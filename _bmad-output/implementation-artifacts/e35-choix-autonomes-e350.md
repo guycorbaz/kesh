@@ -409,6 +409,8 @@ retenue, options écartées, réversibilité. Lignes citées sur `release/0.17.6
 - **Écartée** : afficher le compte retenu hors liste, marqué : un compte que le dialogue refuse resterait sélectionnable
   en apparence, et le serveur le refuserait de toute façon.
 - **Réversible** : oui.
+- *(Annoté le 2026-11-13, validation P1 de la 35-7 : « Compte de contrepartie obligatoire » vaut pour *Écriture manuelle* ;
+  *Éclater* dit « Ligne { $line } : compte requis ». Le champ qui se vide au montage est une limite écrite à la fiche.)*
 
 ### C-e350-37 — 35-7 : sur un champ de compte obligatoire, quitter le champ jette le brouillon
 

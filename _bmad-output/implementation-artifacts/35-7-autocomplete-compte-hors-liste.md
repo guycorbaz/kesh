@@ -55,13 +55,29 @@ restauré **avec** `allowClear`. `ManualMatchModal.test.ts:183` (bouton désacti
   est **absent** de `accounts` (liste pas encore chargée : rien à juger, le serveur tranche, comme aujourd'hui) ; sinon `id`
   s'il est dans `counterpartyAccounts([compte], bankLedgerAccountId)`, `null` dans le cas contraire. Chaque dialogue l'applique
   par un `$effect` qui **n'écrit que si la valeur change** (`counterpartyId` ; chaque `splits[i].counterpartyAccountId`).
-  Le champ est alors vide **et** la valeur nulle : le message existant « Compte de contrepartie obligatoire » s'applique, le
-  bouton se désactive. Aucun texte neuf.
+  Le champ est alors vide **et** la valeur nulle : le message existant de chaque dialogue s'applique — *Écriture manuelle* :
+  « Compte de contrepartie obligatoire » (`reconciliation-manual-error-counterparty-required`, `ManualMatchModal.svelte:106-111`),
+  bouton désactivé ; *Éclater* : « Ligne { $line } : compte requis » (`reconciliation-split-error-account-required`,
+  `TransactionSplitModal.svelte:147-173`, première ligne en défaut). Aucun texte neuf. **Limite écrite** (validation P1,
+  V1-4) : le champ se vide de lui-même quand l'identifiant du compte de la banque arrive (résolution au montage,
+  `ReconciliationProposals.svelte:217-229`), fenêtre courte ; seul ce message dit pourquoi — C-e350-36 tient.
 - **D2 — Chemin 2 : sur un champ strict, le `blur` jette le brouillon** (C-e350-37). `handleBlur` : en mode dégradé
   (`loadError`) rien ne change (le brouillon y est l'identifiant tapé, déjà envoyé par `handleInput`) ; sans `allowClear`,
   `draft = null` — le champ **réaffiche le compte retenu** (ou reste vide si la valeur est nulle), sans jamais appeler
-  `onSelect` (la dette #271 reste tenue : un champ obligatoire n'est pas nullifié) ; avec `allowClear`, inchangé. Le
-  commentaire `:285-287` est réécrit : l'invariant « le champ ne contredit jamais `value` » vaut pour tous.
+  `onSelect` (la dette #271 reste tenue : un champ obligatoire n'est pas nullifié) ; avec `allowClear`, inchangé.
+  **Les textes qui disent « les 4 consommateurs … inchangés » deviennent faux** (validation P1, V1-1 ; le compte lui-même est
+  périmé : **sept** sites, cinq stricts et deux `allowClear`). Inventaire relevé sur `main`
+  (`/usr/bin/grep -n "4 consommateurs\|strictement inchangé\|stricts inchangés"` sur le composant et son test) :
+  - **réécrits** : `AccountAutocomplete.svelte:20-23` (doc d'`allowClear` : « Défaut `false` : les 4 consommateurs existants
+    sont stricts inchangés ») ; `:285-287` (« le brouillon est conservé tel quel — comportement des 4 consommateurs existants
+    strictement inchangé ») — l'invariant « le champ ne contredit jamais `value` » vaut pour tous ;
+    `AccountAutocomplete.test.ts:8` (en-tête : tests « orientés non-régression des 4 consommateurs existants ») ; `:81`
+    (`describe` « non-régression des 4 consommateurs ») et `:99` (titre : « vider le champ au clavier ne nullifie RIEN ») —
+    le test `:99` garde son assertion (`onSelect` jamais appelé) et gagne celle d'AC1 (le champ réaffiche le compte) ;
+  - **gardés, avec leur raison** (le compte « 4 » corrigé en « consommateurs » sans changer le sens) : `:183` (l'effet qui
+    annule le brouillon sur une valeur venue de l'extérieur : inchangé) ; `:199` (`requiredAccountType` à `undefined` par
+    défaut : inchangé) ; test `:279` (même objet).
+  L'étape 0 relance le grep et le Change Log en cite la sortie.
 - **D3 — Ce qui ne change pas** : `allowClear`, `markInvalid`, le mode dégradé, le filtre (`active`, `postable`,
   `requiredAccountType`), le bouton d'effacement, les deux consommateurs `allowClear`. Le serveur reste juge
   (`counterparty_equals_bank_ledger`, `ACCOUNT_NOT_POSTABLE`).
@@ -77,40 +93,49 @@ restauré **avec** `allowClear`. `ManualMatchModal.test.ts:183` (bouton désacti
    compte proposé → l'identifiant ; `bankLedgerAccountId` nul → l'identifiant d'un compte actif et imputable.
 3. **AC3 — Chemin 1, les dialogues** (Vitest, `ManualMatchModal.test.ts` et `TransactionSplitModal.test.ts`) : monté avec
    `bankLedgerAccountId: null`, le compte de la banque choisi, puis le prop passé à son identifiant (`rerender`) → le champ
-   est vide, la valeur nulle (bouton de validation désactivé, message « Compte de contrepartie obligatoire » pour
-   *Écriture manuelle* ; pour *Éclater*, la ligne concernée seule vidée, l'autre intacte) ; un compte resté proposé n'est
-   pas touché. Aucun appel serveur.
+   est vide, la valeur nulle — *Écriture manuelle* : bouton de validation désactivé, message « Compte de contrepartie
+   obligatoire » ; *Éclater* : la ligne concernée seule vidée, l'autre intacte ; la ligne 1 vidée → « Ligne 1 : compte
+   requis » ; la ligne 2 vidée seule, la ligne 1 remplie → « Ligne 2 : compte requis » (aucune ligne antérieure ne masque le
+   message). Un compte resté proposé n'est pas touché. Aucun appel serveur.
 4. **AC4 — Consommateurs stricts, non-régression** : les suites de `JournalEntryForm`, `VatPurchaseAssistant`,
    `ManualMatchModal`, `TransactionSplitModal` restent vertes ; une ligne d'écriture dont on vide le compte puis qu'on quitte
    réaffiche son compte (un test ajouté dans `JournalEntryForm.edit.test.ts`, ou constat que le composant seul suffit, écrit au
    Change Log).
 5. **AC5 — Textes et docs** : aucune clé i18n ajoutée ni changée (`sitesTotal` de `i18n-keys.test.ts` inchangé, recompté) ;
-   le manuel ne décrit pas le comportement du champ au clavier — contrôle :
-   `git grep -nE "vide[rz]? le champ|champ vide|effac" -- docs/manual/fr/user-manual.tex` ; toute phrase qui le
-   contredirait est corrigée, sinon le Change Log dit « manuel inchangé, grep cité ». CHANGELOG `## [0.17.7] — Non
+   le manuel ne décrit pas le comportement du champ au clavier. Les seules lignes qui décrivent le champ de contrepartie sont
+   `user-manual.tex:3121` (*Écriture manuelle* : ce que le sélecteur propose ; « Ouverte sans rien taper, la liste ne montre
+   que les premiers comptes ») et le paragraphe d'*Éclater* voisin — contrôle restreint à `:3105-3135`
+   (`sed -n 3105,3135p docs/manual/fr/user-manual.tex | /usr/bin/grep -nE "vide|effac|quitt|tap"`). Aucune ne dit ce que fait le
+   champ quand on le quitte : le Change Log le constate, lignes citées ; une phrase qui le contredirait est corrigée. CHANGELOG `## [0.17.7] — Non
    publié`, *Corrigé*, un point `refs #1000` (C-e350-8).
 6. **AC6 — Captures** (thème clair, base jetable, `kesh-gate-logs/e357/captures/`) : *Écriture manuelle*, champ vidé puis
    quitté (le compte réaffiché) ; *Éclater*, même geste.
+7. **AC7 — E2E du chemin 2** (`reconciliation-manual-entry.spec.ts`, montage de `:112-140`) : le compte `2000` choisi
+   (`option.dispatchEvent('mousedown')`, `:137`), puis `champ.fill('zzz')` et `champ.blur()` → le champ affiche de nouveau
+   `2000 — …` ; *Passer l'écriture* → le corps du `POST /api/v1/reconciliation/manual` (lu par `page.waitForRequest`) porte
+   l'identifiant du compte **affiché**. Rouge au départ : le champ reste à `zzz`. Le **chemin 1** (course sur
+   `bankLedgerAccountId` au montage) n'est pas déterministe en E2E : **limite assumée**, couvert par Vitest seul (AC3).
 
 ## Tests à écrire, et la preuve du rouge
 
 Écrits d'abord, journal `kesh-gate-logs/e357/rouges.log`. Les tests montent les composants avec un mock local
 d'`i18nMsg` (`vi.mock('$lib/shared/utils/i18n.svelte', …)`, patron de `AccountAutocomplete.test.ts:21-23`), sans état
 i18n global. Rouges au départ : AC1 (le champ reste vide, ou garde `zzz`) ; AC3 (le champ vide, la valeur gardée, le
-bouton actif) ; AC2 : la fonction est d'abord écrite comme `(id) => id` (la lecture d'aujourd'hui), pour que ses rouges portent sur
+bouton actif) ; AC7 (le champ reste à `zzz`) ; AC2 : la fonction est d'abord écrite comme `(id) => id` (la lecture d'aujourd'hui), pour que ses rouges portent sur
 le comportement et non sur un export absent ; puis remplacée. Verts au départ, et dits : `:99-109`, les tests `allowClear`, le mode dégradé.
 
 **Mutations** : M1 `draft = null` retiré du `blur` strict (AC1) ; M2 le `blur` strict nullifie (`onSelect(null)`) — AC1
 (`onSelect` jamais appelé) ; M3 le mode dégradé jette aussi son brouillon (AC1, `7`) ; M4 `keepOfferedCounterparty` rend
 toujours l'identifiant (AC2, AC3) ; M5 la fonction rend `null` pour un compte absent de la liste (AC2 — un compte non
 chargé ne doit pas être effacé) ; M6 l'`$effect` d'*Éclater* vide toutes les lignes (AC3, l'autre ligne intacte) ; M7
-l'`$effect` d'*Écriture manuelle* retiré (AC3).
+l'`$effect` d'*Écriture manuelle* retiré (AC3) ; M1 est aussi tuée par AC7, à la frontière HTTP.
 
 ## Tâches
 
-- [ ] Étape 0 : relire les lignes citées sur `main` ; `git grep -n "<AccountAutocomplete" -- frontend/src` (sept sites).
-- [ ] Tests, rouges consignés ; `AccountAutocomplete.svelte` (D2), `reconciliation-counterparties.ts` (D1), les deux
-      dialogues ; CHANGELOG ; captures.
+- [ ] Étape 0 : relire les lignes citées sur `main` ; `git grep -n "<AccountAutocomplete" -- frontend/src` (sept sites) ;
+      le grep des « 4 consommateurs » de D2, sortie citée au Change Log.
+- [ ] Tests, rouges consignés ; `AccountAutocomplete.svelte` (D2, avec ses commentaires) et son test ;
+      `reconciliation-counterparties.ts` (D1), les deux dialogues ; l'E2E d'AC7 ; CHANGELOG ; captures.
 - [ ] Gates : frontend complet (`npm run check`, `lint-i18n-ownership`, `test:unit`, `build`) ; E2E complet au dernier
       commit de code (`reconciliation-manual.spec.ts`, `reconciliation-manual-entry.spec.ts`, `reconciliation-split.spec.ts`, `journal-entries.spec.ts` en particulier).
       Backend : rien ne change côté Rust ; le gate backend complet n'est dû qu'au push de la branche d'intégration.
@@ -127,7 +152,11 @@ l'`$effect` d'*Écriture manuelle* retiré (AC3).
 `CHANGELOG.md` (un point sous `### Corrigé`). Aucun autre : `features/reconciliation/` est aussi touché par la **35-4**
 (`ReconciliationProposals.svelte`, `AlreadyBookedConfirmDialog.svelte`, `already-booked.ts`) — **fichiers distincts**, pas
 de hunk commun ; la 35-7 touche `ManualMatchModal.svelte`, `TransactionSplitModal.svelte`, `reconciliation-counterparties.ts`
-et leurs tests. Si l'une des deux voit un fichier de l'autre à toucher, elle le dit avant de l'écrire.
+et leurs tests. Si l'une des deux voit un fichier de l'autre à toucher, elle le dit avant de l'écrire. ⚠️ La fiche 35-4
+**cite** des lignes de ces deux dialogues (`ManualMatchModal.svelte:139-151`, `TransactionSplitModal.svelte:234-239`, pour le
+refus d'une ligne déjà rapprochée) : les `$effect` de la 35-7 les décalent ; celle des deux qui part la seconde relit ces
+citations après la fusion de la première. La spec `reconciliation-manual-entry.spec.ts` est éditée ici (AC7) ; la 35-4 ne
+fait que la rejouer. Écrit aussi au fichier d'epic (validation P1, V1-6).
 
 ### Ce qui doit rester vrai
 
@@ -157,3 +186,18 @@ et leurs tests. Si l'une des deux voit un fichier de l'autre à toucher, elle le
   **Écart à la consigne Edit** : six corrections de rédaction (références de ligne de `reconciliation-counterparties.ts`,
   noms de fichiers de tests existants, liste des specs E2E, rouge d'AC2), faites dans la fiche neuve par un court script
   Python qui contrôlait l'unicité de chaque chaîne avant de la remplacer, au lieu de l'outil Edit. Rien d'autre.
+- 2026-11-13 — **Validation P1** (Sonnet) : 0 CRITICAL, 0 HIGH, 2 MEDIUM, 4 LOW (`kesh-gate-logs/e35-7-validation-p1.md`).
+  Remédiée par l'agent de rédaction des fiches (Opus 5.5). Prémisses relues sur `main` : `AccountAutocomplete.svelte:20`,
+  `:183`, `:199`, `:286-287` et son test `:8`, `:81`, `:279` (grep « 4 consommateurs ») ; `TransactionSplitModal.svelte:147-173`
+  (`reconciliation-split-error-account-required`) ; `reconciliation-manual-entry.spec.ts:112-140` ; `user-manual.tex:3121` ;
+  `ReconciliationProposals.svelte:215-229`. Toutes confirmées.
+  - V1-1 (MEDIUM) : inventaire des textes rendus faux par D2 écrit dans D2 (réécrits : `:20-23`, `:285-287`, test `:8`, `:81`,
+    `:99` ; gardés avec leur raison : `:183`, `:199`, test `:279`) ; grep à l'étape 0.
+  - V1-2 (MEDIUM) : AC7, E2E déterministe du chemin 2 dans `reconciliation-manual-entry.spec.ts` (le corps du
+    `POST /reconciliation/manual` porte le compte affiché) ; chemin 1 : limite assumée, Vitest seul.
+  - LOW : V1-3 (message d'*Éclater* « Ligne { $line } : compte requis », AC3) ; V1-4 (limite du champ qui se vide au
+    montage, écrite en D1) ; V1-5 (contrôle du manuel restreint à `:3105-3135`, `:3121` nommée) ; V1-6 (ligne 35-7 du
+    fichier d'epic et point 6 de ses dépendances : 35-7 et 35-4).
+  - Symptômes greppés (fiche, fichier d'epic, registre) : « 4 consommateurs », « Compte de contrepartie obligatoire » (dit
+    désormais pour *Écriture manuelle* seule), « manuel inchangé, grep cité » — remplacés ; registre : C-e350-36 dit « le
+    message existant « Compte de contrepartie obligatoire » s'applique », annoté.
