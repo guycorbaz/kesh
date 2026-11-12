@@ -22,7 +22,6 @@ use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
 use chrono::{NaiveDate, NaiveDateTime};
 use kesh_db::entities::{SettlementChoice, SupplierInvoice, SupplierInvoiceLine};
-use kesh_db::errors::DbError;
 use kesh_db::repositories::supplier_invoices;
 use kesh_qrbill::{ScannedAddress, ScannedQrBill, ScannedReference, parse_spc_payload};
 use rust_decimal::Decimal;
@@ -100,8 +99,8 @@ pub struct SupplierInvoiceResponse {
     /// Story 25-3-a-2 (#414) — le règlement peut-il être annulé ?
     ///
     /// ⚠️ **`None` veut dire « non calculé ici », jamais « non »** — même
-    /// discipline que `InvoiceResponse::amount_settled` : seuls le GET, `pay` et
-    /// l'annulation du règlement le calculent ([`Self::load_with_settlement_cancellation`]).
+    /// discipline que `InvoiceResponse::amount_settled` : seuls le GET et les neuf
+    /// gestes qui écrivent le calculent ([`Self::from_view`], Story 34-8).
     /// Calculé par la fonction même qui refuse l'annulation : l'écran masque le
     /// bouton avant le clic. Ne tient pas compte du rôle.
     pub settlement_cancellable: Option<bool>,
@@ -135,7 +134,8 @@ pub struct SupplierInvoiceResponse {
     ///
     /// Même discipline que `settlement_cancellable` (« non calculé n'est jamais
     /// non »), à ceci près qu'ici l'absence se distingue de `null`. Calculé par
-    /// [`Self::load_with_settlement_cancellation`], dans l'instantané du GET.
+    /// [`Self::from_view`], dans l'instantané de la vue (celui du GET, ou celui de
+    /// la transaction d'écriture, Story 34-8).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub source_document: Option<Option<SourceDocumentInfo>>,
 }
@@ -256,31 +256,18 @@ impl SupplierInvoiceResponse {
         }
     }
 
-    /// Story 25-3-a-2 (#414) — la réponse complète, champs d'annulation du
-    /// règlement et dernier lot confirmé compris, **depuis un seul instantané**
-    /// ([`supplier_invoices::get_settlement_view`]). ⚠️ Servie par le GET, `pay`
-    /// (dont la réponse remplace l'état de l'écran), l'annulation de la facture
-    /// et celle du règlement, la complétion d'un document (Story 30-2b) et, depuis
-    /// la Story 30-2c, le rattachement et le détachement d'un document — le
-    /// document lui-même (`source_document`) compris ; ailleurs, les champs
-    /// restent `None` — « non calculé », jamais une valeur qui mentirait. Après une écriture, la facture est **relue** :
-    /// la réponse décrit l'état courant, cohérent avec ses propres champs.
-    pub async fn load_with_settlement_cancellation(
-        pool: &sqlx::MySqlPool,
-        company_id: i64,
-        id: i64,
-    ) -> Result<Self, AppError> {
-        let view = supplier_invoices::get_settlement_view(pool, company_id, id)
-            .await?
-            .ok_or(AppError::Database(DbError::NotFound))?;
-        Ok(Self::from_view(view))
-    }
-
     /// Story 32-4b (C-32-4b-5) — la mise en forme **pure** d'une vue de
-    /// règlement : la seule, employée par
-    /// [`Self::load_with_settlement_cancellation`] (les mutants, et les trois
-    /// sites de `imported_supplier_invoices.rs`) et par le handler de la fiche,
-    /// qui lit la vue par `services::factures_fournisseur::detail`.
+    /// règlement (`supplier_invoices::SupplierInvoiceSettlementView`), champs
+    /// d'annulation du règlement et de la facture, dernier lot confirmé et
+    /// document compris, **depuis un seul instantané** : la seule. Employée par le
+    /// handler de la fiche, qui lit la vue par `services::factures_fournisseur::detail`,
+    /// et — Story 34-8 (#938) — par les neuf gestes qui écrivent (valider, repasser en
+    /// brouillon, modifier, payer, annuler, annuler le règlement, compléter, joindre,
+    /// détacher), sur la vue que rend l'écriture elle-même, **lue dans sa transaction
+    /// avant le commit** (`supplier_invoices::commit_with_view`). Aucune relecture
+    /// après le commit : celle qui rendait 404 ou 500 pour un geste réussi.
+    /// Ailleurs (`POST /supplier-invoices`, [`Self::from_parts`]), les champs
+    /// restent `None` — « non calculé », jamais une valeur qui mentirait.
     pub fn from_view(view: supplier_invoices::SupplierInvoiceSettlementView) -> Self {
         let hit = view.settlement_cancel_blocker;
         let invoice_hit = view.invoice_cancel_blocker;
@@ -720,8 +707,8 @@ pub async fn get_supplier_invoice(
     Path(id): Path<i64>,
 ) -> Result<Json<SupplierInvoiceResponse>, AppError> {
     // Story 32-4b — la société et la vue passent par le service
-    // (`services::factures_fournisseur::detail`) ; la mise en forme est celle de
-    // `load_with_settlement_cancellation` (`from_view`).
+    // (`services::factures_fournisseur::detail`) ; la mise en forme est celle des
+    // gestes qui écrivent (`from_view`).
     let vue = factures_fournisseur::detail(
         &ContexteAcces::depuis_api(&current_user),
         &state.lecture(),
@@ -775,7 +762,8 @@ pub async fn create_supplier_invoice(
 ///
 /// Refus : facture absente → `404` ; pas un brouillon → `409
 /// ILLEGAL_STATE_TRANSITION` ; version périmée → `409 OPTIMISTIC_LOCK_CONFLICT`
-/// ; puis ceux de la création. Réponse : la facture relue.
+/// ; puis ceux de la création. Réponse : la facture telle que le `PUT` l'a écrite,
+/// lue dans sa transaction avant le commit (Story 34-8, #938).
 ///
 /// ⚠️ **Rejouée sur interblocage** par l'enveloppe `AppError`
 /// [`crate::retry::retry_app_on_deadlock`] (C-v017-4-37, P4) : la transaction
@@ -788,27 +776,26 @@ pub async fn update_supplier_invoice(
     Json(req): Json<UpdateSupplierInvoiceRequest>,
 ) -> Result<Json<SupplierInvoiceResponse>, AppError> {
     let company = get_company_for(&current_user, &state.pool).await?;
-    crate::retry::retry_app_on_deadlock("supplier_invoices::update", || {
+    let view = crate::retry::retry_app_on_deadlock("supplier_invoices::update", || {
         update_supplier_invoice_once(&state.pool, current_user.user_id, company.id, id, &req)
     })
     .await?;
-    Ok(Json(
-        SupplierInvoiceResponse::load_with_settlement_cancellation(&state.pool, company.id, id)
-            .await?,
-    ))
+    Ok(Json(SupplierInvoiceResponse::from_view(view)))
 }
 
 /// Une tentative du `PUT` : la facture verrouillée (brouillon, version), le
 /// document joint lu par une **lecture ordinaire** (ses données de QR et son
 /// origine ne changent qu'avec un détachement, bénin), la conversion selon
-/// l'origine, puis le remplacement.
+/// l'origine, puis le remplacement. Rend la vue de la facture, lue dans la
+/// transaction avant son commit (`supplier_invoices::commit_with_view`, Story 34-8,
+/// #938).
 async fn update_supplier_invoice_once(
     pool: &sqlx::MySqlPool,
     user_id: i64,
     company_id: i64,
     id: i64,
     req: &UpdateSupplierInvoiceRequest,
-) -> Result<(), AppError> {
+) -> Result<supplier_invoices::SupplierInvoiceSettlementView, AppError> {
     use kesh_db::errors::map_db_error;
     use kesh_db::repositories::imported_supplier_invoices;
 
@@ -839,16 +826,8 @@ async fn update_supplier_invoice_once(
         Ok::<(), AppError>(())
     }
     .await;
-    match result {
-        Ok(()) => tx
-            .commit()
-            .await
-            .map_err(|e| AppError::Database(map_db_error(e))),
-        Err(e) => {
-            let _ = tx.rollback().await;
-            Err(e)
-        }
-    }
+    let (view, ()) = supplier_invoices::commit_with_view(tx, company_id, result, |_| id).await?;
+    Ok(view)
 }
 
 /// `DELETE /api/v1/supplier-invoices/{id}` — supprime un **brouillon**
@@ -875,7 +854,8 @@ pub async fn delete_supplier_invoice(
 
 /// `POST /api/v1/supplier-invoices/{id}/validate` `{version}` — valide un
 /// brouillon : l'écriture d'achat est passée (Comptable+, clés `read-write` ;
-/// Story v017-4a, #849, AC-10). Réponse : la facture relue, `status: "open"`.
+/// Story v017-4a, #849, AC-10). Réponse : la facture telle que la validation l'a
+/// écrite, `status: "open"`, lue avant le commit (Story 34-8, #938).
 ///
 /// ⚠️ **Rejouée sur interblocage** par l'enveloppe `DbError`
 /// [`kesh_db::retry::retry_on_deadlock`] (cycle connu avec la confirmation d'un
@@ -887,7 +867,7 @@ pub async fn validate_supplier_invoice(
     Json(req): Json<SupplierInvoiceVersionRequest>,
 ) -> Result<Json<SupplierInvoiceResponse>, AppError> {
     let company = get_company_for(&current_user, &state.pool).await?;
-    kesh_db::retry::retry_on_deadlock("supplier_invoices::validate", || {
+    let view = kesh_db::retry::retry_on_deadlock("supplier_invoices::validate", || {
         supplier_invoices::validate(
             &state.pool,
             company.id,
@@ -897,10 +877,7 @@ pub async fn validate_supplier_invoice(
         )
     })
     .await?;
-    Ok(Json(
-        SupplierInvoiceResponse::load_with_settlement_cancellation(&state.pool, company.id, id)
-            .await?,
-    ))
+    Ok(Json(SupplierInvoiceResponse::from_view(view)))
 }
 
 /// `POST /api/v1/supplier-invoices/{id}/unvalidate` `{version}` — repasse en
@@ -912,7 +889,7 @@ pub async fn validate_supplier_invoice(
 /// champs neufs de `details` (`batchId`, `transactionDate`, `entryId`,
 /// `entryNumber`, `entryDate`) : doc-comment de
 /// `supplier_invoices::unvalidate_in_tx` et `docs/api-external.md`. Réponse :
-/// la facture relue.
+/// la facture telle que le geste l'a écrite, lue avant le commit (Story 34-8).
 ///
 /// ⚠️ **Rejouée sur interblocage** par l'enveloppe `DbError`
 /// [`kesh_db::retry::retry_on_deadlock`].
@@ -923,7 +900,7 @@ pub async fn unvalidate_supplier_invoice(
     Json(req): Json<SupplierInvoiceVersionRequest>,
 ) -> Result<Json<SupplierInvoiceResponse>, AppError> {
     let company = get_company_for(&current_user, &state.pool).await?;
-    kesh_db::retry::retry_on_deadlock("supplier_invoices::unvalidate", || {
+    let view = kesh_db::retry::retry_on_deadlock("supplier_invoices::unvalidate", || {
         supplier_invoices::unvalidate(
             &state.pool,
             company.id,
@@ -933,13 +910,11 @@ pub async fn unvalidate_supplier_invoice(
         )
     })
     .await?;
-    Ok(Json(
-        SupplierInvoiceResponse::load_with_settlement_cancellation(&state.pool, company.id, id)
-            .await?,
-    ))
+    Ok(Json(SupplierInvoiceResponse::from_view(view)))
 }
 
 /// `POST /api/v1/supplier-invoices/{id}/pay` — règlement binaire (Comptable+).
+/// Réponse : la facture payée, lue avant le commit (Story 34-8, #938).
 ///
 /// ⚠️ **Rejouée sur interblocage** (Story 15-5e2) par l'enveloppe `DbError`
 /// [`kesh_db::retry::retry_on_deadlock`].
@@ -952,7 +927,7 @@ pub async fn pay_supplier_invoice(
     borner(req.payment_date, "paymentDate")?;
     let company = get_company_for(&current_user, &state.pool).await?;
     let (choice, payment_date) = req.into_choice()?;
-    kesh_db::retry::retry_on_deadlock("supplier_invoices::pay", || {
+    let view = kesh_db::retry::retry_on_deadlock("supplier_invoices::pay", || {
         supplier_invoices::pay(
             &state.pool,
             company.id,
@@ -963,17 +938,15 @@ pub async fn pay_supplier_invoice(
         )
     })
     .await?;
-    Ok(Json(
-        SupplierInvoiceResponse::load_with_settlement_cancellation(&state.pool, company.id, id)
-            .await?,
-    ))
+    Ok(Json(SupplierInvoiceResponse::from_view(view)))
 }
 
 /// `POST /api/v1/supplier-invoices/{id}/cancel` — annule une facture
 /// fournisseur, **ouverte ou payée** (Comptable+, Story 25-3-c, #454) :
 /// contre-passe l'écriture d'achat par le socle ; payée, son règlement reste au
-/// grand livre, détaché. La réponse est relue avec ses champs de lecture, dans
-/// un seul instantané.
+/// grand livre, détaché. La réponse porte ses champs de lecture, dans un seul
+/// instantané : celui de la transaction d'écriture, lu avant le commit (Story
+/// 34-8, #938).
 ///
 /// ⚠️ **Rejouée sur interblocage** (Story 15-5e2) par l'enveloppe `DbError`
 /// [`kesh_db::retry::retry_on_deadlock`].
@@ -983,18 +956,16 @@ pub async fn cancel_supplier_invoice(
     Path(id): Path<i64>,
 ) -> Result<Json<SupplierInvoiceResponse>, AppError> {
     let company = get_company_for(&current_user, &state.pool).await?;
-    kesh_db::retry::retry_on_deadlock("supplier_invoices::cancel", || {
+    let view = kesh_db::retry::retry_on_deadlock("supplier_invoices::cancel", || {
         supplier_invoices::cancel(&state.pool, company.id, id, current_user.user_id)
     })
     .await?;
-    Ok(Json(
-        SupplierInvoiceResponse::load_with_settlement_cancellation(&state.pool, company.id, id)
-            .await?,
-    ))
+    Ok(Json(SupplierInvoiceResponse::from_view(view)))
 }
 
-/// Réponse de l'annulation d'un règlement fournisseur : la facture relue, et
-/// l'écriture inverse produite (Story 25-3-a-2).
+/// Réponse de l'annulation d'un règlement fournisseur : la facture telle que
+/// l'annulation l'a écrite, et l'écriture inverse produite (Story 25-3-a-2 ;
+/// Story 34-8).
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CancelSupplierSettlementResponse {
@@ -1020,12 +991,7 @@ pub async fn cancel_supplier_invoice_settlement(
     })
     .await?;
     Ok(Json(CancelSupplierSettlementResponse {
-        invoice: SupplierInvoiceResponse::load_with_settlement_cancellation(
-            &state.pool,
-            company.id,
-            id,
-        )
-        .await?,
+        invoice: SupplierInvoiceResponse::from_view(done.invoice),
         reversal_journal_entry_id: done.reversal_journal_entry_id,
     }))
 }

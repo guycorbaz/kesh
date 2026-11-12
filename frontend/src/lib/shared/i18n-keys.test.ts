@@ -921,9 +921,21 @@ const ATTENDU = {
 	// entre-temps », « Repris », l'avis de remplacement, l'avis de fusion, « (vide) »),
 	// `settings/+page.svelte` +1 (« déjà enregistrées »). Que des littéraux ; `sitesNonResolus`
 	// et `relais` inchangés.
+	// Story 34-8 (#938) : **2922 → 2925** (+3), `supplier-invoices/[id]/+page.svelte` : les deux
+	// avis d'issue inconnue (`supplier-invoices-unknown-outcome`, `-reread-failed`) et le repli
+	// `common-error` de `pay()`, qui n'était plus muet hors `ApiError`. Que des littéraux ;
+	// `sitesNonResolus` et `relais` inchangés. Revue P1 (B-2) : **2925 → 2924** (−1), ce repli
+	// de `pay()` retiré — inatteignable, `isSettlementOutcomeUnknown` prenant toute erreur
+	// hors `ApiError`. Revue P2 (B-2 = A-2) : **2924 → 2920** (−4), les replis `common-error`
+	// devenus inatteignables de `cancelSettlement()`, `cancel()`, `confirmValidate()` et
+	// `detach()`, retirés pour la même raison (`confirmDelete()` garde le sien : il ne passe
+	// pas par l'issue inconnue) ; et **+1**, `supplier-invoices-doc-attached` dit au second clic
+	// refusé sur son propre document (B-4) : **2921**. Revue P3 (B-3 = E-2) : **2921 → 2922**
+	// (+1), `supplier-invoices-reread-failed`, l'avis d'une relecture en échec après un refus.
 	// Intégration de la release 0.17.6 (2026-11-12), **recompté à la source** par la garde
 	// elle-même après chaque fusion (non additionné) : 2946 après la 34-3 (34-1, 34-2, 34-3),
-	// 2954 après la 34-4, 2962 après la 34-5, **2968** après la 34-6.
+	// 2954 après la 34-4, 2962 après la 34-5, 2968 après la 34-6, **2968** après la 34-8 (solde
+	// nul de la 34-8).
 	sitesTotal: 2968,
 	sitesNonResolus: 31,
 	relais: 6,

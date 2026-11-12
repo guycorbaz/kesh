@@ -595,8 +595,12 @@ async function requestRaw(
 }
 
 export const apiClient = {
-	get<T>(url: string): Promise<T> {
-		return request<T>(url, { method: 'GET' });
+	/**
+	 * GET JSON. `call` (Story 34-8, revue P2, E-2) : `{ retry: false }` pour une relecture
+	 * dont l'échec est déjà traité par l'écran, sans les ~14 s de rejeu.
+	 */
+	get<T>(url: string, call?: CallOptions): Promise<T> {
+		return request<T>(url, { method: 'GET' }, false, call);
 	},
 
 	/**

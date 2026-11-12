@@ -2476,11 +2476,14 @@ const SITES_NON_RESOLUS: &[SiteNonResolu] = &[
     // Story v017-4a (#849) : 7 → 11 `pub async fn`, 8 → 13 `async fn` — le
     // `PUT` (et sa tentative `update_supplier_invoice_once`, qui reçoit le
     // pool en paramètre), le `DELETE`, la validation et la dévalidation d'une
-    // facture fournisseur, mutants qu'aucun outil ne sert.
+    // facture fournisseur, mutants qu'aucun outil ne sert. Story 34-8 (#938) :
+    // 13 → 12 `async fn` — la méthode indentée `load_with_settlement_cancellation`,
+    // relecture après le commit, est retirée (les gestes rendent la vue lue dans
+    // leur transaction) ; les `pub async fn` restent 11.
     (
         "routes/supplier_invoices.rs",
         11,
-        13,
+        12,
         &[
             "cancel_supplier_invoice",
             "cancel_supplier_invoice_settlement",

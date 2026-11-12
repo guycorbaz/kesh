@@ -22,10 +22,13 @@
 
 use chrono::NaiveDate;
 use kesh_db::entities::contact::{ContactType, NewContact, Salutation};
+use kesh_db::entities::imported_supplier_invoice::NewImportedSupplierInvoice;
 use kesh_db::entities::{
     NewBankAccount, NewSupplierInvoice, NewSupplierInvoiceLine, SettlementChoice,
 };
-use kesh_db::repositories::{bank_accounts, contacts, supplier_invoices};
+use kesh_db::repositories::{
+    bank_accounts, contacts, imported_supplier_invoices, supplier_invoices,
+};
 use kesh_db::test_fixtures::SeededCompany;
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
@@ -433,4 +436,55 @@ pub async fn autre_compte(pool: &MySqlPool, seeded: &SeededCompany) -> i64 {
         .await
         .expect("lien au grand livre");
     bank.id
+}
+
+/// Un document **à traiter** (pièce importée), avec ou sans QR : IBAN classique,
+/// montant, devise. Extrait de `kesh-api/tests/supplier_invoice_draft_e2e.rs` par
+/// la Story 34-8 (#938), dont les tests de réponse joignent, détachent et
+/// complètent un document (règle DRY).
+pub async fn document(
+    pool: &MySqlPool,
+    company_id: i64,
+    hash: &str,
+    qr: Option<(&str, Decimal, &str)>,
+) -> i64 {
+    let mut new = NewImportedSupplierInvoice {
+        company_id,
+        file_hash: hash.into(),
+        storage_path: format!("{hash}.png"),
+        original_filename: format!("{hash}.png"),
+        mime_type: "image/png".into(),
+        byte_size: 10,
+        creditor_iban: None,
+        is_qr_iban: None,
+        creditor_address_type: None,
+        creditor_name: None,
+        creditor_line1: None,
+        creditor_line2: None,
+        creditor_postal_code: None,
+        creditor_town: None,
+        creditor_country: None,
+        reference_type: None,
+        reference_value: None,
+        amount: None,
+        currency: None,
+        unstructured_message: None,
+        billing_information: None,
+    };
+    if let Some((iban, montant, devise)) = qr {
+        new.creditor_iban = Some(iban.into());
+        new.is_qr_iban = Some(false);
+        new.creditor_address_type = Some("K".into());
+        new.creditor_name = Some("Fournisseur rapproché SA".into());
+        new.creditor_line1 = Some("Rue 1".into());
+        new.creditor_line2 = Some("1000 Lausanne".into());
+        new.creditor_country = Some("CH".into());
+        new.reference_type = Some("NON".into());
+        new.amount = Some(montant);
+        new.currency = Some(devise.into());
+    }
+    imported_supplier_invoices::create(pool, &new)
+        .await
+        .expect("document")
+        .id
 }

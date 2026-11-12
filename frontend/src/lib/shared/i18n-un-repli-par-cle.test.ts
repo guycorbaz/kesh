@@ -241,8 +241,15 @@ const PREFIXES = [
  * ⚠️ **Story 34-1** (#966) : **407 → 409** (+2) : `onboarding-bank-editable-later` et
  * `onboarding-bank-ledger-load-error` (relais `msg` de `routes/onboarding/+page.svelte`).
  * Les quatre `bank-accounts-*` réemployées ne sont pas d'un préfixe relevé. Aucune retirée.
+ *
+ * ⚠️ **Story 34-8** (#938) : **407 → 409** (+2) : `supplier-invoices-unknown-outcome` et
+ * `-unknown-outcome-reread-failed`, un repli chacune. Aucune retirée. Revue de code P3 :
+ * **409 → 410** (+1), `supplier-invoices-reread-failed`.
+ *
+ * Intégration de la release 0.17.6 (2026-11-12), fusion de la 34-8 sur la 34-1 : **412**,
+ * recompté par la garde après la fusion (non additionné).
  */
-const CLES_RELEVEES = 409;
+const CLES_RELEVEES = 412;
 
 
 /** Relève, pour chaque clé du domaine, l'ensemble de ses replis littéraux distincts. */

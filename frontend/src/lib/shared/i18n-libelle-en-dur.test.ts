@@ -305,8 +305,15 @@ const SUFFIXES = ['Label', 'Text', 'Display'];
  * (`routes/onboarding/+page.svelte`, tout par le relais `msg` de `i18nMsg`, clé
  * `onboarding-bank-ledger-load-error`) : aucun littéral rendu, donc `conforme` **71 → 72** ;
  * `ecartee` ne bouge pas.
+ *
+ * **85 → 86** (Story 34-8, #938) : `unknownOutcomeText` (`supplier-invoices/[id]/+page.svelte`),
+ * les deux avis d'issue inconnue, tout par `i18nMsg` : aucun littéral affiché, donc `conforme`
+ * **71 → 72** ; `ecartee` ne bouge pas.
+ *
+ * Intégration de la release 0.17.6 (2026-11-12), fusion de la 34-8 sur la 34-1 : **87**
+ * candidates, `conforme` **73**, recomptés par la garde après la fusion (non additionnés).
  */
-const CANDIDATES_ATTENDUES = 86;
+const CANDIDATES_ATTENDUES = 87;
 
 /** Les trois délimiteurs de littéral en JS/TS. */
 const QUOTES = ["'", '"', '`'];
@@ -823,7 +830,7 @@ describe('libellés en dur — l’angle mort #255', () => {
 			else if (c.retours.length > 0) classes.ecartee += 1;
 			else classes.conforme += 1;
 		}
-		expect(classes).toEqual({ nonAnalysee: 0, enViolation: 0, ecartee: 14, conforme: 72 });
+		expect(classes).toEqual({ nonAnalysee: 0, enViolation: 0, ecartee: 14, conforme: 73 });
 		// La somme est recalculée depuis les classes, jamais depuis le total qu'elle contrôle.
 		const somme = Object.values(classes).reduce((a, b) => a + b, 0);
 		expect(somme).toBe(CANDIDATES_ATTENDUES);

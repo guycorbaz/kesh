@@ -114,13 +114,15 @@ pub async fn list_imported(
 /// Story 30-2b (AC13, C-30-2-10) : le corps est **celui de** `POST
 /// /supplier-invoices` ([`CreateSupplierInvoiceRequest`]) — projet compris ; un
 /// client qui n'envoie pas les champs ajoutés reste accepté (tous facultatifs).
-/// La réponse est relue, une fois la transaction validée, par la fonction du GET
-/// ([`SupplierInvoiceResponse::load_with_settlement_cancellation`]).
+/// La réponse est la vue de la facture créée, lue **dans la transaction, avant
+/// son commit** (`supplier_invoices::commit_with_view`, Story 34-8, #938) et mise
+/// en forme par la fonction du GET ([`SupplierInvoiceResponse::from_view`]).
 ///
-/// ⚠️ Angle mort écrit (revue P1 de la 30-2b, C-30-2-42) : une erreur de base
-/// **entre** le `COMMIT` et cette relecture rend une erreur alors que la facture
-/// est créée et le document `completed` ; un nouvel essai rend `409
-/// IMPORT_NOT_PENDING_COMPLETION`. Rien n'est perdu ni faussé — patron de `pay`.
+/// Story 34-8 : l'angle mort écrit à la revue P1 de la 30-2b (C-30-2-42) — une
+/// erreur de base **entre** le `COMMIT` et une relecture rendait une erreur alors
+/// que la facture était créée — est fermé : il n'y a plus de relecture après le
+/// commit. Reste la réponse perdue en route (coupure réseau) : un nouvel essai
+/// rend `409 IMPORT_NOT_PENDING_COMPLETION`, et rien n'est perdu ni faussé.
 ///
 /// ⚠️ **Rejouée sur interblocage** (Story 15-5e2) par l'enveloppe `AppError`
 /// [`crate::retry::retry_app_on_deadlock`] : la transaction vit dans
@@ -132,19 +134,11 @@ pub async fn complete_import(
     Json(req): Json<CreateSupplierInvoiceRequest>,
 ) -> Result<Json<SupplierInvoiceResponse>, AppError> {
     let company = get_company_for(&current_user, &state.pool).await?;
-    let created =
-        crate::retry::retry_app_on_deadlock("imported_supplier_invoices::complete", || {
-            complete_import_once(&state.pool, &current_user, company.id, id, &req)
-        })
-        .await?;
-    Ok(Json(
-        SupplierInvoiceResponse::load_with_settlement_cancellation(
-            &state.pool,
-            company.id,
-            created.invoice.id,
-        )
-        .await?,
-    ))
+    let view = crate::retry::retry_app_on_deadlock("imported_supplier_invoices::complete", || {
+        complete_import_once(&state.pool, &current_user, company.id, id, &req)
+    })
+    .await?;
+    Ok(Json(SupplierInvoiceResponse::from_view(view)))
 }
 
 /// Une tentative de la complétion d'une facture importée : ouvre la
@@ -156,13 +150,17 @@ pub async fn complete_import(
 /// qu'elle consomme. Les erreurs de base arrivent en
 /// `AppError::Database(DbError::Sqlx(_))`, ce que le prédicat de
 /// [`crate::retry::retry_app_on_deadlock`] reconnaît.
+///
+/// Rend la vue de la facture créée, lue avant le commit
+/// (`supplier_invoices::commit_with_view`, Story 34-8, #938) ; son identifiant
+/// n'existe qu'au retour de `create_draft_in_tx`, d'où la fermeture `view_id`.
 async fn complete_import_once(
     pool: &sqlx::MySqlPool,
     current_user: &CurrentUser,
     company_id: i64,
     id: i64,
     req: &CreateSupplierInvoiceRequest,
-) -> Result<supplier_invoices::SupplierInvoiceWithLines, AppError> {
+) -> Result<supplier_invoices::SupplierInvoiceSettlementView, AppError> {
     let user_id = current_user.user_id;
 
     let mut tx = pool
@@ -227,18 +225,9 @@ async fn complete_import_once(
     }
     .await;
 
-    match result {
-        Ok(created) => {
-            tx.commit()
-                .await
-                .map_err(|e| AppError::Database(map_db_error(e)))?;
-            Ok(created)
-        }
-        Err(e) => {
-            let _ = tx.rollback().await;
-            Err(e)
-        }
-    }
+    let (view, _) =
+        supplier_invoices::commit_with_view(tx, company_id, result, |c| c.invoice.id).await?;
+    Ok(view)
 }
 
 /// Les **règles « document »** d'une facture née d'un document (Story 30-2b ;
@@ -561,19 +550,21 @@ pub struct AttachSourceDocumentRequest {
 /// d'une autre société), `404 NOT_FOUND` (facture), `409
 /// IMPORT_NOT_PENDING_COMPLETION` (document déjà traité ou retiré), `409
 /// SOURCE_DOCUMENT_ALREADY_ATTACHED` (la facture a déjà un document). Réponse :
-/// la facture relue une fois la transaction validée, `sourceDocument` calculé.
+/// la facture telle que le rattachement l'a écrite, `sourceDocument` calculé, lue
+/// dans la transaction avant son commit (Story 34-8, #938).
 ///
 /// ⚠️ **Rejouée sur interblocage** ([`crate::retry::retry_app_on_deadlock`]) :
 /// la transaction vit dans [`attach_source_document_once`]. Cycle connu, rare :
 /// avec l'acceptation d'un lot de rapprochement et la confirmation d'un lot de
 /// paiement (C-30-2-46).
 ///
-/// ⚠️ Angles morts écrits (revue P1 de la 30-2c, C-30-2-52) : une erreur de
-/// base **entre** le `COMMIT` et la relecture rend une erreur alors que le
-/// document est joint (patron de `pay` et de `complete_import`, C-30-2-42) ; et
-/// la demande n'est pas idempotente — renvoyée après un succès, elle rend `409
-/// IMPORT_NOT_PENDING_COMPLETION` (C-30-2-21 : aucune lecture préalable du
+/// ⚠️ Angle mort écrit (revue P1 de la 30-2c, C-30-2-52) : la demande n'est pas
+/// idempotente — renvoyée après un succès dont la réponse s'est perdue, elle rend
+/// `409 IMPORT_NOT_PENDING_COMPLETION` (C-30-2-21 : aucune lecture préalable du
 /// lien). Rien n'est perdu ni faussé ; `api-external.md` dit de relire la facture.
+/// L'autre angle mort de C-30-2-52 — une erreur de base entre le `COMMIT` et une
+/// relecture — est fermé par la Story 34-8 : il n'y a plus de relecture après le
+/// commit.
 pub async fn attach_source_document(
     State(state): State<AppState>,
     Extension(current_user): Extension<CurrentUser>,
@@ -581,7 +572,7 @@ pub async fn attach_source_document(
     Json(req): Json<AttachSourceDocumentRequest>,
 ) -> Result<Json<SupplierInvoiceResponse>, AppError> {
     let company = get_company_for(&current_user, &state.pool).await?;
-    crate::retry::retry_app_on_deadlock("imported_supplier_invoices::attach", || {
+    let view = crate::retry::retry_app_on_deadlock("imported_supplier_invoices::attach", || {
         attach_source_document_once(
             &state.pool,
             &current_user,
@@ -591,26 +582,21 @@ pub async fn attach_source_document(
         )
     })
     .await?;
-    Ok(Json(
-        SupplierInvoiceResponse::load_with_settlement_cancellation(
-            &state.pool,
-            company.id,
-            supplier_invoice_id,
-        )
-        .await?,
-    ))
+    Ok(Json(SupplierInvoiceResponse::from_view(view)))
 }
 
 /// Une tentative du rattachement : [`imported_supplier_invoices::attach_in_tx`]
 /// (document, facture, sentinelle de la société, lien), puis l'audit
-/// `imported_supplier_invoice.attached`, dans la même transaction.
+/// `imported_supplier_invoice.attached`, dans la même transaction ; rend la vue de
+/// la facture, lue avant le commit (`supplier_invoices::commit_with_view`, Story
+/// 34-8).
 async fn attach_source_document_once(
     pool: &sqlx::MySqlPool,
     current_user: &CurrentUser,
     company_id: i64,
     supplier_invoice_id: i64,
     imported_id: i64,
-) -> Result<(), AppError> {
+) -> Result<supplier_invoices::SupplierInvoiceSettlementView, AppError> {
     use kesh_db::repositories::imported_supplier_invoices::AttachRefusal;
 
     let mut tx = pool
@@ -655,16 +641,10 @@ async fn attach_source_document_once(
         Ok(())
     }
     .await;
-    match result {
-        Ok(()) => tx
-            .commit()
-            .await
-            .map_err(|e| AppError::Database(map_db_error(e))),
-        Err(e) => {
-            let _ = tx.rollback().await;
-            Err(e)
-        }
-    }
+    let (view, ()) =
+        supplier_invoices::commit_with_view(tx, company_id, result, |_| supplier_invoice_id)
+            .await?;
+    Ok(view)
 }
 
 /// `DELETE /api/v1/supplier-invoices/{id}/source-document` — détache le document
@@ -673,17 +653,19 @@ async fn attach_source_document_once(
 /// Le document repasse « à traiter » avec ses données QR ; la facture, ses
 /// lignes et ses écritures ne sont pas touchées ; aucun fichier n'est supprimé.
 /// Tout statut de facture est accepté. Facture inconnue, d'une autre société ou
-/// sans document → `404 SOURCE_DOCUMENT_NOT_FOUND`. Réponse : la facture relue,
-/// `sourceDocument: null`.
+/// sans document → `404 SOURCE_DOCUMENT_NOT_FOUND`. Réponse : la facture telle
+/// que le détachement l'a laissée, `sourceDocument: null`, lue dans la
+/// transaction avant son commit (Story 34-8, #938).
 ///
 /// ⚠️ Angle mort assumé : un document **avec QR** détaché peut servir à créer
 /// une seconde facture (geste humain explicite ; le manuel dit d'annuler la
 /// facture fausse d'abord).
 ///
-/// ⚠️ Angle mort écrit (revue P1 de la 30-2c, C-30-2-52) : une erreur de base
-/// **entre** le `COMMIT` et la relecture rend une erreur alors que le document
-/// est détaché ; un nouvel essai rend `404 SOURCE_DOCUMENT_NOT_FOUND`. Rien
-/// n'est perdu ni faussé.
+/// La demande n'est pas idempotente : renvoyée après un succès dont la réponse
+/// s'est perdue, elle rend `404 SOURCE_DOCUMENT_NOT_FOUND`. Rien n'est perdu ni
+/// faussé. L'angle mort écrit à la revue P1 de la 30-2c (C-30-2-52) — une erreur
+/// de base entre le `COMMIT` et une relecture — est fermé par la Story 34-8 : il
+/// n'y a plus de relecture après le commit.
 ///
 /// ⚠️ **Rejouée sur interblocage**, comme le rattachement.
 pub async fn detach_source_document(
@@ -692,29 +674,24 @@ pub async fn detach_source_document(
     Path(supplier_invoice_id): Path<i64>,
 ) -> Result<Json<SupplierInvoiceResponse>, AppError> {
     let company = get_company_for(&current_user, &state.pool).await?;
-    crate::retry::retry_app_on_deadlock("imported_supplier_invoices::detach", || {
+    let view = crate::retry::retry_app_on_deadlock("imported_supplier_invoices::detach", || {
         detach_source_document_once(&state.pool, &current_user, company.id, supplier_invoice_id)
     })
     .await?;
-    Ok(Json(
-        SupplierInvoiceResponse::load_with_settlement_cancellation(
-            &state.pool,
-            company.id,
-            supplier_invoice_id,
-        )
-        .await?,
-    ))
+    Ok(Json(SupplierInvoiceResponse::from_view(view)))
 }
 
 /// Une tentative du détachement : [`imported_supplier_invoices::detach_in_tx`]
 /// (la ligne du document seule), puis l'audit
-/// `imported_supplier_invoice.detached`, dans la même transaction.
+/// `imported_supplier_invoice.detached`, dans la même transaction ; rend la vue de
+/// la facture, lue avant le commit (`supplier_invoices::commit_with_view`, Story
+/// 34-8).
 async fn detach_source_document_once(
     pool: &sqlx::MySqlPool,
     current_user: &CurrentUser,
     company_id: i64,
     supplier_invoice_id: i64,
-) -> Result<(), AppError> {
+) -> Result<supplier_invoices::SupplierInvoiceSettlementView, AppError> {
     let mut tx = pool
         .begin()
         .await
@@ -738,19 +715,13 @@ async fn detach_source_document_once(
             ),
         )
         .await?;
-        Ok(())
+        Ok::<(), AppError>(())
     }
     .await;
-    match result {
-        Ok(()) => tx
-            .commit()
-            .await
-            .map_err(|e| AppError::Database(map_db_error(e))),
-        Err(e) => {
-            let _ = tx.rollback().await;
-            Err(e)
-        }
-    }
+    let (view, ()) =
+        supplier_invoices::commit_with_view(tx, company_id, result, |_| supplier_invoice_id)
+            .await?;
+    Ok(view)
 }
 
 /// Lit le justificatif archivé et construit la réponse de téléchargement.

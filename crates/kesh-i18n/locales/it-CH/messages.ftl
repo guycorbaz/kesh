@@ -2699,6 +2699,10 @@ supplier-invoices-doc-attached = Documento allegato alla fattura.
 supplier-invoices-doc-detach = Stacca il documento
 supplier-invoices-doc-detach-confirm = Staccare questo documento? Tornerà tra i documenti da trattare; la fattura e la sua scrittura non cambiano.
 supplier-invoices-doc-detached = Documento staccato: è di nuovo tra i documenti da trattare.
+# Story 34-8 (#938, AC-8) — l'issue inconnue d'un geste de la fiche fournisseur.
+supplier-invoices-unknown-outcome = L’esito non è noto: la fattura è stata riletta, verificatela prima di riprovare.
+supplier-invoices-unknown-outcome-reread-failed = L’esito non è noto, e la fattura non ha potuto essere riletta: ricaricate la pagina prima di riprovare.
+supplier-invoices-reread-failed = La fattura non ha potuto essere riletta: ricaricate la pagina prima di riprovare.
 supplier-invoices-pay-account-ph = Conto di contropartita
 supplier-invoices-pay-bank-ph = Conto bancario di origine
 supplier-invoices-pay-no-eligible-bank-account = Nessun conto bancario utilizzabile: l'unico conto collegato è il conto creditori di questa fattura. Collegare un conto bancario al proprio conto di banca, oppure pagare tramite un conto interno.

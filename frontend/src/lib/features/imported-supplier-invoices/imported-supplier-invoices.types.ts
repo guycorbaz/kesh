@@ -100,6 +100,7 @@ export interface InboxImportReport {
  * Corps de `POST /imported-supplier-invoices/{id}/complete` : depuis la Story 30-2b
  * (AC13), **celui de** `POST /supplier-invoices` — `CreateSupplierInvoiceRequest`. Avec
  * QR, il ne porte aucune coordonnée de paiement (`QR_FIELDS_FROM_DOCUMENT`).
- * La complétion retourne la facture fournisseur réelle créée, relue comme par le GET.
+ * La complétion retourne la facture fournisseur réelle créée, mise en forme comme par le
+ * GET (lue avant le commit depuis la Story 34-8).
  */
 export type CompleteImportResponse = SupplierInvoiceResponse;

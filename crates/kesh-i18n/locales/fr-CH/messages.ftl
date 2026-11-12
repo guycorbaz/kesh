@@ -2731,6 +2731,10 @@ supplier-invoices-doc-attached = Document joint à la facture.
 supplier-invoices-doc-detach = Détacher le document
 supplier-invoices-doc-detach-confirm = Détacher ce document ? Il reviendra dans les documents à traiter ; la facture et son écriture ne changent pas.
 supplier-invoices-doc-detached = Document détaché : il est de nouveau dans les documents à traiter.
+# Story 34-8 (#938, AC-8) — l'issue inconnue d'un geste de la fiche fournisseur.
+supplier-invoices-unknown-outcome = L’issue n’est pas connue : la facture a été relue, vérifiez-la avant de réessayer.
+supplier-invoices-unknown-outcome-reread-failed = L’issue n’est pas connue, et la facture n’a pas pu être relue : rechargez la page avant de réessayer.
+supplier-invoices-reread-failed = La facture n’a pas pu être relue : rechargez la page avant de réessayer.
 supplier-invoices-pay-account-ph = Compte de contrepartie
 supplier-invoices-pay-bank-ph = Compte bancaire source
 supplier-invoices-pay-no-eligible-bank-account = Aucun compte bancaire utilisable : le seul compte lié est le compte créanciers de cette facture. Reliez un compte bancaire à son propre compte de banque, ou réglez par un compte interne.
