@@ -62,8 +62,8 @@ clés : `:969`).
   compteur est **obligatoire** (validation P1, V1-6). **D1 n'exige pas `{YEAR}` ni `{FY}`** (décision de l'orchestrateur,
   validation P2, C-e350-51) : le compteur repart à chaque exercice (`invoice_number_sequences`, clé `(company_id,
   fiscal_year_id)`) alors que l'unicité vaut pour la société (`uq_invoices_number UNIQUE (company_id, invoice_number)`) — un
-  format sans année (`FACT{SEQ}`) heurte donc l'unicité au deuxième exercice ; ce cas est nommé par D5 et suivi par une issue
-  (texte rédigé ci-dessous, *Issue à ouvrir*).
+  format sans année (`FACT{SEQ}`) heurte donc l'unicité au deuxième exercice ; ce cas est nommé par D5 et suivi par
+  **#1058** (texte ci-dessous, *Issue ouverte*).
 - **D2 — Un format n'est jugé que s'il change, au serveur comme à l'écran** (C-e350-43) : la route valide le format client
   et le format d'avoir **quand la requête le porte et qu'il diffère de la valeur enregistrée** ; un format déjà enregistré,
   même sans compteur, ne bloque pas l'enregistrement d'autre chose (le défaut que #932 nommait : « durcir la validation
@@ -190,7 +190,7 @@ avoirs lu mais non envoyé (AC5) ; M6 le miroir d'écran sans `NoSeq` (AC5) ; **
 
 ## Dev Notes
 
-### Issue à ouvrir (C-e350-51, « on trace toujours »)
+### Issue ouverte : #1058 (C-e350-51, « on trace toujours »)
 
 - **Titre** : « Numérotation : un format sans année ni exercice heurte l'unicité au deuxième exercice »
 - **Corps** : « Le compteur de numérotation des factures et des avoirs repart à 1 à chaque exercice

@@ -588,7 +588,7 @@ retenue, options écartées, réversibilité. Lignes citées sur `release/0.17.6
   commencent la même année civile.
 - **Retenu** : D1 n'exige que le compteur ; la collision est nommée à la validation (`duplicate`, C-e350-47), par un message
   qui ne suppose pas l'absence de compteur ; une issue est rédigée dans la fiche (« un format sans année ni exercice heurte
-  l'unicité au deuxième exercice ») pour l'orchestrateur.
+  l'unicité au deuxième exercice ») pour l'orchestrateur — ouverte : **#1058**.
 - **Écartée** : exiger `{YEAR}` ou `{FY}` dans D1 : hors du périmètre de #932 et #948, et refuserait des formats enregistrés
   dès qu'on les touche.
 - **Réversible** : oui.
