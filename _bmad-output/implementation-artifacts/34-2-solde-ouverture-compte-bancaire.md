@@ -1,6 +1,6 @@
 # Story 34-2 : le solde d'ouverture se saisit avec le compte bancaire (#533)
 
-Status: ready-for-dev
+Status: done
 
 *Fiche rédigée le 2026-11-10 en autonomie (Opus 5.5), worktree `/home/gcorbaz/devel/kesh-e34`, branche `chore/epic-34-kickoff`,
 numéros de ligne de `a75835db`. Release **0.17.6**, Epic 34. **Aucune migration** (aucune colonne : l'écriture est une écriture
@@ -94,6 +94,9 @@ dupliqué. » Quatre points y sont « à trancher » ; ils le sont ici (C-e341-6
    compte bancaire n'y figure plus : mouvementé). Sans aucun exercice → `409 OPENING_COMPLEMENT_NO_OPEN_FISCAL_YEAR` (statut du code, `errors.rs:1557-1561`), rien d'écrit ; son
    message (« Aucun exercice ouvert ne couvre la date du jour ») est gardé : inexact au mot près pour « aucun exercice », il dit le remède (un
    exercice ouvert), et une installation passée par l'assistant a toujours son premier exercice.
+   *(Annoté au développement, 2026-11-12, revue P1 A LOW-1 : « rend `ALREADY_HAS_ENTRIES` pour la génération » se lit ainsi au code —
+   `POST /opening-balances` → `409 ILLEGAL_STATE_TRANSITION` ; `GET /opening-balances/status` → `reason: ALREADY_HAS_ENTRIES`,
+   `completeReason: READY`. Le test et `api-external.md` disent les deux.)*
 5. **AC-5 — mêmes refus que *Compléter*, rien d'écrit** : compte lié déjà mouvementé (`ACCOUNT_MOVED`), compte de report absent ou non imputable,
    date verrouillée, aucun exercice ouvert : le refus du complément sort **tel quel** (code et message), et **ni le compte bancaire ni
    l'écriture** n'existent après (AC-9 de l'atomicité, compté en base : `bank_accounts` et `journal_entries` inchangés). L'ancien principal
@@ -103,11 +106,19 @@ dupliqué. » Quatre points y sont « à trancher » ; ils le sont ici (C-e341-6
    (code existant) ; puis les refus du complément. `201` avec l'écriture. Rejouée sur interblocage. **Ordre des verrous** (validation P2, 2.5),
    celui du `PUT` : sentinelle `companies` en exclusif (`acquire_company_sentinel_lock`), puis la ligne `bank_accounts` `LOCK IN SHARE MODE`
    (archivé, clos, lié lus sous ce verrou), puis le complément (son partagé sur `companies` est déjà couvert par l'exclusif ; comptes, exercices).
+   *(Annoté le 2026-11-12, revue P2 A LOW-4 : depuis la remédiation P1 (E-2, B-4), un refus de plus après le `412` —
+   `400 BANK_ACCOUNT_LEDGER_IS_CLAIM_ACCOUNT` — et une lecture de plus, les réglages de facturation en partagé, entre la ligne `bank_accounts` et
+   le complément ; trace `bank_account.opening_balance_entered`. Dérogation à l'ordre global écrite au doc-comment de `claims_for_target`.)*
 7. **AC-7 — l'écran** : au formulaire de création, quand un compte lié est choisi, *Solde d'ouverture* (montant) et *Avoir / Dette* (C-e341-7),
    avec une aide qui dit la date (« daté du premier jour du premier exercice s'il est ouvert, sinon d'aujourd'hui ; contrepartie : Bénéfice/perte
    reporté ») **et la conséquence de C-e341-6** (« Après ce solde, les soldes de départ des autres comptes se saisissent un à un dans *Soldes de
    départ*, mode *Compléter* : l'ouverture générale n'est plus proposée ») ; sans compte lié, les champs sont masqués et rien n'est envoyé. Succès : un avis nomme l'écriture (numéro, date). Refus : le motif
    du serveur dans `form-error`. Action de ligne *Saisir le solde d'ouverture* sur un compte ouvert, lié — même dialogue.
+   *(Annoté le 2026-11-12, revue P2 A LOW-4 : la remédiation P1 a changé l'écran — aide « … s'il est ouvert et hors période verrouillée, sinon
+   d'aujourd'hui : saisissez le solde du relevé à cette date » (B-2) ; conséquence au conditionnel, « Si l'ouverture générale de *Soldes de
+   départ* est encore proposée, ce solde la retire … » (B-6, C-e341-55) — c'est désormais « la phrase de l'AC-7 » à laquelle renvoie l'AC-9 ;
+   montant écrit affiché sous le champ et dans l'avis, « 1,234 » refusé (B-1, C-e341-53) ; dialogue qui nomme le compte (B-7) ; action masquée
+   dès que le compte lié a un mouvement (E-5, C-e341-54).)*
 8. **AC-8 — garde du registre** : `create_bank_account` passe `Traced, Rejouee` ; la route neuve y est inscrite `Traced, Rejouee`
    (`audit_route_registry.rs`), et les totaux du registre suivent (`assert_eq!(traced + exempt + no_matter, LIB_ROUTES.len())`, `:988`, et le
    compte des routes tracées codé en dur du même fichier, recomptés) ; la garde qui exige l'appel de l'enveloppe de rejeu dans le corps du handler
@@ -132,10 +143,10 @@ dupliqué. » Quatre points y sont « à trancher » ; ils le sont ici (C-e341-6
 
 ## Tâches
 
-- [ ] **T1 — rouges d'abord** (`kesh-gate-logs/e341/rouges.log`) : `crates/kesh-db/tests/opening_complement_repository.rs` (portée
+- [x] **T1 — rouges d'abord** (`kesh-gate-logs/e341/rouges.log`) : `crates/kesh-db/tests/opening_complement_repository.rs` (portée
   `SingleBankLedger` sur société vide : passe ; portée `Screen` : `NoEntries` inchangé) ; `crates/kesh-api/tests/bank_accounts_e2e.rs` ou fichier
   neuf `bank_account_opening_balance_e2e.rs` : AC-2 à AC-6, dont l'atomicité comptée (AC-5) et un crédit sur un compte `Liability`.
-- [ ] **T2 — dépôt** : `create_opening_complement_in_tx` + `ComplementScope` ; `create_opening_complement` devient une enveloppe de même signature (lecture
+- [x] **T2 — dépôt** : `create_opening_complement_in_tx` + `ComplementScope` ; `create_opening_complement` devient une enveloppe de même signature (lecture
   `owned_account_ids` hors transaction **inchangée** pour l'écran). **Deux branches distinctes** pour `SingleBankLedger` (validation P1, 2.3 : le code
   actuel les confond dans un seul `filter`, `opening_complement.rs:590-592`) : `first = None` → `NoOpenFiscalYear` ; premier exercice présent →
   le test « la société a des écritures » est sauté. Pour le compte bancaire, `owned` est le seul compte lié, déjà contrôlé de la
@@ -147,21 +158,24 @@ dupliqué. » Quatre points y sont « à trancher » ; ils le sont ici (C-e341-6
   `bank_accounts` en partagé puis écrit), et les deux routes sont rejouées sur interblocage. **Le contrôle de type précède le complément**
   (validation P3, 2.3) : un refus de type ne passe aucune écriture ; la promotion S → X de la ligne `accounts` par le `FOR UPDATE` du complément peut
   interbloquer contre un geste qui tient S (une écriture de journal par sa clé étrangère) : rejouée, sans perte.
+  *(Annoté le 2026-11-12, revue P2 A LOW-4 et LOW-5 : la route de ligne prend désormais `companies` (X) → `bank_accounts` (S) → réglages (S) →
+  comptes et exercices ; les deux partagés ne forment pas de cycle avec un écrivain des réglages — raisonné au doc-comment de `claims_for_target`,
+  non testé par un entrelacement.)*
   ⚠️ `kesh-db` touché : **gate complet même en cours de boucle**.
-- [ ] **T3 — routes** : corps `openingBalance` (forme partagée avec la route neuve), réponse augmentée (`#[serde(flatten)]` du compte),
+- [x] **T3 — routes** : corps `openingBalance` (forme partagée avec la route neuve), réponse augmentée (`#[serde(flatten)]` du compte),
   `create_once` appelle le complément **après le refus du compte de créance, avant la démotion et l'`INSERT`** (AC-10), puis démotion, `INSERT`,
   relecture, traces ; `parse_complement_amount`
   (`opening_balances.rs:509`, privée) passe `pub(crate)` ; route neuve dans `comptable_routes` (`lib.rs:~936-955`), bornée par
   `retry_app_on_deadlock`. Mapping des refus : celui d'`errors.rs:3414` (aucun nouveau code).
-- [ ] **T4 — registre** (AC-8).
-- [ ] **T5 — écran** : `bank-accounts.api.ts` (`createBankAccount` rend `{ …, openingEntry }`, `enterOpeningBalance(id, …)`), formulaire et
+- [x] **T4 — registre** (AC-8).
+- [x] **T5 — écran** : `bank-accounts.api.ts` (`createBankAccount` rend `{ …, openingEntry }`, `enterOpeningBalance(id, …)`), formulaire et
   action de ligne ; Vitest : champs masqués sans lien, présélection du sens par type, corps envoyé, avis de succès, refus affiché.
-- [ ] **T6 — i18n** (quatre locales) : libellé de l'écriture, champs, sens, aide, avis, action. `lint-i18n-ownership`.
-- [ ] **T7 — E2E** : spec neuve `bank-account-opening-balance.spec.ts` : créer un compte lié à un compte neuf (créé par l'API, jamais mouvementé)
+- [x] **T6 — i18n** (quatre locales) : libellé de l'écriture, champs, sens, aide, avis, action. `lint-i18n-ownership`.
+- [x] **T7 — E2E** : spec neuve `bank-account-opening-balance.spec.ts` : créer un compte lié à un compte neuf (créé par l'API, jamais mouvementé)
   avec 1'234.50 *Avoir* → la liste montre le solde `1'234.50` dans la colonne *Solde* (la valeur traverse HTTP et le calcul de
   `list_by_company_with_balances`) ; second essai sur un compte mouvementé → motif affiché, aucun compte créé.
-- [ ] **T8 — manuel** (AC-9), captures (formulaire avec solde, avis, refus) dans `kesh-gate-logs/e341/captures/34-2-*.png`.
-- [ ] **T9 — CHANGELOG** : *Ajouté*, `refs #533`.
+- [x] **T8 — manuel** (AC-9), captures (formulaire avec solde, avis, refus) dans `kesh-gate-logs/e341/captures/34-2-*.png`.
+- [x] **T9 — CHANGELOG** : *Ajouté*, `refs #533`.
 
 ### Mutations nommées
 
@@ -218,11 +232,154 @@ carte se crée avec son solde d'ouverture, sens *Dette*). `opening_complement.rs
   ordres de verrous d'après la P2 et l'inversion couverte par le rejeu. **2.2** : le montage de M8 exige une création principale au-dessus d'un
   principal existant (relu `repositories/bank_accounts.rs:1404-1414`). **2.3** : le contrôle de type de la 34-11a2 précède le complément, promotion
   S → X rejouée (T2).
+- 2026-11-12 : **développement** (Opus 5.5, `bmad-dev-story`, worktree `kesh-e342`, base `133debc2`, clé de travail e342 — port 3342,
+  bases `kesh_e342`, `kesh_e2e_e342`, `kesh_ci_e342`, journaux `kesh-gate-logs/e342/` au lieu des `e341/` de la fiche ; registre
+  `e34-choix-autonomes-e341.md`, celui que la fiche cite, C-e341-44 à 50 ajoutés). **Étape 0** : LOW F7 de la validation P4
+  (`e34-validate-p4-e341.md`, l'inversion de verrous joue aussi contre le retypage) traité au doc-comment de `create_once`, ligne lue
+  `routes/bank_accounts.rs:819` (« … le retypage d'un compte du plan ») ; « test à deux connexions si un point de synchronisation est
+  atteignable » (AC-10) établi : **déterministe**, par `attendre_une_requete_en_cours` sur le `FOR UPDATE` du complément, la ligne croisée
+  étant ajoutée à une écriture **existante** (une création d'écriture prend le partagé de clé étrangère de `companies` et serait sérialisée
+  par la sentinelle : montage muet) ; M8 tuée. Le contrôle de type de la 34-11a2 (T2) n'existe pas encore : il viendra avant l'appel du
+  complément. **Écarts à la fiche** : (1) AC-4 « l'écran *Soldes de départ* rend `ALREADY_HAS_ENTRIES` pour la génération » — le
+  `POST /opening-balances` rend `409 ILLEGAL_STATE_TRANSITION`, et c'est `GET /opening-balances/status` qui rend
+  `reason: ALREADY_HAS_ENTRIES` (lu `routes/opening_balances.rs:185-196`) ; le test et `api-external.md` disent les deux ; (2) M2 (« le complément
+  après le commit ») jouée sous une forme équivalente : refus avalé (`.ok()`), le compte se crée sans écriture ; (3) M9 jouée « commit même sur
+  refus » : **équivalente** — le complément précède la démotion, un refus sort avant toute écriture (`mut/resume.txt`) ; (4) la création ne
+  trace pas d'action `bank_account.*` à la route de ligne (C-e341-46) ; (5) le libellé du champ change au dialogue de ligne (C-e341-50).
+  **Consigne Edit** : deux blocs de tests ajoutés en fin de fichier par `cat >>` (`bank-accounts.api.test.ts`, `format.test.ts`) au lieu de
+  l'outil Edit — par commodité, l'outil ne manquait de rien ; `cargo fmt --all` appliqué (outil de formatage, non un remplacement de texte) ;
+  mutations par le script `mut-run-e342.sh` (remplacements vérifiés uniques, permis). Tout le reste du code par l'outil Edit.
+  *(Annoté le 2026-11-12, revue P1 E-1 : l'écart (3) était **faux** — M9 n'était pas équivalente. Une erreur **après** un complément réussi
+  laissait, sous M9, une écriture orpheline et un ancien principal démoté ; aucun test ne le gardait. Voir l'entrée suivante.)*
+- 2026-11-12 : **revue de code P1** (Opus, B/E/A ; « Sonnet » écrit ici d'abord, corrigé à la clôture sur l'indication de l'orchestrateur) — 0 CRITICAL, 0 HIGH, **2 MEDIUM** (E-1, A MEDIUM-1), 19 LOW. **Remédiation** (Opus 5.5,
+  commits `9d7bb03c`, `7b49f237`, `191d4aeb`, `2342ce45`), tout traité sauf E-3 (renvoyée à **#1022**) :
+  **E-1** : témoin `un_echec_apres_le_complement_n_ecrit_rien` (déclencheur de test `SIGNAL` sur l'`INSERT` du compte, création principale
+  au-dessus d'un principal ; les quatre constats relevés ensemble), M9 rejouée et **tuée** (`(true, false, false, false)`) ; nom de banque borné
+  à 255 caractères (création, `PUT`, assistant ; refus traduit ; borne confrontée au schéma). **A MEDIUM-1** : la ligne E2E du Dev Agent
+  Record récrite avec les lignes du journal du serveur et **#1021** (KF-059) ; l'E2E complet rejoué au dernier commit de code : les sept
+  KF-029 seules. **B-1 = E-6** : « 1,234 » refusé comme ambigu à l'écran ; montant écrit affiché sous le champ et dans l'avis, **exact**
+  jusqu'à quatre décimales (`formatChfExact`, `191d4aeb` : `formatChfBalance` arrondissait au centime ce que le serveur écrit à quatre).
+  **B-2** : aide (période verrouillée, solde à la date). **B-3** : deux refus traduits. **B-4** : trace `bank_account.opening_balance_entered`
+  (C-e341-46 remplacé). **B-5 = E-4**, **A LOW-4** : codes `ACCOUNT_INVALID`, `NOT_BALANCE_ACCOUNT`, `BANK_ACCOUNT_LEDGER_IS_CLAIM_ACCOUNT`,
+  `400 LATER_FISCAL_YEAR_CLOSED` à `api-external.md` ; manuel : compte de report lui-même, exercice suivant clôturé, compte lié hors service,
+  compte de créance. **B-6** : conséquence au conditionnel (C-e341-55). **B-7** : le dialogue nomme le compte. **B-8** : corps entier comparé à
+  la sérialisation du compte relu. **E-2** : garde du compte de créance à la route de ligne (M10). **E-5** : action masquée sur un compte lié
+  mouvementé (C-e341-54). **A LOW-1** : AC-4 annotée. **A LOW-2** : `DATE_LOCKED` et report non imputable exercés. **A LOW-3** : la ligne
+  « ancien principal » vue rouge sous M9. **A LOW-5** : code du sens inconnu vérifié. **A LOW-6** : écart `cat >>` déclaré, non refait.
+  **E-3** (jour UTC) : non corrigé, #1022, cité au manuel. Au passage, la garde `textes_coherents` a lu « 1234 » d'un message neuf comme un
+  numéro de compte : messages récrits (`2342ce45`). Choix C-e341-51 à 55.
+- 2026-11-12 : **revue de code P2** (Sonnet, B/E/A, passe complète) — **0 au-dessus de LOW** sur les trois lentilles. La boucle se clôt.
+  Remédiation des LOW retenus par l'orchestrateur, **sans aucune ligne de code de production** (commentaires seulement) — commit `da8135a4` :
+  tests — borne de 255 caractères au `PUT` et à l'étape bancaire de l'assistant, nom multioctets (B2-3 = E2-5 = A LOW-6 ; mutations M12 et
+  M13 tuées) ; avis à quatre décimales (A LOW-8 ; mutation frontend M14 tuée par ce seul test) ; clés de la réponse comparées à une liste
+  écrite à la main (B2-8) ; documents — exemple « 1.234 » du manuel et du CHANGELOG (B2-6 = E2-4 = A LOW-3), « 1.234 est toujours lu comme un
+  franc » et faux refus au manuel (A LOW-9) ; doc-comment de `format.ts` (A LOW-7, le séparateur est U+202F) ; dérogation à l'ordre des verrous
+  écrite au doc-comment de `claims_for_target`, sans test d'entrelacement (A LOW-5) ; annotations AC-6, AC-7, T2 et décompte des tests
+  (A LOW-4) ; note ¹¹ d'`api-external.md` rangée, la route de l'assistant citée (A LOW-6). **Renvoyés en issues** par l'orchestrateur : faux
+  refus `0,500` / `1'234,567` **#1025** ; `1.234` à l'allemande et `+1,234` **#1026** ; aperçu « 0.00 CHF » d'un montant nul **#1027** ;
+  `1_000` → « NaN CHF » **#1028** ; message `RETAINED_EARNINGS_LINE` étranger au geste **#1029** ; libellé en-CH du côté débit **#1030** ;
+  `formatChfExact` hors `Intl.NumberFormat` v3 **#1031** ; jour UTC **#1022** (P1, E-3) ; verrou tenu pendant la suite E2E **#1021**. E2-6
+  (interblocage avec la validation de facture) sans objet : `validate_invoice_handler` et `validate_supplier_invoice` sont `Rejouee`.
+  **Tendance de la boucle** : P1 (Opus) **0 C / 0 H / 2 M / 19 L** → P2 (Sonnet) **0 C / 0 H / 0 M / LOW seuls**.
+  Modèles : développement et remédiations Opus 5.5 ; revue P1 Opus (trois lentilles) ; revue P2 Sonnet (trois lentilles). Aucun reclassement de
+  sévérité. Gates de clôture au dernier commit de code `da8135a4` : voir le Dev Agent Record.
 
 ## Dev Agent Record
 
 ### Agent Model Used
 
+Opus 5.5 (Claude Code), en autonomie, 2026-11-11 → 2026-11-12.
+
 ### Completion Notes List
 
+- **Dépôt** (`opening_complement.rs`) : `ComplementScope { Screen, SingleBankLedger }` ; `create_opening_complement_in_tx` est la seule
+  implémentation (l'ancienne `create_in_open_tx` privée, renommée et rendue publique) ; `create_opening_complement` garde sa signature et passe
+  `Screen`. `SingleBankLedger` : sans exercice → `NoOpenFiscalYear` ; avec un premier exercice, « la société a des écritures » n'est pas lue.
+  `repositories/bank_accounts.rs` : `find_by_id_locked_shared_in_tx` (lecture `LOCK IN SHARE MODE`). `opening_complement_repository.rs` et
+  `opening_balances_e2e.rs` **inchangés** (`git diff --stat 133debc2 HEAD` vide sur eux).
+- **Routes** : `POST /bank-accounts` accepte `openingBalance { amount, side }` (C-e341-45) et rend `openingEntry` (`CreatedBankAccountResponse`,
+  `#[serde(flatten)]`, `skip_serializing_if`) ; le complément est appelé dans `create_once` après le refus du compte de créance, **avant** la
+  démotion et l'`INSERT` (AC-10) ; `bank_account.created` porte `opening_entry_id` quand une écriture est passée, la trace d'avant sinon.
+  `POST /bank-accounts/{id}/opening-balance` (`enter_opening_balance`, rejouée `bank_accounts::opening_balance`) : sentinelle →
+  ligne en partagé → 404 / 409 clos / 412 sans lien → complément. `parse_complement_amount` et `invalid_amount` passent `pub(crate)`.
+  Libellé « Solde d'ouverture — {nom} » dans la langue comptable, marques BiDi retirées.
+- **Registre** (`audit_route_registry.rs`) : création `Traced, Rejouee` ; route neuve `Traced, Rejouee` ; 145 → 146 routes de `lib.rs`,
+  138 → 139 tracées, 148 → 149 au registre, 25 → 27 rejouées, 120 → 119 sans écriture, point (vi) à vingt-trois. Manuel d'administration :
+  « 139 des 146 routes », « 139 + 4 + 3 = 146 ».
+- **Écran** : champs du solde (montant, sens présélectionné par le type du compte lié, aide, conséquence de C-e341-6 **avant** le geste) dans
+  le formulaire de création dès qu'un compte est lié ; action de ligne *Saisir le solde d'ouverture* sur un compte ouvert et lié, même snippet ;
+  avis qui nomme l'écriture ; refus dans le formulaire ou le dialogue. Garde `i18n-keys.test.ts` : `sitesTotal` 2928 → 2942 (+14, recompté
+  par la garde).
+- **i18n** : 15 clés × 4 locales (`bank-accounts-opening-*`, `bank-accounts-toast-*-opening*`, `bank-accounts-actions-opening-balance`,
+  `error-bank-account-opening-invalid-amount`). Traductions de/it/en proposées par l'agent.
+- **Manuels** : `user-manual.tex` (§ *Comptes bancaires* : puce, § *Le solde d'ouverture d'un compte* ; § *Soldes de départ* : avertissement
+  avant l'énumération), `admin-manual.tex` (compte du registre), PDF FR régénérés (`make fr`, brochure rendue à son état), contrôlés aplatis :
+  « Le solde d’ouverture d’un compte » 2 (titre et table), « Saisir le solde d’ouverture » 1, « Saisissez l’ouverture ici avant tout solde
+  d’ouverture de compte bancaire » 1, « 139 des 146 routes » et « 139 + 4 + 3 = 146 » présents. `docs/api-external.md` : note ¹¹, tableau,
+  paragraphe des interblocages. CHANGELOG `[0.17.6]` *Ajouté*, `refs #533`.
+- **Tests neufs** (périmètre `133debc2..HEAD`, recomptés) : 5 `#[sqlx::test]` kesh-db (`opening_complement_bank_scope.rs`), 12 kesh-api
+  (`bank_account_opening_balance_e2e.rs`), 15 Vitest (page 10, API 3, format 2), 2 E2E Playwright (`bank-account-opening-balance.spec.ts`).
+  *(Annoté le 2026-11-12, revue P2 A LOW-4 : ces chiffres valent au développement, `133debc2..dbdb807c`, non à HEAD comme l'étiquette le
+  disait. Recomptés à la clôture, `133debc2..` le commit de clôture : 5 `#[sqlx::test]` + 1 `#[test]` kesh-db (borne du schéma) ;
+  17 `#[sqlx::test]` dans `bank_account_opening_balance_e2e.rs` + 1 dans `onboarding_bank_account_e2e.rs` ; 23 Vitest ; 2 E2E.)*
+- **Gates de clôture** (remédiation P2, dernier commit de code `da8135a4`, HEAD `6279ab5d` au moment des gates — PDF seul en plus) :
+  `cargo fmt --check`, `cargo clippy -p kesh-db -p kesh-api --all-targets -D warnings` verts ; binaires ciblés
+  `bank_account_opening_balance_e2e` et `onboarding_bank_account_e2e` **31 passés** ; base `kesh_e342` recréée, `scripts/test-fast.sh --ci`
+  **5176 passés, 12 ignorés**, rc 0 ; `scripts/gate-ci.sh kesh_ci_e342` **5183 passés, 0 échoué, 16 ignorés**, rc 0 (`rem3-gates-back.txt`) ;
+  Vitest complet **2919 passés (224 fichiers)** (`rem3-front-test-unit.log`) ; mutations M12, M13 (Rust) et M14 (frontend) tuées
+  (`mut/resume.txt`) ; PDF du manuel utilisateur régénéré, contrôlé aplati. La production n'a pas changé depuis `2342ce45` (commentaires
+  seuls) : l'E2E complet de la remédiation P1 (`e2e-r3.log`, sept KF-029 seules) n'est pas rejoué, l'orchestrateur ne l'ayant pas demandé.
+- **Rouges d'abord** (`kesh-gate-logs/e342/rouges.log`) : Vitest 8 rouges / 2 verts attendus sur l'écran d'avant ; HTTP 11 rouges / 1 vert
+  attendu sur le code de production d'avant (`git stash` des cinq fichiers) ; kesh-db : rouge de compilation.
+- **Mutations**, rejouées après la remédiation (`mut/resume.txt`, `mut/M*.log` ; ceux du développement dans `mut/p0/`) : **M1 à M11
+  tuées**. M8 par `ecriture_croisee_pendant_la_creation_est_vue`, déterministe. **M9** (commit même sur erreur) par
+  `un_echec_apres_le_complement_n_ecrit_rien` — la déclaration « équivalente » du développement était fausse (revue P1, E-1). M10 (garde du
+  compte de créance de la route de ligne neutralisée), M11 (trace de la route de ligne sous une autre action) : neuves.
+- **Rouges de la remédiation** (`rouges.log`, section « Remédiation ») : Vitest 7 rouges / 1 vert attendu ; HTTP 3 rouges / 13 verts, dont le
+  témoin de M9, vert sur le code d'avant **parce que le code était juste** (le défaut était dans le témoin), et les refus déjà produits.
+- **Gates de la remédiation au dernier commit de code `2342ce45`** (HEAD `13302c2b`, PDF seul en plus) : base `kesh_e342` recréée ;
+  `scripts/test-fast.sh --ci` **5174 passés, 12 ignorés**, rc 0 ; `cargo build --workspace --all-targets` rc 0 ; `scripts/gate-ci.sh
+  kesh_ci_e342` **5181 passés, 0 échoué, 16 ignorés**, rc 0 (`rem2-gates-back.txt`). Le premier tour de gates, à `7b49f237`, avait rendu
+  **1 rouge** (`textes_coherents::les_comptes_cites_en_exemple_existent_dans_les_plans_livres` : « 1234 » d'un message neuf lu comme un
+  compte ; corrigé par `2342ce45`). Frontend au même commit : `npm run check` 0 erreur (29 avertissements, aucun dans les fichiers de la
+  story), `lint-i18n-ownership` PASS, `test:unit` **2918 passés (224 fichiers)**, `npm run build` rc 0 (`rem2-gates-front.txt`).
+  *(Gates du développement, au commit `8db6fb7b` : test-fast 5169 passés, gate-ci 5176, Vitest 2911.)*
+- **E2E complet de la remédiation** au dernier commit de code, sur `kesh_e2e_e342` recréée vide (`e2e-r3.log`) : **388 passés, 7 échoués,
+  18 ignorés**. Les sept échecs sont, un par un, ceux de la KF-029 (#97) au tableau de `docs/testing.md` : `mode-expert.spec.ts:26`, `:41`,
+  `onboarding-path-b.spec.ts:65`, `:92`, `onboarding.spec.ts:57`, `:77`, `:150`. Aucune requête lente au journal du serveur
+  (`backend-e2e-r3.log`). Les deux tests de la story passent.
+- **E2E du développement** (`e2e-r1.log`, au commit `8db6fb7b`) : 384 passés, 11 échoués, 18 ignorés — les sept KF-029 et **quatre hors
+  liste** (`fiscal-year-closing-journey.spec.ts:169`, `:320`, `fiscal-years.spec.ts:47`, `:53`), tous en dépassement de 30 s dans le
+  `beforeEach` qui appelle `seedTestState`. **La cause n'était pas la charge de la station**, comme ce record l'affirmait : le journal du
+  serveur (`backend-e2e-r1.log:441-448`) montre un **verrou tenu près de deux minutes** après `export-global.spec.ts` —
+  `SELECT id FROM companies WHERE id = ? FOR UPDATE` 30,1 s, `DO RELEASE_ALL_LOCKS()` 19,9 s puis
+  `1205 (HY000): Lock wait timeout exceeded` à `after_release`, `TRUNCATE TABLE credit_note_lines` 30,2 s trois fois,
+  `DO RELEASE_ALL_LOCKS()` 61,6 s. Ouvert par l'orchestrateur : **#1021 (KF-059)**. La spec neuve passe en n° 30-31, bien avant ; le
+  rejeu isolé (`e2e-r2.log`) rendait 13 passés.
+- **Captures** refaites à la remédiation (thème clair, `kesh-gate-logs/e342/captures/`, `capture-r3.log`) :
+  `34-2-01-formulaire-avec-solde.png` (aperçu « Montant qui sera écrit »), `-02-avis-de-succes-et-solde.png` (montant dans l'avis),
+  `-03-refus-compte-mouvemente.png`, `-04-dialogue-de-ligne-dette.png` (le dialogue nomme le compte), `-05-dialogue-de-ligne-succes.png`
+  (action masquée après la saisie), `-06-montant-ambigu-refuse.png`.
+- **Remédiation P1, le reste** : nom de banque borné (`refuse_too_long_bank_name`, `BANK_ACCOUNT_BANK_NAME_MAX_CHARS`, trois appelants) ;
+  garde du compte de créance et trace `bank_account.opening_balance_entered` à la route de ligne ; deux refus traduits ; i18n : clés neuves
+  `error-bank-account-opening-side-required`, `-ledger-required`, `error-bank-account-bank-name-too-long`, `bank-accounts-opening-preview`,
+  `-error-amount-ambiguous`, `audit-log-action-bank-account-opening-balance-entered`, et cinq textes récrits, quatre locales ; `sitesTotal`
+  2942 → 2944. Tests ajoutés par la remédiation (recomptés, `dbdb807c..HEAD`) : 4 HTTP, 1 kesh-db (borne du schéma), 7 Vitest.
+- **Aucune migration.** #1002 à #1006 (étape bancaire de l'assistant) non touchées : la story ne passe pas par l'assistant (C-e341-12).
+
 ### File List
+
+- `crates/kesh-db/src/repositories/opening_complement.rs`, `crates/kesh-db/src/repositories/bank_accounts.rs`
+- `crates/kesh-db/tests/opening_complement_bank_scope.rs` (neuf)
+- `crates/kesh-api/src/routes/bank_accounts.rs`, `crates/kesh-api/src/routes/opening_balances.rs`, `crates/kesh-api/src/lib.rs`
+- (remédiation P1) `crates/kesh-api/src/routes/onboarding.rs`, `crates/kesh-api/src/audit_labels.rs`, `crates/kesh-db/src/entities/bank_account.rs`,
+  `_bmad-output/implementation-artifacts/34-2-solde-ouverture-compte-bancaire-review-prompt-p2.md` (neuf)
+- `crates/kesh-api/tests/bank_account_opening_balance_e2e.rs` (neuf), `crates/kesh-api/tests/audit_route_registry.rs`
+- `crates/kesh-i18n/locales/{fr,de,it,en}-CH/messages.ftl`
+- `frontend/src/lib/features/bank-accounts/bank-accounts.api.ts`, `format.ts`, `bank-accounts.api.test.ts`, `format.test.ts`
+- `frontend/src/routes/(app)/bank-accounts/+page.svelte`, `bank-accounts-page.test.ts`
+- `frontend/src/lib/shared/i18n-keys.test.ts`
+- `frontend/tests/e2e/bank-account-opening-balance.spec.ts` (neuf)
+- `docs/manual/fr/user-manual.tex`, `user-manual.pdf`, `admin-manual.tex`, `admin-manual.pdf`, `docs/api-external.md`, `CHANGELOG.md`
+- `_bmad-output/implementation-artifacts/e34-choix-autonomes-e341.md`, `34-2-solde-ouverture-compte-bancaire-review-prompt-p1.md` (neuf),
+  la fiche, `sprint-status.yaml`

@@ -156,3 +156,77 @@ export const PRESELECTED_BANK_LEDGER_NUMBER = '1020';
 export function preselectedBankLedgerId(linkable: AccountResponse[]): number | null {
 	return linkable.find((a) => a.number === PRESELECTED_BANK_LEDGER_NUMBER)?.id ?? null;
 }
+
+/**
+ * Story 34-2 (#533, C-e341-7) — sens présélectionné du solde d'ouverture :
+ * *Avoir* (`debit`) pour un compte lié d'actif, *Dette* (`credit`) pour un
+ * passif (découvert, carte). Compte inconnu ou absent : *Avoir*. Une
+ * présélection seulement : l'utilisateur la change, le serveur ne déduit rien.
+ */
+export function defaultOpeningSide(
+	accounts: AccountResponse[],
+	ledgerId: number | null,
+): 'debit' | 'credit' {
+	const account = ledgerId === null ? undefined : accounts.find((a) => a.id === ledgerId);
+	return account?.accountType === 'Liability' ? 'credit' : 'debit';
+}
+
+/**
+ * Story 34-2 (#533) — le montant saisi, tel qu'envoyé : les séparateurs de
+ * milliers suisses (apostrophes droite ou typographique, espaces) retirés, la
+ * virgule décimale lue comme un point. `null` si le champ est vide : aucun solde.
+ * Le contrôle de forme reste celui du serveur (positif, quatre décimales).
+ */
+export function openingAmountPayload(raw: string): string | null {
+	const cleaned = raw.replace(/['’\s  ]/g, '').replace(',', '.');
+	return cleaned === '' ? null : cleaned;
+}
+
+/** Séparateurs de milliers retirés avant les contrôles (apostrophes, espaces). */
+const THOUSANDS_SEPARATORS = /['’\s  ]/g;
+
+/**
+ * Story 34-2 (revue P1, B-1 = E-6) — vrai si la saisie est **ambiguë** : un
+ * nombre, une virgule, puis exactement trois chiffres (« 1,234 »), qui peut être
+ * un millier à l'anglaise (1234) ou une virgule décimale (1.234). Lue comme
+ * décimale, elle écrirait une écriture d'ouverture mille fois trop petite, sans
+ * signal ; l'écran la refuse et demande une forme sans équivoque.
+ */
+export function openingAmountAmbiguous(raw: string): boolean {
+	return /^\d+,\d{3}$/.test(raw.replace(THOUSANDS_SEPARATORS, ''));
+}
+
+/**
+ * Story 34-2 (revue P1, B-1) — le montant **tel qu'il sera écrit**, au format
+ * suisse de `Intl` pour `fr-CH` (`1 234.50 CHF`, le séparateur de milliers est une
+ * espace fine insécable, U+202F), exact jusqu'à quatre décimales
+ * ({@link formatChfExact}), pour le montrer avant le geste ; `null` si la saisie
+ * est vide, ambiguë ou n'est pas un nombre positif bien formé (le serveur en
+ * rendra le refus). Limites suivies : « 0.00 CHF » pour un montant nul (#1027),
+ * « 1_000 » (#1028), moteur sans `Intl.NumberFormat` v3 (#1031).
+ */
+export function openingAmountPreview(raw: string): string | null {
+	if (openingAmountAmbiguous(raw)) return null;
+	const amount = openingAmountPayload(raw);
+	if (amount === null || !/^\d+(\.\d{1,4})?$/.test(amount)) return null;
+	return formatChfExact(amount);
+}
+
+/** Formateur CHF à deux décimales au moins, quatre au plus (la précision de la colonne). */
+const CHF_EXACT = new Intl.NumberFormat('fr-CH', {
+	style: 'currency',
+	currency: 'CHF',
+	minimumFractionDigits: 2,
+	maximumFractionDigits: 4,
+});
+
+/**
+ * Story 34-2 — un montant décimal (chaîne) au format suisse, **sans arrondi**
+ * jusqu'à quatre décimales : l'aperçu et l'avis disent ce que le serveur écrit
+ * (`DECIMAL(19,4)`), là où {@link formatChfBalance} arrondit au centime.
+ * La chaîne est passée telle quelle à `Intl.NumberFormat` (format exact des
+ * décimaux sous forme de chaîne), sans passer par un `number`.
+ */
+export function formatChfExact(amount: string): string {
+	return (CHF_EXACT.format as (value: string) => string)(amount);
+}

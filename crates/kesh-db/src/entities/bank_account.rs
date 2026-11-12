@@ -93,6 +93,13 @@ pub struct NewBankAccount {
 /// (`BANK_ACCOUNT_DESCRIPTION_MAX`, `format.ts`).
 pub const BANK_ACCOUNT_DESCRIPTION_MAX_CHARS: usize = 60;
 
+/// Longueur maximale, en caractères Unicode, de [`BankAccount::bank_name`] — la
+/// borne de la colonne `varchar(255)` (Story 34-2, #533, revue P1 E-1). Sans
+/// elle, un nom plus long faisait échouer l'`INSERT` en `500` (« Data too
+/// long », session `STRICT_ALL_TABLES`) ; la validation de la route la lit et
+/// refuse en `400`.
+pub const BANK_ACCOUNT_BANK_NAME_MAX_CHARS: usize = 255;
+
 /// Séparateur entre la banque et la description : tiret cadratin (U+2014)
 /// entouré d'espaces — celui des sélecteurs de comptes du frontend.
 const DISPLAY_SEPARATOR: &str = " \u{2014} ";
@@ -143,6 +150,25 @@ mod tests {
         assert!(
             ligne.contains("DEFAULT NULL"),
             "la colonne doit être nullable : {ligne}"
+        );
+    }
+
+    /// Story 34-2 (revue P1 E-1) — même contrôle pour le nom de la banque.
+    #[test]
+    fn la_borne_du_nom_de_banque_est_celle_de_la_colonne() {
+        const SCHEMA: &str = include_str!("../../test-schema/0001_schema_squash.sql");
+        let debut = SCHEMA
+            .find("CREATE TABLE `bank_accounts` (")
+            .expect("table bank_accounts absente du schéma");
+        let bloc = &SCHEMA[debut..];
+        let bloc = &bloc[..bloc.find(") ENGINE").expect("fin de table")];
+        let ligne = bloc
+            .lines()
+            .find(|l| l.trim_start().starts_with("`bank_name`"))
+            .expect("colonne bank_name absente de bank_accounts");
+        assert!(
+            ligne.contains(&format!("varchar({BANK_ACCOUNT_BANK_NAME_MAX_CHARS})")),
+            "la colonne doit être varchar({BANK_ACCOUNT_BANK_NAME_MAX_CHARS}), trouvé : {ligne}"
         );
     }
 

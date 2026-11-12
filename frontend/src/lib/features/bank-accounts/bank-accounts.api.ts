@@ -201,6 +201,30 @@ export async function updateBankAccountJournalLink(
 }
 
 /**
+ * Story 34-2 (#533, C-e341-7) — sens d'un solde d'ouverture, **lu sur le
+ * relevé** : `debit` (*Avoir*) le porte au débit du compte lié, `credit`
+ * (*Dette* : un découvert, une carte) au crédit.
+ */
+export type OpeningBalanceSide = 'debit' | 'credit';
+
+/** Story 34-2 (#533) — un solde d'ouverture : montant décimal positif (chaîne) et sens. */
+export interface OpeningBalancePayload {
+	amount: string;
+	side: OpeningBalanceSide;
+}
+
+/**
+ * Story 34-2 (#533) — l'écriture d'ouverture passée avec un compte bancaire :
+ * de quoi la nommer (numéro, date `AAAA-MM-JJ`).
+ */
+export interface OpeningEntrySummary {
+	id: number;
+	entryNumber: number;
+	entryDate: string;
+	fiscalYearId: number;
+}
+
+/**
  * Payload de création — POST /api/v1/bank-accounts (Story v014-1).
  */
 export interface NewBankAccountPayload {
@@ -211,6 +235,17 @@ export interface NewBankAccountPayload {
 	qrIban?: string | null;
 	isPrimary?: boolean;
 	journalAccountId?: number | null;
+	/**
+	 * Story 34-2 (#533) — solde d'ouverture, facultatif ; exige
+	 * `journalAccountId`. L'écran ne l'envoie que si un montant est saisi.
+	 */
+	openingBalance?: OpeningBalancePayload;
+}
+
+/** Story 34-2 (#533) — le compte créé, et l'écriture d'ouverture passée avec lui (`null` sans solde). */
+export interface CreatedBankAccount {
+	account: BankAccountSummary;
+	openingEntry: OpeningEntrySummary | null;
 }
 
 /**
@@ -218,12 +253,35 @@ export interface NewBankAccountPayload {
  * (Comptable+). Transition primary silencieuse symétrique au PUT — si
  * `isPrimary=true` et un autre primary existe, l'ancien est démoté
  * silencieusement dans la même transaction.
+ *
+ * Story 34-2 (#533) : avec `openingBalance`, le serveur passe l'écriture
+ * d'ouverture dans la même transaction ; un refus (`OPENING_COMPLEMENT_*`) ne
+ * crée rien. La réponse porte alors `openingEntry`.
  */
 export async function createBankAccount(
 	payload: NewBankAccountPayload,
-): Promise<BankAccountSummary> {
-	const raw = await apiClient.post<BankAccountSummaryRaw>('/api/v1/bank-accounts', payload);
-	return parseBankAccount({ ...raw, currentBalance: raw.currentBalance ?? null, lastTransactionDate: raw.lastTransactionDate ?? null });
+): Promise<CreatedBankAccount> {
+	const raw = await apiClient.post<BankAccountSummaryRaw & { openingEntry?: OpeningEntrySummary }>(
+		'/api/v1/bank-accounts',
+		payload,
+	);
+	return {
+		account: parseBankAccount({ ...raw, currentBalance: raw.currentBalance ?? null, lastTransactionDate: raw.lastTransactionDate ?? null }),
+		openingEntry: raw.openingEntry ?? null,
+	};
+}
+
+/**
+ * POST /api/v1/bank-accounts/{id}/opening-balance — Story 34-2 (#533, AC-6) :
+ * saisit le solde d'ouverture d'un compte existant, lié (Comptable+). Refus :
+ * `404`, `409 BANK_ACCOUNT_CLOSED`, `412 BANK_ACCOUNT_NOT_CONFIGURED`, puis
+ * ceux du complément (`OPENING_COMPLEMENT_*`, dont `ACCOUNT_MOVED`).
+ */
+export async function enterOpeningBalance(
+	id: number,
+	payload: OpeningBalancePayload,
+): Promise<OpeningEntrySummary> {
+	return apiClient.post<OpeningEntrySummary>(`/api/v1/bank-accounts/${id}/opening-balance`, payload);
 }
 
 /**

@@ -45,7 +45,10 @@ const archiveBankAccountMock = vi.fn<(id: number, version: number) => Promise<un
 const closeBankAccountMock =
 	vi.fn<(id: number, version: number, closedOn: string) => Promise<unknown>>();
 const reopenBankAccountMock = vi.fn<(id: number, version: number) => Promise<unknown>>();
+// Story 34-2 (#533) — la saisie du solde d'ouverture d'un compte existant.
+const enterOpeningBalanceMock = vi.fn<(id: number, payload: unknown) => Promise<unknown>>();
 vi.mock('$lib/features/bank-accounts/bank-accounts.api', () => ({
+	enterOpeningBalance: (id: number, payload: unknown) => enterOpeningBalanceMock(id, payload),
 	listBankAccounts: (includeArchived?: boolean, includeClosed?: boolean) =>
 		listBankAccountsMock(includeArchived, includeClosed),
 	createBankAccount: (payload: unknown) => createBankAccountMock(payload),
@@ -66,6 +69,7 @@ vi.mock('$lib/features/invoices/invoices.api', () => ({
 }));
 
 import { toast } from 'svelte-sonner';
+import { formatChfBalance, formatChfExact } from '$lib/features/bank-accounts/format';
 import Page from './+page.svelte';
 
 function account(overrides: Partial<AccountResponse>): AccountResponse {
@@ -786,5 +790,232 @@ describe('page des comptes bancaires — clôture (Story 28-4b, AC11)', () => {
 		expect((await r.findByTestId('bank-accounts-empty')).textContent?.trim()).toBe(
 			'Aucun compte bancaire configuré.',
 		);
+	});
+});
+
+// Story 34-2 (#533, AC-7) — le solde d'ouverture : au formulaire de création, dès
+// qu'un compte du plan est lié ; puis par l'action de ligne d'un compte ouvert et lié.
+// Comptes synthétiques : 1020 Banque (actif), 2100 Découvert (passif).
+describe("page des comptes bancaires — solde d'ouverture (Story 34-2, AC-7)", () => {
+	const BANQUE = account({ id: 40, number: '1020', name: 'Banque' });
+	const DECOUVERT = account({ id: 41, number: '2100', name: 'Découvert', accountType: 'Liability' });
+	const LIE: BankAccountSummary = { ...bankAccount, id: 8, journalAccountId: BANQUE.id, isPrimary: false };
+	const NON_LIE: BankAccountSummary = { ...bankAccount, id: 9, journalAccountId: null, isPrimary: false };
+
+	beforeEach(() => {
+		vi.clearAllMocks();
+		fetchAccountsMock.mockResolvedValue([BANQUE, DECOUVERT]);
+		listBankAccountsMock.mockResolvedValue([LIE, NON_LIE]);
+		getInvoiceSettingsMock.mockResolvedValue({
+			defaultReceivableAccountId: null,
+			defaultPayableAccountId: null,
+		});
+		createBankAccountMock.mockResolvedValue({ account: LIE, openingEntry: null });
+	});
+
+	async function fill(el: HTMLElement, value: string) {
+		await fireEvent.input(el, { target: { value } });
+	}
+
+	async function openCreate() {
+		const r = render(Page);
+		await fireEvent.click(await r.findByTestId('create-bank-account-button'));
+		await fill(await r.findByTestId('form-bank-name'), 'UBS');
+		await fill(await r.findByTestId('form-iban'), 'CH3908704016075473007');
+		return r;
+	}
+
+	async function link(r: Awaited<ReturnType<typeof openCreate>>, id: number) {
+		await fireEvent.change(r.getByTestId('form-journal-account'), { target: { value: String(id) } });
+	}
+
+	async function submitted(r: Awaited<ReturnType<typeof openCreate>>) {
+		await fireEvent.click(r.getByTestId('form-submit'));
+		await waitFor(() => expect(createBankAccountMock).toHaveBeenCalledTimes(1));
+		return createBankAccountMock.mock.calls[0][0] as Record<string, unknown>;
+	}
+
+	it('sans compte lié, les champs sont masqués et rien n’est envoyé', async () => {
+		const r = await openCreate();
+		expect(r.queryByTestId('form-opening-amount')).toBeNull();
+		const payload = await submitted(r);
+		expect('openingBalance' in payload).toBe(false);
+	});
+
+	it('un compte d’actif lié : les champs, l’aide et la conséquence apparaissent, sens Avoir', async () => {
+		const r = await openCreate();
+		await link(r, BANQUE.id);
+		expect(await r.findByTestId('form-opening-amount')).toBeTruthy();
+		expect(((await r.findByTestId('form-opening-side')) as HTMLSelectElement).value).toBe('debit');
+		expect(r.getByTestId('form-opening-help').textContent).toContain('premier jour du premier exercice');
+		expect(r.getByTestId('form-opening-help').textContent).toContain('Bénéfice/perte reporté');
+		expect(r.getByTestId('form-opening-consequence').textContent).toContain(
+			'ce solde la retire',
+		);
+	});
+
+	it('un compte de passif lié : sens Dette présélectionné, envoyé en crédit', async () => {
+		const r = await openCreate();
+		await link(r, DECOUVERT.id);
+		await waitFor(() =>
+			expect((r.getByTestId('form-opening-side') as HTMLSelectElement).value).toBe('credit'),
+		);
+		await fill(r.getByTestId('form-opening-amount'), "1'234.50");
+		const payload = await submitted(r);
+		expect(payload.journalAccountId).toBe(DECOUVERT.id);
+		expect(payload.openingBalance).toEqual({ amount: '1234.50', side: 'credit' });
+	});
+
+	it('lié, montant vide : aucun solde envoyé', async () => {
+		const r = await openCreate();
+		await link(r, BANQUE.id);
+		const payload = await submitted(r);
+		expect('openingBalance' in payload).toBe(false);
+	});
+
+	it('le succès nomme l’écriture (numéro, date suisse) et le montant écrit', async () => {
+		createBankAccountMock.mockResolvedValue({
+			account: LIE,
+			openingEntry: { id: 1, entryNumber: 12, entryDate: '2026-01-01', fiscalYearId: 3 },
+		});
+		const r = await openCreate();
+		await link(r, BANQUE.id);
+		await fill(r.getByTestId('form-opening-amount'), "1'234.50");
+		// Revue P1 (B-1) — le montant tel qu'il sera écrit, avant le geste.
+		expect((await r.findByTestId('form-opening-preview')).textContent).toContain(
+			formatChfBalance('1234.50'),
+		);
+		await submitted(r);
+		await waitFor(() =>
+			expect(toast.success).toHaveBeenCalledWith(
+				`Compte bancaire créé, avec l'écriture d'ouverture n° 12 du 01.01.2026 : ${formatChfBalance('1234.50')}.`,
+			),
+		);
+	});
+
+	// Revue P2 (A LOW-8) — l'avis dit le montant exact, quatre décimales comprises :
+	// `formatChfBalance` l'arrondirait au centime (« 1.23 »).
+	it('l’avis garde les quatre décimales du montant écrit', async () => {
+		createBankAccountMock.mockResolvedValue({
+			account: LIE,
+			openingEntry: { id: 1, entryNumber: 7, entryDate: '2026-01-01', fiscalYearId: 3 },
+		});
+		const r = await openCreate();
+		await link(r, BANQUE.id);
+		await fill(r.getByTestId('form-opening-amount'), '1.2345');
+		await submitted(r);
+		await waitFor(() =>
+			expect(toast.success).toHaveBeenCalledWith(
+				`Compte bancaire créé, avec l'écriture d'ouverture n° 7 du 01.01.2026 : ${formatChfExact('1.2345')}.`,
+			),
+		);
+		expect(formatChfExact('1.2345')).toContain('1.2345');
+	});
+
+	// Revue P1 (B-1 = E-6) — « 1,234 » : mille ou un franc ? Refusé, rien n'est envoyé.
+	it('un montant ambigu (« 1,234 ») est refusé sans appeler le serveur', async () => {
+		const r = await openCreate();
+		await link(r, BANQUE.id);
+		await fill(r.getByTestId('form-opening-amount'), '1,234');
+		expect(r.queryByTestId('form-opening-preview')).toBeNull();
+		await fireEvent.click(r.getByTestId('form-submit'));
+		expect((await r.findByTestId('form-error')).textContent).toContain('Montant ambigu');
+		expect(createBankAccountMock).not.toHaveBeenCalled();
+	});
+
+	it('« 1,23 » et « 1,2345 » ne sont pas ambigus : virgule décimale', async () => {
+		const r = await openCreate();
+		await link(r, BANQUE.id);
+		await fill(r.getByTestId('form-opening-amount'), '1,23');
+		const payload = await submitted(r);
+		expect(payload.openingBalance).toEqual({ amount: '1.23', side: 'debit' });
+	});
+
+	it('un refus du serveur s’affiche dans le formulaire', async () => {
+		const message = 'Le compte 1020 a déjà des mouvements : corrigez-le dans le journal.';
+		createBankAccountMock.mockRejectedValue({
+			code: 'OPENING_COMPLEMENT_ACCOUNT_MOVED',
+			message,
+			status: 409,
+		});
+		const r = await openCreate();
+		await link(r, BANQUE.id);
+		await fill(r.getByTestId('form-opening-amount'), '100');
+		await fireEvent.click(r.getByTestId('form-submit'));
+		expect((await r.findByTestId('form-error')).textContent).toBe(message);
+	});
+
+	it('l’action de ligne n’est offerte qu’au compte lié', async () => {
+		const r = render(Page);
+		expect(await r.findByTestId('opening-balance-button-8')).toBeTruthy();
+		expect(r.queryByTestId('opening-balance-button-9')).toBeNull();
+	});
+
+	// Revue P1 (E-5) — un compte du plan déjà mouvementé (`lastTransactionDate`) :
+	// l'action n'est pas offerte, le serveur la refuserait.
+	it('l’action de ligne n’est pas offerte quand le compte lié a déjà des mouvements', async () => {
+		listBankAccountsMock.mockResolvedValue([
+			{ ...LIE, lastTransactionDate: '2026-01-01' },
+			NON_LIE,
+		]);
+		const r = render(Page);
+		expect(await r.findByTestId('edit-button-8')).toBeTruthy();
+		expect(r.queryByTestId('opening-balance-button-8')).toBeNull();
+	});
+
+	it('l’action de ligne envoie le montant et le sens, puis nomme l’écriture', async () => {
+		enterOpeningBalanceMock.mockResolvedValue({
+			id: 2,
+			entryNumber: 5,
+			entryDate: '2026-01-01',
+			fiscalYearId: 3,
+		});
+		const r = render(Page);
+		await fireEvent.click(await r.findByTestId('opening-balance-button-8'));
+		expect((await r.findByTestId('row-opening-side') as HTMLSelectElement).value).toBe('debit');
+		expect(r.getByTestId('row-opening-consequence')).toBeTruthy();
+		// Revue P1 (B-7) — le dialogue nomme le compte.
+		expect(r.getByTestId('opening-balance-dialog').textContent).toContain("Solde d'ouverture — BCV");
+		await fill(r.getByTestId('row-opening-amount'), '75,25');
+		await fireEvent.click(r.getByTestId('opening-confirm-button'));
+		await waitFor(() =>
+			expect(enterOpeningBalanceMock).toHaveBeenCalledWith(8, { amount: '75.25', side: 'debit' }),
+		);
+		await waitFor(() =>
+			expect(toast.success).toHaveBeenCalledWith(
+				`Écriture d'ouverture n° 5 du 01.01.2026 passée : ${formatChfBalance('75.25')}.`,
+			),
+		);
+	});
+
+	it('l’action de ligne refuse un montant ambigu sans appeler le serveur', async () => {
+		const r = render(Page);
+		await fireEvent.click(await r.findByTestId('opening-balance-button-8'));
+		await fill(await r.findByTestId('row-opening-amount'), "12,500");
+		await fireEvent.click(r.getByTestId('opening-confirm-button'));
+		expect((await r.findByTestId('opening-error')).textContent).toContain('Montant ambigu');
+		expect(enterOpeningBalanceMock).not.toHaveBeenCalled();
+	});
+
+	it('l’action de ligne refuse un montant vide sans appeler le serveur', async () => {
+		const r = render(Page);
+		await fireEvent.click(await r.findByTestId('opening-balance-button-8'));
+		await fireEvent.click(await r.findByTestId('opening-confirm-button'));
+		expect((await r.findByTestId('opening-error')).textContent).toBe('Saisissez un montant positif.');
+		expect(enterOpeningBalanceMock).not.toHaveBeenCalled();
+	});
+
+	it('un refus de l’action de ligne reste affiché dans le dialogue', async () => {
+		enterOpeningBalanceMock.mockRejectedValue({
+			code: 'OPENING_COMPLEMENT_ACCOUNT_MOVED',
+			message: 'Le compte 1020 a déjà des mouvements.',
+			status: 409,
+		});
+		const r = render(Page);
+		await fireEvent.click(await r.findByTestId('opening-balance-button-8'));
+		await fill(await r.findByTestId('row-opening-amount'), '10');
+		await fireEvent.click(r.getByTestId('opening-confirm-button'));
+		expect((await r.findByTestId('opening-error')).textContent).toBe('Le compte 1020 a déjà des mouvements.');
+		expect(r.getByTestId('opening-balance-dialog')).toBeTruthy();
 	});
 });

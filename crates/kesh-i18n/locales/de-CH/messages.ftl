@@ -1578,6 +1578,28 @@ settings-bank-manage-hint = Um ein Bankkonto hinzuzufügen, zu ändern, aufzulö
 bank-accounts-toast-link-success = Bankkonto erfolgreich mit dem Kontorahmen verbunden.
 bank-accounts-toast-unlink-success = Bankkonto vom Kontorahmen getrennt.
 
+# Story 34-2 (#533) — Eröffnungssaldo mit dem Bankkonto erfasst.
+bank-accounts-opening-entry-description = Eröffnungssaldo — { $account }
+error-bank-account-opening-invalid-amount = Der Eröffnungssaldo ist ein positiver Betrag mit höchstens vier Dezimalstellen, höchstens 999’999’999’999’999.9999.
+error-bank-account-opening-side-required = Die Art des Eröffnungssaldos ist erforderlich: «debit» (Guthaben) oder «credit» (Schuld).
+error-bank-account-opening-ledger-required = Der Eröffnungssaldo verlangt ein verbundenes Konto des Kontenplans (journalAccountId).
+error-bank-account-bank-name-too-long = Der Name der Bank darf höchstens 255 Zeichen lang sein.
+bank-accounts-opening-label-amount = Eröffnungssaldo (optional)
+bank-accounts-opening-label-amount-row = Betrag des Saldos
+bank-accounts-opening-label-side = Art des Saldos
+bank-accounts-opening-side-debit = Guthaben
+bank-accounts-opening-side-credit = Schuld (Überziehung)
+bank-accounts-opening-help = Die Buchung wird auf den ersten Tag des ersten Geschäftsjahres datiert, wenn es offen und nicht gesperrt ist, sonst auf heute: Erfassen Sie den Saldo laut Kontoauszug an diesem Datum. Die Gegenbuchung geht auf das Konto Gewinn-/Verlustvortrag. Sie wird abgelehnt, wenn das verbundene Konto bereits Bewegungen hat.
+bank-accounts-opening-consequence = Wird die allgemeine Eröffnung unter Anfangssaldi noch angeboten, so entfällt sie mit diesem Saldo: Die Anfangssaldi der übrigen Konten werden dann einzeln erfasst, Modus Ergänzen. Um Ihre ganze Eröffnung auf einmal zu erfassen, gehen Sie zuerst über Anfangssaldi.
+bank-accounts-opening-preview = Gebuchter Betrag: { $amount }
+bank-accounts-opening-error-amount-ambiguous = Mehrdeutiger Betrag: Ein Komma gefolgt von drei Ziffern kann ein Tausendertrennzeichen sein. Schreiben Sie 1'234 für eintausendzweihundertvierunddreissig, 1.234 für einen Franken und 23,4 Rappen.
+bank-accounts-toast-create-success-with-opening = Bankkonto angelegt, mit der Eröffnungsbuchung Nr. { $number } vom { $date }: { $amount }.
+bank-accounts-actions-opening-balance = Eröffnungssaldo erfassen
+bank-accounts-opening-dialog-title = Eröffnungssaldo — { $account }
+bank-accounts-opening-dialog-confirm = Buchung erfassen
+bank-accounts-opening-error-amount-required = Geben Sie einen positiven Betrag ein.
+bank-accounts-toast-opening-success = Eröffnungsbuchung Nr. { $number } vom { $date } erfasst: { $amount }.
+
 # Story 8-5b — FR47 reconciliation rules. Traduction DE à compléter v0.2 (L51).
 reconciliation-rules-page-title = Zuweisungsregeln
 reconciliation-rules-loading = Lädt…
@@ -3062,6 +3084,7 @@ audit-log-action-payment-batch-generated = Zahlungsstapel erstellt
 audit-log-action-payment-batch-confirmed = Zahlungsstapel bestätigt
 audit-log-action-payment-batch-cancelled = Zahlungsstapel storniert
 audit-log-action-bank-account-created = Bankkonto erstellt
+audit-log-action-bank-account-opening-balance-entered = Eröffnungssaldo eines Bankkontos erfasst
 audit-log-action-bank-account-updated = Bankkonto aktualisiert
 audit-log-action-bank-account-archived = Bankkonto archiviert
 audit-log-action-bank-account-closed = Bankkonto aufgelöst

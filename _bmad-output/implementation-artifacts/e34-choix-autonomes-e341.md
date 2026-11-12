@@ -194,3 +194,63 @@ transaction sûre) ; un id inconnu, étranger ou archivé rend `404` avant tout 
 **C-e341-19, précisé** — l'assistant ignore `accountKind` et `cardLast4` (corps sans `deny_unknown_fields`) : client interne, angle mort assumé.
 
 **C-e341-42, précisé** — `cardLast4` absent, `null` ou vide valent absent, pour les deux types.
+
+## Développement de la 34-2 (2026-11-11, clé de travail e342)
+
+*Le prompt de développement nommait le registre `e34-choix-autonomes-e342.md` ; celui-ci est le registre d'un autre groupe (34-3, 34-4,
+34-9, 34-10). Les choix de la 34-2 restent ici, au registre que sa fiche cite (C-e341-6 à 12, 38) ; la clé e342 ne nomme que le
+worktree, le port, les bases et les journaux.*
+
+**C-e341-44 (34-2) — un montant mal formé : le code du complément, un message propre au champ.** `OPENING_COMPLEMENT_INVALID_AMOUNT` (aucun
+code neuf), message `error-bank-account-opening-invalid-amount` : celui du complément parle de « lignes » et de contrepartie, qu'un champ
+unique n'a pas. Autre : le message du complément tel quel. Réversible : oui.
+
+**C-e341-45 (34-2) — à la création, un montant vide ou nul vaut absent ; un montant non nul exige `side`.** `openingBalance: {}` ou
+`{ "amount": "0" }` : aucune écriture, la réponse d'avant. `side` est `Option` au désérialiseur pour qu'un montant vide n'exige pas de sens ;
+un sens inconnu reste un `400` de forme. À la route de ligne, dont c'est le seul objet, un montant nul est refusé
+`OPENING_COMPLEMENT_INVALID_AMOUNT`. Autres : `side` toujours exigé (`{}` en `400`) ; un montant nul passé tel quel (écriture nulle).
+Réversible : oui.
+
+**C-e341-46 (34-2) — la route de ligne n'écrit pas de trace `bank_account.*`.** Sa trace est `journal_entry.created`, écrite par le dépôt
+comme pour le complément de l'écran ; le registre la classe `Traced`. Autre : une action neuve (`bank_account.opening_balance_entered`), avec
+son libellé dans le vocabulaire d'audit et quatre traductions. Réversible : oui.
+
+**C-e341-47 (34-2) — la réponse de la route de ligne est le résumé `{ id, entryNumber, entryDate, fiscalYearId }`**, la forme de
+`openingEntry` à la création. Autre : l'écriture entière (`JournalEntryResponse`, celle du complément). Réversible : oui.
+
+**C-e341-48 (34-2) — l'écran retire les séparateurs de milliers et lit la virgule décimale** (`openingAmountPayload`, `format.ts`) avant
+l'envoi ; le contrôle de forme reste au serveur. Autre : envoyer la saisie brute (« 1'234.50 » refusé). Réversible : oui.
+
+**C-e341-49 (34-2) — les tests de la portée `SingleBankLedger` vivent dans un fichier neuf** (`crates/kesh-db/tests/opening_complement_bank_scope.rs`)
+: l'AC-1 veut `opening_complement_repository.rs` et `opening_balances_e2e.rs` **sans modification**. Réversible : oui.
+
+**C-e341-50 (34-2) — le libellé du montant change au dialogue de ligne** (« Montant du solde ») : « Solde d'ouverture (optionnel) » n'a pas de
+sens là où le montant est le seul objet. Une clé de plus par locale. Réversible : oui.
+
+## Remédiation de la revue P1 de la 34-2 (2026-11-12)
+
+**C-e341-46, remplacé** — la route de ligne écrit désormais `bank_account.opening_balance_entered` (`bank_account_id`,
+`journal_account_id`, `opening_entry_id`), action neuve au vocabulaire d'audit, quatre traductions (revue P1, B-4). La trace de l'écriture
+reste `journal_entry.created`.
+
+**C-e341-51 (34-2) — le témoin d'un échec après le complément est un déclencheur de test** (`BEFORE INSERT` sur `bank_accounts`, `SIGNAL`
+sur un nom de banque convenu). Le nom de 256 caractères qu'avait proposé la revue (E-1) ne fait plus échouer l'`INSERT` une fois la borne
+posée ; le déclencheur est le seul échec déterministe restant après le complément, sans crochet de production (précédent :
+`auth_audit_e2e.rs`). Autre : un crochet d'injection en production. Réversible : oui.
+
+**C-e341-52 (34-2) — le nom de banque est borné à 255 caractères** (la colonne), en caractères Unicode, à la création, au `PUT` et à
+l'assistant, refus `400 VALIDATION_ERROR` traduit (`error-bank-account-bank-name-too-long`) ; la borne est confrontée au schéma par un test.
+Limite voisine courte, corrigée dans la zone (revue P1, E-1). Réversible : oui.
+
+**C-e341-53 (34-2) — « 1,234 » est refusé comme ambigu à l'écran** : une virgule suivie d'exactement trois chiffres, sans autre séparateur
+décimal. « 1,23 », « 1,2345 » et « 1'234,50 » restent des virgules décimales (la convention du dépôt). Le montant tel qu'il sera écrit
+s'affiche sous le champ et dans l'avis (revue P1, B-1 = E-6). Le serveur ne refuse rien de plus : « 1.234 » est un montant légitime.
+Autres : ne montrer que le montant (une écriture mille fois trop petite resterait possible d'un clic) ; refuser toute virgule (contre la
+convention du dépôt). Réversible : oui.
+
+**C-e341-54 (34-2) — l'action de ligne est masquée dès que le compte lié a une ligne** (`lastTransactionDate` non nul, revue P1, E-5) ; le
+serveur reste l'autorité (`ACCOUNT_MOVED`). Réversible : oui.
+
+**C-e341-55 (34-2) — l'avertissement de conséquence se dit au conditionnel** (« Si l'ouverture générale … est encore proposée, ce solde la
+retire ») plutôt que d'interroger `GET /opening-balances/status` à l'ouverture du formulaire (revue P1, B-6) : une lecture de moins, et une
+phrase vraie dans les deux cas. Autre : masquer l'avertissement selon le statut. Réversible : oui.

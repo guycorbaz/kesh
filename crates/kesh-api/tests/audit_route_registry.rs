@@ -30,9 +30,9 @@
 //!
 //! L'ensemble clos de l'INVENTAIRE est celui de `lib.rs` (142 routes à la
 //! release 0.17.0 — v017-3a, v016-2a et v017-4a réunies, mesuré le 2026-10-31 —,
-//! puis 144 à la 0.17.3, Story v0172-session, et 145 à la 33-5 ; dont `/mcp`,
-//! monté par `route_service` — Story 32-6a) ;
-//! celui du REGISTRE est plus large (148), car trois routes mutantes vivent dans
+//! puis 144 à la 0.17.3, Story v0172-session, 145 à la 33-5 et 146 à la 34-2 ;
+//! dont `/mcp`, monté par `route_service` — Story 32-6a) ;
+//! celui du REGISTRE est plus large (149), car trois routes mutantes vivent dans
 //! `routes/test_endpoints.rs` et sont montées par un `nest()`. D'où :
 //!
 //! - volet « route absente du registre » → sur les **deux** fichiers, faute de
@@ -156,7 +156,7 @@
 //!   `post`, `put`, `delete` et `patch`. Aucune route `GET` n'écrit au journal
 //!   aujourd'hui (remontée de l'AC1 : des `POST` et un `DELETE`) ; l'angle mort
 //!   est du même ordre que celui de l'audit (`GET /invoices/{id}/pdf`, plus bas).
-//! - **(vi)** **vingt-quatre routes `SansEcritureAuJournal` sont rejouées quand
+//! - **(vi)** **vingt-trois routes `SansEcritureAuJournal` sont rejouées quand
 //!   même** : `fiscal_years::reopen_fiscal_year` (enveloppe `DbError`, Story 33-1a,
 //!   #926 : la réouverture tient un exercice puis demande ses postérieurs, la
 //!   validation d'une facture fournisseur tient le sien puis demande ceux de son
@@ -283,6 +283,11 @@
 //!   `SELECT … FOR UPDATE` ; tenue par `session_settings_e2e.rs` (rejeu
 //!   exigé). Vingt-trois avec elle — recompté le 2026-11-05 depuis la table
 //!   et le corps de chaque route (revue de la 0.17.3, #899 S2-A1).
+//!   Vingt-quatre avec `fiscal_years::reopen_fiscal_year` (33-1a), en tête de
+//!   ce point. Story 34-2 (#533) : `bank_accounts::create_bank_account` en
+//!   **sort** — elle écrit au journal quand elle porte un solde d'ouverture, et
+//!   passe `Rejouee` ; ce qui est dit d'elle plus haut (cycle de la démotion,
+//!   T29a-15) reste vrai. **Vingt-trois.**
 //! - **(vii)** — **angles morts assumés du volet (c bis)** (revue P1 de la
 //!   15-5e2, L-3 = B-4 = A5). Le volet reconnaît un appel au **dernier
 //!   segment** du chemin appelé (`retry_with`) dans un arbre `syn` ; il ne voit
@@ -537,7 +542,13 @@ const LIB_ROUTES: &[(&str, &str, Status, Rejeu)] = &[
     // Story 29-4a (#651), revue de code P1 (E-1) — la création, le `PUT` et
     // l'archivage : rejoués, victimes possibles du cycle avec un import ou un
     // lot qui tient le compte et attend la sentinelle (point (vi)).
-    ("post", "bank_accounts::create_bank_account", Traced, SansEcritureAuJournal),
+    // Story 34-2 (#533) : la création écrit au journal quand elle porte un
+    // solde d'ouverture (`journal_entry.created` ; `bank_account.created`
+    // nomme l'écriture) — reclassée `Rejouee` (elle l'était déjà, point (vi)).
+    ("post", "bank_accounts::create_bank_account", Traced, Rejouee),
+    // Story 34-2 (#533) — saisir le solde d'ouverture d'un compte existant :
+    // écrit au journal (`journal_entry.created`), rejouée.
+    ("post", "bank_accounts::enter_opening_balance", Traced, Rejouee),
     // Story 29-4a (#651) — le lien du compte : rejoué, victime possible d'un
     // cycle par la file d'attente de la ligne du compte (point (vi)).
     ("patch", "bank_accounts::patch_bank_account_journal_link", Traced, SansEcritureAuJournal),
@@ -977,8 +988,8 @@ fn the_registry_partition_is_what_the_story_declares() {
 
     assert_eq!(
         LIB_ROUTES.len(),
-        145,
-        "l'inventaire porte sur 145 routes (+ 1 : l'adresse de la société, 33-5 ; + 1 : `/mcp`, 32-6a ; + 1 : la décision d'un \
+        146,
+        "l'inventaire porte sur 146 routes (+ 1 : le solde d'ouverture d'un compte bancaire existant, 34-2 ; + 1 : l'adresse de la société, 33-5 ; + 1 : `/mcp`, 32-6a ; + 1 : la décision d'un \
          envoi MCP, 32-8b ; + 5 : les routes mutantes des prompts du serveur MCP, 32-10a-iii ; \
          + 1 : le rattachement d'une transaction à une écriture, v017-3a ; + 2 : l'aperçu et \
          la création d'un relevé saisi à la main, v016-2a ; + 4 : le `PUT`, le `DELETE`, la \
@@ -995,8 +1006,10 @@ fn the_registry_partition_is_what_the_story_declares() {
     // Story 33-5 (#909) : 136 → 137 (la correction de l'adresse de la société).
     // Story 33-7 (#435) : 136 → 137 (le changement de mot de passe, tracé).
     // Fusion de la release 0.17.5 (2026-11-07) : les deux réunies, **138**.
+    // Story 34-2 (#533) : 138 → 139 (le solde d'ouverture d'un compte bancaire
+    // existant, tracé par `journal_entry.created`).
     assert_eq!(
-        traced, 138,
+        traced, 139,
         "73 tracées avant la 25-1b, plus ses 14, plus la dévalidation (25-2-b-1, #440), \
          plus l'annulation d'un règlement client (25-3-a-1) et fournisseur (25-3-a-2, #414), \
          plus l'annulation d'un rapprochement (25-3-b, #418), plus le solde du reste \
@@ -1021,7 +1034,8 @@ fn the_registry_partition_is_what_the_story_declares() {
          `PUT`, le `DELETE`, la validation et la dévalidation d'une facture fournisseur \
          (v017-4a, refs #849), plus le réglage de la durée d'inactivité de la session \
          (v0172-session, refs #891), plus la correction de l'adresse de la société \
-         (33-5, refs #909), plus le changement de mot de passe (33-7, refs #435)"
+         (33-5, refs #909), plus le changement de mot de passe (33-7, refs #435), plus le \
+         solde d'ouverture d'un compte bancaire existant (34-2, refs #533)"
     );
     assert_eq!(
         exempt, 4,
@@ -1035,7 +1049,7 @@ fn the_registry_partition_is_what_the_story_declares() {
     );
     assert_eq!(
         LIB_ROUTES.len() + TEST_ENDPOINT_ROUTES.len(),
-        148,
+        149,
         "le registre est plus large que l'inventaire, et c'est voulu"
     );
 }
@@ -1289,8 +1303,8 @@ fn every_replayed_route_calls_an_envelope() {
         }
     }
     assert_eq!(
-        examinees, 25,
-        "les vingt-cinq routes Rejouee ont été examinées"
+        examinees, 27,
+        "les vingt-sept routes Rejouee ont été examinées"
     );
 }
 
@@ -1427,7 +1441,7 @@ fn the_replay_partition_is_what_the_story_declares() {
         .count();
 
     assert_eq!(
-        rejouees, 25,
+        rejouees, 27,
         "5 rejouées avant la 15-5e1 (write_off, accept, cancel du rapprochement, \
          complément des soldes de départ, modification d'une écriture — 15-8a) + 4 par \
          elle (validation, règlement, annulation de règlement, saisie fournisseur) + la \
@@ -1438,12 +1452,15 @@ fn the_replay_partition_is_what_the_story_declares() {
          délettrage manuels (15-1a-i) + la contre-passation au début de l'exercice \
          suivant (29-1b) ; v017-4a : − la saisie fournisseur et la complétion d'import \
          (brouillons, sans écriture au journal) + la validation et la dévalidation d'une \
-         facture fournisseur — compte inchangé"
+         facture fournisseur — compte inchangé ; 34-2 : + la création d'un compte bancaire \
+         (reclassée, elle porte un solde d'ouverture) + la saisie du solde d'ouverture d'un \
+         compte existant — 27"
     );
     assert_eq!(exemptees, 3, "full_import, /seed, /reset");
     assert_eq!(
-        sans_ecriture, 120,
-        "119 routes de lib.rs (33-5 : + 1 — l'adresse de la société ; v0172-session : + 2 — le réglage de la durée d'inactivité \
+        sans_ecriture, 119,
+        "118 routes de lib.rs (34-2 : − 1 — la création d'un compte bancaire, reclassée \
+         `Rejouee`) — 119 avant (33-5 : + 1 — l'adresse de la société ; v0172-session : + 2 — le réglage de la durée d'inactivité \
          et le battement d'activité ; v017-4a : + 4 — la saisie fournisseur et la complétion \
          d'import reclassées, le `PUT` et le `DELETE` d'un brouillon) — 112 avant \
          (la remise à zéro y est entrée, 15-7b2 ; la suppression d'un \
@@ -1462,7 +1479,8 @@ fn the_replay_partition_is_what_the_story_declares() {
     // Story v0172-session (#876, #891) : 145 → 147 (le réglage de la durée
     // d'inactivité, le battement d'activité).
     // Story 33-5 (#909) : 147 → 148 (l'adresse de la société).
-    assert_eq!(tout.len(), 148);
+    // Story 34-2 (#533) : 148 → 149 (le solde d'ouverture d'un compte existant).
+    assert_eq!(tout.len(), 149);
 }
 
 /// Visiteur `syn` d'un fichier de routes : relève chaque appel à la primitive

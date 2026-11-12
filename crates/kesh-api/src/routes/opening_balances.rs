@@ -498,7 +498,7 @@ fn complement_invalid(error_code: &'static str, key: &str, fallback: &str) -> Ap
 /// Montant d'une colonne : absente, vide ou `"0"` → zéro ; sinon un décimal
 /// strictement positif d'au plus quatre décimales (`DECIMAL(19,4)` : au-delà,
 /// l'arrondi à l'écriture déséquilibrerait la contrepartie calculée avant lui).
-fn invalid_amount() -> AppError {
+pub(crate) fn invalid_amount() -> AppError {
     complement_invalid(
         "OPENING_COMPLEMENT_INVALID_AMOUNT",
         "error-opening-complement-invalid-amount",
@@ -506,7 +506,13 @@ fn invalid_amount() -> AppError {
     )
 }
 
-fn parse_complement_amount(raw: Option<&str>) -> Result<Decimal, AppError> {
+/// Contrôle de forme d'un montant (voir la règle ci-dessus, sur
+/// [`invalid_amount`]).
+///
+/// `pub(crate)` depuis la Story 34-2 (#533, AC-2) : le solde d'ouverture d'un
+/// compte bancaire passe par les mêmes contrôles de forme (réemployés, non
+/// recopiés) — `routes::bank_accounts::parse_opening_balance`.
+pub(crate) fn parse_complement_amount(raw: Option<&str>) -> Result<Decimal, AppError> {
     let invalid = invalid_amount;
     let raw = raw.map(str::trim).unwrap_or("");
     if raw.is_empty() {
