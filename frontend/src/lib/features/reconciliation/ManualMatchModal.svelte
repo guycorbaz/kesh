@@ -1,18 +1,20 @@
 <!--
-  Story 8-5a-base FR45 — Modal réconciliation manuelle.
+  Story 8-5a-base FR45 — dialogue « Écriture manuelle » (geste rebaptisé par la 34-3).
 
-  Permet à un Comptable de réconcilier une bank_transaction `pending`
-  sans candidate auto-matchée en sélectionnant un compte de
+  Permet à un Comptable de passer une bank_transaction `pending`
+  en comptabilité, sans facture, en sélectionnant un compte de
   contrepartie + description + valueDate optionnel. Le compte ledger
   banque est résolu **serveur-side** via `bank_account.journal_account_id`
   (foundation 8-5a-zero) — donc PAS de field `bankLedgerAccountId`
   dans le body API.
 
-  Pré-filtrage client-side classes 5/6/7 (Pass 5 patch + Pass 4 Sonnet
-  pattern — pas de wrapper dédié, on filtre en amont) avant passage à
-  `AccountAutocomplete`. Story 15-6d (#524) : le compte comptable du compte
-  bancaire (`bankLedgerAccountId`, résolu par le parent) en est écarté ; le
-  serveur refuse de toute façon une telle contrepartie.
+  Story 34-3 (#967, AC-2) : tout compte actif et imputable est proposé, de
+  toute classe (intérêts reçus, virement vers un autre compte, apport privé,
+  achat de marchandise…), sauf le compte comptable du compte bancaire
+  (`bankLedgerAccountId`, résolu par le parent ; Story 15-6d, #524) — règle
+  partagée avec *Éclater*, `counterpartyAccounts`. Le serveur refuse de toute
+  façon une telle contrepartie. Un compte au rôle débiteurs ou créanciers
+  appelle un avis non bloquant (`CounterpartyClaimNotice`, AC-4).
 
   Gestion erreur 412 BANK_ACCOUNT_NOT_CONFIGURED : affiche un message
   + lien vers `/bank-accounts` pour configurer le journal_account_id
@@ -33,6 +35,8 @@
 	import type { ProjectResponse } from '$lib/features/projects/projects.types';
 	import type { ReconciliationProposal } from './reconciliation.types';
 	import { manualMatchTransaction } from './reconciliation.api';
+	import { counterpartyAccounts } from './reconciliation-counterparties';
+	import CounterpartyClaimNotice from './CounterpartyClaimNotice.svelte';
 
 	type Props = {
 		open: boolean;
@@ -79,18 +83,9 @@
 			.catch(() => (projects = []));
 	});
 
-	// Pré-filtrage client-side classes 5/6/7 (Pass 5 patch — pattern
-	// compatible AccountAutocomplete sans wrapper). Story 15-6d (AC4) : le compte
-	// de la banque est écarté par son identifiant — un plan atypique peut le
-	// numéroter en classe 5 à 7. Filtre local d'une condition, sans emprunt à
-	// `account-options.ts`.
-	const filteredAccounts = $derived(
-		accounts.filter(
-			(a) =>
-				['5', '6', '7'].some((c) => a.number.startsWith(c)) &&
-				a.id !== bankLedgerAccountId,
-		),
-	);
+	// Story 34-3 (AC-2) : tout compte actif et imputable, sauf celui de la banque,
+	// écarté par son identifiant (Story 15-6d, AC4). Règle partagée avec *Éclater*.
+	const filteredAccounts = $derived(counterpartyAccounts(accounts, bankLedgerAccountId));
 
 	// Reset à l'ouverture + pré-remplissage valueDate depuis tx.
 	$effect(() => {
@@ -165,7 +160,7 @@
 	<Dialog.Content data-testid="manual-match-modal">
 		<Dialog.Header>
 			<Dialog.Title>
-				{i18nMsg('reconciliation-manual-modal-title', 'Réconciliation manuelle')}
+				{i18nMsg('reconciliation-manual-modal-title', 'Écriture manuelle')}
 			</Dialog.Title>
 		</Dialog.Header>
 
@@ -187,6 +182,7 @@
 					onSelect={(id) => (counterpartyId = id)}
 					disabled={submitting}
 				/>
+				<CounterpartyClaimNotice accounts={filteredAccounts} accountId={counterpartyId} />
 			</div>
 
 			<div class="mt-2">
@@ -281,7 +277,7 @@
 				disabled={submitting || !!clientError}
 				data-testid="manual-match-submit"
 			>
-				{i18nMsg('reconciliation-manual-submit', 'Affecter')}
+				{i18nMsg('reconciliation-manual-submit', "Passer l'écriture")}
 			</Button>
 		</Dialog.Footer>
 	</Dialog.Content>

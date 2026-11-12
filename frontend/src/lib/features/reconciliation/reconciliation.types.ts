@@ -139,7 +139,7 @@ export interface RejectResponse {
 	failed: FailedProposal[];
 }
 
-// Story 8-5a-base FR45 — réconciliation manuelle.
+// Story 8-5a-base FR45 — écriture manuelle (geste rebaptisé par la 34-3).
 export interface ManualMatchResponse {
 	bankTransactionId: number;
 	journalEntryId: number;

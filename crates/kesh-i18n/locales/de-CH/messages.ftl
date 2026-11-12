@@ -1364,7 +1364,7 @@ reconciliation-labels-rejected-hint = Eine abgelehnte Transaktion verlässt dies
 # Story 29-3 (#527) — die Rangfolge der Vorschläge, über der Liste angezeigt.
 reconciliation-labels-priority-hint = Pro Transaktion wird ein einziger Vorschlag angezeigt: bei einer Gutschrift die am besten bewertete Kundenrechnung, bei einer Belastung die am besten bewertete Lieferantenrechnung, falls es eine gibt, sonst die passende Zuordnungsregel. Eine vorgeschlagene Rechnung geht einer Regel immer vor.
 reconciliation-labels-supplier-invoice-badge = Lieferantenrechnung
-reconciliation-labels-notice-supplier-invoice-in-batch = Die Lieferantenrechnung { $invoice } über diesen Betrag ist im laufenden Zahlungslauf Nr. { $batch } dieses Kontos enthalten. Ist diese Transaktion die Zahlung dieses Laufs, stornieren Sie den Lauf: Die Rechnung wird Ihnen dann hier vorgeschlagen. Andernfalls ordnen Sie die Transaktion manuell zu.
+reconciliation-labels-notice-supplier-invoice-in-batch = Die Lieferantenrechnung { $invoice } über diesen Betrag ist im laufenden Zahlungslauf Nr. { $batch } dieses Kontos enthalten. Ist diese Transaktion die Zahlung dieses Laufs, stornieren Sie den Lauf: Die Rechnung wird Ihnen dann hier vorgeschlagen. Andernfalls erfassen Sie die Transaktion als manuelle Buchung.
 # Story 29-6 (#665, AC10) — in der Schaltflächenzeile angezeigt, wenn eine Zeile ohne Vorschlag markiert ist.
 reconciliation-labels-unmatched-not-acceptable-hint = Eine Transaktion ohne Übereinstimmung kann nicht akzeptiert werden: Entfernen Sie die Markierung, um die übrigen zu akzeptieren.
 # Story 29-9 (#678, AC11) — zugänglicher Name des Kontrollkästchens jeder Zeile: was die Zeile anzeigt.
@@ -1372,7 +1372,7 @@ reconciliation-labels-select-transaction = Transaktion vom { $date }, { $amount 
 reconciliation-labels-select-transaction-no-counterparty = Transaktion vom { $date }, { $amount } { $currency } auswählen
 # Story 29-9 (#649, AC1, AC3) — unter der Liste, wenn ältere Transaktionen bleiben.
 reconciliation-labels-more-hidden = Nur die { $count } neuesten offenen Transaktionen werden angezeigt: Es gibt noch ältere.
-reconciliation-labels-more-capped = Die { $max } neuesten offenen Transaktionen werden angezeigt, das Maximum, das diese Seite auf einmal zeigt. Es gibt noch ältere: Sie erscheinen, sobald diese akzeptiert, manuell zugewiesen, aufgeteilt oder einer bestehenden Buchung zugeordnet werden.
+reconciliation-labels-more-capped = Die { $max } neuesten offenen Transaktionen werden angezeigt, das Maximum, das diese Seite auf einmal zeigt. Es gibt noch ältere: Sie erscheinen, sobald diese akzeptiert, als manuelle Buchung erfasst, aufgeteilt oder einer bestehenden Buchung zugeordnet werden.
 # Story 15-5c (#492) — Bezeichnungen der Ablehnungen eines Abgleich-Stapels (`failed[]`).
 reconciliation-failed-account-not-found = Ein Gegenkonto ist nicht auffindbar oder archiviert.
 reconciliation-failed-account-not-postable = Nicht bebuchbares Konto: { $numbers }. Ein Sammel-, Ergebnis- oder Abschlusskonto nimmt keine Buchung auf: Wählen Sie ein bebuchbares Konto.
@@ -1404,13 +1404,13 @@ reconciliation-failed-rule-not-found = Regel nicht gefunden oder deaktiviert.
 reconciliation-failed-score-too-low = Die Rechnung stimmt nicht ausreichend mit der Transaktion überein, um abgeglichen zu werden.
 reconciliation-failed-transaction-not-credit = Diese Transaktion ist kein Zahlungseingang (Belastung oder Betrag null): Sie kann keine Kundenrechnung begleichen.
 reconciliation-failed-transaction-not-debit = Diese Transaktion ist kein Zahlungsausgang (Gutschrift oder Betrag null): Sie kann keine Lieferantenrechnung begleichen.
-reconciliation-failed-supplier-invoice-in-batch = Diese Lieferantenrechnung ist in einem laufenden Zahlungslauf enthalten: Stornieren Sie den Lauf, wenn diese Transaktion seine Zahlung ist, andernfalls ordnen Sie die Transaktion manuell zu.
+reconciliation-failed-supplier-invoice-in-batch = Diese Lieferantenrechnung ist in einem laufenden Zahlungslauf enthalten: Stornieren Sie den Lauf, wenn diese Transaktion seine Zahlung ist, andernfalls erfassen Sie die Transaktion als manuelle Buchung.
 reconciliation-failed-amount-mismatch = Der Betrag der Transaktion weicht vom Total der Lieferantenrechnung ab: Eine Lieferantenzahlung begleicht das genaue Total.
-reconciliation-failed-supplier-payment-hold = Eine andere Lieferantenrechnung über diesen Betrag ist in einem laufenden Zahlungslauf dieses Kontos enthalten: Diese Transaktion ist vielleicht dessen Zahlung. Stornieren Sie in diesem Fall den Lauf, andernfalls ordnen Sie die Transaktion manuell zu.
-reconciliation-failed-rule-masked-payment-batch = Die Regel wird nicht angewendet: Eine Lieferantenrechnung über diesen Betrag ist in einem laufenden Zahlungslauf dieses Kontos enthalten. Wenn diese Transaktion seine Zahlung ist, stornieren Sie den Lauf und akzeptieren Sie hier die vorgeschlagene Rechnung. Verwenden Sie «Manuell zuweisen» nur, wenn diese Belastung keine erfasste Rechnung begleicht.
-reconciliation-failed-rule-masked-invoice-candidate = Die Regel wird nicht angewendet: Eine validierte Lieferantenrechnung entspricht dieser Transaktion. Laden Sie die Seite neu und akzeptieren Sie die vorgeschlagene Rechnung, wenn diese Belastung sie begleicht. Verwenden Sie «Manuell zuweisen» nur, wenn diese Belastung keine erfasste Rechnung begleicht.
-reconciliation-failed-rule-masked-overpaid = Die Regel wird nicht angewendet: Eine Kundenrechnung, die von dieser Zahlung um einige Rappen überschritten wird, entspricht ihr. Erfassen Sie die Zahlung im Rechnungsdetail und ordnen Sie die Transaktion dann dieser Zahlung zu. Verwenden Sie «Manuell zuweisen» nur, wenn diese Zahlung keine Rechnung begleicht.
-reconciliation-failed-rule-masked = Die Regel wird nicht angewendet: Eine Rechnung entspricht dieser Transaktion. Laden Sie die Seite neu und bearbeiten Sie die Rechnung. Verwenden Sie «Manuell zuweisen» nur, wenn diese Transaktion keine erfasste Rechnung begleicht.
+reconciliation-failed-supplier-payment-hold = Eine andere Lieferantenrechnung über diesen Betrag ist in einem laufenden Zahlungslauf dieses Kontos enthalten: Diese Transaktion ist vielleicht dessen Zahlung. Stornieren Sie in diesem Fall den Lauf, andernfalls erfassen Sie die Transaktion als manuelle Buchung.
+reconciliation-failed-rule-masked-payment-batch = Die Regel wird nicht angewendet: Eine Lieferantenrechnung über diesen Betrag ist in einem laufenden Zahlungslauf dieses Kontos enthalten. Wenn diese Transaktion seine Zahlung ist, stornieren Sie den Lauf und akzeptieren Sie hier die vorgeschlagene Rechnung. Verwenden Sie «Manuelle Buchung» nur, wenn diese Belastung keine erfasste Rechnung begleicht.
+reconciliation-failed-rule-masked-invoice-candidate = Die Regel wird nicht angewendet: Eine validierte Lieferantenrechnung entspricht dieser Transaktion. Laden Sie die Seite neu und akzeptieren Sie die vorgeschlagene Rechnung, wenn diese Belastung sie begleicht. Verwenden Sie «Manuelle Buchung» nur, wenn diese Belastung keine erfasste Rechnung begleicht.
+reconciliation-failed-rule-masked-overpaid = Die Regel wird nicht angewendet: Eine Kundenrechnung, die von dieser Zahlung um einige Rappen überschritten wird, entspricht ihr. Erfassen Sie die Zahlung im Rechnungsdetail und ordnen Sie die Transaktion dann dieser Zahlung zu. Verwenden Sie «Manuelle Buchung» nur, wenn diese Zahlung keine Rechnung begleicht.
+reconciliation-failed-rule-masked = Die Regel wird nicht angewendet: Eine Rechnung entspricht dieser Transaktion. Laden Sie die Seite neu und bearbeiten Sie die Rechnung. Verwenden Sie «Manuelle Buchung» nur, wenn diese Transaktion keine erfasste Rechnung begleicht.
 reconciliation-failed-transaction-not-pending = Diese Transaktion wartet nicht mehr auf den Abgleich.
 reconciliation-failed-unknown = Unbekannte Ablehnung ({ $code }).
 reconciliation-cols-tx-date = Datum
@@ -1437,18 +1437,21 @@ reconciliation-errors-entry-not-linkable = Diese Buchung kann dieser Transaktion
 reconciliation-toast-accept-success = { $count } Transaktion(en) erfolgreich abgeglichen.
 reconciliation-toast-reject-success = { $count } Transaktion(en) erfolgreich abgelehnt.
 
-# Story 8-5a-base FR45 — Manueller Abgleich.
-reconciliation-manual-button-label = Manuell zuweisen
-reconciliation-manual-modal-title = Manueller Abgleich
+# Story 8-5a-base FR45 — Manuelle Buchung (Geste von der 34-3 umbenannt).
+reconciliation-manual-button-label = Manuelle Buchung
+reconciliation-manual-modal-title = Manuelle Buchung
 reconciliation-manual-counterparty-label = Gegenkonto
 reconciliation-manual-description-label = Bezeichnung
 reconciliation-manual-bank-account-not-configured = Das Bankkonto ist nicht konfiguriert. Verknüpfen Sie das Buchhaltungskonto unter /bank-accounts.
 reconciliation-manual-value-date-label = Valutadatum
-reconciliation-manual-submit = Zuweisen
+reconciliation-manual-submit = Buchung erfassen
 reconciliation-manual-error-no-proposal = Keine Transaktion ausgewählt
 reconciliation-manual-error-counterparty-required = Gegenkonto erforderlich
 reconciliation-manual-error-description-too-long = Bezeichnung zu lang (max. { $max } Zeichen)
 reconciliation-manual-description-placeholder = Bankgebühren Mai
+# Story 34-3 (#967, AC-4) — Hinweis, wenn das Gegenkonto die Rolle Debitoren oder Kreditoren trägt.
+reconciliation-manual-claim-notice-receivable = Dieses Konto ist das Debitorenkonto. Eine manuelle Buchung begleicht keine Kundenrechnung: Die Rechnung bliebe offen. Für eine Kundenzahlung erfassen Sie die Zahlung im Rechnungsdetail und ordnen Sie die Transaktion dann dieser Zahlung zu.
+reconciliation-manual-claim-notice-payable = Dieses Konto ist das Kreditorenkonto. Eine manuelle Buchung begleicht keine Lieferantenrechnung: Die Rechnung bliebe unbezahlt. Für die Zahlung eines Lieferanten erfassen Sie die Rechnung und validieren Sie sie im Rechnungsdetail, ohne dort eine Zahlung zu erfassen: Die Zahlung ist diese Transaktion, und die Rechnung wird Ihnen hier zum Akzeptieren vorgeschlagen. Ist sie bereits bezahlt, ordnen Sie die Transaktion dieser Zahlung zu.
 
 # Story 8-5a-bis FR48 — Aufteilung einer aggregierten Transaktion.
 reconciliation-split-button-label = Aufteilen

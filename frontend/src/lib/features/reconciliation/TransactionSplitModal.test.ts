@@ -72,7 +72,8 @@ function makeAccounts(): AccountResponse[] {
 	return [
 		makeAccount(5000, '5000', 'Salaires', 'Expense'),
 		makeAccount(5700, '5700', 'Charges sociales', 'Expense'),
-		// Classe 1 (banque) — doit être filtré côté UI (5/6/7 only).
+		// Compte de classe 1 : proposé depuis la Story 34-3 (aucun filtre de classe) ;
+		// seul le compte de la banque, reçu en `bankLedgerAccountId`, est écarté.
 		makeAccount(1020, '1020', 'Banque', 'Asset'),
 	];
 }
@@ -280,5 +281,167 @@ describe('TransactionSplitModal — date en forme suisse (v0172, #880)', () => {
 		const summary = await findByTestId('split-tx-summary');
 		expect(summary.textContent).toContain('31.05.2026');
 		expect(summary.textContent).not.toContain('2026-05-31');
+	});
+});
+
+// Story 34-3 (#967, AC-3, AC-4) — *Éclater* propose la même liste que *Écriture manuelle* : tout
+// compte actif et imputable, de toute classe, sauf celui de la banque, qu'il reçoit désormais du
+// parent (il l'écartait jusque-là par le seul accident du filtre des classes 5, 6 et 7). L'avis
+// débiteurs / créanciers s'affiche sous la ligne concernée.
+describe('TransactionSplitModal — contreparties et avis (Story 34-3)', () => {
+	function planDeTest(): AccountResponse[] {
+		return [
+			makeAccount(201, '1000', 'Caisse', 'Asset'),
+			makeAccount(202, '2100', 'Emprunt', 'Liability'),
+			makeAccount(203, '3200', 'Ventes de marchandises', 'Revenue'),
+			makeAccount(204, '4200', 'Achats de marchandises', 'Expense'),
+			makeAccount(205, '5000', 'Salaires', 'Expense'),
+			makeAccount(206, '6900', 'Frais financiers', 'Expense'),
+			makeAccount(207, '7500', 'Produits annexes', 'Revenue'),
+			makeAccount(208, '8500', 'Produits hors exploitation', 'Revenue'),
+			makeAccount(209, '9100', 'Bilan d’ouverture', 'Liability'),
+			makeAccount(210, '1020', 'Banque', 'Asset'),
+			{ ...makeAccount(211, '2800', 'Fonds propres', 'Liability'), postable: false },
+			{ ...makeAccount(212, '6500', 'Ancien compte', 'Expense'), active: false },
+			{ ...makeAccount(213, '1100', 'Débiteurs', 'Asset'), role: 'Receivable' },
+			{ ...makeAccount(214, '2000', 'Créanciers', 'Liability'), role: 'Payable' },
+		];
+	}
+	const ATTENDU = [
+		'1000', '1100', '2000', '2100', '3200', '4200', '5000', '6900', '7500', '8500', '9100',
+	];
+
+	function monter(bankLedgerAccountId: number | null) {
+		return render(TransactionSplitModal, {
+			open: true,
+			onOpenChange: () => {},
+			bankAccountId: 17,
+			proposal: makeProposal(),
+			accounts: planDeTest(),
+			bankLedgerAccountId,
+			onSuccess: () => {},
+		});
+	}
+
+	/** Ce que les aides lisent du rendu (le type générique de `render` ne s'infère pas ici). */
+	type Rendu = { findByTestId: (id: string) => Promise<HTMLElement> };
+
+	async function optionsDeLigne(r: Rendu, ligne: number): Promise<HTMLElement[]> {
+		const rang = await r.findByTestId(`split-row-${ligne}`);
+		const champ = rang.querySelector('input[aria-autocomplete="list"]') as HTMLInputElement;
+		await fireEvent.focus(champ);
+		return waitFor(() => {
+			const o = Array.from(rang.querySelectorAll<HTMLElement>('[role="option"]'));
+			expect(o.length).toBeGreaterThan(0);
+			return o;
+		});
+	}
+
+	async function choisir(r: Rendu, ligne: number, numero: string) {
+		const rang = await r.findByTestId(`split-row-${ligne}`);
+		const champ = rang.querySelector('input[aria-autocomplete="list"]') as HTMLInputElement;
+		await fireEvent.focus(champ);
+		// Saisir le numéro : le libellé d'un compte déjà choisi filtrerait la liste.
+		await fireEvent.input(champ, { target: { value: numero } });
+		const option = (await optionsDeLigne(r, ligne)).find((o) => o.textContent?.includes(numero));
+		expect(option, `le compte ${numero} doit être proposé`).toBeTruthy();
+		await fireEvent.mouseDown(option as HTMLElement);
+	}
+
+	function numeros(options: HTMLElement[]): string[] {
+		return options.map((o) => o.querySelector('.font-mono')?.textContent?.trim() ?? '').sort();
+	}
+
+	it('AC-3 — chaque ligne propose tout compte actif et imputable, sauf celui de la banque', async () => {
+		const r = monter(210);
+		expect(numeros(await optionsDeLigne(r, 0))).toEqual([...ATTENDU].sort());
+		expect(numeros(await optionsDeLigne(r, 1))).toEqual([...ATTENDU].sort());
+	});
+
+	it('AC-3 — Éclater n’offre pas le compte de la banque', async () => {
+		const r = monter(210);
+		expect(numeros(await optionsDeLigne(r, 0))).not.toContain('1020');
+	});
+
+	it('AC-3 — repli null : aucun filtrage par identifiant (le serveur tranche)', async () => {
+		const r = monter(null);
+		expect(numeros(await optionsDeLigne(r, 0))).toContain('1020');
+	});
+
+	it('AC-4 — l’avis s’affiche sous la seule ligne concernée, avec son rôle', async () => {
+		const r = monter(210);
+		await choisir(r, 0, '5000');
+		await choisir(r, 1, '1100');
+		const avis = await r.findAllByTestId('counterparty-claim-account-notice');
+		expect(avis).toHaveLength(1);
+		expect(avis[0].getAttribute('data-role')).toBe('Receivable');
+		expect(avis[0].getAttribute('data-line')).toBe('1');
+		expect(avis[0].textContent).toContain('Ce compte est celui des débiteurs.');
+		await choisir(r, 1, '2000');
+		await waitFor(() => {
+			const a = r.getAllByTestId('counterparty-claim-account-notice');
+			expect(a).toHaveLength(1);
+			expect(a[0].getAttribute('data-role')).toBe('Payable');
+			expect(a[0].textContent).toContain('Ce compte est celui des créanciers.');
+		});
+		await choisir(r, 1, '6900');
+		await waitFor(() =>
+			expect(r.queryByTestId('counterparty-claim-account-notice')).toBeNull(),
+		);
+	});
+
+	// Revue de code P1 (B1-2, E1-3, A1-3) — les lignes sont rendues par indice (`(i)`) : l'avis
+	// doit suivre la ligne après une suppression, et deux lignes sur le même compte en portent
+	// chacune un.
+	it('AC-4 — après suppression d’une ligne, l’avis suit sa ligne (data-line du nouvel indice)', async () => {
+		const r = monter(210);
+		await fireEvent.click(await r.findByTestId('split-add-line'));
+		await choisir(r, 0, '5000');
+		await choisir(r, 1, '6900');
+		await choisir(r, 2, '2000');
+		await waitFor(() => {
+			const a = r.getAllByTestId('counterparty-claim-account-notice');
+			expect(a).toHaveLength(1);
+			expect(a[0].getAttribute('data-line')).toBe('2');
+		});
+		await fireEvent.click(await r.findByTestId('split-remove-0'));
+		await waitFor(() => {
+			const a = r.getAllByTestId('counterparty-claim-account-notice');
+			expect(a).toHaveLength(1);
+			expect(a[0].getAttribute('data-role')).toBe('Payable');
+			expect(a[0].getAttribute('data-line')).toBe('1');
+		});
+		// La rangée qui porte l'avis est bien celle qui suit la ligne 1, et aucune autre.
+		expect(r.queryByTestId('split-row-notice-0')).toBeNull();
+		expect(r.getByTestId('split-row-notice-1')).toBeTruthy();
+	});
+
+	it('AC-4 — deux lignes sur le compte débiteurs : un avis sous chacune', async () => {
+		const r = monter(210);
+		await choisir(r, 0, '1100');
+		await choisir(r, 1, '1100');
+		await waitFor(() => {
+			const a = r.getAllByTestId('counterparty-claim-account-notice');
+			expect(a.map((n) => n.getAttribute('data-line'))).toEqual(['0', '1']);
+			expect(a.every((n) => n.getAttribute('data-role') === 'Receivable')).toBe(true);
+		});
+		// Sans projet, la rangée couvre les quatre colonnes de l'en-tête.
+		const cellule = r.getByTestId('split-row-notice-0').querySelector('td') as HTMLTableCellElement;
+		expect(cellule.getAttribute('colspan')).toBe('4');
+		expect(r.getByTestId('split-lines-table').querySelectorAll('thead th')).toHaveLength(4);
+	});
+
+	it('AC-4 — avec des projets, la rangée de l’avis couvre les cinq colonnes', async () => {
+		listProjectsMock.mockResolvedValueOnce([
+			{ id: 5, parentId: null, code: 'CHALET', name: 'Chalet', archived: false },
+		]);
+		const r = monter(210);
+		await r.findByTestId('split-line-project-0');
+		await choisir(r, 0, '1100');
+		const rangee = await r.findByTestId('split-row-notice-0');
+		const cellule = rangee.querySelector('td') as HTMLTableCellElement;
+		expect(cellule.getAttribute('colspan')).toBe('5');
+		// Contrôle croisé : l'en-tête compte bien cinq colonnes.
+		expect(r.getByTestId('split-lines-table').querySelectorAll('thead th')).toHaveLength(5);
 	});
 });

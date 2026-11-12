@@ -12,7 +12,7 @@
   checkbox au niveau tx. Si la transaction n'a aucune candidate,
   on affiche « Aucune correspondance », avec une checkbox comme les
   autres lignes (Story 29-6, #665, AC10) : elle se coche pour être
-  rejetée, ou avant « Affecter manuellement » / « Éclater » ;
+  rejetée, ou avant « Écriture manuelle » / « Éclater » ;
   « Accepter » ne la traite pas — il est grisé tant qu'une telle ligne
   est cochée, et la rangée des boutons le dit. Erreurs partielles
   affichées en bas via `failed`.
@@ -112,8 +112,9 @@
 	 * Efface le bilan du dernier lot — compteur, *Échecs partiels* et transactions relevées.
 	 *
 	 * Revue de code P1 de la 15-5c (B1, E3) : le bilan est rendu hors des branches de la liste
-	 * (C38) ; sans remise à zéro, celui d'un lot ancien survivait à une affectation manuelle ou
-	 * à un éclatement. Appelée à l'ouverture de tout nouveau bilan — lot, affectation, éclatement.
+	 * (C38) ; sans remise à zéro, celui d'un lot ancien survivait à une écriture manuelle ou
+	 * à un éclatement. Appelée à l'ouverture de tout nouveau bilan — lot, écriture manuelle,
+	 * éclatement.
 	 */
 	function clearBatchReport(): void {
 		failed = [];
@@ -196,14 +197,14 @@
 		})();
 	});
 
-	// Story 15-6d (AC4, #524) — compte comptable du compte bancaire monté, que la modale
-	// d'affectation manuelle écarte des contreparties (une écriture `D banque / C banque` est
-	// nulle). Résolu UNE fois, au montage : la page remonte ce composant à chaque changement de
+	// Story 15-6d (AC4, #524) — compte comptable du compte bancaire monté, que les dialogues
+	// *Écriture manuelle* et *Éclater* (Story 34-3, AC-3) écartent des contreparties (une écriture
+	// `D banque / C banque` est nulle). Résolu UNE fois, au montage : la page remonte ce composant à chaque changement de
 	// compte bancaire (`{#key selectedId}`, `routes/(app)/reconciliation/+page.svelte`), si bien
 	// qu'une réponse ne peut pas arriver pour un autre `bankAccountId` que celui du montage —
 	// d'où l'absence de garde de génération (choix C-15-6-28). ⚠️ Retirer ce `{#key}` exigerait
 	// la garde. Repli `null` — aucun filtrage, la garde serveur de `POST /reconciliation/manual`
-	// tranche — pendant le chargement, en cas d'échec (ignoré sans message, comme le chargement
+	// (ou `/split`) tranche — pendant le chargement, en cas d'échec (ignoré sans message, comme le chargement
 	// des comptes ci-dessus), et si le compte bancaire est absent de la liste (archivé, ou
 	// clos depuis la Story 28-4b : `listBankAccounts()` n'en rend aucun des deux) ou non lié.
 	let bankLedgerAccountId = $state<number | null>(null);
@@ -295,7 +296,7 @@
 			// γ refactor — pour chaque txId sélectionné, retrouver la
 			// candidate top-1 (candidates[0]) dans la proposal courante.
 			// Une tx sans candidate peut être sélectionnée (pour « Rejeter »,
-			// ou avant « Affecter manuellement » / « Éclater » ; Story 29-6) :
+			// ou avant « Écriture manuelle » / « Éclater » ; Story 29-6) :
 			// « Accepter » est alors grisé et la garde de tête l'arrête ; le
 			// `throw` ci-dessous reste le dernier rempart.
 			const items = Array.from(selected).map((txId) => {
@@ -500,7 +501,7 @@
 							>
 								{i18nMsg(
 									'reconciliation-labels-notice-supplier-invoice-in-batch',
-									'La facture fournisseur { $invoice } de ce montant figure dans le lot de paiement n° { $batch } en cours sur ce compte. Si cette transaction est le paiement de ce lot, annulez le lot : la facture vous sera alors proposée ici. Sinon, affectez la transaction à la main.',
+									'La facture fournisseur { $invoice } de ce montant figure dans le lot de paiement n° { $batch } en cours sur ce compte. Si cette transaction est le paiement de ce lot, annulez le lot : la facture vous sera alors proposée ici. Sinon, passez la transaction par une écriture manuelle.',
 									{
 										invoice: supplierInvoiceShortLabel({
 											id: p.notice.supplierInvoiceId,
@@ -571,9 +572,9 @@
 							</td>
 						{/if}
 						<td>
-							<!-- Story 8-5a-base FR45 — bouton « Affecter manuellement »
-							     disponible sur toutes les rows pending (avec ou sans
-							     candidate auto-matchée). -->
+							<!-- Story 8-5a-base FR45 — bouton « Écriture manuelle » (geste
+							     rebaptisé par la 34-3) disponible sur toutes les rows pending
+							     (avec ou sans candidate auto-matchée). -->
 							<button
 								type="button"
 								class="text-xs text-primary underline disabled:opacity-50"
@@ -582,7 +583,7 @@
 								data-testid="manual-match-button"
 								data-tx-id={p.bankTransactionId}
 							>
-								{i18nMsg('reconciliation-manual-button-label', 'Affecter manuellement')}
+								{i18nMsg('reconciliation-manual-button-label', 'Écriture manuelle')}
 							</button>
 							<!-- Story 8-5a-bis FR48 — bouton « Éclater » disponible sur
 							     toutes les rows pending (cf. AC #93). -->
@@ -649,7 +650,7 @@
 			<p class="mt-3 text-sm text-text-muted" data-testid="reconciliation-more-capped">
 				{i18nMsg(
 					'reconciliation-labels-more-capped',
-					'Les { $max } transactions en attente les plus récentes sont affichées, le maximum que cette page montre à la fois. Il en reste de plus anciennes : elles apparaîtront à mesure que celles-ci seront acceptées, affectées manuellement, éclatées ou rattachées à un règlement.',
+					'Les { $max } transactions en attente les plus récentes sont affichées, le maximum que cette page montre à la fois. Il en reste de plus anciennes : elles apparaîtront à mesure que celles-ci seront acceptées, passées par une écriture manuelle, éclatées ou rattachées à une écriture existante.',
 					{ max: PROPOSALS_MAX_LIMIT },
 				)}
 			</p>
@@ -677,6 +678,7 @@
 			{bankAccountId}
 			proposal={splitProposal}
 			{accounts}
+			{bankLedgerAccountId}
 			onSuccess={onSplitSuccess}
 		/>
 

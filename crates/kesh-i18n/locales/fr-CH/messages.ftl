@@ -1430,7 +1430,7 @@ reconciliation-labels-rejected-hint = Une transaction rejetée quitte cette list
 # Story 29-3 (#527) — la priorité des candidates, dite au-dessus de la liste.
 reconciliation-labels-priority-hint = Une seule proposition est affichée par transaction : pour un crédit, la facture client la mieux notée, pour un débit, la facture fournisseur la mieux notée, s’il y en a une, sinon la règle d’affectation qui correspond. Une facture proposée passe toujours devant une règle.
 reconciliation-labels-supplier-invoice-badge = Facture fournisseur
-reconciliation-labels-notice-supplier-invoice-in-batch = La facture fournisseur { $invoice } de ce montant figure dans le lot de paiement n° { $batch } en cours sur ce compte. Si cette transaction est le paiement de ce lot, annulez le lot : la facture vous sera alors proposée ici. Sinon, affectez la transaction à la main.
+reconciliation-labels-notice-supplier-invoice-in-batch = La facture fournisseur { $invoice } de ce montant figure dans le lot de paiement n° { $batch } en cours sur ce compte. Si cette transaction est le paiement de ce lot, annulez le lot : la facture vous sera alors proposée ici. Sinon, passez la transaction par une écriture manuelle.
 # Story 29-6 (#665, AC10) — rendue dans la rangée des boutons quand une ligne sans proposition est cochée.
 reconciliation-labels-unmatched-not-acceptable-hint = Une transaction sans correspondance ne peut pas être acceptée : décochez-la pour accepter les autres.
 # Story 29-9 (#678, AC11) — nom accessible de la case de chaque ligne : ce que la ligne affiche.
@@ -1438,7 +1438,7 @@ reconciliation-labels-select-transaction = Sélectionner la transaction du { $da
 reconciliation-labels-select-transaction-no-counterparty = Sélectionner la transaction du { $date }, { $amount } { $currency }
 # Story 29-9 (#649, AC1, AC3) — sous la liste, s'il reste des transactions plus anciennes.
 reconciliation-labels-more-hidden = Seules les { $count } transactions en attente les plus récentes sont affichées : il en reste de plus anciennes.
-reconciliation-labels-more-capped = Les { $max } transactions en attente les plus récentes sont affichées, le maximum que cette page montre à la fois. Il en reste de plus anciennes : elles apparaîtront à mesure que celles-ci seront acceptées, affectées manuellement, éclatées ou rattachées à une écriture existante.
+reconciliation-labels-more-capped = Les { $max } transactions en attente les plus récentes sont affichées, le maximum que cette page montre à la fois. Il en reste de plus anciennes : elles apparaîtront à mesure que celles-ci seront acceptées, passées par une écriture manuelle, éclatées ou rattachées à une écriture existante.
 # Story 15-5c (#492) — libellés des refus d'un lot de rapprochement (`failed[]`).
 reconciliation-failed-account-not-found = Un compte de contrepartie est introuvable ou archivé.
 reconciliation-failed-account-not-postable = Compte non imputable : { $numbers }. Un compte de regroupement, de résultat ou de clôture ne reçoit pas d’écriture : choisissez un compte imputable.
@@ -1470,13 +1470,13 @@ reconciliation-failed-rule-not-found = Règle introuvable ou désactivée.
 reconciliation-failed-score-too-low = La facture ne correspond pas assez à la transaction pour être rapprochée.
 reconciliation-failed-transaction-not-credit = Cette transaction n’est pas une entrée d’argent (débit ou montant nul) : elle ne peut pas régler une facture client.
 reconciliation-failed-transaction-not-debit = Cette transaction n’est pas une sortie d’argent (crédit ou montant nul) : elle ne peut pas régler une facture fournisseur.
-reconciliation-failed-supplier-invoice-in-batch = Cette facture fournisseur figure dans un lot de paiement en cours : annulez le lot si cette transaction en est le paiement, sinon affectez la transaction à la main.
+reconciliation-failed-supplier-invoice-in-batch = Cette facture fournisseur figure dans un lot de paiement en cours : annulez le lot si cette transaction en est le paiement, sinon passez la transaction par une écriture manuelle.
 reconciliation-failed-amount-mismatch = Le montant de la transaction diffère du total de la facture fournisseur : un paiement fournisseur règle le total exact.
-reconciliation-failed-supplier-payment-hold = Une autre facture fournisseur de ce montant figure dans un lot de paiement en cours sur ce compte : cette transaction en est peut-être le paiement. Annulez le lot si c’est le cas, sinon affectez la transaction à la main.
-reconciliation-failed-rule-masked-payment-batch = La règle n’est pas appliquée : une facture fournisseur de ce montant figure dans un lot de paiement en cours sur ce compte. Si cette transaction en est le paiement, annulez le lot, puis acceptez ici la facture proposée. N’utilisez « Affecter manuellement » que si ce débit ne règle aucune facture saisie.
-reconciliation-failed-rule-masked-invoice-candidate = La règle n’est pas appliquée : une facture fournisseur validée correspond à cette transaction. Rechargez la page et acceptez la facture proposée si ce débit la règle. N’utilisez « Affecter manuellement » que si ce débit ne règle aucune facture saisie.
-reconciliation-failed-rule-masked-overpaid = La règle n’est pas appliquée : une facture client que ce paiement dépasse de quelques centimes lui correspond. Enregistrez le règlement depuis la fiche de la facture, puis rattachez-y la transaction. N’utilisez « Affecter manuellement » que si ce paiement ne règle aucune facture.
-reconciliation-failed-rule-masked = La règle n’est pas appliquée : une facture correspond à cette transaction. Rechargez la page et traitez la facture. N’utilisez « Affecter manuellement » que si cette transaction ne règle aucune facture saisie.
+reconciliation-failed-supplier-payment-hold = Une autre facture fournisseur de ce montant figure dans un lot de paiement en cours sur ce compte : cette transaction en est peut-être le paiement. Annulez le lot si c’est le cas, sinon passez la transaction par une écriture manuelle.
+reconciliation-failed-rule-masked-payment-batch = La règle n’est pas appliquée : une facture fournisseur de ce montant figure dans un lot de paiement en cours sur ce compte. Si cette transaction en est le paiement, annulez le lot, puis acceptez ici la facture proposée. N’utilisez « Écriture manuelle » que si ce débit ne règle aucune facture saisie.
+reconciliation-failed-rule-masked-invoice-candidate = La règle n’est pas appliquée : une facture fournisseur validée correspond à cette transaction. Rechargez la page et acceptez la facture proposée si ce débit la règle. N’utilisez « Écriture manuelle » que si ce débit ne règle aucune facture saisie.
+reconciliation-failed-rule-masked-overpaid = La règle n’est pas appliquée : une facture client que ce paiement dépasse de quelques centimes lui correspond. Enregistrez le règlement depuis la fiche de la facture, puis rattachez-y la transaction. N’utilisez « Écriture manuelle » que si ce paiement ne règle aucune facture.
+reconciliation-failed-rule-masked = La règle n’est pas appliquée : une facture correspond à cette transaction. Rechargez la page et traitez la facture. N’utilisez « Écriture manuelle » que si cette transaction ne règle aucune facture saisie.
 reconciliation-failed-transaction-not-pending = Cette transaction n’est plus en attente de rapprochement.
 reconciliation-failed-unknown = Refus non reconnu ({ $code }).
 reconciliation-cols-tx-date = Date
@@ -1504,18 +1504,21 @@ reconciliation-errors-entry-not-linkable = Cette écriture ne peut pas être rat
 reconciliation-toast-accept-success = { $count } transaction(s) réconciliée(s) avec succès.
 reconciliation-toast-reject-success = { $count } transaction(s) rejetée(s) avec succès.
 
-# Story 8-5a-base FR45 — Réconciliation manuelle.
-reconciliation-manual-button-label = Affecter manuellement
-reconciliation-manual-modal-title = Réconciliation manuelle
+# Story 8-5a-base FR45 — écriture manuelle (geste rebaptisé par la 34-3).
+reconciliation-manual-button-label = Écriture manuelle
+reconciliation-manual-modal-title = Écriture manuelle
 reconciliation-manual-counterparty-label = Compte de contrepartie
 reconciliation-manual-description-label = Description
 reconciliation-manual-bank-account-not-configured = Le compte bancaire n'est pas configuré. Configurer le compte comptable lié dans /bank-accounts.
 reconciliation-manual-value-date-label = Date de valeur
-reconciliation-manual-submit = Affecter
+reconciliation-manual-submit = Passer l'écriture
 reconciliation-manual-error-no-proposal = Aucune transaction sélectionnée
 reconciliation-manual-error-counterparty-required = Compte de contrepartie obligatoire
 reconciliation-manual-error-description-too-long = Description trop longue (max { $max } caractères)
 reconciliation-manual-description-placeholder = Frais bancaires mai
+# Story 34-3 (#967, AC-4) — avis non bloquant quand la contrepartie porte le rôle débiteurs ou créanciers.
+reconciliation-manual-claim-notice-receivable = Ce compte est celui des débiteurs. Une écriture manuelle ne règle aucune facture client : elle resterait due. Pour un paiement de client, enregistrez le règlement depuis la fiche de la facture, puis rattachez-y la transaction.
+reconciliation-manual-claim-notice-payable = Ce compte est celui des créanciers. Une écriture manuelle ne règle aucune facture fournisseur : elle resterait à payer. Pour le paiement d'un fournisseur, saisissez la facture et validez-la depuis sa fiche, sans y enregistrer de paiement : le paiement est cette transaction, et la facture vous sera proposée ici, à accepter. Si elle est déjà payée, rattachez la transaction à ce paiement.
 
 # Story 8-5a-bis FR48 — éclatement de transaction agrégée.
 reconciliation-split-button-label = Éclater

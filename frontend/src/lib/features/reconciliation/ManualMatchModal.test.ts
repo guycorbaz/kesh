@@ -76,7 +76,7 @@ function makeAccounts(): AccountResponse[] {
 		makeAccount(100, '6810', 'Frais bancaires', 'Expense'),
 		makeAccount(101, '5200', 'Salaires', 'Expense'),
 		makeAccount(102, '7510', 'Intérêts', 'Revenue'),
-		// Compte classe 1 (banque) — doit être pré-filtré (5/6/7 only).
+		// Compte de classe 1 : proposé depuis la Story 34-3 (aucun filtre de classe).
 		makeAccount(103, '1020', 'Caisse banque', 'Asset'),
 	];
 }
@@ -231,11 +231,29 @@ describe('ManualMatchModal', () => {
 });
 
 // Story 15-6d (AC4, test 10, #524) — le compte comptable du compte bancaire n'est pas proposé
-// comme contrepartie, même numéroté en classe 5/6/7 (plan atypique) ; `null` → aucun filtrage
-// (la garde serveur tranche).
-describe('ManualMatchModal — compte de la banque écarté (Story 15-6d)', () => {
-	// Compte d'actif numéroté en classe 5 : seul le filtre par identifiant l'écarte.
-	const atypicalBank = makeAccount(104, '5999', 'Banque atypique', 'Asset');
+// comme contrepartie ; `null` → aucun filtrage (la garde serveur tranche).
+// Story 34-3 (#967, AC-2) — le filtre des classes 5, 6 et 7 est retiré : tout compte actif et
+// imputable, de toute classe, est proposé, sauf celui de la banque. Plan de test : un compte de
+// chaque classe 1 à 9, un non imputable, un archivé, le compte de la banque ; la liste rendue se
+// compare à l'ENSEMBLE attendu.
+describe('ManualMatchModal — la liste des contreparties (Story 15-6d, Story 34-3)', () => {
+	function planDeTest(): AccountResponse[] {
+		return [
+			makeAccount(201, '1000', 'Caisse', 'Asset'),
+			makeAccount(202, '2100', 'Emprunt', 'Liability'),
+			makeAccount(203, '3200', 'Ventes de marchandises', 'Revenue'),
+			makeAccount(204, '4200', 'Achats de marchandises', 'Expense'),
+			makeAccount(205, '5000', 'Salaires', 'Expense'),
+			makeAccount(206, '6900', 'Frais financiers', 'Expense'),
+			makeAccount(207, '7500', 'Produits annexes', 'Revenue'),
+			makeAccount(208, '8500', 'Produits hors exploitation', 'Revenue'),
+			makeAccount(209, '9100', 'Bilan d’ouverture', 'Liability'),
+			makeAccount(210, '1020', 'Banque', 'Asset'),
+			{ ...makeAccount(211, '2800', 'Fonds propres', 'Liability'), postable: false },
+			{ ...makeAccount(212, '6500', 'Ancien compte', 'Expense'), active: false },
+		];
+	}
+	const ATTENDU = ['1000', '2100', '3200', '4200', '5000', '6900', '7500', '8500', '9100'];
 
 	async function proposedNumbers(bankLedgerAccountId: number | null): Promise<string[]> {
 		const { getByRole, findAllByRole, unmount } = render(ManualMatchModal, {
@@ -243,7 +261,7 @@ describe('ManualMatchModal — compte de la banque écarté (Story 15-6d)', () =
 			onOpenChange: () => {},
 			bankAccountId: 17,
 			proposal: makeProposal(),
-			accounts: [...makeAccounts(), atypicalBank],
+			accounts: planDeTest(),
 			bankLedgerAccountId,
 			onSuccess: () => {},
 		});
@@ -254,12 +272,110 @@ describe('ManualMatchModal — compte de la banque écarté (Story 15-6d)', () =
 		return numbers.sort();
 	}
 
-	it("n'offre pas le compte passé en bankLedgerAccountId, même en classe 5/6/7", async () => {
-		expect(await proposedNumbers(104)).toEqual(['5200', '6810', '7510']);
+	it('AC-2 — tout compte actif et imputable de toute classe, sauf celui de la banque', async () => {
+		expect(await proposedNumbers(210)).toEqual([...ATTENDU].sort());
 	});
 
-	it('bankLedgerAccountId null → aucun filtrage au-delà des classes 5/6/7', async () => {
-		expect(await proposedNumbers(null)).toEqual(['5200', '5999', '6810', '7510']);
+	it('bankLedgerAccountId null → aucun filtrage par identifiant (le serveur tranche)', async () => {
+		expect(await proposedNumbers(null)).toEqual([...ATTENDU, '1020'].sort());
+	});
+});
+
+// Story 34-3 (#967, AC-4, C-e342-1) — un avis non bloquant quand la contrepartie choisie porte le
+// rôle débiteurs ou créanciers : une écriture manuelle n'y règle aucune facture.
+const AVIS_DEBITEURS =
+	'Ce compte est celui des débiteurs. Une écriture manuelle ne règle aucune facture client : elle resterait due. Pour un paiement de client, enregistrez le règlement depuis la fiche de la facture, puis rattachez-y la transaction.';
+const AVIS_CREANCIERS =
+	"Ce compte est celui des créanciers. Une écriture manuelle ne règle aucune facture fournisseur : elle resterait à payer. Pour le paiement d'un fournisseur, saisissez la facture et validez-la depuis sa fiche, sans y enregistrer de paiement : le paiement est cette transaction, et la facture vous sera proposée ici, à accepter. Si elle est déjà payée, rattachez la transaction à ce paiement.";
+
+describe('ManualMatchModal — avis débiteurs / créanciers (Story 34-3, AC-4)', () => {
+	function plan(): AccountResponse[] {
+		return [
+			{ ...makeAccount(301, '1100', 'Débiteurs', 'Asset'), role: 'Receivable' },
+			{ ...makeAccount(302, '2000', 'Créanciers', 'Liability'), role: 'Payable' },
+			{ ...makeAccount(303, '1170', 'Impôt préalable', 'Asset'), role: 'VatRecoverable' },
+			makeAccount(304, '6810', 'Frais bancaires', 'Expense'),
+		];
+	}
+
+	/** Ce que `choisir` lit du rendu (le type générique de `render` ne s'infère pas ici). */
+	type Rendu = { findAllByRole: (role: string) => Promise<HTMLElement[]> };
+
+	async function choisir(r: Rendu, numero: string): Promise<void> {
+		const champ = document.querySelector('input[aria-autocomplete="list"]') as HTMLInputElement;
+		await fireEvent.focus(champ);
+		// Saisir le numéro : une fois un compte choisi, le champ montre son libellé, qui filtre
+		// la liste ; l'utilisateur tape pour en changer.
+		await fireEvent.input(champ, { target: { value: numero } });
+		const options = await r.findAllByRole('option');
+		const option = options.find((o) => o.textContent?.includes(numero));
+		expect(option, `le compte ${numero} doit être proposé`).toBeTruthy();
+		await fireEvent.mouseDown(option as HTMLElement);
+	}
+
+	function monter() {
+		return render(ManualMatchModal, {
+			open: true,
+			onOpenChange: () => {},
+			bankAccountId: 17,
+			proposal: makeProposal(),
+			accounts: plan(),
+			bankLedgerAccountId: 999,
+			onSuccess: () => {},
+		});
+	}
+
+	it('compte débiteurs → l’avis client, complet ; il disparaît pour un autre compte', async () => {
+		const r = monter();
+		expect(r.queryByTestId('counterparty-claim-account-notice')).toBeNull();
+		await choisir(r, '1100');
+		const avis = await r.findByTestId('counterparty-claim-account-notice');
+		expect(avis.getAttribute('data-role')).toBe('Receivable');
+		expect(avis.textContent?.trim()).toBe(AVIS_DEBITEURS);
+		// Non bloquant : la validation reste possible.
+		const submit = (await r.findByTestId('manual-match-submit')) as HTMLButtonElement;
+		await waitFor(() => expect(submit.disabled).toBe(false));
+		await choisir(r, '6810');
+		await waitFor(() => expect(r.queryByTestId('counterparty-claim-account-notice')).toBeNull());
+	});
+
+	it('compte créanciers → l’avis fournisseur, complet', async () => {
+		const r = monter();
+		await choisir(r, '2000');
+		const avis = await r.findByTestId('counterparty-claim-account-notice');
+		expect(avis.getAttribute('data-role')).toBe('Payable');
+		expect(avis.textContent?.trim()).toBe(AVIS_CREANCIERS);
+	});
+
+	it('un compte de TVA n’avertit pas (hors périmètre écrit)', async () => {
+		const r = monter();
+		await choisir(r, '1170');
+		// Revue de code P1 (B1-6) : prouver d'abord que le choix a pris — le champ montre le
+		// compte et la validation est active —, sans quoi l'absence passerait à vide.
+		const champ = document.querySelector('input[aria-autocomplete="list"]') as HTMLInputElement;
+		await waitFor(() => expect(champ.value).toContain('1170'));
+		const submit = (await r.findByTestId('manual-match-submit')) as HTMLButtonElement;
+		await waitFor(() => expect(submit.disabled).toBe(false));
+		expect(r.queryByTestId('counterparty-claim-account-notice')).toBeNull();
+	});
+});
+
+// Story 34-3 (#967, AC-1) — le titre et le bouton de validation suivent le bouton qui ouvre le
+// dialogue (replis fr ; les catalogues sont tenus égaux par `ecriture-manuelle-i18n.test.ts`).
+describe('ManualMatchModal — libellés (Story 34-3, AC-1)', () => {
+	it('titre « Écriture manuelle », validation « Passer l’écriture »', async () => {
+		const r = render(ManualMatchModal, {
+			open: true,
+			onOpenChange: () => {},
+			bankAccountId: 17,
+			proposal: makeProposal(),
+			accounts: makeAccounts(),
+			onSuccess: () => {},
+		});
+		expect((await r.findByTestId('manual-match-submit')).textContent?.trim()).toBe(
+			"Passer l'écriture",
+		);
+		expect(r.getByText('Écriture manuelle')).toBeTruthy();
 	});
 });
 

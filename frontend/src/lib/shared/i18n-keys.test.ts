@@ -906,7 +906,12 @@ const ATTENDU = {
 	// montant requis, les deux avis. Que des littéraux ; `sitesNonResolus` et `relais` inchangés.
 	// Revue P1 de la 34-2 : **2942 → 2944** (+2), même fichier : l'aperçu du montant écrit et le
 	// refus d'un montant ambigu. Que des littéraux.
-	sitesTotal: 2944,
+	// Story 34-3 (#967) : **2922 → 2924** (+2), les deux avis débiteurs / créanciers de
+	// `reconciliation/CounterpartyClaimNotice.svelte`. Que des littéraux ; `sitesNonResolus` et
+	// `relais` inchangés.
+	// Intégration de la release 0.17.6 (2026-11-12), fusion de la 34-3 sur 34-1 et 34-2,
+	// **recompté à la source** par la garde elle-même (non additionné) : **2946**.
+	sitesTotal: 2946,
 	sitesNonResolus: 31,
 	relais: 6,
 	// Story 26-1 (#620, AC3-bis) : **10 → 11** — `lib/features/bank-import/
