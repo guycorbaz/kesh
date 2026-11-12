@@ -163,7 +163,15 @@ test('un lot de rejet dont un import a été supprimé entre-temps traite l’au
 		const deleted = await ctx.delete(`/api/v1/bank-imports/${a.importId}`);
 		expect(deleted.status(), await deleted.text()).toBe(204);
 
+		// Story 35-4 (#1023, AC7) : ces lignes ne sont pas signalées « déjà comptabilisées »,
+		// si bien que *Rejeter* part sans confirmation.
+		for (const id of [a.txId, b.txId]) {
+			await expect(
+				page.locator(`[data-testid="already-booked-warning"][data-tx-id="${id}"]`),
+			).toHaveCount(0);
+		}
 		await page.getByTestId('reconciliation-reject-btn').click();
+		await expect(page.getByTestId('already-booked-confirm')).toHaveCount(0);
 
 		// Exactement une opération réussie : « 1 opération(s)… », et non « 10 » ni « 11 ».
 		await expect(page.getByTestId('reconciliation-success')).toHaveText(/^\s*1\s+\D/);

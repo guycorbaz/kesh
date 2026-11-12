@@ -1,6 +1,6 @@
 # Story 35-4 : *Rejeter* une ligne signalée « déjà comptabilisée » demande confirmation ; une confirmation ne survit plus à une relecture de la liste (#1023, #1024)
 
-Status: ready-for-dev
+Status: in-progress
 
 *Fiche rédigée le 2026-11-12 par l'agent de kickoff de l'Epic 35 (Opus 5.5), worktree `kesh-e35`, par le workflow
 `bmad-create-story`. Release **0.17.7**. **Aucune migration**, aucun changement serveur ni d'API. Code lu sur
