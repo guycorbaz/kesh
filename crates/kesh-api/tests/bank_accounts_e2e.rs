@@ -2571,7 +2571,7 @@ async fn deleting_a_statement_recomputes_the_last_statement(pool: MySqlPool) {
 
 // =========================================================================
 // Story 34-11a1 (#972) — un compte sans IBAN : les lecteurs le tolèrent, les
-// sites qui exigent un IBAN le refusent, et rien ne permet encore d'en créer.
+// sites qui exigent un IBAN le refusent (avant la 34-11a2, aucune route n'en créait).
 // =========================================================================
 
 /// Une carte de crédit forgée en base (aucune route ne la crée avant la 34-11a2).
@@ -2643,7 +2643,7 @@ async fn compte_sans_iban_les_lectures_le_rendent(pool: MySqlPool) {
 /// une carte qui porte un IBAN est refusée (`400 CREDIT_CARD_FIELD_NOT_ALLOWED`),
 /// et non créée comme compte bancaire ; aucune carte n'est écrite.
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
-async fn compte_sans_iban_aucune_route_ne_le_cree(pool: MySqlPool) {
+async fn compte_sans_iban_carte_refusee_sans_lien_ou_avec_iban(pool: MySqlPool) {
     complete_onboarding(&pool).await;
     let ctx = setup_full(&pool, "Acme", "CH4431999123000889012", Role::Comptable).await;
     let app = spawn_app(pool.clone()).await;
@@ -2698,7 +2698,7 @@ async fn compte_sans_iban_aucune_route_ne_le_cree(pool: MySqlPool) {
 /// bancaire qui demande `accountKind: "credit_card"` est refusé (`400
 /// BANK_ACCOUNT_KIND_IMMUTABLE`), et le compte reste bancaire, avec son IBAN.
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
-async fn compte_sans_iban_le_put_ignore_le_type(pool: MySqlPool) {
+async fn compte_sans_iban_le_put_refuse_un_autre_type(pool: MySqlPool) {
     complete_onboarding(&pool).await;
     let ctx = setup_full(&pool, "Acme", "CH4431999123000889012", Role::Comptable).await;
     let app = spawn_app(pool.clone()).await;

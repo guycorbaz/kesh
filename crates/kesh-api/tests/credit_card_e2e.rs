@@ -452,6 +452,10 @@ async fn compte_bancaire_sans_iban_ou_avec_quatre_chiffres(pool: MySqlPool) {
         let (s, b) = ctx.post("/api/v1/bank-accounts", corps.clone()).await;
         assert_eq!(s, 400, "{corps} : {b}");
         assert_eq!(code(&b), "VALIDATION_ERROR", "{corps} : {b}");
+        // Revue P2 (B4) — le motif est celui d'un IBAN vide (`kesh-core`), même
+        // code qu'en 0.17.5 ; le message, lui, n'est plus celui de l'extracteur.
+        let message = b["error"]["message"].as_str().unwrap_or("");
+        assert!(message.contains("IBAN invalide"), "{corps} : {b}");
     }
     let (s, b) = ctx
         .post(
@@ -684,7 +688,23 @@ async fn patch_d_une_carte(pool: MySqlPool) {
     let ctx = monter(&pool).await;
     let carte = ctx.carte(ctx.passif).await;
     let id = carte["id"].as_i64().unwrap();
-    for cible in [Value::Null, json!(ctx.actif)] {
+    // Revue P1 (B1 = E1, M12) — une charge, un produit, le compte débiteurs
+    // (actif désigné) et un actif non imputable rendent le code de la carte,
+    // comme au `POST` et au `PUT`, avant les refus de la transaction.
+    let non_imputable = account(&ctx.pool, ctx.seeded.company_id, "1090", "Asset").await;
+    sqlx::query("UPDATE accounts SET postable = FALSE WHERE id = ?")
+        .bind(non_imputable)
+        .execute(&ctx.pool)
+        .await
+        .unwrap();
+    for cible in [
+        Value::Null,
+        json!(ctx.actif),
+        json!(ctx.seeded.accounts["4000"]),
+        json!(ctx.seeded.accounts["3000"]),
+        json!(ctx.seeded.accounts["1100"]),
+        json!(non_imputable),
+    ] {
         let (s, b) = ctx
             .patch(
                 &format!("/api/v1/bank-accounts/{id}"),
@@ -709,6 +729,245 @@ async fn patch_d_une_carte(pool: MySqlPool) {
         .await;
     assert_eq!(s, 200, "{b}");
     assert_eq!(b["journalAccountId"], ctx.passif2);
+}
+
+// ============================================================
+// AC-5 — concurrence : le type relu sous verrou par les routes (revue P1, B2)
+// ============================================================
+
+/// Attend (dix secondes au plus) qu'une autre connexion de la base de test
+/// exécute une requête qui répond à `motif` (`LIKE`) — bloquée sur un verrou,
+/// pour une requête qui finirait en microsecondes. Sonde `PROCESSLIST` (sans le
+/// privilège `PROCESS`, `INNODB_TRX` est fermé) ; le texte montre les `?`.
+async fn attendre_requete_en_cours(pool: &MySqlPool, motif: &str) {
+    for _ in 0..200 {
+        let n: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM information_schema.PROCESSLIST \
+             WHERE DB = DATABASE() AND ID <> CONNECTION_ID() AND INFO LIKE ?",
+        )
+        .bind(motif)
+        .fetch_one(pool)
+        .await
+        .unwrap();
+        if n > 0 {
+            return;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    }
+    panic!("aucune requête en cours ne répond à {motif:?}");
+}
+
+/// La relecture du type par une route, vue bloquée derrière le retypage.
+const RELECTURE_DU_TYPE: &str = "%account_type, active FROM accounts%LOCK IN SHARE MODE%";
+
+/// Un retypage **tenu ouvert** : `passif` pris `FOR UPDATE` et passé en charge,
+/// sans commit. Une route qui le lit sur le pool y voit encore un passif.
+async fn retypage_tenu(pool: &MySqlPool, passif: i64) -> sqlx::Transaction<'static, sqlx::MySql> {
+    let mut tx = pool.begin().await.unwrap();
+    sqlx::query("SELECT id FROM accounts WHERE id = ? FOR UPDATE")
+        .bind(passif)
+        .execute(&mut *tx)
+        .await
+        .unwrap();
+    sqlx::query("UPDATE accounts SET account_type = 'Expense' WHERE id = ?")
+        .bind(passif)
+        .execute(&mut *tx)
+        .await
+        .unwrap();
+    tx
+}
+
+impl Ctx {
+    /// Lance une requête en tâche (le serveur la traite pendant que le test
+    /// tient le retypage).
+    fn lancer(
+        &self,
+        methode: reqwest::Method,
+        chemin: &str,
+        corps: Value,
+    ) -> tokio::task::JoinHandle<(u16, Value)> {
+        let r = self
+            .app
+            .client
+            .request(methode, format!("{}{chemin}", self.app.base_url))
+            .bearer_auth(&self.jwt)
+            .json(&corps);
+        tokio::spawn(async move {
+            let resp = r.send().await.unwrap();
+            let s = resp.status().as_u16();
+            (s, resp.json().await.unwrap_or(Value::Null))
+        })
+    }
+}
+
+/// AC-5 (C-e341-40 ; revue P1, B2 = E2, A12 ; M11) — création d'une carte
+/// pendant qu'un retypage du passif est tenu : le pré-vol lit encore un passif,
+/// la transaction **attend** la relecture du type (vue bloquée), puis le
+/// retypage commité, la voit en charge et refuse. Sans la relecture
+/// (`recheck_ledger_type_in_tx` retiré de `create_once`), la sonde ne voit
+/// jamais la relecture et le test rougit — et la carte serait liée à une charge.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn creation_croisee_avec_un_retypage(pool: MySqlPool) {
+    let ctx = monter(&pool).await;
+    let tenu = retypage_tenu(&pool, ctx.passif).await;
+    let creation = ctx.lancer(
+        reqwest::Method::POST,
+        "/api/v1/bank-accounts",
+        json!({ "accountKind": "credit_card", "bankName": "Visa", "journalAccountId": ctx.passif }),
+    );
+    attendre_requete_en_cours(&pool, RELECTURE_DU_TYPE).await;
+    tenu.commit().await.unwrap();
+    let (s, b) = creation.await.unwrap();
+    assert_eq!(s, 400, "{b}");
+    assert_eq!(code(&b), "CREDIT_CARD_LEDGER_MUST_BE_LIABILITY", "{b}");
+    assert_eq!(
+        ctx.count("SELECT COUNT(*) FROM bank_accounts WHERE company_id = ? AND account_kind = 'credit_card'")
+            .await,
+        0,
+        "aucune carte liée à une charge"
+    );
+}
+
+/// AC-5 (revue P1, B2, A12 ; M11b) — même course au `PUT` d'une carte qui
+/// change de passif.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn put_croise_avec_un_retypage(pool: MySqlPool) {
+    let ctx = monter(&pool).await;
+    let carte = ctx.carte(ctx.passif).await;
+    let id = carte["id"].as_i64().unwrap();
+    let tenu = retypage_tenu(&pool, ctx.passif2).await;
+    let put = ctx.lancer(
+        reqwest::Method::PUT,
+        &format!("/api/v1/bank-accounts/{id}"),
+        json!({ "bankName": "Visa", "journalAccountId": ctx.passif2, "version": carte["version"] }),
+    );
+    attendre_requete_en_cours(&pool, RELECTURE_DU_TYPE).await;
+    tenu.commit().await.unwrap();
+    let (s, b) = put.await.unwrap();
+    assert_eq!(s, 400, "{b}");
+    assert_eq!(code(&b), "CREDIT_CARD_LEDGER_MUST_BE_LIABILITY", "{b}");
+    let lie: Option<i64> =
+        sqlx::query_scalar("SELECT journal_account_id FROM bank_accounts WHERE id = ?")
+            .bind(id)
+            .fetch_one(&ctx.pool)
+            .await
+            .unwrap();
+    assert_eq!(lie, Some(ctx.passif), "rien d'écrit");
+}
+
+/// AC-5 (revue P1, A12 ; M4) — même course au `PATCH` : le pré-vol (type de la
+/// carte, B1) voit un passif, la transaction relit le type sous verrou et le
+/// contrôle de la carte, sous le `FOR UPDATE` de la ligne, refuse.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn patch_croise_avec_un_retypage(pool: MySqlPool) {
+    let ctx = monter(&pool).await;
+    let carte = ctx.carte(ctx.passif).await;
+    let id = carte["id"].as_i64().unwrap();
+    let tenu = retypage_tenu(&pool, ctx.passif2).await;
+    let patch = ctx.lancer(
+        reqwest::Method::PATCH,
+        &format!("/api/v1/bank-accounts/{id}"),
+        json!({ "journalAccountId": ctx.passif2, "version": carte["version"] }),
+    );
+    attendre_requete_en_cours(&pool, RELECTURE_DU_TYPE).await;
+    tenu.commit().await.unwrap();
+    let (s, b) = patch.await.unwrap();
+    assert_eq!(s, 400, "{b}");
+    assert_eq!(code(&b), "CREDIT_CARD_LEDGER_MUST_BE_LIABILITY", "{b}");
+    let lie: Option<i64> =
+        sqlx::query_scalar("SELECT journal_account_id FROM bank_accounts WHERE id = ?")
+            .bind(id)
+            .fetch_one(&ctx.pool)
+            .await
+            .unwrap();
+    assert_eq!(lie, Some(ctx.passif), "rien d'écrit");
+}
+
+/// Revue P1 (E5) — un numéro complet collé dans le champ des quatre chiffres :
+/// `400 CARD_NUMBER_NOT_ALLOWED`, `details.field = "cardLast4"`, rien d'écrit,
+/// et le numéro n'est pas repris dans la réponse.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn numero_complet_dans_les_quatre_chiffres(pool: MySqlPool) {
+    let ctx = monter(&pool).await;
+    let avant = ctx.bank_accounts().await;
+    let (s, b) = ctx
+        .post(
+            "/api/v1/bank-accounts",
+            json!({
+                "accountKind": "credit_card",
+                "bankName": "Visa",
+                "cardLast4": "4111 1111 1111 1111",
+                "journalAccountId": ctx.passif,
+            }),
+        )
+        .await;
+    assert_eq!(s, 400, "{b}");
+    assert_eq!(code(&b), "CARD_NUMBER_NOT_ALLOWED");
+    assert_eq!(b["error"]["details"]["field"], "cardLast4");
+    assert!(!b.to_string().contains("1111"), "{b}");
+    assert_eq!(ctx.bank_accounts().await, avant);
+}
+
+/// Revue P1 (B7 = E4) — un IBAN valide écrit « CH 48… » d'un bloc dans une
+/// description, dont les chiffres passeraient pour un Visa : accepté.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn un_iban_dans_la_description_n_est_pas_refuse(pool: MySqlPool) {
+    let ctx = monter(&pool).await;
+    let (s, b) = ctx
+        .post(
+            "/api/v1/bank-accounts",
+            json!({ "bankName": "UBS", "iban": "CH9300762011623852957", "description": "ex CH 4826751125328704655" }),
+        )
+        .await;
+    assert_eq!(s, 201, "{b}");
+}
+
+/// Revue P1 (E7) — le refus du retypage d'un compte lié passe **avant** la garde
+/// des écritures : un passif mouvementé, retypé sans confirmation, rend
+/// `ACCOUNT_LINKED_TO_BANK_ACCOUNT`, non `ACCOUNT_HAS_ENTRIES`.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn retypage_refuse_avant_la_garde_des_ecritures(pool: MySqlPool) {
+    use kesh_db::entities::journal_entry::Journal;
+    use kesh_db::entities::{NewJournalEntry, NewJournalEntryLine};
+    let ctx = monter(&pool).await;
+    ctx.carte(ctx.passif).await;
+    let date = NaiveDate::from_ymd_opt(2026, 3, 1).unwrap();
+    kesh_db::repositories::journal_entries::create(
+        &ctx.pool,
+        ctx.seeded.fiscal_year_id,
+        ctx.seeded.admin_user_id,
+        NewJournalEntry {
+            company_id: ctx.seeded.company_id,
+            entry_date: date,
+            journal: Journal::OD,
+            description: "Achat par carte".into(),
+            project_id: None,
+            lines: vec![
+                NewJournalEntryLine {
+                    account_id: ctx.seeded.accounts["4000"],
+                    debit: dec!(50.00),
+                    credit: rust_decimal::Decimal::ZERO,
+                    project_id: None,
+                },
+                NewJournalEntryLine {
+                    account_id: ctx.passif,
+                    debit: rust_decimal::Decimal::ZERO,
+                    credit: dec!(50.00),
+                    project_id: None,
+                },
+            ],
+        },
+    )
+    .await
+    .unwrap();
+    let (s, b) = ctx
+        .put(
+            &format!("/api/v1/accounts/{}", ctx.passif),
+            json!({ "name": "Compte 2030", "accountType": "Expense", "role": null, "postable": true, "version": 1 }),
+        )
+        .await;
+    assert_eq!(s, 409, "{b}");
+    assert_eq!(code(&b), "ACCOUNT_LINKED_TO_BANK_ACCOUNT", "{b}");
 }
 
 // ============================================================
@@ -838,4 +1097,154 @@ async fn reglements_et_carte(pool: MySqlPool) {
         )
         .await;
     assert_eq!(s, 200, "paiement fournisseur depuis la carte : {b}");
+}
+
+// ============================================================
+// Revue P2 — branches sans témoin (E3, A8)
+// ============================================================
+
+/// Revue P2 (E3-1, E3-2) — le `PUT` d'une carte traverse la garde du numéro
+/// complet (nom, description, quatre chiffres) ; `"1234 5678"` n'est pas une
+/// carte : `VALIDATION_ERROR`, sans écho de la saisie.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn put_d_une_carte_et_numero_complet(pool: MySqlPool) {
+    let ctx = monter(&pool).await;
+    let carte = ctx.carte(ctx.passif).await;
+    let id = carte["id"].as_i64().unwrap();
+    let base =
+        json!({ "bankName": "Visa", "journalAccountId": ctx.passif, "version": carte["version"] });
+    let with = |k: &str, v: Value| {
+        let mut b = base.clone();
+        b[k] = v;
+        b
+    };
+    for (corps, champ) in [
+        (
+            with("bankName", json!("Visa 4111 1111 1111 1111")),
+            "bankName",
+        ),
+        (
+            with("description", json!("perso 4111111111111111")),
+            "description",
+        ),
+        (with("cardLast4", json!("4111-1111-1111-1111")), "cardLast4"),
+    ] {
+        let (s, b) = ctx
+            .put(&format!("/api/v1/bank-accounts/{id}"), corps.clone())
+            .await;
+        assert_eq!(s, 400, "{corps} : {b}");
+        assert_eq!(code(&b), "CARD_NUMBER_NOT_ALLOWED", "{corps} : {b}");
+        assert_eq!(b["error"]["details"]["field"], champ);
+        assert!(!b.to_string().contains("1111"), "{b}");
+    }
+    let (s, b) = ctx
+        .put(
+            &format!("/api/v1/bank-accounts/{id}"),
+            with("cardLast4", json!("1234 5678")),
+        )
+        .await;
+    assert_eq!(s, 400, "{b}");
+    assert_eq!(code(&b), "VALIDATION_ERROR");
+    assert!(!b.to_string().contains("5678"), "{b}");
+    let version: i32 = sqlx::query_scalar("SELECT version FROM bank_accounts WHERE id = ?")
+        .bind(id)
+        .fetch_one(&ctx.pool)
+        .await
+        .unwrap();
+    assert_eq!(json!(version), carte["version"], "rien d'écrit");
+}
+
+/// Revue P2 (E3-3 ; M19) — `PATCH` d'une carte vers son passif courant :
+/// no-op (200, version inchangée) ; d'une carte **archivée** vers un actif :
+/// `404` (le pré-vol garde la règle d'un compte bancaire, la transaction rend
+/// le `404`) ; d'une carte **close** : `409 BANK_ACCOUNT_CLOSED`.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn patch_d_une_carte_inchangee_archivee_ou_close(pool: MySqlPool) {
+    let ctx = monter(&pool).await;
+    let carte = ctx.carte(ctx.passif).await;
+    let id = carte["id"].as_i64().unwrap();
+    let (s, b) = ctx
+        .patch(
+            &format!("/api/v1/bank-accounts/{id}"),
+            json!({ "journalAccountId": ctx.passif, "version": carte["version"] }),
+        )
+        .await;
+    assert_eq!(s, 200, "{b}");
+    assert_eq!(b["version"], carte["version"], "no-op : version inchangée");
+
+    let close = ctx.carte(ctx.passif).await;
+    let close_id = close["id"].as_i64().unwrap();
+    sqlx::query("UPDATE bank_accounts SET closed_on = '2026-06-30' WHERE id = ?")
+        .bind(close_id)
+        .execute(&ctx.pool)
+        .await
+        .unwrap();
+    let (s, b) = ctx
+        .patch(
+            &format!("/api/v1/bank-accounts/{close_id}"),
+            json!({ "journalAccountId": ctx.passif2, "version": close["version"] }),
+        )
+        .await;
+    assert_eq!(s, 409, "{b}");
+    assert_eq!(code(&b), "BANK_ACCOUNT_CLOSED", "{b}");
+
+    sqlx::query("UPDATE bank_accounts SET archived = TRUE WHERE id = ?")
+        .bind(id)
+        .execute(&ctx.pool)
+        .await
+        .unwrap();
+    let (s, b) = ctx
+        .patch(
+            &format!("/api/v1/bank-accounts/{id}"),
+            json!({ "journalAccountId": ctx.actif, "version": carte["version"] }),
+        )
+        .await;
+    assert_eq!(s, 404, "carte archivée : {b}");
+}
+
+/// Revue P2 (E3-4) — une carte vers un passif **non imputable** ou vers le
+/// **compte créanciers désigné** : les règles d'un compte bancaire s'appliquent
+/// (`ACCOUNT_NOT_POSTABLE`, `BANK_ACCOUNT_LEDGER_IS_CLAIM_ACCOUNT`), rien d'écrit.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn carte_vers_un_passif_non_imputable_ou_creanciers(pool: MySqlPool) {
+    let ctx = monter(&pool).await;
+    let non_imputable = account(&ctx.pool, ctx.seeded.company_id, "2090", "Liability").await;
+    sqlx::query("UPDATE accounts SET postable = FALSE WHERE id = ?")
+        .bind(non_imputable)
+        .execute(&ctx.pool)
+        .await
+        .unwrap();
+    let avant = ctx.bank_accounts().await;
+    for (ledger, attendu) in [
+        (non_imputable, "ACCOUNT_NOT_POSTABLE"),
+        (
+            ctx.seeded.accounts["2000"],
+            "BANK_ACCOUNT_LEDGER_IS_CLAIM_ACCOUNT",
+        ),
+    ] {
+        let (s, b) = ctx
+            .post(
+                "/api/v1/bank-accounts",
+                json!({ "accountKind": "credit_card", "bankName": "Visa", "journalAccountId": ledger }),
+            )
+            .await;
+        assert_eq!(s, 400, "{b}");
+        assert_eq!(code(&b), attendu, "{b}");
+    }
+    assert_eq!(ctx.bank_accounts().await, avant, "rien d'écrit");
+}
+
+/// Revue P2 (A8) — au `PUT`, `version < 1` passe **avant** le `404` d'un id
+/// inconnu (ordre écrit au doc-comment, à la note ¹¹ et au CHANGELOG).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn put_version_zero_avant_le_404(pool: MySqlPool) {
+    let ctx = monter(&pool).await;
+    let (s, b) = ctx
+        .put(
+            "/api/v1/bank-accounts/999999",
+            json!({ "bankName": "UBS", "iban": "CH9300762011623852957", "version": 0 }),
+        )
+        .await;
+    assert_eq!(s, 400, "{b}");
+    assert_eq!(code(&b), "VALIDATION_ERROR", "{b}");
 }

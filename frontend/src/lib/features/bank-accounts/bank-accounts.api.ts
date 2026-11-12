@@ -221,20 +221,37 @@ export async function updateBankAccountJournalLink(
 /**
  * Payload de création — POST /api/v1/bank-accounts (Story v014-1).
  */
-export interface NewBankAccountPayload {
+export type NewBankAccountPayload = NewBankAccountFields & BankOrCardFields;
+
+/** Champs communs aux deux types de compte. */
+interface NewBankAccountFields {
 	bankName: string;
 	/** Story 26-2a — optionnel : l'omettre crée un compte sans description. */
 	description?: string | null;
-	/** Story 34-11a2 (#972) — obligatoire pour un compte bancaire, omis pour une carte. */
-	iban?: string | null;
-	qrIban?: string | null;
-	isPrimary?: boolean;
 	journalAccountId?: number | null;
-	/** Story 34-11a2 — absent = compte bancaire ; immuable ensuite. */
-	accountKind?: BankAccountKind;
-	/** Story 34-11a2 — quatre derniers chiffres d'une carte (facultatifs). */
-	cardLast4?: string | null;
 }
+
+/**
+ * Story 34-11a2 (#972 ; revue P1, B10) — union discriminée par le type : un
+ * compte bancaire porte **obligatoirement** son IBAN (type absent = compte
+ * bancaire, payload de la 0.17.5) ; une carte n'a ni IBAN, ni QR-IBAN, ni
+ * « principal », et peut porter ses quatre derniers chiffres.
+ */
+type BankOrCardFields =
+	| {
+			accountKind?: 'bank';
+			iban: string;
+			qrIban?: string | null;
+			isPrimary?: boolean;
+			cardLast4?: never;
+	  }
+	| {
+			accountKind: 'credit_card';
+			cardLast4?: string | null;
+			iban?: never;
+			qrIban?: never;
+			isPrimary?: never;
+	  };
 
 /**
  * POST /api/v1/bank-accounts — crée un nouveau compte bancaire post-onboarding
@@ -252,24 +269,38 @@ export async function createBankAccount(
 /**
  * Payload d'édition complète — PUT /api/v1/bank-accounts/{id} (Story v014-1).
  */
-export interface UpdateBankAccountPayload {
+export type UpdateBankAccountPayload = UpdateBankAccountFields &
+	(
+		| {
+				/** IBAN obligatoire d'un compte bancaire. */
+				iban: string;
+				qrIban?: string | null;
+				isPrimary?: boolean;
+				cardLast4?: never;
+		  }
+		| {
+				/**
+				 * Story 34-11a2 (#972) — une carte : ni IBAN (le serveur le refuse :
+				 * revue P1 de la 34-11a1, E5/B7), ni QR-IBAN, ni « principal » ; ses
+				 * quatre chiffres, **absents ⇒ effacés** (remplacement complet). Le
+				 * type n'est pas envoyé : absent, il vaut le type courant.
+				 */
+				cardLast4: string | null;
+				iban?: never;
+				qrIban?: never;
+				isPrimary?: never;
+		  }
+	);
+
+/** Champs communs du `PUT`. */
+interface UpdateBankAccountFields {
 	bankName: string;
 	/**
 	 * Story 26-2a — **obligatoire** : le `PUT` remplace tout, l'omettre
 	 * **efface** la description (C-26-2-19). `null` pour l'effacer exprès.
 	 */
 	description: string | null;
-	/**
-	 * Story 34-11a2 (#972) — obligatoire pour un compte bancaire ; **omis** pour
-	 * une carte (le serveur refuse un IBAN sur une carte : revue P1 de la 34-11a1,
-	 * E5/B7). Le type n'est pas envoyé : absent, il vaut le type courant.
-	 */
-	iban?: string | null;
-	qrIban?: string | null;
-	isPrimary?: boolean;
 	journalAccountId?: number | null;
-	/** Story 34-11a2 — **absents ⇒ effacés** (remplacement complet). */
-	cardLast4?: string | null;
 	version: number;
 }
 

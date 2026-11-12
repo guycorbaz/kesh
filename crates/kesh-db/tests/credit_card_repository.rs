@@ -138,6 +138,30 @@ async fn retype(
     .await
 }
 
+/// Attend (dix secondes au plus) qu'une autre connexion de la base de test
+/// exécute une requête dont le texte répond à `motif` (`LIKE`) — c'est-à-dire,
+/// pour une requête qui devrait finir en microsecondes, qu'elle est **bloquée**
+/// sur un verrou. Sonde `PROCESSLIST` (le privilège `PROCESS`, qu'exige
+/// `INNODB_TRX`, manque à l'utilisateur de test) ; le texte montre les `?`, non
+/// les valeurs.
+async fn attendre_requete_en_cours(pool: &MySqlPool, motif: &str) {
+    for _ in 0..200 {
+        let n: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM information_schema.PROCESSLIST \
+             WHERE DB = DATABASE() AND ID <> CONNECTION_ID() AND INFO LIKE ?",
+        )
+        .bind(motif)
+        .fetch_one(pool)
+        .await
+        .unwrap();
+        if n > 0 {
+            return;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    panic!("aucune requête en cours ne répond à {motif:?}");
+}
+
 async fn type_of(pool: &MySqlPool, account_id: i64) -> String {
     sqlx::query_scalar("SELECT account_type FROM accounts WHERE id = ?")
         .bind(account_id)
@@ -279,6 +303,41 @@ async fn retypage_permis_si_le_lien_est_archive_ou_absent(pool: MySqlPool) {
         .expect("compte non lié : retypage permis");
 }
 
+/// Revue P1 (E7, M15) — une carte **close** compte (elle se rouvre) ; une carte
+/// et un compte bancaire sur le même passif, retypé en actif : le compte
+/// bancaire l'admet, la carte non — le refus nomme la carte.
+#[sqlx::test(migrations = "./test-schema")]
+async fn retypage_carte_close_et_lien_partage(pool: MySqlPool) {
+    let company_id = company(&pool).await;
+    let user_id = user(&pool, company_id).await;
+    let passif = account(&pool, company_id, "2050", AccountType::Liability).await;
+    let carte = card(&pool, company_id, Some(passif)).await;
+    sqlx::query("UPDATE bank_accounts SET closed_on = '2026-06-30' WHERE id = ?")
+        .bind(carte)
+        .execute(&pool)
+        .await
+        .unwrap();
+    assert!(matches!(
+        retype(&pool, passif, user_id, AccountType::Expense).await,
+        Err(DbError::AccountLinkedToBankAccount { bank_account_id, .. }) if bank_account_id == carte
+    ));
+
+    let passif2 = account(&pool, company_id, "2060", AccountType::Liability).await;
+    bank(&pool, company_id, passif2).await;
+    let carte2 = card(&pool, company_id, Some(passif2)).await;
+    match retype(&pool, passif2, user_id, AccountType::Asset).await {
+        Err(DbError::AccountLinkedToBankAccount {
+            bank_account_id,
+            bank_account_name,
+        }) => {
+            assert_eq!(bank_account_id, carte2, "la carte, non le compte bancaire");
+            assert_eq!(bank_account_name, "Visa");
+        }
+        other => panic!("attendu AccountLinkedToBankAccount, obtenu {other:?}"),
+    }
+    assert_eq!(type_of(&pool, passif2).await, "Liability");
+}
+
 /// AC-5, concurrence (C-e341-40, M8) — une transaction « création de carte »
 /// relit le type du compte `LOCK IN SHARE MODE` ; un retypage lancé pendant
 /// qu'elle le tient **attend** la ligne `accounts` (`FOR UPDATE` en tête), puis
@@ -301,7 +360,10 @@ async fn retypage_croise_avec_la_creation_d_une_carte(pool: MySqlPool) {
     let pool_b = pool.clone();
     let retypage =
         tokio::spawn(async move { retype(&pool_b, passif, user_id, AccountType::Expense).await });
-    tokio::time::sleep(Duration::from_millis(400)).await;
+    // Revue P1 (E8) — l'attente se constate, elle ne se suppose pas : la
+    // lecture `FOR UPDATE` de tête du retypage est vue en cours (bloquée) dans
+    // `PROCESSLIST`. Sans elle (M8), la sonde ne la voit jamais et le test rougit.
+    attendre_requete_en_cours(&pool, "%FROM accounts WHERE id = ? FOR UPDATE%").await;
     assert!(
         !retypage.is_finished(),
         "le retypage doit attendre la ligne"

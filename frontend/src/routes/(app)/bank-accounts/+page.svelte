@@ -639,7 +639,9 @@
 					{#if isCard}
 						<div>
 							<label for="form-card-last4" class="block text-sm font-medium text-text mb-1">{i18nMsg('bank-accounts-labels-card-last4', 'Quatre derniers chiffres (facultatif)')}</label>
-							<Input id="form-card-last4" bind:value={formCardLast4} maxlength={4} inputmode="numeric" autocomplete="off" placeholder="1234" data-testid="form-card-last4" />
+							<!-- Revue P1 (E5) : pas de `maxlength` — un numéro complet collé ici serait
+							     tronqué à ses quatre PREMIERS chiffres sans refus ; il est refusé à l'envoi. -->
+							<Input id="form-card-last4" bind:value={formCardLast4} inputmode="numeric" autocomplete="off" placeholder="1234" data-testid="form-card-last4" />
 							<p class="mt-1 text-xs text-text-muted" data-testid="form-card-last4-help">{i18nMsg('bank-accounts-help-card-last4', 'Kesh ne garde jamais le numéro complet de la carte : seulement ses quatre derniers chiffres, pour la reconnaître.')}</p>
 						</div>
 					{:else}
@@ -875,7 +877,7 @@
 											{#if isCard}
 												<div>
 													<label for="edit-card-last4" class="block text-sm font-medium text-text mb-1">{i18nMsg('bank-accounts-labels-card-last4', 'Quatre derniers chiffres (facultatif)')}</label>
-													<Input id="edit-card-last4" bind:value={formCardLast4} maxlength={4} inputmode="numeric" autocomplete="off" data-testid="edit-card-last4" />
+													<Input id="edit-card-last4" bind:value={formCardLast4} inputmode="numeric" autocomplete="off" data-testid="edit-card-last4" />
 													<p class="mt-1 text-xs text-text-muted" data-testid="edit-card-last4-help">{i18nMsg('bank-accounts-help-card-last4', 'Kesh ne garde jamais le numéro complet de la carte : seulement ses quatre derniers chiffres, pour la reconnaître.')}</p>
 												</div>
 											{:else}

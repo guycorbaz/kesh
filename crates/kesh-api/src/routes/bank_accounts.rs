@@ -492,6 +492,11 @@ fn validate_bank_input(f: BankInputFields<'_>) -> Result<ValidatedBankInput, App
                 Some(d) if d.len() == 4 && d.bytes().all(|b| b.is_ascii_digit()) => {
                     Some(d.to_string())
                 }
+                // Revue P1 (E5) — un numéro complet collé dans le champ des quatre
+                // chiffres est nommé comme tel ; rien n'en est gardé ni tronqué.
+                Some(d) if kesh_core::card_number::looks_like_card_number(d) => {
+                    return Err(AppError::CardNumberNotAllowed { field: "cardLast4" });
+                }
                 Some(_) => {
                     return Err(AppError::Validation(
                         "cardLast4 : exactement quatre chiffres (les quatre derniers de la carte)"
@@ -1543,6 +1548,20 @@ async fn reopen_once(
 /// `BANK_ACCOUNT_LEDGER_IS_CLAIM_ACCOUNT` (compte lié **changé** vers le compte
 /// débiteurs ou créanciers désigné).
 ///
+/// **Carte de crédit** (Story 34-11a2, revue P1 B1 = E1, B8 = E6) : le type du
+/// compte bancaire est lu sur le pool **avant** le pré-vol (il est immuable) ;
+/// pour une carte, le pré-vol applique la règle de la carte, si bien que délier
+/// une carte, ou la lier à un actif, une charge ou un produit — le compte
+/// débiteurs et un actif non imputable compris — rend `400
+/// CREDIT_CARD_LEDGER_MUST_BE_LIABILITY` **avant** les refus de la transaction,
+/// comme au `POST` et au `PUT`. Un id inconnu, d'une autre société ou archivé ne
+/// change rien à l'ordre d'avant : le pré-vol garde alors la règle d'un compte
+/// bancaire, et la transaction rend son `404`. Dans la transaction, le type du
+/// compte lié est relu sous verrou partagé avant la ligne du compte bancaire, et
+/// la carte contrôlée encore une fois (une course avec un retypage) — ce dernier
+/// refus vient alors après la version (`409`) et la clôture (`409
+/// BANK_ACCOUNT_CLOSED`).
+///
 /// ⚠️ **Rejouée sur interblocage** (opération `bank_accounts::patch`, Story
 /// 29-4a, #651, AC4) ; la transaction vit dans [`patch_once`]. Sa demande
 /// exclusive de la ligne du compte (`set_journal_account_id_for_company`), en
@@ -1565,13 +1584,17 @@ pub async fn patch_bank_account_journal_link(
         return Err(AppError::Validation("version doit être >= 1".to_string()));
     }
 
-    // Story 34-11a2 — le type du compte n'est connu que dans la transaction :
-    // pré-vol à la règle d'un compte bancaire (actif ou passif, lien
-    // facultatif), la carte est contrôlée dans `patch_once`.
+    // Story 34-11a2 (revue P1, B1 = E1) — le type du compte, lu sur le pool
+    // (immuable) ; inconnu ou archivé : la règle d'un compte bancaire, et le
+    // `404` de la transaction, comme avant.
+    let kind = bank_accounts::find_by_id_for_company(&state.pool, current_user.company_id, id)
+        .await?
+        .filter(|b| !b.archived)
+        .map_or(BankAccountKind::Bank, |b| b.account_kind);
     validate_journal_account_id(
         &state.pool,
         current_user.company_id,
-        BankAccountKind::Bank,
+        kind,
         body.journal_account_id,
         // Postabilité contrôlée dans le dépôt, sous verrou, si changée (AC12).
         false,

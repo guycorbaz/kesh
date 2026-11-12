@@ -55,3 +55,37 @@ droite dans la clé fr-CH et ses deux replis Svelte, assertion Vitest alignée. 
 **C-e34a2-9 — écart à la consigne Edit (B3).** L'outil Edit n'a pas su apparier le littéral `' '` (U+00A0 entre apostrophes) : deux essais
 rendus « String to replace not found ». Le remplacement s'est fait par un script Python d'une ligne, contrôlant que la chaîne exacte
 n'apparaissait qu'une fois (`assert s.count(old) == 1`). C'est ce que Guy veut savoir : l'outil ne voit pas une espace insécable saisie.
+
+## Remédiation de la revue P1 (2026-11-12)
+
+**C-e34a2-10 — le `PATCH` d'une carte lit le type du compte avant le pré-vol** (revue P1, B1 = E1, B8 = E6). Retenu : lecture sur le pool
+(`find_by_id_for_company`, type immuable) **avant** `validate_journal_account_id`, qui reçoit ce type ; un id inconnu, étranger ou archivé
+garde la règle d'un compte bancaire, pour que l'ordre des erreurs d'un compte bancaire soit **exactement** celui d'avant (le `404` vient de la
+transaction). Pour une carte, actif (débiteurs et non imputable compris), charge, produit ou délier rendent
+`CREDIT_CARD_LEDGER_MUST_BE_LIABILITY` avant tout refus de la transaction ; le contrôle sous verrou reste (course avec un retypage) et vient,
+lui seul, après la version et la clôture — écrit au doc-comment et à la note ¹¹. Autres : documenter seulement (deux codes pour un même geste) ;
+lire le compte en tête pour tous (déplacerait l'ordre des erreurs d'un compte bancaire). Réversible : oui.
+
+**C-e34a2-11 — la course se constate, elle ne se suppose pas** (revue P1, B2 = E2, E8, A12). Retenu : un retypage tenu ouvert (`FOR UPDATE`
+puis `UPDATE` sans commit) pendant un `POST`, un `PUT` et un `PATCH` passés par les **vraies routes** ; l'attente est constatée par la sonde
+`PROCESSLIST` sur le texte de la relecture (`account_type, active FROM accounts … LOCK IN SHARE MODE`), patron des tests de verrou du dépôt
+(`INNODB_TRX` exige le privilège `PROCESS`). Le test croisé du dépôt sonde de même la lecture `FOR UPDATE` du retypage, au lieu d'une attente
+de 400 ms. Réversible : oui.
+
+**C-e34a2-12 — les IBAN valides sont masqués avant la garde** (revue P1, B7 = E4). Retenu : deux lettres bordées à gauche, puis des
+alphanumériques sous séparateurs uniques ; le plus long préfixe compacté qui passe `Iban::new` (pays connu, longueur, MOD-97) est masqué.
+Autres : écrire la limite seulement ; traiter « deux lettres + séparateur » comme non entier (masquerait aussi des numéros de carte précédés
+d'un code). Réversible : oui.
+
+**C-e34a2-13 — un numéro collé dans le champ des quatre chiffres** (revue P1, E5). Retenu : plus de `maxlength` à l'écran (il tronquait aux
+quatre **premiers** chiffres sans refus) ; refus à l'écran (quatre chiffres ou rien) et, côté serveur, `CARD_NUMBER_NOT_ALLOWED`
+(`details.field = "cardLast4"`) quand le champ porte un numéro complet — le message ne reprend jamais le texte. Autre : garder les quatre
+derniers (le numéro transiterait et se garderait en partie sans que l'utilisateur le voie). Réversible : oui.
+
+**C-e34a2-14 — AC-8, « libellés frontend »** (revue P1, A9) : les écrans affichent le message du serveur, déjà traduit par les quatre
+`messages.ftl` (usage du dépôt) ; aucun libellé propre par code. Le retypage refusé sur l'écran du plan est tenu par un Vitest
+(`accounts-page.test.ts`). Réversible : oui.
+
+**C-e34a2-15 — le PDF régénéré dans la branche** (revue P1, A2) : la fiche (AC-9) l'exigeait, à l'encontre du transversal X-1 de l'epic
+(« un PDF se régénère une fois à l'intégration »). Écart déclaré ; le PDF est cohérent avec le `.tex` à chaque commit ; l'intégration le
+régénère de toute façon. Réversible : oui.

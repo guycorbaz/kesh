@@ -618,11 +618,11 @@ pub async fn update(
         ..changes
     };
 
-    // KF-004 : court-circuit no-op AVANT toute mutation.
-    // NOTE concurrence (KF-004): sous REPEATABLE READ + plain SELECT, si une tx
-    // parallèle commit entre notre BEGIN et ce check, on retourne notre snapshot
-    // stale au lieu d'un 409. Race acceptée v0.1 (cf. spec 7-3 §race-condition).
-    // Mitigation future: SELECT FOR UPDATE partout (non v0.1).
+    // KF-004 : court-circuit no-op AVANT toute mutation. Depuis la Story
+    // 34-11a2 (C-e341-40), `before` est lu sous `FOR UPDATE` : la course que
+    // décrivait ici la note KF-004 (snapshot périmé d'un `SELECT` sans verrou,
+    // cf. spec 7-3 §race-condition) n'existe plus — une transaction concurrente
+    // commitée est vue, et sa version rend 409 plus haut.
     if is_no_op_change(&before, &changes) {
         tx.rollback().await.map_err(map_db_error)?;
         return Ok(before);
