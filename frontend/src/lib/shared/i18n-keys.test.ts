@@ -913,10 +913,14 @@ const ATTENDU = {
 	// quatre textes de l'avertissement) et `reconciliation/AlreadyBookedConfirmDialog.svelte` +4
 	// (titre, introduction, Annuler, Continuer quand même). Que des littéraux ; `sitesNonResolus`
 	// et `relais` inchangés.
+	// Story 34-5 (#951) : **2922 → 2928** (+6), l'avis de conflit d'un règlement — fiche et
+	// échéancier, deux clés chacun et leur *Relire* (`invoice-settle-unknown-reread`). Que des
+	// littéraux. À recompter à la fusion de l'Epic 34. Revue P2 (B2-1) : **2928 → 2930** (+2),
+	// l'avis « relecture en cours » de la fiche et de l'échéancier.
 	// Intégration de la release 0.17.6 (2026-11-12), **recompté à la source** par la garde
 	// elle-même après chaque fusion (non additionné) : 2946 après la 34-3 (34-1, 34-2, 34-3),
-	// **2954** après la 34-4.
-	sitesTotal: 2954,
+	// 2954 après la 34-4, **2962** après la 34-5.
+	sitesTotal: 2962,
 	sitesNonResolus: 31,
 	relais: 6,
 	// Story 26-1 (#620, AC3-bis) : **10 → 11** — `lib/features/bank-import/

@@ -1065,11 +1065,12 @@ champ_corps!(
     B,
     &aujourd_hui(),
     |m, v| {
-        let (f, _) = m.facture_validee().await;
+        let (f, version) = m.facture_validee().await;
         m.post(
         &format!("/api/v1/invoices/{f}/settlements"),
         avec(
-            json!({"settlementType": "internal_account", "accountId": m.compte("1000"), "amount": "108.10"}),
+            json!({"settlementType": "internal_account", "accountId": m.compte("1000"), "amount": "108.10",
+                   "version": version}),
             "settledOn",
             v,
         ),
@@ -1092,12 +1093,12 @@ champ_corps!(
     .execute(&m.pool)
     .await
     .unwrap();
-        let (f, _) = m.facture_validee().await;
+        let (f, version) = m.facture_validee().await;
         let reglement = m
             .post(
                 &format!("/api/v1/invoices/{f}/settlements"),
                 json!({"settlementType": "internal_account", "accountId": m.compte("1000"),
-                   "amount": "40.00", "settledOn": aujourd_hui()}),
+                   "amount": "40.00", "settledOn": aujourd_hui(), "version": version}),
             )
             .await;
         assert_eq!(reglement.0, 200, "{}", reglement.1);

@@ -7,8 +7,22 @@
  * `KESH_BACKEND_URL`.
  */
 import { expect } from '@playwright/test';
-import type { Page } from '@playwright/test';
+import type { APIRequestContext, Page } from '@playwright/test';
 import { authedApiContext, clearAuthStorage, disposeContextSafe } from './test-state';
+
+/**
+ * Story 34-5 (#951) — la version que la facture porte au moment de l'appel, lue par
+ * `GET` comme le ferait un client : `POST /invoices/{id}/settlements` l'exige, et un
+ * corps sans elle est refusé en 422.
+ */
+export async function invoiceVersionViaApi(
+	ctx: APIRequestContext,
+	invoiceId: number,
+): Promise<number> {
+	const res = await ctx.get(`/api/v1/invoices/${invoiceId}`);
+	expect(res.ok(), `lecture de la facture ${invoiceId}: ${res.status()}`).toBeTruthy();
+	return ((await res.json()) as { version: number }).version;
+}
 
 /** Mot de passe des utilisateurs créés par `createUser`. */
 export const USER_PASSWORD = 'MotDePasse12345';

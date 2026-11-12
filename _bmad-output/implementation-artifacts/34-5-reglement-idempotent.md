@@ -1,6 +1,6 @@
 # Story 34-5 : un second envoi du même règlement n'écrit pas un second règlement (#951)
 
-Status: ready-for-dev
+Status: done
 
 *Fiche rédigée le 2026-11-10 en autonomie (Opus 5.5), worktree `/home/gcorbaz/devel/kesh-e34`, branche `chore/epic-34-kickoff`,
 numéros de ligne de `a75835db`. Release **0.17.6**, Epic 34. **Aucune migration** : le kickoff la disait probable, la fiche
@@ -156,12 +156,13 @@ au registre.
 
 ## Tâches
 
-- [ ] **T1 — rouge d'abord**, journalisé dans `kesh-gate-logs/e343/rouges.log`.
+- [x] **T1 — rouge d'abord**, journalisé dans `kesh-gate-logs/e345/rouges.log` (clé du développement ; la fiche disait
+  `e343`, corrigé à la revue P1, A1-4).
   - Test HTTP de l'AC-2 dans `crates/kesh-api/tests/invoice_settlement_response_e2e.rs`, ou dans un fichier neuf
     `invoice_settlement_idempotence_e2e.rs` : rouge **à l'exécution** (deux 200).
   - Test `kesh-db` de l'AC-4 dans `crates/kesh-db/tests/invoice_settlement.rs` : version périmée → `OptimisticLockConflict`,
     rien d'écrit, version inchangée. Rouge à la compilation, faute de paramètre.
-- [ ] **T2 — `kesh-db`.**
+- [x] **T2 — `kesh-db`.**
   - `settle_invoice(…, expected_version: i32)`. La colonne `version` s'ajoute au `SELECT … FOR UPDATE` de l'étape (1), et la
     comparaison suit la garde de statut. `#[allow(clippy::too_many_arguments)]` si nécessaire, comme `write_off_invoice`.
   - Les appelants en test passent la version lue, par **une aide par crate de test** (C-e343-13), et non par 31 lectures
@@ -185,9 +186,9 @@ au registre.
   - `kesh-report` est touché : le gate ciblé `kesh-db`/`kesh-api` ne le compile pas. Lancer
     `cargo build --workspace --all-targets`.
   - ⚠️ `kesh-db` est touché : **gate complet même en cours de boucle** (exception `kesh-db` du `CLAUDE.md`).
-- [ ] **T3 — route.** `SettleInvoiceRequest.version: i32`, passée à `into_parts` ou à côté, et doc-comments (AC-9). Les
+- [x] **T3 — route.** `SettleInvoiceRequest.version: i32`, passée à `into_parts` ou à côté, et doc-comments (AC-9). Les
   corps de test Rust qui postent un règlement (liste ci-dessus, recensée à nouveau) portent la version.
-- [ ] **T4 — AC-3, montage déterministe** (validation P2, 34-5-F2), sur le patron de `victime`
+- [x] **T4 — AC-3, montage déterministe** (validation P2, 34-5-F2), sur le patron de `victime`
   (`rejeu_interblocage_e2e.rs:346-367`) :
   1. une transaction de test tient la facture par `SELECT … FROM invoices WHERE id = ? FOR UPDATE` ;
   2. les deux requêtes partent, avec la même version ;
@@ -202,7 +203,7 @@ au registre.
   (Story 30-1a), visible de `kesh-api/tests` par `kesh_db::test_fixtures` (`rejeu_interblocage_e2e.rs:47`). Validation P3,
   34-5-F1. ⚠️ Reste **à établir à l'étape 0** : ce que rend `PROCESSLIST` sous ce montage à deux requêtes. Si le montage ne
   peut pas être tenu, le dire au Change Log, et M2 est déclarée non prouvée.
-- [ ] **T5 — frontend.**
+- [x] **T5 — frontend.**
   - `SettleInvoiceRequest.version: number` ; la fiche et l'échéancier l'envoient.
   - `settleOutcome` gagne deux états, `conflict` (relu, rien d'enregistré) et `conflict-blocked` (pas relu). Les clés i18n,
     aux **quatre** locales, chacune avec un repli Svelte identique :
@@ -221,13 +222,13 @@ au registre.
   - Tests Vitest : `invoice-settlements-page.test.ts`, et le test de l'échéancier. On vérifie la version envoyée, puis le 409
     (dialogue fermé, relecture, avis), puis un 400 (dialogue ouvert).
   - Les spécifications Playwright qui postent un règlement portent la version.
-- [ ] **T6 — E2E** de l'AC-2 à l'écran. On règle 100 depuis la fiche. Un second `POST` part par `authedApiContext` avec la
+- [x] **T6 — E2E** de l'AC-2 à l'écran. On règle 100 depuis la fiche. Un second `POST` part par `authedApiContext` avec la
   version d'avant : il rend 409. La fiche affiche un seul règlement. Puis l'avis de conflit, provoqué par un règlement passé
   par l'API pendant que le dialogue est ouvert.
-- [ ] **T7 — textes et outillage** : AC-9 à AC-12 ; les PDF des deux manuels sont régénérés et contrôlé aplati
+- [x] **T7 — textes et outillage** : AC-9 à AC-12 ; les PDF des deux manuels sont régénérés et contrôlé aplati
   (`pdftotext … | tr '\n' ' ' | tr -s ' '`, « Rien n'empêchant » absent).
-- [ ] **T8 — captures** : l'avis de conflit sur la fiche et sur l'échéancier, en thème clair, sur une base jetable, dans
-  `kesh-gate-logs/e343/captures/`.
+- [x] **T8 — captures** : l'avis de conflit sur la fiche et sur l'échéancier, en thème clair, sur une base jetable, dans
+  `kesh-gate-logs/e345/captures/` (clé du développement ; `e343` corrigé à la revue P1, A1-4).
 
 ### Mutations nommées
 
@@ -330,11 +331,283 @@ de la KF-029 se nomment un par un.
 - 2026-11-10 : **validation P4 ciblée (Haiku) : 1 L, remédié** (Opus 5.5). **F3** : relu, `^mod common` dans les huit
   appelants HTTP. Les deux ensembles sont distingués, repository (six fichiers) et route (huit fichiers). Prémisse du rapport
   nuancée : « six » désignait les appelants du repository, et c'était juste ; la liste des appelants HTTP manquait.
+- 2026-11-10/11 : **développement** (Opus 5.5, worktree `/home/gcorbaz/devel/kesh-e345`, base `665de151`, clé `e345` ; la
+  fiche disait `e343` pour les journaux, ils sont sous `kesh-gate-logs/e345/`). Commits `71beefe6` (développement),
+  `3224a199` (type d'une aide Vitest), `b8b749af` (borne des sites i18n), `0a886d6d` (`cargo fmt`). Choix neufs :
+  `e34-choix-autonomes-e345.md`, C-e345-1 à 9. Détail au Dev Agent Record.
+- 2026-11-11 : **revue de code P1** (trois lentilles B, E, A ; rapports `kesh-gate-logs/e345-review-p1-{B,E,A}.md`) :
+  **0 C, 0 H, 3 M** (dont un convergent), **12 L** — B 1 M et 2 L, E 1 M et 6 L, A 2 M et 4 L. Remédiation
+  (Opus 5.5), commit `73d07696` (code), puis `e7442559` (PDF). Prémisse de chaque finding relue au code avant d'appliquer.
+  - **B1-1 = E1-1 = A1-1 (M)** : les textes promettaient qu'un clic après une réponse perdue serait refusé. Décision de
+    l'orchestrateur : **le comportement ne change pas** (l'écran relit, et un clic après la relecture est un nouveau
+    règlement, accepté ; la version refuse le renvoi **sans relecture**). Récrits : CHANGELOG, manuel utilisateur (titre
+    et deux paragraphes), manuel d'administration, `docs/api-external.md`, `unknown-outcome.ts`, doc-comments de la
+    route et du repository, commentaire de `settleOutcome`, commentaires du Vitest et de deux specs. Symptôme grepé sur
+    tout le dépôt (« second clic », « nouveau clic », « écrit qu'une fois », « ne peut donc plus être écrit »,
+    « réponse perdue puis ») : plus aucune promesse. PDF contrôlés aplatis, deux apostrophes.
+  - **A1-2 (M)** : établi au code que, sur l'échéancier, `conflict-blocked` ne coexiste jamais avec une ligne affichée
+    (`{#if loading}` masque la liste pendant la relecture, l'échec la vide, un succès lève l'état). Le test affirme donc
+    la garantie réelle, aucun « Régler » pendant la relecture ; la mutation demandée (M7) **survit, équivalente**.
+  - **E1-2 (L)** : version supérieure refusée (test ; M8 `!=` → `>` tuée). **E1-3 (L)** : facture inconnue ou d'une autre
+    société → `NotFound` / 404 (tests DB et HTTP). **A1-3 (L)** : montant nul et écart d'arrondi autour de la version
+    (témoin d'arrondi compris). **A1-6 (L)** : `NotFound` dans l'ordre des refus du doc-comment.
+  - **E1-4 (L)** : l'annulation en échec relit aussi la facture (Vitest ; M10 tuée). **E1-5 = B1-3 (L)** : tout chargement
+    réussi lève l'état bloquant de l'échéancier, C-e345-10 (Vitest ; M9 tuée). **E1-7 (L)** : les deux enchaînements
+    testés. **B1-2 (L)** : fondu dans B1-1.
+  - **E1-6 (L)** : commentaire corrigé ; la fermeture du dialogue d'une autre ligne, héritée de la 33-6 dans trois
+    branches, n'est pas changée (C-e345-11) : **issue demandée** *(ouverte par l'orchestrateur : #1007 ; annoté le
+    2026-11-11 à la revue P2, A2-1)*.
+  - **A1-4 (L)** : T1 à T8 cochées, chemins `e345`. **A1-5 (L)** : bouton grisé expliqué (`transition-all` et
+    `disabled:opacity-50`, fondu saisi en cours), capture refaite après `opacity: 1` ; l'échec du premier essai `e2e-r3`
+    est dit au Dev Agent Record.
+  - **Tendance** : P1 3 M / 12 L. Aucun finding n'est né d'une remédiation précédente : tous sont d'origine. La
+    remédiation touche la production (fiche, échéancier, doc-comments) : une **P2 complète** suit (Sonnet), prompt
+    `34-5-reglement-idempotent-review-prompt-p2.md`.
+- 2026-11-11 : **revue de code P2** (complète, Sonnet, trois lentilles ; rapports
+  `kesh-gate-logs/e345-review-p2-{B,E,A}.md`) : **0 C, 0 H, 0 M, 8 L**. M7 confirmée équivalente par E et A. Remédiation
+  (Opus 5.5), prémisses relues au code :
+  - **B2-1 (L)** : pendant la relecture qui suit un 409, l'avis disait déjà « n'a pas pu être relue ». Il dit désormais
+    « Relecture en cours… » tant que `settleRereading` est vrai (fiche et échéancier ; deux clés neuves aux quatre
+    locales, `invoice-settle-conflict-rereading` et `due-dates-settle-conflict-rereading`). Le Vitest A1-2 de
+    l'échéancier, qui figeait le texte d'échec pendant l'attente, est récrit ; un Vitest neuf sur la fiche ; mutation M12.
+    L'avis d'issue inconnue (`blocked`, 33-6) porte la même tournure pendant sa relecture : non changé ici.
+  - **E2-2 (L)** : de-CH « bleibt nicht verfügbar » → « ist erst wieder verfügbar, wenn … », sur les deux clés de conflit
+    **et** les deux d'issue inconnue de la 33-6 (même tournure). en-CH (« stays unavailable ») et it-CH (« resta
+    indisponibile ») relus : sens juste.
+  - **B2-2 = E2-1 (L)** : doc-comment de `SettleInvoiceRequest` recoupé.
+  - **E2-3 (L)** : non corrigé ici ; l'avis de conflit ou d'issue inconnue reste affiché après un autre geste réussi :
+    **#1009**, ouverte par l'orchestrateur.
+  - **A2-1 (L)** : #1007 cité aux trois sites. **A2-3 (L)** : File List complétée.
+  - **A2-2 (L)** : M1 à M6 rejouées au dernier commit de code, M6 de l'échéancier jouée (M6e) ; réserve d'E sur la fiche :
+    M11 (`conflict-blocked` retiré du `settleBlocked` de la fiche). Résultats au Dev Agent Record.
+  - **Tendance** : P1 3 M / 12 L → P2 0 M / 8 L. La remédiation touche la production (deux pages, quatre locales) : une
+    **passe ciblée P3** (Haiku, une lentille, sur le seul commit de remédiation) suit, prompt
+    `34-5-reglement-idempotent-review-prompt-p3-ciblee.md`.
+- 2026-11-12 : **passe ciblée P3** (Haiku, sur `73ad22b3` ; rapport `kesh-gate-logs/e345-review-p3-ciblee.md`) :
+  **0 C, 0 H, 1 M, 1 L**. Remédiation (Opus 5.5), commit `59a90ed7`, prémisses relues au code :
+  - **C3-1 (M)** : sur l'échéancier, une relecture supplantée par un chargement de filtre remettait `settleRereading` à
+    faux pendant que ce chargement était en vol : l'avis disait « n'a pas pu être relue » et offrait *Relire* pendant une
+    relecture en cours. Défaut préexistant, que B2-1 ne couvrait pas. Désormais, seul le chargement le plus récent
+    (`load()`, `finally`, `seq === loadSeq`) clôt la relecture ; `rereadAfterSettle` ne la clôt plus. Vitest neuf
+    (relecture, puis filtre avant sa réponse, puis échec du filtre) ; mutation M13 tuée. Remédiée plutôt que tracée sur
+    décision de l'orchestrateur, la story étant le P1 de l'epic.
+  - **C3-2 (L)** : de-CH, l'espace avant « … » est retirée (usage du fichier).
+  - **Tendance** : P1 3 M / 12 L → P2 0 M / 8 L → P3 1 M / 1 L. Le MEDIUM de la P3 n'est pas né de la remédiation P2 :
+    il est préexistant, dans une zone que la P2 avait touchée. La remédiation touche la production (une page) : une
+    **passe ciblée P4** (Sonnet, une lentille, sur `59a90ed7`) suit, prompt
+    `34-5-reglement-idempotent-review-prompt-p4-ciblee.md`.
+- 2026-11-12 : **passe ciblée P4** (Sonnet, sur `59a90ed7` ; rapport `kesh-gate-logs/e345-review-p4-ciblee.md`) :
+  **0 finding**. Sur conseil de l'orchestrateur, un Vitest de plus, sans toucher la production : la relecture supplantée
+  par un filtre qui **réussit** (variante de C3-1), vert au Vitest du fichier (24 passés). **Boucle de revue close.**
+- 2026-11-12 : **synthèse de la revue de code** (quatre passes, modèles en rotation, contexte frais à chaque passe) :
+  - **P1**, complète, trois lentilles, Opus : 0 C, 0 H, **3 M**, 12 L.
+  - **P2**, complète, trois lentilles, Sonnet : 0 C, 0 H, 0 M, **8 L**.
+  - **P3**, ciblée sur la remédiation P2, une lentille, Haiku : 0 C, 0 H, **1 M**, 1 L (le MEDIUM était préexistant).
+  - **P4**, ciblée sur la remédiation P3, une lentille, Sonnet : **0**.
+  - Tendance : 3 M / 12 L → 0 M / 8 L → 1 M / 1 L → 0. Aucun finding n'est né d'une remédiation ; le seul MEDIUM
+    d'après la P1 était un défaut d'origine, dans une zone qu'une remédiation avait touchée.
+  - Décisions et reclassements :
+    - **B1-1 = E1-1 = A1-1** : le comportement ne change pas après une issue inconnue, décision de l'orchestrateur ;
+      les textes sont récrits.
+    - **A1-2** : M7 déclarée équivalente, confirmée par deux lentilles de la P2.
+    - **C3-1** : remédié plutôt que tracé, la story étant le P1 de l'epic.
+  - Issues ouvertes depuis la revue : **#1007** (dialogue d'une autre ligne fermé, E1-6) et **#1009** (avis resté
+    affiché après un autre geste, E2-3).
+  - Dernier commit de code : `59a90ed7`, gates complets verts (Dev Agent Record) ; le Vitest ajouté ensuite est un test
+    seul, vert.
 
 ## Dev Agent Record
 
 ### Agent Model Used
 
+Opus 5.5 (`claude-opus-5-5`), en autonomie.
+
 ### Completion Notes List
 
+**Étape 0.** Les deux LOW de la validation P5 (`e34-validate-p5-e343.md`) portent sur la 34-6 (F1) et la 34-8 (F2) :
+rien à traiter ici. Le point « à établir à l'étape 0 » de T4 (ce que rend `PROCESSLIST` sous le montage à deux
+requêtes) est **établi par le rouge** : sur le code d'avant, `attendre_des_requetes_en_cours(&pool, &["FROM invoices",
+"journal_entry_id", "FOR UPDATE"], 2, …)` a rendu vrai — l'assertion de montage est passée, l'échec portait sur les
+statuts (`[200, 200]`). M2 est donc prouvée, non déclarée. Inventaire des appelants recompté :
+`git grep -n "settle_invoice(" -- crates`, hors `src/` : **31 appels dans 14 fichiers** à la base (20 lignes à `HEAD`,
+l'aide `settle_at_current_version` en absorbant seize dans `invoice_settlement.rs`).
+
+**Rouges d'abord** (`kesh-gate-logs/e345/rouges.log`, journaux `rouge-ac2.log`, `rouge-ac4-compil.log`) :
+- HTTP, à l'exécution, sur le code de base : AC-1 (200 au lieu de 422), AC-2 (second envoi 200 au lieu de 409), AC-3
+  (`[200, 200]`) ; AC-6 vert, comme attendu.
+- `kesh-db`, à la compilation : six `E0061` (« takes 7 arguments but 8 arguments were supplied »).
+
+**Ce qui est fait.**
+- `settle_invoice(…, expected_version: i32)` : `version` lue dans le `SELECT … FOR UPDATE` de l'étape (1), comparée
+  après le statut, avant la date (`OptimisticLockConflict`). Doc-comment : ordre des refus avec la version, rejeu sûr.
+- Route : `SettleInvoiceRequest.version: i32` (obligatoire, `422` sans lui), passée au repository dans
+  `retry_on_deadlock`. Doc-comments récrits, et le commentaire voisin de `invoices.rs:986-991` qui disait encore « le
+  règlement ne prend pas de `version` » (trouvé par le grep du symptôme, hors liste de l'AC-9).
+- Tests : AC-1, AC-2, AC-3 (montage déterministe), AC-6 dans `invoice_settlement_response_e2e.rs` (C-e345-3) ; AC-4 en
+  deux tests dans `kesh-db/tests/invoice_settlement.rs` (version périmée sans rien écrire ; ordre statut → version →
+  date / contrepartie / trop-perçu). AC-5 : `settlement_is_replayed_when_it_is_the_deadlock_victim` passe avec la
+  version (gate). Aides : `kesh-db/tests/support/reglement_version.rs` et `kesh-api/tests/common/mod.rs`
+  (`invoice_version`, `settle_at_current_version`) ; lectures locales dans `lettering_documents.rs` et `kesh-report`
+  (C-e345-1, C-e345-2). `mod common;` ajouté à `invoice_echeancier_e2e.rs`, `invoice_send_email_e2e.rs`,
+  `reconciliation_e2e.rs`.
+- Frontend : la fiche envoie `invoice.version`, l'échéancier `cible.version` ; états `conflict` et `conflict-blocked`,
+  relecture paramétrée `rereadAfterSettle(blocking, arrival)` et `rereadFromBlocked()` ; encadrés `settle-conflict` et
+  `due-dates-settle-conflict` ; quatre clés aux quatre locales, replis identiques à `fr-CH` (C-e345-4, 5).
+- Playwright : `invoiceVersionViaApi` (C-e345-6) dans les huit specs qui postent un règlement ; spec neuve
+  `invoices-settle-version.spec.ts` (T6 : AC-2 à l'écran, avis de conflit sur la fiche et l'échéancier).
+- Textes : AC-9 (contrôle `git grep -nE "ne porte (pas de|aucune) version|Pas de .version|Aucun champ .version" --
+  frontend crates` : vide), manuel utilisateur § *Enregistrer et annuler un règlement*, manuel d'administration
+  § *Passer à la 0.17.6* (créée, C-e345-7), `docs/api-external.md` § *Enregistrer un règlement* (neuve, codes relus
+  dans `errors.rs` et `dates_recues.rs`), CHANGELOG `## [0.17.6] — Non publié` (*Corrigé* et *Modifié* ⚠️),
+  `scripts/recette-montee.sh` (C-e345-8 ; `scripts/tests/recette-montee.test.sh` vert, « aucune assertion en échec »).
+- Garde `i18n-keys.test.ts` : `sitesTotal` 2922 → 2928 (+6 : quatre avis, deux *Relire*), mesuré par la garde.
+
+**Mutations** (`kesh-gate-logs/e345/mut/M*.log`, `mutations.py`, `run.sh` ; motif unique vérifié, restauration
+`git checkout --` puis `touch`, « restauré : 0 fichier(s) modifié(s) » à chacune ; jouées sur `b8b749af`) :
+- M1 (comparaison retirée) : tuée — AC-2, AC-3 et les deux tests AC-4 rouges.
+- M2 (comparaison hors verrou, lecture ordinaire) : tuée — AC-3 `left: [200, 200]`, et le test d'ordre AC-4.
+- M3 (version d'ouverture de l'écran) : tuée — « deux acomptes successifs » (`expected 3 to be 4`) et le 409 (clic
+  suivant).
+- M4 fiche / M4 échéancier (409 traité comme un 4xx) : tuées, deux Vitest chacune.
+- M5 (numéro lu sur `markTarget` après relecture) : tuée — « expected 'Le règlement de la facture  n’a pas é…' to contain
+  'F-2026-005' ».
+- M6 (*Relire* depuis `conflict-blocked` → `verify`, fiche) : tuée. **Non jouée** : la M6 côté échéancier
+  (`rereadFromBlocked` jumeau), couverte par le test « 409 puis liste illisible… » sans mutation dédiée.
+
+**Gates** (au dernier commit de code `0a886d6d`, bases remises à neuf ; verrous de la station, `free -g` avant
+chaque commande, journaux `kesh-gate-logs/e345/gates-g2-*`, `front-*`) :
+- `scripts/test-fast.sh --ci` : **5144 passés, 12 ignorés** (fmt et clippy compris).
+- `cargo build --workspace --all-targets` : vert.
+- `scripts/gate-ci.sh kesh_ci_e345` : **5151 passés, 0 échec, 16 ignorés**.
+- Frontend : `npm run check` 0 erreur (r2, `3224a199`), `lint-i18n-ownership` vert, `npm run build` vert (r2) ;
+  `npm run test:unit` **2889 passés, 222 fichiers** (r3, `0a886d6d`). Entre r2 et `0a886d6d`, seuls un test et du
+  formatage Rust ont changé.
+- Gate ciblé intermédiaire (`cible-1.log`, 23 binaires touchés) : 753 passés.
+- ⚠️ Un premier `test-fast` (g1, `b8b749af`) a échoué sur `cargo fmt --check` (deux fichiers neufs) : corrigé par
+  `0a886d6d`, puis tout rejoué (g2).
+- **Différés par la pause des commandes lourdes** (décision de Guy du 2026-11-11, `kesh-gate-logs/PAUSE-HEAVY`), puis
+  joués à sa levée (`final-head.log`) :
+  - `make fr` : vert ; PDF des deux manuels commités (`1648975a`), la brochure, régénérée sans changement de source,
+    restaurée. Contrôle aplati (`pdftotext … | tr '\n' ' ' | tr -s ' '`) : « Rien n'empêchant » absent du manuel
+    utilisateur, « Un même règlement n’est écrit qu’une fois » présent ; « Passer à la 0.17.6 », « exige désormais le
+    champ version » et « OPTIMISTIC_LOCK_CONFLICT, sans rien écrire » présents au manuel d'administration.
+  - **E2E complet** (`e2e-r2/playwright.log`, base `kesh_e2e_e345` neuve, port 3345, runner avec `KESH_INBOX_DIR` et
+    `KESH_DOCUMENTS_DIR` égaux à ceux du backend) : **388 passés, 7 échecs, 18 ignorés**. Les sept, nommés contre
+    `docs/testing.md` § *Les échecs attendus* : `mode-expert.spec.ts:26` et `:41`, `onboarding-path-b.spec.ts:65` et
+    `:92`, `onboarding.spec.ts:57`, `:77` et `:150` — les sept de la KF-029 (#97). Aucun autre. La spec neuve
+    `invoices-settle-version.spec.ts` : 3 passés ; les specs modifiées (échéancier, annulation, solde, postes ouverts,
+    réconciliation, rappels, issue inconnue) passent.
+  - **Captures** (`kesh-gate-logs/e345/captures/`, thème clair, base jetable, spec de travail hors dépôt
+    `zz-capture-e345.spec.ts.joue`) : `fiche-conflit.png`, `fiche-conflit-non-relu.png` (bouton désactivé, *Relire*),
+    `fiche-conflit-apres-relire.png`, `echeancier-conflit.png` (l'avis nomme la facture). La relecture en échec est
+    simulée par une coupure de `GET /invoices/{id}` : *Relire* n'apparaît qu'après les reprises du client HTTP, et le
+    bandeau global « Base de données temporairement indisponible » s'affiche pendant ce temps (comportement existant).
+    Sur `fiche-conflit-apres-relire.png`, *Enregistrer un règlement* paraît encore grisé alors que le test l'a vu
+    activé juste avant la prise : à regarder en revue.
+  - ⚠️ *(Ajouté à la revue P1, A1-5.)* La première prise des captures (`e2e-r3`) a **échoué** sur le test « fiche,
+    conflit non relu puis Relire » : *Relire* n'était pas encore visible au bout des 5 s par défaut, la relecture coupée
+    n'ayant pas rendu la main. Rejouée seule en `e2e-r4` avec une attente de 90 s : passée. Le bouton grisé de la
+    première `fiche-conflit-apres-relire.png` s'explique par `transition-all` et `disabled:opacity-50` du composant
+    `Button` : le fondu était saisi en cours. La capture est refaite après `toHaveCSS("opacity", "1")`.
+
+**Revue de code P1 — remédiation** (commit `73d07696`, gates à ce commit, journaux `kesh-gate-logs/e345/chaine-p1-head.log`,
+`gates-p1g-*`, `p1-front-*`, `e2e-r5/`, `e2e-r6/`) :
+- `scripts/test-fast.sh --ci` : **5146 passés, 12 ignorés** ; `cargo build --workspace --all-targets` : vert ;
+  `gate-ci.sh kesh_ci_e345` : **5153 passés, 0 échec, 16 ignorés** ; `make fr` : vert, PDF commités (`e7442559`).
+- Captures reprises (`e2e-r6`, 3 passés) : les quatre images de `captures/` sont refaites ; sur
+  `fiche-conflit-apres-relire.png`, *Enregistrer un règlement* paraît désormais actif.
+- Frontend : `npm run check` 0 erreur, `lint-i18n-ownership` vert, Vitest **2894 passés, 222 fichiers**, `npm run build`
+  vert.
+- E2E complet (`e2e-r5`, base neuve) : **388 passés, 7 échecs, 18 ignorés** ; les sept sont ceux de la KF-029 (#97),
+  nommés comme au développement ; `invoices-settle-version.spec.ts` 3 passés.
+- Mutations de la remédiation (`mut/M7.log` à `M10.log`, `mut/campagne-p1.log`) : M7 (`conflict-blocked` retiré de
+  `settleBlocked`, échéancier) **survit, équivalente** (voir A1-2 au Change Log) ; M8 (`!=` → `>`) tuée par
+  `la_version_est_une_egalite_et_ses_voisins_gardent_leur_ordre` (la version future écrivait un règlement) — un premier
+  essai n'a pas pu s'appliquer, le motif figurant deux fois (le solde porte la même garde), et a été ancré sur le message
+  du statut ; M9 (le chargement ne lève plus l'état) tuée par le Vitest d'E1-5 ; M10 (l'annulation en échec ne relit
+  plus la facture) tuée par le Vitest d'E1-4.
+- Décomptes, de `992799e3` à `73d07696` : +2 tests Rust (`la_version_est_une_egalite_et_ses_voisins_gardent_leur_ordre`,
+  `an_unknown_invoice_is_not_found_whatever_the_version`), +5 Vitest (fiche 2, échéancier 3).
+
+**Revue de code P2 — remédiation** (commit `73ad22b3`, dernier commit de code ; journal `kesh-gate-logs/e345/chaine-p2-head.log`).
+Deux voies de verrou, sur consigne de l'orchestrateur : frontend et mutations frontend par `.gate-front.lock`, cargo et
+E2E par `station-heavy` et `.gate.lock`.
+- **Rust** : seuls un doc-comment (`routes/invoices.rs`) et les quatre `.ftl` ont changé. Joués, comme l'orchestrateur le
+  permet : `cargo fmt --check` vert, `cargo clippy --workspace --all-targets -D warnings` vert, `cargo nextest -p
+  kesh-i18n` **41 passés**, `cargo build -p kesh-api` vert (binaire de l'E2E). **Non joués** à ce commit :
+  `test-fast --ci` et `gate-ci` (derniers verts à `73d07696` : 5146 et 5153).
+- **Frontend complet** : `check` 0 erreur, `lint-i18n-ownership` vert, Vitest **2895 passés, 222 fichiers**, `build` vert.
+- **E2E complet** (`e2e-r7`, base recréée) : **388 passés, 7 échecs, 18 ignorés** ; les sept de la KF-029 (#97), nommés
+  comme au développement ; `invoices-settle-version.spec.ts` 3 passés.
+- **Mutations rejouées au dernier commit de code** (A2-2 ; `mut/campagne-p2-front.log`, `mut/campagne-p2-rust.log`, en-têtes
+  `HEAD 73ad22b3`), toutes tuées, restauration « 0 fichier(s) modifié(s) » :
+  - M1 : cinq tests rouges (AC-2, AC-3, les trois tests AC-4) ; M2 : AC-3 `left: [200, 200]` et le test d'ordre.
+  - M3 : `expected 3 to be 4` ; M4f : quatre Vitest de la fiche ; M4e : cinq de l'échéancier ; M5 : numéro absent de
+    l'avis ; M6 : le Vitest de l'AC-7.
+  - **M6e** (jamais jouée jusqu'ici, *Relire* de l'échéancier mène à `verify`) : tuée par « 409 puis liste illisible ».
+  - **M11** (réserve d'E : `conflict-blocked` retiré du `settleBlocked` de la fiche) : **tuée**, deux Vitest
+    (`expected false to be true` sur `disabled`).
+  - **M12** et **M12e** (B2-1 : l'avis dit « échec » pendant la relecture, fiche et échéancier) : tuées par les Vitest
+    neuf et récrit.
+  - Une campagne a été arrêtée puis relancée dans un autre ordre (voie frontend d'abord), M1 ayant attendu trente minutes
+    la voie base ; le fichier muté a été restauré avant la relance, `git status` vide.
+- Captures non reprises : la remédiation ne change que l'avis **pendant** la relecture, que les captures ne montrent pas ;
+  `fiche-conflit-non-relu.png` montre l'état d'après l'échec, au texte inchangé.
+- Décomptes, de `73d07696` à `73ad22b3` : +1 Vitest (fiche, B2-1 ; celui de l'échéancier est récrit), 2895 − 2894 = 1 ;
+  i18n `sitesTotal` 2928 → 2930.
+- *(Ajouté le 2026-11-12.)* Le gate backend complet de `73ad22b3`, demandé par l'orchestrateur pendant la P3 (les `.ftl`
+  sont lus par des tests d'autres crates), a été **arrêté avant d'avoir démarré** (il attendait le verrou) : un commit de
+  code suivait. Il est joué au commit suivant, ci-dessous.
+
+**Passe ciblée P3 — remédiation** (commit `59a90ed7`, **dernier commit de code** ; journal
+`kesh-gate-logs/e345/chaine-p3-head.log`), deux voies de verrou :
+- **Backend complet**, bases remises à neuf : `scripts/test-fast.sh --ci` **5146 passés, 12 ignorés** ;
+  `scripts/gate-ci.sh kesh_ci_e345` **5153 passés, 0 échec, 16 ignorés** ; `cargo build -p kesh-api` vert.
+- **Frontend complet** : `check` 0 erreur, `lint-i18n-ownership` vert, Vitest **2896 passés, 222 fichiers**, `build` vert.
+- **E2E complet** (`e2e-r8`, base recréée) : **388 passés, 7 échecs, 18 ignorés** ; les sept de la KF-029 (#97), nommés
+  comme au développement ; `invoices-settle-version.spec.ts` 3 passés.
+- **Mutations** à `59a90ed7` (`mut/campagne-p3.log`) : **M13** (la relecture remet `settleRereading` à faux dès son propre
+  retour) tuée par le Vitest de C3-1 (`expected … to contain 'Relecture de la liste en cours'`) ; rejouées et toujours
+  tuées : M4e (6 Vitest), M5 (3), M6e (1), M9 (1), M12e (2). Restauration « 0 fichier(s) modifié(s) » à chacune. Les
+  mutations de la fiche (M3, M4f, M6, M11, M12) et du backend (M1, M2) restent celles de `73ad22b3`, ce commit ne
+  touchant ni la fiche ni le Rust.
+- Décomptes, de `73ad22b3` à `59a90ed7` : +1 Vitest (échéancier, C3-1), 2896 − 2895 = 1.
+
+**Écarts à la consigne Edit.** Deux fichiers de test écrits par le shell, non par l'outil : les tests Vitest de la
+fiche ajoutés en fin de `invoice-settlements-page.test.ts` par `cat >>` (ajout, rien remplacé), et la spec neuve
+`invoices-settle-version.spec.ts` créée par `cat >` (l'outil Write convenait). Aucun `sed -i` ni `perl -pi`. `cargo fmt
+--all` a formaté quatre fichiers Rust (outil du projet). L'outil ne manquait de rien : c'est un écart de commodité.
+
+**Limites voisines.** Aucune nouvelle issue à ouvrir au développement. À la revue P1, une issue est demandée : sur
+l'échéancier, un dialogue de règlement ouvert sur une autre ligne pendant l'envoi est fermé par la fin de l'envoi, dans
+les trois branches (succès, issue inconnue, 409), comportement hérité de la 33-6 (E1-6, C-e345-11). *(Ouverte : #1007 ;
+annoté le 2026-11-11 à la revue P2, A2-1.)* À la revue P2 : un avis de conflit ou d'issue inconnue reste affiché après
+un autre geste réussi de l'écran (E2-3) : **#1009**, ouverte par l'orchestrateur.
+
 ### File List
+
+- `crates/kesh-db/src/repositories/invoice_settlements_write.rs`
+- `crates/kesh-api/src/routes/invoices.rs`
+- `crates/kesh-db/tests/support/reglement_version.rs` (neuf), `support/lettering_documents.rs`, `invoice_settlement.rs`,
+  `credit_notes_repository.rs`, `filet_bilan_clos.rs`, `invoice_amount_due_parity.rs`, `invoice_write_off.rs`,
+  `invoices_validate_vat.rs`
+- `crates/kesh-api/tests/common/mod.rs`, `invoice_settlement_response_e2e.rs`, `accounts_designated_archive_e2e.rs`,
+  `admin_full_import_e2e.rs`, `bank_accounts_closed_e2e.rs`, `dates_bornes_e2e.rs`, `invoice_echeancier_e2e.rs`,
+  `invoice_send_email_e2e.rs`, `reconciliation_e2e.rs`, `reconciliation_link_e2e.rs`, `reconciliation_link_entry_e2e.rs`,
+  `rejeu_interblocage_e2e.rs`, `services_rollout.rs`
+- `crates/kesh-report/tests/aged_receivables.rs`
+- `crates/kesh-i18n/locales/{fr-CH,de-CH,en-CH,it-CH}/messages.ftl`
+- `frontend/src/lib/features/invoices/invoices.api.ts`, `invoices.types.ts`, `frontend/src/lib/shared/utils/unknown-outcome.ts`
+- `frontend/src/routes/(app)/invoices/[id]/+page.svelte`, `invoice-settlements-page.test.ts`
+- `frontend/src/routes/(app)/invoices/due-dates/+page.svelte`, `due-dates-page.test.ts`
+- `frontend/src/lib/shared/i18n-keys.test.ts`
+- `frontend/tests/e2e/helpers/api-fixtures.ts`, `invoices-settle-version.spec.ts` (neuf), `invoices-settle-unknown-outcome.spec.ts`,
+  `invoices_echeancier.spec.ts`, `invoices-settlement-cancel.spec.ts`, `invoice-write-off.spec.ts`, `open-items.spec.ts`,
+  `reconciliation-amount-due.spec.ts`, `reconciliation-link.spec.ts`, `reconciliation-priority.spec.ts`, `reminders.spec.ts`
+- `docs/manual/fr/user-manual.tex`, `docs/manual/fr/admin-manual.tex`, `docs/api-external.md`, `CHANGELOG.md`
+- `docs/manual/fr/user-manual.pdf`, `docs/manual/fr/admin-manual.pdf` (régénérés)
+- `scripts/recette-montee.sh`
+- `_bmad-output/implementation-artifacts/e34-choix-autonomes-e345.md` (neuf),
+  `34-5-reglement-idempotent-review-prompt-p1.md`, `34-5-reglement-idempotent-review-prompt-p2.md`,
+  `34-5-reglement-idempotent-review-prompt-p3-ciblee.md` et `34-5-reglement-idempotent-review-prompt-p4-ciblee.md`
+  (neufs), cette fiche, `sprint-status.yaml`

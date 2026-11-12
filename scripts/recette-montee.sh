@@ -504,7 +504,11 @@ peupler "validation de la facture 2" POST "/api/v1/invoices/$F2/validate" >/dev/
 R=$(peupler "lecture de la facture 2" GET "/api/v1/invoices/$F2") || exit $?
 DU=$(printf '%s' "$R" | jq -r '.remainingAmount // .amountDue // .totalTtc // empty')
 [ -n "$DU" ] || echec 1 "reste dû de la facture 2 illisible"
-peupler "règlement de la facture 2" POST "/api/v1/invoices/$F2/settlements" -d "{\"settlementType\":\"internal_account\",\"accountId\":$CAISSE,\"amount\":\"$DU\",\"settledOn\":\"$JOUR\"}" >/dev/null || exit $?
+# Story 34-5 (#951) : la version de la facture est exigée depuis la 0.17.6 ; une
+# image antérieure l'ignore (le corps n'y refuse pas les champs inconnus).
+VF2=$(printf '%s' "$R" | jq -r '.version // empty')
+[[ "$VF2" =~ ^[0-9]+$ ]] || echec 1 "version de la facture 2 illisible"
+peupler "règlement de la facture 2" POST "/api/v1/invoices/$F2/settlements" -d "{\"settlementType\":\"internal_account\",\"accountId\":$CAISSE,\"amount\":\"$DU\",\"settledOn\":\"$JOUR\",\"version\":$VF2}" >/dev/null || exit $?
 
 R=$(peupler "lecture des réglages de facturation" GET /api/v1/company/invoice-settings) || exit $?
 R=$(printf '%s' "$R" | jq --argjson p "$CREANCIERS" '.defaultPayableAccountId=$p') || echec 1 "réglages de facturation illisibles"

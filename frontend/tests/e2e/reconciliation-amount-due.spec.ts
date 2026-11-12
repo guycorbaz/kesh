@@ -35,6 +35,7 @@ import {
 import {
 	createContactWithAddressViaApi,
 	createAndValidateInvoiceViaApi,
+	invoiceVersionViaApi,
 } from './helpers/api-fixtures';
 
 const FIXTURE = path.join(
@@ -102,6 +103,7 @@ async function partiallySettledInvoiceAndItsBalance(
 				accountId: cash!.id,
 				amount: (partialCents / 100).toFixed(2),
 				settledOn: '2026-05-12',
+				version: await invoiceVersionViaApi(ctx, invoiceId),
 			},
 		});
 		expect(settled.ok(), `règlement partiel: ${settled.status()} ${await settled.text()}`).toBeTruthy();

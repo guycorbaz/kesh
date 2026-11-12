@@ -63,15 +63,25 @@ impl TestApp {
         resp.json().await.unwrap()
     }
 
+    /// Règle `amount` à la version que la facture porte au moment de l'appel
+    /// (Story 34-5, #951 : la version est exigée).
     async fn settle(&self, id: i64, amount: &str) -> Value {
-        self.post(
-            &format!("/api/v1/invoices/{id}/settlements"),
-            Some(json!({
-                "settlementType": "internal_account",
-                "accountId": self.caisse,
-                "amount": amount,
-                "settledOn": "2026-04-15",
-            })),
+        let version = self.get(&format!("/api/v1/invoices/{id}")).await["version"].clone();
+        let (status, body) = self.settle_with(id, amount, Some(version)).await;
+        assert_eq!(status, 200, "règlement : {body}");
+        body
+    }
+
+    /// Le `POST` d'un règlement tel quel, `version` comprise ou omise, et sa
+    /// réponse brute : statut et corps (Story 34-5).
+    async fn settle_with(&self, id: i64, amount: &str, version: Option<Value>) -> (u16, Value) {
+        settle_request(
+            &self.client,
+            &self.url(&format!("/api/v1/invoices/{id}/settlements")),
+            &self.token,
+            self.caisse,
+            amount,
+            version,
         )
         .await
     }
@@ -91,6 +101,41 @@ impl TestApp {
             "montage : la facture porte des lignes"
         );
     }
+}
+
+/// Le `POST` d'un règlement par la caisse, hors de `TestApp` pour partir d'une
+/// tâche à part (AC-3 de la 34-5) : rend le statut et le corps, sans rien
+/// affirmer. Sans `version`, le corps l'omet.
+async fn settle_request(
+    client: &reqwest::Client,
+    url: &str,
+    token: &str,
+    caisse: i64,
+    amount: &str,
+    version: Option<Value>,
+) -> (u16, Value) {
+    let mut body = json!({
+        "settlementType": "internal_account",
+        "accountId": caisse,
+        "amount": amount,
+        "settledOn": "2026-04-15",
+    });
+    if let Some(version) = version {
+        body["version"] = version;
+    }
+    let resp = client
+        .post(url)
+        .bearer_auth(token)
+        .json(&body)
+        .send()
+        .await
+        .unwrap();
+    let status = resp.status().as_u16();
+    let text = resp.text().await.unwrap();
+    (
+        status,
+        serde_json::from_str(&text).unwrap_or(Value::String(text)),
+    )
 }
 
 fn test_config() -> Config {
@@ -391,6 +436,190 @@ async fn a_partial_cancellation_returns_what_was_written(pool: MySqlPool) {
     assert_eq!(decimal(&invoice["amountSettled"]), dec!(40.00));
     assert_eq!(decimal(&invoice["amountDue"]), dec!(60.00));
     assert!(invoice["paidAt"].is_null());
+}
+
+// ---------------------------------------------------------------------------
+// Story 34-5 (#951) — un second envoi du même règlement n'écrit rien
+// ---------------------------------------------------------------------------
+
+/// Ce qu'un règlement laisse en base : lignes `invoice_settlements`, écritures
+/// de règlement distinctes, entrées d'audit `invoice.partially_settled`.
+async fn settlement_traces(pool: &MySqlPool, id: i64) -> (i64, i64, i64) {
+    let rows: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM invoice_settlements WHERE invoice_id = ?")
+            .bind(id)
+            .fetch_one(pool)
+            .await
+            .unwrap();
+    let entries: i64 = sqlx::query_scalar(
+        "SELECT COUNT(DISTINCT journal_entry_id) FROM invoice_settlements WHERE invoice_id = ?",
+    )
+    .bind(id)
+    .fetch_one(pool)
+    .await
+    .unwrap();
+    let audits: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM audit_log WHERE entity_type = 'invoice' AND entity_id = ? \
+         AND action = 'invoice.partially_settled'",
+    )
+    .bind(id)
+    .fetch_one(pool)
+    .await
+    .unwrap();
+    (rows, entries, audits)
+}
+
+/// Le seul règlement écrit, et le reste dû de 200 — ce que l'AC-2 et l'AC-3 exigent
+/// après deux envois du même règlement de 100 sur 300.
+async fn assert_one_settlement_of_100(app: &TestApp, pool: &MySqlPool, id: i64) {
+    assert_eq!(
+        settlement_traces(pool, id).await,
+        (1, 1, 1),
+        "une ligne, une écriture de règlement, une entrée d'audit"
+    );
+    let entries_in_journal: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM journal_entries je \
+         JOIN invoice_settlements s ON s.journal_entry_id = je.id WHERE s.invoice_id = ?",
+    )
+    .bind(id)
+    .fetch_one(pool)
+    .await
+    .unwrap();
+    assert_eq!(entries_in_journal, 1, "une seule écriture au journal");
+    let read = app.get(&format!("/api/v1/invoices/{id}")).await;
+    assert_eq!(decimal(&read["amountDue"]), dec!(200.00));
+}
+
+/// AC-1 : un corps sans `version` est refusé par l'extracteur, `422`, et rien
+/// n'est écrit.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn a_settlement_without_version_is_refused_by_the_extractor(pool: MySqlPool) {
+    let (app, id) = setup(&pool, dec!(300.00)).await;
+    let before = app.get(&format!("/api/v1/invoices/{id}")).await;
+
+    let (status, body) = app.settle_with(id, "100.00", None).await;
+
+    assert_eq!(status, 422, "corps sans version : {body}");
+    assert_eq!(settlement_traces(&pool, id).await, (0, 0, 0));
+    let after = app.get(&format!("/api/v1/invoices/{id}")).await;
+    assert_eq!(after["version"], before["version"], "version inchangée");
+}
+
+/// ⛔ AC-2, le défaut de #951 : deux envois **identiques**, même version, d'un
+/// règlement partiel de 100 sur 300. Le premier rend 200, le second 409, et un
+/// seul règlement est écrit. Avant la 34-5, la route ignorait la version et
+/// rendait 200 deux fois : deux règlements, deux écritures, un reste dû de 100.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn the_same_settlement_sent_twice_is_written_once(pool: MySqlPool) {
+    let (app, id) = setup(&pool, dec!(300.00)).await;
+    let version = app.get(&format!("/api/v1/invoices/{id}")).await["version"].clone();
+
+    let (first, first_body) = app.settle_with(id, "100.00", Some(version.clone())).await;
+    let (second, second_body) = app.settle_with(id, "100.00", Some(version)).await;
+
+    assert_eq!(first, 200, "premier envoi : {first_body}");
+    assert_eq!(second, 409, "second envoi, même version : {second_body}");
+    assert_eq!(second_body["error"]["code"], "OPTIMISTIC_LOCK_CONFLICT");
+    assert_one_settlement_of_100(&app, &pool, id).await;
+}
+
+/// ⛔ AC-3 : deux envois **simultanés** du même règlement, même version.
+///
+/// Montage déterministe (patron `victime`, `rejeu_interblocage_e2e.rs`) : une
+/// transaction de test tient la facture ; les deux requêtes partent et sont vues
+/// **toutes deux** en attente sur le `FOR UPDATE` de l'étape (1) ; la transaction
+/// de test est annulée. Une comparaison faite sous le verrou rend un 200 et un
+/// 409 ; une comparaison faite avant lui, par une lecture ordinaire (M2), lit deux
+/// fois l'ancienne version et rend deux 200 — les montants (100 sur 300) laissent
+/// passer le trop-perçu, qui ne peut donc pas masquer le défaut.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn two_simultaneous_identical_settlements_write_one(pool: MySqlPool) {
+    let (app, id) = setup(&pool, dec!(300.00)).await;
+    let version = app.get(&format!("/api/v1/invoices/{id}")).await["version"].clone();
+
+    let mut holder = pool.begin().await.unwrap();
+    sqlx::query("SELECT id FROM invoices WHERE id = ? FOR UPDATE")
+        .bind(id)
+        .fetch_all(&mut *holder)
+        .await
+        .unwrap();
+
+    let url = app.url(&format!("/api/v1/invoices/{id}/settlements"));
+    let spawn = |v: Value| {
+        let (client, url, token, caisse) = (
+            app.client.clone(),
+            url.clone(),
+            app.token.clone(),
+            app.caisse,
+        );
+        tokio::spawn(async move {
+            settle_request(&client, &url, &token, caisse, "100.00", Some(v)).await
+        })
+    };
+    let a = spawn(version.clone());
+    let b = spawn(version);
+
+    let both_waiting = kesh_db::test_fixtures::attendre_des_requetes_en_cours(
+        &pool,
+        &["FROM invoices", "journal_entry_id", "FOR UPDATE"],
+        2,
+        || a.is_finished() || b.is_finished(),
+    )
+    .await;
+    assert!(
+        both_waiting,
+        "les deux envois devaient attendre le verrou de la facture — le montage ne prouve rien sinon"
+    );
+    holder.rollback().await.unwrap();
+
+    let (ra, rb) = (a.await.unwrap(), b.await.unwrap());
+    let mut statuses = [ra.0, rb.0];
+    statuses.sort_unstable();
+    assert_eq!(statuses, [200, 409], "un 200 et un 409 : {ra:?} / {rb:?}");
+    let refused = if ra.0 == 409 { &ra.1 } else { &rb.1 };
+    assert_eq!(refused["error"]["code"], "OPTIMISTIC_LOCK_CONFLICT");
+    assert_one_settlement_of_100(&app, &pool, id).await;
+}
+
+/// Revue P1 (E1-3) : une facture inconnue rend `404`, et non `409`, quelle que soit la
+/// version envoyée — un conflit dirait au client que la facture existe.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn an_unknown_invoice_is_not_found_whatever_the_version(pool: MySqlPool) {
+    let (app, id) = setup(&pool, dec!(300.00)).await;
+    for version in [0, 1, 99] {
+        let (status, body) = app
+            .settle_with(id + 9999, "100.00", Some(json!(version)))
+            .await;
+        assert_eq!(status, 404, "version {version} : {body}");
+        assert_eq!(body["error"]["code"], "NOT_FOUND");
+    }
+    assert_eq!(settlement_traces(&pool, id).await, (0, 0, 0));
+}
+
+/// AC-6 : la réponse porte la version incrémentée, et un règlement qui la reprend
+/// passe — deux acomptes successifs depuis le même écran restent possibles. Le
+/// refus du trop-perçu borne toujours la somme.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn a_settlement_at_the_returned_version_is_accepted(pool: MySqlPool) {
+    let (app, id) = setup(&pool, dec!(300.00)).await;
+    let version = app.get(&format!("/api/v1/invoices/{id}")).await["version"].clone();
+
+    let (s1, r1) = app.settle_with(id, "100.00", Some(version.clone())).await;
+    assert_eq!(s1, 200, "{r1}");
+    assert_eq!(
+        r1["invoice"]["version"].as_i64().unwrap(),
+        version.as_i64().unwrap() + 1
+    );
+    let (s2, r2) = app
+        .settle_with(id, "100.00", Some(r1["invoice"]["version"].clone()))
+        .await;
+    assert_eq!(s2, 200, "second acompte, à la version rendue : {r2}");
+    assert_eq!(decimal(&r2["invoice"]["amountDue"]), dec!(100.00));
+
+    let (s3, r3) = app
+        .settle_with(id, "150.00", Some(r2["invoice"]["version"].clone()))
+        .await;
+    assert_eq!(s3, 400, "le trop-perçu reste refusé, version à jour : {r3}");
 }
 
 // ---------------------------------------------------------------------------

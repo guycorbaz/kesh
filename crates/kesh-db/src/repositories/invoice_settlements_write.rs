@@ -87,15 +87,30 @@ async fn read_after_write_in_tx(
 /// — l'écriture serait `D 1100 / C 1100`, équilibrée, et le reste dû baisserait
 /// sans que rien ne bouge au grand livre.
 ///
-/// **Ordre des refus**, celui des lectures : statut et date ; créance (lue sur
-/// la vente) ; **contrepartie** — compte bancaire inconnu (404), sans compte lié
-/// (`CONFIGURATION_REQUIRED`), compte interne archivé ou inconnu
-/// (`INACTIVE_OR_INVALID_ACCOUNTS`), non imputable (`ACCOUNT_NOT_POSTABLE`),
-/// **puis** contrepartie = créance (`SETTLEMENT_COUNTERPARTY_IS_CLAIM_ACCOUNT`,
-/// `role: counterparty`) ; **trop-perçu** ; **compte d'arrondi** —
-/// `ROUNDING_ACCOUNT_NOT_CONFIGURED`, puis compte d'arrondi = créance
-/// (`role: rounding`). Trop-perçu et écart d'arrondi sont exclusifs. Aucun de
-/// ces refus n'écrit rien.
+/// ⛔ **Un second envoi du même règlement sans relecture est refusé** (Story
+/// 34-5, #951) : `expected_version` est la version de la facture que l'appelant a
+/// lue. Elle est comparée **sous le verrou** de l'étape (1), et tout règlement
+/// l'incrémente, partiel compris : un renvoi aveugle après une réponse perdue, un
+/// second onglet ou la relance d'une intégration portent l'ancienne version et
+/// sont refusés en `OptimisticLockConflict`, sans rien écrire. Un envoi à la
+/// version relue est un nouveau règlement, accepté. Un envoi concurrent attend le
+/// verrou du premier, puis lit la version qu'il a validée. Le rejeu sur
+/// interblocage reste sûr : une tentative annulée laisse la version intacte. Le
+/// refus du trop-perçu, lui, reste le garde de la **somme** de règlements
+/// successifs et légitimes, chacun à la version rendue par le précédent.
+///
+/// **Ordre des refus**, celui des lectures : facture inconnue ou d'une autre
+/// société (`NotFound`, lue par le même verrou) ; statut ; **version** ; date ;
+/// créance (lue sur la vente) ; **contrepartie** — compte bancaire inconnu
+/// (404), sans compte lié (`CONFIGURATION_REQUIRED`), compte interne archivé ou
+/// inconnu (`INACTIVE_OR_INVALID_ACCOUNTS`), non imputable
+/// (`ACCOUNT_NOT_POSTABLE`), **puis** contrepartie = créance
+/// (`SETTLEMENT_COUNTERPARTY_IS_CLAIM_ACCOUNT`, `role: counterparty`) ;
+/// **trop-perçu** ; **compte d'arrondi** — `ROUNDING_ACCOUNT_NOT_CONFIGURED`,
+/// puis compte d'arrondi = créance (`role: rounding`). Trop-perçu et écart
+/// d'arrondi sont exclusifs. Le montant non positif est refusé avant la
+/// transaction. Aucun de ces refus n'écrit rien, et la version reste inchangée.
+#[allow(clippy::too_many_arguments)]
 pub async fn settle_invoice(
     pool: &MySqlPool,
     user_id: i64,
@@ -104,6 +119,7 @@ pub async fn settle_invoice(
     choice: SettlementChoice,
     amount: Decimal,
     settled_on: NaiveDate,
+    expected_version: i32,
 ) -> Result<SettlementOutcome, DbError> {
     if amount <= Decimal::ZERO {
         return Err(DbError::InvalidInput("amountMustBePositive".into()));
@@ -111,16 +127,20 @@ pub async fn settle_invoice(
 
     let mut tx = pool.begin().await.map_err(map_db_error)?;
 
-    // (1) Verrou facture + garde de statut.
-    let (status, sale_entry_id, project_id, invoice_number, invoice_date): (
+    // (1) Verrou facture + gardes : statut, puis version (Story 34-5, #951).
+    //     La version est lue DANS la lecture verrouillante : lue avant, par une
+    //     lecture ordinaire, deux envois simultanés liraient tous deux l'ancienne
+    //     et passeraient l'un après l'autre.
+    let (status, sale_entry_id, project_id, invoice_number, invoice_date, version): (
         String,
         Option<i64>,
         Option<i64>,
         Option<String>,
         NaiveDate,
+        i32,
     ) = sqlx::query_as(
-        "SELECT status, journal_entry_id, project_id, invoice_number, date FROM invoices \
-         WHERE id = ? AND company_id = ? FOR UPDATE",
+        "SELECT status, journal_entry_id, project_id, invoice_number, date, version \
+         FROM invoices WHERE id = ? AND company_id = ? FOR UPDATE",
     )
     .bind(invoice_id)
     .bind(company_id)
@@ -133,6 +153,9 @@ pub async fn settle_invoice(
         return Err(DbError::IllegalStateTransition(format!(
             "seule une facture validée peut être réglée (statut actuel : '{status}')"
         )));
+    }
+    if version != expected_version {
+        return Err(DbError::OptimisticLockConflict);
     }
     let sale_entry_id = sale_entry_id
         .ok_or_else(|| DbError::Invariant("facture validée sans écriture de vente".into()))?;

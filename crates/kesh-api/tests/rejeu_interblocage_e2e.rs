@@ -572,6 +572,10 @@ async fn settlement_is_replayed_when_it_is_the_deadlock_victim(pool: MySqlPool) 
         .unwrap();
 
     // (2) Le règlement par compte interne : facture, compte, puis l'exercice.
+    //     Story 34-5 (#951) : avec la version de la facture, lue avant l'envoi
+    //     par une lecture ordinaire, que le verrou de la lourde ne bloque pas.
+    //     La tentative annulée laisse la version intacte : le rejeu passe.
+    let version = common::invoice_version(&pool, facture).await;
     let route = requete_en_tache(
         &ctx,
         reqwest::Method::POST,
@@ -581,6 +585,7 @@ async fn settlement_is_replayed_when_it_is_the_deadlock_victim(pool: MySqlPool) 
             "accountId": ctx.compte("1000"),
             "amount": "108.10",
             "settledOn": aujourd_hui().to_string(),
+            "version": version,
         })),
     );
     // (3) La facture, que tient la route.
@@ -639,6 +644,7 @@ async fn settlement_cancellation_is_replayed_when_it_is_the_deadlock_victim(pool
             "accountId": ctx.compte("1000"),
             "amount": "108.10",
             "settledOn": aujourd_hui().to_string(),
+            "version": common::invoice_version(&pool, facture).await,
         })),
     )
     .await;
@@ -1582,6 +1588,7 @@ async fn facture_reglee_de_60(pool: &MySqlPool, ctx: &Contexte) -> (i64, i64) {
             "accountId": ctx.compte("1000"),
             "amount": "60.00",
             "settledOn": aujourd_hui().to_string(),
+            "version": common::invoice_version(pool, facture).await,
         })),
     )
     .await;
@@ -2286,6 +2293,7 @@ async fn settlement_cancellation_recheck_cycle_is_replayed(pool: MySqlPool) {
             "bankAccountId": compte,
             "amount": "108.10",
             "settledOn": aujourd_hui().to_string(),
+            "version": common::invoice_version(&pool, facture).await,
         })),
     )
     .await;

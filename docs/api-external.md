@@ -520,6 +520,27 @@ Corps : `{ "version": n }` — le verrou optimiste. Réponse : la facture, même
 
 ⚠️ **Un brouillon qui porte déjà un numéro ne change pas d'exercice** : `PUT /invoices/{id}` refuse une date hors de l'exercice qui a émis le numéro (`INVOICE_NUMBER_FISCAL_YEAR_MISMATCH`, `409`).
 
+### Enregistrer un règlement
+
+**`POST /api/v1/invoices/{id}/settlements`** — écriture (`read-write`), ouverte aux clés. Corps : `{ "settlementType", "bankAccountId"?, "accountId"?, "amount", "settledOn", "version" }` — `settlementType` vaut `bank_transfer` (avec `bankAccountId`, un compte bancaire lié à un compte du grand livre) ou `internal_account` (avec `accountId`, un compte du plan actif et imputable : caisse, poste, compensation) ; `amount` est positif et au centime ; `settledOn` est la date du règlement (`AAAA-MM-JJ`). Le règlement passe son écriture (`D contrepartie / C débiteurs`, journal *Banque* ou *OD*) et réduit le reste dû ; un paiement égal au reste arrondi au centime solde la facture, l'écart passant au compte de différences d'arrondi. Réponse : `{ invoice, journalEntryId, amountDueAfter, fullySettled }`, où `invoice` est la facture **à jour**, `version` comprise.
+
+⚠️ **`version` est exigée** *(depuis la v0.17.6, [#951](https://github.com/guycorbaz/kesh/issues/951) — changement de contrat)* : la version de la facture lue par le client, par `GET /invoices/{id}` ou dans la réponse du geste précédent. Un corps sans elle est refusé par l'extracteur (`422`), sans rien écrire. Tout règlement incrémente la version, partiel compris : un **second envoi du même règlement sans relecture** — corps renvoyé après une réponse perdue, relance automatique, second onglet ouvert avant le premier règlement, deux envois simultanés — porte l'ancienne et est refusé en `409 OPTIMISTIC_LOCK_CONFLICT`, sans rien écrire. **Relisez la facture par `GET` avant de relancer**, et vérifiez ses règlements (`GET /invoices/{id}/settlements`) : le premier envoi a pu être écrit. Un règlement envoyé avec la version relue est un nouveau règlement, et il est accepté : la version protège du renvoi aveugle, non d'une décision prise après relecture. Deux acomptes successifs restent possibles, le second avec la `version` rendue par le premier ; le refus du trop-perçu borne toujours leur somme. Jusqu'à la v0.17.5, le champ était ignoré, et un second envoi écrivait un second règlement.
+
+Refus, dans l'ordre où ils parlent ; aucun n'écrit rien, et la version reste inchangée :
+
+| Refus | Code | Statut |
+|---|---|---|
+| Corps illisible, champ manquant (`version` compris) | — (rejet de l'extracteur) | `400` / `422` |
+| `settledOn` hors de l'an 1000 à l'an 9999 ; `settlementType` inconnu, ou sans sa référence de contrepartie ; montant à plus de deux décimales | `VALIDATION_ERROR` | `400` |
+| Montant nul ou négatif | `INVALID_INPUT` | `400` |
+| Facture inconnue ou d'une autre société | `NOT_FOUND` | `404` |
+| Facture non validée (brouillon, annulée) — le statut précède la version | `ILLEGAL_STATE_TRANSITION` | `409` |
+| `version` qui n'est plus celle de la facture | `OPTIMISTIC_LOCK_CONFLICT` | `409` |
+| Règlement antérieur de plus d'un jour à la date de la facture | `INVALID_INPUT` | `400` |
+| Puis la contrepartie, la créance, le trop-perçu, le compte d'arrondi et l'exercice — ci-dessous | | |
+
+Viennent ensuite, dans cet ordre, les refus de la contrepartie (compte bancaire inconnu, archivé ou clos, ou sans compte du grand livre lié ; compte interne inconnu, archivé ou non imputable), la contrepartie égale à la créance, le trop-perçu (`INVALID_INPUT`, `400`), le compte d'arrondi, puis l'exercice qui doit couvrir la date ; ceux qui ont un code propre sont décrits sous « Refus de `POST /api/v1/invoices/{id}/settlements` », plus bas.
+
 ### Lister et annuler les règlements d'une facture
 
 **`GET /api/v1/invoices/{id}/settlements`** — lecture (`read` suffit). Les règlements de la facture, du plus ancien au plus récent : `id`, `journalEntryId`, `amount`, `settledOn`, `settlementType` (`bank_transfer` / `internal_account` / `write_off` — un solde, ci-dessous), `writeOffNature` (la nature d'un solde, `null` pour un règlement), et **`cancellable`** — calculé par la fonction même qui refuserait l'annulation. Quand il vaut `false`, `cancelBlockedBy` porte le code du motif, `cancelBlockedLabel` le numéro du compte archivé et `cancelBlockedDocumentId` l'identifiant de la transaction bancaire rapprochée. ⚠️ `cancellable` ne dit rien des **droits** de la clé : une clé `read` lit `true` et reçoit `403` à l'annulation. ⚠️ **Angle mort assumé** *(v0.13.0)* : `cancellable` ne voit pas qu'un exercice **postérieur** à l'exercice du jour est clôturé (données antérieures à la v0.13.0, exercice futur clôturé d'avance) — il vaut alors `true` et l'annulation rend `400 LATER_FISCAL_YEAR_CLOSED` (issue [#568](https://github.com/guycorbaz/kesh/issues/568)).

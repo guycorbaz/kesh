@@ -336,3 +336,225 @@ describe("échéancier — règlement à l'issue inconnue", () => {
     expect(r.queryByTestId("due-dates-settle-unknown")).toBeNull();
   });
 });
+
+// Story 34-5 (#951) — la version de la ligne part avec le règlement ; un 409 de version
+// ferme le dialogue, relit la liste, et dit que rien n'a été enregistré (C-e343-4).
+describe("échéancier — règlement à une version périmée", () => {
+  const conflit = { code: "OPTIMISTIC_LOCK_CONFLICT", status: 409, message: "Conflit." };
+
+  async function regler() {
+    const r = render(Page);
+    await fireEvent.click(await r.findByTestId("due-dates-settle-5"));
+    await fireEvent.change(await r.findByTestId("settle-type"), {
+      target: { value: "internal_account" },
+    });
+    await fireEvent.change(await r.findByTestId("settle-account"), { target: { value: "1" } });
+    await fireEvent.click(r.getByTestId("settle-confirm"));
+    return r;
+  }
+
+  beforeEach(() => {
+    settleMock.mockReset();
+  });
+
+  it("le règlement part avec la version de la ligne", async () => {
+    settleMock.mockResolvedValue({ invoice: {}, fullySettled: false });
+    await regler();
+    await waitFor(() => expect(settleMock).toHaveBeenCalledTimes(1));
+    expect(settleMock.mock.calls[0][0]).toBe(5);
+    expect(settleMock.mock.calls[0][1]).toMatchObject({ version: 3 });
+  });
+
+  it("409 : dialogue fermé, liste relue, l'avis nomme la facture et dit « non enregistré » (M4, M5)", async () => {
+    settleMock.mockRejectedValue(conflit);
+    const r = await regler();
+    const avis = await r.findByTestId("due-dates-settle-conflict");
+    expect(avis.getAttribute("role")).toBe("alert");
+    expect(avis.textContent).toContain("F-2026-005");
+    expect(avis.textContent).toContain("n’a pas été enregistré");
+    expect(avis.textContent).not.toContain("n’est pas connue");
+    expect(r.queryByTestId("due-dates-settle-unknown")).toBeNull();
+    await waitFor(() => expect(r.queryByTestId("settle-confirm")).toBeNull());
+    await waitFor(() => expect(listDueDatesMock.mock.calls.length).toBeGreaterThan(1));
+    await waitFor(() =>
+      expect((r.getByTestId("due-dates-settle-5") as HTMLButtonElement).disabled).toBe(false),
+    );
+    expect(r.queryByTestId("due-dates-settle-conflict-reread")).toBeNull();
+  });
+
+  it("revue P1 (E1-7) : après un conflit relu, le règlement suivant part avec la version de la ligne relue", async () => {
+    listDueDatesMock
+      .mockResolvedValueOnce(response([item()]))
+      .mockResolvedValue(response([item({ version: 4 })]));
+    settleMock.mockRejectedValueOnce(conflit);
+    const r = await regler();
+    await r.findByTestId("due-dates-settle-conflict");
+    await waitFor(() =>
+      expect((r.getByTestId("due-dates-settle-5") as HTMLButtonElement).disabled).toBe(false),
+    );
+    settleMock.mockResolvedValueOnce({ invoice: {}, fullySettled: false });
+    await fireEvent.click(r.getByTestId("due-dates-settle-5"));
+    await fireEvent.change(await r.findByTestId("settle-type"), {
+      target: { value: "internal_account" },
+    });
+    await fireEvent.change(await r.findByTestId("settle-account"), { target: { value: "1" } });
+    await fireEvent.click(r.getByTestId("settle-confirm"));
+    await waitFor(() => expect(settleMock).toHaveBeenCalledTimes(2));
+    expect(settleMock.mock.calls[0][1]).toMatchObject({ version: 3 });
+    expect(settleMock.mock.calls[1][1]).toMatchObject({ version: 4 });
+  });
+
+  // Revue P1 (A1-2). Sur l'échéancier, `conflict-blocked` ne coexiste jamais avec une ligne
+  // affichée : la liste est masquée pendant la relecture (`{#if loading}`), vidée si elle
+  // échoue, et un chargement réussi lève l'état (C-e345-10). La garantie qui compte — aucun
+  // « Régler » sur une liste qui n'a pas été relue — se prouve donc par l'absence du geste ;
+  // le `disabled` de `settleBlocked` n'y est pas observable (mutation M7, équivalente).
+  it("revue P1 (A1-2) et P2 (B2-1) : pendant la relecture d'après un 409, aucun « Régler », et l'avis dit « en cours », non « échoué »", async () => {
+    let rendre: (v: unknown) => void = () => {};
+    listDueDatesMock
+      .mockResolvedValueOnce(response([item()]))
+      .mockReturnValue(new Promise((resolve) => (rendre = resolve)));
+    settleMock.mockRejectedValue(conflit);
+    const r = await regler();
+    await waitFor(() =>
+      expect(r.getByTestId("due-dates-settle-conflict").textContent).toContain(
+        "Relecture de la liste en cours",
+      ),
+    );
+    const enCours = r.getByTestId("due-dates-settle-conflict").textContent ?? "";
+    expect(enCours).toContain("F-2026-005");
+    expect(enCours).not.toContain("n’a pas pu être relue");
+    expect(r.queryByTestId("due-dates-settle-conflict-reread")).toBeNull();
+    expect(r.queryByTestId("due-dates-settle-5")).toBeNull();
+    rendre(response([item({ version: 4 })]));
+    await waitFor(() =>
+      expect((r.getByTestId("due-dates-settle-5") as HTMLButtonElement).disabled).toBe(false),
+    );
+    expect(r.getByTestId("due-dates-settle-conflict").textContent).toContain(
+      "La liste a été relue",
+    );
+  });
+
+  it("revue P1 (E1-5) : une relecture supplantée par un filtre réussi lève l'état bloquant", async () => {
+    let rendreRelecture: (v: unknown) => void = () => {};
+    listDueDatesMock
+      .mockResolvedValueOnce(response([item()]))
+      .mockReturnValueOnce(new Promise((resolve) => (rendreRelecture = resolve)))
+      .mockResolvedValue(response([item({ version: 4 })]));
+    settleMock.mockRejectedValue(conflit);
+    const r = await regler();
+    await r.findByTestId("due-dates-settle-conflict");
+    // Pendant la relecture, un autre filtre part et réussit : il la supplante.
+    await fireEvent.click(r.getByRole("tab", { name: "Toutes" }));
+    await waitFor(() =>
+      expect(r.getByTestId("due-dates-settle-conflict").textContent).toContain(
+        "La liste a été relue",
+      ),
+    );
+    expect((r.getByTestId("due-dates-settle-5") as HTMLButtonElement).disabled).toBe(false);
+    // La relecture supplantée qui rend enfin sa réponse ne change plus rien.
+    rendreRelecture(response([item({ version: 3 })]));
+    await waitFor(() =>
+      expect(r.getByTestId("due-dates-settle-conflict").textContent).toContain(
+        "La liste a été relue",
+      ),
+    );
+  });
+
+  it("revue P3 (C3-1) : une relecture supplantée reste « en cours » jusqu'à l'issue du chargement qui l'emporte", async () => {
+    let rendreRelecture: (v: unknown) => void = () => {};
+    let rejeterFiltre: (e: unknown) => void = () => {};
+    listDueDatesMock
+      .mockResolvedValueOnce(response([item()]))
+      .mockReturnValueOnce(new Promise((resolve) => (rendreRelecture = resolve)))
+      .mockReturnValueOnce(new Promise((_, reject) => (rejeterFiltre = reject)));
+    settleMock.mockRejectedValue(conflit);
+    const r = await regler();
+    await r.findByTestId("due-dates-settle-conflict");
+    // Pendant la relecture, un filtre part : il la supplante, et reste en attente.
+    await fireEvent.click(r.getByRole("tab", { name: "Toutes" }));
+    await waitFor(() => expect(listDueDatesMock).toHaveBeenCalledTimes(3));
+    // La relecture supplantée rend sa réponse : la relecture n'est pas finie pour autant.
+    rendreRelecture(response([item({ version: 3 })]));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const pendant = r.getByTestId("due-dates-settle-conflict").textContent ?? "";
+    expect(pendant).toContain("Relecture de la liste en cours");
+    expect(pendant).not.toContain("n’a pas pu être relue");
+    expect(r.queryByTestId("due-dates-settle-conflict-reread")).toBeNull();
+    // Le chargement qui l'emporte échoue : alors seulement, l'avis d'échec et *Relire*.
+    rejeterFiltre({ code: "NETWORK_ERROR", status: 0, message: "x" });
+    await r.findByTestId("due-dates-settle-conflict-reread");
+    expect(r.getByTestId("due-dates-settle-conflict").textContent).toContain(
+      "la liste n’a pas pu être relue",
+    );
+  });
+
+  it("revue P4 : une relecture supplantée par un filtre qui réussit reste « en cours », puis passe à « relue »", async () => {
+    let rendreRelecture: (v: unknown) => void = () => {};
+    let rendreFiltre: (v: unknown) => void = () => {};
+    listDueDatesMock
+      .mockResolvedValueOnce(response([item()]))
+      .mockReturnValueOnce(new Promise((resolve) => (rendreRelecture = resolve)))
+      .mockReturnValueOnce(new Promise((resolve) => (rendreFiltre = resolve)));
+    settleMock.mockRejectedValue(conflit);
+    const r = await regler();
+    await r.findByTestId("due-dates-settle-conflict");
+    await fireEvent.click(r.getByRole("tab", { name: "Toutes" }));
+    await waitFor(() => expect(listDueDatesMock).toHaveBeenCalledTimes(3));
+    rendreRelecture(response([item({ version: 3 })]));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const pendant = r.getByTestId("due-dates-settle-conflict").textContent ?? "";
+    expect(pendant).toContain("Relecture de la liste en cours");
+    expect(r.queryByTestId("due-dates-settle-conflict-reread")).toBeNull();
+    // Le chargement qui l'emporte réussit : l'état se lève, la ligne relue est offerte.
+    rendreFiltre(response([item({ version: 4 })]));
+    await waitFor(() =>
+      expect(r.getByTestId("due-dates-settle-conflict").textContent).toContain(
+        "La liste a été relue",
+      ),
+    );
+    expect(r.queryByTestId("due-dates-settle-conflict-reread")).toBeNull();
+    expect((r.getByTestId("due-dates-settle-5") as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it("409 puis liste illisible : `conflict-blocked`, puis « Relire » mène au conflit, non à l'issue inconnue", async () => {
+    settleMock.mockRejectedValue(conflit);
+    const r = render(Page);
+    await fireEvent.click(await r.findByTestId("due-dates-settle-5"));
+    listDueDatesMock.mockRejectedValue({ code: "NETWORK_ERROR", status: 0, message: "x" });
+    await fireEvent.change(await r.findByTestId("settle-type"), {
+      target: { value: "internal_account" },
+    });
+    await fireEvent.change(await r.findByTestId("settle-account"), { target: { value: "1" } });
+    await fireEvent.click(r.getByTestId("settle-confirm"));
+
+    await r.findByTestId("due-dates-settle-conflict-reread");
+    const bloque = r.getByTestId("due-dates-settle-conflict");
+    expect(bloque.textContent).toContain("F-2026-005");
+    expect(bloque.textContent).toContain("la liste n’a pas pu être relue");
+    expect(bloque.textContent).not.toContain("n’est pas connue");
+    expect(r.queryByTestId("due-dates-settle-unknown")).toBeNull();
+
+    listDueDatesMock.mockResolvedValue(response([item({ version: 4 })]));
+    await fireEvent.click(r.getByTestId("due-dates-settle-conflict-reread"));
+    await waitFor(() =>
+      expect((r.getByTestId("due-dates-settle-5") as HTMLButtonElement).disabled).toBe(false),
+    );
+    const relu = r.getByTestId("due-dates-settle-conflict");
+    expect(relu.textContent).toContain("La liste a été relue");
+    expect(relu.textContent).not.toContain("n’est pas connue");
+    expect(r.queryByTestId("due-dates-settle-conflict-reread")).toBeNull();
+
+    // Le règlement suivant part avec la version relue.
+    settleMock.mockReset();
+    settleMock.mockResolvedValue({ invoice: {}, fullySettled: false });
+    await fireEvent.click(r.getByTestId("due-dates-settle-5"));
+    await fireEvent.change(await r.findByTestId("settle-type"), {
+      target: { value: "internal_account" },
+    });
+    await fireEvent.change(await r.findByTestId("settle-account"), { target: { value: "1" } });
+    await fireEvent.click(r.getByTestId("settle-confirm"));
+    await waitFor(() => expect(settleMock).toHaveBeenCalledTimes(1));
+    expect(settleMock.mock.calls[0][1]).toMatchObject({ version: 4 });
+  });
+});
