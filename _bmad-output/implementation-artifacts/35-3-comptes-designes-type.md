@@ -321,12 +321,12 @@ rangée par rôle et non par numéro (AC7, côté achat).
 ### Fichiers communs — règle d'union (C-e350-8)
 
 - Avec la **35-2a** (et la 35-2b, qui part d'elle) : `crates/kesh-api/src/errors.rs` (ici un bras `DbError` neuf, voisin
-  de `:4571` ; la 35-2a n'y touche qu'un test),
+  de `:4571` ; la 35-2a n'y touche pas, validation P4 de la 35-2a, V4-3),
   `messages.ftl` ×4 (ici à côté de `error-designated-account-not-postable`), `textes_coherents.rs` (G9 : ici en fin du
   bloc `errors.rs`), `user-manual.tex` (ici `:452-461`, `:491`, `:493`, `:1169`, `:1788-1796`), `CHANGELOG.md` (section `[0.17.7]`),
   `docs/api-external.md` (ici après `ACCOUNT_NOT_POSTABLE`), `frontend/src/routes/(app)/invoices/[id]/+page.svelte` et son
-  dossier de tests (ici la liste de fermeture du dialogue, `:449-456` ; la 35-2a, `pdfErrorMessage`, `:949` : hunks
-  distincts). `admin-manual.tex` (ici `:3816`, `:3818`, `:3822`) n'est touché que par cette story. La règle d'union est celle de
+  dossier de tests (ici la liste de fermeture du dialogue, `:449-456` ; la 35-2a ne touche pas ce fichier, seulement
+  `pdf-error.ts`, V4-9). `admin-manual.tex` (ici `:3816`, `:3818`, `:3822`) n'est touché que par cette story. La règle d'union est celle de
   C-e350-8, recopiée au fichier d'epic.
 - Avec la **35-8** (#431, plus tard) : `repositories/company_invoice_settings.rs`. La 35-8 attend la fusion de celle-ci.
 

@@ -51,6 +51,8 @@ retenue, options écartées, réversibilité. Lignes citées sur `release/0.17.6
   `details` sont là ; or les refus sans champ — adresse incomplète, compte bancaire principal absent — sont eux aussi
   remplacés aujourd'hui par la phrase fixe, et l'un d'eux, `"qrbill-error-qrr-generation"`
   (`invoice_pdf_service.rs:338`), envoie une clé nue en guise de message.)*
+- *(Annoté le 2026-11-12, validation P4 de la 35-2a : **suspendu par C-e350-11** pour les `details` ; le message résolu
+  au serveur et repris par l'écran reste.)*
 - **Écartées** : (a) afficher le message brut du serveur tel qu'il est : technique et non traduit ; (b) résoudre au
   frontend à partir des `details` seuls : deux tables de libellés de champ à tenir (serveur et écran) pour un même
   message.
@@ -103,7 +105,8 @@ retenue, options écartées, réversibilité. Lignes citées sur `release/0.17.6
   1. **`CHANGELOG.md`** : chaque branche crée, si elle manque, la section `## [0.17.7] — Non publié` juste au-dessus de la
      première section `## [` existante, avec la seule rubrique `### Corrigé` ; elle y écrit **un** point par issue. À
      l'intégration, une seule section et une seule rubrique sont gardées, les points dans l'ordre des stories (35-2 puis
-     35-3), l'avertissement de la 35-3 en tête de son point.
+     35-3), l'avertissement de la 35-3 en tête de son point. *(Annoté le 2026-11-12, validation P4 de la 35-2a : la 35-2b
+     complète le point #955 de la 35-2a, sans en écrire un second.)*
   2. **`messages.ftl` ×4** : jamais en fin de fichier. 35-2 : à côté du bloc `invoice-pdf-error-*` (fr-CH `:967-983` sur
      `release/0.17.6`) ; 35-3 : juste après `error-designated-account-not-postable`.
   3. **G9** (`crates/kesh-api/tests/textes_coherents.rs`, `TABLE: [(&str, Cles); 8]`) : la 35-3 ajoute ses clés **en fin
@@ -116,6 +119,8 @@ retenue, options écartées, réversibilité. Lignes citées sur `release/0.17.6
      `errors.rs` ne se heurtent plus à ceux de la 35-2.)*
   4. **`crates/kesh-api/src/errors.rs`** : 35-2, le bras `InvoiceNotPdfReady` et ce qu'il appelle ; 35-3, un bras `DbError`
      neuf juste après `DesignatedAccountsNotPostable` (`:4571`). Aucun reformatage hors des passages touchés.
+     *(Annoté le 2026-11-12, validation P4 de la 35-2a : pour la 35-2, **suspendu par C-e350-11** — la 35-2a ne touche plus
+     `errors.rs`.)*
   5. **`docs/api-external.md`** : 35-3, une ligne juste après `ACCOUNT_NOT_POSTABLE` ; 35-2, sa ligne juste après
      `SUPPLIER_INVOICE_DUE_BEFORE_INVOICE_DATE` (`:1058` sur `release/0.17.6`), en fin du premier groupe des `400`.
   6. **`user-manual.tex`** : paragraphes distincts ; chaque branche régénère son PDF pour ses contrôles, mais à l'union le

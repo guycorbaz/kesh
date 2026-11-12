@@ -46,7 +46,7 @@ caractère** corriger, afin de corriger la bonne fiche sans chercher à l'aveugl
   charger un **bundle local** sans y toucher : `I18nBundle::load(Path::new(env!("CARGO_MANIFEST_DIR"))…)`, précédents
   `audit_labels.rs:277-279` et `errors.rs:5307`.
 - **Écran** : `pdfErrorMessage` (`pdf-error.ts:39-46`) remplace le message du serveur par une clé fixe ; un code de
-  `SERVER_RESOLVED_CODES` (`:36`) rend `err.message` **sans condition** (`:40`). `parseErrorResponse` ne remplace qu'un
+  `SERVER_RESOLVED_CODES` (`:36`) rend `err.message` **sans condition** (`:43`). `parseErrorResponse` ne remplace qu'un
   `message` **absent** (`api-client.ts:283`) : une chaîne vide arrive vide.
 
 **Routes et écrans qui montrent ce refus** :
@@ -79,17 +79,42 @@ désormais un tel NPA à la saisie.
   `details.field` : un contrat public, irréversible, ne se fixe pas sous l'échéance du 30 novembre. La proposition
   (C-e350-10) et les findings V2-4, V3-4, V3-5, V3-6 partent dans **#1045**, pour une epic ultérieure. Le code
   `INVOICE_NOT_PDF_READY` et le 400 ne changent pas.
-- **D3 — Une fonction pure de correspondance** (V3-1) : `refus_pdf(…) -> (clé, arguments)` (nom au choix), sans résolution,
-  appelée par `map_qrbill_error` et par les contrôles de `build_qrbill_inputs` ; la construction résout par `t_args` (ou `t`
-  sans argument) et garde **`AppError::InvoiceNotPdfReady(String)`** tel quel. Aucune variante neuve : `classify_render_error`
-  et le test `invoice_email.rs:1754` restent inchangés (V3-7).
+- **D3 — Une fonction pure, une fonction de construction** (V3-1, V4-1, V4-2).
+  - La fonction pure `refus_pdf(cause) -> (clé, arguments, repli)` (noms au choix) ne résout rien : elle rend la clé, ses
+    arguments et le **repli déjà formaté** (variables nommées, D4), seul endroit où le caractère est échappé.
+  - **Forme (a) : une clé par champ et par raison**, sans sélecteur Fluent ni libellé imbriqué : G9 compare un littéral par
+    clé (`textes_coherents.rs:896-913`), ce qu'une phrase composée ou un sélecteur sur `$champ` ne permettraient pas.
+  - **Une seule** fonction de construction, `refus(cause) -> AppError` (nom au choix), appelle `refus_pdf` puis `t_args` (ou
+    `t` sans argument) et rend **`AppError::InvoiceNotPdfReady(String)`**, tel quel ; les treize constructions de
+    production (AC3) passent toutes par elle : `map_qrbill_error`, les contrôles de `build_qrbill_inputs`, `render_document`
+    (`:216`, `:226`) et `credit_notes.rs:295`. Aucune variante neuve : `classify_render_error` et le test
+    `invoice_email.rs:1754` restent inchangés (V3-7).
 - **D4 — Le caractère s'affiche par `escape_debug`**, lié à une variable nommée (`let car = c.escape_debug().to_string();`),
-  suivi de son point de code `U+XXXX`, pour que G9 compare le repli (`textes_coherents.rs:896-913`).
-- **D5 — Une phrase par cause**, localisée, sans texte de `kesh-qrbill` (le détail technique au journal,
-  `tracing::warn!`) : champ vide, trop long, caractère refusé (le champ en mots) ; IBAN invalide et QR-IBAN invalide,
-  distincts (V3-6 a) ; échec de génération de la QRR (`:338`), dit **non corrigeable par l'utilisateur** (« contactez
-  l'administrateur ») ; montant, devise ; contact absent, compte principal absent, client sans adresse. La clé de la QRR
-  est créée ×4.
+  suivi de son point de code passé à Fluent **en chaîne déjà formatée** (`let point = format!("U+{:04X}", c as u32);`) :
+  un nombre serait formaté par Fluent en décimal et selon la locale (V4-6). G9 compare alors le repli
+  (`textes_coherents.rs:896-913`).
+- **D5 — Une phrase par cause, sur un ensemble clos** (V4-4), localisée, sans texte de `kesh-qrbill` (le détail technique
+  au journal, `tracing::warn!`). Les **dix variantes** de `QrBillError` qui construisent `InvoiceNotPdfReady`
+  (`invoice_pdf_service.rs:495-540`) et les causes propres à Kesh :
+
+  | Cause | Phrase |
+  |---|---|
+  | `InvalidCharset { field, codepoint }` | le champ en mots, le caractère échappé, `U+XXXX` (une clé par champ) |
+  | `FieldEmpty(field)` | le champ en mots est vide (une clé par champ ; NPA et localité : la phrase d'adresse incomplète de D6) |
+  | `FieldTooLong { field, max, got }` | le champ en mots dépasse `max` caractères (une clé par champ) |
+  | `InvalidIban` | IBAN du compte bancaire principal invalide |
+  | `InvalidQrIban` | QR-IBAN du compte bancaire principal invalide |
+  | `InvalidQrr` (`:497`), `InvalidPayload` (`:540`) et l'échec de `build_qrr` (`:338`) | panne interne, **non corrigeable** par l'utilisateur, « contactez l'administrateur » : une seule clé |
+  | `InvalidAmount` | montant hors des bornes de la QR-facture |
+  | `InvalidCurrency` | devise non admise |
+  | `InvalidCountry` (bras défensif, `:507-509`) | pays au code invalide, sans partie (D7) |
+  | Kesh : pays d'une partie (D7) | pays de l'entreprise / du client, avec le code |
+  | Kesh : NPA ou localité vide (D6) | adresse incomplète, le champ nommé |
+  | Kesh : client sans adresse (`:310`, bras `_`) | `invoice-pdf-error-client-address-required` (existante) |
+  | Kesh : contact absent (`:216`) ; avoir (`credit_notes.rs:295`) | `invoice-pdf-error-contact-missing` (existante) ; `credit-note-pdf-error-contact-missing` (D8) |
+  | Kesh : compte principal absent (`:226`) | `invoice-pdf-error-no-primary-bank` (existante) |
+
+  Un nom de champ inconnu (les cinq `address.*`, un nom futur) passe par un **repli par raison** (trois clés génériques).
 - **D6 — #964, adresse incomplète : le champ est nommé.** Le contrôle de Kesh (`:287`, `:310`) juge par
   `champ_vide_pour_qr` et rend, pour le premier champ vide, une phrase qui dit l'adresse incomplète **et** le champ :
   « Adresse du client incomplète : la localité est vide. Complétez la fiche du client (NPA et localité sont exigés par la
@@ -106,7 +131,9 @@ désormais un tel NPA à la saisie.
   facture validée ne corrige pas : la phrase le dit (« le numéro de facture contient … : vérifiez le format de numérotation
   dans Administration → Facturation »).
 - **D10 — L'état i18n global** : aucun test de `crates/kesh-api/src` n'appelle `init_error_i18n` ; les tests qui lisent le
-  catalogue chargent un bundle local (D3, AC2) ou montent l'application (`crates/kesh-api/tests/`). Garde : AC13.
+  catalogue chargent un bundle local (D3, AC2) ou montent l'application (`crates/kesh-api/tests/`). Garde : AC13. Le nom de
+  la fonction ne s'écrit pas non plus dans un commentaire de `src/` hors de ses deux sites : la garde compte toute
+  occurrence (V4-11).
 - **D11 — Un terme** (V3-15) : « entreprise », celui du bloc `invoice-pdf-error-*`.
 
 ## Critères d'acceptation
@@ -125,18 +152,23 @@ désormais un tel NPA à la saisie.
      `address.`, `unstructured_message`, `billing_information`).
 2. **AC2 — La table complète, par la fonction pure, sans état global** (V3-1). Un test de `invoice_pdf_service.rs`,
    `mod tests` : pour les onze champs atteignables × leurs raisons, `billing_information` et le bras de repli pour la
-   complétude, chaque cause sans champ de D5, le pays (D7) et l'adresse (D6), il asserte (a) la **clé et les arguments**
-   rendus par la fonction pure ; (b) leur résolution par un **bundle chargé localement** (`I18nBundle::load` sur
-   `crates/kesh-i18n/locales`, comme `audit_labels.rs:277`) **dans les quatre locales** : la clé existe, et le rendu ne
-   contient ni `{`, ni `$`, ni « Champ », ni nom technique. Jamais `init_error_i18n`. Ce test tue M2 et M9 sur toutes les
-   causes.
+   complétude, et **l'ensemble clos de D5** (dix variantes et causes propres à Kesh), il asserte (a) la **clé, les
+   arguments et le repli** rendus par la fonction pure ; (b) leur résolution par un **bundle chargé localement**
+   (`I18nBundle::load` sur `crates/kesh-i18n/locales`, comme `audit_labels.rs:277`) **dans les quatre locales** : le rendu
+   n'est pas la clé elle-même, hors fr-CH il n'est pas la valeur fr-CH (précédent
+   `qr_message_prefix_is_translated_in_all_four_locales`, `invoice_pdf_service.rs:1082`, V4-7), et il ne contient ni `{`,
+   ni `$`, ni « Champ », ni nom technique. Jamais `init_error_i18n`. Ce test tue M2 sur toutes les causes ; M9 se joue
+   sur la fonction de construction unique (D3) et AC1 la tue. Le rendu de `bundle.format` garde les marques d'isolation
+   U+2068/U+2069 que `t_args` retire (`errors.rs:44-55`) : les assertions de sous-chaîne n'enjambent pas un argument.
 3. **AC3 — Inventaire clos** : seize lignes de `git grep -n 'InvoiceNotPdfReady' -- crates` hors `errors.rs`, soit
    **quatorze constructions** — treize en production (`credit_notes.rs:295` ; `invoice_pdf_service.rs:216, 226, 288, 324,
    338, 497, 499, 502, 505, 508, 510, 540`) et une de test (`invoice_email.rs:1754`) — et deux non-constructions
    (`invoice_pdf_service.rs:491`, doc-comment ; `invoice_email.rs:1030`, classement). Plus, dans `errors.rs`, le test
    `:5717`. Recomptées à l'étape 0 avec le tableau des routes ; verdict de chaque site au Change Log ; chaque construction
    de production passe par la fonction pure (D3).
-4. **AC4 — #964 nommé** (D6) : entreprise au NPA `"\u{AD}"` (**posé en SQL** : la saisie le refuse depuis la 0.17.5,
+4. **AC4 — #964 nommé** (D6 ; V4-5 : la phrase d'un NPA ou d'une localité vide est **la même** que le refus vienne du
+   contrôle de Kesh ou de `kesh-qrbill`, si bien que M3 et M4 sont **équivalentes** pour le message ; ce qui tient #964,
+   c'est cette phrase, qu'AC4 asserte, et `champ_vide_pour_qr` reste par cohérence avec la saisie) : entreprise au NPA `"\u{AD}"` (**posé en SQL** : la saisie le refuse depuis la 0.17.5,
    `address_input.rs:110`) → « adresse de l'entreprise incomplète » et « NPA » ; client à la localité `"\u{200B}"` (SQL)
    → « adresse du client incomplète » et « localité » ; client sans adresse → la phrase de
    `invoice-pdf-error-client-address-required`.
@@ -147,17 +179,28 @@ désormais un tel NPA à la saisie.
 7. **AC7 — L'écran** (D1) : `pdfErrorMessage` rend `err.message` pour `INVOICE_NOT_PDF_READY` (fiches facture et avoir)
    quand il est non vide, la clé fixe pour `message: ''` et `'   '` ; `INVOICE_TOO_MANY_LINES_FOR_PDF` et `INVOICE_PDF_GONE`
    gardent leur comportement.
-8. **AC8 — Quatre langues et G9.** Clés neuves ×4 (`parity_between_locales`), à côté du bloc `invoice-pdf-error-*`
-   (C-e350-8) ; aucun sélecteur de pluriel. Replis Rust égaux à fr-CH, à variables nommées (D4), inscrits à G9 par **deux
-   entrées neuves en fin de table**, `crates/kesh-api/src/routes/invoice_pdf_service.rs` et
-   `crates/kesh-api/src/routes/credit_notes.rs` : la table passe de 8 à **10** entrées. Aucune clé neuve dans `errors.rs`
-   (D3) : le bloc `errors.rs` de G9 n'est pas touché par cette story.
+8. **AC8 — Quatre langues et G9.** Clés ×4 (`parity_between_locales`), à côté du bloc `invoice-pdf-error-*` (C-e350-8) ;
+   aucun sélecteur. **Décompte** (forme (a) de D3, à recompter à l'étape 0) :
+   - par champ et par raison : caractère refusé × 11 champs atteignables, vide × 6 (`name`, `postal_code`, `town` des deux
+     parties), trop long × 10 (champs d'adresse) = **27** ; repli par raison pour un nom inconnu : **3** ;
+   - causes sans champ : IBAN, QR-IBAN, panne interne, montant, devise, pays sans partie, pays de l'entreprise, pays du
+     client, contact absent de l'avoir = **9** ;
+   - soit **39 clés neuves** ; trois existantes reprises (`invoice-pdf-error-client-address-required`,
+     `-contact-missing`, `-no-primary-bank`) ; deux retirées (`-company-address-empty`, `-client-address-empty`, D6).
+
+   G9 : **deux entrées neuves en fin de table**, `crates/kesh-api/src/routes/invoice_pdf_service.rs` (les 39 − 1 clés
+   neuves de ce fichier et les trois reprises : **41** clés) et `crates/kesh-api/src/routes/credit_notes.rs` (**1**) ; la
+   table passe de 8 à **10** entrées. Paramètres : `("{ $car }", "{car}")`, `("{ $point }", "{point}")` pour un caractère ;
+   `("{ $max }", "{max}")`, `("{ $got }", "{got}")` pour une longueur ; `("{ $code }", "{code}")` pour un pays. Aucune clé
+   dans `errors.rs` (D3) : le bloc `errors.rs` de G9 n'est pas touché.
 9. **AC9 — Tests existants réécrits sans perdre leur preuve** : `company_address_e2e.rs:583-589` (« Pays invalide » →
-   AC5) et `:667-675` (« adresse de l'entreprise est vide » → AC4) ; `errors.rs:5715-5723` ; `pdf-error.test.ts:35-38` (sa
+   AC5) et `:667-675` (« adresse de l'entreprise est vide » → AC4) ; `pdf-error.test.ts:35-38` (sa
    preuve passe à `INVOICE_NOT_VALIDATED`) ; le commentaire de `frontend/tests/e2e/invoices.spec.ts:723-755` ; le
    commentaire de `company_address_e2e.rs:375-376` au présent (LOW de #964).
 10. **AC10 — Manuel, CHANGELOG, API.** `user-manual.tex:1251` réécrit (le message nomme le champ et le caractère ; la
-    35-2b complète la phrase du lot) ; PDF régénéré, contrôlé aplati. CHANGELOG `## [0.17.7] — Non publié`, *Corrigé*,
+    phrase « Cherchez ces caractères dans le nom et l'adresse du client et de la société » nomme aussi le **numéro de
+    facture**, D9 ; la 35-2b complète la phrase du lot) ; PDF régénéré, contrôlé aplati — le PDF porte des ligatures
+    (`pdftotext` rend « aﬀiche ») : greper des mots sans `ff`/`fi`/`fl`, ou normaliser (V4-12). CHANGELOG `## [0.17.7] — Non publié`, *Corrigé*,
     un point pour #964 et un pour la part #955 de cette story (C-e350-8), qui dit que **le texte du message a changé**
     (V3-14). `docs/api-external.md` : ligne neuve `INVOICE_NOT_PDF_READY` juste après
     `SUPPLIER_INVOICE_DUE_BEFORE_INVOICE_DATE` (`:1058`) : le 400, les routes, un message **localisé, destiné à
@@ -165,6 +208,9 @@ désormais un tel NPA à la saisie.
 11. **AC11 — Les autres routes** (V3-8) : un test HTTP par route, qui asserte que le message nomme le champ (client à la
     localité `Ve–vey`) : envoi par e-mail (`invoice_send_email_e2e.rs`), rappel seul (même fichier), refigeage
     (`invoice_frozen_pdf_e2e.rs` ou voisin) ; l'avoir : contact absent si le montage le permet, sinon angle mort écrit.
+    **Montages** (V4-8) : `get_or_freeze` sert un fichier figé sans rendre — le téléchargement et l'envoi exigent une
+    facture **jamais figée** ; le refigeage exige un PDF figé **dont le fichier manque** (`issued_invoice_pdf.rs:240-249` :
+    sinon `InvoicePdfNotFrozen` ou `InvoicePdfPresent`), pour que le test rougisse pour la bonne raison.
 12. **AC12 — E2E et captures.** Dans `invoice-qr-caracteres.spec.ts`, client à la localité `Ve–vey`, facture validée,
     *Télécharger le PDF* : le message affiché contient « localité du client » et « U+2013 » ; `createContactWithAddressViaApi`
     (`helpers/api-fixtures.ts:73-79`) reçoit un paramètre facultatif `city`, en dernier. Captures (thème clair, base
@@ -261,3 +307,26 @@ Avec la 35-3 : `messages.ftl` ×4, G9 (ici deux entrées neuves en fin de table 
     l'API) ; V3-15 (« entreprise », registre `e352a`, captures `e352a`).
   - Symptômes greppés (35-2a, 35-2b, fichier d'epic, registre) : `details.reason`, `INVALID_CHARSET`, « onze raisons »,
     « longueur 9 », `e352/` — aucun reste hors du recadrage écrit et du registre C-e350-10, annoté.
+- 2026-11-12 — **Validation P4** (Opus) : 0 CRITICAL, 0 HIGH, 4 MEDIUM, 9 LOW (`kesh-gate-logs/e35-2a-validation-p4.md`).
+  **Série 5 → 5 → 8 → 4.** Deux MEDIUM viennent de la remédiation P3 (V4-1, V4-2), un des restes du contrat retiré (V4-3),
+  un de la conception d'origine (V4-4). Prémisses relues au code de `release/0.17.6` ; aucune réfutée
+  (`textes_coherents.rs:900-910` : G9 compare un littéral ; `pdf-error.ts:43` ; `invoice_pdf_service.rs:1082` ;
+  `issued_invoice_pdf.rs:240-249`). Appliqués :
+  - V4-1 : forme (a), une clé par champ et par raison ; la fonction pure rend aussi le repli ; décompte à AC8 (39 clés
+    neuves, 41 + 1 entrées de G9) ;
+  - V4-2 : une seule fonction de construction appelle `t_args`, M9 s'y joue, AC2 ne la revendique plus ; marques
+    d'isolation dites ;
+  - V4-3 : `errors.rs:5715-5723` retiré d'AC9 (la variante et `build_response` ne changent pas) ; propagé **hors de la
+    fiche** : fichier d'epic (`errors.rs` et `invoices/[id]/+page.svelte` : la 35-2a n'y touche pas), fiche 35-3 (liste
+    d'union), fiche 35-2b (AC5 : `details` porte `message`) ; registre : C-e350-3 et C-e350-8 point 4 **annotés**
+    suspendus par C-e350-11, texte non réécrit ;
+  - V4-4 : ensemble clos de D5 (dix variantes de `QrBillError` et causes propres à Kesh) ; `InvalidQrr` et `InvalidPayload`
+    rejoignent la phrase de panne interne ;
+  - LOW : V4-5 (M3/M4 déclarées équivalentes pour le message ; la phrase tient #964) ; V4-6 (point de code en chaîne) ;
+    V4-7 (rendu ≠ clé, ≠ fr-CH) ; V4-8 (montages d'AC11) ; V4-9 (`:43`, appelants alignés, hunk `:949` retiré de l'epic et
+    de la 35-3) ; V4-10 (C-e350-8 point 1 annoté : la 35-2b complète le point #955 de la 35-2a) ; V4-11 (D10) ; V4-12
+    (ligatures, numéro de facture au manuel) ; V4-13 (commentaire rédigé pour #1045, à poster par l'orchestrateur).
+  - Symptômes greppés dans la fiche, la 35-2b, la 35-3, le fichier d'epic et le registre : « porte en plus `message` »,
+    « le seul test `:5715-5723` », « n'y touche qu'un test », « 35-2a `:949` », « bras `InvoiceNotPdfReady` et ce qu'il
+    appelle » — restes traités ou annotés.
+

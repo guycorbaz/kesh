@@ -48,8 +48,8 @@ PDF » seul.
 3. **AC3 — Les deux autres codes** : un échec `InvoiceTooManyLinesForPdf` reste sans `details`.
 4. **AC4 — Écran** : Vitest de `ReminderBatchReport.svelte`, avec et sans `details.message`.
 5. **AC5 — Documentation** : `docs/api-external.md`, la ligne de la 35-2a dit que, dans `failed[]` du lot, `details` porte
-   en plus `message` ; manuel `:1251` complété, PDF régénéré, contrôlé aplati ; CHANGELOG `[0.17.7]`, *Corrigé*, refs #955
-   (règle C-e350-8 : un point, après celui de la 35-2a). La PR porte `closes #955` (la 35-2a, `refs #955`).
+   `message` (et rien d'autre) ; manuel `:1251` complété, PDF régénéré, contrôlé aplati ; CHANGELOG `[0.17.7]`, *Corrigé*, refs #955
+   (règle C-e350-8 : la 35-2b **complète** le point #955 écrit par la 35-2a, sans en ajouter un second). La PR porte `closes #955` (la 35-2a, `refs #955`).
 6. **AC6 — Capture** : la ligne du rapport d'un lot (thème clair, base jetable, `kesh-gate-logs/e352b/captures/`).
 
 **Mutations** : M1 `details.message` omis pour un refus sans champ ; M2 `details.message` non lu par le composant ; M3 le

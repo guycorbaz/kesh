@@ -87,12 +87,12 @@ chacune de ses actions est aujourd'hui attribuée à Guy dans la piste de contr�
    - **G9** (`crates/kesh-api/tests/textes_coherents.rs`, `TABLE: [(&str, Cles); 8]`) : 35-3 en fin du bloc `errors.rs`,
      sous `// Story 35-3` ; 35-2a deux entrées neuves en fin de table (`invoice_pdf_service.rs`, `credit_notes.rs`), aucune
      clé à `errors.rs` : la table passe de 8 à 10 ; la longueur se recompte à l'union ;
-   - **`crates/kesh-api/src/errors.rs`** : 35-2a, le seul test `:5715-5723` ; 35-3 un bras `DbError` neuf juste après
+   - **`crates/kesh-api/src/errors.rs`** : 35-2a n'y touche pas (validation P4, V4-3) ; 35-3 un bras `DbError` neuf juste après
      `DesignatedAccountsNotPostable` ; aucun reformatage hors des passages touchés ;
    - **`docs/api-external.md`** : 35-3 une ligne juste après `ACCOUNT_NOT_POSTABLE` ; 35-2 juste après
      `SUPPLIER_INVOICE_DUE_BEFORE_INVOICE_DATE` ;
    - **`docs/manual/fr/user-manual.tex`** : paragraphes distincts (35-2a l. 1251 ; 35-3 l. 452-461, 491, 493, 1169, 1788-1796) ; `admin-manual.tex`, 35-3 seule (l. 3816, 3822) ;
-     `invoices/[id]/+page.svelte`, hunks distincts (35-2a `:949`, 35-3 `:449-456`) ; le
+     `invoices/[id]/+page.svelte` : 35-3 seule (`:449-456`) ; la 35-2a ne touche que `pdf-error.ts` (V4-9) ; le
      PDF n'est jamais fusionné, il se régénère depuis le `.tex` uni puis se contrôle aplati.
 2. Puis par impact, I1 d'abord : **35-4**, **35-6**, **35-5** ; puis **35-7**, **35-8**, **35-1**.
 3. **35-8 après la fusion de 35-5** (`repositories/journal_entries.rs`) **et de 35-3**
