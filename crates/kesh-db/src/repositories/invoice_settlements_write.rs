@@ -101,8 +101,10 @@ async fn read_after_write_in_tx(
 ///
 /// **Ordre des refus**, celui des lectures : facture inconnue ou d'une autre
 /// société (`NotFound`, lue par le même verrou) ; statut ; **version** ; date ;
-/// créance (lue sur la vente) ; **contrepartie** — compte bancaire inconnu
-/// (404), sans compte lié (`CONFIGURATION_REQUIRED`), compte interne archivé ou
+/// créance (lue sur la vente) ; **contrepartie** — par virement : compte
+/// bancaire inconnu, d'une autre société ou archivé (404), clos
+/// (`BANK_ACCOUNT_CLOSED`), carte de crédit (`SETTLEMENT_ACCOUNT_IS_CREDIT_CARD`,
+/// Story 34-11a2), sans compte lié (`CONFIGURATION_REQUIRED`) ; compte interne archivé ou
 /// inconnu (`INACTIVE_OR_INVALID_ACCOUNTS`), non imputable
 /// (`ACCOUNT_NOT_POSTABLE`), **puis** contrepartie = créance
 /// (`SETTLEMENT_COUNTERPARTY_IS_CLAIM_ACCOUNT`, `role: counterparty`) ;
