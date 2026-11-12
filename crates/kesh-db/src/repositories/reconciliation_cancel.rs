@@ -245,7 +245,7 @@ async fn find(
 /// la lecture (l'écran, au clic), [`cancel_in_tx`] pour refuser, sur la
 /// transaction qu'il vient de verrouiller. Elle prend la transaction déjà lue,
 /// pour que chaque appelant choisisse sa lecture (verrouillante ou non). Après
-/// le rang 0, elle délègue à [`entry_cancel_outlook`] — la même lecture que la
+/// le rang 0, elle délègue à [`entry_cancel_blocker`] — la même lecture que la
 /// liste des écritures candidates (Story v017-3a, D14).
 async fn cancel_blocker(
     conn: &mut MySqlConnection,

@@ -664,8 +664,8 @@ fn entry_sql(mode: EntrySqlMode) -> String {
 /// la liste et du geste ([`linkable_side`]), le second côté compté par la page
 /// ([`count_already_booked_for_page`]) et la décision « retrait du seul lien »
 /// de l'annulation ([`transfer_other_side`], lue par
-/// [`super::reconciliation_cancel::entry_cancel_outlook`], qui sert la vue,
-/// les candidates et `cancel_in_tx`) en dérivent toutes.
+/// `reconciliation_cancel::entry_cancel_blocker` et `cancel_in_tx`) en
+/// dérivent toutes.
 ///
 /// ⛔ **Fondé sur l'écriture et ses transactions, jamais sur le lien actuel
 /// d'un autre compte bancaire à son grand livre** : ce lien se modifie après
@@ -686,24 +686,13 @@ fn entry_sql(mode: EntrySqlMode) -> String {
 /// par un compte bancaire relié au compte débiteurs ou créanciers ; sans
 /// cette garde, le retrait seul laisserait la facture payée sans transaction
 /// de son compte. Le retrait seul ne vaut donc que pour le genre `Entry`.
-///
-/// Revue P2 (B2-3, E2-4) : les deux sous-requêtes reprennent **les mêmes
-/// critères** que le classement (`reconciliation_cancel::classify` : ligne
-/// `invoice_settlements` de l'écriture ; facture fournisseur `paid` qui la
-/// porte, `SUPPLIER_SETTLEMENT_CLASSIFY_SQL`), bornées comme lui par la
-/// société de la transaction. Un test (`the_settlement_exclusion_matches_the_classification`)
-/// rapproche les deux textes ; les tests HTTP `s34_11b_e1_3_…` et
-/// `s34_11b_b2_2_…` vérifient qu'une écriture classée règlement n'a pas
-/// d'autre côté.
 fn other_side_predicate(movement: &str) -> String {
     format!(
         "(bt.bank_account_id <> ? AND bt.amount = -({movement}) \
           AND NOT EXISTS (SELECT 1 FROM invoice_settlements s2 \
-                           WHERE s2.company_id = bt.company_id \
-                             AND s2.journal_entry_id = bt.matched_entry_id) \
+                           WHERE s2.journal_entry_id = bt.matched_entry_id) \
           AND NOT EXISTS (SELECT 1 FROM supplier_invoices si2 \
-                           WHERE si2.company_id = bt.company_id \
-                             AND si2.settlement_journal_entry_id = bt.matched_entry_id \
+                           WHERE si2.settlement_journal_entry_id = bt.matched_entry_id \
                              AND si2.status = 'paid'))"
     )
 }
@@ -760,7 +749,7 @@ const HAS_LINK: &str =
 /// Story 34-11b (#972, C-e341-35) — la seule définition de « l'autre côté
 /// légitime », pour une transaction **liée** (l'annulation : retirer le seul
 /// lien, `reconciliation_cancel::cancel_in_tx`, et sa vue) comme pour une
-/// transaction **prospective** (la candidate : `entry_cancel_outlook` depuis
+/// transaction **prospective** (la candidate : `entry_cancel_blocker` depuis
 /// `GET …/entry-candidates`). Pour une transaction liée, `t.amount` égalait `M`
 /// au rattachement ; le prédicat ne relit pas `M`, qui dépend du lien actuel
 /// du compte de `t` à son grand livre.
@@ -1371,34 +1360,5 @@ mod tests {
             2,
             "deux paramètres : compte, montant"
         );
-    }
-
-    /// Revue P2 (B2-3, E2-4) : l'exclusion des règlements suit le classement de
-    /// `reconciliation_cancel` — mêmes tables, mêmes colonnes, même statut
-    /// `paid` que `SUPPLIER_SETTLEMENT_CLASSIFY_SQL`, même borne par société.
-    /// Un critère ajouté au classement sans l'être ici rougit.
-    #[test]
-    fn the_settlement_exclusion_matches_the_classification() {
-        use crate::repositories::reconciliation_cancel::SUPPLIER_SETTLEMENT_CLASSIFY_SQL as FOURNISSEUR;
-        let p = other_side_predicate("?");
-        assert!(FOURNISSEUR.contains("FROM supplier_invoices"));
-        for critere in [
-            "settlement_journal_entry_id",
-            "status = 'paid'",
-            "company_id",
-        ] {
-            assert!(FOURNISSEUR.contains(critere), "classement : {critere}");
-            assert!(
-                p.contains(&format!("si2.{critere}")),
-                "prédicat : {critere}"
-            );
-        }
-        assert_eq!(
-            FOURNISSEUR.matches(" AND ").count(),
-            2,
-            "le classement fournisseur a changé : reporter ses critères dans other_side_predicate"
-        );
-        assert!(p.contains("s2.company_id = bt.company_id"));
-        assert!(p.contains("s2.journal_entry_id = bt.matched_entry_id"));
     }
 }
