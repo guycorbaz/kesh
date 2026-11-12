@@ -1,6 +1,6 @@
 # Story 34-11a2 : créer et modifier une carte de crédit — type, quatre derniers chiffres, lien à un passif (#972)
 
-Status: review
+Status: done
 
 *Fiche rédigée le 2026-11-10 en autonomie (Opus 5.5), à la remédiation de la validation P1 du groupe e341 (découpe de l'ancienne 34-11a,
 arbitrage de l'orchestrateur), worktree `/home/gcorbaz/devel/kesh-e34`, branche `chore/epic-34-kickoff`, numéros de ligne de `a75835db`.
@@ -353,6 +353,20 @@ story de l'epic. La **34-11b** s'appuie sur celle-ci.
   close comptée, carte et compte bancaire sur le même passif, refus avant `AccountHasEntries` (tests, M15). **A2** — PDF régénéré dans la
   branche, écart à X-1 déclaré (C-e34a2-15). Issues ouvertes par l'orchestrateur : B5 de la 34-11a1 → **#1032**, angle mort de la
   réconciliation → **#1033**.
+- 2026-11-12 : **revue de code P2 (Sonnet, trois lentilles, passe complète)** — `kesh-gate-logs/e34a2-review-p2-{B,E,A}.md` : **0 au-dessus de
+  LOW** une fois réfuté le seul MEDIUM. **B1 réfuté** (interblocage retypage / règlement client « non rejoué ») : le règlement client est
+  rejoué, `crates/kesh-api/tests/audit_route_registry.rs:513` : `("post", "invoices::settle_invoice_handler", Traced, Rejouee),` — et le
+  retypage l'est aussi (`accounts::update`, C-e341-40). **Renvoyés en issues** : faux négatif de `mask_ibans` (deux lettres de pays devant un
+  numéro de carte) → **#1035** ; nom non borné avant la garde → **#1036** ; titre « Nouveau compte bancaire » sur le formulaire d'une carte →
+  **#1037**. **Remédiation, tests et documents seulement, aucune ligne de production** (commit de tests `175d1ef5`) : E3 (`PUT` d'une carte
+  avec un numéro complet dans le nom, la description, les quatre chiffres ; `cardLast4 = "1234 5678"` ; `PATCH` vers le passif courant, d'une
+  carte archivée, d'une carte close ; carte vers un passif non imputable ou le compte créanciers désigné — phrase au manuel) ; E4 : mutation
+  (c) jouée (M19, tuée), (a) et (b) écrites non tuées, ordre non témoigné, avec la raison (liste des mutations nommées) ; A8 (`version < 1`
+  avant le `404` au `PUT`) ; B4 (code et message d'un compte bancaire sans `iban`) ; A1 (M11 à M19 nommées) ; A2 (AC-3, AC-7, AC-8 annotées) ;
+  A3 (raccord (3) : manuel, PDF, CHANGELOG) ; A5 (renvoi `mut-p1/`) ; A6 (code du script E2E précisé) ; A7 (captures 01 à 06 reprises : toast
+  fermé, la 06 avec un compte bancaire ordinaire proposé et la carte absente). A4 (raccords au fichier d'epic) : l'orchestrateur, à
+  l'intégration. **Tendance de la boucle** : P1 (Opus) 0 CRITICAL, 0 HIGH, 3 MEDIUM, ~27 LOW → P2 (Sonnet) 0 au-dessus de LOW (un MEDIUM
+  réfuté). **Validation terminée**, sur une passe sans finding au-dessus de LOW, et une remédiation qui ne touche aucune ligne de production.
 
 ## Dev Agent Record
 
@@ -423,6 +437,21 @@ Opus 5.5 (claude-opus-5-5), en autonomie, 2026-11-12.
 - **Captures** : 01 à 04 reprises, 05 (formulaire de lien d'une carte : passifs seuls, pas de *Délier*) et 06 (dialogue de règlement d'une
   facture client : la carte n'est pas proposée ; la base E2E n'avait aucun autre compte bancaire, la liste est vide), prises après l'E2E r3.
 - **Écarts** : le PDF régénéré dans la branche (C-e34a2-15) ; aucun nouvel écart à la consigne Edit.
+- *(Annotation, revue P2 A6 : « `e2e rc=0` » de `gates-3.txt` est le code de sortie du **script** `e2e-e34a2.sh` ; celui de Playwright est
+  `playwright rc=1` dans `e2e-r3/playwright.log`, pour les neuf échecs nommés ci-dessus.)*
+
+#### Remédiation de la revue P2 (2026-11-12)
+
+- **Aucune ligne de production touchée.** Commits : `175d1ef5` (tests, une phrase du manuel), puis documents et PDF.
+- **Tests neufs** (de `eed314a9` à `175d1ef5`, recomptés) : `credit_card_e2e.rs` 18 → 22 (`put_d_une_carte_et_numero_complet`,
+  `patch_d_une_carte_inchangee_archivee_ou_close`, `carte_vers_un_passif_non_imputable_ou_creanciers`, `put_version_zero_avant_le_404`) ;
+  `compte_bancaire_sans_iban_ou_avec_quatre_chiffres` étendu (message).
+- **Gates**, voie base : ciblé `credit_card_e2e`, `credit_card_repository`, `bank_accounts_e2e` 76 passés sur 76 (`cible-5.log`) ;
+  `scripts/test-fast.sh --ci` 5198 passés sur 5198, 12 ignorés (`gate-test-fast-5.log`) ; `scripts/gate-ci.sh kesh_ci_e34a2` 5205 passés,
+  0 échoué, 16 ignorés (`gate-ci-5.log`) ; `cargo fmt`, `cargo clippy --workspace --all-targets -D warnings` verts. **Mutation M19** jouée,
+  tuée par `patch_d_une_carte_inchangee_archivee_ou_close` (`mut/M19.log`). **E2E complet non rejoué** : seuls des tests Rust et des documents
+  ont changé depuis l'E2E complet de `b27c3ea1` ; la spec de la carte a tourné seule (`e2e-r5/`, 1 passée) pour reprendre les captures.
+  Vitest non rejoué : aucun fichier frontend touché.
 
 ### File List
 
