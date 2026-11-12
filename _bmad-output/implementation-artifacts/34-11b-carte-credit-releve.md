@@ -293,6 +293,29 @@ du rattachement à un règlement : une écriture de règlement n'a qu'une ligne 
   garde d'une transaction en attente : sain). Noms de la fiche alignés sur ceux de la 34-4 (`entry_sql(EntrySqlMode)`, `MATCHED_ELSEWHERE` →
   `HAS_LINK`, `NOT_MATCHED` → `linkable_side()`, `count_already_booked_for_page`). Écarts consignés au registre `e34-choix-autonomes-e34b.md`
   (C-e34b-1 à 8).
+- 2026-11-12 : **revue de code P1** (trois lentilles, rapports `kesh-gate-logs/e34b-review-p1-{B,E,A}.md`) : 0 CRITICAL, 0 HIGH, 2 MEDIUM distincts
+  (B1-1 = A1-1, E1-1 + E1-2), une vingtaine de LOW. **Remédiation (Opus 5.5)**, commits `1b83c157` (code, tests, docs) et `25a7d4dd`
+  (`sitesTotal`, prompt P2) :
+  - **B1-1** : (c′) compte à part les `k − m` non rapprochées et les `m` écritures de virement, singulier/pluriel (clés `-transfer-among-one`,
+    `-other` ; `-transfer-among` retirée), quatre locales, replis, manuel ; Vitest récrit (C-e34b-11).
+  - **E1-1, E1-2** : `expectUnlinkOnly` dans le corps de `POST …/cancel`, `409 RECONCILIATION_CANCEL_CHANGED`, rien d'écrit ; l'écran l'envoie
+    toujours et relit la vue ; tests HTTP des deux sens, Vitest, mutations M12 et F4 (C-e34b-9). `api-external.md` suit.
+  - **E1-3** : `other_side_predicate` exclut les écritures de règlement (client ; fournisseur payée) ; test `s34_11b_e1_3_…`, M13 (C-e34b-8 récrit).
+  - **B1-2** : la limite des comptes qui partagent un grand livre écrite au manuel ; **issue demandée**.
+  - **B1-3, E1-4, A1-11** : M2b déclarée équivalente (doc-comment de `linkable_side`) ; le cas encore bloqué testé
+    (`s34_11b_a1_11_…`, état forgé).
+  - **B1-4** : `CancelOutlook` — une seule lecture de l'autre côté par candidate, par vue et par geste (C-e34b-10).
+  - **B1-5, A1-10** : « Aujourd'hui… ; si l'autre côté est annulé d'abord… » à la fenêtre de rattachement (quatre locales) et au manuel.
+  - **B1-6, A1-5** : `kind: entry` (`api-external.md`) et la « mention » d'audit du manuel récrits au texte exact.
+  - **A1-2** : C-e34b-1 corrigé ; tests `s34_11b_a1_2_relie_ailleurs_l_autre_mouvement_admis` (admis) et
+    `s34_11b_a1_2_virement_eclate_sur_trois_comptes_refuse` (refusé) ; manuel (« Ce qui ne se rattache pas »).
+  - **A1-3, E1-5** : doc-comments d'`entryCount` / `matchedElsewhereCount` (TS et Rust).
+  - **A1-6, B1-8** : l'E2E lit les deux soldes comparés et exige `statementGap: null` ; il tient son prélèvement sur un compte bancaire **propre**
+    (IBAN synthétique réservé, actif propre ; C-e34b-12) ; `s34_11b_ac4c` asserte aussi avant tout relien.
+  - **A1-7** : assertion HTTP de `unlinkOnly` aux candidates ; mutations front F1 à F3 jouées.
+  - **A1-8** : M7c décrite telle qu'elle est jouée, et rejouée avec `supplier_invoice_draft_e2e`.
+  - **A1-4, A1-9, B1-7 — renvoyés à l'intégration** : le pas à pas *Dette* (la 34-2 est dans la release : à vérifier contre elle) et le PDF du
+    manuel (régénéré à la release ; y greper `rejetez-la`, `Tenir une carte`, `#823`). Rien d'autre n'est changé pour eux.
 
 ## Dev Agent Record
 
