@@ -448,3 +448,13 @@ retenue, options écartées, réversibilité. Lignes citées sur `release/0.17.6
   hors de #431 : une clé MCP n'est pas une clé REST, et le manuel écrit déjà la limite (`admin-manual.tex:3392`).
 - **Écartée** : un test par route : couvre les routes écrites, non celles qui viendront.
 - **Réversible** : oui.
+
+### C-e350-41 — 35-8b : l'`Acteur` partout où un handler authentifié trace, administration comprise
+
+- **Contexte** : 35-8b. Exempter les dépôts appelés « seulement par l'administration » oblige à prouver, pour chacun, que
+  nulle route comptable ne l'appelle, et fait reposer la piste de contrôle sur la place de `require_not_pat`.
+- **Retenu** : tout site atteint par un handler authentifié prend l'`Acteur` de la requête ; restent hors du motif le
+  pré-authentification, le système (réparation au démarrage), le pont et le serveur MCP. Les raisons `A_CONVERTIR_35_8B`
+  et `ADMIN_SANS_CLE` disparaissent de la garde.
+- **Écartée** : garder `ADMIN_SANS_CLE` : moins de sites à convertir, mais une preuve d'appelant à tenir à jour.
+- **Réversible** : oui.
