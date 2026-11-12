@@ -8,6 +8,13 @@ Le contenu est rédigé en français à destination des **fiduciaires, PME, ind�
 
 ---
 
+## [0.17.7] — Non publié
+
+### Corrigé
+
+- **Réconciliation : *Rejeter* une transaction signalée « déjà comptabilisée » demande confirmation** (refs [#1023](https://github.com/guycorbaz/kesh/issues/1023)) : un rejet retire la transaction de la liste sans passer d'écriture, et un encaissement réel pouvait la quitter d'un clic sans être aux livres. Si la sélection contient une ligne signalée, *Rejeter* ouvre la même confirmation que les autres gestes ; elle dit que les transactions cochées quittent la liste sans écriture, qu'une transaction déjà aux livres se rattache plutôt (*Rattacher à une écriture existante*), et qu'un rejet s'annule depuis le détail de son import ; *Rejeter quand même* rejette toutes les transactions cochées. Sans ligne signalée, le rejet part aussitôt, comme avant. La confirmation ne nomme pas encore l'écriture qui ressemble à la transaction (refs [#1052](https://github.com/guycorbaz/kesh/issues/1052)).
+- **Réconciliation : une relecture de la liste referme la confirmation « déjà comptabilisée »** (refs [#1024](https://github.com/guycorbaz/kesh/issues/1024)) : une confirmation restée ouverte pendant une relecture pouvait être validée sans effet ni message, sur des lignes qui n'étaient plus celles de la liste ; elle se referme désormais. Dans un navigateur, la confirmation bloque la page, si bien que ce cas n'était atteint qu'en test.
+
 ## [0.17.6] — 2026-11-12
 
 ⚠️ **Avant la mise à jour, prenez une sauvegarde complète** — la base, le `.keshbackup` **et** le dossier des documents. Cette version porte **une migration breaking** (`20261110000001_bank_accounts_without_iban`) : elle relève la version minimale de la base à **0.17.6**. Kesh écrit en plus sa propre sauvegarde dans `backup/pre-upgrade/` avant de migrer, mais elle ne dispense pas de la vôtre. **Une 0.17.5 refuse de démarrer sur une base passée en 0.17.6, et refuse d'importer une sauvegarde 0.17.6 : le retour à la 0.17.5 passe uniquement par la sauvegarde d'avant la mise à jour.**
