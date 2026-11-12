@@ -177,6 +177,9 @@ une écriture manuelle ou que je l'éclate, afin de ne pas compter deux fois un 
    *Écriture manuelle* et *Éclater* — *Continuer quand même* relit la ligne dans la liste courante ; si elle a quitté la liste
    pendant la confirmation (relue entre-temps), rien ne s'ouvre, et rien n'est dit (issue #1024). *Accepter* reprend le lot
    tel qu'il est sélectionné au moment du clic. Fermer le dialogue (Échap, clic hors) vaut *Annuler*.)*
+   *(Annoté le 2026-11-12, revue P4 ciblée C4-1 : la réserve vaut aussi pour *Accepter* — une relecture de la liste pendant la
+   confirmation vide la sélection (`load()`), et *Continuer* n'envoie alors rien, sans message ; #1024 complétée en ce sens.
+   Manuel aligné.)*
 7. **AC-7 — après coup** : la liste est relue après chaque geste (comportement actuel) ; une ligne rattachée disparaît, et
    l'avertissement de l'autre côté d'un virement apparaît à la relecture suivante.
 
@@ -332,7 +335,16 @@ aucune ligne commune prévue.
     frais, de l'arrondi et du virement en plusieurs écritures, doublon de deux transactions du même montant) ; **B2-5** →
     C-e344-17, *Continuer* relit la ligne dans la liste courante, la liste du dialogue n'est plus vidée à la fermeture ;
     **B2-6** → description de M8 ; **B2-7** → allemand sans « Sie würde » ambigu (« Die Bewegung würde sonst doppelt
-    gezählt », « Lehnen Sie die Transaktion ab »). Note d'E sur *Rejeter* sans confirmation : issue demandée (P3).
+    gezählt », « Lehnen Sie die Transaktion ab »). Note d'E sur *Rejeter* sans confirmation : issue demandée (P3), ouverte
+    par l'orchestrateur : **#1023**.
+- 2026-11-12 : passe ciblée **P3** (Haiku, une lentille, commit `cf585bff` ; rapport `kesh-gate-logs/e344-review-p3-ciblee.md`) :
+  0 C, 0 H, 1 MEDIUM (documentaire), 3 LOW. Remédiation `1005d74a` (texte seulement) : **C3-1** → AC-6 annotée et manuel
+  (*Continuer* ne rouvre pas une ligne sortie de la liste) ; **C3-2** → issue **#1024**, non corrigée ; **C3-3** → de-CH
+  « doppelt gezählt werden » ; **C3-4** → manuel, ce qui fonde le signal.
+- 2026-11-12 : passe ciblée **P4** (Sonnet, une lentille, commit `1005d74a` ; rapport `kesh-gate-logs/e344-review-p4-ciblee.md`) :
+  **0 au-dessus de LOW**. **C4-1** → réserve étendue à *Accepter* (une relecture vide la sélection) au manuel et à l'AC-6 ;
+  #1024 complétée par l'orchestrateur. **C4-2** (« sie würde … » de `-confirm-intro`) : **arbitrage rédactionnel laissé en
+  l'état**, le `.ftl` n'est plus touché. Remédiation hors production (manuel et fiche).
 
 ## Performance
 
