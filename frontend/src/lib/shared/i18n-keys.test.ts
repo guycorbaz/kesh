@@ -916,7 +916,9 @@ const ATTENDU = {
 	// `reconciliationCancelDoneMessage`), `LinkSettlementModal.svelte` +1 (le retrait seul d'une
 	// écriture de virement) ; `already-booked.ts` inchangé (4 → 4 : deux clés remplacées). Que des
 	// littéraux ; `sitesNonResolus` et `relais` inchangés.
-	sitesTotal: 2956,
+	// Remédiation P1 de la 34-11b (B1-1) : **2956 → 2957** (+1), `already-booked.ts` 4 → 5
+	// (`-transfer-among` scindée en `-one` et `-other`). Recompté par `grep -o 'i18nMsg('`.
+	sitesTotal: 2957,
 	sitesNonResolus: 31,
 	relais: 6,
 	// Story 26-1 (#620, AC3-bis) : **10 → 11** — `lib/features/bank-import/
