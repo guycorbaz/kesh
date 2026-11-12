@@ -186,6 +186,7 @@ retenue, options écartées, réversibilité. Lignes citées sur `release/0.17.6
 - **Retenu** : un avis au-dessus de la liste (« n'est plus à traiter … la liste est à jour »), effacé au geste suivant, pour
   les quatre gestes ; rien n'est envoyé. Pas par `errorMsg`, qui remplace la liste.
 - **Réversible** : oui.
+- *(Annoté le 2026-11-12, validation P1 de la 35-4 : **révisé par C-e350-18** — garde défensive, sans cause nommée.)*
 
 ### C-e350-8, extension du 2026-11-12 — fichiers communs des stories 35-4, 35-5a, 35-5b, 35-6
 
@@ -258,4 +259,20 @@ retenue, options écartées, réversibilité. Lignes citées sur `release/0.17.6
   `opening_balances.rs:363` et `journal_entries.rs:542` (autres fonctions de lecture) restent à #1050 et #1051.
 - **Écartées** : (a) #1025 en partie : laisserait la moitié de l'issue ; (b) une grammaire serveur commune aux trois routes
   dès cette story : touche l'écriture manuelle, hors de l'objet.
+- **Réversible** : oui.
+
+### C-e350-18 — 35-4 : #1024 en garde défensive ; l'écriture ressemblante en issue ; `sitesTotal` à la règle d'union
+
+- **Contexte** : validation P1 de la 35-4. Par lecture, la liste ne peut pas se relire pendant que la confirmation est ouverte
+  dans un navigateur (modale bits-ui : focus piégé, clic hors = *Annuler* ; `load()` ne suit que `limit` et `bankAccountId`) ;
+  le test qui fonde #1024 clique derrière la modale en jsdom ; le cas « autre onglet » est déjà rendu en `failed[]`.
+  `AlreadyBooked` ne porte que des nombres. `i18n-keys.test.ts:972` (`sitesTotal`) est un compte exact que chaque story
+  i18n déplace.
+- **Retenu** : (1) l'avis de #1024 reste, en **garde défensive** testée en Vitest, sans nommer de cause, dans une région
+  `role="status"` hors de la branche de la liste ; l'étape 0 constate dans un navigateur s'il existe un chemin réel ; sinon,
+  ni capture ni description au manuel, et la PR le dit. (2) Nommer l'écriture ressemblante : issue à ouvrir. (3) La règle
+  d'union C-e350-8 couvre `i18n-keys.test.ts` pour **toutes** les stories : chaque branche recompte `sitesTotal` à la
+  source, l'intégration le recompte après chaque fusion, sans additionner.
+- **Écartées** : (a) promettre un avis et une capture inatteignables ; (b) fermer #1024 sans rien changer : le silence reste
+  possible sous un futur déclencheur de relecture.
 - **Réversible** : oui.
