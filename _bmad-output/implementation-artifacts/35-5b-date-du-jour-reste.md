@@ -117,7 +117,11 @@ helper E2E du jour suisse **existe déjà** : `frontend/tests/e2e/helpers/api-fi
   (`routes/invoices.rs:1018-1036`) convertit ses éléments avec elle, sans relire l'horloge. **De même pour la liste** (V3-7,
   tranché) : `factures::lister` (`services/factures.rs:236-267`) lit `lecture.aujourd_hui()`, la passe à
   `list_by_company_paginated` (qui ne l'emploie pas, la liste ne filtrant pas sur le paiement : `payment_status: None`) et la
-  **rend avec la page** ; la route (`:622`) convertit avec elle. Le CSV de l'échéancier (`:1435`, `:1459`) lit la date **une fois** dans la route et la
+  **rend avec la page**, dans un **type de service neuf** sur le modèle d'`Echeancier` — `ListeFactures { page:
+  InvoiceListResult, aujourd_hui: NaiveDate }`, sans toucher `InvoiceListResult` de `kesh-db` (`invoices.rs:320-325`) ; la route
+  (`:612`, conversion `:622`) convertit avec elle. Consommateurs à adapter (V4-2 de la validation P4) : l'outil MCP
+  `mcp/outils/factures.rs:349` (qui recopie `items/total/limit/offset`), `tests/common/mcp.rs:435` et les appels de
+  `tests/services_rollout.rs` (`:641`, `:1299`, `:1414`, `:2101`, `:2540`, … : recompter). Le CSV de l'échéancier (`:1435`, `:1459`) lit la date **une fois** dans la route et la
   passe à `list_for_export` et à la mise en forme. C'est ce qui ferme la « race midnight » de `routes/invoices.rs:1029-1031`
   (le commentaire est réécrit en ce sens). Aucun champ neuf dans `AppState`, `Lecture`, `EtatMcp` ou `ContexteMcp`.
 - **D2 — Le SQL ne lit plus `UTC_DATE()`** : `invoices.rs:404`, `:970`, `:971` lient la date du jour **par `push_bind`**, dans
@@ -210,7 +214,8 @@ branché sur l'horloge de sa requête et la date passée, mais reçoit **le jour
 (`state.horloge.maintenant().date_naive()`, `lecture.horloge().maintenant().date_naive()` — `Lecture::horloge()` posé par la
 35-5a0), et 16 bis / 22 bis gardent `d.date()`, `lr.date()`. **Le squelette réajuste les comptes de la garde** (V3-1 : ils
 bougent, une forme ne « remplace » pas toujours l'autre dans le même fichier) : les `UTC_DATE()` de `kesh-db invoices.rs` et le
-`Utc::now().date_naive()` de `dunning_eligibility.rs:98` disparaissent (la date vient d'un paramètre : 9 → 6 et 1 → 0), et des
+`Utc::now().date_naive()` de `dunning_eligibility.rs:98` disparaissent (la date vient d'un paramètre ; en **occurrences**, l'unité de la garde : `kesh-db invoices.rs` 10 → 7, `:4379` en portant
+deux, et `dunning_eligibility.rs` 1 → 0), et des
 `….maintenant().date_naive()` paraissent dans des fichiers qui n'en comptaient pas (`services/factures.rs`,
 `routes/onboarding.rs`, `routes/dunning_reminders.rs`, `routes/reports.rs`, et davantage dans `routes/invoices.rs`) ; chaque
 entrée prend le compte que rend l'exécution de la garde. Les rouges sont alors **déterministes** et justes : AC1 lit 2025 ;
@@ -259,7 +264,8 @@ qui attend la 35-5c ; `invoices.rs` (`kesh-db`) avec la **35-1** si son correcti
 `common/mcp_pieges.rs` avec la 35-5a0 (qui touche déjà `mcp.rs` pour l'horloge de l'`AppState`) ;
 `crates/kesh-api/tests/date_du_jour_garde.rs` (liste d'exemptions : 35-5a0, 35-5a, puis ici, puis 35-5c).
 Et (V3-3) : `crates/kesh-api/src/routes/invoice_email.rs` (ici `:206`, `:381`, `:904`) avec la **35-2a** (`:808`,
-`:1023-1036`, `:1754`) et la **35-2b** (`:1260-1269`) — hunks distincts ; `docs/api-external.md` aussi avec la **35-2b** ;
+`:1023-1036` ; `:1754` est un appel que la fiche 35-2a dit laisser inchangé, à constater) et la **35-2b** (`:1260-1269`) —
+hunks distincts ; écrit aussi au registre (C-e350-8, suite) ; `docs/api-external.md` aussi avec la **35-2b** ;
 `routes/onboarding.rs` (35-5a `:1043`, ici `:258`), `services/factures.rs` (35-5a0 `reglements` `:534-558`, ici `echeances`,
 `lister`, `Echeancier`), `tests/services_motif.rs` et `tests/onboarding_audit_e2e.rs` (35-5a0 `Lecture::new(`, ici les traces et
 `seed_demo`), `fiscal_years_e2e.rs` et `bank_accounts_closed_e2e.rs` (parts 35-5a et 35-5b) : ordre 35-5a0 → 35-5a → 35-5b,
@@ -348,3 +354,11 @@ chacune partant de la précédente fusionnée.
     d'intégration, plus l'exécution « nuit réelle » sur tous les binaires).
   - Découpage de la 35-5a (C-e350-28) répercuté : la plomberie est à la 35-5a0 ; helper `aujourd_hui_test()` (C-e350-29).
   - Aucun finding réfuté. Signal de découpage : non levé. Aucune migration. Statut `ready-for-dev`.
+- 2026-11-12 — **Validation P4 ciblée** (`kesh-gate-logs/e35-5b-validation-p4-ciblee.md`, lentille unique sur `0dda8159` :
+  0 HIGH, 0 MEDIUM, 3 LOW). LOW appliqués : V4-1 (« 9 → 6 » devient « 10 → 7 » en occurrences, `:4379` en portant deux) ; V4-2
+  (`lister` rend un type de service `ListeFactures { page, aujourd_hui }`, l'outil MCP `mcp/outils/factures.rs:349` et les bancs
+  nommés) ; V4-3 (fichiers communs avec 35-2a et 35-2b portés au registre, extension de C-e350-8 ; `:1754` qualifié d'appel).
+  Aucun finding réfuté.
+  **Validation terminée.** Série : P1 1 HIGH + 7 MEDIUM → P2 6 MEDIUM → P3 2 MEDIUM → P4 ciblée 0 au-dessus de LOW. Modèles :
+  P1 (complète), P2 Opus, P3 Sonnet, P4 ciblée. Les remédiations n'ont touché que la fiche, le registre, l'epic et le
+  `sprint-status.yaml`. Aucune migration. Statut `ready-for-dev`.
