@@ -1,3 +1,4 @@
+# last_updated: 2026-11-12 (kickoff de l'Epic 35 en autonomie, epic-35-corrections-par-impact.md ; huit stories 35-1 à 35-8)
 # last_updated: 2026-11-10 (rétrospective de l'Epic 33 tenue avec Guy, epic-33-retro-2026-11-10.md ; epic-33 done)
 # last_updated: 2026-11-07 (release 0.17.5 : treize branches de l'Epic 33 fusionnées sur release/0.17.5, gates et recettes de montée jouées ; 33-11 reste review, AC-6 sur la PR ; epic-33 in-progress jusqu'à la rétrospective)
 # last_updated: 2026-11-07 (Epic 33 : 33-12a et 33-12b done, #941 ; validation close au plafond de huit passes, revue de code P1 à P4 close sur 0 au-dessus de LOW ; dernier gate complet à 80bc4363)
@@ -1022,3 +1023,14 @@ development_status:
   33-12a-jeu-caracteres-qr: done  # 2026-11-07 : #941, P1, trouvée à la revue de la 33-5
   33-12b-adresse-imprimee-qr: done  # 2026-11-07 : #941, NPA et localité absents du reçu et de la partie paiement
   epic-33-retrospective: done
+  epic-35: in-progress  # 2026-11-12 KICKOFF en autonomie (planning-artifacts/epic-35-corrections-par-impact.md ; registre e35-choix-autonomes-e350.md). Corrections triées par impact, cible v0.17.7. Au kickoff, avant le tag v0.17.6 : 335 issues, 166 bugs, 14 P1 ; au tag v0.17.6 : à mesurer au tag. Objectif : solde net en baisse au tag v0.17.7. Les clés de l'Epic 34 vivent sur release/0.17.6 et s'uniront ici à sa fusion.
+  35-0-kickoff: in-progress  # 2026-11-12 : fichier d'epic et clés ; fiches 35-2 et 35-3 à suivre.
+  35-1-numerotation-sans-seq: backlog  # #932, #948 ; descend (format par défaut gardé par Guy)
+  35-2-refus-pdf-nomme-le-champ: backlog  # #955, #964 ; tête d'epic, avant le 2026-11-30 ; #944 hors (C-e350-1)
+  35-3-comptes-designes-type: backlog  # #537 ; tête d'epic, avant le 2026-11-30
+  35-4-rejeter-ligne-signalee: backlog  # #1023, #1024
+  35-5-date-du-jour-installation: backlog  # #929, #1022, #907
+  35-6-solde-ouverture-saisie: backlog  # #1026, #1028
+  35-7-autocomplete-compte-hors-liste: backlog  # #1000
+  35-8-audit-cle-api: backlog  # #431 ; après 35-5 et 35-3
+  epic-35-retrospective: optional
