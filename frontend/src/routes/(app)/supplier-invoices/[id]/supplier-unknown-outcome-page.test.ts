@@ -460,6 +460,35 @@ describe('fiche fournisseur — le second clic après une relecture en échec (r
 	});
 
 	/**
+	 * Revue P3 (M10b) — un bloc rouvert par une **relecture**, sans geste de l'utilisateur qui
+	 * passe par `clearCycleErrors` : un refus de paiement certain (400), puis deux gestes de
+	 * document dont la réponse se perd ; la première relecture montre la facture payée ailleurs
+	 * (bloc de paiement masqué), la seconde la montre de nouveau validée (bloc rouvert). Le refus
+	 * d'avant ne reparaît pas : la relecture réussie l'a vidé.
+	 */
+	it('payer : un refus ne reparaît pas dans un bloc rouvert par une relecture (mutation M10b)', async () => {
+		getMock
+			.mockResolvedValueOnce(inv())
+			.mockResolvedValueOnce(inv({ ...PAID, sourceDocument: DOC }))
+			.mockResolvedValueOnce(inv());
+		payMock.mockRejectedValue(REFUSED);
+		attachMock.mockRejectedValue(LOST);
+		detachMock.mockRejectedValue(LOST);
+		const v = render(Page);
+		await GESTURES[0].act(v);
+		expect((await v.findByTestId('supplier-invoice-pay-error')).textContent).toContain(
+			'Refus du serveur.',
+		);
+		await GESTURES[5].act(v);
+		await waitFor(() =>
+			expect(v.getByTestId('supplier-invoice-status').textContent?.trim()).toBe('Payée'),
+		);
+		await fireEvent.click(await v.findByTestId('supplier-invoice-detach'));
+		expect(await v.findByTestId('supplier-invoice-pay-submit')).toBeTruthy();
+		expect(v.queryByTestId('supplier-invoice-pay-error')).toBeNull();
+	});
+
+	/**
 	 * Revue P3 de la 34-8 (A-1 = B-1 = E-1 ; mutation M10) — la séquence entière, en DOM visible :
 	 * le refus du second clic, relu « Payée », ne reparaît pas sous le formulaire de paiement
 	 * quand l'annulation du règlement le rouvre.
