@@ -8,6 +8,16 @@ Le contenu est rédigé en français à destination des **fiduciaires, PME, ind�
 
 ---
 
+## [0.17.7] — Non publié
+
+### Corrigé
+
+- **Le solde d'ouverture d'un compte bancaire ne lit plus « 1.234 » comme un franc en silence** (refs [#1026](https://github.com/guycorbaz/kesh/issues/1026)) : dans *Comptes bancaires*, à la création comme sur un compte existant, **un point ou une virgule suivis d'exactement trois chiffres, après une partie entière de un à trois chiffres écrite sans séparateur de milliers** (zéros de tête non comptés, un zéro seul n'en étant pas une), sont refusés comme ambigus, avec la forme à écrire : `1.234`, `1.000`, `100.250`, `+1,234` (le signe ou un souligné ne masquent plus la virgule). Écrivez `1'234` pour mille deux cent trente-quatre, ou `1.2340` pour un franc vingt-trois et quatre dixièmes de centime. Restent acceptés : `1000.000` (quatre chiffres avant le point), `0.500` (partie entière nulle), `1'234.567` (milliers déjà séparés). Sont désormais refusés comme **illisibles** : une espace ou une apostrophe après le séparateur décimal (`1. 234`, `1.5'0`) ; la **notation à exposant** (`1e3`), **refusée à l'écran, toujours acceptée par l'API** ; plus de 28 décimales, que le serveur arrondissait. L'API garde sa lecture : un client qui envoie `"1.234"` écrit 1,234 franc. Les autres écrans de saisie d'un montant sont suivis à [#1050](https://github.com/guycorbaz/kesh/issues/1050) et [#1051](https://github.com/guycorbaz/kesh/issues/1051).
+- **`0,500` et `1'234,567` ne sont plus refusés comme ambigus** au solde d'ouverture d'un compte bancaire (refs [#1025](https://github.com/guycorbaz/kesh/issues/1025)) : une partie entière nulle ou dont les milliers sont séparés ne laisse aucun doute.
+- **`1_000` s'affiche 1 000.00 CHF, jamais « NaN CHF »** (refs [#1028](https://github.com/guycorbaz/kesh/issues/1028)) : l'écran du solde d'ouverture lit le souligné comme le serveur (mille), le montre sous le champ et le rappelle dans l'avis ; ce qui part au serveur est la valeur affichée.
+
+---
+
 ## [0.17.6] — 2026-11-12
 
 ⚠️ **Avant la mise à jour, prenez une sauvegarde complète** — la base, le `.keshbackup` **et** le dossier des documents. Cette version porte **une migration breaking** (`20261110000001_bank_accounts_without_iban`) : elle relève la version minimale de la base à **0.17.6**. Kesh écrit en plus sa propre sauvegarde dans `backup/pre-upgrade/` avant de migrer, mais elle ne dispense pas de la vôtre. **Une 0.17.5 refuse de démarrer sur une base passée en 0.17.6, et refuse d'importer une sauvegarde 0.17.6 : le retour à la 0.17.5 passe uniquement par la sauvegarde d'avant la mise à jour.**
