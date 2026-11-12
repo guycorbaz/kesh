@@ -30,7 +30,7 @@ code*), qui fait foi pour les comptes ; la poignée `Lecture`, le câblage du MC
 - contre-passation : `reverse_in_tx`, `reverse_owned_in_tx`, `reverse` (`ReversalDating::Today`, `journal_entries.rs:2933-2938`) ;
 - bloqueurs : `settlement_cancellation::settlement_entry_cancel_blocker` (définition `:87` ; c'est lui qui lit le jour à
   `:172`), `settlement_cancel_blocker`, `settlement_cancel_blocker_unlinking` (définitions `invoice_settlements_write.rs:826`,
-  `:838`, `:912` ; `:878` est un appel), `reconciliation_cancel::{cancel_blocker (:250), entry_cancel_outlook (:321)}` ;
+  `:838` ; `:878` est un appel), `reconciliation_cancel::{cancel_blocker (:250), entry_cancel_outlook (:321)}` ;
 - écritures et vues des factures fournisseur (`supplier_invoices.rs`, **définitions**) : `supplier_invoice_cancel_blocker`
   (`:2426`), `cancel_in_tx` (`:2510`), `supplier_settlement_cancel_blocker` (`:2706`, appelé `:2839` et `:3055`), le bloqueur
   de `:2724`, `cancel_settlement_in_tx` (`:2778`), `get_settlement_view` (`:3013`, l'enveloppe), `get_settlement_view_in_tx`
@@ -38,7 +38,8 @@ code*), qui fait foi pour les comptes ; la poignée `Lecture`, le câblage du MC
   **toutes** les écritures qui se terminent par lui — `validate` (`:1058`), `unvalidate` (`:1074`), `pay` (`:1899`), `cancel`
   (`:2680`), `cancel_settlement` (`:2963`). Les **appels** internes `:2462`, `:2750` (bloqueur) et `:2600`, `:2871`
   (`reverse_owned_in_tx`) reçoivent la date de leur appelant ;
-- règlements client : `invoice_settlements_write::{cancel_settlement (:1134), cancel_settlement_in_tx (:1023)}` ;
+- règlements client : `invoice_settlements_write::{cancel_settlement (:1134), cancel_settlement_in_tx (:912)}` (`:1023` est son appel interne
+  de `reverse_owned_in_tx(` ; validation P3, V3-4, `/usr/bin/grep -nE '^pub async fn'` lu) ;
 - rapprochements : `reconciliation_cancel::{cancel (:804), cancel_in_tx (:564), get_view}` ;
 - verrou : `lock_books`, `unlock_books`.
 
@@ -94,7 +95,7 @@ binaires (`lettering_documents_backfill.rs:43`, `lettering_documents.rs:29`, `le
   - `pub fn horloge_depuis(valeur: Option<&str>) -> Arc<dyn Horloge>` (pure, V1-2) : `HorlogeFixe` à `instant_de_test(valeur)`
     s'il y en a un, `HorlogeSysteme` sinon ; et `pub fn horloge_de_test() -> Arc<dyn Horloge>` (`#[doc(hidden)]`) =
     `horloge_depuis(std::env::var(NOM_VARIABLE_INSTANT).ok().as_deref())`, lue à chaque appel, **sans `static`, `OnceLock`,
-    `LazyLock`**. Le test porte sur `horloge_depuis` : **aucun `set_var`** (`unsafe` en édition 2024, `Cargo.toml:16`, interdit
+    `LazyLock`**. Le test porte sur `horloge_depuis` : **aucun `set_var`** (`unsafe` en édition 2024, `Cargo.toml:17`, interdit
     hors tests par `lib.rs:9`, et qui changerait la variable sous les pieds des autres tests du binaire). « Lue à chaque appel »
     tient à la garde (aucune mémoire) et à la forme de `horloge_de_test` (une ligne) ;
   - champ `pub horloge: Arc<dyn Horloge>` d'`AppState` : `HorlogeSysteme` dans `main.rs:439` ; `horloge_de_test()` dans
@@ -119,8 +120,11 @@ binaires (`lettering_documents_backfill.rs:43`, `lettering_documents.rs:29`, `le
 - **D4 — Les appelants de tests** passent la date **du jour** qu'ils tiennent déjà (une variable `today` / `aujourd_hui` du
   montage, tirée de l'horloge), **jamais une date de pièce** (date d'écriture, de facture, de paiement) : passer une date de
   pièce comme `aujourd_hui` changerait le jour du bloqueur ou de la contre-passation, donc ce que le test exerce, sans
-  qu'aucun `assert` ne bouge (validation P2, V2-7 : `payer_par`, `lettering_documents.rs:870`, reçoit `le`, date du paiement,
-  et prend `aujourd_hui_test()`). S'ils n'en tiennent pas, **`aujourd_hui_test()`**, helper partagé par crate de tests :
+  qu'aucun `assert` ne bouge. Les pièges relevés (validation P2, V2-7 ; validation P3, V3-6 ; lus) : `payer_par`
+  (`lettering_documents.rs:870`) et `payer` (`:880`) reçoivent `le`, date du paiement ; `facture_payee`
+  (`fournisseur_rapproche.rs:120-127`, appel de `pay` à `:155-162`) reçoit **`jour`**, date de la facture **et** du paiement —
+  un nom qui invite à la passer comme `aujourd_hui`. Tous trois prennent `aujourd_hui_test()` (le module `jour` du helper et
+  la variable locale `jour` vivent dans des espaces de noms distincts, à constater à la compilation). S'ils n'en tiennent pas, **`aujourd_hui_test()`**, helper partagé par crate de tests :
   - `crates/kesh-api/tests/common/jour.rs` : `horloge_de_test().aujourd_hui()` ;
   - `crates/kesh-db/tests/support/jour.rs` et **`crates/kesh-report/tests/support/jour.rs`** (neuf : V1-6 ; validation P4 de la
     35-5a, V4-2) :
@@ -148,24 +152,32 @@ binaires (`lettering_documents_backfill.rs:43`, `lettering_documents.rs:29`, `le
   `crates/*/src` et `crates/*/tests` — un fichier absent de la liste compte 0 —, le fichier de la garde exclu nommément, et
   **les lignes dont le début, blancs ôtés, est `//` (donc `///` et `//!`) écartées, comme pour la garde de date** (validation
   P2, V2-5 : sans cela, les comptes dépendraient de la rédaction des doc-comments de `new_for_tests`, `horloge_de_test`,
-  `horloge_depuis`) :
+  `horloge_depuis`). **L'unité est l'instruction, non la ligne** (validation P3, V3-2) : avant de compter, la garde retire
+  les **instructions `use … ;` entières**, du `use` au `;`, multi-lignes comprises — rustfmt écrit un import groupé une
+  entrée par ligne (`main.rs:41-49`, `use kesh_api::{` … `};`, lu), et la ligne `horloge::HorlogeSysteme,` d'un tel groupe ne
+  commence pas par `use` ; une garde par ligne la compterait comme une construction et rougirait sur le code correct. Les
+  motifs en `nom(` (`instant_de_test(`, `horloge_depuis(`, `new_for_tests(`, `horloge_de_test(`, `HorlogeFixe(`) comptent
+  **la définition comprise** (`fn nom(`, `pub struct HorlogeFixe(`), écrite dans les comptes ci-dessous ; aucune ligne `fn`
+  n'est retirée :
   - le littéral `"KESH_TEST_INSTANT"` : 2, dans `kesh-core/src/horloge.rs` (la constante, et l'attribut `should_panic` de son
     test, qui exige un littéral) ; 0 ailleurs ;
   - les occurrences de **`NOM_VARIABLE_INSTANT`** (validation P2, V2-4) : `kesh-core/src/horloge.rs` (définition, message de
-    panique, tests : compte relevé), `kesh-api/src/horloge.rs` (dans `horloge_de_test`, et son `use` s'il en a un : compte
-    relevé), `kesh-db/tests/support/jour.rs`, `kesh-report/tests/support/jour.rs` (comptes relevés) ; **0 ailleurs, `main.rs` et
+    panique, tests : compte relevé), `kesh-api/src/horloge.rs` (dans `horloge_de_test` : 1, son import
+    étant retiré avec les instructions `use`), `kesh-db/tests/support/jour.rs`, `kesh-report/tests/support/jour.rs` (comptes relevés) ; **0 ailleurs, `main.rs` et
     `lib.rs` compris** ;
   - les occurrences de **`instant_de_test(`** (définition comprise) : `kesh-core/src/horloge.rs` (définition et tests : compte
     relevé), `kesh-api/src/horloge.rs` (dans `horloge_depuis`, 1), les deux `support/jour.rs` (1 chacun) ; 0 ailleurs ;
   - les occurrences de **`horloge_depuis(`** dans `crates/*/src` : `kesh-api/src/horloge.rs` (définition, appel par
     `horloge_de_test`, tests du module : compte relevé) ; 0 ailleurs ;
-  - appels `new_for_tests(` et `horloge_de_test(` dans `crates/*/src` : uniquement leurs définitions et l'appel de
-    `horloge_de_test()` par `new_for_tests` (`lib.rs`) — aucun appel de production, ni de `mod tests` de `src` ;
-  - `HorlogeSysteme` **construit** (lignes qui le nomment hors `pub struct`, `impl`, `use`) : `main.rs` 1,
-    `kesh-api/src/horloge.rs` 1 (dans `horloge_depuis`), 0 ailleurs ;
-  - `HorlogeFixe(` dans `crates/*/src` (V2-5) : `kesh-api/src/horloge.rs` (dans `horloge_depuis`, 1),
-    `kesh-api/src/middleware/auth.rs` (1, `test_state()` du `mod tests`), `kesh-core/src/horloge.rs` (tests : compte relevé),
-    et les fichiers de `src` dont le `mod tests` date par `HorlogeFixe(Utc::now())` (D4 ; `journal_entries.rs`, qui appelle
+  - `new_for_tests(` et `horloge_de_test(` dans `crates/*/src` : `lib.rs` (définition de `new_for_tests`, appel de
+    `horloge_de_test()` par elle : 2), `kesh-api/src/horloge.rs` (définition de `horloge_de_test` : 1) ; 0 ailleurs — aucun
+    appel de production, ni de `mod tests` de `src` ;
+  - `HorlogeSysteme` **construit** : instructions `use` retirées (ci-dessus), puis la ligne `pub struct HorlogeSysteme` et la
+    ligne d'en-tête `impl … for HorlogeSysteme` ; ce qui reste nomme une construction : `main.rs` 1, `kesh-api/src/horloge.rs`
+    1 (dans `horloge_depuis` ; ses tests ne le nomment pas, sinon compte relevé), 0 ailleurs ;
+  - `HorlogeFixe(` dans `crates/*/src` (V2-5) : `kesh-core/src/horloge.rs` (définition `pub struct HorlogeFixe(` et tests :
+    compte relevé), `kesh-api/src/horloge.rs` (dans `horloge_depuis`, 1),
+    `kesh-api/src/middleware/auth.rs` (1, `test_state()` du `mod tests`), et les fichiers de `src` dont le `mod tests` date par `HorlogeFixe(Utc::now())` (D4 ; `journal_entries.rs`, qui appelle
     `reverse_in_tx` à `:3984` et `:5824`, en est un si son test n'a pas de date fixe) : comptes relevés, en égalité stricte —
     une construction ajoutée en production dans l'un d'eux fait `+ 1` et rougit ; **0 dans `main.rs`, `lib.rs` et tout autre
     fichier de `src`** — une `HorlogeFixe(Utc::now())` de production figerait le jour au démarrage ;
@@ -193,12 +205,16 @@ fenêtre de quelques secondes autour de minuit UTC, et va dans le sens voulu.
    **nommément**, les attendus **lexicaux** des gardes que D3 réécrit : `mcp_gardes_lexicales.rs:169` et `:575` (la ligne
    `mcp::LectureOutils::nouvelle(…)` du câblage, qui passe à trois lignes), `services_motif.rs:2071` et `:2083`
    (`FABRIQUES_V2`, `Lecture::new(self.pool.clone())` qui prend l'horloge) ; et une entrée neuve (la ligne `horloge_outils`,
-   liste voisine de `LIB_NOMME_MCP`). Contrôle en deux temps (validation P2, V2-3), au Change Log :
+   liste voisine de `LIB_NOMME_MCP`). **`<base>`**, ici et dans la *Dérogation*, est **le parent du premier commit de la
+   story** (`<commit (1)>^`), pour que le contrôle ne dépende pas de la branche (validation P3, V3-7). Contrôle en deux temps
+   (validation P2, V2-3), au Change Log :
    - **fichiers modifiés**, lignes retirées seulement : `git diff -U0 --diff-filter=M <base> -- 'crates/*/tests/*' 'crates/*/src/*'
      | /usr/bin/grep -E '^-' | /usr/bin/grep -vE '^---' | /usr/bin/grep -E 'assert|from_ymd_opt|expect_err|StatusCode::'` —
      chaque ligne rendue est **listée** au Change Log avec sa ligne `+` correspondante et sa raison, parmi trois : un argument
      ajouté (date, horloge) ; un reflux de rustfmt (même expression recoupée, sens inchangé) ; un attendu de garde lexicale
-     de la liste ci-dessus. Toute autre raison est un défaut de cette story ;
+     de la liste ci-dessus. Toute autre raison est un défaut de cette story. **Limite écrite** : un attendu porté par une
+     ligne qui ne contient aucun de ces jetons (une chaîne `"2025-06-15"` seule, la queue d'un `assert!(` sur plusieurs
+     lignes) échappe à ce filtre ; le gate reste le juge du comportement ;
    - **fichiers neufs** (`--diff-filter=A` : `date_du_jour_garde.rs`, les helpers `jour.rs`, `kesh-core/src/horloge.rs`,
      `kesh-api/src/horloge.rs`, tests d'AC2 et d'AC3) : listés à part ; leurs `assert` sont neufs par construction et ne
      relèvent pas de ce contrôle.
@@ -220,14 +236,18 @@ fenêtre de quelques secondes autour de minuit UTC, et va dans le sens voulu.
 4. **AC4 — `KESH_TEST_INSTANT`** : `instant_de_test(Some("2025-12-31T23:30:00Z"))` rend l'instant ; `None` et `Some("")`
    rendent `None` ; une valeur invalide `panic!` en citant la constante (`#[should_panic(expected = "KESH_TEST_INSTANT")]`,
    l'attribut exigeant un littéral : le second et dernier littéral admis, dans le `mod tests` de `horloge.rs`) ; `horloge_depuis(Some("2025-12-31T23:30:00Z")).maintenant()` rend l'instant,
-   `horloge_depuis(None)` une horloge système : deux lectures encadrant un `std::thread::sleep(Duration::from_millis(5))`
-   sont **strictement** croissantes (V2-6 : une `HorlogeFixe(Utc::now())` rendrait deux lectures égales) — la garde de
-   construction de `HorlogeSysteme` (D5) reste le filet de la forme.
+   et `horloge_depuis(None)` est l'horloge système. Ce dernier point **ne se teste pas par l'horloge murale** (validation
+   P3, V3-7 : deux lectures de `Utc::now()` peuvent reculer sous un réglage NTP, et une horloge monotone n'est pas
+   comparable à un `DateTime<Utc>`) : il est tenu par les gardes de D5 — dans `kesh-api/src/horloge.rs`, `HorlogeSysteme`
+   construit 1 fois et `HorlogeFixe(` 1 fois, toutes deux dans `horloge_depuis` ; une branche `None` qui rendrait une
+   `HorlogeFixe` y ferait 2 et rougirait. La comparaison « strictement croissantes » de la validation P2 (V2-6) est retirée.
 5. **AC5 — La garde** : verte avec les comptes de son exécution ; sondes au Change Log (forme ajoutée, forme coupée, compte
    + 1, `KESH_TEST_INSTANT` dans un fichier de plus, `HorlogeSysteme` construit ailleurs, `OnceLock` dans un helper de jour,
    appel de `new_for_tests(` dans `src`, **`NOM_VARIABLE_INSTANT` nommé dans `main.rs`**, `instant_de_test(` ou
    `horloge_depuis(` appelé dans `main.rs`, `HorlogeFixe(` construit dans `main.rs`, et une ligne `// NOM_VARIABLE_INSTANT`
-   ajoutée qui, elle, **ne** rougit **pas** — commentaires écartés).
+   ajoutée qui, elle, **ne** rougit **pas** — commentaires écartés ; et, **verte** aussi, un import groupé sur plusieurs
+   lignes ajouté à `main.rs`, `use kesh_api::{` / `horloge::HorlogeSysteme,` / `};`, qui ne compte pas comme construction —
+   instructions `use` retirées, validation P3, V3-2).
 6. **AC6 — Aucune migration** ; `crates/kesh-db/migrations/` intact.
 
 ## Tests à écrire, et la preuve du rouge
@@ -270,8 +290,10 @@ absent : tuée par les gardes de `NOM_VARIABLE_INSTANT`, d'`instant_de_test(` et
          helpers `aujourd_hui_test()` (`common/jour.rs` et `pub mod jour;` dans `common/mod.rs`, les deux `support/jour.rs`,
          les inclusions `#[path]`), posés **avec leurs premiers appelants** — un fichier qu'aucun binaire n'inclut n'est pas
          compilé, et l'y mettre plus tôt ne prouverait rien ; le commentaire `companies.rs:986-989` ; le test d'AC2.
-         Compile une fois tous les appelants à jour (le compilateur donne la liste close). Aucun commit plus fin n'est
-         possible ici : une signature changée oblige tous ses appelants (Dérogation).
+         Compile une fois tous les appelants à jour (le compilateur donne la liste close). Une signature changée oblige
+         tous ses appelants ; seule la chaîne contre-passation → bloqueurs → vues est insécable. `lock_books` /
+         `unlock_books`, qui ne sont appelées par aucune fonction de cette chaîne, pourraient faire un commit (3a) avant
+         elle ; elles restent dans (3) par économie (Dérogation).
       4. **Garde (D5) et `docs/testing.md` (D6)** : fichier de test neuf qui lit les sources, sondes de l'AC5, mutations ;
          ses comptes supposent les neuf sites déjà convertis, d'où sa place après (3).
 - [ ] Gates : `test-fast.sh --ci` complet à chaque commit, `scripts/gate-ci.sh`, Vitest, E2E complet au dernier commit de code.
@@ -285,29 +307,44 @@ absent : tuée par les gardes de `NOM_VARIABLE_INSTANT`, d'`instant_de_test(` et
 *(Récrite à la validation P2, V2-2 : la version précédente disait la story entière indivisible, alors que son propre plan de
 commits la montrait divisible.)*
 
-**Ce qui est indivisible, et seulement cela** : le **noyau D2** — le commit (3) des *Tâches* —, c'est-à-dire les signatures de
-la fermeture et **tous** leurs appelants. Une signature changée oblige chacun de ses appelants, production et tests, dans le
-même commit ; couper ce noyau laisserait un état qui ne compile pas. Sa taille : la quasi-totalité des **50 fichiers** de
-la fermeture (dont **36 de tests**, § *Ce qui se lit*), dans `kesh-db` (une dizaine de dépôts), `kesh-api` (routes, services)
-et les tests de trois crates — plus de cinq modules à lui seul.
+**Ce qui est indivisible** (récrit à la validation P3, V3-5 : la version P2 disait « et seulement cela » du noyau entier, et
+« aucun commit plus fin n'est possible », ce qui est faux) : la **chaîne contre-passation → bloqueurs → vues** du noyau D2 —
+`journal_entries`, `settlement_cancellation`, `invoice_settlements_write`, `reconciliation_cancel`, `supplier_invoices` et
+leurs routes —, avec **tous** ses appelants. Une signature changée oblige chacun de ses appelants, production et tests, dans
+le même commit ; couper cette chaîne laisserait un état qui ne compile pas. Elle dépasse seule cinq modules. Le noyau (3)
+pèse la quasi-totalité des **50 fichiers** de la fermeture (dont **36 de tests**, § *Ce qui se lit*).
 
 **Ce qui serait séparable** : (1) `kesh-core` et (2) la plomberie de `kesh-api` (les **18** fichiers de `Lecture::new(` et des
-littéraux d'`AppState {` hors fermeture, 68 − 50) compilent et se testent sans le noyau ; ils pourraient faire une story à part,
-et la garde (4) une autre. **Choix : la story reste unique**, en quatre commits. Raisons : (a) (1) et (2) seuls livrent une
-horloge que personne ne lit — leur seule preuve serait AC3 et AC4, et leur revue séparée ne réduit pas le noyau, qui reste le
-diff à relire ; (b) la garde (4) n'a de comptes qu'une fois les neuf sites convertis, donc après (3) ; (c) chaque story de
-plus coûte une boucle de validation, un cycle de CI complet et un E2E, pour un diff qui, lui, ne diminue pas. Les quatre
-commits se relisent séparément (revue fichier par fichier, commit par commit). Réversible : la story se coupe entre (2) et
-(3) sans réécriture, les commits étant déjà ceux de deux stories.
+littéraux d'`AppState {` hors fermeture, 68 − 50) compilent et se testent sans le noyau ; **`lock_books` / `unlock_books`**
+(`companies.rs:1013`, `:1100`), qui lisent l'horloge elles-mêmes et ne sont appelées par aucune fonction de la chaîne
+(production : `routes/companies.rs:505`, `:518`, lus), feraient un commit (3a) compilable avant elle ; la garde (4) aussi se
+sépare. La coupe (2)/(3) n'est donc pas la seule possible.
+
+**Choix : la story reste une, en quatre commits** — **décision de l'orchestrateur** (validation P3, V3-5), annotée à C-e350-28.
+Les commits (1), (2) et (4), et `lock_books` / `unlock_books` dans (3), restent dans la story **pour un motif de coût**, que
+l'exception de `CLAUDE.md` (cycles Cargo, fusions intermédiaires impossibles à tester) ne nomme pas : ce motif est **assumé
+par l'orchestrateur**, non tiré de l'exception. Le coût évité : chaque story de plus coûte une boucle de validation, un cycle
+de CI complet et un E2E, pour un diff du noyau qui ne diminue pas ; (1) et (2) seuls livrent une horloge que personne ne lit
+(leur seule preuve serait AC3 et AC4) ; la garde (4) n'a de comptes qu'après (3). Les quatre commits se relisent séparément
+(revue fichier par fichier, commit par commit). Réversible : la story se coupe entre (2) et (3), ou avant (3a), sans
+réécriture.
 
 **Risque accepté** (exigé par `CLAUDE.md`) : un commit (3) d'environ cinquante fichiers, où l'erreur la plus probable est
 **muette** — un appel de test qui passe comme `aujourd_hui` une date de pièce au lieu du jour (V2-7) compile, reste vert, et
 change seulement ce que le test exerce ; le contrôle de l'AC1 ne le voit pas (il ne lit que les lignes retirées). Ce risque
-est accepté, avec trois filets : la règle de D4 (jamais une date de pièce) ; un relevé au Change Log, après (3), du **dernier
-argument** de chaque appel de la fermeture ajouté ou modifié dans les tests (`git diff -U0 --diff-filter=M <base> --
-'crates/*/tests/*' 'crates/*/src/*' | /usr/bin/grep -E '^\+'` filtré sur les noms de la fermeture), chaque argument qui n'est ni
-`aujourd_hui_test()`, ni une variable du jour du montage, ni une date fixe de test justifiée, listé et motivé ; la revue
-fichier par fichier. Une régression de comportement (date, refus) reste visible au gate et aux gardes. Le signal de
+est accepté, avec trois filets : la règle de D4 (jamais une date de pièce) ; **deux relevés** au Change Log, après (3), sur
+`git diff -U0 --diff-filter=M <base> -- 'crates/*/tests/*' 'crates/*/src/*'` (validation P3, V3-1 : avec `-U0`, un appel
+écrit sur plusieurs lignes ne change que par **une ligne d'argument ajoutée**, la ligne qui nomme la fonction restant du
+contexte, absente du diff — un filtre sur les noms serait faussement vide sur la forme dominante) :
+- **appels sur une ligne** : `… | /usr/bin/grep -E '^\+'` filtré sur les noms de la fermeture, dernier argument lu ;
+- **lignes d'argument seules, dédoublonnées** : `… | /usr/bin/grep -E '^\+\s+[^/[:space:]].*,\s*$' | /usr/bin/grep -vE
+  '^\+\s*(fn|let|use|pub|impl)\b' | sed -E 's/^\+\s+//' | sort | uniq -c` — une liste courte de jetons distincts
+  (`aujourd_hui_test(),`, `today,`, …). Simulé à la rédaction sur `support/fournisseur_rapproche.rs:155-165` (copie hors
+  dépôt, une ligne `aujourd_hui_test(),` insérée dans l'appel de `pay(`, `git diff --no-index -U0`) : le relevé rend
+  `1 aujourd_hui_test(),`, que le filtre sur les noms ne rendait pas.
+
+Dans les deux, chaque jeton qui n'est ni `aujourd_hui_test()`, ni une variable du jour du montage, ni une date fixe de test
+justifiée est listé et motivé (un `jour,` ou un `le,` ajouté est le piège de D4) ; puis la revue fichier par fichier. Une régression de comportement (date, refus) reste visible au gate et aux gardes. Le signal de
 découpage est déclaré au Project Lead (Change Log, validation P2).
 
 ### Ordre de fusion avec la 35-3 (validation P3 de la 35-5a, V3-2 ; validation P1, V1-7)
@@ -329,7 +366,10 @@ Ceux de la 35-5a (sa fiche, § *Fichiers communs*), pour la part plomberie : `li
 `crates/kesh-api/tests/date_du_jour_garde.rs` (créé ici ; sa liste d'exemptions est ensuite éditée par la 35-5a, la 35-5b,
 la 35-5c, dans cet ordre). Avec la **35-6** : `opening_balances.rs` (35-6 `:355-366`, `:515-530`, dans son `mod tests` ; ici
 `:244`, `:604`) ; avec la **35-4** : `reconciliation.rs` (35-4 `:1540` ; ici `:5799`, `:5938`, `:6587`) — hunks distincts ; l'epic
-les fait passer avant la 35-5a0, qui se rebase sur elles. **Tests neufs des stories sœurs** : tout appel neuf à une fonction de
+les fait passer avant la 35-5a0, qui se rebase sur elles. Avec la **35-2b** : `invoice_send_email_e2e.rs` (la 35-2b y ajoute
+un test, AC1 de sa fiche, `35-2b-lot-rappels-refus-pdf.md:41` ; ici les trois littéraux `AppState {` `:104`, `:1036`, `:1150`) ; avec la **35-2a** :
+`invoice_send_email_e2e.rs` et `invoice_frozen_pdf_e2e.rs` (`35-2a-refus-pdf-contrat-details.md:224-225` ; ici le littéral `:101`) — hunks distincts, couverts par la règle
+générale ci-après (validation P3, V3-7). **Tests neufs des stories sœurs** : tout appel neuf à une fonction de
 la fermeture reçoit `aujourd_hui_test()` ou une date fixe ; toute construction neuve `Lecture::new(` ou tout littéral
 `AppState {` prend l'horloge (`horloge_de_test()`) ; à l'union, l'intégration relance la garde.
 
@@ -422,3 +462,28 @@ concernés ; `docs/testing.md`.
     qu'un découpage en stories ne supprimerait pas. **Déclaré au Project Lead** par le rapport à l'orchestrateur, qui peut
     couper entre les commits (2) et (3). La passe suivante, sur cette remédiation, est à lancer. Aucune migration. Statut
     `ready-for-dev`.
+- 2026-11-12 — **Validation P3** (Sonnet, `kesh-gate-logs/e35-5a0-validation-p3.md` : 0 CRITICAL, 0 HIGH, 2 MEDIUM, 5 LOW ;
+  série 3 → 4 → 2 MEDIUM) remédiée par l'agent de rédaction (worktree `kesh-e355`). Prémisses lues au code de
+  `release/0.17.6` (`92ccb6ef`).
+  - **V3-1** : le filet du risque accepté devient deux relevés — appels sur une ligne (filtre sur les noms) et **lignes
+    d'argument seules, dédoublonnées** (`sort | uniq -c`). Simulé hors dépôt sur une copie de
+    `support/fournisseur_rapproche.rs:155-165` (`git diff --no-index -U0`) : le relevé rend la ligne d'argument ajoutée, que le
+    filtre sur les noms ne voyait pas.
+  - **V3-2** : gardes de durcissement **par instruction** — instructions `use … ;` multi-lignes retirées avant le compte
+    (`main.rs:41-49`, import groupé, lu) ; définitions comptées dans les motifs en `nom(`, comptes écrits ; sonde de l'AC5
+    « import groupé de `HorlogeSysteme` dans `main.rs` = vert ».
+  - **LOW** : V3-3 (`Cargo.toml:17`, relu : `cat -n Cargo.toml` rend `17 edition = "2024"` ; la remédiation P2 avait remplacé
+    à tort la citation juste de P1 — l'entrée P2 ci-dessus, qui dit `:16`, est fausse **à sa date** et reste telle quelle) ;
+    V3-4 (`cancel_settlement_in_tx` défini à `:912`, `:1023` est son appel interne ; `:912` retiré des bloqueurs ;
+    `/usr/bin/grep -nE '^pub async fn' invoice_settlements_write.rs` lu) ; V3-6 (D4 nomme aussi `payer` `:880` et
+    `facture_payee` / `pay` de `fournisseur_rapproche.rs:120-127`, `:155-162`, dont la variable `jour` est la date de la
+    pièce) ; V3-7 (`<base>` = parent du premier commit de la story ; limite du filtre de l'AC1 écrite ; AC4 sans comparaison
+    d'horloge murale, la branche `None` tenue par les gardes de `kesh-api/src/horloge.rs` ; 35-2a et 35-2b nommées aux
+    fichiers communs, `35-2b-…:41`, `35-2a-…:224-225`).
+  - **V3-5** (décision de l'orchestrateur) : la story reste une, en quatre commits. La phrase « aucun commit plus fin n'est
+    possible » est corrigée — `lock_books` / `unlock_books` sont séparables (commit (3a) possible) ; seule la chaîne
+    contre-passation → bloqueurs → vues est insécable. Les commits (1), (2), (4) restent dans la story pour un **motif de coût,
+    assumé par l'orchestrateur** (annotation de C-e350-28), non tiré de l'exception de `CLAUDE.md`.
+  - Aucun finding réfuté. Signal de découpage : sévérité en baisse (4 → 2 MEDIUM), mais les deux MEDIUM sont encore **nés de
+    la remédiation P2** (le filet du risque accepté, les gardes à listes closes) : recyclage, déclaré ; découpage tranché par
+    l'orchestrateur (V3-5). Aucune migration. Statut `ready-for-dev` ; la passe suivante est à lancer.

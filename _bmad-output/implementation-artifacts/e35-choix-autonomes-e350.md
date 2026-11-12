@@ -443,6 +443,12 @@ sur `chore/epic-35-fiches-355`, commencent à C-e350-21 et s'unissent à la fusi
   plomberie et le noyau — une horloge que personne ne lit, une boucle et un cycle de CI de plus, sans réduire le diff du
   noyau. Le signal de découpage de P2 (3 → 4 MEDIUM, recyclage de la remédiation de P1) est déclaré au Project Lead.
   Réversible : la coupe se fait entre les commits (2) et (3) sans réécriture.)*
+- *(Annoté le 2026-11-12, validation P3 de la 35-5a0, V3-5 — **décision de l'orchestrateur** : la story reste une, en quatre
+  commits. Correction de l'annotation précédente : le noyau n'est pas insécable en entier — `lock_books` / `unlock_books`,
+  appelées par aucune fonction de la chaîne contre-passation → bloqueurs → vues, feraient un commit (3a) à part ; seule cette
+  chaîne est indivisible. Les commits (1), (2), (4), et `lock_books` / `unlock_books` dans (3), restent dans la story pour un
+  **motif de coût** (une boucle de validation, un cycle de CI et un E2E par story de plus, pour un diff du noyau qui ne
+  diminue pas), que l'exception de `CLAUDE.md` ne couvre pas : ce motif est **assumé par l'orchestrateur**.)*
 
 ### C-e350-29 — 35-5a0 : la bascule tient dans `Horloge::aujourd_hui()`, le helper de test la suit ; durcissement par gardes
 
