@@ -125,6 +125,7 @@ lié serait un 2xxx (14-3a) ; rien ici n'apparie (« un appariement automatique 
    calculés), contiguë et imprimée par cinq ; « 41 1111 1111 1111 11 » (Visa 16, Luhn vrai, groupement 2-4-4-4-2 non admis : tue M2b) ; `0041791234564` (13 chiffres, Luhn vrai, vérifié) ; « 4111111111111111perso » (lettre collée) ; une suite de 16 chiffres valide au sens
    de Luhn mais sans préfixe de réseau (`0…`, construite par le dev). (ii) **Acceptés par la longueur ou le groupement**, sans exigence de Luhn :
    `+41 79 123 45 67`, `2026-11-10`, `20261110-0042`, un montant `1'234.50`. La garde atteint aussi l'assistant (`POST /onboarding/bank-account`, nom ou description).
+   *(Écart, revue P2 A2 : à l'assistant, le **nom** seulement — la description de l'assistant vient de la 34-1, raccord d'intégration (3).)*
 4. **AC-4 — modifier une carte** (C-e341-30) : `PUT` sans `accountKind` modifie nom, description, `cardLast4`, lien (passif) — remplacement complet
    (C-26-2-8) : **`cardLast4` absent vaut effacé**, comme la description ; `PUT` avec
    `accountKind: "bank"` → `400 BANK_ACCOUNT_KIND_IMMUTABLE` ; avec IBAN, QR-IBAN ou `isPrimary` → `400 CREDIT_CARD_FIELD_NOT_ALLOWED` ; avec un lien `Asset` ou sans lien → `400`. `PUT` sur un id inconnu ou archivé, `iban` absent → `404` (et non `400`), C-e341-43 ; `PUT` d'un compte `bank` avec `iban` absent ou `null` → `400`, et avec `cardLast4` →
@@ -142,9 +143,13 @@ lié serait un 2xxx (14-3a) ; rien ici n'apparie (« un appariement automatique 
    pour une carte : IBAN, QR-IBAN et *principal* masqués, *Quatre derniers chiffres (facultatif)* avec l'aide « Kesh ne garde jamais le numéro
    complet », compte lié **obligatoire**, liste réduite aux passifs (C-e341-33). Le solde d'ouverture de la 34-2 s'y applique, sens *Dette*
    présélectionné. Sélecteurs (C-e341-32) : la carte est proposée au paiement fournisseur, pas au règlement client.
+   *(Écarts, revue P2 A2 : liste des passifs par `admitsLedgerType`, non `linkableLedgerAccounts` — raccord (1) ; sens *Dette* du solde
+   d'ouverture non livré — raccord (2). Titre « Nouveau compte bancaire » sur le formulaire d'une carte : #1037.)*
 8. **AC-8 — codes d'erreur** : `CARD_NUMBER_NOT_ALLOWED`, `CREDIT_CARD_LEDGER_MUST_BE_LIABILITY`, `BANK_ACCOUNT_KIND_IMMUTABLE`,
    `ACCOUNT_LINKED_TO_BANK_ACCOUNT`, `CREDIT_CARD_FIELD_NOT_ALLOWED`, `BANK_ACCOUNT_FIELD_NOT_ALLOWED`, `SETTLEMENT_ACCOUNT_IS_CREDIT_CARD` : variantes `AppError`, `errors.rs`, messages aux quatre `messages.ftl`, libellés frontend, tableau d'erreurs
    de `docs/api-external.md`.
+   *(Écart, revue P2 A2 : « libellés frontend » — les écrans affichent le message du serveur, déjà traduit ; aucun libellé propre par code,
+   C-e34a2-14.)*
 9. **AC-9 — manuel** : utilisateur, *Comptes bancaires* : le type carte, les quatre chiffres, le refus d'un numéro complet, le lien à un passif, ce
    que la carte ne fait pas (QR-facture, `pain.001`, CAMT), où elle est proposée ; la phrase `user-manual.tex:2369` (« l'IBAN reste affiché à la
    suite … Deux comptes peuvent porter la même description : l'IBAN les distingue ») récrite pour une carte (les quatre chiffres en tiennent lieu) ;
@@ -209,6 +214,22 @@ lié serait un 2xxx (14-3a) ; rien ici n'apparie (« un appariement automatique 
   `NewBankAccount.iban` (chaîne vide) → rouge du même test (`CHECK` carte ⇒ IBAN nul).
 - **M8** : le `FOR UPDATE` de tête du retypage retiré → rouge du test croisé (AC-5), s'il est déterministe ; sinon écrite non tuée.
 
+*Ajoutées au développement et aux revues (journaux `kesh-gate-logs/e34a2/mut/M*.log` ; passe 1 dans `mut-p1/`) :*
+
+- **M11**, **M11b** : `recheck_ledger_type_in_tx` retiré de la création, du `PUT` → rouges des tests croisés par les routes (revue P1, B2).
+- **M12** : le `PATCH` d'une carte prépare son contrôle à la règle d'un compte bancaire → rouge `patch_d_une_carte` (revue P1, B1).
+- **M13**, **M13b** : *Délier* rendu à une carte ; la liste du lien rendue à la règle d'un compte bancaire → rouges Vitest du formulaire de lien.
+- **M14** : un actif choisi n'est plus retiré au passage à *Carte* → rouge Vitest de la page (revue P1, B9).
+- **M15** : les cartes closes écartées du refus de retypage → rouge `retypage_carte_close_et_lien_partage` (revue P1, E7).
+- **M16** : plus de masquage des IBAN → rouge `un_iban_valide_n_est_jamais_un_numero_de_carte` (revue P1, B7).
+- **M17** : un numéro complet dans `cardLast4` n'est plus nommé → rouge `numero_complet_dans_les_quatre_chiffres` (revue P1, E5).
+- **M18** : `maxlength={4}` rétabli → rouge Vitest « numéro complet collé » (revue P1, E5).
+- **M19** : le pré-vol du `PATCH` ne filtre plus les comptes archivés → rouge `patch_d_une_carte_inchangee_archivee_ou_close` (revue P2, E4 (c)).
+- **Non jouées, ordre non témoigné** (revue P2, E4 (a), (b)) : déplacer `recheck_ledger_type_in_tx` **après** `update_for_company`, ou
+  `locked_ledger_type` après `set_journal_account_id_for_company`. Le refus et la sonde resteraient les mêmes (le rollback défait l'écriture) ;
+  seul un cycle avec un écrivain concurrent de la ligne `bank_accounts` le montrerait, et le rejeu sur interblocage le masquerait. Aucun
+  test sans toucher la production ne le distingue : ordre tenu par la revue et le doc-comment, mutations écrites non tuées.
+
 ## Gates
 
 `scripts/test-fast.sh` à chaque patch `kesh-db`, gate frontend complet, E2E complet au dernier commit de code.
@@ -254,8 +275,9 @@ La branche part de la 34-11a1 sans la 34-1 ni la 34-2. Quatre raccords restent �
    d'ouverture avec *Dette* ; le paragraphe *Solde d'ouverture* du manuel utilisateur s'écrit alors (§ *Une carte de crédit*, commentaire
    LaTeX en place). Test attendu : un Vitest « carte → *Dette* présélectionné ».
 3. **La garde du numéro complet sur la description de l'assistant** (34-1) : `onboarding::set_bank_account` ajoute
-   `refuse_card_number("description", …)` (commentaire au site) ; `docs/api-external.md` (note ¹¹) dit alors « nom ou description » à
-   l'assistant. Test attendu : `garde_du_numero_a_l_assistant` étendu à la description.
+   `refuse_card_number("description", …)` (commentaire au site) ; `docs/api-external.md` (note ¹¹ et tableau des erreurs), le manuel
+   utilisateur (§ *Une carte de crédit*, « à l'onboarding, pour le nom de la banque ») **et son PDF**, et le CHANGELOG (« le nom de la banque à
+   l'onboarding ») disent alors « nom ou description » à l'assistant. Test attendu : `garde_du_numero_a_l_assistant` étendu à la description.
 4. **L'ordre de la relecture du type et du complément de la 34-2** : le complément (solde d'ouverture saisi à la création d'un compte) se
    place **après** `recheck_ledger_type_in_tx` dans `create_once` (un refus de type n'écrit rien). Test attendu : une carte refusée par la
    relecture n'écrit aucune écriture d'ouverture.
@@ -352,7 +374,8 @@ Opus 5.5 (claude-opus-5-5), en autonomie, 2026-11-12.
   la base ; le manuel l'annonce) ; le paramètre `liabilityOnly` de `linkableLedgerAccounts` (34-1 absente : `admitsLedgerType` en tient lieu) ;
   la garde sur la **description** de l'assistant (34-1) ; l'ordre « relecture du type avant le complément de la 34-2 ».
 - **Rouges d'abord : écart** — tests écrits avec le code ; la preuve qu'ils mordent est la campagne de mutations (`kesh-gate-logs/e34a2/rouges.log`).
-- **Mutations** (`kesh-gate-logs/e34a2/mut/M*.log`, `mut/campagne.log`) : **18 jouées, 18 tuées** — M1, M1b, M2, M2b, M2c, M2e, M3, M4, M5, M5b,
+- **Mutations** (`kesh-gate-logs/e34a2/mut/M*.log`, `mut/campagne.log` — *annotation, revue P2 A5 : les journaux de cette passe, écrasés
+  par la passe 2, sont copiés dans `mut-p1/`*) : **18 jouées, 18 tuées** — M1, M1b, M2, M2b, M2c, M2e, M3, M4, M5, M5b,
   M6, M7, M7b, M8, M9, M9b, M10, M10b ; aucune erreur de compilation dans les journaux. M8 tuée par
   `retypage_croise_avec_la_creation_d_une_carte`. M2d déclarée équivalente par la fiche, non jouée.
 - **Gates au dernier commit de code `9a3904f5`** (journaux `kesh-gate-logs/e34a2/`, joués au commit `167c8c4e` = `9a3904f5` + le PDF) :
