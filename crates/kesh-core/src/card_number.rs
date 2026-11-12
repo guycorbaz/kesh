@@ -22,14 +22,28 @@
 //! 5. **Préfixe d'un réseau** (IIN) cohérent avec la longueur ([`network_admits`]).
 //! 6. **Somme de Luhn** juste.
 //!
+//! **Avant tout, les IBAN valides sont écartés** (revue P1, B7 = E4) : une suite
+//! qui commence par deux lettres (bordées à gauche par ni chiffre ni lettre),
+//! suivie de chiffres et de lettres sous des séparateurs uniques, et dont un
+//! préfixe compacté est un IBAN valide ([`crate::types::Iban::new`] : pays connu,
+//! longueur du pays, MOD-97), est masquée. Un IBAN suisse écrit `CH 48…` d'un
+//! bloc, ou `CH 4826 7511 …` (4-4-4-4-3), dont les dix-neuf chiffres passeraient
+//! pour un Visa, n'est donc pas refusé.
+//!
 //! ## Limites assumées
 //!
 //! La garde protège d'une **saisie accidentelle** ; ce n'est pas un filtre de
-//! sécurité. Passent : un numéro suivi de sa date ou de son CVC sous le même
-//! séparateur (`4111 1111 1111 1111 12/28` forme 4-4-4-4-2) ; un séparateur
-//! autre que ceux du point 1 (`4111.1111.1111.1111`) ; Diners en seize
-//! chiffres (`300`-`305` n'est admis qu'à quatorze) ; un numéro précédé de
-//! chiffres sous un séparateur unique (`Facture 12 4111 1111 1111 1111`).
+//! sécurité. Passent, entre autres :
+//! - un numéro suivi ou précédé d'autres chiffres sous un séparateur unique, même
+//!   différent (`4111 1111 1111 1111 12/28` forme 4-4-4-4-2 ;
+//!   `12-4111 1111 1111 1111`, `Facture 12 4111 1111 1111 1111` forment 2-4-4-4-4) ;
+//! - un séparateur autre que ceux du point 1 (`4111.1111.1111.1111`, tabulation,
+//!   espaces U+2007, U+2009, U+200B, tiret U+2013) ;
+//! - des chiffres non ASCII (pleine chasse `４１１１…`) ;
+//! - une lettre collée à un bord (`VISA4111111111111111`, `4111111111111111perso`) ;
+//! - un groupement que la liste n'a pas (American Express par quatre, 4-4-4-3 ;
+//!   Visa 13 groupé) ; Diners en seize chiffres ;
+//! - un numéro coupé entre le nom et la description : chaque champ est contrôlé seul.
 
 /// Vrai si `c` sépare deux groupes de chiffres d'une suite candidate.
 fn is_separator(c: char) -> bool {
@@ -43,7 +57,7 @@ const GROUPINGS: &[&[usize]] = &[&[4, 4, 4, 4], &[4, 4, 4, 4, 3], &[4, 6, 5], &[
 /// Vrai si `text` contient une suite qui a la forme d'un numéro de carte
 /// complet au sens de C-e341-15 (voir la doc du module), Luhn compris.
 pub fn looks_like_card_number(text: &str) -> bool {
-    let chars: Vec<char> = text.chars().collect();
+    let chars = mask_ibans(&text.chars().collect::<Vec<char>>());
     let mut i = 0;
     while i < chars.len() {
         if !chars[i].is_ascii_digit() {
@@ -78,6 +92,59 @@ pub fn looks_like_card_number(text: &str) -> bool {
         i = end;
     }
     false
+}
+
+/// Longueur maximale d'un IBAN (norme ISO 13616), et minimale d'un pays connu.
+const IBAN_MAX: usize = 34;
+const IBAN_MIN: usize = 15;
+
+/// Masque (remplace par `X`) les IBAN valides de `chars` — voir la doc du module.
+/// Une suite candidate part de deux lettres ASCII bordées à gauche par ni chiffre
+/// ni lettre, et lit les caractères alphanumériques ASCII qui suivent, sous des
+/// séparateurs uniques ; le plus long préfixe compacté qui est un IBAN valide est
+/// masqué, séparateurs internes laissés tels quels.
+fn mask_ibans(chars: &[char]) -> Vec<char> {
+    let mut out = chars.to_vec();
+    let mut i = 0;
+    while i + 1 < chars.len() {
+        let starts = chars[i].is_ascii_alphabetic()
+            && chars[i + 1].is_ascii_alphabetic()
+            && (i == 0 || !chars[i - 1].is_alphanumeric());
+        if !starts {
+            i += 1;
+            continue;
+        }
+        // Indices des caractères alphanumériques de la suite.
+        let mut idx = vec![i, i + 1];
+        let mut j = i + 2;
+        while j < chars.len() && idx.len() < IBAN_MAX {
+            if chars[j].is_ascii_alphanumeric() {
+                idx.push(j);
+                j += 1;
+            } else if is_separator(chars[j])
+                && j + 1 < chars.len()
+                && chars[j + 1].is_ascii_alphanumeric()
+            {
+                j += 1;
+            } else {
+                break;
+            }
+        }
+        let compact: String = idx.iter().map(|&k| chars[k]).collect();
+        let found = (IBAN_MIN..=compact.len())
+            .rev()
+            .find(|&len| crate::types::Iban::new(&compact[..len]).is_ok());
+        match found {
+            Some(len) => {
+                for &k in &idx[..len] {
+                    out[k] = 'X';
+                }
+                i = idx[len - 1] + 1;
+            }
+            None => i += 1,
+        }
+    }
+    out
 }
 
 /// La suite `chars[start..end]` est entière : ni chiffre ni lettre à ses bords.
@@ -221,6 +288,38 @@ mod tests {
         ] {
             assert!(!looks_like_card_number(t), "{t:?} doit être accepté");
         }
+    }
+
+    /// Revue P1 (B7 = E4) — un IBAN suisse **valide** dont les dix-neuf chiffres
+    /// passent pour un Visa 19 (Luhn vrai), écrit avec une espace après le code
+    /// pays, d'un bloc ou groupé : accepté. Les mêmes chiffres sans le code pays
+    /// sont refusés — sans quoi le test ne prouverait rien (M16).
+    #[test]
+    fn un_iban_valide_n_est_jamais_un_numero_de_carte() {
+        // IBAN synthétique, MOD-97 juste (calculé), chiffres Luhn vrais.
+        let chiffres = "4826751125328704655";
+        assert!(luhn_valid(chiffres));
+        assert!(crate::types::Iban::new("CH4826751125328704655").is_ok());
+        assert!(
+            looks_like_card_number(chiffres),
+            "témoin : sans le code pays"
+        );
+        for t in [
+            "CH 4826751125328704655",
+            "CH-4826751125328704655",
+            "CH 4826 7511 2532 8704 655",
+            "Compte ch 4826 7511 2532 8704 655 perso",
+            "CH4826751125328704655",
+        ] {
+            assert!(!looks_like_card_number(t), "{t:?} est un IBAN");
+        }
+        // Deux lettres qui ne forment pas un IBAN valide (pays inconnu) : rien
+        // n'est masqué, la garde reprend la main.
+        assert!(looks_like_card_number("XY 4826751125328704655"));
+        // Après un IBAN valide, un numéro de carte reste vu.
+        assert!(looks_like_card_number(
+            "CH 4826751125328704655 et 4111 1111 1111 1111"
+        ));
     }
 
     /// Une suite Luhn-fausse à la forme d'un Visa n'est pas un numéro de carte.

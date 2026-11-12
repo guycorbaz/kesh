@@ -153,7 +153,8 @@ lié serait un 2xxx (14-3a) ; rien ici n'apparie (« un appariement automatique 
 
 ## Tâches
 
-- [x] **T1 — rouges d'abord** (`kesh-gate-logs/e341/rouges.log`) : AC-1 à AC-6, Vitest AC-7.
+- [x] **T1 — rouges d'abord** (`kesh-gate-logs/e341/rouges.log`) : AC-1 à AC-6, Vitest AC-7. *(Écart : tests écrits avec le code, journal
+  réel `kesh-gate-logs/e34a2/rouges.log` ; la campagne de mutations en tient lieu — Dev Agent Record.)*
 - [x] **T2 — `kesh-core`** : `looks_like_card_number(&str) -> bool` (bornes, groupements, longueur, préfixe, Luhn — C-e341-15), tests de table (AC-3).
 - [x] **T3 — routes** : corps (`accountKind`, `cardLast4`), et **`iban: Option<String>` avec `#[serde(default)]` dans `CreateBankAccountBody` et
   `UpdateBankAccountBody`** (`routes/bank_accounts.rs:79`, `:99`, `String` aujourd'hui ; validation P3, 4.1) — un compte **bancaire** sans IBAN rend
@@ -179,7 +180,10 @@ lié serait un 2xxx (14-3a) ; rien ici n'apparie (« un appariement automatique 
   propre à l'assistant (`:347`), reste inchangé (validation P4, F1). Les chaînes d'attendus des extracteurs (`routes/bank_accounts.rs:204`, `:209` :
   « `iban` str ») deviennent « `iban?` str » et nomment `accountKind?`, `cardLast4?`. Test :
   `PUT` d'une carte → `iban` `NULL` en base, quatre chiffres écrits, effacés s'ils sont absents. ⚠️ `kesh-db` touché : **gate complet même en cours de boucle**.
+  *(Écart : « avant le complément de la 34-2 » non livré, la 34-2 étant absente de la base — raccord d'intégration (4).)*
 - [x] **T5 — écran** (AC-7), `linkableLedgerAccounts` à paramètre, sélecteurs (C-e341-32), i18n quatre locales, `lint-i18n-ownership`.
+  *(Écart : `linkableLedgerAccounts` n'existe pas dans la base ; `admitsLedgerType` en tient lieu — raccord d'intégration (1) ; le sens *Dette*
+  du solde d'ouverture — raccord (2).)*
 - [x] **T6 — codes** (AC-8).
 - [x] **T7 — E2E** `bank-accounts-credit-card.spec.ts` : créer une carte liée à un passif créé par l'API, `•••• 1234` dans la liste et dans le
   sélecteur de l'import, CAMT absent pour elle, lot refusé, numéro complet refusé avec son motif ; modifier sa description.
@@ -238,6 +242,23 @@ Rapports : `/home/gcorbaz/devel/kesh-gate-logs/e34a1-review-p1-{B,E}.md`. Non co
   alors que le fichier emploie l'apostrophe droite.
 - **B3 (LOW)** — `frontend/src/lib/features/bank-accounts/format.ts:26` écrit l'espace insécable de `CARD_LAST4_SEPARATOR` en littéral
   invisible : l'écrire `' '`.
+
+## Raccords d'intégration (C-e34a2-1 ; revue P1, A1) — porteur : **l'orchestrateur, à l'intégration**
+
+La branche part de la 34-11a1 sans la 34-1 ni la 34-2. Quatre raccords restent à faire quand elles se rejoignent ; chacun a son test attendu.
+
+1. **`linkableLedgerAccounts({ liabilityOnly })`** (34-1, C-e341-5, C-e341-33) : la fonction de la 34-1 reçoit le paramètre, ou appelle
+   `admitsLedgerType(kind, accountType)` (`frontend/src/lib/features/bank-accounts/credit-card.ts`) ; les deux listes de
+   `routes/(app)/bank-accounts/+page.svelte` passent par elle. Test : `bank-accounts-page-credit-card.test.ts` reste vert (passifs seuls).
+2. **Le sens *Dette* présélectionné du solde d'ouverture d'une carte** (34-2, C-e341-7) : une carte liée à un passif ouvre le solde
+   d'ouverture avec *Dette* ; le paragraphe *Solde d'ouverture* du manuel utilisateur s'écrit alors (§ *Une carte de crédit*, commentaire
+   LaTeX en place). Test attendu : un Vitest « carte → *Dette* présélectionné ».
+3. **La garde du numéro complet sur la description de l'assistant** (34-1) : `onboarding::set_bank_account` ajoute
+   `refuse_card_number("description", …)` (commentaire au site) ; `docs/api-external.md` (note ¹¹) dit alors « nom ou description » à
+   l'assistant. Test attendu : `garde_du_numero_a_l_assistant` étendu à la description.
+4. **L'ordre de la relecture du type et du complément de la 34-2** : le complément (solde d'ouverture saisi à la création d'un compte) se
+   place **après** `recheck_ledger_type_in_tx` dans `create_once` (un refus de type n'écrit rien). Test attendu : une carte refusée par la
+   relecture n'écrit aucune écriture d'ouverture.
 
 ## Recoupements
 

@@ -799,7 +799,8 @@ pub enum AppError {
     // ----- Story 34-11a2 (#972) — la carte de crédit -----
     /// Le nom ou la description d'un compte bancaire porte un **numéro de carte
     /// complet** (`kesh_core::card_number`, C-e341-15) → `400
-    /// CARD_NUMBER_NOT_ALLOWED`, `details.field` (`bankName` | `description`).
+    /// CARD_NUMBER_NOT_ALLOWED`, `details.field` (`bankName` | `description` |
+    /// `cardLast4` — un numéro complet collé dans le champ des quatre chiffres).
     /// Kesh ne garde que les quatre derniers chiffres.
     #[error("Numéro de carte complet refusé dans le champ {field}")]
     CardNumberNotAllowed { field: &'static str },

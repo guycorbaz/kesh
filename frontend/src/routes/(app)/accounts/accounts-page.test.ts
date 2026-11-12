@@ -331,3 +331,21 @@ describe('archivage d’un compte désigné — avertissement, puis confirmation
 		expect(screen.queryByTestId('account-archive-designated')).toBeNull();
 	});
 });
+
+// Story 34-11a2 (#972 ; revue P1, A9) — le retypage refusé d'un compte lié à un compte bancaire
+// s'affiche tel que le serveur le formule (il nomme le compte bancaire), sans ouvrir
+// l'avertissement de retypage : aucune confirmation ne le lève.
+describe('retypage d’un compte lié à un compte bancaire', () => {
+	it('un 409 ACCOUNT_LINKED_TO_BANK_ACCOUNT s’affiche, sans avertissement de retypage', async () => {
+		updateAccountMock.mockRejectedValue({
+			code: 'ACCOUNT_LINKED_TO_BANK_ACCOUNT',
+			message: 'Ce compte est lié au compte bancaire « Visa — Personnel », qui n’admet pas ce type.',
+			status: 409,
+			details: { bankAccountId: 7, bankAccountName: 'Visa — Personnel' },
+		});
+		render(Page);
+		await openEditAndSubmit();
+		expect((await screen.findByRole('alert')).textContent).toContain('Visa — Personnel');
+		expect(screen.queryByTestId('account-retype-dialog-confirm')).toBeNull();
+	});
+});

@@ -165,6 +165,39 @@ describe('page des comptes bancaires — la carte de crédit (Story 34-11a2, AC-
 		expect(createBankAccountMock).not.toHaveBeenCalled();
 	});
 
+	// Revue P1 (E5) — sans `maxlength`, un numéro complet collé n'est pas tronqué à ses quatre
+	// premiers chiffres : il est refusé à l'écran, et rien ne part au serveur.
+	it('un numéro complet collé dans les quatre chiffres est refusé, jamais tronqué ni envoyé', async () => {
+		const r = render(Page);
+		await fireEvent.click(await r.findByTestId('create-bank-account-button'));
+		await fireEvent.click(await r.findByTestId('form-kind-credit-card'));
+		const champ = (await r.findByTestId('form-card-last4')) as HTMLInputElement;
+		expect(champ.getAttribute('maxlength')).toBeNull();
+		await fill(await r.findByTestId('form-bank-name'), 'Visa');
+		await fill(champ, '4111 1111 1111 1111');
+		await fireEvent.change(await r.findByTestId('form-journal-account'), {
+			target: { value: '30' },
+		});
+		await fireEvent.click(await r.findByTestId('form-submit'));
+		expect((await r.findByTestId('form-error')).textContent).toContain('quatre chiffres');
+		expect(createBankAccountMock).not.toHaveBeenCalled();
+	});
+
+	// Revue P1 (B9, M14) — un actif choisi pour un compte bancaire est retiré au passage à
+	// « Carte de crédit » : l'écran ne l'envoie pas, il demande un passif.
+	it('passer à « Carte de crédit » retire un actif déjà choisi', async () => {
+		const r = render(Page);
+		await fireEvent.click(await r.findByTestId('create-bank-account-button'));
+		await fireEvent.change(await r.findByTestId('form-journal-account'), {
+			target: { value: '20' },
+		});
+		await fireEvent.click(await r.findByTestId('form-kind-credit-card'));
+		await fill(await r.findByTestId('form-bank-name'), 'Visa');
+		await fireEvent.click(await r.findByTestId('form-submit'));
+		expect((await r.findByTestId('form-error')).textContent).toContain('compte de passif');
+		expect(createBankAccountMock).not.toHaveBeenCalled();
+	});
+
 	it('modification d’une carte (E5/B7) : type affiché, champs de carte, payload sans IBAN ni type', async () => {
 		const r = render(Page);
 		await fireEvent.click(await r.findByTestId('edit-button-7'));
