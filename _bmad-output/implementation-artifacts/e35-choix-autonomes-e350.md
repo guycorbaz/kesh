@@ -394,3 +394,24 @@ retenue, options écartées, réversibilité. Lignes citées sur `release/0.17.6
 - **Écartées** : (a) une famille « apostrophe avant le signe » : refuserait sans raison une saisie lue juste ;
   (b) arrondir comme le serveur au-delà de 28 décimales : une règle pour un cas pathologique.
 - **Réversible** : oui.
+
+### C-e350-36 — 35-7 : un compte que le dialogue ne propose plus est retiré de la sélection
+
+- **Contexte** : #1000, chemin 1. Dans *Écriture manuelle* et *Éclater*, le compte de la banque, choisi avant que son
+  identifiant soit résolu, sort ensuite de la liste : le champ paraît vide, l'identifiant part au serveur, refusé en 400.
+- **Retenu** : une fonction pure `keepOfferedCounterparty` (`reconciliation-counterparties.ts`) remet la sélection à `null`
+  quand le compte, connu de la liste complète, n'est plus proposé ; un compte inconnu (liste pas chargée) est gardé, le
+  serveur tranche. Le message existant « Compte de contrepartie obligatoire » s'applique ; aucun texte neuf.
+- **Écartée** : afficher le compte retenu hors liste, marqué : un compte que le dialogue refuse resterait sélectionnable
+  en apparence, et le serveur le refuserait de toute façon.
+- **Réversible** : oui.
+
+### C-e350-37 — 35-7 : sur un champ de compte obligatoire, quitter le champ jette le brouillon
+
+- **Contexte** : #1000, chemin 2. Sans `allowClear`, `AccountAutocomplete` garde au `blur` le texte tapé (vide ou libre)
+  pendant que la valeur reste l'ancien compte : un compte invisible part au serveur.
+- **Retenu** : au `blur`, sans `allowClear` et hors mode dégradé, le brouillon est jeté : le champ réaffiche le compte
+  retenu, sans jamais appeler `onSelect` (#271 tenue : un champ obligatoire n'est pas nullifié au `blur`).
+- **Écartées** : (a) nullifier au `blur` : rouvre #271 sur les lignes d'écriture ; (b) garder le brouillon et bloquer la
+  validation : un nouveau message et un nouvel état pour cinq consommateurs.
+- **Réversible** : oui.
