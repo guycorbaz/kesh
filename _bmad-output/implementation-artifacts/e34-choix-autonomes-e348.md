@@ -97,3 +97,31 @@
 - **Retenu.** Si le document relu est celui qu'on joignait, la fiche dit « Document joint à la facture. » ; sinon,
   l'avertissement d'avant. Court, dans la zone de la story : traité ici, sans issue.
 - **Réversible.** Oui.
+
+## C-e348-10 — les refus rendus dans les blocs de statut (revue P3, A-1 = B-1 = E-1)
+
+- **Contexte.** `payError`, `settlementCancelError` et `cancelError` sont rendus dans les blocs de statut. Une relecture
+  change le statut sans geste de l'utilisateur ; un refus resté en mémoire reparaissait, faux, au geste qui rouvrait son
+  bloc.
+- **Retenu.** `clearBlockErrors` les vide, appelée par `clearCycleErrors` et par toute relecture réussie. `pay()` vide les
+  refus dès le clic (`clearRefusals`, revue P2 de la v017-4b, B2-2) et l'encadré d'issue seulement après le contrôle des
+  champs (B-2).
+- **Écartée.** Ne pas poser le refus quand la relecture réussit : le message serait perdu si elle échoue.
+- **Réversible.** Oui.
+
+## C-e348-11 — un troisième avis, après un refus connu (revue P3, B-3 = E-2)
+
+- **Contexte.** Une relecture en échec après un **refus** reçu posait « L'issue n'est pas connue… », alors que le refus
+  est connu et affiché.
+- **Retenu.** L'état `refused-reread-failed` et la clé `supplier-invoices-reread-failed` (« La facture n'a pas pu être relue :
+  rechargez la page avant de réessayer. »), aux quatre locales.
+- **Écartée.** Ne rien afficher : l'écran montrerait un refus sur une fiche qu'il n'a pas pu relire, sans le dire.
+- **Réversible.** Oui.
+
+## C-e348-12 — l'ordre des relectures n'est pas gardé ici (revue P3, E-3)
+
+- **Contexte.** Une relecture lente peut revenir après la réponse d'un geste lancé entre-temps et l'écraser.
+- **Retenu.** Pas de garde d'ordre dans cette story : `reloadAfterRefusal` a cinq appelants dont la valeur rendue pilote
+  l'encadré, et un compteur d'époque demande un troisième état (« relecture dépassée ») à chacun d'eux. Ce n'est pas court.
+  `retry: false` (C-e348-8) réduit déjà la fenêtre ; le geste suivant est refusé et relit (C-e348-7). **Issue demandée.**
+- **Réversible.** Oui.

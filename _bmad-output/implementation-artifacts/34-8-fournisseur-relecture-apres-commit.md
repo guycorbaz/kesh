@@ -418,6 +418,37 @@ aucune migration, aucun schéma.
     (`mut/M8.log` ; la première mesure est gardée dans `mut/M8-avant-commit.log`). Leçon : commiter avant toute mutation.
   - **Tendance** : P1 2 M / 7 L → P2 2 M / 9 L (distincts : E-1 vient de la story, B-1 de la remédiation P1). La P3
     complète (Sonnet) relit d'abord `3f5d36c4` : `34-8-fournisseur-relecture-apres-commit-review-prompt-p3.md`.
+- 2026-11-11 : **revue de code P3 (Sonnet, trois lentilles) : 0 C, 0 H, 1 MEDIUM convergent (A-1 = B-1 = E-1, coté LOW par
+  E), 9 LOW — traités** (Opus 5.5, commit de code `7840aab2`, tests E2E au commit suivant). Rapports
+  `kesh-gate-logs/e348-review-p3-{B,E,A}.md`. Prémisses relues au code :
+  - **A-1 = B-1 = E-1 (M)** — né de la remédiation P2 : `payError`, `settlementCancelError`, `cancelError` survivaient à la
+    relecture, sous un bloc masqué, et reparaissaient au geste inverse. Relu : `grep -n "payError = ''"` ne rendait que le
+    début de `pay()`. Retenu C-e348-10 : `clearBlockErrors`, appelée par `clearCycleErrors` (dont le commentaire devient
+    vrai) et par toute relecture réussie. Vitest **en DOM visible** : second clic refusé, relecture « Payée », *Annuler le
+    règlement*, le formulaire de paiement rendu sans refus. Mutation **M10** (`clearBlockErrors` sans effet) : rouge sur
+    l'assertion du refus visible. **M10b** (le seul appel de la relecture retiré) **survit** : chaque geste qui rouvre un
+    bloc passe par `clearCycleErrors` ; seul un bloc rouvert par une relecture, statut changé ailleurs, le distinguerait.
+  - **LOW** :
+    - **B-2** — l'encadré n'est plus effacé avant la confirmation de *Détacher* ni avant le contrôle des champs de *Payer*
+      (`clearRefusals` au clic, l'encadré après). Le Vitest existant « Dévalider refusé, puis Payer : le refus disparaît dès
+      le geste » (`supplier-invoice-draft-page.test.ts`) tient : il a rougi au premier jet, qui reportait tout l'effacement,
+      d'où la séparation `clearRefusals` / encadré. Deux Vitest neufs.
+    - **B-3 = E-2** — un troisième avis, `refused-reread-failed` (C-e348-11), clé `supplier-invoices-reread-failed` aux
+      quatre locales.
+    - **E-3** — pas de garde d'ordre ici, issue demandée (C-e348-12).
+    - **A-2** — Vitest de valider et repasser en brouillon (refus après relecture en échec, relecture, encadré) ; mutations
+      **M11** et **M12** rouges.
+    - **A-3** — CHANGELOG : la fiche relit sur le refus d'un second envoi ; la page de modification n'est pas couverte (#986).
+    - **B-4** — même précision au manuel (phrase neuve, PDF régénéré) et au commentaire d'`isSettlementOutcomeUnknown`
+      (#986, #985, #975).
+    - **A-4** — l'échec instable de `backup-restore-new-install.spec.ts:140` : issue KF demandée, à l'orchestrateur.
+    - **A-5** — deux tests E2E neufs, avec leurs captures (`e348-refus-relecture-en-echec.png`,
+      `e348-propre-document-joint.png`).
+  - **Gardes i18n** : `sitesTotal` 2921 → **2922**, clés du domaine 409 → **410**.
+  - Commit fait **avant** les mutations (leçon de la P2) ; aucune perte.
+  - **Tendance** : P1 2 M / 7 L → P2 2 M / 9 L → P3 1 M / 9 L. Le MEDIUM de la P3 est né de la remédiation P2 : la P4 est
+    une **passe ciblée** (Haiku) sur le commit `7840aab2` et les tests E2E qui suivent,
+    `34-8-fournisseur-relecture-apres-commit-review-prompt-p4-ciblee.md`.
 
 ## Dev Agent Record
 
@@ -549,6 +580,28 @@ Opus 5.5 (claude-opus-5-5), en autonomie, sous le prompt `kesh-gate-logs/prompts
   qu'il ne rejoue pas (`api-client.ts`, `setDegraded()`), et ne le lève qu'au premier succès. Sur cette capture, il dit
   « réessai automatique » alors que rien n'est réessayé, à côté de l'encadré qui dit de recharger : l'écran se contredit.
   Antérieur à la story et commun à tout l'écran : **issue demandée** (une, P4 proposé), sans correction ici.
+
+### Gates de la remédiation P3
+
+- Le backend n'est pas touché par cette remédiation (aucun fichier Rust ; la clé neuve est dans les `.ftl`) : pas de gate
+  backend, les derniers restant ceux de `3f5d36c4` (5155/5155 nextest, 5162 `gate-ci`).
+- Au commit `cf5883e1` (`gates-p3.out`) : `check` 0 erreur, `lint-i18n-ownership` vert, `build` vert, `make user` vert ;
+  `test:unit` 2912/2913 — la garde `e2e-selecteurs-traduits.test.ts` (KF-043) a relevé un `getByText('Document joint à la
+  facture.')` dans la spec neuve : remplacé au commit `610f72c4` par `[data-sonner-toast][data-type="success"]`. E2E
+  **inexploitable** : 132 échecs, `seedTestState … 500`, le backend journalisant 128 `pool timed out while waiting for an
+  open connection` dès 23 h 08, sur des specs sans rapport (la suite entière), alors que la station tournait plusieurs
+  gates. Non retenu comme mesure.
+- **Au commit `610f72c4`, dernier commit de code** : `test:unit` **2913/2913** (223 fichiers) ; **E2E complet**, base
+  recréée vide : **391 passés, 7 échecs, 17 ignorés** (17,7 min), aucun `pool timed out`. Les sept échecs sont ceux de la
+  KF-029 : `mode-expert.spec.ts:26`, `:41`, `onboarding-path-b.spec.ts:65`, `:92`, `onboarding.spec.ts:57`, `:77`, `:150`.
+  Les cinq tests de `supplier-invoice-unknown-outcome.spec.ts` passent. `ss` avant et après : vides.
+- Mutations **M10**, **M11**, **M12** rouges, **M10b** survit (justifiée au Change Log et à `mut/SYNTHESE.log`).
+- **Captures neuves** (thème clair) : `e348-refus-relecture-en-echec.png` — l'encadré « La facture n'a pas pu être relue :
+  rechargez la page avant de réessayer. » au-dessus du refus « Transition d'état interdite » du second paiement, fiche
+  restée « Validée » (le bandeau de réessai, voir A-5 ci-dessus) ; `e348-propre-document-joint.png` — le document joint
+  affiché, notification « Document joint à la facture. ».
+- Décomptes : Vitest `supplier-unknown-outcome-page.test.ts` **32** (27 + 5 de la P3) ; E2E de la story **5** ; Vitest total
+  2908 → 2913.
 
 ### File List
 
