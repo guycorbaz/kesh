@@ -33,7 +33,8 @@ import type {
 export const INBOX_IMPORT_TIMEOUT_MS = 300_000;
 
 /**
- * Déclenche un run d'import du dossier inbox. HTTP 200 `{accepted, failed, warnings}` ; 409 si
+ * Déclenche un run d'import du dossier inbox. HTTP 200 `{accepted, failed, skipped, truncatedAt,
+ * warnings}` (Story 34-9) ; 409 si
  * déjà en cours. Délai de cinq minutes, aucun rejeu : un import abandonné s'arrête au fichier en
  * cours, et le relancer aussitôt pourrait trouver son verrou pas encore rendu.
  */

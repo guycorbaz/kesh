@@ -246,10 +246,18 @@ const PREFIXES = [
  * `-unknown-outcome-reread-failed`, un repli chacune. Aucune retirée. Revue de code P3 :
  * **409 → 410** (+1), `supplier-invoices-reread-failed`.
  *
- * Intégration de la release 0.17.6 (2026-11-12), fusion de la 34-8 sur la 34-1 : **412**,
- * recompté par la garde après la fusion (non additionné).
+ * ⚠️ **Story 34-9** (#969, #974) : **407 → 426** (+19) : vingt et une clés neuves du rapport
+ * d'import, toutes `imported-supplier-invoices-` (quatre `-report-summary-*`, trois
+ * `-report-state-*`, six `-report-duplicate*`, `-report-refused`, `-report-moved-to`, deux
+ * `-report-skipped-*`, `-report-truncated`, trois `-notice-*`), et deux retirées
+ * (`-report-accepted`, `-report-failed`). Revue de code P1 : **426 → 428** (+2),
+ * `-notice-not-imported-truncated` et `-report-duplicate-not-in-list`. Revue P2 : **428 → 429**
+ * (+1), `-report-duplicate-not-in-list-reload-failed`.
+ *
+ * Intégration de la release 0.17.6 (2026-11-12), recompté par la garde après chaque fusion
+ * (non additionné) : 412 après la 34-8 (34-1, 34-8), **434** après la 34-9.
  */
-const CLES_RELEVEES = 412;
+const CLES_RELEVEES = 434;
 
 
 /** Relève, pour chaque clé du domaine, l'ensemble de ses replis littéraux distincts. */

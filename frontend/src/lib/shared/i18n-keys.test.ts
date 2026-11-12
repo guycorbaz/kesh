@@ -932,11 +932,19 @@ const ATTENDU = {
 	// pas par l'issue inconnue) ; et **+1**, `supplier-invoices-doc-attached` dit au second clic
 	// refusé sur son propre document (B-4) : **2921**. Revue P3 (B-3 = E-2) : **2921 → 2922**
 	// (+1), `supplier-invoices-reread-failed`, l'avis d'une relecture en échec après un refus.
+	// Story 34-9 (#969, #974) : **2922 → 2942** (+20), tous dans
+	// `supplier-invoices/import/+page.svelte` — vingt et un sites des clés neuves du rapport,
+	// un second site de `imported-supplier-invoices-reload-failed`, moins les deux sites des
+	// clés retirées (`-report-accepted`, `-report-failed`). Que des littéraux ;
+	// `sitesNonResolus` et `relais` inchangés. Revue de code P1 de la 34-9 : **2942 → 2944**
+	// (+2), `-notice-not-imported-truncated` et `-report-duplicate-not-in-list`. Revue P2 :
+	// **2944 → 2946** (+2), `-report-duplicate-not-in-list-reload-failed` et un second site de
+	// `-report-duplicate-discarded` (document retiré depuis la page).
 	// Intégration de la release 0.17.6 (2026-11-12), **recompté à la source** par la garde
 	// elle-même après chaque fusion (non additionné) : 2946 après la 34-3 (34-1, 34-2, 34-3),
-	// 2954 après la 34-4, 2962 après la 34-5, 2968 après la 34-6, **2968** après la 34-8 (solde
-	// nul de la 34-8).
-	sitesTotal: 2968,
+	// 2954 après la 34-4, 2962 après la 34-5, 2968 après la 34-6, 2968 après la 34-8 (solde
+	// nul de la 34-8), **2992** après la 34-9.
+	sitesTotal: 2992,
 	sitesNonResolus: 31,
 	relais: 6,
 	// Story 26-1 (#620, AC3-bis) : **10 → 11** — `lib/features/bank-import/
