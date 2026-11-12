@@ -1,6 +1,6 @@
 # Story 34-5 : un second envoi du même règlement n'écrit pas un second règlement (#951)
 
-Status: review
+Status: done
 
 *Fiche rédigée le 2026-11-10 en autonomie (Opus 5.5), worktree `/home/gcorbaz/devel/kesh-e34`, branche `chore/epic-34-kickoff`,
 numéros de ligne de `a75835db`. Release **0.17.6**, Epic 34. **Aucune migration** : le kickoff la disait probable, la fiche
@@ -396,6 +396,25 @@ de la KF-029 se nomment un par un.
     il est préexistant, dans une zone que la P2 avait touchée. La remédiation touche la production (une page) : une
     **passe ciblée P4** (Sonnet, une lentille, sur `59a90ed7`) suit, prompt
     `34-5-reglement-idempotent-review-prompt-p4-ciblee.md`.
+- 2026-11-12 : **passe ciblée P4** (Sonnet, sur `59a90ed7` ; rapport `kesh-gate-logs/e345-review-p4-ciblee.md`) :
+  **0 finding**. Sur conseil de l'orchestrateur, un Vitest de plus, sans toucher la production : la relecture supplantée
+  par un filtre qui **réussit** (variante de C3-1), vert au Vitest du fichier (24 passés). **Boucle de revue close.**
+- 2026-11-12 : **synthèse de la revue de code** (quatre passes, modèles en rotation, contexte frais à chaque passe) :
+  - **P1**, complète, trois lentilles, Opus : 0 C, 0 H, **3 M**, 12 L.
+  - **P2**, complète, trois lentilles, Sonnet : 0 C, 0 H, 0 M, **8 L**.
+  - **P3**, ciblée sur la remédiation P2, une lentille, Haiku : 0 C, 0 H, **1 M**, 1 L (le MEDIUM était préexistant).
+  - **P4**, ciblée sur la remédiation P3, une lentille, Sonnet : **0**.
+  - Tendance : 3 M / 12 L → 0 M / 8 L → 1 M / 1 L → 0. Aucun finding n'est né d'une remédiation ; le seul MEDIUM
+    d'après la P1 était un défaut d'origine, dans une zone qu'une remédiation avait touchée.
+  - Décisions et reclassements :
+    - **B1-1 = E1-1 = A1-1** : le comportement ne change pas après une issue inconnue, décision de l'orchestrateur ;
+      les textes sont récrits.
+    - **A1-2** : M7 déclarée équivalente, confirmée par deux lentilles de la P2.
+    - **C3-1** : remédié plutôt que tracé, la story étant le P1 de l'epic.
+  - Issues ouvertes depuis la revue : **#1007** (dialogue d'une autre ligne fermé, E1-6) et **#1009** (avis resté
+    affiché après un autre geste, E2-3).
+  - Dernier commit de code : `59a90ed7`, gates complets verts (Dev Agent Record) ; le Vitest ajouté ensuite est un test
+    seul, vert.
 
 ## Dev Agent Record
 

@@ -489,6 +489,34 @@ describe("échéancier — règlement à une version périmée", () => {
     );
   });
 
+  it("revue P4 : une relecture supplantée par un filtre qui réussit reste « en cours », puis passe à « relue »", async () => {
+    let rendreRelecture: (v: unknown) => void = () => {};
+    let rendreFiltre: (v: unknown) => void = () => {};
+    listDueDatesMock
+      .mockResolvedValueOnce(response([item()]))
+      .mockReturnValueOnce(new Promise((resolve) => (rendreRelecture = resolve)))
+      .mockReturnValueOnce(new Promise((resolve) => (rendreFiltre = resolve)));
+    settleMock.mockRejectedValue(conflit);
+    const r = await regler();
+    await r.findByTestId("due-dates-settle-conflict");
+    await fireEvent.click(r.getByRole("tab", { name: "Toutes" }));
+    await waitFor(() => expect(listDueDatesMock).toHaveBeenCalledTimes(3));
+    rendreRelecture(response([item({ version: 3 })]));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const pendant = r.getByTestId("due-dates-settle-conflict").textContent ?? "";
+    expect(pendant).toContain("Relecture de la liste en cours");
+    expect(r.queryByTestId("due-dates-settle-conflict-reread")).toBeNull();
+    // Le chargement qui l'emporte réussit : l'état se lève, la ligne relue est offerte.
+    rendreFiltre(response([item({ version: 4 })]));
+    await waitFor(() =>
+      expect(r.getByTestId("due-dates-settle-conflict").textContent).toContain(
+        "La liste a été relue",
+      ),
+    );
+    expect(r.queryByTestId("due-dates-settle-conflict-reread")).toBeNull();
+    expect((r.getByTestId("due-dates-settle-5") as HTMLButtonElement).disabled).toBe(false);
+  });
+
   it("409 puis liste illisible : `conflict-blocked`, puis « Relire » mène au conflit, non à l'issue inconnue", async () => {
     settleMock.mockRejectedValue(conflit);
     const r = render(Page);
