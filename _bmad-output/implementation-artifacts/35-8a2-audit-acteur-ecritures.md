@@ -43,7 +43,7 @@ trace `journal_entry.created` `:562`) ; `reverse` (`:3097`), `reverse_in_tx` (`:
 `:2820` (`accept_one_invoice`, `actor_api_key_id` `:2377`), `:3812` (`accept_one_split`, `:3523`), `:4260`
 (`accept_one_rule`, `:3951`), `:5130` (`post_manual_once`, `current_user` `:5039`), `:5596` (`post_split_once`,
 `current_user` `:5499`) — et `reconciliation_cancel.rs:723` (`reverse_in_tx`). Un rapprochement par clé écrit aujourd'hui
-`reconciliation.accepted` à la clé et `journal_entry.created` à l'utilisateur. **Le dé-rapprochement** (`cancel_in_tx`,
+`reconciliation.accepted` à la clé et `journal_entry.created` au créateur de la clé. **Le dé-rapprochement** (`cancel_in_tx`,
 `reconciliation_cancel.rs:564-723`, qui a `actor_api_key_id`) appelle, selon le genre, `invoice_settlements_write::
 cancel_settlement_in_tx(…, user_id)` (`:705`) et `supplier_invoices::cancel_settlement_in_tx(…, user_id)` (`:718`) — non
 convertis par cette story (déploiement, Epic 36) — et `journal_entries::reverse_in_tx(…, user_id)` (`:723`) — converti ici.
@@ -155,7 +155,7 @@ revue fichier par fichier ne vaut que pour les signatures ; les six sites et les
 
 ### Références
 
-- Fiche `35-8a-audit-acteur-patron.md` (`split`) : origine ; **en cas d'écart, cette fiche fait foi** (validation P3 de la
+- Fiche `35-8a-audit-acteur-patron.md` (`split`) : origine ; **en cas d'écart, la 35-8a2 fait foi sur la 35-8a** (validation P3 de la
   35-8a1, V3-5) ; `35-8a1-audit-acteur-mecanisme.md` ;
   `kesh-gate-logs/e35-8a-validation-p1.md`.
 - Issues #431 ; Story 17-2a ; Story 15-8 (modification et suppression d'écriture par clé).
@@ -195,3 +195,11 @@ revue fichier par fichier ne vaut que pour les signatures ; les six sites et les
     `letterings.rs:363`, `:351-356`, `api-external.md:408`) ; et, de la P3 de la 35-8a1, V3-4 (le cinquième motif tombe à
     zéro, AC5b) et V3-5 (cette fiche fait foi, *Références*).
   - Symptôme greppé : « annule un règlement au nom de l'utilisateur », « qui fait foi pour le rayon » — remplacés.
+- 2026-11-13 — **Validation P4, passe ciblée** (Sonnet) sur la remédiation P3 : 0 finding au-dessus de LOW, 2 LOW
+  (`kesh-gate-logs/e35-8a2-validation-p4-ciblee.md`). Appliqués : V4-1 (« au créateur de la clé », l. 46) ; V4-2 (renvoi
+  d'autorité sans ambiguïté : « la 35-8a2 fait foi sur la 35-8a », comme la ligne de `sprint-status.yaml`). Rédaction seule.
+- 2026-11-13 — **Validation terminée.** Série des findings au-dessus de LOW : P1 (sur la 35-8a entière) 1 HIGH + 7 MEDIUM →
+  découpage en 35-8a1 et 35-8a2 (C-e350-50) → P2 2 MEDIUM → P3 1 → P4 0 (CRITICAL : 0). Modèles : Opus (P1), Sonnet (P2),
+  Opus en passe ciblée (P3), Sonnet en passe ciblée (P4). La boucle se clôt sur une passe sans finding au-dessus de LOW ; la
+  remédiation de P4 ne touche que la rédaction. Choix retenus : C-e350-38 à -40, -48 à -50, -52 (ceux de la 35-8a1, dont la
+  garde). Statut : `ready-for-dev`.
