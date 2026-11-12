@@ -460,6 +460,38 @@ describe('fiche fournisseur — le second clic après une relecture en échec (r
 	});
 
 	/**
+	 * Revue P4 ciblée (C-1 ; mutation M13) — un refus d'écran périmé dont la relecture rend le
+	 * **même** statut : le bloc reste affiché, et son refus avec lui.
+	 */
+	it('payer : un refus périmé relu au même statut reste sous son bouton (mutation M13)', async () => {
+		getMock.mockResolvedValueOnce(inv()).mockResolvedValueOnce(inv({ version: 4 }));
+		payMock.mockRejectedValue({
+			code: 'OPTIMISTIC_LOCK_CONFLICT',
+			status: 409,
+			message: 'La facture a été modifiée entre-temps.',
+		});
+		const v = render(Page);
+		await GESTURES[0].act(v);
+		await waitFor(() => expect(getMock).toHaveBeenCalledTimes(2));
+		expect((await v.findByTestId('supplier-invoice-pay-error')).textContent).toContain(
+			'La facture a été modifiée entre-temps.',
+		);
+	});
+
+	it('détacher : une confirmation refusée garde le refus d’avant (revue P4 ciblée, C-2)', async () => {
+		getMock.mockResolvedValue(inv({ sourceDocument: DOC }));
+		detachMock.mockRejectedValue({ code: 'FORBIDDEN', status: 403, message: 'Refus d’avant.' });
+		const v = render(Page);
+		await GESTURES[6].act(v);
+		expect((await v.findByTestId('supplier-invoice-detach-error')).textContent).toContain(
+			'Refus d’avant.',
+		);
+		(window.confirm as unknown as ReturnType<typeof vi.fn>).mockReturnValue(false);
+		await fireEvent.click(v.getByTestId('supplier-invoice-detach'));
+		expect(v.getByTestId('supplier-invoice-detach-error').textContent).toContain('Refus d’avant.');
+	});
+
+	/**
 	 * Revue P3 (M10b) — un bloc rouvert par une **relecture**, sans geste de l'utilisateur qui
 	 * passe par `clearCycleErrors` : un refus de paiement certain (400), puis deux gestes de
 	 * document dont la réponse se perd ; la première relecture montre la facture payée ailleurs

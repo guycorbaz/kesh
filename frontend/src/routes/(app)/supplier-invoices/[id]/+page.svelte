@@ -424,11 +424,12 @@
 	/**
 	 * Efface les refus des gestes du cycle (revue P1, B-2) : au début de **tout geste qui
 	 * change le statut** — valider, repasser en brouillon, supprimer, et (revue P2, B2-2 = A2-2 = E2-1)
-	 * payer, annuler le règlement, annuler la facture —, après sa confirmation et le contrôle
-	 * de ses champs (revue P3 de la 34-8, B-2). Les refus du cycle sont rendus hors des blocs
-	 * de statut ; ceux du paiement et des annulations, dedans, sont vidés aussi
-	 * (`clearBlockErrors`, revue P3 de la 34-8). Story 34-8 (AC-8) : l'encadré d'issue
-	 * inconnue part avec eux.
+	 * annuler le règlement, annuler la facture —, après sa confirmation (revue P3 de la 34-8,
+	 * B-2). *Payer* n'y passe pas : il vide les refus dès le clic (`clearRefusals`) et
+	 * l'encadré après le contrôle de ses champs (revue P4 ciblée, C-3). Les refus du cycle
+	 * sont rendus hors des blocs de statut ; ceux du paiement et des annulations, dedans, sont
+	 * vidés aussi (`clearBlockErrors`, revue P3 de la 34-8). Story 34-8 (AC-8) : l'encadré
+	 * d'issue inconnue part avec eux.
 	 */
 	function clearCycleErrors() {
 		clearRefusals();
@@ -597,11 +598,14 @@
 			// Revue P2 de la 34-8 (E-2, C-e348-8) : sans rejeu. Un `GET` coupé se rejouait
 			// ~14 s, pendant lesquels les autres gestes restaient offerts sur l'écran d'avant ;
 			// un échec est ici déjà traité (`reread-failed`).
+			const statusBefore = invoice?.status;
 			invoice = await getSupplierInvoice(id, { retry: false });
 			cycleOutcome = 'known';
-			// Revue P3 de la 34-8 (A-1 = B-1 = E-1) : l'écran est à jour, les refus rendus dans
-			// les blocs de statut n'ont plus d'objet.
-			clearBlockErrors();
+			// Revue P3 de la 34-8 (A-1 = B-1 = E-1) : quand le statut a changé, les blocs de
+			// statut ont changé avec lui, et les refus rendus dedans n'ont plus d'objet — gardés,
+			// ils reparaîtraient, faux, au bloc rouvert. Revue P4 ciblée (C-1) : **seulement**
+			// alors ; un refus dont la relecture rend le même statut reste sous son bouton.
+			if (invoice.status !== statusBefore) clearBlockErrors();
 			return true;
 		} catch {
 			// L'écran reste celui d'avant ; le message du refus suffit.
@@ -688,7 +692,6 @@
 		// Garde du double clic : sous jsdom, un second clic est parti malgré
 		// `disabled={detaching}` (revue P1) ; la garde ne dépend pas du rendu.
 		if (detaching) return;
-		detachError = '';
 		if (
 			!confirm(
 				i18nMsg(
@@ -698,8 +701,9 @@
 			)
 		)
 			return;
-		// Revue P3 de la 34-8 (B-2) : après la confirmation — une boîte annulée n'efface pas
-		// l'encadré d'une issue inconnue.
+		// Revue P3 de la 34-8 (B-2) et P4 ciblée (C-2) : après la confirmation — une boîte
+		// annulée n'efface ni l'encadré d'une issue inconnue, ni le refus d'avant.
+		detachError = '';
 		cycleOutcome = 'known';
 		detaching = true;
 		try {
