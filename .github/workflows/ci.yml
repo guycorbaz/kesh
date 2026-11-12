@@ -26,7 +26,7 @@ jobs:
   # Un `paths-ignore` au niveau du workflow laisserait les checks requis en attente.
   changes:
     name: Filtre des artefacts
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     outputs:
       code: ${{ steps.decision.outputs.code }}
@@ -48,7 +48,7 @@ jobs:
     name: Backend (Rust)
     needs: changes
     if: ${{ !cancelled() && !(needs.changes.result == 'success' && needs.changes.outputs.code == 'false') }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     # Historique : la suite `cargo test --workspace -j1 --test-threads=1` a
     # dépassé 30 min à partir de l'Epic 21 (le job était annulé à ~30m17s), d'où
     # cette marge portée à 120 min.
@@ -237,7 +237,7 @@ jobs:
     name: Frontend (Svelte)
     needs: changes
     if: ${{ !cancelled() && !(needs.changes.result == 'success' && needs.changes.outputs.code == 'false') }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     defaults:
       run:
@@ -283,7 +283,7 @@ jobs:
     name: Docker build (sanity)
     needs: changes
     if: ${{ !cancelled() && !(needs.changes.result == 'success' && needs.changes.outputs.code == 'false') }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
@@ -365,7 +365,7 @@ jobs:
   # celui du backend (`POST /api/v1/_test/seed`, par `seedTestState`).
   e2e-smoke:
     name: E2E smoke (Playwright)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs: [changes, docker-build]
     if: ${{ !cancelled() && !(needs.changes.result == 'success' && needs.changes.outputs.code == 'false') && needs.docker-build.result == 'success' }}
     timeout-minutes: 25
