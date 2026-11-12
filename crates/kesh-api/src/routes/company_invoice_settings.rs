@@ -185,6 +185,18 @@ async fn validate_account(
     .await
 }
 
+/// Un type de compte en mots, pour les refus de cette route (Story 35-3, #537,
+/// D6) : « actif », « passif », « produit », « charge ». En français en dur,
+/// comme les autres refus de la route (#710).
+fn account_type_in_words(account_type: AccountType) -> &'static str {
+    match account_type {
+        AccountType::Asset => "actif",
+        AccountType::Liability => "passif",
+        AccountType::Revenue => "produit",
+        AccountType::Expense => "charge",
+    }
+}
+
 /// Forme générale de [`validate_account`] (Story 25-4-c3-a1) : plusieurs types
 /// acceptés, et `changed` qui dit si la valeur change.
 ///
@@ -222,9 +234,12 @@ async fn validate_account_of(
         )));
     }
     if !accepted.contains(&account.account_type) {
-        let attendus: Vec<&str> = accepted.iter().map(|t| t.as_str()).collect();
+        // Story 35-3 (#537, D6) : le type attendu EN MOTS — c'est ici que
+        // l'administrateur corrige un compte retypé que la validation refuse.
+        // Le début de phrase reste (`accounts_designated_archive_e2e` l'asserte).
+        let attendus: Vec<&str> = accepted.iter().map(|t| account_type_in_words(*t)).collect();
         return Err(AppError::Validation(format!(
-            "{field_label} : type de compte incompatible (attendu {})",
+            "{field_label} : type de compte incompatible (attendu : {})",
             attendus.join(" ou ")
         )));
     }
@@ -342,12 +357,16 @@ pub async fn update_invoice_settings(
 
     // 4. Valider les comptes (existence, scope company, type, actif ; imputable
     //    si la valeur change — Story 15-5b, AC10).
+    // Story 35-3 (#537, D4) : les types de la créance et des créanciers sont lus
+    // dans `CLAIM_SETTING_ACCOUNT_TYPES`, la constante que lit aussi la garde à
+    // l'usage de la validation — la désignation et l'usage ne peuvent diverger.
+    let claim_types = company_invoice_settings::CLAIM_SETTING_ACCOUNT_TYPES;
     validate_account(
         &state,
         company.id,
         req.default_receivable_account_id,
         current.default_receivable_account_id,
-        AccountType::Asset,
+        claim_types.receivable,
         "Compte créance",
     )
     .await?;
@@ -404,7 +423,7 @@ pub async fn update_invoice_settings(
                 company.id,
                 requested,
                 current.default_payable_account_id,
-                AccountType::Liability,
+                claim_types.payable,
                 "Compte créanciers",
             )
             .await?;
