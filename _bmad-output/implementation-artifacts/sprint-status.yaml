@@ -1036,5 +1036,6 @@ development_status:
   35-5b-date-du-jour-reste: ready-for-dev  # #929 ; après la fusion de 35-5a ; fiche 2026-11-12, validation à lancer
   35-6-solde-ouverture-saisie: ready-for-dev  # fiche 2026-11-12, validation terminée en P5 (5 → 5 → 3 → 1 → 0 MEDIUM) ; #1025 intégrée (C-e350-15) ; #1026, #1028
   35-7-autocomplete-compte-hors-liste: ready-for-dev  # #1000 ; fiche 2026-11-12 (code de main), validation à lancer
-  35-8-audit-cle-api: backlog  # #431 ; après 35-5a, 35-5b et 35-3
+  35-8-audit-cle-api: split  # 2026-11-12, découpage préventif (C-e350-38) en 35-8a et 35-8b
+  35-8a-audit-acteur-patron: ready-for-dev  # #431, #892 item 11 ; après 35-5a0, 35-5a, 35-5b, 35-5c et 35-3 ; fiche 2026-11-12 (code de main), validation à lancer
   epic-35-retrospective: optional

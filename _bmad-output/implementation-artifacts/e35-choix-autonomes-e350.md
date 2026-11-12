@@ -415,3 +415,36 @@ retenue, options écartées, réversibilité. Lignes citées sur `release/0.17.6
 - **Écartées** : (a) nullifier au `blur` : rouvre #271 sur les lignes d'écriture ; (b) garder le brouillon et bloquer la
   validation : un nouveau message et un nouvel état pour cinq consommateurs.
 - **Réversible** : oui.
+
+### C-e350-38 — 35-8 : découpage préventif en 35-8a (motif et pilotes) et 35-8b (déploiement)
+
+- **Contexte** : #431. Sur `main`, 78 sites `NewAuditLogEntry::user(` de production dans 29 fichiers, 9 `letterings::Actor`
+  sans clé, 3 `None` positionnels ; seize dépôts de `kesh-db` et autant de routes. Plus de cinq modules : la règle de
+  découpage préventif s'applique avant `bmad-create-story`.
+- **Retenu** : **35-8a** pose `Acteur`, `NewAuditLogEntry::par`, le pont depuis `CurrentUser`, la garde des sites non
+  résolus, et convertit deux pilotes (les écritures ; le retour en brouillon d'une facture fournisseur, #892 item 11) ;
+  **35-8b** convertit le reste et vide la raison `A_CONVERTIR_35_8B` de la garde. La clé de sprint `35-8` passe à `split`.
+- **Écartée** : une seule story : une boucle de revue sur seize dépôts.
+- **Réversible** : oui.
+
+### C-e350-39 — 35-8 : un type `Acteur` dans `kesh-db`, à la place du `user_id` nu
+
+- **Contexte** : passer `(user_id, actor_api_key_id)` laisse un `None` positionnel invisible (`invoices.rs:1689`,
+  `supplier_invoices.rs:1410`, `:1412`) ; `letterings::Actor` existe déjà.
+- **Retenu** : `Acteur { user_id, api_key_id }` dans `entities/audit_log.rs`, `NewAuditLogEntry::par`, un seul constructeur
+  sans clé (`Acteur::utilisateur`, greppable), `From<&CurrentUser>` dans `kesh-api` ; `letterings::Actor` en devient l'alias
+  ou disparaît. Une fonction convertie prend l'`Acteur` à la place du `user_id`.
+- **Écartées** : (a) ajouter un paramètre `Option<i64>` partout : le `None` positionnel reste muet ; (b) déplacer
+  `CurrentUser` dans `kesh-db` : un type d'authentification dans la couche de données.
+- **Réversible** : oui (aucun schéma touché).
+
+### C-e350-40 — 35-8 : une garde qui inventorie les sites non résolus, par raison
+
+- **Contexte** : `CLAUDE.md`, § *Inventorier les sites NON RÉSOLUS* : énumérer les sites convertis laisse passer le
+  suivant.
+- **Retenu** : `crates/kesh-api/tests/audit_acteur_garde.rs` compte par fichier `NewAuditLogEntry::user(`,
+  `Acteur::utilisateur(` et `api_key_id: None` dans le code de production, contre une table close à raisons
+  (`PRE_AUTH`, `ADMIN_SANS_CLE` avec l'appelant qui le prouve, `MCP`, `PONT`, `A_CONVERTIR_35_8B`). Le serveur MCP reste
+  hors de #431 : une clé MCP n'est pas une clé REST, et le manuel écrit déjà la limite (`admin-manual.tex:3392`).
+- **Écartée** : un test par route : couvre les routes écrites, non celles qui viendront.
+- **Réversible** : oui.
