@@ -202,6 +202,11 @@ une écriture manuelle ou que je l'éclate, afin de ne pas compter deux fois un 
 | M6 | confirmation demandée aussi pour *Rejeter* | Vitest AC-6 |
 | M7 | phrase (a) affichée à compte nul | Vitest AC-5, cas (b) seul |
 | M8 | clé `-other` employée pour un compte de 1 | Vitest AC-5, cas (a) à une écriture |
+| M9 (revue P1, E1-3) | `manual` et `split` intervertis dans `runGesture` | Vitest AC-6, doublures distinctes (`data-modal`) |
+
+*(Annoté à la remédiation P1, 2026-11-12 : depuis C-e344-11, M3 vise le prédicat « transaction de sens contraire »
+(`bt.amount = -m.movement` → `TRUE`) qui remplace le prédicat « grand livre différent » ; elle rougit « comptes partagés » et
+« compte relié ailleurs ».)*
 
 ## Gates
 
@@ -254,6 +259,32 @@ aucune ligne commune prévue.
 - 2026-11-11 : développement (Opus 5.5, clé `e344`, worktree `kesh-e344`, base `f12ad73e` = tête de la 34-3). Commits
   `ff7414d2` (code, manuel, catalogues, E2E), `c3bcbff8` (registre, prompt de revue), `dc4f72d6` (garde i18n), puis le commit
   de clôture du développement. **Le remède de l'AC-8 a été appliqué** (C-e344-9). Détail au Dev Agent Record.
+  Banc (journaux `kesh-gate-logs/e344/banc-*.log`, `--release`, tmpfs = plancher) : environ 0,2 à 0,5 s avant le champ ;
+  **mauvaise pente** avec trois lectures par transaction (≈ 18,7 s à 20 000 écritures, 500 transactions) ; ≈ 0,3 s après le
+  remède — chiffres au § *Performance*. Les chiffres vont dans `kesh-gate-logs/e344/` (la clé de développement), non
+  `e342/` comme l'écrit l'AC-8 (clé de la spécification).
+- 2026-11-12 : revue de code P1 (Opus, trois lentilles ; rapports `kesh-gate-logs/e344-review-p1-{B,E,A}.md`) : 0 C, 0 H,
+  **3 MEDIUM distincts**, ≈ 20 LOW. Remédiation (Opus 5.5), commit `e29a85ca` ; tous retenus après lecture :
+  - **E1-1** MEDIUM (lu : `reconciliation_link.rs:654` à `46c9d755`, `NOT (ba.journal_account_id <=> ?)` ; rouge reproduit,
+    `matchedElsewhereCount = 1` pour un compte relié au 1022 après coup) → **C-e344-11**, qui amende C-e344-2 et le texte de
+    l'AC-2 (« dont le compte du grand livre diffère ») : la règle de l'arbitrage, prise à la lettre (« une ligne sur le grand
+    livre du compte courant »), est déjà vraie de toute écriture examinée et ne corrige rien — c'est consigné ; le second
+    côté se fonde désormais sur la transaction rapprochée **de sens contraire** d'un autre compte bancaire
+    (`bt.amount = -m.movement`), sans lien actuel à un grand livre. Test `s34_4_ac2_compte_relie_ailleurs_ne_fait_pas_rejeter`
+    (relié au 1022, puis délié) ; manuel, `api-external.md`, textes (b) et (c) dans les quatre locales suivent.
+  - **B1-1 = E1-2 = A1-1** MEDIUM, **B1-2 = E1-4 = A1-3** : `api-external.md` et le doc-comment de `AlreadyBooked` décrivent la
+    lecture par page (deux lectures, mêmes textes SQL, égalité testée) ; lien rustdoc corrigé.
+  - **E1-3 = A1-2** MEDIUM : une doublure par modale (`ModalSuccessStub{Manual,Split,Link}.test.svelte`, `data-modal`) ; les
+    tests de *Continuer* et des lignes non signalées assertent la modale ouverte ; **M9** (branches interverties) tuée.
+  - LOW : **B1-3** → C-e344-12, compte clos `null` ; **B1-4 = A1-5** → manuel (« chaque liste s'arrête à 50, le nombre affiché
+    les additionne ») ; **B1-5, A1-10** → C-e344-13, textes neutres en nombre ; **B1-6** → C-e344-16, `One(i64)` ;
+    **B1-7** → E2E *Continuer* puis le dialogue d'écriture, en navigateur ; **B1-8** → C-e344-15, montant laissé à la forme
+    de la ligne, **issue demandée** ; **E1-5** → autre société dans le test d'égalité ; **E1-6** → Vitest Échap ; **E1-7** →
+    nettoyage de l'E2E robuste ; **E1-9** → le banc rapproche la moitié de l'historique (`banc-p1-apres.log`) ; **E1-10** →
+    C-e344-14, ordre écrit au manuel ; **A1-4** → manuel ; **A1-6** → hash au Dev Agent Record, journaux de la remédiation
+    préfixés du commit ; **A1-7** → chiffres ci-dessus ; **A1-8** → plafonds des règlements et du second côté exercés ;
+    **A1-9** → déclaré au Dev Agent Record (le test unitaire d'égalité des textes n'a pas été joué au rouge : il ne compile pas
+    contre la base). **E1-8** : déclaré, rien d'autre.
 
 ## Performance
 
@@ -326,6 +357,43 @@ constante), ce sont les tests HTTP AC-2 qui rougissent. M6 est plus large que so
 - Tests ciblés entre les étapes (`verts-backend.log`, `remede-cible.log`) : binaire `reconciliation_link_entry_e2e` entier et
   tests du module, 42/42 au commit `ff7414d2`. ⚠️ La consigne « `kesh-db` : gate complet même en cours de boucle » n'a pas été
   tenue entre la première écriture et le remède (gates ciblés seulement) ; le gate complet a tourné sur le code final.
+
+*(Annoté le 2026-11-12, revue P1 A1-6 : les journaux `gates.log` et `gates-suite.log` portent le commit **`c3bcbff8`**, et non
+`ff7414d2` ni `dc4f72d6` comme écrit ci-dessus : test-fast, gate-ci et l'E2E ont tourné à `c3bcbff8`, dont le code est celui de
+`ff7414d2` (`c3bcbff8` n'ajoute que des artefacts) ; `dc4f72d6` ne change qu'un test Vitest, rejoué seul. Revue P1 A1-9 : le
+test unitaire `the_matched_elsewhere_query_differs_only_by_the_matched_predicate` et le test d'égalité AC-8 n'ont pas été joués
+au rouge — ils ne compilent pas contre la base, le mode et la fonction n'y existant pas.)*
+
+**Remédiation de la revue P1** (commit **`e29a85ca`**, 2026-11-12 ; journaux sous `kesh-gate-logs/e344/p1/`, chacun préfixé
+du hash du commit joué) :
+- **Rouges** (`rouges.log`, entrée de la remédiation ; `p1/rouges-backend.log`, `p1/rouges-vitest.log`) : contre le code de
+  `46c9d755`, 2 rouges backend pour la bonne raison (E1-1 reproduit, `matchedElsewhereCount` 1 au lieu de 0 ; B1-3, champ non
+  nul sur un compte clos) ; 3 rouges Vitest (textes reformulés, garde des replis). Les tests `data-modal` (E1-3) et Échap
+  (E1-6), et le test d'égalité enrichi (E1-5, A1-8), passent sur l'ancien code : ils ne rougissent que sous mutation.
+- **Mutations rejouées** au commit `e29a85ca` (`mut-p1/M1.log` à `M9.log`) : les neuf tuées. M1 et M2 : tests AC-1 et AC-8 ;
+  M3 (redéfinie, sens contraire neutralisé) : `comptes_partages` et `compte_relie_ailleurs` ; M4 : contre-passée ; M5 : Vitest
+  de *Écriture manuelle* et Échap ; M6 : le test nommé, plus six sans rapport (inchangé) ; M7, M8 : cas AC-5 ; **M9** : les
+  quatre tests qui assertent `data-modal`.
+- **Banc** avec la moitié de l'historique rapprochée (`banc-p1-apres.log`, commit `e29a85ca`) : 207 · 193 · 208 ms à 1 000,
+  223 · 230 · 209 ms à 5 000, 240 · 253 · 266 ms à 20 000. Bonne pente.
+- **Gate complet au commit `e29a85ca`**, arbre propre : base `kesh_e344` remise à neuf ; `test-fast --ci` **5147 passés,
+  13 ignorés** ; `cargo build --workspace --all-targets` vert ; `gate-ci.sh kesh_ci_e344` **5154 passés, 0 échoué,
+  17 ignorés** ; `lint-i18n-ownership` vert ; `npm run check` 0 erreur (29 avertissements préexistants) ; Vitest complet
+  **2944 passés, 225 fichiers** ; `npm run build` vert ; **E2E complet** sur `kesh_e2e_e344` recréée vide : **388 passés,
+  7 échecs, 17 ignorés**, les sept de la KF-029 (#97) déjà nommés ; le spec neuf passe, *Continuer* puis le dialogue d'écriture
+  compris. Port 3344 libre avant et après.
+- **Captures refaites** (textes changés) dans `kesh-gate-logs/e344/captures-p1/` : `e344-1-ligne-a-deja-comptabilisee.png`,
+  `e344-2-3-lignes-b-et-c.png` (textes (c) et (b) neufs), `e344-4-confirmation-accepter.png` (titre et introduction neufs),
+  `e344-ligne-signalee.png`, `e344-confirmation-ecriture-manuelle.png`.
+- **Décomptes de la remédiation** (de `46c9d755` à `e29a85ca`) : `reconciliation_link_entry_e2e.rs` 39 → 40 attributs
+  `sqlx::test` (+1 : `s34_4_ac2_compte_relie_ailleurs_ne_fait_pas_rejeter`) ; Vitest 2943 → 2944 (+1, Échap) ; trois
+  doublures neuves ; aucune clé i18n ajoutée, quatre textes reformulés par locale.
+- **Après le gate**, le grep de l'ancienne règle (`grand livre distinct`, `relié à un autre compte du grand livre`) a trouvé
+  trois restes : la phrase du CHANGELOG, le commentaire TSDoc de `AlreadyBooked` (`reconciliation.types.ts`) et un commentaire
+  du test d'égalité. Corrigés au commit de clôture de la remédiation : **commentaires et documentation seulement**, aucune
+  ligne exécutable ; contrôlés par `cargo fmt --check`, `cargo build -p kesh-api --tests` et `npm run check` (0 erreur)
+  — `p1/build-commentaires.log`, `p1/check-commentaires.log`. Le gate complet et l'E2E de `e29a85ca` n'ont pas été rejoués :
+  le dernier commit **de code exécutable** reste `e29a85ca`.
 
 **Décomptes** (recomptés à la source, de `f12ad73e` à `HEAD`) : `reconciliation_link_entry_e2e.rs` 31 → 39 attributs
 `sqlx::test` (+7 tests `s34_4_…`, +1 banc ignoré) ; `reconciliation_link.rs` 4 → 5 `#[test]` ; Vitest +19 tests neufs (14 dans

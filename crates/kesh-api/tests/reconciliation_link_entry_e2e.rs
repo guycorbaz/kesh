@@ -2395,7 +2395,7 @@ async fn s34_4_ac8_la_lecture_par_page_egale_les_fonctions_du_dialogue(pool: MyS
     let r200 = ctx.recette("2026-04-05", "200.00").await;
     let t200 = ctx.transaction(a, "200.00", "2026-04-05").await;
     assert_eq!(ctx.rattacher(t200, r200).await.0, 200);
-    // Rapprochée sur B (grand livre distinct) : le second côté pour A.
+    // Rapprochée sur B, en sens contraire (un virement) : le second côté pour A.
     let v400 = ctx
         .ecriture(
             "2026-04-06",

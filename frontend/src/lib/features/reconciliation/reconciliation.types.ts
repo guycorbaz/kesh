@@ -70,8 +70,8 @@ export interface ProposalNotice {
  *   non rapprochés, que le dialogue *Rattacher à une écriture existante* proposerait ;
  * - `entryCount` : les écritures non rapprochées que ce même dialogue proposerait ;
  * - `matchedElsewhereCount` : les écritures du même montant déjà rapprochées d'une transaction
- *   d'un autre compte bancaire, relié à un autre compte du grand livre (le second côté
- *   probable d'un virement entre deux comptes propres).
+ *   de sens contraire d'un autre compte bancaire (le second côté probable d'un virement entre
+ *   deux comptes propres ; choix C-e344-11).
  */
 export interface AlreadyBooked {
 	settlementCount: number;
