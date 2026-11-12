@@ -4294,6 +4294,16 @@ impl IntoResponse for AppError {
                     let (key, fallback) = reconciliation_cancel_blocked_text(blocker);
                     build_response(StatusCode::CONFLICT, blocker.code(), &t(key, fallback))
                 }
+                // Story 34-11b (#972, revue P1 E1-1) — la décision confirmée
+                // (retrait seul ou contre-passation) ne vaut plus au geste.
+                DbError::ReconciliationCancelChanged { .. } => build_response(
+                    StatusCode::CONFLICT,
+                    "RECONCILIATION_CANCEL_CHANGED",
+                    &t(
+                        "reconciliation-cancel-changed",
+                        "Ce rapprochement a changé depuis l’ouverture de la fenêtre : l’autre côté du virement a été rattaché ou annulé entre-temps. Rien n’a été annulé ; relisez ce qui va se passer, puis confirmez de nouveau.",
+                    ),
+                ),
                 // Story 25-3-c (#454) — l'annulation d'une facture fournisseur
                 // refusée par le geste lui-même (déjà annulée, exercice de
                 // l'achat clos, lettrage figé par la période — rang 2 bis,

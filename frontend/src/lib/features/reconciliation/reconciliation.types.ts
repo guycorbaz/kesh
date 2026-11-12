@@ -68,10 +68,11 @@ export interface ProposalNotice {
  *
  * - `settlementCount` : les règlements de factures clients par virement sur ce compte bancaire,
  *   non rapprochés, que le dialogue *Rattacher à une écriture existante* proposerait ;
- * - `entryCount` : les écritures non rapprochées que ce même dialogue proposerait ;
- * - `matchedElsewhereCount` : les écritures du même montant déjà rapprochées d'une transaction
- *   de sens contraire d'un autre compte bancaire (le second côté probable d'un virement entre
- *   deux comptes propres ; choix C-e344-11).
+ * - `entryCount` : les écritures que ce même dialogue proposerait — non rapprochées, ou, depuis
+ *   la Story 34-11b, l'écriture d'un virement déjà rapprochée de l'autre côté ;
+ * - `matchedElsewhereCount` : **parmi** ces candidates (`≤ entryCount`), celles déjà rapprochées —
+ *   forcément d'une transaction de sens contraire d'un autre compte bancaire : l'écriture d'un
+ *   virement dont la transaction est le second côté probable (Story 34-11b, AC-10).
  */
 export interface AlreadyBooked {
 	settlementCount: number;

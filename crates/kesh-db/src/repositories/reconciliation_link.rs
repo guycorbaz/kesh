@@ -677,8 +677,24 @@ fn entry_sql(mode: EntrySqlMode) -> String {
 /// jamais l'autre côté (tests `s34_4_ac2_comptes_partages_ne_comptent_pas`,
 /// `s34_4_ac2_compte_relie_ailleurs_ne_fait_pas_rejeter`,
 /// `s34_11b_ac4c_comptes_relies`).
+///
+/// **Jamais une écriture de règlement** (revue P1, E1-3 ; choix C-e34b-8,
+/// récrit) : une écriture qui règle une facture client
+/// (`invoice_settlements`) ou une facture fournisseur **payée**
+/// (`supplier_invoices.settlement_journal_entry_id`, le classement de
+/// `reconciliation_cancel`) n'a pas d'« autre côté ». Atteignable seulement
+/// par un compte bancaire relié au compte débiteurs ou créanciers ; sans
+/// cette garde, le retrait seul laisserait la facture payée sans transaction
+/// de son compte. Le retrait seul ne vaut donc que pour le genre `Entry`.
 fn other_side_predicate(movement: &str) -> String {
-    format!("(bt.bank_account_id <> ? AND bt.amount = -({movement}))")
+    format!(
+        "(bt.bank_account_id <> ? AND bt.amount = -({movement}) \
+          AND NOT EXISTS (SELECT 1 FROM invoice_settlements s2 \
+                           WHERE s2.journal_entry_id = bt.matched_entry_id) \
+          AND NOT EXISTS (SELECT 1 FROM supplier_invoices si2 \
+                           WHERE si2.settlement_journal_entry_id = bt.matched_entry_id \
+                             AND si2.status = 'paid'))"
+    )
 }
 
 /// Condition 4 de la règle (Story 34-11b) : **aucune** transaction liée à `e`
@@ -692,8 +708,23 @@ fn other_side_predicate(movement: &str) -> String {
 /// grand livre : une transaction déjà liée du **même** compte bancaire
 /// (mutation M1 de la fiche : l'ancienne forme), une transaction liée du
 /// **même** sens — un compte bancaire qui partage le grand livre de `t`, ou un
-/// compte délié ou relié ailleurs depuis (mutations M2, M8, M9) —, et une
-/// troisième transaction.
+/// compte délié ou relié ailleurs depuis, pour une transaction du même grand
+/// livre (mutations M2, M8, M9) —, une écriture de règlement déjà rapprochée,
+/// et une troisième transaction. Ce qu'elle admet : l'autre mouvement d'une
+/// écriture de virement à deux lignes de banque, même si le compte rapproché
+/// a été relié ailleurs depuis (le signe de sa transaction prouve le
+/// mouvement). Un virement éclaté sur plus de deux comptes n'a plus de second
+/// côté rattachable : aucun montant n'est opposé à celui du premier.
+///
+/// ⚠️ **Le plafond `<= 1` est une défense en profondeur, inerte aujourd'hui**
+/// (revue P1, E1-4, B1-3 ; mutation M2b **équivalente**) : deux liens sont
+/// forcément de comptes différents et de montants opposés (le second n'est
+/// entré qu'en étant l'autre côté du premier) ; une troisième transaction
+/// devrait être l'autre côté **des deux** — `bt₁.amount = −M = bt₂.amount`,
+/// impossible puisque `bt₁.amount = −bt₂.amount ≠ 0` (condition 1). Le
+/// `NOT EXISTS` suffit. Il deviendrait porteur le jour où le prédicat
+/// tolérerait un écart (frais, arrondi) : un test de comportement devra alors
+/// le garder.
 fn linkable_side() -> String {
     format!(
         "NOT EXISTS (SELECT 1 FROM bank_transactions bt \
@@ -1316,11 +1347,18 @@ mod tests {
         assert!(side.contains(&other_side_predicate("m.movement")));
         assert!(side.contains("bt.bank_account_id <> ?"));
         assert!(side.contains("bt.amount = -(m.movement)"));
+        // Le plafond : défense en profondeur, mutation M2b équivalente (revue P1, E1-4).
         assert!(side.contains("<= 1"), "au plus une transaction déjà liée");
         assert!(!side.contains("journal_account_id"));
+        let cancel = other_side_predicate("?");
+        assert!(cancel.starts_with("(bt.bank_account_id <> ? AND bt.amount = -(?)"));
+        // Revue P1 (E1-3) : jamais une écriture de règlement.
+        assert!(cancel.contains("FROM invoice_settlements s2"));
+        assert!(cancel.contains("FROM supplier_invoices si2"));
         assert_eq!(
-            other_side_predicate("?"),
-            "(bt.bank_account_id <> ? AND bt.amount = -(?))"
+            cancel.matches('?').count(),
+            2,
+            "deux paramètres : compte, montant"
         );
     }
 }

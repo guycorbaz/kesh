@@ -911,6 +911,8 @@ reconciliation-cancel-done = Rapprochement annulé.
 # Story 34-11b (#972, AC-4b) — un côté d'un virement rattaché des deux côtés : seul le lien est retiré.
 reconciliation-cancel-confirm-unlink-only = Seul le lien de cette transaction à l’écriture du virement sera retiré : l’écriture reste rapprochée de l’autre côté du virement, sur votre autre compte, et aucune écriture inverse n’est passée. La transaction redeviendra à rapprocher.
 reconciliation-cancel-done-unlink-only = Le lien est retiré ; l’écriture reste celle de l’autre côté du virement.
+# Story 34-11b (#972, revue P1 E1-1) — la décision confirmée ne vaut plus au geste (409 RECONCILIATION_CANCEL_CHANGED).
+reconciliation-cancel-changed = Ce rapprochement a changé depuis l’ouverture de la fenêtre : l’autre côté du virement a été rattaché ou annulé entre-temps. Rien n’a été annulé ; relisez ce qui va se passer, puis confirmez de nouveau.
 reconciliation-cancel-entry-link = Voir l'écriture
 reconciliation-cancel-column = Rapprochement
 # Story 28-5b (#526) — annuler le rejet d'une transaction, depuis le détail de son import.
@@ -1442,7 +1444,8 @@ reconciliation-labels-already-booked-one = Cette transaction semble déjà compt
 reconciliation-labels-already-booked-other = Cette transaction semble déjà comptabilisée : { $count } écritures non rapprochées du compte de la banque lui correspondent. Rattachez-la (« Rattacher à une écriture existante ») plutôt que de passer une écriture : elle serait comptée deux fois.
 # Story 34-11b (#972, AC-10) — le second côté d'un virement : l'écriture du virement, déjà rapprochée sur un autre compte bancaire, est candidate ; on la rattache.
 reconciliation-labels-already-booked-transfer = Cette transaction est probablement l’autre côté d’un virement entre vos comptes : l’écriture de ce virement est déjà rapprochée d’une transaction d’un autre de vos comptes bancaires. Rattachez-la à cette écriture (« Rattacher à une écriture existante ») plutôt que de passer une écriture : le virement serait compté deux fois.
-reconciliation-labels-already-booked-transfer-among = L’une d’elles est l’écriture d’un virement déjà rapprochée sur un autre de vos comptes bancaires : c’est probablement celle-ci qu’il faut rattacher.
+reconciliation-labels-already-booked-transfer-among-one = S’y ajoute l’écriture d’un virement, déjà rapprochée d’une transaction d’un autre de vos comptes bancaires : si cette transaction est l’autre côté de ce virement, c’est à elle qu’il faut la rattacher.
+reconciliation-labels-already-booked-transfer-among-other = S’y ajoutent { $count } écritures de virement, déjà rapprochées de transactions d’autres de vos comptes bancaires : si cette transaction est l’autre côté de l’un de ces virements, c’est à son écriture qu’il faut la rattacher.
 # Story 34-4 (#828, AC-6) — confirmation avant Accepter, Écriture manuelle ou Éclater sur une ligne signalée.
 reconciliation-labels-already-booked-confirm-title = Confirmer malgré l’avertissement
 reconciliation-labels-already-booked-confirm-intro = Chaque transaction ci-dessous semble déjà comptabilisée (voir l’avertissement de sa ligne). Continuer passerait une écriture pour un mouvement qui est peut-être déjà aux livres : il serait compté deux fois.
@@ -1560,7 +1563,7 @@ reconciliation-link-col-journal = Journal
 reconciliation-link-col-description = Libellé
 reconciliation-link-choose-entry = Choisir cette écriture
 reconciliation-link-entry-cancel-today = Aujourd'hui, Kesh ne voit aucun obstacle : annuler ce rapprochement contre-passerait cette écriture (ou annulerait le règlement qu'elle porte). Une clôture d'exercice, une période verrouillée ou un exercice postérieur clos pourraient l'empêcher, dès aujourd'hui sans que Kesh le voie, ou plus tard.
-reconciliation-link-entry-cancel-unlink-only = Cette écriture est celle d’un virement, déjà rapprochée de l’autre côté sur un autre de vos comptes bancaires : la transaction s’y rattache aussi, sans seconde écriture. Annuler ce rattachement ne retirerait que son lien ; l’écriture resterait celle de l’autre côté.
+reconciliation-link-entry-cancel-unlink-only = Cette écriture est celle d’un virement, déjà rapprochée de l’autre côté sur un autre de vos comptes bancaires : la transaction s’y rattache aussi, sans seconde écriture. Aujourd’hui, annuler ce rattachement ne retirerait que son lien ; l’écriture resterait celle de l’autre côté. Si l’autre côté est annulé d’abord, ce rattachement devient le dernier : son annulation contre-passerait l’écriture, et un exercice clôturé l’empêcherait.
 reconciliation-link-entry-cancel-blocked-intro = Ce rattachement ne pourra pas être annulé tant que dure l'obstacle suivant.
 reconciliation-link-entry-cancel-blocked-ack = J'ai compris : tant que cet obstacle dure, ce rattachement ne pourra pas être annulé.
 reconciliation-link-col-invoice = Facture

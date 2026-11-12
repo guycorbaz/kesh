@@ -131,9 +131,10 @@ pub struct ReconciliationProposal {
 /// deux lectures par page, sur les mêmes textes SQL que les requêtes du
 /// dialogue *Rattacher à une écriture existante* ; les deux premiers nombres
 /// **égalent** les longueurs de ses deux listes (même compte du grand livre,
-/// même tolérance ; égalité testée), le troisième compte les écritures
-/// rapprochées d'une transaction de sens contraire d'un autre compte bancaire.
-/// Chacun vaut au plus 50.
+/// même tolérance ; égalité testée), le troisième compte, **parmi** les
+/// écritures candidates (Story 34-11b), celles déjà rapprochées — forcément
+/// d'une transaction de sens contraire d'un autre compte bancaire : l'écriture
+/// d'un virement. Chacun vaut au plus 50.
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AlreadyBooked {
@@ -5844,6 +5845,16 @@ pub struct CancelReconciliationResponse {
     pub supplier_invoice_id: Option<i64>,
 }
 
+/// Corps **facultatif** de `POST …/cancel` (Story 34-11b, revue P1 E1-1).
+#[derive(Debug, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CancelReconciliationRequest {
+    /// La décision que l'écran a montrée (`unlinkOnly` de la vue) : si elle ne
+    /// vaut plus au geste, `409 RECONCILIATION_CANCEL_CHANGED`, rien d'écrit.
+    /// Absent : aucun contrôle (clients d'avant la 0.17.6).
+    pub expect_unlink_only: Option<bool>,
+}
+
 /// `POST /api/v1/reconciliation/transactions/{id}/cancel` — annule un
 /// rapprochement par contre-passation (Comptable+, clés API d'écriture
 /// admises, Story 25-3-b, #418).
@@ -5861,12 +5872,21 @@ pub async fn post_cancel_reconciliation(
     State(state): State<AppState>,
     Extension(current_user): Extension<CurrentUser>,
     axum::extract::Path(id): axum::extract::Path<i64>,
+    body: Option<Json<CancelReconciliationRequest>>,
 ) -> Result<Json<CancelReconciliationResponse>, AppError> {
     let company_id = current_user.company_id;
     let user_id = current_user.user_id;
     let actor_api_key_id = current_user.api_key_id;
+    let expect_unlink_only = body.and_then(|Json(b)| b.expect_unlink_only);
     crate::retry::retry_app_on_deadlock("reconciliation::cancel", || {
-        cancel_reconciliation_once(&state.pool, company_id, id, user_id, actor_api_key_id)
+        cancel_reconciliation_once(
+            &state.pool,
+            company_id,
+            id,
+            user_id,
+            actor_api_key_id,
+            expect_unlink_only,
+        )
     })
     .await
     .map(Json)
@@ -5879,6 +5899,7 @@ async fn cancel_reconciliation_once(
     bank_transaction_id: i64,
     user_id: i64,
     actor_api_key_id: Option<i64>,
+    expect_unlink_only: Option<bool>,
 ) -> Result<CancelReconciliationResponse, AppError> {
     let bank_account_id =
         bank_account_of_transaction(pool, company_id, bank_transaction_id).await?;
@@ -5899,6 +5920,7 @@ async fn cancel_reconciliation_once(
                 bank_transaction_id,
                 user_id,
                 actor_api_key_id,
+                expect_unlink_only,
             )
             .await?)
         },
@@ -6460,7 +6482,7 @@ pub struct EntryCandidateResponse {
     /// d'annuler ce rattachement — ceux de `SettlementCancelBlocker::code()`
     /// —, ou `null`. Un instantané (angle mort L9 de la fiche) : calculé par
     /// **la** fonction de blocage de l'annulation
-    /// (`reconciliation_cancel::entry_cancel_blocker`), sans seconde
+    /// (`reconciliation_cancel::entry_cancel_outlook`), sans seconde
     /// précédence. Les trois codes fournisseur de tête ne sortent pas pour une
     /// candidate (le classement exige une facture `paid`, qu'aucun lot
     /// `generated` ne contient).
@@ -6539,21 +6561,16 @@ pub async fn get_entry_candidates(
     for c in found {
         // Story 34-11b (C-e341-35) : la transaction prospective `t` est la
         // transaction concernée — la décision « autre côté » la lit.
-        let hit = kesh_db::repositories::reconciliation_cancel::entry_cancel_blocker(
+        // Revue P1 (B1-4) : une seule lecture de l'autre côté, d'où sortent le
+        // motif et le retrait seul.
+        let outlook = kesh_db::repositories::reconciliation_cancel::entry_cancel_outlook(
             &mut tx,
             company_id,
             c.journal_entry_id,
             &t,
         )
         .await?;
-        let unlink_only = kesh_db::repositories::reconciliation_link::transfer_other_side(
-            &mut tx,
-            company_id,
-            c.journal_entry_id,
-            &t,
-        )
-        .await?
-        .is_some();
+        let (hit, unlink_only) = (outlook.blocker, outlook.unlink_only);
         candidates.push(EntryCandidateResponse {
             journal_entry_id: c.journal_entry_id,
             entry_number: c.entry_number,

@@ -36,7 +36,9 @@ import type { ReconciliationProposal, TransactionSummary } from './reconciliatio
  * - (b′) `m > 0`, `k − m ≤ 0` : « l'autre côté d'un virement », avec la consigne de
  *   rattacher la transaction à l'écriture du virement (`≤` et non `=` : un `k < m` que le
  *   serveur ne rend pas se lit comme (b′), jamais comme une ligne muette) ;
- * - (c′) `m > 0`, `k − m > 0` : (a), puis « l'une d'elles est l'écriture d'un virement » ;
+ * - (c′) `m > 0`, `k − m > 0` : (a) **pour les `k − m` non rapprochées seules**, puis les `m`
+ *   écritures de virement déjà rapprochées de l'autre côté, au singulier ou au pluriel (revue
+ *   P1, B1-1 : « N non rapprochées … l'une d'elles est déjà rapprochée » se contredisait) ;
  * - rien si `k = 0` et `m = 0`, ni pour `alreadyBooked: null`. Jamais « 0 écriture ».
  *
  * Les clés sont littérales, une par appel : une clé calculée échapperait aux gardes i18n.
@@ -53,27 +55,37 @@ export function alreadyBookedWarning(p: ReconciliationProposal): string | null {
 		);
 	}
 	const parts: string[] = [];
-	if (k === 1) {
+	// Les écritures non rapprochées seules : celles de virement se disent à part (c′).
+	const n = k - m;
+	if (n === 1) {
 		parts.push(
 			i18nMsg(
 				'reconciliation-labels-already-booked-one',
 				'Cette transaction semble déjà comptabilisée : une écriture non rapprochée du compte de la banque lui correspond. Rattachez-la (« Rattacher à une écriture existante ») plutôt que de passer une écriture : elle serait comptée deux fois.',
 			),
 		);
-	} else if (k > 1) {
+	} else if (n > 1) {
 		parts.push(
 			i18nMsg(
 				'reconciliation-labels-already-booked-other',
 				'Cette transaction semble déjà comptabilisée : { $count } écritures non rapprochées du compte de la banque lui correspondent. Rattachez-la (« Rattacher à une écriture existante ») plutôt que de passer une écriture : elle serait comptée deux fois.',
-				{ count: k },
+				{ count: n },
 			),
 		);
 	}
-	if (m > 0) {
+	if (m === 1) {
 		parts.push(
 			i18nMsg(
-				'reconciliation-labels-already-booked-transfer-among',
-				'L’une d’elles est l’écriture d’un virement déjà rapprochée sur un autre de vos comptes bancaires : c’est probablement celle-ci qu’il faut rattacher.',
+				'reconciliation-labels-already-booked-transfer-among-one',
+				'S’y ajoute l’écriture d’un virement, déjà rapprochée d’une transaction d’un autre de vos comptes bancaires : si cette transaction est l’autre côté de ce virement, c’est à elle qu’il faut la rattacher.',
+			),
+		);
+	} else if (m > 1) {
+		parts.push(
+			i18nMsg(
+				'reconciliation-labels-already-booked-transfer-among-other',
+				'S’y ajoutent { $count } écritures de virement, déjà rapprochées de transactions d’autres de vos comptes bancaires : si cette transaction est l’autre côté de l’un de ces virements, c’est à son écriture qu’il faut la rattacher.',
+				{ count: m },
 			),
 		);
 	}

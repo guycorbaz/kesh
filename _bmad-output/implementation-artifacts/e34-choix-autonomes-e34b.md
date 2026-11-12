@@ -17,6 +17,13 @@ ou s'en écartent, et le disent.*
   Les cas (i), (ii), (iii) de la fiche sont tous refusés par cette règle : même compte → `<>` ; même grand livre, délié ou
   relié ailleurs → même sens (un mouvement rapproché a le signe de la transaction qui l'a rapproché). AC-4c vérifié par
   `s34_11b_ac4c_comptes_relies`.
+- **Corrigé à la remédiation P1 (A1-2, 2026-11-12)** — la phrase précédente est inexacte. (i) et (ii) sont refusés ; (iii)
+  n'est refusé que pour une transaction du **même** grand livre que le côté déjà rapproché (la forme d'AC-4c) ; pour
+  **l'autre** mouvement de l'écriture, de sens contraire, il est **admis** — à juste titre : le signe de la transaction
+  rapprochée prouve le mouvement (`s34_11b_a1_2_relie_ailleurs_l_autre_mouvement_admis`). Et un cas que la fiche admettait
+  est désormais **refusé** : le virement éclaté sur plus de deux comptes bancaires — aucun montant n'est opposé à celui du
+  premier côté (`s34_11b_a1_2_virement_eclate_sur_trois_comptes_refuse`) ; écrit au manuel (« Un virement éclaté… n'a plus de
+  second côté »). Les écritures de **règlement** sont exclues du prédicat (C-e34b-8, récrit).
 - **Écartée** : la forme de la fiche (deux règles pour « l'autre côté », la 34-4 et la 34-11b, que `m` pourrait faire
   diverger : `k − m < 0`, transmission point 2).
 - **Écart à la fiche** : AC-1 dit « au plus une transaction par compte du grand livre » ; la règle dit « au plus une par
@@ -49,6 +56,10 @@ ou s'en écartent, et le disent.*
 - **Conséquence pour M7c** : « `None` traité comme autre côté possible » n'a plus de site dans `entry_cancel_blocker` ;
   la mutation est rejouée sous la forme « la décision déplacée dans la queue commune (`settlement_entry_cancel_blocker`),
   lue sans transaction concernée », que la non-régression facture client doit tuer.
+- **Corrigé à la remédiation P1 (A1-8)** : la mutation **jouée** est « le rang 3 sauté sous `None` » (`None => None` dans
+  `settlement_entry_cancel_blocker`), non la forme écrite ci-dessus ; elle est rejouée avec la dévalidation fournisseur
+  (`supplier_invoice_draft_e2e`) dans son lot. Depuis la remédiation P1 (B1-4), la fonction s'appelle
+  `entry_cancel_outlook` et rend `CancelOutlook { blocker, unlink_only }` (une seule lecture, C-e34b-10).
 - **Pour les candidates**, `Some(t.id)` remplace `None` au rang 3 : `t` n'étant pas liée, l'exemption n'exclut rien, et
   une transaction liée qui n'est pas l'autre côté aurait écarté la candidate (condition 4) — équivalent.
 - **Réversible** : oui.
@@ -92,4 +103,40 @@ ou s'en écartent, et le disent.*
 - **Retenu** : la décision « autre côté » s'applique quel que soit le genre ; elle vient après le verrou de l'écriture
   (étape 3) et l'`ensure_open`. Une écriture de règlement n'a qu'une ligne de banque : elle n'a pas d'autre côté dans les
   états atteignables. Le classement verrouillant de l'étape 2 reste (inoffensif).
+- **Récrit à la remédiation P1 (E1-3)** : faux — un compte bancaire relié au compte débiteurs ou créanciers rend la ligne
+  de la créance « mouvement » d'une banque. Le prédicat de l'autre côté (`other_side_predicate`) **exclut** désormais
+  toute écriture de règlement (client, ou fournisseur payée, comme le classement) : elle n'est ni candidate une seconde
+  fois, ni retirée seule. Le retrait seul ne vaut que pour le genre `Entry`. Test
+  `s34_11b_e1_3_une_ecriture_de_reglement_n_a_pas_d_autre_cote`, mutation M13.
+- **Réversible** : oui.
+
+### C-e34b-9 — Le geste d'annulation porte la décision montrée (remédiation P1, E1-1, E1-2)
+
+- **Contexte** : la confirmation (« aucune écriture inverse ») était choisie sur la vue, et la décision refaite au geste :
+  une annulation de l'autre côté entre-temps faisait contre-passer l'écriture que l'écran excluait (et l'inverse).
+- **Retenu** : `POST …/cancel` accepte un corps facultatif `{ "expectUnlinkOnly": bool }` ; `cancel_in_tx` (étape 3 ter)
+  refuse `DbError::ReconciliationCancelChanged` → `409 RECONCILIATION_CANCEL_CHANGED` si la décision du geste diffère, sans
+  rien écrire ; l'écran envoie toujours `view.unlinkOnly`, relit la vue sur ce refus et affiche le message. Sans le champ
+  (clients d'avant), aucun contrôle. Tests `s34_11b_e1_1_…`, `s34_11b_e1_2_…` (déterministes, les deux sens), Vitest, M12, F4.
+- **Écartées** : la version de l'autre côté dans le corps (plus lourde, même effet) ; un refus systématique sans corps
+  (rupture du contrat des clés API).
+- **Réversible** : oui (champ facultatif).
+
+### C-e34b-10 — Une seule lecture de l'autre côté par candidate et par vue (remédiation P1, B1-4)
+
+- **Retenu** : `entry_cancel_outlook` rend `CancelOutlook { blocker, unlink_only }` ; `cancel_blocker` aussi ; `get_view`, la
+  route des candidates et `cancel_in_tx` (étapes 3 bis et 4) n'en font qu'une lecture.
+- **Réversible** : oui.
+
+### C-e34b-11 — (c′) compte à part les non rapprochées et les écritures de virement (remédiation P1, B1-1)
+
+- **Retenu** : (a) se dit pour les `k − m` non rapprochées seules (`-one`/`-other`), puis `-transfer-among-one` (« s'y
+  ajoute l'écriture d'un virement… ») ou `-transfer-among-other` (« s'y ajoutent N écritures de virement… »). La clé
+  `-transfer-among` est retirée. Quatre locales, replis, manuel.
+- **Réversible** : oui.
+
+### C-e34b-12 — L'E2E sur un compte bancaire propre (remédiation P1, B1-8)
+
+- **Retenu** : `credit-card-statement.spec.ts` crée (une fois par base) un compte bancaire à IBAN synthétique réservé
+  (`CH7600762341100249817`, clé juste) relié à un actif propre : aucune écriture d'une autre spec ne peut signaler le débit.
 - **Réversible** : oui.

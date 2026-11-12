@@ -859,6 +859,7 @@ reconciliation-cancel-dismiss = Close
 reconciliation-cancel-done = Reconciliation cancelled.
 reconciliation-cancel-confirm-unlink-only = Only the link from this transaction to the transfer entry will be removed: the entry stays reconciled with the other side of the transfer, on your other account, and no reversing entry is posted. The transaction will be back to reconcile.
 reconciliation-cancel-done-unlink-only = The link is removed; the entry remains that of the other side of the transfer.
+reconciliation-cancel-changed = This reconciliation has changed since the window was opened: the other side of the transfer was linked or cancelled in the meantime. Nothing was cancelled; read what will happen, then confirm again.
 reconciliation-cancel-entry-link = View the entry
 reconciliation-cancel-column = Reconciliation
 # Story 28-5b (#526) — annuler le rejet d'une transaction, depuis le détail de son import.
@@ -1374,7 +1375,8 @@ reconciliation-labels-notice-supplier-invoice-in-batch = Supplier invoice { $inv
 reconciliation-labels-already-booked-one = This transaction seems already booked: an unreconciled entry on the bank account matches it. Link it ("Link to an existing entry") rather than posting an entry: it would be counted twice.
 reconciliation-labels-already-booked-other = This transaction seems already booked: { $count } unreconciled entries on the bank account match it. Link it ("Link to an existing entry") rather than posting an entry: it would be counted twice.
 reconciliation-labels-already-booked-transfer = This transaction is probably the other side of a transfer between your accounts: the entry for this transfer is already reconciled with a transaction on another of your bank accounts. Link it to this entry ("Link to an existing entry") rather than posting an entry: the transfer would be counted twice.
-reconciliation-labels-already-booked-transfer-among = One of them is the entry for a transfer already reconciled on another of your bank accounts: it is probably the one to link.
+reconciliation-labels-already-booked-transfer-among-one = There is also the entry for a transfer, already reconciled with a transaction on another of your bank accounts: if this transaction is the other side of that transfer, link it to that entry.
+reconciliation-labels-already-booked-transfer-among-other = There are also { $count } transfer entries, already reconciled with transactions on other bank accounts of yours: if this transaction is the other side of one of those transfers, link it to that transfer's entry.
 # Story 34-4 (#828, AC-6) — confirmation before Accept, Manual entry or Split on a flagged line.
 reconciliation-labels-already-booked-confirm-title = Confirm despite the warning
 reconciliation-labels-already-booked-confirm-intro = Each transaction below seems already booked (see the warning on its line). Continuing would post an entry for a movement that may already be in the books: it would be counted twice.
@@ -1491,7 +1493,7 @@ reconciliation-link-col-journal = Journal
 reconciliation-link-col-description = Description
 reconciliation-link-choose-entry = Choose this entry
 reconciliation-link-entry-cancel-today = Today Kesh sees no obstacle: cancelling this reconciliation would reverse this entry (or cancel the payment it carries). A year-end closing, a locked period or a later closed financial year could prevent it, already today without Kesh seeing it, or later.
-reconciliation-link-entry-cancel-unlink-only = This entry is that of a transfer, already reconciled on the other side with another of your bank accounts: the transaction is linked to it too, without a second entry. Cancelling this link would only remove the link; the entry would remain that of the other side.
+reconciliation-link-entry-cancel-unlink-only = This entry is that of a transfer, already reconciled on the other side with another of your bank accounts: the transaction is linked to it too, without a second entry. Today, cancelling this link would only remove the link; the entry would remain that of the other side. If the other side is cancelled first, this link becomes the last one: cancelling it would reverse the entry, and a closed financial year would prevent it.
 reconciliation-link-entry-cancel-blocked-intro = This link cannot be cancelled for as long as the following obstacle lasts.
 reconciliation-link-entry-cancel-blocked-ack = Understood: for as long as this obstacle lasts, this link cannot be cancelled.
 reconciliation-link-col-invoice = Invoice

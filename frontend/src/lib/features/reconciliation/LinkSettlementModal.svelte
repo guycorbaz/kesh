@@ -382,7 +382,7 @@
 				<p class="mt-2 text-sm" data-testid="entry-cancel-unlink-only">
 					{i18nMsg(
 						'reconciliation-link-entry-cancel-unlink-only',
-						'Cette écriture est celle d’un virement, déjà rapprochée de l’autre côté sur un autre de vos comptes bancaires : la transaction s’y rattache aussi, sans seconde écriture. Annuler ce rattachement ne retirerait que son lien ; l’écriture resterait celle de l’autre côté.',
+						'Cette écriture est celle d’un virement, déjà rapprochée de l’autre côté sur un autre de vos comptes bancaires : la transaction s’y rattache aussi, sans seconde écriture. Aujourd’hui, annuler ce rattachement ne retirerait que son lien ; l’écriture resterait celle de l’autre côté. Si l’autre côté est annulé d’abord, ce rattachement devient le dernier : son annulation contre-passerait l’écriture, et un exercice clôturé l’empêcherait.',
 					)}
 				</p>
 			{:else if selectedEntry && selectedEntry.cancelBlockedBy === null}

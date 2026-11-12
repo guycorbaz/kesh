@@ -251,19 +251,36 @@ async fn cancel_blocker(
     conn: &mut MySqlConnection,
     company_id: i64,
     bt: &BankTransaction,
-) -> Result<Option<SettlementCancelHit>, DbError> {
+) -> Result<CancelOutlook, DbError> {
     if bt.status != BankTransactionStatus::Reconciled {
-        return Ok(Some((
-            SettlementCancelBlocker::BankTransactionNotReconciled,
-            None,
-            None,
-        )));
+        return Ok(CancelOutlook {
+            blocker: Some((
+                SettlementCancelBlocker::BankTransactionNotReconciled,
+                None,
+                None,
+            )),
+            unlink_only: false,
+        });
     }
-    entry_cancel_blocker(conn, company_id, matched_entry(bt)?, bt).await
+    entry_cancel_outlook(conn, company_id, matched_entry(bt)?, bt).await
 }
 
-/// Le premier motif qui empêcherait d'annuler un rapprochement **dont
-/// l'écriture serait `entry_id`**, ou `None` — classement puis bras client,
+/// Ce qui décide de l'annulation d'un rapprochement (Story 34-11b, revue P1
+/// B1-4) : **une** lecture de l'autre côté, d'où sortent ensemble le motif et
+/// le retrait seul — jamais deux lectures qui pourraient se contredire
+/// (`blocker: None` et `unlink_only: false` pour un retrait seul).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CancelOutlook {
+    /// Le premier motif qui refuse l'annulation, ou `None`.
+    pub blocker: Option<SettlementCancelHit>,
+    /// L'écriture est aussi rapprochée de l'**autre côté** d'un virement :
+    /// l'annulation ne retirerait que le lien (`blocker` vaut alors `None`).
+    pub unlink_only: bool,
+}
+
+/// Ce qui déciderait de l'annulation d'un rapprochement **dont l'écriture
+/// serait `entry_id`** ([`CancelOutlook`] : le premier motif, ou `None`, et le
+/// retrait seul) — classement puis bras client,
 /// fournisseur ou écriture propre, rangs 1 à 5 (Story v017-3a, D14 : extraite
 /// de [`cancel_blocker`], qui l'appelle après le rang 0).
 ///
@@ -301,20 +318,38 @@ async fn cancel_blocker(
 /// les angles morts documentés de la queue commune (verrou de période du jour,
 /// exercice postérieur clos — #568) et les motifs de propriété qu'elle ignore.
 /// Lecture non verrouillante, sans écriture.
-pub async fn entry_cancel_blocker(
+pub async fn entry_cancel_outlook(
     conn: &mut MySqlConnection,
     company_id: i64,
     entry_id: i64,
     concerned: &BankTransaction,
-) -> Result<Option<SettlementCancelHit>, DbError> {
+) -> Result<CancelOutlook, DbError> {
     // 0 — en tête : l'autre côté d'un virement (Story 34-11b, C-e341-35).
     if super::reconciliation_link::transfer_other_side(conn, company_id, entry_id, concerned)
         .await?
         .is_some()
     {
-        return Ok(None);
+        return Ok(CancelOutlook {
+            blocker: None,
+            unlink_only: true,
+        });
     }
-    let unlinking = Some(concerned.id);
+    let blocker = entry_cancel_chain(conn, company_id, entry_id, concerned.id).await?;
+    Ok(CancelOutlook {
+        blocker,
+        unlink_only: false,
+    })
+}
+
+/// Les rangs 1 à 5, avec l'exemption étroite du rang 3 pour `unlinking` :
+/// classement, puis bras client, fournisseur ou écriture propre.
+async fn entry_cancel_chain(
+    conn: &mut MySqlConnection,
+    company_id: i64,
+    entry_id: i64,
+    unlinking: i64,
+) -> Result<Option<SettlementCancelHit>, DbError> {
+    let unlinking = Some(unlinking);
     match classify(conn, company_id, entry_id, false).await? {
         ReconciliationKind::InvoiceSettlement { settlement_id, .. } => {
             invoice_settlements_write::settlement_cancel_blocker_unlinking(
@@ -437,18 +472,7 @@ pub async fn get_view(
         } else {
             (None, None, None, None)
         };
-    let blocker = cancel_blocker(&mut tx, company_id, &bt).await?;
-    let unlink_only = match (
-        bt.status == BankTransactionStatus::Reconciled,
-        bt.matched_entry_id,
-    ) {
-        (true, Some(entry_id)) => {
-            super::reconciliation_link::transfer_other_side(&mut tx, company_id, entry_id, &bt)
-                .await?
-                .is_some()
-        }
-        _ => false,
-    };
+    let outlook = cancel_blocker(&mut tx, company_id, &bt).await?;
     tx.commit().await.map_err(map_db_error)?;
     Ok(Some(ReconciliationView {
         bank_transaction: bt,
@@ -456,8 +480,8 @@ pub async fn get_view(
         invoice_number,
         supplier_invoice_number,
         internal_number,
-        cancel_blocker: blocker,
-        unlink_only,
+        cancel_blocker: outlook.blocker,
+        unlink_only: outlook.unlink_only,
     }))
 }
 
@@ -543,6 +567,7 @@ pub async fn cancel_in_tx(
     bank_transaction_id: i64,
     user_id: i64,
     actor_api_key_id: Option<i64>,
+    expect_unlink_only: Option<bool>,
 ) -> Result<ReconciliationCancellation, DbError> {
     // (1) Verrou de la transaction bancaire.
     let bt = find(tx, company_id, bank_transaction_id, true).await?;
@@ -604,25 +629,37 @@ pub async fn cancel_in_tx(
     //     VERROUILLANTE de la ligne de l'autre côté attendrait l'annulation
     //     concurrente, qui la tient en exclusif (étape 1) et attend l'écriture :
     //     un interblocage à chaque double annulation.
-    let unlink_only =
-        super::reconciliation_link::transfer_other_side(tx, company_id, entry_id, &bt)
-            .await?
-            .is_some();
+    //     Une seule lecture (revue P1, B1-4) : la décision et les motifs sortent
+    //     ensemble de `cancel_blocker` ([`CancelOutlook`]).
+    let outlook = cancel_blocker(tx, company_id, &bt).await?;
+    let unlink_only = outlook.unlink_only;
+
+    // (3 ter) Revue P1 (E1-1, E1-2) — la décision confirmée à l'écran
+    //     (`expect_unlink_only`, lue par la vue) doit être celle du geste : si
+    //     l'autre côté a été rattaché ou annulé entre-temps, rien n'est écrit,
+    //     `409 RECONCILIATION_CANCEL_CHANGED`, l'écran relit la vue. Dans les
+    //     deux sens : une contre-passation que la confirmation excluait, un
+    //     retrait seul qu'elle n'annonçait pas. `None` (client qui n'envoie
+    //     rien) : pas de contrôle, comme avant.
+    if let Some(attendu) = expect_unlink_only
+        && attendu != unlink_only
+    {
+        return Err(DbError::ReconciliationCancelChanged { unlink_only });
+    }
 
     // (4) Les motifs — forme EXEMPTÉE : le lien existe encore, et la forme
     //     non exemptée refuserait chaque dé-rapprochement sur son propre lien.
     //     Motif LIÉ (`blocker @`), jamais écrit en dur dans l'erreur : le rang
     //     2 bis (Story 15-1a2-0) est refusé ici, dans SA famille, AVANT que le
     //     lien soit défait — sans lui, il remonterait de
-    //     `cancel_settlement_in_tx` sous le texte « ce règlement ». Sautés pour
-    //     un retrait seul (3 bis) : rien n'est écrit au journal.
-    if !unlink_only
-        && let Some((
-            blocker @ (SettlementCancelBlocker::FiscalYearClosed
-            | SettlementCancelBlocker::DocumentLetteringInClosedPeriods),
-            _,
-            _,
-        )) = cancel_blocker(tx, company_id, &bt).await?
+    //     `cancel_settlement_in_tx` sous le texte « ce règlement ». Aucun motif
+    //     pour un retrait seul (3 bis) : rien n'est écrit au journal.
+    if let Some((
+        blocker @ (SettlementCancelBlocker::FiscalYearClosed
+        | SettlementCancelBlocker::DocumentLetteringInClosedPeriods),
+        _,
+        _,
+    )) = outlook.blocker
     {
         return Err(DbError::ReconciliationNotCancellable { blocker });
     }
@@ -771,7 +808,16 @@ pub async fn cancel(
     user_id: i64,
 ) -> Result<ReconciliationCancellation, DbError> {
     let mut tx = pool.begin().await.map_err(map_db_error)?;
-    match cancel_in_tx(&mut tx, company_id, bank_transaction_id, user_id, None).await {
+    match cancel_in_tx(
+        &mut tx,
+        company_id,
+        bank_transaction_id,
+        user_id,
+        None,
+        None,
+    )
+    .await
+    {
         Ok(done) => {
             tx.commit().await.map_err(map_db_error)?;
             Ok(done)

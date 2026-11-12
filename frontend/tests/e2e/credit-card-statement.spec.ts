@@ -8,7 +8,8 @@
  * entre specs ; achats 120.00 et 80.00) :
  * 1. par l'API : un passif neuf, une carte liée, une écriture d'ouverture qui porte la dette
  *    `P` (la Story 34-2 — solde d'ouverture à la création — n'est pas dans cette branche :
- *    choix C-e34b-6) ; un relevé de la banque, un débit de `P` ;
+ *    choix C-e34b-6) ; un relevé du compte bancaire **propre à la spec** (`ownBankAccount`,
+ *    son grand livre n'est partagé avec aucune autre spec), un débit de `P` ;
  * 2. à l'écran : le relevé de la carte saisi à la main — départ `-P`, achats au débit, paiement
  *    reçu de `P` au crédit, arrivée `-200.00` ;
  * 3. *Réconciliation*, banque : *Écriture manuelle* du débit sur le passif de la carte ;
@@ -38,13 +39,10 @@ import {
 	authedApiContext,
 	disposeContextSafe,
 } from './helpers/test-state';
-import {
-	createManualDebitStatementViaApi,
-	todayInZurich,
-	wiredBankAccountViaApi,
-} from './helpers/api-fixtures';
+import { createManualDebitStatementViaApi, todayInZurich } from './helpers/api-fixtures';
 
-const TEST_IBAN = 'CH4431999123000889012';
+/** IBAN synthétique (clé de contrôle juste) réservé à cette spec. */
+const OWN_IBAN = 'CH7600762341100249817';
 
 test.beforeAll(async () => {
 	await seedTestState('with-company');
@@ -74,6 +72,41 @@ type Account = {
 	active: boolean;
 	postable: boolean;
 };
+
+/**
+ * Revue P1 (B1-8) — le compte bancaire **propre à cette spec** (IBAN synthétique `OWN_IBAN`,
+ * aucune autre spec ne l'emploie), relié à un compte du grand livre **propre à la spec** : une
+ * écriture résiduelle d'une autre spec, sur le grand livre partagé du compte de test, ne peut pas
+ * signaler le débit du prélèvement. Créé au premier passage, réemployé ensuite (les écritures
+ * des passages précédents sont contre-passées en `finally`, donc jamais candidates).
+ */
+async function ownBankAccount(ctx: Awaited<ReturnType<typeof authedApiContext>>, unique: string) {
+	type Ba = { id: number; iban: string | null; version: number; journalAccountId: number | null };
+	const find = async (): Promise<Ba | undefined> =>
+		((await (await ctx.get('/api/v1/bank-accounts')).json()) as Ba[]).find(
+			(b) => b.iban === OWN_IBAN,
+		);
+	let ba = await find();
+	if (!ba) {
+		const res = await ctx.post('/api/v1/bank-accounts', {
+			data: { bankName: 'Banque E2E 34-11b', iban: OWN_IBAN, qrIban: null, isPrimary: false },
+		});
+		expect(res.ok(), `compte bancaire de la spec : ${await res.text()}`).toBeTruthy();
+		ba = await find();
+	}
+	if (ba!.journalAccountId === null) {
+		const actif = await ctx.post('/api/v1/accounts', {
+			data: { number: `1${unique.slice(-6)}`, name: 'Banque E2E 34-11b', accountType: 'Asset' },
+		});
+		expect(actif.ok(), `actif de la spec : ${await actif.text()}`).toBeTruthy();
+		const { id } = (await actif.json()) as { id: number };
+		const lie = await ctx.patch(`/api/v1/bank-accounts/${ba!.id}`, {
+			data: { journalAccountId: id, version: ba!.version },
+		});
+		expect(lie.ok(), `liaison : ${await lie.text()}`).toBeTruthy();
+	}
+	return ba!.id;
+}
 
 /** « Écriture manuelle » de la ligne `ligne`, sur le compte `numero`. */
 async function ecritureManuelle(page: Page, ligne: Locator, numero: string, libelle: string) {
@@ -111,7 +144,7 @@ test('une carte de crédit : relevé saisi, achats, prélèvement rattaché des 
 	let carteImport: number | null = null;
 	const aAnnuler: number[] = [];
 	try {
-		const bankAccountId = await wiredBankAccountViaApi(page, TEST_IBAN);
+		const bankAccountId = await ownBankAccount(ctx, unique);
 		const accounts = (await (await ctx.get('/api/v1/accounts')).json()) as Account[];
 		const charge = accounts.find((a) => a.accountType === 'Expense' && a.active && a.postable);
 		expect(charge, 'un compte de charge imputable').toBeTruthy();
@@ -261,14 +294,17 @@ test('une carte de crédit : relevé saisi, achats, prélèvement rattaché des 
 		const comptes = (await (await ctx.get('/api/v1/bank-accounts')).json()) as Array<{
 			id: number;
 			currentBalance: string | null;
+			statementClosingBalance: string | null;
+			ledgerBalanceAtStatement: string | null;
 			statementGap: string | null;
 		}>;
 		const carte = comptes.find((c) => c.id === carteId)!;
 		expect(Number(carte.currentBalance)).toBe(-200);
-		expect(
-			carte.statementGap === null || Number(carte.statementGap) === 0,
-			`écart : ${carte.statementGap}`,
-		).toBe(true);
+		// Revue P1 (A1-6) : `statementGap` vaut `null` aussi quand un solde manque ; les deux
+		// soldes comparés sont donc lus et égaux à -200, puis l'écart nul.
+		expect(Number(carte.statementClosingBalance), 'solde du relevé servi').toBe(-200);
+		expect(Number(carte.ledgerBalanceAtStatement), 'solde des livres au relevé').toBe(-200);
+		expect(carte.statementGap, 'aucun écart').toBeNull();
 		await page.goto('/bank-accounts');
 		await expect(page.getByTestId(`balance-cell-${carteId}`)).toBeVisible();
 		await page.screenshot({

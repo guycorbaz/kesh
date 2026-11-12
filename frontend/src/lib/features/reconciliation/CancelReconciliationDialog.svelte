@@ -121,10 +121,19 @@
 		submitting = true;
 		errorMsg = '';
 		try {
-			const result = await cancelReconciliation(bankTransactionId);
+			// Story 34-11b (revue P1 E1-1) : le geste porte la décision que la confirmation montre.
+			const result = await cancelReconciliation(bankTransactionId, view?.unlinkOnly ?? false);
 			onSuccess(result);
 		} catch (err) {
-			errorMsg = isApiError(err) ? reconciliationCancelErrorMessage(err) : errorMessageOf(err);
+			const message = isApiError(err)
+				? reconciliationCancelErrorMessage(err)
+				: errorMessageOf(err);
+			// La décision a changé entre-temps : la vue est relue, la confirmation juste remontrée,
+			// et le refus reste affiché au-dessus — rien n'a été annulé.
+			if (isApiError(err) && err.code === 'RECONCILIATION_CANCEL_CHANGED') {
+				await load(bankTransactionId);
+			}
+			errorMsg = message;
 		} finally {
 			submitting = false;
 		}

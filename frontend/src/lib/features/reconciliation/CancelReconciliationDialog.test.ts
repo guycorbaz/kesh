@@ -74,7 +74,8 @@ describe('CancelReconciliationDialog', () => {
 		expect(mockApi.getReconciliationTransaction).toHaveBeenCalledWith(42);
 		await fireEvent.click(await findByTestId('reconciliation-cancel-submit'));
 		await waitFor(() => expect(onSuccess).toHaveBeenCalledWith(result));
-		expect(mockApi.cancelReconciliation).toHaveBeenCalledWith(42);
+		// Story 34-11b (revue P1 E1-1) : le geste porte la décision montrée (`unlinkOnly: false`).
+		expect(mockApi.cancelReconciliation).toHaveBeenCalledWith(42, false);
 	});
 
 	it('règlement de facture ⇒ la confirmation NOMME la facture (mutation : texte de l’écriture propre)', async () => {
@@ -207,5 +208,34 @@ describe('CancelReconciliationDialog — règlement fournisseur (Story 30-1b, T-
 		expect(queryByTestId('reconciliation-cancel-motif')).toBeNull();
 		await fireEvent.click(await findByTestId('reconciliation-cancel-submit'));
 		await waitFor(() => expect(onSuccess).toHaveBeenCalledWith(result));
+		expect(mockApi.cancelReconciliation).toHaveBeenCalledWith(42, true);
+	});
+
+	// Story 34-11b (revue P1 E1-1) — la décision a changé entre la lecture et le geste.
+	it('409 RECONCILIATION_CANCEL_CHANGED ⇒ la vue est relue, la confirmation juste remontrée, le refus affiché, rien de réussi (mutation : pas de relecture)', async () => {
+		mockApi.getReconciliationTransaction
+			.mockResolvedValueOnce(view({ unlinkOnly: true }))
+			.mockResolvedValueOnce(view({ unlinkOnly: false }));
+		mockApi.cancelReconciliation.mockRejectedValue({
+			code: 'RECONCILIATION_CANCEL_CHANGED',
+			message: 'Ce rapprochement a changé depuis l’ouverture de la fenêtre.',
+			status: 409,
+		});
+		const onSuccess = vi.fn();
+		const { findByTestId } = monter(onSuccess);
+		expect((await findByTestId('reconciliation-cancel-confirm-text')).textContent).toContain(
+			'Seul le lien',
+		);
+		await fireEvent.click(await findByTestId('reconciliation-cancel-submit'));
+		await waitFor(() =>
+			expect((document.querySelector('[data-testid="reconciliation-cancel-confirm-text"]')?.textContent ?? '')).toContain(
+				'écriture inverse',
+			),
+		);
+		expect(mockApi.getReconciliationTransaction).toHaveBeenCalledTimes(2);
+		expect((await findByTestId('reconciliation-cancel-error')).textContent).toContain(
+			'a changé depuis',
+		);
+		expect(onSuccess).not.toHaveBeenCalled();
 	});
 });

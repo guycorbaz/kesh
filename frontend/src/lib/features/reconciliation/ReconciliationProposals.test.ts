@@ -1540,8 +1540,11 @@ describe('ReconciliationProposals — transaction déjà comptabilisée (Story 3
 	// candidate — `matchedElsewhereCount` en est une partie ; le conseil est de la rattacher.
 	const TEXTE_VIREMENT =
 		'Cette transaction est probablement l’autre côté d’un virement entre vos comptes : l’écriture de ce virement est déjà rapprochée d’une transaction d’un autre de vos comptes bancaires. Rattachez-la à cette écriture (« Rattacher à une écriture existante ») plutôt que de passer une écriture : le virement serait compté deux fois.';
-	const TEXTE_PARMI =
-		'L’une d’elles est l’écriture d’un virement déjà rapprochée sur un autre de vos comptes bancaires : c’est probablement celle-ci qu’il faut rattacher.';
+	// Revue P1 (B1-1) : (c′) compte à part les non rapprochées et les écritures de virement.
+	const TEXTE_PARMI_UNE =
+		'S’y ajoute l’écriture d’un virement, déjà rapprochée d’une transaction d’un autre de vos comptes bancaires : si cette transaction est l’autre côté de ce virement, c’est à elle qu’il faut la rattacher.';
+	const texteParmiDes = (n: number) =>
+		`S’y ajoutent ${n} écritures de virement, déjà rapprochées de transactions d’autres de vos comptes bancaires : si cette transaction est l’autre côté de l’un de ces virements, c’est à son écriture qu’il faut la rattacher.`;
 
 	/** Une ligne avec candidate, et ses trois nombres (`null` : pas de champ). */
 	function signalee(
@@ -1620,10 +1623,18 @@ describe('ReconciliationProposals — transaction déjà comptabilisée (Story 3
 		expect(avertissement(view, 1)).toBe(TEXTE_VIREMENT);
 	});
 
-	it('AC-10 (c′) d’autres candidates aussi ⇒ (a) puis « l’une d’elles » (M11)', async () => {
-		const view = await monter([signalee(1, [0, 2, 1]), signalee(2, [1, 2, 2])]);
-		expect(avertissement(view, 1)).toBe(`${texteDes(2)} ${TEXTE_PARMI}`);
-		expect(avertissement(view, 2)).toBe(`${texteDes(3)} ${TEXTE_PARMI}`);
+	// Revue P1 (B1-1) : (a) ne compte que les `k − m` non rapprochées ; les `m` écritures de
+	// virement se disent à part, au singulier ou au pluriel — jamais « N non rapprochées » dont
+	// « l'une » serait rapprochée.
+	it('AC-10 (c′) d’autres candidates aussi ⇒ (a) des seules non rapprochées, puis les écritures de virement (M11)', async () => {
+		const view = await monter([
+			signalee(1, [0, 2, 1]),
+			signalee(2, [1, 2, 2]),
+			signalee(3, [0, 3, 1]),
+		]);
+		expect(avertissement(view, 1)).toBe(`${TEXTE_UNE} ${TEXTE_PARMI_UNE}`);
+		expect(avertissement(view, 2)).toBe(`${TEXTE_UNE} ${texteParmiDes(2)}`);
+		expect(avertissement(view, 3)).toBe(`${texteDes(2)} ${TEXTE_PARMI_UNE}`);
 		expect(avertissement(view, 1)).not.toContain('rejetez-la');
 	});
 

@@ -1086,6 +1086,15 @@ pub enum DbError {
     #[error("Rapprochement non annulable ({})", .blocker.code())]
     ReconciliationNotCancellable { blocker: SettlementCancelBlocker },
 
+    /// Story 34-11b (#972, revue P1 E1-1, E1-2) — l'annulation a été confirmée
+    /// sur une décision (retrait du seul lien, ou contre-passation) qui ne vaut
+    /// plus au geste : l'autre côté du virement a été rattaché ou annulé
+    /// entre-temps. Conflit d'état → HTTP **409**, rien n'est écrit ; l'écran
+    /// relit la vue et remontre la confirmation juste. `unlink_only` : la
+    /// décision **au geste**.
+    #[error("Le rapprochement a changé depuis sa lecture (retrait seul : {unlink_only})")]
+    ReconciliationCancelChanged { unlink_only: bool },
+
     /// La facture fournisseur ne peut pas être annulée (Story 25-3-c, #454).
     ///
     /// Conflit d'état → HTTP **409**, avec le code canonique du
@@ -1635,6 +1644,7 @@ impl DbError {
             Self::InvoiceNotUnvalidatable { blocker, .. } => blocker.code(),
             Self::SettlementNotCancellable { blocker } => blocker.code(),
             Self::ReconciliationNotCancellable { blocker } => blocker.code(),
+            Self::ReconciliationCancelChanged { .. } => "RECONCILIATION_CANCEL_CHANGED",
             Self::SupplierInvoiceNotCancellable { blocker } => blocker.code(),
             Self::InvoiceNumberFiscalYearMismatch => "INVOICE_NUMBER_FISCAL_YEAR_MISMATCH",
             Self::InvoiceMustBeUnvalidatedFirst => "INVOICE_MUST_BE_UNVALIDATED_FIRST",
