@@ -74,7 +74,10 @@ clés : `:969`).
   (`+page.svelte:146`) : le dérivé de l'aperçu `formatPreview` (`:147-148`), `save()` (`:209-214`), le bouton
   d'enregistrement (`:616-619`, `disabled`), le champ (`:326-332` : aperçu, message en `text-destructive`). Pour reconnaître
   `NoSeq` sans comparer de textes traduits, `FormatValidationResult` (`invoice-number-format.ts:17-20`, aujourd'hui
-  `{ ok, error? }`) gagne un champ `code?: 'NO_SEQ' | …` (validation P3, V3-5). Un format chargé sans compteur, laissé tel quel : bouton actif, **aperçu affiché**,
+  `{ ok, error? }`) gagne `code?: 'NO_SEQ'` (validation P3, V3-5 ; précisé en P4, V4-1) : la branche `NoSeq` du miroir,
+  neuve (elle n'existe pas sur `main`), s'écrit dans `validateTemplateRules`, après la boucle des placeholders,
+  `NoPlaceholder` testé d'abord (ordre du Rust) ; elle seule pose `code: 'NO_SEQ'` ; `formatBlocks` ne teste que
+  `code === 'NO_SEQ'`. Un format chargé sans compteur, laissé tel quel : bouton actif, **aperçu affiché**,
   et sous le champ une aide **non bloquante** (la clé de D1, en texte d'avertissement, non destructif). Les autres refus
   d'écran (caractère, accolade, longueur) restent inconditionnels, comme aujourd'hui. Aucune migration ne réécrit un format
   enregistré.
@@ -309,3 +312,14 @@ avoirs lu mais non envoyé (AC5) ; M6 le miroir d'écran sans `NoSeq` (AC5) ; **
   - LOW : V3-3 (les quatre causes écrites à D4 seul, AC7 y renvoie) ; V3-4 (message de `duplicate` juste : le compteur
     repart toujours, `{FY}` seul distingue deux exercices de même année) ; V3-5 (`code?: 'NO_SEQ'` à `FormatValidationResult`).
   - Symptômes greppés : « trois sites », « ou l'année ({YEAR}) si le », « 35-3 seule » — remplacés hors des entrées passées.
+- 2026-11-13 — **Validation P4, passe ciblée** (Haiku) sur la remédiation P3 : 0 finding au-dessus de LOW, 3 LOW
+  (`kesh-gate-logs/e35-1-validation-p4-ciblee.md`). Appliqués : V4-1 (D2 : `code?: 'NO_SEQ'` seul, posé par la seule branche
+  `NoSeq` neuve de `validateTemplateRules`, `NoPlaceholder` d'abord) ; V4-2 (union du fichier d'epic : la 35-1 nommée sous
+  `messages.ftl`, `api-external.md` et `user-manual.tex`) ; V4-3 (titre de l'extension de C-e350-8 qui annonce l'annotation
+  35-1 / 35-3). Rédaction seule.
+- 2026-11-13 — **Validation terminée.** Série des findings au-dessus de LOW : P1 1 HIGH + 4 MEDIUM → P2 3 MEDIUM → P3 2 →
+  P4 0 (CRITICAL : 0). Modèles : Sonnet (P1), Opus (P2), Sonnet en passe ciblée (P3), Haiku en passe ciblée (P4). La boucle
+  se clôt sur une passe sans finding au-dessus de LOW ; la remédiation de P4 ne touche que la rédaction. Choix retenus :
+  **C-e350-42** (compteur obligatoire), **-43** (format jugé s'il change, serveur et écran), **-44** (format des avoirs à
+  l'écran), **-45** (refus typé `400 NUMBER_FORMAT_UNRENDERABLE`), **-47** (numéro déjà attribué, même refus), **-51** (ni
+  année ni exercice exigés) ; issue **#1058**. Statut : `ready-for-dev`.

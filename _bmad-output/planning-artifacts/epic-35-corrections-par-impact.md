@@ -93,7 +93,8 @@ chacune de ses actions est aujourd'hui attribuée à Guy dans la piste de contr�
      section `## [` existante, avec la seule rubrique `### Corrigé`, un point par issue ; à l'intégration, une section,
      une rubrique, les points dans l'ordre des stories (35-2 puis 35-3), l'avertissement de la 35-3 en tête de son point ;
    - **`messages.ftl` ×4** : jamais en fin de fichier ; 35-2 à côté du bloc `invoice-pdf-error-*`, 35-3 juste après
-     `error-designated-account-not-postable` ;
+     `error-designated-account-not-postable` ; 35-1 ses clés de format à côté de `settings-invoicing-supplier-format-*`, et
+     celle de `NUMBER_FORMAT_UNRENDERABLE` après le bloc de la 35-3 ;
    - **G9** (`crates/kesh-api/tests/textes_coherents.rs`, `TABLE: [(&str, Cles); 8]`) : 35-3 en fin du bloc `errors.rs`,
      sous `// Story 35-3` ; 35-2a une entrée neuve en fin de table (`invoice_pdf_service.rs`, 42 clés), aucune
      clé à `errors.rs` : la table passe de 8 à 9 (validation P5 de la 35-2a) ; la longueur se recompte à l'union ;
@@ -102,10 +103,13 @@ chacune de ses actions est aujourd'hui attribuée à Guy dans la piste de contr�
      `InvoicePdfHeaderOverflow` (`:2144-2168` sur `main`), hunks distincts de la 35-3 (C-e350-46) ; 35-1 un bras
      `NumberFormatUnrenderable` après celui de la 35-3 ; aucun reformatage hors des passages touchés ;
    - **`docs/api-external.md`** : 35-3 une ligne juste après `ACCOUNT_NOT_POSTABLE` ; 35-2 juste après
-     `SUPPLIER_INVOICE_DUE_BEFORE_INVOICE_DATE` ;
+     `SUPPLIER_INVOICE_DUE_BEFORE_INVOICE_DATE` ; 35-1 la ligne `NUMBER_FORMAT_UNRENDERABLE` au tableau des erreurs, après
+     celle de la 35-3, et les renvois des descriptions de `POST /invoices/{id}/validate` (`:497`) et `POST /credit-notes`
+     (`:600`) ;
    - **`frontend/src/lib/shared/i18n-keys.test.ts`** (`sitesTotal`, compte exact des sites `i18nMsg(`) : chaque branche le
      recompte à la source ; l'intégration le recompte après chaque fusion, sans additionner (toutes les stories, C-e350-18) ;
-   - **`docs/manual/fr/user-manual.tex`** : paragraphes distincts (35-2a l. 1251 ; 35-3 l. 452-461, 491, 493, 1169, 1788-1796) ; `admin-manual.tex`, 35-3 seule (l. 3816, 3822) ;
+   - **`docs/manual/fr/user-manual.tex`** : paragraphes distincts (35-2a l. 1251 ; 35-3 l. 452-461, 491, 493, 1169, 1788-1796 ;
+     35-1 l. 1226-1227, 1561) ; `admin-manual.tex`, 35-3 seule (l. 3816, 3822) ;
      `invoices/[id]/+page.svelte` : 35-3, puis 35-1 (`:449-456`, la liste des codes non rejouables : **même hunk**, la
      seconde fusionnée ajoute son code à la liste de la première ; annoté le 2026-11-13, validation P3 de la 35-1) ; la 35-2a
      ne touche que `pdf-error.ts` (V4-9) ; le PDF n'est jamais fusionné, il se régénère depuis le `.tex` uni puis se contrôle

@@ -193,7 +193,7 @@ retenue, options écartées, réversibilité. Lignes citées sur `release/0.17.6
 - *(Annoté le 2026-11-12, validation P1 de la 35-4 : **révisé par C-e350-18** — garde défensive, sans cause nommée.)*
 - *(Annoté le 2026-11-12, validation P2 de la 35-4 : **remplacé par C-e350-20** — plus d'avis.)*
 
-### C-e350-8, extension du 2026-11-12 — fichiers communs des stories 35-4, 35-5a, 35-5b, 35-6
+### C-e350-8, extension du 2026-11-12 — fichiers communs des stories 35-4, 35-5a, 35-5b, 35-6 (et 35-1 / 35-3, annotation du 2026-11-13 en fin de section)
 
 - **`messages.ftl` ×4** : chaque story écrit ses clés **à côté de son bloc** : 35-4 près de
   `reconciliation-labels-already-booked-confirm-*` ; 35-6 près de `bank-accounts-opening-*` ; 35-5a/35-5b, s'il leur en
