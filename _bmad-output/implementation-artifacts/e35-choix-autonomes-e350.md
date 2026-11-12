@@ -199,9 +199,12 @@ retenue, options écartées, réversibilité. Lignes citées sur `release/0.17.6
 - **`crates/kesh-api/src/routes/opening_balances.rs`** : 35-6 `parse_complement_amount` (`:515-530`) ; 35-5a la date du
   jour (`:244`, `:604`). Hunks distincts ; si les deux sont en vol, 35-6 fusionne d'abord (plus courte).
   *(Annoté le 2026-11-12, validation P2 de la 35-6 : la 35-6 ne touche plus ce fichier, C-e350-19.)*
+  *(Annoté le 2026-11-12, validation P3 de la 35-6 : la 35-6 y ajoute **un test seul**, au `mod tests` (`:630` et suivantes),
+  le test de parité de C-e350-33 ; aucun hunk de production ; hunk distinct de ceux de la 35-5a.)*
 - **`crates/kesh-api/src/routes/bank_accounts.rs`** : 35-5a (`:1007`, `:1252`) ; 35-5b (`:1802`). 35-5b part de 35-5a fusionnée.
 - **`docs/api-external.md`** : 35-5a la phrase « UTC » du solde d'ouverture ; 35-6 la grammaire du montant ; lignes
   distinctes.
+  *(Annoté le 2026-11-12, validation P3 de la 35-6 : la 35-6 ne touche plus ce fichier, C-e350-19 ; seule la 35-5a y écrit.)*
 - **`CHANGELOG.md`** : un point par issue sous `### Corrigé`, dans l'ordre des numéros de story.
 
 ### C-e350-15 — 35-6 : point et virgule ambigus, grammaire commune, #1025 intégrée
@@ -299,6 +302,8 @@ retenue, options écartées, réversibilité. Lignes citées sur `release/0.17.6
 - **Réversible** : oui.
 - **Commentaires déjà rédigés pour #1050 et #1051** (validation P1) : ils disaient que la 0.17.7 ferait refuser `1_000` au
   complément ; c'est faux depuis ce choix — correction à poster par l'orchestrateur.
+- *(Annoté le 2026-11-12, validation P3 de la 35-6 : les six saisies « nouvellement refusées » ci-dessus n'étaient pas un
+  ensemble fini mais des exemples ; la règle décidable et ses trois familles sont **C-e350-30** et **C-e350-32**.)*
 
 ### C-e350-20 — 35-4 : une relecture de la liste referme la confirmation (décision demandée par l'orchestrateur)
 
@@ -309,4 +314,51 @@ retenue, options écartées, réversibilité. Lignes citées sur `release/0.17.6
   validée. Plus d'avis, de clé ni de région de statut. La PR porte `refs #1024` ; l'orchestrateur ferme l'issue à la main
   avec le commentaire de la fiche (D5).
 - **Écartée** : l'avis après le clic : plus de code, une confirmation périmée encore affichée, un texte sans cause.
+- **Réversible** : oui.
+
+*(C-e350-21 à C-e350-29 : réservés à la branche `chore/epic-35-fiches-355` ; l'union les range à leur place.)*
+
+### C-e350-30 — 35-6 : la lecture en pipeline ordonné, et le refus par règle décidable
+
+- **Contexte** : validation P3 de la 35-6 (V3-1, V3-2, V3-3). D2 ne disait ni le rognage ni l'ordre des opérations ; classée
+  sur la saisie brute, `1,23 4` aurait été lue 1,234 franc en silence, et ` 9,999 ` aurait échappé à l'ambiguïté. D4 annonçait
+  une « liste close » de six saisies, alors que la règle refuse une famille (`1.000`, `100.250`…).
+- **Retenu** : un pipeline L1-L7 (rognage ; un signe en tête, reste rogné ; souligné ; au plus un `.`/`,` ; fraction en
+  chiffres seuls ; partie entière groupée ou non ; classement non lisible → négative → ambiguë → claire). Ambiguë ⇔
+  `^0*[1-9][0-9]{0,2}[.,][0-9]{3}$` sur la partie entière non groupée et la fraction telle que saisie. Trois familles
+  nouvellement refusées, annoncées par la règle : A (le point), B (la virgule masquée par un `+`), C (blanc ou apostrophe
+  après la décimale). Clé neuve `bank-accounts-opening-error-amount-unreadable`.
+- **Écartées** : (a) retirer les séparateurs partout puis classer : rouvre `1'234,567` (#1025) ; (b) retirer les blancs de la
+  fraction : laisse `1. 234` lu 1,234 franc ; (c) annoncer une liste d'exemples : trompe sur l'étendue du refus.
+- **Réversible** : oui.
+
+### C-e350-31 — 35-6 : le souligné suit la règle du serveur, non « entre deux chiffres »
+
+- **Contexte** : validation P3 de la 35-6, V3-1, proposait de ne retirer `_` qu'entre deux chiffres. `rust_decimal` 1.43.0
+  (`str.rs:245`, `b'_' if HAS`) l'accepte dès qu'un chiffre a été lu : `1_` vaut 1, `1_.5` vaut 1,5, aujourd'hui acceptées.
+- **Retenu** : `_` avant le premier chiffre → non lisible (comme le serveur, `str.rs:325`) ; ailleurs retiré, transparent pour
+  le classement (`1_.234` est ambiguë comme `1.234`).
+- **Écartée** : « entre deux chiffres » : refuse `1_` et `1_.5` sans qu'elles soient mal lues, contraire à C-e350-19.
+- **Réversible** : oui.
+
+### C-e350-32 — 35-6 : les zéros de tête ne comptent pas dans la partie entière courte
+
+- **Contexte** : validation P3 de la 35-6, V3-4. `01,234`, `012,345`, `00,500` sont refusées aujourd'hui (`^\d+,\d{3}$`) ; la
+  règle sans zéro de tête les aurait rendues claires (`01,234` lue 1,234 franc, en silence) ; `01.234` est acceptée
+  aujourd'hui, lue 1,234.
+- **Retenu** : zéros de tête ôtés avant le compte de 1 à 3 chiffres, le zéro seul exclu : `01,234`, `012,345` restent
+  ambiguës ; `00,500` devient claire (0,5, comme `0,500`) ; `01.234` est **nouvellement refusée** (famille A) : même risque de
+  lecture que `1.234`.
+- **Écartée** : garder `01.234` claire : deux verdicts pour `01,234` et `01.234`, et une règle à deux branches.
+- **Réversible** : oui.
+
+### C-e350-33 — 35-6 : un test de parité écran/serveur sur une fixture commune
+
+- **Contexte** : validation P3 de la 35-6, V3-9 : « l'écran lit `1_000` comme le serveur » n'était prouvé par aucun test.
+- **Retenu** : la table de D3 vit dans une fixture JSON (`frontend/src/lib/features/bank-accounts/opening-amount-cases.json`),
+  lue par Vitest et, à l'exécution, par un test du `mod tests` de `opening_balances.rs` qui confronte
+  `parse_complement_amount` aux charges et aux saisies brutes de l'alphabet du serveur. Aucune ligne de production du serveur.
+  Fichier commun avec la 35-5a (C-e350-8, annoté) : hunk de test distinct.
+- **Écartées** : (a) reformuler sans tester : l'affirmation reste crue sur parole ; (b) recopier la table en Rust : deux
+  tables qui dérivent ; (c) `include_str!` : lierait la compilation de `kesh-api` à l'arborescence du frontend.
 - **Réversible** : oui.
