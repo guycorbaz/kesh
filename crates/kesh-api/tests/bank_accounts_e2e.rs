@@ -2636,10 +2636,12 @@ async fn compte_sans_iban_les_lectures_le_rendent(pool: MySqlPool) {
     check(body["bankAccounts"].as_array().expect("bankAccounts"));
 }
 
-/// AC-11 — rien ne crée encore un compte sans IBAN : `POST` sans IBAN → `400`
-/// comme en 0.17.5 ; un `accountKind: "credit_card"` envoyé est **ignoré**
-/// (constaté à l'étape 0 : le corps n'a pas `deny_unknown_fields`) — le
-/// compte créé est bancaire, avec son IBAN.
+/// AC-11 de la 34-11a1, **récrit par la Story 34-11a2** (#972), qui ouvre la
+/// création d'une carte : ce témoin disait l'état transitoire (« rien ne crée
+/// encore un compte sans IBAN » ; `accountKind` ignoré). Désormais : une carte
+/// **sans compte lié** est refusée (`400 CREDIT_CARD_LEDGER_MUST_BE_LIABILITY`) ;
+/// une carte qui porte un IBAN est refusée (`400 CREDIT_CARD_FIELD_NOT_ALLOWED`),
+/// et non créée comme compte bancaire ; aucune carte n'est écrite.
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn compte_sans_iban_aucune_route_ne_le_cree(pool: MySqlPool) {
     complete_onboarding(&pool).await;
@@ -2654,9 +2656,12 @@ async fn compte_sans_iban_aucune_route_ne_le_cree(pool: MySqlPool) {
         .send()
         .await
         .unwrap();
-    assert_eq!(resp.status(), 400, "IBAN toujours exigé");
+    assert_eq!(resp.status(), 400, "carte sans compte lié");
     let body: Value = resp.json().await.unwrap();
-    assert_eq!(body["error"]["code"], "VALIDATION_ERROR", "{body}");
+    assert_eq!(
+        body["error"]["code"], "CREDIT_CARD_LEDGER_MUST_BE_LIABILITY",
+        "{body}"
+    );
 
     let resp = app
         .client
@@ -2673,13 +2678,12 @@ async fn compte_sans_iban_aucune_route_ne_le_cree(pool: MySqlPool) {
         .unwrap();
     let status = resp.status();
     let body: Value = resp.json().await.unwrap();
-    assert_eq!(status, 201, "{body}");
-    assert_eq!(body["accountKind"], "bank", "type ignoré : {body}");
-    assert!(
-        body["cardLast4"].is_null(),
-        "quatre chiffres ignorés : {body}"
+    assert_eq!(status, 400, "{body}");
+    assert_eq!(
+        body["error"]["code"], "CREDIT_CARD_FIELD_NOT_ALLOWED",
+        "{body}"
     );
-    assert_eq!(body["iban"], "CH3908704016075473007");
+    assert_eq!(body["error"]["details"]["field"], "iban", "{body}");
 
     let cartes: i64 =
         sqlx::query_scalar("SELECT COUNT(*) FROM bank_accounts WHERE account_kind <> 'bank'")
@@ -2689,9 +2693,10 @@ async fn compte_sans_iban_aucune_route_ne_le_cree(pool: MySqlPool) {
     assert_eq!(cartes, 0, "aucune carte créée");
 }
 
-/// Revue P1 (A9) — le `PUT` d'un compte bancaire ignore `accountKind` et
-/// `cardLast4` comme le `POST` : le compte reste bancaire, avec son IBAN
-/// (`docs/api-external.md`, note ¹¹ du § 7). La 34-11a2 changera ce contrat.
+/// Revue P1 de la 34-11a1 (A9), **récrit par la Story 34-11a2** (#972,
+/// C-e341-30), qui change ce contrat comme annoncé : le `PUT` d'un compte
+/// bancaire qui demande `accountKind: "credit_card"` est refusé (`400
+/// BANK_ACCOUNT_KIND_IMMUTABLE`), et le compte reste bancaire, avec son IBAN.
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn compte_sans_iban_le_put_ignore_le_type(pool: MySqlPool) {
     complete_onboarding(&pool).await;
@@ -2715,10 +2720,21 @@ async fn compte_sans_iban_le_put_ignore_le_type(pool: MySqlPool) {
         .unwrap();
     let status = resp.status();
     let body: Value = resp.json().await.unwrap();
-    assert_eq!(status, 200, "{body}");
-    assert_eq!(body["accountKind"], "bank", "{body}");
-    assert!(body["cardLast4"].is_null(), "{body}");
-    assert_eq!(body["iban"], "CH4431999123000889012");
+    assert_eq!(status, 400, "{body}");
+    assert_eq!(
+        body["error"]["code"], "BANK_ACCOUNT_KIND_IMMUTABLE",
+        "{body}"
+    );
+    let kind: String = sqlx::query_scalar("SELECT account_kind FROM bank_accounts WHERE id = ?")
+        .bind(ctx.bank_account_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(kind, "bank", "rien d'écrit");
+    assert_eq!(
+        read_bank_account_version(&pool, ctx.bank_account_id).await,
+        version
+    );
 }
 
 /// AC-5 — `POST /payment-batches` sur un compte sans IBAN : `409
