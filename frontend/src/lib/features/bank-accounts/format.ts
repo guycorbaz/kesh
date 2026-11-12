@@ -4,6 +4,7 @@
 // `bank_account_display_name` côté serveur (`kesh_db::entities::bank_account`).
 import Big from 'big.js';
 import type { AccountResponse } from '$lib/features/accounts/accounts.types';
+import { admitsLedgerType } from './credit-card';
 // F17 Pass 1 code review : factoriser `shortIban` entre `+page.svelte`
 // homepage et `bank-accounts/+page.svelte` pour éviter la divergence de
 // seuil (4 vs 8 caractères).
@@ -179,9 +180,9 @@ export function linkableLedgerAccounts(
 			(a) =>
 				a.active &&
 				a.postable &&
-				(options.liabilityOnly
-					? a.accountType === 'Liability'
-					: a.accountType === 'Asset' || a.accountType === 'Liability') &&
+				// Intégration de la 0.17.6 (C-e34a2-1, raccord 1) : la règle du type
+				// est `admitsLedgerType`, source unique avec l'écran de création.
+				admitsLedgerType(options.liabilityOnly ? 'credit_card' : 'bank', a.accountType) &&
 				!excludedIds.has(a.id),
 		)
 		.sort((a, b) => a.number.localeCompare(b.number));

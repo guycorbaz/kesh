@@ -10,11 +10,13 @@ import {
 	defaultOpeningSide,
 	formatChfBalance,
 	formatChfExact,
+	linkableLedgerAccounts,
 	openingAmountAmbiguous,
 	openingAmountPayload,
 	openingAmountPreview,
 	shortIban,
 } from './format';
+import { admitsLedgerType } from './credit-card';
 
 const IBAN = 'CH9300762011623852957';
 /**
@@ -178,5 +180,35 @@ describe("solde d'ouverture", () => {
 		expect(openingAmountPreview('1.2345')).toContain('1.2345');
 		expect(openingAmountPreview('1.005')).toContain('1.005');
 		expect(formatChfExact('1234.5')).toBe(formatChfBalance('1234.50'));
+	});
+});
+
+// Intégration de la 0.17.6 (C-e34a2-1, raccord 1) — le filtre du lien reprend la règle
+// `admitsLedgerType` : passifs seuls pour une carte, actifs ou passifs sinon.
+describe('linkableLedgerAccounts — type du compte bancaire', () => {
+	const compte = (id: number, number: string, accountType: string) =>
+		({ id, number, accountType, active: true, postable: true }) as AccountResponse;
+	const plan = [
+		compte(1, '1020', 'Asset'),
+		compte(2, '2100', 'Liability'),
+		compte(3, '6500', 'Expense'),
+		compte(4, '3000', 'Revenue'),
+	];
+
+	it('compte bancaire : actifs et passifs ; carte (liabilityOnly) : passifs seuls', () => {
+		expect(linkableLedgerAccounts(plan, new Set()).map((a) => a.id)).toEqual([1, 2]);
+		expect(
+			linkableLedgerAccounts(plan, new Set(), { liabilityOnly: true }).map((a) => a.id),
+		).toEqual([2]);
+	});
+
+	it('le filtre suit admitsLedgerType pour chaque type de compte du plan', () => {
+		for (const kind of ['bank', 'credit_card'] as const) {
+			const attendu = plan.filter((a) => admitsLedgerType(kind, a.accountType)).map((a) => a.id);
+			const rendu = linkableLedgerAccounts(plan, new Set(), {
+				liabilityOnly: kind === 'credit_card',
+			}).map((a) => a.id);
+			expect(rendu, kind).toEqual(attendu);
+		}
 	});
 });

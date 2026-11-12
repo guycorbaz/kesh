@@ -200,9 +200,9 @@
 	// Story 34-11a2 (#972, C-e341-33) : pour une carte, la liste se réduit aux
 	// passifs (`admitsLedgerType`, miroir de la règle serveur).
 	let linkableAccounts = $derived(
-		linkableLedgerAccounts(accounts, claimAccountIds).filter((a) =>
-			admitsLedgerType(formKind, a.accountType),
-		),
+		linkableLedgerAccounts(accounts, claimAccountIds, {
+			liabilityOnly: formKind === 'credit_card',
+		}),
 	);
 
 	function accountLabel(journalAccountId: number | null): string {

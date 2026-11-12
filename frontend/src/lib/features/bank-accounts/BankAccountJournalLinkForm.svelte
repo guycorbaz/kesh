@@ -17,7 +17,6 @@
 		bankAccountOptionLabel,
 		linkableLedgerAccounts,
 	} from '$lib/features/bank-accounts/format';
-	import { admitsLedgerType } from './credit-card';
 	import {
 		updateBankAccountJournalLink,
 		type BankAccountSummary,
@@ -65,9 +64,9 @@
 	// commune (revue P1, B-5).
 	// Story 34-11a2 (#972, C-e341-33) — passifs seulement pour une carte.
 	const eligibleAccounts = $derived(
-		linkableLedgerAccounts(accounts, claimAccountIds).filter((a) =>
-			admitsLedgerType(bankAccount.accountKind, a.accountType),
-		),
+		linkableLedgerAccounts(accounts, claimAccountIds, {
+			liabilityOnly: bankAccount.accountKind === 'credit_card',
+		}),
 	);
 
 	// Issue #271 : un compte lié AVANT de devenir non-postable — ou d'être
