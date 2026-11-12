@@ -60,10 +60,10 @@ Rapports : `/home/gcorbaz/devel/kesh-gate-logs/e342-review-p1-B.md`, `…-E.md`,
    soldes de départ* (l'avertissement neuf, **avant** l'énumération) ; `docs/manual/fr/admin-manual.tex` (« 139 des 146 routes
    à verbe mutant », « 139 + 4 + 3 = 146 ») ; `docs/api-external.md` (note ¹¹, ligne du tableau, paragraphe des
    interblocages). Chaque phrase est-elle vraie au code (date, sens, atomicité, « l'ancien compte principal reste principal »,
-   « refusé si déjà mouvementé — en particulier une seconde fois », codes et ordre des refus) ? ⚠️ **Le PDF
-   `docs/manual/fr/user-manual.pdf` n'est pas régénéré dans la story** (consigne de l'epic : à l'intégration) : dis-le, et
-   contrôle que le `.tex` est seul porteur du texte neuf (`pdftotext … | /usr/bin/grep -oF "Le solde d’ouverture d’un compte"`
-   doit rendre zéro, l'apostrophe du PDF étant `’`).
+   « refusé si déjà mouvementé — en particulier une seconde fois », codes et ordre des refus) ? Les PDF
+   `docs/manual/fr/user-manual.pdf` et `admin-manual.pdf` **sont régénérés** dans la story (l'AC-9 l'exige) : contrôle-les
+   aplatis, l'apostrophe du PDF étant `’` (`pdftotext … | tr '\n' ' ' | tr -s ' ' | /usr/bin/grep -oF "Le solde d’ouverture d’un compte"`,
+   `"139 des 146 routes"`).
 2. **Un seul mécanisme (AC-1).** `create_opening_complement_in_tx` (`opening_complement.rs`) : l'enveloppe garde sa signature et
    fixe `Screen` ; `SingleBankLedger` distingue « aucun exercice » (`NoOpenFiscalYear`) de « aucune écriture » (lu seulement pour
    `Screen`). Aucun `decide_date`, `check_lines` ni calcul de contrepartie recopié. `tests/opening_complement_repository.rs` et
