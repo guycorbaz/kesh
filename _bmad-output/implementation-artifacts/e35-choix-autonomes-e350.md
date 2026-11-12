@@ -458,3 +458,39 @@ retenue, options écartées, réversibilité. Lignes citées sur `release/0.17.6
   et `ADMIN_SANS_CLE` disparaissent de la garde.
 - **Écartée** : garder `ADMIN_SANS_CLE` : moins de sites à convertir, mais une preuve d'appelant à tenir à jour.
 - **Réversible** : oui.
+
+### C-e350-42 — 35-1 : un format de facture ou d'avoir doit porter un compteur
+
+- **Contexte** : #932, #948. `validate_template` accepte `F-{YEAR}`, qui donne le même numéro à toutes les factures d'un
+  exercice.
+- **Retenu** : variante `FormatError::NoSeq` ; `NoPlaceholder` garde son sens et passe avant. Miroir d'écran.
+- **Écartée** : la forme stricte du format fournisseur (`validate_numbering_template`) : refuserait `{FY}/{SEQ:06}` et
+  d'autres formats valides aujourd'hui.
+- **Réversible** : oui.
+
+### C-e350-43 — 35-1 : un format n'est jugé que s'il change
+
+- **Contexte** : #932 : durcir la validation bloquerait l'enregistrement de la page sur un format d'avoir que l'écran ne
+  montre pas.
+- **Retenu** : la route ne juge un format que si la requête le porte et qu'il diffère de la valeur enregistrée ; aucune
+  migration ne réécrit un format enregistré.
+- **Écartée** : réécrire les formats sans compteur par migration : une migration, donc l'arrêt de l'epic (C-e350-5), pour un
+  cas que Guy n'a pas.
+- **Réversible** : oui.
+
+### C-e350-44 — 35-1 : le format des avoirs devient visible à l'écran
+
+- **Contexte** : le formulaire n'envoie pas `creditNoteNumberFormat` ; le manuel (`user-manual.tex:1561`) le dit pourtant
+  « configurable dans Administration → Facturation ».
+- **Retenu** : un champ *Format des avoirs*, avec aperçu, dans la section *Numérotation*.
+- **Écartée** : laisser le format d'avoir à l'API : un format fautif enregistré ne se corrigerait pas à l'écran.
+- **Réversible** : oui.
+
+### C-e350-45 — 35-1 : un numéro impossible à produire est un refus typé, non une erreur 500
+
+- **Contexte** : `render` échoue sur un rendu > 64 (un nom d'exercice va jusqu'à 50 caractères, compté 16) ou une
+  accolade dans le nom d'exercice ; `invoices.rs:2334-2340` et `credit_notes.rs:572-577` en font un `Invariant`, 500.
+- **Retenu** : `DbError::NumberFormatUnrenderable`, code `NUMBER_FORMAT_UNRENDERABLE`, même statut que
+  `DesignatedAccountsNotPostable`, message i18n qui nomme le format, l'exercice et la cause ; rien d'écrit.
+- **Écartée** : compter `{FY}` pour 50 à la validation du format : refuserait des formats valides aujourd'hui.
+- **Réversible** : oui.
