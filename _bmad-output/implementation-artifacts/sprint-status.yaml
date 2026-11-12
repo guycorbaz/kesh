@@ -1027,7 +1027,7 @@ development_status:
   epic-34: in-progress
   34-0-kickoff: done  # 2026-11-10 : epic-34-reconciliation-comptes-bancaires.md ; 261 issues et 109 bugs au tag v0.17.5 ; objectif : moins de chacun au tag v0.17.6.
   34-1-assistant-compte-bancaire: done  # #966
-  34-2-solde-ouverture-compte-bancaire: review  # #533 ; développée le 2026-11-12 (worktree kesh-e342) ; revue P1 remédiée le 2026-11-12, revue P2 à lancer
+  34-2-solde-ouverture-compte-bancaire: done  # #533 ; 2026-11-12 : revue P1 (0/0/2M/19L) remédiée, revue P2 0 au-dessus de LOW, boucle close (worktree kesh-e342)
   34-3-ecriture-manuelle: ready-for-dev  # #967
   34-4-transaction-deja-comptabilisee: ready-for-dev  # #828
   34-5-reglement-idempotent: ready-for-dev  # #951, P1 ; sans migration (version obligatoire, C-e343-1)

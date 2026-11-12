@@ -1,6 +1,6 @@
 # Story 34-2 : le solde d'ouverture se saisit avec le compte bancaire (#533)
 
-Status: review
+Status: done
 
 *Fiche rédigée le 2026-11-10 en autonomie (Opus 5.5), worktree `/home/gcorbaz/devel/kesh-e34`, branche `chore/epic-34-kickoff`,
 numéros de ligne de `a75835db`. Release **0.17.6**, Epic 34. **Aucune migration** (aucune colonne : l'écriture est une écriture
@@ -251,7 +251,7 @@ carte se crée avec son solde d'ouverture, sens *Dette*). `opening_complement.rs
   mutations par le script `mut-run-e342.sh` (remplacements vérifiés uniques, permis). Tout le reste du code par l'outil Edit.
   *(Annoté le 2026-11-12, revue P1 E-1 : l'écart (3) était **faux** — M9 n'était pas équivalente. Une erreur **après** un complément réussi
   laissait, sous M9, une écriture orpheline et un ancien principal démoté ; aucun test ne le gardait. Voir l'entrée suivante.)*
-- 2026-11-12 : **revue de code P1** (Sonnet, B/E/A) — 0 CRITICAL, 0 HIGH, **2 MEDIUM** (E-1, A MEDIUM-1), 19 LOW. **Remédiation** (Opus 5.5,
+- 2026-11-12 : **revue de code P1** (Opus, B/E/A ; « Sonnet » écrit ici d'abord, corrigé à la clôture sur l'indication de l'orchestrateur) — 0 CRITICAL, 0 HIGH, **2 MEDIUM** (E-1, A MEDIUM-1), 19 LOW. **Remédiation** (Opus 5.5,
   commits `9d7bb03c`, `7b49f237`, `191d4aeb`, `2342ce45`), tout traité sauf E-3 (renvoyée à **#1022**) :
   **E-1** : témoin `un_echec_apres_le_complement_n_ecrit_rien` (déclencheur de test `SIGNAL` sur l'`INSERT` du compte, création principale
   au-dessus d'un principal ; les quatre constats relevés ensemble), M9 rejouée et **tuée** (`(true, false, false, false)`) ; nom de banque borné
@@ -268,6 +268,21 @@ carte se crée avec son solde d'ouverture, sens *Dette*). `opening_complement.rs
   « ancien principal » vue rouge sous M9. **A LOW-5** : code du sens inconnu vérifié. **A LOW-6** : écart `cat >>` déclaré, non refait.
   **E-3** (jour UTC) : non corrigé, #1022, cité au manuel. Au passage, la garde `textes_coherents` a lu « 1234 » d'un message neuf comme un
   numéro de compte : messages récrits (`2342ce45`). Choix C-e341-51 à 55.
+- 2026-11-12 : **revue de code P2** (Sonnet, B/E/A, passe complète) — **0 au-dessus de LOW** sur les trois lentilles. La boucle se clôt.
+  Remédiation des LOW retenus par l'orchestrateur, **sans aucune ligne de code de production** (commentaires seulement) — commit `da8135a4` :
+  tests — borne de 255 caractères au `PUT` et à l'étape bancaire de l'assistant, nom multioctets (B2-3 = E2-5 = A LOW-6 ; mutations M12 et
+  M13 tuées) ; avis à quatre décimales (A LOW-8 ; mutation frontend M14 tuée par ce seul test) ; clés de la réponse comparées à une liste
+  écrite à la main (B2-8) ; documents — exemple « 1.234 » du manuel et du CHANGELOG (B2-6 = E2-4 = A LOW-3), « 1.234 est toujours lu comme un
+  franc » et faux refus au manuel (A LOW-9) ; doc-comment de `format.ts` (A LOW-7, le séparateur est U+202F) ; dérogation à l'ordre des verrous
+  écrite au doc-comment de `claims_for_target`, sans test d'entrelacement (A LOW-5) ; annotations AC-6, AC-7, T2 et décompte des tests
+  (A LOW-4) ; note ¹¹ d'`api-external.md` rangée, la route de l'assistant citée (A LOW-6). **Renvoyés en issues** par l'orchestrateur : faux
+  refus `0,500` / `1'234,567` **#1025** ; `1.234` à l'allemande et `+1,234` **#1026** ; aperçu « 0.00 CHF » d'un montant nul **#1027** ;
+  `1_000` → « NaN CHF » **#1028** ; message `RETAINED_EARNINGS_LINE` étranger au geste **#1029** ; libellé en-CH du côté débit **#1030** ;
+  `formatChfExact` hors `Intl.NumberFormat` v3 **#1031** ; jour UTC **#1022** (P1, E-3) ; verrou tenu pendant la suite E2E **#1021**. E2-6
+  (interblocage avec la validation de facture) sans objet : `validate_invoice_handler` et `validate_supplier_invoice` sont `Rejouee`.
+  **Tendance de la boucle** : P1 (Opus) **0 C / 0 H / 2 M / 19 L** → P2 (Sonnet) **0 C / 0 H / 0 M / LOW seuls**.
+  Modèles : développement et remédiations Opus 5.5 ; revue P1 Opus (trois lentilles) ; revue P2 Sonnet (trois lentilles). Aucun reclassement de
+  sévérité. Gates de clôture au dernier commit de code `da8135a4` : voir le Dev Agent Record.
 
 ## Dev Agent Record
 
@@ -304,6 +319,16 @@ Opus 5.5 (Claude Code), en autonomie, 2026-11-11 → 2026-11-12.
   paragraphe des interblocages. CHANGELOG `[0.17.6]` *Ajouté*, `refs #533`.
 - **Tests neufs** (périmètre `133debc2..HEAD`, recomptés) : 5 `#[sqlx::test]` kesh-db (`opening_complement_bank_scope.rs`), 12 kesh-api
   (`bank_account_opening_balance_e2e.rs`), 15 Vitest (page 10, API 3, format 2), 2 E2E Playwright (`bank-account-opening-balance.spec.ts`).
+  *(Annoté le 2026-11-12, revue P2 A LOW-4 : ces chiffres valent au développement, `133debc2..dbdb807c`, non à HEAD comme l'étiquette le
+  disait. Recomptés à la clôture, `133debc2..` le commit de clôture : 5 `#[sqlx::test]` + 1 `#[test]` kesh-db (borne du schéma) ;
+  17 `#[sqlx::test]` dans `bank_account_opening_balance_e2e.rs` + 1 dans `onboarding_bank_account_e2e.rs` ; 23 Vitest ; 2 E2E.)*
+- **Gates de clôture** (remédiation P2, dernier commit de code `da8135a4`, HEAD `6279ab5d` au moment des gates — PDF seul en plus) :
+  `cargo fmt --check`, `cargo clippy -p kesh-db -p kesh-api --all-targets -D warnings` verts ; binaires ciblés
+  `bank_account_opening_balance_e2e` et `onboarding_bank_account_e2e` **31 passés** ; base `kesh_e342` recréée, `scripts/test-fast.sh --ci`
+  **5176 passés, 12 ignorés**, rc 0 ; `scripts/gate-ci.sh kesh_ci_e342` **5183 passés, 0 échoué, 16 ignorés**, rc 0 (`rem3-gates-back.txt`) ;
+  Vitest complet **2919 passés (224 fichiers)** (`rem3-front-test-unit.log`) ; mutations M12, M13 (Rust) et M14 (frontend) tuées
+  (`mut/resume.txt`) ; PDF du manuel utilisateur régénéré, contrôlé aplati. La production n'a pas changé depuis `2342ce45` (commentaires
+  seuls) : l'E2E complet de la remédiation P1 (`e2e-r3.log`, sept KF-029 seules) n'est pas rejoué, l'orchestrateur ne l'ayant pas demandé.
 - **Rouges d'abord** (`kesh-gate-logs/e342/rouges.log`) : Vitest 8 rouges / 2 verts attendus sur l'écran d'avant ; HTTP 11 rouges / 1 vert
   attendu sur le code de production d'avant (`git stash` des cinq fichiers) ; kesh-db : rouge de compilation.
 - **Mutations**, rejouées après la remédiation (`mut/resume.txt`, `mut/M*.log` ; ceux du développement dans `mut/p0/`) : **M1 à M11
