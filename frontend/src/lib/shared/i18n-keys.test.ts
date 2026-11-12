@@ -969,7 +969,11 @@ const ATTENDU = {
 	// Passe de textes de l'intégration (#1037, #1040, #1027) : **3021 → 3026** (+5), tous dans
 	// `bank-accounts/+page.svelte` : titre d'une carte, ses deux avis de création, le sens
 	// « Dette (solde dû) », l'aperçu d'un montant nul. Que des littéraux ; recompté par la garde.
-	sitesTotal: 3026,
+	// Story 35-6 (#1026) : **3026 → 3027** (+1), `bank-accounts/+page.svelte` 112 → 113
+	// (`bank-accounts-opening-error-amount-unreadable`, montant illisible ; les refus ambigu et
+	// « montant positif » restent un site chacun). Recompté par `grep -o 'i18nMsg('` et par la
+	// garde ; à recompter à l'intégration après chaque fusion (C-e350-8), non à additionner.
+	sitesTotal: 3027,
 	sitesNonResolus: 31,
 	relais: 6,
 	// Story 26-1 (#620, AC3-bis) : **10 → 11** — `lib/features/bank-import/

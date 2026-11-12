@@ -1639,7 +1639,8 @@ bank-accounts-opening-side-credit = Debt (overdraft)
 bank-accounts-opening-help = The entry is dated the first day of the first fiscal year if it is open and outside the locked period, otherwise today: enter the statement balance at that date. Its counterpart goes to the Retained earnings account. It is refused if the linked account already has movements.
 bank-accounts-opening-consequence = If the general opening in Opening balances is still offered, this balance removes it: the opening balances of the other accounts will be entered one by one, Complete mode. To enter your whole opening at once, go through Opening balances first.
 bank-accounts-opening-preview = Amount to be posted: { $amount }
-bank-accounts-opening-error-amount-ambiguous = Ambiguous amount: a comma followed by three digits may be a thousands separator. Write 1'234 for one thousand two hundred thirty-four, 1.234 for one franc and 23.4 centimes.
+bank-accounts-opening-error-amount-ambiguous = Ambiguous amount: a point or a comma followed by three digits may separate thousands. Write 1'234 for one thousand two hundred thirty-four, or 1.2340 for one franc and 23.4 centimes.
+bank-accounts-opening-error-amount-unreadable = Unreadable amount: enter a positive number, for example 1'234.50.
 bank-accounts-toast-create-success-with-opening = Bank account created, with opening entry no. { $number } of { $date }: { $amount }.
 # 0.17.6 integration — text pass (#1037, #1040, #1027): the credit card and the zero amount.
 bank-accounts-form-title-create-card = New credit card
