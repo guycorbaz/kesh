@@ -1050,7 +1050,7 @@ development_status:
   35-2-refus-pdf-nomme-le-champ: split  # 2026-11-12, validation P2 : découpée en 35-2a et 35-2b (C-e350-9)
   35-2a-refus-pdf-contrat-details: ready-for-dev  # #955, #964 ; tête d’epic, avant le 2026-11-30 ; recadrée en P3 (message seul, C-e350-11) ; validation à poursuivre
   35-2b-lot-rappels-refus-pdf: ready-for-dev  # #955 ; après la fusion de 35-2a ; validation à lancer
-  35-3-comptes-designes-type: review  # #537 ; développée le 2026-11-12/13 (worktree kesh-e353), gates complets verts au dernier commit de code ; revue de code à lancer ; tête d'epic, avant le 2026-11-30
+  35-3-comptes-designes-type: done  # #537 ; développée le 2026-11-12/13 (kesh-e353), revue close en P2 (1 MEDIUM → 0), LOW #1059-#1067 ; tête d'epic, avant le 2026-11-30
   35-4-rejeter-ligne-signalee: ready-for-dev  # fiche 2026-11-12, validation terminée en P4 (9 → 3 → 2 → 0 MEDIUM) ; #1023, #1024
   35-5-date-du-jour-installation: split  # 2026-11-12, découpage préventif (C-e350-14) en 35-5a et 35-5b
   35-5a-date-du-jour-horloge: ready-for-dev  # #1022, #907, #929 en partie ; fiche 2026-11-12, validation à lancer
