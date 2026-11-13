@@ -774,6 +774,10 @@ vat_report_write_off}.rs`.
   **1 MEDIUM, 1 LOW**) **remédiée** par l'agent de développement, commit de code `1a9af93b`. **Signal de recyclage**
   (déclaré au Project Lead par l'orchestrateur) : C1 est le défaut de P1 E1/A2 revenu sous une autre forme — un inventaire
   parti d'une liste de noms, non du symptôme.
+  - *(Annoté le 2026-11-13, revue P3, D1 : cet inventaire **n'était toujours pas clos** — le côté « jour de test » du
+    détecteur n'était pas transitif et ignorait les méthodes ; `supplier_invoices_draft.rs` (`aujourdhui()` réel face à
+    `annuler`/`repasser`) et `bank_accounts_closed_e2e.rs` (`import_pending`, `regler` face à `.executer(`) lui
+    échappaient. Le détecteur par lecture est remplacé par l'**exécution** sous instant décalé : entrée P3 ci-après.)*
   - **C1 (MEDIUM) — inventaire D4, cette fois parti du symptôme.** Détecteur
     `kesh-gate-logs/e355a0/inventaire-d4-symptome-e355a0.py` (lecture seule) : dans le code de test (`crates/*/tests/**`,
     et dans `crates/*/src/**` la partie qui suit `#[cfg(test)]`), toute fonction dont le corps contient un appel
@@ -839,3 +843,55 @@ vat_report_write_off}.rs`.
     fichiers de tests, aucun de production ni du frontend. Contrôle des mots-clés de fermeture : vide. Statut : `review`.
   - **Trend de la revue** : P1 : 3 MEDIUM, 14 LOW ; P2 ciblée : **1 MEDIUM, 1 LOW** (C1 remédié, C2 non traité, issue
     demandée) ; #1105 (B2) tracée. Passe suivante à lancer sur cette remédiation.
+- 2026-11-13 — **Revue de code P3, passe ciblée** (Opus, sur `1a9af93b` ; `kesh-gate-logs/e355a0-review-p3-ciblee.md` :
+  **1 MEDIUM, 1 LOW**) **remédiée** par l'agent de développement, commit de code `59f005a1`. Troisième retour du même défaut
+  (D1 = P2 C1 = P1 E1/A2) : **changement de méthode, le détecteur devient l'exécution** (consignes communes du 2026-11-13).
+  - **Le détecteur par exécution** : la suite rapide lancée avec l'horloge de test arrêtée à un autre jour que le jour réel,
+    `KESH_TEST_INSTANT=2026-11-10T12:00:00Z` (maintenant moins trois jours, midi UTC) — un test qui mêle deux jours rougit
+    quelle que soit sa forme. **La variable atteint** : `scripts/mem-guard.sh` la transmet (`KESH_TEST_INSTANT=… mem-guard
+    env` la rend) ; `kesh-db` (`support/jour.rs`) — prouvé par la sonde ci-dessous ; `kesh-api`, helper **et** serveur des
+    tests (`new_for_tests` → `horloge_de_test`) — prouvé par les rouges de `journal_entry_reversal_e2e` et `period_lock_e2e`,
+    où le serveur datait au jour de test pendant que le test lisait le jour réel ; `kesh-report` (`support/jour.rs`, code
+    identique à celui de `kesh-db`, même lecture de l'environnement) — **aucun rouge ne le prouve** séparément.
+  - **Sonde positive** (avant correction, `r3-sonde-avant.log`, commit `98f1a910`) : `supplier_invoices_draft` sous
+    l'instant décalé, **3 rouges sur 46** — `cancelled_redraft_refused_when_the_reversal_is_locked` (M1, l'`assert_eq!(attempted,
+    aujourdhui(), "M1")` de `:2028`), `cancelled_redraft_precedence_reversal_speaks_first` (`:2267`) et
+    `cancelled_invoice_returns_to_draft`. La méthode voit le défaut que la revue nomme.
+  - **Correction de ce que la P3 nomme**, à l'outil Edit : `supplier_invoices_draft.rs` `fn aujourdhui()` → `crate::jour::
+    aujourd_hui_test()`, commentaire `:1483-1485` réécrit ; `bank_accounts_closed_e2e.rs` — `import_pending` (`:323`),
+    `facture_validee` (`:386`), `regler` (`:500`) et le règlement par clé (`:1651`) datés du jour de test.
+  - **Premier passage complet sous instant décalé** (`r3-instant-decale.log`, sur l'arbre corrigé ci-dessus, avant commit) :
+    **5344 exécutés, 5334 passés, 10 rouges, 13 ignorés**. Tri, ligne lue :
+    - (a) **deux jours mêlés, convertis** : `journal_entry_reversal_e2e::reverse_creates_the_opposite_entry_…` (`:294`
+      compare la date de la contre-passation, datée par le serveur au jour de test, à `Utc::now().date_naive()`) ; neuf de
+      `period_lock_e2e` (`la_cloture_ne_touche_pas_la_borne`, `la_contre_passation_traverse_le_verrou`,
+      `la_garde_tient_sous_les_flux_automatiques`, `le_deverrouillage_exige_un_motif_non_blanc`,
+      `le_deverrouillage_refuse_une_borne_future`, `le_verrou_parle_en_dernier`, `on_ne_pose_pas_un_premier_verrou_par_la_levee`,
+      `poser_et_lever_ecrivent_deux_actions_distinctes`, `une_borne_future_ou_du_jour_est_refusee`) : `fn hier()` (`:256`,
+      `Utc::now().date_naive() - 1`) et les bornes `Utc::now() ± n` jugées par le verrou du serveur au jour de test. Remède :
+      **tous** les jours de ces deux fichiers tirés de `crate::common::jour::aujourd_hui_test()` (remplacement à l'outil Edit,
+      `replace_all` par fichier ; `annee_courante()` aussi) ;
+    - (b) dépendants légitimement de l'heure réelle : **aucun rouge** ;
+    - (c) autre cause : **aucun**.
+  - **Second passage sous instant décalé**, commit `59f005a1` (`r3-instant-decale-2.log`) : **5344 passés sur 5344, 13
+    ignorés, aucun rouge** — il ne reste aucun rouge de classe (b) à déclarer.
+  - **Limite de la méthode, écrite** : un instant **trois jours en arrière** ne fait rougir qu'un test qui compare deux jours
+    à l'égalité ou à une marge de moins de trois jours ; un montage à marge large (`today - 30`) mêlé au jour de test reste
+    vert. Un instant à minuit, ou dans un autre exercice, en verrait d'autres : à jouer à la 35-5a/35-5c (nuit réelle, AC9).
+  - **D2 (LOW)** — angles morts écrits dans l'en-tête du détecteur par lecture (`inventaire-d4-symptome-e355a0.py`) : côté
+    « jour de test » non transitif, méthodes ignorées, lectures SQL de l'horloge (`CURDATE()`, `UTC_DATE()`, `NOW()`)
+    neutralisées avec les chaînes, alias d'import. **L'exécution décalée couvre** les méthodes, les helpers transitifs, les
+    alias, et les lectures SQL **côté serveur** des sites convertis (le serveur lit l'horloge) ; elle **ne couvre pas** un
+    `CURDATE()` écrit dans le SQL de **montage** d'un test et comparé au jour de test avec une marge supérieure au décalage
+    — MariaDB lit toujours l'heure réelle.
+  - **La garde change** (recomptée à son exécution, 7/7) : `bank_accounts_closed_e2e.rs` 6 → **2** (restent les deux
+    `closedOn`, 35-5b) ; **trois entrées retirées** — `supplier_invoices_draft.rs`, `journal_entry_reversal_e2e.rs`,
+    `period_lock_e2e.rs`. L'entrée P2 qui disait l'inventaire clos est **annotée**, datée.
+  - **Fichiers touchés** : tests seulement (`crates/kesh-db/tests/supplier_invoices_draft.rs`,
+    `crates/kesh-api/tests/{bank_accounts_closed_e2e,journal_entry_reversal_e2e,period_lock_e2e,date_du_jour_garde}.rs`).
+  - **Gates**, commit `59f005a1`, base remise à neuf avant chaque run (consignes du 2026-11-13 : en remédiation,
+    `test-fast` seul) : `test-fast.sh --ci` sous instant décalé (`r3-instant-decale-2.log`) **5344/5344, 13 ignorés** ;
+    `test-fast.sh --ci` sans instant (`r3-test-fast.log`) **5344/5344, 13 ignorés**. **`gate-ci.sh` et E2E : non lancés**, à la
+    clôture de la story. Statut : `review`.
+  - **Trend** : P1 3 MEDIUM, 14 LOW ; P2 ciblée 1 MEDIUM, 1 LOW ; P3 ciblée **1 MEDIUM, 1 LOW** (remédiés). Passe suivante à
+    lancer sur cette remédiation.
