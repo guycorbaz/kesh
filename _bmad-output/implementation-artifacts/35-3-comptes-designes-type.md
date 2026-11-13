@@ -1,6 +1,6 @@
 # Story 35-3 : un compte désigné aux réglages de facturation et retypé depuis ne reçoit plus d'écriture ; la validation le refuse en le nommant (#537)
 
-Status: review
+Status: done
 
 *Validation terminée (P1 à P4, 2026-11-12).*
 
@@ -546,3 +546,13 @@ Journaux hors dépôt, `/home/gcorbaz/devel/kesh-gate-logs/e353/` : `etape0.log`
     jouées par un script Python (permis), tout le reste par Edit ; (3) libellés des réglages pris à la page plutôt qu'à D2
     (C-e353-2) ; (4) recensement des `INSERT` : 17 sites et non 16.
 
+- **2026-11-13 — Revue de code, boucle close en deux passes** (orchestrateur). P1 complète, trois lentilles, Opus
+  (`kesh-gate-logs/e353-review-p1-{B,E,A}.md`, prompt versionné `35-3-comptes-designes-type-review-prompt-p1.md`) : 0 CRITICAL,
+  0 HIGH, **1 MEDIUM** (A1 : la note *Rôles des comptes* laissait lire que le type du compte de produit par défaut n'est pas
+  contrôlé, alors que seule l'imputabilité en est exemptée — prémisse lue au code, `invoices.rs:636-641`), 12 LOW. Remédiation
+  `1ceae43f`, **manuel seul, aucun code de production** : A1, et avec lui A2 (le solde du reste relit la TVA due sans contrôle
+  de type, #1044) et E4 (le règlement d'une facture déjà validée solde la créance sur le compte débité) ; PDF régénéré et
+  contrôlé aplati. P2 ciblée, Sonnet, sur `1ceae43f` (`e353-review-p2-ciblee.md`) : **0 au-dessus de LOW**, 1 LOW (C1). Trend :
+  P1 1 MEDIUM + 12 LOW → P2 0 + 1 LOW. LOW tracés, une issue par problème : #1059 (B1), #1060 (B2), #1061 (B3), #1062 (E1),
+  #1063 (E2), #1064 (E3), #1065 (E5), #1066 (A5), #1067 (C1). A3 et A4 (forme du recensement, écarts déjà déclarés) relèvent du
+  processus : versés à la rétrospective. `Status: done`.
