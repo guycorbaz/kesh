@@ -36,10 +36,13 @@ pub fn horloge_depuis(valeur: Option<&str>) -> Arc<dyn Horloge> {
 /// L'horloge des **tests** : [`horloge_depuis`] la valeur de [`NOM_VARIABLE_INSTANT`], lue à
 /// chaque appel (aucune mémoire). Employée par `AppState::new_for_tests` et les états de test.
 ///
+/// La lecture passe par `config::env_nonempty`, seule fonction qui lise l'environnement (C75,
+/// garde `configuration_transmise.rs`) : vide ou blanche, la variable vaut absente.
+///
 /// **À ne jamais appeler depuis du code de production.**
 #[doc(hidden)]
 pub fn horloge_de_test() -> Arc<dyn Horloge> {
-    horloge_depuis(std::env::var(NOM_VARIABLE_INSTANT).ok().as_deref())
+    horloge_depuis(crate::config::env_nonempty(NOM_VARIABLE_INSTANT).as_deref())
 }
 
 #[cfg(test)]

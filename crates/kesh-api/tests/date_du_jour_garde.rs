@@ -593,10 +593,13 @@ const DURCISSEMENTS: &[Durcissement] = &[
         portee: Portee::SrcEtTests,
         sans_use: false,
         lignes_ecartees: &[],
-        // 0 ailleurs, `main.rs` et `lib.rs` compris.
+        // 0 ailleurs, `main.rs` et `lib.rs` compris. `configuration_transmise.rs` : la
+        // lecture admise de `horloge_de_test` (forme exacte) et la liste des variables de
+        // tests, lue sur la constante (C-e355a0-7).
         attendu: &[
             ("kesh-core/src/horloge.rs", 3),
             ("kesh-api/src/horloge.rs", 2),
+            ("kesh-api/tests/configuration_transmise.rs", 2),
             ("kesh-db/tests/support/jour.rs", 2),
             ("kesh-report/tests/support/jour.rs", 2),
         ],
