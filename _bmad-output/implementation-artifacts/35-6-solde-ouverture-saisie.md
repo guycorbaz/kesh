@@ -1,6 +1,6 @@
 # Story 35-6 : la saisie du solde d'ouverture d'un compte bancaire ne lit plus « 1.234 » comme un franc en silence, et ne montre plus « NaN CHF » (#1026, #1028, #1025)
 
-Status: review
+Status: done
 
 *Fiche rédigée le 2026-11-12 par l'agent de kickoff de l'Epic 35 (Opus 5.5), worktree `kesh-e35`, par le workflow
 `bmad-create-story`. Release **0.17.7**. **Aucune migration** ; depuis la validation P2, **aucun changement du code
@@ -484,3 +484,16 @@ Journaux sous `/home/gcorbaz/devel/kesh-gate-logs/e356/` : `rouges.log` (et `rou
     les échappements Unicode du texte écrit.
   - Choix : registre `e35-choix-autonomes-e356.md`, **C-e356-1 à C-e356-6**.
   - Statut : `review`.
+- **2026-11-13 — Revue de code, close en P1** (prompt versionné `35-6-solde-ouverture-saisie-review-prompt-p1.md`, `f72fbd42` ;
+  diff aplati `1ebe1240..d64520db` ; rapports hors dépôt `kesh-gate-logs/e356-review-p1-{B,E,A}.md`).
+  - Trend : **P1 (Opus, trois lentilles) : 0 CRITICAL, 0 HIGH, 0 MEDIUM, 8 LOW** → boucle close (aucune remédiation, donc
+    aucune passe ciblée à relire).
+  - Axes : tous les huit exercés par au moins une lentille (déclarés par rapport) ; l'orchestrateur a relu lui-même la fidélité
+    des traductions (axe 5, exercé en A par le seul recompte) : les quatre locales disent la même règle et la même forme à écrire.
+  - LOW, une issue par problème : #1069 (`1,5e2` et `serverAccepts`), #1070 (saut de ligne et U+FEFF lus comme séparateurs),
+    #1071 (retour silencieux inatteignable, à fermer par le type), #1072 (erreur qui reste après correction), #1073 (saisies
+    absentes de la fixture), #1074 (manuel et CHANGELOG : apostrophe de queue), #1075 (`verts-cible.log` porte un rouge),
+    #1076 (`1'234,567` donné pour exemple de groupement). LOW du développement : #1068.
+  - Écart de la lentille : une redirection `> /dev/null` en fin de pipeline `pdftotext`, sans fichier créé, déclarée et rejouée
+    sans redirection.
+  - Statut : `done`.
