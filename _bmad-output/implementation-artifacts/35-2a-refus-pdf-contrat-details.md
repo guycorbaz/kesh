@@ -488,4 +488,54 @@ Change Log), captures dans `captures/`.
     `client-address-empty`, `qrbill-error-qrr`, `Champ debtor`, `vide (requis)`) sur `crates`, `frontend`, `docs`,
     `website`, `README.md` : seules restent les chaînes `#[error]` de `kesh-qrbill` (journal) et la clé fixe
     `invoice-pdf-error-invoice-not-pdf-ready`, gardée pour un message vide (D1).
+- 2026-11-13 — **Revue de code P1** (Opus, trois lentilles B, E, A ; rapports
+  `kesh-gate-logs/e352a-review-p1-{B,E,A}.md`) : **P1 : 2 MEDIUM, 8 LOW** (0 CRITICAL, 0 HIGH). Les deux MEDIUM convergent
+  (B1 = E2 = A1 ; B2 = E1) et ont été vérifiés au code par l'orchestrateur. Les LOW B3, B4, B5, E3, E4, E5 sont tracés,
+  **non traités ici** : #1099, #1100, #1101, #1102, #1103, #1104 ; la barre d'actions coupée, #1096. A2 et A3 traités
+  ci-dessous. **Remédiation** (Opus 5.5, commit de code `f934bd64`) :
+  - **B1/E2/A1 (MEDIUM)** — les trois phrases du nom de l'entreprise renvoyaient à *Paramètres → Organisation*, où le nom
+    ne se modifie pas. Prémisse lue au code : `routes/companies.rs:133`, `:271`, `:353` reconstruisent la mise à jour avec
+    `name: company.name.clone()` ; aucune route n'écrit le nom. Les trois phrases (×4 langues, replis alignés, G9) disent
+    désormais qu'il « ne se modifie pas encore depuis l'interface », sans promettre d'écran ni nommer personne (C-e352a-8 ;
+    C-e352a-1 annoté ; issues #1097, nom non modifiable, et #1098, contrôle à l'assistant). Manuel (`user-manual.tex:1251`,
+    l'exception dite après l'exemple, avec #1097) et CHANGELOG (« sauf le nom de l'entreprise », #1097) propagés ; PDF
+    régénéré (`make user`, 2 passes) et contrôlé aplati : « Le nom de l'entreprise fait exception : il ne se modifie pas
+    encore depuis l'interface (issue #1097) » présent. Garde : AC2 asserte qu'aucune des trois clés `*-company-name` ne
+    porte « Organi » dans les quatre langues ; `refus_nomme_le_nom_vide_de_l_entreprise` aussi. Symptôme greppé
+    (`Organisation`, `Organizzazione` dans les quatre `messages.ftl`, le manuel, les tests, `api-external.md`, le
+    CHANGELOG) : il reste 11 sites par catalogue, tous des phrases d'**adresse** ou de **pays** de l'entreprise, que
+    l'écran modifie (`settings/+page.svelte`, `addressStructured`, champ pays) ; les mentions du CHANGELOG antérieures
+    parlent de l'adresse et des coordonnées ; `api-external.md` n'en porte aucune.
+  - **B2/E1 (MEDIUM)** — les témoins de #964 passaient quel que soit le champ nommé (la parenthèse « NPA et localité »
+    porte les deux mots). `refus_nomme_le_npa_vide_de_l_entreprise`, `refus_nomme_la_localite_vide_du_client` et
+    `company_address_e2e.rs:666-674` assertent désormais « le npa est vide » / « la localité est vide » et l'absence de
+    l'autre ; AC2 (c) en fait autant pour les quatre clés `empty-*-{postal-code,city}` **dans les quatre langues**
+    (`proposition_du_champ_vide` : « die plz ist leer » / « der ort ist leer », « il npa è vuoto » / « la località è
+    vuota », « the postcode is empty » / « the town is empty »). **Preuve du rouge** : la correction ne touche que des
+    tests, le code de production étant juste ; le rouge se prouve donc par la mutation que proposait la revue, jouée sur
+    les tests **d'avant** (fichiers de test de `745e788f`) puis **d'après** (`kesh-gate-logs/e352a/mut/mutations-b2.py`,
+    `campagne-p1.log`, `MB2*-{avant,apres}.log`) : **MB2a** (le contrôle de la localité nomme le NPA) — avant :
+    **survivante** (3/3 verts), après : **tuée** (`refus_nomme_la_localite_vide_du_client`) ; **MB2b** (le contrôle du NPA
+    nomme la localité) — avant : **survivante**, après : **tuée** (`refus_nomme_le_npa_vide_de_l_entreprise`,
+    `a_free_text_only_company_gets_its_components`). Restauration vérifiée, arbre propre.
+  - **A3 (LOW), déclaration** — au relevé du rouge de départ, trois des douze rouges d'`invoice_pdf_e2e`
+    (`refus_d_un_iban_invalide`, `refus_d_un_qr_iban_invalide`, `refus_du_pdf_d_un_avoir_sans_contact`) rougissaient dans
+    l'aide `fr()`, sur la clé absente du catalogue (`assert_ne!(valeur, cle)`), et non sur le message rendu : ils
+    prouvaient l'absence de la clé, non le défaut du message. Et la mutation M12 posait une **référence** à
+    `init_error_i18n` (`let _ = super::init_error_i18n;`), non un appel : elle prouve que la garde AC13 compte toute
+    occurrence du nom, ce qu'elle exige, mais pas qu'un appel réel serait vu autrement.
+  - **A2 (LOW)** — gates frontend rejoués **au commit `f934bd64`** (journaux `p1-front-*.log`, postérieurs au commit) :
+    `check` 0 erreur (29 avertissements préexistants), `lint-i18n-ownership` PASS, `test:unit` 232 fichiers / 3188 tests,
+    `build` vert.
+  - **Gates au dernier commit de code `f934bd64`** : gate ciblé (`p1-cible-1.log`) 792/792 ; `scripts/test-fast.sh --ci`
+    **5331 exécutés, 5331 passés, 13 ignorés** (`p1-test-fast-ci.log`, base `kesh_e352a` recréée) ;
+    `scripts/gate-ci.sh kesh_ci_e352a` **5338 passés, 0 échoué, 17 ignorés** (`p1-gate-ci.log`) ; **E2E complet**
+    (recette entière, port 3401, `kesh_e2e_e352a` recréée, dossiers `target/e2e-r2`) : **404 passés, 7 échecs, 18
+    ignorés** (`p1-e2e-complet.log`) — les sept de la KF-029 (#97) : `mode-expert.spec.ts:26`, `:41`,
+    `onboarding-path-b.spec.ts:65`, `:92`, `onboarding.spec.ts:57`, `:77`, `:150`. Port 3401 libre avant et après.
+  - **Captures** non refaites : aucune phrase visible des captures 01 à 05 ne change (le nom de l'entreprise n'y figure
+    pas).
+  - **Consigne Edit** : respectée — code et tests par Edit seulement ; scripts Python pour la mutation seulement
+    (permis).
+  - La boucle continue : une passe P2 est à lancer par l'orchestrateur (2 MEDIUM en P1).
 
