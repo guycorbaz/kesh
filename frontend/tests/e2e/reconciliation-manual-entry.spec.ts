@@ -220,6 +220,8 @@ test('le champ quitté sans choisir réaffiche le compte qui part au serveur (#1
 		await option.dispatchEvent('mousedown');
 		await expect(champ).toHaveValue(/^2000 — /);
 		const libelle = await champ.inputValue();
+		// Une description : le serveur refuse l'écriture sans elle (« Valeur invalide »).
+		await modal.getByTestId('manual-match-description-input').fill(`Champ quitté ${unique}`);
 
 		// Le geste de #1000 : un texte tapé, jamais choisi, puis le champ quitté.
 		await champ.fill('zzz');
