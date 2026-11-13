@@ -116,6 +116,8 @@ async fn my_invoice_flow(pool: MySqlPool) {
 
 Les helpers associés (`truncate_all`, `seed_changeme_user_only`, `mark_onboarding_complete`, `seed_contact_and_product`) exposent les briques utilisées par l'endpoint runtime ci-dessous.
 
+**La date du jour des tests** (Story 35-5a0) : le serveur tire la date du jour de son horloge (`AppState.horloge`), et `kesh-db` la reçoit en paramètre. `KESH_TEST_INSTANT` (un instant RFC 3339, par exemple `2025-12-31T23:30:00Z`) est une variable **de tests** : lue à chaque appel par `horloge_de_test()` (`new_for_tests` et les états de test) et par les helpers `aujourd_hui_test()` (`tests/common/jour.rs`, `tests/support/jour.rs`), elle arrête l'horloge sur cet instant ; vide, elle vaut absente ; invalide, elle arrête le test. Elle est **sans effet sur le binaire servi** : `main.rs` construit l'horloge réelle et ne la lit jamais (garde `crates/kesh-api/tests/date_du_jour_garde.rs`).
+
 Lancer la suite :
 
 ```bash
