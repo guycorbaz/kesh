@@ -1,6 +1,6 @@
 # Story 35-4 : *Rejeter* une ligne signalée « déjà comptabilisée » demande confirmation ; une confirmation ne survit plus à une relecture de la liste (#1023, #1024)
 
-Status: in-progress
+Status: review
 
 *Fiche rédigée le 2026-11-12 par l'agent de kickoff de l'Epic 35 (Opus 5.5), worktree `kesh-e35`, par le workflow
 `bmad-create-story`. Release **0.17.7**. **Aucune migration**, aucun changement serveur ni d'API. Code lu sur
@@ -187,7 +187,7 @@ M7 le compte de l'intro pris sur les signalées (AC1) ; M8 `-one` et `-other` in
 
 ## Tâches
 
-- [ ] Étape 0, sur `release/0.17.6` : relire les lignes citées ; **constat en navigateur** (Playwright) : confirmation ouverte,
+- [x] Étape 0, sur `release/0.17.6` : relire les lignes citées ; **constat en navigateur** (Playwright) : confirmation ouverte,
       `reconciliation-show-older-btn.click({ timeout: 2000 })` échoue (« intercepts pointer events »), Tab ne sort pas du
       dialogue, Échap et clic hors referment ; consigner au registre `e354` (sert au commentaire de D5).
       **Montage** : le bouton n'est rendu qu'avec `hasMore && limit < PROPOSALS_MAX_LIMIT` (`ReconciliationProposals.svelte:727`),
@@ -197,9 +197,9 @@ M7 le compte de l'intro pris sur les signalées (AC1) ; M8 `-one` et `-other` in
       `reconciliation-already-booked.spec.ts`), contre-passée au nettoyage (`:194-195`), l'import supprimé. Base jetable.
       **Si le constat diverge** (la liste se relit, ou le bouton reçoit le clic) : le commentaire de D5 n'est pas posté tel
       quel ; l'écart est écrit au registre `e354` et au rapport, et revient à l'orchestrateur.
-- [ ] Tests, rouges consignés ; composant, dialogue, clés ×4 et gardes i18n ; sites de l'ancien contrat ; E2E ; manuel ;
+- [x] Tests, rouges consignés ; composant, dialogue, clés ×4 et gardes i18n ; sites de l'ancien contrat ; E2E ; manuel ;
       CHANGELOG ; capture.
-- [ ] Gates : frontend complet (`npm run check`, `lint-i18n-ownership`, `test:unit`, `build`) ; backend complet
+- [x] Gates : frontend complet (`npm run check`, `lint-i18n-ownership`, `test:unit`, `build`) ; backend complet
       (`test-fast.sh --ci`, les catalogues changent) ; E2E complet au dernier commit de code.
 
 ## Dev Notes
@@ -229,13 +229,57 @@ M7 le compte de l'intro pris sur les signalées (AC1) ; M8 `-one` et `-other` in
 
 ### Agent Model Used
 
+Claude Opus 5.5 (workflow `bmad-dev-story`, en autonomie), worktree `kesh-e354`, port 3404, bases `kesh_e354`,
+`kesh_e2e_e354`, `kesh_ci_e354`.
+
 ### Debug Log References
+
+Journaux sous `/home/gcorbaz/devel/kesh-gate-logs/e354/` : `rouges.log` (et `rouges-vitest.log`, `e2e-r0/`), `verts-vitest-1.log`,
+`mutations.log` (et `mut/M1.log` … `mut/M9.log`), `make-user.log`, `user-manual-aplati.txt`, `gates.log` (`gate-build.log`,
+`gate-test-fast.log`, `gate-ci.log`, `gate-ci-journal.log`, `front-*.log`), `e2e-r2/` à `e2e-r5/`, `captures/e354-confirmation-rejeter.png`.
 
 ### Completion Notes List
 
 - Fiche rédigée par le workflow `bmad-create-story` (analyse du code de `release/0.17.6`).
+- **Étape 0** : constat en Chromium sur le code de départ (`1ebe1240`) — la confirmation ouverte bloque la page : le
+  bouton *Afficher aussi les plus anciennes* ne reçoit pas le clic (« intercepts pointer events »), Tab reste dans le
+  dialogue (six pressions), aucune requête `…/reconciliation/proposals` ne part, Échap et le clic hors referment sans rien
+  ouvrir. **Le constat confirme celui de la fiche** : le commentaire de fermeture de D5 peut être posté, la phrase entre
+  crochets remplie ainsi (registre `e354`, « Constat de l'étape 0 »). Le constat reste sous test (second test de la spec
+  neuve, C-e354-1).
+- **D1–D4 livrés** : `requestReject` et `{ kind: 'reject' }` ; `runGesture` en `switch` exhaustif (`never`) ; le dialogue
+  reçoit `gesture` et `selectedCount` (relevés dans `guard`, gardés pendant la transition de fermeture comme
+  `confirmTransactions`) ; `load()` pose `pendingGesture = null` en tête, sans lecture préalable ; trois clés ×4 locales à
+  côté de `…-confirm-*` ; `sitesTotal` 3026 → **3029**, recompté par la garde.
+- **AC6, sites de l'ancien contrat** — commande de la fiche rejouée après correction : restent `user-manual.tex:860`,
+  `:2780` et `ReconciliationProposals.svelte:226` (les trois faux positifs, le dernier décalé de `:214` par les ajouts),
+  et `user-manual.tex:3049`, `:3107`, qui portent désormais *Rejeter* (le motif `\emph{Écriture manuelle} et` y reste
+  légitime). Corrigés : en-têtes de `AlreadyBookedConfirmDialog.svelte` (`:1-14`, entier), de
+  `ReconciliationProposals.svelte` (`:44-48`), doc de `GuardedGesture` et de `confirmGesture`, `already-booked.ts:6-9`,
+  `already-booked-i18n.test.ts` (« huit clés », « dix clés » → treize), commentaire de `ReconciliationProposals.test.ts:1533`.
+- **Manuel** : `:3049-3050`, `:3097`, `:3107` ; PDF régénéré, contrôlé aplati : « sans message (issue #1024) » 0,
+  « Rejeter quand même » 2, « Rejeter aussi, depuis la version 0.17.7 » 1, « referme une confirmation ouverte » 1,
+  « issue #1052 » 1. **CHANGELOG** : `## [0.17.7] — Non publié`, *Corrigé*, un point par issue, celui de #1023 cite #1052.
+- **Consigne Edit** : le code, les catalogues, le manuel et le CHANGELOG ont été modifiés par l'outil Edit seulement. Un
+  script Python a servi aux seules mutations (motif vérifié unique, restauration `git checkout --` + `touch`) et à corriger
+  ce script lui-même (hors dépôt). Aucun écart.
 
 ### File List
+
+- `frontend/src/lib/features/reconciliation/ReconciliationProposals.svelte` (modifié)
+- `frontend/src/lib/features/reconciliation/AlreadyBookedConfirmDialog.svelte` (modifié)
+- `frontend/src/lib/features/reconciliation/already-booked.ts` (modifié, en-tête)
+- `frontend/src/lib/features/reconciliation/ReconciliationProposals.test.ts` (modifié)
+- `frontend/src/lib/features/reconciliation/already-booked-i18n.test.ts` (modifié)
+- `frontend/src/lib/shared/i18n-keys.test.ts` (modifié, `sitesTotal`)
+- `crates/kesh-i18n/locales/{fr-CH,de-CH,it-CH,en-CH}/messages.ftl` (modifiés)
+- `frontend/tests/e2e/reconciliation-already-booked-reject.spec.ts` (neuf)
+- `frontend/tests/e2e/helpers/camt-synthetic.ts` (neuf, extrait de la spec de la 29-9)
+- `frontend/tests/e2e/reconciliation-show-older.spec.ts`, `reconciliation-deleted-import.spec.ts`,
+  `reconciliation-reject-unmatched.spec.ts` (modifiés)
+- `docs/manual/fr/user-manual.tex`, `docs/manual/fr/user-manual.pdf` (modifiés)
+- `CHANGELOG.md` (modifié)
+- `_bmad-output/implementation-artifacts/e35-choix-autonomes-e354.md` (neuf), `sprint-status.yaml`, cette fiche
 
 ## Change Log
 
@@ -301,3 +345,31 @@ M7 le compte de l'intro pris sur les signalées (AC1) ; M8 `-one` et `-other` in
   une passe sans finding au-dessus de LOW ; la remédiation de V4-1 ne touche que la rédaction. Choix retenus : **C-e350-18**
   (point (3), `sitesTotal` sous la règle d'union ; points (1) remplacé et (2) l'issue #1052) et **C-e350-20** (une relecture
   referme la confirmation). Statut : `ready-for-dev`.
+- 2026-11-13 — **Développement** (Opus 5.5, `bmad-dev-story`, en autonomie). Quatre commits sur `1ebe1240` : `45a0ec3b`
+  (tests rouges, étape 0), `b2795d2c` (D1–D4, dernier commit de code de production), `ec3c9e35` (manuel, PDF, CHANGELOG),
+  `16105cba` (spec E2E : clic hors réessayé, C-e354-2 — dernier commit de code).
+  - **Étape 0** : le constat **confirme** la fiche (registre `e354`) ; le commentaire de fermeture de #1024 (D5) peut
+    être posté, la phrase entre crochets remplie par ce constat.
+  - **Rouges** (`kesh-gate-logs/e354/rouges.log`) : Vitest 12 rouges, 71 verts — AC1 (5) et AC4/*Rejeter* faute de
+    dialogue ; AC4 *Accepter*, *Écriture manuelle*, *Éclater* parce que le dialogue réapparaît ouvert après la relecture ;
+    AC3 (3) sur le seul `data-testid` neuf `already-booked-confirm-intro` (non-régression du texte verte) ; AC2 vert. E2E
+    neuve rouge sur le binaire de départ (AC7), le test de l'étape 0 vert.
+  - **Mutations** M1–M9 de la fiche jouées sur `ReconciliationProposals.test.ts` : **neuf tuées**
+    (`kesh-gate-logs/e354/mutations.log`). ⚠️ Un premier tirage les déclarait toutes « tuées » sur une sortie
+    « No test files found » (chemin de test relatif à la mauvaise racine) : le script a été corrigé pour exiger un test
+    rouge nommé, et le tirage rejoué ; seul le second compte.
+  - **Gates complets**, sur `ec3c9e35` (code de production final) : `cargo build --workspace --all-targets` vert ;
+    `scripts/test-fast.sh --ci` **5307 passés, 13 ignorés** ; `scripts/gate-ci.sh kesh_ci_e354` **5314 passés, 0 échoué,
+    17 ignorés** ; frontend : `check` 0 erreur (29 avertissements, aucun dans un fichier touché), `lint-i18n-ownership`
+    PASS, `test:unit` **3197 tests, 232 fichiers**, `build` vert. Après `16105cba` (spec E2E seule) : `npm run check`
+    rejoué, 0 erreur ; spec rejouée seule ×5, **10/10** ; **E2E complet** (`e2e-r5`) : **406 passés, 7 échoués,
+    17 ignorés** — les sept de la KF-029 (#97) : `mode-expert.spec.ts:26`, `:41`, `onboarding-path-b.spec.ts:65`, `:92`,
+    `onboarding.spec.ts:57`, `:77`, `:150`. Le run précédent (`e2e-r2`, sur `ec3c9e35`) en rendait 18 : les sept, le clic
+    hors de la spec neuve (C-e354-2), et dix `supplier-documents` / `supplier-invoice-*` en `inbox-import: 503` et
+    `INTERNAL_ERROR` du relevé saisi, nés de `sqlx: pool timed out` au backend pendant que d'autres gates chargeaient
+    MariaDB ; aucun ne revient au run `e2e-r5`.
+  - **Choix** : C-e354-1 (le constat de l'étape 0 devient un test E2E ; relevé synthétique partagé), C-e354-2 (clic hors
+    réessayé dans l'E2E).
+  - **Capture** : `kesh-gate-logs/e354/captures/e354-confirmation-rejeter.png` (thème clair). Le guillemet « y tombe seul
+    en fin de ligne : le catalogue n'emploie aucune espace insécable — issue demandée, hors périmètre.
+  - Statut : `review`.
