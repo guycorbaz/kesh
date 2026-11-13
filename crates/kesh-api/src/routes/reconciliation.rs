@@ -5800,6 +5800,7 @@ pub async fn get_reconciliation_transaction(
         &state.pool,
         current_user.company_id,
         id,
+        state.horloge.aujourd_hui(),
     )
     .await?
     .ok_or(AppError::Database(DbError::NotFound))?;
@@ -5899,6 +5900,9 @@ pub async fn post_cancel_reconciliation(
     let actor_api_key_id = current_user.api_key_id;
     // Revue P2 (B2-1) : corps brut, jamais refusé pour sa forme ou son type.
     let expect_unlink_only = parse_cancel_expectation(&body)?;
+    // Story 35-5a0 — la date du jour, lue une fois, avant l'attente du verrou
+    // et les rejeux.
+    let aujourd_hui = state.horloge.aujourd_hui();
     crate::retry::retry_app_on_deadlock("reconciliation::cancel", || {
         cancel_reconciliation_once(
             &state.pool,
@@ -5907,6 +5911,7 @@ pub async fn post_cancel_reconciliation(
             user_id,
             actor_api_key_id,
             expect_unlink_only,
+            aujourd_hui,
         )
     })
     .await
@@ -5921,6 +5926,7 @@ async fn cancel_reconciliation_once(
     user_id: i64,
     actor_api_key_id: Option<i64>,
     expect_unlink_only: Option<bool>,
+    aujourd_hui: chrono::NaiveDate,
 ) -> Result<CancelReconciliationResponse, AppError> {
     let bank_account_id =
         bank_account_of_transaction(pool, company_id, bank_transaction_id).await?;
@@ -5942,6 +5948,7 @@ async fn cancel_reconciliation_once(
                 user_id,
                 actor_api_key_id,
                 expect_unlink_only,
+                aujourd_hui,
             )
             .await?)
         },
@@ -6579,6 +6586,8 @@ pub async fn get_entry_candidates(
     )
     .await?;
     let mut candidates = Vec::with_capacity(found.len());
+    // Story 35-5a0 — la date du jour, lue une fois pour toutes les candidates.
+    let aujourd_hui = state.horloge.aujourd_hui();
     for c in found {
         // Story 34-11b (C-e341-35) : la transaction prospective `t` est la
         // transaction concernée — la décision « autre côté » la lit.
@@ -6589,6 +6598,7 @@ pub async fn get_entry_candidates(
             company_id,
             c.journal_entry_id,
             &t,
+            aujourd_hui,
         )
         .await?;
         let (hit, unlink_only) = (outlook.blocker, outlook.unlink_only);

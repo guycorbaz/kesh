@@ -17,6 +17,11 @@
 //! fabriquent en SQL brut, comme dans `lettering_documents.rs` ; aucune marque
 //! n'est jamais POSÉE autrement que par la primitive.
 
+/// Story 35-5a0 — la date du jour de l'horloge de test.
+#[allow(dead_code)]
+#[path = "support/jour.rs"]
+mod jour;
+
 use chrono::NaiveDate;
 use kesh_db::errors::{DbError, SettlementCancelBlocker};
 use kesh_db::repositories::journal_entries::DocumentKind;
@@ -685,9 +690,15 @@ async fn nothing_due_on_a_line_open_today(pool: MySqlPool) {
     .unwrap()
     .rows_affected();
     assert_eq!(n, 1, "montage : la ligne de créance de l'avoir déplacée");
-    companies::lock_books(&pool, m.s.admin_user_id, m.company(), le)
-        .await
-        .expect("verrou");
+    companies::lock_books(
+        &pool,
+        m.s.admin_user_id,
+        m.company(),
+        le,
+        crate::jour::aujourd_hui_test(),
+    )
+    .await
+    .expect("verrou");
 
     let v = vue(&pool, &m, aujourdhui()).await;
     invariant(&pool, &m, &v).await;
@@ -727,9 +738,15 @@ async fn view_fields_origins_and_periods(pool: MySqlPool) {
     let l_doc = ligne_creance(&pool, &m, vente(&pool, inv).await).await;
     // reversal : écriture manuelle contre-passée (contre-passation du jour).
     let (e_rev, l_rev) = ligne(&pool, &m, m.fy, jours_avant(40), dec!(12)).await;
-    kesh_db::repositories::journal_entries::reverse(&pool, m.company(), e_rev, m.s.admin_user_id)
-        .await
-        .expect("contre-passation");
+    kesh_db::repositories::journal_entries::reverse(
+        &pool,
+        m.company(),
+        e_rev,
+        m.s.admin_user_id,
+        crate::jour::aujourd_hui_test(),
+    )
+    .await
+    .expect("contre-passation");
     // manual : groupe de trois lignes, la plus tardive à jours_avant(10).
     let (_, m1) = ligne(&pool, &m, m.fy, jours_avant(50), dec!(10)).await;
     let (_, m2) = ligne(&pool, &m, m.fy, jours_avant(15), dec!(-4)).await;
@@ -762,9 +779,15 @@ async fn view_fields_origins_and_periods(pool: MySqlPool) {
     }
 
     // Sous la borne.
-    companies::lock_books(&pool, m.s.admin_user_id, m.company(), jours_avant(45))
-        .await
-        .expect("verrou");
+    companies::lock_books(
+        &pool,
+        m.s.admin_user_id,
+        m.company(),
+        jours_avant(45),
+        crate::jour::aujourd_hui_test(),
+    )
+    .await
+    .expect("verrou");
     let v = vue(&pool, &m, x).await;
     assert!(!item(&v, m1).in_open_period, "sous la borne");
     assert!(item(&v, l_rev).in_open_period, "au-dessus de la borne");
@@ -773,9 +796,16 @@ async fn view_fields_origins_and_periods(pool: MySqlPool) {
     let (_, l24) = ligne(&pool, &m, m.fy24, ymd(2024, 3, 1), dec!(2)).await;
     let v = vue(&pool, &m, x).await;
     assert!(!item(&v, l24).in_open_period, "sous la borne aussi");
-    companies::unlock_books(&pool, m.s.admin_user_id, m.company(), None, "test".into())
-        .await
-        .expect("déverrou");
+    companies::unlock_books(
+        &pool,
+        m.s.admin_user_id,
+        m.company(),
+        None,
+        "test".into(),
+        crate::jour::aujourd_hui_test(),
+    )
+    .await
+    .expect("déverrou");
     let v = vue(&pool, &m, x).await;
     assert!(item(&v, l24).in_open_period, "2024 ouvert, sans borne");
     statut(&pool, m.fy, "Closed").await;
@@ -843,9 +873,15 @@ async fn as_of_under_the_lock_is_stable_until_an_admin_unlocks(pool: MySqlPool) 
     let l_vente = ligne_creance(&pool, &m, vente(&pool, inv).await).await;
     let l_regl = ligne_creance(&pool, &m, e_regl).await;
     let borne = jours_avant(80);
-    companies::lock_books(&pool, m.s.admin_user_id, m.company(), borne)
-        .await
-        .expect("verrou");
+    companies::lock_books(
+        &pool,
+        m.s.admin_user_id,
+        m.company(),
+        borne,
+        crate::jour::aujourd_hui_test(),
+    )
+    .await
+    .expect("verrou");
     let x = jours_avant(85);
 
     let avant = vue(&pool, &m, x).await;
@@ -861,6 +897,7 @@ async fn as_of_under_the_lock_is_stable_until_an_admin_unlocks(pool: MySqlPool) 
         m.company(),
         inv,
         sid,
+        crate::jour::aujourd_hui_test(),
     )
     .await
     .expect_err("annulation refusée sous la borne");
@@ -887,12 +924,20 @@ async fn as_of_under_the_lock_is_stable_until_an_admin_unlocks(pool: MySqlPool) 
         m.company(),
         None,
         "correction".into(),
+        crate::jour::aujourd_hui_test(),
     )
     .await
     .expect("déverrouillage");
-    invoice_settlements_write::cancel_settlement(&pool, m.s.admin_user_id, m.company(), inv, sid)
-        .await
-        .expect("annulation après déverrouillage");
+    invoice_settlements_write::cancel_settlement(
+        &pool,
+        m.s.admin_user_id,
+        m.company(),
+        inv,
+        sid,
+        crate::jour::aujourd_hui_test(),
+    )
+    .await
+    .expect("annulation après déverrouillage");
     let apres = vue(&pool, &m, x).await;
     invariant(&pool, &m, &apres).await;
     assert_eq!(item(&apres, l_vente).reason, OpenReason::Unlettered);
@@ -913,9 +958,15 @@ async fn as_of_above_the_lock_moves(pool: MySqlPool) {
     let (_, a) = ligne(&pool, &m, m.fy, jours_avant(40), dec!(30)).await;
     let (_, b) = ligne(&pool, &m, m.fy, jours_avant(35), dec!(-30)).await;
     let cle = lettrer(&pool, &m, &[a, b]).await;
-    companies::lock_books(&pool, m.s.admin_user_id, m.company(), jours_avant(60))
-        .await
-        .expect("verrou");
+    companies::lock_books(
+        &pool,
+        m.s.admin_user_id,
+        m.company(),
+        jours_avant(60),
+        crate::jour::aujourd_hui_test(),
+    )
+    .await
+    .expect("verrou");
     let x = jours_avant(30);
     let avant = vue(&pool, &m, x).await;
     invariant(&pool, &m, &avant).await;
@@ -1019,6 +1070,7 @@ async fn proposals_keep_bank_lines_and_rank_reversal_pairs_first(pool: MySqlPool
         m.company(),
         e_rev,
         m.s.admin_user_id,
+        crate::jour::aujourd_hui_test(),
     )
     .await
     .expect("contre-passation");

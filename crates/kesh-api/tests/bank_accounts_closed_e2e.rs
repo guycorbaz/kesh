@@ -1698,11 +1698,17 @@ impl Annulation {
     ) -> Result<(), kesh_db::errors::DbError> {
         use kesh_db::repositories::{invoice_settlements_write, reconciliation_cancel};
         match self {
-            Annulation::Rapprochement(t) => {
-                reconciliation_cancel::cancel_in_tx(tx, company_id, t, user_id, None, None)
-                    .await
-                    .map(|_| ())
-            }
+            Annulation::Rapprochement(t) => reconciliation_cancel::cancel_in_tx(
+                tx,
+                company_id,
+                t,
+                user_id,
+                None,
+                None,
+                crate::common::jour::aujourd_hui_test(),
+            )
+            .await
+            .map(|_| ()),
             Annulation::Import(i) => {
                 match bank_imports::delete_unreconciled_in_tx(tx, company_id, i).await? {
                     bank_imports::DeleteBankImportOutcome::Deleted(_) => Ok(()),
@@ -1711,21 +1717,34 @@ impl Annulation {
             }
             Annulation::Reglement { facture, reglement } => {
                 invoice_settlements_write::cancel_settlement_in_tx(
-                    tx, company_id, facture, reglement, user_id,
+                    tx,
+                    company_id,
+                    facture,
+                    reglement,
+                    user_id,
+                    crate::common::jour::aujourd_hui_test(),
                 )
                 .await
                 .map(|_| ())
             }
-            Annulation::FactureFournisseur(f) => {
-                supplier_invoices::cancel_in_tx(tx, company_id, f, user_id)
-                    .await
-                    .map(|_| ())
-            }
-            Annulation::ReglementFournisseur(f) => {
-                supplier_invoices::cancel_settlement_in_tx(tx, company_id, f, user_id)
-                    .await
-                    .map(|_| ())
-            }
+            Annulation::FactureFournisseur(f) => supplier_invoices::cancel_in_tx(
+                tx,
+                company_id,
+                f,
+                user_id,
+                crate::common::jour::aujourd_hui_test(),
+            )
+            .await
+            .map(|_| ()),
+            Annulation::ReglementFournisseur(f) => supplier_invoices::cancel_settlement_in_tx(
+                tx,
+                company_id,
+                f,
+                user_id,
+                crate::common::jour::aujourd_hui_test(),
+            )
+            .await
+            .map(|_| ()),
         }
     }
 }

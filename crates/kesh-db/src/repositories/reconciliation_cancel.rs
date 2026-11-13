@@ -60,6 +60,7 @@
 //! (`OWNED_BY_INVOICE`) — rien n'est écrit ; une transaction `reconciled` sans
 //! lien est refusée en [`DbError::Invariant`].
 
+use chrono::NaiveDate;
 use sqlx::{MySqlConnection, MySqlPool};
 
 use crate::entities::audit_log::NewAuditLogEntry;
@@ -251,6 +252,7 @@ async fn cancel_blocker(
     conn: &mut MySqlConnection,
     company_id: i64,
     bt: &BankTransaction,
+    aujourd_hui: NaiveDate,
 ) -> Result<CancelOutlook, DbError> {
     if bt.status != BankTransactionStatus::Reconciled {
         return Ok(CancelOutlook {
@@ -262,7 +264,7 @@ async fn cancel_blocker(
             unlink_only: false,
         });
     }
-    entry_cancel_outlook(conn, company_id, matched_entry(bt)?, bt).await
+    entry_cancel_outlook(conn, company_id, matched_entry(bt)?, bt, aujourd_hui).await
 }
 
 /// Ce qui décide de l'annulation d'un rapprochement (Story 34-11b, revue P1
@@ -318,11 +320,14 @@ pub struct CancelOutlook {
 /// les angles morts documentés de la queue commune (verrou de période du jour,
 /// exercice postérieur clos — #568) et les motifs de propriété qu'elle ignore.
 /// Lecture non verrouillante, sans écriture.
+///
+/// `aujourd_hui` (Story 35-5a0) : la date du jour, pour le rang 5.
 pub async fn entry_cancel_outlook(
     conn: &mut MySqlConnection,
     company_id: i64,
     entry_id: i64,
     concerned: &BankTransaction,
+    aujourd_hui: NaiveDate,
 ) -> Result<CancelOutlook, DbError> {
     // 0 — en tête : l'autre côté d'un virement (Story 34-11b, C-e341-35).
     if super::reconciliation_link::transfer_other_side(conn, company_id, entry_id, concerned)
@@ -334,7 +339,7 @@ pub async fn entry_cancel_outlook(
             unlink_only: true,
         });
     }
-    let blocker = entry_cancel_chain(conn, company_id, entry_id, concerned.id).await?;
+    let blocker = entry_cancel_chain(conn, company_id, entry_id, concerned.id, aujourd_hui).await?;
     Ok(CancelOutlook {
         blocker,
         unlink_only: false,
@@ -348,6 +353,7 @@ async fn entry_cancel_chain(
     company_id: i64,
     entry_id: i64,
     unlinking: i64,
+    aujourd_hui: NaiveDate,
 ) -> Result<Option<SettlementCancelHit>, DbError> {
     let unlinking = Some(unlinking);
     match classify(conn, company_id, entry_id, false).await? {
@@ -357,6 +363,7 @@ async fn entry_cancel_chain(
                 company_id,
                 settlement_id,
                 unlinking,
+                aujourd_hui,
             )
             .await
         }
@@ -368,11 +375,13 @@ async fn entry_cancel_chain(
                 company_id,
                 supplier_invoice_id,
                 unlinking,
+                aujourd_hui,
             )
             .await
         }
         ReconciliationKind::Entry => {
-            settlement_entry_cancel_blocker(conn, company_id, entry_id, unlinking).await
+            settlement_entry_cancel_blocker(conn, company_id, entry_id, unlinking, aujourd_hui)
+                .await
         }
     }
 }
@@ -421,10 +430,13 @@ async fn number_of(
 /// Lit une transaction et sa vue d'annulation dans une transaction de lecture
 /// (instantané `REPEATABLE READ`, aucune lecture verrouillante), ou `None` si
 /// elle n'existe pas pour cette société.
+///
+/// `aujourd_hui` (Story 35-5a0) : la date du jour, pour le rang 5.
 pub async fn get_view(
     pool: &MySqlPool,
     company_id: i64,
     bank_transaction_id: i64,
+    aujourd_hui: NaiveDate,
 ) -> Result<Option<ReconciliationView>, DbError> {
     let mut tx = pool.begin().await.map_err(map_db_error)?;
     let bt = match find(&mut tx, company_id, bank_transaction_id, false).await {
@@ -472,7 +484,7 @@ pub async fn get_view(
         } else {
             (None, None, None, None)
         };
-    let outlook = cancel_blocker(&mut tx, company_id, &bt).await?;
+    let outlook = cancel_blocker(&mut tx, company_id, &bt, aujourd_hui).await?;
     tx.commit().await.map_err(map_db_error)?;
     Ok(Some(ReconciliationView {
         bank_transaction: bt,
@@ -568,6 +580,7 @@ pub async fn cancel_in_tx(
     user_id: i64,
     actor_api_key_id: Option<i64>,
     expect_unlink_only: Option<bool>,
+    aujourd_hui: NaiveDate,
 ) -> Result<ReconciliationCancellation, DbError> {
     // (1) Verrou de la transaction bancaire.
     let bt = find(tx, company_id, bank_transaction_id, true).await?;
@@ -631,7 +644,7 @@ pub async fn cancel_in_tx(
     //     un interblocage à chaque double annulation.
     //     Une seule lecture (revue P1, B1-4) : la décision et les motifs sortent
     //     ensemble de `cancel_blocker` ([`CancelOutlook`]).
-    let outlook = cancel_blocker(tx, company_id, &bt).await?;
+    let outlook = cancel_blocker(tx, company_id, &bt, aujourd_hui).await?;
     let unlink_only = outlook.unlink_only;
 
     // (3 ter) Revue P1 (E1-1, E1-2) — la décision confirmée à l'écran
@@ -703,6 +716,7 @@ pub async fn cancel_in_tx(
                 invoice_id,
                 settlement_id,
                 user_id,
+                aujourd_hui,
             )
             .await?;
             (
@@ -714,13 +728,20 @@ pub async fn cancel_in_tx(
         ReconciliationKind::SupplierSettlement {
             supplier_invoice_id: id,
         } => {
-            let done =
-                supplier_invoices::cancel_settlement_in_tx(tx, company_id, id, user_id).await?;
+            let done = supplier_invoices::cancel_settlement_in_tx(
+                tx,
+                company_id,
+                id,
+                user_id,
+                aujourd_hui,
+            )
+            .await?;
             (Some(done.reversal_journal_entry_id), None, None)
         }
         ReconciliationKind::Entry => {
             let reversal =
-                journal_entries::reverse_in_tx(tx, company_id, entry_id, user_id).await?;
+                journal_entries::reverse_in_tx(tx, company_id, entry_id, user_id, aujourd_hui)
+                    .await?;
             (Some(reversal.entry.id), None, None)
         }
     };
@@ -806,6 +827,7 @@ pub async fn cancel(
     company_id: i64,
     bank_transaction_id: i64,
     user_id: i64,
+    aujourd_hui: NaiveDate,
 ) -> Result<ReconciliationCancellation, DbError> {
     let mut tx = pool.begin().await.map_err(map_db_error)?;
     match cancel_in_tx(
@@ -815,6 +837,7 @@ pub async fn cancel(
         user_id,
         None,
         None,
+        aujourd_hui,
     )
     .await
     {

@@ -5,6 +5,11 @@
 //! `opening_complement::complement_status`. ⚠️ Chaque entrelacement nomme la
 //! mutation qu'il tue.
 
+/// Story 35-5a0 — la date du jour de l'horloge de test.
+#[allow(dead_code)]
+#[path = "support/jour.rs"]
+mod jour;
+
 use chrono::{Datelike, NaiveDate, Utc};
 use kesh_db::entities::account::AccountType;
 use kesh_db::entities::contact::{ContactType, NewContact, Salutation};
@@ -509,9 +514,15 @@ async fn un_compte_contre_passe_reste_mouvemente(pool: MySqlPool) {
         &[("1100", dec!(9), dec!(0)), ("2000", dec!(0), dec!(9))],
     )
     .await;
-    journal_entries::reverse(&pool, co.company_id, e.entry.id, co.user_id)
-        .await
-        .unwrap();
+    journal_entries::reverse(
+        &pool,
+        co.company_id,
+        e.entry.id,
+        co.user_id,
+        crate::jour::aujourd_hui_test(),
+    )
+    .await
+    .unwrap();
     assert_eq!(
         refusal(complete(&pool, &co, &[debit(&co, "1100", dec!(5))], d(2026, 6, 1)).await).0,
         R::AccountMoved
@@ -921,7 +932,9 @@ async fn entrelacement_5_contre_passation_en_vol(pool: MySqlPool) {
     let r = {
         let pool = pool.clone();
         let (cid, uid, id) = (co.company_id, co.user_id, original.entry.id);
-        tokio::spawn(async move { journal_entries::reverse(&pool, cid, id, uid).await })
+        tokio::spawn(async move {
+            journal_entries::reverse(&pool, cid, id, uid, crate::jour::aujourd_hui_test()).await
+        })
     };
     assert!(
         attendre_une_requete_en_cours(&pool, &["JOIN fiscal_years", "FOR UPDATE"], || r

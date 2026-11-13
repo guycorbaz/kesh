@@ -262,6 +262,9 @@ pub mod capture_rejeu;
 /// La `Lecture` de test en lecture seule (Story 32-4a, C-32-4a-9).
 pub mod lecture_seule;
 
+/// La date du jour de l'horloge de test (Story 35-5a0).
+pub mod jour;
+
 /// La capture générique de `tracing`, tous niveaux et toutes cibles (Story
 /// 32-6a, AC-a14).
 pub mod capture_trace;

@@ -23,6 +23,11 @@
 #[path = "support/fournisseur_rapproche.rs"]
 mod fournisseur_rapproche;
 
+/// Story 35-5a0 — la date du jour de l'horloge de test.
+#[allow(dead_code)]
+#[path = "support/jour.rs"]
+mod jour;
+
 use chrono::NaiveDate;
 use fournisseur_rapproche::{Fournisseur, IBAN_CREANCIER};
 use kesh_db::entities::imported_supplier_invoice::{LinkOrigin, NewImportedSupplierInvoice};
@@ -211,6 +216,7 @@ async fn a_draft_outside_any_fiscal_year_is_accepted_then_refused_at_validation(
         d.invoice.id,
         d.invoice.version,
         seeded.admin_user_id,
+        crate::jour::aujourd_hui_test(),
     )
     .await
     .expect_err("aucun exercice ne couvre la date");
@@ -271,6 +277,7 @@ async fn a_vat_draft_without_recoverable_account_needs_it_only_at_validation(poo
         d.invoice.id,
         d.invoice.version,
         seeded.admin_user_id,
+        crate::jour::aujourd_hui_test(),
     )
     .await
     .expect_err("compte de TVA récupérable requis");
@@ -353,6 +360,7 @@ async fn update_draft_replaces_everything_and_validation_follows(pool: MySqlPool
         d.invoice.id,
         u.invoice.version,
         seeded.admin_user_id,
+        crate::jour::aujourd_hui_test(),
     )
     .await
     .expect("validation");
@@ -460,6 +468,7 @@ async fn validation_passes_the_rc1_purchase_entry(pool: MySqlPool) {
         d.invoice.id,
         d.invoice.version,
         seeded.admin_user_id,
+        crate::jour::aujourd_hui_test(),
     )
     .await
     .expect("validation");
@@ -514,6 +523,7 @@ async fn validation_refusals_write_nothing(pool: MySqlPool) {
         v.invoice.id,
         v.invoice.version,
         seeded.admin_user_id,
+        crate::jour::aujourd_hui_test(),
     )
     .await
     .expect_err("déjà validée");
@@ -527,6 +537,7 @@ async fn validation_refusals_write_nothing(pool: MySqlPool) {
         d.invoice.id,
         d.invoice.version + 1,
         seeded.admin_user_id,
+        crate::jour::aujourd_hui_test(),
     )
     .await
     .expect_err("version périmée");
@@ -562,6 +573,7 @@ async fn validation_refusee(
         d.invoice.id,
         d.invoice.version,
         seeded.admin_user_id,
+        crate::jour::aujourd_hui_test(),
     )
     .await
     .expect_err("validation refusée");
@@ -677,7 +689,9 @@ async fn concurrent_validations_the_loser_reads_validated_under_the_lock(pool: M
         .await
         .expect("A valide");
     let pool_b = pool.clone();
-    let b = tokio::spawn(async move { supplier_invoices::validate(&pool_b, c, id, v, u).await });
+    let b = tokio::spawn(async move {
+        supplier_invoices::validate(&pool_b, c, id, v, u, crate::jour::aujourd_hui_test()).await
+    });
     let vu = attendre_une_requete_en_cours(&pool, &["FOR UPDATE"], || b.is_finished()).await;
     assert!(vu, "B devait attendre un verrou tenu par A");
     a.commit().await.unwrap();
@@ -719,6 +733,7 @@ async fn unvalidation_deletes_the_purchase_entry(pool: MySqlPool) {
         v.invoice.id,
         v.invoice.version,
         seeded.admin_user_id,
+        crate::jour::aujourd_hui_test(),
     )
     .await
     .expect("dévalidation");
@@ -779,18 +794,26 @@ async fn unvalidation_status_refusals(pool: MySqlPool) {
         .fetch_one(&pool)
         .await
         .unwrap();
-    let err = supplier_invoices::unvalidate(&pool, c, paid, version, u)
-        .await
-        .expect_err("payée");
+    let err =
+        supplier_invoices::unvalidate(&pool, c, paid, version, u, crate::jour::aujourd_hui_test())
+            .await
+            .expect_err("payée");
     assert_eq!(
         bloque(&err),
         Some(SupplierUnvalidationBlocker::Paid),
         "M6 : {err:?}"
     );
     // Le statut parle avant la version.
-    let err = supplier_invoices::unvalidate(&pool, c, paid, version + 3, u)
-        .await
-        .expect_err("payée, version périmée");
+    let err = supplier_invoices::unvalidate(
+        &pool,
+        c,
+        paid,
+        version + 3,
+        u,
+        crate::jour::aujourd_hui_test(),
+    )
+    .await
+    .expect_err("payée, version périmée");
     assert_eq!(
         bloque(&err),
         Some(SupplierUnvalidationBlocker::Paid),
@@ -812,9 +835,10 @@ async fn unvalidation_status_refusals(pool: MySqlPool) {
         .execute(&pool)
         .await
         .unwrap();
-    let err = supplier_invoices::unvalidate(&pool, c, paid, version, u)
-        .await
-        .expect_err("payée, numéro blanc");
+    let err =
+        supplier_invoices::unvalidate(&pool, c, paid, version, u, crate::jour::aujourd_hui_test())
+            .await
+            .expect_err("payée, numéro blanc");
     assert!(
         matches!(
             &err,
@@ -827,30 +851,58 @@ async fn unvalidation_status_refusals(pool: MySqlPool) {
     );
 
     let d = brouillon(&pool, &seeded, f, "FF-D", dec!(10)).await;
-    let err = supplier_invoices::unvalidate(&pool, c, d.invoice.id, d.invoice.version, u)
-        .await
-        .expect_err("brouillon");
+    let err = supplier_invoices::unvalidate(
+        &pool,
+        c,
+        d.invoice.id,
+        d.invoice.version,
+        u,
+        crate::jour::aujourd_hui_test(),
+    )
+    .await
+    .expect_err("brouillon");
     assert!(matches!(err, DbError::IllegalStateTransition(_)), "{err:?}");
 
     let x = validee(&pool, &seeded, f, "FF-X", dec!(10)).await;
-    supplier_invoices::cancel(&pool, c, x.invoice.id, u)
+    supplier_invoices::cancel(&pool, c, x.invoice.id, u, crate::jour::aujourd_hui_test())
         .await
         .unwrap();
     // Story v0172-annulees (AC-1) : version périmée → la version parle (le
     // statut `cancelled` passe) ; à jour → brouillon.
-    let err = supplier_invoices::unvalidate(&pool, c, x.invoice.id, x.invoice.version + 7, u)
-        .await
-        .expect_err("annulée, version périmée");
+    let err = supplier_invoices::unvalidate(
+        &pool,
+        c,
+        x.invoice.id,
+        x.invoice.version + 7,
+        u,
+        crate::jour::aujourd_hui_test(),
+    )
+    .await
+    .expect_err("annulée, version périmée");
     assert!(matches!(err, DbError::OptimisticLockConflict), "{err:?}");
-    let r = supplier_invoices::unvalidate(&pool, c, x.invoice.id, x.invoice.version + 1, u)
-        .await
-        .expect("annulée → brouillon");
+    let r = supplier_invoices::unvalidate(
+        &pool,
+        c,
+        x.invoice.id,
+        x.invoice.version + 1,
+        u,
+        crate::jour::aujourd_hui_test(),
+    )
+    .await
+    .expect("annulée → brouillon");
     assert_eq!(r.invoice.status, "draft");
 
     let o = validee(&pool, &seeded, f, "FF-O", dec!(10)).await;
-    let err = supplier_invoices::unvalidate(&pool, c, o.invoice.id, o.invoice.version + 1, u)
-        .await
-        .expect_err("version périmée");
+    let err = supplier_invoices::unvalidate(
+        &pool,
+        c,
+        o.invoice.id,
+        o.invoice.version + 1,
+        u,
+        crate::jour::aujourd_hui_test(),
+    )
+    .await
+    .expect_err("version périmée");
     assert!(matches!(err, DbError::OptimisticLockConflict), "{err:?}");
 }
 
@@ -895,18 +947,26 @@ async fn unvalidation_precedence_version_batch_match_fiscal_year(pool: MySqlPool
         .await
         .unwrap();
 
-    let err = supplier_invoices::unvalidate(&pool, c, id, version + 1, u)
-        .await
-        .expect_err("version périmée et lot");
+    let err = supplier_invoices::unvalidate(
+        &pool,
+        c,
+        id,
+        version + 1,
+        u,
+        crate::jour::aujourd_hui_test(),
+    )
+    .await
+    .expect_err("version périmée et lot");
     assert!(
         matches!(err, DbError::OptimisticLockConflict),
         "M7 : {err:?}"
     );
 
     let tx = rapprochee(&pool, &seeded, f, je).await;
-    let err = supplier_invoices::unvalidate(&pool, c, id, version, u)
-        .await
-        .expect_err("lot et rapprochement");
+    let err =
+        supplier_invoices::unvalidate(&pool, c, id, version, u, crate::jour::aujourd_hui_test())
+            .await
+            .expect_err("lot et rapprochement");
     assert_eq!(
         bloque(&err),
         Some(SupplierUnvalidationBlocker::InPaymentBatch),
@@ -923,9 +983,10 @@ async fn unvalidation_precedence_version_batch_match_fiscal_year(pool: MySqlPool
         .execute(&pool)
         .await
         .unwrap();
-    let err = supplier_invoices::unvalidate(&pool, c, id, version, u)
-        .await
-        .expect_err("rapprochement et exercice clos");
+    let err =
+        supplier_invoices::unvalidate(&pool, c, id, version, u, crate::jour::aujourd_hui_test())
+            .await
+            .expect_err("rapprochement et exercice clos");
     assert_eq!(
         bloque(&err),
         Some(SupplierUnvalidationBlocker::MatchedBankTransaction),
@@ -946,9 +1007,10 @@ async fn unvalidation_precedence_version_batch_match_fiscal_year(pool: MySqlPool
     .execute(&pool)
     .await
     .unwrap();
-    let err = supplier_invoices::unvalidate(&pool, c, id, version, u)
-        .await
-        .expect_err("exercice clos");
+    let err =
+        supplier_invoices::unvalidate(&pool, c, id, version, u, crate::jour::aujourd_hui_test())
+            .await
+            .expect_err("exercice clos");
     assert!(matches!(err, DbError::FiscalYearClosed), "{err:?}");
 }
 
@@ -975,9 +1037,16 @@ async fn unvalidation_precedence_later_year_then_period_lock(pool: MySqlPool) {
         .execute(&pool)
         .await
         .unwrap();
-    let err = supplier_invoices::unvalidate(&pool, c, id, v.invoice.version, u)
-        .await
-        .expect_err("exercice postérieur clos");
+    let err = supplier_invoices::unvalidate(
+        &pool,
+        c,
+        id,
+        v.invoice.version,
+        u,
+        crate::jour::aujourd_hui_test(),
+    )
+    .await
+    .expect_err("exercice postérieur clos");
     assert!(
         matches!(err, DbError::LaterFiscalYearClosed { .. }),
         "{err:?}"
@@ -987,9 +1056,16 @@ async fn unvalidation_precedence_later_year_then_period_lock(pool: MySqlPool) {
         .execute(&pool)
         .await
         .unwrap();
-    let err = supplier_invoices::unvalidate(&pool, c, id, v.invoice.version, u)
-        .await
-        .expect_err("période verrouillée");
+    let err = supplier_invoices::unvalidate(
+        &pool,
+        c,
+        id,
+        v.invoice.version,
+        u,
+        crate::jour::aujourd_hui_test(),
+    )
+    .await
+    .expect_err("période verrouillée");
     assert!(matches!(err, DbError::PeriodLocked { .. }), "{err:?}");
     assert_eq!(etat(&pool, id).await.0, "open");
 }
@@ -1010,12 +1086,20 @@ async fn paid_then_settlement_cancelled_then_unvalidated(pool: MySqlPool) {
         dec!(55),
     )
     .await;
-    let annule = supplier_invoices::cancel_settlement(&pool, c, id, u)
-        .await
-        .expect("règlement annulé");
-    let d = supplier_invoices::unvalidate(&pool, c, id, annule.invoice.invoice.version, u)
-        .await
-        .expect("dévalidée");
+    let annule =
+        supplier_invoices::cancel_settlement(&pool, c, id, u, crate::jour::aujourd_hui_test())
+            .await
+            .expect("règlement annulé");
+    let d = supplier_invoices::unvalidate(
+        &pool,
+        c,
+        id,
+        annule.invoice.invoice.version,
+        u,
+        crate::jour::aujourd_hui_test(),
+    )
+    .await
+    .expect("dévalidée");
     let m = supplier_invoices::update_draft(
         &pool,
         c,
@@ -1032,9 +1116,16 @@ async fn paid_then_settlement_cancelled_then_unvalidated(pool: MySqlPool) {
     )
     .await
     .expect("modifiée");
-    let r = supplier_invoices::validate(&pool, c, id, m.invoice.version, u)
-        .await
-        .expect("revalidée");
+    let r = supplier_invoices::validate(
+        &pool,
+        c,
+        id,
+        m.invoice.version,
+        u,
+        crate::jour::aujourd_hui_test(),
+    )
+    .await
+    .expect("revalidée");
     assert_eq!(r.invoice.status, "open");
     assert_eq!(r.invoice.total_amount, dec!(50));
 }
@@ -1177,7 +1268,7 @@ async fn deleting_refusals(pool: MySqlPool) {
     assert!(matches!(err, DbError::IllegalStateTransition(_)), "{err:?}");
 
     let x = validee(&pool, &seeded, f, "FF-X", dec!(9)).await;
-    supplier_invoices::cancel(&pool, c, x.invoice.id, u)
+    supplier_invoices::cancel(&pool, c, x.invoice.id, u, crate::jour::aujourd_hui_test())
         .await
         .unwrap();
     let err = supplier_invoices::delete_draft(&pool, c, x.invoice.id, u)
@@ -1196,9 +1287,16 @@ async fn deleting_refusals(pool: MySqlPool) {
         .fetch_one(&pool)
         .await
         .unwrap();
-    supplier_invoices::unvalidate(&pool, c, l.invoice.id, version, u)
-        .await
-        .expect("dévalidée, lot annulé");
+    supplier_invoices::unvalidate(
+        &pool,
+        c,
+        l.invoice.id,
+        version,
+        u,
+        crate::jour::aujourd_hui_test(),
+    )
+    .await
+    .expect("dévalidée, lot annulé");
     let err = supplier_invoices::delete_draft(&pool, c, l.invoice.id, u)
         .await
         .expect_err("historique de lot");
@@ -1317,10 +1415,15 @@ async fn a_draft_cannot_be_cancelled(pool: MySqlPool) {
     let (seeded, f) = decor(&pool).await;
     let d = brouillon(&pool, &seeded, f, "FF-NC", dec!(6)).await;
     let avant = nb_ecritures(&pool, seeded.company_id).await;
-    let err =
-        supplier_invoices::cancel(&pool, seeded.company_id, d.invoice.id, seeded.admin_user_id)
-            .await
-            .expect_err("brouillon");
+    let err = supplier_invoices::cancel(
+        &pool,
+        seeded.company_id,
+        d.invoice.id,
+        seeded.admin_user_id,
+        crate::jour::aujourd_hui_test(),
+    )
+    .await
+    .expect_err("brouillon");
     assert!(
         matches!(
             err,
@@ -1332,10 +1435,15 @@ async fn a_draft_cannot_be_cancelled(pool: MySqlPool) {
     );
     assert_eq!(nb_ecritures(&pool, seeded.company_id).await, avant);
     assert_eq!(etat(&pool, d.invoice.id).await.0, "draft");
-    let vue = supplier_invoices::get_settlement_view(&pool, seeded.company_id, d.invoice.id)
-        .await
-        .unwrap()
-        .unwrap();
+    let vue = supplier_invoices::get_settlement_view(
+        &pool,
+        seeded.company_id,
+        d.invoice.id,
+        crate::jour::aujourd_hui_test(),
+    )
+    .await
+    .unwrap()
+    .unwrap();
     assert_eq!(
         vue.invoice_cancel_blocker.map(|h| h.0),
         Some(SettlementCancelBlocker::SupplierInvoiceDraft)
@@ -1356,6 +1464,7 @@ async fn a_draft_cannot_be_paid(pool: MySqlPool) {
         },
         jour(2026, 6, 20),
         seeded.admin_user_id,
+        crate::jour::aujourd_hui_test(),
     )
     .await
     .expect_err("brouillon");
@@ -1464,9 +1573,15 @@ struct Annulee {
 }
 
 async fn annuler(pool: &MySqlPool, seeded: &SeededCompany, id: i64) -> Annulee {
-    let x = supplier_invoices::cancel(pool, seeded.company_id, id, seeded.admin_user_id)
-        .await
-        .expect("annulation");
+    let x = supplier_invoices::cancel(
+        pool,
+        seeded.company_id,
+        id,
+        seeded.admin_user_id,
+        crate::jour::aujourd_hui_test(),
+    )
+    .await
+    .expect("annulation");
     assert_eq!(x.invoice.status, "cancelled");
     let achat = x
         .invoice
@@ -1515,6 +1630,7 @@ async fn repasser(
         a.id,
         a.version,
         seeded.admin_user_id,
+        crate::jour::aujourd_hui_test(),
     )
     .await
 }
@@ -1802,9 +1918,16 @@ async fn a_cancelled_then_redrafted_invoice_is_edited_validated_then_deleted(poo
     )
     .await
     .expect("modifié");
-    let r = supplier_invoices::validate(&pool, c, a.id, m.invoice.version, u)
-        .await
-        .expect("revalidé");
+    let r = supplier_invoices::validate(
+        &pool,
+        c,
+        a.id,
+        m.invoice.version,
+        u,
+        crate::jour::aujourd_hui_test(),
+    )
+    .await
+    .expect("revalidé");
     assert_eq!(r.invoice.status, "open");
     assert_eq!(r.invoice.total_amount, dec!(45));
     let neuf = r
@@ -2244,6 +2367,7 @@ async fn cancelled_paid_invoice_redrafts_once_the_payment_is_reversed(pool: MySq
         seeded.company_id,
         reglement,
         seeded.admin_user_id,
+        crate::jour::aujourd_hui_test(),
     )
     .await
     .expect("paiement contre-passé")
@@ -2280,6 +2404,7 @@ async fn cancelled_paid_invoice_redrafts_after_unreconciliation(pool: MySqlPool)
         seeded.company_id,
         r.bank_transaction_id,
         seeded.admin_user_id,
+        crate::jour::aujourd_hui_test(),
     )
     .await
     .expect("rapprochement annulé");
@@ -2315,13 +2440,26 @@ async fn cancelled_redraft_examines_every_cancellation_trace(pool: MySqlPool) {
     )
     .await;
     let a = annuler(&pool, &seeded, id).await;
-    kesh_db::repositories::journal_entries::reverse(&pool, c, s1, u)
-        .await
-        .expect("premier paiement contre-passé");
+    kesh_db::repositories::journal_entries::reverse(
+        &pool,
+        c,
+        s1,
+        u,
+        crate::jour::aujourd_hui_test(),
+    )
+    .await
+    .expect("premier paiement contre-passé");
     let d = repasser(&pool, &seeded, a).await.expect("premier cycle");
-    let v = supplier_invoices::validate(&pool, c, id, d.invoice.version, u)
-        .await
-        .expect("revalidée");
+    let v = supplier_invoices::validate(
+        &pool,
+        c,
+        id,
+        d.invoice.version,
+        u,
+        crate::jour::aujourd_hui_test(),
+    )
+    .await
+    .expect("revalidée");
     let p = supplier_invoices::pay(
         &pool,
         c,
@@ -2331,6 +2469,7 @@ async fn cancelled_redraft_examines_every_cancellation_trace(pool: MySqlPool) {
         },
         jour(2026, 6, 18),
         u,
+        crate::jour::aujourd_hui_test(),
     )
     .await
     .expect("payée de nouveau");
@@ -2376,6 +2515,7 @@ async fn paid_reconciled_invoice_redraft_names_the_reconciliation(pool: MySqlPoo
             r.supplier_invoice_id,
             v,
             seeded.admin_user_id,
+            crate::jour::aujourd_hui_test(),
         )
         .await
         .expect_err("payée rapprochée");
@@ -2441,6 +2581,7 @@ async fn validated_redraft_audit_says_open(pool: MySqlPool) {
         v.invoice.id,
         v.invoice.version,
         seeded.admin_user_id,
+        crate::jour::aujourd_hui_test(),
     )
     .await
     .expect("brouillon");
@@ -2473,22 +2614,42 @@ async fn a_reconciled_paid_invoice_goes_back_to_draft_through_unreconciliation(p
     )
     .await;
     let version = etat(&pool, r.supplier_invoice_id).await.2;
-    let err = supplier_invoices::unvalidate(&pool, c, r.supplier_invoice_id, version, u)
-        .await
-        .expect_err("payée rapprochée");
+    let err = supplier_invoices::unvalidate(
+        &pool,
+        c,
+        r.supplier_invoice_id,
+        version,
+        u,
+        crate::jour::aujourd_hui_test(),
+    )
+    .await
+    .expect_err("payée rapprochée");
     assert_eq!(
         refus(&err).0,
         SupplierUnvalidationBlocker::PaidReconciled,
         "M7"
     );
-    kesh_db::repositories::reconciliation_cancel::cancel(&pool, c, r.bank_transaction_id, u)
-        .await
-        .expect("rapprochement annulé");
+    kesh_db::repositories::reconciliation_cancel::cancel(
+        &pool,
+        c,
+        r.bank_transaction_id,
+        u,
+        crate::jour::aujourd_hui_test(),
+    )
+    .await
+    .expect("rapprochement annulé");
     let (status, _, version) = etat(&pool, r.supplier_invoice_id).await;
     assert_eq!(status, "open");
-    let d = supplier_invoices::unvalidate(&pool, c, r.supplier_invoice_id, version, u)
-        .await
-        .expect("brouillon");
+    let d = supplier_invoices::unvalidate(
+        &pool,
+        c,
+        r.supplier_invoice_id,
+        version,
+        u,
+        crate::jour::aujourd_hui_test(),
+    )
+    .await
+    .expect("brouillon");
     assert_eq!(d.invoice.status, "draft");
     supplier_invoices::delete_draft(&pool, c, r.supplier_invoice_id, u)
         .await

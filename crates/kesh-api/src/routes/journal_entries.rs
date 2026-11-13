@@ -451,9 +451,17 @@ pub async fn reverse_journal_entry(
     Path(id): Path<i64>,
 ) -> Result<(StatusCode, Json<JournalEntryResponse>), AppError> {
     let company = get_company_for(&current_user, &state.pool).await?;
+    // Story 35-5a0 — la date du jour, lue une fois sur l'horloge de l'état.
+    let aujourd_hui = state.horloge.aujourd_hui();
 
     let created = kesh_db::retry::retry_on_deadlock("journal_entries::reverse", || {
-        journal_entries::reverse(&state.pool, company.id, id, current_user.user_id)
+        journal_entries::reverse(
+            &state.pool,
+            company.id,
+            id,
+            current_user.user_id,
+            aujourd_hui,
+        )
     })
     .await?;
 

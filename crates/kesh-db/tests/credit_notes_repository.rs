@@ -8,6 +8,11 @@
 //! Pré-requis : MariaDB démarré (`sqlx::test` crée une DB éphémère par test).
 //! Fixture `seed_accounting_company` : compte 2000 réutilisé en TVA due.
 
+/// Story 35-5a0 — la date du jour de l'horloge de test.
+#[allow(dead_code)]
+#[path = "support/jour.rs"]
+mod jour;
+
 use chrono::NaiveDate;
 use kesh_db::entities::contact::{ContactType, NewContact};
 use kesh_db::entities::{NewCreditNote, NewInvoice, NewInvoiceLine, SettlementChoice};
@@ -574,6 +579,7 @@ async fn credit_note_accepted_after_the_settlement_is_cancelled(pool: MySqlPool)
         seeded.company_id,
         invoice_id,
         sid,
+        crate::jour::aujourd_hui_test(),
     )
     .await
     .expect("annulation du règlement");

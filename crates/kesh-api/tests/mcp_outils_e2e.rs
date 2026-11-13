@@ -1587,9 +1587,16 @@ async fn un_brouillon_lu_par_les_outils(pool: MySqlPool) {
         .fetch_one(&pool)
         .await
         .unwrap();
-    supplier_invoices::unvalidate(&pool, a.c, id, version, a.u)
-        .await
-        .expect("dévalidation");
+    supplier_invoices::unvalidate(
+        &pool,
+        a.c,
+        id,
+        version,
+        a.u,
+        crate::common::jour::aujourd_hui_test(),
+    )
+    .await
+    .expect("dévalidation");
 
     let fiche = structure(
         &b.appeler(&jeton, "kesh_facture_fournisseur", json!({"id": id}))

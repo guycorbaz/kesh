@@ -827,8 +827,9 @@ pub async fn settlement_cancel_blocker(
     conn: &mut sqlx::MySqlConnection,
     company_id: i64,
     settlement_id: i64,
+    aujourd_hui: NaiveDate,
 ) -> Result<Option<SettlementCancelHit>, DbError> {
-    settlement_cancel_blocker_unlinking(conn, company_id, settlement_id, None).await
+    settlement_cancel_blocker_unlinking(conn, company_id, settlement_id, None, aujourd_hui).await
 }
 
 /// [`settlement_cancel_blocker`], avec l'**exemption étroite** du rang 3 pour
@@ -840,6 +841,7 @@ pub async fn settlement_cancel_blocker_unlinking(
     company_id: i64,
     settlement_id: i64,
     unlinking: Option<i64>,
+    aujourd_hui: NaiveDate,
 ) -> Result<Option<SettlementCancelHit>, DbError> {
     // Story 25-4-d2a : un solde existe-t-il sur la facture, et ce règlement
     // en est-il un ?
@@ -875,7 +877,7 @@ pub async fn settlement_cancel_blocker_unlinking(
     if write_off_exists && settlement_type != "write_off" {
         return Ok(Some((SettlementCancelBlocker::WriteOffExists, None, None)));
     }
-    settlement_entry_cancel_blocker(conn, company_id, entry_id, unlinking).await
+    settlement_entry_cancel_blocker(conn, company_id, entry_id, unlinking, aujourd_hui).await
 }
 
 /// Ce que rend une annulation de règlement.
@@ -915,6 +917,7 @@ pub async fn cancel_settlement_in_tx(
     invoice_id: i64,
     settlement_id: i64,
     user_id: i64,
+    aujourd_hui: NaiveDate,
 ) -> Result<SettlementCancellation, DbError> {
     // (1) Verrou facture — même ordre que `settle_invoice`.
     let locked: Option<i64> =
@@ -994,7 +997,7 @@ pub async fn cancel_settlement_in_tx(
         | SettlementCancelBlocker::DocumentLetteringInClosedPeriods),
         _,
         _,
-    )) = settlement_cancel_blocker(tx, company_id, settlement_id).await?
+    )) = settlement_cancel_blocker(tx, company_id, settlement_id, aujourd_hui).await?
     {
         return Err(DbError::SettlementNotCancellable { blocker });
     }
@@ -1026,6 +1029,7 @@ pub async fn cancel_settlement_in_tx(
         entry_id,
         user_id,
         ReversalAuthority::ClientSettlement { settlement_id },
+        aujourd_hui,
     )
     .await?;
 
@@ -1137,11 +1141,19 @@ pub async fn cancel_settlement(
     company_id: i64,
     invoice_id: i64,
     settlement_id: i64,
+    aujourd_hui: NaiveDate,
 ) -> Result<CancelledSettlement, DbError> {
     let mut tx = pool.begin().await.map_err(map_db_error)?;
     let done = async {
-        let done = cancel_settlement_in_tx(&mut tx, company_id, invoice_id, settlement_id, user_id)
-            .await?;
+        let done = cancel_settlement_in_tx(
+            &mut tx,
+            company_id,
+            invoice_id,
+            settlement_id,
+            user_id,
+            aujourd_hui,
+        )
+        .await?;
         let (invoice, lines, amount_settled) =
             read_after_write_in_tx(&mut tx, company_id, invoice_id).await?;
         Ok::<_, DbError>(CancelledSettlement {

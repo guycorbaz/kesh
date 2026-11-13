@@ -7150,9 +7150,15 @@ async fn unreconcile_of_a_closed_lettering_is_refused_in_its_family(pool: MySqlP
         &[vente, encaissement],
     )
     .await;
-    kesh_db::repositories::companies::lock_books(&pool, ctx.user_id, ctx.company_id, paid_on)
-        .await
-        .expect("verrou");
+    kesh_db::repositories::companies::lock_books(
+        &pool,
+        ctx.user_id,
+        ctx.company_id,
+        paid_on,
+        crate::common::jour::aujourd_hui_test(),
+    )
+    .await
+    .expect("verrou");
 
     let (st, view) = get_reco(&app, &ctx.jwt, tx_id).await;
     assert_eq!(st, 200, "got {view:?}");
@@ -10840,6 +10846,7 @@ async fn each_supplier_refusal_lands_in_failed(pool: MySqlPool) {
         },
         day_301b(6, 2),
         c.seeded.admin_user_id,
+        crate::common::jour::aujourd_hui_test(),
     )
     .await
     .unwrap();

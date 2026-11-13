@@ -7,6 +7,11 @@
 //! Décor synthétique.
 #![allow(clippy::too_many_arguments)]
 
+/// Story 35-5a0 — de `tests/common/`, la seule date du jour de l'horloge de test.
+mod common {
+    pub mod jour;
+}
+
 use std::net::SocketAddr;
 use std::path::Path;
 use std::sync::Arc;
@@ -678,9 +683,15 @@ async fn totals_equal_the_income_statement(pool: MySqlPool) {
     post(&pool, u, f, co, month_k(1), c.expense, c.bank, dec!(400.25)).await;
     // Une paire dans l'exercice.
     let in_year = post(&pool, u, f, co, month_k(0), second, c.bank, dec!(70)).await;
-    journal_entries::reverse(&pool, co, in_year, u)
-        .await
-        .unwrap();
+    journal_entries::reverse(
+        &pool,
+        co,
+        in_year,
+        u,
+        crate::common::jour::aujourd_hui_test(),
+    )
+    .await
+    .unwrap();
     // Une paire à cheval sur N−1 et N.
     let across = post(
         &pool,
@@ -834,12 +845,24 @@ async fn reversal_pair_in_the_year_leaves_both_months_untouched(pool: MySqlPool)
     // La contre-passation se date au jour (`ReversalDating::Today`), donc au mois 3.
     let charge = c.charge(&pool, month_k(0), c.expense, dec!(500)).await;
     let income = post(&pool, u, f, co, month_k(0), c.bank, c.revenue, dec!(250)).await;
-    let r1 = journal_entries::reverse(&pool, co, charge, u)
-        .await
-        .unwrap();
-    let r2 = journal_entries::reverse(&pool, co, income, u)
-        .await
-        .unwrap();
+    let r1 = journal_entries::reverse(
+        &pool,
+        co,
+        charge,
+        u,
+        crate::common::jour::aujourd_hui_test(),
+    )
+    .await
+    .unwrap();
+    let r2 = journal_entries::reverse(
+        &pool,
+        co,
+        income,
+        u,
+        crate::common::jour::aujourd_hui_test(),
+    )
+    .await
+    .unwrap();
     assert_eq!(r1.entry.entry_date, today(), "montage : datée du jour");
     assert_eq!(r2.entry.reverses_entry_id, Some(income), "montage");
 
@@ -922,14 +945,26 @@ async fn reversal_pair_with_a_side_dated_outside_the_year_follows_the_income_sta
     let outside = last_day_before(year_start());
     // L'origine hors bornes : reste la contre-passation, −500 au mois du jour.
     let charge = c.charge(&pool, month_k(0), c.expense, dec!(500)).await;
-    journal_entries::reverse(&pool, co, charge, u)
-        .await
-        .unwrap();
+    journal_entries::reverse(
+        &pool,
+        co,
+        charge,
+        u,
+        crate::common::jour::aujourd_hui_test(),
+    )
+    .await
+    .unwrap();
     // La contre-passation hors bornes : reste l'origine, +300 au mois 0.
     let income = post(&pool, u, f, co, month_k(0), c.bank, c.revenue, dec!(300)).await;
-    let reversal = journal_entries::reverse(&pool, co, income, u)
-        .await
-        .unwrap();
+    let reversal = journal_entries::reverse(
+        &pool,
+        co,
+        income,
+        u,
+        crate::common::jour::aujourd_hui_test(),
+    )
+    .await
+    .unwrap();
     for id in [charge, reversal.entry.id] {
         sqlx::query("UPDATE journal_entries SET entry_date = ? WHERE id = ?")
             .bind(outside)
@@ -943,14 +978,26 @@ async fn reversal_pair_with_a_side_dated_outside_the_year_follows_the_income_sta
     let prev = c.previous_year(&pool).await;
     // L'origine dans N−1, datée dans N : reste la contre-passation, −40 au mois du jour.
     let origin_prev = c.charge(&pool, month_k(0), c.expense, dec!(40)).await;
-    journal_entries::reverse(&pool, co, origin_prev, u)
-        .await
-        .unwrap();
+    journal_entries::reverse(
+        &pool,
+        co,
+        origin_prev,
+        u,
+        crate::common::jour::aujourd_hui_test(),
+    )
+    .await
+    .unwrap();
     // La contre-passation dans N−1, datée dans N : reste l'origine, +70 au mois 1.
     let income_two = post(&pool, u, f, co, month_k(1), c.bank, c.revenue, dec!(70)).await;
-    let reversal_two = journal_entries::reverse(&pool, co, income_two, u)
-        .await
-        .unwrap();
+    let reversal_two = journal_entries::reverse(
+        &pool,
+        co,
+        income_two,
+        u,
+        crate::common::jour::aujourd_hui_test(),
+    )
+    .await
+    .unwrap();
     for (number, id) in [(9101_i64, origin_prev), (9102, reversal_two.entry.id)] {
         sqlx::query("UPDATE journal_entries SET fiscal_year_id = ?, entry_number = ? WHERE id = ?")
             .bind(prev)
@@ -1016,6 +1063,7 @@ async fn cancelled_supplier_invoice_disappears(pool: MySqlPool) {
         seeded.company_id,
         validated.invoice.id,
         seeded.admin_user_id,
+        crate::common::jour::aujourd_hui_test(),
     )
     .await
     .unwrap();

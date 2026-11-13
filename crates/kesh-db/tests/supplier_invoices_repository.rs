@@ -8,6 +8,11 @@
 //!
 //! Pré-requis : MariaDB démarré (`sqlx::test` crée une DB éphémère par test).
 
+/// Story 35-5a0 — la date du jour de l'horloge de test.
+#[allow(dead_code)]
+#[path = "support/jour.rs"]
+mod jour;
+
 use chrono::NaiveDate;
 use kesh_db::entities::contact::{ContactType, NewContact};
 use kesh_db::entities::{
@@ -186,6 +191,7 @@ async fn pay_internal_account_settles_payable_to_zero(pool: MySqlPool) {
         },
         d(2026, 6, 20),
         ctx.seeded.admin_user_id,
+        crate::jour::aujourd_hui_test(),
     )
     .await
     .expect("pay internal");
@@ -245,6 +251,7 @@ async fn pay_bank_transfer_uses_journal_account(pool: MySqlPool) {
         },
         d(2026, 6, 20),
         ctx.seeded.admin_user_id,
+        crate::jour::aujourd_hui_test(),
     )
     .await
     .expect("pay bank transfer");
@@ -279,6 +286,7 @@ async fn cancel_reverses_purchase_entry(pool: MySqlPool) {
         ctx.seeded.company_id,
         created.invoice.id,
         ctx.seeded.admin_user_id,
+        crate::jour::aujourd_hui_test(),
     )
     .await
     .expect("cancel");
@@ -355,6 +363,7 @@ async fn pay_cancelled_invoice_rejected(pool: MySqlPool) {
         ctx.seeded.company_id,
         created.invoice.id,
         ctx.seeded.admin_user_id,
+        crate::jour::aujourd_hui_test(),
     )
     .await
     .unwrap();
@@ -368,6 +377,7 @@ async fn pay_cancelled_invoice_rejected(pool: MySqlPool) {
         },
         d(2026, 6, 20),
         ctx.seeded.admin_user_id,
+        crate::jour::aujourd_hui_test(),
     )
     .await
     .unwrap_err();
@@ -603,6 +613,7 @@ async fn pay_with_archived_account_is_inactive_or_invalid(pool: MySqlPool) {
         },
         d(2026, 6, 20),
         ctx.seeded.admin_user_id,
+        crate::jour::aujourd_hui_test(),
     )
     .await
     .unwrap_err();
@@ -649,6 +660,7 @@ async fn pay_with_non_postable_account_is_rejected(pool: MySqlPool) {
         },
         d(2026, 6, 20),
         ctx.seeded.admin_user_id,
+        crate::jour::aujourd_hui_test(),
     )
     .await
     .unwrap_err();
@@ -685,14 +697,21 @@ async fn cancel_paid_invoice_detaches_its_settlement(pool: MySqlPool) {
         },
         d(2026, 6, 20),
         u,
+        crate::jour::aujourd_hui_test(),
     )
     .await
     .unwrap();
     let settlement = paid.invoice.settlement_journal_entry_id.unwrap();
 
-    let cancelled = supplier_invoices::cancel(&pool, c, created.invoice.id, u)
-        .await
-        .expect("une facture payée s'annule");
+    let cancelled = supplier_invoices::cancel(
+        &pool,
+        c,
+        created.invoice.id,
+        u,
+        crate::jour::aujourd_hui_test(),
+    )
+    .await
+    .expect("une facture payée s'annule");
     let inv = &cancelled.invoice;
     assert_eq!(inv.status, "cancelled");
     assert!(inv.settlement_type.is_none());
@@ -795,7 +814,7 @@ async fn cancel_paid_invoice_detaches_its_settlement(pool: MySqlPool) {
         );
     }
 
-    journal_entries::reverse(&pool, c, settlement, u)
+    journal_entries::reverse(&pool, c, settlement, u, crate::jour::aujourd_hui_test())
         .await
         .expect("un paiement sans facture se contre-passe depuis sa fiche");
 
@@ -813,9 +832,15 @@ async fn cancel_paid_invoice_detaches_its_settlement(pool: MySqlPool) {
     assert_eq!(details["settlementType"], "internal_account");
 
     // L'annulation du règlement n'a plus d'objet.
-    let err = supplier_invoices::cancel_settlement(&pool, c, created.invoice.id, u)
-        .await
-        .expect_err("plus de règlement");
+    let err = supplier_invoices::cancel_settlement(
+        &pool,
+        c,
+        created.invoice.id,
+        u,
+        crate::jour::aujourd_hui_test(),
+    )
+    .await
+    .expect_err("plus de règlement");
     assert!(
         matches!(
             err,
@@ -908,6 +933,7 @@ async fn pay_foreign_internal_account_rejected(pool: MySqlPool) {
         },
         d(2026, 6, 20),
         ctx.seeded.admin_user_id,
+        crate::jour::aujourd_hui_test(),
     )
     .await
     .unwrap_err();
@@ -934,6 +960,7 @@ async fn pay_already_paid_invoice_rejected(pool: MySqlPool) {
         internal,
         d(2026, 6, 20),
         ctx.seeded.admin_user_id,
+        crate::jour::aujourd_hui_test(),
     )
     .await
     .unwrap();
@@ -945,6 +972,7 @@ async fn pay_already_paid_invoice_rejected(pool: MySqlPool) {
         internal,
         d(2026, 6, 21),
         ctx.seeded.admin_user_id,
+        crate::jour::aujourd_hui_test(),
     )
     .await
     .unwrap_err();
@@ -981,6 +1009,7 @@ async fn pay_with_date_outside_fiscal_year_rejected(pool: MySqlPool) {
         },
         d(2099, 1, 1),
         ctx.seeded.admin_user_id,
+        crate::jour::aujourd_hui_test(),
     )
     .await
     .unwrap_err();
@@ -1068,6 +1097,7 @@ async fn pay_with_project_tags_settlement_entry(pool: MySqlPool) {
         },
         d(2026, 6, 20),
         ctx.seeded.admin_user_id,
+        crate::jour::aujourd_hui_test(),
     )
     .await
     .expect("pay");
@@ -1106,6 +1136,7 @@ async fn cancel_nets_project_to_zero(pool: MySqlPool) {
         ctx.seeded.company_id,
         created.invoice.id,
         ctx.seeded.admin_user_id,
+        crate::jour::aujourd_hui_test(),
     )
     .await
     .expect("cancel");
@@ -1170,6 +1201,7 @@ async fn pay_succeeds_when_project_archived_after_tagging(pool: MySqlPool) {
         },
         d(2026, 6, 20),
         ctx.seeded.admin_user_id,
+        crate::jour::aujourd_hui_test(),
     )
     .await
     .expect("pay doit réussir même si le projet est archivé");
@@ -1214,6 +1246,7 @@ async fn paid_invoice(
         },
         paid_on,
         ctx.seeded.admin_user_id,
+        crate::jour::aujourd_hui_test(),
     )
     .await
     .expect("règlement");
@@ -1245,6 +1278,7 @@ async fn cancel_settlement_reopens_and_clears_the_columns(pool: MySqlPool) {
         ctx.seeded.company_id,
         id,
         ctx.seeded.admin_user_id,
+        crate::jour::aujourd_hui_test(),
     )
     .await
     .expect("annulation");
@@ -1294,7 +1328,7 @@ async fn two_full_cycles_pay_cancel_pay_cancel(pool: MySqlPool) {
     let ctx = setup(&pool).await;
     let (id, _, first) = paid_invoice(&pool, &ctx, d(2026, 6, 15), d(2026, 6, 20)).await;
     let (c, u) = (ctx.seeded.company_id, ctx.seeded.admin_user_id);
-    supplier_invoices::cancel_settlement(&pool, c, id, u)
+    supplier_invoices::cancel_settlement(&pool, c, id, u, crate::jour::aujourd_hui_test())
         .await
         .expect("première annulation");
     let repaid = supplier_invoices::pay(
@@ -1306,12 +1340,13 @@ async fn two_full_cycles_pay_cancel_pay_cancel(pool: MySqlPool) {
         },
         d(2026, 6, 25),
         u,
+        crate::jour::aujourd_hui_test(),
     )
     .await
     .expect("second règlement");
     let second = repaid.invoice.settlement_journal_entry_id.unwrap();
     assert_ne!(first, second);
-    supplier_invoices::cancel_settlement(&pool, c, id, u)
+    supplier_invoices::cancel_settlement(&pool, c, id, u, crate::jour::aujourd_hui_test())
         .await
         .expect("seconde annulation");
 
@@ -1331,9 +1366,10 @@ async fn not_paid_is_refused_with_its_code(pool: MySqlPool) {
         .unwrap()
         .invoice
         .id;
-    let err = supplier_invoices::cancel_settlement(&pool, c, open, u)
-        .await
-        .expect_err("facture ouverte");
+    let err =
+        supplier_invoices::cancel_settlement(&pool, c, open, u, crate::jour::aujourd_hui_test())
+            .await
+            .expect_err("facture ouverte");
     assert!(
         matches!(
             err,
@@ -1345,12 +1381,13 @@ async fn not_paid_is_refused_with_its_code(pool: MySqlPool) {
     );
 
     let (id, _, _) = paid_invoice(&pool, &ctx, d(2026, 6, 15), d(2026, 6, 20)).await;
-    supplier_invoices::cancel_settlement(&pool, c, id, u)
+    supplier_invoices::cancel_settlement(&pool, c, id, u, crate::jour::aujourd_hui_test())
         .await
         .unwrap();
-    let err = supplier_invoices::cancel_settlement(&pool, c, id, u)
-        .await
-        .expect_err("double annulation");
+    let err =
+        supplier_invoices::cancel_settlement(&pool, c, id, u, crate::jour::aujourd_hui_test())
+            .await
+            .expect_err("double annulation");
     assert!(
         matches!(
             err,
@@ -1382,6 +1419,7 @@ async fn supplier_authority_never_covers_the_purchase_entry(pool: MySqlPool) {
         purchase,
         ctx.seeded.admin_user_id,
         authority,
+        crate::jour::aujourd_hui_test(),
     )
     .await
     .expect_err("l'écriture d'achat ne se contre-passe pas au titre du règlement");
@@ -1404,6 +1442,7 @@ async fn supplier_authority_never_covers_the_purchase_entry(pool: MySqlPool) {
         settlement,
         ctx.seeded.admin_user_id,
         authority,
+        crate::jour::aujourd_hui_test(),
     )
     .await
     .expect("témoin : l'écriture de règlement, elle, se contre-passe");
@@ -1423,6 +1462,7 @@ async fn cancel_settlement_composes_and_rolls_back(pool: MySqlPool) {
             ctx.seeded.company_id,
             id,
             ctx.seeded.admin_user_id,
+            crate::jour::aujourd_hui_test(),
         )
         .await
         .expect("annulation dans la transaction");
@@ -1468,10 +1508,11 @@ async fn settlement_view_reads_the_invoice_and_its_motive_together(pool: MySqlPo
     let c = ctx.seeded.company_id;
     let (id, _, _) = paid_invoice(&pool, &ctx, d(2026, 6, 15), d(2026, 6, 20)).await;
 
-    let view = supplier_invoices::get_settlement_view(&pool, c, id)
-        .await
-        .unwrap()
-        .expect("facture");
+    let view =
+        supplier_invoices::get_settlement_view(&pool, c, id, crate::jour::aujourd_hui_test())
+            .await
+            .unwrap()
+            .expect("facture");
     assert_eq!(view.invoice.status, "paid");
     assert!(!view.lines.is_empty(), "les lignes suivent");
     assert!(
@@ -1481,13 +1522,20 @@ async fn settlement_view_reads_the_invoice_and_its_motive_together(pool: MySqlPo
     );
     assert_eq!(view.last_confirmed_batch, None, "réglée hors lot");
 
-    supplier_invoices::cancel_settlement(&pool, c, id, ctx.seeded.admin_user_id)
-        .await
-        .unwrap();
-    let view = supplier_invoices::get_settlement_view(&pool, c, id)
-        .await
-        .unwrap()
-        .expect("facture");
+    supplier_invoices::cancel_settlement(
+        &pool,
+        c,
+        id,
+        ctx.seeded.admin_user_id,
+        crate::jour::aujourd_hui_test(),
+    )
+    .await
+    .unwrap();
+    let view =
+        supplier_invoices::get_settlement_view(&pool, c, id, crate::jour::aujourd_hui_test())
+            .await
+            .unwrap()
+            .expect("facture");
     assert_eq!(view.invoice.status, "open");
     assert!(matches!(
         view.settlement_cancel_blocker,
@@ -1503,7 +1551,7 @@ async fn settlement_view_reads_the_invoice_and_its_motive_together(pool: MySqlPo
     .unwrap()
     .last_insert_id() as i64;
     assert!(
-        supplier_invoices::get_settlement_view(&pool, other, id)
+        supplier_invoices::get_settlement_view(&pool, other, id, crate::jour::aujourd_hui_test())
             .await
             .unwrap()
             .is_none(),
@@ -1534,14 +1582,25 @@ async fn another_company_cannot_cancel_the_settlement(pool: MySqlPool) {
     for t in tables {
         avant.push(count(&pool, &format!("SELECT COUNT(*) FROM {t}")).await);
     }
-    let err = supplier_invoices::cancel_settlement(&pool, other, id, ctx.seeded.admin_user_id)
-        .await
-        .expect_err("autre société");
+    let err = supplier_invoices::cancel_settlement(
+        &pool,
+        other,
+        id,
+        ctx.seeded.admin_user_id,
+        crate::jour::aujourd_hui_test(),
+    )
+    .await
+    .expect_err("autre société");
     assert!(matches!(err, DbError::NotFound), "got {err:?}");
     let mut conn = pool.acquire().await.unwrap();
-    let err = supplier_invoices::supplier_settlement_cancel_blocker(&mut conn, other, id)
-        .await
-        .expect_err("autre société — lecture");
+    let err = supplier_invoices::supplier_settlement_cancel_blocker(
+        &mut conn,
+        other,
+        id,
+        crate::jour::aujourd_hui_test(),
+    )
+    .await
+    .expect_err("autre société — lecture");
     assert!(matches!(err, DbError::NotFound), "got {err:?}");
     for (t, n) in tables.iter().zip(avant) {
         assert_eq!(
@@ -1568,6 +1627,7 @@ async fn figer(
         ctx.seeded.admin_user_id,
         ctx.seeded.company_id,
         le_plus_recent,
+        crate::jour::aujourd_hui_test(),
     )
     .await
     .expect("verrou de période");
@@ -1679,6 +1739,7 @@ async fn tail_motives_through_the_supplier_path(pool: MySqlPool) {
             &mut conn,
             ctx.seeded.company_id,
             id,
+            crate::jour::aujourd_hui_test(),
         )
         .await
         .expect("lecture");
@@ -1696,6 +1757,7 @@ async fn tail_motives_through_the_supplier_path(pool: MySqlPool) {
             ctx.seeded.company_id,
             id,
             ctx.seeded.admin_user_id,
+            crate::jour::aujourd_hui_test(),
         )
         .await
         .expect_err("refusée");
@@ -1734,8 +1796,9 @@ async fn a_concurrent_close_waits_for_the_cancellation(pool: MySqlPool) {
         .unwrap();
     let p = pool.clone();
     let (c, u) = (ctx.seeded.company_id, ctx.seeded.admin_user_id);
-    let annulation =
-        tokio::spawn(async move { supplier_invoices::cancel_settlement(&p, c, id, u).await });
+    let annulation = tokio::spawn(async move {
+        supplier_invoices::cancel_settlement(&p, c, id, u, crate::jour::aujourd_hui_test()).await
+    });
     let vue = kesh_db::test_fixtures::attendre_une_requete_en_cours(
         &pool,
         &["fiscal_years", "FOR UPDATE"],
@@ -1784,6 +1847,7 @@ async fn purchase_authority_never_covers_the_settlement_entry(pool: MySqlPool) {
         settlement,
         ctx.seeded.admin_user_id,
         authority,
+        crate::jour::aujourd_hui_test(),
     )
     .await
     .expect_err("le règlement ne se contre-passe pas au titre de l'achat");
@@ -1806,6 +1870,7 @@ async fn purchase_authority_never_covers_the_settlement_entry(pool: MySqlPool) {
         purchase,
         ctx.seeded.admin_user_id,
         authority,
+        crate::jour::aujourd_hui_test(),
     )
     .await
     .expect("témoin : l'écriture d'achat, elle, se contre-passe");
@@ -1999,6 +2064,7 @@ async fn invoice_cancel_motives_and_their_precedence(pool: MySqlPool) {
             &mut conn,
             ctx.seeded.company_id,
             id,
+            crate::jour::aujourd_hui_test(),
         )
         .await
         .expect("lecture");
@@ -2011,10 +2077,15 @@ async fn invoice_cancel_motives_and_their_precedence(pool: MySqlPool) {
         if attendu == AccountArchived {
             assert_eq!(lu.and_then(|h| h.2).as_deref(), Some("4000"));
         }
-        let err =
-            supplier_invoices::cancel(&pool, ctx.seeded.company_id, id, ctx.seeded.admin_user_id)
-                .await
-                .expect_err("refusée");
+        let err = supplier_invoices::cancel(
+            &pool,
+            ctx.seeded.company_id,
+            id,
+            ctx.seeded.admin_user_id,
+            crate::jour::aujourd_hui_test(),
+        )
+        .await
+        .expect_err("refusée");
         let ok = match attendu {
             FiscalYearClosed | DocumentLetteringInClosedPeriods | SupplierInvoiceInPaymentBatch => {
                 matches!(
@@ -2040,17 +2111,24 @@ async fn a_second_cancellation_is_refused_with_its_code(pool: MySqlPool) {
         .unwrap()
         .invoice
         .id;
-    supplier_invoices::cancel(&pool, c, id, u).await.unwrap();
-    let mut conn = pool.acquire().await.unwrap();
-    let lu = supplier_invoices::supplier_invoice_cancel_blocker(&mut conn, c, id)
+    supplier_invoices::cancel(&pool, c, id, u, crate::jour::aujourd_hui_test())
         .await
         .unwrap();
+    let mut conn = pool.acquire().await.unwrap();
+    let lu = supplier_invoices::supplier_invoice_cancel_blocker(
+        &mut conn,
+        c,
+        id,
+        crate::jour::aujourd_hui_test(),
+    )
+    .await
+    .unwrap();
     drop(conn);
     assert_eq!(
         lu.map(|h| h.0),
         Some(SettlementCancelBlocker::SupplierInvoiceCancelled)
     );
-    let err = supplier_invoices::cancel(&pool, c, id, u)
+    let err = supplier_invoices::cancel(&pool, c, id, u, crate::jour::aujourd_hui_test())
         .await
         .expect_err("double annulation");
     assert!(
@@ -2079,7 +2157,9 @@ async fn a_concurrent_close_waits_for_the_invoice_cancellation(pool: MySqlPool) 
         .unwrap();
     let p = pool.clone();
     let (c, u) = (ctx.seeded.company_id, ctx.seeded.admin_user_id);
-    let annulation = tokio::spawn(async move { supplier_invoices::cancel(&p, c, id, u).await });
+    let annulation = tokio::spawn(async move {
+        supplier_invoices::cancel(&p, c, id, u, crate::jour::aujourd_hui_test()).await
+    });
     let vue = kesh_db::test_fixtures::attendre_une_requete_en_cours(
         &pool,
         &["fiscal_years", "FOR UPDATE"],
@@ -2122,6 +2202,7 @@ async fn cancel_composes_and_rolls_back(pool: MySqlPool) {
         ctx.seeded.company_id,
         id,
         ctx.seeded.admin_user_id,
+        crate::jour::aujourd_hui_test(),
     )
     .await
     .expect("annulation dans la transaction");
@@ -2175,14 +2256,25 @@ async fn another_company_cannot_cancel_the_invoice(pool: MySqlPool) {
     for t in tables {
         avant.push(count(&pool, &format!("SELECT COUNT(*) FROM {t}")).await);
     }
-    let err = supplier_invoices::cancel(&pool, other, id, ctx.seeded.admin_user_id)
-        .await
-        .expect_err("autre société");
+    let err = supplier_invoices::cancel(
+        &pool,
+        other,
+        id,
+        ctx.seeded.admin_user_id,
+        crate::jour::aujourd_hui_test(),
+    )
+    .await
+    .expect_err("autre société");
     assert!(matches!(err, DbError::NotFound), "got {err:?}");
     let mut conn = pool.acquire().await.unwrap();
-    let err = supplier_invoices::supplier_invoice_cancel_blocker(&mut conn, other, id)
-        .await
-        .expect_err("autre société — lecture");
+    let err = supplier_invoices::supplier_invoice_cancel_blocker(
+        &mut conn,
+        other,
+        id,
+        crate::jour::aujourd_hui_test(),
+    )
+    .await
+    .expect_err("autre société — lecture");
     assert!(matches!(err, DbError::NotFound), "got {err:?}");
     for (t, n) in tables.iter().zip(avant) {
         assert_eq!(
@@ -2216,6 +2308,7 @@ async fn cancel_keeps_the_project_on_every_line(pool: MySqlPool) {
         ctx.seeded.company_id,
         created.invoice.id,
         ctx.seeded.admin_user_id,
+        crate::jour::aujourd_hui_test(),
     )
     .await
     .unwrap();
@@ -2734,6 +2827,7 @@ async fn pay_with_the_payable_account_as_internal_account_is_refused(pool: MySql
         },
         d(2026, 6, 20),
         ctx.seeded.admin_user_id,
+        crate::jour::aujourd_hui_test(),
     )
     .await
     .expect_err("la dette comme contrepartie doit être refusée");
@@ -2784,6 +2878,7 @@ async fn pay_by_a_bank_account_linked_to_the_payable_account_is_refused(pool: My
         },
         d(2026, 6, 20),
         ctx.seeded.admin_user_id,
+        crate::jour::aujourd_hui_test(),
     )
     .await
     .expect_err("un compte bancaire lié à la dette doit être refusé");
@@ -2809,9 +2904,15 @@ async fn supplier_invoice_cancel_letters_a_pair_that_cannot_be_dissolved_by_hand
             .fetch_one(&pool)
             .await
             .unwrap();
-    supplier_invoices::cancel(&pool, ctx.seeded.company_id, id, ctx.seeded.admin_user_id)
-        .await
-        .expect("annulation");
+    supplier_invoices::cancel(
+        &pool,
+        ctx.seeded.company_id,
+        id,
+        ctx.seeded.admin_user_id,
+        crate::jour::aujourd_hui_test(),
+    )
+    .await
+    .expect("annulation");
 
     let fournisseurs = ctx.seeded.accounts["2000"];
     let (ligne, key, origin): (i64, Option<i64>, Option<String>) = sqlx::query_as(
@@ -2895,13 +2996,22 @@ async fn supplier_cancels_are_refused_under_a_frozen_lettering(pool: MySqlPool) 
     let user = ctx.seeded.admin_user_id;
 
     let mut conn = pool.acquire().await.unwrap();
-    let paiement_lu =
-        supplier_invoices::supplier_settlement_cancel_blocker(&mut conn, company_id, id)
-            .await
-            .expect("prédicteur du paiement");
-    let facture_lue = supplier_invoices::supplier_invoice_cancel_blocker(&mut conn, company_id, id)
-        .await
-        .expect("prédicteur de la facture");
+    let paiement_lu = supplier_invoices::supplier_settlement_cancel_blocker(
+        &mut conn,
+        company_id,
+        id,
+        crate::jour::aujourd_hui_test(),
+    )
+    .await
+    .expect("prédicteur du paiement");
+    let facture_lue = supplier_invoices::supplier_invoice_cancel_blocker(
+        &mut conn,
+        company_id,
+        id,
+        crate::jour::aujourd_hui_test(),
+    )
+    .await
+    .expect("prédicteur de la facture");
     drop(conn);
     assert_eq!(
         paiement_lu.map(|h| h.0),
@@ -2916,16 +3026,23 @@ async fn supplier_cancels_are_refused_under_a_frozen_lettering(pool: MySqlPool) 
         avant.push(count(&pool, &format!("SELECT COUNT(*) FROM {t}")).await);
     }
 
-    let err = supplier_invoices::cancel_settlement(&pool, company_id, id, user)
-        .await
-        .expect_err("paiement figé");
+    let err = supplier_invoices::cancel_settlement(
+        &pool,
+        company_id,
+        id,
+        user,
+        crate::jour::aujourd_hui_test(),
+    )
+    .await
+    .expect_err("paiement figé");
     assert!(
         matches!(err, DbError::SettlementNotCancellable { blocker: Fige }),
         "{err:?}"
     );
-    let err = supplier_invoices::cancel(&pool, company_id, id, user)
-        .await
-        .expect_err("facture figée");
+    let err =
+        supplier_invoices::cancel(&pool, company_id, id, user, crate::jour::aujourd_hui_test())
+            .await
+            .expect_err("facture figée");
     assert!(
         matches!(
             err,
@@ -3023,6 +3140,7 @@ mod compte_bancaire_clos {
             },
             dd - chrono::Duration::days(10),
             ctx.seeded.admin_user_id,
+            crate::jour::aujourd_hui_test(),
         )
         .await
         .expect("paiement par virement");
@@ -3088,6 +3206,7 @@ mod compte_bancaire_clos {
             ctx.seeded.company_id,
             id,
             ctx.seeded.admin_user_id,
+            crate::jour::aujourd_hui_test(),
         )
         .await
         .expect("annulation du paiement vers un compte archivé");
@@ -3100,10 +3219,15 @@ mod compte_bancaire_clos {
     async fn w28_annule_une_facture_payee_vers_un_compte_archive(pool: MySqlPool) {
         let (ctx, id) = monter_par_virement(&pool).await;
         archiver(&pool, compte_du_paiement(&pool, id).await).await;
-        let done =
-            supplier_invoices::cancel(&pool, ctx.seeded.company_id, id, ctx.seeded.admin_user_id)
-                .await
-                .expect("annulation de la facture payée vers un compte archivé");
+        let done = supplier_invoices::cancel(
+            &pool,
+            ctx.seeded.company_id,
+            id,
+            ctx.seeded.admin_user_id,
+            crate::jour::aujourd_hui_test(),
+        )
+        .await
+        .expect("annulation de la facture payée vers un compte archivé");
         assert_eq!(done.invoice.status, "cancelled");
     }
 
@@ -3117,7 +3241,7 @@ mod compte_bancaire_clos {
         let p = pool.clone();
         let (c, u) = (ctx.seeded.company_id, ctx.seeded.admin_user_id);
         let result = pendant_une_cloture(&pool, &ctx, async move {
-            supplier_invoices::cancel_settlement(&p, c, id, u)
+            supplier_invoices::cancel_settlement(&p, c, id, u, crate::jour::aujourd_hui_test())
                 .await
                 .map(|_| ())
         })
@@ -3143,7 +3267,9 @@ mod compte_bancaire_clos {
         let p = pool.clone();
         let (c, u) = (ctx.seeded.company_id, ctx.seeded.admin_user_id);
         let result = pendant_une_cloture(&pool, &ctx, async move {
-            supplier_invoices::cancel(&p, c, id, u).await.map(|_| ())
+            supplier_invoices::cancel(&p, c, id, u, crate::jour::aujourd_hui_test())
+                .await
+                .map(|_| ())
         })
         .await;
         assert!(
@@ -3179,6 +3305,7 @@ async fn pay_sets_paid_at_to_the_payment_date(pool: MySqlPool) {
         SettlementChoice::InternalAccount { account_id },
         d(2026, 6, 20),
         ctx.seeded.admin_user_id,
+        crate::jour::aujourd_hui_test(),
     )
     .await
     .unwrap();
@@ -3402,7 +3529,7 @@ async fn the_wrappers_return_the_view_of_what_they_wrote(pool: MySqlPool) {
     let relue = |id: i64| {
         let pool = pool.clone();
         async move {
-            supplier_invoices::get_settlement_view(&pool, c, id)
+            supplier_invoices::get_settlement_view(&pool, c, id, crate::jour::aujourd_hui_test())
                 .await
                 .unwrap()
                 .expect("facture")
@@ -3414,23 +3541,44 @@ async fn the_wrappers_return_the_view_of_what_they_wrote(pool: MySqlPool) {
         .unwrap();
     let id = draft.invoice.id;
 
-    let validated = supplier_invoices::validate(&pool, c, id, draft.invoice.version, u)
-        .await
-        .unwrap();
+    let validated = supplier_invoices::validate(
+        &pool,
+        c,
+        id,
+        draft.invoice.version,
+        u,
+        crate::jour::aujourd_hui_test(),
+    )
+    .await
+    .unwrap();
     assert_eq!(validated.invoice.status, "open");
     assert!(validated.invoice.internal_number.is_some(), "numéro posé");
     assert!(validated.invoice_cancel_blocker.is_none());
     assert_eq!(format!("{validated:?}"), format!("{:?}", relue(id).await));
 
-    let unvalidated = supplier_invoices::unvalidate(&pool, c, id, validated.invoice.version, u)
-        .await
-        .unwrap();
+    let unvalidated = supplier_invoices::unvalidate(
+        &pool,
+        c,
+        id,
+        validated.invoice.version,
+        u,
+        crate::jour::aujourd_hui_test(),
+    )
+    .await
+    .unwrap();
     assert_eq!(unvalidated.invoice.status, "draft");
     assert_eq!(format!("{unvalidated:?}"), format!("{:?}", relue(id).await));
 
-    let validated = supplier_invoices::validate(&pool, c, id, unvalidated.invoice.version, u)
-        .await
-        .unwrap();
+    let validated = supplier_invoices::validate(
+        &pool,
+        c,
+        id,
+        unvalidated.invoice.version,
+        u,
+        crate::jour::aujourd_hui_test(),
+    )
+    .await
+    .unwrap();
     let paid = supplier_invoices::pay(
         &pool,
         c,
@@ -3440,6 +3588,7 @@ async fn the_wrappers_return_the_view_of_what_they_wrote(pool: MySqlPool) {
         },
         d(2026, 6, 20),
         u,
+        crate::jour::aujourd_hui_test(),
     )
     .await
     .unwrap();
@@ -3452,9 +3601,10 @@ async fn the_wrappers_return_the_view_of_what_they_wrote(pool: MySqlPool) {
     );
     assert_eq!(format!("{paid:?}"), format!("{:?}", relue(id).await));
 
-    let done = supplier_invoices::cancel_settlement(&pool, c, id, u)
-        .await
-        .unwrap();
+    let done =
+        supplier_invoices::cancel_settlement(&pool, c, id, u, crate::jour::aujourd_hui_test())
+            .await
+            .unwrap();
     assert_eq!(done.invoice.invoice.status, "open");
     assert!(matches!(
         done.invoice.settlement_cancel_blocker,
@@ -3466,7 +3616,9 @@ async fn the_wrappers_return_the_view_of_what_they_wrote(pool: MySqlPool) {
         format!("{:?}", relue(id).await)
     );
 
-    let cancelled = supplier_invoices::cancel(&pool, c, id, u).await.unwrap();
+    let cancelled = supplier_invoices::cancel(&pool, c, id, u, crate::jour::aujourd_hui_test())
+        .await
+        .unwrap();
     assert_eq!(cancelled.invoice.status, "cancelled");
     assert!(cancelled.invoice_cancel_blocker.is_some(), "déjà annulée");
     assert_eq!(format!("{cancelled:?}"), format!("{:?}", relue(id).await));
@@ -3502,9 +3654,15 @@ async fn commit_with_view_rolls_back_when_the_view_is_missing(pool: MySqlPool) {
     let c = ctx.seeded.company_id;
     let mut tx = pool.begin().await.unwrap();
     ecrire_temoin(&mut tx, c).await;
-    let err = supplier_invoices::commit_with_view(tx, c, Ok::<(), DbError>(()), |_| 999_999_999)
-        .await
-        .expect_err("aucune facture : aucune vue");
+    let err = supplier_invoices::commit_with_view(
+        tx,
+        c,
+        Ok::<(), DbError>(()),
+        |_| 999_999_999,
+        crate::jour::aujourd_hui_test(),
+    )
+    .await
+    .expect_err("aucune facture : aucune vue");
     assert!(matches!(err, DbError::Invariant(_)), "{err:?}");
     assert_eq!(temoins(&pool, c).await, 0, "la transaction est annulée");
 }
@@ -3533,6 +3691,7 @@ async fn commit_with_view_rolls_back_on_error_and_commits_with_the_view(pool: My
         c,
         Err::<(), DbError>(DbError::NotFound),
         |_| -> i64 { panic!("view_id appelée sur Err") },
+        crate::jour::aujourd_hui_test(),
     )
     .await
     .expect_err("l'erreur passe");
@@ -3541,9 +3700,15 @@ async fn commit_with_view_rolls_back_on_error_and_commits_with_the_view(pool: My
 
     let mut tx = pool.begin().await.unwrap();
     ecrire_temoin(&mut tx, c).await;
-    let (view, rendu) = supplier_invoices::commit_with_view(tx, c, Ok::<_, DbError>(7), |_| id)
-        .await
-        .unwrap();
+    let (view, rendu) = supplier_invoices::commit_with_view(
+        tx,
+        c,
+        Ok::<_, DbError>(7),
+        |_| id,
+        crate::jour::aujourd_hui_test(),
+    )
+    .await
+    .unwrap();
     assert_eq!(rendu, 7);
     assert_eq!(view.invoice.id, id);
     assert_eq!(temoins(&pool, c).await, 1, "validée sur Ok");
@@ -3594,9 +3759,15 @@ async fn commit_with_view_rolls_back_when_the_view_cannot_be_read(pool: MySqlPoo
         .await
         .expect("montage : l'écriture d'achat passée à une autre société");
     assert_eq!(fait.rows_affected(), 1, "montage : une ligne");
-    let err = supplier_invoices::commit_with_view(tx, c, Ok::<(), DbError>(()), |_| id)
-        .await
-        .expect_err("la vue ne se lit pas");
+    let err = supplier_invoices::commit_with_view(
+        tx,
+        c,
+        Ok::<(), DbError>(()),
+        |_| id,
+        crate::jour::aujourd_hui_test(),
+    )
+    .await
+    .expect_err("la vue ne se lit pas");
     assert!(matches!(err, DbError::NotFound), "{err:?}");
     assert_eq!(temoins(&pool, c).await, 0, "la transaction est annulée");
     let societe: i64 = sqlx::query_scalar("SELECT company_id FROM journal_entries WHERE id = ?")

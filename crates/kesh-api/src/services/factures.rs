@@ -546,11 +546,17 @@ pub async fn reglements(
     // ⛔ Une transaction de lecture, pour un seul instantané.
     let mut tx = lecture.pool().begin().await.map_err(map_db_error)?;
     let liste = invoice_settlements::list_for_invoice(&mut *tx, company.id, id).await?;
+    // Story 35-5a0 — la date du jour, lue une fois sur l'horloge de la poignée.
+    let aujourd_hui = lecture.aujourd_hui();
     let mut out = Vec::with_capacity(liste.len());
     for reglement in liste {
-        let motif =
-            invoice_settlements_write::settlement_cancel_blocker(&mut tx, company.id, reglement.id)
-                .await?;
+        let motif = invoice_settlements_write::settlement_cancel_blocker(
+            &mut tx,
+            company.id,
+            reglement.id,
+            aujourd_hui,
+        )
+        .await?;
         out.push(ReglementFacture { reglement, motif });
     }
     tx.commit().await.map_err(map_db_error)?;
