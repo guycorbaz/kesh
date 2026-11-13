@@ -3,7 +3,7 @@
 //! [`aujourd_hui_test`] rend le jour de l'horloge du serveur : celle qu'arrête
 //! `KESH_TEST_INSTANT` (RFC 3339) si la variable est posée, l'heure réelle
 //! sinon — lue à chaque appel, sans mémoire. Le jour suit `Horloge::aujourd_hui`
-//! (UTC aujourd'hui, Zurich après la Story 35-5a), sans retouche ici. Vide ou
+//! (le jour de Zurich depuis la Story 35-5a), sans retouche ici. Vide ou
 //! blanche, la variable vaut absente, comme côté `kesh-api` (`instant_de_test`
 //! rogne la valeur).
 //!

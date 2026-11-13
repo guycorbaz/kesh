@@ -761,17 +761,20 @@ async fn ac3_sans_exercice_au_jour_suisse_l_annulation_est_refusee(pool: MySqlPo
 // AC4 — verrou de période (#907)
 // ============================================================
 
-/// AC4 — à 00 h 30 le 11 mars à Zurich (`2026-03-10T23:30:00Z`), poser le
-/// verrou jusqu'au `2026-03-10` est accepté ; jusqu'au `2026-03-11`, refusé
-/// (`400 INVALID_INPUT`, `settings-books-lock-bound-not-past`). Tue M4.
-#[sqlx::test(migrations = "../kesh-db/test-schema")]
-async fn ac4_verrouiller_jusqu_a_hier_la_nuit(pool: MySqlPool) {
-    let ctx = monter(&pool, "2026-03-10T23:30:00Z", Some("Open")).await;
+/// Pose du verrou à l'instant `maintenant` : jusqu'à `aujourd_hui` (le jour
+/// suisse) refusé, jusqu'à `hier` accepté.
+async fn verrouiller_jusqu_a_hier(
+    pool: &MySqlPool,
+    maintenant: &str,
+    hier: &str,
+    aujourd_hui: &str,
+) {
+    let ctx = monter(pool, maintenant, Some("Open")).await;
     let (s, b) = ctx
         .app
         .post(
             "/api/v1/companies/current/books-lock",
-            json!({ "through": "2026-03-11" }),
+            json!({ "through": aujourd_hui }),
         )
         .await;
     assert_borne_refusee(s, &b);
@@ -779,10 +782,29 @@ async fn ac4_verrouiller_jusqu_a_hier_la_nuit(pool: MySqlPool) {
         .app
         .post(
             "/api/v1/companies/current/books-lock",
-            json!({ "through": "2026-03-10" }),
+            json!({ "through": hier }),
         )
         .await;
-    assert_eq!(s, 200, "verrou jusqu'à hier (jour suisse) : {b}");
+    assert_eq!(
+        s, 200,
+        "verrou jusqu'à hier (jour suisse) à {maintenant} : {b}"
+    );
+}
+
+/// AC4 — à 00 h 30 le 11 mars à Zurich (`2026-03-10T23:30:00Z`), poser le
+/// verrou jusqu'au `2026-03-10` est accepté ; jusqu'au `2026-03-11`, refusé
+/// (`400 INVALID_INPUT`, `settings-books-lock-bound-not-past`). Tue M4.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn ac4_verrouiller_jusqu_a_hier_la_nuit(pool: MySqlPool) {
+    verrouiller_jusqu_a_hier(&pool, "2026-03-10T23:30:00Z", "2026-03-10", "2026-03-11").await;
+}
+
+/// AC4, nuit d'**été** (revue P1, E3) — à 00 h 30 le 2 juillet à Zurich
+/// (`2026-07-01T22:30:00Z`, CEST) : jusqu'au 1er juillet accepté, jusqu'au 2
+/// refusé. Un fuseau fixe à +1 h (M2) lit encore le 1er juillet et refuse.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn ac4_verrouiller_jusqu_a_hier_une_nuit_d_ete(pool: MySqlPool) {
+    verrouiller_jusqu_a_hier(&pool, "2026-07-01T22:30:00Z", "2026-07-01", "2026-07-02").await;
 }
 
 /// AC4 — `unlock_books`, borne courante au `2026-03-10` **posée en SQL** :

@@ -31,7 +31,7 @@
 	import { errorMessageOf } from '$lib/shared/utils/error-message';
 	import { isPlausibleEmail } from '$lib/shared/utils/email';
 	import { notifySuccess } from '$lib/shared/utils/notify';
-	import { todayLocal } from '$lib/shared/utils/local-date';
+	import { dayBefore, todayInZurich } from '$lib/shared/utils/local-date';
 
 	// ⚠️ Le troisième argument porte les variables Fluent. Il passe par
 	// `i18nMsg` et JAMAIS par un `.replace()` maison : le backend pré-résout
@@ -561,13 +561,11 @@
 	// et il est testé sans passer par l'écran. Sans ce `max`, le formulaire
 	// proposait une date que le serveur refuse, sur le geste même que la garde
 	// existe pour rattraper.
-	// Story 35-5a (#907) : la veille du jour **du poste** (`todayLocal`), comme le
-	// serveur juge la borne au jour de Zurich — à 00 h 30 le 11 mars, le 10 mars
-	// (la veille UTC aurait rendu le 9). Le calcul se fait sur les champs locaux.
-	const maxLockDate = (() => {
-		const [y, m, d] = todayLocal().split('-').map(Number);
-		return todayLocal(new Date(y, m - 1, d - 1));
-	})();
+	// Story 35-5a (#907) : la veille du jour **de Zurich**, le jour même que juge le
+	// serveur — à 00 h 30 le 11 mars, le 10 mars (la veille UTC aurait rendu le 9),
+	// quel que soit le fuseau du poste (revue P1, E1 : la veille du jour du poste
+	// proposait, sur un poste à l'est de Zurich, une borne refusée).
+	const maxLockDate = dayBefore(todayInZurich());
 
 	let lockThrough = $state('');
 	let unlockThrough = $state('');

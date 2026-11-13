@@ -710,7 +710,7 @@ ce qui \textbf{entre dans le passé}, jamais ce qui \textbf{corrige depuis le pr
 cette distinction qui empêche le verrou de rendre vos livres incorrigibles --- et c'est pourquoi
 Kesh refuse de poser une borne à la date du jour ou dans le futur. La date du jour est celle de
 Zurich (\S\ref{sec:date-du-jour})~: à minuit et demi, «~jusqu'à hier~» est accepté, et l'écran
-propose cette veille.
+propose cette veille --- la veille du jour de Zurich, quel que soit le fuseau de votre poste.
 \textbf{Une exception}~: l'annulation d'un règlement (ou d'un paiement) dont le
 \textbf{lettrage} s'est figé avec la période est refusée --- elle défairait un lettrage de la
 période verrouillée~; le verrou doit reculer pour la permettre (ci-dessus).
@@ -737,15 +737,19 @@ apparente}.
 \begin{keshnote}[title={La date du jour est celle de Zurich, même la nuit}]\label{sec:date-du-jour}
 Ce que Kesh date \textbf{du jour} --- la contre-passation et les annulations qui contre-passent
 (règlement, facture fournisseur, rapprochement), le solde d'ouverture d'un compte bancaire et
-la régularisation des soldes de départ, le premier exercice créé par l'assistant --- et la borne
-du verrou de période, que Kesh refuse au jour même, prennent \textbf{la date de Zurich}, même
-entre minuit et une heure du matin (deux heures en été)~: une correction faite le
-1\textsuperscript{er} janvier à minuit et demi est datée du 1\textsuperscript{er} janvier, dans
-le nouvel exercice. L'écran, lui, propose la date \textbf{de votre poste} (une date de facture,
-la borne du verrou)~; pour un poste réglé sur la Suisse, ce sont les mêmes. \emph{Depuis la
-version 0.17.7~; avant, c'était le jour UTC du serveur, qui ne change qu'à une ou deux heures
-du matin à Zurich. Les autres dates du jour (factures échues, rappels, postes ouverts,
-accueil, noms de fichiers) suivront.}
+la régularisation des soldes de départ, le premier exercice que l'assistant crée pour votre
+société --- et la borne du verrou de période, que Kesh refuse au jour même, prennent \textbf{la
+date de Zurich}, même entre minuit et une heure du matin (deux heures en été)~: une correction
+faite le 1\textsuperscript{er} janvier à minuit et demi est datée du 1\textsuperscript{er}
+janvier, dans le nouvel exercice. L'écran propose la veille de ce même jour comme borne du verrou,
+quel que soit le fuseau de votre poste~; pour une date que vous saisissez (une date de facture),
+il propose la date \textbf{de votre poste} --- pour un poste réglé sur la Suisse, ce sont les
+mêmes. \emph{Depuis la version 0.17.7~; avant, c'était le jour UTC du serveur, qui ne change
+qu'à une ou deux heures du matin à Zurich. Les autres dates du jour du serveur restent pour
+l'instant au jour UTC, notamment~: l'exercice de la société de démonstration, la date de clôture
+d'un compte bancaire quand elle n'est pas donnée (par l'API), les factures échues, les rappels,
+les postes ouverts, la balance âgée, la fin d'un rapport de projet cumulé, l'accueil et les noms
+de fichiers.}
 \end{keshnote}
 
 Le lien figure aussi dans l'export comptable complet (colonne

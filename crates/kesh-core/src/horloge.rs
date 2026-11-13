@@ -50,6 +50,11 @@ impl Horloge for HorlogeFixe {
 /// n'est jamais ambigu (un instant UTC a une seule heure à Zurich), contrairement
 /// au sens inverse. Entre 22 h ou 23 h UTC et minuit UTC, ce jour est le
 /// lendemain du jour UTC.
+///
+/// ⚠️ Remplacer `Europe::Zurich` par `Europe::Paris`, `Berlin`, `Vienna` ou `Rome`
+/// serait une mutation **équivalente** pour tout instant postérieur à 1981 (mêmes
+/// règles d'heure d'été) : aucun test ne peut la distinguer, et ce n'est pas un trou
+/// de couverture (revue P1, E4).
 pub fn jour_suisse(instant: DateTime<Utc>) -> NaiveDate {
     instant
         .with_timezone(&chrono_tz::Europe::Zurich)
@@ -147,6 +152,19 @@ mod tests {
             "borne hiver, 23 h 59 min 59 s",
         ),
         ("2025-12-31T23:00:00Z", (2026, 1, 1), "borne hiver, minuit"),
+        // Revue P1 (E2) : le premier minuit à l'heure d'hiver, à la seconde. La seconde
+        // même du changement d'heure (01:00:00Z) tombe à 02 h ou 03 h locales : elle ne
+        // peut pas changer le jour.
+        (
+            "2026-10-25T22:59:59Z",
+            (2026, 10, 25),
+            "premier soir d'hiver, 23 h 59 min 59 s CET",
+        ),
+        (
+            "2026-10-25T23:00:00Z",
+            (2026, 10, 26),
+            "premier minuit d'hiver, 00 h CET",
+        ),
     ];
 
     #[test]
