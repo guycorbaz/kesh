@@ -1,6 +1,6 @@
 # Story 35-2a : le refus du PDF dit, dans un message localisé, quoi corriger — champ, caractère, adresse, pays (#955, #964)
 
-Status: review
+Status: done
 
 *Validation terminée (P1 à P7, 2026-11-12).*
 
@@ -539,3 +539,18 @@ Change Log), captures dans `captures/`.
     (permis).
   - La boucle continue : une passe P2 est à lancer par l'orchestrateur (2 MEDIUM en P1).
 
+
+### 2026-11-13 — Revue de code close (orchestrateur) — synthèse finale
+
+- **Trend** : P1 (Opus, trois lentilles, `745e788f`) : 2 MEDIUM, 8 LOW → remédiation `f934bd64` (production touchée : trois
+  phrases ×4 locales et leurs replis, manuel, CHANGELOG) → P2 ciblée (Sonnet, une lentille sur `f934bd64`, prompt
+  `35-2a-refus-pdf-contrat-details-review-prompt-p2-ciblee.md`, `e95a5509`) : **0 au-dessus de LOW**, 1 LOW. Boucle close en P2 :
+  la passe ne rend aucun finding au-dessus de LOW et n'appelle aucune remédiation. Rapports hors dépôt :
+  `kesh-gate-logs/e352a-review-p1-{B,E,A}.md`, `e352a-review-p2-ciblee.md`.
+- **Vérification du « 0 » par l'orchestrateur** : les sous-chaînes de B2 relues dans les quatre catalogues
+  (`/usr/bin/grep -h '^invoice-pdf-error-empty-company-…'` : « le NPA est vide », « Die PLZ ist leer », « il NPA è vuoto »,
+  « the postcode is empty » présents, la parenthèse portant les deux mots) ; les phrases du nom ne nomment plus d'écran.
+- **LOW tracés** : P1 → #1099 à #1104 (et #1096, #1097, #1098 ouvertes pendant la revue) ; P2 C1 (garde « Organi » étroite) → #1106.
+- **Gates** au dernier commit de code `f934bd64` : test-fast 5331, gate-ci 5338, Vitest 3188, E2E 404 passés / 7 KF-029 (relevés
+  par l'agent de développement, recoupés par la P2 aux journaux `kesh-gate-logs/e352a/p1-*`).
+- **PR** : `closes #964`, `refs #955` (la 35-2b porte le reste de #955).
