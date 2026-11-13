@@ -1,6 +1,6 @@
 # Story 35-5a : la date du jour est celle de Zurich pour ce qui écrit dans les livres ou les borne — solde d'ouverture, contre-passation, annulation de règlement, verrou de période, premier exercice de l'assistant (#1022, #907, #929)
 
-Status: review
+Status: done
 
 *Fiche rédigée le 2026-11-12 par l'agent de kickoff de l'Epic 35 (Opus 5.5), worktree `kesh-e35`, par le workflow
 `bmad-create-story` ; remédiée après les validations P1 à P3 le même jour (worktree `kesh-e355`, Change Log). Née du
@@ -260,6 +260,10 @@ et deviennent fausses à la fusion. Partout ailleurs (`:259-261`, `:355`, `:709`
   `vi.setSystemTime(new Date('2026-03-10T23:30:00Z'))` — le même instant que l'AC4 serveur — **avant** le rendu, et lit
   l'attribut `max` du champ : `2026-03-10` (le code de départ, veille UTC, rend `2026-03-09`). Sans le fuseau fixé, une date
   construite en champs locaux rendait le test vert avant correction sous TZ=UTC (validation P3, V3-3).
+  *(Annoté le 2026-11-13, clôture, C3 de la revue P2 : la règle « la veille du jour **local** » de D7 est **remplacée** par
+  « la veille du jour **de Zurich** » — `maxLockDate = dayBefore(todayInZurich())` (`local-date.ts`), commit `527f57839`,
+  remédiation de la revue P1 (E1) : la veille du jour du poste proposait, sur un poste à l'est de Zurich, une borne que le
+  serveur refuse. Vitest épinglé aussi à New York et à Athènes. Le texte ci-dessus reste tel qu'écrit à sa date.)*
 
 ## Critères d'acceptation
 
@@ -834,3 +838,31 @@ partie). Aucune clé i18n, aucune spec E2E (C-e355a-6).
     (`p1-gate-test-fast.log` ; +1 : la nuit d'été d'AC4) ; frontend — `check` 0 erreur (29 avertissements, aucun dans un fichier
     de la story), `lint-i18n-ownership` vert, `test:unit` **3217 passés, 232 fichiers**, `build` vert (`p1-gate-front-*.log`).
     **`gate-ci` et E2E : à la clôture.** Statut : `review` ; passe suivante à lancer sur `527f57839`.
+
+### 2026-11-13 — Clôture — synthèse finale
+
+- **Trend de la revue de code** (`CLAUDE.md` § *Review Iteration Rule*) : P1 (Opus, trois lentilles B/E/A, sur
+  `eabafed5f..c5972ca13`) **2 MEDIUM distincts** (B1 = A1 : textes de l'assistant ; E1 : borne de l'écran au jour du poste) et
+  12 LOW → remédiation `527f57839` (un commit de code) → P2 **ciblée** (Sonnet, une lentille, sur `527f57839` ; prompt
+  `4642b082d`) **0 au-dessus de LOW, 3 LOW** : C1 et C2 tracés (#1128, #1129), C3 (doc) appliqué ici — D7 annotée de son
+  remplacement par la veille du jour de Zurich. Boucle close sur une passe sans finding au-dessus de LOW, après une
+  remédiation qui ne touche aucun code (C3). Rapports hors dépôt : `kesh-gate-logs/e355a-review-p1-{B,E,A}.md` et le rapport
+  de la P2 ciblée tenu par l'orchestrateur. Aucun reclassement, aucun finding réfuté. Signal de découpage : non levé.
+- **Issues** tracées par l'orchestrateur : #1125 (tests à dates ou exercices fixes de 2026, qui rougiront dès 2027), #1126 (test
+  MCP `abandon_au_delai_le_permis_reste_pris` rouge isolé), #1127 (A4 : rouges et mutations relevés à un seul site des tests
+  multi-sites), #1128 (C1 de la P2 : un commentaire de `local-date-guard.test.ts` décrit encore la borne comme la veille de
+  `todayLocal`) et #1129 (C2 : la borne `max` de l'écran est figée à l'ouverture de la page).
+- **Gates de clôture** au dernier commit de code `527f57839` (HEAD `4642b082d`, sans différence de code :
+  `git diff --stat 527f57839 HEAD -- crates frontend` vide), règle de l'Epic 35 : `scripts/gate-ci.sh kesh_ci_e355a` **5365
+  passés, 0 échoué, 17 ignorés** (`kesh-gate-logs/e355a/cloture-gate-ci.log`, `cloture-gate-ci.journal`) ; **E2E complet**
+  sur `kesh_e2e_e355a` recréée à neuf, migrée et semée, backend `target/debug/kesh-api` et frontend rebâtis au commit
+  (`cloture-build.log`), port 3410, montage de `docs/testing.md` (`cloture-e355a.sh`) : **403 passés, 7 échecs, 18 ignorés**
+  (`cloture-e2e.log`, 18,5 min). Les sept échecs sont, un par un, ceux de la **KF-029 (#97)** au tableau de `docs/testing.md`
+  § « Les échecs attendus » : `mode-expert.spec.ts:26`, `:41` ; `onboarding-path-b.spec.ts:65`, `:92` ; `onboarding.spec.ts:57`,
+  `:77`, `:150`. Aucun échec changeant, aucun imputable à la story. Backend arrêté par son PID (737979), port libre avant et
+  après.
+- **Récapitulatif des gates de la story** : passage en `review` (`c5972ca13`) — `test-fast` 5357/5357, `gate-ci` 5364/0/17,
+  Vitest 3192 ; remédiation P1 (`527f57839`) — `test-fast` 5358/5358, Vitest 3217 ; clôture (`527f57839`) — `gate-ci` 5365/0/17,
+  E2E 403/7 KF-029/18. Inventaire de nuit : `nuit.log` (nuit réelle, minuit ±1 s, −3 et −45 jours : 0 rouge sur 5357).
+  Mutations : M1, M2 (aussi côté serveur), M3, M4, M5, M7, M9, M10 tuées. **Aucune migration.**
+- Statut : **`done`**.
