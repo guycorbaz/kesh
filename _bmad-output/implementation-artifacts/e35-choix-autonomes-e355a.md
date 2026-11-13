@@ -72,3 +72,21 @@
   du jour UTC D et contre-passée au jour suisse D+1 reste valide (la contre-passation suit). Le E2E ne peut pas prouver la
   nuit par exécution : son serveur est le binaire servi, qui ne lit jamais `KESH_TEST_INSTANT` — angle mort écrit.
 - **Réversibilité** : totale.
+
+### C-e355a-7 — AC9 : la campagne d'instants, et les rouges qui ne viennent pas de la nuit
+
+- **Contexte** : AC9 demande la nuit réelle reproduite de jour (tous binaires) et deux instants fixés (`2025-12-31T23:30Z`,
+  `2026-03-10T23:30Z`) « verts » pour les binaires des fichiers 35-5a ; la 35-5a0 transmet F3 (un instant à plus de trois
+  jours, minuit, bascule d'exercice). Sous les deux instants de la fiche, cinq tests rougissent — dont `reconciliation_e2e`
+  (fichier 35-5a) et `supplier_invoices_draft` (converti par la 35-5a0) — parce que leurs montages posent des **dates fixes de
+  2026** (verrou au `2026-05-15`, borne au `2026-03-31`…) que l'instant précède ; le même relevé, **de jour** au 11 mars 2026
+  (`nuit-C9.log`), rend les mêmes cinq.
+- **Option retenue** : campagne de onze passages (`kesh-gate-logs/e355a/nuit.log`) : référence, nuit réelle, minuit ±1 s, −3 et
+  −45 jours, les deux instants de la fiche, un passage d'année **postérieur** aux dates fixes (`2026-12-31T23:30Z`), et deux sondes
+  de jour (15 janvier 2027, 11 mars 2026) qui séparent ce qui tient à la nuit de ce qui tient à l'instant. Les cinq rouges des
+  instants de la fiche sont laissés tels quels : ils ne disent rien de la nuit, ne rougissent jamais à l'heure réelle (qui ne
+  recule pas), et les « corriger » reviendrait à réécrire des dates fixes voulues par leurs tests. Écart à la lettre d'AC9,
+  déclaré. Les rouges de 2027 (montages à exercice fixe 2026) sont une dette hors story : issue demandée.
+- **Autres options** : convertir les dates fixes en dates relatives au jour de test (cinq tests, hors du périmètre « sites de la
+  35-5a », risque de changer ce qu'ils prouvent).
+- **Réversibilité** : totale.

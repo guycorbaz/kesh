@@ -1,6 +1,6 @@
 # Story 35-5a : la date du jour est celle de Zurich pour ce qui écrit dans les livres ou les borne — solde d'ouverture, contre-passation, annulation de règlement, verrou de période, premier exercice de l'assistant (#1022, #907, #929)
 
-Status: ready-for-dev
+Status: review
 
 *Fiche rédigée le 2026-11-12 par l'agent de kickoff de l'Epic 35 (Opus 5.5), worktree `kesh-e35`, par le workflow
 `bmad-create-story` ; remédiée après les validations P1 à P3 le même jour (worktree `kesh-e355`, Change Log). Née du
@@ -546,21 +546,40 @@ d'exemptions éditée ensuite par la 35-5a, la 35-5b puis la 35-5c (hunks de la 
 
 ### Agent Model Used
 
+Opus 5.5 (agent de développement, worktree `kesh-e355a`, clé `e355a`), 2026-11-13.
+
 ### Debug Log References
+
+Journaux sous `/home/gcorbaz/devel/kesh-gate-logs/e355a/` : `rouges.log` (et `rouges-kesh-core.log`, `rouges-api{,-2,-3}.log`,
+`rouges-vitest.log`), `verts-api.log`, `verts-vitest.log`, `nuit.log` (synthèse d'AC9) et `nuit-{N0,N1,N2,C0…C9}.log`
+(environnement et commit en tête), `mut/` (mutations), `captures/` et `captures.log`, `manuel-make.log`, `gate-*.log`.
 
 ### Completion Notes List
 
-- Fiche rédigée par le workflow `bmad-create-story` (analyse du code de `release/0.17.6`) ; validation à lancer.
+- **Commits** : `076d63ed3` squelette (vert) ; `c2e3e788c` bascule, tests neufs, écran, docs, manuel `.tex`, CHANGELOG ;
+  `ada7e1d61` conversions d'AC9 (huit fichiers, garde) ; `c5972ca13` passage d'année de `period_lock_e2e` ; puis le commit de
+  compte rendu (fiche, PDF, `sprint-status.yaml`, prompt de revue). **Aucune migration** (AC12 :
+  `git diff --stat eabafed5f HEAD -- crates/kesh-db/migrations` vide).
+- Choix : `e35-choix-autonomes-e355a.md`, C-e355a-1 à -7.
+- Voir le Change Log (entrée du développement) pour l'étape 0, les rouges, l'inventaire par exécution, les mutations et les gates.
 
 ### File List
 
-*Attendue (à confirmer ; la plomberie est à la 35-5a0)* : `crates/kesh-core/{Cargo.toml,src/horloge.rs}` (`jour_suisse`,
-bascule) ; `kesh-db/src/repositories/{companies,opening_complement}.rs` et `kesh-api/src/routes/bank_accounts.rs`
-(commentaires, D6) ; `kesh-api/src/services/rapports.rs` (doc-comment de `synthese_accueil`, `:862-864`, D6) ;
-`crates/kesh-api/tests/date_du_jour_garde.rs` (comptes), `tests/common/horloge.rs`, les fichiers
-**35-5a** du tableau de verdict et le `mod tests` de `journal_entries.rs` ; les tests neufs d'AC1 à AC7 ;
-`frontend/src/routes/(app)/settings/+page.svelte`, `frontend/src/lib/shared/utils/local-date-guard.test.ts`, les specs E2E
-qui assertent une date d'un site de la 35-5a ; `docs/api-external.md`, `docs/manual/fr/user-manual.{tex,pdf}`, `CHANGELOG.md`.
+**Production** : `crates/kesh-core/{Cargo.toml,src/horloge.rs}` (`jour_suisse`, bascule) ; `Cargo.lock` (une arête,
+`kesh-core → chrono-tz` 0.10.4, déjà au graphe) ; commentaires D6 : `crates/kesh-api/src/routes/bank_accounts.rs:794-795`,
+`crates/kesh-db/src/repositories/opening_complement.rs:22`, `crates/kesh-api/src/services/rapports.rs:862-864` ;
+`frontend/src/routes/(app)/settings/+page.svelte` (D7).
+
+**Tests** : neufs — `crates/kesh-api/tests/jour_suisse_nuit_e2e.rs` (AC2, AC3, AC4, AC7), `crates/kesh-api/tests/common/horloge.rs`
+(`avec_horloge`) ; modifiés — `kesh-core/src/horloge.rs` (`mod tests`, AC1), `kesh-api/tests/{horloge_routes_e2e (AC10, test
+retourné), horloge_etat (AC7), fiscal_years_e2e (AC5, année du chemin B), common/mod.rs, date_du_jour_garde (comptes),
+bank_account_opening_balance_e2e, opening_balances_e2e, dates_bornes_e2e, filet_bilan_clos_e2e, letterings_e2e,
+reconciliation_rules_e2e, rejeu_interblocage_e2e, period_lock_e2e}.rs`, `kesh-db/tests/fiscal_years_repository.rs` ;
+`frontend/src/routes/(app)/settings/settings-page.test.ts` (AC4 écran), `frontend/src/lib/shared/utils/local-date-guard.test.ts`.
+
+**Docs** : `docs/api-external.md:272`, `docs/manual/fr/user-manual.{tex,pdf}` (§ *La date du jour est celle de Zurich*, `:737`,
+complément `:1013`, solde d'ouverture `:2488`, verrou `:711`), `docs/testing.md:119`, `CHANGELOG.md` (`## [0.17.7] — Non publié`, *Corrigé* : #1022, #907, #929 en
+partie). Aucune clé i18n, aucune spec E2E (C-e355a-6).
 
 ## Change Log
 
@@ -673,3 +692,80 @@ qui assertent une date d'un site de la 35-5a ; `docs/api-external.md`, `docs/man
     du découpage **C-e350-28** (35-5a0 pour la plomberie, comportement inchangé ; la 35-5a pour la bascule au jour suisse).
     **Validation terminée** sur une passe qui ne rend aucun finding au-dessus de LOW. Aucune migration. Statut
     `ready-for-dev`, après la fusion de la 35-5a0.
+- 2026-11-13 — **Développement** (Opus 5.5, worktree `kesh-e355a`, base `eabafed5f` = 35-5a0 close, qui porte aussi la 35-3).
+  Journaux : `/home/gcorbaz/devel/kesh-gate-logs/e355a/`.
+  - **Étape 0.** LOW de la validation P5 : V5-1 (AC11 contrôle aussi « encore la veille ») tenu au contrôle final ; V5-2
+    (`journal_entries.rs:4457`, année du jour dans le `mod tests`) : ligne lue, l'année n'est comparée à aucun jour du serveur
+    dans ce module (aucune horloge) ; V5-3 : le test retourné est `horloge_routes_e2e.rs` (montage `seed_accounting_company`,
+    2020-2030). `chrono-tz` : `/usr/bin/grep -n -A4 '^name = "chrono-tz"' Cargo.lock` → `0.10.4` ; `cargo tree -i chrono-tz -e
+    features` → par `rxing` 0.7.1, `default` ; ajouté à `kesh-core` à la même version, `Cargo.lock` gagne une ligne (l'arête).
+    **Transmis par la 35-5a0** : `configuration_transmise.rs` compte `NOM_VARIABLE_INSTANT` 2 — inchangé, la garde reste verte ;
+    `horloge_de_test` par `env_nonempty` — inchangé ; **E3** (lecture unique avant l'attente d'un verrou) : pas au manuel,
+    C-e355a-4 ; montages et horloge — `homepage_summary_e2e.rs` reste 35-5b (son `today()` est le site 21) ; Lecture du MCP tenue
+    lexicalement, AC7 en ajoute la preuve par `state.lecture().aujourd_hui()` ; #1105 non traitée ici ; **F3** (instant à plus
+    de trois jours, minuit, bascule d'exercice) : joué, voir l'inventaire. Inventaire D5 :
+    `git grep -nE 'HorlogeFixe\(\s*(chrono::)?Utc::now' -- 'crates/*/src/*' 'crates/*/tests/*'` → `middleware/auth.rs:302`
+    (état des tests du middleware sur `stub_pool`, ne date rien) et deux chaînes de `date_du_jour_garde.rs` (:610 commentaire,
+    :802 sonde). Le `mod tests` de `journal_entries.rs` : ses deux `reverse_in_tx` reçoivent la date de leur montage
+    (`:3991` `jour`, `:5845` `today`) — sûrs la nuit par la valeur, aucun à convertir ; il reste à 50 à la garde, classé 35-5c.
+  - **Rouges** (`rouges.log`), sur le squelette `076d63ed3` (`jour_suisse` au corps UTC, compte de la garde de `horloge.rs` à 1) :
+    AC1 3/8 (M1 compris) ; HTTP 18/26 — AC2, les cinq chemins et le refus d'AC3, AC4 ×2, AC5, AC7 (lecture), le test retourné ;
+    six rouges de la garde, une seule cause (l'année du chemin B convertie, exemption ramenée de 2 à 1) ; Vitest 3/62 (M9).
+    Le premier montage d'AC7 était invalide (exercice 2026 clos d'avance : `LATER_FISCAL_YEAR_CLOSED`), le second rendait le rang
+    2 bis quel que soit le jour ; le troisième (sans exercice 2026) rougit pour la bonne raison (`rouges-api-3.log`) —
+    C-e355a-3, **écart à la lettre d'AC7** (« exercice clos » → « aucun exercice ouvert au jour suisse »).
+  - **Bascule** (`c2e3e788c`) : `jour_suisse` = `instant.with_timezone(&chrono_tz::Europe::Zurich).date_naive()` ; AC1 8/8 ;
+    tests ciblés 66/67 puis verts après alignement du refus d'AC3 sur `400 FISCAL_YEAR_INVALID` (le refus du rang 5 au clic,
+    `api-external.md:572`, au lieu du texte du motif de la liste). Écran (D7) : veille de `todayLocal` sur ses champs ; l'entrée
+    d'allowlist du verrou retirée (huit → sept), et les sondes de la garde frontend, qui visaient `ALLOWLIST[3]` par position,
+    désignent l'entrée par son fichier. Vitest ciblé 69/69 (`verts-vitest.log`).
+  - **Inventaire par exécution (AC9)** — synthèse et tri ligne par ligne : `kesh-gate-logs/e355a/nuit.log`. **Sonde positive** :
+    sur `c2e3e788c`, la nuit réelle reproduite (`KESH_TEST_INSTANT=2026-11-13T23:30:00Z`) rend 2 rouges que la fiche n'avait
+    pas nommés — `bank_account_opening_balance_e2e.rs:731`, `opening_balances_e2e.rs:1472` (borne posée au jour UTC, jugée au
+    jour suisse) —, absents sans instant (N0, 5357/5357) : la méthode voit. Le passage d'année (2025-12-31T23:30Z) rend en outre
+    4 rouges de `period_lock_e2e` (pièces à `aujourd_hui - 5..10` hors de l'exercice civil du montage) : défaut de passage
+    d'année d'un fichier 35-5a, corrigé (`c5972ca13`). Les **huit fichiers classés 35-5a** sont convertis à
+    `aujourd_hui_test()` (`ada7e1d61`) et sortent de la garde. **Campagne sur `c5972ca13`** (11 passages, base remise à neuf
+    avant chacun) : référence, nuit réelle, minuit ±1 s, −3 jours, −45 jours → **0 rouge sur 5357** (hors un intermittent MCP
+    sous charge à 22:59:59Z, sans lecture de date, rejoué isolé) ; instants de la fiche (2025-12-31, 2026-03-10) → 5 rouges
+    communs, les mêmes qu'une sonde **de jour** au 11 mars 2026 : montages à **dates fixes de 2026** que l'instant précède,
+    artefact de l'instant (C-e355a-7, **écart à la lettre d'AC9**, déclaré) ; passage d'année 2026→2027 et sonde de jour au
+    15 janvier 2027 → 9 puis 13 rouges : montages à **exercice fixe 2026**, qui rougiront chaque jour de 2027 (issue demandée).
+    Le verdict des fichiers « à lire » (`credit_card_e2e`, `reconciliation_link_e2e`, second tableau) : **35-5c**, établi par
+    l'exécution (aucun rouge la nuit). **Angles morts** écrits au § 4 de `nuit.log` (binaire servi, SQL de montage, ignorés,
+    au-delà de −45 jours et du 15 janvier 2027).
+  - **Specs E2E** : aucune n'asserte une date que pose un site de la 35-5a (C-e355a-6, lignes lues) ; liste vide, transmise à
+    la 35-5c.
+  - **La garde** (AC8), recomptée depuis la source : 39 → **31** entrées (huit retirées, `fiscal_years_e2e.rs` 2 → 1, l'entrée
+    de `journal_entries.rs` requalifiée 35-5c) ; verte à l'exécution (dans chaque passage de la campagne). Sondes : positive et
+    multi-ligne (`sonde_une_forme_ajoutee_rougit_entiere_ou_coupee`), compte + 1 (`sonde_une_exemption_portee_a_plus_un_rougit`),
+    vertes ; M5 (une exemption sans site) la fait rougir.
+  - **Mutations** (`mut/`, restauration `git checkout --` puis `touch`) : M1 (jour UTC) 16 rouges ; M2 (fuseau fixe +1 h) 1 rouge,
+    le cas d'été `2026-07-01T22:30:00Z` ; M3 (contre-passation lue sur `Utc::now()`) 8 ; M4 (`lock_books` au jour UTC) 7, dont
+    `ac4_verrouiller_jusqu_a_hier_la_nuit` ; M5 5 (garde) ; M7 (contre-passation de l'annulation sur l'horloge réelle) 1,
+    `ac3_annulation_d_un_reglement_client_la_nuit` ; M9 (écran, veille UTC) 3. **Toutes tuées.** M6 et M8 : 35-5a0.
+  - **Docs** (D6, AC11) : `api-external.md:272` « du jour, à Zurich » ; commentaires `bank_accounts.rs:794-795`,
+    `opening_complement.rs:22`, clause « comme à la contre-passation » retirée de `rapports.rs:862-864` ; `docs/testing.md:119` ;
+    manuel : § *La date du jour est celle de Zurich, même la nuit* (`user-manual.tex:737`, écran du poste et serveur distingués),
+    renvois depuis le verrou (`:711`), le complément (`:1013`) et le solde d'ouverture (`:2488`). Contrôle :
+    `/usr/bin/grep -nE 'temps universel|encore la veille' docs/manual/fr/user-manual.tex` → vide ; PDF régénéré
+    (`make user`, 3 passes, `manuel-make.log`), aplati (`pdftotext … | tr '\n' ' ' | tr -s ' '`), les deux motifs → vides.
+    `/usr/bin/grep -n UTC` sur les fichiers de production touchés : ne restent que les mentions des sites 35-5b
+    (`bank_accounts.rs:228`, `:1757` ; `rapports.rs:724`, `:863`) et, dans `horloge.rs`, l'UTC comme référence décrite. CHANGELOG :
+    trois points *Corrigé* (#1022, #907, #929 en partie). Aucune clé i18n.
+  - **Captures** (thème clair, poste à Zurich, horloge du navigateur fixée ; `captures/`, `captures.log`) : borne `max` = 10 mars
+    à 00 h 30 le 11 mars, 31 décembre à 00 h 30 le 1er janvier, la veille le jour ; chaque état avant et après saisie de la borne.
+    Le serveur servi ne lit pas `KESH_TEST_INSTANT` : l'acceptation nocturne côté serveur ne se capture pas, elle est prouvée par
+    AC4.
+  - **Écarts** : consigne Edit — `prettier --write` lancé une fois sur `local-date-guard.test.ts` (configuration par défaut,
+    322 lignes réécrites), aussitôt défait par `git checkout --` et les quatre éditions refaites à l'outil Edit ; `cargo fmt`
+    pour les retours de ligne (C-e355a0-2). Scripts Python seulement pour les mutations (`mut/mut-e355a.py`) et pour corriger
+    quatre numéros de ligne du relevé hors dépôt `nuit.log`.
+  - **Gates du passage en `review`**, au dernier commit de code `c5972ca13`, bases remises à neuf (consignes
+    `e35-dev-commun.md`) : `scripts/test-fast.sh --ci` (fmt et clippy du workspace compris) **5357 exécutés, 5357 passés, 13
+    ignorés** (`gate-test-fast.log`) ; `scripts/gate-ci.sh kesh_ci_e355a` **5364 passés, 0 échoué, 17 ignorés** (`gate-ci.log`,
+    `gate-ci.journal`) ; frontend complet — `npm run check` 0 erreur (29 avertissements, aucun dans un fichier de la story),
+    `lint-i18n-ownership` vert, `test:unit` **3192 passés, 232 fichiers**, `build` vert (`gate-front-*.log`). **E2E : non
+    lancé**, à la clôture (avec `gate-ci`, à la demande de l'orchestrateur). Hors story : `mcp_transport_e2e::
+    abandon_au_delai_le_permis_reste_pris` rougit **isolé** 3 fois sur 3 (`mcp-isole-{1,2,3}.log`) et passe dans la suite
+    complète ; la story ne touche ni le test ni `src/mcp` (diff vide) — issue demandée. Statut : `review`.
