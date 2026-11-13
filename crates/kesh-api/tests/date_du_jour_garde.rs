@@ -268,9 +268,11 @@ const EXEMPTIONS: &[Exemption] = &[
     ),
     (
         "kesh-api/tests/bank_accounts_closed_e2e.rs",
-        6,
-        "35-5a / 35-5b",
-        "annulation de règlement ; `closedOn`",
+        // 6 → 2 : remédiation P3 (D4), le montage passe au jour de l'horloge de test ;
+        // restent les deux lectures de `closedOn` (site 11, 35-5b).
+        2,
+        "35-5b",
+        "`closedOn`",
     ),
     (
         "kesh-api/tests/credit_card_e2e.rs",
@@ -320,12 +322,8 @@ const EXEMPTIONS: &[Exemption] = &[
         "35-5c",
         "dates de facture",
     ),
-    (
-        "kesh-api/tests/journal_entry_reversal_e2e.rs",
-        20,
-        "35-5a",
-        "contre-passation datée du jour",
-    ),
+    // Remédiation de la revue P3 (exécution sous instant décalé) : `journal_entry_reversal_e2e.rs`
+    // et `period_lock_e2e.rs` sortis de la liste, leurs jours lisant l'horloge de test.
     (
         "kesh-api/tests/letterings_e2e.rs",
         2,
@@ -364,12 +362,6 @@ const EXEMPTIONS: &[Exemption] = &[
         "complément des soldes de départ",
     ),
     (
-        "kesh-api/tests/period_lock_e2e.rs",
-        19,
-        "35-5a",
-        "verrou de période",
-    ),
-    (
         "kesh-api/tests/reconciliation_link_e2e.rs",
         1,
         "35-5c",
@@ -406,12 +398,8 @@ const EXEMPTIONS: &[Exemption] = &[
         "35-5a",
         "contre-passation",
     ),
-    (
-        "kesh-db/tests/supplier_invoices_draft.rs",
-        1,
-        "35-5a",
-        "annulation",
-    ),
+    // Remédiation de la revue P3 (D4) : `supplier_invoices_draft.rs` sorti de la liste,
+    // son `aujourdhui()` lisant le jour de l'horloge de test.
     // Remédiation de la revue P2 (D4, inventaire parti du symptôme) : sortis de la liste,
     // leurs montages lisant le jour de l'horloge de test — `reconciliation_e2e.rs`,
     // `filet_bilan_clos.rs`, `invoice_settlement.rs`, `letterings.rs`, `open_items.rs`,

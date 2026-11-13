@@ -1481,13 +1481,16 @@ async fn a_draft_cannot_be_paid(pool: MySqlPool) {
 // ---------------------------------------------------------------------------
 //
 // Topologie des exercices (fiche, AC-5) : le décor n'a qu'un exercice,
-// 2020-2030, ouvert, et la contre-passation est datée **du jour** (horloge
-// réelle). Les tests à deux exercices le **scindent en SQL** relativement à
-// l'année du jour `Y` : `A` = `Y-2`, `B` = `Y-1`, `C` = [`Y`-01-01,
-// 2030-12-31] (l'exercice du décor, raccourci).
+// 2020-2030, ouvert, et la contre-passation est datée **du jour** — celui de
+// l'horloge de test (Story 35-5a0), que reçoivent `annuler` et `repasser`.
+// Les tests à deux exercices le **scindent en SQL** relativement à l'année du
+// jour `Y` : `A` = `Y-2`, `B` = `Y-1`, `C` = [`Y`-01-01, 2030-12-31]
+// (l'exercice du décor, raccourci).
 
+/// Le jour de l'horloge de test (Story 35-5a0, D4, revue P3) : un seul jour pour
+/// le montage, les gestes et les assertions.
 fn aujourdhui() -> NaiveDate {
-    chrono::Utc::now().date_naive()
+    crate::jour::aujourd_hui_test()
 }
 
 /// Les trois exercices de la scission.

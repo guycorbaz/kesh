@@ -320,7 +320,9 @@ impl Ctx {
     /// le dépôt (la fonction que la route appelle) : `(import, transaction)`.
     async fn import_pending(&self, bank: i64, montant: &str, cle: &str) -> (i64, i64) {
         use std::str::FromStr;
-        let jour = Utc::now().date_naive();
+        // Story 35-5a0 (D4, revue P3) : le jour de l'horloge de test, celui du serveur
+        // (`new_for_tests`) qui date les annulations de ces tests.
+        let jour = crate::common::jour::aujourd_hui_test();
         let mut tx = self.pool.begin().await.unwrap();
         let (header, txs) = bank_imports::create_with_transactions(
             &mut tx,
@@ -383,7 +385,7 @@ impl Ctx {
                 "/api/v1/invoices",
                 json!({
                     "contactId": client,
-                    "date": Utc::now().date_naive().to_string(),
+                    "date": crate::common::jour::aujourd_hui_test().to_string(),
                     "lines": [
                         {"description": "Conseil", "quantity": "1", "unitPrice": "100.00", "vatRate": "8.10"}
                     ]
@@ -497,7 +499,7 @@ impl Ctx {
                 "settlementType": "bank_transfer",
                 "bankAccountId": bank,
                 "amount": "108.10",
-                "settledOn": Utc::now().date_naive().to_string(),
+                "settledOn": crate::common::jour::aujourd_hui_test().to_string(),
                 "version": common::invoice_version(&self.pool, invoice).await,
             }),
         )
@@ -1648,7 +1650,7 @@ async fn les_gestes_qui_creent_refusent_l_archive(pool: MySqlPool) {
                 "settlementType": "bank_transfer",
                 "bankAccountId": a,
                 "amount": "108.10",
-                "settledOn": Utc::now().date_naive().to_string(),
+                "settledOn": crate::common::jour::aujourd_hui_test().to_string(),
                 "version": common::invoice_version(&ctx.pool, facture).await,
             })),
         )

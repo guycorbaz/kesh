@@ -21,7 +21,7 @@ mod common;
 
 use std::sync::Arc;
 
-use chrono::{NaiveDate, TimeDelta, Utc};
+use chrono::{NaiveDate, TimeDelta};
 use common::create_test_company;
 use kesh_api::auth::bootstrap::ensure_admin_user;
 use kesh_api::config::Config;
@@ -133,7 +133,7 @@ async fn setup(pool: &MySqlPool) -> (TestApp, String, i64, i64) {
         .await
         .unwrap();
 
-    let today = Utc::now().date_naive();
+    let today = crate::common::jour::aujourd_hui_test();
     let fy = fiscal_years::create(
         pool,
         1,
@@ -195,7 +195,7 @@ async fn make_entry(
         1,
         NewJournalEntry {
             company_id,
-            entry_date: Utc::now().date_naive(),
+            entry_date: crate::common::jour::aujourd_hui_test(),
             journal: Journal::OD,
             description: "Écriture à corriger".into(),
             project_id: None,
@@ -253,7 +253,7 @@ async fn consultation_token(app: &TestApp, pool: &MySqlPool) -> String {
 // ---------------------------------------------------------------------------
 
 fn hier() -> chrono::NaiveDate {
-    Utc::now().date_naive() - chrono::Duration::days(1)
+    crate::common::jour::aujourd_hui_test() - chrono::Duration::days(1)
 }
 
 async fn poser_verrou(
@@ -332,7 +332,7 @@ async fn le_seuil_du_verrou_est_inclusif(pool: MySqlPool) {
     let d = make_account(&pool, company_id, "6000", AccountType::Expense).await;
     let c = make_account(&pool, company_id, "1020", AccountType::Asset).await;
 
-    let borne = Utc::now().date_naive() - chrono::Duration::days(10);
+    let borne = crate::common::jour::aujourd_hui_test() - chrono::Duration::days(10);
     let (st, body) = poser_verrou(&app, &token, borne).await;
     assert_eq!(st, 200, "la pose doit passer : {body}");
 
@@ -368,7 +368,7 @@ async fn period_locked_carries_its_bounds_in_details_869(pool: MySqlPool) {
     let d = make_account(&pool, company_id, "6000", AccountType::Expense).await;
     let c = make_account(&pool, company_id, "1020", AccountType::Asset).await;
 
-    let borne = Utc::now().date_naive() - chrono::Duration::days(10);
+    let borne = crate::common::jour::aujourd_hui_test() - chrono::Duration::days(10);
     let (st, body) = poser_verrou(&app, &token, borne).await;
     assert_eq!(st, 200, "la pose doit passer : {body}");
 
@@ -413,12 +413,12 @@ async fn une_borne_future_ou_du_jour_est_refusee(pool: MySqlPool) {
     let (st, _) = poser_verrou(
         &app,
         &token,
-        Utc::now().date_naive() + chrono::Duration::days(1),
+        crate::common::jour::aujourd_hui_test() + chrono::Duration::days(1),
     )
     .await;
     assert_eq!(st, 400, "une borne future doit être refusée");
 
-    let (st, _) = poser_verrou(&app, &token, Utc::now().date_naive()).await;
+    let (st, _) = poser_verrou(&app, &token, crate::common::jour::aujourd_hui_test()).await;
     assert_eq!(
         st, 400,
         "une borne à la date du JOUR doit être refusée aussi"
@@ -449,7 +449,7 @@ async fn la_contre_passation_traverse_le_verrou(pool: MySqlPool) {
     // Une écriture datée d'avant la future borne.
     let origine = make_entry(&pool, company_id, fy_id, d, c, (None, None)).await;
     sqlx::query("UPDATE journal_entries SET entry_date = ? WHERE id = ?")
-        .bind(Utc::now().date_naive() - chrono::Duration::days(5))
+        .bind(crate::common::jour::aujourd_hui_test() - chrono::Duration::days(5))
         .bind(origine)
         .execute(&pool)
         .await
@@ -486,7 +486,7 @@ async fn la_contre_passation_traverse_le_verrou(pool: MySqlPool) {
 async fn l_endpoint_d_avancement_ne_peut_pas_reculer_la_borne(pool: MySqlPool) {
     let (app, token, _company_id, _fy) = setup(&pool).await;
 
-    let borne = Utc::now().date_naive() - chrono::Duration::days(10);
+    let borne = crate::common::jour::aujourd_hui_test() - chrono::Duration::days(10);
     let (st, _) = poser_verrou(&app, &token, borne).await;
     assert_eq!(st, 200);
 
@@ -514,7 +514,7 @@ async fn la_garde_de_valeur_se_tait_a_la_premiere_pose(pool: MySqlPool) {
     let (st, body) = poser_verrou(
         &app,
         &token,
-        Utc::now().date_naive() - chrono::Duration::days(365),
+        crate::common::jour::aujourd_hui_test() - chrono::Duration::days(365),
     )
     .await;
     assert_eq!(
@@ -653,7 +653,7 @@ async fn le_verrou_parle_en_dernier(pool: MySqlPool) {
         &token,
         d,
         c,
-        Utc::now().date_naive() - chrono::Duration::days(5),
+        crate::common::jour::aujourd_hui_test() - chrono::Duration::days(5),
     )
     .await;
     assert_eq!(st, 400);
@@ -691,7 +691,7 @@ async fn la_garde_tient_sous_les_flux_automatiques(pool: MySqlPool) {
         1,
         NewJournalEntry {
             company_id,
-            entry_date: Utc::now().date_naive() - chrono::Duration::days(3),
+            entry_date: crate::common::jour::aujourd_hui_test() - chrono::Duration::days(3),
             journal: Journal::OD,
             description: "Soldes de départ antidatés".into(),
             project_id: None,
@@ -780,8 +780,8 @@ async fn le_deverrouillage_refuse_une_borne_future(pool: MySqlPool) {
     assert_eq!(st, 200);
 
     for cible in [
-        Utc::now().date_naive() + chrono::Duration::days(1),
-        Utc::now().date_naive(),
+        crate::common::jour::aujourd_hui_test() + chrono::Duration::days(1),
+        crate::common::jour::aujourd_hui_test(),
     ] {
         let (st, _) = lever_verrou(&app, &token, Some(cible), "motif valable").await;
         assert_eq!(
@@ -797,8 +797,8 @@ async fn le_deverrouillage_refuse_une_borne_future(pool: MySqlPool) {
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn le_deverrouillage_recule_effectivement_la_borne(pool: MySqlPool) {
     let (app, token, _company_id, _fy) = setup(&pool).await;
-    let haute = Utc::now().date_naive() - chrono::Duration::days(10);
-    let basse = Utc::now().date_naive() - chrono::Duration::days(40);
+    let haute = crate::common::jour::aujourd_hui_test() - chrono::Duration::days(10);
+    let basse = crate::common::jour::aujourd_hui_test() - chrono::Duration::days(40);
 
     let (st, _) = poser_verrou(&app, &token, haute).await;
     assert_eq!(st, 200);
@@ -823,14 +823,14 @@ async fn le_deverrouillage_recule_effectivement_la_borne(pool: MySqlPool) {
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn le_deverrouillage_ne_peut_pas_avancer_la_borne(pool: MySqlPool) {
     let (app, token, _company_id, _fy) = setup(&pool).await;
-    let basse = Utc::now().date_naive() - chrono::Duration::days(40);
+    let basse = crate::common::jour::aujourd_hui_test() - chrono::Duration::days(40);
     let (st, _) = poser_verrou(&app, &token, basse).await;
     assert_eq!(st, 200);
 
     let (st, body) = lever_verrou(
         &app,
         &token,
-        Some(Utc::now().date_naive() - chrono::Duration::days(10)),
+        Some(crate::common::jour::aujourd_hui_test() - chrono::Duration::days(10)),
         "tentative d'avancée par le mauvais verbe",
     )
     .await;
@@ -858,7 +858,7 @@ async fn le_deverrouillage_ne_peut_pas_avancer_la_borne(pool: MySqlPool) {
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn le_refus_de_borne_dit_pourquoi(pool: MySqlPool) {
     let (app, token, _company_id, _fy) = setup(&pool).await;
-    let (_st, body) = poser_verrou(&app, &token, Utc::now().date_naive()).await;
+    let (_st, body) = poser_verrou(&app, &token, crate::common::jour::aujourd_hui_test()).await;
     let message = body["error"]["message"].as_str().unwrap_or_default();
     assert!(
         message.to_lowercase().contains("antérieure")
