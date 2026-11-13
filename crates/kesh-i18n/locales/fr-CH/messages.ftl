@@ -970,7 +970,7 @@ invoice-pdf-error-client-address-required = L'adresse du client est obligatoire 
 # Story 35-2a (#955, #964) — le refus du PDF nomme le champ et le caractère à corriger. Une clé par
 # champ et par raison (G9 compare un littéral par clé) ; `$car` est le caractère échappé, `$point` son
 # point de code (`U+2013`), `$max` et `$got` des longueurs, `$code` un code pays tel que stocké.
-invoice-pdf-error-charset-company-name = Le nom de l'entreprise contient un caractère refusé par la QR-facture : « { $car } » ({ $point }). Corrigez-le dans Paramètres → Organisation.
+invoice-pdf-error-charset-company-name = Le nom de l'entreprise contient un caractère refusé par la QR-facture : « { $car } » ({ $point }). Le nom de l'entreprise ne se modifie pas encore depuis l'interface.
 invoice-pdf-error-charset-company-street = La rue de l'entreprise contient un caractère refusé par la QR-facture : « { $car } » ({ $point }). Corrigez-la dans Paramètres → Organisation.
 invoice-pdf-error-charset-company-building = Le numéro de bâtiment de l'entreprise contient un caractère refusé par la QR-facture : « { $car } » ({ $point }). Corrigez-le dans Paramètres → Organisation.
 invoice-pdf-error-charset-company-postal-code = Le NPA de l'entreprise contient un caractère refusé par la QR-facture : « { $car } » ({ $point }). Corrigez-le dans Paramètres → Organisation.
@@ -982,14 +982,14 @@ invoice-pdf-error-charset-client-postal-code = Le NPA du client contient un cara
 invoice-pdf-error-charset-client-city = La localité du client contient un caractère refusé par la QR-facture : « { $car } » ({ $point }). Corrigez la fiche du client dans le carnet d'adresses.
 invoice-pdf-error-charset-invoice-number = Le numéro de facture contient un caractère refusé par la QR-facture : « { $car } » ({ $point }). Une facture validée ne se corrige pas : vérifiez le format de numérotation dans Administration → Facturation.
 invoice-pdf-error-charset-other = Un champ de la QR-facture contient un caractère refusé : « { $car } » ({ $point }). Vérifiez les fiches du client et de l'entreprise.
-invoice-pdf-error-empty-company-name = Le nom de l'entreprise est vide. Complétez-le dans Paramètres → Organisation.
+invoice-pdf-error-empty-company-name = Le nom de l'entreprise est vide. Il ne se modifie pas encore depuis l'interface.
 invoice-pdf-error-empty-company-postal-code = Adresse de l'entreprise incomplète : le NPA est vide. Complétez-la dans Paramètres → Organisation (NPA et localité sont exigés par la QR-facture).
 invoice-pdf-error-empty-company-city = Adresse de l'entreprise incomplète : la localité est vide. Complétez-la dans Paramètres → Organisation (NPA et localité sont exigés par la QR-facture).
 invoice-pdf-error-empty-client-name = Le nom du client est vide. Complétez la fiche du client dans le carnet d'adresses.
 invoice-pdf-error-empty-client-postal-code = Adresse du client incomplète : le NPA est vide. Complétez la fiche du client dans le carnet d'adresses (NPA et localité sont exigés par la QR-facture).
 invoice-pdf-error-empty-client-city = Adresse du client incomplète : la localité est vide. Complétez la fiche du client dans le carnet d'adresses (NPA et localité sont exigés par la QR-facture).
 invoice-pdf-error-empty-other = Un champ obligatoire de la QR-facture est vide. Vérifiez les fiches du client et de l'entreprise.
-invoice-pdf-error-too-long-company-name = Le nom de l'entreprise dépasse { $max } caractères ({ $got }). Raccourcissez-le dans Paramètres → Organisation.
+invoice-pdf-error-too-long-company-name = Le nom de l'entreprise dépasse { $max } caractères ({ $got }). Il ne se modifie pas encore depuis l'interface.
 invoice-pdf-error-too-long-company-street = La rue de l'entreprise dépasse { $max } caractères ({ $got }). Raccourcissez-la dans Paramètres → Organisation.
 invoice-pdf-error-too-long-company-building = Le numéro de bâtiment de l'entreprise dépasse { $max } caractères ({ $got }). Raccourcissez-le dans Paramètres → Organisation.
 invoice-pdf-error-too-long-company-postal-code = Le NPA de l'entreprise dépasse { $max } caractères ({ $got }). Raccourcissez-le dans Paramètres → Organisation.

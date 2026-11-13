@@ -695,6 +695,9 @@ async fn refus_nomme_le_nom_vide_de_l_entreprise(pool: MySqlPool) {
     let m = message_du_refus(&pool, invoice_id).await.to_lowercase();
     assert!(m.contains("nom de l'entreprise"), "{m}");
     assert!(m.contains("vide"), "{m}");
+    // Revue de code P1 (B1) — le nom ne se modifie pas dans Paramètres →
+    // Organisation : la phrase ne doit pas y renvoyer.
+    assert!(!m.contains("organisation"), "{m}");
 }
 
 /// AC1, D9 — un caractère refusé dans la communication vient du numéro de
@@ -729,7 +732,10 @@ async fn refus_nomme_le_npa_vide_de_l_entreprise(pool: MySqlPool) {
     .await;
     let m = message_du_refus(&pool, invoice_id).await.to_lowercase();
     assert!(m.contains("adresse de l'entreprise incomplète"), "{m}");
-    assert!(m.contains("npa"), "{m}");
+    // Revue de code P1 (B2) — la proposition qui nomme le champ, et non l'autre :
+    // la parenthèse « NPA et localité » porte les deux mots.
+    assert!(m.contains("le npa est vide"), "{m}");
+    assert!(!m.contains("la localité est vide"), "{m}");
 }
 
 /// AC4 (#964) — une localité du client qui ne porte qu'U+200B.
@@ -745,7 +751,9 @@ async fn refus_nomme_la_localite_vide_du_client(pool: MySqlPool) {
     .await;
     let m = message_du_refus(&pool, invoice_id).await.to_lowercase();
     assert!(m.contains("adresse du client incomplète"), "{m}");
-    assert!(m.contains("localité"), "{m}");
+    // Revue de code P1 (B2) — la proposition qui nomme le champ, et non l'autre.
+    assert!(m.contains("la localité est vide"), "{m}");
+    assert!(!m.contains("le npa est vide"), "{m}");
 }
 
 /// AC4 — un client sans aucune adresse garde la phrase de l'adresse requise.

@@ -621,7 +621,7 @@ pub(crate) fn refus_pdf(cause: &CauseRefusPdf) -> RefusPdf {
                 "creditor.name" => (
                     "invoice-pdf-error-charset-company-name",
                     format!(
-                        "Le nom de l'entreprise contient un caractère refusé par la QR-facture : « {car} » ({point}). Corrigez-le dans Paramètres → Organisation."
+                        "Le nom de l'entreprise contient un caractère refusé par la QR-facture : « {car} » ({point}). Le nom de l'entreprise ne se modifie pas encore depuis l'interface."
                     ),
                 ),
                 "creditor.line1" => (
@@ -701,7 +701,7 @@ pub(crate) fn refus_pdf(cause: &CauseRefusPdf) -> RefusPdf {
         C::ChampVide { champ } => match *champ {
             "creditor.name" => sans_argument(
                 "invoice-pdf-error-empty-company-name",
-                "Le nom de l'entreprise est vide. Complétez-le dans Paramètres → Organisation.",
+                "Le nom de l'entreprise est vide. Il ne se modifie pas encore depuis l'interface.",
             ),
             "creditor.postal_code" => sans_argument(
                 "invoice-pdf-error-empty-company-postal-code",
@@ -734,7 +734,7 @@ pub(crate) fn refus_pdf(cause: &CauseRefusPdf) -> RefusPdf {
                 "creditor.name" => (
                     "invoice-pdf-error-too-long-company-name",
                     format!(
-                        "Le nom de l'entreprise dépasse {max} caractères ({got}). Raccourcissez-le dans Paramètres → Organisation."
+                        "Le nom de l'entreprise dépasse {max} caractères ({got}). Il ne se modifie pas encore depuis l'interface."
                     ),
                 ),
                 "creditor.line1" => (
@@ -1495,6 +1495,28 @@ mod tests {
         }
     }
 
+    /// Revue de code P1 (B2) — pour une clé « adresse incomplète », la proposition
+    /// qui nomme le champ vide et celle qui nommerait l'autre, en minuscules, par
+    /// locale ; `None` pour toute autre clé.
+    fn proposition_du_champ_vide(
+        cle: &str,
+        locale: Locale,
+    ) -> Option<(&'static str, &'static str)> {
+        let (npa, localite) = match locale {
+            Locale::FrCh => ("le npa est vide", "la localité est vide"),
+            Locale::DeCh => ("die plz ist leer", "der ort ist leer"),
+            Locale::ItCh => ("il npa è vuoto", "la località è vuota"),
+            Locale::EnCh => ("the postcode is empty", "the town is empty"),
+        };
+        if cle.starts_with("invoice-pdf-error-empty-") && cle.ends_with("-postal-code") {
+            Some((npa, localite))
+        } else if cle.starts_with("invoice-pdf-error-empty-") && cle.ends_with("-city") {
+            Some((localite, npa))
+        } else {
+            None
+        }
+    }
+
     /// Les cas de l'ensemble clos (D5) : la cause, la clé attendue, les noms des
     /// arguments attendus et, pour une clé par champ, (partie, mot) en fr-CH.
     #[allow(clippy::type_complexity)]
@@ -1696,6 +1718,28 @@ mod tests {
                             r.cle
                         );
                     }
+                }
+                // Revue de code P1 (B2/E1) — une adresse incomplète nomme LE champ
+                // vide : la parenthèse « NPA et localité » porte les deux mots, si
+                // bien que seule la proposition « le NPA est vide » / « la localité
+                // est vide » distingue les deux phrases.
+                if let Some((vide, autre)) = proposition_du_champ_vide(r.cle, locale) {
+                    let bas = texte.to_lowercase();
+                    assert!(
+                        bas.contains(vide) && !bas.contains(autre),
+                        "{locale:?} : {} doit dire « {vide} », non « {autre} » : {texte}",
+                        r.cle
+                    );
+                }
+                // Revue de code P1 (B1/E2) — le nom de l'entreprise ne se modifie
+                // pas depuis l'interface : aucune phrase n'y renvoie à l'écran
+                // Organisation, où il ne s'édite pas.
+                if r.cle.ends_with("-company-name") {
+                    assert!(
+                        !texte.contains("Organi"),
+                        "{locale:?} : {} renvoie à un écran où le nom ne se modifie pas : {texte}",
+                        r.cle
+                    );
                 }
             }
             if mots.is_some() {

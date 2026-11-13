@@ -667,7 +667,11 @@ async fn a_free_text_only_company_gets_its_components(pool: MySqlPool) {
     // vide (le NPA) est nommé.
     let message = refused["error"]["message"].as_str().unwrap().to_lowercase();
     assert!(
-        message.contains("adresse de l'entreprise incomplète") && message.contains("npa"),
+        // Revue de code P1 (B2) : la proposition qui nomme le champ, non la
+        // parenthèse « NPA et localité », qui porte les deux mots.
+        message.contains("adresse de l'entreprise incomplète")
+            && message.contains("le npa est vide")
+            && !message.contains("la localité est vide"),
         "{refused}"
     );
 

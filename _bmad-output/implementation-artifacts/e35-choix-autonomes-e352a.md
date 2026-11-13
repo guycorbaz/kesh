@@ -18,6 +18,9 @@ par union, jamais par écrasement.
 - **Écartées** : une phrase sans remède (l'utilisateur sait quoi, pas où) ; « Administration → Entreprise », qui
   n'existe pas.
 - **Réversible** : oui, texte seul ; le changer touche le catalogue, la fonction pure et G9 ensemble.
+- *(Annoté le 2026-11-13, revue de code P1, B1/E2/A1 : la prémisse « *Paramètres → Organisation*, l'écran qui porte son
+  nom et son adresse » est fausse pour le **nom** — l'écran n'édite que l'adresse et les coordonnées. Les trois phrases du
+  nom de l'entreprise sont corrigées par C-e352a-8 ; le reste de cette entrée tient.)*
 
 ### C-e352a-2 — La cause garde le point de code, non le caractère
 
@@ -74,3 +77,19 @@ par union, jamais par écrasement.
   `map_qrbill_error_rend_la_cause_de_chaque_variante` (`InvalidQrr`, `InvalidPayload`). Angle mort assumé : le chemin
   `:338` (échec de `build_qrr`) n'a pas de test qui le traverse.
 - **Réversible** : oui.
+
+### C-e352a-8 — Le nom de l'entreprise : une phrase vraie, sans écran promis (revue de code P1, B1/E2/A1)
+
+- **Contexte** : les trois phrases `invoice-pdf-error-{charset,empty,too-long}-company-name` renvoyaient à *Paramètres →
+  Organisation*. Prémisse lue au code : aucune route n'écrit le nom de l'entreprise — `routes/companies.rs:133`, `:271` et
+  `:353` reconstruisent la mise à jour avec `name: company.name.clone()` ; seul l'assistant le pose à la création. Le
+  remède était donc impossible. Issues tracées par l'orchestrateur : #1097 (le nom ne se modifie pas), #1098 (l'assistant
+  ne contrôle pas le nom contre la QR-facture).
+- **Retenu** : les trois phrases disent le défaut puis « Le nom de l'entreprise ne se modifie pas encore depuis
+  l'interface » (« Il ne se modifie pas encore… » quand le nom vient d'être nommé), ×4 langues, replis alignés (G9) ;
+  aucun écran promis, aucune personne nommée. Le manuel (`user-manual.tex:1251`) et le CHANGELOG disent l'exception, avec
+  #1097. AC2 et `refus_nomme_le_nom_vide_de_l_entreprise` assertent qu'aucune de ces phrases ne renvoie à l'écran
+  Organisation.
+- **Écartées** : renvoyer à l'assistant (il ne se rejoue pas sur une société configurée) ; « contactez
+  l'administrateur » (l'utilisateur est le plus souvent l'administrateur, et la consigne exclut de nommer quelqu'un).
+- **Réversible** : oui ; quand #1097 sera livrée, ces phrases renverront à l'écran qui modifie le nom.
