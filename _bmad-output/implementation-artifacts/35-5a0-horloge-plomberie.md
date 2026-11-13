@@ -1,6 +1,6 @@
 # Story 35-5a0 : l'horloge injectable, posée sans rien changer — `Horloge`, `HorlogeFixe`, `AppState.horloge`, `Lecture` à horloge, la date du jour passée à `kesh-db`, la garde de l'inventaire (#929, #1022, #907)
 
-Status: review
+Status: done
 
 *Fiche rédigée le 2026-11-12 par l'agent de rédaction des fiches 35-5 (Opus 5.5), worktree `kesh-e355`, à la remédiation de
 la validation P3 de la 35-5a (V3-4) : **découpage** décidé par l'orchestrateur (C-e350-28) — la dérogation C-e350-27 tombe,
@@ -895,3 +895,26 @@ vat_report_write_off}.rs`.
     clôture de la story. Statut : `review`.
   - **Trend** : P1 3 MEDIUM, 14 LOW ; P2 ciblée 1 MEDIUM, 1 LOW ; P3 ciblée **1 MEDIUM, 1 LOW** (remédiés). Passe suivante à
     lancer sur cette remédiation.
+
+### 2026-11-13 — Clôture (orchestrateur) — synthèse finale
+
+- **Trend de la revue de code** : P1 (Opus, trois lentilles, `a4da50ac`) 3 MEDIUM, 14 LOW → remédiation `c8cda87e5` → P2 ciblée
+  (Sonnet, `62f1a6dc`) 1 MEDIUM (inventaire D4 non clos), 1 LOW (#1107) → `1a9af93b9` → P3 ciblée (Opus, `98f1a910`) 1 MEDIUM (même
+  défaut, troisième forme), 1 LOW → `59f005a1f` (détecteur **par exécution** sous `KESH_TEST_INSTANT` décalé) → P4 ciblée (Sonnet,
+  `ca4438d3`) **0 au-dessus de LOW**, 3 LOW. Boucle close en P4 sur un commit qui ne touche aucun code de production. Signal de
+  découpage (recyclage du même défaut P1 → P2 → P3) déclaré au Project Lead le 2026-11-13 ; story non découpée, la méthode a changé.
+  Rapports hors dépôt : `kesh-gate-logs/e355a0-review-p{1-B,1-E,1-A,2-ciblee,3-ciblee,4-ciblee}.md`.
+- **LOW de la P4** : F1 appliqué (environnement en tête des journaux de clôture) ; F2 déclaré (lecture de `KESH_TEST_INSTANT` par
+  `kesh-report` établie au code, sans rouge propre) ; F3 transmis à la 35-5a et à la 35-5c (marges larges : jouer aussi un instant
+  décalé de plus de trois jours, minuit et bascule d'exercice).
+- **Gates de clôture** au dernier commit de code `59f005a1f` (règle de Guy du 2026-11-13 : gate-ci et E2E une fois, à la clôture) :
+  `scripts/gate-ci.sh kesh_ci_e355a0` **5351 passés, 0 échoué, 17 ignorés** (`kesh-gate-logs/e355a0/clo-gate-ci.log`) ; E2E complet
+  sur `kesh_e2e_e355a0` recréée **402 passés, 8 échecs, 18 ignorés** (`clo-e2e.log`) : les sept de la KF-029 et
+  `backup-restore-new-install.spec.ts:262`, trié (`tri-e2e-backup.out`, `clo-e2e-backup-r{1,2,3}.log`) : intermittent même isolé
+  (2 verts, 1 rouge), chemin non touché par la story, cause = course entre le battement d'activité de session et l'invalidation de
+  session par l'import ; versé à **#931 [KF-056]** (commentaire du 2026-11-13). Dernier E2E vert sur du code de production : `c8cda87e`,
+  403/7.
+- **Recommandation d'intégration** : squash des commits de la story (les commits (2) à (4) n'ont pas eu de gate complet `kesh-db` ; leur
+  contenu `kesh-db` est celui du (5)).
+- **Écarts** : `pkill -f … -n` (remédiation P2, déclaré) ; relecteurs P3 : quatre redirections interdites (déclarées) ; rétrospective.
+- **Issues** : #1105 (P1 B2), #1107 (P2 C2) ; #931 complétée.
