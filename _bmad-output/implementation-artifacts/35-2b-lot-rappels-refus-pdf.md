@@ -143,7 +143,8 @@ un lot, l'ajouter ; sinon, l'écrire tel quel au Change Log du développement. G
 - [x] Tests, rouges consignés ; `errors.rs` (deux fonctions extraites) ; serveur ; `reminderFailureText` et composant ; E2E ;
       documentation ; capture.
 - [x] Gates : `test-fast.sh --ci` et `scripts/gate-ci.sh`, frontend complet au dernier commit de code ; E2E complet à la
-      clôture de la story (décision de Guy du 2026-11-13).
+      clôture de la story (décision de Guy du 2026-11-13). *(Annoté le 2026-11-13, revue P1 A3 : la case vaut pour les
+      gates du passage en `review` ; **E2E complet : à faire**, à la clôture.)*
 
 ## Dev Notes
 
@@ -207,6 +208,8 @@ hunks restent distincts de ceux de la 35-3 (`:4571`) et de la 35-1.
 message » du composant, vert au départ, est la non-régression ; **E2E** (binaire et build frontend du code de départ, spec
 seule, `e2e-rouge.log`) : « Received string: "#1 — Facture non imprimable en PDF" ». AC3 (égalité avec les fonctions
 extraites) n'a pas de rouge propre : il ne compile qu'avec elles ; M5, M5bis et M6 le prouvent.
+*(Annoté le 2026-11-13, revue P1 A1 : `send_reminder_batch_entete_qui_deborde_porte_le_message`, ajouté par C-e352b-3 après
+les rouges, n'a pas tourné sur le code de départ ; M1, M4 et M5bis prouvent qu'il peut rougir.)*
 
 **Mutations** (`mut/`, jouées sur `d765f9172` (Rust) et sur l'arbre de travail du même commit (frontend), chacune restaurée
 par `git checkout --` puis `touch`, « restauré : 0 écart » au journal ; huit sur huit tuées) :
@@ -233,12 +236,19 @@ route unitaire) ; en de-CH, it-CH et en-CH l'espace avant le deux-points est fau
 (`send_reminder_batch_entete_qui_deborde_porte_le_message`). Reste `InvoiceTooManyLinesForPdf` : sa phrase n'est prouvée au lot
 que par le repli (AC2, AC3, binaire `lib` sans catalogue) ; la route unitaire garde son test HTTP. Un montage HTTP de
 `trop de lignes` pour un rappel demanderait de connaître le plafond du document de rappel : non tenté.
+*(Annoté le 2026-11-13, revue P1 E2 : **prémisse fausse**. `invoice_pdf_service.rs:206` — `if lines.len() > MAX_LINES_PER_PDF {`
+— précède tout rendu et ne dépend pas du document ; une facture validée de dix lignes suffit. La remédiation ajoute
+`send_reminder_batch_mixte_trop_de_lignes_porte_le_message` : phrase sous catalogue réel avec `count` = 10, `details` entier,
+aucune marque U+2068/U+2069. Cet angle mort est fermé ; il ferme aussi #1109.)*
 
 **Garde des libellés en dur** (`i18n-libelle-en-dur.test.ts`) : `reminderFailureText` porte le suffixe `Text` ; la garde l'a
 relevée au Vitest complet (91 candidates pour 90). Déclaration **nommée** au commentaire, puis compteurs 90 → 91 et `conforme`
 76 → 77 — la seule déclaration neuve à suffixe surveillé du diff (`git diff 50623755 -- frontend/src ':!*.test.ts'`).
 L'inventaire est **par exécution** (la garde relit toutes les sources) et sa sonde positive est ce rouge même : elle a vu la
 déclaration neuve avant tout ajustement.
+*(Annoté le 2026-11-13, revue P1 A4 : `sitesTotal` d'`i18n-keys.test.ts` recompté — `sitesTotal: 3026,` (`:972`), fichier
+absent du diff, Vitest complet vert à `24f69d217` ; `reminder-error-label.ts` porte 2 appels `i18nMsg(` avant comme après
+(`git show 506237558:… | grep -c 'i18nMsg('` → 2) : `reminderFailureText` n'en ajoute aucun.)*
 
 **Gates au dernier commit de code `24f69d217`** (bases remises à neuf ; chaque chiffre avec son journal) :
 
@@ -257,8 +267,33 @@ déclaration neuve avant tout ajustement.
   1 occurrence, « le motif dit ce qu’il y a à » présent (apostrophe typographique, coupure de page), « (issue #955) » 0.
 - **E2E complet : non lancé — à la clôture de la story.** La spec neuve n'a tourné qu'en rouge, sur le code de départ.
 
+*(Annoté le 2026-11-13, revue P1 A5 : trois journaux n'ont pas d'en-tête de commit. `cible-1.log` : arbre de travail sur
+`506237558`, avant le commit `d765f9172` qui l'a porté tel quel. `front-test-unit.log` : arbre de `d765f9172`, avant la
+correction de la garde (`24f69d217`). `captures.log` : fichiers datés de 11:21, arbre à `24f69d217`, binaire et build de ce
+commit ; `git diff --stat d765f9172 24f69d217` ne touche qu'un `.test.ts`, sans effet sur ce qui est montré.)*
+
 **Écarts aux consignes** : les mutations s'appliquent par un script Python (`mut-e352b.py`, motif vérifié unique), permis et
 déclaré ; tout le code et les tests sont écrits par l'outil Edit (ou Write pour les fichiers neufs). Aucun autre écart.
+
+**Remédiation P1** (2026-11-13 ; dernier commit de code **`eb512ea7a`** ; détail au Change Log) :
+
+- **Rouge de E2** : le test neuf n'a pas tourné sur le code de départ, où le lot rendait `details: null` pour toute cause
+  (`rouges.log`, AC1). Il est prouvé par mutation (`mut/campagne-rem1.log`, motifs dans `mut-rem1-e352b.sh`, arbre sur
+  `eb512ea7a`, chacune restaurée, « 0 écart ») :
+  | | mutation | tuée par |
+  |---|---|---|
+  | R1 | `t_args(…too-many-lines…, &fallback, &args)` → `t(…)` (phrase sans son `count`) | `send_reminder_batch_mixte_trop_de_lignes_porte_le_message` (`mut/R1.log`) |
+  | R2 | `.replace(['\u{2068}', '\u{2069}'], "")` de `t_args` → `.to_string()` (marques laissées) | même test (`mut/R2.log`) |
+  | R3 | bras « trop de lignes » du lot → `failed` sans `details` (M5 rejouée, l'état de départ pour cette cause) | même test et `classify_render_error_…` (`mut/R3.log`) |
+  | R4 | bras d'`IntoResponse` qui recopie le littéral **identique** (B1) | G9 `les_replis_rust_suivent_le_catalogue` (`mut/R4.log`) |
+- **Gates** (bases remises à neuf) : `scripts/test-fast.sh --ci` **5335 passés, 13 ignorés**, rc 0 — un de plus qu'au
+  passage en `review` (5334), le test neuf (`kesh-gate-logs/e352b/rem1-test-fast-ci.log`, commit `eb512ea7a`) ; frontend complet : `check` 0 erreur, 29 avertissements ; `lint-i18n-ownership` PASS ; Vitest
+  **3195 passés, 233 fichiers** ; `build` rc 0 (`rem1-front-<script>.log`, commit `eb512ea7a`). Gate ciblé avant commit :
+  121/121 (`rem1-cible.log`) ; `fmt` rc 0, `clippy -D warnings` rc 0 (`rem1-clippy.log`). **`gate-ci` et E2E complet : non
+  lancés — à la clôture** (`e35-dev-commun.md`).
+- **Manuel** : `make user` rc 0 (`rem1-make-user.log`) ; PDF aplati (`rem1-user-manual-plat.txt`) : « la même phrase qu » 1,
+  « rappel seul. Le PDF du rappel est produit à chaque envoi » 1, « lot de rappels la reprend » 1, « (issue #955) » 0 ; la
+  seule « comme sur la » restante parle de la réconciliation.
 
 ### File List
 
@@ -324,3 +359,23 @@ déclaré ; tout le code et les tests sont écrits par l'outil Edit (ou Write po
   au lot prouvé par le repli seul) écrits. Commits : `d765f9172` (implémentation), `24f69d217` (garde, dernier commit de
   code). Gates au dernier commit de code : au Dev Agent Record. **E2E complet à la clôture de la story** (décision de Guy du
   2026-11-13). Statut : `review`.
+- 2026-11-13 — **Revue de code P1** (Opus, trois lentilles ; `kesh-gate-logs/e352b-review-p1-{B,E,A}.md`) : 0 CRITICAL,
+  0 HIGH, 2 MEDIUM (E1/A2 fusionnés, E2), 10 LOW (B1 à B4, E3, A1 à A5 ; A2 compté avec E1). Remédiation (Opus 5.5, agent
+  `e352b`) :
+  - **E1/A2 (MEDIUM)** — prémisse lue : `invoice_pdf_service.rs:183-188` (« Les rappels, eux, restent régénérés (#502) ») et
+    `invoice_email.rs:560` (le rappel seul passe par le même `render_document(… PdfDocument::Reminder …)`). Manuel `:1527` :
+    « comme sur la fiche de la facture » → « par la même phrase qu'à l'envoi d'un rappel seul », avec la raison (rappel produit
+    à chaque envoi, PDF émis figé) ; « dit ce qu'il y a à corriger » → « dit pourquoi » (la phrase « scindez la facture »,
+    impossible sur une facture validée, est tracée en #1110 et n'est pas touchée). `.tex` et PDF régénéré, contrôlé aplati.
+    Symptôme greppé (« fiche de la facture », « comme sur la ») : le commentaire de `reminderFailureText` corrigé ; les autres
+    occurrences parlent d'autre chose ; l'énoncé de la story (§ Story) est laissé tel quel.
+  - **E2 (MEDIUM)** — prémisse lue : `invoice_pdf_service.rs:206` `if lines.len() > MAX_LINES_PER_PDF {`. Test HTTP neuf
+    `send_reminder_batch_mixte_trop_de_lignes_porte_le_message` (lot mixte, facture de dix lignes, catalogue réel, `details`
+    entier, aucune marque d'isolation) ; il ferme aussi **E3** (envoi réussi dans `accepted`, autre échec à `details` nul) et
+    **#1109**. Helper `seed_validated_invoice_lines` ; `phrase_fr` prend des arguments Fluent.
+  - **B1** : `error-invoice-too-many-lines-for-pdf` ajoutée à G9 (`textes_coherents.rs`, un site). **B2** : test renommé
+    `refus_du_pdf_route_unitaire_rend_la_phrase_de_la_fonction`, doc qui renvoie au second témoin. **B3** : deux lignes
+    neuves à `docs/api-external.md` (`INVOICE_TOO_MANY_LINES_FOR_PDF`, `INVOICE_PDF_HEADER_OVERFLOW`), routes vérifiées
+    (`render_document` et `map_qrbill_error`). **A1, A3, A4, A5** : annotations datées au Dev Agent Record et aux Tâches.
+    **B4** : non traité, tracé dans #1108.
+  - Mutations et gates : au Dev Agent Record, paragraphe « Remédiation P1 ».
