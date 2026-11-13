@@ -1049,7 +1049,7 @@ development_status:
   35-1-numerotation-sans-seq: ready-for-dev  # #932, #948 ; descend (format par défaut gardé par Guy) ; après 35-3, 35-2a et 35-2b ; fiche 2026-11-12 (code de main), validation terminée en P4 (1 HIGH/4 MEDIUM → 3 → 2 → 0 MEDIUM) ; issue #1058
   35-2-refus-pdf-nomme-le-champ: split  # 2026-11-12, validation P2 : découpée en 35-2a et 35-2b (C-e350-9)
   35-2a-refus-pdf-contrat-details: done  # #955, #964 ; tête d’epic, avant le 2026-11-30 ; recadrée en P3 (message seul, C-e350-11) ; validation terminée (P7) ; développée le 2026-11-12/13 (kesh-e352a), gates et E2E verts au commit fe88ce8c ; revue de code close en P2 (P1 Opus 2 MEDIUM → P2 ciblée Sonnet 0 au-dessus de LOW), LOW #1099-#1104, #1106
-  35-2b-lot-rappels-refus-pdf: review  # #955 ; après la fusion de 35-2a ; validation terminée en P2 (3 → 0 MEDIUM) ; développement 2026-11-13, dernier commit de code 24f69d217, E2E complet à la clôture
+  35-2b-lot-rappels-refus-pdf: done  # 2026-11-13 revue close en P2 (P1 Opus 2 MED → P2 ciblée Sonnet 0), clôture gate-ci 5342 et E2E 405/7 ; #955 ; après la fusion de 35-2a ; validation terminée en P2 (3 → 0 MEDIUM) ; développement 2026-11-13, dernier commit de code 24f69d217, E2E complet à la clôture
   35-3-comptes-designes-type: ready-for-dev  # fiche 2026-11-12, validation à lancer ; #537 ; tête d'epic, avant le 2026-11-30
   35-4-rejeter-ligne-signalee: ready-for-dev  # fiche 2026-11-12, validation terminée en P4 (9 → 3 → 2 → 0 MEDIUM) ; #1023, #1024
   35-5-date-du-jour-installation: split  # 2026-11-12, découpage préventif (C-e350-14) en 35-5a et 35-5b, puis 35-5c (C-e350-22), puis 35-5a0 (C-e350-28)

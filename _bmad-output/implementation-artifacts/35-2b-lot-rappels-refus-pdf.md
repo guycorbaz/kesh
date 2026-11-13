@@ -1,6 +1,6 @@
 # Story 35-2b : le rapport d'un lot de rappels dit pourquoi le PDF d'une facture est refusé (#955)
 
-Status: review
+Status: done
 
 *Fiche née le 2026-11-12 du découpage de la 35-2 à la validation P2 (C-e350-9), par l'agent de kickoff de l'Epic 35
 (Opus 5.5), worktree `kesh-e35`. Elle **part de la 35-2a fusionnée**, dont elle reprend le message localisé (la 35-2a garde
@@ -398,3 +398,17 @@ déclaré ; tout le code et les tests sont écrits par l'outil Edit (ou Write po
     (`render_document` et `map_qrbill_error`). **A1, A3, A4, A5** : annotations datées au Dev Agent Record et aux Tâches.
     **B4** : non traité, tracé dans #1108.
   - Mutations et gates : au Dev Agent Record, paragraphe « Remédiation P1 ».
+
+### 2026-11-13 — Clôture (orchestrateur) — synthèse finale
+
+- **Trend de la revue de code** : P1 (Opus, trois lentilles B/E/A en contextes séparés, prompt `35-2b-…-review-prompt-p1.md`) :
+  **2 MEDIUM** (E1/A2 : le manuel promettait le motif « comme sur la fiche de la facture », alors que la facture est figée et le rappel
+  régénéré ; E2 : l'angle mort « trop de lignes au lot » reposait sur une prémisse fausse), 10 LOW → remédiation `eb512ea7a` (manuel
+  `.tex` et PDF, test HTTP du lot mixte à dix lignes, G9, `api-external.md`, renommage) → P2 ciblée (Sonnet, `cdaccea4`) **0 au-dessus
+  de LOW**, 2 LOW. Boucle close en P2. Rapports hors dépôt : `kesh-gate-logs/e352b-review-p1-{B,E,A}.md`, `e352b-review-p2-ciblee.md`.
+- **LOW** : P1 — B4 versé à #1108, phrase « scindez la facture » → #1110, les autres traités ou annotés ; P2 — C1 → #1113, C2 annoté
+  à la clôture (`f2cfb75a0`). Limites du développement : #1108, #1109 (fermée par le test neuf).
+- **Gates de clôture** au dernier commit de code `eb512ea7a` : `gate-ci` **5342 passés, 0 échoué, 17 ignorés**
+  (`kesh-gate-logs/e352b/clo-gate-ci.log`) ; E2E complet sur `kesh_e2e_e352b` recréée **405 passés, 7 échecs (KF-029), 18 ignorés**
+  (`clo-e2e-complet.log`) ; la spec neuve `reminder-batch-refus-pdf.spec.ts` passe.
+- **PR** : `closes #955`, `closes #1109`.
