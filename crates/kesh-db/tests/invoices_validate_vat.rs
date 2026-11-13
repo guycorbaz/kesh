@@ -1246,9 +1246,9 @@ mod montant_minimum {
 /// place).
 mod garde_usage_comptes_reglage {
     use super::*;
-    use kesh_db::entities::NewCreditNote;
-    use kesh_db::errors::RevenueAccountRejection;
-    use kesh_db::repositories::credit_notes;
+    use kesh_db::entities::{AccountRole, AccountType, AccountUpdate, NewCreditNote};
+    use kesh_db::errors::{DesignatedSetting, RevenueAccountRejection};
+    use kesh_db::repositories::{accounts, credit_notes};
     use kesh_db::test_fixtures::{
         attendre_une_requete_en_cours, disable_rounding_to_5_centimes, sonde_verrou_nowait,
     };
@@ -1322,6 +1322,84 @@ mod garde_usage_comptes_reglage {
             .execute(pool)
             .await
             .unwrap();
+    }
+
+    /// `(id, numéro, réglage, attendu, réel)` des comptes nommés par un
+    /// `DesignatedAccountsWrongType` (Story 35-3), dans l'ordre du refus.
+    fn wrong_type(err: DbError) -> Vec<(i64, String, DesignatedSetting, AccountType, AccountType)> {
+        match err {
+            DbError::DesignatedAccountsWrongType(list) => {
+                assert_eq!(
+                    list.details()["rejected"].as_array().unwrap().len(),
+                    list.len(),
+                    "details.rejected suit la liste"
+                );
+                list.iter()
+                    .map(|a| {
+                        (
+                            a.account_id,
+                            a.account_number.clone(),
+                            a.setting,
+                            a.expected_type,
+                            a.actual_type,
+                        )
+                    })
+                    .collect()
+            }
+            other => panic!("attendu DesignatedAccountsWrongType, obtenu {other:?}"),
+        }
+    }
+
+    /// Story 35-3 — modifie un compte par `accounts::update`, **le chemin réel**
+    /// (celui de `PUT /api/v1/accounts/{id}`), avec `confirm_retype` : type et
+    /// rôle donnés, nom et imputabilité inchangés.
+    async fn update_account(
+        pool: &MySqlPool,
+        seeded: &SeededCompany,
+        account_id: i64,
+        account_type: AccountType,
+        role: Option<AccountRole>,
+    ) {
+        let a = accounts::find_by_id(pool, account_id)
+            .await
+            .unwrap()
+            .expect("compte");
+        accounts::update(
+            pool,
+            account_id,
+            a.version,
+            seeded.admin_user_id,
+            AccountUpdate {
+                name: a.name,
+                account_type,
+                role,
+                postable: a.postable,
+            },
+            true,
+        )
+        .await
+        .expect("accounts::update : le retypage d'un compte désigné passe");
+    }
+
+    async fn role_of(pool: &MySqlPool, account_id: i64) -> Option<AccountRole> {
+        accounts::find_by_id(pool, account_id)
+            .await
+            .unwrap()
+            .expect("compte")
+            .role
+    }
+
+    /// Somme des compteurs de numérotation des factures de la société : un refus
+    /// ne consomme pas de numéro.
+    async fn sequence_total(pool: &MySqlPool, seeded: &SeededCompany) -> i64 {
+        sqlx::query_scalar(
+            "SELECT CAST(COALESCE(SUM(next_number), 0) AS SIGNED) FROM invoice_number_sequences \
+             WHERE company_id = ?",
+        )
+        .bind(seeded.company_id)
+        .fetch_one(pool)
+        .await
+        .unwrap()
     }
 
     /// `(id, numéro)` des comptes nommés par un `DesignatedAccountsNotPostable`.
@@ -1415,9 +1493,15 @@ mod garde_usage_comptes_reglage {
     }
 
     /// Un même compte désigné pour DEUX rôles (créance et TVA due), rendu non
-    /// imputable, facture avec TVA → nommé UNE fois (`count = 1`, singulier) :
-    /// le dédoublonnage de `NonPostableAccounts::new` est atteint par l'accesseur
-    /// (choix C40).
+    /// imputable, facture avec TVA → nommé UNE fois.
+    ///
+    /// **Attendu changé par la Story 35-3** (#537, AC6, D3) : l'actif `1100`
+    /// désigné comme TVA due n'a pas le type de ce réglage (passif), et le refus
+    /// de type prime sur l'imputabilité : le test rend le refus de type, `1100`
+    /// nommé une fois, réglage `VatPayable`. Le dédoublonnage C40 des non
+    /// imputables (`NonPostableAccounts::new`) ne s'atteint plus que par un
+    /// montage incohérent : dans un même flux, les deux rôles attendent des types
+    /// opposés.
     #[sqlx::test(migrations = "./test-schema")]
     async fn one_account_for_two_roles_is_named_once(pool: MySqlPool) {
         let (seeded, contact) = setup(&pool).await;
@@ -1435,12 +1519,17 @@ mod garde_usage_comptes_reglage {
         set_postable(&pool, receivable, false).await;
 
         let err = validate(&pool, &seeded, id).await.expect_err("refusée");
-        let DbError::DesignatedAccountsNotPostable(list) = err else {
-            panic!("attendu DesignatedAccountsNotPostable, obtenu {err:?}");
-        };
-        assert_eq!(list.len(), 1, "le compte commun doit être nommé une fois");
-        assert_eq!(list.details()["rejected"].as_array().unwrap().len(), 1);
-        assert_eq!(list.numbers(), vec!["1100"]);
+        assert_eq!(
+            wrong_type(err),
+            vec![(
+                receivable,
+                "1100".to_string(),
+                DesignatedSetting::VatPayable,
+                AccountType::Liability,
+                AccountType::Asset,
+            )],
+            "le compte commun est nommé une fois, pour le seul réglage dont il n'a pas le type"
+        );
     }
 
     /// Ordre des refus — le compte de produit EXPLICITE d'une ligne non
@@ -1829,5 +1918,343 @@ mod garde_usage_comptes_reglage {
             .await
             .expect("tâche")
             .expect("la validation réussit une fois l'exercice rendu");
+    }
+
+    // -----------------------------------------------------------------------
+    // Story 35-3 (#537) — le TYPE des comptes désignés, revérifié à l'usage
+    // -----------------------------------------------------------------------
+    //
+    // Rouge au départ (`check_written` sans contrôle de type) : la validation
+    // RÉUSSIT et écrit la créance — 108.10 au débit — sur le compte retypé ; les
+    // identifiants de l'écriture produite sont au journal du rouge
+    // (`kesh-gate-logs/e353/rouges.log`).
+
+    /// AC1 — le chemin que #537 décrit : la créance porte le rôle *Créances
+    /// clients*, est retypée en PASSIF en gardant son rôle (le rôle l'admet),
+    /// et la validation la refuse en la nommant ; rien n'est écrit, aucun numéro
+    /// n'est consommé.
+    #[sqlx::test(migrations = "./test-schema")]
+    async fn ac1_receivable_retyped_liability_keeping_its_role_is_refused(pool: MySqlPool) {
+        let (seeded, contact) = setup(&pool).await;
+        let receivable = seeded.accounts["1100"];
+        update_account(
+            &pool,
+            &seeded,
+            receivable,
+            AccountType::Asset,
+            Some(AccountRole::Receivable),
+        )
+        .await;
+        assert_eq!(
+            role_of(&pool, receivable).await,
+            Some(AccountRole::Receivable)
+        );
+        let id = draft(&pool, &seeded, contact, &[(dec!(8.10), dec!(100.00), None)]).await;
+        update_account(
+            &pool,
+            &seeded,
+            receivable,
+            AccountType::Liability,
+            Some(AccountRole::Receivable),
+        )
+        .await;
+        assert_eq!(
+            role_of(&pool, receivable).await,
+            Some(AccountRole::Receivable),
+            "le rôle Créances clients reste posé sur le compte retypé en passif"
+        );
+        let sequence = sequence_total(&pool, &seeded).await;
+
+        let err = validate(&pool, &seeded, id).await.expect_err("refusée");
+        assert_eq!(err.error_code(), "DESIGNATED_ACCOUNT_WRONG_TYPE");
+        assert_eq!(
+            wrong_type(err),
+            vec![(
+                receivable,
+                "1100".to_string(),
+                DesignatedSetting::Receivable,
+                AccountType::Asset,
+                AccountType::Liability,
+            )]
+        );
+        assert_nothing_written(&pool, &seeded, id).await;
+        assert_eq!(
+            sequence_total(&pool, &seeded).await,
+            sequence,
+            "aucun numéro consommé"
+        );
+    }
+
+    /// AC2 — la créance retypée en CHARGE dans la requête même qui lui retire son
+    /// rôle (`PUT` full-replace, `role: null`).
+    #[sqlx::test(migrations = "./test-schema")]
+    async fn ac2_receivable_retyped_expense_losing_its_role_is_refused(pool: MySqlPool) {
+        let (seeded, contact) = setup(&pool).await;
+        let receivable = seeded.accounts["1100"];
+        update_account(
+            &pool,
+            &seeded,
+            receivable,
+            AccountType::Asset,
+            Some(AccountRole::Receivable),
+        )
+        .await;
+        assert_eq!(
+            role_of(&pool, receivable).await,
+            Some(AccountRole::Receivable)
+        );
+        let id = draft(&pool, &seeded, contact, &[(dec!(8.10), dec!(100.00), None)]).await;
+        update_account(&pool, &seeded, receivable, AccountType::Expense, None).await;
+        assert_eq!(role_of(&pool, receivable).await, None, "le rôle est retiré");
+
+        let err = validate(&pool, &seeded, id).await.expect_err("refusée");
+        assert_eq!(
+            wrong_type(err),
+            vec![(
+                receivable,
+                "1100".to_string(),
+                DesignatedSetting::Receivable,
+                AccountType::Asset,
+                AccountType::Expense,
+            )]
+        );
+        assert_nothing_written(&pool, &seeded, id).await;
+    }
+
+    /// AC2-bis — un compte SANS rôle, désigné comme créance par son
+    /// identifiant, retypé seul en charge.
+    #[sqlx::test(migrations = "./test-schema")]
+    async fn ac2bis_receivable_without_role_retyped_alone_is_refused(pool: MySqlPool) {
+        let (seeded, contact) = setup(&pool).await;
+        let receivable = seeded.accounts["1100"];
+        assert_eq!(role_of(&pool, receivable).await, None, "montage sans rôle");
+        let id = draft(&pool, &seeded, contact, &[(dec!(8.10), dec!(100.00), None)]).await;
+        update_account(&pool, &seeded, receivable, AccountType::Expense, None).await;
+
+        let err = validate(&pool, &seeded, id).await.expect_err("refusée");
+        assert_eq!(
+            wrong_type(err),
+            vec![(
+                receivable,
+                "1100".to_string(),
+                DesignatedSetting::Receivable,
+                AccountType::Asset,
+                AccountType::Expense,
+            )]
+        );
+        assert_nothing_written(&pool, &seeded, id).await;
+    }
+
+    /// AC3 — la TVA due retypée en ACTIF : refusée avec TVA ; sans TVA, elle
+    /// n'est pas écrite et la validation passe.
+    #[sqlx::test(migrations = "./test-schema")]
+    async fn ac3_vat_payable_retyped_asset_is_refused_only_when_vat_is_written(pool: MySqlPool) {
+        let (seeded, contact) = setup(&pool).await;
+        let vat = seeded.accounts["2000"];
+        let with_vat = draft(&pool, &seeded, contact, &[(dec!(8.10), dec!(100.00), None)]).await;
+        let without_vat = draft(&pool, &seeded, contact, &[(dec!(0), dec!(100.00), None)]).await;
+        update_account(&pool, &seeded, vat, AccountType::Asset, None).await;
+
+        let err = validate(&pool, &seeded, with_vat)
+            .await
+            .expect_err("avec TVA : refusée");
+        assert_eq!(
+            wrong_type(err),
+            vec![(
+                vat,
+                "2000".to_string(),
+                DesignatedSetting::VatPayable,
+                AccountType::Liability,
+                AccountType::Asset,
+            )]
+        );
+        validate(&pool, &seeded, without_vat)
+            .await
+            .expect("sans TVA : la TVA due n'est pas écrite, la validation passe");
+    }
+
+    /// AC5 (D3) — retypé ET archivé : `InactiveOrInvalidAccounts` prime.
+    #[sqlx::test(migrations = "./test-schema")]
+    async fn ac5_retyped_and_archived_is_inactive_or_invalid(pool: MySqlPool) {
+        let (seeded, contact) = setup(&pool).await;
+        let receivable = seeded.accounts["1100"];
+        let id = draft(&pool, &seeded, contact, &[(dec!(8.10), dec!(100.00), None)]).await;
+        update_account(&pool, &seeded, receivable, AccountType::Liability, None).await;
+        sqlx::query("UPDATE accounts SET active = FALSE WHERE id = ?")
+            .bind(receivable)
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        let err = validate(&pool, &seeded, id).await.expect_err("refusée");
+        assert!(
+            matches!(err, DbError::InactiveOrInvalidAccounts),
+            "attendu InactiveOrInvalidAccounts, obtenu {err:?}"
+        );
+        assert_nothing_written(&pool, &seeded, id).await;
+    }
+
+    /// AC5 (D3, M2-bis) — créance RETYPÉE et TVA due ARCHIVÉE : l'archivé vient
+    /// APRÈS le retypé dans l'ordre des rôles (`Receivable < VatPayable`), et
+    /// prime quand même. Un retour anticipé sur le type le masquerait.
+    #[sqlx::test(migrations = "./test-schema")]
+    async fn ac5_archived_after_a_retyped_one_still_wins(pool: MySqlPool) {
+        let (seeded, contact) = setup(&pool).await;
+        let id = draft(&pool, &seeded, contact, &[(dec!(8.10), dec!(100.00), None)]).await;
+        update_account(
+            &pool,
+            &seeded,
+            seeded.accounts["1100"],
+            AccountType::Liability,
+            None,
+        )
+        .await;
+        sqlx::query("UPDATE accounts SET active = FALSE WHERE id = ?")
+            .bind(seeded.accounts["2000"])
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        let err = validate(&pool, &seeded, id).await.expect_err("refusée");
+        assert!(
+            matches!(err, DbError::InactiveOrInvalidAccounts),
+            "attendu InactiveOrInvalidAccounts, obtenu {err:?}"
+        );
+        assert_nothing_written(&pool, &seeded, id).await;
+    }
+
+    /// AC5 (D3, M2) — retypé ET non imputable : le refus de type seul, qui le
+    /// nomme ; la TVA due non imputable (bon type), elle, n'est pas nommée.
+    #[sqlx::test(migrations = "./test-schema")]
+    async fn ac5_retyped_and_not_postable_is_named_by_the_type_refusal_only(pool: MySqlPool) {
+        let (seeded, contact) = setup(&pool).await;
+        let (receivable, vat) = (seeded.accounts["1100"], seeded.accounts["2000"]);
+        let id = draft(&pool, &seeded, contact, &[(dec!(8.10), dec!(100.00), None)]).await;
+        update_account(&pool, &seeded, receivable, AccountType::Expense, None).await;
+        set_postable(&pool, receivable, false).await;
+        set_postable(&pool, vat, false).await;
+
+        let err = validate(&pool, &seeded, id).await.expect_err("refusée");
+        assert_eq!(
+            wrong_type(err),
+            vec![(
+                receivable,
+                "1100".to_string(),
+                DesignatedSetting::Receivable,
+                AccountType::Asset,
+                AccountType::Expense,
+            )]
+        );
+        assert_nothing_written(&pool, &seeded, id).await;
+    }
+
+    /// AC5 — deux comptes retypés (créance en passif, TVA due en actif) : un
+    /// seul refus qui les nomme tous les deux, par numéro.
+    #[sqlx::test(migrations = "./test-schema")]
+    async fn ac5_two_retyped_accounts_are_named_in_one_refusal(pool: MySqlPool) {
+        let (seeded, contact) = setup(&pool).await;
+        let (receivable, vat) = (seeded.accounts["1100"], seeded.accounts["2000"]);
+        let id = draft(&pool, &seeded, contact, &[(dec!(8.10), dec!(100.00), None)]).await;
+        update_account(&pool, &seeded, receivable, AccountType::Liability, None).await;
+        update_account(&pool, &seeded, vat, AccountType::Asset, None).await;
+
+        let err = validate(&pool, &seeded, id).await.expect_err("refusée");
+        assert_eq!(
+            wrong_type(err),
+            vec![
+                (
+                    receivable,
+                    "1100".to_string(),
+                    DesignatedSetting::Receivable,
+                    AccountType::Asset,
+                    AccountType::Liability,
+                ),
+                (
+                    vat,
+                    "2000".to_string(),
+                    DesignatedSetting::VatPayable,
+                    AccountType::Liability,
+                    AccountType::Asset,
+                ),
+            ]
+        );
+        assert_nothing_written(&pool, &seeded, id).await;
+    }
+
+    /// AC6 — le chemin nominal : comptes au bon type et rôles posés, la
+    /// validation passe et écrit créance, produit et TVA due.
+    #[sqlx::test(migrations = "./test-schema")]
+    async fn ac6_right_types_still_validate(pool: MySqlPool) {
+        let (seeded, contact) = setup(&pool).await;
+        let receivable = seeded.accounts["1100"];
+        update_account(
+            &pool,
+            &seeded,
+            receivable,
+            AccountType::Asset,
+            Some(AccountRole::Receivable),
+        )
+        .await;
+        let id = draft(&pool, &seeded, contact, &[(dec!(8.10), dec!(100.00), None)]).await;
+        let validated = validate(&pool, &seeded, id).await.expect("validée");
+        let debit = validated
+            .journal_entry
+            .lines
+            .iter()
+            .find(|l| l.debit > Decimal::ZERO)
+            .expect("ligne de débit");
+        assert_eq!((debit.account_id, debit.debit), (receivable, dec!(108.10)));
+    }
+
+    /// **Le type se lit frais, sous le verrou** (D5 ; patron `retypage_tenu`) :
+    /// une transaction tient la créance `FOR UPDATE` et la retype en passif sans
+    /// conclure ; la validation est vue en attente sur l'accesseur ; la
+    /// transaction valide ; la validation lit le type validé et refuse.
+    ///
+    /// Exception à la règle « retypage par `accounts::update` » : celui-ci
+    /// commite lui-même et ne se tient pas ouvert. Ce test ne prouve pas que le
+    /// défaut est atteignable (AC1, AC2 le prouvent), mais que le type est lu
+    /// dans la requête verrouillante : sous une lecture séparée, non
+    /// verrouillante (mutation M7), l'instantané REPEATABLE READ ouvert avant le
+    /// retypage y verrait encore un actif.
+    #[sqlx::test(migrations = "./test-schema")]
+    async fn the_type_is_read_fresh_under_the_lock(pool: MySqlPool) {
+        let (seeded, contact) = setup(&pool).await;
+        let id = draft(&pool, &seeded, contact, &[(dec!(8.10), dec!(100.00), None)]).await;
+        let receivable = seeded.accounts["1100"];
+
+        let mut bloqueuse = pool.begin().await.unwrap();
+        sqlx::query("SELECT id, name FROM accounts WHERE id = ? FOR UPDATE")
+            .bind(receivable)
+            .fetch_all(&mut *bloqueuse)
+            .await
+            .unwrap();
+        sqlx::query("UPDATE accounts SET account_type = 'Liability' WHERE id = ?")
+            .bind(receivable)
+            .execute(&mut *bloqueuse)
+            .await
+            .unwrap();
+        let (p, c, u) = (pool.clone(), seeded.company_id, seeded.admin_user_id);
+        let tache = tokio::spawn(async move { invoices::validate_invoice(&p, c, id, u).await });
+        let vue = attendre_une_requete_en_cours(&pool, ACCESSEUR, || tache.is_finished()).await;
+        assert!(
+            vue,
+            "la validation n'a pas été vue en attente sur l'accesseur : {:?}",
+            tache.await.map(|r| r.map(|_| ()))
+        );
+        bloqueuse.commit().await.unwrap();
+
+        let err = tache.await.expect("tâche").expect_err("refusée");
+        assert_eq!(
+            wrong_type(err),
+            vec![(
+                receivable,
+                "1100".to_string(),
+                DesignatedSetting::Receivable,
+                AccountType::Asset,
+                AccountType::Liability,
+            )]
+        );
+        assert_nothing_written(&pool, &seeded, id).await;
     }
 }

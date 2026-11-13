@@ -34,7 +34,7 @@ mod common;
 
 use std::sync::Arc;
 
-use chrono::{NaiveDate, TimeDelta, Utc};
+use chrono::{NaiveDate, TimeDelta};
 use common::create_test_company;
 use kesh_api::auth::bootstrap::ensure_admin_user;
 use kesh_api::config::Config;
@@ -146,7 +146,7 @@ async fn setup(pool: &MySqlPool) -> (TestApp, String, i64, i64) {
         .await
         .unwrap();
 
-    let today = Utc::now().date_naive();
+    let today = crate::common::jour::aujourd_hui_test();
     let fy = fiscal_years::create(
         pool,
         1,
@@ -208,7 +208,7 @@ async fn make_entry(
         1,
         NewJournalEntry {
             company_id,
-            entry_date: Utc::now().date_naive(),
+            entry_date: crate::common::jour::aujourd_hui_test(),
             journal: Journal::OD,
             description: "Écriture à corriger".into(),
             project_id: None,
@@ -291,7 +291,7 @@ async fn reverse_creates_the_opposite_entry_and_marks_the_origin_without_alterin
     assert_eq!(body["journal"].as_str(), Some("OD"));
     assert_eq!(
         body["entryDate"].as_str(),
-        Some(Utc::now().date_naive().to_string().as_str()),
+        Some(crate::common::jour::aujourd_hui_test().to_string().as_str()),
         "la contre-passation porte la date du JOUR, jamais celle de l'origine"
     );
 
@@ -316,7 +316,7 @@ async fn reverse_creates_the_opposite_entry_and_marks_the_origin_without_alterin
     .await
     .unwrap();
     assert_eq!(number, 1);
-    assert_eq!(date, Utc::now().date_naive());
+    assert_eq!(date, crate::common::jour::aujourd_hui_test());
     assert_eq!(journal, "OD");
     assert_eq!(description, "Écriture à corriger");
     assert_eq!(
@@ -562,7 +562,7 @@ async fn monter_les_pieces(
     c: i64,
 ) -> Vec<Piece> {
     let contact = contact_id(pool, company_id).await;
-    let today = Utc::now().date_naive();
+    let today = crate::common::jour::aujourd_hui_test();
 
     // (1) facture client
     let e1 = make_entry(pool, company_id, fy_id, d, c, (None, None)).await;
@@ -987,7 +987,7 @@ async fn another_company_entry_is_not_found(pool: MySqlPool) {
     .unwrap()
     .last_insert_id() as i64;
 
-    let today = Utc::now().date_naive();
+    let today = crate::common::jour::aujourd_hui_test();
     let year: i32 = today.format("%Y").to_string().parse().unwrap();
     let other_fy = fiscal_years::create(
         &pool,
@@ -1081,7 +1081,7 @@ async fn ownership_outranks_the_archived_account(pool: MySqlPool) {
     )
     .bind(company_id)
     .bind(contact)
-    .bind(Utc::now().date_naive())
+    .bind(crate::common::jour::aujourd_hui_test())
     .bind(entry)
     .execute(&pool)
     .await
@@ -1204,7 +1204,7 @@ async fn no_document_ever_points_at_a_reversed_entry(pool: MySqlPool) {
     let d = make_account(&pool, company_id, "6000", AccountType::Expense).await;
     let c = make_account(&pool, company_id, "1020", AccountType::Asset).await;
     let contact = contact_id(&pool, company_id).await;
-    let today = Utc::now().date_naive();
+    let today = crate::common::jour::aujourd_hui_test();
 
     // Une écriture libre, contre-passée ; une écriture possédée par une facture,
     // dont la contre-passation est refusée. Après quoi l'invariant doit tenir.
@@ -1394,8 +1394,7 @@ async fn make_entry_on(
 }
 
 fn annee_courante() -> i32 {
-    Utc::now()
-        .date_naive()
+    crate::common::jour::aujourd_hui_test()
         .format("%Y")
         .to_string()
         .parse()
@@ -1453,7 +1452,7 @@ async fn detacher_un_paiement(
     entry: i64,
 ) -> i64 {
     let contact = contact_id(pool, company_id).await;
-    let today = Utc::now().date_naive();
+    let today = crate::common::jour::aujourd_hui_test();
     // L'écriture d'achat, que l'annulation réelle contre-passe ; la colonne
     // est `NOT NULL`.
     let purchase = make_entry(pool, company_id, fy_id, d, c, (None, None)).await;
@@ -2127,7 +2126,12 @@ async fn the_precedence_of_the_put_refusals_is_fixed(pool: MySqlPool) {
         (409, "OWNED_BY_INVOICE".into())
     );
     // Pièce + période verrouillée → code de la pièce.
-    poser_borne(&pool, company_id, Some(Utc::now().date_naive())).await;
+    poser_borne(
+        &pool,
+        company_id,
+        Some(crate::common::jour::aujourd_hui_test()),
+    )
+    .await;
     let corps = corps_identique(&app, &token, doc).await;
     assert_eq!(
         code(&app, &token, doc, &corps).await,
@@ -2665,7 +2669,12 @@ async fn the_precedence_of_the_delete_refusals_is_fixed(pool: MySqlPool) {
 
     // Pièce + période verrouillée → code de la pièce ; contre-passation +
     // période verrouillée → IS_A_REVERSAL.
-    poser_borne(&pool, company_id, Some(Utc::now().date_naive())).await;
+    poser_borne(
+        &pool,
+        company_id,
+        Some(crate::common::jour::aujourd_hui_test()),
+    )
+    .await;
     let piece_sous_borne = code(&app, &token, doc).await;
     let contre_passation_sous_borne = code(&app, &token, reversal).await;
     poser_borne(&pool, company_id, None).await;
@@ -2722,7 +2731,7 @@ async fn put_and_delete_never_leak_the_existence_of_a_foreign_entry(pool: MySqlP
     .await
     .unwrap()
     .last_insert_id() as i64;
-    let today = Utc::now().date_naive();
+    let today = crate::common::jour::aujourd_hui_test();
     let autre_fy = fiscal_years::create(
         &pool,
         1,
@@ -2865,7 +2874,7 @@ async fn the_opening_entry_is_modifiable_reversable_and_deletable(pool: MySqlPoo
         1,
         NewJournalEntry {
             company_id,
-            entry_date: Utc::now().date_naive(),
+            entry_date: crate::common::jour::aujourd_hui_test(),
             journal: Journal::OD,
             description: "Soldes de départ".into(),
             project_id: None,
@@ -2933,7 +2942,7 @@ async fn an_entry_of_a_closed_year_stays_correctable(pool: MySqlPool) {
     let d = make_account(&pool, company_id, "6000", AccountType::Expense).await;
     let c = make_account(&pool, company_id, "1020", AccountType::Asset).await;
 
-    let today = Utc::now().date_naive();
+    let today = crate::common::jour::aujourd_hui_test();
     let annee: i32 = today.format("%Y").to_string().parse().unwrap();
     let passe = fiscal_years::create(
         &pool,
@@ -3130,7 +3139,7 @@ fn dates_n1() -> (NaiveDate, NaiveDate, NaiveDate) {
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn a_lettered_entry_is_frozen_on_every_path(pool: MySqlPool) {
     let m = monde_lettrage(&pool).await;
-    let today = Utc::now().date_naive();
+    let today = crate::common::jour::aujourd_hui_test();
     let (e, _, code) = ecriture_lettree(&pool, &m, m.fy_id, today, today).await;
 
     let fiche = detail(&m.app, &m.token, e).await;
@@ -3180,7 +3189,7 @@ async fn a_lettered_entry_is_frozen_on_every_path(pool: MySqlPool) {
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn entry_lettered_refusal_leads_to_a_dissolution_that_succeeds(pool: MySqlPool) {
     let m = monde_lettrage(&pool).await;
-    let today = Utc::now().date_naive();
+    let today = crate::common::jour::aujourd_hui_test();
     let (e, _, code) = ecriture_lettree(&pool, &m, m.fy_id, today, today).await;
     let mut corps = corps_identique(&m.app, &m.token, e).await;
     corps["description"] = json!("Corrigée après délettrage");
@@ -3279,7 +3288,7 @@ async fn blocker_of_a_lettered_entry_in_a_locked_period_is_period_locked(pool: M
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn update_of_a_lettered_entry_with_a_stale_version_says_conflict(pool: MySqlPool) {
     let m = monde_lettrage(&pool).await;
-    let today = Utc::now().date_naive();
+    let today = crate::common::jour::aujourd_hui_test();
     let (e, _, _) = ecriture_lettree(&pool, &m, m.fy_id, today, today).await;
     let mut corps = corps_identique(&m.app, &m.token, e).await;
     corps["version"] = json!(corps["version"].as_i64().unwrap() + 7);
@@ -3313,7 +3322,7 @@ async fn update_of_a_lettered_entry_with_a_stale_version_says_conflict(pool: MyS
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn lettering_and_put_interleaved_never_answer_500(pool: MySqlPool) {
     let m = monde_lettrage(&pool).await;
-    let today = Utc::now().date_naive();
+    let today = crate::common::jour::aujourd_hui_test();
     for put_first in [false, true] {
         let e = make_entry_on(&pool, m.company_id, m.fy_id, m.charge, m.lettrable, today).await;
         let p = make_entry_on(&pool, m.company_id, m.fy_id, m.lettrable, m.charge, today).await;
@@ -3478,7 +3487,7 @@ async fn reversal_letters_each_free_letterable_line_with_its_mirror(pool: MySqlP
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn reversal_leaves_an_existing_group_intact_and_the_mirror_open(pool: MySqlPool) {
     let m = monde_lettrage(&pool).await;
-    let today = Utc::now().date_naive();
+    let today = crate::common::jour::aujourd_hui_test();
     let (e, p, code) = ecriture_lettree(&pool, &m, m.fy_id, today, today).await;
     let ligne_e = line_on(&pool, e, m.lettrable).await;
     let ligne_p = line_on(&pool, p, m.lettrable).await;

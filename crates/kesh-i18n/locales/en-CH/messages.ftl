@@ -338,6 +338,17 @@ error-designated-account-not-postable = { $count ->
     [one] Account { $numbers }, designated in Administration → Invoicing, is not postable (grouping, result or closing account): an administrator must designate a postable account there instead.
    *[other] Accounts { $numbers }, designated in Administration → Invoicing, are not postable (grouping, result or closing accounts): an administrator must designate postable accounts there instead.
 }
+# Story 35-3 (#537) — a designated account whose type changed after it was designated: one sentence per account, then the action sentence. The article lives in the type labels (a/an).
+error-designated-account-wrong-type = Account { $account }, designated as the { $setting } in Administration → Invoicing, is { $actual }; this setting requires { $expected }.
+error-designated-account-wrong-type-action = Nothing has been saved. An administrator must correct the setting concerned — designate an account of the right type, or give the account back its original type — and the validation can then be run again as it is.
+error-designated-account-setting-receivable = trade receivables account
+error-designated-account-setting-vat-payable = VAT payable account
+error-designated-account-setting-payable = trade payables account
+error-designated-account-setting-vat-recoverable = recoverable VAT account
+error-designated-account-type-asset = an asset account
+error-designated-account-type-liability = a liability account
+error-designated-account-type-revenue = a revenue account
+error-designated-account-type-expense = an expense account
 error-rounding-account-not-configured = This payment settles the invoice to the centime, but no usable rounding-difference account is designated: choose one in Administration → Invoicing.
 error-rounding-account-not-configured-issuance = The total of this document is rounded to 5 centimes, but no usable rounding-difference account is designated: choose one in Administration → Invoicing.
 error-write-off-account-not-configured-discount = No usable discount account is designated: choose one in Administration → Invoicing, section Writing off the remainder.

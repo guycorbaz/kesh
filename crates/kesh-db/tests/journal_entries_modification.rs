@@ -19,6 +19,11 @@
 //! `TABLE_SCHEMA = DATABASE()` : les bases éphémères voisines vivent sur le même
 //! serveur.
 
+/// Story 35-5a0 — la date du jour de l'horloge de test.
+#[allow(dead_code)]
+#[path = "support/jour.rs"]
+mod jour;
+
 use std::collections::BTreeSet;
 
 use chrono::NaiveDate;
@@ -362,9 +367,15 @@ async fn update_waits_for_a_concurrent_reversal_then_refuses(pool: MySqlPool) {
     let e = ecriture(&pool, &s, s.fiscal_year_id, d(2026, 3, 1)).await;
 
     let mut b = pool.begin().await.unwrap();
-    journal_entries::reverse_in_tx(&mut b, s.company_id, e.entry.id, s.admin_user_id)
-        .await
-        .expect("contre-passation de B");
+    journal_entries::reverse_in_tx(
+        &mut b,
+        s.company_id,
+        e.entry.id,
+        s.admin_user_id,
+        crate::jour::aujourd_hui_test(),
+    )
+    .await
+    .expect("contre-passation de B");
 
     let a = {
         let pool = pool.clone();
@@ -470,9 +481,15 @@ async fn delete_waits_for_a_concurrent_reversal_then_refuses(pool: MySqlPool) {
     let e = ecriture(&pool, &s, s.fiscal_year_id, d(2026, 3, 1)).await;
 
     let mut b = pool.begin().await.unwrap();
-    journal_entries::reverse_in_tx(&mut b, s.company_id, e.entry.id, s.admin_user_id)
-        .await
-        .expect("contre-passation de B");
+    journal_entries::reverse_in_tx(
+        &mut b,
+        s.company_id,
+        e.entry.id,
+        s.admin_user_id,
+        crate::jour::aujourd_hui_test(),
+    )
+    .await
+    .expect("contre-passation de B");
 
     let a = {
         let pool = pool.clone();

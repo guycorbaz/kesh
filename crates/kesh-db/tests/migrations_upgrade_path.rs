@@ -19,6 +19,11 @@
 #[allow(dead_code)]
 mod common;
 
+/// Story 35-5a0 — la date du jour de l'horloge de test.
+#[allow(dead_code)]
+#[path = "support/jour.rs"]
+mod jour;
+
 use kesh_db::version::{
     DowngradeCheckOutcome, VersionError, check_downgrade_protection, record_boot_version,
 };
@@ -1505,9 +1510,15 @@ async fn draft_migration_preserves_a_populated_base(pool: MySqlPool, frontiere: 
     supplier_invoices::pay_in_tx(&mut tx, company_id, d.paid_id, virement, day, user_id)
         .await
         .expect("payée (lettrage de pièce)");
-    supplier_invoices::cancel_in_tx(&mut tx, company_id, d.cancelled_id, user_id)
-        .await
-        .expect("annulée (contre-passation)");
+    supplier_invoices::cancel_in_tx(
+        &mut tx,
+        company_id,
+        d.cancelled_id,
+        user_id,
+        crate::jour::aujourd_hui_test(),
+    )
+    .await
+    .expect("annulée (contre-passation)");
     supplier_invoices::pay_in_tx(
         &mut tx,
         company_id,
@@ -1518,9 +1529,15 @@ async fn draft_migration_preserves_a_populated_base(pool: MySqlPool, frontiere: 
     )
     .await
     .expect("payée");
-    supplier_invoices::cancel_in_tx(&mut tx, company_id, d.paid_cancelled_id, user_id)
-        .await
-        .expect("payée puis annulée (règlement détaché)");
+    supplier_invoices::cancel_in_tx(
+        &mut tx,
+        company_id,
+        d.paid_cancelled_id,
+        user_id,
+        crate::jour::aujourd_hui_test(),
+    )
+    .await
+    .expect("payée puis annulée (règlement détaché)");
     tx.commit().await.unwrap();
     for (hash, invoice) in [("h-c", d.completed_id), ("h-j", d.attached_id)] {
         let id: i64 = sqlx::query_scalar(
@@ -1637,10 +1654,15 @@ async fn draft_migration_preserves_a_populated_base(pool: MySqlPool, frontiere: 
             .expect("présente");
         assert_eq!(inv.status, status);
         assert!(inv.purchase_journal_entry_id.is_some());
-        let view = supplier_invoices::get_settlement_view(&pool, company_id, id)
-            .await
-            .expect("vue")
-            .expect("présente");
+        let view = supplier_invoices::get_settlement_view(
+            &pool,
+            company_id,
+            id,
+            crate::jour::aujourd_hui_test(),
+        )
+        .await
+        .expect("vue")
+        .expect("présente");
         assert_eq!(view.invoice.status, status);
     }
 
@@ -1670,9 +1692,16 @@ async fn draft_migration_preserves_a_populated_base(pool: MySqlPool, frontiere: 
             .await
             .unwrap()
             .unwrap();
-        let u = supplier_invoices::unvalidate(&pool, company_id, id, inv.version, user_id)
-            .await
-            .expect("dévalidée");
+        let u = supplier_invoices::unvalidate(
+            &pool,
+            company_id,
+            id,
+            inv.version,
+            user_id,
+            crate::jour::aujourd_hui_test(),
+        )
+        .await
+        .expect("dévalidée");
         assert_eq!(u.invoice.status, "draft");
         assert_eq!(u.invoice.purchase_journal_entry_id, None);
         let m = supplier_invoices::update_draft(
@@ -1704,9 +1733,16 @@ async fn draft_migration_preserves_a_populated_base(pool: MySqlPool, frontiere: 
         .await
         .expect("modifiée");
         assert_eq!(m.invoice.total_amount, dec!(99.95));
-        let r = supplier_invoices::validate(&pool, company_id, id, m.invoice.version, user_id)
-            .await
-            .expect("revalidée");
+        let r = supplier_invoices::validate(
+            &pool,
+            company_id,
+            id,
+            m.invoice.version,
+            user_id,
+            crate::jour::aujourd_hui_test(),
+        )
+        .await
+        .expect("revalidée");
         assert_eq!(r.invoice.status, "open");
         assert!(r.invoice.purchase_journal_entry_id.is_some());
     }

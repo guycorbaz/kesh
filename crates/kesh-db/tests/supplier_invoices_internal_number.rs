@@ -11,6 +11,11 @@
 #[path = "support/fournisseur_rapproche.rs"]
 mod fournisseur_rapproche;
 
+/// Story 35-5a0 — la date du jour de l'horloge de test.
+#[allow(dead_code)]
+#[path = "support/jour.rs"]
+mod jour;
+
 use chrono::NaiveDate;
 use fournisseur_rapproche::{Fournisseur, IBAN_CREANCIER};
 use kesh_db::entities::{
@@ -103,9 +108,16 @@ impl Decor {
         pool: &MySqlPool,
         d: &SupplierInvoice,
     ) -> SupplierInvoiceSettlementView {
-        supplier_invoices::validate(pool, self.company(), d.id, d.version, self.user())
-            .await
-            .expect("validation")
+        supplier_invoices::validate(
+            pool,
+            self.company(),
+            d.id,
+            d.version,
+            self.user(),
+            crate::jour::aujourd_hui_test(),
+        )
+        .await
+        .expect("validation")
     }
 
     /// Crée et valide ; rend le numéro attribué.
@@ -130,6 +142,7 @@ impl Decor {
             v.invoice.id,
             v.invoice.version,
             self.user(),
+            crate::jour::aujourd_hui_test(),
         )
         .await
         .expect("dévalidation");
@@ -287,6 +300,7 @@ async fn unvalidated_keeps_and_revalidated_takes_the_same_number(pool: MySqlPool
         v.invoice.id,
         v.invoice.version,
         d.user(),
+        crate::jour::aujourd_hui_test(),
     )
     .await
     .expect("dévalidation");
@@ -319,9 +333,15 @@ async fn cancelled_then_draft_keeps_the_number(pool: MySqlPool) {
         .await
         .unwrap();
     let v = d.emettre(&pool, dans_a()).await;
-    let annulee = supplier_invoices::cancel(&pool, d.company(), v.invoice.id, d.user())
-        .await
-        .expect("annulation");
+    let annulee = supplier_invoices::cancel(
+        &pool,
+        d.company(),
+        v.invoice.id,
+        d.user(),
+        crate::jour::aujourd_hui_test(),
+    )
+    .await
+    .expect("annulation");
     assert_eq!(
         annulee.invoice.internal_number.as_deref(),
         Some("FF-2026-001")
@@ -332,6 +352,7 @@ async fn cancelled_then_draft_keeps_the_number(pool: MySqlPool) {
         annulee.invoice.id,
         annulee.invoice.version,
         d.user(),
+        crate::jour::aujourd_hui_test(),
     )
     .await
     .expect("dévalidation d'une annulée");
@@ -349,9 +370,16 @@ async fn assert_refus_sans_numero(
     version: i32,
     motif: &str,
 ) {
-    let err = supplier_invoices::validate(pool, d.company(), b.invoice.id, version, d.user())
-        .await
-        .expect_err(motif);
+    let err = supplier_invoices::validate(
+        pool,
+        d.company(),
+        b.invoice.id,
+        version,
+        d.user(),
+        crate::jour::aujourd_hui_test(),
+    )
+    .await
+    .expect_err(motif);
     assert!(!matches!(err, DbError::Invariant(_)), "{motif} : {err:?}");
     assert_eq!(numero_en_base(pool, b.invoice.id).await, None, "{motif}");
     assert_eq!(compteur(pool, d.a).await, 1, "{motif} : compteur inchangé");
@@ -472,7 +500,16 @@ async fn valider_avec_reprises(
 ) -> String {
     let mut reste = 10;
     loop {
-        match supplier_invoices::validate(&pool, company, id, version, user).await {
+        match supplier_invoices::validate(
+            &pool,
+            company,
+            id,
+            version,
+            user,
+            crate::jour::aujourd_hui_test(),
+        )
+        .await
+        {
             Ok(v) => return v.invoice.internal_number.expect("numéro"),
             Err(e) if reste > 0 && kesh_db::retry::is_deadlock_error(&e) => reste -= 1,
             Err(e) => panic!("validation : {e:?}"),
@@ -719,6 +756,7 @@ async fn the_skip_is_bounded(pool: MySqlPool) {
         b.invoice.id,
         b.invoice.version,
         d.user(),
+        crate::jour::aujourd_hui_test(),
     )
     .await
     .expect_err("saut borné");
@@ -753,8 +791,9 @@ async fn lecture_verrouillante(pool: MySqlPool, sur_b: bool) {
         brouillon.invoice.version,
         d.user(),
     );
-    let validation =
-        tokio::spawn(async move { supplier_invoices::validate(&pool2, c, id, v, u).await });
+    let validation = tokio::spawn(async move {
+        supplier_invoices::validate(&pool2, c, id, v, u, crate::jour::aujourd_hui_test()).await
+    });
     let vue = attendre_une_requete_en_cours(
         &pool,
         &["INSERT IGNORE", "company_invoice_settings"],
@@ -803,6 +842,7 @@ async fn update_draft_preserves_the_number(pool: MySqlPool) {
         v.invoice.id,
         v.invoice.version,
         d.user(),
+        crate::jour::aujourd_hui_test(),
     )
     .await
     .unwrap();
@@ -880,10 +920,17 @@ async fn purchase_and_settlement_labels_carry_the_internal_number(pool: MySqlPoo
             libelle_ecriture(&pool, v.invoice.purchase_journal_entry_id.unwrap()).await,
             format!("Facture fournisseur {attendu} - {nom}")
         );
-        let payee =
-            supplier_invoices::pay(&pool, d.company(), v.invoice.id, compte, dans_a(), d.user())
-                .await
-                .unwrap();
+        let payee = supplier_invoices::pay(
+            &pool,
+            d.company(),
+            v.invoice.id,
+            compte,
+            dans_a(),
+            d.user(),
+            crate::jour::aujourd_hui_test(),
+        )
+        .await
+        .unwrap();
         assert_eq!(
             libelle_ecriture(&pool, payee.invoice.settlement_journal_entry_id.unwrap()).await,
             format!("Règlement fournisseur {attendu} - {nom}")
@@ -910,10 +957,17 @@ async fn settlement_label_falls_back_without_internal_number(pool: MySqlPool) {
             .execute(&pool)
             .await
             .unwrap();
-        let payee =
-            supplier_invoices::pay(&pool, d.company(), v.invoice.id, compte, dans_a(), d.user())
-                .await
-                .unwrap();
+        let payee = supplier_invoices::pay(
+            &pool,
+            d.company(),
+            v.invoice.id,
+            compte,
+            dans_a(),
+            d.user(),
+            crate::jour::aujourd_hui_test(),
+        )
+        .await
+        .unwrap();
         let etiquette = attendu
             .map(str::to_string)
             .unwrap_or_else(|| format!("#{}", v.invoice.id));
@@ -945,6 +999,7 @@ async fn the_refused_unvalidation_names_the_internal_number(pool: MySqlPool) {
         },
         dans_a(),
         d.user(),
+        crate::jour::aujourd_hui_test(),
     )
     .await
     .unwrap();
@@ -954,6 +1009,7 @@ async fn the_refused_unvalidation_names_the_internal_number(pool: MySqlPool) {
         payee.invoice.id,
         payee.invoice.version,
         d.user(),
+        crate::jour::aujourd_hui_test(),
     )
     .await
     .expect_err("une facture payée ne se dévalide pas");
@@ -1037,9 +1093,17 @@ async fn the_lettering_audit_carries_the_long_form(pool: MySqlPool) {
             .await
             .unwrap();
         let v = d.valider(&pool, &b.invoice).await;
-        supplier_invoices::pay(&pool, d.company(), v.invoice.id, compte, dans_a(), d.user())
-            .await
-            .unwrap();
+        supplier_invoices::pay(
+            &pool,
+            d.company(),
+            v.invoice.id,
+            compte,
+            dans_a(),
+            d.user(),
+            crate::jour::aujourd_hui_test(),
+        )
+        .await
+        .unwrap();
         let detail: serde_json::Value = sqlx::query_scalar(
             "SELECT details_json FROM audit_log WHERE action = 'lettering.created' \
              AND JSON_EXTRACT(details_json, '$.documentId') = ?",

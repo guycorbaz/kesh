@@ -776,8 +776,17 @@ pub async fn update_supplier_invoice(
     Json(req): Json<UpdateSupplierInvoiceRequest>,
 ) -> Result<Json<SupplierInvoiceResponse>, AppError> {
     let company = get_company_for(&current_user, &state.pool).await?;
+    // Story 35-5a0 — la date du jour, lue une fois pour toute la requête.
+    let aujourd_hui = state.horloge.aujourd_hui();
     let view = crate::retry::retry_app_on_deadlock("supplier_invoices::update", || {
-        update_supplier_invoice_once(&state.pool, current_user.user_id, company.id, id, &req)
+        update_supplier_invoice_once(
+            &state.pool,
+            current_user.user_id,
+            company.id,
+            id,
+            &req,
+            aujourd_hui,
+        )
     })
     .await?;
     Ok(Json(SupplierInvoiceResponse::from_view(view)))
@@ -795,6 +804,7 @@ async fn update_supplier_invoice_once(
     company_id: i64,
     id: i64,
     req: &UpdateSupplierInvoiceRequest,
+    aujourd_hui: chrono::NaiveDate,
 ) -> Result<supplier_invoices::SupplierInvoiceSettlementView, AppError> {
     use kesh_db::errors::map_db_error;
     use kesh_db::repositories::imported_supplier_invoices;
@@ -826,7 +836,8 @@ async fn update_supplier_invoice_once(
         Ok::<(), AppError>(())
     }
     .await;
-    let (view, ()) = supplier_invoices::commit_with_view(tx, company_id, result, |_| id).await?;
+    let (view, ()) =
+        supplier_invoices::commit_with_view(tx, company_id, result, |_| id, aujourd_hui).await?;
     Ok(view)
 }
 
@@ -867,6 +878,8 @@ pub async fn validate_supplier_invoice(
     Json(req): Json<SupplierInvoiceVersionRequest>,
 ) -> Result<Json<SupplierInvoiceResponse>, AppError> {
     let company = get_company_for(&current_user, &state.pool).await?;
+    // Story 35-5a0 — la date du jour, lue une fois (bloqueurs de la vue).
+    let aujourd_hui = state.horloge.aujourd_hui();
     let view = kesh_db::retry::retry_on_deadlock("supplier_invoices::validate", || {
         supplier_invoices::validate(
             &state.pool,
@@ -874,6 +887,7 @@ pub async fn validate_supplier_invoice(
             id,
             req.version,
             current_user.user_id,
+            aujourd_hui,
         )
     })
     .await?;
@@ -900,6 +914,8 @@ pub async fn unvalidate_supplier_invoice(
     Json(req): Json<SupplierInvoiceVersionRequest>,
 ) -> Result<Json<SupplierInvoiceResponse>, AppError> {
     let company = get_company_for(&current_user, &state.pool).await?;
+    // Story 35-5a0 — la date du jour, lue une fois (bloqueurs de la vue).
+    let aujourd_hui = state.horloge.aujourd_hui();
     let view = kesh_db::retry::retry_on_deadlock("supplier_invoices::unvalidate", || {
         supplier_invoices::unvalidate(
             &state.pool,
@@ -907,6 +923,7 @@ pub async fn unvalidate_supplier_invoice(
             id,
             req.version,
             current_user.user_id,
+            aujourd_hui,
         )
     })
     .await?;
@@ -927,6 +944,8 @@ pub async fn pay_supplier_invoice(
     borner(req.payment_date, "paymentDate")?;
     let company = get_company_for(&current_user, &state.pool).await?;
     let (choice, payment_date) = req.into_choice()?;
+    // Story 35-5a0 — la date du jour, lue une fois (bloqueurs de la vue).
+    let aujourd_hui = state.horloge.aujourd_hui();
     let view = kesh_db::retry::retry_on_deadlock("supplier_invoices::pay", || {
         supplier_invoices::pay(
             &state.pool,
@@ -935,6 +954,7 @@ pub async fn pay_supplier_invoice(
             choice,
             payment_date,
             current_user.user_id,
+            aujourd_hui,
         )
     })
     .await?;
@@ -956,8 +976,17 @@ pub async fn cancel_supplier_invoice(
     Path(id): Path<i64>,
 ) -> Result<Json<SupplierInvoiceResponse>, AppError> {
     let company = get_company_for(&current_user, &state.pool).await?;
+    // Story 35-5a0 — la date du jour, lue une fois : bloqueur et
+    // contre-passation la partagent, rejeux compris.
+    let aujourd_hui = state.horloge.aujourd_hui();
     let view = kesh_db::retry::retry_on_deadlock("supplier_invoices::cancel", || {
-        supplier_invoices::cancel(&state.pool, company.id, id, current_user.user_id)
+        supplier_invoices::cancel(
+            &state.pool,
+            company.id,
+            id,
+            current_user.user_id,
+            aujourd_hui,
+        )
     })
     .await?;
     Ok(Json(SupplierInvoiceResponse::from_view(view)))
@@ -986,8 +1015,17 @@ pub async fn cancel_supplier_invoice_settlement(
     Path(id): Path<i64>,
 ) -> Result<Json<CancelSupplierSettlementResponse>, AppError> {
     let company = get_company_for(&current_user, &state.pool).await?;
+    // Story 35-5a0 — la date du jour, lue une fois : bloqueur et
+    // contre-passation la partagent, rejeux compris.
+    let aujourd_hui = state.horloge.aujourd_hui();
     let done = kesh_db::retry::retry_on_deadlock("supplier_invoices::cancel_settlement", || {
-        supplier_invoices::cancel_settlement(&state.pool, company.id, id, current_user.user_id)
+        supplier_invoices::cancel_settlement(
+            &state.pool,
+            company.id,
+            id,
+            current_user.user_id,
+            aujourd_hui,
+        )
     })
     .await?;
     Ok(Json(CancelSupplierSettlementResponse {

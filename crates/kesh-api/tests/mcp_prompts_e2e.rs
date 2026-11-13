@@ -1006,7 +1006,7 @@ async fn plafond_juste_apres_l_attente_du_verrou(pool: MySqlPool) {
         proposer(&pool, e.c, e.cle, &format!("p{n:02}"), "d", "t").await;
     }
     let cle_auth = authentifier(
-        &Lecture::new(pool.clone()),
+        &Lecture::new(pool.clone(), kesh_api::horloge::horloge_de_test()),
         &Trace::new(pool.clone()),
         &e.jeton,
     )
@@ -1064,7 +1064,7 @@ async fn proposer_refuse_hors_portee_avant_tout(pool: MySqlPool) {
     )
     .await;
     let cle_auth = authentifier(
-        &Lecture::new(pool.clone()),
+        &Lecture::new(pool.clone(), kesh_api::horloge::horloge_de_test()),
         &Trace::new(pool.clone()),
         &lecteur,
     )

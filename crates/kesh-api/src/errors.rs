@@ -1579,6 +1579,92 @@ fn account_not_postable_response(
     (StatusCode::BAD_REQUEST, Json(body)).into_response()
 }
 
+/// Libellé d'un réglage de facturation dans la phrase du refus
+/// `DESIGNATED_ACCOUNT_WRONG_TYPE` (Story 35-3, #537) : le libellé du champ de
+/// *Administration → Facturation*, en minuscule (« compte créance client »…),
+/// pour que l'administrateur retrouve le champ à corriger (choix C-e353-2).
+///
+/// Un littéral de repli par clé, écrit en entier : la garde G9
+/// (`textes_coherents.rs`) ne compare que des littéraux.
+fn designated_setting_label(setting: kesh_db::errors::DesignatedSetting) -> String {
+    use kesh_db::errors::DesignatedSetting as S;
+    match setting {
+        S::Receivable => t(
+            "error-designated-account-setting-receivable",
+            "compte créance client",
+        ),
+        S::VatPayable => t(
+            "error-designated-account-setting-vat-payable",
+            "compte TVA due",
+        ),
+        S::Payable => t(
+            "error-designated-account-setting-payable",
+            "compte créanciers",
+        ),
+        S::VatRecoverable => t(
+            "error-designated-account-setting-vat-recoverable",
+            "compte TVA récupérable",
+        ),
+    }
+}
+
+/// Un type de compte en mots, au singulier, dans la phrase du refus
+/// `DESIGNATED_ACCOUNT_WRONG_TYPE` (Story 35-3, #537) : « compte d’actif »… Les
+/// libellés `account-type-*` du catalogue (« Actif ») ne se déclinent pas dans
+/// une phrase.
+fn designated_account_type_label(account_type: kesh_db::entities::AccountType) -> String {
+    use kesh_db::entities::AccountType as T;
+    match account_type {
+        T::Asset => t("error-designated-account-type-asset", "compte d’actif"),
+        T::Liability => t(
+            "error-designated-account-type-liability",
+            "compte de passif",
+        ),
+        T::Revenue => t("error-designated-account-type-revenue", "compte de produit"),
+        T::Expense => t("error-designated-account-type-expense", "compte de charge"),
+    }
+}
+
+/// Réponse **400 `DESIGNATED_ACCOUNT_WRONG_TYPE`** (Story 35-3, #537) : une
+/// phrase par compte refusé, dans l'ordre de la liste (par numéro), puis une
+/// phrase d'action, jointes par une espace. Aucun sélecteur de pluriel : la
+/// phrase d'action vaut aux deux nombres (« le réglage concerné »). Détail
+/// [`kesh_db::errors::WrongTypeDesignatedAccounts::details`].
+fn designated_account_wrong_type_response(
+    accounts: &kesh_db::errors::WrongTypeDesignatedAccounts,
+) -> Response {
+    let mut phrases: Vec<String> = accounts
+        .iter()
+        .map(|a| {
+            let compte = a.account_number.clone();
+            let reglage = designated_setting_label(a.setting);
+            let reel = designated_account_type_label(a.actual_type);
+            let attendu = designated_account_type_label(a.expected_type);
+            let fallback = format!(
+                "Le compte {compte}, désigné comme {reglage} dans Administration → Facturation, est un {reel} ; ce réglage demande un {attendu}."
+            );
+            let mut args = FluentArgs::new();
+            args.set("account", compte);
+            args.set("setting", reglage);
+            args.set("actual", reel);
+            args.set("expected", attendu);
+            t_args("error-designated-account-wrong-type", &fallback, &args)
+        })
+        .collect();
+    phrases.push(t(
+        "error-designated-account-wrong-type-action",
+        "Rien n’a été enregistré. Un administrateur doit corriger le réglage concerné — désigner un compte du bon type, ou rendre au compte son type d’origine —, puis la validation pourra être relancée telle quelle.",
+    ));
+    let body = serde_json::json!({
+        "error": {
+            "code": "DESIGNATED_ACCOUNT_WRONG_TYPE",
+            "message": phrases.join(" "),
+            "details": accounts.details(),
+        }
+    });
+    (StatusCode::BAD_REQUEST, Json(body)).into_response()
+}
+
 /// Réponse d'un refus de complément des soldes de départ (Story 25-7, AC 5) :
 /// statut, code et message **par cause**. Les refus qui portent sur un compte le
 /// nomment par son numéro — un identifiant de base ne se comprend pas.
@@ -4598,6 +4684,15 @@ impl IntoResponse for AppError {
                         &fallback,
                         &accounts,
                     )
+                }
+                // Story 35-3 (#537) — un compte DÉSIGNÉ dans les réglages de
+                // facturation n'a plus le TYPE que son réglage exige (retypé après
+                // sa désignation) et la validation veut y écrire. Code propre, et
+                // non `INACTIVE_OR_INVALID_ACCOUNTS`, anonyme : le compte vient des
+                // réglages, non de la requête, et le Comptable qui valide doit
+                // savoir lequel et où le faire corriger.
+                DbError::DesignatedAccountsWrongType(accounts) => {
+                    designated_account_wrong_type_response(&accounts)
                 }
                 // Story 25-4-c3-b (#476) — un écart d'arrondi à écrire, et pas de
                 // compte utilisable pour le recevoir. Le message dit OÙ agir.

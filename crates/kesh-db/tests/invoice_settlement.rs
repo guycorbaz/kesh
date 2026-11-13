@@ -12,6 +12,11 @@
 //!
 //! Pré-requis : MariaDB démarré.
 
+/// Story 35-5a0 — la date du jour de l'horloge de test.
+#[allow(dead_code)]
+#[path = "support/jour.rs"]
+mod jour;
+
 use chrono::NaiveDate;
 use kesh_db::entities::journal_entry::Journal;
 use kesh_db::entities::{
@@ -773,6 +778,7 @@ async fn annuler_l_unique_reglement_remet_la_facture_a_regler(pool: MySqlPool) {
         seeded.company_id,
         inv_id,
         sid,
+        crate::jour::aujourd_hui_test(),
     )
     .await
     .expect("annulation");
@@ -871,6 +877,7 @@ async fn annuler_un_reglement_parmi_deux(pool: MySqlPool) {
         seeded.company_id,
         inv_id,
         s2,
+        crate::jour::aujourd_hui_test(),
     )
     .await
     .expect("annulation");
@@ -949,6 +956,7 @@ async fn residuel_reste_nul_laisse_paid_at(pool: MySqlPool) {
         seeded.company_id,
         inv_id,
         s1,
+        crate::jour::aujourd_hui_test(),
     )
     .await
     .expect("annulation");
@@ -969,12 +977,26 @@ async fn double_annulation_rend_not_found(pool: MySqlPool) {
     let inv_id = validated_invoice(&pool, &seeded, dec!(100.00), ymd(2026, 3, 1)).await;
     let (sid, _) = settle_cash(&pool, &seeded, inv_id, dec!(100.00), ymd(2026, 3, 5)).await;
     let args = (seeded.admin_user_id, seeded.company_id, inv_id, sid);
-    invoice_settlements_write::cancel_settlement(&pool, args.0, args.1, args.2, args.3)
-        .await
-        .expect("première");
-    let err = invoice_settlements_write::cancel_settlement(&pool, args.0, args.1, args.2, args.3)
-        .await
-        .expect_err("seconde");
+    invoice_settlements_write::cancel_settlement(
+        &pool,
+        args.0,
+        args.1,
+        args.2,
+        args.3,
+        crate::jour::aujourd_hui_test(),
+    )
+    .await
+    .expect("première");
+    let err = invoice_settlements_write::cancel_settlement(
+        &pool,
+        args.0,
+        args.1,
+        args.2,
+        args.3,
+        crate::jour::aujourd_hui_test(),
+    )
+    .await
+    .expect_err("seconde");
     assert!(matches!(err, DbError::NotFound), "got {err:?}");
 }
 
@@ -995,6 +1017,7 @@ async fn socle_l_autorite_ne_leve_que_son_reglement(pool: MySqlPool) {
         e1,
         seeded.admin_user_id,
         ReversalAuthority::ClientSettlement { settlement_id: s2 },
+        crate::jour::aujourd_hui_test(),
     )
     .await
     .expect_err("l'autorité de s2 ne couvre pas l'écriture de s1");
@@ -1028,6 +1051,7 @@ async fn socle_la_precedence_se_poursuit_apres_le_motif_leve(pool: MySqlPool) {
         entry_id,
         seeded.admin_user_id,
         ReversalAuthority::ClientSettlement { settlement_id: sid },
+        crate::jour::aujourd_hui_test(),
     )
     .await
     .expect_err("un règlement rapproché ne se contre-passe pas");
@@ -1063,6 +1087,7 @@ async fn le_geste_se_compose_et_s_annule_avec_sa_transaction(pool: MySqlPool) {
             inv_id,
             sid,
             seeded.admin_user_id,
+            crate::jour::aujourd_hui_test(),
         )
         .await
         .expect("annulation dans la transaction");
@@ -1137,14 +1162,20 @@ async fn une_autre_societe_ne_peut_pas_annuler(pool: MySqlPool) {
         other,
         inv_id,
         sid,
+        crate::jour::aujourd_hui_test(),
     )
     .await
     .expect_err("autre société");
     assert!(matches!(err, DbError::NotFound), "got {err:?}");
     let mut conn = pool.acquire().await.unwrap();
-    let err = invoice_settlements_write::settlement_cancel_blocker(&mut conn, other, sid)
-        .await
-        .expect_err("autre société — lecture");
+    let err = invoice_settlements_write::settlement_cancel_blocker(
+        &mut conn,
+        other,
+        sid,
+        crate::jour::aujourd_hui_test(),
+    )
+    .await
+    .expect_err("autre société — lecture");
     assert!(matches!(err, DbError::NotFound), "got {err:?}");
 
     for (t, n) in tables.iter().zip(avant) {
@@ -1202,7 +1233,9 @@ async fn monter(pool: &MySqlPool, motifs: &[SettlementCancelBlocker]) -> (Seeded
         .await
         .expect("truncate");
     let seeded = seed_accounting_company(pool).await.expect("seed");
-    let today = chrono::Utc::now().date_naive();
+    // Story 35-5a0 (D4) — le jour du montage, celui de l'horloge de test, que
+    // reçoit aussi le verrou ci-dessous.
+    let today = crate::jour::aujourd_hui_test();
     let d = today - chrono::Duration::days(60);
     sqlx::query("UPDATE fiscal_years SET end_date = ? WHERE id = ?")
         .bind(d)
@@ -1256,6 +1289,7 @@ async fn monter(pool: &MySqlPool, motifs: &[SettlementCancelBlocker]) -> (Seeded
             seeded.admin_user_id,
             seeded.company_id,
             d - chrono::Duration::days(10),
+            today,
         )
         .await
         .expect("verrou de période");
@@ -1398,10 +1432,14 @@ async fn la_precedence_de_l_annulation_lecture_et_ecriture(pool: MySqlPool) {
         let attendu = motifs[0]; // ⚠️ `RANGS` est ordonné : le premier est le plus fort.
 
         let mut conn = pool.acquire().await.unwrap();
-        let lu =
-            invoice_settlements_write::settlement_cancel_blocker(&mut conn, seeded.company_id, sid)
-                .await
-                .expect("lecture");
+        let lu = invoice_settlements_write::settlement_cancel_blocker(
+            &mut conn,
+            seeded.company_id,
+            sid,
+            crate::jour::aujourd_hui_test(),
+        )
+        .await
+        .expect("lecture");
         drop(conn);
         assert_eq!(
             lu.as_ref().map(|h| h.0),
@@ -1422,6 +1460,7 @@ async fn la_precedence_de_l_annulation_lecture_et_ecriture(pool: MySqlPool) {
             seeded.company_id,
             inv_id,
             sid,
+            crate::jour::aujourd_hui_test(),
         )
         .await
         .expect_err("l'annulation doit être refusée");
@@ -1451,17 +1490,29 @@ async fn la_queue_commune_se_lit_sur_l_ecriture(pool: MySqlPool) {
     let mut conn = pool.acquire().await.unwrap();
 
     assert_eq!(
-        settlement_entry_cancel_blocker(&mut conn, seeded.company_id, entry_id, None)
-            .await
-            .unwrap(),
+        settlement_entry_cancel_blocker(
+            &mut conn,
+            seeded.company_id,
+            entry_id,
+            None,
+            crate::jour::aujourd_hui_test()
+        )
+        .await
+        .unwrap(),
         None,
         "rien n'empêche : la queue ne voit PAS le motif de propriété"
     );
     let bt = match_to_bank(&pool, seeded.company_id, entry_id, ymd(2026, 3, 5)).await;
     assert_eq!(
-        settlement_entry_cancel_blocker(&mut conn, seeded.company_id, entry_id, None)
-            .await
-            .unwrap(),
+        settlement_entry_cancel_blocker(
+            &mut conn,
+            seeded.company_id,
+            entry_id,
+            None,
+            crate::jour::aujourd_hui_test()
+        )
+        .await
+        .unwrap(),
         Some((
             SettlementCancelBlocker::MatchedBankTransaction,
             Some(bt),
@@ -1469,9 +1520,15 @@ async fn la_queue_commune_se_lit_sur_l_ecriture(pool: MySqlPool) {
         )),
         "l'identifiant de la transaction accompagne le motif"
     );
-    let err = settlement_entry_cancel_blocker(&mut conn, seeded.company_id + 999, entry_id, None)
-        .await
-        .expect_err("autre société");
+    let err = settlement_entry_cancel_blocker(
+        &mut conn,
+        seeded.company_id + 999,
+        entry_id,
+        None,
+        crate::jour::aujourd_hui_test(),
+    )
+    .await
+    .expect_err("autre société");
     assert!(matches!(err, DbError::NotFound), "got {err:?}");
 }
 
@@ -1512,7 +1569,15 @@ async fn une_cloture_concurrente_attend_l_annulation(pool: MySqlPool) {
     let p = pool.clone();
     let (company_id, user_id) = (seeded.company_id, seeded.admin_user_id);
     let annulation = tokio::spawn(async move {
-        invoice_settlements_write::cancel_settlement(&p, user_id, company_id, inv_id, sid).await
+        invoice_settlements_write::cancel_settlement(
+            &p,
+            user_id,
+            company_id,
+            inv_id,
+            sid,
+            crate::jour::aujourd_hui_test(),
+        )
+        .await
     });
     // ⛔ **Synchronisation déterministe, pas un délai** (passe 2 de revue de
     // code) : on ne valide la clôture qu'une fois l'annulation VUE en attente
@@ -1897,7 +1962,8 @@ use kesh_db::repositories::reconciliation_cancel;
 /// Rend `(seeded, facture, règlement, écriture de règlement, clé, D − 10)`.
 async fn facture_lettree(pool: &MySqlPool) -> (SeededCompany, i64, i64, i64, i64, NaiveDate) {
     let seeded = seed_accounting_company(pool).await.expect("seed");
-    let d = chrono::Utc::now().date_naive() - chrono::Duration::days(60);
+    // Story 35-5a0 (D4, revue P2) : le jour de l'horloge de test.
+    let d = crate::jour::aujourd_hui_test() - chrono::Duration::days(60);
     let inv_id =
         validated_invoice(pool, &seeded, dec!(100.00), d - chrono::Duration::days(20)).await;
     let le_plus_recent = d - chrono::Duration::days(10);
@@ -1920,10 +1986,16 @@ async fn rank_2_bis_sees_a_frozen_document_group(pool: MySqlPool) {
         let pool = pool.clone();
         async move {
             let mut conn = pool.acquire().await.unwrap();
-            settlement_entry_cancel_blocker(&mut conn, company_id, entry_id, None)
-                .await
-                .expect("lecture")
-                .map(|h| h.0)
+            settlement_entry_cancel_blocker(
+                &mut conn,
+                company_id,
+                entry_id,
+                None,
+                crate::jour::aujourd_hui_test(),
+            )
+            .await
+            .expect("lecture")
+            .map(|h| h.0)
         }
     };
 
@@ -1934,6 +2006,7 @@ async fn rank_2_bis_sees_a_frozen_document_group(pool: MySqlPool) {
         seeded.admin_user_id,
         seeded.company_id,
         le_plus_recent - chrono::Duration::days(1),
+        crate::jour::aujourd_hui_test(),
     )
     .await
     .expect("verrou partiel");
@@ -1949,6 +2022,7 @@ async fn rank_2_bis_sees_a_frozen_document_group(pool: MySqlPool) {
         seeded.admin_user_id,
         seeded.company_id,
         le_plus_recent,
+        crate::jour::aujourd_hui_test(),
     )
     .await
     .expect("verrou");
@@ -2005,6 +2079,7 @@ async fn settlement_cancel_is_refused_under_a_frozen_lettering(pool: MySqlPool) 
         seeded.admin_user_id,
         seeded.company_id,
         le_plus_recent,
+        crate::jour::aujourd_hui_test(),
     )
     .await
     .expect("verrou");
@@ -2013,10 +2088,15 @@ async fn settlement_cancel_is_refused_under_a_frozen_lettering(pool: MySqlPool) 
         let company_id = seeded.company_id;
         async move {
             let mut conn = pool.acquire().await.unwrap();
-            invoice_settlements_write::settlement_cancel_blocker(&mut conn, company_id, sid)
-                .await
-                .expect("lecture")
-                .map(|h| h.0)
+            invoice_settlements_write::settlement_cancel_blocker(
+                &mut conn,
+                company_id,
+                sid,
+                crate::jour::aujourd_hui_test(),
+            )
+            .await
+            .expect("lecture")
+            .map(|h| h.0)
         }
     };
     assert_eq!(
@@ -2032,6 +2112,7 @@ async fn settlement_cancel_is_refused_under_a_frozen_lettering(pool: MySqlPool) 
         seeded.company_id,
         inv_id,
         sid,
+        crate::jour::aujourd_hui_test(),
     )
     .await
     .expect_err("refusée");
@@ -2062,6 +2143,7 @@ async fn settlement_cancel_is_refused_under_a_frozen_lettering(pool: MySqlPool) 
         seeded.company_id,
         Some(le_plus_recent),
         "recul insuffisant".into(),
+        crate::jour::aujourd_hui_test(),
     )
     .await
     .expect("déverrouillage à la date la plus récente");
@@ -2078,6 +2160,7 @@ async fn settlement_cancel_is_refused_under_a_frozen_lettering(pool: MySqlPool) 
         seeded.company_id,
         Some(le_plus_recent - chrono::Duration::days(1)),
         "recul suffisant".into(),
+        crate::jour::aujourd_hui_test(),
     )
     .await
     .expect("déverrouillage avant la date la plus récente");
@@ -2101,14 +2184,21 @@ async fn unreconcile_refuses_in_its_family_before_unlinking(pool: MySqlPool) {
         seeded.admin_user_id,
         seeded.company_id,
         le_plus_recent,
+        crate::jour::aujourd_hui_test(),
     )
     .await
     .expect("verrou");
 
     let avant = traces(&pool).await;
-    let err = reconciliation_cancel::cancel(&pool, seeded.company_id, bt, seeded.admin_user_id)
-        .await
-        .expect_err("refusé");
+    let err = reconciliation_cancel::cancel(
+        &pool,
+        seeded.company_id,
+        bt,
+        seeded.admin_user_id,
+        crate::jour::aujourd_hui_test(),
+    )
+    .await
+    .expect_err("refusé");
     assert!(
         matches!(
             err,
@@ -2142,7 +2232,8 @@ async fn later_closed_year_group_is_refused(pool: MySqlPool) {
     let (seeded, inv_id, sid, _, cle, _) = facture_lettree(&pool).await;
     // L'exercice seedé est raccourci à `D`, suivi d'un exercice CLOS — l'état
     // hérité que la clôture dans l'ordre (15-12a) ne produit plus.
-    let d = chrono::Utc::now().date_naive() - chrono::Duration::days(60);
+    // Story 35-5a0 (D4, revue P2) : le jour de l'horloge de test.
+    let d = crate::jour::aujourd_hui_test() - chrono::Duration::days(60);
     sqlx::query("UPDATE fiscal_years SET end_date = ? WHERE id = ?")
         .bind(d)
         .bind(seeded.fiscal_year_id)
@@ -2167,10 +2258,14 @@ async fn later_closed_year_group_is_refused(pool: MySqlPool) {
     assert_eq!(borne, None, "montage : aucun verrou de période");
 
     let mut conn = pool.acquire().await.unwrap();
-    let lu =
-        invoice_settlements_write::settlement_cancel_blocker(&mut conn, seeded.company_id, sid)
-            .await
-            .expect("lecture");
+    let lu = invoice_settlements_write::settlement_cancel_blocker(
+        &mut conn,
+        seeded.company_id,
+        sid,
+        crate::jour::aujourd_hui_test(),
+    )
+    .await
+    .expect("lecture");
     drop(conn);
     assert_eq!(
         lu.map(|h| h.0),
@@ -2183,6 +2278,7 @@ async fn later_closed_year_group_is_refused(pool: MySqlPool) {
         seeded.company_id,
         inv_id,
         sid,
+        crate::jour::aujourd_hui_test(),
     )
     .await
     .expect_err("refusée");
@@ -2316,6 +2412,7 @@ mod compte_bancaire_clos {
             seeded.company_id,
             inv_id,
             sid,
+            crate::jour::aujourd_hui_test(),
         )
         .await
         .expect("l'annulation d'un règlement vers un compte archivé doit passer");
@@ -2337,7 +2434,9 @@ mod compte_bancaire_clos {
     #[sqlx::test(migrations = "./test-schema")]
     async fn une_cloture_d_exercice_attend_l_annulation_d_un_virement(pool: MySqlPool) {
         let seeded = seed_accounting_company(&pool).await.expect("seed");
-        let today = chrono::Utc::now().date_naive();
+        // Story 35-5a0 (D4) — le jour du montage, celui de l'horloge de test,
+        // que reçoit aussi l'annulation ci-dessous.
+        let today = crate::jour::aujourd_hui_test();
         let d = today - chrono::Duration::days(60);
         sqlx::query("UPDATE fiscal_years SET end_date = ? WHERE id = ?")
             .bind(d)
@@ -2389,7 +2488,10 @@ mod compte_bancaire_clos {
         let p = pool.clone();
         let (company_id, user_id) = (seeded.company_id, seeded.admin_user_id);
         let annulation = tokio::spawn(async move {
-            invoice_settlements_write::cancel_settlement(&p, user_id, company_id, inv_id, sid).await
+            invoice_settlements_write::cancel_settlement(
+                &p, user_id, company_id, inv_id, sid, today,
+            )
+            .await
         });
         let vue = kesh_db::test_fixtures::attendre_une_requete_en_cours(
             &pool,
@@ -2527,6 +2629,7 @@ async fn la_sortie_de_l_annulation_porte_la_facture_relue(pool: MySqlPool) {
         seeded.company_id,
         inv,
         settlement_id,
+        crate::jour::aujourd_hui_test(),
     )
     .await
     .expect("annulation");

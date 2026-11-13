@@ -221,7 +221,10 @@ async fn compte(pool: &MySqlPool, sql: &str) -> i64 {
 }
 
 fn poignees(pool: &MySqlPool) -> (Lecture, Trace) {
-    (Lecture::new(pool.clone()), Trace::new(pool.clone()))
+    (
+        Lecture::new(pool.clone(), kesh_api::horloge::horloge_de_test()),
+        Trace::new(pool.clone()),
+    )
 }
 
 const BONNE_CLE: &str = r#"{"name":"agent","scopes":["books:read"]}"#;

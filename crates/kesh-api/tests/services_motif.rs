@@ -1197,7 +1197,7 @@ fn resume(r: &Result<Releve, AppError>) -> String {
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn ac8_a_refus_mcp_sans_la_portee(pool: MySqlPool) {
     let livres = poser_livres(&pool).await;
-    let lecture = Lecture::new(pool.clone());
+    let lecture = Lecture::new(pool.clone(), kesh_api::horloge::horloge_de_test());
     let p = Params::de(&livres);
     let mut echecs = Vec::new();
     for svc in SERVICES {
@@ -1236,7 +1236,7 @@ async fn ac8_a_refus_mcp_sans_la_portee(pool: MySqlPool) {
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn ac8_b_controle_positif_mcp_avec_la_portee(pool: MySqlPool) {
     let livres = poser_livres(&pool).await;
-    let lecture = Lecture::new(pool.clone());
+    let lecture = Lecture::new(pool.clone(), kesh_api::horloge::horloge_de_test());
     let p = Params::de(&livres);
     let mut echecs = Vec::new();
     for svc in SERVICES {
@@ -1312,7 +1312,7 @@ async fn cas_c(
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn ac8_c_val_refus_avant_la_validation(pool: MySqlPool) {
     let livres = poser_livres(&pool).await;
-    let lecture = Lecture::new(pool.clone());
+    let lecture = Lecture::new(pool.clone(), kesh_api::horloge::horloge_de_test());
     let base = Params::de(&livres);
     let mut echecs = Vec::new();
     for svc in SERVICES {
@@ -1338,7 +1338,7 @@ async fn ac8_c_val_refus_avant_la_validation(pool: MySqlPool) {
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn ac8_c_lec_refus_avant_la_lecture(pool: MySqlPool) {
     let livres = poser_livres(&pool).await;
-    let lecture = Lecture::new(pool.clone());
+    let lecture = Lecture::new(pool.clone(), kesh_api::horloge::horloge_de_test());
     let base = Params::de(&livres);
     let mut echecs = Vec::new();
     for svc in SERVICES {
@@ -1425,7 +1425,7 @@ async fn synthese_accueil_motif(pool: MySqlPool) {
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn ac8_d_exports_jamais_servis_au_mcp(pool: MySqlPool) {
     let livres = poser_livres(&pool).await;
-    let lecture = Lecture::new(pool.clone());
+    let lecture = Lecture::new(pool.clone(), kesh_api::horloge::horloge_de_test());
     let p = Params::de(&livres);
     let mut echecs = Vec::new();
     for svc in SERVICES {
@@ -1452,7 +1452,7 @@ async fn ac8_d_exports_jamais_servis_au_mcp(pool: MySqlPool) {
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn ac8_e_canal_api(pool: MySqlPool) {
     let livres = poser_livres(&pool).await;
-    let lecture = Lecture::new(pool.clone());
+    let lecture = Lecture::new(pool.clone(), kesh_api::horloge::horloge_de_test());
     let p = Params::de(&livres);
     let mut echecs = Vec::new();
 
@@ -1523,7 +1523,7 @@ async fn ac8_e_canal_api(pool: MySqlPool) {
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn ac8_identite_societe(pool: MySqlPool) {
     let livres = poser_livres(&pool).await;
-    let lecture = Lecture::new(pool.clone());
+    let lecture = Lecture::new(pool.clone(), kesh_api::horloge::horloge_de_test());
     let mut echecs = Vec::new();
 
     let r = rapports::identite_societe(&mcp(&livres, &TOUTES), &lecture).await;
@@ -2068,7 +2068,8 @@ const EXCEPTIONS_V1: &[(&str, &str)] = &[
 const FABRIQUES_V2: &[(&str, &str)] = &[
     (
         "lib.rs",
-        "services::poignees::Lecture::new(self.pool.clone())",
+        // Story 35-5a0 — la poignée prend l'horloge de l'état.
+        "services::poignees::Lecture::new(self.pool.clone(), self.horloge.clone())",
     ),
     (
         "lib.rs",
@@ -2077,10 +2078,11 @@ const FABRIQUES_V2: &[(&str, &str)] = &[
     // Story 32-6a (AC-a26) — la lecture des outils du MCP, sur le pool en
     // lecture seule, enveloppée une fois dans `LectureOutils` ; Story 32-8b
     // (AC-B15, point 3) — le pool, lié une fois, est cloné pour la seconde
-    // enveloppe.
+    // enveloppe. Story 35-5a0 — la `Lecture` prend l'horloge de l'état, puis
+    // `LectureOutils` l'enveloppe à la ligne suivante.
     (
         "lib.rs",
-        "mcp::LectureOutils::nouvelle(services::poignees::Lecture::new(pool_outils.clone()));",
+        "let lecture_pool = services::poignees::Lecture::new(pool_outils.clone(), horloge_outils);",
     ),
     // Story 32-8b (AC-B10) — les deux poignées des envois du serveur MCP : la
     // relecture sur le pool en lecture seule, le dépôt sur le pool ordinaire.

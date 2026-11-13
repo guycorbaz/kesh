@@ -1,6 +1,6 @@
 # Story 35-3 : un compte désigné aux réglages de facturation et retypé depuis ne reçoit plus d'écriture ; la validation le refuse en le nommant (#537)
 
-Status: ready-for-dev
+Status: done
 
 *Validation terminée (P1 à P4, 2026-11-12).*
 
@@ -294,15 +294,16 @@ rangée par rôle et non par numéro (AC7, côté achat).
 
 ## Tâches
 
-- [ ] Étape 0 : relire les lignes citées sur la branche de départ, recompter l'inventaire ; contrôle sur base jetable ;
+- [x] Étape 0 : relire les lignes citées sur la branche de départ, recompter l'inventaire ; contrôle sur base jetable ;
       écrire au Change Log ce qui a bougé.
-- [ ] Tests ci-dessus, rouges consignés.
-- [ ] `kesh-db` : colonne lue sous verrou, contrôle par accumulation, variante d'erreur et son code, constante publique.
-- [ ] `kesh-api` : réponse 400 nommée, clés ×4 et G9, route des réglages sur la constante et message en mots (D6).
-- [ ] Écran de la fiche facture ; doc-comments ; documentation, deux manuels, CHANGELOG ; captures.
-- [ ] L'avertissement au retypage d'un compte désigné est tracé par **#1047** (V3-6) : le rappeler au registre `e353`.
-- [ ] Gates : `test-fast.sh --ci` **complet à chaque commit de code** (exception `kesh-db`), frontend complet, E2E
-      complet au dernier commit de code, échecs nommés contre `docs/testing.md`.
+- [x] Tests ci-dessus, rouges consignés.
+- [x] `kesh-db` : colonne lue sous verrou, contrôle par accumulation, variante d'erreur et son code, constante publique.
+- [x] `kesh-api` : réponse 400 nommée, clés ×4 et G9, route des réglages sur la constante et message en mots (D6).
+- [x] Écran de la fiche facture ; doc-comments ; documentation, deux manuels, CHANGELOG ; captures.
+- [x] L'avertissement au retypage d'un compte désigné est tracé par **#1047** (V3-6) : le rappeler au registre `e353`.
+- [x] Gates : `test-fast.sh --ci` **complet à chaque commit de code** (exception `kesh-db`), frontend complet, E2E
+      complet au dernier commit de code, échecs nommés contre `docs/testing.md`. *(Complet au dernier commit de code
+      seulement : écart (1) du Change Log.)*
 
 ## Dev Notes
 
@@ -353,13 +354,52 @@ rangée par rôle et non par numéro (AC7, côté achat).
 
 ### Agent Model Used
 
+Claude Opus 5.5 (`claude-opus-5-5`), workflow `bmad-dev-story`, worktree `kesh-e353`, 2026-11-12/13.
+
 ### Debug Log References
+
+Journaux hors dépôt, `/home/gcorbaz/devel/kesh-gate-logs/e353/` : `etape0.log` (contrôle sur base jetable),
+`recensement-set.txt`, `recensement-verdicts.md`, `rouges.log`, `rouge-vitest.log`, `verts-cibles.log`, `mutations.log`,
+`mutation-M6.log`, `front-*.log`, `make-fr.log`, `*-manual-plat.txt`, `captures-final.log`, `gate-test-fast.log`,
+`gate-ci.log`, `e2e-r1.log` ; captures dans `captures/`.
 
 ### Completion Notes List
 
 - Fiche rédigée par le workflow `bmad-create-story` (analyse du code de `release/0.17.6`).
+- `check_written` accumule et rend, dans l'ordre : absent ou archivé (`InactiveOrInvalidAccounts`) > type
+  (`DesignatedAccountsWrongType`, 400 `DESIGNATED_ACCOUNT_WRONG_TYPE`, C-e353-1) > non imputable. Le type est lu en
+  dernière colonne de la requête verrouillante (D5). Les types attendus viennent de `CLAIM_SETTING_ACCOUNT_TYPES` (neuve)
+  et de `VAT_SETTING_ACCOUNT_TYPES`, que lit aussi la route des réglages (D4).
+- Le message : une phrase par compte (par numéro), puis la phrase d'action, jointes par une espace (D2). Libellés des
+  réglages pris à la page *Administration → Facturation* (C-e353-2) : « compte créance client », « compte TVA due »,
+  « compte créanciers », « compte TVA récupérable ».
+- `error-designated-account-not-postable` n'est pas à G9 parce que c'est une clé à **sélecteur** (`{ $count -> … }`,
+  inscrite à `SELECTEURS_RESOLUS_COTE_SERVEUR`) : ses replis sont deux `format!` choisis par `if count == 1`, que G9 ne
+  sait pas comparer à une valeur à variantes. Les dix clés neuves n'ont pas de sélecteur : elles entrent à G9, en fin du
+  bloc `errors.rs`, chacune avec son littéral (lu : `textes_coherents.rs`, bloc `crates/kesh-api/src/errors.rs`).
+- Aucune migration.
 
 ### File List
+
+- `CHANGELOG.md`
+- `_bmad-output/implementation-artifacts/e35-choix-autonomes-e353.md` (neuf)
+- `_bmad-output/implementation-artifacts/35-3-comptes-designes-type.md`
+- `_bmad-output/implementation-artifacts/sprint-status.yaml`
+- `crates/kesh-db/src/errors.rs`
+- `crates/kesh-db/src/repositories/company_invoice_settings.rs`
+- `crates/kesh-db/src/repositories/invoices.rs` (doc-comments)
+- `crates/kesh-db/src/repositories/supplier_invoices.rs` (doc-comments)
+- `crates/kesh-db/tests/invoices_validate_vat.rs`
+- `crates/kesh-db/tests/supplier_invoices_repository.rs`
+- `crates/kesh-api/src/errors.rs`
+- `crates/kesh-api/src/routes/company_invoice_settings.rs`
+- `crates/kesh-api/tests/designated_account_type_e2e.rs` (neuf)
+- `crates/kesh-api/tests/textes_coherents.rs`
+- `crates/kesh-i18n/locales/{fr-CH,de-CH,it-CH,en-CH}/messages.ftl`
+- `docs/api-external.md`
+- `docs/manual/fr/admin-manual.tex`, `admin-manual.pdf`, `user-manual.tex`, `user-manual.pdf`
+- `frontend/src/routes/(app)/invoices/[id]/+page.svelte`
+- `frontend/src/routes/(app)/invoices/[id]/invoice-validate-page.test.ts`
 
 ## Change Log
 
@@ -431,4 +471,88 @@ rangée par rôle et non par numéro (AC7, côté achat).
   `DESIGNATED_ACCOUNT_WRONG_TYPE` (nom à confirmer, `e353`) sans sélecteur, ordre par accumulation, constante publique des
   types, avertissement au CHANGELOG et aux deux manuels pour des livres réels, avertissement au retypage tracé par #1047,
   règle d'union C-e350-8. **Signal de découpage non levé** : sévérité décroissante à chaque passe, cinq modules.
+- 2026-11-12/13 — **Développement** (Opus 5.5, `bmad-dev-story`, worktree `kesh-e353`, branche
+  `story/35-3-comptes-designes-type` partie de `epic-35/base` `049b0466`). Commits : `9f345955` (squelette compilable,
+  `check_written` inchangé), `51d303ea` (tests rouges), `df8ea143` (correction, documentation, manuels), puis ce compte
+  rendu. Journaux : `kesh-gate-logs/e353/`.
+  - **Étape 0, sur le code de départ** (`049b0466`, la 0.17.6) — faits constatés, aucun ne diffère de la fiche :
+    - lignes relues : `company_invoice_settings.rs` (verrou `SELECT id, number, active, postable FROM accounts FORCE INDEX
+      (PRIMARY) …`, `check_written` à retour sur l'archivé et accumulation des non imputables, doc « le **type** du compte
+      (angle mort assumé, préexistant — un compte désigné retypé après sa désignation reste utilisé …) ») ; `invoices.rs:2005-2010`,
+      `:2040-2051`, `:2381-2385` ; `supplier_invoices.rs:1521-1530`, `:1722-1726` ; route `validate_account_of`
+      (`"{field_label} : type de compte incompatible (attendu {})"`) ;
+    - **base jetable `kesh_e353`** (preset `with-data`, backend du worktree, `etape0.log`) : `PUT /api/v1/accounts/{1100}`
+      en `Liability` → **200** (le retypage passe, chemin réel) ; *Enregistrer* sans changement sur *Administration →
+      Facturation* → **400** « Compte créance : type de compte incompatible (attendu Asset) » (capture
+      `etape0-reglages-refus.png`) — le contrôle préventif que l'avertissement propose **se vérifie** ; validation d'une facture
+      de 100.00 + 8.1 % → **200**, écriture `[[2,"108.1000","0.0000"],[4,…],[3,…]]` : la créance écrite sur le compte 2,
+      `1100` retypé passif — **le défaut est atteignable** ; la requête de contrôle de la fiche rend une ligne
+      `receivable | 1100 | Liability | Asset` ;
+    - inventaire des écritures sur compte désigné (`git grep` des `default_*_account_id` hors réglages) : celui de la
+      fiche, sans site neuf (validation vente `invoices.rs:2122`/`:2378`, achat `supplier_invoices.rs:1713`/`:1720`, avoir
+      `credit_notes.rs:502`/`:666`, solde du reste par `vat_payable_account_for_write`, rapport TVA en lecture seule) ;
+    - recensement des montages (`recensement-verdicts.md`) : **38** `SET default_…` (27 conformes, 10 `NULL`, **1 contraire**,
+      `invoices_validate_vat.rs:1426`, suivi d'une validation : `one_account_for_two_roles_is_named_once`, l'exception
+      nommée par AC6) ; `INSERT INTO company_invoice_settings` : **17** sites de code, et non 16 — la fiche omettait
+      `migrations_upgrade_path.rs:1437` (conforme) — 12 conformes, 5 sans objet ; `UPDATE accounts SET account_type` :
+      **14** sites, dont 5 retypent un compte désigné (`accounts_designated_archive_e2e.rs:1224`,
+      `invoice_echeancier_e2e.rs:1931`, `reconciliation_e2e.rs:6776`, `invoice_settlement.rs:1843`,
+      `invoice_write_off.rs:1205`), **aucun** ne valide de facture ensuite ;
+    - G9 : `error-designated-account-not-postable` n'y figure pas parce qu'elle porte un sélecteur `{ $count -> … }` (ses
+      replis sont deux `format!` choisis par `if count == 1`) ; les dix clés neuves n'en ont pas et y entrent.
+  - **Rouges** sur le squelette (`rouges.log`, `rouge-vitest.log`) : 15 tests Rust et 2 Vitest rouges **par leur attendu** —
+    la validation réussit (`journal_entry_id: Some(1)` produite, créance sur le compte retypé), « attendu Asset » au lieu de
+    « attendu : actif », dialogue resté ouvert ; `ac5_retyped_and_archived…`, `ac5_archived_after…` et `ac6_right_types…`
+    verts au départ (ils fixent des comportements déjà vrais, et M2-bis rend le deuxième utile).
+  - **Mutations** (`mutations.log`, `mutation-M6.log`) — toutes **tuées** : M1 (contrôle retiré, 14 rouges), M2 (type
+    après non imputable, 2), M2-bis (retour anticipé sur le type, 5, dont `ac5_archived_after_a_retyped_one_still_wins`),
+    M3 (`Receivable` attendu `Liability`, 44), M4 (`VatRecoverable` hors contrôle, 3), M5 (route revenue à `Asset` en dur,
+    constante changée, 44 dont `ac9_settings_route_reads_the_same_types_as_the_validation`), M6 (code retiré de la liste
+    de fermeture, 2 Vitest), M7 (type relu par une requête séparée non verrouillante, 1 : `the_type_is_read_fresh_under_the_lock`),
+    M8 (liste rangée par réglage, 2 : `ac4_two_retyped_purchase_accounts_are_ordered_by_number`,
+    `ac7_purchase_validation_orders_the_accounts_by_number`). Motifs vérifiés uniques, restauration `git checkout --` + `touch`.
+  - **Tests ajoutés** (périmètre `049b0466` → `df8ea143`, `#[sqlx::test]` comptés aux deux bornes) :
+    `invoices_validate_vat.rs` 45 → 55 (+10, et l'attendu d'`one_account_for_two_roles_is_named_once` changé, AC6),
+    `supplier_invoices_repository.rs` 64 → 67 (+3), `designated_account_type_e2e.rs` 0 → 4 (neuf) ; Vitest
+    `invoice-validate-page.test.ts` 3 → 5 exécutions.
+  - **AC12, symptômes greppés** sur `crates/kesh-db/src` (`angle mort`, `retypé`, `dans cet ordre`,
+    `` InactiveOrInvalidAccounts` ; non imputable ``, `number, active, postable`) : reformulés `company_invoice_settings.rs`
+    (requête recopiée, « Pourquoi partagé suffit », « Ce qui n'est pas contrôlé ici », doc de `check_written`),
+    `invoices.rs` (B-3, liste des refus de `validate_invoice`, commentaire d'appel), `supplier_invoices.rs` (B-3, commentaire
+    d'appel). Hors sujet, laissés : `journal_entries.rs:149` (`number, active, postable` du contrôle non verrouillant de
+    `create_in_tx`), `company_invoice_settings.rs:496` (désignation d'office à l'onboarding), `errors.rs:23`,
+    `invoices.rs:2205-2213` (comptes de produit des lignes), et les « angle mort » / « dans cet ordre » des autres modules.
+  - **Captures** (`kesh-gate-logs/e353/captures/`, thème clair, base jetable) : `final-facture-client-refus.png`,
+    `final-facture-fournisseur-refus.png`, `final-reglages-refus.png` (« attendu : actif »), et `etape0-reglages-refus.png`.
+  - **Manuels** : `admin-manual.tex` (`:3816`, `:3818` avec le pendant 0.17.7 du « Après une mise à jour », `:3822`),
+    `user-manual.tex` (avertissement de « Changer le type… », note *Rôles des comptes*, paragraphe renommé « Un compte des
+    réglages devenu non imputable ou changé de type » avec les deux voies et le contrôle préventif, validation fournisseur) ;
+    `make fr` vert, PDF contrôlés aplatis (`pdftotext | tr`) : phrases neuves présentes. La liste « Trois cas échappent
+    encore » (`:493`) relue : elle ne vise que l'imputabilité, inchangée. Le PDF de la brochure, régénéré sans changement
+    de source, a été rendu à son état (`git checkout --`).
+  - **Gates au dernier commit de code `df8ea143`** : `scripts/test-fast.sh --ci` (base `kesh_e353` remise à neuf) :
+    **5324 exécutés, 5324 passés, 13 ignorés** (fmt et clippy compris) ; frontend : `check` 0 erreur (29 avertissements
+    préexistants), `lint-i18n-ownership` PASS, `test:unit` **3188 tests, 232 fichiers**, `build` vert.
+    `scripts/gate-ci.sh kesh_ci_e353` : **5331 passés, 0 échoué, 17 ignorés**, code 0. **E2E complet** (recette entière des
+    consignes, base `kesh_e2e_e353` recréée, port 3402, dossiers `target/e2e-r1/`, runner avec `KESH_INBOX_DIR` et
+    `KESH_DOCUMENTS_DIR`) : **403 passés, 7 échecs, 18 ignorés** (18,1 min) ; les sept, nommés contre `docs/testing.md`
+    § « Les échecs attendus », sont ceux de la KF-029 (#97) : `mode-expert.spec.ts:26`, `:41`,
+    `onboarding-path-b.spec.ts:65`, `:92`, `onboarding.spec.ts:57`, `:77`, `:150` ; aucun autre. Port 3402 libre avant et
+    après ; backend tué par son PID.
+  - **Écarts** : (1) les deux premiers commits de code (`9f345955`, `51d303ea`) n'ont eu que des gates ciblés (compilation
+    du workspace, binaires touchés), le gate complet ne tournant qu'au troisième — l'exception `kesh-db` le voulait à
+    chacun ; (2) **consigne Edit** : le Vitest d'AC8 a été **ajouté en fin de fichier par un `cat >>`** (heredoc), non par
+    l'outil Edit — un ajout pur, sans remplacement ; rien ne manquait à l'outil, c'est un raccourci ; les mutations sont
+    jouées par un script Python (permis), tout le reste par Edit ; (3) libellés des réglages pris à la page plutôt qu'à D2
+    (C-e353-2) ; (4) recensement des `INSERT` : 17 sites et non 16.
 
+- **2026-11-13 — Revue de code, boucle close en deux passes** (orchestrateur). P1 complète, trois lentilles, Opus
+  (`kesh-gate-logs/e353-review-p1-{B,E,A}.md`, prompt versionné `35-3-comptes-designes-type-review-prompt-p1.md`) : 0 CRITICAL,
+  0 HIGH, **1 MEDIUM** (A1 : la note *Rôles des comptes* laissait lire que le type du compte de produit par défaut n'est pas
+  contrôlé, alors que seule l'imputabilité en est exemptée — prémisse lue au code, `invoices.rs:636-641`), 12 LOW. Remédiation
+  `1ceae43f`, **manuel seul, aucun code de production** : A1, et avec lui A2 (le solde du reste relit la TVA due sans contrôle
+  de type, #1044) et E4 (le règlement d'une facture déjà validée solde la créance sur le compte débité) ; PDF régénéré et
+  contrôlé aplati. P2 ciblée, Sonnet, sur `1ceae43f` (`e353-review-p2-ciblee.md`) : **0 au-dessus de LOW**, 1 LOW (C1). Trend :
+  P1 1 MEDIUM + 12 LOW → P2 0 + 1 LOW. LOW tracés, une issue par problème : #1059 (B1), #1060 (B2), #1061 (B3), #1062 (E1),
+  #1063 (E2), #1064 (E3), #1065 (E5), #1066 (A5), #1067 (C1). A3 et A4 (forme du recensement, écarts déjà déclarés) relèvent du
+  processus : versés à la rétrospective. `Status: done`.

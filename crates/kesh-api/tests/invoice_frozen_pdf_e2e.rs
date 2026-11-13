@@ -114,6 +114,7 @@ async fn spawn_app(pool: MySqlPool, mailer: MockMailer, documents: PathBuf) -> T
         smtp_ready: true,
         test_mock_mailer: None,
         backup_lock: Arc::new(tokio::sync::Mutex::new(())),
+        horloge: kesh_api::horloge::horloge_de_test(),
     };
 
     let app = build_router(state, "nonexistent-static-dir".to_string());

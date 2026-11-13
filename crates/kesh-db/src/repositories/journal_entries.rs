@@ -78,7 +78,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::str::FromStr;
 
-use chrono::{NaiveDate, Utc};
+use chrono::NaiveDate;
 use rust_decimal::Decimal;
 use sqlx::mysql::MySqlPool;
 use sqlx::{QueryBuilder, Row};
@@ -2555,13 +2555,28 @@ where
 /// N'exécute **pas** de rollback en cas d'erreur (n'a qu'un `&mut` sur la
 /// transaction) : l'appelant, propriétaire, en est responsable — le drop de
 /// `Transaction` déclenche le rollback automatique de `sqlx`.
+///
+/// `aujourd_hui` (Story 35-5a0, #929, #1022, #907) : la date du jour, lue
+/// **une fois** sur l'horloge de la requête par l'appelant — la contre-passation
+/// en est datée, dans l'exercice ouvert qui la couvre. La contre-passation ne
+/// lit plus l'heure elle-même (d'autres dépôts le font encore, Story 35-5b :
+/// `kesh-api/tests/date_du_jour_garde.rs` les inventorie).
 pub async fn reverse_in_tx(
     tx: &mut sqlx::Transaction<'_, sqlx::MySql>,
     company_id: i64,
     id: i64,
     user_id: i64,
+    aujourd_hui: NaiveDate,
 ) -> Result<JournalEntryWithLines, DbError> {
-    reverse_in_tx_inner(tx, company_id, id, user_id, None, ReversalDating::Today).await
+    reverse_in_tx_inner(
+        tx,
+        company_id,
+        id,
+        user_id,
+        None,
+        ReversalDating::Today(aujourd_hui),
+    )
+    .await
 }
 
 /// Ce qu'un appelant a **qualité** pour lever quand il contre-passe l'écriture
@@ -2625,12 +2640,16 @@ impl ReversalAuthority {
 /// Même logique que [`reverse_in_tx`] — c'est la **même** fonction interne —,
 /// à ceci près que le motif que l'`authority` a qualité pour lever n'est pas
 /// opposé. Tous les autres le restent, dans leur ordre.
+///
+/// `aujourd_hui` : la date du jour reçue de l'appelant (Story 35-5a0), cf.
+/// [`reverse_in_tx`].
 pub async fn reverse_owned_in_tx(
     tx: &mut sqlx::Transaction<'_, sqlx::MySql>,
     company_id: i64,
     id: i64,
     user_id: i64,
     authority: ReversalAuthority,
+    aujourd_hui: NaiveDate,
 ) -> Result<JournalEntryWithLines, DbError> {
     reverse_in_tx_inner(
         tx,
@@ -2638,7 +2657,7 @@ pub async fn reverse_owned_in_tx(
         id,
         user_id,
         Some(authority),
-        ReversalDating::Today,
+        ReversalDating::Today(aujourd_hui),
     )
     .await
 }
@@ -2653,8 +2672,9 @@ pub async fn reverse_owned_in_tx(
 enum ReversalDating {
     /// Datée **du jour**, dans l'exercice ouvert qui couvre ce jour — la
     /// contre-passation historique (Story 24-4a), celle de `/reverse` et des
-    /// quatre annulations.
-    Today,
+    /// quatre annulations. Le jour est celui que l'appelant a lu sur
+    /// l'horloge de la requête (Story 35-5a0).
+    Today(NaiveDate),
     /// Datée du **premier jour de l'exercice qui suit** celui de l'origine,
     /// dans cet exercice — pour les transitoires de fin d'exercice
     /// (`/reverse-at-next-fiscal-year-start`).
@@ -2931,8 +2951,7 @@ async fn reverse_in_tx_inner(
     // d'exercice, résolu par le rejeu (doc-comment ci-dessus, Story 15-12a).
     let (entry_date, fy) = match dating {
         // L'exercice ouvert du JOUR.
-        ReversalDating::Today => {
-            let today = Utc::now().date_naive();
+        ReversalDating::Today(today) => {
             let fy = super::fiscal_years::find_open_covering_date(tx, company_id, today)
                 .await?
                 .ok_or(DbError::FiscalYearInvalid)?;
@@ -3004,7 +3023,7 @@ async fn reverse_in_tx_inner(
     // le chemin du jour garde son JSON octet pour octet (T-b2), le chemin neuf
     // y ajoute sa datation (Story 29-1b, AC11).
     let details = match dating {
-        ReversalDating::Today => serde_json::json!({
+        ReversalDating::Today(_) => serde_json::json!({
             "reversalJournalEntryId": created.entry.id,
         }),
         ReversalDating::NextFiscalYearStart => serde_json::json!({
@@ -3099,9 +3118,10 @@ pub async fn reverse(
     company_id: i64,
     id: i64,
     user_id: i64,
+    aujourd_hui: NaiveDate,
 ) -> Result<JournalEntryWithLines, DbError> {
     let mut tx = pool.begin().await.map_err(map_db_error)?;
-    match reverse_in_tx(&mut tx, company_id, id, user_id).await {
+    match reverse_in_tx(&mut tx, company_id, id, user_id, aujourd_hui).await {
         Ok(created) => {
             tx.commit().await.map_err(map_db_error)?;
             Ok(created)
@@ -3981,7 +4001,7 @@ mod tests {
         let mut tx = pool.begin().await.unwrap();
         let mut cible = origine.entry.id;
         if causes.contre_passee || causes.contre_passation {
-            let inverse = reverse_in_tx(&mut tx, company_id, origine.entry.id, admin)
+            let inverse = reverse_in_tx(&mut tx, company_id, origine.entry.id, admin, jour)
                 .await
                 .unwrap();
             if causes.contre_passation {
@@ -5821,9 +5841,10 @@ mod tests {
         // L'appelant ouvre SA transaction, contre-passe, puis échoue.
         {
             let mut tx = pool.begin().await.unwrap();
-            let inverse = reverse_in_tx(&mut tx, company_id, origine.entry.id, admin_user_id)
-                .await
-                .expect("la contre-passation doit réussir dans la transaction");
+            let inverse =
+                reverse_in_tx(&mut tx, company_id, origine.entry.id, admin_user_id, today)
+                    .await
+                    .expect("la contre-passation doit réussir dans la transaction");
             assert_eq!(
                 inverse.entry.reverses_entry_id,
                 Some(origine.entry.id),

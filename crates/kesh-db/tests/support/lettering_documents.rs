@@ -22,6 +22,13 @@
 //! sous-ensemble, n'a pas de « code mort » au sens du lint.
 #![allow(dead_code)]
 
+/// Story 35-5a0 — la date du jour de l'horloge de test (résolu depuis `support/`).
+/// Un binaire qui inclut aussi `jour.rs` au premier niveau en a deux copies,
+/// deux modules distincts : voulu (C-e355a0-4), d'où l'`allow`.
+#[allow(dead_code, clippy::duplicate_mod)]
+#[path = "jour.rs"]
+mod jour;
+
 use chrono::NaiveDate;
 use kesh_db::entities::{
     NewCreditNote, NewInvoice, NewInvoiceLine, NewPaymentBatch, NewSupplierInvoice,
@@ -38,8 +45,11 @@ use sqlx::MySqlPool;
 
 /// Aujourd'hui moins `n` jours — toutes les dates de montage sont PASSÉES :
 /// `lock_books` et `unlock_books` refusent une borne `>= aujourd'hui`.
+///
+/// Story 35-5a0 (D4, remédiation de la revue P2) : « aujourd'hui » est le jour de
+/// l'horloge de test, celui que reçoivent les gestes du montage et des tests.
 pub fn jours_avant(n: i64) -> NaiveDate {
-    chrono::Utc::now().date_naive() - chrono::Duration::days(n)
+    jour::aujourd_hui_test() - chrono::Duration::days(n)
 }
 
 /// Une société seedée, prête à régler, solder et créditer : comptes de nature
@@ -448,6 +458,7 @@ pub async fn seed_lettering_documents(pool: &MySqlPool) -> Fixture {
         seeded.company_id,
         inv,
         sid,
+        jour::aujourd_hui_test(),
     )
     .await
     .expect("annulation");
@@ -542,9 +553,15 @@ pub async fn seed_lettering_documents(pool: &MySqlPool) -> Fixture {
     let inv = facture(pool, &seeded, dec!(15.00), ancienne).await;
     regler(pool, &seeded, inv, dec!(15.00), ancienne).await;
     factures.push(("soldée puis sous la borne", inv));
-    companies::lock_books(pool, seeded.admin_user_id, seeded.company_id, ancienne)
-        .await
-        .expect("verrou de période");
+    companies::lock_books(
+        pool,
+        seeded.admin_user_id,
+        seeded.company_id,
+        ancienne,
+        jour::aujourd_hui_test(),
+    )
+    .await
+    .expect("verrou de période");
 
     Fixture {
         seeded,
@@ -867,12 +884,20 @@ pub async fn payer_par(
     choix: SettlementChoice,
     le: NaiveDate,
 ) -> i64 {
-    supplier_invoices::pay(pool, seeded.company_id, id, choix, le, seeded.admin_user_id)
-        .await
-        .expect("paiement fournisseur")
-        .invoice
-        .settlement_journal_entry_id
-        .expect("écriture de règlement")
+    supplier_invoices::pay(
+        pool,
+        seeded.company_id,
+        id,
+        choix,
+        le,
+        seeded.admin_user_id,
+        jour::aujourd_hui_test(),
+    )
+    .await
+    .expect("paiement fournisseur")
+    .invoice
+    .settlement_journal_entry_id
+    .expect("écriture de règlement")
 }
 
 /// Paie par virement depuis le compte bancaire des [`Achats`].

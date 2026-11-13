@@ -25,6 +25,7 @@
 
 use std::collections::BTreeSet;
 
+use chrono::NaiveDate;
 use rust_decimal::Decimal;
 use sqlx::MySqlPool;
 
@@ -1061,10 +1062,11 @@ pub async fn validate(
     id: i64,
     version: i32,
     user_id: i64,
+    aujourd_hui: NaiveDate,
 ) -> Result<SupplierInvoiceSettlementView, DbError> {
     let mut tx = pool.begin().await.map_err(map_db_error)?;
     let result = validate_in_tx(&mut tx, company_id, id, version, user_id).await;
-    let (view, _) = commit_with_view(tx, company_id, result, |_| id).await?;
+    let (view, _) = commit_with_view(tx, company_id, result, |_| id, aujourd_hui).await?;
     Ok(view)
 }
 
@@ -1077,10 +1079,11 @@ pub async fn unvalidate(
     id: i64,
     version: i32,
     user_id: i64,
+    aujourd_hui: NaiveDate,
 ) -> Result<SupplierInvoiceSettlementView, DbError> {
     let mut tx = pool.begin().await.map_err(map_db_error)?;
     let result = unvalidate_in_tx(&mut tx, company_id, id, version, user_id).await;
-    let (view, _) = commit_with_view(tx, company_id, result, |_| id).await?;
+    let (view, _) = commit_with_view(tx, company_id, result, |_| id, aujourd_hui).await?;
     Ok(view)
 }
 
@@ -1520,8 +1523,9 @@ async fn matched_transaction_locked(
 /// tiennent puis demandent l'exclusif s'interbloquent), et l'insertion des
 /// lignes reprend les comptes après l'exercice. Les comptes désignés de
 /// `(2, désignés)` (passif, actif) et les comptes de charge (`Expense`) sont
-/// disjoints **tant que les types désignés sont respectés** — ce qui n'est pas
-/// contrôlé après la désignation (angle mort assumé, revue de code P1, B-3) :
+/// disjoints **tant que les types désignés sont respectés** — ce que la garde à
+/// l'usage refuse désormais (Story 35-3, #537), mais **après** les verrous (revue
+/// de code P1, B-3) :
 /// un compte désigné retypé en charge et imputé par une ligne prend un verrou
 /// exclusif en `(2, suite)` puis partagé en `(2, désignés)`, et deux saisies
 /// croisées sur deux tels comptes peuvent s'interbloquer ; ce cycle étroit
@@ -1722,7 +1726,8 @@ pub async fn validate_in_tx(
     // Story 15-5d (#429) — la garde à l'usage : les seuls comptes de réglage
     // écrits (la TVA récupérable seulement si la TVA totale est positive), sur
     // l'instantané verrouillé en (2, désignés). Absent ou archivé →
-    // `InactiveOrInvalidAccounts` ; non imputable →
+    // `InactiveOrInvalidAccounts` ; sinon, type contraire au réglage →
+    // `DesignatedAccountsWrongType` (Story 35-3) ; sinon, non imputable →
     // `DesignatedAccountsNotPostable`.
     designated.check_written(&generated.roles, &settings)?;
     let entry_lines = generated.lines;
@@ -1903,6 +1908,7 @@ pub async fn pay(
     choice: SettlementChoice,
     payment_date: chrono::NaiveDate,
     user_id: i64,
+    aujourd_hui: NaiveDate,
 ) -> Result<SupplierInvoiceSettlementView, DbError> {
     let mut tx = pool.begin().await.map_err(map_db_error)?;
     let result = async {
@@ -1911,7 +1917,7 @@ pub async fn pay(
         pay_in_tx(&mut tx, company_id, id, choice, payment_date, user_id).await
     }
     .await;
-    let (view, _) = commit_with_view(tx, company_id, result, |_| id).await?;
+    let (view, _) = commit_with_view(tx, company_id, result, |_| id, aujourd_hui).await?;
     Ok(view)
 }
 
@@ -2427,6 +2433,7 @@ pub async fn supplier_invoice_cancel_blocker(
     conn: &mut sqlx::MySqlConnection,
     company_id: i64,
     id: i64,
+    aujourd_hui: NaiveDate,
 ) -> Result<Option<super::settlement_cancellation::SettlementCancelHit>, DbError> {
     use crate::errors::SettlementCancelBlocker;
 
@@ -2464,6 +2471,7 @@ pub async fn supplier_invoice_cancel_blocker(
         company_id,
         purchase_entry,
         None,
+        aujourd_hui,
     )
     .await?
     {
@@ -2512,6 +2520,7 @@ pub async fn cancel_in_tx(
     company_id: i64,
     id: i64,
     user_id: i64,
+    aujourd_hui: NaiveDate,
 ) -> Result<SupplierInvoiceWithLines, DbError> {
     use crate::errors::SettlementCancelBlocker;
     use crate::repositories::journal_entries::{self, ReversalAuthority};
@@ -2571,7 +2580,7 @@ pub async fn cancel_in_tx(
         | SettlementCancelBlocker::SupplierInvoiceInPaymentBatch),
         _,
         _,
-    )) = supplier_invoice_cancel_blocker(tx, company_id, id).await?
+    )) = supplier_invoice_cancel_blocker(tx, company_id, id, aujourd_hui).await?
     {
         return Err(DbError::SupplierInvoiceNotCancellable { blocker });
     }
@@ -2605,6 +2614,7 @@ pub async fn cancel_in_tx(
         ReversalAuthority::SupplierPurchase {
             supplier_invoice_id: id,
         },
+        aujourd_hui,
     )
     .await?;
 
@@ -2682,10 +2692,11 @@ pub async fn cancel(
     company_id: i64,
     id: i64,
     user_id: i64,
+    aujourd_hui: NaiveDate,
 ) -> Result<SupplierInvoiceSettlementView, DbError> {
     let mut tx = pool.begin().await.map_err(map_db_error)?;
-    let result = cancel_in_tx(&mut tx, company_id, id, user_id).await;
-    let (view, _) = commit_with_view(tx, company_id, result, |_| id).await?;
+    let result = cancel_in_tx(&mut tx, company_id, id, user_id, aujourd_hui).await;
+    let (view, _) = commit_with_view(tx, company_id, result, |_| id, aujourd_hui).await?;
     Ok(view)
 }
 
@@ -2707,8 +2718,16 @@ pub async fn supplier_settlement_cancel_blocker(
     conn: &mut sqlx::MySqlConnection,
     company_id: i64,
     supplier_invoice_id: i64,
+    aujourd_hui: NaiveDate,
 ) -> Result<Option<super::settlement_cancellation::SettlementCancelHit>, DbError> {
-    supplier_settlement_cancel_blocker_unlinking(conn, company_id, supplier_invoice_id, None).await
+    supplier_settlement_cancel_blocker_unlinking(
+        conn,
+        company_id,
+        supplier_invoice_id,
+        None,
+        aujourd_hui,
+    )
+    .await
 }
 
 /// [`supplier_settlement_cancel_blocker`], avec l'**exemption étroite** du
@@ -2726,6 +2745,7 @@ pub async fn supplier_settlement_cancel_blocker_unlinking(
     company_id: i64,
     supplier_invoice_id: i64,
     unlinking: Option<i64>,
+    aujourd_hui: NaiveDate,
 ) -> Result<Option<super::settlement_cancellation::SettlementCancelHit>, DbError> {
     let row: Option<(String, Option<i64>)> = sqlx::query_as(
         "SELECT status, settlement_journal_entry_id FROM supplier_invoices \
@@ -2748,7 +2768,11 @@ pub async fn supplier_settlement_cancel_blocker_unlinking(
         )));
     };
     super::settlement_cancellation::settlement_entry_cancel_blocker(
-        conn, company_id, entry_id, unlinking,
+        conn,
+        company_id,
+        entry_id,
+        unlinking,
+        aujourd_hui,
     )
     .await
 }
@@ -2780,6 +2804,7 @@ pub async fn cancel_settlement_in_tx(
     company_id: i64,
     id: i64,
     user_id: i64,
+    aujourd_hui: NaiveDate,
 ) -> Result<SupplierSettlementCancellation, DbError> {
     use crate::errors::SettlementCancelBlocker;
     use crate::repositories::journal_entries::{self, ReversalAuthority};
@@ -2836,7 +2861,7 @@ pub async fn cancel_settlement_in_tx(
         | SettlementCancelBlocker::DocumentLetteringInClosedPeriods),
         _,
         _,
-    )) = supplier_settlement_cancel_blocker(tx, company_id, id).await?
+    )) = supplier_settlement_cancel_blocker(tx, company_id, id, aujourd_hui).await?
     {
         return Err(DbError::SettlementNotCancellable { blocker });
     }
@@ -2876,6 +2901,7 @@ pub async fn cancel_settlement_in_tx(
         ReversalAuthority::SupplierSettlement {
             supplier_invoice_id: id,
         },
+        aujourd_hui,
     )
     .await?;
 
@@ -2965,10 +2991,11 @@ pub async fn cancel_settlement(
     company_id: i64,
     id: i64,
     user_id: i64,
+    aujourd_hui: NaiveDate,
 ) -> Result<SupplierSettlementCancelled, DbError> {
     let mut tx = pool.begin().await.map_err(map_db_error)?;
-    let result = cancel_settlement_in_tx(&mut tx, company_id, id, user_id).await;
-    let (view, done) = commit_with_view(tx, company_id, result, |_| id).await?;
+    let result = cancel_settlement_in_tx(&mut tx, company_id, id, user_id, aujourd_hui).await;
+    let (view, done) = commit_with_view(tx, company_id, result, |_| id, aujourd_hui).await?;
     Ok(SupplierSettlementCancelled {
         invoice: view,
         reversal_journal_entry_id: done.reversal_journal_entry_id,
@@ -3010,13 +3037,17 @@ pub struct SupplierInvoiceSettlementView {
 ///
 /// La lecture elle-même est [`get_settlement_view_in_tx`] (Story 34-8, #938) ;
 /// cette forme lui ouvre une transaction de lecture et la valide.
+///
+/// `aujourd_hui` (Story 35-5a0) : la date du jour, pour les deux bloqueurs
+/// (rang 5 : l'exercice où la contre-passation serait datée).
 pub async fn get_settlement_view(
     pool: &MySqlPool,
     company_id: i64,
     id: i64,
+    aujourd_hui: NaiveDate,
 ) -> Result<Option<SupplierInvoiceSettlementView>, DbError> {
     let mut tx = pool.begin().await.map_err(map_db_error)?;
-    let view = get_settlement_view_in_tx(&mut tx, company_id, id).await?;
+    let view = get_settlement_view_in_tx(&mut tx, company_id, id, aujourd_hui).await?;
     tx.commit().await.map_err(map_db_error)?;
     Ok(view)
 }
@@ -3041,6 +3072,7 @@ pub async fn get_settlement_view_in_tx(
     tx: &mut sqlx::Transaction<'_, sqlx::MySql>,
     company_id: i64,
     id: i64,
+    aujourd_hui: NaiveDate,
 ) -> Result<Option<SupplierInvoiceSettlementView>, DbError> {
     let Some(invoice) = sqlx::query_as::<_, SupplierInvoice>(FIND_SCOPED_SQL)
         .bind(id)
@@ -3052,8 +3084,10 @@ pub async fn get_settlement_view_in_tx(
         return Ok(None);
     };
     let lines = fetch_lines(tx, invoice.id).await?;
-    let settlement_cancel_blocker = supplier_settlement_cancel_blocker(tx, company_id, id).await?;
-    let invoice_cancel_blocker = supplier_invoice_cancel_blocker(tx, company_id, id).await?;
+    let settlement_cancel_blocker =
+        supplier_settlement_cancel_blocker(tx, company_id, id, aujourd_hui).await?;
+    let invoice_cancel_blocker =
+        supplier_invoice_cancel_blocker(tx, company_id, id, aujourd_hui).await?;
     let last_confirmed_batch =
         super::payment_batches::last_confirmed_batch_for_invoice(&mut **tx, company_id, id).await?;
     // Story 30-2c (AC18) — le document, lu dans le même instantané (lecture
@@ -3092,11 +3126,15 @@ pub async fn get_settlement_view_in_tx(
 /// `_once` de `kesh-api`, qui travaillent en `AppError` : une seule
 /// lecture-puis-commit. Une fonction ordinaire, non une macro, pour que la garde
 /// de structure (`kesh-api/tests/supplier_invoice_response_e2e.rs`) la lise.
+///
+/// `aujourd_hui` (Story 35-5a0) : la date du jour, lue une fois par l'appelant,
+/// pour les bloqueurs de la vue.
 pub async fn commit_with_view<T, E: From<DbError>>(
     mut tx: sqlx::Transaction<'_, sqlx::MySql>,
     company_id: i64,
     result: Result<T, E>,
     view_id: impl FnOnce(&T) -> i64,
+    aujourd_hui: NaiveDate,
 ) -> Result<(SupplierInvoiceSettlementView, T), E> {
     let done = match result {
         Ok(done) => done,
@@ -3106,7 +3144,7 @@ pub async fn commit_with_view<T, E: From<DbError>>(
         }
     };
     let id = view_id(&done);
-    let view = match get_settlement_view_in_tx(&mut tx, company_id, id).await {
+    let view = match get_settlement_view_in_tx(&mut tx, company_id, id, aujourd_hui).await {
         Ok(Some(view)) => view,
         Ok(None) => {
             let _ = tx.rollback().await;

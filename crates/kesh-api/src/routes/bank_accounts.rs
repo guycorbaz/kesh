@@ -1004,7 +1004,7 @@ pub async fn create_bank_account(
             Some(OpeningRequest {
                 opening,
                 description: opening_entry_description(&state.i18n, &locale, &display_name),
-                today: chrono::Utc::now().date_naive(),
+                today: state.horloge.aujourd_hui(),
             })
         }
         None => None,
@@ -1249,7 +1249,7 @@ pub async fn enter_opening_balance(
     let opening = parse_opening_balance(Some(&body))?.ok_or_else(invalid_opening_amount)?;
     let company = crate::helpers::get_company_for(&current_user, &state.pool).await?;
     let locale = Locale::from(company.accounting_language.as_str());
-    let today = chrono::Utc::now().date_naive();
+    let today = state.horloge.aujourd_hui();
 
     let entry = crate::retry::retry_app_on_deadlock("bank_accounts::opening_balance", || {
         enter_opening_balance_once(

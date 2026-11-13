@@ -1357,6 +1357,9 @@ pub async fn cancel_invoice_settlement_handler(
     Path((id, settlement_id)): Path<(i64, i64)>,
 ) -> Result<Json<CancelSettlementResponse>, AppError> {
     let company = get_company_for(&current_user, &state.pool).await?;
+    // Story 35-5a0 — la date du jour, lue une fois : bloqueur et
+    // contre-passation la partagent, rejeux compris.
+    let aujourd_hui = state.horloge.aujourd_hui();
     let done = kesh_db::retry::retry_on_deadlock("invoices::cancel_settlement", || {
         kesh_db::repositories::invoice_settlements_write::cancel_settlement(
             &state.pool,
@@ -1364,6 +1367,7 @@ pub async fn cancel_invoice_settlement_handler(
             company.id,
             id,
             settlement_id,
+            aujourd_hui,
         )
     })
     .await?;

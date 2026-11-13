@@ -1762,6 +1762,7 @@ async fn lettering_pieces(pool: &MySqlPool, biz: &Business) -> LetteringPieces {
         SettlementChoice::InternalAccount { account_id: caisse },
         le,
         user,
+        crate::common::jour::aujourd_hui_test(),
     )
     .await
     .expect("paiement")
@@ -1769,9 +1770,15 @@ async fn lettering_pieces(pool: &MySqlPool, biz: &Business) -> LetteringPieces {
     .settlement_journal_entry_id
     .expect("écriture de paiement");
     let cancelled = supplier_invoice("FF-ANNULEE").await;
-    supplier_invoices::cancel(pool, company, cancelled.id, user)
-        .await
-        .expect("annulation");
+    supplier_invoices::cancel(
+        pool,
+        company,
+        cancelled.id,
+        user,
+        crate::common::jour::aujourd_hui_test(),
+    )
+    .await
+    .expect("annulation");
 
     let fy: i64 = sqlx::query_scalar("SELECT id FROM fiscal_years WHERE company_id = ?")
         .bind(company)
@@ -1806,9 +1813,15 @@ async fn lettering_pieces(pool: &MySqlPool, biz: &Business) -> LetteringPieces {
     )
     .await
     .expect("écriture manuelle");
-    journal_entries::reverse(pool, company, manual.entry.id, user)
-        .await
-        .expect("contre-passation");
+    journal_entries::reverse(
+        pool,
+        company,
+        manual.entry.id,
+        user,
+        crate::common::jour::aujourd_hui_test(),
+    )
+    .await
+    .expect("contre-passation");
 
     let pieces = LetteringPieces {
         sale_entry,
@@ -1992,16 +2005,27 @@ async fn full_import_letters_a_reopened_historical_piece(pool: MySqlPool) {
     let p = lettering_pieces(&pool, &biz).await;
     erase_marks(&pool).await;
     let borne = chrono::NaiveDate::from_ymd_opt(2026, 3, 31).unwrap();
-    assert!(borne < Utc::now().date_naive(), "montage : borne passée");
-    companies::lock_books(&pool, biz.ctx.user_id, biz.ctx.company_id, borne)
-        .await
-        .expect("borne posée après le règlement");
+    // Story 35-5a0 (D4, revue P2) : le jour que reçoivent `lock_books` / `unlock_books`.
+    assert!(
+        borne < crate::common::jour::aujourd_hui_test(),
+        "montage : borne passée"
+    );
+    companies::lock_books(
+        &pool,
+        biz.ctx.user_id,
+        biz.ctx.company_id,
+        borne,
+        crate::common::jour::aujourd_hui_test(),
+    )
+    .await
+    .expect("borne posée après le règlement");
     companies::unlock_books(
         &pool,
         biz.ctx.user_id,
         biz.ctx.company_id,
         None,
         "réouverture".into(),
+        crate::common::jour::aujourd_hui_test(),
     )
     .await
     .expect("borne levée");
@@ -4233,7 +4257,7 @@ async fn full_import_restores_mcp_keys_that_authenticate(pool: MySqlPool) {
         SendValidation::Required,
     )
     .await;
-    let lecture = Lecture::new(pool.clone());
+    let lecture = Lecture::new(pool.clone(), kesh_api::horloge::horloge_de_test());
     let trace = Trace::new(pool.clone());
     // Montage : avant l'import, K1 (supprimée) et K3 (révoquée) n'authentifient
     // pas, K2 si.
@@ -4528,6 +4552,7 @@ async fn full_import_restores_a_supplier_invoice_under_the_centime(pool: MySqlPo
         },
         le,
         biz.ctx.user_id,
+        crate::common::jour::aujourd_hui_test(),
     )
     .await
     .expect("paiement de la facture sous le centime");
@@ -5645,10 +5670,16 @@ async fn full_import_of_a_0_17_5_backup_keeps_the_numbers(pool: MySqlPool) {
     facture_numerotee(&pool, &biz, supplier, (2026, 2, 1)).await;
     facture_numerotee(&pool, &biz, supplier, (2026, 3, 1)).await;
     let perdue = facture_numerotee(&pool, &biz, supplier, (2026, 4, 1)).await;
-    let brouillon =
-        supplier_invoices::unvalidate(&pool, c, perdue.invoice.id, perdue.invoice.version, u)
-            .await
-            .unwrap();
+    let brouillon = supplier_invoices::unvalidate(
+        &pool,
+        c,
+        perdue.invoice.id,
+        perdue.invoice.version,
+        u,
+        crate::common::jour::aujourd_hui_test(),
+    )
+    .await
+    .unwrap();
     supplier_invoices::delete_draft(&pool, c, brouillon.invoice.id, u)
         .await
         .unwrap();

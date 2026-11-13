@@ -15,6 +15,11 @@
 //!
 //! Pré-requis : MariaDB démarré (`sqlx::test` crée une DB éphémère par test).
 
+/// Story 35-5a0 — la date du jour de l'horloge de test.
+#[allow(dead_code)]
+#[path = "support/jour.rs"]
+mod jour;
+
 use chrono::NaiveDate;
 use kesh_db::entities::contact::{ContactType, NewContact};
 use kesh_db::entities::{NewCreditNote, NewInvoice, NewInvoiceLine, SettlementChoice};
@@ -444,6 +449,7 @@ async fn cancelled_settlement_leaves_the_aggregates(pool: MySqlPool) {
         seeded.company_id,
         inv,
         settlement_id,
+        crate::jour::aujourd_hui_test(),
     )
     .await
     .expect("annulation du règlement");

@@ -16,7 +16,12 @@
 //! 3. la réparation (AC 16) — les deux voies du bandeau ;
 //! 4. l'angle mort assumé des prédicteurs d'annulation (AC 18, C120, #568).
 
-use chrono::{Datelike, NaiveDate, Utc};
+/// Story 35-5a0 — la date du jour de l'horloge de test.
+#[allow(dead_code)]
+#[path = "support/jour.rs"]
+mod jour;
+
+use chrono::{Datelike, NaiveDate};
 use kesh_db::entities::contact::{ContactType, NewContact, Salutation};
 use kesh_db::entities::journal_entry::Journal;
 use kesh_db::entities::{
@@ -63,7 +68,8 @@ async fn societe(pool: &MySqlPool) -> SeededCompany {
 /// (2020-2030) de couvrir le jour. *(Revue de code P1, B-3.)*
 async fn societe_du_jour(pool: &MySqlPool) -> (SeededCompany, i32) {
     let s = seed_accounting_company(pool).await.expect("seed");
-    let annee = Utc::now().date_naive().year();
+    // Story 35-5a0 (D4, revue P2) : l'année du jour de l'horloge de test.
+    let annee = crate::jour::aujourd_hui_test().year();
     sqlx::query("UPDATE fiscal_years SET name = ?, start_date = ?, end_date = ? WHERE id = ?")
         .bind(format!("Exercice {annee}"))
         .bind(d(annee, 1, 1))
@@ -532,6 +538,7 @@ async fn la_facture_fournisseur_et_son_paiement_sont_refuses(pool: MySqlPool) {
         },
         d(2026, 7, 2),
         s.admin_user_id,
+        crate::jour::aujourd_hui_test(),
     )
     .await;
     assert_posterieur_clos(r, n1, "Exercice 2027");
@@ -558,7 +565,7 @@ async fn la_contre_passation_du_jour_sous_un_futur_clos_est_refusee(pool: MySqlP
         &pool,
         s.fiscal_year_id,
         s.admin_user_id,
-        corps(&s, Utc::now().date_naive()),
+        corps(&s, crate::jour::aujourd_hui_test()),
     )
     .await
     .expect("origine");
@@ -566,8 +573,14 @@ async fn la_contre_passation_du_jour_sous_un_futur_clos_est_refusee(pool: MySqlP
     let avant = ecritures(&pool, &s).await;
 
     let mut tx = pool.begin().await.unwrap();
-    let r =
-        journal_entries::reverse_in_tx(&mut tx, s.company_id, e.entry.id, s.admin_user_id).await;
+    let r = journal_entries::reverse_in_tx(
+        &mut tx,
+        s.company_id,
+        e.entry.id,
+        s.admin_user_id,
+        crate::jour::aujourd_hui_test(),
+    )
+    .await;
     drop(tx);
     assert_posterieur_clos(r, futur, &format!("Exercice {}", annee + 1));
     assert_eq!(ecritures(&pool, &s).await, avant);
@@ -668,7 +681,7 @@ async fn predicteur_muet_sous_un_exercice_futur_clos(pool: MySqlPool) {
         &pool,
         s.fiscal_year_id,
         s.admin_user_id,
-        corps(&s, Utc::now().date_naive()),
+        corps(&s, crate::jour::aujourd_hui_test()),
     )
     .await
     .expect("écriture");
@@ -680,6 +693,7 @@ async fn predicteur_muet_sous_un_exercice_futur_clos(pool: MySqlPool) {
         s.company_id,
         e.entry.id,
         None,
+        crate::jour::aujourd_hui_test(),
     )
     .await
     .expect("lecture");
@@ -690,8 +704,14 @@ async fn predicteur_muet_sous_un_exercice_futur_clos(pool: MySqlPool) {
     );
 
     let mut tx = pool.begin().await.unwrap();
-    let r =
-        journal_entries::reverse_in_tx(&mut tx, s.company_id, e.entry.id, s.admin_user_id).await;
+    let r = journal_entries::reverse_in_tx(
+        &mut tx,
+        s.company_id,
+        e.entry.id,
+        s.admin_user_id,
+        crate::jour::aujourd_hui_test(),
+    )
+    .await;
     drop(tx);
     assert_posterieur_clos(r, futur, &format!("Exercice {}", annee + 1));
 }

@@ -338,6 +338,17 @@ error-designated-account-not-postable = { $count ->
     [one] Das unter Administration → Fakturierung festgelegte Konto { $numbers } ist nicht bebuchbar (Sammel-, Ergebnis- oder Abschlusskonto): Eine Administratorin oder ein Administrator muss dort stattdessen ein bebuchbares Konto festlegen.
    *[other] Die unter Administration → Fakturierung festgelegten Konten { $numbers } sind nicht bebuchbar (Sammel-, Ergebnis- oder Abschlusskonten): Eine Administratorin oder ein Administrator muss dort stattdessen bebuchbare Konten festlegen.
 }
+# Story 35-3 (#537) — ein seit seiner Festlegung umtypisiertes Konto: ein Satz pro Konto, dann der Handlungssatz.
+error-designated-account-wrong-type = Das Konto { $account }, unter Administration → Fakturierung als { $setting } festgelegt, ist ein { $actual }; diese Einstellung verlangt ein { $expected }.
+error-designated-account-wrong-type-action = Es wurde nichts gespeichert. Eine Administratorin oder ein Administrator muss die betreffende Einstellung korrigieren – ein Konto des richtigen Typs festlegen oder dem Konto seinen ursprünglichen Typ zurückgeben –, danach kann die Validierung unverändert erneut ausgeführt werden.
+error-designated-account-setting-receivable = Konto Forderungen aus Lieferungen und Leistungen
+error-designated-account-setting-vat-payable = Konto geschuldete MWST
+error-designated-account-setting-payable = Konto Verbindlichkeiten aus Lieferungen und Leistungen
+error-designated-account-setting-vat-recoverable = Konto Vorsteuer
+error-designated-account-type-asset = Aktivkonto
+error-designated-account-type-liability = Passivkonto
+error-designated-account-type-revenue = Ertragskonto
+error-designated-account-type-expense = Aufwandkonto
 error-rounding-account-not-configured = Diese Zahlung begleicht die Rechnung auf den Rappen genau, aber es ist kein verwendbares Konto für Rundungsdifferenzen festgelegt: Wählen Sie eines unter Administration → Fakturierung.
 error-rounding-account-not-configured-issuance = Der Gesamtbetrag dieses Belegs ist auf 5 Rappen gerundet, aber es ist kein verwendbares Konto für Rundungsdifferenzen festgelegt: Wählen Sie eines unter Administration → Fakturierung.
 error-write-off-account-not-configured-discount = Es ist kein verwendbares Skontokonto festgelegt: Wählen Sie eines unter Administration → Fakturierung, Abschnitt Restbetrag ausbuchen.

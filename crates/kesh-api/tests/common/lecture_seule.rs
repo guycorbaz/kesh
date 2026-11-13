@@ -22,7 +22,10 @@ pub async fn pool_lecture_seule(pool: &MySqlPool) -> MySqlPool {
     kesh_db::pool::pool_lecture_seule(pool, 4, kesh_api::mcp::DELAI_OUTIL)
 }
 
-/// Une `Lecture` sur [`pool_lecture_seule`].
+/// Une `Lecture` sur [`pool_lecture_seule`], à l'horloge de test (Story 35-5a0).
 pub async fn lecture_seule(pool: &MySqlPool) -> Lecture {
-    Lecture::new(pool_lecture_seule(pool).await)
+    Lecture::new(
+        pool_lecture_seule(pool).await,
+        kesh_api::horloge::horloge_de_test(),
+    )
 }

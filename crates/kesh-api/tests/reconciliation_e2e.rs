@@ -4282,7 +4282,9 @@ async fn ensure_fiscal_year_today(pool: &MySqlPool, company_id: i64) {
     // 2026 d'abord, par l'outil commun — sans quoi ses appels suivants
     // entreraient en collision (`uq_fiscal_years_company_start_date`).
     let _ = insert_fake_fiscal_year(pool, company_id).await;
-    let today = Utc::now().date_naive();
+    // Story 35-5a0 (D4, revue P2) : le jour de l'horloge de test, celle du serveur
+    // (`new_for_tests`) qui date la contre-passation.
+    let today = crate::common::jour::aujourd_hui_test();
     let covered: Option<i64> = sqlx::query_scalar(
         "SELECT id FROM fiscal_years WHERE company_id = ? AND start_date <= ? AND end_date >= ?",
     )
@@ -7150,9 +7152,15 @@ async fn unreconcile_of_a_closed_lettering_is_refused_in_its_family(pool: MySqlP
         &[vente, encaissement],
     )
     .await;
-    kesh_db::repositories::companies::lock_books(&pool, ctx.user_id, ctx.company_id, paid_on)
-        .await
-        .expect("verrou");
+    kesh_db::repositories::companies::lock_books(
+        &pool,
+        ctx.user_id,
+        ctx.company_id,
+        paid_on,
+        crate::common::jour::aujourd_hui_test(),
+    )
+    .await
+    .expect("verrou");
 
     let (st, view) = get_reco(&app, &ctx.jwt, tx_id).await;
     assert_eq!(st, 200, "got {view:?}");
@@ -10840,6 +10848,7 @@ async fn each_supplier_refusal_lands_in_failed(pool: MySqlPool) {
         },
         day_301b(6, 2),
         c.seeded.admin_user_id,
+        crate::common::jour::aujourd_hui_test(),
     )
     .await
     .unwrap();

@@ -2,6 +2,8 @@
 
 use thiserror::Error;
 
+use crate::entities::AccountType;
+
 /// Raison du refus d'un compte de produit référencé par une ligne de facture
 /// (Story 16-1a, #152 — décision D3).
 ///
@@ -655,6 +657,132 @@ impl NonPostableAccounts {
     }
 }
 
+/// Le **réglage** de facturation qui désigne un compte refusé par
+/// [`DbError::DesignatedAccountsWrongType`] (Story 35-3, #537).
+///
+/// Pendant public de `company_invoice_settings::DesignatedRole`, qui reste
+/// interne au dépôt : `kesh-api` en tire le libellé du réglage, et
+/// [`DesignatedSetting::api_value`] la valeur de `details.rejected[].setting`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum DesignatedSetting {
+    /// `default_receivable_account_id` — le compte débiteurs.
+    Receivable,
+    /// `default_vat_payable_account_id` — la TVA due.
+    VatPayable,
+    /// `default_payable_account_id` — le compte créanciers.
+    Payable,
+    /// `default_vat_recoverable_account_id` — la TVA récupérable.
+    VatRecoverable,
+}
+
+impl DesignatedSetting {
+    /// La valeur de `details.rejected[].setting` : `receivable`, `vatPayable`,
+    /// `payable`, `vatRecoverable`.
+    pub fn api_value(self) -> &'static str {
+        match self {
+            Self::Receivable => "receivable",
+            Self::VatPayable => "vatPayable",
+            Self::Payable => "payable",
+            Self::VatRecoverable => "vatRecoverable",
+        }
+    }
+}
+
+/// Un compte désigné aux réglages de facturation dont le **type** ne convient
+/// plus au réglage qui le désigne (Story 35-3, #537) : un compte débiteurs
+/// retypé en passif, des créanciers retypés en actif…
+///
+/// Comme [`NonPostableAccount`], il n'est construit que pour un compte **de la
+/// société et actif** (un compte absent, étranger ou archivé reste
+/// [`DbError::InactiveOrInvalidAccounts`] et prime) : son numéro est toujours
+/// connu.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WrongTypeDesignatedAccount {
+    pub account_id: i64,
+    /// Numéro du compte au plan comptable.
+    pub account_number: String,
+    /// Le réglage qui le désigne.
+    pub setting: DesignatedSetting,
+    /// Le type que ce réglage exige (`VAT_SETTING_ACCOUNT_TYPES` et
+    /// `CLAIM_SETTING_ACCOUNT_TYPES` de `company_invoice_settings`).
+    pub expected_type: AccountType,
+    /// Le type que le compte porte au moment de la validation.
+    pub actual_type: AccountType,
+}
+
+/// Liste **triée et non vide** des comptes désignés de mauvais type d'un refus
+/// (Story 35-3, #537).
+///
+/// Champ privé : seul [`WrongTypeDesignatedAccounts::new`] la construit. Tri
+/// par numéro dans l'ordre lexicographique de la chaîne — l'ordre de
+/// [`NonPostableAccounts`] —, puis par identifiant et par réglage
+/// (`Receivable < VatPayable < Payable < VatRecoverable`) : le message et
+/// `details.rejected` suivent cet ordre, quel que soit celui des rôles écrits.
+/// Un même compte désigné pour deux réglages et faux pour les deux y figure deux
+/// fois, une par réglage : chaque phrase du message nomme un réglage à corriger.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WrongTypeDesignatedAccounts(Vec<WrongTypeDesignatedAccount>);
+
+impl WrongTypeDesignatedAccounts {
+    /// Construit la liste : tri (numéro lexicographique, identifiant, réglage),
+    /// puis dédoublonnage par `(identifiant, réglage)`.
+    ///
+    /// **Précondition** : au moins un compte (`debug_assert!`), comme
+    /// [`NonPostableAccounts::new`].
+    pub fn new(accounts: impl IntoIterator<Item = WrongTypeDesignatedAccount>) -> Self {
+        let mut list: Vec<WrongTypeDesignatedAccount> = accounts.into_iter().collect();
+        list.sort_by(|a, b| {
+            a.account_number
+                .cmp(&b.account_number)
+                .then(a.account_id.cmp(&b.account_id))
+                .then(a.setting.cmp(&b.setting))
+        });
+        list.dedup_by(|a, b| a.account_id == b.account_id && a.setting == b.setting);
+        debug_assert!(
+            !list.is_empty(),
+            "WrongTypeDesignatedAccounts::new : la liste des comptes refusés est vide"
+        );
+        Self(list)
+    }
+
+    /// Les comptes, dans l'ordre d'affichage.
+    pub fn iter(&self) -> impl Iterator<Item = &WrongTypeDesignatedAccount> {
+        self.0.iter()
+    }
+
+    /// Nombre d'entrées (une par compte et par réglage).
+    pub fn len(&self) -> usize {
+        self.0.len()
+    }
+
+    /// Toujours faux pour une liste construite par [`Self::new`] (précondition).
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
+    /// **Seul constructeur** du détail JSON du refus
+    /// `DESIGNATED_ACCOUNT_WRONG_TYPE` : `{ "rejected": [{ "accountId",
+    /// "accountNumber", "setting", "expectedType", "actualType" }] }`, dans
+    /// l'ordre de la liste ; les types en valeurs de l'API (`Asset`,
+    /// `Liability`, `Revenue`, `Expense`).
+    pub fn details(&self) -> serde_json::Value {
+        let rejected: Vec<serde_json::Value> = self
+            .0
+            .iter()
+            .map(|a| {
+                serde_json::json!({
+                    "accountId": a.account_id,
+                    "accountNumber": a.account_number,
+                    "setting": a.setting.api_value(),
+                    "expectedType": a.expected_type.as_str(),
+                    "actualType": a.actual_type.as_str(),
+                })
+            })
+            .collect();
+        serde_json::json!({ "rejected": rejected })
+    }
+}
+
 /// Erreurs des opérations de persistance MariaDB.
 ///
 /// Les messages `Display` sont destinés au logging serveur uniquement.
@@ -824,6 +952,28 @@ pub enum DbError {
         "Un ou plusieurs comptes désignés dans les réglages de facturation ne sont pas imputables"
     )]
     DesignatedAccountsNotPostable(NonPostableAccounts),
+
+    /// Un ou plusieurs comptes **désignés dans les réglages de facturation** —
+    /// créance, TVA due, créanciers, TVA récupérable —, de la société et actifs,
+    /// n'ont plus le **type** que leur réglage exige au moment où la validation
+    /// d'une facture ou d'une facture fournisseur veut y écrire (Story 35-3,
+    /// #537) : un compte retypé après sa désignation (la page des réglages ne
+    /// contrôle le type qu'à l'enregistrement).
+    ///
+    /// Mappé vers HTTP **400 `DESIGNATED_ACCOUNT_WRONG_TYPE`**, détail
+    /// [`WrongTypeDesignatedAccounts::details`]. Le message nomme chaque compte,
+    /// son réglage, son type et le type attendu, puis dit qui agit et où — un
+    /// administrateur, dans *Administration → Facturation*.
+    ///
+    /// Ordre des causes (`check_written`) : un compte désigné absent, étranger
+    /// ou archivé reste [`DbError::InactiveOrInvalidAccounts`] et **prime** ;
+    /// cette variante prime à son tour sur
+    /// [`DbError::DesignatedAccountsNotPostable`] — un compte à la fois retypé
+    /// et non imputable n'est nommé que par elle.
+    #[error(
+        "Un ou plusieurs comptes désignés dans les réglages de facturation n'ont pas le type que leur réglage exige"
+    )]
+    DesignatedAccountsWrongType(WrongTypeDesignatedAccounts),
 
     /// Un paiement solde une facture au centime et produit un écart d'arrondi,
     /// mais aucun compte de différences d'arrondi utilisable n'est désigné dans
@@ -1616,6 +1766,7 @@ impl DbError {
             Self::InactiveOrInvalidAccounts => "INACTIVE_OR_INVALID_ACCOUNTS",
             Self::AccountsNotPostable(_) => "ACCOUNT_NOT_POSTABLE",
             Self::DesignatedAccountsNotPostable(_) => "ACCOUNT_NOT_POSTABLE",
+            Self::DesignatedAccountsWrongType(_) => "DESIGNATED_ACCOUNT_WRONG_TYPE",
             Self::RoundingAccountNotConfigured { .. } => "ROUNDING_ACCOUNT_NOT_CONFIGURED",
             Self::WriteOffAccountNotConfigured { .. } => "WRITE_OFF_ACCOUNT_NOT_CONFIGURED",
             Self::InvoiceBelowMinimum { .. } => "INVOICE_BELOW_MINIMUM",
