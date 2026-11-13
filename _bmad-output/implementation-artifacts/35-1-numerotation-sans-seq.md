@@ -195,9 +195,10 @@ avoirs lu mais non envoyé (AC5) ; M6 le miroir d'écran sans `NoSeq` (AC5) ; **
       `company_invoice_settings.rs:105` et `:314-316`, « cas du formulaire frontend actuel » ; `idor_multi_tenant_e2e.rs:747`,
       `:773`, « comme le fait le formulaire frontend » → « un client qui ne l'envoie pas » ; #216 reste testé) ; `DbError`,
       `errors.rs` ; écran et miroir ; clés ×4, gardes i18n ; manuel, `api-external.md`, CHANGELOG ; captures.
-- [x] Gates : backend complet (`kesh-db` touché) ; frontend complet ; E2E complet au dernier commit de code
-      (`settings-invoicing*`, `invoices*` en particulier). *(Annoté le 2026-11-13 : l'E2E complet se joue à la clôture, après
-      la revue — consigne de l'Epic 35, `e35-dev-commun.md` ; il n'a pas tourné au passage en `review`.)*
+- [x] Gates du passage en `review` et de la remédiation : backend complet (`kesh-db` touché) ; frontend complet.
+- [ ] E2E complet au dernier commit de code (`settings-invoicing*`, `invoices*` en particulier) — **à la clôture**, après la
+      revue (consigne de l'Epic 35, `e35-dev-commun.md`). *(Case scindée le 2026-11-13, revue P1, A7 : elle était cochée avec
+      l'E2E, qui n'a pas tourné.)*
 
 ## Dev Notes
 
@@ -340,6 +341,10 @@ Journaux hors dépôt, `/home/gcorbaz/devel/kesh-gate-logs/e351/` : `rouges.log`
   « Un numéro impossible à produire est refusé » 1, « FACT{SEQ} donnerait » 1. Le code `NUMBER_FORMAT_UNRENDERABLE` n'est **pas**
   au manuel utilisateur, qui ne cite aucun code d'erreur (la 35-3 non plus) : il est à `docs/api-external.md` (§ 10, la section
   neuve *Valider une facture — un numéro impossible à produire*, la ligne du tableau de l'avoir). Écart assumé à la lettre d'AC7.
+  *(Annoté le 2026-11-13, revue P1, A1 : la justification était **fausse** — le manuel utilisateur cite des codes d'erreur
+  (`user-manual.tex:464` `\texttt{ACCOUNT\_LINKED\_\allowbreak TO\_BANK\_ACCOUNT}`, `:2506`
+  `SETTLEMENT\_ACCOUNT\_\allowbreak IS\_CREDIT\_CARD`) ; seule « la 35-3 non plus » était vraie. Le code est ajouté au manuel
+  à la remédiation, `84a6a0334`, sur le même modèle ; l'écart à AC7 est levé.)*
 - **Captures** (thème clair, `kesh_e2e_e351` de voie 2, preset `with-data`, `captures.log`) : `01-numerotation-champ-avoirs.png`,
   `02-refus-ecran-f-year.png` (bouton désactivé : `true`), `02b-refus-ecran-bouton-desactive.png`,
   `03-formats-charges-sans-compteur.png` (aperçu et aide ambre ; l'enregistrement d'un autre réglage rend 200),
@@ -347,6 +352,9 @@ Journaux hors dépôt, `/home/gcorbaz/devel/kesh-gate-logs/e351/` : `rouges.log`
   l'API rend `400 NUMBER_FORMAT_UNRENDERABLE`, `details {"cause":"duplicate","document":"invoice"}`).
 - **Voies de base** : jusqu'au message de l'orchestrateur, bases et mutations M1 à M8 sur la voie 1 (3306) ; ensuite voie 2 (3307) :
   M4b, captures, `test-fast`. Les bases `kesh_e351` et `kesh_e2e_e351` de la **voie 1** restent (à supprimer par l'orchestrateur).
+- **AC4, l'année du numéro** (revue P1, A2) : la fiche attend `F-2026`, le test asserte `F-2020` — l'exercice du montage
+  (`seed_accounting_company`) va de 2020 à 2030, et `{YEAR}` est l'année de **début** de l'exercice. Sans effet sur le
+  comportement prouvé.
 - **Écart à la consigne Edit** : aucun sur le code et les tests ; les mutations ont été posées par `muter-e351.py` (Python, chaîne
   unique contrôlée), permis pour les mutations. Les scripts hors dépôt (`kesh-gate-logs/e351/`) ont été retouchés par `sed -i`
   (bascule de voie, citation d'une mutation) : ce ne sont ni du code ni des tests du dépôt.
@@ -451,3 +459,46 @@ Journaux hors dépôt, `/home/gcorbaz/devel/kesh-gate-logs/e351/` : `rouges.log`
   erreur ; Vitest 3211, 233 fichiers ; build). **E2E complet non lancé** (à la clôture). Choix C-e351-1 à -6. Écarts : branche
   `NO_SEQ` du miroir hors de `validateTemplateRules` (C-e351-4) ; le code d'erreur au manuel API et non au manuel utilisateur (AC7) ;
   aucune entorse à la consigne Edit sur le code et les tests (mutations par script Python, permis). Statut : `review`.
+- 2026-11-13 — **Revue de code P1** (Opus, trois lentilles ; `kesh-gate-logs/e351-review-p1-{B,E,A}.md`) : B 0 MEDIUM + 5 LOW,
+  E 2 MEDIUM + 4 LOW, A 1 MEDIUM + 7 LOW — **3 MEDIUM** (A1, E1, E2, vérifiés au code par l'orchestrateur), 16 LOW.
+  **Remédiation** (Opus 5.5, `e351`, voie 2), un seul commit de code : **`84a6a0334`**.
+  - **Rouges d'abord** : Vitest `rem-p1-rouges-vitest.log` (base `c8725b4bb` + tests) — 7 rouges / 71 (les cinq formats d'E2
+    rendaient `NO_SEQ`, et les deux formats mal formés chargés laissaient le bouton actif) ; Rust `rem-p1-rouges-rust.log` (voie 2)
+    — 3 rouges / 15 : la garde `into_number_duplicate` (B2), le message `duplicate` sans « Un administrateur » (E4), le nom
+    multi-octets (message « 64 caractères », E1). Verts au départ, dits comme tels : les compteurs ajoutés aux tests `duplicate` et
+    `brace` (le code les tenait déjà ; preuve par M4c), l'accolade côté avoir, `invalid_format` (API et unitaire), le message de
+    l'avoir `too_long` (A4).
+  - **A1** : `(\texttt{NUMBER\_FORMAT\_\allowbreak UNRENDERABLE})` à l'item du manuel, sur le modèle de `:464` et `:2506` ; PDF
+    régénéré (`rem-p1-make-user.log`), sondes aplaties (`rem-p1-sondes-pdf.log`) : « NUMBER_FORMAT_ UNRENDERABLE » 1 (coupé en
+    fin de ligne au point d'`\allowbreak`, l'espace vient de l'aplatissement), « plus de 64 octets » 1, « un administrateur doit
+    corriger » 1, « plus de 64 caractères (un nom » 0. Justification fausse du Dev Agent Record annotée.
+  - **E1** (C-e351-7) : la borne reste en **octets** (la charge QR est bornée en octets, `generator.rs:73`) ; message ×4, manuel,
+    `api-external.md` (deux lieux), CHANGELOG et doc-comment de `render` le disent ; test `ac3_multibyte_fiscal_year_name_counts_bytes`.
+  - **E2** : le miroir découpe tout le gabarit (`/\{([^}]*)\}|([^{}]+)|([{}])/g`) — une accolade isolée rend
+    `invoices-format-error-unmatched-brace` (clé neuve ×4) — et n'accepte qu'un padding décimal (`/^\d+$/`) ; tests des cinq
+    formats et de deux formats mal formés chargés (bouton désactivé). `sitesTotal` 3031 → 3032, relevé par la garde.
+  - **LOW traités** : B1 (« clé d'API » retirée de quatre commentaires de la route, dont deux antérieurs à la story, même
+    symptôme) ; B5/E6 (doc-comment de `render`) ; B2 (la clé se lit en fin de message, `for key '<clé>'` ou `.<clé>'` ; test
+    unitaire) ; B3/A3/E5 (compteur asserté dans les deux `duplicate` et les deux `brace`, accolade côté avoir, `invalid_format` à
+    l'API et `from_render_error` en unitaire) ; A2, A7 (Dev Agent Record ; case « Gates » scindée) ; A4 ; A5 (ci-dessous) ; A6
+    (journaux frontend annotés de leur commit, et les nouveaux l'écrivent en tête) ; E4 (« un administrateur doit… » dans les
+    quatre causes, ×4, G9).
+  - **A5** (complément de l'entrée *Développement*) : le test `invoice-number-format.test.ts:94-97` de la 33-1b (« F-{YEAR}
+    accepté ») a été **réécrit**, rouge attendu d'AC5 : `F-{YEAR}` refusé en `NO_SEQ`, `{FY}{SEQ}` accepté.
+  - **LOW non traités**, à tracer : **B4** (les phrases `too_long` et `duplicate` présument leur cas typique — nom d'exercice cité
+    sans `{FY}` ; doublon venu d'un format antérieur) ; **E3** (course entre deux administrateurs : `NoSeq` jugé contre la valeur
+    enregistrée passe avant le `409` de version, l'écran ne se recharge pas) ; **E5, partie** (aucun test du format par défaut
+    `F-{YEAR}-{SEQ:04}` sur deux exercices commençant la même année). **A8** : porté par l'orchestrateur à la rétrospective.
+  - **Mutations** (`mut/`, restaurées par `git checkout -- <f>` puis `touch`) : **M8b** (contrainte de l'avoir renommée) — tuée
+    par `ac4_credit_note_duplicate_number_is_a_typed_refusal` (409 au lieu de 400, `M8b.log`) ; **M4c** (`COMMIT` juste après
+    l'avance du compteur de l'avoir) — tuée par l'assertion « le compteur n'a pas avancé » dans
+    `ac4_credit_note_duplicate_number_is_a_typed_refusal` (branche `duplicate`), `ac3_credit_note_number_too_long_…` et
+    `ac3_brace_in_fiscal_year_name_refuses_the_credit_note` (`M4c.log`) ; **M9** (garde de `into_number_duplicate` rendue au
+    `contains` libre) — tuée par `into_number_duplicate_converts_only_the_named_key` (`M9.log`). M4 (entrée *Développement*)
+    reste déclarée tuée par un délai de verrou, non par le compteur.
+  - **Gates de remédiation au commit `84a6a0334`** : `clippy -D warnings` vert (`rem-p1-clippy.log`) ; ciblé
+    (`number_format_unrenderable_e2e`, `textes_coherents`, lib `kesh-db` et `kesh-core`, `kesh-i18n`) **884/884**
+    (`rem-p1-verts-rust.log`, sources de `84a6a0334` avant son commit) ; `scripts/test-fast.sh --ci` (voie 2, bases remises à
+    neuf) : **5391 exécutés, 5391 passés, 13 ignorés** (`rem-p1-test-fast-ci.log`) ; frontend complet : `check` 0 erreur (29 avertissements anciens), `lint-i18n-ownership` vert, `test:unit`
+    **3219 passés, 233 fichiers**, `build` vert (`rem-p1-front-*.log`, commit écrit en tête). **Ni `gate-ci` ni E2E** (consigne de
+    la remédiation ; à la clôture). Statut : `review`, passe P2 à lancer.
