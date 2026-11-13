@@ -1048,7 +1048,7 @@ development_status:
   35-0-kickoff: done  # 2026-11-12 : fichier d'epic, clés, fiches 35-2 et 35-3 (validation à lancer par l'orchestrateur).
   35-1-numerotation-sans-seq: backlog  # #932, #948 ; descend (format par défaut gardé par Guy)
   35-2-refus-pdf-nomme-le-champ: split  # 2026-11-12, validation P2 : découpée en 35-2a et 35-2b (C-e350-9)
-  35-2a-refus-pdf-contrat-details: in-progress  # #955, #964 ; tête d’epic, avant le 2026-11-30 ; recadrée en P3 (message seul, C-e350-11) ; validation terminée (P7) ; développement 2026-11-12 (kesh-e352a)
+  35-2a-refus-pdf-contrat-details: review  # #955, #964 ; tête d’epic, avant le 2026-11-30 ; recadrée en P3 (message seul, C-e350-11) ; validation terminée (P7) ; développée le 2026-11-12/13 (kesh-e352a), gates et E2E verts au commit fe88ce8c ; revue de code à lancer
   35-2b-lot-rappels-refus-pdf: ready-for-dev  # #955 ; après la fusion de 35-2a ; validation à lancer
   35-3-comptes-designes-type: ready-for-dev  # fiche 2026-11-12, validation à lancer ; #537 ; tête d'epic, avant le 2026-11-30
   35-4-rejeter-ligne-signalee: ready-for-dev  # fiche 2026-11-12, validation terminée en P4 (9 → 3 → 2 → 0 MEDIUM) ; #1023, #1024
