@@ -244,8 +244,10 @@ déclaration neuve avant tout ajustement.
 
 - `scripts/test-fast.sh --ci` (fmt, clippy, nextest, base `kesh_e352b` recréée) : **5334 passés, 13 ignorés**, rc 0
   (`kesh-gate-logs/e352b/test-fast-ci.log`, commit `24f69d217`).
-- `scripts/gate-ci.sh kesh_ci_e352b` : GATECI (`kesh-gate-logs/e352b/gate-ci.log`, `gate-ci-console.log`, commit
-  `24f69d217`).
+- `scripts/gate-ci.sh kesh_ci_e352b` (un processus par binaire, base recréée) : **5341 passés, 0 échoué, 17 ignorés**, code 0
+  (`kesh-gate-logs/e352b/gate-ci.log`, `gate-ci-console.log`, commit `24f69d217`).
+- Captures : spec de capture `1 passed` (`captures.log`), backend sur `kesh_e2e_e352b` recréée, arrêté par son PID, port 3409
+  libre avant et après (`captures-console.log`).
 - Frontend complet : `npm run check` 0 erreur, 29 avertissements (`front-check.log`) ; `lint-i18n-ownership` PASS
   (`front-lint-i18n-ownership.log`) ; Vitest **3195 passés, 233 fichiers** (`front-test:unit.log`) ; `npm run build` rc 0
   (`front-build.log`) — tous au commit `24f69d217`.
