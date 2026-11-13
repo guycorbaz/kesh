@@ -35,7 +35,7 @@
 	import type { ProjectResponse } from '$lib/features/projects/projects.types';
 	import type { ReconciliationProposal } from './reconciliation.types';
 	import { manualMatchTransaction } from './reconciliation.api';
-	import { counterpartyAccounts } from './reconciliation-counterparties';
+	import { counterpartyAccounts, keepOfferedCounterparty } from './reconciliation-counterparties';
 	import CounterpartyClaimNotice from './CounterpartyClaimNotice.svelte';
 
 	type Props = {
@@ -86,6 +86,15 @@
 	// Story 34-3 (AC-2) : tout compte actif et imputable, sauf celui de la banque,
 	// écarté par son identifiant (Story 15-6d, AC4). Règle partagée avec *Éclater*.
 	const filteredAccounts = $derived(counterpartyAccounts(accounts, bankLedgerAccountId));
+
+	// Story 35-7 (#1000, D1) : un compte que le dialogue ne propose plus — celui de la banque,
+	// choisi avant que le parent l'ait identifié — est retiré de la sélection. Sans quoi le champ
+	// s'affichait vide pendant que l'identifiant partait au serveur. N'écrit que si la valeur
+	// change.
+	$effect(() => {
+		const kept = keepOfferedCounterparty(counterpartyId, accounts, bankLedgerAccountId);
+		if (kept !== counterpartyId) counterpartyId = kept;
+	});
 
 	// Reset à l'ouverture + pré-remplissage valueDate depuis tx.
 	$effect(() => {

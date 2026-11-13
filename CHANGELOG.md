@@ -8,6 +8,14 @@ Le contenu est rédigé en français à destination des **fiduciaires, PME, ind�
 
 ---
 
+## [0.17.7] — Non publié
+
+### Corrigé
+
+- **Le champ de compte d'une écriture manuelle ou d'un éclatement ne paraît plus vide quand un compte part au serveur** (refs [#1000](https://github.com/guycorbaz/kesh/issues/1000)) : un texte tapé puis abandonné — champ vidé ou « zzz » jamais choisi —, une fois le champ quitté, laisse place au compte retenu, qui est celui qui part ; le champ ne reste vide que si aucun compte ne l'est. Cela vaut pour tous les champs de compte obligatoires (écriture manuelle, éclatement, lignes d'une écriture, assistant TVA des achats). Et un compte de la banque choisi dans *Écriture manuelle* ou *Éclater* avant que Kesh l'ait identifié est ensuite retiré du champ, qui se vide : le dialogue dit alors « Compte de contrepartie obligatoire » ou « Ligne *N* : compte requis », au lieu d'un refus du serveur pour un champ qui paraissait vide.
+
+---
+
 ## [0.17.6] — 2026-11-12
 
 ⚠️ **Avant la mise à jour, prenez une sauvegarde complète** — la base, le `.keshbackup` **et** le dossier des documents. Cette version porte **une migration breaking** (`20261110000001_bank_accounts_without_iban`) : elle relève la version minimale de la base à **0.17.6**. Kesh écrit en plus sa propre sauvegarde dans `backup/pre-upgrade/` avant de migrer, mais elle ne dispense pas de la vôtre. **Une 0.17.5 refuse de démarrer sur une base passée en 0.17.6, et refuse d'importer une sauvegarde 0.17.6 : le retour à la 0.17.5 passe uniquement par la sauvegarde d'avant la mise à jour.**

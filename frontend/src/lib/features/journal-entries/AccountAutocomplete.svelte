@@ -17,7 +17,8 @@
 		 * Story 16-1b (D8/AC1) — affiche un bouton d'effacement et active la
 		 * sémantique « champ vidé au clavier = effacement explicite » (AC1-bis).
 		 *
-		 * **Défaut `false` : les 4 consommateurs existants sont stricts inchangés.**
+		 * **Défaut `false` : le champ est strict** — vidé au clavier puis quitté,
+		 * il réaffiche le compte retenu sans jamais le nullifier (Story 35-7).
 		 * Ne PAS l'activer sur un champ obligatoire — `JournalEntryForm` se
 		 * mettrait à nullifier ses lignes au `blur`, soit la dette #271.
 		 */
@@ -180,7 +181,7 @@
 
 	// Une valeur venue de l'extérieur annule le brouillon : le champ ne peut pas
 	// continuer d'afficher une saisie qui ne correspond plus à rien. Reproduit le
-	// comportement de l'ancien `$effect` pour les 4 consommateurs existants.
+	// comportement de l'ancien `$effect` pour les consommateurs existants.
 	let lastValue = $state<number | null | undefined>(undefined);
 	$effect(() => {
 		if (lastValue !== value) {
@@ -196,7 +197,7 @@
 	// Achats », et le sélectionner marquait aussitôt la ligne invalide en
 	// désactivant l'enregistrement. L'interface conduisait l'utilisateur dans
 	// l'état bloquant qu'elle venait de créer. (Passe 2 de revue.)
-	// `undefined` par défaut : les 4 consommateurs existants sont inchangés.
+	// `undefined` par défaut : les consommateurs existants sont inchangés.
 	const active = $derived(
 		accounts.filter(
 			(a) =>
@@ -282,11 +283,21 @@
 	function handleBlur() {
 		open = false;
 
-		// Champ obligatoire : on ne nullifie JAMAIS au blur (dette #271), et le
-		// brouillon est conservé tel quel — comportement des 4 consommateurs
-		// existants strictement inchangé.
-		if (!allowClear || loadError) return;
+		// Mode dégradé : le brouillon EST l'identifiant tapé, déjà envoyé par
+		// `handleInput` — le jeter effacerait ce que la valeur porte.
+		if (loadError) return;
 		if (draft === null) return;
+
+		// Story 35-7 (#1000, D2, C-e350-37) — champ obligatoire : on ne nullifie
+		// JAMAIS au blur (dette #271), mais le brouillon est jeté. Le champ
+		// réaffiche le compte retenu (ou reste vide si aucun ne l'est) : il ne
+		// peut plus montrer un champ vide, ou « zzz », pendant qu'un autre compte
+		// part au serveur. L'invariant « le champ ne contredit jamais `value` »
+		// vaut désormais pour tous les consommateurs, stricts comme `allowClear`.
+		if (!allowClear) {
+			draft = null;
+			return;
+		}
 
 		if (draft.trim() === '') {
 			// Effacement explicite — mais SEULEMENT si le champ montrait

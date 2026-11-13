@@ -14,8 +14,11 @@ vi.mock('./reconciliation.api', () => ({
 	splitTransaction: vi.fn(),
 }));
 
+// Story 35-7 (AC3) : le repli est interpolé (patron de `ContactPersonsManager.test.ts`), pour
+// que « Ligne { $line } : compte requis » nomme la ligne en défaut.
 vi.mock('$lib/shared/utils/i18n.svelte', () => ({
-	i18nMsg: (_key: string, fallback: string) => fallback,
+	i18nMsg: (_key: string, fallback: string, args?: Record<string, string | number>) =>
+		args ? fallback.replace(/\{\s*\$(\w+)\s*\}/g, (_, k) => String(args[k] ?? '')) : fallback,
 }));
 
 // Story 19-5 — mock listProjects (chargé via $effect dans le composant).
@@ -26,6 +29,7 @@ vi.mock('$lib/features/projects/projects.api', () => ({
 
 import * as api from './reconciliation.api';
 import TransactionSplitModal from './TransactionSplitModal.svelte';
+import CounterpartyModalHost from './CounterpartyModalHost.test.svelte';
 import type { AccountResponse } from '$lib/features/accounts/accounts.types';
 
 const mockApi = vi.mocked(api);
@@ -444,5 +448,114 @@ describe('TransactionSplitModal — contreparties et avis (Story 34-3)', () => {
 		expect(cellule.getAttribute('colspan')).toBe('5');
 		// Contrôle croisé : l'en-tête compte bien cinq colonnes.
 		expect(r.getByTestId('split-lines-table').querySelectorAll('thead th')).toHaveLength(5);
+	});
+});
+
+// Story 35-7 (#1000, AC3, D1, C-e350-36) — une ligne dont le compte se révèle être celui de la
+// banque, une fois son identifiant résolu par le parent, est vidée (champ ET valeur) ; l'autre
+// ligne reste intacte, et le message existant nomme la ligne en défaut.
+describe('TransactionSplitModal — compte retiré de la sélection (Story 35-7, AC3)', () => {
+	beforeEach(() => {
+		vi.clearAllMocks();
+	});
+
+	function plan(): AccountResponse[] {
+		return [
+			makeAccount(401, '6900', 'Frais financiers', 'Expense'),
+			makeAccount(410, '1020', 'Banque', 'Asset'),
+		];
+	}
+
+	function monter() {
+		// L'hôte passe les props une à une (un `rerender` rejouerait la remise à zéro du dialogue et
+		// viderait toutes les lignes quel que soit le code : le test passerait à vide).
+		return render(CounterpartyModalHost, {
+			modal: 'split',
+			proposal: makeProposal('-100.00'),
+			accounts: plan(),
+			lateBankLedgerAccountId: 410,
+		});
+	}
+
+	type Rendu = { findByTestId: (id: string) => Promise<HTMLElement> };
+
+	async function resoudreBanque(r: { getByTestId: (id: string) => HTMLElement }) {
+		await fireEvent.click(r.getByTestId('host-resolve-bank'));
+	}
+
+	async function champ(r: Rendu, ligne: number): Promise<HTMLInputElement> {
+		const rang = await r.findByTestId(`split-row-${ligne}`);
+		return rang.querySelector('input[aria-autocomplete="list"]') as HTMLInputElement;
+	}
+
+	async function choisir(r: Rendu, ligne: number, numero: string) {
+		const rang = await r.findByTestId(`split-row-${ligne}`);
+		const c = await champ(r, ligne);
+		await fireEvent.focus(c);
+		await fireEvent.input(c, { target: { value: numero } });
+		const options = await waitFor(() => {
+			const o = Array.from(rang.querySelectorAll<HTMLElement>('[role="option"]'));
+			expect(o.length).toBeGreaterThan(0);
+			return o;
+		});
+		const option = options.find((o) => o.textContent?.includes(numero));
+		expect(option, `le compte ${numero} doit être proposé`).toBeTruthy();
+		await fireEvent.mouseDown(option as HTMLElement);
+	}
+
+	async function remplir(r: Rendu, ligne: number, numero: string, montant: string) {
+		await choisir(r, ligne, numero);
+		await fireEvent.input(await r.findByTestId(`split-amount-${ligne}`), {
+			target: { value: montant },
+		});
+	}
+
+	it('la ligne 1 sur le compte de la banque → elle seule vidée, « Ligne 1 : compte requis »', async () => {
+		const r = monter();
+		await remplir(r, 0, '1020', '60');
+		await remplir(r, 1, '6900', '40');
+		const submit = (await r.findByTestId('split-submit')) as HTMLButtonElement;
+		// Prémisse : les deux choix ont pris.
+		await waitFor(() => expect(submit.disabled).toBe(false));
+		expect((await champ(r, 0)).value).toBe('1020 — Banque');
+
+		await resoudreBanque(r);
+
+		await waitFor(async () => expect((await champ(r, 0)).value).toBe(''));
+		expect((await champ(r, 1)).value).toBe('6900 — Frais financiers');
+		await waitFor(() => expect(submit.disabled).toBe(true));
+		expect(await r.findByText('Ligne 1 : compte requis')).toBeTruthy();
+		await fireEvent.click(submit);
+		expect(mockApi.splitTransaction).not.toHaveBeenCalled();
+	});
+
+	it('la ligne 2 seule sur le compte de la banque, la ligne 1 remplie → « Ligne 2 : compte requis »', async () => {
+		const r = monter();
+		await remplir(r, 0, '6900', '60');
+		await remplir(r, 1, '1020', '40');
+		const submit = (await r.findByTestId('split-submit')) as HTMLButtonElement;
+		await waitFor(() => expect(submit.disabled).toBe(false));
+
+		await resoudreBanque(r);
+
+		await waitFor(async () => expect((await champ(r, 1)).value).toBe(''));
+		expect((await champ(r, 0)).value).toBe('6900 — Frais financiers');
+		await waitFor(() => expect(submit.disabled).toBe(true));
+		expect(await r.findByText('Ligne 2 : compte requis')).toBeTruthy();
+		expect(mockApi.splitTransaction).not.toHaveBeenCalled();
+	});
+
+	it('deux comptes restés proposés ne sont pas touchés', async () => {
+		const r = monter();
+		await remplir(r, 0, '6900', '60');
+		await remplir(r, 1, '6900', '40');
+		const submit = (await r.findByTestId('split-submit')) as HTMLButtonElement;
+		await waitFor(() => expect(submit.disabled).toBe(false));
+
+		await resoudreBanque(r);
+
+		await waitFor(() => expect(submit.disabled).toBe(false));
+		expect((await champ(r, 0)).value).toBe('6900 — Frais financiers');
+		expect((await champ(r, 1)).value).toBe('6900 — Frais financiers');
 	});
 });

@@ -102,6 +102,29 @@ describe('JournalEntryForm — mode édition', () => {
 		notifyMock.mockClear();
 	});
 
+	it('Story 35-7 (#1000, AC4) — une ligne dont on vide le compte puis qu’on quitte réaffiche son compte, celui qui part', async () => {
+		updateMock.mockResolvedValueOnce(ENTRY);
+		render(JournalEntryForm, {
+			props: {
+				accounts: [account(1, '1000'), account(2, '2000')],
+				accountsLoadError: false,
+				initialEntry: ENTRY,
+				onSuccess: vi.fn(),
+				onCancel: vi.fn()
+			}
+		});
+		const champ = document.querySelectorAll<HTMLInputElement>('input[aria-autocomplete="list"]')[0];
+		expect(champ.value).toBe('1000 — Compte 1000');
+		await fireEvent.input(champ, { target: { value: '' } });
+		await fireEvent.blur(champ);
+		expect(champ.value).toBe('1000 — Compte 1000');
+
+		await fireEvent.click(screen.getByRole('button', { name: 'Valider' }));
+		await new Promise((r) => setTimeout(r, 0));
+		const payload = updateMock.mock.calls[0][1] as { lines: Array<{ accountId: number }> };
+		expect(payload.lines[0].accountId).toBe(1);
+	});
+
 	it('envoie le PUT avec la version lue', async () => {
 		updateMock.mockResolvedValueOnce(ENTRY);
 		const onSuccess = vi.fn();

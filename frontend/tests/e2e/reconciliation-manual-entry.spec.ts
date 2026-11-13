@@ -165,3 +165,82 @@ test('une écriture manuelle se passe sur un compte de classe 2, jamais sur celu
 		await disposeContextSafe(ctx);
 	}
 });
+
+/**
+ * Story 35-7 (#1000, AC7) — le champ de contrepartie ne contredit jamais le compte qui part.
+ *
+ * Un texte tapé puis abandonné (champ quitté sans choisir) laissait le champ montrer `zzz` pendant
+ * que l'ancien compte partait au serveur. Le champ réaffiche désormais le compte retenu, et c'est
+ * celui-là que porte le corps du `POST /reconciliation/manual`, lu à la frontière HTTP. Rouge
+ * avant la story : le champ reste à `zzz` (mutation M1). Le chemin 1 de #1000 (le compte de la
+ * banque identifié après coup) n'est pas déterministe ici : couvert par Vitest seul.
+ */
+test('le champ quitté sans choisir réaffiche le compte qui part au serveur (#1000)', async ({
+	page,
+}, testInfo) => {
+	await login(page);
+	const cents = 50000 + (Date.now() % 30000);
+	const amount = (cents / 100).toFixed(2);
+	const unique = `${Date.now()}${Math.floor(Math.random() * 1000)}`;
+	const bankAccountId = await wiredBankAccountViaApi(page, TEST_IBAN);
+	const ctx = await authedApiContext(page);
+	let importId: number | null = null;
+	let txId: number | null = null;
+	try {
+		const accounts = (await (await ctx.get('/api/v1/accounts')).json()) as Compte[];
+		const capital = accounts.find((a) => a.number === '2000');
+		expect(capital, 'compte 2000 Capital CI du préréglage').toBeTruthy();
+
+		importId = await createManualDebitStatementViaApi(page, {
+			bankAccountId,
+			bookingDate: todayInZurich(),
+			amount,
+			counterpartyName: `Champ 35-7 ${unique}`,
+			details: `Champ quitté ${unique}`,
+		});
+		const detail = (await (await ctx.get(`/api/v1/bank-imports/${importId}`)).json()) as {
+			transactions: Array<{ id: number }>;
+		};
+		expect(detail.transactions).toHaveLength(1);
+		txId = detail.transactions[0].id;
+
+		await page.goto('/reconciliation');
+		await page.getByTestId('bank-account-select').selectOption(bankAccountId.toString());
+		const ligne = page.locator(`[data-testid="reconciliation-row"][data-tx-id="${txId}"]`);
+		await expect(ligne).toBeVisible({ timeout: 10000 });
+		await ligne.getByTestId('manual-match-button').click();
+		const modal = page.getByTestId('manual-match-modal');
+		await expect(modal).toBeVisible();
+
+		const champ = modal.locator('input[aria-autocomplete="list"]');
+		await champ.focus();
+		await champ.fill('2000');
+		const option = modal.getByRole('option').filter({ hasText: '2000' });
+		await expect(option).toHaveCount(1);
+		await option.dispatchEvent('mousedown');
+		await expect(champ).toHaveValue(/^2000 — /);
+		const libelle = await champ.inputValue();
+
+		// Le geste de #1000 : un texte tapé, jamais choisi, puis le champ quitté.
+		await champ.fill('zzz');
+		await champ.blur();
+		await expect(champ).toHaveValue(libelle);
+		await modal.screenshot({ path: capturePath(testInfo, 'e357-ecriture-manuelle-champ-quitte') });
+
+		const valider = modal.getByTestId('manual-match-submit');
+		await expect(valider).toBeEnabled();
+		const requete = page.waitForRequest(
+			(r) => r.method() === 'POST' && r.url().endsWith('/api/v1/reconciliation/manual'),
+		);
+		await valider.click();
+		const corps = (await requete).postDataJSON() as { counterpartyAccountId: number };
+		expect(corps.counterpartyAccountId).toBe(capital!.id);
+		await expect(modal).toBeHidden();
+	} finally {
+		if (txId !== null) {
+			await ctx.post(`/api/v1/reconciliation/transactions/${txId}/cancel`, { data: {} });
+		}
+		if (importId !== null) await ctx.delete(`/api/v1/bank-imports/${importId}`);
+		await disposeContextSafe(ctx);
+	}
+});
