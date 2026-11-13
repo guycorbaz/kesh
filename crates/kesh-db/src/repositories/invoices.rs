@@ -324,10 +324,14 @@ pub struct InvoiceListResult {
     pub limit: i64,
 }
 
+/// Les clauses `WHERE` de la liste et de l'export. `aujourd_hui` borne le
+/// filtre « échues » (`due_date < aujourd_hui`) : la date du jour de Zurich,
+/// lue **une fois** par l'appelant (Story 35-5b, #929), liée par `push_bind`.
 fn push_where_clauses<'a>(
     qb: &mut QueryBuilder<'a, sqlx::MySql>,
     company_id: i64,
     query: &'a InvoiceListQuery,
+    aujourd_hui: NaiveDate,
 ) {
     qb.push(" WHERE i.company_id = ");
     qb.push_bind(company_id);
@@ -375,10 +379,9 @@ fn push_where_clauses<'a>(
         qb.push_bind(db);
     }
 
-    // Story 5.4 — filtre dérivé du paid_at / due_date. UTC_DATE() garantit
-    // la cohérence quelle que soit la TZ de la session SQL (convention
-    // projet : tout en UTC naïf). Known limitation v0.1 : voir Story 5.4
-    // « Dette technique v0.2 — fuseau horaire société ».
+    // Story 5.4 — filtre dérivé du paid_at / due_date. La date du jour est
+    // celle de Zurich, passée par l'appelant et liée (Story 35-5b, #929) :
+    // le SQL ne lit plus l'horloge du serveur de base.
     //
     // P1 (review pass 1) : tout filtre de paiement non-All implique
     // `status='validated'` (une facture draft/cancelled n'a pas de sémantique
@@ -393,16 +396,15 @@ fn push_where_clauses<'a>(
             qb.push(" AND i.status = 'validated' AND i.paid_at IS NULL");
         }
         PaymentStatusFilter::Overdue => {
-            // E6 (review pass 2) : `due_date IS NULL` → NULL < UTC_DATE() = NULL
+            // E6 (review pass 2) : `due_date IS NULL` → NULL < aujourd'hui = NULL
             // → filtre false → la facture n'est jamais comptée comme overdue.
             // Comportement intentionnel : une facture sans échéance explicite
             // ne peut pas être « en retard ». Le défaut `due_date = invoice.date`
             // posé par le handler `create_invoice` (Story 5.2) garantit que ce
             // cas ne se produit pas en pratique pour les factures créées via
             // Kesh ; une éventuelle `due_date` NULL provient de données legacy.
-            qb.push(
-                " AND i.status = 'validated' AND i.paid_at IS NULL AND i.due_date < UTC_DATE()",
-            );
+            qb.push(" AND i.status = 'validated' AND i.paid_at IS NULL AND i.due_date < ");
+            qb.push_bind(aujourd_hui);
         }
     }
 
@@ -865,16 +867,18 @@ pub async fn find_with_lines_in_tx(
     Ok(Some((invoice, lines)))
 }
 
-/// Liste paginée + filtres dynamiques (JOIN contacts).
+/// Liste paginée + filtres dynamiques (JOIN contacts). `aujourd_hui` borne le
+/// filtre « échues » (date de Zurich, Story 35-5b).
 pub async fn list_by_company_paginated(
     pool: &MySqlPool,
     company_id: i64,
     query: InvoiceListQuery,
+    aujourd_hui: NaiveDate,
 ) -> Result<InvoiceListResult, DbError> {
     let mut count_qb: QueryBuilder<sqlx::MySql> = QueryBuilder::new(
         "SELECT COUNT(*) FROM invoices i INNER JOIN contacts c ON c.id = i.contact_id",
     );
-    push_where_clauses(&mut count_qb, company_id, &query);
+    push_where_clauses(&mut count_qb, company_id, &query, aujourd_hui);
     let total: i64 = count_qb
         .build_query_scalar()
         .fetch_one(pool)
@@ -894,7 +898,7 @@ pub async fn list_by_company_paginated(
         due = INVOICE_AMOUNT_DUE_DERIVED_SQL,
         joins = amount_due_derived_joins(),
     ));
-    push_where_clauses(&mut items_qb, company_id, &query);
+    push_where_clauses(&mut items_qb, company_id, &query, aujourd_hui);
     items_qb.push(" ORDER BY ");
     // P7 (review pass 3 A) : NULLs en fin de liste quel que soit le sort.
     // MariaDB trie NULL en premier en ASC et en dernier en DESC — on force
@@ -952,23 +956,37 @@ pub struct DueDatesSummary {
 ///
 /// P2 (review pass 3 B) : restauration des filtres temporels après que la
 /// passe 2 a constaté que la spec §74 les inclut explicitement.
+///
+/// `aujourd_hui` borne les échues (`due_date < aujourd_hui`) : la date du jour
+/// de Zurich, la même que celle de la page (Story 35-5b, #929), liée deux fois
+/// dans le `SELECT`, **avant** les liens du `WHERE`.
 pub async fn due_dates_summary(
     pool: &MySqlPool,
     company_id: i64,
     query: &InvoiceListQuery,
+    aujourd_hui: NaiveDate,
 ) -> Result<DueDatesSummary, DbError> {
+    // CAST AS SIGNED pour forcer BIGINT : MariaDB SUM(CASE…) retourne
+    // DECIMAL par défaut, incompatible avec Rust i64.
+    // Story 25-4-b1 (#416) : les KPI de l'échéancier sont des RESTES DUS —
+    // TTC − avoir émis − Σ règlements, forme jointe — et non plus le TTC
+    // émis (#246, 21-2a), qui comptait une facture de 1 000.— réglée à
+    // 900.— pour 1 000.—.
     let mut qb: QueryBuilder<sqlx::MySql> = QueryBuilder::new(format!(
-        // CAST AS SIGNED pour forcer BIGINT : MariaDB SUM(CASE…) retourne
-        // DECIMAL par défaut, incompatible avec Rust i64.
-        // Story 25-4-b1 (#416) : les KPI de l'échéancier sont des RESTES DUS —
-        // TTC − avoir émis − Σ règlements, forme jointe — et non plus le TTC
-        // émis (#246, 21-2a), qui comptait une facture de 1 000.— réglée à
-        // 900.— pour 1 000.—.
         "SELECT \
             COUNT(*) AS unpaid_count, \
             COALESCE(SUM({due}), CAST(0 AS DECIMAL(19,4))) AS unpaid_total, \
-            CAST(COALESCE(SUM(CASE WHEN i.due_date < UTC_DATE() THEN 1 ELSE 0 END), 0) AS SIGNED) AS overdue_count, \
-            COALESCE(SUM(CASE WHEN i.due_date < UTC_DATE() THEN {due} ELSE 0 END), CAST(0 AS DECIMAL(19,4))) AS overdue_total \
+            CAST(COALESCE(SUM(CASE WHEN i.due_date < ",
+        due = INVOICE_AMOUNT_DUE_DERIVED_SQL,
+    ));
+    qb.push_bind(aujourd_hui);
+    qb.push(
+        " THEN 1 ELSE 0 END), 0) AS SIGNED) AS overdue_count, \
+            COALESCE(SUM(CASE WHEN i.due_date < ",
+    );
+    qb.push_bind(aujourd_hui);
+    qb.push(format!(
+        " THEN {due} ELSE 0 END), CAST(0 AS DECIMAL(19,4))) AS overdue_total \
          FROM invoices i INNER JOIN contacts c ON c.id = i.contact_id \
          {joins}",
         due = INVOICE_AMOUNT_DUE_DERIVED_SQL,
@@ -2900,10 +2918,14 @@ pub async fn refreeze_pdf(
 /// (50_000) a silencieusement rabaissé le `max_rows` demandé par le caller.
 /// Dans ce cas le handler doit alerter l'utilisateur plutôt qu'exploiter
 /// un résultat partiel comme s'il était complet.
+///
+/// `aujourd_hui` borne le filtre « échues » (date de Zurich, Story 35-5b) : la
+/// route la lit une fois et la passe aussi à la mise en forme du CSV.
 pub async fn list_for_export(
     pool: &MySqlPool,
     company_id: i64,
     query: &InvoiceListQuery,
+    aujourd_hui: NaiveDate,
     max_rows: i64,
 ) -> Result<(Vec<InvoiceListItem>, bool), DbError> {
     // P3 (review pass 1) : plafond absolu 50_000 en défense en profondeur.
@@ -2933,7 +2955,7 @@ pub async fn list_for_export(
         due = INVOICE_AMOUNT_DUE_DERIVED_SQL,
         joins = amount_due_derived_joins(),
     ));
-    push_where_clauses(&mut items_qb, company_id, query);
+    push_where_clauses(&mut items_qb, company_id, query, aujourd_hui);
     // P13 (review pass 3 A) : défense en profondeur — l'export ne doit
     // jamais fuiter de drafts même si le handler oublie le filtre `status`.
     items_qb.push(" AND i.status = 'validated'");
@@ -3501,8 +3523,12 @@ mod tests {
         }
     }
 
+    /// La date du jour de ces tests : **fixe** (Story 35-5b, D9). Le module ne
+    /// lit aucune horloge — ni `KESH_TEST_INSTANT`, ni l'heure réelle : les
+    /// dépôts reçoivent cette date (filtre « échues », synthèse), les pièces du
+    /// montage la portent, et l'exercice de la base de dev (2020-2030) la couvre.
     fn today() -> NaiveDate {
-        chrono::Utc::now().naive_utc().date()
+        NaiveDate::from_ymd_opt(2026, 6, 15).unwrap()
     }
 
     #[tokio::test]
@@ -4015,6 +4041,7 @@ mod tests {
                 offset: 0,
                 ..Default::default()
             },
+            today(),
         )
         .await
         .unwrap();
@@ -4186,6 +4213,7 @@ mod tests {
                 offset: 0,
                 ..Default::default()
             },
+            today(),
         )
         .await
         .unwrap();
@@ -4250,6 +4278,7 @@ mod tests {
                 offset: 0,
                 ..Default::default()
             },
+            today(),
         )
         .await
         .unwrap();
@@ -4382,12 +4411,14 @@ mod tests {
         let import_id = sqlx::query(
             "INSERT INTO bank_imports (company_id, bank_account_id, filename, file_hash, \
              source_format, period_from, period_to, imported_by_user_id) \
-             VALUES (?, ?, 'stub.xml', ?, 'CAMT053_V04', CURDATE(), CURDATE(), \
+             VALUES (?, ?, 'stub.xml', ?, 'CAMT053_V04', ?, ?, \
              (SELECT id FROM users WHERE company_id = ? LIMIT 1))",
         )
         .bind(company_id)
         .bind(account_id)
         .bind(format!("{:064}", je_id))
+        .bind(today())
+        .bind(today())
         .bind(company_id)
         .execute(pool)
         .await
@@ -4396,11 +4427,12 @@ mod tests {
         sqlx::query(
             "INSERT INTO bank_transactions (company_id, import_id, bank_account_id, \
              booking_date, amount, currency, details, matched_entry_id) \
-             VALUES (?, ?, ?, CURDATE(), 100.00, 'CHF', 'stub', ?)",
+             VALUES (?, ?, ?, ?, 100.00, 'CHF', 'stub', ?)",
         )
         .bind(company_id)
         .bind(import_id)
         .bind(account_id)
+        .bind(today())
         .bind(je_id)
         .execute(pool)
         .await
@@ -4421,11 +4453,12 @@ mod tests {
         let next_n = max_n.unwrap_or(0) + 1;
         let res = sqlx::query(
             "INSERT INTO journal_entries (company_id, fiscal_year_id, entry_number, \
-             entry_date, journal, description) VALUES (?, ?, ?, CURDATE(), 'Ventes', 'stub-5.4')",
+             entry_date, journal, description) VALUES (?, ?, ?, ?, 'Ventes', 'stub-5.4')",
         )
         .bind(company_id)
         .bind(fy_id)
         .bind(next_n)
+        .bind(today())
         .execute(pool)
         .await
         .unwrap();
@@ -4682,12 +4715,13 @@ mod tests {
         sqlx::query(
             "INSERT INTO invoice_settlements (company_id, invoice_id, journal_entry_id, \
              amount, settled_on, settlement_type, settlement_account_id) \
-             VALUES (?, ?, ?, ?, CURDATE(), 'internal_account', ?)",
+             VALUES (?, ?, ?, ?, ?, 'internal_account', ?)",
         )
         .bind(company_id)
         .bind(id)
         .bind(je_reglement)
         .bind(dec!(40))
+        .bind(today())
         .bind(compte_id)
         .execute(&pool)
         .await
@@ -4748,11 +4782,12 @@ mod tests {
         .await;
         let cn = sqlx::query(
             "INSERT INTO credit_notes (company_id, contact_id, invoice_id, status, date) \
-             VALUES (?, ?, ?, 'draft', CURDATE())",
+             VALUES (?, ?, ?, 'draft', ?)",
         )
         .bind(company_id)
         .bind(contact_id)
         .bind(id)
+        .bind(today())
         .execute(&pool)
         .await
         .unwrap();
@@ -5043,7 +5078,7 @@ mod tests {
         )
         .await;
         // ⚠️ La borne se pose sur la date de l'ÉCRITURE, qu'il faut lire : le
-        // stub de `force_validate` est daté de `CURDATE()`, non de la date de
+        // stub de `force_validate` est daté de `today()`, non de la date de
         // la facture. Une borne posée sur cette dernière laisse passer, et le
         // test rougit pour une raison de montage — c'est arrivé ici.
         let entry_date: NaiveDate =
@@ -5207,6 +5242,7 @@ mod tests {
                 limit: 100,
                 ..Default::default()
             },
+            today(),
         )
         .await
         .unwrap();
@@ -5275,6 +5311,7 @@ mod tests {
                 offset: 0,
                 ..Default::default()
             },
+            t,
         )
         .await
         .unwrap();
@@ -5349,6 +5386,7 @@ mod tests {
                 contact_id: Some(contact_id),
                 ..Default::default()
             },
+            t,
         )
         .await
         .unwrap();
@@ -5413,6 +5451,7 @@ mod tests {
                 payment_status: Some(PaymentStatusFilter::Paid),
                 ..Default::default()
             },
+            today(),
         )
         .await
         .unwrap();
@@ -5953,6 +5992,7 @@ mod tests {
                 limit: 100,
                 ..Default::default()
             },
+            today(),
         )
         .await
         .unwrap();
@@ -5978,6 +6018,7 @@ mod tests {
                 search: Some(marker_marie.clone()),
                 ..Default::default()
             },
+            today(),
         )
         .await
         .unwrap();
@@ -6048,6 +6089,7 @@ mod tests {
                 limit: 100,
                 ..Default::default()
             },
+            today(),
         )
         .await
         .unwrap();
@@ -6066,6 +6108,7 @@ mod tests {
                     limit: 100,
                     ..Default::default()
                 },
+                today(),
             )
             .await
             .unwrap();

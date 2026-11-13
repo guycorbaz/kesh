@@ -90,5 +90,9 @@ pub async fn refreeze_invoice_pdf(
         kesh_db::repositories::invoices::find_by_id_with_lines(&state.pool, company.id, id)
             .await?
             .ok_or(AppError::Database(kesh_db::errors::DbError::NotFound))?;
-    Ok(Json(InvoiceResponse::from_parts(invoice, lines)))
+    Ok(Json(InvoiceResponse::from_parts(
+        invoice,
+        lines,
+        state.horloge.maintenant().date_naive(),
+    )))
 }

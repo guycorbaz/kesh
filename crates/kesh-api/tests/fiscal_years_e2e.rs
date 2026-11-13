@@ -1326,7 +1326,8 @@ async fn demo_path_creates_fiscal_year(pool: MySqlPool) {
         "exactly one fiscal_year created by seed_demo"
     );
     let fy = &list[0];
-    let current_year = chrono::Utc::now().naive_utc().date().year();
+    // Story 35-5b : l'année du jour de l'horloge de test, celle que le serveur lit.
+    let current_year = common::jour::aujourd_hui_test().year();
     assert_eq!(fy.name, format!("Exercice {current_year}"));
     assert_eq!(fy.start_date.year(), current_year);
     assert_eq!(fy.start_date.month(), 1);

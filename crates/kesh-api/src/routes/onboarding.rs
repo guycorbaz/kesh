@@ -255,10 +255,13 @@ pub async fn seed_demo(
 
     // P11: surface actionable validation errors (chart de comptes mal configuré)
     // as 422 instead of 500 so the client can show a concrete remediation message.
+    // Story 35-5b (#929) — l'exercice de démonstration est celui de l'année du
+    // jour de Zurich.
     kesh_seed::seed_demo(
         &state.pool,
         &state.config.locale,
         (current_user.user_id, current_user.api_key_id),
+        state.horloge.maintenant().date_naive(),
     )
     .await
     .map_err(|e| match e {

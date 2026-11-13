@@ -41,7 +41,7 @@ pub const EXIGENCE_LISTER: Exigence = Exigence {
 pub struct DemandePostesOuverts {
     /// Le compte dont on lit les postes ouverts.
     pub account_id: i64,
-    /// `AAAA-MM-JJ` ; absente ou vide → aujourd'hui (UTC).
+    /// `AAAA-MM-JJ` ; absente ou vide → la date du jour, à Zurich.
     pub as_of: Option<String>,
     /// Taille de page ; absente → [`LIMITE_DEFAUT`], ramenée entre 1 et
     /// [`LIMITE_MAX`].
@@ -51,14 +51,14 @@ pub struct DemandePostesOuverts {
 }
 
 /// `asOf` : lu en chaîne, parsé comme `dateFrom` de la liste des écritures ;
-/// mal formé → 400 `VALIDATION_ERROR` ; absent ou vide → aujourd'hui, selon la
-/// convention de la balance âgée (`Utc::now().naive_utc().date()` — l'écart
-/// UTC/heure suisse la nuit est hérité). Aucune borne métier ; seule la plage
+/// mal formé → 400 `VALIDATION_ERROR` ; absent ou vide → `aujourd_hui`, la date
+/// du jour de Zurich que [`lister`] lit sur l'horloge de sa `Lecture` (Story
+/// 35-5b, #929), comme la balance âgée. Aucune borne métier ; seule la plage
 /// des dates de MariaDB (années 1000 à 9999) est exigée : chrono lit aussi
 /// `+10000-01-01` ou une année négative, que sqlx refuse d'encoder ou que la
 /// base lirait comme une date invalide (revue P1, B-1 = E-1) — un 400, jamais
 /// un 500 ni un solde faux.
-fn parse_as_of(as_of: Option<&str>) -> Result<NaiveDate, AppError> {
+fn parse_as_of(as_of: Option<&str>, aujourd_hui: NaiveDate) -> Result<NaiveDate, AppError> {
     match as_of {
         Some(s) if !s.is_empty() => {
             let date = s
@@ -71,7 +71,7 @@ fn parse_as_of(as_of: Option<&str>) -> Result<NaiveDate, AppError> {
             }
             Ok(date)
         }
-        _ => Ok(chrono::Utc::now().naive_utc().date()),
+        _ => Ok(aujourd_hui),
     }
 }
 
@@ -88,7 +88,10 @@ pub async fn lister(
     demande: DemandePostesOuverts,
 ) -> Result<OpenItems, AppError> {
     acces.exiger(EXIGENCE_LISTER)?;
-    let as_of = parse_as_of(demande.as_of.as_deref())?;
+    let as_of = parse_as_of(
+        demande.as_of.as_deref(),
+        lecture.horloge().maintenant().date_naive(),
+    )?;
     let limit = demande.limit.unwrap_or(LIMITE_DEFAUT).clamp(1, LIMITE_MAX);
     let offset = demande.offset.unwrap_or(0).max(0);
     let company =

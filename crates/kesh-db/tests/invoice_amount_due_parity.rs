@@ -383,9 +383,14 @@ async fn due_dates_summary_totals_are_amount_due(pool: MySqlPool) {
     settle(&pool, &seeded, partial, dec!(40.00)).await;
     let _open = validated(&pool, &seeded, contact, &[(dec!(2.60), dec!(50.00))]).await;
 
-    let summary = invoices::due_dates_summary(&pool, seeded.company_id, &unpaid_query())
-        .await
-        .unwrap();
+    let summary = invoices::due_dates_summary(
+        &pool,
+        seeded.company_id,
+        &unpaid_query(),
+        jour::aujourd_hui_test(),
+    )
+    .await
+    .unwrap();
     assert_eq!(summary.unpaid_count, 2);
     // 68.10 + 51.30
     assert_eq!(
@@ -405,12 +410,14 @@ async fn list_items_carry_amount_due(pool: MySqlPool) {
     settle(&pool, &seeded, partial, dec!(40.00)).await;
     let open = validated(&pool, &seeded, contact, &[(dec!(8.10), dec!(10.00))]).await;
 
-    let page = invoices::list_by_company_paginated(&pool, seeded.company_id, unpaid_query())
+    let jour = jour::aujourd_hui_test();
+    let page = invoices::list_by_company_paginated(&pool, seeded.company_id, unpaid_query(), jour)
         .await
         .unwrap();
-    let (export, _) = invoices::list_for_export(&pool, seeded.company_id, &unpaid_query(), 100)
-        .await
-        .unwrap();
+    let (export, _) =
+        invoices::list_for_export(&pool, seeded.company_id, &unpaid_query(), jour, 100)
+            .await
+            .unwrap();
     for (surface, items) in [("liste", &page.items), ("export", &export)] {
         let p = items.iter().find(|i| i.id == partial).expect(surface);
         assert_eq!(p.total_ttc, dec!(108.10), "{surface} : TTC");
@@ -432,7 +439,8 @@ async fn cancelled_settlement_leaves_the_aggregates(pool: MySqlPool) {
     let inv = validated(&pool, &seeded, contact, &[(dec!(8.10), dec!(100.00))]).await;
     let entry = settle(&pool, &seeded, inv, dec!(40.00)).await;
     // Témoin : avant l'annulation, le résumé porte le reste dû.
-    let avant = invoices::due_dates_summary(&pool, seeded.company_id, &unpaid_query())
+    let jour = crate::jour::aujourd_hui_test();
+    let avant = invoices::due_dates_summary(&pool, seeded.company_id, &unpaid_query(), jour)
         .await
         .unwrap();
     assert_eq!(avant.unpaid_total, dec!(68.10));
@@ -449,21 +457,22 @@ async fn cancelled_settlement_leaves_the_aggregates(pool: MySqlPool) {
         seeded.company_id,
         inv,
         settlement_id,
-        crate::jour::aujourd_hui_test(),
+        jour,
     )
     .await
     .expect("annulation du règlement");
 
-    let summary = invoices::due_dates_summary(&pool, seeded.company_id, &unpaid_query())
+    let summary = invoices::due_dates_summary(&pool, seeded.company_id, &unpaid_query(), jour)
         .await
         .unwrap();
     assert_eq!(summary.unpaid_total, dec!(108.10), "résumé");
-    let page = invoices::list_by_company_paginated(&pool, seeded.company_id, unpaid_query())
+    let page = invoices::list_by_company_paginated(&pool, seeded.company_id, unpaid_query(), jour)
         .await
         .unwrap();
-    let (export, _) = invoices::list_for_export(&pool, seeded.company_id, &unpaid_query(), 100)
-        .await
-        .unwrap();
+    let (export, _) =
+        invoices::list_for_export(&pool, seeded.company_id, &unpaid_query(), jour, 100)
+            .await
+            .unwrap();
     for (surface, items) in [("liste", &page.items), ("export", &export)] {
         let i = items.iter().find(|i| i.id == inv).expect(surface);
         assert_eq!(i.amount_settled, Decimal::ZERO, "{surface} : réglé");

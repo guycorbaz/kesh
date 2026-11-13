@@ -701,8 +701,9 @@ async fn demo_validates_an_invoice_with_vat(pool: MySqlPool) {
         .as_i64()
         .unwrap();
 
-    // Date dans l'exercice que crée la démonstration (année courante).
-    let today = chrono::Utc::now().date_naive().to_string();
+    // Date dans l'exercice que crée la démonstration : le jour de l'horloge de
+    // test, que le serveur lit aussi (Story 35-5b).
+    let today = common::jour::aujourd_hui_test().to_string();
     let resp = app
         .client
         .post(app.url("/api/v1/invoices"))

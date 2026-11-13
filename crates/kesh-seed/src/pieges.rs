@@ -20,7 +20,7 @@
 //! **Aucune donnée réelle** : textes écrits en dur, tous synthétiques. Tout
 //! s'écrit par les **dépôts de production**, sans SQL à la main.
 
-use chrono::{Datelike, NaiveDate, Utc};
+use chrono::{Datelike, NaiveDate};
 use kesh_db::entities::contact::{ContactType, NewContact, Salutation};
 use kesh_db::entities::imported_supplier_invoice::NewImportedSupplierInvoice;
 use kesh_db::entities::invoice::{NewInvoice, NewInvoiceLine};
@@ -351,7 +351,14 @@ pub struct Pieges {
 /// facturation et taux de TVA —, **par les mêmes dépôts** que
 /// [`seed_demo`](crate::seed_demo), sans l'étape d'installation ni la garde
 /// « une seule société » (validation P2, R14). Rend son identifiant.
-pub async fn societe_complete(pool: &MySqlPool, nom: &str) -> Result<i64, SeedError> {
+///
+/// L'exercice est celui de l'année d'`aujourd_hui`, la date du jour que
+/// l'appelant a lue (Story 35-5b, #929) : la graine ne lit aucune horloge.
+pub async fn societe_complete(
+    pool: &MySqlPool,
+    nom: &str,
+    aujourd_hui: NaiveDate,
+) -> Result<i64, SeedError> {
     let societe = companies::create(
         pool,
         NewCompany {
@@ -375,7 +382,7 @@ pub async fn societe_complete(pool: &MySqlPool, nom: &str) -> Result<i64, SeedEr
     let chart = kesh_core::chart_of_accounts::load_chart(societe.org_type.as_str())
         .map_err(|e| DbError::Invariant(format!("chart load: {e}")))?;
     accounts::bulk_create_from_chart(pool, societe.id, &chart, "fr").await?;
-    let annee = Utc::now().naive_utc().date().year();
+    let annee = aujourd_hui.year();
     fiscal_years::create_for_seed(
         pool,
         NewFiscalYear {
@@ -451,14 +458,17 @@ fn client_piege(company_id: i64, marque: char) -> NewContact {
 
 /// Sème les pièges de la marque `marque` sur la société `company_id`, qui a
 /// déjà son plan, son exercice et ses réglages ([`societe_complete`]).
+///
+/// Les pièces sont datées d'`aujourd_hui`, la date du jour que l'appelant a lue
+/// (Story 35-5b, #929) — la même que celle passée à [`societe_complete`].
 pub async fn semer(
     pool: &MySqlPool,
     acteur: SeedActor,
     company_id: i64,
     marque: char,
+    aujourd_hui: NaiveDate,
 ) -> Result<Pieges, SeedError> {
     let (user_id, _) = acteur;
-    let aujourd_hui = Utc::now().naive_utc().date();
 
     // L'exercice existant, renommé : les écritures du jour y tombent.
     let exercice = fiscal_years::list_by_company(pool, company_id)

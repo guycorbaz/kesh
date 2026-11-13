@@ -676,15 +676,16 @@ async fn clore_un_compte(pool: MySqlPool) {
     assert_eq!(details["after"]["closed_on"], "2026-01-31");
     assert_eq!(details["after"]["version"], v + 1);
 
-    // T-a13 — sans `closedOn` : la date du jour UTC.
-    let avant = Utc::now().date_naive();
+    // T-a13 — sans `closedOn` : la date du jour de l'horloge de test, à Zurich
+    // (Story 35-5b ; la nuit, par l'horloge arrêtée : `jour_suisse_nuit_e2e.rs`).
+    let avant = crate::common::jour::aujourd_hui_test();
     let (s, b) = ctx
         .post(
             &format!("/api/v1/bank-accounts/{b_}/close"),
             json!({ "version": ctx.version(b_).await }),
         )
         .await;
-    let apres = Utc::now().date_naive();
+    let apres = crate::common::jour::aujourd_hui_test();
     assert_eq!(s, 200, "{b}");
     let jour: NaiveDate = b["closedOn"].as_str().unwrap().parse().unwrap();
     assert!(jour == avant || jour == apres, "{jour}");

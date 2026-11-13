@@ -1296,7 +1296,10 @@ async fn ac11_a_les_services_lisent_en_lecture_seule(pool: MySqlPool) {
         )),
     }
     // Story 32-4b (AC12 (a)) — les six services des factures.
-    match factures::lister(&acces, &lecture, DemandeListeFactures::default()).await {
+    match factures::lister(&acces, &lecture, DemandeListeFactures::default())
+        .await
+        .map(|l| l.page)
+    {
         Ok(p) if p.total >= 2 => {}
         autre => echecs.push(format!(
             "AC12 (a) factures::lister : {:?}",
@@ -1411,7 +1414,10 @@ async fn ac11_b_aucune_lecture_d_une_autre_societe(pool: MySqlPool) {
             resume(&r)
         ));
     }
-    match factures::lister(&acces, &lecture, DemandeListeFactures::default()).await {
+    match factures::lister(&acces, &lecture, DemandeListeFactures::default())
+        .await
+        .map(|l| l.page)
+    {
         Ok(p) if p.total == 0 && p.items.is_empty() => {}
         autre => echecs.push(format!(
             "AC12 (b) factures::lister : {:?}",
@@ -2098,7 +2104,10 @@ async fn ac324b_d_e_f_la_liste_des_factures_par_la_route(pool: MySqlPool) {
     // (le chemin de l'outil de la 32-9a) : le tri par défaut (`Date`, `Desc`).
     let lecture = Lecture::new(pool.clone(), kesh_api::horloge::horloge_de_test());
     let acces = mcp_societe(f.s.company_id, f.s.admin_user_id, &[Portee::InvoicesRead]);
-    match factures::lister(&acces, &lecture, DemandeListeFactures::default()).await {
+    match factures::lister(&acces, &lecture, DemandeListeFactures::default())
+        .await
+        .map(|l| l.page)
+    {
         Ok(p) => {
             let rendu: Vec<String> = p.items.iter().map(|i| f.libelle(i.id)).collect();
             if rendu != ["F5", "F4", "F3", "F2", "F1"] {
@@ -2742,7 +2751,11 @@ async fn ac324b_a_les_refus_de_la_liste_et_de_l_echeancier(pool: MySqlPool) {
     let encadree = Some(format!(" {} ", "a".repeat(100)));
     let liste_total = |d: DemandeListeFactures| {
         let (acces, lecture) = (&acces, &lecture);
-        async move { factures::lister(acces, lecture, d).await.map(|p| p.total) }
+        async move {
+            factures::lister(acces, lecture, d)
+                .await
+                .map(|l| l.page.total)
+        }
     };
     let (nu, encadre, blanc, sans) = (
         liste_total(DemandeListeFactures {
@@ -2842,7 +2855,7 @@ async fn ac324b_b_les_bornes_des_listes_de_factures(pool: MySqlPool) {
     }
     let r = factures::lister(&acces, &lecture, DemandeListeFactures::default())
         .await
-        .map(|p| (p.limit, p.offset));
+        .map(|l| (l.page.limit, l.page.offset));
     if r.as_ref().ok() != Some(&(20, 0)) {
         echecs.push(format!("factures::lister défauts : {r:?}"));
     }

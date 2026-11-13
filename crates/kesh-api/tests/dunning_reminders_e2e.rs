@@ -1,6 +1,8 @@
 //! E2E des routes de rappels débiteurs (Story 21-5a, #231) — liste groupée, RBAC,
 //! IDOR, suspension/reprise, rappel manuel (saut de niveau), annulation Admin, gardes.
 
+mod common;
+
 use std::net::SocketAddr;
 use std::path::Path;
 use std::sync::Arc;
@@ -188,7 +190,8 @@ async fn validated_invoice(
     .fetch_one(pool)
     .await
     .unwrap();
-    let due = Utc::now().date_naive() - Duration::days(days_overdue);
+    // Story 35-5b : le jour de l'horloge de test, celui que lit le serveur.
+    let due = common::jour::aujourd_hui_test() - Duration::days(days_overdue);
     sqlx::query_scalar(
         "INSERT INTO invoices (company_id, contact_id, status, date, due_date, total_amount, journal_entry_id) \
          VALUES (?, ?, 'validated', '2026-01-01', ?, 1000.00, ?) RETURNING id",

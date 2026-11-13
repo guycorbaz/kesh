@@ -94,9 +94,11 @@ pub async fn full_export(
     // pas le téléchargement.
     emit_full_export_audit(&state, &current_user, &meta).await;
 
+    // Le nom porte la date du jour de Zurich (Story 35-5b, #929) ; le contenu
+    // garde ses horodatages en UTC (#669).
     let filename = format!(
         "kesh-installation-{}.keshbackup",
-        Utc::now().date_naive().format("%Y-%m-%d")
+        state.horloge.maintenant().date_naive().format("%Y-%m-%d")
     );
     let content_disposition = crate::util::build_content_disposition(&filename, "fr-CH")?;
     let body = corps_de_l_archive(archive)?;

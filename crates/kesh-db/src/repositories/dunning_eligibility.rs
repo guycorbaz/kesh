@@ -15,7 +15,7 @@
 
 use crate::errors::{DbError, map_db_error};
 use crate::repositories::{company_dunning_settings, dunning_levels};
-use chrono::{Duration, NaiveDate, NaiveDateTime, Utc};
+use chrono::{Duration, NaiveDate, NaiveDateTime};
 use sqlx::MySqlPool;
 
 /// Une facture candidate au rappel (ou en état terminal), avec le contexte de contact.
@@ -52,9 +52,12 @@ struct CandidateRow {
 
 /// Retourne les factures à rappeler pour une company (déclenche le seed lazy des
 /// niveaux par défaut si la company n'a jamais été seedée). Vide si dunning désactivé.
+///
+/// `aujourd_hui` est la date du jour de Zurich, lue par l'appelant (Story 35-5b, #929).
 pub async fn list_reminder_candidates(
     pool: &MySqlPool,
     company_id: i64,
+    aujourd_hui: NaiveDate,
 ) -> Result<Vec<ReminderCandidate>, DbError> {
     // Seed lazy « au premier accès / 1re évaluation » (no-op si déjà seedé OU vidé
     // volontairement — `seeded_at` non-NULL). Transaction courte dédiée.
@@ -95,7 +98,7 @@ pub async fn list_reminder_candidates(
     .await
     .map_err(map_db_error)?;
 
-    let today = Utc::now().date_naive();
+    let today = aujourd_hui;
     let delay_of = |ln: i16| -> i32 {
         levels
             .iter()

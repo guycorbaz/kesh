@@ -193,16 +193,43 @@ const EXEMPTIONS: &[Exemption] = &[
         "nom de l'export (site 12)",
     ),
     (
-        "kesh-api/src/routes/invoice_email.rs",
+        "kesh-api/src/routes/dunning_reminders.rs",
+        // Story 35-5b, squelette : l'éligibilité reçoit le jour UTC de l'instant de l'horloge.
         1,
         "35-5b",
-        "jours de retard d'un rappel (site 13)",
+        "éligibilité aux rappels (site 22, squelette)",
+    ),
+    (
+        "kesh-api/src/routes/invoice_email.rs",
+        // 1 → 2 : Story 35-5b, squelette (jour UTC de l'instant de l'horloge).
+        2,
+        "35-5b",
+        "jours de retard d'un rappel (site 13) ; fiche après envoi (squelette)",
+    ),
+    (
+        "kesh-api/src/routes/invoice_pdf.rs",
+        1,
+        "35-5b",
+        "fiche après regel du PDF (squelette)",
     ),
     (
         "kesh-api/src/routes/invoices.rs",
-        3,
+        // 3 → 8 : Story 35-5b, squelette (chaque appelant de `from_parts`, le CSV).
+        8,
         "35-5b",
-        "factures échues, échéancier (sites 14-16)",
+        "factures échues, échéancier (sites 14-16, squelette)",
+    ),
+    (
+        "kesh-api/src/routes/onboarding.rs",
+        1,
+        "35-5b",
+        "démonstration (site 26, squelette)",
+    ),
+    (
+        "kesh-api/src/services/factures.rs",
+        2,
+        "35-5b",
+        "liste et échéancier (sites 14-15, 23-25, squelette)",
     ),
     (
         "kesh-api/src/services/postes_ouverts.rs",
@@ -216,18 +243,10 @@ const EXEMPTIONS: &[Exemption] = &[
         "35-5b",
         "balance âgée, projet, accueil (sites 19-21)",
     ),
-    (
-        "kesh-db/src/repositories/dunning_eligibility.rs",
-        1,
-        "35-5b",
-        "éligibilité (site 22)",
-    ),
-    (
-        "kesh-db/src/repositories/invoices.rs",
-        10,
-        "35-5b",
-        "`UTC_DATE()` (sites 23-25) ; module de tests : `fn today()` et `CURDATE()` du montage",
-    ),
+    // Story 35-5b, squelette : sortis de la liste, leur date venant d'un paramètre —
+    // `kesh-db` `dunning_eligibility.rs` (site 22) et `invoices.rs` (sites 23-25 ; son
+    // module de tests en date fixe, D9), `kesh-seed` `lib.rs` (site 26) et `pieges.rs`
+    // (sites 27-28).
     (
         "kesh-db/src/repositories/journal_entries.rs",
         // Story 35-5a : aucun ne change — les deux `reverse_in_tx` du module reçoivent la
@@ -235,18 +254,6 @@ const EXEMPTIONS: &[Exemption] = &[
         50,
         "35-5c",
         "module de tests : montages au jour UTC",
-    ),
-    (
-        "kesh-seed/src/lib.rs",
-        1,
-        "35-5b",
-        "année de la démonstration (site 26)",
-    ),
-    (
-        "kesh-seed/src/pieges.rs",
-        2,
-        "35-5b",
-        "pièges de démonstration (sites 27-28)",
     ),
     // --- Tests de `kesh-api`
     (
@@ -263,37 +270,10 @@ const EXEMPTIONS: &[Exemption] = &[
         "bornes à `today - 30`",
     ),
     (
-        "kesh-api/tests/bank_accounts_closed_e2e.rs",
-        // 6 → 2 : remédiation P3 (D4), le montage passe au jour de l'horloge de test ;
-        // restent les deux lectures de `closedOn` (site 11, 35-5b).
-        2,
-        "35-5b",
-        "`closedOn`",
-    ),
-    (
         "kesh-api/tests/credit_card_e2e.rs",
         3,
         "35-5c",
         "dates saisies de facture et de règlement",
-    ),
-    (
-        "kesh-api/tests/dunning_reminders_e2e.rs",
-        1,
-        "35-5b",
-        "rappels",
-    ),
-    (
-        "kesh-api/tests/fiscal_years_e2e.rs",
-        // 2 → 1 : Story 35-5a, l'année du chemin B lit l'horloge de test.
-        1,
-        "35-5b",
-        "démonstration (`seed_demo`, site 26)",
-    ),
-    (
-        "kesh-api/tests/homepage_summary_e2e.rs",
-        1,
-        "35-5b",
-        "accueil",
     ),
     (
         "kesh-api/tests/invoice_delete_e2e.rs",
@@ -316,43 +296,17 @@ const EXEMPTIONS: &[Exemption] = &[
         "date saisie d'une pièce",
     ),
     (
-        "kesh-api/tests/mcp_outils_e2e.rs",
-        1,
-        "35-5b",
-        "balance âgée, postes ouverts",
-    ),
-    (
-        "kesh-api/tests/onboarding_audit_e2e.rs",
-        2,
-        "35-5b",
-        "exercice de démonstration",
-    ),
-    (
-        "kesh-api/tests/onboarding_e2e.rs",
-        1,
-        "35-5b",
-        "démonstration",
-    ),
-    ("kesh-api/tests/open_items_e2e.rs", 1, "35-5b", "`asOf`"),
-    (
         "kesh-api/tests/reconciliation_link_e2e.rs",
         1,
         "35-5c",
         "jour de facture et de transaction",
     ),
-    (
-        "kesh-api/tests/services_motif.rs",
-        3,
-        "35-5b",
-        "traces des rapports",
-    ),
+    // Story 35-5b : sortis de la liste, leurs jours lisant l'horloge de test —
+    // `bank_accounts_closed_e2e.rs` (`closedOn`), `dunning_reminders_e2e.rs`,
+    // `fiscal_years_e2e.rs` (`seed_demo`), `homepage_summary_e2e.rs`, `mcp_outils_e2e.rs`,
+    // `onboarding_audit_e2e.rs`, `onboarding_e2e.rs`, `open_items_e2e.rs`,
+    // `services_motif.rs`, et `kesh-db` `dunning_eligibility.rs`.
     // --- Tests de `kesh-db`
-    (
-        "kesh-db/tests/dunning_eligibility.rs",
-        1,
-        "35-5b",
-        "éligibilité aux rappels",
-    ),
     // Story 35-5a (AC9) : sortis de la liste, leurs jours lisant l'horloge de test —
     // `bank_account_opening_balance_e2e.rs`, `dates_bornes_e2e.rs`, `filet_bilan_clos_e2e.rs`,
     // `letterings_e2e.rs`, `opening_balances_e2e.rs`, `reconciliation_rules_e2e.rs`,

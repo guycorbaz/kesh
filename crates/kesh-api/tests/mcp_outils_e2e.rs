@@ -11,7 +11,6 @@ mod common;
 use std::collections::{BTreeMap, BTreeSet};
 
 use axum::http::StatusCode;
-use chrono::Utc;
 use kesh_api::mcp::Registre;
 use kesh_api::mcp::outils;
 use kesh_api::mcp::textes::*;
@@ -792,7 +791,8 @@ async fn fixture_tailles(pool: &MySqlPool, s: &Societe, large: bool) {
         (55, 34, 22, 12)
     };
     let p = &s.p;
-    let jour = Utc::now().naive_utc().date();
+    // Story 35-5b : le jour de l'horloge de test, celui de l'exercice des pièges.
+    let jour = common::jour::aujourd_hui_test();
     // 71 comptes en tête du plan et de la balance (numéros en `00`).
     for i in 0..71 {
         accounts::create(
@@ -1422,9 +1422,13 @@ async fn plafond_au_maximum(pool: MySqlPool) {
 /// comme les totaux des actifs et des passifs (revue de code P2, B4).
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn bilan_montants_une_seule_forme(pool: MySqlPool) {
-    let c = kesh_seed::pieges::societe_complete(&pool, "Société vide v0161")
-        .await
-        .expect("société");
+    let c = kesh_seed::pieges::societe_complete(
+        &pool,
+        "Société vide v0161",
+        common::jour::aujourd_hui_test(),
+    )
+    .await
+    .expect("société");
     let u = common::mcp::administrateur(&pool, c, "admin-v0161").await;
     common::mcp::activer(&pool, c).await;
     let exercice: i64 = sqlx::query_scalar("SELECT id FROM fiscal_years WHERE company_id = ?")

@@ -7,6 +7,8 @@
 //! Décor synthétique.
 #![allow(clippy::too_many_arguments)]
 
+mod common;
+
 use std::net::SocketAddr;
 use std::path::Path;
 use std::sync::Arc;
@@ -231,11 +233,11 @@ async fn assert_invariant(app: &TestApp, jwt: &str, body: &Value) {
 // Montage
 // ============================================================
 
-/// Le jour du montage. Story 35-5a0 (D4) : les contre-passations du montage le
-/// reçoivent aussi. Il reste à l'heure réelle, comme l'accueil qu'il éprouve
-/// (site 21, Story 35-5b) : les deux changent ensemble.
+/// Le jour du montage : celui de l'horloge de test, que l'accueil lit aussi
+/// (Story 35-5b, site 21). Les contre-passations du montage le reçoivent
+/// (Story 35-5a0, D4).
 fn today() -> NaiveDate {
-    Utc::now().date_naive()
+    common::jour::aujourd_hui_test()
 }
 
 /// Le 1er du mois, trois mois avant aujourd'hui : le début de l'exercice ouvert.

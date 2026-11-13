@@ -202,8 +202,9 @@ fn build_invoice_vars(
     vars
 }
 
-/// Jours de retard d'une facture (clampé ≥ 0), `0` si `due_date` absente. `today` en
-/// UTC (`chrono::Utc::now().naive_utc().date()`), cohérent avec `is_invoice_overdue`.
+/// Jours de retard d'une facture (clampé ≥ 0), `0` si `due_date` absente. `today` est
+/// la date du jour de Zurich, lue sur l'horloge de l'état (Story 35-5b, #929), comme
+/// celle que reçoit `is_invoice_overdue`.
 pub(crate) fn days_overdue(due_date: Option<chrono::NaiveDate>, today: chrono::NaiveDate) -> i64 {
     due_date.map(|d| (today - d).num_days().max(0)).unwrap_or(0)
 }
@@ -378,7 +379,7 @@ async fn render_reminder(
     )
     .await?;
     let total_due = amounts.amount_due + amounts.fees;
-    let today = chrono::Utc::now().naive_utc().date();
+    let today = state.horloge.maintenant().date_naive();
     let days = days_overdue(invoice.due_date, today);
 
     let template = email_templates::get_effective(
@@ -901,7 +902,11 @@ pub async fn send_invoice_email(
 
     Ok((
         StatusCode::OK,
-        Json(InvoiceResponse::from_parts(updated, lines)),
+        Json(InvoiceResponse::from_parts(
+            updated,
+            lines,
+            state.horloge.maintenant().date_naive(),
+        )),
     ))
 }
 

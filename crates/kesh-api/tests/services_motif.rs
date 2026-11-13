@@ -793,7 +793,8 @@ async fn table_des_traces_par_la_route(pool: MySqlPool) {
 
     let mut echecs = Vec::new();
     for ligne in TABLE_DES_TRACES {
-        let avant = Utc::now().naive_utc().date();
+        // Story 35-5b : le jour de l'horloge de test, celui que lisent les rapports.
+        let avant = common::jour::aujourd_hui_test();
         let repere = repere_audit(&pool).await;
         let url = requete(ligne, &livres);
         let resp = app
@@ -803,7 +804,7 @@ async fn table_des_traces_par_la_route(pool: MySqlPool) {
             .send()
             .await
             .unwrap();
-        let apres = Utc::now().naive_utc().date();
+        let apres = common::jour::aujourd_hui_test();
         if resp.status() != 200 {
             echecs.push(format!(
                 "route#{} {} : {url} → {}",
@@ -1743,7 +1744,7 @@ async fn export_csv_du_grand_livre_trace_son_format(pool: MySqlPool) {
     let traces = traces_depuis(&pool, livres.user_id(), repere).await;
     let attendu = resoudre(
         ligne.details,
-        &symboles_route(ligne, &livres, Utc::now().naive_utc().date()),
+        &symboles_route(ligne, &livres, common::jour::aujourd_hui_test()),
     );
     verifier_trace("route", ligne, &traces, &[attendu]).unwrap();
 }

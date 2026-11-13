@@ -583,6 +583,9 @@ async fn t7_3_invoices_search_does_not_leak_cross_company(pool: MySqlPool) {
             limit: 100,
             ..Default::default()
         },
+        // Story 35-5b : la date du jour ne borne que le filtre « échues », absent
+        // ici — une date fixe suffit.
+        NaiveDate::from_ymd_opt(2026, 6, 15).unwrap(),
     )
     .await
     .unwrap();

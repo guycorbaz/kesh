@@ -1636,6 +1636,7 @@ async fn seed_demo_refuses_a_passed_step_under_lock(pool: MySqlPool, step: i32) 
         &pool,
         &kesh_i18n::Locale::FrCh,
         (admin_user_id(&pool).await, None),
+        common::jour::aujourd_hui_test(),
     )
     .await;
     assert!(
@@ -1913,7 +1914,8 @@ async fn populate(pool: &MySqlPool, app: &TestApp, token: &str, company_id: i64)
         kesh_db::test_fixtures::seed_contact_and_product(pool, company_id)
             .await
             .unwrap();
-    let today = chrono::Local::now().date_naive().to_string();
+    // Story 35-5b : le jour de l'horloge de test, celui de l'exercice de démonstration.
+    let today = common::jour::aujourd_hui_test().to_string();
     let (status, body) = call(
         app,
         token,
