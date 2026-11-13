@@ -1,6 +1,6 @@
 # Story 35-2b : le rapport d'un lot de rappels dit pourquoi le PDF d'une facture est refusé (#955)
 
-Status: ready-for-dev
+Status: review
 
 *Fiche née le 2026-11-12 du découpage de la 35-2 à la validation P2 (C-e350-9), par l'agent de kickoff de l'Epic 35
 (Opus 5.5), worktree `kesh-e35`. Elle **part de la 35-2a fusionnée**, dont elle reprend le message localisé (la 35-2a garde
@@ -138,11 +138,12 @@ un lot, l'ajouter ; sinon, l'écrire tel quel au Change Log du développement. G
 
 ## Tâches
 
-- [ ] Étape 0 : partir de la 35-2a fusionnée ; relire les lignes citées ; ajouter l'accesseur `details()` de test et mettre à
+- [x] Étape 0 : partir de la 35-2a fusionnée ; relire les lignes citées ; ajouter l'accesseur `details()` de test et mettre à
       jour le commentaire `:1027-1029`.
-- [ ] Tests, rouges consignés ; `errors.rs` (deux fonctions extraites) ; serveur ; `reminderFailureText` et composant ; E2E ;
+- [x] Tests, rouges consignés ; `errors.rs` (deux fonctions extraites) ; serveur ; `reminderFailureText` et composant ; E2E ;
       documentation ; capture.
-- [ ] Gates : `test-fast.sh --ci` et `scripts/gate-ci.sh`, frontend complet, E2E complet au dernier commit de code.
+- [x] Gates : `test-fast.sh --ci` et `scripts/gate-ci.sh`, frontend complet au dernier commit de code ; E2E complet à la
+      clôture de la story (décision de Guy du 2026-11-13).
 
 ## Dev Notes
 
@@ -166,11 +167,118 @@ un lot, l'ajouter ; sinon, l'écrire tel quel au Change Log du développement. G
 
 ### Agent Model Used
 
+Claude Opus 5.5 (agent de développement, en autonomie), worktree `/home/gcorbaz/devel/kesh-e352b`, le 2026-11-13.
+
 ### Debug Log References
+
+Journaux hors dépôt, sous `/home/gcorbaz/devel/kesh-gate-logs/e352b/` : `rouges.log` (Rust, Vitest, E2E),
+`rouges-front.log`, `e2e-rouge.log`, `cible-1.log`, `clippy.log`, `front-check.log`, `front-lint-i18n-ownership.log`,
+`front-test-unit.log`, `front-build.log`, `make-user.log`, `user-manual-plat.txt`, `mut/` (`campagne.log`, `M1` à `M7`),
+`front-test-unit.log` (premier Vitest complet, rouge sur la garde des libellés en dur), `front-test:unit.log` et les autres
+`front-<script>.log` (frontend complet au dernier commit de code), `test-fast-ci.log`, `gate-ci.log` ; scripts `e2e-e352b.sh`, `mut-e352b.py`, `mut-rust-e352b.sh`,
+`mut-campagne-e352b.sh` ; captures `captures/`.
 
 ### Completion Notes List
 
+**Étape 0** (lignes relues sur la branche, `506237558` = la 35-2a terminée `9f8ef604` + `epic-35/base3`) : toutes les lignes
+que la fiche lisait sur `release/0.17.6` sont **au même endroit** sur la branche — `invoice_email.rs:964-990`
+(`struct BatchItemError`, `fn failed_with` `:979`, `fn code` `:988`), `:1023-1036` (`fn classify_render_error`, motif « ou »
+`:1030-1032` : `AppError::InvoiceNotPdfReady(_)` / `| AppError::InvoiceTooManyLinesForPdf(_)` / `| AppError::InvoicePdfHeaderOverflow
+=> BatchItemError::failed("INVOICE_NOT_PDF_READY")`), `:1260` (`render_document(` du lot), `:1749`
+(`fn classify_render_error_ne_deguise_pas_un_refus_en_panne`) ; `errors.rs:2144-2168` (les deux bras), `:5726`
+(`invoice_too_many_lines_maps_to_400`) ; `git grep -n 'render_document('` : les quatre appels cités ; `contact.rs:15-24`
+(`structured_address`) ; `invoice_send_email_e2e.rs:163` (`seed_contact`), `:249` (`seed_sendable`), `:1192` (`seed_dunning`),
+`:2019` (`send_reminder_batch_partial_success`), `:2348` (`seed_sendable_ve_vey`, qui rendait `(company_id, invoice_id)`).
+La garde AC14 de la 35-2a (`textes_coherents.rs:1155-1184`) compte `InvoiceNotPdfReady(` hors `errors.rs` et hors modules de
+test, **deux sites** attendus (`invoice_email.rs`, `invoice_pdf_service.rs`) : la 35-2b en garde un seul au bras
+`InvoiceNotPdfReady(msg) =>`. Le manuel `:1251` porte la phrase de la 35-2a (« le lot de rappels affiche encore … (issue
+\#955) »), `api-external.md:1059` la clause « sans ce message », le CHANGELOG la section `[0.17.7]` ouverte par la 35-2a.
+**Aucun écart** de ligne avec la fiche. Les LOW de la dernière validation (P2, V2-1 à V2-5) étaient déjà appliqués à la fiche ;
+rien n'en restait au code. Point « à établir » : l'angle mort de l'en-tête qui déborde — le montage se réemploie (C-e352b-3).
+
+**Écart de placement** : les deux fonctions extraites sont posées juste avant `impl IntoResponse for AppError` (`errors.rs`,
+après `opening_complement_refusal_response`), non entre les bras `:2144-2168` — Rust ne permet pas de fonction dans un `match`. Les
+hunks restent distincts de ceux de la 35-3 (`:4571`) et de la 35-1.
+
+**Rouges** (`rouges.log`, code de production intact, tests seuls) : `classify_render_error_ne_deguise_pas_un_refus_en_panne`
+(« `InvoiceNotPdfReady("adresse incomplète")` : details absent au lot ») ; `send_reminder_batch_refus_pdf_porte_le_message`
+(« details n'est pas un objet : `{"details":null,"errorCode":"INVOICE_NOT_PDF_READY","invoiceId":1}` ») ; Vitest : 6 rouges sur
+11 (les quatre de `reminderFailureText`, absente ; deux du composant, la ligne ne montrant que le libellé) — le test « sans
+message » du composant, vert au départ, est la non-régression ; **E2E** (binaire et build frontend du code de départ, spec
+seule, `e2e-rouge.log`) : « Received string: "#1 — Facture non imprimable en PDF" ». AC3 (égalité avec les fonctions
+extraites) n'a pas de rouge propre : il ne compile qu'avec elles ; M5, M5bis et M6 le prouvent.
+
+**Mutations** (`mut/`, jouées sur `d765f9172` (Rust) et sur l'arbre de travail du même commit (frontend), chacune restaurée
+par `git checkout --` puis `touch`, « restauré : 0 écart » au journal ; huit sur huit tuées) :
+
+| | mutation | tuée par |
+|---|---|---|
+| M1 | `json!({ "message": message })` → `json!({ "message": "" })` | `classify_render_error_ne_deguise_pas_un_refus_en_panne` (« details.message vide »), `send_reminder_batch_refus_pdf_porte_le_message`, `send_reminder_batch_entete_qui_deborde_porte_le_message` (`mut/M1.log`) |
+| M2 | `const message = failed.details?.message` → `undefined` | Vitest : 4 rouges, deux de `reminderFailureText`, deux du composant (`mut/M2.log`) ; l'E2E n'est pas rejoué pour elle : `e2e-rouge.log` montre le même affichage, libellé seul |
+| M3 | bras `InvoiceNotPdfReady` → `failed` sans `details` | `classify_render_error_…` (« details absent au lot »), `send_reminder_batch_refus_pdf_porte_le_message` (`mut/M3.log`) |
+| M4 | `"code": …` ajouté à `details` | les trois tests de M1 (« message est le seul champ de details ») (`mut/M4.log`) |
+| M5 | bras `InvoiceTooManyLinesForPdf` → `failed` | `classify_render_error_…` seul (`mut/M5.log`) — aucun test HTTP au lot pour cette cause (angle mort ci-dessous) |
+| M5bis | bras `InvoicePdfHeaderOverflow` → `failed` | `classify_render_error_…`, `send_reminder_batch_entete_qui_deborde_porte_le_message` (`mut/M5bis.log`) |
+| M6 | bras d'`IntoResponse` qui recopie la phrase, « scindez » → « divisez » | `refus_du_pdf_route_unitaire_et_lot_meme_phrase` (`mut/M6.log`) |
+| M7 | filtre de code retiré de `reminderFailureText` | Vitest « n'affiche pas le message d'un autre code » (`mut/M7.log`) |
+
+**Captures** (AC7) : `captures/35-2b-rapport-lot-refus-pdf.png` (l'écran des rappels après un lot de deux factures, une envoyée,
+une écartée) et `35-2b-rapport-lot-refus-pdf-detail.png` (le rapport seul), thème clair, base jetable `kesh_e2e_e352b`.
+
+**Limite assumée** (D2.4, écrite ici comme la fiche le demande) : le séparateur « : » (espace avant) est écrit en dur dans les
+quatre langues, et la ligne mêle la langue de l'interface (le libellé) et celle de l'installation (la phrase, comme sur la
+route unitaire) ; en de-CH, it-CH et en-CH l'espace avant le deux-points est fautive. Sans effet sur les comptes.
+
+**Angle mort** (V2-5 c) : réduit par C-e352b-3 — l'en-tête qui déborde est prouvé au lot sous catalogue réel
+(`send_reminder_batch_entete_qui_deborde_porte_le_message`). Reste `InvoiceTooManyLinesForPdf` : sa phrase n'est prouvée au lot
+que par le repli (AC2, AC3, binaire `lib` sans catalogue) ; la route unitaire garde son test HTTP. Un montage HTTP de
+`trop de lignes` pour un rappel demanderait de connaître le plafond du document de rappel : non tenté.
+
+**Garde des libellés en dur** (`i18n-libelle-en-dur.test.ts`) : `reminderFailureText` porte le suffixe `Text` ; la garde l'a
+relevée au Vitest complet (91 candidates pour 90). Déclaration **nommée** au commentaire, puis compteurs 90 → 91 et `conforme`
+76 → 77 — la seule déclaration neuve à suffixe surveillé du diff (`git diff 50623755 -- frontend/src ':!*.test.ts'`).
+L'inventaire est **par exécution** (la garde relit toutes les sources) et sa sonde positive est ce rouge même : elle a vu la
+déclaration neuve avant tout ajustement.
+
+**Gates au dernier commit de code `24f69d217`** (bases remises à neuf ; chaque chiffre avec son journal) :
+
+- `scripts/test-fast.sh --ci` (fmt, clippy, nextest, base `kesh_e352b` recréée) : **5334 passés, 13 ignorés**, rc 0
+  (`kesh-gate-logs/e352b/test-fast-ci.log`, commit `24f69d217`).
+- `scripts/gate-ci.sh kesh_ci_e352b` : GATECI (`kesh-gate-logs/e352b/gate-ci.log`, `gate-ci-console.log`, commit
+  `24f69d217`).
+- Frontend complet : `npm run check` 0 erreur, 29 avertissements (`front-check.log`) ; `lint-i18n-ownership` PASS
+  (`front-lint-i18n-ownership.log`) ; Vitest **3195 passés, 233 fichiers** (`front-test:unit.log`) ; `npm run build` rc 0
+  (`front-build.log`) — tous au commit `24f69d217`.
+- Gate ciblé en cours de développement (`cible-1.log`, arbre de `d765f9172` avant commit) : 120/120 ; `clippy -D warnings`
+  workspace rc 0 (`clippy.log`), `cargo fmt --check` rc 0.
+- Manuel : `make user` rc 0, 3 passes (`make-user.log`) ; PDF aplati (`user-manual-plat.txt`) : « lot de rappels la reprend »
+  1 occurrence, « le motif dit ce qu’il y a à » présent (apostrophe typographique, coupure de page), « (issue #955) » 0.
+- **E2E complet : non lancé — à la clôture de la story.** La spec neuve n'a tourné qu'en rouge, sur le code de départ.
+
+**Écarts aux consignes** : les mutations s'appliquent par un script Python (`mut-e352b.py`, motif vérifié unique), permis et
+déclaré ; tout le code et les tests sont écrits par l'outil Edit (ou Write pour les fichiers neufs). Aucun autre écart.
+
 ### File List
+
+- `crates/kesh-api/src/errors.rs` — `message_trop_de_lignes_pdf`, `message_entete_pdf_deborde` ; les deux bras les appellent ;
+  test `refus_du_pdf_route_unitaire_et_lot_meme_phrase`.
+- `crates/kesh-api/src/routes/invoice_email.rs` — `classify_render_error` (trois bras), `refus_pdf_au_lot`, accesseur de test
+  `details()` ; test `classify_render_error_ne_deguise_pas_un_refus_en_panne` étendu (AC2, AC3).
+- `crates/kesh-api/tests/invoice_send_email_e2e.rs` — `seed_sendable_ve_vey` rend `admin_id` (C-e352b-5) ; `phrase_fr` ;
+  `send_reminder_batch_refus_pdf_porte_le_message` (AC1), `send_reminder_batch_entete_qui_deborde_porte_le_message`
+  (C-e352b-3).
+- `frontend/src/lib/features/reminders/reminder-error-label.ts` — `reminderFailureText`.
+- `frontend/src/lib/features/reminders/reminder-error-label.test.ts` — quatre tests (AC4).
+- `frontend/src/lib/features/reminders/ReminderBatchReport.svelte` — la ligne passe par `reminderFailureText`.
+- `frontend/src/lib/features/reminders/ReminderBatchReport.test.ts` — neuf, trois tests (AC4, branchement).
+- `frontend/src/lib/shared/i18n-libelle-en-dur.test.ts` — 90 → 91 candidates, `conforme` 76 → 77, déclaration nommée.
+- `frontend/tests/e2e/reminder-batch-refus-pdf.spec.ts` — neuf (AC5, C-e352b-4).
+- `docs/api-external.md` — ligne `INVOICE_NOT_PDF_READY` (AC6).
+- `docs/manual/fr/user-manual.tex`, `docs/manual/fr/user-manual.pdf` — `:1251`, `:1527` (AC6).
+- `CHANGELOG.md` — point #955 de `[0.17.7]` complété (AC6).
+- `_bmad-output/implementation-artifacts/e35-choix-autonomes-e352b.md` — neuf, C-e352b-1 à -5.
+- `_bmad-output/implementation-artifacts/35-2b-lot-rappels-refus-pdf-review-prompt-p1.md` — neuf.
+- `_bmad-output/implementation-artifacts/35-2b-lot-rappels-refus-pdf.md`, `sprint-status.yaml` — statut `review`.
 
 ## Change Log
 
@@ -206,3 +314,11 @@ un lot, l'ajouter ; sinon, l'écrire tel quel au Change Log du développement. G
   Modèles : Opus (P1), Sonnet (P2). La boucle se clôt sur une passe sans finding au-dessus de LOW ; la remédiation de P2 ne
   touche que la rédaction. Choix retenu : **C-e350-46** (voie (a) : le message pour les trois causes, par une construction
   commune). Statut : `ready-for-dev`.
+- 2026-11-13 — **Développement** (Opus 5.5, agent `e352b`). Étape 0 : aucun écart de ligne entre `release/0.17.6` et la branche
+  (`506237558`), lignes citées au Dev Agent Record ; écart de placement des deux fonctions d'`errors.rs` (avant
+  `impl IntoResponse`). Rouges consignés (Rust 2, Vitest 6, E2E 1 sur le code de départ). D1 et D2 livrés ; AC1 à AC7 ; un
+  test HTTP de plus pour l'en-tête qui déborde (C-e352b-3). Mutations M1 à M7 et M5bis : huit tuées sur huit. Garde des
+  libellés en dur 90 → 91 (déclaration nommée). Choix C-e352b-1 à -5. Limite D2.4 et angle mort (`InvoiceTooManyLinesForPdf`
+  au lot prouvé par le repli seul) écrits. Commits : `d765f9172` (implémentation), `24f69d217` (garde, dernier commit de
+  code). Gates au dernier commit de code : au Dev Agent Record. **E2E complet à la clôture de la story** (décision de Guy du
+  2026-11-13). Statut : `review`.
