@@ -157,6 +157,23 @@ async function monterLigneSignalee(
 	return out as Signalee;
 }
 
+/**
+ * Clique hors de la confirmation ouverte et attend qu'elle se referme.
+ *
+ * ⚠️ bits-ui ne pose ses écouteurs de « clic hors » qu'après un `afterSleep(1)` suivant
+ * l'ouverture, et traite le clic après un `debounce` de 10 ms
+ * (`bits-ui/…/dismissible-layer/use-dismissable-layer.svelte.js`) : un clic tiré dès que le
+ * dialogue est visible peut le précéder — deux rejeux sur trois l'ont montré (C-e354-2). Aucun
+ * clic humain ne tombe dans cette fenêtre ; le clic est donc réessayé jusqu'à la fermeture, qui
+ * reste exigée.
+ */
+async function cliquerHors(page: Page, confirmation: ReturnType<Page['getByTestId']>) {
+	await expect(async () => {
+		await page.mouse.click(5, 5);
+		await expect(confirmation).toHaveCount(0, { timeout: 500 });
+	}).toPass({ timeout: 5000 });
+}
+
 /** Contre-passe l'écriture saisie et supprime les imports, quoi qu'il en soit du test. */
 async function nettoyer(
 	ctx: APIRequestContext,
@@ -215,8 +232,7 @@ test('Rejeter une ligne signalée demande confirmation ; Annuler et le clic hors
 		await expect(caseLigne).toBeChecked();
 		await rejeter.click();
 		await expect(confirmation).toBeVisible();
-		await page.mouse.click(5, 5);
-		await expect(confirmation).toHaveCount(0);
+		await cliquerHors(page, confirmation);
 		await expect(ligne).toBeVisible();
 		await expect(page.getByTestId('reconciliation-success')).toHaveCount(0);
 
@@ -316,8 +332,7 @@ test('la confirmation ouverte bloque la page : ni « Afficher aussi les plus anc
 		// Le clic hors vaut Annuler.
 		await ligne.getByTestId('manual-match-button').click();
 		await expect(confirmation).toBeVisible();
-		await page.mouse.click(5, 5);
-		await expect(confirmation).toHaveCount(0);
+		await cliquerHors(page, confirmation);
 		await expect(page.getByTestId('manual-match-modal')).toHaveCount(0);
 		expect(relectures).toBe(avant);
 		await expect(lignes).toHaveCount(100);

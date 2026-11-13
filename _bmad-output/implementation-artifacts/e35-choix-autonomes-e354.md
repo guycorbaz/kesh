@@ -40,3 +40,20 @@ confirmation ; #1023, #1024), **versé par union** par l'orchestrateur. Chaque c
   constat ne serait pas rejoué ; (b) recopier le constructeur du relevé dans la spec neuve : trente lignes dupliquées.
 - **Coût** : une spec de plus à la suite E2E (≈ 5 s, l'import de 101 transactions compris).
 - **Réversible** : oui — retirer le second test et réintégrer le constructeur dans la spec de la 29-9.
+
+### C-e354-2 — Le « clic hors » de l'E2E est réessayé jusqu'à la fermeture
+
+- **Contexte** : à l'E2E complet (`e2e-r2`), le premier test de la spec neuve a rougi sur
+  `page.mouse.click(5, 5)` puis `toHaveCount(0)` : la confirmation restait ouverte. Rejoué seul trois fois (`e2e-r3`),
+  il rougit deux fois sur trois ; le second test, même geste, passe. Lu dans `bits-ui`
+  (`dist/bits/utilities/dismissible-layer/use-dismissable-layer.svelte.js`) : les écouteurs `pointerdown` du clic hors
+  ne sont posés qu'après `afterSleep(1, …)` suivant le montage, et le clic est traité par un `debounce(…, 10)`. Le clic
+  de Playwright, tiré dès que le dialogue est visible, peut précéder la pose des écouteurs.
+- **Retenu** : un helper `cliquerHors` qui réessaie le clic (`expect(…).toPass`, 5 s) tant que la confirmation n'est
+  pas refermée ; la fermeture reste exigée. Ce n'est pas un défaut du produit : aucun clic humain ne tombe dans la
+  fenêtre de quelques millisecondes qui suit l'ouverture.
+- **Écartées** : (a) `waitForTimeout` fixe avant le clic : délai arbitraire, aussi fragile sous charge ; (b) retirer le
+  clic hors de l'E2E : AC1 renvoie son constat à l'étape 0 ou à l'E2E, aucun test jsdom ne le simulant.
+- **Risque** : si un clic réessayé tombait après une fermeture lente, il atteindrait l'en-tête (lien *Kesh*) et la
+  suite du test rougirait — un échec bruyant, jamais un vert à tort.
+- **Réversible** : oui.
