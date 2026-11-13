@@ -1,6 +1,6 @@
 # Story 35-7 : le champ de compte ne paraît plus vide quand un compte part au serveur (#1000)
 
-Status: ready-for-dev
+Status: review
 
 *Fiche rédigée le 2026-11-12 par l'agent de rédaction des fiches de l'Epic 35 (Opus 5.5), worktree `kesh-e35`, par le
 workflow `bmad-create-story`. Release **0.17.7**. **Aucune migration**, aucun changement serveur ni d'API, aucune clé
@@ -143,12 +143,12 @@ l'`$effect` d'*Écriture manuelle* retiré (AC3) ; M1 est aussi tuée par AC7, �
 
 ## Tâches
 
-- [ ] Étape 0 : relire les lignes citées sur `main` ; `git grep -n "<AccountAutocomplete" -- frontend/src` (sept sites) ;
+- [x] Étape 0 : relire les lignes citées sur `main` ; `git grep -n "<AccountAutocomplete" -- frontend/src` (sept sites) ;
       le grep des « 4 consommateurs » de D2, sortie citée au Change Log.
-- [ ] Tests, rouges consignés ; `AccountAutocomplete.svelte` (D2, avec ses commentaires) et son test ;
+- [x] Tests, rouges consignés ; `AccountAutocomplete.svelte` (D2, avec ses commentaires) et son test ;
       `reconciliation-counterparties.ts` (D1), les deux dialogues ; l'E2E d'AC7 ; manuel (`user-manual.tex:3186`) et PDF
       régénéré, contrôlé aplati (AC5) ; CHANGELOG ; captures.
-- [ ] Gates : frontend complet (`npm run check`, `lint-i18n-ownership`, `test:unit`, `build`) ; E2E complet au dernier
+- [x] Gates : frontend complet (`npm run check`, `lint-i18n-ownership`, `test:unit`, `build`) ; E2E complet au dernier
       commit de code (`reconciliation-manual.spec.ts`, `reconciliation-manual-entry.spec.ts`, `reconciliation-split.spec.ts`, `journal-entries.spec.ts` en particulier).
       Backend : rien ne change côté Rust ; le gate backend complet n'est dû qu'au push de la branche d'intégration.
 
@@ -186,13 +186,50 @@ fait que la rejouer. Écrit aussi au fichier d'epic (validation P1, V1-6).
 
 ### Agent Model Used
 
+Opus 5.5 (`claude-opus-5-5`), workflow `bmad-dev-story`, worktree `kesh-e357`, en autonomie.
+
 ### Debug Log References
+
+Journaux dans `/home/gcorbaz/devel/kesh-gate-logs/e357/` : `rouges.log` (Vitest et E2E rouges), `verts-cibles.log`,
+`mut/` (M1-M7, `resume.log`), `front-*.log`, `manuel.log`, `e2e-r1-rouge.log`, `e2e-r2-complet.log`,
+`test-fast-ci.log`, `gate-ci.log`, captures dans `captures/`.
 
 ### Completion Notes List
 
 - Fiche rédigée par le workflow `bmad-create-story` (analyse du code de `main`, `4d39f377`).
+- **D2** (`AccountAutocomplete.svelte`, `handleBlur`) : mode dégradé d'abord (rien ne change), puis, sans brouillon, rien ;
+  sur un champ strict, `draft = null` sans `onSelect` ; `allowClear` inchangé. Commentaires réécrits (doc d'`allowClear`,
+  `handleBlur`) ; `:183` et `:199` gardés avec « consommateurs » sans le nombre.
+- **D1** : `keepOfferedCounterparty(id, accounts, bankLedgerAccountId)` dans `reconciliation-counterparties.ts`, sur la
+  liste **complète** reçue (un identifiant absent est gardé) ; un `$effect` par dialogue, qui n'écrit que si la valeur
+  change (`counterpartyId` ; chaque `splits[i].counterpartyAccountId`).
+- **Harnais d'AC3** : `rerender` remplace l'objet de props entier et rejoue la remise à zéro du dialogue — le premier
+  rouge l'a montré (un test passait à vide). Hôte `CounterpartyModalHost.test.svelte` (C-e357-1). Mock i18n interpolant
+  dans `TransactionSplitModal.test.ts` (C-e357-2).
+- **AC4** : test ajouté à `JournalEntryForm.edit.test.ts` (C-e357-3) ; `VatPurchaseAssistant` n'a pas de suite de
+  composant, ses deux champs stricts sont couverts par AC1.
+- **AC5** : aucune clé i18n (`git diff epic-35/base3 -- '*.ftl'` vide) ; `sitesTotal` reste 3026, le test qui le
+  recompte depuis la source est vert au Vitest complet. Manuel `:3186`, PDF régénéré.
+- **AC6** : captures *Écriture manuelle* (E2E d'AC7) et *Éclater* (spec jetable hors dépôt, C-e357-4).
 
 ### File List
+
+- `frontend/src/lib/features/journal-entries/AccountAutocomplete.svelte`
+- `frontend/src/lib/features/journal-entries/AccountAutocomplete.test.ts`
+- `frontend/src/lib/features/journal-entries/JournalEntryForm.edit.test.ts`
+- `frontend/src/lib/features/reconciliation/reconciliation-counterparties.ts`
+- `frontend/src/lib/features/reconciliation/reconciliation-counterparties.test.ts`
+- `frontend/src/lib/features/reconciliation/ManualMatchModal.svelte`
+- `frontend/src/lib/features/reconciliation/ManualMatchModal.test.ts`
+- `frontend/src/lib/features/reconciliation/TransactionSplitModal.svelte`
+- `frontend/src/lib/features/reconciliation/TransactionSplitModal.test.ts`
+- `frontend/src/lib/features/reconciliation/CounterpartyModalHost.test.svelte` (neuf)
+- `frontend/tests/e2e/reconciliation-manual-entry.spec.ts`
+- `docs/manual/fr/user-manual.tex`, `docs/manual/fr/user-manual.pdf`
+- `CHANGELOG.md`
+- `_bmad-output/implementation-artifacts/e35-choix-autonomes-e357.md` (neuf)
+- `_bmad-output/implementation-artifacts/sprint-status.yaml`
+- `_bmad-output/implementation-artifacts/35-7-autocomplete-compte-hors-liste.md`
 
 ## Change Log
 
@@ -233,3 +270,55 @@ fait que la rejouer. Écrit aussi au fichier d'epic (validation P1, V1-6).
   de LOW ; la remédiation de P3 ne touche que la rédaction. Choix retenus : **C-e350-36** (un compte que le dialogue ne
   propose plus est retiré de la sélection) et **C-e350-37** (sur un champ obligatoire, quitter le champ jette le brouillon).
   Statut : `ready-for-dev`.
+- 2026-11-13 — **Développement** (Opus 5.5, `bmad-dev-story`, worktree `kesh-e357`, branche
+  `story/35-7-autocomplete-compte-hors-liste` sur `epic-35/base3` `137993e5`). Commits : `fe8ead5c` (code, tests, manuel
+  `.tex`, CHANGELOG), `635fc5f2` (PDF), `926854f7` (spec E2E : description, dernier commit de code), puis ce commit
+  (fiche, registre, `review`).
+  - **Étape 0** : `git grep -n "<AccountAutocomplete" -- frontend/src` rend les **sept** sites de la fiche
+    (`InvoiceForm.svelte:877`, `JournalEntryForm.svelte:393`, `VatPurchaseAssistant.svelte:159`, `:204`,
+    `ManualMatchModal.svelte:179`, `TransactionSplitModal.svelte:288`, `products/+page.svelte:697`). Grep des
+    « 4 consommateurs » sur la base : `AccountAutocomplete.svelte:20`, `:183`, `:199`, `:286`, `:287` ;
+    `AccountAutocomplete.test.ts:8`, `:81`, `:279` — exactement l'inventaire de D2. Après la story, le même grep sur
+    `frontend/src` et `docs/manual/fr/*.tex` est **vide**.
+  - **Rouges** (`kesh-gate-logs/e357/rouges.log`) : Vitest, 8 rouges sur 78 avant correction — AC1 ×3 (champ `''` ou
+    `zzz` au lieu du libellé), AC2 ×2 (`10`, `12` au lieu de `null`, la fonction écrite d'abord comme `(id) => id`),
+    AC3 ×3 (bouton actif quand le champ est vide). Verts au départ, comme la fiche le prévoit : le mode dégradé, les
+    tests `allowClear`, les comptes restés proposés. E2E d'AC7 rouge sur le build d'avant la correction :
+    `Expected "2000 — Capital CI"`, `Received "zzz"` (M1 à la frontière HTTP).
+  - ⚠️ **Le premier rouge a révélé un harnais faux** : avec `rerender`, le test « banque → champ vide » d'*Écriture
+    manuelle* passait **à vide** (la remise à zéro du dialogue se rejouait). Hôte `CounterpartyModalHost.test.svelte`
+    (C-e357-1) ; mock i18n interpolant dans `TransactionSplitModal.test.ts` (C-e357-2).
+  - **Mutations** (`kesh-gate-logs/e357/mut/`, script `mutations-e357.py`, motifs vérifiés uniques, restauration
+    `git checkout --` + `touch`, arbre propre après) : **7/7 tuées**. M1 par AC1 ×3 et AC4 ; M2 par AC1 ×3 (`onSelect`
+    appelé) et AC4 ; M3 par le mode dégradé ; M4 par AC2 ×2 et AC3 ×3 ; M5 par AC2 (compte absent) ; M6 par AC3 ×2 (l'autre
+    ligne vidée) ; M7 par AC3 (*Écriture manuelle*). M1 l'est aussi par AC7 en E2E (build d'avant).
+  - **Lignes changées dans les deux dialogues, pour l'intégration avec la 35-4** : `ManualMatchModal.svelte` — `:38`
+    (import), `:90-98` (`$effect`, +9 lignes) : les lignes que cite la 35-4, `:139-151`, deviennent `:148-160` ;
+    `TransactionSplitModal.svelte` — `:39-43` (import, +4), `:104-114` (`$effect`, +11) : `:234-239` deviennent
+    `:249-254`. Aucun autre hunk dans ces fichiers.
+  - **Gates au dernier commit de code** (`926854f7`, qui ne touche qu'une spec E2E ; le frontend du build est celui de
+    `fe8ead5c`, identique en `src/`) : `npm run check` 0 erreur, 29 avertissements (aucun dans les fichiers de la
+    story) ; `lint-i18n-ownership` PASS ; Vitest complet **3201 passés, 232 fichiers** ; `npm run build` vert ;
+    `scripts/test-fast.sh --ci` **5307 exécutés, 5307 passés, 13 ignorés** ; `scripts/gate-ci.sh kesh_ci_e357`
+    **5314 passés, 0 échoué, 17 ignorés** ; **E2E complet** (base `kesh_e2e_e357` recréée, recette entière des
+    consignes, `KESH_INBOX_DIR`/`KESH_DOCUMENTS_DIR` des deux côtés) **405 passés, 7 échecs, 17 ignorés** — les sept
+    de la KF-029 (#97) de `docs/testing.md`, nommés un à un : `mode-expert:26`, `:41`, `onboarding-path-b:65`, `:92`,
+    `onboarding:57`, `:77`, `:150`. `reconciliation-manual`, `-manual-entry`, `-split` et `journal-entries` verts.
+  - **Premier E2E complet** (au commit `635fc5f2`) : 403 passés, 9 échecs — les sept de la KF-029 ;
+    `opening-balances:156`, huitième variable, vert au rejeu isolé ; et **l'AC7**, dont la requête portait bien le compte
+    affiché mais que le serveur a refusée : la spec ne remplissait pas la description, que le serveur exige
+    (`EntryDescriptionEmpty`, affiché « Valeur invalide » ; issue #935). Spec corrigée (`926854f7`), rejeu isolé vert,
+    puis E2E complet ci-dessus.
+  - **Manuel** : `user-manual.tex:3186`, demi-phrase placée après « c'est le refus qui protège le grand livre » ; PDF
+    régénéré (`make -C docs/manual user`, 3 passes, stable), contrôlé aplati : « … c’est le refus qui protège le grand
+    livre ; un compte de la banque choisi avant que Kesh l’ait identifié est ensuite retiré du champ, qui se vide. » —
+    « retiré du champ » présent une fois.
+  - **Captures** (`kesh-gate-logs/e357/captures/`, thème clair, base jetable) : `e357-ecriture-manuelle-champ-quitte.png`
+    (E2E d'AC7), `e357-eclater-avant-quitter.png` et `e357-eclater-champ-quitte.png` (spec jetable, C-e357-4). Le
+    dossier contient aussi les captures des autres specs de la suite, `KESH_E2E_CAPTURES_DIR` ayant été posé pour tout
+    l'E2E complet.
+  - **Écarts à la consigne Edit** : un ajout en fin de `reconciliation-counterparties.test.ts` (le `describe` d'AC2) fait
+    par `cat >> <<EOF` au lieu de l'outil Edit — un geste de facilité, pas un manque de l'outil. Fichiers neufs
+    (`CounterpartyModalHost.test.svelte`, registre) par l'outil Write. Rien d'autre.
+  - Constat hors périmètre, déjà tracé : l'indicateur d'équilibre d'*Éclater* n'affiche que « Balance » (visible sur les
+    captures) — #993.
