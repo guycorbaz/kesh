@@ -328,8 +328,15 @@ const SUFFIXES = ['Label', 'Text', 'Display'];
  *
  * Intégration de la 34-11a2 dans la 0.17.6 (2026-11-12), recomptés par la garde après la
  * fusion (non additionnés) : **90** candidates, `conforme` **76**.
+ *
+ * **90 → 91, et la déclaration est NOMMÉE** (Story 35-2b, #955) : `reminderFailureText`
+ * (`lib/features/reminders/reminder-error-label.ts`), la ligne d'un échec du lot de rappels —
+ * le libellé de `reminderErrorLabel` (tout par `i18nMsg`), suivi, pour un PDF refusé, de la
+ * phrase du serveur par un gabarit : aucun littéral rendu, donc `conforme` **76 → 77** ;
+ * `ecartee` ne bouge pas. *Identifiée en cherchant les suffixes `Label`, `Text`, `Display`
+ * dans le diff de la story (`50623755` → tête) — la seule déclaration neuve qui en porte un.*
  */
-const CANDIDATES_ATTENDUES = 90;
+const CANDIDATES_ATTENDUES = 91;
 
 /** Les trois délimiteurs de littéral en JS/TS. */
 const QUOTES = ["'", '"', '`'];
@@ -846,7 +853,7 @@ describe('libellés en dur — l’angle mort #255', () => {
 			else if (c.retours.length > 0) classes.ecartee += 1;
 			else classes.conforme += 1;
 		}
-		expect(classes).toEqual({ nonAnalysee: 0, enViolation: 0, ecartee: 14, conforme: 76 });
+		expect(classes).toEqual({ nonAnalysee: 0, enViolation: 0, ecartee: 14, conforme: 77 });
 		// La somme est recalculée depuis les classes, jamais depuis le total qu'elle contrôle.
 		const somme = Object.values(classes).reduce((a, b) => a + b, 0);
 		expect(somme).toBe(CANDIDATES_ATTENDUES);
