@@ -159,10 +159,13 @@ pub struct AuditLogEntry {
 ///   Story 17-2a) ;
 /// - `api_key_id` : la clé, `None` pour une session.
 ///
-/// ⛔ Le seul constructeur sans clé est [`Acteur::utilisateur`] : la garde
-/// `crates/kesh-api/tests/audit_acteur_garde.rs` en compte chaque appel de
-/// production, avec sa raison. Côté HTTP, l'acteur se tire du `CurrentUser`
-/// (`impl From<&CurrentUser> for Acteur`, `kesh-api/src/audit.rs`).
+/// ⛔ Le seul constructeur **nommé** sans clé est [`Acteur::utilisateur`]. Les
+/// champs sont publics : un littéral `Acteur { …, api_key_id: None }` — ou
+/// `letterings::Actor { …, api_key_id: None }`, son alias, que la production
+/// écrit encore à plusieurs endroits — construit aussi un acteur sans clé. La
+/// garde `crates/kesh-api/tests/audit_acteur_garde.rs` compte les deux formes
+/// (motifs 2 et 3), site par site, avec leur raison. Côté HTTP, l'acteur se tire
+/// du `CurrentUser` (`impl From<&CurrentUser> for Acteur`, `kesh-api/src/audit.rs`).
 ///
 /// `letterings::Actor` en est un alias : le lettrage portait ce couple depuis
 /// la Story 15-1a.

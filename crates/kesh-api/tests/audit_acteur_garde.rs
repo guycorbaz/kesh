@@ -7,14 +7,18 @@
 //! d'API** est inventorié, **site par site**, avec sa raison. Un dépôt qui
 //! reçoit un `user_id: i64` nu ne peut pas savoir qu'une clé agit : il écrit
 //! `NewAuditLogEntry::user`, et l'action d'une intégration est journalisée comme
-//! celle d'une personne (#431). Cette garde rend impossible d'en ajouter un, ou
-//! d'en déplacer un, sans que rien ne rougisse.
+//! celle d'une personne (#431). Cette garde fait rougir l'ajout, le retrait ou le
+//! déplacement d'un site **sous l'une des cinq formes ci-dessous** ; et, pour les
+//! sites d'une raison finale, l'ajout d'une **référence** à la fonction qui les
+//! porte ou à un maillon de sa chaîne jusqu'à la route ([`REFERENCES`]). Ce qui lui
+//! échappe est écrit plus bas (*Angles morts*).
 //!
 //! # L'inventaire des sites NON RÉSOLUS (D4-ter du `CLAUDE.md`)
 //!
 //! On n'énumère pas les formes qui attribuent la clé ; on inventorie l'ensemble
 //! clos de ce qui ne l'attribue pas. **Cinq motifs**, cherchés sur la source
-//! assainie **jointe** (blancs et retours à la ligne tolérés entre les jetons) :
+//! assainie **jointe** (blancs et retours à la ligne tolérés entre le nom et sa
+//! parenthèse, et entre les arguments) :
 //!
 //! 1. `NewAuditLogEntry::user(` — la trace écrite sans clé ;
 //! 2. `Acteur::utilisateur(` — l'acteur construit sans clé ;
@@ -43,6 +47,18 @@
 //! Une fonction atteinte aussi par une route comptable n'entre dans aucune raison
 //! finale : elle est [`Raison::AConvertir`].
 //!
+//! ⚠️ **Une raison finale repose sur l'ensemble des appelants** (revue P1, B1 =
+//! E1) : le texte du site ne bouge pas quand une route comptable se met à appeler
+//! sa fonction. D'où [`REFERENCES`] : pour chaque fonction qui porte un site de
+//! raison finale (hors [`Raison::Definition`]), et pour chaque maillon jusqu'à la
+//! route, la liste close de ses références — appels qualifiés, pointeurs de
+//! fonction de `lib.rs`, appels nus dans le fichier de définition ou par import.
+//! Un appel ou une route de plus fait rougir la garde en nommant fichier et
+//! fonction ; la personne qui l'ajoute doit alors dire si une clé l'atteint.
+//! **Les colonnes `Raison` et `appelant` de [`SITES`], elles, ne sont pas lues par
+//! une assertion** : leur vérité tient à cette liste close, à la relecture, et à
+//! la date de la table (les numéros de ligne de `lib.rs` y dérivent en silence).
+//!
 //! # Angles morts, écrits
 //!
 //! 1. Le `None` positionnel passé à une fonction **autre que** `delete_in_tx` qui
@@ -57,12 +73,42 @@
 //!    aucun site aujourd'hui, mais un site futur y serait compté (faux rouge, non
 //!    faux vert).
 //! 3. Les limites de `source_assainie` (`common/source_assainie.rs`, écrites à son
-//!    doc-comment) : un `//` dans une chaîne tronque la ligne, les commentaires de
-//!    bloc ne sont pas retirés, les chaînes brutes ne sont pas comprises.
+//!    doc-comment) : un `//` dans une chaîne tronque la ligne — et l'accolade
+//!    perdue fausse la profondeur, donc l'attribution, **de toute la suite du
+//!    fichier** (`mcp/reseau.rs` : `"://"`, `"http://{hote}"`, aucun site
+//!    aujourd'hui) ; les commentaires de bloc ne sont pas retirés ; les chaînes
+//!    brutes ne sont pas comprises ; un `#[cfg(test)]` posé sur un **champ** ou un
+//!    **bras** (item sans accolade ni `;`) masque jusqu'à la première ligne qui
+//!    ouvre une accolade après la fermeture (faux vert possible ; aucun cas en
+//!    production, revue P1, E4).
 //! 4. Le motif 4 ne voit pas un premier argument qui porte une parenthèse ou une
 //!    virgule (`for_actor(u.id(), None, …)`).
 //! 5. Un `#[cfg(test)]` qui n'est pas seul sur sa ligne n'est pas masqué : le site
 //!    qu'il garde est compté (faux rouge).
+//! 6. **Les formes non qualifiées ou renommées** : `Self::user(` et
+//!    `Self::for_actor(…, None, …)` dans `impl NewAuditLogEntry`
+//!    (`entities/audit_log.rs` : le corps de `for_actor` ; une réécriture de `par`
+//!    en `Self::user` — mutation M2 — n'est vue que par le test d'AC3) ; un import
+//!    renommé (`use … NewAuditLogEntry as E;` puis `E::user(`) ; un `None` porté
+//!    par une variable, un champ abrégé (`Acteur { user_id, api_key_id }` après
+//!    `let api_key_id = None;`) ou écrit `Option::None`.
+//! 7. **`fonctions_par_ligne`** lit les `fn <nom>` **dans les chaînes** (un
+//!    `"… fn x …"` met `x` en attente, et la prochaine accolade ouvre une fausse
+//!    fonction ; les cas présents sont tous dans des `mod tests` masqués), et
+//!    l'état « dans une chaîne » de `accolades_hors_chaines` repart de zéro à
+//!    chaque ligne : une chaîne sur plusieurs lignes peut fausser la profondeur.
+//! 8. **[`REFERENCES`]** compte le **texte** du chemin qualifié, chaînes comprises
+//!    (le libellé de rejeu `retry_on_deadlock("company_invoice_settings::update",
+//!    …)` compte pour une référence) ; un appel nu n'est vu que dans le fichier de
+//!    définition ou dans un fichier dont un `use` nomme le module puis la
+//!    fonction — un appel par un alias, par un glob (`use …::module::*;`) ou par un
+//!    import sans le nom du module (`use super::verrou;`) lui échappe ; toutes les
+//!    routes s'enregistrent dans `build_router_avec_registre` : une route de plus
+//!    vers un même handler, quel que soit son routeur, ne se voit qu'à son compte
+//!    (1 → 2) — ce qui suffit à rougir, sans dire lequel des routeurs.
+//! 9. **La chaîne de `Mcp` s'arrête au premier maillon** (`entree_appel`,
+//!    `entree_prompt` et leurs appelants directs, des outils du serveur MCP) :
+//!    une clé MCP n'est pas une clé REST (#1057).
 
 #[path = "common/source_assainie.rs"]
 mod assainissement;
@@ -131,11 +177,11 @@ const SITES: &[(&str, &str, Motif, usize, Raison, &str)] = &[
     ("crates/kesh-api/src/routes/admin.rs", "run_backup_and_restore", User, 2, Restauration,
         "`full_import` (`POST /api/v1/admin/full-import`, lib.rs:342, `require_not_pat` ; `ensure_not_pat` admin.rs:207) — `user_id = audit_uid`"),
     ("crates/kesh-api/src/routes/api_keys.rs", "create", User, 1, AdminSansCle,
-        "`POST /api/v1/settings/api-keys` (lib.rs:989), `ensure_not_pat` (api_keys.rs:96)"),
+        "`POST /api/v1/settings/api-keys` (lib.rs:989), `ensure_not_pat` (api_keys.rs:122)"),
     ("crates/kesh-api/src/routes/api_keys.rs", "revoke", User, 1, AdminSansCle,
-        "`DELETE /api/v1/settings/api-keys/{id}` (lib.rs:993), `ensure_not_pat`"),
+        "`DELETE /api/v1/settings/api-keys/{id}` (lib.rs:993), `ensure_not_pat` (api_keys.rs:222)"),
     ("crates/kesh-api/src/routes/auth.rs", "change_password_with", User, 1, AdminSansCle,
-        "`PUT /api/v1/auth/password` (lib.rs:1151), `change_password` refuse une clé (auth.rs:633)"),
+        "`PUT /api/v1/auth/password` (lib.rs:1151), `change_password` refuse une clé (auth.rs:635)"),
     ("crates/kesh-api/src/routes/auth.rs", "process_forgot_password_match", User, 1, PreAuth,
         "`forgot_password` (lib.rs:1385), sans session"),
     ("crates/kesh-api/src/routes/auth.rs", "reset_password", User, 1, PreAuth,
@@ -224,7 +270,7 @@ const SITES: &[(&str, &str, Motif, usize, Raison, &str)] = &[
     ("crates/kesh-db/src/repositories/credit_notes.rs", "create_credit_note", ApiKeyNone, 1, AConvertir,
         "`create_credit_note` (lib.rs:650)"),
     ("crates/kesh-db/src/repositories/fiscal_years.rs", "build_audit_entry", User, 1, AConvertir,
-        "`create_fiscal_year` (lib.rs:826), `close_fiscal_year` (lib.rs:834)"),
+        "`fiscal_years::create` ×2, `update`, `close`, `reopen` : `create_fiscal_year` (lib.rs:826), `close_fiscal_year` (lib.rs:834), `update_fiscal_year` (lib.rs:830), `reopen_fiscal_year` (lib.rs:479, admin) — une raison finale exigerait les cinq"),
     ("crates/kesh-db/src/repositories/installation_settings.rs", "update_session_idle_minutes", User, 1, AdminSansCle,
         "`update_session_settings` (lib.rs:375), `require_not_pat`"),
     ("crates/kesh-db/src/repositories/invoice_settlements_write.rs", "cancel_settlement_in_tx", User, 1, AConvertir,
@@ -297,6 +343,102 @@ const SITES: &[(&str, &str, Motif, usize, Raison, &str)] = &[
         "`validate_supplier_invoice` (lib.rs:665)"),
 ];
 
+/// Une référence déclarée : `(fichier, fonction englobante, nombre)`.
+type Reference = (&'static str, &'static str, usize);
+
+/// **Les références closes des fonctions de raison finale**, et de chaque maillon
+/// jusqu'à la route (revue P1, B1 = E1 ; C-e358a1-3) : `(chemin qualifié,
+/// fichier de définition, [(fichier, fonction englobante, nombre)])`. Recomptées
+/// depuis la source (Change Log de la fiche).
+#[rustfmt::skip]
+const REFERENCES: &[(&str, &str, &[Reference])] = &[
+    // ── Systeme ──
+    ("bootstrap::ensure_admin_user", "crates/kesh-api/src/auth/bootstrap.rs",
+        &[("crates/kesh-api/src/main.rs", "main", 1)]),
+    ("companies::repair_installation_in_tx", "crates/kesh-db/src/repositories/companies.rs",
+        &[("crates/kesh-api/src/auth/bootstrap.rs", "repair_installation_at_startup", 1),
+          ("crates/kesh-api/src/routes/admin.rs", "run_backup_and_restore", 1)]),
+    ("bootstrap::repair_installation_at_startup", "crates/kesh-api/src/auth/bootstrap.rs",
+        &[("crates/kesh-api/src/auth/bootstrap.rs", "ensure_admin_user", 1)]),
+    // ── Restauration ──
+    ("admin::run_backup_and_restore", "crates/kesh-api/src/routes/admin.rs",
+        &[("crates/kesh-api/src/routes/admin.rs", "full_import", 1)]),
+    ("routes::admin::full_import", "crates/kesh-api/src/routes/admin.rs", &[(LIB, ROUTEUR, 1)]),
+    // ── PreAuth ──
+    ("routes::setup::create_admin", "crates/kesh-api/src/routes/setup.rs", &[(LIB, ROUTEUR, 1)]),
+    ("auth::process_forgot_password_match", "crates/kesh-api/src/routes/auth.rs",
+        &[("crates/kesh-api/src/routes/auth.rs", "process_forgot_password_request", 1)]),
+    ("auth::process_forgot_password_request", "crates/kesh-api/src/routes/auth.rs",
+        &[("crates/kesh-api/src/routes/auth.rs", "forgot_password", 1)]),
+    ("routes::auth::forgot_password", "crates/kesh-api/src/routes/auth.rs", &[(LIB, ROUTEUR, 1)]),
+    ("routes::auth::reset_password", "crates/kesh-api/src/routes/auth.rs", &[(LIB, ROUTEUR, 1)]),
+    ("auth::tracer_vol_de_jeton", "crates/kesh-api/src/routes/auth.rs",
+        &[("crates/kesh-api/src/routes/auth.rs", "refresh", 1)]),
+    ("routes::auth::refresh", "crates/kesh-api/src/routes/auth.rs", &[(LIB, ROUTEUR, 1)]),
+    // ── AdminSansCle : handlers ──
+    ("routes::api_keys::create", "crates/kesh-api/src/routes/api_keys.rs", &[(LIB, ROUTEUR, 1)]),
+    ("routes::api_keys::revoke", "crates/kesh-api/src/routes/api_keys.rs", &[(LIB, ROUTEUR, 1)]),
+    ("auth::change_password_with", "crates/kesh-api/src/routes/auth.rs",
+        &[("crates/kesh-api/src/routes/auth.rs", "change_password", 1)]),
+    ("routes::auth::change_password", "crates/kesh-api/src/routes/auth.rs", &[(LIB, ROUTEUR, 1)]),
+    ("routes::companies::update_company_address", "crates/kesh-api/src/routes/companies.rs", &[(LIB, ROUTEUR, 1)]),
+    ("routes::companies::update_company_contact_details", "crates/kesh-api/src/routes/companies.rs", &[(LIB, ROUTEUR, 1)]),
+    ("routes::companies::update_company_email", "crates/kesh-api/src/routes/companies.rs", &[(LIB, ROUTEUR, 1)]),
+    ("routes::mcp_envois::decider_envoi", "crates/kesh-api/src/routes/mcp_envois.rs", &[(LIB, ROUTEUR, 1)]),
+    ("routes::mcp_keys::create_mcp_key", "crates/kesh-api/src/routes/mcp_keys.rs", &[(LIB, ROUTEUR, 1)]),
+    ("routes::mcp_keys::revoke_mcp_key", "crates/kesh-api/src/routes/mcp_keys.rs", &[(LIB, ROUTEUR, 1)]),
+    ("routes::mcp_keys::set_mcp_key_send_validation", "crates/kesh-api/src/routes/mcp_keys.rs", &[(LIB, ROUTEUR, 1)]),
+    ("routes::mcp_prompts::ajouter_version", "crates/kesh-api/src/routes/mcp_prompts.rs", &[(LIB, ROUTEUR, 1)]),
+    ("routes::mcp_prompts::approuver_version", "crates/kesh-api/src/routes/mcp_prompts.rs", &[(LIB, ROUTEUR, 1)]),
+    ("routes::mcp_prompts::creer_prompt", "crates/kesh-api/src/routes/mcp_prompts.rs", &[(LIB, ROUTEUR, 1)]),
+    ("routes::mcp_prompts::refuser_version", "crates/kesh-api/src/routes/mcp_prompts.rs", &[(LIB, ROUTEUR, 1)]),
+    ("routes::mcp_prompts::revenir_au_standard", "crates/kesh-api/src/routes/mcp_prompts.rs", &[(LIB, ROUTEUR, 1)]),
+    ("routes::mcp_server_settings::update_mcp_server_settings", "crates/kesh-api/src/routes/mcp_server_settings.rs", &[(LIB, ROUTEUR, 1)]),
+    ("routes::users::create_user", "crates/kesh-api/src/routes/users.rs", &[(LIB, ROUTEUR, 1)]),
+    ("routes::users::disable_user", "crates/kesh-api/src/routes/users.rs", &[(LIB, ROUTEUR, 1)]),
+    ("routes::users::reset_password", "crates/kesh-api/src/routes/users.rs", &[(LIB, ROUTEUR, 1)]),
+    ("routes::users::update_user", "crates/kesh-api/src/routes/users.rs", &[(LIB, ROUTEUR, 1)]),
+    // ── AdminSansCle : dépôts, puis leur handler ──
+    ("backup_schedule::update_settings", "crates/kesh-db/src/repositories/backup_schedule.rs",
+        &[("crates/kesh-api/src/routes/backup_schedule.rs", "update_backup_schedule", 1)]),
+    ("routes::backup_schedule::update_backup_schedule", "crates/kesh-api/src/routes/backup_schedule.rs", &[(LIB, ROUTEUR, 1)]),
+    ("companies::unlock_books", "crates/kesh-db/src/repositories/companies.rs",
+        &[("crates/kesh-api/src/routes/companies.rs", "unlock_company_books", 1)]),
+    ("routes::companies::unlock_company_books", "crates/kesh-api/src/routes/companies.rs", &[(LIB, ROUTEUR, 1)]),
+    ("company_dunning_settings::update", "crates/kesh-db/src/repositories/company_dunning_settings.rs",
+        &[("crates/kesh-api/src/routes/company_dunning_settings.rs", "update_dunning_settings", 1)]),
+    ("routes::company_dunning_settings::update_dunning_settings", "crates/kesh-api/src/routes/company_dunning_settings.rs", &[(LIB, ROUTEUR, 1)]),
+    // Deux : l'appel, et le libellé du rejeu (`retry_on_deadlock("company_invoice_settings::update", …)`).
+    ("company_invoice_settings::update", "crates/kesh-db/src/repositories/company_invoice_settings.rs",
+        &[("crates/kesh-api/src/routes/company_invoice_settings.rs", "update_invoice_settings", 2)]),
+    ("routes::company_invoice_settings::update_invoice_settings", "crates/kesh-api/src/routes/company_invoice_settings.rs", &[(LIB, ROUTEUR, 1)]),
+    ("installation_settings::update_session_idle_minutes", "crates/kesh-db/src/repositories/installation_settings.rs",
+        &[("crates/kesh-api/src/routes/session_settings.rs", "update_session_settings", 1)]),
+    ("routes::session_settings::update_session_settings", "crates/kesh-api/src/routes/session_settings.rs", &[(LIB, ROUTEUR, 1)]),
+    ("invoices::delete", "crates/kesh-db/src/repositories/invoices.rs",
+        &[("crates/kesh-api/src/routes/invoices.rs", "delete_invoice", 1)]),
+    ("routes::invoices::delete_invoice", "crates/kesh-api/src/routes/invoices.rs", &[(LIB, ROUTEUR, 1)]),
+    ("supplier_invoices::delete_draft_in_tx", "crates/kesh-db/src/repositories/supplier_invoices.rs",
+        &[("crates/kesh-db/src/repositories/supplier_invoices.rs", "delete_draft", 1)]),
+    ("supplier_invoices::delete_draft", "crates/kesh-db/src/repositories/supplier_invoices.rs",
+        &[("crates/kesh-api/src/routes/supplier_invoices.rs", "delete_supplier_invoice", 1)]),
+    ("routes::supplier_invoices::delete_supplier_invoice", "crates/kesh-api/src/routes/supplier_invoices.rs", &[(LIB, ROUTEUR, 1)]),
+    // ── Mcp : le premier maillon seulement (angle mort 9) ──
+    ("serveur_mcp::entree_appel", "crates/kesh-api/src/services/serveur_mcp.rs",
+        &[("crates/kesh-api/src/services/envois_mcp.rs", "deposer", 1),
+          ("crates/kesh-api/src/services/prompts_mcp.rs", "proposer", 1),
+          ("crates/kesh-api/src/services/serveur_mcp.rs", "journaliser_appel", 1)]),
+    ("serveur_mcp::entree_prompt", "crates/kesh-api/src/services/serveur_mcp.rs",
+        &[("crates/kesh-api/src/services/serveur_mcp.rs", "journaliser_prompt", 1)]),
+];
+
+/// Le routeur : toutes les routes s'enregistrent dans cette fonction de `lib.rs`
+/// — `admin_routes` (sous `require_not_pat`), `comptable_routes` et les routes
+/// publiques. Une référence de plus à un handler, quel que soit le routeur qui
+/// l'ajoute, fait passer son compte de 1 à 2.
+const LIB: &str = "crates/kesh-api/src/lib.rs";
+const ROUTEUR: &str = "build_router_avec_registre";
+
 // ---------------------------------------------------------------------------
 // Le relevé
 // ---------------------------------------------------------------------------
@@ -308,7 +450,7 @@ static RE_UTILISATEUR: LazyLock<Regex> =
 static RE_API_KEY_NONE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"api_key_id:\s*None\b").unwrap());
 static RE_FOR_ACTOR_NONE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"for_actor\(\s*[^,()]+,\s*None\b").unwrap());
+    LazyLock::new(|| Regex::new(r"for_actor\s*\(\s*[^,()]+,\s*None\b").unwrap());
 static RE_DELETE_IN_TX: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"delete_in_tx\s*\(").unwrap());
 static RE_FN: LazyLock<Regex> =
@@ -406,10 +548,11 @@ fn relever<'a>(sources: impl IntoIterator<Item = (String, &'a str)>) -> Releve {
     r
 }
 
-/// Le relevé du dépôt : tout `crates/*/src/**/*.rs`.
-fn releve_du_depot() -> Releve {
+/// Les sources de production du dépôt : `(chemin relatif, texte brut)` de tout
+/// `crates/*/src/**/*.rs`.
+fn sources_du_depot() -> Vec<(String, String)> {
     let racine = racine_crates();
-    let fichiers: Vec<(String, String)> = fichiers_de_production()
+    fichiers_de_production()
         .into_iter()
         .map(|chemin| {
             let relatif = format!(
@@ -422,8 +565,101 @@ fn releve_du_depot() -> Releve {
             let brut = std::fs::read_to_string(&chemin).expect("lire un fichier source");
             (relatif, brut)
         })
-        .collect();
+        .collect()
+}
+
+/// Le relevé du dépôt : tout `crates/*/src/**/*.rs`.
+fn releve_du_depot() -> Releve {
+    let fichiers = sources_du_depot();
     relever(fichiers.iter().map(|(f, b)| (f.clone(), b.as_str())))
+}
+
+// ---------------------------------------------------------------------------
+// Les références d'une fonction de raison finale (revue P1, B1 = E1 ; C-e358a1-3)
+// ---------------------------------------------------------------------------
+
+/// Les références d'une fonction, par `(fichier, fonction englobante)`.
+type References = BTreeMap<(String, String), usize>;
+
+/// Les références de la fonction `qualifie` (chemin qualifié, `module::nom` au
+/// moins) définie dans `fichier_def`, sur des sources **brutes** assainies :
+///
+/// - toute occurrence du chemin qualifié (`\b<qualifie>\b`) — appel, pointeur de
+///   fonction (`post(routes::x::f)`), import ;
+/// - tout appel **nu** `<nom>(` (ni `::`, ni `.`, ni `fn` devant) dans le fichier
+///   de définition et dans les fichiers dont une instruction `use` nomme le
+///   module de la fonction puis `<nom>` (`use …::module::{…, nom, …};`).
+///
+/// La définition (`fn <nom>`) n'est pas une référence.
+fn references_de<'a>(
+    qualifie: &str,
+    fichier_def: &str,
+    sources: impl IntoIterator<Item = (String, &'a str)>,
+) -> References {
+    let mut segments = qualifie.rsplit("::");
+    let nom = segments.next().expect("un chemin a un dernier segment");
+    let module = segments.next().expect("un chemin qualifié a un module");
+    let re_qualifie = Regex::new(&format!(r"\b{}\b", regex::escape(qualifie))).unwrap();
+    let re_nu = Regex::new(&format!(r"\b{}\s*\(", regex::escape(nom))).unwrap();
+    let re_use = Regex::new(&format!(
+        r"\buse\b[^;]*\b{}\b[^;]*\b{}\b[^;]*;",
+        regex::escape(module),
+        regex::escape(nom)
+    ))
+    .unwrap();
+    let mut r = References::new();
+    for (fichier, brut) in sources {
+        let source = source_assainie(brut);
+        let fonctions = fonctions_par_ligne(&source);
+        let mut noter = |pos: usize| {
+            let ligne = source[..pos].matches('\n').count();
+            let f = fonctions
+                .get(ligne)
+                .cloned()
+                .unwrap_or_else(|| HORS_FONCTION.to_string());
+            *r.entry((fichier.clone(), f)).or_default() += 1;
+        };
+        for m in re_qualifie.find_iter(&source) {
+            noter(m.start());
+        }
+        if fichier == fichier_def || re_use.is_match(&source) {
+            for m in re_nu.find_iter(&source) {
+                let avant = source[..m.start()].trim_end();
+                if avant.ends_with(':') || avant.ends_with('.') || avant.ends_with("fn") {
+                    continue;
+                }
+                noter(m.start());
+            }
+        }
+    }
+    r
+}
+
+/// Les écarts entre les références relevées et la liste déclarée.
+fn ecarts_references(qualifie: &str, code: &References, liste: &References) -> Vec<String> {
+    let mut out = Vec::new();
+    for (cle, n) in code {
+        match liste.get(cle) {
+            None => out.push(format!(
+                "{qualifie} : référence NON DÉCLARÉE dans {} / fn {} × {n}",
+                cle.0, cle.1
+            )),
+            Some(m) if m != n => out.push(format!(
+                "{qualifie} : compte faux dans {} / fn {} — code {n}, liste {m}",
+                cle.0, cle.1
+            )),
+            Some(_) => {}
+        }
+    }
+    for (cle, m) in liste {
+        if !code.contains_key(cle) {
+            out.push(format!(
+                "{qualifie} : référence ÉVANOUIE dans {} / fn {} — liste {m}, code 0",
+                cle.0, cle.1
+            ));
+        }
+    }
+    out
 }
 
 /// La table, en relevé.
@@ -489,6 +725,55 @@ fn chaque_acteur_sans_cle_de_la_production_est_inventorie_site_par_site() {
          faire passer un site d'une autre fonction.",
         e.join("\n  ")
     );
+}
+
+/// B1 = E1 de la revue P1 : la raison finale d'un site n'est vraie que si la
+/// fonction qui le porte n'est atteinte par aucune route comptable. Chaque
+/// fonction de [`REFERENCES`] a sa liste close de références ; un appel ajouté,
+/// retiré ou déplacé rougit en le nommant.
+#[test]
+fn chaque_fonction_de_raison_finale_a_ses_references_closes() {
+    let sources = sources_du_depot();
+    let mut e = Vec::new();
+    for (qualifie, fichier_def, liste) in REFERENCES {
+        let code = references_de(
+            qualifie,
+            fichier_def,
+            sources.iter().map(|(f, b)| (f.clone(), b.as_str())),
+        );
+        let declare: References = liste
+            .iter()
+            .map(|(f, g, n)| (((*f).to_string(), (*g).to_string()), *n))
+            .collect();
+        e.extend(ecarts_references(qualifie, &code, &declare));
+    }
+    assert!(
+        e.is_empty(),
+        "⛔ Les références d'une fonction de raison finale ne sont plus celles de \
+         REFERENCES :\n  {}\n\n\
+         Une référence NEUVE (une route, un appelant) : vérifier qu'aucune clé \
+         `read-write` ne l'atteint — sinon la raison n'est plus finale, le site passe \
+         en `AConvertir` (ou mieux, reçoit l'acteur) ; puis inscrire la référence.",
+        e.join("\n  ")
+    );
+}
+
+/// Chaque site de raison finale (hors `Definition`) a sa fonction dans
+/// [`REFERENCES`] : la raison ne se déclare pas sans ses appelants.
+#[test]
+fn chaque_site_de_raison_finale_a_sa_liste_de_references() {
+    for (fichier, fonction, motif, _, raison, _) in SITES {
+        if matches!(raison, AConvertir | Definition) {
+            continue;
+        }
+        assert!(
+            REFERENCES
+                .iter()
+                .any(|(q, f, _)| f == fichier && q.rsplit("::").next() == Some(*fonction)),
+            "⛔ {fichier} / fn {fonction} / {motif:?} ({raison:?}) : aucune entrée de \
+             REFERENCES ne déclare les appelants de cette fonction"
+        );
+    }
 }
 
 #[test]
@@ -609,8 +894,10 @@ fn sonde_g_cfg_not_test_reste_compte() {
 /// compté ; la clé passée ne l'est pas, ni la définition.
 #[test]
 fn sonde_h_delete_in_tx_sans_cle_est_compte() {
+    // La définition porte un paramètre écrit `None` (revue P1, E5) : sans le saut
+    // de la définition, elle serait comptée.
     let s = sites_de(
-        "pub(crate) async fn delete_in_tx(tx: T, id: i64, user_id: i64, k: Option<i64>) {}\n\
+        "pub(crate) async fn delete_in_tx(tx: T, None) {}\n\
          fn f(tx: T) {\n    super::journal_entries::delete_in_tx(\n        tx, 1, 2, None, false,\n    )\n    .await;\n}\n\
          fn g(tx: T, a: Acteur) {\n    delete_in_tx(tx, 1, a.user_id, a.api_key_id, false).await;\n}\n",
     );
@@ -635,5 +922,107 @@ fn sonde_motifs_2_et_3_et_signatures() {
             ("longue".to_string(), Motif::ApiKeyNone),
             ("h".to_string(), Motif::ApiKeyNone),
         ]
+    );
+}
+
+/// Revue P1, B3 — une fonction imbriquée reçoit son site ; une fermeture laisse
+/// le site à la fonction qui l'écrit ; après la fonction imbriquée, la suite
+/// revient à la fonction englobante. Le motif 4 tolère un blanc avant la
+/// parenthèse (B2, E3).
+#[test]
+fn sonde_fonction_imbriquee_fermeture_et_motif_4_espace() {
+    let s = sites_de(
+        "fn externe() {\n    fn interne() {\n        NewAuditLogEntry::user(1, \"a.b\", \"a\", 1, None);\n    }\n\
+         \x20   let c = || {\n        NewAuditLogEntry::user(1, \"a.b\", \"a\", 1, None);\n    };\n\
+         \x20   NewAuditLogEntry::for_actor (u, None, \"a.b\", \"a\", 1, None);\n}\n",
+    );
+    assert_eq!(
+        s,
+        [
+            ("interne".to_string(), Motif::User),
+            ("externe".to_string(), Motif::User),
+            ("externe".to_string(), Motif::ForActorNone),
+        ]
+    );
+}
+
+/// Revue P1, B1 = E1 — **sonde positive du contrôle des références** : la liste
+/// d'une fonction de raison finale rougit dès qu'un appel, un pointeur de
+/// fonction (une route de plus) ou un appel nu par import s'ajoute, en nommant
+/// fichier et fonction ; la définition et les homonymes d'un autre module ne
+/// comptent pas.
+#[test]
+fn sonde_i_une_reference_ajoutee_a_une_fonction_de_raison_finale_rougit() {
+    let def = (
+        "crates/kesh-db/src/repositories/cibles.rs".to_string(),
+        "pub async fn verrou(x: i64) {}\nfn interne() { verrou(1); autre::verrou(2); x.verrou(3); }\n",
+    );
+    let liste: References = [
+        (
+            (
+                "crates/kesh-db/src/repositories/cibles.rs".to_string(),
+                "interne".to_string(),
+            ),
+            1,
+        ),
+        (("lib.rs".to_string(), "routeur".to_string()), 1),
+    ]
+    .into();
+    let routeur_admin = (
+        "lib.rs".to_string(),
+        "fn routeur() {\n    r.route(\"/a\", post(routes::cibles::verrou));\n}\n",
+    );
+    let code = references_de(
+        "cibles::verrou",
+        &def.0,
+        [
+            (def.0.clone(), def.1),
+            (routeur_admin.0.clone(), routeur_admin.1),
+        ],
+    );
+    assert!(
+        ecarts_references("cibles::verrou", &code, &liste).is_empty(),
+        "{code:?}"
+    );
+
+    // Une route comptable de plus vers la même fonction.
+    let routeur_double = (
+        "lib.rs".to_string(),
+        "fn routeur() {\n    r.route(\"/a\", post(routes::cibles::verrou));\n    c.route(\"/b\", post(routes::cibles::verrou));\n}\n",
+    );
+    let code = references_de(
+        "cibles::verrou",
+        &def.0,
+        [
+            (def.0.clone(), def.1),
+            (routeur_double.0.clone(), routeur_double.1),
+        ],
+    );
+    let e = ecarts_references("cibles::verrou", &code, &liste);
+    assert_eq!(e.len(), 1, "{e:?}");
+    assert!(
+        e[0].contains("compte faux") && e[0].contains("fn routeur"),
+        "{e:?}"
+    );
+
+    // Un appel nu, dans un fichier qui importe la fonction.
+    let importe = (
+        "crates/kesh-api/src/routes/autre.rs".to_string(),
+        "use kesh_db::repositories::cibles::{self, verrou};\nfn handler() {\n    verrou(4);\n}\n",
+    );
+    let code = references_de(
+        "cibles::verrou",
+        &def.0,
+        [
+            (def.0.clone(), def.1),
+            (routeur_admin.0.clone(), routeur_admin.1),
+            (importe.0.clone(), importe.1),
+        ],
+    );
+    let e = ecarts_references("cibles::verrou", &code, &liste);
+    assert!(
+        e.iter()
+            .any(|x| x.contains("NON DÉCLARÉE") && x.contains("fn handler")),
+        "{e:?}"
     );
 }

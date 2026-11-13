@@ -100,7 +100,12 @@ pub fn strip_line_comments(src: &str) -> String {
 /// - les commentaires de **bloc** `/* … */` ne sont pas retirés ;
 /// - `accolades_hors_chaines` ne comprend pas la sémantique des **chaînes
 ///   brutes** (`r#"…"#`), où un guillemet interne n'est pas un délimiteur : 27
-///   lignes du dépôt en portent dans des blocs masqués, toutes de bilan nul.
+///   lignes du dépôt en portent dans des blocs masqués, toutes de bilan nul ;
+/// - un `#[cfg(test)]` posé sur un **champ** de struct ou un **bras** de `match`
+///   garde un item sans accolade ni `;` final : la boucle continue après la `}`
+///   fermante de l'englobant et ne s'arrête qu'à la première ligne qui ouvre une
+///   accolade — tout ce qui est entre les deux est masqué (faux vert possible ;
+///   aucun cas en production à la Story 35-8a1, revue P1, E4).
 ///
 /// ⚠️ **Les littéraux de caractère, eux, SONT traités** — une rédaction
 /// antérieure affirmait ici qu'aucun cas n'existait, « vérifié », et c'était
