@@ -1046,10 +1046,10 @@ development_status:
   epic-34-retrospective: optional
   epic-35: in-progress  # 2026-11-12 KICKOFF en autonomie (planning-artifacts/epic-35-corrections-par-impact.md ; registre e35-choix-autonomes-e350.md). Corrections triées par impact, cible v0.17.7. Au kickoff, avant le tag v0.17.6 : 335 issues, 166 bugs, 14 P1 ; au tag v0.17.6 : à mesurer au tag. Objectif : solde net en baisse au tag v0.17.7. Les clés de l'Epic 34 vivent sur release/0.17.6 et s'uniront ici à sa fusion.
   35-0-kickoff: done  # 2026-11-12 : fichier d'epic, clés, fiches 35-2 et 35-3 (validation à lancer par l'orchestrateur).
-  35-1-numerotation-sans-seq: backlog  # #932, #948 ; descend (format par défaut gardé par Guy)
+  35-1-numerotation-sans-seq: ready-for-dev  # #932, #948 ; descend (format par défaut gardé par Guy) ; après 35-3, 35-2a et 35-2b ; fiche 2026-11-12 (code de main), validation terminée en P4 (1 HIGH/4 MEDIUM → 3 → 2 → 0 MEDIUM) ; issue #1058
   35-2-refus-pdf-nomme-le-champ: split  # 2026-11-12, validation P2 : découpée en 35-2a et 35-2b (C-e350-9)
   35-2a-refus-pdf-contrat-details: ready-for-dev  # #955, #964 ; tête d’epic, avant le 2026-11-30 ; recadrée en P3 (message seul, C-e350-11) ; validation à poursuivre
-  35-2b-lot-rappels-refus-pdf: ready-for-dev  # #955 ; après la fusion de 35-2a ; validation à lancer
+  35-2b-lot-rappels-refus-pdf: ready-for-dev  # #955 ; après la fusion de 35-2a ; validation terminée en P2 (3 → 0 MEDIUM)
   35-3-comptes-designes-type: ready-for-dev  # fiche 2026-11-12, validation à lancer ; #537 ; tête d'epic, avant le 2026-11-30
   35-4-rejeter-ligne-signalee: ready-for-dev  # fiche 2026-11-12, validation terminée en P4 (9 → 3 → 2 → 0 MEDIUM) ; #1023, #1024
   35-5-date-du-jour-installation: split  # 2026-11-12, découpage préventif (C-e350-14) en 35-5a et 35-5b, puis 35-5c (C-e350-22), puis 35-5a0 (C-e350-28)
@@ -1058,6 +1058,10 @@ development_status:
   35-5b-date-du-jour-reste: ready-for-dev  # #929 ; après la fusion de 35-5a ; fiche 2026-11-12 ; validations P1 (recadrée : production, SQL, graine, MCP, docs ; C-e350-22) et P2 remédiées (échéancier daté, squelette au jour UTC de l'horloge, banc MCP à horloge), P3 remédiée (comptes du squelette, entrées permanentes, #1053) ; validation terminée en P4 ciblée (0 au-dessus de LOW, 3 LOW appliqués)
   35-5c-date-du-jour-tests: ready-for-dev  # #929 (refs) ; après la fusion de 35-5b ; fiche 2026-11-12 (découpage de la 35-5b, C-e350-22) ; tests restants et gardes fermées ; validations P1 et P2 remédiées (ajouterJoursIso, new Date() relevé contre une allowlist close, preuve de nuit KESH_TEST_INSTANT ; course de setup() fermée, OnceLock à la garde) ; validation terminée en P3 ciblée (0 au-dessus de LOW, 3 LOW appliqués)
   35-6-solde-ouverture-saisie: ready-for-dev  # fiche 2026-11-12, validation terminée en P5 (5 → 5 → 3 → 1 → 0 MEDIUM) ; #1025 intégrée (C-e350-15) ; #1026, #1028
-  35-7-autocomplete-compte-hors-liste: backlog  # #1000
-  35-8-audit-cle-api: backlog  # #431 ; après 35-5a0, 35-5a, 35-5b, 35-5c (journal_entries.rs, mod tests) et 35-3
+  35-7-autocomplete-compte-hors-liste: ready-for-dev  # #1000 ; fiche 2026-11-12 (code de main), validation terminée en P3 (2 → 1 → 0 MEDIUM)
+  35-8-audit-cle-api: split  # 2026-11-12, découpage préventif (C-e350-38) en 35-8a et 35-8b
+  35-8a-audit-acteur-patron: split  # 2026-11-13, découpée (C-e350-50) en 35-8a1 et 35-8a2 ; P1 remédiée (1 HIGH, 7 MEDIUM) dans cette fiche ; en cas d'écart, les fiches 35-8a1 et 35-8a2 font foi
+  35-8a1-audit-acteur-mecanisme: ready-for-dev  # refs #431, refs #892 item 11 ; Acteur, par, garde, retour en brouillon fournisseur ; ne touche pas journal_entries.rs ; après 35-5a0 (même signature d'unvalidate), 35-3 et 35-1 ; validation terminée en P3 (35-8a P1 1 HIGH + 7 → découpage → 4 → 0 MEDIUM)
+  35-8a2-audit-acteur-ecritures: ready-for-dev  # refs #431 ; les écritures ; après 35-8a1, 35-5a0, 35-5a, 35-5b, 35-5c et 35-3 ; validation terminée en P4 (35-8a P1 → découpage → 2 → 1 → 0 MEDIUM)
+  35-8b-audit-acteur-deploiement: backlog  # #431 ; reportée à l'Epic 36 le 2026-11-13 (C-e350-48), à découper en lots par domaine ; findings de sa P1 à traiter au découpage (kesh-gate-logs/e35-8b-validation-p1.md)
   epic-35-retrospective: optional
