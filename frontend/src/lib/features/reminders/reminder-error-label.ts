@@ -45,7 +45,7 @@ export function reminderErrorLabel(code: string): string {
 /**
  * Texte d'un échec du lot de rappels (Story 35-2b, #955) : le libellé du code, suivi,
  * pour un PDF refusé (`INVOICE_NOT_PDF_READY`), de la phrase du serveur qui dit quoi
- * corriger (`details.message`), comme sur la fiche de la facture.
+ * corriger (`details.message`), la même qu'à l'envoi d'un rappel seul.
  *
  * Le message n'est lu que pour ce code — le `details.message` d'autres lots est un
  * texte technique — et seulement s'il est une chaîne non vide. Le résultat est du

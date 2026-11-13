@@ -5743,11 +5743,13 @@ mod tests {
         assert!(body["error"]["message"].as_str().unwrap().contains("42"));
     }
 
-    /// Story 35-2b (#955, AC3) — la route unitaire et le lot de rappels disent la
-    /// même phrase : la réponse garde son statut et son code, et son `message` est
-    /// la chaîne de la fonction extraite (une seule source).
+    /// Story 35-2b (#955, AC3) — la réponse de la route unitaire garde son statut et
+    /// son code, et son `message` est la chaîne de la fonction extraite. Le lot rend
+    /// la même chaîne : c'est le second témoin, `invoice_email::tests::
+    /// classify_render_error_ne_deguise_pas_un_refus_en_panne` ; l'égalité route = lot
+    /// se lit par les deux. Une copie du littéral est gardée par G9 (`textes_coherents.rs`).
     #[tokio::test]
-    async fn refus_du_pdf_route_unitaire_et_lot_meme_phrase() {
+    async fn refus_du_pdf_route_unitaire_rend_la_phrase_de_la_fonction() {
         let resp = AppError::InvoiceTooManyLinesForPdf(42).into_response();
         let (status, body) = response_body(resp).await;
         assert_eq!(status, StatusCode::BAD_REQUEST);

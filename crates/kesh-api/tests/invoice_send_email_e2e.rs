@@ -222,19 +222,33 @@ async fn seed_validated_invoice(
     contact_id: i64,
     user_id: i64,
 ) -> i64 {
+    seed_validated_invoice_lines(pool, company_id, contact_id, user_id, 1).await
+}
+
+/// Une facture validée de `n` lignes identiques (Story 35-2b : au-delà de
+/// `MAX_LINES_PER_PDF`, le PDF est refusé avant tout rendu).
+async fn seed_validated_invoice_lines(
+    pool: &MySqlPool,
+    company_id: i64,
+    contact_id: i64,
+    user_id: i64,
+    n: usize,
+) -> i64 {
     let new = NewInvoice {
         company_id,
         contact_id,
         date: NaiveDate::from_ymd_opt(2026, 4, 14).unwrap(),
         due_date: Some(NaiveDate::from_ymd_opt(2026, 5, 14).unwrap()),
         payment_terms: Some("30 jours net".into()),
-        lines: vec![NewInvoiceLine {
-            revenue_account_id: None,
-            description: "Prestation".into(),
-            quantity: dec!(1),
-            unit_price: dec!(100.00),
-            vat_rate: dec!(8.10),
-        }],
+        lines: (0..n)
+            .map(|_| NewInvoiceLine {
+                revenue_account_id: None,
+                description: "Prestation".into(),
+                quantity: dec!(1),
+                unit_price: dec!(100.00),
+                vat_rate: dec!(8.10),
+            })
+            .collect(),
         project_id: None,
     };
     let (invoice, _lines) = invoices::create(pool, user_id, new).await.unwrap();
@@ -2413,16 +2427,17 @@ async fn send_reminder_refus_pdf_nomme_le_champ(pool: MySqlPool) {
 
 // ─── Story 35-2b (#955, AC1) — le lot de rappels dit pourquoi le PDF est refusé ───
 
-/// La valeur fr-CH d'une clé sans variable, lue au catalogue réel (celui que
-/// `spawn_app` charge), marques d'isolation retirées — non un littéral recopié.
-fn phrase_fr(cle: &str) -> String {
+/// La valeur fr-CH d'une clé, lue au catalogue réel (celui que `spawn_app`
+/// charge), variables Fluent données par `args`, marques d'isolation retirées —
+/// non un littéral recopié.
+fn phrase_fr(cle: &str, args: Option<&kesh_i18n::FluentArgs<'_>>) -> String {
     let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .parent()
         .unwrap()
         .join("kesh-i18n/locales");
     let bundle = kesh_i18n::I18nBundle::load(&dir).expect("catalogue");
     let valeur = bundle
-        .format(&kesh_i18n::Locale::FrCh, cle, None)
+        .format(&kesh_i18n::Locale::FrCh, cle, args)
         .replace(['\u{2068}', '\u{2069}'], "");
     assert_ne!(valeur, cle, "{cle} absente du catalogue fr-CH");
     valeur
@@ -2499,7 +2514,7 @@ async fn send_reminder_batch_refus_pdf_porte_le_message(pool: MySqlPool) {
 
     assert_eq!(
         message_de(sans_adresse_invoice),
-        phrase_fr("invoice-pdf-error-client-address-required")
+        phrase_fr("invoice-pdf-error-client-address-required", None)
     );
 
     assert_eq!(mock.sent_emails().len(), 0, "rien n'est parti");
@@ -2553,11 +2568,82 @@ async fn send_reminder_batch_entete_qui_deborde_porte_le_message(pool: MySqlPool
     assert_eq!(failed.len(), 1, "{body}");
     assert_eq!(failed[0]["errorCode"], "INVOICE_NOT_PDF_READY", "{body}");
 
-    let attendu = phrase_fr("error-invoice-pdf-header-overflow");
+    let attendu = phrase_fr("error-invoice-pdf-header-overflow", None);
     assert_eq!(
         failed[0]["details"],
         json!({ "message": attendu }),
         "{body}"
     );
     assert_eq!(mock.sent_emails().len(), 0, "rien n'est parti");
+}
+
+/// Story 35-2b (revue P1 E2, E3) — un lot **mixte**, sous catalogue réel : une
+/// facture de dix lignes (au-delà de `MAX_LINES_PER_PDF`, refusée avant tout rendu,
+/// pour le rappel comme pour la facture), une facture envoyable et une facture
+/// payée. Le refus porte la phrase de `error-invoice-too-many-lines-for-pdf` avec
+/// `count` = 10, sans marque d'isolation ; l'envoi réussi reste dans `accepted` ;
+/// l'autre échec garde `details` nul.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn send_reminder_batch_mixte_trop_de_lignes_porte_le_message(pool: MySqlPool) {
+    let mock = MockMailer::new();
+    let (admin_id, company_id, ok_invoice) = seed_sendable(&pool).await;
+    let contact_id: i64 = sqlx::query_scalar("SELECT contact_id FROM invoices WHERE id = ?")
+        .bind(ok_invoice)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    let longue = seed_validated_invoice_lines(&pool, company_id, contact_id, admin_id, 10).await;
+    let payee = seed_validated_invoice(&pool, company_id, contact_id, admin_id).await;
+    sqlx::query("UPDATE invoices SET paid_at = UTC_TIMESTAMP(6) WHERE id = ?")
+        .bind(payee)
+        .execute(&pool)
+        .await
+        .unwrap();
+    seed_dunning(&pool, company_id).await;
+    let app = spawn_app(pool.clone(), mock.clone(), true, 20).await;
+    let token = login(&app, "admin", TEST_ADMIN_PASSWORD).await;
+
+    let resp = app
+        .client
+        .post(app.url("/api/v1/dunning/reminders/send-batch"))
+        .bearer_auth(&token)
+        .json(&json!({ "invoiceIds": [longue, ok_invoice, payee] }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200, "succès partiel = succès HTTP");
+    let body: serde_json::Value = resp.json().await.unwrap();
+    let accepted = body["accepted"].as_array().unwrap();
+    assert_eq!(accepted.len(), 1, "{body}");
+    assert_eq!(accepted[0]["invoiceId"], ok_invoice, "{body}");
+    let failed = body["failed"].as_array().unwrap();
+    assert_eq!(failed.len(), 2, "{body}");
+    let echec = |id: i64| {
+        failed
+            .iter()
+            .find(|f| f["invoiceId"] == id)
+            .unwrap_or_else(|| panic!("facture {id} absente de failed[] : {body}"))
+    };
+
+    let mut args = kesh_i18n::FluentArgs::new();
+    args.set("count", 10_i64);
+    let attendu = phrase_fr("error-invoice-too-many-lines-for-pdf", Some(&args));
+    assert!(attendu.contains("10"), "{attendu}");
+    let refus = echec(longue);
+    assert_eq!(refus["errorCode"], "INVOICE_NOT_PDF_READY", "{refus}");
+    assert_eq!(refus["details"], json!({ "message": attendu }), "{refus}");
+    let message = refus["details"]["message"].as_str().unwrap();
+    assert!(
+        !message.contains(['\u{2068}', '\u{2069}']),
+        "marques d'isolation dans le message : {message:?}"
+    );
+
+    let paye = echec(payee);
+    assert_eq!(paye["errorCode"], "INVOICE_ALREADY_PAID", "{paye}");
+    assert!(paye["details"].is_null(), "{paye}");
+    assert_eq!(
+        mock.sent_emails().len(),
+        1,
+        "seul l'envoi accepté est parti"
+    );
 }

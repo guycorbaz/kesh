@@ -734,6 +734,8 @@ fn les_replis_rust_suivent_le_catalogue() {
     const CARACTERE: &[(&str, &str)] = &[("{ $car }", "{car}"), ("{ $point }", "{point}")];
     const LONGUEUR: &[(&str, &str)] = &[("{ $max }", "{max}"), ("{ $got }", "{got}")];
     const PAYS: &[(&str, &str)] = &[("{ $code }", "{code}")];
+    // Story 35-2b (#955, revue P1 B1) — le nombre de lignes du refus « trop de lignes ».
+    const LIGNES: &[(&str, &str)] = &[("{ $count }", "{n}")];
     type Cles = &'static [(&'static str, usize, &'static [(&'static str, &'static str)])];
     const TABLE: [(&str, Cles); 9] = [
         // Story 31-5 (#469, C-31-5-15) — les six refus du journal d'audit.
@@ -762,6 +764,9 @@ fn les_replis_rust_suivent_le_catalogue() {
                     &[],
                 ),
                 ("error-invoice-pdf-header-overflow", 1, &[]),
+                // Story 35-2b (#955, revue P1 B1) — un seul site : la fonction
+                // `message_trop_de_lignes_pdf`, commune à la route et au lot.
+                ("error-invoice-too-many-lines-for-pdf", 1, LIGNES),
                 // Story 15-1a2-0 (#518) — le rang 2 bis, un bras par famille, et
                 // le message neutre de `LETTERING_IS_DOCUMENT` (validation P1, R-2).
                 ("settlement-cancel-blocked-lettering-closed", 1, &[]),
