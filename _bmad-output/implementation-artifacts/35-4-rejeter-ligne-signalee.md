@@ -1,6 +1,6 @@
 # Story 35-4 : *Rejeter* une ligne signalée « déjà comptabilisée » demande confirmation ; une confirmation ne survit plus à une relecture de la liste (#1023, #1024)
 
-Status: review
+Status: done
 
 *Fiche rédigée le 2026-11-12 par l'agent de kickoff de l'Epic 35 (Opus 5.5), worktree `kesh-e35`, par le workflow
 `bmad-create-story`. Release **0.17.7**. **Aucune migration**, aucun changement serveur ni d'API. Code lu sur
@@ -373,3 +373,21 @@ Journaux sous `/home/gcorbaz/devel/kesh-gate-logs/e354/` : `rouges.log` (et `rou
   - **Capture** : `kesh-gate-logs/e354/captures/e354-confirmation-rejeter.png` (thème clair). Le guillemet « y tombe seul
     en fin de ligne : le catalogue n'emploie aucune espace insécable — issue demandée, hors périmètre.
   - Statut : `review`.
+- **2026-11-13 — Revue de code, close en P1** (prompt versionné `35-4-rejeter-ligne-signalee-review-prompt-p1.md`, `d4500c93` ;
+  diff aplati `1ebe1240..16105cba` ; rapports hors dépôt `kesh-gate-logs/e354-review-p1-{B,E,A}.md`).
+  - Trend : **P1 (Opus, trois lentilles) : 0 CRITICAL, 0 HIGH, 0 MEDIUM, 17 LOW** (B 5, E 5, A 7) → boucle close, aucune
+    remédiation de code.
+  - **M10 jouée par l'orchestrateur** (E4/A7 : la mutation propre à D3 manquait) : `load()` mutée en
+    `if (pendingGesture) pendingGesture = null;`, `npx vitest run …/ReconciliationProposals.test.ts` sous verrou frontend →
+    **tuée** (exit 1, quinze tests rouges dont AC1 et AC4 ; journal `kesh-gate-logs/e354/mut-m10.log`) ; fichier restauré par
+    `git checkout --` puis `touch`, `git status --porcelain` vide. « AC1 le verrait » (D3) est désormais constaté.
+  - LOW, une issue par problème : #1086 (guillemets sans espace insécable, demandé au développement : A6), #1087 (manuel
+    `:3097`, « Elle » sans antécédent), #1088 (garde `if (!current) return;` non exercée), #1089 (sélection modifiée derrière la
+    modale, jsdom ; B2 et E1), #1090 (`cliquerHors` réessayé ; B3 et E5), #1091 (`toContainText('1')`), #1092 (en-tête
+    d'`already-booked.ts`), #1093 (bornes du compte non testées), #1094 (double clic, Échap pendant l'envoi, `failed[]` partiel).
+  - Annotations datées du compte rendu de développement (A1, A2, A3, A5), sans réécrire son texte : `e2e-r2` portait aussi
+    « 2 did not run » ; l'attribution des `pool timed out` à la charge des autres gates est une inférence, non une ligne de
+    journal ; 167 captures d'autres specs sont déposées dans `e354/captures/` (`KESH_E2E_CAPTURES_DIR` posé pour toute la
+    suite) ; « code de production final » désigne `ec3c9e35`, dernier commit qui touche du code de production avec le manuel,
+    le dernier commit de code étant `16105cba` (spec E2E seule).
+  - Statut : `done`.
