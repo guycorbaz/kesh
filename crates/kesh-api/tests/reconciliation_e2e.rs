@@ -4282,7 +4282,9 @@ async fn ensure_fiscal_year_today(pool: &MySqlPool, company_id: i64) {
     // 2026 d'abord, par l'outil commun — sans quoi ses appels suivants
     // entreraient en collision (`uq_fiscal_years_company_start_date`).
     let _ = insert_fake_fiscal_year(pool, company_id).await;
-    let today = Utc::now().date_naive();
+    // Story 35-5a0 (D4, revue P2) : le jour de l'horloge de test, celle du serveur
+    // (`new_for_tests`) qui date la contre-passation.
+    let today = crate::common::jour::aujourd_hui_test();
     let covered: Option<i64> = sqlx::query_scalar(
         "SELECT id FROM fiscal_years WHERE company_id = ? AND start_date <= ? AND end_date >= ?",
     )

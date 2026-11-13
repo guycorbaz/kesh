@@ -1460,7 +1460,8 @@ async fn lettering_invariants(pool: MySqlPool) {
     // lignes lettrables (1100, 2000) → deux groupes `reversal` ; une seconde,
     // dont la ligne 1100 est déjà lettrée `manual`, → un seul groupe `reversal`
     // (2000), le groupe manuel intact et le miroir 1100 ouvert.
-    let annee = chrono::Datelike::year(&chrono::Utc::now().date_naive());
+    // Story 35-5a0 (D4, revue P2) : l'année du jour de l'horloge de test.
+    let annee = chrono::Datelike::year(&crate::jour::aujourd_hui_test());
     if !(2025..=2027).contains(&annee) {
         exercice(&pool, m.company(), annee, "Open").await;
     }
@@ -2389,7 +2390,7 @@ async fn group_detail_of_reversal_pairs(pool: MySqlPool) {
     // avant le 3, à la lecture comme à la dissolution.
     // La contre-passation de l'annulation est datée du jour : la borne (seuil
     // inclusif, posée en SQL de montage) la couvre.
-    poser_borne(&pool, s.company_id, chrono::Utc::now().date_naive()).await;
+    poser_borne(&pool, s.company_id, crate::jour::aujourd_hui_test()).await;
     let det = detail(&pool, s.company_id, cle_achat).await.unwrap();
     assert!(
         det.lines.iter().all(|l| !l.in_open_period),

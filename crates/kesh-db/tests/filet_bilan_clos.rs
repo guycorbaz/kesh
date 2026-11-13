@@ -21,7 +21,7 @@
 #[path = "support/jour.rs"]
 mod jour;
 
-use chrono::{Datelike, NaiveDate, Utc};
+use chrono::{Datelike, NaiveDate};
 use kesh_db::entities::contact::{ContactType, NewContact, Salutation};
 use kesh_db::entities::journal_entry::Journal;
 use kesh_db::entities::{
@@ -68,7 +68,8 @@ async fn societe(pool: &MySqlPool) -> SeededCompany {
 /// (2020-2030) de couvrir le jour. *(Revue de code P1, B-3.)*
 async fn societe_du_jour(pool: &MySqlPool) -> (SeededCompany, i32) {
     let s = seed_accounting_company(pool).await.expect("seed");
-    let annee = Utc::now().date_naive().year();
+    // Story 35-5a0 (D4, revue P2) : l'année du jour de l'horloge de test.
+    let annee = crate::jour::aujourd_hui_test().year();
     sqlx::query("UPDATE fiscal_years SET name = ?, start_date = ?, end_date = ? WHERE id = ?")
         .bind(format!("Exercice {annee}"))
         .bind(d(annee, 1, 1))
@@ -564,7 +565,7 @@ async fn la_contre_passation_du_jour_sous_un_futur_clos_est_refusee(pool: MySqlP
         &pool,
         s.fiscal_year_id,
         s.admin_user_id,
-        corps(&s, Utc::now().date_naive()),
+        corps(&s, crate::jour::aujourd_hui_test()),
     )
     .await
     .expect("origine");
@@ -680,7 +681,7 @@ async fn predicteur_muet_sous_un_exercice_futur_clos(pool: MySqlPool) {
         &pool,
         s.fiscal_year_id,
         s.admin_user_id,
-        corps(&s, Utc::now().date_naive()),
+        corps(&s, crate::jour::aujourd_hui_test()),
     )
     .await
     .expect("écriture");

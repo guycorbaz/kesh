@@ -45,8 +45,11 @@ use sqlx::MySqlPool;
 
 /// Aujourd'hui moins `n` jours — toutes les dates de montage sont PASSÉES :
 /// `lock_books` et `unlock_books` refusent une borne `>= aujourd'hui`.
+///
+/// Story 35-5a0 (D4, remédiation de la revue P2) : « aujourd'hui » est le jour de
+/// l'horloge de test, celui que reçoivent les gestes du montage et des tests.
 pub fn jours_avant(n: i64) -> NaiveDate {
-    chrono::Utc::now().date_naive() - chrono::Duration::days(n)
+    jour::aujourd_hui_test() - chrono::Duration::days(n)
 }
 
 /// Une société seedée, prête à régler, solder et créditer : comptes de nature

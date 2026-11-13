@@ -2005,7 +2005,11 @@ async fn full_import_letters_a_reopened_historical_piece(pool: MySqlPool) {
     let p = lettering_pieces(&pool, &biz).await;
     erase_marks(&pool).await;
     let borne = chrono::NaiveDate::from_ymd_opt(2026, 3, 31).unwrap();
-    assert!(borne < Utc::now().date_naive(), "montage : borne passée");
+    // Story 35-5a0 (D4, revue P2) : le jour que reçoivent `lock_books` / `unlock_books`.
+    assert!(
+        borne < crate::common::jour::aujourd_hui_test(),
+        "montage : borne passée"
+    );
     companies::lock_books(
         &pool,
         biz.ctx.user_id,

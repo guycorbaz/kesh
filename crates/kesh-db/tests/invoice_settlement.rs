@@ -1962,7 +1962,8 @@ use kesh_db::repositories::reconciliation_cancel;
 /// Rend `(seeded, facture, règlement, écriture de règlement, clé, D − 10)`.
 async fn facture_lettree(pool: &MySqlPool) -> (SeededCompany, i64, i64, i64, i64, NaiveDate) {
     let seeded = seed_accounting_company(pool).await.expect("seed");
-    let d = chrono::Utc::now().date_naive() - chrono::Duration::days(60);
+    // Story 35-5a0 (D4, revue P2) : le jour de l'horloge de test.
+    let d = crate::jour::aujourd_hui_test() - chrono::Duration::days(60);
     let inv_id =
         validated_invoice(pool, &seeded, dec!(100.00), d - chrono::Duration::days(20)).await;
     let le_plus_recent = d - chrono::Duration::days(10);
@@ -2231,7 +2232,8 @@ async fn later_closed_year_group_is_refused(pool: MySqlPool) {
     let (seeded, inv_id, sid, _, cle, _) = facture_lettree(&pool).await;
     // L'exercice seedé est raccourci à `D`, suivi d'un exercice CLOS — l'état
     // hérité que la clôture dans l'ordre (15-12a) ne produit plus.
-    let d = chrono::Utc::now().date_naive() - chrono::Duration::days(60);
+    // Story 35-5a0 (D4, revue P2) : le jour de l'horloge de test.
+    let d = crate::jour::aujourd_hui_test() - chrono::Duration::days(60);
     sqlx::query("UPDATE fiscal_years SET end_date = ? WHERE id = ?")
         .bind(d)
         .bind(seeded.fiscal_year_id)

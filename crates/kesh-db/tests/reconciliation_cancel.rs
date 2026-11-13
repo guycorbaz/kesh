@@ -466,7 +466,8 @@ async fn unreconciling_a_supplier_settlement_undoes_it(pool: MySqlPool) {
             .await
             .unwrap();
     assert_eq!(reverses, Some(r.settlement_entry_id));
-    assert_eq!(date, chrono::Utc::now().date_naive());
+    // Story 35-5a0 (D4, revue P2) : le jour que l'annulation a reçu.
+    assert_eq!(date, crate::jour::aujourd_hui_test());
 
     // Le lettrage : la pièce dissoute, le paiement lettré avec son miroir.
     let ligne = |entry: i64| {

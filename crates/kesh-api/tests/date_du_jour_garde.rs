@@ -255,7 +255,8 @@ const EXEMPTIONS: &[Exemption] = &[
     ),
     (
         "kesh-api/tests/admin_full_import_e2e.rs",
-        4,
+        // 4 → 3 : remédiation P2 (D4), l'assertion de la borne passée.
+        3,
         "35-5c",
         "bornes à `today - 30`",
     ),
@@ -369,12 +370,6 @@ const EXEMPTIONS: &[Exemption] = &[
         "verrou de période",
     ),
     (
-        "kesh-api/tests/reconciliation_e2e.rs",
-        1,
-        "35-5a",
-        "annulation d'un rapprochement",
-    ),
-    (
         "kesh-api/tests/reconciliation_link_e2e.rs",
         1,
         "35-5c",
@@ -406,36 +401,10 @@ const EXEMPTIONS: &[Exemption] = &[
         "éligibilité aux rappels",
     ),
     (
-        "kesh-db/tests/filet_bilan_clos.rs",
-        3,
-        "35-5a",
-        "contre-passation, bloqueur",
-    ),
-    (
         "kesh-db/tests/fiscal_years_repository.rs",
         1,
         "35-5a",
         "contre-passation",
-    ),
-    (
-        "kesh-db/tests/invoice_settlement.rs",
-        // 4 → 2 : remédiation P1 (D4), deux montages passés à `aujourd_hui_test()`.
-        2,
-        "35-5a",
-        "bloqueur, annulation",
-    ),
-    ("kesh-db/tests/letterings.rs", 2, "35-5a", "verrou"),
-    (
-        "kesh-db/tests/open_items.rs",
-        1,
-        "35-5a",
-        "verrou, contre-passation",
-    ),
-    (
-        "kesh-db/tests/reconciliation_cancel.rs",
-        1,
-        "35-5a",
-        "date de la contre-passation",
     ),
     (
         "kesh-db/tests/supplier_invoices_draft.rs",
@@ -443,26 +412,11 @@ const EXEMPTIONS: &[Exemption] = &[
         "35-5a",
         "annulation",
     ),
-    (
-        "kesh-db/tests/supplier_invoices_repository.rs",
-        // 4 → 3 : remédiation P1 (D4), le montage de `monter_par_virement`.
-        3,
-        "35-5a",
-        "bloqueur, annulation",
-    ),
-    (
-        "kesh-db/tests/support/lettering_documents.rs",
-        1,
-        "35-5a",
-        "marge `today - n`",
-    ),
-    // --- Tests de `kesh-report`
-    (
-        "kesh-report/tests/open_items_invariant.rs",
-        1,
-        "35-5a",
-        "contre-passation",
-    ),
+    // Remédiation de la revue P2 (D4, inventaire parti du symptôme) : sortis de la liste,
+    // leurs montages lisant le jour de l'horloge de test — `reconciliation_e2e.rs`,
+    // `filet_bilan_clos.rs`, `invoice_settlement.rs`, `letterings.rs`, `open_items.rs`,
+    // `reconciliation_cancel.rs`, `supplier_invoices_repository.rs`,
+    // `support/lettering_documents.rs` (`jours_avant`), `kesh-report` `open_items_invariant.rs`.
 ];
 
 fn ecarts(trouve: &BTreeMap<String, usize>, attendu: &[Exemption]) -> Vec<String> {

@@ -1643,7 +1643,8 @@ async fn monter(pool: &MySqlPool, motifs: &[SettlementCancelBlocker]) -> (Ctx, i
         .await
         .expect("truncate");
     let ctx = setup(pool).await;
-    let today = chrono::Utc::now().date_naive();
+    // Story 35-5a0 (D4, revue P2) : le jour de l'horloge de test.
+    let today = crate::jour::aujourd_hui_test();
     let dd = today - chrono::Duration::days(60);
     sqlx::query("UPDATE fiscal_years SET end_date = ? WHERE id = ?")
         .bind(dd)
@@ -1924,7 +1925,8 @@ async fn monter_achat(
         .await
         .expect("truncate");
     let ctx = setup(pool).await;
-    let today = chrono::Utc::now().date_naive();
+    // Story 35-5a0 (D4, revue P2) : le jour de l'horloge de test.
+    let today = crate::jour::aujourd_hui_test();
     let dd = today - chrono::Duration::days(60);
     sqlx::query("UPDATE fiscal_years SET end_date = ? WHERE id = ?")
         .bind(dd)
@@ -2976,7 +2978,8 @@ async fn supplier_invoice_cancel_letters_a_pair_that_cannot_be_dissolved_by_hand
 async fn supplier_cancels_are_refused_under_a_frozen_lettering(pool: MySqlPool) {
     use SettlementCancelBlocker::DocumentLetteringInClosedPeriods as Fige;
     let ctx = setup(&pool).await;
-    let dd = chrono::Utc::now().date_naive() - chrono::Duration::days(60);
+    // Story 35-5a0 (D4, revue P2) : le jour de l'horloge de test.
+    let dd = crate::jour::aujourd_hui_test() - chrono::Duration::days(60);
     let (id, achat, paiement) = paid_invoice(
         &pool,
         &ctx,

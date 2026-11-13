@@ -46,8 +46,10 @@ fn ymd(y: i32, m: u32, d: u32) -> NaiveDate {
     NaiveDate::from_ymd_opt(y, m, d).unwrap()
 }
 
+/// Story 35-5a0 (D4, remédiation de la revue P2) : le jour de l'horloge de test,
+/// celui que reçoivent aussi les gestes du test.
 fn aujourdhui() -> NaiveDate {
-    chrono::Utc::now().date_naive()
+    crate::jour::aujourd_hui_test()
 }
 
 /// Une société prête à facturer (support de la 15-1a2-i) et deux exercices :

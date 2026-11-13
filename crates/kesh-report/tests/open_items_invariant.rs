@@ -232,7 +232,8 @@ async fn open_items_balance_matches_the_ledger_and_the_trial_balance(pool: MySql
         comptes.contains(&creance) && comptes.contains(&a.payable),
         "montage : la créance et la dette sont lettrables"
     );
-    let aujourdhui = chrono::Utc::now().date_naive();
+    // Story 35-5a0 (D4, revue P2) : le jour de l'horloge de test.
+    let aujourdhui = crate::jour::aujourd_hui_test();
     let dates = [ymd(2024, 6, 1), ymd(2024, 12, 31), aujourdhui];
     let mut lignes_ouvertes = 0;
     for &compte in &comptes {
