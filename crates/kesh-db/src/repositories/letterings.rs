@@ -198,13 +198,13 @@ pub enum Mode {
 
 /// L'auteur d'un geste de lettrage, audité par `NewAuditLogEntry::for_actor`.
 ///
+/// Depuis la Story 35-8a1 (#431), un **alias** de
+/// [`crate::entities::audit_log::Acteur`] : un seul type porte l'utilisateur
+/// et la clé d'API, du handler jusqu'à la trace.
+///
 /// ⚠️ La contre-passation ne porte que l'utilisateur (`reverse_in_tx`) : le
 /// lettrage `reversal` passe `api_key_id: None` — écart nommé (R3).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Actor {
-    pub user_id: i64,
-    pub api_key_id: Option<i64>,
-}
+pub type Actor = crate::entities::audit_log::Acteur;
 
 /// Une ligne d'un groupe, telle que la réponse et l'audit la décrivent.
 ///

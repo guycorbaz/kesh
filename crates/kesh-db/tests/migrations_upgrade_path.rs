@@ -1697,7 +1697,7 @@ async fn draft_migration_preserves_a_populated_base(pool: MySqlPool, frontiere: 
             company_id,
             id,
             inv.version,
-            user_id,
+            kesh_db::entities::Acteur::utilisateur(user_id),
             crate::jour::aujourd_hui_test(),
         )
         .await

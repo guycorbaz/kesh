@@ -1878,3 +1878,211 @@ async fn the_open_items_document_carries_both_numbers(pool: MySqlPool) {
     assert_eq!(doc["number"], "ABC-PO", "la valeur du champ ne change pas");
     assert_eq!(doc["internalNumber"], v["internalNumber"]);
 }
+
+// ---------------------------------------------------------------------------
+// Story 35-8a1 (#892 item 11, refs #431) — AC3 : le retour en brouillon par une
+// clé d'API est attribué à la clé, dans TOUTES ses traces
+// ---------------------------------------------------------------------------
+
+/// Une trace du journal d'audit : `(action, actor_type, actor_api_key_id, user_id)`.
+type Trace = (String, String, Option<i64>, i64);
+
+/// L'identifiant du Comptable du décor (créé par [`comptable`]).
+async fn id_comptable(pool: &MySqlPool) -> i64 {
+    sqlx::query_scalar("SELECT id FROM users WHERE username = 'comptable'")
+        .fetch_one(pool)
+        .await
+        .unwrap()
+}
+
+/// Une clé `read-write` créée **par le Comptable** (sous son JWT) ; rend
+/// `(id de la clé, secret)`.
+async fn cle_du_comptable(c: &Ctx, jwt_comptable: &str) -> (i64, String) {
+    let (s, b) = envoyer(
+        c,
+        reqwest::Method::POST,
+        "/api/v1/settings/api-keys",
+        jwt_comptable,
+        Some(json!({ "name": "clé 35-8a1", "scope": "read-write" })),
+    )
+    .await;
+    assert_eq!(s, 201, "création de la clé par le Comptable : {b}");
+    (
+        b["id"].as_i64().unwrap(),
+        b["key"].as_str().unwrap().to_string(),
+    )
+}
+
+/// Le même geste HTTP que [`post`], sous un jeton donné (clé ou JWT).
+async fn post_par(c: &Ctx, jeton: &str, chemin: &str, corps: Value) -> Value {
+    let (s, b) = envoyer(c, reqwest::Method::POST, chemin, jeton, Some(corps)).await;
+    assert_eq!(s / 100, 2, "{chemin} : {s} {b}");
+    b
+}
+
+/// Le dernier identifiant du journal d'audit — la borne des traces d'un geste.
+async fn dernier_audit(pool: &MySqlPool) -> i64 {
+    sqlx::query_scalar("SELECT COALESCE(MAX(id), 0) FROM audit_log")
+        .fetch_one(pool)
+        .await
+        .unwrap()
+}
+
+/// Les traces écrites après la borne.
+async fn traces_depuis(pool: &MySqlPool, borne: i64) -> Vec<Trace> {
+    sqlx::query_as(
+        "SELECT action, actor_type, actor_api_key_id, user_id FROM audit_log \
+         WHERE id > ? ORDER BY id",
+    )
+    .bind(borne)
+    .fetch_all(pool)
+    .await
+    .unwrap()
+}
+
+/// Brouillon → validée (→ annulée si `annuler`) par le jeton donné ; rend la
+/// facture telle que la dernière réponse la décrit.
+async fn facture_par(c: &Ctx, jeton: &str, numero: &str, annuler: bool) -> Value {
+    let b = post_par(
+        c,
+        jeton,
+        "/api/v1/supplier-invoices",
+        corps(c, numero, "50.00"),
+    )
+    .await;
+    let v = post_par(
+        c,
+        jeton,
+        &format!("/api/v1/supplier-invoices/{}/validate", b["id"]),
+        json!({ "version": b["version"] }),
+    )
+    .await;
+    if !annuler {
+        return v;
+    }
+    post_par(
+        c,
+        jeton,
+        &format!("/api/v1/supplier-invoices/{}/cancel", v["id"]),
+        json!({}),
+    )
+    .await
+}
+
+/// Le retour en brouillon par le jeton donné ; rend les traces qu'il a écrites.
+async fn retour_par(c: &Ctx, pool: &MySqlPool, jeton: &str, f: &Value) -> Vec<Trace> {
+    let borne = dernier_audit(pool).await;
+    let r = post_par(
+        c,
+        jeton,
+        &format!("/api/v1/supplier-invoices/{}/unvalidate", f["id"]),
+        json!({ "version": f["version"] }),
+    )
+    .await;
+    assert_eq!(r["status"], "draft", "{r}");
+    traces_depuis(pool, borne).await
+}
+
+/// Le nombre de traces d'une action.
+fn nb(traces: &[Trace], action: &str) -> usize {
+    traces.iter().filter(|t| t.0 == action).count()
+}
+
+/// Chaque trace porte l'acteur attendu : `(actor_type, clé)` et `user_id`.
+fn toutes_par(traces: &[Trace], acteur: &str, cle: Option<i64>, user_id: i64, contexte: &str) {
+    for (action, a, k, u) in traces {
+        assert_eq!(a, acteur, "{contexte} — {action} : actor_type ({traces:?})");
+        assert_eq!(
+            *k, cle,
+            "{contexte} — {action} : actor_api_key_id ({traces:?})"
+        );
+        assert_eq!(*u, user_id, "{contexte} — {action} : user_id ({traces:?})");
+    }
+}
+
+/// AC3 (cas obligatoire) — une facture **annulée** repassée en brouillon par une
+/// clé `read-write` du Comptable, tout par l'API : `supplier_invoice.unvalidated`,
+/// les **deux** `journal_entry.deleted` (contre-passation et achat) et le
+/// `lettering.removed` des paires `reversal` portent `actor_type = 'api_key'`, la
+/// clé, et le Comptable pour `user_id` (le créateur de la clé). Les traces de
+/// l'annulation elle-même ne sont pas de cette story : la borne les laisse hors
+/// du relevé.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn unvalidate_of_a_cancelled_invoice_by_an_api_key_is_attributed_to_the_key(pool: MySqlPool) {
+    let c = setup(&pool).await;
+    let jwt = comptable(&pool, &c).await;
+    let createur = id_comptable(&pool).await;
+    let (cle_id, cle) = cle_du_comptable(&c, &jwt).await;
+
+    let f = facture_par(&c, &cle, "FF-CLE-A", true).await;
+    assert_eq!(f["status"], "cancelled", "{f}");
+    let traces = retour_par(&c, &pool, &cle, &f).await;
+
+    assert_eq!(nb(&traces, "supplier_invoice.unvalidated"), 1, "{traces:?}");
+    assert_eq!(
+        nb(&traces, "journal_entry.deleted"),
+        2,
+        "achat et contre-passation : {traces:?}"
+    );
+    assert!(
+        nb(&traces, "lettering.removed") >= 1,
+        "la paire `reversal` dissoute : {traces:?}"
+    );
+    assert_eq!(
+        traces.len(),
+        nb(&traces, "supplier_invoice.unvalidated")
+            + nb(&traces, "journal_entry.deleted")
+            + nb(&traces, "lettering.removed"),
+        "aucune autre trace : {traces:?}"
+    );
+    toutes_par(
+        &traces,
+        "api_key",
+        Some(cle_id),
+        createur,
+        "annulée par clé",
+    );
+}
+
+/// AC3 (cas simple) — une facture **validée** repassée en brouillon par la clé :
+/// un `journal_entry.deleted` puis la trace du geste, tous deux à la clé.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn unvalidate_of_a_validated_invoice_by_an_api_key_is_attributed_to_the_key(pool: MySqlPool) {
+    let c = setup(&pool).await;
+    let jwt = comptable(&pool, &c).await;
+    let createur = id_comptable(&pool).await;
+    let (cle_id, cle) = cle_du_comptable(&c, &jwt).await;
+
+    let f = facture_par(&c, &cle, "FF-CLE-V", false).await;
+    let traces = retour_par(&c, &pool, &cle, &f).await;
+
+    let actions: Vec<&str> = traces.iter().map(|t| t.0.as_str()).collect();
+    assert_eq!(
+        actions,
+        ["journal_entry.deleted", "supplier_invoice.unvalidated"],
+        "{traces:?}"
+    );
+    toutes_par(
+        &traces,
+        "api_key",
+        Some(cle_id),
+        createur,
+        "validée par clé",
+    );
+}
+
+/// AC3 (témoin) — le même geste **par session** reste attribué à l'utilisateur :
+/// `actor_type = 'user'`, aucune clé, sur une annulée comme sur une validée.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn unvalidate_by_a_session_stays_attributed_to_the_user(pool: MySqlPool) {
+    let c = setup(&pool).await;
+    let jwt = comptable(&pool, &c).await;
+    let createur = id_comptable(&pool).await;
+
+    for (numero, annuler, attendues) in [("FF-JWT-A", true, 4usize), ("FF-JWT-V", false, 2)] {
+        let f = facture_par(&c, &jwt, numero, annuler).await;
+        let traces = retour_par(&c, &pool, &jwt, &f).await;
+        assert!(traces.len() >= attendues, "{numero} : {traces:?}");
+        toutes_par(&traces, "user", None, createur, numero);
+    }
+}

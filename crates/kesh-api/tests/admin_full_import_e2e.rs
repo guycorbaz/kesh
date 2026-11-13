@@ -5675,7 +5675,7 @@ async fn full_import_of_a_0_17_5_backup_keeps_the_numbers(pool: MySqlPool) {
         c,
         perdue.invoice.id,
         perdue.invoice.version,
-        u,
+        kesh_db::entities::Acteur::utilisateur(u),
         crate::common::jour::aujourd_hui_test(),
     )
     .await

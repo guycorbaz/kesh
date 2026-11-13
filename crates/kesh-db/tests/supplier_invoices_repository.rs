@@ -3566,7 +3566,7 @@ async fn the_wrappers_return_the_view_of_what_they_wrote(pool: MySqlPool) {
         c,
         id,
         validated.invoice.version,
-        u,
+        kesh_db::entities::Acteur::utilisateur(u),
         crate::jour::aujourd_hui_test(),
     )
     .await

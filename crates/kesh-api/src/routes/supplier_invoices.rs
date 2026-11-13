@@ -21,7 +21,7 @@ use axum::Json;
 use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
 use chrono::{NaiveDate, NaiveDateTime};
-use kesh_db::entities::{SettlementChoice, SupplierInvoice, SupplierInvoiceLine};
+use kesh_db::entities::{Acteur, SettlementChoice, SupplierInvoice, SupplierInvoiceLine};
 use kesh_db::repositories::supplier_invoices;
 use kesh_qrbill::{ScannedAddress, ScannedQrBill, ScannedReference, parse_spc_payload};
 use rust_decimal::Decimal;
@@ -922,7 +922,8 @@ pub async fn unvalidate_supplier_invoice(
             company.id,
             id,
             req.version,
-            current_user.user_id,
+            // Story 35-8a1 (#892 item 11) : la clé d'API, quand il y en a une.
+            Acteur::from(&current_user),
             aujourd_hui,
         )
     })

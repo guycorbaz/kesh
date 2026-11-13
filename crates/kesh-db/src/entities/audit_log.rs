@@ -146,6 +146,44 @@ pub struct AuditLogEntry {
     pub created_at: NaiveDateTime,
 }
 
+/// **Qui agit** : l'utilisateur et, quand il agit par une clé d'API REST, la
+/// clé (Story 35-8a1, #431, C-e350-39).
+///
+/// Un dépôt qui reçoit un `user_id: i64` nu ne peut pas savoir qu'une clé agit,
+/// et écrit [`NewAuditLogEntry::user`] : l'action d'une intégration est alors
+/// journalisée comme celle d'une personne. Une fonction qui prend un `Acteur`
+/// à la place transmet la clé jusqu'à la trace ([`NewAuditLogEntry::par`]) et
+/// jusqu'aux sous-gestes (suppression d'écriture, délettrage).
+///
+/// - `user_id` : l'utilisateur — pour une clé, son **créateur** (imputabilité,
+///   Story 17-2a) ;
+/// - `api_key_id` : la clé, `None` pour une session.
+///
+/// ⛔ Le seul constructeur sans clé est [`Acteur::utilisateur`] : la garde
+/// `crates/kesh-api/tests/audit_acteur_garde.rs` en compte chaque appel de
+/// production, avec sa raison. Côté HTTP, l'acteur se tire du `CurrentUser`
+/// (`impl From<&CurrentUser> for Acteur`, `kesh-api/src/audit.rs`).
+///
+/// `letterings::Actor` en est un alias : le lettrage portait ce couple depuis
+/// la Story 15-1a.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Acteur {
+    pub user_id: i64,
+    pub api_key_id: Option<i64>,
+}
+
+impl Acteur {
+    /// Un utilisateur **sans clé** : session, démarrage, ou appelant qui n'a pas
+    /// d'acteur HTTP. Chaque appel de production est compté par la garde des
+    /// acteurs, avec sa raison.
+    pub fn utilisateur(user_id: i64) -> Self {
+        Self {
+            user_id,
+            api_key_id: None,
+        }
+    }
+}
+
 /// Données de création d'une entrée d'audit.
 ///
 /// **Ne pas construire par struct literal** : utiliser les constructeurs
@@ -153,6 +191,8 @@ pub struct AuditLogEntry {
 /// [`NewAuditLogEntry::api_key`] (mutation via PAT). Le helper kesh-api
 /// `NewAuditLogEntry::from_current_user` (trait `crate::audit::AuditActor`)
 /// choisit l'un ou l'autre selon `CurrentUser.api_key_id` (Story 17-2a, DC5).
+/// Dans un dépôt qui reçoit un [`Acteur`], [`NewAuditLogEntry::par`] (Story
+/// 35-8a1) : c'est la forme qui ne peut pas oublier la clé.
 #[derive(Debug, Clone)]
 pub struct NewAuditLogEntry {
     pub user_id: i64,
@@ -211,6 +251,27 @@ impl NewAuditLogEntry {
             ),
             None => Self::user(user_id, action, entity_type, entity_id, details_json),
         }
+    }
+
+    /// Constructeur **par acteur** (Story 35-8a1, #431) : l'entrée porte la clé
+    /// d'API quand l'[`Acteur`] en a une, l'utilisateur seul sinon — délègue à
+    /// [`Self::for_actor`]. C'est la forme à employer dans toute fonction qui
+    /// reçoit un `Acteur` : elle ne peut pas oublier la clé.
+    pub fn par(
+        acteur: Acteur,
+        action: impl Into<String>,
+        entity_type: impl Into<String>,
+        entity_id: i64,
+        details_json: Option<serde_json::Value>,
+    ) -> Self {
+        Self::for_actor(
+            acteur.user_id,
+            acteur.api_key_id,
+            action,
+            entity_type,
+            entity_id,
+            details_json,
+        )
     }
 
     /// Constructeur pour une mutation exécutée **via un PAT** (Story 17-2a, DC5).

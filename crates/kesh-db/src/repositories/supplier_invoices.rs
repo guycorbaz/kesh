@@ -30,8 +30,8 @@ use rust_decimal::Decimal;
 use sqlx::MySqlPool;
 
 use crate::entities::{
-    NewAuditLogEntry, NewJournalEntryLine, NewSupplierInvoice, SettlementChoice, SupplierInvoice,
-    SupplierInvoiceLine,
+    Acteur, NewAuditLogEntry, NewJournalEntryLine, NewSupplierInvoice, SettlementChoice,
+    SupplierInvoice, SupplierInvoiceLine,
 };
 use crate::errors::{ClaimSide, DbError, NonPostableAccount, map_db_error};
 use crate::repositories::company_invoice_settings::{DesignatedRole, GeneratedLines};
@@ -1073,16 +1073,19 @@ pub async fn validate(
 /// Dévalide une facture, transaction comprise — cf. [`unvalidate_in_tx`]. Rend
 /// la vue de la facture repassée en brouillon, lue avant le commit
 /// ([`commit_with_view`], Story 34-8).
+///
+/// `acteur` : qui agit — la clé d'API comprise, portée jusqu'à chaque trace du
+/// geste (Story 35-8a1, #892 item 11).
 pub async fn unvalidate(
     pool: &MySqlPool,
     company_id: i64,
     id: i64,
     version: i32,
-    user_id: i64,
+    acteur: Acteur,
     aujourd_hui: NaiveDate,
 ) -> Result<SupplierInvoiceSettlementView, DbError> {
     let mut tx = pool.begin().await.map_err(map_db_error)?;
-    let result = unvalidate_in_tx(&mut tx, company_id, id, version, user_id).await;
+    let result = unvalidate_in_tx(&mut tx, company_id, id, version, acteur).await;
     let (view, _) = commit_with_view(tx, company_id, result, |_| id, aujourd_hui).await?;
     Ok(view)
 }
@@ -1146,13 +1149,20 @@ pub async fn unvalidate(
 /// facture tenu ici, si bien que `reversed_by` ne peut changer pendant la
 /// transaction ; et `books_locked_through` est lu sans verrou par conception.
 ///
+/// # L'acteur (Story 35-8a1, #892 item 11, #431)
+///
+/// `acteur` porte la clé d'API quand le geste vient d'une intégration : la trace
+/// `supplier_invoice.unvalidated`, les `journal_entry.deleted` (achat et
+/// contre-passation) et le `lettering.removed` des paires `reversal` sont **tous**
+/// attribués à la clé, l'utilisateur restant son créateur.
+///
 /// [`SupplierUnvalidationBlocker::Paid`]: crate::errors::SupplierUnvalidationBlocker::Paid
 pub async fn unvalidate_in_tx(
     tx: &mut sqlx::Transaction<'_, sqlx::MySql>,
     company_id: i64,
     id: i64,
     version: i32,
-    user_id: i64,
+    acteur: Acteur,
 ) -> Result<SupplierInvoiceWithLines, DbError> {
     use super::journal_entries::{DETACHED_SETTLEMENT_ENTRY, DETACHED_SETTLEMENT_TRACES};
     use crate::errors::{SupplierUnvalidationBlocker as B, SupplierUnvalidationHint as Hint};
@@ -1375,10 +1385,7 @@ pub async fn unvalidate_in_tx(
                 letterings::Mode::System {
                     held_open_fiscal_year_id: *cp_fy_id,
                 },
-                letterings::Actor {
-                    user_id,
-                    api_key_id: None,
-                },
+                acteur,
             )
             .await?;
         }
@@ -1409,10 +1416,28 @@ pub async fn unvalidate_in_tx(
     //     (clé étrangère `RESTRICT`) : la contre-passation d'abord — elle n'est
     //     contre-passée par rien, et la clé `reverses_entry_id` est `RESTRICT` —,
     //     puis l'achat, dont l'étape 3-bis passe alors.
+    //     La signature de `delete_in_tx` ne change pas ici (35-8a2) : l'acteur
+    //     s'y passe en ses deux moitiés.
     if let Some((_, cp_id, _, _)) = &reversal {
-        super::journal_entries::delete_in_tx(tx, company_id, *cp_id, user_id, None, false).await?;
+        super::journal_entries::delete_in_tx(
+            tx,
+            company_id,
+            *cp_id,
+            acteur.user_id,
+            acteur.api_key_id,
+            false,
+        )
+        .await?;
     }
-    super::journal_entries::delete_in_tx(tx, company_id, je_id, user_id, None, false).await?;
+    super::journal_entries::delete_in_tx(
+        tx,
+        company_id,
+        je_id,
+        acteur.user_id,
+        acteur.api_key_id,
+        false,
+    )
+    .await?;
 
     // (10) La trace du geste (AC-9).
     let mut details = serde_json::json!({
@@ -1425,8 +1450,8 @@ pub async fn unvalidate_in_tx(
     }
     audit_log::insert_in_tx(
         &mut *tx,
-        NewAuditLogEntry::user(
-            user_id,
+        NewAuditLogEntry::par(
+            acteur,
             "supplier_invoice.unvalidated".to_string(),
             "supplier_invoice".to_string(),
             id,
