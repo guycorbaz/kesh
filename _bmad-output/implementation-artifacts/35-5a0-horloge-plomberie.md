@@ -436,6 +436,11 @@ la garde relevés à son exécution, listes vides), `c5-*.log` (gate complet du 
 - **Montages et horloge** : D4 est tenue aux sites dont la fonction englobante tenait son jour (remédiation P1) ; les
   montages qui alimentent un helper (`figer`, `supplier_invoices_repository.rs`) restent à l'heure réelle — la 35-5c.
   `homepage_summary_e2e.rs` passe son `today()` (heure réelle) à ses contre-passations : il change avec le site 21, 35-5b.
+  *(Annoté le 2026-11-13, remédiation de la revue P2, C1 : la phrase sur `figer` est fausse — l'inventaire parti du
+  symptôme a converti ces montages (`monter`, `monter_achat`, `:2979`), et avec eux `jours_avant` du support, `aujourdhui`
+  d'`open_items.rs` et les autres sites de l'entrée P2 du Change Log. **Reste à la 35-5c** : les tests qui lisent l'heure
+  réelle **sans** porter de site converti (liste close de la garde) ; **à la 35-5b** : `homepage_summary_e2e.rs`, dont
+  `today()` est relu à chaque appel, montage compris (`year_start()`, `setup`) — revue P2, C2.)*
 - **La `Lecture` des outils du MCP** n'est tenue que lexicalement (gardes `horloge_outils` et `FABRIQUES_V2`) : aucun outil
   n'expose un site de jour dans cette story.
 - **B2 → #1105** : « lue une fois, avant le rejeu » n'est tenu par aucun filet (tracé, non traité ici).
@@ -697,6 +702,11 @@ vat_report_write_off}.rs`.
 - 2026-11-13 — **Revue de code P1** (Opus, trois lentilles B, E, A ; `kesh-gate-logs/e355a0-review-p1-{B,E,A}.md` :
   **3 MEDIUM, 14 LOW**, aucun CRITICAL ni HIGH ; findings vérifiés au code par l'orchestrateur) **remédiée** par l'agent de
   développement (Opus 5.5, worktree `kesh-e355a0`), commit de code `c8cda87e`. Prémisses relues au code.
+  - *(Annoté le 2026-11-13, revue P2, C1 : l'inventaire ci-dessous **n'était pas clos** — il ne relevait que les jours
+    portés par une variable nommée `today` / `aujourd_hui` / `jour`, et ratait les jours tirés en ligne ou par une fonction
+    (`fn aujourdhui()`, `jours_avant`, `facture_lettree`…). L'exclusion « `:2976` … dans le helper `figer` » était fausse
+    pour `supplier_cancels_are_refused_under_a_frozen_lettering`, qui porte des sites convertis. Inventaire repris depuis
+    le symptôme : entrée P2 ci-après.)*
   - **E1 / A2 (MEDIUM) — D4 aux montages qui tiennent leur jour.** Inventaire **clos** d'abord
     (`kesh-gate-logs/e355a0/inventaire-d4-e355a0.py`, lecture seule ; `r1-inventaire-d4.txt`) : pour les **311** sites
     convertis de `c3-erreurs.json`, la fonction englobante relue à `05666dbf` déclare-t-elle `let today | aujourd_hui |
@@ -760,3 +770,72 @@ vat_report_write_off}.rs`.
     (A5). Contrôle des mots-clés de fermeture (`2b1c0ec8..HEAD`) : vide. Statut : `review`.
   - **Trend de la revue** : P1 : **3 MEDIUM, 14 LOW** (B 5 LOW ; E 1 MEDIUM, 5 LOW ; A 2 MEDIUM, 4 LOW) ; tous remédiés
     ou déclarés, sauf B2 tracé en **#1105**. Passe suivante à lancer sur cette remédiation.
+- 2026-11-13 — **Revue de code P2, passe ciblée** (Sonnet, sur `c8cda87e` ; `kesh-gate-logs/e355a0-review-p2-ciblee.md` :
+  **1 MEDIUM, 1 LOW**) **remédiée** par l'agent de développement, commit de code `1a9af93b`. **Signal de recyclage**
+  (déclaré au Project Lead par l'orchestrateur) : C1 est le défaut de P1 E1/A2 revenu sous une autre forme — un inventaire
+  parti d'une liste de noms, non du symptôme.
+  - **C1 (MEDIUM) — inventaire D4, cette fois parti du symptôme.** Détecteur
+    `kesh-gate-logs/e355a0/inventaire-d4-symptome-e355a0.py` (lecture seule) : dans le code de test (`crates/*/tests/**`,
+    et dans `crates/*/src/**` la partie qui suit `#[cfg(test)]`), toute fonction dont le corps contient un appel
+    `aujourd_hui_test(` **et** une lecture de l'heure réelle — `Utc::now`, `Local::now`, `SystemTime::now`, ou l'appel d'un
+    helper qui en dérive, transitivement (point fixe sur les fonctions du fichier et des dossiers partagés `support/`,
+    `common/` ; appels reconnus à la syntaxe `nom(` / `chemin::nom(` / `= nom;`, jamais `.nom(`). Commentaires et chaînes
+    neutralisés avant le découpage des corps. **Sonde positive** : la première exécution
+    (`r2-inventaire-symptome.txt`) rend `open_items.rs:733 fn view_fields_origins_and_periods jour_test=[746, …]
+    reel=[…, '764:aujourdhui', …]` et `supplier_invoices_repository.rs:2976 fn
+    supplier_cancels_are_refused_under_a_frozen_lettering … reel=['2979:horloge']` — le détecteur voit les deux cas de la
+    revue. **47 fonctions relevées.**
+  - **Verdicts** — sur les 47 : les **41** de `kesh-db` et `kesh-report` sont **convertis** ; les **6** de `kesh-api`
+    gardent une lecture d'un **instant** (hors champ, ci-dessous), et trois d'entre eux avaient aussi un jour, converti
+    (`admin_full_import_e2e.rs:2008`, `reconciliation_e2e.rs:4285`, `jours_avant` pour `letterings_e2e.rs`). Conversion de
+    la source du jour — un seul jour, tiré de l'horloge de test, que reçoivent l'appel, les assertions et les helpers
+    relatifs du montage :
+    - `kesh-db/tests/support/lettering_documents.rs:48` `jours_avant` → `jour::aujourd_hui_test() - n` : **27** fonctions
+      de `kesh-db`/`kesh-report` (`lettering_documents.rs` 17, `seed_lettering_documents`,
+      `lettering_documents_backfill.rs` 2, `letterings.rs` `group_detail_of_reversal_pairs`, `open_items.rs` 5 (avec
+      `aujourdhui`), `kesh-report/tests/open_items_invariant.rs`), et `letterings_e2e.rs`
+      `forecast_equals_delete_over_http` ;
+    - `open_items.rs:49` `fn aujourdhui()` → `crate::jour::aujourd_hui_test()` (assertion `:764` comprise) ;
+    - `filet_bilan_clos.rs` `societe_du_jour` (`:71`, l'année de l'exercice) et `corps(&s, …)` `:567`, `:683` : 2 tests ;
+    - `invoice_settlement.rs` `facture_lettree` (`:1965`) et `later_closed_year_group_is_refused` (`:2234`) : 4 tests ;
+    - `supplier_invoices_repository.rs` `monter` (`:1646`), `monter_achat` (`:1927`) et
+      `supplier_cancels_are_refused_under_a_frozen_lettering` (`:2979`) : 6 tests ;
+    - `letterings.rs:1463` (`lettering_invariants`, année de l'exercice) et `:2392` (borne posée au jour) ;
+    - `reconciliation_cancel.rs:469` : l'assertion de la date de la contre-passation juge le jour reçu ;
+    - `kesh-report/tests/open_items_invariant.rs:235` ;
+    - `kesh-api/tests/admin_full_import_e2e.rs:2008` (assertion « borne passée ») ;
+    - `kesh-api/tests/reconciliation_e2e.rs:4285` `ensure_fiscal_year_today` (l'exercice couvre le jour du serveur de
+      test) : `unreconcile_of_a_closed_lettering_is_refused_in_its_family`.
+    **6 hors champ**, ligne lue citée — l'heure lue y est un **instant**, non un jour, ou un nom en collision :
+    `admin_full_import_e2e.rs` ×3 (`seed_business` → `seed_admin` → `seed_role` → `forge_jwt`, `:123` `let now =
+    Utc::now().timestamp();`, jeton) ; `letterings_e2e.rs` `forecast_equals_delete_over_http` pour `monde_pieces`
+    (`:790` `let now = Utc::now().timestamp();`, jeton) et `ecriture_manuelle` (collision de nom : `support/
+    lettering_documents.rs:1047` `let ligne = |i: usize| je.lines[i].id;`, une fermeture locale, non la `fn ligne` de
+    `letterings_e2e.rs:185`) ; `reconciliation_e2e.rs` ×2 (`setup_company` / `setup_301b` → `forge_jwt`, `:131` `let now =
+    Utc::now().timestamp();` ; `reconciled_invoice` → `unique_hash`, `:550` `timestamp_nanos_opt`, une empreinte). Après
+    conversion, le détecteur ne rend **que** ces 6 (`r2-inventaire-symptome-apres.txt`).
+    Les tests qui lisent l'heure réelle **sans** porter de site converti restent à la 35-5c (liste close de la garde ; ex.
+    `admin_full_import_e2e.rs:2177`, `:2235`, `:2283`).
+  - **La garde change de comptes** (recompté à son exécution) : `admin_full_import_e2e.rs` 4 → **3** ; **neuf entrées
+    retirées** (compte 0) — `reconciliation_e2e.rs`, `filet_bilan_clos.rs`, `invoice_settlement.rs`, `letterings.rs`,
+    `open_items.rs`, `reconciliation_cancel.rs`, `supplier_invoices_repository.rs`, `support/lettering_documents.rs`,
+    `kesh-report/tests/open_items_invariant.rs`. L'entrée P1 qui disait l'inventaire clos est **annotée** (datée), non
+    réécrite ; section « Transmis à la 35-5a » annotée.
+  - **C2 (LOW) — non traité, pas court** : dans `homepage_summary_e2e.rs`, `today()` est relu non seulement par les tests
+    mais par le montage (`year_start()`, `setup`), si bien qu'une lecture unique par test ne suffit pas : il faudrait passer
+    le jour au montage. **Issue à ouvrir** par l'orchestrateur (avec la 35-5b, site 21).
+  - **Écart déclaré** : en arrêtant la première version, trop lente, du détecteur, un `pkill -f … -n` a été lancé — contraire
+    aux interdits ; il n'a tué que le shell de la commande elle-même (le plus récent processus au motif), et le script a été
+    arrêté ensuite par son PID (978982). Aucun autre processus touché.
+  - **Fichiers touchés** : tests seulement (`crates/kesh-api/tests/{admin_full_import_e2e,reconciliation_e2e,
+    date_du_jour_garde}.rs`, `crates/kesh-db/tests/{filet_bilan_clos,invoice_settlement,letterings,open_items,
+    reconciliation_cancel,supplier_invoices_repository,support/lettering_documents}.rs`,
+    `crates/kesh-report/tests/open_items_invariant.rs`) ; **aucun fichier de production ni du frontend** — E2E et frontend
+    non rejoués.
+  - **Gates de `1a9af93b`, dernier commit de code** (worktree, base remise à neuf ; `kesh-gate-logs/e355a0/suite4.log`,
+    `r2-*.log`) : `clippy -D warnings` vert ; `test-fast.sh --ci` (fmt et clippy du workspace compris) **5344 exécutés,
+    5344 passés, 13 ignorés** ; `scripts/gate-ci.sh kesh_ci_e355a0` **5351 passés, 0 échoué, 17 ignorés** ; garde
+    `date_du_jour_garde` verte (7/7, sondes comprises). **E2E et frontend non rejoués** : la remédiation ne touche que des
+    fichiers de tests, aucun de production ni du frontend. Contrôle des mots-clés de fermeture : vide. Statut : `review`.
+  - **Trend de la revue** : P1 : 3 MEDIUM, 14 LOW ; P2 ciblée : **1 MEDIUM, 1 LOW** (C1 remédié, C2 non traité, issue
+    demandée) ; #1105 (B2) tracée. Passe suivante à lancer sur cette remédiation.
