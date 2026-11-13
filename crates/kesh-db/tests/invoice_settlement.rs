@@ -1233,7 +1233,9 @@ async fn monter(pool: &MySqlPool, motifs: &[SettlementCancelBlocker]) -> (Seeded
         .await
         .expect("truncate");
     let seeded = seed_accounting_company(pool).await.expect("seed");
-    let today = chrono::Utc::now().date_naive();
+    // Story 35-5a0 (D4) — le jour du montage, celui de l'horloge de test, que
+    // reçoit aussi le verrou ci-dessous.
+    let today = crate::jour::aujourd_hui_test();
     let d = today - chrono::Duration::days(60);
     sqlx::query("UPDATE fiscal_years SET end_date = ? WHERE id = ?")
         .bind(d)
@@ -1287,7 +1289,7 @@ async fn monter(pool: &MySqlPool, motifs: &[SettlementCancelBlocker]) -> (Seeded
             seeded.admin_user_id,
             seeded.company_id,
             d - chrono::Duration::days(10),
-            crate::jour::aujourd_hui_test(),
+            today,
         )
         .await
         .expect("verrou de période");
@@ -2430,7 +2432,9 @@ mod compte_bancaire_clos {
     #[sqlx::test(migrations = "./test-schema")]
     async fn une_cloture_d_exercice_attend_l_annulation_d_un_virement(pool: MySqlPool) {
         let seeded = seed_accounting_company(&pool).await.expect("seed");
-        let today = chrono::Utc::now().date_naive();
+        // Story 35-5a0 (D4) — le jour du montage, celui de l'horloge de test,
+        // que reçoit aussi l'annulation ci-dessous.
+        let today = crate::jour::aujourd_hui_test();
         let d = today - chrono::Duration::days(60);
         sqlx::query("UPDATE fiscal_years SET end_date = ? WHERE id = ?")
             .bind(d)
@@ -2483,12 +2487,7 @@ mod compte_bancaire_clos {
         let (company_id, user_id) = (seeded.company_id, seeded.admin_user_id);
         let annulation = tokio::spawn(async move {
             invoice_settlements_write::cancel_settlement(
-                &p,
-                user_id,
-                company_id,
-                inv_id,
-                sid,
-                crate::jour::aujourd_hui_test(),
+                &p, user_id, company_id, inv_id, sid, today,
             )
             .await
         });

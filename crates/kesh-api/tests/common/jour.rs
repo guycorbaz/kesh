@@ -3,7 +3,10 @@
 //! [`aujourd_hui_test`] rend le jour de l'horloge de test du serveur
 //! (`kesh_api::horloge::horloge_de_test`) — celle que prennent
 //! `AppState::new_for_tests` et les états de test —, si bien qu'un montage et
-//! le serveur qu'il interroge ont le même jour.
+//! le serveur qu'il interroge ont le même jour **tant que le test ne remplace
+//! pas `state.horloge`**. Un test qui fixe l'horloge de son état
+//! (`state.horloge = Arc::new(HorlogeFixe(…))`) date son montage sur cet
+//! instant, non sur ce helper, qui l'ignore.
 
 use chrono::NaiveDate;
 

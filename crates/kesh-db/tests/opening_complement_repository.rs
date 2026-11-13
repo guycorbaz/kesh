@@ -10,7 +10,7 @@
 #[path = "support/jour.rs"]
 mod jour;
 
-use chrono::{Datelike, NaiveDate, Utc};
+use chrono::{Datelike, NaiveDate};
 use kesh_db::entities::account::AccountType;
 use kesh_db::entities::contact::{ContactType, NewContact, Salutation};
 use kesh_db::entities::invoice::{NewInvoice, NewInvoiceLine};
@@ -886,9 +886,12 @@ async fn entrelacement_4_deux_complements_du_meme_compte(pool: MySqlPool) {
 /// des verrous ne le ferait rougir. Le rejeu reste sans test (fiche, Limites).
 #[sqlx::test(migrations = "./test-schema")]
 async fn entrelacement_5_contre_passation_en_vol(pool: MySqlPool) {
-    let y = Utc::now().date_naive().year();
+    // Story 35-5a0 (D4) — le jour du montage est celui de l'horloge de test, et
+    // l'exercice courant est celui de ce jour : le complément et la
+    // contre-passation reçoivent ce même `today`.
+    let today = crate::jour::aujourd_hui_test();
+    let y = today.year();
     let co = setup(&pool, &[year_span(y - 1), year_span(y)]).await;
-    let today = Utc::now().date_naive();
     let original = post(
         &pool,
         &co,
@@ -932,9 +935,7 @@ async fn entrelacement_5_contre_passation_en_vol(pool: MySqlPool) {
     let r = {
         let pool = pool.clone();
         let (cid, uid, id) = (co.company_id, co.user_id, original.entry.id);
-        tokio::spawn(async move {
-            journal_entries::reverse(&pool, cid, id, uid, crate::jour::aujourd_hui_test()).await
-        })
+        tokio::spawn(async move { journal_entries::reverse(&pool, cid, id, uid, today).await })
     };
     assert!(
         attendre_une_requete_en_cours(&pool, &["JOIN fiscal_years", "FOR UPDATE"], || r

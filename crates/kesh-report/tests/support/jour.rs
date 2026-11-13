@@ -3,7 +3,8 @@
 //!
 //! [`aujourd_hui_test`] rend le jour de l'horloge du serveur : celle qu'arrête
 //! `KESH_TEST_INSTANT` (RFC 3339) si la variable est posée, l'heure réelle
-//! sinon — lue à chaque appel, sans mémoire.
+//! sinon — lue à chaque appel, sans mémoire. Vide ou blanche, la variable vaut
+//! absente, comme côté `kesh-api` (`instant_de_test` rogne la valeur).
 //!
 //! Un binaire l'inclut par `#[path = "support/jour.rs"] mod jour;`.
 

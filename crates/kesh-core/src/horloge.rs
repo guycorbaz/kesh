@@ -1,8 +1,11 @@
-//! L'horloge du serveur — la seule source de la date du jour (Story 35-5a0, #929, #1022, #907).
+//! L'horloge du serveur — la source de la date du jour des sites convertis (Story 35-5a0, #929,
+//! #1022, #907).
 //!
-//! Le serveur ne lit plus l'heure lui-même pour dater une écriture ou borner une période : il la
-//! demande à une [`Horloge`], injectée dans l'état de l'application et passée à `kesh-db` sous la
-//! forme d'une date. Les tests la fixent par [`HorlogeFixe`].
+//! Pour la contre-passation, les annulations, le verrou de période, les soldes d'ouverture et le
+//! premier exercice de l'assistant, le serveur ne lit plus l'heure lui-même : il la demande à une
+//! [`Horloge`], injectée dans l'état de l'application et passée à `kesh-db` sous la forme d'une
+//! date. Les sites qui lisent encore l'heure (Story 35-5b) sont inventoriés par la garde
+//! `kesh-api/tests/date_du_jour_garde.rs`. Les tests fixent l'horloge par [`HorlogeFixe`].
 //!
 //! Le jour rendu par [`Horloge::aujourd_hui`] est, à ce stade, **le jour UTC** de l'instant —
 //! exactement celui d'avant cette story. La Story 35-5a le remplacera par le jour de Zurich en ne
@@ -48,13 +51,15 @@ fn jour(instant: DateTime<Utc>) -> NaiveDate {
 
 /// Interprète la valeur de la variable [`NOM_VARIABLE_INSTANT`].
 ///
-/// `None` et la chaîne vide (variable exportée vide) rendent `None` : l'horloge n'est pas fixée.
+/// La valeur est rognée de ses blancs, comme le fait `config::env_nonempty` côté serveur : `None`,
+/// la chaîne vide et une chaîne blanche (variable exportée vide) rendent `None` — l'horloge n'est
+/// pas fixée. Un instant à décalage (`+01:00`) est ramené en UTC.
 ///
 /// # Panics
 ///
 /// Une valeur qui n'est pas un instant RFC 3339 arrête le test, en nommant la variable.
 pub fn instant_de_test(valeur: Option<&str>) -> Option<DateTime<Utc>> {
-    let valeur = valeur?;
+    let valeur = valeur?.trim();
     if valeur.is_empty() {
         return None;
     }
@@ -110,6 +115,21 @@ mod tests {
     fn instant_de_test_absent_ou_vide_rend_none() {
         assert_eq!(instant_de_test(None), None);
         assert_eq!(instant_de_test(Some("")), None);
+        assert_eq!(instant_de_test(Some("   ")), None);
+    }
+
+    #[test]
+    fn instant_de_test_rogne_et_ramene_un_decalage_en_utc() {
+        assert_eq!(
+            instant_de_test(Some(" 2025-12-31T23:30:00Z ")),
+            Some(instant("2025-12-31T23:30:00Z"))
+        );
+        let i = instant_de_test(Some("2026-01-01T00:30:00+01:00")).unwrap();
+        assert_eq!(i, instant("2025-12-31T23:30:00Z"));
+        assert_eq!(
+            HorlogeFixe(i).aujourd_hui(),
+            NaiveDate::from_ymd_opt(2025, 12, 31).unwrap()
+        );
     }
 
     #[test]

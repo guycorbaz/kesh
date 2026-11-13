@@ -105,9 +105,10 @@ pub struct AppState {
     /// Kesh l'un de l'autre (une instance par base). Champ `pub` : les tests
     /// le tiennent à la main (AC35).
     pub backup_lock: Arc<tokio::sync::Mutex<()>>,
-    /// Story 35-5a0 (#929, #1022, #907) — la **seule** source de la date du
-    /// jour du serveur : les routes la lisent (`state.horloge.aujourd_hui()`)
-    /// et la passent à `kesh-db`, qui ne lit plus l'heure pour une date.
+    /// Story 35-5a0 (#929, #1022, #907) — la source de la date du jour des
+    /// sites convertis : les routes la lisent (`state.horloge.aujourd_hui()`)
+    /// et la passent à `kesh-db`. Les sites qui lisent encore l'heure
+    /// (Story 35-5b) sont inventoriés par `tests/date_du_jour_garde.rs`.
     /// L'horloge réelle en production (`main.rs`) ; l'horloge de test
     /// (`horloge::horloge_de_test`) dans `new_for_tests` et les états de test.
     /// Champ `pub` : un test la remplace par une horloge arrêtée.

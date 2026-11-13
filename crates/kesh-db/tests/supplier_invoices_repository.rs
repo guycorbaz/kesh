@@ -3087,7 +3087,9 @@ mod compte_bancaire_clos {
     /// `D − 20`, paiement à `D − 10`, dans l'exercice seedé raccourci à `D`.
     async fn monter_par_virement(pool: &MySqlPool) -> (Ctx, i64) {
         let ctx = setup(pool).await;
-        let today = chrono::Utc::now().date_naive();
+        // Story 35-5a0 (D4) — le jour du montage, celui de l'horloge de test,
+        // que reçoit aussi le paiement ci-dessous (bloqueurs de la vue).
+        let today = crate::jour::aujourd_hui_test();
         let dd = today - chrono::Duration::days(60);
         sqlx::query("UPDATE fiscal_years SET end_date = ? WHERE id = ?")
             .bind(dd)
@@ -3140,7 +3142,7 @@ mod compte_bancaire_clos {
             },
             dd - chrono::Duration::days(10),
             ctx.seeded.admin_user_id,
-            crate::jour::aujourd_hui_test(),
+            today,
         )
         .await
         .expect("paiement par virement");

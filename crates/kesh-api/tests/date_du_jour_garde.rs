@@ -18,7 +18,11 @@
 //!
 //! **Angle mort assumé** (inventaire) : un jour tiré d'une variable d'instant
 //! (`let n = Utc::now().naive_utc(); n.date()`) n'est pas relevé — `.date()` sur tout récepteur
-//! rendrait des centaines de lignes légitimes. **Angle mort assumé** (durcissement) : un autre nom
+//! rendrait des centaines de lignes légitimes. Ne sont pas relevées non plus, faute d'usage au
+//! dépôt le 2026-11-13 (revue P1, B3 : `git grep` sans résultat utile) : `Utc::now().date()`
+//! (API dépréciée), `NaiveDate::from(… naive_utc())`, et en SQL `CAST(NOW() AS DATE)`,
+//! `SYSDATE()`, `DATE_FORMAT(NOW(), …)`, une comparaison `… < NOW()` ; la première qui
+//! apparaîtrait s'ajoute à `FORMES`. **Angle mort assumé** (durcissement) : un autre nom
 //! de variable d'environnement, lu en production et converti à la main en instant passé à une
 //! horloge écrite pour l'occasion ; la revue de `main.rs` et de `lib.rs` le voit.
 
@@ -415,7 +419,8 @@ const EXEMPTIONS: &[Exemption] = &[
     ),
     (
         "kesh-db/tests/invoice_settlement.rs",
-        4,
+        // 4 → 2 : remédiation P1 (D4), deux montages passés à `aujourd_hui_test()`.
+        2,
         "35-5a",
         "bloqueur, annulation",
     ),
@@ -425,12 +430,6 @@ const EXEMPTIONS: &[Exemption] = &[
         1,
         "35-5a",
         "verrou, contre-passation",
-    ),
-    (
-        "kesh-db/tests/opening_complement_repository.rs",
-        2,
-        "35-5a",
-        "complément",
     ),
     (
         "kesh-db/tests/reconciliation_cancel.rs",
@@ -446,7 +445,8 @@ const EXEMPTIONS: &[Exemption] = &[
     ),
     (
         "kesh-db/tests/supplier_invoices_repository.rs",
-        4,
+        // 4 → 3 : remédiation P1 (D4), le montage de `monter_par_virement`.
+        3,
         "35-5a",
         "bloqueur, annulation",
     ),
@@ -610,8 +610,9 @@ const DURCISSEMENTS: &[Durcissement] = &[
         portee: Portee::SrcEtTests,
         sans_use: false,
         lignes_ecartees: &[],
+        // `kesh-core` : 6 → 9 à la remédiation P1 (E2, E5 : blanc, décalage).
         attendu: &[
-            ("kesh-core/src/horloge.rs", 6),
+            ("kesh-core/src/horloge.rs", 9),
             ("kesh-api/src/horloge.rs", 2),
             ("kesh-db/tests/support/jour.rs", 2),
             ("kesh-report/tests/support/jour.rs", 2),
@@ -665,8 +666,9 @@ const DURCISSEMENTS: &[Durcissement] = &[
         // Définition et tests ; import et branche fixe de `horloge_depuis` ; `test_state()`
         // d'un `mod tests`. 0 dans `main.rs`, `lib.rs` et tout autre fichier de `src` :
         // une `HorlogeFixe(Utc::now())` de production figerait le jour au démarrage.
+        // `kesh-core` : 5 → 6 à la remédiation P1 (E5).
         attendu: &[
-            ("kesh-core/src/horloge.rs", 5),
+            ("kesh-core/src/horloge.rs", 6),
             ("kesh-api/src/horloge.rs", 2),
             ("kesh-api/src/middleware/auth.rs", 1),
         ],

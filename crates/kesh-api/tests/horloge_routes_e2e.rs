@@ -184,6 +184,15 @@ async fn la_contre_passation_et_le_verrou_suivent_l_horloge_de_l_etat(pool: MySq
         )
         .await;
     assert_eq!(status, 400, "borne au jour de l'horloge : {body}");
+    // … par la garde de date (`booksLockBoundNotPast`, rendu `INVALID_INPUT` avec
+    // son message propre), non par un autre refus.
+    assert_eq!(body["error"]["code"], "INVALID_INPUT", "{body}");
+    assert!(
+        body["error"]["message"]
+            .as_str()
+            .is_some_and(|m| m.contains("antérieure à aujourd'hui")),
+        "message de booksLockBoundNotPast attendu : {body}"
+    );
     // … la veille est acceptée.
     let (status, body) = app
         .post(

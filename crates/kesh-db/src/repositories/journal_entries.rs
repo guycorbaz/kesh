@@ -2558,8 +2558,9 @@ where
 ///
 /// `aujourd_hui` (Story 35-5a0, #929, #1022, #907) : la date du jour, lue
 /// **une fois** sur l'horloge de la requête par l'appelant — la contre-passation
-/// en est datée, dans l'exercice ouvert qui la couvre. `kesh-db` ne lit plus
-/// l'heure lui-même.
+/// en est datée, dans l'exercice ouvert qui la couvre. La contre-passation ne
+/// lit plus l'heure elle-même (d'autres dépôts le font encore, Story 35-5b :
+/// `kesh-api/tests/date_du_jour_garde.rs` les inventorie).
 pub async fn reverse_in_tx(
     tx: &mut sqlx::Transaction<'_, sqlx::MySql>,
     company_id: i64,
