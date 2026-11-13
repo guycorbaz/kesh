@@ -166,7 +166,7 @@ pub async fn list_reminders(
     let candidates = dunning_eligibility::list_reminder_candidates(
         &state.pool,
         current_user.company_id,
-        state.horloge.maintenant().date_naive(),
+        state.horloge.aujourd_hui(),
     )
     .await?;
 

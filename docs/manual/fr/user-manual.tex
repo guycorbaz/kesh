@@ -741,15 +741,21 @@ la régularisation des soldes de départ, le premier exercice que l'assistant cr
 société --- et la borne du verrou de période, que Kesh refuse au jour même, prennent \textbf{la
 date de Zurich}, même entre minuit et une heure du matin (deux heures en été)~: une correction
 faite le 1\textsuperscript{er} janvier à minuit et demi est datée du 1\textsuperscript{er}
-janvier, dans le nouvel exercice. L'écran propose la veille de ce même jour comme borne du verrou,
-quel que soit le fuseau de votre poste~; pour une date que vous saisissez (une date de facture),
-il propose la date \textbf{de votre poste} --- pour un poste réglé sur la Suisse, ce sont les
-mêmes. \emph{Depuis la version 0.17.7~; avant, c'était le jour UTC du serveur, qui ne change
-qu'à une ou deux heures du matin à Zurich. Les autres dates du jour du serveur restent pour
-l'instant au jour UTC, notamment~: l'exercice de la société de démonstration, la date de clôture
-d'un compte bancaire quand elle n'est pas donnée (par l'API), les factures échues, les rappels,
-les postes ouverts, la balance âgée, la fin d'un rapport de projet cumulé, l'accueil et les noms
-de fichiers.}
+janvier, dans le nouvel exercice. Il en va de même de tout ce que Kesh juge \textbf{au jour}~:
+l'exercice que montre l'accueil, une facture échue (fiche, liste, échéancier et son export), les
+jours de retard d'un rappel et les factures à rappeler, les postes ouverts et la balance âgée
+arrêtés à aujourd'hui, la fin d'un rapport de projet cumulé sans date de fin, la date de clôture
+d'un compte bancaire quand elle n'est pas donnée (par l'API), l'exercice de la société de
+démonstration, les réponses du serveur MCP, et la date du nom des fichiers exportés
+(sauvegarde, export comptable complet, journal d'audit, échéancier). L'écran propose la veille
+de ce même jour comme borne du verrou, quel que soit le fuseau de votre poste~; pour une date que
+vous saisissez (une date de facture), il propose la date \textbf{de votre poste} --- pour un
+poste réglé sur la Suisse, ce sont les mêmes. Les \textbf{heures} enregistrées (journal d'audit,
+envoi d'un rappel, paiement) restent en UTC~; leur \textbf{jour} est celui de Zurich pour le
+délai du rappel suivant et pour la date de paiement de l'export de l'échéancier --- la fenêtre de
+30~jours de la réconciliation compte encore, elle, depuis le jour UTC du dernier rappel.
+\emph{Depuis la version 0.17.7~; avant, c'était le jour UTC du serveur, qui ne change
+qu'à une ou deux heures du matin à Zurich.}
 \end{keshnote}
 
 Le lien figure aussi dans l'export comptable complet (colonne
@@ -4005,7 +4011,8 @@ transactions à rapprocher) est prévu mais pas encore disponible.
           «~Action~», s'affiche sous son \textbf{code technique}~; on la retrouve en filtrant par le
           type et le numéro d'entité.
     \item \textbf{L'export CSV} reprend les filtres affichés, avec des heures en UTC et les libellés
-          dans la langue de l'installation. Il est \textbf{plafonné à 10~000 lignes}~: au-delà, un
+          dans la langue de l'installation~; son \textbf{nom} porte la date du jour de Zurich
+          (\S\ref{sec:date-du-jour}), alors que ses lignes et ses filtres restent en UTC. Il est \textbf{plafonné à 10~000 lignes}~: au-delà, un
           message vous demande d'affiner les filtres. \emph{À l'export, une période inversée est
           refusée par le serveur avec un message qui n'est pas encore traduit.}
 \end{itemize}

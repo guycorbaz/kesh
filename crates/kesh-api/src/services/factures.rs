@@ -152,6 +152,9 @@ pub struct FicheFacture {
     /// Le réglage `round_to_5_centimes`, lu pour un **brouillon** seulement ;
     /// `None` : facture émise, réglage non lu (son arrondi est figé).
     pub arrondi_5_centimes: Option<bool>,
+    /// La date du jour lue par le service (Story 35-5b, #929) : une route qui
+    /// calcule « échue » sur la fiche la réemploie, sans relire l'horloge.
+    pub aujourd_hui: NaiveDate,
 }
 
 /// L'échéancier : une page de factures validées, et le résumé des impayées et
@@ -280,7 +283,7 @@ pub async fn lister(
         limit,
         offset,
     };
-    let aujourd_hui = lecture.horloge().maintenant().date_naive();
+    let aujourd_hui = lecture.aujourd_hui();
     let page =
         invoices::list_by_company_paginated(lecture.pool(), acces.company_id(), query, aujourd_hui)
             .await?;
@@ -328,6 +331,7 @@ pub async fn detail(
         montant_regle,
         reste_du,
         arrondi_5_centimes,
+        aujourd_hui: lecture.aujourd_hui(),
     })
 }
 
@@ -530,7 +534,7 @@ pub async fn echeances(
         ..query.clone()
     };
     // Une lecture de l'horloge pour la page et le résumé (Story 35-5b).
-    let aujourd_hui = lecture.horloge().maintenant().date_naive();
+    let aujourd_hui = lecture.aujourd_hui();
     // List + summary en parallèle (read-only, pas de tx commune).
     let (page, resume) = tokio::join!(
         invoices::list_by_company_paginated(lecture.pool(), acces.company_id(), query, aujourd_hui),

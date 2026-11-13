@@ -88,10 +88,7 @@ pub async fn lister(
     demande: DemandePostesOuverts,
 ) -> Result<OpenItems, AppError> {
     acces.exiger(EXIGENCE_LISTER)?;
-    let as_of = parse_as_of(
-        demande.as_of.as_deref(),
-        lecture.horloge().maintenant().date_naive(),
-    )?;
+    let as_of = parse_as_of(demande.as_of.as_deref(), lecture.aujourd_hui())?;
     let limit = demande.limit.unwrap_or(LIMITE_DEFAUT).clamp(1, LIMITE_MAX);
     let offset = demande.offset.unwrap_or(0).max(0);
     let company =

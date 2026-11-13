@@ -1133,6 +1133,58 @@ async fn path_b_finalize_a_minuit_le_1er_janvier_cree_l_exercice_suisse(pool: My
     );
 }
 
+/// Story 35-5b, AC6 (site 26) — la démonstration semée à 23 h 30 UTC le
+/// 31 décembre (00 h 30 le 1er janvier à Zurich) crée « Exercice 2026 », du
+/// 1er janvier au 31 décembre 2026 (le jour UTC créait « Exercice 2025 »).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn demo_a_minuit_le_1er_janvier_cree_l_exercice_suisse(pool: MySqlPool) {
+    let instant = chrono::DateTime::parse_from_rfc3339("2025-12-31T23:30:00Z")
+        .unwrap()
+        .with_timezone(&chrono::Utc);
+    let app = spawn_app_a(pool.clone(), Some(instant)).await;
+    create_test_company(&pool).await;
+    ensure_admin_user(&pool, &test_config()).await.unwrap();
+    let token = login(&app).await;
+    for (chemin, corps) in [
+        (
+            "/api/v1/onboarding/language",
+            Some(json!({ "language": "FR" })),
+        ),
+        ("/api/v1/onboarding/mode", Some(json!({ "mode": "guided" }))),
+        ("/api/v1/onboarding/seed-demo", None),
+    ] {
+        let mut req = app
+            .client
+            .post(app.url(chemin))
+            .header("Authorization", auth(&token));
+        if let Some(c) = corps {
+            req = req.json(&c);
+        }
+        let resp = req.send().await.unwrap();
+        assert_eq!(resp.status(), 200, "{chemin}");
+    }
+    let company_id: i64 = sqlx::query_scalar("SELECT id FROM companies ORDER BY id LIMIT 1")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    let list = kesh_db::repositories::fiscal_years::list_by_company(&pool, company_id)
+        .await
+        .unwrap();
+    assert_eq!(list.len(), 1);
+    assert_eq!(
+        (
+            list[0].name.as_str(),
+            list[0].start_date.to_string(),
+            list[0].end_date.to_string()
+        ),
+        (
+            "Exercice 2026",
+            "2026-01-01".to_string(),
+            "2026-12-31".to_string()
+        )
+    );
+}
+
 /// Story 7.2 (KF-003) — vérifie que `finalize` Path B seed les 4 taux TVA
 /// suisses 2024+ pour la nouvelle company, dans la même tx que le reste du
 /// finalize. Test exécute le full Path B + finalize, puis lit `vat_rates`

@@ -1800,7 +1800,7 @@ pub async fn close_bank_account(
     }
     let closed_on = body
         .closed_on
-        .unwrap_or_else(|| state.horloge.maintenant().date_naive());
+        .unwrap_or_else(|| state.horloge.aujourd_hui());
     // Revue P1 (B-1) — la date est informative (C-28-4-3), non sans domaine :
     // `chrono` admet des années signées et au-delà de 9999, que la colonne `DATE`
     // de MariaDB refuserait en `500`. Hors de `1000..=9999` (le domaine de

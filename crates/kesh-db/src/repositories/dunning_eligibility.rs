@@ -5,8 +5,11 @@
 //!
 //! **Approche** : le SQL récupère les candidates brutes (factures `validated`/impayées/
 //! non-suspendues, avec `due_date`, jointes au contact et à l'agrégat des rappels
-//! non-annulés) ; la logique de déclenchement par date est faite en Rust (`today` en
-//! **UTC** via `chrono::Utc`, cohérent avec `UTC_DATE()`/`due_dates_summary`). Cela évite
+//! non-annulés) ; la logique de déclenchement par date est faite en Rust. Le jour du
+//! test est la date du jour **de Zurich**, passée par l'appelant (Story 35-5b, #929),
+//! la même que celle du filtre « échues » de `due_dates_summary` ; le jour du dernier
+//! rappel (`MAX(sent_at)`, un instant UTC) est lu à Zurich par la même fonction,
+//! `kesh_core::horloge::jour_suisse` — jamais deux horloges mêlées. Cela évite
 //! l'arithmétique de dates + sous-requêtes NULL fragiles en SQL.
 //!
 //! **Garde « dunning désactivé » (C1/D7)** : si la company a 0 niveau configuré (table
@@ -16,6 +19,7 @@
 use crate::errors::{DbError, map_db_error};
 use crate::repositories::{company_dunning_settings, dunning_levels};
 use chrono::{Duration, NaiveDate, NaiveDateTime};
+use kesh_core::horloge::jour_suisse;
 use sqlx::MySqlPool;
 
 /// Une facture candidate au rappel (ou en état terminal), avec le contexte de contact.
@@ -128,7 +132,9 @@ pub async fn list_reminder_candidates(
         } else if let Some(nl) = next_level {
             // Niveau N>1 : dernier rappel + délai(niveau suivant).
             match row.last_reminder_at {
-                Some(lr) => today >= lr.date() + Duration::days(delay_of(nl) as i64),
+                Some(lr) => {
+                    today >= jour_suisse(lr.and_utc()) + Duration::days(delay_of(nl) as i64)
+                }
                 None => false,
             }
         } else {

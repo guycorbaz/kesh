@@ -57,7 +57,7 @@ pub async fn export_global(
 
     // Decision §filename — `kesh-export-{slug}-{YYYY-MM-DD}.zip`, la date du
     // jour de Zurich (Story 35-5b, #929 ; L13 la voulait en UTC).
-    let export_date = state.horloge.maintenant().date_naive();
+    let export_date = state.horloge.aujourd_hui();
     let filename = build_global_filename(&company.name, export_date);
 
     // Tracing span — fields populated post-render via `span.record(...)`

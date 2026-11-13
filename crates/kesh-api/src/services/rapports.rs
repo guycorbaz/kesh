@@ -730,7 +730,7 @@ pub async fn balance_agee<U: Usage>(
     usage: U,
 ) -> Result<Rapport<AgedReceivables, U>, AppError> {
     acces.exiger(EXIGENCES_BALANCE_AGEE.pour(&usage))?;
-    let as_of = lecture.horloge().maintenant().date_naive();
+    let as_of = lecture.aujourd_hui();
     let contenu = generate_aged_receivables(lecture.pool(), acces.company_id(), as_of).await?;
     let details = DetailsTrace::BalanceAgee { as_of };
     Ok(Rapport::nouveau(contenu, details, acces, usage))
@@ -778,7 +778,7 @@ async fn resoudre_projet(
             // sont donc exclues — comportement voulu (« borné par les dates du
             // projet »). Une racine sans start_date (cas courant) ⇒ pas de borne
             // basse (`entry_date <= end`), donc tous les enfants sont inclus.
-            let today = lecture.horloge().maintenant().date_naive();
+            let today = lecture.aujourd_hui();
             let end = scope.root.end_date.unwrap_or(today);
             ProjectPeriodMode::Cumulative {
                 start: scope.root.start_date,
@@ -868,7 +868,7 @@ pub async fn synthese_accueil(
     lecture: &Lecture,
 ) -> Result<HomepageSummary, AppError> {
     acces.exiger(EXIGENCE_SYNTHESE_ACCUEIL)?;
-    let today = lecture.horloge().maintenant().date_naive();
+    let today = lecture.aujourd_hui();
     Ok(generate_homepage_summary(lecture.pool(), acces.company_id(), today).await?)
 }
 

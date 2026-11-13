@@ -419,7 +419,7 @@ pub async fn export_audit_log_csv(
 
     // Le nom porte la date du jour de Zurich (Story 35-5b, #929) ; les lignes et
     // les filtres restent en UTC (#669).
-    let aujourd_hui = state.horloge.maintenant().date_naive();
+    let aujourd_hui = state.horloge.aujourd_hui();
     let nom = format!(
         "kesh-journal-audit-{}-{}.csv",
         slugify(&societe.name, "societe"),

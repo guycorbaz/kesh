@@ -261,7 +261,7 @@ pub async fn seed_demo(
         &state.pool,
         &state.config.locale,
         (current_user.user_id, current_user.api_key_id),
-        state.horloge.maintenant().date_naive(),
+        state.horloge.aujourd_hui(),
     )
     .await
     .map_err(|e| match e {

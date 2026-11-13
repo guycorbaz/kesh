@@ -93,6 +93,6 @@ pub async fn refreeze_invoice_pdf(
     Ok(Json(InvoiceResponse::from_parts(
         invoice,
         lines,
-        state.horloge.maintenant().date_naive(),
+        state.horloge.aujourd_hui(),
     )))
 }

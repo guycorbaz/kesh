@@ -159,7 +159,8 @@ type Exemption = (&'static str, usize, &'static str, &'static str);
 /// La liste close, comptée **depuis l'exécution** de la garde (Story 35-5a0).
 /// Entrées permanentes : `kesh-core/src/horloge.rs` (le `.date_naive()` du jour) et, dans
 /// `admin.rs`, l'horodatage du nom de sauvegarde (un instant, non un jour). Le reste est la
-/// dette que la 35-5a, la 35-5b et la 35-5c soldent (verdicts de la fiche 35-5a).
+/// dette que la 35-5a, la 35-5b et la 35-5c soldent (verdicts de la fiche 35-5a) ; depuis la
+/// 35-5b, il n'y a plus que des tests, laissés à la 35-5c.
 const EXEMPTIONS: &[Exemption] = &[
     // --- Production (`src`)
     (
@@ -170,83 +171,18 @@ const EXEMPTIONS: &[Exemption] = &[
     ),
     (
         "kesh-api/src/routes/admin.rs",
-        2,
-        "35-5b + permanent",
-        "nom de la sauvegarde (site 9) ; horodatage `%Y%m%dT%H%M%S%3f`, un instant (permanent)",
-    ),
-    (
-        "kesh-api/src/routes/audit_log.rs",
+        // 2 → 1 : Story 35-5b, le nom daté de la sauvegarde lit l'horloge (site 9).
         1,
-        "35-5b",
-        "nom du CSV du journal d'audit (site 10)",
+        "permanent",
+        "horodatage `%Y%m%dT%H%M%S%3f` du nom de sauvegarde, un instant (#669)",
     ),
-    (
-        "kesh-api/src/routes/bank_accounts.rs",
-        1,
-        "35-5b",
-        "`closedOn` par défaut (site 11)",
-    ),
-    (
-        "kesh-api/src/routes/exports.rs",
-        1,
-        "35-5b",
-        "nom de l'export (site 12)",
-    ),
-    (
-        "kesh-api/src/routes/dunning_reminders.rs",
-        // Story 35-5b, squelette : l'éligibilité reçoit le jour UTC de l'instant de l'horloge.
-        1,
-        "35-5b",
-        "éligibilité aux rappels (site 22, squelette)",
-    ),
-    (
-        "kesh-api/src/routes/invoice_email.rs",
-        // 1 → 2 : Story 35-5b, squelette (jour UTC de l'instant de l'horloge).
-        2,
-        "35-5b",
-        "jours de retard d'un rappel (site 13) ; fiche après envoi (squelette)",
-    ),
-    (
-        "kesh-api/src/routes/invoice_pdf.rs",
-        1,
-        "35-5b",
-        "fiche après regel du PDF (squelette)",
-    ),
-    (
-        "kesh-api/src/routes/invoices.rs",
-        // 3 → 8 : Story 35-5b, squelette (chaque appelant de `from_parts`, le CSV).
-        8,
-        "35-5b",
-        "factures échues, échéancier (sites 14-16, squelette)",
-    ),
-    (
-        "kesh-api/src/routes/onboarding.rs",
-        1,
-        "35-5b",
-        "démonstration (site 26, squelette)",
-    ),
-    (
-        "kesh-api/src/services/factures.rs",
-        2,
-        "35-5b",
-        "liste et échéancier (sites 14-15, 23-25, squelette)",
-    ),
-    (
-        "kesh-api/src/services/postes_ouverts.rs",
-        1,
-        "35-5b",
-        "`asOf` par défaut (site 18)",
-    ),
-    (
-        "kesh-api/src/services/rapports.rs",
-        3,
-        "35-5b",
-        "balance âgée, projet, accueil (sites 19-21)",
-    ),
-    // Story 35-5b, squelette : sortis de la liste, leur date venant d'un paramètre —
-    // `kesh-db` `dunning_eligibility.rs` (site 22) et `invoices.rs` (sites 23-25 ; son
-    // module de tests en date fixe, D9), `kesh-seed` `lib.rs` (site 26) et `pieges.rs`
-    // (sites 27-28).
+    // Story 35-5b (D5) : plus aucune entrée de production hors les deux permanentes. Sortis
+    // de la liste, leur date venant de l'horloge de l'état ou de la `Lecture`, ou d'un
+    // paramètre — `routes/audit_log.rs`, `bank_accounts.rs`, `exports.rs`,
+    // `invoice_email.rs`, `invoices.rs` (sites 10 à 16), `services/postes_ouverts.rs`,
+    // `rapports.rs` (sites 18 à 21) ; `kesh-db` `dunning_eligibility.rs` (site 22) et
+    // `invoices.rs` (sites 23-25 ; son module de tests en date fixe, D9) ; `kesh-seed`
+    // `lib.rs` (site 26) et `pieges.rs` (sites 27-28).
     (
         "kesh-db/src/repositories/journal_entries.rs",
         // Story 35-5a : aucun ne change — les deux `reverse_in_tx` du module reçoivent la

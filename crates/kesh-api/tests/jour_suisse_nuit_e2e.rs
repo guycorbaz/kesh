@@ -1,5 +1,7 @@
 //! Story 35-5a (#1022, #907, #929) — la date du jour est celle de **Zurich**
-//! pour ce qui écrit dans les livres ou les borne, même la nuit.
+//! pour ce qui écrit dans les livres ou les borne, même la nuit ; Story 35-5b
+//! (#929), en fin de fichier — et pour ce que Kesh juge au jour (accueil,
+//! échéances, rappels, noms de fichiers, défauts « aujourd'hui »).
 //!
 //! Chaque test arrête l'horloge de l'état sur un instant de nuit
 //! (`HorlogeFixe`) : `2025-12-31T23:30:00Z` est 00 h 30 le **1er janvier
@@ -928,4 +930,409 @@ async fn ac7_les_services_jugent_au_jour_suisse(pool: MySqlPool) {
         .unwrap_or_else(|| panic!("candidate absente : {b}"))
         .clone();
     assert_eq!(c["cancelBlockedBy"], json!("FISCAL_YEAR_INVALID"), "{b}");
+}
+
+// ============================================================
+// Story 35-5b (#929) — ce que Kesh juge au jour, la nuit
+// ============================================================
+//
+// Mêmes montages : l'horloge du serveur arrêtée sur un instant de nuit. Les
+// instants de mars : `2026-03-10T23:30:00Z` est 00 h 30 le **11 mars** à Zurich
+// (heure d'hiver), `2026-03-10T22:30:00Z` 23 h 30 le **10**. Le squelette de la
+// story (le jour UTC de l'instant) rougit sur chacun des cas de nuit.
+
+/// 00 h 30 le 11 mars 2026 à Zurich ; encore le 10 en UTC.
+const NUIT_DU_11_MARS: &str = "2026-03-10T23:30:00Z";
+/// 23 h 30 le 10 mars 2026 à Zurich : la veille, partout.
+const SOIR_DU_10_MARS: &str = "2026-03-10T22:30:00Z";
+
+impl TestApp {
+    /// Un `GET` brut : statut, `Content-Disposition` (vide s'il manque), corps.
+    async fn telecharger(&self, chemin: &str) -> (u16, String, Vec<u8>) {
+        let resp = self
+            .client
+            .get(format!("{}{chemin}", self.base_url))
+            .bearer_auth(&self.token)
+            .send()
+            .await
+            .unwrap();
+        let status = resp.status().as_u16();
+        let dispo = resp
+            .headers()
+            .get(reqwest::header::CONTENT_DISPOSITION)
+            .map(|v| v.to_str().unwrap().to_string())
+            .unwrap_or_default();
+        (status, dispo, resp.bytes().await.unwrap().to_vec())
+    }
+}
+
+impl Ctx {
+    /// Une facture client du `date`, échéance `echeance`, validée par les
+    /// routes (100.– HT, 8,1 %) : `(id, numéro)`.
+    async fn facture_a_echeance(&self, client: &str, date: &str, echeance: &str) -> (i64, String) {
+        let c = self.contact(client, false).await;
+        let (s, b) = self
+            .app
+            .post(
+                "/api/v1/invoices",
+                json!({
+                    "contactId": c,
+                    "date": date,
+                    "dueDate": echeance,
+                    "lines": [
+                        {"description": "Conseil", "quantity": "1", "unitPrice": "100.00", "vatRate": "8.10"}
+                    ]
+                }),
+            )
+            .await;
+        assert_eq!(s, 201, "facture : {b}");
+        let id = b["id"].as_i64().unwrap();
+        let (s, b) = self
+            .app
+            .post_vide(&format!("/api/v1/invoices/{id}/validate"))
+            .await;
+        assert_eq!(s, 200, "validation : {b}");
+        (id, b["invoiceNumber"].as_str().unwrap().to_string())
+    }
+}
+
+/// AC1 (#929) — à 00 h 30 le 1er janvier, l'accueil lit l'exercice **2026**,
+/// arrêté au 1er janvier (le jour UTC lisait 2025, au 31 décembre).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn ac1_l_accueil_la_nuit_du_nouvel_an(pool: MySqlPool) {
+    let ctx = monter(&pool, NUIT_DU_NOUVEL_AN, Some("Open")).await;
+    let (s, b) = ctx.app.get("/api/v1/reports/homepage-summary").await;
+    assert_eq!(s, 200, "{b}");
+    assert_eq!(
+        (
+            b["state"].clone(),
+            b["asOf"].clone(),
+            b["fiscalYear"]["id"].as_i64()
+        ),
+        (json!("open"), json!("2026-01-01"), ctx.fy_2026),
+        "l'accueil lit le nouvel exercice, au jour suisse : {b}"
+    );
+}
+
+/// Ce que chaque surface dit d'une facture, au jour du serveur.
+#[derive(Debug, PartialEq)]
+struct VueEcheance {
+    /// `isOverdue` de la fiche.
+    fiche: bool,
+    /// `isOverdue` de la liste des factures.
+    liste: bool,
+    /// `isOverdue` de l'élément rendu par le filtre « échues » de
+    /// l'échéancier ; `None` : le filtre ne la rend pas.
+    filtre: Option<bool>,
+    /// `summary.overdueCount` de l'échéancier.
+    echues: i64,
+    /// Le statut de paiement de sa ligne du CSV (`paymentStatus=all`).
+    statut_csv: String,
+    /// Le `Content-Disposition` du CSV.
+    nom_csv: String,
+}
+
+/// La ligne du CSV de l'échéancier (`paymentStatus=all`) qui commence par
+/// `numero`, découpée, et le `Content-Disposition`.
+async fn ligne_csv(app: &TestApp, numero: &str) -> (Vec<String>, String) {
+    let (s, dispo, corps) = app
+        .telecharger("/api/v1/invoices/due-dates/export.csv?paymentStatus=all")
+        .await;
+    assert_eq!(s, 200);
+    let texte = String::from_utf8(corps).unwrap();
+    let ligne = texte
+        .lines()
+        .find(|l| l.split(';').next() == Some(numero))
+        .unwrap_or_else(|| panic!("{numero} absente du CSV : {texte}"));
+    (ligne.split(';').map(str::to_string).collect(), dispo)
+}
+
+async fn vue_echeance(app: &TestApp, id: i64, numero: &str) -> VueEcheance {
+    let (s, f) = app.get(&format!("/api/v1/invoices/{id}")).await;
+    assert_eq!(s, 200, "{f}");
+    let (s, l) = app.get("/api/v1/invoices?limit=100").await;
+    assert_eq!(s, 200, "{l}");
+    let liste = l["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|i| i["id"] == id)
+        .expect("la facture est dans la liste")["isOverdue"]
+        .as_bool()
+        .unwrap();
+    let (s, e) = app
+        .get("/api/v1/invoices/due-dates?paymentStatus=overdue&limit=100")
+        .await;
+    assert_eq!(s, 200, "{e}");
+    let filtre = e["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|i| i["id"] == id)
+        .map(|i| i["isOverdue"].as_bool().unwrap());
+    let (ligne, dispo) = ligne_csv(app, numero).await;
+    VueEcheance {
+        fiche: f["isOverdue"].as_bool().unwrap(),
+        liste,
+        filtre,
+        echues: e["summary"]["overdueCount"].as_i64().unwrap(),
+        statut_csv: ligne[6].clone(),
+        nom_csv: dispo,
+    }
+}
+
+/// AC2 — une facture échue le `2026-03-10` : à 00 h 30 le 11 mars, la fiche,
+/// la liste, le filtre « échues » (élément compris), le résumé et le CSV la
+/// disent échue, et le CSV porte le nom du 11 ; à 23 h 30 le 10, non échue
+/// partout. Une même date sert le filtre, le résumé et la conversion (D1, D2).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn ac2_une_facture_echue_la_nuit(pool: MySqlPool) {
+    let ctx = monter(&pool, NUIT_DU_11_MARS, Some("Open")).await;
+    let (id, numero) = ctx
+        .facture_a_echeance("Client Échéance SA", "2026-03-01", "2026-03-10")
+        .await;
+    let nuit = vue_echeance(&ctx.app, id, &numero).await;
+    let soir = spawn_app(&pool, instant(SOIR_DU_10_MARS)).await;
+    let veille = vue_echeance(&soir, id, &numero).await;
+    assert_eq!(
+        (nuit, veille),
+        (
+            VueEcheance {
+                fiche: true,
+                liste: true,
+                filtre: Some(true),
+                echues: 1,
+                statut_csv: "En retard".into(),
+                nom_csv: "attachment; filename=\"echeancier-2026-03-11.csv\"".into(),
+            },
+            VueEcheance {
+                fiche: false,
+                liste: false,
+                filtre: None,
+                echues: 0,
+                statut_csv: "Impayée".into(),
+                nom_csv: "attachment; filename=\"echeancier-2026-03-10.csv\"".into(),
+            },
+        ),
+        "(00 h 30 le 11 mars, 23 h 30 le 10 mars)"
+    );
+}
+
+/// AC2, paiement (site 16 bis) — une facture payée à `2026-03-10T23:30:00Z`
+/// (00 h 30 le 11 mars à Zurich) porte `11.03.2026` dans la colonne de paiement
+/// du CSV, exporté avec `paymentStatus=all` (le jour UTC écrivait le 10).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn ac2_la_date_de_paiement_du_csv_est_le_jour_suisse(pool: MySqlPool) {
+    let ctx = monter(&pool, NUIT_DU_11_MARS, Some("Open")).await;
+    let (id, numero) = ctx
+        .facture_a_echeance("Client Payé SA", "2026-03-01", "2026-03-31")
+        .await;
+    sqlx::query("UPDATE invoices SET paid_at = '2026-03-10 23:30:00' WHERE id = ?")
+        .bind(id)
+        .execute(&ctx.pool)
+        .await
+        .unwrap();
+    let (ligne, _) = ligne_csv(&ctx.app, &numero).await;
+    assert_eq!(
+        (ligne[6].as_str(), ligne[7].as_str()),
+        ("Payée", "11.03.2026"),
+        "{ligne:?}"
+    );
+}
+
+/// Le corps de l'aperçu du rappel de niveau 1 de `id`.
+async fn apercu_du_rappel(app: &TestApp, id: i64) -> String {
+    let (s, b) = app
+        .get(&format!("/api/v1/invoices/{id}/reminder-preview?level=1"))
+        .await;
+    assert_eq!(s, 200, "{b}");
+    b["body"].as_str().unwrap().to_string()
+}
+
+/// `(niveau courant, niveau suivant)` de la facture `id` dans la liste « à
+/// rappeler » ; `None` : elle n'y est pas.
+async fn a_rappeler(app: &TestApp, id: i64) -> Option<(i64, Option<i64>)> {
+    let (s, b) = app.get("/api/v1/dunning/reminders").await;
+    assert_eq!(s, 200, "{b}");
+    b["groups"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .flat_map(|g| g["invoices"].as_array().unwrap().iter())
+        .find(|i| i["invoiceId"] == id)
+        .map(|i| (i["currentLevel"].as_i64().unwrap(), i["nextLevel"].as_i64()))
+}
+
+/// AC3 — les rappels comptent en jours suisses.
+///
+/// - `days_overdue` d'une facture échue le `2026-03-01` vaut **9** à 23 h 30 le
+///   10 mars et **10** à 00 h 30 le 11 (le jour UTC disait 9 aux deux).
+/// - Dernier rappel envoyé à `2026-03-10T23:30:00Z` (le 11 à Zurich), délai du
+///   niveau 2 ramené à 7 jours : à 23 h 30 le 17 mars, la facture n'est **pas**
+///   à rappeler (11 + 7 = le 18) ; à 00 h 30 le 18, elle l'est, au niveau 2. Le
+///   jour UTC la rappelait dès le 17 (10 + 7). Les deux jours sortent de
+///   `jour_suisse` (D4). Pas d'envoi automatique : l'effet est la liste.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn ac3_les_rappels_comptent_en_jours_suisses(pool: MySqlPool) {
+    let ctx = monter(&pool, SOIR_DU_10_MARS, Some("Open")).await;
+    let (id, _) = ctx
+        .facture_a_echeance("Client Rappel SA", "2026-02-15", "2026-03-01")
+        .await;
+    // Le premier accès sème les niveaux de rappel de la société.
+    a_rappeler(&ctx.app, id).await;
+    let nuit = spawn_app(&pool, instant(NUIT_DU_11_MARS)).await;
+    let (soir_10, nuit_11) = (
+        apercu_du_rappel(&ctx.app, id).await,
+        apercu_du_rappel(&nuit, id).await,
+    );
+    assert!(
+        soir_10.contains("(9 jours de retard)") && nuit_11.contains("(10 jours de retard)"),
+        "jours de retard : 9 à 23 h 30 le 10 mars, 10 à 00 h 30 le 11 — {soir_10:?} / {nuit_11:?}"
+    );
+
+    sqlx::query(
+        "UPDATE dunning_levels SET delay_days = 7 WHERE company_id = ? AND level_number = 2",
+    )
+    .bind(ctx.s.company_id)
+    .execute(&pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        "INSERT INTO invoice_reminders (company_id, invoice_id, level_number, fee_amount, \
+         sent_at, channel, subject, body) \
+         VALUES (?, ?, 1, 0.00, '2026-03-10 23:30:00', 'manual', 'Rappel', 'Rappel')",
+    )
+    .bind(ctx.s.company_id)
+    .bind(id)
+    .execute(&pool)
+    .await
+    .unwrap();
+    let le_17 = spawn_app(&pool, instant("2026-03-17T22:30:00Z")).await;
+    let le_18 = spawn_app(&pool, instant("2026-03-17T23:30:00Z")).await;
+    assert_eq!(
+        (a_rappeler(&le_17, id).await, a_rappeler(&le_18, id).await),
+        (None, Some((1, Some(2)))),
+        "à rappeler : pas le 17 à 23 h 30, le 18 à 00 h 30 (rappel du 11 + 7 jours)"
+    );
+}
+
+/// AC4 — à 00 h 30 le 1er janvier, les noms des fichiers exportés portent le
+/// `2026-01-01` : sauvegarde, export comptable complet, journal d'audit.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn ac4_les_noms_de_fichiers_la_nuit_du_nouvel_an(pool: MySqlPool) {
+    let ctx = monter(&pool, NUIT_DU_NOUVEL_AN, Some("Open")).await;
+    let mut noms = Vec::new();
+    for chemin in [
+        "/api/v1/admin/full-export",
+        "/api/v1/exports/global.zip",
+        "/api/v1/audit-log/export.csv",
+    ] {
+        let (s, dispo, _) = ctx.app.telecharger(chemin).await;
+        assert_eq!(s, 200, "{chemin}");
+        noms.push(dispo);
+    }
+    assert!(
+        noms[0].contains("filename=\"kesh-installation-2026-01-01.keshbackup\"")
+            && noms[1].contains("-2026-01-01.zip\"")
+            && noms[2].contains("-2026-01-01.csv\""),
+        "{noms:?}"
+    );
+}
+
+/// AC4 — à 00 h 30 le 1er janvier, les défauts « aujourd'hui » valent le
+/// `2026-01-01` : la date de clôture d'un compte bancaire sans `closedOn`,
+/// l'`asOf` des postes ouverts et de la balance âgée ; le rapport de projet
+/// cumulé d'un projet sans date de fin inclut l'écriture du 1er janvier (le
+/// jour UTC l'arrêtait au 31 décembre).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn ac4_les_defauts_du_jour_la_nuit_du_nouvel_an(pool: MySqlPool) {
+    let ctx = monter(&pool, NUIT_DU_NOUVEL_AN, Some("Open")).await;
+
+    ctx.compte_bancaire(IBAN_A, true, ctx.ledger).await;
+    let second = ctx.compte_bancaire(IBAN_B, false, ctx.ledger).await;
+    let version: i32 = sqlx::query_scalar("SELECT version FROM bank_accounts WHERE id = ?")
+        .bind(second)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    let (s, b) = ctx
+        .app
+        .post(
+            &format!("/api/v1/bank-accounts/{second}/close"),
+            json!({ "version": version }),
+        )
+        .await;
+    assert_eq!(s, 200, "{b}");
+    let cloture = b["closedOn"].clone();
+
+    let (s, postes) = ctx
+        .app
+        .get(&format!(
+            "/api/v1/accounts/{}/open-items",
+            ctx.s.accounts["1100"]
+        ))
+        .await;
+    assert_eq!(s, 200, "{postes}");
+    let (s, agee) = ctx.app.get("/api/v1/reports/aged-receivables").await;
+    assert_eq!(s, 200, "{agee}");
+
+    let projet = sqlx::query(
+        "INSERT INTO projects (company_id, code, name) VALUES (?, 'NUIT', 'Projet de nuit')",
+    )
+    .bind(ctx.s.company_id)
+    .execute(&pool)
+    .await
+    .unwrap()
+    .last_insert_id() as i64;
+    journal_entries::create(
+        &pool,
+        ctx.fy_2026.unwrap(),
+        ctx.s.admin_user_id,
+        NewJournalEntry {
+            company_id: ctx.s.company_id,
+            entry_date: jour(2026, 1, 1),
+            journal: Journal::OD,
+            description: "Charge du 1er janvier".into(),
+            project_id: Some(projet),
+            lines: vec![
+                NewJournalEntryLine {
+                    account_id: ctx.s.accounts["4000"],
+                    debit: dec!(100.00),
+                    credit: dec!(0),
+                    project_id: Some(projet),
+                },
+                NewJournalEntryLine {
+                    account_id: ctx.s.accounts["1000"],
+                    debit: dec!(0),
+                    credit: dec!(100.00),
+                    project_id: None,
+                },
+            ],
+        },
+    )
+    .await
+    .expect("écriture du 1er janvier");
+    let (s, rapport) = ctx
+        .app
+        .get(&format!(
+            "/api/v1/reports/project-expenses?projectId={projet}&mode=cumulative"
+        ))
+        .await;
+    assert_eq!(s, 200, "{rapport}");
+    let total: rust_decimal::Decimal = rapport["grandTotal"]
+        .as_str()
+        .unwrap_or_else(|| panic!("{rapport}"))
+        .parse()
+        .unwrap();
+
+    assert_eq!(
+        (cloture, postes["asOf"].clone(), agee["asOf"].clone(), total),
+        (
+            json!("2026-01-01"),
+            json!("2026-01-01"),
+            json!("2026-01-01"),
+            dec!(100)
+        ),
+        "(closedOn, asOf des postes ouverts, asOf de la balance âgée, total du projet cumulé)"
+    );
 }

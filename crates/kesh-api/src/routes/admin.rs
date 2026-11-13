@@ -98,7 +98,7 @@ pub async fn full_export(
     // garde ses horodatages en UTC (#669).
     let filename = format!(
         "kesh-installation-{}.keshbackup",
-        state.horloge.maintenant().date_naive().format("%Y-%m-%d")
+        state.horloge.aujourd_hui().format("%Y-%m-%d")
     );
     let content_disposition = crate::util::build_content_disposition(&filename, "fr-CH")?;
     let body = corps_de_l_archive(archive)?;

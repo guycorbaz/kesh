@@ -656,12 +656,9 @@ pub async fn get_invoice(
         id,
     )
     .await?;
-    let response = InvoiceResponse::from_parts(
-        fiche.facture,
-        fiche.lignes,
-        state.horloge.maintenant().date_naive(),
-    )
-    .with_settlement(fiche.montant_regle, fiche.reste_du);
+    // Story 35-5b : « échue » au jour que le service a lu (D1).
+    let response = InvoiceResponse::from_parts(fiche.facture, fiche.lignes, fiche.aujourd_hui)
+        .with_settlement(fiche.montant_regle, fiche.reste_du);
     Ok(Json(match fiche.arrondi_5_centimes {
         Some(arrondi) => response.with_rounding_preview(arrondi),
         None => response,
@@ -751,11 +748,7 @@ pub async fn create_invoice(
         Json(
             with_draft_rounding_preview(
                 &state,
-                InvoiceResponse::from_parts(
-                    invoice,
-                    persisted_lines,
-                    state.horloge.maintenant().date_naive(),
-                ),
+                InvoiceResponse::from_parts(invoice, persisted_lines, state.horloge.aujourd_hui()),
             )
             .await?,
         ),
@@ -819,11 +812,7 @@ pub async fn update_invoice(
     Ok(Json(
         with_draft_rounding_preview(
             &state,
-            InvoiceResponse::from_parts(
-                invoice,
-                persisted_lines,
-                state.horloge.maintenant().date_naive(),
-            ),
+            InvoiceResponse::from_parts(invoice, persisted_lines, state.horloge.aujourd_hui()),
         )
         .await?,
     ))
@@ -862,7 +851,7 @@ pub async fn validate_invoice_handler(
     Ok(Json(InvoiceResponse::from_parts(
         validated.invoice,
         validated.lines,
-        state.horloge.maintenant().date_naive(),
+        state.horloge.aujourd_hui(),
     )))
 }
 
@@ -919,7 +908,7 @@ pub async fn unvalidate_invoice_handler(
     Ok(Json(
         with_draft_rounding_preview(
             &state,
-            InvoiceResponse::from_parts(invoice, lines, state.horloge.maintenant().date_naive()),
+            InvoiceResponse::from_parts(invoice, lines, state.horloge.aujourd_hui()),
         )
         .await?,
     ))
@@ -1212,7 +1201,7 @@ pub async fn settle_invoice_handler(
         invoice: InvoiceResponse::from_parts(
             outcome.invoice,
             outcome.lines,
-            state.horloge.maintenant().date_naive(),
+            state.horloge.aujourd_hui(),
         )
         .with_settlement(outcome.amount_settled, outcome.amount_due_after),
         journal_entry_id: outcome.journal_entry_id,
@@ -1288,7 +1277,7 @@ pub async fn write_off_invoice_handler(
         invoice: InvoiceResponse::from_parts(
             outcome.invoice,
             outcome.lines,
-            state.horloge.maintenant().date_naive(),
+            state.horloge.aujourd_hui(),
         )
         .with_settlement(outcome.amount_settled, outcome.amount_due),
         journal_entry_id: outcome.journal_entry_id,
@@ -1477,7 +1466,7 @@ pub async fn export_due_dates_csv_handler(
     let query = factures::requete_echeances(demande_echeances(params))?;
     // Story 35-5b (#929) — la date du jour de Zurich, lue UNE fois : le filtre
     // « échues », le statut de chaque ligne et le nom du fichier la partagent.
-    let aujourd_hui = state.horloge.maintenant().date_naive();
+    let aujourd_hui = state.horloge.aujourd_hui();
 
     // +1 pour détecter le dépassement de la limite dure.
     // `truncated` (P3 review pass 3 A) capte le cas où le clamp repo 50_000
@@ -1573,8 +1562,10 @@ pub async fn export_due_dates_csv_handler(
                 // vient d'un fichier FTL contrôlé, mais une compromission
                 // (clé locale altérée) ne doit pas ouvrir un vecteur d'injection.
                 csv_sanitize(payment_status),
+                // Story 35-5b (D4) : `paid_at` est un instant UTC ; la colonne
+                // porte son jour à Zurich.
                 inv.paid_at
-                    .map(|d| format_date(&d.date()))
+                    .map(|d| format_date(&kesh_core::horloge::jour_suisse(d.and_utc())))
                     .unwrap_or_default(),
             ])
             .map_err(|e| AppError::Internal(format!("csv row: {e}")))?;
@@ -1608,6 +1599,48 @@ pub async fn export_due_dates_csv_handler(
 mod tests {
     use super::*;
     use rust_decimal_macros::dec;
+
+    /// Story 35-5b (D1, M7) — la réponse de l'échéancier juge « échue » au jour
+    /// de l'[`factures::Echeancier`] (`aujourd_hui`), non à l'heure réelle : un
+    /// élément échu le `2026-03-10` est échu dans un échéancier du `2026-03-11`
+    /// et ne l'est pas dans un échéancier du `2026-03-10`, quel que soit le jour
+    /// où le test tourne.
+    #[test]
+    fn la_reponse_de_l_echeancier_juge_au_jour_de_l_echeancier() {
+        let d = |m, j| NaiveDate::from_ymd_opt(2026, m, j).unwrap();
+        let echeancier = |aujourd_hui| factures::Echeancier {
+            page: factures::InvoiceListResult {
+                items: vec![InvoiceListItem {
+                    id: 1,
+                    company_id: 1,
+                    contact_id: 1,
+                    contact_name: "Client".into(),
+                    invoice_number: Some("F-1".into()),
+                    status: "validated".into(),
+                    date: d(3, 1),
+                    due_date: Some(d(3, 10)),
+                    payment_terms: None,
+                    total_amount: dec!(100),
+                    total_ttc: dec!(100),
+                    amount_settled: dec!(0),
+                    amount_due: dec!(100),
+                    paid_at: None,
+                    dunning_paused_at: None,
+                    dunning_paused_note: None,
+                    version: 1,
+                    created_at: d(3, 1).and_hms_opt(8, 0, 0).unwrap(),
+                    updated_at: d(3, 1).and_hms_opt(8, 0, 0).unwrap(),
+                }],
+                total: 1,
+                offset: 0,
+                limit: 20,
+            },
+            resume: factures::DueDatesSummary::default(),
+            aujourd_hui,
+        };
+        let echue = |aujourd_hui| reponse_echeancier(echeancier(aujourd_hui)).items[0].is_overdue;
+        assert_eq!((echue(d(3, 11)), echue(d(3, 10))), (true, false));
+    }
 
     fn line(desc: &str, qty: Decimal, price: Decimal, vat: Decimal) -> CreateInvoiceLineRequest {
         CreateInvoiceLineRequest {

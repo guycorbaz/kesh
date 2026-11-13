@@ -379,7 +379,7 @@ async fn render_reminder(
     )
     .await?;
     let total_due = amounts.amount_due + amounts.fees;
-    let today = state.horloge.maintenant().date_naive();
+    let today = state.horloge.aujourd_hui();
     let days = days_overdue(invoice.due_date, today);
 
     let template = email_templates::get_effective(
@@ -905,7 +905,7 @@ pub async fn send_invoice_email(
         Json(InvoiceResponse::from_parts(
             updated,
             lines,
-            state.horloge.maintenant().date_naive(),
+            state.horloge.aujourd_hui(),
         )),
     ))
 }

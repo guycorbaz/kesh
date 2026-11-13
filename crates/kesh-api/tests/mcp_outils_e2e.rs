@@ -1750,3 +1750,130 @@ async fn les_cinq_rapports_disent_le_canal_et_la_cle(pool: MySqlPool) {
     }
     assert!(fautes.is_empty(), "AC-7 :\n{}", fautes.join("\n"));
 }
+
+// ---------------------------------------------------------------------------
+// Story 35-5b (AC5, #929) — le serveur MCP juge au jour de Zurich
+// ---------------------------------------------------------------------------
+
+fn instant(s: &str) -> chrono::DateTime<chrono::Utc> {
+    chrono::DateTime::parse_from_rfc3339(s)
+        .unwrap()
+        .with_timezone(&chrono::Utc)
+}
+
+fn date(a: i32, m: u32, j: u32) -> chrono::NaiveDate {
+    chrono::NaiveDate::from_ymd_opt(a, m, j).unwrap()
+}
+
+/// Le JSON d'une réponse d'outil : après l'en-tête et la ligne vide.
+fn donnees_de(r: &Value) -> Value {
+    let t = texte(r);
+    let (_, json_du_texte) = t.split_once("\n\n").expect("en-tête, ligne vide, JSON");
+    serde_json::from_str(json_du_texte).expect("le JSON du texte")
+}
+
+/// Une société complète **sans pièges** (D8 : `semer` pose une facture échue au
+/// jour du montage, qui fausserait le résumé), servie, son exercice de l'année
+/// d'`aujourd_hui`, et une clé de lecture : `(société, administrateur, jeton)`.
+async fn societe_servie(
+    pool: &MySqlPool,
+    nom: &str,
+    aujourd_hui: chrono::NaiveDate,
+) -> (i64, i64, String) {
+    let c = kesh_seed::pieges::societe_complete(pool, nom, aujourd_hui)
+        .await
+        .expect("société");
+    let u = common::mcp::administrateur(pool, c, &format!("admin-{c}")).await;
+    common::mcp::activer(pool, c).await;
+    let (_, jeton) = common::mcp::cle(pool, c, u, &LECTURE, SendValidation::Exempt).await;
+    (c, u, jeton)
+}
+
+/// AC5 — banc à `2025-12-31T23:30:00Z` (00 h 30 le 1er janvier à Zurich) :
+/// `kesh_balance_agee` est arrêtée au `2026-01-01`, et `kesh_postes_ouverts`
+/// sans `asOf` lit au `2026-01-01` (le jour UTC rendait le 31 décembre).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn ac5_le_mcp_lit_le_jour_suisse_la_nuit_du_nouvel_an(pool: MySqlPool) {
+    let (c, _, jeton) = societe_servie(&pool, "Société nuit 355b", date(2026, 1, 1)).await;
+    let debiteurs: i64 =
+        sqlx::query_scalar("SELECT id FROM accounts WHERE company_id = ? AND number = '1100'")
+            .bind(c)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    let banc = banc_avec_horloge(&pool, instant("2025-12-31T23:30:00Z"));
+    let agee = donnees_de(&banc.appeler(&jeton, "kesh_balance_agee", json!({})).await);
+    let postes = donnees_de(
+        &banc
+            .appeler(
+                &jeton,
+                "kesh_postes_ouverts",
+                json!({ "accountId": debiteurs }),
+            )
+            .await,
+    );
+    assert_eq!(
+        (agee["au"].clone(), postes["au"].clone()),
+        (json!("2026-01-01"), json!("2026-01-01")),
+        "(balance âgée, postes ouverts) : {agee} — {postes}"
+    );
+}
+
+/// AC5 — une facture échue le `2026-03-10` : sur un banc à
+/// `2026-03-10T23:30:00Z` (00 h 30 le 11 à Zurich), `kesh_echeancier` filtré
+/// sur les échues la rend et compte `echuesNombre = 1` ; à `22:30:00Z` (23 h 30
+/// le 10), aucune, `echuesNombre = 0`.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn ac5_l_echeancier_du_mcp_juge_au_jour_suisse(pool: MySqlPool) {
+    let (c, u, jeton) = societe_servie(&pool, "Société échéances 355b", date(2026, 3, 10)).await;
+    let client = contacts::create(&pool, u, contact(c, "Client 355b".into(), true))
+        .await
+        .unwrap();
+    let (f, _) = invoices::create(
+        &pool,
+        u,
+        NewInvoice {
+            company_id: c,
+            contact_id: client.id,
+            date: date(2026, 3, 1),
+            due_date: Some(date(2026, 3, 10)),
+            payment_terms: None,
+            project_id: None,
+            lines: vec![NewInvoiceLine {
+                description: "Prestation".into(),
+                quantity: Decimal::ONE,
+                unit_price: Decimal::new(10_000, 2),
+                vat_rate: Decimal::ZERO,
+                revenue_account_id: None,
+            }],
+        },
+    )
+    .await
+    .unwrap();
+    invoices::validate_invoice(&pool, c, f.id, u).await.unwrap();
+
+    let mut vues = Vec::new();
+    for maintenant in ["2026-03-10T23:30:00Z", "2026-03-10T22:30:00Z"] {
+        let e = donnees_de(
+            &banc_avec_horloge(&pool, instant(maintenant))
+                .appeler(
+                    &jeton,
+                    "kesh_echeancier",
+                    json!({ "paymentStatus": "overdue" }),
+                )
+                .await,
+        );
+        let ids: Vec<i64> = e["factures"]
+            .as_array()
+            .unwrap_or_else(|| panic!("{e}"))
+            .iter()
+            .map(|x| x["id"].as_i64().unwrap())
+            .collect();
+        vues.push((ids, e["resume"]["echuesNombre"].clone()));
+    }
+    assert_eq!(
+        vues,
+        vec![(vec![f.id], json!(1)), (vec![], json!(0))],
+        "(00 h 30 le 11 mars, 23 h 30 le 10 mars)"
+    );
+}
