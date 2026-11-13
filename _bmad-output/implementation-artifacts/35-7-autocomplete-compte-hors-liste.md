@@ -322,3 +322,51 @@ Journaux dans `/home/gcorbaz/devel/kesh-gate-logs/e357/` : `rouges.log` (Vitest 
     (`CounterpartyModalHost.test.svelte`, registre) par l'outil Write. Rien d'autre.
   - Constat hors périmètre, déjà tracé : l'indicateur d'équilibre d'*Éclater* n'affiche que « Balance » (visible sur les
     captures) — #993.
+  - *(Annoté le 2026-11-13, revue P1, A1 : les gates frontend de cette entrée — `check`, `lint-i18n-ownership`,
+    `test:unit`, `build` — ont tourné au commit `635fc5f2`, avant `926854f7`, qui ne touche qu'une spec E2E.)*
+- 2026-11-13 — **Remédiation de la revue de code P1** (Opus 5.5 ; rapports `kesh-gate-logs/e357-review-p1-{B,E,A}.md`).
+  Findings traités sur décision de l'orchestrateur : E1 (MEDIUM), A5, A3, A4, A1 et A2 (LOW) ; les autres LOW sont
+  ouverts en issues par l'orchestrateur, non touchés ici. Commits : `0a64b0f8` (code et test), puis ce commit (fiche).
+  - **E1 — inventaire des chemins qui soumettent pendant que le focus reste dans un champ de compte strict.** Commandes :
+    `/usr/bin/grep -nE "<form|onsubmit|svelte:window|svelte:document|onkeydown|ctrlKey|metaKey|type=\"submit\"|key === 'Enter'"`
+    sur les quatre fichiers des cinq consommateurs stricts — seul `JournalEntryForm.svelte` répond (`:285` `Ctrl+S`,
+    `:293` Entrée du dernier crédit, `:300` `<svelte:window onkeydown>`, `:422`) ; `ManualMatchModal`,
+    `TransactionSplitModal`, `VatPurchaseAssistant` : aucune ligne. `git grep -nE "svelte:window|svelte:document|<form"`
+    sur `journal-entries`, `reconciliation` et `components/ui/dialog` : le seul `<form>` est `RuleFormModal.svelte:120`,
+    sans `AccountAutocomplete`. `git grep -n "kesh:save"` : le `Ctrl+S` de `routes/(app)/+layout.svelte:34` émet un
+    événement que **personne n'écoute**. Bilan :
+    1. **`Ctrl+S` de `JournalEntryForm`** — atteint, pour les champs des lignes et pour les deux champs de
+       `VatPurchaseAssistant` (rendu dans le formulaire ; ses comptes ne partent pas par `Ctrl+S` mais par *Appliquer*,
+       le brouillon y restait seulement affiché). **Corrigé** : `(document.activeElement as HTMLElement | null)?.blur()`
+       avant `handleSubmit` (`JournalEntryForm.svelte:285-291`).
+    2. Entrée dans un champ de compte : aucun `<form>` autour d'un consommateur strict, et l'Entrée du composant ne fait
+       que choisir l'option surlignée — rien ne soumet.
+    3. Bouton activé au clavier ou à la souris : le focus quitte le champ d'abord, le `blur` passe — chemin déjà fermé.
+    4. `Ctrl+S` du layout : sans écouteur, rien ne part.
+    Aucun chemin laissé sans correction.
+  - **Test E1** (`JournalEntryForm.edit.test.ts`, « Ctrl+S sans quitter le champ ») : rouge avant correction
+    (`kesh-gate-logs/e357/rem-p1-rouge.log` : `expected '2000' to be '1000 — Compte 1000'`), vert après
+    (`rem-p1-vert.log`, `journal-entries/` 157 passés). **Mutation M8** (le `blur` retiré) : **tuée** par ce test
+    (`mut/M8.log`, même script, arbre propre après).
+  - **A5** : le commentaire de `handleBlur` borne l'invariant « une fois le champ quitté » et nomme le `Ctrl+S`.
+  - **A3** : `account-options.ts:37` « des quatre écrans de saisie d'écriture » → « sept emplacements, dans cinq
+    écrans ». Regrep de `quatre` et `4` (mot entier) sur les fichiers de D2 et `account-options.ts` : ne restent que
+    des occurrences légitimes (AC-4, une étape « 4. », un `colspan` de 4).
+  - **A4 — captures refaites** (`kesh-gate-logs/e357/captures/`, thème clair, base jetable, spec jetable
+    `frontend/.output/e357/capture-e357.spec.ts`) : le champ **vidé** avant de quitter, puis quitté, pour
+    `e357-ecriture-manuelle-champ-vide-{avant-quitter,quitte}.png` et `e357-eclater-champ-vide-{avant-quitter,quitte}.png` ;
+    chemin E1 : `e357-e1-ctrl-s-{avant,apres}.png` (champ vidé, `Ctrl+S`, le compte réaffiché).
+  - **A2 — écart non déclaré à l'entrée précédente** : le script de mutations `kesh-gate-logs/e357/mut/mutations-e357.py`
+    écrit les sources (`write_text`) puis les restaure par `git checkout --` et `touch` ; joué sur du commité, arbre propre
+    après chaque campagne (`resume.log`). Patron permis par les consignes pour les mutations, mais à compter parmi les
+    écarts à la consigne Edit.
+  - **Gates au dernier commit de code `0a64b0f8`** : `npm run check` 0 erreur, 29 avertissements (inchangés, aucun dans
+    les fichiers de la story) ; `lint-i18n-ownership` PASS ; Vitest complet **3202 passés, 232 fichiers** ; `build` vert
+    (`rem-p1-front-*.log`). **E2E complet** (`e2e-r6-rem-p1.log`, pilote `e2e-r6-rem-p1.driver.log`, qui journalise
+    « kesh_e2e_e357 recréée » avant le lancement du backend) : **404 passés, 7 échecs, 18 ignorés** — les sept de la
+    KF-029 (#97) : `mode-expert:26`, `:41`, `onboarding-path-b:65`, `:92`, `onboarding:57`, `:77`, `:150`. Le dix-huitième
+    ignoré, comparé au run `r5` : `bank-manual-statement.spec.ts:225`, qui se saute sans `KESH_E2E_CAPTURES_DIR` (posé au
+    run `r5`, pas ici). *(Pour le run `r5` de l'entrée précédente, la base avait été recréée de la même façon : le pilote
+    `e2e-35-7-complet.sh` imprime « kesh_e2e_e357 recréée », lisible dans la sortie de tâche de ce run, non copiée au
+    journal.)* **Backend** : aucun fichier Rust touché (`git diff 926854f7..0a64b0f8 --stat` : huit fichiers, quatre
+    sous `frontend/src` et quatre sous `_bmad-output/`, dont le prompt de revue P1), pas de gate backend.
