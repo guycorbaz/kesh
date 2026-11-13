@@ -456,16 +456,18 @@ garde rougit sur le compte) ; M7 la contre-passation de l'annulation relit l'hor
 
 ## Tâches
 
-- [ ] Étape 0 : partir de la 35-5a0 fusionnée ; recompter les sites et les tests ; confirmer les deux tableaux de verdict,
+- [x] Étape 0 : partir de la 35-5a0 fusionnée ; recompter les sites et les tests ; confirmer les deux tableaux de verdict,
       ligne lue citée ; `cargo tree` pour `chrono-tz` ; Change Log.
-- [ ] Squelette `jour_suisse`, tests, rouges consignés.
-- [ ] `kesh-core` : `jour_suisse`, bascule de `Horloge::aujourd_hui()`. Écran du verrou (D7). Garde ramenée aux comptes réels.
-- [ ] Retourner le test d'AC2 de la 35-5a0 : à `HorlogeFixe(2025-12-31T23:30:00Z)`, contre-passation au `2026-01-01`, dans
+- [x] Squelette `jour_suisse`, tests, rouges consignés.
+- [x] `kesh-core` : `jour_suisse`, bascule de `Horloge::aujourd_hui()`. Écran du verrou (D7). Garde ramenée aux comptes réels.
+- [x] Retourner le test d'AC2 de la 35-5a0 : à `HorlogeFixe(2025-12-31T23:30:00Z)`, contre-passation au `2026-01-01`, dans
       l'exercice 2020-2030 de son montage (exception nommée à AC10).
-- [ ] Tests convertis (AC9), inventaire des `HorlogeFixe(…Utc::now…)` (D5), et les preuves de nuit ; commentaires, docs, manuel
+- [x] Tests convertis (AC9), inventaire des `HorlogeFixe(…Utc::now…)` (D5), et les preuves de nuit ; commentaires, docs, manuel
       (`:995`, `:2458`), CHANGELOG.
 - [ ] Gates : `test-fast.sh --ci` **complet à chaque commit de code** (exception `kesh-db`), `scripts/gate-ci.sh` au dernier
-      commit de code, frontend complet, E2E complet au dernier commit de code.
+      commit de code, frontend complet, E2E complet au dernier commit de code. *(2026-11-13 : `test-fast` et frontend au
+      passage en `review` et à la remédiation P1 ; `gate-ci` au passage en `review` ; **pas** de gate complet à chaque commit
+      (consignes de l'Epic 35 du 2026-11-13, qui remplacent cette ligne) ; **E2E et `gate-ci` final : à la clôture**.)*
 
 ## Dev Notes
 
@@ -560,6 +562,11 @@ Journaux sous `/home/gcorbaz/devel/kesh-gate-logs/e355a/` : `rouges.log` (et `ro
   `ada7e1d61` conversions d'AC9 (huit fichiers, garde) ; `c5972ca13` passage d'année de `period_lock_e2e` ; puis le commit de
   compte rendu (fiche, PDF, `sprint-status.yaml`, prompt de revue). **Aucune migration** (AC12 :
   `git diff --stat eabafed5f HEAD -- crates/kesh-db/migrations` vide).
+  *(Annoté le 2026-11-13, remédiation de la revue P1, A7 : « squelette (vert) » veut dire `cargo test -p kesh-core horloge`
+  (7 passés) et `clippy -p kesh-core`, lancés à la main **sans journal** ; aucun gate complet n'a tourné sur `076d63ed3` ni sur
+  `ada7e1d61` (le passage `nuit-N3.log` s'est arrêté à la compilation) ; les tests ciblés après la bascule, verts après
+  l'alignement du refus d'AC3, n'ont pas de journal propre — ils sont couverts par `nuit-C0.log` et `gate-test-fast.log` à
+  `c5972ca13`. La remédiation P1 ajoute le commit de code `527f57839`.)*
 - Choix : `e35-choix-autonomes-e355a.md`, C-e355a-1 à -7.
 - Voir le Change Log (entrée du développement) pour l'étape 0, les rouges, l'inventaire par exécution, les mutations et les gates.
 
@@ -769,3 +776,61 @@ partie). Aucune clé i18n, aucune spec E2E (C-e355a-6).
     lancé**, à la clôture (avec `gate-ci`, à la demande de l'orchestrateur). Hors story : `mcp_transport_e2e::
     abandon_au_delai_le_permis_reste_pris` rougit **isolé** 3 fois sur 3 (`mcp-isole-{1,2,3}.log`) et passe dans la suite
     complète ; la story ne touche ni le test ni `src/mcp` (diff vide) — issue demandée. Statut : `review`.
+- 2026-11-13 — **Revue de code P1** (Opus, trois lentilles sur `eabafed5f..c5972ca13` ; `kesh-gate-logs/e355a-review-p1-{B,E,A}.md` :
+  B 1 MEDIUM, 2 LOW ; E 1 MEDIUM, 5 LOW ; A 1 MEDIUM, 6 LOW ; **2 MEDIUM distincts** — B1 = A1, E1 —, vérifiés au code par
+  l'orchestrateur) **remédiée** par l'agent de développement, un seul commit de code `527f57839`. Déjà tracés hors story :
+  #1125 (tests à dates fixes de 2026), #1126 (test MCP qui rougit isolé).
+  - **E1 (MEDIUM)** — l'écran du verrou prenait la veille du jour **du poste** (`settings/+page.svelte:567-570`) quand le serveur
+    juge au jour de Zurich (`companies.rs:1015`, `if through >= aujourd_hui`) : sur un poste à l'est de Zurich, la borne
+    proposée était refusée. Cherché d'abord un helper existant (`/usr/bin/grep -rn "Europe/Zurich" src` hors tests : seul
+    `reports.api.ts:203`, privé, qui formate un horodatage) ; écrit `todayInZurich` (`Intl.DateTimeFormat`, `timeZone:
+    'Europe/Zurich'`) et `dayBefore` (calendrier, sans fuseau) dans `local-date.ts` ; `maxLockDate = dayBefore(todayInZurich())`.
+    **Rouges d'abord** (`p1-rouges-vitest.log`, `c5972ca13` + tests neufs) : 2 sur 65 — poste à New York (`2026-03-10T23:30:00Z`,
+    attendu `2026-03-10`, reçu `2026-03-09`) et à Athènes (`2026-03-10T22:30:00Z`, attendu `2026-03-09`, reçu `2026-03-10`, borne
+    que le serveur aurait refusée). Après : 96/96 sur les trois fichiers ciblés (`p1-verts-vitest-2.log`). Tests ajoutés aussi
+    pour `todayInZurich` (quatre instants × quatre fuseaux de poste) et `dayBefore` (six dates, dont le 29 février). Mutation
+    **M10** (le jour du poste remis, par l'import `todayLocal as todayInZurich`) : **tuée**, 2 rouges (`mut/M10.log`). Manuel
+    `:711-713` et note `sec:date-du-jour`, CHANGELOG (#907) : « la veille du jour de Zurich, quel que soit le fuseau de votre poste ».
+  - **B1 = A1 (MEDIUM)** — option prudente de l'orchestrateur : **le seed n'est pas converti ici** (site 26, 35-5b). Les textes
+    deviennent vrais : manuel « le premier exercice que l'assistant crée pour votre société », CHANGELOG idem (titre et corps
+    de #929), et l'exercice de la société de démonstration nommé parmi ce qui reste au jour UTC.
+  - **LOW traités** : **B2/A2/E5** — la liste de ce qui reste en UTC (manuel, CHANGELOG) dit « notamment » et nomme la
+    démonstration, la date de clôture d'un compte bancaire quand elle n'est pas donnée (`bank_accounts.rs:1802`), la balance
+    âgée (`rapports.rs:732`) et la fin d'un rapport de projet cumulé (`rapports.rs:780`), sans rien convertir. **B3/E6** —
+    `rapports.rs:862-865` dit le jour UTC (`Utc::now()`, 35-5b) « non celui de l'horloge de l'état » ; `kesh-db/tests/support/jour.rs:6`
+    « le jour de Zurich depuis la Story 35-5a » (`git grep -nE "UTC aujourd"` → vide ensuite). **E2** — AC1 gagne le premier
+    minuit d'heure d'hiver à la seconde (`2026-10-25T22:59:59Z` → 25, `23:00:00Z` → 26) ; la seconde du changement d'heure
+    (01:00:00Z) est dite sans effet sur le jour (commentaire). **E3** — `ac4_verrouiller_jusqu_a_hier_une_nuit_d_ete`
+    (`2026-07-01T22:30:00Z`, CEST : jusqu'au 1er juillet accepté, au 2 refusé), par un helper commun avec le cas d'hiver, et un
+    Vitest d'été de nuit ; M2 (fuseau fixe +1 h), rejouée sur `527f57839`, est désormais tuée **aussi côté serveur** par ce cas
+    (`mut/M2-p1.log` : 2 rouges, `le_jour_est_celui_de_zurich` et `ac4_verrouiller_jusqu_a_hier_une_nuit_d_ete`) ; M1 rejouée,
+    5 rouges (`mut/M1-p1.log`). **E4** — `Europe::Paris` (Berlin, Vienne, Rome) à la place de `Zurich` est une mutation
+    **équivalente** pour tout instant postérieur à 1981 : dit au doc-comment de `jour_suisse` et ici. **A3** — cases des Tâches
+    cochées (celle des gates laissée ouverte et annotée : E2E et `gate-ci` à la clôture) ; recompte de l'inventaire de
+    production : `git grep -nE 'Utc::now\(\)\.(date_naive|naive_utc\(\)\.date)\(\)|UTC_DATE|CURDATE|Local::now' <rev> --
+    'crates/*/src/*' | wc -l` → **82** à `eabafed5f` comme à `527f57839` (92 de la fiche − 9 sites convertis par la 35-5a0 − 1
+    commentaire réécrit ; la 35-5a ne touche aucun de ces sites, elle change le corps de `jour_suisse`) ; V5-2, ligne lue :
+    `journal_entries.rs:4477` (`:4457` sur `release/0.17.6`, décalée par la 35-5a0) `let year = chrono::Utc::now().naive_utc().date().year();`.
+    **A5** — C-e355a-7 annoté : pour les deux tests de fichiers 35-5a qui rougissent sous les instants de la fiche, la nuit
+    d'hiver est prouvée par C1 et le passage d'année par C2b, verts. **A6** — exceptions d'**AC10** déclarées : outre le test de
+    `horloge_routes_e2e.rs`, deux tests de `kesh-core/src/horloge.rs` (35-5a0) suivent la bascule (motif D1) —
+    `le_jour_est_le_jour_utc` remplacé par `le_jour_est_celui_de_zurich` et `l_horloge_fixe_rend_le_jour_suisse`, et l'attendu de
+    `instant_de_test_rogne_et_ramene_un_decalage_en_utc` passé de `2025-12-31` à `2026-01-01`. **A7** — les quatre journaux sans
+    en-tête (`rouges-kesh-core.log`, `rouges-vitest.log`, `verts-vitest.log`, `mut/M9.log`) annotés de leur arbre ; le Dev
+    Agent Record annoté (aucun journal pour « squelette (vert) » ni pour les tests ciblés verts après l'alignement d'AC3 ; aucun
+    gate complet sur `076d63ed3` ni `ada7e1d61`).
+  - **LOW non traités** (issues demandées) : **A4** (rouges et mutations relevés à un seul site des tests multi-sites : M3 sur
+    `journal_entries.rs` seulement, M7 sur `invoice_settlements_write.rs` seulement ; la couverture des autres sites d'AC2 et
+    d'AC3 par ces mutations est un **raisonnement**, non une exécution).
+  - **Écart** : la restauration de M10 par `git checkout --` a aussi défait la correction de `+page.svelte`, **non commitée** ;
+    constaté au `git diff --stat` suivant, réappliquée à l'outil Edit, Vitest rejoué vert (`p1-verts-vitest-2.log`). M10 avait
+    bien été jouée sur la version corrigée (son motif est l'import corrigé). Ensuite, le code a été commité **avant** les
+    mutations Rust (M1-p1, M2-p1), que `git checkout` restaure au commit. Captures non reprises : sur un poste réglé sur la
+    Suisse, l'écran rend la même borne qu'avant la remédiation.
+  - **Manuel** : PDF régénéré (`p1-manuel-make.log`, 2 passes) ; aplati (`p1-pdf-aplati.log`) : « temps universel » / « encore
+    la veille » → 0 ; les trois phrases neuves présentes ; « premier exercice créé par l'assistant » → 0.
+  - **Gates de la remédiation** (consignes `e35-dev-commun.md` : `test-fast` et frontend complet, bases remises à neuf ; ni
+    `gate-ci` ni E2E), au commit de code `527f57839` : `scripts/test-fast.sh --ci` **5358 exécutés, 5358 passés, 13 ignorés**
+    (`p1-gate-test-fast.log` ; +1 : la nuit d'été d'AC4) ; frontend — `check` 0 erreur (29 avertissements, aucun dans un fichier
+    de la story), `lint-i18n-ownership` vert, `test:unit` **3217 passés, 232 fichiers**, `build` vert (`p1-gate-front-*.log`).
+    **`gate-ci` et E2E : à la clôture.** Statut : `review` ; passe suivante à lancer sur `527f57839`.

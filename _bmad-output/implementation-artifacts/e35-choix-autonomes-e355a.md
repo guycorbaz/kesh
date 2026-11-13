@@ -90,3 +90,8 @@
 - **Autres options** : convertir les dates fixes en dates relatives au jour de test (cinq tests, hors du périmètre « sites de la
   35-5a », risque de changer ce qu'ils prouvent).
 - **Réversibilité** : totale.
+- *(Annoté le 2026-11-13, remédiation de la revue P1, A5 : l'écart est sans effet sur ce qu'AC9 veut prouver. Pour les deux
+  tests de fichiers 35-5a qui rougissent sous les instants de la fiche — `reconciliation_e2e::unreconcile_of_a_closed_lettering_is_refused_in_its_family`
+  et `supplier_invoices_draft::cancelled_invoice_returns_to_draft` —, la **nuit d'hiver** est prouvée par C1 (nuit réelle du
+  13 novembre, `nuit-C1.log`, vert) et le **passage d'année** par C2b (`2026-12-31T23:30:00Z`, `nuit-C2b.log` : aucun des deux
+  parmi les `FAIL`).)*
