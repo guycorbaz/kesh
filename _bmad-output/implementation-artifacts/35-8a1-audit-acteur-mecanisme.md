@@ -1,6 +1,6 @@
 # Story 35-8a1 : l'audit attribue à la clé d'API ce qu'elle a fait — le type `Acteur`, la garde des sites non résolus, et le retour en brouillon d'une facture fournisseur (#431, #892 item 11)
 
-Status: review
+Status: done
 
 *Fiche tirée le 2026-11-13 de la fiche `35-8a-audit-acteur-patron.md` (validation P1 remédiée, même date), par l'agent
 de rédaction des fiches de l'Epic 35 (Opus 5.5), worktree `kesh-e35`, sur décision de l'orchestrateur (C-e350-50,
@@ -497,3 +497,27 @@ Les deux derniers sont déjà nommés par la fiche, à l'Epic 36.
     - ni `gate-ci` ni E2E : à la clôture (consigne de l'Epic 35) ; frontend non touché.
   - **LOW non traité** : aucun. La remédiation touche du code de test et un doc-comment de production
     (`entities/audit_log.rs`), sans changer de comportement.
+- 2026-11-13 — **Revue P2, passe ciblée** (Sonnet) sur la remédiation `b3a14f752` : 0 au-dessus de LOW, 5 LOW (C1 à C5),
+  tracés par l'orchestrateur en #1133 à #1137 ; aucun code touché. **Boucle de revue close.**
+- 2026-11-13 — **Clôture** (Opus 5.5).
+  - **Gates de clôture**, au dernier commit de code `b3a14f752` (HEAD `a5dca7f56` ; `git diff --stat b3a14f752 HEAD --
+    crates frontend scripts` vide : les commits suivants ne touchent que `_bmad-output`) :
+    - `scripts/gate-ci.sh kesh_ci_e358a1`, voie 1 : **5416 passés, 0 échec, 17 ignorés** (`kesh-gate-logs/e358a1/cloture-gate-ci.log`,
+      commit écrit en tête ; sortie `cloture-gate-ci-sortie.log`) ;
+    - **E2E complet**, voie 2 :
+      - montage : `kesh_e2e_e358a1` recréée, migrée et semée ; backend sur le port 3412 ; frontend
+        (`cloture-front-build.log`) et binaire rebâtis au commit ;
+      - résultat : **405 passés, 7 échecs, 18 ignorés** (`cloture-e2e.log`, backend `cloture-e2e-backend.log`) ;
+      - les 7 échecs, jugés un par un contre `docs/testing.md` § « Les échecs attendus », sont les **sept de la KF-029 (#97)** :
+        `mode-expert.spec.ts:26`, `:41`, `onboarding-path-b.spec.ts:65`, `:92`, `onboarding.spec.ts:57`, `:77`, `:150` ;
+      - aucun échec variable, aucun imputable à la story ;
+      - port 3412 libre avant et après ; backend arrêté par son PID.
+  - **Synthèse finale de la boucle de revue** (findings au-dessus de LOW) : P1 code (Opus, trois lentilles) 1 MEDIUM
+    convergé (B1 = E1) + 14 LOW, remédiés en `b3a14f752` → P2 ciblée (Sonnet) 0 au-dessus de LOW, 5 LOW. CRITICAL et HIGH : 0.
+  - Modèles : Opus (P1, complète), Sonnet (P2, ciblée).
+  - Issues tracées pendant la story : #1130 à #1132 (avant la P1) et #1133 à #1137 (LOW de la P2).
+  - Mutations tuées : M1, M2 (par AC3), M4a, M4b, M5, M6, M7, M8.
+  - Gates : `test-fast --ci` 5405/0/13 au développement (`bcdd05dd7`) et 5409/0/13 à la remédiation (`b3a14f752`) ;
+    `gate-ci` 5412/0/17 (`bcdd05dd7`) et 5416/0/17 à la clôture (`b3a14f752`) ; E2E 405/7/18 (sept KF-029) à la clôture.
+  - Choix C-e358a1-1 à -3.
+  - Statut : `done`. #431 reste ouverte (35-8a2, Epic 36) ; #892 garde ses dix autres items.
