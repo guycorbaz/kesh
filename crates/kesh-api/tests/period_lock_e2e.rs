@@ -134,6 +134,11 @@ async fn setup(pool: &MySqlPool) -> (TestApp, String, i64, i64) {
         .unwrap();
 
     let today = crate::common::jour::aujourd_hui_test();
+    // Story 35-5a (AC9, passage d'année) : les tests datent leurs pièces jusqu'à dix
+    // jours avant le jour du serveur ; l'exercice part donc du 1er janvier de l'année
+    // d'il y a trente jours — du 1er au 30 janvier, il couvre aussi l'année qui s'achève
+    // (sans quoi `aujourd_hui - 5` tombait hors exercice : `NO_FISCAL_YEAR`).
+    let debut = today - chrono::Duration::days(30);
     let fy = fiscal_years::create(
         pool,
         1,
@@ -141,7 +146,7 @@ async fn setup(pool: &MySqlPool) -> (TestApp, String, i64, i64) {
             company_id,
             name: format!("Exercice {}", today.format("%Y")),
             start_date: NaiveDate::from_ymd_opt(
-                today.format("%Y").to_string().parse().unwrap(),
+                debut.format("%Y").to_string().parse().unwrap(),
                 1,
                 1,
             )
