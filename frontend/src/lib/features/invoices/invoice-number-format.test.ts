@@ -130,3 +130,27 @@ describe('validateFormatTemplate, compteur obligatoire', () => {
 		expect(caractere.code).toBeUndefined();
 	});
 });
+
+// Story 35-1, revue P1 (E2) — le miroir suit la grammaire de `parse` (Rust) : une accolade isolée
+// est `UnmatchedBrace`, un padding qui n'est pas une suite de chiffres est `InvalidSeqPadding` ;
+// jamais `NO_SEQ`, que l'écran tolère sur un format chargé.
+describe('validateFormatTemplate, refus de forme avant le compteur', () => {
+	for (const ko of [
+		{ format: 'F-}{YEAR}', message: 'Accolade non appariée' },
+		{ format: 'F-{YEAR}{', message: 'Accolade non appariée' },
+		{ format: 'F-}{YEAR}-{SEQ}', message: 'Accolade non appariée' },
+		{ format: 'F-{YEAR}-{SEQ: 4}', message: 'Padding' },
+		{ format: 'F-{YEAR}-{SEQ:4a}', message: 'Padding' },
+	]) {
+		it(`refuse ${ko.format} sans code NO_SEQ`, () => {
+			const r = validateFormatTemplate(ko.format);
+			expect(r.ok).toBe(false);
+			expect(r.code).toBeUndefined();
+			expect(r.error).toContain(ko.message);
+		});
+	}
+	it('garde un compteur bien formé : {SEQ:04} et {SEQ:4} acceptés', () => {
+		expect(validateFormatTemplate('F-{YEAR}-{SEQ:04}')).toEqual({ ok: true });
+		expect(validateFormatTemplate('F-{YEAR}-{SEQ:4}')).toEqual({ ok: true });
+	});
+});

@@ -1872,6 +1872,11 @@ impl DbError {
     /// [`DbError::NumberFormatUnrenderable`], cause `Duplicate` : le numéro que
     /// le format vient de rendre est déjà attribué dans la société. Toute autre
     /// erreur est rendue telle quelle.
+    ///
+    /// La contrainte se lit à la **fin** du message 1062 de MariaDB
+    /// (`Duplicate entry '<valeur>' for key '<clé>'`, ou `'<table>.<clé>'` sous
+    /// MySQL 8) : la valeur dupliquée, rendue par le format, peut contenir le nom
+    /// d'une autre contrainte sans qu'elle soit en cause (revue P1, B2).
     pub fn into_number_duplicate(
         self,
         constraint: &str,
@@ -1879,8 +1884,12 @@ impl DbError {
         format: &str,
         fiscal_year_name: &str,
     ) -> Self {
+        let names_key = |message: &str| {
+            message.ends_with(&format!("for key '{constraint}'"))
+                || message.ends_with(&format!(".{constraint}'"))
+        };
         match self {
-            Self::UniqueConstraintViolation(ref message) if message.contains(constraint) => {
+            Self::UniqueConstraintViolation(ref message) if names_key(message) => {
                 Self::NumberFormatUnrenderable {
                     document,
                     cause: NumberFormatCause::Duplicate,
@@ -2146,5 +2155,105 @@ mod tests {
             "write_off_nature"
         );
         assert_eq!(SettlementAccountRole::VatPayable.as_str(), "vat_payable");
+    }
+
+    /// Story 35-1, revue P1 (B2) — `into_number_duplicate` ne convertit que la
+    /// violation qui porte SUR la contrainte nommée (`for key '…'`), jamais celle
+    /// dont la seule VALEUR dupliquée contiendrait ce nom.
+    #[test]
+    fn into_number_duplicate_converts_only_the_named_key() {
+        let convert = |message: &str| {
+            DbError::UniqueConstraintViolation(message.to_string()).into_number_duplicate(
+                "uq_credit_notes_number",
+                NumberedDocument::CreditNote,
+                "AV-{YEAR}",
+                "Exercice 2026",
+            )
+        };
+        assert!(matches!(
+            convert("Duplicate entry '1-AV-2026' for key 'uq_credit_notes_number'"),
+            DbError::NumberFormatUnrenderable {
+                document: NumberedDocument::CreditNote,
+                cause: NumberFormatCause::Duplicate,
+                ..
+            }
+        ));
+        // La forme qualifiée par la table (MySQL 8) est reconnue aussi.
+        assert!(matches!(
+            convert("Duplicate entry '1-AV-2026' for key 'credit_notes.uq_credit_notes_number'"),
+            DbError::NumberFormatUnrenderable { .. }
+        ));
+        // Une autre contrainte, même si la valeur dupliquée cite le nom : inchangée.
+        assert!(matches!(
+            convert("Duplicate entry 'uq_credit_notes_number' for key 'uq_credit_notes_invoice'"),
+            DbError::UniqueConstraintViolation(_)
+        ));
+        // Une autre erreur : inchangée.
+        assert!(matches!(
+            DbError::NotFound.into_number_duplicate(
+                "uq_credit_notes_number",
+                NumberedDocument::CreditNote,
+                "AV-{YEAR}",
+                "Exercice 2026",
+            ),
+            DbError::NotFound
+        ));
+    }
+
+    /// Story 35-1, revue P1 (E5) — la cause de chaque erreur de `render` ;
+    /// `InvalidSeq` reste un invariant (500).
+    #[test]
+    fn render_errors_map_to_their_cause() {
+        use kesh_core::invoice_format::FormatError as F;
+        let cas = [
+            (F::RenderedTooLong(65), Some(NumberFormatCause::TooLong)),
+            (
+                F::FiscalYearNameBrace('{'),
+                Some(NumberFormatCause::BraceInFiscalYearName),
+            ),
+            (F::UnmatchedBrace, Some(NumberFormatCause::InvalidFormat)),
+            (
+                F::IllegalCharacter('!'),
+                Some(NumberFormatCause::InvalidFormat),
+            ),
+            (
+                F::UnknownPlaceholder("X".into()),
+                Some(NumberFormatCause::InvalidFormat),
+            ),
+            (
+                F::InvalidSeqPadding(0),
+                Some(NumberFormatCause::InvalidFormat),
+            ),
+            (F::NoSeq, Some(NumberFormatCause::InvalidFormat)),
+            (F::InvalidSeq(0), None),
+        ];
+        for (erreur, attendu) in cas {
+            assert_eq!(
+                NumberFormatCause::from_render_error(&erreur),
+                attendu,
+                "{erreur:?}"
+            );
+        }
+        assert!(matches!(
+            DbError::number_render_failed(
+                NumberedDocument::Invoice,
+                &F::InvalidSeq(0),
+                "F-{SEQ}",
+                "2026"
+            ),
+            DbError::Invariant(_)
+        ));
+        assert!(matches!(
+            DbError::number_render_failed(
+                NumberedDocument::Invoice,
+                &F::UnmatchedBrace,
+                "F-}{SEQ}",
+                "2026"
+            ),
+            DbError::NumberFormatUnrenderable {
+                cause: NumberFormatCause::InvalidFormat,
+                ..
+            }
+        ));
     }
 }

@@ -210,12 +210,23 @@ function validateTemplateRules(template: string): FormatValidationResult {
 		};
 	}
 
-	// Parse les placeholders.
+	// Parse les placeholders. Story 35-1, revue P1 (E2) : le découpage couvre TOUT le gabarit,
+	// comme `parse` (Rust) — une accolade isolée (`}` seule, `{` sans fermante) est refusée
+	// (`UnmatchedBrace`), au lieu d'être sautée.
 	let hasPlaceholder = false;
 	let worstCaseLen = 0;
-	const re = /\{([^}]*)\}|([^{}]+)/g;
+	const re = /\{([^}]*)\}|([^{}]+)|([{}])/g;
 	let match: RegExpExecArray | null;
 	while ((match = re.exec(template)) !== null) {
+		if (match[3] !== undefined) {
+			return {
+				ok: false,
+				error: i18nMsg(
+					'invoices-format-error-unmatched-brace',
+					'Accolade non appariée dans le format',
+				),
+			};
+		}
 		if (match[2] !== undefined) {
 			worstCaseLen += match[2].length;
 			continue;
@@ -232,7 +243,10 @@ function validateTemplateRules(template: string): FormatValidationResult {
 			// i64::MAX = 19 chiffres (review P2 parité Rust).
 			worstCaseLen += 19;
 		} else if (inner.startsWith('SEQ:')) {
-			const n = parseInt(inner.slice(4), 10);
+			// Strictement décimal, comme `str::parse::<u32>` (revue P1, E2) : `parseInt`
+			// accepterait « 4a » et « 4 » précédé d'un blanc.
+			const digits = inner.slice(4);
+			const n = /^\d+$/.test(digits) ? parseInt(digits, 10) : NaN;
 			if (!Number.isFinite(n) || n < 1 || n > MAX_SEQ_PADDING) {
 				return {
 					ok: false,

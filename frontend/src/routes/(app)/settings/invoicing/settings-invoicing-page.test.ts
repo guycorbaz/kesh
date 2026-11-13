@@ -270,6 +270,22 @@ describe('Administration → Facturation — numérotation des factures et des a
 	}
 });
 
+// Story 35-1, revue P1 (E2) — un format chargé invalide pour une autre raison que le compteur
+// (posé hors de l'application) reste bloquant, comme au serveur.
+describe('Administration → Facturation — format chargé mal formé', () => {
+	for (const loaded of ['F-}{YEAR}', 'F-{YEAR}-{SEQ: 4}']) {
+		it(`${loaded} chargé tel quel : refus affiché, bouton désactivé`, async () => {
+			getInvoiceSettingsMock.mockResolvedValue(settings({ invoiceNumberFormat: loaded }));
+			const { findByLabelText, getByTestId, queryByTestId } = render(Page);
+			const input = (await findByLabelText('Format de numérotation')) as HTMLInputElement;
+			await waitFor(() => expect(input.value).toBe(loaded));
+			expect(getByTestId('settings-format-error').className).toContain('text-destructive');
+			expect(queryByTestId('settings-format-noseq-hint')).toBeNull();
+			expect((getByTestId('settings-invoicing-save') as HTMLButtonElement).disabled).toBe(true);
+		});
+	}
+});
+
 // Story 25-4-d1 (#384) — les comptes des natures d'écart soldé.
 describe('Administration → Facturation — solde du reste', () => {
 	const FIELDS = [

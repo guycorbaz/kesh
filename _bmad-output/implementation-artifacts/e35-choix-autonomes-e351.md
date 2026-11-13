@@ -73,3 +73,23 @@ Registre tenu par l'agent de développement. Mise à jour par union, jamais par 
 - **Écartée** : une clé neuve « ce format enregistré n'a pas de compteur » — plus juste dans le ton, mais la fiche la
   désigne ; à reprendre si la recette de Guy trouve le texte trop impératif.
 - **Réversible** : oui.
+
+### C-e351-7 — La borne du numéro rendu reste en octets ; les textes le disent (revue P1, E1)
+
+- **Contexte** : `render` compare `out.len()` (octets) à 64 (`invoice_format.rs`, `if out.len() > MAX_RENDERED_LEN {`), alors
+  que les colonnes sont `VARCHAR(64)` en caractères (`20260416000001_invoices.sql:19`, `20260627000001_credit_notes.sql:32`)
+  et que le message, le manuel, `api-external.md` et le CHANGELOG disaient « 64 caractères ». Un nom d'exercice accentué
+  sous `{FY}` est refusé avant 64 caractères. Consommateurs du numéro lus : la QR-facture le reprend dans son message
+  non structuré (`invoice_pdf_service.rs:388`, `unstructured_message: invoice.invoice_number…`), et la charge entière est
+  bornée **en octets** (`kesh-qrbill/src/generator.rs:73`, `const SIX_PAYLOAD_MAX_BYTES: usize = 997;`) ; le PDF
+  (`pdf.rs:317`, ligne non tronquée) et le nom de fichier (`sanitize_filename`) ne bornent pas ; pain.001 ne porte pas de
+  numéro de facture client.
+- **Retenu** (option prudente de l'orchestrateur : un consommateur en octets) : la borne reste en **octets** ; le message
+  (`error-number-format-unrenderable-too-long` ×4 et son repli), le manuel, `api-external.md`, le CHANGELOG et le
+  doc-comment de `render` disent « plus de 64 octets ; une lettre accentuée en compte deux ». Test :
+  `ac3_multibyte_fiscal_year_name_counts_bytes` (nom de 50 caractères, 60 octets, sous `{FY}-{SEQ:04}` → 55 caractères,
+  65 octets, refusé, message en octets). `worst_case_len` de `validate_template` et le miroir TypeScript ne changent pas :
+  un gabarit n'admet que de l'ASCII (`is_allowed_char`), octets et caractères y coïncident.
+- **Écartée** : `chars().count()` — un numéro accentué de 64 caractères alourdirait la charge QR au-delà de ce que la
+  borne promettait, sans certitude que la QR-facture reste sous 997 octets dans tous les cas.
+- **Réversible** : oui (une comparaison et des textes).

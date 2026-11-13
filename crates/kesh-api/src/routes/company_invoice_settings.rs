@@ -103,14 +103,15 @@ pub struct UpdateInvoiceSettingsRequest {
     pub default_sales_journal: String,
     pub journal_entry_description_template: String,
     /// #216 — optionnel + **préservé** si absent : un client qui ne l'envoie pas
-    /// (clé d'API, onglet ouvert avant la mise à jour) ne l'efface pas ; sans ça,
+    /// (onglet ouvert avant la mise à jour ; la route est fermée aux clés d'API)
+    /// ne l'efface pas ; sans ça,
     /// son enregistrement des réglages échouait en 422. L'écran l'envoie depuis la
     /// Story 35-1 (D3).
     #[serde(default)]
     pub credit_note_number_format: Option<String>,
     /// Story 33-1a (#926) — format du numéro interne. **Absent du corps : préservé**
     /// (patron #216) : le formulaire ne l'envoie qu'à partir de la Story 33-1b, et
-    /// une clé d'API ou un onglet ouvert avant la mise à jour ne l'efface pas.
+    /// un onglet ouvert avant la mise à jour ne l'efface pas.
     #[serde(default)]
     pub supplier_internal_number_format: Option<String>,
     /// Story 12.2 — compte créanciers. **Absent du corps : préservé** (Story
@@ -122,8 +123,8 @@ pub struct UpdateInvoiceSettingsRequest {
     pub default_payable_account_id: Option<Option<i64>>,
     /// Story 25-4-c3-a1 (#476) — compte de différences d'arrondi. **Absent du
     /// corps : préservé** (comme `credit_note_number_format`, #216), pour qu'un
-    /// client qui ignore encore le champ — clé d'API, onglet ouvert avant la mise
-    /// à jour — ne l'efface pas en silence. **Présent à `null` : effacé.**
+    /// client qui ignore encore le champ — un onglet ouvert avant la mise à jour —
+    /// ne l'efface pas en silence. **Présent à `null` : effacé.**
     #[serde(default, deserialize_with = "crate::helpers::double_option")]
     pub default_rounding_account_id: Option<Option<i64>>,
     /// Story 25-4-c4-b (#494) — arrondir à 5 centimes. **Absent du corps :
@@ -329,7 +330,7 @@ pub async fn update_invoice_settings(
     let company = get_company_for(&current_user, &state.pool).await?;
 
     // #216 — `credit_note_number_format` optionnel : si le client ne l'envoie pas
-    // (une clé d'API, un onglet ouvert avant la mise à jour — l'écran l'envoie depuis
+    // (un onglet ouvert avant la mise à jour — l'écran l'envoie depuis
     // la Story 35-1), on **préserve** la valeur existante au lieu de rejeter la
     // requête en 422.
     let current = company_invoice_settings::get_or_create_default(&state.pool, company.id).await?;

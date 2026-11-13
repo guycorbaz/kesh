@@ -1695,28 +1695,28 @@ fn number_format_unrenderable_response(
         C::TooLong => t_args(
             "error-number-format-unrenderable-too-long",
             &format!(
-                "Le format « {format} », avec le nom de l’exercice « {fiscal_year_name} », donne un numéro de plus de 64 caractères : raccourcissez le format dans Administration → Facturation, ou le nom de l’exercice."
+                "Le format « {format} », avec le nom de l’exercice « {fiscal_year_name} », donne un numéro trop long (plus de 64 octets ; une lettre accentuée en compte deux) : un administrateur doit raccourcir le format dans Administration → Facturation, ou le nom de l’exercice."
             ),
             &args,
         ),
         C::BraceInFiscalYearName => t_args(
             "error-number-format-unrenderable-brace",
             &format!(
-                "Le nom de l’exercice « {fiscal_year_name} » contient une accolade, que le format « {format} » reprendrait dans le numéro : renommez l’exercice, ou retirez {{FY}} du format dans Administration → Facturation."
+                "Le nom de l’exercice « {fiscal_year_name} » contient une accolade, que le format « {format} » reprendrait dans le numéro : un administrateur doit renommer l’exercice, ou retirer {{FY}} du format dans Administration → Facturation."
             ),
             &args,
         ),
         C::Duplicate => t_args(
             "error-number-format-unrenderable-duplicate",
             &format!(
-                "Le format « {format} » produit, dans l’exercice « {fiscal_year_name} », un numéro déjà attribué : il doit distinguer chaque pièce — un compteur ({{SEQ}}), qui repart à chaque exercice, et l’exercice ({{FY}}) ; l’année ({{YEAR}}) ne suffit pas si deux exercices commencent la même année. Corrigez-le dans Administration → Facturation."
+                "Le format « {format} » produit, dans l’exercice « {fiscal_year_name} », un numéro déjà attribué : il doit distinguer chaque pièce — un compteur ({{SEQ}}), qui repart à chaque exercice, et l’exercice ({{FY}}) ; l’année ({{YEAR}}) ne suffit pas si deux exercices commencent la même année. Un administrateur doit le corriger dans Administration → Facturation."
             ),
             &args,
         ),
         C::InvalidFormat => t_args(
             "error-number-format-unrenderable-invalid",
             &format!(
-                "Le format « {format} » enregistré n’est pas valide : corrigez-le dans Administration → Facturation."
+                "Le format « {format} » enregistré n’est pas valide : un administrateur doit le corriger dans Administration → Facturation."
             ),
             &args,
         ),

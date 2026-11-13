@@ -332,10 +332,19 @@ pub fn supplier_invoice_long_label(
 
 /// Rend un template avec les valeurs données.
 ///
-/// Appelle `validate_template` en amont — si votre caller a déjà validé
-/// le template à l'écriture, cette fonction ne peut échouer qu'en cas
-/// de `seq` négatif ou de `fy_name` contenant des caractères interdits
-/// dans la sortie (aucune vérif ici — responsabilité du caller).
+/// N'appelle **pas** [`validate_template`] : un format enregistré sans compteur
+/// (toléré par [`validate_template_change`], Story 35-1) se rend tel quel. Erreurs
+/// possibles, que `kesh-db` (`NumberFormatCause::from_render_error`) convertit en
+/// refus typé ou en invariant :
+/// - [`FormatError::InvalidSeq`] : `seq` < 1 (interdit par la base) ;
+/// - les erreurs de `parse` (accolade isolée, placeholder inconnu, caractère
+///   interdit, padding invalide) : un format posé hors de la route ;
+/// - [`FormatError::FiscalYearNameBrace`] : le nom de l'exercice porte une
+///   accolade et le format le reprend (`{FY}`) ;
+/// - [`FormatError::RenderedTooLong`] : le rendu dépasse
+///   [`MAX_RENDERED_LEN`] **octets** — borne en octets, non en caractères, parce
+///   que la QR-facture borne sa charge en octets (C-e351-7) ; un nom d'exercice
+///   accentué l'atteint avant 64 caractères.
 pub fn render(template: &str, year: i32, fy_name: &str, seq: i64) -> Result<String, FormatError> {
     // Review P14 : DB CHECK `next_number >= 1` devrait garantir seq ≥ 1,
     // mais défense en profondeur si un caller contourne le repository.
@@ -373,6 +382,7 @@ pub fn render(template: &str, year: i32, fy_name: &str, seq: i64) -> Result<Stri
         }
     }
 
+    // ⚠️ Octets (`String::len`), délibérément : cf. le doc-comment (C-e351-7).
     if out.len() > MAX_RENDERED_LEN {
         return Err(FormatError::RenderedTooLong(out.len()));
     }

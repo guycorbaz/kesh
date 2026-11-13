@@ -352,10 +352,10 @@ error-designated-account-type-expense = conto di costo
 # Story 35-1 (#948, D4, D5) — 400 NUMBER_FORMAT_UNRENDERABLE : la pièce, puis la cause.
 error-number-format-unrenderable-invoice = Questa fattura non può essere convalidata: il suo numero non può essere prodotto. Nulla è stato registrato, nessun numero è stato consumato.
 error-number-format-unrenderable-credit-note = Questa nota di credito non può essere creata: il suo numero non può essere prodotto. Nulla è stato registrato, nessun numero è stato consumato.
-error-number-format-unrenderable-too-long = Il formato «{ $format }», con il nome dell’esercizio «{ $fiscalYear }», dà un numero di più di 64 caratteri: accorciare il formato in Amministrazione → Fatturazione, oppure il nome dell’esercizio.
-error-number-format-unrenderable-brace = Il nome dell’esercizio «{ $fiscalYear }» contiene una parentesi graffa, che il formato «{ $format }» riprenderebbe nel numero: rinominare l’esercizio, oppure togliere {"{"}FY{"}"} dal formato in Amministrazione → Fatturazione.
-error-number-format-unrenderable-duplicate = Il formato «{ $format }» produce, nell’esercizio «{ $fiscalYear }», un numero già attribuito: deve distinguere ogni documento — un contatore ({"{"}SEQ{"}"}), che riparte a ogni esercizio, e l’esercizio ({"{"}FY{"}"}); l’anno ({"{"}YEAR{"}"}) non basta se due esercizi iniziano nello stesso anno. Correggerlo in Amministrazione → Fatturazione.
-error-number-format-unrenderable-invalid = Il formato «{ $format }» registrato non è valido: correggerlo in Amministrazione → Fatturazione.
+error-number-format-unrenderable-too-long = Il formato «{ $format }», con il nome dell’esercizio «{ $fiscalYear }», dà un numero troppo lungo (più di 64 byte; una lettera accentata ne conta due): un amministratore deve accorciare il formato in Amministrazione → Fatturazione, oppure il nome dell’esercizio.
+error-number-format-unrenderable-brace = Il nome dell’esercizio «{ $fiscalYear }» contiene una parentesi graffa, che il formato «{ $format }» riprenderebbe nel numero: un amministratore deve rinominare l’esercizio, oppure togliere {"{"}FY{"}"} dal formato in Amministrazione → Fatturazione.
+error-number-format-unrenderable-duplicate = Il formato «{ $format }» produce, nell’esercizio «{ $fiscalYear }», un numero già attribuito: deve distinguere ogni documento — un contatore ({"{"}SEQ{"}"}), che riparte a ogni esercizio, e l’esercizio ({"{"}FY{"}"}); l’anno ({"{"}YEAR{"}"}) non basta se due esercizi iniziano nello stesso anno. Un amministratore deve correggerlo in Amministrazione → Fatturazione.
+error-number-format-unrenderable-invalid = Il formato «{ $format }» registrato non è valido: un amministratore deve correggerlo in Amministrazione → Fatturazione.
 error-rounding-account-not-configured = Questo pagamento salda la fattura al centesimo, ma non è designato alcun conto utilizzabile per le differenze di arrotondamento: sceglierne uno in Amministrazione → Fatturazione.
 error-rounding-account-not-configured-issuance = Il totale di questo documento è arrotondato a 5 centesimi, ma non è designato alcun conto utilizzabile per le differenze di arrotondamento: sceglierne uno in Amministrazione → Fatturazione.
 error-write-off-account-not-configured-discount = Nessun conto sconti utilizzabile è designato: sceglietene uno in Amministrazione → Fatturazione, sezione Saldo del residuo.
@@ -2590,6 +2590,7 @@ settings-invoicing-supplier-format-label = Formato delle fatture fornitore
 settings-invoicing-supplier-format-help = Un prefisso, {"{"}YEAR{"}"}, un separatore, poi {"{"}SEQ{"}"} o {"{"}SEQ:03{"}"}. Vale per i numeri futuri: quelli già attribuiti non cambiano.
 # Story 35-1 (#932, D1, D3) — le compteur obligatoire, le format des avoirs.
 invoices-format-error-no-seq = Il formato deve contenere un contatore ({"{"}SEQ{"}"} o {"{"}SEQ:NN{"}"}): senza di esso, tutti i documenti di un esercizio avrebbero lo stesso numero
+invoices-format-error-unmatched-brace = Parentesi graffa senza corrispondenza nel formato
 settings-invoicing-credit-note-format-label = Formato delle note di credito
 settings-invoicing-credit-note-format-help = Gli stessi segnaposto del formato di numerazione delle fatture; il contatore è obbligatorio. Vale per le note di credito future: quelle già emesse non cambiano.
 settings-invoicing-format-invalid = Formato non valido

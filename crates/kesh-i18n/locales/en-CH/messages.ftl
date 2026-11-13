@@ -352,10 +352,10 @@ error-designated-account-type-expense = an expense account
 # Story 35-1 (#948, D4, D5) — 400 NUMBER_FORMAT_UNRENDERABLE : la pièce, puis la cause.
 error-number-format-unrenderable-invoice = This invoice cannot be validated: its number cannot be produced. Nothing has been saved and no number has been used.
 error-number-format-unrenderable-credit-note = This credit note cannot be created: its number cannot be produced. Nothing has been saved and no number has been used.
-error-number-format-unrenderable-too-long = The format “{ $format }”, with the fiscal year name “{ $fiscalYear }”, gives a number longer than 64 characters: shorten the format in Administration → Invoicing, or the fiscal year name.
-error-number-format-unrenderable-brace = The fiscal year name “{ $fiscalYear }” contains a brace, which the format “{ $format }” would carry into the number: rename the fiscal year, or remove {"{"}FY{"}"} from the format in Administration → Invoicing.
-error-number-format-unrenderable-duplicate = The format “{ $format }” produces, in the fiscal year “{ $fiscalYear }”, a number already assigned: it must distinguish each document — a counter ({"{"}SEQ{"}"}), which restarts every fiscal year, and the fiscal year ({"{"}FY{"}"}); the year ({"{"}YEAR{"}"}) is not enough if two fiscal years start in the same year. Correct it in Administration → Invoicing.
-error-number-format-unrenderable-invalid = The saved format “{ $format }” is not valid: correct it in Administration → Invoicing.
+error-number-format-unrenderable-too-long = The format “{ $format }”, with the fiscal year name “{ $fiscalYear }”, gives a number that is too long (more than 64 bytes; an accented letter counts as two): an administrator must shorten the format in Administration → Invoicing, or the fiscal year name.
+error-number-format-unrenderable-brace = The fiscal year name “{ $fiscalYear }” contains a brace, which the format “{ $format }” would carry into the number: an administrator must rename the fiscal year, or remove {"{"}FY{"}"} from the format in Administration → Invoicing.
+error-number-format-unrenderable-duplicate = The format “{ $format }” produces, in the fiscal year “{ $fiscalYear }”, a number already assigned: it must distinguish each document — a counter ({"{"}SEQ{"}"}), which restarts every fiscal year, and the fiscal year ({"{"}FY{"}"}); the year ({"{"}YEAR{"}"}) is not enough if two fiscal years start in the same year. An administrator must correct it in Administration → Invoicing.
+error-number-format-unrenderable-invalid = The saved format “{ $format }” is not valid: an administrator must correct it in Administration → Invoicing.
 error-rounding-account-not-configured = This payment settles the invoice to the centime, but no usable rounding-difference account is designated: choose one in Administration → Invoicing.
 error-rounding-account-not-configured-issuance = The total of this document is rounded to 5 centimes, but no usable rounding-difference account is designated: choose one in Administration → Invoicing.
 error-write-off-account-not-configured-discount = No usable discount account is designated: choose one in Administration → Invoicing, section Writing off the remainder.
@@ -2596,6 +2596,7 @@ settings-invoicing-supplier-format-label = Supplier invoice format
 settings-invoicing-supplier-format-help = A prefix, {"{"}YEAR{"}"}, a separator, then {"{"}SEQ{"}"} or {"{"}SEQ:03{"}"}. Applies to future numbers: those already assigned do not change.
 # Story 35-1 (#932, D1, D3) — le compteur obligatoire, le format des avoirs.
 invoices-format-error-no-seq = The format must contain a counter ({"{"}SEQ{"}"} or {"{"}SEQ:NN{"}"}): without it, every document of a fiscal year would have the same number
+invoices-format-error-unmatched-brace = Unmatched brace in the format
 settings-invoicing-credit-note-format-label = Credit note format
 settings-invoicing-credit-note-format-help = The same placeholders as the invoice numbering format; the counter is required. Applies to future credit notes: those already issued do not change.
 settings-invoicing-format-invalid = Invalid format
