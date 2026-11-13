@@ -8,9 +8,9 @@
 //! jamais un refus d'exercice. L'écriture contre-passée est datée du
 //! `2025-06-01`, antérieure à tous les jours éprouvés.
 //!
-//! ⚠️ `2025-12-31T23:30:00Z` donne le **31 décembre** : le jour UTC, comme
-//! avant la Story 35-5a0. C'est le test que la Story 35-5a retourne (Zurich :
-//! le 1er janvier).
+//! `2025-12-31T23:30:00Z` donne le **1er janvier** : le jour de Zurich, depuis
+//! la Story 35-5a (la 35-5a0 y lisait encore le jour UTC, le 31 décembre ; ce
+//! test est celui qu'elle a retourné, exception nommée à son AC10).
 //!
 //! AC2 n'exerce que **deux** des neuf sites ; les sept autres sont tenus par la
 //! garde de forme (`date_du_jour_garde.rs`).
@@ -203,11 +203,11 @@ async fn la_contre_passation_et_le_verrou_suivent_l_horloge_de_l_etat(pool: MySq
     assert_eq!(status, 200, "borne à la veille de l'horloge : {body}");
 }
 
-/// 23 h 30 UTC le 31 décembre : la contre-passation est datée du **31
-/// décembre**, le jour UTC (comportement d'avant la 35-5a0, voulu ici). La
-/// Story 35-5a retourne ce test.
+/// 23 h 30 UTC le 31 décembre, 00 h 30 le 1er janvier à Zurich : la
+/// contre-passation est datée du **1er janvier** (Story 35-5a ; la 35-5a0 la
+/// datait du 31, le jour UTC), dans l'exercice 2020-2030 du montage.
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
-async fn a_23h30_utc_le_31_decembre_la_contre_passation_reste_au_31(pool: MySqlPool) {
+async fn a_23h30_utc_le_31_decembre_la_contre_passation_est_au_1er_janvier(pool: MySqlPool) {
     let s = seed_accounting_company(&pool).await.unwrap();
     let app = spawn_app(&pool, instant("2025-12-31T23:30:00Z")).await;
 
@@ -215,7 +215,12 @@ async fn a_23h30_utc_le_31_decembre_la_contre_passation_reste_au_31(pool: MySqlP
     let inverse = contre_passer(&app, origine).await;
     assert_eq!(
         inverse["entryDate"].as_str(),
-        Some("2025-12-31"),
-        "le jour UTC de l'horloge : {inverse}"
+        Some("2026-01-01"),
+        "le jour suisse de l'horloge : {inverse}"
+    );
+    assert_eq!(
+        inverse["fiscalYearId"].as_i64(),
+        Some(s.fiscal_year_id),
+        "dans l'exercice 2020-2030 du montage : {inverse}"
     );
 }

@@ -19,7 +19,7 @@
 //! - **(a)** le premier jour du premier exercice, s'il est ouvert et que ce jour
 //!   est **après** `books_locked_through` — le compte oublié faisait partie de
 //!   l'ouverture ;
-//! - **(b)** sinon **aujourd'hui** (date UTC, passée en paramètre), dans
+//! - **(b)** sinon **aujourd'hui** (le jour de Zurich, passé en paramètre), dans
 //!   l'exercice ouvert qui la couvre — une régularisation ;
 //! - **(c)** sinon refus nommé.
 //!

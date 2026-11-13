@@ -6,6 +6,10 @@ license.workspace = true
 
 [dependencies]
 chrono = { version = "0.4", features = ["serde"] }
+# Story 35-5a (#1022, #907, #929) — le jour civil de Zurich (`horloge::jour_suisse`). Base IANA
+# précompilée, aucune lecture de `/usr/share/zoneinfo` ni de `TZ`. Déjà au graphe, même version,
+# par `rxing` : aucun paquet ajouté.
+chrono-tz = "0.10.4"
 kesh-import = { path = "../kesh-import" }
 rust_decimal = { version = "1.41", features = ["serde-str", "maths"] }
 rust_decimal_macros = "1.40"

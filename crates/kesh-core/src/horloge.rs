@@ -7,10 +7,9 @@
 //! date. Les sites qui lisent encore l'heure (Story 35-5b) sont inventoriés par la garde
 //! `kesh-api/tests/date_du_jour_garde.rs`. Les tests fixent l'horloge par [`HorlogeFixe`].
 //!
-//! Le jour rendu par [`Horloge::aujourd_hui`] est, à ce stade, **le jour UTC** de l'instant —
-//! exactement celui d'avant cette story. La Story 35-5a le remplacera par le jour de Zurich en ne
-//! changeant que la fonction privée `jour` : le serveur et les tests qui passent par l'horloge
-//! basculeront ensemble.
+//! Le jour rendu par [`Horloge::aujourd_hui`] est **le jour de Zurich** de l'instant
+//! ([`jour_suisse`], Story 35-5a) — jusqu'à la 35-5a0, le jour UTC. Le serveur et les tests qui
+//! passent par l'horloge ont basculé ensemble.
 //!
 //! Le module est pur (aucune I/O) : la lecture de la variable d'environnement de test se fait chez
 //! l'appelant, qui passe sa valeur à [`instant_de_test`].
@@ -46,9 +45,15 @@ impl Horloge for HorlogeFixe {
 
 /// Le jour civil d'un instant **à Zurich** (Story 35-5a, #1022, #907, #929).
 ///
-/// *Squelette* : rend encore le jour UTC.
+/// Kesh est un logiciel de comptabilité suisse : le fuseau est une constante
+/// (C-e350-16), jamais `TZ` ni `chrono::Local`. Le sens instant → heure locale
+/// n'est jamais ambigu (un instant UTC a une seule heure à Zurich), contrairement
+/// au sens inverse. Entre 22 h ou 23 h UTC et minuit UTC, ce jour est le
+/// lendemain du jour UTC.
 pub fn jour_suisse(instant: DateTime<Utc>) -> NaiveDate {
-    instant.date_naive()
+    instant
+        .with_timezone(&chrono_tz::Europe::Zurich)
+        .date_naive()
 }
 
 /// Interprète la valeur de la variable [`NOM_VARIABLE_INSTANT`].
@@ -89,19 +94,83 @@ mod tests {
         );
     }
 
+    /// AC1 (Story 35-5a) — le jour suisse ne diffère du jour UTC qu'entre 22:00Z ou 23:00Z et
+    /// minuit UTC : les instants sont pris dans cette fenêtre, de part et d'autre de chaque
+    /// changement d'heure, plus les bornes à la seconde. Attendus en dates fixes (aucun
+    /// `.date_naive()`).
+    const AC1: &[(&str, (i32, u32, u32), &str)] = &[
+        (
+            "2025-12-31T23:30:00Z",
+            (2026, 1, 1),
+            "00 h 30 CET : jour UTC (M1)",
+        ),
+        (
+            "2026-07-01T22:30:00Z",
+            (2026, 7, 2),
+            "00 h 30 CEST : fuseau fixe +1 h (M2)",
+        ),
+        (
+            "2026-03-28T22:30:00Z",
+            (2026, 3, 28),
+            "23 h 30 CET : fuseau fixe +2 h",
+        ),
+        (
+            "2026-03-28T23:30:00Z",
+            (2026, 3, 29),
+            "00 h 30 CET, veille de l'heure d'été",
+        ),
+        (
+            "2026-03-29T22:30:00Z",
+            (2026, 3, 30),
+            "00 h 30 CEST, première nuit d'été",
+        ),
+        (
+            "2026-10-24T22:30:00Z",
+            (2026, 10, 25),
+            "00 h 30 CEST, veille de l'heure d'hiver",
+        ),
+        (
+            "2026-10-25T22:30:00Z",
+            (2026, 10, 25),
+            "23 h 30 CET : l'inverse de M2",
+        ),
+        ("2026-06-15T10:00:00Z", (2026, 6, 15), "le jour"),
+        (
+            "2026-06-30T21:59:59Z",
+            (2026, 6, 30),
+            "borne été, 23 h 59 min 59 s",
+        ),
+        ("2026-06-30T22:00:00Z", (2026, 7, 1), "borne été, minuit"),
+        (
+            "2025-12-31T22:59:59Z",
+            (2025, 12, 31),
+            "borne hiver, 23 h 59 min 59 s",
+        ),
+        ("2025-12-31T23:00:00Z", (2026, 1, 1), "borne hiver, minuit"),
+    ];
+
     #[test]
-    fn le_jour_est_le_jour_utc() {
-        // 23 h 30 UTC le 31 décembre : encore le 31 décembre en UTC (comportement d'avant).
-        let h = HorlogeFixe(instant("2025-12-31T23:30:00Z"));
-        assert_eq!(
-            h.aujourd_hui(),
-            NaiveDate::from_ymd_opt(2025, 12, 31).unwrap()
-        );
-        // Un instant donné avec un décalage est ramené en UTC avant d'en tirer le jour.
+    fn le_jour_est_celui_de_zurich() {
+        for (i, (a, m, j), motif) in AC1 {
+            let attendu = NaiveDate::from_ymd_opt(*a, *m, *j).unwrap();
+            assert_eq!(jour_suisse(instant(i)), attendu, "{i} — {motif}");
+        }
+    }
+
+    #[test]
+    fn l_horloge_fixe_rend_le_jour_suisse() {
+        for (i, _, motif) in AC1 {
+            assert_eq!(
+                HorlogeFixe(instant(i)).aujourd_hui(),
+                jour_suisse(instant(i)),
+                "{i} — {motif}"
+            );
+        }
+        // Un instant donné avec un décalage est ramené en UTC, puis à Zurich.
         let h = HorlogeFixe(instant("2026-01-01T00:30:00+01:00"));
         assert_eq!(
             h.aujourd_hui(),
-            NaiveDate::from_ymd_opt(2025, 12, 31).unwrap()
+            NaiveDate::from_ymd_opt(2026, 1, 1).unwrap()
         );
     }
 
@@ -128,9 +197,10 @@ mod tests {
         );
         let i = instant_de_test(Some("2026-01-01T00:30:00+01:00")).unwrap();
         assert_eq!(i, instant("2025-12-31T23:30:00Z"));
+        // Le jour suisse de cet instant (Story 35-5a) : le 1er janvier.
         assert_eq!(
             HorlogeFixe(i).aujourd_hui(),
-            NaiveDate::from_ymd_opt(2025, 12, 31).unwrap()
+            NaiveDate::from_ymd_opt(2026, 1, 1).unwrap()
         );
     }
 

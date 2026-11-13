@@ -300,9 +300,10 @@ const EXEMPTIONS: &[Exemption] = &[
     ),
     (
         "kesh-api/tests/fiscal_years_e2e.rs",
-        2,
-        "35-5a / 35-5b",
-        "exercice du chemin B ; démonstration",
+        // 2 → 1 : Story 35-5a, l'année du chemin B lit l'horloge de test.
+        1,
+        "35-5b",
+        "démonstration (`seed_demo`, site 26)",
     ),
     (
         "kesh-api/tests/homepage_summary_e2e.rs",

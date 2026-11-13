@@ -860,7 +860,7 @@ pub const EXIGENCE_SYNTHESE_ACCUEIL: Exigence = Exigence {
 /// Une lecture **sans trace**, qui rend directement (règle R5) : l'accueil se
 /// charge à chaque visite, une trace par visite noierait le journal, et les trois
 /// tuiles n'en écrivent aucune (C-e332-11). ⚠️ La date est celle de l'horloge en
-/// UTC, comme à la contre-passation : dans la première ou les deux premières heures
+/// UTC : dans la première ou les deux premières heures
 /// du 1er janvier à Zurich, l'accueil lit encore l'exercice précédent.
 pub async fn synthese_accueil(
     acces: &ContexteAcces,

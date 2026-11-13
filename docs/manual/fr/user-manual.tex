@@ -708,7 +708,9 @@ premier jour de cet exercice, et refusée si ce jour est dans la période verrou
 (\S\ref{sec:transitoires}). Le verrou arrête
 ce qui \textbf{entre dans le passé}, jamais ce qui \textbf{corrige depuis le présent}. C'est
 cette distinction qui empêche le verrou de rendre vos livres incorrigibles --- et c'est pourquoi
-Kesh refuse de poser une borne à la date du jour ou dans le futur.
+Kesh refuse de poser une borne à la date du jour ou dans le futur. La date du jour est celle de
+Zurich (\S\ref{sec:date-du-jour})~: à minuit et demi, «~jusqu'à hier~» est accepté, et l'écran
+propose cette veille.
 \textbf{Une exception}~: l'annulation d'un règlement (ou d'un paiement) dont le
 \textbf{lettrage} s'est figé avec la période est refusée --- elle défairait un lettrage de la
 période verrouillée~; le verrou doit reculer pour la permettre (ci-dessus).
@@ -731,6 +733,20 @@ lettrable encore ouvertes sont \textbf{lettrées} avec leur miroir dans l'écrit
 ligne déjà lettrée garde son groupe, et son miroir reste ouvert. C'est ce que l'art.~958f CO et l'Olico
 exigent --- non pas qu'on ne se trompe jamais, mais que \textbf{la correction soit
 apparente}.
+
+\begin{keshnote}[title={La date du jour est celle de Zurich, même la nuit}]\label{sec:date-du-jour}
+Ce que Kesh date \textbf{du jour} --- la contre-passation et les annulations qui contre-passent
+(règlement, facture fournisseur, rapprochement), le solde d'ouverture d'un compte bancaire et
+la régularisation des soldes de départ, le premier exercice créé par l'assistant --- et la borne
+du verrou de période, que Kesh refuse au jour même, prennent \textbf{la date de Zurich}, même
+entre minuit et une heure du matin (deux heures en été)~: une correction faite le
+1\textsuperscript{er} janvier à minuit et demi est datée du 1\textsuperscript{er} janvier, dans
+le nouvel exercice. L'écran, lui, propose la date \textbf{de votre poste} (une date de facture,
+la borne du verrou)~; pour un poste réglé sur la Suisse, ce sont les mêmes. \emph{Depuis la
+version 0.17.7~; avant, c'était le jour UTC du serveur, qui ne change qu'à une ou deux heures
+du matin à Zurich. Les autres dates du jour (factures échues, rappels, postes ouverts,
+accueil, noms de fichiers) suivront.}
+\end{keshnote}
 
 Le lien figure aussi dans l'export comptable complet (colonne
 \texttt{reverses\_entry\_id} du fichier \texttt{journal\_entries.csv}), afin qu'une
@@ -994,7 +1010,7 @@ Une fois l'ouverture générée, l'écran passe en mode \emph{compléter}~: sous
 
 \begin{itemize}
     \item \textbf{La date.} Si votre premier exercice est encore ouvert et que son premier jour n'est pas dans la période verrouillée, le complément est daté de ce premier jour~: le compte oublié faisait partie de l'ouverture, et les soldes d'ouverture --- donc tout rapport déjà tiré sur cet exercice --- en sont modifiés. Si un exercice suivant est déjà clôturé --- ce qui ne se rencontre plus qu'avec des données antérieures à la v0.13.0, les exercices se clôturant désormais dans l'ordre ---, le complément est \textbf{refusé} tant qu'il l'est (\S\ref{sec:exercices-desordre})~: il changerait son bilan reporté. \keshAttention\ L'écran ne le prévoit pas et propose le complément~; le refus vient à l'enregistrement, et nomme l'exercice clôturé. Sinon, le complément est une \textbf{régularisation datée du jour}, dans l'exercice ouvert qui couvre cette date. La date annoncée par l'écran est indicative~; elle est confirmée à l'enregistrement.
-    \item \textbf{Le jour est celui du serveur, en temps universel}~: entre minuit et une ou deux heures du matin, heure suisse, c'est encore la veille --- le 1\textsuperscript{er} janvier, une régularisation peut tomber dans l'exercice précédent, ou être refusée s'il est clôturé.
+    \item \textbf{Le jour est celui de Zurich}, même entre minuit et deux heures du matin (\S\ref{sec:date-du-jour})~: le 1\textsuperscript{er} janvier à minuit et demi, une régularisation est datée du 1\textsuperscript{er} janvier, dans le nouvel exercice.
     \item \textbf{La numérotation.} Daté du premier jour, le complément porte pourtant le numéro suivant du journal~: dans cet exercice, l'ordre des numéros cesse de suivre l'ordre des dates.
 \end{itemize}
 
@@ -2469,7 +2485,7 @@ Pour qui modifie un compte par l'API : \texttt{PUT /bank-accounts/\{id\}} rempla
 
 À la création d'un compte, dès qu'un \textbf{compte comptable lié} est choisi, le formulaire propose le \textbf{solde d'ouverture} (facultatif)~: un montant positif, et son sens --- \emph{Avoir} (le solde du relevé est en votre faveur) ou \emph{Dette (découvert)} (un découvert~; pour une carte de crédit, l'option s'intitule \emph{Dette (solde dû)}). Le sens est présélectionné d'après le compte lié --- \emph{Avoir} pour un compte d'actif, \emph{Dette} pour un compte de passif --- et se change librement~: c'est le solde lu sur le relevé qui compte. Sans compte lié, le champ n'apparaît pas. Les séparateurs de milliers (\texttt{1'234.50}) et la virgule décimale (\texttt{75,25}) sont acceptés~; le montant \textbf{tel qu'il sera écrit} s'affiche sous le champ, au format suisse~; pour un montant nul (\texttt{0}, \texttt{0,00}), il est dit qu'aucune écriture d'ouverture ne sera passée. Une virgule suivie d'exactement trois chiffres (\texttt{1,234}) est \textbf{refusée comme ambiguë}~: mille deux cent trente-quatre, ou un franc, vingt-trois centimes et quatre dixièmes~? Écrivez \texttt{1'234} pour mille deux cent trente-quatre, ou \texttt{1.234} pour un franc, vingt-trois centimes et quatre dixièmes. \keshAttention\ \texttt{1.234} est \textbf{toujours} lu ainsi, jamais comme un millier à l'allemande~: vérifiez le montant affiché sous le champ (\#1026). Le refus touche aussi quelques montants qui n'étaient pas ambigus, comme \texttt{0,500}~: écrivez-les avec un point (\#1025).
 
-À l'enregistrement, Kesh passe \textbf{une écriture OD «~Solde d'ouverture --- \emph{nom du compte}~»} par le mécanisme du mode \emph{compléter} des soldes de départ~: le compte lié au débit (\emph{Avoir}) ou au crédit (\emph{Dette}), la contrepartie sur le compte de rôle \emph{Bénéfice/perte reporté}. Elle est \textbf{datée du premier jour du premier exercice} s'il est ouvert et hors période verrouillée, \textbf{sinon d'aujourd'hui}, dans l'exercice ouvert qui couvre cette date~: saisissez donc le solde du relevé \textbf{à cette date}. Le jour est celui du serveur, en temps universel~: entre minuit et une ou deux heures du matin, heure suisse, c'est encore la veille (\#1022, comme pour le mode \emph{compléter}). Un avis nomme l'écriture (numéro, date et montant écrit)~; elle se retrouve dans le journal comme toute autre. Contrairement au mode \emph{compléter} de l'écran \emph{Soldes de départ}, le solde se saisit aussi dans une société \textbf{qui n'a encore aucune écriture} --- le cas d'une installation neuve.
+À l'enregistrement, Kesh passe \textbf{une écriture OD «~Solde d'ouverture --- \emph{nom du compte}~»} par le mécanisme du mode \emph{compléter} des soldes de départ~: le compte lié au débit (\emph{Avoir}) ou au crédit (\emph{Dette}), la contrepartie sur le compte de rôle \emph{Bénéfice/perte reporté}. Elle est \textbf{datée du premier jour du premier exercice} s'il est ouvert et hors période verrouillée, \textbf{sinon d'aujourd'hui}, dans l'exercice ouvert qui couvre cette date~: saisissez donc le solde du relevé \textbf{à cette date}. Le jour est celui de Zurich, même la nuit (\S\ref{sec:date-du-jour}). Un avis nomme l'écriture (numéro, date et montant écrit)~; elle se retrouve dans le journal comme toute autre. Contrairement au mode \emph{compléter} de l'écran \emph{Soldes de départ}, le solde se saisit aussi dans une société \textbf{qui n'a encore aucune écriture} --- le cas d'une installation neuve.
 
 \textbf{Le compte et son écriture se créent ensemble, ou pas du tout.} L'écriture est refusée, avec le motif, dans les mêmes cas que le mode \emph{compléter}~: le compte lié a \textbf{déjà des mouvements}~; il est lui-même le compte \emph{Bénéfice/perte reporté}~; aucun compte en service ne porte ce rôle (ou il n'est pas imputable)~; aucun exercice ouvert ne couvre la date~; la date tombe dans la période verrouillée~; ou un exercice suivant est déjà clôturé (données antérieures à la v0.13.0, \S\ref{sec:exercices-desordre}). Le compte bancaire n'est alors \textbf{pas créé}, et l'ancien compte principal reste principal --- même si l'erreur survient après l'écriture, que Kesh défait avec le reste~: corrigez, puis recommencez --- ou créez le compte sans solde. Un nom de banque de plus de 255 caractères est refusé.
 

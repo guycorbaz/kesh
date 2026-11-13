@@ -265,6 +265,9 @@ pub mod lecture_seule;
 /// La date du jour de l'horloge de test (Story 35-5a0).
 pub mod jour;
 
+/// Fixer l'horloge d'un état de test (Story 35-5a).
+pub mod horloge;
+
 /// La capture générique de `tracing`, tous niveaux et toutes cibles (Story
 /// 32-6a, AC-a14).
 pub mod capture_trace;

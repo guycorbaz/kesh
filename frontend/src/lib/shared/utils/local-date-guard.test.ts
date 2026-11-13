@@ -39,7 +39,11 @@ interface Entree {
 	motif: string;
 }
 
-/** Les sites conformes (fiche v0174-correctifs-3, § 5 et § 6) : huit entrées. */
+/**
+ * Les sites conformes (fiche v0174-correctifs-3, § 5 et § 6) : sept entrées. La borne du
+ * verrou de période (`settings/+page.svelte`, site 13) en est sortie à la Story 35-5a
+ * (#907) : elle prend la veille de `todayLocal`, le serveur jugeant au jour de Zurich.
+ */
 const ALLOWLIST: Entree[] = [
 	{
 		fichier: 'lib/features/invoices/invoice-helpers.ts',
@@ -50,11 +54,6 @@ const ALLOWLIST: Entree[] = [
 		fichier: 'lib/features/journal-entries/form-helpers.ts',
 		fragment: 'return d.toISOString().slice(0, 10);',
 		motif: 'site 5 — arithmétique de jours sur les composants UTC d’une date pure (nextDay)',
-	},
-	{
-		fichier: 'routes/(app)/settings/+page.svelte',
-		fragment: 'return d.toISOString().slice(0, 10);',
-		motif: 'site 13 — veille UTC, borne du verrou jugée par le serveur à sa date UTC (C-v0174c-14, #907)',
 	},
 	{
 		fichier: 'routes/(app)/invoices/[id]/+page.svelte',
@@ -140,7 +139,7 @@ function lireSources(): Map<string, string> {
 }
 
 describe('garde des dates du jour et des affichages d’instants (#889)', () => {
-	it('les sources ne portent que les huit sites conformes de l’allowlist', () => {
+	it('les sources ne portent que les sept sites conformes de l’allowlist', () => {
 		const sources = lireSources();
 		expect(sources.size).toBeGreaterThan(100);
 		expect(auditer(relever(sources), ALLOWLIST)).toEqual([]);
@@ -153,7 +152,11 @@ describe('garde des dates du jour et des affichages d’instants (#889)', () => 
 			'{formatSwissDate(invoice.paidAt.slice(0, 10))}\n{formatSwissDate(invoice.pdfFrozenAt)}',
 		],
 	]);
-	const une: Entree[] = [ALLOWLIST[3]];
+	// Story 35-5a : l'entrée se désigne par son fichier, non par sa position (le retrait de
+	// l'entrée du verrou avait décalé l'index et fait viser la sonde à côté).
+	const une: Entree[] = ALLOWLIST.filter(
+		(e) => e.fichier === 'routes/(app)/invoices/[id]/+page.svelte',
+	);
 
 	it('sonde : le décor de la sonde est propre', () => {
 		expect(auditer(relever(base), une)).toEqual([]);

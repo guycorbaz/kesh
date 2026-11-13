@@ -56,3 +56,15 @@ async fn la_lecture_de_l_etat_porte_l_horloge_de_l_etat() {
     assert_eq!(state.lecture().horloge().aujourd_hui(), jour);
     assert_eq!(state.horloge.aujourd_hui(), jour);
 }
+
+/// Story 35-5a, AC7 — à 23 h 30 UTC le 31 décembre (00 h 30 le 1er janvier
+/// à Zurich), la `Lecture` de l'état — celle des services et du MCP — rend le
+/// **1er janvier** (la 35-5a0 : le 31 décembre, jour UTC).
+#[tokio::test]
+async fn la_lecture_de_l_etat_rend_le_jour_suisse() {
+    let mut state = etat_de_test();
+    state.horloge = Arc::new(HorlogeFixe(instant("2025-12-31T23:30:00Z")));
+    let jour = NaiveDate::from_ymd_opt(2026, 1, 1).unwrap();
+    assert_eq!(state.lecture().aujourd_hui(), jour);
+    assert_eq!(state.lecture().horloge().aujourd_hui(), jour);
+}

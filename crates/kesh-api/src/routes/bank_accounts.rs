@@ -792,7 +792,7 @@ fn opening_entry_description(
 }
 
 /// Ce que la création transmet au complément : montant et sens, libellé, date
-/// du jour (UTC, comme le complément de l'écran).
+/// du jour (celle de Zurich, l'horloge de l'état, comme le complément de l'écran).
 struct OpeningRequest {
     opening: OpeningAmount,
     description: String,
