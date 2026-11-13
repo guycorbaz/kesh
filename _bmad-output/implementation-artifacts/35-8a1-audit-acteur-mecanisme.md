@@ -323,7 +323,7 @@ Chaque raison finale est relue au code :
 | Mutation | Tuée par |
 |---|---|
 | M1 `From<&CurrentUser>` jette la clé | les deux tests clé d'AC3 (`mut/M1-ac3.log`) ; la garde (`mut/M1.log`) |
-| M2 `par` appelle `Self::user` | les deux tests clé d'AC3 (`supplier_invoice.unvalidated` en `"user"`, `M2-ac3.log`) ; la garde ne la voit pas (`Self::user`, non `NewAuditLogEntry::user`) — dit |
+| M2 `par` appelle `Self::user` | les deux tests clé d'AC3 (`supplier_invoice.unvalidated` en `"user"`, `M2-ac3.log`) ; la garde ne la voit pas (`Self::user`, non `NewAuditLogEntry::user`) — dit *(annoté en P1, A2 : affirmation lue, non jouée au développement ; jouée à la remédiation P1, `mut/M2-garde.log` au commit `b3a14f752` : la garde reste verte, 15/15 — angle mort 6 de la garde)* |
 | M4a `None` au `delete_in_tx` de l'achat | AC3 (`journal_entry.deleted` en `"user"`) ; la garde, motif 5 |
 | M4b `Actor { …, api_key_id: None }` au lettrage | AC3, cas annulée (`lettering.removed` en `"user"`) ; la garde, motif 3 ; le cas validée reste vert — aucun lettrage, attendu |
 | M5 l'entrée `ensure_admin_user` décrémentée | la garde : « compte faux … code 2, table 1 » |
@@ -337,7 +337,7 @@ second passage (`*-ac3.log`). Les lignes de garde de ces journaux restent valide
 
 | Gate | Résultat | Journal | Commit |
 |---|---|---|---|
-| `cargo fmt --check`, `clippy -D warnings` (workspace) | verts | — | même arbre que `bcdd05dd7` |
+| `cargo fmt --check`, `clippy -D warnings` (workspace) | verts | `test-fast-ci-1.log` (« ▶ cargo fmt --check », « ▶ cargo clippy », puis « ✅ Gate backend rapide vert ») *(journal ajouté en P1, A3)* | même arbre que `bcdd05dd7` |
 | `scripts/test-fast.sh --ci`, voie 2, base remise à neuf | **5405 passés, 0 échec, 13 ignorés** | `test-fast-ci-1.log` | arbre commité tel quel en `bcdd05dd7` |
 | `scripts/gate-ci.sh kesh_ci_e358a1`, voie 1 | **5412 passés, 0 échec, 17 ignorés** | `gate-ci.log` | `bcdd05dd7` |
 | frontend | non lancé : rien ne change sous `frontend/` | — | — |
@@ -427,3 +427,73 @@ Les deux derniers sont déjà nommés par la fiche, à l'Epic 36.
   - Frontend non touché ; **E2E à la clôture**.
   - Détail au Dev Agent Record. Statut : `review`. Prompt de la revue P1 :
     `35-8a1-audit-acteur-mecanisme-review-prompt-p1.md`.
+- 2026-11-13 — **Revue P1** (trois lentilles, Opus ; `kesh-gate-logs/e358a1-review-p1-{B,E,A}.md`), sur `bcdd05dd7`.
+  - **1 MEDIUM** convergé, B1 = E1 : la raison et l'appelant de la table ne sont lus par aucune assertion, et une route
+    comptable qui se mettrait à appeler une fonction de raison finale laisserait la garde verte, contrairement à la phrase
+    de tête. **14 LOW** : B2-B5, E2-E6, A1-A5. Déjà tracés, hors de la remédiation : #1130, #1131, #1132.
+  - **Remédiation** (Opus 5.5, voie 2), un seul commit de code `b3a14f752`.
+  - **MEDIUM — remède souhaité, appliqué (C-e358a1-3)** :
+    - table `REFERENCES` : **50** fonctions (chaque fonction de site de raison finale hors `Definition`, et chaque maillon
+      jusqu'à la route), **54** références en 53 paires `(fichier, fonction)`, recomptées depuis la source (`awk` sur le
+      bloc) ;
+    - deux tests : `chaque_fonction_de_raison_finale_a_ses_references_closes` (relevé contre liste, dans les deux sens) et
+      `chaque_site_de_raison_finale_a_sa_liste_de_references` ;
+    - sonde positive synthétique (i) : une route de plus et un appel nu par import rougissent ;
+    - phrase de tête réécrite ; angles morts 6 à 9 écrits.
+    - **Rouge d'abord** : la table posée avec des listes vides, la garde rougit sur **51** références non déclarées
+      (`p1-references-releve.log`), puis la table est remplie. Raccord : ces 51 lignes valent **52** références (celle de
+      `company_invoice_settings::update` compte ×2, l'appel et le libellé du rejeu), et deux maillons sont ajoutés après
+      ce relevé (`process_forgot_password_request`, `repair_installation_at_startup`, une référence chacun) : 54
+      références, 53 paires.
+    - **Mutation M7** (une route `/api/v1/sonde-m7` de plus vers `unlock_company_books` dans `comptable_routes`) :
+      « `routes::companies::unlock_company_books` : compte faux dans `lib.rs` / fn `build_router_avec_registre` — code 2,
+      liste 1 » (`mut/M7.log`).
+  - **LOW traités** :
+    - B2, A2, E3 : motif 4 aligné (`for_actor\s*\(`) ; angles morts 6 (`Self::`, import renommé, `None` par variable, champ
+      abrégé ou `Option::None`), 7 (`fn` dans une chaîne, état de chaîne par ligne), 3 complété (profondeur faussée par un
+      `//` dans une chaîne, `mcp/reseau.rs`) ; **la garde jouée sous M2** (`mut/M2-garde.log`) : 15/15 verte — M2 n'est
+      tuée que par AC3, comme le dit désormais l'angle mort 6.
+    - B3 : sonde `sonde_fonction_imbriquee_fermeture_et_motif_4_espace` (fonction imbriquée, fermeture, retour à la
+      fonction englobante, `for_actor (` avec un blanc), et limite écrite (angle mort 7).
+    - B4 : doc-comment d'`Acteur` (constructeur **nommé** ; champs publics ; littéraux comptés par les motifs 2 et 3).
+    - B5 : `api_keys.rs:122`, `:222`, `auth.rs:635`, relus.
+    - E2 : appelants de `build_audit_entry` complets (création ×2, modification `lib.rs:830`, clôture, réouverture
+      `lib.rs:479`).
+    - E4 : limite écrite au doc-comment de `source_assainie` et à l'angle mort 3 de la garde.
+    - E5 : la sonde (h) porte une définition à paramètre `None`. **Mutation M8** (saut de la définition retiré) : tuée par
+      `sonde_h_delete_in_tx_sans_cle_est_compte` (`mut/M8.log`).
+    - E6 : manuel d'administration — « Les entrées **de ce retour en brouillon** écrites avant la v0.17.7… », et la liste
+      des gestes encore en `'user'` complétée par les autres gestes des factures fournisseur (création, modification,
+      validation, paiement, annulation). Même correction au CHANGELOG (propagation du symptôme). PDF régénéré
+      (`p1-manuels-make.log`) et contrôlé aplati ; `api-external.md` dit déjà « celles déjà écrites le gardent », dans le
+      seul contexte du retour en brouillon : inchangé.
+    - A1 : **les traces de l'annulation elle-même** (`supplier_invoice.cancelled`, son `lettering.created`) **ne sont pas
+      assertées** par AC3 : la borne `MAX(id)` est prise après l'annulation, et ces traces, hors story, portent encore
+      `'user'` quand une clé annule (`cancel_in_tx`, entrées `AConvertir` de la table ; 35-8b, Epic 36).
+    - A3 : journal de fmt et clippy cité au Dev Agent Record (`test-fast-ci-1.log`) ; `gate-ci.log` annoté en tête du
+      commit `bcdd05dd7`, relevé non modifié.
+    - A4 : écarts à la consigne Edit, et pourquoi :
+      - fichiers neufs par l'outil Write, l'outil Edit ne créant pas de fichier ;
+      - `replace_all` de l'outil Edit pour un préfixe écrit à tort sur 85 lignes ;
+      - **mutations par script Python**, parce que chaque mutation est un aller-retour : appliquer, compiler et tester,
+        restaurer à l'octet par `git checkout --`. Dix allers-retours en deux campagnes, plus trois ici, avec un contrôle
+        d'unicité du motif que l'outil Edit fait aussi, mais sans pouvoir s'enchaîner avec le test et la restauration
+        dans une même exécution sans surveillance.
+
+      Rien ne manque à l'outil Edit pour le code livré.
+    - A5 : la sonde d'AC5 pour `NewAuditLogEntry::par(` dans `audit_label_registry` est **la mutation M6**.
+
+      AC5 au Change Log :
+      - table `SITES` inchangée par la remédiation : **85 entrées, 90 sites** — `AConvertir` 46/47, `AdminSansCle` 27/29,
+        `PreAuth` 4/4, `Systeme` 2/3, `Definition` 3/3, `Restauration` 1/2, `Mcp` 2/2 ; par motif, `User` 78,
+        `ApiKeyNone` 11, `DeleteInTxNone` 1 ;
+      - sondes (a) à (h), plus la sonde des motifs 2 et 3, plus (i) et la sonde de la fonction imbriquée : **11 sondes**,
+        vertes, dans les 15 tests de la garde (`p1-gardes-vert.log`).
+  - **Gates de la remédiation**, au commit `b3a14f752` :
+    - `cargo fmt --check` vert ; `clippy -D warnings` (workspace) vert (`p1-clippy.log`) ;
+    - `scripts/test-fast.sh --ci`, voie 2, bases remises à neuf : **5409 passés, 0 échec, 13 ignorés**
+      (`test-fast-ci-p1.log`) ; +4 sur le développement, les quatre tests neufs de la garde ;
+    - gardes ciblées 15/15 et 11/11 (`p1-gardes-vert.log`) ;
+    - ni `gate-ci` ni E2E : à la clôture (consigne de l'Epic 35) ; frontend non touché.
+  - **LOW non traité** : aucun. La remédiation touche du code de test et un doc-comment de production
+    (`entities/audit_log.rs`), sans changer de comportement.
