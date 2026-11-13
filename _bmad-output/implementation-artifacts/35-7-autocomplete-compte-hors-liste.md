@@ -1,6 +1,6 @@
 # Story 35-7 : le champ de compte ne paraît plus vide quand un compte part au serveur (#1000)
 
-Status: review
+Status: done
 
 *Fiche rédigée le 2026-11-12 par l'agent de rédaction des fiches de l'Epic 35 (Opus 5.5), worktree `kesh-e35`, par le
 workflow `bmad-create-story`. Release **0.17.7**. **Aucune migration**, aucun changement serveur ni d'API, aucune clé
@@ -370,3 +370,16 @@ Journaux dans `/home/gcorbaz/devel/kesh-gate-logs/e357/` : `rouges.log` (Vitest 
     `e2e-35-7-complet.sh` imprime « kesh_e2e_e357 recréée », lisible dans la sortie de tâche de ce run, non copiée au
     journal.)* **Backend** : aucun fichier Rust touché (`git diff 926854f7..0a64b0f8 --stat` : huit fichiers, quatre
     sous `frontend/src` et quatre sous `_bmad-output/`, dont le prompt de revue P1), pas de gate backend.
+- **2026-11-13 — Revue de code, close en P2 ciblée.**
+  - Trend : **P1 (Opus, trois lentilles ; prompt `…-review-prompt-p1.md`, `54f7d927`) : 0 CRITICAL, 0 HIGH, 1 MEDIUM, 14 LOW**
+    (B 5, E 4 + E1, A 5) → remédiation `0a64b0f8` (E1 `Ctrl+S`, A3, A5 ; captures A4 ; annotations A1, A2) →
+    **P2 ciblée (Sonnet, une lentille, le seul `0a64b0f8` ; prompt `…-review-prompt-p2-ciblee.md`, `ee8be51a`) : 0 au-dessus de
+    LOW, 1 LOW** → boucle close (passe sans rien au-dessus de LOW). Rapports hors dépôt
+    `kesh-gate-logs/e357-review-p1-{B,E,A}.md`, `e357-review-p2-ciblee.md`.
+  - E1 vérifié au code par l'orchestrateur avant renvoi au développement (`JournalEntryForm.svelte:283-288`, raccourci sur
+    `svelte:window`, aucun `blur`).
+  - LOW, une issue par problème : P1 #1078 à #1085 ; P2 C1 → **#1095** (Entrée dans un champ `allowClear` d'un `<form>` :
+    facture et article, même classe que #1000, antérieur à la story ; labellisé P2 par l'orchestrateur : l'écran des premières
+    factures clients). E5 (compte de la banque qui repasse à `null`) : voulu, sans issue. A1, A2 : annotés au Change Log par la
+    remédiation ; A3, A5 : corrigés ; A4 : captures refaites.
+  - Statut : `done`.
