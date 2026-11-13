@@ -295,6 +295,25 @@ déclaré ; tout le code et les tests sont écrits par l'outil Edit (ou Write po
   « rappel seul. Le PDF du rappel est produit à chaque envoi » 1, « lot de rappels la reprend » 1, « (issue #955) » 0 ; la
   seule « comme sur la » restante parle de la réconciliation.
 
+*(Annoté le 2026-11-13, revue P2 ciblée C2 : « `fmt` rc 0 » ci-dessus citait `rem1-clippy.log`, qui ne porte que clippy ;
+`rem1-fmt.log` porte le diff d'**avant** le commit (une assertion reformatée ensuite). La preuve de `fmt` au commit
+`eb512ea7a` est `rem1-test-fast-ci.log` : en-tête « commit eb512ea7a », étape « ▶ cargo fmt --check » (ligne 5) passée,
+`rc=0` en fin de journal ; et `clo-gate-ci.log` ci-dessous.)*
+
+**Clôture** (2026-11-13 ; boucle de revue close sur la P2 ciblée ; HEAD `cdaccea4c`, **code `eb512ea7a`**, aucun code modifié) :
+
+- `scripts/gate-ci.sh kesh_ci_e352b` (base de CI recréée par le script) : **5342 passés, 0 échoué, 17 ignorés**, code 0
+  (`kesh-gate-logs/e352b/clo-gate-ci.log`, `clo-gate-ci-console.log`, en-tête : HEAD et commit de code).
+- **E2E complet** sur `kesh_e2e_e352b` recréée vide (migrations du worktree, seed), port 3409, `KESH_COOKIE_SECURE=false`,
+  binaire `target/debug/kesh-api` recompilé à `eb512ea7a` (`clo-build-bin.log`), `frontend/build` de `eb512ea7a`
+  (`rem1-front-build.log`) : **405 passés, 7 échoués, 18 ignorés** (18,3 min ; `clo-e2e-complet.log`, en-tête et
+  environnement dans `clo-e2e-console.log`). Les sept échecs, nommés un par un contre `docs/testing.md` § « Les échecs
+  attendus » : `mode-expert.spec.ts:26`, `mode-expert.spec.ts:41`, `onboarding-path-b.spec.ts:65`,
+  `onboarding-path-b.spec.ts:92`, `onboarding.spec.ts:57`, `onboarding.spec.ts:77`, `onboarding.spec.ts:150` — les sept de
+  la KF-029 (#97) ; aucune pollution ; `backup-restore-new-install.spec.ts` (KF-056, #931) vert, pas de rejeu. La spec
+  neuve `reminder-batch-refus-pdf.spec.ts:31` passe (test 336, 1,9 s) : la phrase traverse la frontière HTTP jusqu'à l'écran.
+- Backend arrêté par son PID, port 3409 libre avant et après.
+
 ### File List
 
 - `crates/kesh-api/src/errors.rs` — `message_trop_de_lignes_pdf`, `message_entete_pdf_deborde` ; les deux bras les appellent ;
