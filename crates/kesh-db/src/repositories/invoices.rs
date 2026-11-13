@@ -30,7 +30,7 @@ use kesh_core::listing::SortDirection;
 
 use crate::entities::audit_log::NewAuditLogEntry;
 use crate::entities::invoice::{Invoice, InvoiceLine, InvoiceUpdate, NewInvoice, NewInvoiceLine};
-use crate::errors::{DbError, UnvalidationBlocker, map_db_error};
+use crate::errors::{DbError, NumberedDocument, UnvalidationBlocker, map_db_error};
 use crate::repositories::audit_log;
 use crate::repositories::company_invoice_settings::{DesignatedRole, GeneratedLines};
 use crate::repositories::invoice_settlements::{
@@ -2037,6 +2037,11 @@ pub(in crate::repositories) fn generate_invoice_journal_lines_rounded(
 /// - [`DbError::FiscalYearInvalid`] : aucun exercice ouvert pour `invoice.date`.
 /// - [`DbError::ConfigurationRequired`] : comptes par défaut absents.
 /// - [`DbError::OptimisticLockConflict`] : race sur l'UPDATE final (défensif).
+/// - [`DbError::NumberFormatUnrenderable`] (Story 35-1, #948) : le numéro ne peut
+///   pas être produit par le format des réglages — au rendu, juste après
+///   l'exercice (trop long, accolade dans le nom de l'exercice, format illisible) ;
+///   à l'UPDATE final, s'il est déjà attribué dans la société (`duplicate`). Une
+///   facture qui reprend son numéro (dévalidée) n'y passe pas.
 ///
 /// **Ordre des refus de la garde à l'usage** (Story 15-5d, #429). Le verrou de
 /// `(2 bis', suite)` ne refuse rien, il ne déplace donc aucun refus. Le refus
@@ -2336,11 +2341,17 @@ pub async fn validate_invoice(
             None => {
                 let seq =
                     invoice_number_sequences::next_number_for(&mut tx, company_id, fy.id).await?;
+                // Story 35-1 (#948, D4) : un numéro impossible à produire est un
+                // refus typé (400 `NUMBER_FORMAT_UNRENDERABLE`), non un 500 ; la
+                // transaction est annulée et le numéro tiré avec elle.
                 invoice_format::render(&settings.invoice_number_format, year, &fy.name, seq)
                     .map_err(|e| {
-                        DbError::Invariant(format!(
-                            "rendu numéro facture échoué (config invalide ?) : {e}"
-                        ))
+                        DbError::number_render_failed(
+                            NumberedDocument::Invoice,
+                            &e,
+                            &settings.invoice_number_format,
+                            &fy.name,
+                        )
                     })?
             }
         };
@@ -2433,7 +2444,19 @@ pub async fn validate_invoice(
         .bind(invoice_before.version)
         .execute(&mut *tx)
         .await
-        .map_err(map_db_error)?
+        // Story 35-1 (#948, D5) : un numéro déjà attribué dans la société
+        // (`uq_invoices_number`) — format sans compteur, sans exercice sur deux
+        // exercices… — est le refus typé de D4, cause `duplicate`, et non le
+        // générique `409 RESOURCE_CONFLICT`. Un numéro repris (facture dévalidée)
+        // est celui de la même ligne : il ne heurte rien.
+        .map_err(|e| {
+            map_db_error(e).into_number_duplicate(
+                "uq_invoices_number",
+                NumberedDocument::Invoice,
+                &settings.invoice_number_format,
+                &fy.name,
+            )
+        })?
         .rows_affected();
 
         if rows == 0 {

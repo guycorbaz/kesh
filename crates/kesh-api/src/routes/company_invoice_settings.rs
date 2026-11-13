@@ -102,8 +102,10 @@ pub struct UpdateInvoiceSettingsRequest {
     pub default_vat_decompte_account_id: Option<i64>,
     pub default_sales_journal: String,
     pub journal_entry_description_template: String,
-    /// #216 — optionnel + **préservé** si absent : le formulaire frontend ne le
-    /// gère pas encore ; sans ça, tout enregistrement des réglages échouait en 422.
+    /// #216 — optionnel + **préservé** si absent : un client qui ne l'envoie pas
+    /// (clé d'API, onglet ouvert avant la mise à jour) ne l'efface pas ; sans ça,
+    /// son enregistrement des réglages échouait en 422. L'écran l'envoie depuis la
+    /// Story 35-1 (D3).
     #[serde(default)]
     pub credit_note_number_format: Option<String>,
     /// Story 33-1a (#926) — format du numéro interne. **Absent du corps : préservé**
@@ -327,23 +329,34 @@ pub async fn update_invoice_settings(
     let company = get_company_for(&current_user, &state.pool).await?;
 
     // #216 — `credit_note_number_format` optionnel : si le client ne l'envoie pas
-    // (cas du formulaire frontend actuel), on **préserve** la valeur existante au
-    // lieu de rejeter la requête en 422.
+    // (une clé d'API, un onglet ouvert avant la mise à jour — l'écran l'envoie depuis
+    // la Story 35-1), on **préserve** la valeur existante au lieu de rejeter la
+    // requête en 422.
     let current = company_invoice_settings::get_or_create_default(&state.pool, company.id).await?;
     let credit_note_number_format = req
         .credit_note_number_format
         .clone()
-        .unwrap_or(current.credit_note_number_format);
+        .unwrap_or_else(|| current.credit_note_number_format.clone());
     let supplier_internal_number_format = req
         .supplier_internal_number_format
         .clone()
         .unwrap_or(current.supplier_internal_number_format);
 
     // 1. Valider le format (facture + avoir — même grammaire {YEAR}/{FY}/{SEQ:NN}).
-    invoice_format::validate_template(&req.invoice_number_format)
-        .map_err(|e| AppError::Validation(e.to_string()))?;
-    invoice_format::validate_template(&credit_note_number_format)
-        .map_err(|e| AppError::Validation(e.to_string()))?;
+    // Story 35-1 (#932, D1, D2) : le compteur est obligatoire, mais n'est jugé que
+    // si le format **change** — un format enregistré sans compteur (avant la
+    // 0.17.7, ou par SQL) ne bloque pas l'enregistrement d'autre chose ; tout autre
+    // refus reste inconditionnel.
+    invoice_format::validate_template_change(
+        &req.invoice_number_format,
+        &current.invoice_number_format,
+    )
+    .map_err(|e| AppError::Validation(e.to_string()))?;
+    invoice_format::validate_template_change(
+        &credit_note_number_format,
+        &current.credit_note_number_format,
+    )
+    .map_err(|e| AppError::Validation(e.to_string()))?;
     // Le numéro interne, lui, a une forme fixe (C-e331-16).
     invoice_format::validate_numbering_template(&supplier_internal_number_format)
         .map_err(|e| AppError::Validation(e.to_string()))?;

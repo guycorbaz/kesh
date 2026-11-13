@@ -1665,6 +1665,75 @@ fn designated_account_wrong_type_response(
     (StatusCode::BAD_REQUEST, Json(body)).into_response()
 }
 
+/// Réponse **400 `NUMBER_FORMAT_UNRENDERABLE`** (Story 35-1, #948, D4, D5) : une
+/// phrase sur la pièce (facture ou avoir), une sur la cause — qui nomme le
+/// format, l'exercice, et dit où corriger —, `details { document, cause }`.
+///
+/// Un littéral de repli par clé, écrit en entier : la garde G9
+/// (`textes_coherents.rs`) ne compare que des littéraux.
+fn number_format_unrenderable_response(
+    document: kesh_db::errors::NumberedDocument,
+    cause: kesh_db::errors::NumberFormatCause,
+    format: &str,
+    fiscal_year_name: &str,
+) -> Response {
+    use kesh_db::errors::{NumberFormatCause as C, NumberedDocument as D};
+    let lead = match document {
+        D::Invoice => t(
+            "error-number-format-unrenderable-invoice",
+            "Cette facture ne peut pas être validée : son numéro ne peut pas être produit. Rien n’a été enregistré, aucun numéro n’a été consommé.",
+        ),
+        D::CreditNote => t(
+            "error-number-format-unrenderable-credit-note",
+            "Cet avoir ne peut pas être créé : son numéro ne peut pas être produit. Rien n’a été enregistré, aucun numéro n’a été consommé.",
+        ),
+    };
+    let mut args = FluentArgs::new();
+    args.set("format", format.to_string());
+    args.set("fiscalYear", fiscal_year_name.to_string());
+    let reason = match cause {
+        C::TooLong => t_args(
+            "error-number-format-unrenderable-too-long",
+            &format!(
+                "Le format « {format} », avec le nom de l’exercice « {fiscal_year_name} », donne un numéro de plus de 64 caractères : raccourcissez le format dans Administration → Facturation, ou le nom de l’exercice."
+            ),
+            &args,
+        ),
+        C::BraceInFiscalYearName => t_args(
+            "error-number-format-unrenderable-brace",
+            &format!(
+                "Le nom de l’exercice « {fiscal_year_name} » contient une accolade, que le format « {format} » reprendrait dans le numéro : renommez l’exercice, ou retirez {{FY}} du format dans Administration → Facturation."
+            ),
+            &args,
+        ),
+        C::Duplicate => t_args(
+            "error-number-format-unrenderable-duplicate",
+            &format!(
+                "Le format « {format} » produit, dans l’exercice « {fiscal_year_name} », un numéro déjà attribué : il doit distinguer chaque pièce — un compteur ({{SEQ}}), qui repart à chaque exercice, et l’exercice ({{FY}}) ; l’année ({{YEAR}}) ne suffit pas si deux exercices commencent la même année. Corrigez-le dans Administration → Facturation."
+            ),
+            &args,
+        ),
+        C::InvalidFormat => t_args(
+            "error-number-format-unrenderable-invalid",
+            &format!(
+                "Le format « {format} » enregistré n’est pas valide : corrigez-le dans Administration → Facturation."
+            ),
+            &args,
+        ),
+    };
+    let body = serde_json::json!({
+        "error": {
+            "code": "NUMBER_FORMAT_UNRENDERABLE",
+            "message": format!("{lead} {reason}"),
+            "details": {
+                "document": document.api_value(),
+                "cause": cause.api_value(),
+            },
+        }
+    });
+    (StatusCode::BAD_REQUEST, Json(body)).into_response()
+}
+
 /// Réponse d'un refus de complément des soldes de départ (Story 25-7, AC 5) :
 /// statut, code et message **par cause**. Les refus qui portent sur un compte le
 /// nomment par son numéro — un identifiant de base ne se comprend pas.
@@ -4693,6 +4762,18 @@ impl IntoResponse for AppError {
                 // savoir lequel et où le faire corriger.
                 DbError::DesignatedAccountsWrongType(accounts) => {
                     designated_account_wrong_type_response(&accounts)
+                }
+                // Story 35-1 (#948, D4, D5) — le numéro d'une facture ou d'un avoir
+                // ne peut pas être produit par le format des réglages. Jusqu'à la
+                // v0.17.6 : `500 INTERNAL_ERROR` (rendu) ou `409 RESOURCE_CONFLICT`
+                // (numéro déjà attribué).
+                DbError::NumberFormatUnrenderable {
+                    document,
+                    cause,
+                    format,
+                    fiscal_year_name,
+                } => {
+                    number_format_unrenderable_response(document, cause, &format, &fiscal_year_name)
                 }
                 // Story 25-4-c3-b (#476) — un écart d'arrondi à écrire, et pas de
                 // compte utilisable pour le recevoir. Le message dit OÙ agir.

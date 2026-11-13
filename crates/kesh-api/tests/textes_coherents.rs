@@ -736,6 +736,11 @@ fn les_replis_rust_suivent_le_catalogue() {
     const PAYS: &[(&str, &str)] = &[("{ $code }", "{code}")];
     // Story 35-2b (#955, revue P1 B1) — le nombre de lignes du refus « trop de lignes ».
     const LIGNES: &[(&str, &str)] = &[("{ $count }", "{n}")];
+    // Story 35-1 (#948) — le format de numérotation et le nom de l'exercice.
+    const FORMAT_EXERCICE: &[(&str, &str)] = &[
+        ("{ $format }", "{format}"),
+        ("{ $fiscalYear }", "{fiscal_year_name}"),
+    ];
     type Cles = &'static [(&'static str, usize, &'static [(&'static str, &'static str)])];
     const TABLE: [(&str, Cles); 9] = [
         // Story 31-5 (#469, C-31-5-15) — les six refus du journal d'audit.
@@ -858,6 +863,41 @@ fn les_replis_rust_suivent_le_catalogue() {
                 ("error-designated-account-type-liability", 1, &[]),
                 ("error-designated-account-type-revenue", 1, &[]),
                 ("error-designated-account-type-expense", 1, &[]),
+                // Story 35-1 (#948, D4, D5) — le numéro impossible à produire : la
+                // phrase de la pièce, puis celle de la cause, qui nomme le format et
+                // l'exercice ; les placeholders cités s'écrivent `{{…}}` en Rust.
+                ("error-number-format-unrenderable-invoice", 1, &[]),
+                ("error-number-format-unrenderable-credit-note", 1, &[]),
+                (
+                    "error-number-format-unrenderable-too-long",
+                    1,
+                    FORMAT_EXERCICE,
+                ),
+                (
+                    "error-number-format-unrenderable-brace",
+                    1,
+                    &[
+                        ("{ $format }", "{format}"),
+                        ("{ $fiscalYear }", "{fiscal_year_name}"),
+                        ("{\"{\"}FY{\"}\"}", "{{FY}}"),
+                    ],
+                ),
+                (
+                    "error-number-format-unrenderable-duplicate",
+                    1,
+                    &[
+                        ("{ $format }", "{format}"),
+                        ("{ $fiscalYear }", "{fiscal_year_name}"),
+                        ("{\"{\"}SEQ{\"}\"}", "{{SEQ}}"),
+                        ("{\"{\"}FY{\"}\"}", "{{FY}}"),
+                        ("{\"{\"}YEAR{\"}\"}", "{{YEAR}}"),
+                    ],
+                ),
+                (
+                    "error-number-format-unrenderable-invalid",
+                    1,
+                    &[("{ $format }", "{format}")],
+                ),
             ],
         ),
         (

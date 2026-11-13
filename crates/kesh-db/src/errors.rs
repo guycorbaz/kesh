@@ -783,6 +783,80 @@ impl WrongTypeDesignatedAccounts {
     }
 }
 
+/// La pièce dont le numéro ne peut pas être produit —
+/// [`DbError::NumberFormatUnrenderable`] (Story 35-1, #948).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NumberedDocument {
+    /// Une facture, à sa validation (`invoice_number_format`).
+    Invoice,
+    /// Un avoir, à sa création (`credit_note_number_format`).
+    CreditNote,
+}
+
+impl NumberedDocument {
+    /// La valeur de `details.document` : `invoice`, `credit_note`.
+    pub fn api_value(self) -> &'static str {
+        match self {
+            Self::Invoice => "invoice",
+            Self::CreditNote => "credit_note",
+        }
+    }
+}
+
+/// Pourquoi le numéro ne peut pas être produit —
+/// [`DbError::NumberFormatUnrenderable`] (Story 35-1, #948, D4, D5). Quatre causes,
+/// et quatre seulement.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NumberFormatCause {
+    /// Le rendu dépasse 64 caractères — en pratique un nom d'exercice long sous
+    /// un format qui le reprend (`{FY}`), que la validation des réglages compte
+    /// pour 16 caractères seulement (D6).
+    TooLong,
+    /// Le nom de l'exercice porte une accolade et le format le reprend.
+    BraceInFiscalYearName,
+    /// Le numéro rendu est déjà attribué dans la société (`uq_invoices_number`,
+    /// `uq_credit_notes_number`) : format sans compteur, ou sans exercice sur deux
+    /// exercices, ou `{YEAR}` sur deux exercices de même année de début (D5).
+    Duplicate,
+    /// Le format enregistré ne se lit pas (posé hors de la route : SQL direct,
+    /// version antérieure).
+    InvalidFormat,
+}
+
+impl NumberFormatCause {
+    /// La valeur de `details.cause` : `too_long`, `brace_in_fiscal_year_name`,
+    /// `duplicate`, `invalid_format`.
+    pub fn api_value(self) -> &'static str {
+        match self {
+            Self::TooLong => "too_long",
+            Self::BraceInFiscalYearName => "brace_in_fiscal_year_name",
+            Self::Duplicate => "duplicate",
+            Self::InvalidFormat => "invalid_format",
+        }
+    }
+
+    /// La cause d'une erreur de [`kesh_core::invoice_format::render`] ; `None`
+    /// pour [`kesh_core::invoice_format::FormatError::InvalidSeq`], que le
+    /// `CHECK next_number >= 1` de la base interdit (un invariant, non un refus).
+    pub fn from_render_error(err: &kesh_core::invoice_format::FormatError) -> Option<Self> {
+        use kesh_core::invoice_format::FormatError as F;
+        match err {
+            F::InvalidSeq(_) => None,
+            F::RenderedTooLong(_) => Some(Self::TooLong),
+            F::FiscalYearNameBrace(_) => Some(Self::BraceInFiscalYearName),
+            F::Empty
+            | F::TemplateTooLong(_)
+            | F::IllegalCharacter(_)
+            | F::UnknownPlaceholder(_)
+            | F::InvalidSeqPadding(_)
+            | F::NoPlaceholder
+            | F::NoSeq
+            | F::UnmatchedBrace
+            | F::NotNumberingShape => Some(Self::InvalidFormat),
+        }
+    }
+}
+
 /// Erreurs des opérations de persistance MariaDB.
 ///
 /// Les messages `Display` sont destinés au logging serveur uniquement.
@@ -974,6 +1048,28 @@ pub enum DbError {
         "Un ou plusieurs comptes désignés dans les réglages de facturation n'ont pas le type que leur réglage exige"
     )]
     DesignatedAccountsWrongType(WrongTypeDesignatedAccounts),
+
+    /// Le numéro d'une facture (à sa validation) ou d'un avoir (à sa création) ne
+    /// peut pas être produit par le format enregistré dans *Administration →
+    /// Facturation* (Story 35-1, #948, D4, D5) : rendu trop long, accolade dans le
+    /// nom de l'exercice, numéro déjà attribué, format illisible.
+    ///
+    /// Même famille que [`DbError::DesignatedAccountsNotPostable`] : une
+    /// configuration qui refuse à l'usage. Mappé vers HTTP **400
+    /// `NUMBER_FORMAT_UNRENDERABLE`**, `details { document, cause }` ; le message
+    /// nomme le format, l'exercice et la cause, et dit où corriger. Rien n'est
+    /// écrit : la transaction est annulée, et le numéro tiré du compteur avec elle.
+    /// Jusqu'à la v0.17.6, ces cas rendaient `500 INTERNAL_ERROR` (rendu) ou `409
+    /// RESOURCE_CONFLICT` (numéro déjà attribué).
+    #[error("Le numéro ne peut pas être produit par le format « {format} » ({cause:?})")]
+    NumberFormatUnrenderable {
+        document: NumberedDocument,
+        cause: NumberFormatCause,
+        /// Le format enregistré, tel quel.
+        format: String,
+        /// Le nom de l'exercice de la pièce.
+        fiscal_year_name: String,
+    },
 
     /// Un paiement solde une facture au centime et produit un écart d'arrondi,
     /// mais aucun compte de différences d'arrondi utilisable n'est désigné dans
@@ -1748,6 +1844,54 @@ impl DbError {
         Self::AccountsNotPostable(NonPostableAccounts::new(accounts))
     }
 
+    /// Une erreur de rendu du numéro d'une pièce (Story 35-1, #948, D4) :
+    /// [`DbError::NumberFormatUnrenderable`] avec sa cause, ou
+    /// [`DbError::Invariant`] pour un compteur < 1 (interdit par la base).
+    pub fn number_render_failed(
+        document: NumberedDocument,
+        err: &kesh_core::invoice_format::FormatError,
+        format: &str,
+        fiscal_year_name: &str,
+    ) -> Self {
+        match NumberFormatCause::from_render_error(err) {
+            Some(cause) => Self::NumberFormatUnrenderable {
+                document,
+                cause,
+                format: format.to_string(),
+                fiscal_year_name: fiscal_year_name.to_string(),
+            },
+            None => Self::Invariant(format!(
+                "rendu du numéro ({}) échoué : {err}",
+                document.api_value()
+            )),
+        }
+    }
+
+    /// Story 35-1 (#948, D5) — une violation d'unicité qui **nomme**
+    /// `constraint` (`uq_invoices_number`, `uq_credit_notes_number`) devient
+    /// [`DbError::NumberFormatUnrenderable`], cause `Duplicate` : le numéro que
+    /// le format vient de rendre est déjà attribué dans la société. Toute autre
+    /// erreur est rendue telle quelle.
+    pub fn into_number_duplicate(
+        self,
+        constraint: &str,
+        document: NumberedDocument,
+        format: &str,
+        fiscal_year_name: &str,
+    ) -> Self {
+        match self {
+            Self::UniqueConstraintViolation(ref message) if message.contains(constraint) => {
+                Self::NumberFormatUnrenderable {
+                    document,
+                    cause: NumberFormatCause::Duplicate,
+                    format: format.to_string(),
+                    fiscal_year_name: fiscal_year_name.to_string(),
+                }
+            }
+            other => other,
+        }
+    }
+
     /// Code d'erreur structuré pour le mapping API (utilisé par `kesh-api`
     /// pour construire les réponses d'erreur JSON).
     pub fn error_code(&self) -> &'static str {
@@ -1767,6 +1911,7 @@ impl DbError {
             Self::AccountsNotPostable(_) => "ACCOUNT_NOT_POSTABLE",
             Self::DesignatedAccountsNotPostable(_) => "ACCOUNT_NOT_POSTABLE",
             Self::DesignatedAccountsWrongType(_) => "DESIGNATED_ACCOUNT_WRONG_TYPE",
+            Self::NumberFormatUnrenderable { .. } => "NUMBER_FORMAT_UNRENDERABLE",
             Self::RoundingAccountNotConfigured { .. } => "ROUNDING_ACCOUNT_NOT_CONFIGURED",
             Self::WriteOffAccountNotConfigured { .. } => "WRITE_OFF_ACCOUNT_NOT_CONFIGURED",
             Self::InvoiceBelowMinimum { .. } => "INVOICE_BELOW_MINIMUM",

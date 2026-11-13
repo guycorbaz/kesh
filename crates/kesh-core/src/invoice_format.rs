@@ -18,6 +18,7 @@
 //! - Au moins 1 placeholder reconnu présent.
 //! - Pour chaque `{SEQ:NN}` : 1 ≤ NN ≤ 10.
 //! - Longueur du rendu maximal ≤ 64 (cas worst-case `seq = 10^NN - 1`).
+//! - Un compteur, `{SEQ}` ou `{SEQ:NN}` (Story 35-1, #932) — testé en dernier.
 
 use std::fmt;
 
@@ -40,6 +41,16 @@ pub enum FormatError {
     /// dédié pour distinguer d'une erreur de padding.
     InvalidSeq(i64),
     NoPlaceholder,
+    /// Le format de facture ou d'avoir n'a pas de compteur (`{SEQ}` ou
+    /// `{SEQ:NN}`) : toutes les pièces d'un exercice y recevraient le même
+    /// numéro (Story 35-1, #932, D1). Testé **en dernier** par
+    /// [`validate_template`] : tout autre refus prime.
+    NoSeq,
+    /// Le nom de l'exercice porte une accolade, et le format le reprend
+    /// (`{FY}`) : le numéro serait trompeur. Émis par [`render`] seulement
+    /// (Story 35-1, #948 : distinct d'[`FormatError::IllegalCharacter`], qui vient
+    /// du format lui-même).
+    FiscalYearNameBrace(char),
     RenderedTooLong(usize),
     UnmatchedBrace,
     /// Le format n'a pas la forme d'un format de numérotation
@@ -69,6 +80,14 @@ impl fmt::Display for FormatError {
             Self::NoPlaceholder => write!(
                 f,
                 "Le format doit contenir au moins un placeholder reconnu ({{YEAR}}, {{FY}}, {{SEQ}}, {{SEQ:NN}})"
+            ),
+            Self::NoSeq => write!(
+                f,
+                "Le format doit contenir un compteur ({{SEQ}} ou {{SEQ:NN}}) : sans lui, toutes les pièces d'un exercice auraient le même numéro"
+            ),
+            Self::FiscalYearNameBrace(c) => write!(
+                f,
+                "Le nom de l'exercice contient une accolade ('{c}'), que le format reprendrait dans le numéro"
             ),
             Self::RenderedTooLong(n) => write!(
                 f,
@@ -155,8 +174,40 @@ fn parse(template: &str) -> Result<Vec<Token<'_>>, FormatError> {
     Ok(tokens)
 }
 
-/// Valide un template sans rendre.
+/// Valide un format de numéro de **facture ou d'avoir** sans le rendre : les
+/// règles de [`validate_template_rules`], puis le **compteur obligatoire**
+/// (`{SEQ}` ou `{SEQ:NN}`, Story 35-1, #932, D1) — testé en dernier, si bien qu'un
+/// [`FormatError::NoSeq`] dit que tout le reste est valide.
+///
+/// ⚠️ Un compteur ne suffit pas à rendre un numéro unique : il repart à chaque
+/// exercice, et l'unicité vaut pour la société. Un format sans `{YEAR}` ni `{FY}`
+/// (`FACT{SEQ}`) heurte l'unicité au deuxième exercice — refusé à l'usage
+/// (`NUMBER_FORMAT_UNRENDERABLE`, cause `duplicate`), non ici (#1058).
 pub fn validate_template(template: &str) -> Result<(), FormatError> {
+    let tokens = validate_template_rules(template)?;
+    if !tokens.iter().any(|t| matches!(t, Token::Seq(_))) {
+        return Err(FormatError::NoSeq);
+    }
+    Ok(())
+}
+
+/// Juge un format **à l'enregistrement des réglages** (Story 35-1, #932, D2) :
+/// [`validate_template`], sauf qu'un format **inchangé** (`template ==
+/// stored`) sans compteur est toléré — un format enregistré avant la 0.17.7 ne
+/// bloque pas l'enregistrement d'autre chose. Tout autre refus reste
+/// inconditionnel.
+pub fn validate_template_change(template: &str, stored: &str) -> Result<(), FormatError> {
+    match validate_template(template) {
+        Err(FormatError::NoSeq) if template == stored => Ok(()),
+        other => other,
+    }
+}
+
+/// Les règles communes aux formats de facture, d'avoir et de numéro interne :
+/// non vide, ≤ 64 octets, caractères et placeholders reconnus, au moins un
+/// placeholder, rendu au pire ≤ 64. Rend les jetons, pour les contrôles propres
+/// à chaque format.
+fn validate_template_rules(template: &str) -> Result<Vec<Token<'_>>, FormatError> {
     if template.trim().is_empty() {
         return Err(FormatError::Empty);
     }
@@ -202,7 +253,7 @@ pub fn validate_template(template: &str) -> Result<(), FormatError> {
     if worst_case_len > MAX_RENDERED_LEN {
         return Err(FormatError::RenderedTooLong(worst_case_len));
     }
-    Ok(())
+    Ok(tokens)
 }
 
 /// Valide un **format de numérotation interne** (Story 33-1a, #926 ; C-e331-16) :
@@ -218,12 +269,15 @@ pub fn validate_template(template: &str) -> Result<(), FormatError> {
 /// rendent donc la même chaîne que pour la même année et le même rang, si bien
 /// qu'un changement de format ne fait revenir aucun numéro. Les formats client et
 /// avoir gardent [`validate_template`].
+///
+/// Story 35-1 : elle part des règles communes, **sans** le compteur obligatoire
+/// de [`validate_template`] — sa forme l'exige déjà, et un format sans compteur
+/// garde ici son refus de forme ([`FormatError::NotNumberingShape`]).
 pub fn validate_numbering_template(template: &str) -> Result<(), FormatError> {
-    validate_template(template)?;
+    let tokens = validate_template_rules(template)?;
     if template.starts_with(char::is_whitespace) || template.contains('\t') {
         return Err(FormatError::NotNumberingShape);
     }
-    let tokens = parse(template)?;
     let sans_prefixe = match tokens.as_slice() {
         [Token::Literal(_), reste @ ..] => reste,
         tous => tous,
@@ -288,15 +342,18 @@ pub fn render(template: &str, year: i32, fy_name: &str, seq: i64) -> Result<Stri
     if seq < 1 {
         return Err(FormatError::InvalidSeq(seq));
     }
+    let tokens = parse(template)?;
     // Review Q2 (pass 2) : fy.name est admin-controlled à la création de
     // l'exercice. Un nom contenant '{' ou '}' pourrait produire un numéro
     // visuellement trompeur. Refuser côté render (défense en profondeur).
-    if fy_name.contains('{') || fy_name.contains('}') {
-        return Err(FormatError::IllegalCharacter(
-            fy_name.chars().find(|c| *c == '{' || *c == '}').unwrap(),
-        ));
+    // Story 35-1 (#948, C-e351-2) : seulement si le format reprend le nom
+    // (`{FY}`) — sinon le nom n'entre pas dans le numéro, et un exercice à
+    // accolade bloquait toute validation, au format par défaut compris.
+    if tokens.iter().any(|t| matches!(t, Token::Fy))
+        && let Some(c) = fy_name.chars().find(|c| *c == '{' || *c == '}')
+    {
+        return Err(FormatError::FiscalYearNameBrace(c));
     }
-    let tokens = parse(template)?;
     let seq_str = seq.to_string();
 
     let mut out = String::with_capacity(template.len() + 16);
@@ -512,6 +569,67 @@ mod tests {
             validate_description_template("{FOO}"),
             Err(FormatError::UnknownPlaceholder(_))
         ));
+    }
+
+    // Story 35-1 (#932, AC1, D1) — un format de facture ou d'avoir porte un
+    // compteur : sans lui, toutes les pièces d'un exercice auraient le même numéro.
+    #[test]
+    fn template_without_counter_is_refused() {
+        assert_eq!(validate_template("F-{YEAR}"), Err(FormatError::NoSeq));
+        assert_eq!(validate_template("{YEAR}"), Err(FormatError::NoSeq));
+        assert_eq!(validate_template("AV-{FY}"), Err(FormatError::NoSeq));
+        // Sans aucun placeholder : `NoPlaceholder`, testé d'abord.
+        assert_eq!(
+            validate_template("FACTURE"),
+            Err(FormatError::NoPlaceholder)
+        );
+        // Les autres refus priment : `NoSeq` ne vient qu'en dernier.
+        assert_eq!(
+            validate_template("F-{YEAR}!"),
+            Err(FormatError::IllegalCharacter('!'))
+        );
+    }
+
+    #[test]
+    fn template_with_counter_is_accepted() {
+        for ok in [
+            "F-{YEAR}-{SEQ:04}",
+            "FACT{SEQ}",
+            "{FY}/{SEQ:06}",
+            "{FY}{SEQ}",
+        ] {
+            assert_eq!(validate_template(ok), Ok(()), "{ok}");
+        }
+    }
+
+    // Story 35-1 (#932, D2) — un format n'est jugé sur son compteur que s'il
+    // change ; tout autre refus reste inconditionnel.
+    #[test]
+    fn unchanged_template_without_counter_is_tolerated() {
+        assert_eq!(validate_template_change("F-{YEAR}", "F-{YEAR}"), Ok(()));
+        assert_eq!(
+            validate_template_change("F-{YEAR}", "F-{YEAR}-{SEQ:04}"),
+            Err(FormatError::NoSeq)
+        );
+        assert_eq!(
+            validate_template_change("FACT", "FACT"),
+            Err(FormatError::NoPlaceholder)
+        );
+        assert_eq!(validate_template_change("FACT{SEQ}", "F-{YEAR}"), Ok(()));
+    }
+
+    // Story 35-1 (#948, D4) — un nom d'exercice à accolade ne bloque le rendu que
+    // si le format le reprend (`{FY}`).
+    #[test]
+    fn brace_in_fiscal_year_name_matters_only_with_fy() {
+        assert_eq!(
+            render("F-{FY}-{SEQ:04}", 2026, "Ex {2026}", 1),
+            Err(FormatError::FiscalYearNameBrace('{'))
+        );
+        assert_eq!(
+            render("F-{YEAR}-{SEQ:04}", 2026, "Ex {2026}", 1),
+            Ok("F-2026-0001".to_string())
+        );
     }
 
     // Story 33-1a (#926) — le format de numérotation interne (AC16).

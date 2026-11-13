@@ -91,8 +91,42 @@ describe('validateFormatTemplate, option numbering', () => {
 			expect(validateFormatTemplate(ko, { numbering: true }).ok).toBe(false);
 		});
 	}
-	it('ne change pas la règle des formats client et avoir', () => {
-		expect(validateFormatTemplate('F-{YEAR}').ok).toBe(true);
+	// Story 35-1 (#932) — réécrit : la 33-1b figeait ici `F-{YEAR}` accepté pour les formats
+	// client et avoir ; depuis la 35-1, un compteur y est obligatoire (D1).
+	it('les formats client et avoir exigent un compteur, pas la forme du numéro interne', () => {
+		const sansCompteur = validateFormatTemplate('F-{YEAR}');
+		expect(sansCompteur.ok).toBe(false);
+		expect(sansCompteur.code).toBe('NO_SEQ');
 		expect(validateFormatTemplate('{FY}{SEQ}').ok).toBe(true);
+	});
+	it('le numéro interne garde son refus de forme, sans code NO_SEQ', () => {
+		const r = validateFormatTemplate('FF-{YEAR}', { numbering: true });
+		expect(r.ok).toBe(false);
+		expect(r.code).toBeUndefined();
+	});
+});
+
+// Story 35-1 (#932, AC5, D1) — le compteur obligatoire, miroir de `FormatError::NoSeq`.
+describe('validateFormatTemplate, compteur obligatoire', () => {
+	for (const ko of ['F-{YEAR}', '{YEAR}', 'AV-{FY}', 'F-{YEAR}-{FY}']) {
+		it(`refuse ${ko} en NO_SEQ`, () => {
+			const r = validateFormatTemplate(ko);
+			expect(r.ok).toBe(false);
+			expect(r.code).toBe('NO_SEQ');
+			expect(r.error).toContain('compteur');
+		});
+	}
+	for (const ok of ['F-{YEAR}-{SEQ:04}', 'FACT{SEQ}', '{FY}/{SEQ:06}']) {
+		it(`accepte ${ok}`, () => {
+			expect(validateFormatTemplate(ok)).toEqual({ ok: true });
+		});
+	}
+	it('les autres refus priment et ne portent pas de code', () => {
+		const sansPlaceholder = validateFormatTemplate('FACTURE');
+		expect(sansPlaceholder.ok).toBe(false);
+		expect(sansPlaceholder.code).toBeUndefined();
+		const caractere = validateFormatTemplate('F-{YEAR}!');
+		expect(caractere.ok).toBe(false);
+		expect(caractere.code).toBeUndefined();
 	});
 });

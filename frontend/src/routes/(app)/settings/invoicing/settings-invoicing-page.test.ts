@@ -74,6 +74,7 @@ function settings(overrides: Partial<InvoiceSettingsResponse> = {}): InvoiceSett
 	return {
 		companyId: 1,
 		invoiceNumberFormat: 'F-{YEAR}-{SEQ:04}',
+		creditNoteNumberFormat: 'AV-{YEAR}-{SEQ:04}',
 		supplierInternalNumberFormat: 'FF-{YEAR}-{SEQ:03}',
 		defaultReceivableAccountId: null,
 		defaultRevenueAccountId: null,
@@ -182,6 +183,91 @@ describe('Administration → Facturation — compte de différences d’arrondi'
 		await waitFor(() => expect(updateInvoiceSettingsMock).toHaveBeenCalledTimes(1));
 		expect(updateInvoiceSettingsMock.mock.calls[0][0]).toMatchObject({ minimumInvoiceAmount: null });
 	});
+});
+
+// Story 35-1 (#932, AC5) — le format des avoirs à l'écran (D3), le compteur obligatoire
+// (D1), jugé seulement quand le format change (D2).
+describe('Administration → Facturation — numérotation des factures et des avoirs', () => {
+	const saveButton = (getByTestId: (id: string) => HTMLElement) =>
+		getByTestId('settings-invoicing-save') as HTMLButtonElement;
+
+	it('le champ Format des avoirs affiche la valeur lue et son aperçu, et part à l’enregistrement (M5)', async () => {
+		getInvoiceSettingsMock.mockResolvedValue(settings());
+		updateInvoiceSettingsMock.mockResolvedValue(settings({ version: 4 }));
+		const { findByLabelText, getByTestId } = render(Page);
+		const input = (await findByLabelText('Format des avoirs')) as HTMLInputElement;
+		await waitFor(() => expect(input.value).toBe('AV-{YEAR}-{SEQ:04}'));
+		expect(getByTestId('settings-credit-note-format-preview').textContent).toContain('AV-2026-0001');
+		await fireEvent.input(input, { target: { value: 'AVOIR-{YEAR}-{SEQ:03}' } });
+		await waitFor(() =>
+			expect(getByTestId('settings-credit-note-format-preview').textContent).toContain('AVOIR-2026-001'),
+		);
+		await fireEvent.click(saveButton(getByTestId));
+		await waitFor(() => expect(updateInvoiceSettingsMock).toHaveBeenCalledTimes(1));
+		expect(updateInvoiceSettingsMock.mock.calls[0][0]).toMatchObject({
+			invoiceNumberFormat: 'F-{YEAR}-{SEQ:04}',
+			creditNoteNumberFormat: 'AVOIR-{YEAR}-{SEQ:03}',
+		});
+	});
+
+	for (const champ of [
+		{ label: 'Format de numérotation', error: 'settings-format-error' },
+		{ label: 'Format des avoirs', error: 'settings-credit-note-format-error' },
+	]) {
+		it(`${champ.label} changé en F-{YEAR} : refus d’écran, bouton désactivé, aucun appel (M6)`, async () => {
+			getInvoiceSettingsMock.mockResolvedValue(settings());
+			const { findByLabelText, getByTestId, container } = render(Page);
+			const input = (await findByLabelText(champ.label)) as HTMLInputElement;
+			await waitFor(() => expect(input.value).not.toBe(''));
+			await fireEvent.input(input, { target: { value: 'F-{YEAR}' } });
+			await waitFor(() => expect(getByTestId(champ.error).textContent).toContain('compteur'));
+			expect(getByTestId(champ.error).className).toContain('text-destructive');
+			expect(saveButton(getByTestId).disabled).toBe(true);
+			await fireEvent.submit(container.querySelector('form')!);
+			await new Promise((r) => setTimeout(r, 20));
+			expect(updateInvoiceSettingsMock).not.toHaveBeenCalled();
+		});
+	}
+
+	for (const champ of [
+		{
+			label: 'Format de numérotation',
+			loaded: { invoiceNumberFormat: 'F-{YEAR}' },
+			preview: 'settings-format-preview',
+			hint: 'settings-format-noseq-hint',
+			error: 'settings-format-error',
+			sent: { invoiceNumberFormat: 'F-{YEAR}' },
+		},
+		{
+			label: 'Format des avoirs',
+			loaded: { creditNoteNumberFormat: 'AV-{YEAR}' },
+			preview: 'settings-credit-note-format-preview',
+			hint: 'settings-credit-note-format-noseq-hint',
+			error: 'settings-credit-note-format-error',
+			sent: { creditNoteNumberFormat: 'AV-{YEAR}' },
+		},
+	]) {
+		it(`${champ.label} chargé sans compteur, laissé tel quel : bouton actif, PUT envoyé, aide non bloquante (D2, M7)`, async () => {
+			getInvoiceSettingsMock.mockResolvedValue(settings(champ.loaded));
+			updateInvoiceSettingsMock.mockResolvedValue(settings({ ...champ.loaded, version: 4 }));
+			const { findByLabelText, getByTestId, queryByTestId } = render(Page);
+			const input = (await findByLabelText(champ.label)) as HTMLInputElement;
+			await waitFor(() => expect(input.value).toBe(Object.values(champ.loaded)[0]));
+			expect(getByTestId(champ.preview)).toBeTruthy();
+			expect(queryByTestId(champ.error)).toBeNull();
+			const hint = getByTestId(champ.hint);
+			expect(hint.textContent).toContain('compteur');
+			expect(hint.className).not.toContain('text-destructive');
+			// Un autre réglage modifié.
+			const box = getByTestId('settings-round-to-5-centimes') as HTMLInputElement;
+			await fireEvent.click(box);
+			const button = saveButton(getByTestId);
+			expect(button.disabled).toBe(false);
+			await fireEvent.click(button);
+			await waitFor(() => expect(updateInvoiceSettingsMock).toHaveBeenCalledTimes(1));
+			expect(updateInvoiceSettingsMock.mock.calls[0][0]).toMatchObject(champ.sent);
+		});
+	}
 });
 
 // Story 25-4-d1 (#384) — les comptes des natures d'écart soldé.

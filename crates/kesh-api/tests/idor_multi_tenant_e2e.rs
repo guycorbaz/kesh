@@ -744,7 +744,8 @@ async fn idor_invoice_settings_vat_account_cross_company_rejected(pool: MySqlPoo
 }
 
 /// #216 — régression : `PUT /company/invoice-settings` SANS `creditNoteNumberFormat`
-/// (cas du formulaire frontend actuel) doit renvoyer **200** (pas 422) et **préserver**
+/// (un client qui ne l'envoie pas — l'écran l'envoie depuis la Story 35-1) doit
+/// renvoyer **200** (pas 422) et **préserver**
 /// le format d'avoir existant. Avant le fix, `credit_note_number_format` était requis
 /// côté DTO → serde échouait → 422 → aucun réglage sauvable depuis l'UI.
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
@@ -770,7 +771,7 @@ async fn settings_update_without_credit_note_format_preserves_and_returns_200(po
         .expect("creditNoteNumberFormat présent au GET")
         .to_string();
 
-    // PUT SANS `creditNoteNumberFormat` (comme le fait le formulaire frontend).
+    // PUT SANS `creditNoteNumberFormat` (un client qui ne l'envoie pas).
     let put = app
         .client
         .put(app.url("/api/v1/company/invoice-settings"))
