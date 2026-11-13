@@ -1,6 +1,6 @@
 # Story 35-1 : un format de numéro sans compteur est refusé aux réglages, et un numéro impossible à produire ne finit plus en erreur 500 à la validation (#932, #948)
 
-Status: review
+Status: done
 
 *Fiche rédigée le 2026-11-12 par l'agent de rédaction des fiches de l'Epic 35 (Opus 5.5), worktree `kesh-e35`, par le
 workflow `bmad-create-story`. Release **0.17.7**. **Priorité basse** dans l'epic (décision de Guy du 2026-11-12 : il garde
@@ -196,7 +196,7 @@ avoirs lu mais non envoyé (AC5) ; M6 le miroir d'écran sans `NoSeq` (AC5) ; **
       `:773`, « comme le fait le formulaire frontend » → « un client qui ne l'envoie pas » ; #216 reste testé) ; `DbError`,
       `errors.rs` ; écran et miroir ; clés ×4, gardes i18n ; manuel, `api-external.md`, CHANGELOG ; captures.
 - [x] Gates du passage en `review` et de la remédiation : backend complet (`kesh-db` touché) ; frontend complet.
-- [ ] E2E complet au dernier commit de code (`settings-invoicing*`, `invoices*` en particulier) — **à la clôture**, après la
+- [x] E2E complet au dernier commit de code (`settings-invoicing*`, `invoices*` en particulier) — **à la clôture**, après la
       revue (consigne de l'Epic 35, `e35-dev-commun.md`). *(Case scindée le 2026-11-13, revue P1, A7 : elle était cochée avec
       l'E2E, qui n'a pas tourné.)*
 
@@ -502,3 +502,24 @@ Journaux hors dépôt, `/home/gcorbaz/devel/kesh-gate-logs/e351/` : `rouges.log`
     neuf) : **5391 exécutés, 5391 passés, 13 ignorés** (`rem-p1-test-fast-ci.log`) ; frontend complet : `check` 0 erreur (29 avertissements anciens), `lint-i18n-ownership` vert, `test:unit`
     **3219 passés, 233 fichiers**, `build` vert (`rem-p1-front-*.log`, commit écrit en tête). **Ni `gate-ci` ni E2E** (consigne de
     la remédiation ; à la clôture). Statut : `review`, passe P2 à lancer.
+- 2026-11-13 — **Revue de code P2, passe ciblée** (Sonnet, une lentille, sur `84a6a0334` ; prompt
+  `35-1-numerotation-sans-seq-review-prompt-p2-ciblee.md`, rapport `kesh-gate-logs/e351-review-p2-ciblee.md`) : **0 CRITICAL,
+  0 HIGH, 0 MEDIUM, 7 LOW** (C1 à C7 : résidus « caractères » autour de la borne en octets, `{SEQ:+4}` au miroir, liste blanche du
+  miroir, `{FY}` compté 16, justification de C-e351-7, « une lettre accentuée en compte deux », compteur de deux causes). Aucun
+  correctif de code : les sept LOW sont tracés par l'orchestrateur en **#1118 à #1124**.
+- 2026-11-13 — **Clôture.** Gates au dernier commit de code **`84a6a0334`** (HEAD `c33f7e2ac`, comptes rendus seuls depuis) :
+  - `scripts/gate-ci.sh kesh_ci_e351` (voie 1) : **5398 passés, 0 échoué, 17 ignorés**, code 0 (`e351/cloture-gate-ci.log`,
+    `cloture-gate-ci.journal`) ;
+  - **E2E complet** (voie 2, `kesh_e2e_e351` recréée à neuf, migrée et semée, backend sur 3411, frontend rebâti
+    `cloture-front-build.log`) : **405 passés, 7 échecs, 18 ignorés** (`e351/cloture-e2e.log`, console `cloture-e2e-console.log`,
+    backend `backend-cloture.log`). Les sept échecs, un à un, sont ceux de la KF-029 (#97) au tableau de `docs/testing.md`
+    § « Les échecs attendus » : `mode-expert.spec.ts:26`, `:41`, `onboarding-path-b.spec.ts:65`, `:92`, `onboarding.spec.ts:57`,
+    `:77`, `:150`. Aucun échec changeant, aucun imputable à la story ; `backup-restore-new-install` (#931) n'a pas rougi.
+  - **Synthèse finale de la boucle de revue** — findings au-dessus de LOW : **P1** (Opus, trois lentilles B/E/A) **3 MEDIUM**
+    (A1, E1, E2) + 16 LOW → **P2 ciblée** (Sonnet) **0** + 7 LOW. Close sur une passe sans rien au-dessus de LOW ; la remédiation P1
+    touchait la production, d'où la passe ciblée. CRITICAL et HIGH : 0 sur toute la boucle. Validation de la fiche : P1 1 HIGH +
+    4 MEDIUM → P2 3 → P3 2 → P4 0.
+  - **Issues ouvertes autour de la story** : #1114 à #1124 (LOW de la P1 non traités — B4, E3, E5 en partie — et autres demandes
+    de l'orchestrateur ; les sept LOW de la P2, #1118 à #1124) ; #1058 (format sans année ni exercice), de la validation.
+  - Statut : **`done`**. Bases de voie 2 gardées (suppression par l'orchestrateur) ; aucun backend vivant (PID du backend d'E2E
+    tué en fin de script, port 3411 libre).
