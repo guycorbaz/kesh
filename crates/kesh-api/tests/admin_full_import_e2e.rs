@@ -4233,7 +4233,7 @@ async fn full_import_restores_mcp_keys_that_authenticate(pool: MySqlPool) {
         SendValidation::Required,
     )
     .await;
-    let lecture = Lecture::new(pool.clone());
+    let lecture = Lecture::new(pool.clone(), kesh_api::horloge::horloge_de_test());
     let trace = Trace::new(pool.clone());
     // Montage : avant l'import, K1 (supprimée) et K3 (révoquée) n'authentifient
     // pas, K2 si.

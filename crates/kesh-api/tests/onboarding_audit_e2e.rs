@@ -2265,7 +2265,7 @@ async fn reset_keeps_mcp_keys_that_authenticate_and_disables_the_server(pool: My
     .execute(&pool)
     .await
     .unwrap();
-    let lecture = Lecture::new(pool.clone());
+    let lecture = Lecture::new(pool.clone(), kesh_api::horloge::horloge_de_test());
     let trace = Trace::new(pool.clone());
     let before = authentifier(&lecture, &trace, &jeton)
         .await
@@ -2504,7 +2504,7 @@ async fn assert_mcp_key_revoked_on(pool: &MySqlPool, key_id: i64, jeton: &str, c
     assert_eq!(company, company_id, "clé MCP rattachée à la société");
     assert!(revoked, "clé MCP orpheline révoquée");
     let auth = kesh_api::services::cles_mcp::authentifier(
-        &Lecture::new(pool.clone()),
+        &Lecture::new(pool.clone(), kesh_api::horloge::horloge_de_test()),
         &Trace::new(pool.clone()),
         jeton,
     )

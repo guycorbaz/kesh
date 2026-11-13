@@ -23,6 +23,7 @@ pub mod errors;
 pub mod exports;
 pub(crate) mod extractors;
 pub mod helpers;
+pub mod horloge;
 pub mod inbox_import;
 pub mod logging;
 pub mod mail;
@@ -104,6 +105,13 @@ pub struct AppState {
     /// Kesh l'un de l'autre (une instance par base). Champ `pub` : les tests
     /// le tiennent à la main (AC35).
     pub backup_lock: Arc<tokio::sync::Mutex<()>>,
+    /// Story 35-5a0 (#929, #1022, #907) — la **seule** source de la date du
+    /// jour du serveur : les routes la lisent (`state.horloge.aujourd_hui()`)
+    /// et la passent à `kesh-db`, qui ne lit plus l'heure pour une date.
+    /// L'horloge réelle en production (`main.rs`) ; l'horloge de test
+    /// (`horloge::horloge_de_test`) dans `new_for_tests` et les états de test.
+    /// Champ `pub` : un test la remplace par une horloge arrêtée.
+    pub horloge: Arc<dyn kesh_core::horloge::Horloge>,
 }
 
 impl AppState {
@@ -144,6 +152,9 @@ impl AppState {
             test_mock_mailer: None,
             // Story 31-1c — verrou des sauvegardes, libre.
             backup_lock: Arc::new(tokio::sync::Mutex::new(())),
+            // Story 35-5a0 — l'horloge de test : arrêtée si la variable
+            // d'instant des tests est posée, réelle sinon.
+            horloge: horloge::horloge_de_test(),
         }
     }
 
@@ -157,7 +168,7 @@ impl AppState {
     /// Méthode, et non champ : `AppState` se construit aussi par littéral dans
     /// des tests.
     pub fn lecture(&self) -> services::poignees::Lecture {
-        services::poignees::Lecture::new(self.pool.clone())
+        services::poignees::Lecture::new(self.pool.clone(), self.horloge.clone())
     }
 
     /// Story 32-3 — la poignée d'écriture de la **trace** d'audit des lectures.
@@ -1399,8 +1410,10 @@ pub fn build_router_avec_registre(
     let delai = registre.delai();
     let pool_outils =
         kesh_db::pool::pool_lecture_seule(&state.pool, mcp::MCP_POOL_CONNEXIONS, delai);
-    let lecture_outils =
-        mcp::LectureOutils::nouvelle(services::poignees::Lecture::new(pool_outils.clone()));
+    // Story 35-5a0 — la lecture des outils porte la MÊME horloge que l'état.
+    let horloge_outils = state.horloge.clone();
+    let lecture_pool = services::poignees::Lecture::new(pool_outils.clone(), horloge_outils);
+    let lecture_outils = mcp::LectureOutils::nouvelle(lecture_pool);
     let lecture_envois = services::poignees::LectureEnvois::new(pool_outils.clone());
     let lecture_prompts = services::poignees::LecturePrompts::new(pool_outils);
     let ecriture_envois = services::poignees::EcritureEnvois::new(state.pool.clone());
