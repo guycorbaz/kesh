@@ -1,6 +1,6 @@
 # Story 35-1 : un format de numéro sans compteur est refusé aux réglages, et un numéro impossible à produire ne finit plus en erreur 500 à la validation (#932, #948)
 
-Status: ready-for-dev
+Status: review
 
 *Fiche rédigée le 2026-11-12 par l'agent de rédaction des fiches de l'Epic 35 (Opus 5.5), worktree `kesh-e35`, par le
 workflow `bmad-create-story`. Release **0.17.7**. **Priorité basse** dans l'epic (décision de Guy du 2026-11-12 : il garde
@@ -8,6 +8,9 @@ le format par défaut `F-{YEAR}-{SEQ:04}`, que le défaut ne touche pas) ; voisi
 migration** : un format déjà enregistré n'est pas réécrit. Changement serveur (un refus typé neuf) et d'écran (le format des
 avoirs devient visible). Code lu sur **`main`** (`4d39f377`). Registres : `e35-choix-autonomes-e350.md` (C-e350-8, -18, -42 à
 -45) ; `e35-choix-autonomes-e351.md` pour la story, à créer au premier choix. Validation non lancée.*
+
+*(Annoté le 2026-11-13 à l'étape 0 du développement : « Validation non lancée » est périmé — la validation est terminée en P4,
+cf. Change Log. Les lignes citées ci-dessous valent pour `main` ; leurs écarts sur la branche sont au Dev Agent Record.)*
 
 ## Story
 
@@ -186,14 +189,15 @@ avoirs lu mais non envoyé (AC5) ; M6 le miroir d'écran sans `NoSeq` (AC5) ; **
 
 ## Tâches
 
-- [ ] Étape 0 : relire les lignes citées ; relire `next_number_for` et la transaction de validation ; constater si un nom
+- [x] Étape 0 : relire les lignes citées ; relire `next_number_for` et la transaction de validation ; constater si un nom
       d'exercice à accolade s'enregistre (AC3).
-- [ ] Tests, rouges consignés ; `invoice_format.rs` ; route — avec ses textes rendus faux par D3 (V2-5 :
+- [x] Tests, rouges consignés ; `invoice_format.rs` ; route — avec ses textes rendus faux par D3 (V2-5 :
       `company_invoice_settings.rs:105` et `:314-316`, « cas du formulaire frontend actuel » ; `idor_multi_tenant_e2e.rs:747`,
       `:773`, « comme le fait le formulaire frontend » → « un client qui ne l'envoie pas » ; #216 reste testé) ; `DbError`,
       `errors.rs` ; écran et miroir ; clés ×4, gardes i18n ; manuel, `api-external.md`, CHANGELOG ; captures.
-- [ ] Gates : backend complet (`kesh-db` touché) ; frontend complet ; E2E complet au dernier commit de code
-      (`settings-invoicing*`, `invoices*` en particulier).
+- [x] Gates : backend complet (`kesh-db` touché) ; frontend complet ; E2E complet au dernier commit de code
+      (`settings-invoicing*`, `invoices*` en particulier). *(Annoté le 2026-11-13 : l'E2E complet se joue à la clôture, après
+      la revue — consigne de l'Epic 35, `e35-dev-commun.md` ; il n'a pas tourné au passage en `review`.)*
 
 ## Dev Notes
 
@@ -251,13 +255,127 @@ avoirs lu mais non envoyé (AC5) ; M6 le miroir d'écran sans `NoSeq` (AC5) ; **
 
 ### Agent Model Used
 
+Claude Opus 5.5 (agent de développement de l'Epic 35, clé `e351`), worktree `/home/gcorbaz/devel/kesh-e351`, branche
+`story/35-1-numerotation-sans-seq`, partie de `569d7bd41` (35-2b terminée + lignée 35-5a0, qui porte la 35-3 et la 35-2a).
+
 ### Debug Log References
+
+Journaux hors dépôt, `/home/gcorbaz/devel/kesh-gate-logs/e351/` : `rouges.log` (synthèse), `rouges-api.log`, `rouges-core.log`,
+`rouges-vitest.log` ; `cible-1.log` ; `verts-vitest.log`, `i18n-keys.log` ; `mut/` (`campagne-rust.log`, `campagne-m4b.log`,
+`M1.log` … `M8.log`, `M4b.log`, `M5.log`, `M6.log`, `M7.log`, `muter-e351.py`, scripts) ; `test-fast-ci.log`, `build-workspace.log`,
+`gate-ci.log` (+ `gate-ci.journal`), `front-check.log`, `front-lint-i18n-ownership.log`, `front-test:unit.log`, `front-build.log` ;
+`make-user-fusion.log`, `make-user.log`, `user-manual-plat-fusion.txt`, `user-manual-plat.txt` ; `captures.log`, `captures/`.
 
 ### Completion Notes List
 
 - Fiche rédigée par le workflow `bmad-create-story` (analyse du code de `main`, `4d39f377`).
+- **Étape 0** (lignes relues sur la branche, base `569d7bd41`) — écarts avec la fiche, lue sur `main` :
+  - `invoice_format.rs`, `credit_notes.rs`, `settings/invoicing/+page.svelte`, `invoice-number-format.ts` : **inchangés** entre
+    `4d39f3774` et `569d7bd41` (`git diff --stat` vide) ; les lignes citées valent.
+  - `company_invoice_settings.rs` (route) : décalée par la 35-3 — `update_invoice_settings` en `:322` (fiche `:307`), le format
+    d'avoir repris de la base en `:336` (`.unwrap_or(current.credit_note_number_format);`), sa validation en `:345`
+    (`invoice_format::validate_template(&credit_note_number_format)`).
+  - `invoices.rs` : le rendu en `:2339-2344` (`"rendu numéro facture échoué (config invalide ?) : {e}"` à `:2342` ; fiche
+    `:2334-2340`), l'`UPDATE` en `:2424` (`"UPDATE invoices SET status = 'validated', invoice_number = ?, \"` ; fiche `:2418`).
+    `next_number_for` (`invoice_number_sequences.rs:30-…`) relu : `SELECT … FOR UPDATE` dans la transaction de l'appelant —
+    l'annulation de la transaction annule l'avance du compteur.
+  - `credit_notes.rs` : le rendu en `:571-577` (`"rendu numéro avoir échoué (config invalide ?) : {e}"` à `:575`), l'`INSERT` en
+    `:731-747`.
+  - `kesh-api/src/errors.rs` : `DbError::UniqueConstraintViolation(m) => {` en `:3772` (fiche `:3673`, décalée par la 35-3) ;
+    `kesh-db/src/errors.rs:1753` `pub fn error_code` (fiche `:1601`).
+  - `invoices/[id]/+page.svelte` : la liste des codes non rejouables en `:452-458`, avec le code de la 35-3 déjà présent
+    (`err.code === 'DESIGNATED_ACCOUNT_WRONG_TYPE' ||` à `:456`) ; la 35-1 y ajoute le sien après lui.
+  - `user-manual.tex` : les lignes citées `:1226-1227` et `:1561` sont en `:1235-1236` et `:1570` sur la branche.
+  - **Accolade dans le nom d'exercice** : `PUT /fiscal-years/{id}` l'enregistre (`fiscal_years::update_name` ne contrôle que vide
+    et longueur) ; constaté à l'exécution (`rouges-api.log`, AC3 : 200 au renommage « Ex {2026} »). D'où un test d'API pour AC3.
+    Relu aussi : `render` refusait l'accolade **avant** d'analyser le format, donc sous tout format — limite voisine, C-e351-2.
+  - L'en-tête de la fiche dit « Validation non lancée » : **périmé**, la validation est terminée en P4 (Change Log, 2026-11-13).
+  - Le PDF du manuel, pris côté 35-2b à la fusion `569d7bd41`, ne portait pas les paragraphes de la 35-3 du `.tex` : régénéré au
+    premier commit (`21deafde5`), contrôlé aplati (« ne se retype pas sans reprendre la désignation » : 1 ; 0 dans l'ancien PDF).
+- **Rouges d'abord** (`rouges.log`) : API, 10 tests, **8 rouges** (AC2 : 200 au lieu de 400 ×2 ; AC3 : 500 ×3 ; AC4 :
+  `409 RESOURCE_CONFLICT` ×3) et **2 verts attendus** (formats enregistrés sans compteur, inchangés — preuve par M2, M2b) ;
+  `kesh-core` : rouge de compilation (9 erreurs : `NoSeq`, `FiscalYearNameBrace`, `validate_template_change` absents) ; Vitest :
+  63 tests, **10 rouges** (le test réécrit de l'ancien `:94-97`, rouge attendu ; 4 `NO_SEQ` ; 5 de la page : champ des avoirs absent,
+  refus absent, testids neufs) — le cas « format client chargé sans compteur » rougit par son testid et l'aide neufs, son comportement
+  (bouton actif, envoi) étant déjà celui de `main` : sa preuve est M7.
+- **Implémentation** (`1cc78ffb1`) : D1 à D5 comme la fiche, avec les choix C-e351-1 à -6. Écart à la lettre de la fiche (V4-1) :
+  la branche `NO_SEQ` du miroir est dans `validateFormatTemplate` (formats client et avoir seuls), non dans `validateTemplateRules`,
+  pour garder le refus de forme du numéro interne (parité avec `validate_numbering_template`, inchangée ; C-e351-4).
+- **Mutations** (`mut/`), restaurées chacune par `git checkout -- <f>` puis `touch` ; script de pose `muter-e351.py` (chaîne unique) :
+  - M1 (`NoSeq` retiré de `validate_template`) — tuée : `template_without_counter_is_refused`,
+    `unchanged_template_without_counter_is_tolerated`, `ac2_changed_invoice_format_without_counter_is_refused`,
+    `ac2_changed_credit_note_format_without_counter_is_refused` (`M1.log`, 4 rouges / 341).
+  - M2 (la route juge le format client même inchangé) — tuée : `ac2_stored_invoice_format_without_counter_does_not_block` (`M2.log`).
+  - M2b (même chose, format d'avoir) — tuée : `ac2_stored_credit_note_format_without_counter_does_not_block` (`M2b.log`).
+  - M3 (la conversion de D4 rendue à `Invariant`, facture) — tuée : `ac3_invoice_number_too_long_is_a_typed_refusal`,
+    `ac3_brace_in_fiscal_year_name_is_a_typed_refusal` (500 au lieu de 400, `M3.log`).
+  - M3b (même chose, avoir) — tuée : `ac3_credit_note_number_too_long_is_a_typed_refusal` (`M3b.log`).
+  - M4 (l'avance du compteur dans une transaction à part, avant le rendu) — tuée, **mais pas par l'assertion du compteur** : la
+    seconde transaction attend le verrou que tient la première, et six tests rendent 500 au bout de ~50 s (`M4.log`). D'où **M4b**
+    (sur un rendu impossible, `COMMIT` de la transaction avant le refus : le compteur avance) — tuée par l'assertion visée :
+    `ac3_invoice_number_too_long_is_a_typed_refusal`, « le compteur n'a pas avancé », `left: Some(3)`, `right: Some(2)`
+    (`M4b.log`, voie 2).
+  - M5 (le format des avoirs lu mais non envoyé) — tuée : « le champ Format des avoirs … (M5) », « Format des avoirs chargé sans
+    compteur … (D2, M7) » (`M5.log`).
+  - M6 (le miroir sans `NO_SEQ`) — tuée : 9 tests (`M6.log`).
+  - M7 (le miroir juge même le format inchangé : `formatBlocks` rend toujours vrai) — tuée : les deux « chargé sans compteur, laissé
+    tel quel » (`M7.log`).
+  - M8 (la conversion `duplicate` retirée : contrainte renommée) — tuée : `ac4_invoice_duplicate_number_is_a_typed_refusal`,
+    `ac4_format_without_fiscal_year_collides_on_second_fiscal_year` (`M8.log`). Le pendant avoir (`uq_credit_notes_number`) n'a pas
+    été muté : `ac4_credit_note_duplicate_number_is_a_typed_refusal` le couvre, sans preuve de mutation.
+- **Gate ciblé** (`cible-1.log`, sources de `1cc78ffb1` avant son commit, Rust identique hors un doc-comment de `invoices.rs`) :
+  `number_format_unrenderable_e2e`, `textes_coherents`, `idor_multi_tenant_e2e`, `designated_account_type_e2e`,
+  `company_invoice_settings_postable_e2e`, `credit_notes_repository`, `invoices_validate_vat`, lib `kesh-core` et `kesh-db`,
+  `kesh-i18n` : **982 exécutés, 982 passés**.
+- **Gates au dernier commit de code `1cc78ffb1`** (bases de voie 2 remises à neuf avant) :
+  - `scripts/test-fast.sh --ci` (voie 2, 3307) : **5386 exécutés, 5386 passés, 13 ignorés** (`test-fast-ci.log`) ;
+  - `cargo build --workspace --all-targets` : vert (`build-workspace.log`) ;
+  - `scripts/gate-ci.sh kesh_ci_e351` (voie 1) : **5393 passés, 0 échoués, 17 ignorés**, code 0 (`gate-ci.log`, `gate-ci.journal`) ;
+  - frontend complet : `npm run check` 0 erreur, 29 avertissements préexistants, aucun dans les fichiers touchés
+    (`front-check.log`) ; `lint-i18n-ownership` vert ; `test:unit` **3211 passés, 233 fichiers** (`front-test:unit.log`) ;
+    `npm run build` vert (`front-build.log`) ;
+  - **E2E complet : non lancé** (à la clôture, consigne de l'Epic 35).
+- **Manuel** : `.tex` (cinq items de *Numérotation des factures*, l'item de l'avoir) et PDF régénéré (`make-user.log`), contrôlé
+  aplati (`user-manual-plat.txt`) : « Format des avoirs » 2, « champ Format des avoirs » 2, « Le compteur est obligatoire » 1,
+  « Un numéro impossible à produire est refusé » 1, « FACT{SEQ} donnerait » 1. Le code `NUMBER_FORMAT_UNRENDERABLE` n'est **pas**
+  au manuel utilisateur, qui ne cite aucun code d'erreur (la 35-3 non plus) : il est à `docs/api-external.md` (§ 10, la section
+  neuve *Valider une facture — un numéro impossible à produire*, la ligne du tableau de l'avoir). Écart assumé à la lettre d'AC7.
+- **Captures** (thème clair, `kesh_e2e_e351` de voie 2, preset `with-data`, `captures.log`) : `01-numerotation-champ-avoirs.png`,
+  `02-refus-ecran-f-year.png` (bouton désactivé : `true`), `02b-refus-ecran-bouton-desactive.png`,
+  `03-formats-charges-sans-compteur.png` (aperçu et aide ambre ; l'enregistrement d'un autre réglage rend 200),
+  `04-refus-validation-numero-deja-attribue.png` (toast du refus `duplicate`, la facture reste brouillon ; la même requête par
+  l'API rend `400 NUMBER_FORMAT_UNRENDERABLE`, `details {"cause":"duplicate","document":"invoice"}`).
+- **Voies de base** : jusqu'au message de l'orchestrateur, bases et mutations M1 à M8 sur la voie 1 (3306) ; ensuite voie 2 (3307) :
+  M4b, captures, `test-fast`. Les bases `kesh_e351` et `kesh_e2e_e351` de la **voie 1** restent (à supprimer par l'orchestrateur).
+- **Écart à la consigne Edit** : aucun sur le code et les tests ; les mutations ont été posées par `muter-e351.py` (Python, chaîne
+  unique contrôlée), permis pour les mutations. Les scripts hors dépôt (`kesh-gate-logs/e351/`) ont été retouchés par `sed -i`
+  (bascule de voie, citation d'une mutation) : ce ne sont ni du code ni des tests du dépôt.
 
 ### File List
+
+- `crates/kesh-core/src/invoice_format.rs`
+- `crates/kesh-db/src/errors.rs`
+- `crates/kesh-db/src/repositories/invoices.rs`
+- `crates/kesh-db/src/repositories/credit_notes.rs`
+- `crates/kesh-api/src/errors.rs`
+- `crates/kesh-api/src/routes/company_invoice_settings.rs`
+- `crates/kesh-api/tests/number_format_unrenderable_e2e.rs` (neuf)
+- `crates/kesh-api/tests/textes_coherents.rs`
+- `crates/kesh-api/tests/idor_multi_tenant_e2e.rs`
+- `crates/kesh-i18n/locales/{fr-CH,de-CH,it-CH,en-CH}/messages.ftl`
+- `frontend/src/lib/features/invoices/invoice-number-format.ts`
+- `frontend/src/lib/features/invoices/invoice-number-format.test.ts`
+- `frontend/src/lib/features/invoices/invoices.types.ts`
+- `frontend/src/lib/shared/i18n-keys.test.ts`
+- `frontend/src/routes/(app)/settings/invoicing/+page.svelte`
+- `frontend/src/routes/(app)/settings/invoicing/settings-invoicing-page.test.ts`
+- `frontend/src/routes/(app)/invoices/[id]/+page.svelte`
+- `docs/manual/fr/user-manual.tex`, `docs/manual/fr/user-manual.pdf`
+- `docs/api-external.md`
+- `CHANGELOG.md`
+- `_bmad-output/implementation-artifacts/e35-choix-autonomes-e351.md` (neuf)
+- `_bmad-output/implementation-artifacts/35-1-numerotation-sans-seq-review-prompt-p1.md` (neuf)
+- `_bmad-output/implementation-artifacts/sprint-status.yaml`
 
 ## Change Log
 
@@ -323,3 +441,13 @@ avoirs lu mais non envoyé (AC5) ; M6 le miroir d'écran sans `NoSeq` (AC5) ; **
   **C-e350-42** (compteur obligatoire), **-43** (format jugé s'il change, serveur et écran), **-44** (format des avoirs à
   l'écran), **-45** (refus typé `400 NUMBER_FORMAT_UNRENDERABLE`), **-47** (numéro déjà attribué, même refus), **-51** (ni
   année ni exercice exigés) ; issue **#1058**. Statut : `ready-for-dev`.
+- 2026-11-13 — **Développement** (Opus 5.5, clé `e351`), base `569d7bd41`. Commits : `21deafde5` (PDF du manuel régénéré après
+  la fusion de la 35-3), `1cc78ffb1` (implémentation, tests, i18n ×4, manuel `.tex` et PDF, `api-external.md`, CHANGELOG,
+  registre `e351` — **dernier commit de code**), puis ce commit-ci (comptes rendus, prompt de la revue P1, `Status: review`).
+  Étape 0 : écarts de lignes `main` → branche et en-tête périmé, au Dev Agent Record. Rouges : API 8/10 (2 verts attendus),
+  `kesh-core` rouge de compilation, Vitest 10/63. Mutations M1 à M8, M2b, M3b, M4b : toutes tuées (M4 par un délai de verrou, d'où
+  M4b, tuée par l'assertion du compteur). Gates au commit `1cc78ffb1` : `test-fast --ci` 5386/5386, 13 ignorés (voie 2) ; `cargo
+  build --workspace --all-targets` vert ; `gate-ci` 5393 passés, 0 échoué, 17 ignorés (voie 1) ; frontend complet vert (check 0
+  erreur ; Vitest 3211, 233 fichiers ; build). **E2E complet non lancé** (à la clôture). Choix C-e351-1 à -6. Écarts : branche
+  `NO_SEQ` du miroir hors de `validateTemplateRules` (C-e351-4) ; le code d'erreur au manuel API et non au manuel utilisateur (AC7) ;
+  aucune entorse à la consigne Edit sur le code et les tests (mutations par script Python, permis). Statut : `review`.
