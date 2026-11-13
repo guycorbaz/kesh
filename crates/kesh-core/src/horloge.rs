@@ -28,9 +28,9 @@ pub trait Horloge: Send + Sync {
     /// L'instant présent.
     fn maintenant(&self) -> DateTime<Utc>;
 
-    /// La date du jour, tirée de [`Horloge::maintenant`].
+    /// La date du jour, tirée de [`Horloge::maintenant`] : [`jour_suisse`].
     fn aujourd_hui(&self) -> NaiveDate {
-        jour(self.maintenant())
+        jour_suisse(self.maintenant())
     }
 }
 
@@ -44,8 +44,10 @@ impl Horloge for HorlogeFixe {
     }
 }
 
-/// Le jour d'un instant : le jour UTC, comme avant la Story 35-5a0.
-fn jour(instant: DateTime<Utc>) -> NaiveDate {
+/// Le jour civil d'un instant **à Zurich** (Story 35-5a, #1022, #907, #929).
+///
+/// *Squelette* : rend encore le jour UTC.
+pub fn jour_suisse(instant: DateTime<Utc>) -> NaiveDate {
     instant.date_naive()
 }
 
