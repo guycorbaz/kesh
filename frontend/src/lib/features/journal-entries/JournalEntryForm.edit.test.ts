@@ -125,6 +125,31 @@ describe('JournalEntryForm — mode édition', () => {
 		expect(payload.lines[0].accountId).toBe(1);
 	});
 
+	it('Story 35-7, revue P1 (E1) — Ctrl+S sans quitter le champ : le brouillon est jeté avant l’envoi, le champ montre le compte qui part', async () => {
+		updateMock.mockResolvedValueOnce(ENTRY);
+		render(JournalEntryForm, {
+			props: {
+				accounts: [account(1, '1000'), account(2, '2000')],
+				accountsLoadError: false,
+				initialEntry: ENTRY,
+				onSuccess: vi.fn(),
+				onCancel: vi.fn()
+			}
+		});
+		const champ = document.querySelectorAll<HTMLInputElement>('input[aria-autocomplete="list"]')[0];
+		champ.focus();
+		await fireEvent.input(champ, { target: { value: '2000' } });
+		expect(champ.value).toBe('2000');
+
+		// Le focus reste dans le champ : aucun `blur` de l'utilisateur.
+		await fireEvent.keyDown(window, { key: 's', ctrlKey: true });
+		await new Promise((r) => setTimeout(r, 0));
+
+		const payload = updateMock.mock.calls[0][1] as { lines: Array<{ accountId: number }> };
+		expect(payload.lines[0].accountId).toBe(1);
+		expect(champ.value).toBe('1000 — Compte 1000');
+	});
+
 	it('envoie le PUT avec la version lue', async () => {
 		updateMock.mockResolvedValueOnce(ENTRY);
 		const onSuccess = vi.fn();

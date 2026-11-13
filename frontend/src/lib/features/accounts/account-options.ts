@@ -34,8 +34,9 @@
  * Choisir sciemment un autre compte reste possible ; perdre le sien par
  * accident ne l'est plus.
  *
- * ⚠️ `AccountAutocomplete.svelte` — le composant des quatre écrans de saisie
- * d'écriture — n'est **pas** concerné, et ne doit pas être « aligné » sur ce
+ * ⚠️ `AccountAutocomplete.svelte` — le champ de compte de sept emplacements, dans
+ * cinq écrans (écriture et son assistant TVA, écriture manuelle, éclatement, produits,
+ * facture) — n'est **pas** concerné, et ne doit pas être « aligné » sur ce
  * helper : son `$effect` résout déjà le libellé de la valeur courante sur la
  * liste **complète** des comptes. Le défaut est propre aux `<select>` natifs,
  * dont les options sont l'unique source de vérité de ce qui est affichable.

@@ -293,7 +293,10 @@
 		// réaffiche le compte retenu (ou reste vide si aucun ne l'est) : il ne
 		// peut plus montrer un champ vide, ou « zzz », pendant qu'un autre compte
 		// part au serveur. L'invariant « le champ ne contredit jamais `value` »
-		// vaut désormais pour tous les consommateurs, stricts comme `allowClear`.
+		// vaut désormais pour tous les consommateurs, stricts comme `allowClear`,
+		// **une fois le champ quitté** : pendant la frappe, le brouillon s'affiche.
+		// Un envoi sans quitter le champ doit donc rendre le focus d'abord — c'est
+		// ce que fait le `Ctrl+S` de `JournalEntryForm` (revue P1 de la 35-7, E1).
 		if (!allowClear) {
 			draft = null;
 			return;
