@@ -1,6 +1,6 @@
 # Story 35-8a1 : l'audit attribue à la clé d'API ce qu'elle a fait — le type `Acteur`, la garde des sites non résolus, et le retour en brouillon d'une facture fournisseur (#431, #892 item 11)
 
-Status: ready-for-dev
+Status: review
 
 *Fiche tirée le 2026-11-13 de la fiche `35-8a-audit-acteur-patron.md` (validation P1 remédiée, même date), par l'agent
 de rédaction des fiches de l'Epic 35 (Opus 5.5), worktree `kesh-e35`, sur décision de l'orchestrateur (C-e350-50,
@@ -202,13 +202,13 @@ entrée de la table de la garde décrémentée (AC5) ; M6 `par(` retiré de `FOR
 
 ## Tâches
 
-- [ ] Étape 0 : relire les lignes citées sur la base réelle ; relancer l'inventaire (`kesh-gate-logs/e358a/inventaire.py
+- [x] Étape 0 : relire les lignes citées sur la base réelle ; relancer l'inventaire (`kesh-gate-logs/e358a/inventaire.py
       <worktree>`), sortie au Change Log ; fonction englobante et raison de chaque site, appelant de chaque raison finale.
-- [ ] Rouges d'AC3 ; `Acteur`, `par`, `From<&CurrentUser>`, alias `letterings::Actor` ; pilote ; extraction de
+- [x] Rouges d'AC3 ; `Acteur`, `par`, `From<&CurrentUser>`, alias `letterings::Actor` ; pilote ; extraction de
       `strip_line_comments`, `source_assainie` et `accolades_hors_chaines` vers `tests/common/source_assainie.rs` ; garde et sa table ; `audit_label_registry.rs` ; manuels
       (deux `.tex`, deux PDF) ; CHANGELOG.
-- [ ] Gates : backend complet à chaque commit (`kesh-db`) ; frontend : rien ne change ; E2E complet au dernier commit de
-      code.
+- [x] Gates : backend complet à chaque commit (`kesh-db`) ; frontend : rien ne change ; E2E complet au dernier commit de
+      code — **à la clôture** (consigne de l'Epic 35 : pas d'E2E au passage en `review`).
 
 ## Dev Notes
 
@@ -241,11 +241,149 @@ avec la 35-1 (sites que la garde compte) ; `CHANGELOG.md` ;
 
 ### Agent Model Used
 
+Opus 5.5 (Claude Code), worktree `kesh-e358a1`, voie 2 (`kesh-mariadb-dev2`, base `kesh_e358a1`), 2026-11-13.
+
 ### Debug Log References
+
+Journaux sous `/home/gcorbaz/devel/kesh-gate-logs/e358a1/` :
+- `inventaire-base-02be2ad7f.txt` — étape 0, l'inventaire de la 35-8a relancé sur la base ;
+- `rouges.log` — AC3 avant le code ;
+- `garde-releve-initial.log` — la garde à table vide (85 sites non inventoriés) ;
+- `gardes-vert.log`, `ac3-vert.log` — verts ciblés ;
+- `test-fast-ci-1.log` — gate complet, voie 2 ;
+- `gate-ci.log`, `gate-ci-sortie.log` — gate CI, voie 1 ;
+- `manuels-make.log` — les deux PDF ;
+- `mut/M1.log` … `mut/M6.log` (gardes) et `mut/M1-ac3.log`, `M2-ac3.log`, `M4a-ac3.log`, `M4b-ac3.log` (AC3).
 
 ### Completion Notes List
 
+**Étape 0** (base `02be2ad7f`, la 35-1 close avec 35-2a, 35-2b, 35-3 et 35-5a0) :
+- l'inventaire de la 35-8a, relancé, rend les mêmes totaux que sur `main` `67efc51f` : **80** `NewAuditLogEntry::user(` et
+  **11** `api_key_id: None` ; seuls des numéros de ligne bougent (`inventaire-base-02be2ad7f.txt`) ;
+- lignes relues : `unvalidate` `supplier_invoices.rs:1076` (avec la date de la 35-5a0), `unvalidate_in_tx` `:1150`, lettrage
+  `:1378-1381`, `delete_in_tx` `:1413`, `:1415`, trace `:1428` ; route `routes/supplier_invoices.rs:919-927` ; `delete_in_tx`
+  `journal_entries.rs:1858` (`user_id, actor_api_key_id: Option<i64>`, inchangé) ;
+- les 30 appels de tests d'`unvalidate*`, recomptés par `grep -cE 'supplier_invoices::unvalidate(_in_tx)?\('` : 21, 5, 1, 1, 1,
+  1, comme la fiche ;
+- les lignes de `lib.rs` ont bougé depuis la fiche (`comptable_routes` commence l. 536, `require_not_pat` l. 530) : les appelants
+  de la table citent les lignes de la base ;
+- `docs/api-external.md:404` relu : il parle du lettrage des pièces ; une phrase y est ajoutée pour le délettrage `reversal` du
+  retour en brouillon, et une au § de la dévalidation (l. 635).
+
+**Rouges** (`rouges.log`) : les deux tests par clé rougissent (`actor_type` `"user"` sur les quatre traces de l'annulée, les deux de
+la validée) ; le témoin par session est vert, comme attendu.
+
+**Livré** :
+- `Acteur` (D1), `Acteur::utilisateur`, `NewAuditLogEntry::par`, réexporté par `entities/mod.rs` ;
+- `letterings::Actor` = alias ; `From<&CurrentUser> for Acteur` ; `from_current_user` passe par `par` (le site `PONT` disparaît) ;
+- le pilote (D3) : `unvalidate`/`unvalidate_in_tx` prennent l'acteur ; trace par `par` ; dissolution par l'acteur ; deux
+  `delete_in_tx(…, acteur.user_id, acteur.api_key_id, false)` ; route par `Acteur::from(&current_user)` ;
+- la garde (D2) `audit_acteur_garde.rs` : cinq motifs, table `SITES`, `ecarts` bilatéral, huit sondes synthétiques (a)-(h) et
+  une neuvième pour les motifs 2, 3 et les signatures multi-lignes ;
+- le module commun `tests/common/source_assainie.rs` (C-e358a1-1, -2) ; `audit_label_registry.rs` l'inclut et connaît
+  `NewAuditLogEntry::par(` en `(1, Some(2))`.
+
+**La table, recomptée depuis la source** (`git show HEAD:…/audit_acteur_garde.rs`, `awk` sur les lignes `("crates/`) :
+
+| Raison | Entrées | Sites |
+|---|---|---|
+| `AConvertir` | 46 | 47 |
+| `AdminSansCle` | 27 | 29 |
+| `PreAuth` | 4 | 4 |
+| `Systeme` | 2 | 3 |
+| `Definition` | 3 | 3 |
+| `Restauration` | 1 | 2 |
+| `Mcp` | 2 | 2 |
+| **Total** | **85** | **90** |
+
+Par motif : `User` 73 entrées, 78 sites ; `ApiKeyNone` 11 et 11 ; `DeleteInTxNone` 1 et 1 (`invoices::unvalidate`) ;
+`Utilisateur` et `ForActorNone` 0.
+
+Raccord à l'inventaire de base :
+- `User` : 80 − 2 = 78 (le pont d'`audit.rs` et la trace du pilote) ;
+- `ApiKeyNone` : 11 − 1 (le lettrage du pilote) + 1 (le corps d'`Acteur::utilisateur`, `Definition`) = 11.
+
+Chaque raison finale est relue au code :
+- `admin_routes` (l. 270-530) sous `require_admin_role` et `require_not_pat` ;
+- `ensure_not_pat` à `api_keys.rs:96` ; refus d'une clé dans `change_password`, `auth.rs:633` ;
+- les routes publiques `lib.rs:1365-1389` ;
+- `repair_installation_in_tx` appelé à `bootstrap.rs:411` et `admin.rs:553`.
+
+**Sondes (AC5)** :
+- (a) à (h) sont des tests permanents de la garde, sur sources synthétiques ; chacune affirme un rouge (`ecarts` non vide qui nomme
+  la fonction) ou un compte, et toutes sont vertes (`gardes-vert.log`) ;
+- sur l'arbre réel, trois mutations jouent le rôle de sondes et la garde réelle rougit en nommant le site :
+  - M1 : `audit.rs / fn from / ApiKeyNone`, un site neuf ;
+  - M4a : `supplier_invoices.rs / fn unvalidate_in_tx / DeleteInTxNone` ;
+  - M4b : `… / ApiKeyNone` ;
+- M5 : un compte faux.
+
+**Mutations**, chacune restaurée par `git checkout --` puis `touch`, « restauré : 0 écart » à chaque journal :
+
+| Mutation | Tuée par |
+|---|---|
+| M1 `From<&CurrentUser>` jette la clé | les deux tests clé d'AC3 (`mut/M1-ac3.log`) ; la garde (`mut/M1.log`) |
+| M2 `par` appelle `Self::user` | les deux tests clé d'AC3 (`supplier_invoice.unvalidated` en `"user"`, `M2-ac3.log`) ; la garde ne la voit pas (`Self::user`, non `NewAuditLogEntry::user`) — dit |
+| M4a `None` au `delete_in_tx` de l'achat | AC3 (`journal_entry.deleted` en `"user"`) ; la garde, motif 5 |
+| M4b `Actor { …, api_key_id: None }` au lettrage | AC3, cas annulée (`lettering.removed` en `"user"`) ; la garde, motif 3 ; le cas validée reste vert — aucun lettrage, attendu |
+| M5 l'entrée `ensure_admin_user` décrémentée | la garde : « compte faux … code 2, table 1 » |
+| M6 `par(` retiré de `FORMES` | `audit_label_registry` : `les_actions_de_la_liste_sont_exactement_celles_que_le_code_ecrit` et `tout_site_dont_l_action_n_est_pas_litterale_est_inventorie` |
+
+⚠️ Un premier passage des mutations (`mut/M1.log`, `M2.log`, `M4a.log`, `M4b.log`) n'a **pas** lancé AC3 : le filtre nextest
+n'était pas cité dans le `bash -c` du script, et l'erreur de syntaxe était masquée par le filtre de sortie. AC3 a été rejoué dans un
+second passage (`*-ac3.log`). Les lignes de garde de ces journaux restent valides.
+
+**Gates** :
+
+| Gate | Résultat | Journal | Commit |
+|---|---|---|---|
+| `cargo fmt --check`, `clippy -D warnings` (workspace) | verts | — | même arbre que `bcdd05dd7` |
+| `scripts/test-fast.sh --ci`, voie 2, base remise à neuf | **5405 passés, 0 échec, 13 ignorés** | `test-fast-ci-1.log` | arbre commité tel quel en `bcdd05dd7` |
+| `scripts/gate-ci.sh kesh_ci_e358a1`, voie 1 | **5412 passés, 0 échec, 17 ignorés** | `gate-ci.log` | `bcdd05dd7` |
+| frontend | non lancé : rien ne change sous `frontend/` | — | — |
+| E2E complet | **non lancé** : à la clôture (consigne de l'Epic 35) | — | — |
+| captures | aucune : aucun contrôle visible ne change | — | — |
+
+**Choix** : C-e358a1-1 (module commun élargi au parcours des fichiers et à `args_de`) ; C-e358a1-2 (module inclus sous le nom
+`assainissement`).
+
+**Écarts à la consigne Edit** :
+- le fichier neuf de la garde et le module commun ont été créés par l'outil Write ;
+- dans la garde, l'outil Edit en `replace_all` a remplacé un préfixe `const_str(API, "` que j'avais écrit à tort (fonction
+  inexistante) ;
+- les mutations passent par un script Python (`scratchpad/e358a1/muter.py`, motif vérifié unique, restauration
+  `git checkout --` et `touch`) ;
+- `cargo fmt` a reformaté.
+
+Aucun `sed -i` ni formateur en écriture sur le dépôt.
+
+**Limites, à suivre en issues** (une par problème, demandées dans le rapport) :
+- le `None` positionnel des 26 autres fonctions à `actor_api_key_id: Option<i64>` (angle mort 1 de la garde) ;
+- `reconciliation_cancel::cancel` (`user_id, None, None`) ;
+- `pieges.rs:570`.
+
+Les deux derniers sont déjà nommés par la fiche, à l'Epic 36.
+
 ### File List
+
+- `crates/kesh-db/src/entities/audit_log.rs` — `Acteur`, `Acteur::utilisateur`, `NewAuditLogEntry::par`
+- `crates/kesh-db/src/entities/mod.rs` — réexport d'`Acteur`
+- `crates/kesh-db/src/repositories/letterings.rs` — `Actor` alias d'`Acteur`
+- `crates/kesh-db/src/repositories/supplier_invoices.rs` — pilote `unvalidate`, `unvalidate_in_tx`
+- `crates/kesh-api/src/audit.rs` — `From<&CurrentUser> for Acteur`, `from_current_user` par `par`
+- `crates/kesh-api/src/routes/supplier_invoices.rs` — la route passe l'acteur
+- `crates/kesh-api/tests/audit_acteur_garde.rs` — **neuf**, la garde
+- `crates/kesh-api/tests/common/source_assainie.rs` — **neuf**, module commun
+- `crates/kesh-api/tests/audit_label_registry.rs` — extraction ; `FORMES` connaît `par(`
+- `crates/kesh-api/tests/supplier_invoice_draft_e2e.rs` — AC3 (trois tests)
+- `crates/kesh-api/tests/admin_full_import_e2e.rs`, `crates/kesh-api/tests/mcp_outils_e2e.rs`,
+  `crates/kesh-db/tests/supplier_invoices_draft.rs`, `crates/kesh-db/tests/supplier_invoices_internal_number.rs`,
+  `crates/kesh-db/tests/supplier_invoices_repository.rs`, `crates/kesh-db/tests/migrations_upgrade_path.rs` — 30 appels
+  d'`unvalidate`
+- `docs/manual/fr/admin-manual.tex`, `.pdf` ; `docs/manual/fr/user-manual.tex`, `.pdf` ; `docs/api-external.md` ; `CHANGELOG.md`
+- `_bmad-output/implementation-artifacts/e35-choix-autonomes-e358a1.md` — **neuf**, registre des choix
+- `_bmad-output/implementation-artifacts/35-8a1-audit-acteur-mecanisme-review-prompt-p1.md` — **neuf**, prompt de la revue P1
+- `_bmad-output/implementation-artifacts/sprint-status.yaml`, cette fiche
 
 ## Change Log
 
@@ -281,3 +419,11 @@ avec la 35-1 (sites que la garde compte) ; `CHANGELOG.md` ;
   rédaction. Choix retenus : **C-e350-38** (découpage de la 35-8), **-39** (`Acteur`), **-40** (garde par raison), **-48**
   (35-8b à l'Epic 36), **-49** (garde par site), **-50** (découpage de la 35-8a), **-52** (cinquième motif, angles morts).
   Statut : `ready-for-dev`.
+- 2026-11-13 — **Développement** (Opus 5.5, voie 2).
+  - Code au commit `bcdd05dd7` : `Acteur`, `par`, alias, pont, pilote ; garde à 85 entrées, 90 sites ; module commun ; AC3 ;
+    manuels, PDF, API, CHANGELOG.
+  - Rouges d'AC3 d'abord ; mutations M1, M2, M4a, M4b, M5, M6 tuées.
+  - `test-fast --ci` 5405/0/13 (voie 2) ; `gate-ci` 5412/0/17 (voie 1).
+  - Frontend non touché ; **E2E à la clôture**.
+  - Détail au Dev Agent Record. Statut : `review`. Prompt de la revue P1 :
+    `35-8a1-audit-acteur-mecanisme-review-prompt-p1.md`.
