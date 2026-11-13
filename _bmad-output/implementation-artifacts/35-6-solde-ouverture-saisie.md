@@ -41,7 +41,7 @@ valeur différente de celle que l'utilisateur voulait : le cas « 1.234 ». Les 
   vingt-trois — faux après la story ; `bank-accounts-page.test.ts:924`, `:998` attendent son préfixe « Montant ambigu ».
 
 **Le serveur, inchangé** — `parse_complement_amount` (`crates/kesh-api/src/routes/opening_balances.rs:515-530`) :
-`Decimal::from_str` (`rust_decimal` 1.43.0), puis positif, quatre décimales après normalisation (`:524`), borne de quinze
+`Decimal::from_str` (`rust_decimal` 1.43.0), puis positif, quatre décimales après normalisation (`:526`), borne de quinze
 chiffres. D'après la source du crate (validation P2, relue en P3 : `str.rs:245`, `b'_' if HAS`, le souligné est permis dès
 qu'un chiffre a été lu, avant comme après le point ; `:325`, refusé avant) : accepte `1_000`, `1__0`, `1.2_5`, `1_`, `1_.5`,
 `1._5`, `.5`, `5.`, `-0` et `-0.00` (zéro, le signe effacé) ; refuse `_1`, `+_5`, `._5`, `+` et `.` seuls (`str.rs:244`,
@@ -161,7 +161,8 @@ qu'un chiffre a été lu, avant comme après le point ; `:325`, refusé avant) :
   - **#1025** fermée en entier (`closes #1025`) : `0,500` et `1'234,567` passent ; ne restent refusées que les formes de D4 et
     celles que l'écran refusait déjà.
   - **#1026** fermée (`closes #1026`) — motif : *« Corrigé à l'écran du solde d'ouverture (création et compte existant) :
-    `1.234` et `+1,234` sont refusés comme ambigus (règle de D4). L'API garde sa lecture : un client qui envoie `"1.234"`
+    `1.234` et `+1,234` sont refusés comme ambigus (règle de D4, familles A et B) ; un blanc ou une apostrophe après la
+    décimale (famille C) et plus de 28 décimales (famille E) sont refusés comme illisibles. L'API garde sa lecture : un client qui envoie `"1.234"`
     écrit toujours 1,234 franc, ce qui est le sens d'un nombre décimal, et l'API ne lit pas la virgule. La notation à
     exposant (`1e3`) est désormais refusée à l'écran ; l'API l'accepte toujours. Les autres écrans de
     saisie d'un montant sont suivis à #1050 et #1051. »*
@@ -213,7 +214,7 @@ qu'un chiffre a été lu, avant comme après le point ; `:325`, refusé avant) :
    (a) pour chaque ligne `clear` sans `serverRejects`, `parse_complement_amount(Some(payload))` réussit et vaut
    `Decimal::from_str(payload)` (l'acceptation de la charge ; la parité elle-même est portée par (c)) ; (b) pour la ligne
    `serverRejects`, le refus ; (c) pour chaque ligne `clear` **sans `serverRejects`** dont la saisie brute n'emploie que
-   l'alphabet du serveur (`[0-9._+-]`, rognée ; par exemple `1_000`, `1__0`, `1.2_5`, `1_`, `1_.5`, `-0`, `+12.50`, `.5`, `5.`,
+   l'alphabet du serveur (`[0-9._+-]`, rognée des seuls blancs, comme `str::trim` ; une apostrophe sort de l'alphabet ; par exemple `1_000`, `1__0`, `1.2_5`, `1_`, `1_.5`, `-0`, `+12.50`, `.5`, `5.`,
    `1.50000`), `parse_complement_amount(Some(raw))` vaut la même valeur que la charge ; (d) pour chaque ligne `unreadable` ou
    `negative` de cet alphabet **sans `serverAccepts`** (par exemple `_1`, `+_5`, `1+2`, `++1`, `1.23456`, `1.2.3`, `+`, `.`,
    `1-2`, `-5`), le refus du serveur ; (e) pour chaque ligne `serverAccepts` dont la saisie brute n'emploie que
@@ -254,10 +255,10 @@ classé non lisible (AC2, création sans solde) ; M11 le rognage retiré (` 9,99
 au-delà de la quatrième décimale non retirés (`1.50000` devient non lisible) ; M13 un `+` hors de la tête accepté (`1+2`) ;
 M14 un `_` avant le premier chiffre accepté (`_1`, `+_5`) ; M15 un séparateur de groupe dans la fraction retiré au lieu de
 refusé (`1. 234` devient ambiguë ou claire) ; M16 les zéros de tête comptés (`0,500`, `00,500`, `0.999` deviennent
-ambiguës) ; M16-bis le `0*` retiré du motif (`01,234` devient claire) ; M18 l'exposant lu (`1e3` devient claire, famille D) ;
-M19 les apostrophes de tête non rognées (`'+5` devient non lisible) ; M17 (AC8) la charge
-de `1_000` portée à `100` dans la fixture : l'assertion (c) du test de parité rougit. Le test de parité affirme en dur le
-nombre de lignes qu'exerce chacune de ses assertions (a) à (d), pour qu'un filtre d'alphabet trop étroit ne le fasse pas
+ambiguës) ; M16-bis le `0*` retiré du motif (`01,234` devient claire) ; M17 (AC8) la charge de `1_000` portée à `100` dans
+la fixture : l'assertion (c) du test de parité rougit ; M18 l'exposant lu (`1e3` devient claire, famille D) ; M19 les
+apostrophes de tête non rognées (`'+5` devient non lisible). Le test de parité affirme en dur le nombre de lignes
+qu'exerce chacune de ses assertions (a) à (e), pour qu'un filtre d'alphabet trop étroit ne le fasse pas
 passer à vide.
 
 ## Tâches
@@ -390,3 +391,15 @@ n'ajoute qu'un test au `mod tests` (`:630` et suivantes), hunk distinct de la da
     cette entrée, corrigée par le même script avant le commit).
   - Symptômes greppés (fiche, registre, fichier d'epic) : `1e3`, « trois familles », « A, B, C », espaces spéciales brutes
     (aucune ne reste) ; registre C-e350-30 annoté ; entrées passées du Change Log et du registre laissées telles quelles.
+- 2026-11-12 — **Validation P5, passe ciblée** (Sonnet) sur la remédiation P4 : 0 finding au-dessus de LOW, 3 LOW
+  (`kesh-gate-logs/e35-6-validation-p5-ciblee.md`). Appliqués : V5-1 (normalisation à `opening_balances.rs:526`, non `:524`) ;
+  V5-2 (AC8 (c) : « rognée des seuls blancs ; une apostrophe sort de l'alphabet ») ; V5-3 (mutations dans l'ordre M17, M18,
+  M19 ; « (a) à (e) » ; familles C et E nommées au motif de fermeture de #1026). Rédaction seule, aucune règle changée.
+- 2026-11-12 — **Validation terminée.** Série des findings au-dessus de LOW : P1 5 MEDIUM → P2 5 → P3 3 → P4 1 → P5 0
+  (CRITICAL et HIGH : 0 à chaque passe). Modèles : Sonnet (P1), Opus (P2), Sonnet (P3), Opus (P4), Sonnet en passe ciblée
+  (P5). Le **signal de découpage** levé en P2 (5 → 5, recyclage) a été traité par **réduction** plutôt que par découpage
+  (C-e350-19 : ce qui est accepté aujourd'hui reste accepté ; serveur non touché ; story de l'écran seul), à déclarer à Guy
+  par l'orchestrateur. La boucle se clôt sur une passe sans finding au-dessus de LOW ; la remédiation de P5 ne touche que la
+  rédaction. Choix retenus : **C-e350-19**, **C-e350-30** (pipeline et règle), **C-e350-31** (souligné), **C-e350-32** (zéros
+  de tête), **C-e350-33** (test de parité), **C-e350-34** (exposant, écran seul ; décision de l'orchestrateur), **C-e350-35**
+  (souligné devant la virgule, apostrophes de bord, plus de 28 décimales). Statut : `ready-for-dev`.

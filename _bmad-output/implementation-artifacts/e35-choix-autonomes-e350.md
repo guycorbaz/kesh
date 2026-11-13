@@ -123,6 +123,10 @@ retenue, options écartées, réversibilité. Lignes citées sur `release/0.17.6
      neuf juste après `DesignatedAccountsNotPostable` (`:4571`). Aucun reformatage hors des passages touchés.
      *(Annoté le 2026-11-12, validation P4 de la 35-2a : pour la 35-2, **suspendu par C-e350-11** — la 35-2a ne touche plus
      `errors.rs`.)*
+     *(Annoté le 2026-11-13, validation P2 de la 35-2b : la **35-2b** y touche — deux fonctions neuves à côté des bras
+     `InvoiceTooManyLinesForPdf` et `InvoicePdfHeaderOverflow` (`:2144-2168` sur `main`), appelées par ces bras et par le lot
+     (C-e350-46) ; hunks distincts du bras de la 35-3. La **35-1** y ajoute aussi un bras `NumberFormatUnrenderable`, après
+     celui de la 35-3 (C-e350-45).)*
   5. **`docs/api-external.md`** : 35-3, une ligne juste après `ACCOUNT_NOT_POSTABLE` ; 35-2, sa ligne juste après
      `SUPPLIER_INVOICE_DUE_BEFORE_INVOICE_DATE` (`:1058` sur `release/0.17.6`), en fin du premier groupe des `400`.
   6. **`user-manual.tex`** : paragraphes distincts ; chaque branche régénère son PDF pour ses contrôles, mais à l'union le
@@ -189,7 +193,7 @@ retenue, options écartées, réversibilité. Lignes citées sur `release/0.17.6
 - *(Annoté le 2026-11-12, validation P1 de la 35-4 : **révisé par C-e350-18** — garde défensive, sans cause nommée.)*
 - *(Annoté le 2026-11-12, validation P2 de la 35-4 : **remplacé par C-e350-20** — plus d'avis.)*
 
-### C-e350-8, extension du 2026-11-12 — fichiers communs des stories 35-4, 35-5a, 35-5b, 35-6
+### C-e350-8, extension du 2026-11-12 — fichiers communs des stories 35-4, 35-5a, 35-5b, 35-6 (et 35-1 / 35-3, annotation du 2026-11-13 en fin de section)
 
 - **`messages.ftl` ×4** : chaque story écrit ses clés **à côté de son bloc** : 35-4 près de
   `reconciliation-labels-already-booked-confirm-*` ; 35-6 près de `bank-accounts-opening-*` ; 35-5a/35-5b, s'il leur en
@@ -197,6 +201,7 @@ retenue, options écartées, réversibilité. Lignes citées sur `release/0.17.6
 - **`user-manual.tex`** : 35-4 `:3049-3050`, `:3097`, `:3107` *(`:3097` ajouté le 2026-11-12, validation P2 de la 35-4 ;
   `:3049-3050` le même jour, validation P3)* ; 35-6 `:2456` (et `:2462` si touché) ; 35-5a les phrases « aujourd'hui » du solde
   d'ouverture et du verrou de période ; 35-5b les autres. Paragraphes distincts ; le PDF se régénère après l'union.
+  *(Annoté le 2026-11-13, validation P2 de la 35-7 : 35-7 `:3186` (une demi-phrase), voisin des paragraphes de la 35-4.)*
 - **`crates/kesh-api/src/routes/opening_balances.rs`** : 35-6 `parse_complement_amount` (`:515-530`) ; 35-5a la date du
   jour (`:244`, `:604`). Hunks distincts ; si les deux sont en vol, 35-6 fusionne d'abord (plus courte).
   *(Annoté le 2026-11-12, validation P2 de la 35-6 : la 35-6 ne touche plus ce fichier, C-e350-19.)*
@@ -206,7 +211,13 @@ retenue, options écartées, réversibilité. Lignes citées sur `release/0.17.6
 - **`docs/api-external.md`** : 35-5a la phrase « UTC » du solde d'ouverture ; 35-6 la grammaire du montant ; lignes
   distinctes.
   *(Annoté le 2026-11-12, validation P3 de la 35-6 : la 35-6 ne touche plus ce fichier, C-e350-19 ; seule la 35-5a y écrit.)*
+  distinctes. *(Annoté le 2026-11-12, validation P2 de la 35-5a : la 35-6 ne touche plus `api-external.md`, ni
+  `opening_balances.rs` hors de son `mod tests` (un test de parité), C-e350-19 ; la 35-5b y écrit `:252`, `:292`, `:443`.)*
 - **`CHANGELOG.md`** : un point par issue sous `### Corrigé`, dans l'ordre des numéros de story.
+- *(Annoté le 2026-11-13, validation P3 de la 35-1 : avec la 35-3, la 35-1 partage
+  `frontend/src/routes/(app)/invoices/[id]/+page.svelte:449-456` (la liste des codes non rejouables, **même hunk** : la
+  seconde fusionnée ajoute son code) et `crates/kesh-api/src/routes/company_invoice_settings.rs` (35-3 `:345-414`, 35-1
+  `:317-331`, hunks distincts) ; écrit au fichier d'epic.)*
 
 ### C-e350-15 — 35-6 : point et virgule ambigus, grammaire commune, #1025 intégrée
 
@@ -235,6 +246,9 @@ retenue, options écartées, réversibilité. Lignes citées sur `release/0.17.6
   restants et vide la liste d'exemptions, puis les specs E2E.
 - **Écartée** : une seule story : boucle complète sur quatre crates et 200 sites de tests.
 - **Réversible** : oui.
+- *(Annoté le 2026-11-12, validations P1 des 35-5a et 35-5b : le site 17 passe à la 35-5a, 9 / 19 (C-e350-23) ; la 35-5b se
+  découpe à son tour, la conversion des tests restants et la fermeture des gardes passant à une **35-5c** (C-e350-22) ;
+  les décomptes « 36 » des specs E2E et « 107 » des tests valent 35 (34 + 1 coupé) et 112 (107 + 5 coupés).)*
 
 ### C-e350-16 — Le fuseau est Europe/Zurich, constant ; l'horloge s'injecte
 
@@ -393,4 +407,425 @@ retenue, options écartées, réversibilité. Lignes citées sur `release/0.17.6
   28 décimales dont l'une au-delà de la quatrième n'est pas nulle : non lisible, limite assumée, dite au CHANGELOG.
 - **Écartées** : (a) une famille « apostrophe avant le signe » : refuserait sans raison une saisie lue juste ;
   (b) arrondir comme le serveur au-delà de 28 décimales : une règle pour un cas pathologique.
+- **Réversible** : oui.
+
+*(C-e350-20 est pris par la 35-4, sur `chore/epic-35-kickoff` ; les entrées suivantes, de l'agent des fiches 35-5a à 35-5c
+sur `chore/epic-35-fiches-355`, commencent à C-e350-21 et s'unissent à la fusion.)*
+
+### C-e350-21 — 35-5 : l'horloge vit dans `AppState` et dans `Lecture`
+
+- **Contexte** : validations P1 de la 35-5a (V1-6) et de la 35-5b (V1-1, HIGH). Une horloge dans le seul `AppState` n'atteint
+  ni les services, qui ne reçoivent qu'une `Lecture` (`services/rapports.rs:726-732`, `:870`, `services/factures.rs:534`), ni
+  le serveur MCP, qui construit sa propre `Lecture` au câblage (`lib.rs:1403`) et dont l'état ne voit pas l'`AppState`
+  (`mcp/mod.rs:105-107`). Les fonctions pures (`InvoiceResponse::from_parts`, `routes/invoices.rs:333` ; la conversion d'un
+  élément de liste, `:425` ; `parse_as_of`, `services/postes_ouverts.rs:61-74`) n'ont aucun contexte.
+- **Retenu** : `Lecture` porte l'horloge — `Lecture::new(pool, horloge: Arc<dyn Horloge>)`, **sans valeur par défaut**,
+  `Lecture::aujourd_hui()`. `AppState::lecture()` passe `self.horloge` ; le câblage du MCP, `state.horloge`. Les routes lisent
+  `state.horloge.aujourd_hui()`, les services `lecture.aujourd_hui()` ; les fonctions pures, `kesh-db` et `kesh-seed` reçoivent
+  une `NaiveDate`. Une lecture de l'horloge par requête. Posé par la 35-5a (qui en a besoin pour
+  `services::factures::reglements`, rang 5) ; la 35-5b ne fait qu'en user. Trait `Horloge: Send + Sync` et `HorlogeFixe`
+  (`pub`) dans `kesh-core` ; `HorlogeSysteme` dans `kesh-api`.
+- **Coût** : 43 constructions `Lecture::new(` dans 10 fichiers de tests ; 16 littéraux d'`AppState` dans 9 fichiers ; la
+  ligne figée par `mcp_gardes_lexicales.rs:169`, `:575` et `services_motif.rs` (`FABRIQUES_V2`, `:2071`, `:2083`) — changements
+  mécaniques, que le compilateur et les gardes énumèrent.
+- **Écartées** : (a) la date en paramètre de chaque service, et un champ d'`EtatMcp` / `ContexteMcp` pour le MCP : change la
+  signature de chaque service servi par le MCP et de tous leurs appelants de tests (`services_rollout.rs`…), plus le contexte
+  du MCP, pour le même effet ; (b) `Lecture::new(pool)` gardé, à horloge système par défaut, avec un second constructeur :
+  laisse le MCP sur l'horloge système dans un test qui fixe celle de l'`AppState` (un appelant hors d'atteinte des tests), et
+  ouvre un contournement de la garde (v-2), qui ne reconnaît que `Lecture::new(` ; (c) l'horloge dans le seul `AppState` :
+  le défaut même de la validation.
+- **Réversible** : oui ; une poignée et deux lignes de câblage.
+- *(Annoté le 2026-11-12, validations P2 des 35-5a et 35-5b : les littéraux d'`AppState` sont **9 dans 7 fichiers**, non 16
+  dans 9 ; le câblage du MCP s'écrit en trois lignes courtes (`horloge_outils`, `lecture_pool`, `lecture_outils`), la ligne
+  d'un seul tenant dépassant 100 caractères ; `Lecture` expose aussi `horloge()`, pour le squelette de la 35-5b ; le service
+  de l'échéancier rend la date qu'il a employée, que la route réemploie — une lecture par requête.)*
+
+### C-e350-22 — La 35-5b se découpe : la 35-5c prend les tests restants et ferme les gardes
+
+- **Contexte** : validation P1 de la 35-5b, V1-8. Après la plomberie de C-e350-21, la story portait 19 sites de production,
+  le SQL de trois sites, la graine, le MCP, puis 168 sites de tests Rust et 35 de specs E2E, l'extension de deux gardes et la
+  doc ; `kesh-db` touché impose le gate complet à chaque commit, sur un diff de plus de cent fichiers. Plus de cinq modules :
+  la règle de découpage préventif s'applique une seconde fois.
+- **Retenu** : **35-5b** = production, SQL, graine, plomberie des signatures, MCP, docs, **et** les tests dont l'attendu
+  change avec un de ses sites (sinon le gate rougit à son propre commit) ; **35-5c** = les tests restants (`src`,
+  `crates/*/tests`, specs E2E), la garde Rust fermée, la garde frontend étendue aux specs. **Chaque story reste sûre la
+  nuit à elle seule** : la 35-5a convertit les tests qui atteignent ses sites (verdict des 38 fichiers dans sa fiche), la
+  35-5b ceux des siens ; ce qui reste à la 35-5c ne compare pas son jour à celui du serveur. Ordre : 35-5a → 35-5b → 35-5c ;
+  la **35-8** attend la 35-5c (`journal_entries.rs`, `mod tests`).
+- **Écartées** : (a) 35-5b entière : une boucle d'environ une heure par passe sur plus de cent fichiers ; (b) la 35-5b emporte
+  les 50 sites de `journal_entries.rs` pour libérer la 35-8 plus tôt : la 35-8 est en bas de l'ordre de l'epic, rien ne
+  presse.
+- **Réversible** : oui.
+
+### C-e350-23 — 35-5a : la création du premier exercice par l'assistant passe à la 35-5a
+
+- **Contexte** : validation P1 de la 35-5a, V1-5. `routes/onboarding.rs:1043-1056` crée « Exercice {année} » par
+  `fiscal_years::create_if_absent_in_tx`, ligne de `fiscal_years` tracée à l'audit : la nuit du 1er janvier, l'exercice de
+  l'année passée, et les soldes de départ datés du 1er janvier de cette année-là. C-e350-14 confie à la 35-5a « ce qui écrit
+  dans les livres ou les borne ».
+- **Retenu** : le site 17 passe à la 35-5a (AC5 de sa fiche) ; partage 9 / 19.
+- **Écartée** : le laisser à la 35-5b en écrivant pourquoi un exercice n'est pas « dans les livres » : il l'est (il borne
+  toutes les écritures).
+- **Réversible** : oui.
+
+### C-e350-24 — 35-5 : la garde de la date du jour, par fichier, en égalité stricte, sur les sources et les tests
+
+- **Contexte** : validations P1 de la 35-5a (V1-3, V1-4) et de la 35-5b (V1-4). La garde écrite au kickoff comptait les
+  commentaires (8 dans `src`), ne disait pas ce qu'est un compte « qui ne baisse pas comme prévu », énumérait des formes,
+  ne voyait pas les 5 sites coupés sur plusieurs lignes, et ne lisait pas `crates/*/tests`, où un oubli ne rougit que la
+  nuit.
+- **Retenu** : `crates/kesh-api/tests/date_du_jour_garde.rs`, dès la 35-5a, sur `crates/*/src/**/*.rs` **et**
+  `crates/*/tests/**/*.rs` ; lignes de commentaire (`//`, `///`, `//!` en tête) écartées, blancs réduits autour des `.` d'une
+  chaîne de méthodes (formes coupées vues) ; formes relevées sur **tout récepteur** (`.date_naive()`, `.naive_utc().date()`,
+  `.naive_local()`, `Utc::today`, `Local::`, `UTC_DATE`, `CURDATE`, `CURRENT_DATE`, `DATE(NOW`) ; liste d'exemptions
+  `{ fichier, nombre, story, motif }` en **égalité stricte** — un fichier absent compte 0, un écart dans un sens ou dans
+  l'autre rougit, la liste se ramène au compte réel à chaque conversion. Entrée permanente : `jour_suisse` (`kesh-core`, 1).
+  La 35-5c la ferme. Côté écran, `local-date-guard.test.ts` s'étend aux specs à la 35-5c.
+- **Écartées** : (a) un compte « décroissant » (`<=`) : ne voit pas une exemption gardée après conversion (M5) ; (b) des
+  commentaires comptés, comme `local-date-guard.test.ts` : rougirait pour des phrases vraies (`aged_receivables.rs:27`) ; (c)
+  une garde restreinte à `src` jusqu'à la 35-5b : un test converti pourrait revenir en arrière sans bruit.
+- **Réversible** : oui.
+- *(Annoté le 2026-11-12, validation P2 de la 35-5a et P1 de la 35-5c : motifs bornés `\b…\(` (le relevé « casse ignorée »
+  de `UTC_DATE` prenait `Utc.from_utc_datetime(`) ; formes `Utc::now().year(`/`month(`/`day(`/`format(` et
+  `DATE(UTC_TIMESTAMP`/`DATE(CURRENT_TIMESTAMP` ajoutées ; entrée permanente `admin.rs:722` (horodatage) ; le fichier de la
+  garde est exclu nommément, une sonde le prouve ; angle mort assumé : le jour tiré d'une variable d'instant.)*
+
+### C-e350-26 — 35-5 : la preuve de nuit par `KESH_TEST_INSTANT`
+
+- **Contexte** : validation P1 de la 35-5c (V1-7) — aucun critère n'établissait qu'un test converti passe « à 00 h 30 » ; les
+  tests de montage prennent `aujourd_hui_suisse()`, qui lit l'horloge réelle. `faketime` n'est pas installé sur la station
+  (`command -v faketime` vide, aucune `libfaketime`).
+- **Retenu** : `AppState::new_for_tests` et les helpers `aujourd_hui_suisse()` prennent une `HorlogeFixe` à l'instant de la
+  variable `KESH_TEST_INSTANT` (RFC 3339) si elle est posée, l'horloge système sinon ; lue à chaque appel, sans `static` ni
+  `OnceLock`. `main.rs` ne la lit jamais (il construit `HorlogeSysteme`), et la garde de la date du jour vérifie qu'elle
+  n'apparaît que dans ces trois fonctions. Chaque story (35-5a, 35-5b, 35-5c) lance une fois les binaires de tests qu'elle
+  convertit à `2025-12-31T23:30:00Z` et à `2026-03-10T23:30:00Z` ; journal `nuit.log` ; un rouge qui vient d'un horodatage
+  MariaDB (`NOW(3)`, heure réelle) se nomme, il n'est pas un défaut de nuit. Posé par la 35-5a.
+- **Écartées** : (a) installer `faketime` : un paquet sur la station, et un `LD_PRELOAD` sous `cargo test` peu sûr ; (b) une
+  heure de nuit fixée dans chaque test : 112 sites réécrits pour une preuve qu'une variable donne ; (c) ne rien prouver : la
+  règle « on ne déclare que ce qui a tourné ».
+- **Réversible** : oui ; trois fonctions de test.
+- *(Annoté le 2026-11-12, validation P3 de la 35-5a, V3-1, et C-e350-29 : la variable est lue par **une** fonction,
+  `horloge_de_test()` (`kesh-api`), qui sert `new_for_tests`, les littéraux d'`AppState` de test et le helper renommé
+  `aujourd_hui_test()` — et par le helper de `kesh-db/tests`, par `kesh_core::horloge::instant_de_test` ; posée par la
+  **35-5a0**. La preuve de la 35-5a s'ajoute une exécution qui reproduit la nuit réelle de jour sur **tous** les binaires,
+  `KESH_TEST_INSTANT="$(date -u +%F)T23:30:00Z"` (montages non convertis et MariaDB au jour UTC D, serveur au jour suisse
+  D+1), chaque rouge rattaché à 35-5b ou 35-5c.)*
+
+### C-e350-27 — 35-5a : dérogation à la règle de découpage préventif
+
+- **Contexte** : validation P2 de la 35-5a, V2-8 : la story touche plus de cinq modules.
+- **Retenu** : pas de nouveau découpage ; section *Dérogation règle de splitting* dans la fiche. Le mécanisme ne se coupe
+  pas — les signatures de D2 et de `Lecture::new` obligent tous leurs appelants, production et tests, dans le même commit — et
+  la sûreté de nuit non plus (une story qui convertirait les sites sans les tests qui les atteignent rougirait la nuit). Ce
+  qui pouvait partir est parti : 35-5b (sites restants), 35-5c (tests sans lien), la dévalidation (V2-10).
+- **Écartée** : isoler les appelants sans site de jour dans la 35-5c : la compilation de la 35-5a l'interdit.
+- **Réversible** : oui.
+- *(Annoté le 2026-11-12 : **tombé**, remplacé par C-e350-28. La validation P3 de la 35-5a (V3-4) a montré la prémisse fausse :
+  la fiche prescrivait elle-même un squelette compilable, plomberie et appelants, à comportement inchangé.)*
+
+### C-e350-28 — La 35-5a se découpe : 35-5a0 (plomberie, comportement inchangé), puis 35-5a (le jour suisse) — décision de l'orchestrateur
+
+- **Contexte** : validation P3 de la 35-5a, V3-4 : la dérogation C-e350-27 reposait sur « le mécanisme ne se coupe pas », alors
+  que la fiche décrivait déjà le squelette compilable qui le coupe ; `CLAUDE.md` n'admet de dérogation que pour un cycle de
+  dépendances ou des fusions intermédiaires impossibles à tester, ni l'un ni l'autre ici ; V3-2 élargit encore le diff
+  mécanique (158 appels dans 23 fichiers pour les seules écritures fournisseur).
+- **Retenu** : **35-5a0** — `Horloge`, `HorlogeFixe`, `HorlogeSysteme`, `horloge_de_test()`, `AppState.horloge`,
+  `Lecture::new(pool, horloge)`, câblage du MCP, la date passée à `kesh-db` et **toute** la fermeture de ses appelants
+  (production et tests), les neuf sites de la 35-5a branchés sur l'horloge, `aujourd_hui_test()`, `KESH_TEST_INSTANT`, la garde
+  et ses gardes de durcissement — **avec un jour égal au jour UTC**, si bien que rien ne change et que les tests existants
+  restent verts sans retouche ; puis **35-5a** — `jour_suisse`, la bascule, les critères de nuit, l'écran, les tests convertis
+  et les preuves de nuit. **Ordre de fusion avec la 35-3** : conflit de compilation (ses tests neufs appellent `validate` /
+  `pay`) ; la seconde des deux fusionnée ajoute la date aux appels de l'autre et passe le gate complet ; ordre préféré : la 35-3
+  d'abord (tête d'epic, avant le 2026-11-30).
+- **Écartée** : garder la story unique avec une dérogation réécrite (motif réel : le coût d'une revue de plus) et le signal
+  déclaré à Guy : le découpage coûte moins qu'une boucle sur un diff de plus de 200 appels de tests mêlés à un changement de
+  règle.
+- **Réversible** : oui (deux fiches qui se réunissent).
+- *(Annoté le 2026-11-12, validation P2 de la 35-5a0, V2-1 et V2-2 : la 35-5a0 n'est **pas** redécoupée. Seul son noyau — les
+  signatures de la fermeture et tous leurs appelants, ≈ 50 fichiers dont 36 de tests — est indivisible ; `kesh-core` et la
+  plomberie de `kesh-api` (≈ 18 fichiers) seraient séparables, la garde aussi. Retenu : une story, quatre commits qui
+  compilent chacun — `kesh-core`, plomberie `kesh-api` sans `kesh-db`, noyau D2 avec tous ses appelants, garde et docs —,
+  relus séparément, avec un risque accepté écrit (date de pièce passée comme jour). Écarté : deux stories coupées entre la
+  plomberie et le noyau — une horloge que personne ne lit, une boucle et un cycle de CI de plus, sans réduire le diff du
+  noyau. Le signal de découpage de P2 (3 → 4 MEDIUM, recyclage de la remédiation de P1) est déclaré au Project Lead.
+  Réversible : la coupe se fait entre les commits (2) et (3) sans réécriture.)*
+- *(Annoté le 2026-11-12, validation P3 de la 35-5a0, V3-5 — **décision de l'orchestrateur** : la story reste une, en quatre
+  commits. Correction de l'annotation précédente : le noyau n'est pas insécable en entier — `lock_books` / `unlock_books`,
+  appelées par aucune fonction de la chaîne contre-passation → bloqueurs → vues, feraient un commit (3a) à part ; seule cette
+  chaîne est indivisible. Les commits (1), (2), (4), et `lock_books` / `unlock_books` dans (3), restent dans la story pour un
+  **motif de coût** (une boucle de validation, un cycle de CI et un E2E par story de plus, pour un diff du noyau qui ne
+  diminue pas), que l'exception de `CLAUDE.md` ne couvre pas : ce motif est **assumé par l'orchestrateur**.)*
+
+### C-e350-29 — 35-5a0 : la bascule tient dans `Horloge::aujourd_hui()`, le helper de test la suit ; durcissement par gardes
+
+- **Contexte** : C-e350-28 ; validation P3 de la 35-5a, V3-1 (les littéraux d'`AppState` ne lisaient pas `KESH_TEST_INSTANT`)
+  et V3-5 (`new_for_tests` compilé dans le binaire servi, sans rien qui empêche un appel de production).
+- **Retenu** : dans la 35-5a0, `Horloge::aujourd_hui()` rend `maintenant().date_naive()` ; la 35-5a change ce seul corps en
+  `jour_suisse(…)`. Le helper de test `aujourd_hui_test()` (renommé : `aujourd_hui_suisse` aurait menti dans la 35-5a0) rend
+  l'`aujourd_hui()` de l'horloge de test : serveur et montages convertis basculent ensemble. `horloge_de_test()` (`kesh-api`,
+  `#[doc(hidden)]`) sert `new_for_tests` et les littéraux de test ; `kesh_core::horloge::instant_de_test` (pur, `panic!` sur
+  valeur invalide) sert le helper de `kesh-db/tests`. Durcissement **par gardes** (dans `date_du_jour_garde.rs`) : comptes
+  exacts de `KESH_TEST_INSTANT`, aucun appel de `new_for_tests(` / `horloge_de_test(` dans `crates/*/src` hors leurs
+  définitions, `HorlogeSysteme` construit dans `main.rs` et `horloge_de_test()` seulement, aucun `static`/`OnceLock`/
+  `LazyLock` dans les fichiers de l'horloge et des helpers ; une ligne dans `docs/testing.md`.
+- **Écartées** : (a) `new_for_tests` sous `#[cfg(any(test, feature = "test-support"))]` : les tests d'intégration d'une crate
+  ne voient pas son `cfg(test)`, et la feature exigerait une auto-dépendance de développement (`kesh-api = { path = ".",
+  features = [...] }`) — plus de mécanique pour la même garantie ; (b) garder le nom `aujourd_hui_suisse` : faux entre les
+  deux stories.
+- **Réversible** : oui.
+- *(Annoté le 2026-11-12, validation P1 de la 35-5a0 et P4 de la 35-5a : le nom de la variable est porté par une constante
+  unique `kesh_core::horloge::NOM_VARIABLE_INSTANT` ; `horloge_de_test()` délègue à la fonction pure `horloge_depuis(Option<&str>)`,
+  testée sans `set_var` ; `HorlogeSysteme`, `horloge_depuis` et `horloge_de_test` vivent dans `kesh-api/src/horloge.rs` ; la
+  chaîne vide vaut absente ; `Horloge::aujourd_hui()` appelle une fonction privée `jour()` (jour UTC), que la 35-5a remplace par
+  `jour_suisse` — le compte de la garde du fichier reste 1 ; `kesh-report/tests` reçoit son `support/jour.rs`, qui lit la
+  variable ; `middleware/auth.rs:285`, dans un `mod tests` de `src`, prend `HorlogeFixe(Utc::now())`.)*
+
+### C-e350-25 — 35-5 : le jour d'un instant enregistré
+
+- **Contexte** : validations P1 de la 35-5a (V1-7) et de la 35-5b (V1-2). Des horodatages UTC sont ramenés à un jour par
+  `.date()` ou `DATE(…)` : `dunning_eligibility.rs:128` (`lr.date()`, comparé au jour du serveur : une fois ce jour suisse,
+  le niveau suivant d'un rappel envoyé entre minuit et 1 h devient éligible un jour trop tôt), `routes/invoices.rs:1525`
+  (`paid_at` du CSV de l'échéancier), `reconciliation.rs:237` (`DATE(rmd.last_sent_at)` dans la date d'exigibilité, en
+  SQL), `reconciliation.rs:435` (contrainte `chk_invoices_paid_at_after_date`, `DATE(paid_at) >= date - INTERVAL 1 DAY`).
+- **Retenu** : `dunning_eligibility.rs:128` et `routes/invoices.rs:1525` passent à `jour_suisse(x.and_utc())` dans la 35-5b
+  (sites 22 bis et 16 bis) ; `reconciliation.rs:237` s'ouvre en issue (SQL : le jour suisse d'un horodatage demande soit les
+  tables de fuseaux de MariaDB, soit un calcul hors SQL ; hors de la limite courte) ; `:435` reste tel quel, sans issue : la
+  tolérance d'un jour absorbe l'écart, et la changer demanderait une migration (règle d'arrêt).
+- **Écartée** : laisser toute la classe en UTC : le mélange des deux horloges dans une même comparaison (`:128`) est le
+  défaut contre lequel `companies.rs:986-989` met en garde.
+- **Réversible** : oui.
+
+### C-e350-8, extension du 2026-11-12 (suite) — 35-3 et 35-5a
+
+- `kesh-db/src/repositories/supplier_invoices.rs` (35-3 `:1521-1530`, `:1698-1727` ; 35-5a, signatures `:2462`, `:2600`,
+  `:2750`, `:2871`), `invoice_settlements_write.rs` (35-3 `:679-680` ; 35-5a `:878`, `:1023`),
+  `crates/kesh-db/tests/supplier_invoices_repository.rs` (35-3 `:2250-2257` ; 35-5a, ses dates du jour) : hunks distincts ; la
+  seconde fusionnée se rebase sur la première et recompile (la 35-5a ajoute un argument aux fonctions que la 35-3 appelle
+  peut-être). `user-manual.tex` : 35-5a et 35-6 aussi, paragraphes distincts. `routes/invoices.rs`,
+  `routes/supplier_invoices.rs`, `routes/reconciliation.rs` : 35-5a (chaîne des appelants), 35-5b (`routes/invoices.rs`).
+- *(Annoté le 2026-11-12, validations P1 de la 35-5a0, P4 de la 35-5a et P4 ciblée de la 35-5b : la chaîne des appelants est
+  à la **35-5a0** ; les numéros `:2462`, `:2600`, `:2750`, `:2871`, `:878` sont des **appels**, les définitions étant
+  `supplier_invoices.rs:2426`, `:2510`, `:2706`, `:2778`, `:3013`, `:3040`, `:3095` et `invoice_settlements_write.rs:826`, `:838`,
+  `:912` ; les tests neufs de la 35-3 appellent `create_validated`, hors de la fermeture (conflit « à constater à
+  l'intégration ») ; avec la 35-6, `opening_balances.rs` (son `mod tests`) et `user-manual.tex` `:2456`, **contigu** au `:2458`
+  que la 35-5a réécrit ; avec la 35-4, `reconciliation.rs` (`:1540` contre `:5799`, `:5938`, `:6587`).)*
+
+### C-e350-8, extension du 2026-11-12 (suite) — 35-5b avec 35-2a et 35-2b
+
+- `crates/kesh-api/src/routes/invoice_email.rs` : 35-5b `:206`, `:381`, `:904` ; 35-2a `:808`, `:1023-1036` (`:1754` est un
+  appel que la 35-2a dit laisser inchangé : à constater) ; 35-2b `:1260-1269` — hunks distincts. `docs/api-external.md` : 35-5b
+  `:252`, `:292`, `:443`, et la 35-2b. `routes/onboarding.rs` (35-5a0/35-5a `:1043`, `finalize_inner` ; 35-5b `:258`),
+  `services/factures.rs` (35-5a0 `reglements` ; 35-5b `echeances`, `lister`), `tests/services_motif.rs`,
+  `tests/onboarding_audit_e2e.rs`, `fiscal_years_e2e.rs`, `bank_accounts_closed_e2e.rs` : ordre 35-5a0 → 35-5a → 35-5b → 35-5c,
+  chacune partant de la précédente fusionnée.
+
+### C-e350-36 — 35-7 : un compte que le dialogue ne propose plus est retiré de la sélection
+
+- **Contexte** : #1000, chemin 1. Dans *Écriture manuelle* et *Éclater*, le compte de la banque, choisi avant que son
+  identifiant soit résolu, sort ensuite de la liste : le champ paraît vide, l'identifiant part au serveur, refusé en 400.
+- **Retenu** : une fonction pure `keepOfferedCounterparty` (`reconciliation-counterparties.ts`) remet la sélection à `null`
+  quand le compte, connu de la liste complète, n'est plus proposé ; un compte inconnu (liste pas chargée) est gardé, le
+  serveur tranche. Le message existant « Compte de contrepartie obligatoire » s'applique ; aucun texte neuf.
+- **Écartée** : afficher le compte retenu hors liste, marqué : un compte que le dialogue refuse resterait sélectionnable
+  en apparence, et le serveur le refuserait de toute façon.
+- **Réversible** : oui.
+- *(Annoté le 2026-11-13, validation P1 de la 35-7 : « Compte de contrepartie obligatoire » vaut pour *Écriture manuelle* ;
+  *Éclater* dit « Ligne { $line } : compte requis ». Le champ qui se vide au montage est une limite écrite à la fiche.)*
+
+### C-e350-37 — 35-7 : sur un champ de compte obligatoire, quitter le champ jette le brouillon
+
+- **Contexte** : #1000, chemin 2. Sans `allowClear`, `AccountAutocomplete` garde au `blur` le texte tapé (vide ou libre)
+  pendant que la valeur reste l'ancien compte : un compte invisible part au serveur.
+- **Retenu** : au `blur`, sans `allowClear` et hors mode dégradé, le brouillon est jeté : le champ réaffiche le compte
+  retenu, sans jamais appeler `onSelect` (#271 tenue : un champ obligatoire n'est pas nullifié au `blur`).
+- **Écartées** : (a) nullifier au `blur` : rouvre #271 sur les lignes d'écriture ; (b) garder le brouillon et bloquer la
+  validation : un nouveau message et un nouvel état pour cinq consommateurs.
+- **Réversible** : oui.
+
+### C-e350-38 — 35-8 : découpage préventif en 35-8a (motif et pilotes) et 35-8b (déploiement)
+
+- **Contexte** : #431. Sur `main`, 78 sites `NewAuditLogEntry::user(` de production dans 29 fichiers, 9 `letterings::Actor`
+  sans clé, 3 `None` positionnels ; seize dépôts de `kesh-db` et autant de routes. Plus de cinq modules : la règle de
+  découpage préventif s'applique avant `bmad-create-story`.
+- **Retenu** : **35-8a** pose `Acteur`, `NewAuditLogEntry::par`, le pont depuis `CurrentUser`, la garde des sites non
+  résolus, et convertit deux pilotes (les écritures ; le retour en brouillon d'une facture fournisseur, #892 item 11) ;
+  **35-8b** convertit le reste et vide la raison `A_CONVERTIR_35_8B` de la garde. La clé de sprint `35-8` passe à `split`.
+- **Écartée** : une seule story : une boucle de revue sur seize dépôts.
+- **Réversible** : oui.
+- *(Annoté le 2026-11-13, validation P1 de la 35-8a, V1-1 : **80** sites dans **30** fichiers, non 78 dans 29 — la coupe au
+  premier `#[cfg(test)]` cachait `auth/bootstrap.rs:195`, `:332`. La 35-8b sort de l'Epic 35 : **C-e350-48** ; raison
+  renommée `A_CONVERTIR`.)*
+
+### C-e350-39 — 35-8 : un type `Acteur` dans `kesh-db`, à la place du `user_id` nu
+
+- **Contexte** : passer `(user_id, actor_api_key_id)` laisse un `None` positionnel invisible (`invoices.rs:1689`,
+  `supplier_invoices.rs:1410`, `:1412`) ; `letterings::Actor` existe déjà.
+- **Retenu** : `Acteur { user_id, api_key_id }` dans `entities/audit_log.rs`, `NewAuditLogEntry::par`, un seul constructeur
+  sans clé (`Acteur::utilisateur`, greppable), `From<&CurrentUser>` dans `kesh-api` ; `letterings::Actor` en devient l'alias
+  ou disparaît. Une fonction convertie prend l'`Acteur` à la place du `user_id`.
+- **Écartées** : (a) ajouter un paramètre `Option<i64>` partout : le `None` positionnel reste muet ; (b) déplacer
+  `CurrentUser` dans `kesh-db` : un type d'authentification dans la couche de données.
+- **Réversible** : oui (aucun schéma touché).
+
+### C-e350-40 — 35-8 : une garde qui inventorie les sites non résolus, par raison
+
+- **Contexte** : `CLAUDE.md`, § *Inventorier les sites NON RÉSOLUS* : énumérer les sites convertis laisse passer le
+  suivant.
+- **Retenu** : `crates/kesh-api/tests/audit_acteur_garde.rs` compte par fichier `NewAuditLogEntry::user(`,
+  `Acteur::utilisateur(` et `api_key_id: None` dans le code de production, contre une table close à raisons
+  (`PRE_AUTH`, `ADMIN_SANS_CLE` avec l'appelant qui le prouve, `MCP`, `PONT`, `A_CONVERTIR_35_8B`). Le serveur MCP reste
+  hors de #431 : une clé MCP n'est pas une clé REST, et le manuel écrit déjà la limite (`admin-manual.tex:3392`).
+- **Écartée** : un test par route : couvre les routes écrites, non celles qui viendront.
+- **Réversible** : oui.
+- *(Annoté le 2026-11-13, validation P1 de la 35-8a : la garde compte par **site** et non par fichier, retire les items
+  `#[cfg(test)]` au lieu de couper le fichier, compte un quatrième motif et donne une raison à chaque site : **C-e350-49**.)*
+
+### C-e350-41 — 35-8b : l'`Acteur` partout où un handler authentifié trace, administration comprise
+
+- **Contexte** : 35-8b. Exempter les dépôts appelés « seulement par l'administration » oblige à prouver, pour chacun, que
+  nulle route comptable ne l'appelle, et fait reposer la piste de contrôle sur la place de `require_not_pat`.
+- **Retenu** : tout site atteint par un handler authentifié prend l'`Acteur` de la requête ; restent hors du motif le
+  pré-authentification, le système (réparation au démarrage), le pont et le serveur MCP. Les raisons `A_CONVERTIR_35_8B`
+  et `ADMIN_SANS_CLE` disparaissent de la garde.
+- **Écartée** : garder `ADMIN_SANS_CLE` : moins de sites à convertir, mais une preuve d'appelant à tenir à jour.
+- **Réversible** : oui.
+
+### C-e350-42 — 35-1 : un format de facture ou d'avoir doit porter un compteur
+
+- **Contexte** : #932, #948. `validate_template` accepte `F-{YEAR}`, qui donne le même numéro à toutes les factures d'un
+  exercice.
+- **Retenu** : variante `FormatError::NoSeq` ; `NoPlaceholder` garde son sens et passe avant. Miroir d'écran.
+- **Écartée** : la forme stricte du format fournisseur (`validate_numbering_template`) : refuserait `{FY}/{SEQ:06}` et
+  d'autres formats valides aujourd'hui.
+- **Réversible** : oui.
+
+### C-e350-43 — 35-1 : un format n'est jugé que s'il change
+
+- **Contexte** : #932 : durcir la validation bloquerait l'enregistrement de la page sur un format d'avoir que l'écran ne
+  montre pas.
+- **Retenu** : la route ne juge un format que si la requête le porte et qu'il diffère de la valeur enregistrée ; aucune
+  migration ne réécrit un format enregistré.
+- **Écartée** : réécrire les formats sans compteur par migration : une migration, donc l'arrêt de l'epic (C-e350-5), pour un
+  cas que Guy n'a pas.
+- **Réversible** : oui.
+- *(Annoté le 2026-11-13, validation P1 de la 35-1, V1-1 : la règle vaut **aussi pour le miroir d'écran** — `NoSeq` ne
+  bloque l'enregistrement que si le champ diffère de la valeur chargée ; un format chargé sans compteur s'affiche avec une
+  aide non bloquante.)*
+
+### C-e350-44 — 35-1 : le format des avoirs devient visible à l'écran
+
+- **Contexte** : le formulaire n'envoie pas `creditNoteNumberFormat` ; le manuel (`user-manual.tex:1561`) le dit pourtant
+  « configurable dans Administration → Facturation ».
+- **Retenu** : un champ *Format des avoirs*, avec aperçu, dans la section *Numérotation*.
+- **Écartée** : laisser le format d'avoir à l'API : un format fautif enregistré ne se corrigerait pas à l'écran.
+- **Réversible** : oui.
+
+### C-e350-45 — 35-1 : un numéro impossible à produire est un refus typé, non une erreur 500
+
+- **Contexte** : `render` échoue sur un rendu > 64 (un nom d'exercice va jusqu'à 50 caractères, compté 16) ou une
+  accolade dans le nom d'exercice ; `invoices.rs:2334-2340` et `credit_notes.rs:572-577` en font un `Invariant`, 500.
+- **Retenu** : `DbError::NumberFormatUnrenderable`, code `NUMBER_FORMAT_UNRENDERABLE`, même statut que
+  `DesignatedAccountsNotPostable`, message i18n qui nomme le format, l'exercice et la cause ; rien d'écrit.
+- **Écartée** : compter `{FY}` pour 50 à la validation du format : refuserait des formats valides aujourd'hui.
+- **Réversible** : oui.
+- *(Annoté le 2026-11-13, validation P1 de la 35-1 : statut **`400`**, `details { document, cause }` ; changement de contrat
+  500 → 400 pour les routes ouvertes aux clés (validation d'une facture, création d'un avoir), écrit à `api-external.md` et
+  au CHANGELOG ; la cause `duplicate` s'ajoute par **C-e350-47**.)*
+
+### C-e350-46 — 35-2b : le message du refus pour les trois causes du code, par une construction commune
+
+- **Contexte** : validation P1 de la 35-2b, V1-1. `classify_render_error` rend `INVOICE_NOT_PDF_READY` pour
+  `InvoiceNotPdfReady`, `InvoiceTooManyLinesForPdf` et `InvoicePdfHeaderOverflow` ; la fiche ne donnait `details.message`
+  qu'à la première, alors que la PR ferme #955. Les deux autres ont une phrase sur la route unitaire, construite dans le bras
+  de `IntoResponse` (`errors.rs:2144-2168`).
+- **Retenu** : voie (a) de l'orchestrateur — deux fonctions `pub(crate)` extraites d'`errors.rs`
+  (`message_trop_de_lignes_pdf`, `message_entete_pdf_deborde`), appelées par `IntoResponse` et par le lot : une seule source
+  par phrase ; `details.message` pour les trois causes. Simple : deux fonctions sans état, statut et code inchangés.
+- **Écartée** : voie (b) — limite écrite, issue, `refs #955` : laisse le lot muet pour deux causes que l'utilisateur peut
+  corriger.
+- **Réversible** : oui.
+
+### C-e350-47 — 35-1 : un numéro déjà attribué par un format sans compteur est le même refus typé
+
+- **Contexte** : validation P1 de la 35-1, V1-5. Un format sans compteur déjà enregistré (C-e350-43 ne le réécrit pas) fait
+  heurter `uq_invoices_number` à la deuxième validation de l'exercice (`invoices.rs:2418-2430`) : `409 RESOURCE_CONFLICT`
+  générique (`errors.rs:3673`), et toute validation suivante échoue de même, sans cause nommée.
+- **Retenu** : à ce site et à l'`INSERT` de l'avoir (`uq_credit_notes_number`), une violation qui nomme la contrainte
+  devient `NumberFormatUnrenderable { cause: Duplicate }` (« ajoutez-y un compteur ») ; test d'API inconditionnel (AC4).
+- **Écartée** : écrire la limite et ouvrir une issue : laisserait un refus muet que la story sait nommer pour quelques
+  lignes.
+- **Réversible** : oui.
+- *(Annoté le 2026-11-13, validation P2 de la 35-1 : la collision n'est pas propre aux formats sans compteur — `FACT{SEQ}`
+  au deuxième exercice ; le message ne suppose pas la cause ; le passage `409 RESOURCE_CONFLICT` → `400` est un changement
+  de contrat écrit comme le `500` → `400`. Voir C-e350-51.)*
+
+### C-e350-48 — 35-8b : reportée à l'Epic 36, découpée là-bas en lots par domaine
+
+- **Contexte** : décision de l'orchestrateur du 2026-11-13, sur la demande de Guy d'epics courtes à petites stories. La
+  35-8b touche ≈ 140 fichiers et ≈ 1000 appels (validation P1 de la 35-8b, V1-4) : ce n'est pas une petite story.
+- **Retenu** : la 35-8b sort de l'Epic 35 — statut `backlog` au `sprint-status.yaml`, ligne du fichier d'epic déplacée en
+  « reporté à l'Epic 36 », fiche gardée telle quelle avec une note en tête qui renvoie aux findings de sa P1
+  (`kesh-gate-logs/e35-8b-validation-p1.md`, 4 MEDIUM, 3 LOW) à traiter au découpage. La 35-8a reste (mécanisme et deux
+  pilotes) ; sa PR porte `refs #431`, non `closes` ; #431 reste ouverte à la 0.17.7.
+- **Écartée** : garder la 35-8b dans l'Epic 35 et la valider en l'état : une boucle de revue sur un rayon de cette taille.
+- **Réversible** : oui (la fiche est intacte).
+
+### C-e350-49 — 35-8a : la garde compte par site, retire les items de test, et donne une raison à chaque site
+
+- **Contexte** : validation P1 de la 35-8a, V1-1 à V1-4, V1-10, et la restauration (35-8b V1-1). Couper au premier
+  `#[cfg(test)]` cache `auth/bootstrap.rs` ; un compte par fichier reste vert sur un échange site ajouté / site converti ;
+  `for_actor(user_id, None, …)` est une sortie muette ; des sites comptés n'avaient aucune raison.
+- **Retenu** : items `#[cfg(test)]` retirés (accolades appariées) ; clé `(fichier, fonction englobante, motif)` ; quatrième
+  motif `for_actor(…, None` ; raisons `PRE_AUTH`, `SYSTEME`, `RESTAURATION`, `DEFINITION`, `PONT`, `FIXTURE`, `MCP`,
+  `ADMIN_SANS_CLE`, `A_CONVERTIR` (renommée depuis `A_CONVERTIR_35_8B`) ; six sondes. La restauration garde son
+  `user_id = audit_uid` : la 35-8a ne la touche pas.
+- **Écartées** : (a) clé par ligne de code normalisée : rougit au moindre reformatage ; (b) rendre `for_actor`
+  `pub(crate)` tout de suite : `kesh-api` l'appelle (`inbox_import.rs:647`, `routes/bank_accounts.rs:851`, …), à
+  reprendre au déploiement.
+- **Réversible** : oui (un test).
+
+### C-e350-50 — 35-8a : la story n'est pas petite ; découpage en 35-8a1 / 35-8a2 proposé, non appliqué
+
+- **Contexte** : validation P1 de la 35-8a, V1-7. Rayon recompté sur `main` `67efc51f` : le lot des écritures touche
+  ≈ 60 fichiers et ≈ 240 appels, presque tous dans les tests, mécaniques.
+- **Retenu** : la fiche reste une story (décision de l'orchestrateur du même jour : « la 35-8a reste ») mais ordonne ses
+  tâches en deux lots, et **propose** à l'orchestrateur un découpage : 35-8a1 (mécanisme, garde, retour en brouillon
+  fournisseur, ≈ 8 fichiers de production) puis 35-8a2 (les écritures, rollout mécanique). Seuil écrit pour le cas où il
+  ne découpe pas : plus de 70 fichiers à l'étape 0, ou lot 1 non convergé.
+- **Écartées** : (a) découper sans décision de l'orchestrateur : contredit sa consigne ; (b) garder les signatures
+  `user_id` des écritures avec une enveloppe : les appelants sortiraient de la vue de la garde.
+- **Réversible** : oui.
+- *(Annoté le 2026-11-13 : **découpé**, sur décision de l'orchestrateur — Guy veut de petites stories. La 35-8a passe à
+  `split` ; **35-8a1** (`35-8a1-audit-acteur-mecanisme.md` : mécanisme, garde et sondes, retour en brouillon fournisseur ;
+  AC3, AC5 ; `refs #431`, `refs #892`) et **35-8a2** (`35-8a2-audit-acteur-ecritures.md` : les écritures ; AC1, AC2, AC4 ;
+  après la 35-8a1 et la 35-5a0 ; `refs #431`), tirées sans réécriture du fond.)*
+- *(Annoté le 2026-11-13, validation P2 de la 35-8a1, V2-1 : la **35-8a1** part elle aussi **après la 35-5a0** — même
+  signature d'`unvalidate`, même appel de route, mêmes 30 appels de tests —, et après la 35-3 et la 35-1 ; elle n'en dépend
+  pas pour son contenu.)*
+
+### C-e350-51 — 35-1 : le format n'est pas tenu de porter l'année ou l'exercice (décision de l'orchestrateur)
+
+- **Contexte** : validation P2 de la 35-1, V2-1. Le compteur repart à chaque exercice, l'unicité vaut pour la société :
+  `FACT{SEQ}`, accepté par D1, heurte l'unicité au deuxième exercice ; `F-{YEAR}-{SEQ:04}` aussi quand deux exercices
+  commencent la même année civile.
+- **Retenu** : D1 n'exige que le compteur ; la collision est nommée à la validation (`duplicate`, C-e350-47), par un message
+  qui ne suppose pas l'absence de compteur ; une issue est rédigée dans la fiche (« un format sans année ni exercice heurte
+  l'unicité au deuxième exercice ») pour l'orchestrateur — ouverte : **#1058**.
+- **Écartée** : exiger `{YEAR}` ou `{FY}` dans D1 : hors du périmètre de #932 et #948, et refuserait des formats enregistrés
+  dès qu'on les touche.
+- **Réversible** : oui.
+
+### C-e350-52 — 35-8a1 : la garde compte aussi le `None` positionnel passé à `delete_in_tx`, et écrit ses angles morts
+
+- **Contexte** : validation P2 de la 35-8a1, V2-4. Les quatre motifs de la garde ne lisent pas un `None` passé en position
+  de clé : `invoices.rs:1689` (et la mutation M4, sur `delete_in_tx`) passaient. Le rejeu de la passe trouve aussi
+  `reconciliation_cancel.rs:811` et `kesh-seed/src/pieges.rs:570`, sur d'autres fonctions qui prennent
+  `actor_api_key_id: Option<i64>` (28 dans `src`).
+- **Retenu** : un cinquième motif, un appel de `delete_in_tx(` portant un argument `None`, clé `(fichier, fonction)` ;
+  `invoices.rs:1689` en `A_CONVERTIR` jusqu'à la 35-8a2 ; les autres fonctions à `Option<i64>` écrites en **angle mort** au
+  doc-comment de la garde, à reprendre au déploiement (Epic 36). Et la garde ne réécrit pas de parseur : elle partage
+  `source_assainie` avec `audit_label_registry.rs`, extraite vers `tests/common/`.
+- **Écartées** : (a) un motif générique `None` en position de clé : il faudrait la signature de chaque fonction, donc un
+  parseur ; (b) taire l'angle mort : « ensemble clos » serait faux.
 - **Réversible** : oui.

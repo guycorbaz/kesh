@@ -5,8 +5,10 @@ Status: ready-for-dev
 *Fiche née le 2026-11-12 du découpage de la 35-2 à la validation P2 (C-e350-9), par l'agent de kickoff de l'Epic 35
 (Opus 5.5), worktree `kesh-e35`. Elle **part de la 35-2a fusionnée**, dont elle reprend le message localisé (la 35-2a garde
 `AppError::InvoiceNotPdfReady(String)`, D3 ; aucun contrat `details` lisible par machine, C-e350-11). Release **0.17.7** ; Guy n'emploie pas encore les rappels (première facture client avant le
-2026-11-30) : elle suit la 35-2a sans échéance propre. **Aucune migration.** Code lu sur **`release/0.17.6`** (`4e1c768a`).
-Registre de la story : `e35-choix-autonomes-e352b.md`, à créer au premier choix.*
+2026-11-30) : elle suit la 35-2a sans échéance propre. **Aucune migration.** Lignes lues sur **`release/0.17.6`**
+(`4e1c768a`), identiques sur **`main`** (`4d39f377`, la 0.17.6 publiée ; `git diff --stat 4e1c768a 4d39f377 -- crates/kesh-api
+frontend/src` vide, validation P1). Registres : `e35-choix-autonomes-e350.md` (C-e350-8, -9, -11, -46) ;
+`e35-choix-autonomes-e352b.md` pour la story, à créer au premier choix.*
 
 ## Story
 
@@ -14,14 +16,30 @@ En tant que titulaire qui envoie un lot de rappels, quand une facture du lot est
 veux lire dans le rapport **ce qu'il faut corriger**, comme sur la fiche de la facture, et non « Facture non imprimable en
 PDF » seul.
 
-## Ce qui se lit au code (`release/0.17.6`)
+## Ce qui se lit au code (`release/0.17.6`, identique sur `main`)
 
 - La boucle du lot rend chaque PDF (`crates/kesh-api/src/routes/invoice_email.rs:1260-1269`) et classe l'échec par
   `classify_render_error` (`:1023-1036`) : `InvoiceNotPdfReady`, `InvoiceTooManyLinesForPdf` et
   `InvoicePdfHeaderOverflow` deviennent tous `BatchItemError::failed("INVOICE_NOT_PDF_READY")`, **sans `details`**, alors
   que `BatchItemError::failed_with(code, details)` existe (`:964-990`) et que `FailedReminder` porte un champ `details`
   (`:944-948`). Le bras final rend `DATABASE_ERROR` (règle du doc-comment `:1010-1022`) ; test
-  `classify_render_error_ne_deguise_pas_un_refus_en_panne` (`:1749`).
+  `classify_render_error_ne_deguise_pas_un_refus_en_panne` (`:1749`) ; `BatchItemError` n'expose en test que `code()`
+  (`:985-989`). Le commentaire du bras (`:1027-1029`) nomme les quatre causes.
+- Le chemin du lot est **unique** : `git grep -n 'render_document('` rend quatre appels (`invoice_email.rs:560`, `:1260`,
+  `issued_invoice_pdf.rs:151`, `:256`), un seul dans le lot ; `render_reminder` (`:362-405`) ne produit pas
+  `InvoiceNotPdfReady`, et `classify_reminder_render_error` (`:1062`) ne change pas.
+- Les deux autres refus du même code ont, sur la route unitaire, une phrase qui dit quoi corriger, construite **dans le bras
+  de `IntoResponse`** : `InvoiceTooManyLinesForPdf(n)` (`crates/kesh-api/src/errors.rs:2144-2158`, `t_args(
+  "error-invoice-too-many-lines-for-pdf", …)`, argument `count`) et `InvoicePdfHeaderOverflow` (`:2159-2168`,
+  `t("error-invoice-pdf-header-overflow", …)`).
+- Le montage : `Contact::structured_address` (`crates/kesh-db/src/entities/contact.rs:15-24`) ne rend `None` que si la rue,
+  le numéro, le NPA et la localité sont **tous** vides ; un contact sans e-mail est refusé avant le rendu
+  (`CONTACT_EMAIL_MISSING`, `invoice_email.rs:1222-1223`) ; `seed_contact` (`invoice_send_email_e2e.rs:163-200`) pose une
+  adresse complète ; la 35-2a ajoute `seed_sendable_ve_vey` au même fichier ; `spawn_app` charge le catalogue (`:102`).
+- Aucune spec E2E ne lit aujourd'hui le contenu d'une ligne du rapport (`git grep 'reminder-batch-failed-row' --
+  frontend/tests` vide ; `dunning-roundtrip.spec.ts:80-91` ne vérifie que la visibilité du rapport). Type du rapport :
+  `details: Record<string, unknown> | null` (`frontend/src/lib/features/reminders/reminders.types.ts:109`). Ailleurs,
+  `details.message` existe avec un sens **technique** non traduit (`reconciliation.rs:804`, `:2167`).
 - L'écran : `ReminderBatchReport.svelte:30` affiche `reminderErrorLabel(f.errorCode)` seul, « Facture non imprimable en
   PDF » (`reminder-error-label.ts:20`). Le composant n'a pas de test.
 - Le manuel (`user-manual.tex:1251`) dit que le lot affiche ce libellé seul (issue #955) ; la 35-2a réécrit la phrase du
@@ -29,42 +47,119 @@ PDF » seul.
 
 ## Décisions
 
-- **D1 — Le message, seul.** `classify_render_error` rend, pour `AppError::InvoiceNotPdfReady(msg)`,
-  `BatchItemError::failed_with("INVOICE_NOT_PDF_READY", json!({ "message": msg }))` : `details.message` est une phrase
-  **destinée à l'utilisateur**, non un contrat lisible par machine (C-e350-11). Ceux nés de `InvoiceTooManyLinesForPdf` et
-  `InvoicePdfHeaderOverflow`, qui partagent le code, restent sans `details`.
-- **D2 — L'écran** affiche « Facture non imprimable en PDF — *message* » quand `details.message` est là, le libellé seul
-  sinon. Le séparateur suit le patron existant du rapport ; aucune clé frontend neuve sauf nécessité (`lint-i18n-ownership`).
+- **D1 — Le message, pour les trois refus du code** (C-e350-46, voie (a) de la validation P1). `classify_render_error` rend
+  `BatchItemError::failed_with("INVOICE_NOT_PDF_READY", json!({ "message": msg }))` pour :
+  - `AppError::InvoiceNotPdfReady(msg)` — la phrase de la 35-2a ;
+  - `AppError::InvoiceTooManyLinesForPdf(n)` et `AppError::InvoicePdfHeaderOverflow` — la phrase **de la route unitaire**,
+    par deux fonctions `pub(crate)` extraites d'`errors.rs` (`message_trop_de_lignes_pdf(n: usize) -> String`,
+    `message_entete_pdf_deborde() -> String`), appelées par les bras de `IntoResponse` (`:2144-2168`) **et** par
+    `classify_render_error` : une seule source pour chaque phrase (DRY). Les bras de `IntoResponse` gardent leur statut et
+    leur code (`INVOICE_TOO_MANY_LINES_FOR_PDF`, `INVOICE_PDF_HEADER_OVERFLOW`) ; seul le lot les rend sous
+    `INVOICE_NOT_PDF_READY`, comme aujourd'hui.
+  `details.message` est une phrase **destinée à l'utilisateur**, localisée dans la langue du serveur, non un contrat lisible
+  par machine (C-e350-11). Le motif « ou » de `:1030-1032` est scindé en trois bras ; **une seule** occurrence de
+  `InvoiceNotPdfReady(` reste hors tests (le bras `InvoiceNotPdfReady(msg) =>`), sans quoi la garde AC14 de la 35-2a
+  (`textes_coherents.rs`) rougit. Le commentaire `:1027-1029` suit.
+- **D2 — L'écran**, par une fonction pure à côté de `reminderErrorLabel` (`reminder-error-label.ts`),
+  `reminderFailureText(failed) → string` :
+  1. le message n'est lu **que pour `INVOICE_NOT_PDF_READY`** — le `details.message` technique d'un autre code ne s'affiche
+     pas ;
+  2. seulement si `typeof details.message === 'string'` et non vide après `trim()` (règle de la 35-2a, D1) ;
+  3. rendu en texte (`{…}`), jamais `{@html}` ;
+  4. séparateur : « : » — la ligne lit `#12 — Facture non imprimable en PDF : La localité du client …` (le patron
+     `#{id} — {libellé}` de `ReminderBatchReport.svelte:30` garde son tiret, sans en ajouter un second). **Limite
+     assumée** (validation P2, V2-4) : le séparateur « : » (espace avant, typographie française) est écrit en dur dans les
+     quatre locales, et la ligne mêle la langue de l'interface (le libellé) et celle du serveur (le message, comme sur la
+     route unitaire) ; en de-CH, it-CH et en-CH l'espace avant le deux-points est fautive. Sans effet sur les comptes ; une
+     clé de gabarit coûterait quatre locales pour un ordre déjà mêlé de langues. Écrite au Change Log du développement ;
+  5. **aucune clé i18n neuve** : `sitesTotal` d'`i18n-keys.test.ts` inchangé, recompté.
 
 ## Critères d'acceptation
 
 1. **AC1 — Par HTTP** (`crates/kesh-api/tests/invoice_send_email_e2e.rs`, sur le modèle de
-   `send_reminder_batch_partial_success`, `:2019`) : un lot de deux factures, l'une au client de localité `Ve–vey`, l'autre
-   au client **sans adresse** : deux `failed[]` en `INVOICE_NOT_PDF_READY`, chacun avec `details.message` — le premier
-   contient « localité du client » et « U+2013 », le second la phrase de `invoice-pdf-error-client-address-required` —,
-   et rien d'autre dans `details`. Rouge sur le code de départ (`details` à `null`).
-2. **AC2 — Pas de fausse panne** : le refus reste `INVOICE_NOT_PDF_READY`, jamais `DATABASE_ERROR` ; le test `:1749`
-   asserte en plus `details.message` (frontière : la 35-2a ne change ni la variante ni ce test, D3 de la 35-2a).
-3. **AC3 — Les deux autres codes** : un échec `InvoiceTooManyLinesForPdf` reste sans `details`.
-4. **AC4 — Écran** : Vitest de `ReminderBatchReport.svelte`, avec et sans `details.message`.
-5. **AC5 — Documentation** : `docs/api-external.md`, la ligne de la 35-2a dit que, dans `failed[]` du lot, `details` porte
-   `message` (et rien d'autre) ; manuel `:1251` complété, PDF régénéré, contrôlé aplati ; CHANGELOG `[0.17.7]`, *Corrigé*, refs #955
-   (règle C-e350-8 : la 35-2b **complète** le point #955 écrit par la 35-2a, sans en ajouter un second). La PR porte `closes #955` (la 35-2a, `refs #955`).
-6. **AC6 — Capture** : la ligne du rapport d'un lot (thème clair, base jetable, `kesh-gate-logs/e352b/captures/`).
+   `send_reminder_batch_partial_success`, `:2019`) : un lot de deux factures, dans **une** société. Montage :
+   `seed_sendable` (il rend `(admin_id, company_id, invoice_id)` — `seed_sendable_ve_vey` de la 35-2a jette `admin_id`),
+   puis `UPDATE contacts SET address_city = 'Ve–vey'` sur le contact de la première facture ; un **second** contact, distinct,
+   par `seed_contact` (e-mail gardé, sinon `CONTACT_EMAIL_MISSING` passe avant le rendu), sa facture par
+   `seed_validated_invoice`, puis ses quatre colonnes `address_street`, `address_building`, `address_postal_code`,
+   `address_city` à `NULL` en SQL ; `seed_dunning(&pool, company_id)` (comme `:2044`). (Faire rendre `admin_id` à
+   `seed_sendable_ve_vey` est permis : fonction de la 35-2a, fichier commun, à dire au Change Log.) Deux `failed[]` en
+   `INVOICE_NOT_PDF_READY`, chacun avec `details.message` : le premier contient « localité du client » et « U+2013 » ; le
+   second est la phrase de `invoice-pdf-error-client-address-required`, lue par `bundle.format(fr-CH, …)`, marques
+   U+2068/U+2069 retirées, non par un littéral recopié. `message` est le seul champ de `details` à ce jour, asserté sur
+   l'objet entier : `assert_eq!(details.as_object().unwrap().keys().collect::<Vec<_>>(), ["message"])`. Rouge sur le code de
+   départ (`details` à `null`).
+2. **AC2 — Pas de fausse panne** (test `:1749`, par un accesseur `#[cfg(test)] fn details(&self)` de `BatchItemError`, à
+   côté de `code()`) : les trois refus restent `INVOICE_NOT_PDF_READY`, jamais `DATABASE_ERROR`, chacun avec
+   `details.message` non vide (frontière : la 35-2a ne change ni la variante ni ce test, D3 de la 35-2a).
+3. **AC3 — Les deux autres causes** (même test) : `InvoiceTooManyLinesForPdf(42)` donne `details.message` égal à
+   `message_trop_de_lignes_pdf(42)`, `InvoicePdfHeaderOverflow` à `message_entete_pdf_deborde()` ; et la réponse de la route
+   unitaire garde ses codes et son texte : le test existant `errors.rs:5726` reste vert, et un test asserte que son
+   `message` est la même chaîne que la fonction extraite (une seule source).
+4. **AC4 — Écran** (Vitest, `reminder-error-label.test.ts` pour `reminderFailureText`, sans monter le composant ; un test
+   du composant pour le branchement) : message présent → « Facture non imprimable en PDF : *message* » ; absent, vide,
+   blanc, non-chaîne → le libellé seul ; présent sur un **autre** code (`DATABASE_ERROR` avec `details.message`) → non
+   affiché ; un message portant `<b>` s'affiche en texte. Mock local d'`i18nMsg`, sans état i18n global.
+5. **AC5 — E2E** (sur le modèle de `dunning-roundtrip.spec.ts:56-91`) : `createContactWithAddressViaApi(page, nom, email,
+   undefined, undefined, 'Ve–vey')` — l'**e-mail fourni** (3e paramètre ; sans lui la ligne devient `CONTACT_EMAIL_MISSING`
+   et le contact n'est pas proposé au lot), `city` en **6e** paramètre (la spec `invoice-qr-caracteres.spec.ts` de la 35-2a
+   l'appelle sans e-mail) ; `ensurePrimaryBankAccountViaApi` ; visite de `/settings/dunning` (niveaux semés au premier
+   GET) ; `createAndValidateInvoiceViaApi(page, contactId, overdueDate())` ; case `reminder-batch-checkbox`,
+   `reminder-batch-send` ; assertion : `reminder-batch-failed-row` contient « localité du client » et « U+2013 » — la valeur
+   traverse la frontière HTTP jusqu'à l'écran. Rouge au départ : la ligne vaut « Facture non imprimable en PDF » seul.
+6. **AC6 — Documentation** :
+   - `docs/api-external.md` : dans la ligne d'`INVOICE_NOT_PDF_READY` écrite par la 35-2a, la clause « Le lot
+     `POST /dunning/reminders/send-batch` rend ce code par facture, sans ce message » est **remplacée** : au lot,
+     `failed[].details = { message }` *(depuis la v0.17.7)*, phrase localisée dans la langue du serveur, destinée à
+     l'utilisateur, à ne pas lire par machine, seul champ à ce jour ; « `details` absent » ne vaut que pour la réponse `400`
+     de la route unitaire ; le `details.message` d'autres lots (réconciliation) est un texte technique, de même nom et
+     d'autre nature ;
+   - manuel `user-manual.tex:1251` : la phrase de la 35-2a « le lot de rappels affiche encore … (issue \#955) » réécrite ;
+     `:1527` (« un compte-rendu liste … les échecs par facture ») dit que le motif est lisible ; PDF régénéré, contrôlé aplati
+     (absence de « (#955) » à cet endroit ; présence d'une phrase neuve, choisie sans ligature `ff`/`fi`/`fl`) ;
+   - CHANGELOG `[0.17.7]`, *Corrigé*, refs #955 (règle C-e350-8 : la 35-2b **complète** le point #955 écrit par la 35-2a,
+     sans en ajouter un second) : pour un client d'API, `details` passe de `null` à un objet pour ce code dans le lot.
+   La PR porte `closes #955` (la 35-2a, `refs #955`).
+7. **AC7 — Capture** : la ligne du rapport d'un lot (thème clair, base jetable, `kesh-gate-logs/e352b/captures/`).
 
-**Mutations** : M1 `details.message` omis pour un refus sans champ ; M2 `details.message` non lu par le composant ; M3 le
-bras `InvoiceNotPdfReady` de `classify_render_error` rendu à `failed` sans `details`.
+**Mutations**, chacune avec le test qui la tue : M1 `json!({ "message": msg })` remplacé par `json!({ "message": "" })` (AC1,
+AC2) ; M2 `details.message` non lu par `reminderFailureText` (AC4, AC5) ; M3 le bras `InvoiceNotPdfReady` rendu à `failed`
+sans `details` (AC1, AC2) ; M4 un champ ajouté à `details` (`"code": …`) (AC1, « seul champ ») ; M5 le bras
+`InvoiceTooManyLinesForPdf` rendu à `failed` sans `details` (AC3) ; M5bis le bras `InvoicePdfHeaderOverflow` rendu à
+`failed` sans `details` (AC3) ; M6 le bras d'`IntoResponse` qui recopie la phrase au lieu d'appeler la fonction extraite,
+avec un mot changé (AC3, même chaîne) ; M7 le filtre de code retiré de `reminderFailureText` (AC4, autre code).
+
+**Angle mort écrit** (validation P2, V2-5 c) : aux tests unitaires, `t`/`t_args` rendent le **repli** (aucun bundle dans le
+binaire `lib`, garde AC13 de la 35-2a) ; AC2 et AC3 ne prouvent donc, pour les deux phrases extraites, que le repli. Au lot,
+sous catalogue réel, seul `InvoiceNotPdfReady` est exercé (AC1) ; la route unitaire garde son test HTTP sous catalogue
+(`invoice_pdf_e2e.rs:485`). Si le montage de `invoice_pdf_e2e.rs:485-544` (en-tête qui déborde) se réemploie sans frais pour
+un lot, l'ajouter ; sinon, l'écrire tel quel au Change Log du développement. G9 reste vert : la clé
+`error-invoice-pdf-header-overflow` garde un seul site dans `errors.rs`, dans la fonction extraite.
 
 ## Tâches
 
-- [ ] Étape 0 : partir de la 35-2a fusionnée ; relire les lignes citées.
-- [ ] Tests, rouges consignés ; serveur ; composant ; documentation ; capture.
+- [ ] Étape 0 : partir de la 35-2a fusionnée ; relire les lignes citées ; ajouter l'accesseur `details()` de test et mettre à
+      jour le commentaire `:1027-1029`.
+- [ ] Tests, rouges consignés ; `errors.rs` (deux fonctions extraites) ; serveur ; `reminderFailureText` et composant ; E2E ;
+      documentation ; capture.
 - [ ] Gates : `test-fast.sh --ci` et `scripts/gate-ci.sh`, frontend complet, E2E complet au dernier commit de code.
 
 ## Dev Notes
 
-- Fichiers : `invoice_email.rs`, `ReminderBatchReport.svelte` (+ test), `api-external.md`, `user-manual.tex`,
-  `CHANGELOG.md` ; communs avec la 35-2a, qui la précède.
+- Fichiers : `invoice_email.rs`, `errors.rs`, `reminder-error-label.ts` (+ test), `ReminderBatchReport.svelte` (+ test), une
+  spec E2E, `api-external.md`, `user-manual.tex`, `CHANGELOG.md`.
+- **Union (C-e350-8)** :
+  - avec la **35-2a**, qui la précède : `invoice_email.rs`, `invoice_send_email_e2e.rs`, `api-external.md`, `user-manual.tex`,
+    `CHANGELOG.md` ; la **garde AC14** de la 35-2a (`textes_coherents.rs`, « exactement deux occurrences de
+    `InvoiceNotPdfReady(` » hors tests) : la 35-2b garde une seule occurrence au bras de `classify_render_error` (D1) ; le
+    gate qui la porte est `textes_coherents.rs` ;
+  - avec la **35-3** : `CHANGELOG.md`, `docs/api-external.md`, `user-manual.tex` (C-e350-8, points 1, 5, 6), et
+    `errors.rs` — la 35-3 y ajoute un bras `DbError` après `DesignatedAccountsNotPostable` (`:4571`), la 35-2b ne touche que
+    les bras `:2144-2168` et ajoute ses deux fonctions à côté : hunks distincts, aucun reformatage hors des passages
+    touchés ; avec la **35-1**, de même (`errors.rs`, bras `NumberFormatUnrenderable`) ; écrit au fichier d'epic (règle
+    d'union, ligne `errors.rs`) et au registre (C-e350-8, annotation de la validation P2) ;
+  - avec la **35-5b** : `invoice_email.rs` — la 35-5b touche `:206`, `:381` (`render_reminder`), `:904` ; la 35-2b `:1023-1036`
+    et le test `:1749` : hunks distincts.
 - Fixtures synthétiques seulement. Pattern batch du `CLAUDE.md` : aucune erreur per-facture n'escalade.
 
 ## Dev Agent Record
@@ -82,3 +177,32 @@ bras `InvoiceNotPdfReady` de `classify_render_error` rendu à `failed` sans `det
 - 2026-11-12 — Née du découpage de la 35-2 à la validation P2 (C-e350-9). Validation à lancer.
 - 2026-11-12 — Réajustée au recadrage de la 35-2a (validation P3, C-e350-11) : `details` du lot réduit à `message`,
   phrase destinée à l'utilisateur ; aucune `reason` ni `field` ; frontière avec la 35-2a écrite (AC2) ; `closes #955` ici.
+- 2026-11-12 — **Validation P1** (Opus) : 0 CRITICAL, 0 HIGH, 3 MEDIUM, 6 LOW (`kesh-gate-logs/e35-2b-validation-p1.md`).
+  Remédiée par l'agent de rédaction des fiches (Opus 5.5). Prémisses relues sur `main` (`4d39f377`) :
+  `invoice_email.rs:1008-1036` (le motif « ou » `:1030-1032`), `errors.rs:2144-2168` (les deux phrases de la route
+  unitaire, construites dans `IntoResponse`), `ReminderBatchReport.svelte:25-34`, `reminders.types.ts:105-110`, la garde AC14
+  de la fiche 35-2a (`:239`). Toutes confirmées.
+  - V1-1 (MEDIUM) : **voie (a)** retenue (C-e350-46) — `details.message` aussi pour `InvoiceTooManyLinesForPdf` et
+    `InvoicePdfHeaderOverflow`, par deux fonctions extraites d'`errors.rs`, communes à `IntoResponse` et au lot (D1) ;
+    simple : deux fonctions sans état, les bras gardent statut et code. AC3 inversé.
+  - V1-2 (MEDIUM) : M1, reste du contrat retiré (« refus sans champ »), remplacée ; mutations M1 à M7 jouables, chacune avec
+    son test.
+  - V1-3 (MEDIUM) : AC5, un E2E qui voit `details.message` dans la ligne du rapport.
+  - LOW : V1-4 (D2 : règle d'affichage, fonction pure, filtre de code, texte, séparateur « : », aucune clé neuve) ; V1-5
+    (AC1 : montage du contact sans adresse, `seed_sendable_ve_vey`, phrase lue au catalogue) ; V1-6 (AC6 : la ligne d'API,
+    le manuel `:1251` et `:1527`, le CHANGELOG) ; V1-7 (union : 35-3, 35-1, 35-5b, garde AC14 de la 35-2a) ; V1-8 (AC2,
+    AC3 : accesseur `details()` de test, les deux causes) ; V1-9 (référence `main`, statut tenu par le registre de sprint).
+  - Symptômes greppés (fiche, fichier d'epic, registre) : « refus sans champ », « restent sans `details` »,
+    « sans ce message » — remplacés dans la fiche ; le fichier d'epic (« Le rapport d'un lot de rappels porte la phrase du
+    refus ») reste juste.
+- 2026-11-13 — **Validation P2** (Sonnet) : 0 CRITICAL, 0 HIGH, 0 MEDIUM, 5 LOW (`kesh-gate-logs/e35-2b-validation-p2.md`).
+  Appliqués : V2-1 (AC1 : montage par `seed_sendable`, second contact distinct, `seed_dunning`) ; V2-2 (AC5 : e-mail en 3e
+  paramètre, `city` en 6e, `/settings/dunning`, `overdueDate()`, rouge écrit) ; V2-3 (union : `errors.rs` nommé pour la
+  35-2b au fichier d'epic — ligne de la story et règle d'union — et par annotation datée de C-e350-8, point 4 ; G9 vert, un
+  seul site de `error-invoice-pdf-header-overflow`) ; V2-4 (séparateur « : » et mélange de langues **assumés par écrit**,
+  sans clé neuve, D2.4 — la lecture du code ne montre rien qui gêne une locale au-delà de la typographie) ; V2-5 (M5bis,
+  assertion de l'objet entier en AC1, angle mort du repli écrit).
+- 2026-11-13 — **Validation terminée.** Série des findings au-dessus de LOW : P1 3 MEDIUM → P2 0 (CRITICAL et HIGH : 0).
+  Modèles : Opus (P1), Sonnet (P2). La boucle se clôt sur une passe sans finding au-dessus de LOW ; la remédiation de P2 ne
+  touche que la rédaction. Choix retenu : **C-e350-46** (voie (a) : le message pour les trois causes, par une construction
+  commune). Statut : `ready-for-dev`.
