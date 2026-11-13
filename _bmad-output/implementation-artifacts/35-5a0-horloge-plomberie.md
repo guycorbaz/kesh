@@ -1,6 +1,6 @@
 # Story 35-5a0 : l'horloge injectable, posée sans rien changer — `Horloge`, `HorlogeFixe`, `AppState.horloge`, `Lecture` à horloge, la date du jour passée à `kesh-db`, la garde de l'inventaire (#929, #1022, #907)
 
-Status: ready-for-dev
+Status: review
 
 *Fiche rédigée le 2026-11-12 par l'agent de rédaction des fiches 35-5 (Opus 5.5), worktree `kesh-e355`, à la remédiation de
 la validation P3 de la 35-5a (V3-4) : **découpage** décidé par l'orchestrateur (C-e350-28) — la dérogation C-e350-27 tombe,
@@ -272,9 +272,9 @@ attendus).
 
 ## Tâches
 
-- [ ] Étape 0 : recompter la fermeture des appelants (production, tests) par `git grep` sur les noms de D2 ; les 43
+- [x] Étape 0 : recompter la fermeture des appelants (production, tests) par `git grep` sur les noms de D2 ; les 43
       constructions de `Lecture`, les 9 littéraux ; Change Log.
-- [ ] Commits internes, **dans cet ordre** (validation P2, V2-1 : l'ordre précédent mettait `kesh-db` avant `kesh-api`, qui
+- [x] Commits internes, **dans cet ordre** (validation P2, V2-1 : l'ordre précédent mettait `kesh-db` avant `kesh-api`, qui
       appelle la fermeture — `routes/companies.rs:505`, `journal_entries.rs:456`, `services/factures.rs:552`,
       `supplier_invoices.rs:829`, lus — et ne compilait pas). Chacun compile et passe le gate complet ; le raisonnement est
       écrit ici, et l'étape le constate (`cargo build --workspace --all-targets` puis gate complet, au Change Log) :
@@ -303,7 +303,9 @@ attendus).
          elle ; elles restent dans (3) par économie (Dérogation).
       4. **Garde (D5) et `docs/testing.md` (D6)** : fichier de test neuf qui lit les sources, sondes de l'AC5, mutations ;
          ses comptes supposent les neuf sites déjà convertis, d'où sa place après (3).
-- [ ] Gates : `test-fast.sh --ci` complet à chaque commit, `scripts/gate-ci.sh`, Vitest, E2E complet au dernier commit de code.
+- [x] Gates : `test-fast.sh --ci` complet à chaque commit, `scripts/gate-ci.sh`, Vitest, E2E complet au dernier commit de code.
+      *(Fait au commit (2) et au commit (5), dernier commit de code ; commits (3) et (4) jugés par le gate du (5) — écart
+      déclaré au Change Log, C-e355a0-5.)*
 - [ ] Revue : **fichier par fichier** pour les appelants (rollout mécanique, `CLAUDE.md` § *Règle de splitting préventif*),
       passes adversariales sur `kesh-core/src/horloge.rs`, `kesh-api/src/horloge.rs`, D2 et la garde.
 
@@ -398,21 +400,52 @@ la fermeture reçoit `aujourd_hui_test()` ou une date fixe ; toute construction 
 
 ### Agent Model Used
 
+Opus 5.5 (agent de développement, worktree `kesh-e355a0`, clé `e355a0`), 2026-11-13.
+
 ### Debug Log References
+
+Journaux sous `/home/gcorbaz/devel/kesh-gate-logs/e355a0/` : `etape0-*.log` (étape 0), `c2-*.log` (gate du commit (2)),
+`c3-erreurs.json` / `c3-conversion.log` (diagnostics et conversion du commit (3)), `garde-comptes-bruts.log` (comptes de
+la garde relevés à son exécution, listes vides), `c5-*.log` (gate complet du dernier commit de code), `mut/` (mutations),
+`rouges.log`. Gates de commit sur le clone `kesh-gate-logs/e355a0/gwt` (C-e355a0-1).
 
 ### Completion Notes List
 
 - Fiche rédigée au découpage de la 35-5a (C-e350-28) ; validation terminée en P5 ciblée (Change Log).
+- Développement en **cinq** commits — les quatre de la fiche, plus un correctif (5) né du gate du commit (2)
+  (C-e355a0-7) : `48b9e627` (1) `kesh-core`, `05666dbf` (2) plomberie `kesh-api`, `5426cb8b` (3) noyau D2 et appelants,
+  `79ec67b4` (4) garde et `docs/testing.md`, `0deb9abc` (5) `configuration_transmise`. **Aucune migration**
+  (`git diff --stat 2b1c0ec8 HEAD -- crates/kesh-db/migrations` vide). Aucun texte d'interface, manuel ni CHANGELOG (D6).
+- Choix consignés au registre `e35-choix-autonomes-e355a0.md` : C-e355a0-1 à -7.
 
 ### File List
 
-*Attendue (à confirmer)* : `crates/kesh-core/{Cargo.toml,src/lib.rs,src/horloge.rs}` ; les dépôts de `kesh-db` de la
-fermeture, dont le commentaire de `companies.rs:986-989` ; `crates/kesh-api/src/{lib,main,horloge}.rs`, `middleware/auth.rs`,
+**Neufs** : `crates/kesh-core/src/horloge.rs`, `crates/kesh-api/src/horloge.rs`, `crates/kesh-api/tests/{common/jour,
+date_du_jour_garde,horloge_etat,horloge_routes_e2e}.rs`, `crates/kesh-db/tests/support/jour.rs`,
+`crates/kesh-report/tests/support/jour.rs`, `_bmad-output/implementation-artifacts/e35-choix-autonomes-e355a0.md`.
+
+**Modifiés** (production) : `crates/kesh-core/src/lib.rs` ; `crates/kesh-api/src/{lib,main}.rs`, `middleware/auth.rs`,
 `services/{poignees,factures,factures_fournisseur}.rs`,
-`routes/{bank_accounts,opening_balances,companies,journal_entries,onboarding,invoices,supplier_invoices,imported_supplier_invoices,reconciliation}.rs` ;
-`crates/kesh-api/tests/{date_du_jour_garde,common/jour,mcp_gardes_lexicales,services_motif}.rs` et les fichiers de tests de la
-fermeture ; `crates/kesh-db/tests/support/jour.rs` ; `crates/kesh-report/tests/support/jour.rs` et les tests `kesh-report`
-concernés ; `docs/testing.md`.
+`routes/{bank_accounts,companies,imported_supplier_invoices,invoices,journal_entries,onboarding,opening_balances,reconciliation,supplier_invoices}.rs` ;
+`crates/kesh-db/src/repositories/{companies,invoice_settlements_write,journal_entries,reconciliation_cancel,settlement_cancellation,supplier_invoices}.rs`.
+(`kesh-core/Cargo.toml` inchangé : `chrono` y était.)
+
+**Modifiés** (tests) : `crates/kesh-api/tests/` — les six littéraux d'`AppState` (`invoice_frozen_pdf_e2e`,
+`invoice_send_email_e2e` ×3, `password_recovery_e2e`, `setup_admin_e2e`), les 43 `Lecture::new(` (`services_rollout`,
+`services_motif`, `cles_mcp_e2e`, `mcp_prompts_e2e`, `onboarding_audit_e2e`, `admin_full_import_e2e`,
+`common/lecture_seule`, `mcp_admin_routes_e2e`, `mcp_envois_e2e`, `mcp_journal_e2e`), les gardes `mcp_gardes_lexicales`,
+`services_motif`, `configuration_transmise`, `common/mod.rs`, et les appelants de la fermeture
+(`accounts_designated_archive_e2e`, `admin_full_import_e2e`, `bank_accounts_closed_e2e`, `homepage_summary_e2e`,
+`invoice_echeancier_e2e`, `letterings_e2e`, `mcp_outils_e2e`, `reconciliation_e2e`, `supplier_invoice_draft_e2e`,
+`supplier_settlement_cancel_e2e`) ; `crates/kesh-db/tests/` — `credit_notes_repository`, `filet_bilan_clos`,
+`invoice_amount_due_parity`, `invoice_settlement`, `invoice_write_off`, `journal_entries_modification`,
+`lettering_documents`, `lettering_documents_backfill`, `letterings`, `migrations_upgrade_path`, `open_items`,
+`opening_complement_repository`, `payment_batches_repository`, `reconciliation_cancel`, `supplier_document_attachment`,
+`supplier_invoices_draft`, `supplier_invoices_internal_number`, `supplier_invoices_repository`,
+`support/{fournisseur_rapproche,lettering_documents}` ; `crates/kesh-report/tests/{aged_receivables,open_items_invariant,
+vat_report_write_off}.rs`.
+
+**Docs** : `docs/testing.md` (D6).
 
 ## Change Log
 
@@ -524,3 +557,116 @@ concernés ; `docs/testing.md`.
     sont tous nés de la remédiation précédente, aucun de la conception D1-D3 ; la sévérité a décru de P2 à P5.
   - **Validation terminée** sur une passe qui ne rend aucun finding au-dessus de LOW. Aucune migration. Statut
     `ready-for-dev`.
+- 2026-11-13 — **Développement** (Opus 5.5, worktree `kesh-e355a0`, branche `story/35-5a0-horloge-plomberie`, partie de
+  `epic-35/base3` et des huit commits de la 35-3 rejoués par cherry-pick, `2b1c0ec8`). Choix C-e355a0-1 à -7. Statut
+  `review`.
+  - **Étape 0 — la branche telle quelle** (`2b1c0ec8`, avant tout changement, sur le clone de gate) : `cargo build
+    --workspace --all-targets` vert ; les tests de la 35-3 — `nextest --profile ci` sur `designated_account_type_e2e`,
+    `textes_coherents`, `invoices_validate_vat`, `supplier_invoices_repository` et les `lib` de `kesh-db` et `kesh-api` —
+    **1293 passés, 5 ignorés, 0 échec** (`kesh-gate-logs/e355a0/etape0-nextest.log`). **Recompte** au même commit : la
+    commande de la fiche `git grep -cE 'supplier_invoices::(validate|unvalidate|pay|cancel|cancel_settlement)\s*\(' --
+    'crates/*/tests/*'` rend **158 appels dans 23 fichiers** (égal) ; `Lecture::new(` : **43 constructions dans 10
+    fichiers** de tests, plus six chaînes des gardes (`mcp_gardes_lexicales.rs` 2, `services_motif.rs` 4) — égal ;
+    littéraux d'`AppState` (champ `rate_limiter_send_email:`) : **9** — égal. Le « 50 fichiers dont 36 de tests, 68 » de
+    la fiche ne se recompte pas à l'identique : l'alternative `$P` n'y est pas écrite, et la mienne (noms nus compris :
+    `cancel_blocker(`, `cancel_settlement(`, `cancel_in_tx(`, qui prennent des homonymes) rend 53, 37 et 71 ; le
+    compilateur a donné la liste close (ci-dessous).
+  - **Commits** : (1) `48b9e627` `kesh-core/src/horloge.rs` (D1) ; (2) `05666dbf` plomberie `kesh-api` (D3, AC3, AC4),
+    `kesh-db` intact ; (3) `5426cb8b` noyau D2 et tous ses appelants, commentaire `companies.rs:986-989` réécrit, helpers
+    `aujourd_hui_test()`, AC2 ; (4) `79ec67b4` garde (D5) et `docs/testing.md` (D6) ; (5) `0deb9abc` correctif de
+    `configuration_transmise` (C-e355a0-7). Chacun compile (`cargo build --workspace --all-targets`, `clippy -D
+    warnings`, `fmt --check` verts à chaque commit).
+  - **La fermeture, par le compilateur** : production — les **18** appels de `kesh-api` que rend `cargo build -p
+    kesh-api` après le changement des signatures (exactement la liste de la fiche : `routes/companies.rs:505`, `:518`,
+    `imported_supplier_invoices.rs:230`, `:646`, `:723`, `invoices.rs:1361`, `journal_entries.rs:456`,
+    `reconciliation.rs:5799`, `:5938`, `:6587`, `supplier_invoices.rs:829`, `:871`, `:904`, `:931`, `:960`, `:990`,
+    `services/factures.rs:552`, `services/factures_fournisseur.rs:206`), plus les cinq sites de jour de `kesh-api`
+    (`bank_accounts.rs:1007`, `:1252`, `opening_balances.rs:244`, `:604`, `onboarding.rs:1043` par `finalize_inner`),
+    édités à l'outil Edit ; la date est lue **une fois**, avant le rejeu `retry_on_deadlock` et l'attente du verrou ;
+    tests — **336 E0061**, **311 sites** distincts dans **33 fichiers**, convertis par script depuis les diagnostics
+    (C-e355a0-3 : écart déclaré à la consigne « Edit seulement », chiffré), puis `cargo fmt` (C-e355a0-2). Aucun appel ne
+    reçoit une date de pièce : le script n'insère que `aujourd_hui_test()` ; les deux appels internes des `mod tests` de
+    `journal_entries.rs` reçoivent la variable de jour de leur montage (`jour`, `today`, tirées de `Utc::now()`, non une
+    date de pièce).
+  - **Helpers** : `crates/kesh-api/tests/common/jour.rs` (`pub mod jour;` dans `common/mod.rs`) ; `crates/kesh-db/tests/
+    support/jour.rs`, `crates/kesh-report/tests/support/jour.rs` (neuf). Inclusion `#[path = "support/jour.rs"] mod jour;`
+    dans **18** binaires `kesh-db` et **3** `kesh-report` (`aged_receivables`, `open_items_invariant`,
+    `vat_report_write_off`) ; `mod common { pub mod jour; }` dans les trois binaires `kesh-api` sans `mod common;`
+    (`homepage_summary_e2e`, `supplier_invoice_draft_e2e`, `supplier_settlement_cancel_e2e`) ; inclusion **imbriquée**
+    `#[path = "jour.rs"]` dans `support/lettering_documents.rs` et `support/fournisseur_rapproche.rs` — **constatée au
+    compilateur** (résolue depuis `support/`, y compris pour les binaires de `kesh-report` et `kesh-api` qui incluent ces
+    fichiers par `../../kesh-db/tests/support/`) ; `clippy::duplicate_mod` rougit sur le doublon, d'où C-e355a0-4.
+  - **AC1, contrôle en deux temps** (`<base>` = `2b1c0ec8`, parent du premier commit). (a) Fichiers modifiés, lignes `-`
+    filtrées sur `assert|from_ymd_opt|expect_err|StatusCode::` : **34 lignes, toutes `.expect_err("…")`**, chacune avec
+    sa ligne `+` identique (reflux de rustfmt : l'appel, allongé d'un argument, passe sur plusieurs lignes) — appariement
+    vérifié ligne à ligne (`moins.txt` / `plus.txt`, 34 retirées, 34 retrouvées ; côté `+`, 3 lignes de plus, les
+    assertions neuves de la garde `horloge_outils` de `mcp_gardes_lexicales.rs`). Aucun attendu de comportement ne change.
+    Les attendus lexicaux changés sont ceux que D3 nomme : `mcp_gardes_lexicales.rs` (`LIB_NOMME_MCP` et le site de
+    `LectureOutils::nouvelle`, qui devient `let lecture_outils = mcp::LectureOutils::nouvelle(lecture_pool);`),
+    `services_motif.rs` (`FABRIQUES_V2` : `Lecture::new(self.pool.clone(), self.horloge.clone())` et la ligne
+    `lecture_pool`), et la garde neuve de `horloge_outils` (liste voisine). (b) Fichiers neufs : les huit de la *File
+    List*, `assert` neufs par construction.
+  - **Risque accepté, les deux relevés** (sur `git diff -U0 --diff-filter=M 2b1c0ec8 HEAD`) : appels sur une ligne,
+    dernier argument — `aujourd_hui` ×23 (production), `crate::jour::aujourd_hui_test()` ×36, `aujourd_hui()` ×1
+    (`lecture.aujourd_hui()`), `jour` ×1 et `today` ×1 (les deux montages de `journal_entries.rs`, ci-dessus) ; lignes
+    d'argument seules, dédoublonnées — en tête `crate::jour::aujourd_hui_test(),` ×235,
+    `crate::common::jour::aujourd_hui_test(),` ×33, `aujourd_hui,` ×29, `jour::aujourd_hui_test(),` ×4 ; les autres
+    jetons (`&pool,`, `seeded.company_id,`, `le,` ×5…) sont des arguments **préexistants** que rustfmt a remis chacun sur
+    sa ligne — `le,` est l'argument `payment_date` de `pay` dans `payer_par`, inchangé, suivi de
+    `jour::aujourd_hui_test(),`. Aucun jeton de date de pièce passé comme jour.
+  - **D5, inventaire** : `git grep -nE 'HorlogeFixe\(\s*(chrono::)?Utc::now' -- 'crates/*/src/*' 'crates/*/tests/*'` →
+    `middleware/auth.rs:302` (`test_state()`) seul en code, plus deux textes de la garde (commentaire, sonde).
+  - **La garde** (`date_du_jour_garde.rs`) : comptes **écrits depuis son exécution** à listes vides
+    (`garde-comptes-bruts.log`) — inventaire : **52 fichiers** à la liste close (production : `kesh-core/src/horloge.rs`
+    1, permanent ; `admin.rs` 2, site 9 et l'horodatage `:722` ; les 19 sites de la 35-5b ; `journal_entries.rs` 50 et
+    `invoices.rs` 10 de `kesh-db`, modules de tests compris ; les 38 fichiers de `crates/*/tests` du verdict de la 35-5a,
+    à leurs comptes) ; les neuf sites de la 35-5a en sont sortis. Durcissement : littéral 2 (`kesh-core/src/horloge.rs`) ;
+    `NOM_VARIABLE_INSTANT` 3 / 2 / 2 / 2 (`kesh-core`, `kesh-api/src/horloge.rs`, les deux `support/jour.rs`) et 2 dans
+    `configuration_transmise.rs` (C-e355a0-7) ; `instant_de_test` 6 / 2 / 2 / 2 ; `horloge_depuis` 4 ; `new_for_tests` 1
+    (`lib.rs`, sa définition) ; `horloge_de_test` 1 + 1 ; `HorlogeSysteme` construit 1 (`main.rs`) + 1
+    (`horloge_depuis`) ; `HorlogeFixe` 5 / 2 / 1 (`auth.rs`) ; aucune mémoire dans les cinq fichiers. **Sondes (AC5)**,
+    tests du fichier, toutes conformes : forme ajoutée et forme coupée sur deux lignes → rouges ; `CURDATE()` dans un
+    fichier de tests → rouge ; compte + 1 d'un fichier exempté → rouge ; exemption portée à + 1 → rouge ; ligne `//` →
+    verte ; littéral dans un fichier de plus, `HorlogeSysteme` construit ailleurs, `OnceLock` dans un helper de jour,
+    `new_for_tests(` et `new_for_tests` nu dans `src`, `NOM_VARIABLE_INSTANT` / `instant_de_test(` / `horloge_depuis(`
+    / `HorlogeFixe(` / `use … horloge_de_test as h;` dans `main.rs` → rouges ; `// NOM_VARIABLE_INSTANT` et l'import
+    groupé `use kesh_api::{ horloge::HorlogeSysteme, };` dans `main.rs` → verts ; et la garde lit un autre fichier du
+    même dossier (`horloge_etat.rs`) et exclut le sien. **Angles morts** écrits dans l'en-tête (jour tiré d'une variable
+    d'instant ; autre nom de variable lu à la main en production).
+  - **Tests neufs** (de `2b1c0ec8` à `HEAD`) : **19** — `kesh-core/src/horloge.rs` 6 (AC4), `kesh-api/src/horloge.rs` 2
+    (AC4 : `horloge_depuis`, figée et non figée par `assert_ne!` autour de 10 ms), `horloge_etat.rs` 1 (AC3),
+    `horloge_routes_e2e.rs` 2 (AC2), `date_du_jour_garde.rs` 7 (AC5), `configuration_transmise.rs` 1.
+  - **Gates réellement exécutés** :
+    - commit (2), clone de gate : `test-fast.sh --ci` **5333 exécutés, 5331 passés, 2 échecs, 13 ignorés** — les deux
+      échecs, `configuration_transmise::{fantomes, lectures}`, sont ceux que corrige le commit (5) ; `gate-ci.sh` non
+      lancé à ce commit (retiré de la file au profit du gate du commit (5)) ;
+    - commits (3) et (4) : gate ciblé (`fmt`, `clippy --workspace --all-targets -D warnings`, garde exécutée,
+      `cargo build --all-targets`) ; **pas de gate complet propre à ces commits** — écart à l'exception `kesh-db`,
+      déclaré : leur contenu est jugé par le gate complet du commit (5), qui ne diffère du (4) que par
+      `horloge_de_test` et deux fichiers de tests ;
+    - **commit (5), dernier commit de code — gate complet** (base remise à neuf avant chaque étape) :
+      `test-fast.sh --ci` **5343 exécutés, 5343 passés, 13 ignorés** (`c5-test-fast.log`) ; `scripts/gate-ci.sh`
+      **5350 passés, 0 échoué, 17 ignorés** (`c5-gate-ci.log`, journal `c5-gate-ci.journal`) ; frontend : `check` 0
+      erreur (29 avertissements, préexistants), `lint-i18n-ownership` PASS, Vitest **3188 passés**, `build` vert ;
+      **E2E complet** (recette entière, `KESH_INBOX_DIR` et `KESH_DOCUMENTS_DIR` des deux côtés, port 3408, base
+      `kesh_e2e_e355a0`) : **403 passés, 7 échecs, 18 ignorés** — les sept de la KF-029 (#97), nommés un par un contre
+      `docs/testing.md` : `mode-expert.spec.ts:26`, `:41`, `onboarding-path-b.spec.ts:65`, `:92`,
+      `onboarding.spec.ts:57`, `:77`, `:150` ; aucun autre.
+  - **Mutations** (`kesh-gate-logs/e355a0/mut/mutations-e355a0.py`, sur le worktree au commit (5), une prise de la
+    voie base, motif vérifié unique, restauration `git checkout --` + `touch` ; `mutations.log`, `M*.log`) : **8 / 8
+    tuées**, chacune par le motif attendu — **M1a** (`bank_accounts.rs:1007` garde `Utc::now()`) : garde,
+    `bank_accounts.rs : 2 occurrence(s), 1 écrite(s)` ; **M1b** (la contre-passation relit `Utc::now()` dans `kesh-db`) :
+    garde (`journal_entries.rs : 51, 50`) **et** AC2 (les deux tests de `horloge_routes_e2e`) ; **M1c** (`lock_books`
+    relit `Utc::now()`) : garde (`companies.rs : 1, 0`) et AC2 ; **M2** (câblage du MCP sur `HorlogeSysteme`) : garde
+    `[HorlogeSysteme construit] lib.rs : 1, 0` ; **M3** (`OnceLock` dans `horloge_de_test`) : `[mémoire]` ; **M4** (le
+    bloqueur relit l'horloge, deux lectures par requête) : garde (`settlement_cancellation.rs : 1, 0`) ; **M5**
+    (`Some("")` panique) : `instant_de_test_absent_ou_vide_rend_none` ; **M6** (`main.rs` lit la variable par la
+    constante, `HorlogeSysteme` en repli) : trois gardes, `[NOM_VARIABLE_INSTANT]`, `[instant_de_test]`,
+    `[HorlogeFixe]` sur `main.rs` — le compte de `HorlogeSysteme` construit reste 1 dans `main.rs`, comme la fiche
+    l'annonce. Preuve du rouge : `kesh-gate-logs/e355a0/rouges.log`.
+  - **Recontrôles** : `git log 2b1c0ec8..HEAD --format=%B | /usr/bin/grep -niE
+    '\b(close[sd]?|fix(e[sd])?|resolve[sd]?) #[0-9]'` vide ; aucune migration ; aucun écrit sous `~/kesh/`.
+  - **Écarts déclarés** : la conversion des tests par script (C-e355a0-3, 311 sites) et les déclarations du helper
+    (26 fichiers) — consigne « Edit seulement » ; un cinquième commit (C-e355a0-7) ; `horloge_de_test` lit par
+    `env_nonempty` et non par `std::env::var` (D3) ; `allow(clippy::duplicate_mod)` (C-e355a0-4) ; gates des commits
+    (3) et (4) non complets (ci-dessus).
