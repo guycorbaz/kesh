@@ -989,6 +989,12 @@ impl BatchItemError {
         &self.error_code
     }
 
+    /// Le `details` porté, pour les tests (Story 35-2b, AC2).
+    #[cfg(test)]
+    fn details(&self) -> Option<&serde_json::Value> {
+        self.details.as_ref()
+    }
+
     /// Erreur d'**infrastructure** survenue en cours de lot (pool mort, IO).
     ///
     /// Reste per-facture pour préserver `accepted` (cf. doc du type), mais loggée
@@ -1024,16 +1030,34 @@ fn classify_render_error(e: AppError, invoice_id: i64) -> BatchItemError {
     match e {
         AppError::InvoiceNotValidated => BatchItemError::failed("INVOICE_NOT_VALIDATED"),
         AppError::Database(DbError::NotFound) => BatchItemError::failed("INVOICE_NOT_FOUND"),
-        // Données de facturation incomplètes (pas de compte bancaire, adresse QR
-        // invalide, trop de lignes, en-tête débordant) — le PDF ne peut pas être
-        // produit, mais rien n'est cassé.
-        AppError::InvoiceNotPdfReady(_)
-        | AppError::InvoiceTooManyLinesForPdf(_)
-        | AppError::InvoicePdfHeaderOverflow => BatchItemError::failed("INVOICE_NOT_PDF_READY"),
+        // Données de facturation incomplètes ou refusées (pas de compte bancaire,
+        // adresse ou caractère que la QR-facture refuse, trop de lignes, en-tête
+        // débordant) — le PDF ne peut pas être produit, mais rien n'est cassé.
+        // Story 35-2b (#955) : les trois causes portent au lot la phrase de la
+        // route unitaire, qui dit quoi corriger ; le lot les rend toutes sous
+        // `INVOICE_NOT_PDF_READY`, comme avant.
+        AppError::InvoiceNotPdfReady(msg) => refus_pdf_au_lot(msg),
+        AppError::InvoiceTooManyLinesForPdf(n) => {
+            refus_pdf_au_lot(crate::errors::message_trop_de_lignes_pdf(n))
+        }
+        AppError::InvoicePdfHeaderOverflow => {
+            refus_pdf_au_lot(crate::errors::message_entete_pdf_deborde())
+        }
         // Story 25-4-b2 (#416) — reste dû nul : un refus métier, pas une panne.
         AppError::ReminderNothingDue => BatchItemError::failed("REMINDER_NOTHING_DUE"),
         other => BatchItemError::infra("render pdf", invoice_id, other),
     }
+}
+
+/// Le refus du PDF d'une facture du lot (Story 35-2b, #955) :
+/// `INVOICE_NOT_PDF_READY` avec `details = { message }`, la phrase destinée à
+/// l'utilisateur, dans la langue de l'installation — non un contrat lisible par
+/// machine (C-e350-11, #1045). `message` est le seul champ.
+fn refus_pdf_au_lot(message: String) -> BatchItemError {
+    BatchItemError::failed_with(
+        "INVOICE_NOT_PDF_READY",
+        serde_json::json!({ "message": message }),
+    )
 }
 
 /// Refuse l'envoi unitaire si les montants ont changé depuis l'aperçu (revue de
@@ -1776,6 +1800,56 @@ mod tests {
             classify_render_error(AppError::Internal("pool fermé".into()), 1).code(),
             "DATABASE_ERROR",
             "une panne d'infrastructure doit rester détectée comme telle"
+        );
+
+        // Story 35-2b (#955, AC2) — les trois refus du PDF portent au lot la
+        // phrase qui dit quoi corriger, et rien d'autre : `details = { message }`.
+        // Aux tests unitaires, les deux phrases d'`errors.rs` sont le repli
+        // (aucun catalogue chargé, angle mort écrit à la fiche).
+        let refus = [
+            AppError::InvoiceNotPdfReady("adresse incomplète".into()),
+            AppError::InvoiceTooManyLinesForPdf(42),
+            AppError::InvoicePdfHeaderOverflow,
+        ];
+        for err in refus {
+            let libelle = format!("{err:?}");
+            let item = classify_render_error(err, 1);
+            assert_eq!(item.code(), "INVOICE_NOT_PDF_READY", "{libelle}");
+            let details = item
+                .details()
+                .unwrap_or_else(|| panic!("{libelle} : details absent au lot"));
+            let message = details["message"].as_str().unwrap_or_default();
+            assert!(
+                !message.trim().is_empty(),
+                "{libelle} : details.message vide ({details})"
+            );
+            assert_eq!(
+                details.as_object().unwrap().keys().collect::<Vec<_>>(),
+                ["message"],
+                "{libelle} : message est le seul champ de details"
+            );
+        }
+        assert_eq!(
+            classify_render_error(AppError::InvoiceNotPdfReady("adresse incomplète".into()), 1)
+                .details()
+                .unwrap()["message"],
+            "adresse incomplète",
+            "la phrase du refus passe telle quelle"
+        );
+
+        // AC3 — les deux autres causes portent la phrase de la route unitaire,
+        // construite par la même fonction (une seule source).
+        assert_eq!(
+            classify_render_error(AppError::InvoiceTooManyLinesForPdf(42), 1)
+                .details()
+                .unwrap()["message"],
+            crate::errors::message_trop_de_lignes_pdf(42)
+        );
+        assert_eq!(
+            classify_render_error(AppError::InvoicePdfHeaderOverflow, 1)
+                .details()
+                .unwrap()["message"],
+            crate::errors::message_entete_pdf_deborde()
         );
     }
 }

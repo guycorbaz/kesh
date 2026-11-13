@@ -1642,6 +1642,35 @@ fn opening_complement_refusal_response(
     build_response(status, reason.code(), &t_args(key, &fallback, &args))
 }
 
+/// La phrase du refus [`AppError::InvoiceTooManyLinesForPdf`] — dans la langue de
+/// l'installation, destinée à l'utilisateur. Seule source de cette phrase : la
+/// réponse `400 INVOICE_TOO_MANY_LINES_FOR_PDF` et le `details.message` du lot de
+/// rappels (Story 35-2b, #955, C-e350-46) l'appellent tous deux.
+pub(crate) fn message_trop_de_lignes_pdf(n: usize) -> String {
+    // #151 code-review : le cap n'est plus un nombre fixe (il dépend du
+    // récap TVA et du type de document), donc message sans « max ».
+    let fallback = format!(
+        "La facture contient {n} lignes — le PDF A4 mono-page ne peut pas toutes les afficher avec le récapitulatif TVA. Réduisez le nombre de lignes ou scindez la facture."
+    );
+    let mut args = FluentArgs::new();
+    args.set("count", n as i64);
+    t_args("error-invoice-too-many-lines-for-pdf", &fallback, &args)
+}
+
+/// La phrase du refus [`AppError::InvoicePdfHeaderOverflow`] — même rôle que
+/// [`message_trop_de_lignes_pdf`] : seule source, pour la réponse
+/// `400 INVOICE_PDF_HEADER_OVERFLOW` et pour le lot de rappels (Story 35-2b).
+pub(crate) fn message_entete_pdf_deborde() -> String {
+    t(
+        "error-invoice-pdf-header-overflow",
+        "L'en-tête du document ne tient pas sur la page. Supprimez une \
+         coordonnée — téléphone, e-mail ou site web — dans les Paramètres : \
+         les raccourcir ne libère aucune place, chaque coordonnée occupe \
+         une ligne entière. Ou réduisez le nombre de lignes de l'adresse \
+         du destinataire.",
+    )
+}
+
 impl IntoResponse for AppError {
     fn into_response(self) -> Response {
         match self {
@@ -2141,32 +2170,16 @@ impl IntoResponse for AppError {
                     "Le fichier du PDF émis a été altéré : son empreinte ne correspond plus. Restaurez-le depuis la sauvegarde, ou écartez-le du répertoire des documents avant de refiger.",
                 ),
             ),
-            AppError::InvoiceTooManyLinesForPdf(n) => {
-                // #151 code-review : le cap n'est plus un nombre fixe (il dépend du
-                // récap TVA et du type de document), donc message sans « max ».
-                let fallback = format!(
-                    "La facture contient {n} lignes — le PDF A4 mono-page ne peut pas toutes les afficher avec le récapitulatif TVA. Réduisez le nombre de lignes ou scindez la facture."
-                );
-                let mut args = FluentArgs::new();
-                args.set("count", n as i64);
-                let msg = t_args("error-invoice-too-many-lines-for-pdf", &fallback, &args);
-                build_response(
-                    StatusCode::BAD_REQUEST,
-                    "INVOICE_TOO_MANY_LINES_FOR_PDF",
-                    &msg,
-                )
-            }
-            AppError::InvoicePdfHeaderOverflow => {
-                let msg = t(
-                    "error-invoice-pdf-header-overflow",
-                    "L'en-tête du document ne tient pas sur la page. Supprimez une \
-                     coordonnée — téléphone, e-mail ou site web — dans les Paramètres : \
-                     les raccourcir ne libère aucune place, chaque coordonnée occupe \
-                     une ligne entière. Ou réduisez le nombre de lignes de l'adresse \
-                     du destinataire.",
-                );
-                build_response(StatusCode::BAD_REQUEST, "INVOICE_PDF_HEADER_OVERFLOW", &msg)
-            }
+            AppError::InvoiceTooManyLinesForPdf(n) => build_response(
+                StatusCode::BAD_REQUEST,
+                "INVOICE_TOO_MANY_LINES_FOR_PDF",
+                &message_trop_de_lignes_pdf(n),
+            ),
+            AppError::InvoicePdfHeaderOverflow => build_response(
+                StatusCode::BAD_REQUEST,
+                "INVOICE_PDF_HEADER_OVERFLOW",
+                &message_entete_pdf_deborde(),
+            ),
             // Story 5.4 — overflow export CSV.
             AppError::ResultTooLarge(msg) => {
                 build_response(StatusCode::BAD_REQUEST, "RESULT_TOO_LARGE", &msg)
@@ -5728,6 +5741,24 @@ mod tests {
         assert_eq!(status, StatusCode::BAD_REQUEST);
         assert_eq!(body["error"]["code"], "INVOICE_TOO_MANY_LINES_FOR_PDF");
         assert!(body["error"]["message"].as_str().unwrap().contains("42"));
+    }
+
+    /// Story 35-2b (#955, AC3) — la route unitaire et le lot de rappels disent la
+    /// même phrase : la réponse garde son statut et son code, et son `message` est
+    /// la chaîne de la fonction extraite (une seule source).
+    #[tokio::test]
+    async fn refus_du_pdf_route_unitaire_et_lot_meme_phrase() {
+        let resp = AppError::InvoiceTooManyLinesForPdf(42).into_response();
+        let (status, body) = response_body(resp).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        assert_eq!(body["error"]["code"], "INVOICE_TOO_MANY_LINES_FOR_PDF");
+        assert_eq!(body["error"]["message"], message_trop_de_lignes_pdf(42));
+
+        let resp = AppError::InvoicePdfHeaderOverflow.into_response();
+        let (status, body) = response_body(resp).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        assert_eq!(body["error"]["code"], "INVOICE_PDF_HEADER_OVERFLOW");
+        assert_eq!(body["error"]["message"], message_entete_pdf_deborde());
     }
 
     #[tokio::test]

@@ -6,6 +6,7 @@
  */
 
 import { i18nMsg } from '$lib/shared/utils/i18n.svelte';
+import type { FailedReminder } from './reminders.types';
 
 const LABELS: Record<string, [string, string]> = {
 	INVOICE_NOT_FOUND: ['invoice-not-found', 'Facture introuvable'],
@@ -39,4 +40,27 @@ export function reminderErrorLabel(code: string): string {
 	const entry = LABELS[code];
 	if (entry) return i18nMsg(`reminders-error-${entry[0]}`, entry[1]);
 	return i18nMsg('reminders-error-unknown', 'Échec ({ $code })', { code });
+}
+
+/**
+ * Texte d'un échec du lot de rappels (Story 35-2b, #955) : le libellé du code, suivi,
+ * pour un PDF refusé (`INVOICE_NOT_PDF_READY`), de la phrase du serveur qui dit quoi
+ * corriger (`details.message`), comme sur la fiche de la facture.
+ *
+ * Le message n'est lu que pour ce code — le `details.message` d'autres lots est un
+ * texte technique — et seulement s'il est une chaîne non vide. Le résultat est du
+ * texte : le composant l'affiche par `{…}`, jamais `{@html}`.
+ *
+ * Limite assumée (fiche, D2.4) : le séparateur « : » est écrit en dur dans les quatre
+ * langues, et la phrase est dans la langue du serveur, le libellé dans celle de
+ * l'interface.
+ */
+export function reminderFailureText(
+	failed: Pick<FailedReminder, 'errorCode' | 'details'>,
+): string {
+	const libelle = reminderErrorLabel(failed.errorCode);
+	if (failed.errorCode !== 'INVOICE_NOT_PDF_READY') return libelle;
+	const message = failed.details?.message;
+	if (typeof message !== 'string' || message.trim() === '') return libelle;
+	return `${libelle} : ${message.trim()}`;
 }

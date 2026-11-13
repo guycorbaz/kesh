@@ -2345,8 +2345,10 @@ async fn send_reminder_refuses_amounts_changed_since_preview(pool: MySqlPool) {
 
 /// Une facture prête à l'envoi dont le client habite `Ve–vey` (tiret
 /// demi-cadratin, refusé par la QR-facture) ; la facture n'est jamais figée.
-async fn seed_sendable_ve_vey(pool: &MySqlPool) -> (i64, i64) {
-    let (_, company_id, invoice_id) = seed_sendable(pool).await;
+/// Rend `(admin_id, company_id, invoice_id)`, comme `seed_sendable` (Story
+/// 35-2b : le lot a besoin d'`admin_id` pour semer une seconde facture).
+async fn seed_sendable_ve_vey(pool: &MySqlPool) -> (i64, i64, i64) {
+    let (admin_id, company_id, invoice_id) = seed_sendable(pool).await;
     sqlx::query(
         "UPDATE contacts SET address_city = ? \
          WHERE id = (SELECT contact_id FROM invoices WHERE id = ?)",
@@ -2356,7 +2358,7 @@ async fn seed_sendable_ve_vey(pool: &MySqlPool) -> (i64, i64) {
     .execute(pool)
     .await
     .unwrap();
-    (company_id, invoice_id)
+    (admin_id, company_id, invoice_id)
 }
 
 /// Le 400 `INVOICE_NOT_PDF_READY`, dont le message nomme la localité du client
@@ -2375,7 +2377,7 @@ async fn assert_refus_nomme_la_localite(resp: reqwest::Response, mock: &MockMail
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn send_email_refus_pdf_nomme_le_champ(pool: MySqlPool) {
     let mock = MockMailer::new();
-    let (_, invoice_id) = seed_sendable_ve_vey(&pool).await;
+    let (_, _, invoice_id) = seed_sendable_ve_vey(&pool).await;
     let app = spawn_app(pool.clone(), mock.clone(), true, 20).await;
     let token = login(&app, "admin", TEST_ADMIN_PASSWORD).await;
     let resp = app
@@ -2393,7 +2395,7 @@ async fn send_email_refus_pdf_nomme_le_champ(pool: MySqlPool) {
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn send_reminder_refus_pdf_nomme_le_champ(pool: MySqlPool) {
     let mock = MockMailer::new();
-    let (company_id, invoice_id) = seed_sendable_ve_vey(&pool).await;
+    let (_, company_id, invoice_id) = seed_sendable_ve_vey(&pool).await;
     seed_dunning(&pool, company_id).await;
     let app = spawn_app(pool.clone(), mock.clone(), true, 20).await;
     let token = login(&app, "admin", TEST_ADMIN_PASSWORD).await;
@@ -2407,4 +2409,155 @@ async fn send_reminder_refus_pdf_nomme_le_champ(pool: MySqlPool) {
         .unwrap();
     assert_refus_nomme_la_localite(resp, &mock).await;
     assert_eq!(reminder_count(&pool, invoice_id).await, 0);
+}
+
+// ─── Story 35-2b (#955, AC1) — le lot de rappels dit pourquoi le PDF est refusé ───
+
+/// La valeur fr-CH d'une clé sans variable, lue au catalogue réel (celui que
+/// `spawn_app` charge), marques d'isolation retirées — non un littéral recopié.
+fn phrase_fr(cle: &str) -> String {
+    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .unwrap()
+        .join("kesh-i18n/locales");
+    let bundle = kesh_i18n::I18nBundle::load(&dir).expect("catalogue");
+    let valeur = bundle
+        .format(&kesh_i18n::Locale::FrCh, cle, None)
+        .replace(['\u{2068}', '\u{2069}'], "");
+    assert_ne!(valeur, cle, "{cle} absente du catalogue fr-CH");
+    valeur
+}
+
+/// Un lot de deux factures dont le PDF est refusé pour deux causes : la localité
+/// `Ve–vey` du premier client, l'adresse absente du second. Chaque échec porte
+/// `details = { message }`, la phrase de la route unitaire ; rien n'est parti.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn send_reminder_batch_refus_pdf_porte_le_message(pool: MySqlPool) {
+    let mock = MockMailer::new();
+    let (admin_id, company_id, ve_vey_invoice) = seed_sendable_ve_vey(&pool).await;
+    // Second contact, distinct, avec e-mail (sinon CONTACT_EMAIL_MISSING passe
+    // avant le rendu), puis sans aucune des quatre colonnes de l'adresse.
+    let sans_adresse = seed_contact(
+        &pool,
+        company_id,
+        admin_id,
+        Some("sans-adresse@example.ch"),
+        None,
+        Salutation::Monsieur,
+        Some("Sansadresse"),
+    )
+    .await;
+    let sans_adresse_invoice =
+        seed_validated_invoice(&pool, company_id, sans_adresse, admin_id).await;
+    sqlx::query(
+        "UPDATE contacts SET address_street = NULL, address_building = NULL, \
+         address_postal_code = NULL, address_city = NULL WHERE id = ?",
+    )
+    .bind(sans_adresse)
+    .execute(&pool)
+    .await
+    .unwrap();
+    seed_dunning(&pool, company_id).await;
+    let app = spawn_app(pool.clone(), mock.clone(), true, 20).await;
+    let token = login(&app, "admin", TEST_ADMIN_PASSWORD).await;
+
+    let resp = app
+        .client
+        .post(app.url("/api/v1/dunning/reminders/send-batch"))
+        .bearer_auth(&token)
+        .json(&json!({ "invoiceIds": [ve_vey_invoice, sans_adresse_invoice] }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200, "succès partiel = succès HTTP");
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(body["accepted"].as_array().unwrap().len(), 0, "{body}");
+    let failed = body["failed"].as_array().unwrap();
+    assert_eq!(failed.len(), 2, "{body}");
+    let message_de = |id: i64| -> String {
+        let f = failed
+            .iter()
+            .find(|f| f["invoiceId"] == id)
+            .unwrap_or_else(|| panic!("facture {id} absente de failed[] : {body}"));
+        assert_eq!(f["errorCode"], "INVOICE_NOT_PDF_READY", "{f}");
+        let details = &f["details"];
+        assert_eq!(
+            details
+                .as_object()
+                .unwrap_or_else(|| panic!("details n'est pas un objet : {f}"))
+                .keys()
+                .collect::<Vec<_>>(),
+            ["message"],
+            "message est le seul champ de details : {f}"
+        );
+        details["message"].as_str().unwrap().to_string()
+    };
+
+    let m = message_de(ve_vey_invoice);
+    assert!(m.contains("localité du client"), "{m}");
+    assert!(m.contains("U+2013"), "{m}");
+
+    assert_eq!(
+        message_de(sans_adresse_invoice),
+        phrase_fr("invoice-pdf-error-client-address-required")
+    );
+
+    assert_eq!(mock.sent_emails().len(), 0, "rien n'est parti");
+    assert_eq!(reminder_count(&pool, ve_vey_invoice).await, 0);
+    assert_eq!(reminder_count(&pool, sans_adresse_invoice).await, 0);
+}
+
+/// Story 35-2b (angle mort de la fiche) — l'en-tête qui déborde, sous catalogue
+/// réel : au lot, le refus porte la phrase de la route unitaire
+/// `INVOICE_PDF_HEADER_OVERFLOW`, sous le code du lot. Montage repris de
+/// `invoice_pdf_e2e::pdf_header_overflow_returns_400_with_its_own_code`.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn send_reminder_batch_entete_qui_deborde_porte_le_message(pool: MySqlPool) {
+    let mock = MockMailer::new();
+    let (_, company_id, invoice_id) = seed_sendable(&pool).await;
+    sqlx::query(
+        "UPDATE companies SET address = ?, phone = ?, email = ?, website = ? WHERE id = ?",
+    )
+    .bind("Ligne 1\nLigne 2\nLigne 3\nLigne 4\nLigne 5\nLigne 6\nLigne 7\nLigne 8\nLigne 9\nLigne 10")
+    .bind("+41 21 123 45 67")
+    .bind("contact@demo.ch")
+    .bind("https://demo.ch")
+    .bind(company_id)
+    .execute(&pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        "UPDATE contacts SET address = ? \
+         WHERE id = (SELECT contact_id FROM invoices WHERE id = ?)",
+    )
+    .bind("Dest 1\nDest 2\nDest 3\nDest 4\nDest 5\nDest 6\nDest 7\nDest 8\nDest 9\nDest 10")
+    .bind(invoice_id)
+    .execute(&pool)
+    .await
+    .unwrap();
+    seed_dunning(&pool, company_id).await;
+    let app = spawn_app(pool.clone(), mock.clone(), true, 20).await;
+    let token = login(&app, "admin", TEST_ADMIN_PASSWORD).await;
+
+    let resp = app
+        .client
+        .post(app.url("/api/v1/dunning/reminders/send-batch"))
+        .bearer_auth(&token)
+        .json(&json!({ "invoiceIds": [invoice_id] }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+    let body: serde_json::Value = resp.json().await.unwrap();
+    let failed = body["failed"].as_array().unwrap();
+    assert_eq!(failed.len(), 1, "{body}");
+    assert_eq!(failed[0]["errorCode"], "INVOICE_NOT_PDF_READY", "{body}");
+
+    let attendu = phrase_fr("error-invoice-pdf-header-overflow");
+    assert_eq!(
+        failed[0]["details"],
+        json!({ "message": attendu }),
+        "{body}"
+    );
+    assert_eq!(mock.sent_emails().len(), 0, "rien n'est parti");
 }
