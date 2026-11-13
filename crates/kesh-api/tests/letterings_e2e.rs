@@ -119,8 +119,8 @@ struct Monde {
 }
 
 fn annee() -> i32 {
-    Utc::now()
-        .date_naive()
+    // Story 35-5a — l'année du jour du serveur (horloge de test, jour suisse).
+    crate::common::jour::aujourd_hui_test()
         .format("%Y")
         .to_string()
         .parse()
@@ -202,7 +202,7 @@ async fn ligne(
         1,
         NewJournalEntry {
             company_id,
-            entry_date: Utc::now().date_naive(),
+            entry_date: crate::common::jour::aujourd_hui_test(),
             journal: Journal::OD,
             description: "Lettrage".into(),
             project_id: None,

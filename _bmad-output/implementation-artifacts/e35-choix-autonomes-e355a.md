@@ -58,3 +58,17 @@
   `local-date-guard.test.ts` tombe (huit → sept). Vitest à fuseau épinglé sur quatre instants : 11 mars, 1er mars et
   1er janvier à 00 h 30, un jour d'été.
 - **Réversibilité** : totale.
+
+### C-e355a-6 — Aucune spec E2E ne passe à `todayInZurich()` dans cette story
+
+- **Contexte** : Dev Notes, *La nuit* : « les specs qui assertent une date d'un site de la 35-5a passent au helper
+  `todayInZurich()` — au moins, à confirmer : `invoices-settlement-cancel`, `journal-entries`, `invoice-write-off`,
+  `supplier-invoice-draft-cycle` ». Lu (`grep -nE "today\(\)|toHaveText\(.*today|toContainText\(.*today|entryDate"`) :
+  leurs dates UTC (`invoices-settlement-cancel.spec.ts:39-40` `today()`, `:63`, `:64`, `:107` ; `journal-entries.spec.ts:646` ;
+  `invoice-write-off.spec.ts:88` ; `supplier-invoice-draft-cycle.spec.ts:577-584`) datent les **pièces envoyées** (facture,
+  règlement, écriture, lot) ; aucune n'est comparée à une date que pose un site de la 35-5a (la contre-passation n'est
+  jamais lue par sa date). `supplier-invoice-draft-cycle.spec.ts:685-696` lit déjà la date locale du poste.
+- **Option retenue** : aucune spec modifiée ; la liste (vide) au Change Log, la 35-5c part d'elle. La nuit, une pièce datée
+  du jour UTC D et contre-passée au jour suisse D+1 reste valide (la contre-passation suit). Le E2E ne peut pas prouver la
+  nuit par exécution : son serveur est le binaire servi, qui ne lit jamais `KESH_TEST_INSTANT` — angle mort écrit.
+- **Réversibilité** : totale.

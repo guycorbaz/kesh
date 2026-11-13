@@ -10,7 +10,7 @@ mod common;
 use std::net::SocketAddr;
 use std::sync::Arc;
 
-use chrono::{Datelike, NaiveDate, TimeDelta, Utc};
+use chrono::{Datelike, NaiveDate, TimeDelta};
 use common::create_test_company;
 use kesh_api::auth::bootstrap::ensure_admin_user;
 use kesh_api::config::Config;
@@ -169,7 +169,8 @@ async fn setup(pool: &MySqlPool) -> Ctx {
             .fetch_one(pool)
             .await
             .unwrap();
-    let year = Utc::now().date_naive().year();
+    // Story 35-5a — l'année du jour du serveur (horloge de test, jour suisse).
+    let year = crate::common::jour::aujourd_hui_test().year();
     let fy_start = NaiveDate::from_ymd_opt(year, 1, 1).unwrap();
     let fy_id = fiscal_years::create(
         pool,
@@ -726,9 +727,10 @@ async fn un_echec_apres_le_complement_n_ecrit_rien(pool: MySqlPool) {
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn creation_date_verrouillee_ou_report_non_imputable_refusee(pool: MySqlPool) {
     let ctx = setup(&pool).await;
-    // Premier jour et jour même dans la période verrouillée.
+    // Premier jour et jour même dans la période verrouillée — le jour du serveur
+    // (Story 35-5a : au jour UTC, la nuit, la borne était la veille du serveur).
     sqlx::query("UPDATE companies SET books_locked_through = ? WHERE id = ?")
-        .bind(Utc::now().date_naive())
+        .bind(crate::common::jour::aujourd_hui_test())
         .bind(ctx.company_id)
         .execute(&pool)
         .await

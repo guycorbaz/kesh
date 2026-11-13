@@ -1,5 +1,9 @@
 //! Tests d'intégration pour `repositories::fiscal_years`.
 
+// Story 35-5a — le jour de l'horloge de test (jour suisse).
+#[path = "support/jour.rs"]
+mod jour;
+
 use chrono::NaiveDate;
 use kesh_db::entities::address::StructuredAddress;
 use kesh_db::entities::{
@@ -1860,7 +1864,7 @@ async fn close_against_a_reversal_deadlocks_and_the_replay_resolves_it(pool: MyS
     use chrono::Datelike;
     let company_id = create_company(&pool).await;
     let user_id = create_admin_user(&pool, company_id).await;
-    let today = chrono::Utc::now().date_naive();
+    let today = crate::jour::aujourd_hui_test();
     let m = exercice(&pool, user_id, company_id, today.year() - 6).await;
     let n = exercice(&pool, user_id, company_id, today.year() - 5).await;
     let _t = exercice(&pool, user_id, company_id, today.year()).await;

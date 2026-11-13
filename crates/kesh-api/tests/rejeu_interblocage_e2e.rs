@@ -176,7 +176,8 @@ async fn monter(pool: &MySqlPool) -> Contexte {
 }
 
 fn aujourd_hui() -> NaiveDate {
-    Utc::now().date_naive()
+    // Story 35-5a — le jour du serveur (horloge de test, jour suisse).
+    crate::common::jour::aujourd_hui_test()
 }
 
 /// L'exercice **ouvert qui couvre aujourd'hui**, créé s'il manque — sans date
