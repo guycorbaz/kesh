@@ -39,6 +39,10 @@
   coquille plus grand que celui d'un script borné par le compilateur) ; la suggestion de rustc appliquée telle quelle (elle
   réécrit la liste d'arguments et perdrait les commentaires).
 - **Réversibilité** : totale (`git revert` du commit (3)) ; les deux scripts restent dans `kesh-gate-logs/e355a0/`.
+- *(Annoté le 2026-11-13, remédiation de la revue P1, E1 et A2 : le script ne lisait pas la portée, si bien que D4 —
+  « la date du jour que le montage tient déjà » — n'a pas été suivie là où la fonction englobante tenait son jour. Inventaire
+  clos (`inventaire-d4-e355a0.py`, lecture seule, sur les 311 sites de `c3-erreurs.json`, fonction englobante relue à
+  `05666dbf`) et verdicts au Change Log de la fiche ; sites corrigés à l'outil Edit.)*
 
 ### C-e355a0-4 — Les deux copies de `support/jour.rs` d'un même binaire : `allow(clippy::duplicate_mod)`
 
@@ -61,6 +65,20 @@
   (`kesh-core` seul, un module que rien n'appelle) est couvert par le gate du commit (2), qui le contient, et par
   `cargo test -p kesh-core` à son commit. Aucun commit ne touche le frontend.
 - **Réversibilité** : sans objet.
+- *(Annoté le 2026-11-13, remédiation de la revue P1, A1 et A6 : l'option ci-dessus, écrite avant les gates, **n'a pas
+  été tenue** ; elle reste telle quelle comme relevé de l'intention. **Ce qui a tourné, commit par commit** : (1)
+  `48b9e627` — `cargo test -p kesh-core horloge` (6 passés), `clippy -p kesh-core` ; (2) `05666dbf` — `test-fast.sh --ci`
+  seul (5333 exécutés, 5331 passés, 2 échecs `configuration_transmise`, 13 ignorés) ; `gate-ci.sh` **pas lancé** (la
+  prise de verrou a été retirée de la file ; `c2-gate-ci.log` vide, 0 octet) ; (3) `5426cb8b` et (4) `79ec67b4` —
+  **aucun gate complet** : `fmt --check`, `clippy --workspace --all-targets -D warnings`, compilation complète, garde
+  `date_du_jour_garde` exécutée ; les suites `test-fast` et `gate-ci` préparées pour eux (`suite-e355a0.sh`) ont été
+  arrêtées avant d'obtenir le verrou ; (5) `0deb9abc` — **gate complet** : `test-fast.sh --ci` 5343/5343, `gate-ci.sh` 5350
+  passés, frontend complet, E2E complet (403 passés, les 7 KF-029), mutations 8/8. **Exception `kesh-db` (A6)** : elle
+  n'a pas été suivie aux commits (3) et (4), qui touchent `kesh-db` (le (3) ses dépôts et ses tests) ; leur contenu
+  `kesh-db` est **identique** à celui du (5) (`git diff --stat 5426cb8b 0deb9abc -- crates/kesh-db` ne rend rien), si bien
+  que le gate complet du (5) le juge, mais l'historique porte trois commits ((2) à (4)) aux deux rouges de
+  `configuration_transmise`, et deux ((3), (4)) sans gate complet propre : à garder en tête à la fusion (squash
+  recommandé, ou bisect à éviter sur cet intervalle). Le gate de la remédiation P1 est noté au Change Log de la fiche.)*
 
 ### C-e355a0-7 — `horloge_de_test` lit par `config::env_nonempty` ; `KESH_TEST_INSTANT` connue de `configuration_transmise`
 

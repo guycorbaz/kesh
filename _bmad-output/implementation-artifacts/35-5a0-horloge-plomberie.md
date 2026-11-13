@@ -305,7 +305,9 @@ attendus).
          ses comptes supposent les neuf sites déjà convertis, d'où sa place après (3).
 - [x] Gates : `test-fast.sh --ci` complet à chaque commit, `scripts/gate-ci.sh`, Vitest, E2E complet au dernier commit de code.
       *(Fait au commit (2) et au commit (5), dernier commit de code ; commits (3) et (4) jugés par le gate du (5) — écart
-      déclaré au Change Log, C-e355a0-5.)*
+      déclaré au Change Log, C-e355a0-5.)* *(Annoté le 2026-11-13, remédiation P1, A1 : au commit (2), `test-fast` seul —
+      `gate-ci.sh` n'y a pas tourné ; gate complet au (5) seulement ; détail commit par commit dans l'annotation de
+      C-e355a0-5 et au Change Log. Le gate du commit de la remédiation y est noté.)*
 - [ ] Revue : **fichier par fichier** pour les appelants (rollout mécanique, `CLAUDE.md` § *Règle de splitting préventif*),
       passes adversariales sur `kesh-core/src/horloge.rs`, `kesh-api/src/horloge.rs`, D2 et la garde.
 
@@ -416,7 +418,27 @@ la garde relevés à son exécution, listes vides), `c5-*.log` (gate complet du 
   (C-e355a0-7) : `48b9e627` (1) `kesh-core`, `05666dbf` (2) plomberie `kesh-api`, `5426cb8b` (3) noyau D2 et appelants,
   `79ec67b4` (4) garde et `docs/testing.md`, `0deb9abc` (5) `configuration_transmise`. **Aucune migration**
   (`git diff --stat 2b1c0ec8 HEAD -- crates/kesh-db/migrations` vide). Aucun texte d'interface, manuel ni CHANGELOG (D6).
-- Choix consignés au registre `e35-choix-autonomes-e355a0.md` : C-e355a0-1 à -7.
+- Choix consignés au registre `e35-choix-autonomes-e355a0.md` : C-e355a0-1 à -7 (C-e355a0-3 et -5 annotés à la
+  remédiation de la revue P1).
+
+#### Transmis à la 35-5a (remédiation de la revue P1, A3)
+
+- **`configuration_transmise.rs`** nomme `NOM_VARIABLE_INSTANT` **deux fois** (la lecture admise `env_nonempty (
+  NOM_VARIABLE_INSTANT )` de `horloge_de_test`, en forme exacte, et la liste fermée `VARIABLES_DE_TEST`) : la garde de la
+  date du jour l'inscrit à 2 (C-e355a0-7). Toute retouche de ces deux listes se répercute là.
+- **`horloge_de_test` lit par `config::env_nonempty`**, non par `std::env::var` (écart à D3) : vide ou blanche, la
+  variable vaut absente ; `instant_de_test` rogne aussi la valeur depuis la remédiation P1, si bien que les helpers de
+  `kesh-db` et `kesh-report` disent la même chose.
+- **E3, écart voulu** : la date est lue une fois à l'entrée de la requête ; une contre-passation entrée à 23 h 59 59 UTC le
+  31 décembre, qui attend le verrou d'une clôture de l'exercice en cours, est refusée (`FiscalYearInvalid`) là où l'ancien
+  code, relisant l'heure après l'attente, la datait du 1er janvier. Fenêtre de quelques secondes, dans le sens voulu (« lue
+  une fois », fiche) ; aucun test. À la 35-5a, qui fait passer ce jour à Zurich, de dire si le cas mérite le manuel.
+- **Montages et horloge** : D4 est tenue aux sites dont la fonction englobante tenait son jour (remédiation P1) ; les
+  montages qui alimentent un helper (`figer`, `supplier_invoices_repository.rs`) restent à l'heure réelle — la 35-5c.
+  `homepage_summary_e2e.rs` passe son `today()` (heure réelle) à ses contre-passations : il change avec le site 21, 35-5b.
+- **La `Lecture` des outils du MCP** n'est tenue que lexicalement (gardes `horloge_outils` et `FABRIQUES_V2`) : aucun outil
+  n'expose un site de jour dans cette story.
+- **B2 → #1105** : « lue une fois, avant le rejeu » n'est tenu par aucun filet (tracé, non traité ici).
 
 ### File List
 
@@ -600,7 +622,9 @@ vat_report_write_off}.rs`.
     filtrées sur `assert|from_ymd_opt|expect_err|StatusCode::` : **34 lignes, toutes `.expect_err("…")`**, chacune avec
     sa ligne `+` identique (reflux de rustfmt : l'appel, allongé d'un argument, passe sur plusieurs lignes) — appariement
     vérifié ligne à ligne (`moins.txt` / `plus.txt`, 34 retirées, 34 retrouvées ; côté `+`, 3 lignes de plus, les
-    assertions neuves de la garde `horloge_outils` de `mcp_gardes_lexicales.rs`). Aucun attendu de comportement ne change.
+    assertions neuves de la garde `horloge_outils` de `mcp_gardes_lexicales.rs`) *(annoté le 2026-11-13, revue P1, A4 :
+    faux à sa date — il y en a **5** : les trois de `mcp_gardes_lexicales.rs` et deux de `configuration_transmise.rs`,
+    `assert!(` et `assert!(VARIABLES_DE_TEST…)`, assertions neuves du commit (5))*. Aucun attendu de comportement ne change.
     Les attendus lexicaux changés sont ceux que D3 nomme : `mcp_gardes_lexicales.rs` (`LIB_NOMME_MCP` et le site de
     `LectureOutils::nouvelle`, qui devient `let lecture_outils = mcp::LectureOutils::nouvelle(lecture_pool);`),
     `services_motif.rs` (`FABRIQUES_V2` : `Lecture::new(self.pool.clone(), self.horloge.clone())` et la ligne
@@ -670,3 +694,69 @@ vat_report_write_off}.rs`.
     (26 fichiers) — consigne « Edit seulement » ; un cinquième commit (C-e355a0-7) ; `horloge_de_test` lit par
     `env_nonempty` et non par `std::env::var` (D3) ; `allow(clippy::duplicate_mod)` (C-e355a0-4) ; gates des commits
     (3) et (4) non complets (ci-dessus).
+- 2026-11-13 — **Revue de code P1** (Opus, trois lentilles B, E, A ; `kesh-gate-logs/e355a0-review-p1-{B,E,A}.md` :
+  **3 MEDIUM, 14 LOW**, aucun CRITICAL ni HIGH ; findings vérifiés au code par l'orchestrateur) **remédiée** par l'agent de
+  développement (Opus 5.5, worktree `kesh-e355a0`), commit de code `c8cda87e`. Prémisses relues au code.
+  - **E1 / A2 (MEDIUM) — D4 aux montages qui tiennent leur jour.** Inventaire **clos** d'abord
+    (`kesh-gate-logs/e355a0/inventaire-d4-e355a0.py`, lecture seule ; `r1-inventaire-d4.txt`) : pour les **311** sites
+    convertis de `c3-erreurs.json`, la fonction englobante relue à `05666dbf` déclare-t-elle `let today | aujourd_hui |
+    jour` ? **13 sites** ; complété à la main par les fonctions de jour des fichiers convertis (`fn today()`,
+    `fn jour()`) et les paramètres `today: NaiveDate`. Verdicts :
+    - `kesh-db/tests/invoice_settlement.rs` — `monter` (`today` `:1205` → `lock_books` `:1254`, lignes à `05666dbf`) et
+      `une_cloture_d_exercice_attend_l_annulation_d_un_virement` (`:2340` → `cancel_settlement` `:2392`) : **convertis**,
+      `let today = crate::jour::aujourd_hui_test();`, l'appel reçoit `today` ;
+    - `kesh-db/tests/supplier_invoices_repository.rs` — `monter_par_virement` (`:2973` → `pay` `:3017`) : **converti** ;
+    - `kesh-db/tests/opening_complement_repository.rs` — `entrelacement_5_contre_passation_en_vol` (`:880` → `reverse`
+      `:924`) : **converti** ; l'année de l'exercice suit `today` (`let y = today.year()`), si bien que l'exercice couvre
+      toujours le jour, variable posée ou non ;
+    - `kesh-db/tests/lettering_documents_backfill.rs` — `rattrapage`, 9 sites (`let jour = jours_avant;`) : **hors
+      champ**, `jour` y est une fonction (alias de `jours_avant`), non un jour ;
+    - `kesh-api/tests/homepage_summary_e2e.rs` — 8 sites dans quatre tests dont le montage tient `fn today()` (heure
+      réelle) et l'asserte (`assert_eq!(r1.entry.entry_date, today(), …)`) : **convertis à `today()`** ; le montage reste
+      à l'heure réelle, comme l'accueil qu'il éprouve (site 21, 35-5b) ; la déclaration `mod common { pub mod jour; }`,
+      devenue inutile, est retirée ;
+    - `kesh-db/tests/supplier_document_attachment.rs` (`fn jour()` = `2026-06-15`, date de pièce fixe) et les fichiers aux
+      `fn jour(y, m, d)` (constructeurs de dates) : **hors champ**, ce ne sont pas des jours du montage ;
+    - `supplier_invoices_repository.rs` `:1646` (`monter`), `:1927` (`monter_achat`), `:2976` : leurs fonctions n'ont
+      **aucun** site converti ; le site est dans le helper `figer`, qui ne tient pas de jour — **hors règle**, laissés à la
+      35-5c (transmis).
+    **La garde change de compte** (recompté à son exécution) : `invoice_settlement.rs` 4 → **2**,
+    `supplier_invoices_repository.rs` 4 → **3**, `opening_complement_repository.rs` 2 → **0** (entrée retirée).
+  - **A1 (MEDIUM) et A6 (LOW)** : C-e355a0-5 **annoté** (daté, l'entrée gardée) — ce qui a tourné commit par commit ; au
+    (2), `test-fast` seul et `gate-ci.sh` jamais lancé (`c2-gate-ci.log` vide) ; aux (3) et (4), aucun gate complet ;
+    l'exception `kesh-db` n'y a pas été suivie, et le contenu `kesh-db` du (3) au (5) est identique (`git diff --stat
+    5426cb8b 0deb9abc -- crates/kesh-db` vide). *Tâches* annotées de même. C-e355a0-3 annoté pour E1/A2.
+  - **LOW traités** : **A3** — section *Transmis à la 35-5a* au Dev Agent Record (le compte 2 de `NOM_VARIABLE_INSTANT`
+    dans `configuration_transmise.rs`, la lecture par `env_nonempty`, E3, les montages laissés, la `Lecture` du MCP tenue
+    lexicalement) ; **A4** — l'entrée du développement annotée : côté `+`, **5** lignes de plus, non 3 (recompté à
+    `0deb9abc` et à `c8cda87e` : 34 lignes `-`, toutes `.expect_err`, et 39 lignes `+` dont 34 `.expect_err` identiques) ;
+    **A5** — M2 rejouée sur `mcp_gardes_lexicales.rs` (ci-dessous) ; **B1** — `kesh-core/src/horloge.rs`, `lib.rs`,
+    `journal_entries.rs` : les commentaires disent « des sites convertis » et renvoient à l'inventaire de la garde ;
+    **B3** — les formes non relevées (`Utc::now().date()`, `NaiveDate::from(… naive_utc())`, `CAST(NOW() AS DATE)`,
+    `SYSDATE()`, `DATE_FORMAT(NOW(), …)`, `… < NOW()`) écrites aux angles morts de l'en-tête de la garde ; **B4** — AC2
+    asserte aussi le refus par sa garde (`INVALID_INPUT` et le message de `booksLockBoundNotPast`, « antérieure à
+    aujourd'hui » — le code `booksLockBoundNotPast` n'est pas exposé tel quel au corps HTTP, qui porte `INVALID_INPUT`) ;
+    **B5 / E2** — `instant_de_test` rogne la valeur : blanche, elle vaut absente, côté `kesh-api` comme dans les helpers
+    de `kesh-db` et `kesh-report` (docs des helpers alignées), test `Some("   ")` ; **E4** — doc de `common/jour.rs` : vrai
+    tant que le test ne remplace pas `state.horloge` ; **E5** — test `instant_de_test(Some("2026-01-01T00:30:00+01:00"))`
+    (ramené au `2025-12-31T23:30Z`, jour du 31) et valeur entourée de blancs ; **E6** — la ligne de `docs/testing.md` dit
+    les sites convertis, « vide ou blanche », et que la suite ne suit pas encore toute la variable (35-5c) ; **E3** —
+    déclaré comme **écart voulu** et transmis à la 35-5a (section ci-dessus). Garde recomptée aussi pour `kesh-core` :
+    `instant_de_test` 6 → **9**, `HorlogeFixe` 5 → **6** (tests neufs).
+  - **Tracé, non traité** : **B2 → #1105** (« lue une fois, avant le rejeu » sans filet).
+  - **Fichiers de production touchés** : `crates/kesh-core/src/horloge.rs` (`instant_de_test` rogne ; doc),
+    `crates/kesh-api/src/lib.rs` (doc), `crates/kesh-db/src/repositories/journal_entries.rs` (doc). Édition à l'outil
+    Edit, sans script (l'inventaire est un script **en lecture seule**, déclaré).
+  - **Gates de `c8cda87e`, dernier commit de code** (dans le worktree, sans clone, aucune édition de code pendant le run ;
+    base remise à neuf ; `kesh-gate-logs/e355a0/suite3.log`, `r1-*.log`) : `fmt --check` et `clippy --workspace
+    --all-targets -D warnings` verts ; `test-fast.sh --ci` **5344 exécutés, 5344 passés, 13 ignorés** (+1 : le test neuf
+    de `kesh-core`) ; `scripts/gate-ci.sh kesh_ci_e355a0` **5351 passés, 0 échoué, 17 ignorés** ; frontend : **`npm run
+    build` seul** (vert, il sert l'E2E) — `check`, `lint-i18n-ownership` et Vitest **non rejoués**, la remédiation ne
+    touchant aucun fichier de `frontend/` ; **E2E complet** (production touchée : `instant_de_test` rogne) : **403 passés,
+    7 échecs, 18 ignorés**, les sept de la KF-029 nommés contre `docs/testing.md` (`mode-expert.spec.ts:26`, `:41`,
+    `onboarding-path-b.spec.ts:65`, `:92`, `onboarding.spec.ts:57`, `:77`, `:150`), aucun autre. **Mutations rejouées**
+    (`mut/r1-mutations.log`) : **M2** TUÉE [101, 101] — garde de la date **et** `mcp_gardes_lexicales.rs`
+    (`outils_et_politique_en_leur_lieu`, l'assertion `horloge_outils`, `:592`) ; **M5** TUÉE [101]. `rouges.log` annoté
+    (A5). Contrôle des mots-clés de fermeture (`2b1c0ec8..HEAD`) : vide. Statut : `review`.
+  - **Trend de la revue** : P1 : **3 MEDIUM, 14 LOW** (B 5 LOW ; E 1 MEDIUM, 5 LOW ; A 2 MEDIUM, 4 LOW) ; tous remédiés
+    ou déclarés, sauf B2 tracé en **#1105**. Passe suivante à lancer sur cette remédiation.
