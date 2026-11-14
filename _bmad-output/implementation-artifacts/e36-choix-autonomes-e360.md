@@ -159,6 +159,11 @@ Lecture faite au kickoff : l'issue (`gh issue view N --json title,labels,body,co
 - **Écartées** : (a) écrire la fiche sur une hypothèse : la 35-7 a montré qu'un correctif du composant a des effets
   sur tous ses consommateurs ; (b) prendre #1151 d'office : P4, hors du chemin du défaut si la cause est H1 ou H2.
 - **Réversible** : oui.
+- *Amendé le 2026-11-14 par l'orchestrateur (validation P1 de la fiche 36-2, C-36-2-7 à 12)* : la lecture a établi deux
+  défauts sans condition (H4, l'écart non dit ; H5, le montant envoyé en nombre, refusé par le serveur : l'éclatement
+  n'a jamais pu réussir depuis l'écran) ; le champ de montant passe au texte lu par `readJournalAmount` (36-3), ce qui
+  retire H2 des branches ; **#1151 entre sans condition** (option (b) ci-dessus, désormais retenue : H3 quasi certaine).
+  La reproduction R0 reste exigée pour constater la cause du symptôme de Guy, sans conditionner le correctif.
 
 ### C-e360-6 — 36-3 : le prédicat de la 35-6, la grammaire du journal ; périmètre borné à l'écriture manuelle
 
