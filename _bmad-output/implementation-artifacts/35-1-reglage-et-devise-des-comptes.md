@@ -9,7 +9,12 @@ registre antérieur ; puis pour sa revue CR-3 (S2 : comptes de différence de ch
 S3 : liste des comptes que l'avertissement d'archivage archiverait ; S4 : R10 et l'arbitrage A1 retirés), qui prime
 sur CR-2 ; puis pour sa revue 2 (CR-4 : **T1** — l'assistant de démarrage demande les dates du premier exercice,
 AC-11 rétablie avec ce contenu ; **T3** — la devise d'une ligne se lit sur le compte, le verrou de l'AC-4 en devient
-la garantie ; **T4** — sens du genre d'ouverture et son défaut à la création), qui prime sur tout ce qui précède.*
+la garantie ; **T4** — sens du genre d'ouverture et son défaut à la création), qui primait sur tout ce qui
+précède ; puis pour sa revue 3 (CR-5), qui prime sur tout : **U1** — la table des cours de la société s'appelle
+`exchange_rates` (35-2), et l'activation, la création d'un exercice multi-devises et la bascule vers multi-devises y
+copient les cours déjà récupérés (AC-3, AC-3 bis, AC-6) ; **U4** — changer le genre de clôture propose de l'appliquer à
+l'ouverture de l'exercice suivant (AC-3 bis, renvoi à 35-2 AC-5) ; **U5** — les arbitrages approuvés de cette fiche
+sont des AC (Décisions).*
 
 ## Story
 
@@ -30,7 +35,17 @@ S3 (`FISCAL_YEAR_FOREIGN_ACCOUNTS_ACTIVE` liste les comptes, AC-3 bis) ; S4 (R10
 pas de constante). **CR-4 (revue 2 de Beat, prime sur tout)** : T1 (l'assistant demande les dates du premier
 exercice, AC-11) ; T3 (la ligne d'écriture ne stocke pas de devise : le verrou de la devise d'un compte, AC-4, porte
 celle de ses lignes) ; T4 (genre d'ouverture = clôture de l'exercice précédent, défaut repris à la création, AC-1,
-AC-3 bis).
+AC-3 bis). **CR-5 (revue 3 de Beat, prime sur tout)** : U1 (copie des cours récupérés dans `exchange_rates` de 35-2 à
+l'activation, à la création d'un exercice multi-devises et à la bascule vers multi-devises : appels ajoutés par 35-2
+AC-3 bis, AC-3 et AC-3 bis ci-dessous ; liste close de l'AC-6 sous le nom neuf) ; U4 (remplace A22 : AC-3 bis, la
+route vit en 35-2 AC-5). **U5 — arbitrages approuvés par Beat (CR-5), écrits comme AC de cette fiche** : A4 (ligne en
+devise datée avant un exercice mono-devise refusée : AC-3 bis, puce « dans un exercice mono-devise », garde de 35-3a
+AC-4) ; A5 (`force` n'archive que les comptes en devise sans ligne après la fin de l'exercice, pas de bascule sans
+archivage, l'activation passe tous les exercices ouverts en multi-devises : AC-3, AC-3 bis) ; A6 (compte de conversion
+de bilan, non archivé, à créer, p. ex. 1090 : AC-3, AC-10) ; A15 (les comptes propres couvrent gains et pertes, le
+compte de conversion reste un réglage de la société : AC-4 bis) ; A18 et A19 (fin du premier exercice saisie dans
+l'assistant, nom « Exercice AAAA » ou « Exercice AAAA/AAAA » : AC-11). A22 est remplacé par U4 ; A1 était déjà retiré
+(S4).
 
 ## Critères d'acceptation
 
@@ -116,6 +131,12 @@ AC-3 bis).
      **désactivation**, admise seulement sans compte en devise (ci-dessous, donc sans aucune ligne en devise), passe
      **tous** les exercices de la société à `FALSE`, clos compris (ils ne portent rien en devise). Les identifiants
      des exercices changés vont au détail d'audit. Ensuite, chaque exercice se règle seul (AC-3 bis) ;
+   - **cours de la société à l'activation (U1, CR-5)** : dans la même transaction, après les verrous ci-dessous, chaque
+     exercice passé en multi-devises reçoit la **copie** des cours déjà récupérés de ses unités utiles dans
+     `exchange_rates` (insertion seulement, `source = 'afc'`, `updated_by` `NULL`) — fonction et règles de **35-2 AC-3
+     bis**, qui ajoute cet appel à `companies::update_currency_settings` (la table n'existe pas avant 35-2) ; le nombre
+     de lignes copiées va au détail d'audit (`copied`). La désactivation ne vide pas `exchange_rates` : une société
+     sans compte en devise ne lit aucun cours, et une réactivation retrouve ses cours saisis ;
    - **ordre des refus** (une seule raison) : forme du corps (`missing`/`unexpected`, 400, avant la transaction) →
      version (409, jugée sous le `FOR UPDATE` de `companies`) → no-op → `MULTI_CURRENCY_IN_USE` (désactivation) →
      `FX_ACCOUNT_INVALID` (compte changé, gain puis perte puis conversion) ;
@@ -219,10 +240,19 @@ AC-3 bis).
      les deux rejeux (`retry_on_deadlock("fiscal_years::create", …)`, `routes/fiscal_years.rs:286`, et celui de
      l'AC-3) ; `create_for_seed`, sans rejeu, ne s'exécute que dans une société neuve sans concurrence ;
      `create_if_absent_in_tx` (assistant) n'insère que sans aucun exercice (`WHERE NOT EXISTS`, :472), donc toujours
-     `'day'` ; `create_for_seed` applique le même fragment. Un changement ultérieur du genre de clôture de l'exercice
-     précédent (`PUT /rate-kinds`, 35-2) **ne se propage pas** : chaque exercice garde son réglage (T4 dit « par
-     défaut »). Tests : précédent en clôture `month` → nouvel exercice en ouverture `month` ; précédent `day` → `day` ;
+     `'day'` ; `create_for_seed` applique le même fragment. **Changement ultérieur du genre de clôture (U4, CR-5 —
+     remplace A22, « ne se propage pas »)** : quand le genre de clôture d'un exercice change alors que l'exercice
+     **suivant** existe (celui qui commence le lendemain de sa clôture), un dialogue propose d'appliquer le genre
+     correspondant au **cours d'ouverture** de l'exercice suivant, case **cochée par défaut** ; aucune écriture
+     d'ouverture n'est modifiée — il n'en existe aucune entre deux exercices Kesh (soldes cumulés, et soldes
+     d'ouverture saisissables sur le seul premier exercice). L'AC (route, champ `applyToNextOpening`, refus, audit,
+     tests) vit avec la route, en **35-2 AC-5** (*Genres d'ouverture et de clôture*), et le dialogue en **35-2 AC-6** ;
+     cette fiche ne pose que le défaut à la création. Tests : précédent en clôture `month` → nouvel exercice en
+     ouverture `month` ; précédent `day` → `day` ;
      exercice séparé du précédent par un trou → `day` ; premier exercice → `day` ; création des trois chemins ;
+     **cours de la société (U1, CR-5)** : un exercice créé multi-devises par `fiscal_years::create` reçoit, dans la
+     transaction qui l'insère, la copie des cours déjà récupérés de ses unités utiles (35-2 AC-3 bis, appel ajouté par
+     35-2) ;
    - **bascule** : `PUT /api/v1/fiscal-years/{id}/currency-mode { multiCurrency, force? }`, dans **`comptable_routes`**
      (Administrateur ou Comptable, comme `…/close` ; une clé d'API l'atteint comme `close`), handler sous
      `kesh_db::retry::retry_on_deadlock("fiscal_years::set_currency_mode", …)` comme `create_fiscal_year`
@@ -237,7 +267,7 @@ AC-3 bis).
      exercice clos est figé) ; no-op → 200 sans audit ni écriture ; **vers mono-devise** :
      - **refus** 409 **`FISCAL_YEAR_HAS_FOREIGN_BALANCES`** (code neuf, quatre locales) tant qu'un compte en devise
        (archivés compris) a un solde cumulé **≠ 0 au début de l'exercice** (lignes datées avant `start_date`, toutes
-       années) — en CHF (Σ débit − Σ crédit) **et** en devise (Σ `amount_currency` signé, colonne de 35-3a : **35-3a
+       années) — en devise principale, aujourd'hui CHF (Σ débit − Σ crédit), **et** en devise (Σ `amount_currency` signé, colonne de 35-3a : **35-3a
        étend cette requête**, la 35-1 ne connaissant que le CHF et l'existence des lignes) — ou **porte une ligne** datée
        dans l'exercice ; `details: { accounts: [{ id, number, name, reason: "balance" | "lines" }] }` (20 au plus ;
        `name` ajouté par CR-3 pour que l'écran nomme les comptes comme pour l'avertissement ci-dessous). Lectures
@@ -261,7 +291,9 @@ AC-3 bis).
        retire par `PUT`, aucune ligne). Un compte imputable qui garde un sous-compte actif (état anormal) n'est pas
        proposé non plus. Les comptes se traitent par identifiant croissant. L'archivage se défait par la réactivation (société multi-devises). Aucun compte n'est
        converti en CHF (R3) ;
-     - **vers multi-devises** : aucune autre condition ;
+     - **vers multi-devises** : aucune autre condition ; l'exercice reçoit, dans la même transaction, la copie des
+       cours déjà récupérés de ses unités utiles dans `exchange_rates` (U1, CR-5 ; 35-2 AC-3 bis, appel ajouté par
+       35-2 à `fiscal_years::set_currency_mode`, `copied` au détail d'audit) ;
    - **dans un exercice mono-devise**, un compte en devise **n'est pas utilisable** : une ligne en devise est refusée
      (409 `MULTI_CURRENCY_DISABLED`, jugé sur l'exercice de l'écriture, 35-3a AC-4) et une ligne CHF sur un compte en
      devise l'est déjà (`ACCOUNT_REQUIRES_CURRENCY`, 35-3a) ; 35-3a garde aussi un exercice **antérieur** à un exercice
@@ -532,8 +564,8 @@ AC-3 bis).
    `kesh-db::backup` (nom au développement, p. ex. `ABSENCES_ADMISES_EPIC_35: &[Absence]`, `Absence::Table(&str)` |
    `Absence::Colonne(&str, &str)`, chaque entrée avec la version de la migration qui l'ajoute). Cette story crée le
    mécanisme et y inscrit ses colonnes (`companies` × 4, `accounts` × 3 — `currency`, et `fx_gain_account_id`,
-   `fx_loss_account_id` de CR-3, S2 —, `fiscal_years` × 3) ; 35-2 y inscrit la table `exchange_rate_overrides` (ses
-   colonnes neuves de `_kesh_exchange_rates`, table système, ne passent pas par l'import), 35-3a les **trois** colonnes
+   `fx_loss_account_id` de CR-3, S2 —, `fiscal_years` × 3) ; 35-2 y inscrit la table `exchange_rates` (U1, CR-5 ;
+   ex-`exchange_rate_overrides` ; la table système `_kesh_fetched_exchange_rates` ne passe pas par l'import), 35-3a les **trois** colonnes
    de `journal_entry_lines` (`amount_currency`, `exchange_rate`, `rate_source` ; aucune colonne de devise, CR-4, T3). Au code :
    - **tables** : la boucle de couverture de `parse_and_verify_avec_inventaire`
      (`crates/kesh-api/src/admin_backup/import.rs:250-253`, « table '…' absente du manifeste ») saute une table de la
@@ -554,7 +586,7 @@ AC-3 bis).
      0.17.5 de ce fichier, `:5563`, `:5638`, simulées par l'export courant retouché) : export d'une société
      mono-devise, puis retrait des colonnes et des tables de la liste au manifeste et aux NDJSON, `keshVersion` 0.17.6 →
      import 200, réglage et exercices à leur défaut (mono-devise), comptes sans devise (35-2 étend le test à
-     `exchange_rate_overrides` absente — aucun cours saisi —, 35-3a aux colonnes des lignes — aucune ligne en devise) ;
+     `exchange_rates` absente — aucun cours retenu —, 35-3a aux colonnes des lignes — aucune ligne en devise) ;
      et une table **hors liste** retirée → 400 (le refus d'origine tient). La phase 5 de
      `scripts/recette-montee.sh` (import du `.keshbackup` de l'image 0.17.6, exige un 200, `:651`) se joue normalement
      à la release ; son `--diff-attendu` y liste `migrations` (toujours, `_sqlx_migrations`), `companies`, `accounts`
@@ -748,6 +780,10 @@ AC-3 bis).
       `onboarding.svelte.ts`, i18n, tests d'API, Vitest, E2E, manuel (`user-manual.tex:217`, `:1004`).
 - [ ] CR-4 (T4) — défaut du genre d'ouverture à la création (AC-3 bis) : fragment SQL partagé des trois chemins de
       création, tests ; sens des genres écrit au doc-comment de `FiscalYear` (AC-1).
+- [ ] CR-5 — rien à développer ici pour U1 et U4 : la copie des cours (appels dans `update_currency_settings`,
+      `fiscal_years::create`, `set_currency_mode`) et `applyToNextOpening` sont des tâches de **35-2** (AC-3 bis,
+      AC-5, AC-6) ; cette story laisse ces trois fonctions prêtes à recevoir l'appel (transaction ouverte, verrous pris,
+      détail d'audit extensible).
 - [ ] CR-3 (S2) — comptes de différence propres (AC-4 bis) : colonnes et deux `CHECK` dans la migration de l'AC-1 ;
       `Account`, `NewAccount`, `AccountUpdate` (un champ à trois états), macro `columns!`, `bulk_create` et
       `bulk_create_from_chart_in_tx` (`NULL`) ; `fx_accounts_for` (pure) et `validate_fx_accounts_in_tx` (dépôt) ;
@@ -973,3 +1009,16 @@ AC-3 bis).
   `repositories/fiscal_years.rs:456-500`, `dates_recues.rs:55`, `user-manual.tex:217`, `:1004`, `:2465` ; décomptes
   de `finalize` par fichier de `crates/kesh-api/tests` (`grep -c`). AC touchés : en-tête, Décisions, AC-1, AC-3 bis,
   AC-4, AC-6, AC-10, AC-11, Tâches. Fiche à revalider (cycle CR-4).
+- 2026-11-14 — révision CR-5 (revue 3 de Beat U1–U6 ; Opus) : **U1** — copie des cours déjà récupérés dans
+  `exchange_rates` à l'activation (AC-3), à la création d'un exercice multi-devises et à la bascule vers
+  multi-devises (AC-3 bis) : règles et appels portés par 35-2 AC-3 bis (la table n'existe qu'à 35-2) ; la
+  désactivation ne vide pas `exchange_rates` ; liste close des absences admises sous le nom neuf `exchange_rates` (AC-6).
+  **U4** — « un changement ultérieur du genre de clôture ne se propage pas » (A22) remplacé : dialogue qui propose
+  d'appliquer le genre à l'ouverture de l'exercice suivant, case cochée par défaut, aucune écriture modifiée (il n'en
+  existe aucune entre deux exercices Kesh) ; l'AC vit avec la route `PUT /fiscal-years/{id}/rate-kinds`, en 35-2 AC-5
+  et AC-6 ; renvoi en AC-3 bis. **U5** — vérifié que les arbitrages A2–A22 (hors A11, A22) sont écrits comme AC ou
+  règles de leur fiche : A4, A5, A6, A15, A18, A19 ici (inventaire aux Décisions) ; A2, A7, A9, A10, A16 en 35-2 ;
+  A3, A20, A21 en 35-3a ; A8, A12, A13, A14, A21 en 35-3b ; A17 en 35-3a et 35-3b. **U6** — « en CHF » du solde
+  contrôlé à la bascule écrit « en devise principale, aujourd'hui CHF » (AC-3 bis) ; les autres « en CHF » de la fiche
+  désignent un compte sans devise (exemple concret) et restent. AC touchés : en-tête, Décisions, AC-3, AC-3 bis,
+  AC-6, Tâches. Aucune migration ni route neuve. Fiche à revalider (cycle CR-5).

@@ -9,8 +9,11 @@ préventif : plus de cinq modules) : 35-3a = le serveur (`kesh-core`, `kesh-db`,
 la revue de Beat (CR-2 : R1, R3, R7), qui prime sur le registre antérieur ; puis pour sa revue CR-3 (S2 : comptes de
 différence propres à un compte en devise, résolus par `fx_accounts_for` de 35-1 ; S6 : `FX_RATE_NOT_AFC` compare au
 cours AFC **en vigueur**), qui prime sur CR-2 ; puis pour sa revue 2 (CR-4, **T3** : la ligne **ne stocke pas** la
-devise — elle se lit sur le compte, dont la devise est verrouillée dès la première ligne, 35-1), qui prime sur tout ce
-qui précède.*
+devise — elle se lit sur le compte, dont la devise est verrouillée dès la première ligne, 35-1), qui primait sur tout
+ce qui précède ; puis pour sa revue 3 (CR-5), qui prime sur tout : **U1** — `FX_RATE_NOT_AFC` compare au **cours
+retenu par la société** (`exchange_rates` de 35-2, ligne `source = 'afc'` du mois), plus à une table système (AC-4) ;
+**U2** — changer le compte d'une ligne au `PUT` : la devise de la ligne suit le compte (AC-7) ; **U5** — A3, A17, A20,
+A21 approuvés (AC-4) ; **U6** — débit et crédit restent en **devise principale** (AC-3).*
 
 ## Story
 
@@ -55,7 +58,7 @@ chacune (R7), l'écart de change dans la seconde, afin que mes comptes en devise
    `chk_jel_fx_chf` (« montant 0 hors `revaluation` » et « montant < 0 ») est constaté au premier essai et écrit au Change Log (ordre d'évaluation des `CHECK` de MariaDB).
    Inscriptions habituelles (sha384, audit, squash, P6 inspecté, P7 sans objet : DDL seul). Colonnes `NULL` : cette
    migration ne referme pas la fenêtre d'import, et 35-2 non plus depuis CR-2 (R1 : la liste close des absences
-   admises de 35-1 AC-6 couvre `exchange_rate_overrides`). Les trois colonnes **s'inscrivent à cette liste** (déjà
+   admises de 35-1 AC-6 couvre `exchange_rates`, U1, CR-5). Les trois colonnes **s'inscrivent à cette liste** (déjà
    tolérées par la règle générique, la liste les garde non `is_required()`). Ce qui se teste ici : le test d'import
    d'une sauvegarde 0.17.6 de 35-1 AC-6, étendu aux trois colonnes retirées des NDJSON de `journal_entry_lines` →
    import 200, lignes aux trois colonnes `NULL` (Tâches).
@@ -154,7 +157,8 @@ chacune (R7), l'écart de change dans la seconde, afin que mes comptes en devise
    - **`rate_source = 'revaluation'`** : exemptée de l'égalité CHF = round(montant × cours) et de
      `FX_LINE_ROUNDS_TO_ZERO` ; exige `amount = 0`, `rate > 0` et un CHF > 0. Refusée par l'API (AC-6), admise pour
      35-5 et pour la contre-passation.
-   - l'équilibre reste Σ débit CHF = Σ crédit CHF, **strict** ; déséquilibre → `EntryUnbalanced` avec l'écart.
+   - débit et crédit restent en **devise principale** (aujourd'hui CHF ; U6, CR-5) : l'équilibre reste Σ débit =
+     Σ crédit en devise principale, **strict** ; déséquilibre → `EntryUnbalanced` avec l'écart.
    - **Vecteurs d'arrondi partagés** : `crates/kesh-core/tests/fixtures/fx_rounding.json` (créé ici ; tableau de
      `{ amount, rate, chf }` en chaînes décimales, ou `{ amount, rate, error: "FX_VALUE_OUT_OF_RANGE" }`), avec au moins
      les cas `x.xx5` (équidistant, arrondi loin de zéro), JPY (cours par unité < 0.01), cours à 10
@@ -227,7 +231,7 @@ chacune (R7), l'écart de change dans la seconde, afin que mes comptes en devise
       sur le modèle de celle du constructeur de test, Tâches) ; jamais un champ public de `NewJournalEntry` (même raison
       que la contre-passation ci-dessous) ; la contre-passation est exemptée elle aussi (reconnue par
       `reverses_entry_id.is_some()`, comme pour `FX_RATE_NOT_AFC`) : elle recopie une écriture qui a passé ce contrôle,
-      ou une ouverture. Exemption de l'ouverture à confirmer par Beat (Change Log). ⚠️ **La contre-passation n'est exemptée ni de
+      ou une ouverture. Exemption de l'ouverture : arbitrage A3, approuvé par Beat (CR-5). ⚠️ **La contre-passation n'est exemptée ni de
       `MULTI_CURRENCY_DISABLED` ni de `laterFiscalYear`** : elle est datée du jour ou du premier jour de l'exercice
       suivant (`ReversalDating`, `reverse_in_tx_inner`), exercice qui peut être mono-devise — contre-passer une
       réévaluation au 1er janvier d'un exercice mono-devise est refusé en 409, le message disant de le passer en
@@ -246,19 +250,23 @@ chacune (R7), l'écart de change dans la seconde, afin que mes comptes en devise
       plus `details.reason: "monoCurrencyFiscalYear"` et `fiscalYearId` : l'invite « saisissez le montant en devise »
       y serait fausse (la ligne en devise est refusée au rang 2) — le message dit de passer l'exercice en
       multi-devises (clé i18n propre, quatre locales ; affichage 35-3b, inter-fiche) ;
-   4. ligne `rate_source = 'afc'` : le cours doit égaler `rate_per_unit` du cours AFC **mensuel brut en vigueur** de
-      `_kesh_exchange_rates` (35-2) pour (devise **du compte**, lue au rang 1, mois de `entry_date`) — **jamais** une valeur republiée non adoptée
-      (`republished_rate`, S6, CR-3 : une correction de l'AFC reste à part jusqu'à son adoption à l'écran *Cours de
-      change*, 35-2 AC-5 ; `find_rate_in_tx` rend le cours en vigueur, la lecture ne change pas) —, lu dans la transaction par la fonction de
-      lecture du dépôt `kesh_db::repositories::exchange_rates::find_rate_in_tx(conn, currency, RateKind::Month, 1er du
-      mois)` de 35-2 (pas de second accès ; lecture **sans verrou**, comme celle de la période : une adoption ou une
-      récupération validée pendant la transaction n'est pas vue, la ligne garde alors le cours lu — **limite assumée**,
-      sans effet sur les autres lignes, écrite au Change Log). ⛔ **Jamais le cours effectif** : un cours saisi par la société (D9,
-      `exchange_rate_overrides`) n'entre pas dans ce contrôle — une ligne à ce cours, s'il diffère du cours AFC, est
-      `manual` (le client la qualifie ainsi, 35-3b) ; envoyée `afc`, elle est refusée. Ni le cours journalier (D10).
-      Aucune nouvelle valeur de `rate_source`. Sinon 400
-      `FX_RATE_NOT_AFC`, `details: { line, expectedRate }` (`rate_per_unit` de la table, chaîne décimale sans zéros
-      terminaux ; clé lue par 35-3b pour proposer le cours) ; cours absent → `DbError::RateUnavailable {currency, month}`,
+   4. ligne `rate_source = 'afc'` (U1, CR-5 — remplace la comparaison au cours AFC brut de la table système) : le
+      cours doit égaler le **cours retenu par la société** pour (devise **du compte**, lue au rang 1, mois de
+      `entry_date`), c'est-à-dire `exchange_rates.rate` de la ligne de la société **dont la `source` est `afc`** (35-2
+      AC-1 : copie d'une valeur publiée, ou valeur reprise par ↑), lu dans la transaction par la fonction de lecture du
+      dépôt `kesh_db::repositories::exchange_rates::find_company_rate_in_tx(conn, company_id, currency,
+      RateKind::Month, 1er du mois)` de 35-2 (pas de second accès ; lecture **sans verrou**, comme celle de la période :
+      un ↑ ou un `PUT …/rates` validé pendant la transaction n'est pas vu, la ligne garde alors le cours lu — **limite
+      assumée**, sans effet sur les autres lignes, écrite au Change Log). ⛔ **Plus aucun `find_rate_in_tx` sur la table
+      système pour ce contrôle** : la dernière valeur publiée (`_kesh_fetched_exchange_rates`) n'y entre jamais — une
+      correction de l'AFC que la société n'a pas reprise ne change rien, et une installation restaurée contrôle ses
+      lignes contre ses cours restaurés, sans attendre une récupération. **Ligne de la société `manual`** (cours saisi,
+      D9) : une ligne d'écriture à ce cours est `manual` (le client la qualifie ainsi, 35-3b) ; envoyée `afc`, elle est
+      refusée `FX_RATE_NOT_AFC`, `expectedRate` à `null` (il n'y a pas de cours `afc` à proposer : la ligne se garde en
+      `manual`). Ni le cours journalier (D10). Aucune nouvelle valeur de `rate_source`. Sinon 400
+      `FX_RATE_NOT_AFC`, `details: { line, expectedRate }` (`exchange_rates.rate` de la ligne `afc` de la société,
+      chaîne décimale sans zéros terminaux, ou `null` si la ligne est `manual` ; clé lue par 35-3b pour proposer le
+      cours) ; **aucune** ligne de la société pour ce mois → `DbError::RateUnavailable {currency, month}`,
       rendu sous le **même code et le même statut 404** que le `RATE_UNAVAILABLE` de 35-2, avec la même forme de
      `details` : `{ currency: "USD", month: "AAAA-MM-01" }` (35-2 AC-5). Contrôle à la création
       **et** au `PUT` (date changée comprise). **Le mois de référence est toujours celui de `entry_date`, sans
@@ -271,15 +279,17 @@ chacune (R7), l'écart de change dans la seconde, afin que mes comptes en devise
       (une ligne `manual` repassée `afc` au même cours est modifiée ; la devise suit le compte, T3) —, montants en
       valeur comme `is_no_op_change` ;
       appariement **sans égard à l'ordre** (déplacer une ligne ne la modifie pas ; le projet n'entre pas dans la
-      comparaison). Une ligne inchangée n'est jamais recontrôlée et ne déclenche aucune lecture du cours : après une
-      restauration (table des cours vide, 35-2 AC-7) ou après l'**adoption** d'un cours AFC republié (35-2 AC-5), le
-      `PUT` du seul libellé, de lignes CHF ou d'un projet passe ; une ligne `afc` ajoutée ou modifiée rend
-      `404 RATE_UNAVAILABLE` (cours absent ; 35-3b propose « Récupérer le mois » ou le passage en `manual`) ou
-      `FX_RATE_NOT_AFC` (ancien cours, `expectedRate` = cours en vigueur ; 35-3b en tire « Reprendre le cours attendu »
-      / « Garder mon cours », passage en `manual`). Une republication
-      **non adoptée** ne change rien. Conséquence assumée, écrite au Change Log : `rate_source = 'afc'` dit que la ligne
-      portait le cours AFC en vigueur **quand elle a été contrôlée**, non qu'elle porte celui d'aujourd'hui (aucun
-      lecteur de 35-4 ni de 35-5 n'en tire autre chose). **Exemptée** : la contre-passation, qui recopie le cours
+      comparaison). Une ligne inchangée n'est jamais recontrôlée et ne déclenche aucune lecture du cours : après la
+      **reprise** par ↑ d'un cours AFC corrigé (35-2 AC-5, U1, U3 : la ligne de la société change de valeur) ou après
+      un `PUT …/rates` qui passe le mois en `manual`, le `PUT` du seul libellé, de lignes CHF ou d'un projet passe ; une
+      ligne `afc` ajoutée ou modifiée rend `404 RATE_UNAVAILABLE` (aucune ligne de la société pour ce mois — p. ex.
+      exercice passé en multi-devises avant toute récupération ; 35-3b propose « Récupérer le mois », qui copie le cours
+      publié, ou le passage en `manual`) ou `FX_RATE_NOT_AFC` (ancien cours, `expectedRate` = cours retenu ; 35-3b en
+      tire « Reprendre le cours attendu » / « Garder mon cours », passage en `manual`). Une correction de l'AFC **non
+      reprise** ne change rien. Depuis U1, une restauration ne vide plus les cours de la société (35-2 AC-7) : le
+      contrôle s'y appuie dès l'import. Conséquence assumée, écrite au Change Log : `rate_source = 'afc'` dit que la
+      ligne portait le cours `afc` retenu par la société **quand elle a été contrôlée**, non qu'elle porte celui
+      d'aujourd'hui (aucun lecteur de 35-4 ni de 35-5 n'en tire autre chose). **Exemptée** : la contre-passation, qui recopie le cours
       d'origine à une autre date — mécanisme : `create_in_tx_inner` la reconnaît à son paramètre existant
       `reverses_entry_id.is_some()` (`:281`), aucun nouvel indicateur dans `NewJournalEntry` (un indicateur public
       permettrait à un appelant de se dispenser du contrôle).
@@ -414,6 +424,19 @@ chacune (R7), l'écart de change dans la seconde, afin que mes comptes en devise
      avec les mêmes contrôles (AC-3, AC-4), `FX_RATE_NOT_AFC` et `RATE_UNAVAILABLE` sur les seules lignes `afc`
      nouvelles ou modifiées (AC-4, 4, A17) ; l'audit avant/après (`entry_snapshot_json`
      `:999`) porte `foreign` (AC-8) ;
+   - **changer le compte d'une ligne (U2, CR-5)** : la devise d'une ligne **suit son compte** — elle n'est verrouillée
+     qu'au compte (35-1 AC-4), jamais à la ligne, qui ne la stocke pas (T3). Au `PUT`, une ligne dont le compte change
+     se juge entièrement sur le **nouveau** compte, avec les mêmes contrôles que le `POST` : compte USD → compte EUR,
+     `foreign` en EUR (montant et cours neufs, 35-3b les réinitialise) → passe, la réponse porte `EUR` ; même ligne
+     annonçant encore `currency: "USD"` → `FX_CURRENCY_MISMATCH` ; compte en devise → compte CHF **avec** `foreign` →
+     `FX_ACCOUNT_IN_CHF`, **sans** `foreign` → passe (la ligne redevient CHF : `amount_currency`, `exchange_rate`,
+     `rate_source` à `NULL`) ; compte CHF → compte en devise sans `foreign` → `ACCOUNT_REQUIRES_CURRENCY` ; une ligne au
+     compte changé est **modifiée** au sens de l'AC-4 (4) : `afc`, elle est contrôlée contre le cours retenu de la
+     **nouvelle** devise ; et la règle d'une seule devise (AC-4, 2 bis, au `PUT`) s'applique : passer **toutes** les
+     lignes USD d'une écriture sur des comptes EUR passe (une devise dans le corps), en passer une seule laisse USD et
+     EUR → `FX_MULTIPLE_CURRENCIES`. La garde `laterFiscalYear` (AC-4, 2) voit le changement (compte comparé). Le compte
+     quitté perd son verrou de devise s'il ne porte plus aucune ligne (`currencyLocked` faux, 35-1 AC-4 : le verrou
+     se calcule sur l'existence d'une ligne). Tests au dépôt et à l'API de chacun de ces cas ;
    - une écriture qui porte une ligne `rate_source = 'revaluation'` **n'est pas modifiable** : `PUT` → 409
      `ENTRY_IS_FX_REVALUATION`. Sites : `DbError::EntryIsFxRevaluation` (variante propre, bras dans `errors.rs`), posée
      dans `update_in_tx` en **étape 3-bis** : juste après la garde d'écriture (étape 3) et **avant** la version
@@ -504,23 +527,25 @@ chacune (R7), l'écart de change dans la seconde, afin que mes comptes en devise
       la devise **du compte** (`null` sur une ligne CHF) ; `foreign()` d'une ligne à `amount_currency` posé sur un
       compte CHF (SQL brut) → `None` ; réponse d'une création portant la devise lue au verrou (AC-4, devise des lignes
       relues).
-- [ ] Tests de `FX_RATE_NOT_AFC` (D9, AC-4 4), au niveau du dépôt **et** de l'API, avec un cours AFC mensuel posé et un
-      cours saisi (`exchange_rate_overrides`) **différent** pour le même mois : (a) ligne `afc` au cours saisi →
-      `FX_RATE_NOT_AFC` (`expectedRate` = cours AFC) ; (b) ligne `afc` au cours AFC → **passe** (le cours saisi
-      n'entre pas dans le contrôle, dans les deux sens) ; (c) la même ligne en `manual` au cours saisi → passe ;
-      (d) mois sans cours AFC mais avec cours saisi : ligne `afc` → `404 RATE_UNAVAILABLE` (le cours saisi ne tient pas
-      lieu de cours AFC), ligne `manual` → passe ; (e) un cours journalier AFC ou saisi pour la date de l'écriture ne
-      change pas le résultat de (a) à (d) ; (f) **S6** : un cours AFC republié non adopté (`republished_rate` posé) → une
-      ligne `afc` au cours **republié** est refusée `FX_RATE_NOT_AFC` (`expectedRate` = cours en vigueur), une ligne `afc`
-      au cours en vigueur passe, le `PUT` d'une écriture `afc` passée à l'ancien cours passe ; (g) **après adoption**
-      (`republications/adopt`, 35-2 AC-5) : une ligne `afc` à l'ancien cours est refusée à la création ; l'écriture
-      passée **avant** l'adoption garde ses lignes (aucune réécriture) et son `PUT` du seul libellé, de lignes CHF ou
-      d'un projet passe, de même avec ses lignes envoyées dans un autre ordre ; son `PUT` qui modifie la ligne `afc`
-      (montant, compte, côté, ou date de l'écriture, vers un mois dont le cours est présent) ou en ajoute une à l'ancien cours → `FX_RATE_NOT_AFC`
-      (`expectedRate` = nouveau cours) ; la même ligne passée en `manual` à l'ancien cours passe ; une ligne `manual`
-      repassée `afc` à l'ancien cours → `FX_RATE_NOT_AFC` ; (h) **restauration** (table des cours vide) : `PUT` du seul
-      libellé d'une écriture `afc` → passe, sans lecture du cours ; `PUT` qui modifie sa ligne `afc` → `404
-      RATE_UNAVAILABLE`.
+- [ ] Tests de `FX_RATE_NOT_AFC` (D9, U1, AC-4 4), au niveau du dépôt **et** de l'API, contre les lignes
+      `exchange_rates` de la société (35-2) : (a) mois à ligne `afc` : ligne d'écriture `afc` au cours retenu → passe ;
+      à un autre cours → `FX_RATE_NOT_AFC` (`expectedRate` = cours retenu) ; (b) mois à ligne `manual` (cours saisi) :
+      ligne d'écriture `afc` au cours saisi → `FX_RATE_NOT_AFC` (`expectedRate` `null`), en `manual` → passe ; (c) mois
+      sans ligne de la société mais avec une valeur publiée dans `_kesh_fetched_exchange_rates` : ligne `afc` → `404
+      RATE_UNAVAILABLE` (la valeur publiée n'entre jamais dans le contrôle), ligne `manual` → passe ; (d) un cours
+      journalier (ligne `day`) pour la date de l'écriture ne change pas le résultat de (a) à (c) ; (e) **correction de
+      l'AFC non reprise** (valeur publiée changée, ligne `afc` de la société inchangée) : ligne `afc` au cours retenu →
+      passe ; à la valeur corrigée → `FX_RATE_NOT_AFC` (`expectedRate` = cours retenu) ; (f) **après reprise par ↑**
+      (`POST …/rates/reset`, 35-2 AC-5) : une ligne `afc` à l'ancien cours est refusée à la création ; l'écriture passée
+      **avant** la reprise garde ses lignes (aucune réécriture) et son `PUT` du seul libellé, de lignes CHF ou d'un projet
+      passe, de même avec ses lignes envoyées dans un autre ordre ; son `PUT` qui modifie la ligne `afc` (montant,
+      compte, côté, ou date de l'écriture, vers un mois à ligne `afc`) ou en ajoute une à l'ancien cours →
+      `FX_RATE_NOT_AFC` (`expectedRate` = nouveau cours) ; la même ligne passée en `manual` à l'ancien cours passe ; une
+      ligne `manual` repassée `afc` à l'ancien cours → `FX_RATE_NOT_AFC` ; (g) **deux sociétés** : un même mois retenu à
+      des cours différents (A à la valeur corrigée, B à l'ancienne) — chaque ligne `afc` est jugée contre le cours de
+      **sa** société ; (h) **restauration** : `.keshbackup` importé sur une installation neuve (table système vide) —
+      création d'une ligne `afc` au cours restauré → passe, sans aucune récupération ; `PUT` du seul libellé d'une
+      écriture `afc` → passe.
 - [ ] `kesh-core` (AC-2, AC-3) : `ForeignAmount`, `JournalEntryLineDraft.foreign`, ordre des contrôles, bornes et
       produit en entiers `i128` (**jamais** `Decimal::checked_mul`, AC-3) ; fonction publique du contrôle par ligne et
       fonction publique des bornes du cours seul (AC-3) ; fixture `crates/kesh-core/tests/fixtures/fx_rounding.json` et son test Rust ; tests de propriété
@@ -770,3 +795,14 @@ chacune (R7), l'écart de change dans la seconde, afin que mes comptes en devise
   résidus de T3 sur les six fiches, prémisses de code des lectures et écritures de lignes, ordre des refus, verrous et
   isolation, CSV/audit/MCP/sauvegarde, tests des AC modifiés. Non exercés : GET de la source journalière (aucune prémisse
   ici), i18n des quatre locales (aucune clé relue au code), manuels et E2E (35-3b), test de concurrence non exécuté.
+- 2026-11-14 — révision CR-5 (revue 3 de Beat U1–U6 ; Opus) : **U1** — `FX_RATE_NOT_AFC` (AC-4, 4) compare au cours
+  retenu par la société, la ligne `exchange_rates` `source = 'afc'` du mois, lue par `find_company_rate_in_tx` de
+  35-2 ; plus aucun `find_rate_in_tx` sur la table système pour ce contrôle (la dernière valeur publiée n'y entre
+  jamais) ; mois à ligne `manual` → ligne `afc` refusée, `expectedRate` `null` ; aucune ligne de la société →
+  `RATE_UNAVAILABLE` ; la restauration ne vide plus les cours (contrôle opérant dès l'import) ; « adoption » remplacée
+  par la reprise par ↑, par société ; tests (a)–(h) récrits, dont deux sociétés à cours différents et la restauration ;
+  liste close sous le nom `exchange_rates` (AC-1). **U2** — AC-7 : changer le compte d'une ligne au `PUT` — la devise
+  suit le compte (USD → EUR, devise → CHF, CHF → devise), ligne modifiée au sens d'A17, une seule devise par écriture,
+  verrou du compte quitté levé s'il n'a plus de ligne ; tests. **U5** — A3 (exemption de l'ouverture) noté approuvé ;
+  A17, A20, A21 déjà AC (AC-4, AC-6). **U6** — AC-3 : débit et crédit restent en devise principale. Aucune migration
+  ni route neuve. AC touchés : en-tête, AC-1, AC-3, AC-4, AC-7, Tâches. Fiche à revalider (cycle CR-5).

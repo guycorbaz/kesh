@@ -294,6 +294,32 @@ Prime sur tout ce qui précède là où il diverge. Beat approuve A2–A22, **sa
 - **U6 — Vocabulaire** : « débit et crédit restent en **devise principale** » (aujourd'hui CHF), jamais « en CHF » seul.
   La page de revue ajoute un **schéma des réglages** (société, exercice, compte).
 
+### CR-5 — amendements du registre et arbitrages (2026-11-14)
+
+- **C-35-1 amendé (U1)** : `exchange_rates` (applicative, par société, sauvegardée ; `rate`, `source`,
+  `acknowledged_rate`/`acknowledged_at`, `version`, `updated_by` NULL pour une copie ; UNIQUE (company_id, currency,
+  kind, rate_date)) et `_kesh_fetched_exchange_rates` (système ; PK (source, currency, kind, rate_date) ; dernière
+  valeur publiée, `first_fetched_at`, `fetched_at`, `value_changed_at` ; plus de `republished_*`). Copie automatique
+  en insertion seule (`copy_fetched_in_tx`, 35-2 AC-3 bis) ; cours effectif = ligne de la société
+  (`find_company_rate_in_tx`) ; R1 s'applique à `exchange_rates`.
+- **C-35-6 complété** : copie non auditée (`updated_by` NULL, nombre au détail de l'action déclenchante) ; les routes
+  mutantes de 35-2 sous `retry_on_deadlock`.
+- **C-35-9 complété** : `lookup` → `{ currency, kind, rateDate, effectiveRate, source, publishedRate, publishedUnit,
+  sourceDate }` ; `FX_RATE_NOT_AFC` contre la ligne `afc` de la société ; notices et acquittement par société.
+- **A11, A22 retirés** (U3, U4). Routes 35-2 en deltas : +5 routes, +5 tracées, total +6.
+- **Arbitrages de l'orchestrateur sur les questions de la révision CR-5** (soumis à Beat) :
+  - A23 — tant que la seconde option de U3 est masquée, le ↑ s'applique **directement** (sans dialogue) ; le dialogue
+    n'apparaît que lorsque l'option « toutes les sociétés » devient disponible ; le ↑ d'un cours `manual` n'a pas de
+    dialogue ;
+  - A24 — la copie dans `exchange_rates` ne porte que sur les **devises des comptes de la société** (pas les 73
+    devises) ; donner une devise à un compte déclenche la copie des cours déjà récupérés pour cette devise ;
+  - A25 — `applyToNextOpening` absent de la requête = `false` ; l'écran l'envoie coché par défaut ;
+  - A26 — `value_changed_at` est gardée (affiche « AFC corrigé le … ») ;
+  - A27 — désactiver le multi-devises ne vide pas `exchange_rates` ;
+  - A28 — `source` n'a **pas** de CHECK d'énumération (format seul ; valeurs contrôlées par le code), pour qu'une
+    source ajoutée plus tard (`ecb`) ne demande pas de migration breaking (P1) ;
+  - A29 — 35-4 : « totaux en devise principale », non « en CHF ».
+
 ## Source des cours — établie le 2026-11-14
 
 - Page ESTV *MWST Monatsmittelkurse* : « XML-File » → `https://www.backend-rates.bazg.admin.ch/api/xmlavgmonth`.

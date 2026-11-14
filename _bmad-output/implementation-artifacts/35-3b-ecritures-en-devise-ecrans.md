@@ -12,7 +12,13 @@ l'assistant TVA achat calcule la TVA sur le montant en devise et passe la ligne 
 (CR-4), qui prime sur tout ce qui précède : **T3** — la ligne ne stocke pas de devise (35-3a AC-1) : `currency` se lit
 sur le compte, facultatif à l'envoi (AC-1, AC-2, AC-3) ; **T4** — cours d'ouverture proposé = cours de **clôture**
 de l'exercice précédent : veille de l'ouverture (genre `day`) ou cours mensuel du **dernier mois de l'exercice
-précédent** (genre `month`) (AC-1).*
+précédent** (genre `month`) (AC-1). Révisée en dernier pour la revue 3 de Beat (CR-5), qui prime sur tout : **U1** — le
+cours proposé est le **cours retenu par la société** (`exchange_rates` de 35-2 : `effectiveRate` et `source` de
+`lookup` ; ses champs `afcRate` et `overridden` n'existent plus, `afcRate` devient une valeur dérivée du formulaire,
+AC-2), et les indicateurs se lisent sur `source` (AC-1,
+AC-2, AC-5, AC-6) ; S6 tel qu'écrit (« adoption ») devient la reprise par ↑ d'un cours AFC corrigé, par société ;
+**U2** — changer le compte d'une ligne réinitialise montant et cours, vers un compte CHF retire `foreign` (AC-2) ;
+**U5** — A8, A12, A13, A14 approuvés ; **U6** — débit et crédit restent en devise principale (AC-1, AC-2).*
 
 ## Story
 
@@ -34,7 +40,8 @@ devise au cours d'ouverture choisi pour l'exercice (R6), afin de tenir mes livre
      `String` analysés par la même fonction, `currency` facultatif — T3 : absent, la ligne prend la devise du compte ;
      présent, il doit l'égaler, `FX_CURRENCY_MISMATCH` ; jamais stocké ; les deux grilles l'envoient toujours, comme le
      formulaire, AC-2 —, d'où un **400** et non le 422 d'axum pour `rateSource: "revaluation"`,
-     statut testé sur les deux routes) ; `debit`/`credit` restent les montants **CHF, fournis par le client et
+     statut testé sur les deux routes) ; `debit`/`credit` restent les montants en **devise principale** (aujourd'hui
+     **CHF** ; U6), **fournis par le client et
      vérifiés** par la règle de 35-3a (la route ne calcule rien ; `FX_AMOUNT_MISMATCH` sinon). `rateSource`
      `revaluation` refusé ; l'écran envoie toujours `manual` (cf. *Cours proposé*) ; l'API admet `afc`, alors contrôlé
      par `FX_RATE_NOT_AFC` de 35-3a contre le mois de la date retenue. Le sens est celui de la colonne (`debit` ou
@@ -67,8 +74,9 @@ devise au cours d'ouverture choisi pour l'exercice (R6), afin de tenir mes livre
      `CompletableAccount` exposent `currency` ; la grille principale la lit sur `AccountResponse`.
    - **Cours proposé** (R6, CR-2 — remplace « mois précédent » de CR-1 ; **T4, CR-4** : le cours d'ouverture est le
      cours de **clôture** de l'exercice précédent, pour que les valeurs CHF concordent d'un exercice à l'autre ; cette
-     puce est récrite en conséquence pour le genre `month`) : cours **effectif** (D9 : cours saisi par la
-     société s'il existe, sinon cours AFC ; champ `effectiveRate` de `lookup`, 35-2 AC-5) du **genre d'ouverture de
+     puce est récrite en conséquence pour le genre `month`) : cours **effectif** (U1, CR-5 : le **cours retenu par la
+     société**, ligne `exchange_rates` — copie d'une valeur publiée (`source: "afc"`) ou cours saisi (`source:
+     "manual"`) ; champs `effectiveRate` et `source` de `lookup`, 35-2 AC-5) du **genre d'ouverture de
      l'exercice** de l'écriture d'ouverture (`openingRateKind` du premier exercice, 35-1 AC-1, réglé à l'écran *Cours
      de change*, 35-2 AC-6 ; lu sur `GET /fiscal-years`) : genre `day` (défaut) → **cours journalier de la veille de
      l'ouverture** (`lookup` `kind=day`, `date` = `start_date` − 1 jour : le 31.12 pour un exercice civil, le 30.06
@@ -98,8 +106,8 @@ devise au cours d'ouverture choisi pour l'exercice (R6), afin de tenir mes livre
      ligne `afc` au cours **mensuel** du mois de `entry_date`, à la création **et** au `PUT` pour une ligne nouvelle ou
      modifiée (arbitrage A17) — un cours journalier, ou d'un mois que la date recalculée du complément a quitté, y
      serait refusé dès la création, et toute ligne retouchée de l'écriture d'ouverture le serait aussi. L'écran affiche la provenance (« proposé : cours journalier du JJ.MM.AAAA » ou « proposé : AFC
-     <mois> », ou « cours saisi » quand `overridden` et `effectiveRate` ≠ `afcRate` — un cours saisi égal au cours AFC
-     s'affiche comme le cours AFC, comme au formulaire, AC-2) ; le Change Log de la story le dit. Le genre `day`
+     <mois> », ou « cours saisi » quand `source = "manual"` — U1 : la provenance se lit sur `source`, sans
+     comparaison de valeurs, comme au formulaire, AC-2) ; le Change Log de la story le dit. Le genre `day`
      (défaut) propose le cours de clôture de l'exercice antérieur, celui de sa réévaluation (35-5) : un solde repris d'un
      bilan réévalué tombe donc juste ; sinon il se saisit au CHF (« cours OU CHF » ci-dessous), ce qui reprend exactement
      le CHF de clôture. Sur `404 RATE_UNAVAILABLE` du `lookup`, même repli qu'à l'AC-2 (un `POST /exchange-rates/fetch`,
@@ -122,7 +130,7 @@ devise au cours d'ouverture choisi pour l'exercice (R6), afin de tenir mes livre
      jusqu'à ce que ce soit le cas (borné : si aucun cours à 10 décimales ne convient, message, saisie refusée). Sert à
      reprendre exactement le CHF du bilan de clôture précédent ou le CHF réel d'une conversion ; `rate_source = manual`.
    - **Le serveur ne fait aucun `lookup`** (la résolution du cours est faite à l'écran, avant l'appel) et ne lit
-     `_kesh_exchange_rates` **avant aucun verrou** : `create_opening_complement_in_tx` exige que la transaction n'ait
+     `exchange_rates` (35-2, U1) **avant aucun verrou** : `create_opening_complement_in_tx` exige que la transaction n'ait
      fait que des lectures verrouillantes avant ses verrous — AC-10 de la 34-2. Le seul accès à la table est celui du
      contrôle `FX_RATE_NOT_AFC` de 35-3a, pour une ligne `afc` venue de l'API, dans `create_in_tx_inner`, après les
      verrous ; le contrôle de devise de 35-3a AC-4 y reste aussi.
@@ -157,7 +165,7 @@ devise au cours d'ouverture choisi pour l'exercice (R6), afin de tenir mes livre
    - **Sens.** Une ligne en devise se saisit dans la colonne **Débit ou Crédit en montant en devise** (le sens est
      celui de la colonne) ; le CHF est calculé (`round(montant × cours, 2)`, `Big.roundHalfUp`), affiché en lecture
      seule sous le champ, et alimente `computeBalance` et la ligne d'écart. `debit`/`credit` du payload restent les
-     montants CHF, `foreign.amount` le montant en devise. `LineDraft` (`form-helpers.ts` :13) gagne
+     montants en devise principale (aujourd'hui CHF ; U6), `foreign.amount` le montant en devise. `LineDraft` (`form-helpers.ts` :13) gagne
      `foreign?: { currency, side: 'debit' | 'credit', amount, rate, rateSource }` (absent = ligne CHF ; T3, CR-4 :
      `currency` du brouillon est **la devise du compte** de la ligne, `account.currency` lue sur `AccountResponse` au
      choix du compte — jamais saisie —, et `lineResponseToDraft` la reprend de `foreign.currency` de la réponse, elle
@@ -175,13 +183,25 @@ devise au cours d'ouverture choisi pour l'exercice (R6), afin de tenir mes livre
      un compte dont la devise a changé depuis le chargement (`FX_CURRENCY_MISMATCH`, ci-dessous) ; le type de la
      **réponse** porte `currency: string` (toujours présent dans `foreign`). Vitest : le corps envoyé porte la devise
      du compte, y compris pour les lignes que produisent l'assistant TVA et l'assistant *Conversion* (leur Vitest).
-     Changer le compte d'une ligne : CHF → devise, champs initialisés ; devise → CHF, `foreign` effacé ;
-     USD → EUR, cours réinitialisé.
+     **Changer le compte d'une ligne (U2, CR-5)** — la devise de la ligne **suit le compte** (elle n'est verrouillée
+     qu'au compte, 35-1 AC-4 ; le serveur juge la ligne sur le nouveau compte, 35-3a AC-7) : CHF → devise, champs en
+     devise initialisés (montant vide, cours proposé par `lookup` de la nouvelle devise) ; devise → CHF, `foreign`
+     **retiré** (la ligne redevient une ligne CHF, montant CHF vide) ; devise → **autre** devise (USD → EUR) :
+     **montant et cours réinitialisés** (montant en devise vide, cours reproposé par `lookup` de la nouvelle devise,
+     `rateProposed` vrai, CHF recalculé à vide) — jamais un montant USD gardé sous l'étiquette EUR ; devise → même devise
+     (deux comptes USD) : montant et cours gardés, cours reproposé seulement si `rateProposed`. Le changement de compte
+     compte comme une **retouche** (indicateur de l'édition, ci-dessous : la provenance relue n'est plus conservée).
+     Vitest de chacun des quatre cas, dont : USD → EUR en édition d'une ligne `afc` relue → montant vide, cours EUR
+     proposé, corps envoyé en EUR ; USD → CHF → aucune clé `foreign` dans le corps.
    - **Champs** : *Montant (USD)*, *Cours* (prérempli par le **cours effectif** que rend `lookup` pour le mois de la
-     date, `effectiveRate` ; indicateur « AFC », « cours saisi » (cours de la société, D9) ou « manuel » ; modifié à
-     la main → `manual`), *CHF* ; **provenance envoyée** (D9) : `rateSource = 'afc'` si le cours de la ligne **égale**
-     `afcRate` (non `null`) **du mois de la date** (`afcMonth`, puce suivante), comparaison en valeur (`Big.eq`, non en graphie), `manual` sinon — un cours saisi par la
-     société qui diffère du cours AFC, ou un mois sans cours AFC, part donc `manual` ; aucune autre valeur. Comme à
+     date, `effectiveRate` — le cours retenu par la société, U1 ; indicateur « AFC » (`source: "afc"`), « cours saisi »
+     (`source: "manual"`, cours de la société, D9) ou « manuel » (retouché à la main) ; modifié à la main → `manual`),
+     *CHF* ; **provenance envoyée** (D9, U1) : on note **`afcRate`** l'`effectiveRate` d'un `lookup` dont `source`
+     vaut `"afc"` (`null` si `source` vaut `"manual"`, ou sans cours) — c'est exactement le cours auquel le serveur
+     compare une ligne `afc` (35-3a AC-4, 4) ; `rateSource = 'afc'` si le cours de la ligne **égale** `afcRate` (non
+     `null`) **du mois de la date** (`afcMonth`, puce suivante), comparaison en valeur (`Big.eq`, non en graphie),
+     `manual` sinon — un cours saisi par la société, ou un mois sans cours `afc` retenu, part donc `manual` ; la
+     dernière valeur publiée (`publishedRate` de `lookup`) n'entre jamais dans ce choix ; aucune autre valeur. Comme à
      l'AC-1, **soit le cours soit le CHF** se saisit à la
      main (CHF saisi → cours = CHF ÷ montant à 10 décimales, vérification `round(montant × cours, 2) = CHF`, ajustement
      au dernier chiffre) ; changer la date repropose le cours effectif des lignes dont le cours n'a pas été modifié à
@@ -204,21 +224,22 @@ devise au cours d'ouverture choisi pour l'exercice (R6), afin de tenir mes livre
      quoi `afcRate`, inconnu, ferait partir `manual` un cours retapé égal à l'AFC. État porté par `LineDraft.foreign` :
      `loadedRateSource` (provenance relue, posée par `lineResponseToDraft`, absente pour une ligne neuve) et un
      indicateur de retouche (cours, date ou compte), remis à faux au chargement.
-   - **Cours AFC sous le champ** (D9) : quand le `lookup` rend un `afcRate` qui diffère du cours de la ligne, **pour le
-     mois de la date courante** (`afcMonth` égal, aucun `lookup` de ce mois en cours — jamais le cours AFC d'un mois
-     quitté), le formulaire
-     affiche « AFC : <cours> » et un bouton **↑** (« Reprendre le cours AFC ») qui remet **la ligne** au cours AFC
-     (`rateSource = 'afc'`, ligne proposée : un changement de date ultérieur la repropose au cours effectif du nouveau
-     mois, comme toute ligne proposée) — action locale du formulaire, **sans** `DELETE` du cours saisi, qui se
-     retire à l'écran *Cours de change* (35-2 AC-6). Un cours saisi égal au cours AFC : indicateur « AFC »
-     (provenance `afc`), pas de ↑.
+   - **Cours de la société sous le champ** (D9, U1) : quand le `lookup` **du mois de la date courante** (`afcMonth`
+     égal, aucun `lookup` de ce mois en cours — jamais le cours d'un mois quitté) rend un `effectiveRate` qui diffère du
+     cours de la ligne, le formulaire affiche « AFC : <cours> » (`source: "afc"`) ou « Cours saisi : <cours> »
+     (`source: "manual"`) et un bouton **↑** (« Reprendre le cours de la société ») qui remet **la ligne** à ce cours
+     (`rateSource` = `afc` si `source` vaut `"afc"`, `manual` sinon ; ligne proposée : un changement de date ultérieur
+     la repropose au cours effectif du nouveau mois, comme toute ligne proposée) — action locale du formulaire ; il ne
+     touche **jamais** la table des cours de la société (le ↑ de cette table, qui reprend une valeur publiée, vit à
+     l'écran *Cours de change*, 35-2 AC-6). Ligne au cours de la société : indicateur « AFC » ou « cours saisi », pas
+     de ↑.
    - **Appels `lookup`** : mémoïsation par `(devise, mois)` par formulaire, **résultats négatifs compris** ; appel
      seulement pour une date valide dans `dateBounds` et après débounce (`debounce.ts`) ; jeton de requête pour ignorer
      une réponse périmée ; si le nouveau mois n'a pas de cours, le cours **proposé** précédent est **effacé** (jamais
      gardé sous l'étiquette `afc` ni comme proposition) ; en édition, aucune reproposition au montage, seulement au
      changement de date et pour les lignes proposées (`rateProposed`). `GET /lookup` est **en lecture seule** (35-2) et
-     ne rend 404 que s'il n'y a ni cours saisi ni cours AFC (un cours saisi seul rend 200, `afcRate: null`, sans
-     `POST /fetch`) : sur `404 RATE_UNAVAILABLE`, l'écran appelle **une
+     ne rend 404 que si la société n'a **aucune** ligne `exchange_rates` pour ce mois (un cours saisi seul rend 200,
+     `source: "manual"`, sans `POST /fetch`) : sur `404 RATE_UNAVAILABLE`, l'écran appelle **une
      fois** `POST /exchange-rates/fetch` pour ce mois — par la fonction d'API de 35-2 (seule entrée : sans bandeau
      dégradé sur 503, `timeoutMs` de 90 s, 35-2 AC-3 et AC-5), le mois tiré de `details.month` (`AAAA-MM-01`) ; les specs
      E2E pilotent la source factice et s'appuient sur le vidage des tables par `/_test/seed` (35-2 AC-7) — (rôle Comptable ou Administrateur ; mois ≥ 2000-01 et ≤ **mois suivant** le mois courant, **à toute date**, 35-2 AC-5 et R4 amendé, non « ≤ mois courant » : le mois suivant peut être publié avant le 25), puis
@@ -242,7 +263,8 @@ devise au cours d'ouverture choisi pour l'exercice (R6), afin de tenir mes livre
    - **Refus du serveur propres aux devises** (`POST` et `PUT`) : `RATE_UNAVAILABLE {currency, month}` — p. ex. le
      `PUT` d'une écriture ancienne dont une ligne `afc` est **nouvelle ou modifiée** (compte, débit ou crédit, devise, montant en devise, cours,
      provenance — une ligne `manual` repassée `afc` au même cours est modifiée — ou date de l'écriture ; ni l'ordre des
-     lignes ni le projet), sur une installation restaurée dont la table des cours, système, est vide (35-2 AC-7) ; le
+     lignes ni le projet), pour un mois où la société n'a aucun cours retenu (p. ex. exercice passé en multi-devises
+     avant toute récupération ; depuis U1, une restauration ramène les cours de la société, 35-2 AC-7) ; le
      `PUT` du seul libellé, de lignes CHF ou d'un projet passe, ses lignes `afc` inchangées n'étant jamais recontrôlées (35-3a AC-4, arbitrage A17) — →
      l'écran propose « Récupérer le mois » (`POST /exchange-rates/fetch`, mêmes rôles et même
      règle que ci-dessus) puis le renvoi, ou le passage de la ligne en `manual` ; `FX_RATE_NOT_AFC` → le cours attendu
@@ -265,20 +287,22 @@ devise au cours d'ouverture choisi pour l'exercice (R6), afin de tenir mes livre
      (`form-helpers.ts` :108) classe ces refus en édition : `ENTRY_IS_FX_REVALUATION` → `stale` (la fiche se recharge,
      le motif s'affiche) ; `RATE_UNAVAILABLE`, `FX_*`, `ACCOUNT_REQUIRES_CURRENCY`, `MULTI_CURRENCY_DISABLED` (réglage retiré entre le chargement et l'envoi) → `stay` (le formulaire reste
      ouvert) ; sinon ils tomberaient en `other`. Test par code. Un `FX_RATE_NOT_AFC` sur une ligne au cours saisi
-     de la société ne devrait pas se produire (elle part `manual`) : s'il survient, même traitement. **Après une adoption**
-     (cours AFC republié **adopté**, 35-2 AC-5, S6), il survient aussi au `PUT` d'une écriture ancienne, mais **pour
+     de la société ne devrait pas se produire (elle part `manual`) : s'il survient, même traitement. **Après une
+     reprise** (cours AFC corrigé **repris par ↑** à l'écran *Cours de change*, pour cette société, 35-2 AC-5 et AC-6,
+     U1, U3), il survient aussi au `PUT` d'une écriture ancienne, mais **pour
      ses seules lignes `afc` nouvelles ou modifiées** (35-3a AC-4, arbitrage A17 : une ligne inchangée n'est jamais
      recontrôlée, si bien que le `PUT` du seul libellé passe) — typiquement une ligne dont seul le **montant** a été
      corrigé, qui garde sa provenance relue `afc` sans `lookup` (*Mois du cours AFC comparé*) ; une ligne dont la
-     date ou le cours a changé a, elle, relu le cours en vigueur et part `manual` s'il diffère. Pour ces lignes, le
+     date ou le cours a changé a, elle, relu le cours retenu par la société et part `manual` s'il diffère. Pour ces lignes, le
      refus propose **deux** actions, « Reprendre le cours attendu » (`details.expectedRate`, `afc`, le CHF change) et
      « Garder mon cours » (la ligne passe en `manual` au cours qu'elle porte, son CHF n'est pas recalculé) ; aucune
      action sur les autres lignes. Vitest des deux actions, et Vitest d'une édition du seul libellé d'une écriture `afc`
-     (corps aux lignes inchangées, provenance relue, aucun `lookup`). **S6, CR-3** : l'écran de saisie n'affiche **ni** les
-     valeurs republiées **ni** l'avertissement de connexion — le cours proposé et l'« AFC : … » sous le champ sont ceux
-     du cours **en vigueur** que rend `lookup` (forme inchangée) ; le rouge, l'adoption et l'acquittement vivent à
-     l'écran *Cours de change* et au bandeau de 35-2 (AC-6).
-   - **Ligne d'écart** (R8) : écriture déséquilibrée en CHF avec au moins une ligne en devise → bouton « Ajouter la
+     (corps aux lignes inchangées, provenance relue, aucun `lookup`). **U1, CR-5 (remplace S6 de CR-3)** : l'écran de
+     saisie n'affiche **ni** les corrections de l'AFC **ni** l'avertissement de connexion — le cours proposé et la
+     mention sous le champ sont ceux du **cours retenu par la société** que rend `lookup` (`effectiveRate`, `source`) ;
+     `publishedRate` de `lookup` n'est pas affiché ici ; le rouge « AFC corrigé », le ↑ et son dialogue, et
+     l'acquittement vivent à l'écran *Cours de change* et au bandeau de 35-2 (AC-6).
+   - **Ligne d'écart** (R8) : écriture déséquilibrée en devise principale (aujourd'hui CHF) avec au moins une ligne en devise → bouton « Ajouter la
      différence de change », qui **ajoute une ligne à l'écriture en cours** — il ne crée **aucune** écriture et
      n'envoie rien : une ligne CHF sur le compte de gains (écart au crédit) ou de pertes (au débit) du **compte en
      devise concerné** — S2, CR-3 : `fxAccountsFor(compte, société)` (35-1 AC-4 bis), soit ses comptes **propres**, soit
@@ -286,8 +310,8 @@ devise au cours d'ouverture choisi pour l'exercice (R6), afin de tenir mes livre
      écriture ne porte qu'une devise, R7, mais peut toucher plusieurs comptes de cette devise, p. ex. PayPal USD et
      ventes USD) : le premier compte en devise **de bilan** (`Asset`/`Liability`) dans l'ordre des lignes, sinon le
      premier compte en devise ; si les comptes en devise de l'écriture ne résolvent pas tous la même paire, la ligne
-     est posée sur celle du compte retenu et un avis nomme ce compte (le compte de la ligne reste modifiable) — règle
-     de l'orchestrateur, à confirmer par Beat ; au-delà de n × 0.005 CHF (n = nombre de lignes en
+     est posée sur celle du compte retenu et un avis nomme ce compte (le compte de la ligne reste modifiable) —
+     arbitrage A12, approuvé par Beat (CR-5) ; au-delà de n × 0.005 CHF (n = nombre de lignes en
      devise, calculé en `Big`), le texte précise qu'il ne s'agit pas d'un arrondi ; rien n'est ajouté sans clic
      (C-35-4). Libellé accessible et aide du bouton : « Ajouter une ligne de différence de change ». Vitest : un clic
      ajoute exactement une ligne et aucun appel réseau.
@@ -322,8 +346,11 @@ devise au cours d'ouverture choisi pour l'exercice (R6), afin de tenir mes livre
      Big.roundHalfUp)` **explicite** (pas `Big.RM` global), même résultat que le serveur (`MidpointAwayFromZero`) ;
      Vitest lit la fixture de vecteurs **partagée** `crates/kesh-core/tests/fixtures/fx_rounding.json` fournie par 35-3a
      (dont `x.xx5`, cours à 10 décimales, 15 chiffres, hors bornes).
-   - **Tests Vitest de la provenance** (D9) : cours saisi ≠ AFC → `manual` et ligne proposée ; cours saisi = AFC →
-     `afc` ; mois sans cours AFC (`afcRate: null`) → `manual` ; cours retapé égal à l'AFC → `afc` ; date changée vers un
+   - **Tests Vitest de la provenance** (D9, U1) : `lookup` `source: "manual"` → ligne proposée et `manual`, même si
+     son cours égale `publishedRate` ; `source: "afc"` → `afc` ; `lookup` 404 ou `source: "manual"` (`afcRate` dérivé
+     `null`) puis cours retapé → `manual` ; cours retapé égal à l'`effectiveRate` d'une ligne `afc` de la société →
+     `afc` ; `publishedRate` différent de `effectiveRate` (correction non reprise) : cours retapé égal à `publishedRate`
+     → `manual` ; date changée vers un
      mois dont l'AFC diffère, ligne retouchée au cours de l'ancien mois → `manual` (`afcMonth`) ; reproposition des
      seules lignes proposées ; édition non touchée → provenance relue conservée, sans `lookup` au montage ; édition,
      ligne `afc` dont seul le montant change → reste `afc`, sans `lookup` ; édition, cours retapé égal à l'AFC → `lookup`
@@ -559,9 +586,11 @@ devise au cours d'ouverture choisi pour l'exercice (R6), afin de tenir mes livre
    l'écran, on vérifie que le sélecteur ne propose pas le compte de l'autre devise, formulaire sans champs en devise dans un exercice mono-devise (R3), saisie du CHF au
    lieu du cours, soldes d'ouverture d'un compte USD au cours journalier de la veille de l'ouverture (genre `day`, R6), puis, l'exercice passé en genre `month` par `PUT /fiscal-years/{id}/rate-kinds` (35-2) et la page rechargée, au cours mensuel du dernier mois de l'exercice précédent (T4 ; l'exercice du seed `with-company` s'ouvre le 01.01.2020, `crates/kesh-db/src/test_fixtures.rs:118-119` : veille 31.12.2019, mois décembre 2019 ; ce jour et ce mois servis par la source factice) — les deux cours se vérifient **au préremplissage**, l'ouverture ne s'enregistre qu'après le passage en `month` : enregistrée en genre `day`, elle ferait passer la page au complément, dont le cours est celui du mois de sa propre date (AC-1) (l'E2E repart d'une société vierge par `seedTestState('with-company')`,
    précédent `opening-balances.spec.ts:21, :80` : l'ouverture exige une société sans écriture, `ALREADY_HAS_ENTRIES`),
-   mono-devise inchangé ; **cours saisi par la société** (D9) : un cours posé par `PUT /exchange-rates/overrides`
-   pour le mois est proposé, affiché « cours saisi », et la ligne part `rateSource: "manual"` (relue telle) ; le même
-   cours égal au cours AFC part `afc` ;
+   mono-devise inchangé ; **cours saisi par la société** (D9) : un cours posé par `PUT /exchange-rates/rates` (35-2,
+   `source: "manual"`) pour le mois est proposé, affiché « cours saisi », et la ligne part `rateSource: "manual"`
+   (relue telle) ; après ↑ à l'écran *Cours de change* (`POST /exchange-rates/rates/reset`, la ligne de la société
+   repasse `afc`), le cours proposé part `afc` ; **changement de compte (U2)** : une ligne USD passée sur un compte EUR
+   repart montant vide et cours EUR proposé, l'écriture s'enregistre en EUR ;
    préalables posés par l'API (Administrateur) : mode multi-devises activé **avec les comptes de gain, de perte et de
       conversion désignés** (35-1 AC-3, sans quoi le bouton d'écart n'ajoute rien et l'assistant est désactivé),
       exercices passés en multi-devises par l'activation ; **S2/S5** : un compte USD à comptes propres (gains et pertes
@@ -577,18 +606,20 @@ devise au cours d'ouverture choisi pour l'exercice (R6), afin de tenir mes livre
       (`FISCAL_YEAR_HAS_FOREIGN_BALANCES`, 35-1) ; aucun scénario ne mêle les deux états,
       compte USD (et EUR) créé, cours des mois et jours utiles servis par la source factice — dont la **veille** de
       l'ouverture ; un scénario au moins part
-      d'une table des cours vide et exerce le repli de l'écran (`404 RATE_UNAVAILABLE` → `POST /exchange-rates/fetch`
-      → relecture), les autres récupèrent leurs mois par `POST /exchange-rates/fetch` en préalable (`lookup` ne lit que
-      la table) ;
+      d'une table des cours vide et exerce le repli de l'écran (`404 RATE_UNAVAILABLE` → `POST /exchange-rates/fetch`,
+      qui copie le cours publié dans les cours de la société, 35-2 AC-3 bis → relecture), les autres récupèrent leurs
+      mois par `POST /exchange-rates/fetch` en préalable (`lookup` ne lit que les cours de la société) ;
       captures d'écran des états (thème clair) ; liste des échecs attendus de `docs/testing.md` recontrôlée.
 6. **AC-6 — Manuel utilisateur** : saisir une écriture en devise, cours proposé (cours mensuel AFC — moyenne du 25 au
    24 publiée d'avance pour le mois, R4, jamais « cours moyen du mois » — ou cours saisi par la société, et la
-   provenance enregistrée qui en découle ; « AFC : <cours> » sous le champ et le bouton ↑, qui ne retire pas le cours
-   saisi de la société) et manuel (cours ou CHF), une seule devise par écriture (R7) et la ligne de différence de
+   provenance enregistrée qui en découle ; « AFC : <cours> » ou « Cours saisi : <cours> » sous le champ et le bouton
+   ↑, qui remet la ligne au cours de la société sans toucher à la table des cours) et manuel (cours ou CHF), changer
+   le compte d'une ligne (la devise suit le compte : montant et cours repartent à vide, U2), une seule devise par
+   écriture (R7) et la ligne de différence de
    change ajoutée par le bouton (R8) — sur les comptes propres du compte en devise s'il en a (S2) —, l'achat en devise
    avec TVA par l'assistant (S5 : TVA calculée en devise, ligne d'impôt préalable en CHF au même cours, centime
-   d'arrondi éventuel), le cours affiché toujours celui **en vigueur** (une republication de l'AFC se règle à l'écran
-   *Cours de change*, S6 ; après une adoption, la correction d'une ligne ancienne au cours AFC remplacé propose
+   d'arrondi éventuel), le cours affiché toujours celui **retenu par la société** (une correction de l'AFC se règle à
+   l'écran *Cours de change*, U1, U3 ; après la reprise par ↑, la correction d'une ligne ancienne au cours remplacé propose
    « Reprendre le cours attendu » ou « Garder mon cours », sans toucher au reste de l'écriture, A17), conversion EUR → USD pas à pas par l'assistant et le compte de conversion (R7),
    exercice mono-devise (R3), soldes d'ouverture en devise (« solde repris au cours de clôture » : cours journalier de
    la veille de l'ouverture, ou cours mensuel du dernier mois de l'exercice précédent, selon le choix de l'exercice,
@@ -615,8 +646,13 @@ devise au cours d'ouverture choisi pour l'exercice (R6), afin de tenir mes livre
 - [ ] E2E, captures, manuel, i18n, CHANGELOG (AC-5, AC-6).
 - [ ] CR-3 : ligne d'écart et assistant *Conversion* sur les comptes de différence du compte en devise (S2,
       `fxAccountsFor`) ; assistant TVA achat en devise (S5 : `vat-purchase.ts`, `chfFromForeign`, ligne CHF à zéro,
-      changement de date) ; `FX_RATE_NOT_AFC` après adoption, pour les seules lignes nouvelles ou
-      modifiées (S6, A17, « Garder mon cours ») ; E2E et manuel complétés.
+      changement de date) ; `FX_RATE_NOT_AFC` après la reprise par ↑ d'un cours corrigé (ex-« adoption », U1), pour
+      les seules lignes nouvelles ou modifiées (A17, « Garder mon cours ») ; E2E et manuel complétés.
+- [ ] CR-5 : U1 — `lookup` à `effectiveRate` + `source` (+ `publishedRate` non affiché) : type TS, `afcRate` dérivé
+      (`source === 'afc' ? effectiveRate : null`), indicateurs « AFC » / « cours saisi » sur `source`, ↑ sous le champ
+      vers le cours de la société, soldes d'ouverture (provenance affichée) ; U2 — changement de compte d'une ligne
+      (USD → EUR : montant et cours réinitialisés ; vers CHF : `foreign` retiré ; CHF → devise ; même devise) au
+      formulaire, Vitest et E2E ; manuel (AC-6).
 - [ ] CR-4 : T3 — `currency` facultatif des DTO d'ouverture, types TS (réponse `currency: string`, requête
       `currency?`), devise du compte dans `LineDraft`, envoi systématique par formulaire, grilles et assistants,
       messages `FX_CURRENCY_MISMATCH` / `FX_ACCOUNT_IN_CHF`, guide d'API ; T4 — cours d'ouverture de genre `month` au
@@ -879,3 +915,16 @@ devise au cours d'ouverture choisi pour l'exercice (R6), afin de tenir mes livre
   pas exigé ici, sans contradiction) ; renvoi 35-1 AC-11 (T1) ; enchaînement `day` puis `month` de l'E2E contre AC-1
   (complément au cours du mois de sa date) ; source factice au mois demandé (35-2 AC-3). Non exercés : code
   applicatif hors seed, 35-4/35-5, manuel, PDF.
+- 2026-11-14 — révision CR-5 (revue 3 de Beat U1–U6 ; Opus) : **U1** — cours proposé = cours retenu par la société
+  (`exchange_rates` de 35-2) : `lookup` rend `effectiveRate` et `source` (et `publishedRate`, non affiché ici) ; ses
+  `afcRate` et `overridden` disparaissent ; `afcRate` du formulaire devient une valeur dérivée (`effectiveRate` d'un
+  `lookup` `source: "afc"`), si bien que la règle de provenance (`afc` si égal, au mois de la date) et le contrôle
+  `FX_RATE_NOT_AFC` de 35-3a jugent contre la même valeur ; indicateurs « AFC » / « cours saisi » lus sur `source`
+  (formulaire et soldes d'ouverture) ; ↑ sous le champ vers le cours de la société, sans toucher la table ; 404 de
+  `lookup` = aucune ligne de la société (le `POST /fetch` copie) ; restauration : les cours de la société reviennent ;
+  « adoption » remplacée par la reprise par ↑, par société ; Vitest de provenance récrits ; E2E (`PUT
+  /exchange-rates/rates`, ↑) ; manuel. **U2** — changer le compte d'une ligne : CHF → devise (champs initialisés),
+  devise → CHF (`foreign` retiré), USD → EUR (montant et cours réinitialisés, cours EUR proposé), même devise (gardés) ;
+  compté comme retouche ; Vitest et E2E. **U5** — A12 noté approuvé ; A8, A13, A14, A21 déjà AC (AC-2, AC-2 bis).
+  **U6** — débit et crédit en devise principale (AC-1, AC-2, ligne d'écart). Aucune migration ni route neuve. AC
+  touchés : en-tête, AC-1, AC-2, AC-5, AC-6, Tâches. Fiche à revalider (cycle CR-5).
