@@ -55,6 +55,48 @@ dans les fiches ; l'issue et la PR s'ouvrent à la fin, une fois la recette fait
 - **Terminologie** (Beat) : les cours mensuels AFC ne sont **pas des moyennes** ; ils sont **fixés d'avance** pour le
   mois (publiés en début de mois). Les textes disent « cours mensuel AFC », jamais « cours moyen ».
 
+## Revue de Beat — CR-2 (2026-11-14, première revue de la page `epic-35-revue.html`)
+
+Réponses de Beat à la revue et aux quatre questions qui ont suivi ; elles **priment** sur D1–D10 et sur le registre
+là où elles divergent.
+
+- **R1 — Sauvegardes antérieures réimportables (exception).** Une sauvegarde d'une version antérieure à l'Epic 35 se
+  réimporte : elle est forcément mono-devise. L'import tolère l'**absence des seules tables et colonnes ajoutées par
+  l'Epic 35** (liste close, déclarée dans le code), traitées comme vides ou à leur défaut. Cela **rouvre la fenêtre
+  d'import** fermée par CR-1 (le registre de rejeu redevient tel quel).
+- **R2 — Récupération AFC ciblée.** Kesh ne récupère que les cours des **exercices en multi-devises** (R3).
+- **R3 — Mode par exercice.** Le réglage de la société est le **défaut** des exercices créés (l'exercice initial
+  compris). Chaque exercice peut être passé en mono-devise ou en multi-devises. Passer un exercice en mono-devise est
+  **refusé** tant qu'un compte en devise n'est pas à **0** (devise et CHF) au début de l'exercice ou porte une ligne
+  dans l'exercice. Dans un exercice mono-devise, les comptes en devise ne sont pas utilisables ; Kesh propose de les
+  **archiver**, après avertissement (API : confirmation explicite, `force`). Pas de conversion d'un compte en CHF.
+- **R4 — Calendrier de récupération.** Source ESTV (*MWST Monatsmittelkurse*, lue le 2026-11-14) : le cours du mois M
+  est la moyenne des cours journaliers du 25 de M−2 au 24 de M−1, **publié le 25 de M−1** (ou le jour ouvrable
+  suivant), applicable dès le 1er de M ; l'heure n'est pas publiée. Kesh vérifie toutes les 6 h **à partir du 25**
+  jusqu'à obtenir le mois suivant, puis s'arrête jusqu'au 25 suivant ; et au **démarrage** comme à la **connexion**
+  s'il manque un mois utile. Pas de boucle permanente toutes les 6 h.
+- **R5 — Données reprises filtrées.** Tout ce qui vient de la source est validé strictement (taille, structure,
+  refus de DOCTYPE et d'entités, codes, nombres, bornes, mois et dates), avec des tests de réponses hostiles.
+- **R6 — Écran des cours en tableau annuel.** Une ligne par devise, une colonne par mois **de l'exercice** (dans
+  l'ordre de l'exercice), plus **Ouverture** et **Clôture**. Chaque case : cours effectif modifiable ; dessous
+  « AFC ✓ » s'il est égal au cours AFC, sinon « AFC : 0.8846 » et ↑. Par exercice, deux choix : **cours d'ouverture**
+  (cours journalier de la veille de l'ouverture — défaut — ou cours mensuel du premier mois) et **cours de clôture**
+  (cours journalier de la date de clôture — défaut — ou cours mensuel du dernier mois). Testé pour des exercices
+  commençant le **1er juillet** et le **1er avril**.
+- **R7 — Conversion par un compte de transfert en CHF.** Une écriture ne porte de lignes que dans **une seule devise
+  étrangère** (plus des lignes CHF). Une conversion EUR → USD passe par un **compte de conversion** en CHF, désigné à
+  l'activation du multi-devises : écriture 1, EUR → compte de conversion ; écriture 2, compte de conversion → USD, avec
+  la **différence de change** dans l'écriture 2 pour que le compte de conversion revienne à 0 ; des lignes de frais
+  sont possibles (écritures à plusieurs lignes). Un assistant *Conversion* crée les deux écritures. Fondement :
+  aucune interdiction expresse trouvée dans le CO (957a impose la tenue en CHF) ; c'est la pratique fiduciaire et
+  l'avis du réviseur de Beat ; Kesh l'impose pour la traçabilité (chaque écriture se rapproche d'un seul relevé).
+- **R8 — « Ajouter la différence de change »** ajoute une **ligne** à l'écriture en cours ; il ne crée pas d'écriture.
+- **R9 — Réévaluation : une écriture par compte réévalué** (comme les livres 2024 : « Gain de change PAYPAL ONLINE USD
+  0.91193 »), passées ensemble dans une transaction ; le bouton dit « Passer les écritures ».
+- **R10 — Constante du début d'exercice.** L'assistant crée l'exercice initial au 1er janvier
+  (`routes/onboarding.rs:1045`) : la date devient une constante nommée, avec un commentaire « ne pas modifier sans … ».
+  Kesh accepte déjà des exercices à dates libres : rien d'autre à implémenter pour cela.
+
 ## Source des cours — établie le 2026-11-14
 
 - Page ESTV *MWST Monatsmittelkurse* : « XML-File » → `https://www.backend-rates.bazg.admin.ch/api/xmlavgmonth`.
