@@ -924,10 +924,12 @@ describe('InvoiceForm — prix unitaire ambigu (36-3b, #1171)', () => {
 		);
 	const totalFacture = (container: HTMLElement) =>
 		container.querySelector('[data-testid="invoice-lines-table"] tfoot')?.textContent ?? '';
+	/** Les prix de la dernière charge envoyée ; `[]` si aucune n'est partie (une assertion
+	 *  qui compare rougit alors en le disant, au lieu de lever). */
 	const prixEnvoyes = () =>
-		(updateInvoiceMock.mock.calls.at(-1)![1] as { lines: { unitPrice: string }[] }).lines.map(
-			(l) => l.unitPrice,
-		);
+		(
+			updateInvoiceMock.mock.calls.at(-1)?.[1] as { lines: { unitPrice: string }[] } | undefined
+		)?.lines.map((l) => l.unitPrice) ?? [];
 
 	async function taper(el: HTMLInputElement, value: string) {
 		await fireEvent.input(el, { target: { value } });
