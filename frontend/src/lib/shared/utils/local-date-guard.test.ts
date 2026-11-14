@@ -30,6 +30,20 @@
  * **Angle mort assumé** : un jour tiré de `Date.now()` sans construction de date
  * (`Intl.DateTimeFormat('sv-SE').format(Date.now())`) n'est pas relevé — aucun
  * aujourd'hui ; `Date.now()` seul sert aux suffixes d'unicité, par centaines.
+ *
+ * Revue P1 de la 35-5c (B3, B5, E4, E5) — **motifs étendus** : `new Date;` (sans
+ * parenthèses), `new globalThis.Date()`, `Date()` sans `new` (la date courante en texte),
+ * `.format()` sans argument (`Intl.DateTimeFormat(…).format()` formate maintenant) ; et,
+ * pour les specs, l'entrée apparie la **ligne entière** (`auditer(…, exact)`), si bien
+ * qu'une seconde lecture ajoutée à une ligne admise la fait rougir. **Angles morts restants,
+ * assumés** : un instant passé par une variable (`const n = Date.now(); … new Date(n)`),
+ * `new Date(...[])`, `new Date(+Date.now())`, un alias (`const D = Date; new D()`),
+ * `Reflect.construct(Date, [])` ; deux lectures sur une même ligne d'une ligne **non**
+ * admise ne donnent qu'un relevé (la ligne rougit quand même) ; et **le jour relu
+ * plusieurs fois dans une spec** (`todayInZurich()` appelé à deux endroits d'un test) n'est
+ * pas relevé — une spec qui franchit minuit à Zurich entre deux lectures mêle deux jours,
+ * comme le navigateur et le serveur, qui lisent aussi leur propre horloge : risque connu,
+ * non fermé ici.
  */
 import { describe, expect, it } from 'vitest';
 import { readFileSync, readdirSync } from 'node:fs';
@@ -113,12 +127,19 @@ function relever(sources: Map<string, string>): Releve[] {
 	return out;
 }
 
-/** Les écarts entre les relevés et l'allowlist ; vide si l'inventaire est clos. */
-function auditer(releves: Releve[], allowlist: Entree[]): string[] {
+/**
+ * Les écarts entre les relevés et l'allowlist ; vide si l'inventaire est clos. `exact` :
+ * l'entrée apparie la ligne entière (sans son indentation), non un extrait — sans quoi une
+ * seconde lecture ajoutée à une ligne admise passerait sous son entrée (revue P1 de la 35-5c,
+ * E4 : les specs, dont le relevé est d'un par ligne).
+ */
+function auditer(releves: Releve[], allowlist: Entree[], exact = false): string[] {
 	const erreurs: string[] = [];
 	const usages = new Map<Entree, Releve[]>(allowlist.map((e) => [e, []]));
+	const apparie = (r: Releve, e: Entree) =>
+		exact ? r.texte.trim() === e.fragment : r.texte.includes(e.fragment);
 	for (const r of releves) {
-		const entrees = allowlist.filter((e) => e.fichier === r.fichier && r.texte.includes(e.fragment));
+		const entrees = allowlist.filter((e) => e.fichier === r.fichier && apparie(r, e));
 		if (entrees.length === 0) {
 			erreurs.push(`relevé sans entrée : ${r.fichier}:${r.ligne} — ${r.texte.trim()}`);
 		} else if (entrees.length > 1) {
@@ -230,6 +251,12 @@ const MOTIFS_SPECS: RegExp[] = [
 	/new\s+Date\s*\(\s*\)/g,
 	/new\s+Date\s*\(\s*Date\s*\.\s*now/g,
 	/toISOString\s*\(\s*\)\s*\.\s*slice\s*\(\s*0\s*,\s*10\s*\)/g,
+	// Revue P1 de la 35-5c (E5, B3) : `new Date;`, `new globalThis.Date…`, `Date()` sans `new`
+	// (`globalThis.Date()` compris), `.format()` sans argument.
+	/new\s+(?:globalThis\s*\.\s*)?Date\b(?!\s*\()/g,
+	/new\s+globalThis\s*\.\s*Date\s*\(\s*\)/g,
+	/(?<![\w$])Date\s*\(\s*\)/g,
+	/\.\s*format\s*\(\s*\)/g,
 ];
 
 /**
@@ -292,7 +319,7 @@ describe('garde des dates du jour des specs E2E (#929, Story 35-5c)', () => {
 		const sources = lireSpecs();
 		expect(sources.size).toBeGreaterThan(100);
 		expect(sources.has('helpers/api-fixtures.ts')).toBe(true);
-		expect(auditer(releverSpecs(sources), ALLOWLIST_SPECS)).toEqual([]);
+		expect(auditer(releverSpecs(sources), ALLOWLIST_SPECS, true)).toEqual([]);
 		expect(sources.has('helpers/dates.ts')).toBe(true);
 	});
 
@@ -324,8 +351,38 @@ describe('garde des dates du jour des specs E2E (#929, Story 35-5c)', () => {
 			auditer(
 				r,
 				ALLOWLIST_SPECS.filter((e) => e.fichier === 'audit-log.spec.ts'),
+				true,
 			),
 		).toEqual([]);
+	});
+
+	it('sonde : une seconde lecture ajoutée à une ligne admise rougit (revue P1, E4)', () => {
+		const s = new Map([
+			[
+				'audit-log.spec.ts',
+				'\treturn new Date().toISOString().slice(0, 10); const u = new Date().getDate();',
+			],
+		]);
+		const une = ALLOWLIST_SPECS.filter((e) => e.fichier === 'audit-log.spec.ts');
+		expect(auditer(releverSpecs(s), une, true)).toEqual([
+			expect.stringContaining('relevé sans entrée : audit-log.spec.ts:1'),
+			expect.stringContaining('entrée orpheline : audit-log.spec.ts'),
+		]);
+		// Par extrait (l'appariement de `src`), la seconde lecture passait sous l'entrée.
+		expect(auditer(releverSpecs(s), une)).toEqual([]);
+	});
+
+	it('sonde : les constructions de « maintenant » des motifs étendus rougissent (revue P1, E5)', () => {
+		expect(releves('const d = new Date;')).toHaveLength(1);
+		expect(releves('const d = new Date\nconst e = 1;')).toHaveLength(1);
+		expect(releves('const d = new globalThis.Date();')).toHaveLength(1);
+		expect(releves('const s = Date();')).toHaveLength(1);
+		expect(releves('const s = globalThis.Date();')).toHaveLength(1);
+		expect(releves("const j = new Intl.DateTimeFormat('sv-SE').format();")).toHaveLength(1);
+		// Ni une méthode qui finit par `Date`, ni un format avec argument, ni un type.
+		expect(releves('const j = d.getDate(); const k = f.toDate();')).toEqual([]);
+		expect(releves("const j = new Intl.DateTimeFormat('sv-SE').format(d);")).toEqual([]);
+		expect(releves('let d: Date; const e = x instanceof Date;')).toEqual([]);
 	});
 
 	it('sonde : l’arithmétique sur un jour donné ne rougit pas', () => {

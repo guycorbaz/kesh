@@ -63,11 +63,6 @@ async function login(page: Page, username: string, password: string): Promise<vo
 	await expect(page).toHaveURL('/');
 }
 
-/** Le jour local de Zurich, `AAAA-MM-JJ`. */
-function todayZurich(): string {
-	return todayInZurich();
-}
-
 /** La veille de `day`, sauf un 1ᵉʳ janvier (alors `day` : l'exercice du seed est l'année). */
 function dayBefore(day: string): string {
 	if (day.endsWith('-01-01')) return day;
@@ -129,7 +124,7 @@ test('un Comptable saisit un relevé de trois lignes, le rapproche et le retrouv
 }) => {
 	const comptable = await createUser(page, 'Comptable');
 	await login(page, comptable, USER_PASSWORD);
-	const today = todayZurich();
+	const today = todayInZurich();
 	const contactId = await createContactWithAddressViaApi(page, `Saisie ${Date.now()}`);
 	const invoiceId = await createAndValidateInvoiceViaApi(page, contactId, today);
 	const bankAccountId = await wiredBankAccountViaApi(page, IBAN_A);
@@ -228,7 +223,7 @@ test('recette visuelle de la saisie d’un relevé (AC-25)', async ({ page }, te
 	await page.setViewportSize({ width: 1400, height: 1000 });
 	const comptable = await createUser(page, 'Comptable');
 	await login(page, comptable, USER_PASSWORD);
-	const today = todayZurich();
+	const today = todayInZurich();
 	const contactId = await createContactWithAddressViaApi(page, `Recette ${Date.now()}`);
 	const invoiceId = await createAndValidateInvoiceViaApi(page, contactId, today);
 	const compteB = await wiredBankAccountViaApi(page, IBAN_B);

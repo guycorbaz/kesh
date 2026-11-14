@@ -35,11 +35,6 @@ test.afterEach(async ({ page }) => {
 	await clearAuthStorage(page);
 });
 
-/** La date LOCALE (Zurich) — celle que l'écran écrit dans l'URL. */
-function todayZurich(): string {
-	return todayInZurich();
-}
-
 async function login(page: Page, username = 'admin', password = 'admin123') {
 	await page.goto('/login');
 	await page.fill('#username', username);
@@ -95,7 +90,7 @@ async function monter(page: Page, amount = uniqueAmount(), extra?: string): Prom
 		const ecrire = async (debitAcc: number, creditAcc: number, value: string, label: string) => {
 			const res = await ctx.post('/api/v1/journal-entries', {
 				data: {
-					entryDate: todayZurich(),
+					entryDate: todayInZurich(),
 					journal: 'OD',
 					description: label,
 					lines: [
@@ -151,7 +146,7 @@ test.describe('Postes ouverts', () => {
 					settlementType: 'internal_account',
 					accountId: caisse.id,
 					amount: '972.90',
-					settledOn: todayZurich(),
+					settledOn: todayInZurich(),
 					version: await invoiceVersionViaApi(ctx, invoiceId),
 				},
 			});
@@ -190,7 +185,7 @@ test.describe('Postes ouverts', () => {
 			m = await monter(page);
 			await page.goto(`/open-items?accountId=${m.accountId}`);
 			// La date du jour est écrite dans l'URL (remplacement) : un rechargement retombe sur la même vue.
-			await expect(page).toHaveURL(new RegExp(`asOf=${todayZurich()}`));
+			await expect(page).toHaveURL(new RegExp(`asOf=${todayInZurich()}`));
 			await expect(page.getByTestId(`open-item-row-${m.debitLine}`)).toBeVisible();
 			await expect(page.getByTestId(`open-item-row-${m.creditLine}`)).toBeVisible();
 
@@ -357,7 +352,7 @@ test.describe('Postes ouverts', () => {
 
 	test('(8) au Grand livre, la colonne porte le code, et « Postes ouverts de ce compte » ouvre l’écran à la fin de la période', async ({ page }) => {
 		await avecLettrage(page, async (m, code) => {
-			const year = todayZurich().slice(0, 4);
+			const year = todayInZurich().slice(0, 4);
 			const to = `${year}-12-31`;
 			await page.goto(`/reports?tab=general-ledger&from=${year}-01-01&to=${to}&accountId=${m.accountId}`);
 			const section = page.getByTestId(`ledger-section-${m.accountNumber}`);

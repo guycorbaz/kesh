@@ -15,6 +15,11 @@
 //!    sont nommés qu'aux endroits prévus — si bien que `main.rs` ne peut ni lire la variable ni
 //!    fixer l'horloge —, `HorlogeSysteme` n'est construit qu'à deux endroits, et aucun helper de
 //!    jour ne mémorise l'horloge.
+//! 3. **L'horloge réelle d'un test** (remédiation de la revue P1 de la 35-5c, B2/E6) : l'heure
+//!    réelle passée à `jour_suisse` ou à `HorlogeFixe` (`jour_suisse(Utc::now())`,
+//!    `HorlogeFixe(chrono::Utc::now())`) rend un jour juste mais **sourd à `KESH_TEST_INSTANT`**,
+//!    forme qu'aucune des deux familles ci-dessus ne voit. Liste close, à égalité stricte, sur le
+//!    texte entier sans ses lignes `//` (une forme coupée est vue).
 //!
 //! **Angle mort assumé** (inventaire) : un jour tiré d'une variable d'instant
 //! (`let n = Utc::now().naive_utc(); n.date()`) n'est pas relevé — `.date()` sur tout récepteur
@@ -24,7 +29,11 @@
 //! `SYSDATE()`, `DATE_FORMAT(NOW(), …)`, une comparaison `… < NOW()` ; la première qui
 //! apparaîtrait s'ajoute à `FORMES`. **Angle mort assumé** (durcissement) : un autre nom
 //! de variable d'environnement, lu en production et converti à la main en instant passé à une
-//! horloge écrite pour l'occasion ; la revue de `main.rs` et de `lib.rs` le voit.
+//! horloge écrite pour l'occasion ; la revue de `main.rs` et de `lib.rs` le voit. **Angle mort
+//! assumé** (horloge réelle d'un test) : l'instant passé par une variable
+//! (`let n = Utc::now(); jour_suisse(n)`), un alias (`use chrono::Utc as U;`,
+//! `use kesh_core::horloge::jour_suisse as js;`), une fonction ou une macro enveloppe,
+//! `SystemTime::now()` converti, une `impl Horloge` écrite pour l'occasion.
 
 use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
@@ -449,12 +458,68 @@ fn ecarts_memoire(sources: &[(String, String)]) -> Vec<String> {
     v
 }
 
+// ---------------------------------------------------------------------------
+// 3. L'horloge réelle d'un test
+// ---------------------------------------------------------------------------
+
+/// L'heure réelle (`Utc::now()`, chemin qualifié ou non) passée **directement** à `jour_suisse`
+/// ou à `HorlogeFixe`. Appliqué au texte entier sans ses lignes `//` : `\s` couvre les retours à
+/// la ligne, une forme coupée est vue. Portée : `crates/*/src` (production et `mod tests`) et
+/// `crates/*/tests` — en production, la forme contournerait aussi l'horloge de l'état.
+const HORLOGE_REELLE: &str = r"\b(jour_suisse|HorlogeFixe)\s*\(\s*(::\s*)?([A-Za-z_][A-Za-z0-9_]*\s*::\s*)*Utc\s*::\s*now\s*\(";
+
+/// La liste close des lectures admises, chacune justifiée par la ligne lue (revue P1 de la
+/// 35-5c, B2/E6 ; C-e355c-8).
+const HORLOGE_REELLE_ADMISES: &[Exemption] = &[
+    (
+        "kesh-db/src/repositories/journal_entries.rs",
+        1,
+        "35-5c (D1, C-e355c-1)",
+        "`setup()` du `mod tests` : `let today = kesh_core::horloge::jour_suisse(chrono::Utc::now());` \
+         — le binaire `lib` de `kesh-db` n'a pas d'horloge de test ; le jour est lu une fois et \
+         réemployé par les 50 appelants",
+    ),
+    (
+        "kesh-api/src/middleware/auth.rs",
+        1,
+        "35-5a0",
+        "`test_state()` du `mod tests` : `horloge: …HorlogeFixe(chrono::Utc::now())` — les tests \
+         du middleware d'authentification ne datent rien au jour ; un `mod tests` de `src` ne lit \
+         pas la variable d'instant (commentaire de la ligne précédente)",
+    ),
+];
+
+fn ecarts_horloge_reelle(sources: &[(String, String)]) -> Vec<String> {
+    let motif = re(HORLOGE_REELLE);
+    let trouve: BTreeMap<String, usize> = sources
+        .iter()
+        .map(|(f, t)| (f.clone(), motif.find_iter(&sans_commentaires(t)).count()))
+        .filter(|(_, n)| *n > 0)
+        .collect();
+    ecarts(&trouve, HORLOGE_REELLE_ADMISES)
+        .into_iter()
+        .map(|e| format!("[horloge réelle d'un test] {e}"))
+        .collect()
+}
+
+#[test]
+fn horloge_reelle_d_un_test() {
+    let e = ecarts_horloge_reelle(&sources());
+    assert!(
+        e.is_empty(),
+        "horloge réelle passée à jour_suisse / HorlogeFixe (liste close, égalité stricte) — \
+         un test de `kesh-api` prend `common::jour::aujourd_hui_test()` :\n{}",
+        e.join("\n")
+    );
+}
+
 fn tous_les_ecarts(sources: &[(String, String)]) -> Vec<String> {
     let mut v = ecarts(&inventaire(sources), EXEMPTIONS);
     for d in DURCISSEMENTS {
         v.extend(ecarts_durcissement(d, sources));
     }
     v.extend(ecarts_memoire(sources));
+    v.extend(ecarts_horloge_reelle(sources));
     v
 }
 
@@ -598,6 +663,43 @@ fn sonde_les_gardes_de_durcissement_rougissent() {
         "kesh-api/src/routes/admin.rs",
         "fn f() { let _ = crate::AppState::new_for_tests; }",
         "[new_for_tests]",
+    );
+}
+
+#[test]
+fn sonde_l_horloge_reelle_d_un_test_rougit() {
+    let m = "[horloge réelle d'un test]";
+    // Dans un fichier de `tests`, qualifiée, puis coupée sur plusieurs lignes.
+    rouge(
+        "kesh-api/tests/accounts_e2e.rs",
+        "fn f() { let _ = kesh_core::horloge::jour_suisse(chrono::Utc::now()); }",
+        m,
+    );
+    rouge(
+        "kesh-api/tests/horloge_etat.rs",
+        "fn f() {\n    let _ = jour_suisse(\n        Utc::now(),\n    );\n}",
+        m,
+    );
+    // `HorlogeFixe(Utc::now())` dans `tests/`, que la garde `HorlogeFixe` (portée `src`) ignore.
+    rouge(
+        "kesh-api/tests/credit_card_e2e.rs",
+        "fn f() { let _ = HorlogeFixe(chrono::Utc::now()); }",
+        m,
+    );
+    // Une seconde lecture dans le module admis rougit (le compte, non le fichier, est clos).
+    rouge(
+        "kesh-db/src/repositories/journal_entries.rs",
+        "fn f() { let _ = kesh_core::horloge::jour_suisse(chrono::Utc::now()); }",
+        "journal_entries.rs : 2 occurrence(s), 1 écrite(s)",
+    );
+    // Un instant donné, un `Utc::now()` qui ne va pas au jour, un commentaire : vert.
+    vert(
+        "kesh-api/tests/horloge_etat.rs",
+        "fn f(i: chrono::DateTime<chrono::Utc>) { let _ = jour_suisse(i); let _ = chrono::Utc::now().timestamp(); }",
+    );
+    vert(
+        "kesh-api/tests/horloge_etat.rs",
+        "// jour_suisse(chrono::Utc::now())",
     );
 }
 

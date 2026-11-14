@@ -35,10 +35,6 @@ async function login(page: import("@playwright/test").Page) {
   await expect(page).toHaveURL("/");
 }
 
-function today(): string {
-  return todayInZurich();
-}
-
 /** Une facture validée de 100.00 HT (108.10 TTC), sans règlement ; rend son id. */
 async function validatedInvoice(page: import("@playwright/test").Page): Promise<number> {
   const ctx = await authedApiContext(page);
@@ -55,8 +51,8 @@ async function validatedInvoice(page: import("@playwright/test").Page): Promise<
     const created = await ctx.post("/api/v1/invoices", {
       data: {
         contactId: (await contact.json()).id,
-        date: today(),
-        dueDate: today(),
+        date: todayInZurich(),
+        dueDate: todayInZurich(),
         paymentTerms: null,
         lines: [
           { description: "Prestation", quantity: "1", unitPrice: "100.00", vatRate: "8.10" },
