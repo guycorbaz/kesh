@@ -6,7 +6,9 @@ Status: ready-for-dev
 et 35-2. **Migration non breaking** (colonnes `NULL` ajoutées). **Découpée** à la rédaction (règle de splitting
 préventif : plus de cinq modules) : 35-3a = le serveur (`kesh-core`, `kesh-db`, `kesh-api`, `kesh-reconciliation`,
 `kesh-seed`) et les sélecteurs serveur ; 35-3b = soldes d'ouverture, formulaire et écrans. Révisée le 2026-11-14 pour
-la revue de Beat (CR-2 : R1, R3, R7), qui prime sur le registre antérieur.*
+la revue de Beat (CR-2 : R1, R3, R7), qui prime sur le registre antérieur ; puis pour sa revue CR-3 (S2 : comptes de
+différence propres à un compte en devise, résolus par `fx_accounts_for` de 35-1 ; S6 : `FX_RATE_NOT_AFC` compare au
+cours AFC **en vigueur**), qui prime sur CR-2.*
 
 ## Story
 
@@ -199,8 +201,10 @@ chacune (R7), l'écart de change dans la seconde, afin que mes comptes en devise
       plus `details.reason: "monoCurrencyFiscalYear"` et `fiscalYearId` : l'invite « saisissez le montant en devise »
       y serait fausse (la ligne en devise est refusée au rang 2) — le message dit de passer l'exercice en
       multi-devises (clé i18n propre, quatre locales ; affichage 35-3b, inter-fiche) ;
-   4. ligne `rate_source = 'afc'` : le cours doit égaler `rate_per_unit` du cours AFC **mensuel brut** de
-      `_kesh_exchange_rates` (35-2) pour (devise, mois de `entry_date`), lu dans la transaction par la fonction de
+   4. ligne `rate_source = 'afc'` : le cours doit égaler `rate_per_unit` du cours AFC **mensuel brut en vigueur** de
+      `_kesh_exchange_rates` (35-2) pour (devise, mois de `entry_date`) — **jamais** une valeur republiée non adoptée
+      (`republished_rate`, S6, CR-3 : une correction de l'AFC reste à part jusqu'à son adoption à l'écran *Cours de
+      change*, 35-2 AC-5 ; `find_rate_in_tx` rend le cours en vigueur, la lecture ne change pas) —, lu dans la transaction par la fonction de
       lecture du dépôt `kesh_db::repositories::exchange_rates::find_rate_in_tx(conn, currency, RateKind::Month, 1er du
       mois)` de 35-2 (pas de second accès). ⛔ **Jamais le cours effectif** : un cours saisi par la société (D9,
       `exchange_rate_overrides`) n'entre pas dans ce contrôle — une ligne à ce cours, s'il diffère du cours AFC, est
@@ -214,8 +218,10 @@ chacune (R7), l'écart de change dans la seconde, afin que mes comptes en devise
       exception** : un cours d'un autre mois (p. ex. celui du mois précédant la date d'un solde d'ouverture, C-35-9)
       se saisit `manual`, jamais `afc` (35-3b y est alignée). Le contrôle porte sur **toutes** les lignes `afc` du
       corps, inchangées comprises : après une restauration (tables des cours vides, 35-2 AC-7), le `PUT` d'une
-      écriture `afc` — même pour son seul libellé — rend `404 RATE_UNAVAILABLE` jusqu'à la récupération du cours, et
-      un cours republié autrement par l'AFC rend `FX_RATE_NOT_AFC` (35-2) ; comportement assumé, testé, écrit au
+      écriture `afc` — même pour son seul libellé — rend `404 RATE_UNAVAILABLE` jusqu'à la récupération du cours, et,
+      après l'**adoption** d'un cours AFC republié (35-2 AC-5, S6), le `PUT` d'une écriture `afc` à l'ancien cours rend
+      `FX_RATE_NOT_AFC` (une republication **non adoptée** ne change rien : le cours en vigueur reste celui de la
+      ligne) ; comportement assumé, testé (republication en attente → `PUT` passe ; après adoption → refus), écrit au
       Change Log. **Exemptée** : la contre-passation, qui recopie le cours
       d'origine à une autre date — mécanisme : `create_in_tx_inner` la reconnaît à son paramètre existant
       `reverses_entry_id.is_some()` (`:281`), aucun nouvel indicateur dans `NewJournalEntry` (un indicateur public
@@ -293,7 +299,19 @@ chacune (R7), l'écart de change dans la seconde, afin que mes comptes en devise
      `products.default_revenue_account_id` ; `invoice_lines.revenue_account_id` ; `credit_note_lines.revenue_account_id` ;
      `supplier_invoice_lines.expense_account_id` ; `supplier_invoices.settlement_account_id` ;
      `invoice_settlements.settlement_account_id` ; `reconciliation_rules.counterparty_account_id` ; plus
-     `companies.fx_gain_account_id` / `fx_loss_account_id` (35-1, en CHF par construction) et les rôles de compte.
+     `companies.fx_gain_account_id` / `fx_loss_account_id` (35-1, en CHF par construction),
+     `accounts.fx_gain_account_id` / `fx_loss_account_id` (comptes propres d'un compte en devise, 35-1 AC-4 bis, S2 ;
+     en CHF par construction, gardés des deux côtés par 35-1) et les rôles de compte.
+   - **Comptes de différence de change (S2, CR-3)** : cette story ne construit aucune ligne d'écart ni de
+     réévaluation et ne choisit donc aucun compte de différence (la ligne d'écart du formulaire est une ligne CHF
+     ordinaire, C-35-9 ; elle passe ce contrôle central comme toute ligne). Toute résolution **serveur** des comptes
+     de gains et de pertes d'un compte en devise — aujourd'hui la seule réévaluation (35-5) ; la route de conversion
+     (35-3b) ne revalide que le compte de conversion, sa ligne de différence étant construite par l'assistant — passe
+     par `fx_accounts_for` **puis** `validate_fx_accounts_in_tx` (35-1 AC-4 bis : contrôle des comptes désignés à
+     l'usage, `FX_ACCOUNT_INVALID`) ; côté écran, la ligne d'écart, l'assistant *Conversion* et l'assistant TVA (35-3b)
+     passent par le miroir `fxAccountsFor`, jamais par un choix écrit à côté entre `companies.fx_*` et `accounts.fx_*` ;
+     inventaire des sites qui lisent ces colonnes (grep `fx_gain_account_id`, `fx_loss_account_id`) au Change Log, chacun
+     classé : résolution (`fx_accounts_for` seule), garde (35-1), sérialisation (DTO, CSV, audit).
      Le **contrôle central de l'AC-4 reste le filet** : un état hérité ou une colonne oubliée ne produit jamais une
      ligne CHF sur un compte en devise, seulement un refus. Les sélecteurs du frontend masquent ces comptes (35-3b) ;
    - inventaire **clos** des sites, écrit au Change Log (méthode « inventorier les sites non résolus », `CLAUDE.md`).
@@ -547,3 +565,11 @@ chacune (R7), l'écart de change dans la seconde, afin que mes comptes en devise
   complément / écriture ordinaire), `recette-montee.sh:414`, 35-5 AC-3 (suppression ; contre-passation datée),
   35-1 AC-6, 35-3b AC-2 (alignée). Axes non exercés : le reste de la fiche, i18n, manuels, E2E ; test de
   concurrence non exécuté (fiche seule).
+- 2026-11-14 — révision CR-3 (revue de Beat S1–S6 ; Opus) : **S2** — AC-5 : `accounts.fx_gain_account_id` /
+  `fx_loss_account_id` (35-1 AC-4 bis) ajoutées à la liste close des colonnes qui désignent un compte ; puce neuve :
+  cette story ne choisit aucun compte de différence, toute résolution serveur (35-5) passe par `fx_accounts_for` puis
+  `validate_fx_accounts_in_tx` (35-1), et l'écran (35-3b) par le miroir `fxAccountsFor`, inventaire des sites lecteurs au Change Log du
+  développement. **S6** — AC-4 (4) : `FX_RATE_NOT_AFC` compare au cours AFC mensuel **en vigueur** (`rate_per_unit`),
+  jamais à une valeur republiée non adoptée ; seule une adoption (35-2 AC-5) fait refuser le `PUT` d'une écriture `afc`
+  à l'ancien cours (test : republication en attente → passe ; après adoption → refus). S1, S3, S4, S5 sans point de
+  contact ici. Aucune migration ni route neuve. AC touchés : en-tête, AC-4, AC-5. Fiche à revalider (cycle CR-3).

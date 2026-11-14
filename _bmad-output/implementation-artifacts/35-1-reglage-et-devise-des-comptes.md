@@ -5,7 +5,9 @@ Status: ready-for-dev
 *Fiche rédigée le 2026-11-14 (Opus 5.5), branche `epic/35-multi-devises`, numéros de ligne de `67efc51f`. Epic 35
 (`_bmad-output/planning-artifacts/epic-35-multi-devises.md`), registre C-35-1 à C-35-8. **Migration non breaking**.
 Révisée le 2026-11-14 pour la revue de Beat (CR-2 : R1, R3, R6 — colonnes seulement —, R7, R10), qui prime sur le
-registre antérieur.*
+registre antérieur ; puis pour sa revue CR-3 (S2 : comptes de différence de change propres à un compte en devise ;
+S3 : liste des comptes que l'avertissement d'archivage archiverait ; S4 : R10 et l'arbitrage A1 retirés), qui prime
+sur CR-2.*
 
 ## Story
 
@@ -20,7 +22,10 @@ verrou des deux côtés, réglage réservé à l'Administrateur). **CR-2 (revue 
 antérieure à l'Epic 35 se réimporte : liste close des tables et colonnes de l'epic, AC-6) ; R3 (mode mono-devise ou
 multi-devises **par exercice**, le réglage de la société en est le défaut, AC-3 bis) ; R6 (colonnes
 `opening_rate_kind`/`closing_rate_kind` seulement, AC-1 ; route et écran en 35-2) ; R7 (compte de conversion en
-CHF désigné à l'activation, AC-3) ; R10 (constante du début de l'exercice initial de l'assistant, AC-11).
+CHF désigné à l'activation, AC-3). **CR-3 (revue de Beat, prime sur CR-2)** : S2 (comptes de différence de
+change **propres** à un compte en devise, le réglage de la société restant le défaut : AC-1, AC-4 bis, AC-6, AC-7) ;
+S3 (`FISCAL_YEAR_FOREIGN_ACCOUNTS_ACTIVE` liste les comptes, AC-3 bis) ; S4 (R10 et l'arbitrage A1 **retirés** :
+l'assistant n'est pas touché, AC-11).
 
 ## Critères d'acceptation
 
@@ -42,6 +47,16 @@ CHF désigné à l'activation, AC-3) ; R10 (constante du début de l'exercice in
      `CHECK (currency IS NULL OR BINARY currency <> BINARY 'CHF')` (la devise principale s'écrit NULL, une seule
      graphie). ⚠️ La table est en `utf8mb4_unicode_ci` (`20260411000001_accounts.sql:23`) : sans collation binaire,
      `REGEXP` ignore la casse et `usd` passerait. Test : un `INSERT` de `usd` est refusé par le schéma.
+   - `accounts` (**CR-3, S2**) : `fx_gain_account_id BIGINT NULL`, `fx_loss_account_id BIGINT NULL` — comptes de
+     différence de change **propres** au compte en devise ; `NULL` = suivre le réglage de la société (`companies`,
+     ci-dessus), lu **à l'usage** : un changement du réglage de la société s'applique donc d'office aux comptes « par
+     défaut ». **Sans clé étrangère** (commentaire SQL, même raison que `companies` — C-35-2 : relation logique vers
+     `accounts.id` de la même société, intégrité par le dépôt ; la remise à zéro vide `accounts` entière, l'import
+     s'exécute sans contrôle de clé, `backup.rs:689-736`). Contraintes nommées, filet du dépôt :
+     `chk_accounts_fx_own_pair` `CHECK ((fx_gain_account_id IS NULL) = (fx_loss_account_id IS NULL))` (les deux, ou
+     aucun : « par défaut » ou « propres ») et `chk_accounts_fx_own_foreign` `CHECK (fx_gain_account_id IS NULL OR
+     currency IS NOT NULL)` (posables seulement sur un compte en devise). Les deux peuvent désigner le même compte.
+     Test : un `INSERT` qui viole chacune est refusé par **sa** contrainte ; les comptes existants prennent `NULL`.
    - Les colonnes des lignes d'écriture **ne sont pas** dans cette migration (35-3).
    - Inscrite à `migrations.sha384`, au tableau de `docs/migrations-idempotence-audit.md` (compteurs recomptés, P5),
      squash régénéré (`scripts/regen-test-schema.sh`), P6 inspecté, P7 : aucune donnée écrite (le test de triage passe
@@ -187,12 +202,15 @@ CHF désigné à l'activation, AC-3) ; R10 (constante du début de l'exercice in
        (archivés compris) a un solde cumulé **≠ 0 au début de l'exercice** (lignes datées avant `start_date`, toutes
        années) — en CHF (Σ débit − Σ crédit) **et** en devise (Σ `amount_currency` signé, colonne de 35-3a : **35-3a
        étend cette requête**, la 35-1 ne connaissant que le CHF et l'existence des lignes) — ou **porte une ligne** datée
-       dans l'exercice ; `details: { accounts: [{ id, number, reason: "balance" | "lines" }] }` (20 au plus). Lectures
+       dans l'exercice ; `details: { accounts: [{ id, number, name, reason: "balance" | "lines" }] }` (20 au plus ;
+       `name` ajouté par CR-3 pour que l'écran nomme les comptes comme pour l'avertissement ci-dessous). Lectures
        **verrouillantes** (`LOCK IN SHARE MODE`), après les verrous d'exercice, aucune lecture simple avant (AC-3) ;
      - puis **avertissement** : s'il reste des comptes en devise **actifs** qui ne portent **aucune ligne datée après
        la fin** de l'exercice (ceux qui servent à un exercice postérieur ne sont pas proposés), sans `force: true` → 409
-       **`FISCAL_YEAR_FOREIGN_ACCOUNTS_ACTIVE`** (code neuf), `details: { accounts: [{ id, number, currency }] }` : Kesh
-       **propose de les archiver** (R3). Avec `force: true`, ces comptes sont archivés dans la même transaction (audit
+       **`FISCAL_YEAR_FOREIGN_ACCOUNTS_ACTIVE`** (code neuf), `details: { accounts: [{ id, number, name, currency }] }`
+       — **la liste complète**, sans plafond, dans l'ordre où `force` les traite (identifiant croissant) : ce sont
+       exactement les comptes que `force` archiverait (S3, CR-3 : l'avertissement **liste** ce qui sera archivé ; un
+       plafond cacherait des comptes archivés sans avoir été montrés) : Kesh **propose de les archiver** (R3). Avec `force: true`, ces comptes sont archivés dans la même transaction (audit
        `account.archived` de chacun, `version` + 1, verrous `accounts` `FOR UPDATE` après les exercices), puis l'exercice
        passe en mono-devise. **Comment** (35-1-CR2-P1-2) : `archive_guarded` ouvre sa propre transaction sur le pool
        (`accounts.rs:859`) et refuse un compte aux sous-comptes actifs ; le corps de l'archivage est donc **extrait**
@@ -215,11 +233,14 @@ CHF désigné à l'activation, AC-3) ; R10 (constante du début de l'exercice in
      multi-devises n'existe que dans une société multi-devises ;
    - **écran** *Exercices* (société multi-devises seulement) : colonne « Devises » (« mono » / « multi ») et action
      « Passer en mono-devise » / « Passer en multi-devises » (Administrateur, Comptable) ; sur
-     `FISCAL_YEAR_FOREIGN_ACCOUNTS_ACTIVE`, un dialogue liste les comptes et propose « Archiver et passer en
-     mono-devise » (renvoi avec `force: true`) ; sur `FISCAL_YEAR_HAS_FOREIGN_BALANCES`, la liste des comptes et la
-     raison. Vitest et E2E ;
+     `FISCAL_YEAR_FOREIGN_ACCOUNTS_ACTIVE`, un dialogue **liste les comptes qui seront archivés** — numéro, nom et
+     devise de chacun, tous ceux de `details.accounts` (S3, CR-3 ; la liste défile si elle est longue) — et propose
+     « Archiver ces comptes et passer en mono-devise » (renvoi avec `force: true`) ; sur
+     `FISCAL_YEAR_HAS_FOREIGN_BALANCES`, la liste des comptes (numéro, nom) et la raison. Vitest (le dialogue affiche
+     chaque compte de `details.accounts`, numéro et nom, y compris au-delà de vingt) et E2E ;
    - **tests** : bascule refusée (solde CHF ≠ 0 au début ; ligne dans l'exercice ; compte archivé compris),
-     avertissement puis `force` (comptes archivés, audit), compte utilisé par un exercice postérieur non proposé, exercice
+     avertissement puis `force` (comptes archivés, audit ; l'ensemble archivé **égale** celui de `details.accounts`
+     de l'avertissement, numéro et nom compris — S3 —, 25 comptes pour exercer l'absence de plafond), compte utilisé par un exercice postérieur non proposé, exercice
      clos, société mono-devise, no-op, Consultation → 403, course bascule contre écriture CHF dans un exercice antérieur
      (sérialisées par le verrou de l'antérieur).
 4. **AC-4 — Devise d'un compte.** `CreateAccountRequest.currency` est facultatif (`null` ou absent = CHF).
@@ -282,14 +303,17 @@ CHF désigné à l'activation, AC-3) ; R10 (constante du début de l'exercice in
      → 400), le contrôle `CURRENCY_UNKNOWN` se place après lui, dans la route ; avant la transaction, forme
      (`CURRENCY_UNKNOWN`, `check_role_account_type`) ; puis compte introuvable/archivé → version → no-op →
      `MULTI_CURRENCY_DISABLED` → `ACCOUNT_IS_FX_DIFFERENCE_ACCOUNT` → `ACCOUNT_CURRENCY_LOCKED` →
-     `ACCOUNT_CURRENCY_IN_USE` → `ACCOUNT_IN_FOREIGN_CURRENCY` → refus existants dans leur ordre actuel (rôle singleton
+     `ACCOUNT_CURRENCY_IN_USE` → `ACCOUNT_IN_FOREIGN_CURRENCY` → `FX_ACCOUNT_INVALID` des comptes propres (AC-4 bis,
+     S2 : forme `missing` avant la transaction, puis `unexpected` sur l'état résultant, puis gain puis perte, comptes
+     **changés** seulement) → refus existants dans leur ordre actuel (rôle singleton
      déjà porté, `AccountLinkedToBankAccount`, `AccountHasEntries`). Jugés sur l'**état résultant** du `PUT` : devise
      posée **et** rôle posé dans la même requête → `ACCOUNT_IN_FOREIGN_CURRENCY` (comme `create`) ; devise posée sur
      un compte qui garde son rôle → `ACCOUNT_CURRENCY_IN_USE` ; rôle retiré et devise posée dans la même requête →
      admis (si aucun autre site ne désigne le compte). Pour `create` : `CURRENCY_UNKNOWN` (avant la transaction) →
      `MULTI_CURRENCY_DISABLED` → `ACCOUNT_IS_FX_DIFFERENCE_ACCOUNT` (parent désigné) → `ACCOUNT_IN_FOREIGN_CURRENCY`
-     (rôle posé en même temps) ;
-   - un compte désigné gain/perte ne peut recevoir de devise, ni être archivé, ni changer de type hors
+     (rôle posé en même temps) → `FX_ACCOUNT_INVALID` des comptes propres (AC-4 bis) ;
+   - un compte désigné gain/perte — **par la société ou par un compte en devise** (comptes propres, AC-4 bis, S2 ;
+     désignations d'un compte archivé comprises, comme les liens de l'AC-4) — ne peut recevoir de devise, ni être archivé, ni changer de type hors
      `Expense`/`Revenue`, ni recevoir le rôle `DefaultRevenue`, ni passer à `postable = false`, ni recevoir un
      sous-compte (`accounts::create` :197-207 passe le parent à non imputable sans garde) → 409
      `ACCOUNT_IS_FX_DIFFERENCE_ACCOUNT`. **Symétrique de l'AC-3** (les gains de change ne vont pas au chiffre
@@ -298,7 +322,13 @@ CHF désigné à l'activation, AC-3) ; R10 (constante du début de l'exercice in
      **avant** son `INSERT IGNORE` / `FOR UPDATE` des réglages, ordre global) ni d'un article (`products::create` /
      `update`, `companies` lu en partage avant le compte) — → 409 `ACCOUNT_IS_FX_DIFFERENCE_ACCOUNT`, seulement si la
      valeur **change** (motif C4) ; sans quoi la garde de l'AC-3 se contourne en désignant après coup, et la
-     revalidation de la 35-5 ne le verrait pas. À l'archivage, ce refus est **sans recours** — à la différence du précédent
+     revalidation de la 35-5 ne le verrait pas. Pour une désignation **propre** (S2), `details` porte en plus
+     `holderAccountId` et `holderNumber` (le compte en devise qui le désigne, le premier par identifiant s'il y en a
+     plusieurs) ; sans eux, la désignation est celle de la société. La recherche des comptes qui le désignent
+     (`SELECT id, number FROM accounts WHERE company_id = ? AND (fx_gain_account_id = ? OR fx_loss_account_id = ?)
+     ORDER BY id LIMIT 1 LOCK IN SHARE MODE`) se fait **après** le `FOR UPDATE` du compte visé, en lecture
+     verrouillante (AC-3) ; elle ne peut croiser une désignation concurrente, qui tient `companies` en exclusif
+     (AC-4 bis, verrous). À l'archivage, ce refus est **sans recours** — à la différence du précédent
      #486 (`AccountDesignatedInSettings`, confirmable) : `confirm_designated` ne le lève pas. Ordre des refus
      d'`archive_guarded` : sous-comptes actifs → gain/perte → désignation de facturation → version ;
    - **compte de conversion** (R7) : mêmes refus, même code (`ACCOUNT_IS_FX_DIFFERENCE_ACCOUNT`, `details.designation`
@@ -350,6 +380,70 @@ CHF désigné à l'activation, AC-3) ; R10 (constante du début de l'exercice in
      sur un compte déjà en devise, acceptée tant que la 35-3a n'est pas là, sera refusée par son contrôle central
      (`ACCOUNT_REQUIRES_CURRENCY`) et casserait le test ;
    - un compte de groupe (non imputable) peut porter une devise (informatif) ; un enfant n'hérite de rien.
+4. **AC-4 bis — Comptes de différence de change propres à un compte en devise (S2, CR-3).** Le réglage de la
+   société (AC-3) reste le **défaut**. Sur chaque compte **en devise**, l'utilisateur choisit : *comptes par défaut*
+   (`accounts.fx_gain_account_id` et `fx_loss_account_id` à `NULL` : ils suivent le réglage de la société, y compris
+   quand il change) ou **comptes propres** (les deux posés ; p. ex. un sous-compte « frais de change cachés PayPal »,
+   un autre pour Stripe). Toute ligne d'écart (35-3b), conversion (35-3b) ou réévaluation (35-5) qui touche ce compte
+   prend ses comptes propres. Le compte de **conversion** reste un réglage de la société seul. Lien avec la
+   comptabilité analytique (projets) : **hors périmètre**, au registre (C-35-8).
+   - **Résolution unique** (nom au développement, p. ex. `kesh_db::repositories::accounts::fx_accounts_for(company:
+     &Company, account: &Account) -> Option<FxAccounts>`, fonction **pure**, sans I/O) : pour un compte en devise, ses
+     comptes propres s'il en a, sinon `companies.fx_gain_account_id` / `fx_loss_account_id` ; `FxAccounts { gain,
+     loss, origin: Own | Company }` ; `None` pour un compte CHF, ou si la société n'en désigne pas (état hérité). **Seule
+     fonction** qui choisit les comptes de différence côté serveur ; la réévaluation (35-5) l'appelle, **puis** la
+     revalidation à l'usage ci-dessous (la route de conversion de 35-3b ne revalide que le compte de conversion : sa
+     ligne de différence est construite par l'assistant). Côté écran, **une** fonction TypeScript miroir
+     (`fxAccountsFor(account, company)`, `features/accounts/`), seule lue par le formulaire de compte, la ligne d'écart
+     et l'assistant *Conversion* (35-3b) et l'assistant TVA (35-3b, S5) ; tests unitaires des deux (propres, défaut,
+     défaut après changement du réglage, compte CHF).
+   - **Revalidation à l'usage** (C-35-2 (3), étendue) : fonction du dépôt partagée (p. ex.
+     `accounts::validate_fx_accounts_in_tx(conn, company_id, &FxAccounts)`), qui relit les deux comptes résolus
+     `LOCK IN SHARE MODE` et applique les gardes de l'AC-3 (de la société, imputable, actif, `Expense`/`Revenue`, sans
+     devise, ni rôle `DefaultRevenue` ni désigné `default_revenue_account_id`) → 400 `FX_ACCOUNT_INVALID` (`field` :
+     `fxGainAccountId` | `fxLossAccountId`, `reason` de la liste close de l'AC-3, plus `holderAccountId` quand
+     `origin = Own`). Un compte de la société invalide mais **non employé** (tous les comptes touchés ont leurs comptes
+     propres) n'arrête rien. 35-5 l'appelle sous ses verrous ; elle est créée ici, avec ses tests.
+   - **API** : `CreateAccountRequest` prend `fxGainAccountId?`, `fxLossAccountId?` (absents = par défaut) ;
+     `UpdateAccountRequest` les prend en `Option<Option<i64>>` par `present_or_null` (comme `currency`) : **absents =
+     inchangés**, `null` = par défaut, valeur = compte propre ; les deux champs vont ensemble — l'un présent sans
+     l'autre, ou l'un `null` et l'autre posé → 400 `FX_ACCOUNT_INVALID`, `reason: "missing"`, avant la transaction.
+     `AccountUpdate`/`NewAccount` portent le choix en **un** champ à trois états (inchangé / par défaut / propres
+     `{ gain, loss }`), résolu sous le `FOR UPDATE` du compte. `AccountResponse` expose `fxGainAccountId` et
+     `fxLossAccountId` avec `#[serde(skip_serializing_if = "Option::is_none")]` (JSON identique en mono-devise et pour
+     un compte « par défaut », C-35-9 ; type TS `fxGainAccountId?: number`).
+   - **Gardes à la désignation** (comptes **changés** seulement, motif C4 de l'AC-3) : chaque compte propre passe les
+     gardes de l'AC-3 (de la société, imputable, actif, `Expense`/`Revenue`, sans devise, ni rôle `DefaultRevenue` ni
+     désigné `default_revenue_account_id`) → 400 `FX_ACCOUNT_INVALID` (`field`, `reason`, liste close inchangée) ;
+     des comptes propres sur un compte qui **reste ou devient CHF** (état résultant du `PUT` : `currency` `null`, ou
+     absente sur un compte CHF) → 400 `FX_ACCOUNT_INVALID`, `reason: "unexpected"` (même sens qu'à l'AC-3 : un
+     identifiant là où aucun n'est admis) — retirer la devise d'un compte exige donc d'envoyer aussi `null` pour ses
+     comptes propres. La société en mono-devise ne peut avoir de compte en devise : `MULTI_CURRENCY_DISABLED` passe
+     avant (ordre de l'AC-4).
+   - **Gardes inverses** : un compte désigné par un compte en devise est gardé comme un compte désigné par la société
+     (AC-4, `ACCOUNT_IS_FX_DIFFERENCE_ACCOUNT`, `details.designation` `gain`|`loss` et `holderAccountId`) : archivage,
+     retypage hors `Expense`/`Revenue`, devise posée, `postable = false`, sous-compte, rôle `DefaultRevenue`,
+     désignation `default_revenue_account_id` (réglages de facturation, article). L'archivage du compte **en devise**
+     qui désigne reste admis (il garde ses désignations, inertes tant qu'il est archivé, de nouveau gardées s'il est
+     réactivé : elles comptent quel que soit son état). La désactivation du mode multi-devises n'a rien à défaire
+     (elle exige qu'aucun compte ne porte de devise, AC-3 ; `chk_accounts_fx_own_foreign`).
+   - **Verrous** : un `POST` ou un `PUT` de compte qui **porte** `fxGainAccountId`/`fxLossAccountId` prend la ligne
+     `companies` **`FOR UPDATE`** comme **premier** verrou (au lieu du partage de l'AC-4 ; jamais un partage suivi d'un
+     exclusif, promotion S → X) : la désignation propre est ainsi sérialisée contre toutes les gardes inverses, qui
+     prennent `companies` en partage avant le compte visé, et contre la réévaluation (35-5, `companies` en partage en
+     tête) — aucun cycle entre deux comptes (désignant en `FOR UPDATE`, désigné en partage). Les comptes propres
+     désignés se lisent ensuite `LOCK IN SHARE MODE`, après le `FOR UPDATE` du compte en devise. Le formulaire
+     n'envoie ces champs que **s'ils changent** (absents = inchangés), pour ne pas sérialiser chaque modification de
+     compte. Argument écrit au Change Log ; test de course : désignation propre contre archivage du compte désigné
+     (l'un attend l'autre ; l'archivage commité d'abord fait refuser la désignation en `reason: "archived"`, la
+     désignation commitée d'abord fait refuser l'archivage en `ACCOUNT_IS_FX_DIFFERENCE_ACCOUNT`).
+   - **Audit et no-op** : `account_snapshot_json` et `is_no_op_change` incluent les deux colonnes (un `PUT` qui ne
+     change que les comptes propres écrit et audite `account.updated`).
+   - **Tests** : désignation propre (création et modification), retour au défaut (`null`), résolution après changement
+     du réglage de la société (défaut suivi, propres inchangés), même compte pour gains et pertes, chaque `reason`
+     (dont `unexpected` sur un compte CHF et sur un compte rendu CHF dans le même `PUT`, `missing` pour un seul champ),
+     chaque garde inverse avec `holderAccountId`, désignation d'un compte archivé qui désigne comptée, `CHECK` en SQL
+     brut, réponse d'un compte « par défaut » sans les deux clés.
 5. **AC-5 — Réinitialisation de la société.** Seul chemin qui vide les comptes en gardant la société :
    `kesh_seed::reset_demo` (`onboarding/reset`) — `accounts` est dans `reset_cleared_tables`, `companies` est
    préservée (`backup.rs:136-144`) et remise à zéro en place par `companies::reset_to_stub_in_tx`
@@ -365,8 +459,10 @@ CHF désigné à l'activation, AC-3) ; R10 (constante du début de l'exercice in
    l'absence des **seules** tables et colonnes ajoutées par l'Epic 35, déclarées dans une constante de
    `kesh-db::backup` (nom au développement, p. ex. `ABSENCES_ADMISES_EPIC_35: &[Absence]`, `Absence::Table(&str)` |
    `Absence::Colonne(&str, &str)`, chaque entrée avec la version de la migration qui l'ajoute). Cette story crée le
-   mécanisme et y inscrit ses colonnes (`companies` × 4, `accounts.currency`, `fiscal_years` × 3) ; 35-2 y inscrit la
-   table `exchange_rate_overrides`, 35-3a les quatre colonnes de `journal_entry_lines`. Au code :
+   mécanisme et y inscrit ses colonnes (`companies` × 4, `accounts` × 3 — `currency`, et `fx_gain_account_id`,
+   `fx_loss_account_id` de CR-3, S2 —, `fiscal_years` × 3) ; 35-2 y inscrit la table `exchange_rate_overrides` (ses
+   colonnes neuves de `_kesh_exchange_rates`, table système, ne passent pas par l'import), 35-3a les quatre colonnes de
+   `journal_entry_lines`. Au code :
    - **tables** : la boucle de couverture de `parse_and_verify_avec_inventaire`
      (`crates/kesh-api/src/admin_backup/import.rs:250-253`, « table '…' absente du manifeste ») saute une table de la
      liste absente du manifeste ; toute autre table absente reste refusée (400, test conservé). La restauration la vide
@@ -393,7 +489,8 @@ CHF désigné à l'activation, AC-3) ; R10 (constante du début de l'exercice in
      et `fiscal_years`, plus les tables des autres stories (l'empreinte lit
      `SELECT *` : les colonnes neuves sont un écart attendu, `scripts/recette-montee.sh:414-440`).
    L'aller-retour d'une sauvegarde 35-1 conserve réglage, devises et mode des exercices ; l'export CSV des comptes (`serialize_accounts_csv`,
-   `csv_tables.rs:265`, en-tête écrit à la main) porte `currency` ; `company.csv` (`serialize_company_csv`, :163)
+   `csv_tables.rs:265`, en-tête écrit à la main) porte `currency`, `fx_gain_account_id` et `fx_loss_account_id` (S2) ;
+   l'aller-retour conserve les comptes propres (test) ; `company.csv` (`serialize_company_csv`, :163)
    porte les quatre colonnes ; l'export CSV des exercices (`serialize_fiscal_years_csv`, `csv_tables.rs:230`, écrit à
    la main ; `exports/global.rs:124`) porte les trois colonnes d'exercice, avec son cas de test (le test qui compare
    les en-têtes au schéma rougit sinon). Le `.keshbackup` lui-même n'énumère rien à la main (`export_table` lit les colonnes à
@@ -410,7 +507,14 @@ CHF désigné à l'activation, AC-3) ; R10 (constante du début de l'exercice in
      pour `isAdmin` seulement (`settings/+page.svelte:228`), lecture seule pour les autres rôles.
    - *Plan comptable* : en multi-devises, un champ « Devise » (sélecteur ISO 4217, vide = CHF) à la création et à la
      modification, désactivé d'avance avec l'explication si `currencyLocked` ; une colonne « Devise » dans la liste
-     (vide pour CHF). En mono-devise : **aucun** changement visible.
+     (vide pour CHF). **Comptes de différence de change** (S2, AC-4 bis), pour un compte **en devise** seulement
+     (champ « Devise » non vide) : un choix « Comptes de différence de change : **par défaut** / **propres** » —
+     « par défaut » rappelle les comptes de la société (« 6840 Différences de change / 6840 », lus par
+     `fxAccountsFor`), « propres » ouvre deux sélecteurs (gains, pertes ; mêmes filtres que ceux des paramètres :
+     comptes `Expense`/`Revenue` en CHF, imputables, actifs) ; envoyés seulement s'ils changent ; erreurs
+     `FX_ACCOUNT_INVALID` affichées sur le sélecteur (`field`). Passer la devise à vide repasse le choix à « par
+     défaut » (et envoie `null`). Vitest : le choix n'apparaît que pour un compte en devise, « par défaut » n'envoie
+     rien quand rien ne change, « propres » envoie les deux. En mono-devise : **aucun** changement visible.
    - Captures d'écran des états touchés (recette visuelle, thème clair), hors du dépôt.
 8. **AC-8 — MCP et services.** `kesh_plan_comptable` donne la devise d'un compte. Le service
    (`services/plan_comptable.rs`) rend déjà l'`Account` entier : le changement est dans la sortie de l'outil,
@@ -420,7 +524,8 @@ CHF désigné à l'activation, AC-3) ; R10 (constante du début de l'exercice in
    `skip_serializing_if` : la clé est toujours présente). La description de l'outil mentionne la devise. Les tailles
    mesurées (`LIMITE_DEFAUT` 40, `LIMITE_MAX_MCP` 70 ; `mcp_outils_e2e.rs:183`) sont re-mesurées avec le champ
    (précédent C-e331-27) ; le test de contrat du protocole MCP de la CI est relu. Test de l'outil avec un compte en
-   devise et un compte CHF.
+   devise et un compte CHF. Les comptes de différence propres (AC-4 bis) ne sont **pas** ajoutés à la sortie MCP
+   (hors périmètre, écrit au Change Log du développement).
 9. **AC-9 — i18n.** Toutes les chaînes neuves dans les quatre locales (`fr-CH`, `de-CH`, `it-CH`, `en-CH`),
    `lint-i18n-ownership` vert.
 10. **AC-10 — Manuel utilisateur** (`docs/manual/fr/user-manual.tex`) : section « Comptabilité multi-devises » —
@@ -429,20 +534,20 @@ CHF désigné à l'activation, AC-3) ; R10 (constante du début de l'exercice in
     archivés compris, on ne revient pas en mono-devise) ; PDF régénéré et contrôlé
     (`pdftotext | tr`). Il dit aussi le **mode par exercice** (R3 : défaut, bascule, refus tant qu'un compte en devise
     n'est pas à zéro, archivage proposé), le **compte de conversion** (R7 : un compte de bilan en CHF à créer, p. ex.
-    1090, qui revient à 0 après une conversion) et la réimportation des sauvegardes antérieures (R1, mono-devise). Aucun plan livré n'a de compte « Différences de change » (`pme.json:76-78` : 6900, 6940,
+    1090, qui revient à 0 après une conversion), les **comptes de différence propres** d'un compte en devise (S2 :
+    par défaut ou propres, p. ex. des sous-comptes de frais de change cachés pour PayPal et pour Stripe ; ce qu'ils
+    changent à la ligne d'écart, à la conversion et à la réévaluation ; gardes inverses) et la réimportation des
+    sauvegardes antérieures (R1, mono-devise). Aucun plan livré n'a de compte « Différences de change » (`pme.json:76-78` : 6900, 6940,
     6950) : le manuel dit quoi choisir ou créer (p. ex. 6840, **sous le groupe 6** et non sous 6800 *Amortissements*,
     compte imputable que la création d'un sous-compte rendrait non imputable, `accounts::create` :197-207). Si le manuel cite la route
     `PUT /api/v1/companies/current/currency-settings`, ajouter l'entrée à `MULTI_SOCIETE_ASSUME` de
     `textes_coherents.rs` (motif `\bcompanies\b`, précédent :1014-1017).
-11. **AC-11 — Début de l'exercice initial (R10).** L'assistant crée l'exercice initial au 1er janvier de l'année
-    courante (`routes/onboarding.rs:1044-1046`, `from_ymd_opt(year, 1, 1)` et `(year, 12, 31)` écrits en ligne). Ces
-    dates deviennent des **constantes nommées** du module (nom au développement, p. ex.
-    `EXERCICE_INITIAL_DEBUT: (u32, u32) = (1, 1)` et `EXERCICE_INITIAL_FIN: (u32, u32) = (12, 31)`), avec le
-    commentaire de l'arbitrage A1 du fichier d'epic (« Ne pas modifier : l'exercice initial créé par l'assistant
-    commence le 1er janvier ; un exercice à d'autres dates se crée dans *Exercices* », soumis à Beat ; sa réponse, si
-    elle le change, au Change Log) ; le comportement ne change
-    pas (test existant de l'assistant vert). Kesh accepte déjà des exercices à dates libres (`POST /fiscal-years`) :
-    rien d'autre à implémenter ; 35-2 et 35-5 se testent sur des exercices au 1er juillet et au 1er avril (R6).
+11. **AC-11 — Retirée (CR-3, S4 : R10 et l'arbitrage A1 sont retirés).** L'assistant n'est **pas** touché : ni
+    constante, ni commentaire dans `routes/onboarding.rs` (l'exercice initial reste créé du 1er janvier au 31 décembre
+    de l'année courante, `:1044-1046`, tel quel). Kesh accepte déjà des exercices à dates libres et **sans limite de
+    durée** (seule règle : `chk_fiscal_years_dates`, `end_date > start_date`, `20260404000001_initial_schema.sql:51`) ;
+    les dates viennent toujours de l'exercice. Les tests d'exercices décalés (1er juillet, 1er avril) et de durée
+    autre que douze mois (six et dix-huit mois) sont ceux de 35-2 et de 35-5 ; numéro gardé pour ne pas renuméroter.
 
 ## Tâches
 
@@ -499,8 +604,17 @@ CHF désigné à l'activation, AC-3) ; R10 (constante du début de l'exercice in
       deux routes (AC-3).
 - [ ] CR-2 — `kesh-api` : route `PUT /fiscal-years/{id}/currency-mode`, codes `FISCAL_YEAR_HAS_FOREIGN_BALANCES` et
       `FISCAL_YEAR_FOREIGN_ACCOUNTS_ACTIVE` (409, quatre locales), audit `fiscal_year.currency_mode_updated`,
-      `FiscalYearResponse` ; constantes de l'assistant (AC-11) ; frontend *Exercices* (colonne, action, dialogue
-      d'archivage) et troisième sélecteur des paramètres ; test d'import d'une sauvegarde 0.17.6 (AC-6).
+      `FiscalYearResponse` ; frontend *Exercices* (colonne, action, dialogue d'archivage qui liste les comptes —
+      numéro, nom, devise —, S3) et troisième sélecteur des paramètres ; test d'import d'une sauvegarde 0.17.6 (AC-6).
+      L'assistant (`routes/onboarding.rs`) n'est pas touché (AC-11 retirée, S4).
+- [ ] CR-3 (S2) — comptes de différence propres (AC-4 bis) : colonnes et deux `CHECK` dans la migration de l'AC-1 ;
+      `Account`, `NewAccount`, `AccountUpdate` (un champ à trois états), macro `columns!`, `bulk_create` et
+      `bulk_create_from_chart_in_tx` (`NULL`) ; `fx_accounts_for` (pure) et `validate_fx_accounts_in_tx` (dépôt) ;
+      gardes à la désignation et gardes inverses (`holderAccountId`) dans `create`, `update`, `archive_guarded`,
+      `reactivate`, `company_invoice_settings::update`, `products::create/update` ; `companies` `FOR UPDATE` en tête
+      d'un geste qui porte les champs ; DTO, `AccountResponse`, CSV des comptes, liste close des absences admises
+      (`accounts` × 3) ; frontend : `fxAccountsFor`, choix « par défaut / propres » du formulaire de compte ; tests de
+      l'AC-4 bis.
 
 ## Notes de développement
 
@@ -603,3 +717,20 @@ CHF désigné à l'activation, AC-3) ; R10 (constante du début de l'exercice in
   `admin_pat_denied_e2e.rs:85` ; `onboarding.rs:1043-1053`, `:1273-1287` ; `scripts/recette-montee.sh:414-453`,
   `:651` ; plans livrés (aucun 109x). Axes non exercés : source journalière (aucun GET, la 35-1 n'y touche pas),
   manuels (PDF non lu), i18n au code.
+- 2026-11-14 — révision CR-3 (revue de Beat S1–S6 ; Opus) : **S2** — comptes de différence de change propres à un
+  compte en devise (AC-4 bis, neuf) : `accounts.fx_gain_account_id` / `fx_loss_account_id` `NULL` (= réglage de la
+  société, suivi à l'usage), sans clé étrangère (même raison que C-35-2), dans la migration de l'AC-1 avec deux
+  `CHECK` (les deux ou aucun ; posables seulement sur un compte en devise) ; mêmes gardes que les comptes de la société,
+  gardes inverses (`ACCOUNT_IS_FX_DIFFERENCE_ACCOUNT` + `holderAccountId`), résolution unique `fx_accounts_for` (pure)
+  et revalidation à l'usage `validate_fx_accounts_in_tx` créées ici pour 35-5, miroir TS `fxAccountsFor` pour les écrans de 35-3b ;
+  `companies` `FOR UPDATE` en tête d'un geste qui désigne (aucun cycle entre comptes) ; champ « par défaut / propres »
+  du formulaire de compte (AC-7) ; liste close des absences admises étendue (`accounts` × 3, AC-6) ; CSV des comptes ;
+  manuel (AC-10). **S3** — `FISCAL_YEAR_FOREIGN_ACCOUNTS_ACTIVE` porte la liste **complète** des comptes que `force`
+  archiverait (`id`, `number`, `name`, `currency`), affichée par le dialogue ; `name` ajouté aussi à
+  `FISCAL_YEAR_HAS_FOREIGN_BALANCES`. **S4** — R10 et l'arbitrage A1 retirés : AC-11 vidée (numéro gardé), tâche et
+  Décisions alignées ; l'assistant n'est pas touché. S1, S5, S6 sans point de contact ici. Aucune route neuve.
+  Prémisses relues au code : `chk_fiscal_years_dates` (`20260404000001_initial_schema.sql:51`, `end_date >
+  start_date`, aucune borne de durée) ; `routes/onboarding.rs:1043-1046` ; `routes/fiscal_years.rs:264-279`
+  (`borner` des dates, aucune durée) ; `backup.rs:689-736` (import sans contrôle de clé, motif repris de C-35-2).
+  AC touchés : en-tête, Décisions, AC-1, AC-3 bis, AC-4, AC-4 bis (neuf), AC-6, AC-7, AC-8, AC-10, AC-11, Tâches.
+  Fiche à revalider (cycle CR-3).

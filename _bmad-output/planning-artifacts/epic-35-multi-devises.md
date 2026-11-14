@@ -169,6 +169,37 @@ Prime sur CR-2 et sur ses arbitrages là où ils divergent.
 - **Page de revue** : ajouter à la fin un **schéma des tables et relations** neuves (SVG intégré), la rendre
   autonome (envoyable à Guy) et ajouter un bouton **Enregistrer** qui télécharge la page avec les réponses.
 
+### CR-3 — amendements du registre et arbitrages (2026-11-14)
+
+- **C-35-2 complété (S2)** : `accounts.fx_gain_account_id`, `fx_loss_account_id` (BIGINT NULL, sans FK ; NULL = réglage
+  de la société, lu à l'usage) ; CHECK « les deux ou aucun » et « seulement sur un compte en devise » ; mêmes gardes
+  que la société et gardes inverses (`ACCOUNT_IS_FX_DIFFERENCE_ACCOUNT` + `holderAccountId`) ; résolution unique
+  `fx_accounts_for` + revalidation `validate_fx_accounts_in_tx`, miroir TS `fxAccountsFor`. Le compte de conversion
+  reste un réglage de la société. Analytique : hors périmètre (C-35-8).
+- **C-35-6 amendé (S1)** : quotidien tant que le mois courant ou suivant manque ; mois suivant T obtenu → pause
+  jusqu'à min(obtention + 24 j, 25 de T), jamais avant le 1er de T ; `first_fetched_at` sur `_kesh_exchange_rates`.
+- **C-35-1 amendé (S6)** : `_kesh_exchange_rates` gagne `first_fetched_at` et les colonnes `republished_*`,
+  `notice_acknowledged_at` ; une récupération ne remplace jamais le cours en vigueur ; adoption et acquittement
+  audités, globaux à l'installation ; bandeau à la connexion ; cours effectif et `FX_RATE_NOT_AFC` sur le cours en
+  vigueur.
+- **C-35-7 amendé (S2, S4)** : contrepartie de chaque écriture de réévaluation = comptes propres du compte réévalué,
+  sinon ceux de la société ; mois et jour de clôture = ceux de `end_date`, toute durée d'exercice.
+- **R10 et A1 retirés (S4)** ; **S3** : liste complète `{id, number, name, currency}` ; **S5** : assistant TVA en devise.
+- Registre des routes (deltas) : epic +11 routes `LIB_ROUTES`, total du registre +12.
+- **Arbitrages de l'orchestrateur sur les questions de la révision CR-3** (soumis à Beat, page de revue 2) :
+  - A9 — S1 : pause jusqu'à min(obtention + 24 j, 25 du mois T), jamais avant le 1er de T (ex. décembre obtenu le
+    14.11 → reprise le 08.12) ;
+  - A10 — S6 : chaque tour automatique **revérifie aussi le mois courant** (un appel de plus), pour découvrir seul une
+    correction de l'AFC ; le bouton « Revérifier les cours publiés » reste ;
+  - A11 — S6 : adoption et acquittement valent pour toute l'installation ; les notices affichées sont filtrées sur les
+    devises et les exercices multi-devises de la société ;
+  - A12 — S2 : écriture touchant deux comptes en devise aux comptes de différence distincts → la ligne d'écart va sur
+    ceux du premier compte de bilan en devise, avec un avis ;
+  - A13 — S5 : TVA CHF = TVA en devise × même cours, arrondie ; un écart d'un centime est laissé au bouton d'écart ;
+  - A14 — S5 : l'assistant TVA reste à la création d'écriture ;
+  - A15 — S2 : les comptes propres couvrent gains et pertes ; le compte de conversion reste un réglage de la société ;
+  - A16 — S6 : `first_fetched_at` est une colonne distincte de `fetched_at`.
+
 ## Source des cours — établie le 2026-11-14
 
 - Page ESTV *MWST Monatsmittelkurse* : « XML-File » → `https://www.backend-rates.bazg.admin.ch/api/xmlavgmonth`.

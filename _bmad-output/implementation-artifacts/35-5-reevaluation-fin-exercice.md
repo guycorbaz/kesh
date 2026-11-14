@@ -7,7 +7,9 @@ Status: ready-for-dev
 **Aucune migration attendue** (`rate_source = 'revaluation'` posé par 35-3a ; `closing_rate_kind` posé par 35-1).
 Révisée le 2026-11-14 pour la revue de Beat (CR-2 : R3, R6, R9), qui prime sur le registre antérieur : **une écriture
 par compte réévalué** (R9), cours de clôture selon le genre choisi pour l'exercice (R6), refus en exercice
-mono-devise (R3).*
+mono-devise (R3). Révisée de nouveau pour la revue CR-3 de Beat, qui prime sur CR-2 : **S2** — la contrepartie de
+chaque écriture prend les comptes de différence **propres** du compte réévalué s'il en a (35-1 AC-4 bis) ; **S4** —
+exercice de durée quelconque (aucune constante de douze mois : le mois et le jour de clôture sont ceux de `end_date`).*
 
 ## Story
 
@@ -23,7 +25,12 @@ clôture et que l'écart aille aux différences de change.
    accountIds?: [...] }` → par compte de **bilan** (`Asset`, `Liability`) en devise, **imputable** (`postable = TRUE` ;
    les comptes de groupe ne sont jamais proposés) : solde en devise et solde CHF **cumulés depuis l'origine** jusqu'à
    la date de fin d'exercice (toutes années confondues, sans borne basse), cours retenu, CHF réévalué = round(solde
-   devise × cours), écart, compte de contrepartie.
+   devise × cours), écart, compte de contrepartie — **par compte** (S2, CR-3) : gains ou pertes résolus par
+   `fx_accounts_for(société, compte)` (35-1 AC-4 bis), soit les comptes **propres** du compte réévalué, soit ceux de
+   la société ; l'aperçu porte par compte `counterpartAccountId` et `fxAccountsOrigin` (`own` | `company`), que l'écran
+   affiche. **Durée de l'exercice** (S4, CR-3) : quelconque — « dernier mois » et « date de fin » sont toujours ceux
+   de `end_date` (un exercice de six ou de dix-huit mois, ou qui finit un 14, n'a rien de particulier ; aucun calcul
+   ne suppose douze mois).
    - **Cours par défaut** (D10, D9, **R6**), par devise, résolu par la lecture du cours effectif de 35-2
      (`find_effective_rate_in_tx`, AC-5 de 35-2 — cours saisi par la société, sinon cours AFC brut), selon le **genre
      de clôture de l'exercice** (`fiscal_years.closing_rate_kind`, 35-1 AC-1, réglé à l'écran *Cours de change*, 35-2
@@ -128,7 +135,8 @@ clôture et que l'écart aille aux différences de change.
      solde à lire). `post` lit donc la date de début de l'exercice et la liste des antérieurs **avant `begin`**, sur le
      pool (une date de début ne change pas : seul le nom d'un exercice se modifie), puis, dans la transaction :
      (0) la ligne `companies` (`multi_currency_enabled`, `fx_gain_account_id`, `fx_loss_account_id`) lue
-     `LOCK IN SHARE MODE` (jamais `FOR SHARE`, erreur de syntaxe sur MariaDB 10.11) **avant tout exercice** : c'est
+     `LOCK IN SHARE MODE` (ce partage bloque aussi toute désignation de comptes propres concurrente, qui prend
+     `companies` en exclusif, 35-1 AC-4 bis : les désignations lues ensuite restent celles du calcul) (jamais `FOR SHARE`, erreur de syntaxe sur MariaDB 10.11) **avant tout exercice** : c'est
      l'ordre global `companies` → exercice des chemins Pattern 5 (`repositories/invoices.rs:698`, sentinelle puis `create_in_tx`) et
      de 35-3a AC-4 (`companies` en tête de l'étape 0 de `create_in_tx_inner`) ; prise après l'exercice, elle formerait
      le cycle exercice → `companies` contre `companies` → exercice que 35-3a écarte (aucun flux ne prend un exercice
@@ -136,9 +144,13 @@ clôture et que l'écart aille aux différences de change.
      contre-passation d'une écriture en devise de 35-3a prend l'exercice puis `companies` en partagé, compatible) ; (1) chaque antérieur
      verrouillé par clé primaire (`LOCK_EARLIER_BY_ID_SQL`) dans l'ordre chronologique, puis
      l'exercice `FOR UPDATE` (`LOCK_IN_COMPANY_SQL`) ; (2) relecture **verrouillante** du plus ancien antérieur ouvert (`earlier_open_locking_sql`,
-     même texte que `close`) → `EARLIER_FISCAL_YEAR_OPEN` ; (3) réglages de facturation et articles qui désignent les
-     comptes de différences de change (`default_revenue_account_id`, contrôle de l'AC-4), puis comptes de gains et de
-     pertes, lus `LOCK IN SHARE MODE` (ordre `companies` → réglages → `accounts` de 35-1 AC-3) ; (4) seulement
+     même texte que `close`) → `EARLIER_FISCAL_YEAR_OPEN` ; (3) les désignations propres des comptes
+     sélectionnés (`SELECT id, fx_gain_account_id, fx_loss_account_id FROM accounts WHERE company_id = ? AND id IN
+     (…) LOCK IN SHARE MODE`, S2), d'où, par `fx_accounts_for`, l'ensemble des comptes de gains et de pertes
+     **employés** ; puis réglages de facturation et articles qui les désignent (`default_revenue_account_id`, contrôle
+     de l'AC-4), puis ces comptes de gains et de pertes, lus `LOCK IN SHARE MODE` par `validate_fx_accounts_in_tx`
+     (35-1 ; ordre `companies` → réglages → `accounts` de 35-1 AC-3 ; les comptes sélectionnés et les comptes
+     désignés sont tous pris en partage, aucun en exclusif : pas de cycle entre eux) ; (4) seulement
      ensuite, les soldes cumulés (`balances_as_of`, 35-4) et la liste des comptes admissibles. L'ordre des **verrous**
      n'est pas l'ordre des **refus** (AC-4) : tout se lit d'abord, puis s'évalue dans l'ordre de l'AC-4. Le test des deux
      passations concurrentes (AC-7) fait attendre la seconde sur le verrou de l'exercice pendant que la première
@@ -168,14 +180,16 @@ clôture et que l'écart aille aux différences de change.
      'revaluation'`, `amount_currency = 0`, `exchange_rate` = cours retenu (> 0, par unité), CHF = |D|. **Cette ligne
      est exemptée de l'égalité CHF = montant × cours et de `FX_LINE_ROUNDS_TO_ZERO`** (le CHF est pris tel quel, > 0) ;
      la saisie manuelle de 35-3a (AC-6) la refuse, c'est la route de 35-5 qui la construit.
-   - Contrepartie : **une** ligne CHF par écriture, sur le compte de gains ou de pertes (le même compte peut servir aux
-     deux : chaque écriture n'en porte qu'une ligne, aucune agrégation ni compensation entre comptes — la règle « une
-     seule ligne au net » de l'écriture unique disparaît).
+   - Contrepartie : **une** ligne CHF par écriture, sur le compte de gains ou de pertes **du compte réévalué**
+     (`fx_accounts_for` : ses comptes propres, sinon ceux de la société — S2, CR-3 ; p. ex. PayPal USD sur son
+     sous-compte de frais de change cachés, Wise USD sur 6840) ; le même compte peut servir aux deux, et plusieurs
+     comptes réévalués peuvent partager une contrepartie : chaque écriture n'en porte qu'une ligne, aucune agrégation
+     ni compensation entre comptes — la règle « une seule ligne au net » de l'écriture unique disparaît.
    - Aucun écart non nul → 200 sans écriture (`{ entryIds: [] }`) ; sinon 200 `{ entryIds: [...] }` (dans l'ordre des
      numéros de compte).
    - **Audit** : outre le `journal_entry.created` de chaque écriture, **une** ligne d'audit propre
      `fx_revaluation.posted` qui **liste les écritures** passées — `{ entries: [{ entryId, accountId, currency, rate,
-     delta }], rates, source par devise (afc|manual), genre par devise (day|month|request), closingRateKind,
+     delta, counterpartAccountId, fxAccountsOrigin }], rates, source par devise (afc|manual), genre par devise (day|month|request), closingRateKind,
      accountIds }` — écrite **dans la même transaction** (la source
      du cours, perdue sur la ligne puisque `rate_source = 'revaluation'`, y est conservée), entité `fiscal_year`
      (déjà au registre des types, `audit_labels.rs:40`), identifiant = l'exercice. **Aucune** ligne d'audit quand
@@ -232,10 +246,13 @@ clôture et que l'écart aille aux différences de change.
    réglage relu sous verrou (étape (0)) et mode de l'exercice relu dans sa ligne `FOR UPDATE` (étape (1)) : société ou
    exercice mono-devise → 409 `MULTI_CURRENCY_DISABLED` ; exercice clos →
    `FISCAL_YEAR_CLOSED` ; **exercice antérieur encore ouvert → `EARLIER_FISCAL_YEAR_OPEN`** (comme K1 : le cumul lu ne
-   serait plus stable) ; comptes de différences de change **revalidés** (société, actif,
+   serait plus stable) ; comptes de différences de change **employés** (résolus par compte sélectionné, S2)
+   **revalidés** par `validate_fx_accounts_in_tx` (35-1 AC-4 bis : société, actif,
    imputable, de type `Expense`/`Revenue`, en CHF, ni au rôle `DefaultRevenue`, ni désigné
    `default_revenue_account_id` des réglages de facturation ou d'un article — 35-1 P3-8) → 400 `FX_ACCOUNT_INVALID` (C-35-2 ; même code et même statut que
-   35-1, `details` de 35-1) ; `accountIds` hors de la liste admissible (lue à l'étape (4) de l'AC-2) → 400
+   35-1, `details` de 35-1, plus `holderAccountId` pour un compte propre ; le premier fautif dans l'ordre des
+   numéros de compte réévalués, gain avant perte ; un compte de la société invalide qu'**aucun** compte sélectionné
+   n'emploie ne bloque rien) ; `accountIds` hors de la liste admissible (lue à l'étape (4) de l'AC-2) → 400
    `FX_REVALUATION_ACCOUNT_INVALID`, ensuite ; puis genre de clôture changé depuis la lecture d'avant la transaction →
    409 `OPTIMISTIC_LOCK_CONFLICT` (AC-1 ; après les refus d'état et de comptes : le motif réel prime sur
    « rechargez », comme l'étape 3-bis d'`update_in_tx` avant la version) ; puis 404 `RATE_UNAVAILABLE` d'une devise
@@ -292,7 +309,8 @@ clôture et que l'écart aille aux différences de change.
    mensuel est pris ou qu'aucun cours n'existe, et que la date de fin est passée (AC-1) ; au genre `month`, seul
    « Récupérer le mois » est proposé, pour un mois publié — Administrateur et Comptable), cases par compte (comptes archivés grisés avec
    avertissement ; au-delà de 498 comptes admissibles, l'avis de présélection tronquée de l'AC-1, et pas plus de 498 cases
-   cochées), l'écriture prévue par compte (R9), total des gains et des pertes, **« Passer les écritures »** (R9), liens
+   cochées), l'écriture prévue par compte (R9) avec son compte de contrepartie et son origine (« comptes propres » ou
+   « réglage de la société », S2), total des gains et des pertes, **« Passer les écritures »** (R9), liens
    vers les écritures passées ; le genre de clôture de l'exercice est rappelé (« cours de clôture : cours journalier du
    JJ.MM.AAAA » ou « cours mensuel de <mois> », avec un lien vers l'écran *Cours de change* qui le règle, R6) ; l'action
    « Réévaluer les devises » n'est offerte que pour un exercice **multi-devises** (R3) ; captures d'écran.
@@ -322,6 +340,17 @@ clôture et que l'écart aille aux différences de change.
      genre changé entre l'aperçu et la passation → 409 ; exercices **au 1er
      juillet** (fin 30.06.2024, un dimanche : cours journalier publié le 28.06 ; genre `month` : juin 2024) et **au
      1er avril** (fin 31.03.2024, dimanche de Pâques : publication antérieure, `sourceDate` ; genre `month` : mars 2024) ;
+   - **comptes de différence propres (S2, CR-3)** : PayPal USD à comptes propres (gains 6841, pertes 6842) et Wise
+     USD « par défaut » (6840) dans la même passation → l'écriture de PayPal a sa contrepartie sur 6841 ou 6842, celle
+     de Wise sur 6840 ; aperçu et audit portent `counterpartAccountId` et `fxAccountsOrigin` ; compte propre devenu
+     archivé (posé par SQL) → `FX_ACCOUNT_INVALID` avec `holderAccountId`, rien de passé ; compte de la société
+     invalide (par SQL) alors que tous les comptes sélectionnés ont des comptes propres → passation admise ; une
+     désignation propre concurrente attend la fin de la passation (verrou `companies`) ;
+   - **durée de l'exercice (S4, CR-3)** : exercice de **six mois** (01.07.2024–31.12.2024) et de **dix-huit mois**
+     (01.07.2023–31.12.2024) → cours journalier du 31.12.2024 (genre `day`) ou cours mensuel de décembre 2024 (genre
+     `month`), écart sur le cumul depuis l'origine (achat EUR antérieur à l'exercice compris), une écriture par compte
+     datée du 31.12.2024 ; exercice qui finit un 14 (15.03.2024–14.03.2025) → cours journalier du 14.03.2025, repli
+     mensuel de mars 2025 ;
    - **exercice mono-devise (R3)** : aperçu et passation → 409 `MULTI_CURRENCY_DISABLED` `details.fiscalYearId`, avant
      la transaction et sous verrou ; exercice postérieur mono-devise → `blockers[]` à l'aperçu **et** 409 `reason: "laterFiscalYear"` à la passation (état posé par SQL, la bascule de 35-1 l'interdisant avec un solde ≠ 0) ;
    - cours invalide (0, négatif, 11 décimales, > 10⁶, devise sans compte) ; au-delà des bornes ;
@@ -355,7 +384,8 @@ clôture et que l'écart aille aux différences de change.
      ayant repris le défaut) ; Vitest : l'aperçu ne reçoit que les cours modifiés, un `404 RATE_NOT_PUBLISHED` du
      `POST /fetch` laisse le repli affiché.
 8. **AC-8 — Manuel** : réévaluation, cours journalier OFDF de la date de clôture (D10 : la pratique du cours de
-   clôture, et les cours que portaient les livres de Beat), repli sur le cours mensuel AFC du mois de clôture (la méthode de
+   clôture, et les cours que portaient les livres de Beat), contrepartie sur les comptes de différence propres du
+   compte réévalué s'il en a (S2), exercice de durée quelconque (S4), repli sur le cours mensuel AFC du mois de clôture (la méthode de
    calcul du cours mensuel ne se décrit qu'après confirmation, R4 amendé), choix du genre de clôture par exercice (R6), une écriture
    par compte réévalué (R9), correction par suppression ou nouveau passage, la contre-passation ne corrigeant que dans un exercice en cours (AC-3), refus en
    exercice mono-devise (R3), cours saisi par la société (D9), récupération du cours du jour, gains et pertes non réalisés
@@ -492,3 +522,13 @@ clôture et que l'écart aille aux différences de change.
   Vérifié au code : ordre `create_in_tx_inner` (1-a, 1-bis, puis étape 2 des comptes), `ReversalDating::Today`
   (`journal_entries.rs:2933-2938`), `examinees` = 27 (`audit_route_registry.rs:1325`), 35-3b +1 route (conversion). Axes non
   exercés : code réel de 35-1 à 35-4 (non écrit), reste de la fiche hors diff.
+- 2026-11-14 — révision CR-3 (revue de Beat S1–S6 ; Opus) : **S2** — une écriture par compte réévalué, contrepartie
+  sur les comptes de différence **propres** du compte s'il en a, sinon ceux de la société, par `fx_accounts_for`
+  (35-1 AC-4 bis) : AC-1 (aperçu : `counterpartAccountId`, `fxAccountsOrigin`), AC-2 (étape (3) : désignations propres
+  lues en partage, puis comptes employés revalidés par `validate_fx_accounts_in_tx` ; le partage de `companies` de
+  l'étape (0) bloque une désignation concurrente ; contrepartie par compte ; audit), AC-4 (revalidation des seuls
+  comptes **employés**, `holderAccountId`), AC-6 (origine affichée), AC-7 (tests), AC-8. **S4** — exercice de durée
+  quelconque : dernier mois et date de fin tirés de `end_date` (AC-1), tests d'exercices de six et de dix-huit mois
+  et d'un exercice qui finit un 14 (AC-7). S1, S3, S5, S6 sans point de contact (le cours AFC lu reste le cours en
+  vigueur, 35-2 ; une republication non adoptée ne change rien ici). Aucune migration ni route neuve. AC touchés :
+  en-tête, AC-1, AC-2, AC-4, AC-6, AC-7, AC-8. Fiche à revalider (cycle CR-3).
