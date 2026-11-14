@@ -730,8 +730,19 @@ fn les_replis_rust_suivent_le_catalogue() {
     const ENTREE: &[(&str, &str)] = &[("{ $entry }", "{entree}")];
     const ENTREE_ATTENDU: &[(&str, &str)] =
         &[("{ $entry }", "{entree}"), ("{ $expected }", "{attendu}")];
+    // Story 35-2a (#955, #964) — le caractère refusé, une longueur, un code pays.
+    const CARACTERE: &[(&str, &str)] = &[("{ $car }", "{car}"), ("{ $point }", "{point}")];
+    const LONGUEUR: &[(&str, &str)] = &[("{ $max }", "{max}"), ("{ $got }", "{got}")];
+    const PAYS: &[(&str, &str)] = &[("{ $code }", "{code}")];
+    // Story 35-2b (#955, revue P1 B1) — le nombre de lignes du refus « trop de lignes ».
+    const LIGNES: &[(&str, &str)] = &[("{ $count }", "{n}")];
+    // Story 35-1 (#948) — le format de numérotation et le nom de l'exercice.
+    const FORMAT_EXERCICE: &[(&str, &str)] = &[
+        ("{ $format }", "{format}"),
+        ("{ $fiscalYear }", "{fiscal_year_name}"),
+    ];
     type Cles = &'static [(&'static str, usize, &'static [(&'static str, &'static str)])];
-    const TABLE: [(&str, Cles); 8] = [
+    const TABLE: [(&str, Cles); 9] = [
         // Story 31-5 (#469, C-31-5-15) — les six refus du journal d'audit.
         (
             "crates/kesh-api/src/routes/audit_log.rs",
@@ -758,6 +769,9 @@ fn les_replis_rust_suivent_le_catalogue() {
                     &[],
                 ),
                 ("error-invoice-pdf-header-overflow", 1, &[]),
+                // Story 35-2b (#955, revue P1 B1) — un seul site : la fonction
+                // `message_trop_de_lignes_pdf`, commune à la route et au lot.
+                ("error-invoice-too-many-lines-for-pdf", 1, LIGNES),
                 // Story 15-1a2-0 (#518) — le rang 2 bis, un bras par famille, et
                 // le message neutre de `LETTERING_IS_DOCUMENT` (validation P1, R-2).
                 ("settlement-cancel-blocked-lettering-closed", 1, &[]),
@@ -849,6 +863,41 @@ fn les_replis_rust_suivent_le_catalogue() {
                 ("error-designated-account-type-liability", 1, &[]),
                 ("error-designated-account-type-revenue", 1, &[]),
                 ("error-designated-account-type-expense", 1, &[]),
+                // Story 35-1 (#948, D4, D5) — le numéro impossible à produire : la
+                // phrase de la pièce, puis celle de la cause, qui nomme le format et
+                // l'exercice ; les placeholders cités s'écrivent `{{…}}` en Rust.
+                ("error-number-format-unrenderable-invoice", 1, &[]),
+                ("error-number-format-unrenderable-credit-note", 1, &[]),
+                (
+                    "error-number-format-unrenderable-too-long",
+                    1,
+                    FORMAT_EXERCICE,
+                ),
+                (
+                    "error-number-format-unrenderable-brace",
+                    1,
+                    &[
+                        ("{ $format }", "{format}"),
+                        ("{ $fiscalYear }", "{fiscal_year_name}"),
+                        ("{\"{\"}FY{\"}\"}", "{{FY}}"),
+                    ],
+                ),
+                (
+                    "error-number-format-unrenderable-duplicate",
+                    1,
+                    &[
+                        ("{ $format }", "{format}"),
+                        ("{ $fiscalYear }", "{fiscal_year_name}"),
+                        ("{\"{\"}SEQ{\"}\"}", "{{SEQ}}"),
+                        ("{\"{\"}FY{\"}\"}", "{{FY}}"),
+                        ("{\"{\"}YEAR{\"}\"}", "{{YEAR}}"),
+                    ],
+                ),
+                (
+                    "error-number-format-unrenderable-invalid",
+                    1,
+                    &[("{ $format }", "{format}")],
+                ),
             ],
         ),
         (
@@ -901,6 +950,64 @@ fn les_replis_rust_suivent_le_catalogue() {
                 ("admin-mcp-settings-error-origin-invalid", 1, ENTREE),
             ],
         ),
+        // Story 35-2a (#955, #964, AC8) — le refus du PDF : 39 clés neuves (une par
+        // champ et par raison, les replis par raison, les causes sans champ, l'avoir)
+        // et trois reprises, toutes rendues par `refus_pdf`.
+        (
+            "crates/kesh-api/src/routes/invoice_pdf_service.rs",
+            &[
+                ("invoice-pdf-error-charset-company-name", 1, CARACTERE),
+                ("invoice-pdf-error-charset-company-street", 1, CARACTERE),
+                ("invoice-pdf-error-charset-company-building", 1, CARACTERE),
+                (
+                    "invoice-pdf-error-charset-company-postal-code",
+                    1,
+                    CARACTERE,
+                ),
+                ("invoice-pdf-error-charset-company-city", 1, CARACTERE),
+                ("invoice-pdf-error-charset-client-name", 1, CARACTERE),
+                ("invoice-pdf-error-charset-client-street", 1, CARACTERE),
+                ("invoice-pdf-error-charset-client-building", 1, CARACTERE),
+                ("invoice-pdf-error-charset-client-postal-code", 1, CARACTERE),
+                ("invoice-pdf-error-charset-client-city", 1, CARACTERE),
+                ("invoice-pdf-error-charset-invoice-number", 1, CARACTERE),
+                ("invoice-pdf-error-charset-other", 1, CARACTERE),
+                ("invoice-pdf-error-empty-company-name", 1, &[]),
+                ("invoice-pdf-error-empty-company-postal-code", 1, &[]),
+                ("invoice-pdf-error-empty-company-city", 1, &[]),
+                ("invoice-pdf-error-empty-client-name", 1, &[]),
+                ("invoice-pdf-error-empty-client-postal-code", 1, &[]),
+                ("invoice-pdf-error-empty-client-city", 1, &[]),
+                ("invoice-pdf-error-empty-other", 1, &[]),
+                ("invoice-pdf-error-too-long-company-name", 1, LONGUEUR),
+                ("invoice-pdf-error-too-long-company-street", 1, LONGUEUR),
+                ("invoice-pdf-error-too-long-company-building", 1, LONGUEUR),
+                (
+                    "invoice-pdf-error-too-long-company-postal-code",
+                    1,
+                    LONGUEUR,
+                ),
+                ("invoice-pdf-error-too-long-company-city", 1, LONGUEUR),
+                ("invoice-pdf-error-too-long-client-name", 1, LONGUEUR),
+                ("invoice-pdf-error-too-long-client-street", 1, LONGUEUR),
+                ("invoice-pdf-error-too-long-client-building", 1, LONGUEUR),
+                ("invoice-pdf-error-too-long-client-postal-code", 1, LONGUEUR),
+                ("invoice-pdf-error-too-long-client-city", 1, LONGUEUR),
+                ("invoice-pdf-error-too-long-other", 1, LONGUEUR),
+                ("invoice-pdf-error-iban-invalid", 1, &[]),
+                ("invoice-pdf-error-qr-iban-invalid", 1, &[]),
+                ("invoice-pdf-error-internal", 1, &[]),
+                ("invoice-pdf-error-amount-invalid", 1, &[]),
+                ("invoice-pdf-error-currency-invalid", 1, &[]),
+                ("invoice-pdf-error-country-invalid", 1, PAYS),
+                ("invoice-pdf-error-country-invalid-company", 1, PAYS),
+                ("invoice-pdf-error-country-invalid-client", 1, PAYS),
+                ("credit-note-pdf-error-contact-missing", 1, &[]),
+                ("invoice-pdf-error-contact-missing", 1, &[]),
+                ("invoice-pdf-error-no-primary-bank", 1, &[]),
+                ("invoice-pdf-error-client-address-required", 1, &[]),
+            ],
+        ),
     ];
     let continuation = Regex::new(r"\\\n\s*").unwrap();
     let fr = catalogue_fr();
@@ -943,6 +1050,204 @@ fn les_replis_rust_suivent_le_catalogue() {
             assert!(!source.contains(perime), "{fichier} : « {perime} »");
         }
     }
+}
+
+/// Les sources Rust de `crates/kesh-api/src`, chemin relatif à la racine et texte.
+fn sources_kesh_api() -> Vec<(String, String)> {
+    let racine_txt = racine().to_string_lossy().into_owned();
+    let mut out: Vec<(String, String)> =
+        fichiers_sous("crates/kesh-api/src", &|n| n.ends_with(".rs"))
+            .into_iter()
+            .map(|p| {
+                let texte = std::fs::read_to_string(&p).unwrap();
+                let rel = p.to_string_lossy().replace(&racine_txt, "");
+                (rel.trim_start_matches('/').to_string(), texte)
+            })
+            .collect();
+    out.sort();
+    assert!(out.len() > 50, "sources de kesh-api lues à vide");
+    out
+}
+
+/// Retire d'un source Rust les modules `#[cfg(test)] mod … { … }`, accolades
+/// appariées. Les accolades des chaînes (`"…"`, `r"…"`, `r#"…"#`), des caractères
+/// (`'{'`) et des commentaires (`//`, `/* */`) ne comptent pas : un doc-comment
+/// `{ $count }` ne doit pas fermer le module avant son terme.
+fn sans_modules_de_test(source: &str) -> String {
+    let ouverture = Regex::new(
+        r"#\[cfg\(test\)\]\s*(?:#\[[^\]]*\]\s*)*(?:pub(?:\([^)]*\))?\s+)?mod\s+\w+\s*\{",
+    )
+    .unwrap();
+    let mut out = String::new();
+    let mut reste = source;
+    while let Some(m) = ouverture.find(reste) {
+        out.push_str(&reste[..m.start()]);
+        let corps = &reste[m.end()..];
+        let fin = fin_du_bloc(corps)
+            .unwrap_or_else(|| panic!("module de test non fermé : {}", &reste[m.start()..m.end()]));
+        reste = &corps[fin..];
+    }
+    out.push_str(reste);
+    out
+}
+
+/// Position, dans `corps` (qui suit une `{` ouvrante), juste après l'accolade qui
+/// la ferme ; `None` si elle manque.
+fn fin_du_bloc(corps: &str) -> Option<usize> {
+    let b = corps.as_bytes();
+    let mut i = 0;
+    let mut profondeur = 1usize;
+    while i < b.len() {
+        match b[i] {
+            b'/' if b.get(i + 1) == Some(&b'/') => {
+                while i < b.len() && b[i] != b'\n' {
+                    i += 1;
+                }
+            }
+            b'/' if b.get(i + 1) == Some(&b'*') => {
+                i += 2;
+                while i + 1 < b.len() && !(b[i] == b'*' && b[i + 1] == b'/') {
+                    i += 1;
+                }
+                i += 1;
+            }
+            b'r' if (b.get(i + 1) == Some(&b'"') || b.get(i + 1) == Some(&b'#'))
+                && (i == 0 || !(b[i - 1].is_ascii_alphanumeric() || b[i - 1] == b'_')) =>
+            {
+                let mut j = i + 1;
+                let mut dieses = 0;
+                while b.get(j) == Some(&b'#') {
+                    dieses += 1;
+                    j += 1;
+                }
+                if b.get(j) == Some(&b'"') {
+                    let fermeture: Vec<u8> = std::iter::once(b'"')
+                        .chain(std::iter::repeat_n(b'#', dieses))
+                        .collect();
+                    j += 1;
+                    while j < b.len() && !b[j..].starts_with(&fermeture) {
+                        j += 1;
+                    }
+                    i = j + fermeture.len() - 1;
+                }
+            }
+            b'"' => {
+                i += 1;
+                while i < b.len() && b[i] != b'"' {
+                    if b[i] == b'\\' {
+                        i += 1;
+                    }
+                    i += 1;
+                }
+            }
+            b'\'' => {
+                // Un caractère (`'{'`, `'\''`, `'\u{2013}'`) ; sinon une durée de vie.
+                if b.get(i + 1) == Some(&b'\\') {
+                    i += 2;
+                    while i < b.len() && b[i] != b'\'' {
+                        i += 1;
+                    }
+                } else if let Some(c) = corps[i + 1..].chars().next()
+                    && corps[i + 1 + c.len_utf8()..].starts_with('\'')
+                {
+                    i += c.len_utf8() + 1;
+                }
+            }
+            b'{' => profondeur += 1,
+            b'}' => {
+                profondeur -= 1;
+                if profondeur == 0 {
+                    return Some(i + 1);
+                }
+            }
+            _ => {}
+        }
+        i += 1;
+    }
+    None
+}
+
+/// Anti-test-muet de [`sans_modules_de_test`] : le module est retiré entier, même
+/// quand ses chaînes, caractères et commentaires portent des accolades ; le code
+/// qui le suit reste.
+#[test]
+fn sans_modules_de_test_apparie_les_accolades() {
+    let source = "fn a() { X(1) }\n#[cfg(test)]\nmod tests {\n    // { ouverte\n    \
+                  fn t() { let _ = \"}\"; let _ = '{'; let _ = r#\"}\"#; X(2); }\n    \
+                  /* } */\n}\nfn b<'a>(_: &'a str) { X(3) }\n";
+    let reste = sans_modules_de_test(source);
+    assert!(reste.contains("X(1)") && reste.contains("X(3)"), "{reste}");
+    assert!(!reste.contains("X(2)"), "{reste}");
+}
+
+/// **Story 35-2a, AC13** (D10) — l'état i18n global des messages d'erreur ne
+/// s'initialise qu'au démarrage. `errors::t` rend le repli tant que
+/// `init_error_i18n` n'a pas été appelée : un test de `src/` qui l'appellerait
+/// changerait, pour tout le processus de `cargo test`, ce que lisent les autres —
+/// vert sous nextest (un processus par test), rouge en CI. Le nom ne s'écrit donc
+/// qu'à **deux** endroits, `mod tests` et commentaires compris : la définition
+/// d'`errors.rs` et l'appel de `main.rs`. Un alias (`use … as …`) l'écrit aussi.
+#[test]
+fn l_etat_i18n_global_ne_s_initialise_qu_au_demarrage() {
+    let mut sites: Vec<String> = Vec::new();
+    for (fichier, texte) in sources_kesh_api() {
+        for (n, ligne) in texte.lines().enumerate() {
+            for _ in ligne.matches("init_error_i18n") {
+                sites.push(format!("{fichier}:{} {}", n + 1, ligne.trim()));
+            }
+        }
+    }
+    assert_eq!(
+        sites.len(),
+        2,
+        "init_error_i18n hors de ses deux sites : {sites:#?}"
+    );
+    assert!(
+        sites[0].starts_with("crates/kesh-api/src/errors.rs:")
+            && sites[0].contains("pub fn init_error_i18n("),
+        "{sites:#?}"
+    );
+    assert!(
+        sites[1].starts_with("crates/kesh-api/src/main.rs:"),
+        "{sites:#?}"
+    );
+}
+
+/// **Story 35-2a, AC14** (D3) — le refus `INVOICE_NOT_PDF_READY` ne se construit
+/// qu'à un endroit, la fonction `refus` d'`invoice_pdf_service.rs`, qui le rend
+/// localisé ; l'autre occurrence est le motif de `classify_render_error`
+/// (`invoice_email.rs`). Hors `errors.rs` (la variante et sa réponse) et hors
+/// modules de test.
+#[test]
+fn le_refus_du_pdf_ne_se_construit_qu_a_un_endroit() {
+    let mut sites: Vec<String> = Vec::new();
+    for (fichier, texte) in sources_kesh_api() {
+        if fichier.ends_with("/errors.rs") {
+            continue;
+        }
+        for (n, ligne) in sans_modules_de_test(&texte).lines().enumerate() {
+            for _ in ligne.matches("InvoiceNotPdfReady(") {
+                sites.push(format!("{fichier}:{} {}", n + 1, ligne.trim()));
+            }
+        }
+    }
+    assert_eq!(
+        sites.len(),
+        2,
+        "InvoiceNotPdfReady( hors de ses deux sites : {sites:#?}"
+    );
+    assert!(
+        sites
+            .iter()
+            .any(|s| s.starts_with("crates/kesh-api/src/routes/invoice_email.rs:")),
+        "{sites:#?}"
+    );
+    assert!(
+        sites
+            .iter()
+            .any(|s| s.starts_with("crates/kesh-api/src/routes/invoice_pdf_service.rs:")),
+        "{sites:#?}"
+    );
 }
 
 /// **G12** (#569) — le manuel utilisateur et le guide d'API disent l'ordre de

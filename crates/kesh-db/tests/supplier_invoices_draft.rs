@@ -32,7 +32,7 @@ use chrono::NaiveDate;
 use fournisseur_rapproche::{Fournisseur, IBAN_CREANCIER};
 use kesh_db::entities::imported_supplier_invoice::{LinkOrigin, NewImportedSupplierInvoice};
 use kesh_db::entities::{
-    NewPaymentBatch, NewSupplierInvoice, NewSupplierInvoiceLine, SettlementChoice,
+    Acteur, NewPaymentBatch, NewSupplierInvoice, NewSupplierInvoiceLine, SettlementChoice,
 };
 use kesh_db::errors::{DbError, SettlementCancelBlocker, SupplierUnvalidationBlocker};
 use kesh_db::repositories::{imported_supplier_invoices, payment_batches, supplier_invoices};
@@ -732,7 +732,7 @@ async fn unvalidation_deletes_the_purchase_entry(pool: MySqlPool) {
         seeded.company_id,
         v.invoice.id,
         v.invoice.version,
-        seeded.admin_user_id,
+        Acteur::utilisateur(seeded.admin_user_id),
         crate::jour::aujourd_hui_test(),
     )
     .await
@@ -780,6 +780,7 @@ async fn unvalidation_status_refusals(pool: MySqlPool) {
     let (seeded, f) = decor(&pool).await;
     let c = seeded.company_id;
     let u = seeded.admin_user_id;
+    let qui = Acteur::utilisateur(u);
     let (paid, _, _) = fournisseur_rapproche::facture_payee(
         &pool,
         &seeded,
@@ -794,10 +795,16 @@ async fn unvalidation_status_refusals(pool: MySqlPool) {
         .fetch_one(&pool)
         .await
         .unwrap();
-    let err =
-        supplier_invoices::unvalidate(&pool, c, paid, version, u, crate::jour::aujourd_hui_test())
-            .await
-            .expect_err("payée");
+    let err = supplier_invoices::unvalidate(
+        &pool,
+        c,
+        paid,
+        version,
+        qui,
+        crate::jour::aujourd_hui_test(),
+    )
+    .await
+    .expect_err("payée");
     assert_eq!(
         bloque(&err),
         Some(SupplierUnvalidationBlocker::Paid),
@@ -809,7 +816,7 @@ async fn unvalidation_status_refusals(pool: MySqlPool) {
         c,
         paid,
         version + 3,
-        u,
+        qui,
         crate::jour::aujourd_hui_test(),
     )
     .await
@@ -835,10 +842,16 @@ async fn unvalidation_status_refusals(pool: MySqlPool) {
         .execute(&pool)
         .await
         .unwrap();
-    let err =
-        supplier_invoices::unvalidate(&pool, c, paid, version, u, crate::jour::aujourd_hui_test())
-            .await
-            .expect_err("payée, numéro blanc");
+    let err = supplier_invoices::unvalidate(
+        &pool,
+        c,
+        paid,
+        version,
+        qui,
+        crate::jour::aujourd_hui_test(),
+    )
+    .await
+    .expect_err("payée, numéro blanc");
     assert!(
         matches!(
             &err,
@@ -856,7 +869,7 @@ async fn unvalidation_status_refusals(pool: MySqlPool) {
         c,
         d.invoice.id,
         d.invoice.version,
-        u,
+        qui,
         crate::jour::aujourd_hui_test(),
     )
     .await
@@ -874,7 +887,7 @@ async fn unvalidation_status_refusals(pool: MySqlPool) {
         c,
         x.invoice.id,
         x.invoice.version + 7,
-        u,
+        qui,
         crate::jour::aujourd_hui_test(),
     )
     .await
@@ -885,7 +898,7 @@ async fn unvalidation_status_refusals(pool: MySqlPool) {
         c,
         x.invoice.id,
         x.invoice.version + 1,
-        u,
+        qui,
         crate::jour::aujourd_hui_test(),
     )
     .await
@@ -898,7 +911,7 @@ async fn unvalidation_status_refusals(pool: MySqlPool) {
         c,
         o.invoice.id,
         o.invoice.version + 1,
-        u,
+        qui,
         crate::jour::aujourd_hui_test(),
     )
     .await
@@ -936,7 +949,7 @@ async fn rapprochee(pool: &MySqlPool, seeded: &SeededCompany, f: Fournisseur, je
 async fn unvalidation_precedence_version_batch_match_fiscal_year(pool: MySqlPool) {
     let (seeded, f) = decor(&pool).await;
     let c = seeded.company_id;
-    let u = seeded.admin_user_id;
+    let qui = Acteur::utilisateur(seeded.admin_user_id);
     let v = validee(&pool, &seeded, f, "FF-PR", dec!(90)).await;
     let id = v.invoice.id;
     let je = v.invoice.purchase_journal_entry_id.unwrap();
@@ -952,7 +965,7 @@ async fn unvalidation_precedence_version_batch_match_fiscal_year(pool: MySqlPool
         c,
         id,
         version + 1,
-        u,
+        qui,
         crate::jour::aujourd_hui_test(),
     )
     .await
@@ -964,7 +977,7 @@ async fn unvalidation_precedence_version_batch_match_fiscal_year(pool: MySqlPool
 
     let tx = rapprochee(&pool, &seeded, f, je).await;
     let err =
-        supplier_invoices::unvalidate(&pool, c, id, version, u, crate::jour::aujourd_hui_test())
+        supplier_invoices::unvalidate(&pool, c, id, version, qui, crate::jour::aujourd_hui_test())
             .await
             .expect_err("lot et rapprochement");
     assert_eq!(
@@ -984,7 +997,7 @@ async fn unvalidation_precedence_version_batch_match_fiscal_year(pool: MySqlPool
         .await
         .unwrap();
     let err =
-        supplier_invoices::unvalidate(&pool, c, id, version, u, crate::jour::aujourd_hui_test())
+        supplier_invoices::unvalidate(&pool, c, id, version, qui, crate::jour::aujourd_hui_test())
             .await
             .expect_err("rapprochement et exercice clos");
     assert_eq!(
@@ -1008,7 +1021,7 @@ async fn unvalidation_precedence_version_batch_match_fiscal_year(pool: MySqlPool
     .await
     .unwrap();
     let err =
-        supplier_invoices::unvalidate(&pool, c, id, version, u, crate::jour::aujourd_hui_test())
+        supplier_invoices::unvalidate(&pool, c, id, version, qui, crate::jour::aujourd_hui_test())
             .await
             .expect_err("exercice clos");
     assert!(matches!(err, DbError::FiscalYearClosed), "{err:?}");
@@ -1020,7 +1033,7 @@ async fn unvalidation_precedence_version_batch_match_fiscal_year(pool: MySqlPool
 async fn unvalidation_precedence_later_year_then_period_lock(pool: MySqlPool) {
     let (seeded, f) = decor(&pool).await;
     let c = seeded.company_id;
-    let u = seeded.admin_user_id;
+    let qui = Acteur::utilisateur(seeded.admin_user_id);
     let v = validee(&pool, &seeded, f, "FF-L", dec!(15)).await;
     let id = v.invoice.id;
     // Exercice postérieur clos.
@@ -1042,7 +1055,7 @@ async fn unvalidation_precedence_later_year_then_period_lock(pool: MySqlPool) {
         c,
         id,
         v.invoice.version,
-        u,
+        qui,
         crate::jour::aujourd_hui_test(),
     )
     .await
@@ -1061,7 +1074,7 @@ async fn unvalidation_precedence_later_year_then_period_lock(pool: MySqlPool) {
         c,
         id,
         v.invoice.version,
-        u,
+        qui,
         crate::jour::aujourd_hui_test(),
     )
     .await
@@ -1095,7 +1108,7 @@ async fn paid_then_settlement_cancelled_then_unvalidated(pool: MySqlPool) {
         c,
         id,
         annule.invoice.invoice.version,
-        u,
+        Acteur::utilisateur(u),
         crate::jour::aujourd_hui_test(),
     )
     .await
@@ -1292,7 +1305,7 @@ async fn deleting_refusals(pool: MySqlPool) {
         c,
         l.invoice.id,
         version,
-        u,
+        Acteur::utilisateur(u),
         crate::jour::aujourd_hui_test(),
     )
     .await
@@ -1632,7 +1645,7 @@ async fn repasser(
         seeded.company_id,
         a.id,
         a.version,
-        seeded.admin_user_id,
+        Acteur::utilisateur(seeded.admin_user_id),
         crate::jour::aujourd_hui_test(),
     )
     .await
@@ -2517,7 +2530,7 @@ async fn paid_reconciled_invoice_redraft_names_the_reconciliation(pool: MySqlPoo
             seeded.company_id,
             r.supplier_invoice_id,
             v,
-            seeded.admin_user_id,
+            Acteur::utilisateur(seeded.admin_user_id),
             crate::jour::aujourd_hui_test(),
         )
         .await
@@ -2583,7 +2596,7 @@ async fn validated_redraft_audit_says_open(pool: MySqlPool) {
         seeded.company_id,
         v.invoice.id,
         v.invoice.version,
-        seeded.admin_user_id,
+        Acteur::utilisateur(seeded.admin_user_id),
         crate::jour::aujourd_hui_test(),
     )
     .await
@@ -2622,7 +2635,7 @@ async fn a_reconciled_paid_invoice_goes_back_to_draft_through_unreconciliation(p
         c,
         r.supplier_invoice_id,
         version,
-        u,
+        Acteur::utilisateur(u),
         crate::jour::aujourd_hui_test(),
     )
     .await
@@ -2648,7 +2661,7 @@ async fn a_reconciled_paid_invoice_goes_back_to_draft_through_unreconciliation(p
         c,
         r.supplier_invoice_id,
         version,
-        u,
+        Acteur::utilisateur(u),
         crate::jour::aujourd_hui_test(),
     )
     .await

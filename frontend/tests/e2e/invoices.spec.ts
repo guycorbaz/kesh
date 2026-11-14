@@ -736,7 +736,7 @@ test.describe('Factures — téléchargement PDF (Story 5.3)', () => {
 				body: JSON.stringify({
 					error: {
 						code: 'INVOICE_NOT_PDF_READY',
-						message: "Aucun compte bancaire principal n'est configuré pour cette company.",
+						message: "Aucun compte bancaire principal n'est configuré pour cette entreprise.",
 					},
 				}),
 			});
@@ -747,9 +747,10 @@ test.describe('Factures — téléchargement PDF (Story 5.3)', () => {
 
 		// Toast d'erreur affichant le message INVOICE_NOT_PDF_READY.
 		await expect(
-			// La clé FTL invoice-pdf-error-invoice-not-pdf-ready traduit le code —
-			// le message backend intercepté n'est pas affiché tel quel.
-			page.getByText(/pas prête pour la génération PDF|compte bancaire principal|INVOICE_NOT_PDF_READY/i),
+			// Story 35-2a (#955, D1) — le message du serveur, localisé et qui dit
+			// quoi corriger, est affiché tel quel ; la clé FTL
+			// invoice-pdf-error-invoice-not-pdf-ready ne sert plus qu'au message vide.
+			page.getByText(/compte bancaire principal n'est configuré pour cette entreprise/i),
 		).toBeVisible({ timeout: 5000 });
 	});
 });

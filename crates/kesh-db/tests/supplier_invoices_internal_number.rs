@@ -141,7 +141,7 @@ impl Decor {
             self.company(),
             v.invoice.id,
             v.invoice.version,
-            self.user(),
+            kesh_db::entities::Acteur::utilisateur(self.user()),
             crate::jour::aujourd_hui_test(),
         )
         .await
@@ -299,7 +299,7 @@ async fn unvalidated_keeps_and_revalidated_takes_the_same_number(pool: MySqlPool
         d.company(),
         v.invoice.id,
         v.invoice.version,
-        d.user(),
+        kesh_db::entities::Acteur::utilisateur(d.user()),
         crate::jour::aujourd_hui_test(),
     )
     .await
@@ -351,7 +351,7 @@ async fn cancelled_then_draft_keeps_the_number(pool: MySqlPool) {
         d.company(),
         annulee.invoice.id,
         annulee.invoice.version,
-        d.user(),
+        kesh_db::entities::Acteur::utilisateur(d.user()),
         crate::jour::aujourd_hui_test(),
     )
     .await
@@ -841,7 +841,7 @@ async fn update_draft_preserves_the_number(pool: MySqlPool) {
         d.company(),
         v.invoice.id,
         v.invoice.version,
-        d.user(),
+        kesh_db::entities::Acteur::utilisateur(d.user()),
         crate::jour::aujourd_hui_test(),
     )
     .await
@@ -1008,7 +1008,7 @@ async fn the_refused_unvalidation_names_the_internal_number(pool: MySqlPool) {
         d.company(),
         payee.invoice.id,
         payee.invoice.version,
-        d.user(),
+        kesh_db::entities::Acteur::utilisateur(d.user()),
         crate::jour::aujourd_hui_test(),
     )
     .await

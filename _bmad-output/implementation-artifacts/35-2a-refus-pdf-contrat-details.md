@@ -1,6 +1,6 @@
 # Story 35-2a : le refus du PDF dit, dans un message localisé, quoi corriger — champ, caractère, adresse, pays (#955, #964)
 
-Status: ready-for-dev
+Status: done
 
 *Validation terminée (P1 à P7, 2026-11-12).*
 
@@ -260,13 +260,13 @@ retirée du catalogue (AC2) ; M14 une construction `InvoiceNotPdfReady(…)` ajo
 
 ## Tâches
 
-- [ ] Étape 0, **sur `release/0.17.6`** (les lignes citées sont celles de cette branche ; le worktree du kickoff est sur
+- [x] Étape 0, **sur `release/0.17.6`** (les lignes citées sont celles de cette branche ; le worktree du kickoff est sur
       `main`) : recompter l'inventaire, le tableau des routes et les lignes citées ; Change Log.
-- [ ] Tests, rouges consignés.
-- [ ] Serveur : fonction pure, phrases ×4, adresse (D6), pays (D7), avoir (D8), communication (D9), `:338`, G9 ; gardes AC13 et AC14.
-- [ ] Écran : `pdf-error.ts` (D1).
-- [ ] Tests existants (AC9) ; manuel, CHANGELOG, `api-external.md` ; captures ; E2E.
-- [ ] Gates : `test-fast.sh --ci` et `scripts/gate-ci.sh`, frontend complet, E2E complet au dernier commit de code, échecs
+- [x] Tests, rouges consignés.
+- [x] Serveur : fonction pure, phrases ×4, adresse (D6), pays (D7), avoir (D8), communication (D9), `:338`, G9 ; gardes AC13 et AC14.
+- [x] Écran : `pdf-error.ts` (D1).
+- [x] Tests existants (AC9) ; manuel, CHANGELOG, `api-external.md` ; captures ; E2E.
+- [x] Gates : `test-fast.sh --ci` et `scripts/gate-ci.sh`, frontend complet, E2E complet au dernier commit de code, échecs
       nommés contre `docs/testing.md`.
 
 ## Dev Notes
@@ -303,11 +303,47 @@ Avec la 35-3 : `messages.ftl` ×4, G9 (ici une entrée neuve en fin de table ; l
 
 ### Agent Model Used
 
+Claude Opus 5.5 (`claude-opus-5-5`), en autonomie, worktree `kesh-e352a`, le 2026-11-12.
+
 ### Debug Log References
+
+Journaux sous `/home/gcorbaz/devel/kesh-gate-logs/e352a/` : `rouges.log` (preuve du rouge), `rouges-front.log`,
+`cible-*.log` (gates ciblés), `mut/*.log` (mutations), `front-*.log`, `make-user.log`, gates complets et E2E (noms au
+Change Log), captures dans `captures/`.
 
 ### Completion Notes List
 
+- **Fonction pure et construction unique (D3)** : `CauseRefusPdf` (ensemble clos, D5), `refus_pdf(&cause) -> RefusPdf
+  { cle, args, repli }` et `refus(cause) -> AppError`, dans `invoice_pdf_service.rs`. Les treize constructions de
+  production passent par `refus` ; `map_qrbill_error` classe chaque variante en cause et journalise le texte de
+  `kesh-qrbill` (`tracing::warn!`) ; `PdfGeneration`, `TooManyLines`, `HeaderOverflow` gardent leur variante.
+- **D4** : le caractère par `escape_debug`, le point de code en chaîne `U+XXXX` ; `max`, `got`, `code` en chaînes.
+- **D6 (#964)** : `adresse_complete` juge NPA et localité par `champ_vide_pour_qr` et nomme le premier vide, par la même
+  clé que `FieldEmpty` ; un client sans adresse garde `invoice-pdf-error-client-address-required`.
+- **D7** : `pays_iso` contrôle le pays résolu de chaque partie par `is_iso_3166_alpha2` (C-e352a-3) ; le bras
+  `InvalidCountry` reste, défensif, glose technique retirée.
+- **D8** : `credit-note-pdf-error-contact-missing` ; **D9** : la phrase du numéro de facture renvoie au format.
+- **Catalogues** : 39 clés neuves ×4, deux retirées, trois reprises à replis réalignés ; G9 passe de 8 à 9 entrées (42
+  clés). **Écran** : `pdfErrorMessage` rend le message du serveur pour `INVOICE_NOT_PDF_READY` s'il n'est pas blanc.
+- **Gardes** : AC13 (`l_etat_i18n_global_ne_s_initialise_qu_au_demarrage`), AC14
+  (`le_refus_du_pdf_ne_se_construit_qu_a_un_endroit`), avec `sans_modules_de_test` et son anti-test-muet (C-e352a-4).
+
 ### File List
+
+- `crates/kesh-api/src/routes/invoice_pdf_service.rs` — cause, fonction pure, construction, contrôles D6/D7, tests AC2.
+- `crates/kesh-api/src/routes/credit_notes.rs` — la clé de l'avoir.
+- `crates/kesh-i18n/locales/{fr-CH,de-CH,it-CH,en-CH}/messages.ftl` — 39 clés neuves, deux retirées.
+- `crates/kesh-api/tests/invoice_pdf_e2e.rs` — AC1, AC4, AC5, AC6, avoir (AC11).
+- `crates/kesh-api/tests/invoice_send_email_e2e.rs` — envoi et rappel seul (AC11).
+- `crates/kesh-api/tests/invoice_frozen_pdf_e2e.rs` — refigeage (AC11).
+- `crates/kesh-api/tests/company_address_e2e.rs` — trois assertions réécrites, un commentaire au présent (AC9).
+- `crates/kesh-api/tests/textes_coherents.rs` — G9 (9 entrées), gardes AC13 et AC14.
+- `frontend/src/lib/shared/utils/pdf-error.ts`, `pdf-error.test.ts` — D1, AC7.
+- `frontend/tests/e2e/invoice-qr-caracteres.spec.ts`, `helpers/api-fixtures.ts`, `invoices.spec.ts` — AC12, AC9.
+- `docs/manual/fr/user-manual.tex`, `user-manual.pdf` — AC10.
+- `CHANGELOG.md`, `docs/api-external.md` — AC10.
+- `_bmad-output/implementation-artifacts/e35-choix-autonomes-e352a.md` — registre (C-e352a-1 à -7).
+- `_bmad-output/implementation-artifacts/sprint-status.yaml`, cette fiche.
 
 ## Change Log
 
@@ -384,4 +420,137 @@ Avec la 35-3 : `messages.ftl` ×4, G9 (ici une entrée neuve en fin de table ; l
   de recyclage), **recadrage C-e350-11** à la P3 (message localisé, sans contrat `details` ; contrat renvoyé à #1045) ;
   fonction pure et fonction de construction uniques, une clé par champ et par raison (G9 42 / 9), ensemble clos des causes,
   gardes AC13 et AC14 ; #944 hors (C-e350-1) ; #1046 pour le format de numérotation.
+- 2026-11-12 — **Étape 0 du développement** (Opus 5.5, worktree `kesh-e352a`, branche `story/35-2a-refus-pdf` partie de
+  `epic-35/base` = `049b0466` ; `git diff release/0.17.6 HEAD -- crates frontend` vide : le code est celui de la 0.17.6).
+  Recompté, **aucun écart** ; la fiche n'est pas corrigée.
+  - **AC3** : `git grep -n 'InvoiceNotPdfReady' -- crates | grep -v errors.rs` rend **16 lignes** : `credit_notes.rs:295`,
+    `invoice_email.rs:1030` (classement), `:1754` (test), `invoice_pdf_service.rs:216, 226, 288, 324, 338, 491`
+    (doc-comment : « map to `InvoiceNotPdfReady` (400) »), `497, 499, 502, 505, 508, 510, 540` — soit 13 constructions de
+    production, 1 de test, 2 non-constructions ; `errors.rs` : `:34` (doc), `:429` (variante), `:2073` (bras), `:5717`
+    (test). Verdicts par site : à l'entrée du développement.
+  - **Routes** : `invoice_pdf.rs:50` (`get_or_freeze(…, Usage::Download)`), `:88` (`refreeze`) ;
+    `issued_invoice_pdf.rs:151` et `:256` (`render_document(`), `:240-249` (`InvoicePdfNotFrozen`, `InvoicePdfPresent`,
+    `FrozenFile::Missing => {}`) ; `invoice_email.rs:560` (`render_document(`, rappel seul), `:808` (`get_or_freeze(…,
+    Usage::Send)`), `:1023-1036` (`classify_render_error`), `:1260-1269` (lot) ; `credit_notes.rs:295`, `:363`
+    (`generate_credit_note_pdf(…).map_err(map_qrbill_error)`). Conformes au tableau.
+  - **Champs** (`kesh-qrbill/src/validation.rs:314-407`, `:469-474`) : charset sur `name`, `line1`, `line2`,
+    `postal_code`, `town` × 2 parties + `unstructured_message` = 11 ; vide sur `name`, `postal_code`, `town` × 2 = 6 (le
+    `line2` vide du type K est inatteignable : Kesh ne construit que des adresses `Structured`) ; trop long sur les cinq
+    champs × 2 = 10 ; **27** ; + 3 replis par raison + 9 causes sans champ = **39** clés neuves, 42 avec les trois reprises.
+  - **Catalogue** fr-CH `:967-971` (`invoice-pdf-error-*`, « entreprise » à `:968`) ; `textes_coherents.rs:734`
+    (`const TABLE: [(&str, Cles); 8]`) ; `pdf-error.ts:36` et `:43` ; `pdf-error.test.ts:35-38` ;
+    `company_address_e2e.rs:583-589` (« Pays invalide »), `:667-675` (« adresse de l'entreprise est vide »), `:375-376` ;
+    `user-manual.tex:1251` ; `api-external.md:1058` (`SUPPLIER_INVOICE_DUE_BEFORE_INVOICE_DATE`) ;
+    `api-fixtures.ts:73-79` (`createContactWithAddressViaApi`, sans `city`). Conformes.
+- 2026-11-13 — **Développement** (Opus 5.5, commits `dcac5283` étape 0, `fe88ce8c` code ; registre
+  `e35-choix-autonomes-e352a.md`, C-e352a-1 à -7).
+  - **Rouges avant correction** (`kesh-gate-logs/e352a/rouges.log`, binaires du code de départ, catalogues de la 0.17.6
+    remis en place, C-e352a-5) : `invoice_pdf_e2e` 12 rouges sur 15 — les trois verts sont les clés reprises, dont la
+    valeur ne change pas (client sans adresse, compte absent, contact absent de la facture) ; `company_address_e2e` 2/2
+    rouges ; envoi et rappel seul 2/2 ; refigeage 1/1 ; AC14 rouge (14 occurrences au départ : les 13 constructions
+    de production et `invoice_email.rs:1030`, relevées par `git grep` à l'étape 0) ; AC13 vert au départ (sa sonde est
+    M12) ; Vitest `pdf-error` 1 rouge (`rouges-front.log`). AC2 ne compilait pas au départ (fonction absente).
+  - **Verdict par site (AC3)** : les 13 constructions de production passent par `refus` — `credit_notes.rs:295` (avoir,
+    D8) ; `invoice_pdf_service.rs:216` (contact), `:226` (compte), `:288` (D6, entreprise), `:324` (client sans adresse
+    ou D6), `:338` (QRR → panne interne), `:497, 499, 502, 505, 508, 510, 540` (`map_qrbill_error`, une cause par
+    variante). `invoice_email.rs:1030` (classement) et `:1754` (test) inchangés ; `:491` (doc-comment) sans le motif.
+    Garde AC14 : deux sites, la construction de `refus` et `invoice_email.rs:1030`.
+  - **Écart de la fiche, corrigé dans le code** : AC9 n'inventoriait que deux assertions de `company_address_e2e.rs` ;
+    une **troisième** (`a_lowercase_stored_country_is_not_known`, `:505-511`, « Pays invalide ») a rougi au gate ciblé et
+    a été réécrite comme les autres (« pays de l'entreprise » et « « ch » », le code tel que stocké, D7).
+  - **Tests ajoutés** (de `049b0466` à `fe88ce8c`, `#[test]`/`#[sqlx::test]` recomptés au diff) : 24 Rust —
+    `invoice_pdf_service.rs` 3 (table AC2, échappement D4, causes de `map_qrbill_error`), `invoice_pdf_e2e.rs` 15,
+    `invoice_send_email_e2e.rs` 2, `invoice_frozen_pdf_e2e.rs` 1, `textes_coherents.rs` 3 (AC13, AC14, anti-test-muet
+    de `sans_modules_de_test`) ; Vitest +2 (7 dans `pdf-error.test.ts`) ; E2E +1.
+  - **Mutations** (`kesh-gate-logs/e352a/mut/`, script `mutations-e352a.py`, motif unique vérifié, restauration
+    `git checkout --` + `touch`, arbre propre après) : **9 jouées, 9 tuées, chacune par une assertion** — M1 (Vitest) ;
+    M2a (deux clés échangées → AC2 a) ; M2b (« entreprise » → « client » dans la phrase et son repli → AC2 c seule) ;
+    M7 (`escape_debug` retiré → test D4 et `refus_ecrit_un_saut_de_ligne_echappe`) ; M9 (`t` au lieu de `t_args` → AC1,
+    `{$car}` brut) ; M11 (pays non contrôlé → AC5) ; M12 (`init_error_i18n` dans le `mod tests` d'`errors.rs` → AC13) ;
+    M13 (`invoice-pdf-error-internal` retirée du fr-CH → AC2) ; M14 (construction ajoutée dans `credit_notes.rs` → AC14,
+    qui liste trois sites : **sonde positive**). M3 et M4 non jouées (équivalentes, V5-3).
+  - **Gates au dernier commit de code `fe88ce8c`** : `scripts/test-fast.sh --ci` **5331 exécutés, 5331 passés, 13
+    ignorés** (`test-fast-ci.log`) ; `scripts/gate-ci.sh kesh_ci_e352a` **5338 passés, 0 échoué, 17 ignorés**
+    (`gate-ci.log`) ; frontend `check` 0 erreur (29 avertissements préexistants), `lint-i18n-ownership` PASS, `test:unit`
+    232 fichiers / 3188 tests, `build` vert (`front-*.log`) ; **E2E complet** (recette entière, port 3401,
+    `kesh_e2e_e352a` recréée) : **404 passés, 7 échecs, 18 ignorés** (`e2e-complet.log`) — les sept de la KF-029 (#97),
+    nommés contre `docs/testing.md` : `mode-expert.spec.ts:26`, `:41`, `onboarding-path-b.spec.ts:65`, `:92`,
+    `onboarding.spec.ts:57`, `:77`, `:150` ; les specs touchées passent (`invoice-qr-caracteres.spec.ts:52`, `:90`,
+    `invoices.spec.ts:723`).
+  - **Manuel** : `user-manual.tex:1251` réécrit, PDF régénéré (`make user`, 3 passes), contrôlé aplati : « Depuis la
+    version 0.17.7, le téléchargement refusé nomme le champ et le caractère à corriger » présent.
+  - **Captures** (thème clair, `kesh_e2e_e352a` jetable) : `kesh-gate-logs/e352a/captures/01-telechargement-caractere.png`,
+    `02-telechargement-adresse-incomplete.png`, `03-telechargement-pays.png`, `04-envoi-email.png`, `05-rappel-seul.png`.
+  - **Consigne Edit** : un écart — les tests ajoutés en fin d'`invoice_pdf_e2e.rs` l'ont été par un `cat >> … <<EOF`
+    (ajout en fin de fichier, sans remplacement) ; tout le reste par Edit/Write. L'outil ne manquait de rien : Edit
+    exige une lecture préalable du fichier, que le `cat` évitait ; c'était un raccourci, non un besoin.
+  - Symptôme greppé après correction (`Pays invalide`, `adresse de l'entreprise est vide`, `company-address-empty`,
+    `client-address-empty`, `qrbill-error-qrr`, `Champ debtor`, `vide (requis)`) sur `crates`, `frontend`, `docs`,
+    `website`, `README.md` : seules restent les chaînes `#[error]` de `kesh-qrbill` (journal) et la clé fixe
+    `invoice-pdf-error-invoice-not-pdf-ready`, gardée pour un message vide (D1).
+- 2026-11-13 — **Revue de code P1** (Opus, trois lentilles B, E, A ; rapports
+  `kesh-gate-logs/e352a-review-p1-{B,E,A}.md`) : **P1 : 2 MEDIUM, 8 LOW** (0 CRITICAL, 0 HIGH). Les deux MEDIUM convergent
+  (B1 = E2 = A1 ; B2 = E1) et ont été vérifiés au code par l'orchestrateur. Les LOW B3, B4, B5, E3, E4, E5 sont tracés,
+  **non traités ici** : #1099, #1100, #1101, #1102, #1103, #1104 ; la barre d'actions coupée, #1096. A2 et A3 traités
+  ci-dessous. **Remédiation** (Opus 5.5, commit de code `f934bd64`) :
+  - **B1/E2/A1 (MEDIUM)** — les trois phrases du nom de l'entreprise renvoyaient à *Paramètres → Organisation*, où le nom
+    ne se modifie pas. Prémisse lue au code : `routes/companies.rs:133`, `:271`, `:353` reconstruisent la mise à jour avec
+    `name: company.name.clone()` ; aucune route n'écrit le nom. Les trois phrases (×4 langues, replis alignés, G9) disent
+    désormais qu'il « ne se modifie pas encore depuis l'interface », sans promettre d'écran ni nommer personne (C-e352a-8 ;
+    C-e352a-1 annoté ; issues #1097, nom non modifiable, et #1098, contrôle à l'assistant). Manuel (`user-manual.tex:1251`,
+    l'exception dite après l'exemple, avec #1097) et CHANGELOG (« sauf le nom de l'entreprise », #1097) propagés ; PDF
+    régénéré (`make user`, 2 passes) et contrôlé aplati : « Le nom de l'entreprise fait exception : il ne se modifie pas
+    encore depuis l'interface (issue #1097) » présent. Garde : AC2 asserte qu'aucune des trois clés `*-company-name` ne
+    porte « Organi » dans les quatre langues ; `refus_nomme_le_nom_vide_de_l_entreprise` aussi. Symptôme greppé
+    (`Organisation`, `Organizzazione` dans les quatre `messages.ftl`, le manuel, les tests, `api-external.md`, le
+    CHANGELOG) : il reste 11 sites par catalogue, tous des phrases d'**adresse** ou de **pays** de l'entreprise, que
+    l'écran modifie (`settings/+page.svelte`, `addressStructured`, champ pays) ; les mentions du CHANGELOG antérieures
+    parlent de l'adresse et des coordonnées ; `api-external.md` n'en porte aucune.
+  - **B2/E1 (MEDIUM)** — les témoins de #964 passaient quel que soit le champ nommé (la parenthèse « NPA et localité »
+    porte les deux mots). `refus_nomme_le_npa_vide_de_l_entreprise`, `refus_nomme_la_localite_vide_du_client` et
+    `company_address_e2e.rs:666-674` assertent désormais « le npa est vide » / « la localité est vide » et l'absence de
+    l'autre ; AC2 (c) en fait autant pour les quatre clés `empty-*-{postal-code,city}` **dans les quatre langues**
+    (`proposition_du_champ_vide` : « die plz ist leer » / « der ort ist leer », « il npa è vuoto » / « la località è
+    vuota », « the postcode is empty » / « the town is empty »). **Preuve du rouge** : la correction ne touche que des
+    tests, le code de production étant juste ; le rouge se prouve donc par la mutation que proposait la revue, jouée sur
+    les tests **d'avant** (fichiers de test de `745e788f`) puis **d'après** (`kesh-gate-logs/e352a/mut/mutations-b2.py`,
+    `campagne-p1.log`, `MB2*-{avant,apres}.log`) : **MB2a** (le contrôle de la localité nomme le NPA) — avant :
+    **survivante** (3/3 verts), après : **tuée** (`refus_nomme_la_localite_vide_du_client`) ; **MB2b** (le contrôle du NPA
+    nomme la localité) — avant : **survivante**, après : **tuée** (`refus_nomme_le_npa_vide_de_l_entreprise`,
+    `a_free_text_only_company_gets_its_components`). Restauration vérifiée, arbre propre.
+  - **A3 (LOW), déclaration** — au relevé du rouge de départ, trois des douze rouges d'`invoice_pdf_e2e`
+    (`refus_d_un_iban_invalide`, `refus_d_un_qr_iban_invalide`, `refus_du_pdf_d_un_avoir_sans_contact`) rougissaient dans
+    l'aide `fr()`, sur la clé absente du catalogue (`assert_ne!(valeur, cle)`), et non sur le message rendu : ils
+    prouvaient l'absence de la clé, non le défaut du message. Et la mutation M12 posait une **référence** à
+    `init_error_i18n` (`let _ = super::init_error_i18n;`), non un appel : elle prouve que la garde AC13 compte toute
+    occurrence du nom, ce qu'elle exige, mais pas qu'un appel réel serait vu autrement.
+  - **A2 (LOW)** — gates frontend rejoués **au commit `f934bd64`** (journaux `p1-front-*.log`, postérieurs au commit) :
+    `check` 0 erreur (29 avertissements préexistants), `lint-i18n-ownership` PASS, `test:unit` 232 fichiers / 3188 tests,
+    `build` vert.
+  - **Gates au dernier commit de code `f934bd64`** : gate ciblé (`p1-cible-1.log`) 792/792 ; `scripts/test-fast.sh --ci`
+    **5331 exécutés, 5331 passés, 13 ignorés** (`p1-test-fast-ci.log`, base `kesh_e352a` recréée) ;
+    `scripts/gate-ci.sh kesh_ci_e352a` **5338 passés, 0 échoué, 17 ignorés** (`p1-gate-ci.log`) ; **E2E complet**
+    (recette entière, port 3401, `kesh_e2e_e352a` recréée, dossiers `target/e2e-r2`) : **404 passés, 7 échecs, 18
+    ignorés** (`p1-e2e-complet.log`) — les sept de la KF-029 (#97) : `mode-expert.spec.ts:26`, `:41`,
+    `onboarding-path-b.spec.ts:65`, `:92`, `onboarding.spec.ts:57`, `:77`, `:150`. Port 3401 libre avant et après.
+  - **Captures** non refaites : aucune phrase visible des captures 01 à 05 ne change (le nom de l'entreprise n'y figure
+    pas).
+  - **Consigne Edit** : respectée — code et tests par Edit seulement ; scripts Python pour la mutation seulement
+    (permis).
+  - La boucle continue : une passe P2 est à lancer par l'orchestrateur (2 MEDIUM en P1).
 
+
+### 2026-11-13 — Revue de code close (orchestrateur) — synthèse finale
+
+- **Trend** : P1 (Opus, trois lentilles, `745e788f`) : 2 MEDIUM, 8 LOW → remédiation `f934bd64` (production touchée : trois
+  phrases ×4 locales et leurs replis, manuel, CHANGELOG) → P2 ciblée (Sonnet, une lentille sur `f934bd64`, prompt
+  `35-2a-refus-pdf-contrat-details-review-prompt-p2-ciblee.md`, `e95a5509`) : **0 au-dessus de LOW**, 1 LOW. Boucle close en P2 :
+  la passe ne rend aucun finding au-dessus de LOW et n'appelle aucune remédiation. Rapports hors dépôt :
+  `kesh-gate-logs/e352a-review-p1-{B,E,A}.md`, `e352a-review-p2-ciblee.md`.
+- **Vérification du « 0 » par l'orchestrateur** : les sous-chaînes de B2 relues dans les quatre catalogues
+  (`/usr/bin/grep -h '^invoice-pdf-error-empty-company-…'` : « le NPA est vide », « Die PLZ ist leer », « il NPA è vuoto »,
+  « the postcode is empty » présents, la parenthèse portant les deux mots) ; les phrases du nom ne nomment plus d'écran.
+- **LOW tracés** : P1 → #1099 à #1104 (et #1096, #1097, #1098 ouvertes pendant la revue) ; P2 C1 (garde « Organi » étroite) → #1106.
+- **Gates** au dernier commit de code `f934bd64` : test-fast 5331, gate-ci 5338, Vitest 3188, E2E 404 passés / 7 KF-029 (relevés
+  par l'agent de développement, recoupés par la P2 aux journaux `kesh-gate-logs/e352a/p1-*`).
+- **PR** : `closes #964`, `refs #955` (la 35-2b porte le reste de #955).

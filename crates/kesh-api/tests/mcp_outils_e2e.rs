@@ -1596,7 +1596,7 @@ async fn un_brouillon_lu_par_les_outils(pool: MySqlPool) {
         a.c,
         id,
         version,
-        a.u,
+        kesh_db::entities::Acteur::utilisateur(a.u),
         crate::common::jour::aujourd_hui_test(),
     )
     .await

@@ -22,7 +22,7 @@ use sqlx::MySqlPool;
 use crate::entities::{
     CreditNote, CreditNoteLine, InvoiceLine, JournalEntryWithLines, NewAuditLogEntry, NewCreditNote,
 };
-use crate::errors::{DbError, map_db_error};
+use crate::errors::{DbError, NumberedDocument, map_db_error};
 use crate::repositories::audit_log;
 
 /// SELECT scopé multi-tenant (anti-IDOR — toujours `AND company_id = ?`).
@@ -568,12 +568,18 @@ pub async fn create_credit_note(
                     fy.start_date
                 ))
             })?;
+        // Story 35-1 (#948, D4) : un numéro impossible à produire est un refus
+        // typé (400 `NUMBER_FORMAT_UNRENDERABLE`), non un 500 ; la transaction est
+        // annulée et le numéro tiré avec elle.
         let credit_note_number =
             invoice_format::render(&settings.credit_note_number_format, year, &fy.name, seq)
                 .map_err(|e| {
-                    DbError::Invariant(format!(
-                        "rendu numéro avoir échoué (config invalide ?) : {e}"
-                    ))
+                    DbError::number_render_failed(
+                        NumberedDocument::CreditNote,
+                        &e,
+                        &settings.credit_note_number_format,
+                        &fy.name,
+                    )
                 })?;
 
         // (6) Libellé écriture : « Avoir AV-… (annule F-…) - Contact ».
@@ -737,7 +743,18 @@ pub async fn create_credit_note(
         .bind(je.entry.id)
         .execute(&mut *tx)
         .await
-        .map_err(map_db_error)?
+        // Story 35-1 (#948, D5) : un numéro d'avoir déjà attribué dans la société
+        // (`uq_credit_notes_number`) est le refus typé de D4, cause `duplicate`,
+        // et non le générique `409 RESOURCE_CONFLICT`. Toute autre unicité (un
+        // avoir par facture) garde son refus.
+        .map_err(|e| {
+            map_db_error(e).into_number_duplicate(
+                "uq_credit_notes_number",
+                NumberedDocument::CreditNote,
+                &settings.credit_note_number_format,
+                &fy.name,
+            )
+        })?
         .last_insert_id() as i64;
 
         // (10) INSERT credit_note_lines (snapshot).

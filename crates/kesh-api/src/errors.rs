@@ -1665,6 +1665,75 @@ fn designated_account_wrong_type_response(
     (StatusCode::BAD_REQUEST, Json(body)).into_response()
 }
 
+/// Réponse **400 `NUMBER_FORMAT_UNRENDERABLE`** (Story 35-1, #948, D4, D5) : une
+/// phrase sur la pièce (facture ou avoir), une sur la cause — qui nomme le
+/// format, l'exercice, et dit où corriger —, `details { document, cause }`.
+///
+/// Un littéral de repli par clé, écrit en entier : la garde G9
+/// (`textes_coherents.rs`) ne compare que des littéraux.
+fn number_format_unrenderable_response(
+    document: kesh_db::errors::NumberedDocument,
+    cause: kesh_db::errors::NumberFormatCause,
+    format: &str,
+    fiscal_year_name: &str,
+) -> Response {
+    use kesh_db::errors::{NumberFormatCause as C, NumberedDocument as D};
+    let lead = match document {
+        D::Invoice => t(
+            "error-number-format-unrenderable-invoice",
+            "Cette facture ne peut pas être validée : son numéro ne peut pas être produit. Rien n’a été enregistré, aucun numéro n’a été consommé.",
+        ),
+        D::CreditNote => t(
+            "error-number-format-unrenderable-credit-note",
+            "Cet avoir ne peut pas être créé : son numéro ne peut pas être produit. Rien n’a été enregistré, aucun numéro n’a été consommé.",
+        ),
+    };
+    let mut args = FluentArgs::new();
+    args.set("format", format.to_string());
+    args.set("fiscalYear", fiscal_year_name.to_string());
+    let reason = match cause {
+        C::TooLong => t_args(
+            "error-number-format-unrenderable-too-long",
+            &format!(
+                "Le format « {format} », avec le nom de l’exercice « {fiscal_year_name} », donne un numéro trop long (plus de 64 octets ; une lettre accentuée en compte deux) : un administrateur doit raccourcir le format dans Administration → Facturation, ou le nom de l’exercice."
+            ),
+            &args,
+        ),
+        C::BraceInFiscalYearName => t_args(
+            "error-number-format-unrenderable-brace",
+            &format!(
+                "Le nom de l’exercice « {fiscal_year_name} » contient une accolade, que le format « {format} » reprendrait dans le numéro : un administrateur doit renommer l’exercice, ou retirer {{FY}} du format dans Administration → Facturation."
+            ),
+            &args,
+        ),
+        C::Duplicate => t_args(
+            "error-number-format-unrenderable-duplicate",
+            &format!(
+                "Le format « {format} » produit, dans l’exercice « {fiscal_year_name} », un numéro déjà attribué : il doit distinguer chaque pièce — un compteur ({{SEQ}}), qui repart à chaque exercice, et l’exercice ({{FY}}) ; l’année ({{YEAR}}) ne suffit pas si deux exercices commencent la même année. Un administrateur doit le corriger dans Administration → Facturation."
+            ),
+            &args,
+        ),
+        C::InvalidFormat => t_args(
+            "error-number-format-unrenderable-invalid",
+            &format!(
+                "Le format « {format} » enregistré n’est pas valide : un administrateur doit le corriger dans Administration → Facturation."
+            ),
+            &args,
+        ),
+    };
+    let body = serde_json::json!({
+        "error": {
+            "code": "NUMBER_FORMAT_UNRENDERABLE",
+            "message": format!("{lead} {reason}"),
+            "details": {
+                "document": document.api_value(),
+                "cause": cause.api_value(),
+            },
+        }
+    });
+    (StatusCode::BAD_REQUEST, Json(body)).into_response()
+}
+
 /// Réponse d'un refus de complément des soldes de départ (Story 25-7, AC 5) :
 /// statut, code et message **par cause**. Les refus qui portent sur un compte le
 /// nomment par son numéro — un identifiant de base ne se comprend pas.
@@ -1726,6 +1795,35 @@ fn opening_complement_refusal_response(
         ),
     };
     build_response(status, reason.code(), &t_args(key, &fallback, &args))
+}
+
+/// La phrase du refus [`AppError::InvoiceTooManyLinesForPdf`] — dans la langue de
+/// l'installation, destinée à l'utilisateur. Seule source de cette phrase : la
+/// réponse `400 INVOICE_TOO_MANY_LINES_FOR_PDF` et le `details.message` du lot de
+/// rappels (Story 35-2b, #955, C-e350-46) l'appellent tous deux.
+pub(crate) fn message_trop_de_lignes_pdf(n: usize) -> String {
+    // #151 code-review : le cap n'est plus un nombre fixe (il dépend du
+    // récap TVA et du type de document), donc message sans « max ».
+    let fallback = format!(
+        "La facture contient {n} lignes — le PDF A4 mono-page ne peut pas toutes les afficher avec le récapitulatif TVA. Réduisez le nombre de lignes ou scindez la facture."
+    );
+    let mut args = FluentArgs::new();
+    args.set("count", n as i64);
+    t_args("error-invoice-too-many-lines-for-pdf", &fallback, &args)
+}
+
+/// La phrase du refus [`AppError::InvoicePdfHeaderOverflow`] — même rôle que
+/// [`message_trop_de_lignes_pdf`] : seule source, pour la réponse
+/// `400 INVOICE_PDF_HEADER_OVERFLOW` et pour le lot de rappels (Story 35-2b).
+pub(crate) fn message_entete_pdf_deborde() -> String {
+    t(
+        "error-invoice-pdf-header-overflow",
+        "L'en-tête du document ne tient pas sur la page. Supprimez une \
+         coordonnée — téléphone, e-mail ou site web — dans les Paramètres : \
+         les raccourcir ne libère aucune place, chaque coordonnée occupe \
+         une ligne entière. Ou réduisez le nombre de lignes de l'adresse \
+         du destinataire.",
+    )
 }
 
 impl IntoResponse for AppError {
@@ -2227,32 +2325,16 @@ impl IntoResponse for AppError {
                     "Le fichier du PDF émis a été altéré : son empreinte ne correspond plus. Restaurez-le depuis la sauvegarde, ou écartez-le du répertoire des documents avant de refiger.",
                 ),
             ),
-            AppError::InvoiceTooManyLinesForPdf(n) => {
-                // #151 code-review : le cap n'est plus un nombre fixe (il dépend du
-                // récap TVA et du type de document), donc message sans « max ».
-                let fallback = format!(
-                    "La facture contient {n} lignes — le PDF A4 mono-page ne peut pas toutes les afficher avec le récapitulatif TVA. Réduisez le nombre de lignes ou scindez la facture."
-                );
-                let mut args = FluentArgs::new();
-                args.set("count", n as i64);
-                let msg = t_args("error-invoice-too-many-lines-for-pdf", &fallback, &args);
-                build_response(
-                    StatusCode::BAD_REQUEST,
-                    "INVOICE_TOO_MANY_LINES_FOR_PDF",
-                    &msg,
-                )
-            }
-            AppError::InvoicePdfHeaderOverflow => {
-                let msg = t(
-                    "error-invoice-pdf-header-overflow",
-                    "L'en-tête du document ne tient pas sur la page. Supprimez une \
-                     coordonnée — téléphone, e-mail ou site web — dans les Paramètres : \
-                     les raccourcir ne libère aucune place, chaque coordonnée occupe \
-                     une ligne entière. Ou réduisez le nombre de lignes de l'adresse \
-                     du destinataire.",
-                );
-                build_response(StatusCode::BAD_REQUEST, "INVOICE_PDF_HEADER_OVERFLOW", &msg)
-            }
+            AppError::InvoiceTooManyLinesForPdf(n) => build_response(
+                StatusCode::BAD_REQUEST,
+                "INVOICE_TOO_MANY_LINES_FOR_PDF",
+                &message_trop_de_lignes_pdf(n),
+            ),
+            AppError::InvoicePdfHeaderOverflow => build_response(
+                StatusCode::BAD_REQUEST,
+                "INVOICE_PDF_HEADER_OVERFLOW",
+                &message_entete_pdf_deborde(),
+            ),
             // Story 5.4 — overflow export CSV.
             AppError::ResultTooLarge(msg) => {
                 build_response(StatusCode::BAD_REQUEST, "RESULT_TOO_LARGE", &msg)
@@ -4681,6 +4763,18 @@ impl IntoResponse for AppError {
                 DbError::DesignatedAccountsWrongType(accounts) => {
                     designated_account_wrong_type_response(&accounts)
                 }
+                // Story 35-1 (#948, D4, D5) — le numéro d'une facture ou d'un avoir
+                // ne peut pas être produit par le format des réglages. Jusqu'à la
+                // v0.17.6 : `500 INTERNAL_ERROR` (rendu) ou `409 RESOURCE_CONFLICT`
+                // (numéro déjà attribué).
+                DbError::NumberFormatUnrenderable {
+                    document,
+                    cause,
+                    format,
+                    fiscal_year_name,
+                } => {
+                    number_format_unrenderable_response(document, cause, &format, &fiscal_year_name)
+                }
                 // Story 25-4-c3-b (#476) — un écart d'arrondi à écrire, et pas de
                 // compte utilisable pour le recevoir. Le message dit OÙ agir.
                 // Story 25-4-c4-a : le message suit le CONTEXTE — une pièce émise
@@ -5823,6 +5917,26 @@ mod tests {
         assert_eq!(status, StatusCode::BAD_REQUEST);
         assert_eq!(body["error"]["code"], "INVOICE_TOO_MANY_LINES_FOR_PDF");
         assert!(body["error"]["message"].as_str().unwrap().contains("42"));
+    }
+
+    /// Story 35-2b (#955, AC3) — la réponse de la route unitaire garde son statut et
+    /// son code, et son `message` est la chaîne de la fonction extraite. Le lot rend
+    /// la même chaîne : c'est le second témoin, `invoice_email::tests::
+    /// classify_render_error_ne_deguise_pas_un_refus_en_panne` ; l'égalité route = lot
+    /// se lit par les deux. Une copie du littéral est gardée par G9 (`textes_coherents.rs`).
+    #[tokio::test]
+    async fn refus_du_pdf_route_unitaire_rend_la_phrase_de_la_fonction() {
+        let resp = AppError::InvoiceTooManyLinesForPdf(42).into_response();
+        let (status, body) = response_body(resp).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        assert_eq!(body["error"]["code"], "INVOICE_TOO_MANY_LINES_FOR_PDF");
+        assert_eq!(body["error"]["message"], message_trop_de_lignes_pdf(42));
+
+        let resp = AppError::InvoicePdfHeaderOverflow.into_response();
+        let (status, body) = response_body(resp).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        assert_eq!(body["error"]["code"], "INVOICE_PDF_HEADER_OVERFLOW");
+        assert_eq!(body["error"]["message"], message_entete_pdf_deborde());
     }
 
     #[tokio::test]
