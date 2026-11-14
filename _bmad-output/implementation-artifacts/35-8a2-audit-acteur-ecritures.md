@@ -110,6 +110,11 @@ convertis par cette story (déploiement, Epic 36) — et `journal_entries::rever
    contre-passe rien » (renvoi à #431 ; validation P3, V3-1, V3-2 : genre par genre, `reconciliation_cancel.rs:694-725` ;
    `write_off_invoice`, `invoice_settlements_write.rs:700` ; « le créateur de la clé » partout, non « l'utilisateur ») ;
    même phrase au CHANGELOG, *Corrigé*, `refs #431` ; PDF régénérés, contrôlés aplatis.
+   *(Annoté le 2026-11-14, remédiation de la revue de code P1, M-A : cette phrase rangeait le règlement d'une facture passé par
+   un rapprochement sous deux règles contraires. Les textes livrés la qualifient — « toutes celles qu'un rapprochement bancaire
+   passe (y compris le règlement d'une facture client et le paiement d'une facture fournisseur que le rapprochement
+   enregistre) », « un règlement saisi sur la facture », « paiement depuis la fiche ou par un lot de paiement ». Le critère
+   n'est pas réécrit.)*
 
 ## Tests à écrire, et la preuve du rouge
 
@@ -229,6 +234,8 @@ de la paire `reversal` à `'user'` — après l'assertion de son existence, vert
   `post_manual_by_an_api_key_attributes_the_entry_to_the_key` ; **aucun cas de `POST /reconciliation/accept`** n'est monté : les
   trois sites `accept_one_invoice`, `accept_one_split`, `accept_one_rule` sont couverts par la garde (aucune entrée `Utilisateur`
   pour `routes/reconciliation.rs`) et M9 le prouve pour l'un d'eux ;
+  *(annoté le 2026-11-14, remédiation P1, A1 = E1 : le montage tenait — les cas `invoice`, `supplier_invoice`, `rule`, `split` et
+  `POST /reconciliation/split` par clé sont montés et assertés depuis le commit `ec8117bcc` ; la garde ne voyait pas M10/M11)*
 - AC2 : `both_reversals_by_an_api_key_are_attributed_to_the_key` (du jour et à l'exercice suivant, compte `1100` lettrable ;
   `lettering.created`, `journal_entry.reversed`, `journal_entry.created` de l'inverse) ; modification et suppression par clé :
   `a_read_write_key_modifies_and_is_traced_as_the_key`, `a_read_write_key_deletes_and_is_traced_as_the_key`, verts ;
@@ -257,6 +264,11 @@ fonctions (50 + `pieges::semer`), références inchangées.
 
 M7, M8 et M9 ont été jouées **ensemble** (un seul passage de compilation) : la garde nomme chaque site séparément, et seul M7
 touche le rapprochement manuel ; aucune mutation ne survit.
+*(Annoté le 2026-11-14, remédiation P1, A4 : le journal de M2' finit par « restauré : 3 écart », suivi d'une annotation —
+« git diff -- crates vide (0 ligne) ; les écarts ci-dessus sont les deux PDF régénérés » ; « 0 ligne » ci-dessus vaut pour
+`crates`, non pour l'arbre entier. A5 : seule la première assertion d'AC2 — `lettering.created` de la contre-passation du jour —
+a été vue rouge au `rouges.log` ; `journal_entry.reversed` et la branche de l'exercice suivant ne l'ont pas été (le test, lui,
+est tué par M2' et M3 : `mut/M2p.log`, `mut/M3.log`).)*
 
 **Gates du passage en `review`**, au dernier commit de code `6d68be121` (les commits suivants ne touchent ni `crates` ni
 `frontend` ni `scripts` : `git diff --stat 6d68be121 HEAD -- crates frontend scripts` vide) :
@@ -345,3 +357,66 @@ l'orchestrateur : marqueurs du CHANGELOG de la fusion 35-8a1 retirés par `sed -
   - `test-fast --ci` 5443/0/13 (voie 2) ; `gate-ci` 5450/0/17 (voie 1) ; frontend non touché ; **E2E à la clôture**.
   - Écart : mes `replace_all` ont touché 37 destructurations, rétablies (Dev Agent Record). Statut : `review`. Prompt de la revue
     P1 : `35-8a2-audit-acteur-ecritures-review-prompt-p1.md`.
+- 2026-11-14 — **Revue de code P1** (Opus, trois lentilles, rapports `kesh-gate-logs/e358a2-review-p1-{B,E,A}.md`) : lentille B
+  1 MEDIUM / 7 LOW, lentille E 2 MEDIUM / 3 LOW, lentille A 2 MEDIUM / 5 LOW ; 0 CRITICAL, 0 HIGH ; **deux MEDIUM distincts**
+  (M-A = B1 = A2 = E2, M-B = A1 = E1).
+- 2026-11-14 — **Remédiation P1** (Opus 5.5, voie 2). Code au commit `ec8117bcc`, compte rendu et PDF au commit suivant.
+  - **M-A — textes contradictoires.** Chemins relus au code avant d'écrire : règlement client par rapprochement,
+    `routes/reconciliation.rs:2823-2826` (`accept_one_invoice` : `Acteur { user_id, api_key_id: actor_api_key_id }` passé à
+    `create_in_tx`) ; paiement fournisseur par rapprochement, `:2118-2125` (`letterings::Actor { user_id, api_key_id:
+    actor_api_key_id }` vers `accept_one_supplier_invoice`) puis `:3426` (`pay_in_tx_as(…, actor)`) et
+    `supplier_invoices.rs:2156` (`actor` passé à `create_in_tx`) ; règlement saisi sur la facture, `lib.rs:770-771`
+    (`POST /api/v1/invoices/{id}/settlements` → `settle_invoice_handler`) → `invoice_settlements_write::settle_invoice`,
+    `:342` (`Acteur::utilisateur(user_id)`) ; solde du reste, `lib.rs:780` → `write_off_invoice`, `:706` (`Acteur::utilisateur`) ;
+    paiement par la fiche, `lib.rs:672-673` → `supplier_invoices::pay` → `pay_in_tx`, `supplier_invoices.rs:1954-1958`
+    (`api_key_id: None`) ; par un lot, `payment_batches.rs:584` (`pay_in_tx`) ; dé-rapprochement,
+    `reconciliation_cancel.rs:713-739` (règlements : `cancel_settlement_in_tx(…, user_id, …)`) et `:744-750` (genre `Entry` :
+    `Acteur { user_id, api_key_id: actor_api_key_id }`). Récrits : `CHANGELOG.md` (entrées 35-8a1 et 35-8a2), item *Journal
+    d'audit* du manuel d'administration (ses deux phrases), tableau du journal d'audit du manuel utilisateur — « toutes celles
+    qu'un rapprochement bancaire passe (y compris le règlement d'une facture client et le paiement d'une facture fournisseur que le
+    rapprochement enregistre) » d'un côté ; « un règlement saisi sur la facture », « paiement depuis la fiche ou par un lot de
+    paiement » de l'autre (C-e358a2-7). Symptôme greppé (`validation, paiement, annulation`, `un avoir, un règlement`,
+    `qu'un rapprochement`) : seuls restent la fiche (AC6b, annotée, non réécrite), le prompt P1 et le registre (relevés datés) ;
+    manuels de/en/it et catalogues : aucune occurrence de #431. PDF régénérés (`p1-manuels-make.log`, `make -B user admin`), contrôlés
+    aplatis : le texte du PDF reprend le `.tex`.
+  - **M-B — écritures d'un rapprochement par clé testées.** `journal_entry.created` → `('api_key', Some(clé), créateur)`, trace
+    **unique** (`common::audit_actor_unique`, `fetch_all` puis longueur 1), ajouté à `accept_letters_a_fully_settled_invoice`
+    (facture client, l'encaissement et non la vente) et à `an_api_key_accepts_a_supplier_invoice_and_is_named_everywhere`
+    (C-e358a2-4) ; test neuf `an_api_key_rule_and_split_entries_are_attributed_to_the_key` (montage `setup_301b` : une règle et une
+    ventilation proposées acceptées par la clé, puis `POST /reconciliation/split` par la même clé ; trois écritures).
+  - **Mutations** (`kesh-gate-logs/e358a2/p1-mut/`, chacune par l'outil Edit, restaurée par `git checkout --` puis `touch`,
+    « restauré : 0 ligne(s) de diff sous crates » au journal) :
+
+    | Mutation | Tuée par | Garde |
+    |---|---|---|
+    | M10a — bras `split` d'`accept_one`, `None` à la place d'`actor_api_key_id` | test neuf, « écriture du rapprochement split » (`M10a.log`) | verte (angle mort 1, #1130) |
+    | M10b — bras `rule`, idem | test neuf, « écriture du rapprochement rule » (`M10b-M12-M13.log`) | verte |
+    | M11 — `post_split_once` : `let actor_api_key_id: Option<i64> = None;` | test neuf, « écriture du rapprochement /reconciliation/split » (`M11-M13p.log`) | verte |
+    | M12 — `pay_in_tx_as` passe à `create_in_tx` un acteur dont la clé est jetée (`api_key_id.filter(\|_\| false)`, forme que la garde ne voit pas) | « écriture de règlement fournisseur » (`M10b-M12-M13.log`) | verte |
+    | M13 — bras `invoice`, `None` | `accept_letters_…`, mais par l'assertion antérieure de `lettering.created` (`M10b-M12-M13.log`) | verte |
+    | M13' — `accept_one_invoice` : l'écriture seule perd la clé (`.filter(\|_\| false)`), le lettrage la garde | « écriture d'encaissement » (`M11-M13p.log`) | verte |
+
+    M10b, M12 et M13 jouées ensemble, M11 et M13' ensemble : chaque mutation d'un même passage touche un test distinct. Aucune ne
+    survit. Toutes passent la garde : sans ces tests, elles survivaient (ce que disaient A1 et E1).
+  - **LOW traités** : B2 (exemple de `retry_on_deadlock` à l'`Acteur`) ; B3 (commentaire du `mod tests` de `journal_entries.rs`) ;
+    B4 = A7 = E4 (`api-external.md:677`, `:713`, `:739` et doc de `pay_in_tx_as` citent l'écriture) ; B6 = A6 = E5 (unicité :
+    `common::audit_actor_unique`, employé par `acteur_de`, le témoin d'AC4, les tests de `reconciliation_e2e.rs` ; forme en ligne
+    dans `reconciliation_manual_e2e.rs`, binaire sans `common`) ; B7 (motif 5 dit « forme morte », échantillon `g` de la sonde (h)
+    à la signature d'aujourd'hui) ; B8 (couvert par M-B) ; E3 (commentaires de `reconciliation_e2e.rs` corrigés ; le test du
+    dé-rapprochement par clé asserte `journal_entry.reversed` de l'écriture rapprochée et `journal_entry.created` de l'inverse —
+    assertions non vues rouges par mutation : M8 de la passe de développement porte sur ce site) ; A3 (déclaré : la saisie d'AC1 est
+    jouée par une clé de l'administrateur ; l'attribution ne dépend pas du rôle — `Acteur::from(&current_user)` —, et le cas d'un
+    Comptable est celui du rapprochement manuel, `setup_full(…, Role::Comptable)`) ; A4, A5 (annotés au Dev Agent Record).
+  - **LOW non traité** : B5 (les cinq littéraux `Acteur { user_id, api_key_id: actor_api_key_id }` de `routes/reconciliation.rs`) —
+    construire l'`Acteur` une fois dans `post_accept`/`post_manual_once`/`post_split_once` change la signature des six fonctions
+    `accept_one*` et déplace les sites de la garde ; c'est un refactor, hors d'une remédiation (C-e358a2-8) ; issue à ouvrir par
+    l'orchestrateur.
+  - **Gates** au commit de code `ec8117bcc` : `cargo fmt` ; `clippy -D warnings` workspace vert (`p1-clippy.log`, sur l'arbre du
+    commit avant commit) ; tests ciblés 104/104 (`p1-cibles.log`) ; base `kesh_e358a2` remise à neuf (`p1-db-reset.log`) ;
+    `test-fast --ci` voie 2 (fmt et clippy compris) : **5444 passés, 0 échec, 13 ignorés**, `rc=0` (`p1-test-fast.log` ; +1 sur
+    le passage en `review` : le test neuf). **Non lancés** : `gate-ci` et E2E, à la clôture (consigne du
+    2026-11-13) ; frontend non touché.
+  - Écarts aux consignes : le prompt de la P2 ciblée créé par l'outil Write (fichier neuf) ; un script de mutation dans le
+    répertoire de travail temporaire de la session (hors dépôt), qui restaure par `git checkout --` et `touch` ; les journaux
+    redirigés par `>` vers `kesh-gate-logs/e358a2/` (`p1-*.log`, `p1-mut/*.log`). Prompt de la P2 ciblée :
+    `35-8a2-audit-acteur-ecritures-review-prompt-p2-ciblee.md`.

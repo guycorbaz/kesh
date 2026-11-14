@@ -66,3 +66,26 @@ Registre tenu par l'agent de développement. Mise à jour par union, jamais par 
   le compilateur, puis `cargo fmt`, contrôlent le résultat. Les appels du `mod tests` de `journal_entries.rs` ont été
   convertis par moi (Edit `replace_all` sur des motifs vérifiés).
 - **Réversible** : oui.
+
+## Remédiation de la revue de code P1
+
+### C-e358a2-7 — Le règlement passé par un rapprochement se range du côté de la clé, par le chemin et non par le geste
+
+- **Contexte** : M-A (B1 = A2 = E2). Le même geste — régler une facture client, payer une facture fournisseur — porte la clé
+  quand un rapprochement le passe (`accept_one_invoice`, `pay_in_tx_as`) et ne la porte pas par sa route ou un lot ; les textes
+  le rangeaient sous deux règles. *(C-e358a2-4 disait « comme le manuel le dit » : le manuel le disait aussi en sens contraire.)*
+- **Retenu** : qualifier par le chemin — « toutes celles qu'un rapprochement bancaire passe (y compris le règlement d'une facture
+  client et le paiement d'une facture fournisseur que le rapprochement enregistre) » ; « un règlement saisi sur la facture » ;
+  « paiement depuis la fiche ou par un lot de paiement ». Routes nommées au CHANGELOG et au manuel d'administration, non au manuel
+  utilisateur.
+- **Écartées** : retirer la clé de `pay_in_tx_as` (C-e358a2-4 inversé : l'écriture d'un rapprochement par clé redeviendrait
+  muette) ; énumérer les traces une à une (illisible pour le lecteur du journal).
+- **Réversible** : oui (texte seul).
+
+### C-e358a2-8 — B5 (cinq littéraux `Acteur { … }` dans `routes/reconciliation.rs`) laissé en l'état
+
+- **Contexte** : construire l'`Acteur` une fois par route et le passer changerait la signature des fonctions `accept_one*`,
+  `post_manual_once`, `post_split_once` et déplacerait les sites de la garde.
+- **Retenu** : laisser ; les tests de comportement neufs (M10 à M13') tuent désormais un aiguillage qui jetterait la clé. Issue à
+  ouvrir par l'orchestrateur (une par problème).
+- **Réversible** : oui.
