@@ -59,7 +59,7 @@ clôture et que l'écart aille aux différences de change.
      sélection courante (`accountIds`) et les cours modifiés de ces seules devises, et seule la dernière réponse est
      retenue ; à sélection vide, aucune relecture (AC-4). Quand `closingRateKind` vaut `day`, l'écran **signale** un
      `rateKind: "month"` (« cours du jour de clôture indisponible : cours mensuel de <mois> ») et propose « Récupérer
-     le cours du JJ.MM.AAAA » (`POST /exchange-rates/fetch { date }`, 35-2), puis relit l'aperçu ; un
+     le cours du JJ.MM.AAAA » (`POST /exchange-rates/fetch { date }`, 35-2), puis relit l'aperçu (règle de relecture ci-dessus : pas de relecture à sélection vide, le nouveau cours est alors repris à la prochaine case cochée) ; un
      `404 RATE_NOT_PUBLISHED` ou un `503 RATE_SOURCE_UNAVAILABLE` s'affiche (message traduit) et laisse l'aperçu tel
      quel, repli mensuel compris. ⚠️ **Date de fin d'exercice
      non passée** : 35-2 ne récupère un cours journalier que pour un jour **strictement antérieur** à aujourd'hui
@@ -603,3 +603,9 @@ clôture et que l'écart aille aux différences de change.
   `reason: "empty"`, AC-1 « L'écran n'envoie à l'aperçu que les cours modifiés » ; aucune autre fiche ni l'epic ne
   nomment `accountIds` ou la route de réévaluation (grep). Axes non exercés : code réel de 35-1 à 35-4 (non écrit) ;
   passages hors diff 040185ac..53a885f4, sauf AC-1 (cours envoyés) relu pour cohérence.
+- 2026-11-14 — validation CR-3 P5 ciblée (Sonnet) : 0 CRITICAL, 0 HIGH, 0 MEDIUM, 1 LOW ; remédié dans la fiche ; aucun
+  finding inter-fiches. (35-5-CR3-P5-1 LOW : « puis relit l'aperçu » après récupération (AC-1) restait inconditionnel
+  face à « pas de relecture à sélection vide » : renvoi à la règle ajouté.) Vérifié : AC-1 (règle de relecture, cours
+  envoyés), AC-2 (cours omis = défaut), AC-4 « Bornes de la requête » (clé = devise d'un compte sélectionné, `empty`),
+  ligne de test du décochage. Axes non exercés : code réel de 35-1 à 35-4 (non écrit) ; passages hors diff
+  53a885f4..644d2b74.
