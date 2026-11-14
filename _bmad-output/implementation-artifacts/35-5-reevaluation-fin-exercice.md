@@ -30,7 +30,7 @@ que mon bilan présente ces comptes au cours de clôture et que l'écart aille a
      la résolution par défaut de la devise — jour, sinon mois —, que l'écran affiche sous le champ comme ailleurs, D9).
      **Genre d'un cours reçu dans `rates`** — règle **unique**, la même à l'aperçu et à la passation (AC-2, audit) : égal
      au cours par défaut résolu par le serveur → genre de ce défaut (`day` ou `month`) ; différent, ou sans défaut →
-     `request`. Sans cette règle à l'aperçu, un cours prérempli renvoyé ferait disparaître le signalement du repli et
+     `request` (comparaison **numérique**, zéros terminaux ignorés ; `overridden` vaut `true` si et seulement si le genre est `request`). Sans cette règle à l'aperçu, un cours prérempli renvoyé ferait disparaître le signalement du repli et
      masquerait le cours du jour récupéré. **L'écran n'envoie à l'aperçu que les cours modifiés par l'utilisateur** ;
      après une récupération, un champ non modifié reprend le nouveau cours par défaut (la passation, elle, reçoit tous
      les cours affichés, AC-2). L'écran **signale** un
@@ -368,3 +368,8 @@ que mon bilan présente ces comptes au cours de clôture et que l'écart aille a
   l'`afcRate` affiché ; date de fin non passée — cours journalier saisi, mois futur, « Récupérer le mois » ;
   libellé du bouton et échec de la récupération ; tests Vitest à horloge fixée. Vérifié à la source le 2026-11-14 :
   `xmldaily?d=20251231` rend le 31.12.2025, `d=20251226` (férié) le 24.12.2025.)
+- 2026-11-14 — validation CR-1 P3 ciblée (Sonnet) : 0 CRITICAL, 0 HIGH, 0 MEDIUM, 1 LOW ; remédié dans la fiche ; aucun
+  finding inter-fiches. (LOW : sens de `overridden` et mode de comparaison du cours reçu au défaut non écrits avec la
+  règle unique de genre. Vérifié aux fiches : `RateBoundsError`, `FX_RATE_INVALID` `details: { currency }`, fetch jour
+  strictement antérieur / mois ≤ courant, `RATE_NOT_PUBLISHED`, `RATE_SOURCE_UNAVAILABLE` — cohérents avec 35-2 et 35-3a.
+  Axes non exercés : relecture hors diff, code réel non encore écrit.)

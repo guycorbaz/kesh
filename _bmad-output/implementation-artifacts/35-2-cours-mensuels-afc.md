@@ -186,8 +186,8 @@ AFC, afin que mes écritures en devise et ma réévaluation reçoivent le bon co
      **après `normalize()`** (zéros terminaux ignorés), ≤ 10⁶. Elle rend une **erreur de type propre**, neutre (p. ex.
      `RateBoundsError { NotPositive, Scale, TooLarge }`), **jamais** une variante de `CoreError` liée à un code : chaque
      appelant la traduit — le `PUT` d'un cours saisi (AC-5) et 35-5 en `FX_RATE_INVALID`, 35-3a en
-     `FX_VALUE_OUT_OF_RANGE { line }` (35-3a AC-3, 35-3a-CR1-P1-IF1), le parseur en devise écartée. Elle sert ici au `PUT` d'un cours saisi (AC-5) et au
-     filtre `rate_per_unit` du parseur ; 35-3a l'appelle depuis son contrôle par ligne (AC-3) et 35-5 pour les cours de
+     `FX_VALUE_OUT_OF_RANGE { line }` (35-3a AC-3, 35-3a-CR1-P1-IF1), le parseur en devise écartée (filtre
+     `rate_per_unit`) ; 35-3a l'appelle depuis son contrôle par ligne (AC-3) et 35-5 pour les cours de
      sa requête (AC-4) — **une seule** fonction.
    - Fixtures versionnées **synthétiques** (forme du XML réel, `xmlns` compris, valeurs inventées — aucun cours officiel
      n'est versionné : conditions d'utilisation SIX), une mensuelle et une journalière, avec unités 1, 100, 1000 et
@@ -601,3 +601,10 @@ AFC, afin que mes écritures en devise et ma réévaluation reçoivent le bon co
   source journalière, un GET : `d=20240401` (lundi de Pâques) rend `<datum>28.03.2024` (jeudi saint, quatre jours :
   la borne de 7 jours tient sur un pont de Pâques). Non exercés : compilation, gate, rendu de l'écran, i18n et manuels
   au-delà de la fiche (rien de neuf depuis la P1).
+- 2026-11-14 — validation CR-1 P3 ciblée (Sonnet) : 0 CRITICAL, 0 HIGH, 0 MEDIUM, 1 LOW ; remédié dans la fiche (aucun
+  finding inter-fiches). LOW : phrase des bornes d'un cours seul redondante après l'ajout de CR1-P2-3 (« Elle sert ici au
+  `PUT` … » répétait « le `PUT` … le parseur ») fusionnée (CR1-P3-1). Axes exercés : diff 796ae5a9..272a5289 de la fiche ;
+  citations relues (`admin_full_import_e2e.rs` :972, :5551, :5563, :5619, :5638, :5669) ; cohérence avec D9 (epic), 35-3a
+  AC-3 (`RateBoundsError`, `FX_VALUE_OUT_OF_RANGE { line }`), 35-5 AC-4 (`FX_RATE_INVALID`) et AC-6 (↑ propre à 35-2),
+  35-3b (↑ de la ligne, distinct), `last_error` `http_status:<n>`, tests de l'AC-3. Non exercés : compilation, gate, rendu
+  de l'écran, rien hors du diff.

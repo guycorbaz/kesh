@@ -121,8 +121,9 @@ change, et ouvrir mes comptes en devise avec leur solde en devise, afin de tenir
      au dernier chiffre) ; changer la date repropose le cours effectif des lignes dont le cours n'a pas été modifié à
      la main. `LineDraft.foreign` gagne pour cela un indicateur `rateProposed` (cours venu de `lookup`, non retouché),
      distinct de `rateSource` : une ligne au cours saisi de la société est `manual` **et** proposée ; en édition, une
-     ligne relue `afc` est tenue pour proposée, une ligne relue `manual` pour retouchée (la provenance d'origine n'est
-     pas stockée).
+     ligne relue `afc` est tenue pour proposée, une ligne relue `manual` pour non proposée (`rateProposed` faux : aucune
+     reproposition au changement de date) — notion distincte de l'indicateur de **retouche** ci-dessous, qui gouverne
+     la provenance envoyée, la provenance relue étant, elle, conservée dans `loadedRateSource`.
    - **Mois du cours AFC comparé** (35-3a AC-4, 4 : toujours le mois de `entry_date`). `LineDraft.foreign` retient
      `afcRate` **avec son mois** (`afcMonth`, le `rateDate` du `lookup`). Au changement de date, un `lookup` (mémoïsé) est
      lancé pour **toutes** les lignes en devise, proposées ou non : il rafraîchit `afcRate`/`afcMonth` ; le cours n'est
@@ -350,3 +351,6 @@ change, et ouvrir mes comptes en devise avec leur solde en devise, afin de tenir
   posé par `lineResponseToDraft` ; LOW : `afcMonth` rappelé dans la règle des *Champs*, ↑ limité au cours AFC du mois
   courant et ligne suivant les propositions après ↑, relecture après `POST /fetch` remplaçant l'entrée négative
   mémoïsée, libellé « cours saisi » de l'ouverture aligné sur le formulaire et ↑ au manuel).
+- 2026-11-14 — validation CR-1 P3 ciblée (Sonnet) : 0 CRITICAL, 0 HIGH, 0 MEDIUM, 1 LOW ; remédié dans la fiche, aucun
+  inter-fiches (CR1-P3-1 : le rappel « la provenance d'origine n'est pas stockée » contredisait `loadedRateSource` ; `rateProposed`
+  et l'indicateur de retouche distingués).
