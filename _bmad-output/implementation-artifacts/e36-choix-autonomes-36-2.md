@@ -150,3 +150,40 @@ le 2026-11-14 ; prémisses relues au code avant application.*
 - **Écartées** : défilement du seul corps des lignes (rogne davantage) ; liste rendue hors du conteneur (modifie
   `AccountAutocomplete.svelte`, hors de la story) ; `max-h-[85vh] overflow-y-auto` du précédent.
 - **Réversible** : oui.
+- *(Annoté le 2026-11-14, validation P3 : la classe devient `sm:max-w-[min(48rem,calc(100%-2rem))]`, C-36-2-16 ; I3 est
+  ouverte : #1181.)*
+
+---
+
+*Choix suivants : validation P3 (`kesh-gate-logs/e36-2/validation-p3.md`), consignés le 2026-11-14.*
+
+### C-36-2-15 — *Si R0 rend…* : deux tables à cas exclusifs ; les correctifs ne dépendent pas de R0-b (V3-1)
+
+- **Contexte** : la table unique se contredisait (H5 constatée → développer ; R0-b impossible → suspendre) sans
+  précédence, et « lignes que Guy jugerait complètes » n'était pas constatable.
+- **Retenu** (décision de l'orchestrateur, forme choisie ici) : table A pour D2 à D6 — A1 H1 contredite à la tête → arrêt ;
+  A2 R0-a impossible → arrêt ; A3 sinon → développés ; table B pour #1150 — B1 grisé reproduit à la tête → `closes`
+  (après vérification que la même variante active le bouton après correctif) ; B2 en 0.17.6 seulement → `closes` ;
+  B3 nulle part → `refs`, aucun correctif de plus. Première ligne applicable seule. « Grisé reproduit » : chaque ligne
+  montre un compte et un montant tapé, somme tapée = montant de la transaction, `split-submit` désactivé. Cette règle
+  remplace, pour la mise en œuvre, la suspension écrite à C-36-2-9.
+- **Écartée** : suspendre D2 à D6 sans grisé reproduit (fait dépendre de R0-b des défauts établis à la lecture).
+- **Réversible** : oui.
+
+### C-36-2-16 — La largeur bornée à toute taille de fenêtre (V3-5)
+
+- **Contexte** : `dialog-content.svelte:31` porte `max-w-[calc(100%-2rem)]` et `sm:max-w-sm` ; `sm:max-w-3xl` remplace
+  le second, et la borne ne vaut plus dès 640 px : de 640 à ≈ 800 px, 768 px débordent.
+- **Retenu** (décision de l'orchestrateur, corrigé dans la story) : `sm:max-w-[min(48rem,calc(100%-2rem))]` ; AC6 c à
+  700×720, R0 (i), capture, M10.
+- **Écartées** : `sm:max-w-3xl` seul (le défaut du précédent) ; corriger aussi `LinkSettlementModal` (hors périmètre).
+- **Réversible** : oui.
+
+### C-36-2-17 — Les dossiers de R0-b hors du worktree, sous `/tmp/kesh-voie2/` (V3-6)
+
+- **Contexte** : l'image n'a pas de directive `USER` ; le conteneur écrit en root.
+- **Retenu** : `-v /tmp/kesh-voie2/e36-2-r0b:/data` (le `TMPDIR` de la voie 2), vidé au redémarrage ; rien de root dans
+  le worktree, que `git worktree remove` doit pouvoir retirer.
+- **Écartée** : `--user "$(id -u):$(id -g)"` (image non éprouvée sans root ; un refus d'écriture hors de `/data` ferait
+  échouer R0-b sans rapport avec la story).
+- **Réversible** : oui.
