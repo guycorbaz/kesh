@@ -978,3 +978,4 @@ devise au cours d'ouverture choisi pour l'exercice (R6), afin de tenir mes livre
   toute autre source, comme à l'AC-2, Vitest. Vérifié : AC-2 (`afcRate` `null` si `source` ≠ `"afc"`, ↑ → `manual`,
   indicateur), tâche `source === 'afc' ? effectiveRate : null` cohérents avec 35-2 et 35-3a. Non exercés : reste de la
   fiche hors diff, Vitest, rendu.
+- 2026-11-14 — validation CR-5 P6 ciblée (Sonnet) : 0 CRITICAL, 0 HIGH, 0 MEDIUM, 0 LOW ; aucune modification. Phrases A30 du diff P5 vérifiées contre 35-2 (AC-1, AC-5, AC-6) ; aucun site restant. Non exercés : reste de la fiche hors diff, compilation, rendu.

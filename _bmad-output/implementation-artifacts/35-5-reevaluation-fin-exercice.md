@@ -677,3 +677,4 @@ clôture et que l'écart aille aux différences de change.
   `afc` ou `manual` » contredisait la valeur brute de l'AC-1 et de l'audit — aligné. Vérifié : `sourceDate` `null`
   hors `afc`, test A30, audit `fx_revaluation.posted` à la valeur brute ; genre (`request` si différent) indépendant
   de la source. Non exercés : reste de la fiche hors diff, rendu.
+- 2026-11-14 — validation CR-5 P6 ciblée (Sonnet) : 0 CRITICAL, 0 HIGH, 0 MEDIUM, 0 LOW ; aucune modification. Phrases A30 du diff P5 vérifiées contre 35-2 (AC-1, AC-5, AC-6) ; aucun site restant. Non exercés : reste de la fiche hors diff, compilation, rendu.

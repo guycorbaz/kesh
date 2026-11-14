@@ -153,7 +153,7 @@ cours sans saisie.
      release qui l'écrit vérifie que ce traitement reste juste pour la source neuve. Un binaire antérieur à cette
      version ne connaît pas la table du tout, et ne démarre de toute façon pas sur une base migrée (P1) ; un
      `.keshbackup` d'une version future portant une source neuve se lit de même **s'il s'importe** — même inventaire de
-     tables (`parse_and_verify_avec_inventaire`, `admin_backup/import.rs:187`) et version minimale du manifeste non
+     tables (`parse_and_verify`, `admin_backup/import.rs:175-180`, qui passe `TABLES_TO_TRUNCATE` à `parse_and_verify_avec_inventaire`) et version minimale du manifeste non
      supérieure à ce binaire (`routes/admin.rs:235`)), `acknowledged_rate DECIMAL(20,10) NULL`
      et `acknowledged_at DATETIME(3) NULL` (UTC) — l'**acquittement par société** d'une correction de l'AFC : la valeur
      publiée (par unité) que la société a vue et acquittée (AC-5) ; `chk_exchange_rates_ack_pair` (les deux `NULL` ou les
@@ -1570,3 +1570,10 @@ cours sans saisie.
   grille (lignes et mentions), corrigés ici, et des sites de 35-3a, 35-3b, 35-5 (leurs Change Logs). 35-1 (copie
   `source = 'afc'`) et 35-4 (aucune lecture de `exchange_rates.source`) sans site. Non exercés : compilation, gate,
   rendu, reste de la fiche hors diff.
+- 2026-11-14 — validation CR-5 P6 ciblée (Sonnet) : 0 CRITICAL, 0 HIGH, 0 MEDIUM, 1 LOW ; remédié dans la fiche. LOW
+  35-2-CR5-P6-1 (AC-1) la garde d'import citait `parse_and_verify_avec_inventaire` (`import.rs:187`, signature `pub(crate)`
+  d'un test) — la production passe par `parse_and_verify` (`import.rs:175-180`), qui lui transmet `TABLES_TO_TRUNCATE` ;
+  `check_import_version_compat` lu à `routes/admin.rs:234-235`. Sites de A30 grepés (`manual`/`afc`) dans les quatre fiches,
+  35-1 et 35-4 : aucun site restant qui traite une autre source autrement que `manual` ; `rateSource` reçu en entrée
+  (`afc|manual`, 35-3a) est une entrée client, non une lecture de source. Non exercés : reste des fiches hors diff,
+  compilation, rendu.

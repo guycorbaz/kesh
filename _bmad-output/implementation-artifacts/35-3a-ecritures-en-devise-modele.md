@@ -837,3 +837,4 @@ chacune (R7), l'écart de change dans la seconde, afin que mes comptes en devise
   la phrase précédente traite comme `manual` — « ou d'une autre source, A30 ». Vérifié : test (b bis), noms
   `RateOrigin::Other`, `find_company_rate_in_tx`, `expectedRate` alignés sur 35-2 AC-1/AC-5 et 35-3b AC-2. Non
   exercés : reste de la fiche hors diff, compilation.
+- 2026-11-14 — validation CR-5 P6 ciblée (Sonnet) : 0 CRITICAL, 0 HIGH, 0 MEDIUM, 0 LOW ; aucune modification. Phrases A30 du diff P5 vérifiées contre 35-2 (AC-1, AC-5, AC-6) ; aucun site restant. Non exercés : reste de la fiche hors diff, compilation, rendu.
