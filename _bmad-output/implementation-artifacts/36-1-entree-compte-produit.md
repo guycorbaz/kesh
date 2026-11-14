@@ -1,4 +1,4 @@
-# Story 36-1 : *Entrée* dans le champ « compte de produit » n'envoie plus un compte que le champ ne montre pas (#1095)
+# Story 36-1 : *Entrée* dans le champ « compte de produit » n'envoie plus un compte que le champ ne montre pas, ni un compte que personne n'a désigné (#1095, #1165)
 
 Status: ready-for-dev
 
@@ -7,13 +7,16 @@ Status: ready-for-dev
 aucun changement serveur ni d'API. **Une clé i18n neuve** (`common-account-no-match`, quatre locales). Code lu à la tête du
 worktree, **`9d5a142df`** (kickoff de l'Epic 36, sur `main` `42d5f368`). Étape 0 et choix qui font foi : registre
 `e36-choix-autonomes-e360.md` (§ *Étape 0* — 36-1 ; C-e360-1, -2, -3, -4, -11) ; choix propres à la story :
-`e36-choix-autonomes-36-1.md` (C-36-1-1 à C-36-1-4). Voie de développement : **voie 2**. Validation non lancée.*
+`e36-choix-autonomes-36-1.md` (C-36-1-1 à C-36-1-5). Voie de développement : **voie 2**. Validation P1 (Sonnet) remédiée ;
+**#1165 intégrée** à la story par décision de l'orchestrateur (C-36-1-5).*
 
 ## Story
 
 En tant que titulaire qui monte une facture client ou tient son catalogue d'articles, je veux que la touche *Entrée* dans le
 champ « Compte de produit » ne fasse jamais partir le formulaire avec un autre compte que celui que le champ montre, afin de
-ne pas enregistrer une facture (ou un article) sur un compte que je crois avoir changé.
+ne pas enregistrer une facture (ou un article) sur un compte que je crois avoir changé — et qu'elle ne choisisse jamais un
+compte que je n'ai désigné ni par une saisie ni par les flèches (#1165), afin qu'une double *Entrée* sur une ligne neuve ne
+pose pas le premier compte de produit de la liste à la place du compte par défaut de la société.
 
 ## Ce qui se lit au code (`9d5a142df`)
 
@@ -43,6 +46,21 @@ ne pas enregistrer une facture (ou un article) sur un compte que je crois avoir 
 | C1 | taper un texte sans correspondance (« zzz », un numéro d'un compte qui n'est pas de type produit), *Entrée* | « zzz » | l'ancien compte (ou `null`) |
 | C2 | taper un texte qui correspond, *Échap*, *Entrée* | le texte tapé | l'ancien compte |
 | C3 | vider le champ, *Échap*, *Entrée* | champ vide (placeholder « … (défaut société) ») | l'ancien compte |
+
+**Le chemin de #1165 — une surbrillance que personne n'a désignée** (le champ ne ment pas, mais le compte n'a pas été
+choisi) : `:177` `let highlightIndex = $state(0);` ; le focus ouvre la liste (`:327` `onfocus={() => (open = true)}`) ; une
+saisie vide propose les vingt premiers comptes (`:226` `if (q === '') return active.slice(0, 20);`) ; `handleInput` remet la
+surbrillance à 0 quelle que soit la saisie (`:240` `highlightIndex = 0;`). D'où deux gestes qui posent le premier compte de la
+liste, la seconde *Entrée* envoyant le formulaire :
+
+| Chemin | Geste | Ce qui est choisi |
+|---|---|---|
+| C4 | ligne neuve (valeur nulle, « … (défaut société) »), focus, *Entrée* | le premier compte de produit de la liste |
+| C5 | vider un champ renseigné (liste ouverte), *Entrée* | idem, au lieu de l'effacement qu'accorde le `blur` |
+
+(Validation P1, V1-1 et V1-2. Sur un champ **non touché à valeur résolue**, `query` vaut « 3000 — Ventes », que ni
+`startsWith` ni `includes` ne retrouvent : `filtered` est vide et *Entrée* laisse partir le formulaire — propriété du filtre,
+fixée par AC1 g.)
 
 **Les deux consommateurs atteints** — les seuls dont le champ est dans un `<form>` :
 
@@ -125,37 +143,48 @@ l'`defaultPrevented` de l'événement ; la soumission réelle ne se voit qu'en E
 
 ## Décisions
 
-- **D1 — Principe : tant qu'un brouillon est affiché, *Entrée* ne laisse jamais partir le formulaire ; elle résout le
-  brouillon, et une seconde *Entrée* envoie** (C-36-1-1). La correction vit **dans le composant**, pas dans les deux
-  consommateurs : c'est lui qui sait qu'un brouillon est affiché, et le défaut est le sien (le même geste sur un futur
-  consommateur dans un `<form>` serait couvert). Nouveau comportement de `handleKeydown` sur *Entrée*, hors mode dégradé
-  (inchangé, `:256`) :
-  1. **aucun brouillon** (`draft === null`) : inchangé — un élément en surbrillance d'une liste ouverte est choisi
-     (`preventDefault`), sinon l'événement suit son cours et le formulaire part ; le champ montre alors `displayLabel`, la
-     vérité. *Entrée* sur un champ non touché reste donc le geste d'envoi ;
-  2. **brouillon, liste ouverte, élément en surbrillance** : inchangé — l'élément est choisi (`preventDefault`), le champ
-     montre son libellé, rien ne part. **Un texte qui correspond à un compte unique ou à plusieurs** suit cette règle : c'est
-     l'élément en surbrillance — le premier, ou celui que les flèches ont désigné — qui est choisi, **visible avant le
-     choix** ;
-  3. **brouillon non vide, liste fermée** (après *Échap*, chemin C2), **avec correspondances** : `preventDefault`, la liste
-     **se rouvre** (`open = true`, `highlightIndex = 0`), rien n'est choisi. Même pour une correspondance unique : *Échap* a
-     écarté la liste, la rouvrir montre ce qu'une *Entrée* suivante choisira, au lieu de choisir sans le montrer ;
-  4. **brouillon non vide sans aucune correspondance** (chemin C1, liste ouverte ou fermée) : `preventDefault`, le brouillon
-     **reste** affiché, et un message dit qu'aucun compte ne correspond (D2). Rien n'est choisi, rien ne part ;
-  5. **brouillon vide** (`draft.trim() === ''`) **sans élément en surbrillance** (liste fermée, chemin C3) :
-     `preventDefault`, puis **la même résolution que le `blur`** — `allowClear` : effacement explicite, sous la même condition
-     (`value !== null && selected !== undefined`) ; strict : brouillon jeté, compte retenu réaffiché. Le champ montre alors la
-     vérité ; rien ne part.
+- **D1 — Deux principes : (i) tant qu'un brouillon est affiché, *Entrée* ne laisse jamais partir le formulaire ; elle résout
+  le brouillon, et une seconde *Entrée* envoie ; (ii) une surbrillance ne vaut choix que si elle a été désignée — par une
+  saisie non blanche ou par une flèche** (C-36-1-1 ; (ii) : C-36-1-5, #1165 intégrée). La correction vit **dans le
+  composant**, pas dans les deux consommateurs : c'est lui qui sait qu'un brouillon est affiché, et le défaut est le sien (le
+  même geste sur un futur consommateur dans un `<form>` serait couvert).
 
-  La résolution du brouillon (`:291-316`) est **extraite** en une fonction (`commitDraft()`) que `handleBlur` et le cas 5
+  **La désignation, par l'index de surbrillance.** `highlightIndex` vaut **`-1`** (aucune surbrillance) tant que rien n'a été
+  désigné : valeur initiale (`:177`, aujourd'hui `0`), au focus (`:327`), au choix, au `blur`, à *Échap*, et à une frappe qui
+  laisse un brouillon blanc ; une frappe **non blanche** la met à `0` (le premier compte correspondant, désigné par la
+  saisie — aujourd'hui `:240` met `0` inconditionnellement) ; *flèche bas* depuis `-1` va à `0`, *flèche haut* depuis `-1` va à
+  `0` (`Math.max(-2, 0)`), puis comme aujourd'hui. Aucune ligne n'est mise en évidence à `-1` (`class:bg-accent` et
+  `aria-selected` suivent l'index, `:397`, `:403`) : l'écran ne montre plus une surbrillance qui n'est pas un choix. La
+  condition de choix de `:266` (`open && filtered[highlightIndex]`) reste la même et devient juste, puisque `filtered[-1]` est
+  `undefined`. **Option écartée** : un booléen `designated` à côté d'un index qui resterait à `0` — deux états à garder
+  d'accord, et une surbrillance affichée qui ne vaudrait pas choix.
+
+  **Règle de `handleKeydown` sur *Entrée***, dans cet ordre (V1-3 : les conditions portent sur `open` et sur l'index, plus sur
+  une formule « sans élément en surbrillance ») :
+
+  | # | État | Règle | Chemin | AC | Mutation |
+  |---|---|---|---|---|---|
+  | E0 | `loadError`, ou composition IME en cours (`e.isComposing`, V1-7) | inchangé : retour sans rien faire, l'événement suit son cours | — | AC1 i, AC1 j | M8 |
+  | E1 | liste ouverte et élément désigné (`open && filtered[highlightIndex]`, index ≥ 0) — saisie qui correspond à **un ou plusieurs** comptes (index `0` par la frappe, ou celui des flèches), ou champ vide / vidé **après une flèche** | `preventDefault`, l'élément est choisi, le champ montre son libellé, rien ne part | — | AC1 c, AC1 k | M11 |
+  | E2 | **non touché** (`draft === null`), sans désignation — valeur résolue **ou** nulle | rien n'est choisi ; l'événement suit son cours : le formulaire part, le champ montrant `displayLabel` (le compte, ou vide = « défaut société » et `null` envoyé) | C4 | AC1 g (valeur résolue), AC1 l (valeur nulle) | M2, M9 |
+  | E3 | brouillon non blanc, liste fermée (après *Échap*), avec correspondances | `preventDefault`, la liste **se rouvre** (`open = true`, `highlightIndex = 0`), rien n'est choisi | C2 | AC1 d | M4 |
+  | E4 | brouillon non blanc, aucune correspondance (liste ouverte ou fermée) | `preventDefault`, le brouillon **reste** ; le message de D2 s'affiche **si la liste des comptes est chargée** (`accounts.length > 0`) — pendant le chargement, rien n'est choisi ni envoyé, sans message (V1-3) | C1 | AC1 a, AC1 b, AC1 m | M1, M3, M12 |
+  | E5 | brouillon **blanc** sans désignation (`draft.trim() === ''`, index `-1`), **liste ouverte ou fermée** | `preventDefault`, puis **la résolution du `blur`** (`commitDraft()`) : `allowClear` → effacement explicite, sous la même condition (`value !== null && selected !== undefined`) ; strict → brouillon jeté, compte retenu réaffiché. Rien ne part | C3, C5 | AC1 e, f (après *Échap*), AC1 n, o (liste ouverte) | M5, M10 |
+
+  Une *Entrée* suivante, sans brouillon, tombe sur E2 et envoie. **Un texte qui correspond à un compte unique ou à
+  plusieurs** suit E1 (liste ouverte) ou E3 (liste fermée) : seul un élément visible et désigné est choisi.
+
+  La résolution du brouillon (`:291-316`) est **extraite** en une fonction (`commitDraft()`) que `handleBlur` et E5
   appellent tous deux — une seule règle, écrite une fois (DRY). **Options écartées** : (a) résoudre le brouillon comme le
   `blur` **puis** laisser partir le formulaire (remède 1 de l'issue) — le champ montrerait l'ancien compte au moment de
   l'envoi, mais la facture partirait et la page changerait sans que l'utilisateur voie que sa saisie a été jetée ; (b) choisir
   d'office la correspondance unique, même liste fermée — un choix que l'écran n'a pas montré, contraire à la 35-7 (D2 : seul
   un choix explicite sélectionne) ; (c) corriger dans chaque consommateur (`onkeydown` sur le `<form>`) — deux copies, et le
-  composant resterait piégé pour le suivant. **Réversible** : oui, une fonction.
+  composant resterait piégé pour le suivant ; (d) laisser #1165 à une story ultérieure (version d'origine de cette fiche) —
+  elle rouvrirait le même gestionnaire, ses tests, ses deux E2E et ses captures, et laisserait sur l'écran de la première
+  facture une double *Entrée* qui pose un compte de produit non désigné (V1-2). **Réversible** : oui, une fonction.
 - **D2 — Le message « aucun compte ne correspond »** (C-36-1-2). Clé **neuve** `common-account-no-match`, espace de noms
-  global `common-` (autorisé partout par `lint-i18n-ownership.js:12`
+  global `common-` (autorisé partout par `frontend/scripts/lint-i18n-ownership.js:16`
   `const GLOBAL_NAMESPACES = ['error', 'tooltip', 'common', 'mode', 'shortcut', 'demo'];`, sans entrée à `KNOWN_VIOLATIONS`),
   rangée **sous `common-account-invalid`** dans les quatre `messages.ftl` (fr-CH `:2648`, de-CH `:2520`, en-CH `:2525`, it-CH
   `:2518` à `9d5a142df`), jamais en fin de fichier. Texte (le développement peut l'ajuster, le sens reste) :
@@ -165,18 +194,31 @@ l'`defaultPrevented` de l'événement ; la soumission réelle ne se voit qu'en E
   - it-CH : `Nessun conto corrisponde a questo inserimento: scegliete un conto dall'elenco.`
 
   Rendu sous le champ, comme le marqueur d'invalidité (`:384` `<p id={invalidMsgId} class="mt-1 text-xs text-destructive">`),
-  avec un `id` propre joint à `aria-describedby` (`:337-339`, composé avec `describedBy` et le marqueur) et `aria-live="polite"`.
-  Il s'affiche au cas 4 de D1 et **disparaît** à la frappe suivante, au choix d'un compte, au bouton d'effacement et au `blur`.
+  avec un `id` propre joint à `aria-describedby` (`:337-339`, composé avec `describedBy` et le marqueur). **Annonce** (V1-4) :
+  une région `role="status"` **toujours présente** dans le DOM, dont seul le contenu change (vide hors E4) — un conteneur
+  `aria-live` inséré en même temps que son texte n'est pas annoncé de façon fiable ; le lien `aria-describedby` vise cette
+  même région, et n'est posé que lorsqu'elle a un contenu. AC1 a vérifie `role="status"` et le lien.
+  Il s'affiche à l'état E4 de D1 et **disparaît** à la frappe suivante, au choix d'un compte, au bouton d'effacement et au `blur`.
   Valable pour les sept consommateurs : il ne nomme ni produit ni facture. **Option écartée** : jeter le brouillon sans message
   (le champ réafficherait l'ancien compte) — vrai, mais l'utilisateur voit son texte remplacé sans savoir pourquoi, et doit le
   retaper pour corriger une faute de frappe. **Réversible** : oui.
 - **D3 — Le sort des sept consommateurs** (C-36-1-3). Aucun consommateur n'est modifié. Les deux `allowClear` dans un `<form>`
   (`InvoiceForm`, fiche article) reçoivent le correctif et **un test chacun** (AC3, AC4). Les cinq stricts
   (`JournalEntryForm:397`, `VatPurchaseAssistant:159`, `:204`, `ManualMatchModal:188`, `TransactionSplitModal:303`) ne sont
-  dans aucun `<form>` : pour eux, *Entrée* n'envoyait rien, et le changement visible se borne aux cas 3 à 5 de D1 (liste
-  rouverte, message, brouillon résolu au lieu de rester affiché) ; leurs suites restent vertes, sans test neuf (le composant
-  seul le couvre, AC1). ⚠️ `TransactionSplitModal` est l'objet de la 36-2 (hypothèse H1 de C-e360-5) : la 36-2 part de la
-  36-1 fusionnée (C-e360-4) et dira si le message de D2 suffit à son cas.
+  dans aucun `<form>` : pour eux, *Entrée* n'envoyait rien. **Mais le principe (ii) de D1 change la sélection au clavier
+  des sept** : un champ ouvert sans saisie ne montre plus de surbrillance, et *Entrée* n'y choisit plus le premier compte
+  (E2, E5) ; la première *flèche bas* désigne désormais le **premier** compte (aujourd'hui le deuxième, l'index partant de
+  `0`) ; le reste — frappe puis *Entrée*, flèches puis *Entrée*, clic — est inchangé. Couverture : le composant porte la
+  règle et ses tests (AC1, toutes les lignes de la table de D1) ; les consommateurs ne font que passer `accounts`, `value`,
+  `onSelect` et leurs options, sans logique clavier propre au champ (lu : aucun `onkeydown` sur `<AccountAutocomplete`, sortie
+  du `grep` de *Ce qui se lit au code*) ; aucun test existant ne sélectionne un compte au clavier
+  (`git grep -n -E "ArrowDown|ArrowUp|key: 'Enter'|press\('Enter'\)|'Enter'" -- "frontend/src/**/*.test.ts" frontend/tests/e2e`
+  ne rend que `SupplierInvoiceForm.test.ts:400`, `audit-log.spec.ts:98`, `bank-manual-statement.spec.ts:192`,
+  `homepage-charts.spec.ts:140`, `:151`, `:155`, `supplier-documents.spec.ts:267` — aucun sur un champ de compte ; les
+  sélections passent par le `mousedown` d'une option). Les suites des sept restent vertes (AC2), et les deux consommateurs
+  dans un `<form>` reçoivent en plus le cas C4 (AC3 c). Sans test neuf pour les cinq stricts. ⚠️ `TransactionSplitModal` est
+  l'objet de la 36-2 (hypothèse H1 de C-e360-5) : la 36-2 part de la 36-1 fusionnée (C-e360-4) et dira si le message de D2
+  suffit à son cas.
 - **D4 — Le manuel ne change pas** (C-36-1-4). Il ne décrit aucun geste clavier du champ de compte :
   `git grep -n -i -E "touche entr|clavier|surbrillance|liste déroulante" -- docs/manual/fr/user-manual.tex` rend `:60`
   (convention `\keshkey`), `:95` (session), `:312` (graphiques), `:1800` (création d'un fournisseur), `:4360` (raccourcis) —
@@ -187,13 +229,15 @@ l'`defaultPrevented` de l'événement ; la soumission réelle ne se voit qu'en E
 
 ## Critères d'acceptation
 
-1. **AC1 — Le composant** (`AccountAutocomplete.test.ts`, `describe` neuf « Entrée (Story 36-1, #1095) » ; l'événement est
-   constaté par la valeur rendue de `fireEvent.keyDown`, `false` quand `preventDefault` a été appelé) :
+1. **AC1 — Le composant** (`AccountAutocomplete.test.ts`, `describe` neuf « Entrée (Story 36-1, #1095, #1165) » ;
+   l'événement est constaté par la valeur rendue de `fireEvent.keyDown`, `false` quand `preventDefault` a été appelé ; chaque
+   ligne de la table de D1 a au moins un cas) :
    - a. `allowClear`, valeur `1` (`3000 — Ventes`) : taper `zzz`, *Entrée* → événement empêché ; `onSelect` jamais appelé ; le
-     champ montre `zzz` ; le message « Aucun compte ne correspond » est affiché et son `id` figure dans `aria-describedby` ;
+     champ montre `zzz` ; le message « Aucun compte ne correspond » est affiché dans un élément `role="status"` dont l'`id`
+     figure dans `aria-describedby` ;
    - b. même montage : taper `zzz`, *Échap*, *Entrée* → idem (C1 liste fermée) ;
    - c. deux comptes `3000`, `3001` : taper `300`, *Entrée* → événement empêché ; `onSelect(id de 3000)` une fois ; le champ
-     montre `3000 — Ventes` (non-régression du cas 2, vert au départ, **dit**) ; taper `300`, *flèche bas*, *Entrée* →
+     montre `3000 — Ventes` (non-régression de E1, vert au départ, **dit**) ; taper `300`, *flèche bas*, *Entrée* →
      `onSelect(id de 3001)` ;
    - d. taper `3001` (correspondance unique), *Échap*, *Entrée* → événement empêché ; `onSelect` jamais appelé ; la liste
      (`role="listbox"`) est de nouveau affichée ; une seconde *Entrée* → `onSelect(id de 3001)` ;
@@ -201,10 +245,23 @@ l'`defaultPrevented` de l'événement ; la soumission réelle ne se voit qu'en E
      champ est vide ;
    - f. **strict**, valeur `1` : vider le champ, *Échap*, *Entrée* → événement empêché ; `onSelect` jamais appelé ; le champ
      montre `3000 — Ventes` ;
-   - g. valeur `1`, aucune frappe : focus, *Entrée* → événement **non** empêché, `onSelect` jamais appelé (le formulaire peut
-     partir : le champ montre la vérité) ;
+   - g. E2, **non touché à valeur résolue** : valeur `1`, focus, *Entrée* → événement **non** empêché, `onSelect` jamais
+     appelé (le formulaire peut partir : le champ montre le compte) ;
    - h. après le cas a : une frappe (`zz`) → le message disparaît ; de même après un `blur` ;
-   - i. mode dégradé (`loadError`) : taper `7`, *Entrée* → événement non empêché, comportement inchangé.
+   - i. E0, mode dégradé (`loadError`) : taper `7`, *Entrée* → événement non empêché, comportement inchangé ;
+   - j. E0, composition IME : taper `zzz`, puis `keyDown` *Entrée* avec `isComposing: true` → événement **non** empêché, aucun
+     message ;
+   - k. E1 sans saisie : valeur nulle, focus, *flèche bas*, *Entrée* → événement empêché, `onSelect(id du premier compte de la
+     liste)` ; de même valeur `1`, vider le champ, *flèche bas*, *Entrée* → le premier compte ;
+   - l. E2, **non touché à valeur nulle** (#1165, chemin C4) : valeur nulle, `allowClear`, focus → la liste est affichée et
+     **aucune** option ne porte `aria-selected="true"` ; *Entrée* → événement **non** empêché, `onSelect` jamais appelé, le
+     champ reste vide ;
+   - m. E4 pendant le chargement : `accounts = []`, valeur nulle, taper `zzz`, *Entrée* → événement empêché, `onSelect` jamais
+     appelé, **aucun** message ;
+   - n. E5, **vidé, liste ouverte**, `allowClear` (chemin C5) : valeur `1`, vider le champ (sans *Échap*), *Entrée* →
+     événement empêché ; `onSelect(null)` **une** fois ; le champ est vide ;
+   - o. E5, vidé, liste ouverte, **strict** : valeur `1`, vider le champ, *Entrée* → événement empêché ; `onSelect` jamais
+     appelé ; le champ montre `3000 — Ventes`.
 2. **AC2 — Les tests existants** : la suite `AccountAutocomplete.test.ts` existante reste verte **sans modification de ses
    assertions** (le `blur` garde exactement sa règle, désormais dans `commitDraft()`), ainsi que celles de `JournalEntryForm`,
    `ManualMatchModal`, `TransactionSplitModal`, `InvoiceForm`, `products-page`.
@@ -213,21 +270,37 @@ l'`defaultPrevented` de l'événement ; la soumission réelle ne se voit qu'en E
    `champ.form!.requestSubmit()` (ce que fait le navigateur). Brouillon édité dont la ligne porte `3200 — Honoraires` :
    - a. taper `zzz`, *Entrée* simulée → `updateInvoiceMock` **jamais appelé** ; le champ montre `zzz` ;
    - b. taper le numéro exact d'un autre compte de produit, *Entrée* (choisit), *Entrée* (envoie) → `updateInvoiceMock`
-     appelé une fois, `lines[0].revenueAccountId` = l'identifiant de ce compte.
+     appelé une fois, `lines[0].revenueAccountId` = l'identifiant de ce compte ;
+   - c. (#1165, C4) brouillon édité dont la ligne n'a **pas** de compte (`revenueAccountId: null`) : focus sur le champ,
+     *Entrée* simulée → l'événement n'est pas empêché, le formulaire part : `updateInvoiceMock` appelé une fois,
+     `lines[0].revenueAccountId` **`null`** (le défaut société), et non le premier compte de produit. Rouge au départ : la
+     première *Entrée* choisit le premier compte et rien ne part.
 4. **AC4 — L'article** (`products-page.test.ts`, `describe` neuf) — même helper, sur le dialogue d'édition d'un article dont
    le compte de produit est `A` : taper `zzz`, *Entrée* simulée → ni `updateProduct` ni `createProduct` appelés, le dialogue
-   reste ouvert, le champ montre `zzz`. (Le montage du dialogue est à écrire ; s'il exige plus que les mocks existants
-   `:26-58`, le dire au Change Log.)
+   reste ouvert, le champ montre `zzz`. **Montage** (V1-6) : à écrire — `listProductsMock` rend aujourd'hui `items: []`
+   (`products-page.test.ts:86`), `updateProduct` est un `vi.fn()` anonyme (`:44`, à nommer), et il faut cliquer *Modifier*
+   (`+page.svelte:573-574`, `aria-label` « Modifier ») pour ouvrir le `Dialog` (`:612-613`). Un précédent existe dans le dépôt :
+   `routes/(app)/contacts/contacts-page.test.ts` ouvre le `Dialog` de formulaire de sa page en jsdom et l'y referme
+   (`fermer()`, `:174-182`), ce qui rend le montage plausible — non démontré par exécution. **Repli** : si le dialogue ne se
+   monte pas en jsdom, AC4 tombe, c'est déclaré au Change Log avec la cause, et la preuve de l'article est portée par l'E2E
+   seul (AC5 b), qui doit alors tuer M1.
 5. **AC5 — E2E, à la frontière** (le défaut se voit dans le navigateur : la soumission implicite n'existe qu'en vrai) :
    - a. **facture** (`invoice-revenue-account.spec.ts`, test neuf, montage du test `:47-121`) : brouillon dont la ligne 1
      porte le compte `honoraires` posé par l'API ; `/invoices/{id}/edit` ; `fill('zzz')` dans le premier champ
-     `input[aria-autocomplete="list"]`, `press('Enter')` → l'URL reste `/edit`, le message est visible, **aucune requête
-     `PUT /api/v1/invoices/{id}`** n'est partie (compteur `page.on('request')` posé avant le geste) ; puis `fill(<numéro de
+     `input[aria-autocomplete="list"]`, `press('Enter')` → **attendre le message visible** ; l'URL reste `/edit` ; aucune
+     requête `PUT /api/v1/invoices/{id}` (compteur `page.on('request')` posé avant le geste, lu **après** l'attente du
+     message) ; puis relecture `GET /api/v1/invoices/{id}` : `lines[0].revenueAccountId` = `honoraires.id` et `version`
+     inchangée (V1-5 : la preuve d'absence d'envoi est la relecture, le compteur n'est qu'un indice) ; puis `fill(<numéro de
      marchandises>)`, `press('Enter')` → le champ montre `<numéro> — <nom>` ; `press('Enter')` → l'URL devient le détail, et
      `GET /api/v1/invoices/{id}` rend `lines[0].revenueAccountId` = `marchandises.id` ;
+   - a-bis. **facture, #1165** (même fichier, test neuf) : brouillon dont la ligne 2 n'a pas de compte ; `/edit` ; *Tab*
+     jusqu'au champ de compte de la ligne 2 (ou `focus()`), `press('Enter')` → l'URL devient le détail ; `GET` :
+     `lines[1].revenueAccountId` = `null`. Rouge au départ : la première *Entrée* pose le premier compte de produit et l'URL
+     reste `/edit` (une seconde l'enregistrerait) ;
    - b. **article** (`product-revenue-account.spec.ts`, test neuf, `mkRevenueAccount` et `openEditDialog`) : article créé par
      l'API avec le compte `A` ; dialogue d'édition ; `#form-revenue-account` : `fill('zzz')`, `press('Enter')` → le dialogue
-     reste ouvert, le message est visible, aucune requête `PUT /api/v1/products/{id}` ; `GET` de l'article : compte `A`.
+     reste ouvert, le message est visible (attendu avant toute lecture), aucune requête `PUT /api/v1/products/{id}` ; `GET`
+     de l'article : compte `A`.
    Rouges au départ : le premier *Entrée* soumet (redirection vers le détail ; dialogue fermé).
 6. **AC6 — Textes** : la clé `common-account-no-match` dans les quatre `messages.ftl`, à côté de `common-account-invalid` ;
    parité des locales verte (`crates/kesh-i18n/src/loader.rs:771` `fn parity_between_locales() {`) ;
@@ -236,26 +309,36 @@ l'`defaultPrevented` de l'événement ; la soumission réelle ne se voit qu'en E
    C-e350-18). Aucun manuel modifié (D4).
 7. **AC7 — Captures** (thème clair, base de démonstration jetable, `/home/gcorbaz/devel/kesh-gate-logs/e36-1/captures/`) :
    ligne de facture avec `zzz` et le message ; fiche article, même état ; ligne de facture après *Échap* puis *Entrée* (liste
-   rouverte).
+   rouverte) ; ligne neuve au focus, liste ouverte **sans** surbrillance (#1165).
 
 ## Tests à écrire, et la preuve du rouge
 
 Écrits **avant** le correctif et commités avec lui seulement après le constat ; journal
 `/home/gcorbaz/devel/kesh-gate-logs/e36-1/rouges.log` (Vitest ciblé et E2E ciblé, sortie copiée).
 
-- **Rouges au départ** : AC1 a, b, d, e, f, h (l'événement n'est pas empêché ; pas de message) ; AC3 a (`updateInvoiceMock`
-  appelé avec `3200`) ; AC4 (`updateProduct` appelé) ; AC5 a et b (redirection ; dialogue fermé ; `PUT` parti).
-- **Verts au départ, et dits** (non-régression) : AC1 c, g, i ; AC3 b (la première *Entrée* choisit déjà dans une liste
-  ouverte, la seconde envoie déjà : ce test garde contre un blocage excessif, M2) ; AC2.
+- **Rouges au départ** : AC1 a, b, d, e, f, h, m (l'événement n'est pas empêché ; pas de message) ; AC1 k (la *flèche bas*
+  part de l'index `0` et désigne le **deuxième** compte) ; AC1 l (l'option `0` porte `aria-selected="true"`, puis *Entrée*
+  l'empêche et choisit) ; AC1 n, o (le premier compte est choisi) ; AC3 a (`updateInvoiceMock` appelé avec `3200`) ; AC3 c
+  (premier compte choisi, rien ne part) ; AC4 (`updateProduct` appelé) ; AC5 a, a-bis et b (redirection ; premier compte
+  posé ; dialogue fermé ; `PUT` parti).
+- **Verts au départ, et dits** (non-régression) : AC1 c, g, i, j (aujourd'hui `zzz` n'est jamais intercepté, donc pas en
+  composition non plus : j ne devient utile qu'avec le correctif, tué par M8) ; AC3 b (la première *Entrée* choisit déjà dans
+  une liste ouverte, la seconde envoie déjà : ce test garde contre un blocage excessif, M2) ; AC2.
 - **Mutations** (code commité avant ; scripts dans `/home/gcorbaz/devel/kesh-gate-logs/e36-1/mut/` ; restauration
   `git restore --worktree -- <fichier>` puis `touch <fichier>` ; une mutation équivalente se dit) :
   - M1 : la branche neuve retirée (retour à `:266-269`) → AC1 a, b, d, e, f ; AC3 a ; AC4 ; AC5 ;
-  - M2 : `preventDefault` sur **toute** *Entrée* (même sans brouillon) → AC1 g ; AC3 b (la seconde *Entrée* ne part plus) ;
-  - M3 : cas 4, le brouillon jeté (`draft = null`) au lieu d'être gardé → AC1 a (le champ ne montre plus `zzz`) ;
-  - M4 : cas 3, la correspondance choisie au lieu de rouvrir la liste → AC1 d (`onSelect` appelé) ;
-  - M5 : cas 5, `commitDraft()` non appelé → AC1 e et f ;
+  - M2 : `preventDefault` sur **toute** *Entrée* (même sans brouillon) → AC1 g, l ; AC3 b, c (l'*Entrée* d'envoi ne part
+    plus) ;
+  - M3 : E4, le brouillon jeté (`draft = null`) au lieu d'être gardé → AC1 a (le champ ne montre plus `zzz`) ;
+  - M4 : E3, la correspondance choisie au lieu de rouvrir la liste → AC1 d (`onSelect` appelé) ;
+  - M5 : E5, `commitDraft()` non appelé → AC1 e, f, n, o ;
   - M6 : le message non effacé à la frappe → AC1 h ;
-  - M7 : `aria-describedby` sans l'`id` du message → AC1 a.
+  - M7 : `aria-describedby` sans l'`id` du message → AC1 a ;
+  - M8 : la garde `e.isComposing` retirée → AC1 j ;
+  - M9 : l'index de surbrillance remis à `0` au focus (au lieu de `-1`) → AC1 l ; AC3 c ; AC5 a-bis (#1165, C4) ;
+  - M10 : une frappe qui laisse un brouillon blanc met l'index à `0` (comme `:240` aujourd'hui) → AC1 n, o (C5) ;
+  - M11 : les flèches ne désignent pas depuis `-1` (l'index y reste) → AC1 k ;
+  - M12 : le message affiché même sans liste chargée → AC1 m.
 
 ## Tâches
 
@@ -264,12 +347,13 @@ l'`defaultPrevented` de l'événement ; la soumission réelle ne se voit qu'en E
       `git grep -n "<AccountAutocomplete" -- frontend/src` et le contrôle des `<form>` ; citer les sorties au Change Log.
 - [ ] Bases de la voie 2 (`kesh_36_1`, `kesh_e2e_36_1` sur `127.0.0.1:3307`), `node_modules` par `cp -al`.
 - [ ] Tests d'AC1, AC3, AC4, AC5 écrits ; rouges constatés et journalisés ; commit.
-- [ ] `AccountAutocomplete.svelte` : `commitDraft()` extraite de `handleBlur` ; *Entrée* selon D1 ; message de D2 et son
-      `aria-describedby` ; commentaires du fichier mis à jour (`:297-299` dit qu'un envoi sans quitter le champ doit rendre le
+- [ ] `AccountAutocomplete.svelte` : `commitDraft()` extraite de `handleBlur` ; index de surbrillance à `-1` sans
+      désignation (D1, principe ii) ; *Entrée* selon la table de D1, garde `isComposing` comprise ; région `role="status"` de
+      D2 et son `aria-describedby` ; commentaires du fichier mis à jour (`:297-299` dit qu'un envoi sans quitter le champ doit rendre le
       focus d'abord : à compléter par « ou passer par *Entrée*, qui résout le brouillon sans envoyer ») ; doc de la prop
       `allowClear` relue.
 - [ ] `messages.ftl` ×4 (D2) ; `sitesTotal` recompté.
-- [ ] Verts ; mutations M1 à M7 ; captures (AC7).
+- [ ] Verts ; mutations M1 à M12 ; captures (AC7).
 - [ ] Gates (voie 2 ; `gate-ci` en voie 1), selon `e35-dev-commun.md` § *Quels gates, quand* : en cours, gate ciblé — Vitest
       des fichiers touchés, `npm run check`, `npm run lint-i18n-ownership`, et `cargo nextest run -E 'binary(...)'` du crate
       `kesh-i18n` (les `.ftl` y sont lus) ; **au passage en `review`** : bases remises à neuf, `scripts/test-fast.sh --ci`
@@ -286,6 +370,10 @@ l'`defaultPrevented` de l'événement ; la soumission réelle ne se voit qu'en E
 - **Facture et article : la touche Entrée dans le champ « Compte de produit » n'enregistre plus l'ancien compte pendant que
   le champ montre le texte tapé.** Entrée choisit le compte en surbrillance dans la liste, rouvre la liste si vous l'aviez
   fermée, ou signale qu'aucun compte ne correspond à votre saisie ; une seconde Entrée enregistre. (refs #1095)
+- **Facture et article : Entrée dans un champ « Compte de produit » vide ne choisit plus d'office le premier compte de la
+  liste.** Un compte n'est choisi au clavier que si vous l'avez désigné, en tapant ou avec les flèches ; une ligne laissée
+  vide suit le compte de produit par défaut de la société, même après une double Entrée. Le même champ de compte, dans les
+  écritures manuelles et le rapprochement bancaire, suit la même règle. (refs #1165)
 
 ## Dev Notes
 
@@ -300,13 +388,8 @@ l'`defaultPrevented` de l'événement ; la soumission réelle ne se voit qu'en E
 - **I3 — `Ctrl+S` annoncé, sans effet** (documentation ou bug, P3 proposé) : le manuel (`user-manual.tex:4366`) dit que
   `Ctrl+S` sauvegarde le formulaire en cours ; l'événement `kesh:save` (`+layout.svelte:36`) n'a aucun écouteur, seule
   l'écriture manuelle a le sien. À ouvrir, une issue.
-- **I4 — *Entrée* sur un champ de compte vide et non touché choisit le premier compte de la liste** (bug, P3 proposé) : le
-  focus ouvre la liste (`AccountAutocomplete.svelte:327` `onfocus={() => (open = true)}`), `query` vide propose les vingt
-  premiers comptes (`:226`), `highlightIndex` vaut 0 : la première *Entrée* choisit ce compte (visible), la seconde envoie.
-  Sur la ligne de facture, une double *Entrée* pour enregistrer pose donc le premier compte de produit au lieu du défaut
-  société. Le champ ne ment pas — hors de la classe de #1095 —, mais le choix n'a pas été désigné ; le corriger exige de
-  distinguer une surbrillance désignée (frappe ou flèches) d'une surbrillance par défaut, ce qui change la sélection au
-  clavier des sept consommateurs. À ouvrir, une issue ; à reconsidérer à la validation si l'orchestrateur veut l'intégrer.
+- **I4 — ouverte en #1165, puis intégrée à la story** (décision de l'orchestrateur, C-36-1-5 ; D1, principe ii ; chemins C4,
+  C5). La PR porte `closes #1095` et `closes #1165`.
 - **I5 — Mode dégradé** (bug, P4 proposé) : liste des comptes non chargée, un texte non numérique (`abc`) envoie `null`
   (`:243-246`) et reste affiché, au `blur` (`:288`) comme à *Entrée* (`:256`). Voisin de #1085 (le brouillon gardé quand la
   liste revient), distinct. À ouvrir, une issue.
@@ -334,12 +417,15 @@ découpage proposé — séparer un test de son correctif n'apporterait rien, et
 
 - Le champ ne contredit jamais la valeur envoyée — désormais **aussi** à l'instant d'un envoi par *Entrée*.
 - Un champ strict n'est jamais nullifié (#271) : ni par le `blur`, ni par *Entrée*.
-- *Entrée* sur un champ non touché reste le geste d'envoi du formulaire.
+- Une *Entrée* ne choisit jamais un compte que l'utilisateur n'a pas désigné (saisie non blanche ou flèche) ; sur un champ
+  non touché — compte affiché, ou vide et suivant le défaut société —, elle laisse partir le formulaire, qui envoie ce que le
+  champ montre.
 - Le mode dégradé ne change pas. Rien ne change au serveur. Aucune migration (C-e360-3). Fixtures synthétiques seulement.
 
 ### Références
 
-- Issue #1095 (P2, `bug`) ; Story 35-7 (#1000 ; D2 : seul un choix explicite sélectionne ; E1 : le `Ctrl+S` de l'écriture
+- Issue #1095 (P2, `bug`) ; issue #1165 (la surbrillance non désignée) ; validation P1
+  `/home/gcorbaz/devel/kesh-gate-logs/e36-1/validation-p1.md` ; Story 35-7 (#1000 ; D2 : seul un choix explicite sélectionne ; E1 : le `Ctrl+S` de l'écriture
   manuelle rend le focus) ; Story 16-1b (`allowClear`) ; #271.
 - Fichier d'epic `_bmad-output/planning-artifacts/epic-36-premiere-facture-et-suite.md` (phase 1, ligne 1 ; fichiers communs).
 - `CLAUDE.md` : § *Recette visuelle* ; § *Le prompt d'une passe doit NOMMER le manuel* ; § *Test Locally First* (E2E).
@@ -358,3 +444,29 @@ découpage proposé — séparer un test de son correctif n'apporterait rien, et
 
 - 2026-11-14 — Fiche créée (`bmad-create-story`, Opus 5.5), code lu à `9d5a142df`. Décisions D1 à D4 (C-36-1-1 à C-36-1-4) ;
   cinq issues demandées à l'orchestrateur (I1 à I5). Validation non lancée.
+- 2026-11-14 — **Validation P1 (Sonnet) : 0/0/2/6 → remédiés** (Opus 5.5, par l'outil Edit ; rapport
+  `kesh-gate-logs/e36-1/validation-p1.md`). Prémisses relues au code à `9d5a142df` avant chaque remède :
+  - **V1-1 (MEDIUM), retenu** : `:240` `highlightIndex = 0;` dans `handleInput`, `:226` (vingt comptes pour une saisie vide),
+    `:266` — vider puis *Entrée* sans *Échap* choisit bien le premier compte. Remède : chemin C5 écrit, D1 réécrit en table
+    d'états (E0 à E5), chaque état avec sa règle, son AC et sa mutation : non touché à valeur nulle (E2, AC1 l, M9), non touché
+    à valeur résolue (E2, AC1 g, M2), vidé liste ouverte (E5, AC1 n, o, M10), vidé après *Échap* (E5, AC1 e, f, M5).
+  - **V1-2 (MEDIUM), retenu** : `:177` `let highlightIndex = $state(0);`, `:327` `onfocus={() => (open = true)}` — la première
+    *Entrée* sur un champ vide non touché choisit le premier compte. **#1165 intégrée** (décision de l'orchestrateur,
+    C-36-1-5) : principe (ii) de D1, index `-1` sans désignation ; l'affirmation fausse « Entrée sur un champ non touché reste
+    le geste d'envoi » retirée de D1 et de *Ce qui doit rester vrai* (remplacée par la règle exacte), AC1 k, l, AC3 c, AC5
+    a-bis, M9 à M11 ajoutés ; D3 dit l'effet sur les sept consommateurs et sa couverture (grep des tests au clavier cité) ;
+    note de version : un second point `refs #1165` ; I4 renvoie à #1165.
+  - **V1-3 (LOW), retenu** : condition d'E5 écrite sur la désignation et non « sans élément en surbrillance » ; pendant le
+    chargement (`accounts = []`), E4 bloque sans message (AC1 m, M12).
+  - **V1-4 (LOW), retenu** : région `role="status"` toujours présente, contenu variable, au lieu d'un `<p aria-live>` inséré ;
+    AC1 a la vérifie.
+  - **V1-5 (LOW), retenu** : AC5 a attend le message, lit le compteur après, et relit `GET /invoices/{id}` (compte et
+    `version` inchangés) ; AC5 b attend le message.
+  - **V1-6 (LOW), retenu** : montage d'AC4 décrit (`products-page.test.ts:86` liste vide, `:44` mock anonyme, bouton
+    *Modifier* `+page.svelte:573-574`, `Dialog` `:612-613`), précédent `contacts-page.test.ts:174-182` cité, non démontré par
+    exécution ; repli écrit (E2E AC5 b seul, déclaré au Change Log, tuant M1).
+  - **V1-7 (LOW), retenu** : garde reprise de `SupplierCreatePanel.svelte:114`
+    `if (e.key !== 'Enter' || e.isComposing) return;` ; état E0, AC1 j, M8.
+  - **V1-8 (LOW), retenu** : `lint-i18n-ownership.js:16` (lu : `16:const GLOBAL_NAMESPACES = […]`) au lieu de `:12`.
+  - Grep de la phrase corrigée (`/usr/bin/grep -n "geste d'envoi"` sur la fiche et le registre) : ne reste que la citation de
+    l'ancienne phrase dans cette entrée. Registre : C-36-1-5 ajouté, C-36-1-1 et C-36-1-3 complétés.
