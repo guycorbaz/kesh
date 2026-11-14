@@ -477,7 +477,8 @@ const HORLOGE_REELLE_ADMISES: &[Exemption] = &[
         "35-5c (D1, C-e355c-1)",
         "`setup()` du `mod tests` : `let today = kesh_core::horloge::jour_suisse(chrono::Utc::now());` \
          — le binaire `lib` de `kesh-db` n'a pas d'horloge de test ; le jour est lu une fois et \
-         réemployé par les 50 appelants",
+         réemployé par ses 51 appels (`setup(&pool)` dans le `mod tests`, définition et deux \
+         doc-comments exclus ; recompté à la clôture de la 35-5c, C5)",
     ),
     (
         "kesh-api/src/middleware/auth.rs",
