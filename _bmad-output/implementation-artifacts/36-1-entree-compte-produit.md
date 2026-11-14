@@ -230,7 +230,7 @@ l'`defaultPrevented` de l'événement ; la soumission réelle ne se voit qu'en E
   | — | sinon (**un brouillon est affiché**) | `preventDefault` **toujours**, puis E3, E4 ou E5 | — | AC1 q (M14) | M1, M14 |
   | E3 | … brouillon non blanc, `filtered` non vide | la liste **s'ouvre** ou reste ouverte (`open = true`, index `0`), rien n'est choisi | C2 | AC1 d | M4 |
   | E4 | … brouillon non blanc, `filtered` vide, **des comptes proposables** (`active.length > 0`) | le brouillon **reste** ; le message de D2 s'affiche *(amendé à la remédiation de la revue P1, B2 : la condition était `accounts.length > 0`)* | C1 | AC1 a, b | M3, M12 |
-  | E4-bis | … brouillon non blanc, **aucun compte proposable** (`active` vide : comptes en cours de chargement, plan vide, aucun du type attendu) | la résolution du `blur` (`commitDraft()`), sans message : le champ réaffiche la valeur, l'*Entrée* suivante envoie ce qu'il montre (C-36-1-11) | — | AC1 m, m-bis | M33 |
+  | E4-bis | … brouillon non blanc, **aucun compte proposable** (`active` vide : comptes en cours de chargement, plan vide, aucun du type attendu) | la résolution du `blur` (`commitDraft()`), sans message : le champ réaffiche la valeur, l'*Entrée* suivante envoie ce qu'il montre (C-36-1-11) — sauf pendant le chargement si une valeur est posée : le champ paraît vide et la valeur persistée part (exception d'E2, #1170 ; P2 ciblée, R1) | — | AC1 m, m-bis | M33 |
   | E5 | … brouillon **blanc** (`draft.trim() === ''`) | **la résolution du `blur`** (`commitDraft()`) : `allowClear` → effacement explicite, sous la même condition (`value !== null && selected !== undefined`) ; strict → brouillon jeté, compte retenu réaffiché ; liste fermée, index `-1` | C3, C5 | AC1 e, f, n, o | M5, M10 |
 
   Une *Entrée* suivante, sans brouillon, tombe sur E2 et envoie. **Un texte qui correspond à un compte unique ou à
@@ -354,7 +354,8 @@ l'`defaultPrevented` de l'événement ; la soumission réelle ne se voit qu'en E
      aucun compte du type attendu — le brouillon est résolu, l'*Entrée* suivante n'est pas empêchée, B2)* ;
    - j-bis. E0, `keyCode: 229` (fin de composition sous WebKit) avec un compte désigné par la saisie → événement non empêché,
      `onSelect` jamais appelé (B3/E3) ;
-   - n-bis, o-bis. n et o avec un brouillon d'**espaces** (`'  '`) : aucune option désignée ; mêmes attendus (E2) ;
+   - n-bis, o-bis. n et o avec un brouillon d'**espaces** (`'  '`) : aucune option désignée ; mêmes attendus (E5 ; « E2 »
+     écrit à la remédiation P1, corrigé à la clôture, P2 ciblée R4) ;
    - n. E5, **vidé, liste ouverte**, `allowClear` (chemin C5) : valeur `1`, vider le champ (sans *Échap*), *Entrée* →
      événement empêché ; `onSelect(null)` **une** fois ; le champ est vide ;
    - o. E5, vidé, liste ouverte, **strict** : valeur `1`, vider le champ, *Entrée* → événement empêché ; `onSelect` jamais
@@ -565,9 +566,11 @@ l'`defaultPrevented` de l'événement ; la soumission réelle ne se voit qu'en E
   le champ montre le texte tapé.** Tant que le champ montre une saisie, Entrée n'enregistre rien : elle choisit le compte
   en surbrillance dans la liste, rouvre la liste si vous l'aviez fermée (une Entrée de plus choisit alors le compte en
   surbrillance), ou signale qu'aucun compte ne correspond à votre saisie (corrigez-la ou choisissez un compte : Entrée
-  reste sans effet tant que ce message s'affiche). Une fois le compte choisi, une nouvelle Entrée enregistre. Retaper le
-  libellé du compte (« 3200 — Honoraires ») le choisit comme son numéro. Le bouton × du champ reste à sa place quand un
-  message s'affiche sous le champ. (refs #1095)
+  reste sans effet tant que ce message s'affiche). Si aucun compte ne peut être proposé (liste des comptes pas encore
+  chargée, ou aucun compte de produit), Entrée efface la saisie sans message et le champ revient à son compte. Une fois le
+  compte choisi, une nouvelle Entrée enregistre. Modifier le libellé affiché (« 3200 — Honoraires », avec son tiret long)
+  désigne ce compte comme son numéro ; écrit avec un trait d'union (« 3200 - Honoraires »), il n'est pas reconnu (#1185).
+  Le bouton × du champ reste à sa place quand un message s'affiche sous le champ. (refs #1095)
 - **Facture et article : Entrée dans un champ « Compte de produit » vide ne choisit plus d'office le premier compte de la
   liste.** Un compte n'est choisi au clavier que si vous l'avez désigné, en tapant ou avec les flèches ; une ligne laissée
   vide suit le compte de produit par défaut de la société, même après une double Entrée. Le même champ de compte, dans les
@@ -610,6 +613,10 @@ ouvrir » ci-dessous datent de la fiche.)*
 - **#1168 — pas d'`aria-activedescendant`** (validation P2, V2-4 ; ouverte par l'orchestrateur) : la désignation au clavier
   n'est annoncée à aucun lecteur d'écran (`git grep -n "activedescendant" -- frontend/src` ne rend que
   `ContactPicker.svelte:137`). Préexistant, hors périmètre.
+- **Tracées à la passe ciblée P2** (ouvertes par l'orchestrateur, titres relus par `gh issue view`) : **#1185** — retaper
+  un libellé avec un trait d'union au lieu du tiret cadratin ne retrouve pas le compte (R2 ; la note de version le dit) ;
+  **#1186** — le message « aucun compte ne correspond » ne relit pas la liste proposable si elle change après coup
+  (`showNoMatch` sans `active.length > 0` ; théorique, aucun consommateur ne recharge ses comptes ; R5).
 - Les issues voisines déjà ouvertes, inchangées : #1081 (barre de défilement de la liste), #1084 (numéro exact puis *Tab*),
   #1085 (mode dégradé puis liste revenue).
 
@@ -725,7 +732,8 @@ Tous les journaux sous `/home/gcorbaz/devel/kesh-gate-logs/e36-1/` :
   `highlightIndex` est un `$derived` réassignable sur `indexParDefaut(draft, filteredIds, valeurLue)` (forme recommandée par
   D1, non le repli `$effect`) ; `filteredIds` est la chaîne des identifiants ; `valeurLue` un `$derived` de `value`
   (C-36-1-8) ; focus, *Échap*, choix et `blur` remettent l'index à `-1` ; les flèches désignent depuis `-1` (bas : le premier,
-  haut : le dernier, et ouvre la liste). Message : `noMatchDraft` posé à E4 si `accounts.length > 0`, `showNoMatch` dérivé,
+  haut : le dernier, et ouvre la liste). Message : `noMatchDraft` posé à E4 si `accounts.length > 0` *(`active.length > 0`
+  depuis la remédiation de la revue P1, B2 ; sinon E4-bis — annoté à la clôture, P2 ciblée R3)*, `showNoMatch` dérivé,
   région `role="status"` toujours présente, `aria-describedby` seulement quand le message s'affiche.
 - **Hors fiche, constaté aux captures** : le × se centrait sur la racine du composant, qui grandit avec le message (et avec
   le marqueur d'invalidité, préexistant) ; il descendait sur le message. Le champ et le × ont désormais leur propre

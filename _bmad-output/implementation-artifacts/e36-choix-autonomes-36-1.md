@@ -151,7 +151,9 @@ Ces choix ne sont pas couverts par C-e360 ; ils reprennent l'étape 0 de la 36-1
 - **Retenu** : E4 (message) seulement si `active.length > 0` ; sinon **E4-bis** : `commitDraft()` (la règle du `blur` :
   strict → brouillon jeté, valeur réaffichée ; `allowClear` → texte libre jeté), liste fermée, index `-1`, aucun message.
   *Entrée* reste empêchée cette fois — le champ montrait un texte que la valeur contredit — et l'*Entrée* suivante envoie ce
-  que le champ montre. Pendant le chargement, le texte tapé est jeté comme il l'est déjà au `blur`. Tests AC1 m, m-bis (deux
+  que le champ montre *(sauf pendant le chargement si une valeur est posée : le champ paraît vide alors que la valeur
+  persistée part — exception préexistante d'E2, #1170 ; ajouté à la clôture, passe ciblée P2, R1)*. Pendant le chargement,
+  le texte tapé est jeté comme il l'est déjà au `blur`. Tests AC1 m, m-bis (deux
   cas) ; mutations M12 (message même sans compte proposable), M33 (`commitDraft()` retiré d'E4-bis).
 - **Écartées** : laisser l'événement suivre son cours (l'ancien compte partirait pendant que le champ montre la saisie :
   #1095 lui-même) ; un message propre au plan vide (clé i18n de plus, indiscernable du chargement sans prop nouvelle).

@@ -415,7 +415,9 @@
 			// attendu. « Choisissez un compte dans la liste » serait faux, et garder
 			// le brouillon bloquerait Entrée sans rien dire : le brouillon est
 			// résolu comme au `blur`, le champ réaffiche la valeur, et l'Entrée
-			// suivante envoie ce qu'il montre.
+			// suivante envoie ce qu'il montre — sauf pendant le chargement si une
+			// valeur est posée : le champ paraît vide alors que la valeur persistée
+			// part (exception préexistante d'E2, #1170).
 			commitDraft();
 			open = false;
 			highlightIndex = -1;
