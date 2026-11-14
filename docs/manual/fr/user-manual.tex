@@ -256,7 +256,8 @@ Les deux graphiques se lisent dans la \textbf{comptabilité} : les produits et l
 passés au journal, non les flux bancaires. Un virement reçu mais pas encore comptabilisé
 n'y figure pas, et une facture validée y figure à sa date même si elle n'est pas encaissée.
 
-\paragraph{Quel exercice.} L'exercice \textbf{ouvert à la date du jour}, même vide. Si aucun
+\paragraph{Quel exercice.} L'exercice \textbf{ouvert à la date du jour} --- celle de Zurich, même
+la nuit (\S\ref{sec:date-du-jour}) ---, même vide. Si aucun
 exercice ne couvre ce jour, ou si celui qui le couvre est clos, l'accueil dit qu'aucun
 exercice n'est ouvert à la date du jour, sans montrer un autre exercice à la place.
 
@@ -751,9 +752,10 @@ démonstration, les réponses du serveur MCP, et la date du nom des fichiers exp
 de ce même jour comme borne du verrou, quel que soit le fuseau de votre poste~; pour une date que
 vous saisissez (une date de facture), il propose la date \textbf{de votre poste} --- pour un
 poste réglé sur la Suisse, ce sont les mêmes. Les \textbf{heures} enregistrées (journal d'audit,
-envoi d'un rappel, paiement) restent en UTC~; leur \textbf{jour} est celui de Zurich pour le
-délai du rappel suivant et pour la date de paiement de l'export de l'échéancier --- la fenêtre de
-30~jours de la réconciliation compte encore, elle, depuis le jour UTC du dernier rappel.
+envoi d'un rappel) restent en UTC~; le \textbf{jour} d'un envoi de rappel est celui de Zurich pour
+le délai du rappel suivant --- la fenêtre de 30~jours de la réconciliation compte encore, elle,
+depuis le jour UTC du dernier rappel. Le paiement d'une facture n'est pas une heure mais une
+\textbf{date}, celle du règlement~: l'export de l'échéancier la reprend telle quelle.
 \emph{Depuis la version 0.17.7~; avant, c'était le jour UTC du serveur, qui ne change
 qu'à une ou deux heures du matin à Zurich.}
 \end{keshnote}
@@ -1401,7 +1403,8 @@ les modèles par défaut — rien à configurer.
 
 \begin{itemize}
     \item Factures à échoir (dans les 30 prochains jours).
-    \item Factures échues impayées (en retard).
+    \item Factures échues impayées (en retard)~: échues dès le lendemain de leur échéance, au jour
+          de Zurich, même la nuit (\S\ref{sec:date-du-jour}).
     \item Factures payées (historique).
 \end{itemize}
 

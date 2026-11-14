@@ -31,8 +31,14 @@ pub struct Invoice {
     /// Référence vers l'écriture comptable générée à la validation (Story 5.2).
     /// NULL tant que la facture est en brouillon.
     pub journal_entry_id: Option<i64>,
-    /// Horodate de paiement manuel (Story 5.4). NULL = impayée.
-    /// Ne peut être posée que sur `status = 'validated'` (CHECK DB).
+    /// Date du règlement qui a soldé la facture, **posée à minuit** — la
+    /// `settled_on` du règlement, du passage en perte ou du rapprochement
+    /// (`invoice_settlements_write.rs`, `routes/reconciliation.rs`) : une date de
+    /// pièce, non un instant ; sa `.date()` est la date du règlement, sans
+    /// conversion de fuseau. Une facture marquée payée avant les lignes de
+    /// règlement (Story 5.4, avant la v0.12) peut porter l'heure de l'époque.
+    /// NULL = non soldée. Ne peut être posée que sur `status = 'validated'`
+    /// (CHECK DB).
     pub paid_at: Option<NaiveDateTime>,
     /// Horodate du dernier envoi par e-mail (Story 20-3b1). NULL = jamais
     /// envoyée. Le renvoi écrase la valeur (chaque envoi est audité).

@@ -359,6 +359,10 @@ fn next_reminder_level(
 ///
 /// `total_due` = **reste dû** (arrondi au centime) + frais cumulés — Story 25-4-b2
 /// (#416) ; avant, le TTC. Reste ≤ 0 → `AppError::ReminderNothingDue`.
+///
+/// `today` est la date du jour de Zurich que la **route** a lue une fois
+/// (Story 35-5b, D1 ; remédiation P1, B4) : un lot qui franchit minuit compte
+/// les jours de retard de toutes ses factures au même jour.
 #[allow(clippy::too_many_arguments)]
 async fn render_reminder(
     state: &AppState,
@@ -369,6 +373,7 @@ async fn render_reminder(
     language: Language,
     level_number: i16,
     level_fee: &rust_decimal::Decimal,
+    today: chrono::NaiveDate,
 ) -> Result<(String, String, invoice_pdf_service::ReminderAmounts), AppError> {
     let amounts = invoice_pdf_service::reminder_amounts(
         &state.pool,
@@ -379,7 +384,6 @@ async fn render_reminder(
     )
     .await?;
     let total_due = amounts.amount_due + amounts.fees;
-    let today = state.horloge.aujourd_hui();
     let days = days_overdue(invoice.due_date, today);
 
     let template = email_templates::get_effective(
@@ -439,6 +443,7 @@ pub async fn preview_reminder_email(
         language,
         q.level,
         &level.fee_amount,
+        state.horloge.aujourd_hui(),
     )
     .await?;
 
@@ -1125,11 +1130,24 @@ pub async fn send_reminder_batch(
     }
 
     let levels = dunning_levels::list_all_by_company(&state.pool, company.id).await?;
+    // Story 35-5b (D1, remédiation P1 B4) : la date du jour de Zurich, lue UNE
+    // fois pour tout le lot — un lot qui franchit minuit ne compte pas « 9 » puis
+    // « 10 » jours de retard selon la facture.
+    let aujourd_hui = state.horloge.aujourd_hui();
 
     let mut accepted = Vec::new();
     let mut failed = Vec::new();
     for invoice_id in ids {
-        match send_one_batch_reminder(&state, &current_user, &company, invoice_id, &levels).await {
+        match send_one_batch_reminder(
+            &state,
+            &current_user,
+            &company,
+            invoice_id,
+            &levels,
+            aujourd_hui,
+        )
+        .await
+        {
             Ok(acc) => accepted.push(acc),
             Err(item) => failed.push(FailedReminder {
                 invoice_id,
@@ -1149,12 +1167,14 @@ pub async fn send_reminder_batch(
 ///
 /// `Err(_)` = `FailedProposal` → `failed[]` + HTTP 200, jamais d'escalade globale
 /// (cf. doc de [`BatchItemError`]). Gardes pré-SMTP sous verrou → SMTP → enregistrement.
+/// `aujourd_hui` : la date du jour du lot, lue une fois par la route (D1).
 async fn send_one_batch_reminder(
     state: &AppState,
     current_user: &CurrentUser,
     company: &Company,
     invoice_id: i64,
     levels: &[kesh_db::entities::DunningLevel],
+    aujourd_hui: chrono::NaiveDate,
 ) -> Result<AcceptedReminder, BatchItemError> {
     // (a) Gardes pré-SMTP sous verrou bref.
     let next_level = {
@@ -1235,7 +1255,15 @@ async fn send_one_batch_reminder(
     let language = resolve_language(&contact, company);
 
     let (subject, body, amounts) = render_reminder(
-        state, company, &invoice, &lines, &contact, language, next_level, &level_fee,
+        state,
+        company,
+        &invoice,
+        &lines,
+        &contact,
+        language,
+        next_level,
+        &level_fee,
+        aujourd_hui,
     )
     .await
     .map_err(|e| classify_reminder_render_error(e, invoice_id))?;

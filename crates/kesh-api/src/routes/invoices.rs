@@ -1562,10 +1562,12 @@ pub async fn export_due_dates_csv_handler(
                 // vient d'un fichier FTL contrôlé, mais une compromission
                 // (clé locale altérée) ne doit pas ouvrir un vecteur d'injection.
                 csv_sanitize(payment_status),
-                // Story 35-5b (D4) : `paid_at` est un instant UTC ; la colonne
-                // porte son jour à Zurich.
+                // `paid_at` porte la date du règlement, posée à minuit
+                // (`invoice_settlements_write.rs`, `reconciliation.rs`) : sa date
+                // est celle de la pièce, sans conversion (remédiation P1 de la
+                // Story 35-5b, E1 : ce n'est pas un instant).
                 inv.paid_at
-                    .map(|d| format_date(&kesh_core::horloge::jour_suisse(d.and_utc())))
+                    .map(|d| format_date(&d.date()))
                     .unwrap_or_default(),
             ])
             .map_err(|e| AppError::Internal(format!("csv row: {e}")))?;

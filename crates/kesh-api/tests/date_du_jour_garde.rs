@@ -176,7 +176,9 @@ const EXEMPTIONS: &[Exemption] = &[
         "permanent",
         "horodatage `%Y%m%dT%H%M%S%3f` du nom de sauvegarde, un instant (#669)",
     ),
-    // Story 35-5b (D5) : plus aucune entrée de production hors les deux permanentes. Sortis
+    // Story 35-5b (D5) : plus aucune entrée de code de production hors les deux permanentes ;
+    // l'entrée `journal_entries.rs` qui suit, bien que sous `src`, ne compte que le module de
+    // tests de ce fichier (35-5c) — une occurrence de production ajoutée la ferait rougir. Sortis
     // de la liste, leur date venant de l'horloge de l'état ou de la `Lecture`, ou d'un
     // paramètre — `routes/audit_log.rs`, `bank_accounts.rs`, `exports.rs`,
     // `invoice_email.rs`, `invoices.rs` (sites 10 à 16), `services/postes_ouverts.rs`,

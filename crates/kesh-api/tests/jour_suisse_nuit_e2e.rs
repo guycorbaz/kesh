@@ -1014,6 +1014,26 @@ async fn ac1_l_accueil_la_nuit_du_nouvel_an(pool: MySqlPool) {
     );
 }
 
+/// AC1, sans exercice 2026 (remédiation P1, E3) — à 00 h 30 le 1er janvier,
+/// l'exercice 2025 ne couvre plus le jour suisse : l'accueil dit
+/// `noOpenFiscalYear`, arrêté au 1er janvier, sans retomber sur 2025 (C-e332-15 ;
+/// le jour UTC montrait encore 2025).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn ac1_l_accueil_la_nuit_du_nouvel_an_sans_exercice_neuf(pool: MySqlPool) {
+    let ctx = monter(&pool, NUIT_DU_NOUVEL_AN, None).await;
+    let (s, b) = ctx.app.get("/api/v1/reports/homepage-summary").await;
+    assert_eq!(s, 200, "{b}");
+    assert_eq!(
+        (
+            b["state"].clone(),
+            b["asOf"].clone(),
+            b["fiscalYear"].clone()
+        ),
+        (json!("noOpenFiscalYear"), json!("2026-01-01"), Value::Null),
+        "{b}"
+    );
+}
+
 /// Ce que chaque surface dit d'une facture, au jour du serveur.
 #[derive(Debug, PartialEq)]
 struct VueEcheance {
@@ -1026,6 +1046,12 @@ struct VueEcheance {
     filtre: Option<bool>,
     /// `summary.overdueCount` de l'échéancier.
     echues: i64,
+    /// `summary.overdueTotal` de l'échéancier — le second lien du `SELECT` de
+    /// `due_dates_summary` (remédiation P1, B3).
+    total_echues: rust_decimal::Decimal,
+    /// La facture est-elle dans l'export CSV filtré `paymentStatus=overdue`
+    /// (`list_for_export`, remédiation P1, B2) ?
+    export_echues: bool,
     /// Le statut de paiement de sa ligne du CSV (`paymentStatus=all`).
     statut_csv: String,
     /// Le `Content-Disposition` du CSV.
@@ -1071,20 +1097,35 @@ async fn vue_echeance(app: &TestApp, id: i64, numero: &str) -> VueEcheance {
         .find(|i| i["id"] == id)
         .map(|i| i["isOverdue"].as_bool().unwrap());
     let (ligne, dispo) = ligne_csv(app, numero).await;
+    let (s, _, corps) = app
+        .telecharger("/api/v1/invoices/due-dates/export.csv?paymentStatus=overdue")
+        .await;
+    assert_eq!(s, 200);
+    let export_echues = String::from_utf8(corps)
+        .unwrap()
+        .lines()
+        .any(|l| l.split(';').next() == Some(numero));
     VueEcheance {
         fiche: f["isOverdue"].as_bool().unwrap(),
         liste,
         filtre,
         echues: e["summary"]["overdueCount"].as_i64().unwrap(),
+        total_echues: e["summary"]["overdueTotal"]
+            .as_str()
+            .unwrap_or_else(|| panic!("overdueTotal : {e}"))
+            .parse()
+            .unwrap(),
+        export_echues,
         statut_csv: ligne[6].clone(),
         nom_csv: dispo,
     }
 }
 
 /// AC2 — une facture échue le `2026-03-10` : à 00 h 30 le 11 mars, la fiche,
-/// la liste, le filtre « échues » (élément compris), le résumé et le CSV la
-/// disent échue, et le CSV porte le nom du 11 ; à 23 h 30 le 10, non échue
-/// partout. Une même date sert le filtre, le résumé et la conversion (D1, D2).
+/// la liste, le filtre « échues » (élément compris), le résumé (nombre et
+/// montant), l'export filtré « échues » et le CSV la disent échue, et le CSV
+/// porte le nom du 11 ; à 23 h 30 le 10, non échue partout. Une même date sert
+/// le filtre, le résumé et la conversion (D1, D2).
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn ac2_une_facture_echue_la_nuit(pool: MySqlPool) {
     let ctx = monter(&pool, NUIT_DU_11_MARS, Some("Open")).await;
@@ -1102,6 +1143,8 @@ async fn ac2_une_facture_echue_la_nuit(pool: MySqlPool) {
                 liste: true,
                 filtre: Some(true),
                 echues: 1,
+                total_echues: dec!(108.10),
+                export_echues: true,
                 statut_csv: "En retard".into(),
                 nom_csv: "attachment; filename=\"echeancier-2026-03-11.csv\"".into(),
             },
@@ -1110,6 +1153,8 @@ async fn ac2_une_facture_echue_la_nuit(pool: MySqlPool) {
                 liste: false,
                 filtre: None,
                 echues: 0,
+                total_echues: dec!(0),
+                export_echues: false,
                 statut_csv: "Impayée".into(),
                 nom_csv: "attachment; filename=\"echeancier-2026-03-10.csv\"".into(),
             },
@@ -1118,25 +1163,68 @@ async fn ac2_une_facture_echue_la_nuit(pool: MySqlPool) {
     );
 }
 
-/// AC2, paiement (site 16 bis) — une facture payée à `2026-03-10T23:30:00Z`
-/// (00 h 30 le 11 mars à Zurich) porte `11.03.2026` dans la colonne de paiement
-/// du CSV, exporté avec `paymentStatus=all` (le jour UTC écrivait le 10).
+/// AC2, minuit pile en heure d'été (remédiation P1, E6) — une facture échue le
+/// `2026-07-01` : à `2026-07-01T21:59:59Z` (23 h 59 min 59 s le 1er juillet à
+/// Zurich) la fiche ne la dit pas échue ; à `2026-07-01T22:00:00Z` (minuit pile
+/// le 2 juillet, UTC+2) elle la dit échue.
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
-async fn ac2_la_date_de_paiement_du_csv_est_le_jour_suisse(pool: MySqlPool) {
+async fn ac2_minuit_pile_en_heure_d_ete(pool: MySqlPool) {
+    let ctx = monter(&pool, "2026-07-01T21:59:59Z", Some("Open")).await;
+    let (id, _) = ctx
+        .facture_a_echeance("Client Été SA", "2026-06-15", "2026-07-01")
+        .await;
+    let minuit = spawn_app(&pool, instant("2026-07-01T22:00:00Z")).await;
+    let mut vues = Vec::new();
+    for app in [&ctx.app, &minuit] {
+        let (s, f) = app.get(&format!("/api/v1/invoices/{id}")).await;
+        assert_eq!(s, 200, "{f}");
+        vues.push(f["isOverdue"].as_bool().unwrap());
+    }
+    assert_eq!(
+        vues,
+        [false, true],
+        "(23:59:59 le 1er juillet, minuit le 2)"
+    );
+}
+
+/// AC2, paiement (site 16 bis, remédiation P1 E1) — `paid_at` n'est pas un
+/// instant : les écrivains y posent la **date du règlement à minuit**
+/// (`invoice_settlements_write.rs`, `reconciliation.rs`). Une facture réglée par
+/// la route à 00 h 30 le 11 mars, `settledOn` du **10**, porte `10.03.2026` dans
+/// la colonne de paiement du CSV (`paymentStatus=all`) : la date du règlement,
+/// non le jour de la nuit où on l'a saisi.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn ac2_la_date_de_paiement_du_csv_est_celle_du_reglement(pool: MySqlPool) {
     let ctx = monter(&pool, NUIT_DU_11_MARS, Some("Open")).await;
+    let bank = ctx.compte_bancaire(IBAN_A, true, ctx.ledger).await;
     let (id, numero) = ctx
         .facture_a_echeance("Client Payé SA", "2026-03-01", "2026-03-31")
         .await;
-    sqlx::query("UPDATE invoices SET paid_at = '2026-03-10 23:30:00' WHERE id = ?")
-        .bind(id)
-        .execute(&ctx.pool)
-        .await
-        .unwrap();
+    let (s, b) = ctx
+        .app
+        .post(
+            &format!("/api/v1/invoices/{id}/settlements"),
+            json!({
+                "settlementType": "bank_transfer",
+                "bankAccountId": bank,
+                "amount": "108.10",
+                "settledOn": "2026-03-10",
+                "version": common::invoice_version(&ctx.pool, id).await,
+            }),
+        )
+        .await;
+    assert!((200..300).contains(&s), "règlement : {b}");
+    let paid_at: chrono::NaiveDateTime =
+        sqlx::query_scalar("SELECT paid_at FROM invoices WHERE id = ?")
+            .bind(id)
+            .fetch_one(&ctx.pool)
+            .await
+            .unwrap();
     let (ligne, _) = ligne_csv(&ctx.app, &numero).await;
     assert_eq!(
-        (ligne[6].as_str(), ligne[7].as_str()),
-        ("Payée", "11.03.2026"),
-        "{ligne:?}"
+        (paid_at.to_string(), ligne[6].as_str(), ligne[7].as_str()),
+        ("2026-03-10 00:00:00".to_string(), "Payée", "10.03.2026"),
+        "(paid_at écrit par le règlement, statut, colonne de paiement) : {ligne:?}"
     );
 }
 
@@ -1335,4 +1423,63 @@ async fn ac4_les_defauts_du_jour_la_nuit_du_nouvel_an(pool: MySqlPool) {
         ),
         "(closedOn, asOf des postes ouverts, asOf de la balance âgée, total du projet cumulé)"
     );
+}
+
+/// AC4, projet à date de fin (remédiation P1, E4) — en mode cumulé, une date de
+/// fin donnée l'emporte sur la date du jour : à 00 h 30 le 1er janvier 2026, un
+/// projet clos le `2026-06-30` compte son écriture du `2026-06-01`, postérieure
+/// au jour (une fin prise à « aujourd'hui » l'exclurait).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn ac4_la_fin_donnee_d_un_projet_l_emporte_sur_le_jour(pool: MySqlPool) {
+    let ctx = monter(&pool, NUIT_DU_NOUVEL_AN, Some("Open")).await;
+    let projet = sqlx::query(
+        "INSERT INTO projects (company_id, code, name, end_date) \
+         VALUES (?, 'FIN', 'Projet à fin donnée', '2026-06-30')",
+    )
+    .bind(ctx.s.company_id)
+    .execute(&pool)
+    .await
+    .unwrap()
+    .last_insert_id() as i64;
+    journal_entries::create(
+        &pool,
+        ctx.fy_2026.unwrap(),
+        ctx.s.admin_user_id,
+        NewJournalEntry {
+            company_id: ctx.s.company_id,
+            entry_date: jour(2026, 6, 1),
+            journal: Journal::OD,
+            description: "Charge de juin".into(),
+            project_id: Some(projet),
+            lines: vec![
+                NewJournalEntryLine {
+                    account_id: ctx.s.accounts["4000"],
+                    debit: dec!(100.00),
+                    credit: dec!(0),
+                    project_id: Some(projet),
+                },
+                NewJournalEntryLine {
+                    account_id: ctx.s.accounts["1000"],
+                    debit: dec!(0),
+                    credit: dec!(100.00),
+                    project_id: None,
+                },
+            ],
+        },
+    )
+    .await
+    .expect("écriture de juin");
+    let (s, rapport) = ctx
+        .app
+        .get(&format!(
+            "/api/v1/reports/project-expenses?projectId={projet}&mode=cumulative"
+        ))
+        .await;
+    assert_eq!(s, 200, "{rapport}");
+    let total: rust_decimal::Decimal = rapport["grandTotal"]
+        .as_str()
+        .unwrap_or_else(|| panic!("{rapport}"))
+        .parse()
+        .unwrap();
+    assert_eq!(total, dec!(100), "{rapport}");
 }
