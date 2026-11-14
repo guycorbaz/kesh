@@ -255,7 +255,8 @@ chacune (R7), l'écart de change dans la seconde, afin que mes comptes en devise
       `entry_date`), c'est-à-dire `exchange_rates.rate` de la ligne de la société **dont la `source` est `afc`** (35-2
       AC-1 : copie d'une valeur publiée, ou valeur reprise par ↑), lu dans la transaction par la fonction de lecture du
       dépôt `kesh_db::repositories::exchange_rates::find_company_rate_in_tx(conn, company_id, currency,
-      RateKind::Month, 1er du mois)` de 35-2 (pas de second accès ; lecture **sans verrou**, comme celle de la période :
+      RateKind::Month, 1er du mois)` de 35-2 (`Option<CompanyRate>` : `rate` et `source` ; la source se lit sur la ligne
+      rendue, aucune seconde lecture ; pas de second accès ; lecture **sans verrou**, comme celle de la période :
       un ↑ ou un `PUT …/rates` validé pendant la transaction n'est pas vu, la ligne garde alors le cours lu — **limite
       assumée**, sans effet sur les autres lignes, écrite au Change Log). ⛔ **Plus aucun `find_rate_in_tx` sur la table
       système pour ce contrôle** : la dernière valeur publiée (`_kesh_fetched_exchange_rates`) n'y entre jamais — une
@@ -545,7 +546,15 @@ chacune (R7), l'écart de change dans la seconde, afin que mes comptes en devise
       des cours différents (A à la valeur corrigée, B à l'ancienne) — chaque ligne `afc` est jugée contre le cours de
       **sa** société ; (h) **restauration** : `.keshbackup` importé sur une installation neuve (table système vide) —
       création d'une ligne `afc` au cours restauré → passe, sans aucune récupération ; `PUT` du seul libellé d'une
-      écriture `afc` → passe.
+      écriture `afc` → passe ; (i) **mois passé en `manual` par `PUT …/rates`** (35-2 AC-5) après une écriture `afc` : son
+      `PUT` du seul libellé passe ; une ligne `afc` ajoutée ou modifiée à ce mois → `FX_RATE_NOT_AFC`, `expectedRate`
+      `null`.
+- [ ] Tests U2 (AC-7, changer le compte d'une ligne au `PUT`), au dépôt et à l'API : USD → EUR avec `foreign` en EUR →
+      passe, réponse en `EUR` ; même ligne annonçant `currency: "USD"` → `FX_CURRENCY_MISMATCH` ; devise → CHF avec
+      `foreign` → `FX_ACCOUNT_IN_CHF`, sans `foreign` → passe (trois colonnes `NULL`) ; CHF → devise sans `foreign` →
+      `ACCOUNT_REQUIRES_CURRENCY` ; ligne `afc` au compte changé contrôlée contre le cours retenu de la nouvelle devise ;
+      toutes les lignes USD sur des comptes EUR → passe, une seule → `FX_MULTIPLE_CURRENCIES` ; `laterFiscalYear` vu au
+      changement de compte ; compte quitté sans plus de ligne → `currencyLocked` faux.
 - [ ] `kesh-core` (AC-2, AC-3) : `ForeignAmount`, `JournalEntryLineDraft.foreign`, ordre des contrôles, bornes et
       produit en entiers `i128` (**jamais** `Decimal::checked_mul`, AC-3) ; fonction publique du contrôle par ligne et
       fonction publique des bornes du cours seul (AC-3) ; fixture `crates/kesh-core/tests/fixtures/fx_rounding.json` et son test Rust ; tests de propriété
@@ -806,3 +815,16 @@ chacune (R7), l'écart de change dans la seconde, afin que mes comptes en devise
   verrou du compte quitté levé s'il n'a plus de ligne ; tests. **U5** — A3 (exemption de l'ouverture) noté approuvé ;
   A17, A20, A21 déjà AC (AC-4, AC-6). **U6** — AC-3 : débit et crédit restent en devise principale. Aucune migration
   ni route neuve. AC touchés : en-tête, AC-1, AC-3, AC-4, AC-7, Tâches. Fiche à revalider (cycle CR-5).
+- 2026-11-14 — validation CR-5 P1 (Sonnet) : 0 CRITICAL, 0 HIGH, 0 MEDIUM, 3 LOW (plus 1 LOW inter-fiche) ; remédiés dans la
+  fiche sauf 35-3a-CR5-P1-IF1 (35-3b). (1) -1 : les Tâches ne listaient aucun test de l'AC-7 neuf (U2) ; (2) -2 : aucun
+  test du passage d'un mois en `manual` par `PUT …/rates`, que l'AC-4 dit sans effet sur le `PUT` du libellé ; (3) -3 : la
+  source `afc` de la ligne de la société se lit sur `CompanyRate.source` (35-2 AC-1), non écrite à l'AC-4. IF1 : 35-3b
+  AC-2 propose « Reprendre le cours attendu » sur tout `FX_RATE_NOT_AFC`, or `expectedRate` vaut `null` pour une ligne de
+  la société `manual` : n'offrir alors que « Garder mon cours ». Sites lus : `journal_entries.rs:103, 135, 505, 1243, 1300,
+  1667` ; `routes/journal_entries.rs:265` ; `backup.rs:46` ; 35-2 AC-1 (:529), AC-5 (:574-584), AC-7 (:955), Tâches
+  (:1018-1032) ; 35-1 AC-4 (`currencyLocked` :326) ; 35-3b AC-2 (:266-300) ; epic A3, A17, A20, A21, A24 ; aucun reste
+  des anciens noms (`exchange_rate_overrides`, `_kesh_exchange_rates`, `republished_*`, `find_rate_in_tx`) hors historique du
+  Change Log. Axes exercés : résidus U1 sur les six fiches, prémisses de code citées, tests des AC modifiés, cohérence
+  35-2/35-3b. Non exercés : GET de la source journalière (aucune prémisse ici), i18n, manuels, MCP, E2E (inchangés par CR-5),
+  test de concurrence non exécuté. Arbitrages A23–A29 : sans point de contact ici (A24 : la copie couvre la devise du compte de
+  la ligne, 35-1/35-2).

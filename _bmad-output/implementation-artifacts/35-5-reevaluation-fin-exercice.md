@@ -57,7 +57,9 @@ clôture et que l'écart aille aux différences de change.
      defaultSource, overridden, sourceDate }` (U1, CR-5 — remplace `afcRate` : `defaultRate` et `defaultSource` =
      le cours retenu par la société et sa source (`"afc"` | `"manual"`) de la **résolution par défaut**, tous deux
      `null` s'il n'y en a pas ; `sourceDate` = date de publication d'un cours journalier, lue sur la valeur publiée
-     (35-2 `lookup`), `null` si elle n'est pas connue ; `rateDate`, `defaultRate` et `defaultSource` sont toujours ceux
+     (`find_fetched_rate_in_tx`, 35-2 AC-5, pour l'affichage seulement), **seulement quand `defaultSource` vaut `"afc"`** :
+     `null` pour un cours `manual` (la date de publication d'une autre valeur ne qualifie pas un cours saisi), et `null`
+     si elle n'est pas connue (valeur publiée absente, p. ex. après une restauration) ; `rateDate`, `defaultRate` et `defaultSource` sont toujours ceux
      de la résolution par défaut de la devise — jour, sinon mois —, que l'écran affiche sous le champ, AC-6) ;
      l'aperçu porte en outre `closingRateKind` (`day` | `month`), d'après lequel l'écran distingue un repli d'un choix.
      **Genre d'un cours reçu dans `rates`** — règle **unique**, la même à l'aperçu et à la passation (AC-2, audit) : égal
@@ -77,7 +79,8 @@ clôture et que l'écart aille aux différences de change.
      (Europe/Zurich ; sinon 400) — le bouton n'est alors **pas proposé** et, si le repli mensuel est pris ou qu'aucun
      cours n'existe, l'écran dit « date de clôture pas encore passée : cours du jour non publié » ; le cours par défaut
      suit la même résolution (un cours journalier **saisi** par la société pour ce jour, D9, reste le premier ; sinon
-     le cours effectif mensuel du mois de cette date, qui pour un mois futur n'existe que s'il a été saisi), sinon
+     le cours effectif mensuel du mois de cette date — celui du mois courant ou du mois suivant s'il a été copié, un mois
+     postérieur seulement s'il a été saisi), sinon
      `RATE_UNAVAILABLE` et saisie ; « Récupérer le mois » n'est pas proposé non plus pour un mois postérieur au
      mois suivant le mois courant (35-2 AC-5 : le mois suivant est admis à toute date, non publié → 404
      `RATE_NOT_PUBLISHED` ; R4 amendé, alignement de l'orchestrateur). Le serveur ne lit pas la date du jour : seul l'écran en dépend. Le cours journalier
@@ -187,7 +190,7 @@ clôture et que l'écart aille aux différences de change.
      (l'écran renvoie les cours préremplis) ; `manual` sinon (genre `request`) — y compris un cours saisi par la société
      (D9, `defaultSource` `manual`), et une devise sans cours retenu (`defaultRate` `null`). La source d'un cours `afc`
      se garde ainsi **pour toujours** à l'audit de la réévaluation, même après une correction de l'AFC ou une
-     restauration (U1). L'audit porte aussi le **genre** du cours retenu par devise (`day` | `month` | `request`),
+     restauration (U1). Limite écrite (35-5-CR5-P1-3) : si le cours retenu change entre l'aperçu et la passation (↑ ou saisie d'un autre utilisateur), le cours renvoyé par l'écran diffère du nouveau défaut : genre `request` et source `manual` à l'audit — le cours posé est bien celui que l'utilisateur a vu ; test de dépôt. L'audit porte aussi le **genre** du cours retenu par devise (`day` | `month` | `request`),
      selon la règle unique de l'AC-1 (cours reçu égal au défaut : genre de ce défaut ; sinon `request`) : comme l'écran
      renvoie les cours préremplis, le genre serait sans cela toujours `request` et ne dirait rien. Ces lectures (cours
      retenus par la société, du jour et du mois de fin, avec leur source) se font **avant la transaction**, avec celles des cours (35-2 : aucune lecture de cours
@@ -364,10 +367,10 @@ clôture et que l'écart aille aux différences de change.
    cours mensuel du mois de fin, `rateKind: "month"` ; ni l'un ni l'autre → `RATE_UNAVAILABLE` ; un cours saisi par
    la société (D9, ligne `manual`) pour le jour est le cours du jour, un cours saisi pour le mois ne l'emporte **pas**
    sur un cours journalier présent (l'ordre est jour puis mois, chacun effectif) ; source `afc` d'une ligne `afc` du
-   jour, `manual` d'une ligne `manual` (même si elle égale la valeur publiée) ; **U1** : correction de l'AFC du jour de
+   jour, `manual` d'une ligne `manual` (même si elle égale la valeur publiée) ; `sourceDate` `null` pour une ligne `manual` ; **U1** : correction de l'AFC du jour de
    clôture non reprise → cours proposé = l'ancien cours retenu, source `afc` ; après ↑ (35-2) → la valeur corrigée,
    source `afc` ; restauration d'un `.keshbackup` sur une installation neuve → aperçu au cours restauré, sans aucune
-   récupération, source restaurée ; exercice **se terminant le 30 juin** (un dimanche en 2024) → cours
+   récupération, source restaurée (la source de cours factice de 35-2, tâche et déclenchement à la connexion neutralisés : la preuve est l'absence d'appel sortant ; `sourceDate` `null` tant que la valeur publiée n'est pas relue) ; exercice **se terminant le 30 juin** (un dimanche en 2024) → cours
    journalier du 30.06 = publication du 28.06 (`sourceDate`) ; rejeu sans écriture ; compte
    décoché ou de résultat : aucune ligne ; cours surchargé figé sur la ligne ; refus des gardes. S'y ajoutent :
    - **les cinq cas de signe** : actif USD débiteur, cours en hausse (gain) puis en baisse (perte) ; actif USD à solde
@@ -448,8 +451,8 @@ clôture et que l'écart aille aux différences de change.
    par compte réévalué (R9), correction par suppression ou nouveau passage, la contre-passation ne corrigeant que dans un exercice en cours (AC-3), refus en
    exercice mono-devise (R3), cours saisi par la société (D9), récupération du cours du jour, gains et pertes non réalisés
    comptabilisés (CO 960b, choix assumé ; la neutralisation par provision n'est pas offerte, C-35-8), postes non
-   monétaires à décocher (stocks, immobilisations, capital en devise), la source du cours conservée à l'audit et non
-   sur la ligne ; i18n ; PDF.
+   monétaires à décocher (stocks, immobilisations, capital en devise), la source du cours (« AFC » ou « cours saisi ») conservée à l'audit et non
+   sur la ligne, une correction de l'AFC non reprise (↑) ne changeant pas le cours proposé (U1) ; i18n ; PDF.
 
 **Hors périmètre, tracé** : un contrôle de clôture informatif « comptes en devise à réévaluer » (K9 de
 `closing_checks.rs`, dont l'ensemble K1–K8 est clos) — à ouvrir en issue avec la PR (C-35-8).
@@ -664,3 +667,4 @@ clôture et que l'écart aille aux différences de change.
   valeur publiée (AC-7). U2 à U6 sans point de contact (aucune édition de ligne ici ; aucune phrase générale « débit
   et crédit en CHF »). Aucune migration ni route neuve. AC touchés : en-tête, AC-1, AC-2, AC-6, AC-7. Fiche à
   revalider (cycle CR-5).
+- 2026-11-14 — validation CR-5 P1 (Sonnet) : 0 CRITICAL, 0 HIGH, 1 MEDIUM, 3 LOW ; remédiés dans la fiche ; aucun finding inter-fiches. (MEDIUM 35-5-CR5-P1-1 : `sourceDate` d'une valeur publiée affichée sur un cours `manual` — `null` sauf `defaultSource` `afc`, test ; fonction de lecture nommée. LOW : -2 AC-1, mois courant ou suivant d'une fin d'exercice non passée existent par copie, non seulement saisis ; -3 limite d'un cours retenu changé entre aperçu et passation (genre `request`, source `manual`) ; -4 test de restauration sans appel sortant, `sourceDate` `null`, et manuel AC-8. Vérifié : plus aucun reste de `exchange_rate_overrides`, `_kesh_exchange_rates`, `republished_*`, `find_effective_rate_in_tx` hors historiques des six fiches ; `lookup`/`find_company_rate_in_tx`/`find_fetched_rate_in_tx` de 35-2 AC-5 ; `for_actor` `audit_log.rs:195`, `"fiscal_year"` `audit_labels.rs:40`, `retry_on_deadlock` lus. A23–A29 : sans point de contact ici. Axes non exercés : GET de la source (aucun point de contact), code réel non écrit.)

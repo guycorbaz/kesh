@@ -55,7 +55,7 @@ exports, afin de rapprocher mes comptes PayPal ou Wise de leurs relevés et de c
      `match` sur le type, à partir du fragment de somme en devise, et enveloppé
      `CASE WHEN a.currency IS NULL THEN NULL ELSE … END AS balance_currency` — `NULL`, jamais `0`, pour un compte CHF
      (sinon le JSON ne serait plus identique, AC-6). Un test croise ce solde avec `signed` appliqué à la paire brute.
-   - Les sommes CHF existantes **ne changent pas**. Un compte CHF a `currency = None` et aucun champ en devise.
+   - Les sommes existantes en devise principale (CHF) **ne changent pas**. Un compte CHF a `currency = None` et aucun champ en devise.
    - **AC-1 bis — Compte de RÉSULTAT en devise, solde borné par exercice.** Il suit les **mêmes bornes** que le CHF :
      ouverture = Σ depuis le début de l'exercice contenant `from` (paire `since_fy` en devise passée à `opening_from`) ;
      solde progressif en devise remis à zéro à chaque rupture d'exercice, **dans le même `Cumul`** que le CHF (un état
@@ -109,11 +109,11 @@ exports, afin de rapprocher mes comptes PayPal ou Wise de leurs relevés et de c
      `tests/general_ledger.rs:135` n'en construit aucune, c'est un type de retour) : sites revus au Change Log.
 3. **AC-3 — Balance** (`trial_balance.rs` :129). `TrialBalanceRow` gagne `currency`, `openingCurrency`,
    `totalDebitCurrency`, `totalCreditCurrency`, `balanceCurrency`, `closingCurrency` (compte en devise seulement).
-   **Aucun total en devise** (devises mélangées) : `total_debit`, `total_credit`, `balanced`, `opening_balanced`,
-   `retained_earnings` restent CHF.
+   **Aucun total en devise étrangère** (devises mélangées) : `total_debit`, `total_credit`, `balanced`, `opening_balanced`,
+   `retained_earnings` restent en **devise principale** (aujourd'hui CHF ; A29, U6).
 4. **AC-4 — Bilan** (`balance_sheet.rs` :166) et **compte de résultat** (`income_statement.rs` :30) : `AccountBalance`
    gagne `currency` et `balanceCurrency` (`a.currency` dans `SELECT` et `GROUP BY`) ; mention « USD 1'233.57 » à côté
-   du CHF ; totaux en CHF seulement.
+   du solde en devise principale ; **totaux en devise principale** seulement (A29, U6).
 5. **AC-5 — Exports.**
    - **CSV : règle de colonnes.** Les colonnes en devise n'apparaissent **que si le rapport contient au moins un
      compte en devise** ; sinon la sortie est **identique octet pour octet** à celle d'avant, y compris pour une société
@@ -286,3 +286,4 @@ exports, afin de rapprocher mes comptes PayPal ou Wise de leurs relevés et de c
   SQL direct réalisable sous `chk_jel_fx_*` (35-3a AC-1 : trois colonnes cohérentes). Axes exercés : vérité au code des
   ajouts, cohérence interne (AC-1 ter, AC-2, AC-3, AC-7), points de contact 35-3a (contraintes, colonne absente).
   Non exercés : relecture complète de la fiche (hors périmètre), 35-5 (aucun ajout ne touche `balances_as_of`).
+- 2026-11-14 — validation CR-5 P1 (Sonnet) : 0 CRITICAL, 0 HIGH, 1 MEDIUM, 1 LOW ; remédiés dans la fiche sauf <aucun inter-fiches>. MEDIUM CR5-P1-1 : A29/U6 non appliqués (AC-3 et AC-4 disaient « restent CHF » et « totaux en CHF seulement » — réécrits « devise principale (aujourd'hui CHF) »). LOW CR5-P1-2 : « sommes CHF existantes » (AC-1) alignée ; les noms de champs `chf_net`, `total_debit` ne changent pas (code). Points de contact U1 : aucun — la fiche ne lit ni `exchange_rates` ni `_kesh_fetched_exchange_rates` (les rapports lisent `amount_currency` et `exchange_rate` de la ligne) ; aucun reste de `republished_*` ; A24/A28 sans objet ici ; la fiche ne crée ni table ni migration (pas de fenêtre d'import, rejeu, `TABLES_TO_TRUNCATE`). U6 : « CHF » restant légitime pour TVA, projets, accueil (base légale, AC-7). Relu au code : `opening.rs:75`, `general_ledger.rs:687`, `trial_balance.rs:165-170`/`:209` : exacts. Non exercés : GET de la source journalière (aucun rapport n'y touche), 35-5 (inchangée).

@@ -4,7 +4,7 @@ Status: ready-for-dev
 
 *Fiche rédigée le 2026-11-14 (Opus 5.5), branche `epic/35-multi-devises`. Epic 35, C-35-1 (amendé par D9/D10, CR-1),
 C-35-6, D9, D10. Suit 35-1. **Migration non breaking** : deux tables système `_kesh_*` et **une table applicative**
-`exchange_rate_overrides`. Révisée le 2026-11-14 pour la revue de Beat (CR-2 : R1, R2, R4, R5, R6), qui prime sur le
+`exchange_rates` (ex-`exchange_rate_overrides`, U1). Révisée le 2026-11-14 pour la revue de Beat (CR-2 : R1, R2, R4, R5, R6), qui prime sur le
 registre antérieur : la table applicative **ne referme plus** la fenêtre d'import (R1, liste close de 35-1 AC-6) ; la
 récupération est ciblée sur les exercices multi-devises (R2) et suit le calendrier de publication (R4) ; les données
 reprises sont filtrées strictement (R5) ; l'écran devient un tableau annuel par exercice (R6). Révisée de nouveau pour
@@ -24,8 +24,8 @@ par la société** et sa `source` (`afc` | `manual`), reçoit **automatiquement*
 (**système** ; ex-`_kesh_exchange_rates`) porte la **dernière** valeur publiée par la source, et une correction de
 l'AFC la met à jour sans jamais toucher `exchange_rates` ; plus de colonnes `republished_*`, plus d'adoption globale ;
 une seule valeur par case à l'écran, « AFC corrigé : x » en rouge avec ↑ ; avertissement et acquittement **par
-société** (AC-1, AC-3, AC-3 bis, AC-4, AC-5, AC-6, AC-7, AC-9) ; **U3** — le ↑ d'un cours AFC corrigé ouvre un dialogue,
-« pour cette société » (option « toutes les sociétés » spécifiée, masquée ; AC-6) ; **U4** — changer le genre de clôture
+société** (AC-1, AC-3, AC-3 bis, AC-4, AC-5, AC-6, AC-7, AC-9) ; **U3** — le ↑ d'un cours AFC corrigé reprend la valeur
+pour cette société, **directement** (A23 ; le dialogue avec l'option « toutes les sociétés » est spécifié, masqué ; AC-6) ; **U4** — changer le genre de clôture
 propose d'appliquer le genre correspondant à l'ouverture de l'exercice suivant (AC-5, AC-6 ; renvoi de 35-1 AC-3 bis) ;
 **U5** — A2, A7, A9, A10, A16 sont des AC de cette fiche, A11 est retiré (AC-4, AC-5, AC-6).*
 
@@ -111,11 +111,12 @@ cours sans saisie.
      ascii_bin NOT NULL, kind VARCHAR(5) CHARACTER SET ascii COLLATE ascii_bin NOT NULL, rate_date DATE NOT NULL,
      rate_per_unit DECIMAL(20,10) NOT NULL, published_unit INT NOT NULL, published_rate DECIMAL(19,6) NOT NULL,
      source_date DATE NULL, first_fetched_at DATETIME(3) NOT NULL, fetched_at DATETIME(3) NOT NULL, value_changed_at
-     DATETIME(3) NOT NULL, PRIMARY KEY (source, currency, kind, rate_date), CHECK (BINARY source IN ('afc')),
+     DATETIME(3) NOT NULL, PRIMARY KEY (source, currency, kind, rate_date), CHECK (BINARY source REGEXP '^[a-z]{2,12}$'),
      CHECK (BINARY kind IN ('month','day')), CHECK (kind <> 'month' OR DAY(rate_date) = 1), CHECK ((kind = 'day') =
      (source_date IS NOT NULL)), CHECK (rate_per_unit > 0), CHECK (published_unit > 0), CHECK (BINARY currency REGEXP
-     '^[A-Z]{3}$'))`. `source` = `afc` seule aujourd'hui (OFDF/AFC, mensuels et journaliers) ; une autre source (p. ex.
-     `ecb`) s'ajoutera par une migration qui élargit ce `CHECK` (table système, hors sauvegarde) ; `rate_date` = le 1er
+     '^[A-Z]{3}$'))`. `source` = `afc` seule aujourd'hui (OFDF/AFC, mensuels et journaliers) ; le `CHECK` ne porte que
+     le **format** (A28, comme `exchange_rates.source`) : une autre source (p. ex. `ecb`) s'ajoute sans modifier le
+     schéma ; `rate_date` = le 1er
      du mois pour `month`, la date **demandée** D pour `day` ; `source_date` = le `<datum>` lu pour `day` (≤ D, cf.
      *Cours journaliers*), `NULL` pour `month` ; `INT` et non `SMALLINT` (unités jusqu'à 10000 relevées) ;
      `published_rate DECIMAL(19,6)` porte les cinq décimales des cours journaliers ; `currency` a **la même définition**
@@ -136,9 +137,11 @@ cours sans saisie.
      REGEXP '^[A-Z]{3}$' AND BINARY currency <> BINARY 'CHF'`), `kind` et `rate_date` (mêmes définitions et mêmes
      `CHECK` que ci-dessus), `rate DECIMAL(20,10) NOT NULL` (`CHECK rate > 0`, **par unité**, comme `rate_per_unit`),
      `source VARCHAR(12) CHARACTER SET ascii COLLATE ascii_bin NOT NULL` (`chk_exchange_rates_source` : `BINARY source
-     IN ('afc','manual')` — `afc` : copie d'un cours récupéré, ou valeur publiée reprise par ↑ ; `manual` : cours saisi
-     par la société ; **extensible** : une source future, p. ex. `ecb`, élargit ce `CHECK` par une migration, jugée alors
-     au regard de P1 — un binaire antérieur ne saurait pas lire la valeur neuve), `acknowledged_rate DECIMAL(20,10) NULL`
+     REGEXP '^[a-z]{2,12}$'` — **format seul, aucune énumération** (A28, CR-5) ; `afc` : copie d'un cours récupéré, ou
+     valeur publiée reprise par ↑ ; `manual` : cours saisi par la société ; les valeurs admises sont contrôlées **par le
+     code** (`RateOrigin` : une valeur inconnue lue est une erreur interne, jamais ignorée), si bien qu'une source
+     future, p. ex. `ecb`, s'ajoute sans migration — élargir plus tard un `CHECK` d'énumération serait un `MODIFY` ou
+     un `DROP CONSTRAINT`, que P1 et P3 jugent breaking), `acknowledged_rate DECIMAL(20,10) NULL`
      et `acknowledged_at DATETIME(3) NULL` (UTC) — l'**acquittement par société** d'une correction de l'AFC : la valeur
      publiée (par unité) que la société a vue et acquittée (AC-5) ; `chk_exchange_rates_ack_pair` (les deux `NULL` ou les
      deux non `NULL`) et `chk_exchange_rates_ack_afc` (`acknowledged_rate IS NULL OR source = 'afc'`) —, `version INT NOT
@@ -148,8 +151,9 @@ cours sans saisie.
      kind, rate_date)`. **Relation** avec `_kesh_fetched_exchange_rates` : logique, par (`source`, `currency`, `kind`,
      `rate_date`) pour une ligne `afc` — **sans clé étrangère** (table système, vidée à volonté, absente de la
      sauvegarde) : une ligne `afc` garde sa valeur et sa source même quand la valeur publiée manque (installation
-     restaurée, source qui ne l'offre plus). Volume : toutes les devises publiées des unités utiles d'un exercice
-     (AC-3 bis), soit environ 73 × 14 ≈ 1000 lignes par exercice multi-devises et par société. Inscrite à
+     restaurée, source qui ne l'offre plus). Volume (A24, CR-5) : les devises des **comptes** de la société × les unités
+     utiles d'un exercice (AC-3 bis), soit quelques dizaines de lignes par exercice multi-devises (3 devises × 14
+     unités ≈ 40), non plus 73 × 14 ≈ 1000, plus les cours saisis ou repris. Inscrite à
      `TABLES_TO_TRUNCATE` (`crates/kesh-db/src/backup.rs:46`), **avant `companies` et `users`** (enfant des deux, sans
      enfant propre ; place proposée : après `mcp_server_settings`, autre table de réglages de société), absente de
      `RESET_PRESERVED_TABLES` (:136) : un cours retenu est une donnée de la société, vidée par la remise à zéro
@@ -374,8 +378,10 @@ cours sans saisie.
      updated_by, …) SELECT ?, f.currency, f.kind, f.rate_date, f.rate_per_unit, 'afc', NULL, … FROM
      _kesh_fetched_exchange_rates f WHERE f.source = 'afc' AND (f.kind, f.rate_date) IN (…) AND NOT EXISTS (SELECT 1
      FROM exchange_rates x WHERE x.company_id = ? AND x.currency = f.currency AND x.kind = f.kind AND x.rate_date =
-     f.rate_date)` — **toutes** les devises publiées de l'unité (une devise d'un compte créé plus tard trouve ainsi son
-     cours) ; **insertion seulement** : une ligne présente, `afc` ou `manual`, n'est jamais modifiée ; une course entre
+     f.rate_date)` — les devises des **comptes de la société** seulement (A24, CR-5 : `AND f.currency IN (SELECT a.currency FROM
+     accounts a WHERE a.company_id = ? AND a.currency IS NOT NULL)`, comptes archivés compris), non plus les 73 devises
+     publiées ; une devise donnée plus tard à un compte déclenche sa propre copie (*Quand*, ci-dessous) ; **insertion
+     seulement** : une ligne présente, `afc` ou `manual`, n'est jamais modifiée ; une course entre
      deux copies est rattrapée sur l'unicité (`uq_exchange_rates_key`, doublon ignoré, jamais une 500). `updated_by =
      NULL`, **aucune ligne d'audit** (copie automatique, C-35-6) ; le nombre de lignes copiées va au détail d'audit de
      l'action qui la déclenche, quand elle en a une (`copied`).
@@ -391,18 +397,32 @@ cours sans saisie.
        démonstration) ;
      - au **passage d'un exercice en multi-devises** (`PUT /fiscal-years/{id}/currency-mode`, 35-1 AC-3 bis) ;
      - au **changement de genre** d'ouverture ou de clôture (`PUT /fiscal-years/{id}/rate-kinds`, AC-5), pour les
-       unités neuves de l'exercice et, si U4 s'applique, de l'exercice suivant.
-     Ces quatre derniers appels se font **dans la transaction** de la route de 35-1 ou de cette story, après ses
+       unités neuves de l'exercice et, si U4 s'applique, de l'exercice suivant ;
+     - quand un **compte reçoit une devise** (A24 ; `accounts::create` avec une devise, `accounts::update` qui passe un
+       compte de CHF ou d'une autre devise à celle-ci, 35-1 AC-4) : pour chaque exercice **multi-devises ouvert** de la
+       société, copie des cours déjà récupérés de cette devise seule, sur les unités utiles de l'exercice. Une devise
+       déjà portée par un autre compte n'a rien de neuf à copier (l'insertion seule le rend sans effet).
+     Ces cinq derniers appels se font **dans la transaction** de la route de 35-1 ou de cette story, après ses
      verrous (l'`INSERT` prend `companies` en partage par sa clé étrangère : la route tient déjà `companies`) ;
-     `_kesh_fetched_exchange_rates` s'y lit sans verrou (table système, écrite seulement par la récupération). Les
+     `_kesh_fetched_exchange_rates` est lue par le `SELECT` de l'`INSERT … SELECT`, qui sous REPEATABLE READ pose des verrous
+     **partagés** sur les lignes lues : ce n'est **pas** une lecture sans verrou, et elle peut croiser une récupération
+     (qui tient ces lignes `FOR UPDATE`, puis demande `companies` en partage) — le cycle est celui déjà couvert par
+     `retry_on_deadlock` (les routes de 35-1 y passent, `accounts::create` et `accounts::update` compris ; AC-5). Les
      routes de 35-1 sont développées avant cette table : **cette story ajoute l'appel** dans
-     `companies::update_currency_settings`, `fiscal_years::create` et `fiscal_years::set_currency_mode`, et le
-     détail `copied` à leur audit (renvoi écrit en 35-1 AC-3 et AC-3 bis).
+     `companies::update_currency_settings`, `fiscal_years::create`, `fiscal_years::set_currency_mode`,
+     `accounts::create` et `accounts::update`, et le détail `copied` à leur audit (renvoi écrit en 35-1 AC-3, AC-3 bis ;
+     pour les deux routes de comptes, à ajouter à 35-1 AC-4).
+   - **Désactivation du multi-devises (A27)** : elle ne vide pas `exchange_rates` (35-1 AC-3) ; les lignes restent,
+     inertes (aucune route de cours n'est ouverte en mono-devise, 409 `MULTI_CURRENCY_DISABLED`), et une réactivation
+     les retrouve, la copie ne faisant qu'insérer ce qui manque.
    - Rien d'autre n'écrit `exchange_rates` que cette copie, le `PUT` d'un cours saisi, le ↑ (AC-5), l'acquittement
      (colonnes `acknowledged_*` seulement), la restauration et la remise à zéro (AC-7).
    - **Tests** : récupération → lignes `afc` copiées pour la société A (exercice multi-devises ouvert qui couvre
      l'unité), non pour B (mono-devise) ni pour C (exercice clos), sauf `POST /fetch` de C ; ligne `manual` présente →
-     inchangée ; correction (AC-3 (c)) → ligne `afc` inchangée ; activation, création d'un exercice multi-devises,
+     inchangée ; devise publiée que **aucun compte** de la société ne porte (p. ex. SEK) → aucune ligne copiée ;
+     un compte qui reçoit la devise SEK (création, puis modification d'un compte CHF) → les cours SEK déjà récupérés
+     des unités utiles sont copiés, ceux d'une autre devise non ; compte archivé en JPY → JPY encore copié ;
+     désactivation puis réactivation → lignes conservées, aucune doublée ; correction (AC-3 (c)) → ligne `afc` inchangée ; activation, création d'un exercice multi-devises,
      passage en multi-devises, changement de genre → cours déjà récupérés copiés (un mois, l'Ouverture `month` du mois
      précédant l'exercice, un jour de Clôture) ; deux copies concurrentes → une ligne, aucune erreur ; `updated_by`
      `NULL`, aucune ligne d'audit propre.
@@ -637,7 +657,7 @@ cours sans saisie.
    - **Tableau annuel d'un exercice (R6)** — `GET /api/v1/fiscal-years/{id}/exchange-rates[?all=true]`, en lecture
      seule (aucun appel sortant), tout rôle authentifié ; exercice d'une autre société → 404 ; exercice mono-devise →
      409 `MULTI_CURRENCY_DISABLED` (`details: { fiscalYearId }`). Réponse `{ fiscalYearId, startDate, endDate,
-     openingRateKind, closingRateKind, openingDate, closingDate, months: ["AAAA-MM-01", …], rows: [{ currency, months:
+     openingRateKind, closingRateKind, openingDate, closingDate, months: ["AAAA-MM-01", …], rows: [{ currency, hasAccount, months:
      [Cell, …], opening: Cell, closing: Cell }] }` : `months` = les mois de l'exercice **dans l'ordre de l'exercice**
      (juillet à juin pour un exercice au 1er juillet), **du mois de `startDate` au mois de `endDate` inclus, quelle que
      soit la durée** (S4, CR-3 : aucune constante de douze mois — six colonnes pour un exercice de six mois, dix-huit
@@ -665,7 +685,7 @@ cours sans saisie.
      si `corrected` et que `acknowledged_rate` égale `published.rate` (l'avertissement de connexion est acquitté pour
      cette valeur ; une correction suivante le rouvre) ; `updatedByKesh` = `updated_by IS NULL` (copie automatique).
      Les champs `afcRate`, `overridden`, `override` et `republished` de CR-1 et CR-3 n'existent plus. Test du `GET` sur
-     un exercice de six et de dix-huit mois (nombre et ordre des colonnes, `openingDate`, `closingDate`). Lignes : les
+     un exercice de six et de dix-huit mois (nombre et ordre des colonnes, `openingDate`, `closingDate`). Lignes (`hasAccount` = au moins un compte de la société, archivé compris, porte la devise) : les
      devises des comptes de la société (archivés compris s'ils portent une ligne dans l'exercice) et celles qui ont
      une ligne `manual` dans l'exercice, triées ; `all=true` ajoute toutes les devises qui ont une ligne
      `exchange_rates` ou une valeur publiée pour une unité de l'exercice. Les cases se lisent en **une** connexion, par
@@ -716,7 +736,7 @@ cours sans saisie.
        lecture seule) → `{ notices: [{ currency, kind, rateDate, effectiveRate, publishedRate, publishedUnit,
        valueChangedAt }] }` : les lignes `exchange_rates` de la société, `source = 'afc'`, dont la valeur publiée
        (`_kesh_fetched_exchange_rates`, même source, devise, genre et date) **diffère** de `rate` et n'est **pas
-       acquittée** à cette valeur (`acknowledged_rate IS NULL OR acknowledged_rate <> rate_per_unit`), triées par date
+       acquittée** à cette valeur (`acknowledged_rate IS NULL OR acknowledged_rate <> f.rate_per_unit`, `f` = la ligne de `_kesh_fetched_exchange_rates`), triées par date
        puis devise ; liste vide sinon. Une ligne sans valeur publiée (installation restaurée) n'est pas une notice ;
      - `POST /api/v1/exchange-rates/notices/acknowledge { notices: [{ currency, kind, rateDate, publishedRate }] }`
        (mêmes rôles) : sous `FOR UPDATE` des lignes de la société, pose `acknowledged_rate = publishedRate`,
@@ -836,7 +856,7 @@ cours sans saisie.
    « Récupérer les cours manquants » (Administrateur et Comptable) : **un seul** `POST /exchange-rates/fetch` par
    **colonne** récupérable (mois ≤ mois suivant, AC-5, l'Ouverture en genre `month` comprise, T4 — une seule fois quand elle est liée à la première colonne ; jour
    d'Ouverture ou de Clôture en genre `day`, strictement passé ; jamais un mois < 2000-01 ni un jour < 2000-01-01,
-   bornes de l'AC-5, dont la raison s'affiche au survol comme pour un jour non passé) dont au moins une ligne affichée n'a pas de valeur publiée (`published` à `null` : case vide, cours saisi sans valeur publiée, ou ligne `afc` d'une installation restaurée) ou pas de cours retenu (`effectiveRate` à `null`) — une récupération
+   bornes de l'AC-5, dont la raison s'affiche au survol comme pour un jour non passé) dont au moins une ligne affichée n'a pas de valeur publiée (`published` à `null` : case vide, cours saisi sans valeur publiée, ou ligne `afc` d'une installation restaurée) ou — pour une devise **portée par un compte** de la société (`hasAccount`, AC-5) seulement — pas de cours retenu (`effectiveRate` à `null`) : la copie ne couvre que ces devises (A24), si bien qu'une devise ajoutée à l'écran sans compte resterait sans cours retenu après toute récupération et relancerait l'appel à chaque clic — une récupération
    écrit toutes les devises publiées du mois ou du jour : un appel par case doublerait appels sortants et lignes
    d'audit —, l'un après l'autre, par la fonction d'API commune (AC-5 : `timeoutMs` 90 s, sans bandeau dégradé), puis
    relecture (la récupération copie les cours publiés dans les lignes de la société qui en manquent, AC-3 bis) ; un échec s'affiche sur les cases de sa colonne sans arrêter les suivantes. « Ajouter une devise » ajoute une ligne (liste ISO 4217, hors CHF ; la ligne n'existe
@@ -865,7 +885,8 @@ cours sans saisie.
      - ligne `afc`, valeur publiée **égale** → « **AFC ✓** », sans ↑ ;
      - ligne `afc`, valeur publiée **différente** (`corrected`, correction de l'AFC non reprise) → « **AFC corrigé :
        0.8850** (le 03.12.2024) » **en rouge** (date = `valueChangedAt`, heure locale suisse) et **↑** (libellé
-       accessible « Reprendre la valeur corrigée »), qui ouvre le **dialogue U3** ci-dessous ; le rouge reste tant que
+       accessible « Reprendre la valeur corrigée »), qui reprend la valeur **directement** pour la société (A23 ; le
+       dialogue U3 ci-dessous n'est pas rendu aujourd'hui) ; le rouge reste tant que
        la valeur n'est pas reprise (l'acquittement n'efface que l'avertissement de connexion) ; couleur par le jeton
        d'erreur existant du thème (recette visuelle : le rouge doit se voir, #640) ;
      - ligne `afc` **sans** valeur publiée (installation restaurée avant toute récupération) → « AFC (valeur publiée
@@ -888,18 +909,22 @@ cours sans saisie.
      de jour **non passé** (≥ aujourd'hui, Europe/Zurich) n'est pas récupérable (le serveur la refuse, AC-5) : la
      raison s'affiche au survol ; elle reste saisissable. Une copie automatique se distingue au survol d'une reprise par
      un utilisateur (`updatedByKesh`).
-   - **Dialogue du ↑ d'une correction (U3, CR-5 — remplace A11)** : le ↑ d'une case « AFC corrigé » ouvre un dialogue
-     (Administrateur et Comptable) qui dit la valeur retenue, la valeur corrigée et la date de la correction, et que la
+   - **Dialogue du ↑ d'une correction (U3, CR-5 — remplace A11 ; A23 : spécifié, non rendu aujourd'hui)** : tant que
+     l'option « toutes les sociétés » est masquée, le ↑ d'une case « AFC corrigé » s'applique **directement** à la
+     société de l'utilisateur, sans dialogue (`reset` avec la valeur affichée et la version) ; le dialogue ci-dessous
+     n'apparaît que lorsque cette option devient disponible. Il (Administrateur et Comptable) dit la valeur retenue, la valeur corrigée et la date de la correction, et que la
      reprise ne touche aucune écriture passée — une ligne d'écriture `afc` à l'ancien cours reste admise tant qu'on ne
      la modifie pas, puis ne se modifie qu'en passant en `manual` ou au nouveau cours (A17). Choix : (•) « Corriger pour
      [nom de la société] » (défaut, la seule portée livrée) ; ( ) « Corriger pour toutes les sociétés sous votre
      gestion (exercices ouverts seulement) » — **spécifiée (AC-5, `POST …/rates/reset`, portée `managedCompanies`) mais
      masquée** : l'option n'est pas rendue tant qu'un utilisateur n'appartient qu'à une société (`users.company_id`,
-     AC-5) ; le composant la porte derrière une condition unique (nom au développement, p. ex. `canManageSeveralCompanies`,
-     constante `false` aujourd'hui), pour qu'elle apparaisse sans réécrire le dialogue ; issue à ouvrir avec la PR
-     (C-35-8). Boutons « Corriger » et « Annuler ». Vitest : dialogue ouvert par le ↑ d'une correction, non par celui
-     d'un cours saisi ; seconde option absente ; « Corriger » envoie `reset` avec la valeur affichée ; « Annuler »
-     n'envoie rien.
+     AC-5) ; le composant porte une condition unique (nom au développement, p. ex. `canManageSeveralCompanies`,
+     constante `false` aujourd'hui) qui gouverne le **dialogue entier** (A23) et non la seule option, pour qu'il
+     apparaisse sans réécrire l'écran ; issue à ouvrir avec la PR
+     (C-35-8). Boutons « Corriger » et « Annuler ». Vitest : condition à `false` (état livré) → le ↑ d'une correction envoie `reset`
+     directement (valeur affichée, version), sans dialogue, comme celui d'un cours saisi ; condition à `true` (test du
+     composant seul) → dialogue ouvert par le ↑ d'une correction et non par celui d'un cours saisi, « Corriger » envoie
+     `reset` avec la valeur affichée, « Annuler » n'envoie rien.
    - Bouton « **Revérifier les cours publiés** » (Administrateur et Comptable) : un `POST /exchange-rates/fetch` par
      colonne récupérable **déjà présente** de l'exercice, l'un après l'autre (même fonction d'API ; la tâche
      automatique ne revérifie que le **mois courant**, AC-4 (A10) : c'est par là que se découvre une correction de l'AFC
@@ -915,7 +940,7 @@ cours sans saisie.
      L'écran de saisie des écritures (35-3b) ne les affiche pas. Vitest : bandeau absent pour Consultation, en
      mono-devise et sans notice ; présent sinon ; « Acquitter » envoie la liste affichée et le bandeau disparaît ; E2E :
      un `POST /fetch` piloté (source factice) qui rend une autre valeur pour un mois présent → case en rouge « AFC
-     corrigé » et bandeau ; ↑ → dialogue → « Corriger » → cours retenu changé, rouge disparu ; une autre correction →
+     corrigé » et bandeau ; ↑ (direct, A23) → cours retenu changé, rouge disparu ; une autre correction →
      « Acquitter » → bandeau disparu, rouge encore là.
    - **Dialogue du genre de clôture (U4, CR-5 — remplace A22)** : changer *Cours de clôture* alors que l'exercice
      **suivant** existe (il commence le lendemain de la clôture ; l'écran le lit dans `GET /fiscal-years`) ouvre un
@@ -942,15 +967,15 @@ cours sans saisie.
      juillet → décembre, Ouverture = 30.06.2024 ou juin 2024, Clôture = 31.12.2024 ou décembre 2024) et de **dix-huit
      mois** (01.07.2023–31.12.2024 : dix-huit colonnes, juillet 2023 → décembre 2024, Ouverture = 30.06.2023 ou **juin
      2023**), au serveur et en Vitest (en-têtes, défilement du seul tableau).
-   - Vitest : ligne `afc` égale → « AFC ✓ » sans ↑ ; ligne `afc` corrigée → « AFC corrigé : … » en rouge et ↑ qui
-     ouvre le dialogue U3 ; ligne `afc` sans valeur publiée → sans ↑ ; ligne `manual` différente → « AFC : … » et ↑
+   - Vitest : ligne `afc` égale → « AFC ✓ » sans ↑ ; ligne `afc` corrigée → « AFC corrigé : … » en rouge et ↑ direct
+     (sans dialogue, A23) ; ligne `afc` sans valeur publiée → sans ↑ ; ligne `manual` différente → « AFC : … » et ↑
      direct ; « AFC : non publié » et ↑ « Retirer le cours saisi » ; « AFC ✓ · saisi » et ↑ (A2) ; case vide à valeur
      publiée → ↑ ; valeur entrée égale à la valeur publiée → `reset` (ou rien si déjà `afc`) et jamais `PUT` ; ↑ →
      `reset` avec la bonne version et la valeur affichée ; 409 → rechargement ; changement d'un genre → `PUT
      /rate-kinds` puis relecture ; Consultation sans champ éditable ni choix ; cours JPY saisi par unité ; « Récupérer
      les cours manquants » poursuit après un échec et n'appelle qu'une fois par colonne (deux devises sans valeur
      publiée le même mois → un seul `POST /fetch`). Captures d'écran (exercice au 1er juillet avec un cours saisi et
-     son ↑, une case « AFC corrigé » en rouge et son dialogue, le dialogue du genre de clôture, colonnes Ouverture et
+     son ↑, une case « AFC corrigé » en rouge et son ↑ direct (le dialogue U3 n'est pas rendu, A23), le dialogue du genre de clôture, colonnes Ouverture et
      Clôture en genre `day` puis `month`, lecture seule).
 7. **AC-7 — Restauration.** Les deux tables `_kesh_*` sont système : un import de sauvegarde ne les touche pas. Sur une
    installation neuve restaurée, elles sont vides : la boucle ou `POST /fetch` les complète ; aucun test ne suppose une
@@ -986,7 +1011,7 @@ cours sans saisie.
    source — copie automatique des cours publiés, cours saisi, ↑ (U1) —,
    récupération automatique et son calendrier — quotidien jusqu'au cours du mois suivant, puis pause d'au plus 24 jours
    jamais au-delà du 25 (S1) —, tableau d'un exercice de durée quelconque (S4), **correction d'un cours par l'AFC** :
-   la société garde son cours, « AFC corrigé » en rouge, ↑ et son dialogue (cette société seule, U3), avertissement à
+   la société garde son cours, « AFC corrigé » en rouge, ↑ direct (cette société seule, U3, A23), avertissement à
    acquitter par société, effet sur les lignes `afc` passées (U1, A17) ; restauration : les cours retenus et leur
    source reviennent avec la sauvegarde) ;
    manuel d'administration : accès sortant HTTPS vers
@@ -1040,8 +1065,9 @@ cours sans saisie.
       (`audit_labels.rs` : six actions — `exchange_rates.fetched`, `exchange_rate.created`, `exchange_rate.updated`,
       `exchange_rate.reset`, `exchange_rates.corrections_acknowledged`, `fiscal_year.rate_kinds_updated` — et le type
       d'entité `exchange_rate`), registre des routes (AC-5 : +5 routes, total +6, point (vi) +5) et phrase du manuel ;
-      appel de la copie (AC-3 bis) dans `companies::update_currency_settings`, `fiscal_years::create` et
-      `fiscal_years::set_currency_mode` de 35-1, avec `copied` à leur audit.
+      appel de la copie (AC-3 bis) dans `companies::update_currency_settings`, `fiscal_years::create`,
+      `fiscal_years::set_currency_mode`, `accounts::create` et `accounts::update` de 35-1, avec `copied` à leur audit ;
+      copie limitée aux devises des comptes de la société (A24), `hasAccount` des lignes du tableau.
 - [ ] CR-2, CR-3 : tâche automatique au calendrier (AC-4 : `unites_utiles` — exercices de durée quelconque, S4 —,
       `prochain_reveil` — quotidien, puis pause d'au plus 24 jours jamais au-delà du 25, S1 —, démarrage, connexion,
       revérification du mois courant à chaque tour, A10), filtrage strict et tests hostiles (AC-2, R5), routes `GET /fiscal-years/{id}/exchange-rates` et
@@ -1053,7 +1079,7 @@ cours sans saisie.
       /exchange-rates/notices`, `POST /exchange-rates/notices/acknowledge` (par société) et `POST
       /exchange-rates/rates/reset` (↑) ; `applyToNextOpening` de `PUT /rate-kinds` (U4) ; `Cell` à une valeur
       (`corrected`, `acknowledged`, `published`) ; frontend : mentions et ↑ de la case, « AFC corrigé » en rouge, dialogue
-      U3 (option « toutes les sociétés » masquée), dialogue U4, bouton « Revérifier les cours publiés », bandeau de
+      U3 (spécifié, **non rendu** tant que l'option « toutes les sociétés » est masquée : ↑ direct, A23), dialogue U4, bouton « Revérifier les cours publiés », bandeau de
       connexion et son acquittement (AC-6) ; tests (dépôt, API, Vitest, E2E). Les colonnes `republished_*`,
       `notice_acknowledged_at`, la route `…/republications/adopt` et l'action `exchange_rates.republication_adopted` de
       CR-3 ne se font **pas**.
@@ -1438,3 +1464,29 @@ cours sans saisie.
   « à confirmer » levés) ; A11 retiré. **U6** — sans point de contact (la fiche ne dit pas débit/crédit « en CHF »).
   Calendrier S1 inchangé. AC touchés : en-tête, Story, AC-1, AC-3, AC-3 bis, AC-4, AC-5, AC-6, AC-7, AC-8, AC-9,
   Tâches. Fiche à revalider (cycle CR-5).
+- 2026-11-14 — validation CR-5 P1 (Sonnet) : 0 CRITICAL, 0 HIGH, 3 MEDIUM, 3 LOW ; remédiés dans la fiche sauf
+  35-2-CR5-P1-IF1 (inter-fiches : 35-1 AC-4). MEDIUM : 35-2-CR5-P1-1 (AC-1) `source` portait un `CHECK` d'énumération
+  (`IN ('afc','manual')` et `IN ('afc')`) contraire à A28 — passés au format seul (`REGEXP '^[a-z]{2,12}$'`), valeurs
+  contrôlées par le code ; 35-2-CR5-P1-2 (AC-3 bis, AC-1, AC-6, Tâches) A24 non appliqué : copie de toutes les devises
+  publiées (≈ 1000 lignes par exercice) — limitée aux devises des comptes de la société, nouveau déclencheur « un
+  compte reçoit une devise » (`accounts::create`, `accounts::update`), volume recalculé, tests ; conséquence : le
+  bouton « Récupérer les cours manquants » relançait un appel à chaque clic pour une devise ajoutée à l'écran sans
+  compte (`effectiveRate` toujours `null`) — champ `hasAccount` des lignes du tableau et critère restreint ;
+  35-2-CR5-P1-3 (AC-3 bis) A23 non appliqué : le ↑ d'une correction ouvrait un dialogue dont la seule option
+  utile est masquée — ↑ direct, dialogue spécifié sous condition unique (AC-6, Vitest, E2E, captures, Tâches, AC-8,
+  en-tête). LOW : 35-2-CR5-P1-4 la copie était dite « lue sans verrou » alors que `INSERT … SELECT` pose des verrous
+  partagés sous REPEATABLE READ (cycle couvert par `retry_on_deadlock`, écrit) ; 35-2-CR5-P1-5 en-tête : nom
+  `exchange_rate_overrides` resté au présent ; 35-2-CR5-P1-6 colonne de comparaison des notices précisée
+  (`f.rate_per_unit`). A27 écrit (AC-3 bis) ; A25 et A26 déjà portés. Inter-fiches non appliqué, texte proposé :
+  35-2-CR5-P1-IF1 — 35-1 AC-4, ajouter : « Quand une devise est donnée à un compte (création, ou modification qui change
+  la devise), la copie des cours déjà récupérés de cette devise pour les exercices multi-devises ouverts (35-2 AC-3
+  bis, appel ajouté par 35-2 dans `accounts::create` et `accounts::update`, sous leur `retry_app_on_deadlock`) est faite
+  dans la même transaction ; `copied` va au détail de l'audit du compte. » Axes exercés : diff
+  `0ae43432..d59a1de9` de la fiche ; U1 (grep des anciens noms dans les six fiches : restes seulement dans des entrées
+  de Change Log datées et des mentions « ex- »), AC-1 (tables, `CHECK`, TABLES_TO_TRUNCATE/TABLES_SYSTEME/R1),
+  AC-3, AC-3 bis, AC-5 (U3, U4), AC-6, AC-7, A23–A28 ; citations relues au code (`users_company_id.sql:23`,
+  `middleware/auth.rs:41`, `NEXT_AFTER_SQL` `fiscal_years.rs:207`, `opening_balances.rs:240` et `:379`,
+  `audit_labels.rs` `ENTITY_TYPES` et tri, `backup.rs` `mcp_server_settings` :99 et `TABLES_SYSTEME` :949,
+  `audit_route_registry.rs` (vi) :155/:302, `exports/global.rs:116`). Non exercés : les trois `GET` de la source
+  journalière (aucune prémisse de source touchée par CR-5), compilation, gate, rendu de l'écran, MCP, manuels au-delà de
+  la fiche, 35-3a/35-3b/35-4/35-5 (sauf renvois).
