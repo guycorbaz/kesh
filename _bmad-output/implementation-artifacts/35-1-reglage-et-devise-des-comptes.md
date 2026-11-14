@@ -11,8 +11,8 @@ sur CR-2 ; puis pour sa revue 2 (CR-4 : **T1** — l'assistant de démarrage dem
 AC-11 rétablie avec ce contenu ; **T3** — la devise d'une ligne se lit sur le compte, le verrou de l'AC-4 en devient
 la garantie ; **T4** — sens du genre d'ouverture et son défaut à la création), qui primait sur tout ce qui
 précède ; puis pour sa revue 3 (CR-5), qui prime sur tout : **U1** — la table des cours de la société s'appelle
-`exchange_rates` (35-2), et la création d'un exercice multi-devises, la bascule vers multi-devises et la première
-devise donnée à un compte y copient les cours déjà récupérés des devises des comptes (A24 ; AC-3, AC-3 bis, AC-4,
+`exchange_rates` (35-2), et la création d'un exercice multi-devises, la bascule vers multi-devises et une devise
+donnée à un compte (création, ou changement sur un compte sans ligne) y copient les cours déjà récupérés des devises des comptes (A24 ; AC-3, AC-3 bis, AC-4,
 AC-6) ; **U4** — changer le genre de clôture propose de l'appliquer à
 l'ouverture de l'exercice suivant (AC-3 bis, renvoi à 35-2 AC-5) ; **U5** — les arbitrages approuvés de cette fiche
 sont des AC (Décisions).*
@@ -38,7 +38,7 @@ exercice, AC-11) ; T3 (la ligne d'écriture ne stocke pas de devise : le verrou 
 celle de ses lignes) ; T4 (genre d'ouverture = clôture de l'exercice précédent, défaut repris à la création, AC-1,
 AC-3 bis). **CR-5 (revue 3 de Beat, prime sur tout)** : U1 (copie des cours récupérés dans `exchange_rates` de 35-2 à
 la création d'un exercice multi-devises, à la bascule vers multi-devises et quand un compte reçoit une devise — pas à
-l'activation, vide par construction : appels ajoutés par 35-2 AC-3 bis, AC-3, AC-3 bis et AC-4 ci-dessous ; liste close de l'AC-6 sous le nom neuf) ; U4 (remplace A22 : AC-3 bis, la
+l'activation, vide par construction : appels ajoutés par 35-2 AC-3 bis, AC-3 bis et AC-4 ci-dessous, l'AC-3 disant qu'il n'y en a aucun ; liste close de l'AC-6 sous le nom neuf) ; U4 (remplace A22 : AC-3 bis, la
 route vit en 35-2 AC-5). **U5 — arbitrages approuvés par Beat (CR-5), écrits comme AC de cette fiche** : A4 (ligne en
 devise datée avant un exercice mono-devise refusée : AC-3 bis, puce « dans un exercice mono-devise », garde de 35-3a
 AC-4) ; A5 (`force` n'archive que les comptes en devise sans ligne après la fin de l'exercice, pas de bascule sans
@@ -248,9 +248,9 @@ l'assistant, nom « Exercice AAAA » ou « Exercice AAAA/AAAA » : AC-11). A22 e
      `create_if_absent_in_tx` (assistant) n'insère que sans aucun exercice (`WHERE NOT EXISTS`, :472), donc toujours
      `'day'` ; `create_for_seed` applique le même fragment. **Changement ultérieur du genre de clôture (U4, CR-5 —
      remplace A22, « ne se propage pas »)** : quand le genre de clôture d'un exercice change alors que l'exercice
-     **suivant** existe (celui qui commence le lendemain de sa clôture) et est **ouvert** (clos, il n'est pas touché),
-     un dialogue propose d'appliquer le genre correspondant au **cours d'ouverture** de l'exercice suivant, case
-     **cochée par défaut** (seul le genre de **clôture** change la question : celui d'ouverture seul n'y touche pas) ; aucune écriture
+     **suivant** existe (celui qui commence le lendemain de sa clôture), un dialogue propose d'appliquer le genre
+     correspondant au **cours d'ouverture** de l'exercice suivant, case **cochée par défaut** — exercice suivant
+     **clos** : il n'est pas touché, la case est désactivée avec la raison (35-2 AC-5, AC-6) (seul le genre de **clôture** change la question : celui d'ouverture seul n'y touche pas) ; aucune écriture
      d'ouverture n'est modifiée — il n'en existe aucune entre deux exercices Kesh (soldes cumulés, et soldes
      d'ouverture saisissables sur le seul premier exercice). L'AC (route, champ `applyToNextOpening`, refus, audit,
      tests) vit avec la route, en **35-2 AC-5** (*Genres d'ouverture et de clôture*), et le dialogue en **35-2 AC-6** ;
@@ -476,12 +476,19 @@ l'assistant, nom « Exercice AAAA » ou « Exercice AAAA/AAAA » : AC-11). A22 e
      qui **posent** une devise (compte CHF → devise, ou devise changée sur un compte sans ligne ; pas un no-op)
      copient, dans leur transaction et après leurs verrous, les cours déjà récupérés **de cette devise** pour les
      unités utiles de chaque exercice **multi-devises ouvert** de la société (fonction et règles de **35-2 AC-3
-     bis**, qui ajoute l'appel et un paramètre `currencies` ; insertion seulement, `source = 'afc'`, `updated_by`
-     `NULL`) ; `copied` s'écrit à côté du snapshot de `account.created` / `account.updated`. Les exercices se lisent
+     bis**, qui ajoute l'appel ; la restriction à la seule devise posée y est écrite en prose, « de cette devise
+     seule », sans paramètre à la signature de la copie, renvoi signalé à 35-2 ; insertion seulement,
+     `source = 'afc'`, `updated_by` `NULL`) ; `copied` s'écrit au détail d'audit de l'action : à côté du snapshot de
+     `account.created` (`accounts.rs:227`), à côté de `{ before, after }` pour `accounts::update`, que l'action soit
+     `account.updated` ou `account.retyped` (`accounts.rs:792-804`). Les exercices se lisent
      par une lecture **simple**, jamais `LOCK IN SHARE MODE` : une écriture prend l'exercice `FOR UPDATE` puis le
      compte en partage (35-3a AC-4) ; les verrouiller après le `FOR UPDATE` du compte fermerait un cycle. Une course
      avec la création d'un exercice multi-devises, où chacun ne voit pas l'autre non commité, peut laisser des cours
-     non copiés : le filet est `lookup` 404 → `POST /fetch` → copie (35-2 AC-3 bis). Aucun ordre de refus ne change.
+     non copiés : le filet est `lookup` 404 → `POST /fetch` → copie (35-2 AC-3 bis). La sous-requête `accounts` de
+     la copie (35-2 AC-3 bis) lit en partage, sous REPEATABLE READ, les comptes en devise de la société : deux poses
+     concurrentes de devise sur deux comptes, chacune tenant son compte `FOR UPDATE`, peuvent s'interbloquer ; le
+     cycle est couvert par les enveloppes `retry_app_on_deadlock` de `accounts::update` (`routes/accounts.rs:337`) et
+     de `accounts::create` (AC-4 bis, *Rejeu*). Aucun ordre de refus ne change.
      Tests (portés par 35-2, la table n'existant pas ici) : un compte reçoit USD → seules les lignes USD sont copiées,
      aucune EUR ; devise changée d'USD à EUR sur un compte sans ligne → lignes EUR ; `PUT` no-op → aucune copie ;
      aucun exercice multi-devises ouvert → rien.
@@ -1062,3 +1069,21 @@ l'assistant, nom « Exercice AAAA » ou « Exercice AAAA/AAAA » : AC-11). A22 e
   CSV, remise à zéro — portés par 35-2 AC-1/AC-7, cohérents avec AC-5 et AC-6 ici), U4, U5 (A4, A5, A6, A15, A18, A19
   présents), U6, A24, A27, A28 (sans objet ici). Non exercés : source journalière (aucun GET, la 35-1 n'y touche pas),
   manuels (PDF non lu), i18n au code, MCP au code, exécution des verrous.
+- 2026-11-14 — validation CR-5 P2 ciblée (Opus) : 0 CRITICAL, 0 HIGH, 0 MEDIUM, 6 LOW dans la fiche, plus 1
+  inter-fiches (35-2, LOW) ; remédiés dans la fiche. CR5-P2-1 : l'en-tête disait « la première devise donnée à un
+  compte », l'AC-4 copie aussi au changement de devise d'un compte sans ligne : aligné. CR5-P2-2 : Décisions (U1)
+  rangeait l'AC-3 parmi les sites d'appel, qu'elle exclut : reformulé. CR5-P2-3 : l'AC-3 bis (U4) ne proposait le
+  dialogue que pour un exercice suivant ouvert ; 35-2 AC-6 l'affiche aussi, case désactivée, pour un suivant clos :
+  aligné. CR5-P2-4 : `copied` « à côté du snapshot de `account.updated` » — `update` écrit `{ before, after }` et peut
+  auditer `account.retyped` (`accounts.rs:792-804`) : précisé. CR5-P2-5 : renvoi faux, « 35-2 AC-3 bis ajoute un
+  paramètre `currencies` » — la signature y est `copy_fetched_in_tx(conn, company_id, units)` (35-2 :376), la
+  restriction à une devise n'y est qu'en prose : reformulé, IF1 signalé. CR5-P2-6 : la sous-requête `accounts` de la
+  copie (35-2) lit en partage les comptes en devise ; deux poses concurrentes sur deux comptes s'interbloquent, cycle
+  non écrit mais couvert par les deux enveloppes de rejeu (`routes/accounts.rs:337`, AC-4 bis) : écrit. Inter-fiches
+  non appliqué : 35-1-CR5-P2-IF1 (35-2 AC-3 bis) — écrire le paramètre de devises de `copy_fetched_in_tx` (appel des
+  routes de comptes : la seule devise posée, ce qui rend vrai le test « aucune EUR ») et le cycle de CR5-P2-6 avec son
+  test de victime. Relu au code : `accounts.rs:57`, `:227`, `:792-815`, `fiscal_years.rs:279`, `:389`,
+  `routes/accounts.rs:337`. Axes exercés : diff `d59a1de9..3b058509` de la fiche, phrase à phrase ; A24, A27, U1, U4,
+  U6 contre le registre de l'epic (:262, :314-318) ; points de contact 35-2 AC-3 bis, AC-5, AC-6 et 35-3a AC-4
+  (ordre des verrous) ; noms d'audit au code. Non exercés : manuels, i18n, exécution des verrous (analyse seule),
+  autres fiches que 35-2 et 35-3a.

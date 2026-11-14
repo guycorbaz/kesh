@@ -319,6 +319,9 @@ Prime sur tout ce qui précède là où il diverge. Beat approuve A2–A22, **sa
   - A28 — `source` n'a **pas** de CHECK d'énumération (format seul ; valeurs contrôlées par le code), pour qu'une
     source ajoutée plus tard (`ecb`) ne demande pas de migration breaking (P1) ;
   - A29 — 35-4 : « totaux en devise principale », non « en CHF ».
+  - A30 — complète A28 : la lecture d'une `source` inconnue est **tolérante** (`RateOrigin::Other(String)`, affichée
+    telle quelle, jamais d'erreur interne), dès cette version ; une source ajoutée plus tard (`ecb`) ne demande donc ni
+    relèvement de `kesh_version_min_required` ni migration breaking (P1).
 
 ## Source des cours — établie le 2026-11-14
 

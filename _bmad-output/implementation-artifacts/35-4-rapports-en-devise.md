@@ -9,7 +9,7 @@ Status: ready-for-dev
 ## Story
 
 En tant que comptable en multi-devises, je veux voir, pour chaque compte en devise, le solde et les mouvements en
-devise à côté du CHF, dans le grand livre, la balance, le bilan et le compte de résultat, à l'écran et dans les
+devise à côté du montant en devise principale (aujourd'hui CHF), dans le grand livre, la balance, le bilan et le compte de résultat, à l'écran et dans les
 exports, afin de rapprocher mes comptes PayPal ou Wise de leurs relevés et de contrôler ma réévaluation.
 
 ## Critères d'acceptation
@@ -97,7 +97,7 @@ exports, afin de rapprocher mes comptes PayPal ou Wise de leurs relevés et de c
      montant en devise (en débit/crédit comme le CHF), le cours (10 décimales stockées ; affichage par un formateur
      **neuf** `format_exchange_rate`, AC-5 — ⚠️ **pas** `format_rate` de `pdf.rs:1063`, qui rend un taux de TVA
      `"{rate:.2} %"`), le solde progressif en devise ; `LedgerSection` gagne `currency`, `openingCurrency`,
-     `closingCurrency`, totaux en devise. `unnatural_balance` reste CHF.
+     `closingCurrency`, totaux en devise. `unnatural_balance` reste calculé sur le solde en devise principale (U6).
    - Une ligne `revaluation` s'affiche « Réévaluation au cours X » sans montant en devise ; comptes CHF : inchangés.
      Le libellé suit le régime de chaque sortie, tel qu'il est : le **JSON** ne porte pas de libellé (il porte
      `rateSource` et le cours) ; l'**écran** le traduit (clé i18n, quatre locales) ; le **PDF** le prend d'un champ
@@ -287,3 +287,4 @@ exports, afin de rapprocher mes comptes PayPal ou Wise de leurs relevés et de c
   ajouts, cohérence interne (AC-1 ter, AC-2, AC-3, AC-7), points de contact 35-3a (contraintes, colonne absente).
   Non exercés : relecture complète de la fiche (hors périmètre), 35-5 (aucun ajout ne touche `balances_as_of`).
 - 2026-11-14 — validation CR-5 P1 (Sonnet) : 0 CRITICAL, 0 HIGH, 1 MEDIUM, 1 LOW ; remédiés dans la fiche sauf <aucun inter-fiches>. MEDIUM CR5-P1-1 : A29/U6 non appliqués (AC-3 et AC-4 disaient « restent CHF » et « totaux en CHF seulement » — réécrits « devise principale (aujourd'hui CHF) »). LOW CR5-P1-2 : « sommes CHF existantes » (AC-1) alignée ; les noms de champs `chf_net`, `total_debit` ne changent pas (code). Points de contact U1 : aucun — la fiche ne lit ni `exchange_rates` ni `_kesh_fetched_exchange_rates` (les rapports lisent `amount_currency` et `exchange_rate` de la ligne) ; aucun reste de `republished_*` ; A24/A28 sans objet ici ; la fiche ne crée ni table ni migration (pas de fenêtre d'import, rejeu, `TABLES_TO_TRUNCATE`). U6 : « CHF » restant légitime pour TVA, projets, accueil (base légale, AC-7). Relu au code : `opening.rs:75`, `general_ledger.rs:687`, `trial_balance.rs:165-170`/`:209` : exacts. Non exercés : GET de la source journalière (aucun rapport n'y touche), 35-5 (inchangée).
+- 2026-11-14 — validation CR-5 P2 ciblée (Opus) : 0 CRITICAL, 0 HIGH, 0 MEDIUM, 1 LOW ; remédié dans la fiche, aucun inter-fiches. LOW CR5-P2-1 : propagation de U6 incomplète — le récit (« à côté du CHF ») et AC-2 (« `unnatural_balance` reste CHF ») gardaient la formule réécrite en AC-3/AC-4 ; alignés « devise principale ». Relu au code : `trial_balance.rs:69-83` (`total_debit`, `total_credit`, `balanced`, `retained_earnings`, `opening_balanced`) et `general_ledger.rs:137`, `:797` (`unnatural_balance` booléen tiré du solde CHF) : exacts. Cohérence : A29, U6 (epic l. 294, 321) appliqués ; « devise principale » définie par l'epic (l. 17) ; 35-5 (`chf_net`, `balances_as_of`) non touchée. Non exercés : relecture complète de la fiche (hors périmètre) ; AC-7 « CHF seulement » laissé tel quel (description du calcul, non du vocabulaire débit/crédit).

@@ -595,9 +595,9 @@ devise au cours d'ouverture choisi pour l'exercice (R6), afin de tenir mes livre
    lue par `GET /exchange-rates`, sinon 409) pour le mois est proposé, affiché « cours saisi », et la ligne part `rateSource: "manual"`
    (relue telle) ; après ↑ à l'écran *Cours de change* (`POST /exchange-rates/rates/reset`, avec la `version` de la ligne et le `publishedRate` affiché ; le mois doit avoir une
    valeur publiée, servie par la source factice et récupérée, sans quoi une ligne `manual` serait **supprimée** et non
-   reprise ; la ligne de la société repasse `afc`) ; **cours `manual` apparu après l'écriture** : édition du montant
+   reprise ; la ligne de la société repasse `afc`), le cours proposé part `afc` ; **cours `manual` apparu après l'écriture** : édition du montant
    seul d'une ligne `afc` relue, le mois étant passé en `manual` par `PUT …/rates` → `FX_RATE_NOT_AFC`, `expectedRate`
-   `null`, seule « Garder mon cours » offerte, le cours proposé part `afc` ; **changement de compte (U2)** : une ligne USD passée sur un compte EUR
+   `null`, seule « Garder mon cours » offerte ; après elle, la ligne part `manual` à son cours et l'écriture s'enregistre ; **changement de compte (U2)** : une ligne USD passée sur un compte EUR
    repart montant vide et cours EUR proposé, l'écriture s'enregistre en EUR ;
    préalables posés par l'API (Administrateur) : mode multi-devises activé **avec les comptes de gain, de perte et de
       conversion désignés** (35-1 AC-3, sans quoi le bouton d'écart n'ajoute rien et l'assistant est désactivé),
@@ -954,3 +954,13 @@ devise au cours d'ouverture choisi pour l'exercice (R6), afin de tenir mes livre
   `_kesh_exchange_rates`, `republished_*`, `overridden`, `afcRate` du `lookup`) : aucun hors Change Log ; U1, U2, U3, U6,
   A23, A24 ; Terminologie. Non exercés : sauvegarde et rejeu (aucune table neuve ici), audit, MCP, source journalière
   (aucun GET), E2E, Vitest, PDF, citations de lignes de code antérieures à CR-5.
+- 2026-11-14 — validation CR-5 P2 ciblée (Opus) : 0 CRITICAL, 0 HIGH, 1 MEDIUM, 0 LOW ; remédié. MEDIUM :
+  35-3b-CR5-P2-1 (AC-5, E2E) — l'insertion de CR5-P1-3 avait déplacé « le cours proposé part `afc` », conclusion du ↑,
+  à la fin du cas « cours `manual` apparu après l'écriture », où il contredisait `expectedRate` `null` (aucun cours
+  `afc` pour ce mois, 35-3a AC-4) et laissait le ↑ sans vérification : remis au ↑ ; le cas nouveau se conclut par
+  « Garder mon cours » → ligne `manual`, écriture enregistrée. Axes exercés : diff `d59a1de9..3b058509` de la fiche ;
+  35-3a AC-4 (`expectedRate` `null`, ligne `manual` de la société) ; 35-2 AC-5 (`PUT …/rates` et `version`, `…/rates/reset`
+  et `publishedRate`, suppression sans valeur publiée, `PUT /rate-kinds` : deux genres obligatoires,
+  `applyToNextOpening` absent = `false`), `Cell.row.version` du `GET` ; A23 ; Terminologie et R4 amendé/S1 ; seed
+  `with-company` (`test_fixtures.rs:118-119`, un seul exercice : pas d'exercice suivant). Non exercés : reste de la
+  fiche hors diff, Vitest, PDF, audit, sauvegarde. Aucun finding inter-fiche.

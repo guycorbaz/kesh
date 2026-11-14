@@ -20,7 +20,7 @@ dix-huit mois (AC-4, AC-6). Révisée en dernier pour la revue 3 de Beat (CR-5),
 C-35-1, S6, A10, A11, A16 et les colonnes `republished_*` compris : **U1** — deux tables renommées et réparties :
 `exchange_rates` (**applicative**, par société, sauvegardée ; ex-`exchange_rate_overrides`) porte **le cours retenu
 par la société** et sa `source` (`afc` | `manual`), reçoit **automatiquement** une copie de chaque cours récupéré utile
-à un exercice multi-devises de la société et garde la source d'un cours pour toujours ; `_kesh_fetched_exchange_rates`
+à un exercice multi-devises de la société, pour les devises de ses comptes (A24), et garde la source d'un cours pour toujours ; `_kesh_fetched_exchange_rates`
 (**système** ; ex-`_kesh_exchange_rates`) porte la **dernière** valeur publiée par la source, et une correction de
 l'AFC la met à jour sans jamais toucher `exchange_rates` ; plus de colonnes `republished_*`, plus d'adoption globale ;
 une seule valeur par case à l'écran, « AFC corrigé : x » en rouge avec ↑ ; avertissement et acquittement **par
@@ -140,8 +140,11 @@ cours sans saisie.
      REGEXP '^[a-z]{2,12}$'` — **format seul, aucune énumération** (A28, CR-5) ; `afc` : copie d'un cours récupéré, ou
      valeur publiée reprise par ↑ ; `manual` : cours saisi par la société ; les valeurs admises sont contrôlées **par le
      code** (`RateOrigin` : une valeur inconnue lue est une erreur interne, jamais ignorée), si bien qu'une source
-     future, p. ex. `ecb`, s'ajoute sans migration — élargir plus tard un `CHECK` d'énumération serait un `MODIFY` ou
-     un `DROP CONSTRAINT`, que P1 et P3 jugent breaking), `acknowledged_rate DECIMAL(20,10) NULL`
+     future, p. ex. `ecb`, s'ajoute sans DDL — élargir un `CHECK` d'énumération demanderait un `DROP CONSTRAINT` puis
+     un `ADD CONSTRAINT` (P3 ne les liste pas ; c'est la valeur neuve, non le DDL, qui relève de P1). Ce que le format
+     seul n'épargne pas : un binaire antérieur qui lit une source qu'il ne connaît pas rend une erreur interne ; la
+     release qui écrit la première une source neuve se juge donc encore au regard de P1 (bump de
+     `kesh_version_min_required` par une migration, P2, ou lecture tolérante, à décider alors)), `acknowledged_rate DECIMAL(20,10) NULL`
      et `acknowledged_at DATETIME(3) NULL` (UTC) — l'**acquittement par société** d'une correction de l'AFC : la valeur
      publiée (par unité) que la société a vue et acquittée (AC-5) ; `chk_exchange_rates_ack_pair` (les deux `NULL` ou les
      deux non `NULL`) et `chk_exchange_rates_ack_afc` (`acknowledged_rate IS NULL OR source = 'afc'`) —, `version INT NOT
@@ -347,8 +350,9 @@ cours sans saisie.
      inconnue) ; écriture en **une transaction** par mois ou par jour récupéré : les valeurs publiées dans
      `_kesh_fetched_exchange_rates` (`source = 'afc'`), puis la **copie** dans `exchange_rates` (AC-3 bis) ; un échec
      n'écrit aucun cours. La transaction passe sous `kesh_db::retry::retry_on_deadlock` (la copie prend `companies` en
-     partage par sa clé étrangère : cycle possible avec une activation ou une bascule de 35-1, qui tiennent `companies`
-     `FOR UPDATE` puis écrivent elles aussi dans `exchange_rates`). **Règle d'écriture de la valeur publiée (U1, CR-5 —
+     partage par sa clé étrangère et lit `accounts` en partage par le filtre A24 : cycle possible avec une bascule de
+     35-1, qui tient `companies` `FOR UPDATE` puis copie elle aussi dans `exchange_rates`, ou avec une route de compte
+     qui tient le compte `FOR UPDATE` puis copie, AC-3 bis). **Règle d'écriture de la valeur publiée (U1, CR-5 —
      remplace la règle S6 de CR-3, qui gardait à part une valeur republiée)**, par devise valide, les lignes déjà
      présentes du mois ou du jour lues `FOR UPDATE` dans la transaction : (a) absente → insérée (`fetched_at` =
      `first_fetched_at` = `value_changed_at` = l'instant pris avant l'appel sortant) ; (b) présente, **même valeur
@@ -374,7 +378,8 @@ cours sans saisie.
      ensemble que `unites_utiles` de l'AC-4, **sans** la borne « strictement antérieur à aujourd'hui » ni celle du mois
      suivant (une valeur déjà publiée se copie quelle que soit sa date).
    - **Une seule fonction de dépôt** (nom au développement, p. ex. `exchange_rates::copy_fetched_in_tx(conn,
-     company_id, units)`) : `INSERT INTO exchange_rates (company_id, currency, kind, rate_date, rate, source,
+     company_id, units, currencies)`, `currencies` = `None` pour toutes les devises des comptes de la société, ou la
+     seule devise qu'un compte reçoit — le paramètre que 35-1 AC-4 attend de cette story) : `INSERT INTO exchange_rates (company_id, currency, kind, rate_date, rate, source,
      updated_by, …) SELECT ?, f.currency, f.kind, f.rate_date, f.rate_per_unit, 'afc', NULL, … FROM
      _kesh_fetched_exchange_rates f WHERE f.source = 'afc' AND (f.kind, f.rate_date) IN (…) AND NOT EXISTS (SELECT 1
      FROM exchange_rates x WHERE x.company_id = ? AND x.currency = f.currency AND x.kind = f.kind AND x.rate_date =
@@ -391,7 +396,6 @@ cours sans saisie.
        dans la transaction, sans verrou ; ordre des sociétés croissant) — et, pour un `POST /fetch`, **toujours** pour la
        société de l'utilisateur (exercice clos compris, A7 : ses cours se récupèrent à l'écran ; c'est aussi le filet
        d'une case vide : `lookup` 404 → `POST /fetch` → copie → relecture, 35-3b, 35-5) ;
-     - à l'**activation** du mode multi-devises (35-1 AC-3), pour chaque exercice ouvert qu'elle passe en multi-devises ;
      - à la **création** d'un exercice multi-devises (35-1 AC-3 bis, `fiscal_years::create` ; les deux autres chemins
        ne créent pas d'exercice multi-devises : l'assistant crée la société mono-devise, `create_for_seed` sert la
        démonstration) ;
@@ -402,27 +406,35 @@ cours sans saisie.
        compte de CHF ou d'une autre devise à celle-ci, 35-1 AC-4) : pour chaque exercice **multi-devises ouvert** de la
        société, copie des cours déjà récupérés de cette devise seule, sur les unités utiles de l'exercice. Une devise
        déjà portée par un autre compte n'a rien de neuf à copier (l'insertion seule le rend sans effet).
-     Ces cinq derniers appels se font **dans la transaction** de la route de 35-1 ou de cette story, après ses
+     **Pas à l'activation** du mode multi-devises (35-1 AC-3, CR5-P1-2) : la copie y serait vide par construction —
+     tant que la société est mono-devise, aucun compte, archivé compris, ne porte de devise ;
+     `companies::update_currency_settings` n'appelle pas la copie.
+     Ces quatre derniers appels se font **dans la transaction** de la route de 35-1 ou de cette story, après ses
      verrous (l'`INSERT` prend `companies` en partage par sa clé étrangère : la route tient déjà `companies`) ;
-     `_kesh_fetched_exchange_rates` est lue par le `SELECT` de l'`INSERT … SELECT`, qui sous REPEATABLE READ pose des verrous
-     **partagés** sur les lignes lues : ce n'est **pas** une lecture sans verrou, et elle peut croiser une récupération
-     (qui tient ces lignes `FOR UPDATE`, puis demande `companies` en partage) — le cycle est celui déjà couvert par
-     `retry_on_deadlock` (les routes de 35-1 y passent, `accounts::create` et `accounts::update` compris ; AC-5). Les
+     le `SELECT` de l'`INSERT … SELECT` pose sous REPEATABLE READ des verrous **partagés** sur les lignes lues — celles
+     de `_kesh_fetched_exchange_rates` et, par le filtre A24, celles d'`accounts` de la société : ce n'est **pas** une
+     lecture sans verrou. Elle peut croiser une récupération, qui tient ses lignes `_kesh_fetched_exchange_rates`
+     `FOR UPDATE` puis lit `accounts` et prend `companies` en partage : cycle avec une route d'exercice qui tient
+     `companies` `FOR UPDATE`, ou avec une route de compte qui tient le compte `FOR UPDATE`. Les deux côtés sont
+     rejoués : la récupération et les routes d'exercice sous `kesh_db::retry::retry_on_deadlock`, `accounts::create`
+     et `accounts::update` sous `crate::retry::retry_app_on_deadlock` (35-1 AC-4 ; AC-5). Les
      routes de 35-1 sont développées avant cette table : **cette story ajoute l'appel** dans
-     `companies::update_currency_settings`, `fiscal_years::create`, `fiscal_years::set_currency_mode`,
-     `accounts::create` et `accounts::update`, et le détail `copied` à leur audit (renvoi écrit en 35-1 AC-3, AC-3 bis ;
-     pour les deux routes de comptes, à ajouter à 35-1 AC-4).
+     `fiscal_years::create`, `fiscal_years::set_currency_mode`, `accounts::create` et `accounts::update`, et le
+     détail `copied` à leur audit (renvoi écrit en 35-1 AC-3 bis et AC-4).
    - **Désactivation du multi-devises (A27)** : elle ne vide pas `exchange_rates` (35-1 AC-3) ; les lignes restent,
      inertes (aucune route de cours n'est ouverte en mono-devise, 409 `MULTI_CURRENCY_DISABLED`), et une réactivation
-     les retrouve, la copie ne faisant qu'insérer ce qui manque.
+     les retrouve telles quelles (elle ne copie rien ; les comptes qui recevront une devise copieront ce qui manque).
    - Rien d'autre n'écrit `exchange_rates` que cette copie, le `PUT` d'un cours saisi, le ↑ (AC-5), l'acquittement
      (colonnes `acknowledged_*` seulement), la restauration et la remise à zéro (AC-7).
    - **Tests** : récupération → lignes `afc` copiées pour la société A (exercice multi-devises ouvert qui couvre
      l'unité), non pour B (mono-devise) ni pour C (exercice clos), sauf `POST /fetch` de C ; ligne `manual` présente →
      inchangée ; devise publiée que **aucun compte** de la société ne porte (p. ex. SEK) → aucune ligne copiée ;
      un compte qui reçoit la devise SEK (création, puis modification d'un compte CHF) → les cours SEK déjà récupérés
-     des unités utiles sont copiés, ceux d'une autre devise non ; compte archivé en JPY → JPY encore copié ;
-     désactivation puis réactivation → lignes conservées, aucune doublée ; correction (AC-3 (c)) → ligne `afc` inchangée ; activation, création d'un exercice multi-devises,
+     des unités utiles sont copiés, ceux d'une autre devise non ; devise changée d'USD à EUR sur un compte sans ligne →
+     lignes EUR copiées ; `PUT` de compte no-op → aucune copie ; aucun exercice multi-devises ouvert → rien (tests
+     délégués par 35-1 AC-4) ; compte archivé en JPY → JPY encore copié ;
+     activation → aucune ligne copiée, `copied` absent de son audit ;
+     désactivation puis réactivation → lignes conservées, aucune doublée ; correction (AC-3 (c)) → ligne `afc` inchangée ; création d'un exercice multi-devises,
      passage en multi-devises, changement de genre → cours déjà récupérés copiés (un mois, l'Ouverture `month` du mois
      précédant l'exercice, un jour de Clôture) ; deux copies concurrentes → une ligne, aucune erreur ; `updated_by`
      `NULL`, aucune ligne d'audit propre.
@@ -823,7 +835,7 @@ cours sans saisie.
      /exchange-rates/notices/acknowledge`, `PUT /fiscal-years/{id}/rate-kinds` — la 35-2 compte donc **+5 routes, +5
      tracées, total registre +6 (avec l'endpoint `_test`), `sans_ecriture` +6, `tout.len()` +6** (`rejouees` et
      `exemptees` inchangés). **Rejeu** : les cinq routes écrivent `exchange_rates` (ou, pour `PUT /rate-kinds`, y
-     copient) et prennent `companies` en partage par sa clé étrangère, en cycle possible avec une activation ou une
+     copient) et prennent `companies` en partage par sa clé étrangère, en cycle possible avec une
      bascule de 35-1 (`companies` `FOR UPDATE` puis copie dans `exchange_rates`) : leur transaction passe sous
      `kesh_db::retry::retry_on_deadlock` ; elles entrent donc au décompte du point **(vi)** du module
      (`audit_route_registry.rs:155`, « vingt-cinq routes `SansEcritureAuJournal` sont rejouées », :302 ; 35-1 le porte à
@@ -1065,9 +1077,10 @@ cours sans saisie.
       (`audit_labels.rs` : six actions — `exchange_rates.fetched`, `exchange_rate.created`, `exchange_rate.updated`,
       `exchange_rate.reset`, `exchange_rates.corrections_acknowledged`, `fiscal_year.rate_kinds_updated` — et le type
       d'entité `exchange_rate`), registre des routes (AC-5 : +5 routes, total +6, point (vi) +5) et phrase du manuel ;
-      appel de la copie (AC-3 bis) dans `companies::update_currency_settings`, `fiscal_years::create`,
-      `fiscal_years::set_currency_mode`, `accounts::create` et `accounts::update` de 35-1, avec `copied` à leur audit ;
-      copie limitée aux devises des comptes de la société (A24), `hasAccount` des lignes du tableau.
+      appel de la copie (AC-3 bis) dans `fiscal_years::create`, `fiscal_years::set_currency_mode`,
+      `accounts::create` et `accounts::update` de 35-1, avec `copied` à leur audit (aucun dans
+      `companies::update_currency_settings`, vide par construction) ; copie limitée aux devises des comptes de la
+      société (A24), paramètre `currencies`, `hasAccount` des lignes du tableau.
 - [ ] CR-2, CR-3 : tâche automatique au calendrier (AC-4 : `unites_utiles` — exercices de durée quelconque, S4 —,
       `prochain_reveil` — quotidien, puis pause d'au plus 24 jours jamais au-delà du 25, S1 —, démarrage, connexion,
       revérification du mois courant à chaque tour, A10), filtrage strict et tests hostiles (AC-2, R5), routes `GET /fiscal-years/{id}/exchange-rates` et
@@ -1490,3 +1503,25 @@ cours sans saisie.
   `audit_route_registry.rs` (vi) :155/:302, `exports/global.rs:116`). Non exercés : les trois `GET` de la source
   journalière (aucune prémisse de source touchée par CR-5), compilation, gate, rendu de l'écran, MCP, manuels au-delà de
   la fiche, 35-3a/35-3b/35-4/35-5 (sauf renvois).
+- 2026-11-14 — validation CR-5 P2 ciblée (Opus) : 0 CRITICAL, 0 HIGH, 3 MEDIUM, 3 LOW ; tous remédiés dans la fiche,
+  aucun inter-fiches. MEDIUM : 35-2-CR5-P2-1 (AC-3 bis, AC-5 rejeu, AC-4 fetch, Tâches) alignement 35-1 CR5-P1-2 :
+  la copie à l'activation est vide par construction (aucun compte en devise tant que la société est mono-devise) —
+  puce « à l'activation » et `companies::update_currency_settings` retirés des appelants (« quatre derniers
+  appels »), test « activation → aucune ligne copiée », A27 réécrit (la réactivation ne copie rien), cycles « avec
+  une activation » retirés (AC-4, AC-5), renvoi « à ajouter à 35-1 AC-4 » remplacé (35-1 AC-4 le porte) ;
+  35-2-CR5-P2-2 (AC-3 bis, tests) tests délégués par 35-1 AC-4 absents (devise changée USD→EUR sur un compte sans
+  ligne, `PUT` no-op, aucun exercice multi-devises ouvert) : ajoutés ; 35-2-CR5-P2-3 (AC-1) la justification d'A28
+  disait l'élargissement d'un `CHECK` d'énumération « jugé breaking par P1 et P3 » — P3 ne liste ni `DROP CONSTRAINT`
+  ni `ADD CONSTRAINT`, et le format seul n'ôte pas le risque P1 (un binaire antérieur rend une erreur interne sur une
+  source inconnue, `RateOrigin`) : réécrit, le jugement P1 de la release qui écrit une source neuve reste dû
+  (question à Beat : A28 promettait « pas de migration breaking »). LOW : 35-2-CR5-P2-4 le verrouillage de la copie
+  décrivait le cycle par `companies` seul et nommait `retry_on_deadlock` pour les routes de comptes — le filtre A24
+  lit `accounts` en partage (cycle avec une route de compte qui tient le compte `FOR UPDATE`), et ces routes passent
+  par `crate::retry::retry_app_on_deadlock` (`kesh-api/src/retry.rs:40`, `routes/accounts.rs:337`) : écrit (AC-3 bis,
+  AC-4) ; 35-2-CR5-P2-5 signature `copy_fetched_in_tx` sans le paramètre `currencies` qu'attend 35-1 AC-4 : ajouté ;
+  35-2-CR5-P2-6 en-tête : copie « de chaque cours récupéré utile » sans la restriction A24 : précisée. Axes exercés :
+  diff `d59a1de9..3b058509` de la fiche, entrée CR-5 P1 et alignement de l'orchestrateur ; points de contact avec
+  35-1 (AC-3 activation, AC-4 copie et verrous, Tâches CR-5, Change Log CR5-P1-1/2) ; registre A23–A29 ; code lu :
+  `retry.rs` des deux crates, `routes/accounts.rs:267`, `:337` ; P3 de `CLAUDE.md`. Non exercés : 35-3a, 35-3b, 35-4,
+  35-5 (aucune phrase du diff n'y renvoie hors 35-3b/35-5 pour le filet `lookup`, inchangé), rendu de l'écran,
+  compilation, gate, sémantique exacte des verrous InnoDB d'un `IN (SELECT …)` (raisonnée, non exécutée).
