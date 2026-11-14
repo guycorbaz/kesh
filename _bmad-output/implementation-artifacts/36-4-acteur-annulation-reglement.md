@@ -1,6 +1,6 @@
 # Story 36-4 : l'annulation d'un règlement par une clé d'API est attribuée à la clé — par sa route ou par le dé-rapprochement (#1131)
 
-Status: ready-for-dev
+Status: review
 
 *Fiche rédigée le 2026-11-14 par l'agent de rédaction des fiches de l'Epic 36 (Opus 5.5), worktree `kesh-36-4`, branche
 `story/36-4-acteur-annulation-reglement`, par le workflow `bmad-create-story`. Phase 1, release **0.17.8**. **Aucune
@@ -428,30 +428,30 @@ nommé.
 
 ## Tâches
 
-- [ ] **Étape 0** : relire les lignes citées à la base réelle (la branche part de `9d5a142df`, ou de `main` après la fusion
+- [x] **Étape 0** : relire les lignes citées à la base réelle (la branche part de `9d5a142df`, ou de `main` après la fusion
       d'une autre story) ; relancer `inventaire-appels.py` et la commande `git grep`, sorties au Change Log ; recompter la
       table de la garde ; relire les LOW du dernier rapport de validation.
-- [ ] Aide commune `common/audit_traces.rs` (V1-5) ; rouges : les cinq tests par clé (dont le solde), commités ;
+- [x] Aide commune `common/audit_traces.rs` (V1-5) ; rouges : les cinq tests par clé (dont le solde), commités ;
       `rouges.log`.
-- [ ] `invoice_settlements_write.rs` : `cancel_settlement_in_tx` et `cancel_settlement` à l'`Acteur` (D1, D2).
-- [ ] `supplier_invoices.rs` : idem.
-- [ ] `reconciliation_cancel.rs` : `cancel_in_tx` et `cancel` à l'`Acteur` (D3, D4) ; doc-comments.
-- [ ] Routes : `routes/invoices.rs`, `routes/supplier_invoices.rs`, `routes/reconciliation.rs` (D2, D3).
-- [ ] Tests existants : 77 appels dans 17 fichiers, mécaniques (`Acteur::utilisateur(u)`), fichier par fichier ; le
+- [x] `invoice_settlements_write.rs` : `cancel_settlement_in_tx` et `cancel_settlement` à l'`Acteur` (D1, D2).
+- [x] `supplier_invoices.rs` : idem.
+- [x] `reconciliation_cancel.rs` : `cancel_in_tx` et `cancel` à l'`Acteur` (D3, D4) ; doc-comments.
+- [x] Routes : `routes/invoices.rs`, `routes/supplier_invoices.rs`, `routes/reconciliation.rs` (D2, D3).
+- [x] Tests existants : 77 appels dans 17 fichiers, mécaniques (`Acteur::utilisateur(u)`), fichier par fichier ; le
       compilateur ferme la liste ; assertions de session d'AC4 ; doc-comment de `reconciliation_e2e.rs:5349-5355`.
-- [ ] Garde : six entrées retirées, table recomptée, doc-comments (AC5).
-- [ ] Documents : `docs/api-external.md` (`:404`, `:565`, `:653`, `:739`), `admin-manual.tex:3212`,
+- [x] Garde : six entrées retirées, table recomptée, doc-comments (AC5).
+- [x] Documents : `docs/api-external.md` (`:404`, `:565`, `:653`, `:739`), `admin-manual.tex:3212`,
       `user-manual.tex:4016-4023` (dont « ou leur annulation », « annulation de la facture », « avant la 0.17.7 », V1-1),
       PDF régénérés (`make fr` dans `docs/manual/`, sous `.gate-front.lock` ou la voie de la
       consigne en vigueur), contrôlés aplatis (AC6) ; symptôme greppé.
-- [ ] Mutations M1 à M8, et M1', M2', M3' (V1-4).
-- [ ] **Gates** (voie 1 ; `kesh-db` touché) : en cours de boucle, `scripts/test-fast.sh --ci` (complet, non ciblé) sur
+- [x] Mutations M1 à M8, et M1', M2', M3' (V1-4).
+- [x] **Gates** du passage en `review` (`test-fast --ci`, `gate-ci` ; E2E à la clôture) (voie 1 ; `kesh-db` touché) : en cours de boucle, `scripts/test-fast.sh --ci` (complet, non ciblé) sur
       `kesh_e364` remise à neuf ; au **passage en `review`**, `test-fast --ci` puis `scripts/gate-ci.sh kesh_ci_e364`, une
       commande à la fois sous `flock /tmp/station-heavy.lock flock /home/gcorbaz/devel/kesh-gate-logs/.gate.lock
       scripts/mem-guard.sh …` ; frontend non touché (le dire) ; **pas d'E2E** ; aux remédiations, `test-fast --ci` seul ; à la
       **clôture**, `gate-ci` **et** E2E complet sur `kesh_e2e_e364` recréée, au dernier commit de code, échecs nommés contre
       `docs/testing.md` (sept de la KF-029). Chaque chiffre cite son journal sous `kesh-gate-logs/e36-4/` et son commit.
-- [ ] Prompt de la revue P1 à côté de la fiche (`36-4-acteur-annulation-reglement-review-prompt-p1.md`) : trois lentilles,
+- [x] Prompt de la revue P1 à côté de la fiche (`36-4-acteur-annulation-reglement-review-prompt-p1.md`) : trois lentilles,
       manuels et PDF nommés, garde et tests lexicaux nommés, axes exercés et non exercés exigés.
 
 ## Note de version
@@ -521,11 +521,54 @@ nommé.
 
 ### Agent Model Used
 
+Opus 5.5 (agent de développement de l'Epic 36), 2026-11-14, worktree `/home/gcorbaz/devel/kesh-36-4`, voie 1.
+
 ### Debug Log References
+
+Sous `/home/gcorbaz/devel/kesh-gate-logs/e36-4/` : `rouges.log`, `rouges-run1.log`, `rouges-run2.log` ;
+`inventaire-appels-846d64e98.txt`, `git-grep-appels-846d64e98.txt` ; `recompte-garde.py`, `recompte-garde-apres.txt` ;
+`actor-api-key-id-option-apres.txt` ; `clippy-1.log` ; `test-fast-ci-c5d67ce42.log` ; `mut/*.log`, `mut/muter.py`,
+`mut/jouer.sh` ; `manuels-make-c5d67ce42.log` ; `gate-ci-e958fb169.log` (+ `.console.log`) ; `bases-a-neuf.sh`.
 
 ### Completion Notes List
 
+- **Commits** : `80bc35072` (rouges, aide `audit_traces.rs`, étape 0 de la fiche), `c5d67ce42` (correctif, garde, conversion
+  des tests — **dernier commit de code**), `e958fb169` (documents et PDF), puis la fiche, le registre, `sprint-status.yaml` et
+  le prompt de revue.
+- **Gates** :
+  - `cargo clippy --workspace --all-targets -- -D warnings` vert et `cargo fmt --check` vert, arbre de `c5d67ce42` avant son
+    commit (`clippy-1.log`).
+  - `scripts/test-fast.sh --ci` sur `kesh_e364` remise à neuf (`bases-a-neuf.sh`), au commit `c5d67ce42` :
+    **5450 exécutés, 5450 passés, 13 ignorés** (`test-fast-ci-c5d67ce42.log`, `Summary [ 338.596s]`). ⚠️ Il précède le commit
+    des documents `e958fb169` ; les tests qui lisent les manuels ou `api-external.md` y sont couverts par `gate-ci`.
+  - `scripts/gate-ci.sh kesh_ci_e364` au commit `e958fb169` : **premier essai rouge** — 2120 passés, 1 échec, 7 ignorés,
+    arrêté au premier binaire en échec (`gate-ci-e958fb169.log`) : `mcp_transport_e2e::abandon_au_delai_le_permis_reste_pris`,
+    au témoin (`mcp_transport_e2e.rs:1876`, « témoin : sonde servie »), avant tout geste — **KF-061, #1126** (ouverte), test
+    de délais du serveur MCP, sans rapport avec la story (aucun fichier MCP touché ; le même test est passé dans
+    `test-fast-ci-c5d67ce42.log`). **Second essai vert** : **5457 passés, 0 échec, 17 ignorés**
+    (`gate-ci-e958fb169-r2.log`, code 0).
+  - Frontend : **non touché**, aucun gate frontend lancé.
+  - **E2E (Playwright) : non lancé** — à la clôture, avec le second `gate-ci` (consignes de l'Epic 35).
+- **Mutations** : onze jouées, onze tuées (Change Log).
+- **Choix** : C-36-4-5 (aide `audit_traces.rs`, `create_key_via_http` déplacée, multiplicité).
+- **Écart** : les listes d'actions relevées diffèrent de la lecture (deux lettrages de contre-passation en caisse) ; écrit au
+  Change Log. Aucune migration.
+
 ### File List
+
+- `crates/kesh-db/src/repositories/invoice_settlements_write.rs`, `supplier_invoices.rs`, `reconciliation_cancel.rs`
+- `crates/kesh-api/src/routes/invoices.rs`, `routes/supplier_invoices.rs`, `routes/reconciliation.rs`
+- `crates/kesh-api/tests/common/audit_traces.rs` (neuf), `common/mod.rs`, `audit_acteur_garde.rs`,
+  `invoice_settlement_response_e2e.rs`, `supplier_settlement_cancel_e2e.rs`, `reconciliation_e2e.rs`,
+  `bank_accounts_closed_e2e.rs`, `letterings_e2e.rs`
+- `crates/kesh-db/tests/` : `credit_notes_repository.rs`, `invoice_amount_due_parity.rs`, `invoice_settlement.rs`,
+  `invoice_write_off.rs`, `lettering_documents.rs`, `lettering_documents_backfill.rs`, `letterings.rs`, `open_items.rs`,
+  `payment_batches_repository.rs`, `reconciliation_cancel.rs`, `supplier_invoices_draft.rs`, `supplier_invoices_repository.rs`,
+  `support/lettering_documents.rs`
+- `crates/kesh-report/tests/aged_receivables.rs`, `vat_report_write_off.rs`
+- `docs/api-external.md`, `docs/manual/fr/admin-manual.tex`, `.pdf`, `docs/manual/fr/user-manual.tex`, `.pdf`
+- `_bmad-output/implementation-artifacts/36-4-acteur-annulation-reglement.md`, `…-review-prompt-p1.md`,
+  `e36-choix-autonomes-36-4.md`, `sprint-status.yaml`
 
 ## Change Log
 
@@ -562,3 +605,87 @@ nommé.
     `common/audit_traces.rs` prescrite (`max_audit_id`, `audit_depuis`, `assert_toutes_a_la_cle`), déclarée dans
     `common/mod.rs` et dans les modules `common` en ligne des deux hôtes.
   - Une passe 2 est requise (deux MEDIUM en P1).
+- 2026-11-14 — **Validation P2 (Opus) : 0 CRITICAL / 0 HIGH / 0 MEDIUM / 5 LOW** (`kesh-gate-logs/e36-4/validation-p2.md`).
+  **Validation terminée** : trend P1 Sonnet 0/0/2/3 → P2 Opus 0/0/0/5 ; la dernière passe ne rend rien au-dessus de LOW. Les
+  cinq LOW traités à l'étape 0 du développement (entrée suivante).
+- 2026-11-14 — **Développement** (Opus 5.5, agent de développement de l'Epic 36, worktree `kesh-36-4`).
+  - **Étape 0.** Lignes relues à `846d64e98` : `invoice_settlements_write.rs:917-924` (`cancel_settlement_in_tx(…, user_id:
+    i64, aujourd_hui)`), `:1021-1024` (`Actor { user_id, api_key_id: None }`), `:1034` (`Acteur::utilisateur(user_id)`),
+    `:1100-1102` (`NewAuditLogEntry::user(user_id, "invoice.settlement_cancelled"`), `:1142-1149` ;
+    `supplier_invoices.rs:2815-2821`, `:2899-2902`, `:2914`, `:2954-2956`, `:3003-3011` ; `reconciliation_cancel.rs:576-584`,
+    `:713-720`, `:731-737`, `:744-747`, `:797-801`, `:831-847` ; routes `invoices.rs:1396-1403`, `supplier_invoices.rs:1022-1029`,
+    `reconciliation.rs:5954-5955`, `:5977-6007` — toutes conformes à la fiche. `inventaire-appels.py` relancé
+    (`kesh-gate-logs/e36-4/inventaire-appels-846d64e98.txt`) et `git grep` (`git-grep-appels-846d64e98.txt`) : **identiques** à
+    ceux de `9d5a142df` (`diff` vide). Garde recomptée (`recompte-garde.py`, versionné sous `kesh-gate-logs/e36-4/`) : 93 entrées,
+    98 sites, ventilation de la fiche.
+  - **LOW de la validation P2** : **V2-1** — `:469` « les quatre tests neufs » → « cinq » ; en-tête « Validation P1 à lancer »
+    → « Validation terminée » ; `:156` `:4016-4022` → `:4016-4023`. **V2-2** — `admin-manual.tex:3212` lu : la première liste
+    « (création, modification, validation, paiement depuis la fiche ou par un lot de paiement, annulation) » ; AC6 étendu, et le
+    `.tex` dit « annulation de la facture » dans les deux listes. **V2-3** — `invoice_settlement_response_e2e.rs:26-27`
+    (`#[path = "common/autour_appel.rs"] mod autour_appel;`), `supplier_settlement_cancel_e2e.rs:24-26` (`mod common { pub mod
+    jour; }`), `common/mod.rs:204` (`pub async fn create_key_via_http(`) : la fonction est **déplacée** dans
+    `common/audit_traces.rs` et réexportée (C-36-4-5) ; l'assertion compare les actions avec leur multiplicité. **V2-4** —
+    `invoice_settlements_write.rs:1016-1026` (délettrage avant la contre-passation et le geste) : l'aide nomme **toutes** les
+    traces fautives ; la colonne « Rouge attendu » le dit. **V2-5** — `:880` `if write_off_exists && settlement_type !=
+    "write_off" {` : AC1 précise que seul le bloqueur lit le type.
+  - **Écart à la fiche (listes d'actions)** : les listes relevées sur les montages réels diffèrent de la lecture —
+    **deux** `lettering.created` quand le règlement est en caisse (`1000`, compte lettrable : la contre-passation lettre une
+    paire par ligne libre d'un compte lettrable, `journal_entries.rs` étape (5) « chaque ligne de l'origine sur un compte
+    lettrable, non lettrée, forme avec son miroir … un groupe `reversal` »), **un seul** pour le solde (contrepartie `4000`) et
+    pour les dé-rapprochements (compte bancaire). Relevé au premier run des rouges (`rouges-run1.log` : les deux témoins de
+    session rougissaient sur la liste, non sur l'acteur), corrigé avant le second (`rouges-run2.log`).
+  - **Écart à la consigne Edit** : aucun. Toutes les modifications de code, de tests, de documents et de la fiche par l'outil
+    Edit (ou Write pour `audit_traces.rs` et le prompt de revue) ; `cargo fmt` seul a reformaté. Les remplacements multiples
+    (`replace_all`) de l'outil Edit ont touché à tort cinq appels de `supplier_invoices::cancel` / `cancel_in_tx` dans
+    `kesh-db/tests/supplier_invoices_repository.rs` (même suite d'arguments) : le compilateur les a refusés (`expected i64,
+    found Acteur`, lignes 2134, 2254, 2313, 2961, 3279), rétablis un par un. L'outil n'a pas manqué ; le motif choisi était
+    trop large.
+  - **Rouges** (`80bc35072`, code de production de la base) : `kesh-gate-logs/e36-4/rouges.log`, `rouges-run2.log` — 37 tests,
+    32 passés, 5 échecs, exactement les cinq tests par clé, chacun parce que les traces du geste sont à `("user", None, 1)`
+    (`reconciliation.cancelled` déjà à la clé en AC3) ; témoins de session (AC4) verts.
+  - **Listes relevées** (actions du geste, multiplicité comprise) : règlement client en caisse (route) — `lettering.removed`,
+    `journal_entry.created`, `journal_entry.reversed`, `lettering.created` ×2, `invoice.settlement_cancelled` ; solde —
+    même liste, `lettering.created` ×1 ; paiement fournisseur en caisse (route) — idem avec
+    `supplier_invoice.settlement_cancelled`, `lettering.created` ×2 ; dé-rapprochement client — `lettering.removed`,
+    `journal_entry.created`, `journal_entry.reversed`, `lettering.created`, `invoice.settlement_cancelled`,
+    `reconciliation.cancelled` ; dé-rapprochement fournisseur — idem avec `supplier_invoice.settlement_cancelled`. Les mêmes
+    listes, à l'utilisateur, aux témoins de session : le nombre et les actions des entrées ne changent pas.
+  - **Correctif** `c5d67ce42` (D1 à D4) ; conversion de 77 appels de tests dans 17 fichiers (`git diff 80bc35072 c5d67ce42
+    --stat -- 'crates/*/tests/*'` : 18 fichiers, la garde comprise).
+  - **Garde recomptée** (`recompte-garde.py` → `kesh-gate-logs/e36-4/recompte-garde-apres.txt`) : **87 entrées, 92 sites** ;
+    `AConvertir` 47/48, `AdminSansCle` 27/29, `PreAuth` 4/4, `Systeme` 2/3, `Definition` 3/3, `Restauration` 1/2, `Mcp` 2/2,
+    `Fixture` 1/1 (somme 87/92) ; `User` 69/74, `ApiKeyNone` 8/8, `Utilisateur` 10/10 (somme 87/92). Angle mort 1 : `git grep
+    -nE 'actor_api_key_id:\s*Option<i64>' -- crates/ ':!crates/*/tests/*'` → **28** lignes (`actor-api-key-id-option-apres.txt`),
+    dont 6 champs `pub` et 1 doc-comment (`entities/audit_log.rs:236`), soit **21** lignes de paramètre ; aucune dans
+    `reconciliation_cancel.rs`, et `routes/reconciliation.rs:5982` n'y est plus. Le doc-comment de la garde dit « 26 fonctions …
+    à la fiche de la 35-8a1, P3 — relevé daté, non recompté » : je ne l'ai pas recompté.
+  - **Mutations** (`kesh-gate-logs/e36-4/mut/`, `muter.py` + `jouer.sh`, sur l'arbre commité `c5d67ce42`, une par prise de
+    verrou, restauration `git restore --worktree` + `touch`, chaque journal finit par « restauré ») — **onze tuées, aucune
+    survivante** :
+    - M1 (geste client par `user(acteur.user_id`) : garde (`chaque_acteur_sans_cle_…_site_par_site`), AC1 ×2, AC3 a ;
+    - M1' (fournisseur) : garde, AC2, AC3 b ;
+    - M2 (délettrage client sans clé) : garde, AC1 ×2, AC3 a ; M2' : garde, AC2, AC3 b ;
+    - M3 (contre-passation fournisseur `Acteur::utilisateur`) : garde, AC2, AC3 b ; M3' (client) : garde, AC1 ×2, AC3 a ;
+    - M4 (route client, clé jetée par `.filter`) : AC1 ×2 seuls ; M5 (route fournisseur) : AC2 seul ;
+    - M6 (`reconciliation_cancel`, appel client) : AC3 a seul ; M7 (appel fournisseur) : AC3 b seul — premier essai
+      « échec d'application » (motif d'avant `cargo fmt`, `M7-essai1-motif-absent.log`), motif corrigé et rejoué ;
+    - M8 (route du dé-rapprochement) : AC3 a, AC3 b, `an_api_key_cancels_and_is_named_in_the_audit`.
+  - **Documents** `e958fb169` : `api-external.md` (`:404`, `:565`, `:653`, `:739`), `admin-manual.tex:3212` (« annulation de la
+    facture » dans les deux listes, « ou leur annulation » retiré, phrase « Depuis la v0.17.8 », dates), `user-manual.tex:4016-4024` ;
+    PDF régénérés (`make -C docs/manual fr` sous `.gate-front.lock`, `kesh-gate-logs/e36-4/manuels-make-c5d67ce42.log` ; la
+    brochure, régénérée sans changement de source, rétablie par `git restore`). Contrôle aplati (E6), `admin-manual.pdf` /
+    `user-manual.pdf` : « contre-passation comprise, au nom du créateur de la clé » `0` / `0` ; « ou leur annulation, une facture
+    fournisseur » `0` / `0` ; « est attribuée à la clé dans toutes ses traces » `1` (admin) ; « porte la marque, contrepassation et
+    délettrage compris » `1` (user — `pdftotext` rend « contrepassation » : le trait d'union tombe à la coupure de ligne).
+    Symptôme greppé (`restent au nom du créateur`, `reste au nom du créateur`, `leur annulation`, `dé-rapprochement compris`,
+    `ne portent que l'utilisateur`, `avant la 0.17.7`, `avant la v0.17.7`, `créateur de la clé`) sur `docs website README.md
+    crates frontend/src` : restent `admin-manual.tex:2549` (relevé daté de la 0.17.7, non touché), `user-manual.tex:4019` (la
+    liste de ce qui reste au créateur, juste), `api-external.md:1103` (« leur annulation » des verrous, sans rapport), les
+    commentaires de code sur le MCP et l'imputabilité (justes), `invoice_format.rs:196` et `invoice-number-format.ts:174` (« avant
+    la 0.17.7 » du format de numérotation, sans rapport), `InvoiceSettlements.svelte:2`, `+page.svelte:158` (« leur annulation »,
+    sans rapport). Les autres `AConvertir, Epic 36` du code (`credit_notes.rs:706`, `invoice_settlements_write.rs:341`, `:705`,
+    `opening_complement.rs:719`, `supplier_invoices.rs:1768`, `:2625`) sont d'autres fonctions, hors périmètre (#431).
+  - **Gates du passage en `review`** : `test-fast --ci` vert à `c5d67ce42` (5450/5450, 13 ignorés) ; `gate-ci` vert à
+    `e958fb169` au second essai (5457 passés, 17 ignorés ; premier essai rouge sur KF-061 #1126, sans rapport) ; frontend non
+    touché ; **E2E non lancé** (à la clôture, avec le second `gate-ci`). Détail au Dev Agent Record.
+  - Statut : `review`. Prompt de la revue P1 : `36-4-acteur-annulation-reglement-review-prompt-p1.md`.
