@@ -129,7 +129,8 @@ registre). Les fiches passent ensuite par `bmad-create-story`, puis la boucle de
 | 11 | **36-11a** à **36-11d** | #431, #1132 | I3 | L'acteur de la requête partout où un handler authentifié trace — la 35-8b (`superseded`) découpée en quatre lots par domaine | C-e360-9 ; findings V1-1 à V1-7 de `kesh-gate-logs/e35-8b-validation-p1.md` à traiter dans les fiches ; `closes #431` au dernier lot |
 | 12 | **36-12** | #944 | I3 | QR-facture : ciseaux, ligne de séparation, place de *Payable by*, largeurs (SIX § 3.7) | C-e350-1 ; touche le rendu de chaque QR-facture : **après** la première facture réelle de Guy |
 | 13 | **36-13** | #235 (P1) | I1 (conformité, art. 957a CO) | Pièces justificatives sur les écritures | **à placer avant la clôture de l'exercice 2026** (Q5) ; migration et stockage probables ; sera découpée à sa fiche, voire portée par un epic à elle |
-| 14 | **36-14** | dette des stories 36-* | selon les issues | **Story de solde** : la dette ouverte par les stories de l'epic, **plafonnée à huit issues** dans au plus cinq modules (C-e360-10) | en fin d'epic, avant le tag ; règle « Tarir la source, puis solder » |
+| 14 | **36-15** | #1161 (CR) | I4 | Parler de « compte analytique » plutôt que de « projet analytique » : vocabulaire visible seulement (écrans, quatre langues, manuels), identifiants internes `project*` gardés | ajoutée le 2026-11-14 sur décision de Guy (C-e360-15) ; **sans migration** ni changement de contrat de l'API ; avant la première clôture d'exercice, pour que les rapports portent le bon terme ; une seule story, faite d'un seul geste |
+| 15 | **36-14** | dette des stories 36-* | selon les issues | **Story de solde** : la dette ouverte par les stories de l'epic, **plafonnée à huit issues** dans au plus cinq modules (C-e360-10) | en fin d'epic, avant le tag ; règle « Tarir la source, puis solder » |
 
 **Lots de l'acteur** (C-e360-9 ; le rayon exact se chiffre à l'étape 0 de chaque fiche, V1-4) :
 

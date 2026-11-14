@@ -267,3 +267,15 @@ Lecture faite au kickoff : l'issue (`gh issue view N --json title,labels,body,co
   trois derniers commits sont des releases). La ligne de la 0.17.8 s'écrira à sa release.
 - **Écartée** : une ligne « en cours » pour l'Epic 36 : le tableau n'en porte pour aucun epic.
 - **Réversible** : oui.
+
+### C-e360-15 — Le CR #1161 (« compte analytique ») entre en phase 2
+
+- **Contexte** : CR ouvert le 2026-11-14 à la demande de Guy (#1161) ; l'orchestrateur a recommandé la phase 2 de l'Epic 36 ;
+  Guy : « ok pour ta recommandation » (même jour).
+- **Retenu** : clé `36-15-compte-analytique`, placée après 36-13 et **avant la story de solde 36-14** (qui reste la dernière
+  avant le tag) ; vocabulaire visible seulement — écrans, messages des quatre langues, manuels, `docs/api-external.md` —, les
+  identifiants internes `project*` (table, colonnes, route, champs de l'API) restent ; aucune migration. Les traductions se
+  fixent à la fiche.
+- **Écartées** : (a) renommer aussi les identifiants internes : migration breaking (`RENAME`) et changement de contrat de
+  l'API, sans gain pour l'utilisateur ; (b) une epic suivante : les rapports de la première clôture porteraient l'ancien terme.
+- **Réversible** : oui ; textes seulement.
