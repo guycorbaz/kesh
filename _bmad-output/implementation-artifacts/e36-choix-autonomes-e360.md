@@ -298,3 +298,16 @@ Lecture faite au kickoff : l'issue (`gh issue view N --json title,labels,body,co
 - **Écartées** : (a) le retour en brouillon : voir le CR ; (b) la répartition d'une facture entre plusieurs comptes analytiques,
   ligne par ligne : non demandée ; (c) une epic suivante : utile avant la première clôture.
 - **Réversible** : oui ; le geste ne touche que `project_id`.
+
+### C-e360-17 — #1171 (prix unitaire d'une facture client) entre dans la 0.17.8, story 36-3b
+
+- **Contexte** : l'inventaire par le symptôme de la fiche 36-3 a trouvé que le prix unitaire d'une ligne de facture client
+  lit « 1.250 » comme 1,25 franc (`InvoiceForm.svelte:511`, `new Big(l.unitPrice)`) ; #1171 ouverte (P2). C'est l'écran de
+  la première facture réelle de Guy, prévue avant la fin de novembre. L'orchestrateur a proposé une petite story à part ;
+  Guy : « oui » (2026-11-14).
+- **Retenu** : clé `36-3b-facture-prix-unitaire-ambigu`, phase 1 (0.17.8), lignée A, voie 2, **après** la 36-3 (dont elle
+  réemploie le prédicat d'ambiguïté et le lecteur, sans les modifier). Périmètre : le prix unitaire de la ligne de facture
+  client ; les autres sites (#1172 à #1177, #1050, #1159) restent hors périmètre. Sans migration ; serveur inchangé.
+- **Écartées** : (a) l'intégrer à la 36-3 : six modules, au-delà de la règle de découpage ; (b) la laisser pour la phase 2 :
+  la première facture réelle de Guy part avant.
+- **Réversible** : oui.
