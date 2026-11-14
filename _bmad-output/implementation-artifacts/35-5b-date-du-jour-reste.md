@@ -1,6 +1,6 @@
 # Story 35-5b : la date du jour est celle de Zurich partout ailleurs dans la production — accueil, échéances, rappels, noms de fichiers, démonstration, et le serveur MCP (#929)
 
-Status: ready-for-dev
+Status: review
 
 *Fiche rédigée le 2026-11-12 par l'agent de kickoff de l'Epic 35 (Opus 5.5), worktree `kesh-e35`, par le workflow
 `bmad-create-story` ; remédiée et **recadrée** après la validation P1 le même jour (worktree `kesh-e355`, Change Log) : la
@@ -234,13 +234,15 @@ fonction **de l'`Echeancier` seul** (sans paramètre de date) ; un test unitaire
 
 ## Tâches
 
-- [ ] Étape 0 : partir de la 35-5a fusionnée ; recompter les sites restants, les tests 35-5b et les appelants des fonctions
+- [x] Étape 0 : partir de la 35-5a fusionnée ; recompter les sites restants, les tests 35-5b et les appelants des fonctions
       à paramètre neuf ; reconfirmer qu'aucune spec E2E n'est à cette story ; Change Log.
-- [ ] Squelette branché au jour UTC de l'instant de l'horloge, tests, rouges consignés ; sites 9–16, 18–28, 16 bis, 22 bis ;
+- [x] Squelette branché au jour UTC de l'instant de l'horloge, tests, rouges consignés ; sites 9–16, 18–28, 16 bis, 22 bis ;
       SQL ; graine ; banc MCP à horloge (D8) ; tests 35-5b.
-- [ ] Commentaires, docs, manuel, CHANGELOG.
+- [x] Commentaires, docs, manuel, CHANGELOG.
 - [ ] Gates : `test-fast.sh --ci` complet à chaque commit de code, `scripts/gate-ci.sh` au dernier, frontend complet, E2E
-      complet au dernier commit de code.
+      complet au dernier commit de code. *(Annoté au passage en `review` : `test-fast` et `gate-ci` au dernier commit de code
+      `e3e8256fa`, verts ; frontend non touché ; **E2E à la clôture**, règle de l'Epic 35. Le squelette `777664745` a eu son gate
+      complet, rouge, corrigé au commit suivant — Change Log.)*
 
 ## Dev Notes
 
@@ -286,13 +288,49 @@ chacune partant de la précédente fusionnée.
 
 ### Agent Model Used
 
+Opus 5.5 (agent de développement, worktree `kesh-e355b`, clé `e355b`, voie 1), 2026-11-13/14.
+
 ### Debug Log References
+
+Journaux sous `/home/gcorbaz/devel/kesh-gate-logs/e355b/` (environnement et commit en tête de chacun) :
+`gate-squelette-test-fast.log` (squelette), `rouges.log` et `rouges-ac7.log`, `verts.log`, `mut/M1.log` à `mut/M7.log` et
+`mut/resume.log`, `gate-test-fast.log`, `nuit.log` (synthèse d'AC8) et `nuit-{S1,N1,B1,B2,B3}.log`, `gate-ci.log` et
+`gate-ci.journal`, `manuel-make.log`, `pdf-aplati.log`. Scripts : `reset-db-e355b.sh`, `test-fast-e355b.sh`, `cibles-e355b.sh`,
+`nuit-e355b.sh`, `mut/mutations-e355b.sh`, `mut/mut-e355b.py`.
 
 ### Completion Notes List
 
 - Fiche rédigée par le workflow `bmad-create-story` (analyse du code de `release/0.17.6`) ; validation à lancer.
+- **Commits** : `777664745` squelette (sites branchés sur l'horloge, au jour UTC de son instant ; signatures ; banc MCP à horloge ;
+  conversions des tests 35-5b ; module de tests de `kesh-db invoices.rs` en date fixe ; garde ramenée à l'exécution) ;
+  `e3e8256fa` implémentation (jour de Zurich, D4, `FicheFacture::aujourd_hui`, tests neufs, garde finale, docs, manuel `.tex`,
+  CHANGELOG, registre) ; puis le commit de compte rendu (fiche, PDF, `sprint-status.yaml`, prompt de revue). **Aucune migration**
+  (`git diff --stat de2626a85 e3e8256fa -- crates/kesh-db/migrations` vide).
+- **Tests** : 11 tests neufs, 0 retiré (`git diff de2626a85 e3e8256fa -- crates`, attributs `#[sqlx::test]`/`#[test]`/`#[tokio::test]`
+  ajoutés : 11, retirés : 0) — `test-fast` passe de 5358 (35-5a, `527f57839`) à 5369.
+- **Choix** : `e35-choix-autonomes-e355b.md`, C-e355b-1 à -4.
+- **Gates du passage en `review`** au dernier commit de code `e3e8256fa` : `test-fast --ci` **5369/5369, 13 ignorés**
+  (`gate-test-fast.log`) ; `gate-ci.sh kesh_ci_e355b` **5376 passés, 0 échoué, 17 ignorés** (`gate-ci.log`). Frontend **non
+  touché** (`git diff --stat de2626a85 e3e8256fa -- frontend` vide) : non lancé. **E2E : non lancé**, à la clôture.
+- Voir le Change Log (entrée du développement) pour l'étape 0, les rouges, l'inventaire par exécution et les mutations.
 
 ### File List
+
+**Production** : `crates/kesh-db/src/repositories/{invoices,dunning_eligibility}.rs` ; `crates/kesh-seed/src/{lib,pieges}.rs` ;
+`crates/kesh-api/src/services/{factures,postes_ouverts,rapports}.rs` ; `crates/kesh-api/src/routes/{admin,audit_log,bank_accounts,
+dunning_reminders,exports,invoice_email,invoice_pdf,invoices,onboarding}.rs` ; `crates/kesh-api/src/mcp/outils/factures.rs` ;
+`crates/kesh-api/src/auth/bootstrap.rs` (`mod tests`).
+
+**Tests** : neufs ou étendus — `crates/kesh-api/tests/jour_suisse_nuit_e2e.rs` (AC1 à AC4), `mcp_outils_e2e.rs` (AC5),
+`fiscal_years_e2e.rs` (AC6), `crates/kesh-db/tests/dunning_eligibility.rs` (AC3, dépôt), `routes/invoices.rs` (`mod tests`, M7) ;
+banc — `tests/common/{mcp,mcp_pieges}.rs` ; conversions — `bank_accounts_closed_e2e`, `dunning_reminders_e2e`,
+`homepage_summary_e2e`, `onboarding_audit_e2e`, `onboarding_e2e`, `open_items_e2e`, `services_motif`, `services_rollout` ;
+appelants — `kesh-db/tests/{invoice_amount_due_parity,invoice_ttc_parity,kf005_fulltext_index_e2e}.rs` ; garde —
+`date_du_jour_garde.rs`.
+
+**Docs** : `docs/api-external.md` (`closedOn`, synthèse de l'accueil, `asOf`), `docs/testing.md:119`,
+`docs/manual/fr/user-manual.{tex,pdf}` (note `sec:date-du-jour`, export CSV du journal d'audit), `CHANGELOG.md` (point #929
+complété). Registre `e35-choix-autonomes-e355b.md`. Aucune clé i18n, aucune spec E2E, aucun fichier frontend.
 
 ## Change Log
 
@@ -362,3 +400,88 @@ chacune partant de la précédente fusionnée.
   **Validation terminée.** Série : P1 1 HIGH + 7 MEDIUM → P2 6 MEDIUM → P3 2 MEDIUM → P4 ciblée 0 au-dessus de LOW. Modèles :
   P1 (complète), P2 Opus, P3 Sonnet, P4 ciblée. Les remédiations n'ont touché que la fiche, le registre, l'epic et le
   `sprint-status.yaml`. Aucune migration. Statut `ready-for-dev`.
+- 2026-11-13/14 — **Développement** (Opus 5.5, worktree `kesh-e355b`, base `de2626a85` = 35-5a close, voie 1). Journaux :
+  `/home/gcorbaz/devel/kesh-gate-logs/e355b/`.
+  - **Étape 0.** Sites recomptés sur `de2626a85` (`git grep -nE 'date_naive\(|naive_utc\(\)\s*\.date\(|UTC_DATE|CURDATE|Local::|
+    Utc::now\(\)\.(year|month|day|format)\(' -- 'crates/*/src/*'`, commentaires écartés) : les 19 sites de la fiche, aux lignes de
+    `release/0.17.6` sauf `routes/invoices.rs:1459` → `:1463` (CSV), et les deux « jours d'un instant » (`invoices.rs:1525`,
+    `dunning_eligibility.rs:128`). Les trois sites que la synthèse de la 35-5a laisse au jour UTC (seed `kesh-seed/src/lib.rs:279`,
+    `closedOn` `bank_accounts.rs:1802`, balance âgée `rapports.rs:732`, borne du projet cumulé `rapports.rs:780`) sont bien les sites
+    26, 11, 19 et 20 de cette fiche : aucun site hors périmètre. Appelants à paramètre neuf : donnés par le compilateur (liste au
+    File List). **Specs E2E reconfirmées** (relevé `/usr/bin/grep -rln 'isOverdue|overdue|asOf|…' frontend/tests/e2e`, lignes lues) :
+    `invoices_echeancier.spec.ts:110-121` (échéances à −1 et +30 jours), `reports.spec.ts:190`, `:260-262` (−40 jours),
+    `dunning-roundtrip`/`reminders`/`homepage-reminders` (`overdueDate()`, marges ≥ 1 jour), `open-items.spec.ts:39`
+    (`toLocaleDateString('sv-SE', { timeZone: 'Europe/Zurich' })`), `homepage-charts.spec.ts:52` (`todayInZurich`),
+    `bank-accounts-closed.spec.ts:144` (`closedOn` envoyé par l'écran, non le défaut) : **aucune** n'asserte une date d'un site de la
+    story ; liste vide, transmise à la 35-5c. Manuels DE/EN/IT : `README.md` seuls (inchangé).
+  - **Squelette** (`777664745`) : routes sur `state.horloge.maintenant().date_naive()`, services sur
+    `lecture.horloge().maintenant().date_naive()` ; `kesh-db` et `kesh-seed` reçoivent la date ; le SQL la lie (`push_bind`, D2 —
+    les deux liens du `SELECT` de `due_dates_summary` avant ceux du `WHERE`, les fragments `INVOICE_*_SQL` et
+    `amount_due_derived_joins()` sans `?`, relevé `grep`) ; `Echeancier::aujourd_hui`, `ListeFactures` (D1) ; réponse de l'échéancier
+    en fonction de l'`Echeancier` seul (`reponse_echeancier`, M7) ; banc MCP `routeur_avec_horloge` / `banc_avec_horloge` (D8) ;
+    module de tests de `kesh-db invoices.rs` en **date fixe** `2026-06-15` dès le squelette (D9, C-e355b-1 : la garde y tombe à 0,
+    non à 7 comme la fiche le prévoyait) ; tests 35-5b convertis à `aujourd_hui_test()` ; comptes de la garde ramenés à
+    l'exécution. **Gate complet du squelette** (`gate-squelette-test-fast.log`) : 5357/5359, **2 rouges** — (1)
+    `services_motif::ac13_ix_les_seuls_usages_de_state_d_un_handler_migre` (`routes/invoices.rs : get_invoice — 3 occurrences de
+    state, 2 sous une forme permise`) : la garde de la 32-4b refuse `state.horloge` dans un handler migré ; **défaut du squelette**,
+    corrigé au commit suivant par `FicheFacture::aujourd_hui` (C-e355b-3, extension de D1 à la fiche) ; (2)
+    `kesh-db::dunning_eligibility::le_jour_du_dernier_rappel_est_celui_de_zurich`, test neuf commité avec le squelette : son rouge
+    est **le rouge d'AC3 côté dépôt** (`lr.date()`), voulu. Un intermittent hors story, `mcp_transport_e2e::
+    abandon_au_delai_le_permis_reste_pris` (#1126), rouge au premier essai, vert à la reprise. **Écart** : le squelette a été commité
+    avec ces deux rouges ; la fiche voulait un squelette vert, puis les rouges des tests neufs.
+  - **Rouges** (`rouges.log`, arbre = squelette + `FicheFacture::aujourd_hui` + tests neufs, non commité ; en-tête) : **10 rouges**
+    sur les 11 tests neufs, chacun pour la bonne raison, motif lu — AC1 (`asOf` 2025-12-31, exercice 2025) ; AC2 (fiche, liste,
+    filtre, résumé, statut CSV et nom du CSV à la veille : `false`, `None`, 0, `Impayée`, `echeancier-2026-03-10.csv`) ; AC2
+    paiement (`10.03.2026`) ; AC3 HTTP (`9 jours de retard` aux deux instants ; l'assertion d'éligibilité, qui suit, n'est pas
+    atteinte — l'éligibilité est prouvée rouge au dépôt et par M3) ; AC3 dépôt (éligible le 17) ; AC4 noms (`…-2025-12-31…` ×3) ;
+    AC4 défauts (`closedOn`, deux `asOf` au 31 décembre, total du projet 0) ; AC5 ×2 (`au` 2025-12-31 ×2 ; `echuesNombre` 0 et
+    facture absente à 00 h 30) ; AC6 (`Exercice 2025`). Le 11e, M7 (test unitaire), est vert sur le squelette par construction : la
+    fonction de l'`Echeancier` seul y existe déjà (sa preuve est la mutation M7). **AC7** (`rouges-ac7.log`) : l'implémentation
+    sous la liste du squelette rougit sur les **seules entrées 35-5b**, toutes à 0 (et `admin.rs` 2 → 1).
+  - **Implémentation** (`e3e8256fa`) : `aujourd_hui()` partout (routes, services) ; `jour_suisse(lr.and_utc())` et
+    `jour_suisse(d.and_utc())` (D4) ; garde : plus aucune exemption de production hors `kesh-core/src/horloge.rs` (1) et `admin.rs`
+    (1, `:724`) — 31 → 10 entrées (recompté sur `de2626a85` et `HEAD` : 21 retirées, 11 de production et 10 de tests ;
+    `admin.rs` 2 → 1 ; restent les deux permanentes et huit entrées de tests 35-5c, dont le module de tests de `journal_entries.rs`). **Verts** (`verts.log`) : 28/28 (les 11 neufs, les tests
+    de nuit de la 35-5a, la garde et ses sondes).
+  - **Inventaire par exécution (AC8)** — synthèse et tri ligne par ligne : `nuit.log`. **Sonde positive** (`nuit-S1.log`) : l'arbre
+    du squelette sous `KESH_TEST_INSTANT=2026-11-13T23:30:00Z` rend **12 rouges** sur les binaires 35-5b, dont 10 mêlent un site au
+    jour UTC 13 et un montage au jour suisse 14 (`clore_un_compte`, deux tests de l'accueil, quatre du MCP aux postes ouverts, deux
+    des postes ouverts, la trace de la balance âgée) : la méthode voit. Sur `e3e8256fa` : **nuit réelle reproduite, tous les binaires,
+    5369/5369** (`nuit-N1.log`) ; et `gate-test-fast.log` a tourné **réellement de nuit** (00 h 35 le 14 à Zurich), 5369/5369. Les deux
+    instants de la fiche sur les 16 binaires 35-5b (`nuit-B1.log`, `nuit-B2.log`) : 308/309, un rouge,
+    `services_rollout::ac11_a_les_services_lisent_en_lecture_seule` — montage à date fixe `2026-06-01` (`:206`) lu à l'`asOf` par
+    défaut ; la sonde **de jour** au 11 mars 2026 (`nuit-B3.log`) rend le même : artefact de l'instant antérieur aux dates fixes de
+    2026 (classe de #1125, fichier 35-5c), non un mélange de jours. **Écart à la lettre d'AC8** (« verts sous les deux instants ») :
+    ce seul rouge, déclaré. Angles morts : § 3 de `nuit.log`.
+  - **Mutations** (`mut/`, restauration `git checkout --` puis `touch`, au commit `e3e8256fa`) : M1 (`exports.rs`, nom de l'export sur
+    `Utc::now()`) 6 rouges — la garde et `ac4_les_noms_de_fichiers_la_nuit_du_nouvel_an` ; M2 (`UTC_DATE()` rétabli dans
+    `push_where_clauses`) 7 — garde, `ac2_une_facture_echue_la_nuit`, `ac5_l_echeancier_du_mcp_juge_au_jour_suisse` ; M3 (`lr.date()`)
+    2 — `le_jour_du_dernier_rappel_est_celui_de_zurich`, `ac3_les_rappels_comptent_en_jours_suisses` ; M4 (`synthese_accueil` sur
+    `Utc::now()`) 6 — garde, `ac1_l_accueil_la_nuit_du_nouvel_an` ; M5 (`seed_demo` au jour UTC de l'instant, à la route) 6 — garde,
+    `demo_a_minuit_le_1er_janvier_cree_l_exercice_suisse` ; M6 (`d.date()` du CSV) 1 — `ac2_la_date_de_paiement_du_csv_est_le_jour_suisse` ;
+    M7 (réponse de l'échéancier sur `Utc::now()`) 6 — garde, `la_reponse_de_l_echeancier_juge_au_jour_de_l_echeancier`. **Toutes
+    tuées**, chacune par un test nommé de la story.
+  - **Docs** (D7, AC9) : `api-external.md` `:252` (`closedOn`), `:292` (accueil), `:443` (`asOf`) disent Zurich ; commentaires
+    réécrits (`dunning_eligibility.rs:9`, `invoices.rs` `:378`, `:396`, `invoice_email.rs:206`, `postes_ouverts.rs:44`, `:55-56`,
+    `rapports.rs:724-725`, `:862-866`, `routes/invoices.rs:1029-1031`, `bank_accounts.rs:228`, `:1757-1759`, `exports.rs:7`, `:57`,
+    `:118`, `kesh-seed/src/lib.rs:278`). `/usr/bin/grep -n 'UTC\|Utc::now'` sur chaque fichier de production touché : ne restent que
+    des **instants** (`admin.rs:724` horodatage, `audit_log.rs:89`, `:279`, `:421` lignes et filtres, `dunning_reminders.rs:267`,
+    `invoice_email.rs:662` `sent_at`, `invoices.rs:109` `paidAt`, `:2587` `UTC_TIMESTAMP(6)`, `bootstrap.rs:806-809`, les
+    `set_paid_at_for_test` du module de tests) et les commentaires qui disent l'instant UTC (`invoices.rs:1565`,
+    `dunning_eligibility.rs:11`, `exports.rs:59`). Manuel : la note `sec:date-du-jour` énumère les sites convertis, dit que les heures
+    restent en UTC et nomme la limite #1053 ; l'export CSV du journal d'audit dit son nom à la date de Zurich. PDF régénéré (`make
+    user`, 3 passes, `manuel-make.log`), aplati (`pdf-aplati.log`) : « temps universel » 0, « restent pour l'instant au jour UTC » 0,
+    les quatre phrases neuves 1 chacune. CHANGELOG : le point #929 de la 35-5a **complété** (titre et corps), sans second point.
+    `docs/testing.md:119` mis à jour. Aucune clé i18n.
+  - **Limite connue** (fiche, *Hors périmètre*) : l'éligibilité aux rappels compte depuis le jour **suisse** du dernier rappel quand la
+    fenêtre de 30 jours de la réconciliation (`reconciliation.rs:237`, `DATE(rmd.last_sent_at)`) garde son jour **UTC**, jusqu'à
+    #1053 — écrite au manuel et au CHANGELOG.
+  - **Écarts** : le squelette commité rouge (ci-dessus) ; C-e355b-3 (la fiche d'une facture prend la date du service, non nommée par
+    D1) ; AC8 (un rouge d'artefact sous les instants de la fiche). Consigne Edit : code et tests par l'outil Edit seulement (dont
+    `replace_all` pour les remplacements identiques d'un fichier) ; `cargo fmt` pour les retours de ligne ; scripts Python seulement
+    pour les mutations (`mut/mut-e355b.py`) ; `sed -i` employé une fois sur ce script hors dépôt (adaptation du nom de la story) ;
+    `git checkout 777664745 -- crates` puis `git checkout HEAD -- crates` pour la sonde positive, tout le code étant commité avant.
+  - **Gates du passage en `review`**, au dernier commit de code `e3e8256fa`, bases remises à neuf : `scripts/test-fast.sh --ci`
+    **5369 exécutés, 5369 passés, 13 ignorés** (`gate-test-fast.log`) ; `scripts/gate-ci.sh kesh_ci_e355b` **5376 passés, 0
+    échoué, 17 ignorés** (`gate-ci.log`, `gate-ci.journal`). Frontend non touché, non lancé. **E2E : non lancé**, à la clôture.
+    Statut : `review`.
