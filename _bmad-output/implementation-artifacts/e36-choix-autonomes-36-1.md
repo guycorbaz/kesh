@@ -61,9 +61,25 @@ Ces choix ne sont pas couverts par C-e360 ; ils reprennent l'étape 0 de la 36-1
   de `value` (bouton ×, valeur du parent, comptes arrivés, liste rétrécie) — `$derived` réassignable recommandé ; la flèche
   haut ouvre la liste sur le dernier élément depuis `-1` (patron du combobox ARIA ; écartée : ouvrir sans désigner, qui
   obligerait à une seconde touche) ; le survol passe à `bg-muted` ; table d'*Entrée* close par construction, tout brouillon
-  empêchant l'envoi.)*
+  empêchant l'envoi.)* *(Annoté à la remédiation P3 : `bg-muted` n'existe pas dans le thème — voir C-36-1-6 ; le recalcul
+  dépend du **texte** du brouillon, non de son seul blanc ; *Entrée* maintenue (`e.repeat`) empêchée et ignorée.)*
 - **Écartées** : laisser #1165 à une story ultérieure (même gestionnaire, mêmes tests et E2E à rouvrir) ; un booléen
   `designated` à côté d'un index resté à `0` (deux états à garder d'accord, surbrillance affichée qui ne vaut pas choix).
 - **Effet** : la sélection au clavier des sept consommateurs change (première *flèche bas* = premier compte ; *Entrée* sans
   désignation ne choisit rien) ; couverture en D3.
 - **Réversible** : oui, une ligne d'état et ses tests.
+
+### C-36-1-6 — Rendre la désignation visible avec des jetons existants, sans définir `--color-accent`
+
+- **Contexte** : validation P3, V3-1 (HIGH) — `frontend/src/app.css` (`@theme`, `:10-52`) ne définit ni `--color-accent` ni
+  `--color-muted` ; `bg-accent` et `hover:bg-accent` (`AccountAutocomplete.svelte:396-397`) ne produisent rien : la
+  désignation, critère de ce qu'*Entrée* choisit, est invisible.
+- **Décision de l'orchestrateur** (2026-11-14) : la 36-1 ne définit pas `--color-accent` (menus et `select` de toute
+  l'application, hors périmètre : #1169) ; le composant emploie des jetons définis, choisis par la fiche.
+- **Retenu** : désignation `bg-primary/10 ring-1 ring-inset ring-primary` (`--color-primary`, `app.css:12` ; `/10` déjà
+  employé, `accounts/+page.svelte:504`) ; survol `hover:bg-border/60` (`--color-border`, `app.css:33`), gris sans filet.
+  Contraste du texte sur la désignation mesuré au développement (`tests/e2e/helpers/contrast.ts`).
+- **Écartées** : `hover:bg-surface-alt` pour le survol (`#f8fafc` sur le fond blanc de la liste : à peine visible) ; définir
+  `--color-accent`/`--color-muted` (portée de toute l'application) ; laisser la désignation invisible avec une issue (le
+  principe (ii) de D1 reposerait sur un état que l'écran ne montre pas).
+- **Réversible** : oui, deux classes.

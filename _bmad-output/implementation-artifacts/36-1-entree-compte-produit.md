@@ -7,8 +7,9 @@ Status: ready-for-dev
 aucun changement serveur ni d'API. **Une clé i18n neuve** (`common-account-no-match`, quatre locales). Code lu à la tête du
 worktree, **`9d5a142df`** (kickoff de l'Epic 36, sur `main` `42d5f368`). Étape 0 et choix qui font foi : registre
 `e36-choix-autonomes-e360.md` (§ *Étape 0* — 36-1 ; C-e360-1, -2, -3, -4, -11) ; choix propres à la story :
-`e36-choix-autonomes-36-1.md` (C-36-1-1 à C-36-1-5). Voie de développement : **voie 2**. Validation P1 (Sonnet) remédiée ;
-**#1165 intégrée** à la story par décision de l'orchestrateur (C-36-1-5).*
+`e36-choix-autonomes-36-1.md` (C-36-1-1 à C-36-1-6). Voie de développement : **voie 2**. Validations P1 (Sonnet), P2 (Opus)
+et P3 (Sonnet) remédiées ; passe suivante à venir. **#1165 intégrée** à la story par décision de l'orchestrateur
+(C-36-1-5).*
 
 ## Story
 
@@ -166,35 +167,54 @@ l'`defaultPrevented` de l'événement ; la soumission réelle ne se voit qu'en E
   | *Échap* (`:270-271`) | inchangé | `-1` |
   | choix (`:249-253`) | inchangé | `-1` |
   | `blur` (`:283-284`) | inchangé | `-1` |
-  | **recalcul** : la suite des identifiants de `filtered` change, ou `value` change — frappe (`:236-240`), bouton × (`:370-371`), valeur posée par le parent (`$effect` `:186-191`), arrivée des comptes après chargement, liste qui rétrécit sous l'index | `0` à la frappe seulement ; sinon inchangé | `0` si le brouillon est **non blanc** et `filtered` non vide (désignation par la saisie), `-1` sinon (V2-2, V2-1 b) |
+  | **recalcul** : le **texte** du brouillon change (toute frappe, `:236-240`, même si la liste filtrée reste la même — V3-2), la suite des identifiants de `filtered` change, ou `value` change — bouton × (`:370-371`), valeur posée par le parent (`$effect` `:186-191`), arrivée des comptes après chargement, liste qui rétrécit sous l'index | `0` à la frappe seulement ; sinon inchangé | `0` si le brouillon est **non blanc** et `filtered` non vide (désignation par la saisie), `-1` sinon (V2-2, V2-1 b) |
   | *flèche bas* (`:258-261`) | ouvre, `+1` borné | ouvre ; depuis `-1` → `0`, puis `+1` borné ; `filtered` vide → `-1` |
   | *flèche haut* (`:262-264`) | `-1` borné à `0`, **n'ouvre pas** | **ouvre la liste** ; depuis `-1` → le **dernier** élément (`filtered.length - 1`, patron du combobox ARIA), sinon `-1` borné à `0` ; `filtered` vide → `-1` (V2-1 a) |
 
   **Mise en œuvre recommandée du recalcul** : `highlightIndex` en `$derived` **réassignable** (Svelte ≥ 5.25 ; le dépôt est en
-  `^5.54.0`, `frontend/package.json:35`), dérivé de la **chaîne** des identifiants de `filtered`, de `value` et du caractère
-  blanc du brouillon, et réassigné par les flèches, le focus, *Échap*, le choix et le `blur`. Une chaîne et non le tableau :
-  un nouveau tableau aux mêmes comptes (rendu du parent) ne doit pas effacer une désignation par les flèches. **Repli
+  `^5.54.0`, `frontend/package.json:35`), dérivé du **texte** du brouillon (`draft`, et non son seul caractère blanc), de la
+  **chaîne** des identifiants de `filtered` (un `$derived` intermédiaire) et de `value`, et réassigné par les flèches, le
+  focus, *Échap*, le choix et le `blur`. Le texte et non le seul blanc (V3-2) : sinon `30`, *Échap*, `0` laisse la chaîne
+  (`3000,3001`), la valeur et le blanc inchangés, l'index reste `-1` sur une liste rouverte par la frappe, et une saisie non
+  blanche ne désigne plus le premier compte — l'invariant tomberait. Une chaîne et non le tableau : un nouveau tableau aux
+  mêmes comptes (rendu du parent) ne doit pas effacer une désignation par les flèches. **Repli
   accepté** : un `$effect` sur les mêmes dépendances, si le `$derived` réassignable ne se prête pas au cas — à dire au Change
   Log. **Options écartées** : remettre l'index à `-1` dans chaque gestionnaire (la liste rétrécie et l'arrivée des comptes
   n'ont pas de gestionnaire : c'est par elles que V2-1 b passait) ; un booléen `designated` à côté d'un index resté à `0`
   (deux états à garder d'accord, surbrillance affichée qui ne vaut pas choix).
 
-  Aucune ligne n'est mise en évidence à `-1` (`class:bg-accent` et `aria-selected` suivent l'index, `:397`, `:403`). **Survol**
-  (V2-3) : `:396` `hover:bg-accent` donne aujourd'hui au survol la couleur de la désignation, alors qu'*Entrée* ne choisit pas
-  l'option survolée ; il passe à `hover:bg-muted` pour que la couleur `bg-accent` ne signifie que la désignation au clavier.
+  **Rendu de la désignation et du survol** (V2-3, V3-1 ; C-36-1-6). Aujourd'hui, `:396`
+  `class="cursor-pointer px-3 py-2 text-sm hover:bg-accent"` et `:397` `class:bg-accent={i === highlightIndex}` ne produisent
+  **rien** : le thème (`frontend/src/app.css`, bloc `@theme` `:10-52`) ne définit ni `--color-accent` ni `--color-muted`
+  (`/usr/bin/grep -nE "muted|accent" frontend/src/app.css` ne rend que `32:  --color-text-muted: #64748b;`), et Tailwind 4 ne
+  génère aucune utilité pour un jeton inconnu. La désignation n'est donc **visible nulle part** aujourd'hui (seul
+  `aria-selected` change). La 36-1 ne définit pas `--color-accent` (il changerait les menus et les `select` de toute
+  l'application : #1169) ; le composant emploie des **jetons définis** :
+  - **désignation au clavier** : `bg-primary/10 ring-1 ring-inset ring-primary` — `--color-primary` (`app.css:12`
+    `--color-primary: #1e40af;`) ; l'opacité `/10` sur un jeton défini est générée par Tailwind 4, et le dépôt l'emploie déjà
+    (`routes/(app)/accounts/+page.svelte:504` `bg-primary/10`) ; fond bleu pâle et filet bleu ;
+  - **survol** : `hover:bg-border/60` — `--color-border` (`app.css:33` `--color-border: #e2e8f0;`), gris, sans filet ; distinct
+    de la désignation par la teinte et par l'absence d'anneau.
+
+  Le texte de l'option garde sa couleur (`--color-popover-foreground`, `app.css:35`, sur `bg-popover` de la liste, `:391`) ;
+  le contraste du texte sur le fond désigné se calcule au développement par le helper `frontend/tests/e2e/helpers/contrast.ts`
+  (attendu ≥ 4,5:1, à écrire au Change Log). Aucune ligne n'est mise en évidence à `-1` (la classe de désignation et
+  `aria-selected` suivent l'index, `:397`, `:403`) ; le survol ne vaut pas choix, et *Entrée* ne choisit pas l'option
+  survolée.
   La condition de choix de `:266` (`open && filtered[highlightIndex]`) reste la même : par l'invariant, elle ne vaut que pour
   un compte désigné.
 
   **Règle de `handleKeydown` sur *Entrée*** — **close par construction** (V2-1) : E0, E1, E2 sont essayées dans cet ordre ;
   ce qui reste a **toujours** un brouillon (`draft !== null`), et E3, E4, E5 en sont la **partition** sur deux seuls critères,
   brouillon blanc ou non, `filtered` vide ou non — **aucune condition sur `open` ni sur l'index**. Le code s'écrit donc
-  `if (E0) return; if (E1) {…} else if (draft === null) {/* E2 */} else { e.preventDefault(); if (blanc) … else if (vide) … else … }`,
+  `if (E0) return; if (e.repeat) { e.preventDefault(); return; } if (E1) {…} else if (draft === null) {/* E2 */} else { e.preventDefault(); if (blanc) … else if (vide) … else … }`,
   et aucun état ne laisse partir l'événement avec un brouillon affiché.
 
   | # | État | Règle | Chemin | AC | Mutation |
   |---|---|---|---|---|---|
   | E0 | `loadError`, ou composition IME en cours (`e.isComposing`, V1-7) | inchangé : retour sans rien faire, l'événement suit son cours | — | AC1 i, AC1 j | M8 |
-  | E1 | sinon, `open && filtered[highlightIndex]` (un compte désigné, par l'invariant) — saisie qui correspond à **un ou plusieurs** comptes, ou flèches | `preventDefault`, l'élément est choisi, le champ montre son libellé, rien ne part | — | AC1 c, k, p, q | M11, M13 |
+  | E0-bis | sinon, **touche maintenue** (`e.repeat`, V3-5) | `preventDefault`, rien d'autre : une *Entrée* maintenue ne fait qu'un geste — la première pression résout, choisit ou envoie ; les répétitions n'envoient pas un formulaire dont l'utilisateur n'a pas vu l'état | — | AC1 u | M19 |
+  | E1 | sinon, `open && filtered[highlightIndex]` (un compte désigné, par l'invariant) — saisie qui correspond à **un ou plusieurs** comptes, ou flèches | `preventDefault`, l'élément est choisi, le champ montre son libellé, rien ne part | — | AC1 c, k, p, q, s, t | M11, M13, M16, M17 |
   | E2 | sinon, **aucun brouillon** (`draft === null`) — non touché, valeur résolue **ou** nulle, ou après le bouton × | rien n'est choisi ; l'événement suit son cours : le formulaire part, le champ montrant `displayLabel` (le compte, ou vide = « défaut société » et `null` envoyé) | C4 | AC1 g, l, r | M2, M9, M15 |
   | — | sinon (**un brouillon est affiché**) | `preventDefault` **toujours**, puis E3, E4 ou E5 | — | AC1 q (M14) | M1, M14 |
   | E3 | … brouillon non blanc, `filtered` non vide | la liste **s'ouvre** ou reste ouverte (`open = true`, index `0`), rien n'est choisi | C2 | AC1 d | M4 |
@@ -230,11 +250,14 @@ l'`defaultPrevented` de l'événement ; la soumission réelle ne se voit qu'en E
   `aria-live` inséré en même temps que son texte n'est pas annoncé de façon fiable ; le lien `aria-describedby` vise cette
   même région, et n'est posé que lorsqu'elle a un contenu. AC1 a vérifie `role="status"` et le lien.
   Il s'affiche à l'état E4 de D1 et **disparaît** à la frappe suivante, au choix d'un compte, au bouton d'effacement et au `blur`.
-  **Un seul point d'effacement** (V2-6) : E4 retient le brouillon refusé (`noMatchDraft = draft`), et le message est **dérivé**
-  — visible tant que `draft === noMatchDraft` (non nul). Les quatre déclencheurs changent tous `draft` (frappe `:238`, choix
-  `:250`, bouton × `:370`, `blur` via `commitDraft()`) : aucun n'a à effacer le message lui-même, et une seule mutation (M6,
-  le message lu sur un drapeau gardé au lieu de la comparaison) les fait tous rougir. Conséquence assumée : retaper
-  exactement le texte refusé fait reparaître le message, qui reste vrai.
+  **Effacement** (V2-6, V3-3) : E4 retient le brouillon refusé (`noMatchDraft = draft`), et le message est **dérivé** —
+  visible tant que `noMatchDraft !== null && draft === noMatchDraft && filtered.length === 0`. Les quatre déclencheurs
+  changent tous `draft` (frappe `:238`, choix `:250`, bouton × `:370`, `blur` via `commitDraft()`), et une seule mutation (M6,
+  le message lu sur un drapeau gardé au lieu de la comparaison) les fait tous rougir. En outre, `noMatchDraft` est **remis à
+  `null`** à la frappe (`handleInput`) et au `blur` : retaper le texte refusé ne fait pas reparaître le message sans *Entrée*
+  (M18 ; la remise au `blur` est redondante avec celle de la frappe pour tout geste qui retape le texte, dite équivalente). Au
+  **rechargement des comptes**, la condition `filtered.length === 0` de la dérivation efface le message dès qu'un compte
+  correspond — même effet qu'une remise à `null`, sans `$effect` de plus (AC1 h, variante « comptes rechargés »).
   Valable pour les sept consommateurs : il ne nomme ni produit ni facture. **Option écartée** : jeter le brouillon sans message
   (le champ réafficherait l'ancien compte) — vrai, mais l'utilisateur voit son texte remplacé sans savoir pourquoi, et doit le
   retaper pour corriger une faute de frappe. **Réversible** : oui.
@@ -245,7 +268,8 @@ l'`defaultPrevented` de l'événement ; la soumission réelle ne se voit qu'en E
   des sept** : un champ ouvert sans saisie ne montre plus de surbrillance, et *Entrée* n'y choisit plus le premier compte
   (E2, E5) ; la première *flèche bas* désigne désormais le **premier** compte (aujourd'hui le deuxième, l'index partant de
   `0`) ; la *flèche haut* ouvre la liste sur le dernier compte ; le × et une valeur posée par le parent annulent la
-  désignation ; le survol prend `bg-muted` ; le reste — frappe puis *Entrée*, flèches dans une liste ouverte, clic — est
+  désignation ; la désignation devient **visible** (fond `primary/10` et filet `primary`) et le survol prend un gris
+  distinct (`border/60`) ; le reste — frappe puis *Entrée*, flèches dans une liste ouverte, clic — est
   inchangé (validation P2). Couverture : le composant porte la
   règle et ses tests (AC1, toutes les lignes de la table de D1) ; les consommateurs ne font que passer `accounts`, `value`,
   `onSelect` et leurs options, sans logique clavier propre au champ (lu : aucun `onkeydown` sur `<AccountAutocomplete`, sortie
@@ -271,7 +295,7 @@ l'`defaultPrevented` de l'événement ; la soumission réelle ne se voit qu'en E
    l'événement est constaté par la valeur rendue de `fireEvent.keyDown`, `false` quand `preventDefault` a été appelé ; chaque
    ligne de la table de D1 a au moins un cas). **Montage** (V2-5) : les tests existants passent `onSelect: vi.fn()` sans jamais
    réinjecter la valeur (`AccountAutocomplete.test.ts:171-203`) ; les cas qui constatent l'affichage **après** un choix ou un
-   effacement (c, e, k, n, p, q, r) réinjectent la valeur comme un parent : `onSelect` espion qui appelle
+   effacement (c, e, k, n, p, q, r, t, u) réinjectent la valeur comme un parent : `onSelect` espion qui appelle
    `rerender({ value: id })` (ou un composant hôte). Sans cela, l'affichage retomberait sur la valeur de départ :
    - a. `allowClear`, valeur `1` (`3000 — Ventes`) : taper `zzz`, *Entrée* → événement empêché ; `onSelect` jamais appelé ; le
      champ montre `zzz` ; le message « Aucun compte ne correspond » est affiché dans un élément `role="status"` dont l'`id`
@@ -290,7 +314,9 @@ l'`defaultPrevented` de l'événement ; la soumission réelle ne se voit qu'en E
      appelé (le formulaire peut partir : le champ montre le compte) ;
    - h. après le cas a, quatre variantes, une par déclencheur (V2-6) : une frappe (`zz`) ; un `blur` ; un clic sur le bouton ×
      (valeur réinjectée) ; un choix (taper `30`, clic sur l'option `3000`) → le message disparaît chaque fois, et la région
-     `role="status"` reste présente, vide ;
+     `role="status"` reste présente, vide ; deux variantes de plus (V3-3) : **retaper le texte refusé** (`zzz`, *Entrée*,
+     frappe `zzzx`, puis `zzz`) → aucun message sans nouvelle *Entrée* ; **comptes rechargés** (`zzz`, *Entrée*, puis
+     `rerender({ accounts: [… un compte nommé « zzz Conseil »] })`) → le message disparaît ;
    - i. E0, mode dégradé (`loadError`) : taper `7`, *Entrée* → événement non empêché, comportement inchangé ;
    - j. E0, composition IME : taper `zzz`, puis `keyDown` *Entrée* avec `isComposing: true` → événement **non** empêché, aucun
      message ;
@@ -314,7 +340,16 @@ l'`defaultPrevented` de l'événement ; la soumission réelle ne se voit qu'en E
    - r. bouton × après une désignation (V2-2) : `allowClear`, valeur `1`, valeur réinjectée, taper `30` (option `0` désignée),
      clic sur × → `onSelect(null)` une fois, la liste reste affichée, **aucune** option ne porte `aria-selected="true"` ;
      *Entrée* → événement **non** empêché, `onSelect` n'est pas rappelé. (Une valeur posée par le parent, liste ouverte,
-     brouillon nul, change toujours `filtered` avec elle : le cas se confond avec r ou avec g ; pas de test séparé, dit.)
+     brouillon nul, change toujours `filtered` avec elle : le cas se confond avec r ou avec g ; pas de test séparé, dit.) ;
+   - s. rendu de la désignation (V3-1) : valeur nulle, focus → aucune option ne porte la classe de désignation
+     (`bg-primary/10`) ; *flèche bas* → l'option `0` la porte, avec `aria-selected="true"` ; aucune option ne porte
+     `bg-accent` ;
+   - t. frappe qui ne change pas la liste (V3-2) : comptes `3000`, `3001`, valeur `null`, valeur réinjectée ; taper `30`,
+     *Échap*, taper `0` (brouillon `300` ; liste rouverte par la frappe, `:239`) → l'option `3000` porte `aria-selected="true"`
+     (désignée par la saisie) ; *Entrée* → événement empêché, `onSelect(id de 3000)` une fois ;
+   - u. touche maintenue (V3-5) : `allowClear`, valeur `1`, valeur réinjectée ; vider le champ, *Entrée* (E5 : `onSelect(null)`)
+     puis `keyDown` *Entrée* avec `repeat: true` → événement **empêché**, `onSelect` non rappelé ; et, sans brouillon, une
+     *Entrée* `repeat: true` sur un champ non touché → empêchée (aucun envoi par répétition).
 2. **AC2 — Les tests existants** : la suite `AccountAutocomplete.test.ts` existante reste verte **sans modification de ses
    assertions** (le `blur` garde exactement sa règle, désormais dans `commitDraft()`), ainsi que celles de `JournalEntryForm`,
    `ManualMatchModal`, `TransactionSplitModal`, `InvoiceForm`, `products-page`.
@@ -363,7 +398,9 @@ l'`defaultPrevented` de l'événement ; la soumission réelle ne se voit qu'en E
 7. **AC7 — Captures** (thème clair, base de démonstration jetable, `/home/gcorbaz/devel/kesh-gate-logs/e36-1/captures/`) :
    ligne de facture avec `zzz` et le message ; fiche article, même état ; ligne de facture après *Échap* puis *Entrée* (liste
    rouverte) ; ligne neuve au focus, liste ouverte **sans** surbrillance (#1165), **pointeur hors de la liste** (V2-3) ; la
-   même liste, pointeur sur une option (survol `bg-muted`, distinct de la désignation).
+   même liste après *flèche bas*, pointeur hors de la liste (désignation visible : fond `primary/10`, filet `primary`) ; la
+   même liste, pointeur sur une autre option que la désignée (survol gris `border/60`, distinct de la désignation, les deux
+   visibles à la fois).
 
 ## Tests à écrire, et la preuve du rouge
 
@@ -375,7 +412,11 @@ l'`defaultPrevented` de l'événement ; la soumission réelle ne se voit qu'en E
   l'empêche et choisit) ; AC1 n, o (le premier compte est choisi) ; AC3 a (`updateInvoiceMock` appelé avec `3200`) ; AC3 c
   (premier compte choisi, rien ne part) ; AC4 (`updateProduct` appelé) ; AC5 a, a-bis et b (redirection ; premier compte
   posé ; dialogue fermé ; `PUT` parti) ; AC1 p (la *flèche haut* n'ouvre pas la liste) ; AC1 q (l'index reste `-1` à
-  l'arrivée des comptes, *Entrée* non empêchée) ; AC1 r (l'option `0` reste désignée après le ×, *Entrée* la choisit).
+  l'arrivée des comptes, *Entrée* non empêchée) ; AC1 r (l'option `0` reste désignée après le ×, *Entrée* la choisit) ;
+  AC1 s (aucune classe `bg-primary/10`) ; AC1 u (la première *Entrée* choisit le premier compte ; la répétition n'est pas
+  empêchée) ; AC1 h, variantes « retaper » et « comptes rechargés » (pas de message du tout aujourd'hui : rouges par
+  l'absence du message après la première *Entrée*). **Vert au départ, et dit** : AC1 t (aujourd'hui `:240` remet l'index à
+  `0` à chaque frappe, et *Échap* ne le touche pas : *Entrée* choisit `3000`) — il garde contre M17.
 - **Verts au départ, et dits** (non-régression) : AC1 c, g, i, j (aujourd'hui `zzz` n'est jamais intercepté, donc pas en
   composition non plus : j ne devient utile qu'avec le correctif, tué par M8) ; AC3 b (la première *Entrée* choisit déjà dans
   une liste ouverte, la seconde envoie déjà : ce test garde contre un blocage excessif, M2) ; AC2.
@@ -404,7 +445,15 @@ l'`defaultPrevented` de l'événement ; la soumission réelle ne se voit qu'en E
     aucune option désignée) ; AC1 r (le × laisse l'option `0` désignée, *Entrée* la choisit). Retirer la seule dépendance à
     `value` (en gardant celle à `filtered`) est **équivalent** : brouillon nul, un changement de valeur change toujours
     `filtered` (dit) ;
-  - M16 : le survol rendu à `hover:bg-accent` → aucune assertion de test (classe CSS) ; contrôlé par la capture d'AC7, dit.
+  - M16 : la classe de désignation rendue à `bg-accent` (jeton absent, rendu nul) → AC1 s (classe de désignation absente de
+    l'option désignée) ; le rendu lui-même se constate à la capture d'AC7, dit ;
+  - M17 : le recalcul ne dépend que du caractère blanc du brouillon, non de son texte (version P2) → AC1 t (`onSelect` non
+    appelé à la première *Entrée*). **M14 seule reste équivalente** sous l'invariant : l'état qu'elle laisserait partir (liste
+    ouverte, brouillon non blanc, `filtered` non vide, index `-1`) n'est atteignable que si le recalcul manque une frappe,
+    c'est-à-dire sous M17 ou M15 ; la double M14 + M17 est tuée par AC1 t (événement non empêché) ;
+  - M18 : `noMatchDraft` non remis à `null` à la frappe → AC1 h, variante « retaper le texte refusé » ;
+  - M19 : la garde `e.repeat` retirée → AC1 u ;
+  - M20 : la condition `filtered.length === 0` retirée de la dérivation du message → AC1 h, variante « comptes rechargés ».
 
 ## Tâches
 
@@ -419,7 +468,7 @@ l'`defaultPrevented` de l'événement ; la soumission réelle ne se voit qu'en E
       focus d'abord : à compléter par « ou passer par *Entrée*, qui résout le brouillon sans envoyer ») ; doc de la prop
       `allowClear` relue.
 - [ ] `messages.ftl` ×4 (D2) ; `sitesTotal` recompté.
-- [ ] Verts ; mutations M1 à M15 (M16 par la capture) ; captures (AC7).
+- [ ] Verts ; mutations M1 à M20 ; captures (AC7) ; contraste du texte sur la désignation (`contrast.ts`) au Change Log.
 - [ ] Gates (voie 2 ; `gate-ci` en voie 1), selon `e35-dev-commun.md` § *Quels gates, quand* : en cours, gate ciblé — Vitest
       des fichiers touchés, `npm run check`, `npm run lint-i18n-ownership`, et `cargo nextest run -E 'binary(...)'` du crate
       `kesh-i18n` (les `.ftl` y sont lus) ; **au passage en `review`** : bases remises à neuf, `scripts/test-fast.sh --ci`
@@ -441,7 +490,8 @@ l'`defaultPrevented` de l'événement ; la soumission réelle ne se voit qu'en E
   vide suit le compte de produit par défaut de la société, même après une double Entrée. Le même champ de compte, dans les
   écritures manuelles, l'assistant d'achat et le rapprochement bancaire, suit la même règle ; sur ces sept champs, la
   première flèche vers le bas désigne désormais le premier compte de la liste (auparavant le deuxième), la flèche vers le
-  haut ouvre la liste sur le dernier, et le survol de la souris n'a plus la couleur d'un compte désigné. (refs #1165)
+  haut ouvre la liste sur le dernier, et le compte désigné au clavier est désormais mis en évidence (fond bleu pâle et
+  filet bleu), distinct du survol de la souris, qui ne le choisit pas. (refs #1165)
 
 ## Dev Notes
 
@@ -568,3 +618,22 @@ découpage proposé — séparer un test de son correctif n'apporterait rien, et
     par l'orchestrateur.
   - **V2-9 (LOW), retenu** : la note de version (`refs #1165`) dit la première flèche bas, la flèche haut et le survol pour les
     sept champs.
+- 2026-11-14 — **Validation P3 (Sonnet) : 0/1/1/3 → remédiés** (Opus 5.5, par l'outil Edit ; rapport
+  `kesh-gate-logs/e36-1/validation-p3.md`). Prémisses relues :
+  - **V3-1 (HIGH), retenu** : `frontend/src/app.css`, `@theme` `:10-52`, ne définit ni `--color-accent` ni `--color-muted`
+    (`/usr/bin/grep -nE "muted|accent"` ne rend que `32:  --color-text-muted: #64748b;`) ; `AccountAutocomplete.svelte:396-397`
+    emploie `bg-accent`, sans effet. Décision de l'orchestrateur (C-36-1-6) : pas de `--color-accent` dans la 36-1 (#1169) ;
+    jetons définis — désignation `bg-primary/10 ring-1 ring-inset ring-primary` (`app.css:12`, précédent
+    `accounts/+page.svelte:504`), survol `hover:bg-border/60` (`app.css:33`). D1, D3, AC7, M16, note de version corrigés ;
+    AC1 s ajouté ; contraste à mesurer au développement. Grep `bg-accent|bg-muted` sur la fiche et le registre : ne restent que
+    la description du code actuel, l'assertion négative d'AC1 s, M16 et les entrées passées du Change Log (historiques).
+  - **V3-2 (MEDIUM), retenu** : `:236-240` relu ; un recalcul sur le seul caractère blanc laisse l'index à `-1` après `30`,
+    *Échap*, `0`. Remède : le recalcul dépend du **texte** du brouillon ; la ligne de D1 corrigée. Le cas demandé est ajouté
+    (AC1 t) **avec un attendu différent** de celui du rapport : sous la règle corrigée, la saisie `300` désigne `3000`, et la
+    première *Entrée* le choisit (empêchée, `onSelect(3000)`) ; l'attendu du rapport (première *Entrée* sans choix) décrivait
+    l'état troué lui-même. M17 (recalcul sur le blanc seul) est tuée par AC1 t ; **M14 seule reste équivalente**, raison
+    écrite (l'état n'existe que si le recalcul manque une frappe : sous M15 ou M17) ; la double M14 + M17 est tuée par AC1 t.
+  - **V3-3 (LOW), retenu** : `noMatchDraft` remis à `null` à la frappe et au `blur` ; la dérivation exige aussi
+    `filtered.length === 0` (rechargement des comptes) ; AC1 h, deux variantes ; M18, M20.
+  - **V3-4 (LOW), retenu** : en-tête mis à jour (P1, P2, P3 remédiées ; C-36-1-6).
+  - **V3-5 (LOW), retenu** : règle E0-bis — *Entrée* maintenue (`e.repeat`) empêchée et ignorée ; AC1 u ; M19.
