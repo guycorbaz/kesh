@@ -28,15 +28,15 @@ de C-e360-8 (« forme exacte à la fiche »). Chaque choix : contexte, option re
 - **Écartées** : suspendre aussi le battement ; lever le maintien dès la réponse reçue.
 - **Réversible** : oui.
 - **Amendé le 2026-11-14 (validation P1, V1-3 ; option prudente demandée par l'orchestrateur)** *(la borne de l'import en
-  cours est remplacée par C-36-5-8)* : le maintien est **borné**
+  cours est remplacée par C-36-5-8 ; la levée à l'issue inconnue est remplacée par C-36-5-9)* : le maintien est **borné**
   — il ne couvre que l'import en cours et la lecture du compte rendu, chacune au plus B = la durée d'inactivité réglée
   (60 min si inconnue) ; il est **levé à l'issue inconnue** (la fermeture ordinaire reprend) ; à B après un succès, la
   session se termine comme par le chemin 401 (`clearSession`, `/login?reason=session_expired`). Levée en `finally`
   (V1-9). Écartées : maintien sans borne après une issue inconnue ; borne fixe de 15 min sans rapport avec le réglage.
 - **Amendé le 2026-11-14 (validation P2, V2-5, V2-6 ; conduites prudentes)** : (a) l'import lui-même refusé en 401 sous
-  maintien lève le maintien et termine la session (`expireSession`), comme aujourd'hui ; (b) sous maintien,
-  l'avertissement se calcule sur `max(last + w, restoreHoldUntil)` et paraît avant l'expiration du maintien, au lieu d'être
-  éteint ; pas d'avertissement pendant la lecture du compte rendu (session déjà morte, rien à prolonger).
+  maintien lève le maintien et termine la session (`expireSession`), comme aujourd'hui ; (b) *(remplacé par C-36-5-9)*
+  sous maintien, l'avertissement se calcule sur `max(last + w, échéance du maintien)` et paraît avant l'expiration du
+  maintien, au lieu d'être éteint ; pas d'avertissement pendant la lecture du compte rendu (session déjà morte, rien à prolonger).
 
 ### C-36-5-3 — Un E2E déterministe par réponse retenue, en plus de la répétition
 
@@ -57,7 +57,9 @@ de C-e360-8 (« forme exacte à la fiche »). Chaque choix : contexte, option re
 - **Écartée** : 20 (fréquence de `:140` inconnue).
 - **Réversible** : oui.
 
-### C-36-5-5 — Manuel inchangé ; la note de la KF-056 dans `docs/testing.md`
+### C-36-5-5 — Une phrase au manuel d'administration ; la note de la KF-056 dans `docs/testing.md`
+
+*(Titre d'origine : « Manuel inchangé ; la note de la KF-056 dans `docs/testing.md` », remplacé à la validation P4, V4-11.)*
 
 - **Contexte** : `admin-manual.tex:2340` décrit déjà le comportement rétabli (« Prenez le temps de lire, puis cliquez « Se
   reconnecter » ») ; `docs/testing.md` ne nomme pas la KF-056, tolérée implicitement dans « 0 à 2 de pollution ».
@@ -68,6 +70,15 @@ de C-e360-8 (« forme exacte à la fiche »). Chaque choix : contexte, option re
   après les deux paragraphes qu'annonce la note de la KF-052 ; le manuel d'administration reçoit une demi-phrase à `:2340`
   (renvoi d'un écran laissé ouvert au bout de la durée d'inactivité réglée, visible depuis la borne de C-36-5-2) ; `.tex`
   dans la story, PDF à l'intégration.
+- **Amendé le 2026-11-14 (validation P4, V4-9)** : la phrase dit aussi que **quitter** l'écran du compte rendu mène à la
+  connexion : « Laissé ouvert, ou quitté, l'écran mène à la connexion --- au bout de la durée d'inactivité réglée
+  (\S\ref{sec:duree-inactivite}) dans le premier cas, aussitôt dans le second. »
+
+### C-36-5-6 — Noms de bases
+
+- **Contexte** : la clé contient des tirets, que les noms de bases MariaDB n'admettent pas sans guillemets.
+- **Retenu** : `kesh_e2e_e365` et `kesh_ci_e365` (patron `e357` de l'Epic 35), journaux sous `kesh-gate-logs/e36-5/`.
+- **Réversible** : oui.
 
 ### C-36-5-7 — Le renouvellement ne lève jamais le maintien : `login()` ne le touche plus
 
@@ -98,9 +109,23 @@ de C-e360-8 (« forme exacte à la fiche »). Chaque choix : contexte, option re
 - **Écartées** : la borne B seule (première rédaction) ; écrire la limite au manuel (« pour N < 60 min, un import plus long
   que N perd son compte rendu ») et l'ouvrir en issue.
 - **Réversible** : oui.
+- **Amendé le 2026-11-14 (validation P4, V4-4)** *(le Retenu ci-dessus est remplacé pour la borne)* : un 401 renouvelé
+  fait un rejeu, avec un délai neuf (`api-client.ts:319`, `:476-485`) ; la phase 1 est donc bornée par
+  `max(B, 2 × LONG_OPERATION_TIMEOUT_MS + RESTORE_HOLD_MARGIN_MS)`, marge d'une minute (`RESTORE_HOLD_MARGIN_MS =
+  60_000`, renouvellement et relecture de `/me`), constante écrite une fois. À l'échec certain et à l'issue inconnue, la
+  levée se fait au premier geste (C-36-5-9).
 
-### C-36-5-6 — Noms de bases
+### C-36-5-9 — D2 simplifié : le maintien ne diffère que le renvoi local, après l'échéance seulement
 
-- **Contexte** : la clé contient des tirets, que les noms de bases MariaDB n'admettent pas sans guillemets.
-- **Retenu** : `kesh_e2e_e365` et `kesh_ci_e365` (patron `e357` de l'Epic 35), journaux sous `kesh-gate-logs/e36-5/`.
+- **Contexte** : validation P4, V4-1, V4-2, V4-5. Le serveur ferme la session à `last + w` quoi qu'il arrive
+  (`middleware/auth.rs:156-161` ; échéance écrite dans `refresh_tokens.expires_at`, `routes/auth.rs:25-33`) ; la formule
+  `max(last + w, échéance du maintien)` de la P2 supprimait l'avertissement utile et en montrait un inopérant ; AC3 et
+  AC6 se contredisaient sur `stayActive()` ; une levée immédiate à l'échec emportait le message si la session était échue.
+- **Retenu** (décision de l'orchestrateur) : sous maintien, tant que `last + w − now > 0`, le module de session se
+  comporte exactement comme aujourd'hui (battement, avertissement, *Rester connecté*) ; au-delà, ni fermeture, ni écriture
+  d'activité, ni avertissement tant que le maintien dure ; la fermeture a lieu à la levée ou à l'échéance du maintien. À un
+  échec certain ou une issue inconnue, la levée attend le premier geste (`pointerdown` ou `keydown` sur la fenêtre), le
+  démontage ou l'échéance : le message reste lisible. L'accesseur `restoreHoldDeadline` de la P3 est retiré.
+- **Écartées** : l'avertissement calculé sur `max(…)` (P2) ; l'avertissement éteint dès la pose (P1) ; la levée immédiate
+  à l'échec (P1 à P3) ; un clic sur un bouton du panneau seulement (une règle par bouton).
 - **Réversible** : oui.
