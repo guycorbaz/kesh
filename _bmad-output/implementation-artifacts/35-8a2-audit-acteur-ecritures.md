@@ -1,6 +1,6 @@
 # Story 35-8a2 : l'audit attribue à la clé d'API les écritures qu'elle passe, contre-passe, modifie ou supprime (#431)
 
-Status: review
+Status: done
 
 *Fiche tirée le 2026-11-13 de la fiche `35-8a-audit-acteur-patron.md` (validation P1 remédiée, même date), par l'agent
 de rédaction des fiches de l'Epic 35 (Opus 5.5), worktree `kesh-e35`, sur décision de l'orchestrateur (C-e350-50,
@@ -420,3 +420,36 @@ l'orchestrateur : marqueurs du CHANGELOG de la fusion 35-8a1 retirés par `sed -
     répertoire de travail temporaire de la session (hors dépôt), qui restaure par `git checkout --` et `touch` ; les journaux
     redirigés par `>` vers `kesh-gate-logs/e358a2/` (`p1-*.log`, `p1-mut/*.log`). Prompt de la P2 ciblée :
     `35-8a2-audit-acteur-ecritures-review-prompt-p2-ciblee.md`.
+  - *Annotation du 2026-11-14, à la clôture (LOW C3 de la P2 ciblée)* : l'entrée ci-dessus dit les mutations « chacune par l'outil
+    Edit » ; elles ont en fait été posées par le script de mutation hors dépôt nommé aux écarts, et jouées par groupes (M10b, M12
+    et M13 ensemble ; M11 et M13' ensemble), non une à une. L'entrée n'est pas réécrite.
+- 2026-11-14 — **Revue de code P2 ciblée** (Sonnet, une lentille, le seul commit `ec8117bcc` ;
+  `kesh-gate-logs/e358a2-review-p2-ciblee.md`) : **0 au-dessus de LOW**, 3 LOW (C1 à C3). Les deux MEDIUM de la P1 remédiés.
+  Boucle de revue terminée.
+- 2026-11-14 — **Clôture** (Opus 5.5, worktree `kesh-e358a2`). Synthèse finale de la boucle :
+  - **Tendance** : P1 (Opus, trois lentilles) — B 1 MEDIUM / 7 LOW, E 2 MEDIUM / 3 LOW, A 2 MEDIUM / 5 LOW, soit **deux MEDIUM
+    distincts** (M-A textes, M-B tests d'exécution), 0 CRITICAL, 0 HIGH → remédiation `ec8117bcc` → P2 ciblée (Sonnet) **0 MEDIUM**,
+    3 LOW. Modèles : Opus en P1, Sonnet en P2 ; aucun reclassement, aucun finding réfuté.
+  - **LOW de la P2** : C1 appliqué, commit `3cbea0e05` (commentaire de l'étape (g bis) d'`accept_one_invoice`,
+    `routes/reconciliation.rs:2982-2983`, parenthèse « seul geste qui la porte, AC10 » retirée : la clé est aussi passée à
+    `create_in_tx`) ; C2 joué — mutation **M14**, `reconciliation_cancel.rs:746` (bras `Entry`) `api_key_id:
+    actor_api_key_id.filter(|_| false)`, forme que la garde ne voit pas : **tuée** par `an_api_key_cancels_and_is_named_in_the_audit`,
+    `reconciliation_e2e.rs:5412`, « assertion `left == right` failed: journal_entry.reversed — left: ("user", None, 1), right:
+    ("api_key", Some(1), 1) » ; l'assertion `journal_entry.created` de l'inverse, qui suit, n'est pas atteinte par cette mutation
+    (l'acteur est le même pour les deux traces, `reverse_in_tx(…, acteur, …)`) ; restaurée par Edit inverse puis `touch`,
+    `git status --porcelain` vide (`kesh-gate-logs/e358a2/clot-mut-M14.log`) ; C3 annoté ci-dessus. LOW non traité de la P1 : B5,
+    issue **#1142**.
+  - **Dernier commit de code : `3cbea0e05`** (un commentaire de production).
+  - **Gates au commit `3cbea0e05`** :
+    - `cargo fmt --all -- --check` vert avant le commit ;
+    - `scripts/gate-ci.sh kesh_ci_e358a2`, voie 1 : **5451 passés, 0 échoué, 17 ignorés** (5450 au passage en `review` + le test
+      neuf de la remédiation P1) (`kesh-gate-logs/e358a2/cloture-gate-ci.log`) ;
+    - E2E complet, voie 2, base `kesh_e2e_e358a2` recréée (91 migrations, seed), frontend reconstruit, backend sur le port 3416
+      (dossiers sous `target/e2e-c/`) : **405 passés, 7 échecs, 18 ignorés** ; les sept échecs sont exactement ceux de la KF-029
+      (#97) au tableau de `docs/testing.md` § « Les échecs attendus » (`mode-expert.spec.ts:26`, `:41`,
+      `onboarding-path-b.spec.ts:65`, `:92`, `onboarding.spec.ts:57`, `:77`, `:150`) ; aucun échec hors liste
+      (`kesh-gate-logs/e358a2/cloture-e2e.log`, backend `cloture-e2e-backend.log`, arrêté par son PID, port libre après).
+  - Consigne Edit : tenue (commentaire, mutation et sa restauration, fiche, sprint-status). Le script de l'E2E est un fichier du
+    répertoire de travail de la session, hors dépôt ; les dossiers E2E sont sous `target/e2e-c/` du worktree, comme le veulent les
+    consignes communes (et non sous `/tmp`).
+  - Statut `done`.
