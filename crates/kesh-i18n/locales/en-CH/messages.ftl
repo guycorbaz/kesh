@@ -2523,6 +2523,7 @@ reminders-link-aged = View aged balance
 # Story 16-1b (#152) — selecteur de compte de produit par ligne.
 common-account-clear = Clear selected account
 common-account-invalid = Invalid account — not postable, archived, or unexpected type
+common-account-no-match = No account matches this entry: choose an account from the list.
 invoice-line-col-revenue-account = Revenue account
 invoice-detail-project-label = Analytical project
 invoice-field-project = Analytical project (optional)

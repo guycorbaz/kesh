@@ -982,7 +982,9 @@ const ATTENDU = {
 	// « montant positif » restent un site chacun).
 	// Union de l'intégration 0.17.7 (C-e350-8) : 35-1 (+6), 35-4 (+3) et 35-6 (+1) sur 3026 ;
 	// recompté par la garde après chaque fusion (relevé à la source avant d'écrire ce nombre).
-	sitesTotal: 3036,
+	// Story 36-1 (#1095, D2) : **3036 → 3037** (+1) sur sa branche, `AccountAutocomplete.svelte`
+	// (`common-account-no-match`, littéral). Relevé à 3037 par la garde avant d'écrire.
+	sitesTotal: 3037,
 	sitesNonResolus: 31,
 	relais: 6,
 	// Story 26-1 (#620, AC3-bis) : **10 → 11** — `lib/features/bank-import/

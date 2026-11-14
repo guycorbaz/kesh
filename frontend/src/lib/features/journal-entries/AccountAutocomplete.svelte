@@ -6,6 +6,7 @@
 	import { i18nMsg } from '$lib/shared/utils/i18n.svelte';
 	import type { AccountResponse, AccountType } from '$lib/features/accounts/accounts.types';
 	import { isAccountUnusable } from '$lib/features/accounts/account-validity';
+	import { CLASSE_DESIGNEE, CLASSE_SURVOL } from './account-autocomplete-classes';
 
 	interface Props {
 		accounts: AccountResponse[];
@@ -17,8 +18,9 @@
 		 * Story 16-1b (D8/AC1) — affiche un bouton d'effacement et active la
 		 * sémantique « champ vidé au clavier = effacement explicite » (AC1-bis).
 		 *
-		 * **Défaut `false` : le champ est strict** — vidé au clavier puis quitté,
-		 * il réaffiche le compte retenu sans jamais le nullifier (Story 35-7).
+		 * **Défaut `false` : le champ est strict** — vidé au clavier puis quitté
+		 * (ou validé par *Entrée*, Story 36-1), il réaffiche le compte retenu sans
+		 * jamais le nullifier (Story 35-7).
 		 * Ne PAS l'activer sur un champ obligatoire — `JournalEntryForm` se
 		 * mettrait à nullifier ses lignes au `blur`, soit la dette #271.
 		 */
@@ -117,6 +119,8 @@
 	// sécurisé, donc sur un déploiement LAN en HTTP (cf. NAS Synology).
 	const uid = $props.id();
 	const invalidMsgId = `account-invalid-${uid}`;
+	/** Région `role="status"` du message « aucun compte ne correspond » (36-1, D2). */
+	const noMatchMsgId = `account-no-match-${uid}`;
 
 	// ── LE TEXTE AFFICHÉ EST DÉRIVÉ DE LA VALEUR, PLUS UN ÉTAT MUTABLE ────────
 	//
@@ -174,7 +178,11 @@
 	/** Texte en cours de frappe. `null` = aucune édition en cours. */
 	let draft = $state<string | null>(null);
 	let open = $state(false);
-	let highlightIndex = $state(0);
+	/**
+	 * Brouillon refusé par *Entrée* faute de compte correspondant (36-1, D2) :
+	 * le message « aucun compte ne correspond » se dérive de lui (`showNoMatch`).
+	 */
+	let noMatchDraft = $state<string | null>(null);
 
 	/** Ce que l'input montre : le brouillon s'il existe, sinon la vérité. */
 	const query = $derived(draft ?? displayLabel);
@@ -233,11 +241,64 @@
 			.slice(0, 20);
 	});
 
+	// ── LA DÉSIGNATION (Story 36-1, #1165, D1 principe ii) ───────────────────
+	//
+	// Invariant : `highlightIndex ≥ 0` SI ET SEULEMENT SI un compte a été
+	// désigné — par une saisie non blanche (le premier compte correspondant) ou
+	// par une flèche. *Entrée* ne choisit que l'option désignée : une
+	// surbrillance que personne n'a désignée posait le premier compte de la
+	// liste sur une ligne neuve (double *Entrée*, #1165).
+	//
+	// L'index est un `$derived` RÉASSIGNABLE : recalculé dès que change le texte
+	// du brouillon (non son seul caractère blanc : `30`, Échap, `0` doit
+	// redésigner), la suite des identifiants de `filtered` (comptes arrivés,
+	// liste rétrécie) ou `value` (bouton ×, valeur posée par le parent, même
+	// non résoluble) ; réassigné par les flèches, le focus, Échap, le choix et
+	// le `blur`. Il lit la CHAÎNE des identifiants, jamais le tableau : un
+	// nouveau tableau aux mêmes comptes (rendu du parent) ne doit pas effacer
+	// une désignation faite aux flèches. Écartés : remettre l'index à `-1` dans
+	// chaque gestionnaire (l'arrivée des comptes n'en a pas) ; un booléen
+	// `designated` à côté d'un index (deux états à garder d'accord).
+
+	/** Identifiants de `filtered`, joints : ne change que si la liste change. */
+	const filteredIds = $derived(filtered.map((a) => a.id).join(','));
+
+	/**
+	 * Index par défaut : `0` si le brouillon est non blanc et que la liste a des
+	 * comptes (désignation par la saisie), `-1` sinon. `_valeur` n'entre pas dans
+	 * le calcul : le passer suffit à rendre l'index dépendant de `value`.
+	 */
+	function indexParDefaut(texte: string | null, ids: string, _valeur: number | null): number {
+		return texte !== null && texte.trim() !== '' && ids !== '' ? 0 : -1;
+	}
+
+	/**
+	 * `value` relue en `$derived` primitif : un parent qui ré-évalue ses props
+	 * sans changer cette valeur (ex. un nouvel objet de props, ou la liste des
+	 * comptes rendue de nouveau) ne doit pas remettre l'index à `-1`. Seul un
+	 * changement réel de la valeur se propage.
+	 */
+	const valeurLue = $derived(value);
+
+	let highlightIndex = $derived(indexParDefaut(draft, filteredIds, valeurLue));
+
+	/**
+	 * Message « aucun compte ne correspond » (D2) : visible tant que le champ
+	 * montre exactement le brouillon refusé par *Entrée* et que rien ne lui
+	 * correspond. Toute frappe, le choix, le bouton × et le `blur` changent
+	 * `draft` ; des comptes rechargés qui lui correspondent rendent `filtered`
+	 * non vide.
+	 */
+	const showNoMatch = $derived(
+		noMatchDraft !== null && draft === noMatchDraft && filtered.length === 0
+	);
+
 	function handleInput(e: Event) {
 		const target = e.target as HTMLInputElement;
 		draft = target.value;
 		open = true;
-		highlightIndex = 0;
+		// Retaper le texte refusé ne fait pas reparaître le message sans *Entrée*.
+		noMatchDraft = null;
 
 		// Mode dégradé (14-3b) : l'utilisateur saisit un ID numérique directement.
 		if (loadError) {
@@ -249,6 +310,7 @@
 	function handleSelect(acc: AccountResponse) {
 		draft = null; // le libellé retombe sur `displayLabel`
 		open = false;
+		highlightIndex = -1;
 		onSelect(acc.id);
 	}
 
@@ -258,23 +320,89 @@
 		if (e.key === 'ArrowDown') {
 			e.preventDefault();
 			open = true;
-			highlightIndex = Math.min(highlightIndex + 1, filtered.length - 1);
+			// Depuis « rien de désigné », la première flèche désigne le PREMIER
+			// compte (36-1 : l'index partait de 0 et sautait au deuxième).
+			highlightIndex =
+				filtered.length === 0
+					? -1
+					: highlightIndex < 0
+						? 0
+						: Math.min(highlightIndex + 1, filtered.length - 1);
 		} else if (e.key === 'ArrowUp') {
 			e.preventDefault();
-			highlightIndex = Math.max(highlightIndex - 1, 0);
+			// Ouvre la liste ; depuis « rien de désigné », sur le DERNIER compte
+			// (patron du combobox ARIA).
+			open = true;
+			highlightIndex =
+				filtered.length === 0
+					? -1
+					: highlightIndex < 0
+						? filtered.length - 1
+						: Math.max(highlightIndex - 1, 0);
 		} else if (e.key === 'Enter') {
-			if (open && filtered[highlightIndex]) {
-				e.preventDefault();
-				handleSelect(filtered[highlightIndex]);
-			}
+			handleEnter(e);
 		} else if (e.key === 'Escape') {
 			open = false;
+			highlightIndex = -1;
 		}
 	}
 
 	/**
-	 * Commit du brouillon au `blur` — **immédiat**, et seulement s'il y a eu
-	 * édition (AC1-bis).
+	 * *Entrée* — Story 36-1 (#1095, #1165), table d'états E0 à E5 de la fiche.
+	 *
+	 * Deux principes : (i) tant qu'un brouillon est affiché, *Entrée* ne laisse
+	 * JAMAIS partir le formulaire englobant (soumission implicite du `<form>` de
+	 * la facture ou de l'article, qui partait sans `blur`, donc avec l'ancien
+	 * compte pendant que le champ montrait le texte tapé) — elle résout le
+	 * brouillon, et une seconde *Entrée* envoie ; (ii) seule l'option DÉSIGNÉE
+	 * se choisit (invariant de `highlightIndex`).
+	 *
+	 * Close par construction : E0, E0-bis, E1, E2 dans cet ordre ; tout ce qui
+	 * reste a un brouillon et est empêché, puis réparti par E3, E4, E5 sur deux
+	 * seuls critères — brouillon blanc ou non, `filtered` vide ou non.
+	 */
+	function handleEnter(e: KeyboardEvent) {
+		// E0 — composition IME : cette Entrée valide le mot composé, pas le champ.
+		// (Le mode dégradé, l'autre cas E0, est écarté par `handleKeydown`.)
+		if (e.isComposing) return;
+		// E0-bis — touche maintenue : un seul geste ; les répétitions n'envoient
+		// pas un formulaire dont l'utilisateur n'a pas vu l'état.
+		if (e.repeat) {
+			e.preventDefault();
+			return;
+		}
+		// E1 — un compte désigné, liste ouverte : il est choisi, rien ne part.
+		const designe = open ? filtered[highlightIndex] : undefined;
+		if (designe) {
+			e.preventDefault();
+			handleSelect(designe);
+			return;
+		}
+		// E2 — aucun brouillon : le champ montre ce qui partira (le compte, ou
+		// vide = défaut société) ; l'événement suit son cours.
+		if (draft === null) return;
+
+		// Un brouillon est affiché : jamais d'envoi.
+		e.preventDefault();
+		if (draft.trim() === '') {
+			// E5 — brouillon blanc : la résolution du `blur`.
+			commitDraft();
+			open = false;
+			highlightIndex = -1;
+		} else if (filtered.length > 0) {
+			// E3 — des comptes correspondent mais la liste était fermée : elle se
+			// rouvre, rien n'est choisi (choix montré avant d'être fait, 35-7 D2).
+			open = true;
+			highlightIndex = 0;
+		} else if (accounts.length > 0) {
+			// E4 — aucun compte ne correspond : le brouillon reste, le message le
+			// dit. Pendant le chargement des comptes, sans message.
+			noMatchDraft = draft;
+		}
+	}
+
+	/**
+	 * `blur` — **immédiat**, et ne résout que s'il y a eu édition (AC1-bis).
 	 *
 	 * `draft === null` signifie « l'utilisateur n'a rien tapé » : un simple
 	 * passage de focus ne peut donc plus rien effacer. C'est ce qui ferme le
@@ -282,10 +410,20 @@
 	 */
 	function handleBlur() {
 		open = false;
+		highlightIndex = -1;
+		noMatchDraft = null;
 
 		// Mode dégradé : le brouillon EST l'identifiant tapé, déjà envoyé par
 		// `handleInput` — le jeter effacerait ce que la valeur porte.
 		if (loadError) return;
+		commitDraft();
+	}
+
+	/**
+	 * Résolution du brouillon, commune au `blur` et à *Entrée* sur un brouillon
+	 * blanc (36-1, E5) — une seule règle, écrite une fois.
+	 */
+	function commitDraft() {
 		if (draft === null) return;
 
 		// Story 35-7 (#1000, D2, C-e350-37) — champ obligatoire : on ne nullifie
@@ -296,7 +434,8 @@
 		// vaut désormais pour tous les consommateurs, stricts comme `allowClear`,
 		// **une fois le champ quitté** : pendant la frappe, le brouillon s'affiche.
 		// Un envoi sans quitter le champ doit donc rendre le focus d'abord — c'est
-		// ce que fait le `Ctrl+S` de `JournalEntryForm` (revue P1 de la 35-7, E1).
+		// ce que fait le `Ctrl+S` de `JournalEntryForm` (revue P1 de la 35-7, E1) —,
+		// ou passer par *Entrée*, qui résout le brouillon sans envoyer (36-1).
 		if (!allowClear) {
 			draft = null;
 			return;
@@ -324,7 +463,11 @@
 		value={query}
 		oninput={handleInput}
 		onkeydown={handleKeydown}
-		onfocus={() => (open = true)}
+		onfocus={() => {
+			open = true;
+			// Ouvrir n'est pas désigner (#1165).
+			highlightIndex = -1;
+		}}
 		onblur={handleBlur}
 		{disabled}
 		placeholder={loadError
@@ -334,7 +477,11 @@
 		aria-autocomplete="list"
 		aria-expanded={open}
 		aria-invalid={isInvalid ? 'true' : undefined}
-		aria-describedby={[describedBy, isInvalid ? invalidMsgId : undefined]
+		aria-describedby={[
+			describedBy,
+			isInvalid ? invalidMsgId : undefined,
+			showNoMatch ? noMatchMsgId : undefined
+		]
 			.filter(Boolean)
 			.join(' ') || undefined}
 	/>
@@ -386,15 +533,36 @@
 		</p>
 	{/if}
 
+	<!--
+		Story 36-1 (#1095, D2) — région TOUJOURS présente, dont seul le contenu
+		change : un conteneur `role="status"` inséré en même temps que son texte
+		n'est pas annoncé de façon fiable. Vide, elle ne prend aucune place (ni
+		marge ni enfant) : la marge est portée par le seul paragraphe du message.
+	-->
+	<div id={noMatchMsgId} role="status" class="text-xs text-destructive">
+		{#if showNoMatch}
+			<p class="mt-1">
+				{i18nMsg(
+					'common-account-no-match',
+					'Aucun compte ne correspond à cette saisie : choisissez un compte dans la liste.'
+				)}
+			</p>
+		{/if}
+	</div>
+
 	{#if open && !loadError && filtered.length > 0}
 		<ul
 			class="absolute z-20 mt-1 max-h-60 w-full overflow-auto rounded-md border border-border bg-popover shadow-md"
 			role="listbox"
 		>
 			{#each filtered as acc, i (acc.id)}
+				<!--
+					36-1 (#1165) : la désignation se voit (fond `primary` plein), le
+					survol est distinct et ne vaut pas choix ; jetons du thème, cf.
+					`account-autocomplete-classes.ts`.
+				-->
 				<li
-					class="cursor-pointer px-3 py-2 text-sm hover:bg-accent"
-					class:bg-accent={i === highlightIndex}
+					class={['cursor-pointer px-3 py-2 text-sm', i === highlightIndex ? CLASSE_DESIGNEE : CLASSE_SURVOL]}
 					onmousedown={(e) => {
 						e.preventDefault();
 						handleSelect(acc);

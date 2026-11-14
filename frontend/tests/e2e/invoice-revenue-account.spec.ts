@@ -213,3 +213,136 @@ test('une facture ventilée sur 2 comptes produit 2 lignes de crédit distinctes
 		await disposeContextSafe(ctx2);
 	}
 });
+
+// ── Story 36-1 (#1095, #1165, AC5) — la touche Entrée dans le compte de produit ──
+//
+// Le défaut ne se voit que dans un vrai navigateur : la soumission implicite d'un
+// `<form>` par Entrée n'existe pas dans jsdom. D'où ces deux tests, à la frontière.
+
+type Compte = { id: number; number: string; name: string };
+
+/**
+ * Deux comptes de produit et un brouillon à deux lignes : la ligne 1 porte
+ * `honoraires` (posé par l'API), la ligne 2 n'a pas de compte (défaut société).
+ */
+async function brouillonEntree(page: import('@playwright/test').Page) {
+	const suffix = uniqSuffix();
+	const ctx = await authedApiContext(page);
+	try {
+		const mk = async (number: string, name: string): Promise<Compte> => {
+			const res = await ctx.post('/api/v1/accounts', {
+				data: { number, name, accountType: 'Revenue', postable: true, role: null },
+			});
+			expect(res.ok(), `création compte ${number} échouée: ${res.status()}`).toBeTruthy();
+			return (await res.json()) as Compte;
+		};
+		// Plage 38000-38999, distincte de celle du test précédent (39000-39900).
+		const base = 38000 + Math.floor(Math.random() * 450) * 2;
+		const honoraires = await mk(String(base), `Honoraires E ${suffix}`);
+		const marchandises = await mk(String(base + 1), `Marchandises E ${suffix}`);
+
+		const contactRes = await ctx.post('/api/v1/contacts', {
+			data: { contactType: 'Entreprise', name: `Client Entrée ${suffix}`, isClient: true, isSupplier: false },
+		});
+		expect(contactRes.ok(), `création contact échouée: ${contactRes.status()}`).toBeTruthy();
+		const contactId = (await contactRes.json()).id as number;
+
+		const draftRes = await ctx.post('/api/v1/invoices', {
+			data: {
+				contactId,
+				date: todayInZurich(),
+				lines: [
+					{
+						description: 'Prestation',
+						quantity: '1',
+						unitPrice: '1000.00',
+						vatRate: '0.00',
+						revenueAccountId: honoraires.id,
+					},
+					{ description: 'Divers', quantity: '1', unitPrice: '50.00', vatRate: '0.00' },
+				],
+			},
+		});
+		expect(draftRes.ok(), `création brouillon échouée: ${draftRes.status()}`).toBeTruthy();
+		const draft = (await draftRes.json()) as { id: number; version: number };
+		return { invoiceId: draft.id, version: draft.version, honoraires, marchandises };
+	} finally {
+		await disposeContextSafe(ctx);
+	}
+}
+
+async function relireFacture(page: import('@playwright/test').Page, invoiceId: number) {
+	const ctx = await authedApiContext(page);
+	try {
+		const res = await ctx.get(`/api/v1/invoices/${invoiceId}`);
+		expect(res.ok()).toBeTruthy();
+		return (await res.json()) as {
+			version: number;
+			lines: { revenueAccountId: number | null }[];
+		};
+	} finally {
+		await disposeContextSafe(ctx);
+	}
+}
+
+test('(#1095) Entrée sur un texte sans correspondance n’enregistre pas l’ancien compte', async ({
+	page,
+}) => {
+	await login(page);
+	const { invoiceId, version, honoraires, marchandises } = await brouillonEntree(page);
+
+	await page.goto(`/invoices/${invoiceId}/edit`);
+	const field = page.locator('input[aria-autocomplete="list"]').first();
+	await expect(field).toHaveValue(`${honoraires.number} — ${honoraires.name}`);
+
+	// Compteur posé AVANT le geste ; ce n'est qu'un indice — la preuve d'absence
+	// d'envoi est la relecture (fiche, V1-5).
+	let puts = 0;
+	page.on('request', (r) => {
+		if (r.method() === 'PUT' && r.url().endsWith(`/api/v1/invoices/${invoiceId}`)) puts += 1;
+	});
+
+	await field.fill('zzz');
+	await field.press('Enter');
+	// Attendre l'une des deux issues — le message (correctif) ou l'écran de
+	// détail (le défaut : le formulaire est parti) — puis asserter : un rouge
+	// nomme alors l'URL atteinte au lieu d'expirer sur un message absent.
+	const message = page.getByText('Aucun compte ne correspond à cette saisie');
+	await expect(message.or(page.getByTestId('invoice-line-revenue-account').first())).toBeVisible();
+	await expect(page).toHaveURL(new RegExp(`/invoices/${invoiceId}/edit$`));
+	await expect(message).toBeVisible();
+	await expect(field).toHaveValue('zzz');
+	expect(puts).toBe(0);
+	const avant = await relireFacture(page, invoiceId);
+	expect(avant.lines[0].revenueAccountId).toBe(honoraires.id);
+	expect(avant.version).toBe(version);
+
+	// Puis le geste correct : le numéro, Entrée (choisit), Entrée (enregistre).
+	await field.fill(marchandises.number);
+	await field.press('Enter');
+	await expect(field).toHaveValue(`${marchandises.number} — ${marchandises.name}`);
+	await field.press('Enter');
+	await expect(page).toHaveURL(new RegExp(`/invoices/${invoiceId}$`));
+	const apres = await relireFacture(page, invoiceId);
+	expect(apres.lines[0].revenueAccountId).toBe(marchandises.id);
+});
+
+test('(#1165) Entrée sur une ligne sans compte enregistre le défaut société, non le premier compte', async ({
+	page,
+}) => {
+	await login(page);
+	const { invoiceId } = await brouillonEntree(page);
+
+	await page.goto(`/invoices/${invoiceId}/edit`);
+	const field = page.locator('input[aria-autocomplete="list"]').nth(1);
+	await expect(field).toHaveValue('');
+	await field.focus();
+	await expect(page.getByRole('listbox')).toBeVisible();
+
+	// Aujourd'hui (défaut) : la liste s'ouvre avec le premier compte en
+	// surbrillance, la première Entrée le choisit et l'URL reste `/edit`.
+	await field.press('Enter');
+	await expect(page).toHaveURL(new RegExp(`/invoices/${invoiceId}$`));
+	const apres = await relireFacture(page, invoiceId);
+	expect(apres.lines[1].revenueAccountId).toBeNull();
+});

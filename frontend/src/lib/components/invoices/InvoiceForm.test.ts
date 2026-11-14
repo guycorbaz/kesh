@@ -884,3 +884,74 @@ describe('InvoiceForm — date par défaut locale (#889)', () => {
 		);
 	});
 });
+
+// Story 36-1 (#1095, #1165, AC3) — la touche Entrée dans le champ « Compte de
+// produit » d'une ligne. jsdom n'implémente pas la soumission implicite d'un
+// `<form>` : `entreeSimulee` la rejoue comme le navigateur — si l'événement
+// n'a pas été empêché, le formulaire est soumis.
+describe('InvoiceForm — Entrée dans le compte de produit (Story 36-1)', () => {
+	/** *Entrée* dans `champ`, puis la soumission implicite si rien ne l'a empêchée. */
+	async function entreeSimulee(champ: HTMLInputElement): Promise<boolean> {
+		const nonEmpechee = await fireEvent.keyDown(champ, { key: 'Enter' });
+		if (nonEmpechee) champ.form!.requestSubmit();
+		await settle();
+		return nonEmpechee;
+	}
+
+	function compteEnvoye(i: number): number | null | undefined {
+		const payload = updateInvoiceMock.mock.calls[0][1] as {
+			lines: { revenueAccountId: number | null }[];
+		};
+		return payload.lines[i].revenueAccountId;
+	}
+
+	it('a. (#1095) texte sans correspondance, Entrée : rien ne part, le champ montre la saisie', async () => {
+		updateInvoiceMock.mockResolvedValue({ id: 7 });
+		const { container } = render(InvoiceForm, { invoice: invoiceWith([SERVICES.id]) });
+		await settle();
+		const field = accountInputs(container)[0];
+		expect(field.value).toBe('3200 — Honoraires');
+
+		await fireEvent.input(field, { target: { value: 'zzz' } });
+		const nonEmpechee = await entreeSimulee(field);
+
+		// L'envoi d'abord : c'est lui, le défaut (#1095) — l'ancien compte partait.
+		expect(updateInvoiceMock).not.toHaveBeenCalled();
+		expect(nonEmpechee).toBe(false);
+		expect(field.value).toBe('zzz');
+	});
+
+	it('b. numéro exact, Entrée (choisit), Entrée (envoie) : le compte choisi part', async () => {
+		updateInvoiceMock.mockResolvedValue({ id: 7 });
+		const { container } = render(InvoiceForm, { invoice: invoiceWith([SERVICES.id]) });
+		await settle();
+		const field = accountInputs(container)[0];
+
+		await fireEvent.input(field, { target: { value: '3000' } });
+		expect(await entreeSimulee(field)).toBe(false);
+		expect(updateInvoiceMock).not.toHaveBeenCalled();
+		expect(field.value).toBe('3000 — Ventes');
+
+		expect(await entreeSimulee(field)).toBe(true);
+		expect(updateInvoiceMock).toHaveBeenCalledTimes(1);
+		expect(compteEnvoye(0)).toBe(DEFAULT_REVENUE.id);
+	});
+
+	it('c. (#1165) ligne sans compte, focus, Entrée : le formulaire part avec `null`, non le premier compte', async () => {
+		updateInvoiceMock.mockResolvedValue({ id: 7 });
+		const { container } = render(InvoiceForm, { invoice: invoiceWith([null]) });
+		await settle();
+		const field = accountInputs(container)[0];
+		expect(field.value).toBe('');
+
+		await fireEvent.focus(field);
+		const nonEmpechee = await entreeSimulee(field);
+
+		// L'envoi d'abord (#1165) : aujourd'hui, la première Entrée choisit le
+		// premier compte de produit et rien ne part.
+		expect(updateInvoiceMock).toHaveBeenCalledTimes(1);
+		expect(compteEnvoye(0)).toBeNull();
+		expect(nonEmpechee).toBe(true);
+		expect(field.value).toBe('');
+	});
+});
