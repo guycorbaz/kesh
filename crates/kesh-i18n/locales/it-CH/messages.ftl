@@ -1542,7 +1542,8 @@ reconciliation-manual-claim-notice-payable = Questo conto è quello dei creditor
 # Story 8-5a-bis FR48 — suddivisione di una transazione aggregata.
 reconciliation-split-button-label = Suddividi
 reconciliation-split-modal-title = Suddividi la transazione
-reconciliation-split-balance-indicator = Saldo
+reconciliation-split-balance-indicator = Saldo in pareggio: { $expected }
+reconciliation-split-balance-gap = Saldo non in pareggio — atteso { $expected }, differenza { $diff }
 reconciliation-split-error-imbalance = La suddivisione non bilancia l'importo della transazione.
 
 # Story 29-8 (#670) — rattacher une transaction au règlement saisi depuis la fiche.
@@ -1771,6 +1772,7 @@ reconciliation-split-error-min-lines = Sono richieste almeno { $min } righe
 reconciliation-split-error-max-lines = Massimo { $max } righe
 reconciliation-split-error-account-required = Riga { $line }: conto obbligatorio
 reconciliation-split-error-amount-positive = Riga { $line }: importo > 0 obbligatorio
+reconciliation-split-error-imbalance-detail = La suddivisione non bilancia l'importo della transazione: atteso { $expected }, differenza { $diff }.
 reconciliation-split-error-description-too-long = Riga { $line }: descrizione troppo lunga (max { $max })
 
 # === Story 9-1 — Rapporti contabili (34 chiavi) ===

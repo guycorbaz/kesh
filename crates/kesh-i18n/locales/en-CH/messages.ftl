@@ -1542,7 +1542,8 @@ reconciliation-manual-claim-notice-payable = This is the accounts payable accoun
 # Story 8-5a-bis FR48 — split aggregated transaction.
 reconciliation-split-button-label = Split
 reconciliation-split-modal-title = Split transaction
-reconciliation-split-balance-indicator = Balance
+reconciliation-split-balance-indicator = Balanced: { $expected }
+reconciliation-split-balance-gap = Not balanced — expected { $expected }, difference { $diff }
 reconciliation-split-error-imbalance = The split does not balance the transaction amount.
 
 # Story 29-8 (#670) — rattacher une transaction au règlement saisi depuis la fiche.
@@ -1771,6 +1772,7 @@ reconciliation-split-error-min-lines = At least { $min } lines are required
 reconciliation-split-error-max-lines = At most { $max } lines
 reconciliation-split-error-account-required = Line { $line }: account required
 reconciliation-split-error-amount-positive = Line { $line }: amount > 0 required
+reconciliation-split-error-imbalance-detail = The split does not balance the transaction amount: expected { $expected }, difference { $diff }.
 reconciliation-split-error-description-too-long = Line { $line }: description too long (max { $max })
 
 # === Story 9-1 — Accounting reports (34 keys) ===

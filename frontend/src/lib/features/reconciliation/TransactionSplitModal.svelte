@@ -205,9 +205,14 @@
 			}
 		}
 		if (!balanceExact) {
+			// Story 36-2 (#1150, D3) : l'attendu et l'écart viennent du catalogue, une clé propre
+			// au dialogue. `reconciliation-split-error-imbalance`, message de la `400
+			// RECONCILIATION_SPLIT_IMBALANCE` et de l'échec partiel, appelée sans arguments par ces
+			// deux sites, reste inchangée.
 			return i18nMsg(
-				'reconciliation-split-error-imbalance',
-				`Balance non équilibrée (écart ${balanceDiff})`,
+				'reconciliation-split-error-imbalance-detail',
+				"L'éclatement n'équilibre pas le montant de la transaction : attendu { $expected }, écart { $diff }.",
+				{ expected: txAbsAmount, diff: balanceDiff },
 			);
 		}
 		return '';
@@ -400,15 +405,17 @@
 				data-testid="split-balance-indicator"
 				aria-live="polite"
 			>
+				<!-- Story 36-2 (#1150, D3) : deux clés, deux états ; le catalogue disait « Balance »
+				     pour les deux, et le montant n'était que dans des replis jamais affichés. -->
 				{#if balanceExact}
-					{i18nMsg(
-						'reconciliation-split-balance-indicator',
-						`Balance équilibrée : ${txAbsAmount}`,
-					)}
+					{i18nMsg('reconciliation-split-balance-indicator', 'Balance équilibrée : { $expected }', {
+						expected: txAbsAmount,
+					})}
 				{:else}
 					{i18nMsg(
-						'reconciliation-split-balance-indicator',
-						`Balance non équilibrée — attendu ${txAbsAmount}, écart ${balanceDiff}`,
+						'reconciliation-split-balance-gap',
+						'Balance non équilibrée — attendu { $expected }, écart { $diff }',
+						{ expected: txAbsAmount, diff: balanceDiff },
 					)}
 				{/if}
 			</div>

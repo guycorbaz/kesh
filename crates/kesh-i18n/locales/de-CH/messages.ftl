@@ -1542,7 +1542,8 @@ reconciliation-manual-claim-notice-payable = Dieses Konto ist das Kreditorenkont
 # Story 8-5a-bis FR48 — Aufteilung einer aggregierten Transaktion.
 reconciliation-split-button-label = Aufteilen
 reconciliation-split-modal-title = Transaktion aufteilen
-reconciliation-split-balance-indicator = Saldo
+reconciliation-split-balance-indicator = Saldo ausgeglichen: { $expected }
+reconciliation-split-balance-gap = Saldo nicht ausgeglichen — erwartet { $expected }, Differenz { $diff }
 reconciliation-split-error-imbalance = Die Aufteilung gleicht den Transaktionsbetrag nicht aus.
 
 # Story 29-8 (#670) — rattacher une transaction au règlement saisi depuis la fiche.
@@ -1771,6 +1772,7 @@ reconciliation-split-error-min-lines = Mindestens { $min } Zeilen erforderlich
 reconciliation-split-error-max-lines = Maximal { $max } Zeilen
 reconciliation-split-error-account-required = Zeile { $line }: Konto erforderlich
 reconciliation-split-error-amount-positive = Zeile { $line }: Betrag > 0 erforderlich
+reconciliation-split-error-imbalance-detail = Die Aufteilung gleicht den Transaktionsbetrag nicht aus: erwartet { $expected }, Differenz { $diff }.
 reconciliation-split-error-description-too-long = Zeile { $line }: Beschreibung zu lang (max. { $max })
 
 # === Story 9-1 — Buchhaltungsberichte (34 Schlüssel) ===
