@@ -1,6 +1,6 @@
 # Story 36-1 : *Entrée* dans le champ « compte de produit » n'envoie plus un compte que le champ ne montre pas, ni un compte que personne n'a désigné (#1095, #1165)
 
-Status: review
+Status: done
 
 *Fiche rédigée le 2026-11-14 par l'agent de rédaction des fiches de l'Epic 36 (Opus 5.5), worktree `kesh-36-1`, branche
 `story/36-1-entree-compte-produit`, par le workflow `bmad-create-story`. Release **0.17.8** (phase 1). **Aucune migration**,
@@ -720,6 +720,17 @@ Tous les journaux sous `/home/gcorbaz/devel/kesh-gate-logs/e36-1/` :
   (`verts-e2e-cible-r3.log`) **8 sur 8** ; `test-fast --ci` voie 2 (`test-fast-ci-r3.log`) **5445 exécutés, 5445 passés,
   13 ignorés**. **Non lancés, par la règle des remédiations** : `gate-ci` (dernier : `258a04559`, 5452 passés) et l'E2E
   complet — tous deux à la clôture.
+- **Gates de clôture, au dernier commit de code `de7a79b17`** (tête `9f6db4471`, qui n'en diffère que par un commentaire :
+  `git diff de7a79b17 HEAD -- frontend crates` → 1 fichier, 3 insertions, 1 suppression, en première ligne de chaque
+  journal ; série `gates-cloture-36-1.sh`, en séquence) :
+  - `scripts/gate-ci.sh kesh_ci_e361`, voie 1 (`gate-ci-cloture.log`, `gate-ci-console-cloture.log`) : **5452 passés,
+    0 échoué, 17 ignorés** (aucun rouge de KF-061, aucun rejeu) ;
+  - `npm run build` (`build-cloture.log`) vert ; `kesh_e2e_e361` recréée à neuf (migrations du worktree, seed) ;
+  - **E2E complet**, voie 2, port 3361, recette de `e34-commun.md`, dossiers sous `target/e2e-cloture/`
+    (`e2e-complet-cloture.log`) : **411 passés, 7 échecs, 18 ignorés** (17,9 min) ; `ss -ltnp` avant et après : aucune
+    écoute sur 3361. Les sept échecs, nommés contre `docs/testing.md` § « Les échecs attendus » — **tous KF-029 (#97)** :
+    `mode-expert.spec.ts:26`, `mode-expert.spec.ts:41`, `onboarding-path-b.spec.ts:65`, `onboarding-path-b.spec.ts:92`,
+    `onboarding.spec.ts:57`, `onboarding.spec.ts:77`, `onboarding.spec.ts:150`. Aucune pollution, aucun rouge hors liste.
   - *Série précédente, au commit `5963dd64c`* : `test-fast-ci.log` 5445/5445 (13 ignorés), `gate-ci.log` 5452 passés
     (17 ignorés), `front-complet.log` : `check`, `lint`, `build` verts, **`test:unit` 1 rouge sur 3472** — la garde KF-043
     (`e2e-selecteurs-traduits.test.ts`) sur les deux sélecteurs E2E `getByText` du message ; corrigé par le commit
@@ -945,3 +956,18 @@ Tous les journaux sous `/home/gcorbaz/devel/kesh-gate-logs/e36-1/` :
     plus que dans `CLASSE_LISTE` ; « 7,3 » ne reste que dans des entrées datées. Gates : Dev Agent Record. Prompt de la passe
     ciblée P2 : `36-1-entree-compte-produit-review-prompt-p2-ciblee.md`. Écart : un dossier vide `mut/r2/` créé par erreur
     pendant la campagne, non utilisé (aucun `rm`).
+- 2026-11-14 — **Passe ciblée P2 (Opus) : 0/0/0/5** (rapport `kesh-gate-logs/e36-1/review-p2-ciblee.md`), sur le seul
+  diff `258a04559..de7a79b17`. **Revue de code terminée** — trend (CRITICAL/HIGH/MEDIUM/LOW) : P1 B 0/0/0/4, E 0/0/0/4,
+  A 0/0/0/6 → remédiés (`de7a79b17`) → P2 ciblée Opus 0/0/0/5 ; close sur une passe sans rien au-dessus de LOW. Ses cinq LOW
+  traités par écrit, sans ligne exécutable (commit `9f6db4471` : un commentaire du composant, la fiche, le registre) — **le
+  dernier commit de code reste `de7a79b17`** :
+  - **R1** : l'exception du chargement (#1170) citée au commentaire d'E4-bis (`AccountAutocomplete.svelte`), à la table de
+    D1 (E4-bis) et au registre (C-36-1-11) ;
+  - **R2** : note de version — le cas E4-bis (saisie effacée sans message quand aucun compte n'est proposable) et le tiret
+    long du libellé ; le trait d'union tracé en **#1185** ;
+  - **R3** : Completion Notes annotées (`active.length > 0`) ; **R4** : AC1 n-bis, o-bis classés E5 ;
+  - **R5** : hors de la story, tracé en **#1186** ; #1185 et #1186 cités aux Dev Notes.
+  - Banc de mutations (hors dépôt) : la constante `SHOW`, morte depuis `de7a79b17`, annotée.
+- 2026-11-14 — **Clôture** (Opus 5.5) : gates de clôture au dernier commit de code `de7a79b17` — `gate-ci` 5452 passés,
+  E2E complet 411 passés et les sept échecs de la KF-029, rien hors liste (Dev Agent Record). `Status: done`, clé `done` au
+  `sprint-status.yaml`. Bases `kesh_e361`, `kesh_e2e_e361`, `kesh_ci_e361` et worktree gardés jusqu'à l'intégration.
