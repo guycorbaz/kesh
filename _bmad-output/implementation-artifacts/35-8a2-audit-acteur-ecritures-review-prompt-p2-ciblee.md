@@ -6,7 +6,7 @@ Passe **ciblée**, une seule lentille, contexte frais, **Sonnet** (P1 : Opus, tr
 du côté du créateur) et M-B (A1 = E1 : aucun test d'exécution de l'écriture d'un rapprochement par clé, hors `POST
 /reconciliation/manual`) — et des LOW (rapports `/home/gcorbaz/devel/kesh-gate-logs/e358a2-review-p1-{B,E,A}.md`). Déjà tracés, à ne
 pas rapporter de nouveau : #1130 (None positionnel des fonctions exemptées), #1131 (annulation d'un rapprochement sans clé), #1132
-(`pieges.rs`) ; et les LOW de la P1 non traités, que l'orchestrateur ouvre en issues : *à compléter par l'orchestrateur* (B5, les
+(`pieges.rs`) ; et les LOW de la P1 non traités, que l'orchestrateur ouvre en issues : #1142 (B5, les
 cinq littéraux `Acteur { user_id, api_key_id: actor_api_key_id }` de `routes/reconciliation.rs`).
 
 ## Périmètre : le seul commit `ec8117bcc`
@@ -53,7 +53,8 @@ et PDF : le commit suivant (entrée « Remédiation P1 » du Change Log de la fi
    ajouté par la story 35-8a2 (`git diff 4531669f8 ec8117bcc -- 'crates/kesh-api/tests/*'`) ?
 6. **Les mutations** (`p1-mut/*.log`) : M10a (bras `split` d'`accept_one` sans clé), M10b (bras `rule`), M11
    (`let actor_api_key_id: Option<i64> = None;` dans `post_split_once`), M12 (`pay_in_tx_as` qui passe `Acteur::utilisateur(user_id)`
-   à `create_in_tx`), M13 (bras `invoice` sans clé) : chacune tuée par le test annoncé, pour la bonne raison (message d'échec cité) ;
+   à `create_in_tx` — le journal dit la forme réellement jouée : compare), M13 (bras `invoice` sans clé), M13' (seule l'écriture
+   d'`accept_one_invoice` perd la clé) : chacune tuée par le test annoncé, pour la bonne raison (message d'échec cité) ;
    restauration constatée (« 0 ligne ») ; la garde verte sous M10/M11 (angle mort) est-elle bien écrite au Change Log ? Propose une
    mutation plausible qui survivrait encore.
 7. **Les commentaires de production** (`retry.rs`, `journal_entries.rs`, `supplier_invoices.rs`) : le diff ne change-t-il que des
