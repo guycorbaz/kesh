@@ -121,6 +121,3 @@ docs/manual/.mcp.json
 /.claude/settings.json
 /.claude/settings.local.json
 /.claude/workflows
-
-# Données comptables locales du contributeur (pièces, grands livres) — jamais versionnées
-/data-not-committed/
