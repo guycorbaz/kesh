@@ -36,7 +36,7 @@ change, et ouvrir mes comptes en devise avec leur solde en devise, afin de tenir
      `kesh-core`), sans lecture de la base. Dans le dépôt, `accounting::validate` s'exécute sous verrou et son erreur
      devient `DbError::Invariant("opening-complement:unbalanced:…")` (`opening_complement.rs:699-700`), rendu en 500
      `INTERNAL_ERROR` (`errors.rs:4808-4813`) : ce `map_err` reste le filet d'un défaut de calcul, jamais le refus d'une
-     saisie. Test d'API : chaque refus FX du complément rend son code en 400, jamais 500. (La génération appelle
+     saisie. Test d'API : chaque refus FX du complément rend son code en 400, jamais 500. Le refus est converti par `map_core_error` (déjà importé par la route) et son `details.line` est le rang **1-based** de la ligne dans `req.lines` (celui du corps envoyé, 35-3a AC-3). (La génération appelle
      `validate` dans la route, `:448`, par `map_core_error` : rien à déplacer.)
    - **`ComplementLine`** (`opening_complement.rs`) gagne `foreign: Option<ForeignAmount>` **sans** `Default` ; chaque
      site de construction est revu et inventorié au Change Log : `bank_accounts.rs` :764 (`opening_line` : `None`
@@ -53,7 +53,7 @@ change, et ouvrir mes comptes en devise avec leur solde en devise, afin de tenir
      `CompletableAccountDto` et le type TS
      `CompletableAccount` exposent `currency` ; la grille principale la lit sur `AccountResponse`.
    - **Cours proposé** : cours AFC du **mois précédant** la date de l'écriture (mois de clôture de l'exercice antérieur,
-     cohérent avec C-35-7 : le solde d'ouverture reprend la clôture), par `lookup` de 35-2 ; pour un complément daté
+     cohérent avec C-35-7 : le solde d'ouverture reprend la clôture), par `lookup` de 35-2, **appelé avec le 1er jour du mois précédent** (le `lookup` ne lit que le mois de sa `date` ; hors des bornes de 35-2, mois < 2000-01, il rend 400 : l'écran passe alors en saisie manuelle, sans `POST /fetch`) ; pour un complément daté
      `TODAY` (`complementDateKind`), cours du mois de cette date. Modifiable. **Envoyé `rate_source = manual`** sur
      l'ouverture et le complément, proposé ou saisi : le contrôle `FX_RATE_NOT_AFC` de 35-3a (AC-4, 4) compare une
      ligne `afc` au cours du mois de `entry_date`, à la création **et** au `PUT` — un cours du mois précédent, ou d'un
@@ -101,7 +101,7 @@ change, et ouvrir mes comptes en devise avec leur solde en devise, afin de tenir
      à un cours ou un CHF encore vides) ; `debit`/`credit` de la ligne ne portent **que le CHF dérivé** (l'un des deux
      vide, selon `side`), recalculé à chaque changement et seul lu par `computeBalance`, `classifyLine` et
      `isDraftLineNonEmpty` — aucun d'eux ne lit jamais `foreign.amount` comme du CHF ; une ligne en devise sans CHF
-     calculable (cours ou montant vide ou invalide) est `partial` ; `classifyLine` (`balance.ts` :143-162),
+     calculable (cours ou montant vide ou invalide) est `partial` (le message de la ligne est celui du code rendu par `computeChf` — `FX_VALUE_OUT_OF_RANGE`, `FX_LINE_ROUNDS_TO_ZERO` — traduit, non un « montant invalide » générique) ; `classifyLine` (`balance.ts` :143-162),
      `computeBalance` (`balance.ts` :83), `isDraftLineNonEmpty` (`vat-purchase.ts` :106) et les fabriques de lignes
      (`JournalEntryForm` :105-106, :187 ; `vat-purchase.ts` :87-96) sont revus, inventaire au Change Log.
      Changer le compte d'une ligne : CHF → devise, champs initialisés ; devise → CHF, `foreign` effacé ;
@@ -140,11 +140,11 @@ change, et ouvrir mes comptes en devise avec leur solde en devise, afin de tenir
      `FX_AMOUNT_MISMATCH` → message traduit sur la ligne fautive (numéro en `details` : le rang **1-based** de la ligne dans `lines`,
      lu dans `details.line` (35-3a AC-3), y compris pour `FX_VALUE_OUT_OF_RANGE`, `FX_LINE_ROUNDS_TO_ZERO` et
      `FX_RATE_NOT_AFC`). ⚠️ Ce rang est celui du **corps envoyé**, qui omet les lignes `empty` (`nonEmptyLines`,
-     `JournalEntryForm.svelte:170-173`, payload :205) : l'écran le traduit en ligne du formulaire par l'`index` de
+     `JournalEntryForm.svelte:171-174`, payload :206) : l'écran le traduit en ligne du formulaire par l'`index` de
      `nonEmptyLines[line − 1]`, jamais par `lines[line − 1]` ; même règle sur les grilles d'ouverture (`nonEmptyRows`,
      `complementLines`). Vitest de chacun, dont un refus sur une ligne précédée d'une ligne vide. `editRefusalOutcome`
      (`form-helpers.ts` :108) classe ces refus en édition : `ENTRY_IS_FX_REVALUATION` → `stale` (la fiche se recharge,
-     le motif s'affiche) ; `RATE_UNAVAILABLE`, `FX_*`, `ACCOUNT_REQUIRES_CURRENCY` → `stay` (le formulaire reste
+     le motif s'affiche) ; `RATE_UNAVAILABLE`, `FX_*`, `ACCOUNT_REQUIRES_CURRENCY`, `MULTI_CURRENCY_DISABLED` (réglage retiré entre le chargement et l'envoi) → `stay` (le formulaire reste
      ouvert) ; sinon ils tomberaient en `other`. Test par code.
    - **Ligne d'écart** : écriture déséquilibrée en CHF avec au moins une ligne en devise → bouton « Ajouter la
      différence de change » : une ligne CHF sur le compte de gains (écart au crédit) ou de pertes (au débit) désigné en
@@ -278,3 +278,4 @@ change, et ouvrir mes comptes en devise avec leur solde en devise, afin de tenir
   conditionné au verrou de période et au lettrage ; LOW : DTO `foreign` en `String`, mois futur sans `POST /fetch`,
   repli de `multiCurrency`, sites oubliés (`CompletableAccount`, aide de test, `blocker-messages.test.ts`, types TS),
   garde d'inventaire et prémisse de `VatPurchaseAssistant`, numéros de ligne, préalables E2E).
+- 2026-11-14 — validation P5 (Sonnet) : 0 CRITICAL, 0 HIGH, 0 MEDIUM, 4 LOW ; remédiés dans la fiche sauf aucun inter-fiches (numéros de ligne `JournalEntryForm` 171-174/:206 ; date du `lookup` du mois précédent et ses bornes ; `map_core_error` et rang `details.line` du complément ; `MULTI_CURRENCY_DISABLED` classé `stay` et message des lignes `partial`).

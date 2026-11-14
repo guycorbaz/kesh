@@ -31,7 +31,8 @@ que mon bilan présente ces comptes au cours de clôture et que l'écart aille a
      35-4-P2-1, 2026-11-14.)*
    - Un compte à solde en devise nul mais à solde CHF résiduel ≠ 0 **est proposé** (D = −chf_net) : il n'est pas écarté
      par un `HAVING balance != 0` de rapport.
-   - Comptes présélectionnés : tous ceux de bilan en devise, actifs et imputables. Un compte **archivé** à solde ≠ 0 est
+   - Comptes présélectionnés : tous ceux de bilan en devise, actifs et imputables, **dans la limite de 498** (AC-4) : au-delà,
+     l'aperçu présélectionne les 498 premiers par numéro de compte et le dit à l'écran (la passation en refuserait davantage). Un compte **archivé** à solde ≠ 0 est
      listé avec `reason: ACCOUNT_ARCHIVED`, non sélectionnable, avec avertissement (sinon l'écriture entière serait
      refusée en `InactiveOrInvalidAccounts`, `validate_lines_accounts_in_tx`). Comptes `Revenue`/`Expense` jamais
      proposés.
@@ -54,7 +55,11 @@ que mon bilan présente ces comptes au cours de clôture et que l'écart aille a
      (`routes/fiscal_years.rs:361`) — le registre des routes (ci-dessous) contrôle l'enveloppe au handler. Elle
      appelle ensuite `create_in_tx(…, enforce_postable = true)` ; l'audit `journal_entry.created` est écrit par
      `create_in_tx_inner`. Une `rates` qui omet une devise sélectionnée : cours AFC lu dans la table des cours
-     **avant** la transaction, `RATE_UNAVAILABLE` (404) s'il manque.
+     **avant** la transaction, `RATE_UNAVAILABLE` (404) s'il manque. Les devises des comptes sélectionnés se lisent
+     avant la transaction par une lecture ordinaire sur le pool (elles ne servent qu'à choisir les cours à résoudre et à
+     contrôler les clés de `rates`) ; **dans** la transaction, après l'étape (4), toute devise d'un compte admissible
+     sélectionné qui n'a pas de cours résolu (devise du compte changée entre-temps) → rollback, 404 `RATE_UNAVAILABLE` : un
+     cours n'est jamais supposé.
    - **Verrous et instantané** (le même défaut que la règle de placement de `bank_accounts.rs:905-918`) : sous
      `REPEATABLE READ` (niveau par défaut), la vue cohérente naît à la **première lecture non verrouillante** de la
      transaction. Les soldes doivent donc se lire **après** tous les verrous, et **aucune lecture ordinaire ne
@@ -71,7 +76,7 @@ que mon bilan présente ces comptes au cours de clôture et que l'écart aille a
      l'ordre global `companies` → exercice des chemins Pattern 5 (`invoices.rs:698`, sentinelle puis `create_in_tx`) et
      de 35-3a AC-4 (`companies` en tête de l'étape 0 de `create_in_tx_inner`) ; prise après l'exercice, elle formerait
      le cycle exercice → `companies` contre `companies` → exercice que 35-3a écarte (aucun flux ne prend un exercice
-     puis `companies` **en exclusif** : ni `close`, ni `reopen`, ni `lock_books`, `companies.rs:1020` ; la
+     puis `companies` **en exclusif** : ni `close`, ni `reopen`, ni `lock_books`, `repositories/companies.rs:1002-1020` ; la
      contre-passation d'une écriture en devise de 35-3a prend l'exercice puis `companies` en partagé, compatible) ; (1) chaque antérieur
      verrouillé par clé primaire (`LOCK_EARLIER_BY_ID_SQL`) dans l'ordre chronologique, puis
      l'exercice `FOR UPDATE` (`LOCK_IN_COMPANY_SQL`) ; (2) relecture **verrouillante** du plus ancien antérieur ouvert (`earlier_open_locking_sql`,
@@ -85,10 +90,12 @@ que mon bilan présente ces comptes au cours de clôture et que l'écart aille a
    - **Source du cours** (pour l'audit) : par devise, `afc` si le cours retenu **égale** `rate_per_unit` de la table
      pour (devise, mois de fin d'exercice), qu'il vienne de la table ou de `rates` (l'écran renvoie les cours
      préremplis) ; `manual` sinon, y compris pour une devise non publiée.
-   - Une **seule** écriture journal `OD`, datée du dernier jour de l'exercice, libellé **en français**, comme la
-     contre-passation (`journal_entries.rs:2975`) : « Réévaluation des comptes en devise au JJ.MM.AAAA (écarts non
-     réalisés) » (≤ 500 caractères, `MAX_DESCRIPTION_LEN`).
-   - Une ligne par compte d'écart non nul : `ForeignAmount { source: Revaluation, amount: 0 }`, `rate_source =
+   - Une **seule** écriture journal `OD`, datée du dernier jour de l'exercice, libellé **en français** construit dans `post`, comme la
+     contre-passation (`crates/kesh-db/src/repositories/journal_entries.rs:2975`) : « Réévaluation des comptes en devise au JJ.MM.AAAA (écarts non
+     réalisés) » (longueur fixe, très inférieure aux 500 caractères de `MAX_DESCRIPTION_LEN`, privé à `routes/journal_entries.rs` : un test sur
+     le libellé produit suffit, aucune constante à exporter).
+   - Une ligne par compte d'écart non nul : `ForeignAmount { currency, source: Revaluation, amount: 0, rate }` (`currency` =
+     devise **du compte**, que le contrôle central de 35-3a, `FX_CURRENCY_MISMATCH`, compare à celle du compte), `rate_source =
      'revaluation'`, `amount_currency = 0`, `exchange_rate` = cours retenu (> 0, par unité), CHF = |D|. **Cette ligne
      est exemptée de l'égalité CHF = montant × cours et de `FX_LINE_ROUNDS_TO_ZERO`** (le CHF est pris tel quel, > 0) ;
      la saisie manuelle de 35-3a (AC-6) la refuse, c'est la route de 35-5 qui la construit.
@@ -107,7 +114,7 @@ que mon bilan présente ces comptes au cours de clôture et que l'écart aille a
      liste triée, garde `tests/audit_label_registry.rs`) et sa clé `audit-log-action-fx-revaluation-posted` dans
      les quatre locales ; les deux routes entrent à `LIB_ROUTES` (`tests/audit_route_registry.rs`) — aperçu
      `NoMatter("calcule sans persistance — aucune mutation"), SansEcritureAuJournal` (comme `bank_imports::preview`,
-     `:540`), passation `Traced, Rejouee` ; les décomptes de `the_registry_partition_is_what_the_story_declares` et la
+     `:540`), passation `Traced, Rejouee` ; les décomptes de `the_registry_partition_is_what_the_story_declares` (+2 routes, **total du registre +2**) et la
      phrase du manuel d'administration (`admin-manual.tex:3217`, gardée par `le_manuel_dit_le_compte_du_registre`)
      suivent, **cumulés** avec ceux des 35-1 et 35-2 (+2 routes, dont +1 tracée et +1 sans mutation : l'assertion
      `no_matter` passe de 3 à 4, et la phrase du manuel change **en chiffres et en toutes lettres** — « N + 4 + 4 = M » et
@@ -143,7 +150,8 @@ que mon bilan présente ces comptes au cours de clôture et que l'écart aille a
    postérieur clos → `LATER_FISCAL_YEAR_CLOSED` (garde `journal_entries.rs:368`, repository ; état hérité seulement,
    puisque `close` impose l'ordre) ; `DATE_OUTSIDE_FISCAL_YEAR` ; livres verrouillés à cette date
    (`books_locked_through`, seuil **inclusif** : `entry_date <= locked_through`) → `PERIOD_LOCKED`. L'aperçu
-   refuse de même (404, mono-devise, exercice clos) et **signale** les autres (`blockers[]`, AC-1). `accountIds` : un seul code, 400 `FX_REVALUATION_ACCOUNT_INVALID`, `details: { reason, accountIds }` (les
+   refuse de même (404, mono-devise, exercice clos, formes de la requête : 400 `FX_RATE_INVALID` /
+   `FX_REVALUATION_ACCOUNT_INVALID`, `FX_VALUE_OUT_OF_RANGE`) et **signale** les autres (`blockers[]`, AC-1). `accountIds` : un seul code, 400 `FX_REVALUATION_ACCOUNT_INVALID`, `details: { reason, accountIds }` (les
    identifiants fautifs **tels que reçus**, rien de lu en base) ; liste vide ou doublons → `reason: "empty"` /
    `"duplicate"`, avant la transaction ; comptes d'une autre société ou hors de la liste admissible (groupe, archivé,
    résultat, sans devise) → `reason: "notEligible"`, dans la transaction (ci-dessus), sans fuite d'existence (même
@@ -156,9 +164,12 @@ que mon bilan présente ces comptes au cours de clôture et que l'écart aille a
      rendu diffère (`FX_RATE_INVALID`, la devise fautive en `details`). **Le produit** devise_net × cours (devise_net est
      un cumul, non borné par ligne) se calcule en entiers `i128` par multiplication **contrôlée** (`i128::checked_mul` ; un dépassement →
      `FX_VALUE_OUT_OF_RANGE`), jamais par `Decimal::checked_mul` (35-3a AC-3 : réduction d'échelle silencieuse) ; un
-     CHF réévalué ou un |D| > 10¹³ → 400 `FX_VALUE_OUT_OF_RANGE`, sans écriture. **De même Σ gains et Σ pertes** (et le
+     CHF réévalué ou un |D| > 10¹³ → 400 `FX_VALUE_OUT_OF_RANGE`, sans écriture. **Forme du refus** : la variante de 35-3a
+     (`FxValueOutOfRange { line }`) porte un rang de ligne que 35-5 n'a pas ; 35-5 rend le même code et le même statut par
+     sa **propre variante** (`FxRevaluationValueOutOfRange`, bras dans `errors.rs`), `details: { currency, accountId }` (le
+     compte fautif, ou `accountId` absent pour une somme de contrepartie), sans toucher `map_core_error`. **De même Σ gains et Σ pertes** (et le
      net d'un compte unique) : les lignes de contrepartie agrégent jusqu'à 498 écarts, et 498 × 10¹³ dépasse la colonne
-     `debit`/`credit` `DECIMAL(19,4)` (< 10¹⁵, `0001_schema_squash.sql:848-849`) — une erreur SQL, donc un 500, si rien
+     `debit`/`credit` `DECIMAL(19,4)` (< 10¹⁵, `crates/kesh-db/test-schema/0001_schema_squash.sql:848-849`) — une erreur SQL, donc un 500, si rien
      ne la borne ; une somme > 10¹³ → 400 `FX_VALUE_OUT_OF_RANGE`, sans écriture. Au plus 100 devises et **498** comptes par requête (l'écriture reste sous
      `MAX_LINES_PER_ENTRY` = 500, `routes/journal_entries.rs`, avec les deux lignes de contrepartie).
 5. **AC-5 — RBAC.** Les deux routes vont dans `comptable_routes` (`lib.rs:524`, `require_comptable_role`), comme
@@ -248,3 +259,7 @@ que mon bilan présente ces comptes au cours de clôture et que l'écart aille a
   Choix de cette passe, à confirmer : `companies` verrouillée **avant** les exercices (P4-1, ordre de 35-3a et de
   Pattern 5) ; refus en transaction alignés sur l'ordre d'avant la transaction, mono-devise d'abord (P4-5) ; code neuf
   `FX_REVALUATION_ACCOUNT_INVALID` pour `accountIds` (P4-4).
+- 2026-11-14 — validation P5 (Sonnet) : 0 CRITICAL, 0 HIGH, 2 MEDIUM, 6 LOW ; remédiés dans la fiche ; aucun finding
+  inter-fiches. (MEDIUM : variante propre de `FX_VALUE_OUT_OF_RANGE` sans rang de ligne ; devises des comptes lues avant
+  la transaction et revérifiées dedans. LOW : `currency` de `ForeignAmount`, chemins cités, plafond de 498 à l'aperçu,
+  formes de la requête à l'aperçu, total du registre +2, libellé et `MAX_DESCRIPTION_LEN`.)

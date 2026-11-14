@@ -36,11 +36,13 @@ récupération pour un mois donné, afin que mes écritures en devise reçoivent
      `currency` a **la même définition** qu'`accounts.currency` (35-1 AC-1) et `journal_entry_lines.currency`
      (35-3a AC-1), et le `CHECK` porte `BINARY` comme dans ces deux fiches : la table, en `utf8mb4_unicode_ci` par
      défaut, confondrait sinon `usd` et `USD` ;
-   - `_kesh_exchange_rate_fetch` singleton : `id` (`CHECK (id = 1)`), `triggered_by ENUM('auto','manual')` (**pas
+   - `_kesh_exchange_rate_fetch` singleton : `id TINYINT UNSIGNED PRIMARY KEY` (`CHECK (id = 1)`),
+     `triggered_by ENUM('auto','manual') NOT NULL` (**pas
      `trigger`** : mot réservé de MariaDB ; le champ JSON de l'API s'appelle `trigger`, lu depuis cette colonne),
-     `last_run_at`, `last_status` (`CHECK IN ('ok','error','not_published')`), `last_error VARCHAR(64)` — **un code
+     `last_run_at DATETIME(3) NOT NULL` (UTC), `last_status VARCHAR(16) NOT NULL` (`CHECK IN ('ok','error','not_published')`),
+     `last_error VARCHAR(64) NULL` — **un code
      classé**, jamais le texte d'une erreur `reqwest` (qui porte l'URL) : `timeout`, `connect`, `http_status:<n>`,
-     `too_large`, `malformed`, `month_mismatch`, `no_valid_rate`, `invalid_rates:<n>` —, `last_month DATE`. Le tour
+     `too_large`, `malformed`, `month_mismatch`, `no_valid_rate`, `invalid_rates:<n>` —, `last_month DATE NOT NULL`. Le tour
      d'une récupération écrit **une** ligne : `ok` (avec `last_error = invalid_rates:<n>` si des devises ont été
      écartées), `not_published` ou `error` ; un tour de la boucle qui traite deux mois écrit le **pire** des deux
      statuts (`error` > `not_published` > `ok`) et `last_month` du mois en cause (à égalité, le plus récent). **Ligne créée
@@ -118,9 +120,18 @@ récupération pour un mois donné, afin que mes écritures en devise reçoivent
      se prend **par mois récupéré**, jamais pour un tour entier de la boucle (qui en traite deux : 2 × 20 s) : l'attente
      d'un `POST /fetch` est alors bornée par **deux** requêtes sortantes au plus devant la sienne (le mois en cours de la
      boucle et un autre `POST /fetch` — le verrou tokio est équitable, premier arrivé premier servi), soit 3 × 20 s dans
-     le pire cas, plus les écritures. Sous le verrou, le `POST /fetch` relit la mémoire de l'AC-5 avant d'appeler la
-     source (un mois **présent** se redemande, c'est la demande : la mémoire ne retient que `not_published` et les
-     échecs). Le client du frontend appelle `POST /fetch` avec `timeoutMs: 90_000` (`CallOptions`, `api-client.ts:61` ; le
+     le pire cas, plus les écritures — borne valable pour **un** autre demandeur : avec plus de demandeurs simultanés
+     (plusieurs onglets), elle s'allonge d'autant ; pour la tenir, un `POST /fetch` qui a **attendu** le verrou et
+     trouve, une fois le verrou pris, le mois écrit par une récupération **commencée après son arrivée** (`fetched_at`
+     postérieur) rend ce résultat (200, `count` des devises présentes, `rejected` 0) sans rappeler la source. Sous le
+     verrou, le `POST /fetch` relit la mémoire de l'AC-5 avant d'appeler la source (un mois **présent** se redemande,
+     c'est la demande : la mémoire ne retient que `not_published` et les échecs) ; **un succès retire l'entrée** du
+     mois de la mémoire (sans quoi un échec mémorisé rendrait 503 pendant 15 minutes sur un mois que la boucle vient
+     d'écrire). La boucle juge « manque » (AC-4) **sous le verrou**, non avant : sinon elle redemanderait un mois que
+     le `POST /fetch` devant elle vient d'écrire. Le travail du `POST /fetch` (verrou, appel, transaction, état,
+     audit) tourne dans un `tokio::spawn` attendu par le handler, comme « Sauvegarder maintenant »
+     (`run_backup_now`, `routes/backup_schedule.rs:159`) : l'abandon du client (délai de 90 s, onglet fermé) n'annule
+     pas une récupération entre le `COMMIT` des cours et l'audit. Le client du frontend appelle `POST /fetch` avec `timeoutMs: 90_000` (`CallOptions`, `api-client.ts:61` ; le
      défaut de 30 s, `:42`, et même 60 s ne couvrent pas ce pire cas : ils rendraient `TIMEOUT`, lu comme issue
      inconnue) ; écriture en **une transaction** : `INSERT … ON DUPLICATE KEY UPDATE` des devises valides du mois ; un échec du mois
      n'écrit aucun cours.
@@ -150,7 +161,8 @@ récupération pour un mois donné, afin que mes écritures en devise reçoivent
      d'erreur) ;
    - `POST /api/v1/exchange-rates/fetch { year, month }` — dans **`comptable_routes`** (Administrateur ou Comptable ;
      mois ≥ 2000-01 et ≤ mois courant en Europe/Zurich, sinon 400) : récupère ce mois, **auditée sous l'utilisateur**
-     (`exchange_rates.fetched`, mois, nombre de devises écrites, écartées et dont le cours a changé (`changed`) — écrite **sur un succès seulement** : un
+     (`NewAuditLogEntry::from_current_user`, `audit.rs` : une clé d'API est attribuée comme telle ;
+     `exchange_rates.fetched`, mois, nombre de devises écrites, écartées et dont le cours a changé (`changed`) — écrite **sur un succès seulement** : un
      404 ou un 503 n'écrit que `_kesh_exchange_rate_fetch`) ; écrit `_kesh_exchange_rate_fetch` avec
      `triggered_by = 'manual'` ; réponses `200 {month: "AAAA-MM-01", count, rejected}` (`count` et `rejected` sont des
      **nombres** ; les codes écartés vont au journal du serveur), `404 RATE_NOT_PUBLISHED`,
@@ -175,14 +187,15 @@ récupération pour un mois donné, afin que mes écritures en devise reçoivent
      **forme unique** de ce code, que le `DbError::RateUnavailable` de 35-3a rend à l'identique, et d'où l'écran tire
      `{year, month}` du `POST /fetch`. L'écran de saisie (35-3b) et la réévaluation (35-5)
      appellent `POST /fetch` sur ce 404 (rôles Administrateur et Comptable), puis relisent ; sans cours, saisie
-     manuelle. Devise `CHF` (devise principale, sans cours) → 400 ; devise absente de la liste ISO 4217 de 35-1
+     manuelle. Devise `CHF` (devise principale, sans cours) → 400 `Validation`, sans code dédié ; devise absente de la liste ISO 4217 de 35-1
      (`kesh-core::currency`) → 400 `CURRENCY_UNKNOWN` (code de 35-1) ; `month` ou `date` absents ou illisibles (les deux `GET`) → 400.
    - Toutes ces routes exigent le mode multi-devises de la société courante : **`409 MULTI_CURRENCY_DISABLED`**, même
      statut que dans la 35-1.
    - Nouvelles variantes `AppError` (`errors.rs`) et leur traduction côté frontend pour `RATE_NOT_PUBLISHED`,
      `RATE_SOURCE_UNAVAILABLE`, `RATE_UNAVAILABLE`. **Propriétaire unique de `RATE_UNAVAILABLE`** : cette story (elle
-     précède 35-3a) crée la variante `DbError::RateUnavailable { currency, month }` **et** son bras de la
-     correspondance `DbError` → `AppError` (`errors.rs`, 404, `details` ci-dessus) ; le handler de `lookup` s'en sert
+     précède 35-3a) crée la variante `DbError::RateUnavailable { currency, month }` (`crates/kesh-db/src/errors.rs`,
+     `enum DbError` :668) **et** son bras de la correspondance `DbError` → `AppError` (`crates/kesh-api/src/errors.rs`,
+     404, `details` ci-dessus) ; le handler de `lookup` s'en sert
      sur `find_rate_in_tx` → `None`. 35-3a et 35-5 la **réutilisent**, sans la redéfinir.
    - **Formes des réponses** (camelCase, décimaux en chaînes, comme `lookup`) : `GET /exchange-rates` →
      `{ month: "AAAA-MM-01", rates: [{ currency, publishedUnit, publishedRate, ratePerUnit, fetchedAt }] }` (tri par
@@ -202,11 +215,14 @@ récupération pour un mois donné, afin que mes écritures en devise reçoivent
      `the_registry_partition_is_what_the_story_declares` gagne **+1 route et +1 tracée** (état au 2026-11-14 : 146 routes,
      139 tracées, total registre 149 ; **ces chiffres s'écrivent en deltas** — la 35-1 et la 35-5 ajoutent aussi leur
      route mutante, l'ordre d'intégration décide du chiffre absolu, à recompter au code), et le total registre **+2**
-     avec l'endpoint `_test` (entrée `("post", "/exchange-rates/source", Exempt(…), Exemptee(…))` de
-     `TEST_ENDPOINT_ROUTES`) ; la phrase du manuel d'administration (`admin-manual.tex:3217`, « N des M routes à verbe
+     avec l'endpoint `_test` (entrée `("post", "/exchange-rates/source", Exempt(…), SansEcritureAuJournal)` de
+     `TEST_ENDPOINT_ROUTES`, sur le modèle de `/password-reset-token`, `audit_route_registry.rs:620` : il n'écrit
+     rien en base ; `Exemptee` signifie « écrit au journal et n'est pas rejouée », réservé à `full_import`, `/seed`,
+     `/reset`) ; la phrase du manuel d'administration (`admin-manual.tex:3217`, « N des M routes à verbe
      mutant » et « N + 4 + 3 = M », gardée par `le_manuel_dit_le_compte_du_registre`) suit le chiffre recompté.
      Le second test, `the_replay_partition_is_what_the_story_declares` (`audit_route_registry.rs:1450`), compte aussi :
-     `sans_ecriture` +1 (le `POST /fetch`), `exemptees` +1 (l'endpoint `_test`), `tout.len()` +2 (:1502) ; commentaires
+     `sans_ecriture` **+2** (le `POST /fetch` et l'endpoint `_test`), `exemptees` et `rejouees` inchangés,
+     `tout.len()` +2 (:1502) ; commentaires
      et `//!` du module recomptés, en deltas. *(Alignement de l'orchestrateur sur 35-1-P4-IF-1.)*
 6. **AC-6 — Écran** *Paramètres → Cours de change* (visible en multi-devises) : choix du mois, tableau
    (devise, unité publiée, cours publié, cours par unité, date de récupération), filtre par devise, bouton
@@ -221,7 +237,10 @@ récupération pour un mois donné, afin que mes écritures en devise reçoivent
    un `404 RATE_UNAVAILABLE`. Ces deux routes vident donc aussi `_kesh_exchange_rates` et
    `_kesh_exchange_rate_fetch`, et `clear_transient_test_state` (`test_endpoints.rs:349`) vide `rate_fetch_memo` et
    remet la source factice à son défaut. Test Rust de ce vidage. Le commentaire de `test_fixtures.rs` (:365-373), qui liste
-   les tables système hors `TABLES_TO_TRUNCATE`, gagne les deux tables neuves.
+   les tables système hors `TABLES_TO_TRUNCATE`, gagne les deux tables neuves. La remise à zéro des données de
+   démonstration (`kesh_seed::reset_demo`, `crates/kesh-seed/src/lib.rs:510`, audit `installation.reset`) ne vide
+   que les tables applicatives : elle **laisse** les cours, données officielles de l'installation — voulu, à dire au
+   manuel. Aucun outil du serveur MCP ne lit la table des cours (une ligne porte son cours, 35-3a) : hors périmètre.
 8. **AC-8 — i18n, manuels.** Quatre locales (écran, codes d'erreur, libellé d'audit) ; manuel utilisateur (écran,
    source, récupération) ; manuel d'administration : accès sortant HTTPS vers `www.backend-rates.bazg.admin.ch`
    requis en multi-devises, aucun en mono-devise, mandataire par `HTTPS_PROXY` (lu par `reqwest`) ; phrase du
@@ -258,7 +277,8 @@ récupération pour un mois donné, afin que mes écritures en devise reçoivent
       `last_status` d'un tour à deux mois (le pire) ; aucune trace d'audit en automatique ; deux `POST /fetch` simultanés
       sérialisés (le second attend la fin du premier, AC-3 ; un seul appel sortant à la fois) ; `POST /_test/seed` et `/reset` vident les deux tables et
       la mémoire (AC-7) ; source factice : XML par défaut au mois demandé ; un `rate_per_unit` changé au refetch est
-      compté ; Vitest : un 503 de `POST /fetch` n'allume pas le bandeau dégradé ; E2E (écran, récupération servie par
+      compté ; un `POST /fetch` qui a attendu le verrou derrière une récupération réussie du même mois ne rappelle pas
+      la source ; un succès efface l'échec mémorisé du mois ; Vitest : un 503 de `POST /fetch` n'allume pas le bandeau dégradé ; E2E (écran, récupération servie par
       la source factice du mode test).
 - [ ] Manuels, CHANGELOG, `Cargo.lock`.
 
@@ -290,3 +310,9 @@ récupération pour un mois donné, afin que mes écritures en devise reçoivent
   (35-3b : `timeoutMs` 90 s et non 60 s) et 35-2-P4-IF3 (35-1 : décomptes du registre des routes en deltas). Choix de
   cette passe, à confirmer : propriétaire unique de `RATE_UNAVAILABLE` = 35-2 (P4-1), `timeoutMs: 90_000` (P4-4),
   formes des réponses `GET` fixées (P4-7).
+- 2026-11-14 — validation P5 (Opus) : 0 CRITICAL, 0 HIGH, 1 MEDIUM, 6 LOW ; remédiés dans la fiche sauf aucun
+  (aucun finding inter-fiches). MEDIUM P5-1 : l'endpoint `_test` classé `SansEcritureAuJournal` et non `Exemptee`
+  (`sans_ecriture` +2, `exemptees` inchangé). LOW : borne d'attente du verrou et récupération attendue non rejouée
+  (P5-2), mémoire effacée sur succès (P5-3), `POST /fetch` dans un `tokio::spawn` (P5-4), DDL de
+  `_kesh_exchange_rate_fetch` complété (P5-5), `reset_demo`, MCP et `from_current_user` nommés (P5-6), `CHF` → 400
+  `Validation` et les deux `errors.rs` distingués (P5-7).

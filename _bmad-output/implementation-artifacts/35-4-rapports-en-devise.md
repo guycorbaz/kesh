@@ -118,7 +118,7 @@ exports, afin de rapprocher mes comptes PayPal ou Wise de leurs relevés et de c
      MidpointAwayFromZero)` avant tout formatage (les formateurs existants ne font qu'un `{:.2}` : `pdf.rs:247`,
      `csv.rs:41`). Montants : `format_swiss_amount` (apostrophes) dans le **PDF** et à l'écran ; dans le **CSV**,
      `format_amount_iso` (`csv.rs:40`, point décimal sans séparateur de milliers, comme les colonnes CHF — un tableur
-     ne relit pas `1'233.57`). Cours : `format_exchange_rate` (neuf, `pdf.rs`, partagé par PDF et CSV), qui rend le cours **par
+     ne relit pas `1'233.57`). Cours : `format_exchange_rate` (neuf, `pdf.rs`, `pub(crate)` pour que `csv.rs` l'appelle, partagé par PDF et CSV), qui rend le cours **par
      unité** sans `%`, zéros de queue retirés, au moins 4 décimales et au plus 10 (`0.8808`, `0.0057510000` →
      `0.005751`) ; testé (cours JPY < 0.01, cours à 10 décimales). `format_rate` (`pdf.rs:1063`, taux de TVA en
      `%` à 2 décimales) ne s'emploie pas : il rendrait `0.88 %`.
@@ -187,7 +187,7 @@ exports, afin de rapprocher mes comptes PayPal ou Wise de leurs relevés et de c
       `csv.rs:1172`, `pdf.rs:1902`, `:2404`, `:2412`, `benches/export.rs:153`, `:161`. Consommateurs
       à étendre (sans échec de compilation) : `mcp/outils/rapports.rs:142` (`fn ligne`, `LigneDeSolde`), la
       construction de `LigneBalance` (`mcp/outils/rapports.rs:219`) et la correspondance du grand livre de
-      `mcp/outils/grand_livre.rs` (`fn section`, :148) ; extension de `sortie!` reprise de 35-3a (AC-6).
+      `mcp/outils/grand_livre.rs` (`fn section`, :148) ; **aucune** extension de `sortie!` (champs en devise présents à `null`, AC-6, C-35-9) : les champs neufs des sorties MCP sont des `Option<…>` de types admis.
 - [ ] `services/rapports.rs`, routes, MCP (limites).
 - [ ] Frontend : cinq vues, types ; Vitest — `IncomeStatementView.test.ts` et `JournalReportView.test.ts` **n'existent
       pas** (relevé du 2026-11-14) : à créer, avec le cas « mono-devise : rien de visible ne change » (AC-6) ; E2E
@@ -218,3 +218,11 @@ exports, afin de rapprocher mes comptes PayPal ou Wise de leurs relevés et de c
   LOW : P4-5 arrondi explicite avant `{:.2}` ; P4-6 sites `LedgerLine`/`LedgerSection` ; P4-7 `JournalEntryLineRow`
   des benches et lignes des `SELECT` du journal ; P4-9 régime des libellés (JSON, PDF, CSV) ; P4-10 `Some(&[])` de
   `balances_as_of` ; P4-11 inventaire AC-7 (`routes/bank_accounts.rs`) ; P4-12 `RawAccount` lit `a.currency`.
+- 2026-11-14 — validation P5 (Sonnet) : 0 CRITICAL, 0 HIGH, 1 MEDIUM, 1 LOW ; remédiés dans la fiche sauf <aucun
+  inter-fiches>. MEDIUM P5-1 : la tâche « Sites de construction » renvoyait à une « extension de `sortie!` reprise de
+  35-3a », contraire à l'AC-6 et au registre C-35-9 (champs à `null`, macro non étendue) ; l'entrée P4 ci-dessus
+  (« extension de `sortie!` ») est historique. LOW P5-2 : visibilité de `format_exchange_rate` (`pub(crate)`). Lignes
+  citées relues au code (`opening.rs:75`, sommes `general_ledger.rs:338`/`:465`, `:687`, `trial_balance.rs:165-195`/`:209`,
+  `sign_expr` bilan et résultat, `Cargo.toml` des deux crates, `sortie.rs:97-114`/`:463`, `rapports.rs:63`/`:104`,
+  `grand_livre.rs:37`/`:56`/`:61`, `mcp_outils_e2e.rs:99`/`:182`/`:788`/`:1345`, `pdf.rs:153`/`:718`/`:1063`,
+  `csv.rs:40`, `journal_report.rs:92`/`:177`) : exactes ; accord avec 35-1, 35-3a et 35-5 (`balances_as_of`) vérifié.

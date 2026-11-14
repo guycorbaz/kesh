@@ -33,6 +33,13 @@ dans les fiches ; l'issue et la PR s'ouvrent à la fin, une fois la recette fait
   (c) grand livre, balance, bilan et compte de résultat dans les deux devises ; (d) réévaluation. **Hors périmètre** :
   factures, factures fournisseur, imports bancaires (CAMT, CSV) en devise — l'API suffit pour l'instant.
 
+- **D8 — Comptes bancaires en devise (2026-11-14).** Tant que les imports en devise n'existent pas, PayPal, Wise et
+  les autres comptes en USD ou EUR sont des **comptes du plan** en devise, et non des comptes bancaires Kesh (un compte
+  lié à un compte bancaire ne peut porter de devise, C-35-9). Beat : « plain ledger accounts for PayPal/Wise is fine if
+  I can change type later to bank accounts ». **Engagement pour l'epic des imports en devise** : permettre de lier un
+  compte bancaire à un compte du plan **déjà en devise**, en gardant numéro, historique et soldes (à tracer en issue
+  avec la PR).
+
 ## Source des cours — établie le 2026-11-14
 
 - Page ESTV *MWST Monatsmittelkurse* : « XML-File » → `https://www.backend-rates.bazg.admin.ch/api/xmlavgmonth`.
