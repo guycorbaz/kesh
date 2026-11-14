@@ -1,6 +1,6 @@
 # Story 35-5c : les tests ne dépendent plus de l'heure à laquelle on les lance — tests Rust et specs E2E au jour suisse, gardes fermées (#929)
 
-Status: ready-for-dev
+Status: review
 
 *Fiche rédigée le 2026-11-12 par l'agent de rédaction des fiches 35-5a et 35-5b (Opus 5.5), worktree `kesh-e355`, à la
 remédiation de la validation P1 de la 35-5b (V1-8 : la story ne tenait pas en une boucle). Troisième des trois stories du
@@ -170,13 +170,13 @@ produit qu'à minuit) : contrôle par lecture, au Change Log, `/usr/bin/grep -nE
 
 ## Tâches
 
-- [ ] Étape 0 : partir de la 35-5b fusionnée ; relever la liste d'exemptions restante de la garde Rust et la liste des specs
+- [x] Étape 0 : partir de la 35-5b fusionnée ; relever la liste d'exemptions restante de la garde Rust et la liste des specs
       restantes (sortie de la garde étendue sur la 35-5b fusionnée : compte d'entrée) ; confirmer les tableaux ci-dessus ;
       Change Log.
-- [ ] Conversion des tests Rust (D1) ; garde Rust fermée (D2) ; preuve de nuit (AC5).
-- [ ] Specs E2E (D3), `ajouterJoursIso` et son test, garde frontend étendue (D4).
-- [ ] Gates : `test-fast.sh --ci` complet à chaque commit (tests de `kesh-db`), `scripts/gate-ci.sh` au dernier, frontend
-      complet, E2E complet au dernier commit de code.
+- [x] Conversion des tests Rust (D1) ; garde Rust fermée (D2) ; preuve de nuit (AC5).
+- [x] Specs E2E (D3), `ajouterJoursIso` et son test, garde frontend étendue (D4).
+- [x] Gates du passage en `review` (consignes de l'Epic 35, qui priment sur cette ligne) : `test-fast.sh --ci` et
+      `scripts/gate-ci.sh` au dernier commit de code, frontend complet. **E2E complet : à la clôture** (non lancé ici).
 
 ## Dev Notes
 
@@ -210,13 +210,53 @@ découpage Rust / E2E reste possible s'il le fallait, sans dépendance entre les
 
 ### Agent Model Used
 
+Opus 5.5 (agent de développement, worktree `kesh-e355c`, branche `story/35-5c-date-du-jour-tests`, voie 2), le 2026-11-14.
+
 ### Debug Log References
+
+Journaux hors dépôt, `/home/gcorbaz/devel/kesh-gate-logs/e355c/` (commit et environnement en tête de chacun) :
+`rouges.log` (garde frontend), `rouges-rust.log` (garde Rust), `cible-1.log`, `verts-front-cible.log`, `nuit-B1.log`,
+`nuit-B2.log`, `nuit-B3.log`, `nuit-J1.log`, `nuit-N1.log`, `nuit-S1.log`, `nuit-S2.log` et la synthèse `nuit.log`,
+`mut/M1-M2-M5.log`, `mut/M3.log`, `mut/M4.log`, `mut/M6-lecture.log`, `mut/resume.log`, `ac6.log`, `gate-test-fast.log`,
+`gate-ci.log` (+ `gate-ci.journal`), `front-check.log`, `front-lint-i18n-ownership.log`, `front-test-unit.log`, `front-build.log`.
+Scripts : `reset-db-e355c.sh`, `test-fast-e355c.sh`, `nuit-e355c.sh`, `cible-e355c.sh`.
 
 ### Completion Notes List
 
-- Fiche rédigée à la remédiation de la validation P1 de la 35-5b (C-e350-22) ; validation à lancer.
+- Fiche rédigée à la remédiation de la validation P1 de la 35-5b (C-e350-22) ; validation terminée en P3 ciblée.
+- **Commits** : `40090cdd3` (code et tests, registre) — dernier commit de code ; le commit suivant ne porte que la fiche, le
+  registre annoté, `sprint-status.yaml` et le prompt de la revue P1.
+- **Rust (D1)** : 68 occurrences converties (périmètre `ebd5b654c..40090cdd3`, comptes de la garde sur la base,
+  `rouges-rust.log`) — `journal_entries.rs` 50 (module de tests ; `setup()` lit le jour suisse une fois et le rend), et
+  `kesh-api/tests` : `accounts_e2e.rs` 2, `admin_full_import_e2e.rs` 3, `credit_card_e2e.rs` 3, `invoice_delete_e2e.rs` 2,
+  `invoice_unvalidate_e2e.rs` 6, `mcp_enveloppe_e2e.rs` 1, `reconciliation_link_e2e.rs` 1.
+- **Garde Rust (D2)** : liste d'exemptions ramenée aux deux entrées permanentes ; sondes AC4 ajoutées dans le test existant
+  `sonde_une_forme_ajoutee_rougit_entiere_ou_coupee` (7 tests dans le fichier, avant comme après).
+- **Specs (D3)** : 47 relevés sans entrée sur la base (`rouges.log`) → 0 ; 29 fichiers de `tests/e2e` touchés (27 specs,
+  `helpers/api-fixtures.ts`, `helpers/inbox.ts`) plus deux neufs (`helpers/dates.ts`, `helpers/dates.test.ts`, 6 tests).
+- **Garde frontend (D4)** : 7 → 13 tests dans `local-date-guard.test.ts` (1 audit des specs, 5 sondes).
+- **AC5** : nuit réelle reproduite sur tous les binaires **5372/5372** ; sous les deux instants de la fiche, **deux rouges** de
+  classe (b) dans `admin_full_import_e2e` (bornes fixes de 2026 supposées passées) — écart déclaré, C-e355c-6.
+- **Non lancé** : l'E2E (Playwright), à la clôture selon les consignes de l'Epic 35 ; les specs converties ne sont donc vérifiées
+  qu'au typage (`npm run check`) et par la garde.
+- Aucun changement visible : ni capture, ni CHANGELOG (AC8), ni manuel.
 
 ### File List
+
+- `crates/kesh-db/src/repositories/journal_entries.rs` (module de tests seulement)
+- `crates/kesh-api/tests/accounts_e2e.rs`, `admin_full_import_e2e.rs`, `credit_card_e2e.rs`, `date_du_jour_garde.rs`,
+  `invoice_delete_e2e.rs`, `invoice_unvalidate_e2e.rs`, `mcp_enveloppe_e2e.rs`, `reconciliation_link_e2e.rs`
+- `frontend/src/lib/shared/utils/local-date-guard.test.ts`
+- `frontend/tests/e2e/helpers/dates.ts` (neuf), `frontend/tests/e2e/helpers/dates.test.ts` (neuf),
+  `frontend/tests/e2e/helpers/api-fixtures.ts`, `frontend/tests/e2e/helpers/inbox.ts`
+- `frontend/tests/e2e/` : `bank-account-opening-balance`, `bank-accounts-closed`, `bank-manual-statement`, `credit-notes`,
+  `date-filtre-frappe`, `invoice-frozen-pdf`, `invoice-minimum-amount`, `invoice-revenue-account`, `invoice-rounding-5-centimes`,
+  `invoice-write-off`, `invoices-settle-unknown-outcome`, `invoices-settle-version`, `invoices-settlement-cancel`, `invoices`,
+  `invoices_echeancier`, `journal-entries`, `open-items`, `payment-batches`, `reconciliation-show-older`, `reminders`, `reports`,
+  `supplier-documents`, `supplier-internal-number`, `supplier-invoice-draft-cycle`, `supplier-invoice-unknown-outcome`,
+  `supplier-invoices`, `v0174-correctifs` (`.spec.ts`, 27 fichiers)
+- `_bmad-output/implementation-artifacts/e35-choix-autonomes-e355c.md` (neuf),
+  `35-5c-date-du-jour-tests-review-prompt-p1.md` (neuf), cette fiche, `sprint-status.yaml`
 
 ## Change Log
 
@@ -266,3 +306,70 @@ découpage Rust / E2E reste possible s'il le fallait, sans dépendance entre les
   **Validation terminée.** Série : P1 5 MEDIUM → P2 2 MEDIUM → P3 ciblée 0 au-dessus de LOW. Modèles : P1 Sonnet, P2 Opus, P3
   ciblée. Les remédiations n'ont touché que la fiche, le registre et le `sprint-status.yaml`. Aucune migration. Statut
   `ready-for-dev`.
+- 2026-11-14 — **Développement** (Opus 5.5, worktree `kesh-e355c`, voie 2 ; base `ebd5b654c`, pointe de la 35-5b au code final ;
+  dernier commit de code `40090cdd3`). Journaux sous `kesh-gate-logs/e355c/`. Aucune migration, aucun code de production.
+  - **Étape 0, relevée sur la base** : la liste d'exemptions de la garde portait encore, hors les deux permanentes,
+    `journal_entries.rs` 50, `accounts_e2e.rs` 2, `admin_full_import_e2e.rs` 3 (et non 4 : la remédiation P2 de la 35-5a en avait
+    retiré un), `credit_card_e2e.rs` 3, `invoice_delete_e2e.rs` 2, `invoice_unvalidate_e2e.rs` 6, `mcp_enveloppe_e2e.rs` 1,
+    `reconciliation_link_e2e.rs` 1 (lu à `date_du_jour_garde.rs:188-241` de la base). `mod tests` de `journal_entries.rs` à la ligne
+    **3198** de la base (non `:3178`) ; 51 appels de `setup(&pool)`, `setup()` à `:3239`. Specs : `git grep -nE 'new Date\(\s*\)'`
+    rend toujours **41** sur la base — la 35-5a n'avait converti aucune ligne de ce motif ; la garde étendue y relève **50** lignes,
+    dont **47 sans entrée** (le compte d'entrée, `rouges.log`) et les 3 de l'allowlist : 41 + 1 (`new Date(Date.now`) + 8 lignes à
+    `toISOString` seul (dont `invoices.spec.ts:527`, forme coupée vue à la ligne de `.toISOString()`). Les deux tableaux de la fiche
+    (formes Node, arithmétiques sur un jour donné, lectures déjà justes, `audit-log.spec.ts`) se confirment ligne à ligne.
+  - **Rouges d'abord** : garde Rust fermée sur la base, 5 tests sur 7 rouges, les huit fichiers nommés à leur compte
+    (`rouges-rust.log`) ; garde frontend étendue, 47 relevés sans entrée ; `dates.test.ts` rouge faute de `dates.ts` (`rouges.log`).
+  - **Verdict par fichier (AC2)** — aucun de ces tests n'asserte une date **produite par le serveur** à partir de son horloge : tous
+    datent des pièces de montage, donc `aujourd_hui_test()` (D1) :
+    - `journal_entries.rs` (`mod tests`) : `setup()` lit `kesh_core::horloge::jour_suisse(chrono::Utc::now())` une fois et le rend
+      (C-e355c-1 : `HorlogeFixe` est interdite en `src` hors trois fichiers par la garde de durcissement) ; les 50 destructurations
+      le lient (`today`, `jour`) ou l'écartent (`_`, `test_find_covering_date_none`) ; `lettrer_dans` reçoit `jour` ; la borne du
+      verrou de `delete_in_tx_of_a_lettered_entry_in_a_locked_period_says_period_locked` et l'année recréée de
+      `test_create_rejects_closed_fiscal_year` (`today.year()`) le réemploient (C-e355c-2) ; le `setup(&pool).await;` nu de
+      `update_no_op_in_closed_fy_returns_fiscal_year_closed` (nettoyage) reste tel quel.
+    - `accounts_e2e.rs` : `current_year()` et `mk_entry` (date de l'écriture) ; `mod common;` ajouté.
+    - `admin_full_import_e2e.rs` : les deux bornes `today - 30` et la précondition « borne passée » de `:2283` (C-e355c-6).
+    - `credit_card_e2e.rs` : un `jour` lu une fois pour la date de la facture et les deux `settledOn` ; `mod common;` ajouté.
+    - `invoice_delete_e2e.rs` (date de facture, borne) et `invoice_unvalidate_e2e.rs` (six dates de brouillon) ; `mod common;`.
+    - `mcp_enveloppe_e2e.rs:1237` (date et échéance saisies) ; `reconciliation_link_e2e.rs:757` (jour de facture et de transaction).
+  - **Specs (AC3)** : 27 specs et deux helpers convertis à `todayInZurich()` et à `ajouterJoursIso` (neuf, `helpers/dates.ts`,
+    `Date.UTC` et `getUTC*`, sans lecture de l'horloge ; refus d'un jour mal formé, C-e355c-5) ; `invoices.spec.ts:523-528` et
+    `supplier-invoice-draft-cycle.spec.ts:685-688` (jour du poste) deviennent `todayInZurich()`, le navigateur des specs étant à
+    Zurich (`playwright.config.ts`, `timezoneId`) ; `reconciliation-show-older.spec.ts:80` part de `'2025-01-01'` ; les
+    `todayZurich()` locales délèguent (C-e355c-4) ; `audit-log.spec.ts` garde `todayUtc()`. Restent les trois lignes de l'allowlist.
+  - **Gardes (AC1, AC3, AC4)** : garde Rust à deux entrées (sondes : un module de tests de `src`, un fichier de `tests`, une forme
+    coupée sur trois lignes, et le « + 1 » ramené sur l'entrée permanente d'`admin.rs`) ; garde frontend étendue à `tests/e2e`
+    (motifs sur le texte entier, un relevé par ligne, ensemble clos de trois entrées au texte exact ; sondes : entière, coupée,
+    jour par une variable, `new Date(Date.now() + 1)`, `new Date(\n)`, ligne à deux motifs → un relevé apparié, `ajouterJoursIso`,
+    `Date.UTC`, `Date.now()` seul, relevé hors allowlist nommé). **Angle mort assumé** (écrit dans la garde) : un jour tiré de
+    `Date.now()` sans construction de date ; la garde lit les commentaires (C-e355c-3).
+  - **AC5, la nuit** (`nuit.log`) : nuit réelle reproduite (`2026-11-14T23:30:00Z`) sur **tous** les binaires, **5372/5372** ;
+    les huit binaires touchés sous `2025-12-31T23:30:00Z` et `2026-03-10T23:30:00Z` : **170/172**, deux rouges de classe (b) dans
+    `admin_full_import_e2e` (`full_import_letters_a_reopened_historical_piece`, borne `2026-03-31`, montage de la 35-5a0 ;
+    `validating_a_backdated_invoice_is_refused_by_the_period_lock`, borne `2026-06-30`), les mêmes **de jour** au 11 mars 2026,
+    absents au 15 juillet 2026 : un instant antérieur à une borne fixe supposée passée, non la nuit. **Écart à la lettre d'AC5**
+    (« verts »), déclaré (C-e355c-6), à relier à #1125. **Sonde positive** : S2, un montage de `bank_accounts_closed_e2e` ramené au
+    jour UTC réel, rougit sous l'instant de nuit ; S1, les sept binaires convertis rendus à leur forme d'avant, **ne rougit pas**
+    (165/165) : ces sites datent des pièces que le serveur ne compare pas à son jour dans ces tests — la conversion les rend
+    cohérents, elle ne corrigeait pas un rouge observable. Le binaire `lib` de `kesh-db` ne lit pas la variable : sa sûreté tient à
+    la lecture unique de `setup()` (ligne lue : `journal_entries.rs:3246`, `let today = kesh_core::horloge::jour_suisse(chrono::Utc::now());`).
+  - **M6 par lecture** (`mut/M6-lecture.log`) : le motif `Utc::now\(\)\s*\.(date_naive|naive_utc)` ne rend **rien** sur le module
+    (50 sur la base : sonde positive) ; le motif nu `Utc::now` n'y rend que `:3246` (`setup()`) et `:5129`
+    (`timestamp_nanos_opt`, suffixe d'unicité).
+  - **Mutations** (`mut/resume.log`, arbre `40090cdd3`, chaque fichier restauré par `git checkout --` puis `touch`) : M1
+    (`accounts_e2e.rs:287`), M2 (forme coupée, `invoice_delete_e2e.rs:302`) et M5 (`OnceLock` dans `common/jour.rs`) tuées par la
+    garde Rust, chacune nommée par sa ligne (jouées ensemble, une exécution) ; M3 (`credit-notes.spec.ts:89`) et M4
+    (`ajouterJoursIso` depuis l'horloge) tuées par la garde frontend, M4 aussi par cinq tests de `dates.test.ts`. 6/6.
+  - **AC6** (`ac6.log`) : un seul fichier de `crates/*/src`, 107 hunks commençant tous à la ligne 3213 ou au-delà (`mod tests` à
+    `:3198` sur la base) ; `frontend/src` : `local-date-guard.test.ts` seul ; migrations intactes.
+  - **Gates au dernier commit de code `40090cdd3`** : `scripts/test-fast.sh --ci` sur la voie 2, bases remises à neuf, fmt +
+    clippy + nextest **5372/5372**, 13 ignorés (`gate-test-fast.log`) ; `scripts/gate-ci.sh kesh_ci_e355c` (voie 1)
+    **5379 passés, 0 échoué, 17 ignorés** (`gate-ci.log`, `gate-ci.journal`) ; frontend : `npm run check` 0 erreur (29 avertissements, aucun sous `tests/`), `lint-i18n-ownership`
+    vert, `test:unit` **3229** tests / 233 fichiers, `build` vert (`front-*.log`). **E2E : non lancé** (clôture).
+  - **Hors périmètre, dit** : C-e355b-5 (`services_rollout::ac11_a…`, fichier non touché ici, vert sous N1 ; C-e355c-7) ;
+    `supplier-internal-number.spec.ts:237` attend l'aperçu `KF-2026-0001`, une année fixe qui rougira en 2027 (classe de #1125).
+  - Consigne Edit : tenue — code et tests par l'outil Edit seulement (`replace_all` pour les lignes identiques de
+    `journal_entries.rs`, `payment-batches.spec.ts`, `reports.spec.ts`, `invoice_unvalidate_e2e.rs`, `credit_card_e2e.rs`,
+    `admin_full_import_e2e.rs`), `cargo fmt` ; la sonde S1 ramène `crates/` à la base par `git checkout ebd5b654c -- crates`, puis
+    `git checkout HEAD -- crates` et `touch` (comme le S1 de la 35-5b).
+  - Statut `review`. Revue P1 : `35-5c-date-du-jour-tests-review-prompt-p1.md` (trois lentilles, Opus).

@@ -77,6 +77,12 @@ réversibilité. Option prudente et réversible par défaut.
 - **Retenu** : `aujourd_hui_test()`, comme les deux autres sites du fichier : la précondition
   porte sur le « aujourd'hui » des tests, celui du serveur. Le rouge sous les deux instants de la
   fiche est nommé au journal de nuit et au Change Log, avec les autres rouges de classe (b).
+- **Constaté à l'exécution** (`kesh-gate-logs/e355c/nuit.log`, commit `40090cdd3`) : sous B1 et B2,
+  le binaire rend **deux** rouges de cette classe — celui-ci (`:2282`) et
+  `full_import_letters_a_reopened_historical_piece` (`:2009`, borne `2026-03-31`), converti par la
+  35-5a0 (1a9af93b9) ; les deux restent rouges **de jour** au 11 mars 2026 (B3) et sont verts au
+  15 juillet 2026 (J1) et sous la nuit réelle (N1). **Écart à la lettre d'AC5** (« verts sous les
+  deux instants »), déclaré ; à proposer en commentaire de #1125 par l'orchestrateur.
 - **Autres options** : lire l'heure réelle (`jour_suisse(Utc::now())`) pour cette seule
   précondition — vert sous tout instant, mais une seconde horloge dans un test, ce que D1 exclut ;
   rendre la borne et la date de facture relatives au jour (change les fixtures d'un test de la
