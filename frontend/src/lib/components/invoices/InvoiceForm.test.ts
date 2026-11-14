@@ -1128,7 +1128,7 @@ describe('InvoiceForm — prix unitaire ambigu (36-3b, #1171)', () => {
 
 		it('ouverture d’un brouillon : `1.2340`, `1.25`, `12.3450`, aucun message ; renvoyés tels quels (M3 : `initLines`)', async () => {
 			updateInvoiceMock.mockResolvedValue({ id: 7 });
-			const { container, getByTestId, queryByTestId } = render(InvoiceForm, {
+			const { container, getByTestId } = render(InvoiceForm, {
 				invoice: brouillonAuxPrix(PRIX_SERVEUR.map((p, k) => ligneAuPrix(k + 1, p))),
 			});
 			await settle();
@@ -1152,7 +1152,7 @@ describe('InvoiceForm — prix unitaire ambigu (36-3b, #1171)', () => {
 			getInvoiceMock.mockResolvedValue(
 				brouillonAuxPrix(PRIX_SERVEUR.map((p, k) => ligneAuPrix(k + 1, p))),
 			);
-			const { container, getByTestId, getByText, queryByTestId } = render(InvoiceForm, {
+			const { container, getByTestId, getByText } = render(InvoiceForm, {
 				invoice: brouillonAuxPrix([ligneAuPrix(1, '100.00')]),
 			});
 			await settle();
@@ -1196,7 +1196,7 @@ describe('InvoiceForm — prix unitaire ambigu (36-3b, #1171)', () => {
 			});
 			// Un brouillon à une ligne complète : `invoiceWith([])` ouvrirait une ligne neuve
 			// sans description, que la validation refuserait avant le prix.
-			const { container, getByText, getByTestId, queryByTestId } = render(InvoiceForm, {
+			const { container, getByText, getByTestId } = render(InvoiceForm, {
 				invoice: brouillonAuxPrix([ligneAuPrix(1, '100.0000')]),
 			});
 			await settle();
