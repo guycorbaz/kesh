@@ -362,7 +362,7 @@ aux fiches :
   (source `revaluation`).
 - **V13** (37-4 AC-7) — `kesh_postes_ouverts` inscrit aux sites « CHF seulement », renvoi à 37-3a AC-9.
 
-Arbitrages de l'orchestrateur pendant la validation CR-6 (à confirmer par Beat) :
+Arbitrages de l'orchestrateur pendant la validation CR-6 — **approuvés par Beat le 2026-11-14** :
 
 - **A31** (37-3b AC-2 bis, V3) — la ligne de différence d'une conversion n'est **jamais** ajoutée d'office : le serveur
   la calcule seulement si le corps le demande (`completeDifference: true`). Sans ce champ, une écriture déséquilibrée
