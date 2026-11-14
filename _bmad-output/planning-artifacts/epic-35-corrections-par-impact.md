@@ -40,7 +40,7 @@ v0.17.6 (la PR de release n'est pas encore fusionnée) :
 - **166 bugs** (label `bug` ou `known-failure`, commande du § *Priorités des défauts*) ;
 - **14 P1** (`--label P1`), dont les dix de la TVA reportés.
 
-**Au tag v0.17.6 : à mesurer au tag.** Les issues que la PR de release de la 0.17.6 ferme tomberont entre ces chiffres
+**Au tag v0.17.6 : à mesurer au tag.** *(Annoté le 2026-11-14, à l'intégration de la 0.17.7 : au tag v0.17.6, **330 issues ouvertes, dont 163 bugs**, recomptées depuis les dates de création et de fermeture — cf. `CLAUDE.md`, paragraphe *Current release* ; l'objectif devient moins de 330 issues et moins de 163 bugs au tag v0.17.7.)* Les issues que la PR de release de la 0.17.6 ferme tomberont entre ces chiffres
 et ceux du tag ; c'est le compte **au tag v0.17.6** qui sert de référence.
 
 **Objectif** (règle de release, objectif à terme et non barrière) : **solde net en baisse** — moins d'issues ouvertes
