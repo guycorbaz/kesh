@@ -32,6 +32,8 @@ Ces choix ne sont pas couverts par C-e360 ; ils prolongent l'étape 0 de la 36-2
 - **Écartées** : `valueAsNumber` (la saisie jetée reste muette) ; la grammaire du solde d'ouverture (`bank-accounts/format.ts`) ;
   une grammaire propre au dialogue.
 - **Réversible** : oui.
+- *(Annoté le 2026-11-14, remédiation de la validation P1 : **remplacé par C-36-2-9** — le champ devient texte sans
+  condition, lu par `readJournalAmount` de la 36-3.)*
 
 ### C-36-2-4 — R0 se joue aussi contre l'image 0.17.6
 
@@ -58,4 +60,65 @@ Ces choix ne sont pas couverts par C-e360 ; ils prolongent l'étape 0 de la 36-2
 - **Retenu** : la clé existante garde l'état équilibré (`{ $expected }`) ; `reconciliation-split-balance-gap` neuve porte
   l'écart ; `reconciliation-split-error-imbalance` reçoit `{ $expected }` et `{ $diff }`.
 - **Écartée** : retirer la clé partagée et en créer deux (plus de lignes touchées dans quatre fichiers, sans gain).
+- **Réversible** : oui.
+- *(Annoté le 2026-11-14, remédiation de la validation P1 : **remplacé par C-36-2-7** pour
+  `reconciliation-split-error-imbalance`, qui reste intacte ; le reste — clé existante pour l'état équilibré, clé neuve
+  `-balance-gap` — est maintenu.)*
+
+---
+
+*Choix suivants : décisions de l'orchestrateur sur la validation P1 (`kesh-gate-logs/e36-2/validation-p1.md`), consignées
+le 2026-11-14 ; prémisses relues au code avant application.*
+
+### C-36-2-7 — Le message du dialogue prend une clé neuve ; `reconciliation-split-error-imbalance` reste intacte (V1-1)
+
+- **Contexte** : la clé est lue sans arguments par `crates/kesh-api/src/errors.rs:3430` (message de la
+  `400 RECONCILIATION_SPLIT_IMBALANCE`) et `failed-proposal-label.ts:379` (échec partiel) ; lui donner des variables
+  changerait le message de l'API et afficherait `{ $expected }` dans l'étiquette.
+- **Retenu** (décision de l'orchestrateur) : clé neuve `reconciliation-split-error-imbalance-detail` (`{ $expected }`,
+  `{ $diff }`) pour le dialogue ; l'ancienne intacte dans les quatre locales ; garde au test de catalogue ; grep des
+  consommateurs Rust et TS pour toute clé dont la valeur change.
+- **Écartées** : variables sur l'ancienne clé ; chiffres passés aussi par l'API et l'étiquette (changement de contrat).
+- **Réversible** : oui.
+
+### C-36-2-8 — La 36-2 se développe à partir de la 36-1 et de la 36-3 fusionnées (V1-2, V1-4)
+
+- **Contexte** : le lecteur `readJournalAmount` naît dans la 36-3 (fiche `36-3-ecriture-montant-ambigu.md`, D2).
+- **Retenu** (décision de l'orchestrateur) : la branche se refonde sur la lignée A après la fusion de la 36-3, avant tout
+  correctif ; R0 peut s'écrire et se jouer avant.
+- **Écartée** : développer en parallèle de la 36-3 avec la grammaire d'aujourd'hui (deux lectures du montant à fusionner).
+- **Réversible** : oui (au prix d'un correctif sur `isValidAmount` / `parseAmount`).
+
+### C-36-2-9 — Aucun correctif ne dépend plus du verdict de R0 ; H2 n'est plus une branche (V1-2, V1-4)
+
+- **Contexte** : les branches H2/H3 n'étaient pas bornées ; H5 réfutée et « aucune hypothèse reproduite » n'étaient pas
+  écrits.
+- **Retenu** (décision de l'orchestrateur) : champ de montant texte sans condition, lu par `readJournalAmount`, charge en
+  chaîne normalisée ; messages tranchés (vide, `0`, `0,00` → « montant > 0 requis » ; `-70.00`, `7O` → « illisible » ;
+  `1.234` → « ambigu ») ; table *Si R0 rend…* : H5 réfutée → la conversion reste, phrase retirée de la note, #1150 non
+  fermée sur ce motif ; aucune hypothèse reproduite → arrêt après R0 et rapport, sans correctif inventé, `refs #1150` ;
+  H1 contredite → arrêt.
+- **Écartées** : garder H2 comme branche (critère flou, correctif partiel) ; corriger sans cause établie.
+- **Réversible** : oui.
+
+### C-36-2-10 — Localisateurs de R0 indépendants de D4 (V1-3)
+
+- **Retenu** : R0 ne s'appuie que sur des `data-testid` présents à la tête et en 0.17.6 et localise le message par son
+  texte ; passage à `split-client-error` au commit de D4.
+- **Écartée** : `split-client-error` dès R0 (rouge par absence du `testid`, relevé vide, rien de départagé).
+- **Réversible** : oui.
+
+### C-36-2-11 — Pas de `role="status"` sur le message (V1-5)
+
+- **Contexte** : l'indicateur voisin porte `aria-live="polite"` (`TransactionSplitModal.svelte:401`) et dit le déséquilibre.
+- **Retenu** : `data-testid` seul ; pas de seconde région vivante.
+- **Écartée** : `role="status"` (double annonce du déséquilibre, sans test qui l'exerce).
+- **Réversible** : oui.
+
+### C-36-2-12 — #1151 entre sans condition, sur le précédent `LinkSettlementModal` (V1-4, V1-6)
+
+- **Contexte** : la passe juge H3 quasi certaine (quatre à cinq colonnes dans ≈ 22rem).
+- **Retenu** (décision de l'orchestrateur) : `class="max-h-[85vh] overflow-y-auto sm:max-w-3xl"` sur le seul
+  `Dialog.Content` du dialogue (`LinkSettlementModal.svelte:195`) ; `closes #1151` à la PR.
+- **Écartée** : garder la condition (C-e360-5 le permettait, la mesure la rend sans objet).
 - **Réversible** : oui.
