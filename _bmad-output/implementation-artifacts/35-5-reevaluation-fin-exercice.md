@@ -58,7 +58,8 @@ clôture et que l'écart aille aux différences de change.
      suit la même résolution (un cours journalier **saisi** par la société pour ce jour, D9, reste le premier ; sinon
      le cours effectif mensuel du mois de cette date, qui pour un mois futur n'existe que s'il a été saisi), sinon
      `RATE_UNAVAILABLE` et saisie ; « Récupérer le mois » n'est pas proposé non plus pour un mois postérieur au
-     dernier mois publié (le mois courant, ou le mois suivant à partir du 25, R4 ; 35-2 le refuse en 400). Le serveur ne lit pas la date du jour : seul l'écran en dépend. Le cours journalier
+     mois suivant le mois courant (35-2 AC-5 : le mois suivant est admis à toute date, non publié → 404
+     `RATE_NOT_PUBLISHED` ; R4 amendé, alignement de l'orchestrateur). Le serveur ne lit pas la date du jour : seul l'écran en dépend. Le cours journalier
      d'un jour sans publication (week-end) est celui de la publication antérieure (35-2, *Cours journaliers*) : un
      exercice qui finit un dimanche prend le cours du vendredi, `sourceDate` l'affiche.
    - **Règle de calcul en débit net**, quel que soit le type du compte : `devise_net` = Σ `amount_currency` au débit −
@@ -79,13 +80,15 @@ clôture et que l'écart aille aux différences de change.
      listé avec `reason: ACCOUNT_ARCHIVED`, non sélectionnable, avec avertissement (sinon l'écriture entière serait
      refusée en `InactiveOrInvalidAccounts`, `validate_lines_accounts_in_tx`). Comptes `Revenue`/`Expense` jamais
      proposés.
-   - Aucun cours (ni journalier ni mensuel, ni saisi ni AFC) sans surcharge → la devise est signalée
+   - Aucun cours du genre de clôture (au genre `day` : ni journalier ni mensuel ; au genre `month` : pas de mensuel ;
+     ni saisi ni AFC) sans surcharge → la devise est signalée
      `RATE_UNAVAILABLE` (`details` de 35-2, forme `month` : le mois de la date de fin), ses comptes exclus jusqu'à
      saisie ou récupération.
    - **Cours résolus avant toute transaction**, par lecture de la table des cours (35-2 : `lookup` est en lecture
      seule, sans appel sortant). Un cours absent rend la devise `RATE_UNAVAILABLE` dans l'aperçu ; l'écran propose
-     « Récupérer le cours du JJ.MM.AAAA », puis « Récupérer le mois » (`POST /exchange-rates/fetch { date }` puis
-     `{ year, month }`, 35-2, audités à part) ou la saisie du cours. Le serveur de 35-5
+     « Récupérer le cours du JJ.MM.AAAA » (**genre `day` seulement**, date de fin passée : au genre `month`, le cours
+     du jour ne serait pas retenu), puis « Récupérer le mois » (mois publié) (`POST /exchange-rates/fetch { date }`
+     puis `{ year, month }`, 35-2, audités à part) ou la saisie du cours. Le serveur de 35-5
      **ne récupère jamais** de cours lui-même ; aucune récupération n'a lieu sous le verrou de l'exercice.
      L'aperçu **n'écrit rien**. *(Alignement de l'orchestrateur sur la remédiation P1 de 35-2, 2026-11-14.)*
    - **Avertissements de l'aperçu** (sans refus) : l'aperçu signale, sans écrire, ce que la passation refuserait —
@@ -105,8 +108,9 @@ clôture et que l'écart aille aux différences de change.
      (`routes/fiscal_years.rs:361`) — le registre des routes (ci-dessous) contrôle l'enveloppe au handler. Elle
      appelle ensuite `create_in_tx(…, enforce_postable = true)` **une fois par compte réévalué** (R9), dans l'ordre des
      numéros de compte, **dans la même transaction** : toutes les écritures passent, ou aucune (un refus de l'une
-     annule les autres) ; l'audit `journal_entry.created` de chacune est écrit par `create_in_tx_inner`. Une `rates` qui omet une devise sélectionnée : cours par défaut de l'AC-1 (effectif
-     journalier, sinon effectif mensuel) lu **avant** la transaction, `RATE_UNAVAILABLE` (404) s'il manque. Les devises des comptes sélectionnés se lisent
+     annule les autres) ; l'audit `journal_entry.created` de chacune est écrit par `create_in_tx_inner`. Une `rates` qui omet une devise sélectionnée : cours par défaut de l'AC-1, **selon le
+     genre de clôture** lu avec l'exercice (`day` : effectif journalier, sinon effectif mensuel ; `month` : effectif
+     mensuel seul), lu **avant** la transaction, `RATE_UNAVAILABLE` (404) s'il manque. Les devises des comptes sélectionnés se lisent
      avant la transaction par une lecture ordinaire sur le pool (elles ne servent qu'à choisir les cours à résoudre et à
      contrôler les clés de `rates`) ; **dans** la transaction, après l'étape (4), toute devise d'un compte admissible
      sélectionné qui n'a pas de cours résolu (devise du compte changée entre-temps) → rollback, 404 `RATE_UNAVAILABLE`
@@ -184,22 +188,28 @@ clôture et que l'écart aille aux différences de change.
      `NoMatter("calcule sans persistance — aucune mutation"), SansEcritureAuJournal` (comme `bank_imports::preview`,
      `:540`), passation `Traced, Rejouee` ; les décomptes de `the_registry_partition_is_what_the_story_declares` (+2 routes, **total du registre +2**) et la
      phrase du manuel d'administration (`admin-manual.tex:3217`, gardée par `le_manuel_dit_le_compte_du_registre`)
-     suivent, **cumulés** avec ceux des 35-1 et 35-2 (+2 routes, dont +1 tracée et +1 sans mutation : l'assertion
+     suivent, **cumulés** avec ceux des 35-1, 35-2 et 35-3b (route de conversion) (35-5 : +2 routes, dont +1 tracée et +1 sans mutation : l'assertion
      `no_matter` passe de 3 à 4, et la phrase du manuel change **en chiffres et en toutes lettres** — « N + 4 + 4 = M » et
      « quatre autres routes qui n'écrivent rien », que la garde, qui ne lit que les chiffres, ne contrôle pas). Les décomptes de
      `the_replay_partition_is_what_the_story_declares` (`audit_route_registry.rs:1450`) suivent aussi : l'aperçu
      `SansEcritureAuJournal` fait `sans_ecriture` +1, la passation `Rejouee` fait `rejouees` +1, `tout.len()` +2
-     (:1502), en deltas cumulés avec ceux des 35-1 et 35-2 ; la passation appelle une enveloppe
-     (`every_replayed_route_calls_an_envelope`). *(Alignement de l'orchestrateur sur 35-1-P4-IF-2.)*
+     (:1502), en deltas cumulés avec ceux des 35-1, 35-2 et 35-3b ; la passation appelle une enveloppe
+     (`every_replayed_route_calls_an_envelope`, `audit_route_registry.rs:1290`), dont l'assertion
+     `assert_eq!(examinees, 27, "les vingt-sept routes Rejouee …")` (:1324-1327) suit aussi, +1 en delta (avec la
+     route de conversion de 35-3b), chiffre et toutes lettres. *(Alignement de l'orchestrateur sur 35-1-P4-IF-2.)*
 3. **AC-3 — Rejouable, compte par compte (R9).** Un second passage, sans mouvement entre-temps, ne passe rien ; après
    une écriture tardive en devise sur un compte, il ne passe qu'**une** écriture, le résidu de **ce** compte (l'écart se
    calcule par compte sur le cumul, les autres comptes ont D = 0) ; la **suppression** de l'écriture
    d'un seul compte, puis un nouveau passage, ne repasse que ce compte. ⚠️ **La contre-passation ne corrige pas une
-   réévaluation de l'exercice** : l'écriture inverse est datée du **jour** ou du **premier jour de l'exercice suivant**
-   (`ReversalDating::Today` / `NextFiscalYearStart`, `journal_entries.rs:2931-2961`), donc **hors** du cumul arrêté à la
-   fin de l'exercice, qui continue de compter l'original : un nouveau passage ne repasse rien. Elle déplace l'effet dans
-   l'exercice qui la porte (le cumul de cet exercice voit les deux) ; la correction d'une réévaluation de l'exercice est
-   la suppression (exercice ouvert) ou un nouveau passage au résidu. Pas d'extourne au premier jour de l'exercice suivant. **Le report à nouveau des
+   réévaluation de l'exercice** : l'écriture inverse est datée du **jour** (dans l'exercice ouvert qui le couvre) ou du
+   **premier jour de l'exercice suivant** (`ReversalDating::Today` / `NextFiscalYearStart`,
+   `journal_entries.rs:2931-2961`). Cas ordinaire — la fin de l'exercice est passée, ou l'inverse est au début de
+   l'exercice suivant — : elle tombe **hors** du cumul arrêté à la fin de l'exercice, qui continue de compter
+   l'original ; un nouveau passage ne repasse rien, et l'effet se déplace dans l'exercice qui la porte (le cumul de cet
+   exercice voit les deux). Cas d'un exercice **en cours** (réévaluation passée avant sa fin, AC-1 ; `Today` ≤ date de
+   fin, l'exercice du jour **est** celui de la réévaluation) : l'inverse tombe **dans** le cumul, annule l'original, et
+   un nouveau passage repasse l'écart du compte. La correction d'une réévaluation de l'exercice est la suppression
+   (exercice ouvert) ou un nouveau passage au résidu. Pas d'extourne au premier jour de l'exercice suivant. **Le report à nouveau des
    soldes en devise se fait par le cumul** (`opening.rs:17`, Kesh ne passe aucune écriture de clôture) : aucune écriture
    de report n'est créée. Une réévaluation se corrige par **suppression** de l'écriture, ou par un
    nouveau passage (résidu) ; le `PUT` de la saisie manuelle la refuse (35-3a AC-7 : 409 `ENTRY_IS_FX_REVALUATION` ;
@@ -214,23 +224,28 @@ clôture et que l'écart aille aux différences de change.
    (`DbError::FiscalYearClosed`, `errors.rs:4516` — le code et le statut d'une écriture dans un exercice clos, non le 409
    `ILLEGAL_STATE_TRANSITION` de `close`) ; forme de
    la requête (bornes ci-dessous) → 400 `FX_RATE_INVALID`, ou 400 `FX_REVALUATION_ACCOUNT_INVALID` sur `accountIds` ; aucun cours par
-   défaut (AC-1 : ni journalier ni mensuel) pour une devise sélectionnée sans surcharge → 404 `RATE_UNAVAILABLE`.
+   défaut (AC-1, selon le genre de clôture : ni journalier ni mensuel au genre `day`, pas de mensuel au genre
+   `month`) pour une devise sélectionnée sans surcharge → 404 `RATE_UNAVAILABLE`.
    **Dans la transaction**, après tous les verrous de l'AC-2 et **dans le même ordre qu'avant la transaction** (sauf le
-   `RATE_UNAVAILABLE` d'une devise changée entre-temps, qui ne peut naître qu'ici et vient après les comptes, ci-dessous) :
+   genre de clôture changé et le `RATE_UNAVAILABLE` d'une devise changée entre-temps, qui ne peuvent naître qu'ici et
+   viennent après les comptes, ci-dessous) :
    réglage relu sous verrou (étape (0)) et mode de l'exercice relu dans sa ligne `FOR UPDATE` (étape (1)) : société ou
-   exercice mono-devise → 409 `MULTI_CURRENCY_DISABLED` ; genre de clôture changé depuis la lecture d'avant la
-   transaction → 409 `OPTIMISTIC_LOCK_CONFLICT` (AC-1) ; exercice clos →
+   exercice mono-devise → 409 `MULTI_CURRENCY_DISABLED` ; exercice clos →
    `FISCAL_YEAR_CLOSED` ; **exercice antérieur encore ouvert → `EARLIER_FISCAL_YEAR_OPEN`** (comme K1 : le cumul lu ne
    serait plus stable) ; comptes de différences de change **revalidés** (société, actif,
    imputable, de type `Expense`/`Revenue`, en CHF, ni au rôle `DefaultRevenue`, ni désigné
    `default_revenue_account_id` des réglages de facturation ou d'un article — 35-1 P3-8) → 400 `FX_ACCOUNT_INVALID` (C-35-2 ; même code et même statut que
    35-1, `details` de 35-1) ; `accountIds` hors de la liste admissible (lue à l'étape (4) de l'AC-2) → 400
-   `FX_REVALUATION_ACCOUNT_INVALID`, ensuite ; puis 404 `RATE_UNAVAILABLE` d'une devise sans cours résolu (AC-2) ; puis, par `create_in_tx_inner`, exercice
-   postérieur mono-devise → 409 `MULTI_CURRENCY_DISABLED` `reason: "laterFiscalYear"` (garde de 35-3a, rendue ici sur les
-   lignes en devise de l'écriture ; place relative aux suivants : celle de 35-3a AC-4, à suivre) ; exercice
-   postérieur clos → `LATER_FISCAL_YEAR_CLOSED` (garde `journal_entries.rs:368`, repository ; état hérité seulement,
-   puisque `close` impose l'ordre) ; `DATE_OUTSIDE_FISCAL_YEAR` ; livres verrouillés à cette date
-   (`books_locked_through`, seuil **inclusif** : `entry_date <= locked_through`) → `PERIOD_LOCKED`. L'aperçu
+   `FX_REVALUATION_ACCOUNT_INVALID`, ensuite ; puis genre de clôture changé depuis la lecture d'avant la transaction →
+   409 `OPTIMISTIC_LOCK_CONFLICT` (AC-1 ; après les refus d'état et de comptes : le motif réel prime sur
+   « rechargez », comme l'étape 3-bis d'`update_in_tx` avant la version) ; puis 404 `RATE_UNAVAILABLE` d'une devise
+   sans cours résolu (AC-2) ; puis, par `create_in_tx_inner`, dans l'ordre de ses étapes : exercice
+   postérieur clos → `LATER_FISCAL_YEAR_CLOSED` (étape 1-a, garde `journal_entries.rs:368`, repository ; état hérité
+   seulement, puisque `close` impose l'ordre) ; `DATE_OUTSIDE_FISCAL_YEAR` ; livres verrouillés à cette date
+   (`books_locked_through`, seuil **inclusif** : `entry_date <= locked_through`, étape 1-bis) → `PERIOD_LOCKED` ;
+   enfin exercice postérieur mono-devise → 409 `MULTI_CURRENCY_DISABLED` `reason: "laterFiscalYear"` (garde de 35-3a,
+   rang 2 de son AC-4, après la validation des comptes de l'étape 2 de `create_in_tx_inner`, donc **après**
+   `PERIOD_LOCKED` ; rendue ici sur les lignes en devise de l'écriture). L'aperçu
    refuse de même (404, mono-devise, exercice clos, formes de la requête : 400 `FX_RATE_INVALID` /
    `FX_REVALUATION_ACCOUNT_INVALID`, `FX_VALUE_OUT_OF_RANGE` ; un `accountIds` fourni hors de la liste admissible y est
    refusé de même, `reason: "notEligible"`) et **signale** les autres (`blockers[]`, AC-1). `accountIds` : un seul code, 400 `FX_REVALUATION_ACCOUNT_INVALID`, `details: { reason, accountIds }` (les
@@ -255,7 +270,8 @@ clôture et que l'écart aille aux différences de change.
      dépassement, le code de `kesh-db` qui l'appelle le traduit), `details: { currency, accountId }` pour un compte
      fautif, sans toucher
      `map_core_error`. Depuis R9 (une écriture par compte), la contrepartie d'une écriture vaut |D| de son seul compte,
-     déjà borné à 10¹³ : il n'y a plus de **somme** de contrepartie à borner (le cas `details: {}` ci-dessus disparaît ;
+     déjà borné à 10¹³ : il n'y a plus de **somme** de contrepartie à borner (le refus d'une somme de contrepartie hors
+     bornes, `details: {}`, de l'écriture unique disparaît ;
      Σ gains et Σ pertes ne sont plus qu'affichés, calculés en `Decimal` sans écriture). Au plus 100 devises et **498**
      comptes par requête — borne **conservée** (taille de la transaction, de l'aperçu et du détail d'audit
      `fx_revaluation.posted`) ; elle ne vient plus de `MAX_LINES_PER_ENTRY` (chaque écriture a deux lignes) : plus de 498
@@ -270,10 +286,11 @@ clôture et que l'écart aille aux différences de change.
    cours modifiables par devise (**valable pour cette passation seulement** : le champ n'écrit aucun cours saisi, qui
    se fixe à l'écran *Cours de change*, 35-2 ; « AFC : … » affiché sous le champ, sans ↑ ; source affichée : AFC ou
    manuel ; **genre** affiché : « cours du JJ.MM.AAAA » pour
-   un cours journalier, avec la date de publication si elle diffère, « cours mensuel de <mois> » signalé comme repli,
-   « cours saisi » quand le cours vient de la société, D9 ; bouton « Récupérer le cours du JJ.MM.AAAA » quand le repli
-   mensuel est pris ou qu'aucun cours n'existe, et que la date de fin est passée (AC-1) — Administrateur et
-   Comptable), cases par compte (comptes archivés grisés avec
+   un cours journalier, avec la date de publication si elle diffère, « cours mensuel de <mois> » — signalé comme repli
+   au genre de clôture `day` seulement, sans signalement au genre `month` (R6) —, « cours saisi » quand le cours vient
+   de la société, D9 ; bouton « Récupérer le cours du JJ.MM.AAAA » quand le genre de clôture est `day`, que le repli
+   mensuel est pris ou qu'aucun cours n'existe, et que la date de fin est passée (AC-1) ; au genre `month`, seul
+   « Récupérer le mois » est proposé, pour un mois publié — Administrateur et Comptable), cases par compte (comptes archivés grisés avec
    avertissement ; au-delà de 498 comptes admissibles, l'avis de présélection tronquée de l'AC-1, et pas plus de 498 cases
    cochées), l'écriture prévue par compte (R9), total des gains et des pertes, **« Passer les écritures »** (R9), liens
    vers les écritures passées ; le genre de clôture de l'exercice est rappelé (« cours de clôture : cours journalier du
@@ -300,7 +317,9 @@ clôture et que l'écart aille aux différences de change.
      au développement, écrit au Change Log) → aucune des trois n'existe après (transaction unique) ; audit
      `fx_revaluation.posted` qui liste les trois `entryId` ;
    - **genre de clôture (R6)** : exercice au genre `month` → cours mensuel du dernier mois, `rateKind: "month"` sans
-     signalement de repli ni bouton du jour ; genre changé entre l'aperçu et la passation → 409 ; exercices **au 1er
+     signalement de repli ni bouton du jour ; genre `month` sans cours mensuel, un cours journalier présent →
+     `RATE_UNAVAILABLE` (le jour n'est pas retenu), passation sans `rates` → 404, écran sans bouton du jour (Vitest) ;
+     genre changé entre l'aperçu et la passation → 409 ; exercices **au 1er
      juillet** (fin 30.06.2024, un dimanche : cours journalier publié le 28.06 ; genre `month` : juin 2024) et **au
      1er avril** (fin 31.03.2024, dimanche de Pâques : publication antérieure, `sourceDate` ; genre `month` : mars 2024) ;
    - **exercice mono-devise (R3)** : aperçu et passation → 409 `MULTI_CURRENCY_DISABLED` `details.fiscalYearId`, avant
@@ -318,7 +337,8 @@ clôture et que l'écart aille aux différences de change.
    - audit : `journal_entry.created` avec les quatre colonnes de devise au snapshot, et `fx_revaluation.posted` ;
    - le résidu après écriture tardive ; une réévaluation **supprimée**, puis un nouveau passage (le résidu
      rétablit l'écart) ; une réévaluation **contre-passée** (écriture inverse hors de l'exercice) : le nouveau passage ne
-     passe rien, l'original reste au cumul ; 498 comptes acceptés, 499 refusés (`reason: "tooMany"`), 101 devises refusées ;
+     passe rien, l'original reste au cumul ; contre-passée **le jour même dans un exercice en cours** (date de fin
+     future, inverse datée du jour dans le même exercice) : le nouveau passage repasse l'écart du compte ; 498 comptes acceptés, 499 refusés (`reason: "tooMany"`), 101 devises refusées ;
      499 comptes admissibles : l'aperçu en présélectionne 498 et le signale ; libellé ≤ 500 caractères avec un nom de
      compte maximal ; produit devise × cours hors bornes, |D| > 10¹³ → `FX_VALUE_OUT_OF_RANGE` ; `accountIds` vide, en
      doublon, étranger à la société et inexistant → `FX_REVALUATION_ACCOUNT_INVALID`, réponses identiques pour les deux
@@ -337,7 +357,8 @@ clôture et que l'écart aille aux différences de change.
 8. **AC-8 — Manuel** : réévaluation, cours journalier OFDF de la date de clôture (D10 : la pratique du cours de
    clôture, et les cours que portaient les livres de Beat), repli sur le cours mensuel AFC du mois de clôture (moyenne
    du 25 au 24 publiée d'avance, R4, non la moyenne du mois), choix du genre de clôture par exercice (R6), une écriture
-   par compte réévalué (R9), refus en exercice mono-devise (R3), cours saisi par la société (D9), récupération du cours du jour, gains et pertes non réalisés
+   par compte réévalué (R9), correction par suppression ou nouveau passage et non par contre-passation (AC-3), refus en
+   exercice mono-devise (R3), cours saisi par la société (D9), récupération du cours du jour, gains et pertes non réalisés
    comptabilisés (CO 960b, choix assumé ; la neutralisation par provision n'est pas offerte, C-35-8), postes non
    monétaires à décocher (stocks, immobilisations, capital en devise), la source du cours conservée à l'audit et non
    sur la ligne ; i18n ; PDF.
@@ -354,7 +375,7 @@ clôture et que l'écart aille aux différences de change.
       company_id, fin_d_exercice, Some(ids))` (35-4 AC-1 quater : dans `kesh-db`, car `kesh-db` ne peut pas dépendre de
       `kesh-report` ; borne `<=` incluse ; débit net brut ; aucune conversion de signe).
 - [ ] `kesh-api` : routes (aperçu, passation) dans `comptable_routes`, gardes, résolution des cours avant la
-      transaction (cours effectif journalier puis mensuel, 35-2), i18n des erreurs neuves (`FX_REVALUATION_ACCOUNT_INVALID` ;
+      transaction (selon le genre de clôture : cours effectif journalier puis mensuel, ou mensuel seul ; 35-2), i18n des erreurs neuves (`FX_REVALUATION_ACCOUNT_INVALID` ;
       `FX_ACCOUNT_INVALID`, `RATE_UNAVAILABLE` et `FX_RATE_INVALID` viennent de 35-1 et 35-2, réemployés) et du libellé d'audit
       (quatre locales) ; registres de l'AC-2 (`ACTIONS`, `LIB_ROUTES`, décomptes, phrase du manuel d'administration).
 - [ ] Frontend : écran depuis les exercices, Vitest, E2E.
@@ -450,3 +471,18 @@ clôture et que l'écart aille aux différences de change.
   à la passation ; libellé construit à deux endroits (aperçu, `post`) ; `invoices.rs:698` est
   `repositories/invoices.rs` ; `overridden` homonyme de celui de 35-2.) Axes non exercés : GET de la source
   journalière (déjà vérifiée en CR-1 P2).
+- 2026-11-14 — validation CR-2 P2 (Opus) : 0 CRITICAL, 0 HIGH, 2 MEDIUM, 6 LOW ; remédiés dans la fiche sauf
+  35-5-CR2-P2-IF1 (LOW, 35-3a AC-7 : « suppression ou contre-passation » citée de 35-5 AC-3) et 35-5-CR2-P2-IF2 (LOW,
+  35-3b : assertion `examinees` de `every_replayed_route_calls_an_envelope`), inter-fiches. (MEDIUM : la
+  contre-passation datée du jour tombe **dans** le cumul quand l'exercice est en cours — `ReversalDating::Today`,
+  `Utc::now().date_naive()` et `find_open_covering_date`, `journal_entries.rs:2933-2938` —, l'affirmation « hors du
+  cumul » de la remédiation CR-2 P1 ne valait que pour un exercice dont la fin est passée : AC-3, test, manuel ; genre
+  `month` (R6) non propagé — bouton du jour proposé et repli signalé sans condition de genre, défaut d'une devise omise
+  dit « journalier, sinon mensuel » : AC-1, AC-2, AC-4, AC-6, Tâches, test. LOW : `laterFiscalYear` placé avant
+  `LATER_FISCAL_YEAR_CLOSED` / `PERIOD_LOCKED`, alors que `create_in_tx_inner` évalue les dates (étapes 1, 1-a, 1-bis)
+  avant les comptes (étape 2) et que 35-3a la met au rang 2 de son AC-4 ; `OPTIMISTIC_LOCK_CONFLICT` du genre placé
+  avant les refus d'état (motif réel avant « rechargez ») ; renvoi « `details: {}` ci-dessus » sans objet ; décomptes
+  du registre cumulés sans 35-3b, assertion `examinees` (27, `audit_route_registry.rs:1325`) omise.) Vérifié à la
+  source (trois GET) : `xmldaily?d=20240630` rend la publication du 28.06.2024 (validité 29.06–01.07) ;
+  `d=20240331` celle du 28.03.2024 (Vendredi saint sans publication) ; `d=20271231` rend un JSON
+  « Aucune donnée disponible » (date future). Axes non exercés : code réel de 35-1 à 35-4 (non écrit).

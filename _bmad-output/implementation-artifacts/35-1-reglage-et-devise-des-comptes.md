@@ -4,7 +4,8 @@ Status: ready-for-dev
 
 *Fiche rédigée le 2026-11-14 (Opus 5.5), branche `epic/35-multi-devises`, numéros de ligne de `67efc51f`. Epic 35
 (`_bmad-output/planning-artifacts/epic-35-multi-devises.md`), registre C-35-1 à C-35-8. **Migration non breaking**.
-Révisée le 2026-11-14 pour la revue de Beat (CR-2 : R1, R3, R7, R10), qui prime sur le registre antérieur.*
+Révisée le 2026-11-14 pour la revue de Beat (CR-2 : R1, R3, R6 — colonnes seulement —, R7, R10), qui prime sur le
+registre antérieur.*
 
 ## Story
 
@@ -17,7 +18,8 @@ passer ensuite des écritures en devise (35-3), sans rien changer pour qui reste
 D1, D2 (fichier d'epic) ; C-35-2 (réglage sur `companies`, sans FK, quatre gardes), C-35-5 (verrous), C-35-9 (409 partout,
 verrou des deux côtés, réglage réservé à l'Administrateur). **CR-2 (revue de Beat, prime)** : R1 (une sauvegarde
 antérieure à l'Epic 35 se réimporte : liste close des tables et colonnes de l'epic, AC-6) ; R3 (mode mono-devise ou
-multi-devises **par exercice**, le réglage de la société en est le défaut, AC-3 bis) ; R7 (compte de conversion en
+multi-devises **par exercice**, le réglage de la société en est le défaut, AC-3 bis) ; R6 (colonnes
+`opening_rate_kind`/`closing_rate_kind` seulement, AC-1 ; route et écran en 35-2) ; R7 (compte de conversion en
 CHF désigné à l'activation, AC-3) ; R10 (constante du début de l'exercice initial de l'assistant, AC-11).
 
 ## Critères d'acceptation
@@ -73,7 +75,8 @@ CHF désigné à l'activation, AC-3) ; R10 (constante du début de l'exercice in
    - **compte de conversion** (R7, `fx_transit_account_id`) : compte **de bilan** en CHF par lequel passe une
      conversion entre deux devises (35-3b, assistant *Conversion* : il revient à 0 après les deux écritures) ; mêmes
      gardes que les comptes de gains et de pertes (de la société, imputable, actif, **sans devise**, lu `FOR UPDATE`,
-     motif C4, revalidation à l'usage par 35-3b et 35-5, verrous de l'AC-4 sous `ACCOUNT_IS_FX_DIFFERENCE_ACCOUNT`),
+     motif C4, revalidation à l'usage par la route de conversion de 35-3b — la réévaluation de 35-5 n'emploie que les
+     comptes de gains et de pertes —, verrous de l'AC-4 sous `ACCOUNT_IS_FX_DIFFERENCE_ACCOUNT`),
      **sauf le type** : `Asset` ou `Liability` (à créer, p. ex. 1090 *Transferts de fonds* — aucun plan livré n'a de
      compte 109x, grep des `*.json` de plans du 2026-11-14), jamais `Expense`/`Revenue`
      (`reason: "accountType"`) ; il ne peut donc pas être le compte de gains ou de pertes. La contrainte « ni au rôle
@@ -127,7 +130,15 @@ CHF désigné à l'activation, AC-3) ; R10 (constante du début de l'exercice in
      rejouées (celle-ci et `currency-mode`, AC-3 bis) : `audit_route_registry.rs` (vi) passe de « vingt-cinq » à
      « vingt-sept » (décompte, liste et « vingt-trois handlers `SansEcritureAuJournal` de `src/routes/` » recomptés au
      code, en deltas), et un test de victime d'interblocage par route dans `rejeu_interblocage_e2e.rs` (patron
-     `fiscal_year_reopen_is_replayed_when_it_is_the_deadlock_victim`) ;
+     `fiscal_year_reopen_is_replayed_when_it_is_the_deadlock_victim`). **Autres cycles, couverts par le même rejeu**
+     (35-1-CR2-P2-2, à écrire au Change Log du développement) : la validation d'une facture, l'avoir et la saisie
+     fournisseur prennent les réglages de facturation `FOR UPDATE` **avant** l'exercice (`invoices.rs:1974`,
+     `credit_notes.rs:312`, `supplier_invoices.rs:1484`), l'activation les réglages en partage **après** les
+     exercices — routes rejouées des deux côtés ; et la bascule `currency-mode` sous `force` (AC-3 bis) tient
+     l'exercice et les lignes des comptes en devise en lecture verrouillante puis demande ces comptes `FOR UPDATE`,
+     quand une écriture d'un exercice postérieur tient son exercice et le compte en partage (35-3a) avant d'insérer
+     sa ligne — c'est ce cycle-là, non celui de `companies`, qui fait rejouer `currency-mode` (elle ne prend
+     `companies` qu'en partage) ;
    - audit `company.currency_settings_updated` (avant/après, ajouté à `ACTIONS` de `audit_labels.rs`, liste triée) ;
      libellés d'audit dans les quatre locales ;
    - **réponse** : 200 avec le `CompanyJson` à jour (nouvelle `version`, comme les trois autres `PUT` de la société) ;
@@ -165,7 +176,8 @@ CHF désigné à l'activation, AC-3) ; R10 (constante du début de l'exercice in
      `kesh_db::retry::retry_on_deadlock("fiscal_years::set_currency_mode", …)` comme `create_fiscal_year`
      (`routes/fiscal_years.rs:286`), audit `fiscal_year.currency_mode_updated` (`{ before, after, archivedAccountIds }`,
      `ACTIONS` triée, quatre locales), registre `Traced, SansEcritureAuJournal` (ci-dessus). **Ordre des refus** (une
-     seule raison) : exercice inexistant ou d'une autre société → 404 ; corps illisible → 400 ; puis, dans la
+     seule raison) : corps illisible → 400 (l'extracteur `Json` passe avant le handler, comme pour `…/reopen`) ;
+     exercice inexistant ou d'une autre société → 404 (pré-vol sur le pool) ; puis, dans la
      transaction, `companies` `LOCK IN SHARE MODE`, les exercices antérieurs verrouillés par clé primaire dans l'ordre
      chronologique puis l'exercice `FOR UPDATE` (ordre de `fiscal_years::close`, `LOCK_EARLIER_BY_ID_SQL` /
      `LOCK_IN_COMPANY_SQL`, sans ses lectures ordinaires de tête — 35-5 AC-2 le détaille) : `multiCurrency: true` dans
@@ -185,7 +197,11 @@ CHF désigné à l'activation, AC-3) ; R10 (constante du début de l'exercice in
        passe en mono-devise. **Comment** (35-1-CR2-P1-2) : `archive_guarded` ouvre sa propre transaction sur le pool
        (`accounts.rs:859`) et refuse un compte aux sous-comptes actifs ; le corps de l'archivage est donc **extrait**
        en `archive_in_tx` (mêmes refus, même audit, aucune copie : DRY), appelé par `archive_guarded` et par
-       `set_currency_mode`. Seuls les comptes **imputables** sont proposés et archivés ; un compte de groupe porteur
+       `set_currency_mode`. Contrat (35-1-CR2-P2-8) : `archive_in_tx` reçoit la société attendue et **compare** le
+       `company_id` relu sous le `FOR UPDATE` du compte (écart → `NotFound`, comme l'AC-4 pour `archive_guarded`) ;
+       sous `force`, la `version` passée est celle relue sous ce verrou ; `companies` et les réglages de facturation
+       sont pris en partage **une fois**, par l'appelant, avant le premier compte (ordre `companies` → exercices →
+       réglages → `accounts` de l'AC-3). Seuls les comptes **imputables** sont proposés et archivés ; un compte de groupe porteur
        d'une devise (informatif, AC-4) n'est jamais proposé — il ne reçoit aucune ligne — et garde sa devise (il se
        retire par `PUT`, aucune ligne). Un compte imputable qui garde un sous-compte actif (état anormal) n'est pas
        proposé non plus. Les comptes se traitent par identifiant croissant. L'archivage se défait par la réactivation (société multi-devises). Aucun compte n'est
@@ -373,7 +389,8 @@ CHF désigné à l'activation, AC-3) ; R10 (constante du début de l'exercice in
      `exchange_rate_overrides` absente — aucun cours saisi —, 35-3a aux colonnes des lignes — aucune ligne en devise) ;
      et une table **hors liste** retirée → 400 (le refus d'origine tient). La phase 5 de
      `scripts/recette-montee.sh` (import du `.keshbackup` de l'image 0.17.6, exige un 200, `:651`) se joue normalement
-     à la release ; son `--diff-attendu` y liste `companies`, `accounts` et `fiscal_years` (l'empreinte lit
+     à la release ; son `--diff-attendu` y liste `migrations` (toujours, `_sqlx_migrations`), `companies`, `accounts`
+     et `fiscal_years`, plus les tables des autres stories (l'empreinte lit
      `SELECT *` : les colonnes neuves sont un écart attendu, `scripts/recette-montee.sh:414-440`).
    L'aller-retour d'une sauvegarde 35-1 conserve réglage, devises et mode des exercices ; l'export CSV des comptes (`serialize_accounts_csv`,
    `csv_tables.rs:265`, en-tête écrit à la main) porte `currency` ; `company.csv` (`serialize_company_csv`, :163)
@@ -421,7 +438,9 @@ CHF désigné à l'activation, AC-3) ; R10 (constante du début de l'exercice in
     courante (`routes/onboarding.rs:1044-1046`, `from_ymd_opt(year, 1, 1)` et `(year, 12, 31)` écrits en ligne). Ces
     dates deviennent des **constantes nommées** du module (nom au développement, p. ex.
     `EXERCICE_INITIAL_DEBUT: (u32, u32) = (1, 1)` et `EXERCICE_INITIAL_FIN: (u32, u32) = (12, 31)`), avec le
-    commentaire « ne pas modifier sans … » de Beat (texte à compléter avec lui, Change Log) ; le comportement ne change
+    commentaire de l'arbitrage A1 du fichier d'epic (« Ne pas modifier : l'exercice initial créé par l'assistant
+    commence le 1er janvier ; un exercice à d'autres dates se crée dans *Exercices* », soumis à Beat ; sa réponse, si
+    elle le change, au Change Log) ; le comportement ne change
     pas (test existant de l'assistant vert). Kesh accepte déjà des exercices à dates libres (`POST /fiscal-years`) :
     rien d'autre à implémenter ; 35-2 et 35-5 se testent sur des exercices au 1er juillet et au 1er avril (R6).
 
@@ -456,8 +475,10 @@ CHF désigné à l'activation, AC-3) ; R10 (constante du début de l'exercice in
 - [ ] `kesh-api` : registre des routes d'audit et phrase du manuel d'administration (AC-3).
 - [ ] Manuel (AC-10), CHANGELOG `[Unreleased]` (nouveau champ `currency` du compte, absent = inchangé ; réglage
       réservé à l'Administrateur, hors clé d'API).
-- [ ] Tests : dépôt (gardes, verrou, reset), API (codes), sauvegarde (AC-6), E2E Playwright (activer le mode, créer un
-      compte USD, verrou : écriture passée par l'API sur un compte **CHF**, puis devise refusée à l'écran — AC-4).
+- [ ] Tests : dépôt (gardes, verrou, reset), API (codes), sauvegarde (AC-6), E2E Playwright (créer d'abord un compte de
+      bilan pour la conversion — aucun plan livré n'en a, AC-3 —, activer le mode avec les trois comptes, créer un
+      compte USD, verrou : écriture passée par l'API sur un compte **CHF**, puis devise refusée à l'écran — AC-4 ;
+      écran *Exercices* : bascule en mono-devise, dialogue d'archivage puis renvoi avec `force` — AC-3 bis).
 - [ ] CR-2 — `kesh-db` : `FiscalYear` (`entities/fiscal_year.rs:73`) gagne `multi_currency`, `opening_rate_kind`,
       `closing_rate_kind` (énumération `RateKindChoice`/nom au développement) ; **quinze listes de colonnes écrites à la
       main** à compléter (`FromRow` échoue à l'exécution, non à la compilation) — quatorze constantes et requêtes de
@@ -565,3 +586,20 @@ CHF désigné à l'activation, AC-3) ; R10 (constante du début de l'exercice in
   colonnes d'exercice (21 et non 15) ; CR2-P1-5 : `--diff-attendu` de la recette de montée. Prémisses relues au code :
   `import.rs:250-253`, `:625` ; `backup.rs:796-803` ; `post_restore.rs:968-1004` ; `fiscal_years.rs:331`, `:456`,
   `:1360` ; `journal_entries.rs:326-336` ; `accounts.rs:859` ; `audit_route_registry.rs` (vi) ; `onboarding.rs:1044`.
+- 2026-11-14 — validation CR-2 P2 (Opus) : 0 CRITICAL, 0 HIGH, 0 MEDIUM, 8 LOW dans la fiche, plus 1 inter-fiches
+  (LOW) ; remédiés dans la fiche sauf 35-1-CR2-P2-IF1 (fichier d'epic, arbitrage A6 : « suggestion 1091 » contre 1090
+  des fiches 35-1 et 35-3b ; texte proposé : « suggestion 1090 »).
+  Points : ordre 400 (corps) avant 404 (extracteur `Json`) de `currency-mode` (P2-1) ; cycles couverts par le rejeu
+  — réglages `FOR UPDATE` avant l'exercice des validations de facture, avoir, saisie fournisseur, et cycle propre à
+  `currency-mode` sous `force` (P2-2) ; commentaire de la constante repris de l'arbitrage A1 (P2-3) ; R6 à l'en-tête
+  et aux Décisions (P2-4) ; revalidation du compte de conversion par 35-3b seule (P2-5) ; `migrations` au
+  `--diff-attendu` de la recette (P2-6) ; E2E : compte de bilan à créer avant l'activation, bascule d'exercice
+  (P2-7) ; contrat d'`archive_in_tx` (société comparée, version, verrous pris une fois, P2-8). Prémisses relues au
+  code : `routes/fiscal_years.rs:286`, `:385-389` (`reopen`, extracteur `Json`) ; `accounts.rs:440-448`, `:859-946`
+  (`archive_guarded` : aucun contrôle de solde) ; `fiscal_years.rs:162`, `:178`, `:331`, `:412`, `:456`, `:470`,
+  `:1360`, 14 + 1 listes de colonnes ; `journal_entries.rs:281-336` ; `invoices.rs:698`, `:1974` ;
+  `credit_notes.rs:312` ; `supplier_invoices.rs:1484` ; `post_restore.rs:938-1004` (fonctions de test) ;
+  `audit_route_registry.rs:155`, `:302-308`, `:1450-1502` ; `rejeu_interblocage_e2e.rs:2497` ;
+  `admin_pat_denied_e2e.rs:85` ; `onboarding.rs:1043-1053`, `:1273-1287` ; `scripts/recette-montee.sh:414-453`,
+  `:651` ; plans livrés (aucun 109x). Axes non exercés : source journalière (aucun GET, la 35-1 n'y touche pas),
+  manuels (PDF non lu), i18n au code.

@@ -75,6 +75,13 @@ là où elles divergent.
   suivant), applicable dès le 1er de M ; l'heure n'est pas publiée. Kesh vérifie toutes les 6 h **à partir du 25**
   jusqu'à obtenir le mois suivant, puis s'arrête jusqu'au 25 suivant ; et au **démarrage** comme à la **connexion**
   s'il manque un mois utile. Pas de boucle permanente toutes les 6 h.
+- **R4 amendé (orchestrateur, 2026-11-14, à confirmer par Beat).** Relevé contraire à la page ESTV : le
+  14.11.2026 (en-tête `Date` du serveur), `xmlavgmonth?j=2026&m=12` rend **déjà** décembre 2026 complet (USD 0.8320,
+  EUR 0.9295) ; `j=2027&m=1` est vide. Le mois suivant paraît donc **avant le 25**, et la définition « du 25 au 24 »
+  n'est pas vérifiable en l'état. Calendrier retenu, sûr dans les deux lectures : **une vérification par jour**
+  (dès le 1er du mois) tant que le mois courant ou le mois suivant manque pour un exercice multi-devises, puis
+  plus rien jusqu'au mois suivant ; plus le démarrage et la connexion. `POST /fetch` admet le mois suivant à toute
+  date (non publié → `404 RATE_NOT_PUBLISHED`). Le manuel ne décrit la méthode de calcul qu'après confirmation.
 - **R5 — Données reprises filtrées.** Tout ce qui vient de la source est validé strictement (taille, structure,
   refus de DOCTYPE et d'entités, codes, nombres, bornes, mois et dates), avec des tests de réponses hostiles.
 - **R6 — Écran des cours en tableau annuel.** Une ligne par devise, une colonne par mois **de l'exercice** (dans
@@ -123,7 +130,7 @@ là où elles divergent.
     multi-devises pour saisir ;
   - A5 — `force` archive les comptes en devise sans ligne après la fin de l'exercice ; pas de bascule sans archivage ;
     l'activation passe tous les exercices ouverts en multi-devises ;
-  - A6 — compte de conversion : compte de bilan non archivé, à créer (aucun plan livré n'en a ; suggestion 1091) ;
+  - A6 — compte de conversion : compte de bilan non archivé, à créer (aucun plan livré n'en a ; les fiches disent « p. ex. 1090 », le plan de Beat le numérote 1091) ;
   - A7 — la récupération automatique ignore les exercices clos ; leurs cours se récupèrent à l'écran ;
   - A8 — la conversion passe par une route serveur (deux écritures dans une transaction).
 - **Tableau des stories** : 35-2 « ne referme pas la fenêtre d'import (R1) ».

@@ -31,13 +31,19 @@ cours sans saisie.
 - **calendrier de publication (R4, source ESTV *MWST Monatsmittelkurse*, lue par Beat le 2026-11-14)** : le cours du
   mois M est la moyenne des cours journaliers du 25 de M−2 au 24 de M−1, **publiée le 25 de M−1** (ou le jour
   ouvrable suivant), applicable dès le 1er de M ; l'heure n'est pas publiée. Le relevé du 2026-11-14 (`xmlavgmonth`
-  sans paramètre rendait `2026-11`) s'accorde avec lui : le mois courant est toujours publié, le mois suivant l'est à
-  partir du 25 ;
+  sans paramètre rendait `2026-11`) montre le mois courant publié ; mais **un relevé du même jour le contredit pour le
+  mois suivant** (validation CR-2 P2) : `j=2026&m=12` rendait dès le **14.11.2026** (en-tête `Date` du serveur) un
+  `<monat>2026-12</monat>` complet (EUR 0.9295), `j=2027&m=1` la racine vide — le mois suivant peut donc être publié
+  **avant le 25**, et la définition « du 25 de M−2 au 24 de M−1 » ne peut alors être exacte (le 24.11 n'était pas
+  passé). **À confirmer par Beat (R4).** Kesh n'en dépend pas pour sa justesse : la tâche automatique part du 25, où
+  le mois suivant est publié dans les deux lectures (AC-4), et la récupération à la demande accepte le mois suivant à
+  toute date (non publié → `404 RATE_NOT_PUBLISHED`, AC-5) ;
 - mois non publié : élément racine vide → « pas encore publié » ;
 - la réponse peut porter un autre mois que celui demandé (sans paramètre : mois courant) : **le `<monat>` lu fait foi** ;
   un écart avec le mois demandé est une erreur (rien n'est écrit).
 - **Terminologie** (fichier d'epic, précisée par R4) : ce n'est **pas la moyenne du mois** qu'il désigne — c'est la
-  moyenne des cours du 25 au 24 qui précède, **publiée d'avance** et applicable tout le mois. Textes, libellés et
+  moyenne des cours du 25 au 24 qui précède (définition de R4, à confirmer : relevé ci-dessus), **publiée d'avance**
+  et applicable tout le mois. Textes, libellés et
   manuels disent « cours mensuel AFC », jamais « cours moyen » ni « moyenne du mois » ; le manuel l'explique ainsi (le
   nom allemand de la page ESTV, *Monatsmittelkurse*, et la racine XML `monatsmittelkurs` restent des noms de la source).
 
@@ -297,7 +303,9 @@ cours sans saisie.
      chaque tour dans son propre `tokio::spawn`, une panique journalisée n'arrête rien) ne tourne **pas** en boucle de
      6 h permanente. Elle se réveille : (a) **au démarrage**, après un court délai fixe (60 s, constante) pour ne pas
      retarder le démarrage ; (b) **à partir du 25** de chaque mois (Europe/Zurich, 00:00) et ensuite **toutes les 6 h**
-     tant que le **mois suivant** manque pour un exercice multi-devises qui le couvre ; dès qu'il est obtenu (ou
+     tant que le **dernier mois publié** (le mois suivant à partir du 25, le mois courant avant : même aide de fuseau)
+     manque pour un exercice multi-devises qui le couvre — un mois suivant encore manquant au 1er (fenêtre du 25 tout
+     en échec) devient le mois courant, et les essais de 6 h continuent au lieu d'attendre le 25 ; dès qu'il est obtenu (ou
      qu'aucun exercice ne le couvre), elle **dort jusqu'au 25 suivant** (un **jour** d'ouverture ou de clôture
      manquant ne réveille pas la tâche : le jour de clôture du 31.12 devient récupérable le 1er janvier et se récupère
      au prochain démarrage, à la prochaine connexion — qui lance un tour pour toute unité manquante — ou au plus tard
@@ -306,10 +314,12 @@ cours sans saisie.
      Chaque tour traite **toutes** les unités utiles qui manquent (pas seulement le mois suivant : une restauration ou
      un exercice neuf peuvent en laisser plusieurs), **au plus 36 par tour** (constante, testée ; le reste au tour
      suivant), dans l'ordre chronologique. Le calcul du prochain réveil est une fonction pure (`prochain_reveil(now,
-     manque_mois_suivant)`), testée aux bords (24 → 25, fin de mois, 31.12 → 25.01, changement d'heure).
-   - **À la connexion (R4)** : après un `POST /api/v1/auth/login` réussi (`routes/auth.rs:235`), si une unité utile
-     manque pour un exercice de la société de l'utilisateur, un tour est lancé en **tâche détachée** (`tokio::spawn`,
-     jamais attendu : la connexion ne dépend jamais de la source), au plus une fois toutes les 15 minutes pour
+     manque_dernier_mois_publie)`), testée aux bords (24 → 25, fin de mois, 31.12 → 25.01, changement d'heure, mois
+     courant encore manquant le 1er → 6 h).
+   - **À la connexion (R4)** : après un `POST /api/v1/auth/login` réussi (`routes/auth.rs:235`), une **tâche
+     détachée** (`tokio::spawn`, jamais attendue : la connexion ne dépend jamais de la source) juge elle-même si une
+     unité utile manque pour un exercice de la société de l'utilisateur et lance alors un tour — aucune lecture n'est
+     ajoutée au chemin de la connexion —, au plus une fois toutes les 15 minutes pour
      l'installation (horodatage en mémoire d'`AppState`, comme `rate_fetch_memo`) ; le renouvellement de session
      (`refresh`) ne déclenche rien. Test : la réponse de connexion ne dépend ni du succès ni du délai de la source.
    - Lancement de `main.rs` **seulement**, avec un commentaire de renvoi à la garde comme `main.rs:463-466`, et **ni la
@@ -341,10 +351,10 @@ cours sans saisie.
      d'erreur, genre et date du cours) ;
    - `POST /api/v1/exchange-rates/fetch { year, month }` (cours mensuel) **ou** `{ date: "AAAA-MM-JJ" }` (cours
      journalier, D10 ; les deux formes ensemble ou aucune → 400) — dans **`comptable_routes`** (Administrateur ou
-     Comptable ; mois ≥ 2000-01 et ≤ **dernier mois publié** en Europe/Zurich — le mois courant, ou le mois suivant à
-     partir du 25 (R4) ; jour ≥ 2000-01-01 et **strictement antérieur** au jour courant en Europe/Zurich, cf. *Cours
-     journaliers* — même aide de fuseau que l'AC-4 ; sinon 400. Un mois suivant demandé le 25 avant sa publication rend
-     `404 RATE_NOT_PUBLISHED`, comme tout mois non publié) : récupère ce mois ou ce jour, **auditée sous l'utilisateur**
+     Comptable ; mois ≥ 2000-01 et ≤ **mois suivant** le mois courant en Europe/Zurich, **à toute date** (relevé
+     CR-2 P2, *Source* : le mois suivant peut être publié avant le 25) ; jour ≥ 2000-01-01 et **strictement antérieur**
+     au jour courant en Europe/Zurich, cf. *Cours journaliers* — même aide de fuseau que l'AC-4 ; sinon 400. Un mois
+     suivant demandé avant sa publication rend `404 RATE_NOT_PUBLISHED`, comme tout mois non publié) : récupère ce mois ou ce jour, **auditée sous l'utilisateur**
      (`NewAuditLogEntry::from_current_user`, méthode du trait `AuditActor`, `audit.rs:24` : une clé d'API est attribuée comme telle ;
      `exchange_rates.fetched`, genre, mois ou jour, `<datum>` lu pour un jour, nombre de devises écrites, écartées et dont le cours a changé (`changed`) — écrite **sur un succès seulement** : un
      404 ou un 503 n'écrit que `_kesh_exchange_rate_fetch`) ; écrit `_kesh_exchange_rate_fetch` avec
@@ -423,9 +433,12 @@ cours sans saisie.
    - **Genres d'ouverture et de clôture (R6)** — `PUT /api/v1/fiscal-years/{id}/rate-kinds { openingRateKind,
      closingRateKind }` (`"day"` | `"month"`, les deux obligatoires), dans **`comptable_routes`** (Administrateur ou
      Comptable ; Consultation 403), handler sous `retry_on_deadlock` comme les autres routes d'exercice ; écrit les
-     colonnes de 35-1 sous `FOR UPDATE` de l'exercice ; refus, dans l'ordre général de cet AC (401, 403 → 404 → 409 → 400) : 404 (exercice d'une autre
-     société), 409 `MULTI_CURRENCY_DISABLED` (société ou exercice mono-devise), 400 (corps illisible ou valeur hors
-     `day|month`), 400 `FISCAL_YEAR_CLOSED` (exercice clos : ses genres sont figés) ; no-op → 200 sans audit ; audit `fiscal_year.rate_kinds_updated` (`{ before, after }`, `ACTIONS`
+     colonnes de 35-1 sous `FOR UPDATE` de l'exercice ; refus, dans l'ordre : 401, 403 → 400 `VALIDATION_ERROR`
+     (corps illisible, champ absent ou valeur hors `day|month` : rejet de l'extracteur `impl_validation_extractor`,
+     `extractors.rs:18`, **avant** le handler — un corps typé ne peut se juger après le 404) → 404 (exercice d'une autre
+     société) → 409 `MULTI_CURRENCY_DISABLED` (société ou exercice mono-devise, `details: { fiscalYearId }` pour
+     l'exercice) → 400 `FISCAL_YEAR_CLOSED` (exercice clos : ses genres sont figés), mode et statut relus sous le
+     `FOR UPDATE` ; no-op → 200 sans audit ; audit `fiscal_year.rate_kinds_updated` (`{ before, after }`, `ACTIONS`
      triée, quatre locales). Le choix ne réécrit rien : il change le cours **proposé** à l'ouverture (35-3b) et à la
      réévaluation (35-5), et les jours que récupère la tâche automatique (AC-4).
    - Toutes ces routes exigent le mode multi-devises de la société courante : **`409 MULTI_CURRENCY_DISABLED`**, même
@@ -449,7 +462,10 @@ cours sans saisie.
      (`409 MULTI_CURRENCY_DISABLED`) → paramètres illisibles ou hors bornes (400, dont `CHF`) → devise inconnue
      (`400 CURRENCY_UNKNOWN`) → cours absent (404) ; pour le `PUT` d'un cours saisi, après la devise inconnue :
      `400 FX_RATE_INVALID`, puis la version (`409 OPTIMISTIC_LOCK_CONFLICT`). La devise se lit **telle quelle**, sans normalisation : `usd` →
-     `400 CURRENCY_UNKNOWN`.
+     `400 CURRENCY_UNKNOWN`. **Seul écart**, commun aux routes à corps JSON (`POST /fetch`, `PUT` d'un cours saisi,
+     `PUT /rate-kinds`) : un corps illisible est refusé par l'extracteur (`impl_validation_extractor`, 400
+     `VALIDATION_ERROR`) avant le handler, donc avant le 409 ; les champs se lisent en chaînes (`rate`, `rateDate`,
+     `currency`) et se jugent ensuite dans l'ordre ci-dessus.
    - **Audit et registres** : action `exchange_rates.fetched` ajoutée à `ACTIONS` (`crates/kesh-api/src/audit_labels.rs`,
      liste triée, garde `tests/audit_label_registry.rs`) ; type d'entité `installation` avec `AUDIT_ENTITY_ID_NONE`
      (précédent `admin.backup_run`, `routes/backup_schedule.rs:177-191`, `emit_audit` après coup — la table est
@@ -487,10 +503,12 @@ cours sans saisie.
    Les colonnes Ouverture et Clôture suivent le choix : genre `day`, la case du jour (avec la date de publication
    `sourceDate` quand elle diffère : « publié le 28.06.2024 ») ; genre `month`, la case du mois concerné, liée à la
    colonne de ce mois (la même valeur, éditée à un seul endroit). En-tête de colonne : la date du cours. Bouton
-   « Récupérer les cours manquants » (Administrateur et Comptable) : `POST /exchange-rates/fetch` pour chaque case
-   vide récupérable (mois ≤ dernier mois publié, jour strictement passé), l'une après l'autre, par la fonction d'API
-   commune (AC-5 : `timeoutMs` 90 s, sans bandeau dégradé), puis relecture ; un échec par case s'affiche sur la case
-   sans arrêter les suivantes. « Ajouter une devise » ajoute une ligne (liste ISO 4217, hors CHF ; la ligne n'existe
+   « Récupérer les cours manquants » (Administrateur et Comptable) : **un seul** `POST /exchange-rates/fetch` par
+   **colonne** récupérable (mois ≤ mois suivant, AC-5 ; jour d'Ouverture ou de Clôture en genre `day`, strictement
+   passé) dont au moins une ligne n'a pas de cours AFC (`afcRate` à `null`, cours saisi ou non) — une récupération
+   écrit toutes les devises publiées du mois ou du jour : un appel par case doublerait appels sortants et lignes
+   d'audit —, l'un après l'autre, par la fonction d'API commune (AC-5 : `timeoutMs` 90 s, sans bandeau dégradé), puis
+   relecture ; un échec s'affiche sur les cases de sa colonne sans arrêter les suivantes. « Ajouter une devise » ajoute une ligne (liste ISO 4217, hors CHF ; la ligne n'existe
    côté serveur qu'une fois un cours saisi) ; « Toutes les devises publiées » (`all=true`). État de la dernière
    récupération (automatique ou manuelle, d'après `trigger` ; genre, date, statut, code d'erreur traduit) ; mention
    de la source, de son calendrier (R4) et de son caractère non contraignant ; libellés « cours mensuel AFC » et
@@ -498,7 +516,11 @@ cours sans saisie.
    tableau (colonne des devises figée) ; pas de défilement horizontal de la page. **Exercice clos** (A7 : la tâche
    automatique l'ignore, ses cours se récupèrent ici) : « Récupérer les cours manquants » reste offert, mais les champs
    et ↑ sont en lecture seule et les deux choix de genre sont désactivés (le serveur refuse `PUT /rate-kinds`,
-   `FISCAL_YEAR_CLOSED`) ; Vitest.
+   `FISCAL_YEAR_CLOSED`) ; Vitest. Lecture seule **de l'écran** : `PUT` et `DELETE /exchange-rates/overrides` ne
+   connaissent pas l'exercice et restent admis par l'API (un cours saisi ne réécrit rien, AC-5). Le jour de Clôture
+   (genre `day`) d'un exercice est aussi le jour d'Ouverture (veille) de l'exercice suivant : c'est **la même case**
+   (même devise, genre et date), éditable depuis l'exercice ouvert, qui change aussi ce qu'affiche l'exercice clos
+   (testé au serveur).
    - **Cours éditable** (D9) : chaque cours effectif est un champ (Administrateur et Comptable ; lecture seule pour
      Consultation), validé à l'écran par les bornes de l'AC-2 (`AmountFormatOptions { maxDecimals: 10,
      maxIntegerDigits: 7 }`, comme 35-3b AC-2) ; une valeur changée s'enregistre à la validation du champ (`PUT`, avec
@@ -524,7 +546,8 @@ cours sans saisie.
      publié » et ↑ « Retirer le cours saisi » ; « AFC ✓ · saisi » et ↑ (cas résiduel) ; valeur entrée égale au cours AFC
      → `DELETE` (ou rien) et jamais `PUT` ; ↑ → `DELETE` avec la bonne version ; 409 → rechargement ; changement d'un
      genre → `PUT /rate-kinds` puis relecture ; Consultation sans champ éditable ni choix ; cours JPY saisi par unité ;
-     « Récupérer les cours manquants » poursuit après un échec. Captures d'écran (exercice au 1er juillet avec un cours
+     « Récupérer les cours manquants » poursuit après un échec et n'appelle qu'une fois par colonne (deux devises sans
+     cours AFC le même mois → un seul `POST /fetch`). Captures d'écran (exercice au 1er juillet avec un cours
      saisi et son ↑, colonnes Ouverture et Clôture en genre `day` puis `month`, lecture seule).
 7. **AC-7 — Restauration.** Les deux tables `_kesh_*` sont système : un import de sauvegarde ne les touche pas. Sur une
    installation neuve restaurée, elles sont vides : la boucle ou `POST /fetch` les complète ; aucun test ne suppose un
@@ -545,8 +568,9 @@ cours sans saisie.
    que les tables applicatives : elle **laisse** les cours AFC, données officielles de l'installation, et **vide**
    les cours saisis, données de la société — voulu, à dire au manuel. Aucun outil du serveur MCP ne lit la table des cours (une ligne porte son cours, 35-3a) : hors périmètre.
 8. **AC-8 — i18n, manuels.** Quatre locales (écran, codes d'erreur dont `FX_RATE_INVALID`, libellés d'audit et de
-   type d'entité) ; manuel utilisateur (tableau annuel, source, cours mensuel AFC — moyenne du 25 au 24 publiée
-   d'avance le 25, R4 —, cours journalier, genres d'ouverture et de clôture de l'exercice, cours saisi et bouton ↑,
+   type d'entité) ; manuel utilisateur (tableau annuel, source, cours mensuel AFC — publié d'avance pour le mois ; la
+   définition « moyenne du 25 au 24, publiée le 25 » de R4 n'est écrite qu'une fois confirmée par Beat (relevé
+   contraire, *Source*) —, cours journalier, genres d'ouverture et de clôture de l'exercice, cours saisi et bouton ↑,
    récupération automatique et son calendrier) ; manuel d'administration : accès sortant HTTPS vers
    `www.backend-rates.bazg.admin.ch` requis pour un exercice multi-devises ouvert, aucun sinon, quand il a lieu
    (démarrage, à partir du 25, connexion), mandataire par `HTTPS_PROXY` (lu par `reqwest`) ; un `.keshbackup` 0.17.6
@@ -634,7 +658,9 @@ cours sans saisie.
   `cookies`) ; `rustls`
   0.23.46 (ring) y est aussi.
 - Calendrier de la source (R4) : le cours du mois M est publié le 25 de M−1 (ou le jour ouvrable suivant), applicable
-  dès le 1er de M ; le relevé du 2026-11-14 (sans paramètre, `2026-11`) s'y accorde.
+  dès le 1er de M ; le relevé du 2026-11-14 (sans paramètre, `2026-11`) s'y accorde pour le mois courant, mais
+  `j=2026&m=12` était déjà publié le 14.11.2026 (validation CR-2 P2, *Source*) : date de publication à confirmer par
+  Beat ; la tâche part du 25 (sûr dans les deux lectures), `POST /fetch` accepte le mois suivant à toute date.
 - Pas de production des cours dans le dépôt : les fixtures sont synthétiques (C-35-1, conditions SIX).
 - Cours journaliers relevés le 2026-11-14 (deux `GET`, `d=20241231` et `d=20240630`) : voir *Cours journaliers*.
 - Fenêtre d'import : `parse_and_verify_avec_inventaire` (`admin_backup/import.rs:187`) compare le manifeste à
@@ -754,3 +780,26 @@ cours sans saisie.
   AC-6, nom de migration) et 35-5, R1–R10 et A1–A8, source journalière (2 GET : `20261114`, `20261115`). Non exercés :
   compilation, gate, rendu de l'écran, `resolve_xml_entity` de quick-xml 0.42 (sources absentes du poste), 35-3a/35-3b
   au-delà des renvois, i18n et manuels au-delà de la fiche. Cycle CR-2 : passe suivante à lancer.
+- 2026-11-14 — validation CR-2 P2 (Opus) : 0 CRITICAL, 0 HIGH, 3 MEDIUM, 3 LOW ; remédiés dans la fiche sauf
+  35-2-CR2-P2-IF1 (fichier d'epic R4 et 35-3b/35-5 : borne « mois suivant à toute date ») et 35-2-CR2-P2-IF2 (35-1 AC-3
+  bis : rejet du corps par l'extracteur avant le 404). MEDIUM : R4 contredit par un relevé — `xmlavgmonth?j=2026&m=12`
+  rend un mois complet dès le 14.11.2026, `j=2027&m=1` la racine vide : la borne du `POST /fetch` passe au mois suivant
+  à toute date, la tâche garde le 25, la définition « du 25 au 24, publiée le 25 » est à confirmer par Beat avant d'aller
+  au manuel (CR2-P2-1) ; ordre des refus du `PUT /rate-kinds` posé par CR2-P1-3 (404 → 409 → 400 corps) irréalisable
+  avec l'extracteur de corps (`extractors.rs:18`, rejet avant le handler) et attribué à tort à « l'ordre général » :
+  corps (400) → 404 → 409 → `FISCAL_YEAR_CLOSED`, écart des routes à corps JSON écrit à l'ordre général (CR2-P2-2) ;
+  « Récupérer les cours manquants » appelait `POST /fetch` par case — un appel et une ligne d'audit par devise pour un
+  même mois — et ignorait les cases à cours saisi sans cours AFC : un appel par colonne (CR2-P2-3). LOW : la tâche
+  dormait du 1er au 24 avec le mois courant manquant après une fenêtre du 25 en échec — condition (b) sur le dernier
+  mois publié (CR2-P2-4) ; lecture seule de l'exercice clos propre à l'écran, case du jour de clôture partagée avec
+  l'ouverture de l'exercice suivant (CR2-P2-5) ; le contrôle « unité manquante » de la connexion passe dans la tâche
+  détachée (CR2-P2-6). Axes exercés : diff `b36599d0..HEAD` (entrées CR-2 P1) ; citations relues au code
+  (`api-client.ts` :42, :61, :388-423 ; `extractors.rs` :1-60 ; `routes/fiscal_years.rs` :286-330 ; `errors.rs`
+  `FiscalYearClosed` ; `backup.rs` :46-118, :785-806 ; `import.rs` :245-256 ; `post_restore.rs` :936-995 ;
+  `audit_labels.rs` entités et actions `fiscal_year.*` ; `audit_route_registry.rs` :530-545 ; `exports/global.rs` :116,
+  :673 ; `test_endpoints.rs` :189, :325, :349 ; `admin-manual.tex` :3217 ; `auth.rs` :235) ; accord avec 35-1 (AC-1,
+  AC-3 bis, AC-6), 35-3b et 35-5 (borne du mois, `closingRateKind`) ; verrous et mémoire, calendrier, exercice clos (A7),
+  R1–R6 ; source, trois GET (`xmlavgmonth` `j=2026&m=12` et `j=2027&m=1`, en-tête `Date`). Non exercés : compilation,
+  gate, rendu de l'écran, `resolve_xml_entity` de quick-xml 0.42, i18n et manuels au-delà de la fiche ; `FX_MULTIPLE_CURRENCIES`,
+  assistant *Conversion* et archivage sous `force` sans point de contact dans cette fiche hors du tableau (lignes des
+  comptes archivés). Cycle CR-2 : passe suivante à lancer (des MEDIUM ont été remédiés).

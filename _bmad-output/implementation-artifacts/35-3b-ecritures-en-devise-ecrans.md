@@ -63,8 +63,9 @@ devise au cours d'ouverture choisi pour l'exercice (R6), afin de tenir mes livre
      l'ouverture** (`lookup` `kind=day`, `date` = `start_date` − 1 jour : le 31.12 pour un exercice civil, le 30.06
      pour un exercice au 1er juillet, le 31.03 pour un exercice au 1er avril), qui est le cours de clôture de
      l'exercice antérieur ; genre `month` → **cours mensuel du premier mois** de l'exercice (`lookup` `kind=month`,
-     `date` = `start_date`). Hors des bornes de 35-2 (date < 2000-01-01), le `lookup` rend 400 : saisie manuelle, sans
-     `POST /fetch`. Pour un complément daté `TODAY` (`complementDateKind`), cours mensuel du mois de cette date, comme
+     `date` = `start_date`). Hors des bornes du `POST /fetch` de 35-2 (date < 2000-01-01, AC-5 : il rendrait 400), le
+     `lookup` — qui n'a pas de borne basse et rend alors `404 RATE_UNAVAILABLE` faute de cours — n'est suivi d'**aucun**
+     `POST /fetch` : saisie manuelle. Pour un complément daté `TODAY` (`complementDateKind`), cours mensuel du mois de cette date, comme
      avant. Modifiable. Le `404 RATE_UNAVAILABLE` d'un jour (`details.date`) déclenche `POST /fetch { date }` si la
      veille est strictement passée (35-2 AC-5), sinon saisie manuelle. Tests : exercice civil, au 1er juillet, au
      1er avril, en genre `day` et `month`. **Envoyé `rate_source = manual`** sur
@@ -85,7 +86,11 @@ devise au cours d'ouverture choisi pour l'exercice (R6), afin de tenir mes livre
      **postérieur** mono-devise fait refuser une ligne en devise de l'ouverture ou du complément par le même code
      (`reason: "laterFiscalYear"`, `details.fiscalYearId`, 409) — les deux grilles affichent ce refus traduit (le message
      dit de passer l'exercice postérieur en multi-devises), classé comme tout refus FX de l'écran, saisie conservée. L'écriture d'ouverture et son complément peuvent porter
-     plusieurs devises (exemption de `FX_MULTIPLE_CURRENCIES`, 35-3a AC-4, 2 bis).
+     plusieurs devises (exemption de `FX_MULTIPLE_CURRENCIES`, 35-3a AC-4, 2 bis). ⚠️ La page
+     (`settings/opening-balances/+page.svelte`) ne charge aujourd'hui **aucun** exercice : elle charge `GET /fiscal-years`
+     au montage (`multiCurrency` et `openingRateKind` ci-dessus). Si ce chargement échoue : les comptes en devise restent
+     offerts (le serveur tranche, refus affiché comme ci-dessus) et **aucun** cours n'est proposé (genre inconnu) —
+     saisie manuelle, avec un message ; Vitest de ce cas.
    - **Saisie manuelle : cours OU CHF** (ouverture, complément et formulaire d'écriture, AC-2). L'utilisateur saisit
      soit le cours, soit le montant CHF. Si le CHF est saisi : cours = CHF ÷ montant en devise, arrondi à 10 décimales ;
      le client vérifie que `round(montant × cours, 2)` redonne le CHF saisi et, sinon, ajuste le cours au dernier chiffre
@@ -115,6 +120,8 @@ devise au cours d'ouverture choisi pour l'exercice (R6), afin de tenir mes livre
      `foreign`. Vitest : montant en devise sans cours → bouton désactivé, aucun appel.
    - **Tests.** Dépôt : ouverture et complément avec ligne en devise, contrepartie sur le compte de report ; API :
      `FX_AMOUNT_MISMATCH`, devise ≠ devise du compte, mono-devise → `MULTI_CURRENCY_DISABLED`, `revaluation` refusé ;
+     ouverture **et** complément à lignes EUR et USD acceptés **par leurs routes** (exemption de
+     `FX_MULTIPLE_CURRENCIES`, 35-3a AC-4, 2 bis), puis `PUT` du libellé de l'écriture d'ouverture ainsi créée → 200 ;
      aller-retour `.keshbackup` ; **non-régression du mode Compléter bancaire** (34-2, compte CHF inchangé) ; Vitest de
      l'écran et des totaux (`opening-balances-page.test.ts`, `opening-balances-totals.test.ts`), dont : premier
      exercice (ou exercice du complément) mono-devise → aucun compte en devise offert, motif affiché ; refus
@@ -180,7 +187,8 @@ devise au cours d'ouverture choisi pour l'exercice (R6), afin de tenir mes livre
      dégradé sur 503, `timeoutMs` de 90 s, 35-2 AC-3 et AC-5), le mois tiré de `details.month` (`AAAA-MM-01`) ; les specs
      E2E pilotent la source factice et s'appuient sur le vidage des tables par `/_test/seed` (35-2 AC-7) — (rôle Comptable ou Administrateur ; mois ≤ **dernier mois publié**, R4 et 35-2 AC-5, non « ≤ mois courant » : dès le 25, le mois suivant se récupère), puis
      relit ; `404 RATE_NOT_PUBLISHED`, `503` ou rôle Consultation → message, saisie manuelle exigée. Pour un mois
-     **postérieur au dernier mois publié** (le mois courant, ou le mois suivant à partir du 25, Europe/Zurich, R4),
+     **postérieur au mois suivant le mois courant** (Europe/Zurich ; 35-2 AC-5 : le mois suivant est admis à toute
+     date, non publié → `404 RATE_NOT_PUBLISHED` ; R4 amendé, alignement de l'orchestrateur),
      **aucun** `POST /fetch` (il rendrait 400, 35-2 AC-5) : saisie manuelle directement ; un 400 du `POST /fetch` se
      traite comme `RATE_NOT_PUBLISHED`. Le cours du mois M est publié le 25 de M−1 (R4 ; 35-2 *Source*), et la tâche
      automatique de 35-2 le récupère pour les exercices multi-devises ; le cas « cours indisponible » vise surtout un
@@ -203,7 +211,11 @@ devise au cours d'ouverture choisi pour l'exercice (R6), afin de tenir mes livre
      `details.expected` / `details.provided` (35-3a AC-3) ; `FX_CURRENCY_MISMATCH`, `ACCOUNT_REQUIRES_CURRENCY`,
      `FX_AMOUNT_MISMATCH` → message traduit sur la ligne fautive (numéro en `details` : le rang **1-based** de la ligne dans `lines`,
      lu dans `details.line` (35-3a AC-3), y compris pour `FX_VALUE_OUT_OF_RANGE`, `FX_LINE_ROUNDS_TO_ZERO` et
-     `FX_RATE_NOT_AFC`). ⚠️ Ce rang est celui du **corps envoyé**, qui omet les lignes `empty` (`nonEmptyLines`,
+     `FX_RATE_NOT_AFC`). `ACCOUNT_REQUIRES_CURRENCY` portant `details.reason = "monoCurrencyFiscalYear"` (et
+     `fiscalYearId`, 35-3a AC-4, 3 : ligne CHF sur un compte en devise dans un exercice mono-devise) a son **message
+     propre** — passer l'exercice en multi-devises, jamais l'invite « saisissez le montant en devise » —, clé i18n dans
+     les quatre locales, au formulaire, aux deux grilles d'ouverture et dans l'assistant *Conversion* ; Vitest des deux
+     messages. ⚠️ Ce rang est celui du **corps envoyé**, qui omet les lignes `empty` (`nonEmptyLines`,
      `JournalEntryForm.svelte:171-174`, payload :206) : l'écran le traduit en ligne du formulaire par l'`index` de
      `nonEmptyLines[line − 1]`, jamais par `lines[line − 1]` ; même règle sur les grilles d'ouverture (`nonEmptyRows`,
      `complementLines`). Vitest de chacun, dont un refus sur une ligne précédée d'une ligne vide. `editRefusalOutcome`
@@ -220,13 +232,17 @@ devise au cours d'ouverture choisi pour l'exercice (R6), afin de tenir mes livre
      (C-35-4). Libellé accessible et aide du bouton : « Ajouter une ligne de différence de change ». Vitest : un clic
      ajoute exactement une ligne et aucun appel réseau.
    - **Une devise par écriture (R7)** : dès qu'une ligne porte une devise, les comptes d'une **autre** devise sont
-     retirés du sélecteur des autres lignes (les comptes CHF restent) ; une écriture relue qui en porterait deux — **l'écriture d'ouverture et son complément** (exemptés à la création,
-     35-3a AC-4, 2 bis) **ou** un état hérité — affiche le refus `FX_MULTIPLE_CURRENCIES` du serveur à l'enregistrement
-     d'une modification (traduit, `stay`), avec le motif dit à l'écran : la 35-3a ne prévoit l'exemption que pour la
-     création (inter-fiche, ci-dessous au Change Log) ; pour changer de devise,
-     l'assistant *Conversion* (AC-2 bis) est proposé par un lien (Vitest : avec une ligne USD, le sélecteur des autres
-     lignes ne propose ni compte EUR ni compte USD d'une autre ligne EUR, mais les comptes CHF ; le lien apparaît ;
-     retirer la ligne en devise rend les comptes de toutes les devises). Le formulaire reçoit les props `multiCurrency`,
+     retirés du sélecteur des autres lignes (les comptes CHF restent) ; une écriture relue qui en porte déjà plusieurs —
+     **l'écriture d'ouverture et son complément** (exemptés, 35-3a AC-4, 2 bis), une contre-passation de l'une d'elles,
+     **ou** un état hérité — **reste modifiable** : 35-3a AC-4 (2 bis) n'oppose `FX_MULTIPLE_CURRENCIES` au `PUT` que si
+     l'écriture stockée portait au plus une devise. Pour une telle écriture, le sélecteur offre les comptes CHF et ceux
+     des devises **déjà portées par l'écriture relue** (jamais une devise de plus) ; un `FX_MULTIPLE_CURRENCIES` reçu
+     malgré tout (corps qui ajoute une seconde devise, écriture changée entre la lecture et l'envoi) s'affiche traduit,
+     `stay`. Pour changer de devise, l'assistant *Conversion* (AC-2 bis) est proposé par un lien (Vitest : avec une
+     ligne USD, le sélecteur des autres lignes propose les comptes CHF et USD, aucun compte EUR ; le lien apparaît ;
+     retirer la ligne en devise rend les comptes de toutes les devises ; en édition d'une ouverture à lignes EUR et USD,
+     le sélecteur propose CHF, EUR et USD, aucune autre devise, et l'enregistrement d'un libellé changé part sans
+     refus). Le formulaire reçoit les props `multiCurrency`,
      `fxGainAccountId`, `fxLossAccountId`, fournies par `journal-entries/+page.svelte` (:163) et
      `journal-entries/[id]/+page.svelte` (:305), qui chargent déjà `fetchCompanyCurrent`. Si cet appel échoue
      (les deux pages le tolèrent), `multiCurrency` vaut vrai dès qu'un compte de `accounts` porte une devise (35-1 : un
@@ -253,8 +269,11 @@ devise au cours d'ouverture choisi pour l'exercice (R6), afin de tenir mes livre
      comptes en devise sont masqués quand la date de l'écriture tombe dans un exercice dont `multiCurrency` est faux
      (exercices lus par `GET /fiscal-years`). ⚠️ Le formulaire ne les a pas aujourd'hui : `dateBounds` ne lit que la prop
      `entryFiscalYear` (`{ startDate, endDate }`, édition seulement), `journal-entries/+page.svelte` (création) ne
-     charge aucun exercice, `[id]/+page.svelte` charge `listFiscalYears()` à l'ouverture de l'édition. Une prop neuve
-     (`fiscalYears`, avec `multiCurrency`) est fournie par les deux pages — la liste de création se charge au montage,
+     charge aucun exercice ; `[id]/+page.svelte` les charge **déjà au montage** (`loadFiscalYears`, :100-115, appelée
+     par `loadEntry` :153, état `fiscalYears` :68, pour la contre-passation de la 29-1b) et une seconde fois à
+     l'ouverture de l'édition (`startEdit`, :307). Une prop neuve (`fiscalYears`, avec `multiCurrency`) est fournie par
+     les deux pages — la fiche réemploie l'état `fiscalYears` du montage (un état `'error'` ou `null` vaut « exercices
+     inconnus », ci-après), sans troisième lecture ; la liste de création se charge au montage,
      avec `fetchCompanyCurrent` ; si ce chargement échoue, le formulaire se comporte comme sans exercices connus (champs
      en devise offerts si `multiCurrency` de la société, le serveur tranche). Au changement de
      date vers un exercice mono-devise alors que des lignes en devise existent, elles restent affichées, marquées
@@ -283,7 +302,12 @@ devise au cours d'ouverture choisi pour l'exercice (R6), afin de tenir mes livre
    débité (côté EUR) et le compte crédité (côté USD) sont des comptes en devise de **deux devises différentes** (sinon
    la conversion n'en est pas une : une écriture ordinaire suffit) ; la ligne de différence est calculée et **non
    modifiable** dans l'assistant (le compte de conversion doit revenir à 0), mais visible à l'aperçu avant « Passer les
-   écritures » (D6 : proposée, jamais silencieuse). Maquette :
+   écritures » (D6 : proposée, jamais silencieuse). Un refus du serveur s'affiche sur la colonne de l'écriture que
+   désigne `details.entry` (1 = Débit, 2 = Crédit) ; son `details.line` est le rang dans le corps de **cette**
+   écriture tel que l'assistant l'a construit (compte en devise, frais, compte de conversion, ligne de différence) et
+   se traduit en champ de l'assistant par la même table que celle qui a construit le corps ; un refus sans
+   `details.entry` (`FX_ACCOUNT_INVALID`, `FX_CONVERSION_TRANSIT_UNBALANCED`) s'affiche au-dessus de l'aperçu, saisie
+   conservée ; Vitest d'un refus par colonne. Maquette :
    ```
    ┌ Conversion de devises ─────────────────────────────────────────────────────────┐
    │  Débit                                  │  Crédit                              │
@@ -317,11 +341,26 @@ devise au cours d'ouverture choisi pour l'exercice (R6), afin de tenir mes livre
    `details: { entry1, entry2 }`) ; un refus d'une écriture rend son code avec `details.entry` (1 ou 2) en plus de ses
    `details` (un refus sans `details` en reçoit : mécanisme commun, au développement, à inventorier au Change Log), et
    rien n'est créé ; `entries` de longueur ≠ 2 → 400 `Validation` ; le compte de conversion peut figurer sur plusieurs
-   lignes d'une écriture : le contrôle compare le **solde net** de ses lignes (débit − crédit) dans chaque écriture. Réponse 201 `{ entries: [JournalEntryResponse, JournalEntryResponse] }` ; l'audit
+   lignes d'une écriture : le contrôle compare le **solde net** de ses lignes (débit − crédit) dans chaque écriture.
+   **Verrous et ordre des refus** (une seule raison) : `entries` de longueur ≠ 2 (avant la transaction) ; puis, dans
+   la transaction et **avant** le premier `create_in_tx` : la ligne `companies` (`fx_transit_account_id`) lue
+   `LOCK IN SHARE MODE` (jamais `FOR SHARE`), puis le compte de conversion lu `LOCK IN SHARE MODE` — ordre `companies` →
+   réglages → `accounts` de 35-1 AC-3, comme la réévaluation (35-5 AC-2, étapes (0) et (3)) ; le `companies` en partage
+   que `create_in_tx_inner` reprend en tête de son étape 0 (35-3a AC-4) est alors déjà tenu, compatible → refus
+   `FX_ACCOUNT_INVALID` ; → `FX_CONVERSION_TRANSIT_UNBALANCED` (calculé sur les corps, identifiant relu sous verrou) ;
+   → écriture 1, puis écriture 2 (refus de chacune dans l'ordre de 35-3a AC-4, avec `details.entry`). Les deux
+   `create_in_tx` s'exécutent dans l'ordre **chronologique** de leurs dates (corps dans l'ordre à date égale), pour
+   prendre les exercices `FOR UPDATE` dans l'ordre de la bascule et de `close` (antérieurs d'abord) ; la réponse garde
+   l'ordre du corps et `details.entry` le rang dans le corps. Le compte de conversion lu en partage avant l'exercice
+   (l'écriture ordinaire prend l'exercice puis les comptes en partage) ne forme pas de cycle : aucun chemin ne prend un
+   exercice puis ce compte **en exclusif** (la bascule de 35-1 n'archive que des comptes en devise) — argument écrit au
+   Change Log, défendu de toute façon par le rejeu (`retry_on_deadlock`). Réponse 201 `{ entries: [JournalEntryResponse, JournalEntryResponse] }` ; l'audit
    est celui des deux créations (`journal_entry.created` ×2), les libellés se renvoient (« (1/2) », « (2/2) »).
    Registre des routes : `LIB_ROUTES` +1, `Traced, Rejouee` (elle écrit au journal comptable ; enveloppe exigée par
    `every_replayed_route_calls_an_envelope`) — **+1 route, +1 tracée, total +1, `rejouees` +1, `tout.len()` +1**, en
-   deltas cumulés avec 35-1, 35-2 et 35-5 ; phrase du manuel d'administration recomptée.
+   deltas cumulés avec 35-1, 35-2 et 35-5 ; l'assertion `examinees` de `every_replayed_route_calls_an_envelope`
+   (`audit_route_registry.rs:1325`, 27) prend +1, chiffre et toutes lettres (alignement de l'orchestrateur sur
+   35-5-CR2-P2-IF2) ; phrase du manuel d'administration recomptée.
    **Tests** : dépôt et API — conversion sans frais (gain), avec frais aux deux écritures (perte), différence nulle
    (aucune ligne d'écart), compte de conversion à 0 après, refus de la seconde écriture → rien de créé, compte de
    conversion non désigné ou invalide, transit déséquilibré, date dans un exercice mono-devise, `details.entry`,
@@ -406,7 +445,9 @@ devise au cours d'ouverture choisi pour l'exercice (R6), afin de tenir mes livre
       conversion désignés** (35-1 AC-3, sans quoi le bouton d'écart n'ajoute rien et l'assistant est désactivé),
       exercices passés en multi-devises par l'activation ; ⚠️ **le scénario R3 (exercice mono-devise) tourne sur son propre
       `seedTestState('with-company')`**, dont l'exercice unique est passé en mono-devise par la bascule (35-1) **avant**
-      tout compte ou ligne en devise : un exercice mono-devise **postérieur** refuserait toute ligne en devise des
+      tout compte ou ligne en devise — le compte USD de ce scénario se crée **après** la bascule (la société restant
+      multi-devises, la création l'admet, 35-1), sans quoi le masquage du formulaire n'aurait rien à masquer et la
+      bascule s'arrêterait sur `FISCAL_YEAR_FOREIGN_ACCOUNTS_ACTIVE` : un exercice mono-devise **postérieur** refuserait toute ligne en devise des
       exercices antérieurs (`laterFiscalYear`, 35-3a AC-4) — donc les scénarios USD, l'ouverture comprise — et la
       bascule vers le mono-devise est refusée tant qu'un compte en devise porte un solde ou une ligne
       (`FISCAL_YEAR_HAS_FOREIGN_BALANCES`, 35-1) ; aucun scénario ne mêle les deux états,
@@ -537,3 +578,30 @@ devise au cours d'ouverture choisi pour l'exercice (R6), afin de tenir mes livre
   les quatre locales) ; (b) 35-3b-CR2-P1-2 porté dans 35-3a AC-4 (2 bis) : le `PUT` d'une ouverture déjà à plusieurs
   devises reste admis ; (c) 35-3b-CR2-P1-12 porté au registre de l'epic (la route de conversion revalide le compte de
   conversion à l'usage).
+- 2026-11-14 — validation CR-2 P2 (Opus) : 0 CRITICAL, 0 HIGH, 3 MEDIUM, 7 LOW ; remédiés dans la fiche sauf
+  35-3b-CR2-P2-9 (35-3a), inter-fiche. MEDIUM : P2-1 l'AC-2 (*Une devise par écriture*) disait encore le `PUT` d'une
+  ouverture à deux devises refusé et l'exemption « à la seule création », contre 35-3a AC-4 (2 bis) alignée — écriture
+  relue à plusieurs devises modifiable, sélecteur limité aux devises déjà portées, Vitest ; P2-2 l'alignement (a) de
+  l'orchestrateur n'était écrit qu'au Change Log — message propre de `ACCOUNT_REQUIRES_CURRENCY`
+  `reason: "monoCurrencyFiscalYear"` et test du complément à deux devises par sa route portés dans l'AC-2 et l'AC-1 ;
+  P2-3 route de conversion sans verrous ni ordre des refus — `companies` puis compte de conversion en
+  `LOCK IN SHARE MODE` avant le premier `create_in_tx`, ordre des refus, écritures créées dans l'ordre chronologique.
+  LOW : P2-4 « le `lookup` rend 400 avant 2000 » faux (35-2 AC-5 : la borne est celle du `POST /fetch`, le `lookup`
+  rend 404) ; P2-5 la page des soldes d'ouverture ne charge aucun exercice (chargement et repli écrits) ; P2-6 la fiche
+  d'écriture charge déjà les exercices au montage (`loadFiscalYears` :100, 29-1b), réemployés ; P2-7 Vitest du
+  sélecteur R7 mal formé ; P2-8 E2E R3 : compte USD créé après la bascule ; P2-10 affichage des refus de l'assistant
+  (`details.entry`, `details.line`). (P2-9, inter-fiche, ci-dessous.)
+  **Inter-fiche non appliqué — texte proposé.** *35-3a AC-4, 2 bis*, remplacer « ne refuse que si le corps porte plus
+  d'une devise alors que l'écriture stockée en portait au plus une » par « ne refuse que si le corps porte plus d'une
+  devise **et** une devise que l'écriture stockée ne portait pas (l'ensemble des devises ne s'élargit jamais ; une
+  ouverture à EUR et USD ne reçoit pas de GBP par un `PUT`) ; test : `PUT` qui ajoute GBP à une ouverture EUR + USD →
+  400 ». Motif : la règle actuelle laisse un `PUT` ajouter une troisième devise à un état hérité, contre R7.
+  Axes exercés : diff `b36599d0..HEAD` et alignements ; citations de code (routes et dépôt des soldes d'ouverture,
+  `lib.rs` `comptable_routes` :524-570, registre des routes :1448-1502, `errors.rs` :134/:210/:224,
+  `modification_blocker` :1243, `blocker-messages.test.ts` :51, `JournalEntryForm` :105-206, pages `journal-entries`
+  et `[id]` :68/:100-153/:305-307/:418, page des soldes d'ouverture) ; contrats 35-1 (AC-1 à AC-3 bis), 35-2 (AC-5),
+  35-3a (AC-4, AC-6, AC-7), 35-5 (AC-2, verrous) ; comptabilité de la conversion (sens de la différence) ; i18n ; E2E
+  (préalables R3). Deux GET de la source journalière : `xmldaily?d=20240331` (Pâques) rend `<datum>` 28.03.2024
+  (`<gueltigkeit>` 29.03 seul, non lu par 35-2) et `d=20240630` rend 28.06.2024 — la veille d'une ouverture au 1er avril
+  ou au 1er juillet se lit. Non exercés : sauvegarde (aucune table ni colonne neuve ici), MCP (aucune sortie), audit
+  (aucune action neuve), E2E et Vitest non joués, PDF du manuel (non écrit).
