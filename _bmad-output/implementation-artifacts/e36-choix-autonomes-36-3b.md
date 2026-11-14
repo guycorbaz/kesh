@@ -83,3 +83,45 @@ contexte, option retenue, options écartées, réversibilité.
   résoudre).
 - **Écartées** : envoyer `payload!` sans garde — une course rendrait `"unitPrice": null`.
 - **Réversible** : oui.
+
+## Choix du développement (2026-11-14)
+
+### C-36-3b-8 — Les trois fonctions du prix dans un module neuf `unit-price.ts`
+
+- **Contexte** : validation P1, V1-5 — `readableAmount` vit dans `supplier-invoice-form.ts:214`, qui importe
+  `invoice-helpers.ts` (`:13`) ; poser `unitPriceFieldValue` dans `invoice-helpers.ts` créerait le cycle.
+- **Retenu** : `frontend/src/lib/features/invoices/unit-price.ts` porte `unitPricePayload`, `unitPriceProblem` (le refus
+  sous le champ, ajouté pour ne pas répéter la lecture au gabarit) et `unitPriceFieldValue` ; tests dans
+  `unit-price.test.ts`. Même module de premier niveau (`features/invoices`) : le décompte de la règle de découpage ne
+  change pas.
+- **Écartées** : (a) `invoice-helpers.ts` avec le cycle accepté ; (b) déplacer `readableAmount` — touche la facture
+  fournisseur, hors périmètre.
+- **Réversible** : oui.
+
+### C-36-3b-9 — `validateClient` contrôle le prix avant la quantité
+
+- **Contexte** : D3 place la lecture du prix « après la description et avant le bloc `try` », où se contrôle la quantité.
+- **Retenu** : tel quel ; une ligne à la quantité nulle **et** au prix ambigu se refuse d'abord pour le prix. La
+  quantité garde ses messages d'avant.
+- **Écartées** : quantité d'abord — le défaut que la story ferme est le prix ; l'ordre ne change que le premier des deux
+  messages.
+- **Réversible** : oui.
+
+### C-36-3b-10 — La rangée du refus porte une constante `LINE_TABLE_COLUMNS = 7`
+
+- **Contexte** : V1-1 — le tableau des lignes a sept colonnes, sans variable ; `JournalEntryForm.svelte` dérive la sienne
+  de la colonne de projet.
+- **Retenu** : constante nommée à côté de `MAX_LINES`, testée par le nombre d'en-têtes (`thead th`) et le `colSpan` de la
+  cellule (mutation M14).
+- **Écartées** : un `colspan="7"` littéral — même valeur, sans nom ni rappel des colonnes.
+- **Réversible** : oui.
+
+### C-36-3b-11 — Le rouge de l'E2E porte sur la requête partie, non sur le message absent
+
+- **Contexte** : la première exécution rouge (`e2e-rouges-r1.log`) échouait sur l'absence du message, sans montrer le
+  défaut lui-même (le `POST` parti avec `"unitPrice":"1.250"`).
+- **Retenu** : l'écouteur garde le corps de chaque `POST /api/v1/invoices` ; l'assertion « aucune requête » vient en
+  tête, après une attente d'une seconde, et son message cite le corps : le rouge rejoué (`e2e-rouges.log`) montre
+  `"unitPrice":"1.250"` parti.
+- **Écartées** : garder l'ordre d'origine — un rouge qui ne montre pas le défaut.
+- **Réversible** : oui.

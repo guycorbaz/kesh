@@ -1,6 +1,6 @@
 # Story 36-3b : la facture client ne lit plus un prix unitaire « 1.250 » comme 1,25 franc (#1171)
 
-Status: ready-for-dev
+Status: review
 
 *Fiche rédigée le 2026-11-14 par l'agent de rédaction des fiches de l'Epic 36 (Opus 5.5), worktree `kesh-36-3b`, branche
 `story/36-3b-facture-prix-unitaire-ambigu`, partie de la tête de la 36-3 terminée (`b1cd53d28`), par le workflow
@@ -183,17 +183,24 @@ passe sur la facture sans signal — ce que seule #1173 corrige. Un article au p
   *Écartées* : (a) une variante à signe pour garder « prix unitaire ≥ 0 » — une seconde grammaire pour un cas que le
   serveur refuse ; (b) modifier `readJournalAmount` pour un paramètre — interdit par C-e360-17.
 - **D2 — Un prix venu du serveur ne se rouvre jamais sous une forme ambiguë** (C-36-3b-3). Fonction pure neuve dans
-  `frontend/src/lib/features/invoices/invoice-helpers.ts` :
+  `frontend/src/lib/features/invoices/invoice-helpers.ts` *(étape 0, V1-5 : dans un module neuf
+  `frontend/src/lib/features/invoices/unit-price.ts`, avec `unitPricePayload` et `unitPriceProblem`, testé par
+  `unit-price.test.ts` — `invoice-helpers.ts` importer `readableAmount` créerait le cycle avec
+  `supplier-invoice-form.ts:13`)* :
   `unitPriceFieldValue(raw: string): string` = `readableAmount(raw, 2)`, sauf si `readJournalAmount` de ce résultat est
   `ambiguous` : alors `new Big(raw).toFixed(4)`. Exemples : « 1.2340 » → `1.2340` ; « 12.3450 » → `12.3450` ;
   « 1.2500 » → `1.25` ; « 1250.0000 » → `1250.00` ; « 100.2000 » → `100.20` ; « 33.3333 » → `33.3333` ;
-  « 0.0100 » → `0.01` ; « 0.1250 » → `0.125` (partie nulle, clair). Une valeur illisible pour big.js est rendue telle
+  « 0.0100 » → `0.01` ; « 0.1250 » → `0.125` (partie nulle, clair) ; *(étape 0, V1-4)* « 0.0010 » → `0.001`,
+  « 1000.0000 » → `1000.00`, « 1.0000 » → `1.00`, « 999.1230 » → `999.1230` (borne haute de la partie entière
+  ambiguë). Une valeur illisible pour big.js est rendue telle
   quelle (contrat de `readableAmount`). Appelée aux **trois** sites : `initLines` (`:122`), `onProductSelect` (`:453`),
   `reloadFromServer` (`:650`). La quantité garde `readableAmount(…, 0)`.
   *Écartées* : (a) modifier `readableAmount` — partagé par la facture fournisseur (`SupplierInvoiceForm.svelte:185`,
   `supplier-invoice-form.ts:236`) et trois écrans de détail ; (b) quatre décimales toujours — défait #878.
 - **D3 — Le refus : sous le champ, et à l'envoi en nommant la ligne** (C-36-3b-2, C-36-3b-4).
-  - Sous le champ : une rangée sous la ligne (comme `JournalEntryForm.svelte:504-527`), `class="text-xs text-destructive"`,
+  - Sous le champ : une rangée sous la ligne (comme `JournalEntryForm.svelte:504-527`), *(étape 0, V1-1)*
+    `<tr><td colspan={LINE_TABLE_COLUMNS}>`, constante nommée à 7 (les sept colonnes du tableau, `:830-900`),
+    testée, `class="text-xs text-destructive pb-2"`,
     `data-testid="invoice-line-unit-price-ambiguous"` avec `i18nMsg('journal-entry-form-amount-ambiguous', <fallback
     identique à JournalEntryForm.svelte:511>)`, ou `data-testid="invoice-line-unit-price-unreadable"` avec
     `journal-entry-form-amount-unreadable`. Bordure `border-destructive` sur le champ du prix dans ces deux cas. Rien
@@ -217,7 +224,11 @@ passe sur la facture sans signal — ce que seule #1173 corrige. Un article au p
   construction de chaque ligne `{ ...stripUiKey(l), unitPrice: unitPricePayload(l.unitPrice) }` ; si l'une rend `null`
   (prix retapé pendant `await getInvoiceSettings()`, `:562`), l'envoi s'arrête : `errorMsg = validateClient() ?? …`,
   `submitting = false`, aucune requête. « 100.00 » part `100.00`, « 33.3333 » `33.3333` (les allers-retours de #878,
-  `InvoiceForm.test.ts:694`, `:709`, `:720`, inchangés).
+  `InvoiceForm.test.ts:694`, `:709`, `:720`, inchangés). *(Étape 0, V1-6 : la charge se construit dans une boucle
+  à sortie anticipée — `const payloadLines: CreateInvoiceLineRequest[] = []` ; `for (const l of lines)` ;
+  `if (unitPrice === null) { … return; }` ; `payloadLines.push({ ...stripUiKey(l), unitPrice })` —, sans quoi
+  `unitPrice: string | null` ne se type pas en `CreateInvoiceLineRequest`. La quantité et la description retapées
+  pendant l'attente ne sont pas revalidées : hors périmètre, voir Dev Notes.)*
 - **D6 — Textes** (quatre locales, **à côté** d'`invoice-line-vat-rate-disabled-error` — fr-CH `:2659`, de-CH `:2531`,
   it-CH `:2529`, en-CH `:2536` —, jamais en fin de fichier ; la 36-1 ajoute `common-account-no-match` dix lignes plus
   haut, sans chevauchement) :
@@ -242,7 +253,8 @@ passe sur la facture sans signal — ce que seule #1173 corrige. Un article au p
 
 ## Critères d'acceptation
 
-1. **AC1 — Les fonctions pures** (`features/invoices/invoice-helpers.test.ts`) : `unitPricePayload` — « 1'250 » →
+1. **AC1 — Les fonctions pures** (`features/invoices/invoice-helpers.test.ts` ; *étape 0, V1-5 :*
+   `features/invoices/unit-price.test.ts`, qui couvre aussi `unitPriceProblem`) : `unitPricePayload` — « 1'250 » →
    `1250`, « 1’250.50 » → `1250.50`, « 1,25 » → `1.25`, « 100.00 » → `100.00`, « 33.3333 » → `33.3333`, « 0.00 » →
    `0.00`, « 0.125 » → `0.125` ; `null` pour « 1.250 », « 12,500 », « 001.250 », « 12'50 », « -5 », « 1e3 », « .5 »,
    « 1.25000 », « » ; `unitPriceFieldValue` — la table de D2 entière, et pour chaque sortie
@@ -279,6 +291,8 @@ passe sur la facture sans signal — ce que seule #1173 corrige. Un article au p
    millième rouvert (`1.2340`) et que la quantité n'est pas concernée. Texte proposé, ajouté à la fin de l'item :
    « Le \textbf{prix unitaire} se lit comme le montant d'une écriture (cf. \emph{Saisie d'une écriture en partie
    double})~: point ou virgule décimale, quatre décimales au plus, apostrophe des milliers (\texttt{1'250}).
+   *(Étape 0, V1-7 : la virgule finale devient « ~; la saisie à exposant (\texttt{1e3}), sans chiffre avant le point
+   (\texttt{.5}) ou après lui (\texttt{5.}), ou précédée d'un signe, n'est pas lue. »)*
    \textbf{\texttt{1.250} est refusé comme ambigu}~: écrivez \texttt{1'250} pour mille deux cent cinquante francs, ou
    \texttt{1.2500} pour un franc vingt-cinq~; la facture ne s'enregistre pas tant qu'une ligne porte un prix ambigu ou
    illisible, et le message nomme la ligne. Un prix enregistré au millième se rouvre sur quatre décimales
@@ -324,26 +338,28 @@ restauration `git restore --worktree -- <fichier>` puis `touch` ; journaux `mut/
 | M4 | idem dans `reloadFromServer` | AC4 (Recharger) |
 | M5 | idem dans `onProductSelect` | AC4 (article) |
 | M6 | `unitPriceFieldValue` sans le repli `toFixed(4)` | AC1, AC4 |
-| M7 | `unitPricePayload` rend `'0'` pour le vide | AC1, AC2 (prix vidé) |
+| M7 | `unitPricePayload` rend `'0'` pour le vide | AC1 ; AC5 (prix vidé pendant l'attente) *(étape 0, V1-2 : l'AC2 ne la tue pas, le vide étant refusé par la lecture)* |
 | M8 | les rangées de message sous le champ retirées | AC2 |
 | M9 | `lineTotal` lit le prix brut | AC2 (total `0.00`), AC3 (`2’500.00`) |
 | M10 | la garde `null` de la charge retirée (D5) | AC5 |
 | M11 | `ambiguous` et `unreadable` échangés dans `validateClient` | AC2 |
+| M12 *(étape 0, V1-3)* | bordure `border-destructive` retirée | AC2 |
+| M13 *(étape 0, V1-3)* | le vide traité comme illisible dans `validateClient` | AC2 (prix vidé) |
 
 Une mutation équivalente se dit au Dev Agent Record ; les E2E ne se rejouent pas sous mutation (Vitest seul, dit).
 
 ## Tâches
 
-- [ ] **Étape 0** : relire à la tête du worktree les lignes citées ; rejouer les commandes d'inventaire et recopier leur
+- [x] **Étape 0** : relire à la tête du worktree les lignes citées ; rejouer les commandes d'inventaire et recopier leur
       sortie brute à `kesh-gate-logs/e36-3b/etape0-inventaires.log` ; vérifier que la 36-3 n'a pas bougé depuis
       `b1cd53d28` (`git diff b1cd53d28 -- frontend/src/lib/features/journal-entries/balance.ts frontend/src/lib/shared/utils/amount-ambiguity.ts`
       vide) ; relire les LOW du dernier rapport de validation.
-- [ ] Tests d'abord (AC1 à AC5), rouges consignés ; puis `invoice-helpers.ts` (D2, D3) ; `InvoiceForm.svelte` (D2 à D5) ;
+- [x] Tests d'abord (AC1 à AC5), rouges consignés ; puis `invoice-helpers.ts` (D2, D3) ; `InvoiceForm.svelte` (D2 à D5) ;
       quatre `messages.ftl` (D6) ; `i18n-keys.test.ts` recompté (AC7).
-- [ ] E2E (AC6), rouge d'abord.
-- [ ] Manuel (AC8), `.tex` seul ; captures (AC10).
-- [ ] Mutations M1-M11.
-- [ ] Gates (voie 2, `e35-dev-commun.md` § *Quels gates, quand*) : en cours, Vitest ciblé
+- [x] E2E (AC6), rouge d'abord.
+- [x] Manuel (AC8), `.tex` seul ; captures (AC10).
+- [x] Mutations M1-M11 (et M9b, M12 à M14).
+- [ ] Gates (voie 2, — *passage en `review` fait ; clôture à venir* `e35-dev-commun.md` § *Quels gates, quand*) : en cours, Vitest ciblé
       (`components/invoices/`, `features/invoices/invoice-helpers.test.ts`, `shared/i18n-keys.test.ts`) par
       `.gate-front.lock`, `npm run check` et `lint-i18n-ownership` ; **passage en `review`** : bases `kesh_e363b` remises
       à neuf sur la voie 2, `scripts/test-fast.sh --ci`, `scripts/gate-ci.sh kesh_ci_e363b` (voie 1, son verrou),
@@ -351,7 +367,7 @@ Une mutation équivalente se dit au Dev Agent Record ; les E2E ne se rejouent pa
       `test-fast.sh --ci` et frontend complet ; **clôture** : `gate-ci` et E2E complet sur `kesh_e2e_e363b` recréée
       (voie 2), au dernier commit de code, échecs nommés contre `docs/testing.md` § « Les échecs attendus ». Journaux
       dans `/home/gcorbaz/devel/kesh-gate-logs/e36-3b/`, commit en première ligne de chacun.
-- [ ] Fin du développement : `Status: review`, clé `review` au `sprint-status.yaml`, prompt de la revue P1
+- [x] Fin du développement : `Status: review`, clé `review` au `sprint-status.yaml`, prompt de la revue P1
       (`36-3b-facture-prix-unitaire-ambigu-review-prompt-p1.md`) qui nomme le manuel, le PDF (à l'intégration) et les
       captures.
 
@@ -362,8 +378,9 @@ Une mutation équivalente se dit au Dev Agent Record ; les E2E ne se rejouent pa
 - Facture client : un prix unitaire comme « 1.250 » — un point ou une virgule suivis de trois chiffres, sans séparateur
   de milliers avant — n'est plus lu 1,25 franc en silence : il est refusé comme ambigu, la facture ne s'enregistre pas,
   et le message dit comment l'écrire (`1'250` ou `1.2500`). L'apostrophe des milliers et la virgule décimale sont
-  désormais acceptées dans le prix (`1'250`, `1,25`). Un prix enregistré au millième se rouvre sur quatre décimales
-  (`1.2340`) et n'est pas refusé. (refs #1171)
+  désormais acceptées dans le prix (`1'250`, `1,25`) ; la saisie à exposant (`1e3`) ou sans chiffre avant ou après
+  le point (`.5`, `5.`) n'est plus lue. Un prix enregistré au millième se rouvre sur quatre décimales (`1.2340`) et
+  n'est pas refusé. (refs #1171)
 
 ## Dev Notes
 
@@ -373,6 +390,8 @@ Une mutation équivalente se dit au Dev Agent Record ; les E2E ne se rejouent pa
   facture sans signal), #1159 (prix fournisseur), #1172 (paiement attendu), #1174 (règlement), #1175 (frais de rappel),
   #1176 (montant minimal), #1177 (filtres du journal), #1050 (soldes de départ). Aucune issue neuve.
 - La quantité (hors de la règle) ; le plafond du prix (10⁹), jugé au serveur seul, comme aujourd'hui.
+- *(Étape 0, V1-6)* Une quantité ou une description retapée pendant l'attente de `getInvoiceSettings()` part sans
+  contrôle client (le serveur la juge) : la garde de D5 ne relit que le prix. Issue demandée au rapport.
 - Un prix déjà enregistré trop bas avant la 0.17.8 (« 1.250 » lu 1,25) : rien ne permet de le reconnaître ; aucune
   reprise des données.
 - Le serveur et l'API (C-e350-19).
@@ -419,14 +438,103 @@ Le défaut se voit dans le navigateur et à la frontière HTTP (le prix part tel
 
 ### Agent Model Used
 
+Opus 5.5 (`claude-opus-5-5`), agent de développement de l'Epic 36, en autonomie, prompt
+`kesh-gate-logs/prompts/e36-dev.md`, voie 2 (port 3367, bases `kesh_e363b`, `kesh_e2e_e363b` sur `kesh-mariadb-dev2`).
+
 ### Debug Log References
+
+Journaux sous `/home/gcorbaz/devel/kesh-gate-logs/e36-3b/`, commit en première ligne de chacun :
+`etape0-inventaires.log` (`b837ee8de`) ; `rouges.log` (`b837ee8de` + tests, code non corrigé) ; `cible-1.log`,
+`cible-2.log`, `check-1.log`, `check-2.log`, `i18n-crate-1.log` (avant le commit du code) ; `e2e-rouges-r1.log` et
+`e2e-rouges.log` (`9a68c086d`, composant remis à `b1cd53d28`) ; `e2e-cible-vert.log` (`9a68c086d`, E2E et manuel non
+commités, identiques à `de75ba63d`) ; `captures.log` (`de75ba63d`) ; `mut/resume.log`, `mut/M*.log` (`de75ba63d`,
+script `mut/mut-36-3b.py`) ; `test-fast-ci-review.log`, `gate-ci-review.log`, `front-*-review.log` (passage en `review`).
 
 ### Completion Notes List
 
+- **Fait** : D1 à D7 ; module `features/invoices/unit-price.ts` (V1-5, C-36-3b-8) ; `InvoiceForm.svelte` — lecture du
+  prix dans `validateClient` (ambigu, illisible, vide, dans cet ordre, avant la quantité : C-36-3b-9), rangée du refus
+  sous la ligne (`colspan={LINE_TABLE_COLUMNS}` = 7, C-36-3b-10) et bordure, totaux par la charge, charge construite
+  dans une boucle à sortie anticipée après `await getInvoiceSettings()` (V1-6) ; deux clés × quatre locales à côté
+  d'`invoice-line-vat-rate-disabled-error` ; `sitesTotal` 3040 → 3044, relevé par la garde (`cible-1.log` : « expected
+  3044 to be 3040 ») avant d'écrire ; manuel, item **Lignes de facture** (`.tex` seul, PDF à l'intégration).
+- **Rouges** (`rouges.log`, 34 échecs sur 93 tests des deux fichiers) : tous les cas annoncés par la fiche. Verts au
+  départ, et dits : le prix vidé (AC2), les allers-retours de #878, `1.2500` → `1.25`, `0.1250`, `0.0100` → `0.01`,
+  `0.0010` → `0.001`, `1000.0000`, `1.0000`, `100.2000`, `33.3333`, `1250.0000`, la valeur illisible rendue telle
+  quelle, et les cas `null` que `new Big` refusait déjà (« 12,500 », « 12'50 », « » ; « 1'250 » est rouge). Une première
+  passe rouge (34 + 1) comptait à tort la ligne « prix vidé » : l'aide de test lisait `className`, que la classe de base
+  d'`Input` (`aria-invalid:border-destructive`) faisait contenir ; corrigée en `classList.contains` (aide `borde()`)
+  avant tout correctif. Le test « article au millième » a été repris après le correctif : son brouillon sans ligne
+  ouvrait une ligne neuve sans description, refusée avant le prix (`cible-1.log`) ; il porte désormais une ligne
+  complète. Son rouge (`rouges.log`, forme `1.234`) reste celui de la version d'avant ; la mutation M5 le tue dans sa
+  forme finale.
+- **E2E** : rouge sur le composant de `b1cd53d28` (`e2e-rouges.log` : « création partie : … "unitPrice":"1.250" … ») ;
+  vert, `invoices.spec.ts` entier, 21 passés (`e2e-cible-vert.log`). La suite complète n'a **pas** tourné : elle tourne
+  à la clôture (`e35-dev-commun.md`).
+- **Mutations** (`mut/resume.log`) : M1 à M14 et M9b (totaux de la facture) jouées en Vitest, **15 tuées sur 15**,
+  aucune équivalente. Les E2E ne se rejouent pas sous mutation.
+- **Captures** (AC10, `captures/`) : `01-prix-1.250-ambigu-sous-le-champ.png`, `02-prix-1.250-ambigu-bandeau-apres-creer.png`,
+  `03-prix-12-34-illisible.png`, `04-prix-1-250-fois-2-total-2500.png`, `05-brouillon-rouvert-prix-1.2340.png`
+  (brouillon créé par l'API au prix `1.2340`, rouvert en édition : « 1.2340 », `captures.log`). Constat : le bandeau
+  d'erreur reste affiché après correction du prix jusqu'au prochain envoi (capture 04) — comportement d'avant la story
+  pour tous les refus de `validateClient` ; issue demandée.
+- **Gates du passage en `review`**, au dernier commit de code `de75ba63d` (bases `kesh_e363b` et `kesh_e2e_e363b`
+  remises à neuf sur la voie 2, 91 migrations, seed) :
+  - `scripts/test-fast.sh --ci` (voie 2) : **5445 exécutés, 5445 passés, 13 ignorés**, 1 instable —
+    `kesh-db::mcp_sends_repository lister_rend_au_plus_deux_cents_lignes`, rouge au premier essai
+    (`mcp_sends_repository.rs:975` `assertion failed: liste.windows(2).all(|w| w[0].expires_at <= w[1].expires_at)`),
+    vert au second ; sans rapport avec la story (aucun fichier `crates/` hors catalogues) ; issue demandée
+    (`test-fast-ci-review.log`) ;
+  - `scripts/gate-ci.sh kesh_ci_e363b` (voie 1) : **5452 passés, 0 échoué, 17 ignorés** (`gate-ci-review.log`) ;
+  - frontend complet : `npm run check` 0 erreur, 29 avertissements (aucun sur les fichiers de la story) ;
+    `lint-i18n-ownership` PASS ; `test:unit` **3577 tests, 236 fichiers**, verts ; `build` vert
+    (`front-{check,lint-i18n-ownership,test-unit,build}-review.log`) ;
+  - **E2E complet et `gate-ci` de clôture : non lancés**, à la clôture.
+  - `git diff --stat b1cd53d28 de75ba63d` (AC9) : 14 fichiers, aucun sous `crates/` hors `kesh-i18n/locales/`, ni
+    `journal-entries/`, ni `amount-ambiguity.ts`, ni `supplier-invoices/`, ni `products/`.
+- **Écarts à la consigne Edit** : aucun sur le code, les tests ni la fiche. Les mutations passent par le script
+  versionné `mut/mut-36-3b.py` (permis) ; un `cp` a gardé le premier journal E2E rouge (`e2e-rouges-r1.log`).
+- **Hors périmètre, issue demandée** : la quantité et la description retapées pendant l'attente des réglages (V1-6) ;
+  le bandeau qui reste après correction.
+
 ### File List
+
+- `frontend/src/lib/features/invoices/unit-price.ts` (neuf)
+- `frontend/src/lib/features/invoices/unit-price.test.ts` (neuf)
+- `frontend/src/lib/components/invoices/InvoiceForm.svelte`
+- `frontend/src/lib/components/invoices/InvoiceForm.test.ts` (un `describe` en fin de fichier)
+- `frontend/src/lib/shared/i18n-keys.test.ts`
+- `frontend/tests/e2e/invoices.spec.ts`
+- `crates/kesh-i18n/locales/{fr-CH,de-CH,it-CH,en-CH}/messages.ftl`
+- `docs/manual/fr/user-manual.tex`
+- `_bmad-output/implementation-artifacts/36-3b-facture-prix-unitaire-ambigu.md`,
+  `36-3b-facture-prix-unitaire-ambigu-review-prompt-p1.md` (neuf), `e36-choix-autonomes-36-3b.md`,
+  `sprint-status.yaml`
 
 ## Change Log
 
 - 2026-11-14 — Fiche rédigée (Epic 36, phase 1), sur `b1cd53d28` (tête de la 36-3 terminée). Choix C-36-3b-1 à
   C-36-3b-7 au registre `e36-choix-autonomes-36-3b.md`. Clé ajoutée au `sprint-status.yaml` en `ready-for-dev`.
   Validation non lancée.
+- 2026-11-14 — **Validation terminée en une passe** : P1 (Sonnet 5.5, complète) 0 CRITICAL / 0 HIGH / 0 MEDIUM / 7 LOW
+  (`kesh-gate-logs/e36-3b/validation-p1.md`) ; trend P1 : 7 LOW → clôture (aucun finding au-dessus de LOW). Les sept LOW
+  traités à l'étape 0 du développement, ci-dessous.
+- 2026-11-14 — **Étape 0** (Opus 5.5), tête `b837ee8de` : lignes citées relues, inventaires rejoués
+  (`etape0-inventaires.log` : mêmes sorties que la fiche ; `git diff b1cd53d28 -- balance.ts amount-ambiguity.ts` vide).
+  LOW de la validation, chacun avec sa ligne lue :
+  - **V1-1** (colspan) — lu `JournalEntryForm.svelte:497` `<td colspan={tableColCount} class="text-xs text-destructive pb-2">` ;
+    au code : `colspan={LINE_TABLE_COLUMNS}` (= 7), testé (`colSpan` et nombre de `thead th`), mutation M14. Fiche D3 annotée.
+  - **V1-2** (M7) — lu `InvoiceForm.svelte` d'avant, `:509` `try {` : le vide est refusé par la lecture, non par la
+    charge ; colonne « Tuée par » corrigée, variante « prix vidé pendant l'attente » ajoutée à l'AC5 (tue M7, M10, M13).
+  - **V1-3** (mutations absentes) — M12 (bordure) et M13 (vide traité comme illisible) ajoutées au tableau et jouées.
+  - **V1-4** (table de D2) — « 0.0010 », « 1000.0000 », « 1.0000 », « 999.1230 » ajoutés à D2 et à `unit-price.test.ts`.
+  - **V1-5** (cycle) — lu `supplier-invoice-form.ts:13` `import { formatExactAmount } from '$lib/features/invoices/invoice-helpers';` ;
+    au code : module neuf `features/invoices/unit-price.ts` (C-36-3b-8). D2 et AC1 annotés.
+  - **V1-6** (typage, course) — lu `invoices.types.ts:22` (`unitPrice: string`) ; au code : boucle à sortie anticipée
+    (`payloadLines`), `npm run check` 0 erreur (`check-2.log`). La quantité et la description retapées pendant l'attente
+    restent sans contrôle client : Dev Notes, issue demandée au rapport.
+  - **V1-7** (grammaire plus stricte) — lu `user-manual.tex:2505` (« la notation à exposant (`1e3`), que l'écran ne lit
+    pas ») ; demi-phrase ajoutée au manuel et à la note de version.
+- 2026-11-14 — **Développement** (Opus 5.5) : tests d'abord (`rouges.log`), correctif `9a68c086d`, E2E rouge puis vert et
+  manuel `de75ba63d`, captures, mutations (15/15 tuées). Choix C-36-3b-8 à C-36-3b-11. Gates du passage en `review` au
+  Dev Agent Record. `Status: review`.
