@@ -4014,13 +4014,15 @@ transactions à rapprocher) est prévu mais pas encore disponible.
           \textbf{rapprochement bancaire} passe (y compris le règlement d'une facture client et
           le paiement d'une facture fournisseur que le rapprochement enregistre) --- mais celles
           que Kesh passe pour une facture (validation, dévalidation), un avoir, un règlement
-          saisi sur la facture, le solde de son reste ou leur annulation, une facture fournisseur
-          (validation, paiement depuis sa fiche ou par un lot de paiement, annulation) ou un solde
-          d'ouverture restent au nom du créateur de la clé~; un dé-rapprochement par clé
-          contre-passe au nom de la clé une écriture rapprochée seule, celui d'un règlement de
-          facture (client ou fournisseur) l'annule, contre-passation comprise, au nom du
-          créateur de la clé, et un simple détachement ne contre-passe rien~; une ligne écrite
-          avant la 0.17.7 ne porte pas la marque~; un appel du \textbf{serveur MCP}
+          saisi sur la facture, le solde de son reste, une facture fournisseur (validation,
+          paiement depuis sa fiche ou par un lot de paiement, annulation de la facture) ou un
+          solde d'ouverture restent au nom du créateur de la clé~; un dé-rapprochement par clé
+          contre-passe au nom de la clé une écriture rapprochée seule~; depuis la 0.17.8,
+          l'\textbf{annulation d'un règlement ou d'un solde} (client ou fournisseur, par sa
+          route ou par le dé-rapprochement) porte la marque, contre-passation et délettrage
+          compris, et un simple détachement ne contre-passe rien~; une ligne écrite avant la
+          0.17.7 --- avant la 0.17.8 pour l'annulation d'un règlement ou d'un solde --- ne
+          porte pas la marque~; un appel du \textbf{serveur MCP}
           paraît, lui, \textbf{au nom du créateur de la clé du serveur MCP}, \textbf{sans} cette
           marque --- c'est l'action «~Outil du serveur MCP appelé~» et le numéro de la clé, au
           détail, qui le distinguent~; et la \textbf{consultation d'un rapport} par un agent
