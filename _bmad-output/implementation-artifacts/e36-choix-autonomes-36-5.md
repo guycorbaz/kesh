@@ -13,6 +13,9 @@ de C-e360-8 (« forme exacte à la fiche »). Chaque choix : contexte, option re
 - **Écartées** : ignorer tout 401 du battement (C-e360-8 (b)) ; `sessionIdle.stop()` seul au clic (laisse le bandeau et un
   battement déjà parti) ; compte rendu reporté après la reconnexion ; correction de la spec seule.
 - **Réversible** : oui ; état de module, aucune donnée écrite.
+- **Amendé le 2026-11-14 (validation P1, V1-1)** : sous maintien, le renouvellement est **toujours tenté** ; seuls
+  `clearSession` et la redirection sont suspendus quand il échoue. Sans cela, un import envoyé avec un jeton d'accès expiré
+  échouait, et le battement cessait de prolonger la session.
 
 ### C-36-5-2 — Le battement continue pendant l'import ; la fermeture locale est différée, non annulée
 
@@ -24,6 +27,11 @@ de C-e360-8 (« forme exacte à la fiche »). Chaque choix : contexte, option re
   panneau, maintien levé.
 - **Écartées** : suspendre aussi le battement ; lever le maintien dès la réponse reçue.
 - **Réversible** : oui.
+- **Amendé le 2026-11-14 (validation P1, V1-3 ; option prudente demandée par l'orchestrateur)** : le maintien est **borné**
+  — il ne couvre que l'import en cours et la lecture du compte rendu, chacune au plus B = la durée d'inactivité réglée
+  (60 min si inconnue) ; il est **levé à l'issue inconnue** (la fermeture ordinaire reprend) ; à B après un succès, la
+  session se termine comme par le chemin 401 (`clearSession`, `/login?reason=session_expired`). Levée en `finally`
+  (V1-9). Écartées : maintien sans borne après une issue inconnue ; borne fixe de 15 min sans rapport avec le réglage.
 
 ### C-36-5-3 — Un E2E déterministe par réponse retenue, en plus de la répétition
 
