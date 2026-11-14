@@ -37,7 +37,11 @@ passer l'écart de change, afin que mes comptes en devise portent leur solde en 
    bras dédié ; les refus précis sont ceux de `kesh-core` (AC-3) et du dépôt (AC-4), qui les précèdent. Test, **par
    contrainte** et en SQL brut : quatre colonnes partielles, `usd`, `CHF`, source inconnue, montant 0 hors
    `revaluation`, montant ≤ 0, cours 0, CHF incohérent → chacune refusée par **sa** contrainte (nom lu dans le message) ;
-   la ligne CHF (quatre `NULL`) et une ligne `revaluation` valide passent.
+   la ligne CHF (quatre `NULL`) et une ligne `revaluation` valide passent. ⚠️ Hors `revaluation`, un montant ≤ 0 ou un
+   cours 0 viole **aussi** `chk_jel_fx_chf` (`debit + credit > 0` par `chk_jel_debit_credit_exclusive`, squash :863) :
+   `chk_jel_fx_chf` est déclarée **en dernier** dans la migration, le cas « cours 0 » se construit sur une ligne
+   `revaluation` (montant 0, CHF > 0 : seule `chk_jel_fx_rate` est violée), et le nom rapporté pour les deux autres cas
+   est constaté au premier essai et écrit au Change Log (ordre d'évaluation des `CHECK` de MariaDB).
    Inscriptions habituelles (sha384, audit, squash, P6 inspecté, P7 sans objet : DDL seul). Colonnes `NULL` : la fenêtre
    d'import ne se ferme pas, une sauvegarde 0.17.6 se réimporte (testé, Tâches).
 2. **AC-2 — Modèle Rust.** `ForeignAmount { currency, amount, rate, source }` (`kesh-core` ; `source` est un enum
@@ -57,7 +61,8 @@ passer l'écart de change, afin que mes comptes en devise portent leur solde en 
      quatre champs en devise, un `PUT` qui ne change que le cours, la source ou la devise d'une ligne (CHF identique)
      serait jugé **sans effet** — ni écriture, ni `version`, ni audit. Il compare `foreign` (les quatre champs,
      montants comparés en valeur, non en graphie) ; test : un `PUT` qui ne change que `rateSource` écrit et audite.
-   - **`ModificationBlocker`** (`kesh-db/src/errors.rs:210`, `modification_blocker` `:1247`, motif d'écran) et
+   - **`ModificationBlocker`** (`kesh-db/src/errors.rs:210` ; `modification_blocker`,
+     `repositories/journal_entries.rs:1243`, motif d'écran) et
      `update_in_tx` : voir AC-7 (nouveau motif `ENTRY_IS_FX_REVALUATION`, **hors** `ModificationGuard`, que
      `delete_in_tx` partage).
    - **Locks** : voir AC-4 (concurrence).
@@ -82,8 +87,16 @@ passer l'écart de change, afin que mes comptes en devise portent leur solde en 
    4. le montant CHF fourni, **`debit + credit`** (la même somme que `chk_jel_fx_chf`), doit **égaler** ce calcul,
       sinon `FX_AMOUNT_MISMATCH` (attendu et fourni en `details`) ; une ligne qui porte les deux côtés non nuls est
       ensuite refusée par l'exclusivité (`balance.rs:170`).
-   - **Erreurs `CoreError`** : nouvelles variantes `FxValueOutOfRange`, `FxLineRoundsToZero`, `FxAmountMismatch
-     { expected, provided }` (+ `error_code()`, `kesh-core/src/errors.rs:109`). ⛔ `map_core_error`
+   - **Erreurs `CoreError`** : nouvelles variantes `FxValueOutOfRange { line }`, `FxLineRoundsToZero { line }`,
+     `FxAmountMismatch { line, expected, provided }` (+ `error_code()`, `kesh-core/src/errors.rs:114`). **`line`** est
+     le rang **1-based** de la ligne dans `lines` du corps, rendu `details.line` (convention existante :
+     `kesh-api/src/errors.rs:2715`, `:4476`) ; il en va de même de **tous** les refus par ligne de cette fiche
+     (`ACCOUNT_REQUIRES_CURRENCY`, `FX_CURRENCY_MISMATCH`, `FX_RATE_NOT_AFC`, AC-4) : 35-3b affiche le message sur la
+     ligne fautive à partir de ce seul champ (35-3b AC-2).
+   - **Bornes du cours seul** : le contrôle d'échelle et de borne du cours (≤ 10 décimales après `normalize()`,
+     ≤ 10⁶) est une fonction publique **distincte** de `kesh-core` (nom au développement), appelée par la fonction par
+     ligne ci-dessus et par 35-5 (bornes de la requête de réévaluation, « la même fonction », 35-5 AC-4) ; 35-5 rend
+     son propre code (`FX_RATE_INVALID`). ⛔ `map_core_error`
      (`routes/journal_entries.rs:265`) rend **tout** variant inconnu en `Validation` générique
      (`other => … "Erreur métier"` `:288`) : sans un bras par variante, le code et les `details` n'atteindraient jamais
      le client. Un bras par variante, avec son code et ses `details`, et un test par code au niveau HTTP.
@@ -103,12 +116,14 @@ passer l'écart de change, afin que mes comptes en devise portent leur solde en 
    1. `InactiveOrInvalidAccounts` → `AccountsNotPostable` (existants, `validate_lines_accounts_in_tx` :135) ;
    2. société en mono-devise et ligne en devise → **409** `MULTI_CURRENCY_DISABLED` (variante de 35-1) ;
    3. ligne **sans** devise sur un compte en devise → `ACCOUNT_REQUIRES_CURRENCY` ; ligne en devise sur un compte d'une
-      autre devise ou CHF → `FX_CURRENCY_MISMATCH` (première ligne fautive, son numéro en `details`) ;
+      autre devise ou CHF → `FX_CURRENCY_MISMATCH` (pour **l'un et l'autre** : première ligne fautive, son rang en
+      `details.line`, AC-3) ;
    4. ligne `rate_source = 'afc'` : le cours doit égaler `rate_per_unit` de `_kesh_exchange_rates` (35-2) pour
       (devise, mois de `entry_date`), lu dans la transaction par la fonction de lecture du dépôt
       `kesh-db::repositories::exchange_rates` de 35-2 (à nommer au développement, pas de second accès) ; sinon 400
-      `FX_RATE_NOT_AFC` (cours attendu en `details`) ; cours absent → `DbError::RateUnavailable {currency, month}`,
-      rendu sous le **même code et le même statut 404** que le `RATE_UNAVAILABLE` de 35-2. Contrôle à la création
+      `FX_RATE_NOT_AFC` (cours attendu et `line` en `details`) ; cours absent → `DbError::RateUnavailable {currency, month}`,
+      rendu sous le **même code et le même statut 404** que le `RATE_UNAVAILABLE` de 35-2, avec la même forme de
+     `details` : `{ currency: "USD", month: "AAAA-MM-01" }` (35-2 AC-5). Contrôle à la création
       **et** au `PUT` (date changée comprise). **Le mois de référence est toujours celui de `entry_date`, sans
       exception** : un cours d'un autre mois (p. ex. celui du mois précédant la date d'un solde d'ouverture, C-35-9)
       se saisit `manual`, jamais `afc` (35-3b y est alignée). **Exemptée** : la contre-passation, qui recopie le cours
@@ -123,7 +138,14 @@ passer l'écart de change, afin que mes comptes en devise portent leur solde en 
      `companies` → réglages → `accounts`), **seulement si une ligne porte `foreign`** : une écriture sans ligne en
      devise ne prend aucun verrou sur `companies` (`create_in_tx_inner` lit `books_locked_through` **sans** verrou,
      `:316-324`, pour ne pas se bloquer derrière chaque écriture de la société) — les comptes en devise étant
-     verrouillés en lecture, une société repassée en mono-devise sans compte en devise n'a rien à refuser. 35-1 prend
+     verrouillés en lecture, une société repassée en mono-devise sans compte en devise n'a rien à refuser.
+     **Place du verrou de `companies`** (« avant les comptes » ne suffit pas : l'exercice est pris `FOR UPDATE` avant
+     eux, `create_in_tx_inner` étape 1 `:332-336`, et les chemins Pattern 5 prennent `companies` `FOR UPDATE` **puis**
+     l'exercice — `invoices.rs:698`, sentinelle puis `create_in_tx` — d'où un cycle exercice → `companies` contre
+     `companies` → exercice) : dans `create_in_tx_inner`, **en tête de l'étape 0**, avant les projets et l'exercice ;
+     dans `update_in_tx`, **juste après l'étape 1** (le `FOR UPDATE` de l'écriture reste le premier acte, `:1481-1487`)
+     et avant l'exercice (étape 1-ter). La contre-passation d'une écriture en devise prend l'exercice d'origine avant
+     `create_in_tx_inner` : cycle résiduel, défendu par son rejeu (`Rejouee`) — écrit au Change Log. 35-1 prend
      `FOR UPDATE` sur le compte avant de compter ses lignes. Sans cela, un `PUT` de 35-1 validé entre la lecture et
      l'`INSERT` laisserait une ligne CHF sur un compte en devise. Test de concurrence, ou argument écrit au Change Log.
    - Chaque refus est une variante de `DbError` avec son `error_code()`, et a son bras dans la correspondance
@@ -136,9 +158,12 @@ passer l'écart de change, afin que mes comptes en devise portent leur solde en 
    - **lots (`accept_batch`)** : chaque nouvelle variante a son bras dans **chaque** correspondance
      `DbError → FailedProposal` de `crates/kesh-api/src/routes/reconciliation.rs` — `project_error_to_failed_proposal`
      (`:743`, dont le repli `_ => "DATABASE_ERROR"` `:801-803` est exactement ce qu'il faut éviter : précédent
-     `PeriodLocked`, commentaire `:773-780`), la correspondance des refus de comptes (`:3143-3260`, bras
-     `InactiveOrInvalidAccounts` `:3169`) et `:675-690` (`AccountsNotPostable`) ; inventaire des `match` au Change
-     Log. Test : un lot dont une proposition vise un compte en devise rend **200**, un `failed[]` avec
+     `PeriodLocked`, commentaire `:773-780`), `supplier_payment_error_to_failed_proposal` (`:3150-3235`, bras
+     `InactiveOrInvalidAccounts` `:3169`, repli `other => "DATABASE_ERROR"` `:3229-3233`), la correspondance
+     **en ligne** d'`accept_one_rule` (`:4260-4303` : `if let` sur `PeriodLocked` et `LaterFiscalYearClosed`, puis
+     repli `DATABASE_ERROR`) et `:675-690` (`AccountsNotPostable`) — **quatre** sites ; un constructeur commun des
+     refus de devise (sur le modèle de `period_locked_failed_proposal` `:603`) évite de les écrire quatre fois ;
+     inventaire des `match` au Change Log. Test : un lot dont une proposition vise un compte en devise rend **200**, un `failed[]` avec
      `ACCOUNT_REQUIRES_CURRENCY`, les autres propositions acceptées (règle *Pattern batch*) ;
    - **configurations** — refus des deux côtés, **propriété partagée sans recouvrement** : poser une devise sur un
      compte désigné, lié ou porteur d'un rôle → 409 `ACCOUNT_CURRENCY_IN_USE` (35-1) ; lier ou désigner un compte en
@@ -161,7 +186,11 @@ passer l'écart de change, afin que mes comptes en devise portent leur solde en 
    - inventaire **clos** des sites, écrit au Change Log (méthode « inventorier les sites non résolus », `CLAUDE.md`).
 6. **AC-6 — API des écritures.** `CreateJournalEntryLineRequest` prend `foreign?: { currency, amount, rate,
    rateSource: "afc"|"manual" }` (`revaluation` refusé ici : réservé à 35-5) ; `debit`/`credit` restent les montants
-   CHF ; réponses (`JournalEntryLineResponse`, détail, liste) exposent `foreign` ; `MAX_LINES_PER_ENTRY` inchangé ;
+   CHF ; **typage du DTO** : les quatre champs de `foreign` sont des `String` (comme `debit`/`credit`), analysés dans
+   le handler — la route reçoit le corps par le `Json` d'axum (`create_journal_entry` `:600`), dont l'échec de
+   désérialisation (énumération inconnue, nombre JSON pour un décimal) rend **422**, non 400 ; un `rateSource` typé en
+   énumération rendrait donc 422 et non le 400 exigé ci-dessous (test HTTP : `rateSource: "revaluation"` → 400) ;
+   réponses (`JournalEntryLineResponse`, détail, liste) exposent `foreign` ; `MAX_LINES_PER_ENTRY` inchangé ;
    erreurs traduites (quatre locales). `MULTI_CURRENCY_DISABLED` est un **409** partout. **Statuts** (une table, un
    test HTTP par code) : **400** `FX_VALUE_OUT_OF_RANGE`, `FX_LINE_ROUNDS_TO_ZERO`, `FX_AMOUNT_MISMATCH`,
    `FX_RATE_NOT_AFC`, `FX_CURRENCY_MISMATCH`, `ACCOUNT_REQUIRES_CURRENCY`, `ACCOUNT_IN_FOREIGN_CURRENCY` ; **404**
@@ -176,9 +205,10 @@ passer l'écart de change, afin que mes comptes en devise portent leur solde en 
      `:999`) porte les quatre champs ;
    - une écriture qui porte une ligne `rate_source = 'revaluation'` **n'est pas modifiable** : `PUT` → 409
      `ENTRY_IS_FX_REVALUATION`. Sites : `DbError::EntryIsFxRevaluation` (variante propre, bras dans `errors.rs`), posée
-     dans `update_in_tx` **après** la garde d'écriture de pièce et **avant** le verrou de période ; et
+     dans `update_in_tx` en **étape 3-bis** : juste après la garde d'écriture (étape 3) et **avant** la version
+     (étape 4 — « le motif réel prime sur « rechargez » »), donc avant la date, les comptes et le verrou de période ; et
      `ModificationBlocker::FxRevaluation` (code d'écran `ENTRY_IS_FX_REVALUATION`, rendu par `modification_blocker`
-     `:1247` au même rang, donc `modifiable: false` et `modificationBlockedBy` du détail, lu par 35-3b ; la liste de
+     `journal_entries.rs:1243` au même rang, juste après `Guard` et avant `PeriodLocked`, donc `modifiable: false` et `modificationBlockedBy` du détail, lu par 35-3b ; la liste de
      « douze valeurs » de son doc-comment passe à treize). ⛔ **Pas dans `ModificationGuard`** : `delete_in_tx` (étape
      3-ter) la partage, et la **suppression** d'une réévaluation doit rester permise (35-5 AC-3 : « suppression ou
      contre-passation ») ; test : `DELETE` d'une écriture de réévaluation → 204, `PUT` → 409, précédence testée ;
@@ -193,8 +223,10 @@ passer l'écart de change, afin que mes comptes en devise portent leur solde en 
      l'audit d'une écriture CHF reste identique octet pour octet (test) ;
    - MCP : `kesh_ecritures` / `kesh_ecriture` les donnent — `crates/kesh-api/src/services/ecritures.rs`
      (`list_by_company_paginated` `:201`, `find_by_id` `:243`) et `crates/kesh-api/src/mcp/outils/ecritures.rs`
-     (struct `:126`, construction `:187`) ; champs **omis** sur une ligne CHF, devise typée `Code`, cours et montant
-     `Montant`/texte non fiable selon `mcp::sortie` ; la page de `kesh_ecritures` (`LIMITE_MAX_MCP = 22`,
+     (struct `:126`, construction `:187`) ; champs **omis** sur une ligne CHF, devise typée `Code`, source
+     `Code<RateProvenance>`, cours et montant `Montant`/texte non fiable selon `mcp::sortie` ; si `Montant` porte le
+     cours, son doc-comment (`mcp/sortie.rs:205-214`, qui énumère les types décimaux des colonnes, « recompté le
+     2026-10-29 ») gagne `DECIMAL(20,10)` ; la page de `kesh_ecritures` (`LIMITE_MAX_MCP = 22`,
      `LIMITE_DEFAUT = 12`, `outils/ecritures.rs:20-22`, doublée au test `mcp_outils_e2e.rs:108,184`) est **recalculée**
      pour le pire cas — lignes en devise comprises — sous `MCP_ENVOI_OCTETS_MAX` ; `mcp_gardes_lexicales` et
      `mcp_contrat` verts ;
@@ -208,13 +240,16 @@ passer l'écart de change, afin que mes comptes en devise portent leur solde en 
    registre (C-35-8) pour une issue à l'ouverture de la PR.
 ## Tâches
 
-- [ ] Migration + inscriptions, contraintes nommées et leur correspondance dans `errors.rs` (AC-1) ; test : une
+- [ ] Migration + inscriptions, contraintes nommées (AC-1 ; **aucune** correspondance par nom dans `errors.rs` : le
+      filet rend le 400 générique `CHECK_CONSTRAINT_VIOLATION`) ; test : une
       sauvegarde 0.17.6 se réimporte ; test : `chk_jel_fx_chf` refuse une ligne incohérente insérée en SQL brut.
 - [ ] `kesh-core` (AC-2, AC-3) : `ForeignAmount`, `JournalEntryLineDraft.foreign`, ordre des contrôles, bornes et
-      `checked_mul` ; fixture `crates/kesh-core/tests/fixtures/fx_rounding.json` et son test Rust ; tests de propriété
+      produit en entiers `i128` (**jamais** `Decimal::checked_mul`, AC-3) ; fonction publique du contrôle par ligne et
+      fonction publique des bornes du cours seul (AC-3) ; fixture `crates/kesh-core/tests/fixtures/fx_rounding.json` et son test Rust ; tests de propriété
       (arrondi) et de chaque refus (`FX_VALUE_OUT_OF_RANGE`, `FX_LINE_ROUNDS_TO_ZERO`, `FX_AMOUNT_MISMATCH`,
       exemption `revaluation`).
-- [ ] `kesh-db` : entités, colonnes, sites SQL de l'AC-2, contrôle central dans l'ordre de l'AC-4 (`FOR SHARE`),
+- [ ] `kesh-db` : entités, colonnes, sites SQL de l'AC-2, contrôle central dans l'ordre de l'AC-4 (`LOCK IN SHARE MODE`,
+      jamais `FOR SHARE` ; place du verrou de `companies` de l'AC-4),
       `FX_RATE_NOT_AFC`, contre-passation (AC-2, AC-4, AC-7) ; tests de chacun des codes de l'AC-4, de la concurrence
       (ou argument écrit), de la recopie à la contre-passation (réévaluation comprise), du 409
       `ENTRY_IS_FX_REVALUATION`.
@@ -222,7 +257,10 @@ passer l'écart de change, afin que mes comptes en devise portent leur solde en 
       littéraux au total, recomptés par `grep -rn "NewJournalEntryLine {"` : `kesh-api/tests`, `kesh-db/tests`,
       `kesh-report/tests`, `mod tests` — 52 dans `journal_entries.rs` seul) ;
       un constructeur de test commun (`NewJournalEntryLine::chf(account, debit, credit)`, sans `foreign`) évite de
-      toucher chaque littéral à la main ; il ne sert **jamais** en production (inventaire ci-dessous).
+      toucher chaque littéral à la main ; il ne sert **jamais** en production. `kesh-db` n'a pas de feature de test
+      (`test_fixtures` est un module public, `lib.rs:19`) : le constructeur vit dans `kesh_db::test_fixtures` (non sur
+      le type), et une garde lexicale (sur le modèle de `mcp_gardes_lexicales`) échoue si un fichier de `src/` hors
+      `mod tests` et hors `test_fixtures.rs` l'appelle.
 - [ ] Revue site par site des constructeurs de `NewJournalEntryLine` et de `JournalEntryLineDraft`, des
       correspondances `FailedProposal` et des validations de configuration (AC-5) — inventaire au Change Log.
 - [ ] API (AC-6), MCP, exports, audit (AC-8) ; test de l'export CSV à 10 décimales.
@@ -251,7 +289,8 @@ passer l'écart de change, afin que mes comptes en devise portent leur solde en 
   `kesh-reconciliation/src/manual.rs` 2, `split.rs` 2 ; `kesh-seed/src/pieges.rs` 2 ; `routes/journal_entries.rs` 1 ;
   `routes/opening_balances.rs` 1. `repositories/accounts.rs` n'en construit qu'en tests. La liste fait foi **après**
   l'échec de compilation, pas avant.
-- Correspondances `DbError → FailedProposal` : `routes/reconciliation.rs` :675-690, :743-803, :3143-3260.
+- Correspondances `DbError → FailedProposal` : `routes/reconciliation.rs` :675-690, :743-803, :3150-3235,
+  :4260-4303 (en ligne, `accept_one_rule`).
 
 ## Change Log
 
@@ -264,3 +303,10 @@ passer l'écart de change, afin que mes comptes en devise portent leur solde en 
   `CoreError` et `map_core_error` ; produit en `i128` et borne CHF ; filet `CHECK` sans correspondance par nom ;
   verrou de `companies` conditionnel ; limite MCP de `kesh_ecritures` ; propriété des refus de configuration ;
   statuts HTTP.
+- 2026-11-14 — validation P3 (Opus) : 0 CRITICAL, 0 HIGH, 5 MEDIUM, 8 LOW ; remédiés dans la fiche sauf
+  35-3a-P3-IF1 (35-3b) et 35-3a-P3-IF2 (35-3b) (inter-fiches). Points : résidus des Tâches (`FOR SHARE`,
+  `checked_mul`, correspondance des contraintes) ; quatrième correspondance `FailedProposal` (`accept_one_rule`) ;
+  rang de ligne `details.line` sur tous les refus par ligne ; place du verrou de `companies` (cycle avec Pattern 5) ;
+  champs `foreign` en `String` (422 d'axum) ; `modification_blocker` à `:1243` ; rang 3-bis de
+  `ENTRY_IS_FX_REVALUATION` ; ordre des `CHECK` au test ; bornes du cours seul (35-5) ; constructeur de test gardé ;
+  doc-comment de `Montant`.

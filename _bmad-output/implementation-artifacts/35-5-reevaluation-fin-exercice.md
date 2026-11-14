@@ -58,10 +58,15 @@ que mon bilan présente ces comptes au cours de clôture et que l'écart aille a
      `REPEATABLE READ` (niveau par défaut), la vue cohérente naît à la **première lecture non verrouillante** de la
      transaction. Les soldes doivent donc se lire **après** tous les verrous, et **aucune lecture ordinaire ne
      précède** ces verrous — sinon la seconde de deux passations concurrentes, débloquée après le `COMMIT` de la
-     première, relirait les soldes d'avant et passerait l'écart **une seconde fois**. Ordre, celui de
-     `fiscal_years::close` (`fiscal_years.rs:1116-1190`, antérieurs puis exercice, pour ne pas croiser une
-     réouverture) : (1) exercices antérieurs verrouillés un par un dans l'ordre chronologique, puis l'exercice
-     `FOR UPDATE` ; (2) relecture **verrouillante** du plus ancien antérieur ouvert (`earlier_open_locking_sql`,
+     première, relirait les soldes d'avant et passerait l'écart **une seconde fois**. Ordre des
+     verrous, celui de `fiscal_years::close` (`fiscal_years.rs:1116-1190`, antérieurs puis exercice, pour ne pas croiser
+     une réouverture) — **mais pas ses étapes (a) et (b)**, qui sont des lectures ordinaires
+     (`START_DATE_IN_COMPANY_SQL`, `LIST_EARLIER_SQL`, `fiscal_years.rs:166-175`) et fixeraient l'instantané avant tout
+     verrou (`close` le dit de sa propre étape (d) : « la vue fixée à l'étape (a) » ; elle n'y perd rien, n'ayant aucun
+     solde à lire). `post` lit donc la date de début de l'exercice et la liste des antérieurs **avant `begin`**, sur le
+     pool (une date de début ne change pas : seul le nom d'un exercice se modifie), puis : (1) dans la transaction,
+     chaque antérieur verrouillé par clé primaire (`LOCK_EARLIER_BY_ID_SQL`) dans l'ordre chronologique, puis
+     l'exercice `FOR UPDATE` (`LOCK_IN_COMPANY_SQL`) ; (2) relecture **verrouillante** du plus ancien antérieur ouvert (`earlier_open_locking_sql`,
      même texte que `close`) → `EARLIER_FISCAL_YEAR_OPEN` ; (3) ligne `companies` (`multi_currency_enabled`,
      `fx_gain_account_id`, `fx_loss_account_id`) et comptes de gains et de pertes lus `LOCK IN SHARE MODE` (jamais
      `FOR SHARE`, erreur de syntaxe sur MariaDB 10.11 ; ordre `companies` → `accounts` de 35-1 AC-3) ; (4) seulement
@@ -102,27 +107,36 @@ que mon bilan présente ces comptes au cours de clôture et que l'écart aille a
    de report n'est créée. Une réévaluation se corrige par **suppression ou contre-passation** de l'écriture, ou par un
    nouveau passage (résidu) ; le `PUT` de la saisie manuelle la refuse (35-3a AC-7 : 409 `ENTRY_IS_FX_REVALUATION` ;
    et 35-3a AC-6 refuse `rateSource: "revaluation"` dans toute requête d'écriture).
-4. **AC-4 — Gardes.** Ordre des refus, **en deux temps** (une seule raison, la plus bloquante d'abord ; l'état de
-   l'exercice parle avant les comptes et les cours, comme dans `close`).
+4. **AC-4 — Gardes.** Ordre des refus, **en deux temps** (une seule raison, la plus bloquante d'abord ; l'état
+   **clos** de l'exercice parle avant les comptes et les cours ; les refus de forme (400) et le cours AFC manquant,
+   **avant la transaction**, précèdent `EARLIER_FISCAL_YEAR_OPEN`, qui ne se lit que sous verrou).
    **Avant la transaction** (handler) : exercice inexistant ou d'une autre société → 404 (le handler appelle d'abord
    `fiscal_years::find_by_id_in_company`) ; mono-devise → **409** `MULTI_CURRENCY_DISABLED` (409 partout, décision
-   d'epic) ; exercice clos (lecture non verrouillante, refaite dans la transaction) → `FISCAL_YEAR_CLOSED` ; forme de
+   d'epic) ; exercice clos (lecture non verrouillante, refaite dans la transaction) → **400** `FISCAL_YEAR_CLOSED`
+   (`DbError::FiscalYearClosed`, `errors.rs:4516` — le code et le statut d'une écriture dans un exercice clos, non le 409
+   `ILLEGAL_STATE_TRANSITION` de `close`) ; forme de
    la requête (bornes ci-dessous) → 400 `FX_RATE_INVALID` ou 400 sur `accountIds` ; cours AFC manquant pour une
    devise sélectionnée sans surcharge → 404 `RATE_UNAVAILABLE`.
    **Dans la transaction**, dans l'ordre des verrous de l'AC-2 : exercice clos → `FISCAL_YEAR_CLOSED` ; **exercice
-   antérieur encore ouvert → `EARLIER_FISCAL_YEAR_OPEN`** (comme K1 : le cumul lu ne serait plus stable) ; comptes de
-   différences de change **revalidés** (société, actif, imputable, de type `Expense`/`Revenue`, en CHF) →
-   `FX_ACCOUNT_INVALID` (C-35-2) ; puis, par `create_in_tx_inner`, exercice
+   antérieur encore ouvert → `EARLIER_FISCAL_YEAR_OPEN`** (comme K1 : le cumul lu ne serait plus stable) ; réglage relu sous
+   verrou : mono-devise → 409 `MULTI_CURRENCY_DISABLED` ; comptes de différences de change **revalidés** (société, actif,
+   imputable, de type `Expense`/`Revenue`, en CHF, ni au rôle `DefaultRevenue`, ni désigné
+   `default_revenue_account_id` des réglages de facturation ou d'un article — 35-1 P3-8) → 400 `FX_ACCOUNT_INVALID` (C-35-2 ; même code et même statut que
+   35-1, `details` de 35-1) ; `accountIds` hors de la liste admissible (lue à l'étape (4) de l'AC-2) → 400, ensuite ; puis, par `create_in_tx_inner`, exercice
    postérieur clos → `LATER_FISCAL_YEAR_CLOSED` (garde `journal_entries.rs:368`, repository ; état hérité seulement,
    puisque `close` impose l'ordre) ; `DATE_OUTSIDE_FISCAL_YEAR` ; livres verrouillés à cette date
    (`books_locked_through`, seuil **inclusif** : `entry_date <= locked_through`) → `PERIOD_LOCKED`. L'aperçu
-   refuse de même (404, mono-devise, exercice clos) et **signale** les autres (`blockers[]`, AC-1). `accountIds` : doublons, comptes d'une autre société ou hors
-   de la liste admissible (groupe, archivé, résultat, sans devise) → 400, sans fuite d'existence.
+   refuse de même (404, mono-devise, exercice clos) et **signale** les autres (`blockers[]`, AC-1). `accountIds` : doublons → 400 avant la transaction ; comptes d'une autre société ou hors de la
+   liste admissible (groupe, archivé, résultat, sans devise) → 400 dans la transaction (ci-dessus), sans fuite d'existence
+   (même réponse pour un compte inexistant et pour un compte d'une autre société).
    - **Bornes de la requête** : chaque cours est un décimal > 0, ≤ 10 décimales, ≤ 10⁶, exprimé **par unité** de
      monnaie (1 JPY, pas 100 JPY), et sa clé est la devise d'au moins un compte sélectionné ; sinon 400
-     `FX_RATE_INVALID`. Les bornes de forme (décimales, ≤ 10⁶, > 0) sont celles du cours d'une ligne en devise
-     (35-3a AC-3, étape 1) et se contrôlent par **la même fonction** de `kesh-core` (DRY) ; seul le code rendu
-     diffère (`FX_RATE_INVALID`, la devise fautive en `details`). Au plus 100 devises et **498** comptes par requête (l'écriture reste sous
+     `FX_RATE_INVALID`. Les bornes d'échelle (≤ 10 décimales, zéros terminaux ignorés) et ≤ 10⁶ sont celles du
+     cours d'une ligne en devise (35-3a AC-3, étape 1) et se contrôlent par **la même fonction** de `kesh-core` (DRY),
+     exposée seule (cours sans montant) ; le signe (> 0) est contrôlé ici (35-3a le contrôle à l'étape 2) ; seul le code
+     rendu diffère (`FX_RATE_INVALID`, la devise fautive en `details`). **Le produit** devise_net × cours (devise_net est
+     un cumul, non borné par ligne) se calcule en entiers `i128`, jamais par `Decimal::checked_mul` (35-3a AC-3 :
+     réduction d'échelle silencieuse) ; un CHF réévalué ou un |D| > 10¹³ → 400 `FX_VALUE_OUT_OF_RANGE`, sans écriture. Au plus 100 devises et **498** comptes par requête (l'écriture reste sous
      `MAX_LINES_PER_ENTRY` = 500, `routes/journal_entries.rs`, avec les deux lignes de contrepartie).
 5. **AC-5 — RBAC.** Les deux routes vont dans `comptable_routes` (`lib.rs:524`, `require_comptable_role`), comme
    `…/close` (`lib.rs:821`) : Consultation reçoit 403 **y compris sur l'aperçu** (c'est un POST). Pas d'`ensure_not_pat`
@@ -142,14 +156,18 @@ que mon bilan présente ces comptes au cours de clôture et que l'écart aille a
    - cours invalide (0, négatif, 11 décimales, > 10⁶, devise sans compte) ; au-delà des bornes ;
    - `PERIOD_LOCKED` exactement à la borne (inclusive) ; exercice postérieur clos (test de dépôt, comme
      `opening_complement_repository.rs:963`) ; exercice antérieur ouvert ; exercice clos ; mono-devise ;
-   - `FX_ACCOUNT_INVALID` (compte devenu archivé, d'une autre société, ou en devise) — états que 35-1 interdit par
+   - `FX_ACCOUNT_INVALID` (compte devenu archivé, d'une autre société, en devise, ou compte de gains désigné produit
+     par défaut) — états que 35-1 interdit par
      l'API (`ACCOUNT_IS_FX_DIFFERENCE_ACCOUNT`) : posés **par SQL** dans le test, comme un état hérité ;
    - l'ordre des refus de l'AC-4 (exercice clos **et** cours manquant → `FISCAL_YEAR_CLOSED`) ; source `afc` d'un
      cours prérempli renvoyé tel quel, `manual` d'un cours modifié ; aucun `fx_revaluation.posted` sans écriture ;
      `blockers[]` de l'aperçu ;
    - RBAC (Consultation 403) et société (exercice d'une autre société 404) ;
    - audit : `journal_entry.created` avec les quatre colonnes de devise au snapshot, et `fx_revaluation.posted` ;
-   - le résidu après écriture tardive ; deux passations concurrentes : l'une passe, l'autre ne passe rien ;
+   - le résidu après écriture tardive ; une réévaluation supprimée ou contre-passée, puis un nouveau passage (le résidu
+     rétablit l'écart) ; 498 comptes acceptés, 499 refusés, 101 devises refusées, libellé ≤ 500 caractères ; produit
+     devise × cours hors bornes ; exercice antérieur ouvert **et** cours manquant → `RATE_UNAVAILABLE` (ordre en deux
+     temps) ; deux passations concurrentes : l'une passe, l'autre ne passe rien ;
    - l'aperçu ne crée aucune écriture ; E2E de l'écran.
 8. **AC-8 — Manuel** : réévaluation, cours du mois de clôture (choix assumé, D5), gains et pertes non réalisés
    comptabilisés (CO 960b, choix assumé ; la neutralisation par provision n'est pas offerte, C-35-8), postes non
@@ -167,7 +185,8 @@ que mon bilan présente ces comptes au cours de clôture et que l'écart aille a
       company_id, fin_d_exercice, Some(ids))` (35-4 AC-1 quater : dans `kesh-db`, car `kesh-db` ne peut pas dépendre de
       `kesh-report` ; borne `<=` incluse ; débit net brut ; aucune conversion de signe).
 - [ ] `kesh-api` : routes (aperçu, passation) dans `comptable_routes`, gardes, résolution des cours avant la
-      transaction, i18n des erreurs et du libellé d'audit (quatre locales).
+      transaction, i18n des erreurs (`FX_RATE_INVALID`, `FX_ACCOUNT_INVALID`, `RATE_UNAVAILABLE`, …) et du libellé d'audit
+      (quatre locales) ; registres de l'AC-2 (`ACTIONS`, `LIB_ROUTES`, décomptes, phrase du manuel d'administration).
 - [ ] Frontend : écran depuis les exercices, Vitest, E2E.
 - [ ] Manuel, CHANGELOG.
 
@@ -190,3 +209,5 @@ que mon bilan présente ces comptes au cours de clôture et que l'écart aille a
   35-3a) et l'exigence 35-4 de P1-2 portés par l'orchestrateur.
 - 2026-11-14 — validation P2 (Opus) : 0 CRITICAL, 0 HIGH, 5 MEDIUM, 8 LOW ; remédiés dans la fiche sauf 35-5-P2-IF1
   (MEDIUM, 35-3a), 35-5-P2-IF2 (LOW, 35-3a/35-3b) et 35-5-P2-IF3 (LOW, 35-2), inter-fiches.
+- 2026-11-14 — validation P3 (Sonnet) : 0 CRITICAL, 1 HIGH, 3 MEDIUM, 3 LOW ; remédiés dans la fiche sauf 35-5-P3-IF1
+  (LOW, 35-3a), inter-fiches.

@@ -19,7 +19,8 @@ exports, afin de rapprocher mes comptes PayPal ou Wise de leurs relevés et de c
    - **Côté d'une ligne** : celui de son montant CHF (`debit > 0` ⇒ débit, `credit > 0` ⇒ crédit) ; `amount_currency`
      n'a pas de signe (C-35-3). Les rapports lisent une **paire brute (débit, crédit) en devise** :
      `SUM(CASE WHEN jel.debit > 0 THEN jel.amount_currency ELSE 0 END)` et son symétrique, filtrée
-     `jel.currency = a.currency`. Une ligne `revaluation` (`amount_currency = 0`) n'y ajoute rien.
+     `jel.currency = a.currency` — la condition **dans** le `CASE` (`WHEN jel.debit > 0 AND jel.currency = a.currency`),
+     **jamais** en `WHERE`, qui écarterait des sommes CHF. Une ligne `revaluation` (`amount_currency = 0`) n'y ajoute rien.
    - `signed`, `opening_from` et `debit_sense` (`opening.rs`, :75 pour `opening_from`) s'appliquent **sans
      changement** à la paire en devise (ce sont des fonctions sur `Decimal`) : aucun `CASE` d'ouverture n'est recopié
      en SQL, aucune seconde règle. « Fonction partagée » = fragment SQL de la somme en devise + `opening_from` ; la
@@ -57,7 +58,8 @@ exports, afin de rapprocher mes comptes PayPal ou Wise de leurs relevés et de c
        réévaluation déjà passée au même jour est comptée, ce qui rend le rejeu de 35-5 (résidu seul) exact — test : deux
        appels encadrant une réévaluation au `as_of` ;
      - `account_ids = None` : tous les comptes **en devise** de la société ; `Some(ids)` : exactement ces comptes
-       (bornés à la société, KF-002), **chacun rendu** même sans ligne (`LEFT JOIN`, `(0, Some(0))`) ; `devise_net` vaut
+       (bornés à la société, KF-002 : un identifiant étranger à la société est **ignoré**, sans erreur — l'appelant
+       compare le nombre de lignes rendues à celui demandé), **chacun rendu** même sans ligne (`LEFT JOIN`, `(0, Some(0))`) ; `devise_net` vaut
        `None` pour un compte CHF ;
      - les lignes `revaluation` comptent dans le CHF, pas dans la devise ;
      - lecture ordinaire (non verrouillante) dans la connexion fournie : c'est le verrou d'exercice de 35-5 qui la
@@ -149,11 +151,17 @@ exports, afin de rapprocher mes comptes PayPal ou Wise de leurs relevés et de c
 - [ ] Sites de construction à revoir (échec de compilation), relevés le 2026-11-14 : `AccountBalance` —
       `balance_sheet.rs:376` (test), `csv.rs` (7 : :846, :928, :937, :946, :1054, :1065, :1074), `pdf.rs` (7 : :1787,
       :1800, :1826, :1839, :2000, :2298, :2307), `benches/export.rs:45` ; `TrialBalanceRow` — `trial_balance.rs:213`,
-      `:284`, `csv.rs:1213`, `pdf.rs:1861`, `benches/export.rs:102` ; `LedgerLine`/`LedgerSection` — AC-2. Consommateur
+      `:284`, `csv.rs:1213`, `pdf.rs:1861`, `benches/export.rs:102` ; `LedgerLine`/`LedgerSection` — AC-2 ; `FiscalYearBreak` (gagne `closingBalanceCurrency`, AC-1 bis) —
+      `general_ledger.rs:591`, `:609`, `:842` (test), `csv.rs:1390`, `:1395`, `pdf.rs:2514`, `:2531`, `:2537` ;
+      `JournalEntryLineRow` (AC-7 : champs en devise) — `journal_report.rs:177` (et les **deux** `SELECT` de
+      `generate`, :106 et :130, qui lisent `jel.currency`, `amount_currency`, `exchange_rate`, `rate_source`),
+      `csv.rs:1172`, `pdf.rs:1902`, `:2404`, `:2412`. Consommateur
       à étendre (sans échec de compilation) : `mcp/outils/rapports.rs:142` (`fn ligne`, `LigneDeSolde`) et la
       correspondance du grand livre de `mcp/outils/grand_livre.rs`.
 - [ ] `services/rapports.rs`, routes, MCP (limites).
-- [ ] Frontend : cinq vues, types ; Vitest ; E2E (grand livre d'un compte USD).
+- [ ] Frontend : cinq vues, types ; Vitest — `IncomeStatementView.test.ts` et `JournalReportView.test.ts` **n'existent
+      pas** (relevé du 2026-11-14) : à créer, avec le cas « mono-devise : rien de visible ne change » (AC-6) ; E2E
+      (grand livre d'un compte USD).
 - [ ] Manuel, CHANGELOG.
 
 ## Notes de développement
@@ -169,3 +177,6 @@ exports, afin de rapprocher mes comptes PayPal ou Wise de leurs relevés et de c
 - 2026-11-14 — validation P1 (Sonnet) : 0 CRITICAL, 3 HIGH, 10 MEDIUM, 3 LOW ; tous remédiés dans la fiche ; P1-11 (côté 35-3a) porté par l'orchestrateur.
 - 2026-11-14 — validation P2 (Opus) : 0 CRITICAL, 1 HIGH, 4 MEDIUM, 5 LOW ; remédiés dans la fiche sauf 35-4-P2-1 (volet
   35-5 : `balances_as_of` dans `kesh-db`, en sens débit brut — Tâches de 35-5 à aligner).
+- 2026-11-14 — validation P3 (Sonnet) : 0 CRITICAL, 0 HIGH, 2 MEDIUM, 3 LOW ; remédiés dans la fiche sauf <aucun
+  inter-fiches>. Prémisses et lignes citées relues au code (sommes, `opening.rs:75`, binds 18 → +12, `:687`, `:209`,
+  `kesh-db/Cargo.toml:48`, `kesh-report/Cargo.toml:9`, sites MCP, inventaire AC-7) : exactes.

@@ -23,11 +23,14 @@ change, et ouvrir mes comptes en devise avec leur solde en devise, afin de tenir
      vérifiés** par la règle de 35-3a (la route ne calcule rien ; `FX_AMOUNT_MISMATCH` sinon). `rateSource`
      `revaluation` refusé ; l'écran envoie toujours `manual` (cf. *Cours proposé*) ; l'API admet `afc`, alors contrôlé
      par `FX_RATE_NOT_AFC` de 35-3a contre le mois de la date retenue. Le sens est celui de la colonne (`debit` ou
-     `credit`) qui porte le CHF. Mêmes bornes de forme que `parse_complement_amount` sur le CHF résultant, et les bornes
-     de 35-3a AC-3 (montant ≤ 10¹³ à 4 décimales, cours ≤ 10⁶ à 10 décimales) sur la devise ; `parse_complement_lines`
+     `credit`) qui porte le CHF. Complément : mêmes bornes de forme que `parse_complement_amount` (`opening_balances.rs:515`) sur le CHF résultant ;
+     génération : ses montants se lisent par `Decimal::from_str` (`:362-368`), sans ce parseur — les bornes y viennent du
+     contrôle FX de 35-3a et de `validate`. Dans les deux cas, les bornes de 35-3a AC-3 (montant ≤ 10¹³ à 4 décimales, cours ≤ 10⁶ à 10 décimales) sur la devise ; `parse_complement_lines`
      (:535-584, « exactement une colonne non nulle », borne de `Σ(débit − crédit)`) s'applique au CHF.
    - **Contrôle FX du complément avant la transaction.** `parse_complement_lines` applique à chaque ligne `foreign` le
-     contrôle FX pur de 35-3a AC-3 (bornes, signe, `FX_LINE_ROUNDS_TO_ZERO`, `FX_AMOUNT_MISMATCH` ; fonction publique de
+     contrôle FX pur de 35-3a AC-3 **avant** la règle « exactement une colonne non nulle » (comme 35-3a AC-3 pour
+     l'exclusivité : sans cet ordre, une ligne dont le CHF s'arrondit à 0 ou manque rendrait l'erreur de montant
+     générique au lieu de `FX_LINE_ROUNDS_TO_ZERO` / `FX_AMOUNT_MISMATCH`) (bornes, signe, `FX_LINE_ROUNDS_TO_ZERO`, `FX_AMOUNT_MISMATCH` ; fonction publique de
      `kesh-core`), sans lecture de la base. Dans le dépôt, `accounting::validate` s'exécute sous verrou et son erreur
      devient `DbError::Invariant("opening-complement:unbalanced:…")` (`opening_complement.rs:699-700`), rendu en 500
      `INTERNAL_ERROR` (`errors.rs:4808-4813`) : ce `map_err` reste le filet d'un défaut de calcul, jamais le refus d'une
@@ -50,7 +53,8 @@ change, et ouvrir mes comptes en devise avec leur solde en devise, afin de tenir
      l'ouverture et le complément, proposé ou saisi : le contrôle `FX_RATE_NOT_AFC` de 35-3a (AC-4, 4) compare une
      ligne `afc` au cours du mois de `entry_date`, à la création **et** au `PUT` — un cours du mois précédent, ou d'un
      mois que la date recalculée du complément a quitté, y serait refusé, et l'écriture d'ouverture ne se modifierait
-     plus. L'écran affiche la provenance (« proposé : AFC <mois> ») ; le Change Log de la story le dit.
+     plus. L'écran affiche la provenance (« proposé : AFC <mois> ») ; le Change Log de la story le dit. Sur `404 RATE_UNAVAILABLE`
+     du `lookup`, même repli qu'à l'AC-2 (un `POST /exchange-rates/fetch`, puis relecture ; sinon saisie manuelle).
    - **Saisie manuelle : cours OU CHF** (ouverture, complément et formulaire d'écriture, AC-2). L'utilisateur saisit
      soit le cours, soit le montant CHF. Si le CHF est saisi : cours = CHF ÷ montant en devise, arrondi à 10 décimales ;
      le client vérifie que `round(montant × cours, 2)` redonne le CHF saisi et, sinon, ajuste le cours au dernier chiffre
@@ -80,7 +84,12 @@ change, et ouvrir mes comptes en devise avec leur solde en devise, afin de tenir
      celui de la colonne) ; le CHF est calculé (`round(montant × cours, 2)`, `Big.roundHalfUp`), affiché en lecture
      seule sous le champ, et alimente `computeBalance` et la ligne d'écart. `debit`/`credit` du payload restent les
      montants CHF, `foreign.amount` le montant en devise. `LineDraft` (`form-helpers.ts` :13) gagne
-     `foreign?: { currency, amount, rate, rateSource }` (absent = ligne CHF) ; `classifyLine`, `computeBalance`
+     `foreign?: { currency, side: 'debit' | 'credit', amount, rate, rateSource }` (absent = ligne CHF) — **contrat de
+     stockage** : le montant saisi en devise vit dans `foreign.amount` et le sens dans `foreign.side` (il doit survivre
+     à un cours ou un CHF encore vides) ; `debit`/`credit` de la ligne ne portent **que le CHF dérivé** (l'un des deux
+     vide, selon `side`), recalculé à chaque changement et seul lu par `computeBalance`, `classifyLine` et
+     `isDraftLineNonEmpty` — aucun d'eux ne lit jamais `foreign.amount` comme du CHF ; une ligne en devise sans CHF
+     calculable (cours ou montant vide ou invalide) est `partial` ; `classifyLine`, `computeBalance`
      (`balance.ts` :83, :140-162), `isDraftLineNonEmpty` (`vat-purchase.ts` :106) et les fabriques de lignes
      (`JournalEntryForm` :105-106, :187 ; `vat-purchase.ts` :87-96) sont revus, inventaire au Change Log.
      Changer le compte d'une ligne : CHF → devise, champs initialisés ; devise → CHF, `foreign` effacé ;
@@ -95,7 +104,9 @@ change, et ouvrir mes comptes en devise avec leur solde en devise, afin de tenir
      une réponse périmée ; si le nouveau mois n'a pas de cours, le cours `afc` précédent est **effacé** (jamais gardé
      sous l'étiquette `afc`) ; en édition, aucune reproposition au montage, seulement au changement de date et pour les
      lignes `afc`. `GET /lookup` est **en lecture seule** (35-2) : sur `404 RATE_UNAVAILABLE`, l'écran appelle **une
-     fois** `POST /exchange-rates/fetch` pour ce mois (rôle Comptable ou Administrateur ; mois ≤ mois courant), puis
+     fois** `POST /exchange-rates/fetch` pour ce mois — par la fonction d'API de 35-2 (seule entrée : sans bandeau
+     dégradé sur 503, `timeoutMs` de 60 s, 35-2 AC-3 et AC-5), le mois tiré de `details.month` (`AAAA-MM-01`) ; les specs
+     E2E pilotent la source factice et s'appuient sur le vidage des tables par `/_test/seed` (35-2 AC-7) — (rôle Comptable ou Administrateur ; mois ≤ mois courant), puis
      relit ; `404 RATE_NOT_PUBLISHED`, `503` ou rôle Consultation → message, saisie manuelle exigée. Le cours du mois
      courant **est** publié dès le début du mois (relevé le 2026-11-14 : `xmlavgmonth` sans paramètre rendait
      `2026-11`) ; le cas « cours indisponible » vise surtout un mois futur, une devise non publiée ou une source
@@ -111,7 +122,12 @@ change, et ouvrir mes comptes en devise avec leur solde en devise, afin de tenir
      vide (35-2 AC-7) — → l'écran propose « Récupérer le mois » (`POST /exchange-rates/fetch`, mêmes rôles et même
      règle que ci-dessus) puis le renvoi, ou le passage de la ligne en `manual` ; `FX_RATE_NOT_AFC` → le cours attendu
      (`details`) est affiché et proposé à la reprise ; `FX_CURRENCY_MISMATCH`, `ACCOUNT_REQUIRES_CURRENCY`,
-     `FX_AMOUNT_MISMATCH` → message traduit sur la ligne fautive (numéro en `details`). Vitest de chacun.
+     `FX_AMOUNT_MISMATCH` → message traduit sur la ligne fautive (numéro en `details` : le rang **1-based** de la ligne dans `lines`,
+     lu dans `details.line` (35-3a AC-3), y compris pour `FX_VALUE_OUT_OF_RANGE`, `FX_LINE_ROUNDS_TO_ZERO` et
+     `FX_RATE_NOT_AFC`). Vitest de chacun. `editRefusalOutcome`
+     (`form-helpers.ts` :106) classe ces refus en édition : `ENTRY_IS_FX_REVALUATION` → `stale` (la fiche se recharge,
+     le motif s'affiche) ; `RATE_UNAVAILABLE`, `FX_*`, `ACCOUNT_REQUIRES_CURRENCY` → `stay` (le formulaire reste
+     ouvert) ; sinon ils tomberaient en `other`. Test par code.
    - **Ligne d'écart** : écriture déséquilibrée en CHF avec au moins une ligne en devise → bouton « Ajouter la
      différence de change » : une ligne CHF sur le compte de gains (écart au crédit) ou de pertes (au débit) désigné en
      35-1 ; au-delà de n × 0.005 CHF (n = nombre de lignes en devise, calculé en `Big`), le texte précise qu'il ne s'agit
@@ -160,9 +176,14 @@ change, et ouvrir mes comptes en devise avec leur solde en devise, afin de tenir
      **par une option** `excludeForeignCurrency` d'`AccountValidityOptions` (défaut `true`) : la fonction est aussi
      appelée par `JournalEntryForm` (:135) et par `AccountAutocomplete` (:219), qui passent `false` dans le formulaire
      d'écriture — sans quoi chaque compte en devise y serait marqué inutilisable. Vitest des deux cas.
-   - Garde Vitest d'inventaire : tout composant important `fetchAccounts` ou `AccountAutocomplete` porte l'une des
-     deux marques ou une exemption justifiée (les composants de la liste « à ne pas filtrer » et `onboarding`
-     compris).
+   - ⚠️ `SettleInvoiceDialog`, `SupplierInvoiceForm` (`expenseAccounts`), `RuleFormModal` et `RulesList` **n'importent ni
+     `fetchAccounts` ni `AccountAutocomplete`** : ils reçoivent leurs comptes en props (`accounts: AccountResponse[]`).
+     Le filtre se pose donc, pour eux, soit à l'entrée du composant (`withoutForeignCurrency`), soit dans la page
+     parente qui appelle `fetchAccounts` — au choix, écrit à l'inventaire, mais un seul des deux par composant.
+   - Garde Vitest d'inventaire : tout fichier `.svelte` ou `.ts` (hors tests) qui importe `fetchAccounts`,
+     `AccountAutocomplete` ou `linkableLedgerAccounts`, **ou** qui déclare une prop de type `AccountResponse[]`, porte
+     l'une des deux marques ou une exemption justifiée (les composants de la liste « à ne pas filtrer » et
+     `onboarding` compris) ; le test lit le source, il ne se fie pas à la liste du Change Log.
    - **Hors périmètre, dit** : l'assistant d'onboarding (étape compte bancaire, `onboarding/+page.svelte` :198-204) —
      le mode multi-devises s'active après (D1) ; le mode Compléter bancaire (34-2) ne reçoit jamais `foreign` ; les
      imports bancaires restent hors périmètre (D7).
@@ -171,7 +192,9 @@ change, et ouvrir mes comptes en devise avec leur solde en devise, afin de tenir
    cours, soldes d'ouverture d'un compte USD (l'E2E repart d'une société vierge par `seedTestState('with-company')`,
    précédent `opening-balances.spec.ts:21, :80` : l'ouverture exige une société sans écriture, `ALREADY_HAS_ENTRIES`),
    mono-devise inchangé ;
-   captures d'écran des états (thème clair) ; liste des échecs attendus de `docs/testing.md` recontrôlée.
+   préalables posés par l'API (Administrateur) : mode multi-devises activé, compte USD (et EUR) créé, cours des mois
+      utiles servis par la source factice — dont le mois **précédant** l'ouverture ;
+      captures d'écran des états (thème clair) ; liste des échecs attendus de `docs/testing.md` recontrôlée.
 6. **AC-6 — Manuel utilisateur** : saisir une écriture en devise, cours proposé et manuel (cours ou CHF), conversion
    EUR → USD pas à pas, soldes d'ouverture en devise (« solde repris au cours de clôture », mois précédent) ; i18n
    quatre locales ; PDF contrôlé.
@@ -194,7 +217,7 @@ change, et ouvrir mes comptes en devise avec leur solde en devise, afin de tenir
 - `kesh-db` : `repositories/opening_complement.rs` (`COMPLETABLE_SQL` :319, `create_opening_complement_in_tx` :551,
   `check_lines`), `routes/bank_accounts.rs` :764.
 - Dépendances sur d'autres fiches (portées ailleurs) : 35-1 (devise refusée sur un compte lié, désigné par défaut ou
-  portant un rôle ; lier/désigner un compte en devise refusé) ; 35-3a (`checked_mul`, `FX_VALUE_OUT_OF_RANGE`,
+  portant un rôle ; lier/désigner un compte en devise refusé) ; 35-3a (produit en entiers `i128`, jamais `Decimal::checked_mul`, `FX_VALUE_OUT_OF_RANGE`,
   fixture `fx_rounding.json`, valeur `ENTRY_IS_FX_REVALUATION` de `modificationBlockedBy` rendue par le serveur,
   contrôle FX par ligne exposé en fonction publique de `kesh-core`) ; C-35-2 (3) amendé.
 
@@ -205,3 +228,6 @@ change, et ouvrir mes comptes en devise avec leur solde en devise, afin de tenir
   l'amendement de C-35-2 portés par l'orchestrateur.
 - 2026-11-14 — validation P2 (Opus) : 0 CRITICAL, 3 HIGH, 6 MEDIUM, 3 LOW ; remédiés dans la fiche sauf
   35-3b-P2-4 et 35-3b-P2-2 pour leur part dans 35-3a (inter-fiches, portés par l'orchestrateur).
+- 2026-11-14 — validation P3 (Sonnet) : 0 CRITICAL, 0 HIGH, 4 MEDIUM, 3 LOW ; remédiés dans la fiche sauf aucun
+  inter-fiches (P3-1 stockage `LineDraft`, P3-2 ordre des contrôles du complément, P3-3 garde d'inventaire des
+  sélecteurs, P3-4 `editRefusalOutcome` ; LOW : repli `lookup` de l'ouverture, bornes de la génération, préalables E2E).
