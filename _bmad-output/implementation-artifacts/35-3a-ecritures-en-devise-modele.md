@@ -160,7 +160,9 @@ chacune (R7), l'écart de change dans la seconde, afin que mes comptes en devise
       garde des comptes). **Critère au `PUT`** : la garde ne refuse que si les lignes en devise **changent** — l'ensemble
       des lignes d'avant qui portent une devise diffère de celle du corps (sans égard à l'ordre, même appariement que
       le point 4 ci-dessous ; compte, débit, crédit et les
-      quatre champs de `foreign` comparés comme `is_no_op_change`, montants en valeur). Un `PUT` qui ne touche que le
+      quatre champs de `foreign` comparés comme `is_no_op_change`, montants en valeur, **sauf `rate_source`**, que la
+      garde ne compare pas : la provenance d'un cours ne change aucun solde, et un `PUT` qui ne fait que la changer
+      passe). Un `PUT` qui ne touche que le
       libellé, la date dans l'exercice ou des lignes CHF ne change pas le solde d'ouverture de l'exercice mono-devise
       et passe ; un `PUT` sans effet passe donc aussi, sans exception à KF-004 (toutes les gardes **précèdent** le
       court-circuit de l'étape 8, `:1636` ; celle-ci ne refuse simplement pas ce qui ne change rien). Le message dit
@@ -229,8 +231,9 @@ chacune (R7), l'écart de change dans la seconde, afin que mes comptes en devise
       comparaison). Une ligne inchangée n'est jamais recontrôlée et ne déclenche aucune lecture du cours : après une
       restauration (table des cours vide, 35-2 AC-7) ou après l'**adoption** d'un cours AFC republié (35-2 AC-5), le
       `PUT` du seul libellé, de lignes CHF ou d'un projet passe ; une ligne `afc` ajoutée ou modifiée rend
-      `404 RATE_UNAVAILABLE` (cours absent) ou `FX_RATE_NOT_AFC` (ancien cours, `expectedRate` = cours en vigueur),
-      dont 35-3b tire « Reprendre le cours attendu » / « Garder mon cours » (passage en `manual`). Une republication
+      `404 RATE_UNAVAILABLE` (cours absent ; 35-3b propose « Récupérer le mois » ou le passage en `manual`) ou
+      `FX_RATE_NOT_AFC` (ancien cours, `expectedRate` = cours en vigueur ; 35-3b en tire « Reprendre le cours attendu »
+      / « Garder mon cours », passage en `manual`). Une republication
       **non adoptée** ne change rien. Conséquence assumée, écrite au Change Log : `rate_source = 'afc'` dit que la ligne
       portait le cours AFC en vigueur **quand elle a été contrôlée**, non qu'elle porte celui d'aujourd'hui (aucun
       lecteur de 35-4 ni de 35-5 n'en tire autre chose). **Exemptée** : la contre-passation, qui recopie le cours
@@ -431,7 +434,7 @@ chacune (R7), l'écart de change dans la seconde, afin que mes comptes en devise
       (`republications/adopt`, 35-2 AC-5) : une ligne `afc` à l'ancien cours est refusée à la création ; l'écriture
       passée **avant** l'adoption garde ses lignes (aucune réécriture) et son `PUT` du seul libellé, de lignes CHF ou
       d'un projet passe, de même avec ses lignes envoyées dans un autre ordre ; son `PUT` qui modifie la ligne `afc`
-      (montant, compte, côté, ou date de l'écriture) ou en ajoute une à l'ancien cours → `FX_RATE_NOT_AFC`
+      (montant, compte, côté, ou date de l'écriture, vers un mois dont le cours est présent) ou en ajoute une à l'ancien cours → `FX_RATE_NOT_AFC`
       (`expectedRate` = nouveau cours) ; la même ligne passée en `manual` à l'ancien cours passe ; une ligne `manual`
       repassée `afc` à l'ancien cours → `FX_RATE_NOT_AFC` ; (h) **restauration** (table des cours vide) : `PUT` du seul
       libellé d'une écriture `afc` → passe, sans lecture du cours ; `PUT` qui modifie sa ligne `afc` → `404
@@ -627,3 +630,15 @@ chacune (R7), l'écart de change dans la seconde, afin que mes comptes en devise
   Axes exercés : remédiation CR-3 P1 et A17, cohérence inter-fiches de S6, tests des AC modifiés. Non exercés : GET de
   la source journalière (aucune prémisse ici), i18n des quatre locales et manuels (aucune clé neuve ; 35-3b), MCP et
   E2E (non touchés par A17), code au-delà d'`update_in_tx`.
+- 2026-11-14 — validation CR-3 P3 ciblée (Sonnet) : 0 CRITICAL, 0 HIGH, 0 MEDIUM, 3 LOW ; remédiés dans la fiche.
+  (1) critère du `PUT` à la garde `laterFiscalYear` : « même appariement que le point 4 » faisait entrer `rate_source`,
+  si bien qu'un `PUT` qui ne change que la provenance aurait été refusé alors qu'aucun solde ne change — `rate_source`
+  exclu de la garde ; (2) `RATE_UNAVAILABLE` / `FX_RATE_NOT_AFC` : « dont 35-3b tire » les deux actions, qui ne
+  vont qu'au second — réécrit ; (3) test (g), date de l'écriture changée : vers un mois sans cours, le refus serait
+  `RATE_UNAVAILABLE` et non `FX_RATE_NOT_AFC` — mois à cours présent précisé. Inter-fiche, non appliqué : 35-3b AC-2
+  (`RATE_UNAVAILABLE`, « compte, devise, montant, cours ou date ») omet le côté et le passage `manual` → `afc` qui
+  font aussi une ligne modifiée (35-3a AC-4, 4). Sites lus : diff `d9c0018e..040185ac` ;
+  `journal_entries.rs:1300-1320` (`is_no_op_change`, positionnel, sans `foreign`), `:1481-1500` (`old_date` déjà lu à
+  l'étape 1), `:1620-1636` ; 35-2 AC-5 (:552-561), 35-3b (:72-80, :205-236), fichier d'epic A17. Axes exercés : vérité
+  au code des phrases ajoutées, cohérence AC-4/AC-7/Tâches, points de contact 35-2/35-3b/35-4/35-5. Non exercés :
+  reste de la fiche, i18n, manuels, MCP, E2E.

@@ -1041,6 +1041,16 @@ cours sans saisie.
   « redemande » / « revérifi » (aucun écart) ; source journalière : un GET (`d=20000101`). Non exercés : compilation,
   gate, rendu de l'écran, deux GET restants non faits (week-end et date future déjà relevés), 35-1/35-4/35-5 au-delà
   des renvois.
+- 2026-11-14 — validation CR-3 P3 ciblée (Sonnet) : 0 CRITICAL, 0 HIGH, 0 MEDIUM, 0 LOW ; rien à remédier, aucun
+  finding inter-fiches. Axes exercés : diff `d9c0018e..040185ac` de la fiche, phrase par phrase — borne d'année 1999
+  du `<datum>` (contre le relevé `d=20000101` du § Source, la borne 2000-01-01 de l'AC-5, le `CHECK` de
+  `source_date`, le contrôle `date_mismatch`) ; réponse du raccourci avec `republished` (forme `{kind, rateDate,
+  sourceDate, count, rejected, republished}` de l'AC-5) ; `source_date` gardée et limite de l'adoption (AC-5, adoption
+  sans écriture de `source_date`) ; test (b) à `<datum>` différent ; réécriture A17 aux trois sites (AC-5, AC-6,
+  Tâches) contre 35-3a AC-4 (4) et le fichier d'epic (A17) ; compte des actions d'audit (4 + 3 = 4 de l'AC-5 sur
+  `exchange_rate_override.*` et `fetched`, republication ×2, `fiscal_year.rate_kinds_updated`) ; condition « unité
+  manquante » de l'A10 (iii) contre l'AC-4 (démarrage, connexion, seul mois suivant). Non exercés : compilation, gate,
+  rendu de l'écran, code au-delà des renvois, 35-1/35-4/35-5.
 - 2026-11-14 — révision CR-3 (revue de Beat S1–S6 ; Opus) : **S1** — calendrier de la tâche automatique (AC-4,
   remplace R4 amendé) : quotidien tant que le mois courant ou le mois suivant manque, puis, le mois suivant `T` obtenu,
   pause jusqu'au plus tôt de « obtention + 24 jours » et du 25 de `T`, jamais avant le 1er de `T` ; `prochain_reveil`

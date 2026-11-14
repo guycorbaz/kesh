@@ -271,8 +271,11 @@ clôture et que l'écart aille aux différences de change.
    `counterpartAccountId` `null` sur la ligne — la ligne reste **sélectionnable** (le compte est admissible) : la
    décocher lève le refus. Les blockers `FX_ACCOUNT_INVALID` de l'aperçu portent sur les comptes **sélectionnés** de
    la requête (`accountIds`, à défaut la présélection), comme la passation ; l'écran relit l'aperçu, avec
-   `accountIds`, à chaque case cochée ou décochée, et ne désactive « Passer les écritures » que sur les blockers de
-   cette sélection) ; `accountIds` hors de la liste admissible (lue à l'étape (4) de l'AC-2) → 400
+   `accountIds` **et** les cours modifiés (`rates`, limités aux devises d'au moins un compte coché : la requête
+   refuse toute autre clé, `FX_RATE_INVALID`, ci-dessous), à chaque case cochée ou décochée — dernière réponse
+   seule retenue —, et ne désactive « Passer les écritures » que sur les blockers de cette sélection ; **aucune
+   relecture à sélection vide** (`accountIds` vide serait refusé, `reason: "empty"`) : le bouton reste désactivé,
+   sans blocker) ; `accountIds` hors de la liste admissible (lue à l'étape (4) de l'AC-2) → 400
    `FX_REVALUATION_ACCOUNT_INVALID`, ensuite ; puis genre de clôture changé depuis la lecture d'avant la transaction →
    409 `OPTIMISTIC_LOCK_CONFLICT` (AC-1 ; après les refus d'état et de comptes : le motif réel prime sur
    « rechargez », comme l'étape 3-bis d'`update_in_tx` avant la version) ; puis 404 `RATE_UNAVAILABLE` d'une devise
@@ -367,7 +370,7 @@ clôture et que l'écart aille aux différences de change.
      `blockers[]` de l'aperçu ; compte sélectionné non admissible (CHF, archivé) dont les comptes propres seraient
      invalides → seul `FX_REVALUATION_ACCOUNT_INVALID` `notEligible` ; compte à D = 0 dont les comptes propres sont
      invalides → refusé (comptes employés) ; ce même compte **décoché** → aperçu (avec `accountIds`) sans blocker et
-     passation admise, et l'écran (Vitest) réactive « Passer les écritures » après la relecture ; ni comptes propres ni
+     passation admise, et l'écran (Vitest) réactive « Passer les écritures » après la relecture, sans perdre les cours modifiés, la dernière case décochée ne déclenchant aucune relecture ; ni comptes propres ni
      comptes de la société (`None`) → `reason: "missing"`, ligne cochable ; premier fautif dans l'ordre des numéros de compte, gain avant perte ; compte de la société
      invalide (par SQL) alors que tous les comptes sélectionnés ont des comptes propres → passation admise ; une
      désignation propre concurrente attend la fin de la passation (verrou `companies`) ;
@@ -580,3 +583,9 @@ clôture et que l'écart aille aux différences de change.
   journalière (un GET) : `xmldaily?d=20250314` rend la publication du 14.03.2025 (exercice qui finit un 14, AC-7).
   Axes non exercés : code réel de 35-1 à 35-4 (non écrit) ; registres d'audit et RBAC non touchés par la révision
   (vérifiés aux passes antérieures).
+- 2026-11-14 — validation CR-3 P3 ciblée (Sonnet) : 0 CRITICAL, 0 HIGH, 1 MEDIUM, 0 LOW ; remédié dans la fiche ; aucun
+  finding inter-fiches. (MEDIUM : la relecture de l'aperçu « avec `accountIds` » à chaque case, ajoutée en P2, perdait
+  les cours modifiés (AC-6 : valables pour la passation) et, à sélection vide, rendait 400 `empty` ; `rates` d'une devise
+  sans compte coché aurait rendu `FX_RATE_INVALID` : cours joints et limités aux devises cochées, pas de relecture à
+  sélection vide, test.) Vérifié : lignes 286-296 (`empty`, `notEligible`), 35-1 AC-4 bis (signature, `None`).
+  Axes non exercés : code réel de 35-1 à 35-4 (non écrit) ; passages hors diff d9c0018e..040185ac.

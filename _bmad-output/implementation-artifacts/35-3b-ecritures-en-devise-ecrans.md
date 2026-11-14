@@ -207,7 +207,7 @@ devise au cours d'ouverture choisi pour l'exercice (R6), afin de tenir mes livre
      de 35-3a AC-3, vecteur « CHF > 10¹³ » de la fixture) — une seule borne, au client comme au serveur, et non les
      quinze chiffres entiers de `DECIMAL(19,4)` ; un cours déduit d'un CHF saisi passe par les mêmes bornes. Le payload sérialise par `toFixed`, jamais `toString()`.
    - **Refus du serveur propres aux devises** (`POST` et `PUT`) : `RATE_UNAVAILABLE {currency, month}` — p. ex. le
-     `PUT` d'une écriture ancienne dont une ligne `afc` est **nouvelle ou modifiée** (compte, devise, montant, cours ou
+     `PUT` d'une écriture ancienne dont une ligne `afc` est **nouvelle ou modifiée** (compte, côté débit/crédit, devise, montant, cours, provenance ou
      date de l'écriture), sur une installation restaurée dont la table des cours, système, est vide (35-2 AC-7) ; le
      `PUT` du seul libellé passe, ses lignes inchangées n'étant jamais recontrôlées (35-3a AC-4, arbitrage A17) — →
      l'écran propose « Récupérer le mois » (`POST /exchange-rates/fetch`, mêmes rôles et même
@@ -767,3 +767,10 @@ devise au cours d'ouverture choisi pour l'exercice (R6), afin de tenir mes livre
   `xmldaily?d=20261231` (date future) rend `<datum>13.11.2026</datum>` sans erreur — la garde « veille strictement
   passée » de l'AC-1 (et 35-2, l. 85-86) est donc nécessaire, et tenue. Non exercés : sauvegarde, MCP, audit (aucune
   table ni action neuve depuis CR-2), i18n (clés neuves non énumérées), E2E, Vitest, PDF.
+- 2026-11-14 — validation CR-3 P3 ciblée (Sonnet) : 0 CRITICAL, 0 HIGH, 0 MEDIUM, 1 LOW ; remédié dans la fiche, aucun
+  inter-fiches. LOW : 35-3b-CR3-P3-1 la liste des champs d'une ligne `afc` « modifiée » (AC-2, `RATE_UNAVAILABLE`) omettait
+  la provenance, que 35-3a AC-4 (4) compte (`manual` repassée `afc`). Axes exercés : diff `d9c0018e..040185ac` de la fiche,
+  phrase par phrase ; A17 (epic l. 202-203) et 35-3a AC-4 (l. 221-235), AC-7 (l. 414) ; `VatPurchaseAssistant.svelte:55-56`
+  (`configMissing`, `noRates`) ; sens débit/crédit de la conversion (l. 362 contre l. 375-376) ; arithmétique du seuil
+  n × 0.005 et du cas `x.xx5` (l. 329-330) ; cohérence Tâches et AC-6. Non exercés : sauvegarde, MCP, audit, i18n, E2E,
+  Vitest, PDF.

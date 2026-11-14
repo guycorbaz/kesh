@@ -797,3 +797,14 @@ l'assistant n'est pas touché, AC-11).
   en exclusif (`update_currency_settings` : déjà rejouée), contacts 35-3a/35-5 (`holderAccountId`, aucune autre fiche
   ne reprend la recherche en `OR`), CSV, MCP. Non exercés : source journalière (aucun GET, la 35-1 n'y touche pas),
   manuels (PDF non lu), i18n au code, E2E au code.
+- 2026-11-14 — validation CR-3 P3 ciblée (Sonnet) : 0 CRITICAL, 0 HIGH, 0 MEDIUM, 0 LOW ; aucune remédiation, aucun
+  inter-fiches. Diff `d9c0018e..040185ac` relu phrase à phrase. Prémisses relues au code : `accounts.rs:156`
+  (`pool.begin()` propre au dépôt), `:205-211` (`UPDATE accounts SET postable = FALSE` sur le parent),
+  `routes/accounts.rs:267` (`accounts::create` appelé nu), `:337` (enveloppe `accounts::update`), `NewAccount` dérive
+  `Clone`, `retry.rs:40` (`retry_app_on_deadlock`), `audit_route_registry.rs:155`, `:302-309` (« vingt-cinq » ; les
+  « vingt-trois handlers » à enveloppe passent à vingt-six, cohérent avec + 3), `:444-445` ; précédent de `FORCE INDEX`
+  (`bank_imports.rs:474-484`, `refresh_tokens.rs:206`) ; 35-3a AC-4 (place de `companies`, cycle résiduel) ; 35-5:223
+  (compte `Rejouee`, autre partition, non touché) ; aucune autre fiche ne cite `create_account`, `parentId` ni la
+  liste (vi). Axes exercés : vérité au code des phrases ajoutées, cohérence des décomptes (vi) et de la partition,
+  nom des index vs AC-1, renvois P2-1/-2/-3. Non exercés : exécution réelle du cycle (non montable en lecture seule),
+  plan de requête MariaDB, manuels, i18n.
