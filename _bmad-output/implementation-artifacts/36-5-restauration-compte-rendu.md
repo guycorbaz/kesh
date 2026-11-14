@@ -225,8 +225,8 @@ le second grep couvre `goto` et `redirect`. Aucun autre site.
   Hors maintien : rien ne change. Le battement **continue** pendant l'import, et son 401 éventuel, après l'invalidation
   ou après `last + w`, est absorbé par D1. Borne (D3, formulation unique) : « Le maintien est posé à la confirmation pour
   `importHoldMs(B)` ; au succès, son échéance est remplacée par `maintenant + B` ; après un échec certain ou une issue
-  inconnue, l'échéance de la confirmation est gardée et le maintien est levé au premier geste, au démontage ou à cette
-  échéance ; au 401 de l'import, il est levé aussitôt. Il ne dure donc jamais au-delà de `confirmation +
+  inconnue, son échéance est ramenée à au plus `maintenant + B`, jamais allongée, et le maintien est levé au premier
+  geste, au démontage ou à cette échéance ; au 401 de l'import, il est levé aussitôt. Il ne dure donc jamais au-delà de `confirmation +
   max(importHoldMs(B), durée de l'import + B)`. » Au serveur, rien ne s'étend. *Écartées* : (a) suspendre aussi le battement pendant l'import — une
   restauration longue qui échoue trouverait la session close au serveur (C-36-5-2) ; (b) — rédaction de la P2 —
   calculer l'avertissement sur `max(last + w, échéance du maintien)` : il supprimait l'avertissement utile (avant la vraie
@@ -252,9 +252,12 @@ le second grep couvre `goto` et `redirect`. Aucun autre site.
     selon le réglage de l'Administrateur ; lire deux lignes de compte rendu en prend quelques secondes.
   - **Borne du maintien — formulation unique** (validation P5, V5-2 ; reprise telle quelle en D2 et dans *Ce qui doit
     rester vrai*) : « Le maintien est posé à la confirmation pour `importHoldMs(B)` ; au succès, son échéance est remplacée
-    par `maintenant + B` ; après un échec certain ou une issue inconnue, l'échéance de la confirmation est gardée et le
-    maintien est levé au premier geste, au démontage ou à cette échéance ; au 401 de l'import, il est levé aussitôt. Il
-    ne dure donc jamais au-delà de `confirmation + max(importHoldMs(B), durée de l'import + B)`. »
+    par `maintenant + B` ; après un échec certain ou une issue inconnue, son échéance est ramenée à au plus `maintenant +
+    B`, jamais allongée, et le maintien est levé au premier geste, au démontage ou à cette échéance ; au 401 de l'import,
+    il est levé aussitôt. Il ne dure donc jamais au-delà de `confirmation + max(importHoldMs(B), durée de l'import + B)`. »
+    *(Récrite à la revue de code P1, E1-2 : « l'échéance de la confirmation est gardée » laissait un écran sans geste
+    ouvert jusqu'à `confirmation + importHoldMs(B)`, au moins 121 min, après un échec rendu en quelques secondes. La borne
+    finale est inchangée : `min(confirmation + importHoldMs(B), échec + B)` ne la dépasse pas.)*
   - **Où vivent la marge et la formule** (V5-3) : dans `frontend/src/lib/features/admin-restore/admin-restore.api.ts`, à
     côté d'`uploadFullImport` (qui emploie déjà `LONG_OPERATION_TIMEOUT_MS`, `:46-48`), deux exports :
     `export const RESTORE_HOLD_MARGIN_MS = 60_000;` et une **fonction unique**
@@ -417,6 +420,12 @@ le second grep couvre `goto` et `redirect`. Aucun autre site.
    `releaseRestoreHold` une fois — l'écouteur n'est armé qu'après l'affichage du message d'échec ou d'issue inconnue. La levée différée se pose dans
    le `finally` : constat de lecture à la revue, ligne citée — le cas « `toast.error` jette » n'est pas joué en Vitest
    (rejet non géré d'un `onclick` sans `await`, compté comme erreur avant comme après le correctif, V2-3) ;
+   **ajouté à la revue de code P1** : (E1-1) après un échec certain, un nouvel import activé par `click` seul retire
+   l'écouteur — un `keydown` ou un `pointerdown` pendant l'import, puis pendant la lecture du compte rendu, n'appelle
+   pas `releaseRestoreHold` et `restoreHold` reste vrai ; (E1-2) B = 1 min, import de 90 s puis échec 400 :
+   `shortenRestoreHold(60 000)` appelé, `restoreHold` vrai à `échec + 59 999`, faux à `échec + 60 000`, sans levée ;
+   au store, `shortenRestoreHold` ramène l'échéance à au plus `maintenant + durée`, ne l'allonge jamais et ne pose rien
+   sans maintien ;
    (b) au module de session (`authState.restoreHold` du simulacre réglé à vrai) : **avant** `last + w`, tout est
    d'aujourd'hui — le battement part, l'avertissement paraît à `last + w − 60 000` et vaut le temps restant, `stayActive()`
    l'efface et écrit `lastActivity` ; **à partir de** `last + w` : le `tick` ne ferme pas et `warningRemainingMs` vaut
@@ -530,7 +539,7 @@ devient partiel de la même façon, `uploadFullImport` restant un `vi.fn()`, fau
 | M7′a | `logout()` ne remet plus le maintien à zéro | AC6 (`auth.svelte.test.ts`, test de `logout()`, `fetch` simulé) |
 | M7′b | `clearSession()` ne remet plus le maintien à zéro | AC6 (`auth.svelte.test.ts`, test de `clearSession()`) |
 | M7″ | dans `logout()`, la levée déplacée **après** le `await fetch` | AC6 (`fetch` pendant : `restoreHold` encore vrai) |
-| M8 | `sessionIdle.stop()` retiré du succès | AC2 (Vitest du panneau ; E2E de D5, seconde partie : compteur ≥ 1, cf. D5) |
+| M8 | `sessionIdle.stop()` retiré du succès | AC2 (Vitest du panneau ; E2E de D5, seconde partie : compteur ≥ 1, cf. D5 — *prévision, non jouée en E2E : la mutation n'a été jouée qu'en Vitest, où AC2 la tue ; revue P1, A1-4*) |
 | M9 | la garde du client appliquée **toujours** (maintien ignoré : jamais d'effacement ni de redirection après un renouvellement échoué) | AC6 — les tests 401 existants du client (`:246-267`, `:327-343`, `:567-581`) rougissent : la preuve que la fermeture ordinaire n'est pas affaiblie |
 | M10 | la fermeture de `recordActivity` non conditionnée au maintien | AC3 (b) (`keydown` sous maintien, après `last + w`) |
 | M10′ | sous maintien, après `last + w`, `recordActivity` écrit l'activité | AC3 (b) (`lastActivity` relue inchangée) |
@@ -543,12 +552,15 @@ devient partiel de la même façon, `uploadFullImport` restant un `vi.fn()`, fau
 | M16 | le cas `UNAUTHENTICATED` de l'import retiré du `catch` (message affiché, pas d'`expireSession`) | AC4 |
 | M17 | la confirmation pose `holdForRestore(B)` au lieu de la borne de la phase 1 | AC5 bis (c) et (d) (B = 1 min, import de plus d'une minute : maintien levé avant la réponse) |
 | M17′ | la borne de la phase 1 réduite à `max(B, LONG_OPERATION_TIMEOUT_MS)` (sans le rejeu ni la marge, rédaction de la P3) | AC5 bis (c) (7 260 000 attendu) |
-| M18 | `holdForRestore` prend le maximum de l'échéance courante et de la nouvelle au lieu de la remplacer (l'heure survit au succès) | AC5 bis (a) (seconde pose plus courte) et (d) (échéance à `+60 000` après le succès) |
+| M18 | `holdForRestore` prend le maximum de l'échéance courante et de la nouvelle au lieu de la remplacer (l'heure survit au succès) | AC5 bis (a) (seconde pose plus courte) et (d) (échéance à `+60 000` après le succès) — *au développement, tuée par (a) seul : (d) ne la discrimine pas, la minuterie de B levant le maintien à `+60 000` (revue P1, A1-1)* |
 | M19 | au démontage en phase 2, `expireSession()` retiré (levée seule) | AC5 (c) |
 | M20 | au démontage, `expireSession()` appelé même quand `reconnecting` est vrai | AC5 (d) |
 | M21 | `keepHold` non posé au succès (le `finally` arme la levée au geste après `holdForRestore(B)`) | AC2 (`releaseRestoreHold` non appelé après le succès, puis un geste : toujours pas) (V4-7) |
 | M22 | la minuterie de B non effacée au démontage en phase 2 | AC5 (c) (`expireSession` appelé deux fois) |
 | M23 | l'écouteur de geste armé à la confirmation (au début de `confirmImport`) au lieu du `finally` | AC3 (a), « geste pendant l'import » (`releaseRestoreHold` appelé pendant l'import) (V5-1) |
+| M24 | le retrait de l'écouteur en tête de `confirmImport` supprimé (revue P1, E1-1) | AC3 (a), E1-1 (nouvel import par `click` seul : geste pendant l'import) |
+| M25 | `shortenRestoreHold(B)` retiré du `finally` (l'échéance de la confirmation gardée, revue P1, E1-2) | AC3 (a), E1-2 (`restoreHold` faux à `échec + 60 000`) |
+| M26 | `shortenRestoreHold` prend le maximum au lieu du minimum (l'échéance allongée) | AC3 (a), E1-2 au store (« n'allonge jamais ») |
 
 *Retirées à la P4 (simplification de D2, V4-1)* : M15 (« maintien gardé à l'issue inconnue ») — l'issue inconnue garde
 désormais le maintien jusqu'au premier geste, ce que tuent M5 et M5″. Recompte de la table : M1, M1′, M2, M3, M4, M5,
@@ -649,9 +661,9 @@ se contrôle aplati. Aucun autre fichier commun. 36-1 à
   (#895) ; un 401 hors maintien renvoie à `/login?reason=session_expired`. Le serveur ne change pas.
 - Le maintien n'est posé que par le panneau de restauration, ne couvre que l'import en cours et la lecture du compte
   rendu. Borne (D3, formulation unique) : « Le maintien est posé à la confirmation pour `importHoldMs(B)` ; au succès,
-  son échéance est remplacée par `maintenant + B` ; après un échec certain ou une issue inconnue, l'échéance de la
-  confirmation est gardée et le maintien est levé au premier geste, au démontage ou à cette échéance ; au 401 de
-  l'import, il est levé aussitôt. Il ne dure donc jamais au-delà de `confirmation + max(importHoldMs(B), durée de
+  son échéance est remplacée par `maintenant + B` ; après un échec certain ou une issue inconnue, son échéance est
+  ramenée à au plus `maintenant + B`, jamais allongée, et le maintien est levé au premier geste, au démontage ou à cette
+  échéance ; au 401 de l'import, il est levé aussitôt. Il ne dure donc jamais au-delà de `confirmation + max(importHoldMs(B), durée de
   l'import + B)`. » Il ne survit ni à la disparition du panneau, ni à `logout()`, ni à `clearSession()`, ni à un rechargement (état de module). **Un renouvellement réussi ne le
   lève jamais** (`login()` ne le touche pas, V2-1) ; aucune connexion faite dans cet onglet n'en hérite (D1).
 - Le maintien ne prolonge rien au serveur et ne change rien avant `last + w` : il diffère seulement le renvoi local à la
