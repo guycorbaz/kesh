@@ -1044,3 +1044,12 @@ development_status:
   34-11a2-carte-credit-creation: done  # #972 ; après 34-11a1 ; revue de code P1 (Opus) → P2 (Sonnet, 0 au-dessus de LOW), 2026-11-12
   34-11b-carte-credit-releve: done  # #972 ; après 34-11a2 et 34-4 ; développée le 2026-11-12 (34-4 et 34-11a2 fusionnées) ; revue P1 → P2 → P3 ciblée close le 2026-11-12
   epic-34-retrospective: done  # 2026-11-12 : epic-34-retro-2026-11-12.md, en autonomie ; 330 issues et 163 bugs au tag v0.17.6
+  epic-35: in-progress
+  35-0-kickoff: done  # 2026-11-14 : epic-35-multi-devises.md ; demande de Beat (contributeur), une PR à la fin ; architecture par bmad-party-mode (consensus au tour 2)
+  35-1-reglage-et-devise-des-comptes: ready-for-dev
+  35-2-cours-mensuels-afc: ready-for-dev
+  35-3-ecritures-en-devise: split  # 2026-11-14, à la rédaction : 35-3a (serveur) et 35-3b (écrans)
+  35-3a-ecritures-en-devise-modele: ready-for-dev
+  35-3b-ecritures-en-devise-ecrans: ready-for-dev
+  35-4-rapports-en-devise: ready-for-dev
+  35-5-reevaluation-fin-exercice: ready-for-dev
