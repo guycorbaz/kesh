@@ -202,6 +202,33 @@ Prime sur CR-2 et sur ses arbitrages là où ils divergent.
   - A17 — S6 : au `PUT` d'une écriture, seules les lignes `afc` nouvelles ou modifiées sont contrôlées contre le cours
     AFC en vigueur ; une ligne inchangée ne l'est jamais (35-3a AC-4, 35-3b AC-2).
 
+## Revue 2 de Beat — CR-4 (2026-11-14)
+
+Prime sur tout ce qui précède là où il diverge.
+
+- **T1 — Assistant de démarrage.** Pas de constante (déjà retirée par S4). L'assistant **demande la date de début du
+  premier exercice** (défaut : 1er janvier de l'année en cours ; fin = veille du même jour un an plus tard,
+  modifiable dans *Exercices*) ; le multi-devises se règle **plus tard**, dans les paramètres. Remplace l'ancien A1.
+- **T2 — Tests d'exercices** : commençant le **1er janvier**, le 1er avril et le 1er juillet (plus les durées de 6 et
+  18 mois de S4).
+- **T3 — Devise portée par le compte seul (DB DRY).** La ligne d'écriture **ne stocke pas** la devise : elle se lit
+  sur le compte, dont la devise est verrouillée dès la première ligne (35-1). La ligne garde `amount_currency`,
+  `exchange_rate`, `rate_source`. Cas admis, par les comptes de l'écriture : **CHF–CHF** ; **devise–CHF** (et l'inverse),
+  avec cours ; **devise–même devise** (p. ex. EUR–EUR : chaque ligne a sa valeur CHF au cours AFC du mois ou au cours
+  fixé dans l'écriture). Refusé : **deux devises étrangères différentes** (EUR–USD) → passer par le compte de
+  conversion (R7). L'API peut recevoir `foreign.currency` ; s'il est présent, il doit égaler la devise du compte.
+  Les réponses donnent la devise lue sur le compte.
+- **T4 — Cours d'ouverture = cours de clôture précédent.** Pour que les valeurs CHF concordent d'un exercice à
+  l'autre, le cours d'ouverture par défaut est **celui de la clôture de l'exercice précédent** : genre « jour »
+  → cours journalier de la veille de l'ouverture (= jour de clôture précédent) ; genre « mois » → cours mensuel
+  **du dernier mois de l'exercice précédent** (et non plus du premier mois du nouvel exercice). Par défaut, un exercice
+  qui suit un exercice Kesh reprend le genre de clôture de celui-ci. Rappel : dans Kesh, les soldes de bilan sont
+  cumulés d'un exercice à l'autre (aucune écriture de report) ; le cours d'ouverture ne sert qu'aux soldes
+  d'ouverture d'une société neuve et à l'affichage.
+- **T5 — Montant en devise « pour information » sur une écriture CHF : rejeté** (Beat : « feature-creep ») ; à tracer
+  comme idée (C-35-8), éventuellement pour la réconciliation ou la saisie automatique de factures.
+- **T6 — A6 approuvé** (compte de conversion à créer).
+
 ## Source des cours — établie le 2026-11-14
 
 - Page ESTV *MWST Monatsmittelkurse* : « XML-File » → `https://www.backend-rates.bazg.admin.ch/api/xmlavgmonth`.
