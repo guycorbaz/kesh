@@ -141,7 +141,8 @@ que mon bilan présente ces comptes au cours de clôture et que l'écart aille a
    `ILLEGAL_STATE_TRANSITION` de `close`) ; forme de
    la requête (bornes ci-dessous) → 400 `FX_RATE_INVALID`, ou 400 `FX_REVALUATION_ACCOUNT_INVALID` sur `accountIds` ; cours AFC manquant pour une
    devise sélectionnée sans surcharge → 404 `RATE_UNAVAILABLE`.
-   **Dans la transaction**, après tous les verrous de l'AC-2 et **dans le même ordre qu'avant la transaction** :
+   **Dans la transaction**, après tous les verrous de l'AC-2 et **dans le même ordre qu'avant la transaction** (sauf le
+   `RATE_UNAVAILABLE` d'une devise changée entre-temps, qui ne peut naître qu'ici et vient après les comptes, ci-dessous) :
    réglage relu sous verrou (étape (0)) : mono-devise → 409 `MULTI_CURRENCY_DISABLED` ; exercice clos →
    `FISCAL_YEAR_CLOSED` ; **exercice antérieur encore ouvert → `EARLIER_FISCAL_YEAR_OPEN`** (comme K1 : le cumul lu ne
    serait plus stable) ; comptes de différences de change **revalidés** (société, actif,
@@ -187,7 +188,8 @@ que mon bilan présente ces comptes au cours de clôture et que l'écart aille a
 6. **AC-6 — Écran** : depuis *Exercices* (exercice ouvert), action « Réévaluer les devises », **affichée seulement en
    multi-devises** (D1 : en mono-devise, rien n'apparaît) **et aux rôles Comptable et Administrateur** (AC-5) : tableau de l'aperçu,
    cours modifiables par devise (source affichée : AFC ou manuel), cases par compte (comptes archivés grisés avec
-   avertissement), total des gains et des pertes, « Passer l'écriture », lien vers l'écriture passée ; captures d'écran.
+   avertissement ; au-delà de 498 comptes admissibles, l'avis de présélection tronquée de l'AC-1, et pas plus de 498 cases
+   cochées), total des gains et des pertes, « Passer l'écriture », lien vers l'écriture passée ; captures d'écran.
 7. **AC-7 — Tests** : deux exercices (achat EUR en N-1, réévaluation N-1, mouvements N, réévaluation N) : solde CHF au
    31.12.N = round(solde EUR × cours) exactement ; exercice **se terminant le 30 juin** → cours de juin ; rejeu sans écriture ; compte
    décoché ou de résultat : aucune ligne ; cours surchargé figé sur la ligne ; refus des gardes. S'y ajoutent :
@@ -277,3 +279,6 @@ que mon bilan présente ces comptes au cours de clôture et que l'écart aille a
   présélection ajoutée en P5 — `reason: "tooMany"`. LOW : `details` d'une somme de contrepartie sans devise, variante
   `DbError` rendue aussi par l'aperçu ; place du `RATE_UNAVAILABLE` en transaction dans l'ordre de l'AC-4 ; champ de
   réponse de la présélection tronquée et son test ; `notEligible` à l'aperçu.)
+- 2026-11-14 — validation P7 ciblée (Sonnet) : 0 CRITICAL, 0 HIGH, 0 MEDIUM, 2 LOW ; remédiés dans la fiche ; aucun
+  finding inter-fiches. (LOW : « même ordre qu'avant la transaction » contredit par le `RATE_UNAVAILABLE` en transaction
+  placé après les comptes ; avis de présélection tronquée et plafond de 498 cases absents de l'écran, AC-6.)
