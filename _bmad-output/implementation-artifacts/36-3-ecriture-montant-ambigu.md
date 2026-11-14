@@ -44,7 +44,8 @@ afin qu'aucune écriture équilibrée ne parte au millième du montant voulu san
 
 **La règle de la 35-6** — `frontend/src/lib/features/bank-accounts/format.ts` :
 - `:244` `const GROUP_SEPARATOR = "['’\\s]";` (apostrophes droite et typographique, blancs) ; `:280-332`
-  `openingAmountKind`, dont le prédicat d'ambiguïté, `:321-328` :
+  `openingAmountKind`, dont le prédicat d'ambiguïté, `:317-324` (*lignes corrigées à l'étape 0, V1-5 : la fiche
+  disait `:321-328` ; le bloc cité est exact*) :
   ```ts
   if (
   	hasDecimal &&
@@ -61,7 +62,8 @@ afin qu'aucune écriture équilibrée ne parte au millième du montant voulu san
   est relue par le test de parité Rust (`crates/kesh-api/src/routes/opening_balances.rs`).
 
 **Le serveur** n'est pas modifié (C-e350-19, second commentaire de #1051) ; il rend les montants à quatre décimales
-(`crates/kesh-api/src/routes/journal_entries.rs:222-223` `debit: l.debit.to_string()`, colonne `DECIMAL(19,4)` ;
+(`crates/kesh-api/src/routes/journal_entries.rs:221-222` `debit: l.debit.to_string()`, colonne `DECIMAL(19,4)` —
+*lignes corrigées à l'étape 0, V1-5 : la fiche disait `:222-223`* ;
 `crates/kesh-api/tests/opening_balances_e2e.rs:1681` `assert_eq!(body["lines"][1]["debit"], "400.0000");`). Une écriture
 rouverte en édition (`form-helpers.ts:27-30` `amountToFieldValue`, valeur gardée telle quelle) porte donc « 1.2340 »,
 jamais « 1.234 » : la règle ne la refuse pas (AC4 le constate).
@@ -177,7 +179,9 @@ celle de l'étape de rédaction ; l'issue la confirme.
   `kind: 'empty' | 'clear' | 'ambiguous' | 'unreadable'` et, pour `clear`, `value: Big` et `payload: string`.
   Grammaire, sans rognage (le journal n'en fait pas aujourd'hui, inchangé) :
   `^(?:\d{1,3}(?:['’]\d{3})+|\d{1,15})(?:[.,](\d{1,4}))?$`, partie entière de quinze chiffres au plus une fois les
-  apostrophes retirées. Les apostrophes admises sont la droite (U+0027) et la typographique (U+2019, celle que Kesh
+  apostrophes retirées. *Étape 0 (V1-1, V1-2) : la borne de quinze chiffres est une garde séparée (C-36-3-8), la regex
+  groupée n'en ayant pas ; le premier groupe commence par un chiffre non nul, `[1-9]\d{0,2}(?:['’]\d{3})+`
+  (« 0'123.456 », « 01'234 » → `unreadable`, C-36-3-7).* Les apostrophes admises sont la droite (U+0027) et la typographique (U+2019, celle que Kesh
   affiche, `balance.ts:137`) ; les groupes sont **stricts**, de trois chiffres (C-36-3-2). `grouped` = la saisie porte
   une apostrophe. Ambiguë si `isAmbiguousThousands(...)` (D1) ; sinon claire, `payload` = chiffres entiers sans
   apostrophe, puis `.` et la fraction telle que saisie si elle existe (« 1'234,50 » → `1234.50` ; zéros de tête
@@ -194,6 +198,10 @@ celle de l'étape de rédaction ; l'issue la confirme.
   que gardent les soldes de départ (`settings/opening-balances/+page.svelte:135`). Lecteur du journal, exporté
   `journalAmountReader` : `readJournalAmount(raw)` → `Big(0)` si `empty`, `value` si `clear`, `null` sinon.
   `JournalEntryForm` passe `journalAmountReader` aux deux. `hasInvalidAmount` et l'état `partial` suivent le lecteur.
+  *Étape 0 (V1-6) : `lines.map(classifyLine)` passerait l'indice pour lecteur — l'appel devient
+  `lines.map((l) => classifyLine(l, journalAmountReader))`, et le doc-comment de `classifyLine` le dit. Constaté aux
+  rouges : la première passe Vitest, l'appel laissé tel quel, a fait tomber toutes les suites du formulaire
+  (`TypeError: read is not a function`, `rouges.log`).*
   *Écartées* : (a) une seconde paire `computeJournalBalance` / `classifyJournalLine` — duplique la logique d'équilibre
   (DRY) ; (b) normaliser le champ à la frappe (réécrire « 1'234,50 » en « 1234.50 ») — l'utilisateur ne verrait plus ce
   qu'il a tapé, et l'ambiguïté se perdrait comme dans l'assistant aujourd'hui.
@@ -252,7 +260,8 @@ celle de l'étape de rédaction ; l'issue la confirme.
    `createJournalEntry` ; « 12'34 » → le message illisible ; « 1'234,50 » des deux côtés → « ✓ Équilibré »,
    *Valider* appelle `createJournalEntry` avec `debit: '1234.50'` et `credit: '1234.50'` sur les lignes concernées.
    En édition, une écriture à `debit: '1.2340'` (forme du serveur) s'affiche sans message et se renvoie avec
-   `'1.2340'`.
+   `'1.2340'`. *Étape 0 (V1-4) : les deux lignes portent un compte imputable (aide `pick`), et un cas témoin
+   « 1.23 » / « 1.23 » montre *Valider* actif — sans quoi « Valider désactivé » passerait avec le défaut présent.*
 5. **AC5 — L'assistant** (`vat-purchase.test.ts`, `readHtAmount`) : « 1.234 » → `ambiguous`, `usable` faux ;
    « 1'234.50 » → `payload` `1234.50`, `usable` vrai ; « 0.004 » → `clear`, `usable` faux (règle du centime
    inchangée) ; `buildPurchaseVatLines` sur le `payload` de « 1'234.50 » à 8.10 → charge `1234.50`, TVA `99.99`
@@ -285,6 +294,8 @@ celle de l'étape de rédaction ; l'issue la confirme.
     sans apostrophe, sont refusés comme ambigus} (\texttt{1.234}~: mille deux cent trente-quatre, ou un franc
     vingt-trois~?)~: écrivez \texttt{1'234} ou \texttt{1.2340}, comme pour le solde d'ouverture d'un compte
     (\S\ref{sec:solde-ouverture-compte-bancaire}). L'assistant TVA achat applique la même règle à son montant HT. »
+    *Étape 0 (V1-8, C-36-3-11) : le texte écrit ajoute « par groupes de trois chiffres ; une espace entre les milliers
+    n'est pas admise », borne le renvoi à « la même règle d'ambiguïté », et nomme « Montant illisible ».*
     Le PDF se régénère **à l'intégration**, après l'union (fichier d'epic, *Fichiers communs*) ; contrôle aplati :
     `pdftotext docs/manual/fr/user-manual.pdf - | tr '\n' ' ' | tr -s ' ' | /usr/bin/grep -c 'apostrophe des milliers'`
     ≥ 1 (aucune occurrence à `4de0bcc7e` dans le `.tex` : `git grep -c "apostrophe des milliers" -- docs/manual/fr/user-manual.tex` vide).
@@ -311,12 +322,12 @@ restauration `git restore --worktree -- <fichier>` puis `touch` ; journaux `mut/
 |---|---|---|
 | M1 | `readJournalAmount` ne consulte pas le prédicat (tout `clear`) | AC3, AC4, AC7 |
 | M2 | `isAmbiguousThousands` rend toujours `false` | AC1, AC2 (`format.test.ts`), AC3 |
-| M3 | le prédicat oublie `!grouped` | AC1, AC3 (« 1’234.567 ») |
+| M3 | le prédicat oublie `!grouped` | AC1 (`{ '1', '234', true }`) — *V1-3 : « 1’234.567 » ne la tue pas (quatre chiffres entiers) ; avec C-36-3-7, aucune saisie du journal ne la tue* |
 | M4 | le prédicat admet une partie nulle (`/^0*[0-9]{1,3}$/`) | AC1, AC3 (« 0.500 ») |
 | M5 | `payload` garde les apostrophes | AC3, AC4, AC7 (le serveur refuserait) |
 | M6 | `JournalEntryForm` appelle `computeBalance` / `classifyLine` sans lecteur | AC4, AC7 |
 | M7 | `defaultAmountReader` remplacé par la lecture du journal | AC3 (non-régression du défaut) |
-| M8 | l'assistant passe `htAmount` brut à `buildPurchaseVatLines` | AC8 (« 1'234.50 ») |
+| M8 | l'assistant passe `htAmount` brut à `buildPurchaseVatLines` (depuis C-36-3-9 : `purchaseVatEntry` le passe brut) | `vat-purchase.test.ts` (`purchaseVatEntry`), AC8 (« 1'234.50 ») |
 | M9 | `readHtAmount` ignore `ambiguous` | AC5, AC8 |
 | M10 | une ligne ambiguë affiche le message illisible | AC4 |
 | M11 | groupes libres (`['’]\d+` au lieu de `['’]\d{3}`) | AC3, AC4 (« 12'34 ») |

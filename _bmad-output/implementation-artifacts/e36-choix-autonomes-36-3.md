@@ -60,3 +60,50 @@ réversibilité.
 - **Retenu** : la branche change le `.tex` ; le PDF et son contrôle aplati se font à l'intégration (AC10).
 - **Écartée** : régénérer le PDF dans la branche — conflit binaire certain avec 36-4 et 36-5.
 - **Réversible** : oui.
+
+## Choix du développement (2026-11-14, étape 0 et suivantes)
+
+### C-36-3-7 — Un premier groupe à zéro de tête est illisible (V1-2)
+
+- **Contexte** : la grammaire de D2 admettait « 0'123.456 » (groupé, partie entière `0123`) : claire, charge
+  `0123.456` ; rien n'en disait le sort (validation P1, V1-2).
+- **Retenu** : le premier groupe d'une partie entière groupée commence par un chiffre non nul
+  (`[1-9]\d{0,2}(?:['’]\d{3})+`) : « 0'123.456 », « 01'234 » → `unreadable`. Conséquence : dans la grammaire du journal,
+  toute saisie groupée a quatre chiffres entiers ou plus sans zéro de tête, donc `!grouped` n'y change jamais le verdict ;
+  la mutation M3 n'est tuée qu'au niveau du prédicat (AC1, cas `{ '1', '234', true }`) et par la 35-6 si sa table a un
+  cas groupé court.
+- **Écartées** : (a) la laisser claire — une saisie « 0'123 » n'a pas de sens, et la charge à zéro de tête est
+  inutilement surprenante ; (b) la juger ambiguë — elle ne l'est pas.
+- **Réversible** : oui ; refus à l'écran seulement.
+
+### C-36-3-8 — Quinze chiffres entiers : une garde séparée (V1-1)
+
+- **Contexte** : la regex groupée de D2 n'a pas de borne haute ; AC3 exige « 1'234'567'890'123'456 » → `unreadable`.
+- **Retenu** : `JOURNAL_MAX_INTEGER_DIGITS = 15`, contrôlé sur les chiffres entiers une fois les apostrophes retirées.
+- **Réversible** : oui.
+
+### C-36-3-9 — L'écriture de l'assistant tirée d'une fonction pure (V1-7)
+
+- **Contexte** : `insert()` de `VatPurchaseAssistant.svelte` lisait le HT brut ; la mutation M8 (« HT brut passé à
+  `buildPurchaseVatLines` ») n'était tuée que par l'E2E, qui ne tourne qu'à la clôture.
+- **Retenu** : `purchaseVatEntry(params)` dans `vat-purchase.ts` lit le HT brut par `readHtAmount`, rend `null` s'il
+  n'est pas utilisable, sinon les lignes sur la charge normalisée et `isExempt` ; `insert()` n'appelle qu'elle. M8 se
+  joue sur cette fonction et `vat-purchase.test.ts` la tue.
+- **Écartée** : une suite de composant pour l'assistant (D5, écartée par la fiche).
+- **Réversible** : oui.
+
+### C-36-3-10 — Deux fonctions d'aide dans `balance.ts` pour l'écran
+
+- **Contexte** : D4 décrit le message de ligne (ambigu prioritaire) et la charge normalisée, sans dire où vit la logique.
+- **Retenu** : `lineAmountProblem(debit, credit)` et `journalAmountPayload(raw)` (`'0'` pour le vide, `null` pour un
+  refus), testées dans `balance.test.ts` ; le formulaire n'envoie rien si une charge est `null` (garde redondante avec
+  `canSubmit`, plutôt que de deviner un montant).
+- **Écartée** : la logique en ligne dans le gabarit — non testable sans composant (M10).
+- **Réversible** : oui.
+
+### C-36-3-11 — Le manuel dit l'espace refusée et borne le renvoi à la 35-6 (V1-8)
+
+- **Contexte** : le texte proposé par AC10 renvoyait au solde d'ouverture, dont la grammaire admet blancs et souligné.
+- **Retenu** : « une espace entre les milliers n'est pas admise » ; « la même règle d'ambiguïté que pour le solde
+  d'ouverture » ; une phrase sur « Montant illisible ».
+- **Réversible** : oui.
