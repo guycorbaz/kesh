@@ -239,21 +239,29 @@ describe('readJournalAmount (Story 36-3, AC3)', () => {
 		'-5',
 		' 5',
 		'1e3',
-		// Revue P1 (E1) — les bornes de la grammaire, figées : blancs insécables, apostrophes
-		// voisines (seules U+0027 et U+2019 groupent), séparateur sans chiffre d'un côté, cinq
-		// décimales même nulles, chiffres non ASCII, retour à la ligne final.
-		'1 234',
-		'1 234',
-		'1‘234',
-		'1´234',
-		'1ʼ234',
+		// Revue P1 (E1) — séparateur sans chiffre d'un côté, cinq décimales même nulles.
 		'.5',
 		'5.',
-		'1.23450',
-		'١٢٣',
-		'１２３',
-		'5\n'
+		'1.23450'
 	])('%j → unreadable', (raw) => {
+		expect(readJournalAmount(raw).kind).toBe('unreadable');
+	});
+
+	// Revue P1 (E1), titres distincts depuis la passe P2 (P2-2) — les caractères voisins de ceux
+	// que la grammaire admet, construits par code point (source lisible, rapport sans ambiguïté) :
+	// blancs insécables, apostrophes voisines (seules U+0027 et U+2019 groupent), chiffres non
+	// ASCII, retour à la ligne final.
+	const cp = (...codes: number[]) => String.fromCodePoint(...codes);
+	it.each([
+		['blanc insécable U+00A0', `1${cp(0xa0)}234`],
+		['blanc insécable fin U+202F', `1${cp(0x202f)}234`],
+		['apostrophe ouvrante U+2018', `1${cp(0x2018)}234`],
+		['accent aigu U+00B4', `1${cp(0xb4)}234`],
+		['lettre apostrophe U+02BC', `1${cp(0x2bc)}234`],
+		['chiffres arabo-indiens', cp(0x661, 0x662, 0x663)],
+		['chiffres pleine chasse', cp(0xff11, 0xff12, 0xff13)],
+		['retour à la ligne final', `5${cp(0x0a)}`]
+	])('%s → unreadable', (_nom, raw) => {
 		expect(readJournalAmount(raw).kind).toBe('unreadable');
 	});
 
