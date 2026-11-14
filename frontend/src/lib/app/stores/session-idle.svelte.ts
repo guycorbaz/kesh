@@ -18,8 +18,17 @@
  * le serveur place son échéance à `réception − âge + N`.
  *
  * Ce qui n'y est pas, délibérément : aucun verrou entre onglets, aucun onglet
- * maître, aucune suspension. Deux onglets qui envoient le même battement à la
- * même seconde écrivent deux fois la même échéance.
+ * maître, aucune suspension — hormis le maintien de restauration ci-dessous.
+ * Deux onglets qui envoient le même battement à la même seconde écrivent deux
+ * fois la même échéance.
+ *
+ * Story 36-5 (#931, KF-056) — sous **maintien de restauration**
+ * (`authState.restoreHold`, posé par le panneau de restauration), rien ne
+ * change avant l'échéance (battement, avertissement, « Rester connecté ») ;
+ * une fois l'échéance atteinte, ni fermeture, ni écriture d'activité, ni
+ * avertissement tant que le maintien dure — le serveur, lui, a déjà fermé la
+ * session ; la fermeture a lieu au tic qui suit la levée ou l'échéance du
+ * maintien. Elle est différée, jamais annulée.
  *
  * Ce qui compte comme activité : `keydown`, `pointerdown`, `pointermove`
  * (seulement si les coordonnées d'écran changent : le navigateur émet des
@@ -246,9 +255,10 @@ function concile(now: number, idleExpiresIn: unknown): void {
 
 function recordActivity(): void {
 	const now = Date.now();
-	// D'abord l'échéance : une activité au-delà ne ranime pas la session.
+	// D'abord l'échéance : une activité au-delà ne ranime pas la session. Sous
+	// maintien de restauration (Story 36-5), elle ne la ferme pas non plus.
 	if (deadlineReached(now)) {
-		void closeSession();
+		if (!authState.restoreHold) void closeSession();
 		return;
 	}
 	if (now - lastWriteAt < ACTIVITY_WRITE_THROTTLE_MS) return;
@@ -329,6 +339,12 @@ function tick(): void {
 	const last = currentLast(now);
 	const w = windowMs();
 	if (w !== null && shared && now >= last + w) {
+		// Story 36-5 — sous maintien de restauration, la fermeture attend la levée ;
+		// la session est close au serveur, il n'y a rien à annoncer ni à prolonger.
+		if (authState.restoreHold) {
+			warningRemainingMs = null;
+			return;
+		}
 		void closeSession();
 		return;
 	}
@@ -360,7 +376,8 @@ async function sendHeartbeat(idleMs: number, previousReported: number, gen: numb
 	} catch {
 		// Échec (réseau, 5xx) : l'activité redevient « à rapporter » ; `heartbeatAt`
 		// garde sa valeur, si bien que l'envoi se retente au pas de 15 s suivant.
-		// Un 401 définitif a déjà effacé la session et redirigé (chemin 401).
+		// Un 401 définitif a déjà effacé la session et redirigé (chemin 401) — sauf
+		// sous maintien de restauration (Story 36-5), où il est absorbé ici.
 		// #898 (N-E5) : sans activité rapportée avant (`-Infinity`), `writeKey`
 		// n'écrirait rien et l'activité resterait marquée « rapportée » — la clé
 		// est retirée, et l'activité repart au pas de 15 s suivant.
@@ -468,7 +485,8 @@ export const sessionIdle = {
 		if (!running) return;
 		const now = Date.now();
 		if (deadlineReached(now)) {
-			void closeSession();
+			// Story 36-5 — sous maintien de restauration : ni fermeture, ni écriture.
+			if (!authState.restoreHold) void closeSession();
 			return;
 		}
 		lastWriteAt = now;

@@ -63,6 +63,19 @@ let _idleTimeoutMinutes: number | undefined = undefined;
 let _idleExpiresIn: number | null | undefined = undefined;
 
 /**
+ * Story 36-5 (#931, KF-056) — échéance (ms) du **maintien de session pendant
+ * une restauration**, `null` sans maintien. Non réactif, propre à l'onglet
+ * (état de module : un rechargement le perd). Posé et réarmé par le panneau
+ * de restauration seul (`holdForRestore`) ; levé par `releaseRestoreHold()`,
+ * `logout()` et `clearSession()` — **jamais par `login()`**, que le
+ * renouvellement réussi appelle (`api-client.ts`, `doRefresh`) : sinon un
+ * renouvellement pendant l'import l'effacerait. Sous maintien, le chemin 401
+ * du client ne renvoie pas à la connexion et le module de session ne ferme
+ * pas au-delà de l'échéance d'inactivité ; il n'étend rien au serveur.
+ */
+let _restoreHoldUntil: number | null = null;
+
+/**
  * Story v011-5 — flag « setup-required » set à `true` quand `/me` ou tout autre
  * route protégée retourne `423 Locked` (table `users` vide côté backend, le
  * 1er admin n'a pas encore été créé via `/setup`). Le `+layout.ts` racine
@@ -127,12 +140,21 @@ export const authState = {
 		return _idleExpiresIn;
 	},
 
-	/** Story 36-5 (#931) — API du maintien, inerte : posée avant le correctif. */
+	/** Story 36-5 (#931) — vrai tant que le maintien de restauration n'est ni levé ni échu. */
 	get restoreHold(): boolean {
-		return false;
+		return _restoreHoldUntil !== null && Date.now() < _restoreHoldUntil;
 	},
-	holdForRestore(_durationMs: number): void {},
-	releaseRestoreHold(): void {},
+	/**
+	 * Story 36-5 (#931) — pose ou réarme le maintien pour `durationMs` à partir de
+	 * maintenant ; **remplace** toute échéance précédente, plus longue ou plus courte.
+	 */
+	holdForRestore(durationMs: number): void {
+		_restoreHoldUntil = Date.now() + durationMs;
+	},
+	/** Story 36-5 (#931) — lève le maintien. Idempotente. */
+	releaseRestoreHold(): void {
+		_restoreHoldUntil = null;
+	},
 
 	/**
 	 * Set l'état authentifié depuis le body de réponse `/login` ou `/me`.
@@ -189,6 +211,7 @@ export const authState = {
 	 * appelée à nouveau si l'app détecte un état desynchronisé.
 	 */
 	clearSession(options?: { broadcast?: boolean }) {
+		_restoreHoldUntil = null; // Story 36-5
 		_expiresIn = null;
 		_currentUser = null;
 		_idleTimeoutMinutes = undefined;
@@ -209,6 +232,9 @@ export const authState = {
 	},
 
 	async logout() {
+		// Story 36-5 — le maintien est levé AVANT la requête : elle n'a pas de délai
+		// d'abandon, et une déconnexion pendue ou en échec ne doit pas le laisser posé.
+		_restoreHoldUntil = null;
 		// POST /api/v1/auth/logout avec credentials: 'include' — le browser
 		// envoie automatiquement le cookie HttpOnly. Pas de body refresh_token.
 		await fetch('/api/v1/auth/logout', {
