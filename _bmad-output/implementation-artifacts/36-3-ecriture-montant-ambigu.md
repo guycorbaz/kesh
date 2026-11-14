@@ -1,6 +1,6 @@
 # Story 36-3 : l'écriture manuelle ne lit plus « 1.234 » comme 1,234 franc (#1051)
 
-Status: ready-for-dev
+Status: review
 
 *Fiche rédigée le 2026-11-14 par l'agent de rédaction des fiches de l'Epic 36 (Opus 5.5), worktree `kesh-36-3`, branche
 `story/36-3-ecriture-montant-ambigu`, par le workflow `bmad-create-story`, prompt `kesh-gate-logs/prompts/e36-fiche.md`.
@@ -412,13 +412,109 @@ suivent les modules : `frontend/scripts/lint-i18n-ownership.js`, `frontend/src/l
 
 ### Agent Model Used
 
+Claude Opus 5.5, en autonomie (prompt `kesh-gate-logs/prompts/e36-dev.md`), worktree `kesh-36-3`, voie 2, le 2026-11-14.
+
 ### Debug Log References
+
+Journaux sous `/home/gcorbaz/devel/kesh-gate-logs/e36-3/` : `etape0-inventaires.log` (sortie brute des trois commandes
+d'inventaire, de `journal_entries.rs:218-224` et de `format.ts:314-326`, à `a78115b69`) ; `rouges.log` (Vitest, deux passes) ;
+`e2e-rouges.log` ; `vitest-cible-1.log`, `vitest-cible-2.log`, `vitest-i18n-keys-1.log`, `check-1.log`, `lint-i18n-1.log` ;
+`e2e-cible-vert.log` ; `mut/resume.log`, `mut/M*.log` (script `mut/mut-36-3.py`) ; `captures.log` et `captures/` (script
+`captures-36-3.cjs`) ; `test-fast-ci-review.log`, `gate-ci-review.log`, `front-{check,lint,test-unit,build}-review.log`.
 
 ### Completion Notes List
 
+**Commits** (base `a78115b69`) : `bb708c479` tests d'abord (fonctions neuves à la lecture d'aujourd'hui) ; `0204e8e3c`
+implémentation ; `03afa30b5` E2E ; `01bc01e95` manuel (`.tex`) ; `ed6316c42` fiche (étape 0) et registre ; le commit de ce
+compte rendu. **Dernier commit de code : `03afa30b5`** ; `01bc01e95` ne touche que le `.tex`, les suivants que des artefacts.
+
+**Rouges** (`rouges.log`) :
+- Passe 1, sur les stubs : 46 rouges sur 222 (10 fichiers). Dont **toutes** les suites du formulaire (création et édition,
+  tests d'avant compris) : `TypeError: read is not a function` — le piège V1-6 (`lines.map(classifyLine)` passe l'indice
+  pour lecteur), constaté à l'exécution.
+- Passe 2, formulaire en `lines.map((l) => classifyLine(l))` : 3 rouges sur 22, ceux du comportement (« 1.234 » sans message
+  ambigu, « 12'34 » sans message illisible, « 1'234,50 » refusé). Le cas témoin « 1.23 » et l'édition à `1.2340` sont verts
+  au départ, comme prévu.
+- AC1 (3 cas ambigus), AC3 (ambigus, groupés, lecteur du journal, `lineAmountProblem`), AC5 et `purchaseVatEntry` : rouges
+  en passe 1. Verts au départ : AC1 non ambigus, non-régressions d'AC3, AC4 en édition, `format.test.ts` (AC2).
+- E2E (`e2e-rouges.log`) : les quatre sources du journal remises à `a78115b69` (code commité), frontend construit, les trois
+  tests visés rouges (« Montant ambigu » ou « Montant illisible » introuvables), puis sources restaurées
+  (`git restore --worktree` + `touch`).
+
+**Verts** : Vitest ciblé élargi (`vitest-cible-2.log`, après le recompte de `sitesTotal`) 835/835, 46 fichiers ;
+E2E ciblé (`e2e-cible-vert.log`) — `journal-entries.spec.ts` et `vat-purchase-assistant.spec.ts` entières — **28 passés**,
+backend port 3363 sur `kesh_e2e_e363`, frontend construit au code de `03afa30b5`.
+
+**Mutations** (`mut/resume.log`, HEAD `ed6316c42`, code commité avant) : M1 à M11 et **M10b** (`lineAmountProblem` rend
+« illisible » pour une ligne ambiguë) — **12 jouées, 12 tuées**. M3 est tuée par AC1 **et** par la table de la 35-6
+(« 1 2.345 », « 12'3.456 ») ; aucune saisie du journal ne la tue (C-36-3-7). M8 est tuée par `vat-purchase.test.ts`
+(`purchaseVatEntry`, C-36-3-9), sans E2E. Aucune mutation équivalente.
+
+**Gates au passage en `review`** (bases `kesh_e363` et `kesh_e2e_e363` remises à neuf sur la voie 2, à `ed6316c42`, dont le
+code est celui de `03afa30b5`) :
+- `scripts/test-fast.sh --ci` (voie 2) : **5445 exécutés, 5445 passés, 13 ignorés** (`test-fast-ci-review.log`) ;
+- `scripts/gate-ci.sh kesh_ci_e363` (voie 1) : **5452 passés, 0 échoué, 17 ignorés** (`gate-ci-review.log`) ;
+- frontend complet : `npm run check` 0 erreur, 29 avertissements, aucun dans un fichier de la story
+  (`front-check-review.log`) ; `lint-i18n-ownership` PASS ; `npm run test:unit` **3496 passés, 235 fichiers**
+  (`front-test-unit-review.log`) ; `npm run build` vert.
+- **Non lancés** : E2E complet et `gate-ci` de clôture — à la clôture, au dernier commit de code.
+
+**Captures** (AC11, thème clair, base jetable `kesh_e2e_e363`) : `kesh-gate-logs/e36-3/captures/01-ecriture-1.234-ambigu.png`,
+`02-ecriture-12-34-illisible.png`, `03-ecriture-1234-50-equilibree.png`, `04-assistant-ht-1.234-ambigu.png`. Une première
+prise montrait les bordures en pleine transition de couleur (`transition-colors` de la classe de base) ; reprise après la
+perte du focus et 800 ms.
+
+**Constats hors périmètre** :
+- Sous une ligne au montant refusé, « Ligne incomplète » s'affiche **en plus** du message de montant (capture 01) — déjà le
+  cas avant la story avec « Maximum 4 décimales ». Pas une régression ; laissé tel quel.
+- Les sites 4 (montant attendu) à 10 de l'inventaire par le symptôme restent à ouvrir en issue, un par site (C-36-3-5) ;
+  `settings/vat-rates/+page.svelte:287`, `:331` (`type="number"`, un taux et non un montant) n'est pas du même défaut.
+
+**Écarts** : aucun à la consigne Edit pour le code (tout par Edit ou Write) ; scripts versionnés hors dépôt pour les mutations
+(remplacement à motif unique vérifié, restauration `git restore` + `touch`), l'E2E et les captures. Un fichier
+`kesh-gate-logs/e36-3/rouges.log.tmp2` est resté (intermédiaire de journalisation ; aucun `rm` permis).
+
 ### File List
+
+- `frontend/src/lib/shared/utils/amount-ambiguity.ts` (neuf), `amount-ambiguity.test.ts` (neuf)
+- `frontend/src/lib/features/bank-accounts/format.ts`
+- `frontend/src/lib/features/journal-entries/balance.ts`, `balance.test.ts`
+- `frontend/src/lib/features/journal-entries/JournalEntryForm.svelte`, `JournalEntryForm.create.test.ts`,
+  `JournalEntryForm.edit.test.ts`
+- `frontend/src/lib/features/journal-entries/vat-purchase.ts`, `vat-purchase.test.ts`, `VatPurchaseAssistant.svelte`
+- `crates/kesh-i18n/locales/{fr-CH,de-CH,it-CH,en-CH}/messages.ftl`
+- `frontend/scripts/lint-i18n-ownership.js`, `frontend/src/lib/shared/i18n-keys.test.ts`
+- `frontend/tests/e2e/journal-entries.spec.ts`, `frontend/tests/e2e/vat-purchase-assistant.spec.ts`
+- `docs/manual/fr/user-manual.tex`
+- `_bmad-output/implementation-artifacts/36-3-ecriture-montant-ambigu.md`, `e36-choix-autonomes-36-3.md`,
+  `36-3-ecriture-montant-ambigu-review-prompt-p1.md`, `sprint-status.yaml`
 
 ## Change Log
 
 - 2026-11-14 — Fiche rédigée (Epic 36, phase 1), sur `4de0bcc7e`. Choix C-36-3-1 à C-36-3-6 au registre
   `e36-choix-autonomes-36-3.md`. Validation non lancée.
+- 2026-11-14 — **Validation terminée en une passe** : P1 Sonnet, 0 CRITICAL / 0 HIGH / 0 MEDIUM / 8 LOW
+  (`kesh-gate-logs/e36-3/validation-p1.md`). Trend : P1 0/0/0/8. Aucune passe de plus (aucun finding au-dessus de LOW).
+- 2026-11-14 — **Développement (Opus 5.5).** Étape 0, les huit LOW traités, ligne lue citée :
+  - **V1-1** — regex groupée sans borne : garde séparée (`balance.ts`,
+    `if (integerDigits.length > JOURNAL_MAX_INTEGER_DIGITS) return { kind: 'unreadable' };`), C-36-3-8 ; testée par
+    « 1'234'567'890'123'456 » et « 1234567890123456 ».
+  - **V1-2** — « 0'123.456 » : premier groupe `[1-9]\d{0,2}`
+    (`const JOURNAL_AMOUNT_RE = /^([1-9]\d{0,2}(?:['’]\d{3})+|\d{1,15})(?:[.,](\d{1,4}))?$/;`), `unreadable`, C-36-3-7 ;
+    cas ajoutés à AC3 (« 0'123.456 », « 01'234 »).
+  - **V1-3** — M3 : référence à « 1’234.567 » retirée du tableau ; tuée par AC1 et la table 35-6 (`mut/M3.log`).
+  - **V1-4** — AC4 : comptes choisis par `pick(0, '1000')`, `pick(1, '2000')` (`JournalEntryForm.create.test.ts`) et cas
+    témoin « 1.23 » / « 1.23 » où *Valider* est actif.
+  - **V1-5** — lignes : `format.ts:317-324` (lu à `etape0-inventaires.log` : `if (` … `return { kind: 'ambiguous' };`) ;
+    `journal_entries.rs:221` `debit: l.debit.to_string(),` ; corrigées dans la fiche. Quatre décimales du serveur confirmées
+    par `crates/kesh-api/tests/opening_balances_e2e.rs:1681` `assert_eq!(body["lines"][1]["debit"], "400.0000");`.
+  - **V1-6** — `JournalEntryForm.svelte:169` lu `const lineStatuses = $derived(lines.map(classifyLine));` → devenu
+    `lines.map((l) => classifyLine(l, journalAmountReader))` ; le piège s'est produit aux rouges.
+  - **V1-7** — `purchaseVatEntry` pure, appelée par `insert()` (C-36-3-9) ; M8 tuée sans E2E.
+  - **V1-8** — manuel : espace refusée, groupes de trois, renvoi borné à la règle d'ambiguïté (C-36-3-11) ; le décompte
+    des modules (cinq) est laissé à la revue de code, comme le rapport le propose.
+  Inventaires rejoués à `a78115b69`, sortie brute à `etape0-inventaires.log` : identique à celle de la fiche, plus
+  `settings/vat-rates/+page.svelte:287`, `:331` et `settings/dunning/+page.svelte:203`, `:277` au motif `type="number"`
+  (taux et entiers : hors du défaut). Choix C-36-3-7 à C-36-3-11. Tests d'abord, rouges, implémentation, E2E, manuel,
+  mutations 12/12, captures, gates du passage en revue verts (Dev Agent Record). `sitesTotal` 3036 → 3038, relevé par la
+  garde. **Status → review.**
