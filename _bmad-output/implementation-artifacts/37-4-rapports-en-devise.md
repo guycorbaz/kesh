@@ -173,9 +173,11 @@ exports, afin de rapprocher mes comptes PayPal ou Wise de leurs relevés et de c
      bancaire (`bank_accounts.rs:1871-1905`, compte lié jamais en devise, C-37-9) ; postes ouverts et lettrage
      (`letterings/open_items.rs:83`, `:91` : limite du lettrage, 37-3a AC-9), **et l'outil MCP `kesh_postes_ouverts`**
      qui les rend (V13, CR-6 : `mcp/outils/postes_ouverts.rs:210`, par `services/postes_ouverts.rs:98` →
-     `letterings::open_items` ; sortie `Poste` et `PostesOuverts`, `:125-161`, en CHF seulement — un compte en devise
-     lettrable y est atteignable ; aucun champ en devise ajouté, renvoi à la limite de 37-3a AC-9 ; test : un compte
-     de débiteurs USD rend ses postes au CHF de leurs lignes) ; réconciliation
+     `letterings::open_items` — site atteint par cet appel, non par le `grep` ci-dessus, qui ne relève que des
+     `SUM` ; sortie `Poste` et `PostesOuverts`, `:125-161`, en CHF seulement — un compte en devise lettrable y est
+     atteignable ; aucun champ en devise ajouté, renvoi à la limite de 37-3a AC-9 ; la devise du compte se lit par
+     `kesh_plan_comptable` (`devise`, 37-1 AC-8), et la description de l'outil, qui dit « solde », ne le dit pas en
+     devise : un agent lit des CHF ; test : un compte de débiteurs USD rend ses postes au CHF de leurs lignes) ; réconciliation
      (`reconciliation_link.rs:151`, `:801`, comptes en devise exclus, C-37-5) ; équilibre des écritures
      (`journal_entries.rs:522`, `:1684`, `:913`). Aucun n'est étendu ; un site neuf trouvé au développement s'ajoute
      ici, au Change Log.
@@ -219,7 +221,8 @@ exports, afin de rapprocher mes comptes PayPal ou Wise de leurs relevés et de c
 - [ ] `services/rapports.rs`, routes, MCP (limites).
 - [ ] CR-6 (V13, AC-7) : test `mcp_outils_e2e.rs` — `kesh_postes_ouverts` sur un compte de débiteurs USD lettrable
       (lignes en devise) rend `solde`, `total_ouvert` et les `debit`/`credit` des postes au CHF des lignes, sans champ
-      en devise ; site inscrit à l'inventaire « CHF seulement » du Change Log.
+      en devise (`reste_du` à `null` : aucune facture en devise) ; site inscrit à l'inventaire « CHF seulement » du
+      Change Log du développement.
 - [ ] Frontend : cinq vues, types ; Vitest — `IncomeStatementView.test.ts` et `JournalReportView.test.ts` **n'existent
       pas** (relevé du 2026-11-14) : à créer, avec le cas « mono-devise : rien de visible ne change » (AC-6) ; E2E
       (grand livre d'un compte USD).
@@ -301,3 +304,4 @@ exports, afin de rapprocher mes comptes PayPal ou Wise de leurs relevés et de c
   AC-9 ; test et tâche. Prémisses relues au code : `postes_ouverts.rs:125-161` (sorties `Poste`, `PostesOuverts`, en
   `Montant` seulement), `services/postes_ouverts.rs:98`, `letterings/open_items.rs:83-91`. AC touchés : AC-7, Tâches.
   Fiche à revalider (cycle CR-6).
+- 2026-11-14 — validation CR-6 P1 (Sonnet) : 0 CRITICAL, 0 HIGH, 0 MEDIUM, 2 LOW ; remédiés dans la fiche sauf <aucun inter-fiches>. LOW 37-4-CR6-P1-1 : l'inventaire AC-7 disait « sommes relevées par grep » et y rangeait un outil MCP sans `SUM` — précisé (atteint par `letterings::open_items`). LOW -P1-2 : l'agent MCP lit des CHF sans l'avoir dit (`solde`) — renvoi à `kesh_plan_comptable.devise` écrit ; test : `reste_du` à `null`. Relu au code : `mcp/outils/postes_ouverts.rs:210` (`nom`), `:125-161` (`Poste`, `PostesOuverts`, `Montant` seulement, aucun champ en devise), `services/postes_ouverts.rs:98` (`letterings::open_items`), `open_items.rs:83-91` (`SUM(jel.debit - jel.credit)`), `:346-355` (`require_viewable_account` : un compte de bilan en devise est atteignable) ; 37-3a AC-9 (limite du lettrage) cohérent ; epic l. 363 (V13). Non exercés : relecture complète hors diff CR-6, compilation, rendu, 37-1 AC-8 (`devise` de `kesh_plan_comptable`, citée, non relue).

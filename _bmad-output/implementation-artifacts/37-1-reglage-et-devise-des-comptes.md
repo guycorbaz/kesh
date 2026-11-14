@@ -104,14 +104,19 @@ l'assistant, nom « Exercice AAAA » ou « Exercice AAAA/AAAA » : AC-11). A22 e
    précisément la sortie qu'il s'agit d'étendre) : `sortie! struct Exercice` (`mcp/outils/exercices.rs:23-29`) gagne
    `multi_devises: bool`, `genre_ouverture` et `genre_cloture` (énumération des genres de l'AC-1, `RateKindChoice` / nom
    au développement, rendue en type **scellé** comme `statut: kesh_db::entities::FiscalYearStatus`, `:28` — jamais
-   `String`, qui ne compile pas, `mcp/sortie.rs:92`), posés à la construction (`:69-75`) depuis le `FiscalYear` que
+   `String`, qui ne compile pas, `mcp/sortie.rs:92` ; **l'énumération s'inscrit à `champ_enum!`**, `mcp/sortie.rs:131-143`
+   — sans cela `sortie!` ne compile pas : elle doit être sans champ (`x as isize`), `Serialize`, et ses valeurs écrites
+   `day`/`month`, celles du HTTP), posés à la construction (`:69-75`) depuis le `FiscalYear` que
    rend déjà `services::exercices::lister` ; présents en mono-devise aussi (ce ne sont pas des champs en devise, comme
    au HTTP) ; la description de l'outil (`:42-46`) les nomme. **Tests** : `mcp_outils_e2e.rs` — un exercice
    multi-devises au genre `month`/`day` et un mono-devise rendent les trois champs ; `mcp_contrat` et
    `mcp_gardes_lexicales` verts. **Mesure de taille** : l'outil n'est pas paginé (aucune `LIMITE`, absent de
-   `bornes_attendues`) ; la taille d'un `Exercice` avec les trois champs est mesurée (méthode de `tailles_mesurees`,
-   `mcp_outils_e2e.rs:1345`, différence entre une et deux lignes) et le nombre d'exercices qui tient sous
-   `MCP_ENVOI_OCTETS_MAX` (`services/envois_mcp.rs:55`, 24 576 octets) est écrit au Change Log du développement.
+   `bornes_attendues`, et son `SansArgument` refuse tout `limit`, `deny_unknown_fields`) : `tailles_mesurees`
+   (`mcp_outils_e2e.rs:1345`) ne s'applique donc **pas** telle quelle — test dédié, même méthode (différence de taille
+   entre un et deux exercices, trois champs compris) ; le nombre d'exercices qui tient sous `MCP_ENVOI_OCTETS_MAX`
+   (`services/envois_mcp.rs:55`, 24 576 octets) est écrit au Change Log du développement, **avec la conséquence** :
+   au-delà, `texte_et_valeur` (`mcp/sortie.rs:463`) rend `TropVolumineux` sans recours (aucune pagination) — état
+   existant, aggravé de trois champs ; pagination hors périmètre, dite au Change Log.
 3. **AC-3 — Écriture du réglage.** `PUT /api/v1/companies/current/currency-settings`
    `{ multiCurrencyEnabled, fxGainAccountId, fxLossAccountId, fxTransitAccountId, version }` (verrou optimiste comme
    les autres `PUT` de la société) :
@@ -211,7 +216,10 @@ l'assistant, nom « Exercice AAAA » ou « Exercice AAAA/AAAA » : AC-11). A22 e
      l'exercice et les lignes des comptes en devise en lecture verrouillante puis demande ces comptes `FOR UPDATE`,
      quand une écriture d'un exercice postérieur tient son exercice et le compte en partage (37-3a) avant d'insérer
      sa ligne — c'est ce cycle-là, non celui de `companies`, qui fait rejouer `currency-mode` (elle ne prend
-     `companies` qu'en partage) ;
+     `companies` qu'en partage) ; **et la route de conversion de 37-3b, depuis V3 (CR-6)** : elle lit en partage, avant
+     l'exercice, le compte en devise de l'écriture à compléter et ses comptes de différence, quand la bascule `force`
+     tient l'exercice puis demande ces comptes `FOR UPDATE` — même cycle, absorbé par le rejeu des deux routes
+     (la conversion `Rejouee`, 37-3b ; la bascule sous `retry_on_deadlock`, AC-3 bis) ;
    - audit `company.currency_settings_updated` (avant/après, ajouté à `ACTIONS` de `audit_labels.rs`, liste triée) ;
      libellés d'audit dans les quatre locales ;
    - **réponse** : 200 avec le `CompanyJson` à jour (nouvelle `version`, comme les trois autres `PUT` de la société) ;
@@ -533,7 +541,8 @@ l'assistant, nom « Exercice AAAA » ou « Exercice AAAA/AAAA » : AC-11). A22 e
      devise, ni rôle `DefaultRevenue` ni désigné `default_revenue_account_id`) → 400 `FX_ACCOUNT_INVALID` (`field` :
      `fxGainAccountId` | `fxLossAccountId`, `reason` de la liste close de l'AC-3, plus `holderAccountId` quand
      `origin = Own`). Un compte de la société invalide mais **non employé** (tous les comptes touchés ont leurs comptes
-     propres) n'arrête rien. 37-5 l'appelle sous ses verrous ; elle est créée ici, avec ses tests.
+     propres) n'arrête rien. 37-5 l'appelle sous ses verrous, et, depuis V3 (CR-6), la route de conversion de 37-3b (AC-2 bis) ; elle est créée
+     ici, avec ses tests.
    - **API** : `CreateAccountRequest` prend `fxGainAccountId?`, `fxLossAccountId?` (absents = par défaut) ;
      `UpdateAccountRequest` les prend en `Option<Option<i64>>` par `present_or_null` (comme `currency`) : **absents =
      inchangés**, `null` = par défaut, valeur = compte propre ; les deux champs vont ensemble — l'un présent sans
@@ -697,7 +706,10 @@ l'assistant, nom « Exercice AAAA » ou « Exercice AAAA/AAAA » : AC-11). A22 e
     6950) : le manuel dit quoi choisir ou créer (p. ex. 6840, **sous le groupe 6** et non sous 6800 *Amortissements*,
     compte imputable que la création d'un sous-compte rendrait non imputable, `accounts::create` :197-207). Si le manuel cite la route
     `PUT /api/v1/companies/current/currency-settings`, ajouter l'entrée à `MULTI_SOCIETE_ASSUME` de
-    `textes_coherents.rs` (motif `\bcompanies\b`, précédent :1014-1017).
+    `textes_coherents.rs` (motif `\bcompanies\b`, précédent :1014-1017). **Le manuel dit aussi (V6, CR-6) que le
+    mode s'active par une session d'Administrateur — écran, ou client HTTP en `Authorization: Bearer` après
+    `POST /auth/login` — et jamais par une clé d'API** ; même phrase au manuel d'administration (là où il dit les
+    routes refusées à une clé d'API, `admin-manual.tex:3217`) et au CHANGELOG ; PDF régénérés.
 11. **AC-11 — Dates du premier exercice dans l'assistant de démarrage (T1, CR-4 ; remplace la version « retirée »
     de CR-3 et l'ancien arbitrage A1).** Aujourd'hui, `finalize` (`routes/onboarding.rs:879`, sans corps) crée
     l'exercice initial du 1er janvier au 31 décembre de l'année courante (`:1043-1046`, `Utc::now()`), par
@@ -1126,3 +1138,15 @@ l'assistant, nom « Exercice AAAA » ou « Exercice AAAA/AAAA » : AC-11). A22 e
   `mcp/outils/exercices.rs:23-29`, `:42-46`, `:69-75` ; `mcp/outils/mod.rs:9-20` (aucun outil société) ;
   `tests/mcp_outils_e2e.rs:99` (`bornes_attendues`, sans `kesh_exercices`), `:312` (portée `books:read`), `:1345` ; `services/envois_mcp.rs:55`. AC
   touchés : AC-2, AC-3, AC-4 bis, AC-8, Tâches. Fiche à revalider (cycle CR-6).
+- 2026-11-14 — validation CR-6 P1 (Sonnet) : 4 findings (0 CRITICAL, 0 HIGH, 1 MEDIUM, 3 LOW) ; remédiés dans la
+  fiche, aucun inter-fiches. **CR6-P1-1** (MEDIUM) — AC-2 : le type scellé de `kesh_exercices` exige l'inscription à
+  `champ_enum!` (`mcp/sortie.rs:131-143`), énumération sans champ, valeurs `day`/`month`. **-2** (LOW) — AC-2 :
+  `tailles_mesurees` ne s'applique pas (pas de `limit`, `SansArgument` en `deny_unknown_fields`) → test dédié ; la
+  conséquence `TropVolumineux` (`sortie.rs:463`) écrite. **-3** (LOW) — AC-4 bis : la route de conversion (V3) ajoutée
+  aux appelants de `validate_fx_accounts_in_tx` et son cycle avec la bascule `force` aux « autres cycles » rejoués.
+  **-4** (LOW) — V6 n'avait qu'une tâche : l'exigence passe à l'AC-10 (manuel utilisateur, d'administration,
+  CHANGELOG). Prémisses relues au code et justes : `lib.rs:518`, `:1353` ; `routes/auth.rs:186` ; `middleware/auth.rs:83-95` ;
+  `rbac.rs:58-66` ; `mcp/outils/exercices.rs:23-29`, `:42`, `:69-75` ; `mcp/outils/mod.rs` (aucun outil société) ;
+  `mcp_outils_e2e.rs:312`, `:1345` ; `envois_mcp.rs:55`. Axes exercés : prémisses de la révision, V6, V10, V11, renvoi V3,
+  cohérence avec 37-3b AC-2 bis, choix (b) et (c) vus depuis 37-1 (corrects : la paire résolue fait échouer fermé).
+  Non exercés : contrats V1/V2/V3 de 37-3a et 37-3b en détail (choix (a), (d), (e)), 37-4, 37-5, exécution des tests.

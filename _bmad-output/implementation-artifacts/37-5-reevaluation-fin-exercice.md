@@ -354,11 +354,12 @@ clôture et que l'écart aille aux différences de change.
    (comme `close`, contrairement à `reopen`), sauf décision contraire de l'utilisateur ; une clé en lecture seule est
    refusée sur le POST d'aperçu comme sur tout POST.
    **MCP (V12, CR-6)** : aucun outil pour l'aperçu — un calcul à la demande (proposition d'écritures), hors du
-   périmètre du serveur MCP de l'Epic 32, qui ne rend que des lectures des livres ; hors périmètre, dit ; les écritures passées se lisent par `kesh_ecritures`
+   périmètre du serveur MCP de l'Epic 32, qui ne rend que des lectures des livres (dit au Change Log du développement) ; les écritures passées se lisent par `kesh_ecritures`
    et `kesh_ecriture` (`mcp/outils/ecritures.rs:198`, `:272`), dont les lignes portent `foreign` avec la source
    `revaluation` (37-3a AC-8) ; l'action d'audit `fx_revaluation.posted` n'est lue par aucun outil (existant : aucun
    outil d'audit). Test : `kesh_ecriture` d'une écriture de réévaluation rend la ligne du compte en devise à montant 0
-   et source `revaluation`.
+   et source `revaluation` (dans `mcp_outils_e2e.rs`, fixture de 37-3a AC-8, et, de bout en bout, dans le test d'API de
+   l'AC-7).
 6. **AC-6 — Écran** : depuis *Exercices* (exercice ouvert), action « Réévaluer les devises », **affichée seulement en
    multi-devises** (D1 : en mono-devise, rien n'apparaît) **et aux rôles Comptable et Administrateur** (AC-5) : tableau de l'aperçu,
    cours modifiables par devise (**valable pour cette passation seulement** : le champ n'écrit aucun cours saisi, qui
@@ -473,8 +474,14 @@ clôture et que l'écart aille aux différences de change.
      la passation) avec `rates` `{ "USD": "0.91193", "EUR": "0.94947" }` (V8) ; **rapports** (`GET
      /reports/trial-balance`, `/reports/balance-sheet`, `/reports/general-ledger`, 37-4) : soldes en devise et en CHF
      de chaque compte en devise calculés à la main, solde CHF au 31.12.2024 = round(solde en devise × cours de clôture)
-     exactement, compte de conversion à 0 ; `kesh_ecritures` lu par une clé d'API en lecture seule rend la ligne
-     `revaluation` (V12). Le test n'emploie aucun calcul de cours ni de CHF côté client : tout montant CHF qu'il envoie
+     exactement, compte de conversion à 0 ; **lecture MCP** (V12) : le serveur MCP est désactivé par défaut et ses clés ne
+     sont **pas** des clés d'API (`require_auth` ne les reconnaît pas, `lib.rs:366-368` ; elles ne passent pas par
+     `/api/v1`) — le test l'active en session d'Administrateur (`PUT /api/v1/admin/mcp/settings`), crée une clé MCP de
+     portée `books:read` (`POST /api/v1/admin/mcp/keys`, jeton rendu à la création) et appelle `kesh_ecritures` puis
+     `kesh_ecriture` par le transport MCP (comme `mcp_outils_e2e.rs`, `banc(&pool).appeler(&jeton, …)`) : la ligne du
+     compte en devise rend `foreign` à montant 0 et source `revaluation`. Le Comptable de l'étape précédente est créé
+     par l'Administrateur (`POST /api/v1/users`). Le cours de `rates` (0.91193) est choisi **différent** de celui que
+     la source factice de 37-2 rend pour le 31.12.2024 (à fixer à l'écriture du test) : genre `request`, source `manual` à l'audit, attendus ainsi. Le test n'emploie aucun calcul de cours ni de CHF côté client : tout montant CHF qu'il envoie
      est une donnée (celle des livres d'origine), jamais un produit qu'il aurait calculé ;
    - l'aperçu ne crée aucune écriture ; E2E de l'écran, dont le parcours repli mensuel → « Récupérer le cours du
      JJ.MM.AAAA » (source factice de 37-2) → aperçu relu, cours journalier (`rateKind: "day"`, le champ non modifié
@@ -730,3 +737,4 @@ clôture et que l'écart aille aux différences de change.
   /fiscal-years`, Comptable), `:582` (`/opening-balances`), `:1246`, `:1259`, `:1272` (rapports), `:1353`
   (`/auth/login`) ; `mcp/outils/ecritures.rs:198`, `:272` ; `mcp/outils/mod.rs:9-20` (aucun outil d'audit). AC
   touchés : AC-2, AC-5, AC-7, AC-8, Tâches. Fiche à revalider (cycle CR-6).
+- 2026-11-14 — validation CR-6 P1 (Sonnet) : 0 CRITICAL, 0 HIGH, 1 MEDIUM, 2 LOW ; remédiés dans la fiche sauf <aucun inter-fiches>. MEDIUM 37-5-CR6-P1-1 : la lecture MCP du test V7 (AC-7) parlait d'une « clé d'API en lecture seule » — une clé MCP n'est pas une clé d'API (`lib.rs:366-368`), le serveur est désactivé par défaut : étapes d'activation (`PUT /admin/mcp/settings`) et de clé (`POST /admin/mcp/keys`, `books:read`) ajoutées. LOW -P1-2 : phrase MCP d'AC-5 redondante, lieu du test V12 absent (`mcp_outils_e2e.rs`). LOW -P1-3 : création du Comptable (`POST /users`) et genre attendu du cours de `rates` (`request`) non dits. Relu au code : `lib.rs:525`, `:582`, `:813`, `:1246`, `:1259`, `:1272`, `:1353` ; `mcp/outils/ecritures.rs:198`, `:272` ; `mcp/outils/mod.rs` (aucun outil d'audit) ; cohérence avec 37-1 AC-3 (V6, Bearer), 37-3a AC-6 (V1, V2, V4, V8), 37-3b AC-2 bis (V3) et epic l. 8, 55 (0.91193, 0.94947). Non exercés : relecture complète hors diff CR-6, compilation, rendu.
