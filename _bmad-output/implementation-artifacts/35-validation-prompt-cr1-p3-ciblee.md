@@ -6,7 +6,7 @@ Dépôt `/home/beat/limu/compta/kesh`. Fiche indiquée dans ta mission, dans `_b
 ## Périmètre
 
 - La remédiation à relire est le diff de la fiche entre les commits `796ae5a9` (fin de CR-1 P1) et `272a5289` (fin de CR-1 P2) :
-  `git diff 796ae5a9 272a5289 -- <fiche>` (lecture seule). Lis aussi l'entrée P5 du Change Log.
+  `git diff 796ae5a9 272a5289 -- <fiche>` (lecture seule). Lis aussi l’entrée CR-1 P2 du Change Log.
 - Pour chaque phrase ajoutée ou changée : est-elle **vraie au code** (vérifie la ligne citée), **cohérente** avec le
   reste de la fiche, avec le fichier d'epic (`_bmad-output/planning-artifacts/epic-35-multi-devises.md`, registre C-35-*,
   D1–D8) et avec les **points de contact** des autres fiches `35-*.md` (codes d'erreur, statuts HTTP, `details`, noms de
