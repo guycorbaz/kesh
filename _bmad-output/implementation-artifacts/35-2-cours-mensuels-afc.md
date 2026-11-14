@@ -50,8 +50,10 @@ AFC, afin que mes écritures en devise et ma réévaluation reçoivent le bon co
 - **pas de publication : HTTP 404, corps JSON** — relevé le 2026-11-14 pour `d=20301231` : `404`
   `{"error":"Aucune donnée disponible","message":"Aucun taux de change trouvé pour la période demandée"}` (et non une
   racine vide, comme `xmlavgmonth`). Le client traite un **404** de `xmldaily` comme « pas encore publié »
-  (`NotPublished`, → `404 RATE_NOT_PUBLISHED`, mémorisé 15 minutes), **jamais** comme `http_status:404` ; tout autre
-  statut non 2xx reste une erreur. Relevé aussi : `d=20000103` rend `<datum>03.01.2000</datum>` et `d=20000101` rend
+  (`NotPublished`, → `404 RATE_NOT_PUBLISHED`, mémorisé 15 minutes), **jamais** comme `http_status:404` : `fetch_day` le
+  rend par une variante propre de `SourceError` (p. ex. `SourceError::NotPublished`), que l'appelant traite comme la
+  racine vide ; tout autre statut non 2xx de `xmldaily`, et **tout** non 2xx de `xmlavgmonth` (404 compris), reste
+  une erreur (`http_status:<n>`). Relevé aussi : `d=20000103` rend `<datum>03.01.2000</datum>` et `d=20000101` rend
   `<datum>31.12.1999</datum>` (la borne 2000-01-01 de l'AC-5 est servie) ; les éléments `<land_en/>` peuvent être
   **vides** (ignorés) ; `<gueltigkeit>` peut ne porter qu'une date ;
 - contrôle de la réponse : `<datum>` lu ≤ D et D − `<datum>` ≤ 7 jours, sinon erreur `date_mismatch` (rien n'est
@@ -112,9 +114,14 @@ AFC, afin que mes écritures en devise et ma réévaluation reçoivent le bon co
        donnée (`git show b723e3d9:crates/kesh-api/tests/admin_full_import_e2e.rs`, :1589-1596 : rapport vide) et le
        commentaire de tête (:954, « le registre de production a été VIDE de la 32-5a à la 33-1a ») est annoté, sans
        réécrire l'historique ;
-     - `full_import_of_a_0_17_4_backup_gives_the_numbers` (`crates/kesh-api/tests/admin_full_import_e2e.rs`, aide
-       `entree_numero_interne` :5551, qui cherche l'entrée dans le rapport du registre de production) passe au patron
-       `replay_retired` (:972) ;
+     - **deux** tests lisent l'entrée par l'aide `entree_numero_interne` (`crates/kesh-api/tests/admin_full_import_e2e.rs`
+       :5551, qui cherche l'entrée dans le rapport du registre de production et **panique** — `.expect("le rapport porte
+       la numérotation interne")` — quand il est vide) : `full_import_of_a_0_17_4_backup_gives_the_numbers` (:5563,
+       appel :5619) **et** `full_import_of_a_0_17_5_backup_keeps_the_numbers` (:5638, appel :5669). Les deux passent au
+       patron `replay_retired` (:972), appelé après `import_ok` et **avant** les assertions sur les numéros (sans registre,
+       l'import seul ne pose plus les numéros de la sauvegarde 0.17.4) ; l'aide lit alors l'entrée dans le rapport de
+       `replay_retired` (issues attendues inchangées : `REPLAYED_SENTINELS_ABSENT`, 3 lignes, pour la 0.17.4 ; `SKIPPED`,
+       0 ligne, pour la 0.17.5) ;
      - le test d'AC-6 de 35-1 (« un `.keshbackup` écrit par la 0.17.6 se réimporte ») devient, ici, un test de **refus**
        (400, table `exchange_rate_overrides` absente du manifeste) ; l'aller-retour d'une sauvegarde de la version
        courante reste vert ;
@@ -176,7 +183,10 @@ AFC, afin que mes écritures en devise et ma réévaluation reçoivent le bon co
      (`kesh-api`, comme `month_mismatch`).
    - **Bornes d'un cours seul** (propriétaire : cette story, qui précède 35-3a et 35-5) : fonction publique de
      `kesh-core` (nom au développement, p. ex. `exchange_rates::check_rate_bounds`) — décimal > 0, au plus 10 décimales
-     **après `normalize()`** (zéros terminaux ignorés), ≤ 10⁶. Elle sert ici au `PUT` d'un cours saisi (AC-5) et au
+     **après `normalize()`** (zéros terminaux ignorés), ≤ 10⁶. Elle rend une **erreur de type propre**, neutre (p. ex.
+     `RateBoundsError { NotPositive, Scale, TooLarge }`), **jamais** une variante de `CoreError` liée à un code : chaque
+     appelant la traduit — le `PUT` d'un cours saisi (AC-5) et 35-5 en `FX_RATE_INVALID`, 35-3a en
+     `FX_VALUE_OUT_OF_RANGE { line }` (35-3a AC-3, 35-3a-CR1-P1-IF1), le parseur en devise écartée. Elle sert ici au `PUT` d'un cours saisi (AC-5) et au
      filtre `rate_per_unit` du parseur ; 35-3a l'appelle depuis son contrôle par ligne (AC-3) et 35-5 pour les cours de
      sa requête (AC-4) — **une seule** fonction.
    - Fixtures versionnées **synthétiques** (forme du XML réel, `xmlns` compris, valeurs inventées — aucun cours officiel
@@ -335,7 +345,7 @@ AFC, afin que mes écritures en devise et ma réévaluation reçoivent le bon co
        `OPTIMISTIC_LOCK_CONFLICT` ; **y compris** deux créations simultanées : la violation de l'unicité `(company_id, currency, kind, rate_date)` est rattrapée et rendue 409, jamais 500) ; `version` présent = remplacement de cette version (ligne absente ou autre version
        → 409 `OPTIMISTIC_LOCK_CONFLICT`) ; `version` + 1 à chaque remplacement. Rend `200` avec la forme de `lookup`
        (plus `override: { id, version, updatedAt }`). Un cours saisi **égal** au cours AFC est conservé tel quel (il ne
-       suivra pas une republication de l'AFC) ;
+       suivra pas une republication de l'AFC tant qu'il n'est pas retiré par ↑, AC-6) ;
      - `DELETE /api/v1/exchange-rates/overrides?currency=USD&kind=month&rateDate=AAAA-MM-JJ&version=N` retire le cours
        saisi (bouton ↑ de l'écran : « reprendre le cours AFC ») ; `version` **obligatoire** (absente ou illisible → 400) ; `204` ; ligne absente → 404 `NOT_FOUND` ; autre
        version → 409 `OPTIMISTIC_LOCK_CONFLICT`. Le cours effectif redevient le cours AFC, ou aucun ;
@@ -401,12 +411,16 @@ AFC, afin que mes écritures en devise et ma réévaluation reçoivent le bon co
      Consultation), validé à l'écran par les bornes de l'AC-2 (`AmountFormatOptions { maxDecimals: 10,
      maxIntegerDigits: 7 }`, comme 35-3b AC-2) ; une valeur changée s'enregistre à la validation du champ (`PUT`, avec
      la `version` du cours saisi s'il existe) ; un `409 OPTIMISTIC_LOCK_CONFLICT` recharge la vue avec un message.
-     **Sous le champ**, quand un cours saisi existe et **diffère** du cours AFC : « AFC : 0.8846 » et un bouton **↑**
-     (libellé accessible « Reprendre le cours AFC ») qui appelle le `DELETE` ; un cours saisi égal au cours AFC est
-     marqué « saisi » sans ↑. Un cours saisi sans cours AFC : « AFC : non publié », sans ↑ ; une devise sans aucun
+     **Sous le champ**, pour **tout cours saisi existant** — qu'il diffère du cours AFC, lui soit égal ou qu'il n'y ait
+     pas de cours AFC (D9 : un cours saisi doit toujours pouvoir être retiré, et seul ↑ le retire) — la mention
+     « AFC : 0.8846 » (ou « AFC : non publié ») et un bouton **↑** qui appelle le `DELETE` ; libellé accessible
+     « Reprendre le cours AFC », ou « Retirer le cours saisi » sans cours AFC (la ligne disparaît alors de la vue). Un
+     cours saisi **égal** au cours AFC est en outre marqué « saisi » : il ne suit pas une republication de l'AFC tant
+     qu'il n'est pas retiré par ↑. Sans cours saisi, ni ↑ ni marque. Une devise sans aucun
      cours n'a pas de ligne (le cours se saisit alors par un champ « Ajouter un cours » : devise de la liste ISO 4217,
      cours). Une récupération qui change le cours AFC laisse le cours saisi et met à jour la mention « AFC : … ». Un champ **vidé** ne supprime rien : la valeur affichée est restaurée, sans appel (seul ↑ retire un cours saisi) ; une valeur égale au cours effectif affiché n'envoie rien. En vue jour, « Récupérer ce jour » est **désactivé** pour une date ≥ aujourd'hui (Europe/Zurich), avec la raison affichée (le serveur la refuse, AC-5) ; la date proposée par défaut est, **sans exercice terminé**, la veille (Europe/Zurich).
-   - Vitest : ↑ présent seulement si saisi et différent ; ↑ → `DELETE` avec la bonne version ; 409 → rechargement ;
+   - Vitest : ↑ présent pour tout cours saisi (différent, égal au cours AFC — marqué « saisi » —, sans cours AFC —
+     libellé « Retirer le cours saisi ») et absent sans cours saisi ; ↑ → `DELETE` avec la bonne version ; 409 → rechargement ;
      Consultation sans champ éditable ; cours JPY saisi par unité. Captures d'écran (vue mensuelle avec un cours saisi
      et son ↑, vue jour avec `sourceDate` d'un dimanche, lecture seule).
 7. **AC-7 — Restauration.** Les deux tables `_kesh_*` sont système : un import de sauvegarde ne les touche pas. Sur une
@@ -445,7 +459,7 @@ AFC, afin que mes écritures en devise et ma réévaluation reçoivent le bon co
 - [ ] Migration + inscriptions (AC-1), dont `exchange_rate_overrides` dans `TABLES_TO_TRUNCATE`, `TABLES_EXPORTEES`
       (ou exclusion motivée) ; fenêtre d'import refermée : registre de rejeu vidé, `20261106000001` passé à
       `RETIRED_BACKFILLS` et `EXEMPT_MIGRATIONS` (« Hors fenêtre depuis 20261114000002 »), compteurs recomptés,
-      test d'import 0.17.4 au patron `replay_retired`, test de 35-1 AC-6 inversé en refus.
+      tests d'import 0.17.4 et 0.17.5 au patron `replay_retired`, test de 35-1 AC-6 inversé en refus.
 - [ ] `kesh-core::exchange_rates` (AC-2 : deux analyses, une seule analyse des `<devise>`, bornes d'un cours seul) ;
       `kesh-db::repositories::exchange_rates` (upsert en transaction, lecture, état, cours saisis). La lecture d'un
       cours AFC **brut** — **nom fixé ici, repris tel quel par 35-3a** :
@@ -494,7 +508,8 @@ AFC, afin que mes écritures en devise et ma réévaluation reçoivent le bon co
       404, version périmée → 409 ; une récupération ne touche aucun cours saisi (AC-3) ; société B ne voit pas le
       cours saisi de A ; aller-retour `.keshbackup` des cours saisis ; remise à zéro les vide et laisse les cours AFC ;
       E2E : saisir un cours, le voir proposé, ↑ le retire ; `xmldaily` 404 JSON (relevé du 2026-11-14) →
-      `NotPublished`, `RATE_NOT_PUBLISHED`, mémorisé, rien d'écrit ; autre 404/500 → `RATE_SOURCE_UNAVAILABLE` ;
+      `NotPublished`, `RATE_NOT_PUBLISHED`, mémorisé, rien d'écrit ; 404 de `xmlavgmonth`, 500 de l'une ou l'autre →
+      `RATE_SOURCE_UNAVAILABLE` ;
       `<land_en/>` vide et `<gueltigkeit>` d'une seule date acceptés ; `lookup` `kind` hors `month|day` → 400, forme `day`
       sans cours → 404 avec `details.date` ; `GET /exchange-rates` d'une devise à cours saisi seul (`fetchedAt` `null`) ;
       cours saisi égal au cours AFC conservé (`overridden` vrai) ; deux `PUT` de création simultanés → un 200 et un 409 ;
@@ -570,3 +585,19 @@ AFC, afin que mes écritures en devise et ma réévaluation reçoivent le bon co
   (sauvegarde, restauration, fenêtre, remise à zéro, export CSV, audit, RBAC, i18n, manuels, MCP), source journalière
   (3 GET : `20000103`, `20301231`, `20000101`), provenance `afc`/`manual`, tests. Non exercés : compilation, gate,
   rendu de l'écran.
+- 2026-11-14 — validation CR-1 P2 (Opus) : 0 CRITICAL, 0 HIGH, 3 MEDIUM, 2 LOW ; remédiés dans la fiche sauf aucun
+  (aucun finding inter-fiches). MEDIUM : `full_import_of_a_0_17_5_backup_keeps_the_numbers` (`admin_full_import_e2e.rs`
+  :5638, appel d'`entree_numero_interne` :5669, `.expect` qui panique sur le registre vide) rougit aussi, absent des
+  conséquences de la fermeture de fenêtre : les deux tests passent à `replay_retired` (CR1-P2-1) ; arbitrage de
+  l'orchestrateur : ↑ pour **tout** cours saisi existant, égal au cours AFC ou sans cours AFC compris (AC-6, Vitest)
+  (CR1-P2-2) ; arbitrage : la fonction des bornes d'un cours seul rend une erreur de type propre (`RateBoundsError`),
+  traduite par chaque appelant — aligne l'AC-2 sur 35-3a AC-3 (CR1-P2-3). LOW : le 404 de `xmldaily` passe par une
+  variante propre de `SourceError`, un 404 de `xmlavgmonth` reste `http_status:404` (CR1-P2-4) ; « autre 404 » du test
+  précisé (CR1-P2-5). Axes exercés : diff de la révision et de la remédiation P1 ; citations relues au code
+  (`admin_full_import_e2e.rs` :954, :972, :1561-1600, :5475, :5551, :5563, :5638 ; `b723e3d9` :1580-1600 ;
+  `post_restore.rs` :205-232, :271, :1135-1145, :1210-1230, boucles des tests sur le registre ; `post_restore_class_a.rs`
+  :75-100 ; `recette-montee.sh` :640-660 ; `api-client.ts` :42, :61, :388-425 ; `kesh-db/src/errors.rs` :675-679, :1721 ;
+  `backup.rs` :46, :137-160) ; points de contact 35-3a AC-3 et 35-5 AC-4 (bornes) et 35-3b (↑ de la ligne, distinct) ;
+  source journalière, un GET : `d=20240401` (lundi de Pâques) rend `<datum>28.03.2024` (jeudi saint, quatre jours :
+  la borne de 7 jours tient sur un pont de Pâques). Non exercés : compilation, gate, rendu de l'écran, i18n et manuels
+  au-delà de la fiche (rien de neuf depuis la P1).

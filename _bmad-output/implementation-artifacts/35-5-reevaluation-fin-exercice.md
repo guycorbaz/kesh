@@ -25,16 +25,26 @@ que mon bilan présente ces comptes au cours de clôture et que l'écart aille a
      effectif **journalier** de la **date de fin d'exercice** ; (2) à défaut, le cours effectif **mensuel** du mois de
      cette date ; (3) à défaut, `RATE_UNAVAILABLE`. Surchargeable par devise dans la requête (`rates`), comme avant.
      La réponse porte, par devise, `{ currency, rate, rateKind: "day"|"month"|"request", rateDate, afcRate, overridden,
-     sourceDate }` (`request` : cours venu de `rates` ; `afcRate` = le cours AFC brut du genre retenu, `null` s'il
-     n'y en a pas ; `sourceDate` = date de publication d'un cours journalier, cf. 35-2 ; pour `request`, `rateDate` et
-     `afcRate` sont ceux de la **résolution par défaut** de la devise — jour, sinon mois —, que l'écran affiche sous le
-     champ comme ailleurs, D9) ; l'écran **signale** un
+     sourceDate }` (`afcRate` = le cours AFC brut du genre de la **résolution par défaut**, `null` s'il n'y en a pas ;
+     `sourceDate` = date de publication d'un cours journalier, cf. 35-2 ; `rateDate` et `afcRate` sont toujours ceux de
+     la résolution par défaut de la devise — jour, sinon mois —, que l'écran affiche sous le champ comme ailleurs, D9).
+     **Genre d'un cours reçu dans `rates`** — règle **unique**, la même à l'aperçu et à la passation (AC-2, audit) : égal
+     au cours par défaut résolu par le serveur → genre de ce défaut (`day` ou `month`) ; différent, ou sans défaut →
+     `request`. Sans cette règle à l'aperçu, un cours prérempli renvoyé ferait disparaître le signalement du repli et
+     masquerait le cours du jour récupéré. **L'écran n'envoie à l'aperçu que les cours modifiés par l'utilisateur** ;
+     après une récupération, un champ non modifié reprend le nouveau cours par défaut (la passation, elle, reçoit tous
+     les cours affichés, AC-2). L'écran **signale** un
      `rateKind: "month"` (« cours du jour de clôture indisponible : cours mensuel de <mois> ») et propose « Récupérer
-     le cours du JJ.MM.AAAA » (`POST /exchange-rates/fetch { date }`, 35-2), puis relit l'aperçu. ⚠️ **Date de fin d'exercice
+     le cours du JJ.MM.AAAA » (`POST /exchange-rates/fetch { date }`, 35-2), puis relit l'aperçu ; un
+     `404 RATE_NOT_PUBLISHED` ou un `503 RATE_SOURCE_UNAVAILABLE` s'affiche (message traduit) et laisse l'aperçu tel
+     quel, repli mensuel compris. ⚠️ **Date de fin d'exercice
      non passée** : 35-2 ne récupère un cours journalier que pour un jour **strictement antérieur** à aujourd'hui
-     (Europe/Zurich ; sinon 400) — le bouton n'est alors **pas proposé** et l'écran dit « date de clôture pas encore
-     passée : cours du jour non publié » ; le cours par défaut est le cours mensuel du mois de cette date s'il existe
-     (jamais, pour un mois futur), sinon `RATE_UNAVAILABLE` et saisie. Le cours journalier
+     (Europe/Zurich ; sinon 400) — le bouton n'est alors **pas proposé** et, si le repli mensuel est pris ou qu'aucun
+     cours n'existe, l'écran dit « date de clôture pas encore passée : cours du jour non publié » ; le cours par défaut
+     suit la même résolution (un cours journalier **saisi** par la société pour ce jour, D9, reste le premier ; sinon
+     le cours effectif mensuel du mois de cette date, qui pour un mois futur n'existe que s'il a été saisi), sinon
+     `RATE_UNAVAILABLE` et saisie ; « Récupérer le mois » n'est pas proposé non plus pour un mois postérieur au mois
+     courant (35-2 le refuse en 400). Le serveur ne lit pas la date du jour : seul l'écran en dépend. Le cours journalier
      d'un jour sans publication (week-end) est celui de la publication antérieure (35-2, *Cours journaliers*) : un
      exercice qui finit un dimanche prend le cours du vendredi, `sourceDate` l'affiche.
    - **Règle de calcul en débit net**, quel que soit le type du compte : `devise_net` = Σ `amount_currency` au débit −
@@ -60,7 +70,7 @@ que mon bilan présente ces comptes au cours de clôture et que l'écart aille a
      saisie ou récupération.
    - **Cours résolus avant toute transaction**, par lecture de la table des cours (35-2 : `lookup` est en lecture
      seule, sans appel sortant). Un cours absent rend la devise `RATE_UNAVAILABLE` dans l'aperçu ; l'écran propose
-     « Récupérer le cours du jour », puis « Récupérer le mois » (`POST /exchange-rates/fetch { date }` puis
+     « Récupérer le cours du JJ.MM.AAAA », puis « Récupérer le mois » (`POST /exchange-rates/fetch { date }` puis
      `{ year, month }`, 35-2, audités à part) ou la saisie du cours. Le serveur de 35-5
      **ne récupère jamais** de cours lui-même ; aucune récupération n'a lieu sous le verrou de l'exercice.
      L'aperçu **n'écrit rien**. *(Alignement de l'orchestrateur sur la remédiation P1 de 35-2, 2026-11-14.)*
@@ -110,14 +120,14 @@ que mon bilan présente ces comptes au cours de clôture et que l'écart aille a
      n'est pas l'ordre des **refus** (AC-4) : tout se lit d'abord, puis s'évalue dans l'ordre de l'AC-4. Le test des deux
      passations concurrentes (AC-7) fait attendre la seconde sur le verrou de l'exercice pendant que la première
      commite, et constate une seule écriture.
-   - **Source du cours** (pour l'audit) : par devise, `afc` si le cours retenu **égale** le cours AFC **brut** du
-     jour de fin d'exercice (`find_rate_in_tx(…, Day, date de fin)`), ou, à défaut de cours AFC journalier, le cours
-     AFC brut du mois de fin (`Month`), qu'il vienne de la table ou de `rates` (l'écran renvoie les cours
-     préremplis) ; `manual` sinon — y compris un cours saisi par la société (D9) qui diffère, et une devise non
-     publiée. L'audit porte aussi le **genre** du cours retenu par devise (`day` | `month` | `request`) : comme l'écran
-     renvoie les cours préremplis, le serveur **compare** chaque cours reçu au cours par défaut qu'il résout lui-même
-     (avant la transaction, AC-1) — égal : genre de ce défaut (`day` ou `month`) ; différent : `request` ; sans cela
-     le genre serait toujours `request` et ne dirait rien. Ces lectures (cours effectif par défaut et cours AFC bruts
+   - **Source du cours** (pour l'audit) : par devise, `afc` si le cours retenu **égale** l'`afcRate` de l'AC-1 — le
+     cours AFC **brut** du genre de la résolution par défaut : du jour de fin d'exercice si un cours effectif
+     journalier existe, sinon du mois de fin —, qu'il vienne de la table ou de `rates` (l'écran renvoie les cours
+     préremplis) ; `manual` sinon — y compris un cours saisi par la société (D9) qui diffère, un cours journalier saisi
+     sans cours AFC du jour (`afcRate` `null` : l'écran affiche « AFC : non publié », l'audit dit `manual`), et une
+     devise non publiée. L'audit porte aussi le **genre** du cours retenu par devise (`day` | `month` | `request`),
+     selon la règle unique de l'AC-1 (cours reçu égal au défaut : genre de ce défaut ; sinon `request`) : comme l'écran
+     renvoie les cours préremplis, le genre serait sans cela toujours `request` et ne dirait rien. Ces lectures (cours effectif par défaut et cours AFC bruts
      du jour et du mois de fin) se font **avant la transaction**, avec celles des cours (35-2 : aucune lecture de cours
      sous le verrou de l'exercice), et non à la volée sous les verrous.
    - Une **seule** écriture journal `OD`, datée du dernier jour de l'exercice, libellé **en français** construit dans `post`, comme la
@@ -190,11 +200,12 @@ que mon bilan présente ces comptes au cours de clôture et que l'écart aille a
    réponse pour un compte inexistant et pour un compte d'une autre société) ; libellé dans les quatre locales.
    - **Bornes de la requête** : chaque cours est un décimal > 0, ≤ 10 décimales, ≤ 10⁶, exprimé **par unité** de
      monnaie (1 JPY, pas 100 JPY), et sa clé est la devise d'au moins un compte sélectionné ; sinon 400
-     `FX_RATE_INVALID`. Les bornes d'échelle (≤ 10 décimales, zéros terminaux ignorés) et ≤ 10⁶ sont celles du
-     cours d'une ligne en devise (35-3a AC-3, étape 1) et d'un cours saisi (35-2 AC-5) et se contrôlent par **la même
-     fonction** de `kesh-core` (DRY), **créée par 35-2** (AC-2, bornes d'un cours seul) ; le signe (> 0) est contrôlé
-     ici (35-3a le contrôle à l'étape 2) ; le code rendu est `FX_RATE_INVALID`, **créé par 35-2** (variante `AppError`
-     et traduction) et réutilisé ici avec la devise fautive en `details`. **Le produit** devise_net × cours (devise_net est
+     `FX_RATE_INVALID`. Ces bornes (signe, échelle — zéros terminaux ignorés —, ≤ 10⁶) sont celles du cours d'une ligne
+     en devise (35-3a AC-3) et d'un cours saisi (35-2 AC-5) et se contrôlent par **la même fonction** de `kesh-core`
+     (DRY), **créée par 35-2** (AC-2, bornes d'un cours seul), qui rend une erreur de **type propre** (p. ex.
+     `RateBoundsError { Scale, TooLarge, NotPositive }`, non une variante de `CoreError` liée à un code — arbitrage de
+     l'orchestrateur, CR-1 P2) ; 35-5 traduit **toute** variante en 400 `FX_RATE_INVALID`, `details: { currency }`
+     (la devise fautive), code **créé par 35-2** (variante `AppError` et traduction) et réutilisé ici. **Le produit** devise_net × cours (devise_net est
      un cumul, non borné par ligne) se calcule en entiers `i128` par multiplication **contrôlée** (`i128::checked_mul` ; un dépassement →
      `FX_VALUE_OUT_OF_RANGE`), jamais par `Decimal::checked_mul` (35-3a AC-3 : réduction d'échelle silencieuse) ; un
      CHF réévalué ou un |D| > 10¹³ → 400 `FX_VALUE_OUT_OF_RANGE`, sans écriture. **Forme du refus** : la variante de 35-3a
@@ -216,11 +227,13 @@ que mon bilan présente ces comptes au cours de clôture et que l'écart aille a
    refusée sur le POST d'aperçu comme sur tout POST.
 6. **AC-6 — Écran** : depuis *Exercices* (exercice ouvert), action « Réévaluer les devises », **affichée seulement en
    multi-devises** (D1 : en mono-devise, rien n'apparaît) **et aux rôles Comptable et Administrateur** (AC-5) : tableau de l'aperçu,
-   cours modifiables par devise (**valable pour cette passation seulement** : le champ n'écrit aucun cours saisi, qui se
-fixe à l'écran *Cours de change*, 35-2 ; « AFC : … » affiché sous le champ, sans ↑ ; source affichée : AFC ou manuel ; **genre** affiché : « cours du JJ.MM.AAAA » pour
+   cours modifiables par devise (**valable pour cette passation seulement** : le champ n'écrit aucun cours saisi, qui
+   se fixe à l'écran *Cours de change*, 35-2 ; « AFC : … » affiché sous le champ, sans ↑ ; source affichée : AFC ou
+   manuel ; **genre** affiché : « cours du JJ.MM.AAAA » pour
    un cours journalier, avec la date de publication si elle diffère, « cours mensuel de <mois> » signalé comme repli,
-   « cours saisi » quand le cours vient de la société, D9 ; bouton « Récupérer le cours du jour » quand le repli
-   mensuel est pris ou qu'aucun cours n'existe — Administrateur et Comptable), cases par compte (comptes archivés grisés avec
+   « cours saisi » quand le cours vient de la société, D9 ; bouton « Récupérer le cours du JJ.MM.AAAA » quand le repli
+   mensuel est pris ou qu'aucun cours n'existe, et que la date de fin est passée (AC-1) — Administrateur et
+   Comptable), cases par compte (comptes archivés grisés avec
    avertissement ; au-delà de 498 comptes admissibles, l'avis de présélection tronquée de l'AC-1, et pas plus de 498 cases
    cochées), total des gains et des pertes, « Passer l'écriture », lien vers l'écriture passée ; captures d'écran.
 7. **AC-7 — Tests** : deux exercices (achat EUR en N-1, réévaluation N-1, mouvements N, réévaluation N) : solde CHF au
@@ -255,11 +268,16 @@ fixe à l'écran *Cours de change*, 35-2 ; « AFC : … » affiché sous le cham
      doublon, étranger à la société et inexistant → `FX_REVALUATION_ACCOUNT_INVALID`, réponses identiques pour les deux
      derniers ; l'audit `fx_revaluation.posted` d'une passation par clé d'API porte la clé (`for_actor`) ; exercice antérieur ouvert **et** cours manquant → `RATE_UNAVAILABLE` (ordre en deux
      temps) ; deux passations concurrentes : l'une passe, l'autre ne passe rien ;
-   - genre d'audit : cours reçu égal au défaut journalier → `day`, égal au défaut mensuel → `month`, différent →
-     `request` ; fin d'exercice non passée (date ≥ aujourd'hui, Europe/Zurich) : pas de bouton du jour, repli mensuel
-     ou `RATE_UNAVAILABLE` ;
+   - genre, à l'aperçu **et** à l'audit : cours reçu égal au défaut journalier → `day`, égal au défaut mensuel →
+     `month`, différent → `request` ; source `manual` d'un cours journalier saisi sans cours AFC du jour, même égal au
+     cours AFC mensuel ; cours de `rates` → `FX_RATE_INVALID` pour chaque variante de l'erreur des bornes de 35-2 ;
+   - fin d'exercice non passée (date ≥ aujourd'hui, Europe/Zurich) : Vitest à horloge fixée — pas de bouton du jour
+     ni « Récupérer le mois » pour un mois futur, message affiché ; côté serveur, un cours journalier saisi pour ce
+     jour est retenu (`day`), sinon repli mensuel ou `RATE_UNAVAILABLE` ;
    - l'aperçu ne crée aucune écriture ; E2E de l'écran, dont le parcours repli mensuel → « Récupérer le cours du
-     JJ.MM.AAAA » (source factice de 35-2) → cours journalier.
+     JJ.MM.AAAA » (source factice de 35-2) → aperçu relu, cours journalier (`rateKind: "day"`, le champ non modifié
+     ayant repris le défaut) ; Vitest : l'aperçu ne reçoit que les cours modifiés, un `404 RATE_NOT_PUBLISHED` du
+     `POST /fetch` laisse le repli affiché.
 8. **AC-8 — Manuel** : réévaluation, cours journalier OFDF de la date de clôture (D10 : la pratique du cours de
    clôture, et les cours que portaient les livres de Beat), repli sur le cours mensuel AFC du mois de clôture (fixé
    d'avance, non une moyenne), cours saisi par la société (D9), récupération du cours du jour, gains et pertes non réalisés
@@ -342,3 +360,11 @@ fixe à l'écran *Cours de change*, 35-2 ; « AFC : … » affiché sous le cham
   proposé à tort ; genre d'audit toujours `request` puisque l'écran renvoie les cours préremplis. LOW : `rateDate` et
   `afcRate` d'un cours `request` ; lectures des cours AFC bruts avant la transaction ; champ de cours de l'écran
   par passation, sans cours saisi ; tests du genre, de la date non passée et du parcours E2E de récupération.)
+- 2026-11-14 — validation CR-1 P2 (Opus) : 0 CRITICAL, 0 HIGH, 2 MEDIUM, 4 LOW ; remédiés dans la fiche ; aucun
+  finding inter-fiches. (MEDIUM : genre `request` à l'aperçu pour tout cours de `rates`, alors que l'écran renvoie
+  les cours préremplis — repli et cours du jour récupéré masqués : règle unique de genre à l'aperçu et à l'audit,
+  l'aperçu ne reçoit que les cours modifiés ; arbitrage de l'orchestrateur sur la fonction des bornes de 35-2 —
+  erreur de type propre, signe compris, toute variante → `FX_RATE_INVALID`. LOW : source `afc` alignée sur
+  l'`afcRate` affiché ; date de fin non passée — cours journalier saisi, mois futur, « Récupérer le mois » ;
+  libellé du bouton et échec de la récupération ; tests Vitest à horloge fixée. Vérifié à la source le 2026-11-14 :
+  `xmldaily?d=20251231` rend le 31.12.2025, `d=20251226` (férié) le 24.12.2025.)
