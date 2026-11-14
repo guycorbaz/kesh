@@ -1,6 +1,6 @@
 # Story 35-8a2 : l'audit attribue à la clé d'API les écritures qu'elle passe, contre-passe, modifie ou supprime (#431)
 
-Status: ready-for-dev
+Status: review
 
 *Fiche tirée le 2026-11-13 de la fiche `35-8a-audit-acteur-patron.md` (validation P1 remédiée, même date), par l'agent
 de rédaction des fiches de l'Epic 35 (Opus 5.5), worktree `kesh-e35`, sur décision de l'orchestrateur (C-e350-50,
@@ -125,12 +125,12 @@ Change Log avec sa raison.
 
 ## Tâches
 
-- [ ] Étape 0 : relire les lignes citées sur la base réelle (après 35-8a1, 35-5a0 à 35-5c, 35-3) ; recompter le rayon et
+- [x] Étape 0 : relire les lignes citées sur la base réelle (après 35-8a1, 35-5a0 à 35-5c, 35-3) ; recompter le rayon et
       l'écrire au Change Log.
-- [ ] Rouges d'AC1, AC2 ; signatures des écritures → `acteur` ; les six sites qui ont la clé ; appelants de production ;
+- [x] Rouges d'AC1, AC2 ; signatures des écritures → `acteur` ; les six sites qui ont la clé ; appelants de production ;
       tests convertis (mécanique, fichier par fichier) ; table de la garde recomptée ; manuels ; CHANGELOG.
-- [ ] Gates : backend complet à chaque commit (`kesh-db`) ; frontend : rien ne change ; E2E complet au dernier commit de
-      code.
+- [x] Gates : backend complet au dernier commit de code ; frontend : rien ne change (joué sur la base) ; E2E complet **à la
+      clôture** (consigne de l'Epic 35 : pas d'E2E au passage en `review`).
 
 ## Dev Notes
 
@@ -164,11 +164,140 @@ revue fichier par fichier ne vaut que pour les signatures ; les six sites et les
 
 ### Agent Model Used
 
+Opus 5.5 (Claude Code), worktree `kesh-e358a2`, voie 2 (`kesh-mariadb-dev2`, base `kesh_e358a2`), 2026-11-14. Conversion des
+tests confiée à trois agents Sonnet, fichiers disjoints, outil Edit seul (C-e358a2-6).
+
 ### Debug Log References
+
+Journaux sous `/home/gcorbaz/devel/kesh-gate-logs/e358a2/` :
+- base : `base-pdf.log`, `base-db-reset.log`, `base-test-fast.log`, `base-front-{check,lint-i18n-ownership,test-unit,build}.log` ;
+- `rouges.log` — AC1, AC2, AC4 avant le code (commit `4531669f8`) ;
+- `conversion-erreurs-1.txt`, `conversion-erreurs-2.txt` — le relevé du compilateur (sites à convertir) ;
+- `lot-00` à `lot-02`, `fichiers-tests.txt` — le partage des fichiers de tests entre les agents ;
+- `garde-releve-1.log` — la garde rouge sur le code converti, avant la mise à jour de sa table (12 sites neufs, 4 évanouis) ;
+- `verts-cibles.log` — la garde, `audit_label_registry` et les tests ciblés, verts ;
+- `clippy-1.log`, `manuels-make.log` ;
+- `mut/M2p.log`, `mut/M3.log`, `mut/M7-M8-M9.log` ;
+- `gate-db-reset.log`, `gate-test-fast.log`, `gate-ci.log` — gates du passage en `review`.
 
 ### Completion Notes List
 
+**Base** (étape A). Fusion de `story/35-3-comptes-designes-type` achevée (commit `4531669f8`) : onze conflits de texte dont le côté
+35-3 était vide (contenu déjà dans la base par la 35-1), côté de la base gardé ; `sprint-status.yaml` : 35-2a et 35-2b gardées à
+`done` ; PDF pris de notre côté puis régénérés (`make -B user admin`). Comparaison à l'intégration à blanc `e2e1c39c4` : écarts
+limités aux stories absentes (35-4, solde d'ouverture #1025-#1028, #1000) et à la 35-5c (C-e358a2-1 à -3). Gates de la base, au
+commit `4531669f8` : `test-fast --ci` voie 2 **5439 passés, 0 échec, 13 ignorés** (fmt et clippy compris, `base-test-fast.log`) ;
+frontend `check` 0 erreur, `lint-i18n-ownership` PASS, Vitest **3265** (234 fichiers), `build` vert (`base-front-*.log`).
+
+**Étape 0** — lignes relues sur la base `4531669f8` (la fiche cite `main` `67efc51f`) :
+- `journal_entries.rs` : `create` `:195`, `create_in_tx` `:242`, `create_in_tx_inner` `:281` (trace `:562`) ; `reverse_in_tx`
+  `:2564`, `reverse_owned_in_tx` `:2646`, `reverse_at_next_fiscal_year_start_in_tx` `:2697`, `reverse_in_tx_inner` `:2816` (trace
+  `journal_entry.reversed` `:3036`, lettrage `reversal` `:3085`), `reverse` `:3116`, `reverse_at_next_fiscal_year_start` `:3142` ;
+  `update` `:1438`, `delete_by_id` `:1756`, `delete_in_tx` `:1858` ; et `create_opening_entry` `:655`, que la fiche ne nomme pas
+  (C-e358a2-5) ;
+- routes : `routes/journal_entries.rs:458`, `:497`, `:646`, `:708`, `:757` ; `routes/reconciliation.rs:2820`, `:3812`, `:4260`,
+  `:5130`, `:5596` (comme la fiche) ; `reconciliation_cancel.rs:743` (`:723` à la fiche) ;
+- autres appelants : `credit_notes.rs:703`, `invoice_settlements_write.rs:337`, `:700`, `:1026`, `invoices.rs:1707`, `:2424`,
+  `opening_complement.rs:719`, `supplier_invoices.rs:1422`, `:1432` (retour en brouillon), `:1782`, `:2166` (dans `pay_in_tx_as`,
+  qui a l'acteur : C-e358a2-4), `:2634`, `:2921`, `routes/opening_balances.rs:473` (`create_opening_entry`),
+  `kesh-seed/src/pieges.rs:521` ;
+- **rayon**, relevé par le compilateur (`conversion-erreurs-2.txt`, après la conversion de la production) : 217 lignes d'erreur —
+  `journal_entries.rs` (`mod tests`) 80, `accounts.rs` (`mod tests`) 2, tests d'intégration 135 dans 48 fichiers ; la fiche
+  annonçait ≈ 240 appels et ≈ 60 fichiers. Au commit `6d68be121`, depuis la base : **131** `Acteur::utilisateur(` ajoutés dans
+  `crates/*/tests` (garde exclue), **80** dans le `mod tests` de `journal_entries.rs` (81 lignes ajoutées, dont celle de
+  `create_opening_entry`), **2** dans celui d'`accounts.rs`.
+
+**Rouges** (`rouges.log`, commit `4531669f8`) : AC1 saisie par clé (`journal_entry.created` à `("user", None, 1)`), AC1
+rapprochement manuel (`journal_entry.created` à `'user'` ; `reconciliation.manual_matched` déjà à la clé), AC2 (`lettering.created`
+de la paire `reversal` à `'user'` — après l'assertion de son existence, verte) ; le témoin d'AC4 vert, comme attendu.
+
+**Livré** :
+- `journal_entries.rs` : `create`, `create_in_tx`, `create_in_tx_inner`, `reverse`, `reverse_in_tx`, `reverse_owned_in_tx`,
+  `reverse_at_next_fiscal_year_start[_in_tx]`, `reverse_in_tx_inner`, `update`, `update_in_tx`, `delete_by_id`, `delete_in_tx`
+  prennent `acteur: Acteur` ; `journal_entry.created`, `.reversed`, `.updated`, `.deleted` par `NewAuditLogEntry::par` ; le
+  lettrage `reversal` reçoit l'acteur (écart R3 levé, doc-comment de `letterings::Actor` corrigé) ;
+- routes du journal : `Acteur::from(&current_user)` (calculé hors des fermetures de rejeu pour `update` et `delete`) ;
+- les six sites qui ont la clé : `accept_one_invoice`, `accept_one_split`, `accept_one_rule`, `post_manual_once`,
+  `post_split_once` (`Acteur { user_id, api_key_id: actor_api_key_id }`), `reconciliation_cancel.rs` genre `Entry` ; plus
+  `supplier_invoices::pay_in_tx_as` (C-e358a2-4) ;
+- les autres appelants de production passent `Acteur::utilisateur(user_id)` ; le retour en brouillon fournisseur passe l'`acteur`
+  entier à `delete_in_tx` ;
+- la garde : 4 entrées retirées (`create_in_tx_inner` `User`, `reverse_in_tx_inner` `User` et `ApiKeyNone`, `invoices::unvalidate`
+  `DeleteInTxNone`), 12 ajoutées (`Utilisateur`) ; raison `Fixture` déclarée, référence close `pieges::semer` (liste vide : seuls
+  des tests l'appellent) ; doc-comment : motif 5 sans site, angle mort 1 recompté (23 lignes de paramètre) ;
+- AC1 : `an_entry_posted_by_an_api_key_is_attributed_to_the_key` (saisie, clé puis session) et
+  `post_manual_by_an_api_key_attributes_the_entry_to_the_key` ; **aucun cas de `POST /reconciliation/accept`** n'est monté : les
+  trois sites `accept_one_invoice`, `accept_one_split`, `accept_one_rule` sont couverts par la garde (aucune entrée `Utilisateur`
+  pour `routes/reconciliation.rs`) et M9 le prouve pour l'un d'eux ;
+- AC2 : `both_reversals_by_an_api_key_are_attributed_to_the_key` (du jour et à l'exercice suivant, compte `1100` lettrable ;
+  `lettering.created`, `journal_entry.reversed`, `journal_entry.created` de l'inverse) ; modification et suppression par clé :
+  `a_read_write_key_modifies_and_is_traced_as_the_key`, `a_read_write_key_deletes_and_is_traced_as_the_key`, verts ;
+- AC4 : `la_validation_par_cle_ecrit_encore_l_ecriture_au_nom_du_createur` (limite assertée) ; les tests de dépôt existants verts ;
+  l'AC3 de la 35-8a1 vert (dans le gate) ;
+- AC6b : `admin-manual.tex` (item *Journal d'audit*), `user-manual.tex` (tableau du journal d'audit), PDF régénérés
+  (`manuels-make.log`) et contrôlés aplatis ; CHANGELOG, *Corrigé*, `refs #431`.
+
+**La table de la garde, recomptée depuis la source** (`git show HEAD:…/audit_acteur_garde.rs`, `awk` sur les lignes `("crates/`
+du bloc `SITES`) : **93 entrées, 98 sites** — `AConvertir` 53/54, `AdminSansCle` 27/29, `PreAuth` 4/4, `Systeme` 2/3, `Definition`
+3/3, `Restauration` 1/2, `Mcp` 2/2, `Fixture` 1/1 ; par motif, `User` 71/76, `ApiKeyNone` 10/10, `Utilisateur` 12/12,
+`DeleteInTxNone` 0. Raccord à la 35-8a1 (85/90) : − 4 entrées et 4 sites, + 12 et 12. Aucune entrée `Utilisateur` pour
+`routes/reconciliation.rs`, `routes/journal_entries.rs`, `repositories/reconciliation_cancel.rs` (AC5b). `REFERENCES` : 51
+fonctions (50 + `pieges::semer`), références inchangées.
+
+**Mutations**, sur l'arbre commité `6d68be121`/`a9bf89787`, chacune par l'outil Edit, restaurée par `git checkout --` puis `touch`,
+« restauré : 0 ligne » au journal :
+
+| Mutation | Tuée par |
+|---|---|
+| M2' `create_in_tx_inner` trace par `NewAuditLogEntry::user(acteur.user_id, …)` | la garde (`create_in_tx_inner / User`, site neuf), AC1 saisie, AC1 rapprochement, AC2 (`mut/M2p.log`) |
+| M3 lettrage `reversal` rendu à `api_key_id: None` | la garde (`reverse_in_tx_inner / ApiKeyNone`), AC2 (`mut/M3.log`) |
+| M7 `post_manual_once` passe `Acteur::utilisateur(user_id)` | la garde (`post_manual_once / Utilisateur`), AC1 rapprochement (`mut/M7-M8-M9.log`) |
+| M8 `reconciliation_cancel.rs` genre `Entry` passe `Acteur::utilisateur(user_id)` | la garde (`cancel_in_tx / Utilisateur`) |
+| M9 `accept_one_split` passe `Acteur::utilisateur(user_id)` | la garde (`accept_one_split / Utilisateur`) |
+
+M7, M8 et M9 ont été jouées **ensemble** (un seul passage de compilation) : la garde nomme chaque site séparément, et seul M7
+touche le rapprochement manuel ; aucune mutation ne survit.
+
+**Gates du passage en `review`**, au dernier commit de code `6d68be121` (les commits suivants ne touchent ni `crates` ni
+`frontend` ni `scripts` : `git diff --stat 6d68be121 HEAD -- crates frontend scripts` vide) :
+
+| Gate | Résultat | Journal | Commit |
+|---|---|---|---|
+| `cargo fmt --check`, `clippy -D warnings` (workspace) | verts | `clippy-1.log` ; `gate-test-fast.log` (« ▶ cargo fmt --check », « ▶ cargo clippy ») | `6d68be121` |
+| `scripts/test-fast.sh --ci`, voie 2, bases remises à neuf (`gate-db-reset.log`) | **5443 passés, 0 échec, 13 ignorés** (+4 sur la base : les quatre tests neufs) | `gate-test-fast.log` | HEAD `a9bf89787`, code `6d68be121` |
+| `scripts/gate-ci.sh kesh_ci_e358a2`, voie 1 | **5450 passés, 0 échec, 17 ignorés** | `gate-ci.log` | idem |
+| frontend | non relancé : rien ne change sous `frontend/` ; vert sur la base (`base-front-*.log`) | — | `4531669f8` |
+| E2E complet | **non lancé** : à la clôture (consigne de l'Epic 35) | — | — |
+| captures | aucune : aucun contrôle visible ne change | — | — |
+
+**Ce qui n'a pas tourné** : l'E2E (à la clôture) ; le frontend au commit de code (non touché ; joué sur la base) ; aucune capture
+(aucun contrôle visible).
+
+**Écarts à la consigne Edit** : le registre et le prompt de revue créés par l'outil Write (l'outil Edit ne crée pas de fichier) ;
+`cargo fmt` a reformaté ; mes `replace_all` ont touché à tort 37 destructurations `let (…, admin_user_id, today)` du `mod tests`,
+rétablies par Edit après le compilateur. Aucun `sed -i` ni script qui écrit dans le dépôt. Écart de la base, déclaré par
+l'orchestrateur : marqueurs du CHANGELOG de la fusion 35-8a1 retirés par `sed -i`.
+
+**Limites voisines**, à suivre en issues (une par problème, demandées au rapport) : aucune neuve au-delà de #1130 à #1132.
+
 ### File List
+
+- `crates/kesh-db/src/repositories/journal_entries.rs` — signatures à l'`Acteur`, traces par `par`, lettrage `reversal` ; `mod tests`
+- `crates/kesh-db/src/repositories/{credit_notes,invoice_settlements_write,invoices,opening_complement,reconciliation_cancel,supplier_invoices}.rs` — appelants
+- `crates/kesh-db/src/repositories/letterings.rs` — doc-comment de `Actor`
+- `crates/kesh-db/src/repositories/accounts.rs` — `mod tests`
+- `crates/kesh-api/src/routes/journal_entries.rs`, `crates/kesh-api/src/routes/reconciliation.rs` — l'acteur passé
+- `crates/kesh-seed/src/pieges.rs` — `Acteur::utilisateur`
+- `crates/kesh-api/tests/audit_acteur_garde.rs` — table, raison `Fixture`, `REFERENCES`, doc-comment
+- `crates/kesh-api/tests/journal_entry_reversal_e2e.rs` — AC1 (saisie), AC2 ; conversion
+- `crates/kesh-api/tests/reconciliation_manual_e2e.rs` — AC1 (rapprochement)
+- `crates/kesh-api/tests/invoice_unvalidate_e2e.rs` — AC4 (témoin de la limite)
+- 47 autres fichiers de tests de `crates/kesh-{api,db,report}/tests` (dont `kesh-db/tests/support/lettering_documents.rs`) —
+  conversion mécanique (`git diff --stat 4531669f8 6d68be121 -- 'crates/*/tests/*'`)
+- `docs/manual/fr/admin-manual.tex`, `.pdf` ; `docs/manual/fr/user-manual.tex`, `.pdf` ; `CHANGELOG.md`
+- `_bmad-output/implementation-artifacts/e35-choix-autonomes-e358a2.md` — **neuf**, registre
+- `_bmad-output/implementation-artifacts/35-8a2-audit-acteur-ecritures-review-prompt-p1.md` — **neuf**, prompt de la revue P1
+- `_bmad-output/implementation-artifacts/sprint-status.yaml`, cette fiche
 
 ## Change Log
 
@@ -203,3 +332,16 @@ revue fichier par fichier ne vaut que pour les signatures ; les six sites et les
   Opus en passe ciblée (P3), Sonnet en passe ciblée (P4). La boucle se clôt sur une passe sans finding au-dessus de LOW ; la
   remédiation de P4 ne touche que la rédaction. Choix retenus : C-e350-38 à -40, -48 à -50, -52 (ceux de la 35-8a1, dont la
   garde). Statut : `ready-for-dev`.
+- 2026-11-14 — **Base** (Opus 5.5) : fusion de la 35-3 achevée (`4531669f8`, onze conflits de texte réglés côté base — côté 35-3
+  vide —, PDF régénérés ; C-e358a2-1 à -3) ; gates de la base verts (`test-fast --ci` 5439/0/13, frontend complet, Vitest 3265).
+- 2026-11-14 — **Développement** (Opus 5.5, voie 2 ; conversion des tests par trois agents Sonnet, C-e358a2-6).
+  - Étape 0 : lignes relues sur `4531669f8`, rayon relevé par le compilateur (217 lignes d'erreur ; 131 + 80 + 2 sites convertis),
+    détail au Dev Agent Record.
+  - Rouges d'AC1, AC2 et témoin d'AC4 au commit `3be2d577c` (`rouges.log`).
+  - Code au commit `6d68be121` : signatures de `journal_entries.rs` à l'`Acteur`, six sites qui ont la clé et `pay_in_tx_as`
+    (C-e358a2-4), `create_opening_entry` inchangée (C-e358a2-5), autres appelants à `Acteur::utilisateur`, garde à 93 entrées / 98
+    sites (`Utilisateur` 12, motif 5 à zéro, raison `Fixture`), manuels et CHANGELOG ; PDF au commit `a9bf89787`.
+  - Mutations M2', M3, M7, M8, M9 tuées (M7 à M9 jouées ensemble, nommées séparément par la garde).
+  - `test-fast --ci` 5443/0/13 (voie 2) ; `gate-ci` 5450/0/17 (voie 1) ; frontend non touché ; **E2E à la clôture**.
+  - Écart : mes `replace_all` ont touché 37 destructurations, rétablies (Dev Agent Record). Statut : `review`. Prompt de la revue
+    P1 : `35-8a2-audit-acteur-ecritures-review-prompt-p1.md`.
