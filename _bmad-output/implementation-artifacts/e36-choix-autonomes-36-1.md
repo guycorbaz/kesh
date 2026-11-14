@@ -56,7 +56,12 @@ Ces choix ne sont pas couverts par C-e360 ; ils reprennent l'étape 0 de la 36-1
   si le champ porte une saisie ou si une flèche a été pressée ; *Entrée* sur un champ non touché ou vidé sans désignation ne
   choisit aucun compte. La PR ferme #1095 et #1165.
 - **Mise en œuvre retenue** : l'index de surbrillance vaut `-1` sans désignation (pas de surbrillance affichée), `0` après
-  une frappe non blanche, et les flèches partent de `-1` vers `0`.
+  une frappe non blanche, et les flèches partent de `-1` vers `0`. *(Complété à la remédiation de la validation P2 :
+  invariant « index ≥ 0 ⇔ désigné », tenu par un recalcul sur tout changement de la suite des identifiants de `filtered` ou
+  de `value` (bouton ×, valeur du parent, comptes arrivés, liste rétrécie) — `$derived` réassignable recommandé ; la flèche
+  haut ouvre la liste sur le dernier élément depuis `-1` (patron du combobox ARIA ; écartée : ouvrir sans désigner, qui
+  obligerait à une seconde touche) ; le survol passe à `bg-muted` ; table d'*Entrée* close par construction, tout brouillon
+  empêchant l'envoi.)*
 - **Écartées** : laisser #1165 à une story ultérieure (même gestionnaire, mêmes tests et E2E à rouvrir) ; un booléen
   `designated` à côté d'un index resté à `0` (deux états à garder d'accord, surbrillance affichée qui ne vaut pas choix).
 - **Effet** : la sélection au clavier des sept consommateurs change (première *flèche bas* = premier compte ; *Entrée* sans

@@ -93,7 +93,7 @@ leurs parents (`git grep -n "<JournalEntryForm\b\|<VatPurchaseAssistant\b\|<Manu
 `JournalEntryForm.svelte:354`, `ReconciliationProposals.svelte:810`, `:823`, `CounterpartyModalHost.test.svelte:37`, `:47` —
 aucun `<form>`). Les cinq consommateurs stricts ne soumettent donc rien sur *Entrée* ; les seules autres touches *Entrée* de
 ces écrans sont `JournalEntryForm.svelte:297` (`if (e.key === 'Enter' && index === lines.length - 1) {`, dans le champ
-**crédit**, qui ajoute une ligne) et le `Ctrl+S` de `JournalEntryForm.svelte:285`, qui rend déjà le focus (`:289`
+**crédit**, qui ajoute une ligne) et le `Ctrl+S` de `JournalEntryForm.svelte:285`, qui rend déjà le focus (`:290`
 `(document.activeElement as HTMLElement | null)?.blur();`, 35-7, E1).
 
 **Les autres chemins d'envoi sans `blur`, cherchés par le symptôme** (un envoi qui part pendant que le focus est dans le
@@ -133,7 +133,7 @@ I1, I2) : autre composant, autre logique (recherche serveur), et le chemin *blur
 - `frontend/src/routes/(app)/products/products-page.test.ts` : mocks `createProduct`, `updateProduct` (`:41-46`) ; trois tests
   de chargement seulement (`:89-113`) ;
 - E2E : `frontend/tests/e2e/invoice-revenue-account.spec.ts` (montage d'un brouillon et des comptes `:47-121`, champs
-  `page.locator('input[aria-autocomplete="list"]')` `:118`) ; `frontend/tests/e2e/product-revenue-account.spec.ts`
+  `page.locator('input[aria-autocomplete="list"]')` `:115`) ; `frontend/tests/e2e/product-revenue-account.spec.ts`
   (`mkRevenueAccount` `:68`, `openCreateDialog` `:82`, `openEditDialog` `:89`, champ `#form-revenue-account`).
 
 **Outillage de test** : ni `@testing-library/user-event` (`frontend/package.json`, seuls `@testing-library/svelte` `:30` et
@@ -149,30 +149,61 @@ l'`defaultPrevented` de l'événement ; la soumission réelle ne se voit qu'en E
   composant**, pas dans les deux consommateurs : c'est lui qui sait qu'un brouillon est affiché, et le défaut est le sien (le
   même geste sur un futur consommateur dans un `<form>` serait couvert).
 
-  **La désignation, par l'index de surbrillance.** `highlightIndex` vaut **`-1`** (aucune surbrillance) tant que rien n'a été
-  désigné : valeur initiale (`:177`, aujourd'hui `0`), au focus (`:327`), au choix, au `blur`, à *Échap*, et à une frappe qui
-  laisse un brouillon blanc ; une frappe **non blanche** la met à `0` (le premier compte correspondant, désigné par la
-  saisie — aujourd'hui `:240` met `0` inconditionnellement) ; *flèche bas* depuis `-1` va à `0`, *flèche haut* depuis `-1` va à
-  `0` (`Math.max(-2, 0)`), puis comme aujourd'hui. Aucune ligne n'est mise en évidence à `-1` (`class:bg-accent` et
-  `aria-selected` suivent l'index, `:397`, `:403`) : l'écran ne montre plus une surbrillance qui n'est pas un choix. La
-  condition de choix de `:266` (`open && filtered[highlightIndex]`) reste la même et devient juste, puisque `filtered[-1]` est
-  `undefined`. **Option écartée** : un booléen `designated` à côté d'un index qui resterait à `0` — deux états à garder
-  d'accord, et une surbrillance affichée qui ne vaudrait pas choix.
+  **La désignation, par l'index de surbrillance.** Invariant : **`highlightIndex ≥ 0` si et seulement si un compte a été
+  désigné** — par une saisie non blanche (le premier compte correspondant) ou par une flèche. Toutes les transitions de l'index
+  dans le composant, relevées par `/usr/bin/grep -n "highlightIndex\|open = \|draft = " AccountAutocomplete.svelte` à
+  `9d5a142df` (lignes lues : `177:	let highlightIndex = $state(0);`, `240:		highlightIndex = 0;`,
+  `261:			highlightIndex = Math.min(highlightIndex + 1, filtered.length - 1);`,
+  `264:			highlightIndex = Math.max(highlightIndex - 1, 0);`, `271:			open = false;` (*Échap*), `284:		open = false;` (`blur`),
+  `250:		draft = null;` / `251:		open = false;` (choix), `189:			draft = null;` (`$effect` de la valeur, `:186-191`),
+  `327:		onfocus={() => (open = true)}`, `370:				draft = null;` (bouton ×), `397`/`403` (lecture, rendu)), et la
+  règle de chacune :
 
-  **Règle de `handleKeydown` sur *Entrée***, dans cet ordre (V1-3 : les conditions portent sur `open` et sur l'index, plus sur
-  une formule « sans élément en surbrillance ») :
+  | Transition | Aujourd'hui | Règle 36-1 |
+  |---|---|---|
+  | valeur initiale (`:177`) | `0` | `-1` |
+  | focus (`:327`) | inchangé | `-1` |
+  | *Échap* (`:270-271`) | inchangé | `-1` |
+  | choix (`:249-253`) | inchangé | `-1` |
+  | `blur` (`:283-284`) | inchangé | `-1` |
+  | **recalcul** : la suite des identifiants de `filtered` change, ou `value` change — frappe (`:236-240`), bouton × (`:370-371`), valeur posée par le parent (`$effect` `:186-191`), arrivée des comptes après chargement, liste qui rétrécit sous l'index | `0` à la frappe seulement ; sinon inchangé | `0` si le brouillon est **non blanc** et `filtered` non vide (désignation par la saisie), `-1` sinon (V2-2, V2-1 b) |
+  | *flèche bas* (`:258-261`) | ouvre, `+1` borné | ouvre ; depuis `-1` → `0`, puis `+1` borné ; `filtered` vide → `-1` |
+  | *flèche haut* (`:262-264`) | `-1` borné à `0`, **n'ouvre pas** | **ouvre la liste** ; depuis `-1` → le **dernier** élément (`filtered.length - 1`, patron du combobox ARIA), sinon `-1` borné à `0` ; `filtered` vide → `-1` (V2-1 a) |
+
+  **Mise en œuvre recommandée du recalcul** : `highlightIndex` en `$derived` **réassignable** (Svelte ≥ 5.25 ; le dépôt est en
+  `^5.54.0`, `frontend/package.json:35`), dérivé de la **chaîne** des identifiants de `filtered`, de `value` et du caractère
+  blanc du brouillon, et réassigné par les flèches, le focus, *Échap*, le choix et le `blur`. Une chaîne et non le tableau :
+  un nouveau tableau aux mêmes comptes (rendu du parent) ne doit pas effacer une désignation par les flèches. **Repli
+  accepté** : un `$effect` sur les mêmes dépendances, si le `$derived` réassignable ne se prête pas au cas — à dire au Change
+  Log. **Options écartées** : remettre l'index à `-1` dans chaque gestionnaire (la liste rétrécie et l'arrivée des comptes
+  n'ont pas de gestionnaire : c'est par elles que V2-1 b passait) ; un booléen `designated` à côté d'un index resté à `0`
+  (deux états à garder d'accord, surbrillance affichée qui ne vaut pas choix).
+
+  Aucune ligne n'est mise en évidence à `-1` (`class:bg-accent` et `aria-selected` suivent l'index, `:397`, `:403`). **Survol**
+  (V2-3) : `:396` `hover:bg-accent` donne aujourd'hui au survol la couleur de la désignation, alors qu'*Entrée* ne choisit pas
+  l'option survolée ; il passe à `hover:bg-muted` pour que la couleur `bg-accent` ne signifie que la désignation au clavier.
+  La condition de choix de `:266` (`open && filtered[highlightIndex]`) reste la même : par l'invariant, elle ne vaut que pour
+  un compte désigné.
+
+  **Règle de `handleKeydown` sur *Entrée*** — **close par construction** (V2-1) : E0, E1, E2 sont essayées dans cet ordre ;
+  ce qui reste a **toujours** un brouillon (`draft !== null`), et E3, E4, E5 en sont la **partition** sur deux seuls critères,
+  brouillon blanc ou non, `filtered` vide ou non — **aucune condition sur `open` ni sur l'index**. Le code s'écrit donc
+  `if (E0) return; if (E1) {…} else if (draft === null) {/* E2 */} else { e.preventDefault(); if (blanc) … else if (vide) … else … }`,
+  et aucun état ne laisse partir l'événement avec un brouillon affiché.
 
   | # | État | Règle | Chemin | AC | Mutation |
   |---|---|---|---|---|---|
   | E0 | `loadError`, ou composition IME en cours (`e.isComposing`, V1-7) | inchangé : retour sans rien faire, l'événement suit son cours | — | AC1 i, AC1 j | M8 |
-  | E1 | liste ouverte et élément désigné (`open && filtered[highlightIndex]`, index ≥ 0) — saisie qui correspond à **un ou plusieurs** comptes (index `0` par la frappe, ou celui des flèches), ou champ vide / vidé **après une flèche** | `preventDefault`, l'élément est choisi, le champ montre son libellé, rien ne part | — | AC1 c, AC1 k | M11 |
-  | E2 | **non touché** (`draft === null`), sans désignation — valeur résolue **ou** nulle | rien n'est choisi ; l'événement suit son cours : le formulaire part, le champ montrant `displayLabel` (le compte, ou vide = « défaut société » et `null` envoyé) | C4 | AC1 g (valeur résolue), AC1 l (valeur nulle) | M2, M9 |
-  | E3 | brouillon non blanc, liste fermée (après *Échap*), avec correspondances | `preventDefault`, la liste **se rouvre** (`open = true`, `highlightIndex = 0`), rien n'est choisi | C2 | AC1 d | M4 |
-  | E4 | brouillon non blanc, aucune correspondance (liste ouverte ou fermée) | `preventDefault`, le brouillon **reste** ; le message de D2 s'affiche **si la liste des comptes est chargée** (`accounts.length > 0`) — pendant le chargement, rien n'est choisi ni envoyé, sans message (V1-3) | C1 | AC1 a, AC1 b, AC1 m | M1, M3, M12 |
-  | E5 | brouillon **blanc** sans désignation (`draft.trim() === ''`, index `-1`), **liste ouverte ou fermée** | `preventDefault`, puis **la résolution du `blur`** (`commitDraft()`) : `allowClear` → effacement explicite, sous la même condition (`value !== null && selected !== undefined`) ; strict → brouillon jeté, compte retenu réaffiché. Rien ne part | C3, C5 | AC1 e, f (après *Échap*), AC1 n, o (liste ouverte) | M5, M10 |
+  | E1 | sinon, `open && filtered[highlightIndex]` (un compte désigné, par l'invariant) — saisie qui correspond à **un ou plusieurs** comptes, ou flèches | `preventDefault`, l'élément est choisi, le champ montre son libellé, rien ne part | — | AC1 c, k, p, q | M11, M13 |
+  | E2 | sinon, **aucun brouillon** (`draft === null`) — non touché, valeur résolue **ou** nulle, ou après le bouton × | rien n'est choisi ; l'événement suit son cours : le formulaire part, le champ montrant `displayLabel` (le compte, ou vide = « défaut société » et `null` envoyé) | C4 | AC1 g, l, r | M2, M9, M15 |
+  | — | sinon (**un brouillon est affiché**) | `preventDefault` **toujours**, puis E3, E4 ou E5 | — | AC1 q (M14) | M1, M14 |
+  | E3 | … brouillon non blanc, `filtered` non vide | la liste **s'ouvre** ou reste ouverte (`open = true`, index `0`), rien n'est choisi | C2 | AC1 d | M4 |
+  | E4 | … brouillon non blanc, `filtered` vide | le brouillon **reste** ; le message de D2 s'affiche **si la liste des comptes est chargée** (`accounts.length > 0`) — pendant le chargement, sans message (V1-3) | C1 | AC1 a, b, m | M3, M12 |
+  | E5 | … brouillon **blanc** (`draft.trim() === ''`) | **la résolution du `blur`** (`commitDraft()`) : `allowClear` → effacement explicite, sous la même condition (`value !== null && selected !== undefined`) ; strict → brouillon jeté, compte retenu réaffiché ; liste fermée, index `-1` | C3, C5 | AC1 e, f, n, o | M5, M10 |
 
   Une *Entrée* suivante, sans brouillon, tombe sur E2 et envoie. **Un texte qui correspond à un compte unique ou à
-  plusieurs** suit E1 (liste ouverte) ou E3 (liste fermée) : seul un élément visible et désigné est choisi.
+  plusieurs** suit E1 (liste ouverte, premier compte désigné par la saisie ou celui des flèches) ou E3 (liste fermée : elle se
+  rouvre) : seul un élément visible et désigné est choisi.
 
   La résolution du brouillon (`:291-316`) est **extraite** en une fonction (`commitDraft()`) que `handleBlur` et E5
   appellent tous deux — une seule règle, écrite une fois (DRY). **Options écartées** : (a) résoudre le brouillon comme le
@@ -199,6 +230,11 @@ l'`defaultPrevented` de l'événement ; la soumission réelle ne se voit qu'en E
   `aria-live` inséré en même temps que son texte n'est pas annoncé de façon fiable ; le lien `aria-describedby` vise cette
   même région, et n'est posé que lorsqu'elle a un contenu. AC1 a vérifie `role="status"` et le lien.
   Il s'affiche à l'état E4 de D1 et **disparaît** à la frappe suivante, au choix d'un compte, au bouton d'effacement et au `blur`.
+  **Un seul point d'effacement** (V2-6) : E4 retient le brouillon refusé (`noMatchDraft = draft`), et le message est **dérivé**
+  — visible tant que `draft === noMatchDraft` (non nul). Les quatre déclencheurs changent tous `draft` (frappe `:238`, choix
+  `:250`, bouton × `:370`, `blur` via `commitDraft()`) : aucun n'a à effacer le message lui-même, et une seule mutation (M6,
+  le message lu sur un drapeau gardé au lieu de la comparaison) les fait tous rougir. Conséquence assumée : retaper
+  exactement le texte refusé fait reparaître le message, qui reste vrai.
   Valable pour les sept consommateurs : il ne nomme ni produit ni facture. **Option écartée** : jeter le brouillon sans message
   (le champ réafficherait l'ancien compte) — vrai, mais l'utilisateur voit son texte remplacé sans savoir pourquoi, et doit le
   retaper pour corriger une faute de frappe. **Réversible** : oui.
@@ -208,7 +244,9 @@ l'`defaultPrevented` de l'événement ; la soumission réelle ne se voit qu'en E
   dans aucun `<form>` : pour eux, *Entrée* n'envoyait rien. **Mais le principe (ii) de D1 change la sélection au clavier
   des sept** : un champ ouvert sans saisie ne montre plus de surbrillance, et *Entrée* n'y choisit plus le premier compte
   (E2, E5) ; la première *flèche bas* désigne désormais le **premier** compte (aujourd'hui le deuxième, l'index partant de
-  `0`) ; le reste — frappe puis *Entrée*, flèches puis *Entrée*, clic — est inchangé. Couverture : le composant porte la
+  `0`) ; la *flèche haut* ouvre la liste sur le dernier compte ; le × et une valeur posée par le parent annulent la
+  désignation ; le survol prend `bg-muted` ; le reste — frappe puis *Entrée*, flèches dans une liste ouverte, clic — est
+  inchangé (validation P2). Couverture : le composant porte la
   règle et ses tests (AC1, toutes les lignes de la table de D1) ; les consommateurs ne font que passer `accounts`, `value`,
   `onSelect` et leurs options, sans logique clavier propre au champ (lu : aucun `onkeydown` sur `<AccountAutocomplete`, sortie
   du `grep` de *Ce qui se lit au code*) ; aucun test existant ne sélectionne un compte au clavier
@@ -231,14 +269,17 @@ l'`defaultPrevented` de l'événement ; la soumission réelle ne se voit qu'en E
 
 1. **AC1 — Le composant** (`AccountAutocomplete.test.ts`, `describe` neuf « Entrée (Story 36-1, #1095, #1165) » ;
    l'événement est constaté par la valeur rendue de `fireEvent.keyDown`, `false` quand `preventDefault` a été appelé ; chaque
-   ligne de la table de D1 a au moins un cas) :
+   ligne de la table de D1 a au moins un cas). **Montage** (V2-5) : les tests existants passent `onSelect: vi.fn()` sans jamais
+   réinjecter la valeur (`AccountAutocomplete.test.ts:171-203`) ; les cas qui constatent l'affichage **après** un choix ou un
+   effacement (c, e, k, n, p, q, r) réinjectent la valeur comme un parent : `onSelect` espion qui appelle
+   `rerender({ value: id })` (ou un composant hôte). Sans cela, l'affichage retomberait sur la valeur de départ :
    - a. `allowClear`, valeur `1` (`3000 — Ventes`) : taper `zzz`, *Entrée* → événement empêché ; `onSelect` jamais appelé ; le
      champ montre `zzz` ; le message « Aucun compte ne correspond » est affiché dans un élément `role="status"` dont l'`id`
      figure dans `aria-describedby` ;
    - b. même montage : taper `zzz`, *Échap*, *Entrée* → idem (C1 liste fermée) ;
-   - c. deux comptes `3000`, `3001` : taper `300`, *Entrée* → événement empêché ; `onSelect(id de 3000)` une fois ; le champ
-     montre `3000 — Ventes` (non-régression de E1, vert au départ, **dit**) ; taper `300`, *flèche bas*, *Entrée* →
-     `onSelect(id de 3001)` ;
+   - c. deux comptes `3000`, `3001`, **valeur `null`** (V2-5), valeur réinjectée : taper `300`, *Entrée* → événement empêché ;
+     `onSelect(id de 3000)` une fois ; le champ montre `3000 — Ventes` (non-régression de E1, vert au départ, **dit**) ; taper
+     `300`, *flèche bas*, *Entrée* → `onSelect(id de 3001)` ;
    - d. taper `3001` (correspondance unique), *Échap*, *Entrée* → événement empêché ; `onSelect` jamais appelé ; la liste
      (`role="listbox"`) est de nouveau affichée ; une seconde *Entrée* → `onSelect(id de 3001)` ;
    - e. `allowClear`, valeur `1` : vider le champ, *Échap*, *Entrée* → événement empêché ; `onSelect(null)` **une** fois ; le
@@ -247,7 +288,9 @@ l'`defaultPrevented` de l'événement ; la soumission réelle ne se voit qu'en E
      montre `3000 — Ventes` ;
    - g. E2, **non touché à valeur résolue** : valeur `1`, focus, *Entrée* → événement **non** empêché, `onSelect` jamais
      appelé (le formulaire peut partir : le champ montre le compte) ;
-   - h. après le cas a : une frappe (`zz`) → le message disparaît ; de même après un `blur` ;
+   - h. après le cas a, quatre variantes, une par déclencheur (V2-6) : une frappe (`zz`) ; un `blur` ; un clic sur le bouton ×
+     (valeur réinjectée) ; un choix (taper `30`, clic sur l'option `3000`) → le message disparaît chaque fois, et la région
+     `role="status"` reste présente, vide ;
    - i. E0, mode dégradé (`loadError`) : taper `7`, *Entrée* → événement non empêché, comportement inchangé ;
    - j. E0, composition IME : taper `zzz`, puis `keyDown` *Entrée* avec `isComposing: true` → événement **non** empêché, aucun
      message ;
@@ -261,7 +304,17 @@ l'`defaultPrevented` de l'événement ; la soumission réelle ne se voit qu'en E
    - n. E5, **vidé, liste ouverte**, `allowClear` (chemin C5) : valeur `1`, vider le champ (sans *Échap*), *Entrée* →
      événement empêché ; `onSelect(null)` **une** fois ; le champ est vide ;
    - o. E5, vidé, liste ouverte, **strict** : valeur `1`, vider le champ, *Entrée* → événement empêché ; `onSelect` jamais
-     appelé ; le champ montre `3000 — Ventes`.
+     appelé ; le champ montre `3000 — Ventes` ;
+   - p. *flèche haut* depuis `-1`, liste fermée (V2-1 a) : `allowClear`, valeur `1`, comptes `3000`, `3001`, vider le champ,
+     *Échap*, *flèche haut* → la liste est affichée, la **dernière** option porte `aria-selected="true"` ; *Entrée* → événement
+     empêché, `onSelect(id de 3001)` ; et, sans *flèche haut* (vider, *Échap*, *Entrée*), c'est E5 (cas e) ;
+   - q. liste arrivée sous un brouillon (V2-1 b) : monté avec `accounts = []`, valeur `null`, taper `300`, *flèche bas*, puis
+     `rerender({ accounts: [3000, 3001] })` → l'option `3000` porte `aria-selected="true"` (désignée par la saisie) ;
+     *Entrée* → événement **empêché**, `onSelect(id de 3000)` ;
+   - r. bouton × après une désignation (V2-2) : `allowClear`, valeur `1`, valeur réinjectée, taper `30` (option `0` désignée),
+     clic sur × → `onSelect(null)` une fois, la liste reste affichée, **aucune** option ne porte `aria-selected="true"` ;
+     *Entrée* → événement **non** empêché, `onSelect` n'est pas rappelé. (Une valeur posée par le parent, liste ouverte,
+     brouillon nul, change toujours `filtered` avec elle : le cas se confond avec r ou avec g ; pas de test séparé, dit.)
 2. **AC2 — Les tests existants** : la suite `AccountAutocomplete.test.ts` existante reste verte **sans modification de ses
    assertions** (le `blur` garde exactement sa règle, désormais dans `commitDraft()`), ainsi que celles de `JournalEntryForm`,
    `ManualMatchModal`, `TransactionSplitModal`, `InvoiceForm`, `products-page`.
@@ -309,7 +362,8 @@ l'`defaultPrevented` de l'événement ; la soumission réelle ne se voit qu'en E
    C-e350-18). Aucun manuel modifié (D4).
 7. **AC7 — Captures** (thème clair, base de démonstration jetable, `/home/gcorbaz/devel/kesh-gate-logs/e36-1/captures/`) :
    ligne de facture avec `zzz` et le message ; fiche article, même état ; ligne de facture après *Échap* puis *Entrée* (liste
-   rouverte) ; ligne neuve au focus, liste ouverte **sans** surbrillance (#1165).
+   rouverte) ; ligne neuve au focus, liste ouverte **sans** surbrillance (#1165), **pointeur hors de la liste** (V2-3) ; la
+   même liste, pointeur sur une option (survol `bg-muted`, distinct de la désignation).
 
 ## Tests à écrire, et la preuve du rouge
 
@@ -320,7 +374,8 @@ l'`defaultPrevented` de l'événement ; la soumission réelle ne se voit qu'en E
   part de l'index `0` et désigne le **deuxième** compte) ; AC1 l (l'option `0` porte `aria-selected="true"`, puis *Entrée*
   l'empêche et choisit) ; AC1 n, o (le premier compte est choisi) ; AC3 a (`updateInvoiceMock` appelé avec `3200`) ; AC3 c
   (premier compte choisi, rien ne part) ; AC4 (`updateProduct` appelé) ; AC5 a, a-bis et b (redirection ; premier compte
-  posé ; dialogue fermé ; `PUT` parti).
+  posé ; dialogue fermé ; `PUT` parti) ; AC1 p (la *flèche haut* n'ouvre pas la liste) ; AC1 q (l'index reste `-1` à
+  l'arrivée des comptes, *Entrée* non empêchée) ; AC1 r (l'option `0` reste désignée après le ×, *Entrée* la choisit).
 - **Verts au départ, et dits** (non-régression) : AC1 c, g, i, j (aujourd'hui `zzz` n'est jamais intercepté, donc pas en
   composition non plus : j ne devient utile qu'avec le correctif, tué par M8) ; AC3 b (la première *Entrée* choisit déjà dans
   une liste ouverte, la seconde envoie déjà : ce test garde contre un blocage excessif, M2) ; AC2.
@@ -332,13 +387,24 @@ l'`defaultPrevented` de l'événement ; la soumission réelle ne se voit qu'en E
   - M3 : E4, le brouillon jeté (`draft = null`) au lieu d'être gardé → AC1 a (le champ ne montre plus `zzz`) ;
   - M4 : E3, la correspondance choisie au lieu de rouvrir la liste → AC1 d (`onSelect` appelé) ;
   - M5 : E5, `commitDraft()` non appelé → AC1 e, f, n, o ;
-  - M6 : le message non effacé à la frappe → AC1 h ;
+  - M6 : le message lu sur un drapeau posé à E4 et jamais remis à faux, au lieu de la comparaison `draft === noMatchDraft`
+    (le seul point d'effacement de D2) → AC1 h, ses quatre variantes (frappe, `blur`, ×, choix) ;
   - M7 : `aria-describedby` sans l'`id` du message → AC1 a ;
   - M8 : la garde `e.isComposing` retirée → AC1 j ;
   - M9 : l'index de surbrillance remis à `0` au focus (au lieu de `-1`) → AC1 l ; AC3 c ; AC5 a-bis (#1165, C4) ;
   - M10 : une frappe qui laisse un brouillon blanc met l'index à `0` (comme `:240` aujourd'hui) → AC1 n, o (C5) ;
   - M11 : les flèches ne désignent pas depuis `-1` (l'index y reste) → AC1 k ;
-  - M12 : le message affiché même sans liste chargée → AC1 m.
+  - M12 : le message affiché même sans liste chargée → AC1 m ;
+  - M13 : la *flèche haut* reprise d'aujourd'hui (`:262-264` : n'ouvre pas, `Math.max(-2, 0)`) → AC1 p ;
+  - M14 : **mutation double**, la table codée à la lettre de sa version P1 (E3 seulement liste fermée, E5 seulement index
+    `-1`, sinon l'événement suit son cours) **et** le recalcul de l'index retiré (M15) — seule combinaison qui atteint le trou
+    que la construction ferme : AC1 q (événement non empêché, alors que M15 seule le laisse empêché par le repli). M14 seule
+    est **équivalente** sous l'invariant (dit) ;
+  - M15 : le recalcul de l'index retiré (l'index ne change qu'aux frappes et aux flèches) → AC1 q (`onSelect` non appelé,
+    aucune option désignée) ; AC1 r (le × laisse l'option `0` désignée, *Entrée* la choisit). Retirer la seule dépendance à
+    `value` (en gardant celle à `filtered`) est **équivalent** : brouillon nul, un changement de valeur change toujours
+    `filtered` (dit) ;
+  - M16 : le survol rendu à `hover:bg-accent` → aucune assertion de test (classe CSS) ; contrôlé par la capture d'AC7, dit.
 
 ## Tâches
 
@@ -353,7 +419,7 @@ l'`defaultPrevented` de l'événement ; la soumission réelle ne se voit qu'en E
       focus d'abord : à compléter par « ou passer par *Entrée*, qui résout le brouillon sans envoyer ») ; doc de la prop
       `allowClear` relue.
 - [ ] `messages.ftl` ×4 (D2) ; `sitesTotal` recompté.
-- [ ] Verts ; mutations M1 à M12 ; captures (AC7).
+- [ ] Verts ; mutations M1 à M15 (M16 par la capture) ; captures (AC7).
 - [ ] Gates (voie 2 ; `gate-ci` en voie 1), selon `e35-dev-commun.md` § *Quels gates, quand* : en cours, gate ciblé — Vitest
       des fichiers touchés, `npm run check`, `npm run lint-i18n-ownership`, et `cargo nextest run -E 'binary(...)'` du crate
       `kesh-i18n` (les `.ftl` y sont lus) ; **au passage en `review`** : bases remises à neuf, `scripts/test-fast.sh --ci`
@@ -373,7 +439,9 @@ l'`defaultPrevented` de l'événement ; la soumission réelle ne se voit qu'en E
 - **Facture et article : Entrée dans un champ « Compte de produit » vide ne choisit plus d'office le premier compte de la
   liste.** Un compte n'est choisi au clavier que si vous l'avez désigné, en tapant ou avec les flèches ; une ligne laissée
   vide suit le compte de produit par défaut de la société, même après une double Entrée. Le même champ de compte, dans les
-  écritures manuelles et le rapprochement bancaire, suit la même règle. (refs #1165)
+  écritures manuelles, l'assistant d'achat et le rapprochement bancaire, suit la même règle ; sur ces sept champs, la
+  première flèche vers le bas désigne désormais le premier compte de la liste (auparavant le deuxième), la flèche vers le
+  haut ouvre la liste sur le dernier, et le survol de la souris n'a plus la couleur d'un compte désigné. (refs #1165)
 
 ## Dev Notes
 
@@ -393,6 +461,9 @@ l'`defaultPrevented` de l'événement ; la soumission réelle ne se voit qu'en E
 - **I5 — Mode dégradé** (bug, P4 proposé) : liste des comptes non chargée, un texte non numérique (`abc`) envoie `null`
   (`:243-246`) et reste affiché, au `blur` (`:288`) comme à *Entrée* (`:256`). Voisin de #1085 (le brouillon gardé quand la
   liste revient), distinct. À ouvrir, une issue.
+- **#1168 — pas d'`aria-activedescendant`** (validation P2, V2-4 ; ouverte par l'orchestrateur) : la désignation au clavier
+  n'est annoncée à aucun lecteur d'écran (`git grep -n "activedescendant" -- frontend/src` ne rend que
+  `ContactPicker.svelte:137`). Préexistant, hors périmètre.
 - Les issues voisines déjà ouvertes, inchangées : #1081 (barre de défilement de la liste), #1084 (numéro exact puis *Tab*),
   #1085 (mode dégradé puis liste revenue).
 
@@ -470,3 +541,30 @@ découpage proposé — séparer un test de son correctif n'apporterait rien, et
   - **V1-8 (LOW), retenu** : `lint-i18n-ownership.js:16` (lu : `16:const GLOBAL_NAMESPACES = […]`) au lieu de `:12`.
   - Grep de la phrase corrigée (`/usr/bin/grep -n "geste d'envoi"` sur la fiche et le registre) : ne reste que la citation de
     l'ancienne phrase dans cette entrée. Registre : C-36-1-5 ajouté, C-36-1-1 et C-36-1-3 complétés.
+- 2026-11-14 — **Validation P2 (Opus) : 0/0/2/7 → remédiés** (Opus 5.5, par l'outil Edit ; rapport
+  `kesh-gate-logs/e36-1/validation-p2.md`). Prémisses relues au code à `9d5a142df` :
+  - **V2-1 (MEDIUM), retenu** : `262:		} else if (e.key === 'ArrowUp') {` / `264:			highlightIndex = Math.max(highlightIndex - 1, 0);`
+    — n'ouvre pas la liste ; `261` `Math.min(highlightIndex + 1, filtered.length - 1)` rend `-1` sur une liste vide. Les deux
+    états orphelins existent. Remède : table de D1 **close par construction** (E0, E1, E2, puis tout brouillon empêche
+    l'envoi ; E3, E4, E5 partitionnés sur « blanc » et « `filtered` vide » seuls, sans condition sur `open` ni sur l'index) ;
+    *flèche haut* qui ouvre la liste sur le dernier élément depuis `-1` ; AC1 p, q ; M13, M14 (double, avec M15 ; M14 seule
+    équivalente, dit).
+  - **V2-2 (MEDIUM), retenu** : `$effect` `:186-191` et bouton × `:370-371` ne touchent ni `open` ni `highlightIndex`.
+    Remède : énumération de **toutes** les transitions de l'index (grep cité en D1) et invariant « index ≥ 0 ⇔ désigné » ;
+    recalcul de l'index sur tout changement de la suite des identifiants de `filtered` ou de `value` (× , valeur du parent,
+    comptes arrivés, liste rétrécie, frappe) ; `$derived` réassignable recommandé, `$effect` en repli ; AC1 r ; M15.
+  - **V2-3 (LOW), retenu** : `396` `hover:bg-accent` lu ; le survol passe à `hover:bg-muted`, D1 le dit, capture d'AC7
+    pointeur hors liste et sur une option ; M16 contrôlée par la capture.
+  - **V2-4 (LOW)** : #1168, ouverte par l'orchestrateur, citée hors périmètre.
+  - **V2-5 (LOW), retenu** : `AccountAutocomplete.test.ts:171-203` (`onSelect` sans réinjection) lu ; montage avec valeur
+    réinjectée pour c, e, k, n, p, q, r ; valeur de départ d'AC1 c à `null`.
+  - **V2-6 (LOW), retenu** : un seul point d'effacement du message (dérivé de `draft === noMatchDraft`) ; AC1 h en quatre
+    variantes (frappe, `blur`, ×, choix) ; M6 redéfinie, tuée par les quatre.
+  - **V2-7 (LOW), retenu** : `invoice-revenue-account.spec.ts:115` (lu :
+    `115:	const accountFields = page.locator('input[aria-autocomplete="list"]');`) au lieu de `:118` ;
+    `JournalEntryForm.svelte:290` (lu : `(document.activeElement as HTMLElement | null)?.blur();`) au lieu de `:289`.
+  - **V2-8 (LOW)** : ligne du `sprint-status.yaml` corrigée (validation P1 et P2 remédiées, #1165) ; clé
+    `36-1-compte-produit-entree` et nom de fiche gardés tels quels (écart consigné au premier rapport) ; fichier d'epic annoté
+    par l'orchestrateur.
+  - **V2-9 (LOW), retenu** : la note de version (`refs #1165`) dit la première flèche bas, la flèche haut et le survol pour les
+    sept champs.
