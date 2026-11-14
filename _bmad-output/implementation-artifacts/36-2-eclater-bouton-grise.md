@@ -710,10 +710,16 @@ au focus initial, couvrait *Ajouter une ligne* — défaut du test).
 | (h) six lignes, liste ouverte | `overflowY:visible, maxHeight:none`, première option visible ; **seuil #1181 : 9 lignes** | idem, 9 lignes |
 
 Verdicts : **H1** constatée en 0.17.6 (variante (b)) et corrigée à la tête par la 35-7 — non contredite à la tête ;
-**H2** réfutée sous Chromium fr-CH : le navigateur ne laisse pas un texte illisible affiché avec une valeur nulle, il
-réécrit la saisie (`70,00` → `70.00`, apostrophe écartée ; `illisible=false` partout) — D5 s'applique tout de même (le
-champ texte rend la saisie telle quelle, et la lecture la dit) ; **H3** constatée (quatre champs tronqués à 384 px) ;
+**H2** réfutée sous Chromium fr-CH : Chromium lit `70,00` et lie `70.00` (le champ **affiche** « 70,00 », capture
+`r0-tete-c-virgule.png` ; `input.value` vaut `70.00` et `validity.badInput` est faux), et l'apostrophe tapée est écartée
+de `1'200.50` (`1200.50`) — aucun désaccord entre l'affiché et le lié, donc pas de grisé par H2 ; la réfutation ne vaut
+que pour Chromium, seul navigateur des E2E. D5 s'applique tout de même (le champ texte rend la saisie telle quelle, et la
+lecture la dit) *(corrigé à la remédiation de la revue P1, A5 : la phrase disait « réécrit la saisie »)* ; **H3** constatée (quatre champs tronqués à 384 px) ;
 **H4** constatée (« Balance ») ; **H5** constatée (`Erreur serveur (422)` : rejet de l'extracteur JSON, montant en nombre).
+
+**Pour la PR (revue P1, A1)** : **`closes #1150`** (table B2) et **`closes #1151`** (D6), au titre ou au corps de la
+PR seulement — les commits et la note de version gardent `refs`. Après fusion : `gh issue view 1150 --json state`, et
+de même pour 1151.
 
 **Tables de *Si R0 rend…*** : table A, ligne **A3** (H1 non contredite à la tête, R0-a joué) — D2 à D6 développés.
 Table B, ligne **B2** : aucune variante éligible ne reproduit le grisé à la tête (B1 non), la variante (b) le reproduit en
@@ -733,17 +739,35 @@ correctifs (`r0-apres-3.log`).
 - en cours : Vitest ciblés (`cible-apres-correctifs.log` : 742 passés, 47 fichiers), `npm run check`,
   `lint-i18n-ownership`, `cargo fmt --check` et `cargo nextest run -p kesh-i18n` (41/41, `cible-i18n-build.log`,
   `78e841d57`), E2E ciblé `reconciliation-split.spec.ts` ;
-- bases `kesh_e362` et `kesh_e2e_e362` remises à neuf avant les gates ;
+- bases `kesh_e362` et `kesh_e2e_e362` remises à neuf avant les gates *(annoté à la remédiation P1, A3 : la remise à
+  neuf a été faite par une commande dont la sortie n'a pas été journalisée — l'affirmation reste sans pièce pour ce
+  passage ; à la remédiation, elle est au journal `remise-a-neuf-rem1.log`)* ;
 - `scripts/test-fast.sh --ci` (voie 2) : **5445 exécutés, 5445 passés, 13 ignorés** — `test-fast-ci-review.log`, commit
   `7efe74db4` (les commits de code suivants, `95259d3db` et `ee9f15714`, ne touchent que la spec E2E et un test Vitest :
   aucun fichier Rust ni `.ftl`) ;
-- frontend complet : `npm run check` 0 erreur (29 avertissements, aucun dans les fichiers de la story), lint vert,
+- frontend complet : `npm run check` 0 erreur (29 avertissements ; « aucun dans les fichiers de la story » reposait sur
+  un `grep -c` non journalisé — annoté à la remédiation P1, A3 : la liste par fichier est au journal
+  `check-avertissements-rem1.log`), lint vert,
   **Vitest 3598 passés (237 fichiers)**, build — `front-complet-review-2.log`, commit `ee9f15714` (la première passe,
   `front-complet-review.log` à `95259d3db`, rendait 2 rouges de la garde des libellés en dur : 92 candidates au lieu de
   91, `expectedLabel` — compteurs relevés et corrigés en `ee9f15714`) ;
 - `scripts/gate-ci.sh kesh_ci_e362` (voie 1) : **5452 passés, 0 échoué, 17 ignorés** — `gate-ci-review.log`, commit
   `ee9f15714` (dernier commit de code).
 - **Non lancés : l'E2E complet et le `gate-ci` de clôture** — à la clôture, au dernier commit de code.
+
+**Gates de la remédiation de la revue P1** (dernier commit de code `46c26744f` ; script `gates-rem-36-2.sh rem1`,
+chaque journal porte son commit en première ligne) :
+- bases `kesh_e362` et `kesh_e2e_e362` recréées, migrées, semées (0 projet) — `remise-a-neuf-rem1.log` ;
+- `scripts/test-fast.sh --ci` (voie 2 ; un `.ftl` a changé) : **5445 exécutés, 5445 passés, 13 ignorés** —
+  `test-fast-ci-rem1.log` ;
+- `npm run check` : 0 erreur, 29 avertissements dans cinq fichiers (`BankProfileForm.svelte` 16, `RuleFormModal.svelte`
+  8, `reports/+page.svelte` 2, `design-system/+page.svelte` 2, `ManualReminderDialog.svelte` 1), **aucun dans les
+  fichiers de la story** — `check-avertissements-rem1.log` ;
+- lint i18n vert, **Vitest 3609 passés (237 fichiers)**, build — `front-complet-rem1.log` ;
+- `reconciliation-split.spec.ts` entière : **13 passés** (dont R0 (g0) et (g390)), seuil de #1181 toujours 9 lignes —
+  `r0-rem1.log` ;
+- greps de propagation (`écart —`, `sans signe.`, largeurs) : `propagation-rem1.log` — aucun résidu dans la story ;
+- **non lancés : `gate-ci` et E2E complet** (clôture).
 
 **Mutations** (code commité avant, `7efe74db4` ; script `kesh-gate-logs/e36-2/mut/mut-36-2.py`, motif vérifié unique ;
 restauration `git restore --worktree` puis `touch`, arbre propre constaté après chaque campagne) — campagne Vitest
@@ -772,6 +796,24 @@ restauration `git restore --worktree` puis `touch`, arbre propre constaté aprè
 
 Dix-sept mutations jouées (les quinze de la fiche, M7-bis pour la largeur de colonne de C-36-2-18, puis M7-ter quand
 M7-bis s'est révélée équivalente — recompté sur le tableau) : seize tuées, une équivalente (M7-bis).
+
+*Remédiation de la revue P1* (`mut/campagne-rem1-vitest.log`, `campagne-rem1-e2e.log`, `campagne-rem1-e2e-2.log`),
+sur le code de `2248951a1` puis `46c26744f` :
+
+| Mutation | Tuée par |
+|---|---|
+| M10 (`expectedLabel = txAbsAmount`, C-36-2-19 ; A6) | V-b « montant normalisé par le serveur » |
+| M11 (`lte(0)` → `lt(0)` : un montant nul accepté ; A6) | V-d `0`, `0,00` |
+| M12 (la branche « écart non calculable » neutralisée ; B3) | V-b « une ligne sans montant lu », V-f « montant illisible » |
+| M7-bis (redéfinie : largeur de la description du jeu « avec projet ») | **équivalente** (`description:294/294`) — C-36-2-20 |
+| M7-bis-b (même chose, jeu « sans projet ») | **équivalente** (`description:363/363`) |
+| M7-ter (redéfinie : les deux jeux et la colonne *Projet* vidés) | R0 (g) (`description:237/206`) |
+| M7-quater (`w-px` retiré de la colonne du bouton) | **survivante, sans effet mesuré** : `w-px` retiré du code (`46c26744f`) |
+| M7-quinquies (jeu « avec projet » appliqué sans projet) | R0 (g0) (`colonne_bouton:173`) |
+
+Vingt-cinq mutations jouées en tout (17 + 8, recompté sur les deux tableaux) : vingt et une tuées, quatre non tuées —
+M7-bis deux fois (avant et après la remédiation) et M7-bis-b, équivalentes par construction (C-36-2-20), et M7-quater,
+dont le code muté a été retiré. Aucune survivante sur du code resté en place.
 
 **Écarts à la fiche, en cours de développement** :
 - **C-36-2-18** — `sm:max-w-3xl` laissait la description tronquée (`description:237/176`, `r0-apres.log`) : D6 prévoyait
@@ -908,3 +950,28 @@ M7-bis s'est révélée équivalente — recompté sur le tableau) : seize tuée
   `rouges.log`) et R0-a (8 sur 9 : (a), (c), (d), (e), (e′), (f), (g) pour le produit ; (h) pour un défaut du test, corrigé
   et rejoué vert). Correctifs dans l'ordre imposé : D4 (`14d70feca`), D3 (`ec52cc833`), D2/D5/D6 (`78e841d57`), puis
   C-36-2-18 et C-36-2-19 (`4d55adbbf`) ; manuel (`7efe74db4`). Écarts déclarés au Dev Agent Record.
+- 2026-11-15 — **Revue de code P1** (trois lentilles) : B 0/0/0/4, E 0/0/0/6, A 0/0/0/6 — rien au-dessus de LOW. Décision
+  de l'orchestrateur (« Tarir la source ») : les LOW se corrigent dans la story, puis une passe ciblée relit ce seul
+  correctif. **Remédiation (Opus 5.5)**, commits `2248951a1` et `46c26744f` (dernier commit de code), prémisses relues :
+  - **E1 / B2** (lu : `<th class="py-1"></th>` après trois largeurs à 80 %) — deux jeux de largeurs selon la présence de
+    *Projet* (C-36-2-20) ; R0 (g0) sans projet : `compte:288/288, montant:167/167, description:357/357,
+    colonne_bouton:35` (`r0-rem1.log`) ; capture `r0-rem1-g0-largeur-sans-projet.png`. M7-bis reste équivalente, dit
+    pourquoi (C-36-2-20) ; M7-quinquies la remplace comme témoin, tuée.
+  - **E2** (lu : `w-[30%]` sans préfixe) — largeurs en `sm:` ; R0 (g390) à 390×844 : dialogue `16+358`, dans la
+    fenêtre ; capture `r0-rem1-g390-telephone.png`. Les champs s'y serrent (compte 170/87, description 270/104 :
+    attendu d'un tableau à cinq colonnes sur un téléphone). Constat hors story : la page sous le dialogue mesure 1280 px
+    de large à 390 px (`R0 (g390) page=1280 fenetre=390`).
+  - **B3** (lu : `if (sumAmounts === null || expectedBig === null) return '—';`) — clé neuve
+    `reconciliation-split-balance-incomplete` (« écart non calculable »), message de déséquilibre récrit pour dire quoi
+    faire (C-36-2-21), quatre locales.
+  - **B1 / E5** (lu : `JOURNAL_AMOUNT_RE` sans blanc, aucun rognage) — « sans signe ni espace » dans la clé propre au
+    dialogue, quatre locales, et au manuel (C-36-2-22) ; Vitest ` 70`, `70 `, `1 200.50`.
+  - **B4 / E3 / E4** — R0 (d) tape U+2019 ; Vitest : `1’200.50`, quinze chiffres (lus) et seize (illisibles), crédit,
+    montant de transaction illisible (`expectedBig` nul) et nul, envoi après suppression d'une ligne saisie.
+  - **A4** — `griseReproduit` compare la somme affichée à la valeur absolue du montant.
+  - **A6** — M10 (`expectedLabel = txAbsAmount`) tuée ; aussi M11 (`lte` → `lt`) et M12 (écart non calculable).
+  - **A1** (Record : `closes #1150`, `closes #1151` pour la PR), **A2** (en-tête de la spec), **A3** (deux affirmations
+    annotées, pièces aux journaux `remise-a-neuf-rem1.log` et `check-avertissements-rem1.log`), **A5** (verdict H2),
+    **E6** (manuel : zéros au-delà admis, `60.0000`).
+  - `sitesTotal` 3044 → **3046**, relevé par la garde. Symptôme grepé : `écart —`, `sans signe.`, `w-[3` dans
+    `frontend/src`, `crates/kesh-i18n/locales`, `docs/manual/fr` (voir gates de remédiation au Record).

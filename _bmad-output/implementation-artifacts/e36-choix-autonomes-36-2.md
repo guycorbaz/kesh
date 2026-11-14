@@ -224,3 +224,41 @@ le 2026-11-14 ; prémisses relues au code avant application.*
 - **Écartées** : la mise en forme suisse (`1'200.00`, hors périmètre, D3) ; laisser « 388.2 » (deux formes dans la même
   phrase).
 - **Réversible** : oui.
+
+### C-36-2-20 — Les largeurs selon la présence de *Projet*, à partir de 640 px (remédiation P1, E1, E2, B2)
+
+- **Contexte** : sans colonne *Projet*, les trois largeurs de C-36-2-18 totalisaient 80 % ; la colonne du bouton « - »
+  prenait le reste (≈ 180 px vides, capture de la revue). Les pourcentages valaient aussi sous 640 px.
+- **Retenu** (décision de l'orchestrateur, forme choisie ici) : deux jeux, `sm:` seulement — avec *Projet* 30/17/33
+  (+15), sans *Projet* 34/20/42 ; la colonne du bouton sans largeur garde le reste (35 px sans projet, 43 avec,
+  `r0-rem1.log`). R0 (g0) mesure sans projet, R0 (g390) à 390×844 (le dialogue tient : `16+358`).
+- **Écartées** : `w-px` sur la colonne du bouton — essayé, sans effet mesuré (mutation M7-quater survivante, mêmes
+  mesures), retiré ; `table-fixed` (la colonne sans largeur absorberait de même le reste : M7-bis resterait équivalente).
+- **M7-bis reste équivalente**, par construction : dans un tableau à disposition automatique, la colonne dont on retire
+  la largeur reçoit la place que les autres laissent, au moins autant que son pourcentage (`description:294/294` avec
+  projet, `363/363` sans, `mut/M7-bis.log`, `mut/M7-bis-b.log`). Les mutations qui comptent : M7-ter (toutes les
+  largeurs) et M7-quinquies (le jeu « avec projet » appliqué sans projet), tuées par R0 (g) et R0 (g0).
+- **Réversible** : oui (classes CSS).
+
+### C-36-2-21 — Le message dit quoi faire ; l'écart non calculable se dit en toutes lettres (remédiation P1, B3)
+
+- **Contexte** : sur une somme fausse, l'indicateur et le message disaient la même chose ; une ligne sans montant lu
+  donnait « écart — », le tiret se confondant avec la ponctuation.
+- **Retenu** : `reconciliation-split-error-imbalance-detail` devient « Ajustez les montants : leur somme doit égaler
+  { $expected } (écart actuel { $diff }). » (il garde l'attendu et l'écart, AC3) ; clé neuve
+  `reconciliation-split-balance-incomplete` « … attendu { $expected }, écart non calculable » (quatre locales) ; un montant
+  de transaction illisible (`expectedBig` nul) fait dire au message la phrase générique
+  `reconciliation-split-error-imbalance`, sans arguments — le dialogue en redevient consommateur, sa valeur ne change pas.
+- **Écartées** : omettre l'écart (le message ne dirait plus combien corriger) ; « écart : à déterminer ».
+- **Réversible** : oui.
+
+### C-36-2-22 — « sans signe ni espace » dans le message du dialogue (remédiation P1, B1, E5)
+
+- **Contexte** : une espace en tête, en fin ou entre les milliers rend la saisie illisible (grammaire de la 36-3, sans
+  rognage), sans que le message le dise.
+- **Retenu** : le message est **propre au dialogue** (`reconciliation-split-error-amount-unreadable`) : il dit « sans
+  signe ni espace » (quatre locales), sans toucher la 36-3 ; le manuel le dit aussi (« pas même en tête ou en fin de
+  saisie »).
+- **Écartées** : rogner la saisie dans `lireMontant` (le journal ne rogne pas : deux règles pour une même grammaire) ;
+  modifier `readJournalAmount` (36-3).
+- **Réversible** : oui.
