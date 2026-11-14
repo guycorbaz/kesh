@@ -912,6 +912,8 @@ describe('InvoiceForm — prix unitaire ambigu (36-3b, #1171)', () => {
 	/** La classe `border-destructive` elle-même : la classe de base de `Input` porte
 	 *  `aria-invalid:border-destructive`, qu'un `toContain` sur `className` confondrait. */
 	const borde = (el: HTMLElement) => el.classList.contains('border-destructive');
+	const ambigus = (container: HTMLElement) =>
+		container.querySelectorAll('[data-testid="invoice-line-unit-price-ambiguous"]').length;
 	const prixAffiches = (container: HTMLElement) =>
 		decimaux(container)
 			.filter((_, k) => k % 2 === 1)
@@ -1129,7 +1131,9 @@ describe('InvoiceForm — prix unitaire ambigu (36-3b, #1171)', () => {
 			});
 			await settle();
 			expect.soft(prixAffiches(container), 'forme rouverte').toEqual(ROUVERTS);
-			expect.soft(queryByTestId('invoice-line-unit-price-ambiguous'), 'message sous le champ').toBeNull();
+			// `querySelectorAll` : sous mutation, plusieurs lignes portent le message, et
+			// `queryByTestId` lèverait au lieu d'asserter.
+			expect.soft(ambigus(container), 'message sous le champ').toBe(0);
 			await fireEvent.click(getByTestId('create-invoice-button'));
 			await settle();
 			expect.soft(container.textContent, 'bandeau').not.toContain('prix unitaire ambigu');
@@ -1155,7 +1159,9 @@ describe('InvoiceForm — prix unitaire ambigu (36-3b, #1171)', () => {
 			await fireEvent.click(getByText('Recharger'));
 			await settle();
 			expect.soft(prixAffiches(container), 'forme rouverte').toEqual(ROUVERTS);
-			expect.soft(queryByTestId('invoice-line-unit-price-ambiguous'), 'message sous le champ').toBeNull();
+			// `querySelectorAll` : sous mutation, plusieurs lignes portent le message, et
+			// `queryByTestId` lèverait au lieu d'asserter.
+			expect.soft(ambigus(container), 'message sous le champ').toBe(0);
 			updateInvoiceMock.mockResolvedValue({ id: 7 });
 			await fireEvent.click(getByTestId('create-invoice-button'));
 			await settle();
@@ -1199,7 +1205,9 @@ describe('InvoiceForm — prix unitaire ambigu (36-3b, #1171)', () => {
 			await fireEvent.click(entry!);
 			await settle();
 			expect.soft(prixAffiches(container).at(-1), 'forme rouverte').toBe('1.2340');
-			expect.soft(queryByTestId('invoice-line-unit-price-ambiguous'), 'message sous le champ').toBeNull();
+			// `querySelectorAll` : sous mutation, plusieurs lignes portent le message, et
+			// `queryByTestId` lèverait au lieu d'asserter.
+			expect.soft(ambigus(container), 'message sous le champ').toBe(0);
 			await fireEvent.click(getByTestId('create-invoice-button'));
 			await settle();
 			expect.soft(container.textContent, 'bandeau').not.toContain('prix unitaire ambigu');
