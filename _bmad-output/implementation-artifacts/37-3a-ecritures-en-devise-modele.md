@@ -753,7 +753,9 @@ chacune (R7), l'écart de change dans la seconde, afin que mes comptes en devise
       repris (CR6-P3-3) ; `rateSource: "afc"` sans `rate`, ligne de la société `manual` → `FX_RATE_NOT_AFC`,
       `expectedRate` `null` ; aucune ligne de la société : sans provenance → `manual`, `afc` → 404 `RATE_UNAVAILABLE` ;
       `PUT` d'une ligne au cours déduit dont la date change → qualifiée comme à la création (A32) ; `PUT` de
-      `{ amount, chf, rateSource: "manual" }` renvoyée telle que lue → cours stocké gardé, sans effet (CR6-P4-1) ; deux
+      `{ amount, chf, rateSource: "manual" }` renvoyée telle que lue, la ligne d'avant ayant été créée `manual` **avec un
+      `rate` explicite différent de celui que `rate_from_chf` redonne du même CHF** (sans quoi le test passe aussi sans la
+      règle) → cours stocké gardé, sans effet (CR6-P4-1, CR6-P5-1) ; deux
       lignes d'avant `afc` de même compte, débit, crédit et montant, à 0.91193 et 0.91194 (même CHF), corps qui renvoie
       l'une au cours déduit et l'autre avec `rate: "0.91193"`, toutes deux `rateSource: "afc"`, après reprise d'un cours à
       0.91195 → accepté, aucune ligne recontrôlée, cours stockés gardés, **quel que soit le rang** (CR6-P4-2) ; ordre des refus de l'analyse (CR6-P2-4) ; ligne CHF négative et libellé vide →
@@ -1116,3 +1118,13 @@ chacune (R7), l'écart de change dans la seconde, afin que mes comptes en devise
   gardé : CHF inchangé). Non exercés : reste de la fiche (hors périmètre), `is_no_op_change` par rang
   (`repositories/journal_entries.rs:1300-1320`, déjà relevé en P2) face à un corps réordonné, 37-1, MCP, i18n,
   compilation.
+- 2026-11-14 — validation CR-6 P5 ciblée (Sonnet) : 0 CRITICAL, 0 HIGH, 0 MEDIUM, 1 LOW ; remédié dans la fiche, aucun
+  inter-fiches. Périmètre : `git diff 0bcdaeac 19ec8732` de la fiche (CR6-P4-1 à CR6-P4-3). **37-3a-CR6-P5-1** (LOW, tests) — le test
+  de CR6-P4-1 ne disait pas que la ligne d'avant porte un cours stocké différent de `rate_from_chf` : sinon il passe sans la règle
+  d'appariement `manual` ; fixture précisée. Lu au code : `routes/journal_entries.rs:539-554` (boucle de parse, citation
+  juste), `balance.rs:150-173` (ordre libellé, deux lignes, signe : CR6-P4-3 vrai), `is_no_op_change` (`repositories/journal_entries.rs:1300-1320`,
+  compte/débit/crédit/projet ; la fiche l'étend aux champs `foreign`, AC-2 : « version et audit » de CR6-P4-1 vrais après
+  extension) ; epic A31/A32 ; 37-3b (A32, rateSource `manual` envoyé par l'écran) ; 37-5 recette V7. Arithmétique de CR6-P4-2
+  vérifiée (100 × 0.91193 et × 0.91194 → 91.19). Axes exercés : chaque phrase du diff (règle `manual`, rang dans le groupe, signe
+  `foreign`, tests) contre le code, le reste d'AC-4/AC-6, l'epic, 37-3b, 37-5 ; comptabilité (`chk_jel_fx_chf` tenu par CHF
+  inchangé). Non exercés : reste de la fiche, MCP, i18n, compilation.

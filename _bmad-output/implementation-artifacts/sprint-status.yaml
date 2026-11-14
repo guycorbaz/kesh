@@ -1046,10 +1046,10 @@ development_status:
   epic-34-retrospective: done  # 2026-11-12 : epic-34-retro-2026-11-12.md, en autonomie ; 330 issues et 163 bugs au tag v0.17.6
   epic-37: in-progress  # renuméroté depuis 35 le 2026-11-14 (35 et 36 réservés ; 38 : comptes PayPal, 39 : comptes Wise, réservés par Beat)
   37-0-kickoff: done  # 2026-11-14 : epic-37-multi-devises.md ; demande de Beat (contributeur), une PR à la fin ; architecture par bmad-party-mode (consensus au tour 2)
-  37-1-reglage-et-devise-des-comptes: ready-for-dev  # validée ; revalidée après CR-1 à CR-5 (revues de Beat), 2026-11-14
-  37-2-cours-mensuels-afc: ready-for-dev  # validée ; revalidée après CR-1 à CR-5 (revues de Beat), 2026-11-14
+  37-1-reglage-et-devise-des-comptes: ready-for-dev  # validée ; revalidée après CR-1 à CR-5 (revues de Beat) et CR-6 (couverture API et MCP), 2026-11-14
+  37-2-cours-mensuels-afc: ready-for-dev  # validée ; revalidée après CR-1 à CR-5 (revues de Beat) et CR-6 (couverture API et MCP), 2026-11-14
   37-3-ecritures-en-devise: split  # 2026-11-14, à la rédaction : 37-3a (serveur) et 37-3b (écrans)
-  37-3a-ecritures-en-devise-modele: ready-for-dev  # validée ; revalidée après CR-1 à CR-5 (revues de Beat), 2026-11-14
-  37-3b-ecritures-en-devise-ecrans: ready-for-dev  # validée ; revalidée après CR-1 à CR-5 (revues de Beat), 2026-11-14
-  37-4-rapports-en-devise: ready-for-dev  # validée ; revalidée après CR-1 à CR-5 (revues de Beat), 2026-11-14
-  37-5-reevaluation-fin-exercice: ready-for-dev  # validée ; revalidée après CR-1 à CR-5 (revues de Beat), 2026-11-14
+  37-3a-ecritures-en-devise-modele: ready-for-dev  # validée ; revalidée après CR-1 à CR-5 (revues de Beat) et CR-6 (couverture API et MCP), 2026-11-14
+  37-3b-ecritures-en-devise-ecrans: ready-for-dev  # validée ; revalidée après CR-1 à CR-5 (revues de Beat) et CR-6 (couverture API et MCP), 2026-11-14
+  37-4-rapports-en-devise: ready-for-dev  # validée ; revalidée après CR-1 à CR-5 (revues de Beat) et CR-6 (couverture API et MCP), 2026-11-14
+  37-5-reevaluation-fin-exercice: ready-for-dev  # validée ; revalidée après CR-1 à CR-5 (revues de Beat) et CR-6 (couverture API et MCP), 2026-11-14
