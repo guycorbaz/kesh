@@ -77,13 +77,14 @@ devise au cours d'ouverture choisi pour l'exercice (R6), afin de tenir mes livre
      premier mois du nouvel exercice), c'est-à-dire du mois de la veille de l'ouverture (`lookup` `kind=month`,
      `date` = le **1er du mois de la veille**, la veille étant `start_date` − 1 jour — non « le 1er du mois de
      `start_date`, moins un jour » : pour une ouverture au 15.03, la veille est le 14.03 et le mois est **mars**, non
-     février ; l'assistant de démarrage laisse choisir un début quelconque, 35-1 T1 : décembre pour un exercice civil,
+     février ; l'assistant de démarrage laisse choisir un début quelconque, 35-1 AC-11 (T1) : décembre pour un exercice civil,
      juin pour un exercice au 1er juillet, mars pour un exercice au 1er avril ou au 15.03), que l'exercice précédent soit tenu dans Kesh ou non — la
      règle se calcule sur la seule date d'ouverture, sans lire l'exercice précédent ; même date que `openingDate` du
      tableau annuel de 35-2 (AC-5) : la fonction pure de 35-2 est en Rust et la page des soldes d'ouverture est en
      TypeScript — elles ne se partagent pas ; la page calcule la date par **une** fonction pure TS (nom au
-     développement), dont les vecteurs (jour, mois, 29.02, 15.03, 1er janvier) sont ceux de la fonction de 35-2 (même
-     fixture si 35-2 la fournit, sinon vecteurs recopiés avec leur source citée au Change Log). Ce cours est celui de la réévaluation de l'exercice précédent quand son genre de clôture est
+     développement), dont le Vitest lit la fixture commune de 35-2 AC-5, `crates/kesh-core/tests/fixtures/fx_opening_dates.json`
+     (même fichier que le test Rust, aucune copie ; genres `day` et `month`, 1er janvier, 1er avril, 1er juillet,
+     15.03, 01.03.2024 — veille 29.02 —, six et dix-huit mois). Ce cours est celui de la réévaluation de l'exercice précédent quand son genre de clôture est
      `month` (35-5) ; le genre d'ouverture d'un exercice qui suit un exercice Kesh reprend par défaut le genre de
      clôture de celui-ci (35-1 AC-3 bis), si bien que la concordance tient sans réglage. Hors des bornes du `POST /fetch` de 35-2 (date < 2000-01-01, AC-5 : il rendrait 400), le
      `lookup` — qui n'a pas de borne basse et rend alors `404 RATE_UNAVAILABLE` faute de cours — n'est suivi d'**aucun**
@@ -556,7 +557,7 @@ devise au cours d'ouverture choisi pour l'exercice (R6), afin de tenir mes livre
    EUR → USD **par l'assistant** (deux écritures, compte de conversion à 0 après, R7), écriture à deux devises refusée
    (`FX_MULTIPLE_CURRENCIES`) **par l'API** (`authedApiContext`) — le formulaire ne la laisse pas composer (R7) ; à
    l'écran, on vérifie que le sélecteur ne propose pas le compte de l'autre devise, formulaire sans champs en devise dans un exercice mono-devise (R3), saisie du CHF au
-   lieu du cours, soldes d'ouverture d'un compte USD au cours journalier de la veille de l'ouverture (genre `day`, R6), puis, l'exercice passé en genre `month` par `PUT /fiscal-years/{id}/rate-kinds` (35-2), au cours mensuel du dernier mois de l'exercice précédent (T4 ; ouverture au 1er juillet : juin ; ce mois servi par la source factice) (l'E2E repart d'une société vierge par `seedTestState('with-company')`,
+   lieu du cours, soldes d'ouverture d'un compte USD au cours journalier de la veille de l'ouverture (genre `day`, R6), puis, l'exercice passé en genre `month` par `PUT /fiscal-years/{id}/rate-kinds` (35-2) et la page rechargée, au cours mensuel du dernier mois de l'exercice précédent (T4 ; l'exercice du seed `with-company` s'ouvre le 01.01.2020, `crates/kesh-db/src/test_fixtures.rs:118-119` : veille 31.12.2019, mois décembre 2019 ; ce jour et ce mois servis par la source factice) — les deux cours se vérifient **au préremplissage**, l'ouverture ne s'enregistre qu'après le passage en `month` : enregistrée en genre `day`, elle ferait passer la page au complément, dont le cours est celui du mois de sa propre date (AC-1) (l'E2E repart d'une société vierge par `seedTestState('with-company')`,
    précédent `opening-balances.spec.ts:21, :80` : l'ouverture exige une société sans écriture, `ALREADY_HAS_ENTRIES`),
    mono-devise inchangé ; **cours saisi par la société** (D9) : un cours posé par `PUT /exchange-rates/overrides`
    pour le mois est proposé, affiché « cours saisi », et la ligne part `rateSource: "manual"` (relue telle) ; le même
@@ -858,3 +859,16 @@ devise au cours d'ouverture choisi pour l'exercice (R6), afin de tenir mes livre
   colonne `currency` de ligne dans la fiche) ; types TS ; comptabilité de l'écart et de la conversion inchangée. Non
   exercés : sauvegarde, audit, MCP (aucune table, action ou sortie neuve ici), source journalière (aucun GET), E2E,
   Vitest, PDF.
+- 2026-11-14 — validation CR-4 P2 ciblée (Opus) : 0 CRITICAL, 0 HIGH, 1 MEDIUM, 2 LOW ; tous remédiés dans la fiche.
+  MEDIUM : 35-3b-CR4-P2-1 (AC-5, E2E du genre `month` ajouté en P1) — « ouverture au 1er juillet : juin » contredit le
+  seed `with-company` qu'utilise l'E2E (exercice 01.01.2020–31.12.2030, `test_fixtures.rs:118-119` : décembre 2019) ;
+  et l'enchaînement `day` puis `month` ne tient pas si l'ouverture est enregistrée en `day` (la page passe au
+  complément, cours du mois de sa date) : mois du seed écrit, cours vérifiés au préremplissage, enregistrement après le
+  passage en `month`. LOW : P2-2 (AC-1) vecteurs « (jour, mois, 29.02, 15.03, 1er janvier) … même fixture si 35-2 la
+  fournit, sinon recopiés » — 35-2 AC-5 fournit désormais `fx_opening_dates.json` (cas réunis, 29.02 compris) : fixture
+  nommée, alternative retirée ; P2-3 (AC-1) renvoi « 35-1 T1 » → 35-1 AC-11 (T1). Axes exercés : diff
+  `bd7d0ec7..a8f89e04` de la fiche ; entrée CR-4 P1 ; formule du mois de la veille (15.03, 01.04, 01.07) contre epic T4
+  et 35-2 AC-4/AC-5 ; début quelconque contre 35-1 AC-11 ; parité TS/Rust contre 35-2 AC-5 (fixture) ; codes
+  `FX_CURRENCY_MISMATCH` / `FX_ACCOUNT_IN_CHF` contre 35-3a AC-3/AC-4 (`details.line`) ; seed E2E au code ; item
+  Tâches CR-4. Non exercés : code applicatif hors seed (aucune ligne neuve citée), source factice de 35-2 AC-3 dans le
+  détail, 35-4/35-5, manuel, PDF.

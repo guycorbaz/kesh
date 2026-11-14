@@ -207,9 +207,17 @@ AC-3 bis).
      trois chemins ci-dessus (DRY ; p. ex. `COALESCE((SELECT closing_rate_kind FROM fiscal_years WHERE company_id = ?
      AND end_date = ? - INTERVAL 1 DAY), 'day')` dans l'`INSERT … SELECT`) : `fiscal_years::create` et `create_for_seed` passent par `insert_fiscal_year_in_tx` (aujourd'hui
      `INSERT … VALUES`, `repositories/fiscal_years.rs:1360` : il devient `INSERT … SELECT … FROM companies`, qui lit aussi
-     `multi_currency_enabled`) ; la lecture du genre du précédent est une sous-requête ordinaire — le précédent n'est pas
-     verrouillé par les pré-contrôles (`find_overlapping` ne le renvoie pas : ses bornes ne se chevauchent pas), et une
-     lecture concurrente d'un `PUT /rate-kinds` (35-2) ne fait que choisir l'un des deux défauts, sans conséquence ;
+     `multi_currency_enabled`) ; sous REPEATABLE READ, InnoDB pose des verrous **partagés** sur les lignes que lit
+     l'`INSERT … SELECT` — la ligne `companies` et l'exercice précédent : ce n'est pas une lecture ordinaire. Le
+     précédent n'est pas renvoyé par `find_overlapping` (bornes disjointes), mais peut être tenu par son verrou de
+     parcours (dépendant du plan, `repositories/fiscal_years.rs:371-372`) ; un `PUT /rate-kinds` (35-2) concurrent est
+     donc attendu ou vu commité, et l'un des deux défauts est retenu, sans conséquence. ⚠️ Dans `create`, ce verrou
+     partagé de `companies` vient **après** les verrous d'exercice des pré-contrôles : ce chemin ne suit pas l'ordre
+     « `companies` → exercices » écrit plus haut pour la lecture `LOCK IN SHARE MODE` — exactement comme aujourd'hui,
+     où l'`INSERT` prend déjà `companies` en partage par `fk_fiscal_years_company` (`20260404000001_initial_schema.sql:48`).
+     Le cycle avec une activation ou une désactivation (AC-3 : `companies` `FOR UPDATE` puis exercices) est absorbé par
+     les deux rejeux (`retry_on_deadlock("fiscal_years::create", …)`, `routes/fiscal_years.rs:286`, et celui de
+     l'AC-3) ; `create_for_seed`, sans rejeu, ne s'exécute que dans une société neuve sans concurrence ;
      `create_if_absent_in_tx` (assistant) n'insère que sans aucun exercice (`WHERE NOT EXISTS`, :472), donc toujours
      `'day'` ; `create_for_seed` applique le même fragment. Un changement ultérieur du genre de clôture de l'exercice
      précédent (`PUT /rate-kinds`, 35-2) **ne se propage pas** : chaque exercice garde son réglage (T4 dit « par
@@ -625,7 +633,9 @@ AC-3 bis).
       **1er mars** suivant, donc fin au **28 février** ; Rust : `with_year(y + 1)` rend `None` un 29 février, à traiter
       par `from_ymd_opt(y + 1, 3, 1)` — jamais `checked_add_months(12)`, qui ramène au 28 février et donnerait le 27 ;
       la fonction du serveur et son miroir TypeScript de l'écran, `new Date(y + 1, m, d)` qui donne le 1er mars,
-      rendent la même fin, un test commun de cas limites les compare ; sans début fourni : 31 décembre — le comportement actuel, clients de l'API et tests
+      rendent la même fin, et les **mêmes cas limites** sont testés de chaque côté (test API et Vitest, ci-dessous ;
+      le miroir formate sa date par les champs locaux, comme `todayLocal`, jamais par `toISOString()`, que relève
+      `local-date-guard.test.ts`) ; sans début fourni : 31 décembre — le comportement actuel, clients de l'API et tests
       existants inchangés). Avant la transaction : `borner` sur chaque date fournie (`dates_recues.rs:55`, comme
       `create_fiscal_year`, 400), fin ≤ début → 400 `error-fiscal-year-dates-invalid` (même message que
       `map_create_error`) ; aucune borne de durée (S4 : six ou dix-huit mois admis). Un corps illisible est refusé par
@@ -662,7 +672,7 @@ AC-3 bis).
       figure (grep au développement).
     - **Tests** : API — sans corps → 01.01–31.12 de l'année courante, nom « Exercice AAAA » ; début 01.04.2026 seul →
       fin 31.03.2027, nom « Exercice 2026/2027 » ; début 01.07 et fin fournie à dix-huit mois → admis ; début
-      29.02.2028 → fin 28.02.2029 ; fin ≤ début → 400, rien de créé, étape inchangée (7) ; date hors bornes → 400 ;
+      29.02.2028 → fin 28.02.2029 ; début 01.03.2027 → fin 29.02.2028 ; fin ≤ début → 400, rien de créé, étape inchangée (7) ; date hors bornes → 400 ;
       finalisation rejouée avec d'autres dates après succès → état rendu, exercice inchangé ; audit
       `fiscal_year.created` aux dates choisies. Vitest de l'écran (défaut, recalcul de la fin, fin retouchée gardée,
       boutons désactivés si fin ≤ début, corps envoyé par les deux boutons ; cas limites partagés avec le serveur :
@@ -671,7 +681,8 @@ AC-3 bis).
     Les tests d'exercices décalés (1er janvier, 1er juillet, 1er avril — T2) et de durée autre que douze mois (six et
     dix-huit mois) des cours et de la réévaluation restent ceux de 35-2, 35-3b et 35-5.
     **Limite assumée** : le jour par défaut est celui du serveur (`Utc::now()`, comme aujourd'hui) pour un client
-    d'API sans corps, celui de l'écran la date locale Europe/Zurich : la nuit du 31 décembre, les deux années peuvent
+    d'API sans corps, celui de l'écran la date du poste (`todayLocal`, `shared/utils/local-date.ts:13`, Zurich pour un poste réglé
+    sur la Suisse) : la nuit du 31 décembre, les deux années peuvent
     différer ; l'écran envoie toujours ses dates.
 
 ## Tâches
@@ -907,6 +918,20 @@ AC-3 bis).
   liste (vi). Axes exercés : vérité au code des phrases ajoutées, cohérence des décomptes (vi) et de la partition,
   nom des index vs AC-1, renvois P2-1/-2/-3. Non exercés : exécution réelle du cycle (non montable en lecture seule),
   plan de requête MariaDB, manuels, i18n.
+- 2026-11-14 — validation CR-4 P2 ciblée (Opus) : 0 CRITICAL, 0 HIGH, 1 MEDIUM, 2 LOW, 0 inter-fiches ; remédiés.
+  CR4-P2-1 (MEDIUM, AC-3 bis) : « sous-requête ordinaire », « précédent non verrouillé » inexacts (l'`INSERT … SELECT`
+  pose des verrous partagés sous REPEATABLE READ ; verrou de parcours de `find_overlapping`, `fiscal_years.rs:371-372`),
+  et le choix de l'`INSERT … SELECT … FROM companies` dans `insert_fiscal_year_in_tx` (:1359) lit `companies` après
+  les verrous d'exercice, contre l'ordre écrit pour la variante `LOCK IN SHARE MODE` : précisé (même ordre que la FK
+  `fk_fiscal_years_company` aujourd'hui, `initial_schema.sql:48` ; cycle avec l'AC-3 absorbé par les rejeux,
+  `routes/fiscal_years.rs:286`). CR4-P2-2 (LOW, AC-11) : « un test commun » irréalisable entre Rust et Vitest →
+  mêmes cas limites des deux côtés, cas 01.03.2027 → 29.02.2028 ajouté aux tests API, formatage local du miroir.
+  CR4-P2-3 (LOW, AC-11) : « date locale Europe/Zurich » → date du poste (`todayLocal`, `local-date.ts:13`).
+  Prémisses relues : `repositories/fiscal_years.rs:331-391`, `:412-436`, `:456-480`, `:807-827`, `:1355-1378`,
+  `routes/onboarding.rs:1043-1053` (`Utc::now()`), `local-date.ts`, `local-date-guard.test.ts`, les deux Vitest de
+  l'étape (existent, mockent `finalize`), 35-2 `PUT /rate-kinds`. Axes exercés : vérité au code du diff CR-4 P1,
+  arithmétique des dates (chrono/JS), ordre des verrous vs AC-3/AC-3 bis, contacts 35-2. Non exercés : plan de requête
+  MariaDB réel, exécution, manuels, i18n.
 - 2026-11-14 — validation CR-4 P1 (Sonnet) : 0 CRITICAL, 0 HIGH, 1 MEDIUM, 2 LOW dans la fiche, plus 1 inter-fiches (LOW) ;
   remédiés dans la fiche sauf 35-1-CR4-P1-IF1 (35-2, voir le rapport). CR4-P1-1 (MEDIUM) : « début + 1 an − 1 jour »
   et le test « 29.02.2028 → 28.02.2029 » se contredisent (`checked_add_months` de chrono donne 28.02.2029 puis 27.02.2029) :

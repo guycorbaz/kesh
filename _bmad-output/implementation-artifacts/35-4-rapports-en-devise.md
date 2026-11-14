@@ -30,8 +30,11 @@ exports, afin de rapprocher mes comptes PayPal ou Wise de leurs relevés et de c
    - **La devise gouverne l'affichage, pas la ligne** : au grand livre, `fetch_lines` lit `amount_currency` pour toute
      ligne, mais la ligne, le solde progressif, l'ouverture, la clôture et les totaux en devise ne sont remplis **que si
      la section est en devise** (`LedgerSection.currency` = `a.currency` non `NULL`) ; au journal, les champs en devise
-     d'une ligne ne sont remplis que si `a.currency` **et** `jel.amount_currency` sont non `NULL`. Sans cela, une ligne
-     en devise posée hors du dépôt sur un compte CHF s'afficherait sans devise.
+     d'une ligne ne sont remplis que si `a.currency` **et** `jel.amount_currency` sont non `NULL` (une ligne
+     `revaluation`, montant 0, s'y lit comme au grand livre, AC-2 : « Réévaluation au cours X », sans montant en devise
+     affiché) ; à la balance, les champs en devise d'une ligne ne sont remplis que si `a.currency` est non `NULL` (AC-3) ;
+     au bilan et au compte de résultat, par le `CASE WHEN a.currency IS NULL` ci-dessous. Sans cela, une ligne
+     en devise posée hors du dépôt sur un compte CHF s'afficherait sans devise (test T3, AC-8).
    - `signed`, `opening_from` et `debit_sense` (`opening.rs`, :75 pour `opening_from`) s'appliquent **sans
      changement** à la paire en devise (ce sont des fonctions sur `Decimal`) : aucun `CASE` d'ouverture n'est recopié
      en SQL, aucune seconde règle. « Fonction partagée » = fragment SQL de la somme en devise + `opening_from` ; la
@@ -272,3 +275,14 @@ exports, afin de rapprocher mes comptes PayPal ou Wise de leurs relevés et de c
   `kesh-db/Cargo.toml:48`, `sortie.rs:97`, `rapports.rs:63`/`:104`/`:219`, `csv.rs:40`, `pdf.rs:153`/`:718`/`:1063` :
   exacts ; `grep jel.currency|l.currency` sur `crates/` : aucun reste aujourd'hui ; aucun reste de la colonne dans 35-1,
   35-2, 35-3a, 35-3b, 35-5 (accord de 35-3a AC-1/AC-2 et de 35-5 sur `balances_as_of`).
+- 2026-11-14 — validation CR-4 P2 ciblée (Opus) : 0 CRITICAL, 0 HIGH, 0 MEDIUM, 2 LOW, remédiés dans la fiche ; aucun
+  inter-fiches. CR4-P2-1 : la règle « la devise gouverne l'affichage » ne nommait que le grand livre et le journal, alors
+  que le test T3 couvre aussi balance, bilan et compte de résultat (balance : AC-3 ; bilan, résultat : `CASE`) — nommés.
+  CR4-P2-2 : la condition du journal (`amount_currency` non `NULL`) remplissait une ligne `revaluation` à 0 — alignée sur
+  AC-2. Relu au code : `journal_report.rs:100-135` (`INNER JOIN accounts a`), `general_ledger.rs:338-342`, `:407-413`,
+  `:465-473` (sans `accounts`, sommes CHF en `COALESCE`), `trial_balance.rs:165-170` (`x` sans `amount_currency`),
+  `balance_sheet.rs:288-292`, `income_statement.rs:62-66` (`COALESCE` au CHF : « comme le CHF » exact) ; `grep -rnE
+  "\b(jel|l)\.currency\b" crates/ --include=*.rs --include=*.sql` : vide, motif non échappé : vide aussi ; test T3 par
+  SQL direct réalisable sous `chk_jel_fx_*` (35-3a AC-1 : trois colonnes cohérentes). Axes exercés : vérité au code des
+  ajouts, cohérence interne (AC-1 ter, AC-2, AC-3, AC-7), points de contact 35-3a (contraintes, colonne absente).
+  Non exercés : relecture complète de la fiche (hors périmètre), 35-5 (aucun ajout ne touche `balances_as_of`).
