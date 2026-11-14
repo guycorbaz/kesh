@@ -47,9 +47,15 @@ AFC, afin que mes écritures en devise et ma réévaluation reçoivent le bon co
   journalier **d'une date D** est donc, par définition dans Kesh, celui que rend `xmldaily?d=D` : la publication du
   jour D, ou la dernière qui la précède. `<gueltigkeit>` n'est pas lu (Kesh suit la convention des livres de Beat :
   la publication **datée** du 31.12, non celle « valable » le 31.12) ;
+- **pas de publication : HTTP 404, corps JSON** — relevé le 2026-11-14 pour `d=20301231` : `404`
+  `{"error":"Aucune donnée disponible","message":"Aucun taux de change trouvé pour la période demandée"}` (et non une
+  racine vide, comme `xmlavgmonth`). Le client traite un **404** de `xmldaily` comme « pas encore publié »
+  (`NotPublished`, → `404 RATE_NOT_PUBLISHED`, mémorisé 15 minutes), **jamais** comme `http_status:404` ; tout autre
+  statut non 2xx reste une erreur. Relevé aussi : `d=20000103` rend `<datum>03.01.2000</datum>` et `d=20000101` rend
+  `<datum>31.12.1999</datum>` (la borne 2000-01-01 de l'AC-5 est servie) ; les éléments `<land_en/>` peuvent être
+  **vides** (ignorés) ; `<gueltigkeit>` peut ne porter qu'une date ;
 - contrôle de la réponse : `<datum>` lu ≤ D et D − `<datum>` ≤ 7 jours, sinon erreur `date_mismatch` (rien n'est
-  écrit) ; racine vide → « pas encore publié » (comportement non relevé pour `xmldaily`, traité comme pour
-  `xmlavgmonth`) ; une date ≥ aujourd'hui (Europe/Zurich) n'est pas demandée (AC-5) : la publication du jour tombe
+  écrit) ; racine vide → « pas encore publié », comme pour `xmlavgmonth` (par prudence : le cas réel relevé est le 404) ; une date ≥ aujourd'hui (Europe/Zurich) n'est pas demandée (AC-5) : la publication du jour tombe
   vers 04:15 et, avant, la source rendrait celle de la veille sous la date du jour.
 
 ## Critères d'acceptation
@@ -86,8 +92,12 @@ AFC, afin que mes écritures en devise et ma réévaluation reçoivent le bon co
      exige que le manifeste porte **exactement** l'inventaire `TABLES_TO_TRUNCATE` (« table '…' absente du
      manifeste » → 400) : **un `.keshbackup` écrit par la 0.17.6 ou avant ne se réimporte plus** dans la version qui
      porte cette story. À écrire au CHANGELOG (section *Changed*, en tête des notes avec la sauvegarde d'avant la mise à
-     jour) et au manuel d'administration ; l'option `--import` de `scripts/recette-montee.sh` (étape 5) attend désormais
-     un refus, à dire au journal de la release. Conséquences au code, **toutes dans cette story** (précédents : Story
+     jour) et au manuel d'administration ; l'option `--import` de `scripts/recette-montee.sh` (phase 5) **n'est pas jouée à cette release** : elle
+     importe le `.keshbackup` de l'image précédente et exige un 200 (`recette-montee.sh:651`, `echec 5` sinon), or la
+     version de cette story le refuse en 400 — le script n'est **pas modifié** (la release suivante retrouve une image
+     précédente dont les sauvegardes sont importables) ; le journal de la release dit que la phase 5 est omise et
+     pourquoi (le retour à la version précédente par le dump et son import dans **l'ancien** binaire, phase 4, reste
+     joué). Conséquences au code, **toutes dans cette story** (précédents : Story
      32-5a, création de `mcp_keys` ; Story 25-2-c) :
      - `registry_entries_are_within_import_window` (`crates/kesh-db/src/post_restore.rs:939`) rougit : l'unique entrée
        de `POST_RESTORE_BACKFILLS` (:210), `20261106000001_supplier_invoice_internal_number` (classe B), devient hors
@@ -96,6 +106,12 @@ AFC, afin que mes écritures en devise et ma réévaluation reçoivent le bon co
        redevient **vide**, et son commentaire d'en-tête (:211-217) le dit ; compteurs codés en dur recomptés au code
        (« Hors fenêtre » 9 → 10, :1140 ; nombre total d'exemptions + 1, :1219 et suivantes), chacun avec sa ligne
        d'historique ;
+     - `full_import_report_mirrors_the_production_registry` (`crates/kesh-api/tests/admin_full_import_e2e.rs:1561`) :
+       son assertion de montage `!report.is_empty()` (:1595, « le registre de production porte au moins une entrée »,
+       revenue à la Story 33-1a) **rougit** avec le registre vide ; elle reprend la forme que la Story 32-5a lui avait
+       donnée (`git show b723e3d9:crates/kesh-api/tests/admin_full_import_e2e.rs`, :1589-1596 : rapport vide) et le
+       commentaire de tête (:954, « le registre de production a été VIDE de la 32-5a à la 33-1a ») est annoté, sans
+       réécrire l'historique ;
      - `full_import_of_a_0_17_4_backup_gives_the_numbers` (`crates/kesh-api/tests/admin_full_import_e2e.rs`, aide
        `entree_numero_interne` :5551, qui cherche l'entrée dans le rapport du registre de production) passe au patron
        `replay_retired` (:972) ;
@@ -304,7 +320,9 @@ AFC, afin que mes écritures en devise et ma réévaluation reçoivent le bon co
      manuelle. Devise `CHF` (devise principale, sans cours) → 400 `Validation`, sans code dédié ; devise absente de la liste ISO 4217 de 35-1
      (`kesh-core::currency`) → 400 `CURRENCY_UNKNOWN` (code de 35-1) ; `month` ou `date` absents ou illisibles (les deux `GET`) → 400 ;
      `kind` hors `month|day` → 400. Un cours saisi sans cours AFC rend 200 (`afcRate: null`) : aucun `POST /fetch`
-     n'est alors nécessaire.
+     n'est alors nécessaire. **Forme `day`** : `DbError::RateUnavailable { currency, month }` (35-3a, 35-5) ne porte
+     pas de date ; le handler de `lookup` pour `kind=day` construit donc **directement** l'`AppError` 404 (`details`
+     avec `date`), sans passer par `DbError`, dont la variante reste à deux champs.
    - **Cours saisis par la société** (D9) — deux routes dans **`comptable_routes`** (Administrateur ou Comptable ;
      Consultation 403), **auditées** sous l'utilisateur (`from_current_user`) **dans la transaction** de l'écriture :
      - `PUT /api/v1/exchange-rates/overrides { currency, kind: "month"|"day", rateDate: "AAAA-MM-JJ", rate, version? }`
@@ -314,12 +332,12 @@ AFC, afin que mes écritures en devise et ma réévaluation reçoivent le bon co
        ici**, avec sa variante `AppError` et sa traduction dans les quatre locales ; 35-5 le **réutilise** pour les
        cours de sa requête) ; `currency` comme aux `GET` (`CHF` → 400, inconnue → `CURRENCY_UNKNOWN`, lue telle
        quelle). Concurrence optimiste : `version` absent = création (une ligne déjà présente → 409
-       `OPTIMISTIC_LOCK_CONFLICT`) ; `version` présent = remplacement de cette version (ligne absente ou autre version
+       `OPTIMISTIC_LOCK_CONFLICT` ; **y compris** deux créations simultanées : la violation de l'unicité `(company_id, currency, kind, rate_date)` est rattrapée et rendue 409, jamais 500) ; `version` présent = remplacement de cette version (ligne absente ou autre version
        → 409 `OPTIMISTIC_LOCK_CONFLICT`) ; `version` + 1 à chaque remplacement. Rend `200` avec la forme de `lookup`
        (plus `override: { id, version, updatedAt }`). Un cours saisi **égal** au cours AFC est conservé tel quel (il ne
        suivra pas une republication de l'AFC) ;
      - `DELETE /api/v1/exchange-rates/overrides?currency=USD&kind=month&rateDate=AAAA-MM-JJ&version=N` retire le cours
-       saisi (bouton ↑ de l'écran : « reprendre le cours AFC ») : `204` ; ligne absente → 404 `NOT_FOUND` ; autre
+       saisi (bouton ↑ de l'écran : « reprendre le cours AFC ») ; `version` **obligatoire** (absente ou illisible → 400) ; `204` ; ligne absente → 404 `NOT_FOUND` ; autre
        version → 409 `OPTIMISTIC_LOCK_CONFLICT`. Le cours effectif redevient le cours AFC, ou aucun ;
      - audit : actions `exchange_rate_override.created`, `exchange_rate_override.updated`,
        `exchange_rate_override.deleted` (précédent `company_invoice_settings.created`/`.updated`), type d'entité neuf
@@ -340,7 +358,7 @@ AFC, afin que mes écritures en devise et ma réévaluation reçoivent le bon co
      un cours mensuel, la forme `month` ; la forme `day` n'est rendue que par `lookup`).
    - **Formes des réponses** (camelCase, décimaux en chaînes, comme `lookup`) : `GET /exchange-rates` →
      `{ kind, rateDate: "AAAA-MM-JJ", rates: [{ currency, effectiveRate, afcRate, overridden, publishedUnit,
-     publishedRate, sourceDate, fetchedAt, override: { id, version, updatedAt } | null }] }` (tri par devise ; liste
+     publishedRate, sourceDate, fetchedAt, override: { id, version, updatedAt } | null }] }` (`afcRate`, `publishedUnit`, `publishedRate`, `sourceDate` et `fetchedAt` à `null` pour une devise qui n'a qu'un cours saisi ; tri par devise ; liste
      vide si ni cours AFC ni cours saisi pour ce mois ou ce jour) ; `GET /exchange-rates/status` → `{ trigger,
      lastRunAt, status, error, kind, rateDate }`, tous `null` tant qu'aucune récupération n'a eu lieu (la ligne est
      créée paresseusement, AC-1).
@@ -387,7 +405,7 @@ AFC, afin que mes écritures en devise et ma réévaluation reçoivent le bon co
      (libellé accessible « Reprendre le cours AFC ») qui appelle le `DELETE` ; un cours saisi égal au cours AFC est
      marqué « saisi » sans ↑. Un cours saisi sans cours AFC : « AFC : non publié », sans ↑ ; une devise sans aucun
      cours n'a pas de ligne (le cours se saisit alors par un champ « Ajouter un cours » : devise de la liste ISO 4217,
-     cours). Une récupération qui change le cours AFC laisse le cours saisi et met à jour la mention « AFC : … ».
+     cours). Une récupération qui change le cours AFC laisse le cours saisi et met à jour la mention « AFC : … ». Un champ **vidé** ne supprime rien : la valeur affichée est restaurée, sans appel (seul ↑ retire un cours saisi) ; une valeur égale au cours effectif affiché n'envoie rien. En vue jour, « Récupérer ce jour » est **désactivé** pour une date ≥ aujourd'hui (Europe/Zurich), avec la raison affichée (le serveur la refuse, AC-5) ; la date proposée par défaut est, **sans exercice terminé**, la veille (Europe/Zurich).
    - Vitest : ↑ présent seulement si saisi et différent ; ↑ → `DELETE` avec la bonne version ; 409 → rechargement ;
      Consultation sans champ éditable ; cours JPY saisi par unité. Captures d'écran (vue mensuelle avec un cours saisi
      et son ↑, vue jour avec `sourceDate` d'un dimanche, lecture seule).
@@ -475,7 +493,12 @@ AFC, afin que mes écritures en devise et ma réévaluation reçoivent le bon co
       mono-devise → 409, audit `created`/`updated` avec avant et après ; `DELETE` : 204 et audit `deleted`, absent →
       404, version périmée → 409 ; une récupération ne touche aucun cours saisi (AC-3) ; société B ne voit pas le
       cours saisi de A ; aller-retour `.keshbackup` des cours saisis ; remise à zéro les vide et laisse les cours AFC ;
-      E2E : saisir un cours, le voir proposé, ↑ le retire.
+      E2E : saisir un cours, le voir proposé, ↑ le retire ; `xmldaily` 404 JSON (relevé du 2026-11-14) →
+      `NotPublished`, `RATE_NOT_PUBLISHED`, mémorisé, rien d'écrit ; autre 404/500 → `RATE_SOURCE_UNAVAILABLE` ;
+      `<land_en/>` vide et `<gueltigkeit>` d'une seule date acceptés ; `lookup` `kind` hors `month|day` → 400, forme `day`
+      sans cours → 404 avec `details.date` ; `GET /exchange-rates` d'une devise à cours saisi seul (`fetchedAt` `null`) ;
+      cours saisi égal au cours AFC conservé (`overridden` vrai) ; deux `PUT` de création simultanés → un 200 et un 409 ;
+      `DELETE` sans `version` → 400 ; `full_import_report_mirrors_the_production_registry` vert avec le registre vide.
 - [ ] Manuels, CHANGELOG, `Cargo.lock`.
 
 ## Notes de développement
@@ -531,3 +554,19 @@ AFC, afin que mes écritures en devise et ma réévaluation reçoivent le bon co
   `DELETE /exchange-rates/overrides` (auditées, version, `FX_RATE_INVALID` et bornes d'un cours seul créés ici) ;
   registre des routes +3 routes / +4 au total ; écran à cours éditables, « AFC : … » et ↑, vue jour ; AC touchés :
   Story, Source, AC-1, AC-2, AC-3, AC-4, AC-5, AC-6, AC-7, AC-8, AC-9, Tâches, Notes ; « cours moyens » retiré.
+- 2026-11-14 — validation CR-1 P1 (Sonnet) : 0 CRITICAL, 0 HIGH, 4 MEDIUM, 4 LOW ; remédiés dans la fiche (aucun
+  finding inter-fiches). MEDIUM : `xmldaily` rend un **404 JSON** sans publication (relevé `d=20301231`), non une racine
+  vide — traité `NotPublished` (CR1-P1-1) ; le test `full_import_report_mirrors_the_production_registry`
+  (`admin_full_import_e2e.rs:1595`) rougit avec le registre vide, absent des conséquences de la fermeture de fenêtre
+  (CR1-P1-2) ; la phase 5 de `recette-montee.sh` exige un 200 (:651) et ne peut « attendre un refus » : omise à cette
+  release, script inchangé (CR1-P1-3) ; deux créations simultanées d'un cours saisi → 409 et non 500 (CR1-P1-4). LOW :
+  forme `day` de `RATE_UNAVAILABLE` sans date dans `DbError` (CR1-P1-5), `fetchedAt` `null` d'un cours saisi seul
+  (CR1-P1-6), champ vidé, bouton jour désactivé, date par défaut sans exercice (CR1-P1-7), `version` du `DELETE`
+  obligatoire (CR1-P1-8). Non appliqué, à trancher par Beat : un cours saisi **égal** au cours AFC est marqué « saisi »
+  sans ↑ (AC-6) et ne peut donc plus être retiré depuis l'écran ni suivre une republication de l'AFC — D9 dit « un
+  bouton ↑ qui reprend le cours AFC » ; proposition : ↑ pour tout cours saisi existant. Axes exercés : citations de code
+  (backup.rs, post_restore.rs, import.rs, audit_labels.rs, audit_route_registry.rs, mail/mod.rs, lib.rs,
+  auto_backup.rs, api-client.ts, Cargo.lock, Dockerfile, exports/global.rs, recette-montee.sh), sites de D9/D10
+  (sauvegarde, restauration, fenêtre, remise à zéro, export CSV, audit, RBAC, i18n, manuels, MCP), source journalière
+  (3 GET : `20000103`, `20301231`, `20000101`), provenance `afc`/`manual`, tests. Non exercés : compilation, gate,
+  rendu de l'écran.

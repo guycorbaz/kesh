@@ -122,6 +122,20 @@ change, et ouvrir mes comptes en devise avec leur solde en devise, afin de tenir
      distinct de `rateSource` : une ligne au cours saisi de la société est `manual` **et** proposée ; en édition, une
      ligne relue `afc` est tenue pour proposée, une ligne relue `manual` pour retouchée (la provenance d'origine n'est
      pas stockée).
+   - **Mois du cours AFC comparé** (35-3a AC-4, 4 : toujours le mois de `entry_date`). `LineDraft.foreign` retient
+     `afcRate` **avec son mois** (`afcMonth`, le `rateDate` du `lookup`). Au changement de date, un `lookup` (mémoïsé) est
+     lancé pour **toutes** les lignes en devise, proposées ou non : il rafraîchit `afcRate`/`afcMonth` ; le cours n'est
+     remplacé que pour les lignes proposées. À l'envoi, `afc` seulement si `afcMonth` = mois de la date **et** cours =
+     `afcRate` ; sinon `manual` (jamais `afc` sur un `afcRate` d'un autre mois, que le serveur refuserait en
+     `FX_RATE_NOT_AFC`) ; l'envoi attend les `lookup` en cours, et un `lookup` en échec ou sans cours AFC laisse
+     `afcRate = null` (`manual`). **Édition** : aucun `lookup` au montage, donc `afcRate` est inconnu ; une ligne
+     **non touchée** (montant, cours, date, compte) **conserve la provenance relue** (`afc` ou `manual`) à l'envoi, la
+     règle d'égalité ne s'applique qu'aux lignes touchées ou dont le `lookup` a rendu une réponse.
+   - **Cours AFC sous le champ** (D9) : quand le `lookup` rend un `afcRate` qui diffère du cours de la ligne, le formulaire
+     affiche « AFC : <cours> » et un bouton **↑** (« Reprendre le cours AFC ») qui remet **la ligne** au cours AFC
+     (`rateSource = 'afc'`, ligne proposée) — action locale du formulaire, **sans** `DELETE` du cours saisi, qui se
+     retire à l'écran *Cours de change* (35-2 AC-6). Un cours saisi égal au cours AFC : indicateur « AFC »
+     (provenance `afc`), pas de ↑.
    - **Appels `lookup`** : mémoïsation par `(devise, mois)` par formulaire, **résultats négatifs compris** ; appel
      seulement pour une date valide dans `dateBounds` et après débounce (`debounce.ts`) ; jeton de requête pour ignorer
      une réponse périmée ; si le nouveau mois n'a pas de cours, le cours **proposé** précédent est **effacé** (jamais
@@ -180,6 +194,11 @@ change, et ouvrir mes comptes en devise avec leur solde en devise, afin de tenir
      Big.roundHalfUp)` **explicite** (pas `Big.RM` global), même résultat que le serveur (`MidpointAwayFromZero`) ;
      Vitest lit la fixture de vecteurs **partagée** `crates/kesh-core/tests/fixtures/fx_rounding.json` fournie par 35-3a
      (dont `x.xx5`, cours à 10 décimales, 15 chiffres, hors bornes).
+   - **Tests Vitest de la provenance** (D9) : cours saisi ≠ AFC → `manual` et ligne proposée ; cours saisi = AFC →
+     `afc` ; mois sans cours AFC (`afcRate: null`) → `manual` ; cours retapé égal à l'AFC → `afc` ; date changée vers un
+     mois dont l'AFC diffère, ligne retouchée au cours de l'ancien mois → `manual` (`afcMonth`) ; reproposition des
+     seules lignes proposées ; édition non touchée → provenance relue conservée, sans `lookup` au montage ; ↑ ; efface
+     le cours proposé d'un mois sans cours.
    - **Mono-devise** : formulaire strictement inchangé (test de non-régression).
 3. **AC-3 — Affichage et édition** : détail et liste des écritures montrent montant en devise (avec son code), cours
    **sans zéros terminaux** et source (`AFC`, `manuel`, `réévaluation`) à côté du CHF ; `lineResponseToDraft` recharge
@@ -307,3 +326,7 @@ change, et ouvrir mes comptes en devise avec leur solde en devise, afin de tenir
   de `rateSource` pour la reproposition au changement de date ; `lookup` ne rend 404 que sans aucun cours ; le cours
   journalier (D10) n'est pas proposé à l'ouverture (saisie au CHF) ; E2E et manuel d'un cours saisi ; terminologie.
   AC touchés : Story, AC-1 (*Cours proposé*), AC-2 (*Champs*, *Appels `lookup`*, refus du serveur), AC-5, AC-6.
+- 2026-11-14 — validation CR-1 P1 (Sonnet) : 0 CRITICAL, 0 HIGH, 2 MEDIUM, 2 LOW ; remédiés dans la fiche sauf aucun
+  inter-fiches (CR1-P1-1 provenance d'une ligne non touchée en édition, `afcRate` inconnu au montage ; CR1-P1-2 mois
+  du cours AFC comparé après changement de date, `afcMonth` ; LOW : cours AFC et ↑ sous le champ du formulaire,
+  tests Vitest de la provenance).
