@@ -3,9 +3,13 @@ import Big from 'big.js';
 import {
 	classifyLine,
 	computeBalance,
+	defaultAmountReader,
 	formatSwissAmount,
 	isValidAmount,
-	parseAmount
+	journalAmountReader,
+	lineAmountProblem,
+	parseAmount,
+	readJournalAmount
 } from './balance';
 
 describe('isValidAmount', () => {
@@ -181,5 +185,127 @@ describe('classifyLine', () => {
 
 	it('partial : montant = 0', () => {
 		expect(classifyLine({ accountId: 1, debit: '0', credit: '' })).toBe('partial');
+	});
+});
+
+// Story 36-3 (#1051, AC3) — la lecture d'un montant du journal : l'apostrophe des
+// milliers admise, l'ambiguïté « 1.234 » refusée ; la lecture par défaut inchangée.
+describe('readJournalAmount (Story 36-3, AC3)', () => {
+	it.each(['1.234', '1,234', '12.500', '001.234', '123.456', '1.250'])(
+		'%s → ambiguous',
+		(raw) => {
+			expect(readJournalAmount(raw).kind).toBe('ambiguous');
+		}
+	);
+
+	it.each([
+		["1'234", '1234'],
+		["1'234,50", '1234.50'],
+		['1’234.567', '1234.567'],
+		['1234.567', '1234.567'],
+		['0.500', '0.500'],
+		['1.2340', '1.2340'],
+		['1.23', '1.23'],
+		['12,5', '12.5'],
+		["1'234'567.89", '1234567.89'],
+		["123'456'789'012'345", '123456789012345'],
+		['100', '100']
+	])('%s → clear, charge %s', (raw, payload) => {
+		const r = readJournalAmount(raw);
+		expect(r.kind).toBe('clear');
+		if (r.kind !== 'clear') return;
+		expect(r.payload).toBe(payload);
+		expect(r.value.eq(new Big(payload))).toBe(true);
+	});
+
+	it.each([
+		"12'34",
+		"1''234",
+		"'1234",
+		"1'234'",
+		'1 234',
+		'1.23456',
+		'1.234,5',
+		'abc',
+		'100,',
+		"1'234'567'890'123'456", // seize chiffres entiers (V1-1)
+		'1234567890123456',
+		"0'123.456", // groupe de tête à zéro (V1-2, C-36-3-7)
+		"01'234",
+		"1234'567",
+		'-5',
+		' 5',
+		'1e3'
+	])('%s → unreadable', (raw) => {
+		expect(readJournalAmount(raw).kind).toBe('unreadable');
+	});
+
+	it('vide → empty', () => {
+		expect(readJournalAmount('').kind).toBe('empty');
+	});
+});
+
+describe('lecteurs de computeBalance et classifyLine (Story 36-3, AC3)', () => {
+	const ambigu = [
+		{ debit: '1.234', credit: '' },
+		{ debit: '', credit: '1.234' }
+	];
+
+	it('non-régression : la lecture par défaut ne change pas', () => {
+		expect(isValidAmount('1.234')).toBe(true);
+		expect(isValidAmount("1'234")).toBe(false);
+		const r = computeBalance(ambigu);
+		expect(r.isBalanced).toBe(true);
+		expect(r.totalDebit.eq(new Big('1.234'))).toBe(true);
+		expect(r.totalCredit.eq(new Big('1.234'))).toBe(true);
+		expect(defaultAmountReader('1.234')?.eq(new Big('1.234'))).toBe(true);
+		expect(defaultAmountReader("1'234")).toBeNull();
+		expect(defaultAmountReader('')?.eq(0)).toBe(true);
+	});
+
+	it('avec journalAmountReader, « 1.234 » rend l’écriture invalide', () => {
+		const r = computeBalance(ambigu, journalAmountReader);
+		expect(r.hasInvalidAmount).toBe(true);
+		expect(r.isBalanced).toBe(false);
+	});
+
+	it('avec journalAmountReader, « 1’234,50 » des deux côtés est équilibré à 1234.50', () => {
+		const r = computeBalance(
+			[
+				{ debit: "1'234,50", credit: '' },
+				{ debit: '', credit: '1’234.50' }
+			],
+			journalAmountReader
+		);
+		expect(r.hasInvalidAmount).toBe(false);
+		expect(r.isBalanced).toBe(true);
+		expect(r.totalDebit.eq(new Big('1234.50'))).toBe(true);
+	});
+
+	it('classifyLine avec journalAmountReader', () => {
+		expect(classifyLine({ accountId: 1, debit: '1.234', credit: '' }, journalAmountReader)).toBe(
+			'partial'
+		);
+		expect(
+			classifyLine({ accountId: 1, debit: "1'234,50", credit: '' }, journalAmountReader)
+		).toBe('valid');
+		// Défaut inchangé.
+		expect(classifyLine({ accountId: 1, debit: '1.234', credit: '' })).toBe('valid');
+	});
+});
+
+describe('lineAmountProblem (Story 36-3, D4)', () => {
+	it('ambigu prioritaire sur illisible', () => {
+		expect(lineAmountProblem('1.234', "12'34")).toBe('ambiguous');
+		expect(lineAmountProblem("12'34", '1,234')).toBe('ambiguous');
+	});
+	it('illisible', () => {
+		expect(lineAmountProblem("12'34", '')).toBe('unreadable');
+		expect(lineAmountProblem('', '10.99999')).toBe('unreadable');
+	});
+	it('aucun problème', () => {
+		expect(lineAmountProblem("1'234,50", '')).toBeNull();
+		expect(lineAmountProblem('', '')).toBeNull();
+		expect(lineAmountProblem('1.2340', '')).toBeNull();
 	});
 });

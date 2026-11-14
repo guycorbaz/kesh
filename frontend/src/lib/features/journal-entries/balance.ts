@@ -70,6 +70,43 @@ export function parseAmount(raw: string): Big {
 	return new Big(raw.replace(',', '.'));
 }
 
+/** Story 36-3 — le classement d'une saisie du journal. */
+export type JournalAmountKind = 'empty' | 'clear' | 'ambiguous' | 'unreadable';
+
+/** Story 36-3 — la lecture d'une saisie du journal ; `value` et `payload` pour une saisie claire. */
+export type JournalAmountReading =
+	| { kind: 'clear'; value: Big; payload: string }
+	| { kind: 'empty' | 'ambiguous' | 'unreadable' };
+
+/** Story 36-3 (stub de la preuve du rouge) — la lecture d'aujourd'hui. */
+export function readJournalAmount(raw: string): JournalAmountReading {
+	if (raw === '') return { kind: 'empty' };
+	if (!isValidAmount(raw)) return { kind: 'unreadable' };
+	return { kind: 'clear', value: parseAmount(raw), payload: raw.replace(',', '.') };
+}
+
+/** Story 36-3 (stub) — le problème de montant d'une ligne. */
+export function lineAmountProblem(
+	_debit: string,
+	_credit: string
+): 'ambiguous' | 'unreadable' | null {
+	return null;
+}
+
+/** Story 36-3 (D3) — un lecteur de montant : `null` hors format, `Big(0)` pour le vide. */
+export type AmountReader = (raw: string) => Big | null;
+
+/** Story 36-3 (D3) — la lecture d'avant la story, que gardent les soldes de départ (#1050). */
+export const defaultAmountReader: AmountReader = (raw) =>
+	isValidAmount(raw) ? parseAmount(raw) : null;
+
+/** Story 36-3 (D3) — la lecture du journal (`readJournalAmount`). */
+export const journalAmountReader: AmountReader = (raw) => {
+	const r = readJournalAmount(raw);
+	if (r.kind === 'empty') return new Big(0);
+	return r.kind === 'clear' ? r.value : null;
+};
+
 export interface BalanceResult {
 	totalDebit: Big;
 	totalCredit: Big;
@@ -80,20 +117,20 @@ export interface BalanceResult {
 	hasInvalidAmount: boolean;
 }
 
+/**
+ * Totaux et équilibre des lignes, chaque montant lu par `read` (Story 36-3, D3) :
+ * par défaut `defaultAmountReader`, la lecture d'avant la story (soldes de départ,
+ * #1050) ; l'écriture manuelle passe `journalAmountReader`. Un montant que le
+ * lecteur rend `null` compte pour zéro et rend `hasInvalidAmount` vrai.
+ */
 export function computeBalance(
-	lines: { debit: string; credit: string }[]
+	lines: { debit: string; credit: string }[],
+	read: AmountReader = defaultAmountReader
 ): BalanceResult {
-	const hasInvalidAmount = lines.some(
-		(l) => !isValidAmount(l.debit) || !isValidAmount(l.credit)
-	);
-	const totalDebit = lines.reduce(
-		(acc, l) => acc.plus(isValidAmount(l.debit) ? parseAmount(l.debit) : new Big(0)),
-		new Big(0)
-	);
-	const totalCredit = lines.reduce(
-		(acc, l) => acc.plus(isValidAmount(l.credit) ? parseAmount(l.credit) : new Big(0)),
-		new Big(0)
-	);
+	const read0 = (raw: string) => read(raw) ?? new Big(0);
+	const hasInvalidAmount = lines.some((l) => read(l.debit) === null || read(l.credit) === null);
+	const totalDebit = lines.reduce((acc, l) => acc.plus(read0(l.debit)), new Big(0));
+	const totalCredit = lines.reduce((acc, l) => acc.plus(read0(l.credit)), new Big(0));
 	return {
 		totalDebit,
 		totalCredit,
@@ -140,22 +177,33 @@ export function formatSwissAmount(big: Big, decimals = 2): string {
 	return `${negative ? '-' : ''}${withSeparators}${fraction}`;
 }
 
-export function classifyLine(line: {
-	accountId: number | null;
-	debit: string;
-	credit: string;
-}): LineStatus {
+/**
+ * Classe une ligne, ses montants lus par `read` (Story 36-3, D3 ; défaut :
+ * `defaultAmountReader`). ⚠️ Ne pas passer cette fonction telle quelle à
+ * `Array.prototype.map` : `map` donnerait l'indice pour lecteur. Écrire
+ * `lines.map((l) => classifyLine(l, journalAmountReader))`.
+ */
+export function classifyLine(
+	line: {
+		accountId: number | null;
+		debit: string;
+		credit: string;
+	},
+	read: AmountReader = defaultAmountReader
+): LineStatus {
 	const emptyDebit = line.debit === '';
 	const emptyCredit = line.credit === '';
 	if (line.accountId === null && emptyDebit && emptyCredit) return 'empty';
 
 	if (line.accountId === null) return 'partial';
-	if (!isValidAmount(line.debit) || !isValidAmount(line.credit)) return 'partial';
+	const debit = read(line.debit);
+	const credit = read(line.credit);
+	if (debit === null || credit === null) return 'partial';
 	if (emptyDebit && emptyCredit) return 'partial';
 	if (!emptyDebit && !emptyCredit) return 'partial';
 
 	// Un seul des deux non vide
-	const amount = emptyDebit ? parseAmount(line.credit) : parseAmount(line.debit);
+	const amount = emptyDebit ? credit : debit;
 	if (amount.lte(0)) return 'partial';
 
 	return 'valid';

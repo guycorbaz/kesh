@@ -166,7 +166,7 @@
 	}
 
 	const balance = $derived(computeBalance(lines));
-	const lineStatuses = $derived(lines.map(classifyLine));
+	const lineStatuses = $derived(lines.map((l) => classifyLine(l)));
 
 	const nonEmptyLines = $derived.by(() => {
 		return lines.map((l, i) => ({ line: l, status: lineStatuses[i], index: i }))

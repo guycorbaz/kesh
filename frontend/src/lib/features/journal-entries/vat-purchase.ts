@@ -22,7 +22,7 @@
  */
 
 import Big from 'big.js';
-import { parseAmount } from './balance';
+import { isValidAmount, parseAmount, type JournalAmountKind } from './balance';
 import type { LineDraft } from './form-helpers';
 
 /**
@@ -96,6 +96,33 @@ export function buildPurchaseVatLines(params: PurchaseVatParams): LineDraft[] {
 	lines.push({ accountId: counterpartyAccountId, debit: '', credit: ttc, projectId: null });
 
 	return lines;
+}
+
+/** Story 36-3 (D5) — la lecture du montant HT de l'assistant. */
+export interface HtAmountReading {
+	kind: JournalAmountKind;
+	/** Charge normalisée (point décimal, sans apostrophe) d'une saisie claire ; `null` sinon. */
+	payload: string | null;
+	/** Claire et `> 0` une fois arrondie au centime : l'assistant peut insérer. */
+	usable: boolean;
+}
+
+/** Story 36-3 (stub de la preuve du rouge) — la lecture d'aujourd'hui. */
+export function readHtAmount(raw: string): HtAmountReading {
+	const kind: JournalAmountKind = raw === '' ? 'empty' : isValidAmount(raw) ? 'clear' : 'unreadable';
+	const usable =
+		isValidAmount(raw) && raw.trim() !== '' && parseAmount(raw).round(2, Big.roundHalfUp).gt(0);
+	return { kind, payload: kind === 'clear' ? raw.replace(',', '.') : null, usable };
+}
+
+/** Story 36-3 (stub) — l'écriture que l'assistant insère, depuis la saisie brute. */
+export function purchaseVatEntry(
+	params: PurchaseVatParams
+): { lines: LineDraft[]; isExempt: boolean } | null {
+	return {
+		lines: buildPurchaseVatLines(params),
+		isExempt: lineVatAmount(params.htAmount, params.ratePercent) === '0.00'
+	};
 }
 
 /**

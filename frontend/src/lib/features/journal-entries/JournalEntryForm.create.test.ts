@@ -110,6 +110,82 @@ describe('JournalEntryForm — mode création', () => {
 	});
 });
 
+// Story 36-3 (#1051, AC4) — le montant ambigu « 1.234 » refusé à l'écran, l'apostrophe
+// des milliers admise. Les deux lignes portent un compte imputable (V1-4 de la
+// validation) : sans compte, la ligne serait `partial` pour une autre raison, et
+// « Valider désactivé » ne prouverait rien. Le cas témoin « 1.23 » montre que,
+// comptes choisis, le bouton s'active bien.
+describe('JournalEntryForm — montant ambigu (Story 36-3)', () => {
+	beforeEach(() => {
+		createMock.mockReset();
+		createMock.mockResolvedValue({});
+	});
+
+	async function saisir(debit: string, credit: string) {
+		render(JournalEntryForm, {
+			props: {
+				accounts: [account(1, '1000'), account(2, '2000')],
+				accountsLoadError: false,
+				onSuccess: vi.fn(),
+				onCancel: vi.fn(),
+				onStale: vi.fn()
+			}
+		});
+		await fireEvent.input(document.getElementById('entry-description')!, {
+			target: { value: 'Montant ambigu' }
+		});
+		await pick(0, '1000');
+		await pick(1, '2000');
+		const montants = screen.getAllByPlaceholderText('0.00');
+		await fireEvent.input(montants[0], { target: { value: debit } });
+		await fireEvent.input(montants[3], { target: { value: credit } });
+		return montants;
+	}
+
+	const valider = () => screen.getByRole('button', { name: 'Valider' }) as HTMLButtonElement;
+
+	it('témoin : « 1.23 » des deux côtés, comptes choisis → Valider actif', async () => {
+		await saisir('1.23', '1.23');
+		expect(valider().disabled).toBe(false);
+		expect(screen.queryByText(/Montant ambigu/)).toBeNull();
+	});
+
+	it('« 1.234 » des deux côtés → message ambigu, Valider désactivé, Ctrl+S sans envoi', async () => {
+		const montants = await saisir('1.234', '1.234');
+		expect(screen.getAllByText(/Montant ambigu/).length).toBeGreaterThan(0);
+		expect(screen.queryByText(/Montant illisible/)).toBeNull();
+		expect(montants[0].className).toContain('border-destructive');
+		expect(valider().disabled).toBe(true);
+		await fireEvent.keyDown(window, { key: 's', ctrlKey: true });
+		await new Promise((r) => setTimeout(r, 0));
+		expect(createMock).not.toHaveBeenCalled();
+	});
+
+	it('« 12’34 » → message illisible', async () => {
+		await saisir("12'34", "12'34");
+		expect(screen.getAllByText(/Montant illisible/).length).toBeGreaterThan(0);
+		expect(screen.queryByText(/Montant ambigu/)).toBeNull();
+		expect(valider().disabled).toBe(true);
+	});
+
+	it('« 1’234,50 » des deux côtés → équilibré, envoyé en 1234.50', async () => {
+		const montants = await saisir("1'234,50", "1'234,50");
+		expect(screen.getByText(/Équilibré/)).toBeTruthy();
+		expect(montants[0].className).not.toContain('border-destructive');
+		expect(valider().disabled).toBe(false);
+		await fireEvent.click(valider());
+		await new Promise((r) => setTimeout(r, 0));
+		expect(createMock).toHaveBeenCalledTimes(1);
+		const payload = createMock.mock.calls[0][0] as {
+			lines: Array<{ accountId: number; debit: string; credit: string }>;
+		};
+		expect(payload.lines).toEqual([
+			expect.objectContaining({ accountId: 1, debit: '1234.50', credit: '0' }),
+			expect.objectContaining({ accountId: 2, debit: '0', credit: '1234.50' })
+		]);
+	});
+});
+
 // Story v0174-correctifs-3 (#889, AC-3.6) — la date par défaut d'une écriture est celle du
 // poste (déjà locale avant la 0.17.4 : ce test fige le remplacement par `todayLocal`).
 describe('JournalEntryForm — date par défaut locale (#889)', () => {
