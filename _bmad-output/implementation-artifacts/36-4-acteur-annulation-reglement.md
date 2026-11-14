@@ -1,6 +1,6 @@
 # Story 36-4 : l'annulation d'un règlement par une clé d'API est attribuée à la clé — par sa route ou par le dé-rapprochement (#1131)
 
-Status: review
+Status: done
 
 *Fiche rédigée le 2026-11-14 par l'agent de rédaction des fiches de l'Epic 36 (Opus 5.5), worktree `kesh-36-4`, branche
 `story/36-4-acteur-annulation-reglement`, par le workflow `bmad-create-story`. Phase 1, release **0.17.8**. **Aucune
@@ -714,13 +714,17 @@ Sous `/home/gcorbaz/devel/kesh-gate-logs/e36-4/` : `rouges.log`, `rouges-run1.lo
     (`assert_toutes_a_l_utilisateur`, `seeded.admin_user_id`, `SUPPLIER_UNRECONCILE_ACTIONS`) ; la cellule `:388` de la fiche
     accordée, et les deux tests neufs ajoutés au tableau.
   - **A2**, confirmé : `/usr/bin/grep -niE 'fmt' clippy-1.log` ne rend que `Checking powerfmt`. Le Dev Agent Record cite
-    `test-fast-ci-c5d67ce42.log:4` (`▶ cargo fmt --check`). Les journaux de la remédiation portent le commit en première ligne
-    (`# commit $(git rev-parse HEAD)` dans la même commande).
+    `test-fast-ci-c5d67ce42.log:4` (`▶ cargo fmt --check`). Le journal du gate de la remédiation,
+    `test-fast-ci-remediation-p1.log`, porte son commit en première ligne (`# commit a8b1ebb08…`, par `git rev-parse HEAD` dans
+    la même commande). *(Corrigé à la passe ciblée P2, R1 : cette phrase disait « les journaux de la remédiation » ;
+    `manuels-make-remediation-p1.log` et `remediation-p1-cibles.log` portent en tête `c52e10b50` **et l'arbre de travail**
+    non commité, la remédiation n'étant pas encore commitée quand ils ont été écrits.)*
   - **A3**, confirmé : `api-external.md:565` dit « `lettering.removed` quand la pièce était lettrée — un règlement partiel n'en
     écrit pas ».
   - **A4**, confirmé : les deux `.tex` rattachent « un simple détachement ne contre-passe rien » à la phrase de l'écriture seule,
     hors de « depuis la 0.17.8 » ; `user-manual.tex` reprend la parenthèse de l'admin (« un règlement ou un solde de facture
-    client, le paiement d'une facture fournisseur »). PDF régénérés (`manuels-make-remediation-p1.log`, commit en tête ; la
+    client, le paiement d'une facture fournisseur »). PDF régénérés (`manuels-make-remediation-p1.log`, en tête `c52e10b50` + l'arbre de travail, avant le commit `a8b1ebb08` qui
+    porte ces PDF ; la
     brochure rétablie par `git restore`). Contrôle aplati (E6), admin / user : « délettrage ; un simple détachement » `0` / `0`,
     « compris, et un simple détachement » `0` / `0`, « client ou fournisseur, par sa route » `0` / `0`, « une écriture rapprochée
     seule, et un simple détachement ne contre-passe rien » `1` / `1`. Sonde positive sur les PDF de `c52e10b50` : « délettrage ; un
@@ -734,3 +738,22 @@ Sous `/home/gcorbaz/devel/kesh-gate-logs/e36-4/` : `rouges.log`, `rouges-run1.lo
     d'autres gates, a été arrêté par son PID avant de démarrer (`remediation-p1-cibles.log` ne porte que sa ligne d'en-tête) :
     `test-fast --ci` les couvre.
   - Prompt de la passe ciblée P2 : `36-4-acteur-annulation-reglement-review-prompt-p2-ciblee.md`.
+- 2026-11-14 — **Passe ciblée P2 (Haiku) : 0 CRITICAL / 0 HIGH / 0 MEDIUM / 1 LOW** (`kesh-gate-logs/e36-4/review-p2-ciblee.md`) :
+  la remédiation n'introduit aucun défaut ; **R1** (compte rendu) — l'entrée précédente disait que « les journaux de la
+  remédiation » portent leur commit en tête, alors que seul `test-fast-ci-remediation-p1.log` porte `a8b1ebb08` ;
+  `manuels-make-remediation-p1.log` et `remediation-p1-cibles.log` portent `c52e10b50` et l'arbre de travail. Corrigé dans la
+  fiche seule (annotation datée sur l'entrée précédente). **Boucle de revue close** : P1 B 0/0/0/2, E 0/0/0/3, A 0/0/0/4 →
+  remédiés `a8b1ebb08` → P2 ciblée Haiku 0/0/0/1 (compte rendu seul, aucune ligne de code).
+- 2026-11-14 — **Clôture** (Opus 5.5), au dernier commit de code `a8b1ebb08` (HEAD `f8e313142` n'ajoute que la fiche et le prompt
+  P2), voie 1, une commande lourde à la fois sous son verrou :
+  - `scripts/gate-ci.sh kesh_ci_e364` : **5459 passés, 0 échec, 17 ignorés**, code 0 (`kesh-gate-logs/e36-4/gate-ci-cloture.log`,
+    première ligne `# commit f8e313142…`, sortie brute `gate-ci-cloture.brut.log`). KF-061 (#1126) n'a pas rougi.
+  - **E2E complet** sur `kesh_e2e_e364` recréée à neuf (vide, migrée au démarrage), port 3364, recette entière de `e34-commun.md`,
+    dossiers sous `target/e2e-r1/`, frontend `npm run build` (`e2e-build-frontend.log`), backend `cargo build -p kesh-api`
+    (`e2e-build-backend.log`) ; script `kesh-gate-logs/e36-4/e2e-cloture.sh`, journal `e2e-cloture.log` (commit en tête, après
+    la ligne de `mem-guard` ; `/health` : `smtpConfigured: true`) : **433 tests, 408 passés, 7 échecs, 18 ignorés** (17,7 min).
+    Les sept échecs sont exactement ceux de la KF-029 (#97) de `docs/testing.md` § « Les échecs attendus » :
+    `mode-expert.spec.ts:26`, `mode-expert.spec.ts:41`, `onboarding-path-b.spec.ts:65`, `onboarding-path-b.spec.ts:92`,
+    `onboarding.spec.ts:57`, `onboarding.spec.ts:77`, `onboarding.spec.ts:150`. Aucun échec de pollution. `ss -ltnp` avant et
+    après : 3364 libre ; le backend arrêté par son PID.
+  - Statut : `done`. Bases `kesh_e364`, `kesh_e2e_e364`, `kesh_ci_e364` et worktree gardés jusqu'à l'intégration.
