@@ -201,7 +201,7 @@ l'`defaultPrevented` de l'événement ; la soumission réelle ne se voit qu'en E
     **≈ 8,7:1** (≥ 4,5:1) ;
   - **survol** : `hover:bg-border` — `--color-border` (`app.css:33` `--color-border: #e2e8f0;`), gris clair (≈ 1,2:1 contre le
     blanc : un retour de pointeur, non un état), **appliqué aux seules options non désignées** : sur l'option désignée, le fond
-    plein reste (sinon le texte blanc passerait sur un gris clair). Désignation contre survol **≈ 7,3:1** : bleu plein contre
+    plein reste (sinon le texte blanc passerait sur un gris clair). Désignation contre survol **≈ 7,1:1** (V5-2, calculé par le test d'AC8) : bleu plein contre
     gris clair, distincts **par la luminance** et non par une nuance.
 
   **Forme** (V4-2) : la directive `class:` ne porte qu'une classe et son nom s'arrête au `/` ; l'option s'écrit en tableau
@@ -444,7 +444,11 @@ l'`defaultPrevented` de l'événement ; la soumission réelle ne se voit qu'en E
    - fond désigné (`primary`) contre le fond de la liste (`popover`) **≥ 3:1** ;
    - texte désigné (`primary-foreground`) sur `primary` **≥ 4,5:1** ;
    - fond désigné contre le fond de survol (`border`) **≥ 3:1** (les deux états se distinguent par eux-mêmes) ;
-   - `CLASSE_DESIGNEE` ne contient aucun jeton absent du thème (`accent`, `muted` compris).
+   - `CLASSE_DESIGNEE` ne contient aucun jeton absent du thème (`accent`, `muted` compris) ;
+   - **les jetons se lisent dans les constantes, et non à vide** (V5-1) : `CLASSE_DESIGNEE` contient `bg-primary` et
+     `text-primary-foreground`, `CLASSE_SURVOL` contient `hover:bg-border`, et les contrastes ci-dessus se calculent sur les
+     jetons **extraits des constantes**, non sur des noms écrits dans le test — sans quoi une constante vidée (M21) ou changée
+     (M25) laisserait les assertions précédentes vraies à vide.
    Ce qu'il ne voit pas : le rendu réel (capture d'AC7) et une classe écrite en dur dans le composant au lieu des
    constantes (lecture de revue).
 

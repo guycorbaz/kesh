@@ -76,13 +76,13 @@ Ces choix ne sont pas couverts par C-e360 ; ils reprennent l'étape 0 de la 36-1
   désignation, critère de ce qu'*Entrée* choisit, est invisible.
 - **Décision de l'orchestrateur** (2026-11-14) : la 36-1 ne définit pas `--color-accent` (menus et `select` de toute
   l'application, hors périmètre : #1169) ; le composant emploie des jetons définis, choisis par la fiche.
-- **Retenu** : désignation `bg-primary/10 ring-1 ring-inset ring-primary` (`--color-primary`, `app.css:12` ; `/10` déjà
+- **Retenu en P3, remplacé en P4** (V5-3) : désignation `bg-primary/10 ring-1 ring-inset ring-primary` (`--color-primary`, `app.css:12` ; `/10` déjà
   employé, `accounts/+page.svelte:504`) ; survol `hover:bg-border/60` (`--color-border`, `app.css:33`), gris sans filet.
   Contraste du texte sur la désignation mesuré au développement (`tests/e2e/helpers/contrast.ts`).
   *(Remplacé à la remédiation de la validation P4, V4-1 : ces deux fonds pâles se tenaient à 1,04:1 l'un de l'autre et à
   1,18:1 du fond de la liste ; seul le filet de 1 px distinguait la désignation. **Retenu désormais** : désignation
   `bg-primary text-primary-foreground` (`app.css:12`, `:14` ; ≈ 8,7:1 contre `--color-popover`, texte ≈ 8,7:1), survol
-  `hover:bg-border` (`app.css:33`) sur les seules options non désignées (désignation contre survol ≈ 7,3:1) ; constantes
+  `hover:bg-border` (`app.css:33`) sur les seules options non désignées (désignation contre survol ≈ 7,1:1 — « 7,3 » écrit en P4, corrigé au développement, V5-2) ; constantes
   `CLASSE_DESIGNEE`, `CLASSE_SURVOL` dans `account-autocomplete-classes.ts`, gardées par un test de jetons et de contrastes
   sur le patron de `button-destructive.test.ts` (AC8). Écartés : fond atténué + filet + barre gauche — trois classes à garder
   pour un indicateur que le fond plein donne seul.)*
