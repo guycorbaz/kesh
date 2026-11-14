@@ -3873,3 +3873,161 @@ async fn the_two_refusals_of_the_reversal_at_next_fiscal_year_start(pool: MySqlP
         )
     );
 }
+
+// ---------------------------------------------------------------------------
+// Story 35-8a2 (refs #431) — l'audit attribue à la clé d'API les écritures
+// qu'elle passe et contre-passe (AC1, AC2)
+// ---------------------------------------------------------------------------
+
+/// Une clé `read-write` de l'administrateur du décor, créée par HTTP sous son
+/// jeton ; rend `(id de la clé, secret)`.
+async fn cle_8a2(app: &TestApp, token: &str, nom: &str) -> (i64, String) {
+    let resp = app
+        .client
+        .post(app.url("/api/v1/settings/api-keys"))
+        .header("Authorization", auth(token))
+        .json(&json!({ "name": nom, "scope": "read-write" }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 201, "création de la clé {nom}");
+    let b: Value = resp.json().await.unwrap();
+    (
+        b["id"].as_i64().unwrap(),
+        b["key"].as_str().unwrap().to_string(),
+    )
+}
+
+/// L'identifiant de l'administrateur du décor — le créateur de la clé.
+async fn id_admin(pool: &MySqlPool) -> i64 {
+    sqlx::query_scalar("SELECT id FROM users WHERE username = 'admin'")
+        .fetch_one(pool)
+        .await
+        .unwrap()
+}
+
+/// L'acteur d'une trace : `(actor_type, actor_api_key_id, user_id)` de l'unique
+/// entrée `action` sur `entity_type`/`entity_id`.
+async fn acteur_de(
+    pool: &MySqlPool,
+    action: &str,
+    entity_type: &str,
+    entity_id: i64,
+) -> (String, Option<i64>, i64) {
+    sqlx::query_as(
+        "SELECT actor_type, actor_api_key_id, user_id FROM audit_log \
+         WHERE action = ? AND entity_type = ? AND entity_id = ?",
+    )
+    .bind(action)
+    .bind(entity_type)
+    .bind(entity_id)
+    .fetch_one(pool)
+    .await
+    .unwrap_or_else(|e| panic!("trace {action} de {entity_type} {entity_id} : {e}"))
+}
+
+/// `POST /api/v1/journal-entries` sous le jeton donné ; rend l'id créé.
+async fn saisir_par(app: &TestApp, jeton: &str, d: i64, c: i64) -> i64 {
+    let resp = app
+        .client
+        .post(app.url("/api/v1/journal-entries"))
+        .header("Authorization", auth(jeton))
+        .json(&json!({
+            "entryDate": crate::common::jour::aujourd_hui_test(),
+            "journal": "OD",
+            "description": "Saisie 35-8a2",
+            "lines": [
+                { "accountId": d, "debit": "100.00", "credit": "0" },
+                { "accountId": c, "debit": "0", "credit": "100.00" },
+            ],
+        }))
+        .send()
+        .await
+        .unwrap();
+    let status = resp.status();
+    let body: Value = resp.json().await.unwrap_or(Value::Null);
+    assert_eq!(status, 201, "saisie : {body}");
+    body["id"].as_i64().unwrap()
+}
+
+/// AC1 (Story 35-8a2) — une écriture saisie par une clé `read-write` :
+/// `journal_entry.created` porte `actor_type = 'api_key'`, la clé, et son
+/// créateur pour `user_id` ; la même saisie par session reste `'user'`, sans clé.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn an_entry_posted_by_an_api_key_is_attributed_to_the_key(pool: MySqlPool) {
+    let (app, token, company_id, _fy_id) = setup(&pool).await;
+    let d = make_account(&pool, company_id, "6000", AccountType::Expense).await;
+    let c = make_account(&pool, company_id, "1020", AccountType::Asset).await;
+    let admin = id_admin(&pool).await;
+    let (cle_id, cle) = cle_8a2(&app, &token, "cle-8a2-saisie").await;
+
+    let par_cle = saisir_par(&app, &cle, d, c).await;
+    assert_eq!(
+        acteur_de(&pool, "journal_entry.created", "journal_entry", par_cle).await,
+        ("api_key".to_string(), Some(cle_id), admin),
+        "saisie par clé"
+    );
+
+    let par_session = saisir_par(&app, &token, d, c).await;
+    assert_eq!(
+        acteur_de(&pool, "journal_entry.created", "journal_entry", par_session).await,
+        ("user".to_string(), None, admin),
+        "saisie par session"
+    );
+}
+
+/// AC2 (Story 35-8a2) — les deux contre-passations par clé, sur une écriture
+/// qui porte une ligne sur un compte **lettrable** (`1100`, `Asset`, non lié à
+/// un compte bancaire) : le lettrage `reversal` **existe** d'abord (sans quoi
+/// M3 survivrait sur un montage qui ne lettre rien), puis lui et
+/// `journal_entry.reversed` — et le `journal_entry.created` de l'inverse — portent
+/// la clé et son créateur.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn both_reversals_by_an_api_key_are_attributed_to_the_key(pool: MySqlPool) {
+    let (app, token, company_id, fy_id) = setup(&pool).await;
+    next_year(&pool, company_id).await;
+    let debiteurs = make_account(&pool, company_id, "1100", AccountType::Asset).await;
+    let produit = make_account(&pool, company_id, "3200", AccountType::Revenue).await;
+    let admin = id_admin(&pool).await;
+    let (cle_id, cle) = cle_8a2(&app, &token, "cle-8a2-contre-passation").await;
+
+    for au_debut_de_l_exercice_suivant in [false, true] {
+        let origine = make_entry(&pool, company_id, fy_id, debiteurs, produit, (None, None)).await;
+        let (status, body) = if au_debut_de_l_exercice_suivant {
+            post_reverse_next_year(&app, &cle, origine).await
+        } else {
+            post_reverse(&app, &cle, origine).await
+        };
+        assert_eq!(status, 201, "{body}");
+        let inverse = body["id"].as_i64().unwrap();
+        let contexte = if au_debut_de_l_exercice_suivant {
+            "contre-passation à l'exercice suivant"
+        } else {
+            "contre-passation du jour"
+        };
+
+        let groupe = marque_of(&pool, line_on(&pool, origine, debiteurs).await).await;
+        assert_eq!(
+            groupe.1.as_deref(),
+            Some("reversal"),
+            "{contexte} : la ligne lettrable est lettrée `reversal`"
+        );
+        let cle_groupe = groupe.0.unwrap();
+        let attendu = ("api_key".to_string(), Some(cle_id), admin);
+        assert_eq!(
+            acteur_de(&pool, "lettering.created", "lettering", cle_groupe).await,
+            attendu,
+            "{contexte} : lettering.created"
+        );
+        assert_eq!(
+            acteur_de(&pool, "journal_entry.reversed", "journal_entry", origine).await,
+            attendu,
+            "{contexte} : journal_entry.reversed"
+        );
+        assert_eq!(
+            acteur_de(&pool, "journal_entry.created", "journal_entry", inverse).await,
+            attendu,
+            "{contexte} : journal_entry.created de l'inverse"
+        );
+    }
+}

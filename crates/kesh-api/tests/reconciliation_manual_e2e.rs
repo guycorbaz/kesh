@@ -1312,6 +1312,80 @@ async fn post_manual_emits_audit_log_pair(pool: MySqlPool) {
     assert!(details_json["value_date"].is_string());
 }
 
+/// AC1 (Story 35-8a2, refs #431) — un rapprochement manuel par une clé
+/// `read-write` du Comptable : `journal_entry.created` porte la clé, comme
+/// `reconciliation.manual_matched` ; `user_id` reste le créateur de la clé.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn post_manual_by_an_api_key_attributes_the_entry_to_the_key(pool: MySqlPool) {
+    let ctx = setup_full(&pool, "Acme", "CH4431999123000889012", Role::Comptable).await;
+    let day = NaiveDate::from_ymd_opt(2026, 5, 15).unwrap();
+    let tx_ids = seed_bank_transactions(
+        &pool,
+        ctx.company_id,
+        ctx.bank_account_id,
+        ctx.user_id,
+        &unique_hash("audit_cle_8a2"),
+        day,
+        vec![make_new_tx(
+            ctx.company_id,
+            ctx.bank_account_id,
+            day,
+            dec!(-100.00),
+            "FEES",
+        )],
+    )
+    .await;
+    let tx_id = tx_ids[0];
+
+    let app = spawn_app(pool.clone()).await;
+    let resp = app
+        .client
+        .post(app.url("/api/v1/settings/api-keys"))
+        .bearer_auth(&ctx.jwt)
+        .json(&json!({ "name": "cle-8a2-rapprochement", "scope": "read-write" }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 201, "création de la clé");
+    let cle: Value = resp.json().await.unwrap();
+    let cle_id = cle["id"].as_i64().unwrap();
+
+    let resp = app
+        .client
+        .post(app.url("/api/v1/reconciliation/manual"))
+        .bearer_auth(cle["key"].as_str().unwrap())
+        .json(&json!({
+            "bankAccountId": ctx.bank_account_id,
+            "bankTransactionId": tx_id,
+            "counterpartyAccountId": ctx.counterparty_account_id,
+            "description": "Rapprochement par clé",
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+    let body: Value = resp.json().await.unwrap();
+    let je_id = body["journalEntryId"].as_i64().expect("journalEntryId");
+
+    let attendu = ("api_key".to_string(), Some(cle_id), ctx.user_id);
+    for (action, entity_type, id) in [
+        ("reconciliation.manual_matched", "bank_transaction", tx_id),
+        ("journal_entry.created", "journal_entry", je_id),
+    ] {
+        let acteur: (String, Option<i64>, i64) = sqlx::query_as(
+            "SELECT actor_type, actor_api_key_id, user_id FROM audit_log \
+             WHERE action = ? AND entity_type = ? AND entity_id = ?",
+        )
+        .bind(action)
+        .bind(entity_type)
+        .bind(id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(acteur, attendu, "{action}");
+    }
+}
+
 // ============================================================
 // Story 15-5b (AC1, AC16, #427) — compte de contrepartie non imputable
 // ============================================================

@@ -586,6 +586,50 @@ async fn une_cle_read_write_devalide_une_cle_read_est_refusee(pool: MySqlPool) {
     assert!(je.is_none(), "l'écriture est détachée puis supprimée");
 }
 
+/// AC4 (Story 35-8a2, refs #431) — **limite connue, assertée telle quelle** :
+/// la validation d'une facture client **par une clé** écrit encore
+/// `journal_entry.created` au nom du créateur de la clé, `actor_type = 'user'`,
+/// sans clé (`invoices::validate_invoice` passe `Acteur::utilisateur`, entrée
+/// `AConvertir` de la garde des acteurs ; le déploiement est à l'Epic 36). Le
+/// jour où ce test rougit, la limite est levée : mettre à jour le manuel et ce test.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn la_validation_par_cle_ecrit_encore_l_ecriture_au_nom_du_createur(pool: MySqlPool) {
+    let app = spawn_app(pool.clone()).await;
+    let (admin_id, company_id) = seed_base(&pool).await;
+    let contact_id = seed_contact(&pool, company_id, admin_id).await;
+    let token = login(&app, "admin", TEST_ADMIN_PASSWORD).await;
+    let cle_rw = creer_cle(&app, &token, "rw-8a2", "read-write").await;
+
+    let id = create_draft(
+        &pool,
+        company_id,
+        contact_id,
+        admin_id,
+        common::jour::aujourd_hui_test(),
+    )
+    .await;
+    let resp = app
+        .client
+        .post(app.url(&format!("/api/v1/invoices/{id}/validate")))
+        .bearer_auth(&cle_rw)
+        .json(&json!({}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200, "validation par clé");
+    let (_, _, _, je) = etat(&pool, id).await;
+    let (actor_type, cle, user_id): (String, Option<i64>, i64) = sqlx::query_as(
+        "SELECT actor_type, actor_api_key_id, user_id FROM audit_log \
+         WHERE action = 'journal_entry.created' AND entity_type = 'journal_entry' \
+           AND entity_id = ?",
+    )
+    .bind(je.expect("écriture de la facture"))
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!((actor_type.as_str(), cle, user_id), ("user", None, admin_id));
+}
+
 /// ⛔ **Le refus, par la couche HTTP.** Les tests de dépôt établissent le
 /// `DbError` ; **aucun** n'établissait le statut, le code ni le `details` que
 /// l'appelant reçoit réellement. Une correspondance HTTP fausse — mauvais
