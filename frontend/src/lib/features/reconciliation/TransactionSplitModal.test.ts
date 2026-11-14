@@ -625,12 +625,14 @@ describe('TransactionSplitModal — Éclater, montants et messages (Story 36-2)'
 	it('V-b — somme fausse : le message et l’indicateur disent l’attendu et l’écart', async () => {
 		const { r, submit } = await remplir(['40', '30']);
 		const message = await r.findByTestId('split-client-error');
-		expect(message.textContent).toContain('attendu 100.00');
-		expect(message.textContent).toContain('écart -30.00');
-		expect(message.textContent).not.toContain('{ $');
+		// Revue P1 (B3) : le message dit quoi faire, l'indicateur constate — deux phrases.
+		expect(message.textContent?.trim()).toBe(
+			'Ajustez les montants : leur somme doit égaler 100.00 (écart actuel -30.00).',
+		);
 		const indicateur = await r.findByTestId('split-balance-indicator');
-		expect(indicateur.textContent).toContain('attendu 100.00');
-		expect(indicateur.textContent).toContain('écart -30.00');
+		expect(indicateur.textContent?.trim()).toBe(
+			'Balance non équilibrée — attendu 100.00, écart -30.00',
+		);
 		expect(submit.disabled).toBe(true);
 	});
 
@@ -639,9 +641,66 @@ describe('TransactionSplitModal — Éclater, montants et messages (Story 36-2)'
 	it('V-b — un montant normalisé par le serveur se dit à deux décimales', async () => {
 		const { r } = await remplir(['10', '20'], '-388.2');
 		const message = await r.findByTestId('split-client-error');
-		expect(message.textContent).toContain('attendu 388.20, écart -358.20');
+		expect(message.textContent).toContain('doit égaler 388.20 (écart actuel -358.20)');
 		const indicateur = await r.findByTestId('split-balance-indicator');
 		expect(indicateur.textContent).toContain('attendu 388.20, écart -358.20');
+	});
+
+	// Revue P1 (B3) : une ligne sans montant lu — l'écart n'est pas calculable, et se dit tel.
+	it('V-b — une ligne sans montant lu : « écart non calculable », jamais « écart — »', async () => {
+		const { r } = await remplir(['', '40']);
+		const indicateur = await r.findByTestId('split-balance-indicator');
+		expect(indicateur.textContent?.trim()).toBe(
+			'Balance non équilibrée — attendu 100.00, écart non calculable',
+		);
+		expect(indicateur.textContent).not.toContain('—,');
+	});
+
+	// Revue P1 (E4) : une transaction au crédit (montant positif) s'éclate comme un débit.
+	it('V-f — transaction au crédit : la valeur absolue est attendue, l’envoi passe', async () => {
+		const { r, submit } = await remplir(['60', '40'], '100.00');
+		expect(r.queryByTestId('split-client-error')).toBeNull();
+		expect((await r.findByTestId('split-balance-indicator')).textContent).toContain(
+			'Balance équilibrée : 100.00',
+		);
+		expect(await envoyer(submit)).toEqual(['60.00', '40.00']);
+	});
+
+	// Revue P1 (E4) : un montant de transaction illisible (`expectedBig` nul) — rien ne part,
+	// l'écart n'est pas calculable et le message générique le dit.
+	it('V-f — montant de transaction illisible : grisé, écart non calculable', async () => {
+		const { r, submit } = await remplir(['60', '40'], 'abc');
+		expect(submit.disabled).toBe(true);
+		expect((await r.findByTestId('split-client-error')).textContent?.trim()).toBe(
+			"L'éclatement n'équilibre pas le montant de la transaction.",
+		);
+		expect((await r.findByTestId('split-balance-indicator')).textContent).toContain(
+			'écart non calculable',
+		);
+	});
+
+	// Revue P1 (E4) : un montant de transaction nul — aucune somme positive ne l'égale.
+	it('V-f — montant de transaction nul : grisé, l’écart est dit', async () => {
+		const { r, submit } = await remplir(['60', '40'], '0.00');
+		expect(submit.disabled).toBe(true);
+		expect((await r.findByTestId('split-client-error')).textContent).toContain(
+			'doit égaler 0.00 (écart actuel +100.00)',
+		);
+	});
+
+	// Revue P1 (E4, B4) : les lignes sont rendues par indice ; après la suppression d'une ligne
+	// saisie, les lectures et l'envoi suivent les lignes restantes.
+	it('V-f — envoi après suppression d’une ligne saisie : les montants des lignes restantes', async () => {
+		const { r } = await remplir(['5', '40']);
+		await fireEvent.click(await r.findByTestId('split-add-line'));
+		await choisirCompte(r.findByTestId, 2, '5000');
+		await fireEvent.input(await r.findByTestId('split-amount-2'), { target: { value: '60' } });
+		await fireEvent.click(await r.findByTestId('split-remove-0'));
+		const submit = (await r.findByTestId('split-submit')) as HTMLButtonElement;
+		expect(await envoyer(submit)).toEqual(['40.00', '60.00']);
+		expect(mockApi.splitTransaction.mock.calls[0][2].map((s) => s.counterpartyAccountId)).toEqual([
+			5700, 5000,
+		]);
 	});
 
 	it('V-c — à l’ouverture, le message nommé dit « Ligne 1 : compte requis »', async () => {
@@ -667,6 +726,13 @@ describe('TransactionSplitModal — Éclater, montants et messages (Story 36-2)'
 		['1.234', 'Ligne 1 : montant ambigu'],
 		['0.005', 'Ligne 1 : deux décimales au plus'],
 		['30.0050', 'Ligne 1 : deux décimales au plus'],
+		// Revue P1 (B1, E5) : une espace (en tête, en fin, entre les milliers) rend la saisie
+		// illisible, et le message dit « sans signe ni espace ».
+		[' 70', 'Ligne 1 : montant illisible'],
+		['70 ', 'sans signe ni espace'],
+		['1 200.50', 'Ligne 1 : montant illisible'],
+		// Revue P1 (B4) : seize chiffres entiers dépassent la grammaire (quinze au plus).
+		['1234567890123456', 'Ligne 1 : montant illisible'],
 	])('V-d — « %s » : bouton grisé, « %s »', async (saisie, attendu) => {
 		const { r, submit } = await remplir([saisie, '40']);
 		const message = await r.findByTestId('split-client-error');
@@ -679,6 +745,10 @@ describe('TransactionSplitModal — Éclater, montants et messages (Story 36-2)'
 		['70,00', '30', '-100.00', ['70.00', '30.00']],
 		["1'200.50", '100', '-1300.50', ['1200.50', '100.00']],
 		['0.10', '0.20', '-0.30', ['0.10', '0.20']],
+		// Revue P1 (B4, E3) : l'apostrophe typographique U+2019 (ponctuation automatique de macOS
+		// et d'iOS), et quinze chiffres entiers, le plus long que lit la grammaire.
+		['1’200.50', '100', '-1300.50', ['1200.50', '100.00']],
+		['123456789012345', '1', '-123456789012346.00', ['123456789012345.00', '1.00']],
 	])('V-d — « %s » + « %s » sur %s : lu, part %j', async (a, b, tx, attendus) => {
 		const { r, submit } = await remplir([a, b], tx);
 		expect(r.queryByTestId('split-client-error')).toBeNull();

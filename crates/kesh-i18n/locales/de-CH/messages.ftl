@@ -1544,6 +1544,7 @@ reconciliation-split-button-label = Aufteilen
 reconciliation-split-modal-title = Transaktion aufteilen
 reconciliation-split-balance-indicator = Saldo ausgeglichen: { $expected }
 reconciliation-split-balance-gap = Saldo nicht ausgeglichen — erwartet { $expected }, Differenz { $diff }
+reconciliation-split-balance-incomplete = Saldo nicht ausgeglichen — erwartet { $expected }, Differenz nicht berechenbar
 reconciliation-split-error-imbalance = Die Aufteilung gleicht den Transaktionsbetrag nicht aus.
 
 # Story 29-8 (#670) — rattacher une transaction au règlement saisi depuis la fiche.
@@ -1772,10 +1773,10 @@ reconciliation-split-error-min-lines = Mindestens { $min } Zeilen erforderlich
 reconciliation-split-error-max-lines = Maximal { $max } Zeilen
 reconciliation-split-error-account-required = Zeile { $line }: Konto erforderlich
 reconciliation-split-error-amount-positive = Zeile { $line }: Betrag > 0 erforderlich
-reconciliation-split-error-amount-unreadable = Zeile { $line }: unlesbarer Betrag — Ziffern, Apostroph als Tausendertrennzeichen (1'234), Punkt oder Komma als Dezimaltrennzeichen, höchstens zwei Nachkommastellen, ohne Vorzeichen.
+reconciliation-split-error-amount-unreadable = Zeile { $line }: unlesbarer Betrag — Ziffern, Apostroph als Tausendertrennzeichen (1'234), Punkt oder Komma als Dezimaltrennzeichen, höchstens zwei Nachkommastellen, ohne Vorzeichen und ohne Leerzeichen.
 reconciliation-split-error-amount-ambiguous = Zeile { $line }: mehrdeutiger Betrag — ein Punkt oder Komma mit drei folgenden Ziffern kann Tausender trennen; schreiben Sie 1'234 für tausendzweihundertvierunddreissig Franken.
 reconciliation-split-error-amount-cents = Zeile { $line }: höchstens zwei Nachkommastellen — der Betrag wird in Rappen angegeben.
-reconciliation-split-error-imbalance-detail = Die Aufteilung gleicht den Transaktionsbetrag nicht aus: erwartet { $expected }, Differenz { $diff }.
+reconciliation-split-error-imbalance-detail = Passen Sie die Beträge an: Ihre Summe muss { $expected } ergeben (aktuelle Differenz { $diff }).
 reconciliation-split-error-description-too-long = Zeile { $line }: Beschreibung zu lang (max. { $max })
 
 # === Story 9-1 — Buchhaltungsberichte (34 Schlüssel) ===

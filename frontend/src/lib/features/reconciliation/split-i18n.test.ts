@@ -28,6 +28,8 @@ const DIALOGUE = 'src/lib/features/reconciliation/TransactionSplitModal.svelte';
 const CLES: Array<[string, string[]]> = [
 	['reconciliation-split-balance-indicator', ['expected']],
 	['reconciliation-split-balance-gap', ['expected', 'diff']],
+	// Revue P1 (B3) : l'écart non calculable se dit en toutes lettres.
+	['reconciliation-split-balance-incomplete', ['expected']],
 	['reconciliation-split-error-imbalance-detail', ['expected', 'diff']],
 	['reconciliation-split-error-amount-unreadable', ['line']],
 	['reconciliation-split-error-amount-ambiguous', ['line']],

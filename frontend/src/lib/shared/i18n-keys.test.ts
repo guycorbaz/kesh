@@ -999,7 +999,11 @@ const ATTENDU = {
 	// les trois sites neufs de `TransactionSplitModal.svelte` (`-amount-unreadable`,
 	// `-amount-ambiguous`, `-amount-cents`) ; l'indicateur et le message de déséquilibre gardent
 	// leurs trois sites, sous d'autres clés. Que des littéraux.
-	sitesTotal: 3044,
+	// Remédiation de la revue P1 de la 36-2 (B3) : **3044 → 3046**, relevé par la garde
+	// (`expected 3046 to be 3044`) — `reconciliation-split-balance-incomplete` (l'écart non
+	// calculable) et `reconciliation-split-error-imbalance` (montant de transaction illisible),
+	// deux littéraux.
+	sitesTotal: 3046,
 	sitesNonResolus: 31,
 	relais: 6,
 	// Story 26-1 (#620, AC3-bis) : **10 → 11** — `lib/features/bank-import/

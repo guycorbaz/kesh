@@ -187,8 +187,26 @@
 	 */
 	const expectedLabel = $derived(expectedBig !== null ? expectedBig.toFixed(2) : txAbsAmount);
 
+	/**
+	 * L'écart signé à deux décimales ; `null` quand il n'est pas calculable (une ligne sans
+	 * montant lu, ou un montant de transaction illisible) — l'indicateur le dit alors en toutes
+	 * lettres au lieu d'un « — » qui se confondait avec la ponctuation (revue P1, B3).
+	 */
+	/**
+	 * Story 36-2 (#1151, C-36-2-18, revue P1 E1/E2) — les largeurs des colonnes, à partir de
+	 * 640 px seulement (`sm:`) : en dessous, le tableau garde son partage automatique. Deux jeux,
+	 * selon la présence de la colonne *Projet*, pour que compte et description reçoivent la
+	 * place ; la colonne du bouton « - » est au plus étroit (`w-px`). Classes littérales : Tailwind
+	 * ne voit que celles écrites en toutes lettres.
+	 */
+	const largeurs = $derived(
+		projects.length > 0
+			? { compte: 'sm:w-[30%]', montant: 'sm:w-[17%]', description: 'sm:w-[33%]' }
+			: { compte: 'sm:w-[34%]', montant: 'sm:w-[20%]', description: 'sm:w-[42%]' },
+	);
+
 	const balanceDiff = $derived.by(() => {
-		if (sumAmounts === null || expectedBig === null) return '—';
+		if (sumAmounts === null || expectedBig === null) return null;
 		const diff = sumAmounts.minus(expectedBig);
 		return (diff.gte(0) ? '+' : '') + diff.toFixed(2);
 	});
@@ -234,7 +252,7 @@
 			if (lecture.kind === 'unreadable') {
 				return i18nMsg(
 					'reconciliation-split-error-amount-unreadable',
-					"Ligne { $line } : montant illisible — chiffres, apostrophe des milliers (1'234), point ou virgule décimale, deux décimales au plus, sans signe.",
+					"Ligne { $line } : montant illisible — chiffres, apostrophe des milliers (1'234), point ou virgule décimale, deux décimales au plus, sans signe ni espace.",
 					{ line: i + 1 },
 				);
 			}
@@ -261,13 +279,22 @@
 			}
 		}
 		if (!balanceExact) {
+			// Toutes les lignes sont lues : seul un montant de transaction illisible rend l'écart
+			// incalculable ; le message générique, sans arguments, le dit alors.
+			if (balanceDiff === null) {
+				return i18nMsg(
+					'reconciliation-split-error-imbalance',
+					"L'éclatement n'équilibre pas le montant de la transaction.",
+				);
+			}
 			// Story 36-2 (#1150, D3) : l'attendu et l'écart viennent du catalogue, une clé propre
-			// au dialogue. `reconciliation-split-error-imbalance`, message de la `400
-			// RECONCILIATION_SPLIT_IMBALANCE` et de l'échec partiel, appelée sans arguments par ces
-			// deux sites, reste inchangée.
+			// au dialogue, et le message dit quoi faire — l'indicateur au-dessus constate le
+			// déséquilibre, le message ne le répète pas (revue P1, B3).
+			// `reconciliation-split-error-imbalance`, message de la `400
+			// RECONCILIATION_SPLIT_IMBALANCE` et de l'échec partiel, reste inchangée.
 			return i18nMsg(
 				'reconciliation-split-error-imbalance-detail',
-				"L'éclatement n'équilibre pas le montant de la transaction : attendu { $expected }, écart { $diff }.",
+				'Ajustez les montants : leur somme doit égaler { $expected } (écart actuel { $diff }).',
 				{ expected: expectedLabel, diff: balanceDiff },
 			);
 		}
@@ -348,21 +375,23 @@
 				<table class="w-full text-sm" data-testid="split-lines-table">
 					<thead>
 						<tr class="text-left text-xs text-text-muted">
-							<th class="w-[30%] py-1">
+							<th class={`${largeurs.compte} py-1`}>
 								{i18nMsg('reconciliation-split-th-account', 'Compte')}
 							</th>
-							<th class="w-[17%] py-1">
+							<th class={`${largeurs.montant} py-1`}>
 								{i18nMsg('reconciliation-split-th-amount', 'Montant')}
 							</th>
-							<th class="w-[33%] py-1">
+							<th class={`${largeurs.description} py-1`}>
 								{i18nMsg('reconciliation-split-th-description', 'Description')}
 							</th>
 							{#if projects.length > 0}
-								<th class="w-[15%] py-1">
+								<th class="sm:w-[15%] py-1">
 									{i18nMsg('reconciliation-split-th-project', 'Projet')}
 								</th>
 							{/if}
-							<th class="py-1"></th>
+							<!-- Revue P1 (E1, B2) : la colonne du bouton « - » au plus étroit ; sans colonne
+							     *Projet*, elle prenait le reste (≈ 20 %), vide. -->
+							<th class="w-px py-1"></th>
 						</tr>
 					</thead>
 					<tbody>
@@ -476,6 +505,12 @@
 					{i18nMsg('reconciliation-split-balance-indicator', 'Balance équilibrée : { $expected }', {
 						expected: expectedLabel,
 					})}
+				{:else if balanceDiff === null}
+					{i18nMsg(
+						'reconciliation-split-balance-incomplete',
+						'Balance non équilibrée — attendu { $expected }, écart non calculable',
+						{ expected: expectedLabel },
+					)}
 				{:else}
 					{i18nMsg(
 						'reconciliation-split-balance-gap',

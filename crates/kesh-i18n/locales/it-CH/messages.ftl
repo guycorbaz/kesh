@@ -1544,6 +1544,7 @@ reconciliation-split-button-label = Suddividi
 reconciliation-split-modal-title = Suddividi la transazione
 reconciliation-split-balance-indicator = Saldo in pareggio: { $expected }
 reconciliation-split-balance-gap = Saldo non in pareggio — atteso { $expected }, differenza { $diff }
+reconciliation-split-balance-incomplete = Saldo non in pareggio — atteso { $expected }, differenza non calcolabile
 reconciliation-split-error-imbalance = La suddivisione non bilancia l'importo della transazione.
 
 # Story 29-8 (#670) — rattacher une transaction au règlement saisi depuis la fiche.
@@ -1772,10 +1773,10 @@ reconciliation-split-error-min-lines = Sono richieste almeno { $min } righe
 reconciliation-split-error-max-lines = Massimo { $max } righe
 reconciliation-split-error-account-required = Riga { $line }: conto obbligatorio
 reconciliation-split-error-amount-positive = Riga { $line }: importo > 0 obbligatorio
-reconciliation-split-error-amount-unreadable = Riga { $line }: importo illeggibile — cifre, apostrofo delle migliaia (1'234), punto o virgola decimale, al massimo due decimali, senza segno.
+reconciliation-split-error-amount-unreadable = Riga { $line }: importo illeggibile — cifre, apostrofo delle migliaia (1'234), punto o virgola decimale, al massimo due decimali, senza segno né spazi.
 reconciliation-split-error-amount-ambiguous = Riga { $line }: importo ambiguo — un punto o una virgola seguiti da tre cifre possono separare le migliaia; scrivete 1'234 per milleduecentotrentaquattro franchi.
 reconciliation-split-error-amount-cents = Riga { $line }: al massimo due decimali — l'importo si esprime in centesimi.
-reconciliation-split-error-imbalance-detail = La suddivisione non bilancia l'importo della transazione: atteso { $expected }, differenza { $diff }.
+reconciliation-split-error-imbalance-detail = Correggete gli importi: la loro somma deve essere pari a { $expected } (differenza attuale { $diff }).
 reconciliation-split-error-description-too-long = Riga { $line }: descrizione troppo lunga (max { $max })
 
 # === Story 9-1 — Rapporti contabili (34 chiavi) ===

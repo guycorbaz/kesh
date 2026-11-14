@@ -202,14 +202,15 @@ describe('entrées Fluent à variables', () => {
 		expect(attendues.filter((c) => !vues.has(c))).toEqual([]);
 	});
 
-	// Story 36-2 (#1150, D3, D5) — les six entrées à variables d'*Éclater* : l'attendu et l'écart
-	// (dits jusque-là par des replis en gabarit que le catalogue masquait), et les trois raisons
-	// de refus d'un montant.
-	it('les six entrées à variables de la story 36-2 sont bien relevées', () => {
+	// Story 36-2 (#1150, D3, D5) — les sept entrées à variables d'*Éclater* : l'attendu et l'écart
+	// (dits jusque-là par des replis en gabarit que le catalogue masquait), l'écart non
+	// calculable (revue P1, B3), et les trois raisons de refus d'un montant.
+	it('les sept entrées à variables de la story 36-2 sont bien relevées', () => {
 		const vues = new Set(sitesAVariables().map((s) => s.cle));
 		const attendues = [
 			'reconciliation-split-balance-indicator',
 			'reconciliation-split-balance-gap',
+			'reconciliation-split-balance-incomplete',
 			'reconciliation-split-error-imbalance-detail',
 			'reconciliation-split-error-amount-unreadable',
 			'reconciliation-split-error-amount-ambiguous',
@@ -244,6 +245,7 @@ describe('entrées Fluent à variables', () => {
 			// Story 36-2 (#1150).
 			['reconciliation-split-balance-indicator', { expected: '100.00' }],
 			['reconciliation-split-balance-gap', { expected: '100.00', diff: '-30.00' }],
+			['reconciliation-split-balance-incomplete', { expected: '100.00' }],
 			['reconciliation-split-error-imbalance-detail', { expected: '100.00', diff: '-30.00' }],
 			['reconciliation-split-error-amount-unreadable', { line: 3 }],
 			['reconciliation-split-error-amount-ambiguous', { line: 3 }],

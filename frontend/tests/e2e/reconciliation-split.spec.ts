@@ -12,9 +12,10 @@
  * par l'API. C'est le seul test qui fait traverser la frontière HTTP à un éclatement saisi à
  * l'écran — les tests Rust (`reconciliation_split_e2e.rs`) envoient leurs montants en chaînes
  * et ne voient pas ce que le dialogue envoie. Chaque variante **relève** l'état observé (ligne
- * `R0 <variante> …` dans la sortie et en pièce jointe) avant d'asserter l'attendu ; le bloc se
- * rejoue tel quel contre une image publiée (`--grep R0`), d'où des localisateurs présents en
- * 0.17.6 (fiche 36-2, D1).
+ * `R0 <variante> …` dans la sortie et en pièce jointe) avant d'asserter l'attendu. Le bloc s'est
+ * joué tel quel contre l'image 0.17.6 (`--grep R0`, localisateurs présents en 0.17.6, fiche 36-2,
+ * D1) jusqu'à D4 ; depuis, le message se localise par `split-client-error`, absent de 0.17.6 :
+ * le rejouer contre cette image demande de revenir au localisateur par la boîte (`messageClient`).
  *
  * Pré-requis :
  *   - MariaDB up + KESH_TEST_MODE=true.
@@ -196,12 +197,28 @@ async function relever(
 
 /**
  * Le critère du grisé de la table B (fiche 36-2, V4-3) : chaque ligne montre un compte, les
- * montants tapés (admis par construction de la variante) font la somme, et le bouton est grisé.
+ * montants affichés font la somme — la **valeur absolue** du montant de la transaction, `amount`
+ * (revue P1, A4 : vérifiée ici, et non plus tenue pour acquise par construction) —, et le
+ * bouton est grisé. Les montants des variantes éligibles sont admis par construction (liste
+ * fermée de la fiche) ; ils se lisent ici apostrophes retirées et virgule changée en point.
  */
-async function griseReproduit(modal: Locator, releve: Releve, nLignes: number): Promise<boolean> {
+async function griseReproduit(
+	modal: Locator,
+	releve: Releve,
+	nLignes: number,
+	amount: string,
+): Promise<boolean> {
+	let centimes = 0;
 	for (let i = 0; i < nLignes; i++) {
 		if ((await champCompte(modal, i).inputValue()).trim() === '') return false;
+		const affiche = (await modal.getByTestId(`split-amount-${i}`).inputValue())
+			.replace(/['’]/g, '')
+			.replace(',', '.');
+		const n = Number(affiche);
+		if (affiche === '' || !Number.isFinite(n)) return false;
+		centimes += Math.round(n * 100);
 	}
+	if (centimes !== Math.round(Math.abs(Number(amount)) * 100)) return false;
 	return releve.bouton === 'grisé';
 }
 
@@ -346,7 +363,7 @@ test.describe('R0 — l’éclatement joué depuis l’écran (#1150, #1151)', (
 			await taperMontant(t.modal, 0, enFrancs(premier));
 			await taperMontant(t.modal, 1, enFrancs(cents - premier));
 			const r = await relever(t.modal, testInfo, '(a)');
-			console.log(`R0 (a) grise_reproduit=${await griseReproduit(t.modal, r, 2)}`);
+			console.log(`R0 (a) grise_reproduit=${await griseReproduit(t.modal, r, 2, t.amount)}`);
 			await t.modal.screenshot({ path: r0Capture(testInfo, 'a-equilibre') });
 			// AC3 : l'état équilibré dit le montant, lu au catalogue (tue M2-bis, M2-ter).
 			expect.soft(r.indicateur).toBe(`Balance équilibrée : ${t.amount}`);
@@ -373,7 +390,7 @@ test.describe('R0 — l’éclatement joué depuis l’écran (#1150, #1151)', (
 			await taperMontant(t.modal, 0, enFrancs(premier));
 			await taperMontant(t.modal, 1, enFrancs(cents - premier));
 			const r = await relever(t.modal, testInfo, '(b)');
-			console.log(`R0 (b) grise_reproduit=${await griseReproduit(t.modal, r, 2)}`);
+			console.log(`R0 (b) grise_reproduit=${await griseReproduit(t.modal, r, 2, t.amount)}`);
 			await t.modal.screenshot({ path: r0Capture(testInfo, 'b-compte-tape') });
 			expect.soft(await champ.inputValue(), 'AC7 : le champ quitté sans choisir est vide').toBe('');
 			expect.soft(r.message).toBe('Ligne 1 : compte requis');
@@ -393,7 +410,7 @@ test.describe('R0 — l’éclatement joué depuis l’écran (#1150, #1151)', (
 			await taperMontant(t.modal, 0, '70,00');
 			await taperMontant(t.modal, 1, complement);
 			const r = await relever(t.modal, testInfo, '(c)');
-			console.log(`R0 (c) grise_reproduit=${await griseReproduit(t.modal, r, 2)}`);
+			console.log(`R0 (c) grise_reproduit=${await griseReproduit(t.modal, r, 2, t.amount)}`);
 			await t.modal.screenshot({ path: r0Capture(testInfo, 'c-virgule') });
 			expect.soft(r.bouton).toBe('actif');
 			await eclaterEtVerifier(page, t, testInfo, '(c)', [
@@ -411,10 +428,12 @@ test.describe('R0 — l’éclatement joué depuis l’écran (#1150, #1151)', (
 		await avecEclatement(page, cents, 'R0 (d)', async (t) => {
 			await choisirCompte(t.modal, 0, '4000');
 			await choisirCompte(t.modal, 1, '2000');
-			await taperMontant(t.modal, 0, "1'200.50");
+			// Revue P1 (E3) : l'apostrophe typographique U+2019, celle de la ponctuation
+			// automatique de macOS et d'iOS ; l'apostrophe droite l'est par (g) et par Vitest.
+			await taperMontant(t.modal, 0, '1’200.50');
 			await taperMontant(t.modal, 1, enFrancs(reste));
 			const r = await relever(t.modal, testInfo, '(d)');
-			console.log(`R0 (d) grise_reproduit=${await griseReproduit(t.modal, r, 2)}`);
+			console.log(`R0 (d) grise_reproduit=${await griseReproduit(t.modal, r, 2, t.amount)}`);
 			await t.modal.screenshot({ path: r0Capture(testInfo, 'd-apostrophe') });
 			expect.soft(r.bouton).toBe('actif');
 			await eclaterEtVerifier(page, t, testInfo, '(d)', [
@@ -488,9 +507,89 @@ test.describe('R0 — l’éclatement joué depuis l’écran (#1150, #1151)', (
 			expect
 				.soft(r.message)
 				.toBe(
-					`L'éclatement n'équilibre pas le montant de la transaction : attendu ${t.amount}, écart ${ecart}.`,
+					`Ajustez les montants : leur somme doit égaler ${t.amount} (écart actuel ${ecart}).`,
 				);
 			await expect(messageClient(t.modal)).toBeInViewport();
+		});
+	});
+
+	/**
+	 * Remplit la ligne 1 avec les valeurs d'AC6 a (compte `4000 — Charges CI`, `1'200.50`,
+	 * trente caractères de description) et relève, pour chaque champ, `scrollWidth/clientWidth`,
+	 * la largeur de la colonne du bouton « - » et la boîte du dialogue. Rend les champs tronqués.
+	 */
+	async function remplirEtMesurer(
+		t: Transaction,
+		testInfo: TestInfo,
+		variante: string,
+		avecProjet: boolean,
+	): Promise<string[]> {
+		await choisirCompte(t.modal, 0, '4000');
+		await taperMontant(t.modal, 0, "1'200.50");
+		await t.modal.getByTestId('split-description-0').fill('Fournitures de bureau, novembre');
+		const champs: Array<[string, Locator]> = [
+			['compte', champCompte(t.modal, 0)],
+			['montant', t.modal.getByTestId('split-amount-0')],
+			['description', t.modal.getByTestId('split-description-0')],
+		];
+		if (avecProjet) champs.push(['projet', t.modal.getByTestId('split-line-project-0')]);
+		const mesures: string[] = [];
+		const tronques: string[] = [];
+		for (const [nom, champ] of champs) {
+			const m = await champ.evaluate((el) => ({ s: el.scrollWidth, c: el.clientWidth }));
+			mesures.push(`${nom}:${m.s}/${m.c}`);
+			if (m.s > m.c) tronques.push(nom);
+		}
+		const bouton = await t.modal.getByTestId('split-remove-0').evaluate((el) => {
+			const cellule = el.closest('td');
+			return Math.round(cellule?.getBoundingClientRect().width ?? 0);
+		});
+		mesures.push(`colonne_bouton:${bouton}`);
+		const boite = await t.modal.boundingBox();
+		mesures.push(
+			`dialogue:${Math.round(boite?.x ?? 0)}+${Math.round(boite?.width ?? 0)}x${Math.round(boite?.height ?? 0)}`,
+		);
+		await relever(t.modal, testInfo, variante, mesures.join(','));
+		return tronques;
+	}
+
+	test('R0 (g0) largeur sans colonne Projet : les champs se lisent, le bouton « - » reste étroit', async ({
+		page,
+	}, testInfo) => {
+		// Le seed du fichier (`beforeAll`) vide les projets ; (g), plus bas, en crée un.
+		const cents = 120050 + centimesUniques(1000, 20000);
+		await avecEclatement(page, cents, 'R0 (g0)', async (t) => {
+			await expect(t.modal.getByTestId('split-line-project-0')).toHaveCount(0);
+			const tronques = await remplirEtMesurer(t, testInfo, '(g0) sans projet', false);
+			await t.modal.screenshot({ path: r0Capture(testInfo, 'g0-largeur-sans-projet') });
+			expect.soft(tronques, 'AC6 a : aucun champ tronqué, sans projet').toEqual([]);
+			const bouton = await t.modal
+				.getByTestId('split-remove-0')
+				.evaluate((el) => el.closest('td')?.getBoundingClientRect().width ?? 0);
+			// Revue P1 (E1, B2) : la colonne du bouton ne prend plus le reste (≈ 180 px avant).
+			expect.soft(bouton, 'la colonne du bouton « - » reste étroite').toBeLessThan(60);
+			await expect.soft(t.modal.getByTestId('split-submit')).toBeInViewport();
+		});
+	});
+
+	test('R0 (g390) fenêtre de téléphone (390×844) : le dialogue ne déborde pas', async ({
+		page,
+	}, testInfo) => {
+		await page.setViewportSize({ width: 390, height: 844 });
+		const cents = 120050 + centimesUniques(1000, 20000);
+		await avecEclatement(page, cents, 'R0 (g390)', async (t) => {
+			await remplirEtMesurer(t, testInfo, '(g390) 390 px', false);
+			const debord = await page.evaluate(() => ({
+				page: document.documentElement.scrollWidth,
+				fenetre: window.innerWidth,
+			}));
+			const boite = await t.modal.boundingBox();
+			console.log(`R0 (g390) page=${debord.page} fenetre=${debord.fenetre}`);
+			await t.modal.screenshot({ path: r0Capture(testInfo, 'g390-telephone') });
+			// Revue P1 (E2) : sous 640 px, aucune largeur imposée (`sm:`) ; le dialogue tient dans
+			// la fenêtre (les champs, eux, s'y serrent — limite d'un tableau à cinq colonnes).
+			expect.soft(boite!.x, 'le dialogue commence dans la fenêtre').toBeGreaterThanOrEqual(0);
+			expect.soft(boite!.x + boite!.width, 'le dialogue finit dans la fenêtre').toBeLessThanOrEqual(390);
 		});
 	});
 
@@ -512,25 +611,7 @@ test.describe('R0 — l’éclatement joué depuis l’écran (#1150, #1151)', (
 		const cents = 120050 + centimesUniques(1000, 20000);
 		await avecEclatement(page, cents, 'R0 (g)', async (t) => {
 			await expect(t.modal.getByTestId('split-line-project-0')).toBeVisible();
-			await choisirCompte(t.modal, 0, '4000');
-			await taperMontant(t.modal, 0, "1'200.50");
-			await t.modal.getByTestId('split-description-0').fill('Fournitures de bureau, novembre');
-			const champs: Array<[string, Locator]> = [
-				['compte', champCompte(t.modal, 0)],
-				['montant', t.modal.getByTestId('split-amount-0')],
-				['description', t.modal.getByTestId('split-description-0')],
-				['projet', t.modal.getByTestId('split-line-project-0')],
-			];
-			const mesures: string[] = [];
-			const tronques: string[] = [];
-			for (const [nom, champ] of champs) {
-				const m = await champ.evaluate((el) => ({ s: el.scrollWidth, c: el.clientWidth }));
-				mesures.push(`${nom}:${m.s}/${m.c}`);
-				if (m.s > m.c) tronques.push(nom);
-			}
-			const boite = await t.modal.boundingBox();
-			mesures.push(`dialogue:${Math.round(boite?.width ?? 0)}x${Math.round(boite?.height ?? 0)}`);
-			await relever(t.modal, testInfo, '(g)', mesures.join(','));
+			const tronques = await remplirEtMesurer(t, testInfo, '(g)', true);
 			await t.modal.screenshot({ path: r0Capture(testInfo, 'g-largeur') });
 			expect.soft(tronques, 'AC6 a : aucun champ tronqué').toEqual([]);
 			await expect.soft(t.modal.getByTestId('split-submit')).toBeInViewport();
