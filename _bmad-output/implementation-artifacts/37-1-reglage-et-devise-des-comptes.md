@@ -217,9 +217,10 @@ l'assistant, nom « Exercice AAAA » ou « Exercice AAAA/AAAA » : AC-11). A22 e
      quand une écriture d'un exercice postérieur tient son exercice et le compte en partage (37-3a) avant d'insérer
      sa ligne — c'est ce cycle-là, non celui de `companies`, qui fait rejouer `currency-mode` (elle ne prend
      `companies` qu'en partage) ; **et la route de conversion de 37-3b, depuis V3 (CR-6)** : elle lit en partage, avant
-     l'exercice, le compte en devise de l'écriture à compléter (et ses comptes de différence, comptes CHF que la
-     bascule n'archive pas), quand la bascule `force` tient l'exercice puis demande les comptes **en devise**
-     `FOR UPDATE` — même cycle, sur le seul compte en devise, absorbé par le rejeu des deux routes
+     l'exercice, les comptes des lignes de l'écriture à compléter — reconnaissance de la ligne de différence, qui
+     comprend son compte en devise — et, à l'usage, les comptes de la paire de différence (comptes CHF que la bascule
+     n'archive pas), quand la bascule `force` tient l'exercice puis demande les comptes **en devise** `FOR UPDATE` —
+     même cycle, sur les seuls comptes en devise des lignes lues (37-3b AC-2 bis), absorbé par le rejeu des deux routes
      (la conversion `Rejouee`, 37-3b ; la bascule sous `retry_on_deadlock`, AC-3 bis) ;
    - audit `company.currency_settings_updated` (avant/après, ajouté à `ACTIONS` de `audit_labels.rs`, liste triée) ;
      libellés d'audit dans les quatre locales ;
@@ -532,7 +533,8 @@ l'assistant, nom « Exercice AAAA » ou « Exercice AAAA/AAAA » : AC-11). A22 e
      loss, origin: Own | Company }` ; `None` pour un compte CHF, ou si la société n'en désigne pas (état hérité). **Seule
      fonction** qui choisit les comptes de différence côté serveur ; la réévaluation (37-5) l'appelle, **puis** la
      revalidation à l'usage ci-dessous, et, depuis V3 (CR-6), la route de conversion de 37-3b aussi (ligne de
-     différence calculée par le serveur sur demande (A31) quand le corps ne la porte pas, paire contrôlée sinon, 37-3b AC-2 bis). Côté écran, **une** fonction TypeScript miroir
+     différence calculée par le serveur sur demande (A31, `completeDifference`) quand le corps ne la porte pas ; paire
+     contrôlée quand le corps en porte une sans la demande ; 400 s'il porte une ligne **et** la demande, 37-3b AC-2 bis). Côté écran, **une** fonction TypeScript miroir
      (`fxAccountsFor(account, company)`, `features/accounts/`), seule lue par le formulaire de compte, la ligne d'écart
      et l'assistant *Conversion* (37-3b) et l'assistant TVA (37-3b, S5) ; tests unitaires des deux (propres, défaut,
      défaut après changement du réglage, compte CHF).
@@ -1177,3 +1179,17 @@ l'assistant, nom « Exercice AAAA » ou « Exercice AAAA/AAAA » : AC-11). A22 e
   Non exercés : AC-1, AC-3 bis à AC-7, AC-11 hors CR-6 ; contrats V1/V2 de 37-3a ; exécution des tests.
 - 2026-11-14 — arbitrages A31/A32 et reports IF1/IF2 (orchestrateur, Sonnet) : AC-4 bis — « sur demande (A31) » ajouté
   à la phrase sur la ligne de différence calculée par la route de conversion (37-3b AC-2 bis, `completeDifference`).
+- 2026-11-14 — validation CR-6 P3 (Sonnet) : 1 finding (0 CRITICAL, 0 HIGH, 0 MEDIUM, 1 LOW) ; remédié dans la fiche,
+  aucun inter-fiches. **37-1-CR6-P3-1** (LOW) — AC-3 (cycle avec la conversion) et AC-4 bis : la remédiation P2-3 disait
+  que la conversion lit « le compte en devise de l'écriture à compléter », « sur le seul compte en devise » ; 37-3b
+  AC-2 bis lit en partage **les comptes des lignes** de l'écriture à compléter (reconnaissance de la ligne de
+  différence, avant la forme exigée), puis la paire à l'usage ; et la phrase d'AC-4 bis, après A31, taisait le cas du
+  corps qui porte une ligne sans la demande (paire contrôlée) et celui des deux ensemble (400) → alignés sur 37-3b.
+  Prémisses relues au code : `mcp/sortie.rs:60-84` (`bool` est `ChampSur`), `:121-143`, `:451-466` ;
+  `mcp/outils/exercices.rs:17-29`, `:42-46`, `:69-75` ; `mcp_outils_e2e.rs:1344-1356` ; `envois_mcp.rs:54-55` ;
+  `middleware/auth.rs:77-100` (Bearer en repli) ; `routes/auth.rs:186` (`access_token` au corps du login) ;
+  `admin-manual.tex:3183`, `:3447` (aucun autre site ne répète « identifiant, nom, dates, statut » hors la description
+  de l'outil, `exercices.rs:43`, que la tâche V10 vise déjà) ; 37-3b AC-2 bis (verrous, A31). Axes exercés : diff P2
+  `ff3ea962..f46de99c` et révision, V6, V10, V11, MCP (`champ_enum!`, taille, matrice du manuel), RBAC Bearer, cycle
+  avec la conversion V3 sous A31. Non exercés : AC-1, AC-3 bis à AC-7, AC-11 ; A32 (37-3a/3b, sans effet sur cette
+  fiche) ; exécution des tests.

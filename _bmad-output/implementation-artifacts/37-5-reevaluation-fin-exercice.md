@@ -467,10 +467,16 @@ clôture et que l'écart aille aux différences de change.
      l'activation ou par `PUT /fiscal-years/{id}/currency-mode` ; `POST /exchange-rates/fetch` des mois et du
      31.12.2024 utiles (source factice) ; **ouverture** (`POST /opening-balances`) d'un compte USD par `{ amount, chf,
      side }` sans `rate` ni `debit`/`credit` (V1, V2) ; **écritures** (`POST /journal-entries`) — une au cours retenu
-     sans `rateSource` (relue `afc`), une par `chf` sans `rate` (relue `manual`), une sans `debit`/`credit` (`side`),
+     sans `rateSource` (relue `afc`), une par `chf` sans `rate` **égal à `round(montant × cours retenu, 2)`** (relue
+     `afc`, au cours retenu exact et non au cours déduit : A32, le cas des livres tenus au cours AFC), une par `chf`
+     **différent** de ce produit (relue `manual`, au cours déduit — 37-5-CR6-P3-2), une sans `debit`/`credit` (`side`),
      une écriture ordinaire avec sa ligne d'écart CHF sur les comptes du compte en devise (V4) ; **conversion** EUR →
-     USD (`POST /journal-entries/conversions`) **sans** ligne de différence, ajoutée par le serveur (37-3b AC-2 bis, V3),
-     compte de conversion à 0 ; **réévaluation** au 31.12.2024 (`POST /fiscal-years/{id}/fx-revaluation/preview`, puis
+     USD (`POST /journal-entries/conversions`) : l'écriture 1 (EUR au crédit, compte de conversion au débit) et
+     l'écriture 2 (USD au débit net, compte de conversion au crédit), **sans** ligne de différence — **d'abord sans**
+     `completeDifference` → 400 `ENTRY_UNBALANCED` (`details.entry` = 2), rien de créé (A31 : le serveur ne calcule
+     jamais la ligne d'office), **puis avec `completeDifference: true`** → 201, ligne de différence ajoutée par le
+     serveur (37-3b AC-2 bis, V3, A31), relue dans la réponse (37-5-CR6-P3-1), compte de conversion à 0 ;
+     **réévaluation** au 31.12.2024 (`POST /fiscal-years/{id}/fx-revaluation/preview`, puis
      la passation) avec `rates` `{ "USD": "0.91193", "EUR": "0.94947" }` (V8) ; **rapports** (`GET
      /reports/trial-balance`, `/reports/balance-sheet`, `/reports/general-ledger`, 37-4) : soldes en devise et en CHF
      de chaque compte en devise calculés à la main, solde CHF au 31.12.2024 = round(solde en devise × cours de clôture)
@@ -764,3 +770,16 @@ clôture et que l'écart aille aux différences de change.
   MCP (portée, activation, validation avant envoi, transport), RBAC Bearer, cohérence avec 37-1 AC-3 (V6) et 37-3b
   AC-2 bis (V3 dans la recette). Non exercés : AC-1 à AC-4 et AC-6 hors CR-6 ; contrats V1/V2 de 37-3a en détail ;
   exécution des tests, rendu.
+- 2026-11-14 — validation CR-6 P3 (Sonnet) : 2 findings (0 CRITICAL, 0 HIGH, 1 MEDIUM, 1 LOW) ; remédiés dans la fiche,
+  aucun inter-fiches. **37-5-CR6-P3-1** (MEDIUM) — AC-7 : l'étape de conversion de la recette disait « sans ligne de
+  différence, ajoutée par le serveur » ; depuis A31 le serveur ne la calcule que sur `completeDifference: true`, sinon
+  `ENTRY_UNBALANCED` — l'étape échouait par construction → conversion jouée d'abord sans le champ (refus, rien de créé),
+  puis avec (201), formes des deux écritures dites (37-3b AC-2 bis : écriture à compléter = USD au débit net, compte de
+  conversion au crédit net). **-2** (LOW) — AC-7 : la ligne « par `chf` sans `rate` (relue `manual`) » ne tient plus
+  sous A32 quand le CHF égale `round(montant × cours retenu, 2)` (relue `afc`, cours exact) → deux lignes, l'une égale
+  (`afc`), l'autre différente (`manual`). Prémisses relues au code : `routes/mcp_server_settings.rs:95-102`,
+  `mcp/transport.rs:85-98` (P2-3 confirmé) ; 37-3a AC-4 (4) *Cours déduit*, AC-6 ; 37-3b AC-2 bis (A31, forme exigée,
+  ordre des refus). V8, V12, AC-2 : non touchés par A31/A32 (la réévaluation lit les soldes, non la provenance des
+  lignes). Axes exercés : diff P2 `ff3ea962..f46de99c` et révision, A31/A32 dans la recette V7, V8, V12, MCP (activation,
+  clé exempte, portée), RBAC Bearer, cohérence avec 37-1 AC-3 et 37-3a/3b. Non exercés : AC-1 à AC-4 et AC-6 hors CR-6,
+  les lignes d'ouverture par `chf` (provenance d'ouverture, 37-3b AC-1), exécution des tests, rendu.

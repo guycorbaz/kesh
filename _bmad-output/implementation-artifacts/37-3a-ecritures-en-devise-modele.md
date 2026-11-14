@@ -317,7 +317,9 @@ chacune (R7), l'écart de change dans la seconde, afin que mes comptes en devise
       quand une ligne d'avant (`before_lines`, lues à l'étape 6, rang 2 ci-dessus), non encore appariée, lui est
       identique en compte, débit, crédit et trois champs stockés de `foreign` — montant, cours **et** `rate_source`
       (une ligne `manual` repassée `afc` au même cours est modifiée ; la devise suit le compte, T3) —, montants en
-      valeur comme `is_no_op_change` ;
+      valeur comme `is_no_op_change` ; **exception (CR6-P3-2)** : une ligne `afc` du corps **au cours déduit**
+      (marqueur de l'AC-2, `rateSource: "afc"` sans `rate`) se juge **sans le cours** (compte, débit, crédit, montant,
+      `rate_source` = `afc`) et garde le cours stocké — le corps n'en porte pas, il n'y a rien à comparer ;
       appariement **sans égard à l'ordre** (déplacer une ligne ne la modifie pas ; le projet n'entre pas dans la
       comparaison). Une ligne inchangée n'est jamais recontrôlée et ne déclenche aucune lecture du cours : après la
       **reprise** par ↑ d'un cours AFC corrigé (37-2 AC-5, U1, U3 : la ligne de la société change de valeur) ou après
@@ -354,7 +356,10 @@ chacune (R7), l'écart de change dans la seconde, afin que mes comptes en devise
       appariée (compte, débit, crédit, montant et cours, montants en valeur, même appariement sans égard à l'ordre
       qu'A17 — **un seul** appariement pour les deux règles : une ligne d'avant appariée à une ligne `afc` du corps ne
       l'est plus à une ligne sans provenance, et inversement, sans quoi une ligne dupliquée sans `rateSource`
-      reprendrait `afc` sans contrôle ; pour une ligne au **cours déduit**, ici comme pour A17, l'identité se juge
+      reprendrait `afc` sans contrôle ; **ordre fixé (CR6-P3-1)** : les lignes du corps à provenance **explicite**
+      (`afc`, `manual`) s'apparient d'abord, les lignes sans provenance ensuite, sur les lignes d'avant restantes — sans
+      cet ordre, le résultat dépendrait du rang des deux copies dans le corps : la copie explicite `afc` pourrait
+      être recontrôlée et refusée `FX_RATE_NOT_AFC` après une reprise de cours alors que la sans-provenance garde `afc` ; pour une ligne au **cours déduit**, ici comme pour A17, l'identité se juge
       **sans le cours** — compte, débit, crédit et montant, qui ont redonné le cours stocké à sa création — et la ligne
       garde **cours et provenance** stockés) **garde la provenance stockée**, sans lecture, **à la condition que la date de l'écriture ne change pas**
       (même condition qu'A17 : si `entry_date` change, la ligne est qualifiée comme à la création — garder `afc` sur un
@@ -507,7 +512,8 @@ chacune (R7), l'écart de change dans la seconde, afin que mes comptes en devise
      parse des montants qu'elle prolonge (`routes/journal_entries.rs:539-551`) ; ses refus (signe, `side`, `chf` ≠
      `debit + credit`, ni cours ni CHF, erreurs de `rate_from_chf`) précèdent donc **tous** ceux de
      `accounting::validate` — libellé vide, moins de deux lignes, et refus FX d'une ligne **antérieure** qui porte
-     `rate` — comme un débit mal formé à la ligne 3 précède aujourd'hui un libellé vide. Ordre assumé, testé (ligne 1
+     `rate` ; le refus de signe (`EntryNegativeAmount`) n'est avancé **que pour une ligne `foreign`** (CR6-P3-4) :
+     une ligne CHF négative reste jugée par `validate`, après le libellé et le nombre de lignes, comme avant CR-6 — comme un débit mal formé à la ligne 3 précède aujourd'hui un libellé vide. Ordre assumé, testé (ligne 1
      à `rate` incohérent, ligne 2 sans `rate` au CHF 0 → refus de la ligne 2).
    **Ligne d'écart, pour un client de l'API (V4, CR-6)** : le serveur n'en construit aucune (C-37-4, AC-5) ; un client
    qui équilibre une écriture en devise y ajoute une ligne **CHF ordinaire** sur le compte de gains (écart au crédit)
@@ -730,7 +736,13 @@ chacune (R7), l'écart de change dans la seconde, afin que mes comptes en devise
       (cours ≠ retenu, CHF cohérent) sans `rateSource` → `manual`, cours du client gardé ; `PUT` de la ligne au cours
       déduit renvoyée `{ amount, chf }` après reprise par ↑ d'un cours corrigé → cours et provenance stockés gardés,
       sans effet ; ligne d'avant `afc` et corps qui la porte deux fois (une fois `afc`, une fois sans `rateSource`) →
-      la copie est qualifiée, non reprise (un seul appariement) ; ordre des refus de l'analyse (CR6-P2-4) ; `side`
+      la copie est qualifiée, non reprise (un seul appariement), **quel que soit le rang** des deux copies dans le corps
+      (CR6-P3-1) ; `{ amount, chf, rateSource: "afc" }` renvoyée telle que lue après reprise → sans effet (CR6-P3-2) ;
+      `rateSource: "manual"` sans `rate` dont le CHF est celui du cours retenu → reste `manual` au cours déduit, non
+      repris (CR6-P3-3) ; `rateSource: "afc"` sans `rate`, ligne de la société `manual` → `FX_RATE_NOT_AFC`,
+      `expectedRate` `null` ; aucune ligne de la société : sans provenance → `manual`, `afc` → 404 `RATE_UNAVAILABLE` ;
+      `PUT` d'une ligne au cours déduit dont la date change → qualifiée comme à la création (A32) ; ordre des refus de
+      l'analyse (CR6-P2-4) ; `side`
       fourni avec deux colonnes non nulles → exclusivité, non 400 de `side` ; montant à 5
       décimales ou > 10¹³ sans `rate` → `FX_VALUE_OUT_OF_RANGE` (aucune panique) ; corps complet d'avant CR-6 → réponse identique
       (non-régression). Tests de dépôt : un
