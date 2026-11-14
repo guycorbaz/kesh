@@ -267,3 +267,29 @@ Lecture faite au kickoff : l'issue (`gh issue view N --json title,labels,body,co
   trois derniers commits sont des releases). La ligne de la 0.17.8 s'écrira à sa release.
 - **Écartée** : une ligne « en cours » pour l'Epic 36 : le tableau n'en porte pour aucun epic.
 - **Réversible** : oui.
+
+### C-e360-15 — Le CR #1161 (« compte analytique ») entre en phase 2
+
+- **Contexte** : CR ouvert le 2026-11-14 à la demande de Guy (#1161) ; l'orchestrateur a recommandé la phase 2 de l'Epic 36 ;
+  Guy : « ok pour ta recommandation » (même jour).
+- **Retenu** : clé `36-15-compte-analytique`, placée après 36-13 et **avant la story de solde 36-14** (qui reste la dernière
+  avant le tag) ; vocabulaire visible seulement — écrans, messages des quatre langues, manuels, `docs/api-external.md` —, les
+  identifiants internes `project*` (table, colonnes, route, champs de l'API) restent ; aucune migration. Les traductions se
+  fixent à la fiche.
+- **Écartées** : (a) renommer aussi les identifiants internes : migration breaking (`RENAME`) et changement de contrat de
+  l'API, sans gain pour l'utilisateur ; (b) une epic suivante : les rapports de la première clôture porteraient l'ancien terme.
+- **Réversible** : oui ; textes seulement.
+
+### C-e360-16 — Le CR #1167 (réimputation analytique) entre en phase 2, après 36-15
+
+- **Contexte** : CR ouvert le 2026-11-14 (#1167) : changer le compte analytique d'une facture même payée. Guy a préféré le geste
+  dédié au retour en brouillon (qui exige de défaire règlements et rapprochements, et que refuse une facture envoyée par courriel
+  ou d'un exercice clos), puis : « oui, place #1167 dans la phase 2 avec #1161 » (même jour).
+- **Retenu** : clé `36-16-reimputation-analytique`, **après 36-15** (même objet ; le vocabulaire « compte analytique » est fixé
+  d'abord) et avant la story de solde 36-14. Périmètre : celui du CR (facture client et fournisseur, tout statut ; écriture
+  manuelle ; propagation aux écritures de vente ou d'achat, règlements, avoirs, solde ; audit ; exercice clos permis avec
+  avertissement ; API externe, pas MCP). Sans migration attendue ; la fiche le confirme à l'étape 0, sinon elle le dit avant
+  d'écrire (la phase 2 admet une migration, à sauvegarde exigée).
+- **Écartées** : (a) le retour en brouillon : voir le CR ; (b) la répartition d'une facture entre plusieurs comptes analytiques,
+  ligne par ligne : non demandée ; (c) une epic suivante : utile avant la première clôture.
+- **Réversible** : oui ; le geste ne touche que `project_id`.

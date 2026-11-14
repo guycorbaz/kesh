@@ -76,7 +76,9 @@ const KNOWN_VIOLATIONS = new Set([
   'src/lib/features/journal-entries/JournalEntryForm.svelte:journal-entry-form-remove-line',
   'src/lib/features/journal-entries/JournalEntryForm.svelte:journal-entry-form-incomplete-line',
   'src/lib/features/journal-entries/JournalEntryForm.svelte:journal-entry-form-add-line',
-  'src/lib/features/journal-entries/JournalEntryForm.svelte:journal-entry-form-max-decimals',
+  // Story 36-3 (#1051) — remplacent l'ancien message unique « quatre décimales au plus », retiré.
+  'src/lib/features/journal-entries/JournalEntryForm.svelte:journal-entry-form-amount-ambiguous',
+  'src/lib/features/journal-entries/JournalEntryForm.svelte:journal-entry-form-amount-unreadable',
   'src/lib/features/journal-entries/JournalEntryForm.svelte:journal-entry-form-total-debit',
   'src/lib/features/journal-entries/JournalEntryForm.svelte:journal-entry-form-total-credit',
   'src/lib/features/journal-entries/JournalEntryForm.svelte:journal-entry-form-diff',
@@ -96,6 +98,11 @@ const KNOWN_VIOLATIONS = new Set([
   // `journal-${j}` ci-dessus (issue #30 — le dossier `journal-entries` pluriel
   // ne matche pas le préfixe). Composant propre à la feature journal-entries.
   'src/lib/features/journal-entries/VatPurchaseAssistant.svelte:vat-purchase-title',
+  // Story 36-3 (#1051, D5) — le HT ambigu, même message que l'écriture manuelle.
+  'src/lib/features/journal-entries/VatPurchaseAssistant.svelte:journal-entry-form-amount-ambiguous',
+  // Story 36-3, revue P1 (B3, E3) — le HT illisible et le HT arrondi à zéro ont leur message.
+  'src/lib/features/journal-entries/VatPurchaseAssistant.svelte:journal-entry-form-amount-unreadable',
+  'src/lib/features/journal-entries/VatPurchaseAssistant.svelte:vat-purchase-ht-below-centime',
   'src/lib/features/journal-entries/VatPurchaseAssistant.svelte:vat-purchase-config-required',
   'src/lib/features/journal-entries/VatPurchaseAssistant.svelte:vat-purchase-no-rates',
   'src/lib/features/journal-entries/VatPurchaseAssistant.svelte:vat-purchase-charge-account',

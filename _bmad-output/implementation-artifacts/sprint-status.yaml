@@ -1073,7 +1073,7 @@ development_status:
   36-0-kickoff: done  # 2026-11-14 : fichier d'epic, registre (C-e360-1 à 14, étape 0 des cinq stories de la phase 1), clés ; aucune fiche rédigée
   36-1-compte-produit-entree: review  # 2026-11-14 développement terminé (dernier commit de code 258a04559 ; test-fast, gate-ci, frontend complet verts ; E2E complet à la clôture) ; validation terminée en cinq passes ; fiche 36-1-entree-compte-produit.md ; #1095, #1165 (intégrée) ; phase 1, tête (chemin de la première facture) ; lignée A, voie 2 ; petite, frontend (AccountAutocomplete + InvoiceForm + produits)
   36-2-eclater-bouton-grise: ready-for-dev  # 2026-11-14 fiche 36-2-eclater-bouton-grise.md (cause non tranchée : reproduction R0 en tête du développement, à la tête et en 0.17.6 ; H4 et H5 établis à la lecture, corrigés sans condition ; registre e36-choix-autonomes-36-2.md) ; #1150 ; phase 1 ; lignée A après 36-1 (AccountAutocomplete possible) ; cause à établir par reproduction (C-e360-5) ; #1151 seulement si la cause l'exige
-  36-3-ecriture-montant-ambigu: backlog  # #1051 ; phase 1 ; lignée A ; prédicat d'ambiguïté de la 35-6 réemployé, grammaire du journal gardée ; périmètre borné (C-e360-6)
+  36-3-ecriture-montant-ambigu: done  # #1051 ; phase 1 ; lignée A ; prédicat d'ambiguïté de la 35-6 réemployé, apostrophe des milliers admise au journal ; périmètre borné à l'écriture et à l'assistant d'achat (C-e360-6 amendé)
   36-4-annulation-reglement-cle-api: backlog  # #1131 ; phase 1 ; lignée B, voie 1 ; kesh-db (gate complet en boucle) ; les deux cancel_settlement_in_tx prennent un Acteur (C-e360-7)
   36-5-restauration-compte-rendu: backlog  # #931 (KF-056) ; phase 1 ; lignée B après 36-4 ; correctif du produit, preuve par répétition avant/après (C-e360-8)
   36-6-transaction-plusieurs-ecritures: backlog  # #823 ; phase 2, rang 1 ; migration possible (à dire avant d'écrire) ; découpage préventif probable
@@ -1087,5 +1087,7 @@ development_status:
   36-11d-acteur-reglages-restauration: backlog  # #431 (fermée par la PR qui porte ce lot), #1132 ; phase 2 ; lot 4, table finale de la garde et documents (V1-1 à V1-3 de la P1 de la 35-8b)
   36-12-qr-facture-separation: backlog  # #944 ; phase 2 ; après la première facture réelle de Guy (C-e350-1)
   36-13-pieces-justificatives: backlog  # #235 (P1) ; phase 2 ; avant la clôture de l'exercice 2026 (Q5) ; migration probable, découpage à sa fiche
+  36-15-compte-analytique: backlog  # CR #1161 ; phase 2 ; ajoutée le 2026-11-14 sur décision de Guy (C-e360-15) ; vocabulaire visible seulement, sans migration ; passe avant la story de solde
+  36-16-reimputation-analytique: backlog  # CR #1167 ; phase 2 ; ajoutée le 2026-11-14 sur décision de Guy (C-e360-16) ; geste dédié « Changer le compte analytique » (facture tout statut, écriture manuelle) ; après 36-15, avant la story de solde
   36-14-solde-dette-epic: backlog  # story de solde (CLAUDE.md, 2026-11-14) : au plus 8 issues ouvertes par les stories 36-*, cinq modules au plus (C-e360-10) ; en fin d'epic, avant le tag
   epic-36-retrospective: optional
