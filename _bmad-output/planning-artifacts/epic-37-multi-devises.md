@@ -341,9 +341,9 @@ aux fiches :
 - **V2** (37-3a AC-6 ; 37-3b AC-1) — `debit`/`credit` facultatifs sur une ligne en devise, posés depuis `foreign` et
   `side` ; présents, contrôle `FX_AMOUNT_MISMATCH` inchangé.
 - **V3** (37-3b AC-2 bis ; 37-3a AC-5 ; 37-1 AC-4 bis) — route de conversion : ligne de différence calculée par le
-  serveur (`fx_accounts_for` puis `validate_fx_accounts_in_tx`) si le corps ne la porte pas, paire contrôlée sinon
-  (400). D6 et C-37-4 tiennent : l'écran la montre toujours à l'aperçu et l'envoie ; un client de l'API qui l'omet la
-  délègue au serveur, et la réponse 201 la porte.
+  serveur (`fx_accounts_for` puis `validate_fx_accounts_in_tx`) **seulement sur demande** (`completeDifference: true`,
+  A31) ; portée par le corps, sa paire est contrôlée (400) ; sans l'une ni l'autre, `ENTRY_UNBALANCED`. D6 et C-37-4
+  tiennent : l'écran la montre toujours à l'aperçu et l'envoie ; la réponse 201 la porte.
 - **V4** (37-3a AC-6) — ligne d'écart d'un client de l'API : comptes du compte en devise, sinon de la société
   (`AccountResponse`, `CompanyJson`).
 - **V5** (37-3b AC-2) — l'assistant TVA reste un calcul de l'écran ; règle d'arrondi écrite pour un client de l'API.

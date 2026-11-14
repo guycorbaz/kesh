@@ -467,12 +467,17 @@ clôture et que l'écart aille aux différences de change.
      l'activation ou par `PUT /fiscal-years/{id}/currency-mode` ; `POST /exchange-rates/fetch` des mois et du
      31.12.2024 utiles (source factice) ; **ouverture** (`POST /opening-balances`) d'un compte USD par `{ amount, chf,
      side }` sans `rate` ni `debit`/`credit` (V1, V2) ; **écritures** (`POST /journal-entries`) — une au cours retenu
-     sans `rateSource` (relue `afc`), une par `chf` sans `rate` **égal à `round(montant × cours retenu, 2)`** (relue
-     `afc`, au cours retenu exact et non au cours déduit : A32, le cas des livres tenus au cours AFC), une par `chf`
-     **différent** de ce produit (relue `manual`, au cours déduit — 37-5-CR6-P3-2), une sans `debit`/`credit` (`side`),
+     sans `rateSource` (relue `afc`), une par `chf` sans `rate` ni `rateSource` **égal à `round(montant × cours
+     retenu, 2)`** (relue `afc`, au cours retenu exact et non au cours déduit : A32, le cas des livres tenus au cours
+     AFC), une par `chf` sans `rate` ni `rateSource` **différent** de ce produit (relue `manual`, au cours déduit —
+     37-5-CR6-P3-2 ; envoyée `afc`, elle serait refusée `FX_RATE_NOT_AFC`, 37-3a AC-4, 4) — ces deux CHF et le cours
+     déduit attendu sont des **littéraux** fixés à l'écriture du test d'après le cours que la source factice de 37-2
+     rend pour le mois, non des produits calculés par le test (37-5-CR6-P4-3), une sans `debit`/`credit` (`side`),
      une écriture ordinaire avec sa ligne d'écart CHF sur les comptes du compte en devise (V4) ; **conversion** EUR →
      USD (`POST /journal-entries/conversions`) : l'écriture 1 (EUR au crédit, compte de conversion au débit) et
-     l'écriture 2 (USD au débit net, compte de conversion au crédit), **sans** ligne de différence — **d'abord sans**
+     l'écriture 2 (USD au débit net, compte de conversion au crédit du **même** CHF qu'à l'écriture 1), montants
+     choisis pour une différence de change **non nulle** (sans quoi le premier envoi passerait en 201 : 37-5-CR6-P4-1),
+     **sans** ligne de différence, corps dans l'ordre écriture 1 puis écriture 2 — **d'abord sans**
      `completeDifference` → 400 `ENTRY_UNBALANCED` (`details.entry` = 2), rien de créé (A31 : le serveur ne calcule
      jamais la ligne d'office), **puis avec `completeDifference: true`** → 201, ligne de différence ajoutée par le
      serveur (37-3b AC-2 bis, V3, A31), relue dans la réponse (37-5-CR6-P3-1), compte de conversion à 0 ;
@@ -783,3 +788,20 @@ clôture et que l'écart aille aux différences de change.
   lignes). Axes exercés : diff P2 `ff3ea962..f46de99c` et révision, A31/A32 dans la recette V7, V8, V12, MCP (activation,
   clé exempte, portée), RBAC Bearer, cohérence avec 37-1 AC-3 et 37-3a/3b. Non exercés : AC-1 à AC-4 et AC-6 hors CR-6,
   les lignes d'ouverture par `chf` (provenance d'ouverture, 37-3b AC-1), exécution des tests, rendu.
+- 2026-11-14 — validation CR-6 P4 ciblée (Opus) : 3 findings (0 CRITICAL, 0 HIGH, 0 MEDIUM, 3 LOW) ; remédiés dans la
+  fiche ; un inter-fiches signalé, non appliqué. **37-5-CR6-P4-1** (LOW) — AC-7, conversion : le refus
+  `ENTRY_UNBALANCED` (`details.entry` = 2) du premier envoi suppose une différence non nulle, un compte de conversion du
+  même CHF aux deux écritures (sinon `FX_CONVERSION_TRANSIT_UNBALANCED`, plus tôt dans l'ordre de 37-3b AC-2 bis) et le
+  corps dans l'ordre 1, 2 — écrits. **-2** (LOW) — AC-7 : la ligne au CHF **différent** du produit ne part `manual` que
+  sans `rateSource` (envoyée `afc` → `FX_RATE_NOT_AFC`, 37-3a AC-4, 4, *Cours déduit*) → « sans `rate` ni
+  `rateSource` » aux deux lignes. **-3** (LOW) — AC-7 : « égal à `round(montant × cours retenu, 2)` » se lisait comme un
+  calcul du test, contre « aucun calcul de cours ni de CHF côté client » de la même étape → littéraux fixés à
+  l'écriture du test. **Inter-fiches (epic)** : V3 de `epic-37-multi-devises.md` (« ligne de différence calculée par le
+  serveur … si le corps ne la porte pas », « un client de l'API qui l'omet la délègue au serveur ») contredit A31,
+  écrit quelques lignes plus bas — à aligner par l'orchestrateur. Prémisses relues : diff `7537d144..7d80c9bd` de la
+  fiche ; A31, A32 (epic, section CR-6) ; 37-3a AC-4 (4) *Cours déduit* et *Ligne sans provenance* ; 37-3b AC-2 bis
+  (demande, écriture à compléter, forme, ordre des refus, tests A31) ; `ENTRY_UNBALANCED` au code
+  (`errors.rs:1873`). Axes exercés : les deux phrases changées de la recette V7 (A32 écritures, A31 conversion), leur
+  cohérence avec 37-3a/3b et l'epic, ordre des refus de la conversion dans les deux modes, la règle « aucun calcul côté
+  client » de la même étape. Non exercés : reste de la fiche (hors périmètre), appariement au `PUT` (la recette n'en
+  joue aucun), exécution des tests, rendu.

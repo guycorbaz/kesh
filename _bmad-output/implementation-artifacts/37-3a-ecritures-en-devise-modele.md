@@ -359,7 +359,16 @@ chacune (R7), l'écart de change dans la seconde, afin que mes comptes en devise
       reprendrait `afc` sans contrôle ; **ordre fixé (CR6-P3-1)** : les lignes du corps à provenance **explicite**
       (`afc`, `manual`) s'apparient d'abord, les lignes sans provenance ensuite, sur les lignes d'avant restantes — sans
       cet ordre, le résultat dépendrait du rang des deux copies dans le corps : la copie explicite `afc` pourrait
-      être recontrôlée et refusée `FX_RATE_NOT_AFC` après une reprise de cours alors que la sans-provenance garde `afc` ; pour une ligne au **cours déduit**, ici comme pour A17, l'identité se juge
+      être recontrôlée et refusée `FX_RATE_NOT_AFC` après une reprise de cours alors que la sans-provenance garde `afc` ;
+      **dans chaque groupe (CR6-P4-2)**, les lignes qui portent `rate` s'apparient avant les lignes au cours déduit — une
+      ligne au cours déduit, jugée sans le cours, peut égaler deux lignes d'avant de cours différents au même CHF (p. ex.
+      0.91193 et 0.91194 sur 100 USD : 91.19 l'une et l'autre), et prise la première elle priverait de son appariement la
+      ligne du corps qui porte le cours exact, recontrôlée alors (`FX_RATE_NOT_AFC`) ou requalifiée `manual` ; une ligne
+      **`manual`** du corps (CR6-P4-1) s'apparie à une ligne d'avant `manual` identique (compte, débit, crédit, montant,
+      cours — sans le cours si elle est au cours déduit, et elle garde alors le cours stocké —, date changée ou non : une
+      ligne `manual` n'est jamais contrôlée) ; sans quoi `{ amount, chf, rateSource: "manual" }` renvoyée telle que lue
+      remplacerait le cours stocké par celui de `rate_from_chf` (même CHF, mais `version` et audit pour un `PUT` sans
+      changement) ; pour une ligne au **cours déduit**, ici comme pour A17, l'identité se juge
       **sans le cours** — compte, débit, crédit et montant, qui ont redonné le cours stocké à sa création — et la ligne
       garde **cours et provenance** stockés) **garde la provenance stockée**, sans lecture, **à la condition que la date de l'écriture ne change pas**
       (même condition qu'A17 : si `entry_date` change, la ligne est qualifiée comme à la création — garder `afc` sur un
@@ -481,7 +490,8 @@ chacune (R7), l'écart de change dans la seconde, afin que mes comptes en devise
    routes d'ouverture l'importent) :
    - **Débit et crédit : trois états** — **les deux absents** (V2, ci-dessous) ; **un seul fourni** : l'absent vaut
      `0` (comme `OpeningComplementLineRequest`, `opening_balances.rs:172-175`) ; **les deux fournis**. Sur une ligne
-     CHF, les deux sont requis (400 `Validation`). Un débit, un crédit ou un `chf` **négatif** est refusé avant tout
+     CHF, les deux sont requis (400 `Validation`). Sur une ligne **`foreign`** (une ligne CHF négative reste jugée par
+     `validate`, CR6-P3-4), un débit, un crédit ou un `chf` **négatif** est refusé avant tout
      calcul par `EntryNegativeAmount` (le refus de `balance.rs:162-163`, même code qu'avant CR-6), pour que l'ordre
      des refus d'AC-3 (signe avant les contrôles FX) ne dépende pas de la présence de `rate` ;
    - **CHF de référence** : `foreign.chf` s'il est fourni, sinon `debit + credit` s'ils le sont (états ci-dessus) ; `chf` **et**
@@ -507,9 +517,10 @@ chacune (R7), l'écart de change dans la seconde, afin que mes comptes en devise
    - **`rateSource` absent (V1)** : `source` à `None` (AC-2), qualifié `afc` ou `manual` par le dépôt (AC-4, 4,
      A30 compris) ; la réponse porte la provenance retenue ;
    - un corps qui porte `rate`, `debit`/`credit` et `rateSource` (ce qu'envoient l'écran et les clients existants)
-     suit exactement le chemin d'avant CR-6 ;
+     suit exactement le chemin d'avant CR-6, à l'ordre des refus près (le signe d'une ligne `foreign` est jugé par
+     l'analyse, avant le libellé et le nombre de lignes : CR6-P2-4, CR6-P3-4) ;
    - **ordre des refus de l'analyse (CR6-P2-4)** : l'analyse parcourt les lignes dans l'ordre du corps, comme le
-     parse des montants qu'elle prolonge (`routes/journal_entries.rs:539-551`) ; ses refus (signe, `side`, `chf` ≠
+     parse des montants qu'elle prolonge (`routes/journal_entries.rs:539-554`) ; ses refus (signe, `side`, `chf` ≠
      `debit + credit`, ni cours ni CHF, erreurs de `rate_from_chf`) précèdent donc **tous** ceux de
      `accounting::validate` — libellé vide, moins de deux lignes, et refus FX d'une ligne **antérieure** qui porte
      `rate` ; le refus de signe (`EntryNegativeAmount`) n'est avancé **que pour une ligne `foreign`** (CR6-P3-4) :
@@ -741,8 +752,13 @@ chacune (R7), l'écart de change dans la seconde, afin que mes comptes en devise
       `rateSource: "manual"` sans `rate` dont le CHF est celui du cours retenu → reste `manual` au cours déduit, non
       repris (CR6-P3-3) ; `rateSource: "afc"` sans `rate`, ligne de la société `manual` → `FX_RATE_NOT_AFC`,
       `expectedRate` `null` ; aucune ligne de la société : sans provenance → `manual`, `afc` → 404 `RATE_UNAVAILABLE` ;
-      `PUT` d'une ligne au cours déduit dont la date change → qualifiée comme à la création (A32) ; ordre des refus de
-      l'analyse (CR6-P2-4) ; `side`
+      `PUT` d'une ligne au cours déduit dont la date change → qualifiée comme à la création (A32) ; `PUT` de
+      `{ amount, chf, rateSource: "manual" }` renvoyée telle que lue → cours stocké gardé, sans effet (CR6-P4-1) ; deux
+      lignes d'avant `afc` de même compte, débit, crédit et montant, à 0.91193 et 0.91194 (même CHF), corps qui renvoie
+      l'une au cours déduit et l'autre avec `rate: "0.91193"`, toutes deux `rateSource: "afc"`, après reprise d'un cours à
+      0.91195 → accepté, aucune ligne recontrôlée, cours stockés gardés, **quel que soit le rang** (CR6-P4-2) ; ordre des refus de l'analyse (CR6-P2-4) ; ligne CHF négative et libellé vide →
+      `EntryDescriptionEmpty` (inchangé, CR6-P3-4), même corps avec une ligne `foreign` négative →
+      `EntryNegativeAmount` ; `side`
       fourni avec deux colonnes non nulles → exclusivité, non 400 de `side` ; montant à 5
       décimales ou > 10¹³ sans `rate` → `FX_VALUE_OUT_OF_RANGE` (aucune panique) ; corps complet d'avant CR-6 → réponse identique
       (non-régression). Tests de dépôt : un
@@ -1068,3 +1084,35 @@ chacune (R7), l'écart de change dans la seconde, afin que mes comptes en devise
   (le texte de la règle y était déjà : cours retenu `afc` si `round(montant × cours retenu, 2)` redonne le CHF) ; AC-5 :
   le renvoi à la route de conversion dit « sur demande, `completeDifference`, A31 ». Aucun autre AC touché ; IF1 se
   porte aux tests d'API de 37-3b.
+- 2026-11-14 — validation CR-6 P3 (Sonnet ; entrée reconstituée par l'orchestrateur d'après le rapport de la passe, que
+  le commit `7d80c9bd` portait sans elle) : 0 CRITICAL, 0 HIGH, 1 MEDIUM, 3 LOW ; remédiés dans la fiche, aucun
+  inter-fiches. **CR6-P3-1** (MEDIUM, AC-4, 4) : ordre d'appariement au `PUT` fixé — lignes à provenance explicite
+  d'abord, sans provenance ensuite ; **CR6-P3-2** (LOW) : exception à A17 pour le cours déduit `afc` (identité sans le
+  cours, cours stocké gardé) ; **CR6-P3-3** (LOW) : tests ajoutés (`manual` sans `rate`, `afc` sans `rate` sur ligne de
+  la société `manual`, mois sans ligne de la société, `PUT` à date changée, ordre des copies) ; **CR6-P3-4** (LOW, AC-6) :
+  le refus de signe avancé ne vise que les lignes `foreign`.
+- 2026-11-14 — validation CR-6 P4 ciblée (Opus) : 0 CRITICAL, 0 HIGH, 2 MEDIUM, 2 LOW ; remédiés dans la fiche, aucun
+  inter-fiches. Périmètre : `git diff 7537d144 7d80c9bd` de la fiche (CR6-P3-1 à CR6-P3-4). MEDIUM : **37-3a-CR6-P4-1**
+  (AC-4, 4, *ordre fixé*) — l'ordre CR6-P3-1 fait apparier les lignes `manual` du corps sans qu'aucune règle dise à
+  quoi : A17 ne vise que `afc`, la rétention que les sans-provenance ; et une ligne `{ amount, chf, rateSource:
+  "manual" }` renvoyée telle que lue voyait son cours stocké remplacé par celui de `rate_from_chf` (`version` et audit
+  pour un `PUT` sans changement), asymétrie avec l'exception CR6-P3-2 — règle d'appariement `manual` écrite, test ;
+  **37-3a-CR6-P4-2** (même lieu) — dans un groupe, une ligne au cours déduit, jugée sans le cours, peut égaler deux
+  lignes d'avant de cours différents au même CHF (100 USD à 0.91193 et 0.91194 → 91.19) et, prise la première, priver
+  la ligne au cours exact de son appariement (refus `FX_RATE_NOT_AFC`, ou requalification `manual` muette côté
+  sans-provenance) : la dépendance au rang que CR6-P3-1 retirait entre groupes subsistait dans le groupe — lignes à
+  `rate` d'abord, test. LOW : **37-3a-CR6-P4-3** (AC-6) — CR6-P3-4 non propagé : « un débit, un crédit ou un `chf`
+  négatif est refusé avant tout calcul » (trois états) et « suit exactement le chemin d'avant CR-6 » (corps complet)
+  ne disaient pas que l'avance du signe ne vaut que pour une ligne `foreign` et change l'ordre des refus — précisés ;
+  test ligne CHF négative + libellé vide ajouté ; **37-3a-CR6-P4-4** (Change Log) — l'entrée « validation CR-6 P3 »
+  de cette fiche manque (le commit `7d80c9bd` modifie la fiche sans l'écrire ; 37-1, 37-3b et 37-5 l'ont) : la
+  remédiation n'est reconstituable que par le diff et les marqueurs CR6-P3-1 à 4 ; non récrite ici (relevé daté, sévérités
+  de P3 inconnues de cette passe) — à l'orchestrateur. Lu au code : `crates/kesh-core/src/accounting/balance.rs:150-173`
+  (`validate` : libellé, deux lignes, puis signe ligne par ligne — CR6-P3-4 vrai), `routes/journal_entries.rs:539-566`
+  (parse puis `validate`) ; epic § CR-6, A31, A32 ; 37-3b `:58`, `:233`, `:790-791` (même règle du cours déduit) ;
+  37-5 `:471-473` (recette V7 : `afc` au cours retenu, `manual` au cours déduit — cohérente). Axes exercés : chaque
+  phrase du diff (exception CR6-P3-2, ordre CR6-P3-1, avance du signe CR6-P3-4, tests CR6-P3-1 à 3 et A32) contre le
+  code, le reste de l'AC-4/AC-6, l'epic et 37-3b/37-5 ; comptabilité (`chk_jel_fx_chf` tient sur tout cours stocké
+  gardé : CHF inchangé). Non exercés : reste de la fiche (hors périmètre), `is_no_op_change` par rang
+  (`repositories/journal_entries.rs:1300-1320`, déjà relevé en P2) face à un corps réordonné, 37-1, MCP, i18n,
+  compilation.
