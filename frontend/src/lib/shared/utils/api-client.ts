@@ -198,10 +198,20 @@ function sharedRefresh(): Promise<boolean> {
 async function refreshTokens(): Promise<boolean> {
 	const refreshed = await sharedRefresh();
 	if (!refreshed) {
-		authState.clearSession();
-		window.location.replace('/login?reason=session_expired');
+		expireSession();
 	}
 	return refreshed;
+}
+
+/**
+ * Termine la session côté client : effacement de l'état, puis connexion
+ * (`reason=session_expired`). Story 36-5 (#931) — le chemin 401 et la fin de
+ * la lecture du compte rendu d'une restauration (`AdminRestorePanel`) la
+ * partagent.
+ */
+export function expireSession(): void {
+	authState.clearSession();
+	window.location.replace('/login?reason=session_expired');
 }
 
 /**

@@ -127,6 +127,13 @@ export const authState = {
 		return _idleExpiresIn;
 	},
 
+	/** Story 36-5 (#931) — API du maintien, inerte : posée avant le correctif. */
+	get restoreHold(): boolean {
+		return false;
+	},
+	holdForRestore(_durationMs: number): void {},
+	releaseRestoreHold(): void {},
+
 	/**
 	 * Set l'état authentifié depuis le body de réponse `/login` ou `/me`.
 	 * Le navigateur a déjà set les cookies HttpOnly via les headers Set-Cookie
