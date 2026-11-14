@@ -994,7 +994,12 @@ const ATTENDU = {
 	// Union 36-1 + 36-3 dans la branche de la 36-2 (orchestrateur, 2026-11-14) : 3036 + 1 + 4 =
 	// **3041**, à recompter par la garde au premier Vitest de la 36-2 (C-e350-18 : relever, ne pas
 	// additionner de confiance).
-	sitesTotal: 3041,
+	// Story 36-2 (#1150, D3, D5) : **3041 → 3044**, relevé par la garde avant d'écrire ce nombre
+	// (C-e350-18). 3041 n'a pas été relevé seul à la tête fusionnée : la garde a rendu 3044 avec
+	// les trois sites neufs de `TransactionSplitModal.svelte` (`-amount-unreadable`,
+	// `-amount-ambiguous`, `-amount-cents`) ; l'indicateur et le message de déséquilibre gardent
+	// leurs trois sites, sous d'autres clés. Que des littéraux.
+	sitesTotal: 3044,
 	sitesNonResolus: 31,
 	relais: 6,
 	// Story 26-1 (#620, AC3-bis) : **10 → 11** — `lib/features/bank-import/

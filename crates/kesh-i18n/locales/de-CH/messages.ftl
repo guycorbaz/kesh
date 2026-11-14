@@ -1772,6 +1772,9 @@ reconciliation-split-error-min-lines = Mindestens { $min } Zeilen erforderlich
 reconciliation-split-error-max-lines = Maximal { $max } Zeilen
 reconciliation-split-error-account-required = Zeile { $line }: Konto erforderlich
 reconciliation-split-error-amount-positive = Zeile { $line }: Betrag > 0 erforderlich
+reconciliation-split-error-amount-unreadable = Zeile { $line }: unlesbarer Betrag — Ziffern, Apostroph als Tausendertrennzeichen (1'234), Punkt oder Komma als Dezimaltrennzeichen, höchstens zwei Nachkommastellen, ohne Vorzeichen.
+reconciliation-split-error-amount-ambiguous = Zeile { $line }: mehrdeutiger Betrag — ein Punkt oder Komma mit drei folgenden Ziffern kann Tausender trennen; schreiben Sie 1'234 für tausendzweihundertvierunddreissig Franken.
+reconciliation-split-error-amount-cents = Zeile { $line }: höchstens zwei Nachkommastellen — der Betrag wird in Rappen angegeben.
 reconciliation-split-error-imbalance-detail = Die Aufteilung gleicht den Transaktionsbetrag nicht aus: erwartet { $expected }, Differenz { $diff }.
 reconciliation-split-error-description-too-long = Zeile { $line }: Beschreibung zu lang (max. { $max })
 

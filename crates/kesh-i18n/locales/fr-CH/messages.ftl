@@ -1850,6 +1850,9 @@ reconciliation-split-error-min-lines = Au moins { $min } lignes requises
 reconciliation-split-error-max-lines = Maximum { $max } lignes
 reconciliation-split-error-account-required = Ligne { $line } : compte requis
 reconciliation-split-error-amount-positive = Ligne { $line } : montant > 0 requis
+reconciliation-split-error-amount-unreadable = Ligne { $line } : montant illisible — chiffres, apostrophe des milliers (1'234), point ou virgule décimale, deux décimales au plus, sans signe.
+reconciliation-split-error-amount-ambiguous = Ligne { $line } : montant ambigu — un point ou une virgule suivis de trois chiffres peuvent séparer les milliers ; écrivez 1'234 pour mille deux cent trente-quatre francs.
+reconciliation-split-error-amount-cents = Ligne { $line } : deux décimales au plus — le montant se compte en centimes.
 reconciliation-split-error-imbalance-detail = L'éclatement n'équilibre pas le montant de la transaction : attendu { $expected }, écart { $diff }.
 reconciliation-split-error-description-too-long = Ligne { $line } : description trop longue (max { $max })
 

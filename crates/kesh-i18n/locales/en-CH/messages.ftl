@@ -1772,6 +1772,9 @@ reconciliation-split-error-min-lines = At least { $min } lines are required
 reconciliation-split-error-max-lines = At most { $max } lines
 reconciliation-split-error-account-required = Line { $line }: account required
 reconciliation-split-error-amount-positive = Line { $line }: amount > 0 required
+reconciliation-split-error-amount-unreadable = Line { $line }: unreadable amount — digits, apostrophe for thousands (1'234), point or comma for decimals, at most two decimals, no sign.
+reconciliation-split-error-amount-ambiguous = Line { $line }: ambiguous amount — a point or comma followed by three digits may separate thousands; write 1'234 for one thousand two hundred and thirty-four francs.
+reconciliation-split-error-amount-cents = Line { $line }: at most two decimals — the amount is counted in cents.
 reconciliation-split-error-imbalance-detail = The split does not balance the transaction amount: expected { $expected }, difference { $diff }.
 reconciliation-split-error-description-too-long = Line { $line }: description too long (max { $max })
 

@@ -202,6 +202,22 @@ describe('entrées Fluent à variables', () => {
 		expect(attendues.filter((c) => !vues.has(c))).toEqual([]);
 	});
 
+	// Story 36-2 (#1150, D3, D5) — les six entrées à variables d'*Éclater* : l'attendu et l'écart
+	// (dits jusque-là par des replis en gabarit que le catalogue masquait), et les trois raisons
+	// de refus d'un montant.
+	it('les six entrées à variables de la story 36-2 sont bien relevées', () => {
+		const vues = new Set(sitesAVariables().map((s) => s.cle));
+		const attendues = [
+			'reconciliation-split-balance-indicator',
+			'reconciliation-split-balance-gap',
+			'reconciliation-split-error-imbalance-detail',
+			'reconciliation-split-error-amount-unreadable',
+			'reconciliation-split-error-amount-ambiguous',
+			'reconciliation-split-error-amount-cents',
+		];
+		expect(attendues.filter((c) => !vues.has(c))).toEqual([]);
+	});
+
 	// Story 29-9 (#678, V23, C-29-9-24) — le libellé des cases de la réconciliation se choisit
 	// entre deux clés selon la contrepartie. Les deux appels doivent rester à clé LITTÉRALE :
 	// une clé calculée (`i18nMsg(cond ? 'a' : 'b', …)`) échapperait aux trois maillons ci-dessus,
@@ -219,12 +235,19 @@ describe('entrées Fluent à variables', () => {
 	it('aucun placeholder ne survit au rendu, dans les quatre locales', () => {
 		const rendre = (raw: string, args: Record<string, string | number>) =>
 			raw.replace(/⁨?\{\s*\$(\w+)\s*\}⁩?/g, (_, k) => String(args[k] ?? ''));
-		const cas: [string, Record<string, number>][] = [
+		const cas: [string, Record<string, string | number>][] = [
 			['reconciliation-split-error-min-lines', { min: 2 }],
 			['reconciliation-split-error-max-lines', { max: 20 }],
 			['reconciliation-split-error-account-required', { line: 3 }],
 			['reconciliation-split-error-amount-positive', { line: 3 }],
 			['reconciliation-split-error-description-too-long', { line: 3, max: 200 }],
+			// Story 36-2 (#1150).
+			['reconciliation-split-balance-indicator', { expected: '100.00' }],
+			['reconciliation-split-balance-gap', { expected: '100.00', diff: '-30.00' }],
+			['reconciliation-split-error-imbalance-detail', { expected: '100.00', diff: '-30.00' }],
+			['reconciliation-split-error-amount-unreadable', { line: 3 }],
+			['reconciliation-split-error-amount-ambiguous', { line: 3 }],
+			['reconciliation-split-error-amount-cents', { line: 3 }],
 		];
 		const survivants: string[] = [];
 		for (const locale of LOCALES) {

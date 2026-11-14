@@ -42,6 +42,8 @@
 		keepOfferedCounterparty,
 	} from './reconciliation-counterparties';
 	import CounterpartyClaimNotice from './CounterpartyClaimNotice.svelte';
+	import Big from 'big.js';
+	import { readJournalAmount } from '$lib/features/journal-entries/balance';
 
 	type Props = {
 		open: boolean;
@@ -75,6 +77,7 @@
 
 	type SplitLine = {
 		counterpartyAccountId: number | null;
+		/** La saisie telle que tapée (champ texte, Story 36-2, D5). */
 		amount: string;
 		description: string;
 		projectId: number | null;
@@ -129,34 +132,59 @@
 		return raw.startsWith('-') ? raw.slice(1) : raw;
 	});
 
+	/** La lecture d'un montant de ligne (Story 36-2, D5). */
+	type LectureMontant =
+		| { kind: 'ok'; value: Big }
+		| { kind: 'empty' | 'nonpositive' | 'unreadable' | 'ambiguous' | 'cents' };
+
 	/**
-	 * Somme des montants splits (parseFloat tolérant). Retourne `null` si
-	 * une ligne a un montant non parsable — bloque submit via clientError.
+	 * Story 36-2 (#1150, D5, C-36-2-9, C-36-2-13) — lit une saisie de montant par la grammaire
+	 * du journal (`readJournalAmount`, 36-3 : apostrophe des milliers, point ou virgule décimale,
+	 * « 1.234 » ambigu, aucun signe), puis applique la **garde du centime** : le serveur refuse
+	 * plus de deux décimales, la grammaire en admet quatre. Une lecture claire n'est acceptée que
+	 * si elle égale son arrondi au centime (« 60.0000 » oui, « 0.005 » non) ; le mode d'arrondi
+	 * de `big.js` est indifférent, `eq` ne testant que l'existence d'un chiffre au-delà du centime.
+	 */
+	function lireMontant(raw: string): LectureMontant {
+		const r = readJournalAmount(raw);
+		if (r.kind !== 'clear') return { kind: r.kind };
+		if (!r.value.eq(r.value.round(2))) return { kind: 'cents' };
+		if (r.value.lte(0)) return { kind: 'nonpositive' };
+		return { kind: 'ok', value: r.value };
+	}
+
+	const lectures = $derived(splits.map((s) => lireMontant(s.amount)));
+
+	/** Montant attendu, en `Big` (`null` si le serveur rendait une valeur illisible). */
+	const expectedBig = $derived.by(() => {
+		try {
+			return new Big(txAbsAmount);
+		} catch {
+			return null;
+		}
+	});
+
+	/**
+	 * Somme exacte des montants (`Big`, jamais `Number` : 0.10 + 0.20 égalent 0.30). `null` si
+	 * une ligne n'a pas de montant accepté — `clientError` dit alors laquelle.
 	 */
 	const sumAmounts = $derived.by(() => {
-		let sum = 0;
-		for (const s of splits) {
-			const n = parseFloat(s.amount);
-			if (!isFinite(n) || n <= 0) return null;
-			sum += n;
+		let sum = new Big(0);
+		for (const l of lectures) {
+			if (l.kind !== 'ok') return null;
+			sum = sum.plus(l.value);
 		}
-		// Arrondi à 2 décimales pour éviter les surprises IEEE 754
-		// (la validation Decimal exacte est faite backend-side).
-		return Math.round(sum * 100) / 100;
+		return sum;
 	});
 
-	const balanceExact = $derived.by(() => {
-		if (sumAmounts === null) return false;
-		const expected = parseFloat(txAbsAmount);
-		if (!isFinite(expected)) return false;
-		return Math.abs(sumAmounts - expected) < 1e-6;
-	});
+	const balanceExact = $derived(
+		sumAmounts !== null && expectedBig !== null && sumAmounts.eq(expectedBig),
+	);
 
 	const balanceDiff = $derived.by(() => {
-		if (sumAmounts === null) return '—';
-		const expected = parseFloat(txAbsAmount);
-		const diff = sumAmounts - expected;
-		return (diff >= 0 ? '+' : '') + diff.toFixed(2);
+		if (sumAmounts === null || expectedBig === null) return '—';
+		const diff = sumAmounts.minus(expectedBig);
+		return (diff.gte(0) ? '+' : '') + diff.toFixed(2);
 	});
 
 	const clientError = $derived.by(() => {
@@ -188,11 +216,33 @@
 					{ line: i + 1 },
 				);
 			}
-			const n = parseFloat(s.amount);
-			if (!isFinite(n) || n <= 0) {
+			// Story 36-2 (#1150, D5) : une ligne à la fois, la raison nommée.
+			const lecture = lectures[i];
+			if (lecture.kind === 'empty' || lecture.kind === 'nonpositive') {
 				return i18nMsg(
 					'reconciliation-split-error-amount-positive',
 					'Ligne { $line } : montant > 0 requis',
+					{ line: i + 1 },
+				);
+			}
+			if (lecture.kind === 'unreadable') {
+				return i18nMsg(
+					'reconciliation-split-error-amount-unreadable',
+					"Ligne { $line } : montant illisible — chiffres, apostrophe des milliers (1'234), point ou virgule décimale, deux décimales au plus, sans signe.",
+					{ line: i + 1 },
+				);
+			}
+			if (lecture.kind === 'ambiguous') {
+				return i18nMsg(
+					'reconciliation-split-error-amount-ambiguous',
+					"Ligne { $line } : montant ambigu — un point ou une virgule suivis de trois chiffres peuvent séparer les milliers ; écrivez 1'234 pour mille deux cent trente-quatre francs.",
+					{ line: i + 1 },
+				);
+			}
+			if (lecture.kind === 'cents') {
+				return i18nMsg(
+					'reconciliation-split-error-amount-cents',
+					'Ligne { $line } : deux décimales au plus — le montant se compte en centimes.',
 					{ line: i + 1 },
 				);
 			}
@@ -236,9 +286,12 @@
 		errorMsg = '';
 		bankNotConfigured = false;
 		try {
-			const splitInputs: SplitProposalLine[] = splits.map((s) => ({
+			// Story 36-2 (#1150, D2) : le montant part en chaîne décimale au centime, écrite avec
+			// un point (`value.toFixed(2)`) — jamais en nombre JSON, que `rust_decimal`
+			// (`serde-str`) refuse, ni en saisie brute. `clientError` vide garantit des lectures `ok`.
+			const splitInputs: SplitProposalLine[] = splits.map((s, i) => ({
 				counterpartyAccountId: s.counterpartyAccountId as number,
-				amount: s.amount,
+				amount: (lectures[i] as { kind: 'ok'; value: Big }).value.toFixed(2),
 				description: s.description,
 				// Story 19-5 — projet par ligne (omis si null).
 				...(s.projectId !== null ? { projectId: s.projectId } : {}),
@@ -265,7 +318,10 @@
 </script>
 
 <Dialog.Root {open} {onOpenChange}>
-	<Dialog.Content data-testid="transaction-split-modal">
+	<!-- Story 36-2 (#1151, D6) : quatre à cinq colonnes ; la largeur par défaut (`sm:max-w-sm`)
+	     les écrasait. La largeur seule, sans `max-h` ni défilement : un ancêtre défilant rognerait
+	     la liste du champ de compte, rendue en `absolute` dans le flux (#1181). -->
+	<Dialog.Content class="sm:max-w-3xl" data-testid="transaction-split-modal">
 		<Dialog.Header>
 			<Dialog.Title>
 				{i18nMsg('reconciliation-split-modal-title', 'Éclater la transaction')}
@@ -315,8 +371,9 @@
 								<td class="py-1 pr-1">
 									<Input
 										data-testid={`split-amount-${i}`}
-										type="number"
-										step="0.01"
+										type="text"
+										inputmode="decimal"
+										autocomplete="off"
 										bind:value={splits[i].amount}
 										disabled={submitting}
 									/>
