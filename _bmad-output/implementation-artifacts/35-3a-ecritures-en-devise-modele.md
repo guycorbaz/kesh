@@ -206,7 +206,9 @@ chacune (R7), l'écart de change dans la seconde, afin que mes comptes en devise
       (`republished_rate`, S6, CR-3 : une correction de l'AFC reste à part jusqu'à son adoption à l'écran *Cours de
       change*, 35-2 AC-5 ; `find_rate_in_tx` rend le cours en vigueur, la lecture ne change pas) —, lu dans la transaction par la fonction de
       lecture du dépôt `kesh_db::repositories::exchange_rates::find_rate_in_tx(conn, currency, RateKind::Month, 1er du
-      mois)` de 35-2 (pas de second accès). ⛔ **Jamais le cours effectif** : un cours saisi par la société (D9,
+      mois)` de 35-2 (pas de second accès ; lecture **sans verrou**, comme celle de la période : une adoption ou une
+      récupération validée pendant la transaction n'est pas vue, la ligne garde alors le cours lu — **limite assumée**,
+      sans effet sur les autres lignes, écrite au Change Log). ⛔ **Jamais le cours effectif** : un cours saisi par la société (D9,
       `exchange_rate_overrides`) n'entre pas dans ce contrôle — une ligne à ce cours, s'il diffère du cours AFC, est
       `manual` (le client la qualifie ainsi, 35-3b) ; envoyée `afc`, elle est refusée. Ni le cours journalier (D10).
       Aucune nouvelle valeur de `rate_source`. Sinon 400
@@ -216,7 +218,11 @@ chacune (R7), l'écart de change dans la seconde, afin que mes comptes en devise
      `details` : `{ currency: "USD", month: "AAAA-MM-01" }` (35-2 AC-5). Contrôle à la création
       **et** au `PUT` (date changée comprise). **Le mois de référence est toujours celui de `entry_date`, sans
       exception** : un cours d'un autre mois (p. ex. celui du mois précédant la date d'un solde d'ouverture, C-35-9)
-      se saisit `manual`, jamais `afc` (35-3b y est alignée). Le contrôle porte sur **toutes** les lignes `afc` du
+      se saisit `manual`, jamais `afc` (35-3b y est alignée). **Arbitrage A17 (orchestrateur, 2026-11-14, sur
+      35-3a-CR3-P1-4 ; prime sur la suite de ce paragraphe, à réécrire à la passe suivante)** : au `PUT`, seules les
+      lignes `afc` **nouvelles ou modifiées** (compte, devise, montant, cours, date de l'écriture) sont contrôlées,
+      par comparaison aux lignes d'avant (étape 6) ; une ligne `afc` inchangée ne l'est pas — « les écritures passées
+      ne changent jamais » (S6). Texte antérieur : le contrôle portait sur **toutes** les lignes `afc` du
       corps, inchangées comprises : après une restauration (tables des cours vides, 35-2 AC-7), le `PUT` d'une
       écriture `afc` — même pour son seul libellé — rend `404 RATE_UNAVAILABLE` jusqu'à la récupération du cours, et,
       après l'**adoption** d'un cours AFC republié (35-2 AC-5, S6), le `PUT` d'une écriture `afc` à l'ancien cours rend
@@ -311,7 +317,8 @@ chacune (R7), l'écart de change dans la seconde, afin que mes comptes en devise
      l'usage, `FX_ACCOUNT_INVALID`) ; côté écran, la ligne d'écart, l'assistant *Conversion* et l'assistant TVA (35-3b)
      passent par le miroir `fxAccountsFor`, jamais par un choix écrit à côté entre `companies.fx_*` et `accounts.fx_*` ;
      inventaire des sites qui lisent ces colonnes (grep `fx_gain_account_id`, `fx_loss_account_id`) au Change Log, chacun
-     classé : résolution (`fx_accounts_for` seule), garde (35-1), sérialisation (DTO, CSV, audit).
+     classé : résolution (`fx_accounts_for` seule), garde (35-1), création (plan comptable livré et création de compte :
+     `NULL`), sérialisation (DTO, CSV, audit, sauvegarde `.keshbackup`) et réinitialisation de la société.
      Le **contrôle central de l'AC-4 reste le filet** : un état hérité ou une colonne oubliée ne produit jamais une
      ligne CHF sur un compte en devise, seulement un refus. Les sélecteurs du frontend masquent ces comptes (35-3b) ;
    - inventaire **clos** des sites, écrit au Change Log (méthode « inventorier les sites non résolus », `CLAUDE.md`).
@@ -412,7 +419,12 @@ chacune (R7), l'écart de change dans la seconde, afin que mes comptes en devise
       n'entre pas dans le contrôle, dans les deux sens) ; (c) la même ligne en `manual` au cours saisi → passe ;
       (d) mois sans cours AFC mais avec cours saisi : ligne `afc` → `404 RATE_UNAVAILABLE` (le cours saisi ne tient pas
       lieu de cours AFC), ligne `manual` → passe ; (e) un cours journalier AFC ou saisi pour la date de l'écriture ne
-      change pas le résultat de (a) à (d).
+      change pas le résultat de (a) à (d) ; (f) **S6** : un cours AFC republié non adopté (`republished_rate` posé) → une
+      ligne `afc` au cours **republié** est refusée `FX_RATE_NOT_AFC` (`expectedRate` = cours en vigueur), une ligne `afc`
+      au cours en vigueur passe, le `PUT` d'une écriture `afc` passée à l'ancien cours passe ; (g) **après adoption**
+      (`republications/adopt`, 35-2 AC-5) : la ligne `afc` à l'ancien cours est refusée à la création et au `PUT`
+      (libellé seul compris), la même ligne en `manual` à l'ancien cours passe, et l'écriture passée **avant**
+      l'adoption garde ses lignes (aucune réécriture).
 - [ ] `kesh-core` (AC-2, AC-3) : `ForeignAmount`, `JournalEntryLineDraft.foreign`, ordre des contrôles, bornes et
       produit en entiers `i128` (**jamais** `Decimal::checked_mul`, AC-3) ; fonction publique du contrôle par ligne et
       fonction publique des bornes du cours seul (AC-3) ; fixture `crates/kesh-core/tests/fixtures/fx_rounding.json` et son test Rust ; tests de propriété
@@ -573,3 +585,19 @@ chacune (R7), l'écart de change dans la seconde, afin que mes comptes en devise
   jamais à une valeur republiée non adoptée ; seule une adoption (35-2 AC-5) fait refuser le `PUT` d'une écriture `afc`
   à l'ancien cours (test : republication en attente → passe ; après adoption → refus). S1, S3, S4, S5 sans point de
   contact ici. Aucune migration ni route neuve. AC touchés : en-tête, AC-4, AC-5. Fiche à revalider (cycle CR-3).
+- 2026-11-14 — validation CR-3 P1 (Sonnet) : 0 CRITICAL, 0 HIGH, 1 MEDIUM, 3 LOW ; remédiés dans la fiche sauf
+  35-3a-CR3-P1-4 (35-2 AC-5 / 35-3b, arbitrage). MEDIUM : (1) les Tâches ne listaient aucun test S6 de
+  `FX_RATE_NOT_AFC` (republication non adoptée, adoption) alors que l'AC-4 les déclare « testés » — cas (f) et (g)
+  ajoutés. LOW : (2) classes de l'inventaire des sites `fx_*_account_id` incomplètes (création, sauvegarde,
+  réinitialisation) ; (3) lecture du cours AFC sans verrou face à une adoption concurrente (35-2 AC-5 les lit `FOR
+  UPDATE`) — limite assumée écrite à l'AC-4 ; (4) **non appliqué** : le `PUT` d'une écriture `afc` est refusé pour ses
+  lignes **inchangées** après une adoption (35-2 AC-5, 35-3a AC-4 4) alors que S6 dit que les lignes passées ne
+  changent jamais ; issue de secours = passer la ligne en `manual` au même cours. Proposition, si Beat veut l'éviter :
+  ne contrôler que les lignes `afc` nouvelles ou modifiées au `PUT` (comparaison à `before_lines`, déjà lues à l'étape
+  6), en gardant `404 RATE_UNAVAILABLE` pour les seules lignes contrôlées ; touche 35-2 (AC-5, Tâches) et 35-3b.
+  Sites lus : diff `294889cc..b6f88c24` ; 35-1 AC-4 bis (`fx_accounts_for`, `validate_fx_accounts_in_tx`, gardes
+  inverses) ; 35-2 AC-3 (règle d'écriture S6), AC-5 (adoption, acquittement), Tâches (`find_rate_in_tx`) ; 35-3b
+  (`fxAccountsFor`, route de conversion) ; 35-5 (résolution par `fx_accounts_for`). Axes exercés : prémisses de S2 et
+  S6 contre 35-1/35-2/35-3b/35-5, tests des AC modifiés, sites SQL/lock. Non exercés : code (fiche seule, aucune ligne
+  citée n'a changé), GET de la source journalière (sans prémisse ici), i18n des locales, manuels, MCP (35-1 AC-8 ne
+  l'étend pas aux comptes de différence), E2E.

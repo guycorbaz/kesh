@@ -225,8 +225,11 @@ devise au cours d'ouverture choisi pour l'exercice (R6), afin de tenir mes livre
      (`form-helpers.ts` :108) classe ces refus en édition : `ENTRY_IS_FX_REVALUATION` → `stale` (la fiche se recharge,
      le motif s'affiche) ; `RATE_UNAVAILABLE`, `FX_*`, `ACCOUNT_REQUIRES_CURRENCY`, `MULTI_CURRENCY_DISABLED` (réglage retiré entre le chargement et l'envoi) → `stay` (le formulaire reste
      ouvert) ; sinon ils tomberaient en `other`. Test par code. Un `FX_RATE_NOT_AFC` sur une ligne au cours saisi
-     de la société ne devrait pas se produire (elle part `manual`) : s'il survient (cours AFC republié **adopté** entre
-     `lookup` et l'envoi, 35-2 AC-5, S6), même traitement. **S6, CR-3** : l'écran de saisie n'affiche **ni** les
+     de la société ne devrait pas se produire (elle part `manual`) : s'il survient, même traitement. **Après une adoption**
+     (cours AFC republié **adopté**, 35-2 AC-5, S6), il survient aussi pour toute écriture ancienne à lignes `afc`
+     dont on corrige seulement le libellé (35-3a AC-4 : comportement assumé, le `PUT` relit le cours en vigueur) : le
+     refus propose donc **deux** actions par ligne, « Reprendre le cours attendu » (`details.expectedRate`, le CHF
+     change) et « Garder mon cours » (la ligne passe en `manual` à son cours enregistré, CHF inchangé) ; Vitest des deux. **S6, CR-3** : l'écran de saisie n'affiche **ni** les
      valeurs republiées **ni** l'avertissement de connexion — le cours proposé et l'« AFC : … » sous le champ sont ceux
      du cours **en vigueur** que rend `lookup` (forme inchangée) ; le rouge, l'adoption et l'acquittement vivent à
      l'écran *Cours de change* et au bandeau de 35-2 (AC-6).
@@ -303,11 +306,16 @@ devise au cours d'ouverture choisi pour l'exercice (R6), afin de tenir mes livre
      CHF) vaut `computeChf(TVA, cours)`, la charge CHF `computeChf(HT, cours)`, la contrepartie CHF `computeChf(TTC,
      cours)`. Les trois arrondis au centime peuvent laisser un écart d'**un centime** entre débit et crédit : l'assistant
      n'ajoute aucune ligne ; le formulaire affiche le déséquilibre et propose la ligne d'écart par son bouton (R8,
-     ci-dessus ; l'écart ne dépasse pas 0.01 CHF — deux demi-centimes —, ce que le texte du bouton dit être un
-     arrondi : le seuil n × 0.005 compte **toutes** les lignes dont le CHF est dérivé d'un montant en devise — les lignes
+     ci-dessus ; l'écart ne dépasse pas 0.01 CHF — trois erreurs d'arrondi de moins d'un demi-centime chacune, soit
+     moins de 0.015, et l'écart est un multiple de 0.01 —, ce que le texte du bouton dit être un arrondi : le seuil n × 0.005 compte **toutes** les lignes dont le CHF est dérivé d'un montant en devise — les lignes
      en devise, et les lignes CHF que l'assistant a calculées au cours, marquées par un indicateur de `LineDraft`
      (p. ex. `chfFromForeign`, nom au développement) que toute retouche du montant efface ; Vitest du seuil avec et
-     sans retouche). Le décompte TVA (en CHF, `vat_report.rs`) n'est pas modifié : il lit le débit CHF de la
+     sans retouche). **Une ligne CHF dérivée qui s'arrondit à 0.00** (montants minuscules : TVA ou HT en devise à faible
+     valeur) : l'insertion est désactivée avec le message de `FX_LINE_ROUNDS_TO_ZERO` (jamais une ligne à zéro, que
+     `chk_jel_debit_credit_exclusive` refuserait) ; Vitest. **Changement de date après l'insertion** : les lignes en devise
+     proposées prennent le cours du nouveau mois, mais les lignes CHF dérivées (`chfFromForeign`) gardent leur CHF — le
+     formulaire affiche alors le déséquilibre, un avis « cours changé : réinsérez l'assistant » et le bouton d'écart,
+     dont le texte dit que l'écart n'est pas un arrondi (il dépasse n × 0.005) ; Vitest. Le décompte TVA (en CHF, `vat_report.rs`) n'est pas modifié : il lit le débit CHF de la
      ligne d'impôt préalable. Libellé suggéré inchangé. **Tests** (Vitest de `vat-purchase.ts` et du composant) :
      achat **USD 100.00, TVA 8,1 %, cours 0.8846**, charge CHF et contrepartie PayPal USD → TVA USD 8.10, charge CHF
      88.46, TVA CHF 7.17 (7.16526), contrepartie USD 108.10 / CHF 95.63, équilibré ; **cas `x.xx5`** : USD 12.29,
@@ -343,7 +351,8 @@ devise au cours d'ouverture choisi pour l'exercice (R6), afin de tenir mes livre
      du compte de conversion du **même montant CHF** qu'à l'écriture 1 (le compte de conversion revient à **0**),
      lignes de frais facultatives, et la **différence de change** qui équilibre l'écriture 2 — au débit du compte de
      pertes si le compte de conversion rend plus que CHF₂ et les frais, au crédit du compte de gains sinon : les
-     comptes de différence **du compte en devise de l'écriture 2** (le compte crédité côté USD), par
+     comptes de différence **du compte en devise de l'écriture 2** (le compte USD, débité au grand livre à cette
+     écriture ; « crédité » ci-dessus parle du relevé), par
      `fxAccountsFor` — ses comptes propres s'il en a, sinon ceux de la société (S2, CR-3) ; l'aperçu nomme le compte
      retenu ; aucune ligne si elle est nulle ; comptes résolus invalides (contrôle de la liste, comme le bouton
      d'écart) → « Passer les écritures » désactivé avec le motif ;
@@ -506,7 +515,10 @@ devise au cours d'ouverture choisi pour l'exercice (R6), afin de tenir mes livre
    cours égal au cours AFC part `afc` ;
    préalables posés par l'API (Administrateur) : mode multi-devises activé **avec les comptes de gain, de perte et de
       conversion désignés** (35-1 AC-3, sans quoi le bouton d'écart n'ajoute rien et l'assistant est désactivé),
-      exercices passés en multi-devises par l'activation ; ⚠️ **le scénario R3 (exercice mono-devise) tourne sur son propre
+      exercices passés en multi-devises par l'activation ; **S2/S5** : un compte USD à comptes propres (gains et pertes
+      désignés par l'API à sa création) en plus d'un compte USD « par défaut », et, pour l'assistant TVA, le compte
+      d'impôt préalable des réglages de facturation et un taux de TVA 8,1 % (sans quoi l'assistant est désactivé,
+      `configMissing`) ; ⚠️ **le scénario R3 (exercice mono-devise) tourne sur son propre
       `seedTestState('with-company')`**, dont l'exercice unique est passé en mono-devise par la bascule (35-1) **avant**
       tout compte ou ligne en devise — le compte USD de ce scénario se crée **après** la bascule (la société restant
       multi-devises, la création l'admet, 35-1), sans quoi le masquage du formulaire n'aurait rien à masquer et la
@@ -548,6 +560,9 @@ devise au cours d'ouverture choisi pour l'exercice (R6), afin de tenir mes livre
       fixture partagée (AC-2, AC-3).
 - [ ] Sélecteurs, prédicat commun, garde d'inventaire (AC-4).
 - [ ] E2E, captures, manuel, i18n, CHANGELOG (AC-5, AC-6).
+- [ ] CR-3 : ligne d'écart et assistant *Conversion* sur les comptes de différence du compte en devise (S2,
+      `fxAccountsFor`) ; assistant TVA achat en devise (S5 : `vat-purchase.ts`, `chfFromForeign`, ligne CHF à zéro,
+      changement de date) ; `FX_RATE_NOT_AFC` après adoption (S6, « Garder mon cours ») ; E2E et manuel complétés.
 - [ ] CR-2 : cours d'ouverture selon le genre de l'exercice (AC-1, R6) ; exercice mono-devise à l'ouverture et au
       formulaire (AC-1, AC-2, R3) ; bouton d'écart qui ajoute une ligne (R8) ; une devise par écriture au formulaire
       (R7) ; assistant *Conversion* — route `POST /journal-entries/conversions`, code `FX_CONVERSION_TRANSIT_UNBALANCED`,
@@ -707,3 +722,16 @@ devise au cours d'ouverture choisi pour l'exercice (R6), afin de tenir mes livre
   `vat-purchase.ts:36`, `:73-99` (trois lignes CHF équilibrées par construction) ; `VatPurchaseAssistant.svelte:16-25`
   (props), `:159`, `:204` ; `JournalEntryForm.svelte:349-356` (création seulement) ; `vat_report.rs:13-19` (impôt
   préalable lu en débit CHF). AC touchés : en-tête, AC-2, AC-2 bis, AC-4, AC-5, AC-6. Fiche à revalider (cycle CR-3).
+- 2026-11-14 — validation CR-3 P1 (Sonnet) : 0 CRITICAL, 0 HIGH, 2 MEDIUM, 5 LOW ; remédiés dans la fiche, aucun
+  inter-fiches. MEDIUM : 35-3b-CR3-P1-1 le refus `FX_RATE_NOT_AFC` n'était décrit que pour une adoption entre `lookup` et
+  l'envoi, alors que 35-3a AC-4 (l. 222) le fait survenir sur toute écriture ancienne à lignes `afc` après adoption : action
+  « Garder mon cours » ajoutée ; 35-3b-CR3-P1-2 changement de date après l'insertion de l'assistant TVA (lignes CHF
+  dérivées périmées, déséquilibre muet) : avis, bouton d'écart, test. LOW : P1-3 ligne CHF dérivée arrondie à 0.00 ;
+  P1-4 « deux demi-centimes » faux (trois arrondis, < 0.015) ; P1-5 « compte crédité côté USD » ambigu (relevé contre
+  grand livre) ; P1-6 préalables E2E de S2/S5 ; P1-7 tâches CR-3 absentes. Axes exercés : diff `294889cc..b6f88c24` ;
+  vecteurs S5 recalculés (100 @ 0.8846 : 88.46 + 7.17 = 95.63 ; 12.29 @ 0.8850 : 10.88 + 0.89 = 11.77 contre 11.76) ;
+  code : `vat-purchase.ts` (`lineVatAmount`, `buildPurchaseVatLines`), `VatPurchaseAssistant.svelte` props,
+  `JournalEntryForm.svelte:349-356`, `balance.ts computeBalance`, `LineDraft`, `vat_report.rs` (solde `débit − crédit`),
+  `audit_route_registry.rs:1325` (27) ; renvois 35-1 AC-4 bis (`fxAccountsFor`), 35-2 (`lookup` : `afcRate` en vigueur,
+  `republished`), 35-3a AC-4 ; comptabilité de la conversion et de l'écart. Non exercés : sauvegarde, MCP, audit (aucune
+  table ni action neuve ici), source journalière (aucun GET : sans objet pour cette fiche), E2E, Vitest, PDF.

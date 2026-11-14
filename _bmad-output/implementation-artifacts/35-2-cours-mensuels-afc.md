@@ -308,7 +308,8 @@ cours sans saisie.
      UPDATE` qui écrasait le cours)**, les lignes déjà présentes du mois ou du jour lues `FOR UPDATE` dans la
      transaction : (a) absente → insérée (cours en vigueur, `fetched_at` = `first_fetched_at` = l'instant pris avant
      l'appel sortant) ; (b) présente, **même valeur publiée** que le cours en vigueur (`published_unit` et
-     `published_rate` égaux, comparés en valeur — jamais le `rate_per_unit` dérivé) → seul `fetched_at` avance ; une
+     `published_rate` égaux, comparés en valeur — jamais le `rate_per_unit` dérivé) → seul `fetched_at` avance (pour un jour, `source_date` reste celle du cours en vigueur, même si le `<datum>` rendu
+     diffère : seule la valeur compte) ; une
      valeur republiée en attente est alors **effacée** (l'AFC est revenue au cours en vigueur : `republished_*` et
      `notice_acknowledged_at` à `NULL`) ; (c) présente, **valeur différente** → le cours en vigueur **ne change pas** ;
      si la valeur rendue égale déjà `republished_*`, rien d'autre que `fetched_at` ; sinon `republished_*` reçoit la
@@ -360,14 +361,37 @@ cours sans saisie.
      manuel ; test de `prochain_reveil` : un jour seul manquant ne change pas le réveil. Chaque tour traite **toutes**
      les unités utiles qui manquent (pas seulement le mois suivant : une restauration ou un exercice neuf peuvent en
      laisser plusieurs), **au plus 36 par tour** (constante, testée ; le reste au tour suivant), dans l'ordre
-     chronologique. La tâche ne redemande **jamais** une unité présente : une republication de l'AFC (S6) se découvre
-     par un `POST /fetch` d'un mois ou d'un jour déjà présent (AC-5, AC-6). Le calcul du prochain réveil est une
+     chronologique. **Revérification du mois courant (A10, CR-3 ; arbitrage de l'orchestrateur, à confirmer par Beat)** :
+     chaque tour automatique — tâche (démarrage, réveil quotidien, fin de pause) **et** déclenchement à la connexion —
+     **revérifie aussi le mois courant** (Europe/Zurich), **un appel `xmlavgmonth` de plus**, pour découvrir seul une
+     correction de l'AFC (S6 : la valeur différente rendue est gardée à part par la règle d'écriture de l'AC-3, cas (c),
+     `tracing::warn!`, sans audit puisque le tour est automatique ; elle s'annonce par le bandeau de connexion). Précisions :
+     (i) la revérification **s'ajoute** aux unités qui manquent, **hors du plafond de 36** ; (ii) elle ne vaut que si le
+     mois courant est **présent** et couvert par un exercice multi-devises ouvert (R2) — s'il manque, c'est déjà une
+     unité manquante, demandée une fois ; (iii) elle **ne déclenche jamais** un tour ni un réveil : un tour ne se lance
+     que si une unité manque (le démarrage ou la connexion qui ne trouvent rien à récupérer n'appellent pas la source,
+     pas même pour revérifier) et **`prochain_reveil` reste inchangé** — pendant la pause de (c), aucun tour, donc aucune
+     revérification : une correction de l'AFC publiée alors se découvre au tour qui suit (fin de pause, démarrage, ou
+     connexion avec une autre unité manquante) ou par « Revérifier les cours publiés » (AC-6) ; (iv) elle passe par
+     `rate_fetch_lock` et la mémoire de 15 minutes comme toute récupération (un succès retire l'entrée ; un échec ou un
+     `not_published` se mémorise 15 minutes et ne se redemande pas avant) ; borne du trafic : au plus un appel de
+     revérification par tour, et au plus un tour de connexion par quart d'heure ; (v) son résultat entre dans le **pire
+     statut** du tour (AC-1) : un échec de la revérification écrit `error` même si l'unité manquante a réussi. Les
+     **autres** mois et jours déjà présents ne sont jamais redemandés par la tâche : leur republication se découvre par
+     un `POST /fetch` explicite (AC-5, AC-6). Le calcul du prochain réveil est une
      fonction pure (`prochain_reveil(now, etat)`, `etat` = mois utile manquant ou non, et la date d'obtention du mois
      suivant), testée aux bords : mois utile manquant → lendemain 00:00 ; mois suivant obtenu le 14.11, le 25.11, le
      02.11 → 08.12, 19.12, 01.12 ; obtenu le 03.12 pour décembre (restauration en décembre) → mois courant présent,
      janvier manquant → lendemain ; propriété « réveil ≤ 25 de `T` » sur toutes les dates d'obtention d'une année ;
      mois suivant non couvert → 1er du mois suivant ; fin de mois, 31.12 → 01.01, changement d'heure (fin mars, fin
-     octobre).
+     octobre) ; **revérification du mois courant (A10)**, par `un_tour` contre la source locale : mois suivant manquant
+     et mois courant présent → deux appels (le mois suivant, puis le mois courant) ; mois courant rendu avec une autre
+     valeur → le cours en vigueur ne change pas, `republished_*` posé (cas (c) de l'AC-3), aucune ligne d'audit ; rien
+     ne manque → **aucun appel**, revérification comprise ; mois courant non couvert par un exercice multi-devises
+     ouvert, ou manquant → pas d'appel de revérification en plus ; revérification hors plafond (36 unités manquantes
+     + 1 appel) ; échec de la revérification avec l'unité manquante réussie → `last_status = error` ;
+     `prochain_reveil` identique avec ou sans revérification ; connexion avec une unité manquante autre que le mois
+     suivant → tour avec revérification, avec seul le mois suivant manquant → aucun tour.
    - **À la connexion (R4)** : après un `POST /api/v1/auth/login` réussi (`routes/auth.rs:235`), une **tâche
      détachée** (`tokio::spawn`, jamais attendue : la connexion ne dépend jamais de la source) juge elle-même si une
      unité utile manque pour un exercice de la société de l'utilisateur — **le mois suivant excepté**, qui ne suffit pas à lancer
@@ -648,8 +672,8 @@ cours sans saisie.
      restent ceux du cours **en vigueur**. Couleur par le jeton d'erreur existant du thème (recette visuelle : le
      rouge doit se voir, #640). Bouton « **Revérifier les cours publiés** » (Administrateur et Comptable) : un
      `POST /exchange-rates/fetch` par colonne récupérable **déjà présente** de l'exercice, l'un après l'autre (même
-     fonction d'API ; la tâche automatique ne redemande jamais un cours présent, AC-4 : c'est par là qu'une correction
-     de l'AFC se découvre) — choix de l'orchestrateur, à confirmer par Beat.
+     fonction d'API ; la tâche automatique ne revérifie que le **mois courant**, AC-4 (A10) : c'est par là que se
+     découvre une correction de l'AFC sur les autres cours présents, et à tout moment sur le mois courant) — choix de l'orchestrateur, à confirmer par Beat.
    - **Avertissement à la connexion (S6)** : un bandeau (`ExchangeRateNoticesBanner.svelte`, sur le modèle de
      `BackupScheduleBanner.svelte` — monté dans `routes/(app)/+layout.svelte`, lu au montage, donc après chaque
      connexion, puis toutes les 30 minutes ; `role="status"`, jamais `alert`), pour l'Administrateur et le Comptable
@@ -705,7 +729,8 @@ cours sans saisie.
    pour l'adopter, avertissement à acquitter, effet sur l'installation entière et sur les lignes `afc` passées (S6)) ;
    manuel d'administration : accès sortant HTTPS vers
    `www.backend-rates.bazg.admin.ch` requis pour un exercice multi-devises ouvert, aucun sinon, quand il a lieu
-   (démarrage, une fois par jour tant que le mois courant ou le mois suivant manque, puis pause, S1 ; connexion), mandataire par `HTTPS_PROXY` (lu par `reqwest`) ; un `.keshbackup` 0.17.6
+   (démarrage, une fois par jour tant que le mois courant ou le mois suivant manque, puis pause, S1 ; connexion ;
+   chaque tour revérifie aussi le mois courant, un appel de plus, A10), mandataire par `HTTPS_PROXY` (lu par `reqwest`) ; un `.keshbackup` 0.17.6
    ou antérieur **se réimporte** (mono-devise, R1) ; phrase du registre des routes (AC-5) ; PDF régénérés.
 9. **AC-9 — Cours manuels** (amendé par D9). Deux niveaux, sans recouvrement :
    - **cours saisi par la société** pour (devise, mois) ou (devise, jour) : table applicative
@@ -745,7 +770,8 @@ cours sans saisie.
       /exchange-rates/overrides` dans `comptable_routes`), variantes `AppError` (dont `FX_RATE_INVALID`), audit
       (`audit_labels.rs` : trois actions et un type d'entité), registre des routes et phrase du manuel.
 - [ ] CR-2, CR-3 : tâche automatique au calendrier (AC-4 : `unites_utiles` — exercices de durée quelconque, S4 —,
-      `prochain_reveil` — quotidien, puis pause d'au plus 24 jours jamais au-delà du 25, S1 —, démarrage, connexion), filtrage strict et tests hostiles (AC-2, R5), routes `GET /fiscal-years/{id}/exchange-rates` et
+      `prochain_reveil` — quotidien, puis pause d'au plus 24 jours jamais au-delà du 25, S1 —, démarrage, connexion,
+      revérification du mois courant à chaque tour, A10), filtrage strict et tests hostiles (AC-2, R5), routes `GET /fiscal-years/{id}/exchange-rates` et
       `PUT /fiscal-years/{id}/rate-kinds` (AC-5 ; `GET` dans `authenticated_routes`, `PUT` dans `comptable_routes`),
       audit `fiscal_year.rate_kinds_updated`, registre des routes (+1 de plus).
 - [ ] CR-3 (S6) : colonnes `first_fetched_at` et `republished_*`, `notice_acknowledged_at` et leurs trois `CHECK`
@@ -802,7 +828,8 @@ cours sans saisie.
   dès le 1er de M ; le relevé du 2026-11-14 (sans paramètre, `2026-11`) s'y accorde pour le mois courant, mais
   `j=2026&m=12` était déjà publié le 14.11.2026 (validation CR-2 P2, *Source*) : date de publication à confirmer par
   Beat ; la tâche vérifie chaque jour tant que le mois courant ou le mois suivant manque, puis se met en pause (S1,
-  CR-3 ; sûr dans les deux lectures), `POST /fetch` accepte le mois suivant à toute date.
+  CR-3 ; sûr dans les deux lectures), `POST /fetch` accepte le mois suivant à toute date ; chaque tour revérifie en
+  plus le mois courant (A10, un appel de plus, sans réveil de plus).
 - Pas de production des cours dans le dépôt : les fixtures sont synthétiques (C-35-1, conditions SIX).
 - Cours journaliers relevés le 2026-11-14 (deux `GET`, `d=20241231` et `d=20240630`) : voir *Cours journaliers*.
 - Fenêtre d'import : `parse_and_verify_avec_inventaire` (`admin_backup/import.rs:187`) compare le manifeste à
@@ -971,6 +998,20 @@ cours sans saisie.
   suivant parmi les unités manquantes ; seule la tâche quotidienne le redemande. Test : connexion avec seul le mois
   suivant manquant → aucun tour. Relu par une passe ciblée.
 - 2026-11-14 — validation CR-2 P5 ciblée (Sonnet) : 0 CRITICAL, 0 HIGH, 0 MEDIUM, 2 LOW remédiés, 1 signalé. 35-2-CR2-P5-1 (AC-4, parenthèse du jour de clôture) : « la prochaine connexion — qui lance un tour pour toute unité manquante » contredisait l'arbitrage (le mois suivant seul ne lance rien) : précisé. 35-2-CR2-P5-2 (AC-4, connexion) : le test de l'arbitrage (connexion, seul le mois suivant manquant → aucun tour) n'était qu'au Change Log : porté à l'AC ; la formule « que seule la tâche quotidienne redemande » est reformulée (un tour lancé par une autre unité manquante traite aussi le mois suivant, « toutes les unités utiles »). 35-2-CR2-P5-3 (signalé, hors fiche) : le fichier d'epic, R4 amendé, dit « plus le démarrage et la connexion » sans l'exception du mois suivant ; 35-3b et 35-5 ne parlent pas de la connexion (aucun écart). Cohérence vérifiée avec `prochain_reveil`, la mémoire des 15 minutes, l'`info!` du `not_published`. Axes non exercés : compilation, reste de la fiche hors remédiation.
+- 2026-11-14 — validation CR-3 P1 (Sonnet) : 0 CRITICAL, 0 HIGH, 2 MEDIUM, 1 LOW ; remédiés dans la fiche (aucun
+  finding inter-fiches). 35-2-CR3-P1-1 (MEDIUM) : A10 (revérification du mois courant par chaque tour) contredisait
+  « la tâche ne redemande jamais une unité présente » (AC-4, AC-6 bouton « Revérifier », Notes) : réécrits. 35-2-CR3-P1-2
+  (MEDIUM) : A10 appliqué à l'AC-4 avec ses bords — ajoutée aux unités manquantes hors plafond de 36, sans déclencher
+  de tour ni de réveil (`prochain_reveil` inchangé, rien ne manque → aucun appel), sous `rate_fetch_lock` et la mémoire
+  de 15 minutes, comptée dans le pire statut, valable pour la connexion aussi, borne du trafic écrite ; tests de
+  `un_tour` ajoutés, manuel d'administration (AC-8) et Tâches alignés. 35-2-CR3-P1-3 (LOW) : règle d'écriture (b) de
+  l'AC-3 muette sur `source_date` d'un jour dont le `<datum>` change à valeur égale : gardée. Axes exercés : diff
+  `294889cc..b6f88c24` de la fiche ; citations relues (`backup.rs:46`, `exports/global.rs`, `audit_labels.rs:24`,
+  `auto_backup.rs:58,788,803`, `main.rs:467`, `+layout.svelte:373`, `chk_fiscal_years_dates`, `chrono-tz` absent des
+  `Cargo.toml`) ; cohérence S1/S4/S6 (colonnes, `CHECK`, adoption, acquittement, deltas du registre : 6 routes
+  mutantes + `_test` = 7) ; sites S1–S6 de la fiche (sauvegarde, `TABLES_TO_TRUNCATE`, export, audit, RBAC, i18n,
+  manuels, MCP). Non exercés : source journalière (aucun GET), compilation, gate, rendu de l'écran, 35-1/35-3a/35-3b/35-5
+  au-delà des renvois. Cycle CR-3 : A10 est une révision nouvelle, à relire par la passe suivante.
 - 2026-11-14 — révision CR-3 (revue de Beat S1–S6 ; Opus) : **S1** — calendrier de la tâche automatique (AC-4,
   remplace R4 amendé) : quotidien tant que le mois courant ou le mois suivant manque, puis, le mois suivant `T` obtenu,
   pause jusqu'au plus tôt de « obtention + 24 jours » et du 25 de `T`, jamais avant le 1er de `T` ; `prochain_reveil`

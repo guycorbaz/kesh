@@ -135,8 +135,9 @@ clôture et que l'écart aille aux différences de change.
      solde à lire). `post` lit donc la date de début de l'exercice et la liste des antérieurs **avant `begin`**, sur le
      pool (une date de début ne change pas : seul le nom d'un exercice se modifie), puis, dans la transaction :
      (0) la ligne `companies` (`multi_currency_enabled`, `fx_gain_account_id`, `fx_loss_account_id`) lue
-     `LOCK IN SHARE MODE` (ce partage bloque aussi toute désignation de comptes propres concurrente, qui prend
-     `companies` en exclusif, 35-1 AC-4 bis : les désignations lues ensuite restent celles du calcul) (jamais `FOR SHARE`, erreur de syntaxe sur MariaDB 10.11) **avant tout exercice** : c'est
+     `LOCK IN SHARE MODE` (jamais `FOR SHARE`, erreur de syntaxe sur MariaDB 10.11 ; ce partage bloque aussi toute
+     désignation de comptes propres concurrente, qui prend `companies` en exclusif, 35-1 AC-4 bis : les désignations
+     lues ensuite restent celles du calcul) **avant tout exercice** : c'est
      l'ordre global `companies` → exercice des chemins Pattern 5 (`repositories/invoices.rs:698`, sentinelle puis `create_in_tx`) et
      de 35-3a AC-4 (`companies` en tête de l'étape 0 de `create_in_tx_inner`) ; prise après l'exercice, elle formerait
      le cycle exercice → `companies` contre `companies` → exercice que 35-3a écarte (aucun flux ne prend un exercice
@@ -145,12 +146,15 @@ clôture et que l'écart aille aux différences de change.
      verrouillé par clé primaire (`LOCK_EARLIER_BY_ID_SQL`) dans l'ordre chronologique, puis
      l'exercice `FOR UPDATE` (`LOCK_IN_COMPANY_SQL`) ; (2) relecture **verrouillante** du plus ancien antérieur ouvert (`earlier_open_locking_sql`,
      même texte que `close`) → `EARLIER_FISCAL_YEAR_OPEN` ; (3) les désignations propres des comptes
-     sélectionnés (`SELECT id, fx_gain_account_id, fx_loss_account_id FROM accounts WHERE company_id = ? AND id IN
-     (…) LOCK IN SHARE MODE`, S2), d'où, par `fx_accounts_for`, l'ensemble des comptes de gains et de pertes
-     **employés** ; puis réglages de facturation et articles qui les désignent (`default_revenue_account_id`, contrôle
+     sélectionnés (`SELECT id, number, currency, fx_gain_account_id, fx_loss_account_id FROM accounts WHERE
+     company_id = ? AND id IN (…) ORDER BY number LOCK IN SHARE MODE`, S2 ; `number` et `currency` servent à
+     `fx_accounts_for` et à l'ordre des refus), d'où, par `fx_accounts_for`, les paires de comptes de gains et de pertes
+     **employées** — **par les comptes sélectionnés admissibles** (la liste de l'étape (4), CHF, archivés, de groupe et
+     de résultat exclus, D nul ou non) : les verrous de cette étape couvrent tous les comptes sélectionnés, l'évaluation
+     des refus (AC-4) ne retient que les admissibles, après la lecture de l'étape (4) ; puis réglages de facturation et articles qui les désignent (`default_revenue_account_id`, contrôle
      de l'AC-4), puis ces comptes de gains et de pertes, lus `LOCK IN SHARE MODE` par `validate_fx_accounts_in_tx`
-     (35-1 ; ordre `companies` → réglages → `accounts` de 35-1 AC-3 ; les comptes sélectionnés et les comptes
-     désignés sont tous pris en partage, aucun en exclusif : pas de cycle entre eux) ; (4) seulement
+     (35-1 ; ordre `companies` → réglages → `accounts` de 35-1 AC-3 ; ce flux prend les comptes sélectionnés et les comptes
+     désignés tous en partage, aucun en exclusif : pas de cycle entre eux) ; (4) seulement
      ensuite, les soldes cumulés (`balances_as_of`, 35-4) et la liste des comptes admissibles. L'ordre des **verrous**
      n'est pas l'ordre des **refus** (AC-4) : tout se lit d'abord, puis s'évalue dans l'ordre de l'AC-4. Le test des deux
      passations concurrentes (AC-7) fait attendre la seconde sur le verrou de l'exercice pendant que la première
@@ -246,13 +250,18 @@ clôture et que l'écart aille aux différences de change.
    réglage relu sous verrou (étape (0)) et mode de l'exercice relu dans sa ligne `FOR UPDATE` (étape (1)) : société ou
    exercice mono-devise → 409 `MULTI_CURRENCY_DISABLED` ; exercice clos →
    `FISCAL_YEAR_CLOSED` ; **exercice antérieur encore ouvert → `EARLIER_FISCAL_YEAR_OPEN`** (comme K1 : le cumul lu ne
-   serait plus stable) ; comptes de différences de change **employés** (résolus par compte sélectionné, S2)
-   **revalidés** par `validate_fx_accounts_in_tx` (35-1 AC-4 bis : société, actif,
+   serait plus stable) ; comptes de différences de change **employés** (résolus par `fx_accounts_for` pour chaque compte sélectionné
+   **admissible**, S2 : un compte sélectionné non admissible, CHF ou archivé par exemple, n'emploie rien et n'est
+   refusé que par `FX_REVALUATION_ACCOUNT_INVALID` plus bas ; l'admissibilité se lit à l'étape (4), avant cette
+   évaluation) **revalidés** par `validate_fx_accounts_in_tx` (35-1 AC-4 bis : société, actif,
    imputable, de type `Expense`/`Revenue`, en CHF, ni au rôle `DefaultRevenue`, ni désigné
    `default_revenue_account_id` des réglages de facturation ou d'un article — 35-1 P3-8) → 400 `FX_ACCOUNT_INVALID` (C-35-2 ; même code et même statut que
    35-1, `details` de 35-1, plus `holderAccountId` pour un compte propre ; le premier fautif dans l'ordre des
    numéros de compte réévalués, gain avant perte ; un compte de la société invalide qu'**aucun** compte sélectionné
-   n'emploie ne bloque rien) ; `accountIds` hors de la liste admissible (lue à l'étape (4) de l'AC-2) → 400
+   n'emploie ne bloque rien ; un compte admissible que ni ses comptes propres ni la société ne dotent de comptes de
+   différence — `fx_accounts_for` rend `None`, état hérité — → 400 `FX_ACCOUNT_INVALID`, `reason: "missing"`, `field`
+   `fxGainAccountId`, `holderAccountId` = ce compte, même à D = 0 : à l'aperçu, un blocker `FX_ACCOUNT_INVALID`, et
+   `counterpartAccountId` `null` sur la ligne, comme sur toute ligne non sélectionnable — archivée, `RATE_UNAVAILABLE`) ; `accountIds` hors de la liste admissible (lue à l'étape (4) de l'AC-2) → 400
    `FX_REVALUATION_ACCOUNT_INVALID`, ensuite ; puis genre de clôture changé depuis la lecture d'avant la transaction →
    409 `OPTIMISTIC_LOCK_CONFLICT` (AC-1 ; après les refus d'état et de comptes : le motif réel prime sur
    « rechargez », comme l'étape 3-bis d'`update_in_tx` avant la version) ; puis 404 `RATE_UNAVAILABLE` d'une devise
@@ -310,7 +319,7 @@ clôture et que l'écart aille aux différences de change.
    « Récupérer le mois » est proposé, pour un mois publié — Administrateur et Comptable), cases par compte (comptes archivés grisés avec
    avertissement ; au-delà de 498 comptes admissibles, l'avis de présélection tronquée de l'AC-1, et pas plus de 498 cases
    cochées), l'écriture prévue par compte (R9) avec son compte de contrepartie et son origine (« comptes propres » ou
-   « réglage de la société », S2), total des gains et des pertes, **« Passer les écritures »** (R9), liens
+   « réglage de la société », S2 ; libellés dans les quatre locales), total des gains et des pertes, **« Passer les écritures »** (R9), liens
    vers les écritures passées ; le genre de clôture de l'exercice est rappelé (« cours de clôture : cours journalier du
    JJ.MM.AAAA » ou « cours mensuel de <mois> », avec un lien vers l'écran *Cours de change* qui le règle, R6) ; l'action
    « Réévaluer les devises » n'est offerte que pour un exercice **multi-devises** (R3) ; captures d'écran.
@@ -343,7 +352,11 @@ clôture et que l'écart aille aux différences de change.
    - **comptes de différence propres (S2, CR-3)** : PayPal USD à comptes propres (gains 6841, pertes 6842) et Wise
      USD « par défaut » (6840) dans la même passation → l'écriture de PayPal a sa contrepartie sur 6841 ou 6842, celle
      de Wise sur 6840 ; aperçu et audit portent `counterpartAccountId` et `fxAccountsOrigin` ; compte propre devenu
-     archivé (posé par SQL) → `FX_ACCOUNT_INVALID` avec `holderAccountId`, rien de passé ; compte de la société
+     archivé (posé par SQL) → `FX_ACCOUNT_INVALID` avec `holderAccountId`, rien de passé, à la passation **et** en
+     `blockers[]` de l'aperçu ; compte sélectionné non admissible (CHF, archivé) dont les comptes propres seraient
+     invalides → seul `FX_REVALUATION_ACCOUNT_INVALID` `notEligible` ; compte à D = 0 dont les comptes propres sont
+     invalides → refusé (comptes employés) ; ni comptes propres ni comptes de la société (`None`) → `reason:
+     "missing"` ; premier fautif dans l'ordre des numéros de compte, gain avant perte ; compte de la société
      invalide (par SQL) alors que tous les comptes sélectionnés ont des comptes propres → passation admise ; une
      désignation propre concurrente attend la fin de la passation (verrou `companies`) ;
    - **durée de l'exercice (S4, CR-3)** : exercice de **six mois** (01.07.2024–31.12.2024) et de **dix-huit mois**
@@ -408,7 +421,8 @@ clôture et que l'écart aille aux différences de change.
       transaction (selon le genre de clôture : cours effectif journalier puis mensuel, ou mensuel seul ; 35-2), i18n des erreurs neuves (`FX_REVALUATION_ACCOUNT_INVALID` ;
       `FX_ACCOUNT_INVALID`, `RATE_UNAVAILABLE` et `FX_RATE_INVALID` viennent de 35-1 et 35-2, réemployés) et du libellé d'audit
       (quatre locales) ; registres de l'AC-2 (`ACTIONS`, `LIB_ROUTES`, décomptes, phrase du manuel d'administration).
-- [ ] Frontend : écran depuis les exercices, Vitest, E2E.
+- [ ] Frontend : écran depuis les exercices (contrepartie et origine par compte, clés i18n neuves dans les quatre
+      locales), Vitest, E2E.
 - [ ] Manuel, CHANGELOG.
 
 ## Notes de développement
@@ -532,3 +546,12 @@ clôture et que l'écart aille aux différences de change.
   et d'un exercice qui finit un 14 (AC-7). S1, S3, S5, S6 sans point de contact (le cours AFC lu reste le cours en
   vigueur, 35-2 ; une republication non adoptée ne change rien ici). Aucune migration ni route neuve. AC touchés :
   en-tête, AC-1, AC-2, AC-4, AC-6, AC-7, AC-8. Fiche à revalider (cycle CR-3).
+- 2026-11-14 — validation CR-3 P1 (Sonnet) : 0 CRITICAL, 0 HIGH, 2 MEDIUM, 4 LOW ; remédiés dans la fiche ; aucun
+  finding inter-fiches (le cycle porte ici le nom CR-3, le prompt disait « CR-2 P1 » par recopie). (MEDIUM : le
+  `SELECT` de l'étape (3) ne lisait ni `number` ni `currency`, alors que `fx_accounts_for` et l'ordre des refus les
+  exigent, et les comptes « employés » incluaient des comptes sélectionnés non admissibles, d'où un
+  `FX_ACCOUNT_INVALID` avant `notEligible` ; cas `None` de `fx_accounts_for` non traité (aperçu, passation).
+  LOW : tests (aperçu en `blockers[]`, non admissible, D = 0, `None`, ordre des fautifs) ; clés i18n des libellés
+  d'origine absentes des Tâches ; parenthèse de l'étape (0) coupant la phrase ; « aucun en exclusif » à borner à ce
+  flux.) Vérifié : 35-1 AC-4 bis (verrous, `validate_fx_accounts_in_tx`, `reason` `missing`), epic C-35-7. Axes
+  non exercés : GET de la source journalière (aucune date de la révision ne l'exigeait), code réel de 35-1 (non écrit).

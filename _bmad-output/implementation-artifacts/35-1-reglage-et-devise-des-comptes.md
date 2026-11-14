@@ -56,7 +56,9 @@ l'assistant n'est pas touché, AC-11).
      `chk_accounts_fx_own_pair` `CHECK ((fx_gain_account_id IS NULL) = (fx_loss_account_id IS NULL))` (les deux, ou
      aucun : « par défaut » ou « propres ») et `chk_accounts_fx_own_foreign` `CHECK (fx_gain_account_id IS NULL OR
      currency IS NOT NULL)` (posables seulement sur un compte en devise). Les deux peuvent désigner le même compte.
-     Test : un `INSERT` qui viole chacune est refusé par **sa** contrainte ; les comptes existants prennent `NULL`.
+     **Deux index** `idx_accounts_fx_gain (company_id, fx_gain_account_id)` et `idx_accounts_fx_loss (company_id,
+     fx_loss_account_id)` (35-1-CR3-P1-1 : sans eux, la recherche du compte qui désigne, AC-4, balaie et verrouille
+     toutes les lignes `accounts` de la société). Test : un `INSERT` qui viole chacune est refusé par **sa** contrainte ; les comptes existants prennent `NULL`.
    - Les colonnes des lignes d'écriture **ne sont pas** dans cette migration (35-3).
    - Inscrite à `migrations.sha384`, au tableau de `docs/migrations-idempotence-audit.md` (compteurs recomptés, P5),
      squash régénéré (`scripts/regen-test-schema.sh`), P6 inspecté, P7 : aucune donnée écrite (le test de triage passe
@@ -325,9 +327,13 @@ l'assistant n'est pas touché, AC-11).
      revalidation de la 35-5 ne le verrait pas. Pour une désignation **propre** (S2), `details` porte en plus
      `holderAccountId` et `holderNumber` (le compte en devise qui le désigne, le premier par identifiant s'il y en a
      plusieurs) ; sans eux, la désignation est celle de la société. La recherche des comptes qui le désignent
-     (`SELECT id, number FROM accounts WHERE company_id = ? AND (fx_gain_account_id = ? OR fx_loss_account_id = ?)
-     ORDER BY id LIMIT 1 LOCK IN SHARE MODE`) se fait **après** le `FOR UPDATE` du compte visé, en lecture
-     verrouillante (AC-3) ; elle ne peut croiser une désignation concurrente, qui tient `companies` en exclusif
+     (**deux** recherches, chacune par son index : `SELECT id, number FROM accounts WHERE company_id = ? AND
+     fx_gain_account_id = ? ORDER BY id LIMIT 1 LOCK IN SHARE MODE`, puis la même sur `fx_loss_account_id`, le plus
+     petit identifiant des deux gardé — **jamais** un `OR` sur les deux colonnes) se fait **après** le `FOR UPDATE` du
+     compte visé, en lecture verrouillante (AC-3) ; 35-1-CR3-P1-1 : un balayage sans index verrouille en partage toutes
+     les lignes de la société sous REPEATABLE READ, et deux archivages concurrents de comptes **différents** (chacun
+     tenant son compte `FOR UPDATE`, puis demandant les lignes de l'autre en partage) s'interbloquent, or
+     `accounts::archive_account` n'est pas rejoué (registre : seule `accounts::update_account` l'est) ; elle ne peut croiser une désignation concurrente, qui tient `companies` en exclusif
      (AC-4 bis, verrous). À l'archivage, ce refus est **sans recours** — à la différence du précédent
      #486 (`AccountDesignatedInSettings`, confirmable) : `confirm_designated` ne le lève pas. Ordre des refus
      d'`archive_guarded` : sous-comptes actifs → gain/perte → désignation de facturation → version ;
@@ -436,7 +442,14 @@ l'assistant n'est pas touché, AC-11).
      n'envoie ces champs que **s'ils changent** (absents = inchangés), pour ne pas sérialiser chaque modification de
      compte. Argument écrit au Change Log ; test de course : désignation propre contre archivage du compte désigné
      (l'un attend l'autre ; l'archivage commité d'abord fait refuser la désignation en `reason: "archived"`, la
-     désignation commitée d'abord fait refuser l'archivage en `ACCOUNT_IS_FX_DIFFERENCE_ACCOUNT`).
+     désignation commitée d'abord fait refuser l'archivage en `ACCOUNT_IS_FX_DIFFERENCE_ACCOUNT`) ; **deux archivages
+     concurrents de deux comptes différents aboutissent tous deux, sans 1213** (35-1-CR3-P1-1).
+   - **Rejeu** (35-1-CR3-P1-2) : le `PUT` qui porte les champs prend `companies` `FOR UPDATE` puis le compte en devise
+     `FOR UPDATE`, quand une écriture tient ce compte en partage (35-3a) avant son `INSERT`, qui prend `companies` en
+     partage (`fk_journal_entries_company`) : cycle, couvert par l'enveloppe existante de `accounts::update_account`
+     (`retry_app_on_deadlock("accounts::update", …)`, `routes/accounts.rs:337`), qui reste en place ; test de victime
+     d'interblocage dans `rejeu_interblocage_e2e.rs`. `create_account` ne verrouille aucun compte déjà lu par une
+     écriture : pas de cycle, pas de rejeu ajouté ; le registre des routes ne change pas.
    - **Audit et no-op** : `account_snapshot_json` et `is_no_op_change` incluent les deux colonnes (un `PUT` qui ne
      change que les comptes propres écrit et audite `account.updated`).
    - **Tests** : désignation propre (création et modification), retour au défaut (`null`), résolution après changement
@@ -734,3 +747,15 @@ l'assistant n'est pas touché, AC-11).
   (`borner` des dates, aucune durée) ; `backup.rs:689-736` (import sans contrôle de clé, motif repris de C-35-2).
   AC touchés : en-tête, Décisions, AC-1, AC-3 bis, AC-4, AC-4 bis (neuf), AC-6, AC-7, AC-8, AC-10, AC-11, Tâches.
   Fiche à revalider (cycle CR-3).
+- 2026-11-14 — validation CR-3 P1 (Sonnet) : 0 CRITICAL, 0 HIGH, 1 MEDIUM, 1 LOW ; remédiés dans la fiche, aucun
+  inter-fiches. CR3-P1-1 (MEDIUM) : la recherche du compte désignant (`… (fx_gain_account_id = ? OR fx_loss_account_id
+  = ?) … LOCK IN SHARE MODE`, sans index) balaie toute la société en verrous partagés après le `FOR UPDATE` du compte
+  visé : interblocage de deux archivages de comptes différents (`archive_account` non rejoué) ; deux index et deux
+  recherches indexées, test de non-interblocage. CR3-P1-2 (LOW) : cycle `companies` X contre écriture (compte en partage
+  puis `fk_journal_entries_company`) du `PUT` qui désigne, couvert par le rejeu existant de `accounts::update_account` ;
+  écrit, avec son test de victime. Prémisses relues au code : `20260404000001_initial_schema.sql:51` ;
+  `routes/onboarding.rs:1043-1046` ; `routes/fiscal_years.rs:262-280` ; `backup.rs:686-692` ; `import.rs:248-254` ;
+  `accounts.rs:195-208` ; `routes/accounts.rs:337` ; `journal_entries.rs:326-336`, `:428` ;
+  `audit_route_registry.rs:444-447`, `:292-296` ; `post_restore.rs:988-1004` (dans `mod tests`). Axes exercés : AC-1,
+  AC-3 bis, AC-4 bis (verrous, gardes, ordre des refus), AC-6, AC-11 retirée, contacts 35-3a/35-3b/35-5 par grep.
+  Non exercés : source journalière (aucun GET, hors sujet), manuels (PDF non lu), i18n au code, MCP au code.

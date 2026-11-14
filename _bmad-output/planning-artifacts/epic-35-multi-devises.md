@@ -199,6 +199,8 @@ Prime sur CR-2 et sur ses arbitrages là où ils divergent.
   - A14 — S5 : l'assistant TVA reste à la création d'écriture ;
   - A15 — S2 : les comptes propres couvrent gains et pertes ; le compte de conversion reste un réglage de la société ;
   - A16 — S6 : `first_fetched_at` est une colonne distincte de `fetched_at`.
+  - A17 — S6 : au `PUT` d'une écriture, seules les lignes `afc` nouvelles ou modifiées sont contrôlées contre le cours
+    AFC en vigueur ; une ligne inchangée ne l'est jamais (35-3a AC-4, 35-3b AC-2).
 
 ## Source des cours — établie le 2026-11-14
 
