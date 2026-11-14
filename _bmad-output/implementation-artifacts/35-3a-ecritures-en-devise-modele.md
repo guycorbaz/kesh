@@ -5,14 +5,15 @@ Status: ready-for-dev
 *Fiche rédigée le 2026-11-14 (Opus 5.5), branche `epic/35-multi-devises`. Epic 35, C-35-3, C-35-4, C-35-5. Suit 35-1
 et 35-2. **Migration non breaking** (colonnes `NULL` ajoutées). **Découpée** à la rédaction (règle de splitting
 préventif : plus de cinq modules) : 35-3a = le serveur (`kesh-core`, `kesh-db`, `kesh-api`, `kesh-reconciliation`,
-`kesh-seed`) et les sélecteurs serveur ; 35-3b = soldes d'ouverture, formulaire et écrans.*
+`kesh-seed`) et les sélecteurs serveur ; 35-3b = soldes d'ouverture, formulaire et écrans. Révisée le 2026-11-14 pour
+la revue de Beat (CR-2 : R1, R3, R7), qui prime sur le registre antérieur.*
 
 ## Story
 
 En tant que comptable en multi-devises, je veux saisir une écriture dont certaines lignes sont en devise — montant en
 USD, cours du mois proposé (le cours mensuel AFC, ou le cours que la société a saisi pour ce mois, D9), montant en
-CHF calculé — et, pour une conversion, saisir moi-même les cours et
-passer l'écart de change, afin que mes comptes en devise portent leur solde en devise et en CHF.
+CHF calculé — et, pour une conversion, passer par le compte de conversion en CHF deux écritures d'une seule devise
+chacune (R7), l'écart de change dans la seconde, afin que mes comptes en devise portent leur solde en devise et en CHF.
 
 ## Critères d'acceptation
 
@@ -45,11 +46,11 @@ passer l'écart de change, afin que mes comptes en devise portent leur solde en 
    `revaluation` (montant 0, CHF > 0 : seule `chk_jel_fx_rate` est violée), et le nom rapporté pour les deux cas qui violent aussi
    `chk_jel_fx_chf` (« montant 0 hors `revaluation` » et « montant < 0 ») est constaté au premier essai et écrit au Change Log (ordre d'évaluation des `CHECK` de MariaDB).
    Inscriptions habituelles (sha384, audit, squash, P6 inspecté, P7 sans objet : DDL seul). Colonnes `NULL` : cette
-   migration ne referme pas la fenêtre d'import — mais **35-2 l'a déjà refermée** (table applicative
-   `exchange_rate_overrides`, révision CR-1) : une sauvegarde 0.17.6 ne se réimporte plus dans la version de l'epic.
-   Ce qui se teste ici : une sauvegarde **exportée par la version de l'epic** (celle qui porte déjà les tables de
-   35-2, non par la 0.17.6) dont aucune ligne n'est en devise se réimporte, ses lignes aux quatre colonnes `NULL`
-   (Tâches).
+   migration ne referme pas la fenêtre d'import, et 35-2 non plus depuis CR-2 (R1 : la liste close des absences
+   admises de 35-1 AC-6 couvre `exchange_rate_overrides`). Les quatre colonnes **s'inscrivent à cette liste** (déjà
+   tolérées par la règle générique, la liste les garde non `is_required()`). Ce qui se teste ici : le test d'import
+   d'une sauvegarde 0.17.6 de 35-1 AC-6, étendu aux quatre colonnes retirées des NDJSON de `journal_entry_lines` →
+   import 200, lignes aux quatre colonnes `NULL` (Tâches).
 2. **AC-2 — Modèle Rust.** `ForeignAmount { currency, amount, rate, source }` (`kesh-core` ; `source` est un enum
    nommé `RateProvenance { Afc, Manual, Revaluation }` — **pas** `RateSource`, déjà le trait de 35-2 dans `kesh-api` ;
    montant et cours en `Decimal`, non en `Money` ; le type dérive `Debug, Clone, PartialEq, Eq, Serialize,
@@ -132,7 +133,36 @@ passer l'écart de change, afin que mes comptes en devise portent leur solde en 
    **Ordre des refus** (une seule raison, la plus bloquante d'abord ; la devise d'un compte ne se lit qu'après le
    contrôle d'appartenance, garde KF-002) :
    1. `InactiveOrInvalidAccounts` → `AccountsNotPostable` (existants, `validate_lines_accounts_in_tx` :135) ;
-   2. société en mono-devise et ligne en devise → **409** `MULTI_CURRENCY_DISABLED` (variante de 35-1) ;
+   2. ligne en devise et société **ou exercice de l'écriture** en mono-devise → **409** `MULTI_CURRENCY_DISABLED`
+      (variante de 35-1 ; R3 : le mode se juge sur l'exercice de l'écriture, `fiscal_years.multi_currency` de 35-1,
+      lu dans la ligne que l'étape 1 de `create_in_tx_inner` prend déjà `FOR UPDATE`, `journal_entries.rs:332-336`
+      — colonne ajoutée à ce `SELECT` —, et à l'étape 1-ter d'`update_in_tx` ; `details: { fiscalYearId }` quand
+      c'est l'exercice, `{}` quand c'est la société). **Garde de l'exercice antérieur (R3)** : une écriture qui porte
+      une ligne en devise et dont la date précède le début d'un exercice **mono-devise** de la société → même refus,
+      `details: { fiscalYearId: <l'exercice mono-devise>, reason: "laterFiscalYear" }` — sans quoi le solde d'ouverture
+      de cet exercice, contrôlé nul à sa bascule (35-1 AC-3 bis), changerait après coup. Lecture
+      `SELECT id FROM fiscal_years WHERE company_id = ? AND start_date > ? AND multi_currency = FALSE ORDER BY
+      start_date LIMIT 1 LOCK IN SHARE MODE`, après le verrou de l'exercice de l'écriture (ordre chronologique, celui de
+      la bascule de 35-1, qui verrouille les antérieurs avant l'exercice : les deux se sérialisent) ; la **même** garde
+      s'applique à `delete_in_tx` pour une écriture qui porte une ligne en devise (supprimer change aussi ce solde) et,
+      par `create_in_tx_inner`, à la réévaluation de 35-5 et à la contre-passation. Le message dit quoi faire (passer
+      l'exercice postérieur en multi-devises) ;
+   2 bis. **une seule devise étrangère par écriture (R7)** : des lignes en devise de deux devises différentes →
+      400 **`FX_MULTIPLE_CURRENCIES`** (code neuf, `details: { currencies: ["EUR", "USD"] }`, triées ; variante
+      `DbError::FxMultipleCurrencies`, bras dans `errors.rs` et dans les correspondances `FailedProposal` de l'AC-5),
+      calculé sur le corps seul (aucune lecture), rendu à ce rang de l'ordre des refus ; les lignes CHF restent
+      admises à côté. Une conversion entre
+      deux devises passe par le compte de conversion de 35-1 en deux écritures (35-3b, assistant *Conversion*).
+      **Exemptées** : l'écriture d'ouverture et son complément (35-3b AC-1), qui reprennent des soldes de plusieurs
+      comptes en devise et ne se rapprochent d'aucun relevé (le motif de R7) — mécanisme : un paramètre **privé** de
+      `create_in_tx_inner` (énumération, p. ex. `PorteeDevises::UneSeule | PorteeDevises::Ouverture`) ; les deux
+      chemins d'ouverture appellent aujourd'hui le `create_in_tx` public (`create_opening_entry`,
+      `journal_entries.rs:727` ; complément, `opening_complement.rs:719`, autre module) : ils passent par une variante
+      **`pub(crate)`** (nom au développement) qui pose `Ouverture`, et ce sont ses deux seuls appelants (garde lexicale
+      sur le modèle de celle du constructeur de test, Tâches) ; jamais un champ public de `NewJournalEntry` (même raison
+      que la contre-passation ci-dessous) ; la contre-passation est exemptée elle aussi (reconnue par
+      `reverses_entry_id.is_some()`, comme pour `FX_RATE_NOT_AFC`) : elle recopie une écriture qui a passé ce contrôle,
+      ou une ouverture. Exemption de l'ouverture à confirmer par Beat (Change Log) ;
    3. ligne **sans** devise sur un compte en devise → `ACCOUNT_REQUIRES_CURRENCY` ; ligne en devise sur un compte d'une
       autre devise ou CHF → `FX_CURRENCY_MISMATCH` (pour **l'un et l'autre** : première ligne fautive, son rang en
       `details.line`, AC-3) ;
@@ -179,6 +209,11 @@ passer l'écart de change, afin que mes comptes en devise portent leur solde en 
    - Chaque refus est une variante de `DbError` avec son `error_code()`, et a son bras dans la correspondance
      `DbError → AppError` de `errors.rs` — sauf `DbError::RateUnavailable {currency, month}`, créée par 35-2 avec son
      bras 404 : 35-3a la réutilise et ne la redéfinit pas.
+   - **Bascule d'un exercice (inter-fiche, 35-1 AC-3 bis)** : la 35-1 contrôle le solde cumulé **en CHF** des comptes
+     en devise au début de l'exercice et l'existence de lignes ; cette story, qui crée `amount_currency`, **étend la
+     même requête** au solde cumulé **en devise** (Σ `amount_currency` au débit − Σ au crédit, lignes de la devise du
+     compte ; une ligne `revaluation` compte 0) : un compte à CHF nul mais devise non nulle refuse aussi la bascule
+     (`FISCAL_YEAR_HAS_FOREIGN_BALANCES`, `reason: "balance"`). Test au dépôt.
 5. **AC-5 — Chemins automatiques.** Factures, avoirs, règlements, factures fournisseur, lots de paiement,
    réconciliation (manuelle, éclatement, règles, propositions), — les soldes d'ouverture et leur complément exceptés
    (étendus par 35-3b ; d'ici là, ils refusent un compte en devise comme les autres) :
@@ -226,7 +261,8 @@ passer l'écart de change, afin que mes comptes en devise portent leur solde en 
    test `routes/journal_entries.rs:876-881`) — test : le JSON d'une ligne CHF n'a pas de clé `foreign` ; `MAX_LINES_PER_ENTRY` inchangé ;
    erreurs traduites (quatre locales). `MULTI_CURRENCY_DISABLED` est un **409** partout. **Statuts** (une table, un
    test HTTP par code) : **400** `FX_VALUE_OUT_OF_RANGE`, `FX_LINE_ROUNDS_TO_ZERO`, `FX_AMOUNT_MISMATCH`,
-   `FX_RATE_NOT_AFC`, `FX_CURRENCY_MISMATCH`, `ACCOUNT_REQUIRES_CURRENCY`, `ACCOUNT_IN_FOREIGN_CURRENCY` ; **404**
+   `FX_RATE_NOT_AFC`, `FX_CURRENCY_MISMATCH`, `FX_MULTIPLE_CURRENCIES` (R7), `ACCOUNT_REQUIRES_CURRENCY`,
+   `ACCOUNT_IN_FOREIGN_CURRENCY` ; **404**
    `RATE_UNAVAILABLE` (comme 35-2 et 35-5) ; **409** `MULTI_CURRENCY_DISABLED`, `ENTRY_IS_FX_REVALUATION`,
    `ACCOUNT_CURRENCY_IN_USE` (35-1). `foreign.currency` se compare **tel quel** à la devise du compte (aucune
    normalisation : `usd` → `FX_CURRENCY_MISMATCH`) ; `rateSource` hors `afc|manual` (dont `revaluation`) → 400
@@ -279,9 +315,17 @@ passer l'écart de change, afin que mes comptes en devise portent leur solde en 
 ## Tâches
 
 - [ ] Migration + inscriptions, contraintes nommées (AC-1 ; **aucune** correspondance par nom dans `errors.rs` : le
-      filet rend le 400 générique `CHECK_CONSTRAINT_VIOLATION`) ; test : une sauvegarde exportée par la version de
-      l'epic, sans ligne en devise, se réimporte, colonnes `NULL` (la sauvegarde 0.17.6 est refusée depuis 35-2, AC-1) ;
-      test : `chk_jel_fx_chf` refuse une ligne incohérente insérée en SQL brut.
+      filet rend le 400 générique `CHECK_CONSTRAINT_VIOLATION`) ; colonnes inscrites à la liste close des absences
+      admises de 35-1 (R1) ; test : la sauvegarde 0.17.6 simulée de 35-1 AC-6, sans les quatre colonnes, se réimporte,
+      colonnes `NULL` ; test : `chk_jel_fx_chf` refuse une ligne incohérente insérée en SQL brut.
+- [ ] Tests CR-2 (R3, R7), au dépôt et à l'API : écriture à lignes EUR et USD → `FX_MULTIPLE_CURRENCIES`
+      (`details.currencies`), une devise et des lignes CHF → passe ; ouverture et complément à deux devises → passent
+      (exemption), même corps par `POST /journal-entries` → refusé ; contre-passation d'une ouverture à deux devises →
+      passe ; ligne en devise dans un exercice mono-devise d'une société multi-devises → 409 `MULTI_CURRENCY_DISABLED`
+      `details.fiscalYearId` ; ligne en devise datée avant un exercice mono-devise → 409 `reason: "laterFiscalYear"`,
+      de même pour la suppression d'une telle écriture et pour une réévaluation (35-5) ; lot de réconciliation : la
+      variante a son bras `FailedProposal` ; course bascule (35-1) contre écriture en devise dans l'exercice antérieur
+      (sérialisées) ; extension de la requête de bascule au solde en devise.
 - [ ] Tests de `FX_RATE_NOT_AFC` (D9, AC-4 4), au niveau du dépôt **et** de l'API, avec un cours AFC mensuel posé et un
       cours saisi (`exchange_rate_overrides`) **différent** pour le même mois : (a) ligne `afc` au cours saisi →
       `FX_RATE_NOT_AFC` (`expectedRate` = cours AFC) ; (b) ligne `afc` au cours AFC → **passe** (le cours saisi
@@ -311,8 +355,9 @@ passer l'écart de change, afin que mes comptes en devise portent leur solde en 
 - [ ] Revue site par site des constructeurs de `NewJournalEntryLine` et de `JournalEntryLineDraft`, des
       correspondances `FailedProposal` et des validations de configuration (AC-5) — inventaire au Change Log.
 - [ ] API (AC-6), MCP, exports, audit (AC-8) ; test de l'export CSV à 10 décimales.
-- [ ] Tests d'API : écriture USD au cours AFC et au cours manuel, `FX_RATE_NOT_AFC`, conversion EUR → USD avec ligne
-      d'écart, refus d'un règlement de facture sur un compte USD, lot de réconciliation en `FailedProposal` (200),
+- [ ] Tests d'API : écriture USD au cours AFC et au cours manuel, `FX_RATE_NOT_AFC`, conversion EUR → USD en deux
+      écritures par le compte de conversion (R7 : EUR → conversion, puis conversion → USD avec la ligne d'écart ; le
+      compte de conversion revient à 0), refus d'un règlement de facture sur un compte USD, lot de réconciliation en `FailedProposal` (200),
       `MULTI_CURRENCY_DISABLED` en 409.
 - [ ] CHANGELOG, avec la limite du lettrage (AC-9) (le manuel et l'E2E vont à 35-3b).
 
@@ -384,3 +429,14 @@ passer l'écart de change, afin que mes comptes en devise portent leur solde en 
   (35-2) au lieu de l'hypothèse « si la fonction le contrôle aussi » ; « sauvegarde de la version courante » précisée
   (version de l'epic). Sites lus : `balance.rs:72,150,163`, `journal_entries.rs:135,505,1243,1300,1667,2796`,
   `errors.rs:1726`, 35-2 AC-2, AC-5, AC-9 et Tâches ; aucun GET réseau.
+- 2026-11-14 — révision CR-2 (revue de Beat R1–R10 ; Opus) : **R7** — une écriture ne porte qu'une devise étrangère :
+  refus 400 `FX_MULTIPLE_CURRENCIES` au contrôle central (AC-4, rang 2 bis), bras HTTP et `FailedProposal` ; exemption
+  de l'ouverture et de son complément par un paramètre privé de `create_in_tx_inner` posé par une variante
+  `pub(crate)` (à confirmer par Beat), et de la contre-passation ; la conversion passe par le compte de conversion en
+  deux écritures (Story, Tâches). **R3** — `MULTI_CURRENCY_DISABLED` jugé sur l'exercice de l'écriture
+  (`fiscal_years.multi_currency`, lu dans le `FOR UPDATE` de l'étape 1), plus sur la société seule ; garde de
+  l'exercice antérieur à un exercice mono-devise (`reason: "laterFiscalYear"`, création, modification, suppression,
+  réévaluation) ; extension de la requête de bascule de 35-1 au solde en devise. **R1** — la sauvegarde 0.17.6 se
+  réimporte (colonnes à la liste close de 35-1), test reformulé. Prémisses relues au code :
+  `journal_entries.rs:242-256`, `:281-289`, `:332-336`, `:655`, `:727`, `:2980` ; `opening_complement.rs:719`.
+  AC touchés : en-tête, Story, AC-1, AC-4, AC-6, Tâches. Fiche à revalider (cycle CR-2).

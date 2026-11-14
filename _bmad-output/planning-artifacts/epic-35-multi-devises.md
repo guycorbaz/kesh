@@ -97,6 +97,37 @@ là où elles divergent.
   (`routes/onboarding.rs:1045`) : la date devient une constante nommée, avec un commentaire « ne pas modifier sans … ».
   Kesh accepte déjà des exercices à dates libres : rien d'autre à implémenter pour cela.
 
+### CR-2 — amendements du registre et arbitrages (2026-11-14)
+
+- **R1** : la fenêtre d'import **ne se referme pas** (annule l'avertissement de CR-1). Les tables et colonnes de
+  l'Epic 35 forment une liste close d'absences admises (`kesh-db::backup`, 35-1 AC-6) ; registre de rejeu inchangé ;
+  phase 5 de `recette-montee.sh` jouée ; une sauvegarde 0.17.6 se réimporte en mono-devise.
+- **C-35-2 amendé (R7)** : + `fx_transit_account_id`, compte **de bilan** en CHF, mêmes gardes sauf le type,
+  obligatoire pour activer ; `ACCOUNT_IS_FX_DIFFERENCE_ACCOUNT` porte `details.designation` (`gain|loss|transit`).
+- **C-35-10 (R3, R6)** : `fiscal_years.multi_currency`, `opening_rate_kind`, `closing_rate_kind` (migration de
+  35-1) ; défaut tiré de la société à la création ; activation de la société → exercices **ouverts** en
+  multi-devises ; désactivation → tous en mono-devise ; bascule `PUT /fiscal-years/{id}/currency-mode`
+  (`FISCAL_YEAR_HAS_FOREIGN_BALANCES`, `FISCAL_YEAR_FOREIGN_ACCOUNTS_ACTIVE` + `force`) ; `MULTI_CURRENCY_DISABLED`
+  jugé sur l'exercice de l'écriture et sur un exercice postérieur mono-devise (`laterFiscalYear`).
+- **C-35-3 complété (R7)** : une seule devise étrangère par écriture (`FX_MULTIPLE_CURRENCIES`, 400), sauf ouverture,
+  complément et contre-passation ; conversion par `POST /journal-entries/conversions` (deux écritures, une transaction).
+- **C-35-6 amendé (R2, R4, R5)**, **C-35-7 amendé (R9, R6)**, **C-35-9 amendé (R6 : cours d'ouverture selon
+  `opening_rate_kind`)**, terminologie R4 : repris des fiches révisées.
+- **Arbitrages de l'orchestrateur sur les questions ouvertes de la révision CR-2** (soumis à Beat dans la page de
+  revue 2) :
+  - A1 — commentaire de la constante (R10) : « Ne pas modifier : l'exercice initial créé par l'assistant commence le
+    1er janvier ; un exercice à d'autres dates se crée dans *Exercices* » ;
+  - A2 — un cours saisi égal au cours AFC s'affiche « AFC ✓ · saisi » avec ↑ (l'écran n'en crée jamais) ;
+  - A3 — l'écriture d'ouverture et son complément sont exemptés de la règle d'une seule devise ;
+  - A4 — une ligne en devise datée avant un exercice mono-devise est refusée ; repasser cet exercice en
+    multi-devises pour saisir ;
+  - A5 — `force` archive les comptes en devise sans ligne après la fin de l'exercice ; pas de bascule sans archivage ;
+    l'activation passe tous les exercices ouverts en multi-devises ;
+  - A6 — compte de conversion : compte de bilan non archivé, à créer (aucun plan livré n'en a ; suggestion 1091) ;
+  - A7 — la récupération automatique ignore les exercices clos ; leurs cours se récupèrent à l'écran ;
+  - A8 — la conversion passe par une route serveur (deux écritures dans une transaction).
+- **Tableau des stories** : 35-2 « ne referme pas la fenêtre d'import (R1) ».
+
 ## Source des cours — établie le 2026-11-14
 
 - Page ESTV *MWST Monatsmittelkurse* : « XML-File » → `https://www.backend-rates.bazg.admin.ch/api/xmlavgmonth`.
@@ -120,7 +151,7 @@ là où elles divergent.
 | Story | Objet | Migration |
 |---|---|---|
 | 35-1 | réglage multi-devises de la société, devise des comptes (création, modification, verrou dès la première écriture) | oui, non breaking |
-| 35-2 | table des cours AFC (mensuels et journaliers) et des cours saisis, récupération OFDF/AFC, écran *Cours de change* éditable | oui, non breaking ; referme la fenêtre d'import (CR-1) |
+| 35-2 | table des cours AFC (mensuels et journaliers) et des cours saisis, récupération OFDF/AFC, écran *Cours de change* éditable | oui, non breaking ; ne referme pas la fenêtre d'import (R1) |
 | 35-3a | écritures en devise : modèle de ligne, validation, contrôle central, API, MCP, exports ; garde des chemins d'écriture automatiques | oui, non breaking |
 | 35-3b | écritures en devise : soldes d'ouverture, formulaire (cours proposé, ligne d'écart), affichage, sélecteurs, E2E, manuel | non |
 | 35-4 | rapports dans les deux devises : grand livre, balance, bilan, compte de résultat, exports | non attendue |
