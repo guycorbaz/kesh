@@ -9,9 +9,10 @@ est retirée). **Le serveur ne change pas** ; seuls les catalogues `crates/kesh-
 `crates/`. **Aucune migration.**
 
 Worktree `/home/gcorbaz/devel/kesh-36-3`, branche `story/36-3-ecriture-montant-ambigu`. Le diff à relire, **aplati** :
-`git -C /home/gcorbaz/devel/kesh-36-3 diff a78115b69 <DERNIER_CODE>` (`a78115b69` = tête de la fiche validée, base de la
-branche ; `<DERNIER_CODE>` = dernier commit de code, nommé au Dev Agent Record ; les commits suivants ne portent que des
-comptes rendus). Langue du rapport : français. Modèle : **Sonnet ou Opus** (première passe : jamais Haiku). Contexte frais.
+`git -C /home/gcorbaz/devel/kesh-36-3 diff a78115b69 01bc01e95` (`a78115b69` = tête de la fiche validée, base de la
+branche ; `03afa30b5` = dernier commit de code ; `01bc01e95` y ajoute le seul `.tex` du manuel ; les commits suivants ne
+portent que la fiche, le registre des choix, ce prompt et le registre de sprint). Ci-dessous, `<DERNIER_CODE>` vaut
+`01bc01e95`. Langue du rapport : français. Modèle : **Sonnet ou Opus** (première passe : jamais Haiku). Contexte frais.
 
 Lis d'abord (lentilles E et A ; la lentille B lit le diff avant) : la fiche
 `_bmad-output/implementation-artifacts/36-3-ecriture-montant-ambigu.md` en entier (D1 à D6, AC1 à AC11, mutations M1 à M11,
