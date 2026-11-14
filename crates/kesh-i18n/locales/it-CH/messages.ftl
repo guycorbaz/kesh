@@ -1699,7 +1699,8 @@ bank-accounts-opening-side-credit = Debito (scoperto)
 bank-accounts-opening-help = La registrazione è datata al primo giorno del primo esercizio se è aperto e fuori dal periodo bloccato, altrimenti a oggi: inserisci il saldo dell'estratto conto a quella data. La sua contropartita va sul conto Utile/perdita riportato. È rifiutata se il conto collegato ha già dei movimenti.
 bank-accounts-opening-consequence = Se l'apertura generale in Saldi iniziali è ancora proposta, questo saldo la toglie: i saldi iniziali degli altri conti si inseriranno uno per uno, modalità Completare. Per inserire tutta la tua apertura in una volta, passa prima da Saldi iniziali.
 bank-accounts-opening-preview = Importo che sarà registrato: { $amount }
-bank-accounts-opening-error-amount-ambiguous = Importo ambiguo: una virgola seguita da tre cifre può essere un separatore delle migliaia. Scrivi 1'234 per milleduecentotrentaquattro, 1.234 per un franco e 23,4 centesimi.
+bank-accounts-opening-error-amount-ambiguous = Importo ambiguo: un punto o una virgola seguiti da tre cifre possono separare le migliaia. Scrivi 1'234 per milleduecentotrentaquattro, o 1.2340 per un franco e 23,4 centesimi.
+bank-accounts-opening-error-amount-unreadable = Importo illeggibile: scrivi un numero positivo, per esempio 1'234.50.
 bank-accounts-toast-create-success-with-opening = Conto bancario creato, con la registrazione di apertura n. { $number } del { $date }: { $amount }.
 # Integrazione della 0.17.6 — passata dei testi (#1037, #1040, #1027): la carta di credito e l'importo nullo.
 bank-accounts-form-title-create-card = Nuova carta di credito

@@ -1777,7 +1777,8 @@ bank-accounts-opening-side-credit = Dette (découvert)
 bank-accounts-opening-help = L'écriture est datée du premier jour du premier exercice s'il est ouvert et hors période verrouillée, sinon d'aujourd'hui : saisissez le solde du relevé à cette date. Sa contrepartie va au compte Bénéfice/perte reporté. Elle est refusée si le compte lié a déjà des mouvements.
 bank-accounts-opening-consequence = Si l'ouverture générale de Soldes de départ est encore proposée, ce solde la retire : les soldes de départ des autres comptes se saisiront un à un, mode Compléter. Pour saisir toute votre ouverture d'un coup, passez d'abord par Soldes de départ.
 bank-accounts-opening-preview = Montant qui sera écrit : { $amount }
-bank-accounts-opening-error-amount-ambiguous = Montant ambigu : une virgule suivie de trois chiffres peut être un séparateur de milliers. Écrivez 1'234 pour mille deux cent trente-quatre, 1.234 pour un franc et vingt-trois centimes et quatre dixièmes de centime.
+bank-accounts-opening-error-amount-ambiguous = Montant ambigu : un point ou une virgule suivis de trois chiffres peuvent séparer les milliers. Écrivez 1'234 pour mille deux cent trente-quatre, ou 1.2340 pour un franc vingt-trois et quatre dixièmes de centime.
+bank-accounts-opening-error-amount-unreadable = Montant illisible : écrivez un nombre positif, par exemple 1'234.50.
 bank-accounts-toast-create-success-with-opening = Compte bancaire créé, avec l'écriture d'ouverture n° { $number } du { $date } : { $amount }.
 # Intégration de la 0.17.6 — passe de textes (#1037, #1040, #1027) : la carte de crédit et le montant nul.
 bank-accounts-form-title-create-card = Nouvelle carte de crédit

@@ -753,4 +753,86 @@ mod tests {
         let err = map_opening_balances_error(DbError::Invariant("autre:clef".to_string()));
         assert!(matches!(err, AppError::Database(DbError::Invariant(_))));
     }
+
+    /// Story 35-6 (#1028, AC8, C-e350-33) — **parité écran/serveur** du solde d'ouverture
+    /// d'un compte bancaire, sur la table de la fiche que l'écran relit aussi
+    /// (`frontend/src/lib/features/bank-accounts/opening-amount-cases.json`). La fixture
+    /// est lue **à l'exécution**, pour ne pas lier la compilation au frontend.
+    ///
+    /// - (a) une charge claire est acceptée et vaut `Decimal::from_str(charge)` ;
+    /// - (b) la charge de la ligne `serverRejects` (seize chiffres) est refusée ;
+    /// - (c) une saisie claire écrite dans l'alphabet du serveur (`[0-9._+-]`, rognée
+    ///   des seuls blancs comme `str::trim`) vaut, envoyée brute, la valeur de sa charge :
+    ///   l'écran lit le souligné et `-0` comme le serveur ;
+    /// - (d) une saisie non lisible ou négative de cet alphabet, sans `serverAccepts`,
+    ///   est refusée par le serveur aussi ;
+    /// - (e) les lignes `serverAccepts` (exposant, plus de 28 décimales), refusées à
+    ///   l'écran seulement, sont acceptées par le serveur à la valeur **épinglée** : une
+    ///   montée de `rust_decimal` qui changerait cette lecture rougit.
+    ///
+    /// Le nombre de lignes de chaque assertion est affirmé en dur : un filtre d'alphabet
+    /// trop étroit ne fait pas passer le test à vide.
+    #[test]
+    fn solde_ouverture_parite_ecran_serveur() {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../frontend/src/lib/features/bank-accounts/opening-amount-cases.json");
+        let text = std::fs::read_to_string(&path)
+            .unwrap_or_else(|e| panic!("fixture {} illisible : {e}", path.display()));
+        let doc: serde_json::Value = serde_json::from_str(&text).expect("fixture JSON");
+        let cases = doc["cases"].as_array().expect("tableau « cases »");
+        let in_alphabet = |raw: &str, extra: &str| {
+            raw.trim()
+                .chars()
+                .all(|c| c.is_ascii_digit() || "._+-".contains(c) || extra.contains(c))
+        };
+        let decimal = |s: &str| Decimal::from_str(s).expect("valeur attendue lisible");
+        let (mut a, mut b, mut c, mut d, mut e) = (0, 0, 0, 0, 0);
+        for case in cases {
+            let raw = case["raw"].as_str().expect("raw");
+            let server_accepts = case["serverAccepts"].as_str();
+            match case["kind"].as_str().expect("kind") {
+                "clear" => {
+                    let payload = case["payload"].as_str().expect("charge d'une ligne claire");
+                    let charge = parse_complement_amount(Some(payload));
+                    if case["serverRejects"].as_bool().unwrap_or(false) {
+                        assert!(charge.is_err(), "(b) {payload:?} devrait être refusée");
+                        b += 1;
+                        continue;
+                    }
+                    let expected = decimal(payload);
+                    let read = charge.unwrap_or_else(|err| panic!("(a) {payload:?} : {err:?}"));
+                    assert_eq!(read, expected, "(a) {payload:?}");
+                    a += 1;
+                    if in_alphabet(raw, "") {
+                        let brute = parse_complement_amount(Some(raw))
+                            .unwrap_or_else(|err| panic!("(c) {raw:?} : {err:?}"));
+                        assert_eq!(brute, expected, "(c) {raw:?} contre sa charge {payload:?}");
+                        c += 1;
+                    }
+                }
+                "unreadable" | "negative" => match server_accepts {
+                    Some(value) if in_alphabet(raw, "eE") => {
+                        let read = parse_complement_amount(Some(raw))
+                            .unwrap_or_else(|err| panic!("(e) {raw:?} : {err:?}"));
+                        assert_eq!(read, decimal(value), "(e) {raw:?}");
+                        e += 1;
+                    }
+                    None if in_alphabet(raw, "") => {
+                        assert!(
+                            parse_complement_amount(Some(raw)).is_err(),
+                            "(d) {raw:?} devrait être refusée par le serveur"
+                        );
+                        d += 1;
+                    }
+                    _ => {}
+                },
+                _ => {}
+            }
+        }
+        assert_eq!(
+            (a, b, c, d, e),
+            (58, 1, 24, 13, 4),
+            "lignes exercées (a, b, c, d, e)"
+        );
+    }
 }

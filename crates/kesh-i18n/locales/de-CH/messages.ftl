@@ -1699,7 +1699,8 @@ bank-accounts-opening-side-credit = Schuld (Überziehung)
 bank-accounts-opening-help = Die Buchung wird auf den ersten Tag des ersten Geschäftsjahres datiert, wenn es offen und nicht gesperrt ist, sonst auf heute: Erfassen Sie den Saldo laut Kontoauszug an diesem Datum. Die Gegenbuchung geht auf das Konto Gewinn-/Verlustvortrag. Sie wird abgelehnt, wenn das verbundene Konto bereits Bewegungen hat.
 bank-accounts-opening-consequence = Wird die allgemeine Eröffnung unter Anfangssaldi noch angeboten, so entfällt sie mit diesem Saldo: Die Anfangssaldi der übrigen Konten werden dann einzeln erfasst, Modus Ergänzen. Um Ihre ganze Eröffnung auf einmal zu erfassen, gehen Sie zuerst über Anfangssaldi.
 bank-accounts-opening-preview = Gebuchter Betrag: { $amount }
-bank-accounts-opening-error-amount-ambiguous = Mehrdeutiger Betrag: Ein Komma gefolgt von drei Ziffern kann ein Tausendertrennzeichen sein. Schreiben Sie 1'234 für eintausendzweihundertvierunddreissig, 1.234 für einen Franken und 23,4 Rappen.
+bank-accounts-opening-error-amount-ambiguous = Mehrdeutiger Betrag: Ein Punkt oder ein Komma gefolgt von drei Ziffern kann Tausender trennen. Schreiben Sie 1'234 für eintausendzweihundertvierunddreissig oder 1.2340 für einen Franken und 23,4 Rappen.
+bank-accounts-opening-error-amount-unreadable = Unlesbarer Betrag: Geben Sie eine positive Zahl ein, zum Beispiel 1'234.50.
 bank-accounts-toast-create-success-with-opening = Bankkonto angelegt, mit der Eröffnungsbuchung Nr. { $number } vom { $date }: { $amount }.
 # Integration der 0.17.6 — Textdurchgang (#1037, #1040, #1027): Kreditkarte und Nullbetrag.
 bank-accounts-form-title-create-card = Neue Kreditkarte

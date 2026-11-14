@@ -977,9 +977,12 @@ const ATTENDU = {
 	// le refus d'une accolade isolée au miroir. Littéral ; relevé à 3032 par la garde avant d'écrire.
 	// Story 35-4 (#1023, D4) : **3026 → 3029** (+3) sur sa branche, `AlreadyBookedConfirmDialog.svelte`
 	// 4 → 7 (intro de *Rejeter* `-one` et `-other`, bouton *Rejeter quand même*). Que des littéraux.
-	// Union de l'intégration 0.17.7 (C-e350-8) : 35-1 (+6) et 35-4 (+3) sur 3026 ; recompté par la
-	// garde après la fusion (relevé à la source avant d'écrire ce nombre).
-	sitesTotal: 3035,
+	// Story 35-6 (#1026) : **3026 → 3027** (+1) sur sa branche, `bank-accounts/+page.svelte` 112 → 113
+	// (`bank-accounts-opening-error-amount-unreadable`, montant illisible ; les refus ambigu et
+	// « montant positif » restent un site chacun).
+	// Union de l'intégration 0.17.7 (C-e350-8) : 35-1 (+6), 35-4 (+3) et 35-6 (+1) sur 3026 ;
+	// recompté par la garde après chaque fusion (relevé à la source avant d'écrire ce nombre).
+	sitesTotal: 3036,
 	sitesNonResolus: 31,
 	relais: 6,
 	// Story 26-1 (#620, AC3-bis) : **10 → 11** — `lib/features/bank-import/

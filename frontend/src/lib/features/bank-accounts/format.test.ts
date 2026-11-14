@@ -11,11 +11,12 @@ import {
 	formatChfBalance,
 	formatChfExact,
 	linkableLedgerAccounts,
-	openingAmountAmbiguous,
+	openingAmountKind,
 	openingAmountPayload,
 	openingAmountPreview,
 	shortIban,
 } from './format';
+import openingAmountCases from './opening-amount-cases.json';
 import { admitsLedgerType } from './credit-card';
 
 const IBAN = 'CH9300762011623852957';
@@ -157,13 +158,15 @@ describe("solde d'ouverture", () => {
 		expect(openingAmountPayload('')).toBeNull();
 	});
 
-	// Revue P1 (B-1 = E-6) — une virgule suivie d'exactement trois chiffres est ambiguë.
-	it("« 1,234 » est ambigu ; « 1,23 », « 1,2345 », « 1'234,50 », « 1.234 » ne le sont pas", () => {
-		for (const ambigu of ['1,234', '12,500', "1'000,000", ' 9,999 ']) {
-			expect(openingAmountAmbiguous(ambigu), ambigu).toBe(true);
+	// Revue P1 de la 34-2 (B-1 = E-6), re-adossé au classement par la Story 35-6 :
+	// « 1'000,000 » (partie entière groupée) cesse d'être ambigu (#1025), « 1.234 » le
+	// devient (#1026).
+	it("« 1,234 » et « 1.234 » sont ambigus ; « 1,23 », « 1,2345 », « 1'234,50 », « 1'000,000 » ne le sont pas", () => {
+		for (const ambigu of ['1,234', '12,500', ' 9,999 ', '1.234']) {
+			expect(openingAmountKind(ambigu).kind, ambigu).toBe('ambiguous');
 		}
-		for (const clair of ['1,23', '1,2345', "1'234,50", '1.234', '1234', '', '1,2']) {
-			expect(openingAmountAmbiguous(clair), clair).toBe(false);
+		for (const clair of ['1,23', '1,2345', "1'234,50", "1'000,000", '1234', '', '1,2']) {
+			expect(openingAmountKind(clair).kind, clair).not.toBe('ambiguous');
 		}
 	});
 
@@ -178,8 +181,84 @@ describe("solde d'ouverture", () => {
 	// L'aperçu dit ce que le serveur écrit (quatre décimales), sans l'arrondir au centime.
 	it('l’aperçu garde jusqu’à quatre décimales, sans arrondi', () => {
 		expect(openingAmountPreview('1.2345')).toContain('1.2345');
-		expect(openingAmountPreview('1.005')).toContain('1.005');
+		// Story 35-6 : « 1.005 » est ambigu (famille A) ; la preuve passe à « 1.0050 ».
+		expect(openingAmountPreview('1.0050')).toContain('1.005');
 		expect(formatChfExact('1234.5')).toBe(formatChfBalance('1234.50'));
+	});
+});
+
+/**
+ * Story 35-6 (#1026, #1028, #1025, AC1) — la table D3 de la fiche, écrite une seule fois
+ * dans `opening-amount-cases.json` et relue ici ligne par ligne : l'issue du classement
+ * ET la charge envoyée. Le test de parité du serveur (`opening_balances.rs`, AC8) relit
+ * la même fixture.
+ */
+type OpeningAmountCase = {
+	raw: string;
+	kind: string;
+	payload?: string;
+	serverRejects?: boolean;
+	serverAccepts?: string;
+};
+const CASES: OpeningAmountCase[] = openingAmountCases.cases;
+
+describe('Story 35-6 — la saisie du solde d’ouverture, table D3', () => {
+	it.each(CASES.map((c) => [JSON.stringify(c.raw), c] as const))(
+		'%s : issue et charge',
+		(_label, c) => {
+			const expected = c.payload === undefined ? { kind: c.kind } : { kind: c.kind, payload: c.payload };
+			expect(openingAmountKind(c.raw)).toEqual(expected);
+		},
+	);
+
+	it('une charge claire suit ^[0-9]+(\\.[0-9]{1,4})?$ ; seule une saisie claire en porte une', () => {
+		for (const c of CASES) {
+			if (c.kind === 'clear') {
+				expect(c.payload, c.raw).toMatch(/^[0-9]+(\.[0-9]{1,4})?$/);
+			} else {
+				expect(c.payload, c.raw).toBeUndefined();
+			}
+		}
+	});
+
+	it('openingAmountPayload rend la charge d’une saisie claire, null sinon', () => {
+		for (const c of CASES) {
+			expect(openingAmountPayload(c.raw), JSON.stringify(c.raw)).toBe(
+				c.kind === 'clear' ? c.payload : null,
+			);
+		}
+	});
+
+	it('l’aperçu formate la charge d’une saisie claire, rien sinon, jamais « NaN »', () => {
+		for (const c of CASES) {
+			const preview = openingAmountPreview(c.raw);
+			if (c.kind === 'clear') {
+				expect(preview, JSON.stringify(c.raw)).toBe(formatChfExact(c.payload as string));
+				expect(preview, JSON.stringify(c.raw)).not.toContain('NaN');
+			} else {
+				expect(preview, JSON.stringify(c.raw)).toBeNull();
+			}
+		}
+	});
+
+	// Les bornes de D4 sont dans la table, et la borne du serveur y est dite.
+	it('la table porte les bornes de la règle et la borne du serveur', () => {
+		const kindOf = (raw: string) => CASES.find((c) => c.raw === raw)?.kind;
+		expect(kindOf('1.000')).toBe('ambiguous');
+		expect(kindOf('100.250')).toBe('ambiguous');
+		expect(kindOf('1000.000')).toBe('clear');
+		expect(kindOf('0.999')).toBe('clear');
+		expect(CASES.filter((c) => c.serverRejects).map((c) => c.raw)).toEqual(['1234567890123456']);
+	});
+
+	// AC3 — l'aperçu de « 1_000 » (#1028) : mille, à l'espace fine U+202F.
+	it('« 1_000 » s’affiche 1 000.00 CHF, jamais « NaN CHF »', () => {
+		expect(openingAmountPreview('1_000')).toBe(formatChfBalance('1000'));
+		expect(openingAmountPreview('1_000')).toContain(`1${String.fromCharCode(0x202f)}000.00`);
+		expect(openingAmountPreview(`1${String.fromCharCode(0x202f)}234.50`)).toBe(
+			formatChfBalance('1234.50'),
+		);
+		expect(openingAmountPreview('0.500')).toBe(formatChfExact('0.500'));
 	});
 });
 

@@ -1,6 +1,6 @@
 # Story 35-6 : la saisie du solde d'ouverture d'un compte bancaire ne lit plus « 1.234 » comme un franc en silence, et ne montre plus « NaN CHF » (#1026, #1028, #1025)
 
-Status: ready-for-dev
+Status: done
 
 *Fiche rédigée le 2026-11-12 par l'agent de kickoff de l'Epic 35 (Opus 5.5), worktree `kesh-e35`, par le workflow
 `bmad-create-story`. Release **0.17.7**. **Aucune migration** ; depuis la validation P2, **aucun changement du code
@@ -111,6 +111,7 @@ qu'un chiffre a été lu, avant comme après le point ; `:325`, refusé avant) :
   | `1 234,50` (U+0020) · `1 234,50` (U+00A0) · `1 234.50` (U+202F) · `1'234.50` · `1'234,50` | claire | `1234.50` |
   | `12.50` · `12,5` · `1,23` · `1,2345` · `1234` · `1.2345` · `1.2340` · `75,25` · `+12.50` | claire | `12.50`, `12.5`, `1.23`, `1.2345`, `1234`, `1.2345`, `1.2340`, `75.25`, `12.50` |
   | `1'2345` · `1234'567` · `1  234` · `1<TAB>234` · `1 234` (U+2009) · `12'34` | claire (acceptées aujourd'hui, même valeur) | `12345`, `1234567`, `1234`, `1234`, `1234`, `1234` |
+  | `1 2.345` · `12'3.456` | claire (E groupée de moins de quatre chiffres : seul le groupement l'écarte de la règle ; acceptées aujourd'hui, même valeur ; ligne ajoutée au développement, M8) | `12.345`, `123.456` |
   | `1_000` · `1__0` · `1.2_5` · `1_` · `1_.5` | claire (#1028 ; acceptées aujourd'hui par le serveur, même valeur) | `1000`, `10`, `1.25`, `1`, `1.5` |
   | `.5` · `,5` · `5.` | claire | `0.5`, `0.5`, `5` |
   | `1.50000` · `1.23450` | claire (zéros au-delà de la quatrième décimale) | `1.5000`, `1.2345` |
@@ -249,7 +250,7 @@ départ, et dits comme tels : le vide (AC2), les lignes claires d'aujourd'hui qu
 **Mutations** : M1 la règle du point retirée (`1.234` redevient clair) ; M2 `0,500` redevient ambigu ; M3 le `+` en tête
 contourne la règle ; M4 l'avis formate la chaîne brute ; M5 `_` retiré de l'ensemble des séparateurs (`1_000` non lisible,
 AC1) ; M6 la saisie non lisible part au serveur — sur **chacun** des deux formulaires ; M7 la borne « 1 à 3 chiffres » retirée
-(`1234.567` devient ambigu) ; M8 le classement fait après le retrait des séparateurs (`1'234,567` redevient ambigu) ; M9
+(`1234.567` devient ambigu) ; M8 le classement fait après le retrait des séparateurs (`1 2.345` et `12'3.456` deviennent ambigus ; *corrigé au développement : `1'234,567`, annoncé ici, garde ses quatre chiffres et reste clair sous la borne de un à trois*) ; M9
 l'ensemble des séparateurs réduit à l'espace ASCII et aux apostrophes (U+00A0, U+202F, tabulation : AC1) ; M10 le vide
 classé non lisible (AC2, création sans solde) ; M11 le rognage retiré (` 9,999 ` cesse d'être ambiguë) ; M12 les zéros
 au-delà de la quatrième décimale non retirés (`1.50000` devient non lisible) ; M13 un `+` hors de la tête accepté (`1+2`) ;
@@ -263,10 +264,10 @@ passer à vide.
 
 ## Tâches
 
-- [ ] Étape 0 : relire les lignes citées sur `release/0.17.6`.
-- [ ] Tests, rouges consignés ; fixture de la table ; `format.ts`, page, clés ×4, gardes i18n ; test de parité (AC8) ;
+- [x] Étape 0 : relire les lignes citées sur `release/0.17.6`.
+- [x] Tests, rouges consignés ; fixture de la table ; `format.ts`, page, clés ×4, gardes i18n ; test de parité (AC8) ;
       manuel, CHANGELOG ; captures.
-- [ ] Gates : frontend complet ; backend complet (`test-fast.sh --ci` : les catalogues changent) ; E2E complet au dernier
+- [x] Gates : frontend complet ; backend complet (`test-fast.sh --ci` : les catalogues changent) ; E2E complet au dernier
       commit de code.
 
 ## Dev Notes
@@ -302,13 +303,64 @@ n'ajoute qu'un test au `mod tests` (`:630` et suivantes), hunk distinct de la da
 
 ### Agent Model Used
 
+Opus 5.5 (`claude-opus-5-5`), workflow `bmad-dev-story`, worktree `kesh-e356`, branche `story/35-6-solde-ouverture-saisie`
+(partie de `epic-35/base2`), 2026-11-12/13.
+
 ### Debug Log References
+
+Journaux sous `/home/gcorbaz/devel/kesh-gate-logs/e356/` : `rouges.log` (et `rouges-brut.log`), `verts-cible.log`,
+`mutations.log`, `front-check.log`, `front-test-unit.log`, `front-build.log`, `make-fr.log`, `test-fast-ci.log`,
+`gate-ci.out` et `gate-ci-journal.log`, `e2e-r1.log` ; captures dans `captures/`.
 
 ### Completion Notes List
 
 - Fiche rédigée par le workflow `bmad-create-story` (analyse du code de `release/0.17.6`).
+- **Étape 0** : lignes relues sur la base de la branche (`epic-35/base2` = la 0.17.6 publiée + les fiches) — `format.ts:236-288`
+  (`openingAmountPayload`, `THOUSANDS_SEPARATORS`, `openingAmountAmbiguous`, `openingAmountPreview`, `formatChfExact`),
+  page `:253-258` (message d'ambiguïté), `:277-288` (compte existant), `:456` (garde de la création), `:482-485`, `:499`,
+  `:510`, `:718-729` (aperçu), `format.test.ts:141-185`, `bank-accounts-page.test.ts:917-998`,
+  `opening_balances.rs:515-530` et `:630` (`mod tests`), `messages.ftl` fr-CH `:1713`, `user-manual.tex:2456`. Toutes
+  conformes à la fiche.
+- **Rouges** (`rouges.log`) : la table écrite d'abord dans `opening-amount-cases.json`, `openingAmountKind` d'abord
+  adaptateur de la lecture d'aujourd'hui ; **96 rouges sur 229 tests** des deux fichiers (`format.test.ts`,
+  `bank-accounts-page.test.ts`), dont toutes les lignes annoncées par la fiche (`1.234`, `1.000`, `01.234`, `+1,234`,
+  `1. 234` clairs ; `1'234,567`, `0,500` ambigus ; `1_000` sans aperçu ; `-0` sans l'avis nul ; les non lisibles envoyées) ;
+  verts au départ et dits tels : les deux vides, les ambiguës déjà refusées, 29 lignes claires de même valeur (liste au
+  journal). Puis le pipeline D2 : **toutes les lignes vertes au premier essai** ; aucune ligne de la table ne donnait autre
+  chose que l'issue annoncée.
+- **AC8** : test de parité `solde_ouverture_parite_ecran_serveur` dans le `mod tests` de `opening_balances.rs`, fixture lue
+  à l'exécution ; lignes exercées affirmées en dur **(a) 58, (b) 1, (c) 24, (d) 13, (e) 4** — (c), (d), (e) égaux aux
+  nombres de la fiche ; (a) 56 au premier passage, 58 après l'ajout des deux lignes de M8 (hors alphabet du serveur).
+  Valeurs épinglées confirmées : `1e3`, `1E3` → 1000, `5e-1` → 0,5, la ligne E → 0 ; `-0`, `-0.00` acceptés à zéro.
+- **Mutations** (`mutations.log`) : M1 à M19 et M16-bis jouées, M4 et M6 sur **chacun** des deux formulaires, M17 côté
+  Vitest et côté Rust — **toutes tuées**, M8 après correction de la table (voir Change Log). Lanceur : motif vérifié unique,
+  restauration `git checkout --` puis `touch`.
+- **Captures** (thème clair, base jetable `kesh_e356` remise au preset de test `with-company`, compte 1020 créé par l'API) :
+  `35-6-1-1_000-apercu.png` (« Montant qui sera écrit : 1 000.00 CHF », espace fine), `35-6-2-1234,567-apercu.png`
+  (« 1 234.567 CHF »), `35-6-3-1.234-refuse.png` (message d'ambiguïté), `35-6-4-illisible-refuse.png` (`1. 234`).
+- **Manuel** : `user-manual.tex:2456` réécrit et scindé en deux paragraphes ; PDF régénéré (`make fr`), contrôlé aplati :
+  absences de « (#1026) », « (#1025) », « toujours lu ainsi », « écrivez-les avec un point » (0 chacune) ; présences de
+  « 1.2340 », « 1000.000 », « 1_000 », « 1e3 », « 1.23456 » (1 chacune). Les PDF d'administration et de la brochure,
+  régénérés sans changement de source, ne sont pas commités (C-e356-5). `docs/api-external.md` inchangé.
+- **i18n** : clé d'ambiguïté réécrite et `bank-accounts-opening-error-amount-unreadable` ajoutée dans les quatre
+  catalogues, à côté de `bank-accounts-opening-*` ; replis littéraux égaux au fr-CH ; `sitesTotal` 3026 → 3027, recompté
+  par `grep -o 'i18nMsg('` (page 112 → 113) et par la garde. `openingAmountAmbiguous` retiré (plus aucun appelant).
 
 ### File List
+
+- `frontend/src/lib/features/bank-accounts/opening-amount-cases.json` (neuf)
+- `frontend/src/lib/features/bank-accounts/format.ts`
+- `frontend/src/lib/features/bank-accounts/format.test.ts`
+- `frontend/src/routes/(app)/bank-accounts/+page.svelte`
+- `frontend/src/routes/(app)/bank-accounts/bank-accounts-page.test.ts`
+- `frontend/src/lib/shared/i18n-keys.test.ts`
+- `crates/kesh-i18n/locales/{fr-CH,de-CH,it-CH,en-CH}/messages.ftl`
+- `crates/kesh-api/src/routes/opening_balances.rs` (`mod tests` seulement)
+- `docs/manual/fr/user-manual.tex`, `docs/manual/fr/user-manual.pdf`
+- `CHANGELOG.md`
+- `_bmad-output/implementation-artifacts/35-6-solde-ouverture-saisie.md`
+- `_bmad-output/implementation-artifacts/e35-choix-autonomes-e356.md` (neuf)
+- `_bmad-output/implementation-artifacts/sprint-status.yaml`
 
 ## Change Log
 
@@ -403,3 +455,45 @@ n'ajoute qu'un test au `mod tests` (`:630` et suivantes), hunk distinct de la da
   rédaction. Choix retenus : **C-e350-19**, **C-e350-30** (pipeline et règle), **C-e350-31** (souligné), **C-e350-32** (zéros
   de tête), **C-e350-33** (test de parité), **C-e350-34** (exposant, écran seul ; décision de l'orchestrateur), **C-e350-35**
   (souligné devant la virgule, apostrophes de bord, plus de 28 décimales). Statut : `ready-for-dev`.
+- 2026-11-12/13 — **Développement** (Opus 5.5, `bmad-dev-story`, worktree `kesh-e356`). Commits `1adf413c` (table en
+  fixture, 96 rouges contre la lecture d'aujourd'hui), `b09b5f9f` (pipeline D2, page, clés ×4, `sitesTotal`, test de
+  parité), `8b83e65f` (manuel et CHANGELOG), `d64520db` (lignes de M8), puis ce compte rendu.
+  - **Fiche corrigée au développement — M8.** La mutation M8 (« classement après le retrait des séparateurs ») **survivait**
+    (229 tests verts) : la fiche annonçait que `1'234,567` redeviendrait ambigu, ce que la borne « un à trois chiffres »
+    (posée en P3, C-e350-30) exclut — `1234` a quatre chiffres, groupé ou non. Aucune ligne de la table ne faisait dépendre
+    l'issue du seul groupement. Ajoutées à D3 et à la fixture : `1 2.345` → `12.345`, `12'3.456` → `123.456`, claires,
+    **acceptées aujourd'hui à la même valeur** (C-e350-19 tenu) ; M8 récrite (`1 2.345`, `12'3.456` deviennent ambiguës)
+    et désormais tuée (4 rouges) ; (a) du test de parité 56 → 58. Corollaire, LOW, non traité : D4 cite `1'234.567` comme
+    borne « groupée » de la famille A, alors qu'il est clair par ses quatre chiffres déjà.
+  - Aucune autre ligne de la table n'a donné une autre issue que l'annoncée ; les nombres (c) 24, (d) 13, (e) 4 de AC8
+    sont ceux du code.
+  - **Gates au dernier commit de code `d64520db`** : `scripts/test-fast.sh --ci` vert, **5308 exécutés, 0 échec, 13
+    ignorés** (5307 à la 0.17.6 + le test de parité) ; `scripts/gate-ci.sh kesh_ci_e356` vert, **5315 passés, 0 échoué,
+    17 ignorés** ; frontend : `npm run check` 0 erreur (29 avertissements, aucun dans les fichiers de la story),
+    `lint-i18n-ownership` vert, `test:unit` **3325 tests, 232 fichiers**, `npm run build` vert ; **E2E complet**, recette
+    entière (base `kesh_e2e_e356` recréée, port 3406, dossiers sous `target/e2e-r1/`) : **403 passés, 7 échecs, 18 ignorés**
+    — les sept de la KF-029 (#97), nommés contre `docs/testing.md` (`mode-expert.spec.ts:26`, `:41`,
+    `onboarding-path-b.spec.ts:65`, `:92`, `onboarding.spec.ts:57`, `:77`, `:150`) ; `bank-account-opening-balance.spec.ts`
+    vert (deux tests).
+  - **Écart à la consigne Edit** (deux fois, une fixture et deux lignes de code) : (1) la fixture écrite par l'outil Write
+    a vu ses échappements Unicode (U+00A0, U+202F, U+2009, U+0661 à U+0663) changés en caractères bruts ; un court script Python
+    les a rétablis (contrôle du nombre de chaque caractère) ; (2) l'outil Edit ne retrouvait pas les deux lignes de
+    `format.ts` portant U+00A0 et U+202F bruts (`:237`, `:242`), même copiées exactement — même constat qu'en validation
+    P4 ; un script a remplacé ces deux seules lignes, après contrôle de leur contenu exact, par un marqueur ASCII, que
+    l'outil Edit a ensuite remplacé avec le reste. L'outil manque d'une façon de viser une espace insécable, et convertit
+    les échappements Unicode du texte écrit.
+  - Choix : registre `e35-choix-autonomes-e356.md`, **C-e356-1 à C-e356-6**.
+  - Statut : `review`.
+- **2026-11-13 — Revue de code, close en P1** (prompt versionné `35-6-solde-ouverture-saisie-review-prompt-p1.md`, `f72fbd42` ;
+  diff aplati `1ebe1240..d64520db` ; rapports hors dépôt `kesh-gate-logs/e356-review-p1-{B,E,A}.md`).
+  - Trend : **P1 (Opus, trois lentilles) : 0 CRITICAL, 0 HIGH, 0 MEDIUM, 8 LOW** → boucle close (aucune remédiation, donc
+    aucune passe ciblée à relire).
+  - Axes : tous les huit exercés par au moins une lentille (déclarés par rapport) ; l'orchestrateur a relu lui-même la fidélité
+    des traductions (axe 5, exercé en A par le seul recompte) : les quatre locales disent la même règle et la même forme à écrire.
+  - LOW, une issue par problème : #1069 (`1,5e2` et `serverAccepts`), #1070 (saut de ligne et U+FEFF lus comme séparateurs),
+    #1071 (retour silencieux inatteignable, à fermer par le type), #1072 (erreur qui reste après correction), #1073 (saisies
+    absentes de la fixture), #1074 (manuel et CHANGELOG : apostrophe de queue), #1075 (`verts-cible.log` porte un rouge),
+    #1076 (`1'234,567` donné pour exemple de groupement). LOW du développement : #1068.
+  - Écart de la lentille : une redirection `> /dev/null` en fin de pipeline `pdftotext`, sans fichier créé, déclarée et rejouée
+    sans redirection.
+  - Statut : `done`.
