@@ -428,7 +428,16 @@ test.describe('Le compte rendu de la restauration reste affiché (Story 36-5, #9
 		// (1) L'import a abouti au serveur, le battement a reçu son 401, et l'écran est resté.
 		expect(importStatus, 'l’import retenu doit avoir abouti au serveur').toBe(200);
 		expect(heartbeatStatus, 'le battement forcé pendant l’import doit avoir été refusé').toBe(401);
-		await expect(page.getByTestId('admin-restore-files-restored')).toBeVisible({ timeout: 15_000 });
+		// Revue P1 (A1-3) : un rouge nomme la page où l'on est — la KF-056 mène à
+		// `/login?reason=session_expired`. (Un contrôle d'URL placé avant passerait, la
+		// redirection pouvant ne pas être encore faite.)
+		try {
+			await expect(page.getByTestId('admin-restore-files-restored')).toBeVisible({ timeout: 15_000 });
+		} catch (e) {
+			throw new Error(
+				`compte rendu jamais affiché — page sur ${page.url()}\n${e instanceof Error ? e.message : String(e)}`,
+			);
+		}
 		await expect(page).toHaveURL(/\/admin\/restore$/);
 
 		// (2) Compte rendu affiché : une activité de plus n'envoie plus aucun battement.

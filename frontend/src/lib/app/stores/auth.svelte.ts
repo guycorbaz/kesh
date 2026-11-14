@@ -69,9 +69,13 @@ let _idleExpiresIn: number | null | undefined = undefined;
  * de restauration seul (`holdForRestore`) ; levé par `releaseRestoreHold()`,
  * `logout()` et `clearSession()` — **jamais par `login()`**, que le
  * renouvellement réussi appelle (`api-client.ts`, `doRefresh`) : sinon un
- * renouvellement pendant l'import l'effacerait. Sous maintien, le chemin 401
- * du client ne renvoie pas à la connexion et le module de session ne ferme
- * pas au-delà de l'échéance d'inactivité ; il n'étend rien au serveur.
+ * renouvellement pendant l'import l'effacerait. `hydrate()` ne le lève pas non
+ * plus (revue P1, B1-2) : relancé par la diffusion `auth-change` d'un autre
+ * onglet, il efface l'identité sans rediriger — le compte rendu reste lu, et le
+ * maintien s'éteint par le panneau ou à son échéance (fiche 36-5, *Hors
+ * périmètre*). Sous maintien, le chemin 401 du client ne renvoie pas à la
+ * connexion et le module de session ne ferme pas au-delà de l'échéance
+ * d'inactivité ; il n'étend rien au serveur.
  */
 let _restoreHoldUntil: number | null = null;
 
@@ -150,6 +154,15 @@ export const authState = {
 	 */
 	holdForRestore(durationMs: number): void {
 		_restoreHoldUntil = Date.now() + durationMs;
+	},
+	/**
+	 * Story 36-5 (#931, revue P1, E1-2) — ramène l'échéance du maintien à au plus
+	 * `durationMs` à partir de maintenant ; ne l'allonge jamais, et ne pose rien
+	 * sans maintien.
+	 */
+	shortenRestoreHold(durationMs: number): void {
+		if (_restoreHoldUntil === null) return;
+		_restoreHoldUntil = Math.min(_restoreHoldUntil, Date.now() + durationMs);
 	},
 	/** Story 36-5 (#931) — lève le maintien. Idempotente. */
 	releaseRestoreHold(): void {

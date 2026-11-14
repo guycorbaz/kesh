@@ -27,6 +27,7 @@ const shared = vi.hoisted(() => ({
 	realAuth: null as null | {
 		holdForRestore(ms: number): void;
 		releaseRestoreHold(): void;
+		shortenRestoreHold(ms: number): void;
 		readonly restoreHold: boolean;
 	},
 }));
@@ -58,6 +59,7 @@ vi.mock('$lib/app/stores/auth.svelte', () => ({
 		// Story 36-5 — espions qui délèguent au vrai maintien.
 		holdForRestore: vi.fn((ms: number) => shared.realAuth?.holdForRestore(ms)),
 		releaseRestoreHold: vi.fn(() => shared.realAuth?.releaseRestoreHold()),
+		shortenRestoreHold: vi.fn((ms: number) => shared.realAuth?.shortenRestoreHold(ms)),
 		get restoreHold() {
 			return shared.realAuth?.restoreHold ?? false;
 		},
@@ -577,5 +579,54 @@ describe('AdminRestorePanel — Story 36-5 (maintien de session)', () => {
 		expect(authState.restoreHold).toBe(true);
 		await vi.advanceTimersByTimeAsync(1);
 		expect(authState.restoreHold).toBe(false);
+	});
+
+	it('revue P1, E1-1 : après un échec, un nouvel import activé par `click` seul retire l’écouteur — aucun geste ne lève le maintien', async () => {
+		mockApi.uploadFullImport.mockRejectedValueOnce({
+			code: 'INVALID_BACKUP_STRUCTURE',
+			message: 'x',
+			status: 400,
+		});
+		const envoi = enAttente<ReturnType<typeof succes>>();
+		mockApi.uploadFullImport.mockReturnValueOnce(envoi.promise);
+		const { getByTestId, findByTestId } = render(AdminRestorePanel);
+		await importer(getByTestId, findByTestId);
+		await findByTestId('admin-restore-error');
+		// Second import : « Importer » puis « Confirmer » par `click` seul (sans pointerdown).
+		await fireEvent.click(getByTestId('admin-restore-import-button'));
+		await fireEvent.click(await findByTestId('admin-restore-confirm'));
+		expect(mockApi.uploadFullImport).toHaveBeenCalledTimes(2);
+		// Phase 1 : un geste ne lève rien.
+		await fireEvent.keyDown(window, { key: 'a' });
+		await fireEvent.pointerDown(window);
+		expect(mockAuth.releaseRestoreHold).not.toHaveBeenCalled();
+		expect(authState.restoreHold).toBe(true);
+		// Phase 2 : non plus, jusqu'à B.
+		envoi.resolve(succes(1, 0));
+		await findByTestId('admin-restore-success');
+		await fireEvent.keyDown(window, { key: 'b' });
+		await fireEvent.pointerDown(window);
+		expect(mockAuth.releaseRestoreHold).not.toHaveBeenCalled();
+		expect(authState.restoreHold).toBe(true);
+	});
+
+	it('revue P1, E1-2 : après un échec certain, l’échéance est ramenée à B (1 min) à partir de l’échec', async () => {
+		horlogeSimulee();
+		shared.minutes = 1;
+		const envoi = enAttente<ReturnType<typeof succes>>();
+		mockApi.uploadFullImport.mockReturnValue(envoi.promise);
+		const { getByTestId, findByTestId } = render(AdminRestorePanel);
+		await importer(getByTestId, findByTestId);
+		// L'import dure plus que B, puis échoue : la borne vaut l'échec + B, non la confirmation + B.
+		await vi.advanceTimersByTimeAsync(90_000);
+		expect(authState.restoreHold).toBe(true);
+		envoi.reject({ code: 'INVALID_BACKUP_STRUCTURE', message: 'x', status: 400 });
+		await findByTestId('admin-restore-error');
+		expect(mockAuth.shortenRestoreHold).toHaveBeenCalledWith(60_000);
+		await vi.advanceTimersByTimeAsync(59_999);
+		expect(authState.restoreHold).toBe(true);
+		await vi.advanceTimersByTimeAsync(1);
+		expect(authState.restoreHold).toBe(false);
+		expect(mockAuth.releaseRestoreHold).not.toHaveBeenCalled();
 	});
 });

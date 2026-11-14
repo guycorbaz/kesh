@@ -448,6 +448,33 @@ describe('authState — maintien de restauration (Story 36-5)', () => {
 		expect(authState.restoreHold).toBe(false);
 	});
 
+	it('revue P1, E1-2 : shortenRestoreHold() ramène l’échéance à au plus maintenant + durée', () => {
+		vi.useFakeTimers({ toFake: ['Date'] });
+		vi.setSystemTime(0);
+		authState.holdForRestore(3_600_000);
+		vi.setSystemTime(10_000);
+		authState.shortenRestoreHold(60_000);
+		vi.setSystemTime(69_999);
+		expect(authState.restoreHold).toBe(true);
+		vi.setSystemTime(70_000);
+		expect(authState.restoreHold).toBe(false);
+	});
+
+	it('revue P1, E1-2 : shortenRestoreHold() n’allonge jamais, et ne pose rien sans maintien', () => {
+		vi.useFakeTimers({ toFake: ['Date'] });
+		vi.setSystemTime(0);
+		authState.holdForRestore(60_000);
+		vi.setSystemTime(30_000);
+		authState.shortenRestoreHold(3_600_000);
+		vi.setSystemTime(59_999);
+		expect(authState.restoreHold).toBe(true);
+		vi.setSystemTime(60_000);
+		expect(authState.restoreHold).toBe(false);
+		authState.releaseRestoreHold();
+		authState.shortenRestoreHold(60_000);
+		expect(authState.restoreHold).toBe(false);
+	});
+
 	it('AC6 : clearSession() remet le maintien à zéro', () => {
 		authState.holdForRestore(60_000);
 		authState.clearSession({ broadcast: false });
