@@ -177,3 +177,19 @@ de C-e360-8 (« forme exacte à la fiche »). Chaque choix : contexte, option re
   `heartbeatAt`, mouvements, seconde partie à compteur `page.route` sur `/auth/activity`, sans corps binaire).
 - **Écartées** : `route.fetch()` (corps altéré) ; `page.clock` (déjà écartée par la fiche).
 - **Réversible** : oui.
+
+### C-36-5-14 — Après un échec, l'échéance est ramenée à B, jamais allongée (revue de code P1, E1-2)
+
+- **Contexte** : la règle « l'échéance de la confirmation est gardée » laissait un écran sans geste ouvert jusqu'à
+  `confirmation + importHoldMs(B)` (au moins 121 min) après un échec rendu en quelques secondes.
+- **Retenu** (remède de l'orchestrateur) : `authState.shortenRestoreHold(B)` dans le `finally`, qui pose
+  `min(échéance courante, maintenant + B)` et ne pose rien sans maintien ; B relu à ce moment (`readingMs()`).
+- **Écartée** : `holdForRestore(B)` à l'échec — allongerait l'échéance d'un import long qui échoue près de sa borne.
+- **Réversible** : oui.
+
+### C-36-5-15 — B relu au succès et à l'échec (revue de code P1, E1-4)
+
+- **Contexte** : B était figé à la confirmation ; une durée apprise pendant l'import (`learnFromMe`) n'était pas prise.
+- **Retenu** : `readingMs()` rappelé au succès et dans le `finally` ; la phase 1 garde la valeur de la confirmation. Le manuel
+  dit le repli : « soixante minutes si l'écran ne la connaît pas encore ».
+- **Réversible** : oui.

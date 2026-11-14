@@ -287,9 +287,10 @@ le second grep couvre `goto` et `redirect`. Aucun autre site.
     gravité (`api-client.ts:195-196`) ;
   - **issue inconnue** (`unknownOutcome` vrai, `:158`) **et échec certain** (toute autre erreur que le 401 de l'import) :
     le message d'échec s'affiche ; **le maintien est levé au premier geste de l'utilisateur qui suit** — le premier
-    `pointerdown` ou `keydown` sur la fenêtre (un écouteur posé une fois, en capture, par le panneau, retiré après usage et
-    au démontage) —, ou au démontage, ou au plus tard à l'échéance déjà posée (validation P4, V4-5, forme la plus simple
-    retenue : un seul geste, quel qu'il soit, vaut lecture du message). Tant qu'il dure, D2 fait que rien ne change pour
+    `pointerdown` ou `keydown` sur la fenêtre (un écouteur posé une fois, en capture, par le panneau, retiré après usage,
+    au démontage et au départ d'un nouvel import — revue P1, E1-1) —, ou au démontage, ou au plus tard à l'échéance,
+    ramenée à au plus `maintenant + B` au moment de l'échec, jamais allongée (revue P1, E1-2 ; `shortenRestoreHold`)
+    (validation P4, V4-5, forme la plus simple retenue : un seul geste, quel qu'il soit, vaut lecture du message). Tant qu'il dure, D2 fait que rien ne change pour
     une session vivante (battement, avertissement, *Rester connecté*), et qu'une session déjà échue ou invalidée ne renvoie
     pas à la connexion sous les yeux de l'utilisateur : le message reste lisible. Au geste, la levée rend le régime
     ordinaire — si la session est échue, le tic suivant ferme (`/login?reason=idle`) ; si l'import a abouti, le 401 suivant
@@ -770,6 +771,53 @@ et l'union se vérifie à l'intégration.
 **Issues à ouvrir** (demandées à l'orchestrateur) : la connexion faite dans un autre onglet pendant la phase 2 (Dev Notes,
 *Hors périmètre*, V4-8 : cet onglet absorbe les 401 de la session neuve et ne la ferme pas pour inactivité, au plus B).
 
+### Remédiation de la revue de code P1 (2026-11-15)
+
+Revue P1 : B 0/0/0/3, E 0/1/1/2, A 0/0/0/5 (`kesh-gate-logs/e36-5/review-p1-{B,E,A}.md`). Prémisses relues au code avant
+d'appliquer. Commits : `f142298e7` (code et tests, **dernier commit de code**), `85359e0f2` (fiche, manuel), puis ce compte
+rendu (avec le registre C-36-5-14, C-36-5-15 et le prompt de la P2).
+
+- **E1-1 (HIGH) = B1-1** — confirmé : `confirmImport` ne retirait pas l'écouteur d'un échec précédent (`grep -nF
+  "disarmGesture"` : aucun appel dans `confirmImport`). Corrigé : `disarmGesture?.()` après la garde de ré-entrance, avant le
+  maintien. Test : échec 400, nouvel import par `click` seul, `keydown`/`pointerdown` pendant l'import puis pendant la lecture :
+  aucune levée, `restoreHold` vrai. Mutation **M24** tuée.
+- **E1-2 (MEDIUM)** — confirmé : le `finally` gardait l'échéance de la confirmation (≥ 121 min). Corrigé :
+  `authState.shortenRestoreHold(B)` (nouveau, `min(échéance, maintenant + B)`, rien sans maintien) dans le `finally` (C-36-5-14).
+  Formulation unique de la borne récrite aux trois endroits (identiques, recompté), D3 « issue inconnue et échec certain »
+  et AC3 (a) complétés ; la borne finale reste vraie. Tests : deux au store, un au panneau (B = 1 min, import de 90 s puis
+  échec : vrai à `+59 999`, faux à `+60 000`). Mutations **M25** et **M26** tuées. Manuel : la phrase du succès ne change pas ;
+  le paragraphe de l'issue inconnue (`:2342`) ne décrit pas de durée, inchangé.
+- **E1-3 (LOW)** — gardé et écrit : la minuterie de lecture est armée en premier, et un commentaire dit pourquoi rien ne jette
+  entre `keepHold = true` et la fin du `try` (une lecture, un `setTimeout`, une affectation, `stop()` qui retire des écouteurs).
+- **E1-4 (LOW)** — B relu au succès et dans le `finally` (`readingMs()`), la phase 1 gardant la valeur de la confirmation
+  (C-36-5-15) ; incise au manuel : « soixante minutes si l'écran ne la connaît pas encore ».
+- **B1-2 (LOW)** — commentaire de `_restoreHoldUntil` : `hydrate()` ne lève pas le maintien, et pourquoi.
+- **B1-3 (LOW)** — garanti par l'ordre : minuterie armée avant le maintien ; le cas d'une minuterie retardée par le
+  navigateur est écrit au commentaire (un 401 entre-temps mène à la même connexion).
+- **A1-1 (LOW)** — table annotée : M18 tuée par AC5 bis (a) seul.
+- **A1-2 (LOW)** — les journaux « avant » sont annotés (commit du code servi : l'export de `29762b89a`) ; deux annotations
+  portaient d'abord un commit faux (`69f18b23a` pour `-r2` et `-r3`), corrigées par une ligne ajoutée. `e2e-e36-5.sh` écrit
+  désormais le commit du code servi et celui du worktree.
+- **A1-3 (LOW)** — le rouge de l'E2E nomme la page (`compte rendu jamais affiché — page sur <URL>`). Écart au remède proposé :
+  un contrôle d'URL placé **avant** la visibilité passerait, la redirection pouvant ne pas être encore faite ; l'URL est donc
+  écrite dans le message d'échec de la visibilité.
+- **A1-4 (LOW)** — M8 non jouée en E2E : la ligne de la table le dit.
+- **A1-5 (LOW)** — les journaux de la remédiation portent leur commit en première ligne.
+
+**Tests de la remédiation** (de `1fbda93a7` à `f142298e7`) : Vitest +4 (`auth.svelte.test.ts` 27 → 29,
+`AdminRestorePanel.test.ts` 29 → 31) ; l'E2E modifié (message), non ajouté. **Mutations**, campagne 2 sur `f142298e7`
+(`mut/resume.log`, `mut/campagne-2.console.log`) : **36 sur 36 tuées** (M1 à M23, plus M24 à M26 ; ancres de M5, M5″ et M14
+mises à jour pour le `finally` en bloc et la minuterie de `reading`).
+
+**Gates de la remédiation** (bases `kesh_e365` et `kesh_e2e_e365` remises à neuf ; commit `85359e0f2`, dernier commit de code
+`f142298e7`, en première ligne de chaque journal) :
+- Vitest ciblé : 5 fichiers, 194/194 (`r1-vitest-cible.log`, sur `f142298e7` non commité encore — avant le commit, mêmes sources).
+- `scripts/test-fast.sh --ci` : **5445 passés, 13 ignorés** (`r1-test-fast-ci.log`).
+- Frontend complet : `check` 0 erreur (29 avertissements préexistants) ; `lint-i18n-ownership` vert ; `test:unit` **234 fichiers,
+  3463 tests** ; `build` vert (`r1-front-*.log`).
+- Test de D5 dix fois sur ce build : **10 passés** (`repetition-apres-d5-r3.log`, test à `:381`).
+- **Non lancés**, selon la consigne : `gate-ci` et l'E2E complet (clôture).
+
 ## Change Log
 
 - 2026-11-14 — Fiche rédigée (Epic 36, phase 1), sur `4de0bcc7e`. Choix propres : `e36-choix-autonomes-36-5.md`
@@ -903,3 +951,8 @@ et l'union se vérifie à l'intégration.
   E2E de D5 rouge 3/3 avant et vert 10/10 après ; 33 mutations tuées sur 33 ; répétition 0 rouge avant (0/30, 0/30) et
   après ; `test-fast --ci`, `gate-ci`, frontend complet verts ; E2E complet à la clôture. Choix C-36-5-10 à C-36-5-13.
   Détail et journaux : Dev Agent Record. `Status: review`.
+- 2026-11-15 — **Revue de code P1** (B, E, A) : 0/0/0/3, 0/1/1/2, 0/0/0/5 → **remédiée** (Opus 5.5) : E1-1 (HIGH) et E1-2
+  (MEDIUM) corrigés au code (`f142298e7`), la borne du maintien récrite (« échéance ramenée à au plus `maintenant + B`,
+  jamais allongée », C-36-5-14) ; les dix LOW traités (code, fiche, journaux, manuel). 4 tests Vitest, mutations M24 à M26 ;
+  36/36 tuées. `test-fast --ci`, frontend complet, test de D5 ×10 verts. La règle de la borne changeant, la passe suivante
+  est **complète, à deux lentilles** (E, A) : `36-5-restauration-compte-rendu-review-prompt-p2.md`.
