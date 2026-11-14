@@ -80,7 +80,8 @@ là où elles divergent.
   EUR 0.9295) ; `j=2027&m=1` est vide. Le mois suivant paraît donc **avant le 25**, et la définition « du 25 au 24 »
   n'est pas vérifiable en l'état. Calendrier retenu, sûr dans les deux lectures : **une vérification par jour**
   (dès le 1er du mois) tant que le mois courant ou le mois suivant manque pour un exercice multi-devises, puis
-  plus rien jusqu'au mois suivant ; plus le démarrage et la connexion. `POST /fetch` admet le mois suivant à toute
+  plus rien jusqu'au mois suivant ; plus le démarrage et la connexion (la connexion ne déclenche rien quand seul le
+  mois suivant manque : arbitrage CR2-P4-3). `POST /fetch` admet le mois suivant à toute
   date (non publié → `404 RATE_NOT_PUBLISHED`). Le manuel ne décrit la méthode de calcul qu'après confirmation.
 - **R5 — Données reprises filtrées.** Tout ce qui vient de la source est validé strictement (taille, structure,
   refus de DOCTYPE et d'entités, codes, nombres, bornes, mois et dates), avec des tests de réponses hostiles.

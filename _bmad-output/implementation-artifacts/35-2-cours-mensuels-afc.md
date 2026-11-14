@@ -307,7 +307,7 @@ cours sans saisie.
      qu'aucun exercice ne les couvre), elle **dort jusqu'au 1er du mois suivant** (un **jour** d'ouverture ou de clôture
      manquant ne réveille pas la tâche : le jour de clôture du 31.12 devient récupérable le 1er janvier et se récupère
      au tour du réveil (b) de ce 1er janvier, 00:00 ; un jour qui n'est pas une veille de 1er, ou dont ce tour a échoué,
-     se récupère au prochain démarrage, à la prochaine connexion — qui lance un tour pour toute unité manquante — ou au
+     se récupère au prochain démarrage, à la prochaine connexion — qui lance un tour pour toute unité manquante autre que le seul mois suivant — ou au
      plus tard le 1er du mois suivant ; test de `prochain_reveil` : un jour seul manquant ne change pas le réveil) ; (c) un tour échoué ou `not_published` dans la
      fenêtre (b) se retente au réveil du lendemain (le « jour ouvrable suivant » de la source est ainsi couvert).
      Chaque tour traite **toutes** les unités utiles qui manquent (pas seulement le mois suivant : une restauration ou
@@ -317,12 +317,14 @@ cours sans saisie.
      de mois, 31.12 → 01.01, changement d'heure ; mois suivant non publié le 1er → lendemain).
    - **À la connexion (R4)** : après un `POST /api/v1/auth/login` réussi (`routes/auth.rs:235`), une **tâche
      détachée** (`tokio::spawn`, jamais attendue : la connexion ne dépend jamais de la source) juge elle-même si une
-     unité utile manque pour un exercice de la société de l'utilisateur — **le mois suivant excepté**, que seule la tâche
-     quotidienne redemande (arbitrage de l'orchestrateur sur CR2-P4-3 : « une vérification par jour ») — et lance alors un
+     unité utile manque pour un exercice de la société de l'utilisateur — **le mois suivant excepté**, qui ne suffit pas à lancer
+     un tour (seule la tâche quotidienne le fait redemander seul ; arbitrage de l'orchestrateur sur CR2-P4-3 : « une
+     vérification par jour ») — et lance alors un
      tour — aucune lecture n'est
      ajoutée au chemin de la connexion —, au plus une fois toutes les 15 minutes pour
      l'installation (horodatage en mémoire d'`AppState`, comme `rate_fetch_memo`) ; le renouvellement de session
-     (`refresh`) ne déclenche rien. Test : la réponse de connexion ne dépend ni du succès ni du délai de la source.
+     (`refresh`) ne déclenche rien. Test : la réponse de connexion ne dépend ni du succès ni du délai de la source ; connexion avec seul le mois suivant
+     manquant → aucun tour (aucune ligne `_kesh_exchange_rate_fetch`, aucun appel sortant).
    - Lancement de `main.rs` **seulement**, avec un commentaire de renvoi à la garde comme `main.rs:463-466`, et **ni la
      tâche ni le déclenchement à la connexion en `KESH_TEST_MODE`** (`if !config.test_mode`) : un tour tomberait au
      milieu de la suite E2E avec la réponse que la spec en cours aurait pilotée — les tours se testent en Rust
@@ -831,3 +833,4 @@ cours sans saisie.
 - 2026-11-14 — arbitrage de l'orchestrateur sur CR2-P4-3 : le déclenchement à la connexion ne compte pas le mois
   suivant parmi les unités manquantes ; seule la tâche quotidienne le redemande. Test : connexion avec seul le mois
   suivant manquant → aucun tour. Relu par une passe ciblée.
+- 2026-11-14 — validation CR-2 P5 ciblée (Sonnet) : 0 CRITICAL, 0 HIGH, 0 MEDIUM, 2 LOW remédiés, 1 signalé. 35-2-CR2-P5-1 (AC-4, parenthèse du jour de clôture) : « la prochaine connexion — qui lance un tour pour toute unité manquante » contredisait l'arbitrage (le mois suivant seul ne lance rien) : précisé. 35-2-CR2-P5-2 (AC-4, connexion) : le test de l'arbitrage (connexion, seul le mois suivant manquant → aucun tour) n'était qu'au Change Log : porté à l'AC ; la formule « que seule la tâche quotidienne redemande » est reformulée (un tour lancé par une autre unité manquante traite aussi le mois suivant, « toutes les unités utiles »). 35-2-CR2-P5-3 (signalé, hors fiche) : le fichier d'epic, R4 amendé, dit « plus le démarrage et la connexion » sans l'exception du mois suivant ; 35-3b et 35-5 ne parlent pas de la connexion (aucun écart). Cohérence vérifiée avec `prochain_reveil`, la mémoire des 15 minutes, l'`info!` du `not_published`. Axes non exercés : compilation, reste de la fiche hors remédiation.
