@@ -964,3 +964,8 @@ devise au cours d'ouverture choisi pour l'exercice (R6), afin de tenir mes livre
   `applyToNextOpening` absent = `false`), `Cell.row.version` du `GET` ; A23 ; Terminologie et R4 amendé/S1 ; seed
   `with-company` (`test_fixtures.rs:118-119`, un seul exercice : pas d'exercice suivant). Non exercés : reste de la
   fiche hors diff, Vitest, PDF, audit, sauvegarde. Aucun finding inter-fiche.
+- 2026-11-14 — validation CR-5 P3 ciblée (Sonnet) : 0 CRITICAL, 0 HIGH, 0 MEDIUM, 0 LOW. Axes exercés : diff
+  `3b058509..dc6c1c5a` de la fiche (deux phrases de l'AC-5, E2E) ; conclusion du ↑ (`afc`) placée au ↑, cohérente avec
+  `expectedRate` `null` de 35-3a AC-4 (l. 266) et avec l. 298-301 de la fiche (« Garder mon cours » → `manual`,
+  CHF non recalculé) ; 35-3a l. 823 ; A30 sans objet ici (35-2 seulement). Non exercés : reste de la fiche hors diff,
+  Vitest, PDF, audit, sauvegarde. Aucun finding inter-fiche.

@@ -139,12 +139,13 @@ cours sans saisie.
      `source VARCHAR(12) CHARACTER SET ascii COLLATE ascii_bin NOT NULL` (`chk_exchange_rates_source` : `BINARY source
      REGEXP '^[a-z]{2,12}$'` — **format seul, aucune énumération** (A28, CR-5) ; `afc` : copie d'un cours récupéré, ou
      valeur publiée reprise par ↑ ; `manual` : cours saisi par la société ; les valeurs admises sont contrôlées **par le
-     code** (`RateOrigin` : une valeur inconnue lue est une erreur interne, jamais ignorée), si bien qu'une source
-     future, p. ex. `ecb`, s'ajoute sans DDL — élargir un `CHECK` d'énumération demanderait un `DROP CONSTRAINT` puis
-     un `ADD CONSTRAINT` (P3 ne les liste pas ; c'est la valeur neuve, non le DDL, qui relève de P1). Ce que le format
-     seul n'épargne pas : un binaire antérieur qui lit une source qu'il ne connaît pas rend une erreur interne ; la
-     release qui écrit la première une source neuve se juge donc encore au regard de P1 (bump de
-     `kesh_version_min_required` par une migration, P2, ou lecture tolérante, à décider alors)), `acknowledged_rate DECIMAL(20,10) NULL`
+     code** (`RateOrigin { Afc, Manual, Other(String) }` : la lecture d'une valeur inconnue est **tolérante** (A30) —
+     `Other(source)`, affichée telle quelle, jamais une erreur interne ; seules `afc` et `manual` s'écrivent aujourd'hui),
+     si bien qu'une source future, p. ex. `ecb`, s'ajoute sans DDL — élargir un `CHECK` d'énumération demanderait un
+     `DROP CONSTRAINT` puis un `ADD CONSTRAINT` (P3 ne les liste pas). Dès cette version, la release qui écrit la première
+     une source neuve n'a donc **plus à relever `kesh_version_min_required`** ni à livrer une migration breaking pour elle
+     (A28, A30) ; le binaire de cette version lit la ligne sans erreur. Un binaire antérieur à cette version, lui,
+     n'aurait pas cette tolérance, mais il ne démarre de toute façon pas sur une base migrée (P1)), `acknowledged_rate DECIMAL(20,10) NULL`
      et `acknowledged_at DATETIME(3) NULL` (UTC) — l'**acquittement par société** d'une correction de l'AFC : la valeur
      publiée (par unité) que la société a vue et acquittée (AC-5) ; `chk_exchange_rates_ack_pair` (les deux `NULL` ou les
      deux non `NULL`) et `chk_exchange_rates_ack_afc` (`acknowledged_rate IS NULL OR source = 'afc'`) —, `version INT NOT
@@ -434,7 +435,7 @@ cours sans saisie.
      lignes EUR copiées ; `PUT` de compte no-op → aucune copie ; aucun exercice multi-devises ouvert → rien (tests
      délégués par 35-1 AC-4) ; compte archivé en JPY → JPY encore copié ;
      activation → aucune ligne copiée, `copied` absent de son audit ;
-     désactivation puis réactivation → lignes conservées, aucune doublée ; correction (AC-3 (c)) → ligne `afc` inchangée ; création d'un exercice multi-devises,
+     désactivation puis réactivation → lignes conservées, aucune doublée ; correction (AC-3 (c)) → ligne `afc` inchangée ; ligne `source = 'ecb'` posée par SQL (A30) → lue par `find_company_rate_in_tx`, `source` affichée `ecb`, aucune erreur interne (ni 500) ; création d'un exercice multi-devises,
      passage en multi-devises, changement de genre → cours déjà récupérés copiés (un mois, l'Ouverture `month` du mois
      précédant l'exercice, un jour de Clôture) ; deux copies concurrentes → une ligne, aucune erreur ; `updated_by`
      `NULL`, aucune ligne d'audit propre.
@@ -559,7 +560,7 @@ cours sans saisie.
      `manual`) — jamais `_kesh_fetched_exchange_rates`, qui ne sert qu'à la copie (AC-3 bis) et à l'**information**
      (valeur publiée affichée, écart signalé). Une seule fonction de dépôt le lit (nom au développement, p. ex.
      `exchange_rates::find_company_rate_in_tx(conn, company_id, currency, kind, rate_date) ->
-     Result<Option<CompanyRate>, DbError>`, `CompanyRate { id, rate, source: RateOrigin { Afc, Manual }, version,
+     Result<Option<CompanyRate>, DbError>`, `CompanyRate { id, rate, source: RateOrigin { Afc, Manual, Other(String) } (A30), version,
      acknowledged_rate, updated_at }`, `&mut MySqlConnection`) : `lookup`, les `GET`, 35-3a (`FX_RATE_NOT_AFC`), 35-3b
      (par `lookup`) et 35-5 passent par elle. La lecture de la valeur publiée, pour l'affichage seulement,
      `find_fetched_rate_in_tx(conn, source, currency, kind, rate_date)` (nom au développement ; ex-`find_rate_in_tx`),
@@ -1525,3 +1526,11 @@ cours sans saisie.
   `retry.rs` des deux crates, `routes/accounts.rs:267`, `:337` ; P3 de `CLAUDE.md`. Non exercés : 35-3a, 35-3b, 35-4,
   35-5 (aucune phrase du diff n'y renvoie hors 35-3b/35-5 pour le filet `lookup`, inchangé), rendu de l'écran,
   compilation, gate, sémantique exacte des verrous InnoDB d'un `IN (SELECT …)` (raisonnée, non exécutée).
+- 2026-11-14 — validation CR-5 P3 ciblée (Sonnet) : 0 CRITICAL, 0 HIGH, 1 MEDIUM, 0 LOW ; remédié dans la fiche, aucun
+  inter-fiches. MEDIUM : 35-2-CR5-P3-1 (AC-1, AC-3 bis) alignement A30 : la lecture d'une `source` inconnue devient
+  tolérante (`RateOrigin::Other(String)`, affichée telle quelle) ; le passage « erreur interne, jamais ignorée » et le
+  jugement P1 « à décider alors » ajoutés en P2 sont réécrits (plus de relèvement de `min_required` à prévoir pour une
+  source neuve) ; signature `CompanyRate.source` complétée ; test `source = 'ecb'` ajouté. Le reste du diff P2
+  (activation retirée, `currencies`, verrous, `retry_app_on_deadlock` `kesh-api/src/retry.rs:40`, `retry_on_deadlock`
+  `kesh-db/src/retry.rs:151`) relu : cohérent avec 35-1 AC-3/AC-4. Non exercés : 35-3a, 35-3b, 35-4, 35-5 au-delà des
+  renvois, compilation, gate, rendu.
