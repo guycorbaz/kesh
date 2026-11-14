@@ -1962,8 +1962,9 @@ pub async fn pay_in_tx(
 
 /// Le corps du règlement d'une facture fournisseur, **avec son acteur**
 /// (Story 30-1b, #686, AC-b9) : l'audit `supplier_invoice.paid` passe par
-/// [`NewAuditLogEntry::for_actor`] et le lettrage reçoit la clé d'API. Un seul
-/// corps pour la fiche, la confirmation d'un lot ([`pay_in_tx`]) et
+/// [`NewAuditLogEntry::for_actor`] et le lettrage reçoit la clé d'API ; depuis
+/// la Story 35-8a2 (#431), l'écriture de règlement aussi (`journal_entry.created`
+/// porte l'acteur entier). Un seul corps pour la fiche, la confirmation d'un lot ([`pay_in_tx`]) et
 /// l'acceptation de la réconciliation (`accept_one_supplier_invoice`, qui
 /// passe la clé de la requête) : aucun jumeau.
 ///

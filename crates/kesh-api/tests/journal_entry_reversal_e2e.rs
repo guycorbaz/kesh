@@ -3907,23 +3907,15 @@ async fn id_admin(pool: &MySqlPool) -> i64 {
 }
 
 /// L'acteur d'une trace : `(actor_type, actor_api_key_id, user_id)` de l'unique
-/// entrée `action` sur `entity_type`/`entity_id`.
+/// entrée `action` sur `entity_type`/`entity_id` — unicité assertée
+/// ([`common::audit_actor_unique`]).
 async fn acteur_de(
     pool: &MySqlPool,
     action: &str,
     entity_type: &str,
     entity_id: i64,
 ) -> (String, Option<i64>, i64) {
-    sqlx::query_as(
-        "SELECT actor_type, actor_api_key_id, user_id FROM audit_log \
-         WHERE action = ? AND entity_type = ? AND entity_id = ?",
-    )
-    .bind(action)
-    .bind(entity_type)
-    .bind(entity_id)
-    .fetch_one(pool)
-    .await
-    .unwrap_or_else(|e| panic!("trace {action} de {entity_type} {entity_id} : {e}"))
+    common::audit_actor_unique(pool, action, entity_type, entity_id).await
 }
 
 /// `POST /api/v1/journal-entries` sous le jeton donné ; rend l'id créé.

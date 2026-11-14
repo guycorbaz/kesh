@@ -26,9 +26,11 @@
 //!    entrée littéralement sans clé (`letterings::Actor { …, api_key_id: None }`) ;
 //! 4. `for_actor(<user_id>, None, …)` — la forme threadée, clé jetée ;
 //! 5. `delete_in_tx(…, None, …)` — le `None` **positionnel** de la suppression
-//!    d'une écriture (C-e350-52). **Aucun site depuis la Story 35-8a2** :
-//!    `delete_in_tx` prend l'`Acteur` entier ; le motif reste, et sa sonde (h),
-//!    contre un retour de la forme.
+//!    d'une écriture (C-e350-52). **Forme morte depuis la Story 35-8a2** :
+//!    `delete_in_tx` prend l'`Acteur` entier, un `None` à sa place ne compile
+//!    plus, et la forme qui jetterait la clé est désormais
+//!    `Acteur::utilisateur(…)` (motif 2). Le motif reste, avec sa sonde (h),
+//!    par prudence contre un retour de l'ancienne signature.
 //!
 //! # Sa clé : le SITE, non le fichier
 //!
@@ -924,7 +926,9 @@ fn sonde_g_cfg_not_test_reste_compte() {
 }
 
 /// (h) Un `delete_in_tx(…, None, …)` ajouté dans une fonction non listée est
-/// compté ; la clé passée ne l'est pas, ni la définition.
+/// compté ; la clé passée ne l'est pas, ni la définition. `f` garde la forme de
+/// l'ancienne signature (celle que le motif 5 guette, morte depuis la 35-8a2) ;
+/// `g`, la signature d'aujourd'hui, l'`Acteur` entier.
 #[test]
 fn sonde_h_delete_in_tx_sans_cle_est_compte() {
     // La définition porte un paramètre écrit `None` (revue P1, E5) : sans le saut
@@ -932,7 +936,7 @@ fn sonde_h_delete_in_tx_sans_cle_est_compte() {
     let s = sites_de(
         "pub(crate) async fn delete_in_tx(tx: T, None) {}\n\
          fn f(tx: T) {\n    super::journal_entries::delete_in_tx(\n        tx, 1, 2, None, false,\n    )\n    .await;\n}\n\
-         fn g(tx: T, a: Acteur) {\n    delete_in_tx(tx, 1, a.user_id, a.api_key_id, false).await;\n}\n",
+         fn g(tx: T, acteur: Acteur) {\n    delete_in_tx(tx, 1, acteur, false).await;\n}\n",
     );
     assert_eq!(s, [("f".to_string(), Motif::DeleteInTxNone)]);
 }

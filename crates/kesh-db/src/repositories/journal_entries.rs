@@ -6062,7 +6062,8 @@ mod tests {
     // ─── Story 15-8a (#532) : la modification, rétablie ───
     //
     // Tests de l'ancien `update`, retirés par la 24-4b (`git show 08e20353`),
-    // repris un par un contre la nouvelle signature (`actor_api_key_id`), plus
+    // repris un par un contre la signature de la 15-8a (`actor_api_key_id`,
+    // aujourd'hui l'`Acteur` entier, Story 35-8a2), plus
     // le jumeau `non imputable` et l'inversion du grandfathering de postabilité.
 
     /// Trois comptes actifs distincts issus du seed.

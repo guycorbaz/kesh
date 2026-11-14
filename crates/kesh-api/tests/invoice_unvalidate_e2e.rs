@@ -618,15 +618,13 @@ async fn la_validation_par_cle_ecrit_encore_l_ecriture_au_nom_du_createur(pool: 
         .unwrap();
     assert_eq!(resp.status(), 200, "validation par clé");
     let (_, _, _, je) = etat(&pool, id).await;
-    let (actor_type, cle, user_id): (String, Option<i64>, i64) = sqlx::query_as(
-        "SELECT actor_type, actor_api_key_id, user_id FROM audit_log \
-         WHERE action = 'journal_entry.created' AND entity_type = 'journal_entry' \
-           AND entity_id = ?",
+    let (actor_type, cle, user_id) = common::audit_actor_unique(
+        &pool,
+        "journal_entry.created",
+        "journal_entry",
+        je.expect("écriture de la facture"),
     )
-    .bind(je.expect("écriture de la facture"))
-    .fetch_one(&pool)
-    .await
-    .unwrap();
+    .await;
     assert_eq!(
         (actor_type.as_str(), cle, user_id),
         ("user", None, admin_id)

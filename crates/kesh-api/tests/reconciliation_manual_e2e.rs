@@ -1372,17 +1372,19 @@ async fn post_manual_by_an_api_key_attributes_the_entry_to_the_key(pool: MySqlPo
         ("reconciliation.manual_matched", "bank_transaction", tx_id),
         ("journal_entry.created", "journal_entry", je_id),
     ] {
-        let acteur: (String, Option<i64>, i64) = sqlx::query_as(
+        // Unicité assertée (revue P1, B6 = A6 = E5) : ce binaire n'a pas le
+        // module `common`, d'où la forme en ligne d'`audit_actor_unique`.
+        let acteurs: Vec<(String, Option<i64>, i64)> = sqlx::query_as(
             "SELECT actor_type, actor_api_key_id, user_id FROM audit_log \
              WHERE action = ? AND entity_type = ? AND entity_id = ?",
         )
         .bind(action)
         .bind(entity_type)
         .bind(id)
-        .fetch_one(&pool)
+        .fetch_all(&pool)
         .await
         .unwrap();
-        assert_eq!(acteur, attendu, "{action}");
+        assert_eq!(acteurs, vec![attendu.clone()], "{action}");
     }
 }
 
