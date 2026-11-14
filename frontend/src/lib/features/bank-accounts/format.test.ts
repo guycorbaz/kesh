@@ -251,10 +251,13 @@ describe('Story 35-6 — la saisie du solde d’ouverture, table D3', () => {
 		expect(CASES.filter((c) => c.serverRejects).map((c) => c.raw)).toEqual(['1234567890123456']);
 	});
 
-	// AC3 — l'aperçu de « 1_000 » (#1028) : mille, à l'espace fine U+202F.
+	// AC3 — l'aperçu de « 1_000 » (#1028) : mille, jamais « NaN CHF ». Le séparateur des
+	// milliers est celui de l'ICU qui exécute : espace fine U+202F sous Node 22.22, apostrophe
+	// sous Node 22.23 (CI de la PR #1143) — le test n'en fige aucun.
 	it('« 1_000 » s’affiche 1 000.00 CHF, jamais « NaN CHF »', () => {
 		expect(openingAmountPreview('1_000')).toBe(formatChfBalance('1000'));
-		expect(openingAmountPreview('1_000')).toContain(`1${String.fromCharCode(0x202f)}000.00`);
+		expect(openingAmountPreview('1_000')).toMatch(/^1\D000\.00\sCHF$/u);
+		expect(openingAmountPreview('1_000')).not.toContain('NaN');
 		expect(openingAmountPreview(`1${String.fromCharCode(0x202f)}234.50`)).toBe(
 			formatChfBalance('1234.50'),
 		);
