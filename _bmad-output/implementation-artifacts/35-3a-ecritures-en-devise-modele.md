@@ -267,7 +267,7 @@ chacune (R7), l'écart de change dans la seconde, afin que mes comptes en devise
       `afc`, elle est refusée `FX_RATE_NOT_AFC`, `expectedRate` à `null` (il n'y a pas de cours `afc` à proposer : la
       ligne se garde en `manual`). Ni le cours journalier (D10). Aucune nouvelle valeur de `rate_source`. Sinon 400
       `FX_RATE_NOT_AFC`, `details: { line, expectedRate }` (`exchange_rates.rate` de la ligne `afc` de la société,
-      chaîne décimale sans zéros terminaux, ou `null` si la ligne est `manual` ; clé lue par 35-3b pour proposer le
+      chaîne décimale sans zéros terminaux, ou `null` si la ligne est `manual` ou d'une autre source, A30 ; clé lue par 35-3b pour proposer le
       cours) ; **aucune** ligne de la société pour ce mois → `DbError::RateUnavailable {currency, month}`,
       rendu sous le **même code et le même statut 404** que le `RATE_UNAVAILABLE` de 35-2, avec la même forme de
      `details` : `{ currency: "USD", month: "AAAA-MM-01" }` (35-2 AC-5). Contrôle à la création
@@ -832,3 +832,8 @@ chacune (R7), l'écart de change dans la seconde, afin que mes comptes en devise
   test de concurrence non exécuté. Arbitrages A23–A29 : sans point de contact ici (A24 : la copie couvre la devise du compte de
   la ligne, 35-1/35-2).
 - 2026-11-14 — alignement A30 (orchestrateur, Sonnet) : une `source` de cours inconnue (`RateOrigin::Other(String)`, p. ex. `ecb`, 35-2 AC-1) se traite comme `manual` au contrôle `FX_RATE_NOT_AFC` (AC-4, 4) : ligne de la société `manual` ou de toute source autre que `afc`, ligne d'écriture `afc` refusée, `expectedRate` `null` ; test (b bis) ajouté (ligne `ecb` → refus, `expectedRate` `null`). Noms repris de 35-2 (`RateOrigin`, `find_company_rate_in_tx`).
+- 2026-11-14 — validation CR-5 P5 ciblée (Opus) : 0 CRITICAL, 0 HIGH, 0 MEDIUM, 1 LOW ; remédié dans la fiche. LOW
+  35-3a-CR5-P5-1 (AC-4, 4) `expectedRate` « `null` si la ligne est `manual` » laissait de côté une autre source, que
+  la phrase précédente traite comme `manual` — « ou d'une autre source, A30 ». Vérifié : test (b bis), noms
+  `RateOrigin::Other`, `find_company_rate_in_tx`, `expectedRate` alignés sur 35-2 AC-1/AC-5 et 35-3b AC-2. Non
+  exercés : reste de la fiche hors diff, compilation.

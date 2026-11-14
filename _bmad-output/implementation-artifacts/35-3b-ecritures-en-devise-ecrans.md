@@ -106,7 +106,8 @@ devise au cours d'ouverture choisi pour l'exercice (R6), afin de tenir mes livre
      ligne `afc` au cours **mensuel** du mois de `entry_date`, à la création **et** au `PUT` pour une ligne nouvelle ou
      modifiée (arbitrage A17) — un cours journalier, ou d'un mois que la date recalculée du complément a quitté, y
      serait refusé dès la création, et toute ligne retouchée de l'écriture d'ouverture le serait aussi. L'écran affiche la provenance (« proposé : cours journalier du JJ.MM.AAAA » ou « proposé : AFC
-     <mois> », ou « cours saisi » quand `source = "manual"` — U1 : la provenance se lit sur `source`, sans
+     <mois> », ou « cours saisi » quand `source = "manual"`, « cours saisi (<source brute>) » pour toute autre source que
+     `"afc"`, p. ex. « cours saisi (ecb) » (A30, comme AC-2 ; Vitest) — U1 : la provenance se lit sur `source`, sans
      comparaison de valeurs, comme au formulaire, AC-2) ; le Change Log de la story le dit. Le genre `day`
      (défaut) propose le cours de clôture de l'exercice antérieur, celui de sa réévaluation (35-5) : un solde repris d'un
      bilan réévalué tombe donc juste ; sinon il se saisit au CHF (« cours OU CHF » ci-dessous), ce qui reprend exactement
@@ -971,3 +972,9 @@ devise au cours d'ouverture choisi pour l'exercice (R6), afin de tenir mes livre
   CHF non recalculé) ; 35-3a l. 823 ; A30 sans objet ici (35-2 seulement). Non exercés : reste de la fiche hors diff,
   Vitest, PDF, audit, sauvegarde. Aucun finding inter-fiche.
 - 2026-11-14 — alignement A30 (orchestrateur, Sonnet) : une `source` de cours inconnue (`RateOrigin::Other(String)`, p. ex. `ecb`, 35-2) se traite comme `manual` à l'AC-2 : `afcRate` est `null` si `source` ≠ `"afc"` ; `rateSource` du ↑ `manual` ; indicateur « cours saisi » suivi de la source brute entre parenthèses ; Vitest ajouté (`lookup` `source: "ecb"` → `afcRate` `null`, ligne `manual`, indicateur). Aligné sur 35-3a AC-4 (`expectedRate` `null`) et 35-2 (`lookup`).
+- 2026-11-14 — validation CR-5 P5 ciblée (Opus) : 0 CRITICAL, 0 HIGH, 1 MEDIUM, 0 LOW ; remédié dans la fiche.
+  MEDIUM 35-3b-CR5-P5-1 (AC-1, ouverture et complément) la provenance affichée (« proposé : AFC <mois> », ou « cours
+  saisi » quand `source = "manual"`) aurait étiqueté « AFC » un cours `ecb` — « cours saisi (<source brute>) » pour
+  toute autre source, comme à l'AC-2, Vitest. Vérifié : AC-2 (`afcRate` `null` si `source` ≠ `"afc"`, ↑ → `manual`,
+  indicateur), tâche `source === 'afc' ? effectiveRate : null` cohérents avec 35-2 et 35-3a. Non exercés : reste de la
+  fiche hors diff, Vitest, rendu.

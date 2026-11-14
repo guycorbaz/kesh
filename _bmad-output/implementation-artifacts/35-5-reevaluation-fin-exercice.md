@@ -185,7 +185,7 @@ clôture et que l'écart aille aux différences de change.
      passations concurrentes (AC-7) fait attendre la seconde sur le verrou de l'exercice pendant que la première
      commite, et constate une seule écriture.
    - **Source du cours** (pour l'audit ; U1, CR-5) : par devise, la **source de la ligne `exchange_rates`** de la
-     résolution par défaut (`defaultSource` de l'AC-1 : `afc` ou `manual`) quand le cours retenu **égale**
+     résolution par défaut (`defaultSource` de l'AC-1, valeur brute : `afc`, `manual` ou autre, A30) quand le cours retenu **égale**
      `defaultRate` (genre `day` ou `month` selon la règle unique de l'AC-1), qu'il vienne de la table ou de `rates`
      (l'écran renvoie les cours préremplis) ; `manual` sinon (genre `request`) — y compris un cours saisi par la société
      (D9, `defaultSource` `manual`), et une devise sans cours retenu (`defaultRate` `null`). La source d'un cours `afc`
@@ -349,7 +349,8 @@ clôture et que l'écart aille aux différences de change.
    cours modifiables par devise (**valable pour cette passation seulement** : le champ n'écrit aucun cours saisi, qui
    se fixe à l'écran *Cours de change*, 35-2 ; sous le champ, le cours retenu par la société (`defaultRate`) quand le
    champ en diffère, sans ↑ ; **source** affichée (U1) : « AFC » (`defaultSource: "afc"`), « cours saisi »
-   (`"manual"`) ou « manuel » (cours modifié ici, `request`) — la même que l'audit ; **genre** affiché : « cours du JJ.MM.AAAA » pour
+   (`"manual"`), « cours saisi (<source brute>) » pour toute autre source (A30, p. ex. « cours saisi (ecb) », comme
+   35-3b AC-2 ; Vitest) ou « manuel » (cours modifié ici, `request`) — la même que l'audit ; **genre** affiché : « cours du JJ.MM.AAAA » pour
    un cours journalier, avec la date de publication si elle diffère, « cours mensuel de <mois> » — signalé comme repli
    au genre de clôture `day` seulement, sans signalement au genre `month` (R6) —, « cours saisi » quand le cours vient
    de la société, D9 ; bouton « Récupérer le cours du JJ.MM.AAAA » quand le genre de clôture est `day`, que le repli
@@ -670,3 +671,9 @@ clôture et que l'écart aille aux différences de change.
 - 2026-11-14 — validation CR-5 P1 (Sonnet) : 0 CRITICAL, 0 HIGH, 1 MEDIUM, 3 LOW ; remédiés dans la fiche ; aucun finding inter-fiches. (MEDIUM 35-5-CR5-P1-1 : `sourceDate` d'une valeur publiée affichée sur un cours `manual` — `null` sauf `defaultSource` `afc`, test ; fonction de lecture nommée. LOW : -2 AC-1, mois courant ou suivant d'une fin d'exercice non passée existent par copie, non seulement saisis ; -3 limite d'un cours retenu changé entre aperçu et passation (genre `request`, source `manual`) ; -4 test de restauration sans appel sortant, `sourceDate` `null`, et manuel AC-8. Vérifié : plus aucun reste de `exchange_rate_overrides`, `_kesh_exchange_rates`, `republished_*`, `find_effective_rate_in_tx` hors historiques des six fiches ; `lookup`/`find_company_rate_in_tx`/`find_fetched_rate_in_tx` de 35-2 AC-5 ; `for_actor` `audit_log.rs:195`, `"fiscal_year"` `audit_labels.rs:40`, `retry_on_deadlock` lus. A23–A29 : sans point de contact ici. Axes non exercés : GET de la source (aucun point de contact), code réel non écrit.)
 - 2026-11-14 — validation CR-5 P2 ciblée (Opus) : 0 CRITICAL, 0 HIGH, 0 MEDIUM, 1 LOW ; remédié dans la fiche ; aucun finding inter-fiches. (LOW 35-5-CR5-P2-1 : `sourceDate` d'un défaut mensuel non dit `null` — explicité, renvoi à 35-2 AC-5 « `sourceDate` à `null` hors `day` ». Vérifié au diff `d59a1de9..3b058509` : `find_fetched_rate_in_tx` (35-2 AC-5, affichage seulement) ; copie du mois courant ou suivant sans borne de date (35-2 AC-3 bis), mois au-delà jamais publié (bornes du `POST /fetch`) ; `_kesh_fetched_exchange_rates` absente du `.keshbackup` (35-2, table système) et tâche et connexion lancées par `main.rs` seul, hors mode test ; limite P1-3 cohérente avec la règle unique de genre et de source. Alignement 35-2 (copie à l'activation) : sans point de contact ici. Axes non exercés : code réel non écrit, reste de la fiche hors diff.)
 - 2026-11-14 — alignement A30 (orchestrateur, Sonnet) : une `source` de cours inconnue (`RateOrigin::Other(String)`, p. ex. `ecb`, 35-2) est affichée et auditée telle quelle (valeur brute, AC-1, AC-6) mais se traite comme `manual` : `sourceDate` `null`, même défaut ; test ajouté (ligne `ecb` → cours proposé, `sourceDate` `null`, `defaultSource` `"ecb"`). Noms repris de 35-2 (`RateOrigin`, `find_company_rate_in_tx`, `sourceDate`).
+- 2026-11-14 — validation CR-5 P5 ciblée (Opus) : 0 CRITICAL, 0 HIGH, 1 MEDIUM, 1 LOW ; remédiés dans la fiche.
+  MEDIUM 35-5-CR5-P5-1 (AC-6) la source affichée n'énumérait que « AFC » et « cours saisi » — « cours saisi (<source
+  brute>) » pour toute autre source, comme 35-3b AC-2, Vitest. LOW -2 (AC-2, source à l'audit) « `defaultSource` :
+  `afc` ou `manual` » contredisait la valeur brute de l'AC-1 et de l'audit — aligné. Vérifié : `sourceDate` `null`
+  hors `afc`, test A30, audit `fx_revaluation.posted` à la valeur brute ; genre (`request` si différent) indépendant
+  de la source. Non exercés : reste de la fiche hors diff, rendu.

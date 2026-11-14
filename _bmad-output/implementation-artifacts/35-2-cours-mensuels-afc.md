@@ -143,15 +143,18 @@ cours sans saisie.
      `Other(source)`, affichée telle quelle, jamais une erreur interne ; seules `afc` et `manual` s'écrivent aujourd'hui ;
      **une ligne `Other` se traite partout comme `manual`**, hors l'affichage et l'audit de sa source, rendue telle
      quelle : elle n'est pas un cours `afc` — `FX_RATE_NOT_AFC` de 35-3a refuse une ligne d'écriture `afc` à ce cours,
-     `expectedRate` à `null` —, son `PUT …/rates` la passe en `manual`, son ↑ (`reset`) en `afc` à la valeur publiée, et
-     aucun acquittement ni reprise ne la vise (`chk_exchange_rates_ack_afc`)),
+     `expectedRate` à `null` —, son `PUT …/rates` la passe en `manual`, son ↑ (`reset`) en `afc` à la valeur publiée (sans
+     valeur publiée : supprimée, comme une ligne `manual`, AC-5), l'écran *Cours de change* l'affiche comme une ligne
+     `manual`, sa source entre parenthèses (AC-6), et aucun acquittement ni reprise ne la vise (`chk_exchange_rates_ack_afc`)),
      si bien qu'une source future, p. ex. `ecb`, s'ajoute sans DDL — élargir un `CHECK` d'énumération demanderait un
      `DROP CONSTRAINT` puis un `ADD CONSTRAINT` (P3 ne les liste pas). Dès cette version, la release qui écrit la première
      une source neuve n'a donc **plus à relever `kesh_version_min_required`** ni à livrer une migration breaking pour elle
      (A28, A30) ; le binaire de cette version lit la ligne sans erreur, et la traite comme `manual` (ci-dessus) — la
      release qui l'écrit vérifie que ce traitement reste juste pour la source neuve. Un binaire antérieur à cette
      version ne connaît pas la table du tout, et ne démarre de toute façon pas sur une base migrée (P1) ; un
-     `.keshbackup` d'une version future portant une source neuve s'importe ici et se lit de même), `acknowledged_rate DECIMAL(20,10) NULL`
+     `.keshbackup` d'une version future portant une source neuve se lit de même **s'il s'importe** — même inventaire de
+     tables (`parse_and_verify_avec_inventaire`, `admin_backup/import.rs:187`) et version minimale du manifeste non
+     supérieure à ce binaire (`routes/admin.rs:235`)), `acknowledged_rate DECIMAL(20,10) NULL`
      et `acknowledged_at DATETIME(3) NULL` (UTC) — l'**acquittement par société** d'une correction de l'AFC : la valeur
      publiée (par unité) que la société a vue et acquittée (AC-5) ; `chk_exchange_rates_ack_pair` (les deux `NULL` ou les
      deux non `NULL`) et `chk_exchange_rates_ack_afc` (`acknowledged_rate IS NULL OR source = 'afc'`) —, `version INT NOT
@@ -441,7 +444,7 @@ cours sans saisie.
      lignes EUR copiées ; `PUT` de compte no-op → aucune copie ; aucun exercice multi-devises ouvert → rien (tests
      délégués par 35-1 AC-4) ; compte archivé en JPY → JPY encore copié ;
      activation → aucune ligne copiée, `copied` absent de son audit ;
-     désactivation puis réactivation → lignes conservées, aucune doublée ; correction (AC-3 (c)) → ligne `afc` inchangée ; ligne `source = 'ecb'` posée par SQL (A30) → lue par `find_company_rate_in_tx` (`RateOrigin::Other("ecb")`), `lookup` et grille rendent `source: "ecb"`, aucune erreur interne (ni 500) ; son `PUT …/rates` → `manual`, son `reset` → `afc` ; création d'un exercice multi-devises,
+     désactivation puis réactivation → lignes conservées, aucune doublée ; correction (AC-3 (c)) → ligne `afc` inchangée ; ligne `source = 'ecb'` posée par SQL (A30) → lue par `find_company_rate_in_tx` (`RateOrigin::Other("ecb")`), `lookup` et grille rendent `source: "ecb"`, aucune erreur interne (ni 500) ; son `PUT …/rates` → `manual`, son `reset` → `afc`, son `reset` sans valeur publiée → supprimée ; devise sans compte à ligne `ecb` dans l'exercice → ligne de la grille sans `all=true` ; création d'un exercice multi-devises,
      passage en multi-devises, changement de genre → cours déjà récupérés copiés (un mois, l'Ouverture `month` du mois
      précédant l'exercice, un jour de Clôture) ; deux copies concurrentes → une ligne, aucune erreur ; `updated_by`
      `NULL`, aucune ligne d'audit propre.
@@ -647,11 +650,11 @@ cours sans saisie.
      - `POST /api/v1/exchange-rates/rates/reset { currency, kind, rateDate, version?, publishedRate? }` — le **↑**
        (« reprendre la valeur publiée ») : la ligne prend la **dernière valeur publiée** (`_kesh_fetched_exchange_rates`,
        `rate_per_unit`) avec **`source = 'afc'`**, `acknowledged_*` à `NULL`, `updated_by` = l'utilisateur — qu'elle
-       soit `manual` (cours saisi abandonné) ou `afc` (correction de l'AFC reprise, U1) ; créée si absente (case vide
+       soit `manual` ou d'une autre source que `afc` (cours saisi abandonné, A30) ou `afc` (correction de l'AFC reprise, U1) ; créée si absente (case vide
        dont la valeur est publiée). `publishedRate` = la valeur que l'écran a montrée : si la valeur publiée a changé
        entre-temps → 409 `OPTIMISTIC_LOCK_CONFLICT` (l'utilisateur reprend ce qu'il a vu, jamais une valeur plus neuve) ;
        `version` obligatoire si la ligne existe (absente ou autre version → 409), interdite sinon (400). **Sans valeur
-       publiée** : ligne `manual` → **supprimée** (« Retirer le cours saisi » : la case redevient vide) ; ligne `afc` →
+       publiée** : ligne `manual` ou d'une autre source que `afc` (A30) → **supprimée** (« Retirer le cours saisi » : la case redevient vide) ; ligne `afc` →
        404 `NOT_FOUND` (installation restaurée avant toute récupération : rien à reprendre, l'écran ne propose pas ↑) ;
        aucune ligne → 404. **Portée (U3)** : la société de l'utilisateur seule ; l'option « toutes les sociétés sous
        votre gestion » est **spécifiée, non livrée** — un utilisateur n'appartient qu'à une société
@@ -706,7 +709,7 @@ cours sans saisie.
      Les champs `afcRate`, `overridden`, `override` et `republished` de CR-1 et CR-3 n'existent plus. Test du `GET` sur
      un exercice de six et de dix-huit mois (nombre et ordre des colonnes, `openingDate`, `closingDate`). Lignes (`hasAccount` = au moins un compte de la société, archivé compris, porte la devise) : les
      devises des comptes de la société (archivés compris s'ils portent une ligne dans l'exercice) et celles qui ont
-     une ligne `manual` dans l'exercice, triées ; `all=true` ajoute toutes les devises qui ont une ligne
+     une ligne `manual` ou d'une autre source que `afc` (A30) dans l'exercice, triées ; `all=true` ajoute toutes les devises qui ont une ligne
      `exchange_rates` ou une valeur publiée pour une unité de l'exercice. Les cases se lisent en **une** connexion, par
      lectures groupées par genre et plage de dates des deux tables — pas une requête par case ; la lecture groupée
      (nom au développement) est la **seule** autre lecture qui joint `exchange_rates` et
@@ -916,12 +919,15 @@ cours sans saisie.
        valeur publiée reste retirable ; ↑ le repasse en `afc`) ;
      - ligne `manual` **sans** valeur publiée → « AFC : non publié » et ↑ (« Retirer le cours saisi » : la ligne est
        supprimée, AC-5) ;
+     - ligne d'une **autre** source que `afc` (A30, p. ex. `ecb`) → comme une ligne `manual` dans les trois cas
+       ci-dessus (mêmes ↑), la source brute entre parenthèses : « AFC : 0.8846 (ecb) », « AFC ✓ · saisi (ecb) »,
+       « AFC : non publié (ecb) » ;
      - **aucune** ligne, valeur publiée présente → champ vide, « AFC : 0.8846 » et ↑ (« Reprendre la valeur publiée » :
        crée la ligne `afc`) ; aucune ligne ni valeur publiée → champ vide, « AFC : non publié ».
      Tout ↑ appelle `POST …/rates/reset` avec la `version` de la ligne et la valeur publiée affichée, puis relit le
      tableau (409 → rechargement avec message). Pour que « AFC ✓ » ne cache pas un cours saisi qu'on ne pourrait plus
      retirer (D9, A2), l'écran **ne crée jamais** une ligne `manual` égale à la valeur publiée : une valeur entrée égale
-     à la valeur publiée envoie le ↑ (`reset`) si la ligne est `manual` ou absente, et rien si elle est déjà `afc` à
+     à la valeur publiée envoie le ↑ (`reset`) si la ligne est `manual`, d'une autre source que `afc` (A30) ou absente, et rien si elle est déjà `afc` à
      cette valeur. Le cas résiduel — ligne `manual` égale posée par l'API, ou devenue égale après une correction de
      l'AFC — s'affiche « AFC ✓ · saisi » avec ↑ (testé). Un champ **vidé** ne supprime rien : la valeur affichée est
      restaurée, sans appel (seul ↑ retire un cours saisi) ; une valeur égale au cours affiché n'envoie rien. Une case
@@ -988,7 +994,7 @@ cours sans saisie.
      2023**), au serveur et en Vitest (en-têtes, défilement du seul tableau).
    - Vitest : ligne `afc` égale → « AFC ✓ » sans ↑ ; ligne `afc` corrigée → « AFC corrigé : … » en rouge et ↑ direct
      (sans dialogue, A23) ; ligne `afc` sans valeur publiée → sans ↑ ; ligne `manual` différente → « AFC : … » et ↑
-     direct ; « AFC : non publié » et ↑ « Retirer le cours saisi » ; « AFC ✓ · saisi » et ↑ (A2) ; case vide à valeur
+     direct ; « AFC : non publié » et ↑ « Retirer le cours saisi » ; « AFC ✓ · saisi » et ↑ (A2) ; ligne `ecb` différente → « AFC : … (ecb) » et ↑ (A30) ; case vide à valeur
      publiée → ↑ ; valeur entrée égale à la valeur publiée → `reset` (ou rien si déjà `afc`) et jamais `PUT` ; ↑ →
      `reset` avec la bonne version et la valeur affichée ; 409 → rechargement ; changement d'un genre → `PUT
      /rate-kinds` puis relecture ; Consultation sans champ éditable ni choix ; cours JPY saisi par unité ; « Récupérer
@@ -1550,3 +1556,17 @@ cours sans saisie.
   d'un `.keshbackup` futur importé ici, et la réserve que la release qui écrit une source neuve vérifie que le
   traitement `manual` lui reste juste. Vérifié : A28 (format seul `^[a-z]{2,12}$`, aucune énumération) intact ; P1–P3
   de `CLAUDE.md` : aucune opération P3, aucun binaire antérieur ne lit la table. Non exercés : compilation, gate, rendu.
+- 2026-11-14 — validation CR-5 P5 ciblée (Opus) : 0 CRITICAL, 0 HIGH, 2 MEDIUM, 2 LOW ; remédiés dans la fiche.
+  MEDIUM : 35-2-CR5-P5-1 (AC-1, AC-5) le ↑ (`reset`) sans valeur publiée ne disait rien d'une ligne `Other` (« ligne
+  `manual` → supprimée ; ligne `afc` → 404 ») — elle est supprimée comme une ligne `manual`, écrit à l'AC-1 et à
+  l'AC-5, test ajouté ; -2 (AC-6) les mentions de la grille n'énuméraient que `afc` et `manual` — ligne d'une autre
+  source : comme `manual`, mêmes ↑, source brute entre parenthèses ; `reset` aussi pour une valeur entrée égale ;
+  Vitest. LOW : -3 (AC-5, grille) lignes « devises ayant une ligne `manual` » étendues aux autres sources, test ; -4
+  (AC-1) l'import d'un `.keshbackup` futur était dit inconditionnel — conditionné à l'inventaire
+  (`admin_backup/import.rs:187`) et à la version minimale du manifeste (`routes/admin.rs:235`), lus. Sites non résolus
+  de A30 inventoriés dans les six fiches : copie (insertion seule), `PUT` (→ `manual`), notices et acquittement
+  (`source = 'afc'`), `corrected` (`afc` seul), qualification d'une ligne d'écriture (AC-9, `afc` si égal à une ligne
+  `afc`, `manual` sinon) traitent déjà une autre source comme `manual` ; restaient le `reset` sans valeur publiée, la
+  grille (lignes et mentions), corrigés ici, et des sites de 35-3a, 35-3b, 35-5 (leurs Change Logs). 35-1 (copie
+  `source = 'afc'`) et 35-4 (aucune lecture de `exchange_rates.source`) sans site. Non exercés : compilation, gate,
+  rendu, reste de la fiche hors diff.
