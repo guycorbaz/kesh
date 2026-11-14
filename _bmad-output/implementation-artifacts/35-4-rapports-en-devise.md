@@ -26,6 +26,14 @@ exports, afin de rapprocher mes comptes PayPal ou Wise de leurs relevés et de c
      en SQL, aucune seconde règle. « Fonction partagée » = fragment SQL de la somme en devise + `opening_from` ; la
      balance lit déjà 18 paramètres positionnels (`trial_balance.rs:178-195`), 12 de plus avec les trois paires en
      devise : un test exerce l'ordre des `bind`.
+   - **Où vit le fragment, et sur quelles requêtes il s'écrit** : les requêtes n'ont pas la même forme — celles du
+     grand livre (`opening_balance`, `general_ledger.rs:338-342` ; `fetch_totals`, `:465-473`) ne joignent **pas**
+     `accounts` (filtre `jel.account_id = ?`), et la balance lit les lignes par la sous-requête `x`
+     (`trial_balance.rs:165-170`), qui ne projette que `account_id, debit, credit, entry_date, fiscal_year_id`. Le
+     fragment est donc une fonction **paramétrée** par l'alias de la ligne et l'expression de la devise du compte,
+     et il vit dans `kesh-db` (`repositories/account_balances.rs`, AC-1 quater), seul crate visible à la fois de
+     `balances_as_of` et de `kesh-report` ; `x` projette en plus `jel.currency` et `jel.amount_currency` ; les deux
+     requêtes du grand livre joignent `accounts a` (ou lient la devise du compte, lue par `select_accounts`).
    - **Bilan et compte de résultat : le signe est en SQL**, non en Rust — `AccountBalance` est un `sqlx::FromRow` dont
      `balance` vient d'un `sign_expr` par type (`balance_sheet.rs:288-292`, `income_statement.rs:62-66`), pour que
      `HAVING` le lise. Le solde en devise y suit **le même patron** : un `sign_expr` en devise construit par la même
@@ -57,6 +65,8 @@ exports, afin de rapprocher mes comptes PayPal ou Wise de leurs relevés et de c
      - borne **inclusive** `je.entry_date <= as_of`, tous exercices, **sans borne basse ni `HAVING`** : une
        réévaluation déjà passée au même jour est comptée, ce qui rend le rejeu de 35-5 (résidu seul) exact — test : deux
        appels encadrant une réévaluation au `as_of` ;
+     - `Some(&[])` rend un `Vec` vide **sans requête** (un `IN ()` est une erreur de syntaxe ; et, à la différence
+       de `select_accounts`, `general_ledger.rs:366`, une liste vide ne vaut pas `None`) ;
      - `account_ids = None` : tous les comptes **en devise** de la société ; `Some(ids)` : exactement ces comptes
        (bornés à la société, KF-002 : un identifiant étranger à la société est **ignoré**, sans erreur — l'appelant
        compare le nombre de lignes rendues à celui demandé), **chacun rendu** même sans ligne (`LEFT JOIN`, `(0, Some(0))`) ; `devise_net` vaut
@@ -65,15 +75,22 @@ exports, afin de rapprocher mes comptes PayPal ou Wise de leurs relevés et de c
      - lecture ordinaire (non verrouillante) dans la connexion fournie : c'est le verrou d'exercice de 35-5 qui la
        stabilise.
 2. **AC-2 — Grand livre** (`general_ledger.rs` `generate` :644). Pour un compte en devise :
+   - `RawAccount`/`select_accounts` (`general_ledger.rs:250`, `:359`) lisent `a.currency` (source de
+     `LedgerSection.currency` et de la devise liée aux requêtes d'ouverture et de totaux) ;
    - `RawLine`/`fetch_lines` lisent `currency`, `amount_currency`, `exchange_rate`, `rate_source` ; `LedgerLine` gagne le
      montant en devise (en débit/crédit comme le CHF), le cours (10 décimales stockées ; affichage par un formateur
      **neuf** `format_exchange_rate`, AC-5 — ⚠️ **pas** `format_rate` de `pdf.rs:1063`, qui rend un taux de TVA
      `"{rate:.2} %"`), le solde progressif en devise ; `LedgerSection` gagne `currency`, `openingCurrency`,
      `closingCurrency`, totaux en devise. `unnatural_balance` reste CHF.
-   - Une ligne `revaluation` s'affiche « Réévaluation au cours X » sans montant en devise (libellé i18n, quatre
-     locales, repris par JSON, PDF, CSV et TS) ; comptes CHF : inchangés.
-   - Les structs `LedgerLine`/`LedgerSection` sont construites à la main dans `general_ledger.rs` (tests), `csv.rs`,
-     `pdf.rs`, `tests/general_ledger.rs` : sites revus au Change Log.
+   - Une ligne `revaluation` s'affiche « Réévaluation au cours X » sans montant en devise ; comptes CHF : inchangés.
+     Le libellé suit le régime de chaque sortie, tel qu'il est : le **JSON** ne porte pas de libellé (il porte
+     `rateSource` et le cours) ; l'**écran** le traduit (clé i18n, quatre locales) ; le **PDF** le prend d'un champ
+     neuf de `SectionLabels` (défaut français, `pdf.rs:153`, comme `ledger_fy_break` — le handler construit
+     `PdfContext::fr_ch_default`, `routes/reports.rs:940`) ; le **CSV** l'écrit en littéral français, comme ses
+     autres libellés (`"Solde d'ouverture"`, `csv.rs:709`).
+   - Les structs `LedgerLine`/`LedgerSection` sont construites à la main en `general_ledger.rs:726`, `:781`, `:824`
+     (test), `:850` (test), `csv.rs:1325`, `:1333`, `pdf.rs:2451`, `:2474` (relevé du 2026-11-14 ;
+     `tests/general_ledger.rs:135` n'en construit aucune, c'est un type de retour) : sites revus au Change Log.
 3. **AC-3 — Balance** (`trial_balance.rs` :129). `TrialBalanceRow` gagne `currency`, `openingCurrency`,
    `totalDebitCurrency`, `totalCreditCurrency`, `balanceCurrency`, `closingCurrency` (compte en devise seulement).
    **Aucun total en devise** (devises mélangées) : `total_debit`, `total_credit`, `balanced`, `opening_balanced`,
@@ -91,11 +108,17 @@ exports, afin de rapprocher mes comptes PayPal ou Wise de leurs relevés et de c
        1'233.57 ») ; « À reporter » et « Report » portent aussi le report en devise (`carry` en devise), remis à zéro à
        la rupture d'exercice des comptes de résultat ; ouverture, clôture et rupture portent le solde en devise.
      - *Bilan et compte de résultat* : « USD 1'233.57 » entre le nom et le solde (`draw_account_row`, `pdf.rs:482`).
+     - *Balance* : ses six colonnes occupent la largeur (`TB_COL_X`, `pdf.rs:718`) ; sous la ligne d'un compte en
+       devise, une **seconde ligne en petit**, comme au grand livre : « USD ouverture … · débit … · crédit … ·
+       clôture … ». Aucune ligne de total en devise.
      - Test de PDF multi-pages.
    - Les colonnes en devise sont portées par le JSON, le PDF et le CSV ; l'existant reste inégal (`lettering_code` JSON
      seul, C-15-1b-6).
-   - **Affichage** : 2 décimales, somme exacte puis arrondi `MidpointAwayFromZero` ; `format_swiss_amount` pour les
-     montants. Cours : `format_exchange_rate` (neuf, `pdf.rs`, partagé par PDF et CSV), qui rend le cours **par
+   - **Affichage** : 2 décimales, somme exacte puis arrondi **explicite** `round_dp_with_strategy(2,
+     MidpointAwayFromZero)` avant tout formatage (les formateurs existants ne font qu'un `{:.2}` : `pdf.rs:247`,
+     `csv.rs:41`). Montants : `format_swiss_amount` (apostrophes) dans le **PDF** et à l'écran ; dans le **CSV**,
+     `format_amount_iso` (`csv.rs:40`, point décimal sans séparateur de milliers, comme les colonnes CHF — un tableur
+     ne relit pas `1'233.57`). Cours : `format_exchange_rate` (neuf, `pdf.rs`, partagé par PDF et CSV), qui rend le cours **par
      unité** sans `%`, zéros de queue retirés, au moins 4 décimales et au plus 10 (`0.8808`, `0.0057510000` →
      `0.005751`) ; testé (cours JPY < 0.01, cours à 10 décimales). `format_rate` (`pdf.rs:1063`, taux de TVA en
      `%` à 2 décimales) ne s'emploie pas : il rendrait `0.88 %`.
@@ -107,7 +130,12 @@ exports, afin de rapprocher mes comptes PayPal ou Wise de leurs relevés et de c
      TS), `isReportEmpty`, i18n quatre locales (`i18n-keys`, `i18n-libelle-en-dur` verts). Mono-devise : rien de
      visible ne change (test).
    - **MCP** : `kesh_grand_livre` (`LIMITE_MAX_MCP = 30`), `kesh_balance` (`LIMITE_MAX_MCP_BALANCE = 55`),
-     `kesh_bilan`, `kesh_compte_de_resultat` : champs en devise **omis** hors compte en devise ; limites recalculées
+     `kesh_bilan`, `kesh_compte_de_resultat` : champs en devise **présents à `null`** hors compte en devise — la macro
+     `sortie!` (`mcp/sortie.rs:97-114`) n'admet aucun attribut de champ et **n'est pas étendue** (choix de
+     l'orchestrateur, 2026-11-14, aligné sur 35-1 AC-8 et 35-3a AC-8, registre C-35-9 ; le JSON des routes de rapports,
+     lui, omet ces champs par `skip_serializing_if`, AC-6). Sorties à étendre : `LigneGrandLivre`, `Section`, `Rupture`
+     (`grand_livre.rs`), `LigneDeSolde` (`rapports.rs:63`) et `LigneBalance` (`rapports.rs:104`, construite `:219`).
+     Limites recalculées
      pour le pire cas avec champs en devise sous `MCP_ENVOI_OCTETS_MAX` (`services/envois_mcp.rs:55`, contrôlé par
      `mcp/sortie.rs:463`) : mesure par `tailles_mesurees` (`tests/mcp_outils_e2e.rs:1345`), dont la fixture
      `fixture_tailles` (`:788`) gagne des comptes et des lignes en devise (société en multi-devises) ; toute limite
@@ -123,7 +151,8 @@ exports, afin de rapprocher mes comptes PayPal ou Wise de leurs relevés et de c
      `:291`, `:456`) ; TVA (`vat_report.rs:261`, `:337`, `:368` : base légale CHF) ; balance âgée
      (`aged_receivables.rs` : factures, hors périmètre D7).
    - **Hors rapports, CHF seulement, nommés pour clore l'inventaire** (sommes de `debit`/`credit` relevées par
-     `grep -rln "SUM(jel.debit\|SUM(jel.credit\|SUM(l.debit\|SUM(debit"` hors tests) : contrôles de clôture
+     `grep -rln "SUM(jel.debit\|SUM(jel.credit\|SUM(l.debit\|SUM(debit"` hors tests ; le grep rend aussi
+     `kesh-api/src/routes/bank_accounts.rs`, par deux commentaires seulement, `:244` et `:878`) : contrôles de clôture
      (`kesh-db/src/repositories/closing_checks.rs:536`, équilibre CHF par écriture) ; solde comptable d'un compte
      bancaire (`bank_accounts.rs:1871-1905`, compte lié jamais en devise, C-35-9) ; postes ouverts et lettrage
      (`letterings/open_items.rs:83`, `:91` : limite du lettrage, 35-3a AC-9) ; réconciliation
@@ -154,10 +183,11 @@ exports, afin de rapprocher mes comptes PayPal ou Wise de leurs relevés et de c
       `:284`, `csv.rs:1213`, `pdf.rs:1861`, `benches/export.rs:102` ; `LedgerLine`/`LedgerSection` — AC-2 ; `FiscalYearBreak` (gagne `closingBalanceCurrency`, AC-1 bis) —
       `general_ledger.rs:591`, `:609`, `:842` (test), `csv.rs:1390`, `:1395`, `pdf.rs:2514`, `:2531`, `:2537` ;
       `JournalEntryLineRow` (AC-7 : champs en devise) — `journal_report.rs:177` (et les **deux** `SELECT` de
-      `generate`, :106 et :130, qui lisent `jel.currency`, `amount_currency`, `exchange_rate`, `rate_source`),
-      `csv.rs:1172`, `pdf.rs:1902`, `:2404`, `:2412`. Consommateur
-      à étendre (sans échec de compilation) : `mcp/outils/rapports.rs:142` (`fn ligne`, `LigneDeSolde`) et la
-      correspondance du grand livre de `mcp/outils/grand_livre.rs`.
+      `generate`, :100 et :124, qui lisent `jel.currency`, `amount_currency`, `exchange_rate`, `rate_source`),
+      `csv.rs:1172`, `pdf.rs:1902`, `:2404`, `:2412`, `benches/export.rs:153`, `:161`. Consommateurs
+      à étendre (sans échec de compilation) : `mcp/outils/rapports.rs:142` (`fn ligne`, `LigneDeSolde`), la
+      construction de `LigneBalance` (`mcp/outils/rapports.rs:219`) et la correspondance du grand livre de
+      `mcp/outils/grand_livre.rs` (`fn section`, :148) ; extension de `sortie!` reprise de 35-3a (AC-6).
 - [ ] `services/rapports.rs`, routes, MCP (limites).
 - [ ] Frontend : cinq vues, types ; Vitest — `IncomeStatementView.test.ts` et `JournalReportView.test.ts` **n'existent
       pas** (relevé du 2026-11-14) : à créer, avec le cas « mono-devise : rien de visible ne change » (AC-6) ; E2E
@@ -180,3 +210,11 @@ exports, afin de rapprocher mes comptes PayPal ou Wise de leurs relevés et de c
 - 2026-11-14 — validation P3 (Sonnet) : 0 CRITICAL, 0 HIGH, 2 MEDIUM, 3 LOW ; remédiés dans la fiche sauf <aucun
   inter-fiches>. Prémisses et lignes citées relues au code (sommes, `opening.rs:75`, binds 18 → +12, `:687`, `:209`,
   `kesh-db/Cargo.toml:48`, `kesh-report/Cargo.toml:9`, sites MCP, inventaire AC-7) : exactes.
+- 2026-11-14 — validation P4 (Opus) : 0 CRITICAL, 0 HIGH, 5 MEDIUM, 7 LOW ; remédiés dans la fiche sauf 35-4-P4-1
+  (volet 35-3a : extension de `sortie!` aux attributs de champ, à porter par 35-3a AC-8). MEDIUM : P4-1 omission MCP
+  impossible avec `sortie!` (`mcp/sortie.rs:97-114`) ; P4-2 fragment SQL partagé — forme des requêtes du grand livre
+  et de la balance, lieu `kesh-db` ; P4-3 PDF de la balance non spécifié (`TB_COL_X`, `pdf.rs:718`) ; P4-4 format
+  CSV des montants en devise (`format_amount_iso`, `csv.rs:40`) ; P4-8 `LigneBalance` MCP absente de l'inventaire.
+  LOW : P4-5 arrondi explicite avant `{:.2}` ; P4-6 sites `LedgerLine`/`LedgerSection` ; P4-7 `JournalEntryLineRow`
+  des benches et lignes des `SELECT` du journal ; P4-9 régime des libellés (JSON, PDF, CSV) ; P4-10 `Some(&[])` de
+  `balances_as_of` ; P4-11 inventaire AC-7 (`routes/bank_accounts.rs`) ; P4-12 `RawAccount` lit `a.currency`.

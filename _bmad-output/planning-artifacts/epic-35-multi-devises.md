@@ -145,6 +145,11 @@ ferme pas la fenêtre d'import, une table applicative neuve la ferme.
   - **Réglage multi-devises : Administrateur seul** (précédent des réglages de la société) ; une clé d'API ne
     l'active pas.
   - Le cours du mois courant est publié en début de mois (relevé du 2026-11-14).
+  - **Sorties MCP** : les champs en devise sont présents à `null` pour une ligne ou un compte CHF (la macro `sortie!`
+    n'est pas étendue) ; le JSON des routes HTTP, lui, les omet (`skip_serializing_if`) pour rester identique en
+    mono-devise.
+  - **PUT d'un compte** : `currency` absent = devise inchangée, `null` = CHF (compatibilité des clients mono-devise ;
+    renversement de la P1 par la P2 de 35-1, confirmé par la P3).
 - **C-35-8 (complément)** : lettrage d'un compte en devise (débiteur soldé en devise avec écart de change) — limite,
   issue à ouvrir avec la PR.
 - **C-35-8 — Tracé pour plus tard** (issues à ouvrir avec la PR) : option de neutralisation des gains de change non
