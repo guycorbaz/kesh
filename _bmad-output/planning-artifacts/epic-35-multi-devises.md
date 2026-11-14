@@ -139,6 +139,36 @@ là où elles divergent.
   aussi le compte de conversion à l'usage (`FX_ACCOUNT_INVALID`), comme la réévaluation ; la ligne d'écart du
   formulaire reste une ligne CHF ordinaire.
 
+## Revue de Beat — CR-3 (2026-11-14, avant la revue 2 de la page)
+
+Prime sur CR-2 et sur ses arbitrages là où ils divergent.
+
+- **S1 — Calendrier de récupération (remplace R4 amendé).** Vérification **une fois par jour** jusqu'à l'arrivée du
+  **premier cours du mois suivant** ; puis **pause** de 24 jours, **au plus tard jusqu'au 25** du mois, où la
+  vérification quotidienne reprend pour le mois d'après. Plus le démarrage et la connexion (sans redemander le
+  mois suivant seul, CR2-P4-3).
+- **S2 — Comptes de différence de change par compte en devise.** Le réglage de la société reste le **défaut**. Sur
+  chaque compte en devise, l'utilisateur choisit : *comptes par défaut* (suivent automatiquement le réglage de la
+  société quand il change) ou **comptes propres** (gains, pertes) — p. ex. un sous-compte « frais de change cachés
+  PayPal », un autre pour Stripe, pour lire séparément les frais de conversion. Toute ligne d'écart, réévaluation ou
+  conversion qui touche ce compte prend ses comptes propres. Lien avec la comptabilité analytique (projets) :
+  **hors périmètre**, tracé pour plus tard.
+- **S3 — Avertissement d'archivage** : il **liste** les comptes en devise qui seraient archivés.
+- **S4 — Exercice : pas de constante.** Kesh accepte déjà des exercices à dates libres, sans limite de durée (seule
+  règle : fin après début). R10 et l'arbitrage A1 sont **retirés** : l'assistant reste tel quel ; les dates viennent de
+  l'exercice. Le tableau des cours a **une colonne par mois de l'exercice, du premier au dernier** (un exercice
+  raccourci ou allongé lors d'un changement de date de clôture donne moins ou plus de 12 colonnes), plus Ouverture et
+  Clôture.
+- **S5 — TVA sur un achat en devise.** L'assistant TVA de la saisie (*VatPurchaseAssistant*) calcule la TVA sur le
+  montant en devise et passe la ligne de TVA en **CHF** au même cours que la ligne d'achat (les comptes de TVA sont en
+  CHF) ; l'écriture reste à une seule devise étrangère. Le décompte TVA (en CHF) n'est pas modifié.
+- **S6 — Cours AFC republié.** Si une récupération rend, pour un cours déjà connu, une **valeur différente**
+  (correction de l'AFC), l'ancienne valeur **reste** le cours AFC en vigueur ; la nouvelle est gardée comme **cours AFC
+  publié à nouveau**, affichée **en rouge** sous la case avec ↑ pour l'adopter. Un **avertissement** s'affiche à la
+  connexion tant qu'il n'est pas **acquitté**. Les lignes déjà passées ne changent jamais.
+- **Page de revue** : ajouter à la fin un **schéma des tables et relations** neuves (SVG intégré), la rendre
+  autonome (envoyable à Guy) et ajouter un bouton **Enregistrer** qui télécharge la page avec les réponses.
+
 ## Source des cours — établie le 2026-11-14
 
 - Page ESTV *MWST Monatsmittelkurse* : « XML-File » → `https://www.backend-rates.bazg.admin.ch/api/xmlavgmonth`.
