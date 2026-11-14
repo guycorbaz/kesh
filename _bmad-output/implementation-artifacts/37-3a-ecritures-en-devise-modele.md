@@ -340,7 +340,7 @@ chacune (R7), l'écart de change dans la seconde, afin que mes comptes en devise
       p. ex. `ecb`), cours différent, ou **aucune** ligne pour ce mois (**pas** de `RATE_UNAVAILABLE` : la ligne ne
       prétend pas au cours `afc`). Une ligne ainsi qualifiée `afc` est conforme par construction (aucun
       `FX_RATE_NOT_AFC`). La qualification est la règle de l'écran (37-3b AC-2, `afcRate` du mois de la date, égalité
-      en valeur), sans `publishedRate`. **Cours déduit (CR6-P2-1)** : une ligne dont le corps ne portait pas de `rate`
+      en valeur), sans `publishedRate`. **Cours déduit (CR6-P2-1, A32)** : une ligne dont le corps ne portait pas de `rate`
       (marqueur de l'AC-2, cours tiré du CHF par `rate_from_chf`, AC-6) et dont la provenance est absente **ou** `afc`
       **prend le cours retenu** quand la ligne de la société du mois est `afc` et que `round(montant × cours retenu, 2)`
       (produit de l'AC-3, étape 1, même code) égale son CHF (`debit + credit`) : son cours devient le cours retenu, sa
@@ -455,7 +455,7 @@ chacune (R7), l'écart de change dans la seconde, afin que mes comptes en devise
      réévaluation et ne choisit donc aucun compte de différence (la ligne d'écart du formulaire est une ligne CHF
      ordinaire, C-37-9 ; elle passe ce contrôle central comme toute ligne). Toute résolution **serveur** des comptes
      de gains et de pertes d'un compte en devise — la réévaluation (37-5) et, depuis V3 (CR-6), la route de conversion
-     (37-3b AC-2 bis), qui calcule la ligne de différence quand le corps ne la porte pas et contrôle sa paire sinon — passe
+     (37-3b AC-2 bis), qui calcule la ligne de différence sur demande (`completeDifference`, A31) quand le corps ne la porte pas et contrôle sa paire sinon — passe
      par `fx_accounts_for` **puis** `validate_fx_accounts_in_tx` (37-1 AC-4 bis : contrôle des comptes désignés à
      l'usage, `FX_ACCOUNT_INVALID`) ; côté écran, la ligne d'écart, l'assistant *Conversion* et l'assistant TVA (37-3b)
      passent par le miroir `fxAccountsFor`, jamais par un choix écrit à côté entre `companies.fx_*` et `accounts.fx_*` ;
@@ -1052,3 +1052,7 @@ chacune (R7), l'écart de change dans la seconde, afin que mes comptes en devise
   limite de 37-3b, non de cette fiche). Non exercés : MCP au-delà d'AC-8 (aucune ligne de CR-6 n'étend un outil ;
   `source` stockée jamais `None`, `Code<RateProvenance>` tient), RBAC et Bearer (37-1, 37-5 : aucune route neuve
   ici), i18n, compilation.
+- 2026-11-14 — arbitrages A31/A32 et reports IF1/IF2 (orchestrateur, Sonnet) : AC-4 (4) *Cours déduit* cite désormais A32
+  (le texte de la règle y était déjà : cours retenu `afc` si `round(montant × cours retenu, 2)` redonne le CHF) ; AC-5 :
+  le renvoi à la route de conversion dit « sur demande, `completeDifference`, A31 ». Aucun autre AC touché ; IF1 se
+  porte aux tests d'API de 37-3b.

@@ -226,7 +226,11 @@ devise au cours d'ouverture choisi pour l'exercice (R6), afin de tenir mes livre
      `manual` sinon — un cours saisi par la société, ou un mois sans cours `afc` retenu, part donc `manual` ; la
      dernière valeur publiée (`publishedRate` de `lookup`) n'entre jamais dans ce choix ; aucune autre valeur. C'est la
      règle par laquelle le serveur qualifie une ligne de l'API envoyée **sans** `rateSource` (V1, CR-6, 37-3a AC-4, 4) ;
-     l'écran, lui, envoie toujours `rateSource` (sa provenance relue en édition y compris). Comme à
+     l'écran, lui, envoie toujours `rateSource` (sa provenance relue en édition y compris). **CHF saisi à la main (A32,
+     report IF2 de 37-3a)** : si `afcRate` du mois de la date redonne ce CHF (`round(montant × afcRate, 2)`), le cours
+     devient `afcRate` et la ligne part `afc` — même règle que le serveur pour une ligne au cours déduit (37-3a AC-4, 4) ;
+     sinon cours de `rateFromChf`, `manual` (Vitest : CHF qui redonne `afcRate` → cours `afcRate`, `afc` ; CHF
+     qui ne le redonne pas, ou mois sans `afcRate` → cours de `rateFromChf`, `manual`). Comme à
      l'AC-1, **soit le cours soit le CHF** se saisit à la
      main (CHF saisi → cours par `rateFromChf`, jumeau de `rate_from_chf`, fixture `fx_rate_from_chf.json`, AC-1 —
      CHF ÷ montant à 10 décimales, vérification `round(montant × cours, 2) = CHF`, ajustement au dernier chiffre) ; changer la date repropose le cours effectif des lignes dont le cours n'a pas été modifié à
@@ -519,8 +523,15 @@ devise au cours d'ouverture choisi pour l'exercice (R6), afin de tenir mes livre
    `details` (un refus sans `details` en reçoit : mécanisme commun, au développement, à inventorier au Change Log), et
    rien n'est créé ; `entries` de longueur ≠ 2 → 400 `Validation` ; le compte de conversion peut figurer sur plusieurs
    lignes d'une écriture : le contrôle compare le **solde net** de ses lignes (débit − crédit) dans chaque écriture.
-   **Ligne de différence calculée par le serveur (V3, CR-6)** — pour qu'une conversion se passe par l'API seule :
-   - **écriture à compléter** : **une seule**, celle dont le **solde net du compte de conversion est un crédit** (le
+   **Ligne de différence calculée par le serveur, sur demande (V3, CR-6, A31)** — pour qu'une conversion se passe par l'API seule :
+   - **demande (A31)** : le corps porte `completeDifference` (booléen, facultatif, `false` par défaut). Le serveur ne
+     calcule **jamais** la ligne d'office : sans ce champ (ou à `false`), une écriture déséquilibrée rend
+     `ENTRY_UNBALANCED` (`details.entry`), comme aujourd'hui, et tout ce qui suit (écriture à compléter, paire, ligne
+     calculée) ne s'applique pas ; avec `completeDifference: true` **et** une ligne de différence déjà présente
+     dans l'écriture à compléter (ligne sur un compte désigné) → 400 `Validation` (`details: { entry, line }`) : le
+     client choisit entre la ligne qu'il porte et celle du serveur, jamais les deux. L'écran n'envoie pas le champ : il
+     envoie la ligne qu'il montre à l'aperçu (D6) ;
+   - **écriture à compléter** (avec la demande) : **une seule**, celle dont le **solde net du compte de conversion est un crédit** (le
      rôle de l'écriture 2 de l'assistant : elle rend le compte de conversion à 0), jamais choisie sur le seul critère
      « déséquilibrée » — sans quoi une erreur d'un client sur l'écriture 1 serait soldée en silence par un gain ou une
      perte de change. Elle est jugée en devise principale (Σ débit ≠ Σ crédit, sur le corps complété par l'analyse de
@@ -541,8 +552,8 @@ devise au cours d'ouverture choisi pour l'exercice (R6), afin de tenir mes livre
      hors de ces cas, la ligne calculée **absorbe** tout écart du corps — montant, cours ou CHF faux sur la ligne en
      devise de l'écriture à compléter, frais oubliés, CHF du compte de conversion faux aux deux écritures — et le passe
      en gain ou en perte de change ; le client relit la ligne dans la réponse 201 (D6 : l'écran la montre à l'aperçu).
-     Une borne de plausibilité ou un consentement explicite du corps (champ qui demande le calcul) n'est **pas** retenu
-     par V3 (question à Guy, Change Log) ;
+     Le consentement explicite du corps (`completeDifference`) est **retenu** (A31) : une ligne calculée n'absorbe
+     jamais en silence l'erreur d'un client qui ne l'a pas demandée ; une borne de plausibilité n'est pas retenue ;
    - **paire** : `fx_accounts_for(société, compte en devise de cette écriture)` (37-1 AC-4 bis), **puis**
      `validate_fx_accounts_in_tx` sous les verrous (37-1 : `FX_ACCOUNT_INVALID`, `field`, `reason` de la liste close,
      `holderAccountId` si `origin = Own` ; `None` → `reason: "missing"`), le compte en devise relu `LOCK IN SHARE MODE`
@@ -558,14 +569,14 @@ devise au cours d'ouverture choisi pour l'exercice (R6), afin de tenir mes livre
      (`EXISTS` sur `accounts` pour chaque identifiant de ligne, `LOCK IN SHARE MODE`) — jamais un balayage de tous les
      comptes, ni une lecture avant les verrous ; une ligne de l'autre écriture sur un compte désigné est une ligne CHF
      ordinaire (contrôle central de 37-3a, rien de plus) ;
-   - **corps sans ligne de différence** (aucune ligne **de l'écriture à compléter** sur un compte désigné comme compte
+   - **corps avec `completeDifference: true` et sans ligne de différence** (aucune ligne **de l'écriture à compléter** sur un compte désigné comme compte
      de gains ou de pertes, de la société ou d'un compte en devise) : le serveur **ajoute en dernière ligne** de l'écriture à compléter une ligne
      CHF de |Σ débit − Σ crédit| — **au crédit du compte de gains** si les débits l'emportent, **au débit du compte de
      pertes** sinon (la règle de l'assistant ci-dessus) ; si l'écriture compte déjà `MAX_LINES_PER_ENTRY` lignes, 400
      `Validation` (« trop de lignes », `details.entry`) — la limite de `prepare_new_journal_entry` se contrôle sur le
      corps **complété**, `accounting::validate` ne la portant pas ; elle figure dans la réponse 201 et dans l'audit
      `journal_entry.created` comme toute ligne ; son rang est le dernier (`details.line` d'un refus qui la viserait) ;
-   - **corps qui porte une ligne de différence** (ligne sur un compte désigné comme compte de gains ou de pertes) : elle
+   - **corps qui porte une ligne de différence, sans `completeDifference`** (ligne sur un compte désigné comme compte de gains ou de pertes) : elle
      doit employer la **paire résolue** — le compte de gains au crédit, ou le compte de pertes au débit —, sinon 400
      `Validation` (`details: { entry, line }`, message : « la différence de change va sur les comptes du compte en
      devise <numéro> »), au rang du contrôle de la paire (ci-dessous) ; l'équilibre de l'écriture se juge ensuite comme d'ordinaire ;
@@ -613,10 +624,12 @@ devise au cours d'ouverture choisi pour l'exercice (R6), afin de tenir mes livre
    (aucune ligne d'écart), compte de conversion à 0 après, refus de la seconde écriture **exécutée** (la plus tardive, placée en tête du corps pour exercer l'ordre chronologique) → rien de créé, `details.entry` = son rang dans le corps, compte de
    conversion non désigné ou invalide, transit déséquilibré, date dans un exercice mono-devise, `details.entry`,
    `entries` de longueur 0, 1 ou 3, rôle Consultation → 403, clé d'API en lecture seule refusée ; **V3 (CR-6)** :
-   corps sans ligne de différence → ligne ajoutée en dernière ligne de l'écriture à compléter (compte de conversion au crédit net), au crédit du compte de
+   corps sans ligne de différence **avec `completeDifference: true`** → ligne ajoutée en dernière ligne de l'écriture à compléter (compte de conversion au crédit net), au crédit du compte de
    gains (gain) ou au débit du compte de pertes (perte), relue dans la réponse et à l'audit, compte de conversion à 0 ;
    compte USD à comptes propres → ligne sur ses comptes, compte « par défaut » → comptes de la société ; corps sans
-   ligne de différence et différence nulle → aucune ligne ; ligne de différence portée sur la paire résolue → acceptée
+   ligne de différence et différence nulle → aucune ligne ; **A31** : même corps déséquilibré **sans** le champ (ou à
+   `false`) → `ENTRY_UNBALANCED` (`details.entry`), rien de créé ; `completeDifference: true` **avec** une ligne de
+   différence déjà présente → 400 `Validation` (`details: { entry, line }`) ; ligne de différence portée sur la paire résolue → acceptée
    telle quelle ; portée sur le compte de gains de la société alors que le compte USD a ses comptes propres → 400
    `Validation` (`details.entry`, `details.line`) ; gain porté au débit → 400 (fixture à comptes de gains et de pertes **distincts** : 37-1 admet le même compte, qui rendrait ce cas indécidable) ; comptes de différence non désignés ou
    compte propre archivé (par SQL) → `FX_ACCOUNT_INVALID` (`holderAccountId`), rien de créé ; deux écritures
@@ -765,7 +778,7 @@ devise au cours d'ouverture choisi pour l'exercice (R6), afin de tenir mes livre
    facultatif (qualifié `afc` ou `manual` par le serveur, V1) — mêmes champs aux routes d'ouverture et de complément
    (AC-1) ; une ligne CHF sans `debit` rend désormais 400 et non 422 (route des écritures et génération des soldes d'ouverture ; le complément, lui, tient toujours une colonne absente pour 0) ; la ligne d'écart (comptes du compte en devise,
    sinon de la société, lus sur `AccountResponse` et `CompanyJson` ; V4) ; la conversion sans ligne de différence,
-   calculée par le serveur (AC-2 bis, V3 : seule l'écriture où le compte de conversion est au **crédit** net est
+   calculée par le serveur **sur demande** (AC-2 bis, V3, A31 : corps `completeDifference: true`, sans lui `ENTRY_UNBALANCED` ; avec lui et une ligne de différence déjà présente, 400 `Validation` ; seule l'écriture où le compte de conversion est au **crédit** net est
    complétée, et seulement si elle porte un seul compte en devise, au débit net ; le CHF du compte de conversion est
    donc celui de l'autre écriture, qui doit s'équilibrer seule ; la ligne calculée absorbe tout écart de l'écriture
    complétée — montant, cours, frais oubliés — en gain ou perte de change : la relire dans la réponse 201) ; l'achat avec TVA en devise, calcul du client selon la règle d'arrondi de
@@ -805,9 +818,13 @@ devise au cours d'ouverture choisi pour l'exercice (R6), afin de tenir mes livre
       ligne `afc`) ; refus sur les deux routes : `debit`/`credit` absents sans `side` → 400, `chf` ≠ `debit` + `credit`
       → `FX_AMOUNT_MISMATCH`, ni `rate` ni `chf` → 400, ligne CHF d'ouverture sans `credit` → 400 (non 422) ; complément
       de même, avant la règle « exactement une colonne non nulle » ; **V3** — route de
-      conversion : ligne de différence calculée ou contrôlée (AC-2 bis), cycle avec la bascule écrit au Change Log,
+      conversion : ligne de différence calculée **sur demande** (`completeDifference`, A31 ; sans le champ
+      `ENTRY_UNBALANCED`, champ + ligne présente → 400) ou contrôlée (AC-2 bis), cycle avec la bascule écrit au Change Log,
       tests de l'AC-2 bis ; **V5** — limite et règle d'arrondi de l'assistant TVA (AC-2), au guide d'API ; **V9** —
-      renvoi à la case `opening` (AC-1), au guide d'API ; guide d'API (AC-6) complété (V1–V9).
+      renvoi à la case `opening` (AC-1), au guide d'API ; guide d'API (AC-6) complété (V1–V9) ; **A32 (IF1, IF2)** — tests
+      d'API, routes de génération et de complément : ligne `{ amount, chf, side }` sans `rateSource` dans un mois retenu
+      `afc` dont le cours redonne le CHF → provenance `afc`, cours retenu (37-3a AC-4, 4, *Cours déduit*) ; sinon
+      `manual` ; `None` jamais écrit ; Vitest du CHF saisi à la main (AC-2).
 - [ ] CR-2 : cours d'ouverture selon le genre de l'exercice (AC-1, R6) ; exercice mono-devise à l'ouverture et au
       formulaire (AC-1, AC-2, R3) ; bouton d'écart qui ajoute une ligne (R8) ; une devise par écriture au formulaire
       (R7) ; assistant *Conversion* — route `POST /journal-entries/conversions`, code `FX_CONVERSION_TRANSIT_UNBALANCED`,
@@ -1137,3 +1154,9 @@ devise au cours d'ouverture choisi pour l'exercice (R6), afin de tenir mes livre
   revalider (cycle CR-6).
 - 2026-11-14 — validation CR-6 P1 (Sonnet) : 0 CRITICAL, 0 HIGH, 4 MEDIUM, 3 LOW ; remédiés dans la fiche (aucun finding inter-fiches). MEDIUM : 37-3b-CR6-P1-1 (AC-1) le DTO d'ouverture et de complément restait écrit `{ currency?, amount, rate, rateSource }`, sans `chf`, `side`, ni `rate`/`rateSource` facultatifs, contre 37-3a AC-6 ; 37-3b-CR6-P1-2 (AC-1) « le seul accès à `exchange_rates` est le contrôle `FX_RATE_NOT_AFC` » contredisait la qualification d'une ligne sans `rateSource` (37-3a AC-4, 4) ; 37-3b-CR6-P1-3 (AC-2 bis, V3) « l'écriture 1 l'est par construction » (déséquilibrée) était faux, et compléter « celle qui est déséquilibrée » aurait soldé en silence, par un gain ou une perte de change, une erreur du client sur l'écriture 1 — l'écriture à compléter est désormais celle dont le solde net du compte de conversion est un crédit, les autres cas rendent `ENTRY_UNBALANCED` ; 37-3b-CR6-P1-4 (AC-2 bis, V3) la reconnaissance d'une « ligne sur un compte désigné » (comptes de gains/pertes de la société ou de tout compte en devise) n'avait ni requête ni ordre de verrous — requête bornée aux comptes du corps, `LOCK IN SHARE MODE`, après le verrou de `companies`. LOW : 37-3b-CR6-P1-5 (V3) « aucun refus » faux : la ligne ajoutée peut dépasser `MAX_LINES_PER_ENTRY` (500, contrôlé seulement par `prepare_new_journal_entry`, `journal_entries.rs:533`) — 400 `Validation` ; 37-3b-CR6-P1-6 (AC-1, e) ligne CHF d'ouverture sans `debit`/`credit` non spécifiée (`Decimal::from_str(&line.debit)`, `opening_balances.rs:362-368` — 400 comme la chaîne vide) et phrase du guide trop large (le complément tient déjà une colonne absente pour 0) ; 37-3b-CR6-P1-7 (Tâches) tests de refus V1/V2/V3 manquants (sans `side`, `chf` ≠ débit + crédit, ni `rate` ni `chf`, écriture 1 déséquilibrée, 500 lignes). Choix de l'auteur : (a) `FX_AMOUNT_MISMATCH` avec `expected` : correct ; (b) 400 `Validation` pour la mauvaise paire : correct (aucun code de plus, `details { entry, line }` suffisent) ; (c) repérage par le compte : correct une fois la requête et les verrous écrits (P1-4) ; (d) extension aux routes d'ouverture et de complément : correcte ; (e) 422 → 400 : correct, borné aux routes dont le champ devient `Option`. Prémisses relues au code : `opening_balances.rs:75-76`, `:173`, `:175`, `:362-368`, `:515-580` ; `vat.rs:40` ; `vat-purchase.ts:36` ; `journal_entries.rs:395`, `:533` ; 37-2 AC-5 (`Cell`, `opening`). Axes exercés : diff `b6e73cc3..d01ad946` de la fiche ; contrat de l'API seule (combinaisons `rate`/`chf`/`debit`/`credit`/`rateSource` contre 37-3a AC-3, AC-4 4, AC-6) ; choix (a) à (e) ; V5 (arrondi `line_vat_amount` / `lineVatAmount`) ; V9 ; guide d'API ; verrous de V3. Non exercés : MCP (la fiche n'étend aucun outil), activation en Bearer (37-1, 37-5), compilation, rendu.
 - 2026-11-14 — validation CR-6 P2 (Opus) : 0 CRITICAL, 0 HIGH, 2 MEDIUM, 5 LOW ; remédiés dans la fiche (aucun finding inter-fiches). MEDIUM : 37-3b-CR6-P2-1 (AC-2 bis, V3, *ordre*) la remédiation P1-3 choisit l'écriture à compléter par le compte de conversion, dont l'identifiant n'est lu que sous verrou, alors que l'*ordre* exigeait `accounting::validate` « avant la transaction » pour l'écriture qui ne reçoit pas de ligne — irréalisable ; avant la transaction : analyse V1/V2, limite de lignes, contrôle FX par ligne (partie de `prepare_new_journal_entry` sans `validate`, extraite) ; dans la transaction, après `FX_CONVERSION_TRANSIT_UNBALANCED` : identification, équilibre de l'autre écriture, forme et paire, ajout, équilibre de l'écriture complétée ; ordre des refus et test « deux écritures déséquilibrées » alignés ; 37-3b-CR6-P2-2 (AC-2 bis, V3, comptabilité) la ligne calculée soldait une erreur de sens du client (compte USD au crédit, `side: "credit"`) par une perte de deux fois le CHF, et « le compte en devise de cette écriture » était indéterminé avec deux comptes en devise — forme exigée (un seul compte en devise, au débit net), sinon `ENTRY_UNBALANCED` ; ligne portée sans compte en devise unique → 400 ; l'absorption résiduelle (montant, cours, frais oubliés, CHF du compte de conversion) écrite comme limite au guide d'API. **Question à Guy** (non appliquée, V3 de l'epic dit « un client qui l'omet la délègue au serveur ») : exiger un consentement explicite du corps (champ qui demande le calcul) ou une borne de plausibilité de la différence. LOW : P2-3 reconnaissance des comptes désignés bornée à l'écriture à compléter (portée « du corps » ambiguë, verrous plus larges que le paragraphe du cycle) ; paragraphe du cycle élargi ; P2-4 paire lue à l'usage seulement (écriture à compléter équilibrée sans ligne de différence : aucun `FX_ACCOUNT_INVALID`) ; P2-5 test « ligne ajoutée à l'écriture déséquilibrée » (résidu d'avant P1-3) → « à compléter » ; « gain au débit → 400 » exige une fixture à comptes de gains et de pertes distincts (37-1 admet le même compte) ; tests de la forme ajoutés ; P2-6 guide d'API sans la règle de l'écriture complétée ; P2-7 le refus « trop de lignes » est un `AppError::Validation` du handler, non un refus de `map_core_error`. Prémisses relues au code : `opening_balances.rs:70-76`, `:166-176`, `:345-375` ; `journal_entries.rs:395`, `:533-535` (route) ; `opening_complement.rs:690-719` (complément par `create_in_tx`, donc `create_in_tx_inner`) ; `errors.rs:153` (`Validation(String)`, sans `details` : mécanisme commun de `details.entry` requis) ; `middleware/rbac.rs:42-67` et `auth/api_key.rs:179-219` (PAT à portée) ; écran `opening-balances/+page.svelte:199-200`, `:245-246` (colonne vide envoyée `"0"`). Axes exercés : diff P1 `16f1cdb2..19039295` et révision `b6e73cc3..d01ad946` de la fiche ; cohérence 37-3a AC-3, AC-4 4, AC-6 (DTO, trois états de `debit`/`credit`, `rate_from_chf`, qualification) ↔ AC-1 ; comptabilité de V3 (détermination, sens, absorption) ; contrat de l'API seule de la conversion ; ordre des refus et des verrous ; tests. Non exercés : MCP au-delà du constat (la fiche n'étend aucun outil ; les écritures de conversion se lisent par `kesh_ecritures`, 37-3a AC-8), activation en Bearer (37-1, 37-5), i18n, compilation. Écart de protocole déclaré : six remplacements de texte de la fiche faits par un script Python ad hoc au lieu de l'outil Edit (contenu identique à des Edit, seule la fiche touchée).
+- 2026-11-14 — arbitrages A31/A32 et reports IF1/IF2 (orchestrateur, Sonnet) : **A31** — AC-2 bis : la ligne de différence
+  n'est calculée que sur `completeDifference: true` (sans lui `ENTRY_UNBALANCED` ; avec lui et une ligne de différence
+  présente, 400 `Validation`), la question à Guy (borne ou consentement) tranchée pour le consentement ; guide d'API,
+  tests, tâche CR-6 ; l'écran n'envoie pas le champ. **A32/IF2** — AC-2 : CHF saisi qui redonne `afcRate` du mois →
+  cours `afcRate`, `afc`, sinon `rateFromChf`, `manual` ; Vitest. **IF1** — tâche CR-6 : tests d'API de génération et de
+  complément (`afc` si le cours redonne le CHF, sinon `manual`). Fiche à revalider (cycle CR-6).

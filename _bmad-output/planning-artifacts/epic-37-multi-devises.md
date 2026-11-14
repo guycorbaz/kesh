@@ -362,6 +362,19 @@ aux fiches :
   (source `revaluation`).
 - **V13** (37-4 AC-7) — `kesh_postes_ouverts` inscrit aux sites « CHF seulement », renvoi à 37-3a AC-9.
 
+Arbitrages de l'orchestrateur pendant la validation CR-6 (à confirmer par Beat) :
+
+- **A31** (37-3b AC-2 bis, V3) — la ligne de différence d'une conversion n'est **jamais** ajoutée d'office : le serveur
+  la calcule seulement si le corps le demande (`completeDifference: true`). Sans ce champ, une écriture déséquilibrée
+  rend `ENTRY_UNBALANCED` comme aujourd'hui. Raison : une ligne calculée absorbe en silence toute erreur de montant,
+  de cours ou de frais du client en gain ou perte de change — erreur muette, comme le faux rattachement (`CLAUDE.md`,
+  *Un appariement automatique propose, il ne crée jamais*). L'écran envoie la ligne qu'il montre à l'aperçu, sans le champ.
+- **A32** (37-3a AC-4, 4 ; 37-3b AC-2) — une ligne au **cours déduit** (`{ amount, chf }` sans `rate`), sans
+  provenance ou `afc`, prend le cours retenu `afc` de la société pour le mois si `round(montant × cours retenu, 2)`
+  égale son CHF : cours exact, provenance `afc`. Sinon cours de `rate_from_chf`, `manual`. Raison : CHF ÷ montant
+  ne redonne presque jamais le cours AFC à la décimale près (1125.83 ÷ 1234.56 ≈ 0.9119281 pour 0.91193), si bien que
+  des livres tenus au cours AFC (import 2024) partiraient `manual`. L'écran applique la même règle à un CHF saisi.
+
 Aucune migration ni route neuve ; contrat d'API étendu sans rupture pour un corps complet (un corps sans `debit` sur
 une ligne CHF rend 400 au lieu de 422, déclaré). Les fiches 37-1, 37-3a, 37-3b, 37-4 et 37-5 sont à revalider (cycle
 CR-6) ; 37-2 n'est pas touchée.

@@ -532,7 +532,7 @@ l'assistant, nom « Exercice AAAA » ou « Exercice AAAA/AAAA » : AC-11). A22 e
      loss, origin: Own | Company }` ; `None` pour un compte CHF, ou si la société n'en désigne pas (état hérité). **Seule
      fonction** qui choisit les comptes de différence côté serveur ; la réévaluation (37-5) l'appelle, **puis** la
      revalidation à l'usage ci-dessous, et, depuis V3 (CR-6), la route de conversion de 37-3b aussi (ligne de
-     différence calculée par le serveur quand le corps ne la porte pas, paire contrôlée sinon, 37-3b AC-2 bis). Côté écran, **une** fonction TypeScript miroir
+     différence calculée par le serveur sur demande (A31) quand le corps ne la porte pas, paire contrôlée sinon, 37-3b AC-2 bis). Côté écran, **une** fonction TypeScript miroir
      (`fxAccountsFor(account, company)`, `features/accounts/`), seule lue par le formulaire de compte, la ligne d'écart
      et l'assistant *Conversion* (37-3b) et l'assistant TVA (37-3b, S5) ; tests unitaires des deux (propres, défaut,
      défaut après changement du réglage, compte CHF).
@@ -1175,3 +1175,5 @@ l'assistant, nom « Exercice AAAA » ou « Exercice AAAA/AAAA » : AC-11). A22 e
   `:3217`, `:3447` ; 37-3b AC-2 bis (verrous de V3, cohérents). Axes exercés : remédiation P1 (P1-1 à P1-4), V6, V10,
   V11, MCP (`champ_enum!`, test de taille, contrat, matrice du manuel), RBAC Bearer, cycle avec la conversion V3.
   Non exercés : AC-1, AC-3 bis à AC-7, AC-11 hors CR-6 ; contrats V1/V2 de 37-3a ; exécution des tests.
+- 2026-11-14 — arbitrages A31/A32 et reports IF1/IF2 (orchestrateur, Sonnet) : AC-4 bis — « sur demande (A31) » ajouté
+  à la phrase sur la ligne de différence calculée par la route de conversion (37-3b AC-2 bis, `completeDifference`).
