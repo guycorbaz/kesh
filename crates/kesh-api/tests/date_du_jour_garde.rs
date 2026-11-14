@@ -158,9 +158,10 @@ type Exemption = (&'static str, usize, &'static str, &'static str);
 
 /// La liste close, comptée **depuis l'exécution** de la garde (Story 35-5a0).
 /// Entrées permanentes : `kesh-core/src/horloge.rs` (le `.date_naive()` du jour) et, dans
-/// `admin.rs`, l'horodatage du nom de sauvegarde (un instant, non un jour). Le reste est la
-/// dette que la 35-5a, la 35-5b et la 35-5c soldent (verdicts de la fiche 35-5a) ; depuis la
-/// 35-5b, il n'y a plus que des tests, laissés à la 35-5c.
+/// `admin.rs`, l'horodatage du nom de sauvegarde (un instant, non un jour). Le reste était la
+/// dette que la 35-5a, la 35-5b et la 35-5c ont soldée (verdicts de la fiche 35-5a) : depuis
+/// la 35-5c (D2), la liste ne porte plus que ces deux entrées, et tout autre fichier de `src`
+/// et de `tests` compte 0.
 const EXEMPTIONS: &[Exemption] = &[
     // --- Production (`src`)
     (
@@ -176,69 +177,21 @@ const EXEMPTIONS: &[Exemption] = &[
         "permanent",
         "horodatage `%Y%m%dT%H%M%S%3f` du nom de sauvegarde, un instant (#669)",
     ),
-    // Story 35-5b (D5) : plus aucune entrée de code de production hors les deux permanentes ;
-    // l'entrée `journal_entries.rs` qui suit, bien que sous `src`, ne compte que le module de
-    // tests de ce fichier (35-5c) — une occurrence de production ajoutée la ferait rougir. Sortis
-    // de la liste, leur date venant de l'horloge de l'état ou de la `Lecture`, ou d'un
+    // Story 35-5b (D5) : plus aucune entrée de code de production hors les deux permanentes.
+    // Sortis de la liste, leur date venant de l'horloge de l'état ou de la `Lecture`, ou d'un
     // paramètre — `routes/audit_log.rs`, `bank_accounts.rs`, `exports.rs`,
     // `invoice_email.rs`, `invoices.rs` (sites 10 à 16), `services/postes_ouverts.rs`,
     // `rapports.rs` (sites 18 à 21) ; `kesh-db` `dunning_eligibility.rs` (site 22) et
     // `invoices.rs` (sites 23-25 ; son module de tests en date fixe, D9) ; `kesh-seed`
     // `lib.rs` (site 26) et `pieges.rs` (sites 27-28).
-    (
-        "kesh-db/src/repositories/journal_entries.rs",
-        // Story 35-5a : aucun ne change — les deux `reverse_in_tx` du module reçoivent la
-        // date que leur montage tient (`:3991`, `:5845`), sûrs la nuit par la valeur.
-        50,
-        "35-5c",
-        "module de tests : montages au jour UTC",
-    ),
-    // --- Tests de `kesh-api`
-    (
-        "kesh-api/tests/accounts_e2e.rs",
-        2,
-        "35-5c",
-        "exercice de l'année du retypage",
-    ),
-    (
-        "kesh-api/tests/admin_full_import_e2e.rs",
-        // 4 → 3 : remédiation P2 (D4), l'assertion de la borne passée.
-        3,
-        "35-5c",
-        "bornes à `today - 30`",
-    ),
-    (
-        "kesh-api/tests/credit_card_e2e.rs",
-        3,
-        "35-5c",
-        "dates saisies de facture et de règlement",
-    ),
-    (
-        "kesh-api/tests/invoice_delete_e2e.rs",
-        2,
-        "35-5c",
-        "dates de facture",
-    ),
-    (
-        "kesh-api/tests/invoice_unvalidate_e2e.rs",
-        6,
-        "35-5c",
-        "dates de facture",
-    ),
-    // Remédiation de la revue P3 (exécution sous instant décalé) : `journal_entry_reversal_e2e.rs`
-    // et `period_lock_e2e.rs` sortis de la liste, leurs jours lisant l'horloge de test.
-    (
-        "kesh-api/tests/mcp_enveloppe_e2e.rs",
-        1,
-        "35-5c",
-        "date saisie d'une pièce",
-    ),
-    (
-        "kesh-api/tests/reconciliation_link_e2e.rs",
-        1,
-        "35-5c",
-        "jour de facture et de transaction",
-    ),
+    // Story 35-5c (D1, D2) : sortis de la liste — le module de tests de `kesh-db`
+    // `journal_entries.rs` (50 : `setup()` lit le jour suisse une fois, ses tests et
+    // `lettrer_dans` le réemploient) ; `kesh-api` `accounts_e2e.rs` (2),
+    // `admin_full_import_e2e.rs` (3), `credit_card_e2e.rs` (3), `invoice_delete_e2e.rs` (2),
+    // `invoice_unvalidate_e2e.rs` (6), `mcp_enveloppe_e2e.rs` (1),
+    // `reconciliation_link_e2e.rs` (1), leurs montages lisant le jour de l'horloge de test.
+    // Remédiation de la revue P3 de la 35-5a (exécution sous instant décalé) :
+    // `journal_entry_reversal_e2e.rs` et `period_lock_e2e.rs` sortis de la liste.
     // Story 35-5b : sortis de la liste, leurs jours lisant l'horloge de test —
     // `bank_accounts_closed_e2e.rs` (`closedOn`), `dunning_reminders_e2e.rs`,
     // `fiscal_years_e2e.rs` (`seed_demo`), `homepage_summary_e2e.rs`, `mcp_outils_e2e.rs`,
@@ -576,11 +529,29 @@ fn sonde_une_forme_ajoutee_rougit_entiere_ou_coupee() {
         "const Q: &str = \"SELECT CURDATE()\";",
         "horloge_etat.rs : 1",
     );
-    // Un compte + 1 dans un fichier déjà exempté rougit aussi.
+    // Un compte + 1 dans un fichier déjà exempté rougit aussi (Story 35-5c : l'entrée de
+    // `journal_entries.rs` sortie de la liste, la sonde vise une entrée permanente).
+    rouge(
+        "kesh-api/src/routes/admin.rs",
+        "fn f() { let _ = chrono::Utc::now().date_naive(); }",
+        "2 occurrence(s), 1 écrite(s)",
+    );
+    // Story 35-5c (AC4) — dans un test : un module de tests de `src` sorti de la liste, un
+    // fichier de `tests` sorti de la liste, entière ou coupée sur deux lignes.
     rouge(
         "kesh-db/src/repositories/journal_entries.rs",
         "fn f() { let _ = chrono::Utc::now().date_naive(); }",
-        "51 occurrence(s), 50 écrite(s)",
+        "journal_entries.rs : 1 occurrence(s), 0 écrite(s)",
+    );
+    rouge(
+        "kesh-api/tests/accounts_e2e.rs",
+        "fn f() { let _ = Utc::now().date_naive(); }",
+        "accounts_e2e.rs : 1 occurrence(s), 0 écrite(s)",
+    );
+    rouge(
+        "kesh-api/tests/invoice_unvalidate_e2e.rs",
+        "fn f() {\n    let _ = chrono::Utc::now()\n        .naive_utc()\n        .date();\n}",
+        "invoice_unvalidate_e2e.rs : 1 occurrence(s), 0 écrite(s)",
     );
     // Une ligne `//` est écartée.
     vert("kesh-api/src/lib.rs", "// chrono::Utc::now().date_naive()");

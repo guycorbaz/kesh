@@ -34,6 +34,7 @@ import {
 	authedApiContext,
 	disposeContextSafe,
 } from './helpers/test-state';
+import { ajouterJoursIso } from './helpers/dates';
 
 const ICI = path.dirname(fileURLToPath(import.meta.url));
 const FIXTURE = path.join(ICI, 'fixtures', 'camt053_v04_minimal.xml');
@@ -77,7 +78,7 @@ async function bankAccountId(ctx: APIRequestContext): Promise<number> {
 
 /** La date `AAAA-MM-JJ` de l'entrée `i` : un jour par entrée depuis le 2025-01-01. */
 function dateOf(i: number): string {
-	return new Date(Date.UTC(2025, 0, 1 + i)).toISOString().slice(0, 10);
+	return ajouterJoursIso('2025-01-01', i);
 }
 
 /** Le relevé synthétique : l'entrée de la fixture répétée `N` fois, chacune unique. */

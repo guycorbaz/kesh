@@ -5,7 +5,7 @@ import {
   authedApiContext,
   disposeContextSafe,
 } from "./helpers/test-state";
-import { invoiceVersionViaApi } from "./helpers/api-fixtures";
+import { invoiceVersionViaApi, todayInZurich } from "./helpers/api-fixtures";
 
 /**
  * Story 34-5 (#951) — un second envoi du même règlement sans relecture n'écrit pas un
@@ -34,7 +34,7 @@ async function login(page: import("@playwright/test").Page) {
 }
 
 function today(): string {
-  return new Date().toISOString().slice(0, 10);
+  return todayInZurich();
 }
 
 /** Une facture validée de 100.00 HT (108.10 TTC), sans règlement ; rend son id. */

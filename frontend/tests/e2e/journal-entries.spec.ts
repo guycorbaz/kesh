@@ -8,6 +8,7 @@ import {
 import {
   createAndValidateInvoiceViaApi,
   createContactWithAddressViaApi,
+  todayInZurich,
 } from "./helpers/api-fixtures";
 
 test.beforeAll(async () => {
@@ -359,7 +360,7 @@ test.describe("Page écritures — modifier et supprimer depuis la fiche (Storie
       const postables = accounts.filter((a) => a.postable && a.active);
       const created = await ctx.post("/api/v1/journal-entries", {
         data: {
-          entryDate: new Date().toLocaleDateString("sv-SE", { timeZone: "Europe/Zurich" }),
+          entryDate: todayInZurich(),
           journal: "OD",
           description: libelle,
           lines: [
@@ -643,7 +644,7 @@ test.describe("Page écritures — contre-passation (Story 24-4a, #380)", () => 
       const libelle = `Contre-passation E2E ${Date.now()}`;
       const created = await ctx.post("/api/v1/journal-entries", {
         data: {
-          entryDate: new Date().toISOString().slice(0, 10),
+          entryDate: todayInZurich(),
           journal: "OD",
           description: libelle,
           lines: [

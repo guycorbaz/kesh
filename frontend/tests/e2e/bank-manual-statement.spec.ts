@@ -11,8 +11,10 @@ import {
 	createContactWithAddressViaApi,
 	createUser,
 	USER_PASSWORD,
+	todayInZurich,
 	wiredBankAccountViaApi,
 } from './helpers/api-fixtures';
+import { ajouterJoursIso } from './helpers/dates';
 
 /**
  * Tests E2E — saisir un relevé bancaire à la main (Story v016-2b, #816, AC-26).
@@ -63,15 +65,13 @@ async function login(page: Page, username: string, password: string): Promise<vo
 
 /** Le jour local de Zurich, `AAAA-MM-JJ`. */
 function todayZurich(): string {
-	return new Date().toLocaleDateString('sv-SE', { timeZone: 'Europe/Zurich' });
+	return todayInZurich();
 }
 
 /** La veille de `day`, sauf un 1ᵉʳ janvier (alors `day` : l'exercice du seed est l'année). */
 function dayBefore(day: string): string {
 	if (day.endsWith('-01-01')) return day;
-	const d = new Date(`${day}T12:00:00Z`);
-	d.setUTCDate(d.getUTCDate() - 1);
-	return d.toISOString().slice(0, 10);
+	return ajouterJoursIso(day, -1);
 }
 
 type Ligne = { date: string; details: string; debit?: string; credit?: string; reference?: string };
@@ -309,9 +309,7 @@ test('recette visuelle de la saisie d’un relevé (AC-25)', async ({ page }, te
 	await capture(page, testInfo, '13-cases-cochees');
 
 	// Le relevé suivant, avec un solde de départ qui ne suit pas : l'avertissement.
-	const lendemain = new Date(`${today}T12:00:00Z`);
-	lendemain.setUTCDate(lendemain.getUTCDate() + 1);
-	const demain = lendemain.toISOString().slice(0, 10);
+	const demain = ajouterJoursIso(today, 1);
 	await page.goto('/bank-import/manual');
 	await remplir(page, {
 		bankAccountId: compteB,

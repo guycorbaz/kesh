@@ -9,6 +9,7 @@ import {
 	createAndValidateInvoiceViaApi,
 	createContactWithAddressViaApi,
 	invoiceVersionViaApi,
+	todayInZurich,
 } from './helpers/api-fixtures';
 
 /**
@@ -36,7 +37,7 @@ test.afterEach(async ({ page }) => {
 
 /** La date LOCALE (Zurich) — celle que l'écran écrit dans l'URL. */
 function todayZurich(): string {
-	return new Date().toLocaleDateString('sv-SE', { timeZone: 'Europe/Zurich' });
+	return todayInZurich();
 }
 
 async function login(page: Page, username = 'admin', password = 'admin123') {

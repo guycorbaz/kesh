@@ -9,6 +9,8 @@
 //! PUT, cycle archive → réactivation (#269) et ses gardes, RBAC, IDOR.
 #![allow(clippy::too_many_arguments)]
 
+mod common;
+
 use std::net::SocketAddr;
 use std::path::Path;
 use std::sync::Arc;
@@ -239,9 +241,10 @@ async fn mk_typed_account(
     .id
 }
 
+/// L'année du jour de l'horloge de test (Story 35-5c : le jour suisse, celui du
+/// serveur des tests).
 fn current_year() -> i32 {
-    Utc::now()
-        .date_naive()
+    common::jour::aujourd_hui_test()
         .format("%Y")
         .to_string()
         .parse()
@@ -281,7 +284,7 @@ async fn mk_entry(
         user_id,
         NewJournalEntry {
             company_id,
-            entry_date: Utc::now().date_naive(),
+            entry_date: common::jour::aujourd_hui_test(),
             journal: Journal::OD,
             description: "Écriture de test 25-2-a".into(),
             project_id: None,

@@ -5,6 +5,7 @@ import {
   authedApiContext,
   disposeContextSafe,
 } from "./helpers/test-state";
+import { todayInZurich } from "./helpers/api-fixtures";
 
 /**
  * Revue P1 de la Story 33-6 (E-4 = A-4) : la réponse d'un règlement coupée APRÈS
@@ -35,7 +36,7 @@ async function login(page: import("@playwright/test").Page) {
 }
 
 function today(): string {
-  return new Date().toISOString().slice(0, 10);
+  return todayInZurich();
 }
 
 /** Une facture validée de 100.00 HT (108.10 TTC), sans règlement ; rend son id. */

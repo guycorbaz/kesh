@@ -15,6 +15,8 @@
 //! - **la garde d'exercice sur le `PUT`** : un brouillon qui porte un numéro ne
 //!   se redate pas hors de l'exercice qui l'a émis.
 
+mod common;
+
 use std::net::SocketAddr;
 use std::sync::Arc;
 
@@ -210,7 +212,7 @@ async fn le_cycle_complet_rend_le_meme_numero_sans_consommer_le_compteur(pool: M
         company_id,
         contact_id,
         admin_id,
-        chrono::Utc::now().date_naive(),
+        common::jour::aujourd_hui_test(),
     )
     .await;
     let token = login(&app, "admin", TEST_ADMIN_PASSWORD).await;
@@ -323,7 +325,7 @@ async fn le_comptable_peut_devalider(pool: MySqlPool) {
         company_id,
         contact_id,
         admin_id,
-        chrono::Utc::now().date_naive(),
+        common::jour::aujourd_hui_test(),
     )
     .await;
     kesh_db::repositories::invoices::validate_invoice(&pool, company_id, invoice_id, admin_id)
@@ -367,7 +369,7 @@ async fn un_brouillon_numerote_ne_change_pas_d_exercice(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     let (admin_id, company_id) = seed_base(&pool).await;
     let contact_id = seed_contact(&pool, company_id, admin_id).await;
-    let aujourd_hui = chrono::Utc::now().date_naive();
+    let aujourd_hui = common::jour::aujourd_hui_test();
     let invoice_id = create_draft(&pool, company_id, contact_id, admin_id, aujourd_hui).await;
     kesh_db::repositories::invoices::validate_invoice(&pool, company_id, invoice_id, admin_id)
         .await
@@ -448,7 +450,7 @@ async fn un_brouillon_numerote_se_redate_dans_son_propre_exercice(pool: MySqlPoo
     let app = spawn_app(pool.clone()).await;
     let (admin_id, company_id) = seed_base(&pool).await;
     let contact_id = seed_contact(&pool, company_id, admin_id).await;
-    let aujourd_hui = chrono::Utc::now().date_naive();
+    let aujourd_hui = common::jour::aujourd_hui_test();
     let invoice_id = create_draft(&pool, company_id, contact_id, admin_id, aujourd_hui).await;
     kesh_db::repositories::invoices::validate_invoice(&pool, company_id, invoice_id, admin_id)
         .await
@@ -532,7 +534,7 @@ async fn une_cle_read_write_devalide_une_cle_read_est_refusee(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     let (admin_id, company_id) = seed_base(&pool).await;
     let contact_id = seed_contact(&pool, company_id, admin_id).await;
-    let aujourd_hui = chrono::Utc::now().date_naive();
+    let aujourd_hui = common::jour::aujourd_hui_test();
     let token = login(&app, "admin", TEST_ADMIN_PASSWORD).await;
     let cle_rw = creer_cle(&app, &token, "rw", "read-write").await;
     let cle_ro = creer_cle(&app, &token, "ro", "read").await;
@@ -600,7 +602,7 @@ async fn un_refus_de_devalidation_rend_409_et_son_code(pool: MySqlPool) {
         company_id,
         contact_id,
         admin_id,
-        chrono::Utc::now().date_naive(),
+        common::jour::aujourd_hui_test(),
     )
     .await;
     kesh_db::repositories::invoices::validate_invoice(&pool, company_id, invoice_id, admin_id)

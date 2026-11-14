@@ -3210,12 +3210,19 @@ mod tests {
     }
 
     /// Nettoie les écritures de test puis retourne
-    /// `(company_id, fiscal_year_id, admin_user_id)`.
+    /// `(company_id, fiscal_year_id, admin_user_id, jour)`.
     ///
     /// Story 3.5 : le `admin_user_id` est récupéré ici et propagé aux
     /// tests pour satisfaire la nouvelle signature de `create` qui
     /// requiert un `user_id` pour l'audit log.
-    async fn setup(pool: &MySqlPool) -> (i64, i64, i64) {
+    ///
+    /// Story 35-5c (#929, D1) : `jour` est le jour suisse lu **une fois**, celui
+    /// de l'exercice ouvert que garantit `setup` ; chaque test date ses pièces de
+    /// ce jour au lieu de relire l'horloge — une exécution qui chevauche minuit le
+    /// 31 décembre créait sinon l'exercice d'une année et une pièce de la
+    /// suivante. Ce module ne lit pas `KESH_TEST_INSTANT` (`kesh-db` reçoit la
+    /// date de ses appelants) : sa sûreté de nuit tient à ce seul jour.
+    async fn setup(pool: &MySqlPool) -> (i64, i64, i64, NaiveDate) {
         // Récupérer la première company (créée par seed_demo).
         let company_id: i64 = sqlx::query_scalar("SELECT id FROM companies LIMIT 1")
             .fetch_one(pool)
@@ -3236,7 +3243,7 @@ mod tests {
             .unwrap();
 
         // Garantir un exercice OUVERT couvrant aujourd'hui (auto-réparation #140).
-        let today = chrono::Utc::now().naive_utc().date();
+        let today = kesh_core::horloge::jour_suisse(chrono::Utc::now());
         let fy = ensure_open_fiscal_year(pool, company_id, today).await;
 
         // Récupérer l'admin user pour l'audit log (dupliqué depuis
@@ -3247,7 +3254,7 @@ mod tests {
                 .await
                 .expect("need at least one admin user (run seed-demo or bootstrap)");
 
-        (company_id, fy.id, admin_user_id)
+        (company_id, fy.id, admin_user_id, today)
     }
 
     /// Garantit qu'un exercice fiscal **ouvert** couvre `date` et le retourne.
@@ -3339,9 +3346,8 @@ mod tests {
     #[tokio::test]
     async fn test_create_writes_audit_log() {
         let pool = test_pool().await;
-        let (company_id, fy_id, admin_user_id) = setup(&pool).await;
+        let (company_id, fy_id, admin_user_id, today) = setup(&pool).await;
         let (a1, a2) = two_accounts(&pool, company_id).await;
-        let today = chrono::Utc::now().naive_utc().date();
 
         let new = mk_entry(
             company_id,
@@ -3406,10 +3412,9 @@ mod tests {
     #[tokio::test]
     async fn test_create_balanced_entry() {
         let pool = test_pool().await;
-        let (company_id, fy_id, admin_user_id) = setup(&pool).await;
+        let (company_id, fy_id, admin_user_id, today) = setup(&pool).await;
         let (a1, a2) = two_accounts(&pool, company_id).await;
 
-        let today = chrono::Utc::now().naive_utc().date();
         let new = mk_entry(
             company_id,
             today,
@@ -3447,9 +3452,8 @@ mod tests {
     #[tokio::test]
     async fn test_create_sequential_numbering() {
         let pool = test_pool().await;
-        let (company_id, fy_id, admin_user_id) = setup(&pool).await;
+        let (company_id, fy_id, admin_user_id, today) = setup(&pool).await;
         let (a1, a2) = two_accounts(&pool, company_id).await;
-        let today = chrono::Utc::now().naive_utc().date();
 
         // ⚠️ Story 25-2-c (#381) — la boucle attendait `1..=3`. La propriété
         // qu'elle voulait dire est la CONTIGUÏTÉ, et celle-là tient toujours ;
@@ -3528,9 +3532,8 @@ mod tests {
     #[tokio::test]
     async fn un_numero_libere_n_est_jamais_reattribue() {
         let pool = test_pool().await;
-        let (company_id, fy_id, admin) = setup(&pool).await;
+        let (company_id, fy_id, admin, today) = setup(&pool).await;
         let (a1, a2) = two_accounts(&pool, company_id).await;
-        let today = chrono::Utc::now().naive_utc().date();
 
         create(
             &pool,
@@ -3593,9 +3596,8 @@ mod tests {
     #[tokio::test]
     async fn le_trou_du_milieu_subsiste_et_c_est_assume() {
         let pool = test_pool().await;
-        let (company_id, fy_id, admin) = setup(&pool).await;
+        let (company_id, fy_id, admin, today) = setup(&pool).await;
         let (a1, a2) = two_accounts(&pool, company_id).await;
-        let today = chrono::Utc::now().naive_utc().date();
 
         let premiere = create(
             &pool,
@@ -3654,9 +3656,8 @@ mod tests {
     #[tokio::test]
     async fn deux_creations_concurrentes_n_obtiennent_pas_le_meme_numero() {
         let pool = test_pool().await;
-        let (company_id, fy_id, admin) = setup(&pool).await;
+        let (company_id, fy_id, admin, today) = setup(&pool).await;
         let (a1, a2) = two_accounts(&pool, company_id).await;
-        let today = chrono::Utc::now().naive_utc().date();
 
         let (g, d) = tokio::join!(
             create(
@@ -3690,9 +3691,8 @@ mod tests {
     #[tokio::test]
     async fn le_compteur_reste_au_dessus_du_plus_grand_numero_en_service() {
         let pool = test_pool().await;
-        let (company_id, fy_id, admin) = setup(&pool).await;
+        let (company_id, fy_id, admin, today) = setup(&pool).await;
         let (a1, a2) = two_accounts(&pool, company_id).await;
-        let today = chrono::Utc::now().naive_utc().date();
 
         create(
             &pool,
@@ -3740,9 +3740,8 @@ mod tests {
     #[tokio::test]
     async fn le_plancher_voit_une_ecriture_validee_pendant_la_transaction() {
         let pool = test_pool().await;
-        let (company_id, fy_id, admin) = setup(&pool).await;
+        let (company_id, fy_id, admin, today) = setup(&pool).await;
         let (a1, a2) = two_accounts(&pool, company_id).await;
-        let today = chrono::Utc::now().naive_utc().date();
 
         // Le compteur existe et porte une valeur connue.
         create(
@@ -3864,9 +3863,8 @@ mod tests {
         enforce_ownership: bool,
     ) -> (Result<(), DbError>, bool) {
         let pool = test_pool().await;
-        let (company_id, fy_id, admin) = setup(&pool).await;
+        let (company_id, fy_id, admin, jour) = setup(&pool).await;
         let (a1, a2) = two_accounts(&pool, company_id).await;
-        let jour = chrono::Utc::now().naive_utc().date();
         let borne = recul.map(|jours| jour - chrono::Duration::days(jours));
         let entree = create(
             &pool,
@@ -3986,9 +3984,8 @@ mod tests {
     /// existe encore après le refus (lu dans la transaction, avant l'annulation).
     async fn supprimer_avec(causes: Causes) -> (Result<(), DbError>, bool) {
         let pool = test_pool().await;
-        let (company_id, fy_id, admin) = setup(&pool).await;
+        let (company_id, fy_id, admin, jour) = setup(&pool).await;
         let (a1, a2) = two_accounts(&pool, company_id).await;
-        let jour = chrono::Utc::now().naive_utc().date();
         let origine = create(
             &pool,
             fy_id,
@@ -4218,9 +4215,8 @@ mod tests {
     #[tokio::test]
     async fn la_devalidation_voit_l_exercice_posterieur() {
         let pool = test_pool().await;
-        let (company_id, fy_id, admin) = setup(&pool).await;
+        let (company_id, fy_id, admin, jour) = setup(&pool).await;
         let (a1, a2) = two_accounts(&pool, company_id).await;
-        let jour = chrono::Utc::now().naive_utc().date();
         let e = create(
             &pool,
             fy_id,
@@ -4266,13 +4262,15 @@ mod tests {
     /// du jour lettrée avec la ligne d'une autre (compte `Asset` créé dans la
     /// transaction, lettrable), par la primitive en mode `Manual`. Rend
     /// `(écriture lettrée, code du groupe)`. Tout s'efface au rollback de
-    /// l'appelant : la base est partagée (KF-039).
+    /// l'appelant : la base est partagée (KF-039). Story 35-5c : `jour` est
+    /// celui que `setup` a lu, non une seconde lecture de l'horloge.
     async fn lettrer_dans(
         tx: &mut sqlx::Transaction<'_, sqlx::MySql>,
         company_id: i64,
         fy_id: i64,
         admin: i64,
         contrepartie: i64,
+        jour: NaiveDate,
     ) -> (i64, String) {
         let lettrable = sqlx::query(
             "INSERT INTO accounts (company_id, number, name, account_type, postable) \
@@ -4283,7 +4281,6 @@ mod tests {
         .await
         .unwrap()
         .last_insert_id() as i64;
-        let jour = chrono::Utc::now().naive_utc().date();
         let cible = create_in_tx(
             tx,
             fy_id,
@@ -4332,11 +4329,11 @@ mod tests {
     #[tokio::test]
     async fn la_marque_de_lettrage_tient_hors_du_drapeau() {
         let pool = test_pool().await;
-        let (company_id, fy_id, admin) = setup(&pool).await;
+        let (company_id, fy_id, admin, today) = setup(&pool).await;
         let (_, a2) = two_accounts(&pool, company_id).await;
         for enforce_ownership in [false, true] {
             let mut tx = pool.begin().await.unwrap();
-            let (cible, code) = lettrer_dans(&mut tx, company_id, fy_id, admin, a2).await;
+            let (cible, code) = lettrer_dans(&mut tx, company_id, fy_id, admin, a2, today).await;
             let r = delete_in_tx(&mut tx, company_id, cible, admin, None, enforce_ownership).await;
             tx.rollback().await.unwrap();
             assert!(
@@ -4357,11 +4354,11 @@ mod tests {
     #[tokio::test]
     async fn delete_of_a_lettered_entry_under_a_later_closed_year_says_later_closed() {
         let pool = test_pool().await;
-        let (company_id, fy_id, admin) = setup(&pool).await;
+        let (company_id, fy_id, admin, today) = setup(&pool).await;
         let (_, a2) = two_accounts(&pool, company_id).await;
         for enforce_ownership in [false, true] {
             let mut tx = pool.begin().await.unwrap();
-            let (cible, _) = lettrer_dans(&mut tx, company_id, fy_id, admin, a2).await;
+            let (cible, _) = lettrer_dans(&mut tx, company_id, fy_id, admin, a2, today).await;
             let fin: NaiveDate =
                 sqlx::query_scalar("SELECT end_date FROM fiscal_years WHERE id = ?")
                     .bind(fy_id)
@@ -4396,12 +4393,12 @@ mod tests {
     #[tokio::test]
     async fn delete_in_tx_of_a_lettered_entry_in_a_locked_period_says_period_locked() {
         let pool = test_pool().await;
-        let (company_id, fy_id, admin) = setup(&pool).await;
+        let (company_id, fy_id, admin, today) = setup(&pool).await;
         let (_, a2) = two_accounts(&pool, company_id).await;
         let mut tx = pool.begin().await.unwrap();
-        let (cible, _) = lettrer_dans(&mut tx, company_id, fy_id, admin, a2).await;
+        let (cible, _) = lettrer_dans(&mut tx, company_id, fy_id, admin, a2, today).await;
         sqlx::query("UPDATE companies SET books_locked_through = ? WHERE id = ?")
-            .bind(chrono::Utc::now().naive_utc().date())
+            .bind(today)
             .bind(company_id)
             .execute(&mut *tx)
             .await
@@ -4417,9 +4414,8 @@ mod tests {
     #[tokio::test]
     async fn test_create_rejects_closed_fiscal_year() {
         let pool = test_pool().await;
-        let (company_id, fy_id, admin_user_id) = setup(&pool).await;
+        let (company_id, fy_id, admin_user_id, today) = setup(&pool).await;
         let (a1, a2) = two_accounts(&pool, company_id).await;
-        let today = chrono::Utc::now().naive_utc().date();
 
         // Clore l'exercice (Story 3.7 : signature audit-aware avec user_id +
         // company_id pour défense en profondeur multi-tenant — Code Review F2).
@@ -4474,7 +4470,7 @@ mod tests {
             .unwrap();
 
         // Recréer pour les tests suivants (Story 3.7 : pas d'audit log, contexte test).
-        let year = chrono::Utc::now().naive_utc().date().year();
+        let year = today.year();
         fiscal_years::create_for_seed(
             &pool,
             crate::entities::NewFiscalYear {
@@ -4491,7 +4487,7 @@ mod tests {
     #[tokio::test]
     async fn test_find_covering_date_none() {
         let pool = test_pool().await;
-        let (company_id, _fy_id, _admin_user_id) = setup(&pool).await;
+        let (company_id, _fy_id, _admin_user_id, _) = setup(&pool).await;
 
         // Date très ancienne — aucun exercice ne la couvre.
         let old = NaiveDate::from_ymd_opt(1900, 1, 1).unwrap();
@@ -4504,8 +4500,7 @@ mod tests {
     #[tokio::test]
     async fn test_find_covering_date_open() {
         let pool = test_pool().await;
-        let (company_id, fy_id, _admin_user_id) = setup(&pool).await;
-        let today = chrono::Utc::now().naive_utc().date();
+        let (company_id, fy_id, _admin_user_id, today) = setup(&pool).await;
 
         let result = fiscal_years::find_covering_date(&pool, company_id, today)
             .await
@@ -4517,9 +4512,8 @@ mod tests {
     #[tokio::test]
     async fn test_find_by_id_returns_lines_in_order() {
         let pool = test_pool().await;
-        let (company_id, fy_id, admin_user_id) = setup(&pool).await;
+        let (company_id, fy_id, admin_user_id, today) = setup(&pool).await;
         let (a1, a2) = two_accounts(&pool, company_id).await;
-        let today = chrono::Utc::now().naive_utc().date();
 
         let new = mk_entry(
             company_id,
@@ -4560,9 +4554,8 @@ mod tests {
     #[tokio::test]
     async fn test_list_paginated_default() {
         let pool = test_pool().await;
-        let (company_id, fy_id, admin_user_id) = setup(&pool).await;
+        let (company_id, fy_id, admin_user_id, today) = setup(&pool).await;
         let (a1, a2) = two_accounts(&pool, company_id).await;
-        let today = chrono::Utc::now().naive_utc().date();
 
         // Créer 3 écritures à la même date.
         for _ in 0..3 {
@@ -4608,9 +4601,8 @@ mod tests {
     #[tokio::test]
     async fn test_list_filter_description() {
         let pool = test_pool().await;
-        let (company_id, fy_id, admin_user_id) = setup(&pool).await;
+        let (company_id, fy_id, admin_user_id, today) = setup(&pool).await;
         let (a1, a2) = two_accounts(&pool, company_id).await;
-        let today = chrono::Utc::now().naive_utc().date();
 
         // Créer 2 écritures avec descriptions distinctes.
         let mut entry1 = mk_entry(
@@ -4694,9 +4686,8 @@ mod tests {
     #[tokio::test]
     async fn test_list_filter_description_handles_special_chars() {
         let pool = test_pool().await;
-        let (company_id, fy_id, admin_user_id) = setup(&pool).await;
+        let (company_id, fy_id, admin_user_id, today) = setup(&pool).await;
         let (a1, a2) = two_accounts(&pool, company_id).await;
-        let today = chrono::Utc::now().naive_utc().date();
 
         let mut e1 = mk_entry(
             company_id,
@@ -4769,9 +4760,8 @@ mod tests {
     #[tokio::test]
     async fn test_filter_by_description_pure_operators_returns_zero() {
         let pool = test_pool().await;
-        let (company_id, fy_id, admin_user_id) = setup(&pool).await;
+        let (company_id, fy_id, admin_user_id, today) = setup(&pool).await;
         let (a1, a2) = two_accounts(&pool, company_id).await;
-        let today = chrono::Utc::now().naive_utc().date();
 
         // Seed 2 écritures — si le skip silencieux régressait, on les
         // retrouverait toutes au lieu d'avoir 0 résultats.
@@ -4827,9 +4817,8 @@ mod tests {
     #[tokio::test]
     async fn test_search_no_longer_matches_mid_word() {
         let pool = test_pool().await;
-        let (company_id, fy_id, admin_user_id) = setup(&pool).await;
+        let (company_id, fy_id, admin_user_id, today) = setup(&pool).await;
         let (a1, a2) = two_accounts(&pool, company_id).await;
-        let today = chrono::Utc::now().naive_utc().date();
 
         let mut entry = mk_entry(
             company_id,
@@ -4891,9 +4880,8 @@ mod tests {
     #[tokio::test]
     async fn test_list_filter_amount_range() {
         let pool = test_pool().await;
-        let (company_id, fy_id, admin_user_id) = setup(&pool).await;
+        let (company_id, fy_id, admin_user_id, today) = setup(&pool).await;
         let (a1, a2) = two_accounts(&pool, company_id).await;
-        let today = chrono::Utc::now().naive_utc().date();
 
         // 3 écritures à 100, 500, 1000.
         for amount in [dec!(100), dec!(500), dec!(1000)] {
@@ -4939,9 +4927,8 @@ mod tests {
     #[tokio::test]
     async fn test_list_filter_journal() {
         let pool = test_pool().await;
-        let (company_id, fy_id, admin_user_id) = setup(&pool).await;
+        let (company_id, fy_id, admin_user_id, today) = setup(&pool).await;
         let (a1, a2) = two_accounts(&pool, company_id).await;
-        let today = chrono::Utc::now().naive_utc().date();
 
         // Créer 2 écritures Banque + 1 Ventes.
         for _ in 0..2 {
@@ -5001,9 +4988,8 @@ mod tests {
     #[tokio::test]
     async fn test_list_pagination_offset_limit() {
         let pool = test_pool().await;
-        let (company_id, fy_id, admin_user_id) = setup(&pool).await;
+        let (company_id, fy_id, admin_user_id, today) = setup(&pool).await;
         let (a1, a2) = two_accounts(&pool, company_id).await;
-        let today = chrono::Utc::now().naive_utc().date();
 
         // Créer 5 écritures.
         for _ in 0..5 {
@@ -5077,9 +5063,8 @@ mod tests {
     #[tokio::test]
     async fn test_list_sort_by_entry_number_asc() {
         let pool = test_pool().await;
-        let (company_id, fy_id, admin_user_id) = setup(&pool).await;
+        let (company_id, fy_id, admin_user_id, today) = setup(&pool).await;
         let (a1, a2) = two_accounts(&pool, company_id).await;
-        let today = chrono::Utc::now().naive_utc().date();
 
         for _ in 0..3 {
             create(
@@ -5137,9 +5122,8 @@ mod tests {
     #[tokio::test]
     async fn test_list_filter_by_account() {
         let pool = test_pool().await;
-        let (company_id, fy_id, admin_user_id) = setup(&pool).await;
+        let (company_id, fy_id, admin_user_id, today) = setup(&pool).await;
         let (a1, a2) = two_accounts(&pool, company_id).await;
-        let today = chrono::Utc::now().naive_utc().date();
 
         // Un compte que ce test est seul à mouvementer.
         let suffixe = chrono::Utc::now().timestamp_nanos_opt().unwrap_or_default();
@@ -5235,9 +5219,8 @@ mod tests {
     #[tokio::test]
     async fn test_list_count_accurate_after_filter() {
         let pool = test_pool().await;
-        let (company_id, fy_id, admin_user_id) = setup(&pool).await;
+        let (company_id, fy_id, admin_user_id, today) = setup(&pool).await;
         let (a1, a2) = two_accounts(&pool, company_id).await;
-        let today = chrono::Utc::now().naive_utc().date();
 
         // Créer 3 écritures : 2 matchent le filtre, 1 non.
         for desc in ["Match 1", "Match 2", "Autre"] {
@@ -5279,12 +5262,11 @@ mod tests {
     #[tokio::test]
     async fn test_check_constraint_rejects_debit_and_credit_same_line() {
         let pool = test_pool().await;
-        let (company_id, _fy_id, admin_user_id) = setup(&pool).await;
+        let (company_id, _fy_id, admin_user_id, today) = setup(&pool).await;
         let (a1, _a2) = two_accounts(&pool, company_id).await;
 
         // Créer d'abord une entry valide pour récupérer un entry_id.
         // On va ensuite tenter un INSERT direct d'une ligne invalide.
-        let today = chrono::Utc::now().naive_utc().date();
         let new = mk_entry(
             company_id,
             today,
@@ -5384,9 +5366,8 @@ mod tests {
     #[tokio::test]
     async fn test_create_line_projects_mixed() {
         let pool = test_pool().await;
-        let (company_id, fy_id, admin_user_id) = setup(&pool).await;
+        let (company_id, fy_id, admin_user_id, today) = setup(&pool).await;
         let (a1, a2) = two_accounts(&pool, company_id).await;
-        let today = chrono::Utc::now().naive_utc().date();
         let p1 = mk_project(&pool, company_id, "P19-2-MIX-A", false).await;
         let p2 = mk_project(&pool, company_id, "P19-2-MIX-B", false).await;
 
@@ -5413,9 +5394,8 @@ mod tests {
     #[tokio::test]
     async fn test_create_line_project_archived_rejected() {
         let pool = test_pool().await;
-        let (company_id, fy_id, admin_user_id) = setup(&pool).await;
+        let (company_id, fy_id, admin_user_id, today) = setup(&pool).await;
         let (a1, a2) = two_accounts(&pool, company_id).await;
-        let today = chrono::Utc::now().naive_utc().date();
         let archived = mk_project(&pool, company_id, "P19-2-ARCH", true).await;
 
         let new = mk_entry(
@@ -5437,9 +5417,8 @@ mod tests {
     #[tokio::test]
     async fn test_create_line_project_unknown_rejected() {
         let pool = test_pool().await;
-        let (company_id, fy_id, admin_user_id) = setup(&pool).await;
+        let (company_id, fy_id, admin_user_id, today) = setup(&pool).await;
         let (a1, a2) = two_accounts(&pool, company_id).await;
-        let today = chrono::Utc::now().naive_utc().date();
 
         let new = mk_entry(
             company_id,
@@ -5458,9 +5437,8 @@ mod tests {
     #[tokio::test]
     async fn test_create_line_project_cross_company_rejected() {
         let pool = test_pool().await;
-        let (company_id, fy_id, admin_user_id) = setup(&pool).await;
+        let (company_id, fy_id, admin_user_id, today) = setup(&pool).await;
         let (a1, a2) = two_accounts(&pool, company_id).await;
-        let today = chrono::Utc::now().naive_utc().date();
 
         // Company étrangère éphémère + projet actif chez elle.
         let other_company: i64 = sqlx::query(
@@ -5503,9 +5481,8 @@ mod tests {
     #[tokio::test]
     async fn test_create_entry_level_fallback_stamps_lines() {
         let pool = test_pool().await;
-        let (company_id, fy_id, admin_user_id) = setup(&pool).await;
+        let (company_id, fy_id, admin_user_id, today) = setup(&pool).await;
         let (a1, a2) = two_accounts(&pool, company_id).await;
-        let today = chrono::Utc::now().naive_utc().date();
         let p = mk_project(&pool, company_id, "P19-2-DOC", false).await;
 
         let mut new = mk_entry(
@@ -5548,9 +5525,8 @@ mod tests {
     #[tokio::test]
     async fn test_create_manual_rejects_non_postable_line() {
         let pool = test_pool().await;
-        let (company_id, fy_id, admin_user_id) = setup(&pool).await;
+        let (company_id, fy_id, admin_user_id, today) = setup(&pool).await;
         let (a1, a2) = two_accounts(&pool, company_id).await;
-        let today = chrono::Utc::now().naive_utc().date();
 
         // Cas OK — comptes postables (état seed).
         let ok = mk_entry(
@@ -5613,9 +5589,8 @@ mod tests {
     #[tokio::test]
     async fn test_create_manual_names_every_non_postable_account_sorted() {
         let pool = test_pool().await;
-        let (company_id, fy_id, admin_user_id) = setup(&pool).await;
+        let (company_id, fy_id, admin_user_id, today) = setup(&pool).await;
         let (a1, a2) = two_accounts(&pool, company_id).await;
-        let today = chrono::Utc::now().naive_utc().date();
 
         set_postable(&pool, a1, false).await;
         set_postable(&pool, a2, false).await;
@@ -5654,9 +5629,8 @@ mod tests {
     #[tokio::test]
     async fn test_create_manual_archived_wins_over_non_postable() {
         let pool = test_pool().await;
-        let (company_id, fy_id, admin_user_id) = setup(&pool).await;
+        let (company_id, fy_id, admin_user_id, today) = setup(&pool).await;
         let (a1, a2) = two_accounts(&pool, company_id).await;
-        let today = chrono::Utc::now().naive_utc().date();
 
         set_active(&pool, a1, false).await;
         set_postable(&pool, a2, false).await;
@@ -5681,9 +5655,8 @@ mod tests {
     #[tokio::test]
     async fn test_create_in_tx_auto_flow_allows_non_postable() {
         let pool = test_pool().await;
-        let (company_id, fy_id, admin_user_id) = setup(&pool).await;
+        let (company_id, fy_id, admin_user_id, today) = setup(&pool).await;
         let (a1, a2) = two_accounts(&pool, company_id).await;
-        let today = chrono::Utc::now().naive_utc().date();
 
         set_postable(&pool, a2, false).await;
         let new = mk_entry(
@@ -5714,9 +5687,8 @@ mod tests {
     #[tokio::test]
     async fn test_create_manual_rejects_result_account() {
         let pool = test_pool().await;
-        let (company_id, fy_id, admin_user_id) = setup(&pool).await;
+        let (company_id, fy_id, admin_user_id, today) = setup(&pool).await;
         let (a1, _a2) = two_accounts(&pool, company_id).await;
-        let today = chrono::Utc::now().naive_utc().date();
 
         let result_account_id: Option<i64> = sqlx::query_scalar(
             "SELECT id FROM accounts \
@@ -5806,9 +5778,8 @@ mod tests {
     #[tokio::test]
     async fn reverse_in_tx_disparait_avec_le_rollback_de_l_appelant() {
         let pool = test_pool().await;
-        let (company_id, fy_id, admin_user_id) = setup(&pool).await;
+        let (company_id, fy_id, admin_user_id, today) = setup(&pool).await;
         let (a1, a2) = two_accounts(&pool, company_id).await;
-        let today = chrono::Utc::now().naive_utc().date();
 
         let origine = create(
             &pool,
@@ -6039,9 +6010,8 @@ mod tests {
     #[tokio::test]
     async fn update_no_op_returns_unchanged_entity_no_lines_churn() {
         let pool = test_pool().await;
-        let (company_id, fy_id, admin_user_id) = setup(&pool).await;
+        let (company_id, fy_id, admin_user_id, today) = setup(&pool).await;
         let (a1, a2) = two_accounts(&pool, company_id).await;
-        let today = chrono::Utc::now().naive_utc().date();
 
         let created = create(
             &pool,
@@ -6085,9 +6055,8 @@ mod tests {
     #[tokio::test]
     async fn update_no_op_in_closed_fy_returns_fiscal_year_closed() {
         let pool = test_pool().await;
-        let (company_id, fy_id, admin_user_id) = setup(&pool).await;
+        let (company_id, fy_id, admin_user_id, today) = setup(&pool).await;
         let (a1, a2) = two_accounts(&pool, company_id).await;
-        let today = chrono::Utc::now().naive_utc().date();
 
         let created = create(
             &pool,
@@ -6130,9 +6099,8 @@ mod tests {
     #[tokio::test]
     async fn update_no_op_with_inactive_account_returns_inactive_error() {
         let pool = test_pool().await;
-        let (company_id, fy_id, admin_user_id) = setup(&pool).await;
+        let (company_id, fy_id, admin_user_id, today) = setup(&pool).await;
         let (a1, a2) = two_accounts(&pool, company_id).await;
-        let today = chrono::Utc::now().naive_utc().date();
 
         let created = create(
             &pool,
@@ -6171,9 +6139,8 @@ mod tests {
     #[tokio::test]
     async fn update_no_op_with_non_postable_account_returns_not_postable() {
         let pool = test_pool().await;
-        let (company_id, fy_id, admin_user_id) = setup(&pool).await;
+        let (company_id, fy_id, admin_user_id, today) = setup(&pool).await;
         let (a1, a2) = two_accounts(&pool, company_id).await;
-        let today = chrono::Utc::now().naive_utc().date();
 
         let created = create(
             &pool,
@@ -6215,9 +6182,8 @@ mod tests {
     #[tokio::test]
     async fn update_partial_change_bumps_version() {
         let pool = test_pool().await;
-        let (company_id, fy_id, admin_user_id) = setup(&pool).await;
+        let (company_id, fy_id, admin_user_id, today) = setup(&pool).await;
         let (a1, a2) = two_accounts(&pool, company_id).await;
-        let today = chrono::Utc::now().naive_utc().date();
 
         let created = create(
             &pool,
@@ -6269,9 +6235,8 @@ mod tests {
     #[tokio::test]
     async fn test_update_project_only_change_is_not_noop() {
         let pool = test_pool().await;
-        let (company_id, fy_id, admin_user_id) = setup(&pool).await;
+        let (company_id, fy_id, admin_user_id, today) = setup(&pool).await;
         let (a1, a2) = two_accounts(&pool, company_id).await;
-        let today = chrono::Utc::now().naive_utc().date();
         let p = mk_project(&pool, company_id, "P19-2-NOOP", false).await;
 
         let created = create(
@@ -6320,9 +6285,8 @@ mod tests {
     #[tokio::test]
     async fn test_update_grandfathers_preexisting_archived_project() {
         let pool = test_pool().await;
-        let (company_id, fy_id, admin_user_id) = setup(&pool).await;
+        let (company_id, fy_id, admin_user_id, today) = setup(&pool).await;
         let (a1, a2) = two_accounts(&pool, company_id).await;
-        let today = chrono::Utc::now().naive_utc().date();
         let p = mk_project(&pool, company_id, "P19-2-GRAND", false).await;
         let q = mk_project(&pool, company_id, "P19-2-GRAND-Q", true).await;
 
@@ -6390,9 +6354,8 @@ mod tests {
     #[tokio::test]
     async fn test_update_moves_archived_tag_between_lines() {
         let pool = test_pool().await;
-        let (company_id, fy_id, admin_user_id) = setup(&pool).await;
+        let (company_id, fy_id, admin_user_id, today) = setup(&pool).await;
         let (a1, a2) = two_accounts(&pool, company_id).await;
-        let today = chrono::Utc::now().naive_utc().date();
         let p = mk_project(&pool, company_id, "P19-2-MOVE", false).await;
 
         let created = create(
@@ -6446,9 +6409,8 @@ mod tests {
     #[tokio::test]
     async fn test_update_refuses_a_line_on_an_account_made_non_postable() {
         let pool = test_pool().await;
-        let (company_id, fy_id, admin_user_id) = setup(&pool).await;
+        let (company_id, fy_id, admin_user_id, today) = setup(&pool).await;
         let (a1, a2, _a3) = three_accounts(&pool, company_id).await;
-        let today = chrono::Utc::now().naive_utc().date();
 
         let created = create(
             &pool,

@@ -7,6 +7,8 @@
 //! quatre chiffres valent `4821` ou `7360`, choisis pour ne coïncider avec
 //! aucun identifiant des montages.
 
+mod common;
+
 use std::net::SocketAddr;
 use std::path::Path;
 use std::sync::Arc;
@@ -1057,6 +1059,8 @@ async fn reglements_et_carte(pool: MySqlPool) {
     let ctx = monter(&pool).await;
     let carte = ctx.carte(ctx.passif).await;
     let carte_id = carte["id"].as_i64().unwrap();
+    // Story 35-5c : le jour de l'horloge de test, lu une fois (dates saisies).
+    let jour = common::jour::aujourd_hui_test().to_string();
 
     // Facture client validée.
     let client = ctx.contact("Client", false).await;
@@ -1065,7 +1069,7 @@ async fn reglements_et_carte(pool: MySqlPool) {
             "/api/v1/invoices",
             json!({
                 "contactId": client,
-                "date": Utc::now().date_naive().to_string(),
+                "date": jour,
                 "lines": [{"description": "Conseil", "quantity": "1", "unitPrice": "100.00", "vatRate": "8.10"}]
             }),
         )
@@ -1095,7 +1099,7 @@ async fn reglements_et_carte(pool: MySqlPool) {
                 "settlementType": "bank_transfer",
                 "bankAccountId": carte_id,
                 "amount": "108.10",
-                "settledOn": Utc::now().date_naive().to_string(),
+                "settledOn": jour,
                 "version": version,
             }),
         )
@@ -1126,7 +1130,7 @@ async fn reglements_et_carte(pool: MySqlPool) {
                 "settlementType": "bank_transfer",
                 "bankAccountId": carte_id,
                 "amount": "108.10",
-                "settledOn": Utc::now().date_naive().to_string(),
+                "settledOn": jour,
                 "version": perimee,
             }),
         )

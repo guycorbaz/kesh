@@ -5,7 +5,9 @@ import {
 	createContactWithAddressViaApi,
 	ensurePrimaryBankAccountViaApi,
 	createAndValidateInvoiceViaApi,
+	todayInZurich,
 } from './helpers/api-fixtures';
+import { ajouterJoursIso } from './helpers/dates';
 
 test.beforeAll(async () => {
 	await seedTestState('with-company');
@@ -519,13 +521,10 @@ test.describe('Factures — création brouillon', () => {
 
 		// Échéance = date du jour + 30 (calcul UTC identique à addDaysIso). La date du jour
 		// est celle du POSTE, comme la propose le formulaire depuis la 0.17.4 (#889) — la date
-		// UTC rendait la veille entre minuit et 1 h (2 h en été) et ce test rougissait.
-		const now = new Date();
-		const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-		const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(today)!;
-		const expectedDue = new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]) + 30))
-			.toISOString()
-			.slice(0, 10);
+		// UTC rendait la veille entre minuit et 1 h (2 h en été) et ce test rougissait. Le
+		// navigateur des specs est à Zurich (`timezoneId`) : le jour du poste est le jour suisse
+		// (Story 35-5c, non plus le fuseau du processus Node).
+		const expectedDue = ajouterJoursIso(todayInZurich(), 30);
 		await expect(page.locator('#invoice-due-date')).toHaveValue(expectedDue);
 		// Libellé serveur (langue contact héritée = FR sur le seed E2E).
 		await expect(page.locator('#invoice-payment-terms')).toHaveValue('Payable à 30 jours net');

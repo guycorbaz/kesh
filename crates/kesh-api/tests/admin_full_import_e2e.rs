@@ -2174,7 +2174,7 @@ async fn full_import_traces_a_receding_books_lock(pool: MySqlPool) {
 
     // Destination : la même installation, mais les livres y ont été verrouillés
     // depuis la sauvegarde.
-    let borne = chrono::Utc::now().date_naive() - chrono::Duration::days(30);
+    let borne = crate::common::jour::aujourd_hui_test() - chrono::Duration::days(30);
     sqlx::query("UPDATE companies SET books_locked_through = ?")
         .bind(borne)
         .execute(&pool)
@@ -2232,7 +2232,7 @@ async fn full_import_does_not_trace_an_advancing_books_lock(pool: MySqlPool) {
 
     let a = seed_admin(&pool, "Source").await;
     // La source PORTE un verrou ; la destination n'en aura pas.
-    let borne = chrono::Utc::now().date_naive() - chrono::Duration::days(30);
+    let borne = crate::common::jour::aujourd_hui_test() - chrono::Duration::days(30);
     sqlx::query("UPDATE companies SET books_locked_through = ?")
         .bind(borne)
         .execute(&pool)
@@ -2280,7 +2280,7 @@ async fn validating_a_backdated_invoice_is_refused_by_the_period_lock(pool: MySq
     // aujourd'hui — les deux conditions que `lock_books` impose.
     let borne = chrono::NaiveDate::from_ymd_opt(2026, 6, 30).unwrap();
     assert!(
-        borne < chrono::Utc::now().date_naive(),
+        borne < crate::common::jour::aujourd_hui_test(),
         "le test suppose une borne passée ; il pourrira sinon en 2026"
     );
     sqlx::query("UPDATE companies SET books_locked_through = ? WHERE id = ?")

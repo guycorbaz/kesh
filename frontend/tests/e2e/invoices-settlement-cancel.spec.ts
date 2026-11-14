@@ -5,7 +5,7 @@ import {
   authedApiContext,
   disposeContextSafe,
 } from "./helpers/test-state";
-import { invoiceVersionViaApi } from "./helpers/api-fixtures";
+import { invoiceVersionViaApi, todayInZurich } from "./helpers/api-fixtures";
 
 /**
  * Tests E2E — Annuler un règlement client, Story 25-3-a-1 (#414).
@@ -37,7 +37,7 @@ async function login(page: import("@playwright/test").Page) {
 }
 
 function today(): string {
-  return new Date().toISOString().slice(0, 10);
+  return todayInZurich();
 }
 
 /** Facture validée de 100.00 HT (108.10 TTC), réglée en entier ; rend son id. */
