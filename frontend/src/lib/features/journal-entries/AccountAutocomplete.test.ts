@@ -4,10 +4,12 @@
 // (hoisting Vitest), render via @testing-library/svelte (Svelte 5).
 //
 // Story 16-1b — les props opt-in `allowClear` / `markInvalid` /
-// `requiredAccountType`. **Tous les tests d'ici sont orientés non-régression des
-// 4 consommateurs existants** (`JournalEntryForm`, `VatPurchaseAssistant`,
+// `requiredAccountType`. **Les tests d'ici sont orientés non-régression des
+// consommateurs stricts** (`JournalEntryForm`, `VatPurchaseAssistant`,
 // `TransactionSplitModal`, `ManualMatchModal`) : le défaut de chaque prop doit
-// préserver strictement le comportement antérieur.
+// préserver le comportement antérieur — à une exception près, voulue : depuis la
+// Story 35-7 (#1000), un champ strict quitté jette son brouillon et réaffiche le
+// compte retenu, au lieu de montrer un texte que la valeur contredit.
 //
 // Le mock i18n suit l'emplacement CANONIQUE (`shared/utils/i18n.svelte`, AC3).
 // Il visait `features/onboarding/onboarding.svelte` jusqu'à la 16-1b — mock
@@ -78,7 +80,7 @@ describe('AccountAutocomplete — filtre postable (Story 14-3b)', () => {
 	});
 });
 
-describe('AccountAutocomplete — non-régression des 4 consommateurs (Story 16-1b, AC13)', () => {
+describe('AccountAutocomplete — consommateurs stricts (Story 16-1b, AC13 ; Story 35-7)', () => {
 	// Le compte 4400 est le témoin qui rend ce bloc discriminant : `Expense` ET
 	// non-postable, donc invalide sur les DEUX critères. Sans lui, les tests
 	// « aucun marqueur » passeraient aussi avec un marqueur inconditionnel.
@@ -96,16 +98,61 @@ describe('AccountAutocomplete — non-régression des 4 consommateurs (Story 16-
 		expect(queryByLabelText(/Effacer le compte/)).toBeNull();
 	});
 
-	it("sans `allowClear` : vider le champ au clavier ne nullifie RIEN (dette #271)", async () => {
+	it("sans `allowClear` : vider le champ puis le quitter ne nullifie rien (dette #271) et réaffiche le compte (Story 35-7)", async () => {
 		const onSelect = vi.fn();
 		const { getByRole } = render(AccountAutocomplete, { accounts, value: 1, onSelect });
 
-		const input = getByRole('textbox');
+		const input = getByRole('textbox') as HTMLInputElement;
 		await fireEvent.input(input, { target: { value: '' } });
 		await fireEvent.blur(input);
 		await afterBlurDelay();
 
 		expect(onSelect).not.toHaveBeenCalled();
+		// Story 35-7 (#1000, AC1) : le champ ne contredit pas la valeur qui partira.
+		expect(input.value).toBe('1000 — Caisse');
+	});
+
+	it('sans `allowClear` : un texte libre jamais choisi est jeté au `blur` (Story 35-7, AC1)', async () => {
+		const onSelect = vi.fn();
+		const { getByRole } = render(AccountAutocomplete, { accounts, value: 1, onSelect });
+
+		const input = getByRole('textbox') as HTMLInputElement;
+		await fireEvent.input(input, { target: { value: 'zzz' } });
+		await fireEvent.blur(input);
+
+		expect(input.value).toBe('1000 — Caisse');
+		expect(onSelect).not.toHaveBeenCalled();
+	});
+
+	it('sans `allowClear`, valeur nulle : un texte libre est jeté au `blur`, le champ reste vide (Story 35-7, AC1)', async () => {
+		const onSelect = vi.fn();
+		const { getByRole } = render(AccountAutocomplete, { accounts, value: null, onSelect });
+
+		const input = getByRole('textbox') as HTMLInputElement;
+		await fireEvent.input(input, { target: { value: 'zzz' } });
+		await fireEvent.blur(input);
+
+		expect(input.value).toBe('');
+		expect(onSelect).not.toHaveBeenCalled();
+	});
+
+	it('mode dégradé (`loadError`) : le brouillon tapé reste affiché au `blur` (Story 35-7, AC1)', async () => {
+		// `onSelect` nu : `value` n'est PAS mise à jour, sans quoi l'effet qui suit `value`
+		// réafficherait `7` de toute façon et le test ne distinguerait rien.
+		const onSelect = vi.fn();
+		const { getByRole } = render(AccountAutocomplete, {
+			accounts: [],
+			value: null,
+			loadError: true,
+			onSelect,
+		});
+
+		const input = getByRole('textbox') as HTMLInputElement;
+		await fireEvent.input(input, { target: { value: '7' } });
+		await fireEvent.blur(input);
+
+		expect(input.value).toBe('7');
+		expect(onSelect).toHaveBeenCalledWith(7);
 	});
 
 	it("sans `markInvalid` : AUCUN marqueur, même sur un compte `Expense` non-postable", () => {
@@ -276,7 +323,7 @@ describe('AccountAutocomplete — `requiredAccountType` filtre le dropdown (pass
 			onSelect: () => {},
 		});
 		await fireEvent.focus(getByRole('textbox'));
-		// Comportement des 4 consommateurs : inchangé.
+		// Comportement des consommateurs existants : inchangé.
 		expect(queryByText('Achats')).not.toBeNull();
 	});
 

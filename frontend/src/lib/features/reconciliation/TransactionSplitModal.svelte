@@ -36,7 +36,11 @@
 	import type { ProjectResponse } from '$lib/features/projects/projects.types';
 	import type { ReconciliationProposal, SplitProposalLine } from './reconciliation.types';
 	import { splitTransaction } from './reconciliation.api';
-	import { claimRoleOfId, counterpartyAccounts } from './reconciliation-counterparties';
+	import {
+		claimRoleOfId,
+		counterpartyAccounts,
+		keepOfferedCounterparty,
+	} from './reconciliation-counterparties';
 	import CounterpartyClaimNotice from './CounterpartyClaimNotice.svelte';
 
 	type Props = {
@@ -96,6 +100,17 @@
 
 	// Story 34-3 (AC-3) : même règle que l'écriture manuelle, écrite une fois.
 	const filteredAccounts = $derived(counterpartyAccounts(accounts, bankLedgerAccountId));
+
+	// Story 35-7 (#1000, D1) : une ligne dont le compte n'est plus proposé — celui de la banque,
+	// choisi avant que le parent l'ait identifié — perd ce compte, et elle seule. Le message
+	// « Ligne N : compte requis » le dit. N'écrit que les lignes dont la valeur change.
+	$effect(() => {
+		for (let i = 0; i < splits.length; i++) {
+			const current = splits[i].counterpartyAccountId;
+			const kept = keepOfferedCounterparty(current, accounts, bankLedgerAccountId);
+			if (kept !== current) splits[i].counterpartyAccountId = kept;
+		}
+	});
 
 	// Reset à l'ouverture + pré-remplissage valueDate.
 	$effect(() => {

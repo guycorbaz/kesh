@@ -284,6 +284,10 @@
 		// Ctrl+S → submit
 		if ((e.ctrlKey || e.metaKey) && e.key === 's') {
 			e.preventDefault();
+			// Story 35-7, revue P1 (E1, #1000) : le raccourci soumet sans quitter le
+			// champ. Rendre le focus fait passer un brouillon de compte par le `blur`
+			// d'`AccountAutocomplete`, qui le jette : le champ montre le compte qui part.
+			(document.activeElement as HTMLElement | null)?.blur();
 			if (canSubmit) handleSubmit();
 		}
 	}

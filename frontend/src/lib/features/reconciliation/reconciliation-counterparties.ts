@@ -29,6 +29,31 @@ export function counterpartyAccounts(
 	return accounts.filter((a) => a.active && a.postable && a.id !== bankLedgerAccountId);
 }
 
+/**
+ * Story 35-7 (#1000, D1, C-e350-36) — la contrepartie choisie, si le dialogue la propose
+ * toujours ; `null` sinon.
+ *
+ * Un compte peut sortir de la liste après avoir été choisi : le cas réel est celui du compte de
+ * la banque, proposé tant que le parent n'a pas résolu `bankLedgerAccountId`, puis écarté quand
+ * l'identifiant arrive. Le champ ne le trouvait plus et s'affichait vide, pendant que la valeur
+ * gardait l'identifiant — un compte invisible partait au serveur, refusé en 400. Retiré de la
+ * sélection, il laisse un champ vide **et** une valeur nulle : le message existant du dialogue
+ * (« Compte de contrepartie obligatoire », « Ligne N : compte requis ») dit ce qui manque.
+ *
+ * Un identifiant **absent** de `accounts` (liste pas encore chargée, ou compte d'une autre
+ * société) n'est pas jugé : il est gardé, et le serveur tranche, comme avant la story.
+ */
+export function keepOfferedCounterparty(
+	id: number | null,
+	accounts: readonly AccountResponse[],
+	bankLedgerAccountId: number | null,
+): number | null {
+	if (id === null) return null;
+	const account = accounts.find((a) => a.id === id);
+	if (account === undefined) return id;
+	return counterpartyAccounts([account], bankLedgerAccountId).length > 0 ? id : null;
+}
+
 /** Les deux rôles qui appellent l'avis débiteurs / créanciers (AC-4). */
 export type ClaimRole = Extract<AccountRole, 'Receivable' | 'Payable'>;
 

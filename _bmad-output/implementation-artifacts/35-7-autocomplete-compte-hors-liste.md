@@ -1,6 +1,6 @@
 # Story 35-7 : le champ de compte ne paraît plus vide quand un compte part au serveur (#1000)
 
-Status: ready-for-dev
+Status: done
 
 *Fiche rédigée le 2026-11-12 par l'agent de rédaction des fiches de l'Epic 35 (Opus 5.5), worktree `kesh-e35`, par le
 workflow `bmad-create-story`. Release **0.17.7**. **Aucune migration**, aucun changement serveur ni d'API, aucune clé
@@ -143,12 +143,12 @@ l'`$effect` d'*Écriture manuelle* retiré (AC3) ; M1 est aussi tuée par AC7, �
 
 ## Tâches
 
-- [ ] Étape 0 : relire les lignes citées sur `main` ; `git grep -n "<AccountAutocomplete" -- frontend/src` (sept sites) ;
+- [x] Étape 0 : relire les lignes citées sur `main` ; `git grep -n "<AccountAutocomplete" -- frontend/src` (sept sites) ;
       le grep des « 4 consommateurs » de D2, sortie citée au Change Log.
-- [ ] Tests, rouges consignés ; `AccountAutocomplete.svelte` (D2, avec ses commentaires) et son test ;
+- [x] Tests, rouges consignés ; `AccountAutocomplete.svelte` (D2, avec ses commentaires) et son test ;
       `reconciliation-counterparties.ts` (D1), les deux dialogues ; l'E2E d'AC7 ; manuel (`user-manual.tex:3186`) et PDF
       régénéré, contrôlé aplati (AC5) ; CHANGELOG ; captures.
-- [ ] Gates : frontend complet (`npm run check`, `lint-i18n-ownership`, `test:unit`, `build`) ; E2E complet au dernier
+- [x] Gates : frontend complet (`npm run check`, `lint-i18n-ownership`, `test:unit`, `build`) ; E2E complet au dernier
       commit de code (`reconciliation-manual.spec.ts`, `reconciliation-manual-entry.spec.ts`, `reconciliation-split.spec.ts`, `journal-entries.spec.ts` en particulier).
       Backend : rien ne change côté Rust ; le gate backend complet n'est dû qu'au push de la branche d'intégration.
 
@@ -186,13 +186,50 @@ fait que la rejouer. Écrit aussi au fichier d'epic (validation P1, V1-6).
 
 ### Agent Model Used
 
+Opus 5.5 (`claude-opus-5-5`), workflow `bmad-dev-story`, worktree `kesh-e357`, en autonomie.
+
 ### Debug Log References
+
+Journaux dans `/home/gcorbaz/devel/kesh-gate-logs/e357/` : `rouges.log` (Vitest et E2E rouges), `verts-cibles.log`,
+`mut/` (M1-M7, `resume.log`), `front-*.log`, `manuel.log`, `e2e-r1-rouge.log`, `e2e-r2-complet.log`,
+`test-fast-ci.log`, `gate-ci.log`, captures dans `captures/`.
 
 ### Completion Notes List
 
 - Fiche rédigée par le workflow `bmad-create-story` (analyse du code de `main`, `4d39f377`).
+- **D2** (`AccountAutocomplete.svelte`, `handleBlur`) : mode dégradé d'abord (rien ne change), puis, sans brouillon, rien ;
+  sur un champ strict, `draft = null` sans `onSelect` ; `allowClear` inchangé. Commentaires réécrits (doc d'`allowClear`,
+  `handleBlur`) ; `:183` et `:199` gardés avec « consommateurs » sans le nombre.
+- **D1** : `keepOfferedCounterparty(id, accounts, bankLedgerAccountId)` dans `reconciliation-counterparties.ts`, sur la
+  liste **complète** reçue (un identifiant absent est gardé) ; un `$effect` par dialogue, qui n'écrit que si la valeur
+  change (`counterpartyId` ; chaque `splits[i].counterpartyAccountId`).
+- **Harnais d'AC3** : `rerender` remplace l'objet de props entier et rejoue la remise à zéro du dialogue — le premier
+  rouge l'a montré (un test passait à vide). Hôte `CounterpartyModalHost.test.svelte` (C-e357-1). Mock i18n interpolant
+  dans `TransactionSplitModal.test.ts` (C-e357-2).
+- **AC4** : test ajouté à `JournalEntryForm.edit.test.ts` (C-e357-3) ; `VatPurchaseAssistant` n'a pas de suite de
+  composant, ses deux champs stricts sont couverts par AC1.
+- **AC5** : aucune clé i18n (`git diff epic-35/base3 -- '*.ftl'` vide) ; `sitesTotal` reste 3026, le test qui le
+  recompte depuis la source est vert au Vitest complet. Manuel `:3186`, PDF régénéré.
+- **AC6** : captures *Écriture manuelle* (E2E d'AC7) et *Éclater* (spec jetable hors dépôt, C-e357-4).
 
 ### File List
+
+- `frontend/src/lib/features/journal-entries/AccountAutocomplete.svelte`
+- `frontend/src/lib/features/journal-entries/AccountAutocomplete.test.ts`
+- `frontend/src/lib/features/journal-entries/JournalEntryForm.edit.test.ts`
+- `frontend/src/lib/features/reconciliation/reconciliation-counterparties.ts`
+- `frontend/src/lib/features/reconciliation/reconciliation-counterparties.test.ts`
+- `frontend/src/lib/features/reconciliation/ManualMatchModal.svelte`
+- `frontend/src/lib/features/reconciliation/ManualMatchModal.test.ts`
+- `frontend/src/lib/features/reconciliation/TransactionSplitModal.svelte`
+- `frontend/src/lib/features/reconciliation/TransactionSplitModal.test.ts`
+- `frontend/src/lib/features/reconciliation/CounterpartyModalHost.test.svelte` (neuf)
+- `frontend/tests/e2e/reconciliation-manual-entry.spec.ts`
+- `docs/manual/fr/user-manual.tex`, `docs/manual/fr/user-manual.pdf`
+- `CHANGELOG.md`
+- `_bmad-output/implementation-artifacts/e35-choix-autonomes-e357.md` (neuf)
+- `_bmad-output/implementation-artifacts/sprint-status.yaml`
+- `_bmad-output/implementation-artifacts/35-7-autocomplete-compte-hors-liste.md`
 
 ## Change Log
 
@@ -233,3 +270,116 @@ fait que la rejouer. Écrit aussi au fichier d'epic (validation P1, V1-6).
   de LOW ; la remédiation de P3 ne touche que la rédaction. Choix retenus : **C-e350-36** (un compte que le dialogue ne
   propose plus est retiré de la sélection) et **C-e350-37** (sur un champ obligatoire, quitter le champ jette le brouillon).
   Statut : `ready-for-dev`.
+- 2026-11-13 — **Développement** (Opus 5.5, `bmad-dev-story`, worktree `kesh-e357`, branche
+  `story/35-7-autocomplete-compte-hors-liste` sur `epic-35/base3` `137993e5`). Commits : `fe8ead5c` (code, tests, manuel
+  `.tex`, CHANGELOG), `635fc5f2` (PDF), `926854f7` (spec E2E : description, dernier commit de code), puis ce commit
+  (fiche, registre, `review`).
+  - **Étape 0** : `git grep -n "<AccountAutocomplete" -- frontend/src` rend les **sept** sites de la fiche
+    (`InvoiceForm.svelte:877`, `JournalEntryForm.svelte:393`, `VatPurchaseAssistant.svelte:159`, `:204`,
+    `ManualMatchModal.svelte:179`, `TransactionSplitModal.svelte:288`, `products/+page.svelte:697`). Grep des
+    « 4 consommateurs » sur la base : `AccountAutocomplete.svelte:20`, `:183`, `:199`, `:286`, `:287` ;
+    `AccountAutocomplete.test.ts:8`, `:81`, `:279` — exactement l'inventaire de D2. Après la story, le même grep sur
+    `frontend/src` et `docs/manual/fr/*.tex` est **vide**.
+  - **Rouges** (`kesh-gate-logs/e357/rouges.log`) : Vitest, 8 rouges sur 78 avant correction — AC1 ×3 (champ `''` ou
+    `zzz` au lieu du libellé), AC2 ×2 (`10`, `12` au lieu de `null`, la fonction écrite d'abord comme `(id) => id`),
+    AC3 ×3 (bouton actif quand le champ est vide). Verts au départ, comme la fiche le prévoit : le mode dégradé, les
+    tests `allowClear`, les comptes restés proposés. E2E d'AC7 rouge sur le build d'avant la correction :
+    `Expected "2000 — Capital CI"`, `Received "zzz"` (M1 à la frontière HTTP).
+  - ⚠️ **Le premier rouge a révélé un harnais faux** : avec `rerender`, le test « banque → champ vide » d'*Écriture
+    manuelle* passait **à vide** (la remise à zéro du dialogue se rejouait). Hôte `CounterpartyModalHost.test.svelte`
+    (C-e357-1) ; mock i18n interpolant dans `TransactionSplitModal.test.ts` (C-e357-2).
+  - **Mutations** (`kesh-gate-logs/e357/mut/`, script `mutations-e357.py`, motifs vérifiés uniques, restauration
+    `git checkout --` + `touch`, arbre propre après) : **7/7 tuées**. M1 par AC1 ×3 et AC4 ; M2 par AC1 ×3 (`onSelect`
+    appelé) et AC4 ; M3 par le mode dégradé ; M4 par AC2 ×2 et AC3 ×3 ; M5 par AC2 (compte absent) ; M6 par AC3 ×2 (l'autre
+    ligne vidée) ; M7 par AC3 (*Écriture manuelle*). M1 l'est aussi par AC7 en E2E (build d'avant).
+  - **Lignes changées dans les deux dialogues, pour l'intégration avec la 35-4** : `ManualMatchModal.svelte` — `:38`
+    (import), `:90-98` (`$effect`, +9 lignes) : les lignes que cite la 35-4, `:139-151`, deviennent `:148-160` ;
+    `TransactionSplitModal.svelte` — `:39-43` (import, +4), `:104-114` (`$effect`, +11) : `:234-239` deviennent
+    `:249-254`. Aucun autre hunk dans ces fichiers.
+  - **Gates au dernier commit de code** (`926854f7`, qui ne touche qu'une spec E2E ; le frontend du build est celui de
+    `fe8ead5c`, identique en `src/`) : `npm run check` 0 erreur, 29 avertissements (aucun dans les fichiers de la
+    story) ; `lint-i18n-ownership` PASS ; Vitest complet **3201 passés, 232 fichiers** ; `npm run build` vert ;
+    `scripts/test-fast.sh --ci` **5307 exécutés, 5307 passés, 13 ignorés** ; `scripts/gate-ci.sh kesh_ci_e357`
+    **5314 passés, 0 échoué, 17 ignorés** ; **E2E complet** (base `kesh_e2e_e357` recréée, recette entière des
+    consignes, `KESH_INBOX_DIR`/`KESH_DOCUMENTS_DIR` des deux côtés) **405 passés, 7 échecs, 17 ignorés** — les sept
+    de la KF-029 (#97) de `docs/testing.md`, nommés un à un : `mode-expert:26`, `:41`, `onboarding-path-b:65`, `:92`,
+    `onboarding:57`, `:77`, `:150`. `reconciliation-manual`, `-manual-entry`, `-split` et `journal-entries` verts.
+  - **Premier E2E complet** (au commit `635fc5f2`) : 403 passés, 9 échecs — les sept de la KF-029 ;
+    `opening-balances:156`, huitième variable, vert au rejeu isolé ; et **l'AC7**, dont la requête portait bien le compte
+    affiché mais que le serveur a refusée : la spec ne remplissait pas la description, que le serveur exige
+    (`EntryDescriptionEmpty`, affiché « Valeur invalide » ; issue #935). Spec corrigée (`926854f7`), rejeu isolé vert,
+    puis E2E complet ci-dessus.
+  - **Manuel** : `user-manual.tex:3186`, demi-phrase placée après « c'est le refus qui protège le grand livre » ; PDF
+    régénéré (`make -C docs/manual user`, 3 passes, stable), contrôlé aplati : « … c’est le refus qui protège le grand
+    livre ; un compte de la banque choisi avant que Kesh l’ait identifié est ensuite retiré du champ, qui se vide. » —
+    « retiré du champ » présent une fois.
+  - **Captures** (`kesh-gate-logs/e357/captures/`, thème clair, base jetable) : `e357-ecriture-manuelle-champ-quitte.png`
+    (E2E d'AC7), `e357-eclater-avant-quitter.png` et `e357-eclater-champ-quitte.png` (spec jetable, C-e357-4). Le
+    dossier contient aussi les captures des autres specs de la suite, `KESH_E2E_CAPTURES_DIR` ayant été posé pour tout
+    l'E2E complet.
+  - **Écarts à la consigne Edit** : un ajout en fin de `reconciliation-counterparties.test.ts` (le `describe` d'AC2) fait
+    par `cat >> <<EOF` au lieu de l'outil Edit — un geste de facilité, pas un manque de l'outil. Fichiers neufs
+    (`CounterpartyModalHost.test.svelte`, registre) par l'outil Write. Rien d'autre.
+  - Constat hors périmètre, déjà tracé : l'indicateur d'équilibre d'*Éclater* n'affiche que « Balance » (visible sur les
+    captures) — #993.
+  - *(Annoté le 2026-11-13, revue P1, A1 : les gates frontend de cette entrée — `check`, `lint-i18n-ownership`,
+    `test:unit`, `build` — ont tourné au commit `635fc5f2`, avant `926854f7`, qui ne touche qu'une spec E2E.)*
+- 2026-11-13 — **Remédiation de la revue de code P1** (Opus 5.5 ; rapports `kesh-gate-logs/e357-review-p1-{B,E,A}.md`).
+  Findings traités sur décision de l'orchestrateur : E1 (MEDIUM), A5, A3, A4, A1 et A2 (LOW) ; les autres LOW sont
+  ouverts en issues par l'orchestrateur, non touchés ici. Commits : `0a64b0f8` (code et test), puis ce commit (fiche).
+  - **E1 — inventaire des chemins qui soumettent pendant que le focus reste dans un champ de compte strict.** Commandes :
+    `/usr/bin/grep -nE "<form|onsubmit|svelte:window|svelte:document|onkeydown|ctrlKey|metaKey|type=\"submit\"|key === 'Enter'"`
+    sur les quatre fichiers des cinq consommateurs stricts — seul `JournalEntryForm.svelte` répond (`:285` `Ctrl+S`,
+    `:293` Entrée du dernier crédit, `:300` `<svelte:window onkeydown>`, `:422`) ; `ManualMatchModal`,
+    `TransactionSplitModal`, `VatPurchaseAssistant` : aucune ligne. `git grep -nE "svelte:window|svelte:document|<form"`
+    sur `journal-entries`, `reconciliation` et `components/ui/dialog` : le seul `<form>` est `RuleFormModal.svelte:120`,
+    sans `AccountAutocomplete`. `git grep -n "kesh:save"` : le `Ctrl+S` de `routes/(app)/+layout.svelte:34` émet un
+    événement que **personne n'écoute**. Bilan :
+    1. **`Ctrl+S` de `JournalEntryForm`** — atteint, pour les champs des lignes et pour les deux champs de
+       `VatPurchaseAssistant` (rendu dans le formulaire ; ses comptes ne partent pas par `Ctrl+S` mais par *Appliquer*,
+       le brouillon y restait seulement affiché). **Corrigé** : `(document.activeElement as HTMLElement | null)?.blur()`
+       avant `handleSubmit` (`JournalEntryForm.svelte:285-291`).
+    2. Entrée dans un champ de compte : aucun `<form>` autour d'un consommateur strict, et l'Entrée du composant ne fait
+       que choisir l'option surlignée — rien ne soumet.
+    3. Bouton activé au clavier ou à la souris : le focus quitte le champ d'abord, le `blur` passe — chemin déjà fermé.
+    4. `Ctrl+S` du layout : sans écouteur, rien ne part.
+    Aucun chemin laissé sans correction.
+  - **Test E1** (`JournalEntryForm.edit.test.ts`, « Ctrl+S sans quitter le champ ») : rouge avant correction
+    (`kesh-gate-logs/e357/rem-p1-rouge.log` : `expected '2000' to be '1000 — Compte 1000'`), vert après
+    (`rem-p1-vert.log`, `journal-entries/` 157 passés). **Mutation M8** (le `blur` retiré) : **tuée** par ce test
+    (`mut/M8.log`, même script, arbre propre après).
+  - **A5** : le commentaire de `handleBlur` borne l'invariant « une fois le champ quitté » et nomme le `Ctrl+S`.
+  - **A3** : `account-options.ts:37` « des quatre écrans de saisie d'écriture » → « sept emplacements, dans cinq
+    écrans ». Regrep de `quatre` et `4` (mot entier) sur les fichiers de D2 et `account-options.ts` : ne restent que
+    des occurrences légitimes (AC-4, une étape « 4. », un `colspan` de 4).
+  - **A4 — captures refaites** (`kesh-gate-logs/e357/captures/`, thème clair, base jetable, spec jetable
+    `frontend/.output/e357/capture-e357.spec.ts`) : le champ **vidé** avant de quitter, puis quitté, pour
+    `e357-ecriture-manuelle-champ-vide-{avant-quitter,quitte}.png` et `e357-eclater-champ-vide-{avant-quitter,quitte}.png` ;
+    chemin E1 : `e357-e1-ctrl-s-{avant,apres}.png` (champ vidé, `Ctrl+S`, le compte réaffiché).
+  - **A2 — écart non déclaré à l'entrée précédente** : le script de mutations `kesh-gate-logs/e357/mut/mutations-e357.py`
+    écrit les sources (`write_text`) puis les restaure par `git checkout --` et `touch` ; joué sur du commité, arbre propre
+    après chaque campagne (`resume.log`). Patron permis par les consignes pour les mutations, mais à compter parmi les
+    écarts à la consigne Edit.
+  - **Gates au dernier commit de code `0a64b0f8`** : `npm run check` 0 erreur, 29 avertissements (inchangés, aucun dans
+    les fichiers de la story) ; `lint-i18n-ownership` PASS ; Vitest complet **3202 passés, 232 fichiers** ; `build` vert
+    (`rem-p1-front-*.log`). **E2E complet** (`e2e-r6-rem-p1.log`, pilote `e2e-r6-rem-p1.driver.log`, qui journalise
+    « kesh_e2e_e357 recréée » avant le lancement du backend) : **404 passés, 7 échecs, 18 ignorés** — les sept de la
+    KF-029 (#97) : `mode-expert:26`, `:41`, `onboarding-path-b:65`, `:92`, `onboarding:57`, `:77`, `:150`. Le dix-huitième
+    ignoré, comparé au run `r5` : `bank-manual-statement.spec.ts:225`, qui se saute sans `KESH_E2E_CAPTURES_DIR` (posé au
+    run `r5`, pas ici). *(Pour le run `r5` de l'entrée précédente, la base avait été recréée de la même façon : le pilote
+    `e2e-35-7-complet.sh` imprime « kesh_e2e_e357 recréée », lisible dans la sortie de tâche de ce run, non copiée au
+    journal.)* **Backend** : aucun fichier Rust touché (`git diff 926854f7..0a64b0f8 --stat` : huit fichiers, quatre
+    sous `frontend/src` et quatre sous `_bmad-output/`, dont le prompt de revue P1), pas de gate backend.
+- **2026-11-13 — Revue de code, close en P2 ciblée.**
+  - Trend : **P1 (Opus, trois lentilles ; prompt `…-review-prompt-p1.md`, `54f7d927`) : 0 CRITICAL, 0 HIGH, 1 MEDIUM, 14 LOW**
+    (B 5, E 4 + E1, A 5) → remédiation `0a64b0f8` (E1 `Ctrl+S`, A3, A5 ; captures A4 ; annotations A1, A2) →
+    **P2 ciblée (Sonnet, une lentille, le seul `0a64b0f8` ; prompt `…-review-prompt-p2-ciblee.md`, `ee8be51a`) : 0 au-dessus de
+    LOW, 1 LOW** → boucle close (passe sans rien au-dessus de LOW). Rapports hors dépôt
+    `kesh-gate-logs/e357-review-p1-{B,E,A}.md`, `e357-review-p2-ciblee.md`.
+  - E1 vérifié au code par l'orchestrateur avant renvoi au développement (`JournalEntryForm.svelte:283-288`, raccourci sur
+    `svelte:window`, aucun `blur`).
+  - LOW, une issue par problème : P1 #1078 à #1085 ; P2 C1 → **#1095** (Entrée dans un champ `allowClear` d'un `<form>` :
+    facture et article, même classe que #1000, antérieur à la story ; labellisé P2 par l'orchestrateur : l'écran des premières
+    factures clients). E5 (compte de la banque qui repasse à `null`) : voulu, sans issue. A1, A2 : annotés au Change Log par la
+    remédiation ; A3, A5 : corrigés ; A4 : captures refaites.
+  - Statut : `done`.
