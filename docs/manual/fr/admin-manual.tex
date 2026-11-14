@@ -223,7 +223,7 @@ cd /opt/kesh
 Télécharger le fichier de référence depuis le dépôt officiel, \textbf{au tag de la version que décrit ce manuel} (\texttt{v\keshVersion}) --- non à la branche \texttt{main}, qui peut être en avance sur l'image publiée ; pour une autre version, remplacez le tag dans l'adresse :
 
 \begin{lstlisting}[language=bash]
-curl -fsSL https://raw.githubusercontent.com/guycorbaz/kesh/v0.17.6/docker-compose.yml \
+curl -fsSL https://raw.githubusercontent.com/guycorbaz/kesh/v0.17.7/docker-compose.yml \
     -o docker-compose.yml
 \end{lstlisting}
 
@@ -234,7 +234,7 @@ Ce fichier désigne l'image publiée \texttt{gcorbaz/kesh:latest} : \keshcommand
 Copier le fichier d'exemple et l'adapter :
 
 \begin{lstlisting}[language=bash]
-curl -fsSL https://raw.githubusercontent.com/guycorbaz/kesh/v0.17.6/.env.example \
+curl -fsSL https://raw.githubusercontent.com/guycorbaz/kesh/v0.17.7/.env.example \
     -o .env
 \end{lstlisting}
 
@@ -2534,6 +2534,25 @@ L'opération s'inscrit au journal d'audit sous \emph{Réparation de l'installati
 La session ouverte doit être \textbf{rouverte} --- reconnexion, ou au plus la durée du \textbf{jeton d'accès} (\texttt{KESH\_JWT\_EXPIRY\_MINUTES}) plus une minute ; d'ici là, certains écrans de la société répondent par une erreur, d'autres s'affichent vides. Si le journal du serveur porte « réparation de l'installation au démarrage » suivi d'une erreur, voir la section \emph{Dépannage}.
 
 \textbf{Limite} : les données de démonstration laissées par une réinitialisation antérieure (taux de TVA, réglages de facturation, contacts, articles, factures, avoirs) qui désignent la société effacée restent en base, invisibles et inertes (\#546).
+
+\subsubsection{Passer à la 0.17.7}\label{sec:maj-0-17-7}
+\sloppy
+
+La 0.17.7 est une version corrective, qui se pose sur la 0.17.6 : elle n'exige ni nouveau compose ni nouvelle variable de \keshpath{.env} ; on tire l'image et on redémarre (\S\ref{sec:mise-a-jour}). Depuis une version antérieure à la 0.17.6, appliquez d'abord les sections suivantes (\S\ref{sec:maj-0-17-6}). \textbf{Prenez avant la mise à jour la sauvegarde complète} --- la base, un \keshcommand{.keshbackup} et le dossier des documents ---, comme avant toute mise à jour d'une installation qui tient des livres : la 0.17.7 n'a pas de migration, mais c'est cette sauvegarde qui rattrape un imprévu.
+
+\paragraph{Aucune migration, retour à la 0.17.6 sans restauration.} \textbf{La 0.17.7 n'a aucune migration} : elle ne modifie pas le schéma, \texttt{kesh\_version\_min\_required} reste à \texttt{0.17.6}, et Kesh n'écrit \textbf{aucune} sauvegarde dans \keshpath{backup/pre-upgrade/} à cette mise à jour (il n'en écrit qu'avant une migration, \S\ref{sec:sauvegarde-avant-maj}). \textbf{Le retour à la 0.17.6 se fait sans restauration} : reprenez l'image \texttt{gcorbaz/kesh:0.17.6} dans le compose et redémarrez ; la 0.17.6 démarre sur la base telle que la 0.17.7 l'a laissée, et ce qui a été saisi entre-temps reste. Une sauvegarde \keshcommand{.keshbackup} prise en 0.17.6 s'importe dans la 0.17.7. Ces comportements ont été constatés à la préparation de la release, avec l'image publiée \texttt{gcorbaz/kesh:0.17.6} et des données synthétiques (factures validées et réglées, facture fournisseur payée, relevé rapproché, écriture passée par une clé d'API) : aucune migration appliquée, aucun fichier dans \keshpath{pre-upgrade/}, données comptables identiques après la montée, après le retour à la 0.17.6 sur la même base et après l'import de la sauvegarde 0.17.6 dans une 0.17.7 neuve.
+
+\paragraph{Après la mise à jour : les comptes désignés.} \textbf{Ouvrez \emph{Administration → Facturation} et cliquez \emph{Enregistrer} sans rien changer.} Depuis la 0.17.7, la validation d'une facture et celle d'une facture fournisseur contrôlent le \textbf{type} des comptes désignés (créance client, TVA due, compte créanciers, TVA récupérable) au moment d'écrire, et refusent si l'un a été retypé depuis sa désignation (\texttt{400 DESIGNATED\_ACCOUNT\_WRONG\_TYPE} ; paragraphes \emph{Configuration des comptes TVA} et \emph{Compte créanciers}, plus bas). L'enregistrement de la page nomme un compte fautif à la fois : corrigez-le et recommencez jusqu'à ce qu'il passe ; sans quoi la prochaine validation est refusée.
+
+\paragraph{La date du jour est celle de Zurich.} Tout ce que Kesh date « du jour » ou juge au jour --- contre-passations et annulations, solde d'ouverture, borne du verrou de période, premier exercice de l'assistant, accueil, factures échues, rappels, postes ouverts et balance âgée, noms des fichiers exportés, serveur MCP --- prend désormais le jour de Zurich, et non plus le jour UTC du serveur : entre minuit et une heure du matin (deux en été), ce n'est plus la veille. Rien n'est à régler : le fuseau du conteneur et celui de MariaDB n'y entrent pas. \textbf{Les écritures déjà passées gardent leur date.} Les heures enregistrées restent en UTC, dont celles du journal d'audit, que ses filtres et son export lisent encore en jours UTC ; la fenêtre de 30 jours de la réconciliation compte encore depuis le jour UTC du dernier rappel (\#1053).
+
+\paragraph{Le journal d'audit attribue à la clé d'API ce qu'elle fait sur les écritures.} Les écritures saisies, modifiées, supprimées ou contre-passées par une clé d'API, celles qu'un rapprochement bancaire passe par une clé, et le retour en brouillon d'une facture fournisseur par une clé portent désormais la marque « clé API » et le numéro de la clé ; d'autres gestes faits par une clé (factures clientes, les autres gestes des factures fournisseur, avoirs, règlements saisis sur la facture, solde d'ouverture, comptes, contacts\ldots) restent au nom de son créateur (le détail est au \S\ref{sec:api-keys}, point \emph{Journal d'audit} ; suite à l'issue \#431). \textbf{Les entrées écrites avant la 0.17.7 ne se corrigent pas} : celles d'une clé y gardent la marque « utilisateur ».
+
+\begin{sloppypar}
+\paragraph{Pour les intégrations.} La validation d'une facture (\texttt{POST /api/v1/invoices/\{id\}/validate}) et la création d'un avoir (\texttt{POST /api/v1/credit-notes}) rendent \texttt{400 NUMBER\_FORMAT\_UNRENDERABLE} quand le format de numérotation ne peut produire de numéro, au lieu de \texttt{500} ou de \texttt{409} ; la validation d'une facture et d'une facture fournisseur rend \texttt{400 DESIGNATED\_ACCOUNT\_WRONG\_TYPE} sur un compte désigné de mauvais type ; le refus \texttt{INVOICE\_NOT\_PDF\_READY} garde son code et son statut, mais \textbf{son message a changé} --- une phrase destinée à l'utilisateur, dans la langue de l'installation, qui ne se lit pas par machine ; au lot \texttt{POST /api/v1/dunning/reminders/send-batch}, \texttt{failed[].details} de ce code passe de \texttt{null} à \texttt{\{ "message": \ldots\ \}}. Le détail est au journal des modifications et dans \texttt{docs/api-external.md}.
+\end{sloppypar}
+
+\fussy
 
 \subsubsection{Passer à la 0.17.6}\label{sec:maj-0-17-6}
 % Revue P1 (A1) : les commandes et chemins insécables de cette section débordaient
