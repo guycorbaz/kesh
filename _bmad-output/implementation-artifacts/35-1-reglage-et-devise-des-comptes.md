@@ -205,8 +205,11 @@ AC-3 bis).
      celui-ci ; sinon (premier exercice, ou exercice précédé d'un trou) `'day'`, le défaut de la colonne ;
      `closing_rate_kind` prend toujours `'day'`. Lu dans la transaction qui insère, par **un** fragment SQL partagé des
      trois chemins ci-dessus (DRY ; p. ex. `COALESCE((SELECT closing_rate_kind FROM fiscal_years WHERE company_id = ?
-     AND end_date = ? - INTERVAL 1 DAY), 'day')` dans l'`INSERT … SELECT`) : `fiscal_years::create` lit le précédent
-     parmi les antérieurs qu'il verrouille déjà (pré-contrôles, `routes/fiscal_years.rs:280-283`) ;
+     AND end_date = ? - INTERVAL 1 DAY), 'day')` dans l'`INSERT … SELECT`) : `fiscal_years::create` et `create_for_seed` passent par `insert_fiscal_year_in_tx` (aujourd'hui
+     `INSERT … VALUES`, `repositories/fiscal_years.rs:1360` : il devient `INSERT … SELECT … FROM companies`, qui lit aussi
+     `multi_currency_enabled`) ; la lecture du genre du précédent est une sous-requête ordinaire — le précédent n'est pas
+     verrouillé par les pré-contrôles (`find_overlapping` ne le renvoie pas : ses bornes ne se chevauchent pas), et une
+     lecture concurrente d'un `PUT /rate-kinds` (35-2) ne fait que choisir l'un des deux défauts, sans conséquence ;
      `create_if_absent_in_tx` (assistant) n'insère que sans aucun exercice (`WHERE NOT EXISTS`, :472), donc toujours
      `'day'` ; `create_for_seed` applique le même fragment. Un changement ultérieur du genre de clôture de l'exercice
      précédent (`PUT /rate-kinds`, 35-2) **ne se propage pas** : chaque exercice garde son réglage (T4 dit « par
@@ -618,8 +621,11 @@ AC-3 bis).
     - **Corps** : `finalize` prend `body: Option<Json<FinalizeRequest>>` (précédent : `logout`,
       `routes/auth.rs:357`), `FinalizeRequest { fiscal_year_start_date: Option<NaiveDate>, fiscal_year_end_date:
       Option<NaiveDate> }` (`camelCase`). Corps absent ou champs absents : début = 1er janvier de l'année courante (comme
-      aujourd'hui), fin = **veille du même jour un an plus tard** (début + 1 an − 1 jour ; un début au 29 février donne
-      le 28 février suivant ; sans début fourni : 31 décembre — le comportement actuel, clients de l'API et tests
+      aujourd'hui), fin = **veille du même jour un an plus tard** (le « même jour un an plus tard » d'un début au 29 février est le
+      **1er mars** suivant, donc fin au **28 février** ; Rust : `with_year(y + 1)` rend `None` un 29 février, à traiter
+      par `from_ymd_opt(y + 1, 3, 1)` — jamais `checked_add_months(12)`, qui ramène au 28 février et donnerait le 27 ;
+      la fonction du serveur et son miroir TypeScript de l'écran, `new Date(y + 1, m, d)` qui donne le 1er mars,
+      rendent la même fin, un test commun de cas limites les compare ; sans début fourni : 31 décembre — le comportement actuel, clients de l'API et tests
       existants inchangés). Avant la transaction : `borner` sur chaque date fournie (`dates_recues.rs:55`, comme
       `create_fiscal_year`, 400), fin ≤ début → 400 `error-fiscal-year-dates-invalid` (même message que
       `map_create_error`) ; aucune borne de durée (S4 : six ou dix-huit mois admis). Un corps illisible est refusé par
@@ -648,7 +654,9 @@ AC-3 bis).
       (`onboarding_e2e.rs` 3, `onboarding_path_b_e2e.rs` 4, `onboarding_audit_e2e.rs` 11, `fiscal_years_e2e.rs` 21,
       `onboarding_bank_account_e2e.rs` 1, `admin_backup_e2e.rs` 2, `audit_route_registry.rs` 5 — lignes qui citent le
       mot ; appels sans corps, donc inchangés) ; E2E de l'assistant (`onboarding-path-b.spec.ts`, `onboarding-bank-account.spec.ts`,
-      `onboarding-motif.spec.ts`) ; manuel utilisateur (`user-manual.tex:217`, « il crée votre premier exercice,
+      `onboarding-motif.spec.ts`) et Vitest de l'étape (`routes/onboarding/onboarding-bank-step.test.ts`,
+      `onboarding-motif.test.ts` : ils montent l'écran de la dernière étape, qui gagne la section « Premier exercice »
+      et dont `finalize` reçoit un corps — leurs attentes sont relues) ; manuel utilisateur (`user-manual.tex:217`, « il crée votre premier exercice,
       l'année civile en cours », et `:1004`, « Si votre premier exercice Kesh ne doit pas commencer au 1er janvier …
       créez d'abord l'exercice voulu », tous deux faux après cette AC ; `:2465` relu) ; guide d'API si `finalize` y
       figure (grep au développement).
@@ -657,10 +665,14 @@ AC-3 bis).
       29.02.2028 → fin 28.02.2029 ; fin ≤ début → 400, rien de créé, étape inchangée (7) ; date hors bornes → 400 ;
       finalisation rejouée avec d'autres dates après succès → état rendu, exercice inchangé ; audit
       `fiscal_year.created` aux dates choisies. Vitest de l'écran (défaut, recalcul de la fin, fin retouchée gardée,
-      boutons désactivés si fin ≤ début, corps envoyé par les deux boutons). E2E : assistant mené avec un début au
+      boutons désactivés si fin ≤ début, corps envoyé par les deux boutons ; cas limites partagés avec le serveur :
+      début 29.02.2028 → fin 28.02.2029, début 01.03.2027 → fin 29.02.2028). E2E : assistant mené avec un début au
       1er avril → *Exercices* liste 01.04.AAAA–31.03.AAAA+1. Manuel (AC-10) : les deux passages ci-dessus récrits.
     Les tests d'exercices décalés (1er janvier, 1er juillet, 1er avril — T2) et de durée autre que douze mois (six et
     dix-huit mois) des cours et de la réévaluation restent ceux de 35-2, 35-3b et 35-5.
+    **Limite assumée** : le jour par défaut est celui du serveur (`Utc::now()`, comme aujourd'hui) pour un client
+    d'API sans corps, celui de l'écran la date locale Europe/Zurich : la nuit du 31 décembre, les deux années peuvent
+    différer ; l'écran envoie toujours ses dates.
 
 ## Tâches
 
@@ -895,6 +907,20 @@ AC-3 bis).
   liste (vi). Axes exercés : vérité au code des phrases ajoutées, cohérence des décomptes (vi) et de la partition,
   nom des index vs AC-1, renvois P2-1/-2/-3. Non exercés : exécution réelle du cycle (non montable en lecture seule),
   plan de requête MariaDB, manuels, i18n.
+- 2026-11-14 — validation CR-4 P1 (Sonnet) : 0 CRITICAL, 0 HIGH, 1 MEDIUM, 2 LOW dans la fiche, plus 1 inter-fiches (LOW) ;
+  remédiés dans la fiche sauf 35-1-CR4-P1-IF1 (35-2, voir le rapport). CR4-P1-1 (MEDIUM) : « début + 1 an − 1 jour »
+  et le test « 29.02.2028 → 28.02.2029 » se contredisent (`checked_add_months` de chrono donne 28.02.2029 puis 27.02.2029) :
+  règle écrite (1er mars − 1 jour), cas limites partagés serveur/écran. CR4-P1-2 (LOW) : inventaire de l'AC-11 sans les
+  Vitest de l'étape ; limite UTC/Zurich écrite. CR4-P1-3 (LOW) : prémisse inexacte « précédent verrouillé par les
+  pré-contrôles » et `insert_fiscal_year_in_tx` en `INSERT … VALUES` (à convertir) ; corrigées. Prémisses relues au code :
+  `routes/onboarding.rs:879-1060` (`finalize` sans corps, `step_completed` 7/8, `:1043-1053`), `routes/auth.rs:357` et
+  `frontend/src/lib/app/stores/auth.svelte.ts:204-210` (précédent : le client envoie `{}`), `api-client.ts:239`
+  (`Content-Type` JSON posé même sans corps : le client de l'écran envoie donc toujours un corps), `routes/fiscal_years.rs:86-90`,
+  `:107-129`, `:259-300`, `repositories/fiscal_years.rs:331-391`, `:407-500`, `:807-827`, `:1360`, `dates_recues.rs:55`,
+  `user-manual.tex:217`, `:1004` ; décomptes de `finalize` par fichier de tests (3, 4, 11, 21, 1, 2, 5 : exacts) ;
+  grep `UPDATE accounts` / `INSERT INTO accounts` (inventaire de l'AC-4 exact). Axes exercés : T1, T3 (aucun reste de
+  `journal_entry_lines.currency` dans cette fiche), T4, AC-6 (listes closes), manuel (`.tex` seulement), contacts 35-2/35-3b.
+  Non exercés : source journalière (aucun GET, hors sujet), PDF des manuels, i18n au code, MCP au code.
 - 2026-11-14 — révision CR-4 (revue 2 de Beat T1–T6 ; Opus) : **T1** — AC-11 rétablie : l'assistant demande les
   dates du premier exercice (début, défaut 1er janvier de l'année courante ; fin, défaut veille du même jour un an
   plus tard), corps facultatif de `finalize` (absent = comportement actuel), nom « Exercice AAAA » ou « AAAA/AAAA »,

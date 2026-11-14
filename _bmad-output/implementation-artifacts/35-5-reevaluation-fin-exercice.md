@@ -9,7 +9,9 @@ Révisée le 2026-11-14 pour la revue de Beat (CR-2 : R3, R6, R9), qui prime sur
 par compte réévalué** (R9), cours de clôture selon le genre choisi pour l'exercice (R6), refus en exercice
 mono-devise (R3). Révisée de nouveau pour la revue CR-3 de Beat, qui prime sur CR-2 : **S2** — la contrepartie de
 chaque écriture prend les comptes de différence **propres** du compte réévalué s'il en a (35-1 AC-4 bis) ; **S4** —
-exercice de durée quelconque (aucune constante de douze mois : le mois et le jour de clôture sont ceux de `end_date`).*
+exercice de durée quelconque (aucune constante de douze mois : le mois et le jour de clôture sont ceux de `end_date`).
+Révisée enfin pour la revue 2 de Beat (CR-4) : **T3** — la ligne ne porte aucune colonne de devise, la devise est celle
+du compte ; **T2** — exercice au 1er janvier ajouté aux tests.*
 
 ## Story
 
@@ -23,7 +25,8 @@ clôture et que l'écart aille aux différences de change.
 
 1. **AC-1 — Aperçu.** `POST /api/v1/fiscal-years/{id}/fx-revaluation/preview { rates?: {USD: "0.8846", …},
    accountIds?: [...] }` → par compte de **bilan** (`Asset`, `Liability`) en devise, **imputable** (`postable = TRUE` ;
-   les comptes de groupe ne sont jamais proposés) : solde en devise et solde CHF **cumulés depuis l'origine** jusqu'à
+   les comptes de groupe ne sont jamais proposés) : **devise du compte** (`currency`, lue sur le compte, T3 : c'est elle qui
+   désigne le cours de la ligne et les devises cochées de l'AC-1), solde en devise et solde CHF **cumulés depuis l'origine** jusqu'à
    la date de fin d'exercice (toutes années confondues, sans borne basse), cours retenu, CHF réévalué = round(solde
    devise × cours), écart, compte de contrepartie — **par compte** (S2, CR-3) : gains ou pertes résolus par
    `fx_accounts_for(société, compte)` (35-1 AC-4 bis), soit les comptes **propres** du compte réévalué, soit ceux de
@@ -193,7 +196,8 @@ clôture et que l'écart aille aux différences de change.
    - Ligne du compte réévalué : `ForeignAmount { declared_currency: None, source: Revaluation, amount: 0, rate }`
      (T3, CR-4 : la ligne **ne porte pas de colonne de devise** — sa devise est celle du compte réévalué, lue par
      jointure ; le contrôle central de 35-3a la vérifie **par la devise du compte** : la ligne `foreign` sur un compte
-     CHF serait refusée `FX_ACCOUNT_IN_CHF`, et `FX_CURRENCY_MISMATCH` ne peut naître, aucune devise n'étant annoncée ;
+     CHF serait refusée `FX_ACCOUNT_IN_CHF`, et `FX_CURRENCY_MISMATCH` ne peut naître, aucune devise n'étant annoncée ; ces refus du rang 3 de 35-3a sont
+     inatteignables ici, la devise du compte étant lue sous verrou à l'étape (3) — filet, non refus métier ;
      le cours retenu est celui de la devise du compte, lue au `SELECT … LOCK IN SHARE MODE` de l'étape (3)), `rate_source =
      'revaluation'`, `amount_currency = 0`, `exchange_rate` = cours retenu (> 0, par unité), CHF = |D|. **Cette ligne
      est exemptée de l'égalité CHF = montant × cours et de `FX_LINE_ROUNDS_TO_ZERO`** (le CHF est pris tel quel, > 0) ;
@@ -382,6 +386,10 @@ clôture et que l'écart aille aux différences de change.
      comptes de la société (`None`) → `reason: "missing"`, ligne cochable ; premier fautif dans l'ordre des numéros de compte, gain avant perte ; compte de la société
      invalide (par SQL) alors que tous les comptes sélectionnés ont des comptes propres → passation admise ; une
      désignation propre concurrente attend la fin de la passation (verrou `companies`) ;
+   - **devise portée par le compte (T3, CR-4)** : la ligne de réévaluation est posée sans devise annoncée et relue
+     avec la devise du compte (jointure), pour une devise autre que USD au moins ; un compte EUR dont le cumul contient
+     une écriture **EUR–EUR** (T3 : chaque ligne a son cours) est réévalué sur `devise_net` de toutes ses lignes ;
+     aucun `FX_CURRENCY_MISMATCH` ni `FX_ACCOUNT_IN_CHF` ne sort d'une passation ordinaire ;
    - **durée de l'exercice (S4, CR-3)** : exercice de **six mois** (01.07.2024–31.12.2024) et de **dix-huit mois**
      (01.07.2023–31.12.2024) → cours journalier du 31.12.2024 (genre `day`) ou cours mensuel de décembre 2024 (genre
      `month`), écart sur le cumul depuis l'origine (achat EUR antérieur à l'exercice compris), une écriture par compte
@@ -623,3 +631,13 @@ clôture et que l'écart aille aux différences de change.
   et des durées de six et dix-huit mois (tests). T4 sans effet ici (cours de **clôture** ; la reprise du genre de
   clôture par l'exercice suivant est en 35-1 AC-3 bis). T1, T5, T6 sans point de contact. AC touchés : AC-1 (règle de
   calcul), AC-2 (ligne du compte réévalué), AC-7 (tests). Fiche à revalider (cycle CR-4).
+- 2026-11-14 — validation CR-4 P1 (Sonnet) : 0 CRITICAL, 0 HIGH, 0 MEDIUM, 4 LOW ; remédiés dans la fiche ; aucun
+  finding inter-fiches. (35-5-CR4-P1-1 LOW : en-tête sans la révision CR-4. -2 LOW : ligne d'aperçu sans `currency`
+  alors que T3 fait lire la devise sur le compte et que l'écran en a besoin pour les cours cochés. -3 LOW : refus du
+  rang 3 de 35-3a (`FX_ACCOUNT_IN_CHF`, `FX_CURRENCY_MISMATCH`) non situés pour la ligne de réévaluation : inatteignables
+  sous verrou, dits filet. -4 LOW : test T3 manquant — devise relue sur le compte, cumul avec écriture EUR–EUR.)
+  Vérifié : 35-3a AC-1/AC-2/AC-4 rang 3/AC-8 (`declared_currency`, `account_currency`, snapshot `foreign`), 35-4 AC-1
+  quater (`balances_as_of`, `Option<devise_net>`), epic C-35-3 amendé, A20/A21 ; aucun reste de colonne de devise de
+  ligne dans la fiche (grep `currency`). Source journalière (un GET) : `xmldaily?d=20241231` rend la publication du
+  31.12.2024 (EUR 0.94947), mardi. Axes non exercés : code réel de 35-1 à 35-4 (non écrit) ; T1, T4, T5, T6 sans point de
+  contact ; registres d'audit et RBAC non touchés par la révision.

@@ -102,8 +102,9 @@ cours sans saisie.
      (mensuels et journaliers), globaux, jamais un cours saisi ; `rate_date` = le 1er du mois pour `month`, la date
      **demandée** D pour `day` ; `source_date` = le `<datum>` lu pour `day` (≤ D, cf. *Cours journaliers*), `NULL` pour
      `month` ; `INT` et non `SMALLINT` (unités jusqu'à 10000 relevées) ; `published_rate DECIMAL(19,6)` porte les cinq
-     décimales des cours journaliers ; `currency` a **la même définition** qu'`accounts.currency` (35-1 AC-1) et
-     `journal_entry_lines.currency` (35-3a AC-1), et le `CHECK` porte `BINARY` comme dans ces deux fiches : la table,
+     décimales des cours journaliers ; `currency` a **la même définition** qu'`accounts.currency` (35-1 AC-1 ; depuis T3, CR-4, la devise d'une ligne
+     d'écriture n'est plus stockée sur la ligne — 35-3a — et `accounts.currency` est la seule colonne de devise
+     d'une écriture), et le `CHECK` porte `BINARY` comme dans 35-1 : la table,
      en `utf8mb4_unicode_ci` par défaut, confondrait sinon `usd` et `USD` ;
      **colonnes de CR-3** (dans le même `CREATE TABLE`, aucune migration de plus) : `first_fetched_at DATETIME(3) NOT
      NULL` (UTC, posée à l'insertion de la ligne et **jamais** mise à jour : date d'obtention que lit le calendrier de
@@ -337,7 +338,12 @@ cours sans saisie.
      son genre demande (R6, colonnes de 35-1) — la veille de `start_date` si `opening_rate_kind = 'day'`, `end_date` si
      `closing_rate_kind = 'day'` —, seulement s'ils sont **strictement antérieurs** à aujourd'hui (AC-5) ; et, si
      `opening_rate_kind = 'month'`, le **mois de la veille de `start_date`** (dernier mois de l'exercice précédent,
-     T4, CR-4 : hors des mois de l'exercice, il s'y ajoute). Une unité
+     T4, CR-4 : un mois **avant** celui de `start_date` quand l'exercice commence le 1er d'un mois, il s'ajoute alors
+     aux mois de l'exercice ; quand il commence en cours de mois, p. ex. le 15.03, la veille tombe dans le même mois
+     que `start_date`, qui est déjà le premier mois de l'exercice : aucune unité de plus, un ensemble sans doublon).
+     Les unités **antérieures aux bornes de l'AC-5** (mois < 2000-01, jour < 2000-01-01 : un exercice commencé le
+     01.01.2000 a pour veille le 31.12.1999) ne sont **pas** utiles — le `POST /fetch` les refuserait et la tâche les
+     redemanderait chaque jour sans fin. Une unité
      **manque** s'il n'y a aucune ligne `_kesh_exchange_rates` de ce genre et de cette date. Aucun exercice
      multi-devises ouvert → aucun trafic sortant (mono-devise compris). Une fonction pure (`unites_utiles(exercices,
      aujourdhui)`, nom au développement) les calcule, testée pour des exercices civils (**1er janvier**, T2 : veille
@@ -346,7 +352,9 @@ cours sans saisie.
      clôture), et — S4, CR-3 : Kesh n'impose aucune
      durée d'exercice — pour un exercice de **six mois** (01.07.2024–31.12.2024) et de **dix-huit mois**
      (01.07.2023–31.12.2024), ainsi que pour un exercice qui ne commence pas le 1er (p. ex. 15.03.2024–14.03.2025 :
-     mois de mars 2024 à mars 2025, treize mois ; veille d'ouverture 14.03.2024).
+     mois de mars 2024 à mars 2025, treize mois ; veille d'ouverture 14.03.2024 ; en genre `month`, mois d'ouverture
+     = mars 2024, **déjà** le premier mois : douze unités distinctes de mois de mars 2024 à mars 2025 plus le mois
+     suivant éventuel, pas de doublon) ; exercice commencé le 01.01.2000 : ni la veille ni son mois ne sont utiles.
    - **Calendrier (S1, CR-3 — remplace R4 amendé)** : une tâche `exchange_rates::spawn(state)` (modèle
      `auto_backup::spawn`, `auto_backup.rs:788` ; chaque tour dans son propre `tokio::spawn`, une panique journalisée
      n'arrête rien) ne tourne **pas** en boucle de 6 h permanente. Elle se réveille : (a) **au démarrage**, après un
@@ -521,9 +529,14 @@ cours sans saisie.
      pour un exercice de dix-huit mois, treize pour un exercice du 15.03 au 14.03 ; `chk_fiscal_years_dates` n'impose
      que `end_date > start_date`) ; `openingDate` = veille de `startDate` (genre `day`) ou 1er du mois de cette
      veille (`month`) — le **dernier mois de l'exercice précédent** (T4, CR-4 : le cours d'ouverture est le cours de
-     clôture précédent ; il n'est pas l'un des `months` de l'exercice) ; une seule fonction pure calcule
-     `openingDate` et `closingDate` pour ce `GET`, `unites_utiles` (AC-4) et le cours proposé à l'ouverture (35-3b
-     AC-1) ; `closingDate` = `endDate` (`day`) ou 1er du dernier mois (`month`) ; `Cell` = la forme de
+     clôture précédent). Pour un exercice qui commence le 1er d'un mois, ce mois précède le premier des `months` et
+     n'en fait pas partie ; pour un exercice qui commence en cours de mois (15.03.2024), il **est** le premier des
+     `months` (mars 2024) : `openingDate` égale alors la date de cette colonne, la case d'Ouverture et la première
+     colonne sont **une seule case** (même devise, genre et date) ; **une seule fonction pure** de `kesh-core`
+     calcule `openingDate` et `closingDate` pour ce `GET` et pour `unites_utiles` (AC-4) ; le cours proposé à
+     l'ouverture (35-3a/35-3b AC-1) se calcule **côté frontend** en TypeScript : un jumeau, non la même fonction —
+     un test de parité (mêmes cas : 1er janvier, 1er avril, 1er juillet, 15.03, six et dix-huit mois, genres `day` et
+     `month`) le garde des deux côtés ; `closingDate` = `endDate` (`day`) ou 1er du dernier mois (`month`) ; `Cell` = la forme de
      `lookup` (`kind, rateDate, effectiveRate, afcRate, overridden, publishedUnit, publishedRate, sourceDate`, plus
      `fetchedAt`, `override: { id, version, updatedAt } | null` et — S6 — `republished: { rate, publishedUnit,
      publishedRate, republishedAt, acknowledged } | null`, la valeur republiée en attente de la ligne AFC de la case,
@@ -553,8 +566,8 @@ cours sans saisie.
        lecture seule) → `{ notices: [{ currency, kind, rateDate, afcRate, republishedRate, publishedUnit,
        publishedRate, republishedAt }] }` : les republications **non acquittées** dont la devise est une ligne du
        tableau annuel (devises des comptes de la société ou à cours saisi) et la date un mois de l'exercice, ou le
-       mois ou le jour d'Ouverture/Clôture (`openingDate`, `closingDate` — le mois d'Ouverture en genre `month` est
-       hors des mois de l'exercice, T4) d'un exercice **multi-devises** de la société (ouvert ou clos), triées par date puis devise ;
+       mois ou le jour d'Ouverture/Clôture (`openingDate`, `closingDate` — le mois d'Ouverture en genre `month`
+       précède d'ordinaire les mois de l'exercice, T4) d'un exercice **multi-devises** de la société (ouvert ou clos), triées par date puis devise ;
        liste vide sinon ;
      - `POST /api/v1/exchange-rates/notices/acknowledge { notices: [{ currency, kind, rateDate, republishedRate }] }`
        (mêmes rôles) : pose `notice_acknowledged_at` sur chaque ligne dont la valeur republiée **égale encore** celle
@@ -649,9 +662,11 @@ cours sans saisie.
    Les colonnes Ouverture et Clôture suivent le choix : genre `day`, la case du jour (avec la date de publication
    `sourceDate` quand elle diffère : « publié le 28.06.2024 ») ; genre `month`, la case du mois concerné — pour la
    Clôture, liée à la colonne du dernier mois (la même valeur, éditée à un seul endroit) ; pour l'Ouverture, une case
-   **propre** (le mois de la veille n'est pas une colonne de l'exercice), qui est la même case (même devise, genre
-   et date) que la Clôture en genre `month` de l'exercice précédent et que la colonne de ce mois dans le tableau de
-   celui-ci. En-tête de colonne : la date du cours. Bouton
+   **propre** quand l'exercice commence le 1er d'un mois (le mois de la veille n'est pas une colonne de l'exercice),
+   qui est la même case (même devise, genre et date) que la colonne de ce mois dans le tableau de l'exercice
+   précédent et, si celui-ci finit la veille et a le genre `month`, que sa Clôture ; quand l'exercice commence en
+   cours de mois (15.03.2024), le mois de la veille est son premier mois : l'Ouverture est **liée à la première
+   colonne**, comme la Clôture à la dernière (une seule valeur, éditée à un seul endroit). En-tête de colonne : la date du cours. Bouton
    « Récupérer les cours manquants » (Administrateur et Comptable) : **un seul** `POST /exchange-rates/fetch` par
    **colonne** récupérable (mois ≤ mois suivant, AC-5, l'Ouverture en genre `month` comprise, T4 ; jour d'Ouverture ou de Clôture en genre `day`, strictement
    passé) dont au moins une ligne n'a pas de cours AFC (`afcRate` à `null`, cours saisi ou non) — une récupération
@@ -670,7 +685,8 @@ cours sans saisie.
    (genre `day`) d'un exercice est aussi le jour d'Ouverture (veille) de l'exercice suivant : c'est **la même case**
    (même devise, genre et date), éditable depuis l'exercice ouvert, qui change aussi ce qu'affiche l'exercice clos
    (testé au serveur) ; de même, depuis T4, en genre `month` : le dernier mois d'un exercice est le mois d'Ouverture
-   du suivant (testé au serveur et en Vitest).
+   du suivant **quand celui-ci commence le lendemain** (un trou entre deux exercices rompt le partage ; testé au
+   serveur et en Vitest).
    - **Cours éditable** (D9) : chaque cours effectif est un champ (Administrateur et Comptable ; lecture seule pour
      Consultation), validé à l'écran par les bornes de l'AC-2 (`AmountFormatOptions { maxDecimals: 10,
      maxIntegerDigits: 7 }`, comme 35-3b AC-2) ; une valeur changée s'enregistre à la validation du champ (`PUT`, avec
@@ -720,7 +736,9 @@ cours sans saisie.
      colonnes) et Clôture = juin 2025 / mars 2024 — au serveur (`GET` du tableau,
      `unites_utiles` de l'AC-4) **et** en Vitest (en-têtes, liaison des colonnes) ; deux exercices consécutifs au
      1er juillet en genre `month` : la Clôture du premier (juin 2025) et l'Ouverture du second sont la même case.
-     **Durées autres que douze mois (S4, CR-3)** : exercice de **six mois** (01.07.2024–31.12.2024 : six colonnes,
+     **Début en cours de mois (S4, T4)** : exercice 15.03.2024–14.03.2025 — treize colonnes, Ouverture = 14.03.2024
+     (genre `day`) ou **mars 2024 liée à la première colonne** (genre `month`), serveur et Vitest. **Durées autres que
+     douze mois (S4, CR-3)** : exercice de **six mois** (01.07.2024–31.12.2024 : six colonnes,
      juillet → décembre, Ouverture = 30.06.2024 ou juin 2024, Clôture = 31.12.2024 ou décembre 2024) et de **dix-huit
      mois** (01.07.2023–31.12.2024 : dix-huit colonnes, juillet 2023 → décembre 2024, Ouverture = 30.06.2023 ou **juin
      2023**), au serveur et en Vitest (en-têtes, défilement du seul tableau).
@@ -752,7 +770,9 @@ cours sans saisie.
 8. **AC-8 — i18n, manuels.** Quatre locales (écran, codes d'erreur dont `FX_RATE_INVALID`, libellés d'audit et de
    type d'entité) ; manuel utilisateur (tableau annuel, source, cours mensuel AFC — publié d'avance pour le mois ; la
    définition « moyenne du 25 au 24, publiée le 25 » de R4 n'est écrite qu'une fois confirmée par Beat (relevé
-   contraire, *Source*) —, cours journalier, genres d'ouverture et de clôture de l'exercice, cours saisi et bouton ↑,
+   contraire, *Source*) —, cours journalier, genres d'ouverture et de clôture de l'exercice (le cours d'ouverture est celui de la clôture de l'exercice
+   précédent, T4 : pourquoi le genre « mois » d'ouverture prend le dernier mois de l'exercice précédent, et le
+   genre d'ouverture repris par défaut à la création), cours saisi et bouton ↑,
    récupération automatique et son calendrier — quotidien jusqu'au cours du mois suivant, puis pause d'au plus 24 jours
    jamais au-delà du 25 (S1) —, tableau d'un exercice de durée quelconque (S4), cours AFC publié à nouveau : rouge, ↑
    pour l'adopter, avertissement à acquitter, effet sur l'installation entière et sur les lignes `afc` passées (S6)) ;
@@ -847,6 +867,12 @@ cours sans saisie.
       sans cours → 404 avec `details.date` ; `GET /exchange-rates` d'une devise à cours saisi seul (`fetchedAt` `null`) ;
       cours saisi égal au cours AFC conservé (`overridden` vrai) ; deux `PUT` de création simultanés → un 200 et un 409 ;
       `DELETE` sans `version` → 400 ; `registry_entries_are_within_import_window` vert avec la table créée (R1).
+- [ ] CR-4 (T4, T2) : fonction pure unique `openingDate`/`closingDate` dans `kesh-core` (genres `day` et `month`,
+      début en cours de mois, bornes de l'AC-5), partagée par le `GET` du tableau et `unites_utiles` (AC-4, AC-5), et
+      son jumeau TypeScript de 35-3b avec test de parité ; case d'Ouverture en genre `month` (propre, ou liée à la
+      première colonne), libellé « cours mensuel du dernier mois de l'exercice précédent » et aide (AC-6, quatre
+      locales) ; notices sur `openingDate` ; tests des exercices au 1er janvier, 1er avril, 1er juillet, 15.03, six et
+      dix-huit mois (serveur et Vitest).
 - [ ] Manuels, CHANGELOG, `Cargo.lock`.
 
 ## Notes de développement
@@ -1107,3 +1133,19 @@ cours sans saisie.
   dix-huit mois, avec les mois d'Ouverture `month` corrigés (décembre, mars, juin ; juin 2023 pour dix-huit mois) et
   deux exercices consécutifs à case partagée (AC-4, AC-6). T1, T3, T5, T6 sans point de contact. AC touchés :
   en-tête, AC-4, AC-5, AC-6. Fiche à revalider (cycle CR-4).
+- 2026-11-14 — validation CR-4 P1 (Sonnet) : 0 CRITICAL, 0 HIGH, 2 MEDIUM, 4 LOW ; remédiés dans la fiche sauf
+  35-2-CR4-P1-IF1 (35-3b : jumeau TS du calcul d'ouverture, test de parité ; la fiche 35-3b dit « partagée avec
+  l'écran », qui lit `openingDate` du serveur). MEDIUM : 35-2-CR4-P1-1 (AC-4, AC-5, AC-6) — « le mois d'Ouverture n'est
+  pas l'un des `months` / case propre » est faux pour un exercice qui commence en cours de mois (15.03.2024 : la veille
+  est le 14.03, même mois que le premier de l'exercice ; la fiche cite elle-même cet exercice) : liée à la première
+  colonne, pas de doublon dans `unites_utiles`, test ; 35-2-CR4-P1-2 (AC-5) — « une seule fonction » pour le `GET`,
+  `unites_utiles` et le cours proposé de 35-3b, irréalisable : Rust contre TypeScript : fonction de `kesh-core` +
+  jumeau TS et test de parité. LOW : P1-3 (AC-1) reste de `journal_entry_lines.currency`, colonne retirée par T3 ;
+  P1-4 (AC-6) partage Clôture/Ouverture valable seulement si l'exercice précédent finit la veille (trou : rompu) ;
+  P1-5 (AC-4) unités avant les bornes 2000-01 / 2000-01-01 (veille d'un exercice au 01.01.2000) redemandées sans fin :
+  exclues (relevé : `xmlavgmonth?j=1999&m=12` et `j=2000&m=1` rendent une racine de 308 octets, soit vide) ; P1-6
+  (AC-8, Tâches) manuel muet sur T4 et aucune tâche CR-4 : ajoutés. Axes exercés : diff `2c0f5afc..bd7d0ec7` de la
+  fiche ; D9, D10, R1–R10, S1–S6, T1–T6, A18–A22 ; accord avec 35-1 AC-3 bis (genre d'ouverture par défaut) et 35-3b
+  (cours proposé) ; T3 : grep `journal_entry_lines` (un reste) ; sites sauvegarde, `TABLES_TO_TRUNCATE`, export CSV,
+  audit, RBAC, i18n, manuels, E2E de la fiche ; source : deux GET. Non exercés : compilation, gate, rendu de l'écran,
+  code au-delà des renvois relus (la révision ne cite aucune ligne de code neuve), 35-3a/35-4/35-5 au-delà des renvois.

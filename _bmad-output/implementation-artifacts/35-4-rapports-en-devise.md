@@ -25,7 +25,13 @@ exports, afin de rapprocher mes comptes PayPal ou Wise de leurs relevés et de c
      part (la colonne n'existe pas). Un compte CHF ne porte aucune ligne en devise (`amount_currency` `NULL`, ignoré
      par `SUM`) ; le solde en devise d'un compte CHF reste `NULL` par `a.currency IS NULL` (ci-dessous), ce qui
      neutralise aussi une ligne en devise posée hors du dépôt (limite de 35-3a AC-1). Une ligne `revaluation`
-     (`amount_currency = 0`) n'y ajoute rien.
+     (`amount_currency = 0`) n'y ajoute rien. Chaque somme en devise est enveloppée `COALESCE(…, 0)`, comme le CHF (un
+     compte sans ligne ne rend pas `NULL` là où le compte est en devise).
+   - **La devise gouverne l'affichage, pas la ligne** : au grand livre, `fetch_lines` lit `amount_currency` pour toute
+     ligne, mais la ligne, le solde progressif, l'ouverture, la clôture et les totaux en devise ne sont remplis **que si
+     la section est en devise** (`LedgerSection.currency` = `a.currency` non `NULL`) ; au journal, les champs en devise
+     d'une ligne ne sont remplis que si `a.currency` **et** `jel.amount_currency` sont non `NULL`. Sans cela, une ligne
+     en devise posée hors du dépôt sur un compte CHF s'afficherait sans devise.
    - `signed`, `opening_from` et `debit_sense` (`opening.rs`, :75 pour `opening_from`) s'appliquent **sans
      changement** à la paire en devise (ce sont des fonctions sur `Decimal`) : aucun `CASE` d'ouverture n'est recopié
      en SQL, aucune seconde règle. « Fonction partagée » = fragment SQL de la somme en devise + `opening_from` ; la
@@ -177,8 +183,11 @@ exports, afin de rapprocher mes comptes PayPal ou Wise de leurs relevés et de c
      comme les tests CHF de `general_ledger.rs`) ; contenu CSV et PDF ; MCP ; `balances_as_of` dans une transaction.
    - **T3 (CR-4)** : la devise affichée d'un mouvement, d'une section ou d'une ligne de rapport est celle du compte
      (`a.currency`) — test : un compte EUR à deux lignes (`afc` et `manual`) donne la paire en devise attendue sans
-     aucune condition de devise sur la ligne ; contrôle au Change Log du développement que `grep -rn "jel.currency\|l.currency"
-     crates/` ne rend rien.
+     aucune condition de devise sur la ligne ; ajout : une ligne en devise insérée **par SQL direct** sur un compte CHF
+     (hors dépôt) n'apparaît dans aucun champ en devise du grand livre, de la balance, du bilan, du compte de résultat
+     ni du journal ; contrôle au Change Log du développement que
+     `grep -rnE "\b(jel|l)\.currency\b" crates/ --include=*.rs --include=*.sql` ne rend rien (motif échappé : un `.`
+     nu rendrait des faux positifs sur `total_currency` et consorts).
    - Non-régression mono-devise : quatre CSV **octet pour octet** contre fixtures enregistrées **depuis le commit de
      base avant toute modification** (cas multi-devises sans compte en devise compris) ; JSON identique (AC-6).
 9. **AC-9 — Manuel** : lecture des rapports en devise ; i18n ; PDF.
@@ -253,3 +262,13 @@ exports, afin de rapprocher mes comptes PayPal ou Wise de leurs relevés et de c
   « aucune lecture de `jel.currency` » (AC-8). Prémisses relues au code : `journal_report.rs:100-135` (jointure
   `accounts a` présente), `general_ledger.rs:407-413` (`fetch_lines` sans `accounts`). T1, T2, T4, T5, T6 sans point
   de contact. AC touchés : AC-1, AC-2, AC-8, Tâches. Fiche à revalider (cycle CR-4).
+- 2026-11-14 — validation CR-4 P1 (Sonnet) : 0 CRITICAL, 0 HIGH, 1 MEDIUM, 3 LOW ; remédiés dans la fiche sauf <aucun
+  inter-fiches>. MEDIUM CR4-P1-1 : affichage en devise non gouverné par la devise du compte (ligne en devise hors dépôt
+  sur compte CHF, grand livre et journal). LOW : CR4-P1-2 `COALESCE` des sommes en devise ; CR4-P1-3 motif du `grep`
+  de contrôle T3 (faux positifs) ; CR4-P1-4 test T3 non observable (ajout d'un cas par SQL direct). Relu au code :
+  `journal_report.rs:100-135` (jointure `accounts a`), `general_ledger.rs:338-342`/`:407-413`/`:465-473` (aucune jointure
+  `accounts`), `trial_balance.rs:165-195` (18 binds ; +12 pour six sommes), `balance_sheet.rs:288-300` et
+  `income_statement.rs:62-83` (`sign_expr`, `HAVING balance != 0`, `INNER JOIN` lignes), `opening.rs:75`,
+  `kesh-db/Cargo.toml:48`, `sortie.rs:97`, `rapports.rs:63`/`:104`/`:219`, `csv.rs:40`, `pdf.rs:153`/`:718`/`:1063` :
+  exacts ; `grep jel.currency|l.currency` sur `crates/` : aucun reste aujourd'hui ; aucun reste de la colonne dans 35-1,
+  35-2, 35-3a, 35-3b, 35-5 (accord de 35-3a AC-1/AC-2 et de 35-5 sur `balances_as_of`).
