@@ -1,6 +1,6 @@
 # Story 35-5c : les tests ne dépendent plus de l'heure à laquelle on les lance — tests Rust et specs E2E au jour suisse, gardes fermées (#929)
 
-Status: review
+Status: done
 
 *Fiche rédigée le 2026-11-12 par l'agent de rédaction des fiches 35-5a et 35-5b (Opus 5.5), worktree `kesh-e355`, à la
 remédiation de la validation P1 de la 35-5b (V1-8 : la story ne tenait pas en une boucle). Troisième des trois stories du
@@ -454,3 +454,33 @@ Scripts : `reset-db-e355c.sh`, `test-fast-e355c.sh`, `nuit-e355c.sh`, `cible-e35
     `git stash`.
   - Prompt de la passe suivante : `35-5c-date-du-jour-tests-review-prompt-p2-ciblee.md` (une lentille, Sonnet, le seul commit
     `7fcede7e8`). Statut `review`.
+- 2026-11-14 — **Revue de code P2 ciblée** (Sonnet, une lentille, le seul commit `7fcede7e8` ;
+  `kesh-gate-logs/e355c-review-p2-ciblee.md`) : **0 au-dessus de LOW**, 5 LOW (C1 à C5). Aucune ligne de production touchée par
+  la remédiation relue. Boucle de revue terminée.
+- 2026-11-14 — **Clôture** (Opus 5.5, worktree `kesh-e355c`). Synthèse finale de la boucle :
+  - **Tendance** : P1 (Opus, trois lentilles) **2 MEDIUM distincts** (A1 = B1 = E1, `docs/testing.md` ; B2 = E6, garde de
+    l'horloge réelle d'un test) et 9 LOW distincts → remédiation `7fcede7e8` → P2 ciblée (Sonnet) **0 au-dessus de LOW**, 5 LOW.
+    Modèles : Opus en P1, Sonnet en P2 ; aucun reclassement, aucun finding réfuté.
+  - **LOW de la P2** : C1, C2 et C5 appliqués à la clôture, commit `8cb058342` (`docs/testing.md:119` — troisième exception
+    nommée, `test_state()` de `crates/kesh-api/src/middleware/auth.rs:302`, choix de la 35-5a0 ; sujet de « sans effet sur le
+    binaire servi » nommé, `KESH_TEST_INSTANT` ; justification de l'entrée `journal_entries.rs` d'`HORLOGE_REELLE_ADMISES` :
+    **51** appels de `setup(&pool)` dans le `mod tests` de `journal_entries.rs`, recomptés depuis la source — 54 occurrences de
+    `setup(` à partir de la ligne `mod tests {`, moins la définition et deux doc-comments ; le « 50 » du commentaire historique
+    de la même garde, nombre de l'ancienne exemption de la 35-5a, est juste à sa date et laissé tel quel). C3 en issue
+    **#1141** ; C4 constaté : les journaux `p1-mut-MP1.log` et `p1-mut-MP2.log` n'ont pas de ligne « restauré », mais
+    `git status --porcelain` était vide à l'ouverture de la P2 (rapport P2, en-tête). B5 de la P1 en issue **#1140**.
+  - **Dernier commit de code : `8cb058342`** (texte de `docs/testing.md` et d'une chaîne de justification d'un test).
+  - **Gates au commit `8cb058342`** :
+    - `cargo fmt --all -- --check` vert et `cargo clippy --workspace --all-targets -- -D warnings` vert, voie 2 sous
+      `mem-guard` (`kesh-gate-logs/e355c/cloture-lint.log`) ;
+    - `scripts/gate-ci.sh kesh_ci_e355c`, voie 1 : **5381 passés, 0 échoué, 17 ignorés** (5379 au développement + les deux
+      tests neufs de la garde Rust de la remédiation P1) (`kesh-gate-logs/e355c/cloture-gate-ci.log`) ;
+    - E2E complet, voie 2, base `kesh_e2e_e355c` recréée (91 migrations, seed), frontend reconstruit, backend sur le port 3415
+      (dossiers sous `target/e2e-c/`) : **403 passés, 7 échecs, 18 ignorés** ; les sept échecs sont exactement ceux de la KF-029
+      (#97) au tableau de `docs/testing.md` § « Les échecs attendus » (`mode-expert.spec.ts:26`, `:41`,
+      `onboarding-path-b.spec.ts:65`, `:92`, `onboarding.spec.ts:57`, `:77`, `:150`) ; aucune des 27 specs converties ne
+      rougit, aucune de ces trois specs n'est touchée par la branche (`kesh-gate-logs/e355c/cloture-e2e.log`, backend
+      `cloture-e2e-backend.log`).
+  - Consigne Edit : tenue (fiche, sprint-status, `docs/testing.md`, `date_du_jour_garde.rs`). Le script de l'E2E est un
+    fichier du répertoire de travail de la session, hors dépôt.
+  - Statut `done`.
