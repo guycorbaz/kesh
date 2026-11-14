@@ -385,7 +385,9 @@ issue à ouvrir : #431 les porte.
 | `an_api_key_cancels_a_supplier_settlement_and_is_named_everywhere` | `crates/kesh-api/tests/supplier_settlement_cancel_e2e.rs` (montage de `pay_then_cancel_the_settlement`) | AC2 | idem, `supplier_invoice.settlement_cancelled` |
 | `an_api_key_unreconciles_an_invoice_settlement_and_is_named_everywhere` | `crates/kesh-api/tests/reconciliation_e2e.rs` | AC3 (a) | `invoice.settlement_cancelled` à `'user'` (`reconciliation.cancelled` déjà à la clé) |
 | `an_api_key_unreconciles_a_supplier_settlement_and_is_named_everywhere` | `crates/kesh-api/tests/reconciliation_e2e.rs` | AC3 (b) | `supplier_invoice.settlement_cancelled` à `'user'` |
-| assertions de session ajoutées | les quatre tests existants nommés en AC4 | AC4 | vertes |
+| assertions de session ajoutées | les quatre tests existants nommés en AC4 (le quatrième, `cancelling_a_supplier_reconciliation_by_the_route`, à la remédiation de la revue P1, E3 = A1) | AC4 | vertes |
+| `an_api_key_unlinks_one_side_and_is_named` | `crates/kesh-api/tests/reconciliation_link_entry_e2e.rs` (montage de `s34_11b_ac4_annuler_un_cote_puis_l_autre`) — remédiation de la revue P1, B2 = E1 | AC3, simple détachement | ajouté après le correctif : non rouge |
+| `an_api_key_cancels_a_partial_settlement_and_is_named_everywhere` | `invoice_settlement_response_e2e.rs` — remédiation de la revue P1, E2 | AC1, règlement partiel | ajouté après le correctif : non rouge |
 
 Le développeur choisit les hôtes au mieux (un test par clé hors de ces fichiers est permis s'il y trouve un montage plus
 court) ; la clé se crée par HTTP (`common::create_key_via_http` ou la requête en ligne de
@@ -536,7 +538,9 @@ Sous `/home/gcorbaz/devel/kesh-gate-logs/e36-4/` : `rouges.log`, `rouges-run1.lo
   des tests — **dernier commit de code**), `e958fb169` (documents et PDF), puis la fiche, le registre, `sprint-status.yaml` et
   le prompt de revue.
 - **Gates** :
-  - `cargo clippy --workspace --all-targets -- -D warnings` vert et `cargo fmt --check` vert, arbre de `c5d67ce42` avant son
+  - `cargo clippy --workspace --all-targets -- -D warnings` vert (`clippy-1.log`) et `cargo fmt --check` vert (`▶ cargo fmt
+    --check`, `test-fast-ci-c5d67ce42.log:4` — *corrigé à la remédiation de la revue P1, A2 : ce point citait `clippy-1.log`,
+    qui ne porte aucune trace de `fmt`*), arbre de `c5d67ce42` avant son
     commit (`clippy-1.log`).
   - `scripts/test-fast.sh --ci` sur `kesh_e364` remise à neuf (`bases-a-neuf.sh`), au commit `c5d67ce42` :
     **5450 exécutés, 5450 passés, 13 ignorés** (`test-fast-ci-c5d67ce42.log`, `Summary [ 338.596s]`). ⚠️ Il précède le commit
@@ -689,3 +693,44 @@ Sous `/home/gcorbaz/devel/kesh-gate-logs/e36-4/` : `rouges.log`, `rouges-run1.lo
     `e958fb169` au second essai (5457 passés, 17 ignorés ; premier essai rouge sur KF-061 #1126, sans rapport) ; frontend non
     touché ; **E2E non lancé** (à la clôture, avec le second `gate-ci`). Détail au Dev Agent Record.
   - Statut : `review`. Prompt de la revue P1 : `36-4-acteur-annulation-reglement-review-prompt-p1.md`.
+- 2026-11-14 — **Revue P1 (trois lentilles) : B 0/0/0/2, E 0/0/0/3, A 0/0/0/4** (`kesh-gate-logs/e36-4/review-p1-{B,E,A}.md`),
+  rien au-dessus de LOW. **Remédiation de la revue P1** (`a8b1ebb08`), sur décision de l'orchestrateur (« Tarir la source » :
+  les LOW se corrigent dans la story, puis une passe ciblée relit ce seul correctif). Chaque prémisse relue au code :
+  - **B1**, confirmé : `reconciliation_cancel.rs:786-788` lu, « trois lignes au total (celle-ci, `invoice.settlement_cancelled`,
+    `journal_entry.reversed`) », contre six relevées (`INVOICE_UNRECONCILE_ACTIONS`). Commentaire récrit (six traces, sans
+    `lettering.removed` pour un partiel, la seule `reconciliation.cancelled` pour un simple détachement) ; aucune ligne de code.
+  - **B2 = E1**, confirmé : aucun test par clé du simple détachement. Ajouté `an_api_key_unlinks_one_side_and_is_named`
+    (`reconciliation_link_entry_e2e.rs`, montage de `s34_11b_ac4_annuler_un_cote_puis_l_autre`) : une seule trace,
+    `reconciliation.cancelled`, à la clé.
+  - **E2**, confirmé : ajouté `an_api_key_cancels_a_partial_settlement_and_is_named_everywhere` (`invoice_settlement_response_e2e.rs`,
+    règlement de 40.00 sur 100.00) ; `cancel_by_key` prend `piece_lettree` et affirme la présence **ou l'absence** du lettrage de
+    pièce. Liste relevée : `PARTIAL_SETTLEMENT_CANCEL_ACTIONS` (sans `lettering.removed`, deux `lettering.created`). **La
+    contre-passation à l'exercice suivant n'est pas testée par clé, parce que ce chemin ne la produit pas** :
+    `journal_entries::reverse_owned_in_tx`, qu'appellent les deux `cancel_settlement_in_tx`, passe
+    `ReversalDating::Today(aujourd_hui)` (`journal_entries.rs`, `reverse_owned_in_tx` → `reverse_in_tx_inner(…,
+    ReversalDating::Today(aujourd_hui))`) ; la datation `NextFiscalYearStart` n'est prise que par
+    `reverse_at_next_fiscal_year_start_in_tx` (Story 29-1b), hors de l'annulation d'un règlement. Aucun montage à écrire.
+  - **E3 = A1**, confirmé : `cancelling_a_supplier_reconciliation_by_the_route` n'avait pas de témoin « toutes traces ». Ajouté
+    (`assert_toutes_a_l_utilisateur`, `seeded.admin_user_id`, `SUPPLIER_UNRECONCILE_ACTIONS`) ; la cellule `:388` de la fiche
+    accordée, et les deux tests neufs ajoutés au tableau.
+  - **A2**, confirmé : `/usr/bin/grep -niE 'fmt' clippy-1.log` ne rend que `Checking powerfmt`. Le Dev Agent Record cite
+    `test-fast-ci-c5d67ce42.log:4` (`▶ cargo fmt --check`). Les journaux de la remédiation portent le commit en première ligne
+    (`# commit $(git rev-parse HEAD)` dans la même commande).
+  - **A3**, confirmé : `api-external.md:565` dit « `lettering.removed` quand la pièce était lettrée — un règlement partiel n'en
+    écrit pas ».
+  - **A4**, confirmé : les deux `.tex` rattachent « un simple détachement ne contre-passe rien » à la phrase de l'écriture seule,
+    hors de « depuis la 0.17.8 » ; `user-manual.tex` reprend la parenthèse de l'admin (« un règlement ou un solde de facture
+    client, le paiement d'une facture fournisseur »). PDF régénérés (`manuels-make-remediation-p1.log`, commit en tête ; la
+    brochure rétablie par `git restore`). Contrôle aplati (E6), admin / user : « délettrage ; un simple détachement » `0` / `0`,
+    « compris, et un simple détachement » `0` / `0`, « client ou fournisseur, par sa route » `0` / `0`, « une écriture rapprochée
+    seule, et un simple détachement ne contre-passe rien » `1` / `1`. Sonde positive sur les PDF de `c52e10b50` : « délettrage ; un
+    simple détachement » `1` (admin), « compris, et un simple détachement » `1`, « client ou fournisseur, par sa route » `1` (user).
+  - **Gate de remédiation** : `scripts/test-fast.sh --ci`, bases remises à neuf, au commit `a8b1ebb08` :
+    **5452 exécutés, 5452 passés, 13 ignorés** (`test-fast-ci-remediation-p1.log`, première ligne `# commit
+    a8b1ebb08000f4a1cf33903e71af30c9792c27dc`, `Summary [ 329.009s]`) — les trois tests neufs ou complétés y passent
+    (`an_api_key_unlinks_one_side_and_is_named`, `an_api_key_cancels_a_partial_settlement_and_is_named_everywhere`,
+    `cancelling_a_supplier_reconciliation_by_the_route`). ⚠️ Les deux tests neufs ont été écrits après le correctif : ils n'ont
+    pas de rouge sur la base. Ni `gate-ci` ni E2E (à la clôture). Un premier run ciblé des trois tests neufs, mis en file derrière
+    d'autres gates, a été arrêté par son PID avant de démarrer (`remediation-p1-cibles.log` ne porte que sa ligne d'en-tête) :
+    `test-fast --ci` les couvre.
+  - Prompt de la passe ciblée P2 : `36-4-acteur-annulation-reglement-review-prompt-p2-ciblee.md`.
