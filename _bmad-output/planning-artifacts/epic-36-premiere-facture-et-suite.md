@@ -95,6 +95,9 @@ registre). Les fiches passent ensuite par `bmad-create-story`, puis la boucle de
    - **Lignée B, voie 1, backend puis frontend** : **36-4 → 36-5**. 36-4 touche `kesh-db` (gate complet même en boucle,
      `gate-ci` sur la voie 1 de toute façon) ; 36-5 n'a aucun fichier commun avec elle et peut partir dès que la voie
      se libère.
+     *Annoté le 2026-11-14 (validation P2 de la fiche 36-5, V2-7)* : un fichier commun est apparu,
+     `docs/manual/fr/admin-manual.tex` (36-4 vers `:3212`, 36-5 vers `:2340`) — paragraphes distincts, PDF régénéré après
+     l'union.
 3. Les fiches des cinq stories peuvent s'écrire et se valider en parallèle dès le kickoff.
 
 **Fichiers communs repérés** (une story qui en découvre un autre le dit dans son rapport avant de l'écrire) :
