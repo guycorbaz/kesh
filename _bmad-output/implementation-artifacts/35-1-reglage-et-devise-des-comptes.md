@@ -651,7 +651,7 @@ AC-3 bis).
     - **Écran** (`frontend/src/routes/onboarding/+page.svelte`, dernière étape, compte bancaire, `stepCompleted === 6`,
       :478 — les **deux** boutons, « Enregistrer » et « Passer », appellent `finalize`, :293 et :310) : une section
       « Premier exercice » au-dessus du formulaire bancaire, deux champs de date (forme suisse JJ.MM.AAAA, comme les
-      écrans comptables, #880) — *Début* (défaut : 1er janvier de l'année courante, date locale Europe/Zurich, #889) et
+      écrans comptables, #880) — *Début* (défaut : 1er janvier de l'année courante, date du poste par `todayLocal`, #889) et
       *Fin* (calculée : veille du même jour un an plus tard, recalculée à chaque changement du début tant qu'elle n'a
       pas été retouchée ; modifiable) — et une phrase : « Les dates d'un exercice ne se modifient plus une fois
       créé. » Contrôle à l'écran : fin > début, sinon les deux boutons sont désactivés avec le motif. `finalize(body)`
@@ -918,6 +918,14 @@ AC-3 bis).
   liste (vi). Axes exercés : vérité au code des phrases ajoutées, cohérence des décomptes (vi) et de la partition,
   nom des index vs AC-1, renvois P2-1/-2/-3. Non exercés : exécution réelle du cycle (non montable en lecture seule),
   plan de requête MariaDB, manuels, i18n.
+- 2026-11-14 — validation CR-4 P3 ciblée (Sonnet) : 0 CRITICAL, 0 HIGH, 0 MEDIUM, 1 LOW, 0 inter-fiches ; remédié.
+  CR4-P3-1 (LOW, AC-11) : résidu du symptôme de CR4-P2-3 — « date locale Europe/Zurich » subsistait à la description
+  de l'écran (*Début*) : alignée sur « date du poste par `todayLocal` ». Relus et justes : `fiscal_years.rs:371-372`
+  (verrou de borne, dépendant du plan), `routes/fiscal_years.rs:286` (`retry_on_deadlock("fiscal_years::create")`),
+  `initial_schema.sql:48` (`fk_fiscal_years_company`), `local-date.ts:13` (`todayLocal`, champs locaux), arithmétique
+  01.03.2027 → 29.02.2028, renvois à l'AC-3 et à la lecture `LOCK IN SHARE MODE`, contacts 35-2 (Zurich propre à
+  ses AC). Axes exercés : vérité au code et cohérence du diff CR-4 P2, propagation du symptôme (grep). Non exercés :
+  plan de requête MariaDB, exécution, manuels, i18n.
 - 2026-11-14 — validation CR-4 P2 ciblée (Opus) : 0 CRITICAL, 0 HIGH, 1 MEDIUM, 2 LOW, 0 inter-fiches ; remédiés.
   CR4-P2-1 (MEDIUM, AC-3 bis) : « sous-requête ordinaire », « précédent non verrouillé » inexacts (l'`INSERT … SELECT`
   pose des verrous partagés sous REPEATABLE READ ; verrou de parcours de `find_overlapping`, `fiscal_years.rs:371-372`),

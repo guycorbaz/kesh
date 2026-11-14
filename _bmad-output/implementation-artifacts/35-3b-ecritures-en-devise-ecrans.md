@@ -872,3 +872,10 @@ devise au cours d'ouverture choisi pour l'exercice (R6), afin de tenir mes livre
   `FX_CURRENCY_MISMATCH` / `FX_ACCOUNT_IN_CHF` contre 35-3a AC-3/AC-4 (`details.line`) ; seed E2E au code ; item
   Tâches CR-4. Non exercés : code applicatif hors seed (aucune ligne neuve citée), source factice de 35-2 AC-3 dans le
   détail, 35-4/35-5, manuel, PDF.
+- 2026-11-14 — validation CR-4 P3 ciblée (Sonnet) : 0 CRITICAL, 0 HIGH, 0 MEDIUM, 0 LOW ; aucune remédiation. Axes
+  exercés : diff `a8f89e04..2f792399` de la fiche ; seed `with-company` (`test_fixtures.rs:118-119`, 2020-01-01 :
+  veille 31.12.2019, décembre 2019) ; fixture `fx_opening_dates.json` contre 35-2 AC-5 (chemin, genres `day`/`month`,
+  cas 1er janvier/avril/juillet, 15.03, 01.03.2024, six et dix-huit mois : tous couverts ; le 01.01.2000 de 35-2 n'est
+  pas exigé ici, sans contradiction) ; renvoi 35-1 AC-11 (T1) ; enchaînement `day` puis `month` de l'E2E contre AC-1
+  (complément au cours du mois de sa date) ; source factice au mois demandé (35-2 AC-3). Non exercés : code
+  applicatif hors seed, 35-4/35-5, manuel, PDF.

@@ -538,7 +538,7 @@ cours sans saisie.
      tient par des **vecteurs communs** : une fixture JSON, `crates/kesh-core/tests/fixtures/fx_opening_dates.json`
      (créée ici, sur le modèle de `fx_rounding.json` de 35-3a ; tableau de `{ startDate, endDate, openingRateKind,
      closingRateKind, openingDate, closingDate }`, dates ISO), **lue par le test Rust** de la fonction de `kesh-core`
-     (35-2) **et par le test Vitest** de la fonction TS (35-3b), même fichier, aucune copie ; au moins les exercices au
+     (35-2) **et par le test Vitest** de la fonction TS (35-3b), même fichier, aucune copie (le jumeau TS ne calcule que `openingDate` : le Vitest ne contrôle que ce champ, `closingDate` n'est contrôlé que côté Rust) ; au moins les exercices au
      1er janvier, 1er avril, 1er juillet, au 15.03 (veille 14.03, mois mars), au 01.03.2024 (veille 29.02.2024, mois
      février 2024), de six et de dix-huit mois, au 01.01.2000 (veille 31.12.1999 : la date se calcule, c'est
      `unites_utiles` qui l'écarte, AC-4), chacun en genres `day` et `month` ; `closingDate` = `endDate` (`day`) ou 1er du dernier mois (`month`) ; `Cell` = la forme de
@@ -1174,3 +1174,4 @@ cours sans saisie.
   35-3a AC-1 (aucune colonne de devise, `fx_rounding.json`) ; 35-3b AC-1 (cours proposé, vecteurs) ; dénombrement des
   mois du 15.03. Non exercés : code (la remédiation ne cite aucune ligne neuve), compilation, gate, rendu de l'écran,
   35-4/35-5.
+- 2026-11-14 — validation CR-4 P3 ciblée (Sonnet) : 0 CRITICAL, 0 HIGH, 0 MEDIUM, 1 LOW ; remédié dans la fiche. LOW : 35-2-CR4-P3-1 (AC-5) la fixture porte `closingDate` mais le jumeau TS de 35-3b ne calcule que `openingDate` : « lue par le test Vitest » laissait croire à un contrôle des deux champs ; précisé. Axes exercés : diff `a8f89e04..2f792399` phrase par phrase ; « treize unités » (15.03) contre AC-5 et Tâches ; fixture `fx_opening_dates.json` contre 35-3b AC-1 (nom, cas 29.02, aucune copie) et 35-3a (`fx_rounding.json`, répertoire créé par 35-3a, sans conflit) ; condition « commence le lendemain » (genres `day` et `month`) ; Ouverture propre « exercice qui le contient » ; bouton de récupération (bornes 2000-01, Ouverture liée comptée une fois) contre AC-4/AC-5 et la ligne 711 (raison au survol) ; item CR-4 des Tâches. Non exercés : code (aucune ligne neuve citée), compilation, gate, rendu de l'écran, 35-4/35-5. Aucun finding inter-fiches ; la remédiation P2 est cohérente avec 35-3b (alignée en P2).
