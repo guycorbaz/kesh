@@ -207,9 +207,10 @@ devise au cours d'ouverture choisi pour l'exercice (R6), afin de tenir mes livre
      de 35-3a AC-3, vecteur « CHF > 10¹³ » de la fixture) — une seule borne, au client comme au serveur, et non les
      quinze chiffres entiers de `DECIMAL(19,4)` ; un cours déduit d'un CHF saisi passe par les mêmes bornes. Le payload sérialise par `toFixed`, jamais `toString()`.
    - **Refus du serveur propres aux devises** (`POST` et `PUT`) : `RATE_UNAVAILABLE {currency, month}` — p. ex. le
-     `PUT` d'une écriture ancienne dont une ligne `afc` est **nouvelle ou modifiée** (compte, côté débit/crédit, devise, montant, cours, provenance ou
-     date de l'écriture), sur une installation restaurée dont la table des cours, système, est vide (35-2 AC-7) ; le
-     `PUT` du seul libellé passe, ses lignes inchangées n'étant jamais recontrôlées (35-3a AC-4, arbitrage A17) — →
+     `PUT` d'une écriture ancienne dont une ligne `afc` est **nouvelle ou modifiée** (compte, débit ou crédit, devise, montant en devise, cours,
+     provenance — une ligne `manual` repassée `afc` au même cours est modifiée — ou date de l'écriture ; ni l'ordre des
+     lignes ni le projet), sur une installation restaurée dont la table des cours, système, est vide (35-2 AC-7) ; le
+     `PUT` du seul libellé, de lignes CHF ou d'un projet passe, ses lignes `afc` inchangées n'étant jamais recontrôlées (35-3a AC-4, arbitrage A17) — →
      l'écran propose « Récupérer le mois » (`POST /exchange-rates/fetch`, mêmes rôles et même
      règle que ci-dessus) puis le renvoi, ou le passage de la ligne en `manual` ; `FX_RATE_NOT_AFC` → le cours attendu
      (`details.expectedRate`, 35-3a AC-4) est affiché et proposé à la reprise ; `FX_AMOUNT_MISMATCH` porte
@@ -774,3 +775,11 @@ devise au cours d'ouverture choisi pour l'exercice (R6), afin de tenir mes livre
   (`configMissing`, `noRates`) ; sens débit/crédit de la conversion (l. 362 contre l. 375-376) ; arithmétique du seuil
   n × 0.005 et du cas `x.xx5` (l. 329-330) ; cohérence Tâches et AC-6. Non exercés : sauvegarde, MCP, audit, i18n, E2E,
   Vitest, PDF.
+- 2026-11-14 — validation CR-3 P4 ciblée (Opus) : 0 CRITICAL, 0 HIGH, 0 MEDIUM, 1 LOW ; remédié dans la fiche, aucun
+  inter-fiches. LOW : 35-3b-CR3-P4-1 la liste de l'AC-2 (`RATE_UNAVAILABLE`) écrivait « côté débit/crédit » et
+  « montant » là où 35-3a AC-4 (4) compare débit et crédit en valeur et le montant de `foreign`, et omettait que ni
+  l'ordre ni le projet n'entrent dans la comparaison (le `PUT` d'un projet ou de lignes CHF passe aussi) : alignée mot
+  pour mot. Axes exercés : diff `040185ac..53a885f4` de la fiche ; 35-3a AC-4 (l. 224-235) ; cohérence avec « Reprendre
+  le cours attendu » (cours changé, ligne recontrôlée au cours attendu) et « Garder mon cours » (provenance `manual`,
+  hors contrôle), l. 230-238 ; Vitest de l'édition du seul libellé ; AC-1 l. 74-78. Non exercés : sauvegarde, MCP,
+  audit, i18n, E2E, PDF, code.

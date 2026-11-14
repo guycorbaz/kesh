@@ -54,7 +54,10 @@ clôture et que l'écart aille aux différences de change.
      `request` (comparaison **numérique**, zéros terminaux ignorés ; `overridden` vaut `true` si et seulement si le genre est `request` : sens **propre à l'aperçu**, distinct de l'`overridden` de 35-2 — « un cours saisi existe » —, que cette réponse ne reprend pas ; l'écran affiche « cours saisi » quand le genre est `day` ou `month` et que `rate` ≠ `afcRate`). Sans cette règle à l'aperçu, un cours prérempli renvoyé ferait disparaître le signalement du repli et
      masquerait le cours du jour récupéré. **L'écran n'envoie à l'aperçu que les cours modifiés par l'utilisateur** ;
      après une récupération, un champ non modifié reprend le nouveau cours par défaut (la passation, elle, reçoit tous
-     les cours affichés, AC-2). Quand `closingRateKind` vaut `day`, l'écran **signale** un
+     les cours affichés **des devises d'au moins un compte coché** — toute autre clé serait refusée,
+     `FX_RATE_INVALID`, AC-4 —, AC-2). **Toute** relecture de l'aperçu (case, cours modifié, récupération) porte la
+     sélection courante (`accountIds`) et les cours modifiés de ces seules devises, et seule la dernière réponse est
+     retenue ; à sélection vide, aucune relecture (AC-4). Quand `closingRateKind` vaut `day`, l'écran **signale** un
      `rateKind: "month"` (« cours du jour de clôture indisponible : cours mensuel de <mois> ») et propose « Récupérer
      le cours du JJ.MM.AAAA » (`POST /exchange-rates/fetch { date }`, 35-2), puis relit l'aperçu ; un
      `404 RATE_NOT_PUBLISHED` ou un `503 RATE_SOURCE_UNAVAILABLE` s'affiche (message traduit) et laisse l'aperçu tel
@@ -370,7 +373,7 @@ clôture et que l'écart aille aux différences de change.
      `blockers[]` de l'aperçu ; compte sélectionné non admissible (CHF, archivé) dont les comptes propres seraient
      invalides → seul `FX_REVALUATION_ACCOUNT_INVALID` `notEligible` ; compte à D = 0 dont les comptes propres sont
      invalides → refusé (comptes employés) ; ce même compte **décoché** → aperçu (avec `accountIds`) sans blocker et
-     passation admise, et l'écran (Vitest) réactive « Passer les écritures » après la relecture, sans perdre les cours modifiés, la dernière case décochée ne déclenchant aucune relecture ; ni comptes propres ni
+     passation admise, et l'écran (Vitest) réactive « Passer les écritures » après la relecture, sans perdre les cours modifiés, la dernière case décochée ne déclenchant aucune relecture ; une récupération de cours après ce décochage relit l'aperçu avec la même sélection (le bouton reste actif) ; la passation n'envoie pas le cours d'une devise dont aucun compte n'est coché ; ni comptes propres ni
      comptes de la société (`None`) → `reason: "missing"`, ligne cochable ; premier fautif dans l'ordre des numéros de compte, gain avant perte ; compte de la société
      invalide (par SQL) alors que tous les comptes sélectionnés ont des comptes propres → passation admise ; une
      désignation propre concurrente attend la fin de la passation (verrou `companies`) ;
@@ -589,3 +592,14 @@ clôture et que l'écart aille aux différences de change.
   sans compte coché aurait rendu `FX_RATE_INVALID` : cours joints et limités aux devises cochées, pas de relecture à
   sélection vide, test.) Vérifié : lignes 286-296 (`empty`, `notEligible`), 35-1 AC-4 bis (signature, `None`).
   Axes non exercés : code réel de 35-1 à 35-4 (non écrit) ; passages hors diff d9c0018e..040185ac.
+- 2026-11-14 — validation CR-3 P4 ciblée (Opus) : 0 CRITICAL, 0 HIGH, 2 MEDIUM, 0 LOW ; remédié dans la fiche ; aucun
+  finding inter-fiches. (35-5-CR3-P4-1 MEDIUM : la règle de relecture (`accountIds` + `rates` des devises cochées,
+  dernière réponse seule) n'était posée qu'au déclencheur « case » ; la relecture après récupération d'un cours (AC-1)
+  ou après un cours modifié repartait sur la présélection, d'où le blocker du compte décoché et un bouton de nouveau
+  désactivé, et pouvait croiser une relecture de case : règle étendue à **toute** relecture, AC-1, test.
+  35-5-CR3-P4-2 MEDIUM : « la passation reçoit tous les cours affichés » (AC-1) contredisait la borne de l'AC-4 (clé =
+  devise d'au moins un compte sélectionné) dès qu'une devise n'a plus aucun compte coché → `FX_RATE_INVALID` :
+  limité aux devises cochées, test.) Vérifié : AC-4 « Bornes de la requête » (clé = devise d'un compte sélectionné),
+  `reason: "empty"`, AC-1 « L'écran n'envoie à l'aperçu que les cours modifiés » ; aucune autre fiche ni l'epic ne
+  nomment `accountIds` ou la route de réévaluation (grep). Axes non exercés : code réel de 35-1 à 35-4 (non écrit) ;
+  passages hors diff 040185ac..53a885f4, sauf AC-1 (cours envoyés) relu pour cohérence.
