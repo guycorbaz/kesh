@@ -185,13 +185,13 @@ devise au cours d'ouverture choisi pour l'exercice (R6), afin de tenir mes livre
      `POST /fetch`) : sur `404 RATE_UNAVAILABLE`, l'écran appelle **une
      fois** `POST /exchange-rates/fetch` pour ce mois — par la fonction d'API de 35-2 (seule entrée : sans bandeau
      dégradé sur 503, `timeoutMs` de 90 s, 35-2 AC-3 et AC-5), le mois tiré de `details.month` (`AAAA-MM-01`) ; les specs
-     E2E pilotent la source factice et s'appuient sur le vidage des tables par `/_test/seed` (35-2 AC-7) — (rôle Comptable ou Administrateur ; mois ≤ **dernier mois publié**, R4 et 35-2 AC-5, non « ≤ mois courant » : dès le 25, le mois suivant se récupère), puis
+     E2E pilotent la source factice et s'appuient sur le vidage des tables par `/_test/seed` (35-2 AC-7) — (rôle Comptable ou Administrateur ; mois ≥ 2000-01 et ≤ **mois suivant** le mois courant, **à toute date**, 35-2 AC-5 et R4 amendé, non « ≤ mois courant » : le mois suivant peut être publié avant le 25), puis
      relit ; `404 RATE_NOT_PUBLISHED`, `503` ou rôle Consultation → message, saisie manuelle exigée. Pour un mois
      **postérieur au mois suivant le mois courant** (Europe/Zurich ; 35-2 AC-5 : le mois suivant est admis à toute
      date, non publié → `404 RATE_NOT_PUBLISHED` ; R4 amendé, alignement de l'orchestrateur),
      **aucun** `POST /fetch` (il rendrait 400, 35-2 AC-5) : saisie manuelle directement ; un 400 du `POST /fetch` se
-     traite comme `RATE_NOT_PUBLISHED`. Le cours du mois M est publié le 25 de M−1 (R4 ; 35-2 *Source*), et la tâche
-     automatique de 35-2 le récupère pour les exercices multi-devises ; le cas « cours indisponible » vise surtout un
+     traite comme `RATE_NOT_PUBLISHED`. Le cours du mois M est publié au plus tard le 25 de M−1, et parfois avant (R4 amendé ; 35-2 *Source*), et la tâche
+     automatique de 35-2 (une vérification par jour) le récupère pour les exercices multi-devises ; le cas « cours indisponible » vise surtout un
      mois futur, une devise non publiée ou une source injoignable. *(Annotation de l'orchestrateur, 2026-11-14 : la
      remédiation P1 avait écrit l'inverse ; précisée par R4, CR-2.)* La
      relecture qui suit un `POST /fetch` réussi **remplace** l'entrée négative mémoïsée de (devise, mois) — elle ne la
@@ -235,7 +235,7 @@ devise au cours d'ouverture choisi pour l'exercice (R6), afin de tenir mes livre
      retirés du sélecteur des autres lignes (les comptes CHF restent) ; une écriture relue qui en porte déjà plusieurs —
      **l'écriture d'ouverture et son complément** (exemptés, 35-3a AC-4, 2 bis), une contre-passation de l'une d'elles,
      **ou** un état hérité — **reste modifiable** : 35-3a AC-4 (2 bis) n'oppose `FX_MULTIPLE_CURRENCIES` au `PUT` que si
-     l'écriture stockée portait au plus une devise. Pour une telle écriture, le sélecteur offre les comptes CHF et ceux
+     le corps porte plus d'une devise **et** une devise que l'écriture stockée ne portait pas. Pour une telle écriture, le sélecteur offre les comptes CHF et ceux
      des devises **déjà portées par l'écriture relue** (jamais une devise de plus) ; un `FX_MULTIPLE_CURRENCIES` reçu
      malgré tout (corps qui ajoute une seconde devise, écriture changée entre la lecture et l'envoi) s'affiche traduit,
      `stay`. Pour changer de devise, l'assistant *Conversion* (AC-2 bis) est proposé par un lien (Vitest : avec une
@@ -348,7 +348,7 @@ devise au cours d'ouverture choisi pour l'exercice (R6), afin de tenir mes livre
    réglages → `accounts` de 35-1 AC-3, comme la réévaluation (35-5 AC-2, étapes (0) et (3)) ; le `companies` en partage
    que `create_in_tx_inner` reprend en tête de son étape 0 (35-3a AC-4) est alors déjà tenu, compatible → refus
    `FX_ACCOUNT_INVALID` ; → `FX_CONVERSION_TRANSIT_UNBALANCED` (calculé sur les corps, identifiant relu sous verrou) ;
-   → écriture 1, puis écriture 2 (refus de chacune dans l'ordre de 35-3a AC-4, avec `details.entry`). Les deux
+   → les deux écritures dans l'ordre d'exécution ci-après, chronologique (refus de chacune dans l'ordre de 35-3a AC-4, avec `details.entry` = son rang dans le corps). Les deux
    `create_in_tx` s'exécutent dans l'ordre **chronologique** de leurs dates (corps dans l'ordre à date égale), pour
    prendre les exercices `FOR UPDATE` dans l'ordre de la bascule et de `close` (antérieurs d'abord) ; la réponse garde
    l'ordre du corps et `details.entry` le rang dans le corps. Le compte de conversion lu en partage avant l'exercice
@@ -605,3 +605,13 @@ devise au cours d'ouverture choisi pour l'exercice (R6), afin de tenir mes livre
   (`<gueltigkeit>` 29.03 seul, non lu par 35-2) et `d=20240630` rend 28.06.2024 — la veille d'une ouverture au 1er avril
   ou au 1er juillet se lit. Non exercés : sauvegarde (aucune table ni colonne neuve ici), MCP (aucune sortie), audit
   (aucune action neuve), E2E et Vitest non joués, PDF du manuel (non écrit).
+- 2026-11-14 — validation CR-2 P3 ciblée (Sonnet) : 0 CRITICAL, 0 HIGH, 1 MEDIUM, 2 LOW ; remédiés dans la fiche. MEDIUM :
+  35-3b-CR2-P3-1 l'AC-2 disait encore le `POST /fetch` borné au « dernier mois publié » (« dès le 25, le mois suivant
+  se récupère ») et le cours « publié le 25 de M−1 », contre la phrase ajoutée en CR-2 P2 juste après, 35-2 AC-5 et
+  R4 amendé (mois suivant à toute date). LOW : P3-2 le renvoi à 35-3a AC-4 (2 bis) disait le `PUT` refusé si l'écriture
+  stockée portait au plus une devise, la règle alignée étant « plus d'une devise **et** une devise de plus » ;
+  P3-3 « écriture 1, puis écriture 2 » pour les refus de la conversion, contre l'exécution chronologique écrite à la
+  suite. Aucun finding inter-fiche. Axes exercés : diff `02b217ac..cb15f2cd` de la fiche ; renvois à 35-2 (AC-5,
+  *Source*), 35-3a (AC-4, 2 bis), 35-1 (AC-3 : ordre `companies` → exercices → comptes), 35-5 (AC-2 (0), (3)), R4 amendé ;
+  `audit_route_registry.rs:1325` (27) ; argument d'absence de cycle sur le compte de conversion. Non exercés : code
+  des pages (lignes citées en CR-2 P2 non relues), i18n, E2E, PDF.

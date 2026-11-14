@@ -355,9 +355,9 @@ clôture et que l'écart aille aux différences de change.
      ayant repris le défaut) ; Vitest : l'aperçu ne reçoit que les cours modifiés, un `404 RATE_NOT_PUBLISHED` du
      `POST /fetch` laisse le repli affiché.
 8. **AC-8 — Manuel** : réévaluation, cours journalier OFDF de la date de clôture (D10 : la pratique du cours de
-   clôture, et les cours que portaient les livres de Beat), repli sur le cours mensuel AFC du mois de clôture (moyenne
-   du 25 au 24 publiée d'avance, R4, non la moyenne du mois), choix du genre de clôture par exercice (R6), une écriture
-   par compte réévalué (R9), correction par suppression ou nouveau passage et non par contre-passation (AC-3), refus en
+   clôture, et les cours que portaient les livres de Beat), repli sur le cours mensuel AFC du mois de clôture (la méthode de
+   calcul du cours mensuel ne se décrit qu'après confirmation, R4 amendé), choix du genre de clôture par exercice (R6), une écriture
+   par compte réévalué (R9), correction par suppression ou nouveau passage, la contre-passation ne corrigeant que dans un exercice en cours (AC-3), refus en
    exercice mono-devise (R3), cours saisi par la société (D9), récupération du cours du jour, gains et pertes non réalisés
    comptabilisés (CO 960b, choix assumé ; la neutralisation par provision n'est pas offerte, C-35-8), postes non
    monétaires à décocher (stocks, immobilisations, capital en devise), la source du cours conservée à l'audit et non
@@ -486,3 +486,9 @@ clôture et que l'écart aille aux différences de change.
   source (trois GET) : `xmldaily?d=20240630` rend la publication du 28.06.2024 (validité 29.06–01.07) ;
   `d=20240331` celle du 28.03.2024 (Vendredi saint sans publication) ; `d=20271231` rend un JSON
   « Aucune donnée disponible » (date future). Axes non exercés : code réel de 35-1 à 35-4 (non écrit).
+- 2026-11-14 — validation CR-2 P3 ciblée (Sonnet) : 0 CRITICAL, 0 HIGH, 0 MEDIUM, 2 LOW ; remédiés (AC-8 : « moyenne du 25 au 24 »
+  retiré, R4 amendé ne décrivant la méthode qu'après confirmation ; « et non par contre-passation » nuancé selon l'AC-3
+  révisé) ; inter-fiche signalé : 35-3b l. 188 (« dès le 25, le mois suivant se récupère ») contredit son l. 190 et 35-2 AC-5.
+  Vérifié au code : ordre `create_in_tx_inner` (1-a, 1-bis, puis étape 2 des comptes), `ReversalDating::Today`
+  (`journal_entries.rs:2933-2938`), `examinees` = 27 (`audit_route_registry.rs:1325`), 35-3b +1 route (conversion). Axes non
+  exercés : code réel de 35-1 à 35-4 (non écrit), reste de la fiche hors diff.

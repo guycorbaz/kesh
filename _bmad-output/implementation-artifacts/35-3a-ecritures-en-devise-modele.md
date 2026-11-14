@@ -370,8 +370,8 @@ chacune (R7), l'écart de change dans la seconde, afin que mes comptes en devise
       colonnes `NULL` ; test : `chk_jel_fx_chf` refuse une ligne incohérente insérée en SQL brut. **Recette de
       montée** (R1, release) : l'empreinte lit `SELECT * FROM journal_entry_lines` (`scripts/recette-montee.sh:414`,
       `TABLES`) ; les quatre colonnes neuves y sont un écart attendu — `journal_entry_lines` s'ajoute au
-      `--diff-attendu` que 35-1 AC-6 limite à `companies`, `accounts` et `fiscal_years` (inter-fiche), et à la note de
-      release.
+      `--diff-attendu` que 35-1 AC-6 ouvre déjà aux « tables des autres stories » (`companies`, `accounts`,
+      `fiscal_years` y sont nommées) : l'y nommer à la release, avec la note de release.
 - [ ] Tests CR-2 (R3, R7), au dépôt et à l'API : écriture à lignes EUR et USD → `FX_MULTIPLE_CURRENCIES`
       (`details.currencies`), une devise et des lignes CHF → passe ; ouverture à deux devises → passe (exemption) par `create_opening_entry`
       (publique, corps construit à la main : seul chemin d'ouverture atteignable de `tests/` en 35-3a, l'AC-5 laissant
@@ -538,3 +538,12 @@ chacune (R7), l'écart de change dans la seconde, afin que mes comptes en devise
   AC-3, AC-3 bis, AC-6 ; 35-3b AC-2 et Change Log ; 35-5 (`FX_MULTIPLE_CURRENCIES`, `laterFiscalYear`). Axes non
   exercés : GET de la source journalière (aucune prémisse de cette fiche n'en dépend) ; i18n des quatre locales et
   manuels (35-3b) ; E2E.
+- 2026-11-14 — validation CR-2 P3 ciblée (Sonnet) : 0 CRITICAL, 0 HIGH, 0 MEDIUM, 1 LOW (35-3a-CR2-P3-1 : la phrase
+  de la recette de montée disait 35-1 AC-6 « limité » à trois tables, alors que 35-1 l'ouvre aux tables des autres
+  stories — remédié). Lu au code : `journal_entries.rs:1636` (court-circuit après toutes les gardes), `:1300`
+  (`is_no_op_change`, quatre champs `foreign` à ajouter, dit à l'AC), `:290-300` et `:1496-1525` (projets : la
+  sentinelle `FOR UPDATE` n'est prise que si des projets nouveaux existent, `projects.rs:95-101`,
+  `bank_accounts.rs:1729` — le partagé après eux est cohérent), `opening_complement.rs:438-452` (cycle
+  complément / écriture ordinaire), `recette-montee.sh:414`, 35-5 AC-3 (suppression ; contre-passation datée),
+  35-1 AC-6, 35-3b AC-2 (alignée). Axes non exercés : le reste de la fiche, i18n, manuels, E2E ; test de
+  concurrence non exécuté (fiche seule).

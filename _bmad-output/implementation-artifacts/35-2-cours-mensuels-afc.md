@@ -35,8 +35,8 @@ cours sans saisie.
   mois suivant** (validation CR-2 P2) : `j=2026&m=12` rendait dès le **14.11.2026** (en-tête `Date` du serveur) un
   `<monat>2026-12</monat>` complet (EUR 0.9295), `j=2027&m=1` la racine vide — le mois suivant peut donc être publié
   **avant le 25**, et la définition « du 25 de M−2 au 24 de M−1 » ne peut alors être exacte (le 24.11 n'était pas
-  passé). **À confirmer par Beat (R4).** Kesh n'en dépend pas pour sa justesse : la tâche automatique part du 25, où
-  le mois suivant est publié dans les deux lectures (AC-4), et la récupération à la demande accepte le mois suivant à
+  passé). **À confirmer par Beat (R4).** Kesh n'en dépend pas pour sa justesse (R4 amendé) : la tâche automatique vérifie
+  **une fois par jour dès le 1er** tant que le mois courant ou le mois suivant manque (AC-4), et la récupération à la demande accepte le mois suivant à
   toute date (non publié → `404 RATE_NOT_PUBLISHED`, AC-5) ;
 - mois non publié : élément racine vide → « pas encore publié » ;
 - la réponse peut porter un autre mois que celui demandé (sans paramètre : mois courant) : **le `<monat>` lu fait foi** ;
@@ -291,8 +291,7 @@ cours sans saisie.
 4. **AC-4 — Récupération automatique (R2, R4 ; remplace la boucle permanente de 6 h).**
    - **Unités utiles (R2)** : Kesh ne récupère que pour les **exercices multi-devises ouverts**
      (`fiscal_years.multi_currency = TRUE`, `status = 'Open'`, 35-1 AC-3 bis), toutes sociétés de l'installation : les
-     **mois** de chaque tel exercice, de son premier mois au plus petit de son dernier mois et du **dernier mois
-     publié** (le mois courant, ou le mois suivant à partir du 25, R4) ; et les **jours** d'ouverture et de clôture que
+     **mois** de chaque tel exercice, de son premier mois au plus petit de son dernier mois et du **mois suivant** le mois courant (R4 amendé : le mois suivant peut être publié avant le 25 ; non publié, il se retente chaque jour) ; et les **jours** d'ouverture et de clôture que
      son genre demande (R6, colonnes de 35-1) — la veille de `start_date` si `opening_rate_kind = 'day'`, `end_date` si
      `closing_rate_kind = 'day'` —, seulement s'ils sont **strictement antérieurs** à aujourd'hui (AC-5). Une unité
      **manque** s'il n'y a aucune ligne `_kesh_exchange_rates` de ce genre et de cette date. Aucun exercice
@@ -302,20 +301,19 @@ cours sans saisie.
    - **Calendrier (R4)** : une tâche `exchange_rates::spawn(state)` (modèle `auto_backup::spawn`, `auto_backup.rs:788` ;
      chaque tour dans son propre `tokio::spawn`, une panique journalisée n'arrête rien) ne tourne **pas** en boucle de
      6 h permanente. Elle se réveille : (a) **au démarrage**, après un court délai fixe (60 s, constante) pour ne pas
-     retarder le démarrage ; (b) **à partir du 25** de chaque mois (Europe/Zurich, 00:00) et ensuite **toutes les 6 h**
-     tant que le **dernier mois publié** (le mois suivant à partir du 25, le mois courant avant : même aide de fuseau)
-     manque pour un exercice multi-devises qui le couvre — un mois suivant encore manquant au 1er (fenêtre du 25 tout
-     en échec) devient le mois courant, et les essais de 6 h continuent au lieu d'attendre le 25 ; dès qu'il est obtenu (ou
-     qu'aucun exercice ne le couvre), elle **dort jusqu'au 25 suivant** (un **jour** d'ouverture ou de clôture
+     retarder le démarrage ; (b) **le 1er** de chaque mois (Europe/Zurich, 00:00) et ensuite **une fois par jour** (00:00)
+     tant que le **mois courant ou le mois suivant** manque pour un exercice multi-devises qui le couvre (même aide de
+     fuseau) ; dès qu'ils sont obtenus (ou
+     qu'aucun exercice ne les couvre), elle **dort jusqu'au 1er du mois suivant** (un **jour** d'ouverture ou de clôture
      manquant ne réveille pas la tâche : le jour de clôture du 31.12 devient récupérable le 1er janvier et se récupère
      au prochain démarrage, à la prochaine connexion — qui lance un tour pour toute unité manquante — ou au plus tard
-     le 25 ; test de `prochain_reveil` : un jour seul manquant ne change pas le réveil) ; (c) un tour échoué ou `not_published` dans la
-     fenêtre (b) se retente au réveil de 6 h suivant (le « jour ouvrable suivant » de la source est ainsi couvert).
+     le 1er du mois suivant ; test de `prochain_reveil` : un jour seul manquant ne change pas le réveil) ; (c) un tour échoué ou `not_published` dans la
+     fenêtre (b) se retente au réveil du lendemain (le « jour ouvrable suivant » de la source est ainsi couvert).
      Chaque tour traite **toutes** les unités utiles qui manquent (pas seulement le mois suivant : une restauration ou
      un exercice neuf peuvent en laisser plusieurs), **au plus 36 par tour** (constante, testée ; le reste au tour
      suivant), dans l'ordre chronologique. Le calcul du prochain réveil est une fonction pure (`prochain_reveil(now,
-     manque_dernier_mois_publie)`), testée aux bords (24 → 25, fin de mois, 31.12 → 25.01, changement d'heure, mois
-     courant encore manquant le 1er → 6 h).
+     manque_mois_utile)`), testée aux bords (mois utile manquant → lendemain 00:00 ; obtenu → 1er du mois suivant ; fin
+     de mois, 31.12 → 01.01, changement d'heure ; mois suivant non publié le 1er → lendemain).
    - **À la connexion (R4)** : après un `POST /api/v1/auth/login` réussi (`routes/auth.rs:235`), une **tâche
      détachée** (`tokio::spawn`, jamais attendue : la connexion ne dépend jamais de la source) juge elle-même si une
      unité utile manque pour un exercice de la société de l'utilisateur et lance alors un tour — aucune lecture n'est
@@ -328,11 +326,11 @@ cours sans saisie.
      (`un_tour`, AC-3) ; garde lexicale `exchange_rates::tests::lancement_par_main_seulement` (jeton
      `exchange_rates::spawn(` : une fois dans `main.rs`, zéro dans `lib.rs`), qui **réutilise** l'aide `code()`
      d'`auto_backup` (extraite ou partagée, refs #727) au lieu de la recopier (DRY).
-   - « Mois courant », « jour » et « le 25 » s'entendent en **Europe/Zurich**, non en UTC (même principe que #889) :
+   - « Mois courant », « jour » et « le 1er » s'entendent en **Europe/Zurich**, non en UTC (même principe que #889) :
      `chrono-tz` n'est aujourd'hui au `Cargo.lock` (0.10.4) que par `rxing` ; l'ajouter comme **dépendance directe** de
      `kesh-api` (`chrono-tz = "0.10"`) et poser **une** aide de fuseau (`aujourdhui_zurich(now)`, d'où se déduisent le
-     mois courant et le dernier mois publié), partagée par la tâche, la connexion et les bornes du `POST /fetch`,
-     testée aux bords (31 → 1er, 24 → 25, UTC contre Zurich).
+     mois courant et le mois suivant), partagée par la tâche, la connexion et les bornes du `POST /fetch`,
+     testée aux bords (31 → 1er, UTC contre Zurich).
    - Un échec se journalise (`tracing::warn!`), s'écrit dans `_kesh_exchange_rate_fetch` (`triggered_by = 'auto'`,
      pire statut du tour, AC-1) ; jamais bloquant au démarrage ni à la connexion. Non auditée (C-35-6). **Seuls** la
      tâche et le déclenchement à la connexion écrivent `triggered_by = 'auto'`. La mémoire des 15 minutes (AC-5)
@@ -573,7 +571,7 @@ cours sans saisie.
    contraire, *Source*) —, cours journalier, genres d'ouverture et de clôture de l'exercice, cours saisi et bouton ↑,
    récupération automatique et son calendrier) ; manuel d'administration : accès sortant HTTPS vers
    `www.backend-rates.bazg.admin.ch` requis pour un exercice multi-devises ouvert, aucun sinon, quand il a lieu
-   (démarrage, à partir du 25, connexion), mandataire par `HTTPS_PROXY` (lu par `reqwest`) ; un `.keshbackup` 0.17.6
+   (démarrage, une fois par jour dès le 1er tant qu'un mois manque, connexion), mandataire par `HTTPS_PROXY` (lu par `reqwest`) ; un `.keshbackup` 0.17.6
    ou antérieur **se réimporte** (mono-devise, R1) ; phrase du registre des routes (AC-5) ; PDF régénérés.
 9. **AC-9 — Cours manuels** (amendé par D9). Deux niveaux, sans recouvrement :
    - **cours saisi par la société** pour (devise, mois) ou (devise, jour) : table applicative
@@ -609,8 +607,8 @@ cours sans saisie.
       `main.rs`), routes (AC-5, `lib.rs` : `GET` dans `authenticated_routes`, `POST /fetch`, `PUT` et `DELETE
       /exchange-rates/overrides` dans `comptable_routes`), variantes `AppError` (dont `FX_RATE_INVALID`), audit
       (`audit_labels.rs` : trois actions et un type d'entité), registre des routes et phrase du manuel.
-- [ ] CR-2 : tâche automatique au calendrier (AC-4 : `unites_utiles`, `prochain_reveil`, démarrage, 25 du mois,
-      connexion), filtrage strict et tests hostiles (AC-2, R5), routes `GET /fiscal-years/{id}/exchange-rates` et
+- [ ] CR-2 : tâche automatique au calendrier (AC-4 : `unites_utiles`, `prochain_reveil`, démarrage, 1er du mois
+      puis quotidien, connexion), filtrage strict et tests hostiles (AC-2, R5), routes `GET /fiscal-years/{id}/exchange-rates` et
       `PUT /fiscal-years/{id}/rate-kinds` (AC-5 ; `GET` dans `authenticated_routes`, `PUT` dans `comptable_routes`),
       audit `fiscal_year.rate_kinds_updated`, registre des routes (+1 de plus).
 - [ ] Frontend : page `settings/exchange-rates` (tableau annuel par exercice, choix des genres, champs éditables, « AFC ✓ » / « AFC : … » et ↑), carte
@@ -623,7 +621,7 @@ cours sans saisie.
       Consultation, audité, `triggered_by = 'manual'`, 409 `MULTI_CURRENCY_DISABLED` en mono-devise (les quatre routes),
       400 hors bornes de mois, mémoire de 15 minutes (un mois `not_published` n'est pas redemandé à la source : un
       seul appel sortant, aucune ligne d'audit, une seule écriture de `_kesh_exchange_rate_fetch`), `malformed` / `month_mismatch` / `no_valid_rate` → 503 sans rien écrire, `lookup` `CHF` → 400,
-      `aujourdhui_zurich` aux bords du mois et du 25, devise aux bornes hors `DECIMAL` écartée sans annuler les autres,
+      `aujourdhui_zurich` aux bords du mois (31 → 1er), devise aux bornes hors `DECIMAL` écartée sans annuler les autres,
       `last_status` d'un tour à plusieurs unités (le pire) ; aucune trace d'audit en automatique ; deux `POST /fetch` simultanés
       sérialisés (le second attend la fin du premier, AC-3 ; un seul appel sortant à la fois) ; `POST /_test/seed` et `/reset` vident les deux tables et
       la mémoire (AC-7) ; source factice : XML par défaut au mois demandé ; un `rate_per_unit` changé au refetch est
@@ -660,7 +658,7 @@ cours sans saisie.
 - Calendrier de la source (R4) : le cours du mois M est publié le 25 de M−1 (ou le jour ouvrable suivant), applicable
   dès le 1er de M ; le relevé du 2026-11-14 (sans paramètre, `2026-11`) s'y accorde pour le mois courant, mais
   `j=2026&m=12` était déjà publié le 14.11.2026 (validation CR-2 P2, *Source*) : date de publication à confirmer par
-  Beat ; la tâche part du 25 (sûr dans les deux lectures), `POST /fetch` accepte le mois suivant à toute date.
+  Beat ; la tâche vérifie chaque jour dès le 1er (R4 amendé, sûr dans les deux lectures), `POST /fetch` accepte le mois suivant à toute date.
 - Pas de production des cours dans le dépôt : les fixtures sont synthétiques (C-35-1, conditions SIX).
 - Cours journaliers relevés le 2026-11-14 (deux `GET`, `d=20241231` et `d=20240630`) : voir *Cours journaliers*.
 - Fenêtre d'import : `parse_and_verify_avec_inventaire` (`admin_backup/import.rs:187`) compare le manifeste à
@@ -803,3 +801,8 @@ cours sans saisie.
   gate, rendu de l'écran, `resolve_xml_entity` de quick-xml 0.42, i18n et manuels au-delà de la fiche ; `FX_MULTIPLE_CURRENCIES`,
   assistant *Conversion* et archivage sous `force` sans point de contact dans cette fiche hors du tableau (lignes des
   comptes archivés). Cycle CR-2 : passe suivante à lancer (des MEDIUM ont été remédiés).
+- 2026-11-14 — révision R4 amendé (orchestrateur, avant CR-2 P3) : tâche automatique alignée sur « une vérification par
+  jour dès le 1er du mois tant que le mois courant ou le mois suivant manque, puis plus rien jusqu'au mois suivant »
+  (AC-4 : unités utiles au mois suivant, calendrier, `prochain_reveil(now, manque_mois_utile)`, tests ; Source, AC-8,
+  Tâches, Notes). Plus de fenêtre « à partir du 25 » ni de cadence de 6 h. À signaler hors fiche : 35-3b (l. 188-193,
+  549) parle encore du « dernier mois publié » et du 25.
