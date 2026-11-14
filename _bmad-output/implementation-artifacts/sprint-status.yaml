@@ -1088,5 +1088,6 @@ development_status:
   36-12-qr-facture-separation: backlog  # #944 ; phase 2 ; après la première facture réelle de Guy (C-e350-1)
   36-13-pieces-justificatives: backlog  # #235 (P1) ; phase 2 ; avant la clôture de l'exercice 2026 (Q5) ; migration probable, découpage à sa fiche
   36-15-compte-analytique: backlog  # CR #1161 ; phase 2 ; ajoutée le 2026-11-14 sur décision de Guy (C-e360-15) ; vocabulaire visible seulement, sans migration ; passe avant la story de solde
+  36-16-reimputation-analytique: backlog  # CR #1167 ; phase 2 ; ajoutée le 2026-11-14 sur décision de Guy (C-e360-16) ; geste dédié « Changer le compte analytique » (facture tout statut, écriture manuelle) ; après 36-15, avant la story de solde
   36-14-solde-dette-epic: backlog  # story de solde (CLAUDE.md, 2026-11-14) : au plus 8 issues ouvertes par les stories 36-*, cinq modules au plus (C-e360-10) ; en fin d'epic, avant le tag
   epic-36-retrospective: optional
