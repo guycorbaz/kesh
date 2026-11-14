@@ -103,7 +103,8 @@ de C-e360-8 (« forme exacte à la fiche »). Chaque choix : contexte, option re
   expirait pendant un import plus long que B, alors que le client accorde jusqu'à une heure à l'import
   (`api-client.ts:53`, `LONG_OPERATION_TIMEOUT_MS = 60 * 60_000` ; `admin-restore.api.ts:46-48`) : la KF-056 revenait
   pour un Administrateur qui a réglé une durée courte.
-- **Retenu** (décision de l'orchestrateur) : confirmation → `holdForRestore(Math.max(B, LONG_OPERATION_TIMEOUT_MS))`, la
+- **Retenu** (décision de l'orchestrateur) *(remplacé en partie : la borne par l'amendement P4 ci-dessous, la levée à
+  l'échec et à l'issue inconnue par C-36-5-9)* : confirmation → `holdForRestore(Math.max(B, LONG_OPERATION_TIMEOUT_MS))`, la
   constante importée d'`api-client.ts`, jamais recopiée ; succès → `holdForRestore(B)`, qui **remplace** l'échéance ;
   échec, issue inconnue, 401 de l'import, démontage → levée. L'échéance d'une heure ne survit à aucune fin d'import.
 - **Écartées** : la borne B seule (première rédaction) ; écrire la limite au manuel (« pour N < 60 min, un import plus long

@@ -223,8 +223,11 @@ le second grep couvre `goto` et `redirect`. Aucun autre site.
   - **à la levée ou à l'échéance du maintien**, le tic suivant ferme si l'échéance est passée, par le chemin
     d'aujourd'hui (`closeSession`, `/login?reason=idle&minutes=N`) : la fermeture est différée, jamais annulée.
   Hors maintien : rien ne change. Le battement **continue** pendant l'import, et son 401 éventuel, après l'invalidation
-  ou après `last + w`, est absorbé par D1. L'écran reste ouvert au plus la borne de la phase 1 plus B après la
-  confirmation (D3) ; au serveur, rien ne s'étend. *Écartées* : (a) suspendre aussi le battement pendant l'import — une
+  ou après `last + w`, est absorbé par D1. Borne (D3, formulation unique) : « Le maintien est posé à la confirmation pour
+  `importHoldMs(B)` ; au succès, son échéance est remplacée par `maintenant + B` ; après un échec certain ou une issue
+  inconnue, l'échéance de la confirmation est gardée et le maintien est levé au premier geste, au démontage ou à cette
+  échéance ; au 401 de l'import, il est levé aussitôt. Il ne dure donc jamais au-delà de `confirmation +
+  max(importHoldMs(B), durée de l'import + B)`. » Au serveur, rien ne s'étend. *Écartées* : (a) suspendre aussi le battement pendant l'import — une
   restauration longue qui échoue trouverait la session close au serveur (C-36-5-2) ; (b) — rédaction de la P2 —
   calculer l'avertissement sur `max(last + w, échéance du maintien)` : il supprimait l'avertissement utile (avant la vraie
   fermeture, au serveur) et en montrait un inopérant, après elle (V4-1) ; (c) — rédaction de la P1 — éteindre
@@ -239,27 +242,46 @@ le second grep couvre `goto` et `redirect`. Aucun autre site.
     (`admin-restore.api.ts:46-48` ; le délai part à chaque `fetchWithTimeout`, `:319`, `setTimeout(() => controller.abort(), timeoutMs)`) ;
     un 401 renouvelé fait **un** rejeu, et un seul (`:476-485`, garde `!isRetry`), qui repart avec un délai neuf. L'import
     tient donc en au plus deux envois et un renouvellement : deux délais, plus une **marge** `RESTORE_HOLD_MARGIN_MS =
-    60_000` (une minute, pour le renouvellement et la relecture de `/me` entre les deux envois), constante écrite une fois
-    à côté du panneau. Au-delà, l'import a fini en `TIMEOUT` (issue inconnue) avant l'échéance du maintien. Et B vaut de 1 à 1 440 minutes (`session-idle.svelte.ts:76-77`,
+    60_000` (une minute, pour le renouvellement et la relecture de `/me` entre les deux envois ; fichier et hypothèse
+    ci-dessous). Au-delà, l'import a fini en `TIMEOUT` (issue inconnue) avant l'échéance du maintien. Et B vaut de 1 à 1 440 minutes (`session-idle.svelte.ts:76-77`,
     `MIN_MINUTES = 1`, `MAX_MINUTES = 1_440`). Bornée par B seul (rédaction de la P1), la phase 1 expirait pendant un import
     plus long que B — dès une minute si l'Administrateur a réglé N = 1 — et le battement suivant rouvrait la KF-056. La
     constante est **importée** d'`api-client.ts` par le panneau, **jamais recopiée** (`git grep -n "60 \* 60_000" --
     frontend/src ':!*.test.ts'` → la seule ligne `:53`).
   - **Borne de la phase 2 : B.** *Pourquoi B* : c'est le temps qu'un écran inactif peut déjà rester ouvert sans fermeture,
     selon le réglage de l'Administrateur ; lire deux lignes de compte rendu en prend quelques secondes.
-  - **La borne de la phase 1 ne survit pas à la fin de l'import** : au succès, `holdForRestore(B)` **remplace** l'échéance
-    (D1 : la pose remplace, elle ne prend pas le maximum) ; au 401 de l'import, levée et fin de session ; à l'échec certain
-    et à l'issue inconnue, levée au premier geste qui suit (ci-dessous), au démontage, ou au plus tard à l'échéance déjà
-    posée ; au démontage, le nettoyage lève.
-  - **confirmation** (`confirmImport`, `AdminRestorePanel.svelte:143`) :
-    `authState.holdForRestore(Math.max(B, 2 * LONG_OPERATION_TIMEOUT_MS + RESTORE_HOLD_MARGIN_MS))` **avant** l'appel à
-    `uploadFullImport` (après `importing = true`, avant tout `await`) ;
+  - **Borne du maintien — formulation unique** (validation P5, V5-2 ; reprise telle quelle en D2 et dans *Ce qui doit
+    rester vrai*) : « Le maintien est posé à la confirmation pour `importHoldMs(B)` ; au succès, son échéance est remplacée
+    par `maintenant + B` ; après un échec certain ou une issue inconnue, l'échéance de la confirmation est gardée et le
+    maintien est levé au premier geste, au démontage ou à cette échéance ; au 401 de l'import, il est levé aussitôt. Il
+    ne dure donc jamais au-delà de `confirmation + max(importHoldMs(B), durée de l'import + B)`. »
+  - **Où vivent la marge et la formule** (V5-3) : dans `frontend/src/lib/features/admin-restore/admin-restore.api.ts`, à
+    côté d'`uploadFullImport` (qui emploie déjà `LONG_OPERATION_TIMEOUT_MS`, `:46-48`), deux exports :
+    `export const RESTORE_HOLD_MARGIN_MS = 60_000;` et une **fonction unique**
+    `export function importHoldMs(readingMs: number): number { return Math.max(readingMs, 2 * LONG_OPERATION_TIMEOUT_MS + RESTORE_HOLD_MARGIN_MS); }`
+    (noms indicatifs) — l'expression du maximum n'est écrite **que là** ; le panneau et les tests l'appellent. B lui-même
+    se calcule en un seul point du panneau (`(sessionIdle.minutes ?? 60) * 60_000`).
+  - **Ce que la marge suppose** (V5-3, dit tel quel) : `doRefresh` (`api-client.ts:92`, `fetch('/api/v1/auth/refresh', …)`)
+    et la relecture de `/me` (`:133`) n'ont **aucun délai d'abandon**. La marge d'une minute couvre un renouvellement et
+    une relecture qui aboutissent en moins d'une minute ; c'est une hypothèse, non une borne. Au-delà, rien ne se perd
+    **tant que le rejeu n'est pas parti** (l'import n'a pas encore atteint le serveur, aucune invalidation n'a eu lieu) ;
+    la fenêtre exposée n'existe que si, après un renouvellement de plus d'une minute, le rejeu dure lui-même presque toute
+    l'heure. Elle est acceptée, non étendue : la borner exigerait de réarmer le maintien depuis `api-client.ts`, pour un
+    cas pathologique.
+  - **confirmation** (`confirmImport`, `AdminRestorePanel.svelte:143`) : `authState.holdForRestore(importHoldMs(B))`
+    **avant** l'appel à `uploadFullImport` (après `importing = true`, avant tout `await`) ;
   - **succès** : `authState.holdForRestore(B)` — le maintien est **réarmé** pour la lecture, l'heure de la phase 1 oubliée ; `sessionIdle.stop()` — la
     session n'existe plus, il n'y a rien à prolonger, et plus aucun battement ne part ; le panneau arme une minuterie de B
     qui, à l'échéance, termine la session comme le chemin 401 ordinaire : levée du maintien, `authState.clearSession()`,
     `window.location.replace('/login?reason=session_expired')`. Ces deux dernières instructions sont celles de
     `refreshTokens` (`api-client.ts:201-202`) : elles s'extraient dans une fonction exportée d'`api-client.ts`
-    (`expireSession()`, nom indicatif), appelée par les deux sites (DRY). La minuterie est effacée au démontage ;
+    (`expireSession()`, nom indicatif), appelée par les deux sites (DRY). La minuterie est effacée au démontage.
+    **Pas de double `expireSession()`** (V5-7, montré au code, sans garde ajoutée) : quand la minuterie s'exécute,
+    `clearSession()` ne démonte pas le panneau — les layouts rendent la page sans condition (`(app)/+layout.svelte:453`,
+    `{@render children()}` dans `<main>`, hors de tout bloc `{#if}` ; `onboarding/+layout.svelte:33` ; `routes/+layout.svelte:118`),
+    et `location.replace` décharge la page sans lancer le nettoyage des composants ; inversement, un démontage d'abord
+    efface la minuterie (AC5 (c), M22). Les deux appels ne peuvent donc se suivre ; et deux effacements resteraient sans
+    gravité (`api-client.ts:195-196`) ;
   - **issue inconnue** (`unknownOutcome` vrai, `:158`) **et échec certain** (toute autre erreur que le 401 de l'import) :
     le message d'échec s'affiche ; **le maintien est levé au premier geste de l'utilisateur qui suit** — le premier
     `pointerdown` ou `keydown` sur la fenêtre (un écouteur posé une fois, en capture, par le panneau, retiré après usage et
@@ -389,7 +411,10 @@ le second grep couvre `goto` et `redirect`. Aucun autre site.
    message (`admin-restore-error`) est rendu ; à l'issue inconnue, *Se reconnecter* est proposé et le bouton d'import
    désactivé, comme aujourd'hui (`backup-restore-new-install.spec.ts:336-341`), et `sessionIdle.stop` n'est **pas** appelé ;
    un `keydown` (puis, dans un autre test, un `pointerdown`) sur la fenêtre appelle `releaseRestoreHold` **une fois** ; un
-   second geste ne l'appelle plus (écouteur retiré) ; démonter sans geste l'appelle aussi. La levée différée se pose dans
+   second geste ne l'appelle plus (écouteur retiré) ; démonter sans geste l'appelle aussi. **Geste pendant l'import**
+   (V5-1) : `uploadFullImport` pendante, `fireEvent.pointerDown(window)` puis `fireEvent.keyDown(window)` →
+   `releaseRestoreHold` **non appelé** ; la promesse rejetée ensuite (400), le message rendu, un geste appelle
+   `releaseRestoreHold` une fois — l'écouteur n'est armé qu'après l'affichage du message d'échec ou d'issue inconnue. La levée différée se pose dans
    le `finally` : constat de lecture à la revue, ligne citée — le cas « `toast.error` jette » n'est pas joué en Vitest
    (rejet non géré d'un `onclick` sans `await`, compté comme erreur avant comme après le correctif, V2-3) ;
    (b) au module de session (`authState.restoreHold` du simulacre réglé à vrai) : **avant** `last + w`, tout est
@@ -420,7 +445,7 @@ le second grep couvre `goto` et `redirect`. Aucun autre site.
    simulacre, V4-6), et rien avant B ; le contenu d'`expireSession` — `clearSession` puis
    `location.replace('/login?reason=session_expired')` — se prouve par un test propre dans `api-client.test.ts` ;
    (c) **les deux durées** : avec `sessionIdle.minutes = 5`, la confirmation pose
-   `holdForRestore(Math.max(300 000, 2 * LONG_OPERATION_TIMEOUT_MS + RESTORE_HOLD_MARGIN_MS))`, soit 7 260 000, et le
+   `holdForRestore(importHoldMs(300 000))`, soit 7 260 000, et le
    succès `holdForRestore(300 000)` ; avec `minutes = null`, la confirmation pose 7 260 000 et le succès 3 600 000 ; les
    attentes se calculent à partir des constantes importées, jamais recopiées ; (d) **import plus long que B** :
    `sessionIdle.minutes = 1` (B = 60 000), vrai `authState` dans ce test, promesse d'`uploadFullImport` pendante,
@@ -428,7 +453,9 @@ le second grep couvre `goto` et `redirect`. Aucun autre site.
    le compte rendu (`admin-restore-success`, `admin-restore-files-restored`) s'affiche, et `restoreHold` vaut vrai à
    `+59 999` et faux à `+60 000` après le succès — la borne de la phase 1 n'a pas survécu à la fin de l'import.
 6. **AC6 — La fermeture ordinaire est intacte (#876, #895)** : les tests existants de `session-idle.svelte.test.ts` et les
-   tests 401 de `api-client.test.ts` (`:246-267`, `:327-343`, `:488`, `:567-581`) passent **sans modification** ; hors
+   tests 401 de `api-client.test.ts` (`:246-267`, `:327-343`, `:488`, `:567-581`) passent **sans modification de leurs
+   corps ni de leurs assertions** — seuls les simulacres sont étendus (`session-idle.svelte.test.ts:17-19`,
+   `AdminRestorePanel.test.ts:9-29`, § *Simulacres*), ce que le panneau exige (V5-5) ; hors
    maintien, le module de session se comporte comme aujourd'hui (couvert par ses tests existants) ; à
    `auth.svelte.test.ts`, `clearSession()` remet le maintien à zéro (`restoreHold` faux) ; `logout()` aussi, **dès avant
    la fin de sa requête** (`fetch` simulé par une promesse pendante : `restoreHold` déjà faux ; puis rejet de cette
@@ -477,7 +504,9 @@ n'a aujourd'hui aucun `vi.mock` dans ce fichier (`AdminRestorePanel.test.ts:9-29
 simulacre entier ferait rougir les tests de messages d'erreur existants (V2-4) ; à écrire tel quel :
 `vi.mock('$lib/shared/utils/api-client', async (orig) => ({ ...(await orig<typeof import('$lib/shared/utils/api-client')>()), expireSession: vi.fn() }));`
 — `LONG_OPERATION_TIMEOUT_MS` y reste la vraie constante, que les tests importent pour leurs attentes au lieu de la
-recopier, comme `RESTORE_HOLD_MARGIN_MS`. Les tests qui touchent l'écouteur de geste (AC3 (a)) emploient
+recopier ; `RESTORE_HOLD_MARGIN_MS` et `importHoldMs` s'importent d'`admin-restore.api.ts` (dont le `vi.mock` existant
+devient partiel de la même façon, `uploadFullImport` restant un `vi.fn()`, faute de quoi le panneau importerait un
+`importHoldMs` indéfini). Les tests qui touchent l'écouteur de geste (AC3 (a)) emploient
 `fireEvent.keyDown(window, …)` / `fireEvent.pointerDown(window)`. Les tests de B et de la minuterie emploient `vi.useFakeTimers()`. Les tests de `logout()` simulent `fetch`
 (`auth.svelte.ts:207`, `await fetch('/api/v1/auth/logout', …)`) par une promesse que le test résout ou rejette.
 
@@ -519,11 +548,13 @@ recopier, comme `RESTORE_HOLD_MARGIN_MS`. Les tests qui touchent l'écouteur de 
 | M20 | au démontage, `expireSession()` appelé même quand `reconnecting` est vrai | AC5 (d) |
 | M21 | `keepHold` non posé au succès (le `finally` arme la levée au geste après `holdForRestore(B)`) | AC2 (`releaseRestoreHold` non appelé après le succès, puis un geste : toujours pas) (V4-7) |
 | M22 | la minuterie de B non effacée au démontage en phase 2 | AC5 (c) (`expireSession` appelé deux fois) |
+| M23 | l'écouteur de geste armé à la confirmation (au début de `confirmImport`) au lieu du `finally` | AC3 (a), « geste pendant l'import » (`releaseRestoreHold` appelé pendant l'import) (V5-1) |
 
 *Retirées à la P4 (simplification de D2, V4-1)* : M15 (« maintien gardé à l'issue inconnue ») — l'issue inconnue garde
 désormais le maintien jusqu'au premier geste, ce que tuent M5 et M5″. Recompte de la table : M1, M1′, M2, M3, M4, M5,
 M5″, M5‴, M6, M6′, M7, M7′a, M7′b, M7″, M8, M9, M10, M10′, M11, M11′, M12, M12′, M13, M14, M16, M17, M17′, M18,
-M19, M20, M21, M22 — **32 mutations** ; M5′ et M15 retirées.
+M19, M20, M21, M22 — 32 mutations à la P4 ; **33** depuis la P5, avec M23 (recompté : `/usr/bin/grep -c '^| M'` sur
+la fiche) ; M5′ et M15 retirées.
 
 Une mutation équivalente se dit au Dev Agent Record.
 
@@ -542,7 +573,7 @@ Une mutation équivalente se dit au Dev Agent Record.
 - [ ] D1 (`auth.svelte.ts`, `api-client.ts`, dont l'extraction d'`expireSession`), D2 (`session-idle.svelte.ts`, commentaire d'en-tête `:20-22` complété :
       « aucune suspension » devient faux), D3 (`AdminRestorePanel.svelte`, commentaire d'en-tête `:9-12` complété) ;
       commentaire de `sendHeartbeat` `:363` récrit (le 401 n'a plus toujours redirigé).
-- [ ] Les 32 mutations de la table (M5′ et M15 retirées).
+- [ ] Les 33 mutations de la table (M5′ et M15 retirées).
 - [ ] **Répétition après** (D4) ; note de `docs/testing.md` et demi-phrase de `admin-manual.tex:2340` (D6 ; PDF à
       l'intégration) ; une capture du compte rendu resté affiché après le
       battement forcé (`KESH_E2E_CAPTURES_DIR`, thème clair) dans `kesh-gate-logs/e36-5/captures/`.
@@ -617,12 +648,11 @@ se contrôle aplati. Aucun autre fichier commun. 36-1 à
 - La session se ferme exactement à l'échéance réglée hors restauration (#876) ; l'avertissement paraît une minute avant
   (#895) ; un 401 hors maintien renvoie à `/login?reason=session_expired`. Le serveur ne change pas.
 - Le maintien n'est posé que par le panneau de restauration, ne couvre que l'import en cours et la lecture du compte
-  rendu — la première bornée par `max(B, 2 × LONG_OPERATION_TIMEOUT_MS + RESTORE_HOLD_MARGIN_MS)`, la seconde par B (la
-  durée d'inactivité réglée) ; à un échec certain ou une issue inconnue, il dure jusqu'au premier geste, dans la borne
-  déjà posée ;
-  au total, l'écran reste ouvert au plus la durée de l'import plus B après la confirmation ; la borne de la phase 1 ne
-  survit à aucune fin d'import —, et ne survit ni à sa disparition, ni au premier geste après une issue inconnue ou un
-  échec, ni à `logout()`, ni à `clearSession()`, ni à un rechargement (état de module). **Un renouvellement réussi ne le
+  rendu. Borne (D3, formulation unique) : « Le maintien est posé à la confirmation pour `importHoldMs(B)` ; au succès,
+  son échéance est remplacée par `maintenant + B` ; après un échec certain ou une issue inconnue, l'échéance de la
+  confirmation est gardée et le maintien est levé au premier geste, au démontage ou à cette échéance ; au 401 de
+  l'import, il est levé aussitôt. Il ne dure donc jamais au-delà de `confirmation + max(importHoldMs(B), durée de
+  l'import + B)`. » Il ne survit ni à la disparition du panneau, ni à `logout()`, ni à `clearSession()`, ni à un rechargement (état de module). **Un renouvellement réussi ne le
   lève jamais** (`login()` ne le touche pas, V2-1) ; aucune connexion faite dans cet onglet n'en hérite (D1).
 - Le maintien ne prolonge rien au serveur et ne change rien avant `last + w` : il diffère seulement le renvoi local à la
   connexion (D2). Sous maintien, le renouvellement est
@@ -741,3 +771,19 @@ se contrôle aplati. Aucun autre fichier commun. 36-1 à
     l'orchestrateur.
   Recompte : **11 critères** (AC1, AC1 bis, AC2 à AC5, AC5 bis, AC6 à AC9) ; **32 mutations** (table, M5′ et M15
   retirées). Modules : inchangés (cinq, dont trois de code). Aucune migration.
+- 2026-11-14 — **Validation P5 (Sonnet) : 0/0/1/6 → remédiés** (`kesh-gate-logs/e36-5/validation-p5.md`), par l'agent de
+  rédaction (Opus 5.5), sans rien ajouter d'autre que ce que demandent les findings. Prémisses relues au code :
+  - V5-1 (MEDIUM) : rien ne gardait un geste pendant l'import. → AC3 (a) « geste pendant l'import », M23 ; **33
+    mutations** (`/usr/bin/grep -c '^| M'` → 33).
+  - V5-2 : une seule formulation de la borne, écrite en D3 et reprise mot pour mot en D2 et dans *Ce qui doit rester
+    vrai* ; juste au succès, à l'échec, à l'issue inconnue et au 401 de l'import.
+  - V5-3 : `RESTORE_HOLD_MARGIN_MS` et la fonction unique `importHoldMs` exportées d'`admin-restore.api.ts` ;
+    l'hypothèse sur `doRefresh` (`api-client.ts:92`) et `/me` (`:133`), sans délai d'abandon, écrite et acceptée, non
+    étendue ; `vi.mock` d'`admin-restore.api` rendu partiel.
+  - V5-4 : `sprint-status.yaml:1078` mis à jour.
+  - V5-5 : AC6 « sans modification de leurs corps ni de leurs assertions », simulacres étendus.
+  - V5-6 : *Retenu* de C-36-5-8 marqué « remplacé en partie par C-36-5-9 ».
+  - V5-7 : montré au code qu'un double `expireSession()` ne peut arriver (`(app)/+layout.svelte:453`,
+    `onboarding/+layout.svelte:33`, `routes/+layout.svelte:118` rendent la page sans condition ; `location.replace`
+    décharge sans nettoyage) ; aucune garde ajoutée.
+  Recompte : **11 critères**, **33 mutations**. Modules : inchangés. Aucune migration.
