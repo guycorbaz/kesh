@@ -226,3 +226,9 @@ exports, afin de rapprocher mes comptes PayPal ou Wise de leurs relevés et de c
   `sign_expr` bilan et résultat, `Cargo.toml` des deux crates, `sortie.rs:97-114`/`:463`, `rapports.rs:63`/`:104`,
   `grand_livre.rs:37`/`:56`/`:61`, `mcp_outils_e2e.rs:99`/`:182`/`:788`/`:1345`, `pdf.rs:153`/`:718`/`:1063`,
   `csv.rs:40`, `journal_report.rs:92`/`:177`) : exactes ; accord avec 35-1, 35-3a et 35-5 (`balances_as_of`) vérifié.
+- 2026-11-14 — validation P6 ciblée (Opus) : 0 CRITICAL, 0 HIGH, 0 MEDIUM, 1 LOW ; aucun inter-fiches. Lentille sur le
+  seul diff `c0801b02..c08ccd9b`. Relu au code : `pub(crate)` suffit (`kesh-report/src/lib.rs:18`, `:25`, `csv` et
+  `pdf` dans le même crate) ; `Option<T: ChampSur>` admis (`mcp/sortie.rs:85-86`), `Montant` (`:215`, `:228`) et
+  `Code<E>` (`:302`) disponibles pour montants, cours et devise ; « présents à `null` », macro non étendue : accord
+  avec l'AC-6 de la fiche, 35-3a AC-8 et C-35-9. LOW P6-1 : l'entrée P5 porte un gabarit non rempli
+  (« sauf <aucun inter-fiches> ») — à lire « aucun inter-fiches » ; relevé daté laissé tel quel.

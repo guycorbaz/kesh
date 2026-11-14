@@ -122,8 +122,10 @@ récupération pour un mois donné, afin que mes écritures en devise reçoivent
      boucle et un autre `POST /fetch` — le verrou tokio est équitable, premier arrivé premier servi), soit 3 × 20 s dans
      le pire cas, plus les écritures — borne valable pour **un** autre demandeur : avec plus de demandeurs simultanés
      (plusieurs onglets), elle s'allonge d'autant ; pour la tenir, un `POST /fetch` qui a **attendu** le verrou et
-     trouve, une fois le verrou pris, le mois écrit par une récupération **commencée après son arrivée** (`fetched_at`
-     postérieur) rend ce résultat (200, `count` des devises présentes, `rejected` 0) sans rappeler la source. Sous le
+     trouve, une fois le verrou pris, le mois écrit par une récupération **commencée après son arrivée** (`fetched_at`,
+     pris par la récupération **avant** son appel sortant, postérieur à l'instant d'arrivée du `POST`) rend ce
+     résultat (200, `count` des devises présentes, `rejected` 0) sans rappeler la source, sans ligne d'audit et sans
+     écriture de `_kesh_exchange_rate_fetch` (il n'a rien récupéré). Sous le
      verrou, le `POST /fetch` relit la mémoire de l'AC-5 avant d'appeler la source (un mois **présent** se redemande,
      c'est la demande : la mémoire ne retient que `not_published` et les échecs) ; **un succès retire l'entrée** du
      mois de la mémoire (sans quoi un échec mémorisé rendrait 503 pendant 15 minutes sur un mois que la boucle vient
@@ -161,7 +163,7 @@ récupération pour un mois donné, afin que mes écritures en devise reçoivent
      d'erreur) ;
    - `POST /api/v1/exchange-rates/fetch { year, month }` — dans **`comptable_routes`** (Administrateur ou Comptable ;
      mois ≥ 2000-01 et ≤ mois courant en Europe/Zurich, sinon 400) : récupère ce mois, **auditée sous l'utilisateur**
-     (`NewAuditLogEntry::from_current_user`, `audit.rs` : une clé d'API est attribuée comme telle ;
+     (`NewAuditLogEntry::from_current_user`, méthode du trait `AuditActor`, `audit.rs:24` : une clé d'API est attribuée comme telle ;
      `exchange_rates.fetched`, mois, nombre de devises écrites, écartées et dont le cours a changé (`changed`) — écrite **sur un succès seulement** : un
      404 ou un 503 n'écrit que `_kesh_exchange_rate_fetch`) ; écrit `_kesh_exchange_rate_fetch` avec
      `triggered_by = 'manual'` ; réponses `200 {month: "AAAA-MM-01", count, rejected}` (`count` et `rejected` sont des
@@ -217,7 +219,7 @@ récupération pour un mois donné, afin que mes écritures en devise reçoivent
      route mutante, l'ordre d'intégration décide du chiffre absolu, à recompter au code), et le total registre **+2**
      avec l'endpoint `_test` (entrée `("post", "/exchange-rates/source", Exempt(…), SansEcritureAuJournal)` de
      `TEST_ENDPOINT_ROUTES`, sur le modèle de `/password-reset-token`, `audit_route_registry.rs:620` : il n'écrit
-     rien en base ; `Exemptee` signifie « écrit au journal et n'est pas rejouée », réservé à `full_import`, `/seed`,
+     rien au journal d'audit ; `Exemptee` signifie « écrit au journal et n'est pas rejouée », réservé à `full_import`, `/seed`,
      `/reset`) ; la phrase du manuel d'administration (`admin-manual.tex:3217`, « N des M routes à verbe
      mutant » et « N + 4 + 3 = M », gardée par `le_manuel_dit_le_compte_du_registre`) suit le chiffre recompté.
      Le second test, `the_replay_partition_is_what_the_story_declares` (`audit_route_registry.rs:1450`), compte aussi :
@@ -316,3 +318,8 @@ récupération pour un mois donné, afin que mes écritures en devise reçoivent
   (P5-2), mémoire effacée sur succès (P5-3), `POST /fetch` dans un `tokio::spawn` (P5-4), DDL de
   `_kesh_exchange_rate_fetch` complété (P5-5), `reset_demo`, MCP et `from_current_user` nommés (P5-6), `CHF` → 400
   `Validation` et les deux `errors.rs` distingués (P5-7).
+- 2026-11-14 — validation P6 ciblée (Sonnet) : 0 CRITICAL, 0 HIGH, 0 MEDIUM, 3 LOW ; remédiés dans la fiche. P6-1 :
+  `fetched_at` de la récupération attendue défini (pris avant l'appel sortant) et le raccourci sans audit ni écriture
+  d'état ; P6-2 : `from_current_user` nommé comme méthode du trait `AuditActor` ; P6-3 : le précédent
+  `/password-reset-token` écrit un jeton en base, la fiche dit donc « rien au journal d'audit ». Inter-fiches, non
+  appliqué : l'entrée P5 du Change Log de 35-1 (IF-1) parle encore de `exemptees` +1 (historique ; l'AC-5 de 35-2 fait foi).

@@ -287,7 +287,7 @@ verrou des deux côtés, réglage réservé à l'Administrateur).
       `NewAccount {` (52 occurrences du motif, définition comprise), dans les tests de `kesh-db` et de `kesh-api`
       surtout, hors `NewAccount::new` qui prend `currency: None` ; `AccountUpdate` : deux sites de production —
       `routes/accounts.rs:315` et la normalisation de `accounts::update` (`accounts.rs:663`, `..changes` : elle
-      recopie `currency` sans erreur de compilation, à garder ainsi) — et vingt-trois littéraux de tests (vingt dans
+      recopie `currency` sans erreur de compilation, à garder ainsi) — et vingt-quatre littéraux de tests (vingt et un dans
       `accounts.rs`, un dans `credit_card_repository.rs`, `letterings.rs` et `journal_entry_reversal_e2e.rs`) ;
       `kesh-seed` n'en construit aucun, vérifié) ;
       gardes croisées de l'AC-4 dans les transactions du dépôt des réglages de facturation, comptes bancaires,
@@ -354,3 +354,7 @@ verrou des deux côtés, réglage réservé à l'Administrateur).
   construction de `NewAccount`/`AccountUpdate` recomptés (P5-3) ; pré-vol 404 de la route en tête de l'ordre des
   refus de `update` (P5-4) ; nom de l'index des lignes (P5-5). Choix P4-2 (`company_id` lu sur le pool puis
   comparé sous verrou) confirmé.
+- 2026-11-14 — validation P6 ciblée (Sonnet) : 0 CRITICAL, 0 HIGH, 0 MEDIUM, 1 LOW (P6-1 : littéraux de tests
+  d'`AccountUpdate` recomptés, 21 dans `accounts.rs` et non 20, soit 24 et non 23 ; remédié) ; 0 inter-fiches.
+  Vérifiés au code : `idx_jel_account`, `routes/accounts.rs:290`/`:315`, `accounts.rs:663`, les quatre listes de colonnes
+  de `Company`, 52 `NewAccount {`.

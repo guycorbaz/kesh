@@ -309,7 +309,7 @@ passer l'écart de change, afin que mes comptes en devise portent leur solde en 
 - Frontend : `frontend/src/lib/features/journal-entries/` (`JournalEntryForm.svelte`, `balance.ts`).
 - Constructeurs de `NewJournalEntryLine` en production, recomptés le 2026-11-14 (littéraux hors `mod tests`) :
   **30 dans 11 fichiers** — `repositories/invoice_settlements.rs` 7, `supplier_invoices.rs` 5, `credit_notes.rs` 4,
-  `invoices.rs` 4, `opening_complement.rs` 1, `journal_entries.rs` 1 (contre-passation :2917) ;
+  `invoices.rs` 4, `opening_complement.rs` 1, `journal_entries.rs` 1 (contre-passation : littéral :2920, dans l'instruction ouverte :2917) ;
   `kesh-reconciliation/src/manual.rs` 2, `split.rs` 2 ; `kesh-seed/src/pieges.rs` 2 ; `routes/journal_entries.rs` 1 ;
   `routes/opening_balances.rs` 1. `repositories/accounts.rs` n'en construit qu'en tests. La liste fait foi **après**
   l'échec de compilation, pas avant.
@@ -345,3 +345,7 @@ passer l'écart de change, afin que mes comptes en devise portent leur solde en 
   contrôles FX après `EntryNegativeAmount` ; cas de test de l'AC-1 (`montant < 0`, `revaluation` au montant ≠ 0) ;
   `PUT` d'une écriture `afc` après restauration ou republication ; doc-comment de `validate_lines_accounts_in_tx` ;
   mesure MCP (`tailles_mesurees`) ; numéros de ligne (:2917, étape 10 d'`update_in_tx`).
+- 2026-11-14 — validation P6 ciblée (Sonnet) : 0 CRITICAL, 0 HIGH, 0 MEDIUM, 1 LOW ; remédié. Point : la liste des
+  constructeurs de production citait `:2917` (le `let reversal_lines`) pour le littéral, qui est à `:2920` (P5 avait
+  rapproché le numéro de la mauvaise ligne). Les autres phrases de la remédiation P5 sont vraies au code et cohérentes
+  avec le registre C-35-9 et 35-1, 35-2, 35-3b, 35-4.

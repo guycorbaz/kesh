@@ -32,7 +32,8 @@ que mon bilan présente ces comptes au cours de clôture et que l'écart aille a
    - Un compte à solde en devise nul mais à solde CHF résiduel ≠ 0 **est proposé** (D = −chf_net) : il n'est pas écarté
      par un `HAVING balance != 0` de rapport.
    - Comptes présélectionnés : tous ceux de bilan en devise, actifs et imputables, **dans la limite de 498** (AC-4) : au-delà,
-     l'aperçu présélectionne les 498 premiers par numéro de compte et le dit à l'écran (la passation en refuserait davantage). Un compte **archivé** à solde ≠ 0 est
+     l'aperçu présélectionne les 498 premiers par numéro de compte et le signale par un champ de la réponse (nom au
+     développement, testé à l'AC-7), que l'écran affiche (la passation en refuserait davantage, AC-4). Un compte **archivé** à solde ≠ 0 est
      listé avec `reason: ACCOUNT_ARCHIVED`, non sélectionnable, avec avertissement (sinon l'écriture entière serait
      refusée en `InactiveOrInvalidAccounts`, `validate_lines_accounts_in_tx`). Comptes `Revenue`/`Expense` jamais
      proposés.
@@ -58,8 +59,9 @@ que mon bilan présente ces comptes au cours de clôture et que l'écart aille a
      **avant** la transaction, `RATE_UNAVAILABLE` (404) s'il manque. Les devises des comptes sélectionnés se lisent
      avant la transaction par une lecture ordinaire sur le pool (elles ne servent qu'à choisir les cours à résoudre et à
      contrôler les clés de `rates`) ; **dans** la transaction, après l'étape (4), toute devise d'un compte admissible
-     sélectionné qui n'a pas de cours résolu (devise du compte changée entre-temps) → rollback, 404 `RATE_UNAVAILABLE` : un
-     cours n'est jamais supposé.
+     sélectionné qui n'a pas de cours résolu (devise du compte changée entre-temps) → rollback, 404 `RATE_UNAVAILABLE`
+     (`details` de 35-2) : un cours n'est jamais supposé. Ce refus se place, dans l'ordre de l'AC-4, juste après
+     `FX_REVALUATION_ACCOUNT_INVALID` (un compte devenu CHF est d'abord `notEligible`).
    - **Verrous et instantané** (le même défaut que la règle de placement de `bank_accounts.rs:905-918`) : sous
      `REPEATABLE READ` (niveau par défaut), la vue cohérente naît à la **première lecture non verrouillante** de la
      transaction. Les soldes doivent donc se lire **après** tous les verrous, et **aucune lecture ordinaire ne
@@ -146,14 +148,15 @@ que mon bilan présente ces comptes au cours de clôture et que l'écart aille a
    imputable, de type `Expense`/`Revenue`, en CHF, ni au rôle `DefaultRevenue`, ni désigné
    `default_revenue_account_id` des réglages de facturation ou d'un article — 35-1 P3-8) → 400 `FX_ACCOUNT_INVALID` (C-35-2 ; même code et même statut que
    35-1, `details` de 35-1) ; `accountIds` hors de la liste admissible (lue à l'étape (4) de l'AC-2) → 400
-   `FX_REVALUATION_ACCOUNT_INVALID`, ensuite ; puis, par `create_in_tx_inner`, exercice
+   `FX_REVALUATION_ACCOUNT_INVALID`, ensuite ; puis 404 `RATE_UNAVAILABLE` d'une devise sans cours résolu (AC-2) ; puis, par `create_in_tx_inner`, exercice
    postérieur clos → `LATER_FISCAL_YEAR_CLOSED` (garde `journal_entries.rs:368`, repository ; état hérité seulement,
    puisque `close` impose l'ordre) ; `DATE_OUTSIDE_FISCAL_YEAR` ; livres verrouillés à cette date
    (`books_locked_through`, seuil **inclusif** : `entry_date <= locked_through`) → `PERIOD_LOCKED`. L'aperçu
    refuse de même (404, mono-devise, exercice clos, formes de la requête : 400 `FX_RATE_INVALID` /
-   `FX_REVALUATION_ACCOUNT_INVALID`, `FX_VALUE_OUT_OF_RANGE`) et **signale** les autres (`blockers[]`, AC-1). `accountIds` : un seul code, 400 `FX_REVALUATION_ACCOUNT_INVALID`, `details: { reason, accountIds }` (les
+   `FX_REVALUATION_ACCOUNT_INVALID`, `FX_VALUE_OUT_OF_RANGE` ; un `accountIds` fourni hors de la liste admissible y est
+   refusé de même, `reason: "notEligible"`) et **signale** les autres (`blockers[]`, AC-1). `accountIds` : un seul code, 400 `FX_REVALUATION_ACCOUNT_INVALID`, `details: { reason, accountIds }` (les
    identifiants fautifs **tels que reçus**, rien de lu en base) ; liste vide ou doublons → `reason: "empty"` /
-   `"duplicate"`, avant la transaction ; comptes d'une autre société ou hors de la liste admissible (groupe, archivé,
+   `"duplicate"`, plus de 498 identifiants → `reason: "tooMany"`, avant la transaction ; comptes d'une autre société ou hors de la liste admissible (groupe, archivé,
    résultat, sans devise) → `reason: "notEligible"`, dans la transaction (ci-dessus), sans fuite d'existence (même
    réponse pour un compte inexistant et pour un compte d'une autre société) ; libellé dans les quatre locales.
    - **Bornes de la requête** : chaque cours est un décimal > 0, ≤ 10 décimales, ≤ 10⁶, exprimé **par unité** de
@@ -166,12 +169,17 @@ que mon bilan présente ces comptes au cours de clôture et que l'écart aille a
      `FX_VALUE_OUT_OF_RANGE`), jamais par `Decimal::checked_mul` (35-3a AC-3 : réduction d'échelle silencieuse) ; un
      CHF réévalué ou un |D| > 10¹³ → 400 `FX_VALUE_OUT_OF_RANGE`, sans écriture. **Forme du refus** : la variante de 35-3a
      (`FxValueOutOfRange { line }`) porte un rang de ligne que 35-5 n'a pas ; 35-5 rend le même code et le même statut par
-     sa **propre variante** (`FxRevaluationValueOutOfRange`, bras dans `errors.rs`), `details: { currency, accountId }` (le
-     compte fautif, ou `accountId` absent pour une somme de contrepartie), sans toucher `map_core_error`. **De même Σ gains et Σ pertes** (et le
+     sa **propre variante** de `DbError` (`FxRevaluationValueOutOfRange`, `kesh-db` ; bras dans
+     `kesh-api/src/errors.rs`), que l'aperçu et la passation rendent tous deux (le calcul pur de `kesh-core` signale le
+     dépassement, le code de `kesh-db` qui l'appelle le traduit), `details: { currency, accountId }` pour un compte
+     fautif, `details: {}` pour une somme de contrepartie (elle mêle les devises : ni compte ni devise), sans toucher
+     `map_core_error`. **De même Σ gains et Σ pertes** (et le
      net d'un compte unique) : les lignes de contrepartie agrégent jusqu'à 498 écarts, et 498 × 10¹³ dépasse la colonne
      `debit`/`credit` `DECIMAL(19,4)` (< 10¹⁵, `crates/kesh-db/test-schema/0001_schema_squash.sql:848-849`) — une erreur SQL, donc un 500, si rien
      ne la borne ; une somme > 10¹³ → 400 `FX_VALUE_OUT_OF_RANGE`, sans écriture. Au plus 100 devises et **498** comptes par requête (l'écriture reste sous
-     `MAX_LINES_PER_ENTRY` = 500, `routes/journal_entries.rs`, avec les deux lignes de contrepartie).
+     `MAX_LINES_PER_ENTRY` = 500, `routes/journal_entries.rs`, avec les deux lignes de contrepartie) : plus de 498
+     `accountIds` → 400 `FX_REVALUATION_ACCOUNT_INVALID`, `reason: "tooMany"` ; plus de 100 clés dans `rates` → 400
+     `FX_RATE_INVALID`, `details: { reason: "tooMany" }` (sans devise fautive).
 5. **AC-5 — RBAC.** Les deux routes vont dans `comptable_routes` (`lib.rs:524`, `require_comptable_role`), comme
    `…/close` (`lib.rs:821`) : Consultation reçoit 403 **y compris sur l'aperçu** (c'est un POST). Pas d'`ensure_not_pat`
    (comme `close`, contrairement à `reopen`), sauf décision contraire de l'utilisateur ; une clé en lecture seule est
@@ -200,7 +208,8 @@ que mon bilan présente ces comptes au cours de clôture et que l'écart aille a
    - RBAC (Consultation 403) et société (exercice d'une autre société 404) ;
    - audit : `journal_entry.created` avec les quatre colonnes de devise au snapshot, et `fx_revaluation.posted` ;
    - le résidu après écriture tardive ; une réévaluation supprimée ou contre-passée, puis un nouveau passage (le résidu
-     rétablit l'écart) ; 498 comptes acceptés, 499 refusés, 101 devises refusées, libellé ≤ 500 caractères ; produit
+     rétablit l'écart) ; 498 comptes acceptés, 499 refusés (`reason: "tooMany"`), 101 devises refusées ;
+     499 comptes admissibles : l'aperçu en présélectionne 498 et le signale ; libellé ≤ 500 caractères ; produit
      devise × cours hors bornes ; Σ des gains (ou des pertes) > 10¹³ → `FX_VALUE_OUT_OF_RANGE` ; `accountIds` vide, en
      doublon, étranger à la société et inexistant → `FX_REVALUATION_ACCOUNT_INVALID`, réponses identiques pour les deux
      derniers ; l'audit `fx_revaluation.posted` d'une passation par clé d'API porte la clé (`for_actor`) ; exercice antérieur ouvert **et** cours manquant → `RATE_UNAVAILABLE` (ordre en deux
@@ -263,3 +272,8 @@ que mon bilan présente ces comptes au cours de clôture et que l'écart aille a
   inter-fiches. (MEDIUM : variante propre de `FX_VALUE_OUT_OF_RANGE` sans rang de ligne ; devises des comptes lues avant
   la transaction et revérifiées dedans. LOW : `currency` de `ForeignAmount`, chemins cités, plafond de 498 à l'aperçu,
   formes de la requête à l'aperçu, total du registre +2, libellé et `MAX_DESCRIPTION_LEN`.)
+- 2026-11-14 — validation P6 ciblée (Opus) : 0 CRITICAL, 0 HIGH, 1 MEDIUM, 4 LOW ; remédiés dans la fiche ; aucun
+  finding inter-fiches. (MEDIUM : code et `reason` des plafonds 498 comptes / 100 devises, sur lesquels s'appuie la
+  présélection ajoutée en P5 — `reason: "tooMany"`. LOW : `details` d'une somme de contrepartie sans devise, variante
+  `DbError` rendue aussi par l'aperçu ; place du `RATE_UNAVAILABLE` en transaction dans l'ordre de l'AC-4 ; champ de
+  réponse de la présélection tronquée et son test ; `notEligible` à l'aperçu.)
