@@ -550,7 +550,8 @@
 	-->
 	<div id={noMatchMsgId} role="status" class="text-xs text-destructive">
 		{#if showNoMatch}
-			<p class="mt-1">
+			<!-- `data-testid` : l'E2E ne vise pas un libellé traduit (garde KF-043). -->
+			<p class="mt-1" data-testid="account-no-match">
 				{i18nMsg(
 					'common-account-no-match',
 					'Aucun compte ne correspond à cette saisie : choisissez un compte dans la liste.'

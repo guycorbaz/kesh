@@ -307,7 +307,7 @@ test('(#1095) Entrée sur un texte sans correspondance n’enregistre pas l’an
 	// Attendre l'une des deux issues — le message (correctif) ou l'écran de
 	// détail (le défaut : le formulaire est parti) — puis asserter : un rouge
 	// nomme alors l'URL atteinte au lieu d'expirer sur un message absent.
-	const message = page.getByText('Aucun compte ne correspond à cette saisie');
+	const message = page.getByTestId('account-no-match');
 	await expect(message.or(page.getByTestId('invoice-line-revenue-account').first())).toBeVisible();
 	await expect(page).toHaveURL(new RegExp(`/invoices/${invoiceId}/edit$`));
 	await expect(message).toBeVisible();
