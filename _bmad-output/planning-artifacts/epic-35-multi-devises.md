@@ -38,7 +38,8 @@ dans les fiches ; l'issue et la PR s'ouvrent à la fin, une fois la recette fait
 - Page ESTV *MWST Monatsmittelkurse* : « XML-File » → `https://www.backend-rates.bazg.admin.ch/api/xmlavgmonth`.
 - Mois donné : `xmlavgmonth?j=<année>&m=<mois>` (paramètres relevés sur la page d'archive ESTV `/de/dezember-2024`).
 - Format : `<monatsmittelkurs><monat>2024-12</monat><devise code="usd"><waehrung>1 USD</waehrung><kurs>0.8846</kurs>…`
-  — 73 devises pour 2024-12 ; l'unité peut être **1 ou 100** (`100 JPY` → 0.5751) ; le cours est en CHF.
+  — 73 devises pour 2024-12 ; l'unité est un entier positif (**1, 100, 1000 et 10000** relevés en 2024-12 ;
+  `100 JPY` → 0.5751) ; le cours est en CHF.
 - Mois non encore publié : élément **vide** (`<monatsmittelkurs …/>`), relevé pour `j=2030&m=1` — à traiter comme
   « pas encore de cours », jamais comme une erreur fatale.
 - Aucune variante JSON trouvée (les chemins `/api/json…` rendent 403).
@@ -82,7 +83,7 @@ objection bloquante restante. Fait vérifié au code qui a tranché C-35-2 : l'i
 ferme pas la fenêtre d'import, une table applicative neuve la ferme.
 
 - **C-35-1 — Table des cours.** Table **système** globale `_kesh_exchange_rates` (`currency CHAR(3)`, `month DATE`
-  au 1er du mois, `rate_per_unit DECIMAL(20,10)`, `published_unit SMALLINT`, `published_rate DECIMAL(19,6)`,
+  au 1er du mois, `rate_per_unit DECIMAL(20,10)`, `published_unit INT`, `published_rate DECIMAL(19,6)`,
   `fetched_at`), PK `(currency, month)`, `CHECK DAY(month) = 1`, source AFC seulement ; état de la récupération dans
   `_kesh_exchange_rate_fetch` (dernier passage, statut, erreur). Non sauvegardée (préfixe `_kesh_`), re-récupérable.
   **Aucun cours manuel mensuel en table** : un cours manuel vit sur la ligne (`rate_source = 'manual'`), audité avec

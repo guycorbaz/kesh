@@ -49,26 +49,51 @@ D1, D2 (fichier d'epic) ; C-35-2 (réglage sur `companies`, sans FK, quatre gard
      sont en remplacement complet : chaque route e-mail, coordonnées, adresse et `company_update_of` de l'assistant
      devrait sinon recopier trois champs de plus) ;
    - activer exige les deux comptes (le même compte est admis pour les deux) ; tant que le mode est actif, aucun des
-     deux ne peut être vidé ;
+     deux ne peut être vidé (400 `FX_ACCOUNT_INVALID`, `reason: "missing"`) ; `multiCurrencyEnabled: false` avec un
+     identifiant non nul → 400 `FX_ACCOUNT_INVALID`, `reason: "unexpected"` (la désactivation les remet à `NULL`,
+     le corps ne les porte donc pas) ; **no-op** (rien ne change) : court-circuit sans bump de `version` ni audit,
+     comme KF-004 ;
    - chaque compte : de la société, imputable, actif, de type `Expense` ou `Revenue`, **sans devise** ; **ni** au rôle
      `DefaultRevenue`, **ni** désigné `default_revenue_account_id` (réglages de facturation ou articles) — les gains de
      change ne vont pas au chiffre d'affaires (CO 959b) ; lu `FOR UPDATE` ; sinon 400 `FX_ACCOUNT_INVALID` (champ et
      `reason` en `details`, p. ex. `reason: "revenueAccount"`). Les autres désignations (arrondi 6940, frais bancaires
      6900) restent admises. **Motif C4** du précédent (`validate_account_of`, `company_invoice_settings.rs:219,231`) :
      ces contrôles ne portent que sur un compte **changé** ; un compte inchangé devenu invalide n'empêche pas
-     d'enregistrer l'autre (la revalidation à l'usage, C-35-2 (3), reste le filet) ;
+     d'enregistrer l'autre (la revalidation à l'usage — la réévaluation, 35-5, C-35-9 — reste le filet). ⚠️
+     `validate_account_of` vit dans `crates/kesh-api/src/routes/company_invoice_settings.rs` (:200), non dans le
+     dépôt du même nom ; le contrôle de la 35-1 est écrit dans `companies::update_currency_settings`, sous verrou ;
    - désactiver est refusé (409 `MULTI_CURRENCY_IN_USE`) tant qu'un compte porte une devise, **comptes archivés
-     compris** ; désactiver remet les deux comptes à `NULL` ;
+     compris** ; `details` liste (jusqu'à 20) les numéros de ces comptes, chacun avec `locked` (il porte une ligne :
+     sa devise ne se retire plus jamais, `update` refusant aussi un compte archivé — l'utilisateur doit le
+     réactiver pour en changer la devise) ; désactiver remet les deux comptes à `NULL` ;
    - **verrous, dans l'ordre global du dépôt** (`companies` → réglages → `accounts` → `bank_accounts`,
      `accounts.rs:446-448`) : ligne `companies` `FOR UPDATE` (version jugée dessus, et non sur une lecture sans verrou
-     comme `update_in_tx` :849), puis les comptes désignés `FOR UPDATE`, puis le `COUNT` des comptes en devise ;
-   - audit `company.currency_settings_updated` (avant/après) ; libellés d'audit dans les quatre locales.
+     comme `update_in_tx` :849), puis les réglages de facturation `LOCK IN SHARE MODE` (contrôle « désigné
+     `default_revenue_account_id` »), puis les comptes désignés `FOR UPDATE`, puis le `COUNT` des comptes en devise ;
+     ⚠️ **ce `COUNT`, comme tout test d'existence de ligne d'écriture de l'AC-4, est une lecture verrouillante**
+     (`… LOCK IN SHARE MODE`) et **aucune lecture simple ne le précède dans la transaction** : sous REPEATABLE READ,
+     une lecture simple fige l'instantané *avant* l'attente des verrous et ne verrait pas une ligne ou un compte
+     commités entre-temps (c'est pourquoi la lecture des comptes bancaires de la 34-11a2 est elle-même verrouillante,
+     `accounts.rs:617-620`) ;
+   - audit `company.currency_settings_updated` (avant/après, ajouté à `ACTIONS` de `audit_labels.rs`, liste triée) ;
+     libellés d'audit dans les quatre locales ;
+   - **registre des routes** : le `PUT` entre dans `LIB_ROUTES` (`tests/audit_route_registry.rs`, `Traced`) ;
+     `the_registry_partition_is_what_the_story_declares` passe de **146 à 147** routes et de **139 à 140** tracées
+     (messages et commentaires du test recomptés) ; la phrase du manuel d'administration
+     (`admin-manual.tex:3217`, « 139 des 146 routes… », « 139 + 4 + 3 = 146 ») devient « 140 des 147 » et
+     « 140 + 4 + 3 = 147 », PDF régénéré, garde `le_manuel_dit_le_compte_du_registre`.
 4. **AC-4 — Devise d'un compte.** `CreateAccountRequest.currency` est facultatif (`null` ou absent = CHF).
-   `UpdateAccountRequest.currency` est `Option<Option<String>>` désérialisé par `present_or_null`, **comme `role`**
-   (contrat full-replace, `routes/accounts.rs:69-76`) : **absent → 400**, `null` = CHF, valeur = devise. Code ISO
-   4217 à trois lettres, mis en majuscules après `trim` avant validation. `AccountResponse` expose `currency` et
+   `UpdateAccountRequest.currency` est `Option<Option<String>>` désérialisé par `present_or_null` (`routes/accounts.rs:60`) :
+   **absent = devise inchangée**, `null` = CHF, valeur = devise. ⚠️ **Pas de 400 sur l'absence, à la différence de `role`** :
+   le motif d'un full-replace est d'éviter l'effacement silencieux d'une donnée (`routes/accounts.rs:69-76`) ; ici
+   « absent = inchangé » n'efface rien, et un 400 casserait en mono-devise tout client qui ne connaît pas le champ
+   (la recette par l'API de l'epic, l'écran de la version précédente), ce que la story s'interdit (« sans rien changer
+   pour qui reste en mono-devise », précédent : la `confirm_account_retype`, `routes/accounts.rs:94-109`). Code ISO
+   4217 à trois lettres, `trim` puis **majuscules ASCII** (`to_ascii_uppercase`, jamais Unicode) avant validation ;
+   toute valeur non ASCII → 400 `CURRENCY_UNKNOWN`. `AccountResponse` expose `currency` et
    `currencyLocked: bool` (le compte porte au moins une ligne d'écriture ; calculé pour la liste en **une** requête,
-   `SELECT DISTINCT account_id FROM journal_entry_lines …`, jamais une par compte).
+   bornée à la société — `SELECT DISTINCT l.account_id FROM journal_entry_lines l JOIN accounts a ON a.id = l.account_id
+   WHERE a.company_id = ?` —, jamais une par compte ; la forme de `letterings::letterable_account_ids`).
    - refus **409** `MULTI_CURRENCY_DISABLED` si la société est en mono-devise et qu'une devise est donnée (409 partout,
      décision d'epic) ;
    - code inconnu de la liste ISO 4217 embarquée (`kesh-core`) → 400 `CURRENCY_UNKNOWN` ; `CHF` donné → normalisé à
@@ -82,12 +107,23 @@ D1, D2 (fichier d'epic) ; C-35-2 (réglage sur `companies`, sans FK, quatre gard
      dans les réglages de facturation (`DESIGNATED_ACCOUNT_COLUMNS`, `company_invoice_settings.rs:46-57`) ; lié à un
      compte bancaire (`bank_accounts.journal_account_id`) ; compte de produit par défaut d'un article
      (`products.default_revenue_account_id`) ; contrepartie d'une règle de réconciliation
-     (`reconciliation_rules.counterparty_account_id`) ; compte par défaut des factures fournisseur. **Inversement**,
-     lier à un compte bancaire, désigner dans les réglages de facturation, choisir comme compte d'un article, d'une
-     règle de réconciliation ou de facture fournisseur, ou poser un rôle sur un compte **en devise** → 400
-     `ACCOUNT_IN_FOREIGN_CURRENCY`. **C'est la 35-1 qui pose ces refus des deux côtés** ; la 35-3a (AC-5) s'y appuie.
-     Inventaire **clos** des sites, lu sur les FK `REFERENCES accounts` des migrations et sur les liens sans FK
-     (`bank_accounts.journal_account_id`), écrit au Change Log (méthode « inventorier les sites non résolus ») ;
+     (`reconciliation_rules.counterparty_account_id`) (le compte par défaut des factures fournisseur,
+     `default_payable_account_id`, est déjà l'une des dix colonnes de `DESIGNATED_ACCOUNT_COLUMNS`). **Inversement**,
+     lier à un compte bancaire, désigner dans les réglages de facturation, choisir comme compte d'un article ou d'une
+     règle de réconciliation, ou poser un rôle sur un compte **en devise** → 400 `ACCOUNT_IN_FOREIGN_CURRENCY`.
+     **C'est la 35-1 qui pose ces refus des deux côtés, pour ces sites de configuration** ; les comptes choisis ligne
+     par ligne (`invoice_lines`/`credit_note_lines.revenue_account_id`, `supplier_invoice_lines.expense_account_id`,
+     `supplier_invoices`/`invoice_settlements.settlement_account_id`) ne sont **pas** gardés par la 35-1 : un brouillon
+     qui les désigne n'empêche pas de donner une devise au compte, et le contrôle central de la 35-3a (AC-4) les
+     refuse à la validation (`ACCOUNT_REQUIRES_CURRENCY`) — décision écrite au Change Log. La 35-3a (AC-5) s'appuie
+     sur les refus de la 35-1.
+     Inventaire **clos** des sites, lu sur les FK `REFERENCES accounts` des migrations (onze constats à ce jour) et sur
+     les liens sans FK (`bank_accounts.journal_account_id`), écrit au Change Log (méthode « inventorier les sites non
+     résolus ») ;
+   - **ordre des refus** de `update` (une seule raison, la plus bloquante) : compte introuvable/archivé → version →
+     no-op → `MULTI_CURRENCY_DISABLED` → `ACCOUNT_IS_FX_DIFFERENCE_ACCOUNT` → `ACCOUNT_CURRENCY_LOCKED` →
+     `ACCOUNT_CURRENCY_IN_USE` ; pour `create` : `MULTI_CURRENCY_DISABLED` → `ACCOUNT_IS_FX_DIFFERENCE_ACCOUNT`
+     (parent désigné) → `ACCOUNT_IN_FOREIGN_CURRENCY` (rôle posé en même temps) ;
    - un compte désigné gain/perte ne peut recevoir de devise, ni être archivé, ni changer de type hors
      `Expense`/`Revenue`, ni recevoir le rôle `DefaultRevenue`, ni passer à `postable = false`, ni recevoir un
      sous-compte (`accounts::create` :197-207 passe le parent à non imputable sans garde) → 409
@@ -98,10 +134,23 @@ D1, D2 (fichier d'epic) ; C-35-2 (réglage sur `companies`, sans FK, quatre gard
      (défensif : le décompte de la désactivation inclut déjà les archivés) ;
    - **verrous** : `accounts::create`, `update`, `archive_guarded` et `reactivate` lisent la ligne `companies`
      `LOCK IN SHARE MODE` **avant** le `FOR UPDATE` du compte (même ordre que l'AC-3, pas d'interblocage) ;
-     `multi_currency_enabled` et les deux colonnes FX se lisent sous ce verrou. Le compte des lignes d'écriture se fait
-     **après** le `FOR UPDATE` du compte. La 35-3a lit la devise des comptes `LOCK IN SHARE MODE`
-     (`validate_lines_accounts_in_tx` :135 lit aujourd'hui sans verrou). Un test de course par paire : désactivation
-     contre création en devise, désignation contre archivage/retypage, changement de devise contre première ligne ;
+     `multi_currency_enabled` et les deux colonnes FX se lisent sous ce verrou. ⚠️ **Cela change trois fonctions** :
+     `update` lit aujourd'hui le compte `FOR UPDATE` *en premier* (`FIND_BY_ID_FOR_UPDATE_SQL`), et `archive_guarded`
+     (:859) et `reactivate` (:1026) ne prennent **aucun** `FOR UPDATE` sur le compte (lecture simple de `company_id`
+     ou de la ligne). Elles lisent donc d'abord `company_id` par une lecture **verrouillante**
+     (`SELECT company_id FROM accounts WHERE id = ? LOCK IN SHARE MODE`, ou prennent la société en paramètre de
+     l'appelant), puis `companies` en partage, puis les réglages en partage quand le geste touche à une désignation,
+     puis `accounts` `FOR UPDATE` : une lecture simple en tête figerait l'instantané REPEATABLE READ avant l'attente
+     (AC-3). Le test d'existence de ligne d'écriture se fait **après** le `FOR UPDATE` du compte, en lecture
+     verrouillante. La 35-3a lit la devise des comptes `LOCK IN SHARE MODE`
+     (`validate_lines_accounts_in_tx` :135 lit aujourd'hui sans verrou). **Les sites de configuration** : chaque
+     validateur de l'AC-4 (réglages, compte bancaire, article, règle de réconciliation) lit le compte `LOCK IN SHARE
+     MODE` avant d'accepter, et `update` (devise ou rôle posé) lit, sous son `FOR UPDATE`, chaque site qui désigne le
+     compte en lecture verrouillante (`bank_accounts` : même mécanisme que `type_in_share_mode`, 34-11a2) — de sorte
+     que de deux gestes concurrents l'un attend l'autre et voit sa valeur commitée. L'ordre de pose de ces verrous par
+     site est écrit au Change Log. Un test de course par paire : désactivation contre création en devise, désignation
+     contre archivage/retypage, changement de devise contre première ligne, **changement de devise contre
+     désignation (réglages de facturation) et contre lien à un compte bancaire** ;
    - un compte de groupe (non imputable) peut porter une devise (informatif) ; un enfant n'hérite de rien.
 5. **AC-5 — Réinitialisation de la société.** Seul chemin qui vide les comptes en gardant la société :
    `kesh_seed::reset_demo` (`onboarding/reset`) — `accounts` est dans `reset_cleared_tables`, `companies` est
@@ -114,7 +163,11 @@ D1, D2 (fichier d'epic) ; C-35-2 (réglage sur `companies`, sans FK, quatre gard
 6. **AC-6 — Sauvegarde.** Un `.keshbackup` écrit par la 0.17.6 se réimporte (colonnes à leur défaut) ; l'aller-retour
    d'une sauvegarde 35-1 conserve réglage et devises ; l'export CSV des comptes (`serialize_accounts_csv`,
    `csv_tables.rs:265`, en-tête écrit à la main) porte `currency` ; `company.csv` (`serialize_company_csv`, :163)
-   porte les trois colonnes.
+   porte les trois colonnes. Le `.keshbackup` lui-même n'énumère rien à la main (`export_table` lit les colonnes à
+   `information_schema`) : les colonnes neuves y passent seules, le test d'aller-retour le prouve. Le test qui
+   compare les en-têtes des CSV aux colonnes du schéma (`csv_tables.rs`, ~:2395, `entete(|w| serialize_*_csv(&[], w))`)
+   rougit tant que les deux sérialiseurs ne suivent pas ; ses tests unitaires (`serialize_accounts_csv_*`,
+   `serialize_company_csv_*`) portent un cas avec devise et avec réglage actif.
 7. **AC-7 — Écrans.**
    - *Paramètres → Comptabilité* : une case « Comptabilité multi-devises » et, cochée, deux sélecteurs (compte de gains
      de change, compte de pertes de change ; mêmes filtres que l'AC-3), enregistrer, erreurs affichées ; le texte dit que
@@ -125,11 +178,14 @@ D1, D2 (fichier d'epic) ; C-35-2 (réglage sur `companies`, sans FK, quatre gard
      (vide pour CHF). En mono-devise : **aucun** changement visible.
    - Captures d'écran des états touchés (recette visuelle, thème clair), hors du dépôt.
 8. **AC-8 — MCP et services.** `kesh_plan_comptable` (`services/plan_comptable.rs`) donne la devise d'un compte en
-   devise.
+   devise (clé `currency`, absente pour le CHF). Test du service avec un compte en devise et un compte CHF ; le test de
+   contrat du protocole MCP de la CI et tout instantané de la sortie de l'outil sont relus (la sortie grossit).
 9. **AC-9 — i18n.** Toutes les chaînes neuves dans les quatre locales (`fr-CH`, `de-CH`, `it-CH`, `en-CH`),
    `lint-i18n-ownership` vert.
 10. **AC-10 — Manuel utilisateur** (`docs/manual/fr/user-manual.tex`) : section « Comptabilité multi-devises » —
-    activer, comptes de différences de change, devise d'un compte et son verrou ; PDF régénéré et contrôlé
+    activer, comptes de différences de change, devise d'un compte et son verrou — **dit que le verrou est définitif**
+    (une écriture sur un compte en devise ne se défait que par sa suppression ; tant qu'un compte porte une devise,
+    archivés compris, on ne revient pas en mono-devise) ; PDF régénéré et contrôlé
     (`pdftotext | tr`). Aucun plan livré n'a de compte « Différences de change » (`pme.json:76-78` : 6900, 6940,
     6950) : le manuel dit quoi choisir ou créer (p. ex. 6840). Si le manuel cite la route
     `PUT /api/v1/companies/current/currency-settings`, ajouter l'entrée à `MULTI_SOCIETE_ASSUME` de
@@ -142,16 +198,18 @@ D1, D2 (fichier d'epic) ; C-35-2 (réglage sur `companies`, sans FK, quatre gard
       `BASE_CURRENCY = "CHF"` ; tests (AC-4).
 - [ ] `kesh-db` : `Company` + `FIND_BY_ID_SQL`/`LIST_SQL` (`companies.rs:24,29`) ; `Account`/`NewAccount`/
       `AccountUpdate` + macro `columns!` ; `companies::update_currency_settings` (gardes C-35-2, verrous AC-3) ;
-      `accounts::create/update/archive_guarded/reactivate` (verrous, gardes AC-4) ; `is_no_op_change` (:533-540) et
+      `accounts::create/update/archive_guarded/reactivate` (verrous, gardes AC-4) ; `is_no_op_change` (:530-537) et
       `account_snapshot_json` (:57) avec `currency` ; `bulk_create` (:1146) et `bulk_create_from_chart_in_tx` (:1256)
       lient `currency` (leurs `INSERT` l'ignoreraient sinon en silence ; plans livrés et assistant : `NULL`) ;
       gardes croisées de l'AC-4 dans les réglages de facturation, comptes bancaires, articles, règles de
       réconciliation, factures fournisseur ; `reset_to_stub_in_tx` (AC-5) ; `test_fixtures.rs`, seed.
-- [ ] `kesh-api` : `CompanyJson` (`companies.rs:30`, miroir écrit à la main) ; `serialize_accounts_csv` et
+- [ ] `kesh-api` : `CompanyJson` (`routes/companies.rs:31`, miroir écrit à la main) ; `serialize_accounts_csv` et
       `serialize_company_csv` (AC-6).
 - [ ] `kesh-api` : routes, DTO, codes d'erreur (`errors.rs` + i18n), audit (`audit_labels.rs`), MCP (AC-2 à AC-8).
 - [ ] Frontend : `settings` (section Comptabilité), `accounts` (champ, colonne), types, API, Vitest (AC-7).
-- [ ] Manuel (AC-10), CHANGELOG `[Unreleased]`.
+- [ ] `kesh-api` : registre des routes d'audit et phrase du manuel d'administration (AC-3).
+- [ ] Manuel (AC-10), CHANGELOG `[Unreleased]` (nouveau champ `currency` du compte, absent = inchangé ; réglage
+      réservé à l'Administrateur, hors clé d'API).
 - [ ] Tests : dépôt (gardes, verrou, reset), API (codes), sauvegarde (AC-6), E2E Playwright (activer le mode, créer un
       compte USD, verrou après une écriture passée par l'API).
 
@@ -169,7 +227,9 @@ D1, D2 (fichier d'epic) ; C-35-2 (réglage sur `companies`, sans FK, quatre gard
 - Marqueur de plan comptable pour un compte de différences de change (sur le modèle de `roundingDifference`) : hors
   périmètre, à noter au registre pour plus tard.
 - La liste ISO 4217 est **embarquée** (pas de dépendance réseau) ; une devise absente des cours AFC reste admise (cours
-  manuel, 35-3).
+  manuel, 35-3). Elle ne porte que des **monnaies** : les codes réservés (`XXX`, `XTS`), les métaux (`XAU`, `XAG`,
+  `XPT`, `XPD`), les droits de tirage (`XDR`) et les unités de fonds en sont exclus ; `CHF` y figure (normalisé à
+  `NULL` par l'AC-4).
 - `CHECK` : collation binaire de la colonne **et** `BINARY` dans les `CHECK` (AC-1) — `20261110000001` ne met
   `BINARY` que sur son `IN`, son `REGEXP` ne porte que sur des chiffres : ne pas le recopier tel quel.
 
@@ -177,3 +237,9 @@ D1, D2 (fichier d'epic) ; C-35-2 (réglage sur `companies`, sans FK, quatre gard
 
 - 2026-11-14 — fiche rédigée.
 - 2026-11-14 — validation P1 (Opus) : 0 CRITICAL, 2 HIGH, 9 MEDIUM, 5 LOW ; tous remédiés.
+- 2026-11-14 — validation P2 (Sonnet) : 0 CRITICAL, 1 HIGH, 5 MEDIUM, 4 LOW dans la fiche, plus 3 inter-fiches (1 MEDIUM,
+  2 LOW) ; remédiés dans la fiche sauf IF-1 (35-3a, `FOR SHARE` → `LOCK IN SHARE MODE`), IF-2 (35-3a AC-5, « ici »)
+  et IF-3 (35-2, décompte du registre des routes). Les cinq choix de conception de cette passe — `currency` absent d'un
+  `PUT` de compte = inchangé (et non 400, P2-4) ; lectures verrouillantes avant tout `COUNT` (P2-1) ; verrous des
+  sites de configuration (P2-2) ; ordre des refus (P2-5) ; liste des comptes en devise dans `MULTI_CURRENCY_IN_USE`
+  (P2-6) — sont de l'orchestrateur de la passe, à confirmer par la P3.

@@ -34,10 +34,14 @@ récupération pour un mois donné, afin que mes écritures en devise reçoivent
      (currency, month), CHECK (DAY(month) = 1), CHECK (rate_per_unit > 0), CHECK (published_unit > 0),
      CHECK (BINARY currency REGEXP '^[A-Z]{3}$'))` — `INT` et non `SMALLINT` (unités jusqu'à 10000 relevées) ; le
      `CHECK` binaire parce que la collation `_ci` confondrait `usd` et `USD` ;
-   - `_kesh_exchange_rate_fetch` singleton : `id` (`CHECK (id = 1)`), `trigger ENUM('auto','manual')`, `last_run_at`,
-     `last_status` (`CHECK IN ('ok','error','not_published')`), `last_error VARCHAR(64)` — **un code classé**, jamais
-     le texte d'une erreur `reqwest` (qui porte l'URL) : `timeout`, `connect`, `http_status:<n>`, `too_large`,
-     `malformed`, `month_mismatch`, `no_valid_rate`, `invalid_rates:<n>` —, `last_month DATE`. **Ligne créée
+   - `_kesh_exchange_rate_fetch` singleton : `id` (`CHECK (id = 1)`), `triggered_by ENUM('auto','manual')` (**pas
+     `trigger`** : mot réservé de MariaDB ; le champ JSON de l'API s'appelle `trigger`, lu depuis cette colonne),
+     `last_run_at`, `last_status` (`CHECK IN ('ok','error','not_published')`), `last_error VARCHAR(64)` — **un code
+     classé**, jamais le texte d'une erreur `reqwest` (qui porte l'URL) : `timeout`, `connect`, `http_status:<n>`,
+     `too_large`, `malformed`, `month_mismatch`, `no_valid_rate`, `invalid_rates:<n>` —, `last_month DATE`. Le tour
+     d'une récupération écrit **une** ligne : `ok` (avec `last_error = invalid_rates:<n>` si des devises ont été
+     écartées), `not_published` ou `error` ; un tour de la boucle qui traite deux mois écrit le **pire** des deux
+     statuts (`error` > `not_published` > `ok`) et `last_month` du mois en cause (à égalité, le plus récent). **Ligne créée
      paresseusement** (aucune écriture de données dans la migration, P7 sans objet ; le dump `--no-data` de
      `regen-test-schema.sh` n'a rien à réinjecter), écrite par `INSERT … ON DUPLICATE KEY UPDATE` ;
    - inscrites à `TABLES_SYSTEME` (`crates/kesh-db/src/backup.rs` :949, lue par `backup_inventory_matches_schema` et
@@ -49,13 +53,17 @@ récupération pour un mois donné, afin que mes écritures en devise reçoivent
      importable.
 2. **AC-2 — Analyse XML** dans `kesh-core` (pure, sans I/O) : `parse_monthly_rates(xml) -> Result<MonthlyRates>`
    (mois, liste `{currency, published_unit, published_rate, rate_per_unit}`), `rate_per_unit = published_rate /
-   published_unit` exact (`Decimal`) ; code mis en majuscules et validé (trois lettres). Parseur `quick-xml = "0.42"`
+   published_unit` (`Decimal`, exact pour les unités puissances de dix relevées), **arrondi à 10 décimales**
+   (`round_dp(10)`, la précision de la colonne : la valeur lue par `FX_RATE_NOT_AFC` est celle qui est stockée) ; code mis en majuscules et validé (trois lettres). Parseur `quick-xml = "0.42"`
    (déjà au `Cargo.lock` par `kesh-import` et `kesh-payment`, dépendance neuve de `kesh-core`), lecture **par noms
    locaux** (la racine porte un `xmlns` par défaut), éléments inconnus ignorés (`land_de`, `land_fr`, `land_it`).
    - **Unité** : entier positif en tête de `<waehrung>` (1, 100, 1000, 10000 relevés — aucune liste fermée), le code
      qui suit doit égaler l'attribut `code` (casse ignorée).
    - **Tolérance par devise** : une devise invalide (cours ≤ 0, unité ou code illisible, code et `<waehrung>`
-     discordants, doublon — les deux occurrences) est **écartée**, rendue dans `MonthlyRates.rejected` et journalisée
+     discordants, doublon — les deux occurrences) est **écartée**, **comme toute devise que la base refuserait** :
+     unité > 1 000 000, cours publié ≥ 10⁹ (borne de `DECIMAL(19,6)`), `rate_per_unit` arrondi à 0 ou ≥ 10¹⁰
+     (borne de `DECIMAL(20,10)`) — sans quoi un `INSERT` refusé annulerait la transaction du mois entier (500) au
+     lieu d'écarter la seule devise fautive ; elle est rendue dans `MonthlyRates.rejected` et journalisée
      par l'appelant (`tracing::warn!`, `last_error = invalid_rates:<n>`) ; les autres s'écrivent. Une seule devise
      fautive (p. ex. un cours publié `0.0000`) ne bloque donc jamais USD ni EUR.
    - **Refus du mois entier** seulement si : XML mal formé, `<monat>` absent ou illisible, ou aucune devise valide
@@ -64,26 +72,37 @@ récupération pour un mois donné, afin que mes écritures en devise reçoivent
      n'est versionné : conditions d'utilisation SIX) avec unités 1, 100, 1000 et 10000 et un cours à 0.0009 ; tests du
      cas vide, des refus du mois et des écarts par devise.
 3. **AC-3 — Source des cours et client HTTP** (`kesh-api`, module `exchange_rates`).
-   - **Trait `RateSource`** (`async fn fetch_month(year, month) -> Result<String, SourceError>`), porté par `AppState`
-     (`rate_source: Arc<dyn RateSource>`, précédent `mailer: Arc<dyn Mailer>` / `test_mock_mailer`, `lib.rs:84-98`,
-     et `BackupEnv` de la sauvegarde automatique ; `AppState::new_for_tests` reçoit une source factice par défaut).
+   - **Trait `RateSource`** (`fn fetch_month(&self, year, month) -> Pin<Box<dyn Future<Output = Result<String,
+     SourceError>> + Send + '_>>` : **objet-safe sans `async_trait`**, comme `Mailer`, `mail/mod.rs:12` et `:32` — un
+     `async fn` dans un trait n'est pas utilisable en `dyn`), porté par `AppState` (`rate_source: Arc<dyn
+     RateSource>`, précédent `mailer: Arc<dyn Mailer>` / `test_mock_mailer`, `lib.rs:84-98`, et `BackupEnv` de la
+     sauvegarde automatique ; `AppState::new_for_tests` reçoit une source factice par défaut).
+   - **Champs neufs d'`AppState`** : `rate_source`, `rate_fetch_lock: Arc<tokio::sync::Mutex<()>>`, `rate_fetch_memo`
+     (la mémoire des 15 minutes de l'AC-5, `Arc<std::sync::Mutex<HashMap<(i32, u32), …>>>`) et
+     `test_rate_source: Option<MockRateSource>` (poignée du mode test, comme `test_mock_mailer`). **Sites de
+     construction littérale à compléter** (inventaire au `grep -rn "AppState {"`, à relancer) : `main.rs:439`,
+     `middleware/auth.rs:285`, `AppState::new_for_tests` (`lib.rs:119`), et les tests `password_recovery_e2e.rs:126`,
+     `invoice_frozen_pdf_e2e.rs:101`, `invoice_send_email_e2e.rs:104`, `:1036`, `:1150`, `setup_admin_e2e.rs:82` ;
+     l'échec de compilation les inventorie.
    - **Production** : `HttpRateSource`, URL de base **constante** `https://www.backend-rates.bazg.admin.ch`, **aucune
      variable d'environnement** ne la change. Les tests Rust construisent `HttpRateSource::with_base_url(…)`
      (`pub(crate)` ou `#[cfg(test)]`) contre un serveur axum local en HTTP.
    - **`KESH_TEST_MODE`** : `main.rs` substitue une **source factice** (XML synthétique en mémoire, aucun appel
-     sortant — la boucle comprise), pilotée par un endpoint `/api/v1/_test/exchange-rates/source` (réponse servie :
-     XML, vide, erreur, délai) monté avec les autres routes `_test` ; il entre au registre (`TEST_ENDPOINT_ROUTES`,
-     total 149 → 150). La recette E2E de `CLAUDE.md` et de `docs/testing.md` reste inchangée.
+     sortant — la boucle comprise), pilotée, par la poignée `test_rate_source`, par un endpoint `POST /api/v1/_test/exchange-rates/source` (réponse
+     servie : XML, vide, erreur, délai ; **XML synthétique par défaut** tant que rien n'est piloté, pour que la boucle
+     ne rende jamais d'erreur au hasard d'une spec) monté avec les autres routes `_test` ; il entre au registre (`TEST_ENDPOINT_ROUTES` : +1,
+     détail des totaux à l'AC-5). La recette E2E de `CLAUDE.md` et de `docs/testing.md` reste inchangée.
    - `reqwest` en dépendance de production, `default-features = false`, `rustls-tls` ; `.use_rustls_tls()` explicite
      (la dev-dependency garde ses fonctionnalités par défaut — native-tls, cookies — qui s'unifient dans les builds de
      test) ; `redirect(Policy::none())` ; `https_only(true)` pour l'URL de production ; `connect_timeout` 5 s et délai
      total 20 s ; pas de magasin de cookies (la source pose `rates_service_session`) ; réponse limitée à 1 MiB
      (`Content-Length` contrôlé puis lecture par `chunk()` bornée) ; `User-Agent: Kesh/<version>` sans donnée
-     personnelle. `Cargo.lock` change (entrée `reqwest` : `rustls`, `tokio-rustls`, `webpki-roots` 1.0.11, déjà au
-     lock) et se commite ; `rustls-tls` embarque `webpki-roots`, l'image a de toute façon `ca-certificates`
+     personnelle. `Cargo.lock` change (l'entrée `reqwest` gagne les dépendances `rustls` ; crates déjà au lock, la liste exacte se
+     constate au build et non ici) et se commite ; `rustls-tls` embarque `webpki-roots`, l'image a de toute façon `ca-certificates`
      (`Dockerfile:20`) ; le build Docker (`cargo build --release -p kesh-api`) n'a rien d'autre à changer.
-   - **Une seule récupération à la fois** (verrou `tokio::sync::Mutex` dans `AppState`, comme `backup_lock`) ;
-     écriture en **une transaction** : `INSERT … ON DUPLICATE KEY UPDATE` des devises valides du mois ; un échec du mois
+   - **Une seule récupération à la fois** (`rate_fetch_lock`, `tokio::sync::Mutex` dans `AppState`, comme
+     `backup_lock` ; **la boucle l'attend** — elle ne saute pas son tour —, un `POST /fetch` l'attend aussi, borné par
+     le délai total de 20 s de la requête sortante) ; écriture en **une transaction** : `INSERT … ON DUPLICATE KEY UPDATE` des devises valides du mois ; un échec du mois
      n'écrit aucun cours.
 4. **AC-4 — Récupération automatique.** Une boucle `exchange_rates::spawn(state)` sur le modèle de
    `auto_backup::spawn` (`auto_backup.rs:788`) : **premier tour 5 minutes après le démarrage**, puis toutes les 6 h
@@ -95,9 +114,13 @@ récupération pour un mois donné, afin que mes écritures en devise reçoivent
    la recopier (DRY). Sautée si **aucune** société n'a `multi_currency_enabled` (aucun trafic sortant en
    mono-devise) ; à chaque tour : récupère le **mois courant** s'il manque (publié en début de mois), et le **mois
    précédent** s'il manque — « manque » = aucune ligne pour ce mois. « Mois courant » s'entend en
-   **Europe/Zurich**, non en UTC (précédent #889). Un échec se journalise (`tracing::warn!`), s'écrit dans
-   `_kesh_exchange_rate_fetch` (`trigger = 'auto'`) et se retente au tour suivant ; jamais bloquant au démarrage.
-   Non auditée (C-35-6). **Seule la boucle** écrit `trigger = 'auto'`.
+   **Europe/Zurich**, non en UTC (même principe que #889, qui est une correction du frontend : le backend n'a aucune
+   aide de fuseau). `chrono-tz` n'est aujourd'hui au `Cargo.lock` (0.10.4) que par `rxing` : l'ajouter comme
+   **dépendance directe** de `kesh-api` (`chrono-tz = "0.10"`) et poser **une** fonction `mois_courant_zurich(now)`,
+   partagée par la boucle et par la borne du `POST /fetch`, testée aux deux bords du mois (31 → 1er, UTC contre
+   Zurich). Un échec se journalise (`tracing::warn!`), s'écrit dans
+   `_kesh_exchange_rate_fetch` (`triggered_by = 'auto'`) et se retente au tour suivant ; jamais bloquant au démarrage.
+   Non auditée (C-35-6). **Seule la boucle** écrit `triggered_by = 'auto'`.
 5. **AC-5 — API.**
    - `GET /api/v1/exchange-rates?month=AAAA-MM[&currency=USD]` : cours du mois (toutes devises ou une) ;
    - `GET /api/v1/exchange-rates/status` : état de `_kesh_exchange_rate_fetch` (`trigger`, date, statut, code
@@ -105,14 +128,18 @@ récupération pour un mois donné, afin que mes écritures en devise reçoivent
    - `POST /api/v1/exchange-rates/fetch { year, month }` — dans **`comptable_routes`** (Administrateur ou Comptable ;
      mois ≥ 2000-01 et ≤ mois courant en Europe/Zurich, sinon 400) : récupère ce mois, **auditée sous l'utilisateur**
      (`exchange_rates.fetched`, mois, nombre de devises écrites et écartées) ; écrit `_kesh_exchange_rate_fetch` avec
-     `trigger = 'manual'` ; réponses `200 {month, count, rejected}`, `404 RATE_NOT_PUBLISHED`,
+     `triggered_by = 'manual'` ; réponses `200 {month, count, rejected}`, `404 RATE_NOT_PUBLISHED`,
      `503 RATE_SOURCE_UNAVAILABLE` (code explicite, message sans URL ni trace — **jamais 502** : le frontend lit 502 et
-     504 comme une issue inconnue venue d'un proxy, `frontend/src/lib/shared/utils/unknown-outcome.ts`). Un mois
-     `not_published` ou en échec n'est pas redemandé à la source avant 15 minutes (état en mémoire) : la réponse
-     d'origine est rendue ;
+     504 comme une issue inconnue venue d'un proxy, `frontend/src/lib/shared/utils/unknown-outcome.ts`). **Tout**
+     échec de récupération se rend ainsi — `timeout`, `connect`, `http_status`, `too_large`, mais aussi `malformed`,
+     `month_mismatch` et `no_valid_rate` (la source a répondu, inutilisablement) : jamais 500 ; le code classé va à
+     `last_error`, pas à l'utilisateur. Un mois `not_published` ou en échec n'est pas redemandé à la source avant 15
+     minutes (`rate_fetch_memo`, clé `(année, mois)`, alimentée aussi par la boucle) : la réponse d'origine est
+     rendue, sans nouvelle ligne d'audit ni écriture de `_kesh_exchange_rate_fetch` ;
    - `GET /api/v1/exchange-rates/lookup?currency=USD&date=AAAA-MM-JJ` — **en lecture seule**, sans appel sortant ni
-     écriture ni audit, ouverte à tout rôle authentifié : cours du mois de la date, ou
-     `404 RATE_UNAVAILABLE {currency, month}` (jamais 1.0). L'écran de saisie (35-3b) et la réévaluation (35-5)
+     écriture ni audit, ouverte à tout rôle authentifié : cours du mois de la date
+     (`200 { currency, month: "AAAA-MM-01", ratePerUnit, publishedUnit, publishedRate }`, décimaux en chaînes, forme
+     lue par 35-3b), ou `404 RATE_UNAVAILABLE {currency, month}` (jamais 1.0). L'écran de saisie (35-3b) et la réévaluation (35-5)
      appellent `POST /fetch` sur ce 404 (rôles Administrateur et Comptable), puis relisent ; sans cours, saisie
      manuelle. Devise `CHF` ou hors ISO → 400.
    - Toutes ces routes exigent le mode multi-devises de la société courante : **`409 MULTI_CURRENCY_DISABLED`**, même
@@ -124,10 +151,12 @@ récupération pour un mois donné, afin que mes écritures en devise reçoivent
      (précédent `admin.backup_run`, `routes/backup_schedule.rs:177-191`, `emit_audit` après coup — la table est
      globale et `audit_log.entity_id` est `NOT NULL`) ; clé `audit-log-action-exchange-rates-fetched` dans les quatre
      locales. `POST /fetch` entre dans `LIB_ROUTES` (`tests/audit_route_registry.rs`, `Traced, SansEcritureAuJournal`) :
-     `the_registry_partition_is_what_the_story_declares` passe de 146 à 147 routes et de 139 à 140 tracées (à cumuler
-     avec les routes de la 35-1), le total registre de 149 à 150 avec l'endpoint `_test` ; la phrase du manuel
-     d'administration (`admin-manual.tex:3217`, « 139 des 146 routes à verbe mutant » et « 139 + 4 + 3 = 146 », gardée
-     par `le_manuel_dit_le_compte_du_registre`) suit.
+     `the_registry_partition_is_what_the_story_declares` gagne **+1 route et +1 tracée** (état au 2026-11-14 : 146 routes,
+     139 tracées, total registre 149 ; **ces chiffres s'écrivent en deltas** — la 35-1 et la 35-5 ajoutent aussi leur
+     route mutante, l'ordre d'intégration décide du chiffre absolu, à recompter au code), et le total registre **+2**
+     avec l'endpoint `_test` (entrée `("post", "/exchange-rates/source", Exempt(…), Exemptee(…))` de
+     `TEST_ENDPOINT_ROUTES`) ; la phrase du manuel d'administration (`admin-manual.tex:3217`, « N des M routes à verbe
+     mutant » et « N + 4 + 3 = M », gardée par `le_manuel_dit_le_compte_du_registre`) suit le chiffre recompté.
 6. **AC-6 — Écran** *Paramètres → Cours de change* (visible en multi-devises) : choix du mois, tableau
    (devise, unité publiée, cours publié, cours par unité, date de récupération), filtre par devise, bouton
    « Récupérer ce mois » (Administrateur et Comptable seulement), état de la dernière récupération (automatique ou
@@ -155,8 +184,12 @@ récupération pour un mois donné, afin que mes écritures en devise reçoivent
 - [ ] Tests : parseur (fixture : unités 1/100/1000/10000, devise écartée, mois refusé) ; client contre un serveur HTTP
       local (délai, 500, redirection non suivie, XML tronqué, corps trop gros, mois différent → rien d'écrit) ;
       `un_tour` sauté en mono-devise ; `un_tour` contre une source injoignable rend sans paniquer, écrit `error` et
-      `trigger = 'auto'`, ne touche aucun cours ; `lookup` n'écrit rien et ne sort pas ; `POST /fetch` refusé au rôle
-      Consultation, audité, `trigger = 'manual'` ; aucune trace d'audit en automatique ; deux `POST /fetch` simultanés
+      `triggered_by = 'auto'`, ne touche aucun cours ; `lookup` n'écrit rien et ne sort pas ; `POST /fetch` refusé au rôle
+      Consultation, audité, `triggered_by = 'manual'`, 409 `MULTI_CURRENCY_DISABLED` en mono-devise (les quatre routes),
+      400 hors bornes de mois, mémoire de 15 minutes (un mois `not_published` n'est pas redemandé, ni audité deux
+      fois), `malformed` / `month_mismatch` / `no_valid_rate` → 503 sans rien écrire, `lookup` `CHF` → 400,
+      `mois_courant_zurich` aux bords du mois, devise aux bornes hors `DECIMAL` écartée sans annuler les autres,
+      `last_status` d'un tour à deux mois (le pire) ; aucune trace d'audit en automatique ; deux `POST /fetch` simultanés
       sérialisés ; E2E (écran, récupération servie par la source factice du mode test).
 - [ ] Manuels, CHANGELOG, `Cargo.lock`.
 
@@ -175,3 +208,5 @@ récupération pour un mois donné, afin que mes écritures en devise reçoivent
 - 2026-11-14 — fiche rédigée.
 - 2026-11-14 — validation P1 (Opus) : 0 CRITICAL, 2 HIGH, 8 MEDIUM, 9 LOW ; remédiés ; alignement de 35-3b/35-5 sur
   POST /fetch et du tableau de l'epic portés par l'orchestrateur.
+- 2026-11-14 — validation P2 (Sonnet) : 0 CRITICAL, 0 HIGH, 8 MEDIUM, 8 LOW ; remédiés dans la fiche sauf P2-14, P2-15
+  et P2-16 (inter-fiches : 35-1 et 35-5, 35-3b, fichier d'epic).
