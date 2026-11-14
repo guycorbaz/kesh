@@ -532,6 +532,9 @@ test.describe('R0 — l’éclatement joué depuis l’écran (#1150, #1151)', (
 	}, testInfo) => {
 		const cents = centimesUniques(20000);
 		await avecEclatement(page, cents, 'R0 (h)', async (t) => {
+			// Le champ de compte de la ligne 1 a le focus à l'ouverture, et sa liste ouverte couvre
+			// *Ajouter une ligne* : le quitter d'abord (clic sur le rappel de la transaction).
+			await t.modal.getByTestId('split-tx-summary').click();
 			for (let k = 0; k < 4; k++) await t.modal.getByTestId('split-add-line').click();
 			await expect(t.modal.getByTestId('split-row-5')).toBeVisible();
 			const champ = champCompte(t.modal, 5);
