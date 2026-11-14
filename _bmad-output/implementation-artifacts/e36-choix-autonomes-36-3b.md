@@ -24,7 +24,8 @@ contexte, option retenue, options écartées, réversibilité.
   prix : un prix effacé partirait à zéro sans rien dire. Aujourd'hui, `new Big('')` lève et la ligne est refusée
   « valeurs numériques invalides » (`InvoiceForm.svelte:509-518`).
 - **Retenu** : une fonction pure `unitPricePayload(raw)` dans `invoice-helpers.ts` — `payload` d'une lecture `clear`,
-  `null` sinon (vide compris) ; le vide garde son message d'aujourd'hui.
+  `null` sinon (vide compris) ; le vide garde son message d'aujourd'hui. *(Annoté au développement : posée dans
+  `unit-price.ts`, C-36-3b-8.)*
 - **Écartées** : (a) `journalAmountPayload` — envoie 0 en silence ; (b) le modifier — interdit par C-e360-17.
 - **Réversible** : oui.
 
@@ -35,7 +36,9 @@ contexte, option retenue, options écartées, réversibilité.
   article au prix légitime d'un franc vingt-trois et quatre dixièmes de centime serait refusé comme ambigu.
 - **Retenu** : `unitPriceFieldValue(raw)` dans `invoice-helpers.ts` : `readableAmount(raw, 2)`, sauf si
   `readJournalAmount` la juge ambiguë — alors `new Big(raw).toFixed(4)` (« 1.2340 »), forme jamais ambiguë (quatre
-  décimales). Appelée aux trois sites (`:122`, `:453`, `:650`).
+  décimales). Appelée aux trois sites (`:122`, `:453`, `:650`). *(Annoté au développement : posée dans
+  `unit-price.ts`, C-36-3b-8 ; seule une forme qui serait ambiguë passe aux quatre décimales — « 0.1230 » se rouvre
+  `0.123`, revue P1, A2.)*
 - **Écartées** : (a) modifier `readableAmount` — partagé par la facture fournisseur et trois écrans de détail ;
   (b) toujours quatre décimales — défait la lisibilité de la v0.17.1 (#878, `100.00`).
 - **Réversible** : oui.
@@ -80,7 +83,9 @@ contexte, option retenue, options écartées, réversibilité.
   juge.
 - **Retenu** : la charge prend `unitPricePayload` de chaque ligne ; une valeur `null` arrête l'envoi et affiche
   `validateClient()`, `submitting` remis à faux. Testé (le mock de `getInvoiceSettings` change le prix avant de
-  résoudre).
+  résoudre). *(Annoté à la remédiation de la revue P1, B2 : la charge et `validateClient` lisent le prix par
+  `readLineUnitPrice(i, raw)` du composant, qui rend la charge ou le refus de la ligne en cause ; le bandeau affiche ce
+  refus, sans repli inatteignable.)*
 - **Écartées** : envoyer `payload!` sans garde — une course rendrait `"unitPrice": null`.
 - **Réversible** : oui.
 

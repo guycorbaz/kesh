@@ -296,7 +296,11 @@ passe sur la facture sans signal — ce que seule #1173 corrige. Un article au p
    \textbf{\texttt{1.250} est refusé comme ambigu}~: écrivez \texttt{1'250} pour mille deux cent cinquante francs, ou
    \texttt{1.2500} pour un franc vingt-cinq~; la facture ne s'enregistre pas tant qu'une ligne porte un prix ambigu ou
    illisible, et le message nomme la ligne. Un prix enregistré au millième se rouvre sur quatre décimales
-   (\texttt{1.2340}), forme qui n'est pas refusée. La quantité n'est pas concernée. » Le PDF se régénère **à
+   (\texttt{1.2340}), forme qui n'est pas refusée. La quantité n'est pas concernée. » *(Revue P1, A2 / E1 : la phrase
+   sur la réouverture devient « Un prix enregistré qui se lirait ambigu une fois écrit au plus court (\texttt{1.234}) se
+   rouvre sur quatre décimales (\texttt{1.2340}), forme qui n'est pas refusée~; un autre prix se rouvre sous sa forme
+   la plus courte, deux décimales au moins (\texttt{0.125}, \texttt{1000.123}, \texttt{100.00}). » — « 0.1230 » se
+   rouvre `0.123`.)* Le PDF se régénère **à
    l'intégration** (fichier d'epic, *Fichiers communs*) ; contrôle aplati :
    `pdftotext docs/manual/fr/user-manual.pdf - | tr '\n' ' ' | tr -s ' ' | /usr/bin/grep -c 'est refusé comme ambigu'`
    ≥ 1 (0 dans le `.tex` à `b1cd53d28` : `git grep -c "est refusé comme ambigu" -- docs/manual/fr/user-manual.tex` vide).
@@ -359,7 +363,7 @@ Une mutation équivalente se dit au Dev Agent Record ; les E2E ne se rejouent pa
 - [x] E2E (AC6), rouge d'abord.
 - [x] Manuel (AC8), `.tex` seul ; captures (AC10).
 - [x] Mutations M1-M11 (et M9b, M12 à M14).
-- [ ] Gates (voie 2, — *passage en `review` fait ; clôture à venir* `e35-dev-commun.md` § *Quels gates, quand*) : en cours, Vitest ciblé
+- [ ] Gates — *clôture à venir* (passage en `review` et remédiation P1 faits, Dev Agent Record) — (voie 2, `e35-dev-commun.md` § *Quels gates, quand*) : en cours, Vitest ciblé
       (`components/invoices/`, `features/invoices/invoice-helpers.test.ts`, `shared/i18n-keys.test.ts`) par
       `.gate-front.lock`, `npm run check` et `lint-i18n-ownership` ; **passage en `review`** : bases `kesh_e363b` remises
       à neuf sur la voie 2, `scripts/test-fast.sh --ci`, `scripts/gate-ci.sh kesh_ci_e363b` (voie 1, son verrou),
@@ -379,8 +383,8 @@ Une mutation équivalente se dit au Dev Agent Record ; les E2E ne se rejouent pa
   de milliers avant — n'est plus lu 1,25 franc en silence : il est refusé comme ambigu, la facture ne s'enregistre pas,
   et le message dit comment l'écrire (`1'250` ou `1.2500`). L'apostrophe des milliers et la virgule décimale sont
   désormais acceptées dans le prix (`1'250`, `1,25`) ; la saisie à exposant (`1e3`) ou sans chiffre avant ou après
-  le point (`.5`, `5.`) n'est plus lue. Un prix enregistré au millième se rouvre sur quatre décimales (`1.2340`) et
-  n'est pas refusé. (refs #1171)
+  le point (`.5`, `5.`) n'est plus lue. Un prix enregistré qui se lirait ambigu une fois écrit au plus court
+  (`1.234`) se rouvre sur quatre décimales (`1.2340`) et n'est pas refusé. (refs #1171)
 
 ## Dev Notes
 
@@ -477,7 +481,9 @@ script `mut/mut-36-3b.py`) ; `test-fast-ci-review.log`, `gate-ci-review.log`, `f
   `03-prix-12-34-illisible.png`, `04-prix-1-250-fois-2-total-2500.png`, `05-brouillon-rouvert-prix-1.2340.png`
   (brouillon créé par l'API au prix `1.2340`, rouvert en édition : « 1.2340 », `captures.log`). Constat : le bandeau
   d'erreur reste affiché après correction du prix jusqu'au prochain envoi (capture 04) — comportement d'avant la story
-  pour tous les refus de `validateClient` ; issue demandée.
+  pour tous les refus de `validateClient` ; issue demandée. *(Annoté à la remédiation P1, A3 : la capture 03 le montre
+  aussi — champ « 12'34 » et message « Montant illisible » sous lui, bandeau « Ligne 1 : prix unitaire ambigu » resté
+  de la tentative d'avant ; issue #1191. Les captures 01, 02 et 05 n'en portent pas.)*
 - **Gates du passage en `review`**, au dernier commit de code `de75ba63d` (bases `kesh_e363b` et `kesh_e2e_e363b`
   remises à neuf sur la voie 2, 91 migrations, seed) :
   - `scripts/test-fast.sh --ci` (voie 2) : **5445 exécutés, 5445 passés, 13 ignorés**, 1 instable —
@@ -495,7 +501,26 @@ script `mut/mut-36-3b.py`) ; `test-fast-ci-review.log`, `gate-ci-review.log`, `f
 - **Écarts à la consigne Edit** : aucun sur le code, les tests ni la fiche. Les mutations passent par le script
   versionné `mut/mut-36-3b.py` (permis) ; un `cp` a gardé le premier journal E2E rouge (`e2e-rouges-r1.log`).
 - **Hors périmètre, issue demandée** : la quantité et la description retapées pendant l'attente des réglages (V1-6) ;
-  le bandeau qui reste après correction.
+  le bandeau qui reste après correction. *(Ouvertes depuis : #1190, #1191 ; le test instable : #1189, KF-062.)*
+- **Remédiation de la revue P1** (B 0/0/0/4, E 0/0/0/4, A 0/0/0/4 ; `review-p1-{B,E,A}.md`), commit de code
+  `6cb932bd6`, `b06fe15f2`, `e7aaa3efa` (dernier commit de code) — détail au Change Log :
+  - **Sept tests neufs** au `describe` 36-3b de `InvoiceForm.test.ts` (Vitest 3577 → 3584) : deux « Ligne 2 », trois
+    d'ordre, deux de l'attente des réglages.
+  - **Mutations** au commit `e7aaa3efa` (`mut/r1-final/resume.log`, script `mut/mut-36-3b.py`, `MUT_ROUND=r1-final`) :
+    **18 tuées sur 18** — R1-M1, R1-M2, M3 à M9, M9b, R1-M10, R1-M11, M12, R1-M13, M14, et les neuves R1-M15
+    (`{ line: 1 }`), R1-M16 (prix après la quantité), R1-M17 (charge lue avant l'attente). M1, M2, M10, M11, M13 sont
+    reprises en R1-* sur les ancres de `readLineUnitPrice`. Les passages intermédiaires sont gardés sous `mut/r1/`
+    (`resume-1.log`, `resume-2.log`).
+  - **A1** : les trois tests d'AC4 portent leurs assertions en `expect.soft` ; le décompte des messages passe par
+    `querySelectorAll` (sous mutation, plusieurs lignes portent le message et `queryByTestId` levait, `mut/r1/` premier
+    passage) ; `prixEnvoyes()` rend `[]` sans charge (une assertion rougit au lieu d'une exception). Sous M3, M4 et M5
+    (`mut/r1-final/M3.log`, `M4.log`, `M5.log`), le journal nomme les cinq assertions rougies : « forme rouverte »,
+    « message sous le champ », « bandeau », « charge partie », « charge envoyée ».
+  - **Gates de remédiation** au commit `e7aaa3efa` (bases de la voie 2 remises à neuf, 91 migrations) :
+    `scripts/test-fast.sh --ci` **5445 passés, 13 ignorés**, aucun instable (`test-fast-ci-r1.log`) ; `npm run check`
+    0 erreur, 29 avertissements ; `lint-i18n-ownership` PASS ; `test:unit` **3584 tests, 236 fichiers** ; `build` vert
+    (`front-*-r1.log`) ; E2E ciblé `invoices.spec.ts` **21 passés** (`e2e-cible-r1.log`). **Ni `gate-ci` ni E2E
+    complet** : à la clôture.
 
 ### File List
 
@@ -538,3 +563,30 @@ script `mut/mut-36-3b.py`) ; `test-fast-ci-review.log`, `gate-ci-review.log`, `f
 - 2026-11-14 — **Développement** (Opus 5.5) : tests d'abord (`rouges.log`), correctif `9a68c086d`, E2E rouge puis vert et
   manuel `de75ba63d`, captures, mutations (15/15 tuées). Choix C-36-3b-8 à C-36-3b-11. Gates du passage en `review` au
   Dev Agent Record. `Status: review`.
+- 2026-11-14 — **Revue de code P1** (trois lentilles B, E, A ; `kesh-gate-logs/e36-3b/review-p1-{B,E,A}.md`) :
+  0 CRITICAL / 0 HIGH / 0 MEDIUM / 12 LOW (4 + 4 + 4). Décision de l'orchestrateur (règle « Tarir la source ») : les LOW
+  se corrigent dans la story, une passe ciblée P2 relit ce seul correctif. Sort de chaque LOW, prémisse vérifiée au code :
+  - **B1 / E2** (aucun témoin au-delà de « Ligne 1 ») — confirmé : `grep -nF "Ligne 2"` vide dans les tests ; deux
+    tests à deux lignes (ambigu, illisible) attendent « Ligne 2 : … » et l'absence de « Ligne 1 : prix unitaire » ;
+    mutation R1-M15 `{ line: 1 }`.
+  - **E3** (ordre de `validateClient`) — confirmé : `grep -nF "quantité > 0"` vide ; trois tests (quantité 0 et prix
+    ambigu → prix ; description vide et prix ambigu → description ; quantité 0 et prix clair → quantité) ; mutation
+    R1-M16 (prix contrôlé après la quantité).
+  - **E4** (attente des réglages : illisible, rétabli) — confirmé : deux appels `retaperPendantLAttente` seulement ;
+    « 12'34 » pendant l'attente → aucune requête, bandeau illisible ; « 1'250 » → charge `1250`, non `100.00` ;
+    mutations R1-M10 (garde retirée) et R1-M17 (charge lue avant l'attente).
+  - **A1** (M3 à M5 ne prouvaient que la forme) — confirmé aux journaux `mut/M3.log:19`, `M4.log:19`, `M5.log:19` ;
+    assertions d'AC4 en `expect.soft`, M3 à M5 rejouées (`mut/r1/`).
+  - **A2 / E1** (manuel : « au millième » → quatre décimales) — confirmé : `unit-price.test.ts` `['0.1250', '0.125']` ;
+    `user-manual.tex:1158` et la note de version récrits (seule une forme qui serait ambiguë passe aux quatre
+    décimales). `.tex` seul, PDF à l'intégration.
+  - **B2** (repli inatteignable `'Prix unitaire invalide'`, bandeau qui pouvait nommer une autre erreur) — confirmé ;
+    au code : `readLineUnitPrice(i, raw)` du composant rend `{ ok, payload }` ou `{ ok: false, message }`, partagé par
+    `validateClient` et la boucle de la charge : le bandeau nomme la ligne dont le prix est en cause, sans repli
+    (C-36-3b-7 annoté).
+  - **B3** (borne serveur `MAX_UNIT_PRICE` non reflétée au client) — noté, sans changement : comportement d'avant la
+    story ; le serveur refuse proprement (`invoices.rs:515`), le message s'affiche au bandeau.
+  - **B4** (« Montant ambigu » sous le champ du prix) — noté, sans changement : réemploi voulu des textes de la 36-3
+    (D3, C-36-3b-4) ; le bandeau dit « prix unitaire ».
+  - **A3** (capture 03 non déclarée) — déclarée au Dev Agent Record (#1191).
+  - **A4** (papiers) — C-36-3b-2, -3 et -7 annotés au registre ; case « Gates » libellée « clôture à venir ».
