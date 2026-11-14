@@ -177,7 +177,9 @@ l'`defaultPrevented` de l'événement ; la soumission réelle ne se voit qu'en E
   focus, *Échap*, le choix et le `blur`. Le texte et non le seul blanc (V3-2) : sinon `30`, *Échap*, `0` laisse la chaîne
   (`3000,3001`), la valeur et le blanc inchangés, l'index reste `-1` sur une liste rouverte par la frappe, et une saisie non
   blanche ne désigne plus le premier compte — l'invariant tomberait. Une chaîne et non le tableau : un nouveau tableau aux
-  mêmes comptes (rendu du parent) ne doit pas effacer une désignation par les flèches. **Repli
+  mêmes comptes (rendu du parent) ne doit pas effacer une désignation par les flèches ; le dérivé de l'index ne lit donc
+  **jamais** `filtered` lui-même, et le vide se lit sur la chaîne (`ids !== ''`), non sur `filtered.length` (V4-3 ; AC1 v,
+  M23). **Repli
   accepté** : un `$effect` sur les mêmes dépendances, si le `$derived` réassignable ne se prête pas au cas — à dire au Change
   Log. **Options écartées** : remettre l'index à `-1` dans chaque gestionnaire (la liste rétrécie et l'arrivée des comptes
   n'ont pas de gestionnaire : c'est par elles que V2-1 b passait) ; un booléen `designated` à côté d'un index resté à `0`
@@ -189,18 +191,26 @@ l'`defaultPrevented` de l'événement ; la soumission réelle ne se voit qu'en E
   (`/usr/bin/grep -nE "muted|accent" frontend/src/app.css` ne rend que `32:  --color-text-muted: #64748b;`), et Tailwind 4 ne
   génère aucune utilité pour un jeton inconnu. La désignation n'est donc **visible nulle part** aujourd'hui (seul
   `aria-selected` change). La 36-1 ne définit pas `--color-accent` (il changerait les menus et les `select` de toute
-  l'application : #1169) ; le composant emploie des **jetons définis** :
-  - **désignation au clavier** : `bg-primary/10 ring-1 ring-inset ring-primary` — `--color-primary` (`app.css:12`
-    `--color-primary: #1e40af;`) ; l'opacité `/10` sur un jeton défini est générée par Tailwind 4, et le dépôt l'emploie déjà
-    (`routes/(app)/accounts/+page.svelte:504` `bg-primary/10`) ; fond bleu pâle et filet bleu ;
-  - **survol** : `hover:bg-border/60` — `--color-border` (`app.css:33` `--color-border: #e2e8f0;`), gris, sans filet ; distinct
-    de la désignation par la teinte et par l'absence d'anneau.
+  l'application : #1169) ; le composant emploie des **jetons définis**, et la désignation se voit **par son fond même** — la
+  version P3 (fond `primary/10` et filet de 1 px) ne se distinguait du survol que par le filet (fonds à 1,18:1 et 1,13:1
+  contre le blanc, 1,04:1 entre eux, validation P4, V4-1) :
+  - **désignation au clavier** : `bg-primary text-primary-foreground` — fond plein `--color-primary` (`app.css:12`
+    `--color-primary: #1e40af;`), texte `--color-primary-foreground` (`app.css:14` `--color-primary-foreground: #ffffff;`).
+    Contrastes (calcul WCAG à la main, même méthode que `contrast.ts`) : fond désigné contre le fond de la liste
+    `--color-popover` (`app.css:34` `#ffffff`) **≈ 8,7:1** (≥ 3:1, indicateur d'état, WCAG 1.4.11) ; texte sur la désignation
+    **≈ 8,7:1** (≥ 4,5:1) ;
+  - **survol** : `hover:bg-border` — `--color-border` (`app.css:33` `--color-border: #e2e8f0;`), gris clair (≈ 1,2:1 contre le
+    blanc : un retour de pointeur, non un état), **appliqué aux seules options non désignées** : sur l'option désignée, le fond
+    plein reste (sinon le texte blanc passerait sur un gris clair). Désignation contre survol **≈ 7,3:1** : bleu plein contre
+    gris clair, distincts **par la luminance** et non par une nuance.
 
-  Le texte de l'option garde sa couleur (`--color-popover-foreground`, `app.css:35`, sur `bg-popover` de la liste, `:391`) ;
-  le contraste du texte sur le fond désigné se calcule au développement par le helper `frontend/tests/e2e/helpers/contrast.ts`
-  (attendu ≥ 4,5:1, à écrire au Change Log). Aucune ligne n'est mise en évidence à `-1` (la classe de désignation et
-  `aria-selected` suivent l'index, `:397`, `:403`) ; le survol ne vaut pas choix, et *Entrée* ne choisit pas l'option
-  survolée.
+  **Forme** (V4-2) : la directive `class:` ne porte qu'une classe et son nom s'arrête au `/` ; l'option s'écrit en tableau
+  `clsx` (Svelte ≥ 5.16) — `class={['cursor-pointer px-3 py-2 text-sm', i === highlightIndex ? CLASSE_DESIGNEE : CLASSE_SURVOL]}`
+  —, et les deux chaînes sont des constantes exportées d'un module du composant
+  (`frontend/src/lib/features/journal-entries/account-autocomplete-classes.ts`, neuf :
+  `CLASSE_DESIGNEE = 'bg-primary text-primary-foreground'`, `CLASSE_SURVOL = 'hover:bg-border'`), lues **aussi** par le test de
+  jetons (AC8) : une seule source. Aucune ligne n'est mise en évidence à `-1` (classe de désignation et `aria-selected`
+  suivent l'index, `:397`, `:403`) ; le survol ne vaut pas choix, et *Entrée* ne choisit pas l'option survolée.
   La condition de choix de `:266` (`open && filtered[highlightIndex]`) reste la même : par l'invariant, elle ne vaut que pour
   un compte désigné.
 
@@ -215,7 +225,7 @@ l'`defaultPrevented` de l'événement ; la soumission réelle ne se voit qu'en E
   | E0 | `loadError`, ou composition IME en cours (`e.isComposing`, V1-7) | inchangé : retour sans rien faire, l'événement suit son cours | — | AC1 i, AC1 j | M8 |
   | E0-bis | sinon, **touche maintenue** (`e.repeat`, V3-5) | `preventDefault`, rien d'autre : une *Entrée* maintenue ne fait qu'un geste — la première pression résout, choisit ou envoie ; les répétitions n'envoient pas un formulaire dont l'utilisateur n'a pas vu l'état | — | AC1 u | M19 |
   | E1 | sinon, `open && filtered[highlightIndex]` (un compte désigné, par l'invariant) — saisie qui correspond à **un ou plusieurs** comptes, ou flèches | `preventDefault`, l'élément est choisi, le champ montre son libellé, rien ne part | — | AC1 c, k, p, q, s, t | M11, M13, M16, M17 |
-  | E2 | sinon, **aucun brouillon** (`draft === null`) — non touché, valeur résolue **ou** nulle, ou après le bouton × | rien n'est choisi ; l'événement suit son cours : le formulaire part, le champ montrant `displayLabel` (le compte, ou vide = « défaut société » et `null` envoyé) | C4 | AC1 g, l, r | M2, M9, M15 |
+  | E2 | sinon, **aucun brouillon** (`draft === null`) — non touché, valeur résolue **ou** nulle, ou après le bouton × | rien n'est choisi ; l'événement suit son cours : le formulaire part, le champ montrant `displayLabel` (le compte, ou vide = « défaut société » et `null` envoyé). **Exception préexistante, hors de la story** (V4-5) : tant que les comptes ne sont pas chargés, un champ dont la valeur persistée est X paraît vide (`:171` `return labelOf(selected);` rend `''`) et X part — la valeur persistée, non une valeur fausse ; comme un clic sur *Enregistrer*, indépendant d'*Entrée* : issue I6 demandée | C4 | AC1 g, l, r, w | M2, M9, M15 |
   | — | sinon (**un brouillon est affiché**) | `preventDefault` **toujours**, puis E3, E4 ou E5 | — | AC1 q (M14) | M1, M14 |
   | E3 | … brouillon non blanc, `filtered` non vide | la liste **s'ouvre** ou reste ouverte (`open = true`, index `0`), rien n'est choisi | C2 | AC1 d | M4 |
   | E4 | … brouillon non blanc, `filtered` vide | le brouillon **reste** ; le message de D2 s'affiche **si la liste des comptes est chargée** (`accounts.length > 0`) — pendant le chargement, sans message (V1-3) | C1 | AC1 a, b, m | M3, M12 |
@@ -248,7 +258,17 @@ l'`defaultPrevented` de l'événement ; la soumission réelle ne se voit qu'en E
   avec un `id` propre joint à `aria-describedby` (`:337-339`, composé avec `describedBy` et le marqueur). **Annonce** (V1-4) :
   une région `role="status"` **toujours présente** dans le DOM, dont seul le contenu change (vide hors E4) — un conteneur
   `aria-live` inséré en même temps que son texte n'est pas annoncé de façon fiable ; le lien `aria-describedby` vise cette
-  même région, et n'est posé que lorsqu'elle a un contenu. AC1 a vérifie `role="status"` et le lien.
+  même région, et n'est posé que lorsqu'elle a un contenu. AC1 a vérifie `role="status"` et le lien. **La région vide ne
+  prend aucune place** (V4-6) : elle est un `<div role="status" class="text-xs text-destructive">` sans marge ni contenu, et
+  la marge (`mt-1`) est portée par le seul paragraphe du message, rendu **seulement** quand il y en a un (AC1 x, M24). Elle
+  vit **dans** l'élément racine du composant (`:320` `<div class="relative">`), qui contient déjà le champ, le bouton × et la
+  liste : un enfant de hauteur nulle ne change ni la hauteur de la racine ni l'espacement que le parent applique entre ses
+  propres enfants. Lu chez les sept consommateurs, le conteneur de `<AccountAutocomplete …/>` : une cellule de tableau
+  (`InvoiceForm.svelte:876` `<td class="py-2 pr-2">`, `JournalEntryForm.svelte:396` `<td class="py-2 pr-2">`,
+  `TransactionSplitModal.svelte:302` `<td class="py-1 pr-1">`) ou un `<div>` en flux de bloc, sans `gap`, après un `<label>`
+  (`VatPurchaseAssistant.svelte:155`, `:200` `<div>` ; `ManualMatchModal.svelte:184` `<div class="mt-2">` ;
+  `products/+page.svelte` `<div>` du champ, `:697` suivi du paragraphe d'aide) — dans tous, la racine du composant est un
+  bloc dont la hauteur ne change pas ; la capture d'AC7 sur une ligne d'écriture manuelle le constate.
   Il s'affiche à l'état E4 de D1 et **disparaît** à la frappe suivante, au choix d'un compte, au bouton d'effacement et au `blur`.
   **Effacement** (V2-6, V3-3) : E4 retient le brouillon refusé (`noMatchDraft = draft`), et le message est **dérivé** —
   visible tant que `noMatchDraft !== null && draft === noMatchDraft && filtered.length === 0`. Les quatre déclencheurs
@@ -268,8 +288,8 @@ l'`defaultPrevented` de l'événement ; la soumission réelle ne se voit qu'en E
   des sept** : un champ ouvert sans saisie ne montre plus de surbrillance, et *Entrée* n'y choisit plus le premier compte
   (E2, E5) ; la première *flèche bas* désigne désormais le **premier** compte (aujourd'hui le deuxième, l'index partant de
   `0`) ; la *flèche haut* ouvre la liste sur le dernier compte ; le × et une valeur posée par le parent annulent la
-  désignation ; la désignation devient **visible** (fond `primary/10` et filet `primary`) et le survol prend un gris
-  distinct (`border/60`) ; le reste — frappe puis *Entrée*, flèches dans une liste ouverte, clic — est
+  désignation ; la désignation devient **visible** (fond `primary` plein, texte blanc) et le survol prend un gris clair
+  distinct (`border`) sur les seules options non désignées ; le reste — frappe puis *Entrée*, flèches dans une liste ouverte, clic — est
   inchangé (validation P2). Couverture : le composant porte la
   règle et ses tests (AC1, toutes les lignes de la table de D1) ; les consommateurs ne font que passer `accounts`, `value`,
   `onSelect` et leurs options, sans logique clavier propre au champ (lu : aucun `onkeydown` sur `<AccountAutocomplete`, sortie
@@ -295,7 +315,7 @@ l'`defaultPrevented` de l'événement ; la soumission réelle ne se voit qu'en E
    l'événement est constaté par la valeur rendue de `fireEvent.keyDown`, `false` quand `preventDefault` a été appelé ; chaque
    ligne de la table de D1 a au moins un cas). **Montage** (V2-5) : les tests existants passent `onSelect: vi.fn()` sans jamais
    réinjecter la valeur (`AccountAutocomplete.test.ts:171-203`) ; les cas qui constatent l'affichage **après** un choix ou un
-   effacement (c, e, k, n, p, q, r, t, u) réinjectent la valeur comme un parent : `onSelect` espion qui appelle
+   effacement (c, e, k, n, p, q, r, t, u, v) réinjectent la valeur comme un parent : `onSelect` espion qui appelle
    `rerender({ value: id })` (ou un composant hôte). Sans cela, l'affichage retomberait sur la valeur de départ :
    - a. `allowClear`, valeur `1` (`3000 — Ventes`) : taper `zzz`, *Entrée* → événement empêché ; `onSelect` jamais appelé ; le
      champ montre `zzz` ; le message « Aucun compte ne correspond » est affiché dans un élément `role="status"` dont l'`id`
@@ -340,16 +360,28 @@ l'`defaultPrevented` de l'événement ; la soumission réelle ne se voit qu'en E
    - r. bouton × après une désignation (V2-2) : `allowClear`, valeur `1`, valeur réinjectée, taper `30` (option `0` désignée),
      clic sur × → `onSelect(null)` une fois, la liste reste affichée, **aucune** option ne porte `aria-selected="true"` ;
      *Entrée* → événement **non** empêché, `onSelect` n'est pas rappelé. (Une valeur posée par le parent, liste ouverte,
-     brouillon nul, change toujours `filtered` avec elle : le cas se confond avec r ou avec g ; pas de test séparé, dit.) ;
-   - s. rendu de la désignation (V3-1) : valeur nulle, focus → aucune option ne porte la classe de désignation
-     (`bg-primary/10`) ; *flèche bas* → l'option `0` la porte, avec `aria-selected="true"` ; aucune option ne porte
+     brouillon nul, change toujours `filtered` avec elle **tant que la valeur posée est résoluble** — de `null` à un
+     identifiant absent de `accounts`, `query` reste `''` et `filtered` ne change pas (`:168-172`, `:226`, V4-4) : c'est la
+     dépendance à `value` qui remet alors l'index à `-1`, d'où AC1 w ;)
+   - s. rendu de la désignation (V3-1, V4-1) : valeur nulle, focus → aucune option ne porte `bg-primary` ni
+     `text-primary-foreground`, toutes portent `hover:bg-border` ; *flèche bas* → l'option `0` porte **toutes** les classes
+     de `CLASSE_DESIGNEE` (`bg-primary`, `text-primary-foreground`), avec `aria-selected="true"`, et **ne porte pas**
+     `hover:bg-border` ; les autres options portent `hover:bg-border` et aucune classe de désignation ; aucune option ne porte
      `bg-accent` ;
    - t. frappe qui ne change pas la liste (V3-2) : comptes `3000`, `3001`, valeur `null`, valeur réinjectée ; taper `30`,
      *Échap*, taper `0` (brouillon `300` ; liste rouverte par la frappe, `:239`) → l'option `3000` porte `aria-selected="true"`
      (désignée par la saisie) ; *Entrée* → événement empêché, `onSelect(id de 3000)` une fois ;
    - u. touche maintenue (V3-5) : `allowClear`, valeur `1`, valeur réinjectée ; vider le champ, *Entrée* (E5 : `onSelect(null)`)
      puis `keyDown` *Entrée* avec `repeat: true` → événement **empêché**, `onSelect` non rappelé ; et, sans brouillon, une
-     *Entrée* `repeat: true` sur un champ non touché → empêchée (aucun envoi par répétition).
+     *Entrée* `repeat: true` sur un champ non touché → empêchée (aucun envoi par répétition) ;
+   - v. mêmes comptes dans un nouveau tableau (V4-3) : comptes `3000`, `3001`, valeur nulle, focus, *flèche bas* ×2 → l'option
+     `3001` désignée ; `rerender({ accounts: [...accounts] })` → l'option `3001` **reste** désignée (`aria-selected="true"`),
+     et *Entrée* → `onSelect(id de 3001)` ;
+   - w. valeur posée non résoluble (V4-4) : valeur nulle, focus, *flèche bas* (option `0` désignée), `rerender({ value: 999 })`
+     (identifiant absent de `accounts`) → aucune option ne porte `aria-selected="true"` ; *Entrée* → événement non empêché,
+     `onSelect` jamais appelé ;
+   - x. région de statut sans place (V4-6) : sans message, la région `role="status"` est présente et **n'a aucun enfant**
+     (le paragraphe et sa marge `mt-1` n'existent qu'avec le message) ; après le cas a, elle contient un seul paragraphe.
 2. **AC2 — Les tests existants** : la suite `AccountAutocomplete.test.ts` existante reste verte **sans modification de ses
    assertions** (le `blur` garde exactement sa règle, désormais dans `commitDraft()`), ainsi que celles de `JournalEntryForm`,
    `ManualMatchModal`, `TransactionSplitModal`, `InvoiceForm`, `products-page`.
@@ -398,9 +430,23 @@ l'`defaultPrevented` de l'événement ; la soumission réelle ne se voit qu'en E
 7. **AC7 — Captures** (thème clair, base de démonstration jetable, `/home/gcorbaz/devel/kesh-gate-logs/e36-1/captures/`) :
    ligne de facture avec `zzz` et le message ; fiche article, même état ; ligne de facture après *Échap* puis *Entrée* (liste
    rouverte) ; ligne neuve au focus, liste ouverte **sans** surbrillance (#1165), **pointeur hors de la liste** (V2-3) ; la
-   même liste après *flèche bas*, pointeur hors de la liste (désignation visible : fond `primary/10`, filet `primary`) ; la
-   même liste, pointeur sur une autre option que la désignée (survol gris `border/60`, distinct de la désignation, les deux
-   visibles à la fois).
+   même liste après *flèche bas*, pointeur hors de la liste (désignation visible : fond `primary` plein, texte blanc) ; la
+   même liste, pointeur sur une autre option que la désignée (survol gris clair `border`, distinct de la désignation, les
+   deux visibles à la fois) ; la même liste, **pointeur sur l'option désignée** (le fond plein reste, V4-1) ; une **ligne
+   d'écriture manuelle** (`JournalEntryForm`), avant et après la story, sans message affiché : même hauteur (V4-6).
+8. **AC8 — Jetons et contrastes** (V4-1 ; test Vitest neuf
+   `frontend/src/lib/features/journal-entries/account-autocomplete-classes.test.ts`, **sur le patron de**
+   `frontend/src/lib/components/ui/button/button-destructive.test.ts` (Story 28-1) : `// @vitest-environment node`, lecture
+   d'`src/app.css`, bloc `@theme` sans commentaires, valeurs lues et non recopiées, calcul par `blend`/`contrastRatio` de
+   `frontend/tests/e2e/helpers/contrast.ts:54`, `:43`) :
+   - chaque jeton de couleur de `CLASSE_DESIGNEE` et `CLASSE_SURVOL` (`primary`, `primary-foreground`, `border`) est **défini**
+     dans `@theme`, ainsi que `popover` (fond de la liste, `AccountAutocomplete.svelte:391`) ;
+   - fond désigné (`primary`) contre le fond de la liste (`popover`) **≥ 3:1** ;
+   - texte désigné (`primary-foreground`) sur `primary` **≥ 4,5:1** ;
+   - fond désigné contre le fond de survol (`border`) **≥ 3:1** (les deux états se distinguent par eux-mêmes) ;
+   - `CLASSE_DESIGNEE` ne contient aucun jeton absent du thème (`accent`, `muted` compris).
+   Ce qu'il ne voit pas : le rendu réel (capture d'AC7) et une classe écrite en dur dans le composant au lieu des
+   constantes (lecture de revue).
 
 ## Tests à écrire, et la preuve du rouge
 
@@ -413,10 +459,13 @@ l'`defaultPrevented` de l'événement ; la soumission réelle ne se voit qu'en E
   (premier compte choisi, rien ne part) ; AC4 (`updateProduct` appelé) ; AC5 a, a-bis et b (redirection ; premier compte
   posé ; dialogue fermé ; `PUT` parti) ; AC1 p (la *flèche haut* n'ouvre pas la liste) ; AC1 q (l'index reste `-1` à
   l'arrivée des comptes, *Entrée* non empêchée) ; AC1 r (l'option `0` reste désignée après le ×, *Entrée* la choisit) ;
-  AC1 s (aucune classe `bg-primary/10`) ; AC1 u (la première *Entrée* choisit le premier compte ; la répétition n'est pas
+  AC1 s (aucune classe `bg-primary`) ; AC1 w (l'option `0` reste désignée et choisie) ; AC1 x (aucune région de statut) ;
+  AC8 (module `account-autocomplete-classes.ts` absent : rouge à l'import, écrit d'abord avec des chaînes vides pour que
+  ses rouges portent sur les jetons et les contrastes) ; AC1 u (la première *Entrée* choisit le premier compte ; la répétition n'est pas
   empêchée) ; AC1 h, variantes « retaper » et « comptes rechargés » (pas de message du tout aujourd'hui : rouges par
   l'absence du message après la première *Entrée*). **Vert au départ, et dit** : AC1 t (aujourd'hui `:240` remet l'index à
-  `0` à chaque frappe, et *Échap* ne le touche pas : *Entrée* choisit `3000`) — il garde contre M17.
+  `0` à chaque frappe, et *Échap* ne le touche pas : *Entrée* choisit `3000`) — il garde contre M17 ; AC1 v (aujourd'hui
+  l'index n'est jamais recalculé) — il garde contre M23.
 - **Verts au départ, et dits** (non-régression) : AC1 c, g, i, j (aujourd'hui `zzz` n'est jamais intercepté, donc pas en
   composition non plus : j ne devient utile qu'avec le correctif, tué par M8) ; AC3 b (la première *Entrée* choisit déjà dans
   une liste ouverte, la seconde envoie déjà : ce test garde contre un blocage excessif, M2) ; AC2.
@@ -443,17 +492,26 @@ l'`defaultPrevented` de l'événement ; la soumission réelle ne se voit qu'en E
     est **équivalente** sous l'invariant (dit) ;
   - M15 : le recalcul de l'index retiré (l'index ne change qu'aux frappes et aux flèches) → AC1 q (`onSelect` non appelé,
     aucune option désignée) ; AC1 r (le × laisse l'option `0` désignée, *Entrée* la choisit). Retirer la seule dépendance à
-    `value` (en gardant celle à `filtered`) est **équivalent** : brouillon nul, un changement de valeur change toujours
-    `filtered` (dit) ;
-  - M16 : la classe de désignation rendue à `bg-accent` (jeton absent, rendu nul) → AC1 s (classe de désignation absente de
-    l'option désignée) ; le rendu lui-même se constate à la capture d'AC7, dit ;
+    `value` (en gardant celle aux identifiants) n'est équivalent **que tant que la valeur posée est résoluble** (V4-4) : AC1 w
+    la tue (M15-bis) ;
+  - M16 : `CLASSE_DESIGNEE` rendue à `bg-accent` (jeton absent, rendu nul) → AC1 s ; AC8 (jeton non défini) ; le rendu
+    lui-même se constate à la capture d'AC7, dit ;
   - M17 : le recalcul ne dépend que du caractère blanc du brouillon, non de son texte (version P2) → AC1 t (`onSelect` non
     appelé à la première *Entrée*). **M14 seule reste équivalente** sous l'invariant : l'état qu'elle laisserait partir (liste
     ouverte, brouillon non blanc, `filtered` non vide, index `-1`) n'est atteignable que si le recalcul manque une frappe,
     c'est-à-dire sous M17 ou M15 ; la double M14 + M17 est tuée par AC1 t (événement non empêché) ;
   - M18 : `noMatchDraft` non remis à `null` à la frappe → AC1 h, variante « retaper le texte refusé » ;
   - M19 : la garde `e.repeat` retirée → AC1 u ;
-  - M20 : la condition `filtered.length === 0` retirée de la dérivation du message → AC1 h, variante « comptes rechargés ».
+  - M20 : la condition `filtered.length === 0` retirée de la dérivation du message → AC1 h, variante « comptes rechargés » ;
+  - M21 : l'indicateur de désignation retiré (l'option désignée ne reçoit plus `CLASSE_DESIGNEE`, ou la constante vidée) →
+    AC1 s ; AC8 (contrastes calculés sur aucune classe : la garde exige les jetons `primary` et `primary-foreground`) ;
+  - M22 : le survol appliqué aussi à l'option désignée (`CLASSE_SURVOL` ajoutée sans condition) → AC1 s (`hover:bg-border`
+    sur l'option désignée) ;
+  - M23 : le dérivé de l'index lit `filtered` (le tableau) au lieu de la chaîne des identifiants → AC1 v (la désignation
+    `3001` effacée par le nouveau tableau) ;
+  - M24 : le paragraphe du message rendu toujours, vide, dans la région de statut → AC1 x ;
+  - M25 : un jeton de contraste insuffisant (par exemple `CLASSE_DESIGNEE` à `bg-border text-text`) → AC8 (fond désigné
+    contre la liste < 3:1).
 
 ## Tâches
 
@@ -468,7 +526,8 @@ l'`defaultPrevented` de l'événement ; la soumission réelle ne se voit qu'en E
       focus d'abord : à compléter par « ou passer par *Entrée*, qui résout le brouillon sans envoyer ») ; doc de la prop
       `allowClear` relue.
 - [ ] `messages.ftl` ×4 (D2) ; `sitesTotal` recompté.
-- [ ] Verts ; mutations M1 à M20 ; captures (AC7) ; contraste du texte sur la désignation (`contrast.ts`) au Change Log.
+- [ ] `account-autocomplete-classes.ts` (constantes `CLASSE_DESIGNEE`, `CLASSE_SURVOL`) et son test de jetons (AC8).
+- [ ] Verts ; mutations M1 à M25 (et M15-bis) ; captures (AC7).
 - [ ] Gates (voie 2 ; `gate-ci` en voie 1), selon `e35-dev-commun.md` § *Quels gates, quand* : en cours, gate ciblé — Vitest
       des fichiers touchés, `npm run check`, `npm run lint-i18n-ownership`, et `cargo nextest run -E 'binary(...)'` du crate
       `kesh-i18n` (les `.ftl` y sont lus) ; **au passage en `review`** : bases remises à neuf, `scripts/test-fast.sh --ci`
@@ -490,8 +549,8 @@ l'`defaultPrevented` de l'événement ; la soumission réelle ne se voit qu'en E
   vide suit le compte de produit par défaut de la société, même après une double Entrée. Le même champ de compte, dans les
   écritures manuelles, l'assistant d'achat et le rapprochement bancaire, suit la même règle ; sur ces sept champs, la
   première flèche vers le bas désigne désormais le premier compte de la liste (auparavant le deuxième), la flèche vers le
-  haut ouvre la liste sur le dernier, et le compte désigné au clavier est désormais mis en évidence (fond bleu pâle et
-  filet bleu), distinct du survol de la souris, qui ne le choisit pas. (refs #1165)
+  haut ouvre la liste sur le dernier, et le compte désigné au clavier est désormais mis en évidence (fond bleu, texte
+  blanc), distinct du survol de la souris (gris clair), qui ne le choisit pas. (refs #1165)
 
 ## Dev Notes
 
@@ -511,6 +570,11 @@ l'`defaultPrevented` de l'événement ; la soumission réelle ne se voit qu'en E
 - **I5 — Mode dégradé** (bug, P4 proposé) : liste des comptes non chargée, un texte non numérique (`abc`) envoie `null`
   (`:243-246`) et reste affiché, au `blur` (`:288`) comme à *Entrée* (`:256`). Voisin de #1085 (le brouillon gardé quand la
   liste revient), distinct. À ouvrir, une issue.
+- **I6 — champ de compte vide pendant le chargement des comptes** (bug, P4 proposé ; validation P4, V4-5) : sur une ligne qui
+  porte le compte X, tant que `accounts` est vide (`InvoiceForm.svelte:195` `let accounts = $state<AccountResponse[]>([]);`,
+  rempli de façon asynchrone), le champ paraît vide avec le placeholder « … (défaut société) » (`AccountAutocomplete.svelte:171`)
+  alors que X sera envoyé. Préexistant, transitoire, indépendant d'*Entrée*, rien n'est réécrit faux ; distinct de #1085 (mode
+  dégradé) et de I5. À ouvrir, une issue.
 - **#1168 — pas d'`aria-activedescendant`** (validation P2, V2-4 ; ouverte par l'orchestrateur) : la désignation au clavier
   n'est annoncée à aucun lecteur d'écran (`git grep -n "activedescendant" -- frontend/src` ne rend que
   `ContactPicker.svelte:137`). Préexistant, hors périmètre.
@@ -529,8 +593,8 @@ l'`defaultPrevented` de l'événement ; la soumission réelle ne se voit qu'en E
 
 ### Modules touchés (règle de splitting)
 
-Code de production : **deux** — `frontend/src/lib/features/journal-entries` (le composant) et `crates/kesh-i18n` (les quatre
-`messages.ftl`). Tests seulement : `frontend/src/lib/components/invoices`, `frontend/src/routes/(app)/products`,
+Code de production : **deux** — `frontend/src/lib/features/journal-entries` (le composant et son module de classes
+`account-autocomplete-classes.ts`) et `crates/kesh-i18n` (les quatre `messages.ftl`). Tests seulement : `frontend/src/lib/components/invoices`, `frontend/src/routes/(app)/products`,
 `frontend/src/lib/shared` (`i18n-keys.test.ts`), `frontend/tests/e2e`. Six au total, dont quatre par leurs seuls tests ; aucun
 découpage proposé — séparer un test de son correctif n'apporterait rien, et le code de production tient en un fichier.
 
@@ -540,7 +604,7 @@ découpage proposé — séparer un test de son correctif n'apporterait rien, et
 - Un champ strict n'est jamais nullifié (#271) : ni par le `blur`, ni par *Entrée*.
 - Une *Entrée* ne choisit jamais un compte que l'utilisateur n'a pas désigné (saisie non blanche ou flèche) ; sur un champ
   non touché — compte affiché, ou vide et suivant le défaut société —, elle laisse partir le formulaire, qui envoie ce que le
-  champ montre.
+  champ montre (sauf pendant le chargement des comptes, exception préexistante écrite en E2, issue I6).
 - Le mode dégradé ne change pas. Rien ne change au serveur. Aucune migration (C-e360-3). Fixtures synthétiques seulement.
 
 ### Références
@@ -637,3 +701,22 @@ découpage proposé — séparer un test de son correctif n'apporterait rien, et
     `filtered.length === 0` (rechargement des comptes) ; AC1 h, deux variantes ; M18, M20.
   - **V3-4 (LOW), retenu** : en-tête mis à jour (P1, P2, P3 remédiées ; C-36-1-6).
   - **V3-5 (LOW), retenu** : règle E0-bis — *Entrée* maintenue (`e.repeat`) empêchée et ignorée ; AC1 u ; M19.
+- 2026-11-14 — **Validation P4 (Opus) : 0/0/1/5 → remédiés** (Opus 5.5, par l'outil Edit ; rapport
+  `kesh-gate-logs/e36-1/validation-p4.md`). Prémisses relues :
+  - **V4-1 (MEDIUM), retenu** : `app.css:12` `#1e40af`, `:14` `#ffffff`, `:33` `#e2e8f0`, `:34` `#ffffff` lus ; les fonds P3
+    (`primary/10`, `border/60`) ne se distinguaient que par le filet. Nouveau rendu : désignation `bg-primary
+    text-primary-foreground` (≈ 8,7:1 contre la liste, texte ≈ 8,7:1), survol `hover:bg-border` sur les seules options non
+    désignées (désignation contre survol ≈ 7,3:1) ; la phrase « par la teinte » retirée ; AC1 s vérifie toutes les classes de
+    l'indicateur et l'absence du survol sur l'option désignée ; AC8, test de jetons et de contrastes sur le patron de
+    `button-destructive.test.ts` (lu : `@vitest-environment node`, `readFileSync('src/app.css')`, `blocTheme`, `blend`,
+    `contrastRatio`) ; capture AC7 du pointeur sur l'option désignée ; M21, M22, M25. C-36-1-6 annoté.
+  - **V4-2 (LOW), retenu** : `class:` ne peut porter `bg-primary/10` ni quatre classes ; forme `class={[…]}` (tableau `clsx`)
+    nommée, constantes dans `account-autocomplete-classes.ts`.
+  - **V4-3 (LOW), retenu** : `:223` `const filtered = $derived.by(() => {` relu ; le dérivé de l'index ne lit jamais
+    `filtered`, le vide se lit sur la chaîne ; AC1 v ; M23.
+  - **V4-4 (LOW), retenu** : `:168-172`, `:226` relus ; équivalence de M15 limitée à une valeur résoluble ; AC1 w ;
+    M15-bis.
+  - **V4-5 (LOW), retenu** : `InvoiceForm.svelte:195` et `AccountAutocomplete.svelte:171` relus ; E2 et *Ce qui doit rester
+    vrai* nuancés (exception préexistante pendant le chargement) ; défaut distinct, issue **I6** demandée.
+  - **V4-6 (LOW), retenu** : région `role="status"` vide sans marge, la marge portée par le seul paragraphe du message ;
+    conteneurs des sept consommateurs lus et cités en D2 ; AC1 x ; M24 ; capture d'une ligne d'écriture manuelle.
