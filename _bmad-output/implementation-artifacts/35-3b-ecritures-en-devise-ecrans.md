@@ -136,7 +136,8 @@ change, et ouvrir mes comptes en devise avec leur solde en devise, afin de tenir
      `PUT` d'une écriture ancienne à lignes `afc` sur une installation restaurée, dont la table des cours, système, est
      vide (35-2 AC-7) — → l'écran propose « Récupérer le mois » (`POST /exchange-rates/fetch`, mêmes rôles et même
      règle que ci-dessus) puis le renvoi, ou le passage de la ligne en `manual` ; `FX_RATE_NOT_AFC` → le cours attendu
-     (`details`) est affiché et proposé à la reprise ; `FX_CURRENCY_MISMATCH`, `ACCOUNT_REQUIRES_CURRENCY`,
+     (`details.expectedRate`, 35-3a AC-4) est affiché et proposé à la reprise ; `FX_AMOUNT_MISMATCH` porte
+     `details.expected` / `details.provided` (35-3a AC-3) ; `FX_CURRENCY_MISMATCH`, `ACCOUNT_REQUIRES_CURRENCY`,
      `FX_AMOUNT_MISMATCH` → message traduit sur la ligne fautive (numéro en `details` : le rang **1-based** de la ligne dans `lines`,
      lu dans `details.line` (35-3a AC-3), y compris pour `FX_VALUE_OUT_OF_RANGE`, `FX_LINE_ROUNDS_TO_ZERO` et
      `FX_RATE_NOT_AFC`). ⚠️ Ce rang est celui du **corps envoyé**, qui omet les lignes `empty` (`nonEmptyLines`,
@@ -153,7 +154,9 @@ change, et ouvrir mes comptes en devise avec leur solde en devise, afin de tenir
      `fxGainAccountId`, `fxLossAccountId`, fournies par `journal-entries/+page.svelte` (:163) et
      `journal-entries/[id]/+page.svelte` (:305), qui chargent déjà `fetchCompanyCurrent`. Si cet appel échoue
      (les deux pages le tolèrent), `multiCurrency` vaut vrai dès qu'un compte de `accounts` porte une devise (35-1 : un
-     compte en devise n'existe qu'en multi-devises) — sans quoi l'édition d'une écriture en devise perdrait `foreign`
+     compte en devise n'existe qu'en multi-devises ; `AccountResponse.currency` et `currencyLocked` sont **omis** pour
+     un compte CHF, 35-1 AC-4 et C-35-9 : type TS `currency?: string`, tout test de devise lit `account.currency ?? null`,
+     jamais `=== null` — alignement de l'orchestrateur sur 35-1-P5-IF1) — sans quoi l'édition d'une écriture en devise perdrait `foreign`
      au `PUT` ; les comptes de différence restent alors inconnus et le bouton d'écart l'explique. **Contrôle client seulement**
      (la ligne est une ligne CHF ordinaire envoyée au `POST` ; la revalidation serveur de C-35-2 (3) vaut pour la
      réévaluation) : le bouton revalide sur la liste des comptes (existe, actif, imputable, `Expense`/`Revenue`, sans

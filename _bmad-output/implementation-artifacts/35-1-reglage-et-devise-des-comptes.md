@@ -111,9 +111,15 @@ verrou des deux côtés, réglage réservé à l'Administrateur).
    toute valeur non ASCII → 400 `CURRENCY_UNKNOWN`. `AccountResponse` expose `currency` et
    `currencyLocked: bool` (le compte porte au moins une ligne d'écriture ; calculé pour la liste en **une** requête,
    bornée à la société — `SELECT a.id FROM accounts a WHERE a.company_id = ? AND EXISTS (SELECT 1 FROM
-   journal_entry_lines l WHERE l.account_id = a.id)`, par l'index de `fk_jel_account`, plutôt qu'un `DISTINCT` sur
+   journal_entry_lines l WHERE l.account_id = a.id)`, par l'index `idx_jel_account` (celui de la contrainte
+   `fk_jel_account`), plutôt qu'un `DISTINCT` sur
    toutes les lignes —, jamais une par compte ; la forme de `letterings::letterable_account_ids`) ; les réponses à un
-   seul compte (création, modification, détail) le portent aussi.
+   seul compte (création, modification, détail) le portent aussi. **Sérialisation (C-35-9 : le JSON des routes HTTP
+   reste identique en mono-devise)** : `currency` porte `#[serde(skip_serializing_if = "Option::is_none")]` (absent
+   pour un compte CHF) et `currencyLocked` `#[serde(skip_serializing_if = "std::ops::Not::not")]` (absent = `false`) ;
+   type TS `currency?: string; currencyLocked?: boolean`, lu `account.currency ?? null`. Test : la réponse d'un
+   compte CHF sans ligne n'a aucune des deux clés. Les champs du réglage de `CompanyJson` (AC-2) ne sont pas des
+   champs en devise : toujours présents.
    - refus **409** `MULTI_CURRENCY_DISABLED` si la société est en mono-devise et qu'une devise est donnée (409 partout,
      décision d'epic) ;
    - code inconnu de la liste ISO 4217 embarquée (`kesh-core`) → 400 `CURRENCY_UNKNOWN` ; `CHF` donné → normalisé à
@@ -147,7 +153,9 @@ verrou des deux côtés, réglage réservé à l'Administrateur).
      `journal_entry_lines.account_id` hors configuration, soit dix-sept colonnes : les dix des réglages, l'article, la
      règle, et les cinq colonnes de pièce laissées à la 35-3a — et sur les liens sans FK
      (`bank_accounts.journal_account_id`), écrit au Change Log (méthode « inventorier les sites non résolus ») ;
-   - **ordre des refus** de `update` (une seule raison, la plus bloquante) : avant la transaction, forme
+   - **ordre des refus** de `update` (une seule raison, la plus bloquante) : le pré-vol existant de la route reste en
+     tête (`find_by_id_in_company` sur le pool → 404, `routes/accounts.rs:290` ; puis `name`, `role` et `postable`
+     → 400), le contrôle `CURRENCY_UNKNOWN` se place après lui, dans la route ; avant la transaction, forme
      (`CURRENCY_UNKNOWN`, `check_role_account_type`) ; puis compte introuvable/archivé → version → no-op →
      `MULTI_CURRENCY_DISABLED` → `ACCOUNT_IS_FX_DIFFERENCE_ACCOUNT` → `ACCOUNT_CURRENCY_LOCKED` →
      `ACCOUNT_CURRENCY_IN_USE` → `ACCOUNT_IN_FOREIGN_CURRENCY` → refus existants dans leur ordre actuel (rôle singleton
@@ -265,14 +273,23 @@ verrou des deux côtés, réglage réservé à l'Administrateur).
 - [ ] Migration + `migrations.sha384` + audit d'idempotence + squash (AC-1).
 - [ ] `kesh-core` : module `currency` — liste ISO 4217 (codes actifs, trois lettres), `CurrencyCode` validé,
       `BASE_CURRENCY = "CHF"` ; tests (AC-4).
-- [ ] `kesh-db` : `Company` + `FIND_BY_ID_SQL`/`LIST_SQL` (`companies.rs:24,29`) ; `Account`/`NewAccount`/
+- [ ] `kesh-db` : `Company` + **les quatre listes de colonnes écrites à la main** qui la construisent par
+      `query_as::<_, Company>` — `FIND_BY_ID_SQL`/`LIST_SQL` (`companies.rs:24,29`), la macro `company_select!` de
+      `routes/onboarding.rs:1273-1287` (`COMPANY_SELECT_FOR_UPDATE`, `COMPANY_BY_ID_FOR_UPDATE`, lues :1292, :1376,
+      :1482) et la requête de `kesh-seed/src/lib.rs:210-214` (`seed_demo`). ⚠️ `FromRow` : une colonne manquante
+      n'échoue **pas** à la compilation mais à l'exécution (assistant et chargement de la démonstration en 500) ;
+      les trois colonnes de l'AC-1 entrent dans les quatre ; `Account`/`NewAccount`/
       `AccountUpdate` + macro `columns!` ; `companies::update_currency_settings` (gardes C-35-2, verrous AC-3) ;
       `accounts::create/update/archive_guarded/reactivate` (verrous, gardes AC-4) ; `is_no_op_change` (:530-537) et
       `account_snapshot_json` (:57) avec `currency` ; `bulk_create` (:1146) et `bulk_create_from_chart_in_tx` (:1256)
       lient `currency` (leurs `INSERT` l'ignoreraient sinon en silence ; plans livrés et assistant : `NULL`) ;
-      sites de construction inventoriés par l'échec de compilation (`NewAccount` : une trentaine de littéraux, dans
-      les tests de `kesh-db` et de `kesh-api` surtout, hors `NewAccount::new` qui prend `currency: None` ;
-      `AccountUpdate` : `routes/accounts.rs:315` et quatre littéraux de tests ; `kesh-seed` n'en construit aucun, vérifié) ;
+      sites de construction inventoriés par l'échec de compilation (`NewAccount` : une cinquantaine de littéraux
+      `NewAccount {` (52 occurrences du motif, définition comprise), dans les tests de `kesh-db` et de `kesh-api`
+      surtout, hors `NewAccount::new` qui prend `currency: None` ; `AccountUpdate` : deux sites de production —
+      `routes/accounts.rs:315` et la normalisation de `accounts::update` (`accounts.rs:663`, `..changes` : elle
+      recopie `currency` sans erreur de compilation, à garder ainsi) — et vingt-trois littéraux de tests (vingt dans
+      `accounts.rs`, un dans `credit_card_repository.rs`, `letterings.rs` et `journal_entry_reversal_e2e.rs`) ;
+      `kesh-seed` n'en construit aucun, vérifié) ;
       gardes croisées de l'AC-4 dans les transactions du dépôt des réglages de facturation, comptes bancaires,
       articles et règles de réconciliation (les colonnes de pièce, factures fournisseur comprises, sont à la 35-3a) ; `reset_to_stub_in_tx` (AC-5) ; `test_fixtures.rs`, seed.
 - [ ] `kesh-api` : `CompanyJson` (`routes/companies.rs:31`, miroir écrit à la main) ; `serialize_accounts_csv` et
@@ -330,3 +347,10 @@ verrou des deux côtés, réglage réservé à l'Administrateur).
   passe, à confirmer par la suivante) ; `"CHF"` en mono-devise (P4-3) ; réponse du `PUT` et test 403 (P4-4) ; sites
   de construction de `NewAccount`/`AccountUpdate` (P4-5) ; chemins des renvois `company_invoice_settings.rs` (P4-6) ;
   liste close des `reason` de `FX_ACCOUNT_INVALID` (P4-7) ; étape bancaire de l'assistant (P4-8, limite assumée).
+- 2026-11-14 — validation P5 (Opus) : 0 CRITICAL, 0 HIGH, 2 MEDIUM, 3 LOW dans la fiche, plus 1 inter-fiches (LOW) ;
+  remédiés dans la fiche sauf 35-1-P5-IF1 (35-3b, type TS `currency?` d'`AccountResponse`). Points : listes de
+  colonnes de `Company` écrites à la main hors `companies.rs` (onboarding, `kesh-seed`), échec à l'exécution et non
+  à la compilation (P5-1) ; `AccountResponse` aligné sur C-35-9, clés omises pour un compte CHF (P5-2) ; sites de
+  construction de `NewAccount`/`AccountUpdate` recomptés (P5-3) ; pré-vol 404 de la route en tête de l'ordre des
+  refus de `update` (P5-4) ; nom de l'index des lignes (P5-5). Choix P4-2 (`company_id` lu sur le pool puis
+  comparé sous verrou) confirmé.

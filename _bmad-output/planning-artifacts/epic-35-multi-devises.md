@@ -157,6 +157,8 @@ ferme pas la fenêtre d'import, une table applicative neuve la ferme.
     mono-devise.
   - **PUT d'un compte** : `currency` absent = devise inchangée, `null` = CHF (compatibilité des clients mono-devise ;
     renversement de la P1 par la P2 de 35-1, confirmé par la P3).
+- **C-35-8 (complément 2)** : course préexistante, antérieure à l'Epic 35 — archivage d'un compte parent contre
+  création d'un sous-compte (relevée à la validation P5 de 35-1) : issue à ouvrir avec la PR.
 - **C-35-8 (complément)** : lettrage d'un compte en devise (débiteur soldé en devise avec écart de change) — limite,
   issue à ouvrir avec la PR.
 - **C-35-8 — Tracé pour plus tard** (issues à ouvrir avec la PR) : option de neutralisation des gains de change non

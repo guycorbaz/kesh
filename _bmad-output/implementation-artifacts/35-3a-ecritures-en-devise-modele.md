@@ -36,7 +36,8 @@ passer l'écart de change, afin que mes comptes en devise portent leur solde en 
    `CHECK_CONSTRAINT_VIOLATION`, `kesh-api/src/errors.rs:3801` — jamais une 500). Les `chk_jel_fx_*` s'y appuient sans
    bras dédié ; les refus précis sont ceux de `kesh-core` (AC-3) et du dépôt (AC-4), qui les précèdent. Test, **par
    contrainte** et en SQL brut : quatre colonnes partielles, `usd`, `CHF`, source inconnue, montant 0 hors
-   `revaluation`, montant ≤ 0, cours 0, CHF incohérent → chacune refusée par **sa** contrainte (nom lu dans le message) ;
+   `revaluation`, montant < 0, ligne `revaluation` au montant ≠ 0 (seule `chk_jel_fx_amount` violée), cours 0,
+   CHF incohérent → chacune refusée par **sa** contrainte (nom lu dans le message) ;
    la ligne CHF (quatre `NULL`) et une ligne `revaluation` valide passent. ⚠️ Hors `revaluation`, un montant ≤ 0 ou un
    cours 0 viole **aussi** `chk_jel_fx_chf` (`debit + credit > 0` par `chk_jel_debit_credit_exclusive`, squash :863) :
    `chk_jel_fx_chf` est déclarée **en dernier** dans la migration, le cas « cours 0 » se construit sur une ligne
@@ -71,8 +72,9 @@ passer l'écart de change, afin que mes comptes en devise portent leur solde en 
    cette fonction voisine, qui contrôle **une** ligne en devise seule, est **publique** : 35-3b l'appelle dans
    `parse_complement_lines` avant la transaction du complément, dont le `validate` sous verrou rendrait une erreur en
    `DbError::Invariant`, donc un 500 — alignement de l'orchestrateur sur 35-3b-P2-2),
-   sur `JournalEntryLineDraft.foreign`. Pour une ligne en devise, les contrôles FX **précèdent** la règle d'exclusivité
-   débit/crédit (`balance.rs:170`), dans cet ordre :
+   sur `JournalEntryLineDraft.foreign`. Pour une ligne en devise, les contrôles FX **suivent** le refus des montants
+   négatifs (`EntryNegativeAmount`, `balance.rs:162-163`, inchangé : un débit ou crédit CHF négatif reste refusé sous
+   ce code) et **précèdent** la règle d'exclusivité débit/crédit (`balance.rs:170`), dans cet ordre :
    1. échelle et bornes : au plus 4 décimales sur le montant, 10 sur le cours, **zéros terminaux ignorés**
       (`1.50000` est admis : on compte l'échelle après `normalize()`) ; montant ≤ 10¹³, cours ≤ 10⁶ ; **CHF arrondi
       ≤ 10¹³** (la colonne `debit`/`credit` est `DECIMAL(19,4)` : au-delà, c'est une erreur SQL, non un refus) ;
@@ -89,7 +91,8 @@ passer l'écart de change, afin que mes comptes en devise portent leur solde en 
       `money.rs:66`, sur les valeurs courantes — la fixture ci-dessous le prouve) ; s'il vaut 0 →
       `FX_LINE_ROUNDS_TO_ZERO` ;
    4. le montant CHF fourni, **`debit + credit`** (la même somme que `chk_jel_fx_chf`), doit **égaler** ce calcul,
-      sinon `FX_AMOUNT_MISMATCH` (attendu et fourni en `details`) ; une ligne qui porte les deux côtés non nuls est
+      sinon `FX_AMOUNT_MISMATCH`, `details: { line, expected, provided }` (CHF en chaînes décimales à deux
+      décimales) ; une ligne qui porte les deux côtés non nuls est
       ensuite refusée par l'exclusivité (`balance.rs:170`).
    - **Erreurs `CoreError`** : nouvelles variantes `FxValueOutOfRange { line }`, `FxLineRoundsToZero { line }`,
      `FxAmountMismatch { line, expected, provided }` (+ `error_code()`, `kesh-core/src/errors.rs:114`). **`line`** est
@@ -125,19 +128,25 @@ passer l'écart de change, afin que mes comptes en devise portent leur solde en 
    4. ligne `rate_source = 'afc'` : le cours doit égaler `rate_per_unit` de `_kesh_exchange_rates` (35-2) pour
       (devise, mois de `entry_date`), lu dans la transaction par la fonction de lecture du dépôt
       `kesh_db::repositories::exchange_rates::find_rate_in_tx` de 35-2 (pas de second accès) ; sinon 400
-      `FX_RATE_NOT_AFC` (cours attendu et `line` en `details`) ; cours absent → `DbError::RateUnavailable {currency, month}`,
+      `FX_RATE_NOT_AFC`, `details: { line, expectedRate }` (`rate_per_unit` de la table, chaîne décimale sans zéros
+      terminaux ; clé lue par 35-3b pour proposer le cours) ; cours absent → `DbError::RateUnavailable {currency, month}`,
       rendu sous le **même code et le même statut 404** que le `RATE_UNAVAILABLE` de 35-2, avec la même forme de
      `details` : `{ currency: "USD", month: "AAAA-MM-01" }` (35-2 AC-5). Contrôle à la création
       **et** au `PUT` (date changée comprise). **Le mois de référence est toujours celui de `entry_date`, sans
       exception** : un cours d'un autre mois (p. ex. celui du mois précédant la date d'un solde d'ouverture, C-35-9)
-      se saisit `manual`, jamais `afc` (35-3b y est alignée). **Exemptée** : la contre-passation, qui recopie le cours
+      se saisit `manual`, jamais `afc` (35-3b y est alignée). Le contrôle porte sur **toutes** les lignes `afc` du
+      corps, inchangées comprises : après une restauration (tables des cours vides, 35-2 AC-7), le `PUT` d'une
+      écriture `afc` — même pour son seul libellé — rend `404 RATE_UNAVAILABLE` jusqu'à la récupération du cours, et
+      un cours republié autrement par l'AFC rend `FX_RATE_NOT_AFC` (35-2) ; comportement assumé, testé, écrit au
+      Change Log. **Exemptée** : la contre-passation, qui recopie le cours
       d'origine à une autre date — mécanisme : `create_in_tx_inner` la reconnaît à son paramètre existant
       `reverses_entry_id.is_some()` (`:281`), aucun nouvel indicateur dans `NewJournalEntry` (un indicateur public
       permettrait à un appelant de se dispenser du contrôle).
    - **Concurrence** : la devise des comptes se lit **`LOCK IN SHARE MODE`** — ⛔ **pas `FOR SHARE`**, erreur de syntaxe
      sur MariaDB 10.11 (`opening_complement.rs:39`, `bank_accounts.rs:194`) ; c'est la forme de 35-1 — dans la
      requête de validation des comptes (`validate_lines_accounts_in_tx` :135, qui lit aujourd'hui sans verrou ; ajouter
-     `currency` à son `SELECT`, et l'ordre des refus ci-dessus reste celui-là) ou une requête dédiée verrouillante.
+     `currency` à son `SELECT`, et l'ordre des refus ci-dessus reste celui-là ; son doc-comment « Lecture **sans
+     verrou** … choix C21 », :127-128, est récrit) ou une requête dédiée verrouillante.
      `companies.multi_currency_enabled` se lit **sous `LOCK IN SHARE MODE` avant** les comptes (ordre global de 35-1 :
      `companies` → réglages → `accounts`), **seulement si une ligne porte `foreign`** : une écriture sans ligne en
      devise ne prend aucun verrou sur `companies` (`create_in_tx_inner` lit `books_locked_through` **sans** verrou,
@@ -195,7 +204,11 @@ passer l'écart de change, afin que mes comptes en devise portent leur solde en 
    le handler — la route reçoit le corps par le `Json` d'axum (`create_journal_entry` `:600`), dont l'échec de
    désérialisation (énumération inconnue, nombre JSON pour un décimal) rend **422**, non 400 ; un `rateSource` typé en
    énumération rendrait donc 422 et non le 400 exigé ci-dessous (test HTTP : `rateSource: "revaluation"` → 400) ;
-   réponses (`JournalEntryLineResponse`, détail, liste) exposent `foreign` ; `MAX_LINES_PER_ENTRY` inchangé ;
+   réponses (`JournalEntryLineResponse`, détail, liste) exposent `foreign: { currency, amount, rate, rateSource }`
+   (décimaux en chaînes, comme `debit`/`credit` ; `rateSource` parmi `afc|manual|revaluation`), **omis** pour une ligne
+   CHF par `#[serde(skip_serializing_if = "Option::is_none")]` (registre C-35-9 : le JSON HTTP reste identique en
+   mono-devise ; ⚠️ contraire à la convention locale du DTO, dont les champs de lettrage sont présents à `null`,
+   test `routes/journal_entries.rs:876-881`) — test : le JSON d'une ligne CHF n'a pas de clé `foreign` ; `MAX_LINES_PER_ENTRY` inchangé ;
    erreurs traduites (quatre locales). `MULTI_CURRENCY_DISABLED` est un **409** partout. **Statuts** (une table, un
    test HTTP par code) : **400** `FX_VALUE_OUT_OF_RANGE`, `FX_LINE_ROUNDS_TO_ZERO`, `FX_AMOUNT_MISMATCH`,
    `FX_RATE_NOT_AFC`, `FX_CURRENCY_MISMATCH`, `ACCOUNT_REQUIRES_CURRENCY`, `ACCOUNT_IN_FOREIGN_CURRENCY` ; **404**
@@ -231,12 +244,14 @@ passer l'écart de change, afin que mes comptes en devise portent leur solde en 
      (`list_by_company_paginated` `:201`, `find_by_id` `:243`) et `crates/kesh-api/src/mcp/outils/ecritures.rs`
      (struct `:126`, construction `:187`) ; champs **présents à `null`** sur une ligne CHF (la macro `sortie!`,
      `mcp/sortie.rs:97-114`, n'admet aucun attribut de champ et **n'est pas étendue** : choix de l'orchestrateur,
-     2026-11-14, aligné sur 35-1 AC-8 ; registre C-35-9), devise typée `Code`, source
+     2026-11-14, aligné sur 35-1 AC-8 ; registre C-35-9), devise du **même type** que le champ `devise` de `kesh_plan_comptable` (35-1 AC-8 :
+     `TexteNonFiable` ou type scellé dédié — `Code<E>`, `mcp/sortie.rs:265`, exige une énumération), source
      `Code<RateProvenance>`, cours et montant `Montant`/texte non fiable selon `mcp::sortie` ; si `Montant` porte le
      cours, son doc-comment (`mcp/sortie.rs:205-214`, qui énumère les types décimaux des colonnes, « recompté le
      2026-10-29 ») gagne `DECIMAL(20,10)` ; la page de `kesh_ecritures` (`LIMITE_MAX_MCP = 22`,
      `LIMITE_DEFAUT = 12`, `outils/ecritures.rs:20-22`, doublée au test `mcp_outils_e2e.rs:108,184`) est **recalculée**
-     pour le pire cas — lignes en devise comprises — sous `MCP_ENVOI_OCTETS_MAX` ; `mcp_gardes_lexicales` et
+     pour le pire cas — lignes en devise comprises — sous `MCP_ENVOI_OCTETS_MAX`, par `tailles_mesurees`
+     (`mcp_outils_e2e.rs:1345`), dont la fixture `fixture_tailles` (`:788`) gagne des lignes en devise ; `mcp_gardes_lexicales` et
      `mcp_contrat` verts ;
    - aller-retour `.keshbackup` : l'export est **générique** (`export_table`, colonnes lues de `INFORMATION_SCHEMA`,
      NDJSON, `backup.rs:215-262` — les quatre colonnes sortent seules, décimaux par `rust_decimal`) et la restauration
@@ -264,7 +279,8 @@ passer l'écart de change, afin que mes comptes en devise portent leur solde en 
 - [ ] Sites de **test** : `NewJournalEntryLine` sans `Default` casse aussi les binaires de `tests/` (près de 200
       littéraux au total, recomptés par `grep -rn "NewJournalEntryLine {"` : `kesh-api/tests`, `kesh-db/tests`,
       `kesh-report/tests`, `mod tests` — 52 dans `journal_entries.rs` seul) ;
-      un constructeur de test commun (`NewJournalEntryLine::chf(account, debit, credit)`, sans `foreign`) évite de
+      un constructeur de test commun (`kesh_db::test_fixtures::chf_line(account, debit, credit)`, fonction libre et
+      non associée au type, sans `foreign` ; `project_id` par `NewJournalEntryLine { project_id, ..chf_line(…) }`) évite de
       toucher chaque littéral à la main ; il ne sert **jamais** en production. `kesh-db` n'a pas de feature de test
       (`test_fixtures` est un module public, `lib.rs:19`) : le constructeur vit dans `kesh_db::test_fixtures` (non sur
       le type), et une garde lexicale (sur le modèle de `mcp_gardes_lexicales`) échoue si un fichier de `src/` hors
@@ -281,7 +297,7 @@ passer l'écart de change, afin que mes comptes en devise portent leur solde en 
 
 - Lignes : `crates/kesh-db/src/entities/journal_entry.rs` (`JournalEntryLine` :151, `NewJournalEntryLine` :203) ;
   `repositories/journal_entries.rs` (`LINE_COLUMNS` :103, `validate_lines_accounts_in_tx` :135, `create_in_tx_inner`
-  :281, `INSERT` :505 et :1667, re-sommes :520-537 et dans `update_in_tx` :1472, `entry_snapshot_json` :999,
+  :281, `INSERT` :505 et :1667, re-sommes :520-537 et dans `update_in_tx` (:1472, étape 10 :1682-1695), `entry_snapshot_json` :999,
   `list_all_lines_by_company` :2047, contre-passation :2558-3122 dont lecture `OriginLine` :2896 et recopie :2917).
   ⚠️ `:5290` est un `INSERT` **de test** (`mod tests` dès `:3177`), non un site de production.
 - Validation : `crates/kesh-core/src/accounting/balance.rs` (`JournalEntryLineDraft` :72, `validate` :150, exclusivité
@@ -293,7 +309,7 @@ passer l'écart de change, afin que mes comptes en devise portent leur solde en 
 - Frontend : `frontend/src/lib/features/journal-entries/` (`JournalEntryForm.svelte`, `balance.ts`).
 - Constructeurs de `NewJournalEntryLine` en production, recomptés le 2026-11-14 (littéraux hors `mod tests`) :
   **30 dans 11 fichiers** — `repositories/invoice_settlements.rs` 7, `supplier_invoices.rs` 5, `credit_notes.rs` 4,
-  `invoices.rs` 4, `opening_complement.rs` 1, `journal_entries.rs` 1 (contre-passation :2920) ;
+  `invoices.rs` 4, `opening_complement.rs` 1, `journal_entries.rs` 1 (contre-passation :2917) ;
   `kesh-reconciliation/src/manual.rs` 2, `split.rs` 2 ; `kesh-seed/src/pieges.rs` 2 ; `routes/journal_entries.rs` 1 ;
   `routes/opening_balances.rs` 1. `repositories/accounts.rs` n'en construit qu'en tests. La liste fait foi **après**
   l'échec de compilation, pas avant.
@@ -322,3 +338,10 @@ passer l'écart de change, afin que mes comptes en devise portent leur solde en 
   fiche sauf 35-3a-P4-IF1 (35-1) et 35-3a-P4-IF2 (35-3b) (inter-fiches). Points : code du refus de signe (étape 2 de
   l'AC-3, `FX_VALUE_OUT_OF_RANGE`) ; dérivations de `ForeignAmount` ; second doc-comment « douze valeurs »
   (`routes/journal_entries.rs:173`) ; ligne `errors.rs:1726` ; cas de l'AC-1 qui violent aussi `chk_jel_fx_chf`.
+- 2026-11-14 — validation P5 (Opus) : 0 CRITICAL, 0 HIGH, 2 MEDIUM, 7 LOW (plus 1 LOW inter-fiches) ; remédiés dans la
+  fiche sauf 35-3a-P5-IF1 (35-3b) (inter-fiches). Points : forme et omission (`skip_serializing_if`, C-35-9) de
+  `foreign` dans les réponses HTTP (MEDIUM) ; clés des `details` de `FX_AMOUNT_MISMATCH` et `FX_RATE_NOT_AFC`
+  (MEDIUM) ; type MCP de la devise (`Code<E>` exige une énumération) ; constructeur de test hors du type ; place des
+  contrôles FX après `EntryNegativeAmount` ; cas de test de l'AC-1 (`montant < 0`, `revaluation` au montant ≠ 0) ;
+  `PUT` d'une écriture `afc` après restauration ou republication ; doc-comment de `validate_lines_accounts_in_tx` ;
+  mesure MCP (`tailles_mesurees`) ; numéros de ligne (:2917, étape 10 d'`update_in_tx`).
