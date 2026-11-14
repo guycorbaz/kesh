@@ -534,3 +534,30 @@ perte du focus et 800 ms.
   (taux et entiers : hors du défaut). Choix C-36-3-7 à C-36-3-11. Tests d'abord, rouges, implémentation, E2E, manuel,
   mutations 12/12, captures, gates du passage en revue verts (Dev Agent Record). `sitesTotal` 3036 → 3038, relevé par la
   garde. **Status → review.**
+- 2026-11-14 — **Revue de code P1** (trois lentilles) : B 0/0/0/3, E 0/0/0/3 + 1 INFO, A 0/0/0/5 — rien au-dessus de LOW.
+  **Remédiation de la revue P1** (Opus 5.5, décision de l'orchestrateur : les LOW se corrigent dans la story, puis une
+  passe ciblée relit le correctif), commit de code `b5d4ab689`, chaque prémisse vérifiée au code :
+  - **A1, B1** — manuel : « partie entière non nulle », zéros de tête (« 0001.234 » refusé, « 0.500 » passe), lu au code
+    `/^0*[1-9][0-9]{0,2}$/.test(parts.integerDigits)` ; test « 0001.234 » → `ambiguous` (et « 1.000 »).
+  - **B2** — trois commentaires reformulés sans l'ancienne clé ; `git grep -nE "max-decimals|Maximum 4 d" -- . ':!_bmad-output'` vide.
+  - **B3, E3** — l'assistant affiche un message pour un HT illisible (`journal-entry-form-amount-unreadable`) et pour un HT
+    arrondi à 0.00 (clé neuve `vat-purchase-ht-below-centime`, quatre locales, C-36-3-12) ; `htAmountProblem` pure et
+    testée ; captures `05-assistant-ht-12-34-illisible.png`, `06-assistant-ht-0.004-sous-le-centime.png` (et 01 à 04
+    reprises). `sitesTotal` 3038 → 3040, relevé par la garde.
+  - **E1** — bornes figées en `unreadable` : U+00A0, U+202F, U+2018, U+00B4, U+02BC, `.5`, `5.`, `1.23450`, chiffres
+    arabo-indiens et pleine chasse, `5\n` ; en `clear` : `1000.000`, `12'345'678'901'234`. Mutation **M12** (classe
+    d'apostrophes élargie) jouée, tuée.
+  - **A3** — test « même ligne : débit ambigu, crédit illisible » → message ambigu seul, rien ne part ; mutation **M13**
+    (les trois verrous retirés ensemble) jouée, tuée par ce test et par « Ctrl+S sans envoi ». **M14** (`below-centime`
+    retiré) jouée, tuée. `mut/resume.log`, entrées `HEAD b5d4ab689`.
+  - **E2, A4** — fiche accordée au livré (ligne 111, tableau des mutations « Vitest seul », tâches cochées sauf les gates
+    de clôture, D5 et Dev Notes annotées).
+  - **A2** — « Ligne incomplète » doublé : **#1183**, ouverte par l'orchestrateur, hors périmètre.
+  - **A5** — chaque journal de gate de la remédiation porte son commit en première ligne ; les 6 E2E ignorés du ciblé
+    déclarés (six `test.skip` préexistants).
+  - **E4** (INFO, garde `null` inatteignable) : défense en profondeur assumée ; M13 la retire avec les deux autres verrous.
+  Gates de remédiation au commit `b5d4ab689` (bases de la voie 2 remises à neuf) : `scripts/test-fast.sh --ci` **5445
+  passés, 13 ignorés** (`test-fast-ci-r1.log`) ; `npm run check` 0 erreur, 29 avertissements (`front-check-r1.log`) ;
+  `lint-i18n-ownership` PASS (`front-lint-r1.log`) ; `npm run test:unit` **3520 passés, 235 fichiers**
+  (`front-test-unit-r1.log`) ; `npm run build` vert (`front-build-r1.log`). **Non lancés** : `gate-ci` et E2E complet
+  (clôture). Prompt de la passe ciblée P2 : `36-3-ecriture-montant-ambigu-review-prompt-p2-ciblee.md`.
