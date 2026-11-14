@@ -3,6 +3,9 @@
 Registre propre à la story 36-2, **versé par union**. Fiche : `36-2-eclater-bouton-grise.md`. Code lu à `dabd9045a`.
 Ces choix ne sont pas couverts par C-e360 ; ils prolongent l'étape 0 de la 36-2 et C-e360-5 (registre
 `e36-choix-autonomes-e360.md`), qui font foi : la cause n'est pas tranchée par la fiche, la reproduction la départage.
+*(Annoté le 2026-11-14, validation P2 : depuis C-36-2-9, la reproduction constate la cause sans décider du contenu des
+correctifs ; elle peut en suspendre la mise en œuvre — fiche, *Si R0 rend…*. C-e360-5 est annoté en ce sens par
+l'orchestrateur au registre du kickoff.)*
 
 ### C-36-2-1 — H4 (le catalogue efface l'attendu et l'écart) se corrige sans condition
 
@@ -121,4 +124,29 @@ le 2026-11-14 ; prémisses relues au code avant application.*
 - **Retenu** (décision de l'orchestrateur) : `class="max-h-[85vh] overflow-y-auto sm:max-w-3xl"` sur le seul
   `Dialog.Content` du dialogue (`LinkSettlementModal.svelte:195`) ; `closes #1151` à la PR.
 - **Écartée** : garder la condition (C-e360-5 le permettait, la mesure la rend sans objet).
+- **Réversible** : oui.
+- *(Annoté le 2026-11-14, validation P2 : la classe est **remplacée par C-36-2-14** — `sm:max-w-3xl` seul, sans
+  `max-h` ni `overflow-y-auto` ; l'entrée de #1151 sans condition est maintenue.)*
+
+### C-36-2-13 — Garde du centime dans le dialogue ; les zéros au-delà du centime se normalisent (V2-1)
+
+- **Contexte** : le serveur refuse une échelle supérieure à 2 (`crates/kesh-api/src/routes/reconciliation.rs:5369-5373`) ;
+  la grammaire du journal (36-3, D2) admet quatre décimales et `payload` garde la fraction telle que saisie.
+- **Retenu** (décision de l'orchestrateur, forme choisie ici) : une lecture `clear` est acceptée si `value` égale son
+  arrondi au centime, et part `value.toFixed(2)` (« 60.0000 » → `60.00`) ; sinon, clé neuve
+  `reconciliation-split-error-amount-cents`. Textes des clés neuves sans conseil de quatre décimales. `readJournalAmount`
+  non modifié.
+- **Écartées** : refuser aussi « 60.0000 » (zéros sans valeur, lecture exacte) ; laisser refuser le serveur (message
+  technique, index à partir de 0) ; modifier `readJournalAmount`.
+- **Réversible** : oui.
+
+### C-36-2-14 — La largeur sans défilement : la liste du champ de compte n'est pas rognée (V2-2)
+
+- **Contexte** : la liste d'`AccountAutocomplete` est un descendant en `absolute` (`:459`, `:555`) ; un ancêtre
+  `overflow-y-auto` la rogne. Aucun dialogue défilant ne loge ce composant aujourd'hui.
+- **Retenu** : `class="sm:max-w-3xl"` seul sur le `Dialog.Content` ; assertion `toBeInViewport` d'une option de la liste
+  ouverte sur la dernière de six lignes (AC6 b), mutation M9 ; si l'assertion échoue : arrêt de cette partie et rapport.
+  La limite des dialogues très longs (bas hors de l'écran, comme aujourd'hui) est une issue demandée (I3).
+- **Écartées** : défilement du seul corps des lignes (rogne davantage) ; liste rendue hors du conteneur (modifie
+  `AccountAutocomplete.svelte`, hors de la story) ; `max-h-[85vh] overflow-y-auto` du précédent.
 - **Réversible** : oui.
