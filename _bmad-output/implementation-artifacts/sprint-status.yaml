@@ -1074,6 +1074,7 @@ development_status:
   36-1-compte-produit-entree: backlog  # #1095 ; phase 1, tête (chemin de la première facture) ; lignée A, voie 2 ; petite, frontend (AccountAutocomplete + InvoiceForm + produits)
   36-2-eclater-bouton-grise: backlog  # #1150 ; phase 1 ; lignée A après 36-1 (AccountAutocomplete possible) ; cause à établir par reproduction (C-e360-5) ; #1151 seulement si la cause l'exige
   36-3-ecriture-montant-ambigu: done  # #1051 ; phase 1 ; lignée A ; prédicat d'ambiguïté de la 35-6 réemployé, apostrophe des milliers admise au journal ; périmètre borné à l'écriture et à l'assistant d'achat (C-e360-6 amendé)
+  36-3b-facture-prix-unitaire-ambigu: ready-for-dev  # #1171 (P2) ; phase 1 ; ajoutée le 2026-11-14 sur décision de Guy (C-e360-17) ; lignée A, voie 2, part de la 36-3
   36-4-annulation-reglement-cle-api: backlog  # #1131 ; phase 1 ; lignée B, voie 1 ; kesh-db (gate complet en boucle) ; les deux cancel_settlement_in_tx prennent un Acteur (C-e360-7)
   36-5-restauration-compte-rendu: backlog  # #931 (KF-056) ; phase 1 ; lignée B après 36-4 ; correctif du produit, preuve par répétition avant/après (C-e360-8)
   36-6-transaction-plusieurs-ecritures: backlog  # #823 ; phase 2, rang 1 ; migration possible (à dire avant d'écrire) ; découpage préventif probable

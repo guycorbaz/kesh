@@ -1,0 +1,432 @@
+# Story 36-3b : la facture client ne lit plus un prix unitaire « 1.250 » comme 1,25 franc (#1171)
+
+Status: ready-for-dev
+
+*Fiche rédigée le 2026-11-14 par l'agent de rédaction des fiches de l'Epic 36 (Opus 5.5), worktree `kesh-36-3b`, branche
+`story/36-3b-facture-prix-unitaire-ambigu`, partie de la tête de la 36-3 terminée (`b1cd53d28`), par le workflow
+`bmad-create-story`, prompt `kesh-gate-logs/prompts/e36-fiche.md`. Release **0.17.8**, phase 1. **Aucune migration**,
+aucun changement serveur ni d'API. Code lu à la tête du worktree (`b1cd53d28`). Voie de développement : **voie 2**.
+Registres : `e36-choix-autonomes-e360.md` de la branche du kickoff (`chore/epic-36-kickoff`, `153bd2bb0`, C-e360-17, qui
+fait foi) ; `e36-choix-autonomes-36-3b.md` (C-36-3b-1 à C-36-3b-7). Validation non lancée.*
+
+## Story
+
+En tant que titulaire qui émet une facture client — la première avant la fin de novembre —, je veux qu'un prix unitaire
+que Kesh ne peut pas lire sans ambiguïté (« 1.250 » : mille deux cent cinquante francs à l'allemande, ou un franc
+vingt-cinq ?) soit refusé avec un message qui dit comment l'écrire, et que « 1'250 » soit accepté pour mille deux cent
+cinquante, afin qu'aucune facture ne parte au millième du prix voulu sans que je le voie.
+
+## Ce qui se lit au code (`b1cd53d28`)
+
+**Le défaut** — `frontend/src/lib/components/invoices/InvoiceForm.svelte` (984 lignes), `validateClient` :
+- `:509-519` :
+  ```ts
+  try {
+  	const qty = new Big(l.quantity);
+  	const price = new Big(l.unitPrice);
+  	if (qty.lte(0)) return `Ligne ${i + 1} : quantité > 0`;
+  	if (price.lt(0)) return `Ligne ${i + 1} : prix unitaire ≥ 0`;
+  	...
+  } catch {
+  	return `Ligne ${i + 1} : valeurs numériques invalides`;
+  }
+  ```
+  `new Big('1.250')` vaut 1,25 ; `new Big("1'250")`, `new Big('1,25')` et `new Big('')` lèvent ; `new Big('1e3')` vaut 1000,
+  `new Big('.5')` 0,5, `new Big('-5')` −5 (relevé à l'exécution, `node -e` sur le big.js du dépôt principal, lecture seule).
+- `:594` la charge : `lines: lines.map(stripUiKey),` — `stripUiKey` (`:111-114`) ne retire que `_uiKey` et
+  `_vatPlaceholder` : **le prix part tel que tapé**, « 1.250 » compris, et le serveur le lit 1,25.
+- Le champ : `:842` `<Input type="text" inputmode="decimal" bind:value={line.unitPrice} />` ; aucun message sous le
+  champ, aucune bordure.
+
+**Les chemins du prix dans le formulaire** (`git grep -n "unitPrice\|stripUiKey\|computeInvoiceTotal\|computeLineTotal\|totalAmount" -- frontend/src/lib/components/invoices/InvoiceForm.svelte`) :
+
+```
+frontend/src/lib/components/invoices/InvoiceForm.svelte:24:		computeInvoiceTotal,
+frontend/src/lib/components/invoices/InvoiceForm.svelte:25:		computeLineTotal,
+frontend/src/lib/components/invoices/InvoiceForm.svelte:111:	function stripUiKey(l: LineState): CreateInvoiceLineRequest {
+frontend/src/lib/components/invoices/InvoiceForm.svelte:122:				unitPrice: readableAmount(l.unitPrice, 2),
+frontend/src/lib/components/invoices/InvoiceForm.svelte:134:				unitPrice: '0.00',
+frontend/src/lib/components/invoices/InvoiceForm.svelte:437:			unitPrice: '0.00',
+frontend/src/lib/components/invoices/InvoiceForm.svelte:453:			unitPrice: readableAmount(p.unitPrice, 2),
+frontend/src/lib/components/invoices/InvoiceForm.svelte:474:		return computeLineTotal(l.quantity, l.unitPrice);
+frontend/src/lib/components/invoices/InvoiceForm.svelte:477:	let totalAmount = $derived(computeInvoiceTotal(lines));
+frontend/src/lib/components/invoices/InvoiceForm.svelte:511:				const price = new Big(l.unitPrice);
+frontend/src/lib/components/invoices/InvoiceForm.svelte:594:				lines: lines.map(stripUiKey),
+frontend/src/lib/components/invoices/InvoiceForm.svelte:650:				unitPrice: readableAmount(l.unitPrice, 2),
+frontend/src/lib/components/invoices/InvoiceForm.svelte:656:				// les efface en base. `stripUiKey` étant un spread, rien ne signale
+frontend/src/lib/components/invoices/InvoiceForm.svelte:842:							<Input type="text" inputmode="decimal" bind:value={line.unitPrice} />
+frontend/src/lib/components/invoices/InvoiceForm.svelte:912:						{formatInvoiceTotal(totalAmount)}
+```
+
+| Chemin | Ligne | Ce qu'il fait du prix | Décision |
+|---|---|---|---|
+| Saisie | `:842` | `bind:value` brut | message et bordure sous le champ (D3) |
+| Ligne neuve, ligne libre | `:134`, `:437` | `'0.00'` | inchangé (`clear`, partie nulle) |
+| Total de ligne vivant | `:473-475` `computeLineTotal(l.quantity, l.unitPrice)`, affiché `:891` | `new Big(qty).times(unitPrice)` (`invoice-helpers.ts:29-35`) : « 1.250 » × 1 = 1.25 | lu par la charge du prix, `0` si refusé (D4) |
+| Total de la facture | `:477`, affiché `:912` | `computeInvoiceTotal(lines)` (`invoice-helpers.ts:40-52`) | idem (D4) |
+| Validation avant envoi | `:506-519` | `new Big(l.unitPrice)` | lecture du journal (D1, D3) |
+| Construction du corps | `:588-595` | brut | charge normalisée, garde après l'attente des réglages (D5) |
+| Brouillon rouvert | `:119-123` `unitPrice: readableAmount(l.unitPrice, 2),` | forme lisible de la valeur serveur | jamais ambiguë (D2) |
+| « Recharger » après conflit | `:645-650` | idem | idem (D2) |
+| Ligne depuis un article | `:449-453` `unitPrice: readableAmount(p.unitPrice, 2),` | idem, valeur de la fiche article | idem (D2) ; le prix de l'article lui-même : **#1173** |
+
+**La forme d'un prix rechargé** — `supplier-invoices/supplier-invoice-form.ts:214-224` `readableAmount` :
+`const s = b.toFixed();` … `return decimals < minDecimals ? b.toFixed(minDecimals) : s;`. Relevé à l'exécution (big.js
+du dépôt) : « 1.2500 » → `1.25`, « 1250.0000 » → `1250.00`, « 100.0000 » → `100.00`, « 33.3333 » → `33.3333`,
+**« 1.2340 » → `1.234`**, **« 12.3450 » → `12.345`**. Un prix « 1.250 » mal saisi avant la story, enregistré 1,25, se
+rouvre donc `1.25` (lisible, non refusé : rien ne permet de savoir qu'il était faux) ; un prix légitime au millième
+(1,234 franc) se rouvrirait `1.234` et **serait refusé à tort** sans D2. Le commentaire `InvoiceForm.svelte:43-45`
+(« `DECIMAL(19,4)`, `1.0000`, `100.0000` ») confirme la forme du serveur.
+
+**La validation serveur du prix** (inchangée) — `crates/kesh-api/src/routes/invoices.rs` :
+- `:506` `if req.unit_price < Decimal::ZERO {` (positif ou nul) ;
+- `:512` `if !scale_within(&req.unit_price, MAX_DECIMAL_SCALE) {` — `limits.rs:28` `pub const MAX_DECIMAL_SCALE: u32 = 4;`,
+  `limits.rs:31-32` `value.scale() <= max_scale` : quatre décimales au plus, **sans** normaliser (« 1.25000 » refusé ;
+  écart voulu avec la facture fournisseur, commentaire `supplier_invoices.rs:521-524`) ;
+- `:515` `if req.unit_price > *MAX_UNIT_PRICE {` — `limits.rs:13-14`, 10⁹ ;
+- `:524` `let line_total = req.quantity * req.unit_price;` borné à `MAX_LINE_TOTAL` (10¹²), **sans arrondi au centime**.
+**La règle du centime #687** (« Une facture fournisseur peut porter un TTC à plus de deux décimales… ») ne vise que la
+facture **fournisseur** (`crates/kesh-core/src/accounting/purchase.rs:1` « Le montant d'une ligne de facture fournisseur —
+Story v017-3b (#687). ») ; la ligne de facture client garde son total à quatre décimales
+(`invoice-helpers.ts:25-31`, `.round(4, ROUND_HALF_UP).toFixed(4)`). **Le prix suit donc la grammaire du journal sans
+variante** : un à quinze chiffres entiers (ou groupés par apostrophe), une à quatre décimales, aucun signe
+(C-36-3b-1). Le plafond de 10⁹ reste au serveur, comme aujourd'hui (le client ne le contrôle pas).
+
+**Ce que la 36-3 fournit, réemployé sans modification** :
+- `frontend/src/lib/shared/utils/amount-ambiguity.ts:38` `export function isAmbiguousThousands(parts: AmountParts): boolean {`
+  — appelé indirectement, par le lecteur ;
+- `frontend/src/lib/features/journal-entries/balance.ts:110` `export function readJournalAmount(raw: string): JournalAmountReading {`
+  (`empty` / `clear` avec `value` et `payload` / `ambiguous` / `unreadable`), grammaire `:90`
+  `const JOURNAL_AMOUNT_RE = /^([1-9]\d{0,2}(?:['’]\d{3})+|\d{1,15})(?:[.,](\d{1,4}))?$/;` ;
+- **non réemployé** : `journalAmountPayload` (`:143-147`), qui rend `'0'` pour le vide (`if (r.kind === 'empty') return '0';`)
+  — un prix effacé partirait à zéro (C-36-3b-2).
+
+**Les messages de la 36-3** — `crates/kesh-i18n/locales/fr-CH/messages.ftl:313-314` (même rang dans les quatre
+locales) : `journal-entry-form-amount-ambiguous = Montant ambigu : un point ou une virgule suivis de trois chiffres peuvent
+séparer les milliers. Écrivez 1'234 pour mille deux cent trente-quatre, ou 1.2340 pour un franc vingt-trois et quatre
+dixièmes de centime.` ; `journal-entry-form-amount-unreadable = Montant illisible : chiffres, apostrophe des milliers
+(1'234), point ou virgule décimale, quatre décimales au plus.` Les deux disent vrai d'un prix unitaire. Leur affichage au
+journal (`JournalEntryForm.svelte:504-527`) : une rangée sous la ligne, `class="text-xs text-destructive pb-2"`,
+`data-testid="journal-entry-line-amount-ambiguous"` / `-unreadable` ; bordure `class={amountFlagged(line.debit) ? 'border-destructive' : …}` (`:440`).
+
+**Le lint de propriété des clés** ne parcourt que `src/lib/features` (`frontend/scripts/lint-i18n-ownership.js:17`
+`const FEATURES_PATH = path.join(__dirname, '../src/lib/features');`, `:255-256` `walkDir(FEATURES_PATH, …)`) :
+`components/invoices/InvoiceForm.svelte` n'y est pas soumis, aucune entrée `KNOWN_VIOLATIONS` n'est à ajouter. La garde
+`frontend/src/lib/shared/i18n-keys.test.ts` parcourt tout `src` (`:1301` `parcourir('src');`) : `sitesTotal`
+(`:992` `sitesTotal: 3040,`) se recompte.
+
+**Le refus visible aujourd'hui** passe par `validateClient` puis le bandeau `errorMsg` (`:698-701`) ; le bouton d'envoi
+(`:933-935`) n'est désactivé que par l'envoi en cours, le conflit, les réglages et les comptes de produit invalides. Les
+messages de ligne de `validateClient` sont en français en dur, sauf `invoice-line-vat-rate-disabled-error`
+(`fr-CH/messages.ftl:2659` `Ligne { $line } : le taux de TVA { $rate }% a été désactivé. Choisissez un taux actif.`).
+
+### Inventaire par le symptôme
+
+Le symptôme : « un prix ou un montant tapé est lu avec le point pour séparateur décimal, sans contrôle d'ambiguïté ».
+L'inventaire complet du dépôt est celui de la fiche 36-3 (§ *Inventaire par le symptôme*, sites 1 à 14) ; rejoué à
+`b1cd53d28`, il rend les mêmes fichiers (sortie ci-dessous). Détecteur par lecture, parti du champ (aucun détecteur par
+exécution praticable : un E2E par écran) ; **sonde positive** : le premier motif rend `InvoiceForm.svelte`, site connu
+du défaut, et `JournalEntryForm.svelte`, site corrigé par la 36-3 (que le troisième motif rend comme lecteur).
+
+`git grep -ln 'inputmode="decimal"' -- frontend/src` :
+```
+frontend/src/lib/components/invoices/InvoiceForm.svelte
+frontend/src/lib/components/invoices/InvoiceForm.test.ts
+frontend/src/lib/features/bank-import/ManualStatementForm.svelte
+frontend/src/lib/features/invoices/SettleInvoiceDialog.svelte
+frontend/src/lib/features/journal-entries/JournalEntryForm.svelte
+frontend/src/lib/features/journal-entries/VatPurchaseAssistant.svelte
+frontend/src/lib/features/supplier-invoices/SupplierInvoiceForm.svelte
+frontend/src/routes/(app)/bank-accounts/+page.svelte
+frontend/src/routes/(app)/journal-entries/+page.svelte
+frontend/src/routes/(app)/products/+page.svelte
+frontend/src/routes/(app)/settings/dunning/+page.svelte
+frontend/src/routes/(app)/settings/invoicing/+page.svelte
+frontend/src/routes/(app)/settings/opening-balances/+page.svelte
+```
+`git grep -n "new Big(" -- frontend/src/lib/components/invoices/InvoiceForm.svelte` :
+```
+frontend/src/lib/components/invoices/InvoiceForm.svelte:510:				const qty = new Big(l.quantity);
+frontend/src/lib/components/invoices/InvoiceForm.svelte:511:				const price = new Big(l.unitPrice);
+```
+`git grep -n "readJournalAmount\|journalAmountPayload\|isAmbiguousThousands" -- frontend/src ':!*.test.ts'` (les lecteurs
+corrigés) : `bank-accounts/format.ts:320`, `journal-entries/JournalEntryForm.svelte:185`, `:223-224`,
+`journal-entries/balance.ts`, `journal-entries/vat-purchase.ts:119` — **aucun** site de la facture client.
+
+| Site | Ligne lue | Décision |
+|---|---|---|
+| Prix unitaire de la facture client | `InvoiceForm.svelte:511`, `:594`, `:842` | **périmètre** |
+| Quantité de la facture client | `InvoiceForm.svelte:510` `const qty = new Big(l.quantity);` | **hors de la règle** : « 1.250 » y vaut 1,25 unité, lecture voulue ; inchangée (virgule toujours refusée) |
+| Prix de l'article (catalogue) | `features/products/product-helpers.ts:53` `PRICE_RE`, `:72` | hors périmètre, **#1173** |
+| Prix unitaire fournisseur | `supplier-invoice-form.ts:152-153` | hors périmètre, **#1159** |
+| Montant de paiement attendu (fournisseur) | `supplier-invoice-form.ts:283` | hors périmètre, **#1172** |
+| Règlement d'une facture | `invoices/SettleInvoiceDialog.svelte:68-76` | hors périmètre, **#1174** |
+| Frais de rappel | `settings/dunning/+page.svelte:104` | hors périmètre, **#1175** |
+| Montant minimal de facture | `settings/invoicing/+page.svelte:276` | hors périmètre, **#1176** |
+| Filtres de la liste des écritures | `routes/(app)/journal-entries/+page.svelte:401-415` | hors périmètre, **#1177** |
+| Soldes de départ | `settings/opening-balances/+page.svelte:150-151`, `:199-200` | hors périmètre, **#1050** |
+| Écriture manuelle, assistant TVA achat, solde d'ouverture | — | corrigés (36-3, 35-6) |
+
+**Ce qui arrive à un article au prix ambigu** : l'écran article accepte « 1.250 » et l'enregistre 1,25 (#1173). La ligne
+préremplie reçoit `readableAmount('1.2500', 2)` = `1.25`, **clair** : elle n'est pas refusée, et l'erreur de l'article
+passe sur la facture sans signal — ce que seule #1173 corrige. Un article au prix légitime « 1.2340 » se préremplit
+`1.2340` grâce à D2, et non `1.234` refusé à tort.
+
+## Décisions
+
+- **D1 — Le prix unitaire se lit par `readJournalAmount`, tel quel** (C-e360-17, C-36-3b-1). Aucune grammaire propre ;
+  ni `balance.ts` ni `amount-ambiguity.ts` ne changent (C-36-3b-6). Conséquences, à dire au manuel : la virgule
+  décimale (« 1,25 ») et l'apostrophe des milliers (« 1'250 », « 1’250.50 ») sont admises et partent normalisées
+  (`1.25`, `1250`, `1250.50`) ; « 1.250 », « 12,500 », « 001.250 » sont **ambigus** ; « -5 », « 1e3 », « .5 », « 5. »,
+  « 1.25000 », « 12'50 » sont **illisibles** (aujourd'hui « -5 » rendait « prix unitaire ≥ 0 », « 1e3 » partait au
+  serveur). Le vide garde son message d'aujourd'hui (D3). La quantité ne change pas.
+  *Écartées* : (a) une variante à signe pour garder « prix unitaire ≥ 0 » — une seconde grammaire pour un cas que le
+  serveur refuse ; (b) modifier `readJournalAmount` pour un paramètre — interdit par C-e360-17.
+- **D2 — Un prix venu du serveur ne se rouvre jamais sous une forme ambiguë** (C-36-3b-3). Fonction pure neuve dans
+  `frontend/src/lib/features/invoices/invoice-helpers.ts` :
+  `unitPriceFieldValue(raw: string): string` = `readableAmount(raw, 2)`, sauf si `readJournalAmount` de ce résultat est
+  `ambiguous` : alors `new Big(raw).toFixed(4)`. Exemples : « 1.2340 » → `1.2340` ; « 12.3450 » → `12.3450` ;
+  « 1.2500 » → `1.25` ; « 1250.0000 » → `1250.00` ; « 100.2000 » → `100.20` ; « 33.3333 » → `33.3333` ;
+  « 0.0100 » → `0.01` ; « 0.1250 » → `0.125` (partie nulle, clair). Une valeur illisible pour big.js est rendue telle
+  quelle (contrat de `readableAmount`). Appelée aux **trois** sites : `initLines` (`:122`), `onProductSelect` (`:453`),
+  `reloadFromServer` (`:650`). La quantité garde `readableAmount(…, 0)`.
+  *Écartées* : (a) modifier `readableAmount` — partagé par la facture fournisseur (`SupplierInvoiceForm.svelte:185`,
+  `supplier-invoice-form.ts:236`) et trois écrans de détail ; (b) quatre décimales toujours — défait #878.
+- **D3 — Le refus : sous le champ, et à l'envoi en nommant la ligne** (C-36-3b-2, C-36-3b-4).
+  - Sous le champ : une rangée sous la ligne (comme `JournalEntryForm.svelte:504-527`), `class="text-xs text-destructive"`,
+    `data-testid="invoice-line-unit-price-ambiguous"` avec `i18nMsg('journal-entry-form-amount-ambiguous', <fallback
+    identique à JournalEntryForm.svelte:511>)`, ou `data-testid="invoice-line-unit-price-unreadable"` avec
+    `journal-entry-form-amount-unreadable`. Bordure `border-destructive` sur le champ du prix dans ces deux cas. Rien
+    pour un prix vide (aujourd'hui non plus).
+  - `validateClient`, après la description et **avant** le bloc `try` : `ambiguous` →
+    `i18nMsg('invoice-line-unit-price-ambiguous-error', …, { line: i + 1 })` ; `unreadable` →
+    `i18nMsg('invoice-line-unit-price-unreadable-error', …, { line: i + 1 })` ; `empty` →
+    `Ligne ${i + 1} : valeurs numériques invalides` (inchangé). Dans le `try`, `price` vaut `new Big(payload)`. La
+    branche `price.lt(0)` reste (défense ; inatteignable par la grammaire).
+  - Le bouton reste actif : clic et *Entrée* passent par `onSubmit` → `validateClient` (`:552`).
+  - Fonction pure neuve dans `invoice-helpers.ts` : `unitPricePayload(raw: string): string | null` — `payload` d'une
+    lecture `clear`, `null` sinon (vide compris).
+  *Écartées* : (a) `journalAmountPayload` — `'0'` pour un prix vide ; (b) préfixer « Ligne N : » en dur devant les clés
+  de la 36-3 — message à moitié français ; (c) désactiver le bouton.
+- **D4 — Les totaux lisent la même charge** (C-36-3b-5) : `lineTotal(l)` =
+  `computeLineTotal(l.quantity, unitPricePayload(l.unitPrice) ?? '0')` ; `totalAmount` =
+  `computeInvoiceTotal(lines.map((l) => ({ quantity: l.quantity, unitPrice: unitPricePayload(l.unitPrice) ?? '0' })))`.
+  `computeLineTotal` et `computeInvoiceTotal` ne changent pas. « 1'250 » × 2 → `2’500.00` ; « 1.250 » → `0.00`.
+  *Écartées* : garder 1,25 (le défaut) ; un tiret (nouvel état de la colonne).
+- **D5 — La charge porte le prix normalisé, relu après l'attente des réglages** (C-36-3b-7). `:594` devient la
+  construction de chaque ligne `{ ...stripUiKey(l), unitPrice: unitPricePayload(l.unitPrice) }` ; si l'une rend `null`
+  (prix retapé pendant `await getInvoiceSettings()`, `:562`), l'envoi s'arrête : `errorMsg = validateClient() ?? …`,
+  `submitting = false`, aucune requête. « 100.00 » part `100.00`, « 33.3333 » `33.3333` (les allers-retours de #878,
+  `InvoiceForm.test.ts:694`, `:709`, `:720`, inchangés).
+- **D6 — Textes** (quatre locales, **à côté** d'`invoice-line-vat-rate-disabled-error` — fr-CH `:2659`, de-CH `:2531`,
+  it-CH `:2529`, en-CH `:2536` —, jamais en fin de fichier ; la 36-1 ajoute `common-account-no-match` dix lignes plus
+  haut, sans chevauchement) :
+  - `invoice-line-unit-price-ambiguous-error` — fr-CH : « Ligne { $line } : prix unitaire ambigu — écrivez 1'250 pour
+    mille deux cent cinquante francs, ou 1.2500 pour un franc vingt-cinq. » ; de-CH : « Zeile { $line }: mehrdeutiger
+    Einzelpreis — schreiben Sie 1'250 für eintausendzweihundertfünfzig Franken oder 1.2500 für einen Franken und
+    25 Rappen. » ; it-CH : « Riga { $line }: prezzo unitario ambiguo — scrivete 1'250 per milleduecentocinquanta
+    franchi, o 1.2500 per un franco e 25 centesimi. » ; en-CH : « Line { $line }: ambiguous unit price — write 1'250 for
+    one thousand two hundred fifty francs, or 1.2500 for one franc and 25 centimes. »
+  - `invoice-line-unit-price-unreadable-error` — fr-CH : « Ligne { $line } : prix unitaire illisible — chiffres,
+    apostrophe des milliers (1'250), point ou virgule décimale, quatre décimales au plus. » ; de-CH : « Zeile { $line }:
+    unlesbarer Einzelpreis — Ziffern, Apostroph als Tausendertrennzeichen (1'250), Punkt oder Komma als
+    Dezimaltrennzeichen, höchstens vier Nachkommastellen. » ; it-CH : « Riga { $line }: prezzo unitario illeggibile —
+    cifre, apostrofo delle migliaia (1'250), punto o virgola decimale, al massimo quattro decimali. » ; en-CH :
+    « Line { $line }: unreadable unit price — digits, apostrophe for thousands (1'250), point or comma for decimals, at
+    most four decimals. »
+  - Les deux clés de la 36-3, réemployées sous le champ, ne changent pas.
+- **D7 — Ce qui ne change pas** : le serveur et l'API (un client d'API envoie toujours un décimal à point ; « 1'250 »
+  y reste refusé par le serveur) ; `balance.ts`, `amount-ambiguity.ts`, `readableAmount`, `computeLineTotal`,
+  `computeInvoiceTotal` ; la quantité ; la facture fournisseur, l'article, le règlement et les autres sites de
+  l'inventaire ; l'écran de détail d'une facture.
+
+## Critères d'acceptation
+
+1. **AC1 — Les fonctions pures** (`features/invoices/invoice-helpers.test.ts`) : `unitPricePayload` — « 1'250 » →
+   `1250`, « 1’250.50 » → `1250.50`, « 1,25 » → `1.25`, « 100.00 » → `100.00`, « 33.3333 » → `33.3333`, « 0.00 » →
+   `0.00`, « 0.125 » → `0.125` ; `null` pour « 1.250 », « 12,500 », « 001.250 », « 12'50 », « -5 », « 1e3 », « .5 »,
+   « 1.25000 », « » ; `unitPriceFieldValue` — la table de D2 entière, et pour chaque sortie
+   `readJournalAmount(sortie).kind !== 'ambiguous'`.
+2. **AC2 — Saisie et refus** (`components/invoices/InvoiceForm.test.ts`, brouillon ouvert, `updateInvoiceMock`) : le
+   prix retapé « 1.250 » → `invoice-line-unit-price-ambiguous` visible, champ bordé `border-destructive`, total de ligne
+   `0.00` ; *Enregistrer* → le bandeau dit « Ligne 1 : prix unitaire ambigu », `updateInvoiceMock` **non appelé** ;
+   même chose par *Entrée* dans le champ (soumission du `<form>`). « 12'34 » → `invoice-line-unit-price-unreadable` et
+   « Ligne 1 : prix unitaire illisible ». Prix vidé → « Ligne 1 : valeurs numériques invalides » (inchangé).
+3. **AC3 — Accepté et normalisé** : « 1'250 » (quantité 2) → aucun message, total de ligne `2’500.00` et total de la
+   facture qui le suit ; *Enregistrer* → `updateInvoiceMock` reçoit `unitPrice: '1250'` ; « 1,25 » part `'1.25'`.
+   Les allers-retours de #878 (`InvoiceForm.test.ts:694`, `:709`, `:720`) restent verts sans modification.
+4. **AC4 — Un prix enregistré n'est pas refusé à tort** : brouillon aux prix serveur `1.2340`, `1.2500`, `12.3450` →
+   champs `1.2340`, `1.25`, `12.3450`, aucun message ; *Enregistrer* sans toucher → charges `'1.2340'`, `'1.25'`,
+   `'12.3450'`. Même constat après *Recharger* sur conflit (`reloadFromServer`) et pour une ligne ajoutée depuis un
+   article au prix `1.2340` (`onProductSelect`) — **un test par site**. Le test existant `:619-635` (`0.0100` → `0.01`)
+   reste vert.
+5. **AC5 — La course** : `getInvoiceSettingsMock` qui, appelé à l'envoi, remplace le prix par « 1.250 » avant de
+   résoudre → aucune requête, bandeau « Ligne 1 : prix unitaire ambigu », bouton de nouveau actif.
+6. **AC6 — E2E** (`frontend/tests/e2e/invoices.spec.ts`, test neuf dans « Factures — création brouillon », montage de
+   `:469-499`) : nouvelle facture, contact créé par l'API, une ligne « Prix ambigu E2E », quantité `1`, prix `1.250` ;
+   écouteur `page.on('request')` armé avant le clic, qui compte les `POST /api/v1/invoices` ; *Créer la facture* →
+   `invoice-line-unit-price-ambiguous` visible, bandeau « prix unitaire ambigu », **zéro** `POST`, URL toujours
+   `/invoices/new`. Puis prix `1'250` → *Créer la facture* : le corps (`page.waitForRequest`) porte
+   `"unitPrice":"1250"`, la réponse est 201, l'URL devient `/invoices/<id>`, et `GET /api/v1/invoices/<id>` (par
+   `authedApiContext`) rend `lines[0].unitPrice === "1250.0000"`. Fixtures synthétiques.
+7. **AC7 — Textes** : deux clés neuves × quatre locales à l'emplacement de D6 ; `npm run lint-i18n-ownership` vert sans
+   entrée neuve (`components/` hors de son parcours) ; `sitesTotal` de `i18n-keys.test.ts` (`:992`, 3040 à `b1cd53d28`)
+   **recompté à la source** par la garde elle-même, valeur mise à ce qu'elle rend, sans addition (attendu 3044 : deux
+   sites sous le champ, deux dans `validateClient` ; C-e350-18) ; les fallbacks des deux clés de la 36-3 recopiés à
+   l'identique de `JournalEntryForm.svelte:511`, `:524`.
+8. **AC8 — Manuel** (`docs/manual/fr/user-manual.tex`, § *Création d'une facture*, item **Lignes de facture**, `:1158`) :
+   une phrase dit la forme admise du prix, le refus de l'ambiguïté avec l'exemple `1.250`, la forme d'un prix au
+   millième rouvert (`1.2340`) et que la quantité n'est pas concernée. Texte proposé, ajouté à la fin de l'item :
+   « Le \textbf{prix unitaire} se lit comme le montant d'une écriture (cf. \emph{Saisie d'une écriture en partie
+   double})~: point ou virgule décimale, quatre décimales au plus, apostrophe des milliers (\texttt{1'250}).
+   \textbf{\texttt{1.250} est refusé comme ambigu}~: écrivez \texttt{1'250} pour mille deux cent cinquante francs, ou
+   \texttt{1.2500} pour un franc vingt-cinq~; la facture ne s'enregistre pas tant qu'une ligne porte un prix ambigu ou
+   illisible, et le message nomme la ligne. Un prix enregistré au millième se rouvre sur quatre décimales
+   (\texttt{1.2340}), forme qui n'est pas refusée. La quantité n'est pas concernée. » Le PDF se régénère **à
+   l'intégration** (fichier d'epic, *Fichiers communs*) ; contrôle aplati :
+   `pdftotext docs/manual/fr/user-manual.pdf - | tr '\n' ' ' | tr -s ' ' | /usr/bin/grep -c 'est refusé comme ambigu'`
+   ≥ 1 (0 dans le `.tex` à `b1cd53d28` : `git grep -c "est refusé comme ambigu" -- docs/manual/fr/user-manual.tex` vide).
+9. **AC9 — Rien d'autre ne change** : `git diff b1cd53d28 --stat` ne nomme ni `crates/` hors `kesh-i18n/locales/`, ni
+   `journal-entries/`, ni `shared/utils/amount-ambiguity.ts`, ni `supplier-invoices/`, ni `products/` ;
+   `balance.test.ts`, `amount-ambiguity.test.ts`, `supplier-invoice-form.test.ts` verts sans modification.
+10. **AC10 — Captures** (thème clair, base jetable `kesh_e2e_e363b`, `kesh-gate-logs/e36-3b/captures/`) : la ligne à
+    « 1.250 » (message sous le champ et bandeau après *Créer*) ; à « 12'34 » ; à « 1'250 » × 2 (total `2’500.00`) ; un
+    brouillon rouvert au prix `1.2340`.
+
+## Tests à écrire, et la preuve du rouge
+
+Écrits d'abord, sur le code non corrigé, journal `/home/gcorbaz/devel/kesh-gate-logs/e36-3b/rouges.log`. Les deux
+fonctions neuves sont d'abord posées avec la lecture d'aujourd'hui (`unitPricePayload` → le brut, `null` seulement si
+`new Big` lève ; `unitPriceFieldValue` → `readableAmount(raw, 2)`), pour que les rouges portent sur le comportement et non
+sur un export absent.
+
+- **Rouges attendus** : AC1 (« 1.250 » non `null`, « 1'250 » `null`, « 1.2340 » → `1.234`) ; AC2 (aucun message,
+  `updateInvoiceMock` appelé avec `1.250`) ; AC3 (« 1'250 » refusé « valeurs numériques invalides ») ; AC4 (champ
+  `1.234` et `12.345`, aux trois sites — rouge sur l'assertion de forme, car le code d'avant ne refuse pas) ; AC5
+  (requête partie) ; AC6 (le `POST` part avec `"unitPrice":"1.250"`).
+- **Verts au départ, et dits** : prix vidé (« valeurs numériques invalides ») ; les allers-retours de #878 ; AC4 pour
+  `1.2500` → `1.25` (seule valeur de la table d'AC4 déjà juste). Le rouge d'AC4 sur `1.234` établit la forme du champ ;
+  le refus à tort qu'il prévient ne se voit qu'**après** le correctif d'AC2, d'où une seconde vérification au vert : la
+  mutation M3 à M5 (retour à `readableAmount`) doit faire rougir AC4 par le **message ambigu**, non seulement par la
+  forme.
+- E2E rouge : sources de la story remises au commit de base par `git restore --source=b1cd53d28 --worktree -- <fichiers>`
+  **après** commit du code, frontend construit, test rouge, sources restaurées (`git restore --worktree` + `touch`),
+  journal `e2e-rouges.log`.
+
+**Mutations** (code commité d'abord ; scripts versionnés dans `/home/gcorbaz/devel/kesh-gate-logs/e36-3b/mut/` ;
+restauration `git restore --worktree -- <fichier>` puis `touch` ; journaux `mut/M*.log`, résumé `mut/resume.log`) :
+
+| # | Mutation | Tuée par |
+|---|---|---|
+| M1 | `validateClient` ne consulte plus la lecture (retour à `new Big(l.unitPrice)`) | AC2, AC3 |
+| M2 | la charge envoie le prix brut (`lines.map(stripUiKey)`) | AC3 (`'1250'`), AC6 |
+| M3 | `initLines` appelle `readableAmount(…, 2)` au lieu d'`unitPriceFieldValue` | AC4 (brouillon) |
+| M4 | idem dans `reloadFromServer` | AC4 (Recharger) |
+| M5 | idem dans `onProductSelect` | AC4 (article) |
+| M6 | `unitPriceFieldValue` sans le repli `toFixed(4)` | AC1, AC4 |
+| M7 | `unitPricePayload` rend `'0'` pour le vide | AC1, AC2 (prix vidé) |
+| M8 | les rangées de message sous le champ retirées | AC2 |
+| M9 | `lineTotal` lit le prix brut | AC2 (total `0.00`), AC3 (`2’500.00`) |
+| M10 | la garde `null` de la charge retirée (D5) | AC5 |
+| M11 | `ambiguous` et `unreadable` échangés dans `validateClient` | AC2 |
+
+Une mutation équivalente se dit au Dev Agent Record ; les E2E ne se rejouent pas sous mutation (Vitest seul, dit).
+
+## Tâches
+
+- [ ] **Étape 0** : relire à la tête du worktree les lignes citées ; rejouer les commandes d'inventaire et recopier leur
+      sortie brute à `kesh-gate-logs/e36-3b/etape0-inventaires.log` ; vérifier que la 36-3 n'a pas bougé depuis
+      `b1cd53d28` (`git diff b1cd53d28 -- frontend/src/lib/features/journal-entries/balance.ts frontend/src/lib/shared/utils/amount-ambiguity.ts`
+      vide) ; relire les LOW du dernier rapport de validation.
+- [ ] Tests d'abord (AC1 à AC5), rouges consignés ; puis `invoice-helpers.ts` (D2, D3) ; `InvoiceForm.svelte` (D2 à D5) ;
+      quatre `messages.ftl` (D6) ; `i18n-keys.test.ts` recompté (AC7).
+- [ ] E2E (AC6), rouge d'abord.
+- [ ] Manuel (AC8), `.tex` seul ; captures (AC10).
+- [ ] Mutations M1-M11.
+- [ ] Gates (voie 2, `e35-dev-commun.md` § *Quels gates, quand*) : en cours, Vitest ciblé
+      (`components/invoices/`, `features/invoices/invoice-helpers.test.ts`, `shared/i18n-keys.test.ts`) par
+      `.gate-front.lock`, `npm run check` et `lint-i18n-ownership` ; **passage en `review`** : bases `kesh_e363b` remises
+      à neuf sur la voie 2, `scripts/test-fast.sh --ci`, `scripts/gate-ci.sh kesh_ci_e363b` (voie 1, son verrou),
+      frontend complet (`check`, `lint-i18n-ownership`, `test:unit`, `build`), pas d'E2E ; **remédiations** :
+      `test-fast.sh --ci` et frontend complet ; **clôture** : `gate-ci` et E2E complet sur `kesh_e2e_e363b` recréée
+      (voie 2), au dernier commit de code, échecs nommés contre `docs/testing.md` § « Les échecs attendus ». Journaux
+      dans `/home/gcorbaz/devel/kesh-gate-logs/e36-3b/`, commit en première ligne de chacun.
+- [ ] Fin du développement : `Status: review`, clé `review` au `sprint-status.yaml`, prompt de la revue P1
+      (`36-3b-facture-prix-unitaire-ambigu-review-prompt-p1.md`) qui nomme le manuel, le PDF (à l'intégration) et les
+      captures.
+
+## Note de version
+
+*Rubrique* **Corrigé** (C-e360-11 ; l'orchestrateur l'assemble dans `## [0.17.8] — Non publié`) :
+
+- Facture client : un prix unitaire comme « 1.250 » — un point ou une virgule suivis de trois chiffres, sans séparateur
+  de milliers avant — n'est plus lu 1,25 franc en silence : il est refusé comme ambigu, la facture ne s'enregistre pas,
+  et le message dit comment l'écrire (`1'250` ou `1.2500`). L'apostrophe des milliers et la virgule décimale sont
+  désormais acceptées dans le prix (`1'250`, `1,25`). Un prix enregistré au millième se rouvre sur quatre décimales
+  (`1.2340`) et n'est pas refusé. (refs #1171)
+
+## Dev Notes
+
+### Hors périmètre
+
+- Les autres sites du symptôme, chacun avec son issue : #1173 (prix d'un article — un article mal saisi passe sur la
+  facture sans signal), #1159 (prix fournisseur), #1172 (paiement attendu), #1174 (règlement), #1175 (frais de rappel),
+  #1176 (montant minimal), #1177 (filtres du journal), #1050 (soldes de départ). Aucune issue neuve.
+- La quantité (hors de la règle) ; le plafond du prix (10⁹), jugé au serveur seul, comme aujourd'hui.
+- Un prix déjà enregistré trop bas avant la 0.17.8 (« 1.250 » lu 1,25) : rien ne permet de le reconnaître ; aucune
+  reprise des données.
+- Le serveur et l'API (C-e350-19).
+
+### Splitting — quatre modules
+
+(1) `frontend/src/lib/components/invoices` ; (2) `frontend/src/lib/features/invoices` (`invoice-helpers.ts` et son
+test) ; (3) `crates/kesh-i18n/locales` ; (4) `docs/manual/fr`. S'y ajoutent les tests transverses
+`frontend/tests/e2e/invoices.spec.ts` et `frontend/src/lib/shared/i18n-keys.test.ts`. `journal-entries/` et
+`shared/utils/` sont importés, non modifiés. **Quatre : la règle ne s'applique pas.**
+
+### Fichiers communs avec les autres stories de la phase 1
+
+- `InvoiceForm.svelte` : la 36-1 ne le modifie pas (`git diff $(git merge-base HEAD story/36-1-entree-compte-produit) story/36-1-entree-compte-produit -- frontend/src/lib/components/invoices/InvoiceForm.svelte`
+  vide) ; **`InvoiceForm.test.ts`** : la 36-1 y ajoute 71 lignes — fichier commun à signaler à l'intégration (le fichier
+  d'epic ne le liste pas) ; les tests de la 36-3b vont dans un `describe` à eux, en fin de fichier.
+- `messages.ftl` ×4 : D6, à côté d'`invoice-line-vat-rate-disabled-error` ; la 36-1 ajoute `common-account-no-match`
+  au-dessus de `invoice-line-col-revenue-account` (fr-CH `:2649`).
+- `i18n-keys.test.ts` (`sitesTotal`) : recompté par la branche, puis après chaque fusion (36-1 en ajoute), sans
+  additionner.
+- `docs/manual/fr/user-manual.tex` : § *Création d'une facture* (`:1158`), distinct du § *Saisie d'une écriture* (36-3,
+  `:559`) et des paragraphes de 36-4 et 36-5 ; PDF après l'union.
+- `CHANGELOG.md` : **non écrit** par la branche (C-e360-11) ; la *Note de version* ci-dessus.
+- `frontend/tests/e2e/invoices.spec.ts` : aucune autre story de la phase 1 ne l'annonce.
+
+### Ce qui doit rester vrai
+
+- Le serveur reste juge ; rien n'est écrit d'office ; big.js partout, jamais `parseFloat`. Aucun écran autre que le
+  formulaire de facture client ne change de lecture. Fixtures synthétiques seulement.
+- Un brouillon existant s'ouvre et se renvoie sans perte de précision (#878) et sans refus à tort (AC4).
+
+### E2E
+
+Le défaut se voit dans le navigateur et à la frontière HTTP (le prix part tel que tapé, `:594`) : l'E2E AC6 est exigé.
+
+### Références
+
+- Issue #1171 ; Story 36-3 (#1051, `readJournalAmount`, `isAmbiguousThousands`) ; Story 35-6 (#1026) ; C-e360-17,
+  C-e360-11, C-e350-18, C-e350-19 ; #878 (forme lisible du prix rechargé) ; #687 (règle du centime, fournisseur seul).
+- `CLAUDE.md` : § *Recette visuelle* ; § *Le prompt d'une passe doit NOMMER le manuel* ; § *Inventorier les sites NON
+  RÉSOLUS*.
+
+## Dev Agent Record
+
+### Agent Model Used
+
+### Debug Log References
+
+### Completion Notes List
+
+### File List
+
+## Change Log
+
+- 2026-11-14 — Fiche rédigée (Epic 36, phase 1), sur `b1cd53d28` (tête de la 36-3 terminée). Choix C-36-3b-1 à
+  C-36-3b-7 au registre `e36-choix-autonomes-36-3b.md`. Clé ajoutée au `sprint-status.yaml` en `ready-for-dev`.
+  Validation non lancée.
