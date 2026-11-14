@@ -205,7 +205,7 @@ async fn make_entry(
     let created = journal_entries::create_in_tx(
         &mut tx,
         fy_id,
-        1,
+        kesh_db::entities::audit_log::Acteur::utilisateur(1),
         NewJournalEntry {
             company_id,
             entry_date: crate::common::jour::aujourd_hui_test(),
@@ -1361,7 +1361,7 @@ async fn make_entry_on(
     let id = journal_entries::create_in_tx(
         &mut tx,
         fy_id,
-        1,
+        kesh_db::entities::audit_log::Acteur::utilisateur(1),
         NewJournalEntry {
             company_id,
             entry_date: date,
@@ -2961,7 +2961,7 @@ async fn an_entry_of_a_closed_year_stays_correctable(pool: MySqlPool) {
     let ancienne = journal_entries::create_in_tx(
         &mut tx,
         passe.id,
-        1,
+        kesh_db::entities::audit_log::Acteur::utilisateur(1),
         NewJournalEntry {
             company_id,
             entry_date: NaiveDate::from_ymd_opt(annee - 1, 6, 15).unwrap(),

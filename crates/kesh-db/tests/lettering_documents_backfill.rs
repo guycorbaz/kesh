@@ -33,6 +33,7 @@
 mod jour;
 
 use chrono::NaiveDate;
+use kesh_db::entities::audit_log::Acteur;
 use kesh_db::entities::{Journal, NewJournalEntry, NewJournalEntryLine, SettlementChoice};
 use kesh_db::repositories::letterings::{self, Actor, SyncOutcome};
 use kesh_db::repositories::{companies, journal_entries, supplier_invoices};
@@ -98,7 +99,7 @@ async fn ecriture(
     let je = journal_entries::create(
         pool,
         seeded.fiscal_year_id,
-        seeded.admin_user_id,
+        Acteur::utilisateur(seeded.admin_user_id),
         NewJournalEntry {
             company_id: seeded.company_id,
             entry_date: le,
@@ -378,7 +379,7 @@ async fn rattrapage(pool: &MySqlPool, verrou: bool) -> Rattrapage {
         pool,
         societe_id,
         e_figee,
-        seeded.admin_user_id,
+        Acteur::utilisateur(seeded.admin_user_id),
         crate::jour::aujourd_hui_test(),
     )
     .await
@@ -446,7 +447,7 @@ async fn rattrapage(pool: &MySqlPool, verrou: bool) -> Rattrapage {
         pool,
         societe_id,
         detache,
-        seeded.admin_user_id,
+        Acteur::utilisateur(seeded.admin_user_id),
         crate::jour::aujourd_hui_test(),
     )
     .await
@@ -518,7 +519,7 @@ async fn rattrapage(pool: &MySqlPool, verrou: bool) -> Rattrapage {
         pool,
         societe_id,
         libre,
-        seeded.admin_user_id,
+        Acteur::utilisateur(seeded.admin_user_id),
         crate::jour::aujourd_hui_test(),
     )
     .await
@@ -548,7 +549,7 @@ async fn rattrapage(pool: &MySqlPool, verrou: bool) -> Rattrapage {
         pool,
         societe_id,
         manuelle,
-        seeded.admin_user_id,
+        Acteur::utilisateur(seeded.admin_user_id),
         crate::jour::aujourd_hui_test(),
     )
     .await
@@ -833,7 +834,7 @@ async fn backfill_pairs_reversals_by_position(pool: MySqlPool) {
         &pool,
         seeded.company_id,
         jumelles,
-        seeded.admin_user_id,
+        Acteur::utilisateur(seeded.admin_user_id),
         crate::jour::aujourd_hui_test(),
     )
     .await

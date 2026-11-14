@@ -23,6 +23,7 @@
 mod jour;
 
 use chrono::NaiveDate;
+use kesh_db::entities::audit_log::Acteur;
 use kesh_db::errors::{DbError, ReversalBlocker};
 use kesh_db::repositories::letterings::{self, Actor, LetteringGroup, Mode, Origin};
 use kesh_db::test_fixtures::{
@@ -1506,7 +1507,7 @@ async fn lettering_invariants(pool: MySqlPool) {
             &pool,
             m.company(),
             origine,
-            m.s.admin_user_id,
+            Acteur::utilisateur(m.s.admin_user_id),
             crate::jour::aujourd_hui_test(),
         )
         .await
@@ -1785,7 +1786,7 @@ async fn lettering_invariants(pool: MySqlPool) {
         &pool,
         m.company(),
         detache2,
-        m.s.admin_user_id,
+        Acteur::utilisateur(m.s.admin_user_id),
         crate::jour::aujourd_hui_test(),
     )
     .await

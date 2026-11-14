@@ -32,6 +32,7 @@ use kesh_api::services::rapports::{
     FormatExport, ModeProjet, Rapport,
 };
 use kesh_api::{AppState, build_router};
+use kesh_db::entities::audit_log::Acteur;
 use kesh_db::entities::journal_entry::Journal;
 use kesh_db::entities::{NewJournalEntry, NewJournalEntryLine, Role};
 use kesh_db::repositories::journal_entries;
@@ -270,7 +271,7 @@ async fn poser_ecriture(
     journal_entries::create(
         pool,
         seeded.fiscal_year_id,
-        seeded.admin_user_id,
+        Acteur::utilisateur(seeded.admin_user_id),
         NewJournalEntry {
             company_id: seeded.company_id,
             entry_date: NaiveDate::from_ymd_opt(2026, 6, 1).unwrap(),
@@ -1941,7 +1942,7 @@ async fn grand_livre_les_deux_regimes(pool: MySqlPool) {
     journal_entries::create(
         &pool,
         seeded.fiscal_year_id,
-        seeded.admin_user_id,
+        Acteur::utilisateur(seeded.admin_user_id),
         NewJournalEntry {
             company_id: seeded.company_id,
             entry_date: date("2026-06-01"),

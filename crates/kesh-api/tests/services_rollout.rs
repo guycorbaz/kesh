@@ -40,6 +40,7 @@ use kesh_api::services::poignees::Lecture;
 use kesh_api::services::postes_ouverts::{self, DemandePostesOuverts};
 use kesh_api::{AppState, build_router};
 use kesh_db::entities::address::StructuredAddress;
+use kesh_db::entities::audit_log::Acteur;
 use kesh_db::entities::invoice::{NewInvoice, NewInvoiceLine};
 use kesh_db::entities::journal_entry::Journal;
 use kesh_db::entities::{
@@ -200,7 +201,7 @@ async fn poser_livres(pool: &MySqlPool) -> Livres {
     let ecriture = journal_entries::create(
         pool,
         s.fiscal_year_id,
-        s.admin_user_id,
+        Acteur::utilisateur(s.admin_user_id),
         NewJournalEntry {
             company_id: s.company_id,
             entry_date: NaiveDate::from_ymd_opt(2026, 6, 1).unwrap(),
@@ -1489,7 +1490,7 @@ async fn poser_ecriture(
     journal_entries::create(
         pool,
         s.fiscal_year_id,
-        s.admin_user_id,
+        Acteur::utilisateur(s.admin_user_id),
         NewJournalEntry {
             company_id: s.company_id,
             entry_date: NaiveDate::from_ymd_opt(date.0, date.1, date.2).unwrap(),

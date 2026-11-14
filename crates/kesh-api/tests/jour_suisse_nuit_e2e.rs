@@ -314,7 +314,7 @@ impl Ctx {
         journal_entries::create(
             &self.pool,
             self.fy_2025,
-            self.s.admin_user_id,
+            kesh_db::entities::audit_log::Acteur::utilisateur(self.s.admin_user_id),
             NewJournalEntry {
                 company_id: self.s.company_id,
                 entry_date: jour(2025, 6, 1),
@@ -879,7 +879,7 @@ async fn ac7_les_services_jugent_au_jour_suisse(pool: MySqlPool) {
     let candidate = journal_entries::create(
         &pool,
         ctx.fy_2025,
-        ctx.s.admin_user_id,
+        kesh_db::entities::audit_log::Acteur::utilisateur(ctx.s.admin_user_id),
         NewJournalEntry {
             company_id: ctx.s.company_id,
             entry_date: jour(2025, 12, 20),
@@ -1375,7 +1375,7 @@ async fn ac4_les_defauts_du_jour_la_nuit_du_nouvel_an(pool: MySqlPool) {
     journal_entries::create(
         &pool,
         ctx.fy_2026.unwrap(),
-        ctx.s.admin_user_id,
+        kesh_db::entities::audit_log::Acteur::utilisateur(ctx.s.admin_user_id),
         NewJournalEntry {
             company_id: ctx.s.company_id,
             entry_date: jour(2026, 1, 1),
@@ -1444,7 +1444,7 @@ async fn ac4_la_fin_donnee_d_un_projet_l_emporte_sur_le_jour(pool: MySqlPool) {
     journal_entries::create(
         &pool,
         ctx.fy_2026.unwrap(),
-        ctx.s.admin_user_id,
+        kesh_db::entities::audit_log::Acteur::utilisateur(ctx.s.admin_user_id),
         NewJournalEntry {
             company_id: ctx.s.company_id,
             entry_date: jour(2026, 6, 1),

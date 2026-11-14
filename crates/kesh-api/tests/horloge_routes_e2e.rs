@@ -126,7 +126,7 @@ async fn ecriture(pool: &MySqlPool, s: &SeededCompany) -> i64 {
     journal_entries::create(
         pool,
         s.fiscal_year_id,
-        s.admin_user_id,
+        kesh_db::entities::audit_log::Acteur::utilisateur(s.admin_user_id),
         NewJournalEntry {
             company_id: s.company_id,
             entry_date: jour(2025, 6, 1),

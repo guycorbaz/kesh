@@ -292,7 +292,7 @@ async fn la_contre_passation_par_la_route_sous_un_posterieur_clos_rend_400(pool:
     let origine = journal_entries::create(
         &pool,
         fy_id,
-        1,
+        kesh_db::entities::audit_log::Acteur::utilisateur(1),
         NewJournalEntry {
             company_id,
             entry_date: crate::common::jour::aujourd_hui_test(),

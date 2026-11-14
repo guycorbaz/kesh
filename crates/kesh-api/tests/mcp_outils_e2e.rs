@@ -816,7 +816,7 @@ async fn fixture_tailles(pool: &MySqlPool, s: &Societe, large: bool) {
         journal_entries::create(
             pool,
             p.exercice_id,
-            s.u,
+            kesh_db::entities::audit_log::Acteur::utilisateur(s.u),
             NewJournalEntry {
                 company_id: s.c,
                 entry_date: jour,
@@ -1251,7 +1251,7 @@ async fn grand_livre_pagine_egal_a_la_lecture_entiere(pool: MySqlPool) {
         journal_entries::create(
             &pool,
             exercice,
-            a.u,
+            kesh_db::entities::audit_log::Acteur::utilisateur(a.u),
             NewJournalEntry {
                 company_id: a.c,
                 entry_date: date,
@@ -1498,7 +1498,7 @@ async fn bilan_montants_une_seule_forme(pool: MySqlPool) {
     journal_entries::create(
         &pool,
         exercice,
-        u,
+        kesh_db::entities::audit_log::Acteur::utilisateur(u),
         NewJournalEntry {
             company_id: c,
             entry_date: debut,

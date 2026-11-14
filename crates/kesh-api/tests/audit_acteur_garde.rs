@@ -26,7 +26,9 @@
 //!    entrée littéralement sans clé (`letterings::Actor { …, api_key_id: None }`) ;
 //! 4. `for_actor(<user_id>, None, …)` — la forme threadée, clé jetée ;
 //! 5. `delete_in_tx(…, None, …)` — le `None` **positionnel** de la suppression
-//!    d'une écriture (C-e350-52).
+//!    d'une écriture (C-e350-52). **Aucun site depuis la Story 35-8a2** :
+//!    `delete_in_tx` prend l'`Acteur` entier ; le motif reste, et sa sonde (h),
+//!    contre un retour de la forme.
 //!
 //! # Sa clé : le SITE, non le fichier
 //!
@@ -63,7 +65,10 @@
 //!
 //! 1. Le `None` positionnel passé à une fonction **autre que** `delete_in_tx` qui
 //!    prend `actor_api_key_id: Option<i64>` (26 fonctions de `src` hors
-//!    `delete_in_tx` à la fiche, P3 ; `reconciliation_cancel.rs` (`cancel` →
+//!    `delete_in_tx` à la fiche, P3 ; 23 lignes de paramètre depuis la Story
+//!    35-8a2, qui a converti `delete_in_tx`, `delete_by_id`, `update` et
+//!    `update_in_tx` — `git grep -nE 'actor_api_key_id:\s*Option<i64>'` rend 30
+//!    lignes, dont 6 champs et 1 doc-comment ; `reconciliation_cancel.rs` (`cancel` →
 //!    `cancel_in_tx`) et `kesh-seed/src/pieges.rs` (`invoices::mark_emailed`)
 //!    aujourd'hui) — à reprendre au déploiement (Epic 36).
 //! 2. Un fichier de `src` **entièrement** sous `#[cfg(test)]` par un `mod x;` ou
@@ -153,20 +158,29 @@ enum Raison {
     /// Atteint seulement par `admin_routes` sous `require_not_pat`, ou par un
     /// handler qui refuse une clé (`ensure_not_pat`).
     AdminSansCle,
+    /// Une fixture (`kesh-seed/src/pieges.rs`, derrière la fonctionnalité
+    /// `pieges`) : pas de requête, pas de clé (Story 35-8a2).
+    Fixture,
     /// Tout le reste : une clé `read-write` peut y agir et n'est pas attribuée.
-    /// Les écritures à la 35-8a2, le reste au déploiement (Epic 36).
+    /// Les écritures des routes du journal et des rapprochements sont converties
+    /// depuis la 35-8a2 ; le reste au déploiement (Epic 36).
     AConvertir,
 }
 
-use Motif::{ApiKeyNone, DeleteInTxNone, User};
-use Raison::{AConvertir, AdminSansCle, Definition, Mcp, PreAuth, Restauration, Systeme};
+use Motif::{ApiKeyNone, User, Utilisateur};
+use Raison::{AConvertir, AdminSansCle, Definition, Fixture, Mcp, PreAuth, Restauration, Systeme};
 
 /// **La table close des sites.** `(fichier, fonction englobante, motif, nombre,
 /// raison, appelant qui établit la raison)` — les lignes de `lib.rs` sont celles
-/// de la Story 35-8a1 ; une route comptable (`comptable_routes`) est atteinte
-/// par une clé `read-write`.
+/// de la Story 35-8a1 (35-8a2 pour ses entrées) ; une route comptable
+/// (`comptable_routes`) est atteinte par une clé `read-write`.
 ///
-/// Recomptée depuis la source à la Story 35-8a1 (Change Log de la fiche).
+/// Recomptée depuis la source à la Story 35-8a1, puis à la Story 35-8a2 : les
+/// écritures des routes du journal, des rapprochements et du dé-rapprochement
+/// d'une écriture seule reçoivent l'acteur ; **aucune** entrée `Utilisateur` pour
+/// `routes/reconciliation.rs`, `routes/journal_entries.rs` ni
+/// `repositories/reconciliation_cancel.rs` (AC5b) ; le cinquième motif
+/// (`delete_in_tx(…, None, …)`) tombe à zéro : `delete_in_tx` prend l'acteur.
 #[rustfmt::skip]
 const SITES: &[(&str, &str, Motif, usize, Raison, &str)] = &[
     // ── kesh-api ────────────────────────────────────────────────────────────
@@ -269,6 +283,8 @@ const SITES: &[(&str, &str, Motif, usize, Raison, &str)] = &[
         "`create_credit_note` (lib.rs:650)"),
     ("crates/kesh-db/src/repositories/credit_notes.rs", "create_credit_note", ApiKeyNone, 1, AConvertir,
         "`create_credit_note` (lib.rs:650)"),
+    ("crates/kesh-db/src/repositories/credit_notes.rs", "create_credit_note", Utilisateur, 1, AConvertir,
+        "`create_credit_note` (lib.rs:650), l'écriture de l'avoir — 35-8a2"),
     ("crates/kesh-db/src/repositories/fiscal_years.rs", "build_audit_entry", User, 1, AConvertir,
         "`fiscal_years::create` ×2, `update`, `close`, `reopen` : `create_fiscal_year` (lib.rs:826), `close_fiscal_year` (lib.rs:834), `update_fiscal_year` (lib.rs:830), `reopen_fiscal_year` (lib.rs:479, admin) — une raison finale exigerait les cinq"),
     ("crates/kesh-db/src/repositories/installation_settings.rs", "update_session_idle_minutes", User, 1, AdminSansCle,
@@ -277,14 +293,20 @@ const SITES: &[(&str, &str, Motif, usize, Raison, &str)] = &[
         "`cancel_invoice_settlement_handler` (lib.rs:775)"),
     ("crates/kesh-db/src/repositories/invoice_settlements_write.rs", "cancel_settlement_in_tx", ApiKeyNone, 1, AConvertir,
         "`cancel_invoice_settlement_handler` (lib.rs:775)"),
+    ("crates/kesh-db/src/repositories/invoice_settlements_write.rs", "cancel_settlement_in_tx", Utilisateur, 1, AConvertir,
+        "`cancel_invoice_settlement_handler` (lib.rs:775) et le dé-rapprochement d'un règlement (`reconciliation_cancel.rs`), la contre-passation — 35-8a2"),
     ("crates/kesh-db/src/repositories/invoice_settlements_write.rs", "settle_invoice", User, 1, AConvertir,
         "`settle_invoice_handler` (lib.rs:771)"),
     ("crates/kesh-db/src/repositories/invoice_settlements_write.rs", "settle_invoice", ApiKeyNone, 1, AConvertir,
         "`settle_invoice_handler` (lib.rs:771)"),
+    ("crates/kesh-db/src/repositories/invoice_settlements_write.rs", "settle_invoice", Utilisateur, 1, AConvertir,
+        "`settle_invoice_handler` (lib.rs:771), l'écriture du règlement — 35-8a2"),
     ("crates/kesh-db/src/repositories/invoice_settlements_write.rs", "write_off_invoice", User, 1, AConvertir,
         "`write_off_invoice_handler` (lib.rs:780)"),
     ("crates/kesh-db/src/repositories/invoice_settlements_write.rs", "write_off_invoice", ApiKeyNone, 1, AConvertir,
         "`write_off_invoice_handler` (lib.rs:780)"),
+    ("crates/kesh-db/src/repositories/invoice_settlements_write.rs", "write_off_invoice", Utilisateur, 1, AConvertir,
+        "`write_off_invoice_handler` (lib.rs:780), l'écriture du solde du reste — 35-8a2"),
     ("crates/kesh-db/src/repositories/invoices.rs", "create", User, 1, AConvertir,
         "`create_invoice` (lib.rs:642)"),
     ("crates/kesh-db/src/repositories/invoices.rs", "delete", User, 1, AdminSansCle,
@@ -293,18 +315,18 @@ const SITES: &[(&str, &str, Motif, usize, Raison, &str)] = &[
         "`pause_dunning` (lib.rs:790)"),
     ("crates/kesh-db/src/repositories/invoices.rs", "unvalidate", User, 1, AConvertir,
         "`unvalidate_invoice_handler` (lib.rs:748)"),
-    ("crates/kesh-db/src/repositories/invoices.rs", "unvalidate", DeleteInTxNone, 1, AConvertir,
-        "`unvalidate_invoice_handler` (lib.rs:748) — 35-8a2"),
+    ("crates/kesh-db/src/repositories/invoices.rs", "unvalidate", Utilisateur, 1, AConvertir,
+        "`unvalidate_invoice_handler` (lib.rs:748), la suppression de l'écriture (motif 5 jusqu'à la 35-8a2)"),
     ("crates/kesh-db/src/repositories/invoices.rs", "update", User, 1, AConvertir,
         "`update_invoice` (lib.rs:645)"),
     ("crates/kesh-db/src/repositories/invoices.rs", "validate_invoice", User, 1, AConvertir,
         "`validate_invoice_handler` (lib.rs:742)"),
-    ("crates/kesh-db/src/repositories/journal_entries.rs", "create_in_tx_inner", User, 1, AConvertir,
-        "`create_journal_entry` (lib.rs:553) — 35-8a2"),
-    ("crates/kesh-db/src/repositories/journal_entries.rs", "reverse_in_tx_inner", User, 1, AConvertir,
-        "`reverse_journal_entry` (lib.rs:571) — 35-8a2"),
-    ("crates/kesh-db/src/repositories/journal_entries.rs", "reverse_in_tx_inner", ApiKeyNone, 1, AConvertir,
-        "`reverse_journal_entry` (lib.rs:571), lettrage `reversal` — 35-8a2"),
+    ("crates/kesh-db/src/repositories/invoices.rs", "validate_invoice", Utilisateur, 1, AConvertir,
+        "`validate_invoice_handler` (lib.rs:742), l'écriture de la facture (AC4, limite assertée) — 35-8a2"),
+    ("crates/kesh-db/src/repositories/journal_entries.rs", "create_opening_entry", Utilisateur, 1, AConvertir,
+        "`generate_opening_balances` (lib.rs:595), le bilan d'ouverture — 35-8a2"),
+    ("crates/kesh-db/src/repositories/opening_complement.rs", "create_opening_complement_in_tx", Utilisateur, 1, AConvertir,
+        "`complete_opening_balances` (lib.rs:604) et `bank_accounts::enter_opening_balance` (lib.rs:973), le solde d'ouverture — 35-8a2"),
     ("crates/kesh-db/src/repositories/payment_batches.rs", "cancel_batch", User, 1, AConvertir,
         "`cancel_payment_batch` (lib.rs:737)"),
     ("crates/kesh-db/src/repositories/payment_batches.rs", "confirm_batch", User, 1, AConvertir,
@@ -327,10 +349,14 @@ const SITES: &[(&str, &str, Motif, usize, Raison, &str)] = &[
         "`cancel_supplier_invoice` (lib.rs:677)"),
     ("crates/kesh-db/src/repositories/supplier_invoices.rs", "cancel_in_tx", ApiKeyNone, 1, AConvertir,
         "`cancel_supplier_invoice` (lib.rs:677), lettrage `reversal`"),
+    ("crates/kesh-db/src/repositories/supplier_invoices.rs", "cancel_in_tx", Utilisateur, 1, AConvertir,
+        "`cancel_supplier_invoice` (lib.rs:677), la contre-passation de l'achat — 35-8a2"),
     ("crates/kesh-db/src/repositories/supplier_invoices.rs", "cancel_settlement_in_tx", User, 1, AConvertir,
         "`cancel_supplier_invoice_settlement` (lib.rs:683)"),
     ("crates/kesh-db/src/repositories/supplier_invoices.rs", "cancel_settlement_in_tx", ApiKeyNone, 1, AConvertir,
         "`cancel_supplier_invoice_settlement` (lib.rs:683)"),
+    ("crates/kesh-db/src/repositories/supplier_invoices.rs", "cancel_settlement_in_tx", Utilisateur, 1, AConvertir,
+        "`cancel_supplier_invoice_settlement` (lib.rs:683) et le dé-rapprochement d'un règlement (`reconciliation_cancel.rs`), la contre-passation — 35-8a2"),
     ("crates/kesh-db/src/repositories/supplier_invoices.rs", "create_draft_in_tx", User, 1, AConvertir,
         "`create_supplier_invoice` (lib.rs:655)"),
     ("crates/kesh-db/src/repositories/supplier_invoices.rs", "delete_draft_in_tx", User, 2, AdminSansCle,
@@ -341,6 +367,11 @@ const SITES: &[(&str, &str, Motif, usize, Raison, &str)] = &[
         "`update_supplier_invoice` (lib.rs:661)"),
     ("crates/kesh-db/src/repositories/supplier_invoices.rs", "validate_in_tx", User, 1, AConvertir,
         "`validate_supplier_invoice` (lib.rs:665)"),
+    ("crates/kesh-db/src/repositories/supplier_invoices.rs", "validate_in_tx", Utilisateur, 1, AConvertir,
+        "`validate_supplier_invoice` (lib.rs:665), l'écriture d'achat — 35-8a2"),
+    // ── kesh-seed ───────────────────────────────────────────────────────────
+    ("crates/kesh-seed/src/pieges.rs", "semer", Utilisateur, 1, Fixture,
+        "fixture des pièges (fonctionnalité `pieges`) : seuls des tests l'appellent (`tests/common/mcp_pieges.rs`) — 35-8a2"),
 ];
 
 /// Une référence déclarée : `(fichier, fonction englobante, nombre)`.
@@ -430,6 +461,8 @@ const REFERENCES: &[(&str, &str, &[Reference])] = &[
           ("crates/kesh-api/src/services/serveur_mcp.rs", "journaliser_appel", 1)]),
     ("serveur_mcp::entree_prompt", "crates/kesh-api/src/services/serveur_mcp.rs",
         &[("crates/kesh-api/src/services/serveur_mcp.rs", "journaliser_prompt", 1)]),
+    // ── Fixture (Story 35-8a2) : aucune référence de production ──
+    ("pieges::semer", "crates/kesh-seed/src/pieges.rs", &[]),
 ];
 
 /// Le routeur : toutes les routes s'enregistrent dans cette fonction de `lib.rs`

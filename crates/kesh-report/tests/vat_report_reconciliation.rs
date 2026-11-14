@@ -14,6 +14,7 @@
 //! Pré-requis : MariaDB (`sqlx::test` crée une DB éphémère par test).
 
 use chrono::NaiveDate;
+use kesh_db::entities::audit_log::Acteur;
 use kesh_db::entities::contact::{ContactType, NewContact};
 use kesh_db::entities::invoice::{NewInvoice, NewInvoiceLine};
 use kesh_db::entities::journal_entry::Journal;
@@ -308,7 +309,7 @@ async fn reconciliation_isolates_non_invoice_entries(pool: MySqlPool) {
     journal_entries::create(
         &pool,
         seeded.fiscal_year_id,
-        seeded.admin_user_id,
+        Acteur::utilisateur(seeded.admin_user_id),
         NewJournalEntry {
             company_id: seeded.company_id,
             entry_date: ymd(2026, 7, 1),

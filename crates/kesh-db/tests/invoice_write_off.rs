@@ -14,6 +14,7 @@
 mod jour;
 
 use chrono::NaiveDate;
+use kesh_db::entities::audit_log::Acteur;
 use kesh_db::entities::journal_entry::Journal;
 use kesh_db::entities::{
     NewCreditNote, NewInvoice, NewInvoiceLine, NewJournalEntry, NewJournalEntryLine,
@@ -132,7 +133,7 @@ async fn validated_invoice(
     let je = kesh_db::repositories::journal_entries::create(
         pool,
         seeded.fiscal_year_id,
-        seeded.admin_user_id,
+        Acteur::utilisateur(seeded.admin_user_id),
         NewJournalEntry {
             company_id: seeded.company_id,
             entry_date: D(),
@@ -370,7 +371,7 @@ async fn issue_490_a_sub_half_centime_remainder_is_written_off_as_rounding(pool:
     let je = kesh_db::repositories::journal_entries::create(
         &pool,
         seeded.fiscal_year_id,
-        seeded.admin_user_id,
+        Acteur::utilisateur(seeded.admin_user_id),
         NewJournalEntry {
             company_id: seeded.company_id,
             entry_date: D(),

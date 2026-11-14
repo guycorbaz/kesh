@@ -22,6 +22,7 @@ use kesh_api::config::Config;
 use kesh_api::{AppState, build_router};
 use kesh_db::entities::account::AccountType;
 use kesh_db::entities::address::StructuredAddress;
+use kesh_db::entities::audit_log::Acteur;
 use kesh_db::entities::journal_entry::Journal;
 use kesh_db::entities::{
     Language, NewAccount, NewCompany, NewFiscalYear, NewJournalEntry, NewJournalEntryLine, NewUser,
@@ -248,7 +249,7 @@ async fn post_entry(
     journal_entries::create(
         pool,
         fiscal_year_id,
-        user_id,
+        Acteur::utilisateur(user_id),
         NewJournalEntry {
             company_id,
             entry_date: date,

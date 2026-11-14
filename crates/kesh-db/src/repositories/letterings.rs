@@ -202,8 +202,8 @@ pub enum Mode {
 /// [`crate::entities::audit_log::Acteur`] : un seul type porte l'utilisateur
 /// et la clé d'API, du handler jusqu'à la trace.
 ///
-/// ⚠️ La contre-passation ne porte que l'utilisateur (`reverse_in_tx`) : le
-/// lettrage `reversal` passe `api_key_id: None` — écart nommé (R3).
+/// Depuis la Story 35-8a2, la contre-passation (`reverse_in_tx`) passe son
+/// acteur au lettrage `reversal` : l'écart R3 (`api_key_id: None`) est levé.
 pub type Actor = crate::entities::audit_log::Acteur;
 
 /// Une ligne d'un groupe, telle que la réponse et l'audit la décrivent.

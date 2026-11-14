@@ -197,7 +197,7 @@ async fn make_entry(
     let created = journal_entries::create_in_tx(
         &mut tx,
         fy_id,
-        1,
+        kesh_db::entities::audit_log::Acteur::utilisateur(1),
         NewJournalEntry {
             company_id,
             entry_date: crate::common::jour::aujourd_hui_test(),

@@ -33,7 +33,7 @@ use axum::extract::rejection::JsonRejection;
 use axum::extract::{Extension, FromRequest, Query, Request, State};
 use axum::response::{IntoResponse, Response};
 use chrono::NaiveDate;
-use kesh_db::entities::audit_log::NewAuditLogEntry;
+use kesh_db::entities::audit_log::{Acteur, NewAuditLogEntry};
 use kesh_db::entities::bank_transaction::{BankTransaction, BankTransactionStatus};
 use kesh_db::entities::invoice::Invoice;
 use kesh_db::errors::{ClaimSide, DbError};
@@ -2816,17 +2816,28 @@ async fn accept_one_invoice(
     };
     // Flux automatique (réconciliation) : garde de postabilité désactivée
     // (Story 14-3b, D-A0) — cohérent `pay_in_tx` et chemin `split`.
-    let settlement_je =
-        match journal_entries::create_in_tx(tx, fiscal_year.id, user_id, new_je, false).await {
-            Ok(j) => j,
-            Err(e) => {
-                return Err(project_error_to_failed_proposal(
-                    bank_transaction_id,
-                    invoice.project_id,
-                    e,
-                ));
-            }
-        };
+    let settlement_je = match journal_entries::create_in_tx(
+        tx,
+        fiscal_year.id,
+        // Story 35-8a2 (#431) : l'écriture porte la clé du rapprochement.
+        Acteur {
+            user_id,
+            api_key_id: actor_api_key_id,
+        },
+        new_je,
+        false,
+    )
+    .await
+    {
+        Ok(j) => j,
+        Err(e) => {
+            return Err(project_error_to_failed_proposal(
+                bank_transaction_id,
+                invoice.project_id,
+                e,
+            ));
+        }
+    };
     let journal_entry_id = settlement_je.entry.id;
 
     // (f) La liaison facture ↔ écriture. `UNIQUE (journal_entry_id)` en base :
@@ -3809,7 +3820,19 @@ async fn accept_one_split(
         entry_date,
     );
     // Flux automatique (réconciliation) : garde de postabilité désactivée (14-3b, D-A0).
-    let je = match journal_entries::create_in_tx(tx, fiscal_year.id, user_id, new_je, false).await {
+    let je = match journal_entries::create_in_tx(
+        tx,
+        fiscal_year.id,
+        // Story 35-8a2 (#431) : l'écriture porte la clé du rapprochement.
+        Acteur {
+            user_id,
+            api_key_id: actor_api_key_id,
+        },
+        new_je,
+        false,
+    )
+    .await
+    {
         Ok(j) => j,
         Err(e) => {
             // Split : la validation projet per-ligne se fait DANS create_in_tx,
@@ -4257,7 +4280,19 @@ async fn accept_one_rule(
         default_project_id,
     );
     // Flux automatique (réconciliation) : garde de postabilité désactivée (14-3b, D-A0).
-    let je = match journal_entries::create_in_tx(tx, fiscal_year.id, user_id, new_je, false).await {
+    let je = match journal_entries::create_in_tx(
+        tx,
+        fiscal_year.id,
+        // Story 35-8a2 (#431) : l'écriture porte la clé du rapprochement.
+        Acteur {
+            user_id,
+            api_key_id: actor_api_key_id,
+        },
+        new_je,
+        false,
+    )
+    .await
+    {
         Ok(j) => j,
         Err(e) => {
             // Le projet par défaut (document-level) a déjà été validé au step
@@ -5127,8 +5162,18 @@ async fn post_manual_once(
             );
             let je =
                 // Flux automatique (réconciliation) : garde postabilité off (14-3b, D-A0).
-                journal_entries::create_in_tx(tx_inner, fiscal_year.id, user_id, new_je, false)
-                    .await?;
+                journal_entries::create_in_tx(
+                    tx_inner,
+                    fiscal_year.id,
+                    // Story 35-8a2 (#431) : l'écriture porte la clé du rapprochement.
+                    Acteur {
+                        user_id,
+                        api_key_id: actor_api_key_id,
+                    },
+                    new_je,
+                    false,
+                )
+                .await?;
             let journal_entry_id = je.entry.id;
 
             // Step 8 — UPDATE bank_transactions optimistic lock + status
@@ -5593,8 +5638,18 @@ async fn post_split_once(
             // `AppError`, Story 15-5e2), l'ordre n'en réduit que la fréquence.
             let je =
                 // Flux automatique (réconciliation) : garde postabilité off (14-3b, D-A0).
-                journal_entries::create_in_tx(tx_inner, fiscal_year.id, user_id, new_je, false)
-                    .await?;
+                journal_entries::create_in_tx(
+                    tx_inner,
+                    fiscal_year.id,
+                    // Story 35-8a2 (#431) : l'écriture porte la clé du rapprochement.
+                    Acteur {
+                        user_id,
+                        api_key_id: actor_api_key_id,
+                    },
+                    new_je,
+                    false,
+                )
+                .await?;
             let journal_entry_id = je.entry.id;
 
             // Step 12 — UPDATE bank_transactions optimistic lock + status guard

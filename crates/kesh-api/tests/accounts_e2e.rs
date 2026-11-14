@@ -274,7 +274,7 @@ async fn mk_entry(
     journal_entries::create(
         pool,
         fiscal_year_id,
-        user_id,
+        kesh_db::entities::audit_log::Acteur::utilisateur(user_id),
         NewJournalEntry {
             company_id,
             entry_date: jour,

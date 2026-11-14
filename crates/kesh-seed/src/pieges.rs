@@ -521,7 +521,8 @@ pub async fn semer(
     let e = journal_entries::create(
         pool,
         exercice.id,
-        user_id,
+        // Story 35-8a2 (#431) : fixture, sans requête ni clé (`Fixture`).
+        kesh_db::entities::audit_log::Acteur::utilisateur(user_id),
         NewJournalEntry {
             company_id,
             entry_date: aujourd_hui,

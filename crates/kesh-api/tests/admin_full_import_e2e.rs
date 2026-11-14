@@ -1788,7 +1788,7 @@ async fn lettering_pieces(pool: &MySqlPool, biz: &Business) -> LetteringPieces {
     let manual = journal_entries::create(
         pool,
         fy,
-        user,
+        kesh_db::entities::audit_log::Acteur::utilisateur(user),
         NewJournalEntry {
             company_id: company,
             entry_date: le,
@@ -1817,7 +1817,7 @@ async fn lettering_pieces(pool: &MySqlPool, biz: &Business) -> LetteringPieces {
         pool,
         company,
         manual.entry.id,
-        user,
+        kesh_db::entities::audit_log::Acteur::utilisateur(user),
         crate::common::jour::aujourd_hui_test(),
     )
     .await

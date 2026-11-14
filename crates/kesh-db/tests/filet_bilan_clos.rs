@@ -22,6 +22,7 @@
 mod jour;
 
 use chrono::{Datelike, NaiveDate};
+use kesh_db::entities::audit_log::Acteur;
 use kesh_db::entities::contact::{ContactType, NewContact, Salutation};
 use kesh_db::entities::journal_entry::Journal;
 use kesh_db::entities::{
@@ -173,7 +174,7 @@ async fn la_saisie_sous_un_posterieur_clos_est_refusee(pool: MySqlPool) {
     let r = journal_entries::create(
         &pool,
         s.fiscal_year_id,
-        s.admin_user_id,
+        Acteur::utilisateur(s.admin_user_id),
         corps(&s, d(2026, 6, 1)),
     )
     .await;
@@ -191,7 +192,7 @@ async fn la_saisie_sous_un_posterieur_clos_est_refusee(pool: MySqlPool) {
     journal_entries::create(
         &pool,
         s.fiscal_year_id,
-        s.admin_user_id,
+        Acteur::utilisateur(s.admin_user_id),
         corps(&s, d(2026, 6, 1)),
     )
     .await
@@ -209,7 +210,7 @@ async fn l_exercice_clos_parle_avant_le_posterieur(pool: MySqlPool) {
     let r = journal_entries::create(
         &pool,
         s.fiscal_year_id,
-        s.admin_user_id,
+        Acteur::utilisateur(s.admin_user_id),
         corps(&s, d(2026, 6, 1)),
     )
     .await;
@@ -225,7 +226,7 @@ async fn le_posterieur_parle_avant_la_date_hors_exercice(pool: MySqlPool) {
     let r = journal_entries::create(
         &pool,
         s.fiscal_year_id,
-        s.admin_user_id,
+        Acteur::utilisateur(s.admin_user_id),
         corps(&s, d(2025, 6, 1)),
     )
     .await;
@@ -246,7 +247,7 @@ async fn le_posterieur_parle_avant_le_verrou_de_periode(pool: MySqlPool) {
     let r = journal_entries::create(
         &pool,
         s.fiscal_year_id,
-        s.admin_user_id,
+        Acteur::utilisateur(s.admin_user_id),
         corps(&s, d(2026, 6, 1)),
     )
     .await;
@@ -564,7 +565,7 @@ async fn la_contre_passation_du_jour_sous_un_futur_clos_est_refusee(pool: MySqlP
     let e = journal_entries::create(
         &pool,
         s.fiscal_year_id,
-        s.admin_user_id,
+        Acteur::utilisateur(s.admin_user_id),
         corps(&s, crate::jour::aujourd_hui_test()),
     )
     .await
@@ -577,7 +578,7 @@ async fn la_contre_passation_du_jour_sous_un_futur_clos_est_refusee(pool: MySqlP
         &mut tx,
         s.company_id,
         e.entry.id,
-        s.admin_user_id,
+        Acteur::utilisateur(s.admin_user_id),
         crate::jour::aujourd_hui_test(),
     )
     .await;
@@ -599,7 +600,8 @@ async fn la_reparation_par_reouverture_puis_cloture_dans_l_ordre(pool: MySqlPool
     let n1 = exercice(&pool, &s, 2027, "Closed").await;
     let n2 = exercice(&pool, &s, 2028, "Open").await;
 
-    let r = journal_entries::create(&pool, n, u, corps(&s, d(2026, 6, 1))).await;
+    let r =
+        journal_entries::create(&pool, n, Acteur::utilisateur(u), corps(&s, d(2026, 6, 1))).await;
     assert_posterieur_clos(r, n1, "Exercice 2027");
 
     let r = fiscal_years::close(&pool, u, c, n2).await;
@@ -616,7 +618,8 @@ async fn la_reparation_par_reouverture_puis_cloture_dans_l_ordre(pool: MySqlPool
     fiscal_years::close(&pool, u, c, n)
         .await
         .expect("clôture de N");
-    let r = journal_entries::create(&pool, n, u, corps(&s, d(2026, 6, 1))).await;
+    let r =
+        journal_entries::create(&pool, n, Acteur::utilisateur(u), corps(&s, d(2026, 6, 1))).await;
     assert!(matches!(r, Err(DbError::FiscalYearClosed)), "obtenu {r:?}");
     fiscal_years::close(&pool, u, c, n1)
         .await
@@ -631,7 +634,7 @@ async fn la_reparation_par_reouverture_puis_cloture_dans_l_ordre(pool: MySqlPool
         let fy = fiscal_years::find_by_id(&pool, id).await.unwrap().unwrap();
         assert_eq!(fy.status, attendu, "exercice {}", fy.name);
     }
-    journal_entries::create(&pool, n2, u, corps(&s, d(2028, 3, 1)))
+    journal_entries::create(&pool, n2, Acteur::utilisateur(u), corps(&s, d(2028, 3, 1)))
         .await
         .expect("N+2 accueille les écritures");
 }
@@ -657,7 +660,8 @@ async fn la_reparation_directe_cloture_le_plus_ancien_ouvert(pool: MySqlPool) {
     fiscal_years::close(&pool, u, c, n)
         .await
         .expect("clôture de N, aucun antérieur ouvert");
-    let r = journal_entries::create(&pool, n, u, corps(&s, d(2026, 6, 1))).await;
+    let r =
+        journal_entries::create(&pool, n, Acteur::utilisateur(u), corps(&s, d(2026, 6, 1))).await;
     assert!(matches!(r, Err(DbError::FiscalYearClosed)), "obtenu {r:?}");
 }
 
@@ -680,7 +684,7 @@ async fn predicteur_muet_sous_un_exercice_futur_clos(pool: MySqlPool) {
     let e = journal_entries::create(
         &pool,
         s.fiscal_year_id,
-        s.admin_user_id,
+        Acteur::utilisateur(s.admin_user_id),
         corps(&s, crate::jour::aujourd_hui_test()),
     )
     .await
@@ -708,7 +712,7 @@ async fn predicteur_muet_sous_un_exercice_futur_clos(pool: MySqlPool) {
         &mut tx,
         s.company_id,
         e.entry.id,
-        s.admin_user_id,
+        Acteur::utilisateur(s.admin_user_id),
         crate::jour::aujourd_hui_test(),
     )
     .await;

@@ -744,7 +744,7 @@ async fn view_fields_origins_and_periods(pool: MySqlPool) {
         &pool,
         m.company(),
         e_rev,
-        m.s.admin_user_id,
+        kesh_db::entities::audit_log::Acteur::utilisateur(m.s.admin_user_id),
         crate::jour::aujourd_hui_test(),
     )
     .await
@@ -1071,7 +1071,7 @@ async fn proposals_keep_bank_lines_and_rank_reversal_pairs_first(pool: MySqlPool
         &pool,
         m.company(),
         e_rev,
-        m.s.admin_user_id,
+        kesh_db::entities::audit_log::Acteur::utilisateur(m.s.admin_user_id),
         crate::jour::aujourd_hui_test(),
     )
     .await

@@ -28,7 +28,7 @@ use sqlx::{MySql, Transaction};
 
 use kesh_core::listing::SortDirection;
 
-use crate::entities::audit_log::NewAuditLogEntry;
+use crate::entities::audit_log::{Acteur, NewAuditLogEntry};
 use crate::entities::invoice::{Invoice, InvoiceLine, InvoiceUpdate, NewInvoice, NewInvoiceLine};
 use crate::errors::{DbError, NumberedDocument, UnvalidationBlocker, map_db_error};
 use crate::repositories::audit_log;
@@ -1701,10 +1701,18 @@ pub async fn unvalidate(
         // drapeau — exercice clos, exercice postérieur clos (Story 15-12b,
         // #543 ; ancien C-15-8-29), contre-passation, période verrouillée
         // (#443) — tiennent, et la marque de lettrage (Story 15-1a-ii),
-        // inatteignable ici, aussi. Pas de clé d'API ici (`None`) : `unvalidate` n'en
-        // reçoit pas (hors périmètre).
+        // inatteignable ici, aussi. Pas de clé d'API ici (`Acteur::utilisateur`) :
+        // `unvalidate` n'en reçoit pas (`AConvertir` de la garde des acteurs,
+        // déploiement à l'Epic 36, #431).
         if let Some(je_id) = current.journal_entry_id {
-            journal_entries::delete_in_tx(&mut tx, company_id, je_id, user_id, None, false).await?;
+            journal_entries::delete_in_tx(
+                &mut tx,
+                company_id,
+                je_id,
+                Acteur::utilisateur(user_id),
+                false,
+            )
+            .await?;
         }
 
         // Étape 6 : l'audit NOMME le geste, avec l'état d'avant.
@@ -2424,7 +2432,9 @@ pub async fn validate_invoice(
         let je = journal_entries::create_in_tx(
             &mut tx,
             fy.id,
-            user_id,
+            // Story 35-8a2 (#431) : au nom de l'utilisateur, même par clé (AC4 ;
+            // `AConvertir`, Epic 36).
+            Acteur::utilisateur(user_id),
             NewJournalEntry {
                 company_id,
                 entry_date: invoice_before.date,

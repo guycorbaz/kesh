@@ -703,7 +703,8 @@ pub async fn create_credit_note(
         let je = journal_entries::create_in_tx(
             &mut tx,
             fy.id,
-            user_id,
+            // Story 35-8a2 (#431) : au nom de l'utilisateur (`AConvertir`, Epic 36).
+            crate::entities::audit_log::Acteur::utilisateur(user_id),
             NewJournalEntry {
                 company_id,
                 entry_date: date,

@@ -2382,7 +2382,7 @@ async fn cancelled_paid_invoice_redrafts_once_the_payment_is_reversed(pool: MySq
         &pool,
         seeded.company_id,
         reglement,
-        seeded.admin_user_id,
+        kesh_db::entities::audit_log::Acteur::utilisateur(seeded.admin_user_id),
         crate::jour::aujourd_hui_test(),
     )
     .await
@@ -2460,7 +2460,7 @@ async fn cancelled_redraft_examines_every_cancellation_trace(pool: MySqlPool) {
         &pool,
         c,
         s1,
-        u,
+        kesh_db::entities::audit_log::Acteur::utilisateur(u),
         crate::jour::aujourd_hui_test(),
     )
     .await

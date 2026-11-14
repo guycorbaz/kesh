@@ -63,7 +63,7 @@
 use chrono::NaiveDate;
 use sqlx::{MySqlConnection, MySqlPool};
 
-use crate::entities::audit_log::NewAuditLogEntry;
+use crate::entities::audit_log::{Acteur, NewAuditLogEntry};
 use crate::entities::bank_transaction::{BankTransaction, BankTransactionStatus};
 use crate::errors::{DbError, SettlementCancelBlocker, map_db_error};
 use crate::repositories::settlement_cancellation::{
@@ -739,8 +739,14 @@ pub async fn cancel_in_tx(
             (Some(done.reversal_journal_entry_id), None, None)
         }
         ReconciliationKind::Entry => {
+            // Story 35-8a2 (#431) : la contre-passation d'une écriture rapprochée
+            // seule porte la clé du dé-rapprochement, quand il en a une.
+            let acteur = Acteur {
+                user_id,
+                api_key_id: actor_api_key_id,
+            };
             let reversal =
-                journal_entries::reverse_in_tx(tx, company_id, entry_id, user_id, aujourd_hui)
+                journal_entries::reverse_in_tx(tx, company_id, entry_id, acteur, aujourd_hui)
                     .await?;
             (Some(reversal.entry.id), None, None)
         }

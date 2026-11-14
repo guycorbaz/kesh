@@ -19,6 +19,7 @@
 mod jour;
 
 use chrono::NaiveDate;
+use kesh_db::entities::audit_log::Acteur;
 use kesh_db::entities::{SettlementChoice, SettlementWriteOffNature as Nature};
 use kesh_db::errors::{DbError, SettlementCancelBlocker};
 use kesh_db::repositories::letterings::{self, Actor, SyncOutcome};
@@ -1418,7 +1419,7 @@ async fn detached_payment_reversed_is_lettered_reversal(pool: MySqlPool) {
         &pool,
         seeded.company_id,
         reglement,
-        seeded.admin_user_id,
+        Acteur::utilisateur(seeded.admin_user_id),
         crate::jour::aujourd_hui_test(),
     )
     .await

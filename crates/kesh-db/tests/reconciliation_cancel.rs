@@ -38,6 +38,7 @@ mod jour;
 
 use chrono::NaiveDate;
 use fournisseur_rapproche::{ReglementRapproche, preparer, reglement_rapproche, solde};
+use kesh_db::entities::audit_log::Acteur;
 use kesh_db::entities::journal_entry::Journal;
 use kesh_db::entities::{NewJournalEntry, NewJournalEntryLine};
 use kesh_db::errors::{DbError, SettlementCancelBlocker};
@@ -58,7 +59,7 @@ async fn ecriture_propre(pool: &MySqlPool, seeded: &SeededCompany) -> i64 {
     journal_entries::create(
         pool,
         seeded.fiscal_year_id,
-        seeded.admin_user_id,
+        Acteur::utilisateur(seeded.admin_user_id),
         NewJournalEntry {
             company_id: seeded.company_id,
             entry_date: jour(2026, 1, 15),

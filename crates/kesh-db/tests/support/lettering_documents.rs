@@ -818,7 +818,7 @@ async fn facture_fournisseur_d_avant_017(
     let je = kesh_db::repositories::journal_entries::create_in_tx(
         &mut tx,
         fy,
-        seeded.admin_user_id,
+        kesh_db::entities::audit_log::Acteur::utilisateur(seeded.admin_user_id),
         NewJournalEntry {
             company_id: seeded.company_id,
             entry_date: date,
@@ -1019,7 +1019,7 @@ pub async fn ecriture_manuelle(
     let je = kesh_db::repositories::journal_entries::create(
         pool,
         seeded.fiscal_year_id,
-        seeded.admin_user_id,
+        kesh_db::entities::audit_log::Acteur::utilisateur(seeded.admin_user_id),
         NewJournalEntry {
             company_id: seeded.company_id,
             entry_date: le,

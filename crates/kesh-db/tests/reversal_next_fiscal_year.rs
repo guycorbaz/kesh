@@ -12,6 +12,7 @@
 use std::time::Duration;
 
 use chrono::NaiveDate;
+use kesh_db::entities::audit_log::Acteur;
 use kesh_db::entities::journal_entry::Journal;
 use kesh_db::entities::{NewJournalEntry, NewJournalEntryLine};
 use kesh_db::errors::{DbError, ReversalBlocker};
@@ -82,7 +83,7 @@ async fn regularisation(pool: &MySqlPool, s: &SeededCompany) -> i64 {
     journal_entries::create(
         pool,
         s.fiscal_year_id,
-        s.admin_user_id,
+        Acteur::utilisateur(s.admin_user_id),
         NewJournalEntry {
             company_id: s.company_id,
             entry_date: d(2026, 12, 31),
@@ -175,7 +176,7 @@ async fn t_b1_datee_du_premier_jour_de_l_exercice_suivant(pool: MySqlPool) {
         &pool,
         s.company_id,
         origine,
-        s.admin_user_id,
+        Acteur::utilisateur(s.admin_user_id),
     )
     .await
     .expect("contre-passation au début de l'exercice suivant");
@@ -243,7 +244,7 @@ async fn t_b6_exercice_suivant_apres_un_trou(pool: MySqlPool) {
         &pool,
         s.company_id,
         origine,
-        s.admin_user_id,
+        Acteur::utilisateur(s.admin_user_id),
     )
     .await
     .expect("contre-passation");
@@ -274,7 +275,7 @@ async fn t_b3_sans_exercice_suivant(pool: MySqlPool) {
         &pool,
         s.company_id,
         origine,
-        s.admin_user_id,
+        Acteur::utilisateur(s.admin_user_id),
     )
     .await;
     match r {
@@ -316,7 +317,7 @@ async fn t_b3_exercice_suivant_clos(pool: MySqlPool) {
             &pool,
             s.company_id,
             origine,
-            s.admin_user_id,
+            Acteur::utilisateur(s.admin_user_id),
         )
         .await;
         match r {
@@ -359,7 +360,7 @@ async fn t_b3_premier_jour_verrouille(pool: MySqlPool) {
         &pool,
         s.company_id,
         origine,
-        s.admin_user_id,
+        Acteur::utilisateur(s.admin_user_id),
     )
     .await;
     match r {
@@ -393,7 +394,7 @@ async fn t_b3_les_refus_de_la_contre_passation_restent(pool: MySqlPool) {
         &pool,
         s.company_id,
         origine,
-        s.admin_user_id,
+        Acteur::utilisateur(s.admin_user_id),
     )
     .await
     .unwrap();
@@ -409,7 +410,7 @@ async fn t_b3_les_refus_de_la_contre_passation_restent(pool: MySqlPool) {
         &pool,
         s.company_id,
         origine,
-        s.admin_user_id,
+        Acteur::utilisateur(s.admin_user_id),
     )
     .await;
     assert_eq!(refus(r), ReversalBlocker::AlreadyReversed);
@@ -417,7 +418,7 @@ async fn t_b3_les_refus_de_la_contre_passation_restent(pool: MySqlPool) {
         &pool,
         s.company_id,
         inverse.entry.id,
-        s.admin_user_id,
+        Acteur::utilisateur(s.admin_user_id),
     )
     .await;
     assert_eq!(refus(r), ReversalBlocker::IsAReversal);
@@ -446,7 +447,7 @@ async fn t_b3_les_refus_de_la_contre_passation_restent(pool: MySqlPool) {
         &pool,
         s.company_id,
         piece,
-        s.admin_user_id,
+        Acteur::utilisateur(s.admin_user_id),
     )
     .await;
     assert_eq!(refus(r), ReversalBlocker::OwnedByInvoice);
@@ -470,7 +471,7 @@ async fn une_ecriture_d_une_autre_societe_est_introuvable(pool: MySqlPool) {
         &pool,
         s.company_id + 1000,
         origine,
-        s.admin_user_id,
+        Acteur::utilisateur(s.admin_user_id),
     )
     .await;
     assert!(
@@ -507,7 +508,7 @@ async fn t_b5_i_la_contre_passation_d_abord_puis_la_cloture(pool: MySqlPool) {
         &mut a,
         s.company_id,
         origine,
-        s.admin_user_id,
+        Acteur::utilisateur(s.admin_user_id),
     )
     .await
     .expect("contre-passation de A");
@@ -598,7 +599,13 @@ async fn t_b5_ii_la_cloture_d_abord_puis_la_contre_passation(pool: MySqlPool) {
 
     let (p, company, user) = (pool.clone(), s.company_id, s.admin_user_id);
     let a = tokio::spawn(async move {
-        journal_entries::reverse_at_next_fiscal_year_start(&p, company, origine, user).await
+        journal_entries::reverse_at_next_fiscal_year_start(
+            &p,
+            company,
+            origine,
+            Acteur::utilisateur(user),
+        )
+        .await
     });
     let vu = attendre_une_requete_en_cours(&pool, &["JOIN fiscal_years fy", "FOR UPDATE"], || {
         a.is_finished()

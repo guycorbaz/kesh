@@ -804,19 +804,31 @@ async fn cancel_paid_invoice_detaches_its_settlement(pool: MySqlPool) {
                 })
                 .collect(),
         };
-        let err =
-            journal_entries::update(&pool, c, settlement, current.entry.version, u, None, corps)
-                .await
-                .expect_err("le paiement détaché ne se modifie pas");
+        let err = journal_entries::update(
+            &pool,
+            c,
+            settlement,
+            current.entry.version,
+            kesh_db::entities::audit_log::Acteur::utilisateur(u),
+            corps,
+        )
+        .await
+        .expect_err("le paiement détaché ne se modifie pas");
         assert!(
             matches!(&err, DbError::EntryNotModifiable(g) if *g == attendu),
             "got {err:?}"
         );
     }
 
-    journal_entries::reverse(&pool, c, settlement, u, crate::jour::aujourd_hui_test())
-        .await
-        .expect("un paiement sans facture se contre-passe depuis sa fiche");
+    journal_entries::reverse(
+        &pool,
+        c,
+        settlement,
+        kesh_db::entities::audit_log::Acteur::utilisateur(u),
+        crate::jour::aujourd_hui_test(),
+    )
+    .await
+    .expect("un paiement sans facture se contre-passe depuis sa fiche");
 
     // L'audit garde le lien que la colonne a perdu.
     let details: serde_json::Value = sqlx::query_scalar(
@@ -1417,7 +1429,7 @@ async fn supplier_authority_never_covers_the_purchase_entry(pool: MySqlPool) {
         &mut tx,
         ctx.seeded.company_id,
         purchase,
-        ctx.seeded.admin_user_id,
+        kesh_db::entities::audit_log::Acteur::utilisateur(ctx.seeded.admin_user_id),
         authority,
         crate::jour::aujourd_hui_test(),
     )
@@ -1440,7 +1452,7 @@ async fn supplier_authority_never_covers_the_purchase_entry(pool: MySqlPool) {
         &mut tx,
         ctx.seeded.company_id,
         settlement,
-        ctx.seeded.admin_user_id,
+        kesh_db::entities::audit_log::Acteur::utilisateur(ctx.seeded.admin_user_id),
         authority,
         crate::jour::aujourd_hui_test(),
     )
@@ -1846,7 +1858,7 @@ async fn purchase_authority_never_covers_the_settlement_entry(pool: MySqlPool) {
         &mut tx,
         ctx.seeded.company_id,
         settlement,
-        ctx.seeded.admin_user_id,
+        kesh_db::entities::audit_log::Acteur::utilisateur(ctx.seeded.admin_user_id),
         authority,
         crate::jour::aujourd_hui_test(),
     )
@@ -1869,7 +1881,7 @@ async fn purchase_authority_never_covers_the_settlement_entry(pool: MySqlPool) {
         &mut tx,
         ctx.seeded.company_id,
         purchase,
-        ctx.seeded.admin_user_id,
+        kesh_db::entities::audit_log::Acteur::utilisateur(ctx.seeded.admin_user_id),
         authority,
         crate::jour::aujourd_hui_test(),
     )

@@ -85,7 +85,7 @@ use sqlx::{QueryBuilder, Row};
 
 use kesh_core::listing::{SortBy, SortDirection};
 
-use crate::entities::audit_log::NewAuditLogEntry;
+use crate::entities::audit_log::{Acteur, NewAuditLogEntry};
 use crate::entities::{
     Journal, JournalEntry, JournalEntryLine, JournalEntryWithLines, NewJournalEntry,
     NewJournalEntryLine,
@@ -192,16 +192,19 @@ async fn validate_lines_accounts_in_tx(
 /// [`fiscal_years::find_covering_date`](super::fiscal_years::find_covering_date)
 /// — il est re-vérifié ici avec `FOR UPDATE` pour capturer les races
 /// avec une clôture concurrente.
+///
+/// `acteur` (Story 35-8a2, #431) : l'utilisateur, et la clé d'API quand c'est
+/// elle qui appelle — la trace `journal_entry.created` porte alors la clé.
 pub async fn create(
     pool: &MySqlPool,
     fiscal_year_id: i64,
-    user_id: i64,
+    acteur: Acteur,
     new: NewJournalEntry,
 ) -> Result<JournalEntryWithLines, DbError> {
     let mut tx = pool.begin().await.map_err(map_db_error)?;
     // Point d'entrée MANUEL (unique appelant `routes/journal_entries.rs`) :
     // la garde de postabilité s'applique (Story 14-3b, D-A0).
-    match create_in_tx(&mut tx, fiscal_year_id, user_id, new, true).await {
+    match create_in_tx(&mut tx, fiscal_year_id, acteur, new, true).await {
         Ok(result) => {
             tx.commit().await.map_err(map_db_error)?;
             Ok(result)
@@ -239,17 +242,21 @@ pub async fn create(
 /// contrôlent leur compte de contrepartie dans leurs handlers (Story 15-5b,
 /// #427) — passer `true` ici rejetterait aussi le compte bancaire, compte de
 /// configuration toléré devenu non imputable (D-A0).
+///
+/// `acteur` (Story 35-8a2, #431) : qui écrit — la trace `journal_entry.created`
+/// porte la clé d'API quand l'appelant en a une. Un appelant sans acteur HTTP
+/// passe `Acteur::utilisateur`, compté par la garde des acteurs.
 pub async fn create_in_tx(
     tx: &mut sqlx::Transaction<'_, sqlx::MySql>,
     fiscal_year_id: i64,
-    user_id: i64,
+    acteur: Acteur,
     new: NewJournalEntry,
     enforce_postable: bool,
 ) -> Result<JournalEntryWithLines, DbError> {
     create_in_tx_inner(
         tx,
         fiscal_year_id,
-        user_id,
+        acteur,
         new,
         enforce_postable,
         true,
@@ -281,7 +288,7 @@ pub async fn create_in_tx(
 async fn create_in_tx_inner(
     tx: &mut sqlx::Transaction<'_, sqlx::MySql>,
     fiscal_year_id: i64,
-    user_id: i64,
+    acteur: Acteur,
     new: NewJournalEntry,
     enforce_postable: bool,
     enforce_project_taggable: bool,
@@ -559,8 +566,8 @@ async fn create_in_tx_inner(
     let snapshot = entry_snapshot_json(&entry, &lines);
     audit_log::insert_in_tx(
         tx,
-        NewAuditLogEntry::user(
-            user_id,
+        NewAuditLogEntry::par(
+            acteur,
             "journal_entry.created".to_string(),
             "journal_entry".to_string(),
             entry_id,
@@ -724,7 +731,17 @@ pub async fn create_opening_entry(
     }
 
     // Étape 5 : création atomique dans la même tx (re-lock ré-entrant).
-    match create_in_tx(&mut tx, fiscal_year_id, user_id, new, true).await {
+    // Story 35-8a2 (#431) : le bilan d'ouverture reste au nom de l'utilisateur
+    // (`AConvertir` de la garde des acteurs ; déploiement à l'Epic 36).
+    match create_in_tx(
+        &mut tx,
+        fiscal_year_id,
+        Acteur::utilisateur(user_id),
+        new,
+        true,
+    )
+    .await
+    {
         Ok(result) => {
             tx.commit().await.map_err(map_db_error)?;
             Ok(result)
@@ -1440,23 +1457,12 @@ pub async fn update(
     company_id: i64,
     id: i64,
     version: i32,
-    user_id: i64,
-    actor_api_key_id: Option<i64>,
+    acteur: Acteur,
     updated: NewJournalEntry,
 ) -> Result<JournalEntryWithLines, DbError> {
     let mut tx = pool.begin().await.map_err(map_db_error)?;
     // En cas d'erreur, le drop de `tx` fait le rollback.
-    match update_in_tx(
-        &mut tx,
-        company_id,
-        id,
-        version,
-        user_id,
-        actor_api_key_id,
-        updated,
-    )
-    .await?
-    {
+    match update_in_tx(&mut tx, company_id, id, version, acteur, updated).await? {
         UpdateOutcome::NoOp(unchanged) => {
             tx.rollback().await.map_err(map_db_error)?;
             Ok(unchanged)
@@ -1474,8 +1480,7 @@ async fn update_in_tx(
     company_id: i64,
     id: i64,
     version: i32,
-    user_id: i64,
-    actor_api_key_id: Option<i64>,
+    acteur: Acteur,
     updated: NewJournalEntry,
 ) -> Result<UpdateOutcome, DbError> {
     // Étape 1 — PREMIER ACTE : le verrou de l'écriture, seule. Aucune lecture
@@ -1714,9 +1719,8 @@ async fn update_in_tx(
     let after_json = entry_snapshot_json(&after_entry, &after_lines);
     audit_log::insert_in_tx(
         tx,
-        NewAuditLogEntry::for_actor(
-            user_id,
-            actor_api_key_id,
+        NewAuditLogEntry::par(
+            acteur,
             "journal_entry.updated",
             "journal_entry",
             id,
@@ -1747,9 +1751,9 @@ async fn update_in_tx(
 /// doc-comment périmé à cet endroit a déjà égaré une journée de revue, 24-4b).
 /// Sur erreur, le drop de la transaction fait le rollback.
 ///
-/// `actor_api_key_id` : `Some` quand la route est appelée par une clé d'API —
+/// `acteur` : sa clé d'API est `Some` quand la route est appelée par une clé —
 /// la trace `journal_entry.deleted` porte alors la clé (C-15-8-8), et non le
-/// seul créateur de la clé.
+/// seul créateur de la clé. Un seul paramètre depuis la Story 35-8a2 (#431).
 ///
 /// ⚠️ **Le numéro n'est jamais réattribué** (compteur de la 25-2-c) : la
 /// suppression creuse un trou, expliqué par l'instantané de l'audit.
@@ -1757,13 +1761,12 @@ pub async fn delete_by_id(
     pool: &MySqlPool,
     company_id: i64,
     id: i64,
-    user_id: i64,
-    actor_api_key_id: Option<i64>,
+    acteur: Acteur,
 ) -> Result<(), DbError> {
     let mut tx = pool.begin().await.map_err(map_db_error)?;
     // En cas d'Err, `delete_in_tx` ne rollback pas (n'a qu'un &mut) : `tx` est
     // droppé ici, ce qui déclenche le rollback automatique sqlx.
-    delete_in_tx(&mut tx, company_id, id, user_id, actor_api_key_id, true).await?;
+    delete_in_tx(&mut tx, company_id, id, acteur, true).await?;
     tx.commit().await.map_err(map_db_error)?;
     Ok(())
 }
@@ -1859,8 +1862,7 @@ pub(crate) async fn delete_in_tx(
     tx: &mut sqlx::Transaction<'_, sqlx::MySql>,
     company_id: i64,
     id: i64,
-    user_id: i64,
-    actor_api_key_id: Option<i64>,
+    acteur: Acteur,
     enforce_ownership: bool,
 ) -> Result<(), DbError> {
     // Étape 2 — PREMIER ACTE : verrou de l'écriture et de son exercice. La date
@@ -1986,9 +1988,8 @@ pub(crate) async fn delete_in_tx(
     // suppression par clé d'API porte la clé (C-15-8-8).
     audit_log::insert_in_tx(
         tx,
-        NewAuditLogEntry::for_actor(
-            user_id,
-            actor_api_key_id,
+        NewAuditLogEntry::par(
+            acteur,
             "journal_entry.deleted",
             "journal_entry",
             id,
@@ -2561,18 +2562,22 @@ where
 /// en est datée, dans l'exercice ouvert qui la couvre. La contre-passation ne
 /// lit plus l'heure elle-même (d'autres dépôts le font encore, Story 35-5b :
 /// `kesh-api/tests/date_du_jour_garde.rs` les inventorie).
+///
+/// `acteur` (Story 35-8a2, #431) : qui contre-passe — l'écriture inverse, la
+/// trace `journal_entry.reversed` et le lettrage `reversal` portent sa clé d'API
+/// quand il en a une.
 pub async fn reverse_in_tx(
     tx: &mut sqlx::Transaction<'_, sqlx::MySql>,
     company_id: i64,
     id: i64,
-    user_id: i64,
+    acteur: Acteur,
     aujourd_hui: NaiveDate,
 ) -> Result<JournalEntryWithLines, DbError> {
     reverse_in_tx_inner(
         tx,
         company_id,
         id,
-        user_id,
+        acteur,
         None,
         ReversalDating::Today(aujourd_hui),
     )
@@ -2647,7 +2652,7 @@ pub async fn reverse_owned_in_tx(
     tx: &mut sqlx::Transaction<'_, sqlx::MySql>,
     company_id: i64,
     id: i64,
-    user_id: i64,
+    acteur: Acteur,
     authority: ReversalAuthority,
     aujourd_hui: NaiveDate,
 ) -> Result<JournalEntryWithLines, DbError> {
@@ -2655,7 +2660,7 @@ pub async fn reverse_owned_in_tx(
         tx,
         company_id,
         id,
-        user_id,
+        acteur,
         Some(authority),
         ReversalDating::Today(aujourd_hui),
     )
@@ -2698,13 +2703,13 @@ pub async fn reverse_at_next_fiscal_year_start_in_tx(
     tx: &mut sqlx::Transaction<'_, sqlx::MySql>,
     company_id: i64,
     id: i64,
-    user_id: i64,
+    acteur: Acteur,
 ) -> Result<JournalEntryWithLines, DbError> {
     reverse_in_tx_inner(
         tx,
         company_id,
         id,
-        user_id,
+        acteur,
         None,
         ReversalDating::NextFiscalYearStart,
     )
@@ -2817,7 +2822,7 @@ async fn reverse_in_tx_inner(
     tx: &mut sqlx::Transaction<'_, sqlx::MySql>,
     company_id: i64,
     id: i64,
-    user_id: i64,
+    acteur: Acteur,
     authority: Option<ReversalAuthority>,
     dating: ReversalDating,
 ) -> Result<JournalEntryWithLines, DbError> {
@@ -2999,7 +3004,7 @@ async fn reverse_in_tx_inner(
     let mut created = create_in_tx_inner(
         tx,
         fy.id,
-        user_id,
+        acteur,
         NewJournalEntry {
             company_id,
             entry_date,
@@ -3033,8 +3038,8 @@ async fn reverse_in_tx_inner(
     };
     audit_log::insert_in_tx(
         tx,
-        NewAuditLogEntry::user(
-            user_id,
+        NewAuditLogEntry::par(
+            acteur,
             "journal_entry.reversed".to_string(),
             "journal_entry".to_string(),
             id,
@@ -3081,11 +3086,9 @@ async fn reverse_in_tx_inner(
             super::letterings::Mode::System {
                 held_open_fiscal_year_id: fy.id,
             },
-            // La contre-passation ne porte que l'utilisateur : écart nommé (R3).
-            super::letterings::Actor {
-                user_id,
-                api_key_id: None,
-            },
+            // L'acteur de la contre-passation, clé comprise (Story 35-8a2, #431 :
+            // l'écart R3 est levé).
+            acteur,
         )
         .await?;
         lettered_any = true;
@@ -3117,11 +3120,11 @@ pub async fn reverse(
     pool: &MySqlPool,
     company_id: i64,
     id: i64,
-    user_id: i64,
+    acteur: Acteur,
     aujourd_hui: NaiveDate,
 ) -> Result<JournalEntryWithLines, DbError> {
     let mut tx = pool.begin().await.map_err(map_db_error)?;
-    match reverse_in_tx(&mut tx, company_id, id, user_id, aujourd_hui).await {
+    match reverse_in_tx(&mut tx, company_id, id, acteur, aujourd_hui).await {
         Ok(created) => {
             tx.commit().await.map_err(map_db_error)?;
             Ok(created)
@@ -3143,10 +3146,10 @@ pub async fn reverse_at_next_fiscal_year_start(
     pool: &MySqlPool,
     company_id: i64,
     id: i64,
-    user_id: i64,
+    acteur: Acteur,
 ) -> Result<JournalEntryWithLines, DbError> {
     let mut tx = pool.begin().await.map_err(map_db_error)?;
-    match reverse_at_next_fiscal_year_start_in_tx(&mut tx, company_id, id, user_id).await {
+    match reverse_at_next_fiscal_year_start_in_tx(&mut tx, company_id, id, acteur).await {
         Ok(created) => {
             tx.commit().await.map_err(map_db_error)?;
             Ok(created)
@@ -3367,7 +3370,9 @@ mod tests {
                 },
             ],
         );
-        let created = create(&pool, fy_id, admin_user_id, new).await.unwrap();
+        let created = create(&pool, fy_id, Acteur::utilisateur(admin_user_id), new)
+            .await
+            .unwrap();
 
         let audit_entries = audit_log::find_by_entity(&pool, "journal_entry", created.entry.id, 10)
             .await
@@ -3434,7 +3439,9 @@ mod tests {
             ],
         );
 
-        let created = create(&pool, fy_id, admin_user_id, new).await.unwrap();
+        let created = create(&pool, fy_id, Acteur::utilisateur(admin_user_id), new)
+            .await
+            .unwrap();
         // ⚠️ Story 25-2-c (#381) — l'égalité à 1 est tombée, et c'est l'effet
         // VOULU du compteur. `setup` efface les écritures (`delete_all_by_company`)
         // mais **pas** le compteur, qui par construction ne redescend pas : sur la
@@ -3481,7 +3488,9 @@ mod tests {
                     },
                 ],
             );
-            let created = create(&pool, fy_id, admin_user_id, new).await.unwrap();
+            let created = create(&pool, fy_id, Acteur::utilisateur(admin_user_id), new)
+                .await
+                .unwrap();
             match attendu {
                 None => attendu = Some(created.entry.entry_number + 1),
                 Some(n) => {
@@ -3538,7 +3547,7 @@ mod tests {
         create(
             &pool,
             fy_id,
-            admin,
+            Acteur::utilisateur(admin),
             mk_entry(company_id, today, paire(a1, a2)),
         )
         .await
@@ -3546,7 +3555,7 @@ mod tests {
         create(
             &pool,
             fy_id,
-            admin,
+            Acteur::utilisateur(admin),
             mk_entry(company_id, today, paire(a1, a2)),
         )
         .await
@@ -3554,7 +3563,7 @@ mod tests {
         let troisieme = create(
             &pool,
             fy_id,
-            admin,
+            Acteur::utilisateur(admin),
             mk_entry(company_id, today, paire(a1, a2)),
         )
         .await
@@ -3566,15 +3575,21 @@ mod tests {
         // dévalidation ; la route (`delete_by_id`, Story 15-8b) passe par le
         // même compteur, sous la garde de la modification.
         let mut tx = pool.begin().await.unwrap();
-        delete_in_tx(&mut tx, company_id, troisieme.entry.id, admin, None, false)
-            .await
-            .unwrap();
+        delete_in_tx(
+            &mut tx,
+            company_id,
+            troisieme.entry.id,
+            Acteur::utilisateur(admin),
+            false,
+        )
+        .await
+        .unwrap();
         tx.commit().await.unwrap();
 
         let suivante = create(
             &pool,
             fy_id,
-            admin,
+            Acteur::utilisateur(admin),
             mk_entry(company_id, today, paire(a1, a2)),
         )
         .await
@@ -3602,7 +3617,7 @@ mod tests {
         let premiere = create(
             &pool,
             fy_id,
-            admin,
+            Acteur::utilisateur(admin),
             mk_entry(company_id, today, paire(a1, a2)),
         )
         .await
@@ -3610,7 +3625,7 @@ mod tests {
         let milieu = create(
             &pool,
             fy_id,
-            admin,
+            Acteur::utilisateur(admin),
             mk_entry(company_id, today, paire(a1, a2)),
         )
         .await
@@ -3618,16 +3633,22 @@ mod tests {
         let troisieme = create(
             &pool,
             fy_id,
-            admin,
+            Acteur::utilisateur(admin),
             mk_entry(company_id, today, paire(a1, a2)),
         )
         .await
         .unwrap();
 
         let mut tx = pool.begin().await.unwrap();
-        delete_in_tx(&mut tx, company_id, milieu.entry.id, admin, None, false)
-            .await
-            .unwrap();
+        delete_in_tx(
+            &mut tx,
+            company_id,
+            milieu.entry.id,
+            Acteur::utilisateur(admin),
+            false,
+        )
+        .await
+        .unwrap();
         tx.commit().await.unwrap();
 
         // Le numéro du milieu manque, et rien ne le réattribue non plus.
@@ -3639,7 +3660,7 @@ mod tests {
         let suivante = create(
             &pool,
             fy_id,
-            admin,
+            Acteur::utilisateur(admin),
             mk_entry(company_id, today, paire(a1, a2)),
         )
         .await
@@ -3663,13 +3684,13 @@ mod tests {
             create(
                 &pool,
                 fy_id,
-                admin,
+                Acteur::utilisateur(admin),
                 mk_entry(company_id, today, paire(a1, a2))
             ),
             create(
                 &pool,
                 fy_id,
-                admin,
+                Acteur::utilisateur(admin),
                 mk_entry(company_id, today, paire(a1, a2))
             ),
         );
@@ -3697,7 +3718,7 @@ mod tests {
         create(
             &pool,
             fy_id,
-            admin,
+            Acteur::utilisateur(admin),
             mk_entry(company_id, today, paire(a1, a2)),
         )
         .await
@@ -3747,7 +3768,7 @@ mod tests {
         create(
             &pool,
             fy_id,
-            admin,
+            Acteur::utilisateur(admin),
             mk_entry(company_id, today, paire(a1, a2)),
         )
         .await
@@ -3869,7 +3890,7 @@ mod tests {
         let entree = create(
             &pool,
             fy_id,
-            admin,
+            Acteur::utilisateur(admin),
             mk_entry(company_id, jour, paire(a1, a2)),
         )
         .await
@@ -3882,8 +3903,7 @@ mod tests {
                 &mut tx,
                 company_id,
                 entree.entry.id,
-                admin,
-                None,
+                Acteur::utilisateur(admin),
                 enforce_ownership,
             )
             .await;
@@ -3989,7 +4009,7 @@ mod tests {
         let origine = create(
             &pool,
             fy_id,
-            admin,
+            Acteur::utilisateur(admin),
             mk_entry(company_id, jour, paire(a1, a2)),
         )
         .await
@@ -3998,9 +4018,15 @@ mod tests {
         let mut tx = pool.begin().await.unwrap();
         let mut cible = origine.entry.id;
         if causes.contre_passee || causes.contre_passation {
-            let inverse = reverse_in_tx(&mut tx, company_id, origine.entry.id, admin, jour)
-                .await
-                .unwrap();
+            let inverse = reverse_in_tx(
+                &mut tx,
+                company_id,
+                origine.entry.id,
+                Acteur::utilisateur(admin),
+                jour,
+            )
+            .await
+            .unwrap();
             if causes.contre_passation {
                 cible = inverse.entry.id;
             }
@@ -4063,7 +4089,8 @@ mod tests {
                 .unwrap();
         }
 
-        let resultat = delete_in_tx(&mut tx, company_id, cible, admin, None, true).await;
+        let resultat =
+            delete_in_tx(&mut tx, company_id, cible, Acteur::utilisateur(admin), true).await;
         let reste: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM journal_entries WHERE id = ?")
             .bind(cible)
             .fetch_one(&mut *tx)
@@ -4220,7 +4247,7 @@ mod tests {
         let e = create(
             &pool,
             fy_id,
-            admin,
+            Acteur::utilisateur(admin),
             mk_entry(company_id, jour, paire(a1, a2)),
         )
         .await
@@ -4243,7 +4270,14 @@ mod tests {
         .execute(&mut *tx)
         .await
         .unwrap();
-        let r = delete_in_tx(&mut tx, company_id, e.entry.id, admin, None, false).await;
+        let r = delete_in_tx(
+            &mut tx,
+            company_id,
+            e.entry.id,
+            Acteur::utilisateur(admin),
+            false,
+        )
+        .await;
         tx.rollback().await.unwrap();
         assert!(
             matches!(r, Err(DbError::LaterFiscalYearClosed { ref fiscal_year_name, .. })
@@ -4284,7 +4318,7 @@ mod tests {
         let cible = create_in_tx(
             tx,
             fy_id,
-            admin,
+            Acteur::utilisateur(admin),
             mk_entry(company_id, jour, paire(lettrable, contrepartie)),
             false,
         )
@@ -4293,7 +4327,7 @@ mod tests {
         let partenaire = create_in_tx(
             tx,
             fy_id,
-            admin,
+            Acteur::utilisateur(admin),
             mk_entry(company_id, jour, paire(contrepartie, lettrable)),
             false,
         )
@@ -4334,7 +4368,14 @@ mod tests {
         for enforce_ownership in [false, true] {
             let mut tx = pool.begin().await.unwrap();
             let (cible, code) = lettrer_dans(&mut tx, company_id, fy_id, admin, a2, today).await;
-            let r = delete_in_tx(&mut tx, company_id, cible, admin, None, enforce_ownership).await;
+            let r = delete_in_tx(
+                &mut tx,
+                company_id,
+                cible,
+                Acteur::utilisateur(admin),
+                enforce_ownership,
+            )
+            .await;
             tx.rollback().await.unwrap();
             assert!(
                 matches!(
@@ -4377,7 +4418,14 @@ mod tests {
             .execute(&mut *tx)
             .await
             .unwrap();
-            let r = delete_in_tx(&mut tx, company_id, cible, admin, None, enforce_ownership).await;
+            let r = delete_in_tx(
+                &mut tx,
+                company_id,
+                cible,
+                Acteur::utilisateur(admin),
+                enforce_ownership,
+            )
+            .await;
             tx.rollback().await.unwrap();
             assert!(
                 matches!(r, Err(DbError::LaterFiscalYearClosed { .. })),
@@ -4403,7 +4451,14 @@ mod tests {
             .execute(&mut *tx)
             .await
             .unwrap();
-        let r = delete_in_tx(&mut tx, company_id, cible, admin, None, false).await;
+        let r = delete_in_tx(
+            &mut tx,
+            company_id,
+            cible,
+            Acteur::utilisateur(admin),
+            false,
+        )
+        .await;
         tx.rollback().await.unwrap();
         assert!(
             matches!(r, Err(DbError::PeriodLocked { .. })),
@@ -4442,7 +4497,7 @@ mod tests {
             ],
         );
 
-        let result = create(&pool, fy_id, admin_user_id, new).await;
+        let result = create(&pool, fy_id, Acteur::utilisateur(admin_user_id), new).await;
         assert!(
             matches!(result, Err(DbError::FiscalYearClosed)),
             "expected FiscalYearClosed, got {:?}",
@@ -4540,7 +4595,9 @@ mod tests {
             ],
         );
 
-        let created = create(&pool, fy_id, admin_user_id, new).await.unwrap();
+        let created = create(&pool, fy_id, Acteur::utilisateur(admin_user_id), new)
+            .await
+            .unwrap();
         let fetched = find_by_id(&pool, company_id, created.entry.id)
             .await
             .unwrap()
@@ -4562,7 +4619,7 @@ mod tests {
             create(
                 &pool,
                 fy_id,
-                admin_user_id,
+                Acteur::utilisateur(admin_user_id),
                 mk_entry(
                     company_id,
                     today,
@@ -4624,7 +4681,9 @@ mod tests {
             ],
         );
         entry1.description = "Facture fournisseur ABC".to_string();
-        create(&pool, fy_id, admin_user_id, entry1).await.unwrap();
+        create(&pool, fy_id, Acteur::utilisateur(admin_user_id), entry1)
+            .await
+            .unwrap();
 
         let mut entry2 = mk_entry(
             company_id,
@@ -4645,7 +4704,9 @@ mod tests {
             ],
         );
         entry2.description = "Virement bancaire XYZ".to_string();
-        create(&pool, fy_id, admin_user_id, entry2).await.unwrap();
+        create(&pool, fy_id, Acteur::utilisateur(admin_user_id), entry2)
+            .await
+            .unwrap();
 
         // Filtre par « facture ».
         let query = JournalEntryListQuery {
@@ -4711,7 +4772,9 @@ mod tests {
         // pour que le tokenizer indexe le token. `50` (2 chars) serait
         // filtré et la recherche retournerait 0.
         e1.description = "Remise 500% client".to_string();
-        create(&pool, fy_id, admin_user_id, e1).await.unwrap();
+        create(&pool, fy_id, Acteur::utilisateur(admin_user_id), e1)
+            .await
+            .unwrap();
 
         let mut e2 = mk_entry(
             company_id,
@@ -4733,7 +4796,9 @@ mod tests {
         );
         // Pas de token préfixé `500` pour ne pas être capté par `500*`.
         e2.description = "Achat fournisseur ABC".to_string();
-        create(&pool, fy_id, admin_user_id, e2).await.unwrap();
+        create(&pool, fy_id, Acteur::utilisateur(admin_user_id), e2)
+            .await
+            .unwrap();
 
         // Recherche « 500% » : le `%` est un non-token côté InnoDB
         // FULLTEXT. La query `MATCH AGAINST '500%*' IN BOOLEAN MODE`
@@ -4785,7 +4850,9 @@ mod tests {
                 ],
             );
             entry.description = desc.to_string();
-            create(&pool, fy_id, admin_user_id, entry).await.unwrap();
+            create(&pool, fy_id, Acteur::utilisateur(admin_user_id), entry)
+                .await
+                .unwrap();
         }
 
         for gibberish in ["+++", "***", "()()", "~~~"] {
@@ -4839,7 +4906,9 @@ mod tests {
             ],
         );
         entry.description = "TestSalaire Mensuel".to_string();
-        create(&pool, fy_id, admin_user_id, entry).await.unwrap();
+        create(&pool, fy_id, Acteur::utilisateur(admin_user_id), entry)
+            .await
+            .unwrap();
 
         // « alaire » fragment mid-word de « TestSalaire » → 0 résultat.
         let mid = list_by_company_paginated(
@@ -4888,7 +4957,7 @@ mod tests {
             create(
                 &pool,
                 fy_id,
-                admin_user_id,
+                Acteur::utilisateur(admin_user_id),
                 mk_entry(
                     company_id,
                     today,
@@ -4951,7 +5020,9 @@ mod tests {
                 ],
             );
             e.journal = CoreJournal::Banque.into();
-            create(&pool, fy_id, admin_user_id, e).await.unwrap();
+            create(&pool, fy_id, Acteur::utilisateur(admin_user_id), e)
+                .await
+                .unwrap();
         }
         let mut ventes = mk_entry(
             company_id,
@@ -4972,7 +5043,9 @@ mod tests {
             ],
         );
         ventes.journal = CoreJournal::Ventes.into();
-        create(&pool, fy_id, admin_user_id, ventes).await.unwrap();
+        create(&pool, fy_id, Acteur::utilisateur(admin_user_id), ventes)
+            .await
+            .unwrap();
 
         // Filtre Banque → 2 écritures.
         let query = JournalEntryListQuery {
@@ -4996,7 +5069,7 @@ mod tests {
             create(
                 &pool,
                 fy_id,
-                admin_user_id,
+                Acteur::utilisateur(admin_user_id),
                 mk_entry(
                     company_id,
                     today,
@@ -5070,7 +5143,7 @@ mod tests {
             create(
                 &pool,
                 fy_id,
-                admin_user_id,
+                Acteur::utilisateur(admin_user_id),
                 mk_entry(
                     company_id,
                     today,
@@ -5163,7 +5236,9 @@ mod tests {
             ],
         );
         touche.description = "Touche le compte neuf".to_string();
-        let attendue = create(&pool, fy_id, admin_user_id, touche).await.unwrap();
+        let attendue = create(&pool, fy_id, Acteur::utilisateur(admin_user_id), touche)
+            .await
+            .unwrap();
 
         let mut ailleurs = mk_entry(
             company_id,
@@ -5184,7 +5259,9 @@ mod tests {
             ],
         );
         ailleurs.description = "Ne le touche pas".to_string();
-        create(&pool, fy_id, admin_user_id, ailleurs).await.unwrap();
+        create(&pool, fy_id, Acteur::utilisateur(admin_user_id), ailleurs)
+            .await
+            .unwrap();
 
         let result = list_by_company_paginated(
             &pool,
@@ -5243,7 +5320,9 @@ mod tests {
                 ],
             );
             e.description = desc.to_string();
-            create(&pool, fy_id, admin_user_id, e).await.unwrap();
+            create(&pool, fy_id, Acteur::utilisateur(admin_user_id), e)
+                .await
+                .unwrap();
         }
 
         let query = JournalEntryListQuery {
@@ -5285,7 +5364,9 @@ mod tests {
                 },
             ],
         );
-        let created = create(&pool, _fy_id, admin_user_id, new).await.unwrap();
+        let created = create(&pool, _fy_id, Acteur::utilisateur(admin_user_id), new)
+            .await
+            .unwrap();
 
         // Tentative d'INSERT direct d'une ligne avec debit > 0 ET credit > 0.
         let direct_result = sqlx::query(
@@ -5380,7 +5461,9 @@ mod tests {
                 line(a2, dec!(0), dec!(50)),
             ],
         );
-        let created = create(&pool, fy_id, admin_user_id, new).await.unwrap();
+        let created = create(&pool, fy_id, Acteur::utilisateur(admin_user_id), new)
+            .await
+            .unwrap();
 
         let read = find_by_id(&pool, company_id, created.entry.id)
             .await
@@ -5406,7 +5489,9 @@ mod tests {
                 line(a2, dec!(0), dec!(10)),
             ],
         );
-        let err = create(&pool, fy_id, admin_user_id, new).await.unwrap_err();
+        let err = create(&pool, fy_id, Acteur::utilisateur(admin_user_id), new)
+            .await
+            .unwrap_err();
         assert!(
             matches!(err, DbError::IllegalStateTransition(_)),
             "expected IllegalStateTransition, got {err:?}"
@@ -5428,7 +5513,9 @@ mod tests {
                 line(a2, dec!(0), dec!(10)),
             ],
         );
-        let err = create(&pool, fy_id, admin_user_id, new).await.unwrap_err();
+        let err = create(&pool, fy_id, Acteur::utilisateur(admin_user_id), new)
+            .await
+            .unwrap_err();
         assert!(matches!(err, DbError::NotFound), "got {err:?}");
     }
 
@@ -5459,7 +5546,9 @@ mod tests {
                 line(a2, dec!(0), dec!(10)),
             ],
         );
-        let err = create(&pool, fy_id, admin_user_id, new).await.unwrap_err();
+        let err = create(&pool, fy_id, Acteur::utilisateur(admin_user_id), new)
+            .await
+            .unwrap_err();
         assert!(matches!(err, DbError::NotFound), "got {err:?}");
 
         // Cleanup de la company éphémère (le projet suit par FK... non : pas de
@@ -5491,7 +5580,9 @@ mod tests {
             vec![line(a1, dec!(42), dec!(0)), line(a2, dec!(0), dec!(42))],
         );
         new.project_id = Some(p);
-        let created = create(&pool, fy_id, admin_user_id, new).await.unwrap();
+        let created = create(&pool, fy_id, Acteur::utilisateur(admin_user_id), new)
+            .await
+            .unwrap();
 
         assert!(
             created.lines.iter().all(|l| l.project_id == Some(p)),
@@ -5534,7 +5625,7 @@ mod tests {
             today,
             vec![line(a1, dec!(10), dec!(0)), line(a2, dec!(0), dec!(10))],
         );
-        create(&pool, fy_id, admin_user_id, ok)
+        create(&pool, fy_id, Acteur::utilisateur(admin_user_id), ok)
             .await
             .expect("écriture manuelle sur comptes postables acceptée");
         delete_all_by_company(&pool, company_id).await.unwrap();
@@ -5546,7 +5637,7 @@ mod tests {
             today,
             vec![line(a1, dec!(10), dec!(0)), line(a2, dec!(0), dec!(10))],
         );
-        let result = create(&pool, fy_id, admin_user_id, ko).await;
+        let result = create(&pool, fy_id, Acteur::utilisateur(admin_user_id), ko).await;
         set_postable(&pool, a2, true).await; // restaurer AVANT l'assert (base partagée)
         // Story 15-5a — réécrit à dessein : le refus nomme le compte, `(id, n°)`.
         let a2_number = account_number(&pool, a2).await;
@@ -5599,7 +5690,7 @@ mod tests {
             today,
             vec![line(a2, dec!(10), dec!(0)), line(a1, dec!(0), dec!(10))],
         );
-        let result = create(&pool, fy_id, admin_user_id, ko).await;
+        let result = create(&pool, fy_id, Acteur::utilisateur(admin_user_id), ko).await;
         set_postable(&pool, a1, true).await;
         set_postable(&pool, a2, true).await;
 
@@ -5639,7 +5730,7 @@ mod tests {
             today,
             vec![line(a1, dec!(10), dec!(0)), line(a2, dec!(0), dec!(10))],
         );
-        let result = create(&pool, fy_id, admin_user_id, ko).await;
+        let result = create(&pool, fy_id, Acteur::utilisateur(admin_user_id), ko).await;
         set_active(&pool, a1, true).await;
         set_postable(&pool, a2, true).await;
         assert!(
@@ -5665,9 +5756,15 @@ mod tests {
             vec![line(a1, dec!(10), dec!(0)), line(a2, dec!(0), dec!(10))],
         );
         let mut tx = pool.begin().await.unwrap();
-        let committed = create_in_tx(&mut tx, fy_id, admin_user_id, new, false)
-            .await
-            .is_ok();
+        let committed = create_in_tx(
+            &mut tx,
+            fy_id,
+            Acteur::utilisateur(admin_user_id),
+            new,
+            false,
+        )
+        .await
+        .is_ok();
         if committed {
             tx.commit().await.unwrap();
         } else {
@@ -5733,7 +5830,7 @@ mod tests {
             today,
             vec![line(a1, dec!(10), dec!(0)), line(rid, dec!(0), dec!(10))],
         );
-        let res = create(&pool, fy_id, admin_user_id, new).await;
+        let res = create(&pool, fy_id, Acteur::utilisateur(admin_user_id), new).await;
         // Story 15-5a — réécrit à dessein : nouveau code, le compte est nommé.
         match res {
             Err(DbError::AccountsNotPostable(list)) => {
@@ -5784,7 +5881,7 @@ mod tests {
         let origine = create(
             &pool,
             fy_id,
-            admin_user_id,
+            Acteur::utilisateur(admin_user_id),
             mk_entry(
                 company_id,
                 today,
@@ -5812,10 +5909,15 @@ mod tests {
         // L'appelant ouvre SA transaction, contre-passe, puis échoue.
         {
             let mut tx = pool.begin().await.unwrap();
-            let inverse =
-                reverse_in_tx(&mut tx, company_id, origine.entry.id, admin_user_id, today)
-                    .await
-                    .expect("la contre-passation doit réussir dans la transaction");
+            let inverse = reverse_in_tx(
+                &mut tx,
+                company_id,
+                origine.entry.id,
+                Acteur::utilisateur(admin_user_id),
+                today,
+            )
+            .await
+            .expect("la contre-passation doit réussir dans la transaction");
             assert_eq!(
                 inverse.entry.reverses_entry_id,
                 Some(origine.entry.id),
@@ -6016,7 +6118,7 @@ mod tests {
         let created = create(
             &pool,
             fy_id,
-            admin_user_id,
+            Acteur::utilisateur(admin_user_id),
             mk_entry(
                 company_id,
                 today,
@@ -6032,8 +6134,7 @@ mod tests {
             company_id,
             created.entry.id,
             created.entry.version,
-            admin_user_id,
-            None,
+            Acteur::utilisateur(admin_user_id),
             identical_payload(company_id, &created),
         )
         .await
@@ -6061,7 +6162,7 @@ mod tests {
         let created = create(
             &pool,
             fy_id,
-            admin_user_id,
+            Acteur::utilisateur(admin_user_id),
             mk_entry(
                 company_id,
                 today,
@@ -6080,8 +6181,7 @@ mod tests {
             company_id,
             created.entry.id,
             created.entry.version,
-            admin_user_id,
-            None,
+            Acteur::utilisateur(admin_user_id),
             identical_payload(company_id, &created),
         )
         .await;
@@ -6105,7 +6205,7 @@ mod tests {
         let created = create(
             &pool,
             fy_id,
-            admin_user_id,
+            Acteur::utilisateur(admin_user_id),
             mk_entry(
                 company_id,
                 today,
@@ -6121,8 +6221,7 @@ mod tests {
             company_id,
             created.entry.id,
             created.entry.version,
-            admin_user_id,
-            None,
+            Acteur::utilisateur(admin_user_id),
             identical_payload(company_id, &created),
         )
         .await;
@@ -6145,7 +6244,7 @@ mod tests {
         let created = create(
             &pool,
             fy_id,
-            admin_user_id,
+            Acteur::utilisateur(admin_user_id),
             mk_entry(
                 company_id,
                 today,
@@ -6161,8 +6260,7 @@ mod tests {
             company_id,
             created.entry.id,
             created.entry.version,
-            admin_user_id,
-            None,
+            Acteur::utilisateur(admin_user_id),
             identical_payload(company_id, &created),
         )
         .await;
@@ -6188,7 +6286,7 @@ mod tests {
         let created = create(
             &pool,
             fy_id,
-            admin_user_id,
+            Acteur::utilisateur(admin_user_id),
             mk_entry(
                 company_id,
                 today,
@@ -6205,8 +6303,7 @@ mod tests {
             company_id,
             created.entry.id,
             created.entry.version,
-            admin_user_id,
-            None,
+            Acteur::utilisateur(admin_user_id),
             payload,
         )
         .await
@@ -6242,7 +6339,7 @@ mod tests {
         let created = create(
             &pool,
             fy_id,
-            admin_user_id,
+            Acteur::utilisateur(admin_user_id),
             mk_entry(
                 company_id,
                 today,
@@ -6262,8 +6359,7 @@ mod tests {
             company_id,
             created.entry.id,
             created.entry.version,
-            admin_user_id,
-            None,
+            Acteur::utilisateur(admin_user_id),
             payload,
         )
         .await
@@ -6293,7 +6389,7 @@ mod tests {
         let created = create(
             &pool,
             fy_id,
-            admin_user_id,
+            Acteur::utilisateur(admin_user_id),
             mk_entry(
                 company_id,
                 today,
@@ -6320,8 +6416,7 @@ mod tests {
             company_id,
             created.entry.id,
             created.entry.version,
-            admin_user_id,
-            None,
+            Acteur::utilisateur(admin_user_id),
             payload,
         )
         .await
@@ -6336,8 +6431,7 @@ mod tests {
             company_id,
             updated.entry.id,
             updated.entry.version,
-            admin_user_id,
-            None,
+            Acteur::utilisateur(admin_user_id),
             payload,
         )
         .await
@@ -6361,7 +6455,7 @@ mod tests {
         let created = create(
             &pool,
             fy_id,
-            admin_user_id,
+            Acteur::utilisateur(admin_user_id),
             mk_entry(
                 company_id,
                 today,
@@ -6390,8 +6484,7 @@ mod tests {
             company_id,
             created.entry.id,
             created.entry.version,
-            admin_user_id,
-            None,
+            Acteur::utilisateur(admin_user_id),
             payload,
         )
         .await
@@ -6415,7 +6508,7 @@ mod tests {
         let created = create(
             &pool,
             fy_id,
-            admin_user_id,
+            Acteur::utilisateur(admin_user_id),
             mk_entry(
                 company_id,
                 today,
@@ -6434,8 +6527,7 @@ mod tests {
             company_id,
             created.entry.id,
             created.entry.version,
-            admin_user_id,
-            None,
+            Acteur::utilisateur(admin_user_id),
             edit,
         )
         .await;
@@ -6451,8 +6543,7 @@ mod tests {
             company_id,
             created.entry.id,
             created.entry.version,
-            admin_user_id,
-            None,
+            Acteur::utilisateur(admin_user_id),
             added,
         )
         .await;

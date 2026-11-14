@@ -568,7 +568,7 @@ async fn archived_vat_decompte_refuses_a_manual_entry_but_no_automatic_flow(pool
         journal_entries::create(
             &pool,
             seeded.fiscal_year_id,
-            seeded.admin_user_id,
+            kesh_db::entities::audit_log::Acteur::utilisateur(seeded.admin_user_id),
             NewJournalEntry {
                 company_id: seeded.company_id,
                 entry_date: NaiveDate::from_ymd_opt(2026, 4, 3).unwrap(),

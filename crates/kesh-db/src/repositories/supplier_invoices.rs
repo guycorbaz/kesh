@@ -1416,28 +1416,11 @@ pub async fn unvalidate_in_tx(
     //     (clé étrangère `RESTRICT`) : la contre-passation d'abord — elle n'est
     //     contre-passée par rien, et la clé `reverses_entry_id` est `RESTRICT` —,
     //     puis l'achat, dont l'étape 3-bis passe alors.
-    //     La signature de `delete_in_tx` ne change pas ici (35-8a2) : l'acteur
-    //     s'y passe en ses deux moitiés.
+    //     `delete_in_tx` prend l'acteur entier depuis la Story 35-8a2.
     if let Some((_, cp_id, _, _)) = &reversal {
-        super::journal_entries::delete_in_tx(
-            tx,
-            company_id,
-            *cp_id,
-            acteur.user_id,
-            acteur.api_key_id,
-            false,
-        )
-        .await?;
+        super::journal_entries::delete_in_tx(tx, company_id, *cp_id, acteur, false).await?;
     }
-    super::journal_entries::delete_in_tx(
-        tx,
-        company_id,
-        je_id,
-        acteur.user_id,
-        acteur.api_key_id,
-        false,
-    )
-    .await?;
+    super::journal_entries::delete_in_tx(tx, company_id, je_id, acteur, false).await?;
 
     // (10) La trace du geste (AC-9).
     let mut details = serde_json::json!({
@@ -1782,7 +1765,8 @@ pub async fn validate_in_tx(
     let je = journal_entries::create_in_tx(
         &mut *tx,
         fy.id,
-        user_id,
+        // Story 35-8a2 (#431) : au nom de l'utilisateur (`AConvertir`, Epic 36).
+        Acteur::utilisateur(user_id),
         NewJournalEntry {
             company_id,
             entry_date: invoice_date,
@@ -2166,7 +2150,9 @@ pub async fn pay_in_tx_as(
     let je = journal_entries::create_in_tx(
         tx,
         fy.id,
-        user_id,
+        // Story 35-8a2 (#431) : l'acteur du règlement — la clé du rapprochement
+        // (`accept_one_supplier_invoice`) ; `pay_in_tx` le construit sans clé.
+        actor,
         NewJournalEntry {
             company_id,
             entry_date: payment_date,
@@ -2635,7 +2621,8 @@ pub async fn cancel_in_tx(
         tx,
         company_id,
         purchase_entry_id,
-        user_id,
+        // Story 35-8a2 (#431) : au nom de l'utilisateur (`AConvertir`, Epic 36).
+        Acteur::utilisateur(user_id),
         ReversalAuthority::SupplierPurchase {
             supplier_invoice_id: id,
         },
@@ -2922,7 +2909,8 @@ pub async fn cancel_settlement_in_tx(
         tx,
         company_id,
         entry_id,
-        user_id,
+        // Story 35-8a2 (#431) : au nom de l'utilisateur (`AConvertir`, Epic 36).
+        Acteur::utilisateur(user_id),
         ReversalAuthority::SupplierSettlement {
             supplier_invoice_id: id,
         },

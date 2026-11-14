@@ -255,7 +255,7 @@ impl Ctx {
         journal_entries::create(
             pool,
             self.fy_id,
-            self.user_id,
+            kesh_db::entities::audit_log::Acteur::utilisateur(self.user_id),
             NewJournalEntry {
                 company_id: self.company_id,
                 entry_date: self.fy_start,

@@ -24,6 +24,7 @@ mod jour;
 
 use chrono::NaiveDate;
 use kesh_db::entities::account::AccountType;
+use kesh_db::entities::audit_log::Acteur;
 use kesh_db::repositories::letterings::{self, Actor, Mode, Origin};
 use kesh_db::repositories::{journal_entries, supplier_invoices};
 use kesh_report::opening::debit_sense;
@@ -194,7 +195,7 @@ async fn open_items_balance_matches_the_ledger_and_the_trial_balance(pool: MySql
         &pool,
         company,
         e_rev,
-        s.admin_user_id,
+        Acteur::utilisateur(s.admin_user_id),
         crate::jour::aujourd_hui_test(),
     )
     .await

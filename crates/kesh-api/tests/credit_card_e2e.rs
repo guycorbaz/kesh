@@ -981,7 +981,7 @@ async fn retypage_refuse_avant_la_garde_des_ecritures(pool: MySqlPool) {
     kesh_db::repositories::journal_entries::create(
         &ctx.pool,
         ctx.seeded.fiscal_year_id,
-        ctx.seeded.admin_user_id,
+        kesh_db::entities::audit_log::Acteur::utilisateur(ctx.seeded.admin_user_id),
         NewJournalEntry {
             company_id: ctx.seeded.company_id,
             entry_date: date,

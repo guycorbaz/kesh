@@ -11,6 +11,7 @@
 use chrono::NaiveDate;
 use kesh_db::entities::account::AccountType;
 use kesh_db::entities::address::StructuredAddress;
+use kesh_db::entities::audit_log::Acteur;
 use kesh_db::entities::journal_entry::Journal;
 use kesh_db::entities::{
     AccountRole, Language, NewAccount, NewCompany, NewFiscalYear, NewJournalEntry,
@@ -170,9 +171,14 @@ async fn count_by_company_zero_then_n(pool: MySqlPool) {
     );
 
     let date = NaiveDate::from_ymd_opt(2026, 3, 1).unwrap();
-    journal_entries::create(&pool, fy, uid, opening_entry(cid, date, asset, retained))
-        .await
-        .unwrap();
+    journal_entries::create(
+        &pool,
+        fy,
+        Acteur::utilisateur(uid),
+        opening_entry(cid, date, asset, retained),
+    )
+    .await
+    .unwrap();
 
     assert_eq!(
         journal_entries::count_by_company(&pool, cid).await.unwrap(),
@@ -223,7 +229,7 @@ async fn count_by_company_is_tenant_scoped(pool: MySqlPool) {
     journal_entries::create(
         &pool,
         fy_b,
-        uid_b,
+        Acteur::utilisateur(uid_b),
         opening_entry(cid_b, date, asset_b, liab_b),
     )
     .await
@@ -394,7 +400,7 @@ async fn create_opening_entry_rejected_if_company_has_entries_in_any_fy(pool: My
     journal_entries::create(
         &pool,
         fy_later,
-        uid,
+        Acteur::utilisateur(uid),
         opening_entry(cid, d_later, asset, liab),
     )
     .await

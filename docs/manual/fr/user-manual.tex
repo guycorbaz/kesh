@@ -4007,7 +4007,16 @@ transactions à rapprocher) est prévu mais pas encore disponible.
           et «~clé API~» si elle a été faite par une clé d'API --- \emph{pour une partie des
           opérations seulement}~: beaucoup de gestes faits par une clé paraissent encore au seul
           nom de son créateur (\#431)~; le \textbf{retour en brouillon d'une facture fournisseur}
-          porte la marque depuis la 0.17.7, et une ligne écrite avant ne la porte pas~; un appel du \textbf{serveur MCP}
+          porte la marque depuis la 0.17.7, de même que les \textbf{écritures} saisies, modifiées,
+          supprimées ou contre-passées par les routes du journal et celles qu'un
+          \textbf{rapprochement bancaire} passe --- mais celles que Kesh passe pour une facture
+          (validation, dévalidation), un avoir, un règlement, le solde de son reste ou leur
+          annulation, une facture fournisseur (validation, paiement, annulation) ou un solde
+          d'ouverture restent au nom du créateur de la clé~; un dé-rapprochement par clé
+          contre-passe au nom de la clé une écriture rapprochée seule, celui d'un règlement de
+          facture (client ou fournisseur) l'annule, contre-passation comprise, au nom du
+          créateur de la clé, et un simple détachement ne contre-passe rien~; une ligne écrite
+          avant la 0.17.7 ne porte pas la marque~; un appel du \textbf{serveur MCP}
           paraît, lui, \textbf{au nom du créateur de la clé du serveur MCP}, \textbf{sans} cette
           marque --- c'est l'action «~Outil du serveur MCP appelé~» et le numéro de la clé, au
           détail, qui le distinguent~; et la \textbf{consultation d'un rapport} par un agent

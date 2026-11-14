@@ -627,7 +627,10 @@ async fn la_validation_par_cle_ecrit_encore_l_ecriture_au_nom_du_createur(pool: 
     .fetch_one(&pool)
     .await
     .unwrap();
-    assert_eq!((actor_type.as_str(), cle, user_id), ("user", None, admin_id));
+    assert_eq!(
+        (actor_type.as_str(), cle, user_id),
+        ("user", None, admin_id)
+    );
 }
 
 /// ⛔ **Le refus, par la couche HTTP.** Les tests de dépôt établissent le

@@ -1313,7 +1313,7 @@ async fn facture_ouverte_rc1(
     let je = kesh_db::repositories::journal_entries::create_in_tx(
         &mut tx,
         d.fy_id,
-        d.user_id,
+        kesh_db::entities::Acteur::utilisateur(d.user_id),
         NewJournalEntry {
             company_id: d.company_id,
             entry_date: chrono::NaiveDate::from_ymd_opt(2026, 6, 15).unwrap(),
@@ -2002,7 +2002,7 @@ async fn facture_avant_numero(
         let je = kesh_db::repositories::journal_entries::create_in_tx(
             &mut tx,
             fy,
-            s.user_id,
+            kesh_db::entities::Acteur::utilisateur(s.user_id),
             NewJournalEntry {
                 company_id: s.company_id,
                 entry_date: date_ecriture.parse().unwrap(),
@@ -2037,7 +2037,7 @@ async fn facture_avant_numero(
         let je = kesh_db::repositories::journal_entries::create_in_tx(
             &mut tx,
             fy,
-            s.user_id,
+            kesh_db::entities::Acteur::utilisateur(s.user_id),
             NewJournalEntry {
                 company_id: s.company_id,
                 entry_date: date_ecriture.parse().unwrap(),

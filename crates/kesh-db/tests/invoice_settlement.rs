@@ -18,6 +18,7 @@
 mod jour;
 
 use chrono::NaiveDate;
+use kesh_db::entities::audit_log::Acteur;
 use kesh_db::entities::journal_entry::Journal;
 use kesh_db::entities::{
     NewInvoice, NewInvoiceLine, NewJournalEntry, NewJournalEntryLine, SettlementChoice,
@@ -89,7 +90,7 @@ async fn validated_invoice(
     let je = kesh_db::repositories::journal_entries::create(
         pool,
         seeded.fiscal_year_id,
-        seeded.admin_user_id,
+        Acteur::utilisateur(seeded.admin_user_id),
         NewJournalEntry {
             company_id: seeded.company_id,
             entry_date: date,
@@ -911,7 +912,7 @@ async fn residuel_reste_nul_laisse_paid_at(pool: MySqlPool) {
     let forged_entry = journal_entries::create(
         &pool,
         seeded.fiscal_year_id,
-        seeded.admin_user_id,
+        Acteur::utilisateur(seeded.admin_user_id),
         NewJournalEntry {
             company_id: seeded.company_id,
             entry_date: ymd(2026, 3, 6),
@@ -1015,7 +1016,7 @@ async fn socle_l_autorite_ne_leve_que_son_reglement(pool: MySqlPool) {
         &mut tx,
         seeded.company_id,
         e1,
-        seeded.admin_user_id,
+        Acteur::utilisateur(seeded.admin_user_id),
         ReversalAuthority::ClientSettlement { settlement_id: s2 },
         crate::jour::aujourd_hui_test(),
     )
@@ -1049,7 +1050,7 @@ async fn socle_la_precedence_se_poursuit_apres_le_motif_leve(pool: MySqlPool) {
         &mut tx,
         seeded.company_id,
         entry_id,
-        seeded.admin_user_id,
+        Acteur::utilisateur(seeded.admin_user_id),
         ReversalAuthority::ClientSettlement { settlement_id: sid },
         crate::jour::aujourd_hui_test(),
     )

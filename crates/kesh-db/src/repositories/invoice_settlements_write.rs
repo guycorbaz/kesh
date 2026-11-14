@@ -17,6 +17,7 @@ use rust_decimal::Decimal;
 use sqlx::{MySql, MySqlPool, Transaction};
 
 use crate::entities::NewAuditLogEntry;
+use crate::entities::audit_log::Acteur;
 use crate::entities::invoice::{Invoice, InvoiceLine};
 use crate::entities::{
     BankAccountKind, Journal, NewInvoiceSettlement, NewJournalEntry, SettlementChoice,
@@ -337,7 +338,8 @@ pub async fn settle_invoice(
     let je = journal_entries::create_in_tx(
         &mut tx,
         fy.id,
-        user_id,
+        // Story 35-8a2 (#431) : au nom de l'utilisateur (`AConvertir`, Epic 36).
+        Acteur::utilisateur(user_id),
         NewJournalEntry {
             company_id,
             entry_date: settled_on,
@@ -700,7 +702,8 @@ pub async fn write_off_invoice(
     let je = journal_entries::create_in_tx(
         &mut tx,
         fy.id,
-        user_id,
+        // Story 35-8a2 (#431) : au nom de l'utilisateur (`AConvertir`, Epic 36).
+        Acteur::utilisateur(user_id),
         NewJournalEntry {
             company_id,
             entry_date: settled_on,
@@ -1027,7 +1030,8 @@ pub async fn cancel_settlement_in_tx(
         tx,
         company_id,
         entry_id,
-        user_id,
+        // Story 35-8a2 (#431) : au nom de l'utilisateur (`AConvertir`, Epic 36).
+        Acteur::utilisateur(user_id),
         ReversalAuthority::ClientSettlement { settlement_id },
         aujourd_hui,
     )

@@ -278,7 +278,7 @@ async fn post_normal_entry(pool: &MySqlPool, seed: &Seed, fy_id: i64, date: Naiv
     journal_entries::create(
         pool,
         fy_id,
-        seed.user_id,
+        kesh_db::entities::audit_log::Acteur::utilisateur(seed.user_id),
         NewJournalEntry {
             company_id: seed.company_id,
             entry_date: date,
