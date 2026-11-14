@@ -19,12 +19,12 @@ dans les fiches ; l'issue et la PR s'ouvrent à la fin, une fois la recette fait
 - **D2 — La devise est portée par le compte**, comme dans les livres de Beat (le compte de ventes `3132-USD-EX` est en
   USD comme le compte PayPal USD). Toute ligne d'écriture sur un compte en devise porte **le montant en devise, le cours
   et le montant en CHF** ; toute ligne a une valeur en CHF, et **l'écriture s'équilibre en CHF**.
-- **D3 — Le cours par défaut est le cours mensuel moyen officiel de l'AFC** (ESTV, publié par l'OFDF/BAZG) du mois de la
+- **D3 — Le cours par défaut est le cours mensuel officiel de l'AFC** (fixé d'avance pour le mois, voir *Terminologie*) (ESTV, publié par l'OFDF/BAZG) du mois de la
   date de l'écriture ; il est **modifiable ligne par ligne** (saisie manuelle, p. ex. pour une conversion de devises).
 - **D4 — Les cours mensuels se récupèrent automatiquement** sur le site officiel, et **toutes les devises publiées**
   sont stockées dans la table des cours mensuels (précision de Beat, 2026-11-14) — USD et EUR pour Beat, mais
   l'ensemble est universel.
-- **D5 — Réévaluation de fin d'exercice** : au **cours mensuel de décembre** (le mois de clôture de l'exercice), dans
+- **D5 — Réévaluation de fin d'exercice** *(cours corrigé par D10)* : au **cours mensuel de décembre** (le mois de clôture de l'exercice), dans
   les deux sens (gain et perte), contre un compte de différences de change choisi par l'utilisateur. Fondement : les
   devises ont un cours de marché observable (CO 960b).
 - **D6 — Conversion de devises** (EUR → USD) : les deux montants en devise sont saisis avec leurs cours ; l'écart en CHF
@@ -40,6 +40,21 @@ dans les fiches ; l'issue et la PR s'ouvrent à la fin, une fois la recette fait
   compte bancaire à un compte du plan **déjà en devise**, en gardant numéro, historique et soldes (à tracer en issue
   avec la PR).
 
+- **D9 — Table des cours modifiable (Beat, 2026-11-14, après validation des fiches : change de périmètre).** La table
+  des cours n'est pas en lecture seule : la société peut **saisir son propre cours** pour une devise et un mois (ou un
+  jour, D10). Un cours saisi **n'est jamais remplacé** par une récupération AFC. À l'écran, sous le champ, le **cours
+  AFC** s'affiche avec un bouton **↑** qui reprend le cours AFC (la saisie est alors effacée). Cours effectif = cours
+  saisi s'il existe, sinon cours AFC. Une ligne d'écriture prend le cours effectif ; elle est `afc` si ce cours égale
+  le cours AFC, sinon `manual`.
+- **D10 — Réévaluation au cours du jour de clôture (corrige D5).** Vérifié le 2026-11-14 : les cours des livres 2024 de
+  Beat (USD 0.91193, EUR 0.94947) sont **exactement** les cours **journaliers** OFDF du 31.12.2024
+  (`https://www.backend-rates.bazg.admin.ch/api/xmldaily?d=20241231`, cinq décimales, validité 01–03.01.2025),
+  importés par son ancien logiciel. Le cours par défaut de la réévaluation est donc le **cours journalier de la date
+  de clôture**, récupéré comme les cours mensuels et modifiable (D9) ; à défaut, le cours mensuel du mois de clôture,
+  signalé à l'écran. C'est aussi la pratique (cours de clôture, CO 960).
+- **Terminologie** (Beat) : les cours mensuels AFC ne sont **pas des moyennes** ; ils sont **fixés d'avance** pour le
+  mois (publiés en début de mois). Les textes disent « cours mensuel AFC », jamais « cours moyen ».
+
 ## Source des cours — établie le 2026-11-14
 
 - Page ESTV *MWST Monatsmittelkurse* : « XML-File » → `https://www.backend-rates.bazg.admin.ch/api/xmlavgmonth`.
@@ -53,8 +68,10 @@ dans les fiches ; l'issue et la PR s'ouvrent à la fin, une fois la recette fait
 - Conditions d'utilisation : les données viennent de SIX, mises à disposition par l'OFDF « sans engagement » ;
   redistribution par des tiers interdite. Kesh les **récupère chez l'utilisateur** pour son propre usage et ne les
   redistribue pas (aucun cours n'est versionné dans le dépôt ni livré dans l'image).
-- Relevé pour la recette : décembre 2024, USD 0.8846, EUR 0.9470. Les livres 2024 de Beat ont été réévalués à
-  USD 0.91193 et EUR 0.94947 (autre source) : l'écart sera chiffré à la recette.
+- Relevé pour la recette : décembre 2024, USD 0.8846, EUR 0.9470 (cours mensuels). Les livres 2024 de Beat ont été
+  réévalués à USD 0.91193 et EUR 0.94947 : ce sont les **cours journaliers du 31.12.2024** (D10).
+- **Cours journaliers** : `xmldaily?d=AAAAMMJJ` (racine `<wechselkurse>`, `<datum>`, `<gueltigkeit>`, cours à cinq
+  décimales, mêmes unités).
 
 ## Stories
 
