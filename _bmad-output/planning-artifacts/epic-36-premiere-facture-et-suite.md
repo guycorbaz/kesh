@@ -88,6 +88,10 @@ registre). Les fiches passent ensuite par `bmad-create-story`, puis la boucle de
      la seconde part de la première fusionnée. 36-3 touche `JournalEntryForm.svelte`, consommateur d'`AccountAutocomplete`
      que 36-1 ne modifie pas d'après l'étape 0 (il n'est dans aucun `<form>`) ; elle peut se développer en parallèle de
      36-2 si 36-1 est fusionnée.
+     *Annoté le 2026-11-14 (validation P1 de la fiche 36-2, C-36-2-7 à 12)* : le champ de montant de l'éclatement passe
+     au texte lu par `readJournalAmount` de la 36-3 ; l'ordre devient **36-1 → 36-3 → 36-2** pour le correctif (36-3
+     développée en parallèle de 36-1, base de 36-2 = 36-1 et 36-3 fusionnées) ; la reproduction R0 de 36-2 peut se jouer
+     avant. #1151 entre dans la 36-2 sans condition.
    - **Lignée B, voie 1, backend puis frontend** : **36-4 → 36-5**. 36-4 touche `kesh-db` (gate complet même en boucle,
      `gate-ci` sur la voie 1 de toute façon) ; 36-5 n'a aucun fichier commun avec elle et peut partir dès que la voie
      se libère.
