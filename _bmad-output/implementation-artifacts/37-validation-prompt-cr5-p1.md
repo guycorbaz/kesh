@@ -1,16 +1,16 @@
-# Prompt de validation CR-5 P1 — fiches révisées de l'Epic 35
+# Prompt de validation CR-5 P1 — fiches révisées de l'Epic 37
 
 Tu fais la **première passe complète** d'un nouveau cycle de validation, ouvert par la revue 3 de Beat (CR-5),
 sur une fiche du dépôt `/home/beat/limu/compta/kesh` (Kesh, logiciel comptable suisse en production : Rust/Axum,
 SvelteKit, MariaDB). À lire d'abord :
 
-- le fichier d'epic `_bmad-output/planning-artifacts/epic-35-multi-devises.md` : décisions **D1–D10** et **R1–R10** et **S1–S6** , **T1–T6** et **U1–U6** (sections CR-2 à CR-5 ; « Revue 3 de Beat — CR-5 » prime) (D9 : table des
+- le fichier d'epic `_bmad-output/planning-artifacts/epic-37-multi-devises.md` : décisions **D1–D10** et **R1–R10** et **S1–S6** , **T1–T6** et **U1–U6** (sections CR-2 à CR-5 ; « Revue 3 de Beat — CR-5 » prime) (D9 : table des
   cours modifiable ; D10 : réévaluation au cours journalier de clôture ; *Terminologie*) et registre, en particulier
   **CR-5 — amendements du registre et arbitrages** (A23–A29) ;
 - la fiche à valider (ta mission), dont l'entrée « révision CR-5 » du Change Log ; le diff de la révision :
   `git diff 0ae43432 d59a1de9 -- <fiche>` (lecture seule) ;
 - `CLAUDE.md` : *Migration breaking policy* (P1–P8, fenêtre d'import), *Pattern batch*, *Review Iteration Rule* ;
-- les autres fiches `35-*.md` du même dossier pour les points de contact.
+- les autres fiches `37-*.md` du même dossier pour les points de contact.
 
 ## Ce que tu cherches
 
@@ -40,6 +40,6 @@ appliqués avec le texte proposé. Message final bref.
 ## Arbitrages à appliquer en phase 2 (s'ils touchent ta fiche)
 
 A23 (↑ direct tant que l'option « toutes les sociétés » est masquée), A24 (copie limitée aux devises des comptes de la
-société ; copie déclenchée aussi quand un compte reçoit une devise — 35-1 et 35-2), A25, A26, A27, A28 (`source` sans
-CHECK d'énumération), A29 (35-4 : « totaux en devise principale »). Ils sont dans le fichier d'epic, section
+société ; copie déclenchée aussi quand un compte reçoit une devise — 37-1 et 37-2), A25, A26, A27, A28 (`source` sans
+CHECK d'énumération), A29 (37-4 : « totaux en devise principale »). Ils sont dans le fichier d'epic, section
 « CR-5 — amendements du registre et arbitrages ».

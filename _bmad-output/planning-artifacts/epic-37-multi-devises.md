@@ -1,9 +1,11 @@
-# Epic 35 — Comptabilité multi-devises
+# Epic 37 — Comptabilité multi-devises
 
 **Kickoff : 2026-11-14.** Demande de Beat (contributeur, comptabilité d'une SA tenue jusqu'ici dans un logiciel
 multi-devises : comptes PayPal, Wise et débiteurs en USD et en EUR, ventes en USD, réévaluation au 31.12 sur le compte
-6840 *Différences de change*). L'epic est développé **sur une branche unique** (`epic/35-multi-devises`) et proposé à
+6840 *Différences de change*). L'epic est développé **sur une branche unique** (`epic/37-multi-devises`) et proposé à
 Guy en **une seule PR** à la fin, après une recette sur l'exercice 2024 de Beat importé par l'API.
+
+**Numéro : 37** (renuméroté depuis 35 le 2026-11-14, sur indication de Beat : les numéros 35 et 36 sont déjà réservés ; 38 est réservé par Beat aux comptes PayPal, 39 aux comptes Wise). Les comptes rendus de passe, prompts et Change Logs antérieurs à cette date écrivaient « 35 » : renumérotés avec les fichiers ; la page de revue `epic-35-revue.html`, en cours de lecture par Guy, garde l'ancien numéro (35-N = 37-N).
 
 **Cible : la release qui suivra la v0.17.6** (numéro, CHANGELOG daté, macros des manuels et tag : à la préparation de
 la release, par Guy — hors de cette branche).
@@ -35,7 +37,7 @@ dans les fiches ; l'issue et la PR s'ouvrent à la fin, une fois la recette fait
 
 - **D8 — Comptes bancaires en devise (2026-11-14).** Tant que les imports en devise n'existent pas, PayPal, Wise et
   les autres comptes en USD ou EUR sont des **comptes du plan** en devise, et non des comptes bancaires Kesh (un compte
-  lié à un compte bancaire ne peut porter de devise, C-35-9). Beat : « plain ledger accounts for PayPal/Wise is fine if
+  lié à un compte bancaire ne peut porter de devise, C-37-9). Beat : « plain ledger accounts for PayPal/Wise is fine if
   I can change type later to bank accounts ». **Engagement pour l'epic des imports en devise** : permettre de lier un
   compte bancaire à un compte du plan **déjà en devise**, en gardant numéro, historique et soldes (à tracer en issue
   avec la PR).
@@ -55,14 +57,14 @@ dans les fiches ; l'issue et la PR s'ouvrent à la fin, une fois la recette fait
 - **Terminologie** (Beat) : les cours mensuels AFC ne sont **pas des moyennes** ; ils sont **fixés d'avance** pour le
   mois (publiés en début de mois). Les textes disent « cours mensuel AFC », jamais « cours moyen ».
 
-## Revue de Beat — CR-2 (2026-11-14, première revue de la page `epic-35-revue.html`)
+## Revue de Beat — CR-2 (2026-11-14, première revue de la page `epic-37-revue.html`)
 
 Réponses de Beat à la revue et aux quatre questions qui ont suivi ; elles **priment** sur D1–D10 et sur le registre
 là où elles divergent.
 
-- **R1 — Sauvegardes antérieures réimportables (exception).** Une sauvegarde d'une version antérieure à l'Epic 35 se
+- **R1 — Sauvegardes antérieures réimportables (exception).** Une sauvegarde d'une version antérieure à l'Epic 37 se
   réimporte : elle est forcément mono-devise. L'import tolère l'**absence des seules tables et colonnes ajoutées par
-  l'Epic 35** (liste close, déclarée dans le code), traitées comme vides ou à leur défaut. Cela **rouvre la fenêtre
+  l'Epic 37** (liste close, déclarée dans le code), traitées comme vides ou à leur défaut. Cela **rouvre la fenêtre
   d'import** fermée par CR-1 (le registre de rejeu redevient tel quel).
 - **R2 — Récupération AFC ciblée.** Kesh ne récupère que les cours des **exercices en multi-devises** (R3).
 - **R3 — Mode par exercice.** Le réglage de la société est le **défaut** des exercices créés (l'exercice initial
@@ -108,18 +110,18 @@ là où elles divergent.
 ### CR-2 — amendements du registre et arbitrages (2026-11-14)
 
 - **R1** : la fenêtre d'import **ne se referme pas** (annule l'avertissement de CR-1). Les tables et colonnes de
-  l'Epic 35 forment une liste close d'absences admises (`kesh-db::backup`, 35-1 AC-6) ; registre de rejeu inchangé ;
+  l'Epic 37 forment une liste close d'absences admises (`kesh-db::backup`, 37-1 AC-6) ; registre de rejeu inchangé ;
   phase 5 de `recette-montee.sh` jouée ; une sauvegarde 0.17.6 se réimporte en mono-devise.
-- **C-35-2 amendé (R7)** : + `fx_transit_account_id`, compte **de bilan** en CHF, mêmes gardes sauf le type,
+- **C-37-2 amendé (R7)** : + `fx_transit_account_id`, compte **de bilan** en CHF, mêmes gardes sauf le type,
   obligatoire pour activer ; `ACCOUNT_IS_FX_DIFFERENCE_ACCOUNT` porte `details.designation` (`gain|loss|transit`).
-- **C-35-10 (R3, R6)** : `fiscal_years.multi_currency`, `opening_rate_kind`, `closing_rate_kind` (migration de
-  35-1) ; défaut tiré de la société à la création ; activation de la société → exercices **ouverts** en
+- **C-37-10 (R3, R6)** : `fiscal_years.multi_currency`, `opening_rate_kind`, `closing_rate_kind` (migration de
+  37-1) ; défaut tiré de la société à la création ; activation de la société → exercices **ouverts** en
   multi-devises ; désactivation → tous en mono-devise ; bascule `PUT /fiscal-years/{id}/currency-mode`
   (`FISCAL_YEAR_HAS_FOREIGN_BALANCES`, `FISCAL_YEAR_FOREIGN_ACCOUNTS_ACTIVE` + `force`) ; `MULTI_CURRENCY_DISABLED`
   jugé sur l'exercice de l'écriture et sur un exercice postérieur mono-devise (`laterFiscalYear`).
-- **C-35-3 complété (R7)** : une seule devise étrangère par écriture (`FX_MULTIPLE_CURRENCIES`, 400), sauf ouverture,
+- **C-37-3 complété (R7)** : une seule devise étrangère par écriture (`FX_MULTIPLE_CURRENCIES`, 400), sauf ouverture,
   complément et contre-passation ; conversion par `POST /journal-entries/conversions` (deux écritures, une transaction).
-- **C-35-6 amendé (R2, R4, R5)**, **C-35-7 amendé (R9, R6)**, **C-35-9 amendé (R6 : cours d'ouverture selon
+- **C-37-6 amendé (R2, R4, R5)**, **C-37-7 amendé (R9, R6)**, **C-37-9 amendé (R6 : cours d'ouverture selon
   `opening_rate_kind`)**, terminologie R4 : repris des fiches révisées.
 - **Arbitrages de l'orchestrateur sur les questions ouvertes de la révision CR-2** (soumis à Beat dans la page de
   revue 2) :
@@ -134,8 +136,8 @@ là où elles divergent.
   - A6 — compte de conversion : compte de bilan non archivé, à créer (aucun plan livré n'en a ; les fiches disent « p. ex. 1090 », le plan de Beat le numérote 1091) ;
   - A7 — la récupération automatique ignore les exercices clos ; leurs cours se récupèrent à l'écran ;
   - A8 — la conversion passe par une route serveur (deux écritures dans une transaction).
-- **Tableau des stories** : 35-2 « ne referme pas la fenêtre d'import (R1) ».
-- **C-35-2 (3) complété (CR-2 P1)** : la route de conversion (`POST /journal-entries/conversions`, 35-3b) revalide
+- **Tableau des stories** : 37-2 « ne referme pas la fenêtre d'import (R1) ».
+- **C-37-2 (3) complété (CR-2 P1)** : la route de conversion (`POST /journal-entries/conversions`, 37-3b) revalide
   aussi le compte de conversion à l'usage (`FX_ACCOUNT_INVALID`), comme la réévaluation ; la ligne d'écart du
   formulaire reste une ligne CHF ordinaire.
 
@@ -171,18 +173,18 @@ Prime sur CR-2 et sur ses arbitrages là où ils divergent.
 
 ### CR-3 — amendements du registre et arbitrages (2026-11-14)
 
-- **C-35-2 complété (S2)** : `accounts.fx_gain_account_id`, `fx_loss_account_id` (BIGINT NULL, sans FK ; NULL = réglage
+- **C-37-2 complété (S2)** : `accounts.fx_gain_account_id`, `fx_loss_account_id` (BIGINT NULL, sans FK ; NULL = réglage
   de la société, lu à l'usage) ; CHECK « les deux ou aucun » et « seulement sur un compte en devise » ; mêmes gardes
   que la société et gardes inverses (`ACCOUNT_IS_FX_DIFFERENCE_ACCOUNT` + `holderAccountId`) ; résolution unique
   `fx_accounts_for` + revalidation `validate_fx_accounts_in_tx`, miroir TS `fxAccountsFor`. Le compte de conversion
-  reste un réglage de la société. Analytique : hors périmètre (C-35-8).
-- **C-35-6 amendé (S1)** : quotidien tant que le mois courant ou suivant manque ; mois suivant T obtenu → pause
+  reste un réglage de la société. Analytique : hors périmètre (C-37-8).
+- **C-37-6 amendé (S1)** : quotidien tant que le mois courant ou suivant manque ; mois suivant T obtenu → pause
   jusqu'à min(obtention + 24 j, 25 de T), jamais avant le 1er de T ; `first_fetched_at` sur `_kesh_exchange_rates`.
-- **C-35-1 amendé (S6)** : `_kesh_exchange_rates` gagne `first_fetched_at` et les colonnes `republished_*`,
+- **C-37-1 amendé (S6)** : `_kesh_exchange_rates` gagne `first_fetched_at` et les colonnes `republished_*`,
   `notice_acknowledged_at` ; une récupération ne remplace jamais le cours en vigueur ; adoption et acquittement
   audités, globaux à l'installation ; bandeau à la connexion ; cours effectif et `FX_RATE_NOT_AFC` sur le cours en
   vigueur.
-- **C-35-7 amendé (S2, S4)** : contrepartie de chaque écriture de réévaluation = comptes propres du compte réévalué,
+- **C-37-7 amendé (S2, S4)** : contrepartie de chaque écriture de réévaluation = comptes propres du compte réévalué,
   sinon ceux de la société ; mois et jour de clôture = ceux de `end_date`, toute durée d'exercice.
 - **R10 et A1 retirés (S4)** ; **S3** : liste complète `{id, number, name, currency}` ; **S5** : assistant TVA en devise.
 - Registre des routes (deltas) : epic +11 routes `LIB_ROUTES`, total du registre +12.
@@ -200,7 +202,7 @@ Prime sur CR-2 et sur ses arbitrages là où ils divergent.
   - A15 — S2 : les comptes propres couvrent gains et pertes ; le compte de conversion reste un réglage de la société ;
   - A16 — S6 : `first_fetched_at` est une colonne distincte de `fetched_at`.
   - A17 — S6 : au `PUT` d'une écriture, seules les lignes `afc` nouvelles ou modifiées sont contrôlées contre le cours
-    AFC en vigueur ; une ligne inchangée ne l'est jamais (35-3a AC-4, 35-3b AC-2).
+    AFC en vigueur ; une ligne inchangée ne l'est jamais (37-3a AC-4, 37-3b AC-2).
 
 ## Revue 2 de Beat — CR-4 (2026-11-14)
 
@@ -212,7 +214,7 @@ Prime sur tout ce qui précède là où il diverge.
 - **T2 — Tests d'exercices** : commençant le **1er janvier**, le 1er avril et le 1er juillet (plus les durées de 6 et
   18 mois de S4).
 - **T3 — Devise portée par le compte seul (DB DRY).** La ligne d'écriture **ne stocke pas** la devise : elle se lit
-  sur le compte, dont la devise est verrouillée dès la première ligne (35-1). La ligne garde `amount_currency`,
+  sur le compte, dont la devise est verrouillée dès la première ligne (37-1). La ligne garde `amount_currency`,
   `exchange_rate`, `rate_source`. Cas admis, par les comptes de l'écriture : **CHF–CHF** ; **devise–CHF** (et l'inverse),
   avec cours ; **devise–même devise** (p. ex. EUR–EUR : chaque ligne a sa valeur CHF au cours AFC du mois ou au cours
   fixé dans l'écriture). Refusé : **deux devises étrangères différentes** (EUR–USD) → passer par le compte de
@@ -226,25 +228,25 @@ Prime sur tout ce qui précède là où il diverge.
   cumulés d'un exercice à l'autre (aucune écriture de report) ; le cours d'ouverture ne sert qu'aux soldes
   d'ouverture d'une société neuve et à l'affichage.
 - **T5 — Montant en devise « pour information » sur une écriture CHF : rejeté** (Beat : « feature-creep ») ; à tracer
-  comme idée (C-35-8), éventuellement pour la réconciliation ou la saisie automatique de factures.
+  comme idée (C-37-8), éventuellement pour la réconciliation ou la saisie automatique de factures.
 - **T6 — A6 approuvé** (compte de conversion à créer).
 
 ### CR-4 — amendements du registre et arbitrages (2026-11-14)
 
-- **C-35-3 amendé (T3)** : `journal_entry_lines` gagne **trois** colonnes NULL : `amount_currency DECIMAL(19,4)`,
+- **C-37-3 amendé (T3)** : `journal_entry_lines` gagne **trois** colonnes NULL : `amount_currency DECIMAL(19,4)`,
   `exchange_rate DECIMAL(20,10)`, `rate_source VARCHAR(12)` ; **aucune colonne de devise** : la devise d'une ligne est
   celle de son compte (`accounts.currency`, lue par jointure), verrouillée dès la première ligne du compte. CHECK
   tout-ou-rien sur les trois colonnes, `chk_jel_fx_rate_source`, `_amount`, `_rate`, `_chf`. Une seule devise
   étrangère par écriture, jugée sur les devises des comptes. `foreign.currency` facultatif à l'API, contrôlé s'il est
   présent (`FX_CURRENCY_MISMATCH`) ; code neuf `FX_ACCOUNT_IN_CHF` (400) pour une ligne `foreign` sur un compte CHF.
   Liste close R1 : `journal_entry_lines` × 3.
-- **C-35-9 amendé (T4)** : cours d'ouverture = cours de clôture de l'exercice précédent — `day` : veille de
+- **C-37-9 amendé (T4)** : cours d'ouverture = cours de clôture de l'exercice précédent — `day` : veille de
   l'ouverture ; `month` : mois de la veille de l'ouverture (dernier mois de l'exercice précédent). Un exercice qui
   suit un exercice Kesh prend à sa création le `closing_rate_kind` de celui-ci comme `opening_rate_kind`.
-- **C-35-10 complété (T1)** : l'assistant demande la date de **début et de fin** du premier exercice (corps facultatif
+- **C-37-10 complété (T1)** : l'assistant demande la date de **début et de fin** du premier exercice (corps facultatif
   de `finalize` ; sans corps, 1er janvier–31 décembre comme aujourd'hui) — les dates d'un exercice ne se modifient
   pas après sa création (`PUT /fiscal-years/{id}` ne change que le nom, `routes/fiscal_years.rs:86-90`).
-- **C-35-8 (T5)** : montant en devise « pour information » sur une écriture CHF — rejeté, gardé comme idée.
+- **C-37-8 (T5)** : montant en devise « pour information » sur une écriture CHF — rejeté, gardé comme idée.
 - **Arbitrages de l'orchestrateur sur les questions de la révision CR-4** (soumis à Beat) :
   - A18 — la date de fin du premier exercice se saisit dans l'assistant (défaut : veille du même jour un an plus
     tard), puisqu'elle n'est plus modifiable ensuite ;
@@ -259,7 +261,7 @@ Prime sur tout ce qui précède là où il diverge.
 
 Prime sur tout ce qui précède là où il diverge. Beat approuve A2–A22, **sauf A11 et A22** (remplacés par U3 et U4).
 
-- **U1 — Tables des cours renommées et réparties (remplace C-35-1 et l'S6 tel qu'écrit).**
+- **U1 — Tables des cours renommées et réparties (remplace C-37-1 et l'S6 tel qu'écrit).**
   - **`exchange_rates`** (table **applicative**, **par société**, sauvegardée ; ex-`exchange_rate_overrides`) : une ligne
     par (société, devise, genre `month|day`, date) avec le **cours retenu par la société** et sa **`source`**
     (`afc`, `manual`, et plus tard d'autres sources, p. ex. `ecb`). Elle reçoit **automatiquement** une copie de
@@ -283,7 +285,7 @@ Prime sur tout ce qui précède là où il diverge. Beat approuve A2–A22, **sa
   [nom de la société] » (défaut) ; ( ) « Corriger pour toutes les sociétés sous votre gestion (exercices ouverts
   seulement) ». **Constat au code** : un utilisateur Kesh n'appartient qu'à une société (`users.company_id`) ; la
   seconde option n'a donc aujourd'hui aucun objet. Elle est **spécifiée mais masquée** tant que Kesh ne gère pas
-  plusieurs sociétés par utilisateur ; à tracer en issue (C-35-8).
+  plusieurs sociétés par utilisateur ; à tracer en issue (C-37-8).
 - **U4 — Changer le genre de clôture d'un exercice (remplace A22).** Si l'exercice suivant existe, un **dialogue**
   demande quoi faire : appliquer aussi le genre correspondant au **cours d'ouverture** de l'exercice suivant (case
   cochée par défaut) ; Kesh rappelle qu'aucune écriture d'ouverture n'existe entre deux exercices Kesh (soldes
@@ -296,17 +298,17 @@ Prime sur tout ce qui précède là où il diverge. Beat approuve A2–A22, **sa
 
 ### CR-5 — amendements du registre et arbitrages (2026-11-14)
 
-- **C-35-1 amendé (U1)** : `exchange_rates` (applicative, par société, sauvegardée ; `rate`, `source`,
+- **C-37-1 amendé (U1)** : `exchange_rates` (applicative, par société, sauvegardée ; `rate`, `source`,
   `acknowledged_rate`/`acknowledged_at`, `version`, `updated_by` NULL pour une copie ; UNIQUE (company_id, currency,
   kind, rate_date)) et `_kesh_fetched_exchange_rates` (système ; PK (source, currency, kind, rate_date) ; dernière
   valeur publiée, `first_fetched_at`, `fetched_at`, `value_changed_at` ; plus de `republished_*`). Copie automatique
-  en insertion seule (`copy_fetched_in_tx`, 35-2 AC-3 bis) ; cours effectif = ligne de la société
+  en insertion seule (`copy_fetched_in_tx`, 37-2 AC-3 bis) ; cours effectif = ligne de la société
   (`find_company_rate_in_tx`) ; R1 s'applique à `exchange_rates`.
-- **C-35-6 complété** : copie non auditée (`updated_by` NULL, nombre au détail de l'action déclenchante) ; les routes
-  mutantes de 35-2 sous `retry_on_deadlock`.
-- **C-35-9 complété** : `lookup` → `{ currency, kind, rateDate, effectiveRate, source, publishedRate, publishedUnit,
+- **C-37-6 complété** : copie non auditée (`updated_by` NULL, nombre au détail de l'action déclenchante) ; les routes
+  mutantes de 37-2 sous `retry_on_deadlock`.
+- **C-37-9 complété** : `lookup` → `{ currency, kind, rateDate, effectiveRate, source, publishedRate, publishedUnit,
   sourceDate }` ; `FX_RATE_NOT_AFC` contre la ligne `afc` de la société ; notices et acquittement par société.
-- **A11, A22 retirés** (U3, U4). Routes 35-2 en deltas : +5 routes, +5 tracées, total +6.
+- **A11, A22 retirés** (U3, U4). Routes 37-2 en deltas : +5 routes, +5 tracées, total +6.
 - **Arbitrages de l'orchestrateur sur les questions de la révision CR-5** (soumis à Beat) :
   - A23 — tant que la seconde option de U3 est masquée, le ↑ s'applique **directement** (sans dialogue) ; le dialogue
     n'apparaît que lorsque l'option « toutes les sociétés » devient disponible ; le ↑ d'un cours `manual` n'a pas de
@@ -318,7 +320,7 @@ Prime sur tout ce qui précède là où il diverge. Beat approuve A2–A22, **sa
   - A27 — désactiver le multi-devises ne vide pas `exchange_rates` ;
   - A28 — `source` n'a **pas** de CHECK d'énumération (format seul ; valeurs contrôlées par le code), pour qu'une
     source ajoutée plus tard (`ecb`) ne demande pas de migration breaking (P1) ;
-  - A29 — 35-4 : « totaux en devise principale », non « en CHF ».
+  - A29 — 37-4 : « totaux en devise principale », non « en CHF ».
   - A30 — complète A28 : la lecture d'une `source` inconnue est **tolérante** (`RateOrigin::Other(String)`, affichée
     telle quelle, jamais d'erreur interne), dès cette version ; une source ajoutée plus tard (`ecb`) ne demande donc ni
     relèvement de `kesh_version_min_required` ni migration breaking (P1).
@@ -345,14 +347,14 @@ Prime sur tout ce qui précède là où il diverge. Beat approuve A2–A22, **sa
 
 | Story | Objet | Migration |
 |---|---|---|
-| 35-1 | réglage multi-devises de la société, devise des comptes (création, modification, verrou dès la première écriture) | oui, non breaking |
-| 35-2 | table des cours AFC (mensuels et journaliers) et des cours saisis, récupération OFDF/AFC, écran *Cours de change* éditable | oui, non breaking ; ne referme pas la fenêtre d'import (R1) |
-| 35-3a | écritures en devise : modèle de ligne, validation, contrôle central, API, MCP, exports ; garde des chemins d'écriture automatiques | oui, non breaking |
-| 35-3b | écritures en devise : soldes d'ouverture, formulaire (cours proposé, ligne d'écart), affichage, sélecteurs, E2E, manuel | non |
-| 35-4 | rapports dans les deux devises : grand livre, balance, bilan, compte de résultat, exports | non attendue |
-| 35-5 | réévaluation de fin d'exercice (le report à nouveau se fait par le cumul depuis l'origine, aucune écriture de report) | non attendue |
+| 37-1 | réglage multi-devises de la société, devise des comptes (création, modification, verrou dès la première écriture) | oui, non breaking |
+| 37-2 | table des cours AFC (mensuels et journaliers) et des cours saisis, récupération OFDF/AFC, écran *Cours de change* éditable | oui, non breaking ; ne referme pas la fenêtre d'import (R1) |
+| 37-3a | écritures en devise : modèle de ligne, validation, contrôle central, API, MCP, exports ; garde des chemins d'écriture automatiques | oui, non breaking |
+| 37-3b | écritures en devise : soldes d'ouverture, formulaire (cours proposé, ligne d'écart), affichage, sélecteurs, E2E, manuel | non |
+| 37-4 | rapports dans les deux devises : grand livre, balance, bilan, compte de résultat, exports | non attendue |
+| 37-5 | réévaluation de fin d'exercice (le report à nouveau se fait par le cumul depuis l'origine, aucune écriture de report) | non attendue |
 
-**Ordre** : 35-1 → 35-2 → 35-3a → 35-3b → 35-4 → 35-5 (35-4 peut suivre 35-3a). La 35-3 a été découpée à la
+**Ordre** : 37-1 → 37-2 → 37-3a → 37-3b → 37-4 → 37-5 (37-4 peut suivre 37-3a). La 37-3 a été découpée à la
 rédaction (règle de splitting préventif : plus de cinq modules). Une story qui découvre qu'il lui faut une migration non prévue le dit
 avant de l'écrire. Toutes les migrations attendues sont **non breaking** (`CREATE TABLE`, `ADD COLUMN` nullable ou à
 défaut) : `kesh_version_min_required` reste à 0.17.6.
@@ -370,17 +372,17 @@ défaut) : `kesh_version_min_required` reste à 0.17.6.
 ## Registre des choix
 
 Architecture tranchée le 2026-11-14 par `bmad-party-mode` (Winston, Amelia, Mary), consensus au **tour 2**, sans
-objection bloquante restante. Fait vérifié au code qui a tranché C-35-2 : l'import `.keshbackup` s'exécute avec
+objection bloquante restante. Fait vérifié au code qui a tranché C-37-2 : l'import `.keshbackup` s'exécute avec
 `SET FOREIGN_KEY_CHECKS = 0` (`crates/kesh-db/src/backup.rs:689-736`) ; une colonne ajoutée avec défaut ou `NULL` ne
 ferme pas la fenêtre d'import, une table applicative neuve la ferme.
 
-- **C-35-1 — Table des cours.** Table **système** globale `_kesh_exchange_rates` (`currency CHAR(3)`, `month DATE`
+- **C-37-1 — Table des cours.** Table **système** globale `_kesh_exchange_rates` (`currency CHAR(3)`, `month DATE`
   au 1er du mois, `rate_per_unit DECIMAL(20,10)`, `published_unit INT`, `published_rate DECIMAL(19,6)`,
   `fetched_at`), PK `(currency, month)`, `CHECK DAY(month) = 1`, source AFC seulement ; état de la récupération dans
   `_kesh_exchange_rate_fetch` (dernier passage, statut, erreur). Non sauvegardée (préfixe `_kesh_`), re-récupérable.
   **Aucun cours manuel mensuel en table** : un cours manuel vit sur la ligne (`rate_source = 'manual'`), audité avec
   l'écriture. Sans cours disponible : erreur `RATE_UNAVAILABLE {currency, month}`, **jamais** de repli à 1.0.
-- **C-35-2 — Réglage.** Colonnes sur `companies` : `multi_currency_enabled BOOLEAN NOT NULL DEFAULT FALSE`,
+- **C-37-2 — Réglage.** Colonnes sur `companies` : `multi_currency_enabled BOOLEAN NOT NULL DEFAULT FALSE`,
   `fx_gain_account_id BIGINT NULL`, `fx_loss_account_id BIGINT NULL`, **sans clé étrangère SQL** (cycle
   `companies` ↔ `accounts`, réinitialisation de la société). Les deux peuvent désigner le même compte. Gardes du dépôt
   qui remplacent la FK : (1) à l'écriture du réglage, compte de la société, imputable, actif, de type charge ou produit,
@@ -389,7 +391,7 @@ ferme pas la fenêtre d'import, une table applicative neuve la ferme.
   réévaluation) : un identifiant orphelin, d'une autre société ou devenu invalide → `FX_ACCOUNT_INVALID`, jamais une
   écriture ; (4) la réinitialisation de la société remet les trois colonnes à leur défaut. Une sauvegarde 0.17.6 se
   réimporte (colonnes à leur défaut).
-- **C-35-3 — Ligne d'écriture.** Colonnes `NULL` sur `journal_entry_lines` : `currency CHAR(3)`,
+- **C-37-3 — Ligne d'écriture.** Colonnes `NULL` sur `journal_entry_lines` : `currency CHAR(3)`,
   `amount_currency DECIMAL(19,4)` (≥ 0, même côté que `debit`/`credit`), `exchange_rate DECIMAL(20,10)` (**par
   unité** : 1 JPY, jamais 100 JPY), `rate_source VARCHAR(12) CHECK IN ('afc','manual','revaluation')` — les trois
   valeurs posées d'emblée, une valeur ajoutée plus tard serait breaking. `CHECK` : tout-ou-rien sur les quatre colonnes ;
@@ -399,40 +401,40 @@ ferme pas la fenêtre d'import, une table applicative neuve la ferme.
   la ligne = devise du compte » contrôlée dans le dépôt. Rust : `foreign: Option<ForeignAmount>` sur
   `NewJournalEntryLine` — l'échec de compilation inventorie les sites de construction. Montant CHF arrondi à zéro →
   `FX_LINE_ROUNDS_TO_ZERO` (400, jamais la 500 du `CHECK` existant).
-- **C-35-4 — Arrondi et équilibre.** CHF = round(montant × cours, 0.01), `MidpointAwayFromZero`
+- **C-37-4 — Arrondi et équilibre.** CHF = round(montant × cours, 0.01), `MidpointAwayFromZero`
   (`Money::round_to_centimes`). Le serveur reste strict : déséquilibre → refus, écart dans `details`. L'interface
   **propose** une ligne d'écart préremplie sur le compte de gain ou de perte ; au-delà de n × 0.005 CHF (n lignes en
   devise), elle dit que ce n'est plus un arrondi mais propose quand même (une conversion porte un écart réel, réalisé).
-- **C-35-5 — Chemins d'écriture.** Contrôle **central** dans le dépôt `journal_entries` : ligne sans devise sur un
+- **C-37-5 — Chemins d'écriture.** Contrôle **central** dans le dépôt `journal_entries` : ligne sans devise sur un
   compte en devise → `ACCOUNT_REQUIRES_CURRENCY` (`FailedProposal` dans un lot). Les sélecteurs des factures,
   règlements et de la réconciliation n'offrent pas les comptes en devise. **Exception étendue** : les soldes
   d'ouverture et leur complément acceptent montant en devise et cours. Devise d'un compte **verrouillée dès sa
   première ligne** ; retour au mono-devise refusé tant qu'un compte en devise existe.
-- **C-35-6 — Audit et réseau.** La récupération automatique n'est pas auditée (`tracing` + `_kesh_exchange_rate_fetch`,
+- **C-37-6 — Audit et réseau.** La récupération automatique n'est pas auditée (`tracing` + `_kesh_exchange_rate_fetch`,
   affiché à l'écran) ; la récupération à la demande est auditée sous l'utilisateur. `reqwest` passe en dépendance de
   production, **rustls**, URL fixe (non configurable), délai et taille de réponse bornés ; un échec ne bloque ni le
   démarrage ni la saisie.
-- **C-35-7 — Réévaluation.** Une OD au dernier jour de l'exercice ; comptes **de bilan** en devise présélectionnés,
+- **C-37-7 — Réévaluation.** Une OD au dernier jour de l'exercice ; comptes **de bilan** en devise présélectionnés,
   décochables (postes non monétaires : stocks, immobilisations) ; cours = cours mensuel du **mois de clôture de
   l'exercice** (décembre pour un exercice civil, décision D5), modifiable par devise dans l'aperçu (devise non
   publiée) ; écart = round(solde devise × cours) − solde CHF, **cumulés depuis l'origine** jusqu'à la date ; rejouable
   (seul le résidu passe) ; pas d'extourne ; refusée sur un exercice clos ou des livres verrouillés ; gains **et**
   pertes (CO 960b), écrit au manuel comme un choix assumé. Ligne du compte réévalué : `rate_source = 'revaluation'`,
   `amount_currency = 0`, `exchange_rate` = cours retenu ; le libellé isole les écarts **non réalisés**.
-- **C-35-9 — Ajouts de la validation P1 des fiches (2026-11-14).**
+- **C-37-9 — Ajouts de la validation P1 des fiches (2026-11-14).**
   - `MULTI_CURRENCY_DISABLED` est un **409** partout.
-  - **Verrou des deux côtés** (35-1) : un compte qui porte un rôle, est désigné par une configuration (facturation,
+  - **Verrou des deux côtés** (37-1) : un compte qui porte un rôle, est désigné par une configuration (facturation,
     articles, fournisseurs, règles de réconciliation) ou lié à un compte bancaire ne reçoit pas de devise
     (`ACCOUNT_CURRENCY_IN_USE`) ; lier, désigner ou poser un rôle sur un compte en devise est refusé
-    (`ACCOUNT_IN_FOREIGN_CURRENCY`). Le contrôle central de 35-3a reste le filet.
-  - **C-35-2 (3) amendé** : la revalidation serveur des comptes de différences de change se fait à la réévaluation
-    (35-5) ; la ligne d'écart de 35-3b est une ligne CHF ordinaire, contrôlée à l'écran et par les gardes ordinaires.
-  - **Saisie manuelle « cours ou CHF »** (35-3b) : l'utilisateur saisit le cours ou le CHF réel ; le cours se déduit à
+    (`ACCOUNT_IN_FOREIGN_CURRENCY`). Le contrôle central de 37-3a reste le filet.
+  - **C-37-2 (3) amendé** : la revalidation serveur des comptes de différences de change se fait à la réévaluation
+    (37-5) ; la ligne d'écart de 37-3b est une ligne CHF ordinaire, contrôlée à l'écran et par les gardes ordinaires.
+  - **Saisie manuelle « cours ou CHF »** (37-3b) : l'utilisateur saisit le cours ou le CHF réel ; le cours se déduit à
     10 décimales de sorte que round(montant × cours, 2) = CHF. Cours proposé pour un solde d'ouverture : celui du mois
     **précédant** la date d'ouverture (mois de clôture de l'exercice antérieur).
-  - **Provenance contrôlée** (35-3a) : une ligne `afc` doit porter le cours de la table pour son mois
+  - **Provenance contrôlée** (37-3a) : une ligne `afc` doit porter le cours de la table pour son mois
     (`FX_RATE_NOT_AFC`) ; `CHECK chk_jel_fx_chf` en filet de la cohérence CHF ↔ devise.
-  - **Lecture et récupération séparées** (35-2) : `GET /lookup` ne sort jamais sur le réseau ; la récupération est
+  - **Lecture et récupération séparées** (37-2) : `GET /lookup` ne sort jamais sur le réseau ; la récupération est
     `POST /exchange-rates/fetch` (Comptable ou Administrateur), appelée par les écrans sur un cours manquant.
   - **Réglage multi-devises : Administrateur seul** (précédent des réglages de la société) ; une clé d'API ne
     l'active pas.
@@ -441,9 +443,9 @@ ferme pas la fenêtre d'import, une table applicative neuve la ferme.
     n'est pas étendue) ; le JSON des routes HTTP, lui, les omet (`skip_serializing_if`) pour rester identique en
     mono-devise.
   - **PUT d'un compte** : `currency` absent = devise inchangée, `null` = CHF (compatibilité des clients mono-devise ;
-    renversement de la P1 par la P2 de 35-1, confirmé par la P3).
+    renversement de la P1 par la P2 de 37-1, confirmé par la P3).
 - **CR-1 — amendements du registre (2026-11-14, révision des fiches pour D9, D10 et la terminologie).**
-  - **C-35-1 amendé** : `_kesh_exchange_rates` ne porte que les **cours AFC bruts**, mensuels et journaliers (`kind`
+  - **C-37-1 amendé** : `_kesh_exchange_rates` ne porte que les **cours AFC bruts**, mensuels et journaliers (`kind`
     'month' | 'day', `rate_date`, `source_date` = `<datum>` lu pour un jour ; PK `(currency, kind, rate_date)`), non
     sauvegardée, re-récupérable. Les **cours saisis** (D9) vont dans la table **applicative** `exchange_rate_overrides`
     (company_id, currency, kind, rate_date, rate, version, updated_by ; UNIQUE (company_id, currency, kind,
@@ -453,20 +455,20 @@ ferme pas la fenêtre d'import, une table applicative neuve la ferme.
     réimporte plus dans la nouvelle version (registre de rejeu vidé : `20261106000001` passe « Hors fenêtre »). À
     écrire au CHANGELOG et au manuel d'administration, et **à confirmer avec Guy** (production) ; soumis à Beat dans la
     page de revue.
-  - **C-35-7 amendé (D10)** : cours par défaut de la réévaluation = cours effectif journalier de la date de fin
+  - **C-37-7 amendé (D10)** : cours par défaut de la réévaluation = cours effectif journalier de la date de fin
     d'exercice (`xmldaily`, `POST /exchange-rates/fetch { date }`), sinon cours effectif mensuel du mois de fin
     (`rateKind` signalé), sinon `RATE_UNAVAILABLE` ; modifiable par devise. Un jour sans publication (week-end) prend
     la publication antérieure (`xmldaily?d=D` rend la dernière `<datum>` ≤ D, relevé le 2026-11-14).
-  - **C-35-9 complété** : une ligne prend le cours effectif ; `rate_source` = `afc` si égal au cours AFC mensuel du
+  - **C-37-9 complété** : une ligne prend le cours effectif ; `rate_source` = `afc` si égal au cours AFC mensuel du
     mois, sinon `manual` ; `FX_RATE_NOT_AFC` compare toujours au cours AFC brut ; `FX_RATE_INVALID` et la fonction des
-    bornes d'un cours sont créés par 35-2 ; `lookup` rend `{ currency, kind, rateDate, effectiveRate, afcRate|null,
+    bornes d'un cours sont créés par 37-2 ; `lookup` rend `{ currency, kind, rateDate, effectiveRate, afcRate|null,
     overridden, publishedUnit, publishedRate, sourceDate }`.
   - **Compte des passes** : le changement de périmètre ouvre un **nouveau cycle de validation** (CR-1 P1, P2…) pour
-    35-2, 35-3a, 35-3b et 35-5, plafonné à huit passes comme tout cycle ; 35-1 (annotation) et 35-4 (inchangée)
+    37-2, 37-3a, 37-3b et 37-5, plafonné à huit passes comme tout cycle ; 37-1 (annotation) et 37-4 (inchangée)
     restent validées.
-- **C-35-8 (complément 2)** : course préexistante, antérieure à l'Epic 35 — archivage d'un compte parent contre
-  création d'un sous-compte (relevée à la validation P5 de 35-1) : issue à ouvrir avec la PR.
-- **C-35-8 (complément)** : lettrage d'un compte en devise (débiteur soldé en devise avec écart de change) — limite,
+- **C-37-8 (complément 2)** : course préexistante, antérieure à l'Epic 37 — archivage d'un compte parent contre
+  création d'un sous-compte (relevée à la validation P5 de 37-1) : issue à ouvrir avec la PR.
+- **C-37-8 (complément)** : lettrage d'un compte en devise (débiteur soldé en devise avec écart de change) — limite,
   issue à ouvrir avec la PR.
-- **C-35-8 — Tracé pour plus tard** (issues à ouvrir avec la PR) : option de neutralisation des gains de change non
+- **C-37-8 — Tracé pour plus tard** (issues à ouvrir avec la PR) : option de neutralisation des gains de change non
   réalisés par une provision (prudence, CO 960 al. 2) ; factures, factures fournisseur et imports bancaires en devise.

@@ -1,16 +1,16 @@
-# Prompt de validation CR-2 P2 — fiches révisées de l'Epic 35
+# Prompt de validation CR-2 P1 — fiches révisées de l'Epic 37
 
-Tu fais la **deuxième passe complète** du cycle de validation CR-2 (revue de Beat),
+Tu fais la **première passe complète** d'un nouveau cycle de validation, ouvert par la revue de Beat (CR-2),
 sur une fiche du dépôt `/home/beat/limu/compta/kesh` (Kesh, logiciel comptable suisse en production : Rust/Axum,
 SvelteKit, MariaDB). À lire d'abord :
 
-- le fichier d'epic `_bmad-output/planning-artifacts/epic-35-multi-devises.md` : décisions **D1–D10** et **R1–R10** (section « Revue de Beat — CR-2 », qui prime) (D9 : table des
+- le fichier d'epic `_bmad-output/planning-artifacts/epic-37-multi-devises.md` : décisions **D1–D10** et **R1–R10** (section « Revue de Beat — CR-2 », qui prime) (D9 : table des
   cours modifiable ; D10 : réévaluation au cours journalier de clôture ; *Terminologie*) et registre, en particulier
   **CR-2 — amendements du registre et arbitrages** ;
 - la fiche à valider (ta mission), dont l'entrée « révision CR-2 » du Change Log ; le diff de la révision :
   `git diff b6bf53f8 HEAD -- <fiche>` (lecture seule) ;
 - `CLAUDE.md` : *Migration breaking policy* (P1–P8, fenêtre d'import), *Pattern batch*, *Review Iteration Rule* ;
-- les autres fiches `35-*.md` du même dossier pour les points de contact.
+- les autres fiches `37-*.md` du même dossier pour les points de contact.
 
 ## Ce que tu cherches
 
@@ -31,14 +31,7 @@ N'écris rien sauf, en phase 2, dans **la seule fiche visée** (Edit). Aucun scr
 
 ## Rapport (français)
 
-Findings `<story>-CR2-P2-N` (sévérité, lieu, constat avec la ligne de code lue, correctif) ; **axes exercés / non
+Findings `<story>-CR2-P1-N` (sévérité, lieu, constat avec la ligne de code lue, correctif) ; **axes exercés / non
 exercés** ; décompte. Phase 2 : applique les correctifs propres à la fiche ; Change Log « 2026-11-14 — validation CR-2
 P1 (<modèle>) : <décompte> ; remédiés dans la fiche sauf <ids inter-fiches> » ; liste les findings inter-fiches non
 appliqués avec le texte proposé. Message final bref.
-
-## Spécifique à la CR-2 P2
-
-La fiche a reçu la passe CR-2 P1 (Sonnet), remédiée, puis des alignements de l'orchestrateur : relis leurs entrées au
-Change Log et le diff `git diff b36599d0 HEAD -- <fiche>`. Cherche d'abord les défauts **introduits par cette
-remédiation** (verrous et rejeu, ordre des refus, archivage sous `force`, exemptions de `FX_MULTIPLE_CURRENCIES`,
-assistant *Conversion*, calendrier de récupération), puis les incohérences entre fiches, puis le reste.

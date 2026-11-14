@@ -1,16 +1,16 @@
-# Prompt de validation CR-3 P1 — fiches révisées de l'Epic 35
+# Prompt de validation CR-3 P1 — fiches révisées de l'Epic 37
 
 Tu fais la **première passe complète** d'un nouveau cycle de validation, ouvert par la revue de Beat (CR-3),
 sur une fiche du dépôt `/home/beat/limu/compta/kesh` (Kesh, logiciel comptable suisse en production : Rust/Axum,
 SvelteKit, MariaDB). À lire d'abord :
 
-- le fichier d'epic `_bmad-output/planning-artifacts/epic-35-multi-devises.md` : décisions **D1–D10** et **R1–R10** et **S1–S6** (sections « Revue de Beat — CR-2 » et « — CR-3 » ; CR-3 prime) (D9 : table des
+- le fichier d'epic `_bmad-output/planning-artifacts/epic-37-multi-devises.md` : décisions **D1–D10** et **R1–R10** et **S1–S6** (sections « Revue de Beat — CR-2 » et « — CR-3 » ; CR-3 prime) (D9 : table des
   cours modifiable ; D10 : réévaluation au cours journalier de clôture ; *Terminologie*) et registre, en particulier
   **CR-3 — amendements du registre et arbitrages** (A9–A16) ;
 - la fiche à valider (ta mission), dont l'entrée « révision CR-3 » du Change Log ; le diff de la révision :
   `git diff 294889cc b6f88c24 -- <fiche>` (lecture seule) ;
 - `CLAUDE.md` : *Migration breaking policy* (P1–P8, fenêtre d'import), *Pattern batch*, *Review Iteration Rule* ;
-- les autres fiches `35-*.md` du même dossier pour les points de contact.
+- les autres fiches `37-*.md` du même dossier pour les points de contact.
 
 ## Ce que tu cherches
 
@@ -36,7 +36,7 @@ exercés** ; décompte. Phase 2 : applique les correctifs propres à la fiche ; 
 P1 (<modèle>) : <décompte> ; remédiés dans la fiche sauf <ids inter-fiches> » ; liste les findings inter-fiches non
 appliqués avec le texte proposé. Message final bref.
 
-## Arbitrage à appliquer (35-2 seulement)
+## Arbitrage à appliquer (37-2 seulement)
 
 A10 : chaque tour automatique **revérifie aussi le mois courant** (un appel `xmlavgmonth` de plus), pour découvrir seul
 une correction de l'AFC (S6) ; écris-le dans l'AC-4 (calendrier, `prochain_reveil` inchangé), les tests et la mémoire

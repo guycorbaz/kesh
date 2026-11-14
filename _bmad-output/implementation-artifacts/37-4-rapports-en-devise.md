@@ -1,9 +1,9 @@
-# Story 35-4 : rapports dans les deux devises
+# Story 37-4 : rapports dans les deux devises
 
 Status: ready-for-dev
 
-*Fiche rédigée le 2026-11-14 (Opus 5.5), branche `epic/35-multi-devises`. Epic 35, D2, C-35-3. Suit 35-3a.
-**Aucune migration attendue** (colonnes de 35-1 et 35-3a ; aucun index nécessaire : les sommes passent par
+*Fiche rédigée le 2026-11-14 (Opus 5.5), branche `epic/37-multi-devises`. Epic 37, D2, C-37-3. Suit 37-3a.
+**Aucune migration attendue** (colonnes de 37-1 et 37-3a ; aucun index nécessaire : les sommes passent par
 `account_id`).*
 
 ## Story
@@ -17,14 +17,14 @@ exports, afin de rapprocher mes comptes PayPal ou Wise de leurs relevés et de c
 1. **AC-1 — Règle unique.** Le solde en devise d'un compte = Σ `amount_currency` au débit − Σ au crédit, signé comme le
    CHF par le type du compte (`opening.rs`).
    - **Côté d'une ligne** : celui de son montant CHF (`debit > 0` ⇒ débit, `credit > 0` ⇒ crédit) ; `amount_currency`
-     n'a pas de signe (C-35-3). Les rapports lisent une **paire brute (débit, crédit) en devise** :
+     n'a pas de signe (C-37-3). Les rapports lisent une **paire brute (débit, crédit) en devise** :
      `SUM(CASE WHEN jel.debit > 0 THEN jel.amount_currency ELSE 0 END)` et son symétrique, **sans condition de
-     devise sur la ligne** — CR-4, T3 : la ligne ne porte plus de devise (35-3a AC-1) ; la **devise est celle du
-     compte**, `a.currency`, et toutes les lignes d'un compte en devise sont dans sa devise (verrou de 35-1 AC-4 dès la
-     première ligne, contrôle central de 35-3a AC-4). Aucune condition `jel.currency = a.currency` ne s'écrit nulle
+     devise sur la ligne** — CR-4, T3 : la ligne ne porte plus de devise (37-3a AC-1) ; la **devise est celle du
+     compte**, `a.currency`, et toutes les lignes d'un compte en devise sont dans sa devise (verrou de 37-1 AC-4 dès la
+     première ligne, contrôle central de 37-3a AC-4). Aucune condition `jel.currency = a.currency` ne s'écrit nulle
      part (la colonne n'existe pas). Un compte CHF ne porte aucune ligne en devise (`amount_currency` `NULL`, ignoré
      par `SUM`) ; le solde en devise d'un compte CHF reste `NULL` par `a.currency IS NULL` (ci-dessous), ce qui
-     neutralise aussi une ligne en devise posée hors du dépôt (limite de 35-3a AC-1). Une ligne `revaluation`
+     neutralise aussi une ligne en devise posée hors du dépôt (limite de 37-3a AC-1). Une ligne `revaluation`
      (`amount_currency = 0`) n'y ajoute rien. Chaque somme en devise est enveloppée `COALESCE(…, 0)`, comme le CHF (un
      compte sans ligne ne rend pas `NULL` là où le compte est en devise).
    - **La devise gouverne l'affichage, pas la ligne** : au grand livre, `fetch_lines` lit `amount_currency` pour toute
@@ -70,15 +70,15 @@ exports, afin de rapprocher mes comptes PayPal ou Wise de leurs relevés et de c
      (`line_count == 0 && opening.is_zero()`), non `select_accounts`, qui ne filtre rien — et pour la règle d'inclusion
      de la balance, `trial_balance.rs:209`, qui ne vise que les comptes archivés). Cas : conversion qui laisse un
      compte à CHF 0 et USD ≠ 0. `BalanceSheet::is_empty()` reste sur les listes.
-   - **AC-1 quater — Fonction à date pour 35-5.** ⚠️ **Elle vit dans `kesh-db`**, non dans `kesh-report` :
-     `fx_revaluation::post` (35-5) est une fonction de dépôt de `kesh-db`, et `kesh-db` ne dépend de `kesh-report` qu'en
+   - **AC-1 quater — Fonction à date pour 37-5.** ⚠️ **Elle vit dans `kesh-db`**, non dans `kesh-report` :
+     `fx_revaluation::post` (37-5) est une fonction de dépôt de `kesh-db`, et `kesh-db` ne dépend de `kesh-report` qu'en
      `[dev-dependencies]` (`crates/kesh-db/Cargo.toml:48`) — l'inverse (`kesh-report/Cargo.toml:9`) ferait un cycle.
      `kesh_db::repositories::account_balances::balances_as_of(conn: &mut MySqlConnection, company_id, as_of,
      account_ids: Option<&[i64]>)` → `Vec<(account_id, chf_net, Option<devise_net>)>`, en **sens débit brut**
      (Σ débit − Σ crédit, et la paire en devise de l'AC-1), **sans signe par type** — la grandeur même de la formule de
-     35-5 (AC-1 de 35-5), et `opening.rs` n'est pas visible de `kesh-db`. Règles :
+     37-5 (AC-1 de 37-5), et `opening.rs` n'est pas visible de `kesh-db`. Règles :
      - borne **inclusive** `je.entry_date <= as_of`, tous exercices, **sans borne basse ni `HAVING`** : une
-       réévaluation déjà passée au même jour est comptée, ce qui rend le rejeu de 35-5 (résidu seul) exact — test : deux
+       réévaluation déjà passée au même jour est comptée, ce qui rend le rejeu de 37-5 (résidu seul) exact — test : deux
        appels encadrant une réévaluation au `as_of` ;
      - `Some(&[])` rend un `Vec` vide **sans requête** (un `IN ()` est une erreur de syntaxe ; et, à la différence
        de `select_accounts`, `general_ledger.rs:366`, une liste vide ne vaut pas `None`) ;
@@ -87,7 +87,7 @@ exports, afin de rapprocher mes comptes PayPal ou Wise de leurs relevés et de c
        compare le nombre de lignes rendues à celui demandé), **chacun rendu** même sans ligne (`LEFT JOIN`, `(0, Some(0))`) ; `devise_net` vaut
        `None` pour un compte CHF ;
      - les lignes `revaluation` comptent dans le CHF, pas dans la devise ;
-     - lecture ordinaire (non verrouillante) dans la connexion fournie : c'est le verrou d'exercice de 35-5 qui la
+     - lecture ordinaire (non verrouillante) dans la connexion fournie : c'est le verrou d'exercice de 37-5 qui la
        stabilise.
 2. **AC-2 — Grand livre** (`general_ledger.rs` `generate` :644). Pour un compte en devise :
    - `RawAccount`/`select_accounts` (`general_ledger.rs:250`, `:359`) lisent `a.currency` (source de
@@ -148,7 +148,7 @@ exports, afin de rapprocher mes comptes PayPal ou Wise de leurs relevés et de c
    - **MCP** : `kesh_grand_livre` (`LIMITE_MAX_MCP = 30`), `kesh_balance` (`LIMITE_MAX_MCP_BALANCE = 55`),
      `kesh_bilan`, `kesh_compte_de_resultat` : champs en devise **présents à `null`** hors compte en devise — la macro
      `sortie!` (`mcp/sortie.rs:97-114`) n'admet aucun attribut de champ et **n'est pas étendue** (choix de
-     l'orchestrateur, 2026-11-14, aligné sur 35-1 AC-8 et 35-3a AC-8, registre C-35-9 ; le JSON des routes de rapports,
+     l'orchestrateur, 2026-11-14, aligné sur 37-1 AC-8 et 37-3a AC-8, registre C-37-9 ; le JSON des routes de rapports,
      lui, omet ces champs par `skip_serializing_if`, AC-6). Sorties à étendre : `LigneGrandLivre`, `Section`, `Rupture`
      (`grand_livre.rs`), `LigneDeSolde` (`rapports.rs:63`) et `LigneBalance` (`rapports.rs:104`, construite `:219`).
      Limites recalculées
@@ -170,16 +170,16 @@ exports, afin de rapprocher mes comptes PayPal ou Wise de leurs relevés et de c
      `grep -rln "SUM(jel.debit\|SUM(jel.credit\|SUM(l.debit\|SUM(debit"` hors tests ; le grep rend aussi
      `kesh-api/src/routes/bank_accounts.rs`, par deux commentaires seulement, `:244` et `:878`) : contrôles de clôture
      (`kesh-db/src/repositories/closing_checks.rs:536`, équilibre CHF par écriture) ; solde comptable d'un compte
-     bancaire (`bank_accounts.rs:1871-1905`, compte lié jamais en devise, C-35-9) ; postes ouverts et lettrage
-     (`letterings/open_items.rs:83`, `:91` : limite du lettrage, 35-3a AC-9) ; réconciliation
-     (`reconciliation_link.rs:151`, `:801`, comptes en devise exclus, C-35-5) ; équilibre des écritures
+     bancaire (`bank_accounts.rs:1871-1905`, compte lié jamais en devise, C-37-9) ; postes ouverts et lettrage
+     (`letterings/open_items.rs:83`, `:91` : limite du lettrage, 37-3a AC-9) ; réconciliation
+     (`reconciliation_link.rs:151`, `:801`, comptes en devise exclus, C-37-5) ; équilibre des écritures
      (`journal_entries.rs:522`, `:1684`, `:913`). Aucun n'est étendu ; un site neuf trouvé au développement s'ajoute
      ici, au Change Log.
 8. **AC-8 — Tests.** Jeu à deux exercices : compte USD de bilan, compte USD de **résultat** (ventes), compte de
    **passif** en devise, compte archivé ; achats et ventes à des cours différents, conversion, réévaluation.
    - La ligne `revaluation` est posée **par le dépôt** (`NewJournalEntryLine.foreign`, source `revaluation`), jamais
-     par l'API (refusée par 35-3a AC-6). Elle est exemptée de l'égalité CHF = round(montant × cours) par 35-3a AC-3
-     (exemption `revaluation`, déjà écrite) et par `chk_jel_fx_chf` (35-3a AC-1).
+     par l'API (refusée par 37-3a AC-6). Elle est exemptée de l'égalité CHF = round(montant × cours) par 37-3a AC-3
+     (exemption `revaluation`, déjà écrite) et par `chk_jel_fx_chf` (37-3a AC-1).
    - Soldes en devise et CHF attendus calculés à la main ; grand livre sur une période franchissant la fin d'exercice
      (rupture et clôture en devise) avec `offset > 0` (#775) ; compte à CHF 0 et devise ≠ 0 listé aux quatre rapports ;
      **concordance** grand livre ↔ balance ↔ bilan ↔ compte de résultat **en devise** (appel réel des générateurs,
@@ -211,7 +211,7 @@ exports, afin de rapprocher mes comptes PayPal ou Wise de leurs relevés et de c
       `csv.rs:1172`, `pdf.rs:1902`, `:2404`, `:2412`, `benches/export.rs:153`, `:161`. Consommateurs
       à étendre (sans échec de compilation) : `mcp/outils/rapports.rs:142` (`fn ligne`, `LigneDeSolde`), la
       construction de `LigneBalance` (`mcp/outils/rapports.rs:219`) et la correspondance du grand livre de
-      `mcp/outils/grand_livre.rs` (`fn section`, :148) ; **aucune** extension de `sortie!` (champs en devise présents à `null`, AC-6, C-35-9) : les champs neufs des sorties MCP sont des `Option<…>` de types admis.
+      `mcp/outils/grand_livre.rs` (`fn section`, :148) ; **aucune** extension de `sortie!` (champs en devise présents à `null`, AC-6, C-37-9) : les champs neufs des sorties MCP sont des `Option<…>` de types admis.
 - [ ] `services/rapports.rs`, routes, MCP (limites).
 - [ ] Frontend : cinq vues, types ; Vitest — `IncomeStatementView.test.ts` et `JournalReportView.test.ts` **n'existent
       pas** (relevé du 2026-11-14) : à créer, avec le cas « mono-devise : rien de visible ne change » (AC-6) ; E2E
@@ -228,14 +228,14 @@ exports, afin de rapprocher mes comptes PayPal ou Wise de leurs relevés et de c
 ## Change Log
 
 - 2026-11-14 — fiche rédigée.
-- 2026-11-14 — validation P1 (Sonnet) : 0 CRITICAL, 3 HIGH, 10 MEDIUM, 3 LOW ; tous remédiés dans la fiche ; P1-11 (côté 35-3a) porté par l'orchestrateur.
-- 2026-11-14 — validation P2 (Opus) : 0 CRITICAL, 1 HIGH, 4 MEDIUM, 5 LOW ; remédiés dans la fiche sauf 35-4-P2-1 (volet
-  35-5 : `balances_as_of` dans `kesh-db`, en sens débit brut — Tâches de 35-5 à aligner).
+- 2026-11-14 — validation P1 (Sonnet) : 0 CRITICAL, 3 HIGH, 10 MEDIUM, 3 LOW ; tous remédiés dans la fiche ; P1-11 (côté 37-3a) porté par l'orchestrateur.
+- 2026-11-14 — validation P2 (Opus) : 0 CRITICAL, 1 HIGH, 4 MEDIUM, 5 LOW ; remédiés dans la fiche sauf 37-4-P2-1 (volet
+  37-5 : `balances_as_of` dans `kesh-db`, en sens débit brut — Tâches de 37-5 à aligner).
 - 2026-11-14 — validation P3 (Sonnet) : 0 CRITICAL, 0 HIGH, 2 MEDIUM, 3 LOW ; remédiés dans la fiche sauf <aucun
   inter-fiches>. Prémisses et lignes citées relues au code (sommes, `opening.rs:75`, binds 18 → +12, `:687`, `:209`,
   `kesh-db/Cargo.toml:48`, `kesh-report/Cargo.toml:9`, sites MCP, inventaire AC-7) : exactes.
-- 2026-11-14 — validation P4 (Opus) : 0 CRITICAL, 0 HIGH, 5 MEDIUM, 7 LOW ; remédiés dans la fiche sauf 35-4-P4-1
-  (volet 35-3a : extension de `sortie!` aux attributs de champ, à porter par 35-3a AC-8). MEDIUM : P4-1 omission MCP
+- 2026-11-14 — validation P4 (Opus) : 0 CRITICAL, 0 HIGH, 5 MEDIUM, 7 LOW ; remédiés dans la fiche sauf 37-4-P4-1
+  (volet 37-3a : extension de `sortie!` aux attributs de champ, à porter par 37-3a AC-8). MEDIUM : P4-1 omission MCP
   impossible avec `sortie!` (`mcp/sortie.rs:97-114`) ; P4-2 fragment SQL partagé — forme des requêtes du grand livre
   et de la balance, lieu `kesh-db` ; P4-3 PDF de la balance non spécifié (`TB_COL_X`, `pdf.rs:718`) ; P4-4 format
   CSV des montants en devise (`format_amount_iso`, `csv.rs:40`) ; P4-8 `LigneBalance` MCP absente de l'inventaire.
@@ -244,19 +244,19 @@ exports, afin de rapprocher mes comptes PayPal ou Wise de leurs relevés et de c
   `balances_as_of` ; P4-11 inventaire AC-7 (`routes/bank_accounts.rs`) ; P4-12 `RawAccount` lit `a.currency`.
 - 2026-11-14 — validation P5 (Sonnet) : 0 CRITICAL, 0 HIGH, 1 MEDIUM, 1 LOW ; remédiés dans la fiche sauf <aucun
   inter-fiches>. MEDIUM P5-1 : la tâche « Sites de construction » renvoyait à une « extension de `sortie!` reprise de
-  35-3a », contraire à l'AC-6 et au registre C-35-9 (champs à `null`, macro non étendue) ; l'entrée P4 ci-dessus
+  37-3a », contraire à l'AC-6 et au registre C-37-9 (champs à `null`, macro non étendue) ; l'entrée P4 ci-dessus
   (« extension de `sortie!` ») est historique. LOW P5-2 : visibilité de `format_exchange_rate` (`pub(crate)`). Lignes
   citées relues au code (`opening.rs:75`, sommes `general_ledger.rs:338`/`:465`, `:687`, `trial_balance.rs:165-195`/`:209`,
   `sign_expr` bilan et résultat, `Cargo.toml` des deux crates, `sortie.rs:97-114`/`:463`, `rapports.rs:63`/`:104`,
   `grand_livre.rs:37`/`:56`/`:61`, `mcp_outils_e2e.rs:99`/`:182`/`:788`/`:1345`, `pdf.rs:153`/`:718`/`:1063`,
-  `csv.rs:40`, `journal_report.rs:92`/`:177`) : exactes ; accord avec 35-1, 35-3a et 35-5 (`balances_as_of`) vérifié.
+  `csv.rs:40`, `journal_report.rs:92`/`:177`) : exactes ; accord avec 37-1, 37-3a et 37-5 (`balances_as_of`) vérifié.
 - 2026-11-14 — validation P6 ciblée (Opus) : 0 CRITICAL, 0 HIGH, 0 MEDIUM, 1 LOW ; aucun inter-fiches. Lentille sur le
   seul diff `c0801b02..c08ccd9b`. Relu au code : `pub(crate)` suffit (`kesh-report/src/lib.rs:18`, `:25`, `csv` et
   `pdf` dans le même crate) ; `Option<T: ChampSur>` admis (`mcp/sortie.rs:85-86`), `Montant` (`:215`, `:228`) et
   `Code<E>` (`:302`) disponibles pour montants, cours et devise ; « présents à `null` », macro non étendue : accord
-  avec l'AC-6 de la fiche, 35-3a AC-8 et C-35-9. LOW P6-1 : l'entrée P5 porte un gabarit non rempli
+  avec l'AC-6 de la fiche, 37-3a AC-8 et C-37-9. LOW P6-1 : l'entrée P5 porte un gabarit non rempli
   (« sauf <aucun inter-fiches> ») — à lire « aucun inter-fiches » ; relevé daté laissé tel quel.
-- 2026-11-14 — révision CR-4 (revue 2 de Beat T1–T6 ; Opus) : **T3** — la ligne ne stocke plus de devise (35-3a
+- 2026-11-14 — révision CR-4 (revue 2 de Beat T1–T6 ; Opus) : **T3** — la ligne ne stocke plus de devise (37-3a
   AC-1) : les rapports lisent la devise sur le compte (`a.currency`) ; la paire en devise se somme **sans** condition
   `jel.currency = a.currency` (retirée de l'AC-1) ; le fragment partagé n'est plus paramétré que par l'alias de la
   ligne ; `x` de la balance projette `jel.amount_currency` seul ; les requêtes du grand livre (`fetch_lines`,
@@ -273,8 +273,8 @@ exports, afin de rapprocher mes comptes PayPal ou Wise de leurs relevés et de c
   `accounts`), `trial_balance.rs:165-195` (18 binds ; +12 pour six sommes), `balance_sheet.rs:288-300` et
   `income_statement.rs:62-83` (`sign_expr`, `HAVING balance != 0`, `INNER JOIN` lignes), `opening.rs:75`,
   `kesh-db/Cargo.toml:48`, `sortie.rs:97`, `rapports.rs:63`/`:104`/`:219`, `csv.rs:40`, `pdf.rs:153`/`:718`/`:1063` :
-  exacts ; `grep jel.currency|l.currency` sur `crates/` : aucun reste aujourd'hui ; aucun reste de la colonne dans 35-1,
-  35-2, 35-3a, 35-3b, 35-5 (accord de 35-3a AC-1/AC-2 et de 35-5 sur `balances_as_of`).
+  exacts ; `grep jel.currency|l.currency` sur `crates/` : aucun reste aujourd'hui ; aucun reste de la colonne dans 37-1,
+  37-2, 37-3a, 37-3b, 37-5 (accord de 37-3a AC-1/AC-2 et de 37-5 sur `balances_as_of`).
 - 2026-11-14 — validation CR-4 P2 ciblée (Opus) : 0 CRITICAL, 0 HIGH, 0 MEDIUM, 2 LOW, remédiés dans la fiche ; aucun
   inter-fiches. CR4-P2-1 : la règle « la devise gouverne l'affichage » ne nommait que le grand livre et le journal, alors
   que le test T3 couvre aussi balance, bilan et compte de résultat (balance : AC-3 ; bilan, résultat : `CASE`) — nommés.
@@ -283,8 +283,8 @@ exports, afin de rapprocher mes comptes PayPal ou Wise de leurs relevés et de c
   `:465-473` (sans `accounts`, sommes CHF en `COALESCE`), `trial_balance.rs:165-170` (`x` sans `amount_currency`),
   `balance_sheet.rs:288-292`, `income_statement.rs:62-66` (`COALESCE` au CHF : « comme le CHF » exact) ; `grep -rnE
   "\b(jel|l)\.currency\b" crates/ --include=*.rs --include=*.sql` : vide, motif non échappé : vide aussi ; test T3 par
-  SQL direct réalisable sous `chk_jel_fx_*` (35-3a AC-1 : trois colonnes cohérentes). Axes exercés : vérité au code des
-  ajouts, cohérence interne (AC-1 ter, AC-2, AC-3, AC-7), points de contact 35-3a (contraintes, colonne absente).
-  Non exercés : relecture complète de la fiche (hors périmètre), 35-5 (aucun ajout ne touche `balances_as_of`).
-- 2026-11-14 — validation CR-5 P1 (Sonnet) : 0 CRITICAL, 0 HIGH, 1 MEDIUM, 1 LOW ; remédiés dans la fiche sauf <aucun inter-fiches>. MEDIUM CR5-P1-1 : A29/U6 non appliqués (AC-3 et AC-4 disaient « restent CHF » et « totaux en CHF seulement » — réécrits « devise principale (aujourd'hui CHF) »). LOW CR5-P1-2 : « sommes CHF existantes » (AC-1) alignée ; les noms de champs `chf_net`, `total_debit` ne changent pas (code). Points de contact U1 : aucun — la fiche ne lit ni `exchange_rates` ni `_kesh_fetched_exchange_rates` (les rapports lisent `amount_currency` et `exchange_rate` de la ligne) ; aucun reste de `republished_*` ; A24/A28 sans objet ici ; la fiche ne crée ni table ni migration (pas de fenêtre d'import, rejeu, `TABLES_TO_TRUNCATE`). U6 : « CHF » restant légitime pour TVA, projets, accueil (base légale, AC-7). Relu au code : `opening.rs:75`, `general_ledger.rs:687`, `trial_balance.rs:165-170`/`:209` : exacts. Non exercés : GET de la source journalière (aucun rapport n'y touche), 35-5 (inchangée).
-- 2026-11-14 — validation CR-5 P2 ciblée (Opus) : 0 CRITICAL, 0 HIGH, 0 MEDIUM, 1 LOW ; remédié dans la fiche, aucun inter-fiches. LOW CR5-P2-1 : propagation de U6 incomplète — le récit (« à côté du CHF ») et AC-2 (« `unnatural_balance` reste CHF ») gardaient la formule réécrite en AC-3/AC-4 ; alignés « devise principale ». Relu au code : `trial_balance.rs:69-83` (`total_debit`, `total_credit`, `balanced`, `retained_earnings`, `opening_balanced`) et `general_ledger.rs:137`, `:797` (`unnatural_balance` booléen tiré du solde CHF) : exacts. Cohérence : A29, U6 (epic l. 294, 321) appliqués ; « devise principale » définie par l'epic (l. 17) ; 35-5 (`chf_net`, `balances_as_of`) non touchée. Non exercés : relecture complète de la fiche (hors périmètre) ; AC-7 « CHF seulement » laissé tel quel (description du calcul, non du vocabulaire débit/crédit).
+  SQL direct réalisable sous `chk_jel_fx_*` (37-3a AC-1 : trois colonnes cohérentes). Axes exercés : vérité au code des
+  ajouts, cohérence interne (AC-1 ter, AC-2, AC-3, AC-7), points de contact 37-3a (contraintes, colonne absente).
+  Non exercés : relecture complète de la fiche (hors périmètre), 37-5 (aucun ajout ne touche `balances_as_of`).
+- 2026-11-14 — validation CR-5 P1 (Sonnet) : 0 CRITICAL, 0 HIGH, 1 MEDIUM, 1 LOW ; remédiés dans la fiche sauf <aucun inter-fiches>. MEDIUM CR5-P1-1 : A29/U6 non appliqués (AC-3 et AC-4 disaient « restent CHF » et « totaux en CHF seulement » — réécrits « devise principale (aujourd'hui CHF) »). LOW CR5-P1-2 : « sommes CHF existantes » (AC-1) alignée ; les noms de champs `chf_net`, `total_debit` ne changent pas (code). Points de contact U1 : aucun — la fiche ne lit ni `exchange_rates` ni `_kesh_fetched_exchange_rates` (les rapports lisent `amount_currency` et `exchange_rate` de la ligne) ; aucun reste de `republished_*` ; A24/A28 sans objet ici ; la fiche ne crée ni table ni migration (pas de fenêtre d'import, rejeu, `TABLES_TO_TRUNCATE`). U6 : « CHF » restant légitime pour TVA, projets, accueil (base légale, AC-7). Relu au code : `opening.rs:75`, `general_ledger.rs:687`, `trial_balance.rs:165-170`/`:209` : exacts. Non exercés : GET de la source journalière (aucun rapport n'y touche), 37-5 (inchangée).
+- 2026-11-14 — validation CR-5 P2 ciblée (Opus) : 0 CRITICAL, 0 HIGH, 0 MEDIUM, 1 LOW ; remédié dans la fiche, aucun inter-fiches. LOW CR5-P2-1 : propagation de U6 incomplète — le récit (« à côté du CHF ») et AC-2 (« `unnatural_balance` reste CHF ») gardaient la formule réécrite en AC-3/AC-4 ; alignés « devise principale ». Relu au code : `trial_balance.rs:69-83` (`total_debit`, `total_credit`, `balanced`, `retained_earnings`, `opening_balanced`) et `general_ledger.rs:137`, `:797` (`unnatural_balance` booléen tiré du solde CHF) : exacts. Cohérence : A29, U6 (epic l. 294, 321) appliqués ; « devise principale » définie par l'epic (l. 17) ; 37-5 (`chf_net`, `balances_as_of`) non touchée. Non exercés : relecture complète de la fiche (hors périmètre) ; AC-7 « CHF seulement » laissé tel quel (description du calcul, non du vocabulaire débit/crédit).

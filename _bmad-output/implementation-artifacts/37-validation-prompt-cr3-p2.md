@@ -1,16 +1,16 @@
-# Prompt de validation CR-3 P2 — fiches révisées de l'Epic 35
+# Prompt de validation CR-3 P2 — fiches révisées de l'Epic 37
 
 Tu fais la **deuxième passe complète** du cycle de validation CR-3 (revue de Beat),
 sur une fiche du dépôt `/home/beat/limu/compta/kesh` (Kesh, logiciel comptable suisse en production : Rust/Axum,
 SvelteKit, MariaDB). À lire d'abord :
 
-- le fichier d'epic `_bmad-output/planning-artifacts/epic-35-multi-devises.md` : décisions **D1–D10** et **R1–R10** et **S1–S6** (sections « Revue de Beat — CR-2 » et « — CR-3 » ; CR-3 prime) (D9 : table des
+- le fichier d'epic `_bmad-output/planning-artifacts/epic-37-multi-devises.md` : décisions **D1–D10** et **R1–R10** et **S1–S6** (sections « Revue de Beat — CR-2 » et « — CR-3 » ; CR-3 prime) (D9 : table des
   cours modifiable ; D10 : réévaluation au cours journalier de clôture ; *Terminologie*) et registre, en particulier
   **CR-3 — amendements du registre et arbitrages** (A9–A16) ;
 - la fiche à valider (ta mission), dont l'entrée « révision CR-3 » du Change Log ; le diff de la révision :
   `git diff b6f88c24 d9c0018e -- <fiche>` (remédiation CR-3 P1 et arbitrage A17) (lecture seule) ;
 - `CLAUDE.md` : *Migration breaking policy* (P1–P8, fenêtre d'import), *Pattern batch*, *Review Iteration Rule* ;
-- les autres fiches `35-*.md` du même dossier pour les points de contact.
+- les autres fiches `37-*.md` du même dossier pour les points de contact.
 
 ## Ce que tu cherches
 
@@ -41,9 +41,9 @@ appliqués avec le texte proposé. Message final bref.
 
 Cherche d'abord les défauts **introduits par la remédiation CR-3 P1** (diff ci-dessus), puis les incohérences entre
 fiches, puis le reste. Arbitrage **A17** (fichier d'epic, arbitrages CR-3) à appliquer en phase 2 s'il touche ta fiche :
-- **35-3a** : réécrire le paragraphe de l'AC-4 (point 4) marqué « Arbitrage A17 » en texte propre (supprimer le
+- **37-3a** : réécrire le paragraphe de l'AC-4 (point 4) marqué « Arbitrage A17 » en texte propre (supprimer le
   « texte antérieur ») et aligner tests et Tâches (une ligne `afc` inchangée n'est jamais recontrôlée au `PUT` ; après
   restauration ou adoption, un `PUT` du seul libellé passe).
-- **35-3b** : aligner l'AC-2 (refus `FX_RATE_NOT_AFC` sur une écriture ancienne) sur A17 : le refus ne vise plus que
+- **37-3b** : aligner l'AC-2 (refus `FX_RATE_NOT_AFC` sur une écriture ancienne) sur A17 : le refus ne vise plus que
   les lignes nouvelles ou modifiées ; garder les actions « Reprendre le cours attendu » / « Garder mon cours » pour
   ces lignes seulement.

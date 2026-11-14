@@ -1,10 +1,10 @@
-# Prompt de validation P1 — fiches de l'Epic 35 (une fiche par passe)
+# Prompt de validation P4 — fiches de l'Epic 37 (une fiche par passe)
 
-Tu fais la passe de validation **P1** d'une fiche de story du dépôt `/home/beat/limu/compta/kesh` (Kesh, logiciel
+Tu fais la passe de validation **P4** d'une fiche de story du dépôt `/home/beat/limu/compta/kesh` (Kesh, logiciel
 comptable suisse en production : Rust/Axum, SvelteKit, MariaDB). Contexte obligatoire, à lire d'abord :
 
-- le fichier d'epic `_bmad-output/planning-artifacts/epic-35-multi-devises.md` (décisions D1–D7 de l'utilisateur,
-  non négociables ; registre C-35-1 à C-35-8, tranché par une table ronde) ;
+- le fichier d'epic `_bmad-output/planning-artifacts/epic-37-multi-devises.md` (décisions D1–D7 de l'utilisateur,
+  non négociables ; registre C-37-1 à C-37-8, tranché par une table ronde) ;
 - la fiche à valider (indiquée dans ta mission) ;
 - `CLAUDE.md` à la racine, sections *Migration breaking policy* (P1–P8), *Pattern batch*, *Un appariement automatique
   propose*, *Review Iteration Rule* (pour le format) ;
@@ -29,7 +29,15 @@ comptable suisse en production : Rust/Axum, SvelteKit, MariaDB). Contexte obliga
 
 ## Rapport (en français)
 
-- Liste des findings : identifiant `<story>-P1-N`, sévérité (`CRITICAL`, `HIGH`, `MEDIUM`, `LOW`), lieu (AC ou
+- Liste des findings : identifiant `<story>-P4-N`, sévérité (`CRITICAL`, `HIGH`, `MEDIUM`, `LOW`), lieu (AC ou
   section), constat **avec la ligne de code lue citée**, correctif proposé (texte prêt à insérer dans la fiche).
 - **Axes exercés / non exercés** (obligatoire : un « 0 finding » sans cette liste ne compte pas).
 - Décompte final par sévérité.
+
+## Spécifique à la P4
+
+La fiche a été remédiée après les passes P1 à P3 (voir son Change Log ; la P3 a surtout touché les verrous et l’ordre des refus) et les six fiches de l'epic ont été alignées entre
+elles (registre C-37-9 du fichier d'epic). Cherche en priorité : (a) les défauts **introduits par la remédiation**
+(contradictions internes, numéros de ligne faux, exigences irréalisables, renvois à des AC renumérotés) ; (b) les
+**incohérences entre fiches** (codes d'erreur, statuts HTTP, noms de fonctions, ordre de dépendance, qui fait quoi) —
+lis les cinq autres fiches `37-*.md` du même dossier pour les points de contact ; (c) ce que les passes précédentes n’'ont pas vu.

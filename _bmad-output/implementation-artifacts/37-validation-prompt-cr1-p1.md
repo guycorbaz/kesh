@@ -1,16 +1,16 @@
-# Prompt de validation CR-1 P1 — fiches révisées de l'Epic 35
+# Prompt de validation CR-1 P1 — fiches révisées de l'Epic 37
 
 Tu fais la **première passe complète** d'un nouveau cycle de validation, ouvert par un changement de périmètre (CR-1),
 sur une fiche du dépôt `/home/beat/limu/compta/kesh` (Kesh, logiciel comptable suisse en production : Rust/Axum,
 SvelteKit, MariaDB). À lire d'abord :
 
-- le fichier d'epic `_bmad-output/planning-artifacts/epic-35-multi-devises.md` : décisions **D1–D10** (D9 : table des
+- le fichier d'epic `_bmad-output/planning-artifacts/epic-37-multi-devises.md` : décisions **D1–D10** (D9 : table des
   cours modifiable ; D10 : réévaluation au cours journalier de clôture ; *Terminologie*) et registre, en particulier
   **CR-1 — amendements du registre** ;
 - la fiche à valider (ta mission), dont l'entrée « révision CR-1 » du Change Log ; le diff de la révision :
   `git diff 0fb6636e b8c73b2b -- <fiche>` (lecture seule) ;
 - `CLAUDE.md` : *Migration breaking policy* (P1–P8, fenêtre d'import), *Pattern batch*, *Review Iteration Rule* ;
-- les autres fiches `35-*.md` du même dossier pour les points de contact.
+- les autres fiches `37-*.md` du même dossier pour les points de contact.
 
 ## Ce que tu cherches
 
