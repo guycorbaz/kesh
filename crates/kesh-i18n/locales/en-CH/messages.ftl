@@ -387,6 +387,7 @@ vat-purchase-config-required = Configure the input VAT account in Administration
 vat-purchase-no-rates = No VAT rate configured — see Settings → VAT rates.
 vat-purchase-charge-account = Expense account
 vat-purchase-ht = Amount excl. VAT
+vat-purchase-ht-below-centime = The amount excl. VAT rounds to 0.00 at the centime: the expense line would be zero.
 vat-purchase-rate = VAT rate
 vat-purchase-rate-placeholder = Choose a rate
 vat-purchase-counterparty = Counterparty account

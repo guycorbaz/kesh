@@ -164,6 +164,22 @@ describe('JournalEntryForm — montant ambigu (Story 36-3)', () => {
 		expect(createMock).not.toHaveBeenCalled();
 	});
 
+	// Revue P1 (A3) — sur une même ligne, un débit ambigu et un crédit illisible : seul le
+	// message ambigu s'affiche (prioritaire), et rien ne part.
+	it('même ligne : débit « 1.234 », crédit « 12’34 » → message ambigu seul', async () => {
+		const montants = await saisir('', '');
+		// montants[0], [1] : débit et crédit de la ligne 1.
+		await fireEvent.input(montants[0], { target: { value: '1.234' } });
+		await fireEvent.input(montants[1], { target: { value: "12'34" } });
+		expect(screen.getAllByText(/Montant ambigu/)).toHaveLength(1);
+		expect(screen.queryByText(/Montant illisible/)).toBeNull();
+		expect(montants[0].classList.contains('border-destructive')).toBe(true);
+		expect(montants[1].classList.contains('border-destructive')).toBe(true);
+		await fireEvent.keyDown(window, { key: 's', ctrlKey: true });
+		await new Promise((r) => setTimeout(r, 0));
+		expect(createMock).not.toHaveBeenCalled();
+	});
+
 	it('« 12’34 » → message illisible', async () => {
 		await saisir("12'34", "12'34");
 		expect(screen.getAllByText(/Montant illisible/).length).toBeGreaterThan(0);

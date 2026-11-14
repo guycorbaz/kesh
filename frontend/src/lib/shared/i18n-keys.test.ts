@@ -983,10 +983,13 @@ const ATTENDU = {
 	// Union de l'intégration 0.17.7 (C-e350-8) : 35-1 (+6), 35-4 (+3) et 35-6 (+1) sur 3026 ;
 	// recompté par la garde après chaque fusion (relevé à la source avant d'écrire ce nombre).
 	// Story 36-3 (#1051, D4-D5) : **3036 → 3038** sur sa branche — `JournalEntryForm.svelte`
-	// perd `journal-entry-form-max-decimals` et gagne `-amount-ambiguous` et `-amount-unreadable`,
-	// `VatPurchaseAssistant.svelte` gagne `-amount-ambiguous`. Que des littéraux ; relevé à
-	// 3038 par la garde avant d'écrire ce nombre (à recompter après l'union avec 36-1).
-	sitesTotal: 3038,
+	// perd l'ancien message des quatre décimales et gagne `-amount-ambiguous` et
+	// `-amount-unreadable`, `VatPurchaseAssistant.svelte` gagne `-amount-ambiguous`.
+	// Revue P1 de la 36-3 (B3, E3) : **3038 → 3040** — l'assistant gagne
+	// `journal-entry-form-amount-unreadable` et `vat-purchase-ht-below-centime`. Que des
+	// littéraux ; relevé à 3040 par la garde avant d'écrire ce nombre (à recompter après
+	// l'union avec 36-1).
+	sitesTotal: 3040,
 	sitesNonResolus: 31,
 	relais: 6,
 	// Story 26-1 (#620, AC3-bis) : **10 → 11** — `lib/features/bank-import/

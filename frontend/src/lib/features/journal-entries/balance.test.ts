@@ -191,7 +191,8 @@ describe('classifyLine', () => {
 // Story 36-3 (#1051, AC3) — la lecture d'un montant du journal : l'apostrophe des
 // milliers admise, l'ambiguïté « 1.234 » refusée ; la lecture par défaut inchangée.
 describe('readJournalAmount (Story 36-3, AC3)', () => {
-	it.each(['1.234', '1,234', '12.500', '001.234', '123.456', '1.250'])(
+	// Revue P1 (A1, B1) : « 0001.234 » — les zéros de tête ne comptent pas ; « 1.000 » aussi.
+	it.each(['1.234', '1,234', '12.500', '001.234', '0001.234', '123.456', '1.250', '1.000'])(
 		'%s → ambiguous',
 		(raw) => {
 			expect(readJournalAmount(raw).kind).toBe('ambiguous');
@@ -209,6 +210,8 @@ describe('readJournalAmount (Story 36-3, AC3)', () => {
 		['12,5', '12.5'],
 		["1'234'567.89", '1234567.89'],
 		["123'456'789'012'345", '123456789012345'],
+		["12'345'678'901'234", '12345678901234'],
+		['1000.000', '1000.000'],
 		['100', '100']
 	])('%s → clear, charge %s', (raw, payload) => {
 		const r = readJournalAmount(raw);
@@ -235,8 +238,22 @@ describe('readJournalAmount (Story 36-3, AC3)', () => {
 		"1234'567",
 		'-5',
 		' 5',
-		'1e3'
-	])('%s → unreadable', (raw) => {
+		'1e3',
+		// Revue P1 (E1) — les bornes de la grammaire, figées : blancs insécables, apostrophes
+		// voisines (seules U+0027 et U+2019 groupent), séparateur sans chiffre d'un côté, cinq
+		// décimales même nulles, chiffres non ASCII, retour à la ligne final.
+		'1 234',
+		'1 234',
+		'1‘234',
+		'1´234',
+		'1ʼ234',
+		'.5',
+		'5.',
+		'1.23450',
+		'١٢٣',
+		'１２３',
+		'5\n'
+	])('%j → unreadable', (raw) => {
 		expect(readJournalAmount(raw).kind).toBe('unreadable');
 	});
 

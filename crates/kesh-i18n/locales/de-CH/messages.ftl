@@ -387,6 +387,7 @@ vat-purchase-config-required = Konfigurieren Sie das Vorsteuerkonto unter Admini
 vat-purchase-no-rates = Kein MWST-Satz konfiguriert — siehe Einstellungen → MWST-Sätze.
 vat-purchase-charge-account = Aufwandskonto
 vat-purchase-ht = Betrag exkl. MWST
+vat-purchase-ht-below-centime = Der Betrag exkl. MWST rundet auf den Rappen zu 0.00: Die Aufwandzeile wäre null.
 vat-purchase-rate = MWST-Satz
 vat-purchase-rate-placeholder = Satz wählen
 vat-purchase-counterparty = Gegenkonto

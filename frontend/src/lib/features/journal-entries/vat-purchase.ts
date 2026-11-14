@@ -126,6 +126,19 @@ export function readHtAmount(raw: string): HtAmountReading {
 }
 
 /**
+ * Story 36-3, revue P1 (B3, E3) — le message à afficher sous le HT : `ambiguous`,
+ * `unreadable`, `below-centime` (clair, mais arrondi à 0.00 au centime), ou `null`
+ * (vide ou utilisable).
+ */
+export function htAmountProblem(
+	ht: HtAmountReading
+): 'ambiguous' | 'unreadable' | 'below-centime' | null {
+	if (ht.kind === 'ambiguous' || ht.kind === 'unreadable') return ht.kind;
+	if (ht.kind === 'clear' && !ht.usable) return 'below-centime';
+	return null;
+}
+
+/**
  * Story 36-3 (V1-7 de la validation) — l'écriture que l'assistant insère, tirée de la
  * saisie **brute** (`params.htAmount`) : `null` si le HT n'est pas `usable` ; sinon les
  * lignes de `buildPurchaseVatLines` sur la charge **normalisée** (sans apostrophe,

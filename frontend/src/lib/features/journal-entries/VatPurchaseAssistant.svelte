@@ -8,7 +8,7 @@
 	import { getVatRates } from '$lib/features/vat-rates/vat-rates.store.svelte';
 	import type { VatRateResponse } from '$lib/features/vat-rates/vat-rates.types';
 	import type { LineDraft } from './form-helpers';
-	import { purchaseVatEntry, readHtAmount } from './vat-purchase';
+	import { htAmountProblem, purchaseVatEntry, readHtAmount } from './vat-purchase';
 	import AccountAutocomplete from './AccountAutocomplete.svelte';
 
 	interface Props {
@@ -70,6 +70,7 @@
 	// « 1.234 » refusé comme ambigu (`readHtAmount`).
 	const htReading = $derived(readHtAmount(htAmount));
 	const htValid = $derived(htReading.usable);
+	const htProblem = $derived(htAmountProblem(htReading));
 
 	// AC8 : garde de validation des entrées.
 	const sameChargeCounterparty = $derived(
@@ -174,11 +175,26 @@
 						class={htAmount !== '' && !htValid ? 'border-destructive' : 'tabular-nums text-right'}
 						placeholder="0.00"
 					/>
-					{#if htReading.kind === 'ambiguous'}
+					<!-- Story 36-3, revue P1 (B3, E3) : chaque refus du HT dit pourquoi. -->
+					{#if htProblem === 'ambiguous'}
 						<p class="mt-1 text-xs text-destructive" data-testid="vat-purchase-ht-ambiguous">
 							{i18nMsg(
 								'journal-entry-form-amount-ambiguous',
 								'Montant ambigu : un point ou une virgule suivis de trois chiffres peuvent séparer les milliers. Écrivez 1\'234 pour mille deux cent trente-quatre, ou 1.2340 pour un franc vingt-trois et quatre dixièmes de centime.'
+							)}
+						</p>
+					{:else if htProblem === 'unreadable'}
+						<p class="mt-1 text-xs text-destructive" data-testid="vat-purchase-ht-unreadable">
+							{i18nMsg(
+								'journal-entry-form-amount-unreadable',
+								'Montant illisible : chiffres, apostrophe des milliers (1\'234), point ou virgule décimale, quatre décimales au plus.'
+							)}
+						</p>
+					{:else if htProblem === 'below-centime'}
+						<p class="mt-1 text-xs text-destructive" data-testid="vat-purchase-ht-below-centime">
+							{i18nMsg(
+								'vat-purchase-ht-below-centime',
+								'Le montant HT s\'arrondit à 0.00 au centime : la ligne de charge serait nulle.'
 							)}
 						</p>
 					{/if}

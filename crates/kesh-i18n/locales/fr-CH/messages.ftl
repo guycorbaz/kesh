@@ -387,6 +387,7 @@ vat-purchase-config-required = Configurez le compte d'impôt préalable dans Adm
 vat-purchase-no-rates = Aucun taux de TVA configuré — voir Paramètres → Taux de TVA.
 vat-purchase-charge-account = Compte de charge
 vat-purchase-ht = Montant HT
+vat-purchase-ht-below-centime = Le montant HT s'arrondit à 0.00 au centime : la ligne de charge serait nulle.
 vat-purchase-rate = Taux TVA
 vat-purchase-rate-placeholder = Choisir un taux
 vat-purchase-counterparty = Compte de contrepartie

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import Big from 'big.js';
 import {
 	buildPurchaseVatLines,
+	htAmountProblem,
 	isDraftLineNonEmpty,
 	lineVatAmount,
 	purchaseVatEntry,
@@ -140,6 +141,22 @@ describe('readHtAmount (Story 36-3, AC5)', () => {
 		// 1234.50 × 8.10 ÷ 100 = 99.9945 → 99.99.
 		expect(lines[1].debit).toBe('99.99');
 		expect(lines[2].credit).toBe('1334.49');
+	});
+});
+
+// Story 36-3, revue P1 (B3, E3) — chaque refus du HT a son message.
+describe('htAmountProblem (Story 36-3)', () => {
+	it.each([
+		['1.234', 'ambiguous'],
+		["12'34", 'unreadable'],
+		['1.23450', 'unreadable'],
+		['0.004', 'below-centime'],
+		['0', 'below-centime'],
+		['', null],
+		["1'234.50", null],
+		['0.005', null]
+	])('%s → %s', (raw, attendu) => {
+		expect(htAmountProblem(readHtAmount(raw))).toBe(attendu);
 	});
 });
 

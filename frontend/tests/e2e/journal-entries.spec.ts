@@ -253,8 +253,8 @@ test.describe("Page écritures — saisie", () => {
     await page.getByRole("listbox").getByRole("option").first().click();
     await page.locator('input[inputmode="decimal"]').nth(3).fill("10.99999");
 
-    // Story 36-3 (#1051, C-36-3-3) : « Maximum 4 décimales » est devenu le
-    // message « Montant illisible », qui décrit la forme admise.
+    // Story 36-3 (#1051, C-36-3-3) : l'ancien message des quatre décimales est
+    // devenu « Montant illisible », qui décrit la forme admise.
     await expect(page.getByText(/Montant illisible/).first()).toBeVisible();
 
     // Le bouton Valider reste désactivé.

@@ -387,6 +387,7 @@ vat-purchase-config-required = Configurare il conto dell'imposta precedente in A
 vat-purchase-no-rates = Nessuna aliquota IVA configurata — vedere Impostazioni → Aliquote IVA.
 vat-purchase-charge-account = Conto di costo
 vat-purchase-ht = Importo IVA esclusa
+vat-purchase-ht-below-centime = L'importo IVA esclusa arrotondato al centesimo vale 0.00: la riga di costo sarebbe nulla.
 vat-purchase-rate = Aliquota IVA
 vat-purchase-rate-placeholder = Scegliere un'aliquota
 vat-purchase-counterparty = Conto di contropartita
