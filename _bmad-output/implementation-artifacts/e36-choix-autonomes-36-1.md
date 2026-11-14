@@ -90,3 +90,38 @@ Ces choix ne sont pas couverts par C-e360 ; ils reprennent l'étape 0 de la 36-1
   `--color-accent`/`--color-muted` (portée de toute l'application) ; laisser la désignation invisible avec une issue (le
   principe (ii) de D1 reposerait sur un état que l'écran ne montre pas).
 - **Réversible** : oui, deux classes.
+
+### C-36-1-7 — La lecture du `@theme` extraite dans un module partagé (développement)
+
+- **Contexte** : la garde d'AC8 doit lire le `@theme` d'`app.css` sans ses commentaires, exactement comme la garde de la
+  28-1 (`button-destructive.test.ts`, fonctions locales `blocTheme`, `jeton`, `declare`, `motEntier`). Les recopier
+  ferait deux copies d'une même lecture (règle DRY du `CLAUDE.md`).
+- **Retenu** : `frontend/tests/e2e/helpers/theme.ts`, à côté de `contrast.ts` (même nature : fonctions pures servant des
+  gardes Vitest) — `blocTheme`, `jetonDans`, `declareDans`, `motEntier`, et `jetonsDesClasses` (neuf : jetons de couleur
+  d'une liste de classes). `button-destructive.test.ts` les importe sans changer ses assertions (ses `jeton`/`declare`
+  locaux deviennent des enveloppes d'une ligne) ; la phrase d'en-tête de `contrast.ts` nomme la seconde garde.
+- **Écartées** : recopier les fonctions (deux copies à garder d'accord) ; les placer sous `src/lib/shared/` (code de
+  test dans l'arbre de production).
+- **Réversible** : oui.
+
+### C-36-1-8 — L'index dépend de `value` par un `$derived` primitif (développement)
+
+- **Contexte** : premier passage vert d'AC1 hors le cas v : `rerender({ accounts: [...accounts] })` effaçait la
+  désignation faite aux flèches. Cause lue : `@testing-library/svelte-core` (`props.svelte.js`) remplace tout l'objet de
+  props à chaque `rerender`, si bien que la lecture de `value` est invalidée même quand sa valeur ne change pas. Un parent
+  réel passe chaque prop par son propre accesseur, mais rien n'interdit à un parent de ré-évaluer ses props.
+- **Retenu** : `const valeurLue = $derived(value)` ; l'index lit `valeurLue`, qui ne propage qu'un changement réel (égalité
+  d'une valeur primitive). Le principe de D1 (« la chaîne des identifiants, non le tableau ») étendu à `value`.
+- **Écartée** : réécrire le cas v sans `rerender` (le test cesserait de garder contre M23 tel que la fiche le décrit).
+- **Réversible** : oui, une ligne.
+
+### C-36-1-9 — Rouges E2E lisibles : attendre l'une des deux issues, puis asserter (développement)
+
+- **Contexte** : AC5 a et b « attendent le message » ; sur le code d'avant correctif, cette attente expirait sans dire
+  que le formulaire était parti.
+- **Retenu** : attendre le message **ou** la conséquence du défaut (écran de détail de la facture ; plus aucun
+  `role="dialog"` pour l'article) par `locator.or(…)`, puis asserter l'URL ou le dialogue, puis le message. Rouges
+  constatés : URL du détail atteinte (a), dialogue refermé (b) ; a-bis : URL restée `/edit`. Aussi, a-bis ne vérifie pas
+  l'absence de surbrillance dans le navigateur (portée par AC1 l) : la vérifier avant *Entrée* faisait rougir le test sur
+  la surbrillance et non sur l'envoi.
+- **Réversible** : oui.
