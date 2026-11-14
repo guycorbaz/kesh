@@ -130,3 +130,50 @@ de C-e360-8 (« forme exacte à la fiche »). Chaque choix : contexte, option re
 - **Écartées** : l'avertissement calculé sur `max(…)` (P2) ; l'avertissement éteint dès la pose (P1) ; la levée immédiate
   à l'échec (P1 à P3) ; un clic sur un bouton du panneau seulement (une règle par bouton).
 - **Réversible** : oui.
+
+### C-36-5-10 — La répétition « avant » sert le build d'un export du commit des rouges (développement)
+
+- **Contexte** : le verrou de la voie 1 était tenu par les `gate-ci` de trois autres stories ; attendre son tour pour
+  construire le frontend d'avant le correctif aurait interdit d'écrire le correctif pendant ce temps (le build lit les
+  sources du worktree).
+- **Retenu** : `git archive 29762b89a frontend` extrait sous `kesh-gate-logs/e36-5/avant-src/` (`node_modules` lié par
+  `cp -al`), construit sous le verrou, servi par `KESH_STATIC_DIR` (variable `STATIC_DIR` du script `e2e-e36-5.sh`, qui
+  l'écrit en tête du journal). `29762b89a` porte l'API du maintien **inerte** : le comportement servi est celui d'avant le
+  correctif. Les specs exécutées sont celles du worktree (identiques à `29762b89a` pour ce fichier).
+- **Écartées** : construire dans le worktree avant d'écrire le correctif (attente du verrou) ; un second worktree (interdit).
+- **Réversible** : oui ; le dossier `avant-src/` reste dans `kesh-gate-logs/e36-5/` (aucun `rm`), à retirer par
+  l'orchestrateur.
+
+### C-36-5-11 — Le panneau testé avec le VRAI maintien, par délégation (développement)
+
+- **Contexte** : AC5 bis (d) demande le vrai `authState` ; or le fichier simule `auth.svelte` pour tous ses tests (`logout`).
+- **Retenu** : le simulacre d'`authState` garde `logout` simulé et délègue `holdForRestore`, `releaseRestoreHold` et
+  `restoreHold` au vrai module, chargé en `beforeAll` par `vi.importActual` ; les espions comptent les appels, le vrai
+  module tient l'échéance. Tous les tests du panneau voient donc le vrai maintien.
+- **Écartées** : un faux maintien recopié dans le simulacre (une seconde implémentation à tenir) ; ne pas simuler
+  `auth.svelte` (un simulacre partiel d'`api-client` qui importe le vrai `auth.svelte`, lequel importe `api-client` : cycle).
+- **Réversible** : oui.
+
+### C-36-5-12 — La phase 2 se reconnaît à la minuterie de lecture armée (développement)
+
+- **Contexte** : D3 distingue au démontage la phase 2 (succès constaté, session connue morte) ; la fiche ne fixe pas le
+  témoin.
+- **Retenu** : `readingTimer !== null`. La minuterie n'est armée qu'au succès, si le panneau n'est pas démonté, et se remet
+  à `null` en s'exécutant : un démontage après l'échéance de B (cas que V5-7 montre impossible) n'appellerait donc pas
+  `expireSession()` une seconde fois, sans garde ajoutée. M19, M20 et M22 le gardent.
+- **Écartée** : `imported !== null` (vrai aussi après l'exécution de la minuterie).
+- **Réversible** : oui.
+
+### C-36-5-13 — L'E2E de D5 retient la réponse dans la page, non par `page.route` (développement)
+
+- **Contexte** : D5 prescrit `page.route('**/api/v1/admin/full-import', …)`, `route.fetch()` puis `route.fulfill`. Exécuté,
+  le serveur reçoit une archive illisible (400 « Could not find EOCD », `backend-avant-d5.log`), et encore avec
+  `postData` repassé en octets (`backend-avant-d5-r2.log`) : la requête multipart rejouée par Playwright n'est pas celle du
+  navigateur. Les deux premières versions du test rougissaient donc pour une autre raison que la KF-056 — la première
+  sans contrôle qui le dise (`rouges.log`, annotations).
+- **Retenu** : `window.fetch` enveloppé par `page.evaluate` avant l'import : la requête part intacte, la réponse arrivée du
+  serveur attend une promesse que le test libère après le 401 du battement ; le statut de l'import (200) et celui du
+  battement (401) sont contrôlés **avant** l'attente du compte rendu. Le reste de D5 est tel qu'écrit (1,1 s, retrait de
+  `heartbeatAt`, mouvements, seconde partie à compteur `page.route` sur `/auth/activity`, sans corps binaire).
+- **Écartées** : `route.fetch()` (corps altéré) ; `page.clock` (déjà écartée par la fiche).
+- **Réversible** : oui.
