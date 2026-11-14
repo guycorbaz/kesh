@@ -133,12 +133,20 @@ function champCompte(modal: Locator, ligne: number): Locator {
 	return modal.getByTestId(`split-row-${ligne}`).locator('input[aria-autocomplete="list"]');
 }
 
+/**
+ * Les options de la liste du champ de compte d'une ligne — bornées à sa `listbox` : le
+ * sélecteur de projet de la ligne porte lui aussi des `<option>` (rôle `option`).
+ */
+function optionsDeCompte(modal: Locator, ligne: number): Locator {
+	return modal.getByTestId(`split-row-${ligne}`).getByRole('listbox').getByRole('option');
+}
+
 /** Choisit le compte `numero` dans la liste, à la souris (`mousedown` sur l'option). */
 async function choisirCompte(modal: Locator, ligne: number, numero: string): Promise<void> {
 	const champ = champCompte(modal, ligne);
 	await champ.click();
 	await champ.fill(numero);
-	const option = modal.getByRole('option').filter({ hasText: numero });
+	const option = optionsDeCompte(modal, ligne).filter({ hasText: numero });
 	await expect(option.first()).toBeVisible();
 	await option.first().dispatchEvent('mousedown');
 	await expect(champ).toHaveValue(new RegExp(`^${numero}`));
@@ -540,7 +548,7 @@ test.describe('R0 — l’éclatement joué depuis l’écran (#1150, #1151)', (
 			await expect(t.modal.getByTestId('split-row-5')).toBeVisible();
 			const champ = champCompte(t.modal, 5);
 			await champ.focus();
-			const premiere = t.modal.getByRole('option').first();
+			const premiere = optionsDeCompte(t.modal, 5).first();
 			await expect(premiere).toBeVisible();
 			const style = await t.modal.evaluate((el) => {
 				const s = getComputedStyle(el);

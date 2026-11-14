@@ -634,6 +634,16 @@ describe('TransactionSplitModal — Éclater, montants et messages (Story 36-2)'
 		expect(submit.disabled).toBe(true);
 	});
 
+	// C-36-2-19 (R0 (f)) : le serveur rend le montant normalisé (« -388.2 ») ; l'attendu se
+	// dit à deux décimales, comme l'écart.
+	it('V-b — un montant normalisé par le serveur se dit à deux décimales', async () => {
+		const { r } = await remplir(['10', '20'], '-388.2');
+		const message = await r.findByTestId('split-client-error');
+		expect(message.textContent).toContain('attendu 388.20, écart -358.20');
+		const indicateur = await r.findByTestId('split-balance-indicator');
+		expect(indicateur.textContent).toContain('attendu 388.20, écart -358.20');
+	});
+
 	it('V-c — à l’ouverture, le message nommé dit « Ligne 1 : compte requis »', async () => {
 		const { findByTestId } = render(TransactionSplitModal, {
 			open: true,

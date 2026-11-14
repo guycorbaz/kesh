@@ -181,6 +181,12 @@
 		sumAmounts !== null && expectedBig !== null && sumAmounts.eq(expectedBig),
 	);
 
+	/**
+	 * L'attendu tel qu'affiché : deux décimales, comme l'écart (C-36-2-19) — le serveur rend le
+	 * montant normalisé (« -388.2 »), et « attendu 388.2, écart -358.20 » se lisait mal.
+	 */
+	const expectedLabel = $derived(expectedBig !== null ? expectedBig.toFixed(2) : txAbsAmount);
+
 	const balanceDiff = $derived.by(() => {
 		if (sumAmounts === null || expectedBig === null) return '—';
 		const diff = sumAmounts.minus(expectedBig);
@@ -262,7 +268,7 @@
 			return i18nMsg(
 				'reconciliation-split-error-imbalance-detail',
 				"L'éclatement n'équilibre pas le montant de la transaction : attendu { $expected }, écart { $diff }.",
-				{ expected: txAbsAmount, diff: balanceDiff },
+				{ expected: expectedLabel, diff: balanceDiff },
 			);
 		}
 		return '';
@@ -318,10 +324,12 @@
 </script>
 
 <Dialog.Root {open} {onOpenChange}>
-	<!-- Story 36-2 (#1151, D6) : quatre à cinq colonnes ; la largeur par défaut (`sm:max-w-sm`)
-	     les écrasait. La largeur seule, sans `max-h` ni défilement : un ancêtre défilant rognerait
-	     la liste du champ de compte, rendue en `absolute` dans le flux (#1181). -->
-	<Dialog.Content class="sm:max-w-3xl" data-testid="transaction-split-modal">
+	<!-- Story 36-2 (#1151, D6, C-36-2-18) : quatre à cinq colonnes ; la largeur par défaut
+	     (`sm:max-w-sm`) les écrasait. `sm:max-w-3xl` laissait encore une description de trente
+	     caractères tronquée (R0 (g)) : `sm:max-w-4xl`, et des largeurs de colonnes qui donnent la
+	     place au compte et à la description. La largeur seule, sans `max-h` ni défilement : un
+	     ancêtre défilant rognerait la liste du champ de compte, rendue en `absolute` (#1181). -->
+	<Dialog.Content class="sm:max-w-4xl" data-testid="transaction-split-modal">
 		<Dialog.Header>
 			<Dialog.Title>
 				{i18nMsg('reconciliation-split-modal-title', 'Éclater la transaction')}
@@ -340,17 +348,17 @@
 				<table class="w-full text-sm" data-testid="split-lines-table">
 					<thead>
 						<tr class="text-left text-xs text-text-muted">
-							<th class="py-1">
+							<th class="w-[30%] py-1">
 								{i18nMsg('reconciliation-split-th-account', 'Compte')}
 							</th>
-							<th class="py-1">
+							<th class="w-[17%] py-1">
 								{i18nMsg('reconciliation-split-th-amount', 'Montant')}
 							</th>
-							<th class="py-1">
+							<th class="w-[33%] py-1">
 								{i18nMsg('reconciliation-split-th-description', 'Description')}
 							</th>
 							{#if projects.length > 0}
-								<th class="py-1">
+								<th class="w-[15%] py-1">
 									{i18nMsg('reconciliation-split-th-project', 'Projet')}
 								</th>
 							{/if}
@@ -466,13 +474,13 @@
 				     pour les deux, et le montant n'était que dans des replis jamais affichés. -->
 				{#if balanceExact}
 					{i18nMsg('reconciliation-split-balance-indicator', 'Balance équilibrée : { $expected }', {
-						expected: txAbsAmount,
+						expected: expectedLabel,
 					})}
 				{:else}
 					{i18nMsg(
 						'reconciliation-split-balance-gap',
 						'Balance non équilibrée — attendu { $expected }, écart { $diff }',
-						{ expected: txAbsAmount, diff: balanceDiff },
+						{ expected: expectedLabel, diff: balanceDiff },
 					)}
 				{/if}
 			</div>

@@ -199,3 +199,28 @@ le 2026-11-14 ; prémisses relues au code avant application.*
 - **Réversible** : oui.
 - *(Annoté le 2026-11-14, validation P4 : un dossier neuf par essai, `/tmp/kesh-voie2/e36-2-r0b-<n>/` — les fichiers
   root d'un essai ne s'effacent pas sans `sudo`, et un second essai ne doit pas remonter ceux du premier.)*
+
+### C-36-2-18 — `sm:max-w-4xl` et des largeurs de colonnes (développement, R0 (g))
+
+- **Contexte** : à `sm:max-w-3xl` (D6), R0 (g) mesure encore la description de trente caractères tronquée
+  (`description:237/176`, `kesh-gate-logs/e36-2/r0-apres.log`) : le tableau partage la largeur à parts égales entre
+  des champs `w-full`. D6 prévoit la largeur suivante, `sm:max-w-4xl` ; le calcul (≈ 848 px de tableau, quatre colonnes
+  et le bouton) laisse ≈ 200 px par colonne, encore sous 237.
+- **Retenu** : `sm:max-w-4xl` **et** des largeurs d'en-tête (`w-[30%]` compte, `w-[17%]` montant, `w-[33%]`
+  description, `w-[15%]` projet), dans `TransactionSplitModal.svelte` seul. Mesuré après : `compte:253/253,
+  montant:141/141, description:279/279, projet:124/124, dialogue:896x497` (`r0-apres-2.log`).
+- **Écartées** : `sm:max-w-5xl` sans largeurs de colonnes (le partage égal donnerait encore la même place au montant
+  qu'à la description) ; raccourcir la description de R0 (masquerait #1151).
+- **Réversible** : oui (classes CSS).
+
+### C-36-2-19 — L'attendu se dit à deux décimales (développement, R0 (f))
+
+- **Contexte** : le serveur rend le montant de la transaction normalisé (`-388.2`) ; après D3, l'indicateur disait
+  « attendu 388.2, écart -358.20 » (`r0-apres-2.log`, R0 (f)). D3 dit « les montants s'affichent comme aujourd'hui » ;
+  aujourd'hui, l'attendu n'était affiché nulle part (le catalogue disait « Balance »).
+- **Retenu** : l'attendu affiché est `Big(txAbsAmount).toFixed(2)` (repli : le texte du serveur), comme l'écart ;
+  Vitest « montant normalisé par le serveur ». Le rappel de la transaction en tête du dialogue (`split-tx-summary`)
+  n'est pas touché.
+- **Écartées** : la mise en forme suisse (`1'200.00`, hors périmètre, D3) ; laisser « 388.2 » (deux formes dans la même
+  phrase).
+- **Réversible** : oui.
