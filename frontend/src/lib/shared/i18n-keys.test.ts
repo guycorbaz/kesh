@@ -975,7 +975,11 @@ const ATTENDU = {
 	// `save()`. Que des littéraux ; recompté par la garde (relevé à 3031 avant d'écrire ce nombre).
 	// Revue P1 de la 35-1 (E2) : **3031 → 3032** (+1) — `invoices-format-error-unmatched-brace`,
 	// le refus d'une accolade isolée au miroir. Littéral ; relevé à 3032 par la garde avant d'écrire.
-	sitesTotal: 3032,
+	// Story 35-4 (#1023, D4) : **3026 → 3029** (+3) sur sa branche, `AlreadyBookedConfirmDialog.svelte`
+	// 4 → 7 (intro de *Rejeter* `-one` et `-other`, bouton *Rejeter quand même*). Que des littéraux.
+	// Union de l'intégration 0.17.7 (C-e350-8) : 35-1 (+6) et 35-4 (+3) sur 3026 ; recompté par la
+	// garde après la fusion (relevé à la source avant d'écrire ce nombre).
+	sitesTotal: 3035,
 	sitesNonResolus: 31,
 	relais: 6,
 	// Story 26-1 (#620, AC3-bis) : **10 → 11** — `lib/features/bank-import/

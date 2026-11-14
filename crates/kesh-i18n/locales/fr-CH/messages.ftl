@@ -1521,6 +1521,10 @@ reconciliation-labels-already-booked-confirm-title = Confirmer malgré l’avert
 reconciliation-labels-already-booked-confirm-intro = Chaque transaction ci-dessous semble déjà comptabilisée (voir l’avertissement de sa ligne). Continuer passerait une écriture pour un mouvement qui est peut-être déjà aux livres : il serait compté deux fois.
 reconciliation-labels-already-booked-confirm-cancel = Annuler
 reconciliation-labels-already-booked-confirm-continue = Continuer quand même
+# Story 35-4 (#1023, D2) — la même confirmation avant Rejeter ; -one / -other selon le nombre de lignes cochées (sans sélecteur Fluent, C-e342-21).
+reconciliation-labels-already-booked-confirm-intro-reject-one = Chaque transaction ci-dessous semble déjà comptabilisée. Rejeter retire la transaction cochée de la liste sans passer d’écriture : si elle est un mouvement réel qui n’est pas encore aux livres, il y manquera ; si elle y est déjà, rattachez-la plutôt (« Rattacher à une écriture existante »). Un rejet s’annule depuis le détail de son import (« Annuler le rejet »).
+reconciliation-labels-already-booked-confirm-intro-reject-other = Chaque transaction ci-dessous semble déjà comptabilisée. Rejeter retire les { $count } transactions cochées de la liste sans passer d’écriture : si l’une est un mouvement réel qui n’est pas encore aux livres, il y manquera ; si elle y est déjà, rattachez-la plutôt (« Rattacher à une écriture existante »). Un rejet s’annule depuis le détail de son import (« Annuler le rejet »).
+reconciliation-labels-already-booked-confirm-reject = Rejeter quand même
 # Story 29-6 (#665, AC10) — rendue dans la rangée des boutons quand une ligne sans proposition est cochée.
 reconciliation-labels-unmatched-not-acceptable-hint = Une transaction sans correspondance ne peut pas être acceptée : décochez-la pour accepter les autres.
 # Story 29-9 (#678, AC11) — nom accessible de la case de chaque ligne : ce que la ligne affiche.
