@@ -130,6 +130,7 @@ kesh/
 - **Guide de démarrage rapide** (FR) : [`docs/user-guide/fr/getting-started.md`](docs/user-guide/fr/getting-started.md) — prise en main express pour un premier usage.
 - **Manuel administrateur** (FR) : [`docs/manual/fr/admin-manual.pdf`](docs/manual/fr/admin-manual.pdf) — installation, configuration, sécurité, déploiement Docker, sauvegardes.
 - **API externe** : [`docs/api-external.md`](docs/api-external.md) — authentification par clé API (PAT), points d'accès, exemples.
+- **Prise en main pour un développeur** : [`docs/prise-en-main-developpeur.md`](docs/prise-en-main-developpeur.md) — ce qu'il faut savoir avant d'écrire du code, le poste de dev, les contrôles locaux, la façon de proposer un changement.
 
 > Les manuels DE / IT / EN sont prévus pour une version ultérieure (le français reste la langue canonique de la documentation).
 
@@ -247,7 +248,7 @@ Détails : [PRD complet](_bmad-output/planning-artifacts/prd.md).
 
 ## Contribuer
 
-Les contributions sont les bienvenues. Merci d'ouvrir une issue avant tout changement significatif pour en discuter.
+Les contributions sont les bienvenues. Merci d'ouvrir une issue avant tout changement significatif pour en discuter, et de lire d'abord [`docs/prise-en-main-developpeur.md`](docs/prise-en-main-developpeur.md).
 
 - Respecter les règles de qualité du code (`CLAUDE.md`)
 - Ajouter des tests pour toute nouvelle logique métier
