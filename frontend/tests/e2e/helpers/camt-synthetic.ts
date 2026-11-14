@@ -17,6 +17,7 @@ import { expect } from '@playwright/test';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { ajouterJoursIso } from './dates';
 
 const FIXTURE = path.join(
 	path.dirname(fileURLToPath(import.meta.url)),
@@ -25,9 +26,15 @@ const FIXTURE = path.join(
 	'camt053_v04_minimal.xml',
 );
 
-/** La date `AAAA-MM-JJ` de l'entrée `i` : un jour par entrée depuis le 2025-01-01. */
+/**
+ * La date `AAAA-MM-JJ` de l'entrée `i` : un jour par entrée depuis le 2025-01-01.
+ *
+ * Raccord de l'intégration 0.17.7 : l'arithmétique de jours des specs passe par
+ * `ajouterJoursIso` (Story 35-5c, #929, D3), comme le `dateOf` d'origine de
+ * `reconciliation-show-older.spec.ts` qu'elle avait converti.
+ */
 export function dateOfEntry(i: number): string {
-	return new Date(Date.UTC(2025, 0, 1 + i)).toISOString().slice(0, 10);
+	return ajouterJoursIso('2025-01-01', i);
 }
 
 /**
