@@ -326,6 +326,8 @@ async function eclaterEtVerifier(
 	const issue = await eclater(page, t.modal, testInfo, variante);
 	expect(issue, `${variante} : l'éclatement passe depuis l'écran`).toBe('succès');
 	await expect(t.ligne).toHaveCount(0);
+	// AC10 : l'état « succès » — dialogue fermé, la ligne a quitté la liste.
+	await page.screenshot({ path: r0Capture(testInfo, `${variante.replace(/[()′]/g, '')}-succes`) });
 	const montants = await montantsDeLEcriture(page, t.importId, t.txId);
 	for (const [numero, montant] of attendus) {
 		expect(montants.get(compte(t.comptes, numero).id), `${variante} : compte ${numero}`).toBe(montant);
