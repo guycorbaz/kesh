@@ -350,9 +350,15 @@ test.describe('Restaurer une installation neuve depuis l’assistant (Story 31-1
  * la réponse n'arrive rendait 401, le renouvellement échouait, et le client effaçait la
  * session et menait à `/login?reason=session_expired` : le compte rendu n'était jamais lu.
  *
- * La réponse de l'import est RETENUE (le serveur a déjà restauré et invalidé la session)
- * jusqu'à ce qu'un battement forcé ait reçu sa réponse ; puis, compte rendu affiché, une
- * activité de plus ne doit envoyer aucun battement (le suivi de session est arrêté).
+ * La réponse de l'import est RETENUE dans la page (le serveur a déjà restauré et invalidé la
+ * session) jusqu'à ce qu'un battement forcé ait reçu sa réponse ; puis, compte rendu
+ * affiché, une activité de plus ne doit envoyer aucun battement (le suivi de session est
+ * arrêté).
+ *
+ * ⚠️ La retenue se fait en enveloppant `window.fetch`, et NON par `page.route` +
+ * `route.fetch()` : rejouée par Playwright, la requête multipart arrivait au serveur
+ * illisible (400 « Could not find EOCD »), même avec `postData` repassé en octets — relevé
+ * au développement (Story 36-5, C-36-5-13). La requête part ici du navigateur, intacte.
  */
 test.describe('Le compte rendu de la restauration reste affiché (Story 36-5, #931)', () => {
 	const ACTIVITY = '**/api/v1/auth/activity';
@@ -383,33 +389,47 @@ test.describe('Le compte rendu de la restauration reste affiché (Story 36-5, #9
 		await page.goto('/admin/restore');
 		await expect(page.getByTestId('backup-env-notice')).toBeVisible();
 
-		let heartbeatStatus: number | null = null;
-		let importStatus: number | null = null;
-		await page.route('**/api/v1/admin/full-import', async (route) => {
-			// Le serveur restaure et invalide la session ; la réponse attend ici. Le corps est
-			// repassé en OCTETS : sans `postData`, `route.fetch()` réencode le multipart et
-			// l'archive arrive illisible (400 « Could not find EOCD », relevé au développement).
-			const body = route.request().postDataBuffer();
-			const response = await route.fetch(body ? { postData: body } : undefined);
-			importStatus = response.status();
-			const heartbeat = page.waitForResponse((r) => r.url().includes('/api/v1/auth/activity'));
-			await forceActivity(page, 40);
-			heartbeatStatus = (await heartbeat).status();
-			try {
-				await route.fulfill({ response });
-			} catch {
-				// Avant le correctif, la page est déjà partie pour `/login` : plus rien à servir.
-			}
+		// La réponse de l'import, arrivée du serveur, attend dans la page qu'on la libère.
+		await page.evaluate(() => {
+			type Gate = { status: number | null; release: () => void };
+			const original = window.fetch.bind(window);
+			let release: () => void = () => {};
+			const gate = new Promise<void>((resolve) => (release = resolve));
+			const state: Gate = { status: null, release };
+			(window as unknown as { __kf056: Gate }).__kf056 = state;
+			window.fetch = async (input, init) => {
+				const url =
+					typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+				const res = await original(input, init);
+				if (url.includes('/api/v1/admin/full-import')) {
+					state.status = res.status;
+					await gate;
+				}
+				return res;
+			};
 		});
 		await importByScreen(page, backup);
+		await page.waitForFunction(
+			() => (window as unknown as { __kf056: { status: number | null } }).__kf056.status !== null,
+			null,
+			{ timeout: 60_000 },
+		);
+		const importStatus = await page.evaluate(
+			() => (window as unknown as { __kf056: { status: number | null } }).__kf056.status,
+		);
+		const heartbeat = page.waitForResponse((r) => r.url().includes('/api/v1/auth/activity'));
+		await forceActivity(page, 40);
+		const heartbeatStatus = (await heartbeat).status();
+		// Avant le correctif, la page part pour `/login` : il n'y a plus rien à libérer.
+		await page
+			.evaluate(() => (window as unknown as { __kf056?: { release: () => void } }).__kf056?.release())
+			.catch(() => {});
 
 		// (1) L'import a abouti au serveur, le battement a reçu son 401, et l'écran est resté.
-		await expect.poll(() => heartbeatStatus, { timeout: 60_000 }).not.toBeNull();
 		expect(importStatus, 'l’import retenu doit avoir abouti au serveur').toBe(200);
 		expect(heartbeatStatus, 'le battement forcé pendant l’import doit avoir été refusé').toBe(401);
 		await expect(page.getByTestId('admin-restore-files-restored')).toBeVisible({ timeout: 15_000 });
 		await expect(page).toHaveURL(/\/admin\/restore$/);
-		await page.unroute('**/api/v1/admin/full-import');
 
 		// (2) Compte rendu affiché : une activité de plus n'envoie plus aucun battement.
 		let activityRequests = 0;
