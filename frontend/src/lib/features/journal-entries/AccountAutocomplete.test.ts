@@ -858,4 +858,17 @@ describe('AccountAutocomplete — Entrée (Story 36-1, #1095, #1165)', () => {
 		expect(statut(container).children).toHaveLength(1);
 		expect(statut(container).children[0].tagName).toBe('P');
 	});
+
+	it('x-bis. le bouton × se centre sur le seul champ, non sur le champ et son message', async () => {
+		// Constaté aux captures de la story : centré (`top-1/2`) sur la racine, le ×
+		// descendait sur le message affiché sous le champ. Son conteneur positionné
+		// doit contenir le champ et AUCUN des messages (statut, invalidité).
+		const { input, container, getByLabelText } = monter({ value: 1, allowClear: true });
+		await taper(input, 'zzz');
+		await entree(input);
+		const cadre = getByLabelText(/Effacer le compte/).parentElement!;
+		expect(cadre.classList.contains('relative')).toBe(true);
+		expect(cadre.contains(input)).toBe(true);
+		expect(cadre.contains(statut(container))).toBe(false);
+	});
 });

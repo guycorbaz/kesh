@@ -457,70 +457,79 @@
 </script>
 
 <div class="relative">
-	<Input
-		{id}
-		type="text"
-		value={query}
-		oninput={handleInput}
-		onkeydown={handleKeydown}
-		onfocus={() => {
-			open = true;
-			// Ouvrir n'est pas désigner (#1165).
-			highlightIndex = -1;
-		}}
-		onblur={handleBlur}
-		{disabled}
-		placeholder={loadError
-			? i18nMsg('account-autocomplete-unavailable', 'Autocomplétion indisponible — saisir l\'ID du compte')
-			: (placeholder ?? i18nMsg('journal-entry-form-col-account', 'Compte'))}
-		aria-label={ariaLabel ?? i18nMsg('journal-entry-form-col-account', 'Compte')}
-		aria-autocomplete="list"
-		aria-expanded={open}
-		aria-invalid={isInvalid ? 'true' : undefined}
-		aria-describedby={[
-			describedBy,
-			isInvalid ? invalidMsgId : undefined,
-			showNoMatch ? noMatchMsgId : undefined
-		]
-			.filter(Boolean)
-			.join(' ') || undefined}
-	/>
-
-	{#if allowClear && !disabled && (value !== null || query !== '')}
-		<!--
-			AC1 : le bouton appelle `onSelect(null)` et NE touche PAS `query` —
-			c'est le `$effect` (`value === null` → `query = ''`) qui en est la
-			source unique. Une double écriture divergerait si le parent refusait
-			la mise à jour.
-
-			`onmousedown` + `preventDefault` empêche la perte de focus (même idiome
-			que les items du dropdown), ce qui évite la course avec `handleBlur` ;
-			`onclick` porte l'action pour que le clavier fonctionne aussi.
-		-->
-		<button
-			type="button"
-			class="absolute right-2 top-1/2 -translate-y-1/2 rounded p-0.5 text-muted-foreground hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring"
-			aria-label={i18nMsg('common-account-clear', 'Effacer le compte sélectionné')}
-			onmousedown={(e) => e.preventDefault()}
-			onclick={() => {
-				// Jeter le brouillon suffit : l'affichage retombe sur `displayLabel`,
-				// qui vaut `''` quand la valeur est nulle. Le bouton n'écrit donc
-				// jamais le texte canonique — il n'y en a plus qu'un, dérivé.
-				//
-				// ASYMÉTRIE VOULUE avec le `blur` : celui-ci exige en plus que le
-				// compte soit RÉSOLUBLE (`selected !== undefined`), le bouton non.
-				// Un champ vide au `blur` est ambigu — il peut l'être parce que la
-				// liste des comptes n'est pas arrivée. Un clic sur « Effacer » ne
-				// l'est pas : c'est un geste explicite, il doit aboutir même sur un
-				// compte que l'on ne sait pas nommer.
-				// (Asymétrie relevée non documentée en passe 3 de revue.)
-				draft = null;
-				if (value !== null) onSelect(null);
+	<!--
+		Story 36-1 : le champ et son bouton × ont leur propre conteneur
+		`relative`. Le × se centre (`top-1/2`) sur CE conteneur, de la hauteur du
+		seul champ ; centré sur la racine, il descendait sur le message affiché
+		sous le champ (« aucun compte ne correspond », ou le marqueur
+		d'invalidité) — constaté aux captures de la story.
+	-->
+	<div class="relative">
+		<Input
+			{id}
+			type="text"
+			value={query}
+			oninput={handleInput}
+			onkeydown={handleKeydown}
+			onfocus={() => {
+				open = true;
+				// Ouvrir n'est pas désigner (#1165).
+				highlightIndex = -1;
 			}}
-		>
-			<span aria-hidden="true">×</span>
-		</button>
-	{/if}
+			onblur={handleBlur}
+			{disabled}
+			placeholder={loadError
+				? i18nMsg('account-autocomplete-unavailable', 'Autocomplétion indisponible — saisir l\'ID du compte')
+				: (placeholder ?? i18nMsg('journal-entry-form-col-account', 'Compte'))}
+			aria-label={ariaLabel ?? i18nMsg('journal-entry-form-col-account', 'Compte')}
+			aria-autocomplete="list"
+			aria-expanded={open}
+			aria-invalid={isInvalid ? 'true' : undefined}
+			aria-describedby={[
+				describedBy,
+				isInvalid ? invalidMsgId : undefined,
+				showNoMatch ? noMatchMsgId : undefined
+			]
+				.filter(Boolean)
+				.join(' ') || undefined}
+		/>
+
+		{#if allowClear && !disabled && (value !== null || query !== '')}
+			<!--
+				AC1 : le bouton appelle `onSelect(null)` et NE touche PAS `query` —
+				c'est le `$effect` (`value === null` → `query = ''`) qui en est la
+				source unique. Une double écriture divergerait si le parent refusait
+				la mise à jour.
+
+				`onmousedown` + `preventDefault` empêche la perte de focus (même idiome
+				que les items du dropdown), ce qui évite la course avec `handleBlur` ;
+				`onclick` porte l'action pour que le clavier fonctionne aussi.
+			-->
+			<button
+				type="button"
+				class="absolute right-2 top-1/2 -translate-y-1/2 rounded p-0.5 text-muted-foreground hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring"
+				aria-label={i18nMsg('common-account-clear', 'Effacer le compte sélectionné')}
+				onmousedown={(e) => e.preventDefault()}
+				onclick={() => {
+					// Jeter le brouillon suffit : l'affichage retombe sur `displayLabel`,
+					// qui vaut `''` quand la valeur est nulle. Le bouton n'écrit donc
+					// jamais le texte canonique — il n'y en a plus qu'un, dérivé.
+					//
+					// ASYMÉTRIE VOULUE avec le `blur` : celui-ci exige en plus que le
+					// compte soit RÉSOLUBLE (`selected !== undefined`), le bouton non.
+					// Un champ vide au `blur` est ambigu — il peut l'être parce que la
+					// liste des comptes n'est pas arrivée. Un clic sur « Effacer » ne
+					// l'est pas : c'est un geste explicite, il doit aboutir même sur un
+					// compte que l'on ne sait pas nommer.
+					// (Asymétrie relevée non documentée en passe 3 de revue.)
+					draft = null;
+					if (value !== null) onSelect(null);
+				}}
+			>
+				<span aria-hidden="true">×</span>
+			</button>
+		{/if}
+	</div>
 
 	{#if isInvalid}
 		<!--
