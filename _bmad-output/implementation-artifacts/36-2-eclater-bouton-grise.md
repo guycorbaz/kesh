@@ -308,11 +308,11 @@ ne dépendent **ni de R0-b, ni de la reproduction du grisé de Guy**.
 
 **Table B — la cause de ce que Guy a vu, et le sort de #1150.** Elle n'a d'objet que sous A3 : sous A1 ou A2, elle
 s'écrit au rapport, sans PR. Critère mécanique de « **grisé reproduit** » (validation P4, V4-3) :
-- **variantes éligibles : (a) à (d) seulement** — (e), (e′), (f) à (i) jouent des saisies dont le grisé, ou l'état, est
+- **variantes éligibles : (a) à (d) seulement** — (e), (e′), (f) à (h) jouent des saisies dont le grisé, ou l'état, est
   attendu, et n'entrent jamais dans B ;
-- **montants admis : la liste fermée des saisies de ces variantes** — `NN.NN` de (a), `70,00` de (c), `1'200.50` de (d)
-  et leurs compléments, tous positifs, à deux décimales au plus, non ambigus (ce que `readJournalAmount` de la 36-3 lit
-  `clear`) ;
+- **montants admis : la liste fermée des saisies de ces variantes** — `NN.NN` de (a), que (b) joue aussi, `70,00` de (c),
+  `1'200.50` de (d) et leurs compléments, tous positifs, à deux décimales au plus, non ambigus (ce que `readJournalAmount`
+  de la 36-3 lit `clear`) ;
 - **grisé reproduit** : dans une variante éligible, chaque ligne montre un compte dans son champ (`inputValue()` non vide)
   et un montant admis, la somme de ces montants égale la **valeur absolue** du montant de la transaction (une transaction
   de débit est négative ; le dialogue compare à `txAbsAmount`, `TransactionSplitModal.svelte:126-130`), et

@@ -176,7 +176,7 @@ le 2026-11-14 ; prémisses relues au code avant application.*
   admis = leur liste fermée (positifs, deux décimales au plus, non ambigus), somme comparée à la **valeur absolue** du
   montant de la transaction ; B2 scindée par variante (B2-ter : `refs`) ; table B sans objet sous A1 ou A2.)*
 
-### C-36-2-16 — La largeur bornée à toute taille de fenêtre (V3-5)
+### C-36-2-16 — (retiré, voir l'annotation P4) La largeur bornée à toute taille de fenêtre (V3-5)
 
 - **Contexte** : `dialog-content.svelte:31` porte `max-w-[calc(100%-2rem)]` et `sm:max-w-sm` ; `sm:max-w-3xl` remplace
   le second, et la borne ne vaut plus dès 640 px : de 640 à ≈ 800 px, 768 px débordent.
