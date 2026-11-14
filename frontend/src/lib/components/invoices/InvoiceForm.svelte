@@ -498,6 +498,42 @@
 	// TVA, compte, total, action) : la rangée du refus du prix les couvre toutes.
 	const LINE_TABLE_COLUMNS = 7;
 
+	/**
+	 * Story 36-3b (D1, D3) — le prix de la ligne `i` (0-based), lu comme le montant d'une
+	 * écriture : la charge d'une saisie claire, ou le refus qui nomme la ligne (ambigu,
+	 * illisible ; le vide garde son message d'avant la story). Partagé par
+	 * `validateClient` et par la construction de la charge après l'attente des réglages
+	 * (D5), qui nomme ainsi la ligne en cause sans repli inatteignable (revue P1, B2).
+	 */
+	function readLineUnitPrice(
+		i: number,
+		raw: string,
+	): { ok: true; payload: string } | { ok: false; message: string } {
+		const lecture = readJournalAmount(raw);
+		if (lecture.kind === 'clear') return { ok: true, payload: lecture.payload };
+		if (lecture.kind === 'ambiguous') {
+			return {
+				ok: false,
+				message: i18nMsg(
+					'invoice-line-unit-price-ambiguous-error',
+					"Ligne { $line } : prix unitaire ambigu — écrivez 1'250 pour mille deux cent cinquante francs, ou 1.2500 pour un franc vingt-cinq.",
+					{ line: i + 1 },
+				),
+			};
+		}
+		if (lecture.kind === 'unreadable') {
+			return {
+				ok: false,
+				message: i18nMsg(
+					'invoice-line-unit-price-unreadable-error',
+					"Ligne { $line } : prix unitaire illisible — chiffres, apostrophe des milliers (1'250), point ou virgule décimale, quatre décimales au plus.",
+					{ line: i + 1 },
+				),
+			};
+		}
+		return { ok: false, message: `Ligne ${i + 1} : valeurs numériques invalides` };
+	}
+
 	function validateClient(): string | null {
 		if (!selectedContact) return 'Veuillez sélectionner un contact';
 		if (!date) return 'La date est obligatoire';
@@ -524,30 +560,13 @@
 		for (let i = 0; i < lines.length; i++) {
 			const l = lines[i];
 			if (!l.description.trim()) return `Ligne ${i + 1} : description requise`;
-			// Story 36-3b (D1, D3) — le prix se lit comme le montant d'une écriture ;
-			// le refus nomme la ligne. Le vide garde son message d'avant la story.
-			const lecturePrix = readJournalAmount(l.unitPrice);
-			if (lecturePrix.kind !== 'clear') {
-				if (lecturePrix.kind === 'ambiguous') {
-					return i18nMsg(
-						'invoice-line-unit-price-ambiguous-error',
-						"Ligne { $line } : prix unitaire ambigu — écrivez 1'250 pour mille deux cent cinquante francs, ou 1.2500 pour un franc vingt-cinq.",
-						{ line: i + 1 },
-					);
-				}
-				if (lecturePrix.kind === 'unreadable') {
-					return i18nMsg(
-						'invoice-line-unit-price-unreadable-error',
-						"Ligne { $line } : prix unitaire illisible — chiffres, apostrophe des milliers (1'250), point ou virgule décimale, quatre décimales au plus.",
-						{ line: i + 1 },
-					);
-				}
-				return `Ligne ${i + 1} : valeurs numériques invalides`;
-			}
+			// Story 36-3b (D1, D3) — le prix se lit avant la quantité (C-36-3b-9).
+			const lecturePrix = readLineUnitPrice(i, l.unitPrice);
+			if (!lecturePrix.ok) return lecturePrix.message;
 			try {
 				const qty = new Big(l.quantity);
 				// Défense : la grammaire n'admet aucun signe, `price.lt(0)` est inatteignable.
-				const price = lecturePrix.value;
+				const price = new Big(lecturePrix.payload);
 				if (qty.lte(0)) return `Ligne ${i + 1} : quantité > 0`;
 				if (price.lt(0)) return `Ligne ${i + 1} : prix unitaire ≥ 0`;
 				if (qty.times(price).gt(MAX_LINE_TOTAL)) {
@@ -627,18 +646,19 @@
 		// `1250`), relu APRÈS l'attente des réglages : un prix retapé pendant cette
 		// attente, ambigu, illisible ou vide, arrête l'envoi au lieu de partir brut (ou
 		// `null`). Une boucle à sortie anticipée, pour que chaque ligne envoyée porte un
-		// `unitPrice: string` (validation P1, V1-6). La quantité et la description
-		// retapées pendant l'attente ne sont pas revalidées ici (hors périmètre, le
+		// `unitPrice: string` (validation P1, V1-6) ; le bandeau nomme la ligne dont le
+		// prix est en cause (revue P1, B2). La quantité et la description retapées
+		// pendant l'attente ne sont pas revalidées ici (hors périmètre, #1190 ; le
 		// serveur les juge).
 		const payloadLines: CreateInvoiceLineRequest[] = [];
-		for (const l of lines) {
-			const unitPrice = unitPricePayload(l.unitPrice);
-			if (unitPrice === null) {
-				errorMsg = validateClient() ?? 'Prix unitaire invalide';
+		for (let i = 0; i < lines.length; i++) {
+			const prix = readLineUnitPrice(i, lines[i].unitPrice);
+			if (!prix.ok) {
+				errorMsg = prix.message;
 				submitting = false;
 				return;
 			}
-			payloadLines.push({ ...stripUiKey(l), unitPrice });
+			payloadLines.push({ ...stripUiKey(lines[i]), unitPrice: prix.payload });
 		}
 		try {
 			const payload: CreateInvoiceRequest = {
