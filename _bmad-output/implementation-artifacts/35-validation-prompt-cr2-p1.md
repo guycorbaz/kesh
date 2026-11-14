@@ -14,7 +14,7 @@ SvelteKit, MariaDB). À lire d'abord :
 
 ## Ce que tu cherches
 
-1. Défauts **introduits par la révision CR-1** : prémisse fausse au code (vérifie chaque ligne citée), contradiction
+1. Défauts **introduits par la révision CR-2** : prémisse fausse au code (vérifie chaque ligne citée), contradiction
    avec le reste de la fiche ou avec une autre fiche, exigence irréalisable, renvoi faux.
 2. **Sites non résolus** de R1–R10 : sauvegarde et restauration (fenêtre d'import, registre de rejeu `post_restore.rs`,
    `TABLES_TO_TRUNCATE`, export CSV, remise à zéro), audit (`audit_labels.rs`, registre des routes), RBAC, i18n,
