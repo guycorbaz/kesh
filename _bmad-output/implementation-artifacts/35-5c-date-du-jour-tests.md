@@ -237,6 +237,8 @@ Scripts : `reset-db-e355c.sh`, `test-fast-e355c.sh`, `nuit-e355c.sh`, `cible-e35
 - **Garde frontend (D4)** : 7 → 13 tests dans `local-date-guard.test.ts` (1 audit des specs, 5 sondes).
 - **AC5** : nuit réelle reproduite sur tous les binaires **5372/5372** ; sous les deux instants de la fiche, **deux rouges** de
   classe (b) dans `admin_full_import_e2e` (bornes fixes de 2026 supposées passées) — écart déclaré, C-e355c-6.
+  *(Annoté le 2026-11-14, revue P1, A3 : l'un des deux, `validating_a_backdated_invoice…`, naît de la conversion faite par
+  cette story ; tous deux sont commentés sur #1125.)*
 - **Non lancé** : l'E2E (Playwright), à la clôture selon les consignes de l'Epic 35 ; les specs converties ne sont donc vérifiées
   qu'au typage (`npm run check`) et par la garde.
 - Aucun changement visible : ni capture, ni CHANGELOG (AC8), ni manuel.
@@ -317,6 +319,9 @@ Scripts : `reset-db-e355c.sh`, `test-fast-e355c.sh`, `nuit-e355c.sh`, `cible-e35
     dont **47 sans entrée** (le compte d'entrée, `rouges.log`) et les 3 de l'allowlist : 41 + 1 (`new Date(Date.now`) + 8 lignes à
     `toISOString` seul (dont `invoices.spec.ts:527`, forme coupée vue à la ligne de `.toISOString()`). Les deux tableaux de la fiche
     (formes Node, arithmétiques sur un jour donné, lectures déjà justes, `audit-log.spec.ts`) se confirment ligne à ligne.
+    *(Annoté le 2026-11-14, revue P1, A2 : « `setup()` à `:3239` » désigne la ligne de lecture de l'horloge ; la fonction
+    commence à `:3218` sur la base (`async fn setup(pool: &MySqlPool) -> (i64, i64, i64) {`) et à `:3225` au commit
+    `40090cdd3`, où la lecture est à `:3246`.)*
   - **Rouges d'abord** : garde Rust fermée sur la base, 5 tests sur 7 rouges, les huit fichiers nommés à leur compte
     (`rouges-rust.log`) ; garde frontend étendue, 47 relevés sans entrée ; `dates.test.ts` rouge faute de `dates.ts` (`rouges.log`).
   - **Verdict par fichier (AC2)** — aucun de ces tests n'asserte une date **produite par le serveur** à partir de son horloge : tous
@@ -332,6 +337,14 @@ Scripts : `reset-db-e355c.sh`, `test-fast-e355c.sh`, `nuit-e355c.sh`, `cible-e35
     - `credit_card_e2e.rs` : un `jour` lu une fois pour la date de la facture et les deux `settledOn` ; `mod common;` ajouté.
     - `invoice_delete_e2e.rs` (date de facture, borne) et `invoice_unvalidate_e2e.rs` (six dates de brouillon) ; `mod common;`.
     - `mcp_enveloppe_e2e.rs:1237` (date et échéance saisies) ; `reconciliation_link_e2e.rs:757` (jour de facture et de transaction).
+    - *(Annoté le 2026-11-14, revue P1, A2 — les lignes lues qui manquaient, au commit `40090cdd3`, par
+      `git show 40090cdd3:<fichier> | grep -nF 'aujourd_hui_test()'` : `accounts_e2e.rs:247` (`current_year()`) et `:287`
+      (`entry_date` de `mk_entry`) ; `credit_card_e2e.rs:1063` (`let jour = common::jour::aujourd_hui_test().to_string();`) ;
+      `invoice_delete_e2e.rs:165` (date de facture) et `:302` (`let borne = … - TimeDelta::days(30);`) ;
+      `invoice_unvalidate_e2e.rs:215`, `:328`, `:605` (dates de brouillon) et `:372`, `:453`, `:537`
+      (`let aujourd_hui = common::jour::aujourd_hui_test();`) ; `admin_full_import_e2e.rs:2177` et `:2235`
+      (`let borne = … - chrono::Duration::days(30);`), et `:2283` (précondition). Toutes datent une pièce ou une borne de
+      montage ; aucune n'asserte une date produite par le serveur.)*
   - **Specs (AC3)** : 27 specs et deux helpers convertis à `todayInZurich()` et à `ajouterJoursIso` (neuf, `helpers/dates.ts`,
     `Date.UTC` et `getUTC*`, sans lecture de l'horloge ; refus d'un jour mal formé, C-e355c-5) ; `invoices.spec.ts:523-528` et
     `supplier-invoice-draft-cycle.spec.ts:685-688` (jour du poste) deviennent `todayInZurich()`, le navigateur des specs étant à
@@ -343,6 +356,13 @@ Scripts : `reset-db-e355c.sh`, `test-fast-e355c.sh`, `nuit-e355c.sh`, `cible-e35
     jour par une variable, `new Date(Date.now() + 1)`, `new Date(\n)`, ligne à deux motifs → un relevé apparié, `ajouterJoursIso`,
     `Date.UTC`, `Date.now()` seul, relevé hors allowlist nommé). **Angle mort assumé** (écrit dans la garde) : un jour tiré de
     `Date.now()` sans construction de date ; la garde lit les commentaires (C-e355c-3).
+    *(Annoté le 2026-11-14, revue P1, B3/B5/E4/E5 — angles morts que cette liste taisait : l'appariement par `includes`
+    avec un relevé par ligne laissait une seconde lecture passer sous une ligne admise (fermé : appariement exact) ;
+    `new Date;`, `new globalThis.Date()`, `Date()` sans `new`, `Intl.DateTimeFormat().format()` sans argument (fermés :
+    motifs étendus) ; restent assumés un instant passé par une variable, `new Date(...[])`, `new Date(+Date.now())`, un
+    alias de `Date`, `Reflect.construct`, et le jour relu plusieurs fois dans une même spec. Côté Rust, la garde ne voyait
+    pas `jour_suisse(Utc::now())` ni `HorlogeFixe(Utc::now())` dans `tests/` (B2/E6, fermé : garde « horloge réelle d'un
+    test »). C-e355c-8, C-e355c-9.)*
   - **AC5, la nuit** (`nuit.log`) : nuit réelle reproduite (`2026-11-14T23:30:00Z`) sur **tous** les binaires, **5372/5372** ;
     les huit binaires touchés sous `2025-12-31T23:30:00Z` et `2026-03-10T23:30:00Z` : **170/172**, deux rouges de classe (b) dans
     `admin_full_import_e2e` (`full_import_letters_a_reopened_historical_piece`, borne `2026-03-31`, montage de la 35-5a0 ;
@@ -353,6 +373,13 @@ Scripts : `reset-db-e355c.sh`, `test-fast-e355c.sh`, `nuit-e355c.sh`, `cible-e35
     (165/165) : ces sites datent des pièces que le serveur ne compare pas à son jour dans ces tests — la conversion les rend
     cohérents, elle ne corrigeait pas un rouge observable. Le binaire `lib` de `kesh-db` ne lit pas la variable : sa sûreté tient à
     la lecture unique de `setup()` (ligne lue : `journal_entries.rs:3246`, `let today = kesh_core::horloge::jour_suisse(chrono::Utc::now());`).
+    *(Annoté le 2026-11-14, revue P1 — A4 : la conclusion de S1 repose sur **un seul instant**, N1
+    (`2026-11-14T23:30:00Z`), qui ne franchit ni une année ni un exercice ; elle vaut sous N1, non en général (S1 n'a pas
+    été rejoué sous B1, où les formes d'avant, à l'heure réelle, auraient daté les pièces après le jour du serveur). A3 :
+    des deux rouges de classe (b), `validating_a_backdated_invoice_is_refused_by_the_period_lock` est **créé par cette
+    story** (sa précondition lisait l'heure réelle sur `ebd5b654c`, verte sous tout instant) ; l'autre vient de la 35-5a0.
+    AC5 était inatteignable à la lettre sans #1125. Les deux tests sont commentés sur #1125 (fait par l'orchestrateur le
+    2026-11-14). C-e355c-6 annoté.)*
   - **M6 par lecture** (`mut/M6-lecture.log`) : le motif `Utc::now\(\)\s*\.(date_naive|naive_utc)` ne rend **rien** sur le module
     (50 sur la base : sonde positive) ; le motif nu `Utc::now` n'y rend que `:3246` (`setup()`) et `:5129`
     (`timestamp_nanos_opt`, suffixe d'unicité).
@@ -373,3 +400,57 @@ Scripts : `reset-db-e355c.sh`, `test-fast-e355c.sh`, `nuit-e355c.sh`, `cible-e35
     `admin_full_import_e2e.rs`), `cargo fmt` ; la sonde S1 ramène `crates/` à la base par `git checkout ebd5b654c -- crates`, puis
     `git checkout HEAD -- crates` et `touch` (comme le S1 de la 35-5b).
   - Statut `review`. Revue P1 : `35-5c-date-du-jour-tests-review-prompt-p1.md` (trois lentilles, Opus).
+- 2026-11-14 — **Revue de code P1** (Opus, trois lentilles ; `kesh-gate-logs/e355c-review-p1-{A,B,E}.md`) : A 1 MEDIUM + 4 LOW,
+  B 2 MEDIUM + 4 LOW, E 1 MEDIUM + 6 LOW ; après fusion des doublons, **2 MEDIUM** (A1 = B1 = E1 ; B2, = E6 classé LOW par sa
+  lentille) et 9 LOW distincts (A2 ; A3 = E7 ; A4 ; A5 = B4 = E3 ; B3 = E5 ; B5 ; B6 ; E2 ; E4). Aucun finding réfuté.
+- 2026-11-14 — **Remédiation P1** (Opus 5.5, worktree `kesh-e355c`, voie 2 ; commit de code `7fcede7e8`, 11 fichiers). Journaux
+  `kesh-gate-logs/e355c/p1-*.log`. Aucun code de production, aucune migration.
+  - **A1 = B1 = E1 (MEDIUM)** — `docs/testing.md:119` récrit au présent : la suite suit `KESH_TEST_INSTANT` depuis la 35-5c ;
+    deux exceptions nommées, (a) les tests à bornes fixes de 2026 (#1125, deux d'`admin_full_import_e2e`), (b) le binaire `lib`
+    de `kesh-db` (module de tests de `journal_entries.rs`, jour réel lu une fois par `setup()`) ; la règle des specs
+    (`todayInZurich()`, `ajouterJoursIso`, garde étendue à `tests/e2e`) ; la parenthèse de fin ne parle plus de « montages non
+    convertis ». Symptôme grepé (`git grep -nE "35-5c|non convertis|pas convertis|ne la suit pas|heure réelle"` sur `docs`,
+    `CLAUDE.md`, `crates`, `frontend`) : plus aucune phrase vivante qui annonce la 35-5c au futur ; les mentions des fiches
+    35-5a0, 35-5a, 35-5b, de l'epic et du registre C-e350 sont des relevés datés de leur planification, laissés tels quels.
+    Le manuel utilisateur ne parle que du produit (lu par A et B) : inchangé.
+  - **B2 (MEDIUM) = E6** — garde « horloge réelle d'un test » dans `date_du_jour_garde.rs` (troisième famille, C-e355c-8) :
+    `Utc::now()` passé directement à `jour_suisse` ou à `HorlogeFixe`, compté sur le texte entier sans ses lignes `//`
+    (forme coupée vue), sur tout `src` et `tests`, liste close à égalité stricte de **deux** entrées — `journal_entries.rs` 1
+    et `middleware/auth.rs` 1 (le détecteur, joué à liste vide, a trouvé ce second site, que l'orchestrateur n'attendait pas ;
+    ligne lue `:302`, `test_state()`, choix de la 35-5a0). Rouge d'abord (`p1-rouge-garde-rust.log` : les deux sites nommés) ;
+    sonde `sonde_l_horloge_reelle_d_un_test_rougit` (qualifiée et coupée dans `tests/`, `HorlogeFixe(Utc::now())` dans
+    `tests/`, seconde lecture dans `journal_entries.rs` ; verts : instant donné, `Utc::now().timestamp()`, commentaire). Angle
+    mort écrit dans l'en-tête : variable intermédiaire, alias, enveloppe, `SystemTime`, `impl Horloge` ad hoc.
+  - **A5 = B4 = E3** — `ajouterJoursIso` refuse une année hors de 1000 à 9999 (entrée et résultat), un jour impossible (contrôle
+    aller-retour), un `n` non entier ; trois tests neufs (`dates.test.ts` 6 → 9), rouges sur le `dates.ts` de `40090cdd3`
+    (`p1-rouge-dates.log`, obtenu par `git stash push -- dates.ts` puis `git stash pop`, fichier relu identique par `cmp`).
+    C-e355c-5 annoté.
+  - **E4, E5 = B3 ; B5** — garde des specs : appariement **exact** de la ligne (sans indentation) pour `ALLOWLIST_SPECS`
+    (`auditer(…, exact)`), la moitié `src` gardant l'extrait ; quatre motifs de plus (`new Date;`, `new globalThis.Date()`,
+    `Date()` sans `new`, `.format()` sans argument), aucun site actuel relevé de plus ; deux sondes neuves, rouges sans
+    l'extension (`p1-rouge-garde-front.log`) ; angles morts restants écrits dans l'en-tête de la garde et annotés ci-dessus
+    (dont B5, le jour relu plusieurs fois dans une spec : non fermé, risque inhérent). C-e355c-9.
+  - **E2** — `accounts_e2e.rs` : `current_year()` retiré ; chaque test lit `let jour = common::jour::aujourd_hui_test();` une
+    fois et le passe à `mk_fiscal_year`, à `mk_entry` et à l'assertion `Exercice {}` (`jour.year()`).
+  - **B6** — alias retirés : `todayZurich()` (`bank-manual-statement.spec.ts`, `open-items.spec.ts`) et `today()` (trois
+    `invoices-settle*.spec.ts`), appels remplacés par `todayInZurich()`. C-e355c-4 annoté.
+  - **A2, A3 = E7, A4** — annotations datées dans l'entrée « Développement » ci-dessus (lignes lues des cinq fichiers, ligne de
+    `setup()` ; rouge créé par la story et commentaire de #1125 ; S1 borné à N1) et au registre (C-e355c-6). Déclaration
+    C-e355c-6 gardée, borne non rendue relative.
+  - **Mutations sur l'arbre commité `7fcede7e8`**, chaque fichier restauré par `git checkout --` puis `touch`, `git status` vide
+    après : MP1 (`credit_card_e2e.rs:1063` → `jour_suisse(chrono::Utc::now())`) tuée par `horloge_reelle_d_un_test`
+    (« credit_card_e2e.rs : 1 occurrence(s), 0 écrite(s) ») ; MP2 (motif cassé, `nowX`) tuée (« journal_entries.rs : 0
+    occurrence, 1 écrite(s) », sondes muettes) ; MP3 (aller-retour retiré), MP4 (`Number.isInteger` retiré), MP5 (bornes
+    d'année élargies à 0-99999) tuées chacune par son test de `dates.test.ts` ; MP6 (appariement exact retiré) tuée par la
+    sonde E4. 6/6 (`p1-mut-MP1.log` à `p1-mut-MP6.log`).
+  - **Gates au commit `7fcede7e8`** : `scripts/test-fast.sh --ci` sur la voie 2, base `kesh_e355c` remise à neuf, fmt + clippy +
+    nextest **5374/5374**, 13 ignorés (`p1-test-fast.log` ; 5372 + les deux tests neufs de la garde) ; ciblés
+    `p1-cible-verts.log` (`date_du_jour_garde`, `accounts_e2e` : 28/28) ; frontend : `npm run check` 0 erreur
+    (29 avertissements), `lint-i18n-ownership` vert, `test:unit` **3234** tests / 233 fichiers (3229 + 5), `build` vert
+    (`p1-front-*.log`). **Non lancés** : `gate-ci` et E2E, à la clôture (consignes de l'Epic 35).
+  - Consigne Edit : tenue pour le code, les tests et les docs (`replace_all` pour les lignes identiques d'`accounts_e2e.rs` et
+    des specs), `cargo fmt`. Le prompt de la P2 ciblée, fichier neuf, est créé par l'outil Write. Les rouges temporaires de la
+    garde Rust et de la garde frontend ont été posés et retirés par Edit avant le commit ; le rouge de `dates.ts` par
+    `git stash`.
+  - Prompt de la passe suivante : `35-5c-date-du-jour-tests-review-prompt-p2-ciblee.md` (une lentille, Sonnet, le seul commit
+    `7fcede7e8`). Statut `review`.
