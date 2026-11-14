@@ -1,3 +1,4 @@
+# last_updated: 2026-11-14 (rétrospective de l'Epic 35 tenue en autonomie, epic-35-retro-2026-11-14.md ; v0.17.7 publiée ; epic-35 reste in-progress tant que la clé 35-8b est backlog — Q3 posée à Guy)
 # last_updated: 2026-11-14 (intégration de la 0.17.7 sur release/0.17.7 : quatre fusions — 35-8a2, 35-4, 35-6, 35-7 — et un raccord ; gates et recettes de montée jouées ; epic-35 in-progress jusqu'à la rétrospective)
 # last_updated: 2026-11-12 (rétrospective de l'Epic 34 tenue en autonomie, epic-34-retro-2026-11-12.md ; epic-34 done ; v0.17.6 publiée)
 # last_updated: 2026-11-12 (Epic 34, intégration de la 0.17.6 : 34-1 à 34-11a2 done et réunies sur release/0.17.6 ; 34-11b en revue, à fusionner)
@@ -1066,4 +1067,4 @@ development_status:
   35-8a1-audit-acteur-mecanisme: done  # refs #431, refs #892 item 11 ; Acteur, par, garde, retour en brouillon fournisseur ; ne touche pas journal_entries.rs ; après 35-5a0 (même signature d'unvalidate), 35-3 et 35-1 ; validation terminée en P3 (35-8a P1 1 HIGH + 7 → découpage → 4 → 0 MEDIUM) ; 2026-11-13 développée (code bcdd05dd7 : test-fast --ci 5405/0/13, gate-ci 5412/0/17) ; revue P1 1 MEDIUM + 14 LOW → remédiation b3a14f752 (test-fast 5409/0/13) → P2 ciblée 0 (5 LOW, #1133-#1137) ; clôture au code b3a14f752 : gate-ci 5416/0/17, E2E 405/7/18 (sept KF-029)
   35-8a2-audit-acteur-ecritures: done  # 2026-11-14 développée (kesh-e358a2, voie 2) ; revue P1 (2 MEDIUM) → P2 ciblée 0 au-dessus de LOW ; clôturée, dernier commit de code 3cbea0e05, gate-ci 5451/0/17, E2E 405/7 (KF-029)/18 ; refs #431 ; les écritures ; après 35-8a1, 35-5a0, 35-5a, 35-5b, 35-5c et 35-3 ; validation terminée en P4 (35-8a P1 → découpage → 2 → 1 → 0 MEDIUM)
   35-8b-audit-acteur-deploiement: backlog  # #431 ; reportée à l'Epic 36 le 2026-11-13 (C-e350-48), à découper en lots par domaine ; findings de sa P1 à traiter au découpage (kesh-gate-logs/e35-8b-validation-p1.md)
-  epic-35-retrospective: optional
+  epic-35-retrospective: done  # 2026-11-14, en autonomie (epic-35-retro-2026-11-14.md) : 403 issues, 212 bugs, 13 P1 au tag v0.17.7 ; issues de la rétrospective #1146 à #1148 ; questions Q1 à Q11 à Guy
