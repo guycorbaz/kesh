@@ -6,7 +6,7 @@
 	import { i18nMsg } from '$lib/shared/utils/i18n.svelte';
 	import type { AccountResponse, AccountType } from '$lib/features/accounts/accounts.types';
 	import { isAccountUnusable } from '$lib/features/accounts/account-validity';
-	import { CLASSE_DESIGNEE, CLASSE_SURVOL } from './account-autocomplete-classes';
+	import { CLASSE_DESIGNEE, CLASSE_LISTE, CLASSE_SURVOL } from './account-autocomplete-classes';
 
 	interface Props {
 		accounts: AccountResponse[];
@@ -236,7 +236,13 @@
 			.filter(
 				(a) =>
 					a.number.toLowerCase().startsWith(q) ||
-					a.name.toLowerCase().includes(q)
+					a.name.toLowerCase().includes(q) ||
+					// Story 36-1 (revue P1, E1) : un BROUILLON qui reprend le début du
+					// libellé affiché (« 3200 — Honoraires » retapé, « 3200 — Hon »)
+					// désigne ce compte, au lieu d'un faux « aucun compte ne
+					// correspond ». Sans brouillon, `query` est le libellé affiché :
+					// le champ non touché garde sa liste vide (C-36-1-10).
+					(draft !== null && labelOf(a).toLowerCase().startsWith(q))
 			)
 			.slice(0, 20);
 	});
@@ -290,7 +296,9 @@
 	 * non vide.
 	 */
 	const showNoMatch = $derived(
-		noMatchDraft !== null && draft === noMatchDraft && filtered.length === 0
+		// `!loadError` (revue P1, B1) : en mode dégradé il n'y a plus de liste où
+		// « choisir un compte », et `filtered` y est vide par construction.
+		!loadError && noMatchDraft !== null && draft === noMatchDraft && filtered.length === 0
 	);
 
 	function handleInput(e: Event) {
@@ -358,13 +366,16 @@
 	 * se choisit (invariant de `highlightIndex`).
 	 *
 	 * Close par construction : E0, E0-bis, E1, E2 dans cet ordre ; tout ce qui
-	 * reste a un brouillon et est empêché, puis réparti par E3, E4, E5 sur deux
-	 * seuls critères — brouillon blanc ou non, `filtered` vide ou non.
+	 * reste a un brouillon et est empêché, puis réparti par E3, E4, E4-bis, E5 —
+	 * brouillon blanc ou non, `filtered` vide ou non, et, pour une liste vide,
+	 * `active` (les comptes proposables) vide ou non.
 	 */
 	function handleEnter(e: KeyboardEvent) {
 		// E0 — composition IME : cette Entrée valide le mot composé, pas le champ.
+		// `keyCode === 229` (revue P1, B3/E3) : sous WebKit, l'Entrée qui clôt la
+		// composition arrive après `compositionend`, `isComposing` déjà faux.
 		// (Le mode dégradé, l'autre cas E0, est écarté par `handleKeydown`.)
-		if (e.isComposing) return;
+		if (e.isComposing || e.keyCode === 229) return;
 		// E0-bis — touche maintenue : un seul geste ; les répétitions n'envoient
 		// pas un formulaire dont l'utilisateur n'a pas vu l'état.
 		if (e.repeat) {
@@ -394,10 +405,20 @@
 			// rouvre, rien n'est choisi (choix montré avant d'être fait, 35-7 D2).
 			open = true;
 			highlightIndex = 0;
-		} else if (accounts.length > 0) {
-			// E4 — aucun compte ne correspond : le brouillon reste, le message le
-			// dit. Pendant le chargement des comptes, sans message.
+		} else if (active.length > 0) {
+			// E4 — des comptes sont proposables, aucun ne correspond : le brouillon
+			// reste, le message le dit.
 			noMatchDraft = draft;
+		} else {
+			// E4-bis (revue P1, B2 ; C-36-1-11) — AUCUN compte proposable : liste
+			// en cours de chargement, plan comptable vide, ou aucun compte du type
+			// attendu. « Choisissez un compte dans la liste » serait faux, et garder
+			// le brouillon bloquerait Entrée sans rien dire : le brouillon est
+			// résolu comme au `blur`, le champ réaffiche la valeur, et l'Entrée
+			// suivante envoie ce qu'il montre.
+			commitDraft();
+			open = false;
+			highlightIndex = -1;
 		}
 	}
 
@@ -562,7 +583,7 @@
 
 	{#if open && !loadError && filtered.length > 0}
 		<ul
-			class="absolute z-20 mt-1 max-h-60 w-full overflow-auto rounded-md border border-border bg-popover shadow-md"
+			class={CLASSE_LISTE}
 			role="listbox"
 		>
 			{#each filtered as acc, i (acc.id)}
