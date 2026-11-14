@@ -188,16 +188,11 @@
 	const expectedLabel = $derived(expectedBig !== null ? expectedBig.toFixed(2) : txAbsAmount);
 
 	/**
-	 * L'écart signé à deux décimales ; `null` quand il n'est pas calculable (une ligne sans
-	 * montant lu, ou un montant de transaction illisible) — l'indicateur le dit alors en toutes
-	 * lettres au lieu d'un « — » qui se confondait avec la ponctuation (revue P1, B3).
-	 */
-	/**
 	 * Story 36-2 (#1151, C-36-2-18, revue P1 E1/E2) — les largeurs des colonnes, à partir de
 	 * 640 px seulement (`sm:`) : en dessous, le tableau garde son partage automatique. Deux jeux,
-	 * selon la présence de la colonne *Projet*, pour que compte et description reçoivent la
-	 * place ; la colonne du bouton « - » est au plus étroit (`w-px`). Classes littérales : Tailwind
-	 * ne voit que celles écrites en toutes lettres.
+	 * selon la présence de la colonne *Projet*, qui totalisent 95 à 96 % : compte et description
+	 * reçoivent la place, la colonne du bouton « - », sans largeur, garde le reste (≈ 35 px).
+	 * Classes littérales : Tailwind ne voit que celles écrites en toutes lettres.
 	 */
 	const largeurs = $derived(
 		projects.length > 0
@@ -205,6 +200,11 @@
 			: { compte: 'sm:w-[34%]', montant: 'sm:w-[20%]', description: 'sm:w-[42%]' },
 	);
 
+	/**
+	 * L'écart signé à deux décimales ; `null` quand il n'est pas calculable (une ligne sans
+	 * montant lu, ou un montant de transaction illisible) — l'indicateur le dit alors en toutes
+	 * lettres au lieu d'un « — » qui se confondait avec la ponctuation (revue P1, B3).
+	 */
 	const balanceDiff = $derived.by(() => {
 		if (sumAmounts === null || expectedBig === null) return null;
 		const diff = sumAmounts.minus(expectedBig);
@@ -389,9 +389,10 @@
 									{i18nMsg('reconciliation-split-th-project', 'Projet')}
 								</th>
 							{/if}
-							<!-- Revue P1 (E1, B2) : la colonne du bouton « - » au plus étroit ; sans colonne
-							     *Projet*, elle prenait le reste (≈ 20 %), vide. -->
-							<th class="w-px py-1"></th>
+							<!-- Revue P1 (E1, B2) : sans largeur, la colonne du bouton « - » reçoit le reste ;
+							     les jeux de `largeurs` totalisent 95 à 96 %, si bien qu'il reste étroit (≈ 35 px,
+							     R0 (g0)) — il prenait ≈ 20 % quand les largeurs ne totalisaient que 80 %. -->
+							<th class="py-1"></th>
 						</tr>
 					</thead>
 					<tbody>
