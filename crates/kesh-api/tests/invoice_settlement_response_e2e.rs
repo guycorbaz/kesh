@@ -26,7 +26,14 @@ use sqlx::MySqlPool;
 #[path = "common/autour_appel.rs"]
 mod autour_appel;
 
+/// Story 36-4 (#1131) — de `tests/common/`, le relevé « toutes traces » d'un geste
+/// et la clé par HTTP.
+mod common {
+    pub mod audit_traces;
+}
+
 use autour_appel::{AroundCall, around};
+use common::audit_traces::{self, assert_toutes_a_l_utilisateur, assert_toutes_a_la_cle};
 
 const TEST_JWT_SECRET: &[u8] = b"test-secret-32-bytes-minimum-test-secret-padding";
 const ADMIN_PASSWORD: &str = "admin123";
@@ -44,7 +51,13 @@ impl TestApp {
     }
 
     async fn post(&self, path: &str, body: Option<Value>) -> Value {
-        let mut req = self.client.post(self.url(path)).bearer_auth(&self.token);
+        self.post_as(&self.token, path, body).await
+    }
+
+    /// Le `POST` de [`Self::post`] sous un autre jeton — une clé d'API (Story
+    /// 36-4, #1131).
+    async fn post_as(&self, token: &str, path: &str, body: Option<Value>) -> Value {
+        let mut req = self.client.post(self.url(path)).bearer_auth(token);
         if let Some(body) = body {
             req = req.json(&body);
         }
@@ -353,19 +366,22 @@ async fn a_settlement_with_a_rounding_gap_returns_what_was_written(pool: MySqlPo
     assert_eq!(lines, 3, "caisse, créance, arrondi");
 }
 
-#[sqlx::test(migrations = "../kesh-db/test-schema")]
-async fn a_write_off_returns_what_was_written(pool: MySqlPool) {
-    let seeded = seed_accounting_company(&pool).await.unwrap();
+/// Une facture de 100.00 réglée de 90.00, puis **soldée** de son reste (10.00,
+/// escompte) : rend l'application, la facture et la réponse du solde. Extrait de
+/// `a_write_off_returns_what_was_written` par la Story 36-4 (#1131), qui
+/// annule ce solde par une clé.
+async fn setup_written_off(pool: &MySqlPool) -> (TestApp, i64, Value) {
+    let seeded = seed_accounting_company(pool).await.unwrap();
     sqlx::query(
         "UPDATE company_invoice_settings SET default_discount_account_id = ? WHERE company_id = ?",
     )
     .bind(seeded.accounts["4000"])
     .bind(seeded.company_id)
-    .execute(&pool)
+    .execute(pool)
     .await
     .unwrap();
-    let id = validated_invoice(&pool, &seeded, dec!(100.00)).await;
-    let app = spawn_app(&pool, &seeded).await;
+    let id = validated_invoice(pool, &seeded, dec!(100.00)).await;
+    let app = spawn_app(pool, &seeded).await;
     let settled = app.settle(id, "90.00").await;
 
     let response = app
@@ -378,6 +394,12 @@ async fn a_write_off_returns_what_was_written(pool: MySqlPool) {
             })),
         )
         .await;
+    (app, id, response)
+}
+
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn a_write_off_returns_what_was_written(pool: MySqlPool) {
+    let (app, id, response) = setup_written_off(&pool).await;
 
     app.assert_response_is_what_was_written(id, &response).await;
     let invoice = &response["invoice"];
@@ -398,6 +420,11 @@ async fn a_cancellation_returns_what_was_written(pool: MySqlPool) {
     assert!(!settled["invoice"]["paidAt"].is_null(), "montage");
     let list = app.get(&format!("/api/v1/invoices/{id}/settlements")).await;
     let settlement_id = list.as_array().unwrap()[0]["id"].as_i64().unwrap();
+    assert!(
+        audit_traces::lignes_lettrees_document(&pool).await > 0,
+        "montage : le lettrage de la pièce est posé"
+    );
+    let avant = audit_traces::max_audit_id(&pool).await;
 
     let response = app
         .post(
@@ -414,6 +441,126 @@ async fn a_cancellation_returns_what_was_written(pool: MySqlPool) {
     assert_eq!(
         invoice["version"].as_i64().unwrap(),
         settled["invoice"]["version"].as_i64().unwrap() + 1
+    );
+
+    // Story 36-4 (#1131, AC4) — par session, rien ne change : toutes les traces
+    // du geste sont à l'utilisateur, sans clé.
+    assert_toutes_a_l_utilisateur(
+        &audit_traces::audit_depuis(&pool, avant).await,
+        audit_traces::user_id_de(&pool, "admin").await,
+        INVOICE_SETTLEMENT_CANCEL_ACTIONS,
+    );
+}
+
+/// Ce qu'écrit au journal d'audit l'annulation d'un règlement client en caisse
+/// qui avait soldé la facture — relevé sur ce montage (Story 36-4, #1131) : le
+/// délettrage de la pièce, la contre-passation (l'inverse, le marquage de
+/// l'écriture, et un lettrage `reversal` par ligne libre d'un compte lettrable —
+/// ici deux : la caisse `1000` et la créance, dont le lettrage de la pièce vient
+/// d'être défait), le geste.
+const INVOICE_SETTLEMENT_CANCEL_ACTIONS: &[&str] = &[
+    "lettering.removed",
+    "journal_entry.created",
+    "journal_entry.reversed",
+    "lettering.created",
+    "lettering.created",
+    "invoice.settlement_cancelled",
+];
+
+/// Ce qu'écrit l'annulation du **solde** de `setup_written_off` — relevé sur ce
+/// montage (Story 36-4, #1131) : mêmes étapes, un seul lettrage `reversal`, la
+/// contrepartie du solde (escompte, `4000`) n'étant pas lettrable.
+const WRITE_OFF_CANCEL_ACTIONS: &[&str] = &[
+    "lettering.removed",
+    "journal_entry.created",
+    "journal_entry.reversed",
+    "lettering.created",
+    "invoice.settlement_cancelled",
+];
+
+/// L'annulation, par la clé `secret`, de la ligne de règlement de la facture
+/// `id` dont le type est `settlement_type`, après avoir relevé que la pièce est
+/// lettrée ; rend l'identifiant d'audit d'avant le geste (Story 36-4, #1131).
+async fn cancel_by_key(
+    app: &TestApp,
+    pool: &MySqlPool,
+    secret: &str,
+    id: i64,
+    settlement_type: &str,
+) -> i64 {
+    let list = app.get(&format!("/api/v1/invoices/{id}/settlements")).await;
+    let settlement_id = list
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|s| s["settlementType"] == settlement_type)
+        .unwrap_or_else(|| panic!("montage : une ligne {settlement_type} dans {list}"))["id"]
+        .as_i64()
+        .unwrap();
+    assert!(
+        audit_traces::lignes_lettrees_document(pool).await > 0,
+        "montage : le lettrage de la pièce est posé, le délettrage sera exercé"
+    );
+    let avant = audit_traces::max_audit_id(pool).await;
+    app.post_as(
+        secret,
+        &format!("/api/v1/invoices/{id}/settlements/{settlement_id}/cancel"),
+        None,
+    )
+    .await;
+    avant
+}
+
+/// ⛔ Story 36-4 (#1131, AC1) — **l'annulation d'un règlement client par une clé
+/// d'API est attribuée à la clé**, toutes traces comprises : le geste, la
+/// contre-passation et le délettrage de la pièce. Avant la story, chacune était
+/// au nom du créateur de la clé (`actor_type = 'user'`).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn an_api_key_cancels_an_invoice_settlement_and_is_named_everywhere(pool: MySqlPool) {
+    let (app, id) = setup(&pool, dec!(100.00)).await;
+    app.settle(id, "100.00").await;
+    let (cle, secret) = audit_traces::create_key_via_http(
+        &app.client,
+        &app.base_url,
+        &app.token,
+        "rw",
+        "read-write",
+    )
+    .await;
+
+    let avant = cancel_by_key(&app, &pool, &secret, id, "internal_account").await;
+
+    assert_toutes_a_la_cle(
+        &audit_traces::audit_depuis(&pool, avant).await,
+        cle,
+        audit_traces::createur_de_la_cle(&pool, cle).await,
+        INVOICE_SETTLEMENT_CANCEL_ACTIONS,
+    );
+}
+
+/// ⛔ Story 36-4 (#1131, AC1, cas du solde) — la même route annule un **solde**
+/// (`settlementType = write_off`) : ses traces portent la clé de même. Le chemin
+/// des traces ne branche pas sur le type ; ce test tient la promesse de la note
+/// de version (« un règlement ou un solde »).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn an_api_key_cancels_a_write_off_and_is_named_everywhere(pool: MySqlPool) {
+    let (app, id, _) = setup_written_off(&pool).await;
+    let (cle, secret) = audit_traces::create_key_via_http(
+        &app.client,
+        &app.base_url,
+        &app.token,
+        "rw",
+        "read-write",
+    )
+    .await;
+
+    let avant = cancel_by_key(&app, &pool, &secret, id, "write_off").await;
+
+    assert_toutes_a_la_cle(
+        &audit_traces::audit_depuis(&pool, avant).await,
+        cle,
+        audit_traces::createur_de_la_cle(&pool, cle).await,
+        WRITE_OFF_CANCEL_ACTIONS,
     );
 }
 

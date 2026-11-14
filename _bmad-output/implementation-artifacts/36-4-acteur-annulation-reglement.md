@@ -7,7 +7,7 @@ Status: ready-for-dev
 migration** (colonnes `actor_type`, `actor_api_key_id` de la migration `20260605000002`, Story 17-2a). **`kesh-db` touché :
 gate complet même en cours de boucle.** Voie **1** (lignée B, C-e360-4). Code lu à la tête du worktree, **`9d5a142df`**
 (kickoff de l'Epic 36, sur `main` `42d5f368`). Registres : `e36-choix-autonomes-e360.md` (étape 0 de 36-4, C-e360-3, -7,
--9, -11) ; `e36-choix-autonomes-36-4.md` (C-36-4-1 à -4). Validation P1 à lancer. Patron : stories 35-8a1 et 35-8a2
+-9, -11) ; `e36-choix-autonomes-36-4.md` (C-36-4-1 à -4). Validation terminée (P1 Sonnet, P2 Opus ; Change Log). Patron : stories 35-8a1 et 35-8a2
 (`Acteur`, `NewAuditLogEntry::par`, garde `audit_acteur_garde.rs`).*
 
 **Issues** : la PR porte `refs #1131` (le mot-clé de fermeture, s'il en faut un, est l'affaire de la PR de release) et
@@ -153,7 +153,7 @@ grep -nE 'actor_api_key_id:\s*Option<i64>' -- crates/` hors `tests/` rend **30**
   règlement saisi sur la facture […], le solde de son reste ou leur annulation, une facture fournisseur (validation, paiement
   depuis la fiche […], annulation) […] restent au nom du créateur de la clé~; […] celui d'un règlement de facture (client ou
   fournisseur) l'annule, contre-passation comprise, au nom du créateur de la clé » ;
-- `docs/manual/fr/user-manual.tex:4016-4022` (tableau du journal d'audit) : même énoncé ; `:4017` « le solde de son reste
+- `docs/manual/fr/user-manual.tex:4016-4023` (tableau du journal d'audit) : même énoncé ; `:4017` « le solde de son reste
   ou leur annulation, une facture fournisseur » dans la liste de ce qui « restent au nom du créateur de la clé » ;
   `:4022-4023` « une ligne écrite avant la 0.17.7 ne porte pas la marque » (V1-1) ;
 - `docs/manual/fr/admin-manual.tex:2549` : paragraphe de mise à jour **vers la 0.17.7**, relevé daté — **non touché**.
@@ -318,8 +318,11 @@ issue à ouvrir : #431 les porte.
    **Cas du solde (V1-3)** : la même route, par clé, sur un **solde** (`POST /api/v1/invoices/{id}/write-off`, montage de
    `a_write_off_returns_what_was_written`, `invoice_settlement_response_e2e.rs:357`, puis annulation de la ligne
    `settlementType = write_off`) → `200`, mêmes assertions « toutes traces » (actions relevées sur le montage réel, écrites
-   au Change Log). Le corps de `cancel_settlement_in_tx` ne branche pas sur le type (`invoice_settlements_write.rs:917-1121`
-   ne lit pas `settlement_type`) : ce cas prouve la promesse de la note de version, non un autre chemin de code.
+   au Change Log). Le chemin des **traces** de `cancel_settlement_in_tx` ne branche pas sur le type
+   (`invoice_settlements_write.rs:917-1121` ne lit pas `settlement_type`) ; seul son bloqueur le lit
+   (`settlement_cancel_blocker`, `:880` : `if write_off_exists && settlement_type != "write_off"`), et un solde existant
+   n'admet que sa propre annulation *(V2-5, étape 0)* : ce cas prouve la promesse de la note de version, non un autre
+   chemin de traces.
 2. **AC2 — Annulation d'un règlement fournisseur par sa route, par clé.** Une facture fournisseur payée (lettrage de la
    pièce posé), une clé `read-write` ; `POST /api/v1/supplier-invoices/{id}/settlement/cancel` avec la clé → `200` ; même
    assertion qu'AC1 (`supplier_invoice.settlement_cancelled` unique, la contre-passation, le délettrage, la paire).
@@ -357,7 +360,9 @@ issue à ouvrir : #431 les porte.
      `user-manual.tex:4017`, même énoncé) : le règlement saisi et le solde y restent, leur **annulation** n'y est plus ;
    - « une facture fournisseur (validation, paiement …, annulation) » devient « (validation, paiement …, annulation **de la
      facture**) », pour que l'annulation de la facture fournisseur (qui reste au créateur, lot 36-11c) ne se confonde pas avec
-     celle de son paiement ;
+     celle de son paiement ; de même dans la **première** liste du même `\item` d'`admin-manual.tex:3212` (« les autres
+     gestes des factures fournisseur (création, modification, validation, paiement depuis la fiche ou par un lot de paiement,
+     annulation) … inscrivent encore `actor_type = 'user'` ») *(V2-2, étape 0)* ;
    - « une ligne écrite avant la 0.17.7 ne porte pas la marque » (`user-manual.tex:4022-4023`) et « avant la v0.17.7 »
      (`admin-manual.tex:3212`) sont complétés : avant la 0.17.8 pour l'annulation d'un règlement ou d'un solde.
 
@@ -375,7 +380,7 @@ issue à ouvrir : #431 les porte.
 
 | Test (nom indicatif) | Fichier hôte | AC | Rouge attendu sur la base |
 |---|---|---|---|
-| `an_api_key_cancels_an_invoice_settlement_and_is_named_everywhere` | `crates/kesh-api/tests/invoice_settlement_response_e2e.rs` (montage `setup`, `settle`) | AC1 | `invoice.settlement_cancelled` à `("user", None, créateur)` |
+| `an_api_key_cancels_an_invoice_settlement_and_is_named_everywhere` | `crates/kesh-api/tests/invoice_settlement_response_e2e.rs` (montage `setup`, `settle`) | AC1 | les traces du geste à `("user", None, créateur)` — l'aide les liste **toutes**, la première par `id` étant `lettering.removed` *(V2-4, étape 0)* ; dont `invoice.settlement_cancelled` |
 | `an_api_key_cancels_a_write_off_and_is_named_everywhere` | `crates/kesh-api/tests/invoice_settlement_response_e2e.rs` (montage de `a_write_off_returns_what_was_written`) | AC1, cas du solde | idem |
 | `an_api_key_cancels_a_supplier_settlement_and_is_named_everywhere` | `crates/kesh-api/tests/supplier_settlement_cancel_e2e.rs` (montage de `pay_then_cancel_the_settlement`) | AC2 | idem, `supplier_invoice.settlement_cancelled` |
 | `an_api_key_unreconciles_an_invoice_settlement_and_is_named_everywhere` | `crates/kesh-api/tests/reconciliation_e2e.rs` | AC3 (a) | `invoice.settlement_cancelled` à `'user'` (`reconciliation.cancelled` déjà à la clé) |
@@ -390,7 +395,11 @@ court) ; la clé se crée par HTTP (`common::create_key_via_http` ou la requête
 (`#![allow(dead_code)]`, comme `autour_appel.rs`), avec deux fonctions — `max_audit_id(pool) -> i64` (0 sur une table
 vide) et `audit_depuis(pool, id_min) -> Vec<(String /* action */, String /* actor_type */, Option<i64>, i64 /* user_id */)>`,
 ordonné par `id` — et une assertion `assert_toutes_a_la_cle(traces, cle, createur, actions_attendues)` qui échoue sur une
-liste vide, une action manquante ou en trop, ou une trace sans la clé, en nommant l'action fautive. Il est déclaré
+liste vide, une action manquante ou en trop, ou une trace sans la clé, en nommant **toutes** les traces fautives (V2-4).
+`actions_attendues` se compare **avec sa multiplicité** (liste triée contre liste triée) : un doublon d'une même action,
+dont `*.settlement_cancelled`, ne passe pas (V2-3). `create_key_via_http` est **déplacée** de `common/mod.rs` dans ce
+fichier et réexportée par `common/mod.rs` (`pub use audit_traces::create_key_via_http;`), si bien que les hôtes au module
+`common` en ligne l'ont aussi sans la recopier (V2-3, C-36-4-5). Il est déclaré
 `pub mod audit_traces;` dans `common/mod.rs` (vu par `reconciliation_e2e.rs`, `mod common;` `:52`), et ajouté au module
 `common` en ligne de `supplier_settlement_cancel_e2e.rs` (`mod common { pub mod jour; }`, `:24-26`) et, sous la même forme,
 de `invoice_settlement_response_e2e.rs` (qui n'inclut aujourd'hui que `#[path = "common/autour_appel.rs"]`, `:26-27`). Les
@@ -466,7 +475,7 @@ nommé.
   `kesh-api` (trois routes, la garde, les tests d'API), `kesh-report` (deux fichiers de tests, un appel chacun). **Modules
   métier** : règlement client, règlement fournisseur, réconciliation ; plus la garde et les documents. **Cinq au plus** au
   sens du `CLAUDE.md` (§ *Règle de splitting préventif*) : pas de découpage. Le gros du volume (77 appels de tests) est
-  mécanique et fermé par le compilateur ; il se revoit fichier par fichier. Les signatures, les trois routes et les quatre
+  mécanique et fermé par le compilateur ; il se revoit fichier par fichier. Les signatures, les trois routes et les cinq
   tests neufs restent à la boucle complète.
 - **Migration** : aucune (C-e360-3). Si le développement en trouvait une nécessaire, il s'arrête et le dit.
 

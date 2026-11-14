@@ -48,3 +48,17 @@ réversibilité. Code lu à `9d5a142df`. Fiche : `36-4-acteur-annulation-regleme
   perdrait son historique au registre). La ligne de `sprint-status.yaml` nomme la fiche en commentaire.
 - **Écartée** : renommer la clé ou le fichier sans décision de l'orchestrateur.
 - **Réversible** : oui ; à l'orchestrateur.
+
+### C-36-4-5 — L'aide `audit_traces.rs` porte la création de clé et compare les actions avec leur multiplicité (V2-3, V2-4)
+
+- **Contexte** : étape 0 du développement, LOW V2-3 et V2-4 de la validation P2. Deux hôtes (`invoice_settlement_response_e2e.rs`,
+  `supplier_settlement_cancel_e2e.rs`) n'incluent pas `common/mod.rs`, où vit `create_key_via_http` (`:204`) ; une
+  comparaison d'actions « présentes » laisserait passer un doublon.
+- **Retenu** : `create_key_via_http` est **déplacée** dans `common/audit_traces.rs` et réexportée par `common/mod.rs`
+  (`pub use audit_traces::create_key_via_http;`) : ses appelants existants ne changent pas, les deux hôtes l'ont par leur
+  module `common` en ligne. `assert_toutes_a_la_cle` compare la liste **triée** des actions à la liste triée attendue
+  (multiplicité comprise) et nomme toutes les traces fautives.
+- **Écartées** : (a) recopier la requête dans les deux hôtes (contraire au DRY, V1-5) ; (b) inclure `common/mod.rs` dans les
+  deux hôtes (`mod common;`) — il tire tout le module, ses sous-modules et leurs dépendances dans deux binaires qui ne
+  s'en servent pas ; (c) une assertion d'unicité séparée — la multiplicité la contient.
+- **Réversible** : oui ; tests seuls.
