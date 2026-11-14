@@ -78,7 +78,7 @@ dans les fiches ; l'issue et la PR s'ouvrent à la fin, une fois la recette fait
 | Story | Objet | Migration |
 |---|---|---|
 | 35-1 | réglage multi-devises de la société, devise des comptes (création, modification, verrou dès la première écriture) | oui, non breaking |
-| 35-2 | table des cours mensuels, récupération OFDF/AFC (à la demande et mensuelle automatique), écran *Cours de change* (le cours manuel vit sur la ligne, C-35-1) | oui, non breaking |
+| 35-2 | table des cours AFC (mensuels et journaliers) et des cours saisis, récupération OFDF/AFC, écran *Cours de change* éditable | oui, non breaking ; referme la fenêtre d'import (CR-1) |
 | 35-3a | écritures en devise : modèle de ligne, validation, contrôle central, API, MCP, exports ; garde des chemins d'écriture automatiques | oui, non breaking |
 | 35-3b | écritures en devise : soldes d'ouverture, formulaire (cours proposé, ligne d'écart), affichage, sélecteurs, E2E, manuel | non |
 | 35-4 | rapports dans les deux devises : grand livre, balance, bilan, compte de résultat, exports | non attendue |
@@ -174,6 +174,28 @@ ferme pas la fenêtre d'import, une table applicative neuve la ferme.
     mono-devise.
   - **PUT d'un compte** : `currency` absent = devise inchangée, `null` = CHF (compatibilité des clients mono-devise ;
     renversement de la P1 par la P2 de 35-1, confirmé par la P3).
+- **CR-1 — amendements du registre (2026-11-14, révision des fiches pour D9, D10 et la terminologie).**
+  - **C-35-1 amendé** : `_kesh_exchange_rates` ne porte que les **cours AFC bruts**, mensuels et journaliers (`kind`
+    'month' | 'day', `rate_date`, `source_date` = `<datum>` lu pour un jour ; PK `(currency, kind, rate_date)`), non
+    sauvegardée, re-récupérable. Les **cours saisis** (D9) vont dans la table **applicative** `exchange_rate_overrides`
+    (company_id, currency, kind, rate_date, rate, version, updated_by ; UNIQUE (company_id, currency, kind,
+    rate_date)), sauvegardée, exportée en CSV, vidée à la remise à zéro. Cours effectif = cours saisi ?? cours AFC
+    (`find_effective_rate_in_tx`, seule fonction) ; une récupération ne touche jamais aux cours saisis.
+    ⚠️ **La table applicative neuve referme la fenêtre d'import** : un `.keshbackup` 0.17.6 ou antérieur ne se
+    réimporte plus dans la nouvelle version (registre de rejeu vidé : `20261106000001` passe « Hors fenêtre »). À
+    écrire au CHANGELOG et au manuel d'administration, et **à confirmer avec Guy** (production) ; soumis à Beat dans la
+    page de revue.
+  - **C-35-7 amendé (D10)** : cours par défaut de la réévaluation = cours effectif journalier de la date de fin
+    d'exercice (`xmldaily`, `POST /exchange-rates/fetch { date }`), sinon cours effectif mensuel du mois de fin
+    (`rateKind` signalé), sinon `RATE_UNAVAILABLE` ; modifiable par devise. Un jour sans publication (week-end) prend
+    la publication antérieure (`xmldaily?d=D` rend la dernière `<datum>` ≤ D, relevé le 2026-11-14).
+  - **C-35-9 complété** : une ligne prend le cours effectif ; `rate_source` = `afc` si égal au cours AFC mensuel du
+    mois, sinon `manual` ; `FX_RATE_NOT_AFC` compare toujours au cours AFC brut ; `FX_RATE_INVALID` et la fonction des
+    bornes d'un cours sont créés par 35-2 ; `lookup` rend `{ currency, kind, rateDate, effectiveRate, afcRate|null,
+    overridden, publishedUnit, publishedRate, sourceDate }`.
+  - **Compte des passes** : le changement de périmètre ouvre un **nouveau cycle de validation** (CR-1 P1, P2…) pour
+    35-2, 35-3a, 35-3b et 35-5, plafonné à huit passes comme tout cycle ; 35-1 (annotation) et 35-4 (inchangée)
+    restent validées.
 - **C-35-8 (complément 2)** : course préexistante, antérieure à l'Epic 35 — archivage d'un compte parent contre
   création d'un sous-compte (relevée à la validation P5 de 35-1) : issue à ouvrir avec la PR.
 - **C-35-8 (complément)** : lettrage d'un compte en devise (débiteur soldé en devise avec écart de change) — limite,

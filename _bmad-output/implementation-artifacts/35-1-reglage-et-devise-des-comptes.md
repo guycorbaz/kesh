@@ -230,7 +230,10 @@ verrou des deux côtés, réglage réservé à l'Administrateur).
    fx_loss_account_id = NULL`. Test : les trois colonnes entrent dans `PERTURBED` (**pas** dans `NOT_COMPARED`) de
    `reset_restores_the_stub_columns_in_place` (`onboarding_audit_e2e.rs:2342`) et sont perturbées par son `UPDATE`
    (:2344).
-6. **AC-6 — Sauvegarde.** Un `.keshbackup` écrit par la 0.17.6 se réimporte (colonnes à leur défaut) ; l'aller-retour
+6. **AC-6 — Sauvegarde.** Un `.keshbackup` écrit par la 0.17.6 se réimporte (colonnes à leur défaut) — **vrai au
+   point de la branche où 35-1 s'intègre, plus dans la release** : 35-2 crée la table applicative
+   `exchange_rate_overrides` (révision CR-1, D9), qui referme la fenêtre d'import, et **inverse ce test en refus**
+   (35-2 AC-1) ; l'aller-retour
    d'une sauvegarde 35-1 conserve réglage et devises ; l'export CSV des comptes (`serialize_accounts_csv`,
    `csv_tables.rs:265`, en-tête écrit à la main) porte `currency` ; `company.csv` (`serialize_company_csv`, :163)
    porte les trois colonnes. Le `.keshbackup` lui-même n'énumère rien à la main (`export_table` lit les colonnes à
@@ -358,3 +361,6 @@ verrou des deux côtés, réglage réservé à l'Administrateur).
   d'`AccountUpdate` recomptés, 21 dans `accounts.rs` et non 20, soit 24 et non 23 ; remédié) ; 0 inter-fiches.
   Vérifiés au code : `idx_jel_account`, `routes/accounts.rs:290`/`:315`, `accounts.rs:663`, les quatre listes de colonnes
   de `Company`, 52 `NewAccount {`.
+- 2026-11-14 — révision CR-1 (D9, D10, terminologie ; Opus) : AC-6 annotée — la réimportation d'une sauvegarde 0.17.6
+  ne vaut que jusqu'à 35-2, dont la table applicative `exchange_rate_overrides` referme la fenêtre d'import et qui
+  inverse ce test en refus. Aucun autre AC touché.

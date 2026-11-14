@@ -10,7 +10,8 @@ préventif : plus de cinq modules) : 35-3a = le serveur (`kesh-core`, `kesh-db`,
 ## Story
 
 En tant que comptable en multi-devises, je veux saisir une écriture dont certaines lignes sont en devise — montant en
-USD, cours officiel du mois proposé, montant en CHF calculé — et, pour une conversion, saisir moi-même les cours et
+USD, cours du mois proposé (le cours mensuel AFC, ou le cours que la société a saisi pour ce mois, D9), montant en
+CHF calculé — et, pour une conversion, saisir moi-même les cours et
 passer l'écart de change, afin que mes comptes en devise portent leur solde en devise et en CHF.
 
 ## Critères d'acceptation
@@ -43,8 +44,11 @@ passer l'écart de change, afin que mes comptes en devise portent leur solde en 
    `chk_jel_fx_chf` est déclarée **en dernier** dans la migration, le cas « cours 0 » se construit sur une ligne
    `revaluation` (montant 0, CHF > 0 : seule `chk_jel_fx_rate` est violée), et le nom rapporté pour les deux cas qui violent aussi
    `chk_jel_fx_chf` (« montant 0 hors `revaluation` » et « montant < 0 ») est constaté au premier essai et écrit au Change Log (ordre d'évaluation des `CHECK` de MariaDB).
-   Inscriptions habituelles (sha384, audit, squash, P6 inspecté, P7 sans objet : DDL seul). Colonnes `NULL` : la fenêtre
-   d'import ne se ferme pas, une sauvegarde 0.17.6 se réimporte (testé, Tâches).
+   Inscriptions habituelles (sha384, audit, squash, P6 inspecté, P7 sans objet : DDL seul). Colonnes `NULL` : cette
+   migration ne referme pas la fenêtre d'import — mais **35-2 l'a déjà refermée** (table applicative
+   `exchange_rate_overrides`, révision CR-1) : une sauvegarde 0.17.6 ne se réimporte plus dans la version de l'epic.
+   Ce qui se teste ici : une sauvegarde de la version courante dont aucune ligne n'est en devise se réimporte, ses
+   lignes aux quatre colonnes `NULL` (Tâches).
 2. **AC-2 — Modèle Rust.** `ForeignAmount { currency, amount, rate, source }` (`kesh-core` ; `source` est un enum
    nommé `RateProvenance { Afc, Manual, Revaluation }` — **pas** `RateSource`, déjà le trait de 35-2 dans `kesh-api` ;
    montant et cours en `Decimal`, non en `Money` ; le type dérive `Debug, Clone, PartialEq, Eq, Serialize,
@@ -101,9 +105,12 @@ passer l'écart de change, afin que mes comptes en devise portent leur solde en 
      (`ACCOUNT_REQUIRES_CURRENCY`, `FX_CURRENCY_MISMATCH`, `FX_RATE_NOT_AFC`, AC-4) : 35-3b affiche le message sur la
      ligne fautive à partir de ce seul champ (35-3b AC-2).
    - **Bornes du cours seul** : le contrôle d'échelle et de borne du cours (≤ 10 décimales après `normalize()`,
-     ≤ 10⁶) est une fonction publique **distincte** de `kesh-core` (nom au développement), appelée par la fonction par
-     ligne ci-dessus et par 35-5 (bornes de la requête de réévaluation, « la même fonction », 35-5 AC-4) ; 35-5 rend
-     son propre code (`FX_RATE_INVALID`). ⛔ `map_core_error`
+     ≤ 10⁶) est la fonction publique **distincte** de `kesh-core` **créée par 35-2** (AC-2, bornes d'un cours seul :
+     elle sert d'abord au `PUT` d'un cours saisi, D9), **réutilisée** ici par la fonction par ligne ci-dessus et par
+     35-5 (bornes de la requête de réévaluation, « la même fonction », 35-5 AC-4) ; 35-2 et 35-5 rendent
+     `FX_RATE_INVALID`, cette fiche `FX_VALUE_OUT_OF_RANGE` (aucun code de plus). Le signe (> 0) reste à l'étape 2
+     ci-dessus pour une ligne ; si la fonction de 35-2 le contrôle aussi, l'ordre des refus de l'AC-3 ne change pas
+     (même code `FX_VALUE_OUT_OF_RANGE`). ⛔ `map_core_error`
      (`routes/journal_entries.rs:265`) rend **tout** variant inconnu en `Validation` générique
      (`other => … "Erreur métier"` `:288`) : sans un bras par variante, le code et les `details` n'atteindraient jamais
      le client. Un bras par variante, avec son code et ses `details`, et un test par code au niveau HTTP.
@@ -125,9 +132,13 @@ passer l'écart de change, afin que mes comptes en devise portent leur solde en 
    3. ligne **sans** devise sur un compte en devise → `ACCOUNT_REQUIRES_CURRENCY` ; ligne en devise sur un compte d'une
       autre devise ou CHF → `FX_CURRENCY_MISMATCH` (pour **l'un et l'autre** : première ligne fautive, son rang en
       `details.line`, AC-3) ;
-   4. ligne `rate_source = 'afc'` : le cours doit égaler `rate_per_unit` de `_kesh_exchange_rates` (35-2) pour
-      (devise, mois de `entry_date`), lu dans la transaction par la fonction de lecture du dépôt
-      `kesh_db::repositories::exchange_rates::find_rate_in_tx` de 35-2 (pas de second accès) ; sinon 400
+   4. ligne `rate_source = 'afc'` : le cours doit égaler `rate_per_unit` du cours AFC **mensuel brut** de
+      `_kesh_exchange_rates` (35-2) pour (devise, mois de `entry_date`), lu dans la transaction par la fonction de
+      lecture du dépôt `kesh_db::repositories::exchange_rates::find_rate_in_tx(conn, currency, RateKind::Month, 1er du
+      mois)` de 35-2 (pas de second accès). ⛔ **Jamais le cours effectif** : un cours saisi par la société (D9,
+      `exchange_rate_overrides`) n'entre pas dans ce contrôle — une ligne à ce cours, s'il diffère du cours AFC, est
+      `manual` (le client la qualifie ainsi, 35-3b) ; envoyée `afc`, elle est refusée. Ni le cours journalier (D10).
+      Aucune nouvelle valeur de `rate_source`. Sinon 400
       `FX_RATE_NOT_AFC`, `details: { line, expectedRate }` (`rate_per_unit` de la table, chaîne décimale sans zéros
       terminaux ; clé lue par 35-3b pour proposer le cours) ; cours absent → `DbError::RateUnavailable {currency, month}`,
       rendu sous le **même code et le même statut 404** que le `RATE_UNAVAILABLE` de 35-2, avec la même forme de
@@ -264,8 +275,10 @@ passer l'écart de change, afin que mes comptes en devise portent leur solde en 
 ## Tâches
 
 - [ ] Migration + inscriptions, contraintes nommées (AC-1 ; **aucune** correspondance par nom dans `errors.rs` : le
-      filet rend le 400 générique `CHECK_CONSTRAINT_VIOLATION`) ; test : une
-      sauvegarde 0.17.6 se réimporte ; test : `chk_jel_fx_chf` refuse une ligne incohérente insérée en SQL brut.
+      filet rend le 400 générique `CHECK_CONSTRAINT_VIOLATION`) ; test : une sauvegarde de la version courante sans
+      ligne en devise se réimporte, colonnes `NULL` (la sauvegarde 0.17.6 est refusée depuis 35-2, AC-1) ; test :
+      `chk_jel_fx_chf` refuse une ligne incohérente insérée en SQL brut ; test : une ligne `afc` au cours saisi par la
+      société (différent du cours AFC) → `FX_RATE_NOT_AFC`, la même en `manual` passe.
 - [ ] `kesh-core` (AC-2, AC-3) : `ForeignAmount`, `JournalEntryLineDraft.foreign`, ordre des contrôles, bornes et
       produit en entiers `i128` (**jamais** `Decimal::checked_mul`, AC-3) ; fonction publique du contrôle par ligne et
       fonction publique des bornes du cours seul (AC-3) ; fixture `crates/kesh-core/tests/fixtures/fx_rounding.json` et son test Rust ; tests de propriété
@@ -349,3 +362,9 @@ passer l'écart de change, afin que mes comptes en devise portent leur solde en 
   constructeurs de production citait `:2917` (le `let reversal_lines`) pour le littéral, qui est à `:2920` (P5 avait
   rapproché le numéro de la mauvaise ligne). Les autres phrases de la remédiation P5 sont vraies au code et cohérentes
   avec le registre C-35-9 et 35-1, 35-2, 35-3b, 35-4.
+- 2026-11-14 — révision CR-1 (D9, D10, terminologie ; Opus) : `FX_RATE_NOT_AFC` (AC-4, 4) compare toujours au cours AFC
+  mensuel **brut**, lu par `find_rate_in_tx(conn, currency, RateKind::Month, 1er du mois)` (signature de 35-2
+  étendue au genre), jamais au cours saisi par la société ni au cours journalier ; aucune nouvelle valeur de
+  `rate_source` ; fonction des bornes d'un cours seul désormais créée par 35-2 (AC-3) ; la fenêtre d'import est
+  refermée par 35-2, d'où le test de sauvegarde reformulé (AC-1, Tâches) ; récit de la story (cours proposé = cours
+  effectif). AC touchés : Story, AC-1, AC-3, AC-4, Tâches.
