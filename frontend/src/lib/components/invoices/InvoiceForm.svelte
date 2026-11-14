@@ -44,6 +44,15 @@
 	// lu du serveur (`DECIMAL(19,4)`, `1.0000`, `100.0000`) s'ouvre lisible dans son champ
 	// (`1`, `100.00`), sans perte de précision (`33.3333` gardé).
 	import { readableAmount } from '$lib/features/supplier-invoices/supplier-invoice-form';
+	// Story 36-3b (#1171) — le prix unitaire se lit comme le montant d'une écriture :
+	// « 1.250 » est refusé comme ambigu, « 1'250 » part `1250` ; un prix rouvert ne
+	// prend jamais une forme ambiguë (`1.2340`, non `1.234`).
+	import {
+		unitPriceFieldValue,
+		unitPricePayload,
+		unitPriceProblem,
+	} from '$lib/features/invoices/unit-price';
+	import { readJournalAmount } from '$lib/features/journal-entries/balance';
 
 	type Props = { invoice?: InvoiceResponse | null };
 	let { invoice = null }: Props = $props();
@@ -119,7 +128,7 @@
 			return invoice.lines.map((l) => ({
 				description: l.description,
 				quantity: readableAmount(l.quantity, 0),
-				unitPrice: readableAmount(l.unitPrice, 2),
+				unitPrice: unitPriceFieldValue(l.unitPrice),
 				vatRate: l.vatRate,
 				// AC9-bis — site 1/5. Recopier depuis la réponse serveur, sinon toute
 				// ouverture d'un brouillon perdrait sa ventilation au ré-enregistrement.
@@ -450,7 +459,7 @@
 		lines.push({
 			description: p.name,
 			quantity: '1',
-			unitPrice: readableAmount(p.unitPrice, 2),
+			unitPrice: unitPriceFieldValue(p.unitPrice),
 			vatRate: p.vatRate,
 			// AC9-bis — site 3/5. Le compte de l'article est recopié tel quel
 			// (Story 16-2b, #144) ; `null` s'il n'en impose aucun, la ligne suit
@@ -470,15 +479,24 @@
 		lines.splice(i, 1);
 	}
 
+	// Story 36-3b (D4, C-36-3b-5) — les totaux lisent la charge du prix, non la saisie
+	// brute : « 1'250 » compte 1250, une ligne au prix ambigu ou illisible compte 0.
 	function lineTotal(l: LineState): string {
-		return computeLineTotal(l.quantity, l.unitPrice);
+		return computeLineTotal(l.quantity, unitPricePayload(l.unitPrice) ?? '0');
 	}
 
-	let totalAmount = $derived(computeInvoiceTotal(lines));
+	let totalAmount = $derived(
+		computeInvoiceTotal(
+			lines.map((l) => ({ quantity: l.quantity, unitPrice: unitPricePayload(l.unitPrice) ?? '0' })),
+		),
+	);
 
 	// Miroirs backend (`crates/kesh-api/src/routes/limits.rs` et invoices.rs).
 	const MAX_LINE_TOTAL = '1000000000000'; // 10¹²
 	const MAX_LINES = 200;
+	// Story 36-3b (V1-1) — colonnes du tableau des lignes (description, quantité, prix,
+	// TVA, compte, total, action) : la rangée du refus du prix les couvre toutes.
+	const LINE_TABLE_COLUMNS = 7;
 
 	function validateClient(): string | null {
 		if (!selectedContact) return 'Veuillez sélectionner un contact';
@@ -506,9 +524,30 @@
 		for (let i = 0; i < lines.length; i++) {
 			const l = lines[i];
 			if (!l.description.trim()) return `Ligne ${i + 1} : description requise`;
+			// Story 36-3b (D1, D3) — le prix se lit comme le montant d'une écriture ;
+			// le refus nomme la ligne. Le vide garde son message d'avant la story.
+			const lecturePrix = readJournalAmount(l.unitPrice);
+			if (lecturePrix.kind !== 'clear') {
+				if (lecturePrix.kind === 'ambiguous') {
+					return i18nMsg(
+						'invoice-line-unit-price-ambiguous-error',
+						"Ligne { $line } : prix unitaire ambigu — écrivez 1'250 pour mille deux cent cinquante francs, ou 1.2500 pour un franc vingt-cinq.",
+						{ line: i + 1 },
+					);
+				}
+				if (lecturePrix.kind === 'unreadable') {
+					return i18nMsg(
+						'invoice-line-unit-price-unreadable-error',
+						"Ligne { $line } : prix unitaire illisible — chiffres, apostrophe des milliers (1'250), point ou virgule décimale, quatre décimales au plus.",
+						{ line: i + 1 },
+					);
+				}
+				return `Ligne ${i + 1} : valeurs numériques invalides`;
+			}
 			try {
 				const qty = new Big(l.quantity);
-				const price = new Big(l.unitPrice);
+				// Défense : la grammaire n'admet aucun signe, `price.lt(0)` est inatteignable.
+				const price = lecturePrix.value;
 				if (qty.lte(0)) return `Ligne ${i + 1} : quantité > 0`;
 				if (price.lt(0)) return `Ligne ${i + 1} : prix unitaire ≥ 0`;
 				if (qty.times(price).gt(MAX_LINE_TOTAL)) {
@@ -584,6 +623,23 @@
 			submitting = false;
 			return;
 		}
+		// Story 36-3b (D5, C-36-3b-7) — la charge porte le prix normalisé (« 1'250 » →
+		// `1250`), relu APRÈS l'attente des réglages : un prix retapé pendant cette
+		// attente, ambigu, illisible ou vide, arrête l'envoi au lieu de partir brut (ou
+		// `null`). Une boucle à sortie anticipée, pour que chaque ligne envoyée porte un
+		// `unitPrice: string` (validation P1, V1-6). La quantité et la description
+		// retapées pendant l'attente ne sont pas revalidées ici (hors périmètre, le
+		// serveur les juge).
+		const payloadLines: CreateInvoiceLineRequest[] = [];
+		for (const l of lines) {
+			const unitPrice = unitPricePayload(l.unitPrice);
+			if (unitPrice === null) {
+				errorMsg = validateClient() ?? 'Prix unitaire invalide';
+				submitting = false;
+				return;
+			}
+			payloadLines.push({ ...stripUiKey(l), unitPrice });
+		}
 		try {
 			const payload: CreateInvoiceRequest = {
 				contactId: selectedContact!.id,
@@ -591,7 +647,7 @@
 				dueDate: dueDate || null,
 				paymentTerms: paymentTerms.trim() || null,
 				projectId,
-				lines: lines.map(stripUiKey),
+				lines: payloadLines,
 			};
 			if (invoice) {
 				const req: UpdateInvoiceRequest = { ...payload, version: invoice.version };
@@ -647,7 +703,7 @@
 			lines = fresh.lines.map((l) => ({
 				description: l.description,
 				quantity: readableAmount(l.quantity, 0),
-				unitPrice: readableAmount(l.unitPrice, 2),
+				unitPrice: unitPriceFieldValue(l.unitPrice),
 				vatRate: l.vatRate,
 				// AC9-bis — site 4/5, LE PLUS DANGEREUX. Un oubli ici n'est visible
 				// qu'APRÈS un conflit de version : conflit optimiste → modale →
@@ -839,7 +895,12 @@
 							<Input type="text" inputmode="decimal" bind:value={line.quantity} />
 						</td>
 						<td class="py-2 pr-2">
-							<Input type="text" inputmode="decimal" bind:value={line.unitPrice} />
+							<Input
+								type="text"
+								inputmode="decimal"
+								bind:value={line.unitPrice}
+								class={unitPriceProblem(line.unitPrice) ? 'border-destructive' : undefined}
+							/>
 						</td>
 						<td class="py-2 pr-2">
 							<select
@@ -903,6 +964,35 @@
 							</Button>
 						</td>
 					</tr>
+					<!-- Story 36-3b (D3) — le refus du prix, sous la ligne, sur les sept
+					     colonnes du tableau (validation P1, V1-1) ; textes de la 36-3. -->
+					{#if unitPriceProblem(line.unitPrice) === 'ambiguous'}
+						<tr>
+							<td
+								colspan={LINE_TABLE_COLUMNS}
+								class="text-xs text-destructive pb-2"
+								data-testid="invoice-line-unit-price-ambiguous"
+							>
+								{i18nMsg(
+									'journal-entry-form-amount-ambiguous',
+									'Montant ambigu : un point ou une virgule suivis de trois chiffres peuvent séparer les milliers. Écrivez 1\'234 pour mille deux cent trente-quatre, ou 1.2340 pour un franc vingt-trois et quatre dixièmes de centime.'
+								)}
+							</td>
+						</tr>
+					{:else if unitPriceProblem(line.unitPrice) === 'unreadable'}
+						<tr>
+							<td
+								colspan={LINE_TABLE_COLUMNS}
+								class="text-xs text-destructive pb-2"
+								data-testid="invoice-line-unit-price-unreadable"
+							>
+								{i18nMsg(
+									'journal-entry-form-amount-unreadable',
+									'Montant illisible : chiffres, apostrophe des milliers (1\'234), point ou virgule décimale, quatre décimales au plus.'
+								)}
+							</td>
+						</tr>
+					{/if}
 				{/each}
 			</tbody>
 			<tfoot>

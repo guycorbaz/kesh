@@ -989,7 +989,12 @@ const ATTENDU = {
 	// `journal-entry-form-amount-unreadable` et `vat-purchase-ht-below-centime`. Que des
 	// littéraux ; relevé à 3040 par la garde avant d'écrire ce nombre (à recompter après
 	// l'union avec 36-1).
-	sitesTotal: 3040,
+	// Story 36-3b (#1171, D3, D6) : **3040 → 3044** sur sa branche — `InvoiceForm.svelte`
+	// gagne `journal-entry-form-amount-ambiguous` et `-amount-unreadable` sous le champ du
+	// prix, `invoice-line-unit-price-ambiguous-error` et `-unreadable-error` au refus. Que
+	// des littéraux ; relevé à 3044 par la garde avant d'écrire ce nombre (à recompter
+	// après l'union avec 36-1).
+	sitesTotal: 3044,
 	sitesNonResolus: 31,
 	relais: 6,
 	// Story 26-1 (#620, AC3-bis) : **10 → 11** — `lib/features/bank-import/

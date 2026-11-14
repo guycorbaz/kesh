@@ -884,3 +884,297 @@ describe('InvoiceForm — date par défaut locale (#889)', () => {
 		);
 	});
 });
+
+// Story 36-3b (#1171) — le prix unitaire d'une ligne de facture client se lit comme le
+// montant d'une écriture (`readJournalAmount`) : « 1.250 » est refusé comme ambigu,
+// « 1'250 » accepté et envoyé `1250` ; un prix enregistré au millième se rouvre sur
+// quatre décimales (`1.2340`) et n'est pas refusé à tort. `describe` à part, en fin de
+// fichier (fichier commun avec la 36-1).
+describe('InvoiceForm — prix unitaire ambigu (36-3b, #1171)', () => {
+	const AMBIGU = 'Ligne 1 : prix unitaire ambigu';
+	const ILLISIBLE = 'Ligne 1 : prix unitaire illisible';
+
+	function ligneAuPrix(position: number, unitPrice: string, quantity = '1') {
+		return { ...line(position, null), quantity, unitPrice };
+	}
+	function brouillonAuxPrix(lignes: ReturnType<typeof ligneAuPrix>[]): InvoiceResponse {
+		return { ...invoiceWith([]), lines: lignes } as unknown as InvoiceResponse;
+	}
+	function decimaux(container: HTMLElement): HTMLInputElement[] {
+		return Array.from(
+			container.querySelectorAll<HTMLInputElement>(
+				'[data-testid="invoice-lines-table"] input[inputmode="decimal"]',
+			),
+		);
+	}
+	const prix = (container: HTMLElement, i = 0) => decimaux(container)[2 * i + 1];
+	const quantite = (container: HTMLElement, i = 0) => decimaux(container)[2 * i];
+	/** La classe `border-destructive` elle-même : la classe de base de `Input` porte
+	 *  `aria-invalid:border-destructive`, qu'un `toContain` sur `className` confondrait. */
+	const borde = (el: HTMLElement) => el.classList.contains('border-destructive');
+	const prixAffiches = (container: HTMLElement) =>
+		decimaux(container)
+			.filter((_, k) => k % 2 === 1)
+			.map((i) => i.value);
+	const totauxDeLigne = (container: HTMLElement) =>
+		Array.from(container.querySelectorAll('[data-testid="invoice-lines-table"] tbody td.font-mono')).map(
+			(td) => td.textContent?.trim() ?? '',
+		);
+	const totalFacture = (container: HTMLElement) =>
+		container.querySelector('[data-testid="invoice-lines-table"] tfoot')?.textContent ?? '';
+	const prixEnvoyes = () =>
+		(updateInvoiceMock.mock.calls.at(-1)![1] as { lines: { unitPrice: string }[] }).lines.map(
+			(l) => l.unitPrice,
+		);
+
+	async function taper(el: HTMLInputElement, value: string) {
+		await fireEvent.input(el, { target: { value } });
+		await settle();
+	}
+
+	describe('AC2 — saisie et refus', () => {
+		it('« 1.250 » : message ambigu sous le champ, bordure, total 0.00 ; Enregistrer refuse en nommant la ligne', async () => {
+			updateInvoiceMock.mockResolvedValue({ id: 7 });
+			const { container, getByTestId, queryByTestId } = render(InvoiceForm, {
+				invoice: brouillonAuxPrix([ligneAuPrix(1, '100.0000')]),
+			});
+			await settle();
+			await taper(prix(container), '1.250');
+
+			expect(queryByTestId('invoice-line-unit-price-ambiguous')).not.toBeNull();
+			expect(queryByTestId('invoice-line-unit-price-unreadable')).toBeNull();
+			expect(borde(prix(container))).toBe(true);
+			expect(totauxDeLigne(container)[0]).toBe('0.00');
+
+			await fireEvent.click(getByTestId('create-invoice-button'));
+			await settle();
+			expect(container.textContent).toContain(AMBIGU);
+			expect(updateInvoiceMock).not.toHaveBeenCalled();
+		});
+
+		it('la rangée du message couvre les sept colonnes du tableau (V1-1)', async () => {
+			const { container, getByTestId } = render(InvoiceForm, {
+				invoice: brouillonAuxPrix([ligneAuPrix(1, '100.0000')]),
+			});
+			await settle();
+			await taper(prix(container), '1.250');
+			const cell = getByTestId('invoice-line-unit-price-ambiguous') as HTMLTableCellElement;
+			expect(cell.tagName).toBe('TD');
+			expect(cell.colSpan).toBe(7);
+			const enTetes = container.querySelectorAll('[data-testid="invoice-lines-table"] thead th');
+			expect(enTetes.length).toBe(7);
+		});
+
+		it('« 1.250 » puis Entrée (soumission du formulaire) : même refus, aucune requête', async () => {
+			updateInvoiceMock.mockResolvedValue({ id: 7 });
+			const { container } = render(InvoiceForm, {
+				invoice: brouillonAuxPrix([ligneAuPrix(1, '100.0000')]),
+			});
+			await settle();
+			await taper(prix(container), '1.250');
+			await fireEvent.submit(container.querySelector('form')!);
+			await settle();
+			expect(container.textContent).toContain(AMBIGU);
+			expect(updateInvoiceMock).not.toHaveBeenCalled();
+		});
+
+		it("« 12'34 » : message illisible sous le champ, bordure ; Enregistrer refuse « prix unitaire illisible »", async () => {
+			updateInvoiceMock.mockResolvedValue({ id: 7 });
+			const { container, getByTestId, queryByTestId } = render(InvoiceForm, {
+				invoice: brouillonAuxPrix([ligneAuPrix(1, '100.0000')]),
+			});
+			await settle();
+			await taper(prix(container), "12'34");
+
+			expect(queryByTestId('invoice-line-unit-price-unreadable')).not.toBeNull();
+			expect(queryByTestId('invoice-line-unit-price-ambiguous')).toBeNull();
+			expect(borde(prix(container))).toBe(true);
+
+			await fireEvent.click(getByTestId('create-invoice-button'));
+			await settle();
+			expect(container.textContent).toContain(ILLISIBLE);
+			expect(container.textContent).not.toContain(AMBIGU);
+			expect(updateInvoiceMock).not.toHaveBeenCalled();
+		});
+
+		it('prix vidé : aucun message sous le champ, refus « valeurs numériques invalides » (inchangé)', async () => {
+			updateInvoiceMock.mockResolvedValue({ id: 7 });
+			const { container, getByTestId, queryByTestId } = render(InvoiceForm, {
+				invoice: brouillonAuxPrix([ligneAuPrix(1, '100.0000')]),
+			});
+			await settle();
+			await taper(prix(container), '');
+
+			expect(queryByTestId('invoice-line-unit-price-ambiguous')).toBeNull();
+			expect(queryByTestId('invoice-line-unit-price-unreadable')).toBeNull();
+			expect(borde(prix(container))).toBe(false);
+
+			await fireEvent.click(getByTestId('create-invoice-button'));
+			await settle();
+			expect(container.textContent).toContain('Ligne 1 : valeurs numériques invalides');
+			expect(container.textContent).not.toContain(ILLISIBLE);
+			expect(updateInvoiceMock).not.toHaveBeenCalled();
+		});
+	});
+
+	describe('AC3 — accepté et normalisé', () => {
+		it("« 1'250 » × 2 : aucun message, total de ligne et de facture 2’500.00 ; part `1250`", async () => {
+			updateInvoiceMock.mockResolvedValue({ id: 7 });
+			const { container, getByTestId, queryByTestId } = render(InvoiceForm, {
+				invoice: brouillonAuxPrix([ligneAuPrix(1, '100.0000')]),
+			});
+			await settle();
+			await taper(quantite(container), '2');
+			await taper(prix(container), "1'250");
+
+			expect(queryByTestId('invoice-line-unit-price-ambiguous')).toBeNull();
+			expect(queryByTestId('invoice-line-unit-price-unreadable')).toBeNull();
+			expect(borde(prix(container))).toBe(false);
+			expect(totauxDeLigne(container)[0]).toBe('2’500.00');
+			expect(totalFacture(container)).toContain('2’500.00');
+
+			await fireEvent.click(getByTestId('create-invoice-button'));
+			await settle();
+			expect(updateInvoiceMock).toHaveBeenCalledTimes(1);
+			expect(prixEnvoyes()).toEqual(['1250']);
+		});
+
+		it('« 1,25 » part `1.25`', async () => {
+			updateInvoiceMock.mockResolvedValue({ id: 7 });
+			const { container, getByTestId } = render(InvoiceForm, {
+				invoice: brouillonAuxPrix([ligneAuPrix(1, '100.0000')]),
+			});
+			await settle();
+			await taper(prix(container), '1,25');
+			await fireEvent.click(getByTestId('create-invoice-button'));
+			await settle();
+			expect(prixEnvoyes()).toEqual(['1.25']);
+		});
+	});
+
+	describe('AC4 — un prix enregistré n’est pas refusé à tort', () => {
+		const PRIX_SERVEUR = ['1.2340', '1.2500', '12.3450'];
+		const ROUVERTS = ['1.2340', '1.25', '12.3450'];
+
+		it('ouverture d’un brouillon : `1.2340`, `1.25`, `12.3450`, aucun message ; renvoyés tels quels (M3 : `initLines`)', async () => {
+			updateInvoiceMock.mockResolvedValue({ id: 7 });
+			const { container, getByTestId, queryByTestId } = render(InvoiceForm, {
+				invoice: brouillonAuxPrix(PRIX_SERVEUR.map((p, k) => ligneAuPrix(k + 1, p))),
+			});
+			await settle();
+			expect(prixAffiches(container)).toEqual(ROUVERTS);
+			expect(queryByTestId('invoice-line-unit-price-ambiguous')).toBeNull();
+			await fireEvent.click(getByTestId('create-invoice-button'));
+			await settle();
+			expect(container.textContent).not.toContain('prix unitaire ambigu');
+			expect(prixEnvoyes()).toEqual(ROUVERTS);
+		});
+
+		it('après « Recharger » sur conflit de version : mêmes formes, aucun message (M4 : `reloadFromServer`)', async () => {
+			updateInvoiceMock.mockRejectedValueOnce({
+				code: 'OPTIMISTIC_LOCK_CONFLICT',
+				status: 409,
+				message: 'conflit',
+			});
+			getInvoiceMock.mockResolvedValue(
+				brouillonAuxPrix(PRIX_SERVEUR.map((p, k) => ligneAuPrix(k + 1, p))),
+			);
+			const { container, getByTestId, getByText, queryByTestId } = render(InvoiceForm, {
+				invoice: brouillonAuxPrix([ligneAuPrix(1, '100.00')]),
+			});
+			await settle();
+			await fireEvent.click(getByTestId('create-invoice-button'));
+			await settle();
+			await fireEvent.click(getByText('Recharger'));
+			await settle();
+			expect(prixAffiches(container)).toEqual(ROUVERTS);
+			expect(queryByTestId('invoice-line-unit-price-ambiguous')).toBeNull();
+			updateInvoiceMock.mockResolvedValue({ id: 7 });
+			await fireEvent.click(getByTestId('create-invoice-button'));
+			await settle();
+			expect(container.textContent).not.toContain('prix unitaire ambigu');
+			expect(prixEnvoyes()).toEqual(ROUVERTS);
+		});
+
+		it('ligne ajoutée depuis un article au prix `1.2340` : `1.2340`, aucun message (M5 : `onProductSelect`)', async () => {
+			updateInvoiceMock.mockResolvedValue({ id: 7 });
+			listProductsMock.mockResolvedValue({
+				items: [
+					{
+						id: 1,
+						companyId: 1,
+						name: 'Article au millième',
+						description: null,
+						unitPrice: '1.2340',
+						vatRate: '8.10',
+						defaultRevenueAccountId: null,
+						active: true,
+						version: 1,
+						createdAt: '2026-01-01T00:00:00',
+						updatedAt: '2026-01-01T00:00:00',
+					},
+				],
+				total: 1,
+				limit: 20,
+				offset: 0,
+			});
+			// Un brouillon à une ligne complète : `invoiceWith([])` ouvrirait une ligne neuve
+			// sans description, que la validation refuserait avant le prix.
+			const { container, getByText, getByTestId, queryByTestId } = render(InvoiceForm, {
+				invoice: brouillonAuxPrix([ligneAuPrix(1, '100.0000')]),
+			});
+			await settle();
+			await fireEvent.click(getByText('Depuis catalogue'));
+			await settle();
+			const entry = document.querySelector('[role="dialog"] ul li button') as HTMLElement | null;
+			expect(entry, 'le picker doit proposer l’article').toBeTruthy();
+			await fireEvent.click(entry!);
+			await settle();
+			expect(prixAffiches(container).at(-1)).toBe('1.2340');
+			expect(queryByTestId('invoice-line-unit-price-ambiguous')).toBeNull();
+			await fireEvent.click(getByTestId('create-invoice-button'));
+			await settle();
+			expect(container.textContent).not.toContain('prix unitaire ambigu');
+			expect(prixEnvoyes()).toEqual(['100.00', '1.2340']);
+		});
+	});
+
+	describe('AC5 — un prix retapé pendant l’attente des réglages', () => {
+		/** Le second appel (celui de l'envoi) retape le prix avant de résoudre. */
+		function retaperPendantLAttente(container: HTMLElement, valeur: string) {
+			const reglages = { defaultReceivableAccountId: 1100, defaultRevenueAccountId: DEFAULT_REVENUE.id };
+			getInvoiceSettingsMock.mockImplementationOnce(async () => {
+				await fireEvent.input(prix(container), { target: { value: valeur } });
+				return reglages;
+			});
+		}
+
+		it('« 1.250 » tapé pendant l’attente : aucune requête, bandeau « prix unitaire ambigu », bouton de nouveau actif', async () => {
+			updateInvoiceMock.mockResolvedValue({ id: 7 });
+			const { container, getByTestId } = render(InvoiceForm, {
+				invoice: brouillonAuxPrix([ligneAuPrix(1, '100.0000')]),
+			});
+			await settle();
+			retaperPendantLAttente(container, '1.250');
+			await fireEvent.click(getByTestId('create-invoice-button'));
+			await settle();
+			expect(updateInvoiceMock).not.toHaveBeenCalled();
+			expect(container.textContent).toContain(AMBIGU);
+			expect(isDisabled(getByTestId('create-invoice-button'))).toBe(false);
+		});
+
+		it('prix vidé pendant l’attente : aucune requête, jamais un prix à zéro (V1-2)', async () => {
+			updateInvoiceMock.mockResolvedValue({ id: 7 });
+			const { container, getByTestId } = render(InvoiceForm, {
+				invoice: brouillonAuxPrix([ligneAuPrix(1, '100.0000')]),
+			});
+			await settle();
+			retaperPendantLAttente(container, '');
+			await fireEvent.click(getByTestId('create-invoice-button'));
+			await settle();
+			expect(updateInvoiceMock).not.toHaveBeenCalled();
+			expect(container.textContent).toContain('Ligne 1 : valeurs numériques invalides');
+			expect(isDisabled(getByTestId('create-invoice-button'))).toBe(false);
+		});
+	});
+});
