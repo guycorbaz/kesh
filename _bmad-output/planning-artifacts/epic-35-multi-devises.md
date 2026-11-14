@@ -53,11 +53,11 @@ dans les fiches ; l'issue et la PR s'ouvrent à la fin, une fois la recette fait
 | Story | Objet | Migration |
 |---|---|---|
 | 35-1 | réglage multi-devises de la société, devise des comptes (création, modification, verrou dès la première écriture) | oui, non breaking |
-| 35-2 | table des cours mensuels, récupération OFDF/AFC (à la demande et mensuelle automatique), écran *Cours de change*, cours saisis à la main | oui, non breaking |
+| 35-2 | table des cours mensuels, récupération OFDF/AFC (à la demande et mensuelle automatique), écran *Cours de change* (le cours manuel vit sur la ligne, C-35-1) | oui, non breaking |
 | 35-3a | écritures en devise : modèle de ligne, validation, contrôle central, API, MCP, exports ; garde des chemins d'écriture automatiques | oui, non breaking |
 | 35-3b | écritures en devise : soldes d'ouverture, formulaire (cours proposé, ligne d'écart), affichage, sélecteurs, E2E, manuel | non |
 | 35-4 | rapports dans les deux devises : grand livre, balance, bilan, compte de résultat, exports | non attendue |
-| 35-5 | réévaluation de fin d'exercice et report à nouveau des soldes en devise | non attendue |
+| 35-5 | réévaluation de fin d'exercice (le report à nouveau se fait par le cumul depuis l'origine, aucune écriture de report) | non attendue |
 
 **Ordre** : 35-1 → 35-2 → 35-3a → 35-3b → 35-4 → 35-5 (35-4 peut suivre 35-3a). La 35-3 a été découpée à la
 rédaction (règle de splitting préventif : plus de cinq modules). Une story qui découvre qu'il lui faut une migration non prévue le dit
@@ -126,5 +126,25 @@ ferme pas la fenêtre d'import, une table applicative neuve la ferme.
   (seul le résidu passe) ; pas d'extourne ; refusée sur un exercice clos ou des livres verrouillés ; gains **et**
   pertes (CO 960b), écrit au manuel comme un choix assumé. Ligne du compte réévalué : `rate_source = 'revaluation'`,
   `amount_currency = 0`, `exchange_rate` = cours retenu ; le libellé isole les écarts **non réalisés**.
+- **C-35-9 — Ajouts de la validation P1 des fiches (2026-11-14).**
+  - `MULTI_CURRENCY_DISABLED` est un **409** partout.
+  - **Verrou des deux côtés** (35-1) : un compte qui porte un rôle, est désigné par une configuration (facturation,
+    articles, fournisseurs, règles de réconciliation) ou lié à un compte bancaire ne reçoit pas de devise
+    (`ACCOUNT_CURRENCY_IN_USE`) ; lier, désigner ou poser un rôle sur un compte en devise est refusé
+    (`ACCOUNT_IN_FOREIGN_CURRENCY`). Le contrôle central de 35-3a reste le filet.
+  - **C-35-2 (3) amendé** : la revalidation serveur des comptes de différences de change se fait à la réévaluation
+    (35-5) ; la ligne d'écart de 35-3b est une ligne CHF ordinaire, contrôlée à l'écran et par les gardes ordinaires.
+  - **Saisie manuelle « cours ou CHF »** (35-3b) : l'utilisateur saisit le cours ou le CHF réel ; le cours se déduit à
+    10 décimales de sorte que round(montant × cours, 2) = CHF. Cours proposé pour un solde d'ouverture : celui du mois
+    **précédant** la date d'ouverture (mois de clôture de l'exercice antérieur).
+  - **Provenance contrôlée** (35-3a) : une ligne `afc` doit porter le cours de la table pour son mois
+    (`FX_RATE_NOT_AFC`) ; `CHECK chk_jel_fx_chf` en filet de la cohérence CHF ↔ devise.
+  - **Lecture et récupération séparées** (35-2) : `GET /lookup` ne sort jamais sur le réseau ; la récupération est
+    `POST /exchange-rates/fetch` (Comptable ou Administrateur), appelée par les écrans sur un cours manquant.
+  - **Réglage multi-devises : Administrateur seul** (précédent des réglages de la société) ; une clé d'API ne
+    l'active pas.
+  - Le cours du mois courant est publié en début de mois (relevé du 2026-11-14).
+- **C-35-8 (complément)** : lettrage d'un compte en devise (débiteur soldé en devise avec écart de change) — limite,
+  issue à ouvrir avec la PR.
 - **C-35-8 — Tracé pour plus tard** (issues à ouvrir avec la PR) : option de neutralisation des gains de change non
   réalisés par une provision (prudence, CO 960 al. 2) ; factures, factures fournisseur et imports bancaires en devise.
