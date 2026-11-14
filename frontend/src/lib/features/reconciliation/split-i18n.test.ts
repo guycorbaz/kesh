@@ -12,8 +12,9 @@
  *    `reconciliation-split-error-imbalance` par `failed-proposal-label.ts`) ;
  * 2. les clés de la story existent dans les quatre locales, avec leurs variables ;
  * 3. `reconciliation-split-error-imbalance`, message de la `400 RECONCILIATION_SPLIT_IMBALANCE`
- *    (`errors.rs`) et de l'étiquette d'échec partiel, ne porte **aucune** variable : ces deux
- *    sites l'appellent sans arguments (validation P1, V1-1).
+ *    (`errors.rs`) et de l'étiquette d'échec partiel, ne porte **aucune** variable : ces trois
+ *    sites — dont le dialogue, quand le montant de la transaction est illisible (C-36-2-21) —
+ *    l'appellent sans arguments (validation P1, V1-1).
  */
 import { describe, it, expect } from 'vitest';
 import { catalogueDe, ecartsAuCatalogue, releveDesReplis } from '$lib/shared/i18n-repli-catalogue';

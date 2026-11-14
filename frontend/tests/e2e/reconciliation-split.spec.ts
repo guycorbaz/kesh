@@ -584,12 +584,33 @@ test.describe('R0 — l’éclatement joué depuis l’écran (#1150, #1151)', (
 				fenetre: window.innerWidth,
 			}));
 			const boite = await t.modal.boundingBox();
+			// `page=` mesure la page de réconciliation sous le dialogue (1280 px à 390 : #1192, hors
+			// story) ; il est relevé, non jugé.
 			console.log(`R0 (g390) page=${debord.page} fenetre=${debord.fenetre}`);
 			await t.modal.screenshot({ path: r0Capture(testInfo, 'g390-telephone') });
 			// Revue P1 (E2) : sous 640 px, aucune largeur imposée (`sm:`) ; le dialogue tient dans
 			// la fenêtre (les champs, eux, s'y serrent — limite d'un tableau à cinq colonnes).
 			expect.soft(boite!.x, 'le dialogue commence dans la fenêtre').toBeGreaterThanOrEqual(0);
 			expect.soft(boite!.x + boite!.width, 'le dialogue finit dans la fenêtre').toBeLessThanOrEqual(390);
+			// Revue P2 (P2-2) : la boîte du dialogue est bornée par sa classe de base quel que soit
+			// son contenu ; c'est le tableau qui pourrait déborder. Il doit tenir dans le dialogue.
+			const tableau = await t.modal.getByTestId('split-lines-table').boundingBox();
+			console.log(
+				`R0 (g390) tableau=${Math.round(tableau!.x)}+${Math.round(tableau!.width)} dialogue=${Math.round(boite!.x)}+${Math.round(boite!.width)}`,
+			);
+			expect
+				.soft(tableau!.x + tableau!.width, 'le tableau tient dans le dialogue')
+				.toBeLessThanOrEqual(boite!.x + boite!.width);
+			// Et la liste du champ de compte, large comme sa cellule : elle s'ouvre dans la fenêtre.
+			await champCompte(t.modal, 1).focus();
+			const liste = t.modal.getByTestId('split-row-1').getByRole('listbox');
+			await expect(liste).toBeVisible();
+			const l = await liste.boundingBox();
+			console.log(`R0 (g390) liste=${Math.round(l!.x)}+${Math.round(l!.width)}`);
+			await page.screenshot({ path: r0Capture(testInfo, 'g390-liste-ouverte') });
+			expect.soft(l!.x, 'la liste commence dans la fenêtre').toBeGreaterThanOrEqual(0);
+			expect.soft(l!.x + l!.width, 'la liste finit dans la fenêtre').toBeLessThanOrEqual(390);
+			await expect.soft(optionsDeCompte(t.modal, 1).first()).toBeInViewport();
 		});
 	});
 

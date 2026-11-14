@@ -1776,7 +1776,7 @@ reconciliation-split-error-amount-positive = Zeile { $line }: Betrag > 0 erforde
 reconciliation-split-error-amount-unreadable = Zeile { $line }: unlesbarer Betrag — Ziffern, Apostroph als Tausendertrennzeichen (1'234), Punkt oder Komma als Dezimaltrennzeichen, höchstens zwei Nachkommastellen, ohne Vorzeichen und ohne Leerzeichen.
 reconciliation-split-error-amount-ambiguous = Zeile { $line }: mehrdeutiger Betrag — ein Punkt oder Komma mit drei folgenden Ziffern kann Tausender trennen; schreiben Sie 1'234 für tausendzweihundertvierunddreissig Franken.
 reconciliation-split-error-amount-cents = Zeile { $line }: höchstens zwei Nachkommastellen — der Betrag wird in Rappen angegeben.
-reconciliation-split-error-imbalance-detail = Passen Sie die Beträge an: Ihre Summe muss { $expected } ergeben (aktuelle Differenz { $diff }).
+reconciliation-split-error-imbalance-detail = Passen Sie die Beträge an: Die Summe muss { $expected } ergeben (aktuelle Differenz { $diff }).
 reconciliation-split-error-description-too-long = Zeile { $line }: Beschreibung zu lang (max. { $max })
 
 # === Story 9-1 — Buchhaltungsberichte (34 Schlüssel) ===
