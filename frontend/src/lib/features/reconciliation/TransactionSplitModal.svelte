@@ -425,7 +425,12 @@
 					<a class="underline" href="/bank-accounts">/bank-accounts</a>
 				</div>
 			{:else if clientError}
-				<div class="rounded-md border border-destructive bg-destructive/10 px-3 py-2 text-sm text-destructive">
+				<!-- Story 36-2 (#1150, D4) : le message qui dit pourquoi *Éclater* est grisé ; sans
+				     rôle `status`, l'indicateur voisin (`aria-live`) disant déjà le déséquilibre. -->
+				<div
+					class="rounded-md border border-destructive bg-destructive/10 px-3 py-2 text-sm text-destructive"
+					data-testid="split-client-error"
+				>
 					{clientError}
 				</div>
 			{:else if errorMsg}

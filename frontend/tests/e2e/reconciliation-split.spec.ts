@@ -120,12 +120,13 @@ function r0Capture(testInfo: TestInfo, name: string): string {
 }
 
 /**
- * Le message de `clientError`, localisé par sa boîte (fiche 36-2, D1, C-36-2-10) : la seule
- * boîte `rounded-md border-destructive` du dialogue sans `data-testid` — l'indicateur
- * d'équilibre, l'avis « compte bancaire non configuré » et l'erreur d'envoi en portent un.
+ * Le message de `clientError` (`split-client-error`, fiche 36-2, D4). R0 s'est joué avant D4,
+ * à la tête et contre 0.17.6, en localisant ce message par sa boîte — la seule
+ * `div.rounded-md.border-destructive` du dialogue sans `data-testid` (D1, C-36-2-10) ; depuis
+ * D4, par son `testid`, sans quoi le retrait du `testid` (mutation M4) passerait inaperçu.
  */
 function messageClient(modal: Locator): Locator {
-	return modal.locator('div.rounded-md.border-destructive:not([data-testid])');
+	return modal.getByTestId('split-client-error');
 }
 
 function champCompte(modal: Locator, ligne: number): Locator {
