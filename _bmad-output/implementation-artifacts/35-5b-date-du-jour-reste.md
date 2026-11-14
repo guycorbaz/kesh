@@ -135,6 +135,8 @@ helper E2E du jour suisse **existe déjà** : `frontend/tests/e2e/helpers/api-fi
   `:461`) reçoivent une `NaiveDate` de leurs appelants de tests (`tests/common/mcp_pieges.rs:50`, `:53`).
 - **D4 — Les deux sites « jour d'un instant »** (C-e350-25) : `dunning_eligibility.rs:128` compare `jour_suisse(lr.and_utc())`
   au jour du serveur, la même fonction des deux côtés ; `routes/invoices.rs:1525` écrit `jour_suisse(d.and_utc())`.
+  *(Annoté le 2026-11-14, revue P1 E1 : `paid_at` n'est pas un instant — ses écrivains posent la date du règlement à minuit ;
+  le site 16 bis revient à `d.date()`, C-e355b-6. Le site 22 bis reste tel qu'écrit.)*
 - **D5 — La garde se resserre** : sa liste d'exemptions ne porte plus d'entrée de production **hors les deux entrées
   permanentes** — `kesh-core/src/horloge.rs` (1, le `.date_naive()` de `jour_suisse`) et `kesh-api/src/routes/admin.rs` (1,
   `:722`, `Utc::now().format("%Y%m%dT%H%M%S%3f")`, horodatage du nom de sauvegarde, #669) —, ni les modules de tests de
@@ -168,7 +170,9 @@ helper E2E du jour suisse **existe déjà** : `frontend/tests/e2e/helpers/api-fi
    porte comme échue. À `2026-03-10T22:30:00Z` (23 h 30 le 10) : non échue partout. **Paiement** (16 bis) : une facture
    réglée à `2026-03-10T23:30:00Z` (`paid_at`) porte `11.03.2026` dans la colonne de paiement du CSV, exporté **avec
    `paymentStatus=all`** (ou `paid` ; sans paramètre, l'export ne rend que les impayées : `requete_echeances`,
-   `payment_status.unwrap_or(PaymentStatusFilter::Unpaid)`) (le squelette : `10.03.2026`).
+   `payment_status.unwrap_or(PaymentStatusFilter::Unpaid)`) (le squelette : `10.03.2026`). *(Annoté le 2026-11-14, revue P1
+   E1 : prémisse fausse, aucun écrivain ne pose `paid_at` à 23:30 ; le critère devient « une facture réglée par la route de nuit,
+   `settledOn` du 10, porte `10.03.2026` » — C-e355b-6.)*
 3. **AC3 — Rappels** (chiffré) :
    - `days_overdue` (`invoice_email.rs:381`) d'une facture échue le `2026-03-01` vaut **9** à `2026-03-10T22:30:00Z` et **10**
      à `2026-03-10T23:30:00Z` (le squelette : 9 aux deux), lu par `GET /invoices/{id}/reminder-preview`
@@ -313,6 +317,10 @@ Journaux sous `/home/gcorbaz/devel/kesh-gate-logs/e355b/` (environnement et comm
   (`gate-test-fast.log`) ; `gate-ci.sh kesh_ci_e355b` **5376 passés, 0 échoué, 17 ignorés** (`gate-ci.log`). Frontend **non
   touché** (`git diff --stat de2626a85 e3e8256fa -- frontend` vide) : non lancé. **E2E : non lancé**, à la clôture.
 - Voir le Change Log (entrée du développement) pour l'étape 0, les rouges, l'inventaire par exécution et les mutations.
+- *(Annoté le 2026-11-14, remédiation de la revue P1.)* Commit de code `73dc06b1e` (3 tests neufs, 0 retiré — attributs
+  ajoutés/retirés de `git show 73dc06b1e -- crates` : 3 / 0 ; le test du paiement est remplacé sous un autre nom) ; `test-fast --ci`
+  **5372/5372, 13 ignorés** au commit `73dc06b1e`, base remise à neuf (`p1-test-fast.log`). Choix C-e355b-5 et -6. **`gate-ci` et
+  E2E : non lancés**, à la clôture (règle de l'Epic 35). Détail : entrée « Remédiation P1 » du Change Log.
 
 ### File List
 
@@ -407,7 +415,7 @@ complété). Registre `e35-choix-autonomes-e355b.md`. Aucune clé i18n, aucune s
     `release/0.17.6` sauf `routes/invoices.rs:1459` → `:1463` (CSV), et les deux « jours d'un instant » (`invoices.rs:1525`,
     `dunning_eligibility.rs:128`). Les trois sites que la synthèse de la 35-5a laisse au jour UTC (seed `kesh-seed/src/lib.rs:279`,
     `closedOn` `bank_accounts.rs:1802`, balance âgée `rapports.rs:732`, borne du projet cumulé `rapports.rs:780`) sont bien les sites
-    26, 11, 19 et 20 de cette fiche : aucun site hors périmètre. Appelants à paramètre neuf : donnés par le compilateur (liste au
+    26, 11, 19 et 20 de cette fiche : aucun site hors périmètre *(annoté le 2026-11-14, revue P1 A3 : lire « les quatre sites »)*. Appelants à paramètre neuf : donnés par le compilateur (liste au
     File List). **Specs E2E reconfirmées** (relevé `/usr/bin/grep -rln 'isOverdue|overdue|asOf|…' frontend/tests/e2e`, lignes lues) :
     `invoices_echeancier.spec.ts:110-121` (échéances à −1 et +30 jours), `reports.spec.ts:190`, `:260-262` (−40 jours),
     `dunning-roundtrip`/`reminders`/`homepage-reminders` (`overdueDate()`, marges ≥ 1 jour), `open-items.spec.ts:39`
@@ -429,7 +437,10 @@ complété). Registre `e35-choix-autonomes-e355b.md`. Aucune clé i18n, aucune s
     est **le rouge d'AC3 côté dépôt** (`lr.date()`), voulu. Un intermittent hors story, `mcp_transport_e2e::
     abandon_au_delai_le_permis_reste_pris` (#1126), rouge au premier essai, vert à la reprise. **Écart** : le squelette a été commité
     avec ces deux rouges ; la fiche voulait un squelette vert, puis les rouges des tests neufs.
-  - **Rouges** (`rouges.log`, arbre = squelette + `FicheFacture::aujourd_hui` + tests neufs, non commité ; en-tête) : **10 rouges**
+  - **Rouges** (`rouges.log`, arbre = squelette + `FicheFacture::aujourd_hui` + tests neufs, non commité ; en-tête) *(annoté le
+    2026-11-14, revue P1 B5 : cet arbre portait deux fichiers de **production** modifiés non commités, `routes/invoices.rs` et
+    `services/factures.rs`, dont le diff n'est pas au journal — le rejeu à l'identique est impossible ; les motifs relevés restent
+    ceux du jour UTC, et M7 est prouvée par mutation)* : **10 rouges**
     sur les 11 tests neufs, chacun pour la bonne raison, motif lu — AC1 (`asOf` 2025-12-31, exercice 2025) ; AC2 (fiche, liste,
     filtre, résumé, statut CSV et nom du CSV à la veille : `false`, `None`, 0, `Impayée`, `echeancier-2026-03-10.csv`) ; AC2
     paiement (`10.03.2026`) ; AC3 HTTP (`9 jours de retard` aux deux instants ; l'assertion d'éligibilité, qui suit, n'est pas
@@ -452,7 +463,10 @@ complété). Registre `e35-choix-autonomes-e355b.md`. Aucune clé i18n, aucune s
     `services_rollout::ac11_a_les_services_lisent_en_lecture_seule` — montage à date fixe `2026-06-01` (`:206`) lu à l'`asOf` par
     défaut ; la sonde **de jour** au 11 mars 2026 (`nuit-B3.log`) rend le même : artefact de l'instant antérieur aux dates fixes de
     2026 (classe de #1125, fichier 35-5c), non un mélange de jours. **Écart à la lettre d'AC8** (« verts sous les deux instants ») :
-    ce seul rouge, déclaré. Angles morts : § 3 de `nuit.log`.
+    ce seul rouge, déclaré. Angles morts : § 3 de `nuit.log`. *(Annoté le 2026-11-14, revue P1 : « fichier 35-5c » est inexact —
+    `services_rollout.rs` est touché par la 35-5b et la fiche 35-5c ne le nomme pas ; classe (b) de la 35-5a, jamais rouge à l'heure
+    réelle, C-e355b-5 (A2). Le témoin **de jour** d'AC8 (`2026-06-15T10:00:00Z`) n'avait pas tourné et le compte rendu ne le disait
+    pas (A1) : joué à la remédiation. L'angle mort E7 (`sent_at` sur l'horloge réelle) manquait au § 3 de `nuit.log`.)*
   - **Mutations** (`mut/`, restauration `git checkout --` puis `touch`, au commit `e3e8256fa`) : M1 (`exports.rs`, nom de l'export sur
     `Utc::now()`) 6 rouges — la garde et `ac4_les_noms_de_fichiers_la_nuit_du_nouvel_an` ; M2 (`UTC_DATE()` rétabli dans
     `push_where_clauses`) 7 — garde, `ac2_une_facture_echue_la_nuit`, `ac5_l_echeancier_du_mcp_juge_au_jour_suisse` ; M3 (`lr.date()`)
@@ -460,7 +474,8 @@ complété). Registre `e35-choix-autonomes-e355b.md`. Aucune clé i18n, aucune s
     `Utc::now()`) 6 — garde, `ac1_l_accueil_la_nuit_du_nouvel_an` ; M5 (`seed_demo` au jour UTC de l'instant, à la route) 6 — garde,
     `demo_a_minuit_le_1er_janvier_cree_l_exercice_suisse` ; M6 (`d.date()` du CSV) 1 — `ac2_la_date_de_paiement_du_csv_est_le_jour_suisse` ;
     M7 (réponse de l'échéancier sur `Utc::now()`) 6 — garde, `la_reponse_de_l_echeancier_juge_au_jour_de_l_echeancier`. **Toutes
-    tuées**, chacune par un test nommé de la story.
+    tuées**, chacune par un test nommé de la story. *(Annoté le 2026-11-14, revue P1 E1 : M6 et son test portaient sur une valeur de
+    `paid_at` qu'aucun écrivain ne produit ; test remplacé, M6 remplacée par M6b — entrée « Remédiation P1 ».)*
   - **Docs** (D7, AC9) : `api-external.md` `:252` (`closedOn`), `:292` (accueil), `:443` (`asOf`) disent Zurich ; commentaires
     réécrits (`dunning_eligibility.rs:9`, `invoices.rs` `:378`, `:396`, `invoice_email.rs:206`, `postes_ouverts.rs:44`, `:55-56`,
     `rapports.rs:724-725`, `:862-866`, `routes/invoices.rs:1029-1031`, `bank_accounts.rs:228`, `:1757-1759`, `exports.rs:7`, `:57`,
@@ -485,3 +500,59 @@ complété). Registre `e35-choix-autonomes-e355b.md`. Aucune clé i18n, aucune s
     **5369 exécutés, 5369 passés, 13 ignorés** (`gate-test-fast.log`) ; `scripts/gate-ci.sh kesh_ci_e355b` **5376 passés, 0
     échoué, 17 ignorés** (`gate-ci.log`, `gate-ci.journal`). Frontend non touché, non lancé. **E2E : non lancé**, à la clôture.
     Statut : `review`.
+- 2026-11-14 — **Remédiation de la revue P1** (Opus 5.5, worktree `kesh-e355b`, voie 1). Revue P1 : Opus, trois lentilles
+  (`kesh-gate-logs/e355b-review-p1-{B,E,A}.md`) — B : 6 LOW ; E : 1 MEDIUM, 6 LOW ; A : 1 MEDIUM, 4 LOW ; soit **2 MEDIUM distincts**
+  (E1, A1 ; B1 = E1) et des LOW recoupés (B2 = B3 = E5 = A5, B4 = E2). Décisions de l'orchestrateur ; prémisse de chaque finding lue
+  au code. Commit de code **`73dc06b1e`** ; journaux `kesh-gate-logs/e355b/p1-*`.
+  - **E1 (MEDIUM) = B1** — lu : `invoice_settlements_write.rs:391-392` (`settled_on.and_hms_opt(0, 0, 0)`), `:745` (passage en
+    perte), `routes/reconciliation.rs:2584-2585` (`paid_at_candidate.and_time(00:00)`) : `paid_at` porte la date du règlement à
+    minuit, non un instant. Le CSV de l'échéancier revient à `format_date(&d.date())`, commentaire juste ; le test
+    `ac2_la_date_de_paiement_du_csv_est_le_jour_suisse` (valeur `23:30:00` posée à la main) devient
+    `ac2_la_date_de_paiement_du_csv_est_celle_du_reglement` : règlement réel par la route à 00 h 30 le 11 mars, `settledOn` du 10 →
+    `paid_at` = `2026-03-10 00:00:00`, colonne `10.03.2026`. Doc d'`Invoice::paid_at` (« Horodate » → date du règlement à minuit),
+    manuel (note `sec:date-du-jour` : le paiement n'est pas une heure mais une date), CHANGELOG (point #929 : plus de changement
+    annoncé pour la date de paiement de l'export). `docs/api-external.md` n'en parlait pas (`/usr/bin/grep -n` sur « paiement »,
+    `paidAt` : seules les lignes 520, 561, 648, 662, 728, sans rapport). Choix C-e355b-6 ; C-e350-25 annoté ; D4 et AC2 annotés.
+    **Propagation** : `git grep -noE "d\.and_utc|date_de_paiement_du_csv[a-z_]*|16 bis|paid_at.{0,30}(instant|UTC)|date de paiement
+    de l.export"` — ne restent que des relevés datés de la fiche, du prompt P1 et du registre (annotés), et des `d.and_utc` d'autres
+    sites (`bank_imports.rs:345`, `reconciliation.rs:3032`, `:3044`, `:6162` : instants de réponses JSON, hors story).
+  - **A1 (MEDIUM)** — le témoin de jour d'AC8 n'avait pas tourné. Joué : `KESH_TEST_INSTANT=2026-06-15T10:00:00Z`, les 16 binaires
+    35-5b, commit `73dc06b1e` : **312/312** (`p1-nuit-jour.log` ; 309 de B1/B2 + 3 tests neufs ; `services_rollout::ac11_a…` vert,
+    l'instant étant postérieur au 1er juin 2026). Écrit au § 5 de `nuit.log` ; le relevé de développement est annoté, non réécrit.
+  - **B4 = E2 (LOW, production)** — `render_reminder` reçoit `today` ; `send_reminder_batch` lit `state.horloge.aujourd_hui()`
+    **une fois** et la passe par `send_one_batch_reminder` ; l'aperçu lit la sienne. **Aucun test** : sous une horloge arrêtée,
+    lecture unique et lecture répétée sont équivalentes — la garantie est structurelle (signature), mutation non jouée car
+    équivalente sous tout banc.
+  - **B2, B3 = E5 = A5 (LOW)** — `VueEcheance` lit `summary.overdueTotal` (108.10 la nuit, 0 la veille) et la présence de la
+    facture dans `export.csv?paymentStatus=overdue` (présente / absente) : `ac2_une_facture_echue_la_nuit`.
+  - **E3 (LOW)** — `ac1_l_accueil_la_nuit_du_nouvel_an_sans_exercice_neuf` : `noOpenFiscalYear`, `asOf` 2026-01-01, `fiscalYear`
+    nul. **E4 (LOW)** — `ac4_la_fin_donnee_d_un_projet_l_emporte_sur_le_jour` : projet clos le 2026-06-30, écriture du
+    2026-06-01 comptée à 00 h 30 le 1er janvier. **E6 (LOW)** — `ac2_minuit_pile_en_heure_d_ete` : fiche non échue à
+    `2026-07-01T21:59:59Z`, échue à `22:00:00Z` (minuit le 2 juillet, UTC+2).
+  - **E7 (LOW)** — angle mort écrit au § 4 de `nuit.log` : `sent_at` d'un rappel envoyé par la route sur l'horloge réelle
+    (`invoice_email.rs`, `chrono::Utc::now().naive_utc()`), l'éligibilité sur l'horloge de l'état ; même horloge en production,
+    mêlées sous `HorlogeFixe` ou `KESH_TEST_INSTANT`.
+  - **A2 (LOW)** — C-e355b-5 ; « fichier hors 35-5b », « verdict 35-5c » annotés ici et au § 4 de `nuit.log` ; à tracer en
+    commentaire de #1125 (orchestrateur). **A3** — « les trois sites » annoté (quatre). **A4** — renvois `\S\ref{sec:date-du-jour}`
+    depuis l'accueil (« Quel exercice ») et l'échéancier (« Factures échues impayées »). **B5** — `rouges.log` avait tourné avec deux
+    fichiers de production non commités (`routes/invoices.rs`, `services/factures.rs`), sans leur diff : déclaré par annotation à
+    l'entrée « Rouges ». **B6** — commentaire de la garde : l'entrée `journal_entries.rs` sous `src` compte le seul module de tests.
+  - **Rouges d'abord, mutations** (au commit `73dc06b1e`, arbre de code propre, restauration `git checkout --` puis `touch` ;
+    `p1-mut-resume.log`, `p1-mut-*.log`) : M6b (colonne de paiement = jour de la requête) 1 rouge —
+    `ac2_la_date_de_paiement_du_csv_est_celle_du_reglement` ; M8 (second lien du `SELECT` de `due_dates_summary` lié à la veille, sans
+    forme gardée) 1 — `ac2_une_facture_echue_la_nuit` ; M9 (`list_for_export` reçoit la veille, sans forme gardée) 1 — même test ;
+    M10 (`let end = today;`) 1 — `ac4_la_fin_donnee_d_un_projet_l_emporte_sur_le_jour` ; M11 (accueil au jour UTC de l'instant) 7 —
+    garde (5) et les deux tests d'AC1 ; M12 (fiche au jour UTC de l'instant) 7 — garde (5), `ac2_minuit_pile_en_heure_d_ete`,
+    `ac2_une_facture_echue_la_nuit`. **Toutes tuées.** Les rouges des tests neufs sont prouvés par ces mutations, non par un
+    `rouges.log` sur arbre antérieur (les sites existaient déjà). La première exécution de M12 a été **tuée au plafond mémoire**
+    pendant la compilation (`p1-mut-M12.log`, rc=137) ; rejouée seule (`p1-mut-M12-reprise.log`).
+  - **Manuel** : `make user` (`p1-manuel-make.log`, 2 passes, stable) ; PDF aplati (`p1-pdf-aplati.log`) : « envoi d'un rappel,
+    paiement » 0, « date de paiement de l'export » 0, les phrases neuves 1 chacune, renvois résolus (§7.6).
+  - **Gates** au dernier commit de code `73dc06b1e` : ciblé `p1-cibles.log` 101/101 (arbre avant commit, mêmes fichiers) ;
+    **`scripts/test-fast.sh --ci` 5372/5372, 13 ignorés** (`p1-test-fast.log`, base `kesh_e355b` remise à neuf). Frontend non
+    touché, non lancé. **`gate-ci` et E2E : non lancés**, à la clôture.
+  - **Écarts** : un premier lancement des mutations a été refusé par le garde-fou de la session — le script restaurait par
+    `git checkout --` des fichiers qui portaient encore la remédiation non commitée ; le code a été commité d'abord, puis les
+    mutations jouées. Consigne Edit tenue (code et tests par l'outil Edit ; `cargo fmt`) ; scripts hors dépôt pour les mutations et
+    les journaux seulement (`p1-mutations.sh`, `p1-mutation-M12-reprise.sh`, `p1-cibles.sh`). Statut : `review`, revue P2 ciblée à
+    lancer (prompt `35-5b-date-du-jour-reste-review-prompt-p2-ciblee.md`).

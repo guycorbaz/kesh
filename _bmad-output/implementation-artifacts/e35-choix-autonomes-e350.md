@@ -595,6 +595,9 @@ sur `chore/epic-35-fiches-355`, commencent à C-e350-21 et s'unissent à la fusi
 - **Écartée** : laisser toute la classe en UTC : le mélange des deux horloges dans une même comparaison (`:128`) est le
   défaut contre lequel `companies.rs:986-989` met en garde.
 - **Réversible** : oui.
+- *Annoté le 2026-11-14 (remédiation P1 de la 35-5b, E1) : `paid_at` n'est pas un instant — ses écrivains posent la date
+  du règlement à minuit ; le site 16 bis (`routes/invoices.rs`, CSV) revient à `d.date()` (C-e355b-6). Le site 22 bis
+  (`sent_at`, un instant) garde `jour_suisse`.*
 
 ### C-e350-8, extension du 2026-11-12 (suite) — 35-3 et 35-5a
 
