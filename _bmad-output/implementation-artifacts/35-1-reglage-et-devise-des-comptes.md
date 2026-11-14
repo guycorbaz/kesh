@@ -143,10 +143,11 @@ l'assistant n'est pas touché, AC-11).
      (exercice → société). Une activation ou une désactivation, qui tient `companies` `FOR UPDATE` puis demande les
      exercices, ferme donc un cycle avec toute saisie d'écriture en cours (angle mort (iv) du registre des routes) :
      le handler est sous `kesh_db::retry::retry_on_deadlock("companies::update_currency_settings", …)`, comme
-     `create_fiscal_year`, et la route est **rejouée** — la 35-1 ajoute donc **deux** routes `SansEcritureAuJournal`
-     rejouées (celle-ci et `currency-mode`, AC-3 bis) : `audit_route_registry.rs` (vi) passe de « vingt-cinq » à
-     « vingt-sept » (décompte, liste et « vingt-trois handlers `SansEcritureAuJournal` de `src/routes/` » recomptés au
-     code, en deltas), et un test de victime d'interblocage par route dans `rejeu_interblocage_e2e.rs` (patron
+     `create_fiscal_year`, et la route est **rejouée** — la 35-1 rend donc **trois** routes `SansEcritureAuJournal`
+     rejouées (celle-ci, `currency-mode`, AC-3 bis, et `accounts::create_account`, AC-4 bis, 35-1-CR3-P2-1) :
+     `audit_route_registry.rs` (vi) passe de « vingt-cinq » à « vingt-huit » (décompte, liste et « vingt-trois handlers
+     `SansEcritureAuJournal` de `src/routes/` » recomptés au code, en deltas : + 3), et un test de victime
+     d'interblocage par route dans `rejeu_interblocage_e2e.rs` (patron
      `fiscal_year_reopen_is_replayed_when_it_is_the_deadlock_victim`). **Autres cycles, couverts par le même rejeu**
      (35-1-CR2-P2-2, à écrire au Change Log du développement) : la validation d'une facture, l'avoir et la saisie
      fournisseur prennent les réglages de facturation `FOR UPDATE` **avant** l'exercice (`invoices.rs:1974`,
@@ -327,8 +328,11 @@ l'assistant n'est pas touché, AC-11).
      revalidation de la 35-5 ne le verrait pas. Pour une désignation **propre** (S2), `details` porte en plus
      `holderAccountId` et `holderNumber` (le compte en devise qui le désigne, le premier par identifiant s'il y en a
      plusieurs) ; sans eux, la désignation est celle de la société. La recherche des comptes qui le désignent
-     (**deux** recherches, chacune par son index : `SELECT id, number FROM accounts WHERE company_id = ? AND
-     fx_gain_account_id = ? ORDER BY id LIMIT 1 LOCK IN SHARE MODE`, puis la même sur `fx_loss_account_id`, le plus
+     (**deux** recherches, chacune par son index, nommé — `SELECT id, number FROM accounts FORCE INDEX
+     (idx_accounts_fx_gain) WHERE company_id = ? AND fx_gain_account_id = ? ORDER BY id LIMIT 1 LOCK IN SHARE MODE`,
+     puis la même sur `fx_loss_account_id` et `idx_accounts_fx_loss` (35-1-CR3-P2-3 : l'empreinte des verrous dépend
+     du plan, et `ORDER BY id LIMIT 1` peut faire préférer un parcours de la clé primaire, qui verrouillerait chaque
+     ligne lue) —, le plus
      petit identifiant des deux gardé — **jamais** un `OR` sur les deux colonnes) se fait **après** le `FOR UPDATE` du
      compte visé, en lecture verrouillante (AC-3) ; 35-1-CR3-P1-1 : un balayage sans index verrouille en partage toutes
      les lignes de la société sous REPEATABLE READ, et deux archivages concurrents de comptes **différents** (chacun
@@ -444,19 +448,33 @@ l'assistant n'est pas touché, AC-11).
      (l'un attend l'autre ; l'archivage commité d'abord fait refuser la désignation en `reason: "archived"`, la
      désignation commitée d'abord fait refuser l'archivage en `ACCOUNT_IS_FX_DIFFERENCE_ACCOUNT`) ; **deux archivages
      concurrents de deux comptes différents aboutissent tous deux, sans 1213** (35-1-CR3-P1-1).
-   - **Rejeu** (35-1-CR3-P1-2) : le `PUT` qui porte les champs prend `companies` `FOR UPDATE` puis le compte en devise
-     `FOR UPDATE`, quand une écriture tient ce compte en partage (35-3a) avant son `INSERT`, qui prend `companies` en
-     partage (`fk_journal_entries_company`) : cycle, couvert par l'enveloppe existante de `accounts::update_account`
+   - **Rejeu** (35-1-CR3-P1-2, précisé par 35-1-CR3-P2-2) : le `PUT` qui porte les champs prend `companies`
+     `FOR UPDATE` puis le compte visé `FOR UPDATE`. Le cycle se ferme avec une écriture **sans ligne en devise** — qui
+     ne prend pas `companies` avant les comptes (35-3a) —, qui tient ce compte en partage puis, à son `INSERT`, demande
+     `companies` en partage (`fk_journal_entries_company`) : cas d'un compte **encore CHF** auquel le même `PUT` donne
+     une devise et ses comptes propres. (Une écriture qui porte une ligne en devise prend `companies` en partage avant
+     les comptes et attend le `PUT` ; une ligne CHF sur un compte déjà en devise est refusée sans rien attendre : ni
+     l'une ni l'autre ne ferme de cycle.) Cycle couvert par l'enveloppe existante de `accounts::update_account`
      (`retry_app_on_deadlock("accounts::update", …)`, `routes/accounts.rs:337`), qui reste en place ; test de victime
-     d'interblocage dans `rejeu_interblocage_e2e.rs`. `create_account` ne verrouille aucun compte déjà lu par une
-     écriture : pas de cycle, pas de rejeu ajouté ; le registre des routes ne change pas.
+     d'interblocage dans `rejeu_interblocage_e2e.rs`, monté sur ce cas.
+     **`create_account`** (35-1-CR3-P2-1) : un `POST` qui porte les champs **et** un `parentId` tient `companies`
+     `FOR UPDATE`, puis passe le parent à non imputable (`UPDATE accounts SET postable = FALSE`, `accounts.rs:204-211`,
+     verrou exclusif sur la ligne du parent) ; une écriture CHF sur ce parent (imputable jusque-là) le tient en partage
+     puis demande `companies` en partage à son `INSERT` : cycle, et `create_account` n'a **aucune** enveloppe
+     aujourd'hui (`routes/accounts.rs:267`, `accounts::create(&state.pool, …)` appelé nu). Le handler passe donc sous
+     `crate::retry::retry_app_on_deadlock("accounts::create", …)` (le dépôt ouvre sa propre transaction, `:156` ;
+     `NewAccount` cloné à chaque tentative) ; registre : la route reste `Traced, SansEcritureAuJournal` (partition et
+     totaux inchangés), elle entre à la liste (vi) (AC-3 : « vingt-huit ») ; test de victime d'interblocage dans
+     `rejeu_interblocage_e2e.rs`.
    - **Audit et no-op** : `account_snapshot_json` et `is_no_op_change` incluent les deux colonnes (un `PUT` qui ne
      change que les comptes propres écrit et audite `account.updated`).
    - **Tests** : désignation propre (création et modification), retour au défaut (`null`), résolution après changement
      du réglage de la société (défaut suivi, propres inchangés), même compte pour gains et pertes, chaque `reason`
      (dont `unexpected` sur un compte CHF et sur un compte rendu CHF dans le même `PUT`, `missing` pour un seul champ),
      chaque garde inverse avec `holderAccountId`, désignation d'un compte archivé qui désigne comptée, `CHECK` en SQL
-     brut, réponse d'un compte « par défaut » sans les deux clés.
+     brut, réponse d'un compte « par défaut » sans les deux clés ; rejeu de `update_account` (compte CHF rendu en
+     devise avec comptes propres) et de `create_account` (comptes propres et `parentId`) contre une écriture CHF, chacun
+     victime d'interblocage puis rejoué (35-1-CR3-P2-1, -2).
 5. **AC-5 — Réinitialisation de la société.** Seul chemin qui vide les comptes en gardant la société :
    `kesh_seed::reset_demo` (`onboarding/reset`) — `accounts` est dans `reset_cleared_tables`, `companies` est
    préservée (`backup.rs:136-144`) et remise à zéro en place par `companies::reset_to_stub_in_tx`
@@ -625,7 +643,8 @@ l'assistant n'est pas touché, AC-11).
       `bulk_create_from_chart_in_tx` (`NULL`) ; `fx_accounts_for` (pure) et `validate_fx_accounts_in_tx` (dépôt) ;
       gardes à la désignation et gardes inverses (`holderAccountId`) dans `create`, `update`, `archive_guarded`,
       `reactivate`, `company_invoice_settings::update`, `products::create/update` ; `companies` `FOR UPDATE` en tête
-      d'un geste qui porte les champs ; DTO, `AccountResponse`, CSV des comptes, liste close des absences admises
+      d'un geste qui porte les champs ; enveloppe de rejeu de `create_account` (35-1-CR3-P2-1) ; recherches du
+      compte désignant par `FORCE INDEX` ; DTO, `AccountResponse`, CSV des comptes, liste close des absences admises
       (`accounts` × 3) ; frontend : `fxAccountsFor`, choix « par défaut / propres » du formulaire de compte ; tests de
       l'AC-4 bis.
 
@@ -759,3 +778,22 @@ l'assistant n'est pas touché, AC-11).
   `audit_route_registry.rs:444-447`, `:292-296` ; `post_restore.rs:988-1004` (dans `mod tests`). Axes exercés : AC-1,
   AC-3 bis, AC-4 bis (verrous, gardes, ordre des refus), AC-6, AC-11 retirée, contacts 35-3a/35-3b/35-5 par grep.
   Non exercés : source journalière (aucun GET, hors sujet), manuels (PDF non lu), i18n au code, MCP au code.
+- 2026-11-14 — validation CR-3 P2 (Opus) : 0 CRITICAL, 0 HIGH, 1 MEDIUM, 2 LOW ; remédiés dans la fiche, aucun
+  inter-fiches. CR3-P2-1 (MEDIUM, défaut de la remédiation P1) : « `create_account` ne verrouille aucun compte déjà lu
+  par une écriture » est faux — un `POST` qui porte les comptes propres **et** un `parentId` tient `companies`
+  `FOR UPDATE` puis écrit le parent (`accounts.rs:204-211`, `UPDATE accounts SET postable = FALSE`), qu'une écriture
+  CHF tient en partage avant de demander `companies` à son `INSERT` ; `create_account` n'a aucune enveloppe
+  (`routes/accounts.rs:267`) : rejouée, liste (vi) « vingt-huit » (AC-3), test de victime. CR3-P2-2 (LOW) : le cycle
+  du `PUT` (CR3-P1-2) ne se ferme qu'avec une écriture sans ligne en devise sur un compte encore CHF que le `PUT` passe
+  en devise ; texte précisé pour que le test de victime soit montable. CR3-P2-3 (LOW) : `FORCE INDEX` sur les deux
+  recherches du compte désignant (l'empreinte des verrous dépend du plan). Prémisses relues au code :
+  `accounts.rs:153-156`, `:204-211` ; `routes/accounts.rs:267`, `:325-345` ; `audit_route_registry.rs:155`,
+  `:292-310`, `:444-447`, `:1450-1502` ; `journal_entries.rs:423-427` ; 35-3a AC-4 (concurrence, `companies` pris en
+  partage avant les comptes seulement si une ligne porte une devise) ; `20260411000001_accounts.sql`
+  (index existants : PK, `uq_accounts_company_number`, FK) ; `20260507200001_bank_account_journal_link.sql:28`
+  (`bank_accounts.journal_account_id` indexé : la lecture verrouillante de l'AC-4 ne balaie pas) ;
+  `csv_tables.rs:163`, `:230`, `:265` ; `mcp/outils/plan_comptable.rs:31-43`, `mcp/sortie.rs:88-95`. Axes exercés :
+  défauts de la remédiation CR-3 P1 (index, recherches, rejeu), cycles de verrous des gestes qui prennent `companies`
+  en exclusif (`update_currency_settings` : déjà rejouée), contacts 35-3a/35-5 (`holderAccountId`, aucune autre fiche
+  ne reprend la recherche en `OR`), CSV, MCP. Non exercés : source journalière (aucun GET, la 35-1 n'y touche pas),
+  manuels (PDF non lu), i18n au code, E2E au code.

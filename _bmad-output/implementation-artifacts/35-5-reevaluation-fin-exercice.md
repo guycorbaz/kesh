@@ -101,7 +101,8 @@ clôture et que l'écart aille aux différences de change.
    - **Avertissements de l'aperçu** (sans refus) : l'aperçu signale, sans écrire, ce que la passation refuserait —
      `EARLIER_FISCAL_YEAR_OPEN`, `LATER_FISCAL_YEAR_CLOSED`, `PERIOD_LOCKED`, `FX_ACCOUNT_INVALID` — dans un champ
      `blockers[]` (code et détails), dont `MULTI_CURRENCY_DISABLED` `reason: "laterFiscalYear"` (35-3a : un exercice
-     postérieur mono-devise) ; l'écran désactive « Passer les écritures » tant qu'il n'est pas vide.
+     postérieur mono-devise) ; l'écran désactive « Passer les écritures » tant qu'il n'est pas vide
+     (`FX_ACCOUNT_INVALID` : sur les comptes sélectionnés seulement, l'aperçu relu à chaque case, AC-4).
    - **Une ligne d'aperçu par compte = une écriture (R9)** : l'aperçu présente, par compte retenu, l'écriture qui sera
      passée (compte réévalué, contrepartie, montant, libellé de l'AC-2) ; les totaux des gains et des pertes restent
      affichés.
@@ -151,7 +152,13 @@ clôture et que l'écart aille aux différences de change.
      `fx_accounts_for` et à l'ordre des refus), d'où, par `fx_accounts_for`, les paires de comptes de gains et de pertes
      **employées** — **par les comptes sélectionnés admissibles** (la liste de l'étape (4), CHF, archivés, de groupe et
      de résultat exclus, D nul ou non) : les verrous de cette étape couvrent tous les comptes sélectionnés, l'évaluation
-     des refus (AC-4) ne retient que les admissibles, après la lecture de l'étape (4) ; puis réglages de facturation et articles qui les désignent (`default_revenue_account_id`, contrôle
+     des refus (AC-4) ne retient que les admissibles, après la lecture de l'étape (4) — `validate_fx_accounts_in_tx`
+     (35-1), qui rend son refus dès qu'elle le constate, est donc appelée ici pour la paire de **chaque** compte
+     sélectionné (verrous), son résultat **gardé par compte sans être propagé** (une erreur de base, elle, se propage
+     aussitôt) ; après l'étape (4), le premier `FX_ACCOUNT_INVALID` d'un compte **admissible**, dans l'ordre des
+     numéros, est rendu à son rang de l'AC-4 (ainsi qu'un `None` de `fx_accounts_for`, AC-4) ; la projection lue
+     ici est celle qu'exige la signature de `fx_accounts_for` au développement (un `Account` complet si elle le
+     prend) ; puis réglages de facturation et articles qui les désignent (`default_revenue_account_id`, contrôle
      de l'AC-4), puis ces comptes de gains et de pertes, lus `LOCK IN SHARE MODE` par `validate_fx_accounts_in_tx`
      (35-1 ; ordre `companies` → réglages → `accounts` de 35-1 AC-3 ; ce flux prend les comptes sélectionnés et les comptes
      désignés tous en partage, aucun en exclusif : pas de cycle entre eux) ; (4) seulement
@@ -261,7 +268,11 @@ clôture et que l'écart aille aux différences de change.
    n'emploie ne bloque rien ; un compte admissible que ni ses comptes propres ni la société ne dotent de comptes de
    différence — `fx_accounts_for` rend `None`, état hérité — → 400 `FX_ACCOUNT_INVALID`, `reason: "missing"`, `field`
    `fxGainAccountId`, `holderAccountId` = ce compte, même à D = 0 : à l'aperçu, un blocker `FX_ACCOUNT_INVALID`, et
-   `counterpartAccountId` `null` sur la ligne, comme sur toute ligne non sélectionnable — archivée, `RATE_UNAVAILABLE`) ; `accountIds` hors de la liste admissible (lue à l'étape (4) de l'AC-2) → 400
+   `counterpartAccountId` `null` sur la ligne — la ligne reste **sélectionnable** (le compte est admissible) : la
+   décocher lève le refus. Les blockers `FX_ACCOUNT_INVALID` de l'aperçu portent sur les comptes **sélectionnés** de
+   la requête (`accountIds`, à défaut la présélection), comme la passation ; l'écran relit l'aperçu, avec
+   `accountIds`, à chaque case cochée ou décochée, et ne désactive « Passer les écritures » que sur les blockers de
+   cette sélection) ; `accountIds` hors de la liste admissible (lue à l'étape (4) de l'AC-2) → 400
    `FX_REVALUATION_ACCOUNT_INVALID`, ensuite ; puis genre de clôture changé depuis la lecture d'avant la transaction →
    409 `OPTIMISTIC_LOCK_CONFLICT` (AC-1 ; après les refus d'état et de comptes : le motif réel prime sur
    « rechargez », comme l'étape 3-bis d'`update_in_tx` avant la version) ; puis 404 `RATE_UNAVAILABLE` d'une devise
@@ -355,8 +366,9 @@ clôture et que l'écart aille aux différences de change.
      archivé (posé par SQL) → `FX_ACCOUNT_INVALID` avec `holderAccountId`, rien de passé, à la passation **et** en
      `blockers[]` de l'aperçu ; compte sélectionné non admissible (CHF, archivé) dont les comptes propres seraient
      invalides → seul `FX_REVALUATION_ACCOUNT_INVALID` `notEligible` ; compte à D = 0 dont les comptes propres sont
-     invalides → refusé (comptes employés) ; ni comptes propres ni comptes de la société (`None`) → `reason:
-     "missing"` ; premier fautif dans l'ordre des numéros de compte, gain avant perte ; compte de la société
+     invalides → refusé (comptes employés) ; ce même compte **décoché** → aperçu (avec `accountIds`) sans blocker et
+     passation admise, et l'écran (Vitest) réactive « Passer les écritures » après la relecture ; ni comptes propres ni
+     comptes de la société (`None`) → `reason: "missing"`, ligne cochable ; premier fautif dans l'ordre des numéros de compte, gain avant perte ; compte de la société
      invalide (par SQL) alors que tous les comptes sélectionnés ont des comptes propres → passation admise ; une
      désignation propre concurrente attend la fin de la passation (verrou `companies`) ;
    - **durée de l'exercice (S4, CR-3)** : exercice de **six mois** (01.07.2024–31.12.2024) et de **dix-huit mois**
@@ -555,3 +567,16 @@ clôture et que l'écart aille aux différences de change.
   d'origine absentes des Tâches ; parenthèse de l'étape (0) coupant la phrase ; « aucun en exclusif » à borner à ce
   flux.) Vérifié : 35-1 AC-4 bis (verrous, `validate_fx_accounts_in_tx`, `reason` `missing`), epic C-35-7. Axes
   non exercés : GET de la source journalière (aucune date de la révision ne l'exigeait), code réel de 35-1 (non écrit).
+- 2026-11-14 — validation CR-3 P2 (Opus) : 0 CRITICAL, 0 HIGH, 2 MEDIUM, 1 LOW ; remédiés dans la fiche ; aucun
+  finding inter-fiches. (MEDIUM : `validate_fx_accounts_in_tx` (35-1) rend son refus dès qu'elle le constate, alors
+  que l'étape (3) l'appelle avant que l'admissibilité de l'étape (4) soit connue — le défaut que la P1 corrigeait
+  revenait à l'implémentation : résultat gardé par compte, rendu après (4) pour les seuls admissibles ; blockers
+  `FX_ACCOUNT_INVALID` par compte depuis S2 sans lien écrit à la sélection, et ligne `None` dite « comme une ligne non
+  sélectionnable » — un compte dormant décoché aurait laissé « Passer les écritures » désactivé : blockers sur la
+  sélection, relecture de l'aperçu à chaque case, ligne cochable, test. LOW : `fx_accounts_for` prend un `Account`
+  (35-1 AC-4 bis, signature d'exemple), que la projection de l'étape (3) ne suffit pas à construire.) A17 sans point
+  de contact (35-3a, 35-3b). Vérifié : 35-1 AC-4 bis (signature, `None`, `holderAccountId`, verrous `companies`
+  `FOR UPDATE` des désignations, pas de cycle avec 35-5), `companies.rs:1002-1020`, `invoices.rs:698` ; source
+  journalière (un GET) : `xmldaily?d=20250314` rend la publication du 14.03.2025 (exercice qui finit un 14, AC-7).
+  Axes non exercés : code réel de 35-1 à 35-4 (non écrit) ; registres d'audit et RBAC non touchés par la révision
+  (vérifiés aux passes antérieures).

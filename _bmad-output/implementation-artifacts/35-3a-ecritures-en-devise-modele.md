@@ -157,8 +157,9 @@ chacune (R7), l'écart de change dans la seconde, afin que mes comptes en devise
       la supprimer, en changer le montant) modifie le solde d'ouverture de l'exercice mono-devise tout autant que d'en
       ajouter une — une garde qui ne regarde que le corps laisserait faire. Les lignes d'avant (`before_lines`, lues
       aujourd'hui à l'étape 8, `:1629`) se lisent donc plus tôt, sous le verrou de l'écriture, à l'étape 6 (après la
-      garde des comptes). **Critère au `PUT`** : la garde ne refuse que si les lignes en devise **changent** — la suite
-      des lignes d'avant qui portent une devise diffère de celle du corps (dans l'ordre, compte, débit, crédit et les
+      garde des comptes). **Critère au `PUT`** : la garde ne refuse que si les lignes en devise **changent** — l'ensemble
+      des lignes d'avant qui portent une devise diffère de celle du corps (sans égard à l'ordre, même appariement que
+      le point 4 ci-dessous ; compte, débit, crédit et les
       quatre champs de `foreign` comparés comme `is_no_op_change`, montants en valeur). Un `PUT` qui ne touche que le
       libellé, la date dans l'exercice ou des lignes CHF ne change pas le solde d'ouverture de l'exercice mono-devise
       et passe ; un `PUT` sans effet passe donc aussi, sans exception à KF-004 (toutes les gardes **précèdent** le
@@ -218,17 +219,21 @@ chacune (R7), l'écart de change dans la seconde, afin que mes comptes en devise
      `details` : `{ currency: "USD", month: "AAAA-MM-01" }` (35-2 AC-5). Contrôle à la création
       **et** au `PUT` (date changée comprise). **Le mois de référence est toujours celui de `entry_date`, sans
       exception** : un cours d'un autre mois (p. ex. celui du mois précédant la date d'un solde d'ouverture, C-35-9)
-      se saisit `manual`, jamais `afc` (35-3b y est alignée). **Arbitrage A17 (orchestrateur, 2026-11-14, sur
-      35-3a-CR3-P1-4 ; prime sur la suite de ce paragraphe, à réécrire à la passe suivante)** : au `PUT`, seules les
-      lignes `afc` **nouvelles ou modifiées** (compte, devise, montant, cours, date de l'écriture) sont contrôlées,
-      par comparaison aux lignes d'avant (étape 6) ; une ligne `afc` inchangée ne l'est pas — « les écritures passées
-      ne changent jamais » (S6). Texte antérieur : le contrôle portait sur **toutes** les lignes `afc` du
-      corps, inchangées comprises : après une restauration (tables des cours vides, 35-2 AC-7), le `PUT` d'une
-      écriture `afc` — même pour son seul libellé — rend `404 RATE_UNAVAILABLE` jusqu'à la récupération du cours, et,
-      après l'**adoption** d'un cours AFC republié (35-2 AC-5, S6), le `PUT` d'une écriture `afc` à l'ancien cours rend
-      `FX_RATE_NOT_AFC` (une republication **non adoptée** ne change rien : le cours en vigueur reste celui de la
-      ligne) ; comportement assumé, testé (republication en attente → `PUT` passe ; après adoption → refus), écrit au
-      Change Log. **Exemptée** : la contre-passation, qui recopie le cours
+      se saisit `manual`, jamais `afc` (35-3b y est alignée). **Au `PUT`, seules les lignes `afc` nouvelles ou
+      modifiées sont contrôlées** (arbitrage A17, S6 : « les lignes déjà passées ne changent jamais ») : si la date de
+      l'écriture change, toutes les lignes `afc` du corps le sont ; sinon, une ligne `afc` du corps est **inchangée**
+      quand une ligne d'avant (`before_lines`, lues à l'étape 6, rang 2 ci-dessus), non encore appariée, lui est
+      identique en compte, débit, crédit et quatre champs de `foreign` — devise, montant, cours **et** `rate_source`
+      (une ligne `manual` repassée `afc` au même cours est modifiée) —, montants en valeur comme `is_no_op_change` ;
+      appariement **sans égard à l'ordre** (déplacer une ligne ne la modifie pas ; le projet n'entre pas dans la
+      comparaison). Une ligne inchangée n'est jamais recontrôlée et ne déclenche aucune lecture du cours : après une
+      restauration (table des cours vide, 35-2 AC-7) ou après l'**adoption** d'un cours AFC republié (35-2 AC-5), le
+      `PUT` du seul libellé, de lignes CHF ou d'un projet passe ; une ligne `afc` ajoutée ou modifiée rend
+      `404 RATE_UNAVAILABLE` (cours absent) ou `FX_RATE_NOT_AFC` (ancien cours, `expectedRate` = cours en vigueur),
+      dont 35-3b tire « Reprendre le cours attendu » / « Garder mon cours » (passage en `manual`). Une republication
+      **non adoptée** ne change rien. Conséquence assumée, écrite au Change Log : `rate_source = 'afc'` dit que la ligne
+      portait le cours AFC en vigueur **quand elle a été contrôlée**, non qu'elle porte celui d'aujourd'hui (aucun
+      lecteur de 35-4 ni de 35-5 n'en tire autre chose). **Exemptée** : la contre-passation, qui recopie le cours
       d'origine à une autre date — mécanisme : `create_in_tx_inner` la reconnaît à son paramètre existant
       `reverses_entry_id.is_some()` (`:281`), aucun nouvel indicateur dans `NewJournalEntry` (un indicateur public
       permettrait à un appelant de se dispenser du contrôle).
@@ -344,7 +349,8 @@ chacune (R7), l'écart de change dans la seconde, afin que mes comptes en devise
    (`frontend/src/lib/` : codes d'erreur, comme 35-2).
 7. **AC-7 — Modification et contre-passation.**
    - le `PUT` (remplacement complet des lignes : `DELETE` `:1646`, `INSERT` `:1667`) prend `foreign` comme le `POST`,
-     avec les mêmes contrôles (AC-3, AC-4, dont `FX_RATE_NOT_AFC`) ; l'audit avant/après (`entry_snapshot_json`
+     avec les mêmes contrôles (AC-3, AC-4), `FX_RATE_NOT_AFC` et `RATE_UNAVAILABLE` sur les seules lignes `afc`
+     nouvelles ou modifiées (AC-4, 4, A17) ; l'audit avant/après (`entry_snapshot_json`
      `:999`) porte les quatre champs ;
    - une écriture qui porte une ligne `rate_source = 'revaluation'` **n'est pas modifiable** : `PUT` → 409
      `ENTRY_IS_FX_REVALUATION`. Sites : `DbError::EntryIsFxRevaluation` (variante propre, bras dans `errors.rs`), posée
@@ -422,9 +428,14 @@ chacune (R7), l'écart de change dans la seconde, afin que mes comptes en devise
       change pas le résultat de (a) à (d) ; (f) **S6** : un cours AFC republié non adopté (`republished_rate` posé) → une
       ligne `afc` au cours **republié** est refusée `FX_RATE_NOT_AFC` (`expectedRate` = cours en vigueur), une ligne `afc`
       au cours en vigueur passe, le `PUT` d'une écriture `afc` passée à l'ancien cours passe ; (g) **après adoption**
-      (`republications/adopt`, 35-2 AC-5) : la ligne `afc` à l'ancien cours est refusée à la création et au `PUT`
-      (libellé seul compris), la même ligne en `manual` à l'ancien cours passe, et l'écriture passée **avant**
-      l'adoption garde ses lignes (aucune réécriture).
+      (`republications/adopt`, 35-2 AC-5) : une ligne `afc` à l'ancien cours est refusée à la création ; l'écriture
+      passée **avant** l'adoption garde ses lignes (aucune réécriture) et son `PUT` du seul libellé, de lignes CHF ou
+      d'un projet passe, de même avec ses lignes envoyées dans un autre ordre ; son `PUT` qui modifie la ligne `afc`
+      (montant, compte, côté, ou date de l'écriture) ou en ajoute une à l'ancien cours → `FX_RATE_NOT_AFC`
+      (`expectedRate` = nouveau cours) ; la même ligne passée en `manual` à l'ancien cours passe ; une ligne `manual`
+      repassée `afc` à l'ancien cours → `FX_RATE_NOT_AFC` ; (h) **restauration** (table des cours vide) : `PUT` du seul
+      libellé d'une écriture `afc` → passe, sans lecture du cours ; `PUT` qui modifie sa ligne `afc` → `404
+      RATE_UNAVAILABLE`.
 - [ ] `kesh-core` (AC-2, AC-3) : `ForeignAmount`, `JournalEntryLineDraft.foreign`, ordre des contrôles, bornes et
       produit en entiers `i128` (**jamais** `Decimal::checked_mul`, AC-3) ; fonction publique du contrôle par ligne et
       fonction publique des bornes du cours seul (AC-3) ; fixture `crates/kesh-core/tests/fixtures/fx_rounding.json` et son test Rust ; tests de propriété
@@ -601,3 +612,18 @@ chacune (R7), l'écart de change dans la seconde, afin que mes comptes en devise
   S6 contre 35-1/35-2/35-3b/35-5, tests des AC modifiés, sites SQL/lock. Non exercés : code (fiche seule, aucune ligne
   citée n'a changé), GET de la source journalière (sans prémisse ici), i18n des locales, manuels, MCP (35-1 AC-8 ne
   l'étend pas aux comptes de différence), E2E.
+- 2026-11-14 — validation CR-3 P2 (Opus) : 0 CRITICAL, 0 HIGH, 2 MEDIUM, 3 LOW ; remédiés dans la fiche sauf
+  35-3a-CR3-P2-IF1 (35-2 AC-5 et Tâches), inter-fiche. **Arbitrage A17 appliqué** : AC-4 (4) réécrit en texte propre
+  (texte antérieur retiré) ; AC-7 et Tâches (g), (h) alignés. MEDIUM : (1) la liste A17 des champs qui font une ligne
+  « modifiée » omettait `rate_source` (une ligne `manual` repassée `afc` au même cours aurait échappé au contrôle) et
+  le côté — comparaison posée sur compte, débit, crédit et les quatre champs de `foreign` ; (2) tests (g) contraires à
+  A17 (« refusée au `PUT`, libellé seul compris ») — réécrits, cas de restauration (h) ajouté. LOW : (3) appariement
+  des lignes sans égard à l'ordre (un `PUT` qui réordonne ne modifie aucune ligne), aligné aussi sur le critère de
+  `laterFiscalYear` (rang 2) ; (4) AC-7 disait le `PUT` soumis aux « mêmes contrôles, dont `FX_RATE_NOT_AFC` » ;
+  (5) sens de `rate_source = 'afc'` après adoption (cours en vigueur au contrôle) écrit, sans lecteur en 35-4/35-5.
+  Sites lus : diff `b6f88c24..d9c0018e` ; `journal_entries.rs:1481-1699` (étapes 1 à 11 d'`update_in_tx`,
+  `before_lines` :1629, court-circuit :1636) ; 35-2 AC-5 (:548-555) et Tâches (:766) ; 35-3b AC-2 (:205-235, provenance
+  conservée en édition :156-185, :283-284) ; 35-4 et 35-5 (aucune lecture de `rate_source = 'afc'` hors audit).
+  Axes exercés : remédiation CR-3 P1 et A17, cohérence inter-fiches de S6, tests des AC modifiés. Non exercés : GET de
+  la source journalière (aucune prémisse ici), i18n des quatre locales et manuels (aucune clé neuve ; 35-3b), MCP et
+  E2E (non touchés par A17), code au-delà d'`update_in_tx`.

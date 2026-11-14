@@ -229,7 +229,8 @@ cours sans saisie.
        exclut `XXX`, `XTS`, métaux et `XDR`), et différents de `CHF` ; sinon devise écartée (`rejected`) ;
      - **mois et dates** : `<monat>` = `AAAA-MM`, mois 01–12, année 2000–2099, et égal au mois demandé
        (`month_mismatch`) ; `<datum>` = `JJ.MM.AAAA`, date calendaire valide (`31.02.2024` refusé), mêmes bornes
-       d'année, contrôle `date_mismatch` de l'appelant ;
+       d'année **abaissées à 1999** (`d=20000101` rend `<datum>31.12.1999</datum>`, relevé le 2026-11-14 : sans
+       cela, la borne 2000-01-01 du `POST /fetch` rendrait `malformed`), contrôle `date_mismatch` de l'appelant ;
      - un refus du document se classe `malformed` (`last_error`), jamais en texte libre.
      **Tests de réponses hostiles** (fixtures synthétiques, `kesh-core` et client contre le serveur local) : DOCTYPE
      avec entités imbriquées (« billion laughs ») et entité externe `SYSTEM "file:///etc/passwd"` → refus, sans
@@ -292,7 +293,8 @@ cours sans saisie.
      (plusieurs onglets), elle s'allonge d'autant ; pour la tenir, un `POST /fetch` qui a **attendu** le verrou et
      trouve, une fois le verrou pris, le mois (ou le jour) écrit par une récupération **commencée après son arrivée** (`fetched_at`,
      pris par la récupération **avant** son appel sortant, postérieur à l'instant d'arrivée du `POST`) rend ce
-     résultat (200, `count` des devises présentes, `rejected` 0) sans rappeler la source, sans ligne d'audit et sans
+     résultat (200, `count` des devises présentes, `rejected` et `republished` à 0 — une valeur republiée trouvée par
+     la récupération qui précède, la revérification automatique de l'AC-4 comprise, se voit en rouge à la relecture) sans rappeler la source, sans ligne d'audit et sans
      écriture de `_kesh_exchange_rate_fetch` (il n'a rien récupéré). Sous le
      verrou, le `POST /fetch` relit la mémoire de l'AC-5 avant d'appeler la source (un mois ou un jour **présent** se redemande,
      c'est la demande : la mémoire ne retient que `not_published` et les échecs) ; **un succès retire l'entrée** du
@@ -309,7 +311,9 @@ cours sans saisie.
      transaction : (a) absente → insérée (cours en vigueur, `fetched_at` = `first_fetched_at` = l'instant pris avant
      l'appel sortant) ; (b) présente, **même valeur publiée** que le cours en vigueur (`published_unit` et
      `published_rate` égaux, comparés en valeur — jamais le `rate_per_unit` dérivé) → seul `fetched_at` avance (pour un jour, `source_date` reste celle du cours en vigueur, même si le `<datum>` rendu
-     diffère : seule la valeur compte) ; une
+     diffère : seule la valeur compte ; de même, une valeur republiée d'un jour ne garde pas son `<datum>`, qui va au
+     seul `tracing::warn!` : l'adoption laisse `source_date` — limite assumée, aucun changement de `<datum>` d'une
+     date passée n'ayant été observé) ; une
      valeur republiée en attente est alors **effacée** (l'AFC est revenue au cours en vigueur : `republished_*` et
      `notice_acknowledged_at` à `NULL`) ; (c) présente, **valeur différente** → le cours en vigueur **ne change pas** ;
      si la valeur rendue égale déjà `republished_*`, rien d'autre que `fetched_at` ; sinon `republished_*` reçoit la
@@ -318,7 +322,8 @@ cours sans saisie.
      changent **jamais** (35-3a : elles portent leur cours). ⛔ **Une récupération ne lit ni n'écrit jamais `exchange_rate_overrides`** (D9 : un cours
      saisi n'est jamais remplacé) ; test : un cours saisi pour (USD, mois) reste, avec sa `version`, après un
      `POST /fetch` du même mois qui rend un cours AFC différent (republication, S6), et le cours effectif reste le
-     cours saisi ; tests de la règle d'écriture S6 : (a), (b) avec effacement d'une republication en attente, (c)
+     cours saisi ; tests de la règle d'écriture S6 : (a), (b) avec effacement d'une republication en attente, (b)
+     d'un jour rendu sous un autre `<datum>` à valeur égale (`source_date` inchangée), (c)
      première republication, même republication revue (rien ne change, `republished_at` et acquittement gardés),
      troisième valeur (republication remplacée, acquittement remis à `NULL`) ; `first_fetched_at` jamais avancé.
 4. **AC-4 — Récupération automatique (R2, R4, S1 ; remplace la boucle permanente de 6 h).**
@@ -371,8 +376,8 @@ cours sans saisie.
      unité manquante, demandée une fois ; (iii) elle **ne déclenche jamais** un tour ni un réveil : un tour ne se lance
      que si une unité manque (le démarrage ou la connexion qui ne trouvent rien à récupérer n'appellent pas la source,
      pas même pour revérifier) et **`prochain_reveil` reste inchangé** — pendant la pause de (c), aucun tour, donc aucune
-     revérification : une correction de l'AFC publiée alors se découvre au tour qui suit (fin de pause, démarrage, ou
-     connexion avec une autre unité manquante) ou par « Revérifier les cours publiés » (AC-6) ; (iv) elle passe par
+     revérification : une correction de l'AFC publiée alors se découvre au tour qui suit (fin de pause, ou démarrage
+     ou connexion qui trouvent une unité manquante — pour la connexion, autre que le seul mois suivant) ou par « Revérifier les cours publiés » (AC-6) ; (iv) elle passe par
      `rate_fetch_lock` et la mémoire de 15 minutes comme toute récupération (un succès retire l'entrée ; un échec ou un
      `not_published` se mémorise 15 minutes et ne se redemande pas avant) ; borne du trafic : au plus un appel de
      revérification par tour, et au plus un tour de connexion par quart d'heure ; (v) son résultat entre dans le **pire
@@ -550,9 +555,10 @@ cours sans saisie.
        `notice_acknowledged_at` repassent à `NULL` ; ligne ou republication absente → 404 `NOT_FOUND` ; valeur
        republiée différente de celle du corps → 409 `OPTIMISTIC_LOCK_CONFLICT` ; réponse `200` avec la forme d'une case
        (`Cell`) ; audit `exchange_rates.republication_adopted` (`{ currency, kind, rateDate, before, after }`, cours en
-       chaînes). Conséquence, écrite au manuel et testée : les lignes `afc` déjà passées gardent leur cours, mais un
-       `PUT` qui les reprend tel quel est refusé `FX_RATE_NOT_AFC` (35-3a AC-4, 4 : comparaison au cours **en
-       vigueur**) jusqu'à ce que l'utilisateur les passe en `manual` ou au nouveau cours ;
+       chaînes). Conséquence, écrite au manuel (testée par 35-3a) : les lignes `afc` déjà passées gardent leur cours,
+       et un `PUT` qui les laisse **inchangées** passe (arbitrage A17 : seules les lignes `afc` nouvelles ou modifiées
+       sont contrôlées) ; une ligne `afc` **nouvelle ou modifiée** à l'ancien cours est refusée `FX_RATE_NOT_AFC`
+       (35-3a AC-4, 4 : comparaison au cours **en vigueur**) — elle passe en `manual` ou prend le nouveau cours ;
      - audit sous l'utilisateur (`from_current_user`), entité `installation` avec `AUDIT_ENTITY_ID_NONE` (comme
        `exchange_rates.fetched`), dans la transaction de l'écriture ; deux actions ajoutées à `ACTIONS` (liste triée),
        clés `audit-log-action-exchange-rates-republication-{acknowledged,adopted}` dans les quatre locales ;
@@ -666,8 +672,8 @@ cours sans saisie.
      un bouton **↑** (libellé accessible « Adopter le cours AFC publié à nouveau »), Administrateur et Comptable : il
      appelle `POST /exchange-rates/republications/adopt` avec la valeur affichée, puis relit le tableau (409 →
      rechargement avec message) ; un texte bref dit que l'adoption change le cours AFC **en vigueur** pour toute
-     l'installation, sans toucher aux écritures passées, et que les lignes `afc` au cours d'avant ne se modifient
-     ensuite qu'en passant en `manual` ou au nouveau cours. Le rouge reste tant que la valeur n'est pas adoptée
+     l'installation, sans toucher aux écritures passées, et qu'une ligne `afc` au cours d'avant reste admise tant
+     qu'on ne la modifie pas, mais ne se modifie ensuite qu'en passant en `manual` ou au nouveau cours (A17). Le rouge reste tant que la valeur n'est pas adoptée
      (l'acquittement n'efface que l'avertissement de connexion). Le cours effectif et la mention « AFC ✓ / AFC : … »
      restent ceux du cours **en vigueur**. Couleur par le jeton d'erreur existant du thème (recette visuelle : le
      rouge doit se voir, #640). Bouton « **Revérifier les cours publiés** » (Administrateur et Comptable) : un
@@ -763,12 +769,14 @@ cours sans saisie.
       plus le cours en vigueur (S6, CR-3 ; règle d'écriture de l'AC-3) : elle la garde dans `republished_*`, la
       journalise (`tracing::warn!`, devise, en vigueur et republié) et la compte (`republished` dans le détail
       d'audit et la réponse de `POST /fetch`) ; seule l'adoption (AC-5) change le cours en vigueur — les lignes `afc`
-      déjà passées gardent leur cours, mais leur `PUT` est alors refusé `FX_RATE_NOT_AFC` (35-3a) : l'écart n'est
-      jamais muet (rouge, avertissement, audit).
+      déjà passées gardent leur cours ; inchangées, leur `PUT` passe, mais une ligne `afc` nouvelle ou modifiée à
+      l'ancien cours est refusée `FX_RATE_NOT_AFC` (35-3a, A17) : l'écart n'est jamais muet (rouge, avertissement,
+      audit).
 - [ ] `kesh-api` : trait `RateSource`, `HttpRateSource`, source factice et endpoint `_test` (AC-3), boucle (AC-4,
       `main.rs`), routes (AC-5, `lib.rs` : `GET` dans `authenticated_routes`, `POST /fetch`, `PUT` et `DELETE
       /exchange-rates/overrides` dans `comptable_routes`), variantes `AppError` (dont `FX_RATE_INVALID`), audit
-      (`audit_labels.rs` : trois actions et un type d'entité), registre des routes et phrase du manuel.
+      (`audit_labels.rs` : quatre actions — `exchange_rates.fetched` et les trois `exchange_rate_override.*` — et un
+      type d'entité ; les trois autres actions aux tâches CR-2 et CR-3), registre des routes et phrase du manuel.
 - [ ] CR-2, CR-3 : tâche automatique au calendrier (AC-4 : `unites_utiles` — exercices de durée quelconque, S4 —,
       `prochain_reveil` — quotidien, puis pause d'au plus 24 jours jamais au-delà du 25, S1 —, démarrage, connexion,
       revérification du mois courant à chaque tour, A10), filtrage strict et tests hostiles (AC-2, R5), routes `GET /fiscal-years/{id}/exchange-rates` et
@@ -811,7 +819,8 @@ cours sans saisie.
       E2E : saisir un cours, le voir proposé, ↑ le retire ; `xmldaily` 404 JSON (relevé du 2026-11-14) →
       `NotPublished`, `RATE_NOT_PUBLISHED`, mémorisé, rien d'écrit ; 404 de `xmlavgmonth`, 500 de l'une ou l'autre →
       `RATE_SOURCE_UNAVAILABLE` ;
-      `<land_en/>` vide et `<gueltigkeit>` d'une seule date acceptés ; `lookup` `kind` hors `month|day` → 400, forme `day`
+      `<land_en/>` vide et `<gueltigkeit>` d'une seule date acceptés ; `POST /fetch { date: "2000-01-01" }` servi
+      `<datum>31.12.1999</datum>` → 200, `sourceDate` 1999-12-31 ; `lookup` `kind` hors `month|day` → 400, forme `day`
       sans cours → 404 avec `details.date` ; `GET /exchange-rates` d'une devise à cours saisi seul (`fetchedAt` `null`) ;
       cours saisi égal au cours AFC conservé (`overridden` vrai) ; deux `PUT` de création simultanés → un 200 et un 409 ;
       `DELETE` sans `version` → 400 ; `registry_entries_are_within_import_window` vert avec la table créée (R1).
@@ -1012,6 +1021,26 @@ cours sans saisie.
   mutantes + `_test` = 7) ; sites S1–S6 de la fiche (sauvegarde, `TABLES_TO_TRUNCATE`, export, audit, RBAC, i18n,
   manuels, MCP). Non exercés : source journalière (aucun GET), compilation, gate, rendu de l'écran, 35-1/35-3a/35-3b/35-5
   au-delà des renvois. Cycle CR-3 : A10 est une révision nouvelle, à relire par la passe suivante.
+- 2026-11-14 — validation CR-3 P2 (Opus) : 0 CRITICAL, 0 HIGH, 1 MEDIUM, 6 LOW ; remédiés dans la fiche (aucun
+  finding inter-fiches). 35-2-CR3-P2-1 (MEDIUM, AC-5 adoption, AC-6 cours republié, Tâches) : « un `PUT` qui les
+  reprend tel quel est refusé `FX_RATE_NOT_AFC` » contredisait l'arbitrage A17 (35-3a AC-4, 4 : seules les lignes
+  `afc` nouvelles ou modifiées sont contrôlées) : réécrit (inchangée → passe ; nouvelle ou modifiée à l'ancien cours →
+  refus). 35-2-CR3-P2-2 (LOW, AC-2 dates) : borne d'année 2000–2099 du `<datum>` contre la borne 2000-01-01 du
+  `POST /fetch` — `xmldaily?d=20000101` rend `<datum>31.12.1999</datum>` (un GET, 2026-11-14) : borne basse à 1999,
+  test ajouté. 35-2-CR3-P2-3 (LOW, AC-3) : réponse du raccourci sans `republished` : 0, la relecture montre le rouge.
+  35-2-CR3-P2-4 (LOW, AC-3 (b)) : la remédiation CR3-P1-3 (`source_date` gardée) n'avait pas de test : ajouté.
+  35-2-CR3-P2-5 (LOW, AC-3 (c)) : une republication d'un jour ne garde pas son `<datum>` ; l'adoption laisse
+  `source_date` : limite écrite. 35-2-CR3-P2-6 (LOW, AC-4 A10 (iii)) : « démarrage » donné comme voie de découverte
+  pendant la pause sans la condition d'une unité manquante : précisé. 35-2-CR3-P2-7 (LOW, Tâches) : « trois actions »
+  d'audit pour quatre (`exchange_rates.fetched` + trois `exchange_rate_override.*`) : corrigé. Décompte : 1 MEDIUM,
+  6 LOW (P2-1 à P2-7). Axes exercés : diff `b6f88c24..d9c0018e` de la fiche (A10, `source_date`) ligne à ligne contre
+  l'AC-1 (pire statut), l'AC-3 (verrou, raccourci, mémoire, règle S6), l'AC-4 (calendrier, connexion, plafond),
+  l'AC-6 (bouton « Revérifier »), l'AC-8, les Notes ; A17 contre 35-3a AC-4 (4) ; renvois du fichier d'epic (S1, S6,
+  A9–A11, A16, A17) ; citations relues (`routes/auth.rs:235`, `+layout.svelte:373`, `BackupScheduleBanner.svelte`,
+  `audit_labels.rs:38-39`, `backup.rs:46,136,949`, `post_restore.rs:939,988`) ; grep des autres fiches 35-* sur
+  « redemande » / « revérifi » (aucun écart) ; source journalière : un GET (`d=20000101`). Non exercés : compilation,
+  gate, rendu de l'écran, deux GET restants non faits (week-end et date future déjà relevés), 35-1/35-4/35-5 au-delà
+  des renvois.
 - 2026-11-14 — révision CR-3 (revue de Beat S1–S6 ; Opus) : **S1** — calendrier de la tâche automatique (AC-4,
   remplace R4 amendé) : quotidien tant que le mois courant ou le mois suivant manque, puis, le mois suivant `T` obtenu,
   pause jusqu'au plus tôt de « obtention + 24 jours » et du 25 de `T`, jamais avant le 1er de `T` ; `prochain_reveil`
