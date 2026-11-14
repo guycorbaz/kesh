@@ -171,7 +171,11 @@ exports, afin de rapprocher mes comptes PayPal ou Wise de leurs relevés et de c
      `kesh-api/src/routes/bank_accounts.rs`, par deux commentaires seulement, `:244` et `:878`) : contrôles de clôture
      (`kesh-db/src/repositories/closing_checks.rs:536`, équilibre CHF par écriture) ; solde comptable d'un compte
      bancaire (`bank_accounts.rs:1871-1905`, compte lié jamais en devise, C-37-9) ; postes ouverts et lettrage
-     (`letterings/open_items.rs:83`, `:91` : limite du lettrage, 37-3a AC-9) ; réconciliation
+     (`letterings/open_items.rs:83`, `:91` : limite du lettrage, 37-3a AC-9), **et l'outil MCP `kesh_postes_ouverts`**
+     qui les rend (V13, CR-6 : `mcp/outils/postes_ouverts.rs:210`, par `services/postes_ouverts.rs:98` →
+     `letterings::open_items` ; sortie `Poste` et `PostesOuverts`, `:125-161`, en CHF seulement — un compte en devise
+     lettrable y est atteignable ; aucun champ en devise ajouté, renvoi à la limite de 37-3a AC-9 ; test : un compte
+     de débiteurs USD rend ses postes au CHF de leurs lignes) ; réconciliation
      (`reconciliation_link.rs:151`, `:801`, comptes en devise exclus, C-37-5) ; équilibre des écritures
      (`journal_entries.rs:522`, `:1684`, `:913`). Aucun n'est étendu ; un site neuf trouvé au développement s'ajoute
      ici, au Change Log.
@@ -213,6 +217,9 @@ exports, afin de rapprocher mes comptes PayPal ou Wise de leurs relevés et de c
       construction de `LigneBalance` (`mcp/outils/rapports.rs:219`) et la correspondance du grand livre de
       `mcp/outils/grand_livre.rs` (`fn section`, :148) ; **aucune** extension de `sortie!` (champs en devise présents à `null`, AC-6, C-37-9) : les champs neufs des sorties MCP sont des `Option<…>` de types admis.
 - [ ] `services/rapports.rs`, routes, MCP (limites).
+- [ ] CR-6 (V13, AC-7) : test `mcp_outils_e2e.rs` — `kesh_postes_ouverts` sur un compte de débiteurs USD lettrable
+      (lignes en devise) rend `solde`, `total_ouvert` et les `debit`/`credit` des postes au CHF des lignes, sans champ
+      en devise ; site inscrit à l'inventaire « CHF seulement » du Change Log.
 - [ ] Frontend : cinq vues, types ; Vitest — `IncomeStatementView.test.ts` et `JournalReportView.test.ts` **n'existent
       pas** (relevé du 2026-11-14) : à créer, avec le cas « mono-devise : rien de visible ne change » (AC-6) ; E2E
       (grand livre d'un compte USD).
@@ -288,3 +295,9 @@ exports, afin de rapprocher mes comptes PayPal ou Wise de leurs relevés et de c
   Non exercés : relecture complète de la fiche (hors périmètre), 37-5 (aucun ajout ne touche `balances_as_of`).
 - 2026-11-14 — validation CR-5 P1 (Sonnet) : 0 CRITICAL, 0 HIGH, 1 MEDIUM, 1 LOW ; remédiés dans la fiche sauf <aucun inter-fiches>. MEDIUM CR5-P1-1 : A29/U6 non appliqués (AC-3 et AC-4 disaient « restent CHF » et « totaux en CHF seulement » — réécrits « devise principale (aujourd'hui CHF) »). LOW CR5-P1-2 : « sommes CHF existantes » (AC-1) alignée ; les noms de champs `chf_net`, `total_debit` ne changent pas (code). Points de contact U1 : aucun — la fiche ne lit ni `exchange_rates` ni `_kesh_fetched_exchange_rates` (les rapports lisent `amount_currency` et `exchange_rate` de la ligne) ; aucun reste de `republished_*` ; A24/A28 sans objet ici ; la fiche ne crée ni table ni migration (pas de fenêtre d'import, rejeu, `TABLES_TO_TRUNCATE`). U6 : « CHF » restant légitime pour TVA, projets, accueil (base légale, AC-7). Relu au code : `opening.rs:75`, `general_ledger.rs:687`, `trial_balance.rs:165-170`/`:209` : exacts. Non exercés : GET de la source journalière (aucun rapport n'y touche), 37-5 (inchangée).
 - 2026-11-14 — validation CR-5 P2 ciblée (Opus) : 0 CRITICAL, 0 HIGH, 0 MEDIUM, 1 LOW ; remédié dans la fiche, aucun inter-fiches. LOW CR5-P2-1 : propagation de U6 incomplète — le récit (« à côté du CHF ») et AC-2 (« `unnatural_balance` reste CHF ») gardaient la formule réécrite en AC-3/AC-4 ; alignés « devise principale ». Relu au code : `trial_balance.rs:69-83` (`total_debit`, `total_credit`, `balanced`, `retained_earnings`, `opening_balanced`) et `general_ledger.rs:137`, `:797` (`unnatural_balance` booléen tiré du solde CHF) : exacts. Cohérence : A29, U6 (epic l. 294, 321) appliqués ; « devise principale » définie par l'epic (l. 17) ; 37-5 (`chf_net`, `balances_as_of`) non touchée. Non exercés : relecture complète de la fiche (hors périmètre) ; AC-7 « CHF seulement » laissé tel quel (description du calcul, non du vocabulaire débit/crédit).
+- 2026-11-14 — révision CR-6 (couverture API et MCP, Opus) : **V13** — AC-7 : l'outil MCP `kesh_postes_ouverts`
+  (`mcp/outils/postes_ouverts.rs:210`, service `services/postes_ouverts.rs:98` → `letterings::open_items`) ajouté aux
+  sites « CHF seulement » — un compte en devise lettrable y est atteignable —, renvoi à la limite du lettrage de 37-3a
+  AC-9 ; test et tâche. Prémisses relues au code : `postes_ouverts.rs:125-161` (sorties `Poste`, `PostesOuverts`, en
+  `Montant` seulement), `services/postes_ouverts.rs:98`, `letterings/open_items.rs:83-91`. AC touchés : AC-7, Tâches.
+  Fiche à revalider (cycle CR-6).

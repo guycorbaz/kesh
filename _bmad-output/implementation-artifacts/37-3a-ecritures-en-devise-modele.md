@@ -66,7 +66,12 @@ chacune (R7), l'écart de change dans la seconde, afin que mes comptes en devise
    `declared_currency: Option<String>` est la devise **annoncée** par le client — jamais stockée, T3 : `None` pour un
    client qui ne l'envoie pas et pour les chemins internes, contre-passation et réévaluation de 37-5 ; le dépôt la
    compare à la devise du compte, AC-4 ; `kesh-core` ne la lit pas ; `source` est un enum
-   nommé `RateProvenance { Afc, Manual, Revaluation }` — **pas** `RateSource`, déjà le trait de 37-2 dans `kesh-api` ;
+   nommé `RateProvenance { Afc, Manual, Revaluation }` — **pas** `RateSource`, déjà le trait de 37-2 dans `kesh-api` —,
+   porté en `source: Option<RateProvenance>` (V1, CR-6) : `None` **seulement** pour une ligne venue de l'API sans
+   `rateSource` (AC-6), que le dépôt qualifie `Afc` ou `Manual` au rang 4 de l'AC-4, avant l'`INSERT` (un `None` à
+   l'`INSERT` est un `DbError::Invariant`, jamais une ligne écrite) ; les chemins internes (ouverture et complément de
+   37-3b, contre-passation, réévaluation de 37-5) posent toujours `Some` ; `kesh-core` ne lit que
+   `Some(Revaluation)` (exemption de l'étape 3) ;
    montant et cours en `Decimal`, non en `Money` ; le type dérive `Debug, Clone, PartialEq, Eq, Serialize,
    Deserialize` comme `JournalEntryLineDraft` qui le porte, `RateProvenance` de même) ;
    `NewJournalEntryLine.foreign: Option<ForeignAmount>` **et** `JournalEntryLineDraft.foreign: Option<ForeignAmount>`
@@ -154,6 +159,25 @@ chacune (R7), l'écart de change dans la seconde, afin que mes comptes en devise
      (`routes/journal_entries.rs:265`) rend **tout** variant inconnu en `Validation` générique
      (`other => … "Erreur métier"` `:288`) : sans un bras par variante, le code et les `details` n'atteindraient jamais
      le client. Un bras par variante, avec son code et ses `details`, et un test par code au niveau HTTP.
+   - **Cours déduit du CHF (V1, CR-6)** — « cours OU CHF » (37-3b AC-1, AC-2) n'est plus un calcul du seul écran :
+     **une** fonction publique **pure** de `kesh-core` (nom au développement, p. ex.
+     `kesh_core::accounting::rate_from_chf(amount, chf) -> Result<Decimal, RateFromChfError>`, voisine de la fonction
+     par ligne ci-dessus) rend le cours = CHF ÷ montant arrondi à 10 décimales (`MidpointAwayFromZero`), puis, si
+     `round(montant × cours, 2)` (le produit en `i128` de l'étape 1, **même** code) ne redonne pas le CHF, ajuste le
+     cours au dernier chiffre vers le CHF visé, en un nombre de pas **borné** (borne fixée au développement, écrite au
+     doc-comment, la même dans le jumeau TS) ; le cours rendu passe la fonction des bornes du cours seul (37-2). Erreur
+     **neutre** (type propre, comme la fonction des bornes du cours seul), traduite par l'appelant : montant ≤ 0, CHF
+     ≤ 0 ou cours hors bornes → `FxValueOutOfRange { line }` ; aucun cours à 10 décimales ne redonne le CHF (montant
+     tel qu'un pas de 10⁻¹⁰ sur le cours déplace le CHF de plus d'un centime) → `FxAmountMismatch { line, expected,
+     provided }` (`expected` = CHF du cours le plus proche, `provided` = le CHF fourni) — aucun code de plus. Le
+     serveur l'appelle (AC-6, ligne sans `rate`) ; l'écran (37-3b, `rateFromChf` de `fx.ts`) en est le **jumeau**
+     TypeScript, tenu égal par une **fixture partagée** créée ici, `crates/kesh-core/tests/fixtures/fx_rate_from_chf.json`
+     (tableau de `{ amount, chf, rate }` ou `{ amount, chf, error }` en chaînes décimales — `error` parmi
+     `FX_VALUE_OUT_OF_RANGE`, `FX_AMOUNT_MISMATCH` ; au moins un CHF repris d'un bilan, un cas qui exige un pas
+     d'ajustement, JPY, un montant au-delà duquel aucun cours ne convient, montant 0 et CHF 0), lue par un test Rust
+     **et** par le Vitest de 37-3b (même fichier, aucune copie). Chaque vecteur accepté vérifie aussi
+     `round(amount × rate, 2) = chf` par la fonction de l'étape 1 (le cours rendu passe le contrôle `FX_AMOUNT_MISMATCH`
+     ordinaire).
    - **`rate_source = 'revaluation'`** : exemptée de l'égalité CHF = round(montant × cours) et de
      `FX_LINE_ROUNDS_TO_ZERO` ; exige `amount = 0`, `rate > 0` et un CHF > 0. Refusée par l'API (AC-6), admise pour
      37-5 et pour la contre-passation.
@@ -295,6 +319,18 @@ chacune (R7), l'écart de change dans la seconde, afin que mes comptes en devise
       d'origine à une autre date — mécanisme : `create_in_tx_inner` la reconnaît à son paramètre existant
       `reverses_entry_id.is_some()` (`:281`), aucun nouvel indicateur dans `NewJournalEntry` (un indicateur public
       permettrait à un appelant de se dispenser du contrôle).
+      **Ligne sans provenance (V1, CR-6 ; `source` `None`, AC-2, venue de l'API sans `rateSource`, AC-6)** : au même
+      rang, le dépôt la **qualifie** par la même lecture `find_company_rate_in_tx` (devise du compte, mois de
+      `entry_date`) : `afc` si la ligne de la société existe, que sa `source` est `afc` et que le cours de la ligne
+      d'écriture l'**égale** en valeur ; `manual` sinon — ligne de la société `manual` ou de toute autre source (A30,
+      p. ex. `ecb`), cours différent, ou **aucune** ligne pour ce mois (**pas** de `RATE_UNAVAILABLE` : la ligne ne
+      prétend pas au cours `afc`). Une ligne ainsi qualifiée `afc` est conforme par construction (aucun
+      `FX_RATE_NOT_AFC`). La qualification est la règle de l'écran (37-3b AC-2, `afcRate` du mois de la date, égalité
+      en valeur), sans `publishedRate`. **Au `PUT`**, une ligne sans provenance **identique** à une ligne d'avant non
+      appariée (compte, débit, crédit, montant et cours, montants en valeur, même appariement sans égard à l'ordre
+      qu'A17) **garde la provenance stockée**, sans lecture : un client qui renvoie l'écriture telle qu'il l'a lue,
+      sans `rateSource`, ne requalifie pas en `manual` une ligne `afc` après la reprise d'un cours corrigé (A17) ; sinon
+      elle est qualifiée comme à la création. Contre-passation et réévaluation ne passent jamais `None`.
    - **Devise des lignes relues dans la transaction (T3)** : la relecture qui suit l'`INSERT` (`:549`, `:1708`) est une
      lecture non verrouillante sous `REPEATABLE READ`, dont l'instantané peut précéder le verrou des comptes (le
      premier `SELECT` non verrouillant de la transaction, `books_locked_through` `:316-324`, l'ouvre avant) : un
@@ -385,8 +421,8 @@ chacune (R7), l'écart de change dans la seconde, afin que mes comptes en devise
    - **Comptes de différence de change (S2, CR-3)** : cette story ne construit aucune ligne d'écart ni de
      réévaluation et ne choisit donc aucun compte de différence (la ligne d'écart du formulaire est une ligne CHF
      ordinaire, C-37-9 ; elle passe ce contrôle central comme toute ligne). Toute résolution **serveur** des comptes
-     de gains et de pertes d'un compte en devise — aujourd'hui la seule réévaluation (37-5) ; la route de conversion
-     (37-3b) ne revalide que le compte de conversion, sa ligne de différence étant construite par l'assistant — passe
+     de gains et de pertes d'un compte en devise — la réévaluation (37-5) et, depuis V3 (CR-6), la route de conversion
+     (37-3b AC-2 bis), qui calcule la ligne de différence quand le corps ne la porte pas et contrôle sa paire sinon — passe
      par `fx_accounts_for` **puis** `validate_fx_accounts_in_tx` (37-1 AC-4 bis : contrôle des comptes désignés à
      l'usage, `FX_ACCOUNT_INVALID`) ; côté écran, la ligne d'écart, l'assistant *Conversion* et l'assistant TVA (37-3b)
      passent par le miroir `fxAccountsFor`, jamais par un choix écrit à côté entre `companies.fx_*` et `accounts.fx_*` ;
@@ -396,11 +432,45 @@ chacune (R7), l'écart de change dans la seconde, afin que mes comptes en devise
      Le **contrôle central de l'AC-4 reste le filet** : un état hérité ou une colonne oubliée ne produit jamais une
      ligne CHF sur un compte en devise, seulement un refus. Les sélecteurs du frontend masquent ces comptes (37-3b) ;
    - inventaire **clos** des sites, écrit au Change Log (méthode « inventorier les sites non résolus », `CLAUDE.md`).
-6. **AC-6 — API des écritures.** `CreateJournalEntryLineRequest` prend `foreign?: { currency?, amount, rate,
-   rateSource: "afc"|"manual" }` (`revaluation` refusé ici : réservé à 37-5) ; **`currency` facultatif** (T3, CR-4) :
+6. **AC-6 — API des écritures.** `CreateJournalEntryLineRequest` prend `foreign?: { currency?, amount, rate?, chf?,
+   rateSource?: "afc"|"manual", side?: "debit"|"credit" }` (`revaluation` refusé ici : réservé à 37-5) ; **`currency` facultatif** (T3, CR-4) :
    absent, la ligne prend la devise de son compte ; présent, il devient `declared_currency` et doit égaler la devise du
    compte (`FX_CURRENCY_MISMATCH`, AC-4, 3) ; il n'est jamais stocké. `debit`/`credit` restent les montants
-   CHF ; **typage du DTO** : les champs de `foreign` sont des `String` (`currency` en `Option<String>` ; comme `debit`/`credit`), analysés dans
+   CHF (en devise principale, U6). **Une ligne en devise se passe par l'API seule, sans calcul du client (V1, V2,
+   CR-6)** — l'analyse, dans `prepare_new_journal_entry` (`routes/journal_entries.rs:515`, avant `accounting::validate`
+   `:566` ; **une** fonction d'analyse de `foreign`, partagée avec les DTO d'ouverture de 37-3b AC-1), complète la
+   ligne avant `kesh-core`, sans lecture de la base :
+   - **CHF de référence** : `foreign.chf` s'il est fourni, sinon `debit + credit` s'ils le sont ; `chf` **et**
+     `debit`/`credit` fournis → ils doivent s'égaler (`chf` = `debit + credit`), sinon 400 `FX_AMOUNT_MISMATCH`
+     (`details: { line, expected: chf, provided: debit + credit }`) ;
+   - **`rate` absent (V1)** : le cours est déduit du CHF de référence par la fonction `rate_from_chf` de l'AC-3 (la
+     même que l'écran, fixture `fx_rate_from_chf.json`), erreurs traduites en `FX_VALUE_OUT_OF_RANGE` /
+     `FX_AMOUNT_MISMATCH` avec `line` ; ni `rate` ni CHF de référence → 400 `Validation` (« cours ou CHF requis ») ;
+     **`rate` fourni** : contrôle actuel inchangé (AC-3, étape 4 : `FX_AMOUNT_MISMATCH` si le CHF de référence ne vaut
+     pas `round(montant × cours, 2)`) ;
+   - **`debit`/`credit` absents (V2)** : `foreign.side` est requis (`"debit"` ou `"credit"`, sinon 400 `Validation`) ;
+     le serveur pose le CHF — `chf` fourni, sinon `round(montant × cours, 2)` par le produit de l'AC-3 — dans la
+     colonne de `side`, l'autre à 0 ; **présents**, `side`, s'il est fourni, doit désigner la colonne non nulle (sinon
+     400 `Validation`) et le contrôle actuel s'applique (`FX_AMOUNT_MISMATCH`). Une ligne **CHF** (sans `foreign`)
+     exige toujours `debit` et `credit` (400 `Validation` sinon) ; ⚠️ les deux champs deviennent `Option<String>`
+     (`#[serde(default)]`) : un corps sans `debit` rendait 422 (champ manquant d'axum), il rend désormais 400
+     `Validation` — changement de statut écrit au CHANGELOG et au guide d'API (37-3b AC-6), tests existants adaptés
+     (inventaire au Change Log) ;
+   - **`rateSource` absent (V1)** : `source` à `None` (AC-2), qualifié `afc` ou `manual` par le dépôt (AC-4, 4,
+     A30 compris) ; la réponse porte la provenance retenue ;
+   - un corps qui porte `rate`, `debit`/`credit` et `rateSource` (ce qu'envoient l'écran et les clients existants)
+     suit exactement le chemin d'avant CR-6.
+   **Ligne d'écart, pour un client de l'API (V4, CR-6)** : le serveur n'en construit aucune (C-37-4, AC-5) ; un client
+   qui équilibre une écriture en devise y ajoute une ligne **CHF ordinaire** sur le compte de gains (écart au crédit)
+   ou de pertes (au débit) **du compte en devise concerné** : ses comptes propres s'il en a, sinon ceux de la société
+   — règle de `fx_accounts_for` (37-1 AC-4 bis), lisible par l'API sur `AccountResponse.fxGainAccountId` /
+   `fxLossAccountId` (omis pour un compte « par défaut ») et `CompanyJson.fxGainAccountId` / `fxLossAccountId`
+   (`GET /companies/current`, 37-1 AC-2) ; le contrôle central ne l'impose pas (une ligne CHF sur un autre compte passe)
+   — écrit au guide d'API (37-3b AC-6). **Import de livres tenus ailleurs (V8, CR-6)** : les écritures de réévaluation
+   des livres d'origine ne s'importent **pas** telles quelles — leur ligne sur le compte en devise (montant en devise
+   nul, CHF non nul) n'a de forme admise que `revaluation`, refusée ici — ; la réévaluation se **repasse** par
+   `POST /fiscal-years/{id}/fx-revaluation` avec `rates` (37-5 AC-2, V8), qui retrouve le CHF des livres d'origine
+   dès que les autres écritures y ont été reprises à leur CHF. **Typage du DTO** : les champs de `foreign` sont des `String` (`currency`, `rate`, `chf`, `rateSource`, `side` en `Option<String>` ; comme `debit`/`credit`), analysés dans
    le handler — la route reçoit le corps par le `Json` d'axum (`create_journal_entry` `:600`), dont l'échec de
    désérialisation (énumération inconnue, nombre JSON pour un décimal) rend **422**, non 400 ; un `rateSource` typé en
    énumération rendrait donc 422 et non le 400 exigé ci-dessous (test HTTP : `rateSource: "revaluation"` → 400) ;
@@ -467,7 +537,7 @@ chacune (R7), l'écart de change dans la seconde, afin que mes comptes en devise
      reste identique octet pour octet (test) ;
    - MCP : `kesh_ecritures` / `kesh_ecriture` les donnent — `crates/kesh-api/src/services/ecritures.rs`
      (`list_by_company_paginated` `:201`, `find_by_id` `:243`) et `crates/kesh-api/src/mcp/outils/ecritures.rs`
-     (struct `:126`, construction `:187`) ; la devise y est celle **du compte** (`account_currency`, AC-2 — les deux
+     (struct `Ligne` `:122`, littéral de construction `:183`) ; la devise y est celle **du compte** (`account_currency`, AC-2 — les deux
      lectures du service passent par `LINE_COLUMNS`/`LINE_FROM`) ; champs **présents à `null`** sur une ligne CHF (la macro `sortie!`,
      `mcp/sortie.rs:97-114`, n'admet aucun attribut de champ et **n'est pas étendue** : choix de l'orchestrateur,
      2026-11-14, aligné sur 37-1 AC-8 ; registre C-37-9), devise du **même type** que le champ `devise` de `kesh_plan_comptable` (37-1 AC-8 :
@@ -584,6 +654,27 @@ chacune (R7), l'écart de change dans la seconde, afin que mes comptes en devise
       écritures par le compte de conversion (R7 : EUR → conversion, puis conversion → USD avec la ligne d'écart ; le
       compte de conversion revient à 0), refus d'un règlement de facture sur un compte USD, lot de réconciliation en `FailedProposal` (200),
       `MULTI_CURRENCY_DISABLED` en 409.
+- [ ] CR-6 (V1, V2, AC-3, AC-4 4, AC-6) — `kesh-core` : `rate_from_chf` (pure, produit de l'étape 1, pas
+      d'ajustement borné, erreur neutre) ; fixture `crates/kesh-core/tests/fixtures/fx_rate_from_chf.json` et son test
+      Rust (chaque vecteur accepté repasse `round(amount × rate, 2) = chf`) ; `ForeignAmount.source` en
+      `Option<RateProvenance>` (sites revus, `Some` partout hors API) ; `kesh-api` : fonction d'analyse de `foreign`
+      partagée (avec 37-3b AC-1), `debit`/`credit` en `Option<String>` ; `kesh-db` : qualification au rang 4 et
+      provenance gardée au `PUT` d'une ligne identique. **Tests d'API** : `foreign { amount, chf }` sans `rate` → 201,
+      cours rendu = celui de la fixture ; sans `rate`, CHF tiré de `debit`/`credit` → 201 ; `chf` ≠ `debit + credit` →
+      `FX_AMOUNT_MISMATCH` ; ni `rate` ni CHF → 400 `Validation` ; montant tel qu'aucun cours ne convient →
+      `FX_AMOUNT_MISMATCH` ; montant 0 ou CHF 0 sans `rate` → `FX_VALUE_OUT_OF_RANGE` ; `rate` **et** `chf` fournis,
+      incohérents → `FX_AMOUNT_MISMATCH` (contrôle inchangé) ; `debit`/`credit` absents avec `side: "credit"` → ligne au
+      crédit du CHF calculé ; absents sans `side` → 400 ; `side` contraire à la colonne non nulle → 400 ; `side: "x"` →
+      400 (non 422) ; ligne CHF sans `debit` → 400 `Validation` ; `rateSource` absent : cours égal à la ligne `afc` de la
+      société → relue `afc` ; différent → `manual` ; mois à ligne `manual` ou `ecb` (A30) → `manual` ; mois sans ligne
+      de la société → 201 `manual` (aucun `RATE_UNAVAILABLE`) ; `PUT` d'une écriture `afc` renvoyée sans `rateSource`,
+      après reprise par ↑ d'un cours corrigé → provenance `afc` gardée, aucune lecture ; même `PUT` avec un cours changé
+      → requalifiée ; corps complet d'avant CR-6 → réponse identique (non-régression). Test de dépôt : un
+      `NewJournalEntryLine` à `source` `None` qui atteindrait l'`INSERT` → `DbError::Invariant`.
+- [ ] CR-6 (V4, V8, AC-6) — guide d'API (37-3b AC-6) : ligne d'écart d'un client de l'API (comptes lus sur
+      `AccountResponse` puis `CompanyJson`) et réévaluation des livres importés par la route de 37-5 ; test d'API : une
+      ligne `rateSource: "revaluation"` reste refusée 400 (déjà listé) et le corps d'une réévaluation des livres
+      d'origine en `manual` (montant en devise 0, CHF non nul) → 400 `FX_VALUE_OUT_OF_RANGE` (AC-3, étape 2).
 - [ ] CHANGELOG, avec la limite du lettrage (AC-9) (le manuel et l'E2E vont à 37-3b).
 
 ## Notes de développement
@@ -838,3 +929,17 @@ chacune (R7), l'écart de change dans la seconde, afin que mes comptes en devise
   `RateOrigin::Other`, `find_company_rate_in_tx`, `expectedRate` alignés sur 37-2 AC-1/AC-5 et 37-3b AC-2. Non
   exercés : reste de la fiche hors diff, compilation.
 - 2026-11-14 — validation CR-5 P6 ciblée (Sonnet) : 0 CRITICAL, 0 HIGH, 0 MEDIUM, 0 LOW ; aucune modification. Phrases A30 du diff P5 vérifiées contre 37-2 (AC-1, AC-5, AC-6) ; aucun site restant. Non exercés : reste de la fiche hors diff, compilation, rendu.
+- 2026-11-14 — révision CR-6 (couverture API et MCP, Opus) : **V1** — une ligne en devise accepte `foreign { amount,
+  chf }` sans `rate` : cours déduit par `rate_from_chf`, fonction publique pure de `kesh-core` (AC-3), jumeau TS de
+  37-3b tenu par la fixture neuve `fx_rate_from_chf.json` ; `rateSource` absent → `ForeignAmount.source` `None`
+  (AC-2), qualifié `afc`/`manual` par le dépôt au rang 4 (AC-4, A30 compris, aucun `RATE_UNAVAILABLE`), provenance
+  stockée gardée au `PUT` d'une ligne identique (A17) ; **V2** — `debit`/`credit` facultatifs sur une ligne en devise,
+  posés depuis `foreign` et `side` (AC-6 ; `Option<String>`, 422 → 400 sur une ligne CHF sans `debit`, déclaré) ;
+  **V3** — AC-5 : la route de conversion (37-3b) passe par `fx_accounts_for` puis `validate_fx_accounts_in_tx` ;
+  **V4** — AC-6 : ligne d'écart d'un client de l'API ; **V8** — AC-6 : réévaluation des livres importés par la route
+  de 37-5, non par des lignes `revaluation` ; tâches et tests CR-6. AC-8 : `ecritures.rs:126` → `:122` (struct
+  `Ligne`, confirmé) et construction `:187` → `:183` (littéral `Ligne {` ; `:187` est son champ `debit`). Prémisses
+  relues au code : `routes/journal_entries.rs:68-80` (`debit`/`credit` en `String` obligatoires), `:515`
+  (`prepare_new_journal_entry`), `:566` (`validate`) ; `routes/opening_balances.rs:73-76` (`String`), `:170-175`
+  (`Option<String>`) ; `mcp/outils/ecritures.rs:120-131`, `:183-191`. AC
+  touchés : AC-2, AC-3, AC-4, AC-5, AC-6, AC-8, Tâches. Fiche à revalider (cycle CR-6).

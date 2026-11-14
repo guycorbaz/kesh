@@ -127,6 +127,15 @@ clôture et que l'écart aille aux différences de change.
 2. **AC-2 — Passation.** `POST …/fx-revaluation { rates, accountIds }` (pas de `version` : `FiscalYear` n'en a pas ;
    l'idempotence vient du rejeu, AC-3, et du verrou de l'exercice). Le serveur ne fait jamais confiance à l'aperçu : il
    recalcule.
+   - **Livres tenus ailleurs, importés par l'API (V8, CR-6)** : la réévaluation des livres d'origine ne s'importe
+     **pas** en écritures — sa ligne sur le compte en devise (montant en devise 0, CHF non nul) n'a de forme admise que
+     `revaluation`, refusée par l'API (37-3a AC-6) ; elle se **repasse** par cette route, à la fin de l'exercice
+     importé, avec les cours de clôture des livres d'origine dans `rates` — pour la recette de Beat, `{ "USD":
+     "0.91193", "EUR": "0.94947" }` au 31.12.2024 (cours journaliers, fichier d'epic D10) — et `accountIds` = les
+     comptes que les livres d'origine réévaluaient. Le CHF obtenu égale celui des livres d'origine dès que les autres
+     écritures y ont été reprises à leur CHF (`chf` ou `debit`/`credit`, 37-3a AC-6, V1) : `round(solde en devise ×
+     cours) − solde CHF`. Genre des cours reçus : la règle unique de l'AC-1 (*Genre d'un cours reçu dans `rates`*).
+     Écrit au manuel (AC-8) et au guide d'API (37-3b AC-6).
    - **Fonction de dépôt unique** `fx_revaluation::post(pool, user_id, actor_api_key_id, company_id, fiscal_year_id,
      rates, account_ids)` (`actor_api_key_id: Option<i64>`, propagé depuis `CurrentUser` par le handler : c'est
      l'argument qu'exige `NewAuditLogEntry::for_actor`, `entities/audit_log.rs:195`, pour l'audit ci-dessous), qui ouvre **une transaction** ; c'est le **handler** qui l'appelle dans
@@ -344,6 +353,12 @@ clôture et que l'écart aille aux différences de change.
    `…/close` (`lib.rs:821`) : Consultation reçoit 403 **y compris sur l'aperçu** (c'est un POST). Pas d'`ensure_not_pat`
    (comme `close`, contrairement à `reopen`), sauf décision contraire de l'utilisateur ; une clé en lecture seule est
    refusée sur le POST d'aperçu comme sur tout POST.
+   **MCP (V12, CR-6)** : aucun outil pour l'aperçu — un calcul à la demande (proposition d'écritures), hors du
+   périmètre du serveur MCP de l'Epic 32, qui ne rend que des lectures des livres ; hors périmètre, dit ; les écritures passées se lisent par `kesh_ecritures`
+   et `kesh_ecriture` (`mcp/outils/ecritures.rs:198`, `:272`), dont les lignes portent `foreign` avec la source
+   `revaluation` (37-3a AC-8) ; l'action d'audit `fx_revaluation.posted` n'est lue par aucun outil (existant : aucun
+   outil d'audit). Test : `kesh_ecriture` d'une écriture de réévaluation rend la ligne du compte en devise à montant 0
+   et source `revaluation`.
 6. **AC-6 — Écran** : depuis *Exercices* (exercice ouvert), action « Réévaluer les devises », **affichée seulement en
    multi-devises** (D1 : en mono-devise, rien n'apparaît) **et aux rôles Comptable et Administrateur** (AC-5) : tableau de l'aperçu,
    cours modifiables par devise (**valable pour cette passation seulement** : le champ n'écrit aucun cours saisi, qui
@@ -441,6 +456,26 @@ clôture et que l'écart aille aux différences de change.
    - fin d'exercice non passée (date ≥ aujourd'hui, Europe/Zurich) : Vitest à horloge fixée — pas de bouton du jour
      ni « Récupérer le mois » pour un mois futur, message affiché ; côté serveur, un cours journalier saisi pour ce
      jour est retenu (`day`), sinon repli mensuel ou `RATE_UNAVAILABLE` ;
+   - **recette par l'API seule (V7, CR-6)** — test d'intégration HTTP de bout en bout (`crates/kesh-api/tests/`, nom
+     au développement, p. ex. `fx_recette_api_e2e.rs`), **sans écran et sans cookie** : chaque appel en
+     `Authorization: Bearer` d'une session (`POST /api/v1/auth/login`, `accessToken`) — l'Administrateur pour
+     l'activation (37-1 AC-3, V6), un Comptable pour le reste ; source de cours factice de 37-2 (`AppState::new_for_tests`,
+     aucun appel sortant). Étapes, chacune contrôlée par sa réponse : comptes de gains, de pertes et de conversion
+     (`POST /accounts`) ; **activation** (`PUT /companies/current/currency-settings`) ; comptes USD et EUR de bilan
+     (`POST /accounts` avec `currency`), l'un à comptes propres ; exercice 2024 (`POST /fiscal-years`), multi-devises par
+     l'activation ou par `PUT /fiscal-years/{id}/currency-mode` ; `POST /exchange-rates/fetch` des mois et du
+     31.12.2024 utiles (source factice) ; **ouverture** (`POST /opening-balances`) d'un compte USD par `{ amount, chf,
+     side }` sans `rate` ni `debit`/`credit` (V1, V2) ; **écritures** (`POST /journal-entries`) — une au cours retenu
+     sans `rateSource` (relue `afc`), une par `chf` sans `rate` (relue `manual`), une sans `debit`/`credit` (`side`),
+     une écriture ordinaire avec sa ligne d'écart CHF sur les comptes du compte en devise (V4) ; **conversion** EUR →
+     USD (`POST /journal-entries/conversions`) **sans** ligne de différence, ajoutée par le serveur (37-3b AC-2 bis, V3),
+     compte de conversion à 0 ; **réévaluation** au 31.12.2024 (`POST /fiscal-years/{id}/fx-revaluation/preview`, puis
+     la passation) avec `rates` `{ "USD": "0.91193", "EUR": "0.94947" }` (V8) ; **rapports** (`GET
+     /reports/trial-balance`, `/reports/balance-sheet`, `/reports/general-ledger`, 37-4) : soldes en devise et en CHF
+     de chaque compte en devise calculés à la main, solde CHF au 31.12.2024 = round(solde en devise × cours de clôture)
+     exactement, compte de conversion à 0 ; `kesh_ecritures` lu par une clé d'API en lecture seule rend la ligne
+     `revaluation` (V12). Le test n'emploie aucun calcul de cours ni de CHF côté client : tout montant CHF qu'il envoie
+     est une donnée (celle des livres d'origine), jamais un produit qu'il aurait calculé ;
    - l'aperçu ne crée aucune écriture ; E2E de l'écran, dont le parcours repli mensuel → « Récupérer le cours du
      JJ.MM.AAAA » (source factice de 37-2) → aperçu relu, cours journalier (`rateKind: "day"`, le champ non modifié
      ayant repris le défaut) ; Vitest : l'aperçu ne reçoit que les cours modifiés, un `404 RATE_NOT_PUBLISHED` du
@@ -453,7 +488,9 @@ clôture et que l'écart aille aux différences de change.
    exercice mono-devise (R3), cours saisi par la société (D9), récupération du cours du jour, gains et pertes non réalisés
    comptabilisés (CO 960b, choix assumé ; la neutralisation par provision n'est pas offerte, C-37-8), postes non
    monétaires à décocher (stocks, immobilisations, capital en devise), la source du cours (« AFC » ou « cours saisi ») conservée à l'audit et non
-   sur la ligne, une correction de l'AFC non reprise (↑) ne changeant pas le cours proposé (U1) ; i18n ; PDF.
+   sur la ligne, une correction de l'AFC non reprise (↑) ne changeant pas le cours proposé (U1), la reprise de livres
+   tenus ailleurs dont la réévaluation se **repasse** par cette fonction avec les cours de clôture d'origine, non par
+   des écritures importées (V8, AC-2) ; i18n ; PDF.
 
 **Hors périmètre, tracé** : un contrôle de clôture informatif « comptes en devise à réévaluer » (K9 de
 `closing_checks.rs`, dont l'ensemble K1–K8 est clos) — à ouvrir en issue avec la PR (C-37-8).
@@ -473,6 +510,10 @@ clôture et que l'écart aille aux différences de change.
 - [ ] Frontend : écran depuis les exercices (contrepartie et origine par compte, clés i18n neuves dans les quatre
       locales), Vitest, E2E.
 - [ ] Manuel, CHANGELOG.
+- [ ] CR-6 : **V7** — test d'intégration HTTP de bout en bout de la recette par l'API (AC-7, sessions Bearer, source
+      factice, de l'activation aux rapports) ; **V8** — réévaluation de livres importés par cette route avec `rates`
+      (AC-2), manuel (AC-8), guide d'API (37-3b AC-6) ; **V12** — test `kesh_ecriture` d'une écriture de réévaluation
+      (AC-5), « aucun outil pour l'aperçu » écrit au Change Log du développement.
 
 ## Notes de développement
 
@@ -678,3 +719,14 @@ clôture et que l'écart aille aux différences de change.
   hors `afc`, test A30, audit `fx_revaluation.posted` à la valeur brute ; genre (`request` si différent) indépendant
   de la source. Non exercés : reste de la fiche hors diff, rendu.
 - 2026-11-14 — validation CR-5 P6 ciblée (Sonnet) : 0 CRITICAL, 0 HIGH, 0 MEDIUM, 0 LOW ; aucune modification. Phrases A30 du diff P5 vérifiées contre 37-2 (AC-1, AC-5, AC-6) ; aucun site restant. Non exercés : reste de la fiche hors diff, compilation, rendu.
+- 2026-11-14 — révision CR-6 (couverture API et MCP, Opus) : **V7** — AC-7 : test d'intégration HTTP de bout en bout
+  de la recette par l'API seule (sessions Bearer : Administrateur pour l'activation, Comptable pour le reste ; source
+  factice ; comptes, activation, exercice, `POST /exchange-rates/fetch`, ouverture, écritures V1/V2/V4, conversion sans
+  ligne de différence V3, réévaluation avec `rates`, rapports, `kesh_ecritures`) ; **V8** — AC-2 et AC-8 : la
+  réévaluation de livres importés se repasse par `POST /fiscal-years/{id}/fx-revaluation` avec `rates` (USD 0.91193,
+  EUR 0.94947 au 31.12.2024), non par des écritures `revaluation` (refusées par l'API) ; **V12** — AC-5 : MCP, aucun
+  outil pour l'aperçu, écritures passées lues par `kesh_ecritures` / `kesh_ecriture` (source `revaluation`), test ;
+  tâche CR-6. Prémisses relues au code : `lib.rs:524-525` (`comptable_routes`, `POST /accounts`), `:813` (`POST
+  /fiscal-years`, Comptable), `:582` (`/opening-balances`), `:1246`, `:1259`, `:1272` (rapports), `:1353`
+  (`/auth/login`) ; `mcp/outils/ecritures.rs:198`, `:272` ; `mcp/outils/mod.rs:9-20` (aucun outil d'audit). AC
+  touchés : AC-2, AC-5, AC-7, AC-8, Tâches. Fiche à revalider (cycle CR-6).

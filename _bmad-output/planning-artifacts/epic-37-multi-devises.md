@@ -3,7 +3,10 @@
 **Kickoff : 2026-11-14.** Demande de Beat (contributeur, comptabilité d'une SA tenue jusqu'ici dans un logiciel
 multi-devises : comptes PayPal, Wise et débiteurs en USD et en EUR, ventes en USD, réévaluation au 31.12 sur le compte
 6840 *Différences de change*). L'epic est développé **sur une branche unique** (`epic/37-multi-devises`) et proposé à
-Guy en **une seule PR** à la fin, après une recette sur l'exercice 2024 de Beat importé par l'API.
+Guy en **une seule PR** à la fin, après une recette sur l'exercice 2024 de Beat importé par l'API — **par l'API
+seule** (CR-6 : sessions en `Authorization: Bearer`, activation comprise ; test de bout en bout de 37-5 AC-7, V7 ; la
+réévaluation des livres d'origine se repasse par `POST /fiscal-years/{id}/fx-revaluation` avec `rates`, USD 0.91193
+et EUR 0.94947 au 31.12.2024, non par des écritures importées, V8).
 
 **Numéro : 37** (renuméroté depuis 35 le 2026-11-14, sur indication de Beat : les numéros 35 et 36 sont déjà réservés ; 38 est réservé par Beat aux comptes PayPal, 39 aux comptes Wise). Les comptes rendus de passe, prompts et Change Logs antérieurs à cette date écrivaient « 35 » : renumérotés avec les fichiers ; la page de revue `epic-35-revue.html`, en cours de lecture par Guy, garde l'ancien numéro (35-N = 37-N).
 
@@ -325,6 +328,44 @@ Prime sur tout ce qui précède là où il diverge. Beat approuve A2–A22, **sa
     telle quelle, jamais d'erreur interne), dès cette version ; une source ajoutée plus tard (`ecb`) ne demande donc ni
     relèvement de `kesh_version_min_required` ni migration breaking (P1).
 
+## CR-6 — couverture API et MCP (2026-11-14)
+
+Audit de couverture (`implementation-artifacts/37-couverture-api-mcp.md`) : toutes les fonctions ont une route ; les
+trous sont des calculs laissés au client Svelte et des contrats non écrits (aucun HIGH). Correctifs retenus, appliqués
+aux fiches :
+
+- **V1** (37-3a AC-2, AC-3, AC-4, AC-6 ; 37-3b AC-1, AC-2) — ligne en devise par `foreign { amount, chf }` sans `rate` :
+  cours déduit par **une** fonction pure de `kesh-core` (`rate_from_chf`), dont `rateFromChf` de l'écran est le jumeau
+  tenu par la fixture partagée `fx_rate_from_chf.json` ; `rateSource` absent → qualifié `afc`/`manual` par le dépôt
+  (A30 compris, provenance gardée au `PUT` d'une ligne inchangée).
+- **V2** (37-3a AC-6 ; 37-3b AC-1) — `debit`/`credit` facultatifs sur une ligne en devise, posés depuis `foreign` et
+  `side` ; présents, contrôle `FX_AMOUNT_MISMATCH` inchangé.
+- **V3** (37-3b AC-2 bis ; 37-3a AC-5 ; 37-1 AC-4 bis) — route de conversion : ligne de différence calculée par le
+  serveur (`fx_accounts_for` puis `validate_fx_accounts_in_tx`) si le corps ne la porte pas, paire contrôlée sinon
+  (400). D6 et C-37-4 tiennent : l'écran la montre toujours à l'aperçu et l'envoie ; un client de l'API qui l'omet la
+  délègue au serveur, et la réponse 201 la porte.
+- **V4** (37-3a AC-6) — ligne d'écart d'un client de l'API : comptes du compte en devise, sinon de la société
+  (`AccountResponse`, `CompanyJson`).
+- **V5** (37-3b AC-2) — l'assistant TVA reste un calcul de l'écran ; règle d'arrondi écrite pour un client de l'API.
+- **V6** (37-1 AC-3 ; ce fichier) — le multi-devises s'active par une session (`POST /auth/login`, Bearer), jamais par
+  une clé d'API ; test d'API en Bearer.
+- **V7** (37-5 AC-7) — test d'intégration HTTP de bout en bout de la recette, en Bearer, de l'activation aux rapports.
+- **V8** (37-5 AC-2, AC-8 ; 37-3a AC-6 ; ce fichier) — livres importés : la réévaluation se repasse par
+  `POST /fiscal-years/{id}/fx-revaluation` avec `rates` (USD 0.91193, EUR 0.94947 au 31.12.2024), non par des
+  écritures `revaluation`.
+- **V9** (37-3b AC-1) — cours d'ouverture d'un client de l'API : case `opening` de
+  `GET /fiscal-years/{id}/exchange-rates`.
+- **V10** (37-1 AC-2) — `kesh_exercices` gagne `multi_devises`, `genre_ouverture`, `genre_cloture` (test, mesure de
+  taille).
+- **V11** (37-1 AC-8) — aucun outil MCP n'expose la société (existant) : hors périmètre, dit.
+- **V12** (37-5 AC-5) — MCP : aucun outil pour l'aperçu ; les écritures passées se lisent par `kesh_ecritures`
+  (source `revaluation`).
+- **V13** (37-4 AC-7) — `kesh_postes_ouverts` inscrit aux sites « CHF seulement », renvoi à 37-3a AC-9.
+
+Aucune migration ni route neuve ; contrat d'API étendu sans rupture pour un corps complet (un corps sans `debit` sur
+une ligne CHF rend 400 au lieu de 422, déclaré). Les fiches 37-1, 37-3a, 37-3b, 37-4 et 37-5 sont à revalider (cycle
+CR-6) ; 37-2 n'est pas touchée.
+
 ## Source des cours — établie le 2026-11-14
 
 - Page ESTV *MWST Monatsmittelkurse* : « XML-File » → `https://www.backend-rates.bazg.admin.ch/api/xmlavgmonth`.
@@ -437,7 +478,9 @@ ferme pas la fenêtre d'import, une table applicative neuve la ferme.
   - **Lecture et récupération séparées** (37-2) : `GET /lookup` ne sort jamais sur le réseau ; la récupération est
     `POST /exchange-rates/fetch` (Comptable ou Administrateur), appelée par les écrans sur un cours manquant.
   - **Réglage multi-devises : Administrateur seul** (précédent des réglages de la société) ; une clé d'API ne
-    l'active pas.
+    l'active pas. *(CR-6, V6 : il s'active par une **session** — `POST /auth/login`, `accessToken` en
+    `Authorization: Bearer`, ou le cookie de l'écran —, non « à l'écran » seulement ; `require_not_pat` ne refuse que
+    la clé d'API.)*
   - Le cours du mois courant est publié en début de mois (relevé du 2026-11-14).
   - **Sorties MCP** : les champs en devise sont présents à `null` pour une ligne ou un compte CHF (la macro `sortie!`
     n'est pas étendue) ; le JSON des routes HTTP, lui, les omet (`skip_serializing_if`) pour rester identique en

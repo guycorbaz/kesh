@@ -100,16 +100,33 @@ l'assistant, nom « Exercice AAAA » ou « Exercice AAAA/AAAA » : AC-11). A22 e
    pas). `GET /api/v1/fiscal-years` et le détail d'un exercice (`FiscalYearResponse`, `routes/fiscal_years.rs:51`, et
    `services/exercices.rs`) exposent `multiCurrency`, `openingRateKind`, `closingRateKind` — toujours présents, comme
    les champs du réglage de `CompanyJson` (ce ne sont pas des champs en devise, C-37-9). L'outil MCP `kesh_exercices`
-   n'est pas étendu (sa sortie `sortie!` ne lit pas ces champs : hors périmètre, écrit au Change Log).
+   **est étendu** (V10, CR-6 — l'ancienne justification, « sa sortie ne lit pas ces champs », était circulaire : c'est
+   précisément la sortie qu'il s'agit d'étendre) : `sortie! struct Exercice` (`mcp/outils/exercices.rs:23-29`) gagne
+   `multi_devises: bool`, `genre_ouverture` et `genre_cloture` (énumération des genres de l'AC-1, `RateKindChoice` / nom
+   au développement, rendue en type **scellé** comme `statut: kesh_db::entities::FiscalYearStatus`, `:28` — jamais
+   `String`, qui ne compile pas, `mcp/sortie.rs:92`), posés à la construction (`:69-75`) depuis le `FiscalYear` que
+   rend déjà `services::exercices::lister` ; présents en mono-devise aussi (ce ne sont pas des champs en devise, comme
+   au HTTP) ; la description de l'outil (`:42-46`) les nomme. **Tests** : `mcp_outils_e2e.rs` — un exercice
+   multi-devises au genre `month`/`day` et un mono-devise rendent les trois champs ; `mcp_contrat` et
+   `mcp_gardes_lexicales` verts. **Mesure de taille** : l'outil n'est pas paginé (aucune `LIMITE`, absent de
+   `bornes_attendues`) ; la taille d'un `Exercice` avec les trois champs est mesurée (méthode de `tailles_mesurees`,
+   `mcp_outils_e2e.rs:1345`, différence entre une et deux lignes) et le nombre d'exercices qui tient sous
+   `MCP_ENVOI_OCTETS_MAX` (`services/envois_mcp.rs:55`, 24 576 octets) est écrit au Change Log du développement.
 3. **AC-3 — Écriture du réglage.** `PUT /api/v1/companies/current/currency-settings`
    `{ multiCurrencyEnabled, fxGainAccountId, fxLossAccountId, fxTransitAccountId, version }` (verrou optimiste comme
    les autres `PUT` de la société) :
    - **Administrateur seul**, comme les trois `PUT /companies/current/*` et `PUT /company/invoice-settings`
      (`lib.rs:277-278, 446-461`) : route dans `admin_routes`, **au-dessus** du marqueur « TOUTE ROUTE S'AJOUTE
      AU-DESSUS DE CETTE LIGNE » (`require_admin_role` + `require_not_pat`) ; une clé d'API reçoit
-     `API_KEY_ADMIN_FORBIDDEN` ; la route s'ajoute à la liste de `admin_pat_denied_e2e.rs` (:85). **Conséquence
-     assumée** : la recette par l'API (clé d'API) ne peut pas activer le mode multi-devises ; il s'active à l'écran,
-     par un Administrateur ;
+     `API_KEY_ADMIN_FORBIDDEN` ; la route s'ajoute à la liste de `admin_pat_denied_e2e.rs` (:85). **Comment il
+     s'active (V6, CR-6 — remplace « il s'active à l'écran »)** : par une **session** d'Administrateur, jamais par une
+     clé d'API — `POST /api/v1/auth/login` (`lib.rs:1353`), dont la réponse porte `accessToken` (`routes/auth.rs:184-186`),
+     puis le `PUT` en `Authorization: Bearer <accessToken>` (lu par `require_auth` quand aucun cookie n'est présent,
+     `middleware/auth.rs:83-95`) ; l'écran ne fait pas autre chose (cookie de la même session). Le refus vise la seule
+     clé d'API (`require_not_pat`, `middleware/rbac.rs:58-66` : `api_key_id.is_some()`), non le client HTTP : une
+     recette **par l'API seule** (37-5 AC-7, V7) active le mode par une session Bearer. **Test d'API** : Administrateur
+     connecté par `POST /auth/login`, `PUT` en Bearer, **sans** cookie → 200 et `multiCurrencyEnabled` vrai ; même
+     `PUT` par une clé d'API de l'Administrateur → `API_KEY_ADMIN_FORBIDDEN` ;
    - fonction dédiée `companies::update_currency_settings` (ne passe **pas** par `CompanyUpdate`/`update_in_tx`, qui
      sont en remplacement complet : chaque route e-mail, coordonnées, adresse et `company_update_of` de l'assistant
      devrait sinon recopier trois champs de plus) ;
@@ -198,7 +215,8 @@ l'assistant, nom « Exercice AAAA » ou « Exercice AAAA/AAAA » : AC-11). A22 e
    - audit `company.currency_settings_updated` (avant/après, ajouté à `ACTIONS` de `audit_labels.rs`, liste triée) ;
      libellés d'audit dans les quatre locales ;
    - **réponse** : 200 avec le `CompanyJson` à jour (nouvelle `version`, comme les trois autres `PUT` de la société) ;
-     tests : Comptable → 403, clé d'API → `API_KEY_ADMIN_FORBIDDEN` ;
+     tests : Comptable → 403, clé d'API → `API_KEY_ADMIN_FORBIDDEN`, Administrateur en session Bearer sans cookie →
+     200 (V6) ;
    - **registre des routes** : le `PUT` entre dans `LIB_ROUTES` (`tests/audit_route_registry.rs`) avec le couple
      `Traced, SansEcritureAuJournal` (le quatrième champ du tuple est la partition de rejeu : il écrit au journal
      d'audit, non au journal comptable) ; **deux** tests comptent, et le second est à recompter aussi :
@@ -504,8 +522,8 @@ l'assistant, nom « Exercice AAAA » ou « Exercice AAAA/AAAA » : AC-11). A22 e
      comptes propres s'il en a, sinon `companies.fx_gain_account_id` / `fx_loss_account_id` ; `FxAccounts { gain,
      loss, origin: Own | Company }` ; `None` pour un compte CHF, ou si la société n'en désigne pas (état hérité). **Seule
      fonction** qui choisit les comptes de différence côté serveur ; la réévaluation (37-5) l'appelle, **puis** la
-     revalidation à l'usage ci-dessous (la route de conversion de 37-3b ne revalide que le compte de conversion : sa
-     ligne de différence est construite par l'assistant). Côté écran, **une** fonction TypeScript miroir
+     revalidation à l'usage ci-dessous, et, depuis V3 (CR-6), la route de conversion de 37-3b aussi (ligne de
+     différence calculée par le serveur quand le corps ne la porte pas, paire contrôlée sinon, 37-3b AC-2 bis). Côté écran, **une** fonction TypeScript miroir
      (`fxAccountsFor(account, company)`, `features/accounts/`), seule lue par le formulaire de compte, la ligne d'écart
      et l'assistant *Conversion* (37-3b) et l'assistant TVA (37-3b, S5) ; tests unitaires des deux (propres, défaut,
      défaut après changement du réglage, compte CHF).
@@ -658,7 +676,10 @@ l'assistant, nom « Exercice AAAA » ou « Exercice AAAA/AAAA » : AC-11). A22 e
    mesurées (`LIMITE_DEFAUT` 40, `LIMITE_MAX_MCP` 70 ; `mcp_outils_e2e.rs:183`) sont re-mesurées avec le champ
    (précédent C-e331-27) ; le test de contrat du protocole MCP de la CI est relu. Test de l'outil avec un compte en
    devise et un compte CHF. Les comptes de différence propres (AC-4 bis) ne sont **pas** ajoutés à la sortie MCP
-   (hors périmètre, écrit au Change Log du développement).
+   (hors périmètre, écrit au Change Log du développement). `kesh_exercices` est étendu (AC-2, V10). **Société (V11,
+   CR-6)** : aucun outil MCP n'expose la société — état existant, aucun module `societe` parmi les outils
+   (`mcp/outils/mod.rs:9-20`) — ; le réglage multi-devises et ses trois comptes ne sont donc lus par aucun outil :
+   **hors périmètre**, dit ici et au Change Log du développement (un client lit `GET /companies/current`, AC-2).
 9. **AC-9 — i18n.** Toutes les chaînes neuves dans les quatre locales (`fr-CH`, `de-CH`, `it-CH`, `en-CH`),
    `lint-i18n-ownership` vert.
 10. **AC-10 — Manuel utilisateur** (`docs/manual/fr/user-manual.tex`) : section « Comptabilité multi-devises » —
@@ -776,7 +797,7 @@ l'assistant, nom « Exercice AAAA » ou « Exercice AAAA/AAAA » : AC-11). A22 e
 - [ ] Frontend : `settings` (section Comptabilité), `accounts` (champ, colonne), types, API, Vitest (AC-7).
 - [ ] `kesh-api` : registre des routes d'audit et phrase du manuel d'administration (AC-3).
 - [ ] Manuel (AC-10), CHANGELOG `[Unreleased]` (nouveau champ `currency` du compte, absent = inchangé ; réglage
-      réservé à l'Administrateur, hors clé d'API).
+      réservé à l'Administrateur, par une session — écran ou client HTTP en Bearer —, hors clé d'API, V6).
 - [ ] Tests : dépôt (gardes, verrou, reset), API (codes), sauvegarde (AC-6), E2E Playwright (créer d'abord un compte de
       bilan pour la conversion — aucun plan livré n'en a, AC-3 —, activer le mode avec les trois comptes, créer un
       compte USD, verrou : écriture passée par l'API sur un compte **CHF**, puis devise refusée à l'écran — AC-4 ;
@@ -814,6 +835,12 @@ l'assistant, nom « Exercice AAAA » ou « Exercice AAAA/AAAA » : AC-11). A22 e
       `update_currency_settings`, vide par construction) et `applyToNextOpening` sont des tâches de **37-2** (AC-3 bis,
       AC-5, AC-6) ; cette story laisse ces fonctions prêtes à recevoir l'appel (transaction ouverte, verrous pris,
       détail d'audit extensible).
+- [ ] CR-6 — **V6** : test d'API de l'activation en session Bearer (`POST /auth/login`, `PUT
+      /companies/current/currency-settings` avec `Authorization: Bearer`, sans cookie → 200) à côté du refus par clé
+      d'API ; manuel d'administration et CHANGELOG : « s'active par une session, jamais par une clé d'API » (non « à
+      l'écran ») ; **V10** : `kesh_exercices` — `multi_devises`, `genre_ouverture`, `genre_cloture` (type scellé),
+      description, test `mcp_outils_e2e.rs`, mesure de taille d'un exercice écrite au Change Log, `mcp_contrat` et
+      `mcp_gardes_lexicales` verts ; **V11** : « aucun outil n'expose la société » écrit au Change Log du développement.
 - [ ] CR-3 (S2) — comptes de différence propres (AC-4 bis) : colonnes et deux `CHECK` dans la migration de l'AC-1 ;
       `Account`, `NewAccount`, `AccountUpdate` (un champ à trois états), macro `columns!`, `bulk_create` et
       `bulk_create_from_chart_in_tx` (`NULL`) ; `fx_accounts_for` (pure) et `validate_fx_accounts_in_tx` (dépôt) ;
@@ -1087,3 +1114,15 @@ l'assistant, nom « Exercice AAAA » ou « Exercice AAAA/AAAA » : AC-11). A22 e
   U6 contre le registre de l'epic (:262, :314-318) ; points de contact 37-2 AC-3 bis, AC-5, AC-6 et 37-3a AC-4
   (ordre des verrous) ; noms d'audit au code. Non exercés : manuels, i18n, exécution des verrous (analyse seule),
   autres fiches que 37-2 et 37-3a.
+- 2026-11-14 — révision CR-6 (couverture API et MCP, Opus) : **V6** — AC-3 : le mode multi-devises s'active par une
+  session d'Administrateur (`POST /auth/login`, `accessToken` en `Authorization: Bearer`), jamais par une clé d'API —
+  non « à l'écran » ; test d'API en Bearer sans cookie, tâche, CHANGELOG. **V10** — AC-2 : `kesh_exercices` gagne
+  `multi_devises`, `genre_ouverture`, `genre_cloture` (type scellé comme `statut`), description, test, mesure de taille
+  (outil non paginé) ; la justification « hors périmètre » antérieure était circulaire. **V11** — AC-8 : aucun outil
+  MCP n'expose la société (existant), hors périmètre dit. **V3** (renvoi) — AC-4 bis : la route de conversion de 37-3b
+  passe désormais par `fx_accounts_for` puis `validate_fx_accounts_in_tx`. Prémisses relues au code : `lib.rs:518`
+  (`require_not_pat` sur `admin_routes`), `:1353` (`/auth/login`) ; `routes/auth.rs:184-186` (`LoginResponse`,
+  `accessToken`) ; `middleware/auth.rs:83-95` (cookie puis Bearer) ; `middleware/rbac.rs:58-66` ;
+  `mcp/outils/exercices.rs:23-29`, `:42-46`, `:69-75` ; `mcp/outils/mod.rs:9-20` (aucun outil société) ;
+  `tests/mcp_outils_e2e.rs:99` (`bornes_attendues`, sans `kesh_exercices`), `:312` (portée `books:read`), `:1345` ; `services/envois_mcp.rs:55`. AC
+  touchés : AC-2, AC-3, AC-4 bis, AC-8, Tâches. Fiche à revalider (cycle CR-6).
