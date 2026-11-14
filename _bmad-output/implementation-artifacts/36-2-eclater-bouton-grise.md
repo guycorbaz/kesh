@@ -212,8 +212,8 @@ l'éclatement passe réellement, afin de ventiler une transaction depuis l'écra
   (V3-7) : pour une valeur dont la fraction n'a rien au-delà du centime, tout arrondi à deux décimales la rend inchangée ;
   pour une valeur qui a un chiffre non nul au-delà du centime, aucun mode ne la rend inchangée — `eq` ne compare donc
   jamais que l'existence de ce chiffre. L'envoi est toujours `value.toFixed(2)` (jamais `payload` brut, qui garde la
-  fraction telle que saisie), et la somme se fait en `Big` jusqu'à quinze chiffres entiers (`999999999999999.99` part
-  tel quel, V-d). La garde vit dans le dialogue ; `readJournalAmount` n'est pas modifié.
+  fraction telle que saisie), et la somme et sa comparaison au montant de la transaction se font en `Big`, exactes
+  (`0.10` + `0.20` égalent `0.30`, ce qu'une somme en `Number` sans arrondi manquerait, V-d). La garde vit dans le dialogue ; `readJournalAmount` n'est pas modifié.
   Messages, **une ligne à la fois, dans l'ordre des règles de `clientError`**, le compte d'abord :
   | Saisie d'une ligne | Lecture (`kind`) | Message | AC |
   |---|---|---|---|
@@ -261,12 +261,13 @@ l'éclatement passe réellement, afin de ventiler une transaction depuis l'écra
   V1-2) ; garder `type="number"` et lire `valueAsNumber` (le navigateur jette la saisie qu'il ne lit pas, et rien ne
   peut le dire) ; la grammaire du solde d'ouverture (`bank-accounts/format.ts:280`) ; une grammaire propre au dialogue.
 - **D6 — #1151 entre dans la story, sans condition ; la largeur seule, sans défilement** (C-36-2-12, C-36-2-14 ;
-  validations P1 V1-4, V1-6, P2 V2-2 et P3 V3-5) : `Dialog.Content` du dialogue reçoit
-  `class="sm:max-w-[min(48rem,calc(100%-2rem))]"` — 48rem est la largeur `sm:max-w-3xl` du précédent du même dossier,
-  bornée comme la classe de base du composant (`dialog-content.svelte:31` : `… grid max-w-[calc(100%-2rem)] … sm:max-w-sm
-  … w-full …`). Avec `sm:max-w-3xl` seul, `cn` (twMerge) remplace `sm:max-w-sm` et, dès 640 px de fenêtre, la borne
-  `calc(100%-2rem)` ne s'applique plus : de 640 à ≈ 800 px, un dialogue de 768 px déborderait la fenêtre (C-36-2-16 ;
-  le précédent a le même défaut, hors périmètre). La largeur reprise du précédent est celle (`LinkSettlementModal.svelte:194` « Six colonnes : la largeur par défaut (`sm:max-w-sm`) les
+  validations P1 V1-4, V1-6, P2 V2-2, P4 V4-1) : `Dialog.Content` du dialogue reçoit `class="sm:max-w-3xl"`. Le dialogue
+  ne déborde la fenêtre à aucune largeur : la classe de base le fait `fixed … w-full` et le centre
+  (`dialog-content.svelte:31` : `… sm:max-w-sm fixed top-1/2 left-1/2 z-50 w-full -translate-x-1/2 …`), si bien que
+  `max-w` ne fait que plafonner une largeur égale à celle de la fenêtre ; entre 640 et 800 px, il perd seulement la marge
+  de 1rem que garde `max-w-[calc(100%-2rem)]` sous 640 px, comme le précédent. *(La borne `min(48rem, calc(100%-2rem))`
+  ajoutée à la P3 sur une prémisse fausse — « 768 px déborderaient » — est retirée, C-36-2-16 remplacé.)* La largeur
+  reprise est celle du précédent du même dossier (`LinkSettlementModal.svelte:194` « Six colonnes : la largeur par défaut (`sm:max-w-sm`) les
   écrasait (recette visuelle). », `:195` `<Dialog.Content class="max-h-[85vh] overflow-y-auto sm:max-w-3xl" …>`), **mais
   ni `max-h` ni `overflow-y-auto`** : la liste du champ de compte est un descendant en `absolute`
   (`AccountAutocomplete.svelte:459` `<div class="relative">`, `:555`
@@ -279,8 +280,8 @@ l'éclatement passe réellement, afin de ventiler une transaction depuis l'écra
   préexistante, **I3, ouverte depuis : #1181** ; le seuil (nombre de lignes à partir duquel `split-submit` sort de la
   fenêtre) n'est pas estimé ici : R0 (h) le **mesure** et le Record l'écrit (V3-4). Le tout **dans
   `TransactionSplitModal.svelte` seulement** (la classe par défaut sert tous les dialogues : non touchée). R0 mesure avant
-  et après ; si 48rem laisse un champ tronqué pour les valeurs de AC6, la largeur suivante (56rem, celle de
-  `sm:max-w-4xl`, sous la même borne `min(…, calc(100%-2rem))`) est prise et dite. **Si l'assertion de la liste (AC6 b) échoue
+  et après ; si `sm:max-w-3xl` laisse un champ tronqué pour les valeurs de AC6, la largeur suivante (`sm:max-w-4xl`) est
+  prise et dite. **Si l'assertion de la liste (AC6 b) échoue
   malgré tout** : arrêt de cette partie et rapport à l'orchestrateur, sans toucher au composant ; les autres correctifs
   continuent. *Écartées* : `max-h-[85vh] overflow-y-auto` (rogne la liste, validation P2 V2-2) ; défilement du seul corps
   des lignes ; liste en portail (modifie le composant de sept consommateurs) ; garder #1151 conditionnelle.
@@ -305,15 +306,24 @@ ne dépendent **ni de R0-b, ni de la reproduction du grisé de Guy**.
 | A2 | **R0-a impossible** (fixture refusée par la tête, backend de la tête qui ne démarre pas, dialogue qui ne s'ouvre pas) | **arrêt** et rapport, journal cité : sans R0-a, les rouges des correctifs ne sont pas constatés |
 | A3 | tout autre résultat — R0-b impossible compris | **D2 à D6 développés** ; le cas de la table B s'écrit au Record |
 
-**Table B — la cause de ce que Guy a vu, et le sort de #1150.** Critère mesurable de « **grisé reproduit** » : une
-variante de R0 où **chaque ligne** montre un compte dans son champ (`inputValue()` non vide) et un montant tapé, où la somme
-des montants **tels que tapés** égale le montant de la transaction, et où `split-submit` est **désactivé** ; relevé dans la
-ligne `R0 <variante> …` du journal.
+**Table B — la cause de ce que Guy a vu, et le sort de #1150.** Elle n'a d'objet que sous A3 : sous A1 ou A2, elle
+s'écrit au rapport, sans PR. Critère mécanique de « **grisé reproduit** » (validation P4, V4-3) :
+- **variantes éligibles : (a) à (d) seulement** — (e), (e′), (f) à (i) jouent des saisies dont le grisé, ou l'état, est
+  attendu, et n'entrent jamais dans B ;
+- **montants admis : la liste fermée des saisies de ces variantes** — `NN.NN` de (a), `70,00` de (c), `1'200.50` de (d)
+  et leurs compléments, tous positifs, à deux décimales au plus, non ambigus (ce que `readJournalAmount` de la 36-3 lit
+  `clear`) ;
+- **grisé reproduit** : dans une variante éligible, chaque ligne montre un compte dans son champ (`inputValue()` non vide)
+  et un montant admis, la somme de ces montants égale la **valeur absolue** du montant de la transaction (une transaction
+  de débit est négative ; le dialogue compare à `txAbsAmount`, `TransactionSplitModal.svelte:126-130`), et
+  `split-submit` est **désactivé** ; relevé dans la ligne `R0 <variante> …` du journal.
 
 | Ordre | Cas | Ce que dit le Record | #1150 dans la PR |
 |---|---|---|---|
 | B1 | grisé reproduit **à la tête** (R0-a) | la variante, sa ligne de journal ; **la même variante rejouée après les correctifs active le bouton** (sinon : arrêt et rapport, correctif incomplet) | `closes` |
-| B2 | grisé reproduit **en 0.17.6 seulement** (R0-b) | la variante ; si c'est (b), cause H1, corrigée par la 35-7 (la note de version le dit) ; si c'est (c) ou (d), cause H2, corrigée par D5 | `closes` |
+| B2 | grisé reproduit **en 0.17.6 seulement** (R0-b), par (b) | cause H1, corrigée par la 35-7 (la note de version le dit) | `closes` |
+| B2-bis | grisé reproduit **en 0.17.6 seulement**, par (c) ou (d) | cause H2, corrigée par D5 | `closes` |
+| B2-ter | grisé reproduit **en 0.17.6 seulement**, par (a) | cause non nommée par la fiche ; rapport à l'orchestrateur | `refs`, non fermée |
 | B3 | grisé reproduit **nulle part**, ou R0-b impossible sans grisé à la tête | la cause n'est pas établie ; **aucun correctif au-delà de D2 à D6** (pas de cause inventée) ; rapport à l'orchestrateur, qui demande un commentaire sur #1150 | `refs`, non fermée |
 
 **H5 réfutée** ((a) réussit à la tête) — indépendamment des deux tables : D2 reste (le champ texte porte de toute façon une
@@ -337,8 +347,10 @@ valeur liée `null`) sans rien changer : D5 s'applique déjà.
 3. **AC3 — L'équilibre se dit en chiffres (H4).** Somme ≠ montant : l'indicateur dit « Balance non équilibrée — attendu X,
    écart Y » et le message sous le tableau dit l'attendu et l'écart, **lus au catalogue** en fr-CH (E2E) ; les clés de D3
    existent dans les quatre locales avec leurs variables ; les replis égalent les valeurs fr-CH. Somme = montant (lignes
-   complètes) : l'indicateur dit « Balance équilibrée : X », **X étant le montant de la transaction**, sans `{ $` résiduel,
-   lu au catalogue (E2E, R0 (a) avant le clic) et dans le Vitest V-e. **`reconciliation-split-error-imbalance` est inchangée** dans les quatre `.ftl` (aucune
+   complètes) : l'indicateur dit « Balance équilibrée : X », **X étant la valeur absolue du montant de la transaction**,
+   sans `{ $` résiduel. **Le catalogue (la clé lue et sa valeur) se vérifie par l'E2E**, R0 (a) avant le clic ; **le Vitest
+   V-e ne vérifie que le repli et ses arguments** — son mock d'`i18nMsg` ignore la clé et rend toujours le repli
+   (`TransactionSplitModal.test.ts:19-21`). **`reconciliation-split-error-imbalance` est inchangée** dans les quatre `.ftl` (aucune
    variable), et le message de la `400 RECONCILIATION_SPLIT_IMBALANCE` aussi (test Rust existant, inchangé).
 4. **AC4 — Tant que le bouton est grisé, l'écran dit ce qui manque, et on le voit.** Pour chacun des gestes « compte non
    choisi », « montant vide, nul, illisible, ambigu ou plus fin que le centime » et « somme fausse », à 1280×720 : `split-submit` désactivé,
@@ -351,17 +363,15 @@ valeur liée `null`) sans rien changer : D5 s'applique déjà.
    e. `70,00` et `1'200.50` sont lus, comptent dans la somme, et partent `70.00` et `1200.50` ;
    f. `0.005` et `30.0050` → « Ligne N : deux décimales au plus … » ;
    g. `60.0000` est lu, compte dans la somme, et part `60.00` (le serveur l'accepte : échelle 2) ;
-   h. `999999999999999.99` (quinze chiffres entiers) est lu et part `'999999999999999.99'`, sans perte de précision.
+   h. `0.10` et `0.20` sur une transaction de `-0.30` : la somme égale le montant (calcul exact), le bouton s'active, et
+      les montants partent `'0.10'` et `'0.20'`.
    Dans les cas a à d et f, le bouton est grisé. Aucune saisie qui active le bouton ne part avec plus de deux décimales.
 6. **AC6 — Les champs se lisent, et la liste des comptes aussi (#1151, sans condition).** À 1280×720 :
    a. pour les valeurs de R0 (compte `4000 — Charges CI`, montant `1'200.50`, description de 30 caractères, colonne
       *Projet* présente) : aucun champ tronqué (`scrollWidth <= clientWidth`), pied et message dans la fenêtre ;
    b. six lignes ajoutées, la liste du champ de compte **ouverte sur la dernière** : sa première `option` est
       `toBeInViewport()` sans aucun défilement (ni de la page ni du dialogue), et le `Dialog.Content` ne porte ni
-      `overflow-y` autre que `visible` ni `max-height` (`getComputedStyle`) ;
-   c. **à toute largeur de fenêtre** — vérifié à 700×720, dans l'intervalle de 640 à 800 px où `sm:max-w-3xl` seul
-      déborderait (V3-5) — le `Dialog.Content` tient dans la fenêtre : `boundingBox()` avec `x >= 0` et
-      `x + width <= 700` ; capture.
+      `overflow-y` autre que `visible` ni `max-height` (`getComputedStyle`).
    À six lignes, R0 (h) **relève** aussi, sans l'asserter, la `boundingBox()` du `Dialog.Content` et la visibilité de
    `split-submit` (`toBeInViewport` relevé), et ajoute des lignes une à une jusqu'à ce que `split-submit` sorte de la
    fenêtre : ce **seuil mesuré** s'écrit au Dev Agent Record (#1181, V3-4).
@@ -378,7 +388,7 @@ valeur liée `null`) sans rien changer : D5 s'applique déjà.
    montant (point ou virgule décimale, apostrophe des milliers, deux décimales au plus, sans signe). PDF régénéré à l'intégration (fichier d'epic,
    *Fichiers communs*).
 10. **AC10 — Captures** des états touchés (bouton grisé avec chaque message ; équilibré ; succès ; largeur avant / après ;
-    liste des comptes ouverte sur la dernière de six lignes ; dialogue dans une fenêtre de 700×720),
+    liste des comptes ouverte sur la dernière de six lignes),
     thème clair, base de démonstration jetable, dans `/home/gcorbaz/devel/kesh-gate-logs/e36-2/captures/`.
 
 ## Tests à écrire, et la preuve du rouge
@@ -397,14 +407,13 @@ valeur liée `null`) sans rien changer : D5 s'applique déjà.
   visibilité → AC6 a ; (h) six lignes (*Ajouter une ligne* quatre fois), focus sur le champ de compte de la dernière, liste
   ouverte : première `option` `toBeInViewport()`, styles calculés du `Dialog.Content` relevés → AC6 b, capture ; puis
   relevé (non asserté) de la `boundingBox()` du dialogue et de la visibilité de `split-submit`, lignes ajoutées une à une
-  jusqu'au seuil où `split-submit` sort de la fenêtre (seuil au Record, #1181) ; (i) fenêtre 700×720 : `boundingBox()` du
-  `Dialog.Content` dans la fenêtre → AC6 c, capture. En (a), avant le clic, l'indicateur dit « Balance équilibrée : »
-  suivi du montant de la transaction, sans `{ $` (AC3). Chaque variante **relève** avant d'asserter (`testInfo.attach` + `console.log` d'une ligne
+  jusqu'au seuil où `split-submit` sort de la fenêtre (seuil au Record, #1181). En (a), avant le clic, l'indicateur dit
+  « Balance équilibrée : » suivi de la valeur absolue du montant de la transaction, lu au catalogue, sans `{ $` (AC3) :
+  c'est l'assertion qui tue M2-ter. Chaque variante **relève** avant d'asserter (`testInfo.attach` + `console.log` d'une ligne
   `R0 <variante> bouton=… valeurs=… message=… mesures=…`, recopiée au journal). **Rouges attendus à la tête** : (a) (H5 :
   pas de succès), (e) (`-70.00` : « montant > 0 requis » au lieu de « illisible » ; `1.234` : lu 1,234 ; `0.005` : lu sans
   message), (e′) (H5, et l'échelle), (f) (H4), (g) (H3) ; (b) **vert attendu** (H1 corrigée par la 35-7) ; (h) **vert
-  attendu** à la tête (aucun `overflow` sur le dialogue aujourd'hui) — il garde contre M9 ; (i) **vert attendu** à la tête
-  (24rem tient dans 700 px) — il garde contre M10 ; (c), (d) selon Chromium. R0-b rejoue `--grep R0` contre l'image 0.17.6 :
+  attendu** à la tête (aucun `overflow` sur le dialogue aujourd'hui) — il garde contre M9 ; (c), (d) selon Chromium. R0-b rejoue `--grep R0` contre l'image 0.17.6 :
   rouges attendus (b) (champ montrant `4000`), (a), (e), (f), (g). L'en-tête de `reconciliation-split.spec.ts` (`:9-14`,
   « couverture business complète … portée par les tests E2E HTTP Rust ») est récrite dans la même tâche : elle deviendrait
   fausse.
@@ -420,11 +429,12 @@ valeur liée `null`) sans rien changer : D5 s'applique déjà.
     une chaîne Fluent, la variante mutée « arguments non passés » rend `{ $expected }` et rougit (M2) ;
   - V-c (AC4) : `split-client-error` existe et dit « Ligne 1 : compte requis » à l'ouverture — **rouge** (pas de `testid`) ;
   - V-d (AC5) : les huit lignes de la table de D5, une assertion par saisie (vide, `0`, `0,00`, `-70.00`, `7O`, `1.234`,
-    `0.005`, `30.0050`, `60.0000`, `70,00`, `1'200.50`, et `999999999999999.99` sur une transaction du même montant),
-    avec la charge envoyée pour les saisies claires (`60.0000` part `'60.00'` ; le montant à quinze chiffres part
-    `'999999999999999.99'` et le bouton s'active) — rouges à la tête : `-70.00` (« montant > 0 »), `1.234` (lu 1,234),
-    `0.005` (aucun message), `1'200.50` (non lu), et les charges de `70,00`, de `60.0000` et du montant à quinze chiffres
-    (nombre JSON) ;
+    `0.005`, `30.0050`, `60.0000`, `70,00`, `1'200.50`), avec la charge envoyée pour les saisies claires (`60.0000` part
+    `'60.00'`) ; et le cas de somme exacte (V4-4) : `0.10` et `0.20` sur une transaction de `-0.30` → bouton actif,
+    charges `'0.10'` et `'0.20'` — rouges à la tête : `-70.00` (« montant > 0 »), `1.234` (lu 1,234), `0.005` (aucun
+    message), `1'200.50` (non lu), et les charges de `70,00`, de `60.0000`, de `0.10` (nombres JSON) ; le cas `0.10` +
+    `0.20` est **vert** à la tête pour le bouton (l'arrondi au centime de `:145` y égalise la somme) et garde contre
+    M8-bis ;
   - V-e (AC3, état équilibré, validation P3 V3-2) : les deux comptes choisis, montants `60` et `40` sur une transaction de
     `-100.00` → `split-balance-indicator` contient « Balance équilibrée » **et** `100.00`, et ne contient pas `{ $` —
     **vert** à la tête pour le texte (le repli en gabarit y met le montant) ; il garde contre M2-bis, où le repli, devenu
@@ -446,10 +456,12 @@ valeur liée `null`) sans rien changer : D5 s'applique déjà.
   - M2 : arguments retirés de l'`i18nMsg` du déséquilibre → V-b, R0 (f) ;
   - M2-bis : arguments retirés de l'`i18nMsg` de l'état équilibré (`reconciliation-split-balance-indicator`) → V-e,
     R0 (a) (avant le clic) ;
-  - M2-ter : l'état équilibré lit la clé `reconciliation-split-balance-gap` → V-e (« Balance non équilibrée ») ;
-  - M8-bis : la somme faite en `Number` au lieu de `Big` → V-d (montant à quinze chiffres : la somme arrondie ne
-    l'égale plus, ou la charge perd ses centimes) ; si elle survit (quinze chiffres et deux décimales tiennent dans un
-    double à l'unité près), la dire équivalente au Record ;
+  - M2-ter : l'état équilibré lit la clé `reconciliation-split-balance-gap` → **R0 (a)** avant le clic (le catalogue y
+    rend « Balance non équilibrée — … ») ; le Vitest V-e n'y peut rien, son mock d'`i18nMsg` ignorant la clé
+    (`TransactionSplitModal.test.ts:19-21`) ;
+  - M8-bis : la somme et sa comparaison faites en `Number`, sans arrondi (`Number(a) + Number(b) === Math.abs(Number(tx))`),
+    au lieu de `Big` → V-d, cas `0.10` + `0.20` sur `-0.30` : `0.1 + 0.2` vaut `0.30000000000000004`, le bouton reste
+    grisé ;
   - M3 : valeur fr-CH de `reconciliation-split-error-imbalance-detail` rendue au texte de l'ancienne clé → test de
     catalogue, R0 (f) ;
   - M3-bis : `{ $diff }` ajoutée à `reconciliation-split-error-imbalance` en fr-CH → test de catalogue (garde V1-1) ;
@@ -460,9 +472,7 @@ valeur liée `null`) sans rien changer : D5 s'applique déjà.
   - M8 : garde du centime retirée (toute lecture `clear` acceptée) → V-d (`0.005`, `30.0050` sans message) ;
   - M9 : `max-h-[50vh] overflow-y-auto` ajoutés au `Dialog.Content` (la forme du précédent, plus courte pour que six
     lignes la remplissent) → R0 (h) : l'`option` rognée n'est plus `toBeInViewport`. Si M9 n'est tuée que par
-    l'assertion de style et non par celle de la visibilité, le dire au Record (assertion de visibilité à revoir) ;
-  - M10 : la classe de largeur rendue à `sm:max-w-3xl` seul (sans la borne `min(…, calc(100%-2rem))`) → R0 (i) (le
-    dialogue de 768 px déborde une fenêtre de 700 px).
+    l'assertion de style et non par celle de la visibilité, le dire au Record (assertion de visibilité à revoir).
 
 **E2E** : exigé — le défaut se voit dans le navigateur, et H5 ne se voit qu'à la frontière HTTP (`CLAUDE.md`, § *Un E2E
 n'est pas un test comme un autre*).
@@ -483,7 +493,7 @@ n'est pas un test comme un autre*).
       ```
       docker image ls gcorbaz/kesh:0.17.6        # présence de l'image, constatée avant tout
       docker run -d --name kesh-36-2-r0b --network=host \
-        -v /tmp/kesh-voie2/e36-2-r0b:/data \
+        -v /tmp/kesh-voie2/e36-2-r0b-<n>:/data \
         -e KESH_TEST_MODE=true -e KESH_HOST=127.0.0.1 -e KESH_PORT=<port de la voie, libre par ss -ltnp> \
         -e KESH_COOKIE_SECURE=false \
         -e DATABASE_URL='mysql://kesh:kesh_dev@127.0.0.1:3307/kesh_e2e_36_2_v0176' \
@@ -494,7 +504,9 @@ n'est pas un test comme un autre*).
         -e KESH_SMTP_FROM=kesh@example.invalid \
         gcorbaz/kesh:0.17.6
       ```
-      (dossiers `inbox`, `documents`, `backup` créés d'abord sous `/tmp/kesh-voie2/e36-2-r0b/`, le `TMPDIR` de la voie 2,
+      (dossiers `inbox`, `documents`, `backup` créés d'abord sous `/tmp/kesh-voie2/e36-2-r0b-<n>/`, **un dossier neuf par
+      essai** (`<n>` = 1, 2, … ; V4-7 : les fichiers root d'un essai ne s'effacent pas sans `sudo`, un second essai ne doit
+      pas remonter les pièces et sauvegardes du premier), sous le `TMPDIR` de la voie 2,
       **hors du worktree** (C-36-2-17, V3-6) : l'image n'a pas de directive `USER` (`git grep -n '^USER' -- Dockerfile`
       vide), le conteneur écrit donc en root, et des fichiers root dans le worktree empêcheraient `git worktree remove` ;
       `/tmp` se vide au redémarrage, et l'agent n'a pas à les supprimer. *Écartée* : `--user "$(id -u):$(id -g)"` — l'image
@@ -518,7 +530,7 @@ n'est pas un test comme un autre*).
       `split-client-error`.
 - [ ] `sitesTotal` de `frontend/src/lib/shared/i18n-keys.test.ts` recompté à la source (C-e350-18) ; listes de
       `i18n-entrees-a-variables.test.ts` complétées si la garde l'exige.
-- [ ] Verts ; mutations M1 à M10 (M1-bis, M1-ter, M2-bis, M2-ter, M3-bis, M8-bis comprises) ; captures (AC10) ; manuel
+- [ ] Verts ; mutations M1 à M9 (M1-bis, M1-ter, M2-bis, M2-ter, M3-bis, M8-bis comprises) ; captures (AC10) ; manuel
       (AC9).
 - [ ] Gates selon `e35-dev-commun.md` § *Quels gates, quand*, voie 2 : en cours, gate ciblé — Vitest des fichiers touchés,
       `npm run check`, `npm run lint-i18n-ownership`, `cargo nextest run -E 'binary(...)'` du crate `kesh-i18n` (les `.ftl` y
@@ -541,7 +553,7 @@ rend…*) : le développement garde celles que R0 confirme et retire les autres.
   centime est signalé au lieu d'être lu de travers, ignoré ou refusé à l'envoi. [En 0.17.6, un numéro de compte tapé sans être choisi dans la liste restait affiché sans être retenu ; depuis la
   0.17.7, le champ se vide et le message le dit.] (refs #1150)
 - **Réconciliation, *Éclater* : la fenêtre est plus large** ; les comptes et les montants se lisent en entier, et la
-  fenêtre ne dépasse jamais l'écran en largeur.
+  liste des comptes s'ouvre sans être coupée.
   (refs #1151)
 
 ## Dev Notes
@@ -734,3 +746,19 @@ dit « Valider » ; le bouton s'appelle *Éclater* et le manuel ne dit ni quand 
     `sm:max-w-3xl`, sous la borne de la classe de base) ; AC6 c (700×720), R0 (i), capture, M10 (C-36-2-16).
   - **V3-6 (LOW)** : dossier de R0-b sous `/tmp/kesh-voie2/e36-2-r0b/`, hors du worktree (C-36-2-17).
   - **V3-7 (LOW)** : indifférence du mode d'arrondi écrite à D5 ; AC5 h, cas V-d à quinze chiffres, M8-bis.
+- 2026-11-14 — Validation P4 ciblée (Opus) : 0/0/3/4 → remédiés (Opus 5.5), en simplifiant. Prémisses relues :
+  `dialog-content.svelte:31` (`fixed … w-full -translate-x-1/2`) ; `TransactionSplitModal.test.ts:19-21` (le mock
+  d'`i18nMsg` ignore la clé) ; `TransactionSplitModal.svelte:126-130` (`txAbsAmount`).
+  - **V4-1 (MEDIUM)** : retour à `sm:max-w-3xl` — le dialogue, `fixed` et `w-full`, ne déborde à aucune largeur ; la
+    borne de la P3 reposait sur une prémisse fausse. Retirés : AC6 c, R0 (i), M10, la capture à 700×720 ; D6 et la note
+    de version récrits ; C-36-2-16 marqué remplacé.
+  - **V4-2 (MEDIUM)** : M2-ter attribuée à R0 (a) ; AC3 dit ce que vérifie le Vitest (le repli et ses arguments) et ce
+    que vérifie l'E2E (le catalogue).
+  - **V4-3 (MEDIUM)** : critère du grisé mécanique — variantes éligibles (a) à (d), montants admis = leur liste fermée,
+    comparaison à la valeur absolue du montant de la transaction.
+  - **V4-4 (LOW)** : le cas à quinze chiffres (AC5 h) remplacé par `0.10` + `0.20` sur `-0.30`, qui tue M8-bis (somme
+    en `Number` sans arrondi) ; D5 accordé.
+  - **V4-5 (LOW)** : B2 scindée par variante (B2, B2-bis, B2-ter « cause non nommée », `refs`) ; table B sans objet sous
+    A1 ou A2 (au rapport, sans PR).
+  - **V4-6 (LOW)** : C-36-2-9 annoté comme remplacé, pour la mise en œuvre, par C-36-2-15.
+  - **V4-7 (LOW)** : un dossier `/tmp/kesh-voie2/e36-2-r0b-<n>/` neuf par essai de R0-b.

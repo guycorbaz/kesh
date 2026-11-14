@@ -103,6 +103,9 @@ le 2026-11-14 ; prémisses relues au code avant application.*
   H1 contredite → arrêt.
 - **Écartées** : garder H2 comme branche (critère flou, correctif partiel) ; corriger sans cause établie.
 - **Réversible** : oui.
+- *(Annoté le 2026-11-14, validation P4 : **remplacé, pour la mise en œuvre, par C-36-2-15** — sans grisé reproduit,
+  D2 à D6 se développent quand même (table A, A3) ; seul `refs #1150` demeure (table B, B3). Le reste — champ texte sans
+  condition, messages tranchés, H5 réfutée — est maintenu.)*
 
 ### C-36-2-10 — Localisateurs de R0 indépendants de D4 (V1-3)
 
@@ -151,7 +154,7 @@ le 2026-11-14 ; prémisses relues au code avant application.*
   `AccountAutocomplete.svelte`, hors de la story) ; `max-h-[85vh] overflow-y-auto` du précédent.
 - **Réversible** : oui.
 - *(Annoté le 2026-11-14, validation P3 : la classe devient `sm:max-w-[min(48rem,calc(100%-2rem))]`, C-36-2-16 ; I3 est
-  ouverte : #1181.)*
+  ouverte : #1181.)* *(Annoté le 2026-11-14, validation P4 : C-36-2-16 retiré, **`sm:max-w-3xl` seul rétabli**.)*
 
 ---
 
@@ -169,6 +172,9 @@ le 2026-11-14 ; prémisses relues au code avant application.*
   remplace, pour la mise en œuvre, la suspension écrite à C-36-2-9.
 - **Écartée** : suspendre D2 à D6 sans grisé reproduit (fait dépendre de R0-b des défauts établis à la lecture).
 - **Réversible** : oui.
+- *(Annoté le 2026-11-14, validation P4 : critère rendu mécanique — variantes éligibles (a) à (d) seulement, montants
+  admis = leur liste fermée (positifs, deux décimales au plus, non ambigus), somme comparée à la **valeur absolue** du
+  montant de la transaction ; B2 scindée par variante (B2-ter : `refs`) ; table B sans objet sous A1 ou A2.)*
 
 ### C-36-2-16 — La largeur bornée à toute taille de fenêtre (V3-5)
 
@@ -178,6 +184,10 @@ le 2026-11-14 ; prémisses relues au code avant application.*
   700×720, R0 (i), capture, M10.
 - **Écartées** : `sm:max-w-3xl` seul (le défaut du précédent) ; corriger aussi `LinkSettlementModal` (hors périmètre).
 - **Réversible** : oui.
+- *(Annoté le 2026-11-14, validation P4 : **remplacé — retiré**. La prémisse était fausse : le dialogue est `fixed` et
+  `w-full` (`dialog-content.svelte:31`), `max-w` ne fait que plafonner une largeur égale à la fenêtre, et rien ne déborde ;
+  seule la marge de 1rem se perd entre 640 et 800 px, comme au précédent. `sm:max-w-3xl` seul est rétabli ; AC6 c, R0 (i)
+  et M10 sont retirés.)*
 
 ### C-36-2-17 — Les dossiers de R0-b hors du worktree, sous `/tmp/kesh-voie2/` (V3-6)
 
@@ -187,3 +197,5 @@ le 2026-11-14 ; prémisses relues au code avant application.*
 - **Écartée** : `--user "$(id -u):$(id -g)"` (image non éprouvée sans root ; un refus d'écriture hors de `/data` ferait
   échouer R0-b sans rapport avec la story).
 - **Réversible** : oui.
+- *(Annoté le 2026-11-14, validation P4 : un dossier neuf par essai, `/tmp/kesh-voie2/e36-2-r0b-<n>/` — les fichiers
+  root d'un essai ne s'effacent pas sans `sudo`, et un second essai ne doit pas remonter ceux du premier.)*
