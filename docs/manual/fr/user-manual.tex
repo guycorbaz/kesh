@@ -556,7 +556,7 @@ Pour chaque ligne :
 
 \begin{itemize}
     \item \textbf{Compte} : sélection dans le plan comptable.
-    \item \textbf{Montant} : positif uniquement (la colonne débit/crédit indique le sens).
+    \item \textbf{Montant} : positif uniquement (la colonne débit/crédit indique le sens)~; point ou virgule décimale, quatre décimales au plus, et l'apostrophe des milliers (\texttt{1'234,50}), par groupes de trois chiffres~; une espace entre les milliers n'est pas admise. \textbf{Un point ou une virgule suivis d'exactement trois chiffres, après une partie entière de un à trois chiffres sans apostrophe, sont refusés comme ambigus} (\texttt{1.234}~: mille deux cent trente-quatre, ou un franc vingt-trois~?)~: écrivez \texttt{1'234} ou \texttt{1.2340} --- la même règle d'ambiguïté que pour le solde d'ouverture d'un compte (\S\ref{sec:solde-ouverture-compte-bancaire}). Un montant mal formé est signalé « Montant illisible ». L'assistant TVA achat applique la même règle à son montant HT.
     \item \textbf{Description ligne} : précision supplémentaire (optionnel).
 \end{itemize}
 
