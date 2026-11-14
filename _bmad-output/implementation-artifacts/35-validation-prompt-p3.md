@@ -6,7 +6,7 @@ comptable suisse en production : Rust/Axum, SvelteKit, MariaDB). Contexte obliga
 - le fichier d'epic `_bmad-output/planning-artifacts/epic-35-multi-devises.md` (décisions D1–D7 de l'utilisateur,
   non négociables ; registre C-35-1 à C-35-8, tranché par une table ronde) ;
 - la fiche à valider (indiquée dans ta mission) ;
-- `CLAUDE.md` à la racine, sections *Migration breaking policy* (P3–P8), *Pattern batch*, *Un appariement automatique
+- `CLAUDE.md` à la racine, sections *Migration breaking policy* (P1–P8), *Pattern batch*, *Un appariement automatique
   propose*, *Review Iteration Rule* (pour le format) ;
 - le code cité par la fiche : **vérifie chaque prémisse et chaque numéro de ligne au code** (`grep -n`, lecture).
 
@@ -18,7 +18,7 @@ comptable suisse en production : Rust/Axum, SvelteKit, MariaDB). Contexte obliga
 3. **Sites non résolus** : chemins d'écriture, sélecteurs, exports, sauvegarde, MCP, réinitialisation, i18n, audit,
    manuels que la fiche devrait couvrir et ne nomme pas. Cherche-les au code (énumère, ne suppose pas).
 4. Défaut comptable (principes suisses, CO 957–960e) ou de sécurité (réseau sortant, entrée non bornée).
-5. Migration : breaking ou non selon P3–P3, inscriptions P5–P8, fenêtre d'import `.keshbackup`.
+5. Migration : breaking ou non selon P1–P3, inscriptions P5–P8, fenêtre d'import `.keshbackup`.
 6. Tests manquants pour un AC.
 
 ## Interdits
