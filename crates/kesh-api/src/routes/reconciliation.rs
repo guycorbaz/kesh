@@ -2979,8 +2979,8 @@ async fn accept_one_invoice(
     //     modification concurrente a déjà été refusée en `race_during_update`
     //     sans qu'aucune marque soit posée. ⛔ Pas dans `create_in_tx` : appelé
     //     avant (g), il prendrait les lignes avant la facture (C-15-1a2-6).
-    //     Exercice tenu : celui de (d). Acteur : la clé d'API, s'il y en a une
-    //     (seul geste qui la porte, AC10). Toute erreur est per-proposal.
+    //     Exercice tenu : celui de (d). Acteur : la clé d'API, s'il y en a une.
+    //     Toute erreur est per-proposal.
     letterings::sync_invoice_in_tx(
         tx,
         company_id,
