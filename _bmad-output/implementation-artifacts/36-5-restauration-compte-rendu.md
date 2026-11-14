@@ -1,13 +1,13 @@
 # Story 36-5 : le compte rendu d'une restauration ne se perd plus sous un battement de session refusé (#931, KF-056)
 
-Status: ready-for-dev
+Status: review
 
 *Fiche rédigée le 2026-11-14 par l'agent de rédaction des fiches de l'Epic 36 (Opus 5.5), worktree `kesh-36-5`, branche
 `story/36-5-restauration-compte-rendu`, par le workflow `bmad-create-story`. Release **0.17.8**, phase 1. **Aucune
 migration**, aucun changement serveur ni d'API, aucune clé i18n. Code lu à la tête du worktree, **`4de0bcc7e`**. Étape 0 et
 choix qui font foi : `e36-choix-autonomes-e360.md` (§ *Étape 0 — 36-5*, C-e360-8, C-e360-11) ; choix propres à la story :
-`e36-choix-autonomes-36-5.md` (C-36-5-1 à C-36-5-9). Voie de base **1** (lignée B, après la 36-4). Validation : P1 à
-P4 remédiées (Change Log), passe suivante à lancer.*
+`e36-choix-autonomes-36-5.md` (C-36-5-1 à C-36-5-13, les quatre derniers au développement). Voie de base **1** (lignée
+B, après la 36-4). Validation terminée en six passes (Change Log) ; développée le 2026-11-15, en revue.*
 
 ## Story
 
@@ -560,24 +560,24 @@ Une mutation équivalente se dit au Dev Agent Record.
 
 ## Tâches
 
-- [ ] **Étape 0** : relire à la tête de la branche les lignes citées ci-dessus ; rejouer les deux greps de l'inventaire et
+- [x] **Étape 0** : relire à la tête de la branche les lignes citées ci-dessus ; rejouer les deux greps de l'inventaire et
       celui des minuteries, sorties citées au Change Log ; **relire `docs/manual/fr/admin-manual.tex:2340` après la
       fusion de la 36-4**, seul fichier commun possible (Dev Notes, *Fichiers communs* ; V4-11), et y placer la phrase de
       D6 sans toucher aux lignes de la 36-4.
-- [ ] **Répétition avant** (D4) : bases `kesh_e2e_e365` recréées à neuf (migrations du worktree, seed), `npm run build`
+- [x] **Répétition avant** (D4) : bases `kesh_e2e_e365` recréées à neuf (migrations du worktree, seed), `npm run build`
       au commit de base, backend selon la recette E2E des consignes (port attribué par le prompt de développement),
       `KESH_TEST_MODE=true PLAYWRIGHT_HOST_PLATFORM_OVERRIDE=ubuntu24.04-x64 KESH_BACKEND_URL=… KESH_INBOX_DIR=… KESH_DOCUMENTS_DIR=…
       npx playwright test tests/e2e/backup-restore-new-install.spec.ts:140 tests/e2e/backup-restore-new-install.spec.ts:262 --repeat-each=30 --retries=0 --reporter=line`,
       sous le verrou de la voie 1 ; `frontend/test-results/` copié avant tout rejeu (traces des rouges).
-- [ ] API du maintien inerte (`auth.svelte.ts`) ; tests de l'AC1 à l'AC6 et E2E de D5 ; rouges consignés.
-- [ ] D1 (`auth.svelte.ts`, `api-client.ts`, dont l'extraction d'`expireSession`), D2 (`session-idle.svelte.ts`, commentaire d'en-tête `:20-22` complété :
+- [x] API du maintien inerte (`auth.svelte.ts`) ; tests de l'AC1 à l'AC6 et E2E de D5 ; rouges consignés.
+- [x] D1 (`auth.svelte.ts`, `api-client.ts`, dont l'extraction d'`expireSession`), D2 (`session-idle.svelte.ts`, commentaire d'en-tête `:20-22` complété :
       « aucune suspension » devient faux), D3 (`AdminRestorePanel.svelte`, commentaire d'en-tête `:9-12` complété) ;
       commentaire de `sendHeartbeat` `:363` récrit (le 401 n'a plus toujours redirigé).
-- [ ] Les 33 mutations de la table (M5′ et M15 retirées).
-- [ ] **Répétition après** (D4) ; note de `docs/testing.md` et demi-phrase de `admin-manual.tex:2340` (D6 ; PDF à
+- [x] Les 33 mutations de la table (M5′ et M15 retirées).
+- [x] **Répétition après** (D4) ; note de `docs/testing.md` et demi-phrase de `admin-manual.tex:2340` (D6 ; PDF à
       l'intégration) ; une capture du compte rendu resté affiché après le
       battement forcé (`KESH_E2E_CAPTURES_DIR`, thème clair) dans `kesh-gate-logs/e36-5/captures/`.
-- [ ] Gates (ci-dessous) ; `Status: review` et clé `review` au `sprint-status.yaml` dans le même commit ; prompt de la
+- [x] Gates (ci-dessous) ; `Status: review` et clé `review` au `sprint-status.yaml` dans le même commit ; prompt de la
       revue P1 à côté de la fiche.
 
 **Gates** (consignes `e35-dev-commun.md` § *Quels gates, quand*, voie **1**) : en cours de développement, frontend ciblé
@@ -666,6 +666,97 @@ se contrôle aplati. Aucun autre fichier commun. 36-1 à
 - `CLAUDE.md` : § *Inventorier les sites NON RÉSOLUS* ; § *E2E (Playwright)* ; `docs/testing.md` § *Les échecs attendus*.
 
 ## Dev Agent Record
+
+*Développement du 2026-11-14 au 2026-11-15, agent Opus 5.5, worktree `kesh-36-5`, voie de base 1 (`kesh_e365`,
+`kesh_e2e_e365`, `kesh_ci_e365`, port 3365). Journaux hors dépôt : `/home/gcorbaz/devel/kesh-gate-logs/e36-5/`.*
+
+**Commits** (de `f43562b4d`, la fiche validée) : `58a9af582` E2E déterministe et étape 0 (V6-1) ; `29762b89a` API du
+maintien inerte, `expireSession` extraite, tests de l'AC1 à l'AC6 (rouges) ; `69f18b23a` le correctif (D1, D2, D3) —
+**dernier commit qui touche du code de production** ; `fe40d7bcc` puis `0e9da291c` l'E2E de D5 corrigé (C-36-5-13) —
+**dernier commit qui touche du code**, un test ; `f4e6afd57` `docs/testing.md`, manuel, registre ; puis ce compte rendu.
+
+**Fichiers de production** : `frontend/src/lib/app/stores/auth.svelte.ts` (état `_restoreHoldUntil`, `restoreHold`,
+`holdForRestore`, `releaseRestoreHold` ; levée dans `clearSession()` et en première instruction de `logout()` ; `login()`
+inchangé), `frontend/src/lib/shared/utils/api-client.ts` (`expireSession()` exportée ; garde `!authState.restoreHold` dans
+`refreshTokens`, seul lieu de l'effacement et de la redirection, qui couvre `request` et `requestRaw`),
+`frontend/src/lib/app/stores/session-idle.svelte.ts` (D2 dans `tick`, `recordActivity`, `stayActive` ; en-tête et
+commentaire de `sendHeartbeat` complétés), `frontend/src/lib/features/admin-restore/AdminRestorePanel.svelte` (D3),
+`frontend/src/lib/features/admin-restore/admin-restore.api.ts` (`RESTORE_HOLD_MARGIN_MS`, `importHoldMs`). Aucun fichier
+Rust, aucune migration, aucune clé i18n.
+
+**Tests ajoutés** (recomptés `git show <ref>:<fichier> | grep -cE "^\s*(it|test)\("`, de `f43562b4d` à `HEAD`) :
+Vitest **28** — `api-client.test.ts` 36 → 42 (+6), `auth.svelte.test.ts` 21 → 27 (+6), `session-idle.svelte.test.ts`
+52 → 54 (+2), `AdminRestorePanel.test.ts` 15 → 29 (+14) ; E2E **1** — `backup-restore-new-install.spec.ts` 3 → 4 (le
+test « KF-056 », `:381`). Les tests existants n'ont changé ni de corps ni d'assertion ; seuls les simulacres sont
+étendus (`session-idle.svelte.test.ts` : `restoreHold` réglable, remis à faux au `beforeEach` ; `AdminRestorePanel.test.ts` :
+simulacres partiels d'`admin-restore.api` et d'`api-client`, `sessionIdle` simulé, maintien délégué au vrai `authState`,
+C-36-5-11).
+
+**Rouges** (`rouges.log`, `rouges-vitest.log`, commit `29762b89a`) : Vitest ciblé des quatre fichiers, **20 rouges,
+167 verts** (187), chacun sur une assertion de comportement. Verts au départ, et dits tels : AC1 (b), AC5 bis (a) et
+AC5 (a) côté client, `expireSession`, `clearSession()`/`logout()` remettent à zéro (par construction), AC3 (b) « avant
+l'échéance », AC5 (d) côté panneau. **E2E de D5 : rouge 3 sur 3 avant le correctif** (`repetition-avant-d5-r3.log`) à
+l'attente du compte rendu, **après** que l'import a rendu 200 et le battement 401 ; traces (`test-results-avant-d5-r3/`) :
+`frameUrl` `…/login?reason=session_expired`. ⚠️ **Les deux premiers rouges de ce test ne prouvaient rien** : par
+`page.route` + `route.fetch()`, l'archive arrivait au serveur illisible (400 « Could not find EOCD »,
+`backend-avant-d5.log`, `backend-avant-d5-r2.log`) ; le premier a d'abord été écrit au journal comme le rouge de la
+KF-056, sur la foi d'une chaîne `login?reason=session_expired` trouvée dans la trace — elle venait du code servi.
+L'annotation datée est dans `rouges.log` ; le test récrit (C-36-5-13) contrôle désormais le statut de l'import et du
+battement avant l'affichage.
+
+**Verts** : Vitest ciblé après le correctif (`verts-vitest.log`, `69f18b23a`) : 6 fichiers, **196/196** ;
+`npm run check` 0 erreur, `lint-i18n-ownership` vert (`check-dev.log`, `lint-i18n-dev.log`).
+
+**Mutations** (`mut/mutations.py`, `mut/resume.log`, `mut/M*.log` ; code commité avant, `69f18b23a` ; restauration par
+`git restore --worktree` puis `touch`, `git status` propre après la campagne) : **33 sur 33 tuées**, chacune par le test
+que la fiche nomme (diff et rouges dans chaque `M*.log`) ; M9 fait rougir trois tests 401 existants du client
+(« refresh échoué → clearSession + redirect login », « refresh 200 sans expiresIn », « refresh fetch échoue (réseau) »)
+plus deux neufs : la fermeture ordinaire n'est pas affaiblie. Aucune mutation équivalente. Les mutations sont
+Vitest seulement ; la seconde partie de l'E2E (M8) n'a pas été mutée en E2E.
+
+**Répétition (D4, AC7)** :
+- *avant* (`repetition-avant.log`) : `:140` et `:262`, 30 passages chacun, **60 passés, 0 rouge** — frontend servi : le
+  build d'un export de `29762b89a` (API inerte, comportement d'avant le correctif ; C-36-5-10), backend de la branche.
+  **Fréquence observée : 0/30 pour `:140`, 0/30 pour `:262`.** La répétition ne reproduit donc pas la KF-056 ici ; sans
+  rouge avant, la répétition « après » ne prouve rien par elle-même : **la preuve est celle du test de D5** (rouge 3 sur 3
+  avant, vert 10 sur 10 après).
+- *après* (`repetition-apres.log`, build de `69f18b23a`) : **60 passés, 0 rouge** ; test de D5 dix fois
+  (`repetition-apres-d5-r2.log`, spec de `0e9da291c`) : **10 passés**. Les journaux `repetition-apres-d5.log` (10 rouges)
+  et `repetition-avant-d5*.log` antérieurs sont ceux des versions défectueuses du test, gardés.
+- Capture : `captures/j-compte-rendu-apres-battement-refuse.png` (thème clair : compte rendu, *Se reconnecter*, URL
+  `/admin/restore` après le battement refusé).
+
+**Gates au passage en revue** (bases remises à neuf ; commit `f4e6afd57`, code identique à `0e9da291c`) :
+- `scripts/test-fast.sh --ci` sur `kesh_e365` : **5445 exécutés, 5445 passés, 13 ignorés** (`test-fast-ci.log`).
+- `scripts/gate-ci.sh kesh_ci_e365` : **5452 passés, 0 échoué, 17 ignorés**, code 0 (`gate-ci.log`, `gate-ci.console.log`)
+  — `textes_coherents.rs` compris.
+- Frontend complet : `npm run check` 0 erreur, 29 avertissements préexistants, aucun dans les fichiers touchés
+  (`front-check.log`) ; `lint-i18n-ownership` vert (`front-lint-i18n-ownership.log`) ; `test:unit` **234 fichiers,
+  3459 tests** (`front-test-unit.log`) ; `npm run build` vert (`front-build.log`).
+- **Non lancé** : l'E2E complet (à la clôture, consigne de l'Epic 36).
+
+**AC9** : `git grep -nE "holdForRestore\(" -- frontend/src ':!*.test.ts'` → `auth.svelte.ts:151` (définition),
+`AdminRestorePanel.svelte:221` (confirmation), `:235` (succès) ; aucune ligne de commentaire rendue. **AC8** :
+`git grep -n "KF-056" -- docs/testing.md` → `:431` ; `git grep -n "Laissé ouvert, ou quitté"` → `admin-manual.tex:2340` ;
+PDF (non régénéré, D6) : « Prenez le temps de lire, puis cliquez » → `1`, la phrase neuve → `0` (attendu jusqu'à
+l'intégration).
+
+**Inventaire rejoué** (étape 0, puis après le correctif) : sorties identiques à la fiche, à une ligne près — le grep
+`(goto|redirect)\(…'/login` rend aussi `SetupForm.svelte:27`, un **commentaire** (« `goto('/login')` s'exécute hors
+contexte ») omis de la sortie copiée par la fiche ; hors du symptôme. Après le correctif, `api-client.ts:202` devient
+`:219` (dans `expireSession`), appelée par `refreshTokens` (`:206`, sous la garde) et par le panneau (`:70`, `:106`),
+deux sites atteints seulement à l'échéance de B ou au démontage, voulus (D3). Minuteries : inchangées, plus la
+minuterie de lecture du panneau (`setTimeout`, D3).
+
+**Écarts** : (1) D5 n'emploie pas `page.route` + `route.fetch()` pour retenir la réponse (C-36-5-13) ; (2) la
+répétition « avant » sert un export du commit des rouges, non le worktree (C-36-5-10) ; (3) le PDF n'est pas régénéré
+(D6, à l'intégration) ; (4) consigne Edit : aucun écart sur le code — les remplacements de `mut/mutations.py` sont ceux
+des mutations, permis ; (5) la relecture de `admin-manual.tex:2340` « après la fusion de la 36-4 » n'a pas pu se faire :
+la 36-4 n'est pas fusionnée ; la demi-phrase est insérée dans la seule ligne `:2340`, sans toucher à aucune autre ligne,
+et l'union se vérifie à l'intégration.
+
+**Issues à ouvrir** (demandées à l'orchestrateur) : la connexion faite dans un autre onglet pendant la phase 2 (Dev Notes,
+*Hors périmètre*, V4-8 : cet onglet absorbe les 401 de la session neuve et ne la ferme pas pour inactivité, au plus B).
 
 ## Change Log
 
@@ -787,3 +878,16 @@ se contrôle aplati. Aucun autre fichier commun. 36-1 à
     `onboarding/+layout.svelte:33`, `routes/+layout.svelte:118` rendent la page sans condition ; `location.replace`
     décharge sans nettoyage) ; aucune garde ajoutée.
   Recompte : **11 critères**, **33 mutations**. Modules : inchangés. Aucune migration.
+- 2026-11-14 — **Validation P6 ciblée (Haiku) : 0/0/0/1** (`kesh-gate-logs/e36-5/validation-p6-ciblee.md`). **Validation
+  terminée en six passes**, sur une passe sans finding au-dessus de LOW. Trend (CRITICAL/HIGH/MEDIUM/LOW) : P1 Sonnet
+  0/0/3/7 → P2 Opus 0/1/0/9 → P3 Sonnet 0/1/1/5 → P4 Opus 0/0/3/8 → P5 Sonnet 0/0/1/6 → P6 ciblée Haiku 0/0/0/1.
+  Reclassement : aucun. Simplification de D2 décidée en P4 par l'orchestrateur (C-36-5-9).
+- 2026-11-14 — **Étape 0 du développement** (Opus 5.5) : V6-1 (LOW) traité dans la fiche — ligne lue, D3 :
+  « - **Borne de la phase 1 : `max(B, 2 × LONG_OPERATION_TIMEOUT_MS + RESTORE_HOLD_MARGIN_MS)`** » récrite
+  « **Borne de la phase 1 : `importHoldMs(B)`**, la fonction unique décrite plus bas » ; l'expression du maximum n'est
+  plus écrite qu'à la description d'`importHoldMs`. Greps de l'inventaire et des minuteries rejoués (Dev Agent Record,
+  *Inventaire rejoué*) ; la 36-4 n'étant pas fusionnée, la phrase de D6 est placée dans la seule ligne `:2340`.
+- 2026-11-15 — **Développement** (Opus 5.5) : D1, D2, D3, D6 livrés ; 28 tests Vitest et 1 E2E ; 20 rouges au départ,
+  E2E de D5 rouge 3/3 avant et vert 10/10 après ; 33 mutations tuées sur 33 ; répétition 0 rouge avant (0/30, 0/30) et
+  après ; `test-fast --ci`, `gate-ci`, frontend complet verts ; E2E complet à la clôture. Choix C-36-5-10 à C-36-5-13.
+  Détail et journaux : Dev Agent Record. `Status: review`.
