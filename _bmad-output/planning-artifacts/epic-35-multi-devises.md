@@ -255,6 +255,45 @@ Prime sur tout ce qui précède là où il diverge.
   - A22 — changer plus tard le genre de clôture d'un exercice ne modifie pas le genre d'ouverture de l'exercice
     suivant déjà créé (chacun se règle dans son tableau des cours).
 
+## Revue 3 de Beat — CR-5 (2026-11-14)
+
+Prime sur tout ce qui précède là où il diverge. Beat approuve A2–A22, **sauf A11 et A22** (remplacés par U3 et U4).
+
+- **U1 — Tables des cours renommées et réparties (remplace C-35-1 et l'S6 tel qu'écrit).**
+  - **`exchange_rates`** (table **applicative**, **par société**, sauvegardée ; ex-`exchange_rate_overrides`) : une ligne
+    par (société, devise, genre `month|day`, date) avec le **cours retenu par la société** et sa **`source`**
+    (`afc`, `manual`, et plus tard d'autres sources, p. ex. `ecb`). Elle reçoit **automatiquement** une copie de
+    chaque cours récupéré utile à un exercice multi-devises de la société (`source = 'afc'`) ; un cours saisi
+    remplace la ligne (`source = 'manual'`). La source d'un cours reste connue **pour toujours**, même pour les
+    exercices clos, même quand la source en ligne ne l'offre plus, même après une restauration.
+  - **`_kesh_fetched_exchange_rates`** (table **système**, non sauvegardée ; ex-`_kesh_exchange_rates`) : les cours
+    **tels que publiés** par la source, une ligne par (`source`, devise, genre, date), la **dernière** valeur publiée.
+    Une republication (correction de l'AFC) met à jour cette ligne ; elle ne touche **jamais** `exchange_rates`.
+  - **Une seule valeur à l'écran** (corrige la maquette, U1 de Beat) : la case montre le cours de `exchange_rates` ;
+    dessous, « AFC ✓ » s'il égale la valeur publiée ; sinon, si la ligne est `afc`, « AFC corrigé : x » **en rouge**
+    avec ↑ ; si la ligne est `manual`, « AFC : x » avec ↑. Avertissement à la connexion tant qu'une ligne `afc` diffère
+    de la valeur publiée et n'est pas acquittée (acquittement **par société**, mémorisé sur la ligne avec la valeur
+    acquittée : une correction suivante avertit de nouveau).
+  - Les colonnes `republished_*` et la notion d'adoption globale disparaissent. `FX_RATE_NOT_AFC` compare au cours de
+    `exchange_rates` du mois de l'écriture quand sa source est `afc`.
+- **U2 — Changer le compte d'une ligne** en éditant une écriture : la devise de la ligne **suit le compte** (elle
+  n'est verrouillée qu'au compte). Passer d'un compte USD à un compte EUR réinitialise montant et cours ; vers un compte
+  CHF, la ligne redevient CHF.
+- **U3 — Corriger un cours AFC (↑) : par société (remplace A11).** Le ↑ ouvre un dialogue : (•) « Corriger pour
+  [nom de la société] » (défaut) ; ( ) « Corriger pour toutes les sociétés sous votre gestion (exercices ouverts
+  seulement) ». **Constat au code** : un utilisateur Kesh n'appartient qu'à une société (`users.company_id`) ; la
+  seconde option n'a donc aujourd'hui aucun objet. Elle est **spécifiée mais masquée** tant que Kesh ne gère pas
+  plusieurs sociétés par utilisateur ; à tracer en issue (C-35-8).
+- **U4 — Changer le genre de clôture d'un exercice (remplace A22).** Si l'exercice suivant existe, un **dialogue**
+  demande quoi faire : appliquer aussi le genre correspondant au **cours d'ouverture** de l'exercice suivant (case
+  cochée par défaut) ; Kesh rappelle qu'aucune écriture d'ouverture n'existe entre deux exercices Kesh (soldes
+  cumulés) et n'en modifie donc aucune. Si l'exercice suivant a des soldes d'ouverture saisis (premier exercice Kesh
+  suivi d'aucun autre : cas impossible ici), sans objet.
+- **U5 — Les arbitrages deviennent des AC** de leur story (A2–A22 hors A11, A22 ; U3 et U4). La page de revue les
+  montre dans les stories, en bleu seulement s'ils ont changé.
+- **U6 — Vocabulaire** : « débit et crédit restent en **devise principale** » (aujourd'hui CHF), jamais « en CHF » seul.
+  La page de revue ajoute un **schéma des réglages** (société, exercice, compte).
+
 ## Source des cours — établie le 2026-11-14
 
 - Page ESTV *MWST Monatsmittelkurse* : « XML-File » → `https://www.backend-rates.bazg.admin.ch/api/xmlavgmonth`.
