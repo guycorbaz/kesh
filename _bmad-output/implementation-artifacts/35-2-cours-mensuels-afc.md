@@ -140,12 +140,18 @@ cours sans saisie.
      REGEXP '^[a-z]{2,12}$'` — **format seul, aucune énumération** (A28, CR-5) ; `afc` : copie d'un cours récupéré, ou
      valeur publiée reprise par ↑ ; `manual` : cours saisi par la société ; les valeurs admises sont contrôlées **par le
      code** (`RateOrigin { Afc, Manual, Other(String) }` : la lecture d'une valeur inconnue est **tolérante** (A30) —
-     `Other(source)`, affichée telle quelle, jamais une erreur interne ; seules `afc` et `manual` s'écrivent aujourd'hui),
+     `Other(source)`, affichée telle quelle, jamais une erreur interne ; seules `afc` et `manual` s'écrivent aujourd'hui ;
+     **une ligne `Other` se traite partout comme `manual`**, hors l'affichage et l'audit de sa source, rendue telle
+     quelle : elle n'est pas un cours `afc` — `FX_RATE_NOT_AFC` de 35-3a refuse une ligne d'écriture `afc` à ce cours,
+     `expectedRate` à `null` —, son `PUT …/rates` la passe en `manual`, son ↑ (`reset`) en `afc` à la valeur publiée, et
+     aucun acquittement ni reprise ne la vise (`chk_exchange_rates_ack_afc`)),
      si bien qu'une source future, p. ex. `ecb`, s'ajoute sans DDL — élargir un `CHECK` d'énumération demanderait un
      `DROP CONSTRAINT` puis un `ADD CONSTRAINT` (P3 ne les liste pas). Dès cette version, la release qui écrit la première
      une source neuve n'a donc **plus à relever `kesh_version_min_required`** ni à livrer une migration breaking pour elle
-     (A28, A30) ; le binaire de cette version lit la ligne sans erreur. Un binaire antérieur à cette version, lui,
-     n'aurait pas cette tolérance, mais il ne démarre de toute façon pas sur une base migrée (P1)), `acknowledged_rate DECIMAL(20,10) NULL`
+     (A28, A30) ; le binaire de cette version lit la ligne sans erreur, et la traite comme `manual` (ci-dessus) — la
+     release qui l'écrit vérifie que ce traitement reste juste pour la source neuve. Un binaire antérieur à cette
+     version ne connaît pas la table du tout, et ne démarre de toute façon pas sur une base migrée (P1) ; un
+     `.keshbackup` d'une version future portant une source neuve s'importe ici et se lit de même), `acknowledged_rate DECIMAL(20,10) NULL`
      et `acknowledged_at DATETIME(3) NULL` (UTC) — l'**acquittement par société** d'une correction de l'AFC : la valeur
      publiée (par unité) que la société a vue et acquittée (AC-5) ; `chk_exchange_rates_ack_pair` (les deux `NULL` ou les
      deux non `NULL`) et `chk_exchange_rates_ack_afc` (`acknowledged_rate IS NULL OR source = 'afc'`) —, `version INT NOT
@@ -435,7 +441,7 @@ cours sans saisie.
      lignes EUR copiées ; `PUT` de compte no-op → aucune copie ; aucun exercice multi-devises ouvert → rien (tests
      délégués par 35-1 AC-4) ; compte archivé en JPY → JPY encore copié ;
      activation → aucune ligne copiée, `copied` absent de son audit ;
-     désactivation puis réactivation → lignes conservées, aucune doublée ; correction (AC-3 (c)) → ligne `afc` inchangée ; ligne `source = 'ecb'` posée par SQL (A30) → lue par `find_company_rate_in_tx`, `source` affichée `ecb`, aucune erreur interne (ni 500) ; création d'un exercice multi-devises,
+     désactivation puis réactivation → lignes conservées, aucune doublée ; correction (AC-3 (c)) → ligne `afc` inchangée ; ligne `source = 'ecb'` posée par SQL (A30) → lue par `find_company_rate_in_tx` (`RateOrigin::Other("ecb")`), `lookup` et grille rendent `source: "ecb"`, aucune erreur interne (ni 500) ; son `PUT …/rates` → `manual`, son `reset` → `afc` ; création d'un exercice multi-devises,
      passage en multi-devises, changement de genre → cours déjà récupérés copiés (un mois, l'Ouverture `month` du mois
      précédant l'exercice, un jour de Clôture) ; deux copies concurrentes → une ligne, aucune erreur ; `updated_by`
      `NULL`, aucune ligne d'audit propre.
@@ -601,7 +607,7 @@ cours sans saisie.
    - `GET /api/v1/exchange-rates/lookup?currency=USD&date=AAAA-MM-JJ[&kind=month|day]` (`kind` absent = `month`) —
      **en lecture seule**, sans appel sortant ni écriture ni audit, ouverte à tout rôle authentifié : **cours effectif**
      (cours retenu par la société, U1) du mois de la date (`month`) ou de la date elle-même (`day`) —
-     `200 { currency, kind, rateDate: "AAAA-MM-JJ", effectiveRate, source: "afc"|"manual", publishedRate,
+     `200 { currency, kind, rateDate: "AAAA-MM-JJ", effectiveRate, source: "afc"|"manual" (ou la valeur lue telle quelle, A30), publishedRate,
      publishedUnit, sourceDate }` (décimaux en chaînes ; `effectiveRate` et `source` = la ligne `exchange_rates` ;
      `publishedRate` (par unité), `publishedUnit` et `sourceDate` = la **dernière valeur publiée**
      (`_kesh_fetched_exchange_rates`), **pour information**, `null` si aucune — elle peut différer de `effectiveRate`
@@ -653,7 +659,7 @@ cours sans saisie.
        `middleware/auth.rs:41` ; aucune table de rattachement utilisateur–sociétés, relevé au code le 2026-11-14) : quand
        Kesh gérera plusieurs sociétés par utilisateur, un champ `scope: "company" | "managedCompanies"` appliquera la
        reprise, pour chaque société gérée dont un exercice multi-devises **ouvert** a cette unité parmi ses unités
-       utiles (AC-3 bis), aux seules lignes `afc` qui diffèrent de la valeur publiée (jamais à une ligne `manual`), dans
+       utiles (AC-3 bis), aux seules lignes `afc` qui diffèrent de la valeur publiée (jamais à une ligne `manual` ni d'une autre source, A30), dans
        une transaction, une ligne d'audit par société ; aujourd'hui le corps n'a pas ce champ (un champ inconnu est
        ignoré comme ailleurs). Issue à ouvrir avec la PR (C-35-8). Rend `200` avec la `Cell` à jour (`rate` `null` après
        une suppression) ;
@@ -1534,3 +1540,13 @@ cours sans saisie.
   (activation retirée, `currencies`, verrous, `retry_app_on_deadlock` `kesh-api/src/retry.rs:40`, `retry_on_deadlock`
   `kesh-db/src/retry.rs:151`) relu : cohérent avec 35-1 AC-3/AC-4. Non exercés : 35-3a, 35-3b, 35-4, 35-5 au-delà des
   renvois, compilation, gate, rendu.
+- 2026-11-14 — validation CR-5 P4 ciblée (Opus) : 0 CRITICAL, 0 HIGH, 2 MEDIUM, 1 LOW ; remédiés dans la fiche ; trois
+  points inter-fiches signalés (35-3a, 35-3b, 35-5). MEDIUM : 35-2-CR5-P4-1 (AC-1) la lecture tolérante ne disait pas
+  ce que fait le code d'une ligne `Other` lue — écrit : traitée partout comme `manual` hors l'affichage et l'audit de
+  sa source (`FX_RATE_NOT_AFC` `expectedRate` `null`, `PUT` → `manual`, `reset` → `afc`, ni acquittement ni reprise),
+  et la reprise « sociétés gérées » exclut toute source autre que `afc` ; -2 (AC-5) contrat de `lookup` encore borné à
+  `"afc"|"manual"` — ouvert à la valeur lue telle quelle ; test `ecb` étendu à `lookup`/grille, `PUT` et `reset`.
+  LOW : -3 « un binaire antérieur n'aurait pas cette tolérance » — il ne connaît pas la table ; reformulé, avec le cas
+  d'un `.keshbackup` futur importé ici, et la réserve que la release qui écrit une source neuve vérifie que le
+  traitement `manual` lui reste juste. Vérifié : A28 (format seul `^[a-z]{2,12}$`, aucune énumération) intact ; P1–P3
+  de `CLAUDE.md` : aucune opération P3, aucun binaire antérieur ne lit la table. Non exercés : compilation, gate, rendu.

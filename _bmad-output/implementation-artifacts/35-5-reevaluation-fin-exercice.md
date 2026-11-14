@@ -13,7 +13,7 @@ exercice de durée quelconque (aucune constante de douze mois : le mois et le jo
 Révisée enfin pour la revue 2 de Beat (CR-4) : **T3** — la ligne ne porte aucune colonne de devise, la devise est celle
 du compte ; **T2** — exercice au 1er janvier ajouté aux tests. Révisée en dernier pour la revue 3 de Beat (CR-5), qui
 prime sur tout : **U1** — le cours de clôture se lit dans `exchange_rates` de 35-2 (le **cours retenu par la
-société**, une seule valeur), et sa **source** (`afc` | `manual`) est affichée et auditée ; une correction de l'AFC non
+société**, une seule valeur), et sa **source** (valeur brute : `afc`, `manual` ou autre, A30) est affichée et auditée ; une correction de l'AFC non
 reprise n'y change rien (AC-1, AC-2, AC-6, AC-7).*
 
 ## Story
@@ -40,7 +40,7 @@ clôture et que l'écart aille aux différences de change.
    - **Cours par défaut** (D10, D9, **R6**, U1), par devise, résolu par la lecture du cours effectif de 35-2
      (`find_company_rate_in_tx`, AC-5 de 35-2 — le **cours retenu par la société** dans `exchange_rates`, une seule
      valeur, avec sa `source` : `afc` pour une copie d'une valeur publiée ou une valeur reprise par ↑, `manual` pour un
-     cours saisi ; jamais la dernière valeur publiée de `_kesh_fetched_exchange_rates`, si bien qu'une correction de
+     cours saisi, ou toute autre valeur brute (`RateOrigin::Other`, p. ex. `ecb`, A30), **traitée comme `manual`** (`sourceDate` `null`, genre et comparaison inchangés) mais affichée et auditée telle quelle ; jamais la dernière valeur publiée de `_kesh_fetched_exchange_rates`, si bien qu'une correction de
      l'AFC que la société n'a pas reprise ne change pas le cours proposé), selon le **genre
      de clôture de l'exercice** (`fiscal_years.closing_rate_kind`, 35-1 AC-1, réglé à l'écran *Cours de change*, 35-2
      AC-6) :
@@ -55,10 +55,10 @@ clôture et que l'écart aille aux différences de change.
      Surchargeable par devise dans la requête (`rates`), comme avant.
      La réponse porte, par devise, `{ currency, rate, rateKind: "day"|"month"|"request", rateDate, defaultRate,
      defaultSource, overridden, sourceDate }` (U1, CR-5 — remplace `afcRate` : `defaultRate` et `defaultSource` =
-     le cours retenu par la société et sa source (`"afc"` | `"manual"`) de la **résolution par défaut**, tous deux
+     le cours retenu par la société et sa source (valeur brute : `"afc"`, `"manual"` ou autre, A30) de la **résolution par défaut**, tous deux
      `null` s'il n'y en a pas ; `sourceDate` = date de publication d'un cours journalier, lue sur la valeur publiée
      (`find_fetched_rate_in_tx`, 35-2 AC-5, pour l'affichage seulement), **seulement quand `defaultSource` vaut `"afc"`** :
-     `null` pour un cours `manual` (la date de publication d'une autre valeur ne qualifie pas un cours saisi), et `null`
+     `null` pour un cours `manual` ou de toute autre source (A30 : traitée comme `manual`) (la date de publication d'une autre valeur ne qualifie pas un cours saisi), et `null`
      si elle n'est pas connue (valeur publiée absente, p. ex. après une restauration), comme pour un cours mensuel (35-2 : `sourceDate` `null` hors `day`) ; `rateDate`, `defaultRate` et `defaultSource` sont toujours ceux
      de la résolution par défaut de la devise — jour, sinon mois —, que l'écran affiche sous le champ, AC-6) ;
      l'aperçu porte en outre `closingRateKind` (`day` | `month`), d'après lequel l'écran distingue un repli d'un choix.
@@ -223,7 +223,7 @@ clôture et que l'écart aille aux différences de change.
      numéros de compte).
    - **Audit** : outre le `journal_entry.created` de chaque écriture, **une** ligne d'audit propre
      `fx_revaluation.posted` qui **liste les écritures** passées — `{ entries: [{ entryId, accountId, currency, rate,
-     delta, counterpartAccountId, fxAccountsOrigin }], rates, source par devise (afc|manual), genre par devise (day|month|request), closingRateKind,
+     delta, counterpartAccountId, fxAccountsOrigin }], rates, source par devise (valeur brute : afc|manual|autre, A30), genre par devise (day|month|request), closingRateKind,
      accountIds }` — écrite **dans la même transaction** (la source
      du cours, perdue sur la ligne puisque `rate_source = 'revaluation'`, y est conservée), entité `fiscal_year`
      (déjà au registre des types, `audit_labels.rs:40`), identifiant = l'exercice. **Aucune** ligne d'audit quand
@@ -367,7 +367,7 @@ clôture et que l'écart aille aux différences de change.
    cours mensuel du mois de fin, `rateKind: "month"` ; ni l'un ni l'autre → `RATE_UNAVAILABLE` ; un cours saisi par
    la société (D9, ligne `manual`) pour le jour est le cours du jour, un cours saisi pour le mois ne l'emporte **pas**
    sur un cours journalier présent (l'ordre est jour puis mois, chacun effectif) ; source `afc` d'une ligne `afc` du
-   jour, `manual` d'une ligne `manual` (même si elle égale la valeur publiée) ; `sourceDate` `null` pour une ligne `manual` ; **U1** : correction de l'AFC du jour de
+   jour, `manual` d'une ligne `manual` (même si elle égale la valeur publiée) ; `sourceDate` `null` pour une ligne `manual` ; **A30** : ligne de la société de `source` `ecb` (posée par SQL, `RateOrigin::Other("ecb")`) → cours proposé comme pour `manual`, `sourceDate` `null`, `defaultSource` `"ecb"` rendu tel quel à l'aperçu et à l'audit ; **U1** : correction de l'AFC du jour de
    clôture non reprise → cours proposé = l'ancien cours retenu, source `afc` ; après ↑ (35-2) → la valeur corrigée,
    source `afc` ; restauration d'un `.keshbackup` sur une installation neuve → aperçu au cours restauré, sans aucune
    récupération, source restaurée (la source de cours factice de 35-2, tâche et déclenchement à la connexion neutralisés : la preuve est l'absence d'appel sortant ; `sourceDate` `null` tant que la valeur publiée n'est pas relue) ; exercice **se terminant le 30 juin** (un dimanche en 2024) → cours
@@ -669,3 +669,4 @@ clôture et que l'écart aille aux différences de change.
   revalider (cycle CR-5).
 - 2026-11-14 — validation CR-5 P1 (Sonnet) : 0 CRITICAL, 0 HIGH, 1 MEDIUM, 3 LOW ; remédiés dans la fiche ; aucun finding inter-fiches. (MEDIUM 35-5-CR5-P1-1 : `sourceDate` d'une valeur publiée affichée sur un cours `manual` — `null` sauf `defaultSource` `afc`, test ; fonction de lecture nommée. LOW : -2 AC-1, mois courant ou suivant d'une fin d'exercice non passée existent par copie, non seulement saisis ; -3 limite d'un cours retenu changé entre aperçu et passation (genre `request`, source `manual`) ; -4 test de restauration sans appel sortant, `sourceDate` `null`, et manuel AC-8. Vérifié : plus aucun reste de `exchange_rate_overrides`, `_kesh_exchange_rates`, `republished_*`, `find_effective_rate_in_tx` hors historiques des six fiches ; `lookup`/`find_company_rate_in_tx`/`find_fetched_rate_in_tx` de 35-2 AC-5 ; `for_actor` `audit_log.rs:195`, `"fiscal_year"` `audit_labels.rs:40`, `retry_on_deadlock` lus. A23–A29 : sans point de contact ici. Axes non exercés : GET de la source (aucun point de contact), code réel non écrit.)
 - 2026-11-14 — validation CR-5 P2 ciblée (Opus) : 0 CRITICAL, 0 HIGH, 0 MEDIUM, 1 LOW ; remédié dans la fiche ; aucun finding inter-fiches. (LOW 35-5-CR5-P2-1 : `sourceDate` d'un défaut mensuel non dit `null` — explicité, renvoi à 35-2 AC-5 « `sourceDate` à `null` hors `day` ». Vérifié au diff `d59a1de9..3b058509` : `find_fetched_rate_in_tx` (35-2 AC-5, affichage seulement) ; copie du mois courant ou suivant sans borne de date (35-2 AC-3 bis), mois au-delà jamais publié (bornes du `POST /fetch`) ; `_kesh_fetched_exchange_rates` absente du `.keshbackup` (35-2, table système) et tâche et connexion lancées par `main.rs` seul, hors mode test ; limite P1-3 cohérente avec la règle unique de genre et de source. Alignement 35-2 (copie à l'activation) : sans point de contact ici. Axes non exercés : code réel non écrit, reste de la fiche hors diff.)
+- 2026-11-14 — alignement A30 (orchestrateur, Sonnet) : une `source` de cours inconnue (`RateOrigin::Other(String)`, p. ex. `ecb`, 35-2) est affichée et auditée telle quelle (valeur brute, AC-1, AC-6) mais se traite comme `manual` : `sourceDate` `null`, même défaut ; test ajouté (ligne `ecb` → cours proposé, `sourceDate` `null`, `defaultSource` `"ecb"`). Noms repris de 35-2 (`RateOrigin`, `find_company_rate_in_tx`, `sourceDate`).

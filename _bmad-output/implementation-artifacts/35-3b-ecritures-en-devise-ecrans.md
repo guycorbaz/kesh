@@ -191,13 +191,14 @@ devise au cours d'ouverture choisi pour l'exercice (R6), afin de tenir mes livre
      `rateProposed` vrai, CHF recalculé à vide) — jamais un montant USD gardé sous l'étiquette EUR ; devise → même devise
      (deux comptes USD) : montant et cours gardés, cours reproposé seulement si `rateProposed`. Le changement de compte
      compte comme une **retouche** (indicateur de l'édition, ci-dessous : la provenance relue n'est plus conservée).
+     Vitest (A30) : `lookup` rendant `source: "ecb"` → `afcRate` `null`, ligne envoyée `manual`, indicateur « cours saisi (ecb) ».
      Vitest de chacun des quatre cas, dont : USD → EUR en édition d'une ligne `afc` relue → montant vide, cours EUR
      proposé, corps envoyé en EUR ; USD → CHF → aucune clé `foreign` dans le corps.
    - **Champs** : *Montant (USD)*, *Cours* (prérempli par le **cours effectif** que rend `lookup` pour le mois de la
      date, `effectiveRate` — le cours retenu par la société, U1 ; indicateur « AFC » (`source: "afc"`), « cours saisi »
-     (`source: "manual"`, cours de la société, D9) ou « manuel » (retouché à la main) ; modifié à la main → `manual`),
+     (`source: "manual"`, cours de la société, D9 ; pour toute **autre** source, p. ex. `"ecb"`, A30 : « cours saisi » suivi de la source brute entre parenthèses, « cours saisi (ecb) ») ou « manuel » (retouché à la main) ; modifié à la main → `manual`),
      *CHF* ; **provenance envoyée** (D9, U1) : on note **`afcRate`** l'`effectiveRate` d'un `lookup` dont `source`
-     vaut `"afc"` (`null` si `source` vaut `"manual"`, ou sans cours) — c'est exactement le cours auquel le serveur
+     vaut `"afc"` (`null` si `source` ≠ `"afc"` — `"manual"` ou toute autre source, p. ex. `"ecb"`, traitée comme `manual` (A30) —, ou sans cours) — c'est exactement le cours auquel le serveur
      compare une ligne `afc` (35-3a AC-4, 4) ; `rateSource = 'afc'` si le cours de la ligne **égale** `afcRate` (non
      `null`) **du mois de la date** (`afcMonth`, puce suivante), comparaison en valeur (`Big.eq`, non en graphie),
      `manual` sinon — un cours saisi par la société, ou un mois sans cours `afc` retenu, part donc `manual` ; la
@@ -227,8 +228,8 @@ devise au cours d'ouverture choisi pour l'exercice (R6), afin de tenir mes livre
    - **Cours de la société sous le champ** (D9, U1) : quand le `lookup` **du mois de la date courante** (`afcMonth`
      égal, aucun `lookup` de ce mois en cours — jamais le cours d'un mois quitté) rend un `effectiveRate` qui diffère du
      cours de la ligne, le formulaire affiche « AFC : <cours> » (`source: "afc"`) ou « Cours saisi : <cours> »
-     (`source: "manual"`) et un bouton **↑** (« Reprendre le cours de la société ») qui remet **la ligne** à ce cours
-     (`rateSource` = `afc` si `source` vaut `"afc"`, `manual` sinon ; ligne proposée : un changement de date ultérieur
+     (`source: "manual"` ; toute autre source, A30 : « Cours saisi (<source brute>) : <cours> ») et un bouton **↑** (« Reprendre le cours de la société ») qui remet **la ligne** à ce cours
+     (`rateSource` = `afc` si `source` vaut `"afc"`, `manual` sinon, toute autre source comprise (A30) ; ligne proposée : un changement de date ultérieur
      la repropose au cours effectif du nouveau mois, comme toute ligne proposée) — action locale du formulaire ; il ne
      touche **jamais** la table des cours de la société (le ↑ de cette table, qui reprend une valeur publiée, vit à
      l'écran *Cours de change*, 35-2 AC-6). Ligne au cours de la société : indicateur « AFC » ou « cours saisi », pas
@@ -969,3 +970,4 @@ devise au cours d'ouverture choisi pour l'exercice (R6), afin de tenir mes livre
   `expectedRate` `null` de 35-3a AC-4 (l. 266) et avec l. 298-301 de la fiche (« Garder mon cours » → `manual`,
   CHF non recalculé) ; 35-3a l. 823 ; A30 sans objet ici (35-2 seulement). Non exercés : reste de la fiche hors diff,
   Vitest, PDF, audit, sauvegarde. Aucun finding inter-fiche.
+- 2026-11-14 — alignement A30 (orchestrateur, Sonnet) : une `source` de cours inconnue (`RateOrigin::Other(String)`, p. ex. `ecb`, 35-2) se traite comme `manual` à l'AC-2 : `afcRate` est `null` si `source` ≠ `"afc"` ; `rateSource` du ↑ `manual` ; indicateur « cours saisi » suivi de la source brute entre parenthèses ; Vitest ajouté (`lookup` `source: "ecb"` → `afcRate` `null`, ligne `manual`, indicateur). Aligné sur 35-3a AC-4 (`expectedRate` `null`) et 35-2 (`lookup`).

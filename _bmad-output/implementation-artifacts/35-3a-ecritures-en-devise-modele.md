@@ -261,10 +261,11 @@ chacune (R7), l'écart de change dans la seconde, afin que mes comptes en devise
       assumée**, sans effet sur les autres lignes, écrite au Change Log). ⛔ **Plus aucun `find_rate_in_tx` sur la table
       système pour ce contrôle** : la dernière valeur publiée (`_kesh_fetched_exchange_rates`) n'y entre jamais — une
       correction de l'AFC que la société n'a pas reprise ne change rien, et une installation restaurée contrôle ses
-      lignes contre ses cours restaurés, sans attendre une récupération. **Ligne de la société `manual`** (cours saisi,
-      D9) : une ligne d'écriture à ce cours est `manual` (le client la qualifie ainsi, 35-3b) ; envoyée `afc`, elle est
-      refusée `FX_RATE_NOT_AFC`, `expectedRate` à `null` (il n'y a pas de cours `afc` à proposer : la ligne se garde en
-      `manual`). Ni le cours journalier (D10). Aucune nouvelle valeur de `rate_source`. Sinon 400
+      lignes contre ses cours restaurés, sans attendre une récupération. **Ligne de la société `manual` ou de toute source autre
+      que `afc`** (cours saisi, D9 ; une `source` inconnue, `RateOrigin::Other(String)` de 35-2, p. ex. `ecb`, se traite
+      comme `manual`, A30) : une ligne d'écriture à ce cours est `manual` (le client la qualifie ainsi, 35-3b) ; envoyée
+      `afc`, elle est refusée `FX_RATE_NOT_AFC`, `expectedRate` à `null` (il n'y a pas de cours `afc` à proposer : la
+      ligne se garde en `manual`). Ni le cours journalier (D10). Aucune nouvelle valeur de `rate_source`. Sinon 400
       `FX_RATE_NOT_AFC`, `details: { line, expectedRate }` (`exchange_rates.rate` de la ligne `afc` de la société,
       chaîne décimale sans zéros terminaux, ou `null` si la ligne est `manual` ; clé lue par 35-3b pour proposer le
       cours) ; **aucune** ligne de la société pour ce mois → `DbError::RateUnavailable {currency, month}`,
@@ -531,7 +532,9 @@ chacune (R7), l'écart de change dans la seconde, afin que mes comptes en devise
 - [ ] Tests de `FX_RATE_NOT_AFC` (D9, U1, AC-4 4), au niveau du dépôt **et** de l'API, contre les lignes
       `exchange_rates` de la société (35-2) : (a) mois à ligne `afc` : ligne d'écriture `afc` au cours retenu → passe ;
       à un autre cours → `FX_RATE_NOT_AFC` (`expectedRate` = cours retenu) ; (b) mois à ligne `manual` (cours saisi) :
-      ligne d'écriture `afc` au cours saisi → `FX_RATE_NOT_AFC` (`expectedRate` `null`), en `manual` → passe ; (c) mois
+      ligne d'écriture `afc` au cours saisi → `FX_RATE_NOT_AFC` (`expectedRate` `null`), en `manual` → passe ; (b bis) mois à ligne de la société de `source` `ecb` (`RateOrigin::Other("ecb")`,
+      posée par SQL, A30) : ligne d'écriture `afc` → `FX_RATE_NOT_AFC`, `expectedRate` `null` (traitée comme `manual`), en
+      `manual` → passe ; (c) mois
       sans ligne de la société mais avec une valeur publiée dans `_kesh_fetched_exchange_rates` : ligne `afc` → `404
       RATE_UNAVAILABLE` (la valeur publiée n'entre jamais dans le contrôle), ligne `manual` → passe ; (d) un cours
       journalier (ligne `day`) pour la date de l'écriture ne change pas le résultat de (a) à (c) ; (e) **correction de
@@ -828,3 +831,4 @@ chacune (R7), l'écart de change dans la seconde, afin que mes comptes en devise
   35-2/35-3b. Non exercés : GET de la source journalière (aucune prémisse ici), i18n, manuels, MCP, E2E (inchangés par CR-5),
   test de concurrence non exécuté. Arbitrages A23–A29 : sans point de contact ici (A24 : la copie couvre la devise du compte de
   la ligne, 35-1/35-2).
+- 2026-11-14 — alignement A30 (orchestrateur, Sonnet) : une `source` de cours inconnue (`RateOrigin::Other(String)`, p. ex. `ecb`, 35-2 AC-1) se traite comme `manual` au contrôle `FX_RATE_NOT_AFC` (AC-4, 4) : ligne de la société `manual` ou de toute source autre que `afc`, ligne d'écriture `afc` refusée, `expectedRate` `null` ; test (b bis) ajouté (ligne `ecb` → refus, `expectedRate` `null`). Noms repris de 35-2 (`RateOrigin`, `find_company_rate_in_tx`).
