@@ -6,7 +6,8 @@ Status: ready-for-dev
 `story/36-5-restauration-compte-rendu`, par le workflow `bmad-create-story`. Release **0.17.8**, phase 1. **Aucune
 migration**, aucun changement serveur ni d'API, aucune clé i18n. Code lu à la tête du worktree, **`4de0bcc7e`**. Étape 0 et
 choix qui font foi : `e36-choix-autonomes-e360.md` (§ *Étape 0 — 36-5*, C-e360-8, C-e360-11) ; choix propres à la story :
-`e36-choix-autonomes-36-5.md` (C-36-5-1 à C-36-5-6). Voie de base **1** (lignée B, après la 36-4). Validation non lancée.*
+`e36-choix-autonomes-36-5.md` (C-36-5-1 à C-36-5-7). Voie de base **1** (lignée B, après la 36-4). Validation : P1 et P2
+remédiées (Change Log), passe suivante à lancer.*
 
 ## Story
 
@@ -75,7 +76,8 @@ efface la session et quitte la page. Lignes lues :
   (`pdftotext docs/manual/fr/admin-manual.pdf - | tr '\n' ' ' | tr -s ' ' | /usr/bin/grep -c 'Prenez le temps de lire, puis cliquez'`
   → `1`). L'assistant : `:2450` (« Restaurer une sauvegarde depuis l'assistant »). Le manuel utilisateur ne décrit pas
   l'écran (`git grep -n -i "Se reconnecter\|introuvables après la restauration" -- docs/manual/fr/user-manual.tex` : vide).
-  **Le code contredit le manuel, non l'inverse** : rien à y changer (D6).
+  **Le code contredit le manuel, non l'inverse** ; seule s'y ajoute une demi-phrase sur le renvoi d'un écran laissé ouvert
+  au bout de B (D6, depuis la validation P2).
 
 ### Inventaire par le symptôme : tout ce qui renvoie à la connexion sans geste de l'utilisateur
 
@@ -89,6 +91,7 @@ frontend/src/lib/app/stores/session-idle.svelte.ts:407:	window.location.replace(
 frontend/src/lib/features/admin-restore/AdminRestorePanel.svelte:184:		window.location.replace('/login');
 frontend/src/lib/shared/utils/api-client.ts:202:		window.location.replace('/login?reason=session_expired');
 frontend/src/routes/(app)/+layout.svelte:355:							window.location.replace('/login');
+frontend/src/routes/+layout.svelte:66:		// token) → `clearSession()` + `window.location.replace('/login?reason
 $ git grep -nE "(goto|redirect)\([^)]*'/login" -- frontend/src ':!*.test.ts'
 frontend/src/lib/features/setup/SetupForm.svelte:82:						void goto('/login');
 frontend/src/routes/(app)/+layout.ts:11:		throw redirect(302, '/login');
@@ -105,6 +108,7 @@ frontend/src/routes/onboarding/+layout.ts:11:		throw redirect(302, '/login');
 | `(app)/+layout.svelte:355` (menu *Déconnexion*, `onclick`) | geste de l'utilisateur | voulu, inchangé |
 | `(app)/+layout.ts:11`, `onboarding/+layout.ts:11` (`load`) | seulement à une **navigation** : l'utilisateur quitte la page | hors du symptôme |
 | `SetupForm.svelte:82` | page `/setup`, jamais rendue avec le panneau | hors du symptôme |
+| `routes/+layout.svelte:66` | **commentaire** (il décrit le chemin de `api-client.ts:202`) | hors du symptôme |
 
 Les autres minuteries de l'application (`git grep -nE "setInterval\(" -- 'frontend/src/**/*.ts' 'frontend/src/**/*.svelte'`,
 tests exclus) : `session-idle.svelte.ts:454` (le battement), `BackupScheduleBanner.svelte:34` (ci-dessus),
@@ -119,7 +123,33 @@ le second grep couvre `goto` et `redirect`. Aucun autre site.
   maintien, `restoreHoldUntil` (ms, `null` sans maintien) — et deux méthodes, `holdForRestore(durationMs)` (pose ou
   réarme : `restoreHoldUntil = Date.now() + durationMs`) et `releaseRestoreHold()`, avec un accesseur `get restoreHold()`
   qui vaut vrai **seulement tant que `Date.now() < restoreHoldUntil`** : le maintien expire seul (D3 fixe la durée).
-  `login()` et `logout()` le remettent à `null`. Sous maintien, le chemin 401 du client **tente toujours le
+  **Qui le lève** (amendé à la validation P2, V2-1 ; C-36-5-7) : `releaseRestoreHold()` (le panneau), `logout()` et
+  `clearSession()` — **jamais `login()`**. Raison, lue au code : le renouvellement réussi passe par `doRefresh`, qui appelle
+  `authState.login({…}, { broadcast: false })` (`api-client.ts:148-158`) — « `authState.login()` remplace l'objet à chaque
+  renouvellement » (`routes/+layout.svelte:27-28`) ; si `login()` levait le maintien, un renouvellement réussi pendant
+  l'import (jeton d'accès expiré à l'envoi, ou au fil d'un import long) l'effacerait, et le battement suivant rouvrirait la
+  KF-056. Les appelants de `authState.login(` (`git grep -n "authState.login(" -- frontend/src ':!*.test.ts'`, sortie
+  copiée, commentaires compris) :
+  ```
+  frontend/src/lib/features/setup/setup.api.ts:73:	authState.login(payload);
+  frontend/src/lib/shared/utils/api-client.ts:83: * - Pas d'appel à `authState.login(...)` (qui voulait stocker les tokens en
+  frontend/src/lib/shared/utils/api-client.ts:125:		// - success path : `authState.login(payload, {broadcast: false})` qui
+  frontend/src/lib/shared/utils/api-client.ts:148:				authState.login(
+  frontend/src/routes/+layout.svelte:27:	// qu'à l'IDENTIFIANT de l'utilisateur : `authState.login()` remplace l'objet
+  frontend/src/routes/login/+page.svelte:51:			// signature `authState.login()` change pour un objet payload
+  frontend/src/routes/login/+page.svelte:66:			authState.login({
+  ```
+  Trois appels réels : `api-client.ts:148` (renouvellement — ne doit pas lever) ; `setup.api.ts:73` (création du premier
+  administrateur, page `/setup`) et `login/+page.svelte:66` (connexion), deux connexions réelles, rendues sur des pages où
+  le panneau n'est pas monté ; les quatre autres lignes sont des commentaires. **Aucune connexion d'un autre utilisateur
+  n'hérite d'un maintien** : le maintien est un état de module, propre à l'onglet ; il est levé par `logout()` (le *Se
+  reconnecter* du panneau, `:180`, et le menu *Déconnexion*), par `clearSession()` (chemin 401 hors maintien, fermeture
+  d'inactivité `session-idle.svelte.ts:406`), par le démontage du panneau — or atteindre `/login` ou `/setup` démonte le
+  panneau, que ce soit par `location.replace` (rechargement complet : module neuf) ou par la redirection SPA d'un `load`
+  (`(app)/+layout.ts:11`) — et il expire seul à B (D3) ; la fermeture du navigateur perd l'état de module. *Option
+  écartée* (b) : `login()` lève le maintien sauf sur une option propre au renouvellement — un appelant futur qui oublierait
+  l'option rouvrirait le défaut en silence ; la forme retenue n'a pas de cas oubliable, et chaque chemin vers une connexion
+  réelle passe déjà par une levée. Sous maintien, le chemin 401 du client **tente toujours le
   renouvellement** (`sharedRefresh()`, `api-client.ts:184-191`) : réussi, la requête est rejouée comme aujourd'hui
   (`:482-485`, `:579-580`) ; **échoué, il n'efface pas la session et ne redirige pas** — `clearSession` et
   `location.replace` (`:200-203`) sont seuls suspendus — et la requête rejetée jette l'`ApiError` `UNAUTHENTICATED`
@@ -139,14 +169,22 @@ le second grep couvre `goto` et `redirect`. Aucun autre site.
   l'utilisateur le lirait sur l'installation restaurée, hors de son contexte ; (d) corriger la spec seule (C-e360-8 (a)) ;
   (e) — première rédaction de cette fiche — ne pas renouveler sous maintien : l'import envoyé avec un jeton d'accès expiré
   échouait, et le battement d'un import long cessait de prolonger la session dès l'expiration du jeton (V1-1).
-- **D2 — Sous maintien, le module de session note l'activité et bat, mais ne ferme rien et n'avertit pas.** Dans
-  `session-idle.svelte.ts`, `tick` (`:326`) ne ferme pas (`:331-333`) et met `warningRemainingMs` à `null` tant que
-  `authState.restoreHold` est vrai ; `recordActivity` (`:250-252`) et `stayActive` (`:470-472`) ne ferment pas non plus. Le
+- **D2 — Sous maintien, le module de session note l'activité et bat, ne ferme rien, et avertit avant la fin du
+  maintien.** Dans `session-idle.svelte.ts`, `tick` (`:326`) ne ferme pas (`:331-333`) tant que `authState.restoreHold` est
+  vrai ; `recordActivity` (`:250-252`) et `stayActive` (`:470-472`) ne ferment pas non plus. **L'avertissement** (#895)
+  se calcule sur le moment où la fermeture aura réellement lieu (amendé à la validation P2, V2-6, conduite prudente) :
+  sous maintien, `fin = max(last + w, restoreHoldUntil)` au lieu de `last + w`, et `warningRemainingMs = fin − now` dès que
+  `fin − now ≤ min(WARNING_LEAD_MS, w / 2)` (`:338-340`, même seuil). Un Administrateur inactif pendant un import plus long
+  que B voit donc l'avertissement une minute avant que le maintien n'expire, et *Rester connecté* (`stayActive`) repousse
+  `last` : à l'expiration, l'échéance ordinaire n'est pas atteinte, rien ne se ferme. Hors maintien, la formule est celle
+  d'aujourd'hui. *Écartée* : éteindre l'avertissement sous maintien (première rédaction) — à l'expiration, l'échéance était
+  déjà passée et la fermeture tombait sans avertissement. Le
   battement **continue** pendant l'import : il prolonge la session au serveur tant que l'import n'a pas abouti (un import
   long qui échoue retrouve une session vivante — vrai même après l'expiration du jeton d'accès, puisque D1 renouvelle
   encore), et son 401 éventuel, après l'invalidation, est absorbé par D1. À la levée ou à l'expiration du maintien, le tic
-  suivant ferme si l'échéance est passée : la fermeture est **différée**, jamais annulée, et jamais au-delà de la durée de
-  D3. Le serveur
+  suivant ferme si l'échéance est passée : la fermeture est **différée**, jamais annulée ; chacune des deux phases de D3
+  est bornée par B, si bien que l'écran reste ouvert au plus la durée de l'import plus B après la confirmation (V2-10) — au
+  serveur, rien ne s'étend (`middleware/auth.rs:156-161`). Le serveur
   garde son contrôle strict d'`idle_exp` (`middleware/auth.rs:156-161`), que rien ici ne touche. *Écartée* : suspendre aussi
   le battement pendant l'import — une restauration longue qui échoue trouverait la session close au serveur (C-36-5-2).
 - **D3 — Le panneau pose, borne et lève le maintien** (C-36-5-2, amendé à la validation P1, V1-3, V1-4, V1-9). Le
@@ -169,6 +207,14 @@ le second grep couvre `goto` et `redirect`. Aucun autre site.
     déjà (« Reconnectez-vous pour vérifier l'état de l'installation », `:100-103`) ; s'il n'a pas eu lieu, la session vit et
     rien ne change. C'est le comportement d'aujourd'hui pour ce cas : le manuel (`:2342`) reste juste ;
   - **échec certain** (toute autre erreur) : maintien levé ;
+  - **l'import lui-même refusé en 401** (V2-5, conduite prudente) : sous maintien, un renouvellement échoué fait jeter
+    `UNAUTHENTICATED` (`api-client.ts:487-492`) sans renvoi ; le `catch` du panneau le reconnaît (`isApiError(err) &&
+    err.code === 'UNAUTHENTICATED'`) et, la session étant morte **avant** tout import, termine la session comme le chemin
+    401 ordinaire : levée du maintien puis `expireSession()` (`/login?reason=session_expired`), au lieu d'afficher « Session
+    expirée » (`:130-133`, `default: return err.message;`) avec un bouton d'import réactivé. C'est le comportement
+    d'aujourd'hui pour ce cas ;
+  - **pas d'avertissement avant la fin de la lecture** (phase 2) : la session est déjà morte au serveur ; *Rester connecté*
+    n'aurait rien à prolonger, et il n'y a rien à enregistrer. Le manuel dit ce renvoi (D6) ;
   - **levée en `finally`** (V1-9) : un indicateur local `keepHold`, posé à vrai **seulement** au succès, décide dans le
     `finally` (`:162-164`) : `if (!keepHold) authState.releaseRestoreHold();`. Une exception levée dans le `catch`
     (`issueInconnue`, `importErrorMessage`, `toast.error`, `:158-161`) ne laisse donc jamais le maintien posé ;
@@ -223,9 +269,15 @@ le second grep couvre `goto` et `redirect`. Aucun autre site.
   la minuterie — il fausse aussi `Date.now` dans tout le module de session et dans les dates de l'écran ; (b) le même test
   sur l'assistant : `/setup` et l'assistant à chaque passage, pour le même composant ; le chemin de l'assistant est couvert
   par la répétition de `:140` et par les tests Vitest du panneau, indépendants de la route.
-- **D6 — Manuel inchangé ; `docs/testing.md` reçoit la note de la KF-056** (C-36-5-5). Le manuel d'administration
-  (`:2340`) décrit déjà le comportement que le correctif rétablit ; l'issue inconnue (`:2342`) garde le comportement
-  d'aujourd'hui (D3) ; le PDF n'a pas à être régénéré. Dans `docs/testing.md`, une note « KF-056 (#931), corrigée par la
+- **D6 — Une demi-phrase au manuel d'administration ; `docs/testing.md` reçoit la note de la KF-056** (C-36-5-5, amendé à
+  la validation P2, V2-7). Le manuel d'administration (`:2340`) décrit déjà le comportement que le correctif rétablit
+  (« Prenez le temps de lire, puis cliquez « Se reconnecter » ») ; ce qui est neuf et visible, c'est le renvoi à la
+  connexion d'un écran laissé ouvert au bout de B (D3). Après « Prenez le temps de lire, puis cliquez \textbf{« Se
+  reconnecter »} : la session est déjà invalidée, et l'écran de connexion attend les identifiants \textbf{de la
+  sauvegarde}. », ajouter : « Laissé ouvert, l'écran y revient de lui-même au bout de la durée d'inactivité réglée
+  (\S\ref{sec:duree-inactivite}). » Le `.tex` change dans la story ; **le PDF se régénère à l'intégration**, après l'union
+  avec la 36-4 (qui touche aussi ce manuel, Dev Notes), et se contrôle aplati. L'issue inconnue (`:2342`) garde le
+  comportement d'aujourd'hui (D3). Dans `docs/testing.md`, une note « KF-056 (#931), corrigée par la
   Story 36-5 », placée **après les deux paragraphes que la note de la KF-052 annonce** (`:417` finit par « Les deux
   paragraphes suivants restent tels qu'écrits à leur date. » ; ces paragraphes sont `:419-422` et `:424-429`), donc juste
   avant `⇒ **Le compte attendu…**` (`:431`) — une insertion après `:417` casserait cette référence (V1-7). Contenu : la
@@ -242,18 +294,29 @@ le second grep couvre `goto` et `redirect`. Aucun autre site.
    puis renouvellement réussi : la requête est **rejouée** et rend sa réponse (rien n'est absorbé) — en particulier
    `postFormData` rejoue le même `FormData` (import envoyé avec un jeton d'accès expiré) ; à l'E2E, le battement 401 de
    l'étape retenue laisse la page sur `/admin/restore` et le compte rendu s'affiche.
+1 bis. **AC1 bis — Un renouvellement réussi ne lève pas le maintien** (V2-1 ; `api-client.test.ts`, vrai `authState`) :
+   sous maintien, une requête rend 401, `/auth/refresh` rend 200, `/auth/me` rend 200 (donc `authState.login(…)` est
+   appelé, `api-client.ts:148`), la requête est rejouée ; **ensuite** `authState.restoreHold` est toujours vrai, et une
+   seconde requête qui rend 401, renouvellement refusé, jette `UNAUTHENTICATED` **sans** `clearSession` ni
+   `location.replace`. Les tests qui posent un maintien le lèvent en `afterEach` (`authState.releaseRestoreHold()`) :
+   l'état est au module, et `login()` en tête du test suivant ne le nettoie plus.
 2. **AC2 — Après un import réussi, le compte rendu reste** (E2E de D5, seconde partie ; `AdminRestorePanel.test.ts`) : aucun
    `POST /api/v1/auth/activity` ne part plus (compteur à zéro après 3 s d'activité), l'URL ne change pas ; au Vitest, le
    maintien est posé **avant** l'appel à `uploadFullImport` (ordre des appels des deux simulacres), réarmé au succès avec
    la durée B, et `sessionIdle.stop` est appelé.
 3. **AC3 — Échec certain : tout reprend** (`AdminRestorePanel.test.ts`, `session-idle.svelte.test.ts`) : pour une `ApiError`
-   400 (`INVALID_BACKUP_STRUCTURE`), le maintien est levé (dans le `finally`) — y compris quand `toast.error` jette (le
-   simulacre de `svelte-sonner` rend une exception) ; au module de session, une échéance passée sous maintien ne ferme
+   400 (`INVALID_BACKUP_STRUCTURE`), le maintien est levé ; la levée se fait dans le `finally` (constat de lecture à la
+   revue, ligne citée : le cas « `toast.error` jette » n'est **pas** joué en Vitest — l'exception sortirait d'un `onclick`
+   sans `await`, en rejet non géré que Vitest compte comme erreur avant comme après le correctif, et le test ne
+   discriminerait rien ; V2-3) ; au module de session, une échéance passée sous maintien ne ferme
    rien — ni au `tick`, ni à `recordActivity` (un `keydown`), ni à `stayActive()` —, puis ferme au tic qui suit la levée
    (`/login?reason=idle&minutes=N`, déconnexion au serveur d'abord, comme `:150-170` du test existant).
 4. **AC4 — Issue inconnue : la fermeture ordinaire reprend** (`AdminRestorePanel.test.ts`) : pour une erreur `TIMEOUT` ou
    un 504 (`isUnknownOutcome`), le maintien est **levé**, `sessionIdle.stop` n'est **pas** appelé, *Se reconnecter* est
    proposé et le bouton d'import désactivé, comme aujourd'hui (`backup-restore-new-install.spec.ts:336-341`).
+4 bis. **AC4 bis — L'import refusé en 401 renvoie à la connexion** (V2-5 ; `AdminRestorePanel.test.ts`) : `uploadFullImport`
+   rejette `{ code: 'UNAUTHENTICATED', status: 401, message: 'Session expirée' }` → `releaseRestoreHold` puis `expireSession`
+   appelés, dans cet ordre ; aucun `admin-restore-error` rendu.
 5. **AC5 — Quitter le panneau lève le maintien** (`AdminRestorePanel.test.ts`) : (a) démonter le composant après un succès
    appelle `releaseRestoreHold` et efface la minuterie de B (avancer les minuteries de B ensuite : aucune redirection) ;
    une requête 401 qui suit (Vitest du client) renvoie à `/login?reason=session_expired` ; (b) démonter **pendant**
@@ -266,15 +329,19 @@ le second grep couvre `goto` et `redirect`. Aucun autre site.
    extraite), et rien avant B ; (c) B vaut `sessionIdle.minutes × 60 000` ms, et 60 minutes quand `minutes` est `null`.
 6. **AC6 — La fermeture ordinaire est intacte (#876, #895)** : les tests existants de `session-idle.svelte.test.ts` et les
    tests 401 de `api-client.test.ts` (`:246-267`, `:327-343`, `:488`, `:567-581`) passent **sans modification** ; au module
-   de session, sous maintien, l'avertissement vaut `null`, puis réapparaît au tic qui suit la levée si l'échéance est à
-   moins d'une minute ; à `auth.svelte.test.ts`, `login()` et `logout()` remettent le maintien à zéro (`restoreHold`
-   faux).
+   de session, sous maintien, l'avertissement suit D2 : avec `last + w` passé et `restoreHoldUntil − now = 30 000` ms, il
+   vaut 30 000 ; `stayActive()` l'efface, et à l'expiration du maintien rien ne se ferme (l'échéance ordinaire a été
+   repoussée) ; sans `stayActive`, la fermeture tombe au tic qui suit l'expiration, l'avertissement ayant paru avant ; à
+   `auth.svelte.test.ts`, `logout()` et `clearSession()` remettent le maintien à zéro (`restoreHold` faux), **`login()` ne
+   le touche pas** (maintien posé, `login()`, `restoreHold` toujours vrai).
 7. **AC7 — Preuve par répétition** (D4) : `repetition-avant.log` (60 exécutions, 30 par test, rouges comptés et nommés
    avec la fréquence observée de chaque test, ou leur absence dite) et `repetition-apres.log` (60 + 10 exécutions, zéro
    rouge), chacun avec son commit, dans `kesh-gate-logs/e36-5/`. Sans rouge avant, le Dev Agent Record écrit que la
    répétition « après » ne prouve rien par elle-même et que la preuve est celle du test de D5 (rouge avant, vert après).
 8. **AC8 — Documentation** (D6) : la note KF-056 dans `docs/testing.md` ; `git grep -n "KF-056" -- docs/testing.md` la
-   rend ; le contrôle du PDF du manuel d'administration rend toujours `1`.
+   rend ; la demi-phrase de D6 au `.tex` (`git grep -n "y revient de lui-même" -- docs/manual/fr/admin-manual.tex` → une
+   ligne) ; le contrôle du PDF (« Prenez le temps de lire, puis cliquez ») rend toujours `1` ; le PDF régénéré à
+   l'intégration rend aussi `1` pour « y revient de lui-même au bout de la durée d'inactivité réglée ».
 9. **AC9 — Les deux chemins** : aucune ligne propre à une route n'est ajoutée ; le panneau est le seul à poser le
    maintien (`git grep -n "holdForRestore" -- frontend/src ':!*.test.ts'` → la définition et les deux appels du panneau, confirmation et succès, seuls) ;
    `:140` (assistant) et `:262` (`/admin/restore`) font partie des deux répétitions.
@@ -287,15 +354,20 @@ effet, `restoreHold` toujours `false`) — patron de la 35-7, AC2. Rouges au dé
 a lieu ; E2E : la page part à `/login?reason=session_expired`) ; AC2 (Vitest du panneau : maintien jamais posé, `stop`
 jamais appelé ; E2E) ; AC3 (le maintien n'est jamais levé ; la fermeture n'est pas différée) ; AC4 (levée jamais
 appelée ; ce qui y est d'aujourd'hui — *Se reconnecter*, bouton désactivé — est vert, et se dit tel) ; AC5 ; AC5 bis ;
-AC1 (b) est **vert au départ** (le rejeu existe déjà) et se dit tel : il garde le rejeu contre M1′. AC6 : `login()`/
-`logout()` passent par construction sur l'API inerte — **vert au départ, et se dit tel** ; tué par M7. Verts au départ,
-et dits : les tests existants de l'AC6.
+AC1 (b) est **vert au départ** (le rejeu existe déjà) et se dit tel : il garde le rejeu contre M1′. AC1 bis : rouge au
+départ (maintien inerte, la seconde requête redirige). AC4 bis : rouge (le message « Session expirée » est rendu). AC6 :
+« `login()` ne touche pas le maintien » est rouge sur l'API inerte (`restoreHold` toujours faux) ; « `logout()`/
+`clearSession()` le remettent à zéro » est **vert au départ par construction, et se dit tel** — tué par M7′. Verts au
+départ, et dits : les tests existants de l'AC6.
 
 **Simulacres** (V1-5) : ceux d'`authState` de `AdminRestorePanel.test.ts:24-29` et de `session-idle.svelte.test.ts:17-19`
 gagnent `holdForRestore`, `releaseRestoreHold`, `restoreHold` (et `clearSession` pour le panneau) ; `AdminRestorePanel.test.ts`
 gagne un `vi.mock('$lib/app/stores/session-idle.svelte', () => ({ sessionIdle: { stop: vi.fn(), get minutes() { … } } }))`
-— le module réel importerait `api-client` et poserait des minuteries — et un simulacre de la fonction extraite
-d'`api-client` (`expireSession`), dans le `vi.mock` existant ou un neuf. Les tests de B et de la minuterie emploient
+— le module réel importerait `api-client` et poserait des minuteries — et un simulacre **partiel** d'`api-client`, qui
+n'a aujourd'hui aucun `vi.mock` dans ce fichier (`AdminRestorePanel.test.ts:9-29` : `./admin-restore.api`, `i18n.svelte`,
+`svelte-sonner`, `auth.svelte`) et dont le panneau emploie `isApiError` (`AdminRestorePanel.svelte:20`, `:105`) — un
+simulacre entier ferait rougir les tests de messages d'erreur existants (V2-4) ; à écrire tel quel :
+`vi.mock('$lib/shared/utils/api-client', async (orig) => ({ ...(await orig<typeof import('$lib/shared/utils/api-client')>()), expireSession: vi.fn() }));`. Les tests de B et de la minuterie emploient
 `vi.useFakeTimers()`.
 
 **Mutations** (code commité d'abord ; script et journaux dans `kesh-gate-logs/e36-5/mut/` ; restauration par
@@ -309,18 +381,21 @@ d'`api-client` (`expireSession`), dans le `vi.mock` existant ou un neuf. Les tes
 | M3 | `holdForRestore()` déplacé après `await uploadFullImport(…)` | AC2 (ordre des appels) |
 | M4 | la fermeture du `tick` non conditionnée au maintien | AC3 (module de session) |
 | M5 | `releaseRestoreHold()` retiré du `finally` (échec certain) | AC3 (panneau) |
-| M5′ | levée replacée en fin de `catch`, après `toast.error` | AC3 (`toast.error` qui jette) |
+| ~~M5′~~ | *retirée à la validation P2 (V2-3)* : sans test qui la discrimine (rejet non géré, AC3) ; la place de la levée dans le `finally` est un constat de lecture de la revue | — |
 | M6 | la levée au démontage retirée | AC5 (a) |
 | M6′ | la garde `destroyed` retirée (succès après démontage) | AC5 (b) |
-| M7 | `login()` (puis `logout()`) ne remet plus le maintien à zéro | AC6 (`auth.svelte.test.ts`) |
+| M7 | `login()` remet le maintien à zéro (la forme de la première rédaction, V2-1) | AC1 bis (`api-client.test.ts` : après le renouvellement réussi, la seconde requête redirige) ; AC6 (`auth.svelte.test.ts`) |
+| M7′ | `logout()` (puis `clearSession()`) ne remet plus le maintien à zéro | AC6 (`auth.svelte.test.ts`) |
 | M8 | `sessionIdle.stop()` retiré du succès | AC2 (Vitest du panneau ; E2E de D5, seconde partie : compteur ≥ 1, cf. D5) |
 | M9 | la garde du client appliquée **toujours** (maintien ignoré : jamais d'effacement ni de redirection après un renouvellement échoué) | AC6 — les tests 401 existants du client (`:246-267`, `:327-343`, `:567-581`) rougissent : la preuve que la fermeture ordinaire n'est pas affaiblie |
 | M10 | la fermeture de `recordActivity` non conditionnée au maintien | AC3 (`keydown` sous maintien, échéance passée) |
 | M11 | la fermeture de `stayActive` non conditionnée au maintien | AC3 (`stayActive()` sous maintien) |
-| M12 | l'avertissement non éteint sous maintien | AC6 (`warningRemainingMs` `null` sous maintien) |
+| M12 | sous maintien, l'avertissement calculé sur `last + w` (formule d'aujourd'hui) au lieu de `max(last + w, restoreHoldUntil)` | AC6 (avertissement à 30 000 ms de l'expiration, `last + w` passé : il vaudrait un nombre négatif ou paraîtrait trop tôt) |
+| M12′ | sous maintien, l'avertissement éteint (`null`, première rédaction) | AC6 (avertissement attendu à 30 000) |
 | M13 | l'accesseur `restoreHold` ignore l'échéance (maintien sans borne) | AC5 bis (a) |
 | M14 | la minuterie de B retirée du succès | AC5 bis (b) |
 | M15 | le maintien gardé à l'issue inconnue (levée retirée pour ce cas) | AC4 |
+| M16 | le cas `UNAUTHENTICATED` de l'import retiré du `catch` (message affiché, pas d'`expireSession`) | AC4 bis |
 
 Une mutation équivalente se dit au Dev Agent Record.
 
@@ -338,8 +413,9 @@ Une mutation équivalente se dit au Dev Agent Record.
 - [ ] D1 (`auth.svelte.ts`, `api-client.ts`, dont l'extraction d'`expireSession`), D2 (`session-idle.svelte.ts`, commentaire d'en-tête `:20-22` complété :
       « aucune suspension » devient faux), D3 (`AdminRestorePanel.svelte`, commentaire d'en-tête `:9-12` complété) ;
       commentaire de `sendHeartbeat` `:363` récrit (le 401 n'a plus toujours redirigé).
-- [ ] Mutations M1 à M15 (avec M1′, M5′, M6′).
-- [ ] **Répétition après** (D4) ; note de `docs/testing.md` (D6) ; une capture du compte rendu resté affiché après le
+- [ ] Mutations M1 à M16 (avec M1′, M6′, M7′, M12′ ; M5′ retirée).
+- [ ] **Répétition après** (D4) ; note de `docs/testing.md` et demi-phrase de `admin-manual.tex:2340` (D6 ; PDF à
+      l'intégration) ; une capture du compte rendu resté affiché après le
       battement forcé (`KESH_E2E_CAPTURES_DIR`, thème clair) dans `kesh-gate-logs/e36-5/captures/`.
 - [ ] Gates (ci-dessous) ; `Status: review` et clé `review` au `sprint-status.yaml` dans le même commit ; prompt de la
       revue P1 à côté de la fiche.
@@ -350,7 +426,9 @@ frontend complet (`check`, `lint-i18n-ownership`, `test:unit`, `build`), puis `s
 `scripts/gate-ci.sh kesh_ci_e365` — **maintenus bien qu'aucun fichier Rust ne soit touché**, parce qu'un test Rust lit
 les sources du frontend : `crates/kesh-api/tests/textes_coherents.rs:593` (`sources.extend(fichiers_sous("frontend/src", …`)
 contrôle les textes de tous les `.svelte` et `.ts` hors tests ; un commentaire ou un texte neuf des quatre fichiers touchés
-peut le faire rougir sans que Vitest ni l'E2E le voient (validation P1, axe 4) ; aux remédiations, frontend complet ; à la clôture, `gate-ci` **et** E2E complet sur
+peut le faire rougir sans que Vitest ni l'E2E le voient (validation P1, axe 4) ; aux remédiations,
+`scripts/test-fast.sh --ci` (bases remises à neuf) **et** frontend complet (`e35-dev-commun.md:12` ; même raison,
+`textes_coherents.rs:593`, V2-2) ; à la clôture, `gate-ci` **et** E2E complet sur
 `kesh_e2e_e365` recréée, au dernier commit de code, échecs nommés un par un contre `docs/testing.md`. Une commande lourde à
 la fois (E7). Les deux répétitions ne remplacent pas l'E2E complet de la clôture.
 
@@ -384,7 +462,12 @@ Tableau du fichier d'epic : la 36-5 n'y partage que `messages.ftl` ×4 (« possi
 **elle ne touche ni l'un ni l'autre** (aucune clé i18n, D6). La 36-4 touche `kesh-db`, `kesh-api`, leurs tests,
 `docs/api-external.md` et les manuels ; la 36-5 touche `frontend/src/lib/app/stores/{auth,session-idle}.svelte.ts`,
 `frontend/src/lib/shared/utils/api-client.ts`, `frontend/src/lib/features/admin-restore/AdminRestorePanel.svelte`, leurs
-tests, `frontend/tests/e2e/backup-restore-new-install.spec.ts` et `docs/testing.md` : **aucun fichier commun**. 36-1 à
+tests, `frontend/tests/e2e/backup-restore-new-install.spec.ts`, `docs/testing.md` et — depuis la validation P2 (V2-7) —
+`docs/manual/fr/admin-manual.tex` (`:2340`, une demi-phrase). **Un fichier commun possible avec la 36-4** : le manuel
+d'administration, si elle y écrit la phrase de l'attribution (fichier d'epic : « 36-4 (attribution, avec
+`admin-manual.tex`) ») — paragraphes distincts (la 36-5 ne touche que `:2340`, section de la restauration) ; celle qui
+part la seconde relit la ligne après la fusion de la première ; **le PDF se régénère après l'union**, à l'intégration, et
+se contrôle aplati. Aucun autre fichier commun. 36-1 à
 36-3 ne touchent aucun de ces fichiers (fichier d'epic, colonne *Fichiers principaux*). `CHANGELOG.md` : non écrit
 (C-e360-11), la note ci-dessus le remplace. `i18n-keys.test.ts` (`sitesTotal`) : aucun `i18nMsg(` ajouté.
 
@@ -398,8 +481,11 @@ tests, `frontend/tests/e2e/backup-restore-new-install.spec.ts` et `docs/testing.
 - La session se ferme exactement à l'échéance réglée hors restauration (#876) ; l'avertissement paraît une minute avant
   (#895) ; un 401 hors maintien renvoie à `/login?reason=session_expired`. Le serveur ne change pas.
 - Le maintien n'est posé que par le panneau de restauration, ne couvre que l'import en cours et la lecture du compte
-  rendu, n'excède jamais B (la durée d'inactivité réglée), et ne survit ni à sa disparition, ni à une issue inconnue, ni à
-  `login()`/`logout()`, ni à un rechargement (état de module). Sous maintien, le renouvellement est toujours tenté.
+  rendu, chacune bornée par B (la durée d'inactivité réglée) — au total, l'écran reste ouvert au plus la durée de l'import
+  plus B après la confirmation —, et ne survit ni à sa disparition, ni à une issue inconnue, ni à `logout()`, ni à
+  `clearSession()`, ni à un rechargement (état de module). **Un renouvellement réussi ne le lève jamais** (`login()` ne le
+  touche pas, V2-1) ; aucune connexion d'un autre utilisateur n'en hérite (D1). Sous maintien, le renouvellement est
+  toujours tenté.
 - Aucune donnée réelle : fixtures synthétiques ; rien sous `~/kesh/`.
 
 ### Références
@@ -436,3 +522,28 @@ tests, `frontend/tests/e2e/backup-restore-new-install.spec.ts` et `docs/testing.
   - Constat pour l'epic : C-e360-8 demande de « retirer KF-056 des échecs tolérés », mais elle ne figure dans aucune liste
     (`docs/testing.md`, mémoire `e2e-echecs-attendus.md`) : il n'y a pas de ligne à supprimer ; D6 ajoute la note.
   Modules : inchangés (cinq, dont trois de code). Aucune migration.
+- 2026-11-14 — **Validation P2 (Opus) : 0/1/0/9 → remédiés** (`kesh-gate-logs/e36-5/validation-p2.md`), par l'agent de
+  rédaction (Opus 5.5). Prémisses relues au code :
+  - V2-1 (HIGH) : `api-client.ts:148-158` (`authState.login({…}, { broadcast: false })` au succès de `doRefresh`),
+    `routes/+layout.svelte:27-28`, `auth.svelte.ts:144-163` (`login()`). Confirmé : la remédiation P1 (renouvellement
+    toujours tenté) faisait lever le maintien par `login()`. → option (a), C-36-5-7 : `login()` ne touche plus le
+    maintien ; seuls `releaseRestoreHold()`, `logout()` et `clearSession()` le lèvent. Appelants de `authState.login(`
+    greppés (sortie copiée en D1) : trois appels réels, dont deux connexions réelles sur des pages où le panneau n'est pas
+    monté ; héritage par un autre utilisateur écarté, chemin par chemin, en D1. D1, AC1 bis (neuf), AC6, M7 (redéfinie :
+    tuée par AC1 bis), M7′, *Ce qui doit rester vrai* ; levée en `afterEach` des tests qui posent un maintien.
+  - V2-2 : gates de remédiation = `test-fast --ci` et frontend complet (`e35-dev-commun.md:12`).
+  - V2-3 : `AdminRestorePanel.svelte:157-164` (aucun `catch` englobant, `onclick` sans `await`) : le cas « `toast.error`
+    jette » quitte l'AC3, M5′ retirée, la place de la levée dans le `finally` devient un constat de lecture.
+  - V2-4 : `AdminRestorePanel.test.ts:9-29` sans `vi.mock` d'`api-client`, `isApiError` employé (`AdminRestorePanel.svelte:20`,
+    `:105`) : simulacre partiel écrit tel quel.
+  - V2-5 : `api-client.ts:486-492`, `AdminRestorePanel.svelte:130-133` : conduite prudente — l'import refusé en 401 lève le
+    maintien et termine la session (`expireSession`), comme aujourd'hui ; AC4 bis, M16.
+  - V2-6 : `session-idle.svelte.ts:331-340` : conduite prudente — sous maintien, l'avertissement se calcule sur
+    `max(last + w, restoreHoldUntil)` ; il paraît avant l'expiration ; D2, AC6, M12 (redéfinie), M12′. Phase de lecture :
+    pas d'avertissement, motivé en D3 (session déjà morte).
+  - V2-7 : `admin-manual.tex:2340` : demi-phrase sur le renvoi au bout de la durée d'inactivité réglée (lien
+    `sec:duree-inactivite`, `:3170`) ; `.tex` dans la story, PDF à l'intégration ; fichier commun possible avec la 36-4
+    écrit aux Dev Notes ; AC8.
+  - V2-8 : en-tête de la fiche mis à jour ; *Retenu* contredits du registre (C-36-5-1, C-36-5-2) marqués « remplacé ».
+  - V2-9 : sortie du premier grep complétée (`routes/+layout.svelte:66`, commentaire, classé au tableau).
+  - V2-10 : « n'excède jamais B » récrit : chaque phase bornée par B, au total la durée de l'import plus B.
