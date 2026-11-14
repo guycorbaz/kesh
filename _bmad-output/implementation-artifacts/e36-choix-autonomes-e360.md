@@ -311,3 +311,17 @@ Lecture faite au kickoff : l'issue (`gh issue view N --json title,labels,body,co
 - **Écartées** : (a) l'intégrer à la 36-3 : six modules, au-delà de la règle de découpage ; (b) la laisser pour la phase 2 :
   la première facture réelle de Guy part avant.
 - **Réversible** : oui.
+
+### C-e360-18 — #1187 (page blanche de l'assistant de configuration) en phase 2, story 36-17
+
+- **Contexte** : défaut rapporté le 2026-11-14 par un utilisateur de la 0.17.6 (chemin « configuration réelle ») : page
+  blanche avec le seul logo après l'étape du compte bancaire, jusqu'à un rechargement. Cause lue au code : aucun écran pour
+  les étapes 7 et 8 de l'assistant ; la finalisation a abouti chez l'utilisateur (comptes par défaut et journal remplis ;
+  comptes de TVA vides, conformes au manuel `user-manual.tex:219`). Guy : « ok pour la phase 2 ».
+- **Retenu** : clé `36-17-assistant-fin-configuration`, phase 2, avant la story de solde. Périmètre de #1187 : indicateur
+  pendant la finalisation, page « Configuration terminée » (rappel de ce qui est créé et de ce qui reste, dont les comptes
+  de TVA pour un assujetti) avec *Commencer*, un écran pour chaque étape, échec affiché avec *Réessayer*, finalisation
+  inachevée reprise ou signalée au rechargement, chemin démo compris.
+- **Écartée** : la 0.17.8 — aucune donnée en jeu (finalisation réussie), seules les installations neuves sont touchées, et
+  la coupure du 26 novembre ne doit pas s'alourdir.
+- **Réversible** : oui.
