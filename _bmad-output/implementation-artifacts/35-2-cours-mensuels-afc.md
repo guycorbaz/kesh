@@ -67,7 +67,11 @@ cours sans saisie.
   **vides** (ignorés) ; `<gueltigkeit>` peut ne porter qu'une date ;
 - contrôle de la réponse : `<datum>` lu ≤ D et D − `<datum>` ≤ 7 jours, sinon erreur `date_mismatch` (rien n'est
   écrit) ; racine vide → « pas encore publié », comme pour `xmlavgmonth` (par prudence : le cas réel relevé est le 404) ; une date ≥ aujourd'hui (Europe/Zurich) n'est pas demandée (AC-5) : la publication du jour tombe
-  vers 04:15 et, avant, la source rendrait celle de la veille sous la date du jour.
+  tôt le matin (`<zeit>` 04:15:03 le 31.12.2024, 07:00:05 le 13.11.2026 : l'heure varie) et, avant, la source rendrait
+  celle de la veille sous la date du jour. **Relevé le 2026-11-14** : `d=20261114` (le jour même, un samedi) et
+  `d=20261115` (demain) rendent **tous deux** `<datum>13.11.2026</datum>`, sans erreur : une date future n'est jamais
+  refusée par la source, et `date_mismatch` ne la voit pas (`<datum>` ≤ D) — seule la garde « strictement antérieur à
+  aujourd'hui » (AC-5) empêche de stocker la publication du vendredi sous la date du lendemain.
 
 ## Critères d'acceptation
 
@@ -222,7 +226,8 @@ cours sans saisie.
      sauvegarde automatique ; `AppState::new_for_tests` reçoit une source factice par défaut).
    - **Champs neufs d'`AppState`** : `rate_source`, `rate_fetch_lock: Arc<tokio::sync::Mutex<()>>`, `rate_fetch_memo`
      (la mémoire des 15 minutes de l'AC-5, `Arc<std::sync::Mutex<HashMap<(RateKind, NaiveDate), …>>>`, clé = genre et
-     `rate_date` : le 1er du mois ou le jour) et
+     `rate_date` : le 1er du mois ou le jour), `rate_login_trigger` (`Arc<std::sync::Mutex<Option<Instant>>>` : le dernier
+     déclenchement à la connexion, AC-4 ; vidé par `clear_transient_test_state`) et
      `test_rate_source: Option<MockRateSource>` (poignée du mode test, comme `test_mock_mailer`). **Sites de
      construction littérale à compléter** (inventaire au `grep -rn "AppState {"`, à relancer) : `main.rs:439`,
      `middleware/auth.rs:285`, `AppState::new_for_tests` (`lib.rs:119`), et les tests `password_recovery_e2e.rs:126`,
@@ -293,7 +298,10 @@ cours sans saisie.
      6 h permanente. Elle se réveille : (a) **au démarrage**, après un court délai fixe (60 s, constante) pour ne pas
      retarder le démarrage ; (b) **à partir du 25** de chaque mois (Europe/Zurich, 00:00) et ensuite **toutes les 6 h**
      tant que le **mois suivant** manque pour un exercice multi-devises qui le couvre ; dès qu'il est obtenu (ou
-     qu'aucun exercice ne le couvre), elle **dort jusqu'au 25 suivant** ; (c) un tour échoué ou `not_published` dans la
+     qu'aucun exercice ne le couvre), elle **dort jusqu'au 25 suivant** (un **jour** d'ouverture ou de clôture
+     manquant ne réveille pas la tâche : le jour de clôture du 31.12 devient récupérable le 1er janvier et se récupère
+     au prochain démarrage, à la prochaine connexion — qui lance un tour pour toute unité manquante — ou au plus tard
+     le 25 ; test de `prochain_reveil` : un jour seul manquant ne change pas le réveil) ; (c) un tour échoué ou `not_published` dans la
      fenêtre (b) se retente au réveil de 6 h suivant (le « jour ouvrable suivant » de la source est ainsi couvert).
      Chaque tour traite **toutes** les unités utiles qui manquent (pas seulement le mois suivant : une restauration ou
      un exercice neuf peuvent en laisser plusieurs), **au plus 36 par tour** (constante, testée ; le reste au tour
@@ -415,9 +423,9 @@ cours sans saisie.
    - **Genres d'ouverture et de clôture (R6)** — `PUT /api/v1/fiscal-years/{id}/rate-kinds { openingRateKind,
      closingRateKind }` (`"day"` | `"month"`, les deux obligatoires), dans **`comptable_routes`** (Administrateur ou
      Comptable ; Consultation 403), handler sous `retry_on_deadlock` comme les autres routes d'exercice ; écrit les
-     colonnes de 35-1 sous `FOR UPDATE` de l'exercice ; refus : 404 (autre société), 400 (valeur hors `day|month`), 409
-     `MULTI_CURRENCY_DISABLED` (société ou exercice mono-devise), 400 `FISCAL_YEAR_CLOSED` (exercice clos : ses genres
-     sont figés) ; no-op → 200 sans audit ; audit `fiscal_year.rate_kinds_updated` (`{ before, after }`, `ACTIONS`
+     colonnes de 35-1 sous `FOR UPDATE` de l'exercice ; refus, dans l'ordre général de cet AC (401, 403 → 404 → 409 → 400) : 404 (exercice d'une autre
+     société), 409 `MULTI_CURRENCY_DISABLED` (société ou exercice mono-devise), 400 (corps illisible ou valeur hors
+     `day|month`), 400 `FISCAL_YEAR_CLOSED` (exercice clos : ses genres sont figés) ; no-op → 200 sans audit ; audit `fiscal_year.rate_kinds_updated` (`{ before, after }`, `ACTIONS`
      triée, quatre locales). Le choix ne réécrit rien : il change le cours **proposé** à l'ouverture (35-3b) et à la
      réévaluation (35-5), et les jours que récupère la tâche automatique (AC-4).
    - Toutes ces routes exigent le mode multi-devises de la société courante : **`409 MULTI_CURRENCY_DISABLED`**, même
@@ -458,9 +466,10 @@ cours sans saisie.
      `/reset`) ; la phrase du manuel d'administration (`admin-manual.tex:3217`, « N des M routes à verbe
      mutant » et « N + 4 + 3 = M », gardée par `le_manuel_dit_le_compte_du_registre`) suit le chiffre recompté.
      Le second test, `the_replay_partition_is_what_the_story_declares` (`audit_route_registry.rs:1450`), compte aussi :
-     `sans_ecriture` **+4** (le `POST /fetch`, le `PUT` et le `DELETE` des cours saisis, et l'endpoint `_test`),
-     `exemptees` et `rejouees` inchangés, `tout.len()` +4 (:1502) ; commentaires
-     et `//!` du module recomptés, en deltas. *(Alignement de l'orchestrateur sur 35-1-P4-IF-1.)* **CR-2** : le
+     `sans_ecriture` **+4** avant la révision CR-2 (le `POST /fetch`, le `PUT` et le `DELETE` des cours saisis, et
+     l'endpoint `_test`), **+5 avec le `PUT /fiscal-years/{id}/rate-kinds`** (valeur qui fait foi, ci-dessous),
+     `exemptees` et `rejouees` inchangés, `tout.len()` +5 (:1502) ; commentaires
+     et `//!` du module recomptés, en deltas. *(Alignement de l'orchestrateur sur 35-1-P4-IF-1.)* **CR-2 (valeurs qui font foi, en deltas, annulant les « +3 / +4 » ci-dessus)** : le
      `PUT /fiscal-years/{id}/rate-kinds` s'y ajoute (`fiscal_years::update_rate_kinds`, `Traced,
      SansEcritureAuJournal`, comme les routes d'exercice `audit_route_registry.rs:537-539`) — la 35-2 compte donc
      **+4 routes, +4 tracées, total registre +5, `sans_ecriture` +5, `tout.len()` +5** ; le `GET` du tableau annuel
@@ -486,7 +495,10 @@ cours sans saisie.
    récupération (automatique ou manuelle, d'après `trigger` ; genre, date, statut, code d'erreur traduit) ; mention
    de la source, de son calendrier (R4) et de son caractère non contraignant ; libellés « cours mensuel AFC » et
    « cours journalier », jamais « cours moyen ». Carte sur `settings/+page.svelte`. Défilement horizontal du seul
-   tableau (colonne des devises figée) ; pas de défilement horizontal de la page.
+   tableau (colonne des devises figée) ; pas de défilement horizontal de la page. **Exercice clos** (A7 : la tâche
+   automatique l'ignore, ses cours se récupèrent ici) : « Récupérer les cours manquants » reste offert, mais les champs
+   et ↑ sont en lecture seule et les deux choix de genre sont désactivés (le serveur refuse `PUT /rate-kinds`,
+   `FISCAL_YEAR_CLOSED`) ; Vitest.
    - **Cours éditable** (D9) : chaque cours effectif est un champ (Administrateur et Comptable ; lecture seule pour
      Consultation), validé à l'écran par les bornes de l'AC-2 (`AmountFormatOptions { maxDecimals: 10,
      maxIntegerDigits: 7 }`, comme 35-3b AC-2) ; une valeur changée s'enregistre à la validation du champ (`PUT`, avec
@@ -727,3 +739,18 @@ cours sans saisie.
   `kesh-import/src/camt053/mod.rs:244`, `:375` (`Event::GeneralRef` de quick-xml 0.42, `Cargo.lock`),
   `audit_route_registry.rs:537-539`. AC touchés : en-tête, Story, Source (calendrier, terminologie), AC-1, AC-2, AC-3,
   AC-4 (réécrit), AC-5, AC-6 (réécrit), AC-7, AC-8, Tâches, Notes. Fiche à revalider (cycle CR-2).
+- 2026-11-14 — validation CR-2 P1 (Sonnet) : 0 CRITICAL, 0 HIGH, 3 MEDIUM, 3 LOW ; remédiés dans la fiche (aucun finding
+  inter-fiches). MEDIUM : champ d'`AppState` de l'horodatage du déclenchement à la connexion absent de la liste des
+  champs neufs (CR2-P1-1, `rate_login_trigger`) ; deltas du registre des routes encore écrits « +3 / +4 » dans le second
+  test (`sans_ecriture`, `tout.len()`) alors que CR-2 donne +5 : valeurs alignées (CR2-P1-2) ; ordre des refus du
+  `PUT /rate-kinds` contraire à l'ordre général de l'AC-5 (400 avant 409) : aligné (CR2-P1-3). LOW : `<zeit>` n'est pas
+  « vers 04:15 » (07:00:05 le 13.11.2026) et une date future n'est jamais refusée par la source (relevé : `d=20261114` et
+  `d=20261115` rendent `<datum>13.11.2026</datum>`), d'où la garde « strictement antérieur » (CR2-P1-4) ; exercice clos sur
+  l'écran, récupération offerte, champs et genres en lecture seule (A7, CR2-P1-5) ; jour de clôture du 31.12 non
+  récupéré par la tâche avant le prochain démarrage, connexion ou 25 (CR2-P1-6). Axes exercés : citations relues au code
+  (`import.rs:250-253`, `backup.rs:46`, `:92-99`, `:137-146`, `:796-803`, `post_restore.rs:988`, `auth.rs:235`,
+  `auto_backup.rs:788`, `main.rs:467`, `audit_labels.rs` ordre des entités, `audit_route_registry.rs:537-539`,
+  `Cargo.lock` quick-xml 0.42.0, `FISCAL_YEAR_CLOSED` 400, `fiscal_years.status` `Open`), accord avec 35-1 (AC-1, AC-3 bis,
+  AC-6, nom de migration) et 35-5, R1–R10 et A1–A8, source journalière (2 GET : `20261114`, `20261115`). Non exercés :
+  compilation, gate, rendu de l'écran, `resolve_xml_entity` de quick-xml 0.42 (sources absentes du poste), 35-3a/35-3b
+  au-delà des renvois, i18n et manuels au-delà de la fiche. Cycle CR-2 : passe suivante à lancer.

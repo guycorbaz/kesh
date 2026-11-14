@@ -127,6 +127,9 @@ là où elles divergent.
   - A7 — la récupération automatique ignore les exercices clos ; leurs cours se récupèrent à l'écran ;
   - A8 — la conversion passe par une route serveur (deux écritures dans une transaction).
 - **Tableau des stories** : 35-2 « ne referme pas la fenêtre d'import (R1) ».
+- **C-35-2 (3) complété (CR-2 P1)** : la route de conversion (`POST /journal-entries/conversions`, 35-3b) revalide
+  aussi le compte de conversion à l'usage (`FX_ACCOUNT_INVALID`), comme la réévaluation ; la ligne d'écart du
+  formulaire reste une ligne CHF ordinaire.
 
 ## Source des cours — établie le 2026-11-14
 

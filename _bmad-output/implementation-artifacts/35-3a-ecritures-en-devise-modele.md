@@ -88,7 +88,9 @@ chacune (R7), l'écart de change dans la seconde, afin que mes comptes en devise
       chiffres) × cours (≤ 17 chiffres) tient sur ≤ 34 chiffres, au-delà des 28 de `Decimal`, dont la
       multiplication **réduit l'échelle en silence** (arrondi) au lieu d'échouer — le résultat pourrait alors différer
       du `ROUND` exact de MariaDB (`chk_jel_fx_chf`) sur un équidistant. Le calcul se fait en **entiers `i128`**
-      (montant × 10⁴ et cours × 10¹⁰ : produit ≤ 10³⁴ < 1,7·10³⁸), arrondi loin de zéro au centime, puis converti ;
+      (montant × 10⁴ et cours × 10¹⁰ : produit ≤ 10³⁴ < 1,7·10³⁸), arrondi loin de zéro au centime, puis converti
+      (précaution : un résultat accepté tient dans les 28 chiffres de `Decimal` ; la borne CHF se juge sur le produit
+      exact, non sur un produit déjà arrondi par `Decimal`) ;
    2. signe : `amount > 0` et `rate > 0` (hors `revaluation`, ci-dessous) ; sinon 400 `FX_VALUE_OUT_OF_RANGE` (même
       variante `FxValueOutOfRange { line }` que l'étape 1, aucun code de plus ; 35-5 contrôle le signe du cours de la
       requête de son côté, sous `FX_RATE_INVALID`) ; les vecteurs `error` de la fixture comptent un montant ≤ 0 et un
@@ -126,8 +128,10 @@ chacune (R7), l'écart de change dans la seconde, afin que mes comptes en devise
    - **Vecteurs d'arrondi partagés** : `crates/kesh-core/tests/fixtures/fx_rounding.json` (créé ici ; tableau de
      `{ amount, rate, chf }` en chaînes décimales, ou `{ amount, rate, error: "FX_VALUE_OUT_OF_RANGE" }`), avec au moins
      les cas `x.xx5` (équidistant, arrondi loin de zéro), JPY (cours par unité < 0.01), cours à 10
-     décimales, montant à 15 chiffres significatifs, un produit de plus de 28 chiffres (aux bornes 10¹³ × 10⁶ avec
-     décimales pleines, dont le chiffre décisif tombe au-delà du 28ᵉ), un CHF > 10¹³, et hors bornes ; un test Rust le lit et l'applique à
+     décimales, montant à 15 chiffres significatifs, un produit exact de 28 chiffres accepté (CHF ≤ 10¹³ : 14 chiffres
+     entiers + 14 décimales ; un produit **accepté** ne peut pas dépasser 28 chiffres), des vecteurs `error` dont le
+     produit exact dépasse 28 chiffres (aux bornes 10¹³ × 10⁶ avec décimales pleines : refusés par la borne CHF), un CHF
+     > 10¹³, et hors bornes ; un test Rust le lit et l'applique à
      `kesh-core` ; **35-3b le lit dans Vitest** pour `big.js` (même fichier, aucune copie).
 4. **AC-4 — Contrôle central du dépôt** (`create_in_tx_inner`, `update_in_tx` — les deux seuls chemins d'`INSERT`).
    **Ordre des refus** (une seule raison, la plus bloquante d'abord ; la devise d'un compte ne se lit qu'après le
@@ -144,15 +148,24 @@ chacune (R7), l'écart de change dans la seconde, afin que mes comptes en devise
       `SELECT id FROM fiscal_years WHERE company_id = ? AND start_date > ? AND multi_currency = FALSE ORDER BY
       start_date LIMIT 1 LOCK IN SHARE MODE`, après le verrou de l'exercice de l'écriture (ordre chronologique, celui de
       la bascule de 35-1, qui verrouille les antérieurs avant l'exercice : les deux se sérialisent) ; la **même** garde
-      s'applique à `delete_in_tx` pour une écriture qui porte une ligne en devise (supprimer change aussi ce solde) et,
-      par `create_in_tx_inner`, à la réévaluation de 35-5 et à la contre-passation. Le message dit quoi faire (passer
-      l'exercice postérieur en multi-devises) ;
+      s'applique à `delete_in_tx` pour une écriture dont les lignes **lues sous le verrou** portent une devise
+      (supprimer change aussi ce solde ; rang : après l'étape 3-ter, avant le verrou de période 3-quater) et,
+      par `create_in_tx_inner`, à la réévaluation de 35-5 et à la contre-passation. **Au `PUT`, la garde se juge sur
+      les lignes d'avant ET sur celles du corps** : retirer ou changer une ligne en devise (la passer sur un compte CHF,
+      la supprimer, en changer le montant) modifie le solde d'ouverture de l'exercice mono-devise tout autant que d'en
+      ajouter une — une garde qui ne regarde que le corps laisserait faire. Les lignes d'avant (`before_lines`, lues
+      aujourd'hui à l'étape 8, `:1629`) se lisent donc plus tôt, sous le verrou de l'écriture, à l'étape 6 (après la
+      garde des comptes) ; un `PUT` sans effet (`is_no_op_change`) n'écrit rien et n'est pas refusé. Le message dit
+      quoi faire (passer l'exercice postérieur en multi-devises) ;
    2 bis. **une seule devise étrangère par écriture (R7)** : des lignes en devise de deux devises différentes →
       400 **`FX_MULTIPLE_CURRENCIES`** (code neuf, `details: { currencies: ["EUR", "USD"] }`, triées ; variante
       `DbError::FxMultipleCurrencies`, bras dans `errors.rs` et dans les correspondances `FailedProposal` de l'AC-5),
       calculé sur le corps seul (aucune lecture), rendu à ce rang de l'ordre des refus ; les lignes CHF restent
       admises à côté. Une conversion entre
       deux devises passe par le compte de conversion de 35-1 en deux écritures (35-3b, assistant *Conversion*).
+      Au **`PUT`** (`update_in_tx`), la règle ne refuse que si le corps porte plus d'une devise **alors que
+      l'écriture stockée en portait au plus une** : une écriture d'ouverture ou de complément déjà à plusieurs devises
+      reste modifiable (alignement de l'orchestrateur sur 35-3b-CR2-P1-2 ; test au dépôt).
       **Exemptées** : l'écriture d'ouverture et son complément (35-3b AC-1), qui reprennent des soldes de plusieurs
       comptes en devise et ne se rapprochent d'aucun relevé (le motif de R7) — mécanisme : un paramètre **privé** de
       `create_in_tx_inner` (énumération, p. ex. `PorteeDevises::UneSeule | PorteeDevises::Ouverture`) ; les deux
@@ -162,10 +175,18 @@ chacune (R7), l'écart de change dans la seconde, afin que mes comptes en devise
       sur le modèle de celle du constructeur de test, Tâches) ; jamais un champ public de `NewJournalEntry` (même raison
       que la contre-passation ci-dessous) ; la contre-passation est exemptée elle aussi (reconnue par
       `reverses_entry_id.is_some()`, comme pour `FX_RATE_NOT_AFC`) : elle recopie une écriture qui a passé ce contrôle,
-      ou une ouverture. Exemption de l'ouverture à confirmer par Beat (Change Log) ;
+      ou une ouverture. Exemption de l'ouverture à confirmer par Beat (Change Log). ⚠️ **La contre-passation n'est exemptée ni de
+      `MULTI_CURRENCY_DISABLED` ni de `laterFiscalYear`** : elle est datée du jour ou du premier jour de l'exercice
+      suivant (`ReversalDating`, `reverse_in_tx_inner`), exercice qui peut être mono-devise — contre-passer une
+      réévaluation au 1er janvier d'un exercice mono-devise est refusé en 409, le message disant de le passer en
+      multi-devises ; comportement assumé, testé (origine en devise, exercice du jour mono-devise ; origine en
+      devise, exercice suivant mono-devise) ;
    3. ligne **sans** devise sur un compte en devise → `ACCOUNT_REQUIRES_CURRENCY` ; ligne en devise sur un compte d'une
       autre devise ou CHF → `FX_CURRENCY_MISMATCH` (pour **l'un et l'autre** : première ligne fautive, son rang en
-      `details.line`, AC-3) ;
+      `details.line`, AC-3). Quand l'exercice de l'écriture est **mono-devise**, `ACCOUNT_REQUIRES_CURRENCY` porte en
+      plus `details.reason: "monoCurrencyFiscalYear"` et `fiscalYearId` : l'invite « saisissez le montant en devise »
+      y serait fausse (la ligne en devise est refusée au rang 2) — le message dit de passer l'exercice en
+      multi-devises (clé i18n propre, quatre locales ; affichage 35-3b, inter-fiche) ;
    4. ligne `rate_source = 'afc'` : le cours doit égaler `rate_per_unit` du cours AFC **mensuel brut** de
       `_kesh_exchange_rates` (35-2) pour (devise, mois de `entry_date`), lu dans la transaction par la fonction de
       lecture du dépôt `kesh_db::repositories::exchange_rates::find_rate_in_tx(conn, currency, RateKind::Month, 1er du
@@ -205,7 +226,15 @@ chacune (R7), l'écart de change dans la seconde, afin que mes comptes en devise
      et avant l'exercice (étape 1-ter). La contre-passation d'une écriture en devise prend l'exercice d'origine avant
      `create_in_tx_inner` : cycle résiduel, défendu par son rejeu (`Rejouee`) — écrit au Change Log. 35-1 prend
      `FOR UPDATE` sur le compte avant de compter ses lignes. Sans cela, un `PUT` de 35-1 validé entre la lecture et
-     l'`INSERT` laisserait une ligne CHF sur un compte en devise. Test de concurrence, ou argument écrit au Change Log.
+     l'`INSERT` laisserait une ligne CHF sur un compte en devise. **Portée, à écrire au Change Log** : le verrou
+     partagé des comptes est pris par **toute** écriture et tout chemin automatique (une ligne CHF sur un compte devenu
+     en devise est le cas à fermer), société mono-devise comprise — contrairement à `companies`, il n'est pas
+     conditionné par une ligne en devise : à déclarer. Deux cycles nouveaux, défendus par le rejeu comme celui de la
+     contre-passation : le complément d'ouverture prend les comptes `FOR UPDATE` **avant** l'exercice
+     (`opening_complement.rs:445-448`), l'écriture ordinaire l'exercice **avant** les comptes ; et un `PUT` (verrou de
+     l'écriture, puis `companies` en partagé) contre une dévalidation de facture (`companies` `FOR UPDATE`, puis
+     l'écriture, Pattern 5), qui n'existe que pour un corps portant une ligne en devise. Test de concurrence, ou
+     argument écrit au Change Log.
    - Chaque refus est une variante de `DbError` avec son `error_code()`, et a son bras dans la correspondance
      `DbError → AppError` de `errors.rs` — sauf `DbError::RateUnavailable {currency, month}`, créée par 35-2 avec son
      bras 404 : 35-3a la réutilise et ne la redéfinit pas.
@@ -319,9 +348,15 @@ chacune (R7), l'écart de change dans la seconde, afin que mes comptes en devise
       admises de 35-1 (R1) ; test : la sauvegarde 0.17.6 simulée de 35-1 AC-6, sans les quatre colonnes, se réimporte,
       colonnes `NULL` ; test : `chk_jel_fx_chf` refuse une ligne incohérente insérée en SQL brut.
 - [ ] Tests CR-2 (R3, R7), au dépôt et à l'API : écriture à lignes EUR et USD → `FX_MULTIPLE_CURRENCIES`
-      (`details.currencies`), une devise et des lignes CHF → passe ; ouverture et complément à deux devises → passent
-      (exemption), même corps par `POST /journal-entries` → refusé ; contre-passation d'une ouverture à deux devises →
-      passe ; ligne en devise dans un exercice mono-devise d'une société multi-devises → 409 `MULTI_CURRENCY_DISABLED`
+      (`details.currencies`), une devise et des lignes CHF → passe ; ouverture à deux devises → passe (exemption) par `create_opening_entry`
+      (publique, corps construit à la main : seul chemin d'ouverture atteignable de `tests/` en 35-3a, l'AC-5 laissant
+      écrans et complément à 35-3b) ; la variante `pub(crate)` (complément compris) se teste **dans `mod tests` de
+      `kesh-db`**, `tests/` ne la voit pas ; le complément à deux devises par sa route : 35-3b (inter-fiche) ; même
+      corps par `POST /journal-entries` → refusé ; contre-passation d'une ouverture à deux devises → passe ;
+      contre-passation d'une écriture en devise vers un exercice mono-devise → 409 ; `PUT` qui retire ou change la
+      ligne en devise d'une écriture antérieure à un exercice mono-devise → 409 `laterFiscalYear` (lignes d'avant),
+      `PUT` sans effet non refusé ; précédence `FX_MULTIPLE_CURRENCIES` (2 bis) avant `ACCOUNT_REQUIRES_CURRENCY` (3) ;
+      ligne CHF sur un compte en devise d'un exercice mono-devise → `reason: "monoCurrencyFiscalYear"` ; ligne en devise dans un exercice mono-devise d'une société multi-devises → 409 `MULTI_CURRENCY_DISABLED`
       `details.fiscalYearId` ; ligne en devise datée avant un exercice mono-devise → 409 `reason: "laterFiscalYear"`,
       de même pour la suppression d'une telle écriture et pour une réévaluation (35-5) ; lot de réconciliation : la
       variante a son bras `FailedProposal` ; course bascule (35-1) contre écriture en devise dans l'exercice antérieur
@@ -440,3 +475,20 @@ chacune (R7), l'écart de change dans la seconde, afin que mes comptes en devise
   réimporte (colonnes à la liste close de 35-1), test reformulé. Prémisses relues au code :
   `journal_entries.rs:242-256`, `:281-289`, `:332-336`, `:655`, `:727`, `:2980` ; `opening_complement.rs:719`.
   AC touchés : en-tête, Story, AC-1, AC-4, AC-6, Tâches. Fiche à revalider (cycle CR-2).
+- 2026-11-14 — validation CR-2 P1 (Sonnet) : 0 CRITICAL, 0 HIGH, 3 MEDIUM, 4 LOW ; remédiés dans la fiche sauf
+  35-3a-CR2-P1-IF1 (35-3b : test du complément d'ouverture à deux devises par sa route ; affichage de
+  `ACCOUNT_REQUIRES_CURRENCY` `reason: "monoCurrencyFiscalYear"`), inter-fiche. MEDIUM : (1) garde `laterFiscalYear`
+  jugée sur le seul corps au `PUT` — retirer ou changer une ligne en devise change autant le solde d'ouverture de
+  l'exercice mono-devise (lignes d'avant lues plus tôt que l'étape 8, `:1629`) ; rang de la garde dans `delete_in_tx` ;
+  (2) test d'exemption de l'ouverture et du complément inatteignable en 35-3a (l'AC-5 leur fait refuser les comptes
+  en devise ; variante `pub(crate)` invisible de `tests/`) ; (3) portée du verrou partagé des comptes (toute écriture,
+  société mono-devise comprise) et deux cycles non écrits (complément : comptes puis exercice ; `PUT` contre
+  dévalidation). LOW : contre-passation vers un exercice mono-devise (non exemptée, à tester) ;
+  `ACCOUNT_REQUIRES_CURRENCY` trompeur en exercice mono-devise ; vecteur « produit de plus de 28 chiffres » de la
+  fixture inatteignable comme vecteur accepté et justification de l'`i128` ; tests de précédence. Sites lus :
+  `journal_entries.rs:135-175, 281-420, 640-725, 1243-1330, 1470-1600, 1858-1935, 2796-3010`,
+  `opening_complement.rs:445-448, 700-719`, `balance.rs:60-200`, `reconciliation.rs` (quatre correspondances
+  confirmées), `csv_tables.rs:108`, `mcp/outils/ecritures.rs:20-22`, `mcp/sortie.rs:95-114`, 35-1 AC-3 bis et AC-6,
+  35-2 AC-2 et AC-9, 35-5 (IF1 de sa passe CR-2 P1 : la garde `laterFiscalYear` est bien au rang 2 de l'AC-4, clos).
+  Axes non exercés : GET de la source journalière (aucune prémisse de cette fiche n'en dépend), réponses HTTP et
+  i18n des quatre locales (non relues au code), E2E.

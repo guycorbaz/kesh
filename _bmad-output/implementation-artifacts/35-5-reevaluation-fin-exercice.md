@@ -44,7 +44,7 @@ clôture et que l'écart aille aux différences de change.
      l'aperçu porte en outre `closingRateKind` (`day` | `month`), d'après lequel l'écran distingue un repli d'un choix.
      **Genre d'un cours reçu dans `rates`** — règle **unique**, la même à l'aperçu et à la passation (AC-2, audit) : égal
      au cours par défaut résolu par le serveur → genre de ce défaut (`day` ou `month`) ; différent, ou sans défaut →
-     `request` (comparaison **numérique**, zéros terminaux ignorés ; `overridden` vaut `true` si et seulement si le genre est `request`). Sans cette règle à l'aperçu, un cours prérempli renvoyé ferait disparaître le signalement du repli et
+     `request` (comparaison **numérique**, zéros terminaux ignorés ; `overridden` vaut `true` si et seulement si le genre est `request` : sens **propre à l'aperçu**, distinct de l'`overridden` de 35-2 — « un cours saisi existe » —, que cette réponse ne reprend pas ; l'écran affiche « cours saisi » quand le genre est `day` ou `month` et que `rate` ≠ `afcRate`). Sans cette règle à l'aperçu, un cours prérempli renvoyé ferait disparaître le signalement du repli et
      masquerait le cours du jour récupéré. **L'écran n'envoie à l'aperçu que les cours modifiés par l'utilisateur** ;
      après une récupération, un champ non modifié reprend le nouveau cours par défaut (la passation, elle, reçoit tous
      les cours affichés, AC-2). Quand `closingRateKind` vaut `day`, l'écran **signale** un
@@ -125,7 +125,7 @@ clôture et que l'écart aille aux différences de change.
      pool (une date de début ne change pas : seul le nom d'un exercice se modifie), puis, dans la transaction :
      (0) la ligne `companies` (`multi_currency_enabled`, `fx_gain_account_id`, `fx_loss_account_id`) lue
      `LOCK IN SHARE MODE` (jamais `FOR SHARE`, erreur de syntaxe sur MariaDB 10.11) **avant tout exercice** : c'est
-     l'ordre global `companies` → exercice des chemins Pattern 5 (`invoices.rs:698`, sentinelle puis `create_in_tx`) et
+     l'ordre global `companies` → exercice des chemins Pattern 5 (`repositories/invoices.rs:698`, sentinelle puis `create_in_tx`) et
      de 35-3a AC-4 (`companies` en tête de l'étape 0 de `create_in_tx_inner`) ; prise après l'exercice, elle formerait
      le cycle exercice → `companies` contre `companies` → exercice que 35-3a écarte (aucun flux ne prend un exercice
      puis `companies` **en exclusif** : ni `close`, ni `reopen`, ni `lock_books`, `repositories/companies.rs:1002-1020` ; la
@@ -154,7 +154,7 @@ clôture et que l'écart aille aux différences de change.
      datée du dernier jour de l'exercice, de **deux lignes** — la ligne du compte réévalué et sa contrepartie CHF (au
      crédit du compte de gains si D > 0, au débit du compte de pertes si D < 0, pour |D|). Chaque écriture ne porte
      ainsi qu'**une** devise (`FX_MULTIPLE_CURRENCIES` de 35-3a ne peut pas se lever). Libellé **en français**
-     construit dans `post`, comme la contre-passation (`crates/kesh-db/src/repositories/journal_entries.rs:2975`) :
+     construit par **une fonction unique** (`kesh-db`, appelée par `post` **et** par l'aperçu, qui montre le libellé qui sera passé — DRY ; test : aperçu et écriture passée portent le même texte), comme la contre-passation (`crates/kesh-db/src/repositories/journal_entries.rs:2975`) :
      « Gain de change <nom du compte> <DEVISE> <cours> au JJ.MM.AAAA (non réalisé) » ou « Perte de change … » (cours
      par unité, sans zéros terminaux ; le nom du compte est tronqué pour que le libellé reste sous les 500 caractères
      de `MAX_DESCRIPTION_LEN`, privé à `routes/journal_entries.rs` : un test sur le libellé produit, nom de compte
@@ -193,10 +193,15 @@ clôture et que l'écart aille aux différences de change.
      (`every_replayed_route_calls_an_envelope`). *(Alignement de l'orchestrateur sur 35-1-P4-IF-2.)*
 3. **AC-3 — Rejouable, compte par compte (R9).** Un second passage, sans mouvement entre-temps, ne passe rien ; après
    une écriture tardive en devise sur un compte, il ne passe qu'**une** écriture, le résidu de **ce** compte (l'écart se
-   calcule par compte sur le cumul, les autres comptes ont D = 0) ; la suppression ou la contre-passation de l'écriture
-   d'un seul compte, puis un nouveau passage, ne repasse que ce compte. Pas d'extourne au premier jour de l'exercice suivant. **Le report à nouveau des
+   calcule par compte sur le cumul, les autres comptes ont D = 0) ; la **suppression** de l'écriture
+   d'un seul compte, puis un nouveau passage, ne repasse que ce compte. ⚠️ **La contre-passation ne corrige pas une
+   réévaluation de l'exercice** : l'écriture inverse est datée du **jour** ou du **premier jour de l'exercice suivant**
+   (`ReversalDating::Today` / `NextFiscalYearStart`, `journal_entries.rs:2931-2961`), donc **hors** du cumul arrêté à la
+   fin de l'exercice, qui continue de compter l'original : un nouveau passage ne repasse rien. Elle déplace l'effet dans
+   l'exercice qui la porte (le cumul de cet exercice voit les deux) ; la correction d'une réévaluation de l'exercice est
+   la suppression (exercice ouvert) ou un nouveau passage au résidu. Pas d'extourne au premier jour de l'exercice suivant. **Le report à nouveau des
    soldes en devise se fait par le cumul** (`opening.rs:17`, Kesh ne passe aucune écriture de clôture) : aucune écriture
-   de report n'est créée. Une réévaluation se corrige par **suppression ou contre-passation** de l'écriture, ou par un
+   de report n'est créée. Une réévaluation se corrige par **suppression** de l'écriture, ou par un
    nouveau passage (résidu) ; le `PUT` de la saisie manuelle la refuse (35-3a AC-7 : 409 `ENTRY_IS_FX_REVALUATION` ;
    et 35-3a AC-6 refuse `rateSource: "revaluation"` dans toute requête d'écriture).
 4. **AC-4 — Gardes.** Ordre des refus, **en deux temps** (une seule raison, la plus bloquante d'abord ; l'état
@@ -221,6 +226,8 @@ clôture et que l'écart aille aux différences de change.
    `default_revenue_account_id` des réglages de facturation ou d'un article — 35-1 P3-8) → 400 `FX_ACCOUNT_INVALID` (C-35-2 ; même code et même statut que
    35-1, `details` de 35-1) ; `accountIds` hors de la liste admissible (lue à l'étape (4) de l'AC-2) → 400
    `FX_REVALUATION_ACCOUNT_INVALID`, ensuite ; puis 404 `RATE_UNAVAILABLE` d'une devise sans cours résolu (AC-2) ; puis, par `create_in_tx_inner`, exercice
+   postérieur mono-devise → 409 `MULTI_CURRENCY_DISABLED` `reason: "laterFiscalYear"` (garde de 35-3a, rendue ici sur les
+   lignes en devise de l'écriture ; place relative aux suivants : celle de 35-3a AC-4, à suivre) ; exercice
    postérieur clos → `LATER_FISCAL_YEAR_CLOSED` (garde `journal_entries.rs:368`, repository ; état hérité seulement,
    puisque `close` impose l'ordre) ; `DATE_OUTSIDE_FISCAL_YEAR` ; livres verrouillés à cette date
    (`books_locked_through`, seuil **inclusif** : `entry_date <= locked_through`) → `PERIOD_LOCKED`. L'aperçu
@@ -297,7 +304,7 @@ clôture et que l'écart aille aux différences de change.
      juillet** (fin 30.06.2024, un dimanche : cours journalier publié le 28.06 ; genre `month` : juin 2024) et **au
      1er avril** (fin 31.03.2024, dimanche de Pâques : publication antérieure, `sourceDate` ; genre `month` : mars 2024) ;
    - **exercice mono-devise (R3)** : aperçu et passation → 409 `MULTI_CURRENCY_DISABLED` `details.fiscalYearId`, avant
-     la transaction et sous verrou ; exercice postérieur mono-devise → `blockers[]` à l'aperçu ;
+     la transaction et sous verrou ; exercice postérieur mono-devise → `blockers[]` à l'aperçu **et** 409 `reason: "laterFiscalYear"` à la passation (état posé par SQL, la bascule de 35-1 l'interdisant avec un solde ≠ 0) ;
    - cours invalide (0, négatif, 11 décimales, > 10⁶, devise sans compte) ; au-delà des bornes ;
    - `PERIOD_LOCKED` exactement à la borne (inclusive) ; exercice postérieur clos (test de dépôt, comme
      `opening_complement_repository.rs:963`) ; exercice antérieur ouvert ; exercice clos ; mono-devise ;
@@ -309,8 +316,9 @@ clôture et que l'écart aille aux différences de change.
      `blockers[]` de l'aperçu ;
    - RBAC (Consultation 403) et société (exercice d'une autre société 404) ;
    - audit : `journal_entry.created` avec les quatre colonnes de devise au snapshot, et `fx_revaluation.posted` ;
-   - le résidu après écriture tardive ; une réévaluation supprimée ou contre-passée, puis un nouveau passage (le résidu
-     rétablit l'écart) ; 498 comptes acceptés, 499 refusés (`reason: "tooMany"`), 101 devises refusées ;
+   - le résidu après écriture tardive ; une réévaluation **supprimée**, puis un nouveau passage (le résidu
+     rétablit l'écart) ; une réévaluation **contre-passée** (écriture inverse hors de l'exercice) : le nouveau passage ne
+     passe rien, l'original reste au cumul ; 498 comptes acceptés, 499 refusés (`reason: "tooMany"`), 101 devises refusées ;
      499 comptes admissibles : l'aperçu en présélectionne 498 et le signale ; libellé ≤ 500 caractères avec un nom de
      compte maximal ; produit devise × cours hors bornes, |D| > 10¹³ → `FX_VALUE_OUT_OF_RANGE` ; `accountIds` vide, en
      doublon, étranger à la société et inexistant → `FX_REVALUATION_ACCOUNT_INVALID`, réponses identiques pour les deux
@@ -434,3 +442,11 @@ clôture et que l'écart aille aux différences de change.
   transaction), `blockers[]` pour un exercice postérieur mono-devise (garde de 35-3a). **R4** — terminologie et borne
   du mois suivant. AC touchés : en-tête, Story, AC-1, AC-2, AC-3, AC-4, AC-6, AC-7, AC-8, Tâches. Fiche à revalider
   (cycle CR-2).
+- 2026-11-14 — validation CR-2 P1 (Sonnet) : 0 CRITICAL, 0 HIGH, 1 MEDIUM, 4 LOW ; remédiés dans la fiche sauf
+  35-5-CR2-P1-IF1 (LOW, 35-3a : place de `MULTI_CURRENCY_DISABLED` `laterFiscalYear` dans l'ordre des refus de
+  35-3a AC-4, que 35-5 AC-4 renvoie à 35-3a), inter-fiches. (MEDIUM : la contre-passation d'une réévaluation est datée
+  du jour ou de l'exercice suivant, hors du cumul de fin d'exercice — « supprimée ou contre-passée, puis nouveau
+  passage » était faux pour la contre-passation. LOW : refus `laterFiscalYear` absent de l'ordre de l'AC-4 et non testé
+  à la passation ; libellé construit à deux endroits (aperçu, `post`) ; `invoices.rs:698` est
+  `repositories/invoices.rs` ; `overridden` homonyme de celui de 35-2.) Axes non exercés : GET de la source
+  journalière (déjà vérifiée en CR-1 P2).

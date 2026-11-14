@@ -117,6 +117,17 @@ CHF désigné à l'activation, AC-3) ; R10 (constante du début de l'exercice in
      une lecture simple fige l'instantané *avant* l'attente des verrous et ne verrait pas une ligne ou un compte
      commités entre-temps (c'est pourquoi la lecture des comptes bancaires de la 34-11a2 est elle-même verrouillante,
      `accounts.rs:617-620`) ;
+   - **rejeu sur interblocage** (35-1-CR2-P1-1) : l'ordre « `companies` → exercices » ci-dessus n'est **pas** celui des
+     écritures — `create_in_tx_inner` lit `companies` sans verrou, prend l'exercice `FOR UPDATE`
+     (`journal_entries.rs:326-336`), puis son `INSERT` prend `companies` en partage par `fk_journal_entries_company`
+     (exercice → société). Une activation ou une désactivation, qui tient `companies` `FOR UPDATE` puis demande les
+     exercices, ferme donc un cycle avec toute saisie d'écriture en cours (angle mort (iv) du registre des routes) :
+     le handler est sous `kesh_db::retry::retry_on_deadlock("companies::update_currency_settings", …)`, comme
+     `create_fiscal_year`, et la route est **rejouée** — la 35-1 ajoute donc **deux** routes `SansEcritureAuJournal`
+     rejouées (celle-ci et `currency-mode`, AC-3 bis) : `audit_route_registry.rs` (vi) passe de « vingt-cinq » à
+     « vingt-sept » (décompte, liste et « vingt-trois handlers `SansEcritureAuJournal` de `src/routes/` » recomptés au
+     code, en deltas), et un test de victime d'interblocage par route dans `rejeu_interblocage_e2e.rs` (patron
+     `fiscal_year_reopen_is_replayed_when_it_is_the_deadlock_victim`) ;
    - audit `company.currency_settings_updated` (avant/après, ajouté à `ACTIONS` de `audit_labels.rs`, liste triée) ;
      libellés d'audit dans les quatre locales ;
    - **réponse** : 200 avec le `CompanyJson` à jour (nouvelle `version`, comme les trois autres `PUT` de la société) ;
@@ -171,7 +182,13 @@ CHF désigné à l'activation, AC-3) ; R10 (constante du début de l'exercice in
        **`FISCAL_YEAR_FOREIGN_ACCOUNTS_ACTIVE`** (code neuf), `details: { accounts: [{ id, number, currency }] }` : Kesh
        **propose de les archiver** (R3). Avec `force: true`, ces comptes sont archivés dans la même transaction (audit
        `account.archived` de chacun, `version` + 1, verrous `accounts` `FOR UPDATE` après les exercices), puis l'exercice
-       passe en mono-devise. L'archivage se défait par la réactivation (société multi-devises). Aucun compte n'est
+       passe en mono-devise. **Comment** (35-1-CR2-P1-2) : `archive_guarded` ouvre sa propre transaction sur le pool
+       (`accounts.rs:859`) et refuse un compte aux sous-comptes actifs ; le corps de l'archivage est donc **extrait**
+       en `archive_in_tx` (mêmes refus, même audit, aucune copie : DRY), appelé par `archive_guarded` et par
+       `set_currency_mode`. Seuls les comptes **imputables** sont proposés et archivés ; un compte de groupe porteur
+       d'une devise (informatif, AC-4) n'est jamais proposé — il ne reçoit aucune ligne — et garde sa devise (il se
+       retire par `PUT`, aucune ligne). Un compte imputable qui garde un sous-compte actif (état anormal) n'est pas
+       proposé non plus. Les comptes se traitent par identifiant croissant. L'archivage se défait par la réactivation (société multi-devises). Aucun compte n'est
        converti en CHF (R3) ;
      - **vers multi-devises** : aucune autre condition ;
    - **dans un exercice mono-devise**, un compte en devise **n'est pas utilisable** : une ligne en devise est refusée
@@ -356,7 +373,8 @@ CHF désigné à l'activation, AC-3) ; R10 (constante du début de l'exercice in
      `exchange_rate_overrides` absente — aucun cours saisi —, 35-3a aux colonnes des lignes — aucune ligne en devise) ;
      et une table **hors liste** retirée → 400 (le refus d'origine tient). La phase 5 de
      `scripts/recette-montee.sh` (import du `.keshbackup` de l'image 0.17.6, exige un 200, `:651`) se joue normalement
-     à la release.
+     à la release ; son `--diff-attendu` y liste `companies`, `accounts` et `fiscal_years` (l'empreinte lit
+     `SELECT *` : les colonnes neuves sont un écart attendu, `scripts/recette-montee.sh:414-440`).
    L'aller-retour d'une sauvegarde 35-1 conserve réglage, devises et mode des exercices ; l'export CSV des comptes (`serialize_accounts_csv`,
    `csv_tables.rs:265`, en-tête écrit à la main) porte `currency` ; `company.csv` (`serialize_company_csv`, :163)
    porte les quatre colonnes ; l'export CSV des exercices (`serialize_fiscal_years_csv`, `csv_tables.rs:230`, écrit à
@@ -445,11 +463,19 @@ CHF désigné à l'activation, AC-3) ; R10 (constante du début de l'exercice in
       main** à compléter (`FromRow` échoue à l'exécution, non à la compilation) — quatorze constantes et requêtes de
       `repositories/fiscal_years.rs` (`FIND_BY_ID_SQL` :145, `LIST_BY_COMPANY_SQL` :150, `LOCK_IN_COMPANY_SQL` :162,
       `EARLIER_OPEN_SQL` :186, `NEXT_AFTER_SQL` :207, `OPEN_COVERING_DATE_SQL` :731, `FIND_LATER_CLOSED_SQL` :890…,
-      recomptées par `grep -rn "start_date, end_date, status, created_at, updated_at" crates`) et une de
+      recomptées par `grep -rn "SELECT id, company_id, name, start_date, end_date, status" crates --include=*.rs` : 14 + 1 de
+      production et la copie de test de `kesh-db/tests/reversal_next_fiscal_year.rs:554` (texte de verrou, sans
+      `FromRow`) ; le motif sans `SELECT` en rend 21, avec cinq `INSERT` de `kesh-report/tests`) et une de
       `repositories/closing_checks.rs` ; `snapshot_json` des exercices ; les trois chemins de création (AC-3 bis) ;
       `fiscal_years::set_currency_mode` (verrous, refus, archivage sous `force`) ; `update_currency_settings` étendu
       (compte de conversion, exercices à l'activation et à la désactivation) ; liste close des absences admises et son
       emploi dans `parse_and_verify_avec_inventaire` et `creates_application_table` (AC-6).
+- [ ] CR-2 — tests manquants (35-1-CR2-P1-3) : activation → exercices **ouverts** multi-devises, clos inchangés,
+      identifiants au détail d'audit ; désactivation → tous mono-devise, clos compris ; compte de conversion :
+      `reason: "accountType"` pour `Expense`/`Revenue`, `details.designation = "transit"` à l'archivage, au retypage, à
+      la devise et au sous-compte ; refus de l'activation sans l'un des trois comptes ; archivage sous `force`
+      (imputables seuls, groupe laissé, `archive_in_tx` partagé avec `archive_guarded`) ; rejeu sur interblocage des
+      deux routes (AC-3).
 - [ ] CR-2 — `kesh-api` : route `PUT /fiscal-years/{id}/currency-mode`, codes `FISCAL_YEAR_HAS_FOREIGN_BALANCES` et
       `FISCAL_YEAR_FOREIGN_ACCOUNTS_ACTIVE` (409, quatre locales), audit `fiscal_year.currency_mode_updated`,
       `FiscalYearResponse` ; constantes de l'assistant (AC-11) ; frontend *Exercices* (colonne, action, dialogue
@@ -532,3 +558,10 @@ CHF désigné à l'activation, AC-3) ; R10 (constante du début de l'exercice in
   `journal_entries.rs:332-336` ; `onboarding.rs:1044-1046`, `:1053` ; `routes/fiscal_years.rs:51`, `:286` ;
   `audit_route_registry.rs:537-539` ; `csv_tables.rs:230`. AC touchés : en-tête, Décisions, AC-1, AC-2, AC-3, AC-3 bis
   (neuf), AC-4 (compte de conversion), AC-5, AC-6, AC-7, AC-10, AC-11 (neuf), Tâches. Fiche à revalider (cycle CR-2).
+- 2026-11-14 — validation CR-2 P1 (Sonnet) : 0 CRITICAL, 0 HIGH, 3 MEDIUM, 2 LOW ; remédiés dans la fiche, aucun
+  inter-fiches. CR2-P1-1 : cycle exercice → société des écritures contre l'activation (`companies` X puis exercices),
+  rejeu des deux routes et registre (vi) ; CR2-P1-2 : archivage sous `force` (`archive_in_tx` extrait, imputables
+  seuls) ; CR2-P1-3 : tests d'activation, de désactivation et du compte de conversion ; CR2-P1-4 : grep des listes de
+  colonnes d'exercice (21 et non 15) ; CR2-P1-5 : `--diff-attendu` de la recette de montée. Prémisses relues au code :
+  `import.rs:250-253`, `:625` ; `backup.rs:796-803` ; `post_restore.rs:968-1004` ; `fiscal_years.rs:331`, `:456`,
+  `:1360` ; `journal_entries.rs:326-336` ; `accounts.rs:859` ; `audit_route_registry.rs` (vi) ; `onboarding.rs:1044`.

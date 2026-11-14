@@ -32,6 +32,6 @@ N'écris rien sauf, en phase 2, dans **la seule fiche visée** (Edit). Aucun scr
 ## Rapport (français)
 
 Findings `<story>-CR2-P1-N` (sévérité, lieu, constat avec la ligne de code lue, correctif) ; **axes exercés / non
-exercés** ; décompte. Phase 2 : applique les correctifs propres à la fiche ; Change Log « 2026-11-14 — validation CR-1
+exercés** ; décompte. Phase 2 : applique les correctifs propres à la fiche ; Change Log « 2026-11-14 — validation CR-2
 P1 (<modèle>) : <décompte> ; remédiés dans la fiche sauf <ids inter-fiches> » ; liste les findings inter-fiches non
 appliqués avec le texte proposé. Message final bref.
