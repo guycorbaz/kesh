@@ -202,8 +202,9 @@ fn build_invoice_vars(
     vars
 }
 
-/// Jours de retard d'une facture (clampé ≥ 0), `0` si `due_date` absente. `today` en
-/// UTC (`chrono::Utc::now().naive_utc().date()`), cohérent avec `is_invoice_overdue`.
+/// Jours de retard d'une facture (clampé ≥ 0), `0` si `due_date` absente. `today` est
+/// la date du jour de Zurich, lue sur l'horloge de l'état (Story 35-5b, #929), comme
+/// celle que reçoit `is_invoice_overdue`.
 pub(crate) fn days_overdue(due_date: Option<chrono::NaiveDate>, today: chrono::NaiveDate) -> i64 {
     due_date.map(|d| (today - d).num_days().max(0)).unwrap_or(0)
 }
@@ -358,6 +359,10 @@ fn next_reminder_level(
 ///
 /// `total_due` = **reste dû** (arrondi au centime) + frais cumulés — Story 25-4-b2
 /// (#416) ; avant, le TTC. Reste ≤ 0 → `AppError::ReminderNothingDue`.
+///
+/// `today` est la date du jour de Zurich que la **route** a lue une fois
+/// (Story 35-5b, D1 ; remédiation P1, B4) : un lot qui franchit minuit compte
+/// les jours de retard de toutes ses factures au même jour.
 #[allow(clippy::too_many_arguments)]
 async fn render_reminder(
     state: &AppState,
@@ -368,6 +373,7 @@ async fn render_reminder(
     language: Language,
     level_number: i16,
     level_fee: &rust_decimal::Decimal,
+    today: chrono::NaiveDate,
 ) -> Result<(String, String, invoice_pdf_service::ReminderAmounts), AppError> {
     let amounts = invoice_pdf_service::reminder_amounts(
         &state.pool,
@@ -378,7 +384,6 @@ async fn render_reminder(
     )
     .await?;
     let total_due = amounts.amount_due + amounts.fees;
-    let today = chrono::Utc::now().naive_utc().date();
     let days = days_overdue(invoice.due_date, today);
 
     let template = email_templates::get_effective(
@@ -438,6 +443,7 @@ pub async fn preview_reminder_email(
         language,
         q.level,
         &level.fee_amount,
+        state.horloge.aujourd_hui(),
     )
     .await?;
 
@@ -901,7 +907,11 @@ pub async fn send_invoice_email(
 
     Ok((
         StatusCode::OK,
-        Json(InvoiceResponse::from_parts(updated, lines)),
+        Json(InvoiceResponse::from_parts(
+            updated,
+            lines,
+            state.horloge.aujourd_hui(),
+        )),
     ))
 }
 
@@ -989,6 +999,12 @@ impl BatchItemError {
         &self.error_code
     }
 
+    /// Le `details` porté, pour les tests (Story 35-2b, AC2).
+    #[cfg(test)]
+    fn details(&self) -> Option<&serde_json::Value> {
+        self.details.as_ref()
+    }
+
     /// Erreur d'**infrastructure** survenue en cours de lot (pool mort, IO).
     ///
     /// Reste per-facture pour préserver `accepted` (cf. doc du type), mais loggée
@@ -1024,16 +1040,34 @@ fn classify_render_error(e: AppError, invoice_id: i64) -> BatchItemError {
     match e {
         AppError::InvoiceNotValidated => BatchItemError::failed("INVOICE_NOT_VALIDATED"),
         AppError::Database(DbError::NotFound) => BatchItemError::failed("INVOICE_NOT_FOUND"),
-        // Données de facturation incomplètes (pas de compte bancaire, adresse QR
-        // invalide, trop de lignes, en-tête débordant) — le PDF ne peut pas être
-        // produit, mais rien n'est cassé.
-        AppError::InvoiceNotPdfReady(_)
-        | AppError::InvoiceTooManyLinesForPdf(_)
-        | AppError::InvoicePdfHeaderOverflow => BatchItemError::failed("INVOICE_NOT_PDF_READY"),
+        // Données de facturation incomplètes ou refusées (pas de compte bancaire,
+        // adresse ou caractère que la QR-facture refuse, trop de lignes, en-tête
+        // débordant) — le PDF ne peut pas être produit, mais rien n'est cassé.
+        // Story 35-2b (#955) : les trois causes portent au lot la phrase de la
+        // route unitaire, qui dit quoi corriger ; le lot les rend toutes sous
+        // `INVOICE_NOT_PDF_READY`, comme avant.
+        AppError::InvoiceNotPdfReady(msg) => refus_pdf_au_lot(msg),
+        AppError::InvoiceTooManyLinesForPdf(n) => {
+            refus_pdf_au_lot(crate::errors::message_trop_de_lignes_pdf(n))
+        }
+        AppError::InvoicePdfHeaderOverflow => {
+            refus_pdf_au_lot(crate::errors::message_entete_pdf_deborde())
+        }
         // Story 25-4-b2 (#416) — reste dû nul : un refus métier, pas une panne.
         AppError::ReminderNothingDue => BatchItemError::failed("REMINDER_NOTHING_DUE"),
         other => BatchItemError::infra("render pdf", invoice_id, other),
     }
+}
+
+/// Le refus du PDF d'une facture du lot (Story 35-2b, #955) :
+/// `INVOICE_NOT_PDF_READY` avec `details = { message }`, la phrase destinée à
+/// l'utilisateur, dans la langue de l'installation — non un contrat lisible par
+/// machine (C-e350-11, #1045). `message` est le seul champ.
+fn refus_pdf_au_lot(message: String) -> BatchItemError {
+    BatchItemError::failed_with(
+        "INVOICE_NOT_PDF_READY",
+        serde_json::json!({ "message": message }),
+    )
 }
 
 /// Refuse l'envoi unitaire si les montants ont changé depuis l'aperçu (revue de
@@ -1120,11 +1154,24 @@ pub async fn send_reminder_batch(
     }
 
     let levels = dunning_levels::list_all_by_company(&state.pool, company.id).await?;
+    // Story 35-5b (D1, remédiation P1 B4) : la date du jour de Zurich, lue UNE
+    // fois pour tout le lot — un lot qui franchit minuit ne compte pas « 9 » puis
+    // « 10 » jours de retard selon la facture.
+    let aujourd_hui = state.horloge.aujourd_hui();
 
     let mut accepted = Vec::new();
     let mut failed = Vec::new();
     for invoice_id in ids {
-        match send_one_batch_reminder(&state, &current_user, &company, invoice_id, &levels).await {
+        match send_one_batch_reminder(
+            &state,
+            &current_user,
+            &company,
+            invoice_id,
+            &levels,
+            aujourd_hui,
+        )
+        .await
+        {
             Ok(acc) => accepted.push(acc),
             Err(item) => failed.push(FailedReminder {
                 invoice_id,
@@ -1144,12 +1191,14 @@ pub async fn send_reminder_batch(
 ///
 /// `Err(_)` = `FailedProposal` → `failed[]` + HTTP 200, jamais d'escalade globale
 /// (cf. doc de [`BatchItemError`]). Gardes pré-SMTP sous verrou → SMTP → enregistrement.
+/// `aujourd_hui` : la date du jour du lot, lue une fois par la route (D1).
 async fn send_one_batch_reminder(
     state: &AppState,
     current_user: &CurrentUser,
     company: &Company,
     invoice_id: i64,
     levels: &[kesh_db::entities::DunningLevel],
+    aujourd_hui: chrono::NaiveDate,
 ) -> Result<AcceptedReminder, BatchItemError> {
     // (a) Gardes pré-SMTP sous verrou bref.
     let next_level = {
@@ -1230,7 +1279,15 @@ async fn send_one_batch_reminder(
     let language = resolve_language(&contact, company);
 
     let (subject, body, amounts) = render_reminder(
-        state, company, &invoice, &lines, &contact, language, next_level, &level_fee,
+        state,
+        company,
+        &invoice,
+        &lines,
+        &contact,
+        language,
+        next_level,
+        &level_fee,
+        aujourd_hui,
     )
     .await
     .map_err(|e| classify_reminder_render_error(e, invoice_id))?;
@@ -1776,6 +1833,56 @@ mod tests {
             classify_render_error(AppError::Internal("pool fermé".into()), 1).code(),
             "DATABASE_ERROR",
             "une panne d'infrastructure doit rester détectée comme telle"
+        );
+
+        // Story 35-2b (#955, AC2) — les trois refus du PDF portent au lot la
+        // phrase qui dit quoi corriger, et rien d'autre : `details = { message }`.
+        // Aux tests unitaires, les deux phrases d'`errors.rs` sont le repli
+        // (aucun catalogue chargé, angle mort écrit à la fiche).
+        let refus = [
+            AppError::InvoiceNotPdfReady("adresse incomplète".into()),
+            AppError::InvoiceTooManyLinesForPdf(42),
+            AppError::InvoicePdfHeaderOverflow,
+        ];
+        for err in refus {
+            let libelle = format!("{err:?}");
+            let item = classify_render_error(err, 1);
+            assert_eq!(item.code(), "INVOICE_NOT_PDF_READY", "{libelle}");
+            let details = item
+                .details()
+                .unwrap_or_else(|| panic!("{libelle} : details absent au lot"));
+            let message = details["message"].as_str().unwrap_or_default();
+            assert!(
+                !message.trim().is_empty(),
+                "{libelle} : details.message vide ({details})"
+            );
+            assert_eq!(
+                details.as_object().unwrap().keys().collect::<Vec<_>>(),
+                ["message"],
+                "{libelle} : message est le seul champ de details"
+            );
+        }
+        assert_eq!(
+            classify_render_error(AppError::InvoiceNotPdfReady("adresse incomplète".into()), 1)
+                .details()
+                .unwrap()["message"],
+            "adresse incomplète",
+            "la phrase du refus passe telle quelle"
+        );
+
+        // AC3 — les deux autres causes portent la phrase de la route unitaire,
+        // construite par la même fonction (une seule source).
+        assert_eq!(
+            classify_render_error(AppError::InvoiceTooManyLinesForPdf(42), 1)
+                .details()
+                .unwrap()["message"],
+            crate::errors::message_trop_de_lignes_pdf(42)
+        );
+        assert_eq!(
+            classify_render_error(AppError::InvoicePdfHeaderOverflow, 1)
+                .details()
+                .unwrap()["message"],
+            crate::errors::message_entete_pdf_deborde()
         );
     }
 }

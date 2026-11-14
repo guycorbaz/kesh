@@ -8,9 +8,21 @@
 //! (correction F-OPUS-1 : la frontière `api_key` vs `user` est « a-t-on un
 //! `&CurrentUser` en scope », pas kesh-api vs kesh-db).
 
-use kesh_db::entities::audit_log::NewAuditLogEntry;
+use kesh_db::entities::audit_log::{Acteur, NewAuditLogEntry};
 
 use crate::middleware::auth::CurrentUser;
+
+/// L'acteur d'une requête authentifiée (Story 35-8a1, #431) : son utilisateur,
+/// et la clé d'API quand la requête en porte une — ce qu'un dépôt converti
+/// reçoit à la place d'un `user_id` nu.
+impl From<&CurrentUser> for Acteur {
+    fn from(user: &CurrentUser) -> Self {
+        Acteur {
+            user_id: user.user_id,
+            api_key_id: user.api_key_id,
+        }
+    }
+}
 
 /// Extension de [`NewAuditLogEntry`] pour construire une entrée d'audit à
 /// partir du `CurrentUser` courant, en propageant automatiquement
@@ -38,18 +50,13 @@ impl AuditActor for NewAuditLogEntry {
         entity_id: i64,
         details_json: Option<serde_json::Value>,
     ) -> NewAuditLogEntry {
-        match user.api_key_id {
-            Some(api_key_id) => NewAuditLogEntry::api_key(
-                api_key_id,
-                user.user_id,
-                action,
-                entity_type,
-                entity_id,
-                details_json,
-            ),
-            None => {
-                NewAuditLogEntry::user(user.user_id, action, entity_type, entity_id, details_json)
-            }
-        }
+        // Story 35-8a1 : le `match` de `for_actor` n'est plus refait ici.
+        NewAuditLogEntry::par(
+            Acteur::from(user),
+            action,
+            entity_type,
+            entity_id,
+            details_json,
+        )
     }
 }

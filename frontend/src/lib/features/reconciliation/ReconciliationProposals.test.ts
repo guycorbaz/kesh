@@ -8,7 +8,7 @@
 // onAccept top-1.
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, fireEvent, cleanup } from '@testing-library/svelte';
+import { render, fireEvent, cleanup, within } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -1530,7 +1530,8 @@ describe('ReconciliationProposals — date de la transaction en forme suisse (v0
 });
 
 // Story 34-4 (#828, AC-5, AC-6) — la transaction qui semble déjà comptabilisée : l'avertissement
-// sous la ligne, puis la confirmation avant Accepter, Écriture manuelle et Éclater.
+// sous la ligne, puis la confirmation avant Accepter, Écriture manuelle et Éclater — et, depuis
+// la Story 35-4 (#1023), avant Rejeter.
 describe('ReconciliationProposals — transaction déjà comptabilisée (Story 34-4, #828)', () => {
 	const TEXTE_UNE =
 		'Cette transaction semble déjà comptabilisée : une écriture non rapprochée du compte de la banque lui correspond. Rattachez-la (« Rattacher à une écriture existante ») plutôt que de passer une écriture : elle serait comptée deux fois.';
@@ -1734,13 +1735,111 @@ describe('ReconciliationProposals — transaction déjà comptabilisée (Story 3
 		await view.findByTestId('already-booked-confirm');
 	});
 
-	it('AC-6 Rejeter une ligne signalée ⇒ aucune confirmation (M6)', async () => {
-		const view = await monter([signalee(1, [0, 1, 1])]);
-		await fireEvent.click(view.getAllByTestId('tx-checkbox')[0]);
+	// Story 35-4 (#1023, AC1, AC2) — *Rejeter* passe par la confirmation dès que la sélection
+	// contient une ligne signalée (remplace « AC-6 Rejeter une ligne signalée ⇒ aucune
+	// confirmation » de la 34-4). L'intro dit le geste et sa portée : le nombre de lignes COCHÉES.
+	const INTRO_ECRITURE =
+		'Chaque transaction ci-dessous semble déjà comptabilisée (voir l’avertissement de sa ligne). Continuer passerait une écriture pour un mouvement qui est peut-être déjà aux livres : il serait compté deux fois.';
+	const INTRO_REJET_UNE =
+		'Chaque transaction ci-dessous semble déjà comptabilisée. Rejeter retire la transaction cochée de la liste sans passer d’écriture : si elle est un mouvement réel qui n’est pas encore aux livres, il y manquera ; si elle y est déjà, rattachez-la plutôt (« Rattacher à une écriture existante »). Un rejet s’annule depuis le détail de son import (« Annuler le rejet »).';
+	const introRejetDes = (n: number) =>
+		`Chaque transaction ci-dessous semble déjà comptabilisée. Rejeter retire les ${n} transactions cochées de la liste sans passer d’écriture : si l’une est un mouvement réel qui n’est pas encore aux livres, il y manquera ; si elle y est déjà, rattachez-la plutôt (« Rattacher à une écriture existante »). Un rejet s’annule depuis le détail de son import (« Annuler le rejet »).`;
+
+	/** Coche les lignes d'indices `indices`, puis clique *Rejeter*. */
+	async function cocherEtRejeter(view: Awaited<ReturnType<typeof monter>>, indices: number[]) {
+		const cases = view.getAllByTestId('tx-checkbox');
+		for (const i of indices) await fireEvent.click(cases[i]);
 		await fireEvent.click(view.getByTestId('reconciliation-reject-btn'));
-		await vi.waitFor(() => expect(mockApi.rejectProposals).toHaveBeenCalledWith(17, [1]));
+	}
+
+	it('AC1 Rejeter, une ligne signalée parmi deux cochées ⇒ confirmation qui ne nomme qu’elle, intro du rejet au pluriel ; Annuler n’appelle rien (M1, M3, M6, M7, M8)', async () => {
+		const view = await monter([signalee(1, [0, 1, 0], 'Dubarde SàRL'), signalee(2, null)]);
+		await cocherEtRejeter(view, [0, 1]);
+		await view.findByTestId('already-booked-confirm');
+		const items = view.getAllByTestId('already-booked-confirm-item');
+		expect(items.map((i) => i.getAttribute('data-tx-id'))).toEqual(['1']);
+		expect(view.getByTestId('already-booked-confirm-intro').textContent?.trim()).toBe(
+			introRejetDes(2),
+		);
+		expect(view.getByTestId('already-booked-confirm-continue').textContent?.trim()).toBe(
+			'Rejeter quand même',
+		);
+		expect(mockApi.rejectProposals).not.toHaveBeenCalled();
+
+		await fireEvent.click(view.getByTestId('already-booked-confirm-cancel'));
+		await vi.waitFor(() => expect(view.queryByTestId('already-booked-confirm')).toBeNull());
+		expect(mockApi.rejectProposals).not.toHaveBeenCalled();
+		expect(mockApi.acceptProposals).not.toHaveBeenCalled();
+		expect(view.queryByTestId('stub-modal-success')).toBeNull();
+	});
+
+	it('AC1 Rejeter, une seule ligne cochée et signalée ⇒ intro du rejet au singulier (M8)', async () => {
+		const view = await monter([signalee(1, [0, 1, 0]), signalee(2, null)]);
+		await cocherEtRejeter(view, [0]);
+		await view.findByTestId('already-booked-confirm');
+		expect(view.getByTestId('already-booked-confirm-intro').textContent?.trim()).toBe(
+			INTRO_REJET_UNE,
+		);
+	});
+
+	it('AC1 Rejeter, Rejeter quand même ⇒ toute la sélection part, la ligne non signalée comprise ; aucune modale (M5, M9)', async () => {
+		const view = await monter([signalee(1, [0, 1, 0]), signalee(2, null)]);
+		await cocherEtRejeter(view, [0, 1]);
+		await fireEvent.click(await view.findByTestId('already-booked-confirm-continue'));
+		await vi.waitFor(() => expect(mockApi.rejectProposals).toHaveBeenCalledTimes(1));
+		const [compte, ids] = mockApi.rejectProposals.mock.calls[0];
+		expect(compte).toBe(17);
+		expect([...ids].sort()).toEqual([1, 2]);
+		expect(mockApi.acceptProposals).not.toHaveBeenCalled();
+		expect(view.queryByTestId('stub-modal-success')).toBeNull();
+		await vi.waitFor(() => expect(view.queryByTestId('already-booked-confirm')).toBeNull());
+	});
+
+	it.each([
+		['Échap', 'escape'],
+		['le X', 'x'],
+	])('AC1 Rejeter : %s ferme la confirmation comme Annuler, rien n’est rejeté', async (_nom, geste) => {
+		const view = await monter([signalee(1, [0, 1, 0])]);
+		await cocherEtRejeter(view, [0]);
+		const dialogue = await view.findByTestId('already-booked-confirm');
+		if (geste === 'escape') {
+			await fireEvent.keyDown(dialogue, { key: 'Escape' });
+		} else {
+			await fireEvent.click(within(dialogue).getByRole('button', { name: 'Close' }));
+		}
+		await vi.waitFor(() => expect(view.queryByTestId('already-booked-confirm')).toBeNull());
+		expect(mockApi.rejectProposals).not.toHaveBeenCalled();
+		// La sélection est intacte : *Rejeter* rouvre la confirmation.
+		await fireEvent.click(view.getByTestId('reconciliation-reject-btn'));
+		await view.findByTestId('already-booked-confirm');
+	});
+
+	it('AC2 Rejeter sans ligne signalée ⇒ aucun dialogue, le rejet part aussitôt (M2)', async () => {
+		const view = await monter([signalee(1, [0, 0, 0]), signalee(2, null)]);
+		await cocherEtRejeter(view, [0, 1]);
+		await vi.waitFor(() => expect(mockApi.rejectProposals).toHaveBeenCalledTimes(1));
+		expect([...mockApi.rejectProposals.mock.calls[0][1]].sort()).toEqual([1, 2]);
 		expect(view.queryByTestId('already-booked-confirm')).toBeNull();
 	});
+
+	// Story 35-4 (AC3, M3) — les gestes qui passent une écriture gardent leur intro et leur bouton.
+	it.each([['reconciliation-accept-btn'], ['manual-match-button'], ['split-button']])(
+		'AC3 %s sur une ligne signalée ⇒ l’intro d’écriture et « Continuer quand même »',
+		async (bouton) => {
+			const view = await monter([signalee(1, [0, 1, 0])]);
+			if (bouton === 'reconciliation-accept-btn') {
+				await fireEvent.click(view.getAllByTestId('tx-checkbox')[0]);
+			}
+			await fireEvent.click(view.getByTestId(bouton));
+			await view.findByTestId('already-booked-confirm');
+			expect(view.getByTestId('already-booked-confirm-intro').textContent?.trim()).toBe(
+				INTRO_ECRITURE,
+			);
+			expect(view.getByTestId('already-booked-confirm-continue').textContent?.trim()).toBe(
+				'Continuer quand même',
+			);
+		},
+	);
 
 	it('AC-6 Rattacher à une écriture existante sur une ligne signalée ⇒ aucune confirmation', async () => {
 		const view = await monter([signalee(1, [0, 1, 0])]);
@@ -1750,29 +1849,46 @@ describe('ReconciliationProposals — transaction déjà comptabilisée (Story 3
 		expect(view.queryByTestId('already-booked-confirm')).toBeNull();
 	});
 
-	// Revue P2 (B2-5) : la liste est relue pendant la confirmation (ici, « Afficher aussi les plus
-	// anciennes ») et la ligne en a disparu — traitée dans un autre onglet, par exemple. *Continuer
-	// quand même* relit la ligne dans la liste courante : absente, rien ne s'ouvre (jamais la
-	// modale d'une ligne périmée).
-	it('AC-6 Continuer ne rouvre pas le geste d’une ligne sortie de la liste pendant la confirmation', async () => {
-		mockApi.getProposals
-			.mockResolvedValueOnce({
-				proposals: [signalee(1, [0, 1, 0])],
-				hasMore: true,
-			} satisfies GetProposalsResponse)
-			.mockResolvedValue({ proposals: [signalee(2, null)], hasMore: false } satisfies GetProposalsResponse);
-		const view = render(ReconciliationProposals, { bankAccountId: 17 });
-		await view.findAllByTestId('reconciliation-row');
-		await fireEvent.click(view.getByTestId('manual-match-button'));
-		await view.findByTestId('already-booked-confirm');
-		await fireEvent.click(view.getByTestId('reconciliation-show-older-btn'));
-		await vi.waitFor(() =>
-			expect(view.getAllByTestId('reconciliation-row').map((r) => r.getAttribute('data-tx-id'))).toEqual([
-				'2',
-			]),
-		);
-		await fireEvent.click(view.getByTestId('already-booked-confirm-continue'));
-		await vi.waitFor(() => expect(view.queryByTestId('already-booked-confirm')).toBeNull());
-		expect(view.queryByTestId('stub-modal-success')).toBeNull();
-	});
+	// Story 35-4 (#1024, AC4) — la liste est relue pendant la confirmation (ici, « Afficher aussi
+	// les plus anciennes », cliqué derrière la modale : jsdom ne la voit pas ; un navigateur ne le
+	// permet pas, cf. l'E2E `reconciliation-already-booked-reject.spec.ts`) et la ligne en a
+	// disparu. La relecture referme la confirmation : elle ne peut plus être validée sur des
+	// lignes périmées. Remplace le test « Continuer ne rouvre pas le geste… » de la 34-4 (revue P2,
+	// B2-5), où la confirmation réapparaissait ouverte et *Continuer* ne faisait rien.
+	it.each([
+		['reconciliation-accept-btn', true],
+		['reconciliation-reject-btn', true],
+		['manual-match-button', false],
+		['split-button', false],
+	])(
+		'AC4 %s : une relecture de la liste referme la confirmation, sans geste (M4)',
+		async (bouton, cocher) => {
+			mockApi.getProposals
+				.mockResolvedValueOnce({
+					proposals: [signalee(1, [0, 1, 0])],
+					hasMore: true,
+				} satisfies GetProposalsResponse)
+				.mockResolvedValue({
+					proposals: [signalee(2, null)],
+					hasMore: false,
+				} satisfies GetProposalsResponse);
+			const view = render(ReconciliationProposals, { bankAccountId: 17 });
+			await view.findAllByTestId('reconciliation-row');
+			if (cocher) await fireEvent.click(view.getAllByTestId('tx-checkbox')[0]);
+			await fireEvent.click(view.getByTestId(bouton));
+			await view.findByTestId('already-booked-confirm');
+			await fireEvent.click(view.getByTestId('reconciliation-show-older-btn'));
+			await vi.waitFor(() =>
+				expect(
+					view.getAllByTestId('reconciliation-row').map((r) => r.getAttribute('data-tx-id')),
+				).toEqual(['2']),
+			);
+			await tick();
+			expect(view.queryByTestId('already-booked-confirm')).toBeNull();
+			expect(mockApi.getProposals).toHaveBeenCalledTimes(2);
+			expect(mockApi.acceptProposals).not.toHaveBeenCalled();
+			expect(mockApi.rejectProposals).not.toHaveBeenCalled();
+			expect(view.queryByTestId('stub-modal-success')).toBeNull();
+		},
+	);
 });

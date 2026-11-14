@@ -1234,7 +1234,7 @@ async fn qr_d_une_piece_completee_lu_par_la_facture_fournisseur(pool: MySqlPool)
     .await
     .expect("pièce QR");
     let b = banc(&pool);
-    let jour = chrono::Utc::now().naive_utc().date().to_string();
+    let jour = common::jour::aujourd_hui_test().to_string();
     let complete = envoyer(
         &b.app,
         requete_api(

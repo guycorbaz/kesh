@@ -20,6 +20,7 @@ import {
 	authedApiContext,
 	disposeContextSafe,
 } from './helpers/test-state';
+import { todayInZurich } from './helpers/api-fixtures';
 
 const IBAN_OK = 'CH9300762011623852957';
 const IBAN_REFUS = 'CH3908704016075473007';
@@ -68,7 +69,7 @@ async function moveAccount(page: Page, accountId: number, counterpartId: number)
 	try {
 		const res = await ctx.post('/api/v1/journal-entries', {
 			data: {
-				entryDate: new Date().toLocaleDateString('sv-SE', { timeZone: 'Europe/Zurich' }),
+				entryDate: todayInZurich(),
 				journal: 'OD',
 				description: 'E2E 34-2 — compte mouvementé',
 				lines: [

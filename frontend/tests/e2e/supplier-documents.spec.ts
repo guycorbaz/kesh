@@ -22,6 +22,7 @@ import {
 	token,
 	uniqueCopy,
 } from './helpers/inbox';
+import { todayInZurich } from './helpers/api-fixtures';
 
 /**
  * Parcours « Documents à traiter » — Story 30-2a (#685), parcours E1-a, E2-a et E3 de la
@@ -504,7 +505,7 @@ async function createInvoiceAndAttachViaApi(
 			data: {
 				contactId,
 				supplierInvoiceNumber: number,
-				invoiceDate: new Date().toISOString().slice(0, 10),
+				invoiceDate: todayInZurich(),
 				lines: [
 					{
 						description: 'Prestation E6',

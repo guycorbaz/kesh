@@ -20,6 +20,13 @@
 //! donnée réelle, `docs/agents-orchestration.md` § 8).
 #![allow(dead_code)]
 
+/// Story 35-5a0 — la date du jour de l'horloge de test (résolu depuis `support/`).
+/// Un binaire qui inclut aussi `jour.rs` au premier niveau en a deux copies,
+/// deux modules distincts : voulu (C-e355a0-4), d'où l'`allow`.
+#[allow(dead_code, clippy::duplicate_mod)]
+#[path = "jour.rs"]
+mod jour;
+
 use chrono::NaiveDate;
 use kesh_db::entities::contact::{ContactType, NewContact, Salutation};
 use kesh_db::entities::imported_supplier_invoice::NewImportedSupplierInvoice;
@@ -161,6 +168,7 @@ pub async fn facture_payee(
         },
         jour,
         seeded.admin_user_id,
+        jour::aujourd_hui_test(),
     )
     .await
     .expect("règlement par virement");

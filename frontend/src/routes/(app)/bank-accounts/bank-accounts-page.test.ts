@@ -1020,4 +1020,121 @@ describe("page des comptes bancaires — solde d'ouverture (Story 34-2, AC-7)", 
 		expect((await r.findByTestId('opening-error')).textContent).toBe('Le compte 1020 a déjà des mouvements.');
 		expect(r.getByTestId('opening-balance-dialog')).toBeTruthy();
 	});
+
+	// Story 35-6 (#1026, #1028, #1025, AC2 à AC4) — la saisie classée avant tout envoi,
+	// dans les deux formulaires ; l'aperçu et l'avis formatent la charge, jamais « NaN ».
+	const AMBIGU = 'Montant ambigu : ';
+	const ILLISIBLE = "Montant illisible : écrivez un nombre positif, par exemple 1'234.50.";
+	const POSITIF = 'Saisissez un montant positif.';
+	const REFUS: [string, string][] = [
+		['1.234', AMBIGU],
+		['+1,234', AMBIGU],
+		['1. 234', ILLISIBLE],
+		['1e3', ILLISIBLE],
+		['abc', ILLISIBLE],
+		['-5', POSITIF],
+	];
+
+	it.each(REFUS)('création : « %s » est refusé à l’écran, sans appel au serveur', async (raw, message) => {
+		const r = await openCreate();
+		await link(r, BANQUE.id);
+		await fill(r.getByTestId('form-opening-amount'), raw);
+		expect(r.queryByTestId('form-opening-preview')).toBeNull();
+		await fireEvent.click(r.getByTestId('form-submit'));
+		expect((await r.findByTestId('form-error')).textContent).toContain(message);
+		expect(createBankAccountMock).not.toHaveBeenCalled();
+	});
+
+	it.each(REFUS)('compte existant : « %s » est refusé à l’écran, sans appel au serveur', async (raw, message) => {
+		const r = render(Page);
+		await fireEvent.click(await r.findByTestId('opening-balance-button-8'));
+		await fill(await r.findByTestId('row-opening-amount'), raw);
+		expect(r.queryByTestId('row-opening-preview')).toBeNull();
+		await fireEvent.click(r.getByTestId('opening-confirm-button'));
+		expect((await r.findByTestId('opening-error')).textContent).toContain(message);
+		expect(enterOpeningBalanceMock).not.toHaveBeenCalled();
+	});
+
+	it('création : un compte délié n’est pas classé — le montant saisi auparavant ne part pas', async () => {
+		const r = await openCreate();
+		await link(r, BANQUE.id);
+		await fill(r.getByTestId('form-opening-amount'), '1.234');
+		await fireEvent.change(r.getByTestId('form-journal-account'), { target: { value: '' } });
+		const payload = await submitted(r);
+		expect('openingBalance' in payload).toBe(false);
+	});
+
+	it('création : « 1_000 » s’affiche et part 1000, l’avis dit 1 000.00 CHF (#1028)', async () => {
+		createBankAccountMock.mockResolvedValue({
+			account: LIE,
+			openingEntry: { id: 1, entryNumber: 3, entryDate: '2026-01-01', fiscalYearId: 3 },
+		});
+		const r = await openCreate();
+		await link(r, BANQUE.id);
+		await fill(r.getByTestId('form-opening-amount'), '1_000');
+		expect((await r.findByTestId('form-opening-preview')).textContent).toContain(
+			formatChfBalance('1000'),
+		);
+		const payload = await submitted(r);
+		expect(payload.openingBalance).toEqual({ amount: '1000', side: 'debit' });
+		await waitFor(() =>
+			expect(toast.success).toHaveBeenCalledWith(
+				`Compte bancaire créé, avec l'écriture d'ouverture n° 3 du 01.01.2026 : ${formatChfBalance('1000')}.`,
+			),
+		);
+		expect(JSON.stringify(vi.mocked(toast.success).mock.calls)).not.toContain('NaN');
+	});
+
+	it("création : « 1'234,567 » et « 0,500 » passent, avec leur aperçu (#1025)", async () => {
+		const r = await openCreate();
+		await link(r, BANQUE.id);
+		await fill(r.getByTestId('form-opening-amount'), '0,500');
+		expect((await r.findByTestId('form-opening-preview')).textContent).toContain(
+			formatChfExact('0.500'),
+		);
+		await fill(r.getByTestId('form-opening-amount'), "1'234,567");
+		expect((await r.findByTestId('form-opening-preview')).textContent).toContain(
+			formatChfExact('1234.567'),
+		);
+		const payload = await submitted(r);
+		expect(payload.openingBalance).toEqual({ amount: '1234.567', side: 'debit' });
+	});
+
+	it.each(['+0', '-0.00', '0,00', '-0'])('création : « %s » donne l’avis du montant nul', async (raw) => {
+		const r = await openCreate();
+		await link(r, BANQUE.id);
+		await fill(r.getByTestId('form-opening-amount'), raw);
+		expect((await r.findByTestId('form-opening-preview')).textContent).toContain('Montant nul');
+	});
+
+	it('compte existant : « 1_000 » part 1000, l’avis dit 1 000.00 CHF, jamais « NaN »', async () => {
+		enterOpeningBalanceMock.mockResolvedValue({
+			id: 2,
+			entryNumber: 6,
+			entryDate: '2026-01-01',
+			fiscalYearId: 3,
+		});
+		const r = render(Page);
+		await fireEvent.click(await r.findByTestId('opening-balance-button-8'));
+		await fill(await r.findByTestId('row-opening-amount'), '1_000');
+		expect((await r.findByTestId('row-opening-preview')).textContent).toContain(
+			formatChfBalance('1000'),
+		);
+		await fireEvent.click(r.getByTestId('opening-confirm-button'));
+		await waitFor(() =>
+			expect(enterOpeningBalanceMock).toHaveBeenCalledWith(8, { amount: '1000', side: 'debit' }),
+		);
+		await waitFor(() =>
+			expect(toast.success).toHaveBeenCalledWith(
+				`Écriture d'ouverture n° 6 du 01.01.2026 passée : ${formatChfBalance('1000')}.`,
+			),
+		);
+	});
+
+	it('compte existant : « -0 » donne l’avis du montant nul', async () => {
+		const r = render(Page);
+		await fireEvent.click(await r.findByTestId('opening-balance-button-8'));
+		await fill(await r.findByTestId('row-opening-amount'), '-0');
+		expect((await r.findByTestId('row-opening-preview')).textContent).toContain('Montant nul');
+	});
 });

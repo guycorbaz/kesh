@@ -27,6 +27,7 @@ import {
 } from './helpers/test-state';
 import {
 	createManualDebitStatementViaApi,
+	todayInZurich,
 	wiredBankAccountViaApi,
 } from './helpers/api-fixtures';
 import {
@@ -574,7 +575,7 @@ test.describe('Cycle brouillon → validée → payée (étapes par l’écran, 
 				data: { version: paidDraft.version },
 			});
 			expect(valPaid.status(), await valPaid.text()).toBe(200);
-			const today = new Date().toISOString().slice(0, 10);
+			const today = todayInZurich();
 			const batch2 = await ctx.post('/api/v1/payment-batches', {
 				data: { bankAccountId, requestedExecutionDate: today, supplierInvoiceIds: [paidDraft.id] },
 			});
@@ -682,11 +683,9 @@ test.describe('Cycle brouillon → validée → payée (étapes par l’écran, 
 			const termsSupplierId = (await termsSupplier.json()).id as number;
 			await page.goto(`/supplier-invoices/new?document=${entry!.importedSupplierInvoiceId}`);
 			const date = page.getByTestId('supplier-invoice-date');
-			const today = await page.evaluate(() => {
-				const n = new Date();
-				const p = (x: number) => String(x).padStart(2, '0');
-				return `${n.getFullYear()}-${p(n.getMonth() + 1)}-${p(n.getDate())}`;
-			});
+			// Le jour du poste : le navigateur des specs est à Zurich (`timezoneId`), donc le
+			// jour suisse (Story 35-5c, même valeur que la lecture dans le navigateur).
+			const today = todayInZurich();
 			await expect(date).toHaveValue(today);
 			await expect(page.getByTestId('supplier-invoice-date-to-verify')).toBeVisible();
 			await expect(page.getByTestId('supplier-invoice-date-help')).toHaveCount(0);

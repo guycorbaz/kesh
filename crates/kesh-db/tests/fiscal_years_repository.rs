@@ -1,5 +1,9 @@
 //! Tests d'intégration pour `repositories::fiscal_years`.
 
+// Story 35-5a — le jour de l'horloge de test (jour suisse).
+#[path = "support/jour.rs"]
+mod jour;
+
 use chrono::NaiveDate;
 use kesh_db::entities::address::StructuredAddress;
 use kesh_db::entities::{
@@ -915,6 +919,7 @@ async fn reopen_lifo_three_years_intercalated(pool: MySqlPool) {
 #[sqlx::test(migrations = "./test-schema")]
 async fn reopen_reactivates_entry_editability(pool: MySqlPool) {
     use kesh_db::entities::account::AccountType;
+    use kesh_db::entities::audit_log::Acteur;
     use kesh_db::entities::journal_entry::Journal;
     use kesh_db::entities::{NewAccount, NewJournalEntry, NewJournalEntryLine};
     use kesh_db::repositories::{accounts, journal_entries};
@@ -986,7 +991,7 @@ async fn reopen_reactivates_entry_editability(pool: MySqlPool) {
     let d = NaiveDate::from_ymd_opt(2026, 6, 15).unwrap();
 
     // Ouvert : création OK.
-    journal_entries::create(&pool, fy.id, user_id, make_entry(d))
+    journal_entries::create(&pool, fy.id, Acteur::utilisateur(user_id), make_entry(d))
         .await
         .expect("create while open should succeed");
 
@@ -994,7 +999,8 @@ async fn reopen_reactivates_entry_editability(pool: MySqlPool) {
     fiscal_years::close(&pool, user_id, company_id, fy.id)
         .await
         .unwrap();
-    let blocked = journal_entries::create(&pool, fy.id, user_id, make_entry(d)).await;
+    let blocked =
+        journal_entries::create(&pool, fy.id, Acteur::utilisateur(user_id), make_entry(d)).await;
     assert!(
         matches!(blocked, Err(DbError::FiscalYearClosed)),
         "closed year should block entry creation, got {blocked:?}"
@@ -1005,7 +1011,7 @@ async fn reopen_reactivates_entry_editability(pool: MySqlPool) {
     fiscal_years::reopen(&pool, user_id, company_id, fy.id, "motif".to_string())
         .await
         .unwrap();
-    journal_entries::create(&pool, fy.id, user_id, make_entry(d))
+    journal_entries::create(&pool, fy.id, Acteur::utilisateur(user_id), make_entry(d))
         .await
         .expect("create after reopen should succeed");
 
@@ -1013,7 +1019,8 @@ async fn reopen_reactivates_entry_editability(pool: MySqlPool) {
     fiscal_years::close(&pool, user_id, company_id, fy.id)
         .await
         .unwrap();
-    let reblocked = journal_entries::create(&pool, fy.id, user_id, make_entry(d)).await;
+    let reblocked =
+        journal_entries::create(&pool, fy.id, Acteur::utilisateur(user_id), make_entry(d)).await;
     assert!(
         matches!(reblocked, Err(DbError::FiscalYearClosed)),
         "re-closed year should block again, got {reblocked:?}"
@@ -1860,7 +1867,7 @@ async fn close_against_a_reversal_deadlocks_and_the_replay_resolves_it(pool: MyS
     use chrono::Datelike;
     let company_id = create_company(&pool).await;
     let user_id = create_admin_user(&pool, company_id).await;
-    let today = chrono::Utc::now().date_naive();
+    let today = crate::jour::aujourd_hui_test();
     let m = exercice(&pool, user_id, company_id, today.year() - 6).await;
     let n = exercice(&pool, user_id, company_id, today.year() - 5).await;
     let _t = exercice(&pool, user_id, company_id, today.year()).await;

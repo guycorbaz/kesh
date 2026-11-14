@@ -17,8 +17,14 @@
 //!
 //! Pré-requis : MariaDB démarré.
 
+/// Story 35-5a0 — la date du jour de l'horloge de test.
+#[allow(dead_code)]
+#[path = "support/jour.rs"]
+mod jour;
+
 use chrono::NaiveDate;
 use kesh_db::entities::account::AccountType;
+use kesh_db::entities::audit_log::Acteur;
 use kesh_db::repositories::letterings::{self, Actor, Mode, Origin};
 use kesh_db::repositories::{journal_entries, supplier_invoices};
 use kesh_report::opening::debit_sense;
@@ -123,9 +129,15 @@ async fn open_items_balance_matches_the_ledger_and_the_trial_balance(pool: MySql
     let annulee =
         facture_fournisseur(&pool, s, &a, dec!(45.00), jours_avant(100), Some("FF-2")).await;
     payer(&pool, s, &a, annulee, jours_avant(90)).await;
-    supplier_invoices::cancel(&pool, company, annulee, s.admin_user_id)
-        .await
-        .expect("annulation de la facture payée");
+    supplier_invoices::cancel(
+        &pool,
+        company,
+        annulee,
+        s.admin_user_id,
+        crate::jour::aujourd_hui_test(),
+    )
+    .await
+    .expect("annulation de la facture payée");
 
     // Écritures manuelles sur la créance : une non lettrée en 2024, une paire
     // lettrée en 2025-2030, une contre-passée.
@@ -179,9 +191,15 @@ async fn open_items_balance_matches_the_ledger_and_the_trial_balance(pool: MySql
         &[(creance, dec!(8), dec!(0)), (contre, dec!(0), dec!(8))],
     )
     .await;
-    journal_entries::reverse(&pool, company, e_rev, s.admin_user_id)
-        .await
-        .expect("contre-passation");
+    journal_entries::reverse(
+        &pool,
+        company,
+        e_rev,
+        Acteur::utilisateur(s.admin_user_id),
+        crate::jour::aujourd_hui_test(),
+    )
+    .await
+    .expect("contre-passation");
     // Le groupe à cheval : 2024-06-30 et 2026-03-01 (au-dessus de la borne).
     let (_, a1) = ecriture(
         &pool,
@@ -215,7 +233,8 @@ async fn open_items_balance_matches_the_ledger_and_the_trial_balance(pool: MySql
         comptes.contains(&creance) && comptes.contains(&a.payable),
         "montage : la créance et la dette sont lettrables"
     );
-    let aujourdhui = chrono::Utc::now().date_naive();
+    // Story 35-5a0 (D4, revue P2) : le jour de l'horloge de test.
+    let aujourdhui = crate::jour::aujourd_hui_test();
     let dates = [ymd(2024, 6, 1), ymd(2024, 12, 31), aujourdhui];
     let mut lignes_ouvertes = 0;
     for &compte in &comptes {

@@ -9,6 +9,7 @@ import {
 import {
 	createContactWithAddressViaApi,
 	createAndValidateInvoiceViaApi,
+	todayInZurich,
 } from './helpers/api-fixtures';
 
 test.beforeAll(async () => {
@@ -85,7 +86,7 @@ test.describe('Avoirs — création depuis une facture validée', () => {
 		const ctx = await authedApiContext(page);
 		try {
 			const res = await ctx.post('/api/v1/credit-notes', {
-				data: { invoiceId, date: new Date().toISOString().slice(0, 10) },
+				data: { invoiceId, date: todayInZurich() },
 			});
 			expect(res.ok(), `create credit note failed: ${res.status()}`).toBeTruthy();
 		} finally {

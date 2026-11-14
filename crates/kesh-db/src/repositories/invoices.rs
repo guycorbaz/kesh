@@ -28,9 +28,9 @@ use sqlx::{MySql, Transaction};
 
 use kesh_core::listing::SortDirection;
 
-use crate::entities::audit_log::NewAuditLogEntry;
+use crate::entities::audit_log::{Acteur, NewAuditLogEntry};
 use crate::entities::invoice::{Invoice, InvoiceLine, InvoiceUpdate, NewInvoice, NewInvoiceLine};
-use crate::errors::{DbError, UnvalidationBlocker, map_db_error};
+use crate::errors::{DbError, NumberedDocument, UnvalidationBlocker, map_db_error};
 use crate::repositories::audit_log;
 use crate::repositories::company_invoice_settings::{DesignatedRole, GeneratedLines};
 use crate::repositories::invoice_settlements::{
@@ -324,10 +324,14 @@ pub struct InvoiceListResult {
     pub limit: i64,
 }
 
+/// Les clauses `WHERE` de la liste et de l'export. `aujourd_hui` borne le
+/// filtre « échues » (`due_date < aujourd_hui`) : la date du jour de Zurich,
+/// lue **une fois** par l'appelant (Story 35-5b, #929), liée par `push_bind`.
 fn push_where_clauses<'a>(
     qb: &mut QueryBuilder<'a, sqlx::MySql>,
     company_id: i64,
     query: &'a InvoiceListQuery,
+    aujourd_hui: NaiveDate,
 ) {
     qb.push(" WHERE i.company_id = ");
     qb.push_bind(company_id);
@@ -375,10 +379,9 @@ fn push_where_clauses<'a>(
         qb.push_bind(db);
     }
 
-    // Story 5.4 — filtre dérivé du paid_at / due_date. UTC_DATE() garantit
-    // la cohérence quelle que soit la TZ de la session SQL (convention
-    // projet : tout en UTC naïf). Known limitation v0.1 : voir Story 5.4
-    // « Dette technique v0.2 — fuseau horaire société ».
+    // Story 5.4 — filtre dérivé du paid_at / due_date. La date du jour est
+    // celle de Zurich, passée par l'appelant et liée (Story 35-5b, #929) :
+    // le SQL ne lit plus l'horloge du serveur de base.
     //
     // P1 (review pass 1) : tout filtre de paiement non-All implique
     // `status='validated'` (une facture draft/cancelled n'a pas de sémantique
@@ -393,16 +396,15 @@ fn push_where_clauses<'a>(
             qb.push(" AND i.status = 'validated' AND i.paid_at IS NULL");
         }
         PaymentStatusFilter::Overdue => {
-            // E6 (review pass 2) : `due_date IS NULL` → NULL < UTC_DATE() = NULL
+            // E6 (review pass 2) : `due_date IS NULL` → NULL < aujourd'hui = NULL
             // → filtre false → la facture n'est jamais comptée comme overdue.
             // Comportement intentionnel : une facture sans échéance explicite
             // ne peut pas être « en retard ». Le défaut `due_date = invoice.date`
             // posé par le handler `create_invoice` (Story 5.2) garantit que ce
             // cas ne se produit pas en pratique pour les factures créées via
             // Kesh ; une éventuelle `due_date` NULL provient de données legacy.
-            qb.push(
-                " AND i.status = 'validated' AND i.paid_at IS NULL AND i.due_date < UTC_DATE()",
-            );
+            qb.push(" AND i.status = 'validated' AND i.paid_at IS NULL AND i.due_date < ");
+            qb.push_bind(aujourd_hui);
         }
     }
 
@@ -865,16 +867,18 @@ pub async fn find_with_lines_in_tx(
     Ok(Some((invoice, lines)))
 }
 
-/// Liste paginée + filtres dynamiques (JOIN contacts).
+/// Liste paginée + filtres dynamiques (JOIN contacts). `aujourd_hui` borne le
+/// filtre « échues » (date de Zurich, Story 35-5b).
 pub async fn list_by_company_paginated(
     pool: &MySqlPool,
     company_id: i64,
     query: InvoiceListQuery,
+    aujourd_hui: NaiveDate,
 ) -> Result<InvoiceListResult, DbError> {
     let mut count_qb: QueryBuilder<sqlx::MySql> = QueryBuilder::new(
         "SELECT COUNT(*) FROM invoices i INNER JOIN contacts c ON c.id = i.contact_id",
     );
-    push_where_clauses(&mut count_qb, company_id, &query);
+    push_where_clauses(&mut count_qb, company_id, &query, aujourd_hui);
     let total: i64 = count_qb
         .build_query_scalar()
         .fetch_one(pool)
@@ -894,7 +898,7 @@ pub async fn list_by_company_paginated(
         due = INVOICE_AMOUNT_DUE_DERIVED_SQL,
         joins = amount_due_derived_joins(),
     ));
-    push_where_clauses(&mut items_qb, company_id, &query);
+    push_where_clauses(&mut items_qb, company_id, &query, aujourd_hui);
     items_qb.push(" ORDER BY ");
     // P7 (review pass 3 A) : NULLs en fin de liste quel que soit le sort.
     // MariaDB trie NULL en premier en ASC et en dernier en DESC — on force
@@ -952,23 +956,37 @@ pub struct DueDatesSummary {
 ///
 /// P2 (review pass 3 B) : restauration des filtres temporels après que la
 /// passe 2 a constaté que la spec §74 les inclut explicitement.
+///
+/// `aujourd_hui` borne les échues (`due_date < aujourd_hui`) : la date du jour
+/// de Zurich, la même que celle de la page (Story 35-5b, #929), liée deux fois
+/// dans le `SELECT`, **avant** les liens du `WHERE`.
 pub async fn due_dates_summary(
     pool: &MySqlPool,
     company_id: i64,
     query: &InvoiceListQuery,
+    aujourd_hui: NaiveDate,
 ) -> Result<DueDatesSummary, DbError> {
+    // CAST AS SIGNED pour forcer BIGINT : MariaDB SUM(CASE…) retourne
+    // DECIMAL par défaut, incompatible avec Rust i64.
+    // Story 25-4-b1 (#416) : les KPI de l'échéancier sont des RESTES DUS —
+    // TTC − avoir émis − Σ règlements, forme jointe — et non plus le TTC
+    // émis (#246, 21-2a), qui comptait une facture de 1 000.— réglée à
+    // 900.— pour 1 000.—.
     let mut qb: QueryBuilder<sqlx::MySql> = QueryBuilder::new(format!(
-        // CAST AS SIGNED pour forcer BIGINT : MariaDB SUM(CASE…) retourne
-        // DECIMAL par défaut, incompatible avec Rust i64.
-        // Story 25-4-b1 (#416) : les KPI de l'échéancier sont des RESTES DUS —
-        // TTC − avoir émis − Σ règlements, forme jointe — et non plus le TTC
-        // émis (#246, 21-2a), qui comptait une facture de 1 000.— réglée à
-        // 900.— pour 1 000.—.
         "SELECT \
             COUNT(*) AS unpaid_count, \
             COALESCE(SUM({due}), CAST(0 AS DECIMAL(19,4))) AS unpaid_total, \
-            CAST(COALESCE(SUM(CASE WHEN i.due_date < UTC_DATE() THEN 1 ELSE 0 END), 0) AS SIGNED) AS overdue_count, \
-            COALESCE(SUM(CASE WHEN i.due_date < UTC_DATE() THEN {due} ELSE 0 END), CAST(0 AS DECIMAL(19,4))) AS overdue_total \
+            CAST(COALESCE(SUM(CASE WHEN i.due_date < ",
+        due = INVOICE_AMOUNT_DUE_DERIVED_SQL,
+    ));
+    qb.push_bind(aujourd_hui);
+    qb.push(
+        " THEN 1 ELSE 0 END), 0) AS SIGNED) AS overdue_count, \
+            COALESCE(SUM(CASE WHEN i.due_date < ",
+    );
+    qb.push_bind(aujourd_hui);
+    qb.push(format!(
+        " THEN {due} ELSE 0 END), CAST(0 AS DECIMAL(19,4))) AS overdue_total \
          FROM invoices i INNER JOIN contacts c ON c.id = i.contact_id \
          {joins}",
         due = INVOICE_AMOUNT_DUE_DERIVED_SQL,
@@ -1683,10 +1701,18 @@ pub async fn unvalidate(
         // drapeau — exercice clos, exercice postérieur clos (Story 15-12b,
         // #543 ; ancien C-15-8-29), contre-passation, période verrouillée
         // (#443) — tiennent, et la marque de lettrage (Story 15-1a-ii),
-        // inatteignable ici, aussi. Pas de clé d'API ici (`None`) : `unvalidate` n'en
-        // reçoit pas (hors périmètre).
+        // inatteignable ici, aussi. Pas de clé d'API ici (`Acteur::utilisateur`) :
+        // `unvalidate` n'en reçoit pas (`AConvertir` de la garde des acteurs,
+        // déploiement à l'Epic 36, #431).
         if let Some(je_id) = current.journal_entry_id {
-            journal_entries::delete_in_tx(&mut tx, company_id, je_id, user_id, None, false).await?;
+            journal_entries::delete_in_tx(
+                &mut tx,
+                company_id,
+                je_id,
+                Acteur::utilisateur(user_id),
+                false,
+            )
+            .await?;
         }
 
         // Étape 6 : l'audit NOMME le geste, avec l'état d'avant.
@@ -2004,9 +2030,11 @@ pub(in crate::repositories) fn generate_invoice_journal_lines_rounded(
 /// `(2 quater)` sont tous deux verrouillés **en partagé** : deux verrous
 /// partagés sont compatibles, leur ordre relatif n'ouvre donc aucun cycle entre
 /// eux, **quel que soit le type** des comptes. Ce n'est pas une disjonction de
-/// types qui le garantit — le type d'un compte désigné n'est pas contrôlé après
-/// sa désignation ([`super::company_invoice_settings`], angle mort assumé), et
-/// un compte retypé peut se retrouver des deux côtés (revue de code P1, B-3).
+/// types qui le garantit : le type d'un compte désigné est désormais refusé à
+/// l'usage (Story 35-3, #537), mais **après** le verrou
+/// ([`super::company_invoice_settings::DesignatedAccountsSnapshot`]), si bien
+/// qu'un compte retypé peut encore se retrouver des deux côtés au moment où les
+/// verrous se prennent (revue de code P1, B-3).
 /// Le verrou des comptes désignés est
 /// **partagé** : il suffit contre l'archivage et le passage à non imputable,
 /// qui écrivent la ligne du compte, et il reste compatible avec les verrous
@@ -2035,6 +2063,11 @@ pub(in crate::repositories) fn generate_invoice_journal_lines_rounded(
 /// - [`DbError::FiscalYearInvalid`] : aucun exercice ouvert pour `invoice.date`.
 /// - [`DbError::ConfigurationRequired`] : comptes par défaut absents.
 /// - [`DbError::OptimisticLockConflict`] : race sur l'UPDATE final (défensif).
+/// - [`DbError::NumberFormatUnrenderable`] (Story 35-1, #948) : le numéro ne peut
+///   pas être produit par le format des réglages — au rendu, juste après
+///   l'exercice (trop long, accolade dans le nom de l'exercice, format illisible) ;
+///   à l'UPDATE final, s'il est déjà attribué dans la société (`duplicate`). Une
+///   facture qui reprend son numéro (dévalidée) n'y passe pas.
 ///
 /// **Ordre des refus de la garde à l'usage** (Story 15-5d, #429). Le verrou de
 /// `(2 bis', suite)` ne refuse rien, il ne déplace donc aucun refus. Le refus
@@ -2047,6 +2080,9 @@ pub(in crate::repositories) fn generate_invoice_journal_lines_rounded(
 /// seulement si `total_vat > 0`) :
 /// - [`DbError::InactiveOrInvalidAccounts`] : un compte désigné écrit absent,
 ///   d'une autre société ou archivé ;
+/// - [`DbError::DesignatedAccountsWrongType`] : sinon, les comptes désignés
+///   écrits dont le type n'est plus celui de leur réglage, tous nommés (400
+///   `DESIGNATED_ACCOUNT_WRONG_TYPE`, Story 35-3) ;
 /// - [`DbError::DesignatedAccountsNotPostable`] : sinon, les comptes désignés
 ///   écrits non imputables, tous nommés (400 `ACCOUNT_NOT_POSTABLE`).
 pub async fn validate_invoice(
@@ -2331,11 +2367,17 @@ pub async fn validate_invoice(
             None => {
                 let seq =
                     invoice_number_sequences::next_number_for(&mut tx, company_id, fy.id).await?;
+                // Story 35-1 (#948, D4) : un numéro impossible à produire est un
+                // refus typé (400 `NUMBER_FORMAT_UNRENDERABLE`), non un 500 ; la
+                // transaction est annulée et le numéro tiré avec elle.
                 invoice_format::render(&settings.invoice_number_format, year, &fy.name, seq)
                     .map_err(|e| {
-                        DbError::Invariant(format!(
-                            "rendu numéro facture échoué (config invalide ?) : {e}"
-                        ))
+                        DbError::number_render_failed(
+                            NumberedDocument::Invoice,
+                            &e,
+                            &settings.invoice_number_format,
+                            &fy.name,
+                        )
                     })?
             }
         };
@@ -2381,7 +2423,8 @@ pub async fn validate_invoice(
         // Story 15-5d (#429) — la garde à l'usage : les seuls comptes de réglage
         // que l'écriture écrit (la TVA due seulement si `total_vat > 0`), sur
         // l'instantané verrouillé en (2 bis', suite). Absent ou archivé →
-        // `InactiveOrInvalidAccounts` ; non imputable →
+        // `InactiveOrInvalidAccounts` ; sinon, type contraire au réglage →
+        // `DesignatedAccountsWrongType` (Story 35-3) ; sinon, non imputable →
         // `DesignatedAccountsNotPostable`.
         designated.check_written(&generated.roles, &settings)?;
         let entry_lines = generated.lines;
@@ -2389,7 +2432,9 @@ pub async fn validate_invoice(
         let je = journal_entries::create_in_tx(
             &mut tx,
             fy.id,
-            user_id,
+            // Story 35-8a2 (#431) : au nom de l'utilisateur, même par clé (AC4 ;
+            // `AConvertir`, Epic 36).
+            Acteur::utilisateur(user_id),
             NewJournalEntry {
                 company_id,
                 entry_date: invoice_before.date,
@@ -2427,7 +2472,19 @@ pub async fn validate_invoice(
         .bind(invoice_before.version)
         .execute(&mut *tx)
         .await
-        .map_err(map_db_error)?
+        // Story 35-1 (#948, D5) : un numéro déjà attribué dans la société
+        // (`uq_invoices_number`) — format sans compteur, sans exercice sur deux
+        // exercices… — est le refus typé de D4, cause `duplicate`, et non le
+        // générique `409 RESOURCE_CONFLICT`. Un numéro repris (facture dévalidée)
+        // est celui de la même ligne : il ne heurte rien.
+        .map_err(|e| {
+            map_db_error(e).into_number_duplicate(
+                "uq_invoices_number",
+                NumberedDocument::Invoice,
+                &settings.invoice_number_format,
+                &fy.name,
+            )
+        })?
         .rows_affected();
 
         if rows == 0 {
@@ -2894,10 +2951,14 @@ pub async fn refreeze_pdf(
 /// (50_000) a silencieusement rabaissé le `max_rows` demandé par le caller.
 /// Dans ce cas le handler doit alerter l'utilisateur plutôt qu'exploiter
 /// un résultat partiel comme s'il était complet.
+///
+/// `aujourd_hui` borne le filtre « échues » (date de Zurich, Story 35-5b) : la
+/// route la lit une fois et la passe aussi à la mise en forme du CSV.
 pub async fn list_for_export(
     pool: &MySqlPool,
     company_id: i64,
     query: &InvoiceListQuery,
+    aujourd_hui: NaiveDate,
     max_rows: i64,
 ) -> Result<(Vec<InvoiceListItem>, bool), DbError> {
     // P3 (review pass 1) : plafond absolu 50_000 en défense en profondeur.
@@ -2927,7 +2988,7 @@ pub async fn list_for_export(
         due = INVOICE_AMOUNT_DUE_DERIVED_SQL,
         joins = amount_due_derived_joins(),
     ));
-    push_where_clauses(&mut items_qb, company_id, query);
+    push_where_clauses(&mut items_qb, company_id, query, aujourd_hui);
     // P13 (review pass 3 A) : défense en profondeur — l'export ne doit
     // jamais fuiter de drafts même si le handler oublie le filtre `status`.
     items_qb.push(" AND i.status = 'validated'");
@@ -3495,8 +3556,12 @@ mod tests {
         }
     }
 
+    /// La date du jour de ces tests : **fixe** (Story 35-5b, D9). Le module ne
+    /// lit aucune horloge — ni `KESH_TEST_INSTANT`, ni l'heure réelle : les
+    /// dépôts reçoivent cette date (filtre « échues », synthèse), les pièces du
+    /// montage la portent, et l'exercice de la base de dev (2020-2030) la couvre.
     fn today() -> NaiveDate {
-        chrono::Utc::now().naive_utc().date()
+        NaiveDate::from_ymd_opt(2026, 6, 15).unwrap()
     }
 
     #[tokio::test]
@@ -4009,6 +4074,7 @@ mod tests {
                 offset: 0,
                 ..Default::default()
             },
+            today(),
         )
         .await
         .unwrap();
@@ -4180,6 +4246,7 @@ mod tests {
                 offset: 0,
                 ..Default::default()
             },
+            today(),
         )
         .await
         .unwrap();
@@ -4244,6 +4311,7 @@ mod tests {
                 offset: 0,
                 ..Default::default()
             },
+            today(),
         )
         .await
         .unwrap();
@@ -4376,12 +4444,14 @@ mod tests {
         let import_id = sqlx::query(
             "INSERT INTO bank_imports (company_id, bank_account_id, filename, file_hash, \
              source_format, period_from, period_to, imported_by_user_id) \
-             VALUES (?, ?, 'stub.xml', ?, 'CAMT053_V04', CURDATE(), CURDATE(), \
+             VALUES (?, ?, 'stub.xml', ?, 'CAMT053_V04', ?, ?, \
              (SELECT id FROM users WHERE company_id = ? LIMIT 1))",
         )
         .bind(company_id)
         .bind(account_id)
         .bind(format!("{:064}", je_id))
+        .bind(today())
+        .bind(today())
         .bind(company_id)
         .execute(pool)
         .await
@@ -4390,11 +4460,12 @@ mod tests {
         sqlx::query(
             "INSERT INTO bank_transactions (company_id, import_id, bank_account_id, \
              booking_date, amount, currency, details, matched_entry_id) \
-             VALUES (?, ?, ?, CURDATE(), 100.00, 'CHF', 'stub', ?)",
+             VALUES (?, ?, ?, ?, 100.00, 'CHF', 'stub', ?)",
         )
         .bind(company_id)
         .bind(import_id)
         .bind(account_id)
+        .bind(today())
         .bind(je_id)
         .execute(pool)
         .await
@@ -4415,11 +4486,12 @@ mod tests {
         let next_n = max_n.unwrap_or(0) + 1;
         let res = sqlx::query(
             "INSERT INTO journal_entries (company_id, fiscal_year_id, entry_number, \
-             entry_date, journal, description) VALUES (?, ?, ?, CURDATE(), 'Ventes', 'stub-5.4')",
+             entry_date, journal, description) VALUES (?, ?, ?, ?, 'Ventes', 'stub-5.4')",
         )
         .bind(company_id)
         .bind(fy_id)
         .bind(next_n)
+        .bind(today())
         .execute(pool)
         .await
         .unwrap();
@@ -4676,12 +4748,13 @@ mod tests {
         sqlx::query(
             "INSERT INTO invoice_settlements (company_id, invoice_id, journal_entry_id, \
              amount, settled_on, settlement_type, settlement_account_id) \
-             VALUES (?, ?, ?, ?, CURDATE(), 'internal_account', ?)",
+             VALUES (?, ?, ?, ?, ?, 'internal_account', ?)",
         )
         .bind(company_id)
         .bind(id)
         .bind(je_reglement)
         .bind(dec!(40))
+        .bind(today())
         .bind(compte_id)
         .execute(&pool)
         .await
@@ -4742,11 +4815,12 @@ mod tests {
         .await;
         let cn = sqlx::query(
             "INSERT INTO credit_notes (company_id, contact_id, invoice_id, status, date) \
-             VALUES (?, ?, ?, 'draft', CURDATE())",
+             VALUES (?, ?, ?, 'draft', ?)",
         )
         .bind(company_id)
         .bind(contact_id)
         .bind(id)
+        .bind(today())
         .execute(&pool)
         .await
         .unwrap();
@@ -5037,7 +5111,7 @@ mod tests {
         )
         .await;
         // ⚠️ La borne se pose sur la date de l'ÉCRITURE, qu'il faut lire : le
-        // stub de `force_validate` est daté de `CURDATE()`, non de la date de
+        // stub de `force_validate` est daté de `today()`, non de la date de
         // la facture. Une borne posée sur cette dernière laisse passer, et le
         // test rougit pour une raison de montage — c'est arrivé ici.
         let entry_date: NaiveDate =
@@ -5201,6 +5275,7 @@ mod tests {
                 limit: 100,
                 ..Default::default()
             },
+            today(),
         )
         .await
         .unwrap();
@@ -5269,6 +5344,7 @@ mod tests {
                 offset: 0,
                 ..Default::default()
             },
+            t,
         )
         .await
         .unwrap();
@@ -5343,6 +5419,7 @@ mod tests {
                 contact_id: Some(contact_id),
                 ..Default::default()
             },
+            t,
         )
         .await
         .unwrap();
@@ -5407,6 +5484,7 @@ mod tests {
                 payment_status: Some(PaymentStatusFilter::Paid),
                 ..Default::default()
             },
+            today(),
         )
         .await
         .unwrap();
@@ -5947,6 +6025,7 @@ mod tests {
                 limit: 100,
                 ..Default::default()
             },
+            today(),
         )
         .await
         .unwrap();
@@ -5972,6 +6051,7 @@ mod tests {
                 search: Some(marker_marie.clone()),
                 ..Default::default()
             },
+            today(),
         )
         .await
         .unwrap();
@@ -6042,6 +6122,7 @@ mod tests {
                 limit: 100,
                 ..Default::default()
             },
+            today(),
         )
         .await
         .unwrap();
@@ -6060,6 +6141,7 @@ mod tests {
                     limit: 100,
                     ..Default::default()
                 },
+                today(),
             )
             .await
             .unwrap();

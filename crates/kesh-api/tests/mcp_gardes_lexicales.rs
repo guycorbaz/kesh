@@ -164,9 +164,10 @@ const LIB_NOMME_MCP: &[(&str, &str)] = &[
         "lib.rs",
         "kesh_db::pool::pool_lecture_seule(&state.pool, mcp::MCP_POOL_CONNEXIONS, delai);",
     ),
+    // Story 35-5a0 — le câblage en trois lignes ; seule la dernière nomme `mcp::`.
     (
         "lib.rs",
-        "mcp::LectureOutils::nouvelle(services::poignees::Lecture::new(pool_outils.clone()));",
+        "let lecture_outils = mcp::LectureOutils::nouvelle(lecture_pool);",
     ),
     ("lib.rs", "let etat_mcp = mcp::EtatMcp {"),
     ("lib.rs", "origines_propres: mcp::origines_propres("),
@@ -572,8 +573,31 @@ fn outils_et_politique_en_leur_lieu() {
         sites(&sources_src(), |f| f != "mcp/outil.rs", &lecture),
         liste(&[(
             "lib.rs",
-            "mcp::LectureOutils::nouvelle(services::poignees::Lecture::new(pool_outils.clone()));"
+            "let lecture_outils = mcp::LectureOutils::nouvelle(lecture_pool);"
         )])
+    );
+
+    // Story 35-5a0 (AC3) — la `Lecture` des outils prend l'horloge de l'ÉTAT, et
+    // rien d'autre : `horloge_outils` naît de `state.horloge` et n'est passée
+    // qu'à la construction de la `Lecture` du câblage.
+    let horloge_outils = re(r"\bhorloge_outils\b");
+    assert_eq!(
+        sites_factices(
+            "    let horloge_outils = state.horloge.clone();",
+            &horloge_outils
+        ),
+        1
+    );
+    assert_eq!(sites_factices("    // horloge_outils", &horloge_outils), 0);
+    assert_eq!(
+        sites(&sources_src(), tout, &horloge_outils),
+        liste(&[
+            ("lib.rs", "let horloge_outils = state.horloge.clone();"),
+            (
+                "lib.rs",
+                "let lecture_pool = services::poignees::Lecture::new(pool_outils.clone(), horloge_outils);"
+            ),
+        ])
     );
 
     // Story 32-8b (AC-B1) : `.deposer(` d'un `EnvoiAValider` n'est appelé, dans

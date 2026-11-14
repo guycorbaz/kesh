@@ -7,6 +7,7 @@
 //! Pré-requis : MariaDB (`sqlx::test` crée une DB éphémère par test).
 
 use chrono::NaiveDate;
+use kesh_db::entities::audit_log::Acteur;
 use kesh_db::entities::journal_entry::Journal;
 use kesh_db::entities::{NewJournalEntry, NewJournalEntryLine};
 use kesh_db::repositories::journal_entries;
@@ -85,7 +86,7 @@ async fn post_tagged(
     journal_entries::create(
         pool,
         fiscal_year_id,
-        seeded.admin_user_id,
+        Acteur::utilisateur(seeded.admin_user_id),
         NewJournalEntry {
             company_id: seeded.company_id,
             entry_date: date,

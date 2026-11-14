@@ -195,7 +195,10 @@ async fn derniere_utilisation_pat(pool: &MySqlPool, id: i64) -> Option<NaiveDate
 
 /// Les deux poignées de production sur le pool du test.
 fn poignees(pool: &MySqlPool) -> (Lecture, Trace) {
-    (Lecture::new(pool.clone()), Trace::new(pool.clone()))
+    (
+        Lecture::new(pool.clone(), kesh_api::horloge::horloge_de_test()),
+        Trace::new(pool.clone()),
+    )
 }
 
 fn est_401(r: &Result<impl std::fmt::Debug, AppError>) -> bool {
@@ -684,7 +687,10 @@ async fn b4_a_b_une_cle_mcp_n_ouvre_pas_l_api(pool: MySqlPool) {
 async fn b5_lecture_seule_et_trace(pool: MySqlPool) {
     let (c, u) = livres(&pool).await;
     let (id, jeton) = cle_livres(&pool, c, u).await;
-    let lecture = Lecture::new(pool_lecture_seule(&pool).await);
+    let lecture = Lecture::new(
+        pool_lecture_seule(&pool).await,
+        kesh_api::horloge::horloge_de_test(),
+    );
     let trace = Trace::new(pool.clone());
     authentifier(&lecture, &trace, &jeton)
         .await

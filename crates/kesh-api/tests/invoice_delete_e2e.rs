@@ -16,6 +16,8 @@
 //! Seed via `kesh_db::test_fixtures::seed_accounting_company` + validation via
 //! le flow normal `validate_invoice` (aucun UPDATE direct sur `status`).
 
+mod common;
+
 use std::net::SocketAddr;
 use std::sync::Arc;
 
@@ -160,7 +162,7 @@ async fn create_validated_invoice(
         company_id,
         contact_id,
         admin_id,
-        chrono::Utc::now().date_naive(),
+        common::jour::aujourd_hui_test(),
     )
     .await
 }
@@ -297,7 +299,7 @@ async fn unvalidate_in_locked_period_returns_400_period_locked(pool: MySqlPool) 
     let app = spawn_app(pool.clone()).await;
     let (admin_id, company_id) = seed_base(&pool).await;
     let contact_id = seed_contact(&pool, company_id, admin_id).await;
-    let borne = chrono::Utc::now().date_naive() - TimeDelta::days(30);
+    let borne = common::jour::aujourd_hui_test() - TimeDelta::days(30);
     let (invoice_id, je_id) =
         create_validated_invoice_on(&pool, company_id, contact_id, admin_id, borne).await;
     sqlx::query("UPDATE companies SET books_locked_through = ? WHERE id = ?")

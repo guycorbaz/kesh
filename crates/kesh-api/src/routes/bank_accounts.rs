@@ -225,7 +225,8 @@ pub struct ListBankAccountsQuery {
 pub struct CloseBankAccountBody {
     /// Optimistic lock.
     pub version: i32,
-    /// Date de clôture, informative (C-28-4-3) ; absente → date du jour UTC.
+    /// Date de clôture, informative (C-28-4-3) ; absente → date du jour, à
+    /// Zurich (Story 35-5b, #929).
     #[serde(default)]
     pub closed_on: Option<chrono::NaiveDate>,
 }
@@ -792,7 +793,7 @@ fn opening_entry_description(
 }
 
 /// Ce que la création transmet au complément : montant et sens, libellé, date
-/// du jour (UTC, comme le complément de l'écran).
+/// du jour (celle de Zurich, l'horloge de l'état, comme le complément de l'écran).
 struct OpeningRequest {
     opening: OpeningAmount,
     description: String,
@@ -1004,7 +1005,7 @@ pub async fn create_bank_account(
             Some(OpeningRequest {
                 opening,
                 description: opening_entry_description(&state.i18n, &locale, &display_name),
-                today: chrono::Utc::now().date_naive(),
+                today: state.horloge.aujourd_hui(),
             })
         }
         None => None,
@@ -1249,7 +1250,7 @@ pub async fn enter_opening_balance(
     let opening = parse_opening_balance(Some(&body))?.ok_or_else(invalid_opening_amount)?;
     let company = crate::helpers::get_company_for(&current_user, &state.pool).await?;
     let locale = Locale::from(company.accounting_language.as_str());
-    let today = chrono::Utc::now().date_naive();
+    let today = state.horloge.aujourd_hui();
 
     let entry = crate::retry::retry_app_on_deadlock("bank_accounts::opening_balance", || {
         enter_opening_balance_once(
@@ -1753,8 +1754,8 @@ fn closure_refusal_error(refusal: bank_accounts::ClosureRefusal) -> AppError {
 /// bancaire : il passe en lecture seule, son historique reste entier
 /// (Comptable+, clés d'API `read-write` admises ; Story 28-4a, #642, AC3).
 ///
-/// Corps `{ "version", "closedOn"? }` ; `closedOn` absent → date du jour
-/// **UTC** (l'écran l'envoie toujours). Effet : `closed_on = <date>`,
+/// Corps `{ "version", "closedOn"? }` ; `closedOn` absent → date du jour, **à
+/// Zurich** (Story 35-5b, #929 ; l'écran l'envoie toujours). Effet : `closed_on = <date>`,
 /// `version + 1`, rien d'autre. Trace `bank_account.closed`.
 ///
 /// **Ordre des refus** : forme (`400` : `version < 1`, date illisible, ou année
@@ -1799,7 +1800,7 @@ pub async fn close_bank_account(
     }
     let closed_on = body
         .closed_on
-        .unwrap_or_else(|| chrono::Utc::now().date_naive());
+        .unwrap_or_else(|| state.horloge.aujourd_hui());
     // Revue P1 (B-1) — la date est informative (C-28-4-3), non sans domaine :
     // `chrono` admet des années signées et au-delà de 9999, que la colonne `DATE`
     // de MariaDB refuserait en `500`. Hors de `1000..=9999` (le domaine de

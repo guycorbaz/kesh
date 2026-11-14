@@ -16,6 +16,8 @@ import {
 	authedApiContext,
 	disposeContextSafe,
 } from './helpers/test-state';
+import { todayInZurich } from './helpers/api-fixtures';
+import { ajouterJoursIso } from './helpers/dates';
 
 test.beforeAll(async () => {
 	await seedTestState('with-company');
@@ -46,11 +48,9 @@ function uniq(prefix: string): string {
 	return `${prefix} ${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
 }
 
-/** Une date `AAAA-MM-JJ` décalée de `days` jours depuis aujourd'hui (UTC, décor seulement). */
+/** Une date `AAAA-MM-JJ` décalée de `days` jours depuis le jour suisse (décor seulement). */
 function daysFromToday(days: number): string {
-	const d = new Date();
-	d.setUTCDate(d.getUTCDate() + days);
-	return d.toISOString().slice(0, 10);
+	return ajouterJoursIso(todayInZurich(), days);
 }
 
 /** Les comptes et réglages du décor : compte de charge, compte créanciers désigné. */

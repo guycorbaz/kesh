@@ -338,6 +338,24 @@ error-designated-account-not-postable = { $count ->
     [one] Le compte { $numbers }, désigné dans Administration → Facturation, n’est pas imputable (compte de regroupement, de résultat ou de clôture) : un administrateur doit y désigner à sa place un compte imputable.
    *[other] Les comptes { $numbers }, désignés dans Administration → Facturation, ne sont pas imputables (comptes de regroupement, de résultat ou de clôture) : un administrateur doit y désigner à leur place des comptes imputables.
 }
+# Story 35-3 (#537) — un compte désigné retypé depuis sa désignation : une phrase par compte, puis la phrase d’action.
+error-designated-account-wrong-type = Le compte { $account }, désigné comme { $setting } dans Administration → Facturation, est un { $actual } ; ce réglage demande un { $expected }.
+error-designated-account-wrong-type-action = Rien n’a été enregistré. Un administrateur doit corriger le réglage concerné — désigner un compte du bon type, ou rendre au compte son type d’origine —, puis la validation pourra être relancée telle quelle.
+error-designated-account-setting-receivable = compte créance client
+error-designated-account-setting-vat-payable = compte TVA due
+error-designated-account-setting-payable = compte créanciers
+error-designated-account-setting-vat-recoverable = compte TVA récupérable
+error-designated-account-type-asset = compte d’actif
+error-designated-account-type-liability = compte de passif
+error-designated-account-type-revenue = compte de produit
+error-designated-account-type-expense = compte de charge
+# Story 35-1 (#948, D4, D5) — 400 NUMBER_FORMAT_UNRENDERABLE : la pièce, puis la cause.
+error-number-format-unrenderable-invoice = Cette facture ne peut pas être validée : son numéro ne peut pas être produit. Rien n’a été enregistré, aucun numéro n’a été consommé.
+error-number-format-unrenderable-credit-note = Cet avoir ne peut pas être créé : son numéro ne peut pas être produit. Rien n’a été enregistré, aucun numéro n’a été consommé.
+error-number-format-unrenderable-too-long = Le format « { $format } », avec le nom de l’exercice « { $fiscalYear } », donne un numéro trop long (plus de 64 octets ; une lettre accentuée en compte deux) : un administrateur doit raccourcir le format dans Administration → Facturation, ou le nom de l’exercice.
+error-number-format-unrenderable-brace = Le nom de l’exercice « { $fiscalYear } » contient une accolade, que le format « { $format } » reprendrait dans le numéro : un administrateur doit renommer l’exercice, ou retirer {"{"}FY{"}"} du format dans Administration → Facturation.
+error-number-format-unrenderable-duplicate = Le format « { $format } » produit, dans l’exercice « { $fiscalYear } », un numéro déjà attribué : il doit distinguer chaque pièce — un compteur ({"{"}SEQ{"}"}), qui repart à chaque exercice, et l’exercice ({"{"}FY{"}"}) ; l’année ({"{"}YEAR{"}"}) ne suffit pas si deux exercices commencent la même année. Un administrateur doit le corriger dans Administration → Facturation.
+error-number-format-unrenderable-invalid = Le format « { $format } » enregistré n’est pas valide : un administrateur doit le corriger dans Administration → Facturation.
 error-rounding-account-not-configured = Ce paiement solde la facture au centime, mais aucun compte de différences d'arrondi utilisable n'est désigné : choisissez-en un dans Administration → Facturation.
 error-rounding-account-not-configured-issuance = Le total de cette pièce est arrondi à 5 centimes, mais aucun compte de différences d'arrondi utilisable n'est désigné : choisissez-en un dans Administration → Facturation.
 error-write-off-account-not-configured-discount = Aucun compte d'escompte utilisable n'est désigné : choisissez-en un dans Administration → Facturation, section Solde du reste.
@@ -682,9 +700,14 @@ invoice-status-validated-label = Validée
 invoice-view-journal-entry-link = Voir l'écriture comptable
 settings-invoicing-title = Paramètres — Facturation
 settings-invoicing-format-label = Format de numérotation
-settings-invoicing-format-help = Placeholders : {"{"}YEAR{"}"}, {"{"}FY{"}"}, {"{"}SEQ{"}"}, {"{"}SEQ:NN{"}"}
+settings-invoicing-format-help = Placeholders : {"{"}YEAR{"}"}, {"{"}FY{"}"}, {"{"}SEQ{"}"}, {"{"}SEQ:NN{"}"} ; le compteur, {"{"}SEQ{"}"} ou {"{"}SEQ:NN{"}"}, est obligatoire
 settings-invoicing-supplier-format-label = Format des factures fournisseur
 settings-invoicing-supplier-format-help = Un préfixe, {"{"}YEAR{"}"}, un séparateur, puis {"{"}SEQ{"}"} ou {"{"}SEQ:03{"}"}. S'applique aux numéros à venir : ceux déjà attribués ne changent pas.
+# Story 35-1 (#932, D1, D3) — le compteur obligatoire, le format des avoirs.
+invoices-format-error-no-seq = Le format doit contenir un compteur ({"{"}SEQ{"}"} ou {"{"}SEQ:NN{"}"}) : sans lui, toutes les pièces d'un exercice auraient le même numéro
+invoices-format-error-unmatched-brace = Accolade non appariée dans le format
+settings-invoicing-credit-note-format-label = Format des avoirs
+settings-invoicing-credit-note-format-help = Mêmes placeholders que le format de numérotation des factures ; le compteur est obligatoire. S'applique aux avoirs à venir : ceux déjà émis ne changent pas.
 settings-invoicing-format-preview = Aperçu
 settings-invoicing-receivable-account = Compte créance client (Actif)
 settings-invoicing-payable-account = Compte créanciers (Passif)
@@ -966,9 +989,49 @@ echeancier-export-error-too-large = Trop de résultats (> { $limit }). Veuillez 
 invoice-qr-message-prefix = Facture
 invoice-pdf-error-contact-missing = Le contact lié à la facture est introuvable.
 invoice-pdf-error-no-primary-bank = Aucun compte bancaire principal n'est configuré pour cette entreprise.
-invoice-pdf-error-company-address-empty = L'adresse de l'entreprise est vide — renseignez-la avant de générer un PDF.
 invoice-pdf-error-client-address-required = L'adresse du client est obligatoire pour la génération du PDF.
-invoice-pdf-error-client-address-empty = L'adresse du client est vide — renseignez-la avant de générer un PDF.
+# Story 35-2a (#955, #964) — le refus du PDF nomme le champ et le caractère à corriger. Une clé par
+# champ et par raison (G9 compare un littéral par clé) ; `$car` est le caractère échappé, `$point` son
+# point de code (`U+2013`), `$max` et `$got` des longueurs, `$code` un code pays tel que stocké.
+invoice-pdf-error-charset-company-name = Le nom de l'entreprise contient un caractère refusé par la QR-facture : « { $car } » ({ $point }). Le nom de l'entreprise ne se modifie pas encore depuis l'interface.
+invoice-pdf-error-charset-company-street = La rue de l'entreprise contient un caractère refusé par la QR-facture : « { $car } » ({ $point }). Corrigez-la dans Paramètres → Organisation.
+invoice-pdf-error-charset-company-building = Le numéro de bâtiment de l'entreprise contient un caractère refusé par la QR-facture : « { $car } » ({ $point }). Corrigez-le dans Paramètres → Organisation.
+invoice-pdf-error-charset-company-postal-code = Le NPA de l'entreprise contient un caractère refusé par la QR-facture : « { $car } » ({ $point }). Corrigez-le dans Paramètres → Organisation.
+invoice-pdf-error-charset-company-city = La localité de l'entreprise contient un caractère refusé par la QR-facture : « { $car } » ({ $point }). Corrigez-la dans Paramètres → Organisation.
+invoice-pdf-error-charset-client-name = Le nom du client contient un caractère refusé par la QR-facture : « { $car } » ({ $point }). Corrigez la fiche du client dans le carnet d'adresses.
+invoice-pdf-error-charset-client-street = La rue du client contient un caractère refusé par la QR-facture : « { $car } » ({ $point }). Corrigez la fiche du client dans le carnet d'adresses.
+invoice-pdf-error-charset-client-building = Le numéro de bâtiment du client contient un caractère refusé par la QR-facture : « { $car } » ({ $point }). Corrigez la fiche du client dans le carnet d'adresses.
+invoice-pdf-error-charset-client-postal-code = Le NPA du client contient un caractère refusé par la QR-facture : « { $car } » ({ $point }). Corrigez la fiche du client dans le carnet d'adresses.
+invoice-pdf-error-charset-client-city = La localité du client contient un caractère refusé par la QR-facture : « { $car } » ({ $point }). Corrigez la fiche du client dans le carnet d'adresses.
+invoice-pdf-error-charset-invoice-number = Le numéro de facture contient un caractère refusé par la QR-facture : « { $car } » ({ $point }). Une facture validée ne se corrige pas : vérifiez le format de numérotation dans Administration → Facturation.
+invoice-pdf-error-charset-other = Un champ de la QR-facture contient un caractère refusé : « { $car } » ({ $point }). Vérifiez les fiches du client et de l'entreprise.
+invoice-pdf-error-empty-company-name = Le nom de l'entreprise est vide. Il ne se modifie pas encore depuis l'interface.
+invoice-pdf-error-empty-company-postal-code = Adresse de l'entreprise incomplète : le NPA est vide. Complétez-la dans Paramètres → Organisation (NPA et localité sont exigés par la QR-facture).
+invoice-pdf-error-empty-company-city = Adresse de l'entreprise incomplète : la localité est vide. Complétez-la dans Paramètres → Organisation (NPA et localité sont exigés par la QR-facture).
+invoice-pdf-error-empty-client-name = Le nom du client est vide. Complétez la fiche du client dans le carnet d'adresses.
+invoice-pdf-error-empty-client-postal-code = Adresse du client incomplète : le NPA est vide. Complétez la fiche du client dans le carnet d'adresses (NPA et localité sont exigés par la QR-facture).
+invoice-pdf-error-empty-client-city = Adresse du client incomplète : la localité est vide. Complétez la fiche du client dans le carnet d'adresses (NPA et localité sont exigés par la QR-facture).
+invoice-pdf-error-empty-other = Un champ obligatoire de la QR-facture est vide. Vérifiez les fiches du client et de l'entreprise.
+invoice-pdf-error-too-long-company-name = Le nom de l'entreprise dépasse { $max } caractères ({ $got }). Il ne se modifie pas encore depuis l'interface.
+invoice-pdf-error-too-long-company-street = La rue de l'entreprise dépasse { $max } caractères ({ $got }). Raccourcissez-la dans Paramètres → Organisation.
+invoice-pdf-error-too-long-company-building = Le numéro de bâtiment de l'entreprise dépasse { $max } caractères ({ $got }). Raccourcissez-le dans Paramètres → Organisation.
+invoice-pdf-error-too-long-company-postal-code = Le NPA de l'entreprise dépasse { $max } caractères ({ $got }). Raccourcissez-le dans Paramètres → Organisation.
+invoice-pdf-error-too-long-company-city = La localité de l'entreprise dépasse { $max } caractères ({ $got }). Raccourcissez-la dans Paramètres → Organisation.
+invoice-pdf-error-too-long-client-name = Le nom du client dépasse { $max } caractères ({ $got }). Raccourcissez-le dans la fiche du client, au carnet d'adresses.
+invoice-pdf-error-too-long-client-street = La rue du client dépasse { $max } caractères ({ $got }). Raccourcissez-la dans la fiche du client, au carnet d'adresses.
+invoice-pdf-error-too-long-client-building = Le numéro de bâtiment du client dépasse { $max } caractères ({ $got }). Raccourcissez-le dans la fiche du client, au carnet d'adresses.
+invoice-pdf-error-too-long-client-postal-code = Le NPA du client dépasse { $max } caractères ({ $got }). Raccourcissez-le dans la fiche du client, au carnet d'adresses.
+invoice-pdf-error-too-long-client-city = La localité du client dépasse { $max } caractères ({ $got }). Raccourcissez-la dans la fiche du client, au carnet d'adresses.
+invoice-pdf-error-too-long-other = Un champ de la QR-facture dépasse { $max } caractères ({ $got }). Vérifiez les fiches du client et de l'entreprise.
+invoice-pdf-error-iban-invalid = L'IBAN du compte bancaire principal n'est pas valable pour la QR-facture. Corrigez-le dans Administration → Comptes bancaires.
+invoice-pdf-error-qr-iban-invalid = Le QR-IBAN du compte bancaire principal n'est pas valable pour la QR-facture. Corrigez-le dans Administration → Comptes bancaires.
+invoice-pdf-error-internal = La QR-facture n'a pas pu être construite (erreur interne, non corrigeable depuis l'écran). Contactez l'administrateur.
+invoice-pdf-error-amount-invalid = Le montant à payer est hors des bornes admises par la QR-facture (de 0.01 à 999 999 999.99).
+invoice-pdf-error-currency-invalid = La devise n'est pas admise par la QR-facture (CHF ou EUR).
+invoice-pdf-error-country-invalid = Le code pays « { $code } » n'est pas un code ISO valide.
+invoice-pdf-error-country-invalid-company = Le pays de l'entreprise (« { $code } ») n'est pas un code ISO valide. Corrigez-le dans Paramètres → Organisation.
+invoice-pdf-error-country-invalid-client = Le pays du client (« { $code } ») n'est pas un code ISO valide. Corrigez la fiche du client dans le carnet d'adresses.
+credit-note-pdf-error-contact-missing = Le contact lié à l'avoir est introuvable.
 
 # Commons
 common-loading = Chargement…
@@ -1458,6 +1521,10 @@ reconciliation-labels-already-booked-confirm-title = Confirmer malgré l’avert
 reconciliation-labels-already-booked-confirm-intro = Chaque transaction ci-dessous semble déjà comptabilisée (voir l’avertissement de sa ligne). Continuer passerait une écriture pour un mouvement qui est peut-être déjà aux livres : il serait compté deux fois.
 reconciliation-labels-already-booked-confirm-cancel = Annuler
 reconciliation-labels-already-booked-confirm-continue = Continuer quand même
+# Story 35-4 (#1023, D2) — la même confirmation avant Rejeter ; -one / -other selon le nombre de lignes cochées (sans sélecteur Fluent, C-e342-21).
+reconciliation-labels-already-booked-confirm-intro-reject-one = Chaque transaction ci-dessous semble déjà comptabilisée. Rejeter retire la transaction cochée de la liste sans passer d’écriture : si elle est un mouvement réel qui n’est pas encore aux livres, il y manquera ; si elle y est déjà, rattachez-la plutôt (« Rattacher à une écriture existante »). Un rejet s’annule depuis le détail de son import (« Annuler le rejet »).
+reconciliation-labels-already-booked-confirm-intro-reject-other = Chaque transaction ci-dessous semble déjà comptabilisée. Rejeter retire les { $count } transactions cochées de la liste sans passer d’écriture : si l’une est un mouvement réel qui n’est pas encore aux livres, il y manquera ; si elle y est déjà, rattachez-la plutôt (« Rattacher à une écriture existante »). Un rejet s’annule depuis le détail de son import (« Annuler le rejet »).
+reconciliation-labels-already-booked-confirm-reject = Rejeter quand même
 # Story 29-6 (#665, AC10) — rendue dans la rangée des boutons quand une ligne sans proposition est cochée.
 reconciliation-labels-unmatched-not-acceptable-hint = Une transaction sans correspondance ne peut pas être acceptée : décochez-la pour accepter les autres.
 # Story 29-9 (#678, AC11) — nom accessible de la case de chaque ligne : ce que la ligne affiche.
@@ -1710,7 +1777,8 @@ bank-accounts-opening-side-credit = Dette (découvert)
 bank-accounts-opening-help = L'écriture est datée du premier jour du premier exercice s'il est ouvert et hors période verrouillée, sinon d'aujourd'hui : saisissez le solde du relevé à cette date. Sa contrepartie va au compte Bénéfice/perte reporté. Elle est refusée si le compte lié a déjà des mouvements.
 bank-accounts-opening-consequence = Si l'ouverture générale de Soldes de départ est encore proposée, ce solde la retire : les soldes de départ des autres comptes se saisiront un à un, mode Compléter. Pour saisir toute votre ouverture d'un coup, passez d'abord par Soldes de départ.
 bank-accounts-opening-preview = Montant qui sera écrit : { $amount }
-bank-accounts-opening-error-amount-ambiguous = Montant ambigu : une virgule suivie de trois chiffres peut être un séparateur de milliers. Écrivez 1'234 pour mille deux cent trente-quatre, 1.234 pour un franc et vingt-trois centimes et quatre dixièmes de centime.
+bank-accounts-opening-error-amount-ambiguous = Montant ambigu : un point ou une virgule suivis de trois chiffres peuvent séparer les milliers. Écrivez 1'234 pour mille deux cent trente-quatre, ou 1.2340 pour un franc vingt-trois et quatre dixièmes de centime.
+bank-accounts-opening-error-amount-unreadable = Montant illisible : écrivez un nombre positif, par exemple 1'234.50.
 bank-accounts-toast-create-success-with-opening = Compte bancaire créé, avec l'écriture d'ouverture n° { $number } du { $date } : { $amount }.
 # Intégration de la 0.17.6 — passe de textes (#1037, #1040, #1027) : la carte de crédit et le montant nul.
 bank-accounts-form-title-create-card = Nouvelle carte de crédit

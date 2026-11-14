@@ -9,11 +9,13 @@
 //! PUT, cycle archive → réactivation (#269) et ses gardes, RBAC, IDOR.
 #![allow(clippy::too_many_arguments)]
 
+mod common;
+
 use std::net::SocketAddr;
 use std::path::Path;
 use std::sync::Arc;
 
-use chrono::{NaiveDate, TimeDelta, Utc};
+use chrono::{Datelike, NaiveDate, TimeDelta, Utc};
 use jsonwebtoken::{Algorithm, EncodingKey, Header};
 use kesh_api::auth::jwt::Claims;
 use kesh_api::auth::password::hash_password;
@@ -239,19 +241,12 @@ async fn mk_typed_account(
     .id
 }
 
-fn current_year() -> i32 {
-    Utc::now()
-        .date_naive()
-        .format("%Y")
-        .to_string()
-        .parse()
-        .unwrap()
-}
-
-/// Exercice **ouvert** de l'année courante — l'écriture porte la date du jour,
-/// elle doit donc y tomber.
-async fn mk_fiscal_year(pool: &MySqlPool, company_id: i64, user_id: i64) -> i64 {
-    let year = current_year();
+/// Exercice **ouvert** de l'année de `jour` — l'écriture porte ce jour, elle doit
+/// donc y tomber. `jour` est le jour de l'horloge de test, lu **une fois** par le
+/// test (Story 35-5c, revue P1 E2 : deux lectures pouvaient chevaucher le
+/// 31 décembre et créer l'exercice d'une année et l'écriture de la suivante).
+async fn mk_fiscal_year(pool: &MySqlPool, company_id: i64, user_id: i64, jour: NaiveDate) -> i64 {
+    let year = jour.year();
     fiscal_years::create(
         pool,
         user_id,
@@ -274,14 +269,15 @@ async fn mk_entry(
     user_id: i64,
     debit_account: i64,
     credit_account: i64,
+    jour: NaiveDate,
 ) {
     journal_entries::create(
         pool,
         fiscal_year_id,
-        user_id,
+        kesh_db::entities::audit_log::Acteur::utilisateur(user_id),
         NewJournalEntry {
             company_id,
-            entry_date: Utc::now().date_naive(),
+            entry_date: jour,
             journal: Journal::OD,
             description: "Écriture de test 25-2-a".into(),
             project_id: None,
@@ -313,11 +309,12 @@ async fn mk_entry(
 async fn retyper_un_compte_mouvemente_rend_409_et_nomme_l_ampleur(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     let (company_id, admin_id, token) = setup(&pool).await;
-    let fy = mk_fiscal_year(&pool, company_id, admin_id).await;
+    let jour = common::jour::aujourd_hui_test();
+    let fy = mk_fiscal_year(&pool, company_id, admin_id, jour).await;
 
     let charge = mk_typed_account(&pool, company_id, admin_id, "6500", AccountType::Expense).await;
     let caisse = mk_typed_account(&pool, company_id, admin_id, "1000", AccountType::Asset).await;
-    mk_entry(&pool, company_id, fy, admin_id, charge, caisse).await;
+    mk_entry(&pool, company_id, fy, admin_id, charge, caisse, jour).await;
 
     let res = app
         .client
@@ -352,11 +349,12 @@ async fn retyper_un_compte_mouvemente_rend_409_et_nomme_l_ampleur(pool: MySqlPoo
 async fn le_409_nomme_les_exercices_clos_touches(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     let (company_id, admin_id, token) = setup(&pool).await;
-    let fy = mk_fiscal_year(&pool, company_id, admin_id).await;
+    let jour = common::jour::aujourd_hui_test();
+    let fy = mk_fiscal_year(&pool, company_id, admin_id, jour).await;
 
     let charge = mk_typed_account(&pool, company_id, admin_id, "6500", AccountType::Expense).await;
     let caisse = mk_typed_account(&pool, company_id, admin_id, "1000", AccountType::Asset).await;
-    mk_entry(&pool, company_id, fy, admin_id, charge, caisse).await;
+    mk_entry(&pool, company_id, fy, admin_id, charge, caisse, jour).await;
 
     // Fermer APRÈS avoir écrit — l'ordre de la vraie vie.
     sqlx::query("UPDATE fiscal_years SET status = 'Closed' WHERE id = ?")
@@ -381,7 +379,7 @@ async fn le_409_nomme_les_exercices_clos_touches(pool: MySqlPool) {
     let body: Value = res.json().await.unwrap();
     assert_eq!(
         body["error"]["details"]["closedFiscalYears"][0],
-        format!("Exercice {}", current_year())
+        format!("Exercice {}", jour.year())
     );
 }
 
@@ -392,11 +390,12 @@ async fn le_409_nomme_les_exercices_clos_touches(pool: MySqlPool) {
 async fn retyper_passe_avec_confirm_account_retype(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     let (company_id, admin_id, token) = setup(&pool).await;
-    let fy = mk_fiscal_year(&pool, company_id, admin_id).await;
+    let jour = common::jour::aujourd_hui_test();
+    let fy = mk_fiscal_year(&pool, company_id, admin_id, jour).await;
 
     let charge = mk_typed_account(&pool, company_id, admin_id, "6500", AccountType::Expense).await;
     let caisse = mk_typed_account(&pool, company_id, admin_id, "1000", AccountType::Asset).await;
-    mk_entry(&pool, company_id, fy, admin_id, charge, caisse).await;
+    mk_entry(&pool, company_id, fy, admin_id, charge, caisse, jour).await;
 
     let res = app
         .client
@@ -422,11 +421,12 @@ async fn retyper_passe_avec_confirm_account_retype(pool: MySqlPool) {
 async fn renommer_un_compte_mouvemente_ne_demande_aucune_confirmation(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     let (company_id, admin_id, token) = setup(&pool).await;
-    let fy = mk_fiscal_year(&pool, company_id, admin_id).await;
+    let jour = common::jour::aujourd_hui_test();
+    let fy = mk_fiscal_year(&pool, company_id, admin_id, jour).await;
 
     let charge = mk_typed_account(&pool, company_id, admin_id, "6500", AccountType::Expense).await;
     let caisse = mk_typed_account(&pool, company_id, admin_id, "1000", AccountType::Asset).await;
-    mk_entry(&pool, company_id, fy, admin_id, charge, caisse).await;
+    mk_entry(&pool, company_id, fy, admin_id, charge, caisse, jour).await;
 
     let res = app
         .client

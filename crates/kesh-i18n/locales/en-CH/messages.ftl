@@ -338,6 +338,24 @@ error-designated-account-not-postable = { $count ->
     [one] Account { $numbers }, designated in Administration → Invoicing, is not postable (grouping, result or closing account): an administrator must designate a postable account there instead.
    *[other] Accounts { $numbers }, designated in Administration → Invoicing, are not postable (grouping, result or closing accounts): an administrator must designate postable accounts there instead.
 }
+# Story 35-3 (#537) — a designated account whose type changed after it was designated: one sentence per account, then the action sentence. The article lives in the type labels (a/an).
+error-designated-account-wrong-type = Account { $account }, designated as the { $setting } in Administration → Invoicing, is { $actual }; this setting requires { $expected }.
+error-designated-account-wrong-type-action = Nothing has been saved. An administrator must correct the setting concerned — designate an account of the right type, or give the account back its original type — and the validation can then be run again as it is.
+error-designated-account-setting-receivable = trade receivables account
+error-designated-account-setting-vat-payable = VAT payable account
+error-designated-account-setting-payable = trade payables account
+error-designated-account-setting-vat-recoverable = recoverable VAT account
+error-designated-account-type-asset = an asset account
+error-designated-account-type-liability = a liability account
+error-designated-account-type-revenue = a revenue account
+error-designated-account-type-expense = an expense account
+# Story 35-1 (#948, D4, D5) — 400 NUMBER_FORMAT_UNRENDERABLE : la pièce, puis la cause.
+error-number-format-unrenderable-invoice = This invoice cannot be validated: its number cannot be produced. Nothing has been saved and no number has been used.
+error-number-format-unrenderable-credit-note = This credit note cannot be created: its number cannot be produced. Nothing has been saved and no number has been used.
+error-number-format-unrenderable-too-long = The format “{ $format }”, with the fiscal year name “{ $fiscalYear }”, gives a number that is too long (more than 64 bytes; an accented letter counts as two): an administrator must shorten the format in Administration → Invoicing, or the fiscal year name.
+error-number-format-unrenderable-brace = The fiscal year name “{ $fiscalYear }” contains a brace, which the format “{ $format }” would carry into the number: an administrator must rename the fiscal year, or remove {"{"}FY{"}"} from the format in Administration → Invoicing.
+error-number-format-unrenderable-duplicate = The format “{ $format }” produces, in the fiscal year “{ $fiscalYear }”, a number already assigned: it must distinguish each document — a counter ({"{"}SEQ{"}"}), which restarts every fiscal year, and the fiscal year ({"{"}FY{"}"}); the year ({"{"}YEAR{"}"}) is not enough if two fiscal years start in the same year. An administrator must correct it in Administration → Invoicing.
+error-number-format-unrenderable-invalid = The saved format “{ $format }” is not valid: an administrator must correct it in Administration → Invoicing.
 error-rounding-account-not-configured = This payment settles the invoice to the centime, but no usable rounding-difference account is designated: choose one in Administration → Invoicing.
 error-rounding-account-not-configured-issuance = The total of this document is rounded to 5 centimes, but no usable rounding-difference account is designated: choose one in Administration → Invoicing.
 error-write-off-account-not-configured-discount = No usable discount account is designated: choose one in Administration → Invoicing, section Writing off the remainder.
@@ -911,9 +929,47 @@ echeancier-export-error-too-large = Too many results (> { $limit }). Please refi
 invoice-qr-message-prefix = Invoice
 invoice-pdf-error-contact-missing = The contact linked to this invoice was not found.
 invoice-pdf-error-no-primary-bank = No primary bank account is configured for this company.
-invoice-pdf-error-company-address-empty = Company address is empty — please fill it in before generating a PDF.
 invoice-pdf-error-client-address-required = The client address is required to generate the PDF.
-invoice-pdf-error-client-address-empty = The client address is empty — please fill it in before generating a PDF.
+# Story 35-2a (#955, #964) — the PDF refusal names the field and the character to correct.
+invoice-pdf-error-charset-company-name = The company name contains a character the QR-bill does not allow: “{ $car }” ({ $point }). The company name cannot be changed from the interface yet.
+invoice-pdf-error-charset-company-street = The company street contains a character the QR-bill does not allow: “{ $car }” ({ $point }). Correct it in Settings → Organisation.
+invoice-pdf-error-charset-company-building = The company building number contains a character the QR-bill does not allow: “{ $car }” ({ $point }). Correct it in Settings → Organisation.
+invoice-pdf-error-charset-company-postal-code = The company postcode contains a character the QR-bill does not allow: “{ $car }” ({ $point }). Correct it in Settings → Organisation.
+invoice-pdf-error-charset-company-city = The company town contains a character the QR-bill does not allow: “{ $car }” ({ $point }). Correct it in Settings → Organisation.
+invoice-pdf-error-charset-client-name = The client name contains a character the QR-bill does not allow: “{ $car }” ({ $point }). Correct the client's record in Contacts.
+invoice-pdf-error-charset-client-street = The client street contains a character the QR-bill does not allow: “{ $car }” ({ $point }). Correct the client's record in Contacts.
+invoice-pdf-error-charset-client-building = The client building number contains a character the QR-bill does not allow: “{ $car }” ({ $point }). Correct the client's record in Contacts.
+invoice-pdf-error-charset-client-postal-code = The client postcode contains a character the QR-bill does not allow: “{ $car }” ({ $point }). Correct the client's record in Contacts.
+invoice-pdf-error-charset-client-city = The client town contains a character the QR-bill does not allow: “{ $car }” ({ $point }). Correct the client's record in Contacts.
+invoice-pdf-error-charset-invoice-number = The invoice number contains a character the QR-bill does not allow: “{ $car }” ({ $point }). A validated invoice cannot be corrected: check the numbering format in Administration → Invoicing.
+invoice-pdf-error-charset-other = A QR-bill field contains a character that is not allowed: “{ $car }” ({ $point }). Check the client's and the company's records.
+invoice-pdf-error-empty-company-name = The company name is empty. It cannot be changed from the interface yet.
+invoice-pdf-error-empty-company-postal-code = Company address incomplete: the postcode is empty. Fill it in under Settings → Organisation (the QR-bill requires postcode and town).
+invoice-pdf-error-empty-company-city = Company address incomplete: the town is empty. Fill it in under Settings → Organisation (the QR-bill requires postcode and town).
+invoice-pdf-error-empty-client-name = The client name is empty. Complete the client's record in Contacts.
+invoice-pdf-error-empty-client-postal-code = Client address incomplete: the postcode is empty. Complete the client's record in Contacts (the QR-bill requires postcode and town).
+invoice-pdf-error-empty-client-city = Client address incomplete: the town is empty. Complete the client's record in Contacts (the QR-bill requires postcode and town).
+invoice-pdf-error-empty-other = A required QR-bill field is empty. Check the client's and the company's records.
+invoice-pdf-error-too-long-company-name = The company name exceeds { $max } characters ({ $got }). It cannot be changed from the interface yet.
+invoice-pdf-error-too-long-company-street = The company street exceeds { $max } characters ({ $got }). Shorten it in Settings → Organisation.
+invoice-pdf-error-too-long-company-building = The company building number exceeds { $max } characters ({ $got }). Shorten it in Settings → Organisation.
+invoice-pdf-error-too-long-company-postal-code = The company postcode exceeds { $max } characters ({ $got }). Shorten it in Settings → Organisation.
+invoice-pdf-error-too-long-company-city = The company town exceeds { $max } characters ({ $got }). Shorten it in Settings → Organisation.
+invoice-pdf-error-too-long-client-name = The client name exceeds { $max } characters ({ $got }). Shorten it in the client's record, in Contacts.
+invoice-pdf-error-too-long-client-street = The client street exceeds { $max } characters ({ $got }). Shorten it in the client's record, in Contacts.
+invoice-pdf-error-too-long-client-building = The client building number exceeds { $max } characters ({ $got }). Shorten it in the client's record, in Contacts.
+invoice-pdf-error-too-long-client-postal-code = The client postcode exceeds { $max } characters ({ $got }). Shorten it in the client's record, in Contacts.
+invoice-pdf-error-too-long-client-city = The client town exceeds { $max } characters ({ $got }). Shorten it in the client's record, in Contacts.
+invoice-pdf-error-too-long-other = A QR-bill field exceeds { $max } characters ({ $got }). Check the client's and the company's records.
+invoice-pdf-error-iban-invalid = The IBAN of the primary bank account is not valid for the QR-bill. Correct it in Administration → Bank accounts.
+invoice-pdf-error-qr-iban-invalid = The QR-IBAN of the primary bank account is not valid for the QR-bill. Correct it in Administration → Bank accounts.
+invoice-pdf-error-internal = The QR-bill could not be built (internal error, not correctable from the screen). Contact your administrator.
+invoice-pdf-error-amount-invalid = The amount due is outside the limits allowed by the QR-bill (0.01 to 999 999 999.99).
+invoice-pdf-error-currency-invalid = The currency is not allowed by the QR-bill (CHF or EUR).
+invoice-pdf-error-country-invalid = The country code “{ $code }” is not a valid ISO code.
+invoice-pdf-error-country-invalid-company = The company country (“{ $code }”) is not a valid ISO code. Correct it in Settings → Organisation.
+invoice-pdf-error-country-invalid-client = The client country (“{ $code }”) is not a valid ISO code. Correct the client's record in Contacts.
+credit-note-pdf-error-contact-missing = The contact linked to this credit note was not found.
 
 common-loading = Loading…
 common-previous = Previous
@@ -1389,6 +1445,10 @@ reconciliation-labels-already-booked-confirm-title = Confirm despite the warning
 reconciliation-labels-already-booked-confirm-intro = Each transaction below seems already booked (see the warning on its line). Continuing would post an entry for a movement that may already be in the books: it would be counted twice.
 reconciliation-labels-already-booked-confirm-cancel = Cancel
 reconciliation-labels-already-booked-confirm-continue = Continue anyway
+# Story 35-4 (#1023, D2) — the same confirmation before Reject; -one / -other by the number of selected lines.
+reconciliation-labels-already-booked-confirm-intro-reject-one = Each transaction below seems already booked. Rejecting removes the selected transaction from the list without posting an entry: if it is a real movement not yet in the books, it will be missing from them; if it is already there, link it instead ("Link to an existing entry"). A rejection can be undone from the detail of its import ("Undo rejection").
+reconciliation-labels-already-booked-confirm-intro-reject-other = Each transaction below seems already booked. Rejecting removes the { $count } selected transactions from the list without posting an entry: if one of them is a real movement not yet in the books, it will be missing from them; if it is already there, link it instead ("Link to an existing entry"). A rejection can be undone from the detail of its import ("Undo rejection").
+reconciliation-labels-already-booked-confirm-reject = Reject anyway
 # Story 29-6 (#665, AC10) — shown in the button row when a line without a proposal is ticked.
 reconciliation-labels-unmatched-not-acceptable-hint = A transaction with no match cannot be accepted: untick it to accept the others.
 # Story 29-9 (#678, AC11) — accessible name of each line's checkbox: what the line shows.
@@ -1639,7 +1699,8 @@ bank-accounts-opening-side-credit = Debt (overdraft)
 bank-accounts-opening-help = The entry is dated the first day of the first fiscal year if it is open and outside the locked period, otherwise today: enter the statement balance at that date. Its counterpart goes to the Retained earnings account. It is refused if the linked account already has movements.
 bank-accounts-opening-consequence = If the general opening in Opening balances is still offered, this balance removes it: the opening balances of the other accounts will be entered one by one, Complete mode. To enter your whole opening at once, go through Opening balances first.
 bank-accounts-opening-preview = Amount to be posted: { $amount }
-bank-accounts-opening-error-amount-ambiguous = Ambiguous amount: a comma followed by three digits may be a thousands separator. Write 1'234 for one thousand two hundred thirty-four, 1.234 for one franc and 23.4 centimes.
+bank-accounts-opening-error-amount-ambiguous = Ambiguous amount: a point or a comma followed by three digits may separate thousands. Write 1'234 for one thousand two hundred thirty-four, or 1.2340 for one franc and 23.4 centimes.
+bank-accounts-opening-error-amount-unreadable = Unreadable amount: enter a positive number, for example 1'234.50.
 bank-accounts-toast-create-success-with-opening = Bank account created, with opening entry no. { $number } of { $date }: { $amount }.
 # 0.17.6 integration — text pass (#1037, #1040, #1027): the credit card and the zero amount.
 bank-accounts-form-title-create-card = New credit card
@@ -2535,9 +2596,14 @@ invoice-validate-success = Invoice validated — { $invoiceNumber }
 invoice-validate-success-body = Invoice { $invoiceNumber } is now validated and immutable. The related journal entry has been generated.
 invoice-view-journal-entry-link = View the journal entry
 settings-invoicing-description-template = Journal entry description
-settings-invoicing-format-help = Placeholders: {"{"}YEAR{"}"}, {"{"}FY{"}"}, {"{"}SEQ{"}"}, {"{"}SEQ:NN{"}"}
+settings-invoicing-format-help = Placeholders: {"{"}YEAR{"}"}, {"{"}FY{"}"}, {"{"}SEQ{"}"}, {"{"}SEQ:NN{"}"}; the counter, {"{"}SEQ{"}"} or {"{"}SEQ:NN{"}"}, is required
 settings-invoicing-supplier-format-label = Supplier invoice format
 settings-invoicing-supplier-format-help = A prefix, {"{"}YEAR{"}"}, a separator, then {"{"}SEQ{"}"} or {"{"}SEQ:03{"}"}. Applies to future numbers: those already assigned do not change.
+# Story 35-1 (#932, D1, D3) — le compteur obligatoire, le format des avoirs.
+invoices-format-error-no-seq = The format must contain a counter ({"{"}SEQ{"}"} or {"{"}SEQ:NN{"}"}): without it, every document of a fiscal year would have the same number
+invoices-format-error-unmatched-brace = Unmatched brace in the format
+settings-invoicing-credit-note-format-label = Credit note format
+settings-invoicing-credit-note-format-help = The same placeholders as the invoice numbering format; the counter is required. Applies to future credit notes: those already issued do not change.
 settings-invoicing-format-invalid = Invalid format
 settings-invoicing-format-label = Numbering format
 settings-invoicing-format-preview = Preview

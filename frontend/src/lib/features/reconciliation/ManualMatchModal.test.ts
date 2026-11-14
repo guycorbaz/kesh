@@ -29,6 +29,7 @@ vi.mock('$lib/shared/utils/i18n.svelte', () => ({
 
 import * as api from './reconciliation.api';
 import ManualMatchModal from './ManualMatchModal.svelte';
+import CounterpartyModalHost from './CounterpartyModalHost.test.svelte';
 import type { AccountResponse } from '$lib/features/accounts/accounts.types';
 
 const mockApi = vi.mocked(api);
@@ -279,6 +280,82 @@ describe('ManualMatchModal — la liste des contreparties (Story 15-6d, Story 34
 
 	it('bankLedgerAccountId null → aucun filtrage par identifiant (le serveur tranche)', async () => {
 		expect(await proposedNumbers(null)).toEqual([...ATTENDU, '1020'].sort());
+	});
+});
+
+// Story 35-7 (#1000, AC3, D1, C-e350-36) — un compte choisi avant que le parent ait résolu le
+// compte de la banque, et qui se révèle être celui-là, est retiré de la sélection : le champ ET
+// la valeur se vident, et le message existant le dit. Un compte resté proposé n'est pas touché.
+describe('ManualMatchModal — compte retiré de la sélection (Story 35-7, AC3)', () => {
+	beforeEach(() => {
+		vi.clearAllMocks();
+	});
+
+	function plan(): AccountResponse[] {
+		return [
+			makeAccount(401, '6900', 'Frais financiers', 'Expense'),
+			makeAccount(410, '1020', 'Banque', 'Asset'),
+		];
+	}
+
+	// L'hôte passe les props une à une (un `rerender` rejouerait la remise à zéro du dialogue et
+	// viderait la sélection quel que soit le code : le test passerait à vide).
+	function monter() {
+		return render(CounterpartyModalHost, {
+			modal: 'manual',
+			proposal: makeProposal(),
+			accounts: plan(),
+			lateBankLedgerAccountId: 410,
+		});
+	}
+
+	type Rendu = { findAllByRole: (role: string) => Promise<HTMLElement[]> };
+
+	async function resoudreBanque(r: { getByTestId: (id: string) => HTMLElement }) {
+		await fireEvent.click(r.getByTestId('host-resolve-bank'));
+	}
+
+	function champ(): HTMLInputElement {
+		return document.querySelector('input[aria-autocomplete="list"]') as HTMLInputElement;
+	}
+
+	async function choisir(r: Rendu, numero: string): Promise<void> {
+		await fireEvent.focus(champ());
+		await fireEvent.input(champ(), { target: { value: numero } });
+		const option = (await r.findAllByRole('option')).find((o) => o.textContent?.includes(numero));
+		expect(option, `le compte ${numero} doit être proposé`).toBeTruthy();
+		await fireEvent.mouseDown(option as HTMLElement);
+	}
+
+	it('le compte de la banque choisi, puis identifié → champ vide, valeur nulle, validation refusée', async () => {
+		const r = monter();
+		await choisir(r, '1020');
+		const submit = (await r.findByTestId('manual-match-submit')) as HTMLButtonElement;
+		// Prémisse : le choix a pris (sans quoi la suite passerait à vide).
+		await waitFor(() => expect(champ().value).toBe('1020 — Banque'));
+		await waitFor(() => expect(submit.disabled).toBe(false));
+
+		await resoudreBanque(r);
+
+		await waitFor(() => expect(champ().value).toBe(''));
+		await waitFor(() => expect(submit.disabled).toBe(true));
+		expect(await r.findByText('Compte de contrepartie obligatoire')).toBeTruthy();
+		// La valeur est nulle : un clic ne part pas au serveur.
+		await fireEvent.click(submit);
+		expect(mockApi.manualMatchTransaction).not.toHaveBeenCalled();
+	});
+
+	it('un compte resté proposé n’est pas touché quand le compte de la banque est identifié', async () => {
+		const r = monter();
+		await choisir(r, '6900');
+		const submit = (await r.findByTestId('manual-match-submit')) as HTMLButtonElement;
+		await waitFor(() => expect(champ().value).toBe('6900 — Frais financiers'));
+
+		await resoudreBanque(r);
+
+		await waitFor(() => expect(submit.disabled).toBe(false));
+		expect(champ().value).toBe('6900 — Frais financiers');
+		expect(mockApi.manualMatchTransaction).not.toHaveBeenCalled();
 	});
 });
 

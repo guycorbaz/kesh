@@ -338,6 +338,24 @@ error-designated-account-not-postable = { $count ->
     [one] Das unter Administration → Fakturierung festgelegte Konto { $numbers } ist nicht bebuchbar (Sammel-, Ergebnis- oder Abschlusskonto): Eine Administratorin oder ein Administrator muss dort stattdessen ein bebuchbares Konto festlegen.
    *[other] Die unter Administration → Fakturierung festgelegten Konten { $numbers } sind nicht bebuchbar (Sammel-, Ergebnis- oder Abschlusskonten): Eine Administratorin oder ein Administrator muss dort stattdessen bebuchbare Konten festlegen.
 }
+# Story 35-3 (#537) — ein seit seiner Festlegung umtypisiertes Konto: ein Satz pro Konto, dann der Handlungssatz.
+error-designated-account-wrong-type = Das Konto { $account }, unter Administration → Fakturierung als { $setting } festgelegt, ist ein { $actual }; diese Einstellung verlangt ein { $expected }.
+error-designated-account-wrong-type-action = Es wurde nichts gespeichert. Eine Administratorin oder ein Administrator muss die betreffende Einstellung korrigieren – ein Konto des richtigen Typs festlegen oder dem Konto seinen ursprünglichen Typ zurückgeben –, danach kann die Validierung unverändert erneut ausgeführt werden.
+error-designated-account-setting-receivable = Konto Forderungen aus Lieferungen und Leistungen
+error-designated-account-setting-vat-payable = Konto geschuldete MWST
+error-designated-account-setting-payable = Konto Verbindlichkeiten aus Lieferungen und Leistungen
+error-designated-account-setting-vat-recoverable = Konto Vorsteuer
+error-designated-account-type-asset = Aktivkonto
+error-designated-account-type-liability = Passivkonto
+error-designated-account-type-revenue = Ertragskonto
+error-designated-account-type-expense = Aufwandkonto
+# Story 35-1 (#948, D4, D5) — 400 NUMBER_FORMAT_UNRENDERABLE : la pièce, puis la cause.
+error-number-format-unrenderable-invoice = Diese Rechnung kann nicht validiert werden: Ihre Nummer kann nicht erzeugt werden. Es wurde nichts gespeichert, keine Nummer wurde verbraucht.
+error-number-format-unrenderable-credit-note = Diese Gutschrift kann nicht erstellt werden: Ihre Nummer kann nicht erzeugt werden. Es wurde nichts gespeichert, keine Nummer wurde verbraucht.
+error-number-format-unrenderable-too-long = Das Format «{ $format }» ergibt mit dem Namen des Geschäftsjahres «{ $fiscalYear }» eine zu lange Nummer (mehr als 64 Bytes; ein Buchstabe mit Akzent zählt zwei): Eine Administratorin oder ein Administrator muss das Format unter Administration → Fakturierung oder den Namen des Geschäftsjahres kürzen.
+error-number-format-unrenderable-brace = Der Name des Geschäftsjahres «{ $fiscalYear }» enthält eine geschweifte Klammer, die das Format «{ $format }» in die Nummer übernehmen würde: Eine Administratorin oder ein Administrator muss das Geschäftsjahr umbenennen oder {"{"}FY{"}"} aus dem Format unter Administration → Fakturierung entfernen.
+error-number-format-unrenderable-duplicate = Das Format «{ $format }» erzeugt im Geschäftsjahr «{ $fiscalYear }» eine bereits vergebene Nummer: Es muss jeden Beleg unterscheiden – einen Zähler ({"{"}SEQ{"}"}), der in jedem Geschäftsjahr neu beginnt, und das Geschäftsjahr ({"{"}FY{"}"}); das Jahr ({"{"}YEAR{"}"}) genügt nicht, wenn zwei Geschäftsjahre im selben Jahr beginnen. Eine Administratorin oder ein Administrator muss es unter Administration → Fakturierung korrigieren.
+error-number-format-unrenderable-invalid = Das gespeicherte Format «{ $format }» ist ungültig: Eine Administratorin oder ein Administrator muss es unter Administration → Fakturierung korrigieren.
 error-rounding-account-not-configured = Diese Zahlung begleicht die Rechnung auf den Rappen genau, aber es ist kein verwendbares Konto für Rundungsdifferenzen festgelegt: Wählen Sie eines unter Administration → Fakturierung.
 error-rounding-account-not-configured-issuance = Der Gesamtbetrag dieses Belegs ist auf 5 Rappen gerundet, aber es ist kein verwendbares Konto für Rundungsdifferenzen festgelegt: Wählen Sie eines unter Administration → Fakturierung.
 error-write-off-account-not-configured-discount = Es ist kein verwendbares Skontokonto festgelegt: Wählen Sie eines unter Administration → Fakturierung, Abschnitt Restbetrag ausbuchen.
@@ -911,9 +929,47 @@ echeancier-export-error-too-large = Zu viele Ergebnisse (> { $limit }). Bitte di
 invoice-qr-message-prefix = Rechnung
 invoice-pdf-error-contact-missing = Der mit der Rechnung verknüpfte Kontakt wurde nicht gefunden.
 invoice-pdf-error-no-primary-bank = Für dieses Unternehmen ist kein Hauptbankkonto konfiguriert.
-invoice-pdf-error-company-address-empty = Die Unternehmensadresse ist leer — bitte vor der PDF-Erstellung ausfüllen.
 invoice-pdf-error-client-address-required = Die Kundenadresse ist zur PDF-Erstellung erforderlich.
-invoice-pdf-error-client-address-empty = Die Kundenadresse ist leer — bitte vor der PDF-Erstellung ausfüllen.
+# Story 35-2a (#955, #964) — die Ablehnung des PDFs nennt das zu korrigierende Feld und Zeichen.
+invoice-pdf-error-charset-company-name = Der Name des Unternehmens enthält ein Zeichen, das die QR-Rechnung nicht zulässt: «{ $car }» ({ $point }). Der Name des Unternehmens lässt sich in der Oberfläche noch nicht ändern.
+invoice-pdf-error-charset-company-street = Die Strasse des Unternehmens enthält ein Zeichen, das die QR-Rechnung nicht zulässt: «{ $car }» ({ $point }). Korrigieren Sie sie unter Einstellungen → Organisation.
+invoice-pdf-error-charset-company-building = Die Hausnummer des Unternehmens enthält ein Zeichen, das die QR-Rechnung nicht zulässt: «{ $car }» ({ $point }). Korrigieren Sie sie unter Einstellungen → Organisation.
+invoice-pdf-error-charset-company-postal-code = Die PLZ des Unternehmens enthält ein Zeichen, das die QR-Rechnung nicht zulässt: «{ $car }» ({ $point }). Korrigieren Sie sie unter Einstellungen → Organisation.
+invoice-pdf-error-charset-company-city = Der Ort des Unternehmens enthält ein Zeichen, das die QR-Rechnung nicht zulässt: «{ $car }» ({ $point }). Korrigieren Sie ihn unter Einstellungen → Organisation.
+invoice-pdf-error-charset-client-name = Der Name des Kunden enthält ein Zeichen, das die QR-Rechnung nicht zulässt: «{ $car }» ({ $point }). Korrigieren Sie die Kundenkarte unter Kontakte.
+invoice-pdf-error-charset-client-street = Die Strasse des Kunden enthält ein Zeichen, das die QR-Rechnung nicht zulässt: «{ $car }» ({ $point }). Korrigieren Sie die Kundenkarte unter Kontakte.
+invoice-pdf-error-charset-client-building = Die Hausnummer des Kunden enthält ein Zeichen, das die QR-Rechnung nicht zulässt: «{ $car }» ({ $point }). Korrigieren Sie die Kundenkarte unter Kontakte.
+invoice-pdf-error-charset-client-postal-code = Die PLZ des Kunden enthält ein Zeichen, das die QR-Rechnung nicht zulässt: «{ $car }» ({ $point }). Korrigieren Sie die Kundenkarte unter Kontakte.
+invoice-pdf-error-charset-client-city = Der Ort des Kunden enthält ein Zeichen, das die QR-Rechnung nicht zulässt: «{ $car }» ({ $point }). Korrigieren Sie die Kundenkarte unter Kontakte.
+invoice-pdf-error-charset-invoice-number = Die Rechnungsnummer enthält ein Zeichen, das die QR-Rechnung nicht zulässt: «{ $car }» ({ $point }). Eine validierte Rechnung lässt sich nicht korrigieren: Prüfen Sie das Nummernformat unter Administration → Fakturierung.
+invoice-pdf-error-charset-other = Ein Feld der QR-Rechnung enthält ein nicht zulässiges Zeichen: «{ $car }» ({ $point }). Prüfen Sie die Karten des Kunden und des Unternehmens.
+invoice-pdf-error-empty-company-name = Der Name des Unternehmens ist leer. Er lässt sich in der Oberfläche noch nicht ändern.
+invoice-pdf-error-empty-company-postal-code = Adresse des Unternehmens unvollständig: Die PLZ ist leer. Ergänzen Sie sie unter Einstellungen → Organisation (PLZ und Ort verlangt die QR-Rechnung).
+invoice-pdf-error-empty-company-city = Adresse des Unternehmens unvollständig: Der Ort ist leer. Ergänzen Sie ihn unter Einstellungen → Organisation (PLZ und Ort verlangt die QR-Rechnung).
+invoice-pdf-error-empty-client-name = Der Name des Kunden ist leer. Ergänzen Sie die Kundenkarte unter Kontakte.
+invoice-pdf-error-empty-client-postal-code = Adresse des Kunden unvollständig: Die PLZ ist leer. Ergänzen Sie die Kundenkarte unter Kontakte (PLZ und Ort verlangt die QR-Rechnung).
+invoice-pdf-error-empty-client-city = Adresse des Kunden unvollständig: Der Ort ist leer. Ergänzen Sie die Kundenkarte unter Kontakte (PLZ und Ort verlangt die QR-Rechnung).
+invoice-pdf-error-empty-other = Ein Pflichtfeld der QR-Rechnung ist leer. Prüfen Sie die Karten des Kunden und des Unternehmens.
+invoice-pdf-error-too-long-company-name = Der Name des Unternehmens überschreitet { $max } Zeichen ({ $got }). Er lässt sich in der Oberfläche noch nicht ändern.
+invoice-pdf-error-too-long-company-street = Die Strasse des Unternehmens überschreitet { $max } Zeichen ({ $got }). Kürzen Sie sie unter Einstellungen → Organisation.
+invoice-pdf-error-too-long-company-building = Die Hausnummer des Unternehmens überschreitet { $max } Zeichen ({ $got }). Kürzen Sie sie unter Einstellungen → Organisation.
+invoice-pdf-error-too-long-company-postal-code = Die PLZ des Unternehmens überschreitet { $max } Zeichen ({ $got }). Kürzen Sie sie unter Einstellungen → Organisation.
+invoice-pdf-error-too-long-company-city = Der Ort des Unternehmens überschreitet { $max } Zeichen ({ $got }). Kürzen Sie ihn unter Einstellungen → Organisation.
+invoice-pdf-error-too-long-client-name = Der Name des Kunden überschreitet { $max } Zeichen ({ $got }). Kürzen Sie ihn in der Kundenkarte unter Kontakte.
+invoice-pdf-error-too-long-client-street = Die Strasse des Kunden überschreitet { $max } Zeichen ({ $got }). Kürzen Sie sie in der Kundenkarte unter Kontakte.
+invoice-pdf-error-too-long-client-building = Die Hausnummer des Kunden überschreitet { $max } Zeichen ({ $got }). Kürzen Sie sie in der Kundenkarte unter Kontakte.
+invoice-pdf-error-too-long-client-postal-code = Die PLZ des Kunden überschreitet { $max } Zeichen ({ $got }). Kürzen Sie sie in der Kundenkarte unter Kontakte.
+invoice-pdf-error-too-long-client-city = Der Ort des Kunden überschreitet { $max } Zeichen ({ $got }). Kürzen Sie ihn in der Kundenkarte unter Kontakte.
+invoice-pdf-error-too-long-other = Ein Feld der QR-Rechnung überschreitet { $max } Zeichen ({ $got }). Prüfen Sie die Karten des Kunden und des Unternehmens.
+invoice-pdf-error-iban-invalid = Die IBAN des Hauptbankkontos ist für die QR-Rechnung nicht gültig. Korrigieren Sie sie unter Administration → Bankkonten.
+invoice-pdf-error-qr-iban-invalid = Die QR-IBAN des Hauptbankkontos ist für die QR-Rechnung nicht gültig. Korrigieren Sie sie unter Administration → Bankkonten.
+invoice-pdf-error-internal = Die QR-Rechnung konnte nicht erstellt werden (interner Fehler, am Bildschirm nicht korrigierbar). Wenden Sie sich an die Administration.
+invoice-pdf-error-amount-invalid = Der zu zahlende Betrag liegt ausserhalb der Grenzen der QR-Rechnung (0.01 bis 999 999 999.99).
+invoice-pdf-error-currency-invalid = Die Währung ist für die QR-Rechnung nicht zulässig (CHF oder EUR).
+invoice-pdf-error-country-invalid = Der Ländercode «{ $code }» ist kein gültiger ISO-Code.
+invoice-pdf-error-country-invalid-company = Das Land des Unternehmens («{ $code }») ist kein gültiger ISO-Code. Korrigieren Sie es unter Einstellungen → Organisation.
+invoice-pdf-error-country-invalid-client = Das Land des Kunden («{ $code }») ist kein gültiger ISO-Code. Korrigieren Sie die Kundenkarte unter Kontakte.
+credit-note-pdf-error-contact-missing = Der mit der Gutschrift verknüpfte Kontakt wurde nicht gefunden.
 
 common-loading = Laden…
 common-previous = Vorherige
@@ -1389,6 +1445,10 @@ reconciliation-labels-already-booked-confirm-title = Trotz des Hinweises bestät
 reconciliation-labels-already-booked-confirm-intro = Jede der folgenden Transaktionen scheint bereits verbucht (siehe den Hinweis in ihrer Zeile). Fortfahren würde eine Buchung für eine Bewegung erfassen, die vielleicht schon in den Büchern steht; sie würde dann doppelt gezählt werden.
 reconciliation-labels-already-booked-confirm-cancel = Abbrechen
 reconciliation-labels-already-booked-confirm-continue = Trotzdem fortfahren
+# Story 35-4 (#1023, D2) — dieselbe Bestätigung vor Ablehnen; -one / -other nach der Zahl der ausgewählten Zeilen.
+reconciliation-labels-already-booked-confirm-intro-reject-one = Jede der folgenden Transaktionen scheint bereits verbucht. Ablehnen entfernt die ausgewählte Transaktion aus der Liste, ohne eine Buchung zu erfassen: Ist sie eine reale Bewegung, die noch nicht in den Büchern steht, fehlt sie dort; steht sie bereits darin, ordnen Sie sie besser zu („Einer bestehenden Buchung zuordnen“). Eine Ablehnung lässt sich im Detail ihres Imports aufheben („Ablehnung aufheben“).
+reconciliation-labels-already-booked-confirm-intro-reject-other = Jede der folgenden Transaktionen scheint bereits verbucht. Ablehnen entfernt die { $count } ausgewählten Transaktionen aus der Liste, ohne eine Buchung zu erfassen: Ist eine davon eine reale Bewegung, die noch nicht in den Büchern steht, fehlt sie dort; steht sie bereits darin, ordnen Sie sie besser zu („Einer bestehenden Buchung zuordnen“). Eine Ablehnung lässt sich im Detail ihres Imports aufheben („Ablehnung aufheben“).
+reconciliation-labels-already-booked-confirm-reject = Trotzdem ablehnen
 # Story 29-6 (#665, AC10) — in der Schaltflächenzeile angezeigt, wenn eine Zeile ohne Vorschlag markiert ist.
 reconciliation-labels-unmatched-not-acceptable-hint = Eine Transaktion ohne Übereinstimmung kann nicht akzeptiert werden: Entfernen Sie die Markierung, um die übrigen zu akzeptieren.
 # Story 29-9 (#678, AC11) — zugänglicher Name des Kontrollkästchens jeder Zeile: was die Zeile anzeigt.
@@ -1639,7 +1699,8 @@ bank-accounts-opening-side-credit = Schuld (Überziehung)
 bank-accounts-opening-help = Die Buchung wird auf den ersten Tag des ersten Geschäftsjahres datiert, wenn es offen und nicht gesperrt ist, sonst auf heute: Erfassen Sie den Saldo laut Kontoauszug an diesem Datum. Die Gegenbuchung geht auf das Konto Gewinn-/Verlustvortrag. Sie wird abgelehnt, wenn das verbundene Konto bereits Bewegungen hat.
 bank-accounts-opening-consequence = Wird die allgemeine Eröffnung unter Anfangssaldi noch angeboten, so entfällt sie mit diesem Saldo: Die Anfangssaldi der übrigen Konten werden dann einzeln erfasst, Modus Ergänzen. Um Ihre ganze Eröffnung auf einmal zu erfassen, gehen Sie zuerst über Anfangssaldi.
 bank-accounts-opening-preview = Gebuchter Betrag: { $amount }
-bank-accounts-opening-error-amount-ambiguous = Mehrdeutiger Betrag: Ein Komma gefolgt von drei Ziffern kann ein Tausendertrennzeichen sein. Schreiben Sie 1'234 für eintausendzweihundertvierunddreissig, 1.234 für einen Franken und 23,4 Rappen.
+bank-accounts-opening-error-amount-ambiguous = Mehrdeutiger Betrag: Ein Punkt oder ein Komma gefolgt von drei Ziffern kann Tausender trennen. Schreiben Sie 1'234 für eintausendzweihundertvierunddreissig oder 1.2340 für einen Franken und 23,4 Rappen.
+bank-accounts-opening-error-amount-unreadable = Unlesbarer Betrag: Geben Sie eine positive Zahl ein, zum Beispiel 1'234.50.
 bank-accounts-toast-create-success-with-opening = Bankkonto angelegt, mit der Eröffnungsbuchung Nr. { $number } vom { $date }: { $amount }.
 # Integration der 0.17.6 — Textdurchgang (#1037, #1040, #1027): Kreditkarte und Nullbetrag.
 bank-accounts-form-title-create-card = Neue Kreditkarte
@@ -2528,9 +2589,14 @@ invoice-validate-success = Rechnung validiert — { $invoiceNumber }
 invoice-validate-success-body = Die Rechnung { $invoiceNumber } ist nun validiert und unveränderlich. Der zugehörige Buchungssatz wurde erzeugt.
 invoice-view-journal-entry-link = Buchungssatz anzeigen
 settings-invoicing-description-template = Beschreibung des Buchungssatzes
-settings-invoicing-format-help = Platzhalter: {"{"}YEAR{"}"}, {"{"}FY{"}"}, {"{"}SEQ{"}"}, {"{"}SEQ:NN{"}"}
+settings-invoicing-format-help = Platzhalter: {"{"}YEAR{"}"}, {"{"}FY{"}"}, {"{"}SEQ{"}"}, {"{"}SEQ:NN{"}"}; der Zähler, {"{"}SEQ{"}"} oder {"{"}SEQ:NN{"}"}, ist Pflicht
 settings-invoicing-supplier-format-label = Format der Lieferantenrechnungen
 settings-invoicing-supplier-format-help = Ein Präfix, {"{"}YEAR{"}"}, ein Trennzeichen, dann {"{"}SEQ{"}"} oder {"{"}SEQ:03{"}"}. Gilt für künftige Nummern: bereits vergebene ändern sich nicht.
+# Story 35-1 (#932, D1, D3) — le compteur obligatoire, le format des avoirs.
+invoices-format-error-no-seq = Das Format muss einen Zähler enthalten ({"{"}SEQ{"}"} oder {"{"}SEQ:NN{"}"}): Ohne ihn hätten alle Belege eines Geschäftsjahres dieselbe Nummer
+invoices-format-error-unmatched-brace = Geschweifte Klammer ohne Gegenstück im Format
+settings-invoicing-credit-note-format-label = Format der Gutschriften
+settings-invoicing-credit-note-format-help = Dieselben Platzhalter wie beim Nummernformat der Rechnungen; der Zähler ist Pflicht. Gilt für künftige Gutschriften: bereits ausgestellte ändern sich nicht.
 settings-invoicing-format-invalid = Ungültiges Format
 settings-invoicing-format-label = Nummerierungsformat
 settings-invoicing-format-preview = Vorschau

@@ -501,8 +501,14 @@ pub async fn lock_company_books(
 ) -> Result<Json<CompanyJson>, AppError> {
     borner(req.through, "through")?;
     let company = get_company_for(&current_user, &state.pool).await?;
-    let updated =
-        companies::lock_books(&state.pool, current_user.user_id, company.id, req.through).await?;
+    let updated = companies::lock_books(
+        &state.pool,
+        current_user.user_id,
+        company.id,
+        req.through,
+        state.horloge.aujourd_hui(),
+    )
+    .await?;
     Ok(Json(updated.into()))
 }
 
@@ -521,6 +527,7 @@ pub async fn unlock_company_books(
         company.id,
         req.through,
         req.motif,
+        state.horloge.aujourd_hui(),
     )
     .await?;
     Ok(Json(updated.into()))

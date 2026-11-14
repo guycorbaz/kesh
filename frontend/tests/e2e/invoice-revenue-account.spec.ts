@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test';
 import { seedTestState, clearAuthStorage, authedApiContext, disposeContextSafe } from './helpers/test-state';
+import { todayInZurich } from './helpers/api-fixtures';
 
 /**
  * Tests E2E — compte de produit par ligne de facture (Story 16-1b, AC15).
@@ -89,7 +90,7 @@ test('une facture ventilée sur 2 comptes produit 2 lignes de crédit distinctes
 		const contactId = (await contactRes.json()).id as number;
 
 		// --- Brouillon à 2 lignes, SANS compte : l'état que l'UI doit corriger ---
-		const today = new Date().toISOString().slice(0, 10);
+		const today = todayInZurich();
 		const draftRes = await ctx.post('/api/v1/invoices', {
 			data: {
 				contactId,
@@ -178,7 +179,7 @@ test('une facture ventilée sur 2 comptes produit 2 lignes de crédit distinctes
 		// construction des comptes hérités d'une facture ancienne, donc les plus
 		// susceptibles d'avoir été archivés depuis.
 		const cnRes = await ctx2.post('/api/v1/credit-notes', {
-			data: { invoiceId, date: new Date().toISOString().slice(0, 10) },
+			data: { invoiceId, date: todayInZurich() },
 		});
 		expect(cnRes.ok(), `émission de l'avoir échouée: ${cnRes.status()}`).toBeTruthy();
 		const creditNoteId = (await cnRes.json()).id as number;

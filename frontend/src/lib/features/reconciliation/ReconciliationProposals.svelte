@@ -44,8 +44,14 @@
   Story 34-4 (#828, AC-5, AC-6) — une ligne qui semble déjà comptabilisée
   (`alreadyBooked`, `already-booked.ts`) porte un avertissement sous elle ; *Accepter (N)*,
   *Écriture manuelle* et *Éclater* demandent alors confirmation
-  (`AlreadyBookedConfirmDialog`) ; *Rejeter* et *Rattacher à une écriture existante*, non.
+  (`AlreadyBookedConfirmDialog`) ; *Rattacher à une écriture existante*, non.
   Rien n'est refusé : *Continuer quand même* reprend le geste tel quel.
+
+  Story 35-4 (#1023, #1024) — *Rejeter* demande aussi confirmation quand la sélection contient
+  une ligne signalée : un rejet retire la ligne sans écriture, et un encaissement réel quitterait
+  la liste sans être aux livres. Le dialogue le dit (*Rejeter quand même*). Une relecture de la
+  liste (`load()`) referme toute confirmation ouverte : elle ne peut jamais être validée sur des
+  lignes qui ne sont plus celles de la liste.
 -->
 <script lang="ts">
 	import { errorMessageOf } from '$lib/shared/utils/error-message';
@@ -157,6 +163,12 @@
 	let hasMore = $state(false);
 
 	async function load() {
+		// Story 35-4 (#1024, D3) — une relecture referme la confirmation « déjà comptabilisée » :
+		// les lignes qu'elle nomme peuvent ne plus être celles de la liste. Écriture SANS lecture
+		// préalable (pas de `if (pendingGesture)`) : l'`$effect` qui appelle `load()` suit ce que
+		// la fonction lit avant son premier `await`, et une lecture ferait de chaque demande de
+		// confirmation le déclencheur d'une relecture, qui la refermerait aussitôt.
+		pendingGesture = null;
 		const myGen = ++loadGen;
 		loading = true;
 		errorMsg = null;
@@ -282,15 +294,23 @@
 
 	/**
 	 * Story 34-4 (#828, AC-6) — le geste qui attend la confirmation d'une ligne signalée « déjà
-	 * comptabilisée », et les lignes signalées qu'il concerne (relevées à la demande). Seuls
-	 * *Accepter*, *Écriture manuelle* et *Éclater* passent par là : ils passeraient une écriture.
+	 * comptabilisée », et les lignes signalées qu'il concerne (relevées à la demande).
+	 * *Accepter*, *Écriture manuelle* et *Éclater* passent par là parce qu'ils passeraient une
+	 * écriture ; *Rejeter* depuis la Story 35-4 (#1023), parce qu'il retirerait de la liste, sans
+	 * écriture, un mouvement peut-être réel.
 	 */
 	type GuardedGesture =
 		| { kind: 'accept' }
+		| { kind: 'reject' }
 		| { kind: 'manual'; proposal: ReconciliationProposal }
 		| { kind: 'split'; proposal: ReconciliationProposal };
 	let pendingGesture = $state<GuardedGesture | null>(null);
 	let confirmTransactions = $state<ReconciliationProposal[]>([]);
+	// Story 35-4 (#1023, D2) — ce que le dialogue dit : le geste (écriture ou rejet) et le nombre
+	// de lignes cochées, relevés à la demande comme `confirmTransactions` et, comme elle, gardés
+	// pendant la transition de fermeture.
+	let confirmKind = $state<'write' | 'reject'>('write');
+	let confirmSelectedCount = $state(0);
 
 	/** Demande confirmation si `flagged` n'est pas vide ; sinon, exécute le geste aussitôt. */
 	function guard(gesture: GuardedGesture, flagged: ReconciliationProposal[]): void {
@@ -299,21 +319,48 @@
 			return;
 		}
 		confirmTransactions = flagged;
+		confirmKind = gesture.kind === 'reject' ? 'reject' : 'write';
+		confirmSelectedCount = selected.size;
 		pendingGesture = gesture;
 	}
 
 	function runGesture(gesture: GuardedGesture): void {
-		if (gesture.kind === 'accept') void onAccept();
-		else if (gesture.kind === 'manual') openManualMatch(gesture.proposal);
-		else openSplit(gesture.proposal);
+		switch (gesture.kind) {
+			case 'accept':
+				void onAccept();
+				return;
+			case 'reject':
+				void onReject();
+				return;
+			case 'manual':
+				openManualMatch(gesture.proposal);
+				return;
+			case 'split':
+				openSplit(gesture.proposal);
+				return;
+			default: {
+				const inconnu: never = gesture;
+				throw new Error(`geste inconnu : ${JSON.stringify(inconnu)}`);
+			}
+		}
+	}
+
+	/** Les lignes cochées qui sont signalées « déjà comptabilisées ». */
+	function selectedFlagged(): ReconciliationProposal[] {
+		return proposals.filter((p) => selected.has(p.bankTransactionId) && isAlreadyBooked(p));
 	}
 
 	/** *Accepter (N)* : confirmation si la sélection contient une ligne signalée ; lot entier. */
 	function requestAccept(): void {
-		guard(
-			{ kind: 'accept' },
-			proposals.filter((p) => selected.has(p.bankTransactionId) && isAlreadyBooked(p)),
-		);
+		guard({ kind: 'accept' }, selectedFlagged());
+	}
+
+	/**
+	 * Story 35-4 (#1023, D1) — *Rejeter* : confirmation si la sélection contient une ligne
+	 * signalée ; sinon le rejet part aussitôt. Confirmé, le lot entier part.
+	 */
+	function requestReject(): void {
+		guard({ kind: 'reject' }, selectedFlagged());
 	}
 
 	function requestManualMatch(p: ReconciliationProposal): void {
@@ -325,10 +372,13 @@
 	}
 
 	/**
-	 * *Continuer quand même* : le geste reprend tel quel. Revue P2 (B2-5) — *Écriture manuelle* et
-	 * *Éclater* relisent leur ligne dans la liste **courante** (elle a pu être relue pendant la
-	 * confirmation) : sortie de la liste, rien ne s'ouvre ; présente, la modale reçoit la ligne
-	 * relue. *Accepter* relit déjà la sélection et la liste (`onAccept`).
+	 * *Continuer quand même* (ou *Rejeter quand même*) : le geste reprend tel quel. Depuis la
+	 * Story 35-4 (#1024, D3), une relecture de la liste referme la confirmation (`load()`) : le
+	 * geste confirmé porte donc toujours sur la liste que la confirmation a vue. Les gardes
+	 * ci-dessous restent, défensives — revue P2 de la 34-4 (B2-5) : *Écriture manuelle* et
+	 * *Éclater* relisent leur ligne dans la liste **courante** (sortie, rien ne s'ouvre ;
+	 * présente, la modale reçoit la ligne relue) ; *Accepter* et *Rejeter* relisent la sélection
+	 * (`onAccept`, `onReject`, gardés par `selected.size === 0`).
 	 *
 	 * `confirmTransactions` n'est pas vidé ici ni à *Annuler* : le dialogue garde sa liste pendant
 	 * sa transition de fermeture ; la demande suivante la remplace (`guard`).
@@ -337,7 +387,7 @@
 		const gesture = pendingGesture;
 		pendingGesture = null;
 		if (!gesture) return;
-		if (gesture.kind === 'accept') {
+		if (gesture.kind === 'accept' || gesture.kind === 'reject') {
 			runGesture(gesture);
 			return;
 		}
@@ -482,7 +532,7 @@
 				type="button"
 				class="rounded border border-text px-4 py-2 disabled:opacity-50"
 				disabled={busy || selected.size === 0}
-				onclick={onReject}
+				onclick={requestReject}
 				data-testid="reconciliation-reject-btn"
 			>
 				{i18nMsg('reconciliation-actions-reject', 'Rejeter')}
@@ -796,6 +846,8 @@
 		<AlreadyBookedConfirmDialog
 			open={pendingGesture !== null}
 			transactions={confirmTransactions}
+			gesture={confirmKind}
+			selectedCount={confirmSelectedCount}
 			onContinue={confirmGesture}
 			onCancel={cancelGesture}
 		/>

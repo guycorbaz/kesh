@@ -45,6 +45,12 @@ fn test_config() -> Config {
 }
 
 async fn spawn_app(pool: MySqlPool) -> TestApp {
+    spawn_app_a(pool, None).await
+}
+
+/// Story 35-5a — le serveur, son horloge arrêtée sur `instant` s'il y en a un
+/// (sinon l'horloge de test, `new_for_tests`).
+async fn spawn_app_a(pool: MySqlPool, instant: Option<chrono::DateTime<chrono::Utc>>) -> TestApp {
     let config = test_config();
     let rate_limiter = kesh_api::middleware::rate_limit::RateLimiter::new(&config);
     let i18n = Arc::new(
@@ -59,7 +65,10 @@ async fn spawn_app(pool: MySqlPool) -> TestApp {
     );
     kesh_api::errors::init_error_i18n(i18n.clone(), config.locale);
 
-    let state = AppState::new_for_tests(pool, Arc::new(config), Arc::new(rate_limiter), i18n);
+    let mut state = AppState::new_for_tests(pool, Arc::new(config), Arc::new(rate_limiter), i18n);
+    if let Some(i) = instant {
+        state = common::horloge::avec_horloge(state, i);
+    }
 
     let app = build_router(state, "nonexistent-static-dir".to_string());
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
@@ -1065,11 +1074,8 @@ async fn path_b_finalize_creates_fiscal_year(pool: MySqlPool) {
         .await
         .unwrap();
     assert_eq!(list.len(), 1);
-    let year = chrono::Utc::now()
-        .naive_utc()
-        .date()
-        .format("%Y")
-        .to_string();
+    // Story 35-5a — l'année du jour du serveur (horloge de test), non du jour UTC.
+    let year = crate::common::jour::aujourd_hui_test().year();
     assert_eq!(list[0].name, format!("Exercice {year}"));
 
     // AC #18 — audit log présent avec user_id = admin.
@@ -1086,6 +1092,97 @@ async fn path_b_finalize_creates_fiscal_year(pool: MySqlPool) {
         .find(|e| e.action == "fiscal_year.created")
         .expect("audit entry present");
     assert_eq!(create_entry.user_id, admin_user_id);
+}
+
+/// Story 35-5a, AC5 (site 17, C-e350-23) — la finalisation du chemin B à
+/// 23 h 30 UTC le 31 décembre (00 h 30 le 1er janvier à Zurich) crée
+/// « Exercice 2026 », qui couvre 2026 (le jour UTC créait « Exercice 2025 »).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn path_b_finalize_a_minuit_le_1er_janvier_cree_l_exercice_suisse(pool: MySqlPool) {
+    let instant = chrono::DateTime::parse_from_rfc3339("2025-12-31T23:30:00Z")
+        .unwrap()
+        .with_timezone(&chrono::Utc);
+    let app = spawn_app_a(pool.clone(), Some(instant)).await;
+    create_test_company(&pool).await;
+    ensure_admin_user(&pool, &test_config()).await.unwrap();
+    let token = login(&app).await;
+    let company_id: i64 = sqlx::query_scalar("SELECT id FROM companies ORDER BY id LIMIT 1")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    seed_minimal_chart(&pool, company_id).await;
+
+    run_path_b_until_finalize(&app, &token).await;
+    let resp = app
+        .client
+        .post(app.url("/api/v1/onboarding/finalize"))
+        .header("Authorization", auth(&token))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+
+    let list = kesh_db::repositories::fiscal_years::list_by_company(&pool, company_id)
+        .await
+        .unwrap();
+    assert_eq!(list.len(), 1);
+    assert_eq!(list[0].name, "Exercice 2026");
+    assert_eq!(
+        (list[0].start_date.to_string(), list[0].end_date.to_string()),
+        ("2026-01-01".to_string(), "2026-12-31".to_string())
+    );
+}
+
+/// Story 35-5b, AC6 (site 26) — la démonstration semée à 23 h 30 UTC le
+/// 31 décembre (00 h 30 le 1er janvier à Zurich) crée « Exercice 2026 », du
+/// 1er janvier au 31 décembre 2026 (le jour UTC créait « Exercice 2025 »).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn demo_a_minuit_le_1er_janvier_cree_l_exercice_suisse(pool: MySqlPool) {
+    let instant = chrono::DateTime::parse_from_rfc3339("2025-12-31T23:30:00Z")
+        .unwrap()
+        .with_timezone(&chrono::Utc);
+    let app = spawn_app_a(pool.clone(), Some(instant)).await;
+    create_test_company(&pool).await;
+    ensure_admin_user(&pool, &test_config()).await.unwrap();
+    let token = login(&app).await;
+    for (chemin, corps) in [
+        (
+            "/api/v1/onboarding/language",
+            Some(json!({ "language": "FR" })),
+        ),
+        ("/api/v1/onboarding/mode", Some(json!({ "mode": "guided" }))),
+        ("/api/v1/onboarding/seed-demo", None),
+    ] {
+        let mut req = app
+            .client
+            .post(app.url(chemin))
+            .header("Authorization", auth(&token));
+        if let Some(c) = corps {
+            req = req.json(&c);
+        }
+        let resp = req.send().await.unwrap();
+        assert_eq!(resp.status(), 200, "{chemin}");
+    }
+    let company_id: i64 = sqlx::query_scalar("SELECT id FROM companies ORDER BY id LIMIT 1")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    let list = kesh_db::repositories::fiscal_years::list_by_company(&pool, company_id)
+        .await
+        .unwrap();
+    assert_eq!(list.len(), 1);
+    assert_eq!(
+        (
+            list[0].name.as_str(),
+            list[0].start_date.to_string(),
+            list[0].end_date.to_string()
+        ),
+        (
+            "Exercice 2026",
+            "2026-01-01".to_string(),
+            "2026-12-31".to_string()
+        )
+    );
 }
 
 /// Story 7.2 (KF-003) — vérifie que `finalize` Path B seed les 4 taux TVA
@@ -1281,7 +1378,8 @@ async fn demo_path_creates_fiscal_year(pool: MySqlPool) {
         "exactly one fiscal_year created by seed_demo"
     );
     let fy = &list[0];
-    let current_year = chrono::Utc::now().naive_utc().date().year();
+    // Story 35-5b : l'année du jour de l'horloge de test, celle que le serveur lit.
+    let current_year = common::jour::aujourd_hui_test().year();
     assert_eq!(fy.name, format!("Exercice {current_year}"));
     assert_eq!(fy.start_date.year(), current_year);
     assert_eq!(fy.start_date.month(), 1);

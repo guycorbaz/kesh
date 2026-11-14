@@ -228,28 +228,113 @@ export function defaultOpeningSide(
 }
 
 /**
- * Story 34-2 (#533) — le montant saisi, tel qu'envoyé : les séparateurs de
- * milliers suisses (apostrophes droite ou typographique, espaces) retirés, la
- * virgule décimale lue comme un point. `null` si le champ est vide : aucun solde.
- * Le contrôle de forme reste celui du serveur (positif, quatre décimales).
+ * Story 35-6 — l'issue du classement d'une saisie de solde d'ouverture :
+ * `empty` (aucun solde), `clear` (la seule qui part au serveur, avec sa charge),
+ * `ambiguous` (« 1.234 », « 1,234 » : mille ou un franc ?), `unreadable`, `negative`.
  */
-export function openingAmountPayload(raw: string): string | null {
-	const cleaned = raw.replace(/['’\s  ]/g, '').replace(',', '.');
-	return cleaned === '' ? null : cleaned;
-}
+export type OpeningAmountKind = 'empty' | 'ambiguous' | 'clear' | 'unreadable' | 'negative';
 
-/** Séparateurs de milliers retirés avant les contrôles (apostrophes, espaces). */
-const THOUSANDS_SEPARATORS = /['’\s  ]/g;
+/** Story 35-6 — le classement d'une saisie, et la charge à envoyer si elle est claire. */
+export type OpeningAmountReading = { kind: OpeningAmountKind; payload?: string };
 
 /**
- * Story 34-2 (revue P1, B-1 = E-6) — vrai si la saisie est **ambiguë** : un
- * nombre, une virgule, puis exactement trois chiffres (« 1,234 »), qui peut être
- * un millier à l'anglaise (1234) ou une virgule décimale (1.234). Lue comme
- * décimale, elle écrirait une écriture d'ouverture mille fois trop petite, sans
- * signal ; l'écran la refuse et demande une forme sans équivoque.
+ * Story 35-6 (D1) — séparateurs de groupe : apostrophes droite et typographique et
+ * tout blanc Unicode (`\s` : espace, U+00A0, U+202F, U+2009, tabulation…), ceux que
+ * l'écran retirait déjà. Permis dans la partie entière seulement.
  */
-export function openingAmountAmbiguous(raw: string): boolean {
-	return /^\d+,\d{3}$/.test(raw.replace(THOUSANDS_SEPARATORS, ''));
+const GROUP_SEPARATOR = "['’\\s]";
+/** Séparateurs de groupe et apostrophes de tête et de queue (L1). */
+const EDGES = new RegExp(`^${GROUP_SEPARATOR}+|${GROUP_SEPARATOR}+$`, 'g');
+const GROUP_SEPARATORS = new RegExp(GROUP_SEPARATOR, 'g');
+/** Une partie entière « groupée » : un séparateur de groupe entre deux chiffres. */
+const GROUPED = new RegExp(`[0-9]${GROUP_SEPARATOR}+[0-9]`);
+const UNREADABLE: OpeningAmountReading = { kind: 'unreadable' };
+
+/**
+ * Story 35-6 (#1026, #1028, #1025) — classe la saisie du solde d'ouverture **avant**
+ * tout envoi, par le pipeline ordonné de la fiche (D2) ; la première étape qui conclut
+ * l'emporte :
+ *
+ * 1. **L1** — rognage des blancs et des apostrophes de tête et de queue ; vide → `empty`.
+ * 2. **L2** — un `+` ou un `-` en tête est retenu, le reste rogné à nouveau ; reste vide
+ *    ou portant encore un signe (`++1`, `1-2`) → `unreadable`.
+ * 3. **L3** — le souligné suit le serveur (`rust_decimal`) : avant le premier chiffre,
+ *    `unreadable` (`_1`) ; après, retiré (`1_000` → 1000, #1028).
+ * 4. **L4** — plus d'un `.` ou `,` → `unreadable` ; le séparateur décimal coupe la
+ *    partie entière E et la fraction F.
+ * 5. **L5** — F ne porte que des chiffres ASCII (un blanc ou une apostrophe après la
+ *    décimale, `1. 234`, n'a pas de lecture sûre).
+ * 6. **L6** — E, ses séparateurs de groupe retirés, ne porte que des chiffres ASCII
+ *    (un exposant, `1e3`, n'est jamais lu) ; E et F ne sont pas vides ensemble.
+ * 7. **L7** — plus de quatre décimales (zéros de queue au-delà de la quatrième
+ *    retirés) → `unreadable` ; signe `-` sur une valeur non nulle → `negative` ;
+ *    **ambiguë** : un séparateur décimal, F de trois chiffres tels que saisis, E non
+ *    groupée et de un à trois chiffres hors zéros de tête
+ *    (`^0*[1-9][0-9]{0,2}[.,][0-9]{3}$`) ; sinon `clear`.
+ *
+ * La charge d'une saisie claire (D5) suit `^[0-9]+(\.[0-9]{1,4})?$` : chiffres de E
+ * (`0` si E est vide), puis `.` et F si F n'est pas vide ; aucun signe ; zéros de tête
+ * gardés. Le serveur la lit à la valeur que l'aperçu montre (test de parité,
+ * `opening_balances.rs`). La table complète est `opening-amount-cases.json`.
+ */
+export function openingAmountKind(raw: string): OpeningAmountReading {
+	// L1
+	let rest = raw.replace(EDGES, '');
+	if (rest === '') return { kind: 'empty' };
+	// L2
+	let negative = false;
+	if (rest[0] === '+' || rest[0] === '-') {
+		negative = rest[0] === '-';
+		rest = rest.slice(1).replace(EDGES, '');
+	}
+	if (rest === '' || /[+-]/.test(rest)) return UNREADABLE;
+	// L3
+	const firstUnderscore = rest.indexOf('_');
+	if (firstUnderscore !== -1) {
+		const firstDigit = rest.search(/[0-9]/);
+		if (firstDigit === -1 || firstUnderscore < firstDigit) return UNREADABLE;
+		rest = rest.replace(/_/g, '');
+	}
+	// L4
+	const decimalSeparators = rest.match(/[.,]/g) ?? [];
+	if (decimalSeparators.length > 1) return UNREADABLE;
+	const cut = rest.search(/[.,]/);
+	const hasDecimal = cut !== -1;
+	const integerPart = hasDecimal ? rest.slice(0, cut) : rest;
+	const typedFraction = hasDecimal ? rest.slice(cut + 1) : '';
+	// L5
+	if (!/^[0-9]*$/.test(typedFraction)) return UNREADABLE;
+	// L6
+	const grouped = GROUPED.test(integerPart);
+	const integerDigits = integerPart.replace(GROUP_SEPARATORS, '');
+	if (!/^[0-9]*$/.test(integerDigits)) return UNREADABLE;
+	if (integerDigits === '' && typedFraction === '') return UNREADABLE;
+	// L7
+	const fraction =
+		typedFraction.slice(0, 4) + typedFraction.slice(4).replace(/0+$/, '');
+	if (fraction.length > 4) return UNREADABLE;
+	if (negative && /[1-9]/.test(integerDigits + fraction)) return { kind: 'negative' };
+	if (
+		hasDecimal &&
+		typedFraction.length === 3 &&
+		!grouped &&
+		/^0*[1-9][0-9]{0,2}$/.test(integerDigits)
+	) {
+		return { kind: 'ambiguous' };
+	}
+	const payload = (integerDigits === '' ? '0' : integerDigits) + (fraction === '' ? '' : `.${fraction}`);
+	return { kind: 'clear', payload };
+}
+
+/**
+ * Story 34-2 (#533), adossé au classement par la Story 35-6 (D5) — la charge
+ * envoyée au serveur pour une saisie **claire** ; `null` sinon (vide compris). La
+ * page classe avant de prendre la charge : un `null` n'y vaut « aucun solde »
+ * qu'après un `kind === 'empty'`.
+ */
+export function openingAmountPayload(raw: string): string | null {
+	const reading = openingAmountKind(raw);
+	return reading.kind === 'clear' ? (reading.payload ?? null) : null;
 }
 
 /**
@@ -257,15 +342,13 @@ export function openingAmountAmbiguous(raw: string): boolean {
  * suisse de `Intl` pour `fr-CH` (`1 234.50 CHF`, le séparateur de milliers est une
  * espace fine insécable, U+202F), exact jusqu'à quatre décimales
  * ({@link formatChfExact}), pour le montrer avant le geste ; `null` si la saisie
- * est vide, ambiguë ou n'est pas un nombre positif bien formé (le serveur en
- * rendra le refus). Limites suivies : « 0.00 CHF » pour un montant nul (#1027),
- * « 1_000 » (#1028), moteur sans `Intl.NumberFormat` v3 (#1031).
+ * n'est pas claire ({@link openingAmountKind}, Story 35-6 : jamais « NaN CHF »,
+ * #1028). Limites suivies : « 0.00 CHF » pour un montant nul (#1027), moteur sans
+ * `Intl.NumberFormat` v3 (#1031).
  */
 export function openingAmountPreview(raw: string): string | null {
-	if (openingAmountAmbiguous(raw)) return null;
 	const amount = openingAmountPayload(raw);
-	if (amount === null || !/^\d+(\.\d{1,4})?$/.test(amount)) return null;
-	return formatChfExact(amount);
+	return amount === null ? null : formatChfExact(amount);
 }
 
 /** Formateur CHF à deux décimales au moins, quatre au plus (la précision de la colonne). */

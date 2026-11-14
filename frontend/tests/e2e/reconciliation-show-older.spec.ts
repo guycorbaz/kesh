@@ -34,9 +34,10 @@ import {
 	authedApiContext,
 	disposeContextSafe,
 } from './helpers/test-state';
+// Story 35-4 : le relevé synthétique est partagé (`helpers/camt-synthetic.ts`).
+import { dateOfEntry as dateOf, syntheticCamtStatement } from './helpers/camt-synthetic';
 
 const ICI = path.dirname(fileURLToPath(import.meta.url));
-const FIXTURE = path.join(ICI, 'fixtures', 'camt053_v04_minimal.xml');
 const CATALOGUE_FR = path.join(ICI, '..', '..', '..', 'crates', 'kesh-i18n', 'locales', 'fr-CH', 'messages.ftl');
 const TEST_IBAN = 'CH4431999123000889012';
 const N = 501;
@@ -73,45 +74,6 @@ async function bankAccountId(ctx: APIRequestContext): Promise<number> {
 		ba = await findAccount();
 	}
 	return ba!.id;
-}
-
-/** La date `AAAA-MM-JJ` de l'entrée `i` : un jour par entrée depuis le 2025-01-01. */
-function dateOf(i: number): string {
-	return new Date(Date.UTC(2025, 0, 1 + i)).toISOString().slice(0, 10);
-}
-
-/** Le relevé synthétique : l'entrée de la fixture répétée `N` fois, chacune unique. */
-function syntheticStatement(unique: string): string {
-	const xml = fs.readFileSync(FIXTURE, 'utf8');
-	const debut = xml.indexOf('<Ntry>');
-	const fin = xml.indexOf('</Ntry>') + '</Ntry>'.length;
-	expect(debut > 0 && fin > debut, 'fixture : bloc <Ntry> introuvable').toBeTruthy();
-	const modele = xml.slice(debut, fin);
-	const entrees = Array.from({ length: N }, (_, i) => {
-		let e = modele;
-		for (const [from, to] of [
-			['<Amt Ccy="CHF">1234.56</Amt>', `<Amt Ccy="CHF">${(1000 + i).toFixed(2)}</Amt>`],
-			['<Dt>2026-05-15</Dt>', `<Dt>${dateOf(i)}</Dt>`],
-			['<Dt>2026-05-15</Dt>', `<Dt>${dateOf(i)}</Dt>`],
-			['BANK-TX-42', `OLDER-${unique}-${i}`],
-			['E2E-2026-05-001', `E2E-OLDER-${unique}-${i}`],
-			['<Nm>Acme SA</Nm>', `<Nm>Ancienne ${i} ${unique}</Nm>`],
-		]) {
-			expect(e.includes(from), `fixture : « ${from} » introuvable`).toBeTruthy();
-			e = e.replace(from, to);
-		}
-		return e;
-	});
-	let out = xml.slice(0, debut) + entrees.join('\n') + xml.slice(fin);
-	for (const [from, to] of [
-		['STMT-2026-05-001', `STMT-OLDER-${unique}`],
-		['<FrDtTm>2026-05-01T00:00:00</FrDtTm>', '<FrDtTm>2025-01-01T00:00:00</FrDtTm>'],
-		['<Dt>2026-05-01</Dt>', '<Dt>2025-01-01</Dt>'],
-	]) {
-		expect(out.includes(from), `fixture : « ${from} » introuvable`).toBeTruthy();
-		out = out.replace(from, to);
-	}
-	return out;
 }
 
 /** Le dossier des captures : `KESH_E2E_CAPTURES_DIR`, sinon la sortie du test. */
@@ -158,7 +120,7 @@ test('au-delà de 100 : l’avis et le bouton ; au plafond de 500 : l’avis seu
 				file: {
 					name: `show-older-${unique}.xml`,
 					mimeType: 'application/xml',
-					buffer: Buffer.from(syntheticStatement(unique), 'utf8'),
+					buffer: Buffer.from(syntheticCamtStatement(N, unique), 'utf8'),
 				},
 				confirmBalanceMismatch: 'true',
 				confirmDuplicateFile: 'true',

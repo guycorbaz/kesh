@@ -5,8 +5,14 @@
 //! `opening_complement::complement_status`. ⚠️ Chaque entrelacement nomme la
 //! mutation qu'il tue.
 
-use chrono::{Datelike, NaiveDate, Utc};
+/// Story 35-5a0 — la date du jour de l'horloge de test.
+#[allow(dead_code)]
+#[path = "support/jour.rs"]
+mod jour;
+
+use chrono::{Datelike, NaiveDate};
 use kesh_db::entities::account::AccountType;
+use kesh_db::entities::audit_log::Acteur;
 use kesh_db::entities::contact::{ContactType, NewContact, Salutation};
 use kesh_db::entities::invoice::{NewInvoice, NewInvoiceLine};
 use kesh_db::entities::journal_entry::Journal;
@@ -128,9 +134,14 @@ async fn post(
     date: NaiveDate,
     lines: &[(&str, Decimal, Decimal)],
 ) -> JournalEntryWithLines {
-    journal_entries::create(pool, fy, co.user_id, entry(co, date, lines))
-        .await
-        .expect("écriture")
+    journal_entries::create(
+        pool,
+        fy,
+        Acteur::utilisateur(co.user_id),
+        entry(co, date, lines),
+    )
+    .await
+    .expect("écriture")
 }
 
 fn debit(co: &Co, n: &str, amount: Decimal) -> ComplementLine {
@@ -509,9 +520,15 @@ async fn un_compte_contre_passe_reste_mouvemente(pool: MySqlPool) {
         &[("1100", dec!(9), dec!(0)), ("2000", dec!(0), dec!(9))],
     )
     .await;
-    journal_entries::reverse(&pool, co.company_id, e.entry.id, co.user_id)
-        .await
-        .unwrap();
+    journal_entries::reverse(
+        &pool,
+        co.company_id,
+        e.entry.id,
+        Acteur::utilisateur(co.user_id),
+        crate::jour::aujourd_hui_test(),
+    )
+    .await
+    .unwrap();
     assert_eq!(
         refusal(complete(&pool, &co, &[debit(&co, "1100", dec!(5))], d(2026, 6, 1)).await).0,
         R::AccountMoved
@@ -705,7 +722,7 @@ async fn entrelacement_1_ecriture_en_vol_sur_le_compte_vise(pool: MySqlPool) {
     journal_entries::create_in_tx(
         &mut tx,
         co.fy[1],
-        co.user_id,
+        Acteur::utilisateur(co.user_id),
         entry(
             &co,
             d(2027, 2, 1),
@@ -790,7 +807,7 @@ async fn entrelacement_2_ecriture_du_meme_exercice_sans_compte_vise(pool: MySqlP
     journal_entries::create_in_tx(
         &mut tx,
         co.fy[0],
-        co.user_id,
+        Acteur::utilisateur(co.user_id),
         entry(
             &co,
             d(2026, 3, 1),
@@ -875,9 +892,12 @@ async fn entrelacement_4_deux_complements_du_meme_compte(pool: MySqlPool) {
 /// des verrous ne le ferait rougir. Le rejeu reste sans test (fiche, Limites).
 #[sqlx::test(migrations = "./test-schema")]
 async fn entrelacement_5_contre_passation_en_vol(pool: MySqlPool) {
-    let y = Utc::now().date_naive().year();
+    // Story 35-5a0 (D4) — le jour du montage est celui de l'horloge de test, et
+    // l'exercice courant est celui de ce jour : le complément et la
+    // contre-passation reçoivent ce même `today`.
+    let today = crate::jour::aujourd_hui_test();
+    let y = today.year();
     let co = setup(&pool, &[year_span(y - 1), year_span(y)]).await;
-    let today = Utc::now().date_naive();
     let original = post(
         &pool,
         &co,
@@ -921,7 +941,9 @@ async fn entrelacement_5_contre_passation_en_vol(pool: MySqlPool) {
     let r = {
         let pool = pool.clone();
         let (cid, uid, id) = (co.company_id, co.user_id, original.entry.id);
-        tokio::spawn(async move { journal_entries::reverse(&pool, cid, id, uid).await })
+        tokio::spawn(async move {
+            journal_entries::reverse(&pool, cid, id, Acteur::utilisateur(uid), today).await
+        })
     };
     assert!(
         attendre_une_requete_en_cours(&pool, &["JOIN fiscal_years", "FOR UPDATE"], || r
