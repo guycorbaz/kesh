@@ -27,7 +27,8 @@ de C-e360-8 (« forme exacte à la fiche »). Chaque choix : contexte, option re
   panneau, maintien levé.
 - **Écartées** : suspendre aussi le battement ; lever le maintien dès la réponse reçue.
 - **Réversible** : oui.
-- **Amendé le 2026-11-14 (validation P1, V1-3 ; option prudente demandée par l'orchestrateur)** : le maintien est **borné**
+- **Amendé le 2026-11-14 (validation P1, V1-3 ; option prudente demandée par l'orchestrateur)** *(la borne de l'import en
+  cours est remplacée par C-36-5-8)* : le maintien est **borné**
   — il ne couvre que l'import en cours et la lecture du compte rendu, chacune au plus B = la durée d'inactivité réglée
   (60 min si inconnue) ; il est **levé à l'issue inconnue** (la fermeture ordinaire reprend) ; à B après un succès, la
   session se termine comme par le chemin 401 (`clearSession`, `/login?reason=session_expired`). Levée en `finally`
@@ -80,6 +81,22 @@ de C-e360-8 (« forme exacte à la fiche »). Chaque choix : contexte, option re
   panneau (levée) ; `logout()` et `clearSession()` lèvent ; la fermeture du navigateur perd l'état.
 - **Écartée** : option (b) — `login()` lève le maintien sauf sur une option propre au renouvellement : un appelant futur qui
   oublierait l'option rouvrirait le défaut en silence ; (a) n'a pas de cas oubliable.
+- **Réversible** : oui.
+- **Précisé le 2026-11-14 (validation P3, V3-7, décision de l'orchestrateur)** : dans `logout()`, la levée est la première
+  instruction, **avant** le `await fetch` (`auth.svelte.ts:204-212`, requête sans délai d'abandon), pour qu'une
+  déconnexion pendue ou en échec ne laisse pas le maintien posé.
+
+### C-36-5-8 — La phase 1 bornée par `max(B, LONG_OPERATION_TIMEOUT_MS)`, la phase 2 par B
+
+- **Contexte** : validation P3, V3-1 (HIGH). Bornée par B (1 à 1 440 min, `session-idle.svelte.ts:76-77`), la phase 1
+  expirait pendant un import plus long que B, alors que le client accorde jusqu'à une heure à l'import
+  (`api-client.ts:53`, `LONG_OPERATION_TIMEOUT_MS = 60 * 60_000` ; `admin-restore.api.ts:46-48`) : la KF-056 revenait
+  pour un Administrateur qui a réglé une durée courte.
+- **Retenu** (décision de l'orchestrateur) : confirmation → `holdForRestore(Math.max(B, LONG_OPERATION_TIMEOUT_MS))`, la
+  constante importée d'`api-client.ts`, jamais recopiée ; succès → `holdForRestore(B)`, qui **remplace** l'échéance ;
+  échec, issue inconnue, 401 de l'import, démontage → levée. L'échéance d'une heure ne survit à aucune fin d'import.
+- **Écartées** : la borne B seule (première rédaction) ; écrire la limite au manuel (« pour N < 60 min, un import plus long
+  que N perd son compte rendu ») et l'ouvrir en issue.
 - **Réversible** : oui.
 
 ### C-36-5-6 — Noms de bases
