@@ -9,6 +9,7 @@
 import { expect } from '@playwright/test';
 import type { APIRequestContext, Page } from '@playwright/test';
 import { authedApiContext, clearAuthStorage, disposeContextSafe } from './test-state';
+import { ajouterJoursIso } from './dates';
 
 /**
  * Story 34-5 (#951) — la version que la facture porte au moment de l'appel, lue par
@@ -59,16 +60,16 @@ export async function createUser(page: Page, role: string): Promise<string> {
  * (M1) pour être réutilisée par `homepage-reminders.spec.ts` sans duplication.
  */
 export function overdueDate(days = 25): string {
-	const d = new Date();
-	d.setDate(d.getDate() - days);
-	return d.toISOString().slice(0, 10);
+	return ajouterJoursIso(todayInZurich(), -days);
 }
 
 /**
  * Contact `Personne` PDF-ready (adresse structurée #213, firstName/lastName
  * obligatoires). `email`/`salutation` optionnels (Story 20-4 : le round-trip
  * d'envoi exige un contact AVEC e-mail et civilité genrée — le backend
- * refuse l'envoi sans e-mail, 400 CONTACT_EMAIL_MISSING).
+ * refuse l'envoi sans e-mail, 400 CONTACT_EMAIL_MISSING). `city` remplace la
+ * localité (Story 35-2a : une localité que la QR-facture refuse ; la saisie d'un
+ * contact ne contrôle que les longueurs).
  */
 export async function createContactWithAddressViaApi(
 	page: Page,
@@ -76,6 +77,7 @@ export async function createContactWithAddressViaApi(
 	email?: string,
 	salutation?: 'Monsieur' | 'Madame' | 'Neutre',
 	paymentTermsDays?: number,
+	city?: string,
 ): Promise<number> {
 	const ctx = await authedApiContext(page);
 	try {
@@ -91,7 +93,7 @@ export async function createContactWithAddressViaApi(
 					street: 'Marktgasse',
 					building: '28',
 					postalCode: '9400',
-					city: 'Rorschach',
+					city: city ?? 'Rorschach',
 					country: 'CH',
 				},
 				defaultPaymentTerms: '30 jours net',
@@ -145,7 +147,7 @@ export async function createAndValidateInvoiceViaApi(
 	contactId: number,
 	dueDate?: string,
 ): Promise<number> {
-	const today = new Date().toISOString().slice(0, 10);
+	const today = todayInZurich();
 	const invoiceDate = dueDate ?? today;
 	const ctx = await authedApiContext(page);
 	try {
@@ -196,7 +198,7 @@ export async function createJournalEntryViaApi(
 			data: {
 				// Date LOCALE (Zurich), pas UTC : entre minuit et 2 h, la date UTC est
 				// la veille — et le 1er janvier, un autre exercice.
-				entryDate: new Date().toLocaleDateString('sv-SE', { timeZone: 'Europe/Zurich' }),
+				entryDate: todayInZurich(),
 				journal: 'OD',
 				description,
 				lines: [

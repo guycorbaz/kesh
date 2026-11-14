@@ -15,6 +15,7 @@ use jsonwebtoken::{Algorithm, EncodingKey, Header};
 use kesh_api::auth::jwt::Claims;
 use kesh_api::config::Config;
 use kesh_api::{AppState, build_router};
+use kesh_db::entities::audit_log::Acteur;
 use kesh_db::entities::journal_entry::Journal;
 use kesh_db::entities::{NewJournalEntry, NewJournalEntryLine};
 use kesh_db::repositories::journal_entries;
@@ -124,7 +125,7 @@ async fn post_expense(pool: &MySqlPool, seeded: &SeededCompany, project: i64) {
     journal_entries::create(
         pool,
         seeded.fiscal_year_id,
-        seeded.admin_user_id,
+        Acteur::utilisateur(seeded.admin_user_id),
         NewJournalEntry {
             company_id: seeded.company_id,
             entry_date: chrono::NaiveDate::from_ymd_opt(2026, 6, 1).unwrap(),

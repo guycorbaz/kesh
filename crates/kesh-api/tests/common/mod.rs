@@ -119,6 +119,35 @@ pub async fn audit_actor(
     .expect("lecture de l'attribution d'audit")
 }
 
+/// L'acteur de l'**unique** entrée `action` sur `entity_type`/`entity_id` :
+/// `(actor_type, actor_api_key_id, user_id)`. Échoue s'il n'y en a pas
+/// exactement une — une trace doublée (l'une à la clé, l'autre à
+/// l'utilisateur) ne passe pas, à la différence d'un `fetch_one`, qui prend la
+/// première ligne sans rien dire (Story 35-8a2, revue P1, B6 = A6 = E5).
+pub async fn audit_actor_unique(
+    pool: &MySqlPool,
+    action: &str,
+    entity_type: &str,
+    entity_id: i64,
+) -> (String, Option<i64>, i64) {
+    let rows: Vec<(String, Option<i64>, i64)> = sqlx::query_as(
+        "SELECT actor_type, actor_api_key_id, user_id FROM audit_log \
+         WHERE action = ? AND entity_type = ? AND entity_id = ?",
+    )
+    .bind(action)
+    .bind(entity_type)
+    .bind(entity_id)
+    .fetch_all(pool)
+    .await
+    .unwrap_or_else(|e| panic!("trace {action} de {entity_type} {entity_id} : {e}"));
+    assert_eq!(
+        rows.len(),
+        1,
+        "une seule trace {action} de {entity_type} {entity_id} : {rows:?}"
+    );
+    rows.into_iter().next().unwrap()
+}
+
 /// Le `details_json` de la dernière entrée écrite pour une action donnée.
 ///
 /// Rend `None` si la colonne est `NULL` — ce qui est un cas LÉGITIME et non un
@@ -261,6 +290,12 @@ pub mod capture_rejeu;
 
 /// La `Lecture` de test en lecture seule (Story 32-4a, C-32-4a-9).
 pub mod lecture_seule;
+
+/// La date du jour de l'horloge de test (Story 35-5a0).
+pub mod jour;
+
+/// Fixer l'horloge d'un état de test (Story 35-5a).
+pub mod horloge;
 
 /// La capture générique de `tracing`, tous niveaux et toutes cibles (Story
 /// 32-6a, AC-a14).

@@ -16,7 +16,7 @@ import {
 	authedApiContext,
 	disposeContextSafe,
 } from './helpers/test-state';
-import { wiredBankAccountViaApi } from './helpers/api-fixtures';
+import { todayInZurich, wiredBankAccountViaApi } from './helpers/api-fixtures';
 
 const FORMAT_DEFAUT = 'FF-{YEAR}-{SEQ:03}';
 const BACKEND = process.env.KESH_BACKEND_URL ?? 'http://127.0.0.1:3000';
@@ -102,7 +102,7 @@ async function brouillon(d: Decor, numero: string | null): Promise<{ id: number;
 		data: {
 			contactId: d.supplierId,
 			supplierInvoiceNumber: numero,
-			invoiceDate: new Date().toISOString().slice(0, 10),
+			invoiceDate: todayInZurich(),
 			creditorIban: 'CH5604835012345678009',
 			paymentReference: 'Facture E2E',
 			lines: [
@@ -279,7 +279,7 @@ test.describe('Le numéro interne', () => {
 				data: {
 					settlementType: 'internal_account',
 					accountId: comptes.find((c) => c.number === '1000')!.id,
-					paymentDate: new Date().toISOString().slice(0, 10),
+					paymentDate: todayInZurich(),
 				},
 			});
 			expect(reglement.ok(), await reglement.text()).toBeTruthy();
@@ -308,7 +308,7 @@ test.describe('Le numéro interne', () => {
 			const res = await d.ctx.post('/api/v1/payment-batches', {
 				data: {
 					bankAccountId,
-					requestedExecutionDate: new Date().toISOString().slice(0, 10),
+					requestedExecutionDate: todayInZurich(),
 					supplierInvoiceIds: [v.id],
 				},
 			});

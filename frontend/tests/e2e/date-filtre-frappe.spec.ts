@@ -5,6 +5,7 @@ import {
 	authedApiContext,
 	disposeContextSafe,
 } from './helpers/test-state';
+import { todayInZurich } from './helpers/api-fixtures';
 
 /**
  * Story 33-4 (#606) — un filtre de date tapé au clavier, caractère par caractère.
@@ -42,7 +43,7 @@ async function peupler(page: Page) {
 		const facture = await api.post('/api/v1/invoices', {
 			data: {
 				contactId: contacts.items[0].id,
-				date: new Date().toISOString().slice(0, 10),
+				date: todayInZurich(),
 				lines: [{ description: 'Frappe', quantity: '1', unitPrice: '100.00', vatRate: '8.10' }],
 			},
 		});

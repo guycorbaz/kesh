@@ -969,7 +969,13 @@ const ATTENDU = {
 	// Passe de textes de l'intégration (#1037, #1040, #1027) : **3021 → 3026** (+5), tous dans
 	// `bank-accounts/+page.svelte` : titre d'une carte, ses deux avis de création, le sens
 	// « Dette (solde dû) », l'aperçu d'un montant nul. Que des littéraux ; recompté par la garde.
-	sitesTotal: 3026,
+	// Story 35-1 (#932) : **3026 → 3031** (+5) — `invoices-format-error-no-seq` (miroir de
+	// `NoSeq`), et dans `settings/invoicing/+page.svelte` le libellé, l'aide et l'aperçu du champ
+	// *Format des avoirs*, et le repli `settings-invoicing-format-invalid` de son refus dans
+	// `save()`. Que des littéraux ; recompté par la garde (relevé à 3031 avant d'écrire ce nombre).
+	// Revue P1 de la 35-1 (E2) : **3031 → 3032** (+1) — `invoices-format-error-unmatched-brace`,
+	// le refus d'une accolade isolée au miroir. Littéral ; relevé à 3032 par la garde avant d'écrire.
+	sitesTotal: 3032,
 	sitesNonResolus: 31,
 	relais: 6,
 	// Story 26-1 (#620, AC3-bis) : **10 → 11** — `lib/features/bank-import/

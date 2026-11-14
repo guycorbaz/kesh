@@ -241,7 +241,7 @@ pub async fn opening_balances_status(
     let complement = opening_complement::complement_status(
         &state.pool,
         current_user.company_id,
-        chrono::Utc::now().date_naive(),
+        state.horloge.aujourd_hui(),
     )
     .await?;
     let respond = |fiscal_year, can_enter, reason| {
@@ -601,7 +601,7 @@ pub async fn complete_opening_balances(
     let description = state
         .i18n
         .format(&locale, "opening-balances-complement-description", None);
-    let today = chrono::Utc::now().date_naive();
+    let today = state.horloge.aujourd_hui();
 
     let result = kesh_db::retry::retry_on_deadlock("opening_balances::complete", || {
         let pool = &state.pool;

@@ -6,6 +6,7 @@ import {
 	authedApiContext,
 	disposeContextSafe,
 } from './helpers/test-state';
+import { todayInZurich } from './helpers/api-fixtures';
 
 test.beforeAll(async () => {
 	await seedTestState('with-company');
@@ -104,7 +105,7 @@ async function createSupplierInvoiceViaApi(
 	expenseAccountId: number,
 	validate = true,
 ): Promise<number> {
-	const today = new Date().toISOString().slice(0, 10);
+	const today = todayInZurich();
 	const ctx = await authedApiContext(page);
 	try {
 		const res = await ctx.post('/api/v1/supplier-invoices', {

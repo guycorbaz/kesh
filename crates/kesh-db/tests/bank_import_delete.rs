@@ -13,6 +13,7 @@
 //! Pré-requis : MariaDB démarré.
 
 use chrono::NaiveDate;
+use kesh_db::entities::audit_log::Acteur;
 use kesh_db::entities::journal_entry::Journal;
 use kesh_db::entities::{NewJournalEntry, NewJournalEntryLine};
 use kesh_db::repositories::bank_imports::{self, DeleteBankImportOutcome};
@@ -91,7 +92,7 @@ async fn entry(pool: &MySqlPool, seeded: &SeededCompany) -> i64 {
     journal_entries::create(
         pool,
         seeded.fiscal_year_id,
-        seeded.admin_user_id,
+        Acteur::utilisateur(seeded.admin_user_id),
         NewJournalEntry {
             company_id: seeded.company_id,
             entry_date: NaiveDate::from_ymd_opt(2026, 1, 15).unwrap(),

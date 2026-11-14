@@ -19,6 +19,10 @@
 //! MariaDB. `AppState::lecture()` et `AppState::trace()` enveloppent le pool
 //! ordinaire.
 
+use std::sync::Arc;
+
+use chrono::NaiveDate;
+use kesh_core::horloge::Horloge;
 use kesh_db::entities::audit_log::NewAuditLogEntry;
 use kesh_db::entities::mcp_prompt::{ErreurEcriturePrompt, VersionEcrite, VersionEnVigueur};
 use kesh_db::entities::mcp_send::{EnvoiPourCle, ErreurDepot, NouvelEnvoi};
@@ -29,21 +33,39 @@ use sqlx::MySqlPool;
 /// Poignée de **lecture** des livres : dépôts, générateurs de rapports.
 ///
 /// Aucune écriture ne passe par elle (règle R4 de `services`).
+///
+/// Depuis la Story 35-5a0 (#929, #1022, #907), elle porte aussi l'**horloge**
+/// de l'état : un service qui a besoin de la date du jour la lit ici
+/// ([`Lecture::aujourd_hui`]), et le serveur MCP reçoit ainsi la même horloge
+/// que l'API. L'horloge n'ajoute aucun accès à la base.
 #[derive(Clone)]
-pub struct Lecture(MySqlPool);
+pub struct Lecture {
+    pool: MySqlPool,
+    horloge: Arc<dyn Horloge>,
+}
 
 impl Lecture {
-    /// Enveloppe un pool. En production, `AppState::lecture()` et le câblage du
-    /// MCP, `build_router_avec_registre` (sur le pool en lecture seule des
-    /// outils), l'appellent.
-    pub fn new(pool: MySqlPool) -> Self {
-        Self(pool)
+    /// Enveloppe un pool et une horloge. En production, `AppState::lecture()`
+    /// et le câblage du MCP, `build_router_avec_registre` (sur le pool en
+    /// lecture seule des outils), l'appellent — avec l'horloge de l'état.
+    pub fn new(pool: MySqlPool, horloge: Arc<dyn Horloge>) -> Self {
+        Self { pool, horloge }
     }
 
     /// Le pool de lecture, pour les dépôts et les générateurs — visible de la
     /// seule couche de services.
     pub(in crate::services) fn pool(&self) -> &MySqlPool {
-        &self.0
+        &self.pool
+    }
+
+    /// La date du jour, lue sur l'horloge de la poignée (Story 35-5a0).
+    pub fn aujourd_hui(&self) -> NaiveDate {
+        self.horloge.aujourd_hui()
+    }
+
+    /// L'horloge de la poignée (Story 35-5a0).
+    pub fn horloge(&self) -> &Arc<dyn Horloge> {
+        &self.horloge
     }
 }
 

@@ -32,6 +32,7 @@ use kesh_api::services::rapports::{
     FormatExport, ModeProjet, Rapport,
 };
 use kesh_api::{AppState, build_router};
+use kesh_db::entities::audit_log::Acteur;
 use kesh_db::entities::journal_entry::Journal;
 use kesh_db::entities::{NewJournalEntry, NewJournalEntryLine, Role};
 use kesh_db::repositories::journal_entries;
@@ -270,7 +271,7 @@ async fn poser_ecriture(
     journal_entries::create(
         pool,
         seeded.fiscal_year_id,
-        seeded.admin_user_id,
+        Acteur::utilisateur(seeded.admin_user_id),
         NewJournalEntry {
             company_id: seeded.company_id,
             entry_date: NaiveDate::from_ymd_opt(2026, 6, 1).unwrap(),
@@ -793,7 +794,8 @@ async fn table_des_traces_par_la_route(pool: MySqlPool) {
 
     let mut echecs = Vec::new();
     for ligne in TABLE_DES_TRACES {
-        let avant = Utc::now().naive_utc().date();
+        // Story 35-5b : le jour de l'horloge de test, celui que lisent les rapports.
+        let avant = common::jour::aujourd_hui_test();
         let repere = repere_audit(&pool).await;
         let url = requete(ligne, &livres);
         let resp = app
@@ -803,7 +805,7 @@ async fn table_des_traces_par_la_route(pool: MySqlPool) {
             .send()
             .await
             .unwrap();
-        let apres = Utc::now().naive_utc().date();
+        let apres = common::jour::aujourd_hui_test();
         if resp.status() != 200 {
             echecs.push(format!(
                 "route#{} {} : {url} → {}",
@@ -1197,7 +1199,7 @@ fn resume(r: &Result<Releve, AppError>) -> String {
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn ac8_a_refus_mcp_sans_la_portee(pool: MySqlPool) {
     let livres = poser_livres(&pool).await;
-    let lecture = Lecture::new(pool.clone());
+    let lecture = Lecture::new(pool.clone(), kesh_api::horloge::horloge_de_test());
     let p = Params::de(&livres);
     let mut echecs = Vec::new();
     for svc in SERVICES {
@@ -1236,7 +1238,7 @@ async fn ac8_a_refus_mcp_sans_la_portee(pool: MySqlPool) {
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn ac8_b_controle_positif_mcp_avec_la_portee(pool: MySqlPool) {
     let livres = poser_livres(&pool).await;
-    let lecture = Lecture::new(pool.clone());
+    let lecture = Lecture::new(pool.clone(), kesh_api::horloge::horloge_de_test());
     let p = Params::de(&livres);
     let mut echecs = Vec::new();
     for svc in SERVICES {
@@ -1312,7 +1314,7 @@ async fn cas_c(
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn ac8_c_val_refus_avant_la_validation(pool: MySqlPool) {
     let livres = poser_livres(&pool).await;
-    let lecture = Lecture::new(pool.clone());
+    let lecture = Lecture::new(pool.clone(), kesh_api::horloge::horloge_de_test());
     let base = Params::de(&livres);
     let mut echecs = Vec::new();
     for svc in SERVICES {
@@ -1338,7 +1340,7 @@ async fn ac8_c_val_refus_avant_la_validation(pool: MySqlPool) {
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn ac8_c_lec_refus_avant_la_lecture(pool: MySqlPool) {
     let livres = poser_livres(&pool).await;
-    let lecture = Lecture::new(pool.clone());
+    let lecture = Lecture::new(pool.clone(), kesh_api::horloge::horloge_de_test());
     let base = Params::de(&livres);
     let mut echecs = Vec::new();
     for svc in SERVICES {
@@ -1425,7 +1427,7 @@ async fn synthese_accueil_motif(pool: MySqlPool) {
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn ac8_d_exports_jamais_servis_au_mcp(pool: MySqlPool) {
     let livres = poser_livres(&pool).await;
-    let lecture = Lecture::new(pool.clone());
+    let lecture = Lecture::new(pool.clone(), kesh_api::horloge::horloge_de_test());
     let p = Params::de(&livres);
     let mut echecs = Vec::new();
     for svc in SERVICES {
@@ -1452,7 +1454,7 @@ async fn ac8_d_exports_jamais_servis_au_mcp(pool: MySqlPool) {
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn ac8_e_canal_api(pool: MySqlPool) {
     let livres = poser_livres(&pool).await;
-    let lecture = Lecture::new(pool.clone());
+    let lecture = Lecture::new(pool.clone(), kesh_api::horloge::horloge_de_test());
     let p = Params::de(&livres);
     let mut echecs = Vec::new();
 
@@ -1523,7 +1525,7 @@ async fn ac8_e_canal_api(pool: MySqlPool) {
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn ac8_identite_societe(pool: MySqlPool) {
     let livres = poser_livres(&pool).await;
-    let lecture = Lecture::new(pool.clone());
+    let lecture = Lecture::new(pool.clone(), kesh_api::horloge::horloge_de_test());
     let mut echecs = Vec::new();
 
     let r = rapports::identite_societe(&mcp(&livres, &TOUTES), &lecture).await;
@@ -1743,7 +1745,7 @@ async fn export_csv_du_grand_livre_trace_son_format(pool: MySqlPool) {
     let traces = traces_depuis(&pool, livres.user_id(), repere).await;
     let attendu = resoudre(
         ligne.details,
-        &symboles_route(ligne, &livres, Utc::now().naive_utc().date()),
+        &symboles_route(ligne, &livres, common::jour::aujourd_hui_test()),
     );
     verifier_trace("route", ligne, &traces, &[attendu]).unwrap();
 }
@@ -1940,7 +1942,7 @@ async fn grand_livre_les_deux_regimes(pool: MySqlPool) {
     journal_entries::create(
         &pool,
         seeded.fiscal_year_id,
-        seeded.admin_user_id,
+        Acteur::utilisateur(seeded.admin_user_id),
         NewJournalEntry {
             company_id: seeded.company_id,
             entry_date: date("2026-06-01"),
@@ -2068,7 +2070,8 @@ const EXCEPTIONS_V1: &[(&str, &str)] = &[
 const FABRIQUES_V2: &[(&str, &str)] = &[
     (
         "lib.rs",
-        "services::poignees::Lecture::new(self.pool.clone())",
+        // Story 35-5a0 — la poignée prend l'horloge de l'état.
+        "services::poignees::Lecture::new(self.pool.clone(), self.horloge.clone())",
     ),
     (
         "lib.rs",
@@ -2077,10 +2080,11 @@ const FABRIQUES_V2: &[(&str, &str)] = &[
     // Story 32-6a (AC-a26) — la lecture des outils du MCP, sur le pool en
     // lecture seule, enveloppée une fois dans `LectureOutils` ; Story 32-8b
     // (AC-B15, point 3) — le pool, lié une fois, est cloné pour la seconde
-    // enveloppe.
+    // enveloppe. Story 35-5a0 — la `Lecture` prend l'horloge de l'état, puis
+    // `LectureOutils` l'enveloppe à la ligne suivante.
     (
         "lib.rs",
-        "mcp::LectureOutils::nouvelle(services::poignees::Lecture::new(pool_outils.clone()));",
+        "let lecture_pool = services::poignees::Lecture::new(pool_outils.clone(), horloge_outils);",
     ),
     // Story 32-8b (AC-B10) — les deux poignées des envois du serveur MCP : la
     // relecture sur le pool en lecture seule, le dépôt sur le pool ordinaire.

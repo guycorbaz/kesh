@@ -1391,7 +1391,9 @@ mod tests {
             .fetch_one(&pool)
             .await
             .unwrap();
-        kesh_seed::seed_demo(&pool, &config.locale, (admin, None))
+        // Story 35-5b (D3, D9) : une date fixe — le test ne lit aucune horloge.
+        let jour = chrono::NaiveDate::from_ymd_opt(2026, 6, 15).unwrap();
+        kesh_seed::seed_demo(&pool, &config.locale, (admin, None), jour)
             .await
             .expect("seed_demo ne rend plus 500 sur plusieurs sociétés provisoires");
     }

@@ -179,3 +179,41 @@ describe("fiche facture — validation refusée par le filet sous un bilan clos"
     await waitFor(() => expect(r.queryByTestId("invoice-validate-dialog")).toBeNull());
   });
 });
+
+// Story 35-3 (#537, AC8) — un compte désigné aux réglages de facturation a été retypé
+// depuis sa désignation : `DESIGNATED_ACCOUNT_WRONG_TYPE`. Le message du serveur nomme le
+// compte, le réglage, les deux types et dit qui agit et où ; réessayer rend le même refus.
+describe("fiche facture — validation refusée pour un compte désigné de mauvais type", () => {
+  const TYPE =
+    "Le compte 1100, désigné comme compte créance client dans Administration → Facturation, est un compte de passif ; ce réglage demande un compte d’actif. Rien n’a été enregistré. Un administrateur doit corriger le réglage concerné — désigner un compte du bon type, ou rendre au compte son type d’origine —, puis la validation pourra être relancée telle quelle.";
+  for (const role of ["Comptable", "Admin"] as const) {
+    it(`${role} : le message du serveur est affiché tel quel et le dialogue se ferme (mutation M6 : code retiré de la liste de fermeture)`, async () => {
+      auth.currentUser = { role, username: "u", userId: "1" };
+      validateInvoiceMock.mockRejectedValue({
+        code: "DESIGNATED_ACCOUNT_WRONG_TYPE",
+        status: 400,
+        message: TYPE,
+        details: {
+          rejected: [
+            {
+              accountId: 2,
+              accountNumber: "1100",
+              setting: "receivable",
+              expectedType: "Asset",
+              actualType: "Liability",
+            },
+          ],
+        },
+      });
+      const r = render(Page);
+      await fireEvent.click(await r.findByTestId("invoice-validate-button"));
+      await r.findByTestId("invoice-validate-dialog");
+      await fireEvent.click(r.getByTestId("invoice-validate-confirm"));
+      await waitFor(() => expect(validateInvoiceMock).toHaveBeenCalledTimes(1));
+      await waitFor(() => expect(notifyError).toHaveBeenCalledWith(TYPE));
+      const affiche = vi.mocked(notifyError).mock.calls.map((c) => String(c[0])).join(" ");
+      expect(affiche).not.toContain("Configurez les comptes par défaut");
+      await waitFor(() => expect(r.queryByTestId("invoice-validate-dialog")).toBeNull());
+    });
+  }
+});

@@ -13,6 +13,7 @@
 use chrono::NaiveDate;
 use kesh_db::entities::account::AccountType;
 use kesh_db::entities::address::StructuredAddress;
+use kesh_db::entities::audit_log::Acteur;
 use kesh_db::entities::journal_entry::Journal;
 use kesh_db::entities::{
     AccountRole, Language, NewAccount, NewCompany, NewFiscalYear, NewJournalEntry,
@@ -162,7 +163,7 @@ async fn post_entry(
     journal_entries::create(
         pool,
         fy_id,
-        user_id,
+        Acteur::utilisateur(user_id),
         NewJournalEntry {
             company_id,
             entry_date: date,
@@ -809,7 +810,7 @@ async fn journal_entry_out_of_fiscal_year_bounds_rejected(pool: MySqlPool) {
     let err = journal_entries::create(
         &pool,
         fy,
-        uid,
+        Acteur::utilisateur(uid),
         NewJournalEntry {
             company_id: cid,
             entry_date: NaiveDate::from_ymd_opt(2027, 1, 15).unwrap(),

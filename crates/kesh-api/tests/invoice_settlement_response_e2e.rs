@@ -241,7 +241,7 @@ async fn validated_invoice(pool: &MySqlPool, seeded: &SeededCompany, amount: Dec
     let entry = journal_entries::create(
         pool,
         seeded.fiscal_year_id,
-        seeded.admin_user_id,
+        kesh_db::entities::audit_log::Acteur::utilisateur(seeded.admin_user_id),
         NewJournalEntry {
             company_id: seeded.company_id,
             entry_date: date,

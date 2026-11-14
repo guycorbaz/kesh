@@ -7,6 +7,8 @@
 //! Décor synthétique.
 #![allow(clippy::too_many_arguments)]
 
+mod common;
+
 use std::net::SocketAddr;
 use std::path::Path;
 use std::sync::Arc;
@@ -231,8 +233,11 @@ async fn assert_invariant(app: &TestApp, jwt: &str, body: &Value) {
 // Montage
 // ============================================================
 
+/// Le jour du montage : celui de l'horloge de test, que l'accueil lit aussi
+/// (Story 35-5b, site 21). Les contre-passations du montage le reçoivent
+/// (Story 35-5a0, D4).
 fn today() -> NaiveDate {
-    Utc::now().date_naive()
+    common::jour::aujourd_hui_test()
 }
 
 /// Le 1er du mois, trois mois avant aujourd'hui : le début de l'exercice ouvert.
@@ -369,7 +374,7 @@ async fn post(
     journal_entries::create(
         pool,
         fy_id,
-        user_id,
+        kesh_db::entities::audit_log::Acteur::utilisateur(user_id),
         NewJournalEntry {
             company_id,
             entry_date: date,
@@ -678,9 +683,15 @@ async fn totals_equal_the_income_statement(pool: MySqlPool) {
     post(&pool, u, f, co, month_k(1), c.expense, c.bank, dec!(400.25)).await;
     // Une paire dans l'exercice.
     let in_year = post(&pool, u, f, co, month_k(0), second, c.bank, dec!(70)).await;
-    journal_entries::reverse(&pool, co, in_year, u)
-        .await
-        .unwrap();
+    journal_entries::reverse(
+        &pool,
+        co,
+        in_year,
+        kesh_db::entities::audit_log::Acteur::utilisateur(u),
+        today(),
+    )
+    .await
+    .unwrap();
     // Une paire à cheval sur N−1 et N.
     let across = post(
         &pool,
@@ -693,9 +704,14 @@ async fn totals_equal_the_income_statement(pool: MySqlPool) {
         dec!(33),
     )
     .await;
-    journal_entries::reverse_at_next_fiscal_year_start(&pool, co, across, u)
-        .await
-        .unwrap();
+    journal_entries::reverse_at_next_fiscal_year_start(
+        &pool,
+        co,
+        across,
+        kesh_db::entities::audit_log::Acteur::utilisateur(u),
+    )
+    .await
+    .unwrap();
     // Un montant de revenus au débit, sans `reverses_entry_id`, de la forme d'un
     // avoir (l'avoir réel : `credit_note_stays_counted`).
     post(&pool, u, f, co, month_k(2), c.revenue, c.bank, dec!(15)).await;
@@ -834,12 +850,24 @@ async fn reversal_pair_in_the_year_leaves_both_months_untouched(pool: MySqlPool)
     // La contre-passation se date au jour (`ReversalDating::Today`), donc au mois 3.
     let charge = c.charge(&pool, month_k(0), c.expense, dec!(500)).await;
     let income = post(&pool, u, f, co, month_k(0), c.bank, c.revenue, dec!(250)).await;
-    let r1 = journal_entries::reverse(&pool, co, charge, u)
-        .await
-        .unwrap();
-    let r2 = journal_entries::reverse(&pool, co, income, u)
-        .await
-        .unwrap();
+    let r1 = journal_entries::reverse(
+        &pool,
+        co,
+        charge,
+        kesh_db::entities::audit_log::Acteur::utilisateur(u),
+        today(),
+    )
+    .await
+    .unwrap();
+    let r2 = journal_entries::reverse(
+        &pool,
+        co,
+        income,
+        kesh_db::entities::audit_log::Acteur::utilisateur(u),
+        today(),
+    )
+    .await
+    .unwrap();
     assert_eq!(r1.entry.entry_date, today(), "montage : datée du jour");
     assert_eq!(r2.entry.reverses_entry_id, Some(income), "montage");
 
@@ -880,9 +908,14 @@ async fn reversal_across_two_years_counts_on_both_sides(pool: MySqlPool) {
         dec!(400),
     )
     .await;
-    let reversal = journal_entries::reverse_at_next_fiscal_year_start(&pool, co, origin, u)
-        .await
-        .unwrap();
+    let reversal = journal_entries::reverse_at_next_fiscal_year_start(
+        &pool,
+        co,
+        origin,
+        kesh_db::entities::audit_log::Acteur::utilisateur(u),
+    )
+    .await
+    .unwrap();
     assert_eq!(reversal.entry.entry_date, year_start(), "montage");
     assert_eq!(reversal.entry.fiscal_year_id, c.fy_id, "montage");
 
@@ -922,14 +955,26 @@ async fn reversal_pair_with_a_side_dated_outside_the_year_follows_the_income_sta
     let outside = last_day_before(year_start());
     // L'origine hors bornes : reste la contre-passation, −500 au mois du jour.
     let charge = c.charge(&pool, month_k(0), c.expense, dec!(500)).await;
-    journal_entries::reverse(&pool, co, charge, u)
-        .await
-        .unwrap();
+    journal_entries::reverse(
+        &pool,
+        co,
+        charge,
+        kesh_db::entities::audit_log::Acteur::utilisateur(u),
+        today(),
+    )
+    .await
+    .unwrap();
     // La contre-passation hors bornes : reste l'origine, +300 au mois 0.
     let income = post(&pool, u, f, co, month_k(0), c.bank, c.revenue, dec!(300)).await;
-    let reversal = journal_entries::reverse(&pool, co, income, u)
-        .await
-        .unwrap();
+    let reversal = journal_entries::reverse(
+        &pool,
+        co,
+        income,
+        kesh_db::entities::audit_log::Acteur::utilisateur(u),
+        today(),
+    )
+    .await
+    .unwrap();
     for id in [charge, reversal.entry.id] {
         sqlx::query("UPDATE journal_entries SET entry_date = ? WHERE id = ?")
             .bind(outside)
@@ -943,14 +988,26 @@ async fn reversal_pair_with_a_side_dated_outside_the_year_follows_the_income_sta
     let prev = c.previous_year(&pool).await;
     // L'origine dans N−1, datée dans N : reste la contre-passation, −40 au mois du jour.
     let origin_prev = c.charge(&pool, month_k(0), c.expense, dec!(40)).await;
-    journal_entries::reverse(&pool, co, origin_prev, u)
-        .await
-        .unwrap();
+    journal_entries::reverse(
+        &pool,
+        co,
+        origin_prev,
+        kesh_db::entities::audit_log::Acteur::utilisateur(u),
+        today(),
+    )
+    .await
+    .unwrap();
     // La contre-passation dans N−1, datée dans N : reste l'origine, +70 au mois 1.
     let income_two = post(&pool, u, f, co, month_k(1), c.bank, c.revenue, dec!(70)).await;
-    let reversal_two = journal_entries::reverse(&pool, co, income_two, u)
-        .await
-        .unwrap();
+    let reversal_two = journal_entries::reverse(
+        &pool,
+        co,
+        income_two,
+        kesh_db::entities::audit_log::Acteur::utilisateur(u),
+        today(),
+    )
+    .await
+    .unwrap();
     for (number, id) in [(9101_i64, origin_prev), (9102, reversal_two.entry.id)] {
         sqlx::query("UPDATE journal_entries SET fiscal_year_id = ?, entry_number = ? WHERE id = ?")
             .bind(prev)
@@ -1016,6 +1073,7 @@ async fn cancelled_supplier_invoice_disappears(pool: MySqlPool) {
         seeded.company_id,
         validated.invoice.id,
         seeded.admin_user_id,
+        today(),
     )
     .await
     .unwrap();

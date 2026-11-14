@@ -119,6 +119,8 @@ export type JournalCode = 'Achats' | 'Ventes' | 'Banque' | 'Caisse' | 'OD';
 export interface InvoiceSettingsResponse {
 	companyId: number;
 	invoiceNumberFormat: string;
+	/** Format du numéro des avoirs (Story 35-1, #932 : lu et affiché à l'écran). */
+	creditNoteNumberFormat: string;
 	/** Format du numéro interne des factures fournisseur (Story 33-1a, #926). */
 	supplierInternalNumberFormat: string;
 	defaultReceivableAccountId: number | null;
@@ -149,6 +151,12 @@ export interface InvoiceSettingsResponse {
 
 export interface UpdateInvoiceSettingsRequest {
 	invoiceNumberFormat: string;
+	/**
+	 * Format du numéro des avoirs — l'écran l'envoie depuis la Story 35-1 (#932). Le serveur
+	 * accepte une requête qui l'omet et le préserve alors (#216), forme que l'écran ne
+	 * produit plus.
+	 */
+	creditNoteNumberFormat: string;
 	supplierInternalNumberFormat: string;
 	defaultReceivableAccountId: number | null;
 	defaultRevenueAccountId: number | null;

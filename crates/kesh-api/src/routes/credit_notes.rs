@@ -25,7 +25,7 @@ use crate::helpers::get_company_for;
 use crate::middleware::auth::CurrentUser;
 use crate::routes::ListResponse;
 use crate::routes::invoice_pdf_service::{
-    build_i18n, map_qrbill_error, sanitize_filename, split_lines,
+    CauseRefusPdf, build_i18n, map_qrbill_error, refus, sanitize_filename, split_lines,
 };
 
 #[derive(Serialize)]
@@ -291,12 +291,8 @@ pub async fn get_credit_note_pdf(
 
     let contact = contacts::find_by_id(&state.pool, cn.contact_id)
         .await?
-        .ok_or_else(|| {
-            AppError::InvoiceNotPdfReady(crate::errors::t(
-                "invoice-pdf-error-contact-missing",
-                "Le contact lié à l'avoir est introuvable.",
-            ))
-        })?;
+        // Story 35-2a (D8) — la clé de l'avoir, et non celle de la facture.
+        .ok_or_else(|| refus(CauseRefusPdf::ContactAbsentAvoir))?;
 
     // Numéro de la facture d'origine (pour la référence affichée).
     let origin_number: Option<String> =

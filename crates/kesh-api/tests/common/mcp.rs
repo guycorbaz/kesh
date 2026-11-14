@@ -238,6 +238,26 @@ pub fn routeur(
     routeur_nu(pool, config, statique, registre).layer(MockConnectInfo(pair))
 }
 
+/// Le routeur, le pair simulé étant `pair`, l'horloge de l'état arrêtée sur
+/// `instant` (Story 35-5b, D8) — le MCP, qui construit sa `Lecture` avec
+/// l'horloge de l'état, lit alors la date du jour de cet instant.
+pub fn routeur_avec_horloge(
+    pool: MySqlPool,
+    config: Config,
+    statique: &Path,
+    registre: Registre,
+    pair: &str,
+    instant: chrono::DateTime<chrono::Utc>,
+) -> Router {
+    let pair: SocketAddr = format!("{}:50000", ip_crochets(pair)).parse().unwrap();
+    build_router_avec_registre(
+        super::horloge::avec_horloge(etat(pool, config), instant),
+        statique.to_string_lossy().into_owned(),
+        registre,
+    )
+    .layer(MockConnectInfo(pair))
+}
+
 fn ip_crochets(ip: &str) -> String {
     if ip.contains(':') {
         format!("[{ip}]")

@@ -210,24 +210,12 @@ pub async fn render_document(
     // Contact (débiteur).
     let contact = contacts::find_by_id(pool, invoice.contact_id)
         .await?
-        .ok_or_else(|| {
-            // M2 (review pass 1 G2) : messages localisés via clés FTL dédiées
-            // (et non plus des chaînes françaises en dur).
-            AppError::InvoiceNotPdfReady(crate::errors::t(
-                "invoice-pdf-error-contact-missing",
-                "Le contact lié à la facture est introuvable.",
-            ))
-        })?;
+        .ok_or_else(|| refus(CauseRefusPdf::ContactAbsent))?;
 
     // Primary bank account.
     let primary_bank = bank_accounts::find_primary(pool, company.id)
         .await?
-        .ok_or_else(|| {
-            AppError::InvoiceNotPdfReady(crate::errors::t(
-                "invoice-pdf-error-no-primary-bank",
-                "Aucun compte bancaire principal n'est configuré pour cette company.",
-            ))
-        })?;
+        .ok_or_else(|| refus(CauseRefusPdf::CompteAbsent))?;
 
     // Construction des structures kesh-qrbill.
     // Pays ISO-3166-1 alpha-2 depuis companies.country / contacts.country
@@ -283,13 +271,11 @@ fn build_qrbill_inputs(
     qr_message_prefix: &str,
 ) -> Result<(QrBillData, InvoicePdfData), AppError> {
     // Adresse créancier — STRUCTURÉE type S (#213, conformité SIX 21.11.2025).
+    // Story 35-2a (#964, D6) — « vide » se juge par la règle de la QR-facture
+    // (`champ_vide_pour_qr`, celle de la saisie), que `trim` ne tient pas
+    // (U+00AD, U+200B), et le refus nomme le premier champ vide.
     let ca = company.structured_address();
-    if ca.postal_code.trim().is_empty() || ca.city.trim().is_empty() {
-        return Err(AppError::InvoiceNotPdfReady(crate::errors::t(
-            "invoice-pdf-error-company-address-empty",
-            "Adresse entreprise incomplète (NPA et localité requis).",
-        )));
-    }
+    adresse_complete("creditor", &ca.postal_code, &ca.city)?;
     let creditor = Address {
         address_type: AddressType::Structured,
         name: company.name.clone(),
@@ -303,39 +289,37 @@ fn build_qrbill_inputs(
             ca.country.clone()
         },
     };
+    pays_iso(Partie::Entreprise, &creditor.country)?;
 
     // Adresse débiteur — STRUCTURÉE type S (#213). Requise et complète (NPA + localité).
-    let da = contact.structured_address();
-    let debtor = match da {
-        Some(a) if !a.postal_code.trim().is_empty() && !a.city.trim().is_empty() => Address {
-            address_type: AddressType::Structured,
-            name: contact.name.clone(),
-            line1: a.street.clone(),
-            line2: a.building.clone(),
-            postal_code: a.postal_code.clone(),
-            town: a.city.clone(),
-            country: if a.country.trim().is_empty() {
-                debtor_country.to_string()
-            } else {
-                a.country.clone()
-            },
-        },
-        _ => {
-            return Err(AppError::InvoiceNotPdfReady(crate::errors::t(
-                "invoice-pdf-error-client-address-required",
-                "Adresse du client obligatoire et complète (NPA et localité) pour la génération PDF.",
-            )));
-        }
+    let Some(a) = contact.structured_address() else {
+        return Err(refus(CauseRefusPdf::AdresseClientRequise));
     };
+    adresse_complete("debtor", &a.postal_code, &a.city)?;
+    let debtor = Address {
+        address_type: AddressType::Structured,
+        name: contact.name.clone(),
+        line1: a.street.clone(),
+        line2: a.building.clone(),
+        postal_code: a.postal_code.clone(),
+        town: a.city.clone(),
+        country: if a.country.trim().is_empty() {
+            debtor_country.to_string()
+        } else {
+            a.country.clone()
+        },
+    };
+    pays_iso(Partie::Client, &debtor.country)?;
 
     // IBAN / QR-IBAN + référence.
     let (iban, reference) = match primary_bank.qr_iban.as_deref() {
         Some(qr) if !qr.trim().is_empty() => {
-            // B8 (review pass 1 G2 B) : message i18n cohérent avec les
-            // autres erreurs PDF (le mapping côté errors.rs résoud la clé).
+            // Story 35-2a (D5) — une QRR qui ne se construit pas est une panne
+            // interne, que l'utilisateur ne corrige pas : le message le dit, le
+            // détail va au journal.
             let qrr = build_qrr(company.id as u64, invoice.id as u64).map_err(|e| {
                 tracing::warn!("build_qrr failed: {e}");
-                AppError::InvoiceNotPdfReady("qrbill-error-qrr-generation".into())
+                refus(CauseRefusPdf::PanneInterne)
             })?;
             (normalize_iban(qr), Reference::Qrr(qrr))
         }
@@ -490,28 +474,40 @@ pub(crate) fn build_i18n(bundle: &kesh_i18n::I18nBundle, locale: Locale) -> QrBi
 /// Maps `QrBillError` to `AppError`. Business errors (invalid IBAN, field too
 /// long, amount out of range) map to `InvoiceNotPdfReady` (400); PDF-rendering
 /// errors map to `PdfGenerationFailed` (500, detail logged only).
+///
+/// Story 35-2a (#955, D5) — un refus de la QR-facture devient une **cause** de
+/// l'ensemble clos [`CauseRefusPdf`], dont [`refus`] fait un message localisé qui
+/// nomme le champ et le caractère ; le texte de `kesh-qrbill` (français en dur,
+/// noms techniques) ne va plus qu'au journal.
 pub(crate) fn map_qrbill_error(err: QrBillError) -> AppError {
-    match err {
-        QrBillError::InvalidIban(msg)
-        | QrBillError::InvalidQrIban(msg)
-        | QrBillError::InvalidQrr(msg) => AppError::InvoiceNotPdfReady(msg),
-        QrBillError::FieldTooLong { field, max, got } => {
-            AppError::InvoiceNotPdfReady(format!("Champ {field} trop long (max {max}, got {got})"))
-        }
-        QrBillError::FieldEmpty(field) => {
-            AppError::InvoiceNotPdfReady(format!("Champ {field} vide (requis)"))
-        }
-        QrBillError::InvalidAmount(msg) | QrBillError::InvalidCurrency(msg) => {
-            AppError::InvoiceNotPdfReady(msg)
-        }
-        QrBillError::InvalidCountry(c) => {
-            AppError::InvoiceNotPdfReady(format!("Pays invalide: {c}"))
-        }
-        err @ QrBillError::InvalidCharset { .. } => AppError::InvoiceNotPdfReady(err.to_string()),
-        QrBillError::PdfGeneration(msg) => AppError::PdfGenerationFailed(msg),
+    use CauseRefusPdf as C;
+    let cause = match &err {
+        QrBillError::InvalidIban(_) => C::IbanInvalide,
+        QrBillError::InvalidQrIban(_) => C::QrIbanInvalide,
+        // La QRR est calculée par Kesh, le payload SPC n'est lu qu'à l'import :
+        // l'utilisateur ne corrige ni l'une ni l'autre.
+        QrBillError::InvalidQrr(_) | QrBillError::InvalidPayload(_) => C::PanneInterne,
+        QrBillError::FieldTooLong { field, max, got } => C::ChampTropLong {
+            champ: field,
+            max: *max,
+            got: *got,
+        },
+        QrBillError::FieldEmpty(field) => C::ChampVide { champ: field },
+        QrBillError::InvalidAmount(_) => C::MontantInvalide,
+        QrBillError::InvalidCurrency(_) => C::DeviseInvalide,
+        // Défensif : `build_qrbill_inputs` contrôle le pays de chaque partie avant
+        // (D7). `validate_country` suffixe le code d'une glose technique, retirée.
+        QrBillError::InvalidCountry(c) => C::PaysInvalide {
+            code: c.split(" (").next().unwrap_or_default().to_string(),
+        },
+        QrBillError::InvalidCharset { field, codepoint } => C::CaractereRefuse {
+            champ: field,
+            codepoint: *codepoint,
+        },
+        QrBillError::PdfGeneration(msg) => return AppError::PdfGenerationFailed(msg.clone()),
         // #151 code-review : la garde géométrique (lignes + récap TVA débordant)
         // remonte un 400 actionnable, pas un 500 opaque.
-        QrBillError::TooManyLines(n) => AppError::InvoiceTooManyLinesForPdf(n),
+        QrBillError::TooManyLines(n) => return AppError::InvoiceTooManyLinesForPdf(*n),
         // Story 16-3a (#151) — en-tête débordant sur le tableau. Actionnable par
         // l'utilisateur, donc 400 et non 500 — même raisonnement que TooManyLines.
         //
@@ -533,12 +529,394 @@ pub(crate) fn map_qrbill_error(err: QrBillError) -> AppError {
                 reached_y_mm = y,
                 "en-tête de document débordant sur le tableau des lignes — PDF refusé en 400"
             );
-            AppError::InvoicePdfHeaderOverflow
+            return AppError::InvoicePdfHeaderOverflow;
         }
-        // Émis uniquement par le parseur SPC (Story 12-5, chemin import) — n'arrive
-        // pas dans la génération PDF. Mappé comme une erreur de validation par défense.
-        QrBillError::InvalidPayload(msg) => AppError::InvoiceNotPdfReady(msg),
+    };
+    tracing::warn!(detail = %err, "QR-facture refusée — PDF refusé en 400");
+    refus(cause)
+}
+
+/// La partie d'une adresse de la QR-facture (D11 : « entreprise », le terme du
+/// bloc `invoice-pdf-error-*`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Partie {
+    /// Le créancier : l'entreprise qui facture.
+    Entreprise,
+    /// Le débiteur : le client.
+    Client,
+}
+
+/// Story 35-2a (#955, #964, D5) — la cause d'un refus `INVOICE_NOT_PDF_READY`,
+/// sur un **ensemble clos** : les refus de `kesh-qrbill` et ceux que Kesh pose
+/// avant lui. Un champ se nomme par son nom technique `kesh-qrbill`
+/// (`debtor.town`) ; [`refus_pdf`] en fait des mots.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum CauseRefusPdf {
+    /// Un caractère hors du jeu de la directive SIX (§ 4.1.1).
+    CaractereRefuse { champ: &'static str, codepoint: u32 },
+    /// Un champ obligatoire vide (par la règle `champ_vide_pour_qr`).
+    ChampVide { champ: &'static str },
+    /// Un champ plus long que la QR-facture ne l'admet.
+    ChampTropLong {
+        champ: &'static str,
+        max: usize,
+        got: usize,
+    },
+    /// L'IBAN du compte principal.
+    IbanInvalide,
+    /// Le QR-IBAN du compte principal.
+    QrIbanInvalide,
+    /// QRR, payload : une panne interne, que l'utilisateur ne corrige pas.
+    PanneInterne,
+    /// Le montant, hors des bornes de la QR-facture.
+    MontantInvalide,
+    /// La devise.
+    DeviseInvalide,
+    /// Un code pays refusé par `kesh-qrbill`, sans partie (bras défensif).
+    PaysInvalide { code: String },
+    /// Le code pays d'une partie, hors de la liste ISO (D7), tel que stocké.
+    PaysDeLaPartie { partie: Partie, code: String },
+    /// Le contact de la facture introuvable.
+    ContactAbsent,
+    /// Le contact de l'avoir introuvable (D8).
+    ContactAbsentAvoir,
+    /// Un client sans aucune adresse.
+    AdresseClientRequise,
+    /// Aucun compte bancaire principal.
+    CompteAbsent,
+}
+
+/// Ce que [`refus_pdf`] rend : la clé du catalogue, ses arguments (déjà formatés
+/// en chaînes : Fluent formaterait un nombre selon la locale) et le repli
+/// fr-CH, égal au catalogue (garde G9 de `textes_coherents.rs`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct RefusPdf {
+    pub cle: &'static str,
+    pub args: Vec<(&'static str, String)>,
+    pub repli: String,
+}
+
+/// Story 35-2a (D3) — la fonction **pure** du refus : la clé, les arguments et le
+/// repli d'une cause. Elle ne résout rien (aucun état global) ; c'est le seul
+/// endroit où le caractère est échappé (D4 : `escape_debug`, puis `U+XXXX`).
+///
+/// Une clé par champ et par raison, sans sélecteur Fluent : G9 compare un
+/// littéral par clé. Un nom de champ inconnu (`address.*`,
+/// `billing_information`, un nom futur) prend le repli de sa raison.
+pub(crate) fn refus_pdf(cause: &CauseRefusPdf) -> RefusPdf {
+    use CauseRefusPdf as C;
+    let sans_argument = |cle: &'static str, repli: &str| RefusPdf {
+        cle,
+        args: Vec::new(),
+        repli: repli.to_string(),
+    };
+    match cause {
+        C::CaractereRefuse { champ, codepoint } => {
+            let car = char::from_u32(*codepoint)
+                .unwrap_or(char::REPLACEMENT_CHARACTER)
+                .escape_debug()
+                .to_string();
+            let point = format!("U+{codepoint:04X}");
+            let (cle, repli) = match *champ {
+                "creditor.name" => (
+                    "invoice-pdf-error-charset-company-name",
+                    format!(
+                        "Le nom de l'entreprise contient un caractère refusé par la QR-facture : « {car} » ({point}). Le nom de l'entreprise ne se modifie pas encore depuis l'interface."
+                    ),
+                ),
+                "creditor.line1" => (
+                    "invoice-pdf-error-charset-company-street",
+                    format!(
+                        "La rue de l'entreprise contient un caractère refusé par la QR-facture : « {car} » ({point}). Corrigez-la dans Paramètres → Organisation."
+                    ),
+                ),
+                "creditor.line2" => (
+                    "invoice-pdf-error-charset-company-building",
+                    format!(
+                        "Le numéro de bâtiment de l'entreprise contient un caractère refusé par la QR-facture : « {car} » ({point}). Corrigez-le dans Paramètres → Organisation."
+                    ),
+                ),
+                "creditor.postal_code" => (
+                    "invoice-pdf-error-charset-company-postal-code",
+                    format!(
+                        "Le NPA de l'entreprise contient un caractère refusé par la QR-facture : « {car} » ({point}). Corrigez-le dans Paramètres → Organisation."
+                    ),
+                ),
+                "creditor.town" => (
+                    "invoice-pdf-error-charset-company-city",
+                    format!(
+                        "La localité de l'entreprise contient un caractère refusé par la QR-facture : « {car} » ({point}). Corrigez-la dans Paramètres → Organisation."
+                    ),
+                ),
+                "debtor.name" => (
+                    "invoice-pdf-error-charset-client-name",
+                    format!(
+                        "Le nom du client contient un caractère refusé par la QR-facture : « {car} » ({point}). Corrigez la fiche du client dans le carnet d'adresses."
+                    ),
+                ),
+                "debtor.line1" => (
+                    "invoice-pdf-error-charset-client-street",
+                    format!(
+                        "La rue du client contient un caractère refusé par la QR-facture : « {car} » ({point}). Corrigez la fiche du client dans le carnet d'adresses."
+                    ),
+                ),
+                "debtor.line2" => (
+                    "invoice-pdf-error-charset-client-building",
+                    format!(
+                        "Le numéro de bâtiment du client contient un caractère refusé par la QR-facture : « {car} » ({point}). Corrigez la fiche du client dans le carnet d'adresses."
+                    ),
+                ),
+                "debtor.postal_code" => (
+                    "invoice-pdf-error-charset-client-postal-code",
+                    format!(
+                        "Le NPA du client contient un caractère refusé par la QR-facture : « {car} » ({point}). Corrigez la fiche du client dans le carnet d'adresses."
+                    ),
+                ),
+                "debtor.town" => (
+                    "invoice-pdf-error-charset-client-city",
+                    format!(
+                        "La localité du client contient un caractère refusé par la QR-facture : « {car} » ({point}). Corrigez la fiche du client dans le carnet d'adresses."
+                    ),
+                ),
+                // D9 — la communication porte le numéro de facture.
+                "unstructured_message" => (
+                    "invoice-pdf-error-charset-invoice-number",
+                    format!(
+                        "Le numéro de facture contient un caractère refusé par la QR-facture : « {car} » ({point}). Une facture validée ne se corrige pas : vérifiez le format de numérotation dans Administration → Facturation."
+                    ),
+                ),
+                _ => (
+                    "invoice-pdf-error-charset-other",
+                    format!(
+                        "Un champ de la QR-facture contient un caractère refusé : « {car} » ({point}). Vérifiez les fiches du client et de l'entreprise."
+                    ),
+                ),
+            };
+            RefusPdf {
+                cle,
+                args: vec![("car", car), ("point", point)],
+                repli,
+            }
+        }
+        C::ChampVide { champ } => match *champ {
+            "creditor.name" => sans_argument(
+                "invoice-pdf-error-empty-company-name",
+                "Le nom de l'entreprise est vide. Il ne se modifie pas encore depuis l'interface.",
+            ),
+            "creditor.postal_code" => sans_argument(
+                "invoice-pdf-error-empty-company-postal-code",
+                "Adresse de l'entreprise incomplète : le NPA est vide. Complétez-la dans Paramètres → Organisation (NPA et localité sont exigés par la QR-facture).",
+            ),
+            "creditor.town" => sans_argument(
+                "invoice-pdf-error-empty-company-city",
+                "Adresse de l'entreprise incomplète : la localité est vide. Complétez-la dans Paramètres → Organisation (NPA et localité sont exigés par la QR-facture).",
+            ),
+            "debtor.name" => sans_argument(
+                "invoice-pdf-error-empty-client-name",
+                "Le nom du client est vide. Complétez la fiche du client dans le carnet d'adresses.",
+            ),
+            "debtor.postal_code" => sans_argument(
+                "invoice-pdf-error-empty-client-postal-code",
+                "Adresse du client incomplète : le NPA est vide. Complétez la fiche du client dans le carnet d'adresses (NPA et localité sont exigés par la QR-facture).",
+            ),
+            "debtor.town" => sans_argument(
+                "invoice-pdf-error-empty-client-city",
+                "Adresse du client incomplète : la localité est vide. Complétez la fiche du client dans le carnet d'adresses (NPA et localité sont exigés par la QR-facture).",
+            ),
+            _ => sans_argument(
+                "invoice-pdf-error-empty-other",
+                "Un champ obligatoire de la QR-facture est vide. Vérifiez les fiches du client et de l'entreprise.",
+            ),
+        },
+        C::ChampTropLong { champ, max, got } => {
+            let (max, got) = (max.to_string(), got.to_string());
+            let (cle, repli) = match *champ {
+                "creditor.name" => (
+                    "invoice-pdf-error-too-long-company-name",
+                    format!(
+                        "Le nom de l'entreprise dépasse {max} caractères ({got}). Il ne se modifie pas encore depuis l'interface."
+                    ),
+                ),
+                "creditor.line1" => (
+                    "invoice-pdf-error-too-long-company-street",
+                    format!(
+                        "La rue de l'entreprise dépasse {max} caractères ({got}). Raccourcissez-la dans Paramètres → Organisation."
+                    ),
+                ),
+                "creditor.line2" => (
+                    "invoice-pdf-error-too-long-company-building",
+                    format!(
+                        "Le numéro de bâtiment de l'entreprise dépasse {max} caractères ({got}). Raccourcissez-le dans Paramètres → Organisation."
+                    ),
+                ),
+                "creditor.postal_code" => (
+                    "invoice-pdf-error-too-long-company-postal-code",
+                    format!(
+                        "Le NPA de l'entreprise dépasse {max} caractères ({got}). Raccourcissez-le dans Paramètres → Organisation."
+                    ),
+                ),
+                "creditor.town" => (
+                    "invoice-pdf-error-too-long-company-city",
+                    format!(
+                        "La localité de l'entreprise dépasse {max} caractères ({got}). Raccourcissez-la dans Paramètres → Organisation."
+                    ),
+                ),
+                "debtor.name" => (
+                    "invoice-pdf-error-too-long-client-name",
+                    format!(
+                        "Le nom du client dépasse {max} caractères ({got}). Raccourcissez-le dans la fiche du client, au carnet d'adresses."
+                    ),
+                ),
+                "debtor.line1" => (
+                    "invoice-pdf-error-too-long-client-street",
+                    format!(
+                        "La rue du client dépasse {max} caractères ({got}). Raccourcissez-la dans la fiche du client, au carnet d'adresses."
+                    ),
+                ),
+                "debtor.line2" => (
+                    "invoice-pdf-error-too-long-client-building",
+                    format!(
+                        "Le numéro de bâtiment du client dépasse {max} caractères ({got}). Raccourcissez-le dans la fiche du client, au carnet d'adresses."
+                    ),
+                ),
+                "debtor.postal_code" => (
+                    "invoice-pdf-error-too-long-client-postal-code",
+                    format!(
+                        "Le NPA du client dépasse {max} caractères ({got}). Raccourcissez-le dans la fiche du client, au carnet d'adresses."
+                    ),
+                ),
+                "debtor.town" => (
+                    "invoice-pdf-error-too-long-client-city",
+                    format!(
+                        "La localité du client dépasse {max} caractères ({got}). Raccourcissez-la dans la fiche du client, au carnet d'adresses."
+                    ),
+                ),
+                _ => (
+                    "invoice-pdf-error-too-long-other",
+                    format!(
+                        "Un champ de la QR-facture dépasse {max} caractères ({got}). Vérifiez les fiches du client et de l'entreprise."
+                    ),
+                ),
+            };
+            RefusPdf {
+                cle,
+                args: vec![("max", max), ("got", got)],
+                repli,
+            }
+        }
+        C::IbanInvalide => sans_argument(
+            "invoice-pdf-error-iban-invalid",
+            "L'IBAN du compte bancaire principal n'est pas valable pour la QR-facture. Corrigez-le dans Administration → Comptes bancaires.",
+        ),
+        C::QrIbanInvalide => sans_argument(
+            "invoice-pdf-error-qr-iban-invalid",
+            "Le QR-IBAN du compte bancaire principal n'est pas valable pour la QR-facture. Corrigez-le dans Administration → Comptes bancaires.",
+        ),
+        C::PanneInterne => sans_argument(
+            "invoice-pdf-error-internal",
+            "La QR-facture n'a pas pu être construite (erreur interne, non corrigeable depuis l'écran). Contactez l'administrateur.",
+        ),
+        C::MontantInvalide => sans_argument(
+            "invoice-pdf-error-amount-invalid",
+            "Le montant à payer est hors des bornes admises par la QR-facture (de 0.01 à 999 999 999.99).",
+        ),
+        C::DeviseInvalide => sans_argument(
+            "invoice-pdf-error-currency-invalid",
+            "La devise n'est pas admise par la QR-facture (CHF ou EUR).",
+        ),
+        C::PaysInvalide { code } => RefusPdf {
+            cle: "invoice-pdf-error-country-invalid",
+            args: vec![("code", code.clone())],
+            repli: format!("Le code pays « {code} » n'est pas un code ISO valide."),
+        },
+        C::PaysDeLaPartie {
+            partie: Partie::Entreprise,
+            code,
+        } => RefusPdf {
+            cle: "invoice-pdf-error-country-invalid-company",
+            args: vec![("code", code.clone())],
+            repli: format!(
+                "Le pays de l'entreprise (« {code} ») n'est pas un code ISO valide. Corrigez-le dans Paramètres → Organisation."
+            ),
+        },
+        C::PaysDeLaPartie {
+            partie: Partie::Client,
+            code,
+        } => RefusPdf {
+            cle: "invoice-pdf-error-country-invalid-client",
+            args: vec![("code", code.clone())],
+            repli: format!(
+                "Le pays du client (« {code} ») n'est pas un code ISO valide. Corrigez la fiche du client dans le carnet d'adresses."
+            ),
+        },
+        C::ContactAbsent => sans_argument(
+            "invoice-pdf-error-contact-missing",
+            "Le contact lié à la facture est introuvable.",
+        ),
+        C::ContactAbsentAvoir => sans_argument(
+            "credit-note-pdf-error-contact-missing",
+            "Le contact lié à l'avoir est introuvable.",
+        ),
+        C::AdresseClientRequise => sans_argument(
+            "invoice-pdf-error-client-address-required",
+            "L'adresse du client est obligatoire pour la génération du PDF.",
+        ),
+        C::CompteAbsent => sans_argument(
+            "invoice-pdf-error-no-primary-bank",
+            "Aucun compte bancaire principal n'est configuré pour cette entreprise.",
+        ),
     }
+}
+
+/// Story 35-2a (D3) — **la** construction du refus `INVOICE_NOT_PDF_READY` : la
+/// cause passe par [`refus_pdf`], puis est résolue dans la langue de
+/// l'installation (`t_args`, qui retire les marques d'isolation ; `t` pour une clé
+/// sans argument). Toute construction de production passe par ici (garde AC14 de
+/// `textes_coherents.rs`).
+pub(crate) fn refus(cause: CauseRefusPdf) -> AppError {
+    let RefusPdf { cle, args, repli } = refus_pdf(&cause);
+    let message = if args.is_empty() {
+        crate::errors::t(cle, &repli)
+    } else {
+        let mut fluent = kesh_i18n::FluentArgs::new();
+        for (nom, valeur) in args {
+            fluent.set(nom, valeur);
+        }
+        crate::errors::t_args(cle, &repli, &fluent)
+    };
+    AppError::InvoiceNotPdfReady(message)
+}
+
+/// D6 (#964) — NPA et localité d'une partie, jugés par la règle de la
+/// QR-facture ; le premier vide est nommé, par la même phrase que si
+/// `kesh-qrbill` l'avait refusé.
+fn adresse_complete(partie: &'static str, npa: &str, localite: &str) -> Result<(), AppError> {
+    let (champ_npa, champ_localite) = match partie {
+        "creditor" => ("creditor.postal_code", "creditor.town"),
+        _ => ("debtor.postal_code", "debtor.town"),
+    };
+    if kesh_qrbill::champ_vide_pour_qr(npa) {
+        return Err(refus(CauseRefusPdf::ChampVide { champ: champ_npa }));
+    }
+    if kesh_qrbill::champ_vide_pour_qr(localite) {
+        return Err(refus(CauseRefusPdf::ChampVide {
+            champ: champ_localite,
+        }));
+    }
+    Ok(())
+}
+
+/// D7 — le pays d'une partie, sur la liste ISO que la QR-facture exige ; le code
+/// est montré tel que stocké (une valeur en minuscules posée en SQL reste
+/// refusée, comme par `kesh-qrbill`).
+fn pays_iso(partie: Partie, code: &str) -> Result<(), AppError> {
+    if kesh_qrbill::is_iso_3166_alpha2(code) {
+        return Ok(());
+    }
+    Err(refus(CauseRefusPdf::PaysDeLaPartie {
+        partie,
+        code: code.to_string(),
+    }))
 }
 
 pub(crate) fn sanitize_filename(raw: &str) -> String {
@@ -1071,6 +1449,393 @@ mod tests {
                 );
             }
         }
+    }
+
+    // ─── Story 35-2a (#955, #964) — le refus du PDF nomme le champ ─────────
+
+    /// Table écrite à part de la fonction pure (V5-2) : nom de champ `kesh-qrbill`
+    /// → (suffixe de la clé, mot fr-CH de la partie, mot fr-CH du champ).
+    const CHAMPS: [(&str, &str, &str, &str); 11] = [
+        ("creditor.name", "company-name", "entreprise", "nom"),
+        ("creditor.line1", "company-street", "entreprise", "rue"),
+        ("creditor.line2", "company-building", "entreprise", "numéro"),
+        (
+            "creditor.postal_code",
+            "company-postal-code",
+            "entreprise",
+            "NPA",
+        ),
+        ("creditor.town", "company-city", "entreprise", "localité"),
+        ("debtor.name", "client-name", "client", "nom"),
+        ("debtor.line1", "client-street", "client", "rue"),
+        ("debtor.line2", "client-building", "client", "numéro"),
+        ("debtor.postal_code", "client-postal-code", "client", "NPA"),
+        ("debtor.town", "client-city", "client", "localité"),
+        (
+            "unstructured_message",
+            "invoice-number",
+            "facture",
+            "numéro de facture",
+        ),
+    ];
+
+    /// Le mot de la partie hors fr-CH (AC2 c).
+    fn partie_hors_fr(locale: Locale, partie: &str) -> &'static str {
+        match (locale, partie) {
+            (Locale::DeCh, "entreprise") => "Unternehmen",
+            (Locale::DeCh, "client") => "Kunde",
+            (Locale::DeCh, _) => "Rechnung",
+            (Locale::ItCh, "entreprise") => "azienda",
+            (Locale::ItCh, "client") => "cliente",
+            (Locale::ItCh, _) => "fattura",
+            (Locale::EnCh, "entreprise") => "company",
+            (Locale::EnCh, "client") => "client",
+            (Locale::EnCh, _) => "invoice",
+            (Locale::FrCh, _) => unreachable!("fr-CH se contrôle par la table"),
+        }
+    }
+
+    /// Revue de code P1 (B2) — pour une clé « adresse incomplète », la proposition
+    /// qui nomme le champ vide et celle qui nommerait l'autre, en minuscules, par
+    /// locale ; `None` pour toute autre clé.
+    fn proposition_du_champ_vide(
+        cle: &str,
+        locale: Locale,
+    ) -> Option<(&'static str, &'static str)> {
+        let (npa, localite) = match locale {
+            Locale::FrCh => ("le npa est vide", "la localité est vide"),
+            Locale::DeCh => ("die plz ist leer", "der ort ist leer"),
+            Locale::ItCh => ("il npa è vuoto", "la località è vuota"),
+            Locale::EnCh => ("the postcode is empty", "the town is empty"),
+        };
+        if cle.starts_with("invoice-pdf-error-empty-") && cle.ends_with("-postal-code") {
+            Some((npa, localite))
+        } else if cle.starts_with("invoice-pdf-error-empty-") && cle.ends_with("-city") {
+            Some((localite, npa))
+        } else {
+            None
+        }
+    }
+
+    /// Les cas de l'ensemble clos (D5) : la cause, la clé attendue, les noms des
+    /// arguments attendus et, pour une clé par champ, (partie, mot) en fr-CH.
+    #[allow(clippy::type_complexity)]
+    fn cas_du_refus() -> Vec<(
+        CauseRefusPdf,
+        String,
+        Vec<&'static str>,
+        Option<(&'static str, &'static str)>,
+    )> {
+        use CauseRefusPdf as C;
+        let mut cas = Vec::new();
+        for (champ, suffixe, partie, mot) in CHAMPS {
+            cas.push((
+                C::CaractereRefuse {
+                    champ,
+                    codepoint: 0x2013,
+                },
+                format!("invoice-pdf-error-charset-{suffixe}"),
+                vec!["car", "point"],
+                Some((partie, mot)),
+            ));
+            if matches!(mot, "nom" | "NPA" | "localité") {
+                cas.push((
+                    C::ChampVide { champ },
+                    format!("invoice-pdf-error-empty-{suffixe}"),
+                    vec![],
+                    Some((partie, mot)),
+                ));
+            }
+            if champ != "unstructured_message" {
+                cas.push((
+                    C::ChampTropLong {
+                        champ,
+                        max: 70,
+                        got: 71,
+                    },
+                    format!("invoice-pdf-error-too-long-{suffixe}"),
+                    vec!["max", "got"],
+                    Some((partie, mot)),
+                ));
+            }
+        }
+        // Les replis par raison : `billing_information` (toujours `None` dans
+        // Kesh), un nom `address.*` des bras par défaut de `kesh-qrbill`.
+        for champ in ["billing_information", "address.name"] {
+            cas.push((
+                C::CaractereRefuse {
+                    champ,
+                    codepoint: 0x2013,
+                },
+                "invoice-pdf-error-charset-other".into(),
+                vec!["car", "point"],
+                None,
+            ));
+            cas.push((
+                C::ChampVide { champ },
+                "invoice-pdf-error-empty-other".into(),
+                vec![],
+                None,
+            ));
+            cas.push((
+                C::ChampTropLong {
+                    champ,
+                    max: 140,
+                    got: 141,
+                },
+                "invoice-pdf-error-too-long-other".into(),
+                vec!["max", "got"],
+                None,
+            ));
+        }
+        let pays = || "SU".to_string();
+        for (cause, cle, args) in [
+            (C::IbanInvalide, "invoice-pdf-error-iban-invalid", vec![]),
+            (
+                C::QrIbanInvalide,
+                "invoice-pdf-error-qr-iban-invalid",
+                vec![],
+            ),
+            (C::PanneInterne, "invoice-pdf-error-internal", vec![]),
+            (
+                C::MontantInvalide,
+                "invoice-pdf-error-amount-invalid",
+                vec![],
+            ),
+            (
+                C::DeviseInvalide,
+                "invoice-pdf-error-currency-invalid",
+                vec![],
+            ),
+            (
+                C::PaysInvalide { code: pays() },
+                "invoice-pdf-error-country-invalid",
+                vec!["code"],
+            ),
+            (
+                C::PaysDeLaPartie {
+                    partie: Partie::Entreprise,
+                    code: pays(),
+                },
+                "invoice-pdf-error-country-invalid-company",
+                vec!["code"],
+            ),
+            (
+                C::PaysDeLaPartie {
+                    partie: Partie::Client,
+                    code: pays(),
+                },
+                "invoice-pdf-error-country-invalid-client",
+                vec!["code"],
+            ),
+            (
+                C::ContactAbsent,
+                "invoice-pdf-error-contact-missing",
+                vec![],
+            ),
+            (
+                C::ContactAbsentAvoir,
+                "credit-note-pdf-error-contact-missing",
+                vec![],
+            ),
+            (
+                C::AdresseClientRequise,
+                "invoice-pdf-error-client-address-required",
+                vec![],
+            ),
+            (C::CompteAbsent, "invoice-pdf-error-no-primary-bank", vec![]),
+        ] {
+            cas.push((cause, cle.to_string(), args, None));
+        }
+        cas
+    }
+
+    /// **AC2** (D3, D4, D5, AC8) — la table complète du refus, par la fonction pure
+    /// et un catalogue chargé **localement** (jamais l'état global d'`errors`) :
+    /// (a) la clé, les arguments et le repli ; (b) le rendu des quatre locales, qui
+    /// n'est ni la clé, ni (hors fr-CH) la valeur fr-CH, et ne porte ni variable, ni
+    /// nom technique ; (c) le rendu fr-CH de chaque clé par champ nomme la partie et
+    /// le champ, et les autres langues au moins la partie. Le repli se compare au
+    /// rendu fr-CH, jamais à un littéral (G9 compte les littéraux du fichier).
+    #[test]
+    fn le_refus_du_pdf_nomme_le_champ_dans_les_quatre_langues() {
+        let dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../kesh-i18n/locales");
+        let bundle = kesh_i18n::I18nBundle::load(&dir).unwrap();
+        let sans_marques = |s: String| s.replace(['\u{2068}', '\u{2069}'], "");
+        let cas = cas_du_refus();
+        let mut cles = std::collections::BTreeSet::new();
+        let mut par_champ = 0;
+        for (cause, cle_attendue, args_attendus, mots) in &cas {
+            let r = refus_pdf(cause);
+            assert_eq!(r.cle, cle_attendue, "{cause:?}");
+            let noms: Vec<&str> = r.args.iter().map(|(n, _)| *n).collect();
+            assert_eq!(&noms, args_attendus, "{cause:?}");
+            cles.insert(r.cle);
+            let mut fluent = kesh_i18n::FluentArgs::new();
+            for (nom, valeur) in &r.args {
+                fluent.set(*nom, valeur.clone());
+            }
+            let fluent = (!r.args.is_empty()).then_some(fluent);
+            let rendu = |l: Locale| bundle.format(&l, r.cle, fluent.as_ref());
+            let fr = rendu(Locale::FrCh);
+            assert_eq!(r.repli, sans_marques(fr.clone()), "repli de {}", r.cle);
+            for locale in [Locale::FrCh, Locale::DeCh, Locale::ItCh, Locale::EnCh] {
+                let texte = rendu(locale);
+                assert_ne!(texte, r.cle, "{locale:?} : {} absente", r.cle);
+                if locale != Locale::FrCh {
+                    assert_ne!(texte, fr, "{locale:?} : {} retombe sur le français", r.cle);
+                }
+                for interdit in [
+                    "{",
+                    "$",
+                    "Champ",
+                    "creditor.",
+                    "debtor.",
+                    "address.",
+                    "unstructured_message",
+                    "billing_information",
+                ] {
+                    assert!(
+                        !texte.contains(interdit),
+                        "{locale:?} : « {interdit} » dans {} : {texte}",
+                        r.cle
+                    );
+                }
+                if let Some((partie, mot)) = mots {
+                    if locale == Locale::FrCh {
+                        assert!(
+                            texte.contains(partie) && texte.contains(mot),
+                            "{}: {texte}",
+                            r.cle
+                        );
+                    } else {
+                        // En minuscules : la phrase peut commencer par la partie
+                        // (« Company address incomplete »).
+                        let p = partie_hors_fr(locale, partie).to_lowercase();
+                        assert!(
+                            texte.to_lowercase().contains(&p),
+                            "{locale:?} : {} sans « {p} » : {texte}",
+                            r.cle
+                        );
+                    }
+                }
+                // Revue de code P1 (B2/E1) — une adresse incomplète nomme LE champ
+                // vide : la parenthèse « NPA et localité » porte les deux mots, si
+                // bien que seule la proposition « le NPA est vide » / « la localité
+                // est vide » distingue les deux phrases.
+                if let Some((vide, autre)) = proposition_du_champ_vide(r.cle, locale) {
+                    let bas = texte.to_lowercase();
+                    assert!(
+                        bas.contains(vide) && !bas.contains(autre),
+                        "{locale:?} : {} doit dire « {vide} », non « {autre} » : {texte}",
+                        r.cle
+                    );
+                }
+                // Revue de code P1 (B1/E2) — le nom de l'entreprise ne se modifie
+                // pas depuis l'interface : aucune phrase n'y renvoie à l'écran
+                // Organisation, où il ne s'édite pas.
+                if r.cle.ends_with("-company-name") {
+                    assert!(
+                        !texte.contains("Organi"),
+                        "{locale:?} : {} renvoie à un écran où le nom ne se modifie pas : {texte}",
+                        r.cle
+                    );
+                }
+            }
+            if mots.is_some() {
+                par_champ += 1;
+            }
+        }
+        // AC8 : 27 clés par champ, 3 replis par raison, 9 causes sans champ, 3 reprises.
+        assert_eq!(par_champ, 27);
+        assert_eq!(cles.len(), 42, "{cles:?}");
+    }
+
+    /// D4 — le caractère s'écrit par `escape_debug` (un saut de ligne en `\n`, deux
+    /// caractères) suivi de son point de code, en chaîne déjà formatée.
+    #[test]
+    fn le_caractere_refuse_est_echappe_et_suivi_de_son_point_de_code() {
+        let r = refus_pdf(&CauseRefusPdf::CaractereRefuse {
+            champ: "debtor.line2",
+            codepoint: 0x0A,
+        });
+        assert_eq!(
+            r.args,
+            vec![("car", "\\n".to_string()), ("point", "U+000A".to_string())]
+        );
+        let r = refus_pdf(&CauseRefusPdf::CaractereRefuse {
+            champ: "debtor.town",
+            codepoint: 0x2013,
+        });
+        assert_eq!(r.args[0], ("car", "\u{2013}".to_string()));
+        assert_eq!(r.args[1], ("point", "U+2013".to_string()));
+    }
+
+    /// D5 — chaque variante de `QrBillError` qui refuse en 400 passe par la cause
+    /// attendue ; les trois autres gardent leur variante propre.
+    #[test]
+    fn map_qrbill_error_rend_la_cause_de_chaque_variante() {
+        use CauseRefusPdf as C;
+        let message = |e: QrBillError| match map_qrbill_error(e) {
+            AppError::InvoiceNotPdfReady(m) => m,
+            autre => panic!("{autre:?}"),
+        };
+        // Sans catalogue chargé, `refus` rend le repli : la cause se lit à son repli.
+        let repli = |c: C| refus_pdf(&c).repli;
+        for (erreur, cause) in [
+            (QrBillError::InvalidIban("x".into()), C::IbanInvalide),
+            (QrBillError::InvalidQrIban("x".into()), C::QrIbanInvalide),
+            (QrBillError::InvalidQrr("x".into()), C::PanneInterne),
+            (QrBillError::InvalidPayload("x".into()), C::PanneInterne),
+            (QrBillError::InvalidAmount("x".into()), C::MontantInvalide),
+            (QrBillError::InvalidCurrency("x".into()), C::DeviseInvalide),
+            (
+                QrBillError::InvalidCountry("SU (non ISO-3166-1 alpha-2)".into()),
+                C::PaysInvalide { code: "SU".into() },
+            ),
+            (
+                QrBillError::FieldEmpty("debtor.town"),
+                C::ChampVide {
+                    champ: "debtor.town",
+                },
+            ),
+            (
+                QrBillError::FieldTooLong {
+                    field: "debtor.name",
+                    max: 70,
+                    got: 71,
+                },
+                C::ChampTropLong {
+                    champ: "debtor.name",
+                    max: 70,
+                    got: 71,
+                },
+            ),
+            (
+                QrBillError::InvalidCharset {
+                    field: "creditor.line1",
+                    codepoint: 0x2013,
+                },
+                C::CaractereRefuse {
+                    champ: "creditor.line1",
+                    codepoint: 0x2013,
+                },
+            ),
+        ] {
+            assert_eq!(message(erreur), repli(cause));
+        }
+        assert!(matches!(
+            map_qrbill_error(QrBillError::TooManyLines(12)),
+            AppError::InvoiceTooManyLinesForPdf(12)
+        ));
+        assert!(matches!(
+            map_qrbill_error(QrBillError::HeaderOverflow(1.0)),
+            AppError::InvoicePdfHeaderOverflow
+        ));
+        assert!(matches!(
+            map_qrbill_error(QrBillError::PdfGeneration("x".into())),
+            AppError::PdfGenerationFailed(_)
+        ));
     }
 
     /// Story 32-1a (#716, B3 = E3) — la clé du préfixe de la communication de la

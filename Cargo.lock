@@ -1991,6 +1991,7 @@ name = "kesh-core"
 version = "0.17.6"
 dependencies = [
  "chrono",
+ "chrono-tz",
  "kesh-import",
  "rust_decimal",
  "rust_decimal_macros",

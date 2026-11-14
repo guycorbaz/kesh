@@ -8,7 +8,13 @@
 //!
 //! Pré-requis : MariaDB démarré.
 
+/// Story 35-5a0 — la date du jour de l'horloge de test.
+#[allow(dead_code)]
+#[path = "support/jour.rs"]
+mod jour;
+
 use chrono::NaiveDate;
+use kesh_db::entities::audit_log::Acteur;
 use kesh_db::entities::journal_entry::Journal;
 use kesh_db::entities::{
     NewCreditNote, NewInvoice, NewInvoiceLine, NewJournalEntry, NewJournalEntryLine,
@@ -127,7 +133,7 @@ async fn validated_invoice(
     let je = kesh_db::repositories::journal_entries::create(
         pool,
         seeded.fiscal_year_id,
-        seeded.admin_user_id,
+        Acteur::utilisateur(seeded.admin_user_id),
         NewJournalEntry {
             company_id: seeded.company_id,
             entry_date: D(),
@@ -365,7 +371,7 @@ async fn issue_490_a_sub_half_centime_remainder_is_written_off_as_rounding(pool:
     let je = kesh_db::repositories::journal_entries::create(
         &pool,
         seeded.fiscal_year_id,
-        seeded.admin_user_id,
+        Acteur::utilisateur(seeded.admin_user_id),
         NewJournalEntry {
             company_id: seeded.company_id,
             entry_date: D(),
@@ -650,6 +656,7 @@ async fn a_settlement_cannot_be_cancelled_while_a_write_off_exists(pool: MySqlPo
         &mut conn,
         seeded.company_id,
         settlement,
+        crate::jour::aujourd_hui_test(),
     )
     .await
     .unwrap();
@@ -661,7 +668,8 @@ async fn a_settlement_cannot_be_cancelled_while_a_write_off_exists(pool: MySqlPo
         invoice_settlements_write::settlement_cancel_blocker(
             &mut conn,
             seeded.company_id,
-            write_off_id
+            write_off_id,
+            crate::jour::aujourd_hui_test()
         )
         .await
         .unwrap()
@@ -676,6 +684,7 @@ async fn a_settlement_cannot_be_cancelled_while_a_write_off_exists(pool: MySqlPo
         seeded.company_id,
         inv,
         settlement,
+        crate::jour::aujourd_hui_test(),
     )
     .await
     .unwrap_err();
@@ -717,6 +726,7 @@ async fn a_settlement_cannot_be_cancelled_while_a_write_off_exists(pool: MySqlPo
         seeded.company_id,
         inv,
         write_off_id,
+        crate::jour::aujourd_hui_test(),
     )
     .await
     .expect("annulation du solde");
@@ -742,6 +752,7 @@ async fn a_settlement_cannot_be_cancelled_while_a_write_off_exists(pool: MySqlPo
         seeded.company_id,
         inv,
         settlement,
+        crate::jour::aujourd_hui_test(),
     )
     .await
     .expect("annulation du règlement");
@@ -771,6 +782,7 @@ async fn the_write_off_motive_comes_before_a_closed_fiscal_year(pool: MySqlPool)
         &mut conn,
         seeded.company_id,
         settlement,
+        crate::jour::aujourd_hui_test(),
     )
     .await
     .unwrap();
@@ -1107,17 +1119,28 @@ async fn unlinking_a_reconciled_settlement_is_refused_while_a_write_off_exists(p
         .await
         .expect("solde des 81.00");
 
-    let view = reconciliation_cancel::get_view(&pool, seeded.company_id, bt)
-        .await
-        .unwrap()
-        .expect("vue");
+    let view = reconciliation_cancel::get_view(
+        &pool,
+        seeded.company_id,
+        bt,
+        crate::jour::aujourd_hui_test(),
+    )
+    .await
+    .unwrap()
+    .expect("vue");
     assert_eq!(
         view.cancel_blocker.map(|h| h.0),
         Some(SettlementCancelBlocker::WriteOffExists)
     );
-    let err = reconciliation_cancel::cancel(&pool, seeded.company_id, bt, seeded.admin_user_id)
-        .await
-        .unwrap_err();
+    let err = reconciliation_cancel::cancel(
+        &pool,
+        seeded.company_id,
+        bt,
+        seeded.admin_user_id,
+        crate::jour::aujourd_hui_test(),
+    )
+    .await
+    .unwrap_err();
     assert!(
         matches!(
             err,
@@ -1477,6 +1500,7 @@ async fn read_blocker(
         &mut conn,
         seeded.company_id,
         settlement_id,
+        crate::jour::aujourd_hui_test(),
     )
     .await
     .expect("lecture")
@@ -1560,6 +1584,7 @@ async fn write_off_cancel_and_rank_1_bis_under_a_frozen_lettering(pool: MySqlPoo
         seeded.admin_user_id,
         seeded.company_id,
         D(),
+        crate::jour::aujourd_hui_test(),
     )
     .await
     .expect("verrou");
@@ -1568,9 +1593,16 @@ async fn write_off_cancel_and_rank_1_bis_under_a_frozen_lettering(pool: MySqlPoo
         let pool = pool.clone();
         let (user, company_id) = (seeded.admin_user_id, seeded.company_id);
         async move {
-            invoice_settlements_write::cancel_settlement(&pool, user, company_id, inv, sid)
-                .await
-                .expect_err("refusée")
+            invoice_settlements_write::cancel_settlement(
+                &pool,
+                user,
+                company_id,
+                inv,
+                sid,
+                crate::jour::aujourd_hui_test(),
+            )
+            .await
+            .expect_err("refusée")
         }
     };
     let refus = |err: &DbError, motif: SettlementCancelBlocker| matches!(err, DbError::SettlementNotCancellable { blocker } if *blocker == motif);

@@ -11,7 +11,7 @@
 #[cfg(feature = "pieges")]
 pub mod pieges;
 
-use chrono::{Datelike, Utc};
+use chrono::Datelike;
 use kesh_db::backup::reset_cleared_tables;
 use kesh_db::entities::audit_log::{AUDIT_ENTITY_ID_NONE, NewAuditLogEntry};
 use kesh_db::entities::onboarding::UiMode;
@@ -184,10 +184,17 @@ fn demo_address(locale: &Locale) -> kesh_db::entities::address::StructuredAddres
 /// sa transaction et la conclut ; un essai annulé n'écrit ni taux, ni
 /// réglages, ni trace. La boucle `InactiveOrInvalidAccounts` (trois rejeux,
 /// quatre essais, 50 ms) l'enveloppe, conservée par prudence (C-15-7-14).
+///
+/// # La date du jour
+///
+/// `aujourd_hui` est la date du jour de Zurich, lue par l'appelant sur son
+/// horloge (Story 35-5b, #929) : l'exercice de démonstration est celui de son
+/// année. La graine ne lit aucune horloge.
 pub async fn seed_demo(
     pool: &MySqlPool,
     locale: &Locale,
     actor: SeedActor,
+    aujourd_hui: chrono::NaiveDate,
 ) -> Result<(), SeedError> {
     let lang = locale_to_language(locale);
 
@@ -275,8 +282,8 @@ pub async fn seed_demo(
     )
     .await?;
 
-    // Exercice fiscal (année courante) — un seul appel Utc::now()
-    let current_year = Utc::now().naive_utc().date().year();
+    // Exercice fiscal : l'année du jour que l'appelant a lu (Story 35-5b).
+    let current_year = aujourd_hui.year();
     let start = chrono::NaiveDate::from_ymd_opt(current_year, 1, 1).expect("valid date");
     let end = chrono::NaiveDate::from_ymd_opt(current_year, 12, 31).expect("valid date");
 

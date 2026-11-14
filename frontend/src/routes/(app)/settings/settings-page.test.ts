@@ -5,10 +5,11 @@
 //
 // Le nom du fichier n'est pas `+page.test.ts` : SvelteKit réserve le préfixe `+`.
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, fireEvent } from '@testing-library/svelte';
 import type { CompanyCurrentResponse } from '$lib/features/settings/settings.types';
 import { PENDING_FIELD_CLASS } from '$lib/features/settings/company-conflict';
+import { pinTimeZone } from '$lib/shared/utils/pin-time-zone.test-helper';
 
 vi.mock('$app/environment', () => ({ browser: true }));
 vi.mock('$lib/features/onboarding/onboarding.svelte', () => ({
@@ -198,6 +199,77 @@ describe('page Paramètres — erreurs du verrou de période (Story 28-2, A1/A2)
 	it('A2 — déverrouillage en échec imprévu → le générique', async () => {
 		const erreur = await deverrouiller(new Error('boom'));
 		expect(erreur.textContent).toBe('Erreur inattendue.');
+	});
+});
+
+// Story 35-5a (#907, AC4, D7) — la borne saisissable du verrou est la veille du jour **de
+// Zurich**, celui que juge le serveur (`companies.rs`, `through >= aujourd_hui`), quel que
+// soit le fuseau du poste (revue P1, E1 : la veille du jour du poste proposait, sur un poste à
+// l'est de Zurich, une borne refusée). Fuseau épinglé (la CI tourne en UTC) ; faux minuteurs
+// sur la seule `Date` (des minuteurs entièrement factices bloqueraient `findByTestId`).
+async function borneDuVerrou(instant: string): Promise<string | null> {
+	vi.useFakeTimers({ toFake: ['Date'] });
+	vi.setSystemTime(new Date(instant));
+	fetchCompanyCurrentMock.mockResolvedValue(reponse(null));
+	const { findByTestId, container } = render(Page);
+	await findByTestId('settings-books-lock');
+	const date = container.querySelector('#books-lock-through') as HTMLInputElement;
+	return date.getAttribute('max');
+}
+
+describe('page Paramètres — borne du verrou la nuit (Story 35-5a, AC4)', () => {
+	pinTimeZone('Europe/Zurich');
+
+	beforeEach(() => {
+		vi.resetAllMocks();
+	});
+	afterEach(() => {
+		vi.useRealTimers();
+	});
+
+	const borne = borneDuVerrou;
+
+	it('à 00 h 30 le 11 mars à Zurich (23 h 30 UTC le 10), la borne est le 10 mars (M9 : veille UTC → 9 mars)', async () => {
+		expect(await borne('2026-03-10T23:30:00Z')).toBe('2026-03-10');
+	});
+
+	it('le jour, en été : la veille du jour local', async () => {
+		expect(await borne('2026-06-15T10:00:00Z')).toBe('2026-06-14');
+	});
+
+	it('à 00 h 30 le 1er mars à Zurich : la veille est le 28 février (champs locaux)', async () => {
+		expect(await borne('2026-02-28T23:30:00Z')).toBe('2026-02-28');
+	});
+
+	it('à 00 h 30 le 1er janvier à Zurich : la veille est le 31 décembre', async () => {
+		expect(await borne('2025-12-31T23:30:00Z')).toBe('2025-12-31');
+	});
+
+	it('à 00 h 30 le 2 juillet à Zurich (heure d’été, 22 h 30 UTC le 1er) : le 1er juillet', async () => {
+		expect(await borne('2026-07-01T22:30:00Z')).toBe('2026-07-01');
+	});
+});
+
+describe('page Paramètres — borne du verrou, poste hors de Suisse (Story 35-5a, revue P1 E1)', () => {
+	beforeEach(() => {
+		vi.resetAllMocks();
+	});
+	afterEach(() => {
+		vi.useRealTimers();
+	});
+
+	describe('poste à New York', () => {
+		pinTimeZone('America/New_York');
+		it('18 h 30 le 10 mars à New York, 00 h 30 le 11 à Zurich : la borne est le 10 mars (jour du poste : 9)', async () => {
+			expect(await borneDuVerrou('2026-03-10T23:30:00Z')).toBe('2026-03-10');
+		});
+	});
+
+	describe('poste à Athènes', () => {
+		pinTimeZone('Europe/Athens');
+		it('00 h 30 le 11 mars à Athènes, 23 h 30 le 10 à Zurich : la borne est le 9 mars (jour du poste : 10, refusé par le serveur)', async () => {
+			expect(await borneDuVerrou('2026-03-10T22:30:00Z')).toBe('2026-03-09');
+		});
 	});
 });
 

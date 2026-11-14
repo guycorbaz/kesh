@@ -25,12 +25,13 @@
 
 use std::collections::BTreeSet;
 
+use chrono::NaiveDate;
 use rust_decimal::Decimal;
 use sqlx::MySqlPool;
 
 use crate::entities::{
-    NewAuditLogEntry, NewJournalEntryLine, NewSupplierInvoice, SettlementChoice, SupplierInvoice,
-    SupplierInvoiceLine,
+    Acteur, NewAuditLogEntry, NewJournalEntryLine, NewSupplierInvoice, SettlementChoice,
+    SupplierInvoice, SupplierInvoiceLine,
 };
 use crate::errors::{ClaimSide, DbError, NonPostableAccount, map_db_error};
 use crate::repositories::company_invoice_settings::{DesignatedRole, GeneratedLines};
@@ -1061,26 +1062,31 @@ pub async fn validate(
     id: i64,
     version: i32,
     user_id: i64,
+    aujourd_hui: NaiveDate,
 ) -> Result<SupplierInvoiceSettlementView, DbError> {
     let mut tx = pool.begin().await.map_err(map_db_error)?;
     let result = validate_in_tx(&mut tx, company_id, id, version, user_id).await;
-    let (view, _) = commit_with_view(tx, company_id, result, |_| id).await?;
+    let (view, _) = commit_with_view(tx, company_id, result, |_| id, aujourd_hui).await?;
     Ok(view)
 }
 
 /// Dévalide une facture, transaction comprise — cf. [`unvalidate_in_tx`]. Rend
 /// la vue de la facture repassée en brouillon, lue avant le commit
 /// ([`commit_with_view`], Story 34-8).
+///
+/// `acteur` : qui agit — la clé d'API comprise, portée jusqu'à chaque trace du
+/// geste (Story 35-8a1, #892 item 11).
 pub async fn unvalidate(
     pool: &MySqlPool,
     company_id: i64,
     id: i64,
     version: i32,
-    user_id: i64,
+    acteur: Acteur,
+    aujourd_hui: NaiveDate,
 ) -> Result<SupplierInvoiceSettlementView, DbError> {
     let mut tx = pool.begin().await.map_err(map_db_error)?;
-    let result = unvalidate_in_tx(&mut tx, company_id, id, version, user_id).await;
-    let (view, _) = commit_with_view(tx, company_id, result, |_| id).await?;
+    let result = unvalidate_in_tx(&mut tx, company_id, id, version, acteur).await;
+    let (view, _) = commit_with_view(tx, company_id, result, |_| id, aujourd_hui).await?;
     Ok(view)
 }
 
@@ -1143,13 +1149,20 @@ pub async fn unvalidate(
 /// facture tenu ici, si bien que `reversed_by` ne peut changer pendant la
 /// transaction ; et `books_locked_through` est lu sans verrou par conception.
 ///
+/// # L'acteur (Story 35-8a1, #892 item 11, #431)
+///
+/// `acteur` porte la clé d'API quand le geste vient d'une intégration : la trace
+/// `supplier_invoice.unvalidated`, les `journal_entry.deleted` (achat et
+/// contre-passation) et le `lettering.removed` des paires `reversal` sont **tous**
+/// attribués à la clé, l'utilisateur restant son créateur.
+///
 /// [`SupplierUnvalidationBlocker::Paid`]: crate::errors::SupplierUnvalidationBlocker::Paid
 pub async fn unvalidate_in_tx(
     tx: &mut sqlx::Transaction<'_, sqlx::MySql>,
     company_id: i64,
     id: i64,
     version: i32,
-    user_id: i64,
+    acteur: Acteur,
 ) -> Result<SupplierInvoiceWithLines, DbError> {
     use super::journal_entries::{DETACHED_SETTLEMENT_ENTRY, DETACHED_SETTLEMENT_TRACES};
     use crate::errors::{SupplierUnvalidationBlocker as B, SupplierUnvalidationHint as Hint};
@@ -1372,10 +1385,7 @@ pub async fn unvalidate_in_tx(
                 letterings::Mode::System {
                     held_open_fiscal_year_id: *cp_fy_id,
                 },
-                letterings::Actor {
-                    user_id,
-                    api_key_id: None,
-                },
+                acteur,
             )
             .await?;
         }
@@ -1406,10 +1416,11 @@ pub async fn unvalidate_in_tx(
     //     (clé étrangère `RESTRICT`) : la contre-passation d'abord — elle n'est
     //     contre-passée par rien, et la clé `reverses_entry_id` est `RESTRICT` —,
     //     puis l'achat, dont l'étape 3-bis passe alors.
+    //     `delete_in_tx` prend l'acteur entier depuis la Story 35-8a2.
     if let Some((_, cp_id, _, _)) = &reversal {
-        super::journal_entries::delete_in_tx(tx, company_id, *cp_id, user_id, None, false).await?;
+        super::journal_entries::delete_in_tx(tx, company_id, *cp_id, acteur, false).await?;
     }
-    super::journal_entries::delete_in_tx(tx, company_id, je_id, user_id, None, false).await?;
+    super::journal_entries::delete_in_tx(tx, company_id, je_id, acteur, false).await?;
 
     // (10) La trace du geste (AC-9).
     let mut details = serde_json::json!({
@@ -1422,8 +1433,8 @@ pub async fn unvalidate_in_tx(
     }
     audit_log::insert_in_tx(
         &mut *tx,
-        NewAuditLogEntry::user(
-            user_id,
+        NewAuditLogEntry::par(
+            acteur,
             "supplier_invoice.unvalidated".to_string(),
             "supplier_invoice".to_string(),
             id,
@@ -1520,8 +1531,9 @@ async fn matched_transaction_locked(
 /// tiennent puis demandent l'exclusif s'interbloquent), et l'insertion des
 /// lignes reprend les comptes après l'exercice. Les comptes désignés de
 /// `(2, désignés)` (passif, actif) et les comptes de charge (`Expense`) sont
-/// disjoints **tant que les types désignés sont respectés** — ce qui n'est pas
-/// contrôlé après la désignation (angle mort assumé, revue de code P1, B-3) :
+/// disjoints **tant que les types désignés sont respectés** — ce que la garde à
+/// l'usage refuse désormais (Story 35-3, #537), mais **après** les verrous (revue
+/// de code P1, B-3) :
 /// un compte désigné retypé en charge et imputé par une ligne prend un verrou
 /// exclusif en `(2, suite)` puis partagé en `(2, désignés)`, et deux saisies
 /// croisées sur deux tels comptes peuvent s'interbloquer ; ce cycle étroit
@@ -1722,7 +1734,8 @@ pub async fn validate_in_tx(
     // Story 15-5d (#429) — la garde à l'usage : les seuls comptes de réglage
     // écrits (la TVA récupérable seulement si la TVA totale est positive), sur
     // l'instantané verrouillé en (2, désignés). Absent ou archivé →
-    // `InactiveOrInvalidAccounts` ; non imputable →
+    // `InactiveOrInvalidAccounts` ; sinon, type contraire au réglage →
+    // `DesignatedAccountsWrongType` (Story 35-3) ; sinon, non imputable →
     // `DesignatedAccountsNotPostable`.
     designated.check_written(&generated.roles, &settings)?;
     let entry_lines = generated.lines;
@@ -1752,7 +1765,8 @@ pub async fn validate_in_tx(
     let je = journal_entries::create_in_tx(
         &mut *tx,
         fy.id,
-        user_id,
+        // Story 35-8a2 (#431) : au nom de l'utilisateur (`AConvertir`, Epic 36).
+        Acteur::utilisateur(user_id),
         NewJournalEntry {
             company_id,
             entry_date: invoice_date,
@@ -1903,6 +1917,7 @@ pub async fn pay(
     choice: SettlementChoice,
     payment_date: chrono::NaiveDate,
     user_id: i64,
+    aujourd_hui: NaiveDate,
 ) -> Result<SupplierInvoiceSettlementView, DbError> {
     let mut tx = pool.begin().await.map_err(map_db_error)?;
     let result = async {
@@ -1911,7 +1926,7 @@ pub async fn pay(
         pay_in_tx(&mut tx, company_id, id, choice, payment_date, user_id).await
     }
     .await;
-    let (view, _) = commit_with_view(tx, company_id, result, |_| id).await?;
+    let (view, _) = commit_with_view(tx, company_id, result, |_| id, aujourd_hui).await?;
     Ok(view)
 }
 
@@ -1947,8 +1962,9 @@ pub async fn pay_in_tx(
 
 /// Le corps du règlement d'une facture fournisseur, **avec son acteur**
 /// (Story 30-1b, #686, AC-b9) : l'audit `supplier_invoice.paid` passe par
-/// [`NewAuditLogEntry::for_actor`] et le lettrage reçoit la clé d'API. Un seul
-/// corps pour la fiche, la confirmation d'un lot ([`pay_in_tx`]) et
+/// [`NewAuditLogEntry::for_actor`] et le lettrage reçoit la clé d'API ; depuis
+/// la Story 35-8a2 (#431), l'écriture de règlement aussi (`journal_entry.created`
+/// porte l'acteur entier). Un seul corps pour la fiche, la confirmation d'un lot ([`pay_in_tx`]) et
 /// l'acceptation de la réconciliation (`accept_one_supplier_invoice`, qui
 /// passe la clé de la requête) : aucun jumeau.
 ///
@@ -2135,7 +2151,9 @@ pub async fn pay_in_tx_as(
     let je = journal_entries::create_in_tx(
         tx,
         fy.id,
-        user_id,
+        // Story 35-8a2 (#431) : l'acteur du règlement — la clé du rapprochement
+        // (`accept_one_supplier_invoice`) ; `pay_in_tx` le construit sans clé.
+        actor,
         NewJournalEntry {
             company_id,
             entry_date: payment_date,
@@ -2427,6 +2445,7 @@ pub async fn supplier_invoice_cancel_blocker(
     conn: &mut sqlx::MySqlConnection,
     company_id: i64,
     id: i64,
+    aujourd_hui: NaiveDate,
 ) -> Result<Option<super::settlement_cancellation::SettlementCancelHit>, DbError> {
     use crate::errors::SettlementCancelBlocker;
 
@@ -2464,6 +2483,7 @@ pub async fn supplier_invoice_cancel_blocker(
         company_id,
         purchase_entry,
         None,
+        aujourd_hui,
     )
     .await?
     {
@@ -2512,6 +2532,7 @@ pub async fn cancel_in_tx(
     company_id: i64,
     id: i64,
     user_id: i64,
+    aujourd_hui: NaiveDate,
 ) -> Result<SupplierInvoiceWithLines, DbError> {
     use crate::errors::SettlementCancelBlocker;
     use crate::repositories::journal_entries::{self, ReversalAuthority};
@@ -2571,7 +2592,7 @@ pub async fn cancel_in_tx(
         | SettlementCancelBlocker::SupplierInvoiceInPaymentBatch),
         _,
         _,
-    )) = supplier_invoice_cancel_blocker(tx, company_id, id).await?
+    )) = supplier_invoice_cancel_blocker(tx, company_id, id, aujourd_hui).await?
     {
         return Err(DbError::SupplierInvoiceNotCancellable { blocker });
     }
@@ -2601,10 +2622,12 @@ pub async fn cancel_in_tx(
         tx,
         company_id,
         purchase_entry_id,
-        user_id,
+        // Story 35-8a2 (#431) : au nom de l'utilisateur (`AConvertir`, Epic 36).
+        Acteur::utilisateur(user_id),
         ReversalAuthority::SupplierPurchase {
             supplier_invoice_id: id,
         },
+        aujourd_hui,
     )
     .await?;
 
@@ -2682,10 +2705,11 @@ pub async fn cancel(
     company_id: i64,
     id: i64,
     user_id: i64,
+    aujourd_hui: NaiveDate,
 ) -> Result<SupplierInvoiceSettlementView, DbError> {
     let mut tx = pool.begin().await.map_err(map_db_error)?;
-    let result = cancel_in_tx(&mut tx, company_id, id, user_id).await;
-    let (view, _) = commit_with_view(tx, company_id, result, |_| id).await?;
+    let result = cancel_in_tx(&mut tx, company_id, id, user_id, aujourd_hui).await;
+    let (view, _) = commit_with_view(tx, company_id, result, |_| id, aujourd_hui).await?;
     Ok(view)
 }
 
@@ -2707,8 +2731,16 @@ pub async fn supplier_settlement_cancel_blocker(
     conn: &mut sqlx::MySqlConnection,
     company_id: i64,
     supplier_invoice_id: i64,
+    aujourd_hui: NaiveDate,
 ) -> Result<Option<super::settlement_cancellation::SettlementCancelHit>, DbError> {
-    supplier_settlement_cancel_blocker_unlinking(conn, company_id, supplier_invoice_id, None).await
+    supplier_settlement_cancel_blocker_unlinking(
+        conn,
+        company_id,
+        supplier_invoice_id,
+        None,
+        aujourd_hui,
+    )
+    .await
 }
 
 /// [`supplier_settlement_cancel_blocker`], avec l'**exemption étroite** du
@@ -2726,6 +2758,7 @@ pub async fn supplier_settlement_cancel_blocker_unlinking(
     company_id: i64,
     supplier_invoice_id: i64,
     unlinking: Option<i64>,
+    aujourd_hui: NaiveDate,
 ) -> Result<Option<super::settlement_cancellation::SettlementCancelHit>, DbError> {
     let row: Option<(String, Option<i64>)> = sqlx::query_as(
         "SELECT status, settlement_journal_entry_id FROM supplier_invoices \
@@ -2748,7 +2781,11 @@ pub async fn supplier_settlement_cancel_blocker_unlinking(
         )));
     };
     super::settlement_cancellation::settlement_entry_cancel_blocker(
-        conn, company_id, entry_id, unlinking,
+        conn,
+        company_id,
+        entry_id,
+        unlinking,
+        aujourd_hui,
     )
     .await
 }
@@ -2780,6 +2817,7 @@ pub async fn cancel_settlement_in_tx(
     company_id: i64,
     id: i64,
     user_id: i64,
+    aujourd_hui: NaiveDate,
 ) -> Result<SupplierSettlementCancellation, DbError> {
     use crate::errors::SettlementCancelBlocker;
     use crate::repositories::journal_entries::{self, ReversalAuthority};
@@ -2836,7 +2874,7 @@ pub async fn cancel_settlement_in_tx(
         | SettlementCancelBlocker::DocumentLetteringInClosedPeriods),
         _,
         _,
-    )) = supplier_settlement_cancel_blocker(tx, company_id, id).await?
+    )) = supplier_settlement_cancel_blocker(tx, company_id, id, aujourd_hui).await?
     {
         return Err(DbError::SettlementNotCancellable { blocker });
     }
@@ -2872,10 +2910,12 @@ pub async fn cancel_settlement_in_tx(
         tx,
         company_id,
         entry_id,
-        user_id,
+        // Story 35-8a2 (#431) : au nom de l'utilisateur (`AConvertir`, Epic 36).
+        Acteur::utilisateur(user_id),
         ReversalAuthority::SupplierSettlement {
             supplier_invoice_id: id,
         },
+        aujourd_hui,
     )
     .await?;
 
@@ -2965,10 +3005,11 @@ pub async fn cancel_settlement(
     company_id: i64,
     id: i64,
     user_id: i64,
+    aujourd_hui: NaiveDate,
 ) -> Result<SupplierSettlementCancelled, DbError> {
     let mut tx = pool.begin().await.map_err(map_db_error)?;
-    let result = cancel_settlement_in_tx(&mut tx, company_id, id, user_id).await;
-    let (view, done) = commit_with_view(tx, company_id, result, |_| id).await?;
+    let result = cancel_settlement_in_tx(&mut tx, company_id, id, user_id, aujourd_hui).await;
+    let (view, done) = commit_with_view(tx, company_id, result, |_| id, aujourd_hui).await?;
     Ok(SupplierSettlementCancelled {
         invoice: view,
         reversal_journal_entry_id: done.reversal_journal_entry_id,
@@ -3010,13 +3051,17 @@ pub struct SupplierInvoiceSettlementView {
 ///
 /// La lecture elle-même est [`get_settlement_view_in_tx`] (Story 34-8, #938) ;
 /// cette forme lui ouvre une transaction de lecture et la valide.
+///
+/// `aujourd_hui` (Story 35-5a0) : la date du jour, pour les deux bloqueurs
+/// (rang 5 : l'exercice où la contre-passation serait datée).
 pub async fn get_settlement_view(
     pool: &MySqlPool,
     company_id: i64,
     id: i64,
+    aujourd_hui: NaiveDate,
 ) -> Result<Option<SupplierInvoiceSettlementView>, DbError> {
     let mut tx = pool.begin().await.map_err(map_db_error)?;
-    let view = get_settlement_view_in_tx(&mut tx, company_id, id).await?;
+    let view = get_settlement_view_in_tx(&mut tx, company_id, id, aujourd_hui).await?;
     tx.commit().await.map_err(map_db_error)?;
     Ok(view)
 }
@@ -3041,6 +3086,7 @@ pub async fn get_settlement_view_in_tx(
     tx: &mut sqlx::Transaction<'_, sqlx::MySql>,
     company_id: i64,
     id: i64,
+    aujourd_hui: NaiveDate,
 ) -> Result<Option<SupplierInvoiceSettlementView>, DbError> {
     let Some(invoice) = sqlx::query_as::<_, SupplierInvoice>(FIND_SCOPED_SQL)
         .bind(id)
@@ -3052,8 +3098,10 @@ pub async fn get_settlement_view_in_tx(
         return Ok(None);
     };
     let lines = fetch_lines(tx, invoice.id).await?;
-    let settlement_cancel_blocker = supplier_settlement_cancel_blocker(tx, company_id, id).await?;
-    let invoice_cancel_blocker = supplier_invoice_cancel_blocker(tx, company_id, id).await?;
+    let settlement_cancel_blocker =
+        supplier_settlement_cancel_blocker(tx, company_id, id, aujourd_hui).await?;
+    let invoice_cancel_blocker =
+        supplier_invoice_cancel_blocker(tx, company_id, id, aujourd_hui).await?;
     let last_confirmed_batch =
         super::payment_batches::last_confirmed_batch_for_invoice(&mut **tx, company_id, id).await?;
     // Story 30-2c (AC18) — le document, lu dans le même instantané (lecture
@@ -3092,11 +3140,15 @@ pub async fn get_settlement_view_in_tx(
 /// `_once` de `kesh-api`, qui travaillent en `AppError` : une seule
 /// lecture-puis-commit. Une fonction ordinaire, non une macro, pour que la garde
 /// de structure (`kesh-api/tests/supplier_invoice_response_e2e.rs`) la lise.
+///
+/// `aujourd_hui` (Story 35-5a0) : la date du jour, lue une fois par l'appelant,
+/// pour les bloqueurs de la vue.
 pub async fn commit_with_view<T, E: From<DbError>>(
     mut tx: sqlx::Transaction<'_, sqlx::MySql>,
     company_id: i64,
     result: Result<T, E>,
     view_id: impl FnOnce(&T) -> i64,
+    aujourd_hui: NaiveDate,
 ) -> Result<(SupplierInvoiceSettlementView, T), E> {
     let done = match result {
         Ok(done) => done,
@@ -3106,7 +3158,7 @@ pub async fn commit_with_view<T, E: From<DbError>>(
         }
     };
     let id = view_id(&done);
-    let view = match get_settlement_view_in_tx(&mut tx, company_id, id).await {
+    let view = match get_settlement_view_in_tx(&mut tx, company_id, id, aujourd_hui).await {
         Ok(Some(view)) => view,
         Ok(None) => {
             let _ = tx.rollback().await;

@@ -25,7 +25,11 @@
 
 import { expect, test, type Page } from '@playwright/test';
 import { seedTestState, clearAuthStorage, authedApiContext, disposeContextSafe } from './helpers/test-state';
-import { createAndValidateInvoiceViaApi, createContactWithAddressViaApi } from './helpers/api-fixtures';
+import {
+	createAndValidateInvoiceViaApi,
+	createContactWithAddressViaApi,
+	todayInZurich,
+} from './helpers/api-fixtures';
 
 // IBAN de test (MOD-97 valides), propres à cette spec.
 const IBAN_PRINCIPAL = 'CH4900483526202000002';
@@ -139,11 +143,11 @@ async function capture(page: Page, nom: string): Promise<void> {
 	await page.emulateMedia({ colorScheme: 'light' });
 }
 
-/** La date locale du jour, `AAAA-MM-JJ`, et sa forme suisse. */
+/** Le jour suisse, `AAAA-MM-JJ`, et sa forme suisse (Story 35-5c : non plus le fuseau du processus Node). */
 function aujourdhui(): { iso: string; suisse: string } {
-	const d = new Date();
-	const [y, m, j] = [d.getFullYear(), String(d.getMonth() + 1).padStart(2, '0'), String(d.getDate()).padStart(2, '0')];
-	return { iso: `${y}-${m}-${j}`, suisse: `${j}.${m}.${y}` };
+	const iso = todayInZurich();
+	const [y, m, j] = iso.split('-');
+	return { iso, suisse: `${j}.${m}.${y}` };
 }
 
 test.describe('Clôture d’un compte bancaire (Story 28-4b)', () => {
@@ -217,7 +221,7 @@ test.describe('Clôture d’un compte bancaire (Story 28-4b)', () => {
 			// débit du compte LIÉ au compte à clore — le helper débite le premier 10xx.
 			const res = await ctx.post('/api/v1/journal-entries', {
 				data: {
-					entryDate: new Date().toLocaleDateString('sv-SE', { timeZone: 'Europe/Zurich' }),
+					entryDate: todayInZurich(),
 					journal: 'OD',
 					description: 'E2E 28-4b — solde non nul',
 					lines: [

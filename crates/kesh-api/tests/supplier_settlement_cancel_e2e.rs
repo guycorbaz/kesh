@@ -20,6 +20,11 @@
 //!
 //! Pré-requis : MariaDB démarré.
 
+/// Story 35-5a0 — de `tests/common/`, la seule date du jour de l'horloge de test.
+mod common {
+    pub mod jour;
+}
+
 use std::net::SocketAddr;
 use std::sync::Arc;
 
@@ -319,6 +324,7 @@ async fn cancel_settlement_roles_and_refusals(pool: MySqlPool) {
         },
         NaiveDate::from_ymd_opt(2026, 6, 20).unwrap(),
         seeded.admin_user_id,
+        crate::common::jour::aujourd_hui_test(),
     )
     .await
     .unwrap();
@@ -369,6 +375,7 @@ async fn pay_then_cancel_the_invoice(pool: MySqlPool) {
         },
         NaiveDate::from_ymd_opt(2026, 6, 20).unwrap(),
         seeded.admin_user_id,
+        crate::common::jour::aujourd_hui_test(),
     )
     .await
     .unwrap();
@@ -730,6 +737,7 @@ async fn cancel_blocked_by_closed_lettering(pool: MySqlPool) {
         },
         paid_on,
         seeded.admin_user_id,
+        crate::common::jour::aujourd_hui_test(),
     )
     .await
     .unwrap();
@@ -751,6 +759,7 @@ async fn cancel_blocked_by_closed_lettering(pool: MySqlPool) {
         seeded.admin_user_id,
         seeded.company_id,
         paid_on,
+        crate::common::jour::aujourd_hui_test(),
     )
     .await
     .expect("verrou");

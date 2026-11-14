@@ -8,6 +8,11 @@
 //! - le guard : `pay`/`cancel` direct refusés tant que la facture est dans un lot `generated` ;
 //! - `generate_pain001_xml` : produit un XML pain.001 valide.
 
+/// Story 35-5a0 — la date du jour de l'horloge de test.
+#[allow(dead_code)]
+#[path = "support/jour.rs"]
+mod jour;
+
 use chrono::NaiveDate;
 use kesh_db::entities::contact::{ContactType, NewContact};
 use kesh_db::entities::{
@@ -281,6 +286,7 @@ async fn cancel_batch_unlocks_invoices(pool: MySqlPool) {
         },
         d(2026, 7, 2),
         ctx.seeded.admin_user_id,
+        crate::jour::aujourd_hui_test(),
     )
     .await
     .unwrap_err();
@@ -307,6 +313,7 @@ async fn cancel_batch_unlocks_invoices(pool: MySqlPool) {
         },
         d(2026, 7, 2),
         ctx.seeded.admin_user_id,
+        crate::jour::aujourd_hui_test(),
     )
     .await
     .unwrap();
@@ -440,6 +447,7 @@ async fn cancelling_a_batch_paid_settlement_leaves_the_batch_alone(pool: MySqlPo
         ctx.seeded.company_id,
         inv,
         ctx.seeded.admin_user_id,
+        crate::jour::aujourd_hui_test(),
     )
     .await
     .expect("annulation");
@@ -508,7 +516,7 @@ async fn last_confirmed_batch_is_historical_and_most_recent(pool: MySqlPool) {
     let inv = make_invoice(&pool, &ctx, Some(IBAN_A), None, Some("R1"), dec!(100.00)).await;
     let first = confirmed_batch(&pool, &ctx, inv, d(2026, 7, 2)).await;
 
-    supplier_invoices::cancel_settlement(&pool, c, inv, u)
+    supplier_invoices::cancel_settlement(&pool, c, inv, u, crate::jour::aujourd_hui_test())
         .await
         .unwrap();
     supplier_invoices::pay(
@@ -520,6 +528,7 @@ async fn last_confirmed_batch_is_historical_and_most_recent(pool: MySqlPool) {
         },
         d(2026, 7, 5),
         u,
+        crate::jour::aujourd_hui_test(),
     )
     .await
     .expect("règlement direct");
@@ -528,7 +537,7 @@ async fn last_confirmed_batch_is_historical_and_most_recent(pool: MySqlPool) {
         .unwrap();
     assert_eq!(last.map(|(id, _)| id), Some(first), "toujours l'ancien lot");
 
-    supplier_invoices::cancel_settlement(&pool, c, inv, u)
+    supplier_invoices::cancel_settlement(&pool, c, inv, u, crate::jour::aujourd_hui_test())
         .await
         .unwrap();
     let second = confirmed_batch(&pool, &ctx, inv, d(2026, 7, 9)).await;
@@ -1325,6 +1334,7 @@ async fn lock_for_bank_settlement_refuses_each_case(pool: MySqlPool) {
         },
         d(2026, 6, 20),
         ctx.seeded.admin_user_id,
+        crate::jour::aujourd_hui_test(),
     )
     .await
     .unwrap();
