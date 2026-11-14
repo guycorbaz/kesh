@@ -1093,3 +1093,7 @@ development_status:
   36-17-assistant-fin-configuration: backlog  # #1187 (P2) ; phase 2 ; ajoutée le 2026-11-14 sur décision de Guy (C-e360-18) ; page blanche après l'étape bancaire de l'assistant : indicateur, page « Configuration terminée », écran pour chaque étape ; frontend seul
   36-14-solde-dette-epic: backlog  # story de solde (CLAUDE.md, 2026-11-14) : au plus 8 issues ouvertes par les stories 36-*, cinq modules au plus (C-e360-10) ; en fin d'epic, avant le tag
   epic-36-retrospective: optional
+  # 2026-11-14 — Numéros d'epic 37, 38 et 39 RÉSERVÉS à un développeur externe qui commence à travailler sur Kesh
+  # (décision de Guy). Aucune clé `epic-37` à `epic-39` n'est créée ici tant que leurs kickoffs n'ont pas eu lieu :
+  # les décomptes de clés `epic-<entier>` restent ceux des epics réels. Le prochain epic de l'orchestrateur porte le
+  # numéro 40. Détail : `_bmad-output/planning-artifacts/epics-37-39-reserves.md`.
