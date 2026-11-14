@@ -111,7 +111,10 @@ de la 35-8a2). **Attendu après la story : 87 entrées, 92 sites** — `AConvert
 `Utilisateur` 10/10. Aucune entrée n'existe pour `reconciliation_cancel.rs` (`grep` sur la table : aucune ligne). `REFERENCES`
 (`:387-468`) ne porte aucune des fonctions touchées (elles sont `AConvertir`, non finales). Angle mort 1 (`:68-75`) : `git
 grep -nE 'actor_api_key_id:\s*Option<i64>' -- crates/` hors `tests/` rend **30** lignes à `9d5a142df`, dont
-`reconciliation_cancel.rs:581` (`kesh-gate-logs/e36-4/actor-api-key-id-option.txt`).
+`reconciliation_cancel.rs:581` (`cancel_in_tx`) **et** `routes/reconciliation.rs:5982` (`cancel_reconciliation_once`)
+(`kesh-gate-logs/e36-4/actor-api-key-id-option.txt`) ; le doc-comment de la garde dit aussi « 26 fonctions de `src` hors
+`delete_in_tx` à la fiche, P3 » et « 23 lignes de paramètre » (`:69-70`) — 23 recompté à `9d5a142df` : les 30 lignes moins
+6 champs `pub actor_api_key_id` et 1 doc-comment. *(Ajouté à la remédiation de la validation P1, V1-2.)*
 
 **Les tests qui lisent ces fonctions par leur nom** (le nom ne change pas ; l'ordre des appels non plus) :
 - `crates/kesh-db/tests/letterings_lexical.rs:437-447` : `appelle_avant(&source, "cancel_settlement_in_tx",
@@ -150,7 +153,9 @@ grep -nE 'actor_api_key_id:\s*Option<i64>' -- crates/` hors `tests/` rend **30**
   règlement saisi sur la facture […], le solde de son reste ou leur annulation, une facture fournisseur (validation, paiement
   depuis la fiche […], annulation) […] restent au nom du créateur de la clé~; […] celui d'un règlement de facture (client ou
   fournisseur) l'annule, contre-passation comprise, au nom du créateur de la clé » ;
-- `docs/manual/fr/user-manual.tex:4016-4022` (tableau du journal d'audit) : même énoncé ;
+- `docs/manual/fr/user-manual.tex:4016-4022` (tableau du journal d'audit) : même énoncé ; `:4017` « le solde de son reste
+  ou leur annulation, une facture fournisseur » dans la liste de ce qui « restent au nom du créateur de la clé » ;
+  `:4022-4023` « une ligne écrite avant la 0.17.7 ne porte pas la marque » (V1-1) ;
 - `docs/manual/fr/admin-manual.tex:2549` : paragraphe de mise à jour **vers la 0.17.7**, relevé daté — **non touché**.
 - Contrôle des PDF à `9d5a142df` (E6) : `pdftotext docs/manual/fr/admin-manual.pdf - | tr '\n' ' ' | tr -s ' ' |
   /usr/bin/grep -c 'contre-passation comprise, au nom du créateur de la clé'` → `1` ; même commande sur `user-manual.pdf`
@@ -272,7 +277,11 @@ issue à ouvrir : #431 les porte.
   à `cancel_in_tx` (C-e360-7 : « prend un `Acteur` ou est documentée comme telle » ; C-36-4-2). Ses onze appels de tests
   passent `Acteur::utilisateur(u)`. Son doc-comment (`:829-830`) dit qu'elle n'a pas d'appelant de production. Le site de
   l'angle mort 1 disparaît : le doc-comment de la garde (`:68-75`) ne nomme plus que `kesh-seed/src/pieges.rs`, et
-  `git grep -nE 'actor_api_key_id:\s*Option<i64>' -- crates/` hors `tests/` rend **29** lignes (une de moins). *Écartée* :
+  `git grep -nE 'actor_api_key_id:\s*Option<i64>' -- crates/` hors `tests/` rend **28** lignes (deux de moins avec D3 :
+  `reconciliation_cancel.rs:581` et `routes/reconciliation.rs:5982`), soit **21** lignes de paramètre (28 moins 6 champs et
+  1 doc-comment) ; ces deux nombres du doc-comment de la garde (`:69-72`) se recomptent depuis la source au développement,
+  commande et sortie au Change Log, de même que « 26 fonctions », qui date de la P3 de la 35-8a1 et se récrit ou se date.
+  *Écartée* :
   la garder telle quelle avec un doc-comment « tests seuls » — le `None` positionnel resterait, invisible de la garde, sur
   une fonction publique de `kesh-db` qu'un appelant futur pourrait prendre.
 - **D5 — Les tests prouvent l'attribution par exécution, toutes traces comprises** (règle des inventaires,
@@ -290,7 +299,7 @@ issue à ouvrir : #431 les porte.
   `details`, schéma, routes, réponses et refus inchangés ; aucune migration. **Le passé ne se corrige pas** : les entrées
   écrites avant la 0.17.8 par une clé gardent `actor_type = 'user'`. Le nom des fonctions et l'ordre des appels restent ceux
   que lisent les tests lexicaux (*Ce qui se lit au code*).
-- **D8 — Manuels et PDF** (C-36-4-3) : la story récrit les `.tex` (admin `:3212`, utilisateur `:4016-4022`), régénère les
+- **D8 — Manuels et PDF** (C-36-4-3) : la story récrit les `.tex` (admin `:3212`, utilisateur `:4016-4023`), régénère les
   deux PDF français et les contrôle aplatis ; `user-manual.tex` est commun avec 36-3 et 36-5 (tableau du fichier d'epic) :
   à l'intégration, les PDF se régénèrent après l'union des `.tex`. Le paragraphe de mise à jour vers la 0.17.7
   (`admin-manual.tex:2549`) n'est pas touché ; un paragraphe de mise à jour vers la 0.17.8, s'il en faut un, est l'affaire
@@ -306,6 +315,11 @@ issue à ouvrir : #431 les porte.
    `lettering.removed` (la pièce) et `lettering.created` (la paire de contre-passation) — liste relevée au développement sur
    le montage réel, écrite au Change Log, chaque action présente au moins une fois. `invoice.settlement_cancelled` est
    **unique** (`common::audit_actor_unique` ou forme en ligne équivalente).
+   **Cas du solde (V1-3)** : la même route, par clé, sur un **solde** (`POST /api/v1/invoices/{id}/write-off`, montage de
+   `a_write_off_returns_what_was_written`, `invoice_settlement_response_e2e.rs:357`, puis annulation de la ligne
+   `settlementType = write_off`) → `200`, mêmes assertions « toutes traces » (actions relevées sur le montage réel, écrites
+   au Change Log). Le corps de `cancel_settlement_in_tx` ne branche pas sur le type (`invoice_settlements_write.rs:917-1121`
+   ne lit pas `settlement_type`) : ce cas prouve la promesse de la note de version, non un autre chemin de code.
 2. **AC2 — Annulation d'un règlement fournisseur par sa route, par clé.** Une facture fournisseur payée (lettrage de la
    pièce posé), une clé `read-write` ; `POST /api/v1/supplier-invoices/{id}/settlement/cancel` avec la clé → `200` ; même
    assertion qu'AC1 (`supplier_invoice.settlement_cancelled` unique, la contre-passation, le délettrage, la paire).
@@ -327,18 +341,32 @@ issue à ouvrir : #431 les porte.
    `ApiKeyNone` 8/8, `Utilisateur` 10/10), ventilation et total cohérents écrits au Change Log ; aucune entrée pour
    `routes/invoices.rs`, `routes/supplier_invoices.rs` (fonctions touchées), `routes/reconciliation.rs`,
    `repositories/reconciliation_cancel.rs`. Le doc-comment de la table (`:175-185`) et l'angle mort 1 (`:68-75`) sont mis à
-   jour (D4 : `pieges.rs` seul, 29 lignes). La garde est verte.
+   jour (D4 : `pieges.rs` seul ; 28 lignes au `git grep`, 21 lignes de paramètre, recomptées depuis la source). La garde
+   est verte.
 6. **AC6 — Documents.** `docs/api-external.md` : `:404` dit que la clé figure au lettrage et au délettrage d'une facture
    client pour le rapprochement, l'**annulation d'un règlement ou d'un solde** (`POST …/settlements/{settlementId}/cancel`)
    et le **dé-rapprochement**, *depuis la v0.17.8* — non pour un règlement saisi, un solde ou un avoir (#431) ; et de même
    pour une facture fournisseur (`…/settlement/cancel` et dé-rapprochement) ; `:739` : la parenthèse dit que l'annulation
    d'un règlement par le dé-rapprochement porte la clé *depuis la v0.17.8* ; `:565`, `:653` : une phrase dit que les traces
-   du geste portent la clé *depuis la v0.17.8*. Manuels : `admin-manual.tex:3212` et `user-manual.tex:4016-4022` disent que
+   du geste portent la clé *depuis la v0.17.8*. Manuels : `admin-manual.tex:3212` et `user-manual.tex:4016-4023` disent que
    l'annulation d'un règlement ou d'un solde (route ou dé-rapprochement, client ou fournisseur) est attribuée à la clé depuis
-   la 0.17.8, contre-passation et délettrage compris, et que les entrées antérieures gardent la marque « utilisateur » ;
-   PDF régénérés, contrôlés aplatis (E6) : la phrase « contre-passation comprise, au nom du créateur de la clé » rend `0`, la
-   phrase neuve rend `1`, dans chacun des deux PDF. Symptôme greppé sur le dépôt (`créateur de la clé`, `dé-rapprochement
-   compris`, `reste au nom du créateur`) : chaque occurrence restante justifiée au Change Log.
+   la 0.17.8, contre-passation et délettrage compris, et que les entrées antérieures gardent la marque « utilisateur ».
+   Dans la **même phrase** des deux `.tex` (V1-1) :
+   - « ou leur annulation » **sort** de la liste de ce qui « reste(nt) au nom du créateur de la clé » (`admin-manual.tex:3212`
+     « le solde de son reste ou leur annulation, une facture fournisseur … restent au nom du créateur de la clé » ;
+     `user-manual.tex:4017`, même énoncé) : le règlement saisi et le solde y restent, leur **annulation** n'y est plus ;
+   - « une facture fournisseur (validation, paiement …, annulation) » devient « (validation, paiement …, annulation **de la
+     facture**) », pour que l'annulation de la facture fournisseur (qui reste au créateur, lot 36-11c) ne se confonde pas avec
+     celle de son paiement ;
+   - « une ligne écrite avant la 0.17.7 ne porte pas la marque » (`user-manual.tex:4022-4023`) et « avant la v0.17.7 »
+     (`admin-manual.tex:3212`) sont complétés : avant la 0.17.8 pour l'annulation d'un règlement ou d'un solde.
+
+   PDF régénérés, contrôlés aplatis (E6), dans chacun des deux PDF : **absence** des anciennes formulations —
+   « contre-passation comprise, au nom du créateur de la clé » → `0`, « ou leur annulation, une facture fournisseur » → `0`
+   (`1` dans chacun à `9d5a142df`) — **et** présence de la phrase neuve → `1`. Symptôme greppé sur le dépôt
+   (`créateur de la clé`, `restent au nom du créateur`, `reste au nom du créateur`, `leur annulation`, `dé-rapprochement
+   compris`, `ne portent que l'utilisateur`, `avant la 0.17.7`, `avant la v0.17.7`) : chaque occurrence restante justifiée au
+   Change Log (`admin-manual.tex:2549`, relevé daté de la 0.17.7, et `README.md:243`, historique, restent tels quels).
 
 ## Tests à écrire, et la preuve du rouge
 
@@ -348,6 +376,7 @@ issue à ouvrir : #431 les porte.
 | Test (nom indicatif) | Fichier hôte | AC | Rouge attendu sur la base |
 |---|---|---|---|
 | `an_api_key_cancels_an_invoice_settlement_and_is_named_everywhere` | `crates/kesh-api/tests/invoice_settlement_response_e2e.rs` (montage `setup`, `settle`) | AC1 | `invoice.settlement_cancelled` à `("user", None, créateur)` |
+| `an_api_key_cancels_a_write_off_and_is_named_everywhere` | `crates/kesh-api/tests/invoice_settlement_response_e2e.rs` (montage de `a_write_off_returns_what_was_written`) | AC1, cas du solde | idem |
 | `an_api_key_cancels_a_supplier_settlement_and_is_named_everywhere` | `crates/kesh-api/tests/supplier_settlement_cancel_e2e.rs` (montage de `pay_then_cancel_the_settlement`) | AC2 | idem, `supplier_invoice.settlement_cancelled` |
 | `an_api_key_unreconciles_an_invoice_settlement_and_is_named_everywhere` | `crates/kesh-api/tests/reconciliation_e2e.rs` | AC3 (a) | `invoice.settlement_cancelled` à `'user'` (`reconciliation.cancelled` déjà à la clé) |
 | `an_api_key_unreconciles_a_supplier_settlement_and_is_named_everywhere` | `crates/kesh-api/tests/reconciliation_e2e.rs` | AC3 (b) | `supplier_invoice.settlement_cancelled` à `'user'` |
@@ -355,7 +384,17 @@ issue à ouvrir : #431 les porte.
 
 Le développeur choisit les hôtes au mieux (un test par clé hors de ces fichiers est permis s'il y trouve un montage plus
 court) ; la clé se crée par HTTP (`common::create_key_via_http` ou la requête en ligne de
-`reconciliation_e2e.rs:5372-5385`). Chaque test relève d'abord que le montage a bien posé ce que le geste défait (lettrage
+`reconciliation_e2e.rs:5372-5385`).
+
+**Une aide commune du relevé « toutes traces »** (V1-5, DRY) : un fichier neuf `crates/kesh-api/tests/common/audit_traces.rs`
+(`#![allow(dead_code)]`, comme `autour_appel.rs`), avec deux fonctions — `max_audit_id(pool) -> i64` (0 sur une table
+vide) et `audit_depuis(pool, id_min) -> Vec<(String /* action */, String /* actor_type */, Option<i64>, i64 /* user_id */)>`,
+ordonné par `id` — et une assertion `assert_toutes_a_la_cle(traces, cle, createur, actions_attendues)` qui échoue sur une
+liste vide, une action manquante ou en trop, ou une trace sans la clé, en nommant l'action fautive. Il est déclaré
+`pub mod audit_traces;` dans `common/mod.rs` (vu par `reconciliation_e2e.rs`, `mod common;` `:52`), et ajouté au module
+`common` en ligne de `supplier_settlement_cancel_e2e.rs` (`mod common { pub mod jour; }`, `:24-26`) et, sous la même forme,
+de `invoice_settlement_response_e2e.rs` (qui n'inclut aujourd'hui que `#[path = "common/autour_appel.rs"]`, `:26-27`). Les
+cinq tests par clé l'emploient ; aucun ne recopie la requête. Chaque test relève d'abord que le montage a bien posé ce que le geste défait (lettrage
 de la pièce existant, sans quoi le délettrage ne serait pas exercé — patron d'AC2 de la 35-8a2).
 
 **Mutations** (sur l'arbre commité ; script versionné sous `/home/gcorbaz/devel/kesh-gate-logs/e36-4/mut/`, restauration
@@ -364,8 +403,11 @@ par `git restore --worktree -- <fichier>` puis `touch <fichier>`, E5 ; journaux 
 | Mutation | Doit être tuée par |
 |---|---|
 | M1 — client `cancel_settlement_in_tx` : le geste par `NewAuditLogEntry::user(acteur.user_id, …)` | AC1, AC3 (a), la garde (site `User` neuf) |
-| M2 — client : le délettrage reçoit `Actor { user_id: acteur.user_id, api_key_id: None }` | AC1, la garde (`ApiKeyNone`) |
+| M1' — fournisseur : le geste par `NewAuditLogEntry::user(acteur.user_id, …)` | AC2, AC3 (b), la garde (`User`) |
+| M2 — client : le délettrage reçoit `Actor { user_id: acteur.user_id, api_key_id: None }` | AC1, AC3 (a), la garde (`ApiKeyNone`) |
+| M2' — fournisseur : le délettrage reçoit `letterings::Actor { user_id: acteur.user_id, api_key_id: None }` | AC2, AC3 (b), la garde (`ApiKeyNone`) |
 | M3 — fournisseur : la contre-passation reçoit `Acteur::utilisateur(acteur.user_id)` | AC2, AC3 (b), la garde (`Utilisateur`) |
+| M3' — client : la contre-passation reçoit `Acteur::utilisateur(acteur.user_id)` | AC1 (règlement et solde), AC3 (a), la garde (`Utilisateur`) |
 | M4 — route client : `Acteur { api_key_id: current_user.api_key_id.filter(\|_\| false), ..Acteur::from(&current_user) }` (forme que la garde ne voit pas) | AC1 seul |
 | M5 — route fournisseur : même forme | AC2 seul |
 | M6 — `reconciliation_cancel.rs`, appel client : l'acteur passé avec la clé jetée par `.filter(\|_\| false)` | AC3 (a) seul |
@@ -380,7 +422,8 @@ nommé.
 - [ ] **Étape 0** : relire les lignes citées à la base réelle (la branche part de `9d5a142df`, ou de `main` après la fusion
       d'une autre story) ; relancer `inventaire-appels.py` et la commande `git grep`, sorties au Change Log ; recompter la
       table de la garde ; relire les LOW du dernier rapport de validation.
-- [ ] Rouges : les quatre tests par clé, commités ; `rouges.log`.
+- [ ] Aide commune `common/audit_traces.rs` (V1-5) ; rouges : les cinq tests par clé (dont le solde), commités ;
+      `rouges.log`.
 - [ ] `invoice_settlements_write.rs` : `cancel_settlement_in_tx` et `cancel_settlement` à l'`Acteur` (D1, D2).
 - [ ] `supplier_invoices.rs` : idem.
 - [ ] `reconciliation_cancel.rs` : `cancel_in_tx` et `cancel` à l'`Acteur` (D3, D4) ; doc-comments.
@@ -389,9 +432,10 @@ nommé.
       compilateur ferme la liste ; assertions de session d'AC4 ; doc-comment de `reconciliation_e2e.rs:5349-5355`.
 - [ ] Garde : six entrées retirées, table recomptée, doc-comments (AC5).
 - [ ] Documents : `docs/api-external.md` (`:404`, `:565`, `:653`, `:739`), `admin-manual.tex:3212`,
-      `user-manual.tex:4016-4022`, PDF régénérés (`make fr` dans `docs/manual/`, sous `.gate-front.lock` ou la voie de la
+      `user-manual.tex:4016-4023` (dont « ou leur annulation », « annulation de la facture », « avant la 0.17.7 », V1-1),
+      PDF régénérés (`make fr` dans `docs/manual/`, sous `.gate-front.lock` ou la voie de la
       consigne en vigueur), contrôlés aplatis (AC6) ; symptôme greppé.
-- [ ] Mutations M1 à M8.
+- [ ] Mutations M1 à M8, et M1', M2', M3' (V1-4).
 - [ ] **Gates** (voie 1 ; `kesh-db` touché) : en cours de boucle, `scripts/test-fast.sh --ci` (complet, non ciblé) sur
       `kesh_e364` remise à neuf ; au **passage en `review`**, `test-fast --ci` puis `scripts/gate-ci.sh kesh_ci_e364`, une
       commande à la fois sous `flock /tmp/station-heavy.lock flock /home/gcorbaz/devel/kesh-gate-logs/.gate.lock
@@ -482,3 +526,30 @@ nommé.
   `invoice_settlements_write.rs:917`, `supplier_invoices.rs:2815`). Inventaire par le symptôme : 8 appels de production,
   77 appels de tests dans 17 fichiers ; garde recomptée (93/98 → 87/92 attendus). Choix C-36-4-1 à -4. Aucune migration.
   Statut : `ready-for-dev`. Validation P1 à lancer.
+- 2026-11-14 — **Validation P1 (Sonnet) : 0 CRITICAL / 0 HIGH / 2 MEDIUM / 3 LOW → remédiés**
+  (`kesh-gate-logs/e36-4/validation-p1.md`). Remédiation par l'agent de rédaction (Opus 5.5), outil Edit seul ; prémisses
+  relues au code à `9d5a142df` :
+  - **V1-1 (MEDIUM), confirmé** : `user-manual.tex:4017` « saisi sur la facture, le solde de son reste ou leur annulation,
+    une facture fournisseur » et `:4022-4023` « une ligne écrite avant la 0.17.7 ne porte pas la marque » lus ; contrôle
+    aplati `pdftotext … | /usr/bin/grep -c 'ou leur annulation, une facture fournisseur'` → `1` dans `admin-manual.pdf` et
+    dans `user-manual.pdf`. AC6 étendu (« ou leur annulation » retiré de la liste, « annulation de la facture »
+    fournisseur, « avant la 0.17.7 » complété, absence des anciennes formulations exigée dans les PDF, symptômes greppés
+    élargis) ; *Ce qui se lit au code*, D8 et la tâche *Documents* suivent (`:4016-4023`).
+  - **V1-2 (MEDIUM), confirmé** : `git grep -nE 'actor_api_key_id:\s*Option<i64>' -- crates/` hors `tests/` rend
+    `crates/kesh-api/src/routes/reconciliation.rs:5982:    actor_api_key_id: Option<i64>,` et
+    `crates/kesh-db/src/repositories/reconciliation_cancel.rs:581:    actor_api_key_id: Option<i64>,`, que D3 convertit
+    toutes deux ; 30 lignes dont 6 champs `pub` et 1 doc-comment (23 lignes de paramètre, recompté). Valeur attendue :
+    **28** (21 lignes de paramètre), non 29. Jeton `29` greppé dans la fiche et le registre (`\b(29|30|23|26)\b`) :
+    corrigé dans D4, AC5 et C-36-4-2 (annoté) ; restent `27/29` (`AdminSansCle`, sans rapport) et `26` (appels de tests).
+    *Ce qui se lit au code* nomme les deux lignes et les chiffres du doc-comment de la garde ; D4 en demande le recompte au
+    développement, « 26 fonctions » compris.
+  - **V1-3 (LOW), appliqué** : cas du solde dans AC1 (`write-off` puis annulation par clé), test
+    `an_api_key_cancels_a_write_off_and_is_named_everywhere` ; le corps de `cancel_settlement_in_tx` ne lit pas
+    `settlement_type` (`invoice_settlements_write.rs:917-1121`).
+  - **V1-4 (LOW), appliqué** : mutations miroir M1' (geste fournisseur), M2' (délettrage fournisseur,
+    `supplier_invoices.rs:2899-2902`), M3' (contre-passation client, `invoice_settlements_write.rs:1034`).
+  - **V1-5 (LOW), confirmé et appliqué** : `invoice_settlement_response_e2e.rs:26` n'inclut que
+    `common/autour_appel.rs`, `supplier_settlement_cancel_e2e.rs:24-26` `mod common { pub mod jour; }` ; aide commune
+    `common/audit_traces.rs` prescrite (`max_audit_id`, `audit_depuis`, `assert_toutes_a_la_cle`), déclarée dans
+    `common/mod.rs` et dans les modules `common` en ligne des deux hôtes.
+  - Une passe 2 est requise (deux MEDIUM en P1).

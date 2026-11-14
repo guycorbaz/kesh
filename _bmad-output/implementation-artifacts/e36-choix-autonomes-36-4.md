@@ -23,7 +23,9 @@ réversibilité. Code lu à `9d5a142df`. Fiche : `36-4-acteur-annulation-regleme
   appelant de production ; onze appels de tests dans cinq fichiers ; elle passe `None` en position à `cancel_in_tx`, site
   nommé par l'angle mort 1 de la garde.
 - **Retenu** : elle prend `acteur: Acteur` ; les tests passent `Acteur::utilisateur(u)` ; le site de l'angle mort 1
-  disparaît (doc-comment de la garde : `pieges.rs` seul ; 29 lignes au lieu de 30).
+  disparaît (doc-comment de la garde : `pieges.rs` seul ; 28 lignes au lieu de 30 au `git grep`, avec la signature de
+  `cancel_reconciliation_once` convertie par C-36-4-1 ; 21 lignes de paramètre au lieu de 23). *(Corrigé à la remédiation
+  de la validation P1, V1-2 : ce choix disait « 29 lignes ».)*
 - **Écartée** : un doc-comment « tests seuls » — laisse sur une fonction publique de `kesh-db` un `None` positionnel que
   la garde ne voit pas.
 - **Réversible** : oui.
