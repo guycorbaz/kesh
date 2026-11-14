@@ -190,7 +190,7 @@ devise au cours d'ouverture choisi pour l'exercice (R6), afin de tenir mes livre
      **postérieur au mois suivant le mois courant** (Europe/Zurich ; 35-2 AC-5 : le mois suivant est admis à toute
      date, non publié → `404 RATE_NOT_PUBLISHED` ; R4 amendé, alignement de l'orchestrateur),
      **aucun** `POST /fetch` (il rendrait 400, 35-2 AC-5) : saisie manuelle directement ; un 400 du `POST /fetch` se
-     traite comme `RATE_NOT_PUBLISHED`. Le cours du mois M est publié au plus tard le 25 de M−1, et parfois avant (R4 amendé ; 35-2 *Source*), et la tâche
+     traite comme `RATE_NOT_PUBLISHED`. Le cours du mois M est publié le 25 de M−1 ou le jour ouvrable suivant selon l'ESTV, mais parfois avant (relevé du 14.11.2026, à confirmer par Beat ; R4 amendé ; 35-2 *Source*), et la tâche
      automatique de 35-2 (une vérification par jour) le récupère pour les exercices multi-devises ; le cas « cours indisponible » vise surtout un
      mois futur, une devise non publiée ou une source injoignable. *(Annotation de l'orchestrateur, 2026-11-14 : la
      remédiation P1 avait écrit l'inverse ; précisée par R4, CR-2.)* La
@@ -362,7 +362,7 @@ devise au cours d'ouverture choisi pour l'exercice (R6), afin de tenir mes livre
    (`audit_route_registry.rs:1325`, 27) prend +1, chiffre et toutes lettres (alignement de l'orchestrateur sur
    35-5-CR2-P2-IF2) ; phrase du manuel d'administration recomptée.
    **Tests** : dépôt et API — conversion sans frais (gain), avec frais aux deux écritures (perte), différence nulle
-   (aucune ligne d'écart), compte de conversion à 0 après, refus de la seconde écriture → rien de créé, compte de
+   (aucune ligne d'écart), compte de conversion à 0 après, refus de la seconde écriture **exécutée** (la plus tardive, placée en tête du corps pour exercer l'ordre chronologique) → rien de créé, `details.entry` = son rang dans le corps, compte de
    conversion non désigné ou invalide, transit déséquilibré, date dans un exercice mono-devise, `details.entry`,
    `entries` de longueur 0, 1 ou 3, rôle Consultation → 403, clé d'API en lecture seule refusée ;
    Vitest de l'assistant (calcul de la différence sur la fixture partagée, frais, cours OU CHF, bouton désactivé hors
@@ -615,3 +615,14 @@ devise au cours d'ouverture choisi pour l'exercice (R6), afin de tenir mes livre
   *Source*), 35-3a (AC-4, 2 bis), 35-1 (AC-3 : ordre `companies` → exercices → comptes), 35-5 (AC-2 (0), (3)), R4 amendé ;
   `audit_route_registry.rs:1325` (27) ; argument d'absence de cycle sur le compte de conversion. Non exercés : code
   des pages (lignes citées en CR-2 P2 non relues), i18n, E2E, PDF.
+- 2026-11-14 — validation CR-2 P4 ciblée (Opus) : 0 CRITICAL, 0 HIGH, 0 MEDIUM, 2 LOW ; remédiés dans la fiche. LOW :
+  35-3b-CR2-P4-1 l'AC-2 disait le cours « publié au plus tard le 25 de M−1 », ce que ni R4 (« le 25 de M−1, ou le jour
+  ouvrable suivant ») ni R4 amendé (calendrier « à confirmer par Beat ») ni 35-2 *Source* n'affirment : phrase réalignée,
+  sans effet sur le comportement (Kesh n'en dépend pas) ; 35-3b-CR2-P4-2 le test « refus de la seconde écriture → rien
+  de créé » de l'AC-2 bis restait ambigu depuis l'exécution chronologique (CR-2 P3-3) : précisé (seconde **exécutée**,
+  placée en tête du corps, `details.entry` = rang dans le corps). Aucun finding inter-fiche. Axes exercés : diff
+  `cb15f2cd..dab5975d` de la fiche (trois hunks) ; renvois à 35-2 AC-5 (bornes ≥ 2000-01, ≤ mois suivant à toute date,
+  rôles) et *Source*, 35-2 AC-4 (vérification quotidienne), R4 et R4 amendé, 35-3a AC-4 (2 bis : règle du `PUT`,
+  mot pour mot), cohérence interne de l'AC-2 bis (`details.entry` 1/2 = colonnes, ordre d'exécution, réponse dans
+  l'ordre du corps). Non exercés : code des pages et du serveur (aucune ligne de code citée par les hunks), i18n, E2E,
+  Vitest, PDF.
