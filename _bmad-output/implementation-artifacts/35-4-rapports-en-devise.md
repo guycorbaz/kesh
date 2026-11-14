@@ -18,9 +18,14 @@ exports, afin de rapprocher mes comptes PayPal ou Wise de leurs relevés et de c
    CHF par le type du compte (`opening.rs`).
    - **Côté d'une ligne** : celui de son montant CHF (`debit > 0` ⇒ débit, `credit > 0` ⇒ crédit) ; `amount_currency`
      n'a pas de signe (C-35-3). Les rapports lisent une **paire brute (débit, crédit) en devise** :
-     `SUM(CASE WHEN jel.debit > 0 THEN jel.amount_currency ELSE 0 END)` et son symétrique, filtrée
-     `jel.currency = a.currency` — la condition **dans** le `CASE` (`WHEN jel.debit > 0 AND jel.currency = a.currency`),
-     **jamais** en `WHERE`, qui écarterait des sommes CHF. Une ligne `revaluation` (`amount_currency = 0`) n'y ajoute rien.
+     `SUM(CASE WHEN jel.debit > 0 THEN jel.amount_currency ELSE 0 END)` et son symétrique, **sans condition de
+     devise sur la ligne** — CR-4, T3 : la ligne ne porte plus de devise (35-3a AC-1) ; la **devise est celle du
+     compte**, `a.currency`, et toutes les lignes d'un compte en devise sont dans sa devise (verrou de 35-1 AC-4 dès la
+     première ligne, contrôle central de 35-3a AC-4). Aucune condition `jel.currency = a.currency` ne s'écrit nulle
+     part (la colonne n'existe pas). Un compte CHF ne porte aucune ligne en devise (`amount_currency` `NULL`, ignoré
+     par `SUM`) ; le solde en devise d'un compte CHF reste `NULL` par `a.currency IS NULL` (ci-dessous), ce qui
+     neutralise aussi une ligne en devise posée hors du dépôt (limite de 35-3a AC-1). Une ligne `revaluation`
+     (`amount_currency = 0`) n'y ajoute rien.
    - `signed`, `opening_from` et `debit_sense` (`opening.rs`, :75 pour `opening_from`) s'appliquent **sans
      changement** à la paire en devise (ce sont des fonctions sur `Decimal`) : aucun `CASE` d'ouverture n'est recopié
      en SQL, aucune seconde règle. « Fonction partagée » = fragment SQL de la somme en devise + `opening_from` ; la
@@ -30,10 +35,11 @@ exports, afin de rapprocher mes comptes PayPal ou Wise de leurs relevés et de c
      grand livre (`opening_balance`, `general_ledger.rs:338-342` ; `fetch_totals`, `:465-473`) ne joignent **pas**
      `accounts` (filtre `jel.account_id = ?`), et la balance lit les lignes par la sous-requête `x`
      (`trial_balance.rs:165-170`), qui ne projette que `account_id, debit, credit, entry_date, fiscal_year_id`. Le
-     fragment est donc une fonction **paramétrée** par l'alias de la ligne et l'expression de la devise du compte,
-     et il vit dans `kesh-db` (`repositories/account_balances.rs`, AC-1 quater), seul crate visible à la fois de
-     `balances_as_of` et de `kesh-report` ; `x` projette en plus `jel.currency` et `jel.amount_currency` ; les deux
-     requêtes du grand livre joignent `accounts a` (ou lient la devise du compte, lue par `select_accounts`).
+     fragment est donc une fonction **paramétrée** par l'alias de la ligne (T3 : plus d'expression de devise à lui
+     passer), et il vit dans `kesh-db` (`repositories/account_balances.rs`, AC-1 quater), seul crate visible à la fois de
+     `balances_as_of` et de `kesh-report` ; `x` projette en plus `jel.amount_currency` (seulement) ; les deux
+     requêtes du grand livre **ne joignent pas** `accounts` pour la somme : la devise de la section est celle que lit
+     `select_accounts` (`a.currency`, AC-2), et la paire en devise se calcule sans elle.
    - **Bilan et compte de résultat : le signe est en SQL**, non en Rust — `AccountBalance` est un `sqlx::FromRow` dont
      `balance` vient d'un `sign_expr` par type (`balance_sheet.rs:288-292`, `income_statement.rs:62-66`), pour que
      `HAVING` le lise. Le solde en devise y suit **le même patron** : un `sign_expr` en devise construit par la même
@@ -77,7 +83,8 @@ exports, afin de rapprocher mes comptes PayPal ou Wise de leurs relevés et de c
 2. **AC-2 — Grand livre** (`general_ledger.rs` `generate` :644). Pour un compte en devise :
    - `RawAccount`/`select_accounts` (`general_ledger.rs:250`, `:359`) lisent `a.currency` (source de
      `LedgerSection.currency` et de la devise liée aux requêtes d'ouverture et de totaux) ;
-   - `RawLine`/`fetch_lines` lisent `currency`, `amount_currency`, `exchange_rate`, `rate_source` ; `LedgerLine` gagne le
+   - `RawLine`/`fetch_lines` lisent `amount_currency`, `exchange_rate`, `rate_source` (la requête ne joint pas
+     `accounts`, `general_ledger.rs:407-413` ; la devise d'une ligne est celle de sa section, T3) ; `LedgerLine` gagne le
      montant en devise (en débit/crédit comme le CHF), le cours (10 décimales stockées ; affichage par un formateur
      **neuf** `format_exchange_rate`, AC-5 — ⚠️ **pas** `format_rate` de `pdf.rs:1063`, qui rend un taux de TVA
      `"{rate:.2} %"`), le solde progressif en devise ; `LedgerSection` gagne `currency`, `openingCurrency`,
@@ -168,6 +175,10 @@ exports, afin de rapprocher mes comptes PayPal ou Wise de leurs relevés et de c
      (rupture et clôture en devise) avec `offset > 0` (#775) ; compte à CHF 0 et devise ≠ 0 listé aux quatre rapports ;
      **concordance** grand livre ↔ balance ↔ bilan ↔ compte de résultat **en devise** (appel réel des générateurs,
      comme les tests CHF de `general_ledger.rs`) ; contenu CSV et PDF ; MCP ; `balances_as_of` dans une transaction.
+   - **T3 (CR-4)** : la devise affichée d'un mouvement, d'une section ou d'une ligne de rapport est celle du compte
+     (`a.currency`) — test : un compte EUR à deux lignes (`afc` et `manual`) donne la paire en devise attendue sans
+     aucune condition de devise sur la ligne ; contrôle au Change Log du développement que `grep -rn "jel.currency\|l.currency"
+     crates/` ne rend rien.
    - Non-régression mono-devise : quatre CSV **octet pour octet** contre fixtures enregistrées **depuis le commit de
      base avant toute modification** (cas multi-devises sans compte en devise compris) ; JSON identique (AC-6).
 9. **AC-9 — Manuel** : lecture des rapports en devise ; i18n ; PDF.
@@ -183,7 +194,8 @@ exports, afin de rapprocher mes comptes PayPal ou Wise de leurs relevés et de c
       `:284`, `csv.rs:1213`, `pdf.rs:1861`, `benches/export.rs:102` ; `LedgerLine`/`LedgerSection` — AC-2 ; `FiscalYearBreak` (gagne `closingBalanceCurrency`, AC-1 bis) —
       `general_ledger.rs:591`, `:609`, `:842` (test), `csv.rs:1390`, `:1395`, `pdf.rs:2514`, `:2531`, `:2537` ;
       `JournalEntryLineRow` (AC-7 : champs en devise) — `journal_report.rs:177` (et les **deux** `SELECT` de
-      `generate`, :100 et :124, qui lisent `jel.currency`, `amount_currency`, `exchange_rate`, `rate_source`),
+      `generate`, :100 et :124, qui lisent `a.currency` — la jointure `INNER JOIN accounts a` y est déjà, pour le
+      numéro et le nom du compte — et `jel.amount_currency`, `jel.exchange_rate`, `jel.rate_source` ; T3),
       `csv.rs:1172`, `pdf.rs:1902`, `:2404`, `:2412`, `benches/export.rs:153`, `:161`. Consommateurs
       à étendre (sans échec de compilation) : `mcp/outils/rapports.rs:142` (`fn ligne`, `LigneDeSolde`), la
       construction de `LigneBalance` (`mcp/outils/rapports.rs:219`) et la correspondance du grand livre de
@@ -232,3 +244,12 @@ exports, afin de rapprocher mes comptes PayPal ou Wise de leurs relevés et de c
   `Code<E>` (`:302`) disponibles pour montants, cours et devise ; « présents à `null` », macro non étendue : accord
   avec l'AC-6 de la fiche, 35-3a AC-8 et C-35-9. LOW P6-1 : l'entrée P5 porte un gabarit non rempli
   (« sauf <aucun inter-fiches> ») — à lire « aucun inter-fiches » ; relevé daté laissé tel quel.
+- 2026-11-14 — révision CR-4 (revue 2 de Beat T1–T6 ; Opus) : **T3** — la ligne ne stocke plus de devise (35-3a
+  AC-1) : les rapports lisent la devise sur le compte (`a.currency`) ; la paire en devise se somme **sans** condition
+  `jel.currency = a.currency` (retirée de l'AC-1) ; le fragment partagé n'est plus paramétré que par l'alias de la
+  ligne ; `x` de la balance projette `jel.amount_currency` seul ; les requêtes du grand livre (`fetch_lines`,
+  ouverture, totaux) ne joignent pas `accounts` pour la somme, la devise de section venant de `select_accounts` (AC-1,
+  AC-2) ; les deux `SELECT` du journal lisent `a.currency` par leur jointure existante (Tâches) ; test et contrôle
+  « aucune lecture de `jel.currency` » (AC-8). Prémisses relues au code : `journal_report.rs:100-135` (jointure
+  `accounts a` présente), `general_ledger.rs:407-413` (`fetch_lines` sans `accounts`). T1, T2, T4, T5, T6 sans point
+  de contact. AC touchés : AC-1, AC-2, AC-8, Tâches. Fiche à revalider (cycle CR-4).

@@ -8,7 +8,9 @@ préventif : plus de cinq modules) : 35-3a = le serveur (`kesh-core`, `kesh-db`,
 `kesh-seed`) et les sélecteurs serveur ; 35-3b = soldes d'ouverture, formulaire et écrans. Révisée le 2026-11-14 pour
 la revue de Beat (CR-2 : R1, R3, R7), qui prime sur le registre antérieur ; puis pour sa revue CR-3 (S2 : comptes de
 différence propres à un compte en devise, résolus par `fx_accounts_for` de 35-1 ; S6 : `FX_RATE_NOT_AFC` compare au
-cours AFC **en vigueur**), qui prime sur CR-2.*
+cours AFC **en vigueur**), qui prime sur CR-2 ; puis pour sa revue 2 (CR-4, **T3** : la ligne **ne stocke pas** la
+devise — elle se lit sur le compte, dont la devise est verrouillée dès la première ligne, 35-1), qui prime sur tout ce
+qui précède.*
 
 ## Story
 
@@ -20,18 +22,18 @@ chacune (R7), l'écart de change dans la seconde, afin que mes comptes en devise
 ## Critères d'acceptation
 
 1. **AC-1 — Migration** `20261114000003_journal_lines_foreign_currency.sql` : sur `journal_entry_lines`,
-   `currency CHAR(3) CHARACTER SET ascii COLLATE ascii_bin NULL` (**même définition** que `accounts.currency`, 35-1
-   AC-1 : la table est en `utf8mb4_unicode_ci`, sans collation binaire `REGEXP` ignorerait la casse),
    `amount_currency DECIMAL(19,4) NULL`, `exchange_rate DECIMAL(20,10) NULL`,
-   `rate_source VARCHAR(12) NULL` ; contraintes **nommées** (C-35-3), chacune tolérante à la ligne CHF (quatre `NULL`) :
-   - `chk_jel_fx_all_or_none` : les quatre `NULL`, ou les quatre non `NULL` ;
-   - `chk_jel_fx_currency` : `currency IS NULL OR (BINARY currency REGEXP '^[A-Z]{3}$' AND BINARY currency <>
-     BINARY 'CHF')` (écriture de 35-1, à recopier ; symétrique de 35-1 : la devise principale s'écrit `NULL`) ;
+   `rate_source VARCHAR(12) NULL` — **trois** colonnes, **aucune colonne de devise** (CR-4, T3 : « DB DRY » ; la devise
+   d'une ligne est celle de son compte, `accounts.currency` de 35-1, lue par jointure, et verrouillée dès la première
+   ligne du compte, 35-1 AC-4 : c'est ce verrou qui garantit qu'une ligne passée garde sa devise) ; contraintes
+   **nommées** (C-35-3), chacune tolérante à la ligne CHF (trois `NULL`) :
+   - `chk_jel_fx_all_or_none` : les trois `NULL`, ou les trois non `NULL` ;
+   - (aucune contrainte de forme de devise : la colonne n'existe pas ; la forme vit sur `accounts`, 35-1 AC-1) ;
    - `chk_jel_fx_rate_source` : `rate_source IN ('afc','manual','revaluation')` (en `BINARY`, sur le modèle de
      `20261110000001`) ;
    - `chk_jel_fx_amount` : `rate_source = 'revaluation'` ⇒ `amount_currency = 0` ; sinon `amount_currency > 0` ;
    - `chk_jel_fx_rate` : `exchange_rate > 0` ;
-   - `chk_jel_fx_chf` (filet structurel, C-35-4) : `currency IS NULL OR rate_source = 'revaluation' OR debit + credit =
+   - `chk_jel_fx_chf` (filet structurel, C-35-4) : `amount_currency IS NULL OR rate_source = 'revaluation' OR debit + credit =
      ROUND(amount_currency * exchange_rate, 2)` — le `ROUND` de MariaDB sur `DECIMAL` arrondit l'équidistant loin de
      zéro, comme `MidpointAwayFromZero` ; il couvre les chemins qui n'appellent pas `validate()` (contre-passation,
      restauration `.keshbackup`, 35-5).
@@ -39,38 +41,59 @@ chacune (R7), l'écart de change dans la seconde, afin que mes comptes en devise
    devient `DbError::CheckConstraintViolation`, `kesh-db/src/errors.rs:1726`, puis un **400** générique
    `CHECK_CONSTRAINT_VIOLATION`, `kesh-api/src/errors.rs:3801` — jamais une 500). Les `chk_jel_fx_*` s'y appuient sans
    bras dédié ; les refus précis sont ceux de `kesh-core` (AC-3) et du dépôt (AC-4), qui les précèdent. Test, **par
-   contrainte** et en SQL brut : quatre colonnes partielles, `usd`, `CHF`, source inconnue, montant 0 hors
+   contrainte** et en SQL brut : trois colonnes partielles, source inconnue, montant 0 hors
    `revaluation`, montant < 0, ligne `revaluation` au montant ≠ 0 (seule `chk_jel_fx_amount` violée), cours 0,
    CHF incohérent → chacune refusée par **sa** contrainte (nom lu dans le message) ;
-   la ligne CHF (quatre `NULL`) et une ligne `revaluation` valide passent. ⚠️ Hors `revaluation`, un montant ≤ 0 ou un
+   la ligne CHF (trois `NULL`) et une ligne `revaluation` valide passent. ⚠️ **Ce que le schéma ne garde plus** :
+   aucune contrainte de table ne lie une ligne en devise à un compte en devise (un `CHECK` ne lit pas `accounts`) ;
+   une ligne à `amount_currency` non `NULL` sur un compte CHF n'est refusée que par le dépôt (AC-4, `FX_ACCOUNT_IN_CHF`)
+   — un `INSERT` brut ou une sauvegarde retouchée pourraient la poser ; les lecteurs (35-4, 35-5) la neutralisent par
+   `a.currency IS NULL` (solde en devise `NULL` pour un compte CHF). Limite assumée, écrite au Change Log. ⚠️ Hors `revaluation`, un montant ≤ 0 ou un
    cours 0 viole **aussi** `chk_jel_fx_chf` (`debit + credit > 0` par `chk_jel_debit_credit_exclusive`, squash :863) :
    `chk_jel_fx_chf` est déclarée **en dernier** dans la migration, le cas « cours 0 » se construit sur une ligne
    `revaluation` (montant 0, CHF > 0 : seule `chk_jel_fx_rate` est violée), et le nom rapporté pour les deux cas qui violent aussi
    `chk_jel_fx_chf` (« montant 0 hors `revaluation` » et « montant < 0 ») est constaté au premier essai et écrit au Change Log (ordre d'évaluation des `CHECK` de MariaDB).
    Inscriptions habituelles (sha384, audit, squash, P6 inspecté, P7 sans objet : DDL seul). Colonnes `NULL` : cette
    migration ne referme pas la fenêtre d'import, et 35-2 non plus depuis CR-2 (R1 : la liste close des absences
-   admises de 35-1 AC-6 couvre `exchange_rate_overrides`). Les quatre colonnes **s'inscrivent à cette liste** (déjà
+   admises de 35-1 AC-6 couvre `exchange_rate_overrides`). Les trois colonnes **s'inscrivent à cette liste** (déjà
    tolérées par la règle générique, la liste les garde non `is_required()`). Ce qui se teste ici : le test d'import
-   d'une sauvegarde 0.17.6 de 35-1 AC-6, étendu aux quatre colonnes retirées des NDJSON de `journal_entry_lines` →
-   import 200, lignes aux quatre colonnes `NULL` (Tâches).
-2. **AC-2 — Modèle Rust.** `ForeignAmount { currency, amount, rate, source }` (`kesh-core` ; `source` est un enum
+   d'une sauvegarde 0.17.6 de 35-1 AC-6, étendu aux trois colonnes retirées des NDJSON de `journal_entry_lines` →
+   import 200, lignes aux trois colonnes `NULL` (Tâches).
+2. **AC-2 — Modèle Rust.** `ForeignAmount { declared_currency, amount, rate, source }` (`kesh-core` ;
+   `declared_currency: Option<String>` est la devise **annoncée** par le client — jamais stockée, T3 : `None` pour un
+   client qui ne l'envoie pas et pour les chemins internes, contre-passation et réévaluation de 35-5 ; le dépôt la
+   compare à la devise du compte, AC-4 ; `kesh-core` ne la lit pas ; `source` est un enum
    nommé `RateProvenance { Afc, Manual, Revaluation }` — **pas** `RateSource`, déjà le trait de 35-2 dans `kesh-api` ;
    montant et cours en `Decimal`, non en `Money` ; le type dérive `Debug, Clone, PartialEq, Eq, Serialize,
    Deserialize` comme `JournalEntryLineDraft` qui le porte, `RateProvenance` de même) ;
    `NewJournalEntryLine.foreign: Option<ForeignAmount>` **et** `JournalEntryLineDraft.foreign: Option<ForeignAmount>`
    (`balance.rs:72`, le type que lit `validate()`), **sans** `Default` : chaque site de construction est revu
    (inventaire de l'échec de compilation, écrit au Change Log, site par site : `None` motivé ou extension) ;
-   `JournalEntryLine` relu avec les quatre colonnes. Sites SQL de `journal_entries.rs`, liste close (production ; `mod
-   tests` commence à `:3177`) :
+   `JournalEntryLine` relu avec les **trois** colonnes **et** la devise du compte, `account_currency: Option<String>`
+   (`a.currency AS account_currency`, par jointure ; nom au développement), d'où une méthode `foreign()` qui compose
+   la vue `{ currency, amount, rate, source }` des réponses (devise = celle du compte). Sites SQL de
+   `journal_entries.rs`, liste close (production ; `mod tests` commence à `:3177`) :
    - `INSERT` : `:505` (`create_in_tx_inner`) et `:1667` (`update_in_tx`) — les deux seuls `INSERT INTO
-     journal_entry_lines` de production de tout `crates/` ;
-   - lectures : `LINE_COLUMNS` (`:103`) ; colonnes en dur de `list_all_lines_by_company` (`:2047`, source de l'export
-     CSV) ; lecture `OriginLine` de la contre-passation (`:2896`), puis recopie `:2917` ;
+     journal_entry_lines` de production de tout `crates/` ; ils écrivent les trois colonnes, jamais de devise ;
+   - lectures : `LINE_COLUMNS` (`:103`, aujourd'hui sans alias) est **qualifiée** (`jel.…`, plus `a.currency AS
+     account_currency`) et s'accompagne d'une constante de source `LINE_FROM` (`journal_entry_lines jel JOIN accounts a
+     ON a.id = jel.account_id`, nom au développement) : ses **sept** lectures `SELECT {LINE_COLUMNS} FROM
+     journal_entry_lines WHERE entry_id = ? ORDER BY line_order` (`:549`, `:765`, `:975`, `:1630`, `:1708`, `:1975`,
+     `:3081`, relevées le 2026-11-14 ; aucune n'est verrouillante — une jointure sous `FOR UPDATE` verrouillerait aussi
+     les comptes) deviennent `SELECT {LINE_COLUMNS} FROM {LINE_FROM} WHERE jel.entry_id = ? ORDER BY jel.line_order`
+     (DRY : la jointure s'écrit une fois). La garde lexicale `letterings_lexical.rs` (`{LINE_COLUMNS}` dans une
+     écriture) n'est pas touchée : ce sont des lectures. Colonnes en dur de `list_all_lines_by_company` (`:2047`,
+     source de l'export CSV, `query_as::<_, JournalEntryLine>` : elle projette aussi `account_currency` et joint donc
+     `accounts` en plus de `journal_entries`) ; lecture `OriginLine` de la contre-passation (`:2896`, `FOR
+     UPDATE` : elle lit les **trois** colonnes, **sans** jointure — la devise suit le compte, inchangé), puis recopie
+     `:2917` ;
    - re-sommes d'équilibre (CHF, inchangées) : `:520-537` et celle d'`update_in_tx`.
    - **`is_no_op_change`** (`:1300`) : compare aujourd'hui compte, débit, crédit et projet **seulement** ; sans les
-     quatre champs en devise, un `PUT` qui ne change que le cours, la source ou la devise d'une ligne (CHF identique)
-     serait jugé **sans effet** — ni écriture, ni `version`, ni audit. Il compare `foreign` (les quatre champs,
-     montants comparés en valeur, non en graphie) ; test : un `PUT` qui ne change que `rateSource` écrit et audite.
+     champs en devise, un `PUT` qui ne change que le cours, la source ou le montant en devise d'une ligne (CHF
+     identique) serait jugé **sans effet** — ni écriture, ni `version`, ni audit. Il compare les **trois** champs
+     stockés de `foreign` (montant, cours, source ; montants comparés en valeur, non en graphie) — la devise suit le
+     compte, déjà comparé, et `declared_currency` n'est pas stockée ; test : un `PUT` qui ne change que `rateSource`
+     écrit et audite.
    - **`ModificationBlocker`** (`kesh-db/src/errors.rs:210` ; `modification_blocker`,
      `repositories/journal_entries.rs:1243`, motif d'écran) et
      `update_in_tx` : voir AC-7 (nouveau motif `ENTRY_IS_FX_REVALUATION`, **hors** `ModificationGuard`, que
@@ -108,7 +131,7 @@ chacune (R7), l'écart de change dans la seconde, afin que mes comptes en devise
      `FxAmountMismatch { line, expected, provided }` (+ `error_code()`, `kesh-core/src/errors.rs:114`). **`line`** est
      le rang **1-based** de la ligne dans `lines` du corps, rendu `details.line` (convention existante :
      `kesh-api/src/errors.rs:2715`, `:4476`) ; il en va de même de **tous** les refus par ligne de cette fiche
-     (`ACCOUNT_REQUIRES_CURRENCY`, `FX_CURRENCY_MISMATCH`, `FX_RATE_NOT_AFC`, AC-4) : 35-3b affiche le message sur la
+     (`ACCOUNT_REQUIRES_CURRENCY`, `FX_ACCOUNT_IN_CHF`, `FX_CURRENCY_MISMATCH`, `FX_RATE_NOT_AFC`, AC-4) : 35-3b affiche le message sur la
      ligne fautive à partir de ce seul champ (35-3b AC-2).
    - **Bornes du cours seul** : le contrôle d'échelle et de borne du cours (≤ 10 décimales après `normalize()`,
      ≤ 10⁶) est la fonction publique **distincte** de `kesh-core` **créée par 35-2** (AC-2, bornes d'un cours seul :
@@ -138,7 +161,9 @@ chacune (R7), l'écart de change dans la seconde, afin que mes comptes en devise
 4. **AC-4 — Contrôle central du dépôt** (`create_in_tx_inner`, `update_in_tx` — les deux seuls chemins d'`INSERT`).
    **Ordre des refus** (une seule raison, la plus bloquante d'abord ; la devise d'un compte ne se lit qu'après le
    contrôle d'appartenance, garde KF-002) :
-   1. `InactiveOrInvalidAccounts` → `AccountsNotPostable` (existants, `validate_lines_accounts_in_tx` :135) ;
+   1. `InactiveOrInvalidAccounts` → `AccountsNotPostable` (existants, `validate_lines_accounts_in_tx` :135) ; la
+      même lecture rend la **devise de chaque compte** (`currency` ajouté à son `SELECT`, verrouillant, ci-dessous) :
+      c'est la **seule** source de la devise des lignes pour tous les rangs suivants (T3, CR-4) ;
    2. ligne en devise et société **ou exercice de l'écriture** en mono-devise → **409** `MULTI_CURRENCY_DISABLED`
       (variante de 35-1 ; R3 : le mode se juge sur l'exercice de l'écriture, `fiscal_years.multi_currency` de 35-1,
       lu dans la ligne que l'étape 1 de `create_in_tx_inner` prend déjà `FOR UPDATE`, `journal_entries.rs:332-336`
@@ -159,24 +184,29 @@ chacune (R7), l'écart de change dans la seconde, afin que mes comptes en devise
       aujourd'hui à l'étape 8, `:1629`) se lisent donc plus tôt, sous le verrou de l'écriture, à l'étape 6 (après la
       garde des comptes). **Critère au `PUT`** : la garde ne refuse que si les lignes en devise **changent** — l'ensemble
       des lignes d'avant qui portent une devise diffère de celle du corps (sans égard à l'ordre, même appariement que
-      le point 4 ci-dessous ; compte, débit, crédit et les
-      quatre champs de `foreign` comparés comme `is_no_op_change`, montants en valeur, **sauf `rate_source`**, que la
+      le point 4 ci-dessous ; compte, débit, crédit, montant en devise et cours comparés comme `is_no_op_change`,
+      montants en valeur — la devise suit le compte, déjà comparé (T3) —, **sauf `rate_source`**, que la
       garde ne compare pas : la provenance d'un cours ne change aucun solde, et un `PUT` qui ne fait que la changer
       passe). Un `PUT` qui ne touche que le
       libellé, la date dans l'exercice ou des lignes CHF ne change pas le solde d'ouverture de l'exercice mono-devise
       et passe ; un `PUT` sans effet passe donc aussi, sans exception à KF-004 (toutes les gardes **précèdent** le
       court-circuit de l'étape 8, `:1636` ; celle-ci ne refuse simplement pas ce qui ne change rien). Le message dit
       quoi faire (passer l'exercice postérieur en multi-devises) ;
-   2 bis. **une seule devise étrangère par écriture (R7)** : des lignes en devise de deux devises différentes →
-      400 **`FX_MULTIPLE_CURRENCIES`** (code neuf, `details: { currencies: ["EUR", "USD"] }`, triées ; variante
-      `DbError::FxMultipleCurrencies`, bras dans `errors.rs` et dans les correspondances `FailedProposal` de l'AC-5),
-      calculé sur le corps seul à la création (aucune lecture), rendu à ce rang de l'ordre des refus ; les lignes CHF
-      restent admises à côté. Une conversion entre
+   2 bis. **une seule devise étrangère par écriture (R7)**, jugée sur les **devises des comptes** des lignes (T3,
+      CR-4 : l'ensemble des `accounts.currency` non `NULL` lus au rang 1 — aucune lecture de plus, la ligne ne portant
+      pas de devise) : deux devises étrangères différentes → 400 **`FX_MULTIPLE_CURRENCIES`** (code neuf,
+      `details: { currencies: ["EUR", "USD"] }`, triées ; variante `DbError::FxMultipleCurrencies`, bras dans
+      `errors.rs` et dans les correspondances `FailedProposal` de l'AC-5), rendu à ce rang de l'ordre des refus.
+      **Cas admis** (T3) : **CHF–CHF** ; **devise–CHF** (et l'inverse), la ligne en devise avec son cours ;
+      **devise–même devise** (p. ex. EUR–EUR, deux comptes EUR : chaque ligne a sa valeur CHF à son cours — cours AFC
+      du mois ou cours saisi dans l'écriture, `afc` ou `manual` ligne par ligne). **Refusé** : EUR–USD (deux comptes de
+      devises différentes), même si l'une des lignes ne porte pas `foreign` (le refus de ce rang précède
+      `ACCOUNT_REQUIRES_CURRENCY`, rang 3 ; précédence testée). Une conversion entre
       deux devises passe par le compte de conversion de 35-1 en deux écritures (35-3b, assistant *Conversion*).
       Au **`PUT`** (`update_in_tx`), la règle ne refuse que si le corps porte plus d'une devise **et** une
       devise que l'écriture stockée ne portait pas (l'ensemble des devises ne s'élargit jamais ; alignement de
-      l'orchestrateur sur 35-3b-CR2-P2-9) — jugé sur les lignes d'avant lues à l'étape 6 (rang 2 ci-dessus),
-      seule lecture de plus : une écriture d'ouverture ou de complément déjà à plusieurs devises
+      l'orchestrateur sur 35-3b-CR2-P2-9) — jugé sur les lignes d'avant lues à l'étape 6 (rang 2 ci-dessus ; leur
+      devise est `account_currency`, lue par la jointure de `LINE_FROM`, AC-2), seule lecture de plus : une écriture d'ouverture ou de complément déjà à plusieurs devises
       reste modifiable (alignement de l'orchestrateur sur 35-3b-CR2-P1-2). **Comportement assumé**, écrit au Change
       Log : une ouverture enregistrée avec **une** seule devise ne reçoit pas de seconde devise par `PUT` (refus
       `FX_MULTIPLE_CURRENCIES`) ; le solde d'ouverture d'un compte d'une autre devise passe par le complément (35-3b).
@@ -198,14 +228,21 @@ chacune (R7), l'écart de change dans la seconde, afin que mes comptes en devise
       réévaluation au 1er janvier d'un exercice mono-devise est refusé en 409, le message disant de le passer en
       multi-devises ; comportement assumé, testé (origine en devise, exercice du jour mono-devise ; origine en
       devise, exercice suivant mono-devise) ;
-   3. ligne **sans** devise sur un compte en devise → `ACCOUNT_REQUIRES_CURRENCY` ; ligne en devise sur un compte d'une
-      autre devise ou CHF → `FX_CURRENCY_MISMATCH` (pour **l'un et l'autre** : première ligne fautive, son rang en
-      `details.line`, AC-3). Quand l'exercice de l'écriture est **mono-devise**, `ACCOUNT_REQUIRES_CURRENCY` porte en
+   3. accord de chaque ligne avec la devise de **son compte** (T3, CR-4), première ligne fautive, son rang en
+      `details.line` (AC-3), avec, pour une ligne donnée, cet ordre : ligne **sans** `foreign` sur un compte en devise
+      → `ACCOUNT_REQUIRES_CURRENCY` ; ligne **avec** `foreign` sur un compte CHF → 400 **`FX_ACCOUNT_IN_CHF`** (code
+      neuf, variante `DbError::FxAccountInChf { line }`, bras dans `errors.rs` et dans les correspondances
+      `FailedProposal` de l'AC-5, quatre locales ; quel que soit `declared_currency`, `"CHF"` compris) ; ligne avec
+      `foreign` dont la devise **annoncée** (`declared_currency`, présente) diffère de celle du compte →
+      `FX_CURRENCY_MISMATCH` (`details: { line, expected: <devise du compte>, provided }`) — **seul** cas de ce code
+      désormais ; sans devise annoncée, la ligne prend la devise du compte. L'écran l'annonce toujours (35-3b) : c'est
+      la garde contre un compte dont la devise a changé entre le chargement du formulaire et l'envoi (possible tant
+      qu'il n'a pas de ligne, 35-1 AC-4) ; un client de l'API qui l'omet renonce à cette garde (écrit au manuel, 35-3b). Quand l'exercice de l'écriture est **mono-devise**, `ACCOUNT_REQUIRES_CURRENCY` porte en
       plus `details.reason: "monoCurrencyFiscalYear"` et `fiscalYearId` : l'invite « saisissez le montant en devise »
       y serait fausse (la ligne en devise est refusée au rang 2) — le message dit de passer l'exercice en
       multi-devises (clé i18n propre, quatre locales ; affichage 35-3b, inter-fiche) ;
    4. ligne `rate_source = 'afc'` : le cours doit égaler `rate_per_unit` du cours AFC **mensuel brut en vigueur** de
-      `_kesh_exchange_rates` (35-2) pour (devise, mois de `entry_date`) — **jamais** une valeur republiée non adoptée
+      `_kesh_exchange_rates` (35-2) pour (devise **du compte**, lue au rang 1, mois de `entry_date`) — **jamais** une valeur republiée non adoptée
       (`republished_rate`, S6, CR-3 : une correction de l'AFC reste à part jusqu'à son adoption à l'écran *Cours de
       change*, 35-2 AC-5 ; `find_rate_in_tx` rend le cours en vigueur, la lecture ne change pas) —, lu dans la transaction par la fonction de
       lecture du dépôt `kesh_db::repositories::exchange_rates::find_rate_in_tx(conn, currency, RateKind::Month, 1er du
@@ -225,8 +262,9 @@ chacune (R7), l'écart de change dans la seconde, afin que mes comptes en devise
       modifiées sont contrôlées** (arbitrage A17, S6 : « les lignes déjà passées ne changent jamais ») : si la date de
       l'écriture change, toutes les lignes `afc` du corps le sont ; sinon, une ligne `afc` du corps est **inchangée**
       quand une ligne d'avant (`before_lines`, lues à l'étape 6, rang 2 ci-dessus), non encore appariée, lui est
-      identique en compte, débit, crédit et quatre champs de `foreign` — devise, montant, cours **et** `rate_source`
-      (une ligne `manual` repassée `afc` au même cours est modifiée) —, montants en valeur comme `is_no_op_change` ;
+      identique en compte, débit, crédit et trois champs stockés de `foreign` — montant, cours **et** `rate_source`
+      (une ligne `manual` repassée `afc` au même cours est modifiée ; la devise suit le compte, T3) —, montants en
+      valeur comme `is_no_op_change` ;
       appariement **sans égard à l'ordre** (déplacer une ligne ne la modifie pas ; le projet n'entre pas dans la
       comparaison). Une ligne inchangée n'est jamais recontrôlée et ne déclenche aucune lecture du cours : après une
       restauration (table des cours vide, 35-2 AC-7) ou après l'**adoption** d'un cours AFC republié (35-2 AC-5), le
@@ -280,8 +318,8 @@ chacune (R7), l'écart de change dans la seconde, afin que mes comptes en devise
      bras 404 : 35-3a la réutilise et ne la redéfinit pas.
    - **Bascule d'un exercice (inter-fiche, 35-1 AC-3 bis)** : la 35-1 contrôle le solde cumulé **en CHF** des comptes
      en devise au début de l'exercice et l'existence de lignes ; cette story, qui crée `amount_currency`, **étend la
-     même requête** au solde cumulé **en devise** (Σ `amount_currency` au débit − Σ au crédit, lignes de la devise du
-     compte ; une ligne `revaluation` compte 0) : un compte à CHF nul mais devise non nulle refuse aussi la bascule
+     même requête** au solde cumulé **en devise** (Σ `amount_currency` au débit − Σ au crédit, toutes les lignes du
+     compte — elles sont toutes dans sa devise, T3 ; une ligne `revaluation` compte 0) : un compte à CHF nul mais devise non nulle refuse aussi la bascule
      (`FISCAL_YEAR_HAS_FOREIGN_BALANCES`, `reason: "balance"`). Test au dépôt.
 5. **AC-5 — Chemins automatiques.** Factures, avoirs, règlements, factures fournisseur, lots de paiement,
    réconciliation (manuelle, éclatement, règles, propositions), — les soldes d'ouverture et leur complément exceptés
@@ -330,31 +368,36 @@ chacune (R7), l'écart de change dans la seconde, afin que mes comptes en devise
      Le **contrôle central de l'AC-4 reste le filet** : un état hérité ou une colonne oubliée ne produit jamais une
      ligne CHF sur un compte en devise, seulement un refus. Les sélecteurs du frontend masquent ces comptes (35-3b) ;
    - inventaire **clos** des sites, écrit au Change Log (méthode « inventorier les sites non résolus », `CLAUDE.md`).
-6. **AC-6 — API des écritures.** `CreateJournalEntryLineRequest` prend `foreign?: { currency, amount, rate,
-   rateSource: "afc"|"manual" }` (`revaluation` refusé ici : réservé à 35-5) ; `debit`/`credit` restent les montants
-   CHF ; **typage du DTO** : les quatre champs de `foreign` sont des `String` (comme `debit`/`credit`), analysés dans
+6. **AC-6 — API des écritures.** `CreateJournalEntryLineRequest` prend `foreign?: { currency?, amount, rate,
+   rateSource: "afc"|"manual" }` (`revaluation` refusé ici : réservé à 35-5) ; **`currency` facultatif** (T3, CR-4) :
+   absent, la ligne prend la devise de son compte ; présent, il devient `declared_currency` et doit égaler la devise du
+   compte (`FX_CURRENCY_MISMATCH`, AC-4, 3) ; il n'est jamais stocké. `debit`/`credit` restent les montants
+   CHF ; **typage du DTO** : les champs de `foreign` sont des `String` (`currency` en `Option<String>` ; comme `debit`/`credit`), analysés dans
    le handler — la route reçoit le corps par le `Json` d'axum (`create_journal_entry` `:600`), dont l'échec de
    désérialisation (énumération inconnue, nombre JSON pour un décimal) rend **422**, non 400 ; un `rateSource` typé en
    énumération rendrait donc 422 et non le 400 exigé ci-dessous (test HTTP : `rateSource: "revaluation"` → 400) ;
    réponses (`JournalEntryLineResponse`, détail, liste) exposent `foreign: { currency, amount, rate, rateSource }`
-   (décimaux en chaînes, comme `debit`/`credit` ; `rateSource` parmi `afc|manual|revaluation`), **omis** pour une ligne
+   (`currency` = devise **lue sur le compte**, `account_currency` de l'AC-2, toujours présente dans `foreign` ;
+   décimaux en chaînes, comme `debit`/`credit` ; `rateSource` parmi `afc|manual|revaluation`), **omis** pour une ligne
    CHF par `#[serde(skip_serializing_if = "Option::is_none")]` (registre C-35-9 : le JSON HTTP reste identique en
    mono-devise ; ⚠️ contraire à la convention locale du DTO, dont les champs de lettrage sont présents à `null`,
    test `routes/journal_entries.rs:876-881`) — test : le JSON d'une ligne CHF n'a pas de clé `foreign` ; `MAX_LINES_PER_ENTRY` inchangé ;
    erreurs traduites (quatre locales). `MULTI_CURRENCY_DISABLED` est un **409** partout. **Statuts** (une table, un
    test HTTP par code) : **400** `FX_VALUE_OUT_OF_RANGE`, `FX_LINE_ROUNDS_TO_ZERO`, `FX_AMOUNT_MISMATCH`,
-   `FX_RATE_NOT_AFC`, `FX_CURRENCY_MISMATCH`, `FX_MULTIPLE_CURRENCIES` (R7), `ACCOUNT_REQUIRES_CURRENCY`,
+   `FX_RATE_NOT_AFC`, `FX_CURRENCY_MISMATCH`, `FX_ACCOUNT_IN_CHF` (T3), `FX_MULTIPLE_CURRENCIES` (R7), `ACCOUNT_REQUIRES_CURRENCY`,
    `ACCOUNT_IN_FOREIGN_CURRENCY` ; **404**
    `RATE_UNAVAILABLE` (comme 35-2 et 35-5) ; **409** `MULTI_CURRENCY_DISABLED`, `ENTRY_IS_FX_REVALUATION`,
-   `ACCOUNT_CURRENCY_IN_USE` (35-1). `foreign.currency` se compare **tel quel** à la devise du compte (aucune
-   normalisation : `usd` → `FX_CURRENCY_MISMATCH`) ; `rateSource` hors `afc|manual` (dont `revaluation`) → 400
+   `ACCOUNT_CURRENCY_IN_USE` (35-1). `foreign.currency`, quand il est fourni, se compare **tel quel** à la devise du
+   compte (aucune normalisation : `usd` → `FX_CURRENCY_MISMATCH`) ; tests HTTP : sans `currency` sur un compte USD →
+   201, `foreign.currency` = `USD` dans la réponse ; `currency: "EUR"` sur un compte USD → `FX_CURRENCY_MISMATCH` ;
+   `foreign` sur un compte CHF (avec ou sans `currency`) → `FX_ACCOUNT_IN_CHF` ; `rateSource` hors `afc|manual` (dont `revaluation`) → 400
    `Validation` sans code dédié ; message en français et clé i18n d'erreur par code dans les quatre locales
    (`frontend/src/lib/` : codes d'erreur, comme 35-2).
 7. **AC-7 — Modification et contre-passation.**
    - le `PUT` (remplacement complet des lignes : `DELETE` `:1646`, `INSERT` `:1667`) prend `foreign` comme le `POST`,
      avec les mêmes contrôles (AC-3, AC-4), `FX_RATE_NOT_AFC` et `RATE_UNAVAILABLE` sur les seules lignes `afc`
      nouvelles ou modifiées (AC-4, 4, A17) ; l'audit avant/après (`entry_snapshot_json`
-     `:999`) porte les quatre champs ;
+     `:999`) porte `foreign` (AC-8) ;
    - une écriture qui porte une ligne `rate_source = 'revaluation'` **n'est pas modifiable** : `PUT` → 409
      `ENTRY_IS_FX_REVALUATION`. Sites : `DbError::EntryIsFxRevaluation` (variante propre, bras dans `errors.rs`), posée
      dans `update_in_tx` en **étape 3-bis** : juste après la garde d'écriture (étape 3) et **avant** la version
@@ -367,17 +410,24 @@ chacune (R7), l'écart de change dans la seconde, afin que mes comptes en devise
      corrige par suppression ; sa contre-passation reste permise mais ne corrige l'exercice que si elle est datée dans
      lui — alignement de l'orchestrateur sur 35-5-CR2-P2-IF1) ; test : `DELETE` d'une écriture de réévaluation → 204, `PUT` → 409, précédence testée ;
    - la contre-passation (repository `reverse_in_tx_inner` `:2796`, lecture `:2896`, recopie `:2917` ; handlers
-     `routes/journal_entries.rs` `:448` et `:479`), y compris d'une réévaluation, recopie `foreign` **et**
-     `rate_source` en inversant les côtés ; elle est exemptée du contrôle `FX_RATE_NOT_AFC`.
+     `routes/journal_entries.rs` `:448` et `:479`), y compris d'une réévaluation, recopie les trois colonnes —
+     montant, cours **et** `rate_source` — en inversant les côtés, sur le **même compte** (sa devise est donc celle
+     de l'origine : verrouillée depuis la première ligne, T3 ; `declared_currency` à `None`) ; elle est exemptée du
+     contrôle `FX_RATE_NOT_AFC`.
 8. **AC-8 — Sauvegarde, exports, MCP.**
-   - CSV des lignes (`csv_tables.rs` :356) avec les quatre colonnes ; `amount_currency` et `exchange_rate` s'exportent
+   - CSV des lignes (`csv_tables.rs` :356) avec les **trois** colonnes de la table — aucune colonne de devise (le CSV
+     suit le schéma, que compare le test des en-têtes ; la devise d'une ligne se lit dans le CSV des comptes, 35-1
+     AC-6) ; `amount_currency` et `exchange_rate` s'exportent
      à leur échelle de colonne (4 et 10), **jamais** par `fmt_decimal` / `fmt_opt_decimal` (`csv_tables.rs:108`,
      `format!("{d:.2}")`, qui les ramènerait à deux décimales) ; test de sérialisation à 10 décimales ;
-   - `entry_snapshot_json` (audit) les inclut **seulement pour une ligne en devise** (clé `foreign` absente sinon) :
-     l'audit d'une écriture CHF reste identique octet pour octet (test) ;
+   - `entry_snapshot_json` (audit) les inclut **seulement pour une ligne en devise** (clé `foreign` absente sinon),
+     sous la forme `{ currency, amount, rate, rateSource }`, `currency` lue sur le compte (`account_currency`, AC-2 : le
+     relevé d'audit reste lisible seul ; ce n'est pas une donnée stockée de la ligne) : l'audit d'une écriture CHF
+     reste identique octet pour octet (test) ;
    - MCP : `kesh_ecritures` / `kesh_ecriture` les donnent — `crates/kesh-api/src/services/ecritures.rs`
      (`list_by_company_paginated` `:201`, `find_by_id` `:243`) et `crates/kesh-api/src/mcp/outils/ecritures.rs`
-     (struct `:126`, construction `:187`) ; champs **présents à `null`** sur une ligne CHF (la macro `sortie!`,
+     (struct `:126`, construction `:187`) ; la devise y est celle **du compte** (`account_currency`, AC-2 — les deux
+     lectures du service passent par `LINE_COLUMNS`/`LINE_FROM`) ; champs **présents à `null`** sur une ligne CHF (la macro `sortie!`,
      `mcp/sortie.rs:97-114`, n'admet aucun attribut de champ et **n'est pas étendue** : choix de l'orchestrateur,
      2026-11-14, aligné sur 35-1 AC-8 ; registre C-35-9), devise du **même type** que le champ `devise` de `kesh_plan_comptable` (35-1 AC-8 :
      `TexteNonFiable` ou type scellé dédié — `Code<E>`, `mcp/sortie.rs:265`, exige une énumération), source
@@ -389,7 +439,7 @@ chacune (R7), l'écart de change dans la seconde, afin que mes comptes en devise
      (`mcp_outils_e2e.rs:1345`), dont la fixture `fixture_tailles` (`:788`) gagne des lignes en devise ; `mcp_gardes_lexicales` et
      `mcp_contrat` verts ;
    - aller-retour `.keshbackup` : l'export est **générique** (`export_table`, colonnes lues de `INFORMATION_SCHEMA`,
-     NDJSON, `backup.rs:215-262` — les quatre colonnes sortent seules, décimaux par `rust_decimal`) et la restauration
+     NDJSON, `backup.rs:215-262` — les trois colonnes sortent seules, décimaux par `rust_decimal`) et la restauration
      passe par l'`INSERT` générique (`backup.rs:833`, sous `chk_jel_fx_*`) ; test : cours à 10 décimales et montant à
      4 identiques après l'aller-retour. Le CSV de `csv_tables.rs` ci-dessus est l'**export utilisateur**, pas la
      sauvegarde.
@@ -400,10 +450,10 @@ chacune (R7), l'écart de change dans la seconde, afin que mes comptes en devise
 
 - [ ] Migration + inscriptions, contraintes nommées (AC-1 ; **aucune** correspondance par nom dans `errors.rs` : le
       filet rend le 400 générique `CHECK_CONSTRAINT_VIOLATION`) ; colonnes inscrites à la liste close des absences
-      admises de 35-1 (R1) ; test : la sauvegarde 0.17.6 simulée de 35-1 AC-6, sans les quatre colonnes, se réimporte,
+      admises de 35-1 (R1) ; test : la sauvegarde 0.17.6 simulée de 35-1 AC-6, sans les trois colonnes, se réimporte,
       colonnes `NULL` ; test : `chk_jel_fx_chf` refuse une ligne incohérente insérée en SQL brut. **Recette de
       montée** (R1, release) : l'empreinte lit `SELECT * FROM journal_entry_lines` (`scripts/recette-montee.sh:414`,
-      `TABLES`) ; les quatre colonnes neuves y sont un écart attendu — `journal_entry_lines` s'ajoute au
+      `TABLES`) ; les trois colonnes neuves y sont un écart attendu — `journal_entry_lines` s'ajoute au
       `--diff-attendu` que 35-1 AC-6 ouvre déjà aux « tables des autres stories » (`companies`, `accounts`,
       `fiscal_years` y sont nommées) : l'y nommer à la release, avec la note de release.
 - [ ] Tests CR-2 (R3, R7), au dépôt et à l'API : écriture à lignes EUR et USD → `FX_MULTIPLE_CURRENCIES`
@@ -422,6 +472,15 @@ chacune (R7), l'écart de change dans la seconde, afin que mes comptes en devise
       de même pour la suppression d'une telle écriture et pour une réévaluation (35-5) ; lot de réconciliation : la
       variante a son bras `FailedProposal` ; course bascule (35-1) contre écriture en devise dans l'exercice antérieur
       (sérialisées) ; extension de la requête de bascule au solde en devise.
+- [ ] Tests CR-4 (T3), au dépôt et à l'API : la migration n'ajoute **aucune** colonne `currency` à
+      `journal_entry_lines` (test de schéma) ; ligne en devise sans `currency` sur un compte USD → passe, relue avec
+      `foreign.currency = "USD"` (jointure) ; `currency` annoncée égale → passe, différente → `FX_CURRENCY_MISMATCH`
+      (`details.expected`, `provided`, `line`) ; `foreign` sur un compte CHF → `FX_ACCOUNT_IN_CHF` (dont `currency:
+      "CHF"`) ; cas admis CHF–CHF, USD–CHF, CHF–USD, EUR–EUR (deux comptes EUR, l'un `afc`, l'autre `manual`) ; EUR–USD
+      → `FX_MULTIPLE_CURRENCIES`, y compris quand la ligne du compte USD ne porte pas `foreign` (précédence sur
+      `ACCOUNT_REQUIRES_CURRENCY`) ; `FX_RATE_NOT_AFC` lit le cours de la devise **du compte** ; contre-passation d'une
+      ligne USD → ligne relue USD sur le même compte ; les sept lectures de `LINE_FROM` rendent la devise (détail,
+      liste, `PUT`, suppression, réponse de création) ; audit d'une ligne en devise : `foreign.currency` présent.
 - [ ] Tests de `FX_RATE_NOT_AFC` (D9, AC-4 4), au niveau du dépôt **et** de l'API, avec un cours AFC mensuel posé et un
       cours saisi (`exchange_rate_overrides`) **différent** pour le même mois : (a) ligne `afc` au cours saisi →
       `FX_RATE_NOT_AFC` (`expectedRate` = cours AFC) ; (b) ligne `afc` au cours AFC → **passe** (le cours saisi
@@ -642,3 +701,26 @@ chacune (R7), l'écart de change dans la seconde, afin que mes comptes en devise
   l'étape 1), `:1620-1636` ; 35-2 AC-5 (:552-561), 35-3b (:72-80, :205-236), fichier d'epic A17. Axes exercés : vérité
   au code des phrases ajoutées, cohérence AC-4/AC-7/Tâches, points de contact 35-2/35-3b/35-4/35-5. Non exercés :
   reste de la fiche, i18n, manuels, MCP, E2E.
+- 2026-11-14 — révision CR-4 (revue 2 de Beat T1–T6 ; Opus) : **T3** — la colonne `journal_entry_lines.currency` est
+  **retirée** : migration à trois colonnes (`amount_currency`, `exchange_rate`, `rate_source`), `chk_jel_fx_currency`
+  supprimée, `chk_jel_fx_all_or_none` sur trois colonnes, `chk_jel_fx_chf` gardée par `amount_currency IS NULL`, liste
+  close R1 à trois colonnes (AC-1) ; la devise d'une ligne se lit sur le compte : `LINE_COLUMNS` qualifiée et jointure
+  unique `LINE_FROM` pour les sept lectures, `account_currency` sur `JournalEntryLine`, `list_all_lines_by_company`
+  joint `accounts`, `OriginLine` sans devise (AC-2) ; `ForeignAmount.declared_currency` (devise annoncée, jamais
+  stockée) ; `is_no_op_change`, critère `laterFiscalYear` et appariement A17 sur les trois champs stockés (AC-2,
+  AC-4) ; rang 2 bis jugé sur les devises **des comptes** lues au rang 1 — cas admis CHF–CHF, devise–CHF,
+  devise–même devise, refus EUR–USD (`FX_MULTIPLE_CURRENCIES`) ; rang 3 : `ACCOUNT_REQUIRES_CURRENCY`, puis code neuf
+  **`FX_ACCOUNT_IN_CHF`** (ligne `foreign` sur un compte CHF), puis `FX_CURRENCY_MISMATCH` réservé à une devise
+  annoncée ≠ devise du compte ; `FX_RATE_NOT_AFC` sur la devise du compte ; bascule (35-1) : toutes les lignes du
+  compte (AC-4) ; API : `foreign.currency` facultatif à l'entrée, toujours rendu (lu sur le compte) (AC-6) ;
+  contre-passation sur le même compte (AC-7) ; CSV sans colonne de devise, audit avec la devise du compte, MCP par la
+  jointure, `.keshbackup` à trois colonnes (AC-8) ; limite écrite : aucun `CHECK` ne lie une ligne en devise à un
+  compte en devise (AC-1). Prémisses relues au code : `journal_entries.rs:103` (`LINE_COLUMNS` sans alias), lectures
+  `:549`, `:765`, `:975`, `:1630`, `:1708`, `:1975`, `:3081` (aucune `FOR UPDATE`), `:2047-2058`
+  (`list_all_lines_by_company`, `query_as::<_, JournalEntryLine>`), `:2896-2925` (`OriginLine`, `FOR UPDATE`),
+  `:999-1016` (`entry_snapshot_json`), `:135-180` (`validate_lines_accounts_in_tx`) ; `entities/journal_entry.rs:151-212`
+  ; `services/ecritures.rs:201`, `:243` (via `list_by_company_paginated` et `find_by_id`) ;
+  `tests/letterings_lexical.rs:85-105` (écritures seulement). Cohérence relue avec 35-3b (extourne, cours d'ouverture),
+  35-4 (lecture `a.currency`) et 35-5 (ligne `revaluation`). T1, T2, T4, T5, T6 sans point de contact ici. AC
+  touchés : en-tête, AC-1, AC-2, AC-3 (liste des refus par ligne), AC-4, AC-6, AC-7, AC-8, Tâches. Fiche à revalider
+  (cycle CR-4).

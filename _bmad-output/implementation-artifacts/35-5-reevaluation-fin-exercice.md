@@ -73,7 +73,8 @@ clôture et que l'écart aille aux différences de change.
      d'un jour sans publication (week-end) est celui de la publication antérieure (35-2, *Cours journaliers*) : un
      exercice qui finit un dimanche prend le cours du vendredi, `sourceDate` l'affiche.
    - **Règle de calcul en débit net**, quel que soit le type du compte : `devise_net` = Σ `amount_currency` au débit −
-     Σ au crédit sur les lignes de la devise du compte ; `chf_net` = Σ débit − Σ crédit ; **D = round(devise_net ×
+     Σ au crédit sur **toutes** les lignes du compte (T3, CR-4 : elles sont toutes dans la devise du compte, la ligne
+     n'en portant aucune ; `balances_as_of` de 35-4 AC-1 quater) ; `chf_net` = Σ débit − Σ crédit ; **D = round(devise_net ×
      cours, 0.01, MidpointAwayFromZero) − chf_net**. D > 0 : débit du compte réévalué, crédit du compte de gains ;
      D < 0 : crédit du compte réévalué, débit du compte de pertes ; D = 0 : rien. Ce sens vaut pour tout signe de solde
      (un actif à solde créditeur dont le cours monte donne une perte ; un passif à solde débiteur suit la même règle).
@@ -189,8 +190,11 @@ clôture et que l'écart aille aux différences de change.
      par unité, sans zéros terminaux ; le nom du compte est tronqué pour que le libellé reste sous les 500 caractères
      de `MAX_DESCRIPTION_LEN`, privé à `routes/journal_entries.rs` : un test sur le libellé produit, nom de compte
      maximal compris, suffit).
-   - Ligne du compte réévalué : `ForeignAmount { currency, source: Revaluation, amount: 0, rate }` (`currency` =
-     devise **du compte**, que le contrôle central de 35-3a, `FX_CURRENCY_MISMATCH`, compare à celle du compte), `rate_source =
+   - Ligne du compte réévalué : `ForeignAmount { declared_currency: None, source: Revaluation, amount: 0, rate }`
+     (T3, CR-4 : la ligne **ne porte pas de colonne de devise** — sa devise est celle du compte réévalué, lue par
+     jointure ; le contrôle central de 35-3a la vérifie **par la devise du compte** : la ligne `foreign` sur un compte
+     CHF serait refusée `FX_ACCOUNT_IN_CHF`, et `FX_CURRENCY_MISMATCH` ne peut naître, aucune devise n'étant annoncée ;
+     le cours retenu est celui de la devise du compte, lue au `SELECT … LOCK IN SHARE MODE` de l'étape (3)), `rate_source =
      'revaluation'`, `amount_currency = 0`, `exchange_rate` = cours retenu (> 0, par unité), CHF = |D|. **Cette ligne
      est exemptée de l'égalité CHF = montant × cours et de `FX_LINE_ROUNDS_TO_ZERO`** (le CHF est pris tel quel, > 0) ;
      la saisie manuelle de 35-3a (AC-6) la refuse, c'est la route de 35-5 qui la construit.
@@ -363,7 +367,8 @@ clôture et que l'écart aille aux différences de change.
    - **genre de clôture (R6)** : exercice au genre `month` → cours mensuel du dernier mois, `rateKind: "month"` sans
      signalement de repli ni bouton du jour ; genre `month` sans cours mensuel, un cours journalier présent →
      `RATE_UNAVAILABLE` (le jour n'est pas retenu), passation sans `rates` → 404, écran sans bouton du jour (Vitest) ;
-     genre changé entre l'aperçu et la passation → 409 ; exercices **au 1er
+     genre changé entre l'aperçu et la passation → 409 ; exercices **au 1er janvier** (T2, CR-4 : exercice civil
+     2024, fin 31.12.2024, un mardi : cours journalier du 31.12.2024 ; genre `month` : décembre 2024), **au 1er
      juillet** (fin 30.06.2024, un dimanche : cours journalier publié le 28.06 ; genre `month` : juin 2024) et **au
      1er avril** (fin 31.03.2024, dimanche de Pâques : publication antérieure, `sourceDate` ; genre `month` : mars 2024) ;
    - **comptes de différence propres (S2, CR-3)** : PayPal USD à comptes propres (gains 6841, pertes 6842) et Wise
@@ -394,7 +399,8 @@ clôture et que l'écart aille aux différences de change.
      cours prérempli renvoyé tel quel, `manual` d'un cours modifié ; aucun `fx_revaluation.posted` sans écriture ;
      `blockers[]` de l'aperçu ;
    - RBAC (Consultation 403) et société (exercice d'une autre société 404) ;
-   - audit : `journal_entry.created` avec les quatre colonnes de devise au snapshot, et `fx_revaluation.posted` ;
+   - audit : `journal_entry.created` avec `foreign` au snapshot (`currency` lue sur le compte, `amount`, `rate`,
+     `rateSource`, 35-3a AC-8), et `fx_revaluation.posted` ; la ligne relue porte la devise du compte (T3) ;
    - le résidu après écriture tardive ; une réévaluation **supprimée**, puis un nouveau passage (le résidu
      rétablit l'écart) ; une réévaluation **contre-passée** (écriture inverse hors de l'exercice) : le nouveau passage ne
      passe rien, l'original reste au cumul ; contre-passée **le jour même dans un exercice en cours** (date de fin
@@ -609,3 +615,11 @@ clôture et que l'écart aille aux différences de change.
   envoyés), AC-2 (cours omis = défaut), AC-4 « Bornes de la requête » (clé = devise d'un compte sélectionné, `empty`),
   ligne de test du décochage. Axes non exercés : code réel de 35-1 à 35-4 (non écrit) ; passages hors diff
   53a885f4..644d2b74.
+- 2026-11-14 — révision CR-4 (revue 2 de Beat T1–T6 ; Opus) : **T3** — la ligne `revaluation` ne porte plus de
+  colonne de devise (35-3a AC-1) : `ForeignAmount { declared_currency: None, … }`, devise lue sur le compte réévalué,
+  contrôle central par la devise du compte (`FX_ACCOUNT_IN_CHF` pour un compte CHF ; `FX_CURRENCY_MISMATCH` sans
+  objet), `devise_net` sur toutes les lignes du compte (AC-1) ; audit au snapshot `foreign` (devise lue sur le compte)
+  (AC-7). **T2** — exercice au 1er janvier ajouté aux tests du genre de clôture, à côté du 1er juillet, du 1er avril
+  et des durées de six et dix-huit mois (tests). T4 sans effet ici (cours de **clôture** ; la reprise du genre de
+  clôture par l'exercice suivant est en 35-1 AC-3 bis). T1, T5, T6 sans point de contact. AC touchés : AC-1 (règle de
+  calcul), AC-2 (ligne du compte réévalué), AC-7 (tests). Fiche à revalider (cycle CR-4).

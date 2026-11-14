@@ -7,7 +7,9 @@ Status: ready-for-dev
 Révisée le 2026-11-14 pour la revue de Beat (CR-2 : R1, R3, R6 — colonnes seulement —, R7, R10), qui prime sur le
 registre antérieur ; puis pour sa revue CR-3 (S2 : comptes de différence de change propres à un compte en devise ;
 S3 : liste des comptes que l'avertissement d'archivage archiverait ; S4 : R10 et l'arbitrage A1 retirés), qui prime
-sur CR-2.*
+sur CR-2 ; puis pour sa revue 2 (CR-4 : **T1** — l'assistant de démarrage demande les dates du premier exercice,
+AC-11 rétablie avec ce contenu ; **T3** — la devise d'une ligne se lit sur le compte, le verrou de l'AC-4 en devient
+la garantie ; **T4** — sens du genre d'ouverture et son défaut à la création), qui prime sur tout ce qui précède.*
 
 ## Story
 
@@ -25,7 +27,10 @@ multi-devises **par exercice**, le réglage de la société en est le défaut, A
 CHF désigné à l'activation, AC-3). **CR-3 (revue de Beat, prime sur CR-2)** : S2 (comptes de différence de
 change **propres** à un compte en devise, le réglage de la société restant le défaut : AC-1, AC-4 bis, AC-6, AC-7) ;
 S3 (`FISCAL_YEAR_FOREIGN_ACCOUNTS_ACTIVE` liste les comptes, AC-3 bis) ; S4 (R10 et l'arbitrage A1 **retirés** :
-l'assistant n'est pas touché, AC-11).
+pas de constante). **CR-4 (revue 2 de Beat, prime sur tout)** : T1 (l'assistant demande les dates du premier
+exercice, AC-11) ; T3 (la ligne d'écriture ne stocke pas de devise : le verrou de la devise d'un compte, AC-4, porte
+celle de ses lignes) ; T4 (genre d'ouverture = clôture de l'exercice précédent, défaut repris à la création, AC-1,
+AC-3 bis).
 
 ## Critères d'acceptation
 
@@ -38,7 +43,13 @@ l'assistant n'est pas touché, AC-11).
    - `fiscal_years` (R3, R6) : `multi_currency BOOLEAN NOT NULL DEFAULT FALSE` (mode de l'exercice, AC-3 bis),
      `opening_rate_kind ENUM('day','month') NOT NULL DEFAULT 'day'` et `closing_rate_kind ENUM('day','month') NOT NULL
      DEFAULT 'day'` (genre du cours d'ouverture et de clôture de l'exercice, R6 : lus par 35-3b et 35-5, réglés à
-     l'écran *Cours de change* de 35-2). **Décision CR-2** : les trois colonnes d'exercice sont dans **cette** migration,
+     l'écran *Cours de change* de 35-2). **Sens (T4, CR-4 : cours d'ouverture = cours de clôture de l'exercice
+     précédent, pour que les valeurs CHF concordent d'un exercice à l'autre)** : ouverture `day` = cours journalier de
+     la **veille** de `start_date` (le jour de clôture de l'exercice précédent) ; ouverture `month` = cours mensuel du
+     **dernier mois de l'exercice précédent**, c'est-à-dire du mois de la veille de `start_date` (et non plus du premier
+     mois du nouvel exercice) ; clôture `day` = cours journalier de `end_date` ; clôture `month` = cours mensuel du mois
+     de `end_date`. Rappel : les soldes de bilan sont cumulés d'un exercice à l'autre, sans écriture de report ; le
+     cours d'ouverture ne sert qu'aux soldes d'ouverture d'une société neuve (35-3b) et à l'affichage (35-2). **Décision CR-2** : les trois colonnes d'exercice sont dans **cette** migration,
      non dans celle de 35-2 — l'entité `FiscalYear` et ses quinze listes de colonnes écrites à la main (Tâches) ne se
      touchent qu'une fois, et le test de montée de `fiscal_years` est unique ; 35-2 n'écrit que la route et l'écran qui
      les règlent. Les exercices existants prennent `FALSE`, `'day'`, `'day'` (une base 0.17.6 est mono-devise) ;
@@ -189,6 +200,18 @@ l'assistant n'est pas touché, AC-11).
      aucun changement. L'import d'une sauvegarde recopie la colonne (ou la met à son défaut, AC-6) ; la remise à zéro
      recrée l'exercice par l'assistant. Inventaire écrit au Change Log. Test : société multi-devises → exercice créé
      multi-devises par chacun des trois chemins ; société mono-devise → mono-devise ;
+   - **genre d'ouverture à la création (T4, CR-4)** : un exercice qui **suit** un exercice Kesh — celui de la société
+     dont `end_date` est la veille de son `start_date` — prend par défaut `opening_rate_kind` = `closing_rate_kind` de
+     celui-ci ; sinon (premier exercice, ou exercice précédé d'un trou) `'day'`, le défaut de la colonne ;
+     `closing_rate_kind` prend toujours `'day'`. Lu dans la transaction qui insère, par **un** fragment SQL partagé des
+     trois chemins ci-dessus (DRY ; p. ex. `COALESCE((SELECT closing_rate_kind FROM fiscal_years WHERE company_id = ?
+     AND end_date = ? - INTERVAL 1 DAY), 'day')` dans l'`INSERT … SELECT`) : `fiscal_years::create` lit le précédent
+     parmi les antérieurs qu'il verrouille déjà (pré-contrôles, `routes/fiscal_years.rs:280-283`) ;
+     `create_if_absent_in_tx` (assistant) n'insère que sans aucun exercice (`WHERE NOT EXISTS`, :472), donc toujours
+     `'day'` ; `create_for_seed` applique le même fragment. Un changement ultérieur du genre de clôture de l'exercice
+     précédent (`PUT /rate-kinds`, 35-2) **ne se propage pas** : chaque exercice garde son réglage (T4 dit « par
+     défaut »). Tests : précédent en clôture `month` → nouvel exercice en ouverture `month` ; précédent `day` → `day` ;
+     exercice séparé du précédent par un trou → `day` ; premier exercice → `day` ; création des trois chemins ;
    - **bascule** : `PUT /api/v1/fiscal-years/{id}/currency-mode { multiCurrency, force? }`, dans **`comptable_routes`**
      (Administrateur ou Comptable, comme `…/close` ; une clé d'API l'atteint comme `close`), handler sous
      `kesh_db::retry::retry_on_deadlock("fiscal_years::set_currency_mode", …)` comme `create_fiscal_year`
@@ -275,7 +298,14 @@ l'assistant n'est pas touché, AC-11).
      `MULTI_CURRENCY_DISABLED` (le refus ne vise qu'une devise **autre** que CHF). La liste ne valide qu'**à l'écriture** : la lecture décode la colonne en `String`, de sorte qu'un code
      retiré plus tard de la liste ne fasse jamais échouer la lecture d'un compte ;
    - changer la devise d'un compte qui porte **au moins une ligne d'écriture** → 409 `ACCOUNT_CURRENCY_LOCKED`
-     (jamais de confirmation possible, à la différence du changement de type). Un `PUT` qui renvoie la devise en place
+     (jamais de confirmation possible, à la différence du changement de type). ⚠️ **Depuis CR-4 (T3), ce verrou porte
+     la devise de toutes les lignes passées** : `journal_entry_lines` ne stocke plus de devise (35-3a AC-1), la devise
+     d'une ligne est celle de son compte, lue par jointure ; changer la devise d'un compte qui porte une ligne
+     réinterpréterait donc en silence toutes ses lignes. Le verrou n'a ni exception ni confirmation, archivés compris ;
+     le seul retour est la suppression de toutes ses lignes. Inventaire au Change Log du développement (grep de
+     `UPDATE accounts` et de `INSERT INTO accounts`) : `accounts.currency` ne s'écrit que par `create` et `update`
+     (gardés), par les créations en masse des plans livrés (`NULL`, compte neuf sans ligne) et par l'import et la
+     remise à zéro, qui remplacent comptes et lignes ensemble. Un `PUT` qui renvoie la devise en place
      est un no-op sur ce champ et ne déclenche pas ce refus (`currency` entre dans `is_no_op_change`) ;
    - **un compte que les chemins automatiques débitent en CHF ne peut recevoir de devise** → 409
      `ACCOUNT_CURRENCY_IN_USE` (le site en `details`) : compte qui porte un rôle (`AccountRole`, les dix) ; désigné
@@ -492,8 +522,8 @@ l'assistant n'est pas touché, AC-11).
    `Absence::Colonne(&str, &str)`, chaque entrée avec la version de la migration qui l'ajoute). Cette story crée le
    mécanisme et y inscrit ses colonnes (`companies` × 4, `accounts` × 3 — `currency`, et `fx_gain_account_id`,
    `fx_loss_account_id` de CR-3, S2 —, `fiscal_years` × 3) ; 35-2 y inscrit la table `exchange_rate_overrides` (ses
-   colonnes neuves de `_kesh_exchange_rates`, table système, ne passent pas par l'import), 35-3a les quatre colonnes de
-   `journal_entry_lines`. Au code :
+   colonnes neuves de `_kesh_exchange_rates`, table système, ne passent pas par l'import), 35-3a les **trois** colonnes
+   de `journal_entry_lines` (`amount_currency`, `exchange_rate`, `rate_source` ; aucune colonne de devise, CR-4, T3). Au code :
    - **tables** : la boucle de couverture de `parse_and_verify_avec_inventaire`
      (`crates/kesh-api/src/admin_backup/import.rs:250-253`, « table '…' absente du manifeste ») saute une table de la
      liste absente du manifeste ; toute autre table absente reste refusée (400, test conservé). La restauration la vide
@@ -568,17 +598,69 @@ l'assistant n'est pas touché, AC-11).
     1090, qui revient à 0 après une conversion), les **comptes de différence propres** d'un compte en devise (S2 :
     par défaut ou propres, p. ex. des sous-comptes de frais de change cachés pour PayPal et pour Stripe ; ce qu'ils
     changent à la ligne d'écart, à la conversion et à la réévaluation ; gardes inverses) et la réimportation des
-    sauvegardes antérieures (R1, mono-devise). Aucun plan livré n'a de compte « Différences de change » (`pme.json:76-78` : 6900, 6940,
+    sauvegardes antérieures (R1, mono-devise), le **verrou de la devise d'un compte** comme ce qui fixe la devise de
+    ses écritures (T3), le **genre du cours d'ouverture** (cours de clôture de l'exercice précédent, repris par défaut,
+    T4) et les **dates du premier exercice** choisies à l'assistant, non modifiables ensuite (T1, AC-11). Aucun plan livré n'a de compte « Différences de change » (`pme.json:76-78` : 6900, 6940,
     6950) : le manuel dit quoi choisir ou créer (p. ex. 6840, **sous le groupe 6** et non sous 6800 *Amortissements*,
     compte imputable que la création d'un sous-compte rendrait non imputable, `accounts::create` :197-207). Si le manuel cite la route
     `PUT /api/v1/companies/current/currency-settings`, ajouter l'entrée à `MULTI_SOCIETE_ASSUME` de
     `textes_coherents.rs` (motif `\bcompanies\b`, précédent :1014-1017).
-11. **AC-11 — Retirée (CR-3, S4 : R10 et l'arbitrage A1 sont retirés).** L'assistant n'est **pas** touché : ni
-    constante, ni commentaire dans `routes/onboarding.rs` (l'exercice initial reste créé du 1er janvier au 31 décembre
-    de l'année courante, `:1044-1046`, tel quel). Kesh accepte déjà des exercices à dates libres et **sans limite de
-    durée** (seule règle : `chk_fiscal_years_dates`, `end_date > start_date`, `20260404000001_initial_schema.sql:51`) ;
-    les dates viennent toujours de l'exercice. Les tests d'exercices décalés (1er juillet, 1er avril) et de durée
-    autre que douze mois (six et dix-huit mois) sont ceux de 35-2 et de 35-5 ; numéro gardé pour ne pas renuméroter.
+11. **AC-11 — Dates du premier exercice dans l'assistant de démarrage (T1, CR-4 ; remplace la version « retirée »
+    de CR-3 et l'ancien arbitrage A1).** Aujourd'hui, `finalize` (`routes/onboarding.rs:879`, sans corps) crée
+    l'exercice initial du 1er janvier au 31 décembre de l'année courante (`:1043-1046`, `Utc::now()`), par
+    `create_if_absent_in_tx` (`:1053` ; `repositories/fiscal_years.rs:456`, `INSERT … WHERE NOT EXISTS`). ⚠️ **Les dates
+    d'un exercice ne se modifient plus ensuite** — relevé au code le 2026-11-14 : `PUT /fiscal-years/{id}` ne change
+    que le nom (`UpdateFiscalYearRequest { name }`, `routes/fiscal_years.rs:86-90`, doc-comment « Seul le `name` est
+    mutable. Les dates et le statut ne peuvent pas être modifiés ») et aucune route ne supprime un exercice ; un
+    exercice voulu ailleurs chevaucherait l'exercice créé (`error-fiscal-year-overlap`). La revue T1 disait « fin
+    modifiable dans *Exercices* » : **prémisse fausse au code**, d'où le choix de la fiche — la fin se modifie **dans
+    l'assistant**, avant la création (question posée à Beat, Change Log).
+    - **Corps** : `finalize` prend `body: Option<Json<FinalizeRequest>>` (précédent : `logout`,
+      `routes/auth.rs:357`), `FinalizeRequest { fiscal_year_start_date: Option<NaiveDate>, fiscal_year_end_date:
+      Option<NaiveDate> }` (`camelCase`). Corps absent ou champs absents : début = 1er janvier de l'année courante (comme
+      aujourd'hui), fin = **veille du même jour un an plus tard** (début + 1 an − 1 jour ; un début au 29 février donne
+      le 28 février suivant ; sans début fourni : 31 décembre — le comportement actuel, clients de l'API et tests
+      existants inchangés). Avant la transaction : `borner` sur chaque date fournie (`dates_recues.rs:55`, comme
+      `create_fiscal_year`, 400), fin ≤ début → 400 `error-fiscal-year-dates-invalid` (même message que
+      `map_create_error`) ; aucune borne de durée (S4 : six ou dix-huit mois admis). Un corps illisible est refusé par
+      l'extracteur (statut d'axum, comme `logout`). **Nom** : « Exercice AAAA » si début et fin sont dans la même
+      année, sinon « Exercice AAAA/AAAA » (années de début et de fin) — au plus 50 caractères (`VARCHAR(50)`).
+      **Rejeu et idempotence** : les dates se calculent une fois, hors de la fermeture rejouée de
+      `retry_app_on_deadlock` (passées par référence à `finalize_inner`) ; une finalisation déjà faite (`step_completed
+      == 8`) ignore le corps et rend l'état, comme aujourd'hui. Le chemin de démonstration (`seed_demo`) n'est pas
+      touché. Le registre des routes ne change pas (route existante, même partition).
+    - **Multi-devises** : l'assistant ne le règle **pas** ; il se règle plus tard dans *Paramètres → Comptabilité*
+      (AC-7), et son activation passe l'exercice initial, ouvert, en multi-devises (AC-3). L'exercice initial est donc
+      créé mono-devise, genres d'ouverture et de clôture `day` (AC-3 bis : aucun exercice précédent).
+    - **Écran** (`frontend/src/routes/onboarding/+page.svelte`, dernière étape, compte bancaire, `stepCompleted === 6`,
+      :478 — les **deux** boutons, « Enregistrer » et « Passer », appellent `finalize`, :293 et :310) : une section
+      « Premier exercice » au-dessus du formulaire bancaire, deux champs de date (forme suisse JJ.MM.AAAA, comme les
+      écrans comptables, #880) — *Début* (défaut : 1er janvier de l'année courante, date locale Europe/Zurich, #889) et
+      *Fin* (calculée : veille du même jour un an plus tard, recalculée à chaque changement du début tant qu'elle n'a
+      pas été retouchée ; modifiable) — et une phrase : « Les dates d'un exercice ne se modifient plus une fois
+      créé. » Contrôle à l'écran : fin > début, sinon les deux boutons sont désactivés avec le motif. `finalize(body)`
+      (`features/onboarding/onboarding.api.ts:95`, `onboarding.svelte.ts:153`) envoie `{ fiscalYearStartDate,
+      fiscalYearEndDate }` (AAAA-MM-JJ) ; un refus 400 s'affiche par `reportFinalizeError` (:237, motif du serveur).
+      i18n quatre locales, `lint-i18n-ownership`.
+    - **Inventaire clos des sites** (relevé le 2026-11-14) : route `finalize` / `finalize_inner`
+      (`routes/onboarding.rs:879-1060`) ; DTO neuf ; `onboarding.api.ts:95-96` et `onboarding.svelte.ts:153-162` ;
+      `routes/onboarding/+page.svelte` (:230-320 et l'étape :478) ; tests d'API qui appellent `finalize`
+      (`onboarding_e2e.rs` 3, `onboarding_path_b_e2e.rs` 4, `onboarding_audit_e2e.rs` 11, `fiscal_years_e2e.rs` 21,
+      `onboarding_bank_account_e2e.rs` 1, `admin_backup_e2e.rs` 2, `audit_route_registry.rs` 5 — lignes qui citent le
+      mot ; appels sans corps, donc inchangés) ; E2E de l'assistant (`onboarding-path-b.spec.ts`, `onboarding-bank-account.spec.ts`,
+      `onboarding-motif.spec.ts`) ; manuel utilisateur (`user-manual.tex:217`, « il crée votre premier exercice,
+      l'année civile en cours », et `:1004`, « Si votre premier exercice Kesh ne doit pas commencer au 1er janvier …
+      créez d'abord l'exercice voulu », tous deux faux après cette AC ; `:2465` relu) ; guide d'API si `finalize` y
+      figure (grep au développement).
+    - **Tests** : API — sans corps → 01.01–31.12 de l'année courante, nom « Exercice AAAA » ; début 01.04.2026 seul →
+      fin 31.03.2027, nom « Exercice 2026/2027 » ; début 01.07 et fin fournie à dix-huit mois → admis ; début
+      29.02.2028 → fin 28.02.2029 ; fin ≤ début → 400, rien de créé, étape inchangée (7) ; date hors bornes → 400 ;
+      finalisation rejouée avec d'autres dates après succès → état rendu, exercice inchangé ; audit
+      `fiscal_year.created` aux dates choisies. Vitest de l'écran (défaut, recalcul de la fin, fin retouchée gardée,
+      boutons désactivés si fin ≤ début, corps envoyé par les deux boutons). E2E : assistant mené avec un début au
+      1er avril → *Exercices* liste 01.04.AAAA–31.03.AAAA+1. Manuel (AC-10) : les deux passages ci-dessus récrits.
+    Les tests d'exercices décalés (1er janvier, 1er juillet, 1er avril — T2) et de durée autre que douze mois (six et
+    dix-huit mois) des cours et de la réévaluation restent ceux de 35-2, 35-3b et 35-5.
 
 ## Tâches
 
@@ -637,7 +719,12 @@ l'assistant n'est pas touché, AC-11).
       `FISCAL_YEAR_FOREIGN_ACCOUNTS_ACTIVE` (409, quatre locales), audit `fiscal_year.currency_mode_updated`,
       `FiscalYearResponse` ; frontend *Exercices* (colonne, action, dialogue d'archivage qui liste les comptes —
       numéro, nom, devise —, S3) et troisième sélecteur des paramètres ; test d'import d'une sauvegarde 0.17.6 (AC-6).
-      L'assistant (`routes/onboarding.rs`) n'est pas touché (AC-11 retirée, S4).
+      *(CR-4 : la phrase « l'assistant n'est pas touché » ne vaut plus ; voir la tâche T1 ci-dessous.)*
+- [ ] CR-4 (T1) — dates du premier exercice dans l'assistant (AC-11) : `FinalizeRequest`, calcul de la fin et du
+      nom, `borner`, refus avant la transaction, écran de la dernière étape, `onboarding.api.ts` /
+      `onboarding.svelte.ts`, i18n, tests d'API, Vitest, E2E, manuel (`user-manual.tex:217`, `:1004`).
+- [ ] CR-4 (T4) — défaut du genre d'ouverture à la création (AC-3 bis) : fragment SQL partagé des trois chemins de
+      création, tests ; sens des genres écrit au doc-comment de `FiscalYear` (AC-1).
 - [ ] CR-3 (S2) — comptes de différence propres (AC-4 bis) : colonnes et deux `CHECK` dans la migration de l'AC-1 ;
       `Account`, `NewAccount`, `AccountUpdate` (un champ à trois états), macro `columns!`, `bulk_create` et
       `bulk_create_from_chart_in_tx` (`NULL`) ; `fx_accounts_for` (pure) et `validate_fx_accounts_in_tx` (dépôt) ;
@@ -808,3 +895,22 @@ l'assistant n'est pas touché, AC-11).
   liste (vi). Axes exercés : vérité au code des phrases ajoutées, cohérence des décomptes (vi) et de la partition,
   nom des index vs AC-1, renvois P2-1/-2/-3. Non exercés : exécution réelle du cycle (non montable en lecture seule),
   plan de requête MariaDB, manuels, i18n.
+- 2026-11-14 — révision CR-4 (revue 2 de Beat T1–T6 ; Opus) : **T1** — AC-11 rétablie : l'assistant demande les
+  dates du premier exercice (début, défaut 1er janvier de l'année courante ; fin, défaut veille du même jour un an
+  plus tard), corps facultatif de `finalize` (absent = comportement actuel), nom « Exercice AAAA » ou « AAAA/AAAA »,
+  refus 400 avant la transaction, écran de la dernière étape (deux boutons), inventaire clos des sites (route, DTO,
+  écran, client, tests d'API et E2E, manuel) ; le multi-devises reste réglé plus tard dans les paramètres.
+  ⚠️ **Prémisse de T1 fausse au code** : la fin n'est **pas** « modifiable dans *Exercices* » — le `PUT` d'un
+  exercice ne change que le nom (`routes/fiscal_years.rs:86-90`) et aucune route ne supprime un exercice ; la fiche
+  rend donc la fin modifiable **dans l'assistant** (question à Beat). **T3** — AC-4 : le verrou de la devise d'un
+  compte porte désormais celle de ses lignes (aucune colonne de devise sur la ligne, 35-3a) ; AC-6 : liste close à
+  trois colonnes de `journal_entry_lines`. **T4** — AC-1 : sens des genres (ouverture `month` = dernier mois de
+  l'exercice précédent) ; AC-3 bis : un exercice qui suit un exercice Kesh (fin = veille du début) reprend son genre
+  de clôture comme genre d'ouverture, par un fragment SQL partagé des trois chemins de création ; sans propagation
+  ultérieure. AC-10 : manuel complété (T1, T3, T4). T2 : tests portés par 35-2, 35-3b, 35-5 (rappel à l'AC-11). T5,
+  T6 sans point de contact. Prémisses relues au code : `routes/onboarding.rs:879-1060` (`finalize` sans corps,
+  `:1043-1046`, `:1053`), `:220-320` et `:478` de `routes/onboarding/+page.svelte`, `onboarding.api.ts:95-96`,
+  `routes/auth.rs:357` (`Option<Json<…>>`, axum 0.8), `routes/fiscal_years.rs:78-90`, `:259-300`,
+  `repositories/fiscal_years.rs:456-500`, `dates_recues.rs:55`, `user-manual.tex:217`, `:1004`, `:2465` ; décomptes
+  de `finalize` par fichier de `crates/kesh-api/tests` (`grep -c`). AC touchés : en-tête, Décisions, AC-1, AC-3 bis,
+  AC-4, AC-6, AC-10, AC-11, Tâches. Fiche à revalider (cycle CR-4).

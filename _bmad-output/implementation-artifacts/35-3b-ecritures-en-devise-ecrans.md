@@ -8,7 +8,11 @@ Status: ready-for-dev
 AC-2 bis). Révisée de nouveau pour la revue CR-3 de Beat, qui prime sur CR-2 : **S2** — la ligne d'écart et l'assistant
 *Conversion* prennent les comptes de différence **propres** du compte en devise concerné (35-1 AC-4 bis) ; **S5** —
 l'assistant TVA achat calcule la TVA sur le montant en devise et passe la ligne de TVA en CHF au même cours (AC-2) ;
-**S6** — l'écran de saisie n'affiche pas les cours AFC republiés (c'est 35-2).*
+**S6** — l'écran de saisie n'affiche pas les cours AFC republiés (c'est 35-2). Révisée enfin pour la revue 2 de Beat
+(CR-4), qui prime sur tout ce qui précède : **T3** — la ligne ne stocke pas de devise (35-3a AC-1) : `currency` se lit
+sur le compte, facultatif à l'envoi (AC-1, AC-2, AC-3) ; **T4** — cours d'ouverture proposé = cours de **clôture**
+de l'exercice précédent : veille de l'ouverture (genre `day`) ou cours mensuel du **dernier mois de l'exercice
+précédent** (genre `month`) (AC-1).*
 
 ## Story
 
@@ -25,9 +29,11 @@ devise au cours d'ouverture choisi pour l'exercice (R6), afin de tenir mes livre
      :655) et le complément (`complete_opening_balances` :593 → `opening_complement.rs` `create_opening_complement` :460, enveloppe en portée `Screen` de
      `create_opening_complement_in_tx` :551, qui sert aussi le mode Compléter de la 34-2 sur les comptes bancaires)
      acceptent, pour un compte en devise, le **solde en devise** et un **cours**. Un compte CHF reste inchangé.
-   - **DTO.** `OpeningBalanceLineRequest` et `OpeningComplementLineRequest` prennent `foreign?: { currency, amount, rate,
-     rateSource }` (forme de 35-3a AC-6 — **même type** que le `foreign` de `CreateJournalEntryLineRequest` : quatre
-     `String` analysées par la même fonction, d'où un **400** et non le 422 d'axum pour `rateSource: "revaluation"`,
+   - **DTO.** `OpeningBalanceLineRequest` et `OpeningComplementLineRequest` prennent `foreign?: { currency?, amount, rate,
+     rateSource }` (forme de 35-3a AC-6 — **même type** que le `foreign` de `CreateJournalEntryLineRequest` : champs
+     `String` analysés par la même fonction, `currency` facultatif — T3 : absent, la ligne prend la devise du compte ;
+     présent, il doit l'égaler, `FX_CURRENCY_MISMATCH` ; jamais stocké ; les deux grilles l'envoient toujours, comme le
+     formulaire, AC-2 —, d'où un **400** et non le 422 d'axum pour `rateSource: "revaluation"`,
      statut testé sur les deux routes) ; `debit`/`credit` restent les montants **CHF, fournis par le client et
      vérifiés** par la règle de 35-3a (la route ne calcule rien ; `FX_AMOUNT_MISMATCH` sinon). `rateSource`
      `revaluation` refusé ; l'écran envoie toujours `manual` (cf. *Cours proposé*) ; l'API admet `afc`, alors contrôlé
@@ -59,19 +65,29 @@ devise au cours d'ouverture choisi pour l'exercice (R6), afin de tenir mes livre
      (`opening_complement.rs:203`, lue par `query_as` :379), sa recopie dans la route (`opening_balances.rs:294`),
      `CompletableAccountDto` et le type TS
      `CompletableAccount` exposent `currency` ; la grille principale la lit sur `AccountResponse`.
-   - **Cours proposé** (R6, CR-2 — remplace « mois précédent » de CR-1) : cours **effectif** (D9 : cours saisi par la
+   - **Cours proposé** (R6, CR-2 — remplace « mois précédent » de CR-1 ; **T4, CR-4** : le cours d'ouverture est le
+     cours de **clôture** de l'exercice précédent, pour que les valeurs CHF concordent d'un exercice à l'autre ; cette
+     puce est récrite en conséquence pour le genre `month`) : cours **effectif** (D9 : cours saisi par la
      société s'il existe, sinon cours AFC ; champ `effectiveRate` de `lookup`, 35-2 AC-5) du **genre d'ouverture de
      l'exercice** de l'écriture d'ouverture (`openingRateKind` du premier exercice, 35-1 AC-1, réglé à l'écran *Cours
      de change*, 35-2 AC-6 ; lu sur `GET /fiscal-years`) : genre `day` (défaut) → **cours journalier de la veille de
      l'ouverture** (`lookup` `kind=day`, `date` = `start_date` − 1 jour : le 31.12 pour un exercice civil, le 30.06
      pour un exercice au 1er juillet, le 31.03 pour un exercice au 1er avril), qui est le cours de clôture de
-     l'exercice antérieur ; genre `month` → **cours mensuel du premier mois** de l'exercice (`lookup` `kind=month`,
-     `date` = `start_date`). Hors des bornes du `POST /fetch` de 35-2 (date < 2000-01-01, AC-5 : il rendrait 400), le
+     l'exercice antérieur ; genre `month` → **cours mensuel du dernier mois de l'exercice précédent** (T4 — non plus du
+     premier mois du nouvel exercice), c'est-à-dire du mois de la veille de l'ouverture (`lookup` `kind=month`,
+     `date` = 1er du mois de `start_date` − 1 jour : décembre pour un exercice civil, juin pour un exercice au
+     1er juillet, mars pour un exercice au 1er avril), que l'exercice précédent soit tenu dans Kesh ou non — la
+     règle se calcule sur la seule date d'ouverture, sans lire l'exercice précédent ; même date que `openingDate` du
+     tableau annuel de 35-2 (AC-5), fonction de calcul **partagée** avec l'écran *Cours de change* (DRY, nom au
+     développement). Ce cours est celui de la réévaluation de l'exercice précédent quand son genre de clôture est
+     `month` (35-5) ; le genre d'ouverture d'un exercice qui suit un exercice Kesh reprend par défaut le genre de
+     clôture de celui-ci (35-1 AC-3 bis), si bien que la concordance tient sans réglage. Hors des bornes du `POST /fetch` de 35-2 (date < 2000-01-01, AC-5 : il rendrait 400), le
      `lookup` — qui n'a pas de borne basse et rend alors `404 RATE_UNAVAILABLE` faute de cours — n'est suivi d'**aucun**
      `POST /fetch` : saisie manuelle. Pour un complément daté `TODAY` (`complementDateKind`), cours mensuel du mois de cette date, comme
      avant. Modifiable. Le `404 RATE_UNAVAILABLE` d'un jour (`details.date`) déclenche `POST /fetch { date }` si la
-     veille est strictement passée (35-2 AC-5), sinon saisie manuelle. Tests : exercice civil, au 1er juillet, au
-     1er avril, en genre `day` et `month`. **Envoyé `rate_source = manual`** sur
+     veille est strictement passée (35-2 AC-5), sinon saisie manuelle. Tests : exercice civil (1er janvier), au
+     1er juillet, au 1er avril, en genre `day` et `month` — genre `month` : `lookup` de décembre de l'année
+     précédente, de juin, de mars (jamais du mois d'ouverture) ; exercice de dix-huit mois au 01.07.2023 : juin 2023. **Envoyé `rate_source = manual`** sur
      l'ouverture et le complément, proposé ou saisi : le contrôle `FX_RATE_NOT_AFC` de 35-3a (AC-4, 4) compare une
      ligne `afc` au cours **mensuel** du mois de `entry_date`, à la création **et** au `PUT` pour une ligne nouvelle ou
      modifiée (arbitrage A17) — un cours journalier, ou d'un mois que la date recalculée du complément a quitté, y
@@ -122,7 +138,9 @@ devise au cours d'ouverture choisi pour l'exercice (R6), afin de tenir mes livre
      avec un message sur la ligne ; les corps envoyés (`handleGenerate` :196-201, `handleComplete` :240-245) portent
      `foreign`. Vitest : montant en devise sans cours → bouton désactivé, aucun appel.
    - **Tests.** Dépôt : ouverture et complément avec ligne en devise, contrepartie sur le compte de report ; API :
-     `FX_AMOUNT_MISMATCH`, devise ≠ devise du compte, mono-devise → `MULTI_CURRENCY_DISABLED`, `revaluation` refusé ;
+     `FX_AMOUNT_MISMATCH`, devise annoncée ≠ devise du compte (`FX_CURRENCY_MISMATCH`), ligne sans `currency` → devise
+     du compte (T3), `foreign` sur un compte CHF → `FX_ACCOUNT_IN_CHF`, mono-devise → `MULTI_CURRENCY_DISABLED`,
+     `revaluation` refusé ;
      ouverture **et** complément à lignes EUR et USD acceptés **par leurs routes** (exemption de
      `FX_MULTIPLE_CURRENCIES`, 35-3a AC-4, 2 bis), puis `PUT` du libellé de l'écriture d'ouverture ainsi créée → 200 ;
      aller-retour `.keshbackup` ; **non-régression du mode Compléter bancaire** (34-2, compte CHF inchangé) ; Vitest de
@@ -134,7 +152,10 @@ devise au cours d'ouverture choisi pour l'exercice (R6), afin de tenir mes livre
      celui de la colonne) ; le CHF est calculé (`round(montant × cours, 2)`, `Big.roundHalfUp`), affiché en lecture
      seule sous le champ, et alimente `computeBalance` et la ligne d'écart. `debit`/`credit` du payload restent les
      montants CHF, `foreign.amount` le montant en devise. `LineDraft` (`form-helpers.ts` :13) gagne
-     `foreign?: { currency, side: 'debit' | 'credit', amount, rate, rateSource }` (absent = ligne CHF) — **contrat de
+     `foreign?: { currency, side: 'debit' | 'credit', amount, rate, rateSource }` (absent = ligne CHF ; T3, CR-4 :
+     `currency` du brouillon est **la devise du compte** de la ligne, `account.currency` lue sur `AccountResponse` au
+     choix du compte — jamais saisie —, et `lineResponseToDraft` la reprend de `foreign.currency` de la réponse, elle
+     aussi lue sur le compte par le serveur, 35-3a AC-6) — **contrat de
      stockage** : le montant saisi en devise vit dans `foreign.amount` et le sens dans `foreign.side` (il doit survivre
      à un cours ou un CHF encore vides) ; `debit`/`credit` de la ligne ne portent **que le CHF dérivé** (l'un des deux
      vide, selon `side`), recalculé à chaque changement et seul lu par `computeBalance`, `classifyLine` et
@@ -142,6 +163,12 @@ devise au cours d'ouverture choisi pour l'exercice (R6), afin de tenir mes livre
      calculable (cours ou montant vide ou invalide) est `partial` (le message de la ligne est celui du code rendu par `computeChf` — `FX_VALUE_OUT_OF_RANGE`, `FX_LINE_ROUNDS_TO_ZERO` — traduit, non un « montant invalide » générique) ; `classifyLine` (`balance.ts` :143-162),
      `computeBalance` (`balance.ts` :83), `isDraftLineNonEmpty` (`vat-purchase.ts` :106) et les fabriques de lignes
      (`JournalEntryForm` :105-106, :187 ; `vat-purchase.ts` :87-96) sont revus, inventaire au Change Log.
+     **Payload (T3)** : `foreign: { currency, amount, rate, rateSource }` — le type TS de la requête porte
+     `currency?: string` (facultatif, comme l'API, 35-3a AC-6), mais le formulaire, les deux grilles d'ouverture,
+     l'assistant TVA et l'assistant *Conversion* l'envoient **toujours** (la devise affichée) : c'est la garde contre
+     un compte dont la devise a changé depuis le chargement (`FX_CURRENCY_MISMATCH`, ci-dessous) ; le type de la
+     **réponse** porte `currency: string` (toujours présent dans `foreign`). Vitest : le corps envoyé porte la devise
+     du compte.
      Changer le compte d'une ligne : CHF → devise, champs initialisés ; devise → CHF, `foreign` effacé ;
      USD → EUR, cours réinitialisé.
    - **Champs** : *Montant (USD)*, *Cours* (prérempli par le **cours effectif** que rend `lookup` pour le mois de la
@@ -214,8 +241,10 @@ devise au cours d'ouverture choisi pour l'exercice (R6), afin de tenir mes livre
      l'écran propose « Récupérer le mois » (`POST /exchange-rates/fetch`, mêmes rôles et même
      règle que ci-dessus) puis le renvoi, ou le passage de la ligne en `manual` ; `FX_RATE_NOT_AFC` → le cours attendu
      (`details.expectedRate`, 35-3a AC-4) est affiché et proposé à la reprise ; `FX_AMOUNT_MISMATCH` porte
-     `details.expected` / `details.provided` (35-3a AC-3) ; `FX_CURRENCY_MISMATCH`, `ACCOUNT_REQUIRES_CURRENCY`,
-     `FX_AMOUNT_MISMATCH` → message traduit sur la ligne fautive (numéro en `details` : le rang **1-based** de la ligne dans `lines`,
+     `details.expected` / `details.provided` (35-3a AC-3) ; `FX_CURRENCY_MISMATCH` (T3 : la devise annoncée diffère
+     de celle du compte — elle a changé depuis le chargement ; le message dit de recharger la page, `details.expected`
+     nomme la devise du compte), `FX_ACCOUNT_IN_CHF` (ligne en devise sur un compte devenu CHF ; même conseil),
+     `ACCOUNT_REQUIRES_CURRENCY`, `FX_AMOUNT_MISMATCH` → message traduit sur la ligne fautive (numéro en `details` : le rang **1-based** de la ligne dans `lines`,
      lu dans `details.line` (35-3a AC-3), y compris pour `FX_VALUE_OUT_OF_RANGE`, `FX_LINE_ROUNDS_TO_ZERO` et
      `FX_RATE_NOT_AFC`). `ACCOUNT_REQUIRES_CURRENCY` portant `details.reason = "monoCurrencyFiscalYear"` (et
      `fiscalYearId`, 35-3a AC-4, 3 : ligne CHF sur un compte en devise dans un exercice mono-devise) a son **message
@@ -452,7 +481,9 @@ devise au cours d'ouverture choisi pour l'exercice (R6), afin de tenir mes livre
    `ENTRY_IS_FX_REVALUATION`, rendue par le serveur (35-3a AC-7) ; 35-3b l'ajoute à l'union TS et à
    `modificationBlockerLabel` (quatre locales ; `blocker-messages.test.ts`, « couvre exactement douze codes »
    `:51-54`, passe à treize), et la fiche affiche le motif. Les types TS `JournalEntryLineResponse` et
-   `CreateJournalEntryLineRequest` (`journal-entries.types.ts`) gagnent `foreign`. « Modifier » disparaît ; **« Supprimer »
+   `CreateJournalEntryLineRequest` (`journal-entries.types.ts`) gagnent `foreign` (T3 : `currency: string` dans la
+   réponse, lue sur le compte ; `currency?: string` dans la requête, AC-2). Le code affiché à côté du montant est celui
+   de `foreign.currency` de la réponse (la devise du compte), jamais une valeur gardée par l'écran. « Modifier » disparaît ; **« Supprimer »
    reste** pour ce motif — la suppression et la contre-passation sont les corrections prévues (35-5 AC-3) — alors
    qu'aujourd'hui les deux boutons partagent la condition `entry.modifiable` (`journal-entries/[id]/+page.svelte`
    :418-432) : la condition de « Supprimer » devient `modifiable || (modificationBlockedBy === 'ENTRY_IS_FX_REVALUATION' &&
@@ -552,7 +583,8 @@ devise au cours d'ouverture choisi pour l'exercice (R6), afin de tenir mes livre
    *Cours de change*, S6 ; après une adoption, la correction d'une ligne ancienne au cours AFC remplacé propose
    « Reprendre le cours attendu » ou « Garder mon cours », sans toucher au reste de l'écriture, A17), conversion EUR → USD pas à pas par l'assistant et le compte de conversion (R7),
    exercice mono-devise (R3), soldes d'ouverture en devise (« solde repris au cours de clôture » : cours journalier de
-   la veille de l'ouverture, ou cours mensuel du premier mois, selon le choix de l'exercice, R6) ; i18n quatre
+   la veille de l'ouverture, ou cours mensuel du dernier mois de l'exercice précédent, selon le choix de l'exercice,
+   R6 et T4 : le cours d'ouverture est le cours de clôture précédent) ; i18n quatre
    locales ; PDF contrôlé. ⚠️ **Garde G4-bis**
    (`crates/kesh-api/tests/textes_coherents.rs`) : tout numéro de compte cité dans le manuel, le guide de démarrage ou
    un catalogue i18n doit exister dans l'un des trois plans livrés, sous son nom — or ni 1090, ni 1021, ni 1022, ni
@@ -562,7 +594,9 @@ devise au cours d'ouverture choisi pour l'exercice (R6), afin de tenir mes livre
    **Guide d'API** (`docs/api-external.md`) : la ligne « Écritures comptables » de son tableau de routes (l'assistant,
    `POST /journal-entries/conversions`, ouvert aux clés d'API comme `POST /journal-entries`) et le paragraphe de
    `LATER_FISCAL_YEAR_CLOSED` (toute création d'écriture, la conversion comprise) ; les champs `foreign` sont ceux de
-   35-3a.
+   35-3a — le guide dit que la devise d'une ligne est **celle de son compte** (T3), que `foreign.currency` est
+   facultatif à l'envoi et, s'il est donné, doit égaler la devise du compte (`FX_CURRENCY_MISMATCH`), et qu'un client
+   qui l'omet renonce à cette garde ; une ligne en devise sur un compte CHF rend `FX_ACCOUNT_IN_CHF`.
 
 ## Tâches
 
@@ -783,3 +817,15 @@ devise au cours d'ouverture choisi pour l'exercice (R6), afin de tenir mes livre
   le cours attendu » (cours changé, ligne recontrôlée au cours attendu) et « Garder mon cours » (provenance `manual`,
   hors contrôle), l. 230-238 ; Vitest de l'édition du seul libellé ; AC-1 l. 74-78. Non exercés : sauvegarde, MCP,
   audit, i18n, E2E, PDF, code.
+- 2026-11-14 — révision CR-4 (revue 2 de Beat T1–T6 ; Opus) : **T3** — la ligne ne stocke pas de devise (35-3a AC-1) :
+  types TS — réponse `foreign.currency: string` lue sur le compte, requête `currency?: string` facultative ; le
+  formulaire, les deux grilles d'ouverture, l'assistant TVA et l'assistant *Conversion* l'envoient toujours (garde
+  contre un compte dont la devise a changé depuis le chargement) ; `LineDraft.foreign.currency` = devise du compte,
+  jamais saisie ; messages de `FX_CURRENCY_MISMATCH` (recharger) et du code neuf `FX_ACCOUNT_IN_CHF` (35-3a AC-4) ;
+  affichage du code par la réponse ; tests d'API des deux routes d'ouverture ; guide d'API (AC-1, AC-2, AC-3, AC-6).
+  **T4** — cours d'ouverture proposé = cours de clôture de l'exercice précédent : genre `day` inchangé (veille de
+  l'ouverture) ; genre `month` → cours mensuel du **dernier mois de l'exercice précédent** (mois de la veille de
+  l'ouverture : décembre, juin, mars), et non plus le premier mois du nouvel exercice ; calcul partagé avec `openingDate` de
+  35-2 ; tests et manuel (AC-1, AC-6). Remplace, pour le genre `month`, la phrase de CR-2 « cours mensuel du premier
+  mois » (entrée ci-dessus, laissée telle quelle). T1, T2, T5, T6 sans autre point de contact. AC touchés : en-tête,
+  AC-1, AC-2, AC-3, AC-6. Fiche à revalider (cycle CR-4).

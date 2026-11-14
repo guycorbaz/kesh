@@ -229,6 +229,32 @@ Prime sur tout ce qui précède là où il diverge.
   comme idée (C-35-8), éventuellement pour la réconciliation ou la saisie automatique de factures.
 - **T6 — A6 approuvé** (compte de conversion à créer).
 
+### CR-4 — amendements du registre et arbitrages (2026-11-14)
+
+- **C-35-3 amendé (T3)** : `journal_entry_lines` gagne **trois** colonnes NULL : `amount_currency DECIMAL(19,4)`,
+  `exchange_rate DECIMAL(20,10)`, `rate_source VARCHAR(12)` ; **aucune colonne de devise** : la devise d'une ligne est
+  celle de son compte (`accounts.currency`, lue par jointure), verrouillée dès la première ligne du compte. CHECK
+  tout-ou-rien sur les trois colonnes, `chk_jel_fx_rate_source`, `_amount`, `_rate`, `_chf`. Une seule devise
+  étrangère par écriture, jugée sur les devises des comptes. `foreign.currency` facultatif à l'API, contrôlé s'il est
+  présent (`FX_CURRENCY_MISMATCH`) ; code neuf `FX_ACCOUNT_IN_CHF` (400) pour une ligne `foreign` sur un compte CHF.
+  Liste close R1 : `journal_entry_lines` × 3.
+- **C-35-9 amendé (T4)** : cours d'ouverture = cours de clôture de l'exercice précédent — `day` : veille de
+  l'ouverture ; `month` : mois de la veille de l'ouverture (dernier mois de l'exercice précédent). Un exercice qui
+  suit un exercice Kesh prend à sa création le `closing_rate_kind` de celui-ci comme `opening_rate_kind`.
+- **C-35-10 complété (T1)** : l'assistant demande la date de **début et de fin** du premier exercice (corps facultatif
+  de `finalize` ; sans corps, 1er janvier–31 décembre comme aujourd'hui) — les dates d'un exercice ne se modifient
+  pas après sa création (`PUT /fiscal-years/{id}` ne change que le nom, `routes/fiscal_years.rs:86-90`).
+- **C-35-8 (T5)** : montant en devise « pour information » sur une écriture CHF — rejeté, gardé comme idée.
+- **Arbitrages de l'orchestrateur sur les questions de la révision CR-4** (soumis à Beat) :
+  - A18 — la date de fin du premier exercice se saisit dans l'assistant (défaut : veille du même jour un an plus
+    tard), puisqu'elle n'est plus modifiable ensuite ;
+  - A19 — nom par défaut « Exercice AAAA », ou « Exercice AAAA/AAAA » s'il chevauche deux années (renommable) ;
+  - A20 — `FX_ACCOUNT_IN_CHF` reste un code distinct de `FX_CURRENCY_MISMATCH` (messages plus clairs) ;
+  - A21 — les écrans envoient toujours la devise (garde contre un compte modifié entre-temps) ; un client API qui
+    l'omet renonce à ce contrôle, la devise du compte faisant foi ;
+  - A22 — changer plus tard le genre de clôture d'un exercice ne modifie pas le genre d'ouverture de l'exercice
+    suivant déjà créé (chacun se règle dans son tableau des cours).
+
 ## Source des cours — établie le 2026-11-14
 
 - Page ESTV *MWST Monatsmittelkurse* : « XML-File » → `https://www.backend-rates.bazg.admin.ch/api/xmlavgmonth`.
