@@ -1,6 +1,6 @@
 # Story 35-5b : la date du jour est celle de Zurich partout ailleurs dans la production — accueil, échéances, rappels, noms de fichiers, démonstration, et le serveur MCP (#929)
 
-Status: review
+Status: done
 
 *Fiche rédigée le 2026-11-12 par l'agent de kickoff de l'Epic 35 (Opus 5.5), worktree `kesh-e35`, par le workflow
 `bmad-create-story` ; remédiée et **recadrée** après la validation P1 le même jour (worktree `kesh-e355`, Change Log) : la
@@ -556,3 +556,24 @@ complété). Registre `e35-choix-autonomes-e355b.md`. Aucune clé i18n, aucune s
     mutations jouées. Consigne Edit tenue (code et tests par l'outil Edit ; `cargo fmt`) ; scripts hors dépôt pour les mutations et
     les journaux seulement (`p1-mutations.sh`, `p1-mutation-M12-reprise.sh`, `p1-cibles.sh`). Statut : `review`, revue P2 ciblée à
     lancer (prompt `35-5b-date-du-jour-reste-review-prompt-p2-ciblee.md`).
+- 2026-11-14 — **Clôture : synthèse finale** (Opus 5.5, worktree `kesh-e355b`, voie 1). Statut : **`done`**.
+  - **Tendance de la boucle de revue** : **P1** (Opus, trois lentilles B, E, A ; `kesh-gate-logs/e355b-review-p1-{A,B,E}.md`)
+    **2 MEDIUM** — E1 (`paid_at` n'est pas un instant : site 16 bis de l'export CSV, son test, M6 et le manuel ; même constat que
+    B1, classé LOW par sa lentille) et A1 (témoin « de jour » d'AC8 non tourné, non déclaré) — et une quinzaine de LOW, remédiés au commit `73dc06b1e`
+    (entrée précédente) → **P2 ciblée** (Sonnet, une lentille sur `73dc06b1e` ; `kesh-gate-logs/e355b-review-p2-ciblee.md`)
+    **0 au-dessus de LOW**, 2 LOW (C1 : doc-comment `today_utc` de `InvoiceResponse::is_overdue`, `routes/invoices.rs:251` ; C2 :
+    `paid_at` des lignes antérieures à la v0.12, limite non annoncée), tracés en **#1138** et **#1139**. Série : 2 → 0 MEDIUM.
+    Boucle close sur une passe sans finding au-dessus de LOW, dont la remédiation éventuelle ne touche aucune ligne de production
+    (aucune n'a été appliquée).
+  - **Chiffres de clôture**, au dernier commit de code `73dc06b1e` (joués à HEAD `ebd5b654c`, qui ne porte que des comptes rendus) :
+    - `scripts/gate-ci.sh kesh_ci_e355b` (voie 1, verrous de la station) : **5379 passés, 0 échoué, 17 ignorés**, code 0 —
+      `kesh-gate-logs/e355b/cloture-gate-ci.log` et `cloture-gate-ci.journal`, commit `ebd5b654c`. 5376 au passage en `review`
+      (`gate-ci.log`, `e3e8256fa`) + les 3 tests neufs de `73dc06b1e` = 5379 : recompté.
+    - **E2E complet** sur `kesh_e2e_e355b` recréée (91 migrations, `scripts/seed-dev-db.sql`), frontend du worktree construit
+      (`cloture-front-build.log`), backend sur le port 3413 (montage du `CLAUDE.md`, dossiers `target/e2e-r1/`) : **403 passés,
+      7 échoués, 18 ignorés** (22,0 min) — `kesh-gate-logs/e355b/cloture-e2e.log` (script `cloture-e2e.sh`, journal du backend
+      `cloture-e2e-backend.log`), commit `ebd5b654c`. Les sept échecs sont, un par un, ceux de la KF-029 (#97) au tableau de
+      `docs/testing.md` § « Les échecs attendus » : `mode-expert.spec.ts:26`, `:41`, `onboarding-path-b.spec.ts:65`, `:92`,
+      `onboarding.spec.ts:57`, `:77`, `:150`. Aucun échec hors de la liste, aucune relance nécessaire.
+    - Rappel : `test-fast --ci` **5372/5372, 13 ignorés** à `73dc06b1e` (`p1-test-fast.log`). Frontend non touché par la story.
+  - **Issues** : #929 (refs ; la 35-5c reste à faire) ; LOW de revue en #1138 et #1139.
