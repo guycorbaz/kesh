@@ -480,13 +480,15 @@ const WRITE_OFF_CANCEL_ACTIONS: &[&str] = &[
 
 /// L'annulation, par la clé `secret`, de la ligne de règlement de la facture
 /// `id` dont le type est `settlement_type`, après avoir relevé que la pièce est
-/// lettrée ; rend l'identifiant d'audit d'avant le geste (Story 36-4, #1131).
+/// lettrée (`piece_lettree`) ou ne l'est pas (règlement partiel) ; rend
+/// l'identifiant d'audit d'avant le geste (Story 36-4, #1131).
 async fn cancel_by_key(
     app: &TestApp,
     pool: &MySqlPool,
     secret: &str,
     id: i64,
     settlement_type: &str,
+    piece_lettree: bool,
 ) -> i64 {
     let list = app.get(&format!("/api/v1/invoices/{id}/settlements")).await;
     let settlement_id = list
@@ -497,9 +499,10 @@ async fn cancel_by_key(
         .unwrap_or_else(|| panic!("montage : une ligne {settlement_type} dans {list}"))["id"]
         .as_i64()
         .unwrap();
-    assert!(
+    assert_eq!(
         audit_traces::lignes_lettrees_document(pool).await > 0,
-        "montage : le lettrage de la pièce est posé, le délettrage sera exercé"
+        piece_lettree,
+        "montage : le lettrage de la pièce (le délettrage n'est exercé que s'il est posé)"
     );
     let avant = audit_traces::max_audit_id(pool).await;
     app.post_as(
@@ -528,7 +531,7 @@ async fn an_api_key_cancels_an_invoice_settlement_and_is_named_everywhere(pool: 
     )
     .await;
 
-    let avant = cancel_by_key(&app, &pool, &secret, id, "internal_account").await;
+    let avant = cancel_by_key(&app, &pool, &secret, id, "internal_account", true).await;
 
     assert_toutes_a_la_cle(
         &audit_traces::audit_depuis(&pool, avant).await,
@@ -554,13 +557,51 @@ async fn an_api_key_cancels_a_write_off_and_is_named_everywhere(pool: MySqlPool)
     )
     .await;
 
-    let avant = cancel_by_key(&app, &pool, &secret, id, "write_off").await;
+    let avant = cancel_by_key(&app, &pool, &secret, id, "write_off", true).await;
 
     assert_toutes_a_la_cle(
         &audit_traces::audit_depuis(&pool, avant).await,
         cle,
         audit_traces::createur_de_la_cle(&pool, cle).await,
         WRITE_OFF_CANCEL_ACTIONS,
+    );
+}
+
+/// Ce qu'écrit l'annulation d'un règlement **partiel** en caisse (40.00 sur
+/// 100.00) : aucun lettrage de pièce, donc aucun `lettering.removed` ; la
+/// contre-passation lettre les deux lignes libres (caisse `1000`, créance) —
+/// relevé sur ce montage (Story 36-4, revue P1 E2).
+const PARTIAL_SETTLEMENT_CANCEL_ACTIONS: &[&str] = &[
+    "journal_entry.created",
+    "journal_entry.reversed",
+    "lettering.created",
+    "lettering.created",
+    "invoice.settlement_cancelled",
+];
+
+/// ⛔ Story 36-4 (#1131, revue P1 E2) — l'annulation par clé d'un règlement
+/// **partiel**, sans lettrage de pièce à défaire : ses traces portent la clé, et
+/// la liste ne contient pas `lettering.removed`.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn an_api_key_cancels_a_partial_settlement_and_is_named_everywhere(pool: MySqlPool) {
+    let (app, id) = setup(&pool, dec!(100.00)).await;
+    app.settle(id, "40.00").await;
+    let (cle, secret) = audit_traces::create_key_via_http(
+        &app.client,
+        &app.base_url,
+        &app.token,
+        "rw",
+        "read-write",
+    )
+    .await;
+
+    let avant = cancel_by_key(&app, &pool, &secret, id, "internal_account", false).await;
+
+    assert_toutes_a_la_cle(
+        &audit_traces::audit_depuis(&pool, avant).await,
+        cle,
+        audit_traces::createur_de_la_cle(&pool, cle).await,
+        PARTIAL_SETTLEMENT_CANCEL_ACTIONS,
     );
 }
 

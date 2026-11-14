@@ -4759,9 +4759,17 @@ async fn cancelling_a_supplier_reconciliation_by_the_route(pool: MySqlPool) {
     assert_eq!(view["matchedEntryId"], r.settlement_entry_id);
     assert_eq!(view["cancellable"], true, "got {view:?}");
     assert_eq!(view["cancelBlockedBy"], Value::Null, "got {view:?}");
+    let avant = common::audit_traces::max_audit_id(&pool).await;
 
     let (st, done) = cancel_reco(&app, &jwt, r.bank_transaction_id).await;
     assert_eq!(st, 200, "got {done:?}");
+    // Story 36-4 (#1131, AC4, revue P1 E3 = A1) — par session, rien ne change :
+    // toutes les traces du dé-rapprochement sont à l'utilisateur, sans clé.
+    common::audit_traces::assert_toutes_a_l_utilisateur(
+        &common::audit_traces::audit_depuis(&pool, avant).await,
+        seeded.admin_user_id,
+        SUPPLIER_UNRECONCILE_ACTIONS,
+    );
     assert_eq!(done["supplierInvoiceId"], r.supplier_invoice_id);
     assert_eq!(done["invoiceId"], Value::Null);
     assert_eq!(done["bankTransaction"]["status"], "pending");

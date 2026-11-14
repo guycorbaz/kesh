@@ -783,9 +783,16 @@ pub async fn cancel_in_tx(
     //     angle mort `innodb_snapshot_isolation`).
     super::bank_accounts::recheck_open_locked_in_tx(tx, company_id, bt.bank_account_id).await?;
 
-    // (7) L'audit du geste. ⚠️ Pour un règlement client, trois lignes au
-    //     total (celle-ci, `invoice.settlement_cancelled`,
-    //     `journal_entry.reversed`) : chacune nomme son objet. Pour un
+    // (7) L'audit du geste. ⚠️ Pour un règlement client qui avait soldé la
+    //     facture, six lignes au total, toutes au même acteur (Story 36-4,
+    //     relevé des tests `INVOICE_UNRECONCILE_ACTIONS`,
+    //     `crates/kesh-api/tests/reconciliation_e2e.rs`) : le délettrage de la
+    //     pièce (`lettering.removed`, absent d'un règlement partiel), la
+    //     contre-passation (`journal_entry.created` de l'inverse,
+    //     `journal_entry.reversed`, un `lettering.created` par ligne libre d'un
+    //     compte lettrable), `invoice.settlement_cancelled` et celle-ci ;
+    //     chacune nomme son objet. Un simple détachement (`unlink_only`)
+    //     n'écrit que celle-ci. Pour un
     //     règlement fournisseur (Story 30-1a, AC-a5), `supplierInvoiceId` est
     //     posé, `invoiceId` et `settlementId` restent nuls — contrat additif ;
     //     le geste appelé écrit `supplier_invoice.settlement_cancelled`.
