@@ -224,8 +224,12 @@ type Compte = { id: number; number: string; name: string };
 /**
  * Deux comptes de produit et un brouillon à deux lignes : la ligne 1 porte
  * `honoraires` (posé par l'API), la ligne 2 n'a pas de compte (défaut société).
+ *
+ * `plage` : début d'une plage de 500 numéros PROPRE à chaque test (revue P1,
+ * A6) — deux tests qui tiraient dans les mêmes valeurs pouvaient créer le même
+ * numéro et rougir sur `uq_accounts_company_number`, sans rapport avec le défaut.
  */
-async function brouillonEntree(page: import('@playwright/test').Page) {
+async function brouillonEntree(page: import('@playwright/test').Page, plage: 38000 | 38500) {
 	const suffix = uniqSuffix();
 	const ctx = await authedApiContext(page);
 	try {
@@ -236,8 +240,9 @@ async function brouillonEntree(page: import('@playwright/test').Page) {
 			expect(res.ok(), `création compte ${number} échouée: ${res.status()}`).toBeTruthy();
 			return (await res.json()) as Compte;
 		};
-		// Plage 38000-38999, distincte de celle du test précédent (39000-39900).
-		const base = 38000 + Math.floor(Math.random() * 450) * 2;
+		// Plages 38000-38499 et 38500-38999, une par test, distinctes de celle du
+		// test précédent (39000-39900).
+		const base = plage + Math.floor(Math.random() * 250) * 2;
 		const honoraires = await mk(String(base), `Honoraires E ${suffix}`);
 		const marchandises = await mk(String(base + 1), `Marchandises E ${suffix}`);
 
@@ -289,7 +294,7 @@ test('(#1095) Entrée sur un texte sans correspondance n’enregistre pas l’an
 	page,
 }) => {
 	await login(page);
-	const { invoiceId, version, honoraires, marchandises } = await brouillonEntree(page);
+	const { invoiceId, version, honoraires, marchandises } = await brouillonEntree(page, 38000);
 
 	await page.goto(`/invoices/${invoiceId}/edit`);
 	const field = page.locator('input[aria-autocomplete="list"]').first();
@@ -307,7 +312,7 @@ test('(#1095) Entrée sur un texte sans correspondance n’enregistre pas l’an
 	// Attendre l'une des deux issues — le message (correctif) ou l'écran de
 	// détail (le défaut : le formulaire est parti) — puis asserter : un rouge
 	// nomme alors l'URL atteinte au lieu d'expirer sur un message absent.
-	const message = page.getByText('Aucun compte ne correspond à cette saisie');
+	const message = page.getByTestId('account-no-match');
 	await expect(message.or(page.getByTestId('invoice-line-revenue-account').first())).toBeVisible();
 	await expect(page).toHaveURL(new RegExp(`/invoices/${invoiceId}/edit$`));
 	await expect(message).toBeVisible();
@@ -331,7 +336,7 @@ test('(#1165) Entrée sur une ligne sans compte enregistre le défaut société,
 	page,
 }) => {
 	await login(page);
-	const { invoiceId } = await brouillonEntree(page);
+	const { invoiceId } = await brouillonEntree(page, 38500);
 
 	await page.goto(`/invoices/${invoiceId}/edit`);
 	const field = page.locator('input[aria-autocomplete="list"]').nth(1);

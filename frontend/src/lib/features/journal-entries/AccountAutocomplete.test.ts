@@ -631,14 +631,10 @@ describe('AccountAutocomplete — Entrée (Story 36-1, #1095, #1165)', () => {
 			sansMessage(m);
 		});
 
-		it('au choix d’un compte', async () => {
-			const m = await apresA();
-			await taper(m.input, '30');
-			const option = m.getAllByRole('option').find((o) => o.textContent?.includes('3000'));
-			await fireEvent.mouseDown(option!);
-			expect(m.onSelect).toHaveBeenCalledWith(1);
-			sansMessage(m);
-		});
+		// « Au choix d'un compte » : variante RETIRÉE (revue P1, E4). Tant que le
+		// message s'affiche, `filtered` est vide : aucune option n'est cliquable
+		// sans une frappe ou des comptes rechargés — deux déclencheurs couverts
+		// ci-dessus et ci-dessous. La variante ne prouvait que « à la frappe ».
 
 		it('retaper le texte refusé ne le fait pas reparaître sans nouvelle Entrée', async () => {
 			const m = await apresA();
@@ -671,6 +667,14 @@ describe('AccountAutocomplete — Entrée (Story 36-1, #1095, #1165)', () => {
 		expect(queryByText(NO_MATCH)).toBeNull();
 	});
 
+	it('j-bis. (revue P1, B3/E3) Entrée de fin de composition sous WebKit (keyCode 229) : non interceptée', async () => {
+		const { input, onSelect, queryByText } = monter({ value: null, allowClear: true });
+		await taper(input, '300'); // désigne 3000 : sans la garde, E1 le choisirait
+		expect(await entree(input, { keyCode: 229 } as KeyboardEventInit)).toBe(true);
+		expect(onSelect).not.toHaveBeenCalled();
+		expect(queryByText(NO_MATCH)).toBeNull();
+	});
+
 	it('k. sans saisie, la première flèche bas désigne le PREMIER compte', async () => {
 		const a = monter();
 		await fireEvent.focus(a.input);
@@ -698,12 +702,40 @@ describe('AccountAutocomplete — Entrée (Story 36-1, #1095, #1165)', () => {
 		expect(input.value).toBe('');
 	});
 
-	it('m. comptes pas encore chargés : Entrée retient le brouillon, sans message', async () => {
+	it('m. comptes pas encore chargés : Entrée n’envoie rien et ne dit pas « aucun compte »', async () => {
 		const { input, onSelect, queryByText } = monter({ value: null, accounts: [] });
 		await taper(input, 'zzz');
 		expect(await entree(input)).toBe(false);
 		expect(onSelect).not.toHaveBeenCalled();
 		expect(queryByText(NO_MATCH)).toBeNull();
+	});
+
+	describe('m-bis. (revue P1, B2) aucun compte proposable : le brouillon est résolu, Entrée n’est pas bloquée', () => {
+		it('plan comptable vide après chargement', async () => {
+			const { input, onSelect, queryByText } = monter({ value: null, allowClear: true, accounts: [] });
+			await taper(input, 'zzz');
+			expect(await entree(input)).toBe(false);
+			expect(input.value).toBe('');
+			expect(queryByText(NO_MATCH)).toBeNull();
+			// L'Entrée suivante laisse partir le formulaire : le champ montre ce qui part.
+			expect(await entree(input)).toBe(true);
+			expect(onSelect).not.toHaveBeenCalled();
+		});
+
+		it('aucun compte du type attendu (strict, valeur retenue réaffichée)', async () => {
+			const ACTIF = acc({ id: 7, number: '1000', name: 'Caisse', accountType: 'Asset' });
+			const { input, onSelect, queryByText } = monter({
+				value: 7,
+				accounts: [ACTIF],
+				requiredAccountType: 'Revenue',
+			});
+			await taper(input, 'zzz');
+			expect(await entree(input)).toBe(false);
+			expect(input.value).toBe('1000 — Caisse');
+			expect(queryByText(NO_MATCH)).toBeNull();
+			expect(await entree(input)).toBe(true);
+			expect(onSelect).not.toHaveBeenCalled();
+		});
 	});
 
 	it('n. (#1165) allowClear : vidé, liste ouverte, Entrée = effacement, non le premier compte', async () => {
@@ -718,6 +750,28 @@ describe('AccountAutocomplete — Entrée (Story 36-1, #1095, #1165)', () => {
 	it('o. strict : vidé, liste ouverte, Entrée = compte retenu réaffiché', async () => {
 		const { input, onSelect } = monter({ value: 1 });
 		await taper(input, '');
+		expect(await entree(input)).toBe(false);
+		expect(onSelect).not.toHaveBeenCalled();
+		expect(input.value).toBe('3000 — Ventes');
+	});
+
+	// Revue P1, E2 : un brouillon d'ESPACES est blanc. Sans `trim()` (à l'index
+	// ou à l'aiguillage d'E5), la liste ouverte désignerait le premier compte et
+	// Entrée le choisirait — #1165 rouvert par une espace.
+	it('n-bis. allowClear : des espaces seules, Entrée = effacement, non le premier compte', async () => {
+		const { input, onSelect, container } = monter({ value: 1, allowClear: true });
+		await taper(input, '  ');
+		expect(designees(container)).toHaveLength(0);
+		expect(await entree(input)).toBe(false);
+		expect(onSelect).toHaveBeenCalledTimes(1);
+		expect(onSelect).toHaveBeenCalledWith(null);
+		expect(input.value).toBe('');
+	});
+
+	it('o-bis. strict : des espaces seules, Entrée = compte retenu réaffiché', async () => {
+		const { input, onSelect, container } = monter({ value: 1 });
+		await taper(input, '  ');
+		expect(designees(container)).toHaveLength(0);
 		expect(await entree(input)).toBe(false);
 		expect(onSelect).not.toHaveBeenCalled();
 		expect(input.value).toBe('3000 — Ventes');
@@ -857,5 +911,55 @@ describe('AccountAutocomplete — Entrée (Story 36-1, #1095, #1165)', () => {
 		await entree(input);
 		expect(statut(container).children).toHaveLength(1);
 		expect(statut(container).children[0].tagName).toBe('P');
+	});
+
+	describe('y. (revue P1, E1) le libellé affiché, retapé, désigne son compte — pas de faux « aucun compte »', () => {
+		it('libellé entier retapé : Entrée choisit ce compte, sans message', async () => {
+			const { input, onSelect, container, queryByText } = monter({ value: 1, allowClear: true });
+			await taper(input, '3000 — Ventes');
+			expect(designees(container)[0]?.textContent).toContain('3000');
+			expect(await entree(input)).toBe(false);
+			expect(onSelect).toHaveBeenCalledTimes(1);
+			expect(onSelect).toHaveBeenCalledWith(1);
+			expect(queryByText(NO_MATCH)).toBeNull();
+			expect(input.value).toBe('3000 — Ventes');
+		});
+
+		it('début de libellé contenant « — » : désigne le compte correspondant', async () => {
+			const { input, onSelect, container } = monter();
+			await taper(input, '3001 — Pr');
+			expect(designees(container)[0]?.textContent).toContain('3001');
+			expect(await entree(input)).toBe(false);
+			expect(onSelect).toHaveBeenCalledWith(2);
+		});
+
+		it('champ non touché : le libellé affiché ne remplit pas la liste (seul un brouillon s’y compare)', async () => {
+			const { input, queryByRole } = monter({ value: 1, allowClear: true });
+			await fireEvent.focus(input);
+			expect(queryByRole('listbox')).toBeNull();
+		});
+	});
+
+	it('z. (revue P1, B1) le mode dégradé efface le message « aucun compte ne correspond »', async () => {
+		const { input, rerender, queryByText } = monter({ value: 1, allowClear: true });
+		await taper(input, 'zzz');
+		await entree(input);
+		expect(queryByText(NO_MATCH)).not.toBeNull();
+		rerender({ loadError: true });
+		await tick();
+		expect(queryByText(NO_MATCH)).toBeNull();
+	});
+
+	it('x-bis. le bouton × se centre sur le seul champ, non sur le champ et son message', async () => {
+		// Constaté aux captures de la story : centré (`top-1/2`) sur la racine, le ×
+		// descendait sur le message affiché sous le champ. Son conteneur positionné
+		// doit contenir le champ et AUCUN des messages (statut, invalidité).
+		const { input, container, getByLabelText } = monter({ value: 1, allowClear: true });
+		await taper(input, 'zzz');
+		await entree(input);
+		const cadre = getByLabelText(/Effacer le compte/).parentElement!;
+		expect(cadre.classList.contains('relative')).toBe(true);
+		expect(cadre.contains(input)).toBe(true);
+		expect(cadre.contains(statut(container))).toBe(false);
 	});
 });

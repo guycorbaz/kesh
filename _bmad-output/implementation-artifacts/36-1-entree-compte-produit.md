@@ -1,15 +1,16 @@
 # Story 36-1 : *Entrée* dans le champ « compte de produit » n'envoie plus un compte que le champ ne montre pas, ni un compte que personne n'a désigné (#1095, #1165)
 
-Status: ready-for-dev
+Status: review
 
 *Fiche rédigée le 2026-11-14 par l'agent de rédaction des fiches de l'Epic 36 (Opus 5.5), worktree `kesh-36-1`, branche
 `story/36-1-entree-compte-produit`, par le workflow `bmad-create-story`. Release **0.17.8** (phase 1). **Aucune migration**,
 aucun changement serveur ni d'API. **Une clé i18n neuve** (`common-account-no-match`, quatre locales). Code lu à la tête du
 worktree, **`9d5a142df`** (kickoff de l'Epic 36, sur `main` `42d5f368`). Étape 0 et choix qui font foi : registre
 `e36-choix-autonomes-e360.md` (§ *Étape 0* — 36-1 ; C-e360-1, -2, -3, -4, -11) ; choix propres à la story :
-`e36-choix-autonomes-36-1.md` (C-36-1-1 à C-36-1-6). Voie de développement : **voie 2**. Validations P1 (Sonnet), P2 (Opus)
-et P3 (Sonnet) remédiées ; passe suivante à venir. **#1165 intégrée** à la story par décision de l'orchestrateur
-(C-36-1-5).*
+`e36-choix-autonomes-36-1.md` (C-36-1-1 à C-36-1-11). Voie de développement : **voie 2**. **Validation terminée en cinq
+passes** (P1 Sonnet, P2 Opus, P3 Sonnet, P4 Opus, P5 ciblée Haiku) ; développement terminé, statut `review` ; revue de code
+P1 close sans rien au-dessus de LOW, ses LOW corrigés dans la story (remédiation de la revue P1, Change Log), passe ciblée
+P2 à venir. **#1165 intégrée** à la story par décision de l'orchestrateur (C-36-1-5).*
 
 ## Story
 
@@ -201,7 +202,7 @@ l'`defaultPrevented` de l'événement ; la soumission réelle ne se voit qu'en E
     **≈ 8,7:1** (≥ 4,5:1) ;
   - **survol** : `hover:bg-border` — `--color-border` (`app.css:33` `--color-border: #e2e8f0;`), gris clair (≈ 1,2:1 contre le
     blanc : un retour de pointeur, non un état), **appliqué aux seules options non désignées** : sur l'option désignée, le fond
-    plein reste (sinon le texte blanc passerait sur un gris clair). Désignation contre survol **≈ 7,1:1** (V5-2, calculé par le test d'AC8) : bleu plein contre
+    plein reste (sinon le texte blanc passerait sur un gris clair). Désignation contre survol **≈ 7,1:1** (V5-2 ; 7,06:1 calculé **à la main** — le test d'AC8 n'en asserte que ≥ 3:1) : bleu plein contre
     gris clair, distincts **par la luminance** et non par une nuance.
 
   **Forme** (V4-2) : la directive `class:` ne porte qu'une classe et son nom s'arrête au `/` ; l'option s'écrit en tableau
@@ -222,13 +223,14 @@ l'`defaultPrevented` de l'événement ; la soumission réelle ne se voit qu'en E
 
   | # | État | Règle | Chemin | AC | Mutation |
   |---|---|---|---|---|---|
-  | E0 | `loadError`, ou composition IME en cours (`e.isComposing`, V1-7) | inchangé : retour sans rien faire, l'événement suit son cours | — | AC1 i, AC1 j | M8 |
+  | E0 | `loadError`, ou composition IME en cours (`e.isComposing`, V1-7 ; ou `e.keyCode === 229`, fin de composition sous WebKit, revue P1 B3/E3) | inchangé : retour sans rien faire, l'événement suit son cours | — | AC1 i, AC1 j, j-bis | M8, M31 |
   | E0-bis | sinon, **touche maintenue** (`e.repeat`, V3-5) | `preventDefault`, rien d'autre : une *Entrée* maintenue ne fait qu'un geste — la première pression résout, choisit ou envoie ; les répétitions n'envoient pas un formulaire dont l'utilisateur n'a pas vu l'état | — | AC1 u | M19 |
   | E1 | sinon, `open && filtered[highlightIndex]` (un compte désigné, par l'invariant) — saisie qui correspond à **un ou plusieurs** comptes, ou flèches | `preventDefault`, l'élément est choisi, le champ montre son libellé, rien ne part | — | AC1 c, k, p, q, s, t | M11, M13, M16, M17 |
   | E2 | sinon, **aucun brouillon** (`draft === null`) — non touché, valeur résolue **ou** nulle, ou après le bouton × | rien n'est choisi ; l'événement suit son cours : le formulaire part, le champ montrant `displayLabel` (le compte, ou vide = « défaut société » et `null` envoyé). **Exception préexistante, hors de la story** (V4-5) : tant que les comptes ne sont pas chargés, un champ dont la valeur persistée est X paraît vide (`:171` `return labelOf(selected);` rend `''`) et X part — la valeur persistée, non une valeur fausse ; comme un clic sur *Enregistrer*, indépendant d'*Entrée* : issue I6 demandée | C4 | AC1 g, l, r, w | M2, M9, M15 |
   | — | sinon (**un brouillon est affiché**) | `preventDefault` **toujours**, puis E3, E4 ou E5 | — | AC1 q (M14) | M1, M14 |
   | E3 | … brouillon non blanc, `filtered` non vide | la liste **s'ouvre** ou reste ouverte (`open = true`, index `0`), rien n'est choisi | C2 | AC1 d | M4 |
-  | E4 | … brouillon non blanc, `filtered` vide | le brouillon **reste** ; le message de D2 s'affiche **si la liste des comptes est chargée** (`accounts.length > 0`) — pendant le chargement, sans message (V1-3) | C1 | AC1 a, b, m | M3, M12 |
+  | E4 | … brouillon non blanc, `filtered` vide, **des comptes proposables** (`active.length > 0`) | le brouillon **reste** ; le message de D2 s'affiche *(amendé à la remédiation de la revue P1, B2 : la condition était `accounts.length > 0`)* | C1 | AC1 a, b | M3, M12 |
+  | E4-bis | … brouillon non blanc, **aucun compte proposable** (`active` vide : comptes en cours de chargement, plan vide, aucun du type attendu) | la résolution du `blur` (`commitDraft()`), sans message : le champ réaffiche la valeur, l'*Entrée* suivante envoie ce qu'il montre (C-36-1-11) — sauf pendant le chargement si une valeur est posée : le champ paraît vide et la valeur persistée part (exception d'E2, #1170 ; P2 ciblée, R1) | — | AC1 m, m-bis | M33 |
   | E5 | … brouillon **blanc** (`draft.trim() === ''`) | **la résolution du `blur`** (`commitDraft()`) : `allowClear` → effacement explicite, sous la même condition (`value !== null && selected !== undefined`) ; strict → brouillon jeté, compte retenu réaffiché ; liste fermée, index `-1` | C3, C5 | AC1 e, f, n, o | M5, M10 |
 
   Une *Entrée* suivante, sans brouillon, tombe sur E2 et envoie. **Un texte qui correspond à un compte unique ou à
@@ -333,7 +335,9 @@ l'`defaultPrevented` de l'événement ; la soumission réelle ne se voit qu'en E
    - g. E2, **non touché à valeur résolue** : valeur `1`, focus, *Entrée* → événement **non** empêché, `onSelect` jamais
      appelé (le formulaire peut partir : le champ montre le compte) ;
    - h. après le cas a, quatre variantes, une par déclencheur (V2-6) : une frappe (`zz`) ; un `blur` ; un clic sur le bouton ×
-     (valeur réinjectée) ; un choix (taper `30`, clic sur l'option `3000`) → le message disparaît chaque fois, et la région
+     (valeur réinjectée) ; un choix (taper `30`, clic sur l'option `3000`) *(variante retirée à la remédiation de la revue
+     P1, E4 : tant que le message s'affiche, `filtered` est vide et aucune option n'est cliquable sans une frappe ou des
+     comptes rechargés — la variante ne prouvait que « à la frappe »)* → le message disparaît chaque fois, et la région
      `role="status"` reste présente, vide ; deux variantes de plus (V3-3) : **retaper le texte refusé** (`zzz`, *Entrée*,
      frappe `zzzx`, puis `zzz`) → aucun message sans nouvelle *Entrée* ; **comptes rechargés** (`zzz`, *Entrée*, puis
      `rerender({ accounts: [… un compte nommé « zzz Conseil »] })`) → le message disparaît ;
@@ -346,7 +350,12 @@ l'`defaultPrevented` de l'événement ; la soumission réelle ne se voit qu'en E
      **aucune** option ne porte `aria-selected="true"` ; *Entrée* → événement **non** empêché, `onSelect` jamais appelé, le
      champ reste vide ;
    - m. E4 pendant le chargement : `accounts = []`, valeur nulle, taper `zzz`, *Entrée* → événement empêché, `onSelect` jamais
-     appelé, **aucun** message ;
+     appelé, **aucun** message ; *(E4-bis depuis la remédiation de la revue P1 ; m-bis : plan vide après chargement, puis
+     aucun compte du type attendu — le brouillon est résolu, l'*Entrée* suivante n'est pas empêchée, B2)* ;
+   - j-bis. E0, `keyCode: 229` (fin de composition sous WebKit) avec un compte désigné par la saisie → événement non empêché,
+     `onSelect` jamais appelé (B3/E3) ;
+   - n-bis, o-bis. n et o avec un brouillon d'**espaces** (`'  '`) : aucune option désignée ; mêmes attendus (E5 ; « E2 »
+     écrit à la remédiation P1, corrigé à la clôture, P2 ciblée R4) ;
    - n. E5, **vidé, liste ouverte**, `allowClear` (chemin C5) : valeur `1`, vider le champ (sans *Échap*), *Entrée* →
      événement empêché ; `onSelect(null)` **une** fois ; le champ est vide ;
    - o. E5, vidé, liste ouverte, **strict** : valeur `1`, vider le champ, *Entrée* → événement empêché ; `onSelect` jamais
@@ -381,7 +390,11 @@ l'`defaultPrevented` de l'événement ; la soumission réelle ne se voit qu'en E
      (identifiant absent de `accounts`) → aucune option ne porte `aria-selected="true"` ; *Entrée* → événement non empêché,
      `onSelect` jamais appelé ;
    - x. région de statut sans place (V4-6) : sans message, la région `role="status"` est présente et **n'a aucun enfant**
-     (le paragraphe et sa marge `mt-1` n'existent qu'avec le message) ; après le cas a, elle contient un seul paragraphe.
+     (le paragraphe et sa marge `mt-1` n'existent qu'avec le message) ; après le cas a, elle contient un seul paragraphe ;
+   - *(ajoutés au développement et à la remédiation de la revue P1)* x-bis. le × se centre sur le seul champ (constat des
+     captures, M26) ; y. un brouillon qui reprend le libellé affiché (`3000 — Ventes`, `3001 — Pr`) désigne son compte et
+     *Entrée* le choisit, sans faux message ; sur un champ non touché, la liste reste vide (E1, C-36-1-10, M27, M28) ; z. le
+     message disparaît en mode dégradé (B1, M32).
 2. **AC2 — Les tests existants** : la suite `AccountAutocomplete.test.ts` existante reste verte **sans modification de ses
    assertions** (le `blur` garde exactement sa règle, désormais dans `commitDraft()`), ainsi que celles de `JournalEntryForm`,
    `ManualMatchModal`, `TransactionSplitModal`, `InvoiceForm`, `products-page`.
@@ -440,7 +453,9 @@ l'`defaultPrevented` de l'événement ; la soumission réelle ne se voit qu'en E
    d'`src/app.css`, bloc `@theme` sans commentaires, valeurs lues et non recopiées, calcul par `blend`/`contrastRatio` de
    `frontend/tests/e2e/helpers/contrast.ts:54`, `:43`) :
    - chaque jeton de couleur de `CLASSE_DESIGNEE` et `CLASSE_SURVOL` (`primary`, `primary-foreground`, `border`) est **défini**
-     dans `@theme`, ainsi que `popover` (fond de la liste, `AccountAutocomplete.svelte:391`) ;
+     dans `@theme`, ainsi que `popover` (fond de la liste, `AccountAutocomplete.svelte:391`) *(depuis la remédiation de la
+     revue P1, B4 : lu dans la constante `CLASSE_LISTE`, que le composant pose sur sa liste ; un cas vérifie au source que
+     le composant emploie la constante sans fond écrit en dur — M34, M35)* ;
    - fond désigné (`primary`) contre le fond de la liste (`popover`) **≥ 3:1** ;
    - texte désigné (`primary-foreground`) sur `primary` **≥ 4,5:1** ;
    - fond désigné contre le fond de survol (`border`) **≥ 3:1** (les deux états se distinguent par eux-mêmes) ;
@@ -519,26 +534,28 @@ l'`defaultPrevented` de l'événement ; la soumission réelle ne se voit qu'en E
 
 ## Tâches
 
-- [ ] Étape 0 : relire à la tête du worktree les lignes citées ci-dessus (`AccountAutocomplete.svelte:255-317`,
+- [x] Étape 0 : relire à la tête du worktree les lignes citées ci-dessus (`AccountAutocomplete.svelte:255-317`,
       `InvoiceForm.svelte:697`, `:877-888`, `:932-933`, `products/+page.svelte:622-627`, `:697-705`, `:732`) ; relancer
       `git grep -n "<AccountAutocomplete" -- frontend/src` et le contrôle des `<form>` ; citer les sorties au Change Log.
-- [ ] Bases de la voie 2 (`kesh_36_1`, `kesh_e2e_36_1` sur `127.0.0.1:3307`), `node_modules` par `cp -al`.
-- [ ] Tests d'AC1, AC3, AC4, AC5 écrits ; rouges constatés et journalisés ; commit.
-- [ ] `AccountAutocomplete.svelte` : `commitDraft()` extraite de `handleBlur` ; index de surbrillance à `-1` sans
+- [x] Bases de la voie 2 (`kesh_36_1`, `kesh_e2e_36_1` sur `127.0.0.1:3307`), `node_modules` par `cp -al`. *(Noms
+      réels : `kesh_e361`, `kesh_e2e_e361`, attribués par le prompt de l'orchestrateur.)*
+- [x] Tests d'AC1, AC3, AC4, AC5 écrits ; rouges constatés et journalisés ; commit.
+- [x] `AccountAutocomplete.svelte` : `commitDraft()` extraite de `handleBlur` ; index de surbrillance à `-1` sans
       désignation (D1, principe ii) ; *Entrée* selon la table de D1, garde `isComposing` comprise ; région `role="status"` de
       D2 et son `aria-describedby` ; commentaires du fichier mis à jour (`:297-299` dit qu'un envoi sans quitter le champ doit rendre le
       focus d'abord : à compléter par « ou passer par *Entrée*, qui résout le brouillon sans envoyer ») ; doc de la prop
       `allowClear` relue.
-- [ ] `messages.ftl` ×4 (D2) ; `sitesTotal` recompté.
-- [ ] `account-autocomplete-classes.ts` (constantes `CLASSE_DESIGNEE`, `CLASSE_SURVOL`) et son test de jetons (AC8).
-- [ ] Verts ; mutations M1 à M25 (et M15-bis) ; captures (AC7).
-- [ ] Gates (voie 2 ; `gate-ci` en voie 1), selon `e35-dev-commun.md` § *Quels gates, quand* : en cours, gate ciblé — Vitest
+- [x] `messages.ftl` ×4 (D2) ; `sitesTotal` recompté.
+- [x] `account-autocomplete-classes.ts` (constantes `CLASSE_DESIGNEE`, `CLASSE_SURVOL`) et son test de jetons (AC8).
+- [x] Verts ; mutations M1 à M25 (et M15-bis) ; captures (AC7).
+- [x] Gates (voie 2 ; `gate-ci` en voie 1), selon `e35-dev-commun.md` § *Quels gates, quand* : en cours, gate ciblé — Vitest
       des fichiers touchés, `npm run check`, `npm run lint-i18n-ownership`, et `cargo nextest run -E 'binary(...)'` du crate
       `kesh-i18n` (les `.ftl` y sont lus) ; **au passage en `review`** : bases remises à neuf, `scripts/test-fast.sh --ci`
       (voie 2), `scripts/gate-ci.sh kesh_ci_36_1` (voie 1), frontend complet (`check`, `lint-i18n-ownership`, `test:unit`,
       `build`) ; **pas d'E2E** ; **à la clôture** : `gate-ci` et E2E complet sur `kesh_e2e_36_1` recréée, au dernier commit de
-      code, échecs nommés contre `docs/testing.md` § *Les échecs attendus*.
-- [ ] Prompt de la revue P1 à côté de la fiche (trois lentilles ; axes exercés et non exercés ; manuel nommé — D4 à
+      code, échecs nommés contre `docs/testing.md` § *Les échecs attendus*. *(Passage en `review` fait ; base de CI réelle
+      `kesh_ci_e361` ; la clôture reste à venir — Dev Agent Record.)*
+- [x] Prompt de la revue P1 à côté de la fiche (trois lentilles ; axes exercés et non exercés ; manuel nommé — D4 à
       contester ; captures nommées).
 
 ## Note de version
@@ -546,19 +563,31 @@ l'`defaultPrevented` de l'événement ; la soumission réelle ne se voit qu'en E
 *Corrigé* (C-e360-11 ; l'orchestrateur l'assemble au CHANGELOG à l'intégration) :
 
 - **Facture et article : la touche Entrée dans le champ « Compte de produit » n'enregistre plus l'ancien compte pendant que
-  le champ montre le texte tapé.** Entrée choisit le compte en surbrillance dans la liste, rouvre la liste si vous l'aviez
-  fermée, ou signale qu'aucun compte ne correspond à votre saisie ; une seconde Entrée enregistre. (refs #1095)
+  le champ montre le texte tapé.** Tant que le champ montre une saisie, Entrée n'enregistre rien : elle choisit le compte
+  en surbrillance dans la liste, rouvre la liste si vous l'aviez fermée (une Entrée de plus choisit alors le compte en
+  surbrillance), ou signale qu'aucun compte ne correspond à votre saisie (corrigez-la ou choisissez un compte : Entrée
+  reste sans effet tant que ce message s'affiche). Si aucun compte ne peut être proposé (liste des comptes pas encore
+  chargée, ou aucun compte de produit), Entrée efface la saisie sans message et le champ revient à son compte. Une fois le
+  compte choisi, une nouvelle Entrée enregistre. Modifier le libellé affiché (« 3200 — Honoraires », avec son tiret long)
+  désigne ce compte comme son numéro ; écrit avec un trait d'union (« 3200 - Honoraires »), il n'est pas reconnu (#1185).
+  Le bouton × du champ reste à sa place quand un message s'affiche sous le champ. (refs #1095)
 - **Facture et article : Entrée dans un champ « Compte de produit » vide ne choisit plus d'office le premier compte de la
   liste.** Un compte n'est choisi au clavier que si vous l'avez désigné, en tapant ou avec les flèches ; une ligne laissée
   vide suit le compte de produit par défaut de la société, même après une double Entrée. Le même champ de compte, dans les
-  écritures manuelles, l'assistant d'achat et le rapprochement bancaire, suit la même règle ; sur ces sept champs, la
-  première flèche vers le bas désigne désormais le premier compte de la liste (auparavant le deuxième), la flèche vers le
-  haut ouvre la liste sur le dernier, et le compte désigné au clavier est désormais mis en évidence (fond bleu, texte
-  blanc), distinct du survol de la souris (gris clair), qui ne le choisit pas. (refs #1165)
+  écritures manuelles, l'assistant d'achat et le rapprochement bancaire, suit la même règle ; sur ces sept champs, quand
+  la liste propose des comptes (champ vide, ou pendant la saisie), la première flèche vers le bas désigne désormais le
+  premier compte de la liste (auparavant le deuxième) et la flèche vers le haut ouvre la liste sur le dernier — sur un
+  champ qui montre déjà un compte, sans saisie, la liste reste vide et les flèches ne désignent rien, comme avant ; le
+  compte désigné au clavier est désormais mis en évidence (fond bleu, texte blanc), distinct du survol de la souris (gris
+  clair), qui ne le choisit pas. (refs #1165)
 
 ## Dev Notes
 
 ### Hors périmètre, et les issues demandées
+
+*(Annoté à la remédiation de la revue P1, A5 : ouvertes par l'orchestrateur — **I1 = #1162**, **I2 = #1163**, **I3 =
+#1164**, **I5 = #1166**, **I6 = #1170**, **I7 = #1184** ; titres relus par `gh issue view`, lecture seule. Les mentions « à
+ouvrir » ci-dessous datent de la fiche.)*
 
 - **I1 — `ContactPicker`, le client de la facture** (bug, P2 proposé) : un nom tapé et non choisi reste affiché au `blur`
   (`ContactPicker.svelte:110-113`), pendant que l'ancien client part — par *Entrée* comme par *Enregistrer*. Même symptôme que
@@ -579,9 +608,15 @@ l'`defaultPrevented` de l'événement ; la soumission réelle ne se voit qu'en E
   rempli de façon asynchrone), le champ paraît vide avec le placeholder « … (défaut société) » (`AccountAutocomplete.svelte:171`)
   alors que X sera envoyé. Préexistant, transitoire, indépendant d'*Entrée*, rien n'est réécrit faux ; distinct de #1085 (mode
   dégradé) et de I5. À ouvrir, une issue.
+- **I7 — le bouton × chevauche la fin d'un libellé long** (bug, P4 ; constaté aux captures du développement, préexistant :
+  le champ n'a pas de marge droite pour le ×, captures `01-…`, `03-…`, `07-…`, ligne 1 « Honoraires de cons× ») : **#1184**.
 - **#1168 — pas d'`aria-activedescendant`** (validation P2, V2-4 ; ouverte par l'orchestrateur) : la désignation au clavier
   n'est annoncée à aucun lecteur d'écran (`git grep -n "activedescendant" -- frontend/src` ne rend que
   `ContactPicker.svelte:137`). Préexistant, hors périmètre.
+- **Tracées à la passe ciblée P2** (ouvertes par l'orchestrateur, titres relus par `gh issue view`) : **#1185** — retaper
+  un libellé avec un trait d'union au lieu du tiret cadratin ne retrouve pas le compte (R2 ; la note de version le dit) ;
+  **#1186** — le message « aucun compte ne correspond » ne relit pas la liste proposable si elle change après coup
+  (`showNoMatch` sans `active.length > 0` ; théorique, aucun consommateur ne recharge ses comptes ; R5).
 - Les issues voisines déjà ouvertes, inchangées : #1081 (barre de défilement de la liste), #1084 (numéro exact puis *Tab*),
   #1085 (mode dégradé puis liste revenue).
 
@@ -623,11 +658,119 @@ découpage proposé — séparer un test de son correctif n'apporterait rien, et
 
 ### Agent Model Used
 
+Opus 5.5 (agent de développement de l'Epic 36, en autonomie), worktree `kesh-36-1`, voie 2 (`kesh-mariadb-dev2`,
+`127.0.0.1:3307`, bases `kesh_e361` et `kesh_e2e_e361`), port 3361 ; `gate-ci` en voie 1 (`kesh_ci_e361`).
+
 ### Debug Log References
+
+Tous les journaux sous `/home/gcorbaz/devel/kesh-gate-logs/e36-1/` :
+
+- **Rouges** (`rouges.log`, synthèse) : Vitest ciblé avant correctif, **32 rouges sur 121** (`rouges-vitest-brut.log`) —
+  AC1 a, b, d, e, f, h (six variantes), k, l, m, n, o, p, q, r, s, u, w, x ; AC3 a, c ; AC4 ; AC8 (six cas) ; verts au départ,
+  comme annoncé : AC1 c, g, i, j, t, v, AC3 b et les suites existantes. AC3 a et AC4 rejoués l'assertion d'envoi en tête
+  (`rouges-vitest-ac3-ac4.log`) : `updateInvoice` appelé avec `revenueAccountId: 3200` pendant que le champ montre `zzz`,
+  `updateProduct` avec `defaultRevenueAccountId: 3000` — le défaut de #1095, exactement. E2E ciblé sur le build d'avant
+  correctif (`rouges-e2e.log`) : **3 rouges sur 8** — AC5 a (URL du détail atteinte : le formulaire est parti), a-bis (URL
+  restée `/edit` : la première *Entrée* a choisi un compte), b (dialogue refermé).
+- **Verts ciblés** : `verts-vitest-cible.log` (premier passage : 1 rouge, AC1 v — cause et remède en C-36-1-8),
+  `verts-vitest-aa.log` (52/52), `verts-vitest-xbis.log` (`journal-entries/`, 194/194), `verts-e2e-cible.log` (8/8),
+  `i18n-keys.log` (11/11, `sitesTotal` 3037 relevé par la garde avant d'écrire *(annoté à la remédiation de la revue P1,
+  A4 : le rouge de la garde a été vu au premier passage, mais son journal a été écrasé par le passage vert ; relevé
+  reproduit depuis, `mut/R-sitesTotal.log` — la garde remise à 3036 rend `expected 3037 to be 3036`)*), `lint-i18n.log`, `check.log` (0 erreur,
+  29 avertissements, aucun sur un fichier de la story), `gate-cible-rust.log` (fmt, clippy, `kesh-i18n` 41/41).
+- **Mutations** (`mut/`, banc versionné `mutations-36-1.py`, un journal par mutation, synthèse `synthese.log`) : M1 à M25,
+  M15-bis, M17, la double M14 + M15 (« M14 »), la double M14 + M17, et M26 (hors fiche, le conteneur du ×) — **toutes tuées,
+  sauf M14 seule, équivalente** comme la fiche l'annonce (sous l'invariant, l'état qu'elle laisserait partir n'existe pas).
+  Écarts au tueur annoncé par la fiche, sans trou : la double « M14 » (= M14 + M15) est tuée par AC1 q, r, w — en q par
+  l'absence de désignation et non par un événement non empêché ; M9 est aussi tuée par AC1 k et s ; M11 par p, s, v, w en
+  plus de k. M1 et M9 jouées en plus contre l'E2E (`M1-e2e.log` : AC5 a et b rouges ; `M9-e2e.log` : AC5 a-bis rouge).
+  Restauration par `git restore --worktree` puis `touch`, arbre propre après chaque campagne (sortie du banc).
+  *(Annoté à la remédiation de la revue P1, A3.)* **Base de chaque campagne** : la première (M1 à M25, M15-bis, doubles) a
+  tourné au commit `dabd9045a` ; M26 à `5963dd64c` ; M24 rejouée à `258a04559` ; les E2E de M1 et M9 à `dabd9045a`.
+  « Arbre propre » est inexact à la lettre : la sortie du banc listait des **artefacts** non commités (fiche, registre,
+  prompt), aucun fichier de code. **Toute la campagne a été rejouée sur la tête de la remédiation `de7a79b17`**
+  (`mut/campagne-r2.log`, `mut/campagne-r2b.log`, synthèse `mut/synthese.log` ; la synthèse de la première campagne est
+  gardée en `mut/r1-synthese.log` ; les journaux par mutation de la première campagne ont été écrasés par ceux de la
+  seconde, du même nom) : M1 à M35 et M15-bis, doubles M14 + M15 et M14 + M17 — **toutes tuées, sauf M14 seule,
+  équivalente**. Motifs du banc revus à la tête et contrôlés uniques avant la campagne (M5, M6, M8, M9, M12, M14 : le
+  gabarit avait changé à `5963dd64c` ou la remédiation touchait leur site). Neuves : M27, M28 (C-36-1-10), M29, M30
+  (`trim()` aux deux sites, revue E2), M31 (`keyCode 229`), M32 (`!loadError`), M33 (E4-bis), M34, M35 (`CLASSE_LISTE`).
+- **Captures** (`captures/`, base jetable `kesh_e2e_e361` semée `with-company`, comptes 38010/38011 synthétiques) :
+  `01-facture-zzz-message.png`, `02-article-zzz-message.png`, `03-facture-echap-entree-liste-rouverte.png`,
+  `04-ligne-neuve-focus-sans-designation.png` (0 option désignée, `notes-apres.txt`), `05-fleche-bas-designation-visible.png`,
+  `06-survol-autre-option.png`, `07-survol-option-designee.png` (couleurs calculées : désignée `rgb(30, 64, 175)` /
+  `rgb(255, 255, 255)` sous le pointeur), `08a-ecriture-ligne-avant.png` et `08b-ecriture-ligne-apres.png` (ligne d'écriture
+  manuelle : **49 px avant, 49 px après**, `notes-avant.txt`, `notes-apres.txt`). Le « avant » a été construit sur le
+  composant de `6fcd654b6` remis temporairement (`git restore --source=6fcd654b6 --worktree`, puis rendu). Scripts
+  `captures-36-1.sh`, `captures-36-1.mjs`.
+- **Gates du passage en `review`, au dernier commit de code `258a04559`** (série `gates-review-36-1.sh`, en séquence,
+  bases de la voie 2 remises à neuf avant `test-fast`) :
+  - frontend complet (`front-complet-r2.log`) : `check` 0 erreur (29 avertissements, aucun sur un fichier de la story),
+    `lint-i18n-ownership` PASS, `test:unit` **3472 passés sur 3472 (235 fichiers)**, `build` vert ;
+  - E2E **ciblé** des deux specs touchées (`verts-e2e-cible-r2.log`) : **8 passés sur 8** ;
+  - `scripts/test-fast.sh --ci`, voie 2 (`test-fast-ci-r2.log`) : **5445 exécutés, 5445 passés, 13 ignorés** ;
+  - `scripts/gate-ci.sh kesh_ci_e361`, voie 1 (`gate-ci-r2.log`, `gate-ci-console-r2.log`) : **5452 passés, 0 échoué,
+    17 ignorés** ;
+  - **E2E complet non lancé** : il tourne à la clôture (règle de l'Epic 35), au dernier commit de code, sur
+    `kesh_e2e_e361` recréée.
+- **Gates de la remédiation de la revue P1, au dernier commit de code `de7a79b17`** (série `gates-remed-36-1.sh`, en
+  séquence, le commit en première ligne de chaque journal ; bases de la voie 2 remises à neuf avant `test-fast`) :
+  frontend complet (`front-complet-r3.log`) — `check` 0 erreur, `lint-i18n-ownership` PASS, `test:unit` **3481 sur 3481
+  (235 fichiers)** (+9 : dix cas neufs, une variante retirée), `build` vert ; E2E **ciblé** des deux specs touchées
+  (`verts-e2e-cible-r3.log`) **8 sur 8** ; `test-fast --ci` voie 2 (`test-fast-ci-r3.log`) **5445 exécutés, 5445 passés,
+  13 ignorés**. **Non lancés, par la règle des remédiations** : `gate-ci` (dernier : `258a04559`, 5452 passés) et l'E2E
+  complet — tous deux à la clôture.
+  - *Série précédente, au commit `5963dd64c`* : `test-fast-ci.log` 5445/5445 (13 ignorés), `gate-ci.log` 5452 passés
+    (17 ignorés), `front-complet.log` : `check`, `lint`, `build` verts, **`test:unit` 1 rouge sur 3472** — la garde KF-043
+    (`e2e-selecteurs-traduits.test.ts`) sur les deux sélecteurs E2E `getByText` du message ; corrigé par le commit
+    `258a04559` (`data-testid`), d'où la seconde série.
 
 ### Completion Notes List
 
+- **Le correctif** vit dans `AccountAutocomplete.svelte` seul (aucun consommateur modifié, D3) : `handleEnter` suit la table
+  E0 à E5 (close par construction) ; `commitDraft()` extraite de `handleBlur`, appelée par le `blur` et par E5 ;
+  `highlightIndex` est un `$derived` réassignable sur `indexParDefaut(draft, filteredIds, valeurLue)` (forme recommandée par
+  D1, non le repli `$effect`) ; `filteredIds` est la chaîne des identifiants ; `valeurLue` un `$derived` de `value`
+  (C-36-1-8) ; focus, *Échap*, choix et `blur` remettent l'index à `-1` ; les flèches désignent depuis `-1` (bas : le premier,
+  haut : le dernier, et ouvre la liste). Message : `noMatchDraft` posé à E4 si `accounts.length > 0` *(`active.length > 0`
+  depuis la remédiation de la revue P1, B2 ; sinon E4-bis — annoté à la clôture, P2 ciblée R3)*, `showNoMatch` dérivé,
+  région `role="status"` toujours présente, `aria-describedby` seulement quand le message s'affiche.
+- **Hors fiche, constaté aux captures** : le × se centrait sur la racine du composant, qui grandit avec le message (et avec
+  le marqueur d'invalidité, préexistant) ; il descendait sur le message. Le champ et le × ont désormais leur propre
+  conteneur `relative` (commit `5963dd64c`, test AC1 x-bis, mutation M26 tuée). Phrase ajoutée à la note de version.
+- **Module partagé** `tests/e2e/helpers/theme.ts` (C-36-1-7) : la lecture du `@theme` extraite de
+  `button-destructive.test.ts`, dont les assertions ne changent pas.
+- **AC4 sans repli** : le dialogue de l'article se monte en jsdom (le champ `#form-revenue-account` y est trouvé et rempli).
+- **AC5** : rouges rendus lisibles par une attente « message ou conséquence du défaut » (C-36-1-9). Rien ne part vérifié par
+  la relecture `GET` (facture : compte et `version` ; article : compte).
+- **D4 (manuel) tenu** : aucun `.tex` modifié. **CHANGELOG non touché** (C-e360-11) ; la note de version est à jour.
+- **Décomptes** (de `6fcd654b6` à `258a04559`, recomptés par `grep -cE "^\s*(it|test)\("` aux deux bornes) : Vitest
+  `AccountAutocomplete.test.ts` 23 → 53 (+30 : AC1 a à x, h en six variantes, et x-bis), `InvoiceForm.test.ts` 36 → 39 (+3,
+  AC3), `products-page.test.ts` 3 → 4 (+1, AC4), `account-autocomplete-classes.test.ts` 0 → 7 (AC8) : **+41** ; E2E
+  `invoice-revenue-account.spec.ts` 1 → 3, `product-revenue-account.spec.ts` 4 → 5 : **+3**. Une clé i18n neuve, quatre
+  locales ; `sitesTotal` 3036 → 3037.
+- **Issues à ouvrir** (une par problème) : I1, I2, I3, I5, I6 (Dev Notes) ; et **I7** (constaté aux captures, préexistant) :
+  le bouton × chevauche la fin d'un libellé long (le champ n'a pas de marge droite pour lui, `01-…`, `03-…`, `07-…`, ligne 1
+  « Honoraires de cons× »).
+- **Commits** : `9991d51f7` (étape 0), `dabd9045a` (correctif et tests), `5963dd64c` (× sur le champ), `258a04559`
+  (`data-testid` du message — **dernier commit de code**), puis le commit de passage en `review` (fiche, registre, prompt
+  de revue, `sprint-status.yaml`).
+
 ### File List
+
+- `frontend/src/lib/features/journal-entries/AccountAutocomplete.svelte` (modifié)
+- `frontend/src/lib/features/journal-entries/account-autocomplete-classes.ts` (neuf)
+- `frontend/src/lib/features/journal-entries/account-autocomplete-classes.test.ts` (neuf)
+- `frontend/src/lib/features/journal-entries/AccountAutocomplete.test.ts` (modifié)
+- `frontend/src/lib/components/invoices/InvoiceForm.test.ts` (modifié)
+- `frontend/src/routes/(app)/products/products-page.test.ts` (modifié)
+- `frontend/src/lib/components/ui/button/button-destructive.test.ts` (modifié : lecture du thème importée)
+- `frontend/src/lib/shared/i18n-keys.test.ts` (modifié : `sitesTotal`)
+- `frontend/tests/e2e/helpers/theme.ts` (neuf), `frontend/tests/e2e/helpers/contrast.ts` (commentaire d'en-tête)
+- `frontend/tests/e2e/invoice-revenue-account.spec.ts`, `frontend/tests/e2e/product-revenue-account.spec.ts` (modifiés)
+- `crates/kesh-i18n/locales/{fr-CH,de-CH,en-CH,it-CH}/messages.ftl` (une clé chacun)
+- `_bmad-output/implementation-artifacts/36-1-entree-compte-produit.md`, `e36-choix-autonomes-36-1.md`,
+  `36-1-entree-compte-produit-review-prompt-p1.md` (neuf), `sprint-status.yaml`
 
 ## Change Log
 
@@ -724,3 +867,81 @@ découpage proposé — séparer un test de son correctif n'apporterait rien, et
     vrai* nuancés (exception préexistante pendant le chargement) ; défaut distinct, issue **I6** demandée.
   - **V4-6 (LOW), retenu** : région `role="status"` vide sans marge, la marge portée par le seul paragraphe du message ;
     conteneurs des sept consommateurs lus et cités en D2 ; AC1 x ; M24 ; capture d'une ligne d'écriture manuelle.
+- 2026-11-14 — **Validation P5 ciblée (Haiku) : 0/0/0/3** (rapport `kesh-gate-logs/e36-1/validation-p5-ciblee.md`).
+  **Validation terminée en cinq passes** — trend (CRITICAL/HIGH/MEDIUM/LOW) : P1 Sonnet 0/0/2/6 → P2 Opus 0/0/2/7 → P3 Sonnet
+  0/1/1/3 → P4 Opus 0/0/1/5 → P5 ciblée Haiku 0/0/0/3 ; close sur une passe sans rien au-dessus de LOW. Les trois LOW de la
+  P5 sont traités à l'étape 0 du développement (entrée suivante).
+- 2026-11-14 — **Étape 0 du développement** (Opus 5.5, par l'outil Edit ; commit `9991d51f7`) :
+  - **V5-1 (LOW), retenu** : AC8 n'exigeait pas que les jetons soient lus dans les constantes (ligne lue, fiche :
+    `- \`CLASSE_DESIGNEE\` ne contient aucun jeton absent du thème (\`accent\`, \`muted\` compris).`). Puce ajoutée à AC8 :
+    `CLASSE_DESIGNEE` contient `bg-primary` et `text-primary-foreground`, `CLASSE_SURVOL` `hover:bg-border`, contrastes calculés
+    sur les jetons extraits des constantes ; le test d'AC8 le fait (`seulJeton`, `jetonsDesClasses`), et M21, M25 y sont
+    jouées.
+  - **V5-2 (LOW), retenu** : « ≈ 7,3:1 » (ligne lue, D1 : `plein reste (sinon le texte blanc passerait sur un gris clair).
+    Désignation contre survol **≈ 7,3:1** : bleu plein contre`) corrigé en **≈ 7,1:1** dans D1 et au registre (C-36-1-6,
+    annoté) ; l'entrée V4-1 de ce Change Log, relevé daté, n'est pas réécrite. Valeur constatée par le calcul du test d'AC8
+    (même méthode, `contrast.ts`) au développement. *(Annoté à la remédiation de la revue P1, A4 : faux à sa date — le test
+    d'AC8 n'affiche ni n'asserte ce ratio, seulement ≥ 3:1 ; la valeur 7,06:1 est un calcul à la main, la même que celle de
+    la P5 et de la lentille A.)*
+  - **V5-3 (LOW), retenu** : registre, C-36-1-6 — la puce de la règle P3 portait « **Retenu** » (ligne lue :
+    `- **Retenu** : désignation \`bg-primary/10 ring-1 ring-inset ring-primary\``) ; étiquetée « **Retenu en P3, remplacé en
+    P4** ».
+  - Lignes de la tâche « Étape 0 » relues à `6fcd654b6` (code identique à `9d5a142df`) : `AccountAutocomplete.svelte:265-269`
+    (`} else if (e.key === 'Enter') {` / `if (open && filtered[highlightIndex]) {` / `e.preventDefault();` /
+    `handleSelect(filtered[highlightIndex]);`), `:283-284` (`function handleBlur() {` / `open = false;`), `:297-299`
+    (commentaire « Un envoi sans quitter le champ doit donc rendre le focus d'abord ») ; `InvoiceForm.svelte:697`
+    (`<form onsubmit={onSubmit} class="space-y-6">`), `:877`, `:881` `allowClear`, `:887`
+    `onSelect={(id) => (line.revenueAccountId = id)}` ; **écart d'une ligne** : le bouton par défaut est à `:933`
+    `<Button data-testid="create-invoice-button"` / `:934` `type="submit"` (la fiche disait `:932`/`:933` ; `:932` est
+    *Annuler*, `type="button"`, sans effet sur la soumission implicite) ; `products/+page.svelte:622` `<form`, `:624`
+    `onsubmit={(e) => {`, `:697-698`, `:703` `allowClear`, `:705`, `:732` `<Button type="submit" …>`. `git grep -n
+    "<AccountAutocomplete" -- frontend/src` : les sept sites de *Ce qui se lit au code*, inchangés ; contrôle des `<form>`
+    (`/usr/bin/grep -c '<form\|</form>'`) : `InvoiceForm.svelte` 2, `products/+page.svelte` 2, `JournalEntryForm.svelte`,
+    `VatPurchaseAssistant.svelte`, `ManualMatchModal.svelte`, `TransactionSplitModal.svelte` 0.
+- 2026-11-14 — **Développement** (`bmad-dev-story`, Opus 5.5 ; commits `dabd9045a`, `5963dd64c`, `258a04559`) : tests
+  écrits d'abord, rouges constatés (Vitest 32/121, E2E 3/8) ; correctif dans le composant (table E0 à E5, invariant de
+  désignation par `$derived` réassignable, message en région `role="status"`, classes du thème) ; clé
+  `common-account-no-match` ×4 ; `sitesTotal` 3037 ; garde AC8 ; mutations M1 à M26 jouées (M14 seule équivalente) ;
+  captures d'AC7. Trois constats en cours de route, chacun corrigé dans la story : (1) AC1 v rouge au premier passage —
+  `rerender` de testing-library invalidait la lecture de `value` (C-36-1-8, `valeurLue`) ; (2) aux captures, le × descendait
+  sur le message (conteneur `relative` propre au champ, test x-bis, M26) ; (3) au Vitest complet, la garde KF-043
+  (`e2e-selecteurs-traduits.test.ts`) refusait les deux sélecteurs E2E sur le libellé traduit du message (`data-testid=
+  "account-no-match"`, commit `258a04559` ; M24 rejouée sur le nouveau motif, tuée). Choix C-36-1-7 à 9 au registre.
+  **Écart à la consigne Edit** : aucun sur le code, les tests ou la fiche ; les scripts hors dépôt (`mut/mutations-36-1.py`,
+  qui écrit les mutations — usage permis —, `e2e-36-1.sh`, `captures-36-1.*`, `gates-review-36-1.sh`) sont écrits par Write ;
+  les journaux par redirection du shell. Gates et chiffres : Dev Agent Record.
+- 2026-11-14 — **Revue de code P1 : B 0/0/0/4, E 0/0/0/4, A 0/0/0/6 — close sans rien au-dessus de LOW** (rapports
+  `kesh-gate-logs/e36-1/review-p1-{B,E,A}.md`). **Remédiation de la revue P1** (Opus 5.5, par l'outil Edit ; décision de
+  l'orchestrateur, règle « Tarir la source » : les LOW corrigés dans la story, puis une passe ciblée sur ce seul correctif ;
+  commit de code `de7a79b17`). Prémisse de chaque finding relue au code avant remède :
+  - **E1, retenu** (filtre lu : `a.number.toLowerCase().startsWith(q) || a.name.toLowerCase().includes(q)` — un libellé
+    `3200 — Honoraires` ne correspond à rien) : un **brouillon** compare aussi le libellé canonique (C-36-1-10) ; AC1 y (trois
+    cas, dont le champ non touché qui garde sa liste vide) ; M27, M28.
+  - **E2, retenu** (`texte.trim() !== ''`, `draft.trim() === ''` lus ; aucun test d'espaces) : AC1 n-bis, o-bis ; M29, M30
+    (comparaison brute aux deux sites) tuées par les deux.
+  - **B3/E3, retenu** (`if (e.isComposing) return;` lu) : `|| e.keyCode === 229` ; AC1 j-bis ; M31.
+  - **B1, retenu** (`showNoMatch` sans condition de mode dégradé, `filtered` vide en `loadError` lu) : `!loadError &&` ;
+    AC1 z ; M32.
+  - **B2, retenu** (`} else if (accounts.length > 0) {` lu) : E4 si `active.length > 0`, sinon **E4-bis** — la résolution du
+    `blur`, sans message, l'*Entrée* suivante envoie ce que montre le champ (C-36-1-11) ; table de D1 amendée ; AC1 m-bis
+    (plan vide après chargement ; aucun compte du type attendu) ; M12 revue, M33.
+  - **B4, retenu** (`const FOND_LISTE = 'popover';` lu dans la garde) : `CLASSE_LISTE` exportée du module de classes, posée
+    par le composant et lue par la garde ; un cas lit le source du composant ; M34, M35.
+  - **E4, retenu** : AC1 h, variante « au choix d'un compte » **retirée** (le message tombe à la frappe de `30`, avant le
+    clic ; pendant le message, `filtered` est vide et aucune option n'est cliquable) ; dit à AC1 h.
+  - **A6, retenu** (`38000 + Math.floor(Math.random() * 450) * 2` lu, appelé par les deux tests) : plages 38000-38499 et
+    38500-38999, une par test.
+  - **A1, retenu** : note de version réécrite (Entrée sans effet tant que le message s'affiche ; une *Entrée* de plus après
+    la réouverture ; « une fois le compte choisi, une nouvelle Entrée enregistre » ; la flèche bas sur un champ rempli non
+    touché ne désigne rien — la phrase de la lentille B ; le libellé retapé).
+  - **A2, retenu** : en-tête de la fiche à jour (cinq passes, C-36-1-1 à 11, revue P1, passe P2 à venir).
+  - **A3, retenu** : base de chaque campagne écrite au Dev Agent Record, « arbre propre » corrigé ; **toute la campagne
+    rejouée sur `de7a79b17`** (motifs revus et contrôlés uniques ; M9 avait été refusée par le garde du banc — indentation
+    changée à `5963dd64c` —, motif corrigé, rejouée) : toutes tuées sauf M14 seule, équivalente.
+  - **A4, retenu** : 7,1:1 dit « calculé à la main » (D1 ; entrée de l'étape 0 annotée) ; `sitesTotal` 3037 relevé par la
+    garde remise à 3036 (`mut/R-sitesTotal.log`, `expected 3037 to be 3036`).
+  - **A5, retenu** : issues ouvertes citées aux Dev Notes (I1 #1162, I2 #1163, I3 #1164, I5 #1166, I6 #1170, I7 #1184).
+  - Symptômes grepés : `accounts.length > 0` ne reste au composant nulle part (`/usr/bin/grep -nF` vide) ; `bg-popover` n'est
+    plus que dans `CLASSE_LISTE` ; « 7,3 » ne reste que dans des entrées datées. Gates : Dev Agent Record. Prompt de la passe
+    ciblée P2 : `36-1-entree-compte-produit-review-prompt-p2-ciblee.md`. Écart : un dossier vide `mut/r2/` créé par erreur
+    pendant la campagne, non utilisé (aucun `rm`).

@@ -90,3 +90,71 @@ Ces choix ne sont pas couverts par C-e360 ; ils reprennent l'étape 0 de la 36-1
   `--color-accent`/`--color-muted` (portée de toute l'application) ; laisser la désignation invisible avec une issue (le
   principe (ii) de D1 reposerait sur un état que l'écran ne montre pas).
 - **Réversible** : oui, deux classes.
+
+### C-36-1-7 — La lecture du `@theme` extraite dans un module partagé (développement)
+
+- **Contexte** : la garde d'AC8 doit lire le `@theme` d'`app.css` sans ses commentaires, exactement comme la garde de la
+  28-1 (`button-destructive.test.ts`, fonctions locales `blocTheme`, `jeton`, `declare`, `motEntier`). Les recopier
+  ferait deux copies d'une même lecture (règle DRY du `CLAUDE.md`).
+- **Retenu** : `frontend/tests/e2e/helpers/theme.ts`, à côté de `contrast.ts` (même nature : fonctions pures servant des
+  gardes Vitest) — `blocTheme`, `jetonDans`, `declareDans`, `motEntier`, et `jetonsDesClasses` (neuf : jetons de couleur
+  d'une liste de classes). `button-destructive.test.ts` les importe sans changer ses assertions (ses `jeton`/`declare`
+  locaux deviennent des enveloppes d'une ligne) ; la phrase d'en-tête de `contrast.ts` nomme la seconde garde.
+- **Écartées** : recopier les fonctions (deux copies à garder d'accord) ; les placer sous `src/lib/shared/` (code de
+  test dans l'arbre de production).
+- **Réversible** : oui.
+
+### C-36-1-8 — L'index dépend de `value` par un `$derived` primitif (développement)
+
+- **Contexte** : premier passage vert d'AC1 hors le cas v : `rerender({ accounts: [...accounts] })` effaçait la
+  désignation faite aux flèches. Cause lue : `@testing-library/svelte-core` (`props.svelte.js`) remplace tout l'objet de
+  props à chaque `rerender`, si bien que la lecture de `value` est invalidée même quand sa valeur ne change pas. Un parent
+  réel passe chaque prop par son propre accesseur, mais rien n'interdit à un parent de ré-évaluer ses props.
+- **Retenu** : `const valeurLue = $derived(value)` ; l'index lit `valeurLue`, qui ne propage qu'un changement réel (égalité
+  d'une valeur primitive). Le principe de D1 (« la chaîne des identifiants, non le tableau ») étendu à `value`.
+- **Écartée** : réécrire le cas v sans `rerender` (le test cesserait de garder contre M23 tel que la fiche le décrit).
+- **Réversible** : oui, une ligne.
+
+### C-36-1-9 — Rouges E2E lisibles : attendre l'une des deux issues, puis asserter (développement)
+
+- **Contexte** : AC5 a et b « attendent le message » ; sur le code d'avant correctif, cette attente expirait sans dire
+  que le formulaire était parti.
+- **Retenu** : attendre le message **ou** la conséquence du défaut (écran de détail de la facture ; plus aucun
+  `role="dialog"` pour l'article) par `locator.or(…)`, puis asserter l'URL ou le dialogue, puis le message. Rouges
+  constatés : URL du détail atteinte (a), dialogue refermé (b) ; a-bis : URL restée `/edit`. Aussi, a-bis ne vérifie pas
+  l'absence de surbrillance dans le navigateur (portée par AC1 l) : la vérifier avant *Entrée* faisait rougir le test sur
+  la surbrillance et non sur l'envoi.
+- **Réversible** : oui.
+
+### C-36-1-10 — Un brouillon qui reprend le libellé affiché désigne son compte (remédiation de la revue P1, E1)
+
+- **Contexte** : revue P1, E1 (LOW) — le filtre ne comparait que le numéro (`startsWith`) et le nom (`includes`) ; un
+  brouillon `3200 — Honoraires` (libellé retapé, ou corrigé d'une lettre) ou `3200 — Hon` ne correspondait à rien, et
+  *Entrée* affichait « aucun compte ne correspond » sous un champ portant le libellé exact d'un compte. Prémisse vérifiée au
+  code (`AccountAutocomplete.svelte`, filtre : `a.number.toLowerCase().startsWith(q) || a.name.toLowerCase().includes(q)`).
+- **Retenu** : le filtre accepte aussi `labelOf(a).toLowerCase().startsWith(q)`, **seulement pour un brouillon**
+  (`draft !== null`). Le compte est alors désigné par la saisie et *Entrée* le choisit (E1), comme pour un numéro tapé ; une
+  nouvelle *Entrée* envoie. Sans brouillon, `query` est le libellé affiché : la condition laisse vide la liste d'un champ
+  non touché, comme avant (sans elle, le focus d'un champ rempli ouvrirait une liste d'un seul compte, sur les sept
+  consommateurs). Tests AC1 y (trois cas) ; mutations M27 (correspondance au libellé retirée) et M28 (condition
+  `draft !== null` retirée).
+- **Écartée** : traiter `draft === displayLabel` comme l'absence de brouillon (E2, envoi direct) — ne couvre ni un début de
+  libellé (`3200 — Hon`) ni le libellé d'un autre compte, qui garderaient un faux message.
+- **Réversible** : oui, une condition.
+
+### C-36-1-11 — Aucun compte proposable : *Entrée* résout le brouillon comme le `blur` (remédiation de la revue P1, B2)
+
+- **Contexte** : revue P1, B2 (LOW) — E4 posait le message si `accounts.length > 0` et, sinon, retenait le brouillon sans
+  rien dire. Un plan comptable vide après chargement (ou une liste sans aucun compte du type attendu) laissait *Entrée*
+  bloquée en silence ; une liste non vide sans compte proposable affichait « choisissez un compte dans la liste », faux.
+  Le composant ne distingue pas « en cours de chargement » de « chargé, vide » (`accounts = []` dans les deux cas).
+- **Retenu** : E4 (message) seulement si `active.length > 0` ; sinon **E4-bis** : `commitDraft()` (la règle du `blur` :
+  strict → brouillon jeté, valeur réaffichée ; `allowClear` → texte libre jeté), liste fermée, index `-1`, aucun message.
+  *Entrée* reste empêchée cette fois — le champ montrait un texte que la valeur contredit — et l'*Entrée* suivante envoie ce
+  que le champ montre *(sauf pendant le chargement si une valeur est posée : le champ paraît vide alors que la valeur
+  persistée part — exception préexistante d'E2, #1170 ; ajouté à la clôture, passe ciblée P2, R1)*. Pendant le chargement,
+  le texte tapé est jeté comme il l'est déjà au `blur`. Tests AC1 m, m-bis (deux
+  cas) ; mutations M12 (message même sans compte proposable), M33 (`commitDraft()` retiré d'E4-bis).
+- **Écartées** : laisser l'événement suivre son cours (l'ancien compte partirait pendant que le champ montre la saisie :
+  #1095 lui-même) ; un message propre au plan vide (clé i18n de plus, indiscernable du chargement sans prop nouvelle).
+- **Réversible** : oui, une branche.

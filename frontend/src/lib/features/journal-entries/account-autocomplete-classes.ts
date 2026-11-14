@@ -12,6 +12,14 @@
  * calculés par la garde AC8).
  */
 
+/**
+ * La liste d'options (`<ul role="listbox">`). Son fond (`bg-popover`) est celui
+ * contre lequel la garde AC8 mesure la désignation : il se lit ICI, non dans un
+ * nom écrit dans le test (revue P1, B4).
+ */
+export const CLASSE_LISTE =
+	'absolute z-20 mt-1 max-h-60 w-full overflow-auto rounded-md border border-border bg-popover shadow-md';
+
 /** Option désignée au clavier — la seule qu'*Entrée* choisit. */
 export const CLASSE_DESIGNEE = 'bg-primary text-primary-foreground';
 

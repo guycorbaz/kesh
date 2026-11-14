@@ -442,7 +442,7 @@ test('(#1095) Entrée sur un texte sans correspondance n’enregistre pas l’an
 	await field.press('Enter');
 	// L'une des deux issues — le message (correctif) ou le dialogue refermé (le
 	// défaut : le formulaire est parti) —, puis l'assertion qui les distingue.
-	const message = page.getByText('Aucun compte ne correspond à cette saisie');
+	const message = page.getByTestId('account-no-match');
 	await expect(message.or(page.locator('body:not(:has([role="dialog"]))'))).toBeVisible();
 	await expect(page.getByRole('dialog')).toBeVisible();
 	await expect(message).toBeVisible();

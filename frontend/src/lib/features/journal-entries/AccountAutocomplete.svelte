@@ -6,7 +6,7 @@
 	import { i18nMsg } from '$lib/shared/utils/i18n.svelte';
 	import type { AccountResponse, AccountType } from '$lib/features/accounts/accounts.types';
 	import { isAccountUnusable } from '$lib/features/accounts/account-validity';
-	import { CLASSE_DESIGNEE, CLASSE_SURVOL } from './account-autocomplete-classes';
+	import { CLASSE_DESIGNEE, CLASSE_LISTE, CLASSE_SURVOL } from './account-autocomplete-classes';
 
 	interface Props {
 		accounts: AccountResponse[];
@@ -236,7 +236,13 @@
 			.filter(
 				(a) =>
 					a.number.toLowerCase().startsWith(q) ||
-					a.name.toLowerCase().includes(q)
+					a.name.toLowerCase().includes(q) ||
+					// Story 36-1 (revue P1, E1) : un BROUILLON qui reprend le début du
+					// libellé affiché (« 3200 — Honoraires » retapé, « 3200 — Hon »)
+					// désigne ce compte, au lieu d'un faux « aucun compte ne
+					// correspond ». Sans brouillon, `query` est le libellé affiché :
+					// le champ non touché garde sa liste vide (C-36-1-10).
+					(draft !== null && labelOf(a).toLowerCase().startsWith(q))
 			)
 			.slice(0, 20);
 	});
@@ -290,7 +296,9 @@
 	 * non vide.
 	 */
 	const showNoMatch = $derived(
-		noMatchDraft !== null && draft === noMatchDraft && filtered.length === 0
+		// `!loadError` (revue P1, B1) : en mode dégradé il n'y a plus de liste où
+		// « choisir un compte », et `filtered` y est vide par construction.
+		!loadError && noMatchDraft !== null && draft === noMatchDraft && filtered.length === 0
 	);
 
 	function handleInput(e: Event) {
@@ -358,13 +366,16 @@
 	 * se choisit (invariant de `highlightIndex`).
 	 *
 	 * Close par construction : E0, E0-bis, E1, E2 dans cet ordre ; tout ce qui
-	 * reste a un brouillon et est empêché, puis réparti par E3, E4, E5 sur deux
-	 * seuls critères — brouillon blanc ou non, `filtered` vide ou non.
+	 * reste a un brouillon et est empêché, puis réparti par E3, E4, E4-bis, E5 —
+	 * brouillon blanc ou non, `filtered` vide ou non, et, pour une liste vide,
+	 * `active` (les comptes proposables) vide ou non.
 	 */
 	function handleEnter(e: KeyboardEvent) {
 		// E0 — composition IME : cette Entrée valide le mot composé, pas le champ.
+		// `keyCode === 229` (revue P1, B3/E3) : sous WebKit, l'Entrée qui clôt la
+		// composition arrive après `compositionend`, `isComposing` déjà faux.
 		// (Le mode dégradé, l'autre cas E0, est écarté par `handleKeydown`.)
-		if (e.isComposing) return;
+		if (e.isComposing || e.keyCode === 229) return;
 		// E0-bis — touche maintenue : un seul geste ; les répétitions n'envoient
 		// pas un formulaire dont l'utilisateur n'a pas vu l'état.
 		if (e.repeat) {
@@ -394,10 +405,22 @@
 			// rouvre, rien n'est choisi (choix montré avant d'être fait, 35-7 D2).
 			open = true;
 			highlightIndex = 0;
-		} else if (accounts.length > 0) {
-			// E4 — aucun compte ne correspond : le brouillon reste, le message le
-			// dit. Pendant le chargement des comptes, sans message.
+		} else if (active.length > 0) {
+			// E4 — des comptes sont proposables, aucun ne correspond : le brouillon
+			// reste, le message le dit.
 			noMatchDraft = draft;
+		} else {
+			// E4-bis (revue P1, B2 ; C-36-1-11) — AUCUN compte proposable : liste
+			// en cours de chargement, plan comptable vide, ou aucun compte du type
+			// attendu. « Choisissez un compte dans la liste » serait faux, et garder
+			// le brouillon bloquerait Entrée sans rien dire : le brouillon est
+			// résolu comme au `blur`, le champ réaffiche la valeur, et l'Entrée
+			// suivante envoie ce qu'il montre — sauf pendant le chargement si une
+			// valeur est posée : le champ paraît vide alors que la valeur persistée
+			// part (exception préexistante d'E2, #1170).
+			commitDraft();
+			open = false;
+			highlightIndex = -1;
 		}
 	}
 
@@ -457,70 +480,79 @@
 </script>
 
 <div class="relative">
-	<Input
-		{id}
-		type="text"
-		value={query}
-		oninput={handleInput}
-		onkeydown={handleKeydown}
-		onfocus={() => {
-			open = true;
-			// Ouvrir n'est pas désigner (#1165).
-			highlightIndex = -1;
-		}}
-		onblur={handleBlur}
-		{disabled}
-		placeholder={loadError
-			? i18nMsg('account-autocomplete-unavailable', 'Autocomplétion indisponible — saisir l\'ID du compte')
-			: (placeholder ?? i18nMsg('journal-entry-form-col-account', 'Compte'))}
-		aria-label={ariaLabel ?? i18nMsg('journal-entry-form-col-account', 'Compte')}
-		aria-autocomplete="list"
-		aria-expanded={open}
-		aria-invalid={isInvalid ? 'true' : undefined}
-		aria-describedby={[
-			describedBy,
-			isInvalid ? invalidMsgId : undefined,
-			showNoMatch ? noMatchMsgId : undefined
-		]
-			.filter(Boolean)
-			.join(' ') || undefined}
-	/>
-
-	{#if allowClear && !disabled && (value !== null || query !== '')}
-		<!--
-			AC1 : le bouton appelle `onSelect(null)` et NE touche PAS `query` —
-			c'est le `$effect` (`value === null` → `query = ''`) qui en est la
-			source unique. Une double écriture divergerait si le parent refusait
-			la mise à jour.
-
-			`onmousedown` + `preventDefault` empêche la perte de focus (même idiome
-			que les items du dropdown), ce qui évite la course avec `handleBlur` ;
-			`onclick` porte l'action pour que le clavier fonctionne aussi.
-		-->
-		<button
-			type="button"
-			class="absolute right-2 top-1/2 -translate-y-1/2 rounded p-0.5 text-muted-foreground hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring"
-			aria-label={i18nMsg('common-account-clear', 'Effacer le compte sélectionné')}
-			onmousedown={(e) => e.preventDefault()}
-			onclick={() => {
-				// Jeter le brouillon suffit : l'affichage retombe sur `displayLabel`,
-				// qui vaut `''` quand la valeur est nulle. Le bouton n'écrit donc
-				// jamais le texte canonique — il n'y en a plus qu'un, dérivé.
-				//
-				// ASYMÉTRIE VOULUE avec le `blur` : celui-ci exige en plus que le
-				// compte soit RÉSOLUBLE (`selected !== undefined`), le bouton non.
-				// Un champ vide au `blur` est ambigu — il peut l'être parce que la
-				// liste des comptes n'est pas arrivée. Un clic sur « Effacer » ne
-				// l'est pas : c'est un geste explicite, il doit aboutir même sur un
-				// compte que l'on ne sait pas nommer.
-				// (Asymétrie relevée non documentée en passe 3 de revue.)
-				draft = null;
-				if (value !== null) onSelect(null);
+	<!--
+		Story 36-1 : le champ et son bouton × ont leur propre conteneur
+		`relative`. Le × se centre (`top-1/2`) sur CE conteneur, de la hauteur du
+		seul champ ; centré sur la racine, il descendait sur le message affiché
+		sous le champ (« aucun compte ne correspond », ou le marqueur
+		d'invalidité) — constaté aux captures de la story.
+	-->
+	<div class="relative">
+		<Input
+			{id}
+			type="text"
+			value={query}
+			oninput={handleInput}
+			onkeydown={handleKeydown}
+			onfocus={() => {
+				open = true;
+				// Ouvrir n'est pas désigner (#1165).
+				highlightIndex = -1;
 			}}
-		>
-			<span aria-hidden="true">×</span>
-		</button>
-	{/if}
+			onblur={handleBlur}
+			{disabled}
+			placeholder={loadError
+				? i18nMsg('account-autocomplete-unavailable', 'Autocomplétion indisponible — saisir l\'ID du compte')
+				: (placeholder ?? i18nMsg('journal-entry-form-col-account', 'Compte'))}
+			aria-label={ariaLabel ?? i18nMsg('journal-entry-form-col-account', 'Compte')}
+			aria-autocomplete="list"
+			aria-expanded={open}
+			aria-invalid={isInvalid ? 'true' : undefined}
+			aria-describedby={[
+				describedBy,
+				isInvalid ? invalidMsgId : undefined,
+				showNoMatch ? noMatchMsgId : undefined
+			]
+				.filter(Boolean)
+				.join(' ') || undefined}
+		/>
+
+		{#if allowClear && !disabled && (value !== null || query !== '')}
+			<!--
+				AC1 : le bouton appelle `onSelect(null)` et NE touche PAS `query` —
+				c'est le `$effect` (`value === null` → `query = ''`) qui en est la
+				source unique. Une double écriture divergerait si le parent refusait
+				la mise à jour.
+
+				`onmousedown` + `preventDefault` empêche la perte de focus (même idiome
+				que les items du dropdown), ce qui évite la course avec `handleBlur` ;
+				`onclick` porte l'action pour que le clavier fonctionne aussi.
+			-->
+			<button
+				type="button"
+				class="absolute right-2 top-1/2 -translate-y-1/2 rounded p-0.5 text-muted-foreground hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring"
+				aria-label={i18nMsg('common-account-clear', 'Effacer le compte sélectionné')}
+				onmousedown={(e) => e.preventDefault()}
+				onclick={() => {
+					// Jeter le brouillon suffit : l'affichage retombe sur `displayLabel`,
+					// qui vaut `''` quand la valeur est nulle. Le bouton n'écrit donc
+					// jamais le texte canonique — il n'y en a plus qu'un, dérivé.
+					//
+					// ASYMÉTRIE VOULUE avec le `blur` : celui-ci exige en plus que le
+					// compte soit RÉSOLUBLE (`selected !== undefined`), le bouton non.
+					// Un champ vide au `blur` est ambigu — il peut l'être parce que la
+					// liste des comptes n'est pas arrivée. Un clic sur « Effacer » ne
+					// l'est pas : c'est un geste explicite, il doit aboutir même sur un
+					// compte que l'on ne sait pas nommer.
+					// (Asymétrie relevée non documentée en passe 3 de revue.)
+					draft = null;
+					if (value !== null) onSelect(null);
+				}}
+			>
+				<span aria-hidden="true">×</span>
+			</button>
+		{/if}
+	</div>
 
 	{#if isInvalid}
 		<!--
@@ -541,7 +573,8 @@
 	-->
 	<div id={noMatchMsgId} role="status" class="text-xs text-destructive">
 		{#if showNoMatch}
-			<p class="mt-1">
+			<!-- `data-testid` : l'E2E ne vise pas un libellé traduit (garde KF-043). -->
+			<p class="mt-1" data-testid="account-no-match">
 				{i18nMsg(
 					'common-account-no-match',
 					'Aucun compte ne correspond à cette saisie : choisissez un compte dans la liste.'
@@ -552,7 +585,7 @@
 
 	{#if open && !loadError && filtered.length > 0}
 		<ul
-			class="absolute z-20 mt-1 max-h-60 w-full overflow-auto rounded-md border border-border bg-popover shadow-md"
+			class={CLASSE_LISTE}
 			role="listbox"
 		>
 			{#each filtered as acc, i (acc.id)}

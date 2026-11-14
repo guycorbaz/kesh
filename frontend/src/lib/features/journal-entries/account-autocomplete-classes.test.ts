@@ -17,7 +17,7 @@
 // @vitest-environment node
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
-import { CLASSE_DESIGNEE, CLASSE_SURVOL } from './account-autocomplete-classes';
+import { CLASSE_DESIGNEE, CLASSE_LISTE, CLASSE_SURVOL } from './account-autocomplete-classes';
 import { contrastRatio } from '../../../../tests/e2e/helpers/contrast';
 import {
 	blocTheme,
@@ -45,8 +45,20 @@ function seulJeton(classes: string, utilite: string): string {
 	return trouves[0].jeton;
 }
 
-/** Fond de la liste d'options (`AccountAutocomplete.svelte`, `<ul … bg-popover>`). */
-const FOND_LISTE = 'popover';
+/**
+ * Fond de la liste d'options, LU dans `CLASSE_LISTE` — la constante que le
+ * composant pose sur son `<ul role="listbox">` (revue P1, B4 : il était écrit
+ * ici en dur, et un autre fond dans le composant ne rougissait rien).
+ */
+const FOND_LISTE = seulJeton(CLASSE_LISTE, 'bg');
+
+describe('AC8 — le composant pose CLASSE_LISTE sur sa liste', () => {
+	it('le `<ul role="listbox">` du composant lit la constante, sans fond écrit en dur', () => {
+		const source = readFileSync('src/lib/features/journal-entries/AccountAutocomplete.svelte', 'utf8');
+		expect(source).toContain('class={CLASSE_LISTE}');
+		expect(source).not.toMatch(/\bbg-popover\b/);
+	});
+});
 
 describe('AC8 — les constantes nomment les classes attendues (non vides)', () => {
 	it('CLASSE_DESIGNEE : fond primary plein, texte primary-foreground', () => {
