@@ -1,6 +1,6 @@
 # Story 36-3 : l'écriture manuelle ne lit plus « 1.234 » comme 1,234 franc (#1051)
 
-Status: review
+Status: done
 
 *Fiche rédigée le 2026-11-14 par l'agent de rédaction des fiches de l'Epic 36 (Opus 5.5), worktree `kesh-36-3`, branche
 `story/36-3-ecriture-montant-ambigu`, par le workflow `bmad-create-story`, prompt `kesh-gate-logs/prompts/e36-fiche.md`.
@@ -561,3 +561,24 @@ perte du focus et 800 ms.
   `lint-i18n-ownership` PASS (`front-lint-r1.log`) ; `npm run test:unit` **3520 passés, 235 fichiers**
   (`front-test-unit-r1.log`) ; `npm run build` vert (`front-build-r1.log`). **Non lancés** : `gate-ci` et E2E complet
   (clôture). Prompt de la passe ciblée P2 : `36-3-ecriture-montant-ambigu-review-prompt-p2-ciblee.md`.
+- 2026-11-14 — **Passe ciblée P2** (Haiku, une lentille, diff `6aca96626..b5d4ab689`,
+  `kesh-gate-logs/e36-3/review-p2-ciblee.md`) : 0/0/0/2.
+  - **P2-1** — les trois verrous de l'envoi (`JournalEntryForm.svelte:217`, `:228`, `:314`) sont redondants : la garde
+    `payloadLines` de `:228` est inatteignable depuis l'interface, et M13 ne prouve que la conjonction des trois.
+    Aucun changement de code ; défense en profondeur assumée, écrite au registre (C-36-3-13).
+  - **P2-2** — deux titres de test indiscernables (U+00A0, U+202F, `balance.test.ts:245-246`) : les caractères voisins
+    passent dans un `it.each` nommé, construits par code point (`d22ec1ff4`, test seul, aucune ligne de production).
+    ⚠️ **Écart à la consigne Edit** : l'outil ne parvenait pas à apparier les caractères spéciaux bruts du bloc (il
+    convertit lui-même les séquences `\uXXXX`) ; bloc remplacé par un script Python à contenu vérifié par assertions
+    (lignes 242-258). M12 rejouée sur les tests renommés : tuée (`mut/resume.log`, `HEAD d22ec1ff4`).
+- 2026-11-14 — **Clôture.** Trend de la revue de code : **P1** (trois lentilles) B 0/0/0/3, E 0/0/0/3 + 1 INFO,
+  A 0/0/0/5 → remédiés dans la story (`b5d4ab689`) → **P2 ciblée** (Haiku) 0/0/0/2 → P2-2 corrigée (test seul), P2-1
+  écrite au registre. Gates de clôture au **dernier commit de code `d22ec1ff4`**, commit en première ligne de chaque
+  journal :
+  - `scripts/gate-ci.sh kesh_ci_e363` (voie 1) : **5452 passés, 0 échoué, 17 ignorés** (`gate-ci-cloture.log`) ;
+  - **E2E complet** sur `kesh_e2e_e363` recréée à neuf (voie 2, port 3363, frontend reconstruit à `d22ec1ff4`,
+    `front-build-cloture.log`) : **410 passés, 7 échecs, 18 ignorés**, 17,5 min (`e2e-cloture.log`) ; port libre avant
+    et après. Les sept échecs, nommés contre `docs/testing.md` § « Les échecs attendus », sont ceux de la KF-029 (#97) :
+    `mode-expert.spec.ts:26`, `:41` ; `onboarding-path-b.spec.ts:65`, `:92` ; `onboarding.spec.ts:57`, `:77`, `:150`.
+    Aucun échec hors liste.
+  **Status → done.**

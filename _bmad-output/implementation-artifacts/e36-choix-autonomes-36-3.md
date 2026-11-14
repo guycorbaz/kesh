@@ -120,3 +120,18 @@ réversibilité.
   `null`), testée ; clé neuve `vat-purchase-ht-below-centime`, quatre locales, à côté de `vat-purchase-ht`.
 - **Écartée** : afficher « Montant illisible » pour « 0.004 » — message faux.
 - **Réversible** : oui.
+
+## Constat de la passe ciblée P2 (2026-11-14)
+
+### C-36-3-13 — Les trois verrous de l'envoi restent ; M13 n'en prouve que la conjonction (P2-1)
+
+- **Contexte** : `JournalEntryForm.svelte` porte trois verrous : `if (!canSubmit) return;` (`:217`), la garde
+  `if (payloadLines.some((l) => l.debit === null || l.credit === null)) return;` (`:228`) et `if (canSubmit) handleSubmit();`
+  du raccourci (`:314`). Un montant `null` rend `hasInvalidAmount` vrai, donc `canSubmit` faux : la garde de `:228` est
+  **inatteignable** depuis l'interface, et `:217` et `:314` se couvrent l'un l'autre. La mutation M13 les retire ensemble
+  et est tuée : elle prouve que leur **conjonction** est testée, non chacun d'eux.
+- **Retenu** : aucun changement de code ; la garde de `:228` est une défense en profondeur assumée (elle n'envoie rien
+  plutôt que de deviner un montant si `canSubmit` venait à changer).
+- **Écartées** : retirer la garde (perd la défense) ; un test de chaque verrou isolé (inatteignable par l'interface pour
+  `:228`, et `:217`/`:314` redondants par construction).
+- **Réversible** : oui.
