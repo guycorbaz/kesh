@@ -1,6 +1,6 @@
 # Story 36-2 : *Éclater* — le bouton s'active quand les lignes sont complètes et équilibrées, ou l'écran dit ce qui manque (#1150)
 
-Status: ready-for-dev
+Status: review
 
 *Fiche rédigée le 2026-11-14 par l'agent de rédaction des fiches de l'Epic 36 (Opus 5.5), worktree `kesh-36-2`, branche
 `story/36-2-eclater-grise`, par le workflow `bmad-create-story`. Release **0.17.8** (phase 1). **Aucune migration** (C-e360-3),
@@ -479,11 +479,13 @@ n'est pas un test comme un autre*).
 
 ## Tâches
 
-- [ ] Étape 0 : relire à la tête les lignes citées (`TransactionSplitModal.svelte:78`, `:162-214`, `:234-236`, `:263`,
+- [x] Étape 0 : relire à la tête les lignes citées (`TransactionSplitModal.svelte:78`, `:162-214`, `:234-236`, `:263`,
       `:303-317`, `:398-430`, `:452` ; `AccountAutocomplete.svelte:411-442` ; `messages.ftl` fr-CH `:1620-1621`) et citer au
       Change Log ; relancer les deux inventaires de *Dev Notes* et copier leur sortie.
-- [ ] Bases de la voie 2 (`kesh_36_2`, `kesh_e2e_36_2`, sur `127.0.0.1:3307`) ; `node_modules` par `cp -al`.
-- [ ] **R0-a** : écrire R0, build du frontend, backend de la tête sur `kesh_e2e_36_2`, `--grep R0` ; journal `r0-tete.log`,
+- [x] Bases de la voie 2 (`kesh_36_2`, `kesh_e2e_36_2`, sur `127.0.0.1:3307`) ; `node_modules` par `cp -al`. *(Noms
+      donnés par le prompt de développement : `kesh_e362`, `kesh_e2e_e362` ; R0-b sur `kesh_r0b_e362`, conteneur
+      `kesh-e362-r0b-1`, port 3363 ; backend du worktree sur 3362.)*
+- [x] **R0-a** : écrire R0, build du frontend, backend de la tête sur `kesh_e2e_36_2`, `--grep R0` ; journal `r0-tete.log`,
       captures. **R0-b** : même spec contre `gcorbaz/kesh:0.17.6` sur une base `kesh_e2e_36_2_v0176` neuve de la voie 2
       (créée par `docker exec kesh-mariadb-dev2 …`, sans migration ni seed : l'image migre au démarrage, et le runner
       sème par `seedTestState`), sous le verrou de la voie ; journal `r0-0176.log`. Recette, sur le précédent du job
@@ -522,38 +524,40 @@ n'est pas un test comme un autre*).
       échec de fixture se dit au Record et s'en tient à la lecture de `v0.17.6`. Verdicts H1, H2, H3, H5 au Record ; appliquer
       la première ligne qui s'applique de chacune des tables A et B de *Si R0 rend…* ; **arrêt** dans les deux cas A1, A2.
       Seuil de #1181 mesuré par R0 (h), écrit au Record.
-- [ ] Refonder la branche sur la lignée A avec la 36-1 **et** la 36-3 fusionnées (`readJournalAmount` présent dans
+- [x] *(Sans objet : la branche partait de `c3f722ca0`, 36-1 et 36-3 fusionnées.)* Refonder la branche sur la lignée A avec la 36-1 **et** la 36-3 fusionnées (`readJournalAmount` présent dans
       `balance.ts`) ; relire `readJournalAmount` et ses `kind` à la tête refondée, ligne citée au Change Log.
-- [ ] Vitest V-a à V-e et test de catalogue ; rouges journalisés ; commit.
-- [ ] Correctifs : D2 et D5 (champ texte, `readJournalAmount`, charge en chaîne), D3 (clés ×4, replis, arguments ; ancienne
+- [x] Vitest V-a à V-e et test de catalogue ; rouges journalisés ; commit.
+- [x] Correctifs : D2 et D5 (champ texte, `readJournalAmount`, charge en chaîne), D3 (clés ×4, replis, arguments ; ancienne
       clé intacte ; grep des consommateurs de chaque clé touchée), D4 (`testid`), D6 (largeur) ; passage de R0 à
       `split-client-error`.
-- [ ] `sitesTotal` de `frontend/src/lib/shared/i18n-keys.test.ts` recompté à la source (C-e350-18) ; listes de
+- [x] `sitesTotal` de `frontend/src/lib/shared/i18n-keys.test.ts` recompté à la source (C-e350-18) ; listes de
       `i18n-entrees-a-variables.test.ts` complétées si la garde l'exige.
-- [ ] Verts ; mutations M1 à M9 (M1-bis, M1-ter, M2-bis, M2-ter, M3-bis, M8-bis comprises) ; captures (AC10) ; manuel
+- [x] Verts ; mutations M1 à M9 (M1-bis, M1-ter, M2-bis, M2-ter, M3-bis, M8-bis comprises) ; captures (AC10) ; manuel
       (AC9).
-- [ ] Gates selon `e35-dev-commun.md` § *Quels gates, quand*, voie 2 : en cours, gate ciblé — Vitest des fichiers touchés,
+- [ ] *(En cours et passage en `review` faits ; clôture à venir : `gate-ci` et E2E complet.)* Gates selon `e35-dev-commun.md` § *Quels gates, quand*, voie 2 : en cours, gate ciblé — Vitest des fichiers touchés,
       `npm run check`, `npm run lint-i18n-ownership`, `cargo nextest run -E 'binary(...)'` du crate `kesh-i18n` (les `.ftl` y
       sont lus), E2E ciblé `reconciliation-split.spec.ts` ; **au passage en `review`** : bases remises à neuf,
       `scripts/test-fast.sh --ci` (voie 2), `scripts/gate-ci.sh kesh_ci_36_2` (voie 1), frontend complet ; pas d'E2E
       complet ; **à la clôture** : `gate-ci` et E2E complet sur `kesh_e2e_36_2` recréée, échecs nommés contre
       `docs/testing.md` § *Les échecs attendus*.
-- [ ] Prompt de la revue P1 à côté de la fiche (trois lentilles ; manuel et PDF nommés ; captures nommées ; axes exercés et
+- [x] Prompt de la revue P1 à côté de la fiche (trois lentilles ; manuel et PDF nommés ; captures nommées ; axes exercés et
       non exercés).
 
 ## Note de version
 
-*Corrigé* (C-e360-11 ; l'orchestrateur l'assemble au CHANGELOG). Les phrases entre crochets dépendent de R0 (*Si R0
-rend…*) : le développement garde celles que R0 confirme et retire les autres.
+*Corrigé* (C-e360-11 ; l'orchestrateur l'assemble au CHANGELOG). Les deux phrases qui dépendaient de R0 sont gardées :
+R0 a constaté le refus à l'envoi à la tête et en 0.17.6 (`r0-tete.log`, `r0-0176.log` : « envoi=erreur: Erreur serveur
+(422) »), et le champ de compte qui montrait `4000` sans le retenir en 0.17.6 (`r0-0176.log`, variante (b)).
 
-- **Réconciliation, *Éclater* : [l'éclatement d'une transaction se passe depuis l'écran — il était refusé au moment de
-  l'envoi ;]** tant que le bouton *Éclater* reste grisé, le message sous les lignes dit ce qui manque : le compte ou le
+- **Réconciliation, *Éclater* : l'éclatement d'une transaction se passe depuis l'écran — il était refusé au moment de
+  l'envoi ;** tant que le bouton *Éclater* reste grisé, le message sous les lignes dit ce qui manque : le compte ou le
   montant de quelle ligne, ou le montant attendu et l'écart. Un montant s'écrit avec un point ou une virgule décimale,
   l'apostrophe des milliers (1'200.50) et deux décimales au plus ; un montant ambigu (1.234), illisible ou plus fin que le
-  centime est signalé au lieu d'être lu de travers, ignoré ou refusé à l'envoi. [En 0.17.6, un numéro de compte tapé sans être choisi dans la liste restait affiché sans être retenu ; depuis la
-  0.17.7, le champ se vide et le message le dit.] (refs #1150)
-- **Réconciliation, *Éclater* : la fenêtre est plus large** ; les comptes et les montants se lisent en entier, et la
-  liste des comptes s'ouvre sans être coupée.
+  centime est signalé au lieu d'être lu de travers, ignoré ou refusé à l'envoi. En 0.17.6, un numéro de compte tapé sans
+  être choisi dans la liste restait affiché sans être retenu ; depuis la 0.17.7, le champ se vide et le message le dit.
+  (refs #1150)
+- **Réconciliation, *Éclater* : la fenêtre est plus large** ; les comptes, les montants et les descriptions se lisent
+  en entier, et la liste des comptes s'ouvre sans être coupée.
   (refs #1151)
 
 ## Dev Notes
@@ -674,11 +678,126 @@ dit « Valider » ; le bouton s'appelle *Éclater* et le manuel ne dit ni quand 
 
 ### Agent Model Used
 
+Opus 5.5 (agent de développement de l'Epic 36, en autonomie), worktree `kesh-36-2`, voie 2. Développement parti de
+`c3f722ca0` (36-1 et 36-3 fusionnées par l'orchestrateur : `readJournalAmount` présent,
+`frontend/src/lib/features/journal-entries/balance.ts:110` `export function readJournalAmount(raw: string): JournalAmountReading {`,
+`:78-80` les quatre `kind`). La tâche « refonder la branche » est donc sans objet : la branche partait déjà de la lignée A.
+
 ### Debug Log References
+
+Journaux sous `/home/gcorbaz/devel/kesh-gate-logs/e36-2/` (chaque journal porte son commit en première ligne) :
+`r0-tete-build.log`, `r0-tete.log` et `r0-tete-h.log` (R0-a), `r0-0176.log` (R0-b), `rouges-vitest.log` et `rouges.log`,
+`cible-apres-correctifs.log`, `cible-i18n-build.log`, `r0-apres.log`, `r0-apres-gh.log`, `r0-apres-2.log`,
+`r0-apres-3.log`, `inventaires.log`, `grep-consommateurs-avant.log`, `mut/` (campagnes et journal par mutation) ;
+scripts `e2e-36-2.sh`, `r0b-36-2.sh`, `mut/mut-36-2.py`, `mut/run-mut-36-2.sh`.
 
 ### Completion Notes List
 
+**R0 — la reproduction (AC1).** Spec : `frontend/tests/e2e/reconciliation-split.spec.ts`, bloc `R0`, variantes (a) à (h)
+écrites avant tout correctif (commit `889e574a9`, (h) corrigée en `986cf784f` : la liste du champ de la ligne 1, ouverte
+au focus initial, couvrait *Ajouter une ligne* — défaut du test).
+
+| Variante | R0-a, tête (`r0-tete.log`, `r0-tete-h.log`) | R0-b, 0.17.6 (`r0-0176.log`) |
+|---|---|---|
+| (a) comptes à la souris, `NN.NN` justes | bouton actif, indicateur « Balance », **envoi refusé `422`** | idem, `422` |
+| (b) `4000` tapé puis *Tab* | **champ vide**, « Ligne 1 : compte requis », grisé — vert | **champ montrant `4000`**, « Ligne 1 : compte requis », grisé ; `grise_reproduit=true` |
+| (c) `70,00` | Chromium affiche `70.00`, bouton actif, `422` | idem |
+| (d) `1'200.50` | Chromium écarte l'apostrophe (`1200.50`), actif, `422` | idem |
+| (e) `-70.00` / vide / `0,00` / `1.234` / `0.005` | « montant > 0 requis » ×3 ; `1.234` et `0.005` lus, message « L'éclatement n'équilibre pas… » | idem |
+| (e′) `60.0000` | actif, `422` | idem |
+| (f) somme fausse | indicateur « Balance », message sans attendu ni écart | idem |
+| (g) largeur | `compte:151/72, montant:89/74, description:237/90, projet:72/64, dialogue:384x497` | idem (`151/73`…) |
+| (h) six lignes, liste ouverte | `overflowY:visible, maxHeight:none`, première option visible ; **seuil #1181 : 9 lignes** | idem, 9 lignes |
+
+Verdicts : **H1** constatée en 0.17.6 (variante (b)) et corrigée à la tête par la 35-7 — non contredite à la tête ;
+**H2** réfutée sous Chromium fr-CH : le navigateur ne laisse pas un texte illisible affiché avec une valeur nulle, il
+réécrit la saisie (`70,00` → `70.00`, apostrophe écartée ; `illisible=false` partout) — D5 s'applique tout de même (le
+champ texte rend la saisie telle quelle, et la lecture la dit) ; **H3** constatée (quatre champs tronqués à 384 px) ;
+**H4** constatée (« Balance ») ; **H5** constatée (`Erreur serveur (422)` : rejet de l'extracteur JSON, montant en nombre).
+
+**Tables de *Si R0 rend…*** : table A, ligne **A3** (H1 non contredite à la tête, R0-a joué) — D2 à D6 développés.
+Table B, ligne **B2** : aucune variante éligible ne reproduit le grisé à la tête (B1 non), la variante (b) le reproduit en
+0.17.6 (`R0 (b) grise_reproduit=true`, `r0-0176.log`) — cause **H1, corrigée par la 35-7** ; la note de version le dit ;
+**#1150 en `closes`**. À noter : en 0.17.6 comme à la tête, des lignes complètes et justes menaient au refus `422` (H5) —
+une seconde cause de « l'éclatement ne passe pas depuis l'écran », corrigée par D2.
+
+**Seuil de #1181 (V3-4)** : à 1280×720, `split-submit` sort de la fenêtre à **9 lignes**, à la tête, en 0.17.6 et après
+correctifs (`r0-apres-3.log`).
+
+**Après correctifs** : `reconciliation-split.spec.ts` entière, **11 passed** au dernier commit de code `ee9f15714`
+(`r0-final.log`) ; R0 (g) : `compte:253/253, montant:141/141, description:279/279, projet:124/124, dialogue:896x497`.
+*(`r0-apres-3.log`, aussi 11 passed, porte en tête `78e841d57` : il a tourné sur l'arbre de travail qui deviendrait
+`4d55adbbf`, avant son commit.)*
+
+**Gates** (passage en `review`, selon `e35-dev-commun.md` § *Quels gates, quand*) :
+- en cours : Vitest ciblés (`cible-apres-correctifs.log` : 742 passés, 47 fichiers), `npm run check`,
+  `lint-i18n-ownership`, `cargo fmt --check` et `cargo nextest run -p kesh-i18n` (41/41, `cible-i18n-build.log`,
+  `78e841d57`), E2E ciblé `reconciliation-split.spec.ts` ;
+- bases `kesh_e362` et `kesh_e2e_e362` remises à neuf avant les gates ;
+- `scripts/test-fast.sh --ci` (voie 2) : **5445 exécutés, 5445 passés, 13 ignorés** — `test-fast-ci-review.log`, commit
+  `7efe74db4` (les commits de code suivants, `95259d3db` et `ee9f15714`, ne touchent que la spec E2E et un test Vitest :
+  aucun fichier Rust ni `.ftl`) ;
+- frontend complet : `npm run check` 0 erreur (29 avertissements, aucun dans les fichiers de la story), lint vert,
+  **Vitest 3598 passés (237 fichiers)**, build — `front-complet-review-2.log`, commit `ee9f15714` (la première passe,
+  `front-complet-review.log` à `95259d3db`, rendait 2 rouges de la garde des libellés en dur : 92 candidates au lieu de
+  91, `expectedLabel` — compteurs relevés et corrigés en `ee9f15714`) ;
+- `scripts/gate-ci.sh kesh_ci_e362` (voie 1) : **5452 passés, 0 échoué, 17 ignorés** — `gate-ci-review.log`, commit
+  `ee9f15714` (dernier commit de code).
+- **Non lancés : l'E2E complet et le `gate-ci` de clôture** — à la clôture, au dernier commit de code.
+
+**Mutations** (code commité avant, `7efe74db4` ; script `kesh-gate-logs/e36-2/mut/mut-36-2.py`, motif vérifié unique ;
+restauration `git restore --worktree` puis `touch`, arbre propre constaté après chaque campagne) — campagne Vitest
+(`mut/campagne-vitest.log`), campagne E2E (`mut/campagne-e2e.log`, `mut/campagne-e2e-2.log`), un journal par mutation
+(`mut/<id>.log`) :
+
+| Mutation | Tuée par |
+|---|---|
+| M1 (charge = saisie brute) | V-a (« 70,00 » part « 70,00 »), V-d |
+| M1-bis (charge en nombre) | V-a (`typeof`), V-d |
+| M1-ter (charge = `payload`) | V-a, V-d (`60.0000` part `'60.0000'`) |
+| M2 (arguments du déséquilibre retirés) | V-b, garde « chaque site fournit les arguments » |
+| M2-bis (arguments de l'état équilibré retirés) | V-e, même garde |
+| M2-ter (état équilibré sur la clé de l'écart) | **R0 (a)** (E2E) ; aussi, contre l'attendu de la fiche, par le test de catalogue et les gardes d'entrées à variables (la clé de l'état équilibré n'est plus relevée, la clé de l'écart a deux replis) |
+| M3 (valeur fr-CH de la clé neuve = ancien texte) | test de catalogue (repli ≠ fr-CH, variables absentes) |
+| M3-bis (`{ $diff }` ajoutée à l'ancienne clé) | test de catalogue (V1-1), garde « mêmes variables dans les quatre locales » |
+| M4 (`testid` du message retiré) | V-b, V-c, V-d |
+| M5 (`type="number"` rétabli) | V-a (« 70,00 »), V-d |
+| M6 (ambigu lu comme clair) | V-d (`1.234`) |
+| M7 (classe de largeur retirée) | **R0 (g)** (`compte:151/95`…, dialogue 384 px) |
+| M7-bis (largeur de la description seule retirée) | **équivalente** : la colonne sans largeur absorbe le reste (`description:288/288`, `mut/M7-bis.log`) |
+| M7-ter (les quatre largeurs retirées) | **R0 (g)** (`description:237/206`) |
+| M8 (garde du centime retirée) | V-d (`0.005`, `30.0050`) |
+| M8-bis (somme et comparaison en `Number`) | V-d (`0.10` + `0.20` sur `-0.30`) |
+| M9 (`max-h-[50vh] overflow-y-auto`) | **R0 (h)** — par l'assertion de **visibilité** (`viewport ratio 0`) comme par celle du style (`overflowY: auto`) ; aussi R0 (b), (e), (f), (g) (message ou pied hors de la fenêtre) |
+
+Dix-sept mutations jouées (les quinze de la fiche, M7-bis pour la largeur de colonne de C-36-2-18, puis M7-ter quand
+M7-bis s'est révélée équivalente — recompté sur le tableau) : seize tuées, une équivalente (M7-bis).
+
+**Écarts à la fiche, en cours de développement** :
+- **C-36-2-18** — `sm:max-w-3xl` laissait la description tronquée (`description:237/176`, `r0-apres.log`) : D6 prévoyait
+  `sm:max-w-4xl` ; il ne suffisait pas seul (partage égal des colonnes) : `sm:max-w-4xl` **et** des largeurs d'en-tête.
+- **C-36-2-19** — le serveur rend le montant normalisé (`-388.2`) : l'attendu affiché passe à deux décimales, comme
+  l'écart (`r0-apres-2.log`, R0 (f) : « attendu 388.2, écart -358.20 »).
+- V-a attend `'60.00'` / `'40.00'` et non `'60'` / `'40'` (la fiche, aux *Tests*, écrivait les seconds) : D2 fixe
+  l'envoi à `value.toFixed(2)`, et c'est D2 qui fait foi.
+- R0 borne les options à la `listbox` du champ de compte de la ligne (`optionsDeCompte`) : le projet créé par (g) ajoute
+  des `<option>` au sélecteur de projet, que `getByRole('option')` prenait (`r0-apres-gh.log`, (h)) — défaut du test.
+- `sitesTotal` : **3044**, relevé par la garde (`expected 3044 to be 3041`), non additionné.
+
 ### File List
+
+- `frontend/src/lib/features/reconciliation/TransactionSplitModal.svelte` — D2 à D6, C-36-2-18, C-36-2-19.
+- `crates/kesh-i18n/locales/{fr-CH,de-CH,en-CH,it-CH}/messages.ftl` — `reconciliation-split-balance-indicator`
+  (valeur), clés neuves `-balance-gap`, `-error-imbalance-detail`, `-error-amount-unreadable`, `-error-amount-ambiguous`,
+  `-error-amount-cents`.
+- `frontend/src/lib/features/reconciliation/TransactionSplitModal.test.ts` — V-a à V-e ; `choisirCompte` partagé.
+- `frontend/src/lib/features/reconciliation/split-i18n.test.ts` — neuf (catalogue).
+- `frontend/src/lib/shared/i18n-entrees-a-variables.test.ts` — les six entrées de la story.
+- `frontend/src/lib/shared/i18n-keys.test.ts` — `sitesTotal` 3044.
+- `frontend/tests/e2e/reconciliation-split.spec.ts` — en-tête récrit, bloc `R0`.
+- `docs/manual/fr/user-manual.tex` — § *Éclatement d'une transaction (split)* (AC9 ; PDF à l'intégration).
+- `_bmad-output/implementation-artifacts/36-2-eclater-bouton-grise.md`, `e36-choix-autonomes-36-2.md` (C-36-2-18,
+  C-36-2-19 ; titre de C-36-2-16, V5-3).
 
 ## Change Log
 
@@ -762,3 +881,30 @@ dit « Valider » ; le bouton s'appelle *Éclater* et le manuel ne dit ni quand 
     A1 ou A2 (au rapport, sans PR).
   - **V4-6 (LOW)** : C-36-2-9 annoté comme remplacé, pour la mise en œuvre, par C-36-2-15.
   - **V4-7 (LOW)** : un dossier `/tmp/kesh-voie2/e36-2-r0b-<n>/` neuf par essai de R0-b.
+- 2026-11-14 — **Validation terminée en cinq passes** : P1 Sonnet 0/1/3/2 → P2 Opus 0/0/2/4 → P3 Sonnet 0/0/2/5 → P4
+  ciblée Opus 0/0/3/4 → P5 ciblée Sonnet 0/0/0/3 (CRITICAL/HIGH/MEDIUM/LOW) ; close sur une passe sans rien au-dessus de
+  LOW. Rapports : `/home/gcorbaz/devel/kesh-gate-logs/e36-2/validation-p1.md` à `validation-p5-ciblee.md`.
+- 2026-11-14 — **Développement (Opus 5.5)**, depuis `c3f722ca0`. **Étape 0** — les trois LOW de la P5 :
+  - **V5-1** : table B, « (f) à (i) » → « (f) à (h) » (ligne lue : `- **variantes éligibles : (a) à (d) seulement** —
+    (e), (e′), (f) à (i) jouent des saisies …`).
+  - **V5-2** : « `NN.NN` de (a), que (b) joue aussi » (même lieu ; R0 (b) tape bien `NN.NN`).
+  - **V5-3** : titre de C-36-2-16 préfixé « (retiré, voir l'annotation P4) » (ligne lue : `### C-36-2-16 — La largeur
+    bornée à toute taille de fenêtre (V3-5)`).
+  Lignes relues à `c3f722ca0` : `TransactionSplitModal.svelte` `:78` `amount: string;`, `:191-192` (`parseFloat`,
+  `!isFinite(n) || n <= 0`), `:207-211` (`reconciliation-split-error-imbalance` sans arguments), `:236` `amount: s.amount,`,
+  `:263` `<Dialog.Content data-testid="transaction-split-modal">`, `:313` `type="number"`, `:405-411` (deux replis en
+  gabarit sur la même clé), `:428` (la boîte sans `testid`), `:452` `disabled={submitting || !!clientError}` — conformes à
+  la fiche. `AccountAutocomplete.svelte` a bougé avec la 36-1 finale : `handleBlur` est à `:434`, `commitDraft` à `:449`,
+  `if (!allowClear) {` / `draft = null;` / `return;` à `:462-464` (la fiche citait `:411-442`) — même règle. fr-CH
+  `messages.ftl:1622-1623` (la fiche citait `:1620-1621`) : `reconciliation-split-balance-indicator = Balance`,
+  `reconciliation-split-error-imbalance = L'éclatement n'équilibre pas le montant de la transaction.` Inventaires H4 et H5
+  relancés avant et après (`inventaires.log`) : à `c3f722ca0`, H4 rend `TransactionSplitModal.svelte-210`, `-406`,
+  `-411` ; après, aucun site de `TransactionSplitModal` ; H5 ne nomme plus le dialogue. Consommateurs des clés touchées,
+  avant (`grep-consommateurs-avant.log`) : `reconciliation-split-balance-indicator` — les quatre `.ftl` et le dialogue
+  (`:405`, `:410`) ; `reconciliation-split-error-imbalance` — `crates/kesh-api/src/errors.rs:3430`,
+  `failed-proposal-label.ts:379`, `failed-proposal-label.test.ts:79`, le dialogue `:209` et les quatre `.ftl` ; les cinq
+  clés neuves — aucun consommateur hors du test de catalogue. Après : `errors.rs` et `failed-proposal-label.ts` inchangés.
+  **R0-a** et **R0-b** joués avant tout correctif : tables A3 et B2 (Dev Agent Record). **Rouges** : Vitest (21 sur 45,
+  `rouges.log`) et R0-a (8 sur 9 : (a), (c), (d), (e), (e′), (f), (g) pour le produit ; (h) pour un défaut du test, corrigé
+  et rejoué vert). Correctifs dans l'ordre imposé : D4 (`14d70feca`), D3 (`ec52cc833`), D2/D5/D6 (`78e841d57`), puis
+  C-36-2-18 et C-36-2-19 (`4d55adbbf`) ; manuel (`7efe74db4`). Écarts déclarés au Dev Agent Record.
