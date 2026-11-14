@@ -1,3 +1,4 @@
+# last_updated: 2026-11-14 (kickoff de l'Epic 36 en autonomie, epic-36-premiere-facture-et-suite.md ; phase 1 = 0.17.8 sans migration, 36-1 à 36-5 ; phase 2 = 36-6 à 36-14)
 # last_updated: 2026-11-14 (rétrospective de l'Epic 35 tenue en autonomie, epic-35-retro-2026-11-14.md ; v0.17.7 publiée ; réponses de Guy du même jour : 35-8b superseded, epic-35 done)
 # last_updated: 2026-11-14 (intégration de la 0.17.7 sur release/0.17.7 : quatre fusions — 35-8a2, 35-4, 35-6, 35-7 — et un raccord ; gates et recettes de montée jouées ; epic-35 in-progress jusqu'à la rétrospective)
 # last_updated: 2026-11-12 (rétrospective de l'Epic 34 tenue en autonomie, epic-34-retro-2026-11-12.md ; epic-34 done ; v0.17.6 publiée)
@@ -1068,3 +1069,25 @@ development_status:
   35-8a2-audit-acteur-ecritures: done  # 2026-11-14 développée (kesh-e358a2, voie 2) ; revue P1 (2 MEDIUM) → P2 ciblée 0 au-dessus de LOW ; clôturée, dernier commit de code 3cbea0e05, gate-ci 5451/0/17, E2E 405/7 (KF-029)/18 ; refs #431 ; les écritures ; après 35-8a1, 35-5a0, 35-5a, 35-5b, 35-5c et 35-3 ; validation terminée en P4 (35-8a P1 → découpage → 2 → 1 → 0 MEDIUM)
   35-8b-audit-acteur-deploiement: superseded  # 2026-11-14, décision de Guy (rétrospective de l'Epic 35, Q3) : reprise par des clés 36-* découpées par domaine au kickoff de l'Epic 36 ; la fiche et les findings de sa P1 restent lisibles. Avant : backlog. #431 ; reportée à l'Epic 36 le 2026-11-13 (C-e350-48), à découper en lots par domaine ; findings de sa P1 à traiter au découpage (kesh-gate-logs/e35-8b-validation-p1.md)
   epic-35-retrospective: done  # 2026-11-14, en autonomie (epic-35-retro-2026-11-14.md) : 403 issues, 212 bugs, 13 P1 au tag v0.17.7 ; issues de la rétrospective #1146 à #1148 ; questions Q1 à Q11 à Guy
+  epic-36: in-progress  # 2026-11-14 KICKOFF en autonomie (planning-artifacts/epic-36-premiere-facture-et-suite.md ; registre e36-choix-autonomes-e360.md). Phase 1 : 0.17.8 sans migration, avant le 2026-11-30 (coupure au 2026-11-26, 36-1 obligatoire). Phase 2 : ordre de Guy. Au tag v0.17.7 : 403 issues, 212 bugs, 13 P1 ; au kickoff : 415 issues, 216 bugs, 13 P1. Objectif : moins de 403 et de 212 au tag v0.17.8 (objectif, non barrière ; hors d'atteinte de la seule phase 1).
+  36-0-kickoff: done  # 2026-11-14 : fichier d'epic, registre (C-e360-1 à 14, étape 0 des cinq stories de la phase 1), clés ; aucune fiche rédigée
+  36-1-compte-produit-entree: backlog  # #1095 ; phase 1, tête (chemin de la première facture) ; lignée A, voie 2 ; petite, frontend (AccountAutocomplete + InvoiceForm + produits)
+  36-2-eclater-bouton-grise: backlog  # #1150 ; phase 1 ; lignée A après 36-1 (AccountAutocomplete possible) ; cause à établir par reproduction (C-e360-5) ; #1151 seulement si la cause l'exige
+  36-3-ecriture-montant-ambigu: backlog  # #1051 ; phase 1 ; lignée A ; prédicat d'ambiguïté de la 35-6 réemployé, grammaire du journal gardée ; périmètre borné (C-e360-6)
+  36-4-annulation-reglement-cle-api: backlog  # #1131 ; phase 1 ; lignée B, voie 1 ; kesh-db (gate complet en boucle) ; les deux cancel_settlement_in_tx prennent un Acteur (C-e360-7)
+  36-5-restauration-compte-rendu: backlog  # #931 (KF-056) ; phase 1 ; lignée B après 36-4 ; correctif du produit, preuve par répétition avant/après (C-e360-8)
+  36-6-transaction-plusieurs-ecritures: backlog  # #823 ; phase 2, rang 1 ; migration possible (à dire avant d'écrire) ; découpage préventif probable
+  36-7-tests-desancres-2026: backlog  # #1125 (KF-060) ; phase 2 ; À TERMINER D'ICI LE 2026-12-28 (Guy, Q1) ; critère E1 sous KESH_TEST_INSTANT=2027-01-04T10:00:00Z
+  36-8-remarque-interne: backlog  # #1158, #268 ; phase 2 ; PORTE UNE MIGRATION
+  36-9-solde-reste-type-compte: backlog  # #1044 ; phase 2 ; patron de la 35-3 (Q6)
+  36-10-dernieres-dates-utc: backlog  # #1147, #1053 ; phase 2 (Q11)
+  36-11a-acteur-tiers-catalogue: backlog  # refs #431 ; phase 2 ; lot 1 de la 35-8b (C-e360-9) ; après 36-4
+  36-11b-acteur-facturation-client: backlog  # refs #431 ; phase 2 ; lot 2 ; après 36-11a
+  36-11c-acteur-fournisseurs-paiements: backlog  # refs #431 ; phase 2 ; lot 3 ; après 36-11b
+  36-11d-acteur-reglages-restauration: backlog  # #431 (fermée par la PR qui porte ce lot), #1132 ; phase 2 ; lot 4, table finale de la garde et documents (V1-1 à V1-3 de la P1 de la 35-8b)
+  36-12-qr-facture-separation: backlog  # #944 ; phase 2 ; après la première facture réelle de Guy (C-e350-1)
+  36-13-pieces-justificatives: backlog  # #235 (P1) ; phase 2 ; avant la clôture de l'exercice 2026 (Q5) ; migration probable, découpage à sa fiche
+  36-15-compte-analytique: backlog  # CR #1161 ; phase 2 ; ajoutée le 2026-11-14 sur décision de Guy (C-e360-15) ; vocabulaire visible seulement, sans migration ; passe avant la story de solde
+  36-16-reimputation-analytique: backlog  # CR #1167 ; phase 2 ; ajoutée le 2026-11-14 sur décision de Guy (C-e360-16) ; geste dédié « Changer le compte analytique » (facture tout statut, écriture manuelle) ; après 36-15, avant la story de solde
+  36-14-solde-dette-epic: backlog  # story de solde (CLAUDE.md, 2026-11-14) : au plus 8 issues ouvertes par les stories 36-*, cinq modules au plus (C-e360-10) ; en fin d'epic, avant le tag
+  epic-36-retrospective: optional
