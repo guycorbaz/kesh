@@ -154,7 +154,10 @@ describe('JournalEntryForm — montant ambigu (Story 36-3)', () => {
 		const montants = await saisir('1.234', '1.234');
 		expect(screen.getAllByText(/Montant ambigu/).length).toBeGreaterThan(0);
 		expect(screen.queryByText(/Montant illisible/)).toBeNull();
-		expect(montants[0].className).toContain('border-destructive');
+		// `classList` et non `className` : la classe de base porte
+		// `aria-invalid:border-destructive`, qu'un `toContain` prendrait pour la bordure.
+		expect(montants[0].classList.contains('border-destructive')).toBe(true);
+		expect(montants[3].classList.contains('border-destructive')).toBe(true);
 		expect(valider().disabled).toBe(true);
 		await fireEvent.keyDown(window, { key: 's', ctrlKey: true });
 		await new Promise((r) => setTimeout(r, 0));
@@ -171,7 +174,8 @@ describe('JournalEntryForm — montant ambigu (Story 36-3)', () => {
 	it('« 1’234,50 » des deux côtés → équilibré, envoyé en 1234.50', async () => {
 		const montants = await saisir("1'234,50", "1'234,50");
 		expect(screen.getByText(/Équilibré/)).toBeTruthy();
-		expect(montants[0].className).not.toContain('border-destructive');
+		expect(montants[0].classList.contains('border-destructive')).toBe(false);
+		expect(montants[3].classList.contains('border-destructive')).toBe(false);
 		expect(valider().disabled).toBe(false);
 		await fireEvent.click(valider());
 		await new Promise((r) => setTimeout(r, 0));

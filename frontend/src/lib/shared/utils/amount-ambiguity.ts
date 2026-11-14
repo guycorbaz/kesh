@@ -24,8 +24,21 @@ export interface AmountParts {
 }
 
 /**
- * Story 36-3 (stub de la preuve du rouge) — la lecture d'aujourd'hui : rien n'est ambigu.
+ * `true` si la saisie peut se lire de deux façons : un point ou une virgule suivis
+ * d'**exactement trois chiffres**, après une partie entière **non groupée** de un à
+ * trois chiffres hors zéros de tête (« 1.234 » : mille deux cent trente-quatre à
+ * l'allemande, ou un franc vingt-trois ?). Une partie entière nulle (« 0.500 »), de
+ * quatre chiffres ou plus (« 1234.567 ») ou groupée (« 1'234.567 ») n'est pas
+ * ambiguë ; une fraction vide (pas de séparateur décimal) non plus.
+ *
+ * Expression d'origine (35-6, `format.ts`) :
+ * `hasDecimal && typedFraction.length === 3 && !grouped && /^0*[1-9][0-9]{0,2}$/.test(integerDigits)`
+ * — `hasDecimal` est implicite ici, la fraction étant vide sans séparateur.
  */
-export function isAmbiguousThousands(_parts: AmountParts): boolean {
-	return false;
+export function isAmbiguousThousands(parts: AmountParts): boolean {
+	return (
+		parts.fraction.length === 3 &&
+		!parts.grouped &&
+		/^0*[1-9][0-9]{0,2}$/.test(parts.integerDigits)
+	);
 }
