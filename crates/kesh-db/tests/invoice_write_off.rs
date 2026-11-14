@@ -680,7 +680,7 @@ async fn a_settlement_cannot_be_cancelled_while_a_write_off_exists(pool: MySqlPo
     // Écriture : refusée, sans rien écrire.
     let err = invoice_settlements_write::cancel_settlement(
         &pool,
-        seeded.admin_user_id,
+        Acteur::utilisateur(seeded.admin_user_id),
         seeded.company_id,
         inv,
         settlement,
@@ -722,7 +722,7 @@ async fn a_settlement_cannot_be_cancelled_while_a_write_off_exists(pool: MySqlPo
     // Le solde s'annule : TVA contre-passée, reste rétabli, facture rouverte.
     invoice_settlements_write::cancel_settlement(
         &pool,
-        seeded.admin_user_id,
+        Acteur::utilisateur(seeded.admin_user_id),
         seeded.company_id,
         inv,
         write_off_id,
@@ -748,7 +748,7 @@ async fn a_settlement_cannot_be_cancelled_while_a_write_off_exists(pool: MySqlPo
     // Puis le règlement s'annule.
     invoice_settlements_write::cancel_settlement(
         &pool,
-        seeded.admin_user_id,
+        Acteur::utilisateur(seeded.admin_user_id),
         seeded.company_id,
         inv,
         settlement,
@@ -1136,7 +1136,7 @@ async fn unlinking_a_reconciled_settlement_is_refused_while_a_write_off_exists(p
         &pool,
         seeded.company_id,
         bt,
-        seeded.admin_user_id,
+        Acteur::utilisateur(seeded.admin_user_id),
         crate::jour::aujourd_hui_test(),
     )
     .await
@@ -1595,7 +1595,7 @@ async fn write_off_cancel_and_rank_1_bis_under_a_frozen_lettering(pool: MySqlPoo
         async move {
             invoice_settlements_write::cancel_settlement(
                 &pool,
-                user,
+                Acteur::utilisateur(user),
                 company_id,
                 inv,
                 sid,

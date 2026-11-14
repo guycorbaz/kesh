@@ -775,7 +775,7 @@ async fn annuler_l_unique_reglement_remet_la_facture_a_regler(pool: MySqlPool) {
 
     let done = invoice_settlements_write::cancel_settlement(
         &pool,
-        seeded.admin_user_id,
+        Acteur::utilisateur(seeded.admin_user_id),
         seeded.company_id,
         inv_id,
         sid,
@@ -874,7 +874,7 @@ async fn annuler_un_reglement_parmi_deux(pool: MySqlPool) {
 
     let done = invoice_settlements_write::cancel_settlement(
         &pool,
-        seeded.admin_user_id,
+        Acteur::utilisateur(seeded.admin_user_id),
         seeded.company_id,
         inv_id,
         s2,
@@ -953,7 +953,7 @@ async fn residuel_reste_nul_laisse_paid_at(pool: MySqlPool) {
 
     let done = invoice_settlements_write::cancel_settlement(
         &pool,
-        seeded.admin_user_id,
+        Acteur::utilisateur(seeded.admin_user_id),
         seeded.company_id,
         inv_id,
         s1,
@@ -977,7 +977,12 @@ async fn double_annulation_rend_not_found(pool: MySqlPool) {
     let seeded = seed_accounting_company(&pool).await.expect("seed");
     let inv_id = validated_invoice(&pool, &seeded, dec!(100.00), ymd(2026, 3, 1)).await;
     let (sid, _) = settle_cash(&pool, &seeded, inv_id, dec!(100.00), ymd(2026, 3, 5)).await;
-    let args = (seeded.admin_user_id, seeded.company_id, inv_id, sid);
+    let args = (
+        Acteur::utilisateur(seeded.admin_user_id),
+        seeded.company_id,
+        inv_id,
+        sid,
+    );
     invoice_settlements_write::cancel_settlement(
         &pool,
         args.0,
@@ -1087,7 +1092,7 @@ async fn le_geste_se_compose_et_s_annule_avec_sa_transaction(pool: MySqlPool) {
             seeded.company_id,
             inv_id,
             sid,
-            seeded.admin_user_id,
+            Acteur::utilisateur(seeded.admin_user_id),
             crate::jour::aujourd_hui_test(),
         )
         .await
@@ -1159,7 +1164,7 @@ async fn une_autre_societe_ne_peut_pas_annuler(pool: MySqlPool) {
 
     let err = invoice_settlements_write::cancel_settlement(
         &pool,
-        seeded.admin_user_id,
+        Acteur::utilisateur(seeded.admin_user_id),
         other,
         inv_id,
         sid,
@@ -1457,7 +1462,7 @@ async fn la_precedence_de_l_annulation_lecture_et_ecriture(pool: MySqlPool) {
 
         let err = invoice_settlements_write::cancel_settlement(
             &pool,
-            seeded.admin_user_id,
+            Acteur::utilisateur(seeded.admin_user_id),
             seeded.company_id,
             inv_id,
             sid,
@@ -1572,7 +1577,7 @@ async fn une_cloture_concurrente_attend_l_annulation(pool: MySqlPool) {
     let annulation = tokio::spawn(async move {
         invoice_settlements_write::cancel_settlement(
             &p,
-            user_id,
+            Acteur::utilisateur(user_id),
             company_id,
             inv_id,
             sid,
@@ -2109,7 +2114,7 @@ async fn settlement_cancel_is_refused_under_a_frozen_lettering(pool: MySqlPool) 
     let avant = traces(&pool).await;
     let err = invoice_settlements_write::cancel_settlement(
         &pool,
-        seeded.admin_user_id,
+        Acteur::utilisateur(seeded.admin_user_id),
         seeded.company_id,
         inv_id,
         sid,
@@ -2195,7 +2200,7 @@ async fn unreconcile_refuses_in_its_family_before_unlinking(pool: MySqlPool) {
         &pool,
         seeded.company_id,
         bt,
-        seeded.admin_user_id,
+        Acteur::utilisateur(seeded.admin_user_id),
         crate::jour::aujourd_hui_test(),
     )
     .await
@@ -2275,7 +2280,7 @@ async fn later_closed_year_group_is_refused(pool: MySqlPool) {
     let avant = traces(&pool).await;
     let err = invoice_settlements_write::cancel_settlement(
         &pool,
-        seeded.admin_user_id,
+        Acteur::utilisateur(seeded.admin_user_id),
         seeded.company_id,
         inv_id,
         sid,
@@ -2409,7 +2414,7 @@ mod compte_bancaire_clos {
             .unwrap();
         invoice_settlements_write::cancel_settlement(
             &pool,
-            seeded.admin_user_id,
+            Acteur::utilisateur(seeded.admin_user_id),
             seeded.company_id,
             inv_id,
             sid,
@@ -2490,7 +2495,12 @@ mod compte_bancaire_clos {
         let (company_id, user_id) = (seeded.company_id, seeded.admin_user_id);
         let annulation = tokio::spawn(async move {
             invoice_settlements_write::cancel_settlement(
-                &p, user_id, company_id, inv_id, sid, today,
+                &p,
+                Acteur::utilisateur(user_id),
+                company_id,
+                inv_id,
+                sid,
+                today,
             )
             .await
         });
@@ -2626,7 +2636,7 @@ async fn la_sortie_de_l_annulation_porte_la_facture_relue(pool: MySqlPool) {
 
     let done = invoice_settlements_write::cancel_settlement(
         &pool,
-        seeded.admin_user_id,
+        Acteur::utilisateur(seeded.admin_user_id),
         seeded.company_id,
         inv,
         settlement_id,

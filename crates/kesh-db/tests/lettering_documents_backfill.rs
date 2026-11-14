@@ -416,7 +416,7 @@ async fn rattrapage(pool: &MySqlPool, verrou: bool) -> Rattrapage {
         pool,
         societe_id,
         interne,
-        seeded.admin_user_id,
+        Acteur::utilisateur(seeded.admin_user_id),
         crate::jour::aujourd_hui_test(),
     )
     .await

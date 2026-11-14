@@ -5951,8 +5951,9 @@ pub async fn post_cancel_reconciliation(
     body: axum::body::Bytes,
 ) -> Result<Json<CancelReconciliationResponse>, AppError> {
     let company_id = current_user.company_id;
-    let user_id = current_user.user_id;
-    let actor_api_key_id = current_user.api_key_id;
+    // Story 36-4 (#1131) : l'acteur de la requête, clé d'API comprise, passé
+    // entier au dépôt (C-36-4-1).
+    let acteur = Acteur::from(&current_user);
     // Revue P2 (B2-1) : corps brut, jamais refusé pour sa forme ou son type.
     let expect_unlink_only = parse_cancel_expectation(&body)?;
     // Story 35-5a0 — la date du jour, lue une fois, avant l'attente du verrou
@@ -5963,8 +5964,7 @@ pub async fn post_cancel_reconciliation(
             &state.pool,
             company_id,
             id,
-            user_id,
-            actor_api_key_id,
+            acteur,
             expect_unlink_only,
             aujourd_hui,
         )
@@ -5978,8 +5978,7 @@ async fn cancel_reconciliation_once(
     pool: &sqlx::MySqlPool,
     company_id: i64,
     bank_transaction_id: i64,
-    user_id: i64,
-    actor_api_key_id: Option<i64>,
+    acteur: Acteur,
     expect_unlink_only: Option<bool>,
     aujourd_hui: chrono::NaiveDate,
 ) -> Result<CancelReconciliationResponse, AppError> {
@@ -6000,8 +5999,7 @@ async fn cancel_reconciliation_once(
                 tx_inner,
                 company_id,
                 bank_transaction_id,
-                user_id,
-                actor_api_key_id,
+                acteur,
                 expect_unlink_only,
                 aujourd_hui,
             )

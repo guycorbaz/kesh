@@ -446,7 +446,7 @@ async fn cancelling_a_batch_paid_settlement_leaves_the_batch_alone(pool: MySqlPo
         &pool,
         ctx.seeded.company_id,
         inv,
-        ctx.seeded.admin_user_id,
+        kesh_db::entities::audit_log::Acteur::utilisateur(ctx.seeded.admin_user_id),
         crate::jour::aujourd_hui_test(),
     )
     .await
@@ -516,9 +516,15 @@ async fn last_confirmed_batch_is_historical_and_most_recent(pool: MySqlPool) {
     let inv = make_invoice(&pool, &ctx, Some(IBAN_A), None, Some("R1"), dec!(100.00)).await;
     let first = confirmed_batch(&pool, &ctx, inv, d(2026, 7, 2)).await;
 
-    supplier_invoices::cancel_settlement(&pool, c, inv, u, crate::jour::aujourd_hui_test())
-        .await
-        .unwrap();
+    supplier_invoices::cancel_settlement(
+        &pool,
+        c,
+        inv,
+        kesh_db::entities::audit_log::Acteur::utilisateur(u),
+        crate::jour::aujourd_hui_test(),
+    )
+    .await
+    .unwrap();
     supplier_invoices::pay(
         &pool,
         c,
@@ -537,9 +543,15 @@ async fn last_confirmed_batch_is_historical_and_most_recent(pool: MySqlPool) {
         .unwrap();
     assert_eq!(last.map(|(id, _)| id), Some(first), "toujours l'ancien lot");
 
-    supplier_invoices::cancel_settlement(&pool, c, inv, u, crate::jour::aujourd_hui_test())
-        .await
-        .unwrap();
+    supplier_invoices::cancel_settlement(
+        &pool,
+        c,
+        inv,
+        kesh_db::entities::audit_log::Acteur::utilisateur(u),
+        crate::jour::aujourd_hui_test(),
+    )
+    .await
+    .unwrap();
     let second = confirmed_batch(&pool, &ctx, inv, d(2026, 7, 9)).await;
     let last = payment_batches::last_confirmed_batch_for_invoice(&pool, c, inv)
         .await

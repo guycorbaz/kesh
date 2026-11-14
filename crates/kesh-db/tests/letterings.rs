@@ -1660,7 +1660,7 @@ async fn lettering_invariants(pool: MySqlPool) {
     let (sid, _) = regler(&pool, &m.s, annulee, dec!(40), le).await;
     kesh_db::repositories::invoice_settlements_write::cancel_settlement(
         &pool,
-        m.s.admin_user_id,
+        Acteur::utilisateur(m.s.admin_user_id),
         m.company(),
         annulee,
         sid,
@@ -1753,7 +1753,7 @@ async fn lettering_invariants(pool: MySqlPool) {
         &pool,
         m.company(),
         reglement_annule,
-        m.s.admin_user_id,
+        Acteur::utilisateur(m.s.admin_user_id),
         crate::jour::aujourd_hui_test(),
     )
     .await
@@ -2356,7 +2356,7 @@ async fn group_detail_of_reversal_pairs(pool: MySqlPool) {
     let (sid, reglement) = regler(&pool, &s, inv, dec!(100.00), jours_avant(70)).await;
     invoice_settlements_write::cancel_settlement(
         &pool,
-        s.admin_user_id,
+        Acteur::utilisateur(s.admin_user_id),
         s.company_id,
         inv,
         sid,

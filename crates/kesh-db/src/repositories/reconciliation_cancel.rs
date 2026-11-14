@@ -566,7 +566,12 @@ pub struct ReconciliationCancellation {
 ///    **en gardant** `GET_LOCK`, si bien que les autres gestes de
 ///    réconciliation du même compte échouent pendant ce temps en
 ///    `ReconciliationAccountLocked` au bout du délai du verrou nommé ;
-/// 7. l'audit `reconciliation.cancelled`, par `for_actor` (clé API portée).
+/// 7. l'audit `reconciliation.cancelled`, par `NewAuditLogEntry::par(acteur, …)`.
+///
+/// `acteur` est l'auteur du geste, clé d'API comprise : il est passé à
+/// l'annulation du règlement client ou fournisseur (délettrage, contre-passation
+/// et entrée du geste appelé, Story 36-4, #1131), à la contre-passation d'une
+/// écriture seule (Story 35-8a2) et à l'entrée `reconciliation.cancelled`.
 ///
 /// ⚠️ Au rang 1, `cancel_settlement_in_tx` refuse **après** que le lien a été
 /// défait : l'erreur remonte, et le rollback de l'appelant rétablit le lien.
@@ -577,8 +582,7 @@ pub async fn cancel_in_tx(
     tx: &mut sqlx::Transaction<'_, sqlx::MySql>,
     company_id: i64,
     bank_transaction_id: i64,
-    user_id: i64,
-    actor_api_key_id: Option<i64>,
+    acteur: Acteur,
     expect_unlink_only: Option<bool>,
     aujourd_hui: NaiveDate,
 ) -> Result<ReconciliationCancellation, DbError> {
@@ -715,7 +719,7 @@ pub async fn cancel_in_tx(
                 company_id,
                 invoice_id,
                 settlement_id,
-                user_id,
+                acteur,
                 aujourd_hui,
             )
             .await?;
@@ -728,23 +732,14 @@ pub async fn cancel_in_tx(
         ReconciliationKind::SupplierSettlement {
             supplier_invoice_id: id,
         } => {
-            let done = supplier_invoices::cancel_settlement_in_tx(
-                tx,
-                company_id,
-                id,
-                user_id,
-                aujourd_hui,
-            )
-            .await?;
+            let done =
+                supplier_invoices::cancel_settlement_in_tx(tx, company_id, id, acteur, aujourd_hui)
+                    .await?;
             (Some(done.reversal_journal_entry_id), None, None)
         }
         ReconciliationKind::Entry => {
             // Story 35-8a2 (#431) : la contre-passation d'une écriture rapprochée
             // seule porte la clé du dé-rapprochement, quand il en a une.
-            let acteur = Acteur {
-                user_id,
-                api_key_id: actor_api_key_id,
-            };
             let reversal =
                 journal_entries::reverse_in_tx(tx, company_id, entry_id, acteur, aujourd_hui)
                     .await?;
@@ -796,9 +791,8 @@ pub async fn cancel_in_tx(
     //     le geste appelé écrit `supplier_invoice.settlement_cancelled`.
     audit_log::insert_in_tx(
         tx,
-        NewAuditLogEntry::for_actor(
-            user_id,
-            actor_api_key_id,
+        NewAuditLogEntry::par(
+            acteur,
             "reconciliation.cancelled",
             "bank_transaction",
             bank_transaction_id,
@@ -828,11 +822,17 @@ pub async fn cancel_in_tx(
 
 /// Annule un rapprochement, transaction comprise — mince enveloppement de
 /// [`cancel_in_tx`], sans verrou de compte ni rejeu (réservés à la route).
+///
+/// **Aucun appelant de production** : les tests seuls l'emploient ; la route
+/// (`post_cancel_reconciliation`) appelle [`cancel_in_tx`] sous son verrou de
+/// compte. Elle prend l'`acteur` entier, clé comprise (Story 36-4, #1131,
+/// C-36-4-2), pour qu'aucun `None` positionnel ne fasse perdre la clé à un
+/// appelant futur.
 pub async fn cancel(
     pool: &MySqlPool,
     company_id: i64,
     bank_transaction_id: i64,
-    user_id: i64,
+    acteur: Acteur,
     aujourd_hui: NaiveDate,
 ) -> Result<ReconciliationCancellation, DbError> {
     let mut tx = pool.begin().await.map_err(map_db_error)?;
@@ -840,8 +840,7 @@ pub async fn cancel(
         &mut tx,
         company_id,
         bank_transaction_id,
-        user_id,
-        None,
+        acteur,
         None,
         aujourd_hui,
     )
