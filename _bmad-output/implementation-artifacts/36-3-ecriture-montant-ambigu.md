@@ -108,7 +108,7 @@ appelants : `git grep -ln "isValidAmount\|parseAmount\|computeBalance\|classifyL
 | Appelant | Décision |
 |---|---|
 | `JournalEntryForm.svelte` | **dans le périmètre** : lecture du journal (D2), par un lecteur passé à `computeBalance` et `classifyLine` (D3) |
-| `VatPurchaseAssistant.svelte`, `vat-purchase.ts` | **dans le périmètre** : HT lu par la lecture du journal, charge normalisée passée aux fonctions pures (D5) ; `vat-purchase.ts` reste inchangé (il reçoit une chaîne déjà normalisée) |
+| `VatPurchaseAssistant.svelte`, `vat-purchase.ts` | **dans le périmètre** : HT lu par la lecture du journal, charge normalisée passée aux fonctions pures (D5) ; `vat-purchase.ts` reste inchangé (il reçoit une chaîne déjà normalisée) — *annoté le 2026-11-14 (revue P1, E2, A4) : faux au livré ; `vat-purchase.ts` gagne `readHtAmount`, `purchaseVatEntry` (C-36-3-9) et `htAmountProblem` ; seules `lineVatAmount` et `buildPurchaseVatLines` restent inchangées* |
 | `bank-import/manual-statement.ts`, `ManualStatementForm.svelte` (relevé manuel) | **inchangé** : `isValidAmount` avec options n'est pas touché ; deux décimales au plus, « 1.234 » y est déjà refusé (`manual-statement.ts:46-49` `MANUAL_LINE_AMOUNT_FORMAT`, `maxDecimals: 2`) |
 | `opening-balances/opening-balances-totals.ts`, `settings/opening-balances/+page.svelte` (soldes de départ) | **inchangé**, hors périmètre : **#1050** ; `computeBalance` sans lecteur garde exactement sa lecture d'aujourd'hui (D3) |
 | `supplier-invoices/supplier-invoice-form.ts:152-153` (prix unitaire) | **inchangé**, hors périmètre : **#1159** |
@@ -232,6 +232,9 @@ celle de l'étape de rédaction ; l'issue la confirme.
   `lineVatAmount` ; sous le champ HT, le message `journal-entry-form-amount-ambiguous` quand `kind === 'ambiguous'`
   (une entrée de plus au lint, `VatPurchaseAssistant.svelte:journal-entry-form-amount-ambiguous`, comme les clés
   `vat-purchase-*` du même composant au titre de #30). Les autres refus gardent la bordure seule (inchangé).
+  *Annoté le 2026-11-14 (revue P1, B3, E3, décision de l'orchestrateur) : dépassé — un HT illisible affiche
+  `journal-entry-form-amount-unreadable`, un HT clair arrondi à 0.00 au centime la clé neuve
+  `vat-purchase-ht-below-centime` (`htAmountProblem`, C-36-3-12).*
   *Écartées* : (a) une clé `vat-purchase-ht-ambiguous` — même texte en double dans quatre locales ; (b) une suite de
   composant pour l'assistant — il n'en a pas (`vat-purchase.test.ts` ne teste que les fonctions pures, 35-7 AC4) :
   la fonction pure et l'E2E couvrent le comportement.
@@ -334,17 +337,25 @@ restauration `git restore --worktree -- <fichier>` puis `touch` ; journaux `mut/
 
 Une mutation équivalente se dit au Dev Agent Record.
 
+*Annoté le 2026-11-14 (revue P1, A4) : sous mutation, seul Vitest a tourné (`mut/mut-36-3.py`) ; les E2E (AC7, AC8) cités
+dans la colonne « Tuée par » n'ont pas été rejoués sous mutation — chaque mutation est tuée par Vitest seul
+(`mut/resume.log`). S'y ajoutent, à la remédiation de la revue P1 : **M12** (classe d'apostrophes élargie à U+2018, U+00B4,
+U+02BC), **M13** (les trois verrous de l'envoi retirés ensemble : `if (!canSubmit) return;`, la garde `null`, et
+`if (canSubmit)` du raccourci), **M14** (`htAmountProblem` sans `below-centime`) — tuées toutes trois.*
+
 ## Tâches
 
-- [ ] **Étape 0** : relire à la tête du worktree les lignes citées ci-dessus ; relancer les trois commandes d'inventaire
+*Cases cochées le 2026-11-14 (revue P1, A4) ; la ligne des gates reste ouverte jusqu'à la clôture.*
+
+- [x] **Étape 0** : relire à la tête du worktree les lignes citées ci-dessus ; relancer les trois commandes d'inventaire
       et recopier leur sortie brute au Change Log ; confirmer que le serveur rend quatre décimales (`journal_entries.rs:222-223`,
       un test qui le montre cité) ; relire les LOW du dernier rapport de validation.
-- [ ] Tests d'abord (AC1, AC3, AC4, AC5), rouges consignés ; puis `shared/utils/amount-ambiguity.ts` (D1) et l'appel dans
+- [x] Tests d'abord (AC1, AC3, AC4, AC5), rouges consignés ; puis `shared/utils/amount-ambiguity.ts` (D1) et l'appel dans
       `format.ts` ; `balance.ts` (D2, D3) ; `JournalEntryForm.svelte` (D4) ; `vat-purchase.ts` et
       `VatPurchaseAssistant.svelte` (D5) ; quatre `messages.ftl` et le lint (AC9) ; `i18n-keys.test.ts` recompté.
-- [ ] E2E (AC7, AC8), rouges d'abord ; le test `:238-261` ajusté.
-- [ ] Manuel (AC10), `.tex` seul ; captures (AC11).
-- [ ] Mutations M1-M11.
+- [x] E2E (AC7, AC8), rouges d'abord ; le test `:238-261` ajusté.
+- [x] Manuel (AC10), `.tex` seul ; captures (AC11).
+- [x] Mutations M1-M11.
 - [ ] Gates (voie 2, `e35-dev-commun.md` § *Quels gates, quand*) : en cours, Vitest ciblé
       (`journal-entries/`, `bank-accounts/format.test.ts`, `shared/utils/amount-ambiguity.test.ts`) par
       `.gate-front.lock`, `npm run check` et `lint-i18n-ownership` ; **passage en `review`** : bases `kesh_e363`
@@ -353,7 +364,7 @@ Une mutation équivalente se dit au Dev Agent Record.
       `test:unit`, `build`), pas d'E2E ; **remédiations** : `test-fast.sh --ci` et frontend complet ; **clôture** :
       `gate-ci` et E2E complet sur `kesh_e2e_e363` recréée (voie 2), au dernier commit de code, échecs nommés contre
       `docs/testing.md` § « Les échecs attendus ». Journaux dans `/home/gcorbaz/devel/kesh-gate-logs/e36-3/`.
-- [ ] Fin du développement : `Status: review`, clé `review` au `sprint-status.yaml`, prompt de la revue P1
+- [x] Fin du développement : `Status: review`, clé `review` au `sprint-status.yaml`, prompt de la revue P1
       (`36-3-ecriture-montant-ambigu-review-prompt-p1.md`) qui nomme le manuel et les captures.
 
 ## Note de version
@@ -364,7 +375,8 @@ Une mutation équivalente se dit au Dev Agent Record.
   trois chiffres, sans séparateur de milliers avant — n'est plus lu au millième en silence : il est refusé comme ambigu,
   avec un message qui dit comment l'écrire (`1'234` ou `1.2340`). L'apostrophe des milliers est désormais acceptée
   (`1'234,50`), comme pour le solde d'ouverture d'un compte. Un montant mal formé est signalé « illisible », et non plus
-  « Maximum 4 décimales ». (refs #1051)
+  « Maximum 4 décimales ». Dans l'assistant TVA achat, un montant HT refusé dit pourquoi, y compris quand il s'arrondit
+  à 0.00 au centime. (refs #1051)
 
 ## Dev Notes
 
@@ -375,7 +387,8 @@ Une mutation équivalente se dit au Dev Agent Record.
   l'orchestrateur. Le site 5 (prix unitaire de la **facture client**, `InvoiceForm.svelte:511`) est sur le chemin de la
   première facture de Guy : signalé au rapport pour qu'il en fixe le rang.
 - Le serveur (`Decimal::from_str`) : C-e350-19.
-- Le message illisible pour l'assistant (bordure seule aujourd'hui) : inchangé.
+- Le message illisible pour l'assistant (bordure seule aujourd'hui) : inchangé. *(Annoté le 2026-11-14 : traité à la
+  revue P1, B3/E3 — voir D5.)*
 
 ### Splitting — cinq modules, à la limite
 
@@ -442,7 +455,9 @@ compte rendu. **Dernier commit de code : `03afa30b5`** ; `01bc01e95` ne touche q
   (`git restore --worktree` + `touch`).
 
 **Verts** : Vitest ciblé élargi (`vitest-cible-2.log`, après le recompte de `sitesTotal`) 835/835, 46 fichiers ;
-E2E ciblé (`e2e-cible-vert.log`) — `journal-entries.spec.ts` et `vat-purchase-assistant.spec.ts` entières — **28 passés**,
+E2E ciblé (`e2e-cible-vert.log`) — `journal-entries.spec.ts` et `vat-purchase-assistant.spec.ts` entières — **28 passés**
+(*et 6 ignorés, annoté le 2026-11-14, revue P1, A5 : six `test.skip` préexistants de `journal-entries.spec.ts`, `:339`,
+`:340`, `:860`, `:890`, `:891`, `:892`*),
 backend port 3363 sur `kesh_e2e_e363`, frontend construit au code de `03afa30b5`.
 
 **Mutations** (`mut/resume.log`, HEAD `ed6316c42`, code commité avant) : M1 à M11 et **M10b** (`lineAmountProblem` rend
@@ -466,7 +481,8 @@ perte du focus et 800 ms.
 
 **Constats hors périmètre** :
 - Sous une ligne au montant refusé, « Ligne incomplète » s'affiche **en plus** du message de montant (capture 01) — déjà le
-  cas avant la story avec « Maximum 4 décimales ». Pas une régression ; laissé tel quel.
+  cas avant la story avec « Maximum 4 décimales ». Pas une régression ; laissé tel quel. *(Annoté le 2026-11-14,
+  revue P1, A2 : tracé par l'orchestrateur, **#1183**, hors périmètre.)*
 - Les sites 4 (montant attendu) à 10 de l'inventaire par le symptôme restent à ouvrir en issue, un par site (C-36-3-5) ;
   `settings/vat-rates/+page.svelte:287`, `:331` (`type="number"`, un taux et non un montant) n'est pas du même défaut.
 

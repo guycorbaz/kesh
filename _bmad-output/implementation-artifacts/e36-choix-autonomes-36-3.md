@@ -107,3 +107,16 @@ réversibilité.
 - **Retenu** : « une espace entre les milliers n'est pas admise » ; « la même règle d'ambiguïté que pour le solde
   d'ouverture » ; une phrase sur « Montant illisible ».
 - **Réversible** : oui.
+
+## Choix de la remédiation de la revue P1 (2026-11-14)
+
+### C-36-3-12 — Le HT arrondi à zéro reçoit une clé neuve, `vat-purchase-ht-below-centime`
+
+- **Contexte** : l'orchestrateur décide (revue P1, B3/E3) que tout refus du HT dit pourquoi, « la clé du journal ».
+  Pour l'ambigu et l'illisible, les clés du journal conviennent ; pour un HT clair qui s'arrondit à 0.00 au centime
+  (« 0.004 »), aucune clé existante ne dit vrai (`git grep` des catalogues fr-CH : ni `journal-entry-form-*`, ni
+  `vat-purchase-*`) — « Montant illisible » serait faux.
+- **Retenu** : `htAmountProblem(reading)` pure dans `vat-purchase.ts` (`ambiguous` | `unreadable` | `below-centime` |
+  `null`), testée ; clé neuve `vat-purchase-ht-below-centime`, quatre locales, à côté de `vat-purchase-ht`.
+- **Écartée** : afficher « Montant illisible » pour « 0.004 » — message faux.
+- **Réversible** : oui.
