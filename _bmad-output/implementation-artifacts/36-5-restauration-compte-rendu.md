@@ -236,7 +236,7 @@ le second grep couvre `goto` et `redirect`. Aucun autre site.
   maintien ne couvre que **deux phases** : l'import en cours (phase 1), et la lecture du compte rendu d'un import réussi
   (phase 2). **B** = la durée d'inactivité réglée (`sessionIdle.minutes`, `session-idle.svelte.ts:499-501`, en minutes ;
   60 si elle est inconnue, la valeur par défaut du serveur, manuel d'administration `:2651`).
-  - **Borne de la phase 1 : `max(B, 2 × LONG_OPERATION_TIMEOUT_MS + RESTORE_HOLD_MARGIN_MS)`** (amendé aux validations
+  - **Borne de la phase 1 : `importHoldMs(B)`**, la fonction unique décrite plus bas (amendé aux validations
     P3, V3-1, décision de l'orchestrateur, C-36-5-8, et P4, V4-4). Lu au code : `api-client.ts:53`,
     `export const LONG_OPERATION_TIMEOUT_MS = 60 * 60_000;`, la durée que le client accorde à **chaque envoi** de l'import
     (`admin-restore.api.ts:46-48` ; le délai part à chaque `fetchWithTimeout`, `:319`, `setTimeout(() => controller.abort(), timeoutMs)`) ;

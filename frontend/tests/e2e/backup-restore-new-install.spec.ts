@@ -343,3 +343,80 @@ test.describe('Restaurer une installation neuve depuis l’assistant (Story 31-1
 		await capture(page, 'i-import-issue-inconnue');
 	});
 });
+
+/**
+ * Story 36-5 (#931, KF-056) — la course qui faisait perdre le compte rendu, rejouée à coup
+ * sûr. L'import invalide la session au serveur ; un battement d'activité parti avant que
+ * la réponse n'arrive rendait 401, le renouvellement échouait, et le client effaçait la
+ * session et menait à `/login?reason=session_expired` : le compte rendu n'était jamais lu.
+ *
+ * La réponse de l'import est RETENUE (le serveur a déjà restauré et invalidé la session)
+ * jusqu'à ce qu'un battement forcé ait reçu sa réponse ; puis, compte rendu affiché, une
+ * activité de plus ne doit envoyer aucun battement (le suivi de session est arrêté).
+ */
+test.describe('Le compte rendu de la restauration reste affiché (Story 36-5, #931)', () => {
+	const ACTIVITY = '**/api/v1/auth/activity';
+	const KEY_HEARTBEAT_AT = 'kesh:session:heartbeatAt';
+
+	/**
+	 * Une activité qui compte, puis un battement permis au tic suivant. L'attente d'1,1 s
+	 * est OBLIGATOIRE : `recordActivity` ignore toute activité à moins d'une seconde de la
+	 * précédente (`ACTIVITY_WRITE_THROTTLE_MS`, `session-idle.svelte.ts`), et le clic qui
+	 * précède vient d'en écrire une ; sans elle, les mouvements resteraient sans effet et
+	 * aucun battement ne partirait.
+	 */
+	async function forceActivity(page: Page, x: number): Promise<void> {
+		await page.waitForTimeout(1_100);
+		await page.evaluate((key) => localStorage.removeItem(key), KEY_HEARTBEAT_AT);
+		await page.mouse.move(x, 120);
+		await page.mouse.move(x + 37, 160);
+	}
+
+	test('KF-056 — un battement refusé pendant l’import ne fait pas quitter l’écran', async ({
+		page,
+	}, testInfo) => {
+		test.setTimeout(120_000);
+		await seedTestState('with-company');
+		await login(page);
+		const backup = await exportByScreen(page, testInfo);
+
+		await page.goto('/admin/restore');
+		await expect(page.getByTestId('backup-env-notice')).toBeVisible();
+
+		let heartbeatStatus: number | null = null;
+		await page.route('**/api/v1/admin/full-import', async (route) => {
+			// Le serveur restaure et invalide la session ; la réponse attend ici.
+			const response = await route.fetch();
+			const heartbeat = page.waitForResponse((r) => r.url().includes('/api/v1/auth/activity'));
+			await forceActivity(page, 40);
+			heartbeatStatus = (await heartbeat).status();
+			try {
+				await route.fulfill({ response });
+			} catch {
+				// Avant le correctif, la page est déjà partie pour `/login` : plus rien à servir.
+			}
+		});
+		await importByScreen(page, backup);
+
+		// (1) Le battement a reçu son 401, et l'écran est resté.
+		await expect(page.getByTestId('admin-restore-files-restored')).toBeVisible({ timeout: 60_000 });
+		expect(heartbeatStatus, 'le battement forcé pendant l’import doit avoir été refusé').toBe(401);
+		await expect(page).toHaveURL(/\/admin\/restore$/);
+		await page.unroute('**/api/v1/admin/full-import');
+
+		// (2) Compte rendu affiché : une activité de plus n'envoie plus aucun battement.
+		let activityRequests = 0;
+		await page.route(ACTIVITY, async (route) => {
+			activityRequests += 1;
+			await route.continue();
+		});
+		await forceActivity(page, 300);
+		// On prouve une ABSENCE : trois tics de la minuterie d'une seconde.
+		await page.waitForTimeout(3_000);
+		expect(activityRequests, 'aucun battement après le compte rendu').toBe(0);
+		await expect(page).toHaveURL(/\/admin\/restore$/);
+		await expect(page.getByTestId('admin-restore-files-restored')).toBeVisible();
+		await expect(page.getByTestId('admin-restore-relogin')).toBeVisible();
+		await capture(page, 'j-compte-rendu-apres-battement-refuse');
+	});
+});
