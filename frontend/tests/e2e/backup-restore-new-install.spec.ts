@@ -384,9 +384,14 @@ test.describe('Le compte rendu de la restauration reste affiché (Story 36-5, #9
 		await expect(page.getByTestId('backup-env-notice')).toBeVisible();
 
 		let heartbeatStatus: number | null = null;
+		let importStatus: number | null = null;
 		await page.route('**/api/v1/admin/full-import', async (route) => {
-			// Le serveur restaure et invalide la session ; la réponse attend ici.
-			const response = await route.fetch();
+			// Le serveur restaure et invalide la session ; la réponse attend ici. Le corps est
+			// repassé en OCTETS : sans `postData`, `route.fetch()` réencode le multipart et
+			// l'archive arrive illisible (400 « Could not find EOCD », relevé au développement).
+			const body = route.request().postDataBuffer();
+			const response = await route.fetch(body ? { postData: body } : undefined);
+			importStatus = response.status();
 			const heartbeat = page.waitForResponse((r) => r.url().includes('/api/v1/auth/activity'));
 			await forceActivity(page, 40);
 			heartbeatStatus = (await heartbeat).status();
@@ -398,9 +403,11 @@ test.describe('Le compte rendu de la restauration reste affiché (Story 36-5, #9
 		});
 		await importByScreen(page, backup);
 
-		// (1) Le battement a reçu son 401, et l'écran est resté.
-		await expect(page.getByTestId('admin-restore-files-restored')).toBeVisible({ timeout: 60_000 });
+		// (1) L'import a abouti au serveur, le battement a reçu son 401, et l'écran est resté.
+		await expect.poll(() => heartbeatStatus, { timeout: 60_000 }).not.toBeNull();
+		expect(importStatus, 'l’import retenu doit avoir abouti au serveur').toBe(200);
 		expect(heartbeatStatus, 'le battement forcé pendant l’import doit avoir été refusé').toBe(401);
+		await expect(page.getByTestId('admin-restore-files-restored')).toBeVisible({ timeout: 15_000 });
 		await expect(page).toHaveURL(/\/admin\/restore$/);
 		await page.unroute('**/api/v1/admin/full-import');
 
