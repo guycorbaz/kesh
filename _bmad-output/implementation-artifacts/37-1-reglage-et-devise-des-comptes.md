@@ -115,7 +115,7 @@ l'assistant, nom « Exercice AAAA » ou « Exercice AAAA/AAAA » : AC-11). A22 e
    (`mcp_outils_e2e.rs:1345`) ne s'applique donc **pas** telle quelle — test dédié, même méthode (différence de taille
    entre un et deux exercices, trois champs compris) ; le nombre d'exercices qui tient sous `MCP_ENVOI_OCTETS_MAX`
    (`services/envois_mcp.rs:55`, 24 576 octets) est écrit au Change Log du développement, **avec la conséquence** :
-   au-delà, `texte_et_valeur` (`mcp/sortie.rs:463`) rend `TropVolumineux` sans recours (aucune pagination) — état
+   au-delà, `texte_et_valeur` (`mcp/sortie.rs:451-466`, refus à `:463-464`) rend `TropVolumineux` sans recours (aucune pagination) — état
    existant, aggravé de trois champs ; pagination hors périmètre, dite au Change Log.
 3. **AC-3 — Écriture du réglage.** `PUT /api/v1/companies/current/currency-settings`
    `{ multiCurrencyEnabled, fxGainAccountId, fxLossAccountId, fxTransitAccountId, version }` (verrou optimiste comme
@@ -217,8 +217,9 @@ l'assistant, nom « Exercice AAAA » ou « Exercice AAAA/AAAA » : AC-11). A22 e
      quand une écriture d'un exercice postérieur tient son exercice et le compte en partage (37-3a) avant d'insérer
      sa ligne — c'est ce cycle-là, non celui de `companies`, qui fait rejouer `currency-mode` (elle ne prend
      `companies` qu'en partage) ; **et la route de conversion de 37-3b, depuis V3 (CR-6)** : elle lit en partage, avant
-     l'exercice, le compte en devise de l'écriture à compléter et ses comptes de différence, quand la bascule `force`
-     tient l'exercice puis demande ces comptes `FOR UPDATE` — même cycle, absorbé par le rejeu des deux routes
+     l'exercice, le compte en devise de l'écriture à compléter (et ses comptes de différence, comptes CHF que la
+     bascule n'archive pas), quand la bascule `force` tient l'exercice puis demande les comptes **en devise**
+     `FOR UPDATE` — même cycle, sur le seul compte en devise, absorbé par le rejeu des deux routes
      (la conversion `Rejouee`, 37-3b ; la bascule sous `retry_on_deadlock`, AC-3 bis) ;
    - audit `company.currency_settings_updated` (avant/après, ajouté à `ACTIONS` de `audit_labels.rs`, liste triée) ;
      libellés d'audit dans les quatre locales ;
@@ -708,8 +709,15 @@ l'assistant, nom « Exercice AAAA » ou « Exercice AAAA/AAAA » : AC-11). A22 e
     `PUT /api/v1/companies/current/currency-settings`, ajouter l'entrée à `MULTI_SOCIETE_ASSUME` de
     `textes_coherents.rs` (motif `\bcompanies\b`, précédent :1014-1017). **Le manuel dit aussi (V6, CR-6) que le
     mode s'active par une session d'Administrateur — écran, ou client HTTP en `Authorization: Bearer` après
-    `POST /auth/login` — et jamais par une clé d'API** ; même phrase au manuel d'administration (là où il dit les
-    routes refusées à une clé d'API, `admin-manual.tex:3217`) et au CHANGELOG ; PDF régénérés.
+    `POST /auth/login` — et jamais par une clé d'API** ; même phrase au manuel d'administration, là où il dit les
+    routes refusées à une clé d'API — le point **Administration** (`admin-manual.tex:3183`, non `:3217`, qui est le
+    décompte du journal d'audit) : le réglage multi-devises s'ajoute à son énumération des routes réservées, et sa
+    phrase « Ces opérations se font dans l'interface web », que V6 rend fausse, devient « par une session
+    d'Administrateur — l'interface web, ou un client HTTP en `Authorization: Bearer` —, jamais par une clé » (37-1-CR6-P2-2)
+    — et au CHANGELOG. **Matrice MCP du manuel d'administration** (`admin-manual.tex:3447`, V10) : la ligne
+    `kesh\_exercices` énumère ce que l'outil lit, « (identifiant, nom, dates, statut) » ; elle gagne le mode
+    multi-devises et les genres de cours d'ouverture et de clôture — `mcp_matrice_manuel.rs` ne lit que les colonnes
+    outil et portée, aucun test ne verrait l'énumération périmée (37-1-CR6-P2-1). PDF régénérés.
 11. **AC-11 — Dates du premier exercice dans l'assistant de démarrage (T1, CR-4 ; remplace la version « retirée »
     de CR-3 et l'ancien arbitrage A1).** Aujourd'hui, `finalize` (`routes/onboarding.rs:879`, sans corps) crée
     l'exercice initial du 1er janvier au 31 décembre de l'année courante (`:1043-1046`, `Utc::now()`), par
@@ -850,8 +858,9 @@ l'assistant, nom « Exercice AAAA » ou « Exercice AAAA/AAAA » : AC-11). A22 e
 - [ ] CR-6 — **V6** : test d'API de l'activation en session Bearer (`POST /auth/login`, `PUT
       /companies/current/currency-settings` avec `Authorization: Bearer`, sans cookie → 200) à côté du refus par clé
       d'API ; manuel d'administration et CHANGELOG : « s'active par une session, jamais par une clé d'API » (non « à
-      l'écran ») ; **V10** : `kesh_exercices` — `multi_devises`, `genre_ouverture`, `genre_cloture` (type scellé),
-      description, test `mcp_outils_e2e.rs`, mesure de taille d'un exercice écrite au Change Log, `mcp_contrat` et
+      l'écran »), point **Administration** du manuel d'administration (`:3183`) amendé (AC-10) ; **V10** :
+      `kesh_exercices` — `multi_devises`, `genre_ouverture`, `genre_cloture` (type scellé),
+      description, ligne de la matrice MCP du manuel d'administration (`:3447`, AC-10), test `mcp_outils_e2e.rs`, mesure de taille d'un exercice écrite au Change Log, `mcp_contrat` et
       `mcp_gardes_lexicales` verts ; **V11** : « aucun outil n'expose la société » écrit au Change Log du développement.
 - [ ] CR-3 (S2) — comptes de différence propres (AC-4 bis) : colonnes et deux `CHECK` dans la migration de l'AC-1 ;
       `Account`, `NewAccount`, `AccountUpdate` (un champ à trois états), macro `columns!`, `bulk_create` et
@@ -1150,3 +1159,19 @@ l'assistant, nom « Exercice AAAA » ou « Exercice AAAA/AAAA » : AC-11). A22 e
   `mcp_outils_e2e.rs:312`, `:1345` ; `envois_mcp.rs:55`. Axes exercés : prémisses de la révision, V6, V10, V11, renvoi V3,
   cohérence avec 37-3b AC-2 bis, choix (b) et (c) vus depuis 37-1 (corrects : la paire résolue fait échouer fermé).
   Non exercés : contrats V1/V2/V3 de 37-3a et 37-3b en détail (choix (a), (d), (e)), 37-4, 37-5, exécution des tests.
+- 2026-11-14 — validation CR-6 P2 (Opus) : 3 findings (0 CRITICAL, 0 HIGH, 2 MEDIUM, 1 LOW) ; remédiés dans la fiche,
+  aucun inter-fiches. **CR6-P2-1** (MEDIUM) — AC-10 : V10 étend `kesh_exercices`, mais la matrice MCP du manuel
+  d'administration (`admin-manual.tex:3447`, « les exercices (identifiant, nom, dates, statut) ») restait inchangée,
+  et `mcp_matrice_manuel.rs` ne lit que les colonnes outil et portée → ligne à compléter, tâche. **-2** (MEDIUM) —
+  AC-10 (remédiation P1-4) : renvoi `admin-manual.tex:3217` faux (décompte du journal d'audit) ; le lieu est le point
+  *Administration* (`:3183`), dont la phrase « Ces opérations se font dans l'interface web » contredit V6 → amendée,
+  réglage ajouté à l'énumération. **-3** (LOW) — AC-3 (remédiation P1-3) : « ces comptes » faisait prendre
+  `FOR UPDATE` les comptes de différence par la bascule, qui n'archive que les comptes en devise (CHF exclus) →
+  reformulé ; renvoi `sortie.rs:463` précisé (`:451-466`). Prémisses relues au code : `mcp/sortie.rs:121-143`
+  (`champ_enum!`, invocation globale à `:132`, précédents locaux `postes_ouverts.rs:75`, `commun.rs:203`), `:451-466` ;
+  `mcp/outils/exercices.rs:17-29`, `:62-75` (`SansArgument` en `deny_unknown_fields`) ; `mcp_outils_e2e.rs:99`, `:1344-1356` ;
+  `envois_mcp.rs:54` ; `middleware/auth.rs:77-100` ; `entities/fiscal_year.rs:17-19` (`FiscalYearStatus` en
+  `PascalCase` : le genre en `day`/`month` est une sérialisation propre, sans conflit) ; `admin-manual.tex:3183`,
+  `:3217`, `:3447` ; 37-3b AC-2 bis (verrous de V3, cohérents). Axes exercés : remédiation P1 (P1-1 à P1-4), V6, V10,
+  V11, MCP (`champ_enum!`, test de taille, contrat, matrice du manuel), RBAC Bearer, cycle avec la conversion V3.
+  Non exercés : AC-1, AC-3 bis à AC-7, AC-11 hors CR-6 ; contrats V1/V2 de 37-3a ; exécution des tests.

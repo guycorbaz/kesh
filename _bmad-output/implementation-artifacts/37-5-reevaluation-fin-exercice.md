@@ -476,12 +476,20 @@ clôture et que l'écart aille aux différences de change.
      de chaque compte en devise calculés à la main, solde CHF au 31.12.2024 = round(solde en devise × cours de clôture)
      exactement, compte de conversion à 0 ; **lecture MCP** (V12) : le serveur MCP est désactivé par défaut et ses clés ne
      sont **pas** des clés d'API (`require_auth` ne les reconnaît pas, `lib.rs:366-368` ; elles ne passent pas par
-     `/api/v1`) — le test l'active en session d'Administrateur (`PUT /api/v1/admin/mcp/settings`), crée une clé MCP de
-     portée `books:read` (`POST /api/v1/admin/mcp/keys`, jeton rendu à la création) et appelle `kesh_ecritures` puis
-     `kesh_ecriture` par le transport MCP (comme `mcp_outils_e2e.rs`, `banc(&pool).appeler(&jeton, …)`) : la ligne du
+     `/api/v1`) — le test l'active en session d'Administrateur (`PUT /api/v1/admin/mcp/settings` : corps complet
+     `{ enabled, addressFilterEnabled, allowedNetworks, trustedProxies, allowedOrigins, version }`,
+     `routes/mcp_server_settings.rs:95-102`, la `version` relue par le `GET` ; le filtre d'adresse doit admettre le pair
+     du banc, `127.0.0.1`, sans quoi `/mcp` répond comme une route absente, `mcp/transport.rs:90-96` — 37-5-CR6-P2-3),
+     crée une clé MCP de portée `books:read` **dispensée de validation** (`POST /api/v1/admin/mcp/keys` avec
+     `"sendValidation": "exempt"`, jeton rendu à la création ; le défaut est `required`, `routes/mcp_keys.rs:273-276`,
+     `entities/mcp_key.rs:256-260`, sous lequel un outil de données rend « envoi n° X en attente » et non les lignes —
+     37-5-CR6-P2-1) et appelle `kesh_ecritures` puis
+     `kesh_ecriture` par le transport MCP (comme `mcp_outils_e2e.rs`, `banc(&pool).appeler(&jeton, …)`,
+     `tests/common/mcp_pieges.rs:76`) : la réponse porte les données (non un envoi en attente), et la ligne du
      compte en devise rend `foreign` à montant 0 et source `revaluation`. Le Comptable de l'étape précédente est créé
-     par l'Administrateur (`POST /api/v1/users`). Le cours de `rates` (0.91193) est choisi **différent** de celui que
-     la source factice de 37-2 rend pour le 31.12.2024 (à fixer à l'écriture du test) : genre `request`, source `manual` à l'audit, attendus ainsi. Le test n'emploie aucun calcul de cours ni de CHF côté client : tout montant CHF qu'il envoie
+     par l'Administrateur (`POST /api/v1/users`). Les **deux** cours de `rates` (USD 0.91193, EUR 0.94947) sont choisis
+     **différents** de ceux que la source factice de 37-2 rend pour le 31.12.2024 (à fixer à l'écriture du test) :
+     genre `request` et source `manual` à l'audit **pour chaque devise**, attendus ainsi (37-5-CR6-P2-2). Le test n'emploie aucun calcul de cours ni de CHF côté client : tout montant CHF qu'il envoie
      est une donnée (celle des livres d'origine), jamais un produit qu'il aurait calculé ;
    - l'aperçu ne crée aucune écriture ; E2E de l'écran, dont le parcours repli mensuel → « Récupérer le cours du
      JJ.MM.AAAA » (source factice de 37-2) → aperçu relu, cours journalier (`rateKind: "day"`, le champ non modifié
@@ -738,3 +746,21 @@ clôture et que l'écart aille aux différences de change.
   (`/auth/login`) ; `mcp/outils/ecritures.rs:198`, `:272` ; `mcp/outils/mod.rs:9-20` (aucun outil d'audit). AC
   touchés : AC-2, AC-5, AC-7, AC-8, Tâches. Fiche à revalider (cycle CR-6).
 - 2026-11-14 — validation CR-6 P1 (Sonnet) : 0 CRITICAL, 0 HIGH, 1 MEDIUM, 2 LOW ; remédiés dans la fiche sauf <aucun inter-fiches>. MEDIUM 37-5-CR6-P1-1 : la lecture MCP du test V7 (AC-7) parlait d'une « clé d'API en lecture seule » — une clé MCP n'est pas une clé d'API (`lib.rs:366-368`), le serveur est désactivé par défaut : étapes d'activation (`PUT /admin/mcp/settings`) et de clé (`POST /admin/mcp/keys`, `books:read`) ajoutées. LOW -P1-2 : phrase MCP d'AC-5 redondante, lieu du test V12 absent (`mcp_outils_e2e.rs`). LOW -P1-3 : création du Comptable (`POST /users`) et genre attendu du cours de `rates` (`request`) non dits. Relu au code : `lib.rs:525`, `:582`, `:813`, `:1246`, `:1259`, `:1272`, `:1353` ; `mcp/outils/ecritures.rs:198`, `:272` ; `mcp/outils/mod.rs` (aucun outil d'audit) ; cohérence avec 37-1 AC-3 (V6, Bearer), 37-3a AC-6 (V1, V2, V4, V8), 37-3b AC-2 bis (V3) et epic l. 8, 55 (0.91193, 0.94947). Non exercés : relecture complète hors diff CR-6, compilation, rendu.
+- 2026-11-14 — validation CR-6 P2 (Opus) : 3 findings (0 CRITICAL, 0 HIGH, 1 MEDIUM, 2 LOW) ; remédiés dans la fiche,
+  aucun inter-fiches. **CR6-P2-1** (MEDIUM) — AC-7 (remédiation P1-1) : la clé MCP créée par
+  `POST /admin/mcp/keys` sans `sendValidation` prend le défaut `required` (`routes/mcp_keys.rs:273-276`,
+  `entities/mcp_key.rs:256-260`) : `kesh_ecritures` rendrait « envoi n° X en attente », non la ligne `revaluation` —
+  l'assertion échouait par construction → clé `"sendValidation": "exempt"`, réponse de données vérifiée. **-2** (LOW) —
+  AC-7 (P1-3) : seul le cours USD était dit différent de la source factice ; l'EUR (0.94947) aussi, genre `request` et
+  source `manual` par devise. **-3** (LOW) — AC-7 (P1-1) : `PUT /admin/mcp/settings` est en remplacement complet avec
+  `version` (`routes/mcp_server_settings.rs:95-102`), et le filtre d'adresse doit admettre le pair du banc
+  (`mcp/transport.rs:90-96`, sinon route absente) → dits. Prémisses relues au code : `lib.rs:365-384` (routes MCP
+  d'administration, clé MCP non reconnue par `require_auth`), `:260` (`/users`) ; `routes/mcp_keys.rs:97-107`,
+  `:266-276` ; `mcp/transport.rs:71-96` (réglages lus en base à chaque requête : le banc voit l'activation faite par
+  le routeur du test) ; `tests/common/mcp_pieges.rs:60-110` (`banc`, `cle_de`) ; `middleware/auth.rs:83-100`.
+  Comptabilité (V8) : le CHF repassé égale celui des livres d'origine, réévaluations infra-annuelles d'origine
+  comprises (leur cumul est l'écart au 31.12), sous la condition écrite (autres écritures reprises à leur CHF) ;
+  gain/perte au sens de `round(solde × cours) − solde CHF`. Axes exercés : remédiation P1 (P1-1 à P1-3), V7, V8, V12,
+  MCP (portée, activation, validation avant envoi, transport), RBAC Bearer, cohérence avec 37-1 AC-3 (V6) et 37-3b
+  AC-2 bis (V3 dans la recette). Non exercés : AC-1 à AC-4 et AC-6 hors CR-6 ; contrats V1/V2 de 37-3a en détail ;
+  exécution des tests, rendu.
