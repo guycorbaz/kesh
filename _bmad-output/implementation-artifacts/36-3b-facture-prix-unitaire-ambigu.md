@@ -1,6 +1,6 @@
 # Story 36-3b : la facture client ne lit plus un prix unitaire « 1.250 » comme 1,25 franc (#1171)
 
-Status: review
+Status: done
 
 *Fiche rédigée le 2026-11-14 par l'agent de rédaction des fiches de l'Epic 36 (Opus 5.5), worktree `kesh-36-3b`, branche
 `story/36-3b-facture-prix-unitaire-ambigu`, partie de la tête de la 36-3 terminée (`b1cd53d28`), par le workflow
@@ -363,7 +363,7 @@ Une mutation équivalente se dit au Dev Agent Record ; les E2E ne se rejouent pa
 - [x] E2E (AC6), rouge d'abord.
 - [x] Manuel (AC8), `.tex` seul ; captures (AC10).
 - [x] Mutations M1-M11 (et M9b, M12 à M14).
-- [ ] Gates — *clôture à venir* (passage en `review` et remédiation P1 faits, Dev Agent Record) — (voie 2, `e35-dev-commun.md` § *Quels gates, quand*) : en cours, Vitest ciblé
+- [x] Gates — passage en `review`, remédiation P1 et clôture faits (Dev Agent Record) — (voie 2, `e35-dev-commun.md` § *Quels gates, quand*) : en cours, Vitest ciblé
       (`components/invoices/`, `features/invoices/invoice-helpers.test.ts`, `shared/i18n-keys.test.ts`) par
       `.gate-front.lock`, `npm run check` et `lint-i18n-ownership` ; **passage en `review`** : bases `kesh_e363b` remises
       à neuf sur la voie 2, `scripts/test-fast.sh --ci`, `scripts/gate-ci.sh kesh_ci_e363b` (voie 1, son verrou),
@@ -521,6 +521,22 @@ script `mut/mut-36-3b.py`) ; `test-fast-ci-review.log`, `gate-ci-review.log`, `f
     0 erreur, 29 avertissements ; `lint-i18n-ownership` PASS ; `test:unit` **3584 tests, 236 fichiers** ; `build` vert
     (`front-*-r1.log`) ; E2E ciblé `invoices.spec.ts` **21 passés** (`e2e-cible-r1.log`). **Ni `gate-ci` ni E2E
     complet** : à la clôture.
+- **Passe ciblée P2** (Opus, `review-p2-ciblee.md`, 0/0/0/2), tests seuls, commit `1a060fedf` (**dernier commit de
+  code**) :
+  - **P2-1** : `queryByTestId` inutilisé retiré des trois tests d'AC4.
+  - **P2-2** : deux mutations neuves, jouées sur `1a060fedf` (`mut/r2/resume.log`, `MUT_ROUND=r2`) : **R2-M18** (prix lu
+    avant la description) tuée par « description vide et prix « 1.250 » : la description est refusée avant le prix » ;
+    **R2-M19** (refus de la quantité nulle retiré) tuée par « quantité 0 et prix clair : la quantité reste refusée ».
+    Aucune survivante.
+- **Gates de clôture**, au commit `1a060fedf` :
+  - Vitest du fichier : 55 passés (`r2-cible-1.log`) ; frontend complet : `check` 0 erreur, `lint-i18n-ownership`
+    PASS, `test:unit` **3584 tests, 236 fichiers**, `build` vert (`front-*-cloture.log`) ; `test-fast --ci` non exigé
+    pour un commit de tests frontend seul (consigne de l'orchestrateur) ;
+  - `scripts/gate-ci.sh kesh_ci_e363b` (voie 1) : **5452 passés, 0 échoué, 17 ignorés** (`gate-ci-cloture.log`) ;
+  - **E2E complet** sur `kesh_e2e_e363b` recréée à neuf (voie 2, port 3367, `ss -ltnp` 0 avant et après) :
+    **411 passés, 7 échoués, 18 ignorés** (`e2e-cloture.log`). Les sept échecs sont exactement ceux de la KF-029
+    (#97) de `docs/testing.md` § « Les échecs attendus » : `mode-expert.spec.ts:26`, `:41`,
+    `onboarding-path-b.spec.ts:65`, `:92`, `onboarding.spec.ts:57`, `:77`, `:150`. Aucun échec hors liste.
 
 ### File List
 
@@ -590,3 +606,12 @@ script `mut/mut-36-3b.py`) ; `test-fast-ci-review.log`, `gate-ci-review.log`, `f
     (D3, C-36-3b-4) ; le bandeau dit « prix unitaire ».
   - **A3** (capture 03 non déclarée) — déclarée au Dev Agent Record (#1191).
   - **A4** (papiers) — C-36-3b-2, -3 et -7 annotés au registre ; case « Gates » libellée « clôture à venir ».
+- 2026-11-15 — **Passe ciblée P2** (Opus, une lentille sur `git diff 197ba366e e7aaa3efa`,
+  `kesh-gate-logs/e36-3b/review-p2-ciblee.md`) : 0 / 0 / 0 / 2 LOW, tous deux dans les tests — P2-1 (`queryByTestId`
+  inutilisé, retiré) et P2-2 (deux témoins d'ordre non éprouvés : mutations R2-M18 et R2-M19, tuées). Commit `1a060fedf`,
+  tests seuls, aucune ligne de production.
+- 2026-11-15 — **Clôture.** Trend de la revue de code : P1 (trois lentilles) B 0/0/0/4, E 0/0/0/4, A 0/0/0/4 → remédiés
+  `6cb932bd6`..`e7aaa3efa` (production : `readLineUnitPrice`, manuel) → P2 ciblée (Opus) 0/0/0/2, remédiés `1a060fedf`
+  (tests seuls). Gates de clôture au dernier commit de code `1a060fedf` : `gate-ci` 5452 passés, 0 échoué, 17 ignorés ;
+  E2E complet 411 passés, 7 échoués (les sept de la KF-029, #97), 18 ignorés ; frontend complet vert (3584 tests) — au
+  Dev Agent Record. Le PDF du manuel se régénère à l'intégration. `Status: done`.
