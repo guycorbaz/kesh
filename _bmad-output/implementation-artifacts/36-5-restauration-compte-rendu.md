@@ -1,6 +1,6 @@
 # Story 36-5 : le compte rendu d'une restauration ne se perd plus sous un battement de session refusé (#931, KF-056)
 
-Status: review
+Status: done
 
 *Fiche rédigée le 2026-11-14 par l'agent de rédaction des fiches de l'Epic 36 (Opus 5.5), worktree `kesh-36-5`, branche
 `story/36-5-restauration-compte-rendu`, par le workflow `bmad-create-story`. Release **0.17.8**, phase 1. **Aucune
@@ -1053,3 +1053,14 @@ touché, consigne de l'orchestrateur), test de D5 (le code servi n'a pas changé
   #1193 (Dev Notes) ; P3-3 (test en `finally`) et P3-4 (annotations) traités. Aucune ligne de production touchée
   (`68c949fa2`) ; frontend complet vert. Trend : P1 0/1/1/10 (trois lentilles) → P2 0/0/0/10 (deux) → P3 ciblée 0/0/1/3. Le
   MEDIUM appelle une passe de plus : **P4 ciblée**, `36-5-restauration-compte-rendu-review-prompt-p4-ciblee.md`.
+- 2026-11-15 — **Passe ciblée P4** (Sonnet) : 0/0/0/0 (`kesh-gate-logs/e36-5/review-p4-ciblee.md`). **Revue terminée.**
+  Trend : P1 (B 0/0/0/3, E 0/1/1/2, A 0/0/0/5) → remédiés `f142298e7` → P2 (E 0/0/0/4, A 0/0/0/6) → remédiés `fb2012f1b` →
+  P3 ciblée Haiku 0/0/1/3 → remédiés `68c949fa2` → P4 ciblée Sonnet 0/0/0/0. Modèles : Sonnet ou Opus aux passes complètes,
+  Haiku et Sonnet aux ciblées. Reclassement : aucun ; issues tracées par l'orchestrateur : #1180, #1193.
+- 2026-11-15 — **Clôture** (Opus 5.5), au dernier commit de code `68c949fa2` (journaux à `2686eb188`, commit en première
+  ligne) : `scripts/gate-ci.sh kesh_ci_e365` **5452 passés, 0 échoué, 17 ignorés** (`clot-gate-ci.log`,
+  `clot-gate-ci.console.log`) ; **E2E complet** sur `kesh_e2e_e365` recréée à neuf, port 3365 (`clot-e2e.log`, frontend
+  servi : le build de `68c949fa2`) : **409 passés, 7 échoués, 18 ignorés** — les sept de la KF-029 (#97), nommés un par un
+  contre `docs/testing.md` § *Les échecs attendus* (`mode-expert.spec.ts:26`, `:41` ; `onboarding-path-b.spec.ts:65`, `:92` ;
+  `onboarding.spec.ts:57`, `:77`, `:150`), aucune pollution ; `backup-restore-new-install.spec.ts:140`, `:262`, `:301` et le
+  test de D5 (`:381`) verts ; port 3365 libre avant et après. `Status: done`.
