@@ -9,12 +9,18 @@
 //! `WX` de l'AFM, en millièmes d'em ([`CHASSES`]).
 //!
 //! **Provenance.** Les deux tableaux sont engendrés, non écrits à la main, par le script
-//! `kesh-gate-logs/e36-12/engendrer-largeurs.py`, depuis :
+//! versionné `scripts/engendrer-largeurs-helvetica.py`, depuis :
 //! - `WIN_ANSI_ENCODING` et `glyphnames.rs` de `lopdf` 0.31.0 ;
-//! - les métriques d'Adobe de 1990 distribuées par TeX Live,
-//!   `fonts/afm/adobe/helvetic/phvr8a.afm` (Helvetica) et `phvb8a.afm` (Helvetica-Bold),
-//!   lues **par nom** (`N <nom>`) : leur colonne `C` est l'*AdobeStandardEncoding*, non
-//!   WinAnsi (`C 39 ; … N quoteright`, alors que l'octet 0x27 de WinAnsi est `quotesingle`).
+//! - les métriques d'Adobe de 1990 distribuées par TeX Live (paquet
+//!   `texlive-fonts-recommended`), `fonts/afm/adobe/helvetic/phvr8a.afm` (Helvetica) et
+//!   `phvb8a.afm` (Helvetica-Bold), dont le script porte les empreintes, lues **par nom**
+//!   (`N <nom>`) : leur colonne `C` est l'*AdobeStandardEncoding*, non WinAnsi
+//!   (`C 39 ; … N quoteright`, alors que l'octet 0x27 de WinAnsi est `quotesingle`).
+//!
+//! Pour vérifier que ce fichier porte bien la sortie du script, depuis la racine du dépôt :
+//! `python3 -I scripts/engendrer-largeurs-helvetica.py --verifier crates/kesh-qrbill/src/largeurs.rs`
+//! (code 0 si les tableaux sont identiques). Sans argument, le script écrit les tableaux sur
+//! la sortie standard, à recopier ici entre les deux `#[rustfmt::skip]`.
 //!
 //! Seul ajout à la main : **`Euro`**, absent des AFM de 1990, reçoit **556** en maigre et en
 //! gras, sa chasse dans les métriques Adobe actuelles d'Helvetica. Pour un caractère porté
@@ -481,23 +487,19 @@ fn chasse(c: char, gras: bool) -> Option<u16> {
     Some(if gras { grasse } else { maigre })
 }
 
-/// La plus large chasse de la police, en millièmes d'em : ce que compte un caractère sans
-/// entrée, pour que la largeur ne soit jamais sous-estimée.
-fn plus_large(gras: bool) -> u16 {
-    CHASSES
-        .iter()
-        .map(|&(_, maigre, grasse)| if gras { grasse } else { maigre })
-        .max()
-        .unwrap_or(1000)
-}
-
 /// La largeur de `texte` imprimé en Helvetica (ou Helvetica-Bold si `gras`) à `taille`
 /// points, en millimètres : la somme des chasses, sans crénage (printpdf n'en applique pas).
-/// Un caractère sans entrée compte pour la plus large chasse de la police.
+///
+/// Un caractère sans entrée compte **zéro** : [`WINANSI`] porte tous les octets imprimables
+/// (`table_triee_et_complete`), si bien qu'un caractère sans entrée n'a pas d'octet, et
+/// `lopdf` le retire à l'écriture (`lopdf-0.31.0/src/encodings/mod.rs:14-18`,
+/// `string_to_bytes`) : il ne s'imprime pas. Une espace insécable (U+00A0, que WinAnsi place à
+/// 0xA0 sous le nom `space`, déjà pris par 0x20) en est un exemple. La largeur rendue est donc
+/// celle du texte réellement imprimé (revue P1, B-2).
 pub(crate) fn largeur_mm(texte: &str, taille: f32, gras: bool) -> f32 {
     let milliemes: u32 = texte
         .chars()
-        .map(|c| u32::from(chasse(c, gras).unwrap_or_else(|| plus_large(gras))))
+        .map(|c| u32::from(chasse(c, gras).unwrap_or(0)))
         .sum();
     milliemes as f32 / 1000.0 * taille * MM_PAR_POINT
 }
@@ -533,7 +535,7 @@ mod tests {
 
     /// La dichotomie de [`chasse`] exige [`CHASSES`] triée et sans doublon, et chaque nom de
     /// [`WINANSI`] doit y avoir sa ligne : sans quoi un caractère imprimable compterait pour
-    /// la plus large, en silence.
+    /// zéro, en silence.
     #[test]
     fn table_triee_et_complete() {
         assert!(CHASSES.windows(2).all(|p| p[0].0 < p[1].0), "CHASSES triée");
@@ -551,10 +553,11 @@ mod tests {
 
     /// **AC8** — tout ce que [`texte_imprime`] peut sortir d'un caractère admis par la
     /// directive (§ 4.1.1, [`est_caractere_qr`]) a son entrée : aucun caractère imprimé ne
-    /// compte pour la plus large par défaut. `Ĳ` sort `IJ`, deux entrées.
+    /// compte pour zéro. `Ĳ` sort `IJ`, deux entrées. Le balayage couvre tout Unicode (revue
+    /// P1, E-3) : une addition future au jeu admis, où qu'elle tombe, est contrôlée.
     #[test]
     fn table_couvre_les_sorties_imprimees() {
-        let admis: Vec<char> = (0..=0x2FFFu32)
+        let admis: Vec<char> = (0..=0x10FFFFu32)
             .filter_map(char::from_u32)
             .filter(|c| est_caractere_qr(*c))
             .collect();
@@ -575,13 +578,15 @@ mod tests {
     }
 
     /// La largeur d'un texte, en mm : « Acceptance point » en gras à 6 pt, 8335 millièmes
-    /// d'em (somme des `WX` de `phvb8a.afm`), soit 17,642 mm ; un caractère sans entrée
-    /// (U+4E00) compte pour la plus large, 1015 en maigre.
+    /// d'em (somme des `WX` de `phvb8a.afm`), soit 17,642 mm ; un caractère sans octet
+    /// WinAnsi (U+4E00, U+00A0), que `lopdf` n'imprime pas, compte zéro.
     #[test]
     fn largeur_en_millimetres() {
         let attendu = 8335.0 / 1000.0 * 6.0 * 25.4 / 72.0;
         assert!((largeur_mm("Acceptance point", 6.0, true) - attendu).abs() < 0.001);
-        assert!((largeur_mm("\u{4E00}", 10.0, false) - 1015.0 / 100.0 * 25.4 / 72.0).abs() < 0.001);
+        assert_eq!(largeur_mm("\u{4E00}", 10.0, false), 0.0);
+        let sans_espace = (8335.0 - 278.0) / 1000.0 * 6.0 * 25.4 / 72.0;
+        assert!((largeur_mm("Acceptance\u{A0}point", 6.0, true) - sans_espace).abs() < 0.001);
         assert_eq!(largeur_mm("", 8.0, false), 0.0);
     }
 }

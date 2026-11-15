@@ -11,11 +11,9 @@
 //! capture montre ce que la production imprime, langue par langue. Aucune donnée réelle :
 //! les adresses et l'IBAN sont ceux des exemples de la directive.
 
-use std::collections::HashMap;
 use std::path::PathBuf;
 
 use chrono::NaiveDate;
-use kesh_qrbill::types::I18N_KEYS;
 use kesh_qrbill::validation::build_qrr;
 use kesh_qrbill::{
     Address, AddressType, Currency, InvoiceLinePdf, InvoicePdfData, InvoiceVatLinePdf, QrBillData,
@@ -35,20 +33,6 @@ const LANGUES: [(&str, &str); 2] = [
         include_str!("../../kesh-i18n/locales/en-CH/messages.ftl"),
     ),
 ];
-
-/// Les libellés du PDF tirés d'un `messages.ftl` : chaque ligne `clé = valeur` dont la clé
-/// est dans [`I18N_KEYS`]. Les valeurs de ces clés tiennent sur une ligne.
-fn traductions(ftl: &str) -> QrBillI18n {
-    let mut entries = HashMap::new();
-    for ligne in ftl.lines() {
-        if let Some((cle, valeur)) = ligne.split_once(" = ")
-            && let Some(cle) = I18N_KEYS.iter().find(|k| **k == cle.trim())
-        {
-            entries.insert(*cle, valeur.trim().to_string());
-        }
-    }
-    QrBillI18n::new(entries)
-}
 
 /// Une adresse de type S en Suisse, la seule que la production imprime.
 fn adresse(nom: &str, rue: &str, numero: &str, npa: &str, localite: &str) -> Address {
@@ -162,7 +146,7 @@ fn main() {
     std::fs::create_dir_all(&dossier).expect("répertoire de sortie");
     let date = OffsetDateTime::from_unix_timestamp(1_767_225_600).expect("date fixe");
     for (langue, ftl) in LANGUES {
-        let i18n = traductions(ftl);
+        let i18n = QrBillI18n::depuis_ftl(ftl);
         for fixture in fixtures() {
             let pdf = generate_qr_bill_pdf_with_date(&fixture.donnees, &facture(), &i18n, date)
                 .expect("PDF rendu");

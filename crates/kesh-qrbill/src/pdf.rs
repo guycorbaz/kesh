@@ -747,18 +747,20 @@ const SEP_PAS: f32 = 4.0;
 /// Écart entre le pointillé et la boîte d'un ciseau, de chaque côté, en mm (C-36-12a-1).
 const SEP_ECART_CISEAUX: f32 = 0.25;
 
-/// Abscisse du pivot du ciseau de la ligne horizontale, en mm : sa boîte va de 46,15 à
+/// Abscisse de l'origine du repère du ciseau de la ligne horizontale, en mm (les lames se
+/// croisent 0,34 mm plus loin, vers leurs pointes) : sa boîte va de 46,15 à
 /// 50, à droite des titres du récépissé (bord droit ≤ 36,05 dans les quatre langues),
 /// à gauche de la ligne verticale (fiche 36-12a, D2 : centre x ∈ [45, 52]).
 const CISEAU_H_X: f32 = 48.0;
 
-/// Ordonnée du pivot du ciseau de la ligne verticale, en mm : sa boîte va de y = 99,5 à
+/// Ordonnée de l'origine du repère du ciseau de la ligne verticale, en mm : sa boîte va de y = 99,5 à
 /// 103,35, au-dessus de la zone de 5 mm du QR (qui monte à 98, § 3.5.2) et sous la ligne
 /// horizontale (D2, AC3 : centre y ∈ [101 ; 102]).
 const CISEAU_V_Y: f32 = 101.5;
 
 // Le symbole, dans son repère propre : `u` le long de la ligne, lames vers les `u`
-// positifs ; `v` en travers. Pivot en (0, 0). Grande dimension 3,85 mm (u de −1,85 à 2),
+// positifs ; `v` en travers. Origine en (0, 0) ; les lames se croisent sur l'axe en
+// u ≈ 0,34 (revue P1, B-1). Grande dimension 3,85 mm (u de −1,85 à 2),
 // petite 2,7 mm (v de −1,35 à 1,35) : la fiche borne la grande de 3 à 5 mm, la petite à
 // 3,5 mm (AC3).
 
@@ -855,7 +857,8 @@ fn trait_droit(de: (f32, f32), a: (f32, f32)) -> Line {
 
 /// Le symbole des ciseaux, dessiné au trait (§ 3.7 : « scissors symbol » ; Helvetica en
 /// WinAnsi ne porte pas ✂, C-36-12-2) : deux anneaux en Bézier et deux lames en triangles
-/// fermés qui se croisent au pivot `(cx, cy)`. Couché, lames vers la droite, sur la ligne
+/// fermés qui se croisent sur la ligne, 0,34 mm après l'origine `(cx, cy)` du repère du
+/// symbole, du côté des pointes. Couché, lames vers la droite, sur la ligne
 /// horizontale ; tourné d'un quart de tour, lames vers le bas, si `vertical`.
 fn dessiner_ciseaux(layer: &PdfLayerReference, cx: f32, cy: f32, vertical: bool) {
     let point = |u: f32, v: f32| -> Point {
@@ -889,8 +892,8 @@ fn dessiner_ciseaux(layer: &PdfLayerReference, cx: f32, cy: f32, vertical: bool)
             points: anneau.iter().map(|&(u, v)| (point(u, v), true)).collect(),
             is_closed: true,
         });
-        // La lame partie de cet anneau, qui croise l'autre au pivot et finit de l'autre
-        // côté de la ligne.
+        // La lame partie de cet anneau, qui croise l'autre sur la ligne et finit de l'autre
+        // côté de celle-ci.
         let [t1, t2] = LAME_TALON;
         layer.add_line(Line {
             points: vec![
@@ -3485,22 +3488,13 @@ mod tests {
         ),
     ];
 
-    /// Le [`QrBillI18n`] d'une langue de [`LANGUES`] : chaque ligne `clé = valeur` dont la
-    /// clé est dans `I18N_KEYS`.
+    /// Le [`QrBillI18n`] d'une langue de [`LANGUES`], par [`QrBillI18n::depuis_ftl`].
     fn i18n_de(langue: &str) -> QrBillI18n {
         let (_, ftl) = LANGUES
             .iter()
             .find(|(l, _)| *l == langue)
             .expect("langue connue");
-        let mut entries = std::collections::HashMap::new();
-        for ligne in ftl.lines() {
-            if let Some((cle, valeur)) = ligne.split_once(" = ")
-                && let Some(cle) = crate::types::I18N_KEYS.iter().find(|k| **k == cle.trim())
-            {
-                entries.insert(*cle, valeur.trim().to_string());
-            }
-        }
-        QrBillI18n::new(entries)
+        QrBillI18n::depuis_ftl(ftl)
     }
 
     /// Le PDF de la fixture, adresses ordinaires de type S, dans une langue.
@@ -3546,14 +3540,24 @@ mod tests {
                 );
             }
             for &(a, b) in &r.horizontaux {
+                // Dans la page (revue P1, A-5), à l'arrondi des points près.
+                assert!(
+                    a >= -0.01 && b <= PAGE_W + 0.01,
+                    "{langue} : trait {a}..{b} hors de [0, 210]"
+                );
                 let trait_ = Boite {
                     x0: a,
                     y0: SEP_Y,
                     x1: b,
                     y1: SEP_Y,
                 };
+                // À plus de 0,2 mm d'un ciseau : l'écart de 0,25 mm de C-36-12a-1, que
+                // l'arrondi des points ne fait pas passer sous 0,2 (revue P1, B-4).
                 for c in [r.ciseau_h, r.ciseau_v].into_iter().flatten() {
-                    assert!(trait_.disjointe(&c), "{langue} : trait {a}..{b} sur {c:?}");
+                    assert!(
+                        trait_.elargie(0.2).disjointe(&c),
+                        "{langue} : trait {a}..{b} à moins de 0,2 mm de {c:?}"
+                    );
                 }
             }
         }
@@ -3586,6 +3590,11 @@ mod tests {
                 );
             }
             for &(a, b) in &r.verticaux {
+                // Du bas de la page à l'horizontale, pas au-delà (revue P1, A-5).
+                assert!(
+                    a >= -0.01 && b <= SEP_Y + 0.01,
+                    "{langue} : trait {a}..{b} hors de [0, 105]"
+                );
                 let trait_ = Boite {
                     x0: RECEIPT_W,
                     y0: a,
@@ -3593,10 +3602,39 @@ mod tests {
                     y1: b,
                 };
                 for c in [r.ciseau_h, r.ciseau_v].into_iter().flatten() {
-                    assert!(trait_.disjointe(&c), "{langue} : trait {a}..{b} sur {c:?}");
+                    assert!(
+                        trait_.elargie(0.2).disjointe(&c),
+                        "{langue} : trait {a}..{b} à moins de 0,2 mm de {c:?}"
+                    );
                 }
             }
         }
+    }
+
+    /// **Revue P1, B-2** — un libellé qui porte une espace insécable : `lopdf` la retire (pas
+    /// d'octet WinAnsi), et l'intitulé imprimé, « Acceptancepoint », finit toujours à x = 57.
+    /// Largeur calculée à la main : 8335 − 278 (l'espace) = 8057 millièmes d'em à 6 pt gras,
+    /// 17,054 mm, d'où `Td.x` = 39,946.
+    #[test]
+    fn le_point_de_depot_ignore_ce_qui_ne_s_imprime_pas() {
+        let mut entries = std::collections::HashMap::new();
+        entries.insert(
+            "invoice-pdf-qr-acceptance-point",
+            "Acceptance\u{A0}point".to_string(),
+        );
+        let textes = textes_du_pdf(&pdf_ordinaire(&QrBillI18n::new(entries)));
+        let trouves: Vec<_> = textes
+            .iter()
+            .filter(|(_, _, t)| t == "Acceptancepoint")
+            .collect();
+        assert_eq!(
+            trouves.len(),
+            1,
+            "montage : l'espace insécable retirée : {trouves:?}"
+        );
+        let (x, y, _) = trouves[0];
+        assert!((x - 39.946).abs() <= 0.05, "Td.x = {x}, attendu 39,946");
+        assert!((y - 5.0).abs() < 0.01);
     }
 
     /// **AC3** (Story 36-12a) — un symbole sur chaque ligne, de 3 à 5 mm de long et 3,5 mm
