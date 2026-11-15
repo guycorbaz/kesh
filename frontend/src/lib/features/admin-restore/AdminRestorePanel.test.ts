@@ -684,14 +684,19 @@ describe('AdminRestorePanel — Story 36-5 (maintien de session)', () => {
 	it('revue P2, E2-2 (B1-3) : au succès, la minuterie de lecture est armée AVANT le réarmement du maintien', async () => {
 		const espion = vi.spyOn(globalThis, 'setTimeout');
 		mockApi.uploadFullImport.mockResolvedValue(succes(0, 0));
-		const { getByTestId, findByTestId } = render(AdminRestorePanel);
-		await importer(getByTestId, findByTestId);
-		await findByTestId('admin-restore-success');
-		const index = espion.mock.calls.findIndex((c) => c[1] === B_DEFAUT);
-		expect(index).toBeGreaterThanOrEqual(0);
-		expect(espion.mock.invocationCallOrder[index]).toBeLessThan(
-			mockAuth.holdForRestore.mock.invocationCallOrder[1],
-		);
-		espion.mockRestore();
+		const { getByTestId, findByTestId, unmount } = render(AdminRestorePanel);
+		// Revue P3 (P3-3) : l'espion est restauré et le panneau démonté même si une assertion échoue.
+		try {
+			await importer(getByTestId, findByTestId);
+			await findByTestId('admin-restore-success');
+			const index = espion.mock.calls.findIndex((c) => c[1] === B_DEFAUT);
+			expect(index).toBeGreaterThanOrEqual(0);
+			expect(espion.mock.invocationCallOrder[index]).toBeLessThan(
+				mockAuth.holdForRestore.mock.invocationCallOrder[1],
+			);
+		} finally {
+			unmount();
+			espion.mockRestore();
+		}
 	});
 });
