@@ -4,7 +4,7 @@ Status: ready-for-dev
 
 *Fiche rédigée le 2026-11-15 (Opus), branche `epic/38-paypal`, numéros de ligne relevés sur `8b3d548d`. Epic 38
 (`_bmad-output/planning-artifacts/epic-38-paypal.md`) : E3, E11, E15, E21, E22, E23, C-38-0, C-38-12, C-38-14 ;
-décisions de Beat B17, B21 (`epics-38-40-cadrage.md`). **Dépend de 38-3** (colonnes `provider_tx_id`, `invoice_ref`
+décisions de Beat B17, B21 (`epics-38-40-cadrage.md`). **Dépend de 38-3a** (colonnes `provider_tx_id`, `invoice_ref`
 de `bank_transactions`, C-38-4 ; comptes prestataires porteurs de transactions) et, à travers elle, de **38-2** (compte
 bancaire lié à un compte du plan **en devise**, levée de C-37-9, E11) et de l'**Epic 37** (37-1 : `accounts.currency` ;
 37-3a : `journal_entry_lines.amount_currency` toujours positif, sens porté par débit/crédit, `chk_jel_fx_amount` ;
@@ -254,13 +254,13 @@ Reprises de la fiche d'epic (§ 38-6c), complétées là où un AC l'exige.
    (tout rôle authentifié, comme `GET /bank-accounts` — `authenticated_routes`, `lib.rs:1229` — ; clés d'API admises,
    `read` comprise) :
    - compte de la société (archivé compris : lecture) sinon 404 `BANK_IMPORT_BANK_ACCOUNT_NOT_FOUND` ;
-   - filtres facultatifs, cumulés : `providerTxId` (égalité, index unique `(bank_account_id, provider_tx_id)` de 38-3),
-     `invoiceRef` (égalité après `trim`, selon la collation que 38-3 donne à la colonne), `status` ∈ {`pending`,
+   - filtres facultatifs, cumulés : `providerTxId` (égalité, index unique `(bank_account_id, provider_tx_id)` de 38-3a),
+     `invoiceRef` (égalité après `trim`, selon la collation que 38-3a donne à la colonne), `status` ∈ {`pending`,
      `reconciled`} (sinon 400), `from`/`to` sur `booking_date`, inclus ; `limit` 1..=500 (défaut 50), `offset` ;
    - tri `booking_date DESC, id DESC` ; réponse `ListResponse<TransactionResponse>` — le DTO du détail d'un import
-     (`routes/bank_imports.rs:302-345`, **ne porte aujourd'hui aucun champ de prestataire** : 38-3 (AC-10) n'étend que la liste des imports de
+     (`routes/bank_imports.rs:302-345`, **ne porte aujourd'hui aucun champ de prestataire** : 38-3a (AC-5) n'étend que la liste des imports de
      `providerConnection`, non ce DTO) **réutilisé** et étendu **ici**, champs additifs : `version`, `bankAccountId`,
-     et, lus des colonnes de 38-3 (AC-3) — `providerTxId`, `grossAmount`, `feeAmount`, `movementKind`, `eventCode`,
+     et, lus des colonnes de 38-3a (AC-3) — `providerTxId`, `grossAmount`, `feeAmount`, `movementKind`, `eventCode`,
      `counterpartyEmail`, `invoiceRef`, `itemNames`, `relatedProviderTxId`, `reviewReason`, `bookedAt` (`null` pour une
      transaction de fichier) ; sans eux, le script ne peut pas lire ce qu'il cherche. Test de sérialisation ;
    - lecture seule ; aucune donnée d'un autre compte ni d'une autre société (test).
@@ -291,7 +291,7 @@ Reprises de la fiche d'epic (§ 38-6c), complétées là où un AC l'exige.
     - **Routes** (C-38-12) : `LIB_ROUTES` (`kesh-api/tests/audit_route_registry.rs:382`) gagne `("post",
       "reconciliation::post_link_entries", Traced, SansEcritureAuJournal)` — **+1** route mutante ; le total de
       `the_registry_partition_is_what_the_story_declares` (`:1007-1018`) et son message passent de N à N + 1 (N relu à
-      la source au moment du développement : 146 sur `8b3d548d`, avant l'Epic 37 et 38-1 à 38-3) ; les deux `GET` ne
+      la source au moment du développement : 146 sur `8b3d548d`, avant l'Epic 37 et 38-1 à 38-3b) ; les deux `GET` ne
       sont pas des routes mutantes (hors registre). Doc-comment du module (`:262-270`, point (vi)) complété pour le lot.
     - **i18n** : aucun message serveur **neuf** (les codes du lot sont des `FailedProposal` sans texte ; les refus
       globaux réutilisent des codes existants). **Un message existant est reformulé** (Écart 8) :

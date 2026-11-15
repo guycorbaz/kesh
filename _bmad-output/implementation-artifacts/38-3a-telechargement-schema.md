@@ -165,7 +165,7 @@ mouvements en attendant les propositions de 38-6a.
      (`frontend/src/lib/features/bank-import/bank-import-display.ts:14-36`) est **laissé à 38-9a** — d'ici là, la liste
      montre `PROVIDER_API` et le `filename` lisible ; limite écrite. Le DTO des **transactions** (`TransactionResponse`,
      `routes/bank_imports.rs:302-345`) **n'est pas étendu ici** : son extension aux champs de prestataire est portée par
-     38-6c (AC-9).
+     38-6c (AC-6).
 
 6. **AC-6 — Garde des chemins existants (FR-38-3a-4, O9).**
    - **Imports de fichier et relevé saisi** sur un compte prestataire (`POST /api/v1/bank-imports/preview`,

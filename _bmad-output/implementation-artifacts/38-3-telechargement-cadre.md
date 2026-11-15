@@ -1,6 +1,12 @@
 # Story 38-3 : téléchargement — cadre commun des prestataires
 
-Status: ready-for-dev
+Status: split
+
+⛔ **Découpée en 38-3a et 38-3b (statut `split`, décision D-P1-1 du 2026-11-15)** :
+[`38-3a-telechargement-schema.md`](38-3a-telechargement-schema.md) (schéma non breaking, entités, décodage tolérant de
+`PROVIDER_API`, gardes) et [`38-3b-telechargement-passage.md`](38-3b-telechargement-passage.md) (crate
+`kesh-providers`, transport, passage, planification, soldes). Ce qui suit est **historique** ; les deux fiches filles
+font foi. Le décodage tolérant de `ReconciliationMatchType` passe à **38-4**.
 
 *Fiche rédigée le 2026-11-15 (Opus), branche `epic/38-paypal`, numéros de ligne relevés au commit `8b3d548d`. Epic 38 :
 décisions E4, E5, E6, E7, E8, E9, E10, E12, E18, E20 (a) ; contrats **C-38-0**, **C-38-4**, **C-38-5**,
@@ -451,3 +457,5 @@ d'imputation (38-6) reposent sur un relevé complet et vérifiable.
   P1-14 (inter-fiche) `PATCH …/balances/{currency}` avec `version` de 38-9a contre `balances-seen/{currency}` de
   l'AC-9, et signe des frais de 38-6a (fixé ici : `fee_amount` signé comme il change le solde, négatif pour un frais).
   Axes non exercés : réponses réelles de PayPal (38-7), exécution de la migration sur MariaDB (aucun `cargo`).
+- 2026-11-15 — découpage de 38-3 (D-P1-1, Opus) : statut `split` ; contenu repris par 38-3a et 38-3b, où sont
+  appliqués les points inter-fiches de la P1 ; fiche gardée comme historique.

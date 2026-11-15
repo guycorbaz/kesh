@@ -1,16 +1,18 @@
 # Epic 38 — Comptes PayPal : téléchargement et imputation automatiques
 
 **Cadrage : 2026-11-15** (branche `epic/38-paypal`), **révisé le même jour sur B16–B21** (§ *Révision B16–B21*)
-**puis sur B22–B26** (§ *Révision B22–B26*). Demande de Beat (contributeur), décisions B1–B26 de
+**puis sur B22–B26** (§ *Révision B22–B26*), arbitré O1–O12 après la rédaction des fiches et aligné sur la validation
+P1 (§ *Validation P1*, découpage de 38-3 en 38-3a et 38-3b). Demande de Beat (contributeur), décisions B1–B26 de
 `epics-38-40-cadrage.md`, qui **priment** sur ce fichier là où il diverge (B22 remplace B16 sur les domaines fermés).
 Kickoff (décomptes d'issues et de bugs, validation de ce fichier) **à tenir** : `38-0-kickoff` reste au backlog tant
 que l'Epic 37 n'est pas développé.
 
-**Une seule migration breaking** (B22), dans **38-3** : `source_format = 'PROVIDER_API'` pour l'en-tête d'un
-passage, et `reconciliation_rules.match_type` passé d'`ENUM` à `VARCHAR` pour les critères neufs ;
-`kesh_version_min_required` relevé **en dernière instruction**, les dix crates bumpés **dans le même commit** (P2,
-P2-bis) — **numéro de release à Guy** (Q1). Toutes les autres migrations de l'epic créent des tables ou ajoutent des
-colonnes `NULL`. `account_kind` ne reçoit toujours aucune valeur neuve (B16 maintenu). Détail en E19.
+**Une seule migration breaking** (B22, placée en **38-2** par O1) : la contrainte d'IBAN d'un compte `bank` remplacée
+(un compte prestataire n'a pas d'IBAN), et `reconciliation_rules.match_type` passé d'`ENUM` à `VARCHAR` pour les
+critères neufs ; `kesh_version_min_required` relevé **en dernière instruction**, les dix crates bumpés **dans le même
+commit** (P2, P2-bis) — **numéro de release à Guy** (Q1). `source_format = 'PROVIDER_API'` n'exige aucun DDL et
+s'écrit à partir de 38-3b, sous ce même relèvement. Toutes les autres migrations de l'epic créent des tables ou
+ajoutent des colonnes `NULL`. `account_kind` ne reçoit toujours aucune valeur neuve (B16 maintenu). Détail en E19.
 
 **Numéro : 38** (35 et 36 réservés ailleurs ; 39 Wise, **40 Stripe**, provisoire en attendant Guy, B25). Une branche par
 story, fusionnée localement dans `epic/38-paypal`, puis **une PR** vers le dépôt de Guy (remote `beat`), **après celle
@@ -83,7 +85,7 @@ boutique PayPal = **préfixe du numéro de facture** (`invoice_id`) · B25 Q3 re
 
 | Domaine | Ce qui existe | Où |
 |---|---|---|
-| Comptes bancaires | `account_kind` `bank` \| `credit_card`, domaine fermé à l'octet, IBAN facultatif, `card_last4` ; migration **breaking** (min 0.17.6) | `migrations/20261110000001_bank_accounts_without_iban.sql:39-55` |
+| Comptes bancaires | `account_kind` `bank` \| `credit_card`, domaine fermé à l'octet, `iban` `NULL` mais **exigé d'un `bank`** (`chk_bank_accounts_bank_has_iban`, `:48-49` ; `validate_bank_input`, `routes/bank_accounts.rs:557-570`) — seule la carte en est dispensée ; `card_last4` ; migration **breaking** (min 0.17.6) | `migrations/20261110000001_bank_accounts_without_iban.sql:39-55` |
 | | `BankAccountKind`, `FromStr` **refuse l'inconnu** ; `admits_ledger_type` (carte : passif seul) | `kesh-db/src/entities/bank_account.rs:21-69` |
 | | dépôt (colonnes lues, création, `PUT`) | `kesh-db/src/repositories/bank_accounts.rs:54, 65, 769` |
 | | lecteurs de `account_kind` (relevés pour E19) | `repositories/accounts.rs:482` ; `invoice_settlements_write.rs:203-218` ; `routes/bank_accounts.rs:97, 194, 403-406, 462, 555-578, 972, 1141, 1406-1411, 2048, 2110` ; `routes/companies.rs:422-438` ; `routes/onboarding.rs:665` ; `exports/csv_tables.rs:661-680` |
@@ -147,10 +149,11 @@ boutique PayPal = **préfixe du numéro de facture** (`invoice_id`) · B25 Q3 re
   `secretUpdatedAt`, jamais la valeur ; audit sans la valeur. Le contrôle « Tester la connexion » obtient un jeton et
   lit les soldes.
 - **E4 — Une migration breaking, puis des lectures tolérantes (patron A30, B22).** Deux colonnes existantes
-  reçoivent des valeurs neuves, **une seule fois**, par la migration breaking de 38-3 (E19) :
-  `bank_imports.source_format` (`'PROVIDER_API'`) et `reconciliation_rules.match_type` (critères neufs, E14). À partir
-  de ce binaire, **`BankImportSourceFormat` et `ReconciliationMatchType` se décodent avec une variante
-  `Other(String)`** (le `FromStr` cesse de refuser l'inconnu ; `Copy` perdu, à vérifier aux sites à la fiche) : une
+  reçoivent des valeurs neuves, **sous un seul relèvement**, celui de la migration breaking de **38-2** (O1, E19) :
+  `bank_imports.source_format` (`'PROVIDER_API'`, sans DDL) et `reconciliation_rules.match_type` (critères neufs, E14 ;
+  `MODIFY COLUMN` en 38-2). Le décodage tolérant arrive avec la **première écriture** d'une valeur neuve :
+  **`BankImportSourceFormat`** en **38-3a**, **`ReconciliationMatchType`** en **38-4** — chacun gagne une variante
+  `Other(String)` (le `FromStr` cesse de refuser l'inconnu ; `Copy` perdu, sites suivis aux fiches) : une
   valeur ajoutée par les Epics 39 et 40 ne demande ni migration breaking ni relèvement. Lecture d'une valeur inconnue :
   en-tête affiché « Source inconnue (`<valeur>`) », sans autre effet ; règle d'un type inconnu **jamais appliquée**,
   listée « critère d'une version ultérieure », non modifiable (`RULE_CRITERION_UNKNOWN`, 409) — refus sans
@@ -171,20 +174,22 @@ boutique PayPal = **préfixe du numéro de facture** (`invoice_id`) · B25 Q3 re
   demande, le `created_by_user_id` de la connexion pour le passage quotidien (colonne `NOT NULL`, `:33`).
   **`source_format = 'PROVIDER_API'`** (B22) : la valeur dit vrai — lignes obtenues de l'API d'un prestataire, sans
   fichier ; elle sert aux trois prestataires (le prestataire est porté par la connexion, jointe par
-  `provider_fetch_run_id`). `BankImportSourceFormat::ProviderApi` neuf, décodage tolérant (E4) ; la colonne est un
+  `provider_fetch_run_id`). `BankImportSourceFormat::ProviderApi` neuf, décodage tolérant (E4, 38-3a) ; la colonne est un
   `VARCHAR(32)` sans `CHECK` (`20260504000001_bank_imports.sql:25`) : **aucun DDL**, seul le relèvement de
-  `kesh_version_min_required` protège un binaire antérieur, dont le `FromStr` refuse l'inconnu (précédent `MANUAL`,
+  `kesh_version_min_required` (38-2) protège un binaire antérieur, dont le `FromStr` refuse l'inconnu (précédent `MANUAL`,
   `20261030000001`). Affichage « Téléchargé de PayPal (connexion, passage) » — liste et détail des imports, boîte de
   suppression, export CSV de `bank_imports` (colonne `provider_fetch_run_id` ajoutée, `csv_tables.rs:702-720`),
   audit, libellé du frontend (`bank-import-display.ts:14-36`). Aucun comportement ne dépend de `source_format`
   (lecteurs relevés à l'inventaire : affichage seul). La suppression d'un tel en-tête par `DELETE /bank-imports/{id}`
-  est **refusée** (`PROVIDER_IMPORT_NOT_DELETABLE`) : le recouvrement de trois jours ne retéléchargerait pas ce qu'elle
-  effacerait. *Raison* : DRY (la réconciliation lit `bank_transactions` et rien d'autre) ; le détour par `MANUAL`
+  est **refusée** (`PROVIDER_IMPORT_NOT_DELETABLE`) : le recouvrement (`overlap()`, trois jours par défaut) ne
+  retéléchargerait pas ce qu'elle effacerait. *Raison* : DRY (la réconciliation lit `bank_transactions` et rien d'autre) ; le détour par `MANUAL`
   (valeur inexacte, ex-Q11) est retiré (B22).
 - **E6 — Doublon par l'identifiant du prestataire.** Colonne neuve `provider_tx_id`, `UNIQUE (bank_account_id,
-  provider_tx_id)` (NULL multiples admis : CAMT, CSV et manuel inchangés). Insertion idempotente
-  (`INSERT … ON DUPLICATE KEY` sans écrasement) ; chaque passage **recouvre** les trois derniers jours (délai de 3 h de
-  PayPal, statuts tardifs). La clé de doublon par fenêtre (`kesh-core/src/bank_imports.rs:295`) ne s'applique pas.
+  provider_tx_id)` (NULL multiples admis : CAMT, CSV et manuel inchangés). Insertion idempotente, **connu ou inséré
+  décidé par une lecture préalable des identifiants connus** — jamais par `rows_affected`, que `CLIENT_FOUND_ROWS`
+  (posé par sqlx) rend égal à 1 dans les deux cas — puis `INSERT` des seuls absents (`ON DUPLICATE KEY` sans écrasement
+  en filet) ; chaque passage **recouvre** les derniers jours (`Connector::overlap()` : `overlapDays` des réglages, 1 à
+  30, **défaut 3** — délai de 3 h de PayPal, statuts tardifs, O11). La clé de doublon par fenêtre (`kesh-core/src/bank_imports.rs:295`) ne s'applique pas.
 - **E7 — Une transaction de prestataire = un mouvement du solde.** `amount` = **net** (ce qui change le solde),
   plus `gross_amount` et `fee_amount` ; frais **dans** la même transaction (B3 : brut par la règle, frais au
   sous-compte). Une conversion PayPal donne **deux** transactions (une par solde), reliées par
@@ -209,7 +214,10 @@ boutique PayPal = **préfixe du numéro de facture** (`invoice_id`) · B25 Q3 re
   + état affiché), passage à la demande audité (précédent C-37-6). Aucun passage en `KESH_TEST_MODE` ; transport
   factice piloté par une route `_test`.
 - **E11 — Compte bancaire prestataire = compte `bank` + réglages de connexion (B16).** Le compte bancaire reste
-  `account_kind = 'bank'`, sans IBAN (admis depuis 34-11a1), sans QR-IBAN ni carte. Son caractère « prestataire » vit
+  `account_kind = 'bank'`, sans IBAN, sans QR-IBAN ni carte. ⚠️ *Corrigé (O1)* : un `bank` sans IBAN **n'est pas**
+  admis depuis 34-11a1 — seule la carte l'est (`chk_bank_accounts_bank_has_iban`) ; la migration breaking de 38-2
+  remplace cette contrainte par `chk_bank_accounts_primary_has_iban` (le principal garde un IBAN), et l'IBAN d'un `bank`
+  ordinaire reste exigé par `validate_bank_input`. Son caractère « prestataire » vit
   dans la table applicative neuve **`payment_provider_accounts`** : `bank_account_id` (PK, FK), `connection_id` (FK
   `payment_provider_connections`), `currency` (devise du solde), `fee_account_id` (compte de frais **de cette devise**,
   B3), `version` ; colonnes `NULL` à venir pour d'autres comptes liés (Epics 39, 40) ; `UNIQUE (connection_id,
@@ -256,8 +264,8 @@ boutique PayPal = **préfixe du numéro de facture** (`invoice_id`) · B25 Q3 re
   *Pourquoi le sens est un filtre* : seul, il n'est pas discriminant (il rapprocherait toute entrée) ; il départage une
   vente et un achat d'un même courriel. **Un critère principal par règle** (`match_type`/`match_value`, décidé ex-Q7),
   plus les filtres facultatifs, applicables aussi aux quatre critères existants. **Migration** : `match_type` passe
-  d'`ENUM` à **`VARCHAR(40) NOT NULL`** sans `CHECK` dans la migration breaking de 38-3 (E19), valeurs existantes
-  conservées ; les valeurs admises sont tenues par l'API à l'écriture (aujourd'hui par la désérialisation de l'enum en 400 ;
+  d'`ENUM` à **`VARCHAR(40) NOT NULL`** `ascii_bin`, `CHECK` de format seul (`^[a-z][a-z_]{1,39}$`, O2), dans la
+  migration breaking de **38-2** (O1, E19), valeurs existantes conservées ; les valeurs admises sont tenues par l'API à l'écriture (aujourd'hui par la désérialisation de l'enum en 400 ;
   désormais `Other` refusé, `RULE_CRITERION_UNKNOWN`) et le décodage est tolérant (E4) — Wise et Stripe ajoutent un critère sans DDL. Les **filtres** et
   l'**unicité** sont la migration **non breaking** de 38-4 : trois colonnes `NULL`, une colonne générée
   `filter_key` (sens, devise, compte, `-` pour NULL) et l'index unique `uq_reconciliation_rules_match_active`
@@ -283,9 +291,13 @@ boutique PayPal = **préfixe du numéro de facture** (`invoice_id`) · B25 Q3 re
   par le volume : un lot de 2024 doublerait sinon les écritures en silence. La voie de ces transactions est le
   rattachement en lot (E21).
 - **E16 — Mouvements particuliers.**
-  - **Conversion** : la paire (E7) se propose comme **une conversion** de 37-3b, `completeDifference: true` (B4,
-    A31), cours AFC des deux côtés, différence aux comptes propres du compte en devise (S2) ; les deux transactions
-    sont réconciliées ensemble. Coût donné à part par le prestataire → ligne de frais.
+  - **Conversion** : la paire (E7) entre **deux devises étrangères** se propose comme **une conversion** de 37-3b,
+    `completeDifference: true` (B4, A31), cours AFC des deux côtés, différence aux comptes propres du compte en
+    devise (S2) ; les deux transactions sont réconciliées ensemble. Coût donné à part par le prestataire → ligne de
+    frais. **Paire dont un côté est en CHF** (la plus courante, C-38-6b-2 bis) : **une seule écriture** ordinaire —
+    débit du compte qui reçoit, crédit du compte qui paie, une seule devise étrangère, frais de la moitié débitée, ligne
+    de différence aux comptes de change du compte en devise —, sans compte de transit ni fonction de 37-3b (qui ne vaut
+    qu'entre deux devises étrangères) ; les deux transactions sont réconciliées sur cette écriture (34-11b).
   - **Retrait vers la banque / dépôt depuis la banque** : rattachement des deux côtés comme un virement entre ses
     comptes (34-11b, `reconciliation.rs:6373`), le côté banque venant du relevé CAMT.
   - **Remboursement (B7, B20)** : rapproché de l'origine par `related_provider_tx_id` ; proposé comme l'**inverse** de
@@ -303,38 +315,42 @@ boutique PayPal = **préfixe du numéro de facture** (`invoice_id`) · B25 Q3 re
 - **E18 — Fenêtre d'import des sauvegardes.** Les tables et colonnes applicatives neuves de l'Epic 38 s'ajoutent à la
   **liste close d'absences admises** de 37-1 AC-6 (R1) : une sauvegarde antérieure se réimporte (sans connexion ni
   donnée de prestataire).
-- **E19 — Migrations : une seule breaking, dans 38-3 (B22).** *Où et pourquoi là* : 38-3 est la **première** story
-  qui écrit une valeur neuve dans une colonne existante à domaine fermé (`source_format = 'PROVIDER_API'`, à chaque
-  passage) ; les types neufs de `match_type` (38-4) dépendent de 38-3 (colonnes `invoice_ref`, `event_code`…) et
-  viennent après. Les deux changements partagent donc **une** migration et **un** relèvement ; 38-4 n'a plus qu'une
-  migration non breaking. La migration breaking est un **fichier à part** de la migration non breaking de 38-3 (tables
-  et colonnes), pour que son exemption P7 ne couvre qu'elle.
-  - **Fichier** `<date>000002_provider_api_source_and_rule_types.sql` (nom à la fiche), en tête `-- BREAKING (P1) :
-    relève kesh_version_min_required à <X.Y.Z>` (patron `20261030000001`). Contenu : (1) `ALTER TABLE
-    reconciliation_rules MODIFY COLUMN match_type VARCHAR(40) NOT NULL` — `MODIFY COLUMN <type>` (P3 : bump
-    obligatoire) ; les quatre valeurs existantes restent, aucune ligne réécrite ; l'index unique qui porte la colonne
-    se reconstruit à l'`ALTER` (vérifier à la fiche qu'aucun `DROP INDEX` n'est requis) ; (2) **aucun DDL** pour
-    `source_format` (`VARCHAR(32)` sans `CHECK`) ; (3) **en dernière instruction** `UPDATE _kesh_version SET
-    kesh_version_min_required = '<X.Y.Z>' WHERE id = 1;` (P2).
-  - **P2-bis** : les dix crates passent à `<X.Y.Z>` **dans le même commit** que la migration ; gate **runtime complet**
-    (`admin_backup_e2e`, `admin_full_import_e2e`, `migrations_fresh_install`) avant `done`. **`<X.Y.Z>` est à Guy
-    (Q1)** : la fiche 38-3 ne s'écrit pas sans lui ; s'il change après coup, la migration, non publiée, se corrige
-    délibérément (P8 : bases de dev reconstruites).
+- **E19 — Migrations : une seule breaking, dans 38-2 (B22, O1).** *Où et pourquoi là* : 38-2 est la **première**
+  story qui en a besoin — un compte prestataire `bank` sans IBAN viole `chk_bank_accounts_bank_has_iban`
+  (`20261110000001_bank_accounts_without_iban.sql:48-49`), que seul un `DROP CONSTRAINT` lève. Le passage de
+  `match_type` en `VARCHAR` et l'écriture de `PROVIDER_API` (sans DDL, à partir de 38-3b) partagent **ce** relèvement :
+  **une** migration breaking, **un** relèvement ; 38-3a et 38-4 n'ont que des migrations non breaking. *(La rédaction
+  plaçait la breaking en 38-3 ; O1 l'a déplacée.)*
+  - **Fichier** de 38-2 (`<date>000002_payment_provider_accounts.sql`), en tête `-- BREAKING (P1, P3 : MODIFY COLUMN) :
+    relève kesh_version_min_required à <X.Y.Z>` (patron `20261110000001`). Contenu : (1) `CREATE TABLE
+    payment_provider_accounts` ; (2) `DROP CONSTRAINT chk_bank_accounts_bank_has_iban, ADD CONSTRAINT
+    chk_bank_accounts_primary_has_iban` ; (3) `ALTER TABLE reconciliation_rules MODIFY COLUMN match_type VARCHAR(40)
+    CHARACTER SET ascii COLLATE ascii_bin NOT NULL` + `CHECK` de format `^[a-z][a-z_]{1,39}$` (O2) — les quatre
+    valeurs existantes restent, aucune ligne réécrite ; l'index unique se reconstruit à l'`ALTER`, sans `DROP INDEX` ;
+    (4) **en dernière instruction** `UPDATE _kesh_version SET kesh_version_min_required = '<X.Y.Z>' WHERE id = 1;` (P2).
+    **Aucun DDL** pour `source_format` (`VARCHAR(32)` sans `CHECK`).
+  - **P2-bis** : les dix crates passent à `<X.Y.Z>` **dans le même commit** que la migration (`kesh-providers` naît
+    après, en 38-3b, à la version courante : onze crates ensuite) ; gate **runtime complet** (`admin_backup_e2e`,
+    `admin_full_import_e2e`, `migrations_fresh_install`) avant `done`. **`<X.Y.Z>` est à Guy (Q1)** : la fiche 38-2 ne
+    se développe pas sans lui ; s'il change après coup, la migration, non publiée, se corrige délibérément (P8 : bases
+    de dev reconstruites). Les assertions de la version minimale courante (`0.17.6`) se trient (38-2 AC-1).
   - **P3/P4** : pas de `breaking-skip-bump` (un binaire antérieur ne décode ni `'PROVIDER_API'` ni les critères neufs :
-    `FromStr` refusant l'inconnu, `entities/bank_import.rs:59`, `entities/reconciliation_rule.rs:68`).
+    `FromStr` refusant l'inconnu, `entities/bank_import.rs:59`, `entities/reconciliation_rule.rs:68` ; et il garderait
+    l'ancienne garantie d'IBAN).
   - **P5** : une ligne à `docs/migrations-idempotence-audit.md` par fichier, compteurs recomptés à la source.
   - **P6** : `grep -rn "migrations.len()\|apply_migrations_up_to" crates/` à chaque fiche qui ajoute une migration.
   - **P7** : l'`UPDATE _kesh_version` écrit une table système jamais restaurée → `EXEMPT_MIGRATIONS`, justification
     écrite (précédent `20261030000001`) ; les autres migrations de l'epic n'écrivent pas de données.
   - **P8** : aucune migration appliquée ne se retouche.
-  - **Décodage tolérant ensuite (E4)** : `BankImportSourceFormat` et `ReconciliationMatchType` gagnent `Other(String)`
-    dans la même story ; Wise (39) et Stripe (40) n'ont plus besoin de relever `kesh_version_min_required` pour ces
-    deux colonnes.
+  - **Décodage tolérant ensuite (E4)** : `BankImportSourceFormat` gagne `Other(String)` en 38-3a,
+    `ReconciliationMatchType` en 38-4 (première écriture de chaque valeur neuve) ; la migration de 38-2 ne change que
+    le DDL. Wise (39) et Stripe (40) n'ont plus besoin de relever `kesh_version_min_required` pour ces deux colonnes.
   - **Retour** : un binaire antérieur refuse de démarrer sur la base migrée et d'importer un `.keshbackup` de cette
     version (version minimale) ; **le retour à la version précédente passe uniquement par la sauvegarde d'avant la mise
     à jour** (`backup/pre-upgrade/`, #847, et celle que les notes exigent), à écrire en tête des notes de version et au
     manuel d'administration (38-9a). Le SQL de retour de la révision B16–B21 est **retiré**. Recette de montée
-    (`scripts/recette-montee.sh`) depuis l'image publiée précédente, jouée en 38-3 et à la release.
+    (`scripts/recette-montee.sh`) depuis l'image publiée précédente, jouée en 38-2 (étendue par 38-3a) et à la
+    release.
   - `account_kind` : inchangé, seul `'bank'` est écrit pour un compte prestataire (lecteurs relevés à l'inventaire).
   - Colonnes neuves de `bank_transactions`, `bank_imports`, `reconciliation_rules`, `accounts`,
     `company_invoice_settings` : `NULL`, lues par listes de colonnes nommées ; tables neuves : `CREATE TABLE`. Liste close
@@ -394,10 +410,12 @@ boutique PayPal = **préfixe du numéro de facture** (`invoice_id`) · B25 Q3 re
     (aucun JSON reçu stocké tel quel) ; `PATCH` avec `version`.
   - **Ce qui va dans le JSON** — les options **propres au prestataire**, sans référence à un compte ni secret :
     - **PayPal** : `clientId` (identifiant de l'application REST : non secret chez PayPal, affiché pour reconnaître
-      l'application ; le *client secret* va au coffre, E2) ; `accountEmail` et `payerId` du compte *business*, posés
-      par « Tester la connexion » (38-7), affichés, et servant à reconnaître un virement entre les deux comptes PayPal
-      de Beat ; `eventKindOverrides` facultatif (code `T…` → genre de mouvement, pour un code que la table de 38-8 ne
-      classe pas ; jamais `sale` pour un code inconnu sans ce réglage explicite — à trancher à la fiche 38-8).
+      l'application ; le *client secret* va au coffre, E2) ; `payerId` du compte *business*, **seul champ posé par le
+      serveur** (« Tester la connexion », 38-7), affiché, et servant à reconnaître un virement entre les deux comptes
+      PayPal de Beat ; `eventKindOverrides` facultatif (code `T…` → genre de mouvement, pour un code que la table de
+      38-8 classe `other` ; 38-8 AC-7) ; `overlapDays` facultatif (recouvrement de relecture, 1 à 30, **défaut 3**,
+      O11). Ces deux derniers sont modifiables par le client (`PATCH`). **`accountEmail` retiré** (O10 : aucune API ne
+      le rend).
     - **Wise (39)** : `profileId` ; empreinte de la clé publique SCA déposée et sa date (renouvellement ≈ 90 jours ; la
       clé privée au coffre) ; type et langue du relevé PDF ; identifiants de solde par devise (`balanceIds`) si la fiche
       ne préfère pas une colonne.
@@ -408,7 +426,7 @@ boutique PayPal = **préfixe du numéro de facture** (`invoice_id`) · B25 Q3 re
 
 ## Registre des contrats entre stories
 
-- **C-38-0 — Une seule migration breaking, dans 38-3** (toutes) : E19, B22 ; relèvement en dernière instruction,
+- **C-38-0 — Une seule migration breaking, dans 38-2** (toutes) : E19, B22, O1 ; relèvement en dernière instruction,
   crates bumpés dans le même commit, numéro de release à Guy (Q1). Toute autre fiche qui découvre une valeur neuve à
   écrire dans une colonne existante à domaine fermé, un `MODIFY`/`CHANGE COLUMN` ou un `DROP` s'arrête et le dit.
 - **C-38-1 — Clé et chiffrement** (38-1) : `KESH_SECRETS_KEY`, `kesh-api::secrets::{seal, open}`, AES-256-GCM, version
@@ -425,28 +443,40 @@ boutique PayPal = **préfixe du numéro de facture** (`invoice_id`) · B25 Q3 re
   `PROVIDER_ACCOUNT_DUPLICATE_CURRENCY`, `FEE_ACCOUNT_INVALID`, `PROVIDER_ACCOUNT_IN_USE`,
   `PROVIDER_ACCOUNT_CANNOT_BE_PRIMARY` ; levée de C-37-9 pour un compte bancaire porteur de réglages ; `account_kind`
   toujours `bank`.
-- **C-38-4 — Transaction de prestataire** (38-3) : colonnes E6, E7, E8 ; `movement_kind` ∈ `sale`, `purchase`, `fee`,
+- **C-38-4 — Transaction de prestataire** (schéma 38-3a, écriture 38-3b) : colonnes E6, E7, E8 ; `movement_kind` ∈ `sale`, `purchase`, `fee`,
   `conversion`, `refund`, `dispute`, `withdrawal`, `deposit`, `other` (tolérant) ; `review_reason` ∈ `dispute`,
   `refund_origin_missing`, `unknown_event`, `other` (tolérant).
-- **C-38-5 — Passage** (38-3) : E5 ; `provider_fetch_runs`, `bank_imports.provider_fetch_run_id`, en-tête
-  `source_format = 'PROVIDER_API'` (migration breaking, E19), affiché « Téléchargé de … », suppression refusée
-  (`PROVIDER_IMPORT_NOT_DELETABLE`) ; `BankImportSourceFormat` et `ReconciliationMatchType` tolérants (E4) ;
-  `kesh_providers::Connector` (`balances(as_of)`, `movements(window, page)`) ; fenêtre ≤ 31 jours, découpée ;
-  recouvrement de 3 jours ; fin = maintenant − 3 h ; début = max(`fetch_from`, dernier passage réussi − 3 jours) ; un
-  échec garde ce qui est inséré, l'état dit où reprendre ; soldes rapportés et contrôle de complétude (E20, (a)).
+- **C-38-5 — Passage** (**38-3a** : schéma, en-tête, gardes ; **38-3b** : connecteur et passage) : E5 ;
+  `provider_fetch_runs` (dont `truncated_from`, `ignored_count`), `bank_imports.provider_fetch_run_id`, en-tête
+  `source_format = 'PROVIDER_API'` (sous le relèvement de 38-2, E19), affiché « Téléchargé de … », suppression refusée
+  (`PROVIDER_IMPORT_NOT_DELETABLE`), imports de fichier refusés sur un compte prestataire
+  (`BANK_IMPORT_PROVIDER_ACCOUNT`) ; `BankImportSourceFormat` tolérant (E4, 38-3a) ; passages, soldes vus et
+  instantanés **supprimés avec leur connexion** (38-3a AC-4) ; `kesh_providers::Connector` (`balances(as_of)`,
+  `movements(window, page)` → `MovementPage { …, skipped, sums }`, page unique admise, `max_window()`,
+  `history_start(now)`, `overlap()`) ; `ConnectorError` (`code()` au passage, `app_code()` à `lastError`) ; transport à
+  bornes par requête ; fenêtre ≤ `max_window()` (31 jours), redécoupée **dans le connecteur** au besoin (O10) ;
+  recouvrement `overlap()` (défaut 3 jours, O11) ; fin = maintenant − 3 h ; début = max(`fetch_from`, point de reprise
+  du compte − `overlap()`, `history_start`) ; un échec garde ce qui est inséré, l'état dit où reprendre ; soldes
+  rapportés et contrôle de complétude (E20, (a)).
 - **C-38-6 — Règles** (38-4) : E14 ; `matchType` ∈ quatre valeurs existantes + `counterparty_email_exact`,
   `invoice_prefix` (boutique, B24), `item_name_contains`, `event_code_prefix` ; filtres facultatifs `direction`,
-  `currency`, `bankAccountId` ; unicité `(type, valeur, filtres)` ; `RULE_CRITERION_UNKNOWN` (écriture d'une valeur
-  inconnue : 400 ; modification d'une règle d'un type inconnu : 409).
+  `currency`, `bankAccountId` ; unicité `(type, valeur, filtres)` ; `ReconciliationMatchType` tolérant (E4, posé par
+  38-4) ; `RULE_CRITERION_UNKNOWN` (écriture d'une valeur inconnue : 400 ; modification d'une règle d'un type inconnu :
+  409).
 - **C-38-7 — TVA par défaut** (38-5) : E13 ; `PUT /accounts/{id}` gagne `defaultVatKind`, `defaultVatRateId` ;
   réglages TVA gagnent `defaultVatAcquisitionAccountId` (B18) ; `kesh_core::accounting::vat::{vat_from_gross,
   acquisition_vat}` et leur miroir TS, tenus par une fixture partagée.
 - **C-38-8 — Propositions** (38-6a, 38-6b) : E15, E16 ; variante `provider` de `accept`, `confirmAlreadyBooked` ; codes
-  `RATE_UNAVAILABLE`, `VAT_ACCOUNT_NOT_CONFIGURED`, `RULE_ACCOUNT_CURRENCY_MISMATCH`, `FEE_ACCOUNT_INVALID`,
-  `PROVIDER_TX_UNDER_REVIEW`, `TRANSACTION_ALREADY_BOOKED`, `MULTI_CURRENCY_DISABLED` (409 hors lot, `failed[]` dans le
-  lot).
+  `RATE_UNAVAILABLE`, `VAT_ACCOUNT_NOT_CONFIGURED`, `VAT_KIND_MISMATCH`, `VAT_KIND_UNKNOWN`, `VAT_RATE_UNAVAILABLE`,
+  `RULE_ACCOUNT_CURRENCY_MISMATCH`, `FEE_ACCOUNT_INVALID` (raison `missing` comprise), `PROVIDER_TX_UNDER_REVIEW`,
+  `PROVIDER_MOVEMENT_KIND_UNSUPPORTED`, `PROVIDER_AMOUNTS_INCONSISTENT`, `PROVIDER_ACCOUNT_REQUIRED`,
+  `PROVIDER_PROPOSAL_REQUIRED`, `TRANSACTION_ALREADY_BOOKED`, `MULTI_CURRENCY_DISABLED` ; et ceux de 38-6b :
+  `PROVIDER_CONVERSION_PAIR_INVALID`, `PROVIDER_PAIR_ACCOUNT_LOCKED`, `PROVIDER_PAIR_CHANGED`,
+  `PROVIDER_TRANSFER_ACCOUNT_INVALID`, `PROVIDER_TRANSFER_CURRENCY_MISMATCH`, `PROVIDER_REFUND_ORIGIN_INVALID` (409
+  hors lot, `failed[]` dans le lot).
 - **C-38-9 — File « à examiner »** (38-6b) : `GET /api/v1/reconciliation/review` ; `POST
-  /reconciliation/transactions/{id}/review-done` (Comptable).
+  /reconciliation/transactions/{id}/review-done` (Comptable ; action d'audit `reconciliation.review_done`,
+  `LIB_ROUTES` +1).
 - **C-38-10 — Pièces de compte** (38-10) : E17 ; `GET|POST /api/v1/bank-accounts/{id}/documents`,
   `GET|PATCH|DELETE /…/documents/{docId}` ; PDF seul, taille bornée ; solde de clôture facultatif ; écart au solde
   comptable aux contrôles de clôture (E20).
@@ -454,7 +484,8 @@ boutique PayPal = **préfixe du numéro de facture** (`invoice_id`) · B25 Q3 re
   /reconciliation/link-suggestions`, `POST /reconciliation/link-entries` (lot), `GET
   /bank-accounts/{id}/transactions` (recherche) ; `link-entry` et `entry-candidates` en devise ; clés `read-write`
   admises sur les écritures et le rattachement, lecture pour la recherche ; codes `ENTRY_NOT_LINKABLE`,
-  `ENTRY_ALREADY_LINKED`, `AMOUNT_MISMATCH`, `VERSION_CONFLICT`.
+  `ENTRY_ALREADY_LINKED`, `AMOUNT_MISMATCH`, `VERSION_CONFLICT` ; la voie des scripts est documentée par 38-6c à
+  `docs/api-external.md` (dans son périmètre).
 - **C-38-11 — Tests** (toutes) : aucun appel réseau en CI ; fixtures enregistrées **anonymisées** (courriels, noms,
   identifiants remplacés ; montants et codes gardés) sous `crates/kesh-providers/tests/fixtures/paypal/` ; tests de
   réponses hostiles (taille, structure, montants, dates, devises, pagination incohérente).
@@ -472,25 +503,27 @@ boutique PayPal = **préfixe du numéro de facture** (`invoice_id`) · B25 Q3 re
 |---|---|---|---|---|
 | 38-0 | kickoff : décomptes, validation de ce fichier, numéro de release (Q1) | — | — | — |
 | 38-1 | coffre des secrets et connexions de prestataire, réglages `settings JSON` (E24) | `kesh-db`, `kesh-core` (structs de réglages), `kesh-api` (config, secrets, routes) | Epic 37 | oui, non breaking (`payment_provider_connections`, `_kesh_provider_secrets`) |
-| 38-2 | compte bancaire `bank` + réglages de prestataire, lié à un compte en devise existant (D8), compte de frais par devise | `kesh-db`, `kesh-api` (bank_accounts, provider-connections), `kesh-core` (gardes) | 38-1 | oui, non breaking (`payment_provider_accounts`) |
-| 38-3 | téléchargement : cadre `kesh-providers`, transactions de prestataire, doublon, passages (`PROVIDER_API`), planifié et à la demande, soldes vus et rapportés, contrôle de complétude ; **migration breaking** et décodage tolérant | `kesh-providers` (neuf), `kesh-db`, `kesh-core`, `kesh-api` | 38-2, **numéro de release (Guy, Q1)** | oui : une non breaking (`provider_fetch_runs`, `provider_balances_seen`, `provider_balance_snapshots` ; colonnes `bank_transactions`, `bank_imports.provider_fetch_run_id`) **et la seule breaking de l'epic** (`match_type` → `VARCHAR`, `min_required` relevé, crates bumpés, E19) |
-| 38-4 | critères neufs des règles (types de `match_type`, dont boutique = préfixe de facture), filtres sens, devise, compte | `kesh-db`, `kesh-reconciliation`, `kesh-api` (reconciliation_rules) | 38-3 | oui, non breaking (trois colonnes de filtre, `filter_key`, index unique remplacé) |
+| 38-2 | compte bancaire `bank` + réglages de prestataire, lié à un compte en devise existant (D8), compte de frais par devise ; **la migration breaking** (O1) | `kesh-db`, `kesh-api` (bank_accounts, provider-connections), `kesh-core` (gardes) | 38-1, **numéro de release (Guy, Q1)** | oui, **la seule breaking de l'epic** (`payment_provider_accounts`, contrainte d'IBAN remplacée, `match_type` → `VARCHAR`, `min_required` relevé, crates bumpés, E19) |
+| 38-3 | *découpée en 38-3a et 38-3b (`split`, D-P1-1 : six modules)* | — | — | — |
+| 38-3a | téléchargement, schéma : colonnes de prestataire, passages, soldes vus et rapportés, point de reprise ; lecture tolérante de `PROVIDER_API` ; suppression d'en-tête, imports de fichier et propositions existantes refusés sur un compte prestataire ; passages supprimés avec leur connexion | `kesh-db`, `kesh-core`, `kesh-api`, `kesh-i18n` | 38-1, 38-2 | oui, non breaking (`provider_fetch_runs`, `provider_balances_seen`, `provider_balance_snapshots` ; colonnes `bank_transactions`, `bank_imports.provider_fetch_run_id`, `payment_provider_accounts.fetched_through`) |
+| 38-3b | téléchargement, passage : crate `kesh-providers` (`Connector`, validation, factice), transport à bornes par requête, fabrique, passage sans doublon, planifié et à la demande, état et historique, soldes rapportés et contrôle de complétude | `kesh-providers` (neuf), `kesh-api`, `kesh-db`, `kesh-i18n` | 38-1, 38-2, 38-3a | non |
+| 38-4 | critères neufs des règles (types de `match_type`, dont boutique = préfixe de facture), filtres sens, devise, compte ; `ReconciliationMatchType` tolérant | `kesh-db`, `kesh-reconciliation`, `kesh-api` (reconciliation_rules), `frontend` (libellés), i18n | 38-2, 38-3a | oui, non breaking (trois colonnes de filtre, `filter_key`, index unique remplacé) |
 | 38-5 | code TVA par défaut d'un compte, extraction de la TVA, compte d'impôt sur les acquisitions | `kesh-db`, `kesh-core`, `kesh-api` (accounts, réglages TVA), `frontend` (accounts, réglages) | Epic 37 | oui, non breaking (`accounts` × 2, `company_invoice_settings` × 1) |
-| 38-6a | propositions de prestataire : vente, achat, frais (brut, TVA, frais, cours) et acceptation en lot ; « déjà comptabilisée » | `kesh-reconciliation`, `kesh-api` (reconciliation), `kesh-db` | 38-3, 38-4, 38-5 | non attendue |
-| 38-6b | conversions, retraits, remboursements (tels que rapportés), litiges ; file « à examiner » | `kesh-reconciliation`, `kesh-api` (reconciliation, conversions), `kesh-db` | 38-6a | non attendue |
-| 38-6c | rattachement aux écritures existantes : en devise, en lot (2024, B17) ; API des scripts externes (B21) | `kesh-db` (reconciliation_link, bank_transactions), `kesh-api` (reconciliation, bank_accounts) | 38-3 | non attendue |
-| 38-7 | client PayPal : OAuth2, Transaction Search, fenêtres de 31 jours, pagination, soldes (`as_of_time`) | `kesh-providers` (paypal), `kesh-api` (transport) | 38-3 | non |
+| 38-6a | propositions de prestataire : vente, achat, frais (brut, TVA, frais, cours) et acceptation en lot ; « déjà comptabilisée » | `kesh-reconciliation`, `kesh-api` (reconciliation), `kesh-db` | 38-3a, 38-4, 38-5, 38-6c | non attendue |
+| 38-6b | conversions (une écriture si un côté est en CHF), retraits, remboursements (tels que rapportés), litiges ; file « à examiner » | `kesh-reconciliation`, `kesh-api` (reconciliation, conversions), `kesh-db` | 38-2, 38-3a, 38-6a, 38-6c | non attendue |
+| 38-6c | rattachement aux écritures existantes : en devise, en lot (2024, B17) ; API des scripts externes (B21) | `kesh-db` (reconciliation_link, bank_transactions), `kesh-api` (reconciliation, bank_accounts), `docs/api-external.md` | 38-3a | non attendue |
+| 38-7 | client PayPal : OAuth2, Transaction Search, fenêtres de 31 jours redécoupées dans le connecteur, pagination, soldes (`as_of_time`), historique de trois ans | `kesh-providers` (paypal), `kesh-api` (transport) | 38-3b | non |
 | 38-8 | correspondance des codes d'événement PayPal vers les mouvements ; `invoice_id` → `invoice_ref` (boutique, B24) ; surcharges `eventKindOverrides` | `kesh-providers` (paypal), `kesh-core` (réglages) | 38-7 | non |
-| 38-9a | écrans : connexions, réglages, secrets, soldes proposés, comptes prestataires, contrôles de solde | `frontend` (provider-connections neuf, bank-accounts), i18n, manuel d'administration (sauvegarde d'avant la mise à jour obligatoire, E19) | 38-1 à 38-3, 38-7 | non |
+| 38-9a | écrans : connexions, réglages, secrets, soldes proposés, comptes prestataires, contrôles de solde | `frontend` (provider-connections neuf, bank-accounts), i18n, manuel d'administration (sauvegarde d'avant la mise à jour obligatoire, E19) | 38-1, 38-2, 38-3a, 38-3b, 38-7 | non |
 | 38-9b | écrans : règles étendues, propositions multi-lignes, rattachement en lot, file « à examiner », E2E | `frontend` (reconciliation, règles), i18n, manuel utilisateur, E2E | 38-4 à 38-6c, 38-8 | non |
-| 38-10 | relevé joint à la main (compte et exercice ou mois), solde de clôture, écart aux contrôles de clôture | `kesh-db`, `kesh-api` (routes, sauvegarde, closing-checks), `frontend` (bank-accounts) | 38-2, 38-3 | oui, non breaking (`bank_account_documents`) |
+| 38-10 | relevé joint à la main (compte et exercice ou mois), solde de clôture, écart aux contrôles de clôture | `kesh-db`, `kesh-api` (routes, sauvegarde, closing-checks), `frontend` (bank-accounts) | 38-2, 38-3a | oui, non breaking (`bank_account_documents`) |
 
-**Migrations : sept fichiers, dont une seule breaking** (38-1, 38-2, 38-3 × 2 — une non breaking, **la breaking** —,
-38-4, 38-5, 38-10) ; seule la breaking écrit une donnée (`_kesh_version`, exemptée P7) ; les autres n'en écrivent pas
-(sauf découverte à la fiche). **Ordre** : 38-1 → 38-2 → 38-3 → (38-4, 38-5, 38-6c, 38-7 en parallèle
-possibles) → 38-8 → 38-6a → 38-6b → 38-9a → 38-9b ; 38-10 dès 38-3. 38-6c avant 38-6a de préférence : les transactions
-de 2024 se rattachent avant que des propositions ne leur soient faites. Une story qui découvre une migration non
-prévue le dit avant de l'écrire (C-38-0).
+**Migrations : six fichiers, dont une seule breaking** (38-1, **38-2 — la breaking** (O1) —, 38-3a, 38-4, 38-5,
+38-10) ; seule la breaking écrit une donnée (`_kesh_version`, exemptée P7) ; les autres n'en écrivent pas (sauf
+découverte à la fiche). **Ordre** : 38-1 → 38-2 → 38-3a → (38-3b, 38-4, 38-5, 38-6c en parallèle possibles) → 38-7
+(après 38-3b) → 38-8 → 38-6a (après 38-4, 38-5, 38-6c) → 38-6b → 38-9a → 38-9b ; 38-10 dès 38-3a. 38-6c avant 38-6a :
+les transactions de 2024 se rattachent avant que des propositions ne leur soient faites. Une story qui découvre une
+migration non prévue le dit avant de l'écrire (C-38-0).
 
 Chaque fiche porte ses **exigences numérotées** (B26) : `FR-38-n-k` (fonctionnelles), `NFR-38-n-k` (non
 fonctionnelles) ; récapitulatif au § *Exigences (FR/NFR) par story*. Les gardes communes (P1–P8, *Pattern batch*,
@@ -505,7 +538,8 @@ aucun appel réseau en CI, recette visuelle) ne s'y répètent que là où la st
   1. `FR-38-0-1` — Compter les issues ouvertes et les bugs, et écrire au fichier d'epic le compte du tag précédent et
      l'objectif du tag.
   2. `FR-38-0-2` — Valider ce fichier en boucle jusqu'à une passe sans finding au-dessus de LOW.
-  3. `FR-38-0-3` — Obtenir de Guy le numéro de la release qui porte la migration breaking (Q1), avant la fiche 38-3.
+  3. `FR-38-0-3` — Obtenir de Guy le numéro de la release qui porte la migration breaking (Q1), avant le
+     développement de 38-2 (O1).
 - **NFR**
   1. `NFR-38-0-1` — Décomptes recomptés à la source, commande et périmètre écrits avec le nombre.
 
@@ -545,8 +579,9 @@ aucun appel réseau en CI, recette visuelle) ne s'y répètent que là où la st
 - *Intention* : chaque solde de devise d'une connexion devient un compte bancaire Kesh ordinaire, lié à un compte du
   plan déjà en devise (numéro, historique et soldes gardés), avec ses réglages de prestataire : connexion, devise,
   compte de frais de la devise.
-- *Périmètre* : migration **non breaking** (`CREATE TABLE payment_provider_accounts`, E11 ; comptes liés en colonnes
-  FK, B23) ; routes C-38-3 ; levée de `ACCOUNT_IN_FOREIGN_CURRENCY` (C-37-9) pour un compte porteur de réglages, posés
+- *Périmètre* : migration **breaking** (O1 : `CREATE TABLE payment_provider_accounts`, E11, comptes liés en colonnes
+  FK, B23 ; contrainte d'IBAN remplacée ; `match_type` → `VARCHAR(40)` ; `min_required` relevé, crates bumpés, E19) ;
+  routes C-38-3 ; levée de `ACCOUNT_IN_FOREIGN_CURRENCY` (C-37-9) pour un compte porteur de réglages, posés
   dans la même transaction que le lien (création et `PATCH` du lien du compte bancaire) ; gardes de devise et de
   compte de frais ; garde d'archivage d'un compte désigné ; exclusion du compte principal, des lots de paiement et de
   l'assistant ; exports (colonnes de la table neuve) ; tables à `backup.rs` (ordre enfants → parents) et liste close
@@ -570,9 +605,22 @@ aucun appel réseau en CI, recette visuelle) ne s'y répètent que là où la st
   1. `NFR-38-2-1` — Gardes au serveur, sous le verrou de devise du compte du plan, dans la transaction du lien.
   2. `NFR-38-2-2` — Comptes désignés en colonnes FK `ON DELETE RESTRICT`, archivage refusé tant qu'un réglage les
      désigne (B23).
-  3. `NFR-38-2-3` — Migration non breaking ; `account_kind` toujours `'bank'`.
+  3. `NFR-38-2-3` — **La** migration breaking de l'epic (O1) : relèvement en dernière instruction, crates bumpés dans
+     le même commit, retour par la sauvegarde d'avant la mise à jour ; `account_kind` toujours `'bank'`.
 
-### 38-3 — Téléchargement : cadre commun, et la migration breaking
+### 38-3a et 38-3b — Téléchargement (découpage D-P1-1)
+
+38-3 touchait six modules ; elle est **découpée** (statut `split`) en **38-3a** — schéma non breaking (colonnes de
+prestataire, passages, soldes, point de reprise), lecture tolérante de `PROVIDER_API`, gardes (suppression d'en-tête,
+imports de fichier et propositions existantes refusés sur un compte prestataire, `balance_seen`), passages supprimés
+avec leur connexion — et **38-3b** — crate `kesh-providers` (`Connector` avec `history_start`, `overlap`,
+`MovementPage.skipped`/`sums`), transport à bornes par requête, fabrique, passage, planification, lecture de l'état,
+soldes et complétude ; aucune migration. La migration breaking est en 38-2 (O1) ; le décodage tolérant de
+`ReconciliationMatchType` passe à 38-4. Fiches : `38-3a-telechargement-schema.md`, `38-3b-telechargement-passage.md` ;
+leurs exigences (`FR-38-3a-k`, `FR-38-3b-k`…) remplacent celles de 38-3 ci-dessous, gardées comme **historique du
+cadrage**.
+
+*(Historique — cadrage de 38-3 avant O1 et D-P1-1.)*
 
 - *Intention* : Kesh télécharge les mouvements d'une connexion, chaque jour ou à la demande, sans doublon, depuis la
   date de départ, et liste les soldes sans compte.
@@ -615,7 +663,8 @@ aucun appel réseau en CI, recette visuelle) ne s'y répètent que là où la st
 - *Intention* : une règle reconnaît une transaction de prestataire par courriel, **boutique (préfixe du numéro de
   facture, B24)**, nom d'article ou code d'événement, et se restreint par sens, devise et compte — pour proposer le bon
   sous-compte de ventes de la devise et de la boutique.
-- *Périmètre* : E14 ; migration non breaking (trois colonnes de filtre, `filter_key`, index unique remplacé) ;
+- *Périmètre* : E14 ; `ReconciliationMatchType` tolérant et `RULE_CRITERION_UNKNOWN` (E4, repris de 38-3 après
+  D-P1-1) ; migration non breaking (trois colonnes de filtre, `filter_key`, index unique remplacé) ;
   `rule_matches` étendu (`rules.rs:46`) et ses appelants (`first_matching_rule`, revalidation d'`accept_one_rule`) ;
   garde de devise du compte de la règle ; routes `reconciliation_rules` (types neufs, filtres facultatifs,
   `RULE_CRITERION_UNKNOWN`) ; export CSV des règles ; libellés des types aux quatre locales.
@@ -736,7 +785,8 @@ aucun appel réseau en CI, recette visuelle) ne s'y répètent que là où la st
   jusqu'à expiration), `GET /v1/reporting/transactions` (`start_date`/`end_date` ≤ 31 jours, `fields=all`,
   `page_size=500`, `page`, `balance_affecting_records_only=Y`), `GET /v1/reporting/balances` ; plafond de 10 000
   résultats → la fenêtre se redécoupe ; trois ans d'historique → `fetch_from` antérieur refusé à l'écran et borné au
-  passage ; « Tester la connexion » pose `accountEmail` et `payerId` aux réglages (E24) ; erreurs (401, 403 permission
+  passage ; « Tester la connexion » pose `payerId` aux réglages (E24 ; `accountEmail` retiré, O10) ; fenêtre trop
+  large redécoupée dans le connecteur (O10) ; erreurs (401, 403 permission
   *Transaction Search* manquante, 429, 5xx) en états lisibles ; URL de base constante (*live*), autre base seulement
   en test.
 - *Risques* : permission manquante sur l'application REST (message clair) ; pagination incohérente ; délai de 3 h ;
@@ -746,7 +796,7 @@ aucun appel réseau en CI, recette visuelle) ne s'y répètent que là où la st
   2. `FR-38-7-2` — Lire les transactions par fenêtres de 31 jours au plus, toutes les pages, en redécoupant au-delà
      de 10 000 résultats.
   3. `FR-38-7-3` — Lire les soldes par devise, à une date donnée (`as_of_time`).
-  4. `FR-38-7-4` — « Tester la connexion » lit les soldes et pose `accountEmail` et `payerId` aux réglages.
+  4. `FR-38-7-4` — « Tester la connexion » lit les soldes et pose `payerId` aux réglages (`accountEmail` retiré, O10).
   5. `FR-38-7-5` — Chaque erreur PayPal devient un état lisible de la connexion.
 - **NFR**
   1. `NFR-38-7-1` — URL de base constante, client HTTP borné de 37-2 (délai, taille).
@@ -832,33 +882,39 @@ aucun appel réseau en CI, recette visuelle) ne s'y répètent que là où la st
 
 ## Exigences (FR/NFR) par story
 
-Récapitulatif (B26) ; le texte de chaque exigence est dans la fiche. **Forme définitive — issues GitHub ou fiches —
-à Guy** (Q12).
+Récapitulatif (B26) ; le texte de chaque exigence est dans la **fiche, qui fait foi** — les listes des sections
+ci-dessus sont celles du cadrage, les fiches en ont ajouté (*ajout*). **Forme définitive — issues GitHub ou fiches —
+à Guy** (Q12). Recompté **aux fiches** le 2026-11-15, après la P1 et le découpage D-P1-1 (identifiants distincts de
+la story dans sa fiche : `grep -oE "\bFR-38-<n>-[0-9]+" <fiche> | sort -u | wc -l`, de même pour `NFR`) ; 38-0 n'a pas
+de fiche : compté à sa section ci-dessus ; 38-3 (`split`) n'est plus comptée.
 
 | Story | FR | NFR |
 |---|---|---|
-| 38-0 | 1 décomptes · 2 validation · 3 numéro de release | 1 décomptes recomptés |
-| 38-1 | 1 connexion CRUD · 2 secrets en écriture seule · 3 réglages validés · 4 suppression refusée si utilisée · 5 secrets effacés à la restauration | 1 AES-256-GCM, clé d'environnement · 2 aucun secret nulle part · 3 session d'Administrateur seule · 4 migration non breaking, JSON contrôlé |
-| 38-2 | 1 créer ou poser les réglages · 2 lien à un compte en devise (D8) · 3 compte de frais de la devise · 4 une devise par connexion, retrait refusé si utilisé · 5 jamais principal ni pain.001 | 1 gardes sous verrou · 2 FK `RESTRICT`, archivage gardé · 3 non breaking, `bank` |
-| 38-3 | 1 téléchargement quotidien ou à la demande · 2 sans doublon · 3 passage et en-tête `PROVIDER_API` · 4 solde sans compte proposé · 5 complétude · 6 lecture tolérante | 1 **la** migration breaking (P2, P2-bis) · 2 retour par la sauvegarde, recette de montée · 3 un passage à la fois, reprise · 4 aucun réseau en CI |
-| 38-4 | 1 quatre types neufs · 2 trois filtres · 3 une règle par boutique et devise · 4 compte en devise · 5 type inconnu inerte | 1 non-régression · 2 normalisation unique · 3 non breaking |
-| 38-5 | 1 genre et taux par compte · 2 extraction, acquisitions · 3 compte d'acquisitions · 4 taux à la date | 1 centime, Rust = TS · 2 TVA en devise principale · 3 non breaking |
-| 38-6a | 1 proposition vente/achat · 2 frais seuls · 3 lot `provider` · 4 déjà comptabilisée · 5 cours | 1 *Pattern batch* · 2 revalidation sous verrou · 3 module à part, pur |
-| 38-6b | 1 conversion · 2 retrait/dépôt · 3 remboursement inverse · 4 file « à examiner » | 1 paire liée · 2 aucune écriture d'office |
-| 38-6c | 1 rattachement en devise · 2 suggestions · 3 lot · 4 recherche · 5 script externe | 1 une seule règle · 2 *Pattern batch* · 3 temps borné · 4 connexions fermées aux clés |
-| 38-7 | 1 OAuth2 · 2 transactions par fenêtres · 3 soldes · 4 « Tester » · 5 erreurs lisibles | 1 URL constante, client borné · 2 jeton en mémoire · 3 validation stricte |
-| 38-8 | 1 classement des codes · 2 champs lus · 3 `invoice_id` → `invoice_ref` · 4 surcharges | 1 test par code relevé · 2 classement pur |
-| 38-9a | 1 écrans des connexions · 2 Tester, Télécharger · 3 soldes proposés · 4 comptes prestataires · 5 contrôles de solde | 1 aucun secret au DOM · 2 i18n, manuel admin · 3 captures |
-| 38-9b | 1 formulaire des règles · 2 propositions multi-lignes · 3 rattachement en lot · 4 file « à examiner » | 1 E2E · 2 textes, i18n, manuel utilisateur · 3 captures |
-| 38-10 | 1 joindre un PDF · 2 solde de clôture · 3 écart affiché · 4 contrôles de clôture | 1 PDF borné · 2 sauvegarde · 3 non breaking |
+| 38-0 | 3 — 1 décomptes · 2 validation · 3 numéro de release | 1 — 1 décomptes recomptés |
+| 38-1 | 7 — 1 connexion CRUD · 2 secrets en écriture seule · 3 réglages validés · 4 suppression refusée si utilisée · 5 secrets effacés à la restauration · 6 remise à zéro · 7 « Tester », contrôle local | 6 — 1 AES-256-GCM, clé d'environnement · 2 aucun secret nulle part · 3 session d'Administrateur seule · 4 migration non breaking, JSON contrôlé · 5 clé changée ou chiffré altéré signalés · 6 variable transmise et documentée |
+| 38-2 | 8 — 1 créer ou poser les réglages · 2 lien à un compte en devise (D8) · 3 compte de frais de la devise · 4 une devise par connexion, retrait refusé si utilisé · 5 jamais principal ni pain.001 · 6 un compte du plan, un compte prestataire · 7 bloc `provider` de la liste · 8 connexion utilisée non supprimable | 3 — 1 gardes sous verrou · 2 FK `RESTRICT`, archivage gardé · 3 **la** migration breaking (O1), `bank` |
+| 38-3a | 5 — 1 schéma des mouvements, passages, soldes · 2 en-tête lu, suppression refusée · 3 source inconnue lue · 4 imports de fichier et propositions existantes refusés · 5 `balance_seen`, passages supprimés avec la connexion | 3 — 1 non breaking · 2 sauvegarde antérieure réimportée, recette étendue · 3 aucun comportement selon `source_format` |
+| 38-3b | 6 — 1 téléchargement quotidien ou à la demande · 2 sans doublon, `overlap()` · 3 passage et en-tête `PROVIDER_API` · 4 solde sans compte proposé · 5 complétude · 6 état lu par le Comptable | 5 — 1 un passage à la fois, reprise · 2 aucun réseau en CI · 3 validation des réponses · 4 date à Zurich · 5 bornes par requête, aucun texte d'erreur ni secret |
+| 38-4 | 6 — 1 quatre types neufs · 2 trois filtres · 3 une règle par boutique et devise · 4 compte en devise · 5 type inconnu inerte · 6 compte de règle en devise admis | 3 — 1 non-régression · 2 normalisation unique · 3 non breaking |
+| 38-5 | 5 — 1 genre et taux par compte · 2 extraction, acquisitions · 3 compte d'acquisitions · 4 taux à la date · 5 traitement TVA d'un compte à une date | 3 — 1 centime, Rust = TS · 2 TVA en devise principale · 3 non breaking |
+| 38-6a | 7 — 1 proposition vente/achat · 2 frais seuls · 3 lot `provider` · 4 déjà comptabilisée · 5 cours · 6 proposition bloquée visible (`blockedBy`) · 7 variante `rule` refusée sur un compte prestataire | 5 — 1 *Pattern batch* · 2 revalidation sous verrou · 3 module à part, pur · 4 équilibre exact, ligne d'arrondi · 5 comptes non prestataires inchangés |
+| 38-6b | 5 — 1 conversion (une écriture si un côté est en CHF) · 2 retrait/dépôt · 3 remboursement inverse · 4 file « à examiner » · 5 file lue par l'API | 4 — 1 paire liée · 2 aucune écriture d'office · 3 une seule définition de la paire, de l'origine, de la file · 4 file calculée à la lecture |
+| 38-6c | 7 — 1 rattachement en devise · 2 suggestions · 3 lot · 4 recherche · 5 script externe · 6 écriture sur deux comptes bancaires · 7 rattacher n'écrit aucune écriture | 4 — 1 une seule règle · 2 *Pattern batch* · 3 temps borné · 4 connexions fermées aux clés |
+| 38-7 | 6 — 1 OAuth2 · 2 transactions par fenêtres · 3 soldes · 4 « Tester » (`payerId`) · 5 erreurs lisibles · 6 trois ans d'historique | 4 — 1 URL constante, client borné · 2 jeton en mémoire · 3 validation stricte · 4 aucun secret ni jeton |
+| 38-8 | 6 — 1 classement des codes · 2 champs lus · 3 `invoice_id` → `invoice_ref` · 4 surcharges · 5 moitiés de conversion reliées · 6 seuls les enregistrements qui changent le solde | 3 — 1 test par code relevé · 2 classement pur · 3 classement vérifiable par la somme des nets |
+| 38-9a | 7 — 1 écrans des connexions · 2 Tester, Télécharger · 3 soldes proposés · 4 comptes prestataires · 5 contrôles de solde · 6 compte prestataire reconnu dans la liste · 7 écrans existants touchés par les gardes | 4 — 1 aucun secret au DOM · 2 i18n, manuel admin · 3 captures · 4 « télécharger », « proposer » |
+| 38-9b | 5 — 1 formulaire des règles · 2 propositions multi-lignes · 3 rattachement en lot · 4 file « à examiner » · 5 annulation d'une moitié de conversion annoncée | 4 — 1 E2E · 2 textes, i18n, manuel utilisateur · 3 captures · 4 composants à part |
+| 38-10 | 5 — 1 joindre un PDF · 2 solde de clôture · 3 écart affiché · 4 contrôles de clôture · 5 lister, corriger, retirer | 4 — 1 PDF borné · 2 sauvegarde · 3 non breaking · 4 audit, i18n, manuel, captures |
 
-**Total : 64 FR et 41 NFR** sur 14 stories (38-9a et 38-9b comptées à part), recomptés au `grep` des listes
-numérotées des fiches.
+**Total : 88 FR et 56 NFR** sur 15 stories (38-0 comprise, 38-3a et 38-3b comptées à part, 38-3 `split` exclue ;
+38-9a et 38-9b à part), recomptés aux fiches le 2026-11-15. *(Avant la P1 : 64 FR et 41 NFR, compte des seules listes
+du cadrage.)* ⚠️ 38-6a, 38-6b, 38-7, 38-8, 38-9a et 38-9b étaient alignées en parallèle au moment du recompte : à
+recompter par la même commande après leur alignement.
 
 ## Ce que réutiliseront les Epics 39 (Wise) et 40 (Stripe)
 
 **Réutilisé tel quel** : coffre des secrets et connexions (38-1), réglages de compte prestataire et compte de frais
-(38-2), cadre de téléchargement, passages, doublon, planification, soldes vus et contrôles (38-3), règles étendues
+(38-2), cadre de téléchargement, passages, doublon, planification, soldes vus et contrôles (38-3a, 38-3b), règles étendues
 (38-4), TVA par défaut (38-5), propositions et file (38-6a, 38-6b), rattachement en lot et API des scripts (38-6c),
 écrans génériques (38-9a, 38-9b), pièces de compte (38-10). **Aucune migration breaking pour 39 et 40** : l'en-tête
 `PROVIDER_API` sert tel quel ; les valeurs neuves (`provider`, genres de mouvement, critères de règle éventuels) vont
@@ -963,9 +1019,10 @@ B16–B21*) :
 E16), Q7 (un critère principal + filtres, E14), Q8 (aucun outil MCP, E23), **Q10** (boutique = préfixe
 d'`invoice_id`, B24), **Q11** (`PROVIDER_API` retenu, B22).
 
-- **Q1 — Numéro de la release (Guy), rouverte par B22** : la migration breaking de 38-3 fige la version dans son SQL
-  (`kesh_version_min_required`) et impose le bump des crates dans le même commit (P2-bis). Proposition : la mineure
-  suivante (`0.18.0`), l'Epic 37 n'en relevant aucune. **Bloquant pour la fiche 38-3**, pas pour les autres.
+- **Q1 — Numéro de la release (Guy), rouverte par B22** : la migration breaking de **38-2** (O1) fige la version dans
+  son SQL (`kesh_version_min_required`) et impose le bump des crates dans le même commit (P2-bis). Proposition : la
+  mineure suivante (`0.18.0`), l'Epic 37 n'en relevant aucune. **Bloquant pour le développement de 38-2**, pas pour
+  les autres.
 - **Q3 — Catégorie de vente (reste de Q3, B19)** : sous-comptes de ventes par devise et par catégorie, ou catégorie
   portée par l'analytique (`default_project_id` de la règle) ? **Reportée** (B25) ; l'epic marche dans les deux cas
   (une règle par boutique et par devise).
@@ -1013,5 +1070,26 @@ Questions des fiches tranchées par l'orchestrateur (Beat peut les contester ; Q
 - **O11** — 38-8 : les deux moitiés d'une conversion se relient par `paypal_reference_id` (à constater sur les réponses
   de Beat) ; un paiement en attente au-delà du recouvrement de trois jours est relu par un recouvrement réglable ;
   surcharge `ignore` gardée ; `refund_origin_missing` est **calculé** (38-6b), jamais écrit (38-8 à aligner).
-- **O12** — 38-9a : routes des soldes vus et de l'historique des passages arrêtées par 38-3 ; 38-9b : période par
-  défaut du rattachement en lot = l'exercice ouvert le plus ancien.
+- **O12** — 38-9a : routes des soldes vus et de l'historique des passages arrêtées par 38-3 (désormais 38-3b) ; 38-9b :
+  période par défaut du rattachement en lot = l'exercice ouvert le plus ancien.
+
+## Validation P1 — décisions et alignement inter-fiches (2026-11-15)
+
+Liste : `implementation-artifacts/38-p1-inter-fiches.md`.
+
+- **D-P1-1 — 38-3 découpée** en **38-3a** (schéma non breaking, entités, lecture tolérante de `PROVIDER_API`, gardes :
+  suppression d'en-tête, import de fichier, propositions existantes, `balance_seen`) et **38-3b** (crate
+  `kesh-providers`, `Connector`, transport, passage, planification, contrôle des soldes ; aucune migration) — six
+  modules sinon (règle de splitting). 38-3 passe `split`. **Tranché en 38-3a** : passages, soldes vus et instantanés
+  sont **supprimés avec leur connexion** (cascade + `DELETE` explicite), seul `bank_imports.provider_fetch_run_id` reste
+  `RESTRICT`.
+- **D-P1-2** — 38-5-P1-5 (compte d'acquisitions égal à d'autres passifs) reste LOW, non traité.
+- **Alignements** de ce fichier : migration breaking en **38-2** partout (en-tête, E4, E14, E19, C-38-0, table,
+  sections, Q1) ; décodage tolérant à la première écriture (`PROVIDER_API` en 38-3a, critères en 38-4) ; E11 et
+  inventaire (un `bank` sans IBAN n'était pas admis) ; E6 (lecture préalable des identifiants, `CLIENT_FOUND_ROWS`) ;
+  E16 (conversion à moitié CHF en une écriture, C-38-6b-2 bis) ; O10/O11 (découpage dans le connecteur, `overlapDays`
+  1–30 défaut 3, `accountEmail` retiré) ; dépendances de 38-6a, 38-6b ; codes de C-38-8, action d'audit et route de
+  38-6b, `docs/api-external.md` de 38-6c ; récapitulatif FR/NFR recompté aux fiches (88 FR, 56 NFR) ; migrations : six
+  fichiers.
+- Les sections *Révision B16–B21* et *Révision B22–B26* ci-dessus restent **historiques** (elles placent la breaking en
+  38-3 et gardent `accountEmail`).

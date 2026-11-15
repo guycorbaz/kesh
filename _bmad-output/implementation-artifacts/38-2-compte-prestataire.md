@@ -6,15 +6,15 @@ Status: ready-for-dev
 décisions E1, E11, E18, E19, E24 ; contrats **C-38-3** (et C-38-2 pour le refus de suppression d'une connexion,
 FR-38-1-4), C-38-0, C-38-12 ; décisions de Beat B1, B3, B16 (maintenu par B22), B23 ; engagement **D8** de l'Epic 37
 (levée de C-37-9). **Dépend de** : 38-1 (connexions), l'Epic 37 (devise d'un compte et ses refus, 37-1 AC-4 ; liste
-close des absences admises, 37-1 AC-6). **Suivie par** : 38-3 (transactions et soldes vus d'un compte prestataire,
-qui étendent le refus `PROVIDER_ACCOUNT_IN_USE`), 38-6a (compte de frais), 38-9a (écrans).*
+close des absences admises, 37-1 AC-6). **Suivie par** : 38-3a (colonnes des transactions et soldes rapportés d'un
+compte prestataire, qui étendent le refus `PROVIDER_ACCOUNT_IN_USE`), 38-3b (téléchargement), 38-6a (compte de frais), 38-9a (écrans).*
 
 ⛔ **Arbitrage O1 (2026-11-15), qui prime sur le reste de cette fiche : la migration de cette story est l'UNIQUE
 migration breaking de l'epic** (la fiche d'origine la disait non breaking et laissait la décision à Beat, Q-38-2-a :
 close). Elle porte, dans **un seul fichier** : la table `payment_provider_accounts`, le remplacement de la contrainte
 d'IBAN, `reconciliation_rules.match_type` en `VARCHAR(40)` (O2), et `kesh_version_min_required` relevé en dernière
-instruction (P2, P2-bis : **dix** crates, `kesh-providers` naissant en 38-3 ; numéro de release à Guy, Q1 de l'epic —
-bloquant pour cette fiche comme il l'était pour 38-3). Détail à l'AC-1.
+instruction (P2, P2-bis : **dix** crates, `kesh-providers` naissant en 38-3b ; numéro de release à Guy, Q1 de l'epic —
+bloquant pour cette fiche comme il l'était pour l'ancienne 38-3). Détail à l'AC-1.
 
 ⚠️ **Écart à l'epic, relevé au code (résolu par O1).** L'epic
 (E11, inventaire) tient qu'un compte `bank` **sans IBAN** est admis depuis 34-11a1. **C'est faux au code** :
@@ -47,7 +47,7 @@ compte de l'assistant.
 | `FR-38-2-3` | Désigner le compte de frais de la devise (charge, actif, même devise) ; le regroupement est son compte parent. | AC-3, AC-5 |
 | `FR-38-2-4` | Une seule devise par connexion (`PROVIDER_ACCOUNT_DUPLICATE_CURRENCY`) ; retrait des réglages refusé si le compte est utilisé (`PROVIDER_ACCOUNT_IN_USE`). | AC-3, AC-5 |
 | `FR-38-2-5` | Un compte prestataire n'est jamais principal et n'entre ni aux lots pain.001 ni à l'assistant. | AC-7 |
-| `FR-38-2-6` *(ajout)* | Un compte du plan en devise n'est lié qu'à un seul compte bancaire prestataire (`PROVIDER_ACCOUNT_LEDGER_SHARED`) : le contrôle de solde de 38-3/38-10 compare un compte du plan à un solde du prestataire. | AC-3 |
+| `FR-38-2-6` *(ajout)* | Un compte du plan en devise n'est lié qu'à un seul compte bancaire prestataire (`PROVIDER_ACCOUNT_LEDGER_SHARED`) : le contrôle de solde de 38-3b/38-10 compare un compte du plan à un solde du prestataire. | AC-3 |
 | `FR-38-2-7` *(ajout)* | La liste des comptes bancaires dit, pour chacun, s'il est compte prestataire (connexion, devise, compte de frais). | AC-8 |
 | `FR-38-2-8` *(ajout, FR-38-1-4)* | La suppression d'une connexion qui porte un compte prestataire est refusée (`PROVIDER_CONNECTION_IN_USE`). | AC-9 |
 | `NFR-38-2-1` | Gardes au serveur, sous le verrou de devise du compte du plan, dans la transaction du lien. | AC-3, AC-6 |
@@ -61,16 +61,41 @@ compte de l'assistant.
    `-- BREAKING (P1, P3 : MODIFY COLUMN) : relève kesh_version_min_required à <X.Y.Z>`, patron de
    `20261110000001`). Ordre des instructions : (1) `CREATE TABLE payment_provider_accounts` ; (2) le remplacement de la
    contrainte d'IBAN ; (3) `ALTER TABLE reconciliation_rules MODIFY COLUMN match_type VARCHAR(40) CHARACTER SET ascii
-   COLLATE ascii_bin NOT NULL` avec `CHECK (BINARY match_type REGEXP '^[a-z][a-z0-9_]{1,39}$')` — format seul, sans
-   énumération (O2) ; les quatre valeurs existantes sont conservées, aucune ligne réécrite ; l'index
-   `uq_reconciliation_rules_match_active (company_id, match_type, active_uniq)` se reconstruit à l'`ALTER` (vérifier
-   qu'aucun `DROP INDEX` n'est requis ; la comparaison passe de `utf8mb4_unicode_ci` à `ascii_bin`, sans effet sur des
-   valeurs en minuscules ASCII) ; (4) **en dernière instruction** `UPDATE _kesh_version SET
+   COLLATE ascii_bin NOT NULL, ADD CONSTRAINT chk_reconciliation_rules_match_type_format CHECK (BINARY match_type
+   REGEXP '^[a-z][a-z_]{1,39}$')` — **exactement** cette définition (la colonne d'origine, `ENUM(…) NOT NULL` sans
+   `DEFAULT` ni `COMMENT`, `migrations/20260513000001_reconciliation_rules.sql:40`, ne perd rien) ; format seul, sans
+   énumération (O2) ; les quatre valeurs existantes (`counterparty_contains`, `counterparty_exact`,
+   `reference_contains`, `iban_exact`) satisfont le format et sont conservées, aucune ligne réécrite ; l'index
+   `uq_reconciliation_rules_match_active (company_id, match_type, active_uniq)` (`:65-66`) se **reconstruit à
+   l'`ALTER`** : aucun `DROP INDEX` n'est requis, le nom et les colonnes restent (38-4 le remplace ensuite sous le même
+   nom) ; la comparaison passe de `utf8mb4_unicode_ci` à `ascii_bin`, sans effet sur des valeurs en minuscules ASCII.
+   **Test d'unicité après l'`ALTER`** (montée par version, P6) : deux règles actives de même société, type et valeur
+   restent refusées (`RECONCILIATION_RULE_DUPLICATE`, `is_duplicate_rule_constraint` sur le nom), une valeur hors
+   format (`'Iban_exact'`, `'x'`) est refusée par le `CHECK` ; (4) **en dernière instruction** `UPDATE _kesh_version SET
    kesh_version_min_required = '<X.Y.Z>' WHERE id = 1;` (P2). **Hors périmètre de cette story** : le décodage
    tolérant `Other(String)` de `ReconciliationMatchType` et de `BankImportSourceFormat` (E4) — tant qu'aucune valeur
-   neuve n'est écrite, l'enum reste tel quel et la désérialisation de l'API refuse l'inconnu en 400 ; il vient avec la
-   première écriture d'une valeur neuve (38-3 pour `PROVIDER_API`, 38-4 pour les critères) — **à confirmer à l'orchestrateur**
-   (inter-fiche, 38-2-P1-3). **P2-bis** : les **dix** crates passent à `<X.Y.Z>` dans le même commit ; gate
+   neuve n'est écrite, l'enum reste tel quel et la désérialisation de l'API refuse l'inconnu ; il vient avec la
+   première écriture d'une valeur neuve : **38-3a** pour `PROVIDER_API`, **38-4** pour les critères (confirmé par
+   l'orchestrateur, liste inter-fiches, point 1 ; 38-2-P1-3 close). Cette migration ne change que le DDL (et la
+   version).
+   - **Version figée `0.17.6`, à trier** : `grep -rn '0\.17\.6' crates docs CHANGELOG.md` (relevé au commit : `post_restore.rs`
+     ×2, `migrations_fresh_install.rs` ×2, `migrations_upgrade_path.rs` ×16, `admin_full_import_e2e.rs` ×11, et des
+     commentaires d'historique dans `routes/` et `tests/`) ; chaque occurrence triée — **assertion de la version
+     minimale courante** (`migrations_fresh_install.rs:249`, `admin_full_import_e2e.rs:4671`, `:4818`,
+     `migrations_upgrade_path.rs` qui lit le seuil après `MIGRATOR.run()` complet) → `<X.Y.Z>` ; **jalon historique**
+     (seuil lu à la version `20261110000001`, sauvegarde 0.17.6 importée, commentaires datés) → inchangé ; le tri est
+     cité au Change Log.
+   - **P6, relevé au commit** : `grep -rn "migrations.len()\|apply_migrations_up_to" crates/` —
+     `migrations_upgrade_path.rs` ×27, `invoice_lines_revenue_account_backfill.rs` ×13, `lettering_documents_backfill.rs`
+     ×6, `accounts_role_backfill.rs` ×5, `closing_accounts_backfill.rs` ×5, `pre_upgrade_backup/tests.rs` ×3, quatre
+     autres ×2 ; chaque site inspecté, cité au Change Log.
+   - **CHANGELOG** (entrée non datée, datée par `prepare-release.sh`) : en tête, l'avertissement de la 0.17.6
+     (`CHANGELOG.md:13`) repris — sauvegarde complète avant la mise à jour, **migration breaking**, version minimale
+     relevée à `<X.Y.Z>`, la version précédente refuse de démarrer sur la base migrée et d'importer une sauvegarde
+     `<X.Y.Z>` : **retour uniquement par la sauvegarde d'avant la mise à jour** ; puis le compte `bank` sans IBAN d'un
+     prestataire. **Manuel d'administration** : sous-section *Passer à la `<X.Y.Z>`* écrite par 38-9a (AC-11 de
+     38-9a, patron de *Passer à la 0.17.6*) — 38-2 lui transmet le texte du CHANGELOG ; 38-2 n'écrit au manuel que la
+     phrase de l'AC-10. **P2-bis** : les **dix** crates passent à `<X.Y.Z>` dans le même commit ; gate
    **runtime** complet (`admin_backup_e2e`, `admin_full_import_e2e`, `migrations_fresh_install`) avant `done` ;
    `<X.Y.Z>` est à Guy (Q1 de l'epic). **P3/P4** : pas de `breaking-skip-bump`. **P7** : l'`UPDATE _kesh_version`
    écrit une table système jamais restaurée → une entrée **`Durable`** à `EXEMPT_MIGRATIONS`
@@ -200,7 +225,7 @@ compte de l'assistant.
      n'est pas celle des réglages ; `PROVIDER_ACCOUNT_LEDGER_SHARED`) ; **délier** (`journalAccountId: null`) un compte
      prestataire → `409 PROVIDER_ACCOUNT_LEDGER_REQUIRED` s'il porte au moins une transaction
      (`count_transactions_for_bank_account`, lue sous le verrou de la ligne ; arbitrage O8 : « délier n'est admis que
-     s'il ne porte aucune transaction téléchargée » — 38-3 y ajoute les soldes vus) ; sans transaction, le lien est
+     s'il ne porte aucune transaction téléchargée » — 38-3a y ajoute les soldes rapportés) ; sans transaction, le lien est
      retiré et le compte reste « lien à désigner » (comme `fee_account_id NULL`), sans proposition possible d'ici là. Pour un compte **sans** réglages, rien ne change (37-1).
    - **`PUT`** d'un compte prestataire : `iban` **facultatif** (absent ou `null` → `NULL` ; présent → contrôlé comme
      aujourd'hui) — c'est la seule dérogation à `validate_bank_input` (`:557-570`), décidée sur
@@ -212,14 +237,16 @@ compte de l'assistant.
      d'exiger l'IBAN d'un `bank` : la seule voie d'un compte `bank` sans IBAN est l'AC-3.
    - **`DELETE /api/v1/bank-accounts/{id}`** (archivage) et `…/close` : admis sur un compte prestataire aux conditions
      d'aujourd'hui (archivage refusé s'il a des transactions, `repositories/bank_accounts.rs:806`) ; la ligne de réglages **reste** (l'historique
-     du lien est gardé) ; 38-3 ne télécharge pas pour un compte archivé ou clos (point de contact). Limite écrite au
+     du lien est gardé) ; 38-3b ne télécharge pas pour un compte archivé ou clos (point de contact). Limite écrite au
      manuel (38-9a) : la devise reste tenue par la connexion tant que la ligne existe (`uq_ppa_connection_currency`).
 
 5. **AC-5 — Compte de frais, modification et retrait des réglages (FR-38-2-3, FR-38-2-4, NFR-38-2-2).**
    - **Garde du compte de frais** (`feeAccountId`, à la création, en `attach` et au `PATCH`) : de la société, **actif**,
      **imputable**, de type **`Expense`**, dans la **devise du solde** (CHF : sans devise) — sinon `400
      FEE_ACCOUNT_INVALID`, `details` `{ accountId, reason }`, `reason` ∈ `not_found`, `archived`, `not_postable`,
-     `not_expense`, `currency_mismatch`. Le **regroupement** des frais est son compte parent (`accounts.parent_id`) :
+     `not_expense`, `currency_mismatch` ; plus **`missing`** (`details.accountId` nul : aucun compte de frais désigné,
+     `fee_account_id NULL`), **posée par 38-6a** à la proposition — le code et la liste des raisons sont fixés ici une
+     fois pour les deux stories. Le **regroupement** des frais est son compte parent (`accounts.parent_id`) :
      aucun réglage de plus (B3). Deux connexions peuvent désigner le même compte de frais ? **Oui** (rien ne
      l'interdit ; B3 recommande un sous-compte par prestataire et par devise, ce que l'écran 38-9a suggère sans
      l'imposer).
@@ -232,7 +259,9 @@ compte de l'assistant.
      **complète**, triée) ∈ `foreign_currency_link` (compte lié en devise : il deviendrait un compte ordinaire lié à un
      compte en devise, contraire à C-37-9), `transactions` (au moins une `bank_transactions` du compte,
      `count_transactions_for_bank_account`, `repositories/bank_accounts.rs:1544`), `no_iban` (le compte deviendrait un
-     `bank` sans IBAN hors prestataire) ; **38-3 ajoute** `balance_seen` (soldes rapportés). Audit
+     `bank` sans IBAN hors prestataire), et **`balance_seen`** — au moins une ligne `provider_balance_snapshots`
+     (`opening` ou `reported`, instantanés compris) de la connexion dans la devise du compte —, **posée par 38-3a**
+     (AC-4), qui crée la table ; le code et ses quatre messages listent les quatre raisons dès cette story. Audit
      `payment_provider_account.deleted`.
    - **Archivage d'un compte du plan désigné** (`archive_guarded`, `crates/kesh-db/src/repositories/accounts.rs:859`) :
      compte de frais d'une ligne de réglages, ou compte lié d'un compte prestataire → `409
@@ -265,7 +294,7 @@ compte de l'assistant.
      le compte **principal**, qu'un compte prestataire ne peut pas être ; les routes de cette story exigent l'onboarding
      terminé. Test : `set_bank_account` après la pose de réglages sur un autre compte ne touche pas ce dernier.
    - **Import CAMT** : sélection par IBAN ; un compte PayPal sans IBAN n'y est jamais choisi (rien à changer) ; un
-     compte prestataire **avec** IBAN : l'import CAMT reste admis en 38-2 — **point de contact 38-3**, qui refuse les
+     compte prestataire **avec** IBAN : l'import CAMT reste admis en 38-2 — **point de contact 38-3a** (AC-6), qui refuse les
      imports de fichier sur un compte prestataire (arbitrage O9 : mélange de `provider_tx_id` et de clés de doublon
      par fenêtre) ; 38-2 ne pose pas ce refus.
 
@@ -340,7 +369,7 @@ compte de l'assistant.
   breaking de l'epic est celle de cette story (O1). Le prix est le remplacement de `chk_bank_accounts_bank_has_iban`
   (en tête).
 - **Soldes** : `currentBalance` de la liste reste calculé comme aujourd'hui (en devise principale) ; l'affichage en
-  devise d'un compte en devise est l'affaire de 37-4. Le contrôle « solde du prestataire = solde comptable » est 38-3
+  devise d'un compte en devise est l'affaire de 37-4. Le contrôle « solde du prestataire = solde comptable » est 38-3b
   (complétude) et 38-10 (relevé).
 - **Archivage d'un compte prestataire** : la ligne de réglages reste et garde sa devise prise ; recréer un compte de
   même devise pour la même connexion demande le retrait des réglages, refusé s'il a des transactions. Limite écrite
@@ -374,3 +403,10 @@ compte de l'assistant.
   sur compte prestataire refusé par O9. LOW : T0 ; `exemptions` décompte. Lignes lues :
   `20261110000001_…sql:39-55`, `post_restore.rs:639-653, 1252`, `20260513000001_reconciliation_rules.sql:40, 69`,
   `0001_schema_squash.sql:176, 1167, 1180`, `payment_batches.rs:158-185`, `invoice_pdf_service.rs:332-353`.
+- 2026-11-15 — alignement inter-fiches P1 (Opus) : AC-1 complété du texte de 38-4 P1 — `MODIFY COLUMN match_type`
+  exact (colonne d'origine sans `DEFAULT` ni `COMMENT`), `CHECK` `^[a-z][a-z_]{1,39}$` nommé, index reconstruit à
+  l'`ALTER` sans `DROP INDEX`, test d'unicité après l'`ALTER`, P6 relevé, tri des `0.17.6` (`grep`, assertions de la
+  version courante contre jalons historiques), CHANGELOG et sous-section du manuel par 38-9a ; 38-2-P1-3 close (décodage
+  tolérant en 38-3a pour la source, en 38-4 pour les critères) ; AC-5 : `PROVIDER_ACCOUNT_IN_USE` liste `balance_seen`
+  (instantanés, posée par 38-3a) et `FEE_ACCOUNT_INVALID` la raison `missing` (posée par 38-6a) ; renvois à 38-3 répartis
+  entre 38-3a et 38-3b.

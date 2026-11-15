@@ -65,7 +65,7 @@ Reprises de la fiche d'epic (§ 38-5), complétées là où un AC l'exige.
 ## Critères d'acceptation
 
 1. **AC-1 — Migration** `<AAAAMMJJ>000001_default_vat_of_accounts.sql` (version strictement postérieure à toute
-   migration de la branche au moment de la fusion ; cette story pouvant fusionner avant 38-3 ou 38-4, son numéro se
+   migration de la branche au moment de la fusion ; cette story pouvant fusionner avant 38-3a ou 38-4, son numéro se
    relit à la fusion et le fichier, **jamais appliqué hors des bases de dev**, se renomme alors délibérément — P8 :
    bases de dev reconstruites), **non breaking**, DDL seul :
    - `ALTER TABLE accounts ADD COLUMN default_vat_kind VARCHAR(16) CHARACTER SET ascii COLLATE ascii_bin NULL, ADD

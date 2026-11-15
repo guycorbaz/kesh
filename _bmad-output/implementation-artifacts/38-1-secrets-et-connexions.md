@@ -6,8 +6,8 @@ Status: ready-for-dev
 (`_bmad-output/planning-artifacts/epic-38-paypal.md`) : décisions E1, E2, E3, E4, E18, E24 ; contrats **C-38-1**,
 **C-38-2**, C-38-11, C-38-12, C-38-13 ; décisions de Beat B11, B14, B22, B23 (`epics-38-40-cadrage.md`), qui priment.
 **Dépend de** : l'Epic 37 livré (liste close des absences admises de 37-1 AC-6, R1 ; numéros de migration postérieurs à
-`20261114000003`). **Suivie par** : 38-2 (comptes prestataires, première table enfant d'une connexion), 38-3
-(passages, colonnes `last_run_*`), 38-7 (« Tester la connexion » réel, `payerId`), 38-9a (écrans).
+`20261114000003`). **Suivie par** : 38-2 (comptes prestataires, première table enfant d'une connexion), 38-3a
+(tables des passages et des soldes), 38-3b (passages, colonnes `last_run_*`), 38-7 (« Tester la connexion » réel, `payerId`), 38-9a (écrans).
 **Migration non breaking** (DDL seul, deux tables neuves). Aucun écran : l'interface est en 38-9a.*
 
 ## Story
@@ -30,7 +30,7 @@ Reprises de la fiche d'epic (§ *38-1*), complétées là où un AC en ajoute (m
 | `FR-38-1-4` | La suppression d'une connexion est refusée tant qu'un compte prestataire y est rattaché (`PROVIDER_CONNECTION_IN_USE`). | AC-5 |
 | `FR-38-1-5` | Une restauration complète efface les secrets ; la connexion passe « secret à saisir ». | AC-8 |
 | `FR-38-1-6` *(ajout)* | La remise à zéro de l'installation vide les connexions et efface leurs secrets. | AC-8 |
-| `FR-38-1-7` *(ajout)* | « Tester la connexion » (`POST …/test`) rend l'état local de la connexion (réglages lisibles, clé présente, secret déchiffrable) ; l'appel au prestataire s'y ajoute en 38-3/38-7. | AC-7 |
+| `FR-38-1-7` *(ajout)* | « Tester la connexion » (`POST …/test`) rend l'état local de la connexion (réglages lisibles, clé présente, secret déchiffrable) ; l'appel au prestataire s'y ajoute en 38-7 (fabrique de 38-3b). | AC-7 |
 | `NFR-38-1-1` | Secrets chiffrés AES-256-GCM (nonce aléatoire, AAD, version de clé) par `KESH_SECRETS_KEY` ; variable absente : Kesh démarre, connexions inutilisables (`PROVIDER_SECRETS_KEY_MISSING`, 409) ; gabarit refusé. | AC-1, AC-6 |
 | `NFR-38-1-2` | Aucun secret dans les journaux, erreurs, réponses, audit, exports ni sauvegarde (test qui cherche la valeur partout). | AC-9 |
 | `NFR-38-1-3` | Routes des connexions et des secrets réservées à une session d'Administrateur (`require_not_pat`). | AC-3 |
@@ -78,8 +78,8 @@ Reprises de la fiche d'epic (§ *38-1*), complétées là où un AC en ajoute (m
      chiffré altéré d'un octet → `Unreadable` ; mauvaise clé → `KeyChanged` quand l'empreinte diffère ; AAD
      modifiée → `Unreadable`.
    - **Seule voie de lecture d'un clair** : une fonction `pub(crate)` de ce module, appelée par `POST …/test`
-     (AC-7, pour vérifier le déchiffrement, le clair jeté aussitôt) et, à partir de 38-3, par le transport d'un
-     passage. Une garde de source (test qui lit `crates/kesh-api/src`) liste les appelants admis de `open` ; un appel
+     (AC-7, pour vérifier le déchiffrement, le clair jeté aussitôt) et, à partir de 38-3b, par la fabrique de
+     connecteurs (`ConnectorFactory`, 38-3b AC-3), seul site neuf. Une garde de source (test qui lit `crates/kesh-api/src`) liste les appelants admis de `open` ; un appel
      neuf la fait rougir (même famille que `lancement_par_main_seulement`, `auto_backup.rs`).
 
 2. **AC-2 — Migration `2026111X000001_provider_connections.sql`** (non breaking, DDL seul ; numéro de date au
@@ -93,11 +93,11 @@ Reprises de la fiche d'epic (§ *38-1*), complétées là où un AC en ajoute (m
      VARCHAR(10) CHARACTER SET ascii COLLATE ascii_bin NOT NULL DEFAULT 'manual'` (`chk_ppc_schedule` : `BINARY
      schedule IN ('daily','manual')`, domaine fermé : un réglage de planification inconnu ne doit jamais se lire en
      « quotidien »), `last_run_at DATETIME(3) NULL`, `last_run_status VARCHAR(20) CHARACTER SET ascii COLLATE ascii_bin
-     NULL` (format seul, `REGEXP '^[a-z_]{1,20}$'`, lu avec `Other(String)`, E4 ; **écrit par 38-3**), `last_error
-     VARCHAR(500) NULL` (écrit par 38-3, jamais un secret), `settings JSON NOT NULL DEFAULT '{}'`
+     NULL` (format seul, `REGEXP '^[a-z_]{1,20}$'`, lu avec `Other(String)`, E4 ; **écrit par 38-3b**), `last_error
+     VARCHAR(500) NULL` (écrit par 38-3b : code d'API `app_code()`, jamais un secret ni un texte du prestataire), `settings JSON NOT NULL DEFAULT '{}'`
      (`chk_ppc_settings` : `JSON_VALID(settings) AND JSON_TYPE(settings) = 'OBJECT'`, patron
      `20261025000001_mcp_keys_and_server_settings.sql:81-83`, E24), `created_by_user_id BIGINT NOT NULL` (FK `users`,
-     `RESTRICT` — auteur du passage quotidien en 38-3, E5), `version INT NOT NULL DEFAULT 1`, `created_at`,
+     `RESTRICT` — auteur du passage quotidien en 38-3b, E5), `version INT NOT NULL DEFAULT 1`, `created_at`,
      `updated_at` `DATETIME(3) NOT NULL` ; `UNIQUE uq_ppc_company_label (company_id, label)` (deux connexions
      « PayPal Lightning » seraient indiscernables à l'écran et au passage).
      ⚠️ `JSON` est un `LONGTEXT` validé sous MariaDB (E24) : la colonne se lit en `String` (`settings_json`), jamais
@@ -130,7 +130,7 @@ Reprises de la fiche d'epic (§ *38-1*), complétées là où un AC en ajoute (m
      liste. Test de schéma des `CHECK` (provider, schedule, settings objet, label, secret `name`) au patron de
      `sans_iban_les_invariants_du_schema` (`bank_accounts_repository.rs`).
    - **Numéro de la migration** : `<date>000001_provider_connections.sql` avec une date **postérieure à
-     `20261114000003`** (dernière migration de l'Epic 37), p. ex. `20261115000001` ; les fiches 38-2/38-3 suivent.
+     `20261114000003`** (dernière migration de l'Epic 37), p. ex. `20261115000001` ; les fiches 38-2/38-3a suivent.
    - **Liste close des absences admises** (37-1 AC-6, R1, E18) : `payment_provider_connections` y entre en
      `Absence::Table` (nom de la constante fixé au développement de 37-1) ; une sauvegarde antérieure à l'Epic 38
      s'importe sans connexion. Le test de 37-1 qui vérifie chaque entrée (table dans `TABLES_TO_TRUNCATE`, ajoutée par
@@ -140,7 +140,7 @@ Reprises de la fiche d'epic (§ *38-1*), complétées là où un AC en ajoute (m
    - **Inscriptions** : `payment_provider_connections` à `TABLES_TO_TRUNCATE` (`crates/kesh-db/src/backup.rs:46`),
      **avant `companies` et `users`** et après toute future table enfant (38-2 placera `payment_provider_accounts`
      **avant** elle) — place proposée : juste **après `bank_imports`** (:101) et avant `bank_profiles` (:102), pour que les
-     tables de 38-2 et 38-3 (enfants de la connexion, et `provider_fetch_runs`, que `bank_imports` référencera) s'y
+     tables de 38-2 et 38-3a (enfants de la connexion, et `provider_fetch_runs`, que `bank_imports` référencera) s'y
      intercalent dans l'ordre enfants → parents ;
      absente de `RESET_PRESERVED_TABLES` (:137) : une connexion est une donnée de la société, vidée par la remise à zéro
      (`reset_partition_is_guarded_by_the_schema`, :1106, reste vert : la table rejoint `companies` directement).
@@ -161,9 +161,9 @@ Reprises de la fiche d'epic (§ *38-1*), complétées là où un AC en ajoute (m
    - `POST /api/v1/provider-connections/{id}/test`.
    Comptable et Consultation → `403` du RBAC ; clé d'API → `403 API_KEY_ADMIN_FORBIDDEN` (tests sur les sept routes,
    un Comptable et une clé d'API d'Administrateur). Une connexion d'une autre société → `404` (portée `company_id`,
-   jamais d'existence révélée). ⚠️ **Point de contact 38-3** : `POST …/fetch` est ouvert au Comptable (E10) ; 38-3
-   décide si le Comptable lit aussi l'état des connexions (lecture restreinte, sans `settings`) — 38-1 n'ouvre rien
-   hors de l'Administrateur.
+   jamais d'existence révélée). ⚠️ **Point de contact 38-3b** : `POST …/fetch` est ouvert au Comptable (E10) ; le
+   Comptable lit l'état des connexions par la route de lecture restreinte de 38-3b (`GET /api/v1/provider-fetch/
+   connections`, sans `settings`, AC-6 ; O7) — 38-1 n'ouvre rien hors de l'Administrateur.
    **Forme de réponse** d'une connexion (`ProviderConnectionResponse`, camelCase) : `id`, `provider`, `label`,
    `fetchFrom` (`AAAA-MM-JJ`), `schedule`, `settings` (objet resérialisé depuis la struct, AC-4 ; `null` si le
    prestataire est inconnu ou les réglages illisibles), `usable` (booléen), `unusableReason` (`null` |
@@ -185,13 +185,14 @@ Reprises de la fiche d'epic (§ *38-1*), complétées là où un AC en ajoute (m
 
 4. **AC-4 — Créer et modifier ; réglages typés (FR-38-1-1, FR-38-1-3, E24).**
    - **Structs** dans `kesh-core::providers::settings` (module neuf, serde seul, sans I/O — lu par `kesh-api` et, dès
-     38-3, par `kesh-providers`) : `enum Provider { Paypal, Other(String) }` (`as_str`, `FromStr` **tolérant** : jamais
+     38-3b, par `kesh-providers`) : `enum Provider { Paypal, Other(String) }` (`as_str`, `FromStr` **tolérant** : jamais
      d'erreur, E4) ; `enum ProviderSettings { Paypal(PaypalSettings), Other }` ; `PaypalSettings`
      `#[serde(deny_unknown_fields, rename_all = "camelCase")]` : `client_id: Option<String>` (identifiant de
      l'application REST, non secret chez PayPal) et `payer_id: Option<String>` (**posé par le serveur** en 38-7, lu
-     en 38-1). **Pas de `account_email`** (arbitrage O10 : aucune API PayPal ne le rend ; un client qui l'envoie
-     reçoit le refus de clé inconnue). Tout champ ajouté plus tard est `Option` + `#[serde(default)]`
-     (`eventKindOverrides` : 38-8). ⚠️ `deny_unknown_fields` est **voulu** (contrat de `ColumnMapping`,
+     en 38-1). **Pas de `account_email`** (arbitrage O10 : aucune API PayPal ne le rend ; un client qui envoie
+     `accountEmail` reçoit le refus de clé inconnue, test nommé ; il n'apparaît ni dans la réponse, ni dans
+     l'instantané d'audit). Tout champ ajouté plus tard est `Option` + `#[serde(default)]` (`eventKindOverrides` et
+     `overlapDays` : 38-8 AC-7, modifiables par le client). ⚠️ `deny_unknown_fields` est **voulu** (contrat de `ColumnMapping`,
      `crates/kesh-import/src/csv/profile.rs:36-48`) : un binaire antérieur refuse bruyamment des réglages écrits par
      un binaire ultérieur, jamais en silence. `parse_settings(provider, json) -> Result<ProviderSettings,
      SettingsError>` : prestataire `Other` → `ProviderSettings::Other` sans lire le JSON ; JSON illisible → erreur.
@@ -221,8 +222,9 @@ Reprises de la fiche d'epic (§ *38-1*), complétées là où un AC en ajoute (m
      Réponse `201`, forme de l'AC-3. La struct est **resérialisée** avant l'écriture : aucun JSON reçu n'est stocké tel
      quel (E24).
    - **`PATCH /api/v1/provider-connections/{id}`**, corps `{ version, label?, fetchFrom?, schedule?, settings? }` —
-     champ absent = inchangé ; `settings` présent **remplace** les champs modifiables du prestataire (`clientId`) et
-     **conserve** celui que le serveur pose (`payerId`) ; `provider` **immuable** (présent → `400
+     champ absent = inchangé ; `settings` présent **remplace** les champs modifiables par le client (`clientId` ; dès 38-8,
+     `eventKindOverrides` et `overlapDays`) et **conserve** le seul champ que le serveur pose (`payerId`, jamais
+     accepté du client) ; `provider` **immuable** (présent → `400
      VALIDATION_ERROR`, `details.field = "provider"`). Mêmes refus qu'au `POST` ; connexion d'un prestataire inconnu →
      `409 PROVIDER_UNKNOWN` (on ne réécrit pas des réglages qu'on ne sait pas lire) ; réglages stockés illisibles et
      `settings` absent du corps → l'écriture des autres champs passe (le libellé se corrige), `settings` présent →
@@ -244,8 +246,10 @@ Reprises de la fiche d'epic (§ *38-1*), complétées là où un AC en ajoute (m
    table enfant n'existe encore** : le code et son message (quatre locales) se posent ici, avec le mappage de l'erreur
    MariaDB **1451** (clé étrangère `RESTRICT`) **sur le nom de la contrainte** (patron du mappage des FK du dépôt) ; le
    **test du refus vit en 38-2**, qui crée `payment_provider_accounts` (FK `RESTRICT`) et y ajoute la lecture des
-   `bankAccountIds` sous verrou ; 38-3 y ajoute les passages (`provider_fetch_runs`, à trancher en 38-3 : `RESTRICT`
-   ou suppression des passages). *Écart à l'epic, de forme seulement* : FR-38-1-4 est portée par 38-1 mais ne se teste
+   `bankAccountIds` sous verrou ; **38-3a tranche pour la suppression des passages** (AC-4 de 38-3a) : passages,
+   soldes vus et instantanés de la connexion partent avec elle (FK `CASCADE` et `DELETE` explicites dans cette même
+   transaction, avant la ligne de la connexion) ; seul `bank_imports.provider_fetch_run_id` reste `RESTRICT`, filet
+   d'un cas que l'ordre des refus rend inatteignable. *Écart à l'epic, de forme seulement* : FR-38-1-4 est portée par 38-1 mais ne se teste
    qu'avec la table de 38-2.
 
 6. **AC-6 — Déposer les secrets (FR-38-1-2, NFR-38-1-1, E3).** `PUT /api/v1/provider-connections/{id}/secrets`,
@@ -272,8 +276,8 @@ Reprises de la fiche d'epic (§ *38-1*), complétées là où un AC en ajoute (m
    `200 { usable, unusableReason, checks: [{ check, ok }] }` où `check` ∈ `provider_known`, `settings_readable`,
    `client_id_present` (PayPal), `secrets_key_present`, `secret_present`, `secret_decryptable` — ce dernier **ouvre**
    le secret par la voie unique de l'AC-1 et jette le clair aussitôt (aucune comparaison, aucune trace). Rien n'est
-   écrit. *Point de contact* : 38-3 ajoute le contrôle `provider_reachable` par `Connector::balances`, et 38-7 pose
-   `payerId` aux réglages (la route passe alors `Traced`). Tests : clé absente, secret absent, clé
+   écrit. *Point de contact* : 38-7 ajoute l'appel au prestataire par `Connector::balances`, sur le connecteur
+   construit par la fabrique de 38-3b, et pose `payerId` aux réglages (la route passe alors `Traced`). Tests : clé absente, secret absent, clé
    changée (`secret_unreadable` par l'empreinte), chiffré altéré en base (`secret_unreadable` par GCM), tout vert.
 
 8. **AC-8 — Restauration, remise à zéro, sauvegarde (FR-38-1-5, FR-38-1-6, E2).**
@@ -339,8 +343,8 @@ Reprises de la fiche d'epic (§ *38-1*), complétées là où un AC en ajoute (m
       compteurs recomptés, P6 exécuté et cité, `TABLES_TO_TRUNCATE`, `TABLES_SYSTEME` (test), `TABLES_HORS_EXPORT`,
       liste close R1 et extension de son test, test d'import d'une sauvegarde d'avant l'Epic 38.
 - [ ] **T3 — Réglages typés** (AC-4) : `kesh-core::providers::{mod, settings}`, `Provider`, `ProviderSettings`,
-      `PaypalSettings`, `parse_settings`, tests (clé inconnue refusée, `clientSecret` refusé, prestataire inconnu,
-      JSON non objet, champ serveur conservé au `PATCH`).
+      `PaypalSettings`, `parse_settings`, tests (clé inconnue refusée, `clientSecret` et `accountEmail` refusés,
+      prestataire inconnu, JSON non objet, `payerId` du client refusé et `payerId` stocké conservé au `PATCH`).
 - [ ] **T4 — Entité, dépôt, routes** (AC-3 à AC-7) : `kesh-db` (entité, dépôt, mappage 1062/1451 par nom de
       contrainte), `kesh-api::routes::provider_connections`, variantes `AppError` (`PROVIDER_UNKNOWN`,
       `PROVIDER_SETTINGS_INVALID`, `PROVIDER_SECRETS_INVALID`, `PROVIDER_SECRETS_KEY_MISSING`,
@@ -368,10 +372,10 @@ Reprises de la fiche d'epic (§ *38-1*), complétées là où un AC en ajoute (m
   que celle de l'ancienne `N`) : seul l'effacement de l'AC-8 la ferme. Ne pas retirer l'effacement en croyant l'AAD
   suffisante.
 - **`FOREIGN_KEY_CHECKS = 0`** : restauration (`restore_body`) et remise à zéro (`reset_body`) ; aucune cascade n'y
-  joue. Toute table enfant d'une connexion ajoutée plus tard (38-2, 38-3) est **applicative** et passe par
+  joue. Toute table enfant d'une connexion ajoutée plus tard (38-2, 38-3a) est **applicative** et passe par
   `TABLES_TO_TRUNCATE` ; seul le coffre, système, demande un effacement explicite.
 - **Ordre de `TABLES_TO_TRUNCATE`** : enfants → parents ; `payment_provider_connections` est enfant de `companies` et
-  `users` ; 38-2 et 38-3 inséreront leurs tables **avant** elle.
+  `users` ; 38-2 et 38-3a inséreront leurs tables **avant** elle.
 - **Variable d'environnement** : toute lecture passe par `env_nonempty` (garde (L) de `configuration_transmise`).
 - **Pas de `Copy`** sur `Provider` (porte un `String`) : comparer par `as_str()`.
 - **Réponses** : `settings` rendu est la struct resérialisée (champs `null` omis ou non : à fixer une fois, test).
@@ -386,12 +390,11 @@ Reprises de la fiche d'epic (§ *38-1*), complétées là où un AC en ajoute (m
 ## Questions ouvertes
 
 - *Closes par l'arbitrage O7 (2026-11-15) : Q-38-1-a (le Comptable lit l'état des connexions par la route de lecture
-  restreinte de 38-3 ; 38-1 reste réservée à l'Administrateur) et Q-38-1-b (unicité du libellé gardée).*
-- **Q-38-1-a** (38-3, 38-9a) : le Comptable, qui peut lancer un passage (`POST …/fetch`, E10), doit-il **lire**
-  l'état des connexions (lecture restreinte sans `settings`) ? 38-1 réserve tout à l'Administrateur, conformément à
-  NFR-38-1-3 ; à trancher en 38-3.
-- **Q-38-1-b** (Beat) : l'unicité du libellé par société (`PROVIDER_CONNECTION_LABEL_DUPLICATE`) est un ajout de cette
-  fiche ; la retirer si deux connexions homonymes ont un usage.
+  restreinte de 38-3b ; 38-1 reste réservée à l'Administrateur) et Q-38-1-b (unicité du libellé gardée).*
+- ~~**Q-38-1-a**~~ (38-3b, 38-9a) : le Comptable, qui peut lancer un passage (`POST …/fetch`, E10), doit-il **lire**
+  l'état des connexions (lecture restreinte sans `settings`) ? — close (O7, 38-3b AC-6).
+- ~~**Q-38-1-b**~~ (Beat) : l'unicité du libellé par société (`PROVIDER_CONNECTION_LABEL_DUPLICATE`) est un ajout de
+  cette fiche ; la retirer si deux connexions homonymes ont un usage. — close (O7, gardée).
 
 ## Change Log
 
@@ -405,3 +408,9 @@ Reprises de la fiche d'epic (§ *38-1*), complétées là où un AC en ajoute (m
   `from_fields_for_test`. LOW : `version` incrémentée par le dépôt d'un secret (contredit son propre motif) ; numéro de
   migration ; test des `CHECK`. Lignes lues : `config.rs:1522-1545`, `configuration_transmise.rs:122-136`,
   `extractors.rs:15-60`, `test_fixtures.rs:360-385`, `admin_full_export_e2e.rs:281`, `onboarding_audit_e2e.rs:2040`.
+- 2026-11-15 — alignement inter-fiches P1 (Opus) : `accountEmail` absent partout (AC-4 : refus de clé inconnue,
+  ni réponse ni instantané d'audit ; test nommé en T3) ; `PATCH` : `eventKindOverrides` et `overlapDays` (38-8)
+  modifiables par le client, `payerId` posé par le serveur seul ; suppression d'une connexion : passages, soldes vus et
+  instantanés supprimés avec elle (tranché en 38-3a AC-4), `bank_imports.provider_fetch_run_id` seul `RESTRICT` ;
+  renvois à 38-3 répartis entre 38-3a (tables) et 38-3b (passage, fabrique, lecture du Comptable) ; Q-38-1-a et
+  Q-38-1-b barrées (closes par O7).

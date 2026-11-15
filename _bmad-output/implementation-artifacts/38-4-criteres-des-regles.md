@@ -6,11 +6,19 @@ Status: ready-for-dev
 (`_bmad-output/planning-artifacts/epic-38-paypal.md`) : E4, E14, E18, E19, C-38-0, C-38-6, C-38-12 ; décisions de Beat
 B5, B19, B22, B24 (`epics-38-40-cadrage.md`) ; arbitrages O1, O2, O3, O4 de l'epic. **Dépend de 38-2** (O1 : **la**
 migration breaking de l'epic, qui passe `reconciliation_rules.match_type` en `VARCHAR(40)` `ascii_bin` avec `CHECK` de
-format et relève `kesh_version_min_required`) **et de 38-3** (C-38-4 : colonnes `counterparty_email`, `invoice_ref`,
-`item_names`, `event_code` de `bank_transactions` ; C-38-5 : `ReconciliationMatchType` tolérant avec `Other(String)`
-et ses quatre variantes neuves **déclarées**) et de l'**Epic 37** (37-1 : `accounts.currency`, liste ISO 4217 de `kesh-core`,
+format et relève `kesh_version_min_required`) **et de 38-3a** (C-38-4 : colonnes `counterparty_email`, `invoice_ref`,
+`item_names`, `event_code` de `bank_transactions`, accesseur `item_names()`) et de l'**Epic 37** (37-1 : `accounts.currency`, liste ISO 4217 de `kesh-core`,
 `CURRENCY_UNKNOWN`, `MULTI_CURRENCY_DISABLED` 409, verrou des deux côtés C-37-9, liste close des absences admises de
 37-1 AC-6). **Migration non breaking** (DDL seul). Aucune route neuve.*
+
+⚠️ **Repris de l'ancienne 38-3 (D-P1-1, liste inter-fiches, point 1)** : le décodage tolérant arrive avec la première
+écriture d'une valeur neuve ; pour les critères, c'est **cette story**. Elle porte donc ce que 38-3 « déclarait » :
+`ReconciliationMatchType` gagne ses quatre variantes neuves et `Other(String)` (`FromStr` tolérant,
+`Serialize`/`Deserialize` à la main, perte de `Copy` — relevé au commit : 53 occurrences hors du fichier, dans
+`rules.rs`, `routes/reconciliation_rules.rs` et un fichier de tests ; `match rule.match_type` devient `match
+&rule.match_type`, sans `match` qui refuse l'inconnu) et le code `RULE_CRITERION_UNKNOWN` (AC-7, quatre locales) ;
+`errors.rs:1150-1159, 3304-3316` relus et adaptés à `Other`. Il n'y a plus de « refus provisoire » des quatre types
+neufs à lever. 38-3a ne touche que `BankImportSourceFormat`.
 
 ## Story
 
@@ -46,8 +54,8 @@ Reprises de la fiche d'epic (§ 38-4), complétées là où un AC l'exige.
 1. **Valeur inconnue de `matchType` aujourd'hui : 422, non 400.** E14 écrit « aujourd'hui par la désérialisation de
    l'enum en 400 ». Les routes de règles prennent le corps par `axum::Json` (`routes/reconciliation_rules.rs:26`,
    `:262`), dont le rejet de données est le `422` natif d'Axum 0.8 (`crates/kesh-api/src/extractors.rs:11-13` le dit ;
-   seules les routes qui passent par `impl_validation_extractor` rendent 400). Après 38-3, `matchType` se décode en
-   `Other(String)` : une **chaîne** inconnue n'est plus un rejet de données et cette fiche la refuse en **400
+   seules les routes qui passent par `impl_validation_extractor` rendent 400). Avec cette story (décodage repris de
+   l'ancienne 38-3), `matchType` se décode en `Other(String)` : une **chaîne** inconnue n'est plus un rejet de données et cette fiche la refuse en **400
    `RULE_CRITERION_UNKNOWN`** (AC-7) ; un corps mal formé (type JSON faux, champ requis absent) reste en 422, comme
    aujourd'hui — l'extracteur des règles n'est pas changé (hors périmètre, aucun motif).
 2. **Le compte d'une règle en devise contredit 37-1.** 37-1 AC-4 refuse en 400 `ACCOUNT_IN_FOREIGN_CURRENCY` le choix
@@ -66,7 +74,7 @@ Reprises de la fiche d'epic (§ 38-4), complétées là où un AC l'exige.
 ## Critères d'acceptation
 
 1. **AC-1 — Migration** `<AAAAMMJJ>000001_reconciliation_rule_filters.sql` (version strictement postérieure à la
-   migration breaking de 38-2, à la migration non breaking de 38-3 et à toute migration de la branche au moment de la
+   migration breaking de 38-2, à la migration non breaking de 38-3a et à toute migration de la branche au moment de la
    fusion), **non breaking**, DDL seul,
    une seule instruction `ALTER TABLE reconciliation_rules` :
    - `ADD COLUMN direction VARCHAR(16) CHARACTER SET ascii COLLATE ascii_bin NULL` + `CONSTRAINT
@@ -127,14 +135,14 @@ Reprises de la fiche d'epic (§ 38-4), complétées là où un AC l'exige.
    `invoice_prefix` (les Epics 39 et 40 y mettront d'autres codes).
 3. **AC-3 — Évaluation** (`rule_matches`, `kesh-reconciliation/src/rules.rs:46-70`) : le critère, **puis** les
    filtres ; tous doivent être vrais.
-   - `counterparty_email_exact` : `tx.counterparty_email` (colonne de 38-3) présent et `match_key` égal ;
-   - `invoice_prefix` : `tx.invoice_ref` (38-3 ; PayPal : `invoice_id`, B24) présent et
+   - `counterparty_email_exact` : `tx.counterparty_email` (colonne de 38-3a) présent et `match_key` égal ;
+   - `invoice_prefix` : `tx.invoice_ref` (38-3a ; PayPal : `invoice_id`, B24) présent et
      `match_key(invoice_ref).starts_with(match_key(valeur))` ;
-   - `item_name_contains` : au moins un nom de `tx.item_names` (38-3) dont le `match_key` contient celui de la
+   - `item_name_contains` : au moins un nom de `tx.item_names` (38-3a) dont le `match_key` contient celui de la
      valeur ; chaque nom est comparé **séparément** (jamais la liste jointe : une valeur ne doit pas « contenir » la
-     fin d'un nom et le début du suivant) — par l'accesseur que 38-3 fournit pour lire la liste, quelle que soit sa
+     fin d'un nom et le début du suivant) — par l'accesseur que 38-3a fournit pour lire la liste, quelle que soit sa
      forme stockée ;
-   - `event_code_prefix` : `tx.event_code` (38-3) présent et `match_key(event_code).starts_with(match_key(valeur))` ;
+   - `event_code_prefix` : `tx.event_code` (38-3a) présent et `match_key(event_code).starts_with(match_key(valeur))` ;
    - les quatre existants : inchangés (NFR-38-4-1) ;
    - `Other(_)` : **faux**, toujours (AC-7) ;
    - filtre `direction` : `in` ⇔ `tx.amount > 0`, `out` ⇔ `tx.amount < 0` (montant nul : aucun des deux ; E14 « signe
@@ -153,8 +161,8 @@ Reprises de la fiche d'epic (§ 38-4), complétées là où un AC l'exige.
      la règle C-37-9 de JSON identique en mono-devise ne les vise pas) ; `matchType` d'une règle `Other` est sa chaîne
      brute ;
    - `CreateRuleRequest` (`:97-109`, `deny_unknown_fields`) gagne `direction`, `currency`, `bankAccountId`, facultatifs
-     (absent = `null`) ; `matchType` admet les **huit** valeurs connues (après 38-3, le type se décode en
-     `Other(String)` pour une neuvième — AC-7) ;
+     (absent = `null`) ; `matchType` admet les **huit** valeurs connues (le type se décode en `Other(String)`
+     pour une neuvième, en-tête — AC-7) ;
    - `UpdateRuleRequest` (`:115-133`) gagne les trois filtres en `Option<Option<…>>` par
      `crate::helpers::double_option` (patron de `default_project_id`, `:131-132`) : absent = inchangé, `null` =
      retiré, valeur = posée. `matchType` reste **non modifiable** (absent de la struct, `deny_unknown_fields` : si un client
@@ -225,9 +233,9 @@ Reprises de la fiche d'epic (§ 38-4), complétées là où un AC l'exige.
    impossible par construction (37-1 : pas de compte en devise) ; proposition CHF qui saute la règle EUR ; acceptation
    rejouée d'une règle dont le compte a reçu une devise entre-temps — inatteignable (refus inverse gardé) : le test
    pose la devise par SQL et vérifie `failed[0].errorCode == "RULE_ACCOUNT_CURRENCY_MISMATCH"`.
-7. **AC-7 — Type ou sens inconnus** (`FR-38-4-5`, E4). `RULE_CRITERION_UNKNOWN` (code **posé par 38-3** — 400 à l'écriture d'un
-   `Other`, 409 à la modification d'une règle `Other`, et refus provisoire des quatre types neufs que **cette story
-   lève** ; fiche 38-3, `ReconciliationMatchType`) ; cette story l'étend au **sens** **pour la seule lecture d'une
+7. **AC-7 — Type ou sens inconnus** (`FR-38-4-5`, E4). `RULE_CRITERION_UNKNOWN` (code **posé par cette story**, repris de l'ancienne
+   38-3 — 400 à l'écriture d'un `Other`, 409 à la modification d'une règle `Other` ; en-tête) ; il vaut aussi pour le
+   **sens** **pour la seule lecture d'une
    règle stockée** : le 409 d'une modification porte `details: { direction }` à côté de `{ matchType }` — une valeur de
    sens inconnue **écrite** par l'API reste un 400 `VALIDATION_ERROR` (ci-dessous) :
    - **400** à l'écriture d'une valeur inconnue (création ; un `PATCH` ne porte pas de type) — `matchType` décodé en
@@ -282,7 +290,7 @@ Reprises de la fiche d'epic (§ 38-4), complétées là où un AC l'exige.
     une règle de chaque type neuf, une à filtres et une inconnue, hors du dépôt (`kesh-gate-logs/`), jointes au Dev
     Agent Record et au prompt de revue.
 11. **AC-11 — i18n.** Toutes les clés neuves (libellés de l'AC-10, message `RULE_ACCOUNT_CURRENCY_MISMATCH`,
-    message de doublon revu ; celui de `RULE_CRITERION_UNKNOWN` vient de 38-3, relu pour le cas du sens) dans `crates/kesh-i18n/locales/{fr-CH,de-CH,it-CH,en-CH}/messages.ftl` ;
+    message de doublon revu, message neuf de `RULE_CRITERION_UNKNOWN`, type et sens) dans `crates/kesh-i18n/locales/{fr-CH,de-CH,it-CH,en-CH}/messages.ftl` ;
     `npm run lint-i18n-ownership` vert ; décompte des clés recompté par `grep -c` aux deux bornes, au Change Log.
 12. **AC-12 — MCP, manuels.** **MCP** : aucun outil n'expose les règles (`crates/kesh-api/src/mcp/outils/` : pas de
     module de règles) ; E23 (aucun outil neuf) — rien à faire, écrit au Change Log. **Manuels** : le manuel
@@ -302,8 +310,8 @@ Reprises de la fiche d'epic (§ 38-4), complétées là où un AC l'exige.
       `rule_account_admits`, `first_matching_rule` sur la carte des comptes éligibles (AC-6) ; tests unitaires.
 - [ ] `kesh-api` : routes (AC-4, AC-5, AC-7), retrait de `normalize_iban_canonical`, levée de la garde 37-1 pour
       les règles et code `RULE_ACCOUNT_CURRENCY_MISMATCH` (AC-6), `get_proposals` et `accept_one_rule` (AC-6),
-      dans `errors.rs` : `RuleAccountCurrencyMismatch` (neuf), `RuleCriterionUnknown` (de 38-3) étendu au sens,
-      détails du doublon ; levée du refus provisoire des quatre types neufs posé par 38-3.
+      dans `errors.rs` : `RuleAccountCurrencyMismatch` (neuf), `RuleCriterionUnknown` (neuf, type et sens),
+      détails du doublon ; `ReconciliationMatchType` tolérant et ses quatre variantes, perte de `Copy` (en-tête).
 - [ ] Export CSV et `COLONNES_HORS_EXPORT` (AC-9) ; aller-retour `.keshbackup`.
 - [ ] Frontend (AC-10), i18n (AC-11), captures.
 - [ ] Tests HTTP et unitaires listés aux AC ; non-régression (AC-8).
@@ -317,16 +325,15 @@ Reprises de la fiche d'epic (§ 38-4), complétées là où un AC l'exige.
 - **Site de l'évaluation** : `rule_matches` est appelée par `first_matching_rule` (proposition) et par l'étape 7
   d'`accept_one_rule` (revalidation, `routes/reconciliation.rs:4154`). Les deux reçoivent la même règle et la même
   transaction : filtres et critère neufs y sont donc revalidés sous verrou sans code de plus.
-- **Ce que 38-2 et 38-3 doivent livrer et que cette fiche lit** (fiche 38-3 relue le 2026-11-15) : **de 38-2** (O1)
+- **Ce que 38-2 et 38-3a doivent livrer et que cette fiche lit** (fiche 38-3a relue le 2026-11-15) : **de 38-2** (O1)
   `match_type VARCHAR(40) CHARACTER SET ascii COLLATE ascii_bin` (8 + 40 + 1020 + 48 octets de clé pour l'index de
-  l'AC-1) ; **de 38-3**
+  l'AC-1) ; **de 38-3a**
   `item_names JSON` tableau de chaînes (`CHECK … JSON_TYPE = 'ARRAY'`, ≤ 50 noms — l'évaluation de l'AC-3 lit le
-  tableau décodé, nom par nom, par `BankTransaction::item_names() -> Vec<String>`, posé par 38-3 AC-3), `ReconciliationMatchType::{CounterpartyEmailExact, InvoicePrefix, ItemNameContains,
-  EventCodePrefix, Other(String)}` (`Copy` perdu : 38-3 suit les sites ; `routes/reconciliation_rules.rs:288`,
-  `:411` copient aujourd'hui `match_type` — `clone()`), les colonnes `counterparty_email`, `invoice_ref`,
-  `item_names`, `event_code` de `BankTransaction` (C-38-4). 38-3 fait rendre `false` à `rule_matches` pour les
-  quatre types neufs et les refuse à l'écriture (`RULE_CRITERION_UNKNOWN`) « jusqu'à 38-4 » : cette story remplace
-  les deux.
+  tableau décodé, nom par nom, par `BankTransaction::item_names() -> Vec<String>`, posé par 38-3a AC-3), les colonnes
+  `counterparty_email`, `invoice_ref`, `item_names`, `event_code` de `BankTransaction` (C-38-4). **Cette story** pose
+  `ReconciliationMatchType::{CounterpartyEmailExact, InvoicePrefix, ItemNameContains, EventCodePrefix, Other(String)}`
+  (`Copy` perdu : `routes/reconciliation_rules.rs:288`, `:411` copient aujourd'hui `match_type` — `clone()`) ; il n'y a
+  plus d'étape intermédiaire où les quatre types neufs seraient déclarés mais refusés.
 - **Pourquoi `match_key` stocke la forme normalisée pour les types neufs seulement** : les trois critères textuels
   existants affichent la valeur saisie depuis toujours ; la normaliser au stockage changerait ce que l'utilisateur
   relit (NFR-38-4-1). La comparaison, elle, passe par la même fonction pour tous.
@@ -359,3 +366,8 @@ Reprises de la fiche d'epic (§ 38-4), complétées là où un AC l'exige.
   (`ACCOUNT_IN_FOREIGN_CURRENCY`) — la levée de l'AC-6 (O3) doit s'y écrire. Axes non exercés : le décompte des
   dix-neuf FK de 37-1 (relu sur la fiche 37-1, non sur le code), l'exécution de la migration (aucun `cargo`), les
   littéraux de test (`ReconciliationRule {` ×1, `NewReconciliationRule {` ×5, `UpdateReconciliationRule {` ×12).
+- 2026-11-15 — renvois à 38-3 répartis après le découpage D-P1-1 (Opus) : colonnes et accesseur `item_names()` lus de
+  **38-3a** ; le décodage tolérant de `ReconciliationMatchType` (quatre variantes, `Other`, perte de `Copy`) et le code
+  `RULE_CRITERION_UNKNOWN` sont **repris par cette story** (liste inter-fiches, point 1 : le décodage arrive avec la
+  première écriture d'un critère neuf) — en-tête, Écart 1, AC-4, AC-7, AC-11, tâches et notes réalignés ; plus de
+  refus provisoire. Modules inchangés (`kesh-db` déjà touché).
