@@ -43,14 +43,21 @@ clôturer l'exercice.
   `Content-Type` et un `Content-Disposition` robuste aux accents (`content_disposition`, `:768`), et rend
   `SOURCE_DOCUMENT_GONE` (410) pour un fichier absent (`crates/kesh-api/src/errors.rs:3506`). Le PDF se reconnaît à
   `%PDF` (`crates/kesh-api/src/inbox_import.rs:900`).
-- **Taille** : l'inbox borne un fichier à 25 Mio par défaut (`crates/kesh-api/src/config.rs:530`) ; les routes
+- **Taille** : l'inbox borne un fichier à 25 Mio par défaut (`crates/kesh-api/src/config.rs:979-1000`,
+  `KESH_INBOX_MAX_FILE_BYTES` ; `:530` est la configuration de test) ; les routes
   d'import bancaire posent leur borne par `DefaultBodyLimit::max` (`crates/kesh-api/src/lib.rs:832-838`) et lisent le
   multipart par `parse_multipart` / `map_multipart_err` (`crates/kesh-api/src/routes/bank_imports.rs:448`, `:872`).
 - **La sauvegarde emporte les pièces que la base désigne** : `read_referenced_files` (`crates/kesh-db/src/backup.rs:423`)
   lit **deux** sources (`imported_supplier_invoices`, `invoices.pdf_storage_path`) ; `ParsedBackup::referenced_files`
   (`crates/kesh-api/src/admin_backup/import.rs:115-140`) fait de même côté import, et tolère une table ou une colonne
   absente (`:109-114`, `:121-127`) ; le test `colonnes_storage_path_inventaire_clos` (`backup.rs:2456-2490`) **rougit** sur toute
-  colonne `*storage_path*` neuve.
+  colonne `*storage_path*` neuve. ⚠️ `read_referenced_files` lit ses sources **sans condition** (deux `SELECT` fixes,
+  `:423-450`), dans `export_installation_in` (`:558-584`) — que la **sauvegarde avant mise à jour** appelle avec
+  `Inventaire::SchemaPresent` (`crates/kesh-api/src/pre_upgrade_backup.rs:299`), c'est-à-dire **sur le schéma de la
+  version précédente, avant les migrations** : une source qui lit une table neuve y échoue (table absente).
+- **Export CSV** : la garde `chaque_colonne_du_schema_est_exportee_ou_ecartee`
+  (`crates/kesh-api/src/exports/csv_tables.rs:2377`) ne voit que les tables de **sa liste écrite à la main** (`:2403…`)
+  et exige que chaque colonne absente de l'en-tête soit à `COLONNES_HORS_EXPORT` (`:2558`) avec son motif.
 - **Tables** : `TABLES_TO_TRUNCATE` ordonne enfants → parents (`backup.rs:46`, `bank_transactions`/`bank_imports`/
   `bank_accounts` `:100-104`, `fiscal_years` `:109`) ; `RESET_PRESERVED_TABLES` (`:137-145`) ne contient pas les tables
   bancaires (vidées à la remise à zéro). L'export de souveraineté exige qu'une table soit dans `TABLES_EXPORTEES` ou
@@ -64,10 +71,13 @@ clôturer l'exercice.
   dernier** pour ne pas déplacer K1–K7 (`crates/kesh-db/src/repositories/closing_checks.rs:1-20`) ; K3
   `BANK_STATEMENT_AT_YEAR_END` ne compare que les relevés **à solde** (`bank_imports.closing_balance`, CAMT) et classe
   sinon le compte `NO_BALANCE_STATEMENT` (`:453-480`, `:692-770`) ; l'écart est celui de `bank_accounts::statement_gap`
-  (chaque solde arrondi au centime avant soustraction, `:93-99` ; `repositories/bank_accounts.rs:2019`) ; toutes les
-  requêtes du module sont des constantes de `ALL_SQL`, sans mot de verrou (garde T-a2, `:30-40`, `:550`). Consommateurs
-  du nombre : `crates/kesh-db/tests/closing_checks.rs:1679` (`len(), 8`), `docs/api-external.md:266-267` (« toujours
-  huit »), `docs/manual/fr/user-manual.tex:890` (« huit contrôles préalables »), le front
+  (chaque solde arrondi au centime avant soustraction, `:93-99` ; `repositories/bank_accounts.rs:2019-2024` : **livres −
+  relevé**, `None` si nul ; `docs/api-external.md:266` : « le même que `statementGap` de `GET /bank-accounts` ») ; toutes les
+  requêtes du module sont des constantes de `ALL_SQL`, sans mot de verrou (garde T-a2, `:30-40`, `:550`) ; les fonctions
+  de dépôt **externes** qu'il appelle sont un angle mort assumé de T-a2, **listé** au doc du module (`:51-60`) et vérifié
+  en revue. Consommateurs du nombre : `crates/kesh-db/tests/closing_checks.rs:1679` (`len(), 8`), `docs/api-external.md:266-267` (« toujours
+  huit »), `docs/manual/fr/user-manual.tex:890` (« huit contrôles préalables »), `docs/manual/fr/admin-manual.tex:1866`
+  (« les huit contrôles »), le front
   (`frontend/src/lib/features/fiscal-years/closing-checks-labels.ts`, `FiscalYearChecks.svelte`, `fiscal-years.types.ts`,
   `closing-checks.test-fixtures.ts`).
 
@@ -94,8 +104,10 @@ clôturer l'exercice.
 - **C-38-10-3 — La devise est celle du compte.** `closing_currency` = la devise du compte du grand livre lié (37-1 ; CHF
   pour un compte CHF ou non lié) ; un corps qui en porte une autre → `400 BANK_DOCUMENT_CURRENCY_MISMATCH`. `closingCurrency`
   absent avec `closingBalance` présent → la devise du compte. Les deux colonnes sont tout-ou-rien (`CHECK`).
-- **C-38-10-4 — L'écart se calcule à la lecture.** Solde comptable du compte du grand livre lié à `period_to` inclus :
-  en CHF, `SUM(debit) − SUM(credit)` (convention de `BALANCES_SQL`, signe libre, une dette de carte est négative) ; en
+- **C-38-10-4 — L'écart se calcule à la lecture.** Solde comptable du compte du grand livre lié à `period_to` inclus,
+  **par une seule fonction pour les deux cas** — `balances_as_of(…, Some(&[compte]))` rend `chf_net` et `devise_net` :
+  en CHF, `chf_net` = `SUM(debit) − SUM(credit)` (convention de `BALANCES_SQL`, signe libre, une dette de carte est
+  négative) ; en
   devise, le **solde en devise** de 37-4 (AC-1 : `Σ amount_currency` au débit − au crédit, par
   `kesh_db::repositories::account_balances::balances_as_of(conn, company_id, as_of, Some(&[compte]))`, 37-4 AC-1 quater :
   borne inclusive, débit net brut CHF et en devise, réévaluations sans effet) — **la même fonction que le contrôle de
@@ -122,7 +134,10 @@ clôturer l'exercice.
 ## Critères d'acceptation
 
 1. **AC-1 — Migration (NFR-38-10-3).** Fichier `crates/kesh-db/migrations/<AAAAMMJJ>000001_bank_account_documents.sql`
-   (date au développement, postérieure à toutes les migrations de l'Epic 37 et de 38-1 à 38-5) : `CREATE TABLE
+   (date au développement, postérieure à **toutes les migrations présentes dans la branche de l'epic** à ce moment —
+   38-10 peut se développer « dès 38-3a », avant 38-4, 38-5 ou 38-6c — et de version **distincte** de celles que les
+   autres fiches de l'epic écrivent en `<date>000001` : 38-6c, 38-4, 38-5 ; collision vérifiée par `ls
+   crates/kesh-db/migrations/` au commit, citée au Change Log) : `CREATE TABLE
    bank_account_documents` — `id BIGINT AUTO_INCREMENT PK`, `company_id` (FK `companies`, `RESTRICT`), `bank_account_id`
    (FK `bank_accounts`, `RESTRICT`), `fiscal_year_id` (FK `fiscal_years`, `RESTRICT`), `kind VARCHAR(32) NOT NULL DEFAULT
    'statement'`, `source VARCHAR(32) NOT NULL DEFAULT 'manual'`, `period_from DATE NOT NULL`, `period_to DATE NOT NULL`,
@@ -171,8 +186,10 @@ clôturer l'exercice.
    FISCAL_YEAR_CLOSED` si l'exercice **actuel** ou **visé** du document est clôturé (C-38-10-5 bis). Traces
    `bank_account_document.updated` (avant/après des champs changés) et `bank_account_document.deleted` (métadonnées).
 5. **AC-5 — Écart au solde comptable (FR-38-10-3).** Tests d'intégration : compte CHF lié à 1020, écritures jusqu'au
-   31.12.2024, document au 31.12.2024 avec le solde comptable exact → `gap: null` ; solde différent de 12.34 → `gap:
-   "-12.34"` (signe : relevé − livres, comme `statement_gap`) ; compte PayPal EUR lié à un compte du plan EUR (37-1),
+   31.12.2024, document au 31.12.2024 avec le solde comptable exact → `gap: null` ; solde du relevé **supérieur** de
+   12.34 aux livres → `gap: "-12.34"` (signe : **livres − relevé**, comme `statement_gap`,
+   `repositories/bank_accounts.rs:2019-2024`, et comme `gap` de K3 et `statementGap` de la liste) ; relevé inférieur de
+   12.34 → `"12.34"` ; compte PayPal EUR lié à un compte du plan EUR (37-1),
    lignes en devise → l'écart se lit **en EUR** sur le solde en devise (une réévaluation au 31.12 ne le change pas) ;
    carte de crédit liée à un passif endetté : solde saisi négatif, écart nul ; compte non lié ou grand livre partagé →
    `notComparable: true`, `gap: null` ; document sans solde → `ledgerBalanceAtPeriodTo` rendu, `gap: null`. Lectures sans
@@ -184,7 +201,9 @@ clôturer l'exercice.
    documentId, periodTo, currency, statementClosingBalance, ledgerBalanceAtStatement, gap }], notComparable: [{
    bankAccountId, name }] }` (comptes non comparables sans effet sur le statut, comme K3). La clôture **n'est pas
    bloquée** (`fiscal_years::close` inchangé). Requêtes : constantes ajoutées à `ALL_SQL`, sans verrou (garde T-a2
-   verte), dans l'instantané de la route. Mises à jour du nombre (prémisse, **tous** les sites) : doc du module (« neuf »,
+   verte), dans l'instantané de la route ; le solde comptable vient de `account_balances::balances_as_of` (C-38-10-4),
+   appelée sur la connexion de l'instantané — fonction **externe**, donc ajoutée à la liste de l'angle mort de T-a2 au
+   doc du module (`closing_checks.rs:51-60`), son SQL relu sans verrou en revue. Mises à jour du nombre (prémisse, **tous** les sites) : doc du module (« neuf »,
    table, `count`), `ClosingChecks::checks` (« toujours neuf »), `CheckCode`/`CheckDetails`/`Severity` (variant neuf),
    `crates/kesh-db/tests/closing_checks.rs:1679`, `crates/kesh-api/tests/closing_checks_e2e.rs`, `docs/api-external.md`
    (« toujours neuf », contrôle décrit, changement de contrat annoncé comme la ligne `:267` l'exige), front
@@ -193,22 +212,33 @@ clôturer l'exercice.
    **`frontend/src/routes/(app)/settings/fiscal-years/+page.svelte` et `fiscal-years-page.test.ts:461`
    (`toHaveLength(8)`)**, `i18n-keys.test.ts` et `i18n-libelle-en-dur.test.ts` si les libellés du contrôle y entrent),
    **E2E `frontend/tests/e2e/fiscal-year-closing-journey.spec.ts:158,165` (`toHaveCount(8)` : attend huit lignes)**,
-   `user-manual.tex:890` ; grep du jeton `\bhuit\b` et `\b8\b` sur ces fichiers (liste relevée par `grep -rln
+   `user-manual.tex:890`, `admin-manual.tex:1866` ; grep du jeton `\bhuit\b` et `\b8\b` sur ces fichiers (liste relevée par `grep -rln
    "closing_checks\|closing-checks\|DRAFT_SUPPLIER_INVOICES" crates frontend/src frontend/tests docs`), résultat trié au
-   Change Log. ⚠️ **Collision de nom** : 37-5 réserve « K9 de `closing_checks.rs` » pour un contrôle informatif futur
-   « comptes en devise à réévaluer » (C-37-8, à ouvrir en issue) ; **K9 est ici `ATTACHED_STATEMENT_GAP`**, livré, et
-   celui de 37-5 devient K10 (finding inter-fiche P1-2). Tests : écart → `attention` ; aucun document → `ok` ; document daté hors Y
+   Change Log. **Nom** : K9 est ici `ATTACHED_STATEMENT_GAP` ; le contrôle informatif futur de 37-5 (« comptes en devise
+   à réévaluer », C-37-8) est désormais **K10** (`37-5-reevaluation-fin-exercice.md:543-544`, aligné après P1-2). Tests : écart → `attention` ; aucun document → `ok` ; document daté hors Y
    ignoré ; deux documents dans Y → le dernier compte ; dialogue de clôture (Vitest) qui rappelle K9.
 7. **AC-7 — Sauvegarde et restauration (NFR-38-10-2, E18).** (a) `bank_account_documents` entre à `TABLES_TO_TRUNCATE`
    **avant** `bank_transactions` (enfant de `bank_accounts`, `fiscal_years`, `users`, `companies`), donc vidée à la remise
    à zéro de la société ; (b) `read_referenced_files` lit une **troisième** source (`SELECT storage_path, sha256 FROM
-   bank_account_documents`), `ParsedBackup::referenced_files` aussi (`("bank_account_documents", "storage_path",
-   "sha256")`), et `colonnes_storage_path_inventaire_clos` liste la colonne neuve ; (c) la table entre à la **liste close
+   bank_account_documents`) **seulement si la table est au schéma présent** — lue dans le même instantané
+   (`information_schema.TABLES` de `DATABASE()`, comme `tables_du_schema_present`), sinon aucune référence : la
+   sauvegarde avant mise à jour (#847) est écrite par le binaire neuf sur le schéma **précédent**, où la table n'existe
+   pas encore (prémisse) ; un `SELECT` sans condition y échouerait, et Kesh **refuserait de migrer** à la première mise à
+   jour vers cette version. `ParsedBackup::referenced_files` aussi (`("bank_account_documents", "storage_path",
+   "sha256")`, déjà tolérant à une table absente), et `colonnes_storage_path_inventaire_clos` liste la colonne neuve.
+   **Test** au patron de `pre_upgrade_backup/tests.rs` : sauvegarde avant mise à jour prise sur une base migrée
+   jusqu'à la migration **précédant** celle de l'AC-1 (index résolu par version, P6) → écrite, aucune référence de
+   relevé ; mutation « condition retirée » → rouge ; (c) la table entre à la **liste close
    des absences admises** de 37-1 AC-6 (R1, `Absence::Table("bank_account_documents")` avec sa version de migration) :
    un `.keshbackup` antérieur se réimporte, table vide ; (d) l'export CSV de souveraineté la porte (`TABLES_EXPORTEES`,
    sérialiseur `serialize_bank_account_documents_csv` : `id, bank_account_id, fiscal_year_id, kind, source, period_from,
    period_to, original_filename, sha256, byte_size, closing_balance, closing_currency, created_by_user_id, created_at` —
-   sans `storage_path`), garde `export_couvre_toutes_les_tables` verte. Tests : export complet puis import dans une
+   sans `storage_path`), garde `export_couvre_toutes_les_tables` verte ; **la table entre à la liste de
+   `chaque_colonne_du_schema_est_exportee_ou_ecartee`** (`csv_tables.rs:2377`, liste écrite à la main : sans cette
+   ligne la garde ne la voit pas) et chaque colonne hors de l'en-tête — `company_id`, `storage_path`, `mime_type`,
+   `updated_at`, `version` — entre à `COLONNES_HORS_EXPORT` (`:2558`) avec son motif (`storage_path` : patron de
+   `invoices.pdf_storage_path`, dérivé de `sha256`), **ou** à l'en-tête (`company_id`, comme `bank_imports`) — choix au
+   Change Log. Tests : export complet puis import dans une
    instance neuve → le PDF se télécharge, empreinte identique (`admin_full_import_e2e` étendu) ; la sauvegarde d'avant
    mise à jour (#847, `pre_upgrade_backup`) emporte le fichier ; sauvegarde sans la table → import accepté.
 8. **AC-8 — Audit et registre (NFR-38-10-4).** Actions `bank_account_document.attached`, `.updated`, `.deleted` à
@@ -243,7 +273,8 @@ clôturer l'exercice.
     d'API ; le solde de clôture est la somme de contrôle), comment (période, exercice choisi par la date de fin, un PDF
     par compte et par devise), l'écart, le contrôle K9, exercice clos (on joint, on ne corrige plus) ; § *Préparer la
     clôture* : « neuf contrôles », K9 décrit. `admin-manual.tex` : les relevés joints sont dans le dossier des documents
-    et dans la sauvegarde complète ; la sauvegarde d'avant mise à jour les emporte. PDF régénérés (`make fr` dans
+    et dans la sauvegarde complète ; la sauvegarde d'avant mise à jour les emporte ; « les huit contrôles » (`:1866`,
+    répétition d'une clôture) devient « les neuf contrôles ». PDF régénérés (`make fr` dans
     `docs/manual/`) et vérifiés aplatis (`pdftotext … | tr '\n' ' '`). `docs/api-external.md` : les cinq routes, leurs
     codes, K9. **MCP** : aucun outil (E23) — `kesh_pieces` (`mcp/outils/pieces.rs`) liste les pièces fournisseur
     importées et n'est pas étendu ; les relevés joints ne sont pas exposés au serveur MCP (décision de l'epic, aucune
@@ -257,8 +288,9 @@ clôturer l'exercice.
 - [ ] T3 — `kesh-api` : routes (`lib.rs`, bornes de corps), multipart, contrôle PDF, `store_document`, téléchargement
       (fonction `content_disposition` partagée), codes d'erreur, audit (AC-2 à AC-4, AC-8).
 - [ ] T4 — `closing_checks` : K9, tous les consommateurs du nombre (AC-6).
-- [ ] T5 — Sauvegarde : `TABLES_TO_TRUNCATE`, `read_referenced_files`, `ParsedBackup::referenced_files`, inventaire
-      clos, absences admises (R1), export CSV (AC-7).
+- [ ] T5 — Sauvegarde : `TABLES_TO_TRUNCATE`, `read_referenced_files` **conditionnée à la présence de la table** et
+      son test de sauvegarde avant mise à jour sur le schéma précédent, `ParsedBackup::referenced_files`, inventaire
+      clos, absences admises (R1), export CSV et garde de colonnes (AC-7).
 - [ ] T6 — Frontend : dialogue, API, i18n, Vitest, E2E, captures (AC-9).
 - [ ] T7 — Manuels FR (PDF régénérés), `api-external.md` (AC-10).
 - [ ] T8 — Gate complet **même en cours de boucle** (migration et dépôts touchés) ; runtime : `admin_backup_e2e`,
@@ -292,6 +324,27 @@ clôturer l'exercice.
 
 ## Change Log
 
+- 2026-11-15 — validation P2 (Opus) : 7 findings (0 CRITICAL, 1 HIGH, 2 MEDIUM, 4 LOW) ; remédiés dans la fiche, aucun
+  inter-fiches. HIGH P2-1 : la troisième source de `read_referenced_files` était un `SELECT` sans condition ; or la
+  sauvegarde avant mise à jour lit le **schéma précédent** (`Inventaire::SchemaPresent`, `pre_upgrade_backup.rs:299` ;
+  `export_installation_in`, `backup.rs:558-584`, appelle `read_referenced_files` sans condition, `:423-450`) : table
+  absente → sauvegarde en échec → **migration refusée** à la première mise à jour vers la release — lecture conditionnée
+  à la présence de la table, test sur le schéma précédent, mutation. MEDIUM : P2-2 sens de l'écart faux —
+  `statement_gap` est **livres − relevé** (`bank_accounts.rs:2019-2024`), la fiche disait « relevé − livres, comme
+  `statement_gap` » ; P2-3 l'export CSV omettait la garde `chaque_colonne_du_schema_est_exportee_ou_ecartee`
+  (`csv_tables.rs:2377`, liste à la main) et `COLONNES_HORS_EXPORT` (`:2558`) pour les colonnes non exportées. LOW :
+  P2-4 note « K9/K10 » à jour (37-5 aligné, `:543-544`) ; P2-5 `admin-manual.tex:1866` (« les huit contrôles ») ajouté
+  aux sites et à l'AC-10 ; P2-6 version de migration : postérieure à la branche au moment du développement, distincte
+  des `000001` de 38-4, 38-5, 38-6c ; P2-7 rédaction — `config.rs:530` est la configuration de test (défaut réel
+  `:979-1000`), solde CHF et en devise par la seule `balances_as_of` (DRY), fonction externe ajoutée à la liste de
+  l'angle mort de T-a2 (`closing_checks.rs:51-60`). Relu au code : `document_storage.rs:90`, `:142`, `:166`,
+  `imported_supplier_invoices.rs:733`, `:768`, `errors.rs:1885-1888`, `:3504-3508`, `inbox_import.rs:900`,
+  `backup.rs:46`, `:98-112`, `:137`, `:423-450`, `:470-481`, `:558-584`, `:2460`, `import.rs:108-140`,
+  `bank_imports.rs:872-885`, `lib.rs:828-862`, `:930-960`, `:1222-1235`, `closing_checks.rs:28-66`, `:88-100`,
+  `tests/closing_checks.rs:1676-1681`, `fiscal-years-page.test.ts:459-463`, `fiscal-year-closing-journey.spec.ts:156-166`,
+  `api-external.md:264-268`, `user-manual.tex:890`, `admin-manual.tex:1866`. Trend : P1 = 5 (2 MEDIUM) → P2 = 7 (1 HIGH,
+  2 MEDIUM). Axes non exercés : code de 37-4 (`balances_as_of`, non écrit) ; PDF du manuel (non régénéré) ; B27/B28
+  sans effet sur cette fiche (vérifié : aucun lecteur de groupe, solde lu par `balances_as_of`).
 - 2026-11-15 — validation P1 (Sonnet) : 5 findings (0 CRITICAL, 0 HIGH, 2 MEDIUM, 3 LOW) ; prémisses `fichier:ligne`
   toutes relues au code et justes (`document_storage.rs`, `backup.rs`, `import.rs`, `global.rs`, `closing_checks.rs`,
   `errors.rs`, `lib.rs`, `bank_imports.rs`) ; remédiés dans la fiche sauf l'inter-fiche 38-10-P1-2 (K9 de 37-5 → K10).

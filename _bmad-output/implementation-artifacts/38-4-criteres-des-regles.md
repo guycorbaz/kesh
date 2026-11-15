@@ -16,7 +16,10 @@ format et relève `kesh_version_min_required`) **et de 38-3a** (C-38-4 : colonne
 `ReconciliationMatchType` gagne ses quatre variantes neuves et `Other(String)` (`FromStr` tolérant,
 `Serialize`/`Deserialize` à la main, perte de `Copy` — relevé au commit : 53 occurrences hors du fichier, dans
 `rules.rs`, `routes/reconciliation_rules.rs` et un fichier de tests ; `match rule.match_type` devient `match
-&rule.match_type`, sans `match` qui refuse l'inconnu) et le code `RULE_CRITERION_UNKNOWN` (AC-7, quatre locales) ;
+&rule.match_type`, sans `match` qui refuse l'inconnu ; `as_str` perd son `&'static str` et rend `&str` (emprunté à
+`Other`) — `Display` (`entities/reconciliation_rule.rs:60`) et `Encode` (`:88-95`, qui encode `as_str()`) suivent,
+patron de `BankImportSourceFormat` en 38-3a AC-2 ; le `Decode` (`:97-102`) passe par `FromStr` et devient tolérant sans autre
+changement ; un `Other` n'est jamais encodé, refusé avant toute écriture (AC-7)) et le code `RULE_CRITERION_UNKNOWN` (AC-7, quatre locales) ;
 `errors.rs:1150-1159, 3304-3316` relus et adaptés à `Other`. Il n'y a plus de « refus provisoire » des quatre types
 neufs à lever. 38-3a ne touche que `BankImportSourceFormat`.
 
@@ -141,7 +144,10 @@ Reprises de la fiche d'epic (§ 38-4), complétées là où un AC l'exige.
    - `item_name_contains` : au moins un nom de `tx.item_names` (38-3a) dont le `match_key` contient celui de la
      valeur ; chaque nom est comparé **séparément** (jamais la liste jointe : une valeur ne doit pas « contenir » la
      fin d'un nom et le début du suivant) — par l'accesseur que 38-3a fournit pour lire la liste, quelle que soit sa
-     forme stockée ;
+     forme stockée ; une liste **illisible** (l'accesseur rend une erreur, 38-3a AC-3 : `DbError::Invariant`) rend le
+     critère **faux** — `rule_matches` reste une fonction pure à résultat booléen, jamais une panique ni un `unwrap` —
+     et l'appelant de la proposition le journalise (`tracing::warn!`, identifiant de la transaction seul) ; test
+     unitaire d'une transaction à `item_names` illisible ;
    - `event_code_prefix` : `tx.event_code` (38-3a) présent et `match_key(event_code).starts_with(match_key(valeur))` ;
    - les quatre existants : inchangés (NFR-38-4-1) ;
    - `Other(_)` : **faux**, toujours (AC-7) ;
@@ -181,8 +187,9 @@ Reprises de la fiche d'epic (§ 38-4), complétées là où un AC l'exige.
      `MULTI_CURRENCY_DISABLED`** (37-1 : 409 partout ; lu dans la transaction, comme le réglage de 37-1) ; puis la
      garde de devise du compte (AC-6) ; puis les gardes existantes du dépôt (projet, compte imputable,
      `create_in_tx` `repositories/reconciliation_rules.rs:183-204`) ;
-   - **audit** : `reconciliation_rule.created` porte `direction`, `currency`, `bank_account_id` ; `.updated` les porte
-     dans `before` et `after` (`:390-405`), avec — correction au passage — `counterparty_account_id`, aujourd'hui
+   - **audit** (écrit **au dépôt**, `kesh-db/src/repositories/reconciliation_rules.rs` — `.created` `:228-247`,
+     `.updated` `:384-407` —, non dans la route) : `reconciliation_rule.created` porte `direction`, `currency`,
+     `bank_account_id` ; `.updated` les porte dans `before` et `after`, avec — correction au passage — `counterparty_account_id`, aujourd'hui
      absent du diff (une modification du seul compte laisse `before == after` : à écrire au Change Log comme défaut
      voisin traité). Aucune action neuve à `audit_labels.rs` (les quatre `reconciliation_rule.*` existent, `:192-195`) ;
    - `NewReconciliationRule` et `UpdateReconciliationRule` (`entities/reconciliation_rule.rs:136-169`) gagnent les
@@ -198,7 +205,10 @@ Reprises de la fiche d'epic (§ 38-4), complétées là où un AC l'exige.
    (`matchType`, `matchValue`, `errors.rs:3303-3320`) gagnent `direction`, `currency`, `bankAccountId` (lus de la
    requête résolue — `map_create_or_update_db_err`, `routes/reconciliation_rules.rs:233-246`, reçoit la règle
    résolue, non plus le seul couple) ; message `reconciliation-rules-error-duplicate` revu aux quatre locales («… pour
-   cette combinaison type, valeur et filtres »). Tests : une règle `invoice_prefix` `LG` en EUR **et** une en USD →
+   cette combinaison type, valeur et filtres ») **et** son texte de repli en dur (`errors.rs:3308-3309`, « … type/valeur
+   ») ; les doc-comments qui décrivent l'unicité par `(company_id, match_type, match_value)` suivent (grep du symptôme,
+   au Change Log) : `errors.rs:1149-1154`, `kesh-reconciliation/src/errors.rs:148-155` (variante `RuleDuplicate`, lue
+   seulement en `{ .. }`), `is_duplicate_rule_constraint` (`repositories/reconciliation_rules.rs:30-36`). Tests : une règle `invoice_prefix` `LG` en EUR **et** une en USD →
    les deux 201 (B19) ; deux `LG` en EUR → 409 ; une `LG` sans filtre et une `LG` en EUR → 201 (filtres distincts,
    la priorité les départage, AC-8) ; `LG` et `lg` → 409 (forme stockée identique, AC-2) ; une règle archivée ne
    compte pas (comportement actuel de `active_uniq`, test existant `rule_create_succeeds_when_existing_rule_is_inactive`
@@ -208,8 +218,10 @@ Reprises de la fiche d'epic (§ 38-4), complétées là où un AC l'exige.
      `ACCOUNT_IN_FOREIGN_CURRENCY` que 37-1 AC-4 pose sur `reconciliation_rules.counterparty_account_id` est **retirée
      pour cette colonne seule** (création, changement de compte, réactivation) ; le refus inverse
      `ACCOUNT_CURRENCY_IN_USE` (donner une devise à un compte qu'une règle désigne, archivée comprise) **reste**
-     (Écart 2). L'inventaire clos des sites de 37-1 (dix-neuf FK `REFERENCES accounts`) est relu au Change Log : une
-     seule colonne change de traitement. Une règle dont le **filtre** `currency` contredit la devise de son compte
+     (Écart 2). L'inventaire clos des sites de 37-1 (dix-neuf FK `REFERENCES accounts` au commit relevé — recompté au
+     développement : `payment_provider_accounts.fee_account_id` de 38-2 s'y ajoute, et
+     `company_invoice_settings.default_vat_acquisition_account_id` de 38-5 si elle est fusionnée) est relu au Change
+     Log : une seule colonne change de traitement. Une règle dont le **filtre** `currency` contredit la devise de son compte
      (compte en EUR, filtre USD) → 400 `RULE_ACCOUNT_CURRENCY_MISMATCH` (code neuf, `details: { accountId,
      accountCurrency, filterCurrency }`, quatre locales) : elle ne s'appliquerait jamais ; un compte CHF admet tout
      filtre.
@@ -325,6 +337,12 @@ Reprises de la fiche d'epic (§ 38-4), complétées là où un AC l'exige.
 - **Site de l'évaluation** : `rule_matches` est appelée par `first_matching_rule` (proposition) et par l'étape 7
   d'`accept_one_rule` (revalidation, `routes/reconciliation.rs:4154`). Les deux reçoivent la même règle et la même
   transaction : filtres et critère neufs y sont donc revalidés sous verrou sans code de plus.
+- **Les quatre critères neufs ne trouvent aucune proposition avant 38-6a** : leurs champs (`counterparty_email`,
+  `invoice_ref`, `item_names`, `event_code`) ne sont remplis que sur les transactions de prestataire, que 38-3a
+  (AC-6) exclut des propositions par règle jusqu'à la variante `provider` de 38-6a ; une transaction CAMT ou CSV les a
+  à `NULL`. Ils s'éprouvent donc ici par les **tests unitaires** de l'AC-3 (transactions construites en mémoire) ;
+  aucun test HTTP de cette story ne doit attendre une proposition par un critère neuf (il serait vert à vide ou
+  impossible) — les filtres, eux, s'éprouvent sur des transactions CHF ordinaires.
 - **Ce que 38-2 et 38-3a doivent livrer et que cette fiche lit** (fiche 38-3a relue le 2026-11-15) : **de 38-2** (O1)
   `match_type VARCHAR(40) CHARACTER SET ascii COLLATE ascii_bin` (8 + 40 + 1020 + 48 octets de clé pour l'index de
   l'AC-1) ; **de 38-3a**
@@ -371,3 +389,21 @@ Reprises de la fiche d'epic (§ 38-4), complétées là où un AC l'exige.
   `RULE_CRITERION_UNKNOWN` sont **repris par cette story** (liste inter-fiches, point 1 : le décodage arrive avec la
   première écriture d'un critère neuf) — en-tête, Écart 1, AC-4, AC-7, AC-11, tâches et notes réalignés ; plus de
   refus provisoire. Modules inchangés (`kesh-db` déjà touché).
+- 2026-11-15 — validation P2 (Opus) : 6 findings (0 CRITICAL, 0 HIGH, 0 MEDIUM, 6 LOW) ; remédiés dans la fiche sauf
+  la part inter-fiche de 38-4-P2-3 (38-3a). LOW : P2-1 l'audit `before`/`after` cité `:390-405` de la route vit au
+  dépôt (`repositories/reconciliation_rules.rs:228-247`, `:384-407`) ; P2-2 l'unicité « type/valeur » reste écrite
+  au texte de repli `errors.rs:3308-3309` et aux doc-comments `errors.rs:1149-1154`,
+  `kesh-reconciliation/src/errors.rs:148-155`, `repositories/reconciliation_rules.rs:30-36` (grep du symptôme,
+  AC-5) ; P2-3 `item_names()` faillible (38-3a : `DbError::Invariant`) dans un `rule_matches` pur → illisible = faux
+  (AC-3) ; P2-4 décodage tolérant repris de 38-3 : `as_str`, `Display` et `Encode` (`entities/reconciliation_rule.rs:60,
+  88-95`) suivent la perte du `'static`, `Decode` (`:97-102`) devient tolérant par `FromStr` (en-tête) ; P2-5 les
+  critères neufs n'atteignent aucune proposition avant 38-6a (38-3a AC-6) : tests unitaires seuls, écrit aux notes ;
+  P2-6 « dix-neuf FK » à recompter au développement (38-2, 38-5). Relu sans écart : le décompte 53 de
+  `ReconciliationMatchType` (6 + 1 + 24 + 22), les littéraux (`ReconciliationRule {` ×1 `rules.rs:191`,
+  `NewReconciliationRule {` ×5, `UpdateReconciliationRule {` ×12), 8 tests de `rules.rs`, `rules.rs:46-131`,
+  `routes/reconciliation_rules.rs:26, 95-135, 155-246, 258-300, 360-450`, `repositories/reconciliation_rules.rs:25-43,
+  73, 183, 228-247, 384-407`, `errors.rs:766-770, 1146-1160, 2549-2556, 3298-3322`, `routes/reconciliation.rs:1226-1262,
+  1458, 4062-4075, 4136-4160, 4359, 4397`, `backup.rs:100-106, 176-192`, `csv_tables.rs:1015, 1044, 2377, 2558, 2586`,
+  19 FK `REFERENCES accounts`, notes de dépendance de 37-1 (`:428-433`), 38-6a C-38-6a-8, 38-9b AC-1/AC-2. Axes non
+  exercés : exécution de la migration (FK sur colonne de base d'une colonne générée : le test de l'AC-1 tranchera) ;
+  aucune exécution.

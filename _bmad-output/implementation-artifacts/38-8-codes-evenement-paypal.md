@@ -52,7 +52,9 @@ plutôt qu'en vente, afin que les règles et les propositions des stories suivan
 ## Critères d'acceptation
 
 1. **AC-1 — Statuts et sort d'un enregistrement.** `classify_window(records: &[PaypalRecord], ctx: &ClassifyCtx) ->
-   Classified { movements: Vec<ProviderMovement>, skipped: SkipCounts }` (`kesh-providers::paypal::classify`).
+   Classified { movements: Vec<ProviderMovement>, skipped: SkippedCounts, sums: Vec<(String, Decimal)> }`
+   (`kesh-providers::paypal::classify` ; `SkippedCounts` et `sums` sont ceux de `MovementPage`, 38-3b AC-2, AC-6
+   ci-dessous ; une surcharge `ignore`, AC-7, se compte en `skipped.non_balance`).
    `ClassifyCtx` porte les surcharges (AC-7) et la liste des `payerId` des autres connexions (AC-5), rien d'autre
    (aucune horloge, aucune base). **Où elle s'appelle (contrat avec 38-3b et 38-7 AC-4)** : 38-3b reçoit des
    `ProviderMovement` **déjà classés** (`Connector::movements`), page par page ; le classement exigeant la fenêtre
@@ -66,7 +68,7 @@ plutôt qu'en vente, afin que les règles et les propositions des stories suivan
    - `S` et `V` → classés (AC-2) : `V` est une transaction **réussie puis inversée** ; l'inversion arrive comme un
      enregistrement séparé (T11xx) et l'original a bien changé le solde ;
    - genre « hors solde » (AC-2 : T13xx, T15xx, T21xx, T98xx, T1110, T1111) → écarté, `skipped.non_balance`.
-   `SkipCounts` (denied, pending, non_balance) est rendu au passage (38-3b), qui l'écrit à son état ; rien n'est écarté
+   `SkippedCounts` (denied, pending, non_balance) est rendu au passage (38-3b), qui l'écrit à son état ; rien n'est écarté
    sans être compté.
 2. **AC-2 — Table de classement** (`kesh-providers::paypal::event_codes`, **une constante** `&[(code, Rule)]`
    ou correspondance `match` exhaustive par code, documentée ligne par ligne avec la page PayPal). Le signe est celui
@@ -76,8 +78,9 @@ plutôt qu'en vente, afin que les règles et les propositions des stories suivan
    |---|---|---|
    | T0000–T0013, T0018, T0019, T0022, T0023 | signe > 0 → `sale` ; < 0 → `purchase` ; nul → `other` | `other` si nul |
    | T0014 (rabais, cash back), T0015 (versement de tiers), T0016 (récupération de tiers), T0017 (paiement **ou remboursement** chaîné), T0020 (taxe d'une place de marché), T0021 (crypto) | `other` | `other` |
-   | T0100–T0104, T0106–T0110, T0111–T0118, T0121 | `fee` (débit **ou** crédit : un crédit est un frais rendu) | — |
-   | T0105 (retrait par chèque) | `other` (ni frais ni retrait vérifiable sur le relevé) | `other` |
+   | T0100–T0104, T0106, T0107, T0111–T0118, T0121 | `fee` (débit **ou** crédit : un crédit est un frais rendu) | — |
+   | T0105 (retrait par chèque), T0108 (retrait au distributeur), T0110 (retrait vers une carte de crédit internationale) | `other` (ni frais ni retrait vérifiable sur un relevé de Kesh) | `other` |
+   | T0109 (« Auto-sweep from account », virement automatique du solde, comme T0401) | `withdrawal` si < 0, sinon `other` | `other` sinon |
    | T0200, T0201, T0202 | `conversion` (AC-5) | — |
    | T0300–T0303 | `deposit` si > 0, sinon `other` | `other` sinon |
    | T0400–T0403 | `withdrawal` si < 0, sinon `other` | `other` sinon |
@@ -90,9 +93,13 @@ plutôt qu'en vente, afin que les règles et les propositions des stories suivan
    | **tout autre code connu** (T05xx, T08xx–T10xx, T1100–T1105, T1112, T1113, T1116–T1119, T1200, T1203, T1204, T14xx, T16xx–T20xx, T30xx, T97xx, T99xx) | `other` | `other` |
    | **code absent de la page PayPal** | `other` | `unknown_event` |
 
-   *Relevé de la page PayPal le 2026-11-15 (validation P1) : T0108 « ATM withdrawal fee », T0109 « Auto-sweep fee »,
-   T0110 « International credit card withdrawal fee » sont des **frais**, non des retraits (la fiche les rangeait en
-   `withdrawal`) ; T0014 à T0017 ne sont pas des ventes (rabais, versement, récupération, paiement ou remboursement
+   *Relevé de la page PayPal le 2026-11-15 (validation P1) : ~~T0108 « ATM withdrawal fee », T0109 « Auto-sweep fee »,
+   T0110 « International credit card withdrawal fee » sont des **frais**~~ — **faux, corrigé à la validation P2**
+   (page relue le 2026-11-15 : « `T0108` | ATM withdrawal », « `T0109` | Auto-sweep from account », « `T0110` |
+   International CC withdrawal », rangés sous l'intitulé *Fees* mais sans le mot « fee », au contraire de T0113
+   « Partner fee » ou T0118 « Gross billed fees ») : ce sont des **retraits**. Les classer `fee` aurait passé un
+   retrait en charge — une erreur muette ; T0109 suit T0401 (`withdrawal`), T0108 et T0110, sans ligne de relevé
+   bancaire à rattacher, vont à la file comme T0105 ; T0014 à T0017 ne sont pas des ventes (rabais, versement, récupération, paiement ou remboursement
    chaîné) ; T0105 est un retrait par chèque, sans ligne de relevé bancaire à rattacher. La page avertit que les codes
    « may change » : la table se rejoue contre les réponses de Beat (AC-9), et le contrôle de somme (AC-6) en est le
    filet.*
@@ -129,7 +136,12 @@ plutôt qu'en vente, afin que les règles et les propositions des stories suivan
      `NULL` (≤ 255) ; `counterparty_email` = `payer_info.email_address` tel quel (la normalisation est celle de la
      règle `counterparty_email_exact`, 38-4) ;
    - `item_names` = les `cart_info.item_details[].item_name` non vides, **dans l'ordre**, au format fixé par 38-3a pour
-     la colonne (C-38-4) ;
+     la colonne (C-38-4), **bornés aux limites de `validate_page` de 38-3b** (50 noms au plus, 255 caractères au plus
+     chacun) : les 50 premiers gardés, chaque nom tronqué à 255 caractères (frontière de caractère), avec
+     `tracing::warn!` sans la valeur — 38-7 admet 500 articles de 2000 caractères, et `validate_page` **rejette la
+     page** au-delà de ses bornes (`item_names` n'est pas un texte libre qu'elle tronque) : sans cette borne, une
+     commande de 51 articles bloquerait sa fenêtre à chaque passage (validation P2). Test : 60 articles → 50 ; un nom
+     de 300 caractères → 255 ;
    - `details` (`TEXT NOT NULL`, `:65`) = `transaction_subject`, sinon `PayPal <code>` (p. ex. `PayPal T0006`) —
      jamais vide, et aucun texte traduit écrit en base (l'écran traduit le genre) ;
    - `counterparty_iban`, `end_to_end_id` = `NULL` ; `transaction_id` (colonne existante) = `NULL` (le prestataire
@@ -218,8 +230,10 @@ plutôt qu'en vente, afin que les règles et les propositions des stories suivan
   remboursements » et les litiges en T12xx ; ces deux codes sont des **blocages** (ils ne changent pas
   `total_balance`) et sont **écartés** comme T15xx/T21xx. Le litige qui déplace de l'argent arrive en T1201 ou en
   remboursement.
-- **T01xx** contient un retrait par chèque (T0105) : classé `other` (file), non `fee` ; T0108–T0110, malgré leur
-  nom de retrait, sont des **frais** (page PayPal).
+- **T01xx** contient des retraits — T0105 (chèque), T0108 (distributeur), T0109 (virement automatique du solde),
+  T0110 (carte de crédit internationale) — rangés sous l'intitulé *Fees* de la page PayPal : aucun n'est classé
+  `fee` ; T0109 en `withdrawal` (comme T0401), les trois autres en `other` (file). *(La P1 les disait « frais » sur
+  une citation fausse de la page ; corrigé en P2.)*
 - **`reference`** : l'epic E8 la veut « numéro de facture du prestataire » ; FR-38-8-3 la veut égale à `invoice_id`.
   Retenu : `invoice_id` (seule valeur qui soit un numéro de facture ; le sujet va à `details`).
 - **Virement entre deux comptes PayPal de Beat** : non classé par l'epic ; retenu `other`, reconnu par `payerId`
@@ -288,3 +302,11 @@ plutôt qu'en vente, afin que les règles et les propositions des stories suivan
   part, calculé par 38-6b) ; découpage D-P1-1 : renvois à 38-3 portés sur 38-3b (`ProviderMovement`, `MovementPage`,
   passage, fabrique, `overlap()`, `booking_date`, contrôle des soldes) ou 38-3a (colonnes, format d'`item_names`,
   décodage tolérant).
+- 2026-11-15 — validation P2 (Opus) : 0 CRITICAL, 1 HIGH, 1 MEDIUM, 2 LOW ; remédiés dans la fiche sauf l'inter-fiche
+  38-3b (unicité de `provider_tx_id` par devise, portée par la P2 de 38-7). P2-1 (HIGH) : la table classait T0108,
+  T0109, T0110 en `fee` sur une citation inexacte de la page PayPal (relue par WebFetch : « ATM withdrawal »,
+  « Auto-sweep from account », « International CC withdrawal ») — un retrait passé en charge → T0109 `withdrawal`,
+  T0108 et T0110 `other` ; P2-2 : `item_names` sans borne, alors que `validate_page` de 38-3b rejette la page au-delà
+  de 50 noms de 255 caractères → bornés et tronqués avec avertissement ; LOW : `SkipCounts` → `SkippedCounts` et
+  `Classified` porte `sums` ; compteur d'une surcharge `ignore` nommé (`non_balance`). Grep du symptôme
+  (`T0108`, `T0110`, `SkipCounts`) fait dans la fiche ; l'entrée P1 ci-dessus, relevé daté, n'est pas réécrite.

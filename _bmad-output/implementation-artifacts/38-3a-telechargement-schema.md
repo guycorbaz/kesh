@@ -75,8 +75,15 @@ mouvements en attendant les propositions de 38-6a.
    de date **postérieure** à la migration breaking de 38-2 (`NN` fixé au développement) ; **seule migration de cette
    story** (aucun `UPDATE`, aucun `MODIFY`).
    - **`bank_transactions`** (`migrations/20260504000001_bank_imports.sql:54-88`) gagne, toutes `NULL` (lues par listes
-     de colonnes nommées — `repositories/bank_transactions.rs:21-24` `COLUMNS`, à étendre — : un binaire antérieur les
-     ignore) : `provider_tx_id VARCHAR(64) CHARACTER SET ascii COLLATE ascii_bin`, `booked_at DATETIME(3)` (instant du
+     de colonnes nommées : un binaire antérieur les ignore) — ⚠️ **trois** listes décodent aujourd'hui en
+     `BankTransaction` (`sqlx::FromRow` exige chaque champ de l'entité dans le `SELECT`, faute de `#[sqlx(default)]` :
+     un champ neuf absent d'une liste fait échouer **à l'exécution** chaque lecture qui l'emploie) :
+     `repositories/bank_transactions.rs:21-24` (`COLUMNS`, aussi lue par `reconciliation_cancel.rs:219`),
+     `repositories/bank_imports.rs:34-37` (`TX_COLUMNS`, lecture des transactions d'un import, `:188`) et
+     `repositories/reconciliation.rs:111` (`BANK_TX_COLUMNS`, propositions et lectures sous verrou, `:974, 1131, 1192,
+     1261`) ; les deux dernières se **remplacent** par `bank_transactions::COLUMNS` (une seule définition, DRY) et un
+     test lit une transaction de prestataire par chacun des sites (`grep -rn "query_as::<_, BankTransaction>" crates/`
+     relevé au Change Log) : `provider_tx_id VARCHAR(64) CHARACTER SET ascii COLLATE ascii_bin`, `booked_at DATETIME(3)` (instant du
      prestataire, **UTC** ; `booking_date` en sera la date à Europe/Zurich, écrite par 38-3b), `gross_amount
      DECIMAL(18,2)`, `fee_amount DECIMAL(18,2)` (signés comme ils changent le solde : `amount` = net = brut + frais, E7 ;
      un frais est négatif), `movement_kind VARCHAR(20)` (ascii_bin, format `^[a-z_]{1,20}$`, valeurs C-38-4 lues avec
@@ -103,11 +110,13 @@ mouvements en attendant les propositions de 38-6a.
      en attente, hors solde, 38-8 AC-1), `accounts_touched` `INT NOT NULL DEFAULT 0` ; index `(connection_id,
      started_at)` (lecture des passages et recherche du dernier, 38-3b).
    - **`bank_imports.provider_fetch_run_id BIGINT NULL`**, FK `provider_fetch_runs` **`RESTRICT`**, index ; l'entité
-     `BankImport` et `COLUMNS` de `repositories/bank_imports.rs` (`:72` et sa constante) gagnent la colonne
-     (`Option<i64>`), comme `COLUMNS` de `bank_transactions` gagne les onze.
+     `BankImport` et `COLUMNS` de `repositories/bank_imports.rs` (`:30-32`, seule liste qui décode en `BankImport`,
+     huit lectures, `:176-577`) gagnent la colonne (`Option<i64>`), comme `COLUMNS` de `bank_transactions` gagne les
+     onze.
    - **`payment_provider_accounts.fetched_through DATETIME(3) NULL`** (UTC) — **ajout à l'epic** : le point de reprise
      **par compte** (un compte créé après coup repart de `fetch_from` ; un point par connexion le priverait de tout ce
-     qui précède sa création, E12).
+     qui précède sa création, E12). L'entité et le dépôt de 38-2 (AC-2) la lisent ; l'export CSV
+     `payment_provider_accounts.csv` de 38-2 (dont le cas de test confronte l'en-tête au schéma) **la gagne**.
    - **`provider_balances_seen`** (applicative, E12) : `connection_id` (FK `CASCADE`), `currency CHAR(3)` ascii_bin,
      `first_seen_at`, `last_seen_at DATETIME(3)`, `last_amount DECIMAL(18,2)`, `ignored BOOLEAN NOT NULL DEFAULT FALSE`,
      `PRIMARY KEY (connection_id, currency)`.
@@ -128,7 +137,7 @@ mouvements en attendant les propositions de 38-6a.
      sauvegarde d'avant l'Epic 38 étendu. **P5** (ligne d'audit, total aux deux sites et partition recomptés à la
      source), **P6** (AC-1), **P7** (aucune écriture), squash `test-schema` (`test_schema_guard.rs`). Sites de
      dénombrement (même grep que 38-1/38-2) : `admin_full_export_e2e.rs:~281` (`data_count`, +3 cumulés),
-     `onboarding_audit_e2e.rs:2040` (`EMPTY_BEFORE_RESET`). Test de schéma des `CHECK` (montants, `item_names`,
+     `onboarding_audit_e2e.rs:2046` (`EMPTY_BEFORE_RESET`). Test de schéma des `CHECK` (montants, `item_names`,
      `kind`, `trigger_kind`, formats) au patron de `sans_iban_les_invariants_du_schema`.
 
 4. **AC-4 — Suppression d'une connexion et retrait des réglages (FR-38-3a-5) — `RESTRICT` ou suppression des passages :
@@ -173,20 +182,30 @@ mouvements en attendant les propositions de 38-6a.
      BANK_IMPORT_PROVIDER_ACCOUNT` (`details.bankAccountId`), décidé sur `is_provider_account_in_tx` (38-2 AC-2) sous
      le verrou du compte. Sans cette garde, une transaction de fichier (sans `provider_tx_id`) doublerait en silence un
      mouvement téléchargé (clé de doublon par fenêtre, `kesh-core/src/bank_imports.rs:295-360`, sans rapport avec E6).
-     Répond au point de contact de 38-2 AC-7.
+     Répond au point de contact de 38-2 AC-7 (le sens inverse — réglages posés sur un compte qui a déjà des
+     transactions — est refusé par 38-2 AC-3, `PROVIDER_ACCOUNT_HAS_TRANSACTIONS`). Le test de course (c) de 38-2 AC-6
+     (retrait des réglages contre import CSV) change de sens ici : il devient « import contre retrait » — l'import voit
+     les réglages et refuse, ou le retrait passe avant et l'import est admis ; réécrit dans cette story.
    - **Propositions existantes** : `get_proposals` (`routes/reconciliation.rs:999`) ne propose **ni facture, ni règle,
      ni ventilation** à une transaction d'un compte prestataire (`TxDocuments::Nothing` **et** pas de règle, à côté du
      saut hors CHF, `:1096-1104`) — une règle à deux lignes au **net** (`kesh-reconciliation/src/manual.rs:68`)
      fausserait B3 (brut par la règle, frais à part) ; `post_accept` refuse de même par proposition (`FailedProposal`
-     `PROVIDER_TX_REQUIRES_PROVIDER_PROPOSAL`, *Pattern batch*). 38-6a lève ce saut pour sa variante `provider` (point
-     de contact). Les voies manuelles restent : écriture manuelle (34-3), rattachement à une écriture (v017-3a, en CHF ;
+     **`PROVIDER_PROPOSAL_REQUIRED`**, le code de C-38-8 que reprend 38-6a AC-8 — un seul code pour ce refus, posé ici ;
+     `details: { movementKind }`, `null` tant que 38-3b n'écrit rien —, *Pattern batch*). **38-6a** (point de contact)
+     ajoute sa variante `provider`, **garde** le refus de la variante `rule` et **réadmet** `invoice`,
+     `supplier_invoice` et `split` sur un compte prestataire (38-6a AC-8) : le refus de ces trois-là est provisoire,
+     le temps de 38-3a à 38-6a. Les voies manuelles restent : écriture manuelle (34-3), rattachement à une écriture (v017-3a, en CHF ;
      en devise par 38-6c), virement entre ses comptes (34-11b). Tests : transaction posée par SQL sur un compte
      prestataire CHF → aucune proposition ; lot qui la vise → `failed[]` avec le code.
 
 7. **AC-7 — Registres, i18n, recette, documentation (NFR-38-3a-2).**
    - **Routes** : aucune neuve ; `LIB_ROUTES` et `TEST_ENDPOINT_ROUTES` inchangés.
    - **Codes neufs** et messages aux quatre locales : `PROVIDER_IMPORT_NOT_DELETABLE`, `BANK_IMPORT_PROVIDER_ACCOUNT`,
-     `PROVIDER_TX_REQUIRES_PROVIDER_PROPOSAL` ; raison `balance_seen` de `PROVIDER_ACCOUNT_IN_USE`.
+     `PROVIDER_PROPOSAL_REQUIRED` (C-38-8, repris par 38-6a) ; raison `balance_seen` de `PROVIDER_ACCOUNT_IN_USE`.
+   - **Manuel** : aucun écran ici ; les refus visibles (import ou relevé saisi refusé sur un compte prestataire,
+     suppression d'un en-tête téléchargé refusée, connexion qui ne se supprime plus après une lecture de soldes) sont
+     écrits au manuel utilisateur et d'administration par **38-9a** avec les écrans, PDF contrôlé aplati ; 38-3a lui
+     transmet la liste.
    - **Recette de montée** (`scripts/recette-montee.sh`, `docs/testing.md`) : la montée depuis l'image publiée
      précédente, le relèvement, le refus de l'image précédente et le retour par la sauvegarde sont ceux de **38-2**
      (O1) ; cette story **étend** le `--diff-attendu` à ses objets (`bank_transactions`, `bank_imports` : colonnes
@@ -225,7 +244,7 @@ mouvements en attendant les propositions de 38-6a.
   prestataire n'existe avant 38-3b).
 - **Références** : epic E4–E8, E12, E18, E20, C-38-0, C-38-4, C-38-5 ; `entities/bank_import.rs:17-110` ;
   `migrations/20260504000001_bank_imports.sql:19-88` ; `repositories/bank_transactions.rs:21-24, 83` ;
-  `repositories/bank_imports.rs:72, 571` ; `routes/reconciliation.rs:999, 1096-1104` ; `lib.rs:831-860` ;
+  `repositories/bank_imports.rs:30-37, 571` ; `repositories/reconciliation.rs:111` ; `routes/reconciliation.rs:999, 1096-1104` ; `lib.rs:831-860` ;
   `backup.rs:46, 99-105` ; `csv_tables.rs:689-795` ; `kesh-core/src/bank_imports.rs:145-170, 295-360`.
 
 ## Questions ouvertes
@@ -244,3 +263,18 @@ mouvements en attendant les propositions de 38-6a.
   `balance_seen` (instantanés) ; **tranché : suppression des passages, soldes vus et instantanés avec leur connexion**
   (cascade + `DELETE` explicite), seul `bank_imports.provider_fetch_run_id` en `RESTRICT`. Retiré vers **38-4** :
   `ReconciliationMatchType` tolérant, ses quatre variantes, `RULE_CRITERION_UNKNOWN` (liste inter-fiches, point 1).
+- 2026-11-15 — validation P2 (Opus), première passe de cette fiche née du découpage : 0 CRITICAL, 0 HIGH, 2 MEDIUM,
+  3 LOW ; remédiés dans la fiche (aucun report inter-fiches : 38-6a et C-38-8 portent déjà le code retenu). MEDIUM :
+  deux codes pour un même refus — `PROVIDER_TX_REQUIRES_PROVIDER_PROPOSAL` ici, `PROVIDER_PROPOSAL_REQUIRED` en C-38-8
+  et 38-6a AC-8, qui réadmet `invoice`, `supplier_invoice` et `split` → code de C-38-8, levée de 38-6a écrite (AC-6,
+  AC-7) ; **trois** listes de colonnes décodent en `BankTransaction` (`bank_transactions.rs:21`,
+  `bank_imports.rs:34` `TX_COLUMNS`, `reconciliation.rs:111` `BANK_TX_COLUMNS`), la fiche n'en nommait qu'une : un
+  champ neuf de l'entité absent des deux autres casse l'import et les propositions à l'exécution → les trois
+  inventoriées, ramenées à une (AC-3). LOW : `COLUMNS` de `BankImport` à `:30`, non `:72` ; `fetched_through` dans
+  l'export CSV de 38-2 ; manuel nommé (38-9a) ; course (c) de 38-2 reprise ici ; `onboarding_audit_e2e.rs:2046`.
+  Lignes lues : `20260504000001_bank_imports.sql:19-88` ; `entities/bank_import.rs:24, 41, 57, 79` ;
+  `kesh-core/src/bank_imports.rs:145, 160, 193` ; `repositories/bank_imports.rs:30-37, 70-76, 176-188, 560-600` ;
+  `repositories/bank_transactions.rs:21-34` ; `repositories/reconciliation.rs:110-111, 969-974, 1131, 1192, 1261` ;
+  `reconciliation_cancel.rs:219-222` ; `routes/reconciliation.rs:855-880, 995-1002, 1090-1110` ; `lib.rs:825-862,
+  875-932` ; `routes/bank_imports.rs:304` ; `csv_tables.rs:689, 736` ; `backup.rs:95-110, 1060-1215` ;
+  `38-6a-…md:296-310`.

@@ -120,12 +120,12 @@ Reprises de la fiche d'epic (§ *38-1*), complétées là où un AC en ajoute (m
      (`every_data_backfill_migration_is_triaged` reste vert sans entrée). **P8** : sans objet (fichier neuf).
      **Squash de test** `crates/kesh-db/test-schema/` mis à jour (garde `test_schema_guard.rs`).
    - **Autres sites qui énumèrent les tables** (greppés : `grep -rn "mcp_server_settings\|_kesh_installation_settings"
-     crates/*/src crates/*/tests`), à reprendre : `kesh_db::test_fixtures::truncate_all` (`test_fixtures.rs:370`) ne
+     crates/*/src crates/*/tests`), à reprendre : `kesh_db::test_fixtures::truncate_all` (`test_fixtures.rs:395`) ne
      vide que `TABLES_TO_TRUNCATE` et **remet les `AUTO_INCREMENT` à zéro** : il **vide aussi**
      `_kesh_provider_secrets` (sinon un secret orphelin se rattache à la connexion de même `id` d'un test suivant :
      `secretSet` faux-vrai, le mode d'échec d'AC-8 en test) ; `admin_full_export_e2e.rs:~281` (`data_count == 44` : +1,
      `payment_provider_connections` entre à l'export de sauvegarde ; nommer l'entrant, jamais aligner le chiffre) ;
-     `onboarding_audit_e2e.rs:2040` (`EMPTY_BEFORE_RESET`, liste **fermée** des tables vides avant la remise à zéro :
+     `onboarding_audit_e2e.rs:2046` (`EMPTY_BEFORE_RESET`, liste **fermée** des tables vides avant la remise à zéro :
      la table y entre, ou le test la peuple) ; `crates/kesh-api/README.md` (variables d'environnement) si elle les
      liste. Test de schéma des `CHECK` (provider, schedule, settings objet, label, secret `name`) au patron de
      `sans_iban_les_invariants_du_schema` (`bank_accounts_repository.rs`).
@@ -224,7 +224,10 @@ Reprises de la fiche d'epic (§ *38-1*), complétées là où un AC en ajoute (m
    - **`PATCH /api/v1/provider-connections/{id}`**, corps `{ version, label?, fetchFrom?, schedule?, settings? }` —
      champ absent = inchangé ; `settings` présent **remplace** les champs modifiables par le client (`clientId` ; dès 38-8,
      `eventKindOverrides` et `overlapDays`) et **conserve** le seul champ que le serveur pose (`payerId`, jamais
-     accepté du client) ; `provider` **immuable** (présent → `400
+     accepté du client) — **sauf si `clientId` change** : `payerId` repasse alors à `null` dans la même écriture
+     (une autre application REST peut appartenir à un autre compte *business* ; un `payerId` resté d'avant ferait
+     reconnaître à tort un virement entre les deux comptes PayPal, 38-8 AC-5), visible dans l'instantané d'audit
+     avant/après, et « Tester la connexion » (38-7) le repose ; test nommé (T3) ; `provider` **immuable** (présent → `400
      VALIDATION_ERROR`, `details.field = "provider"`). Mêmes refus qu'au `POST` ; connexion d'un prestataire inconnu →
      `409 PROVIDER_UNKNOWN` (on ne réécrit pas des réglages qu'on ne sait pas lire) ; réglages stockés illisibles et
      `settings` absent du corps → l'écriture des autres champs passe (le libellé se corrige), `settings` présent →
@@ -286,8 +289,12 @@ Reprises de la fiche d'epic (§ *38-1*), complétées là où un AC en ajoute (m
      esprit : un accès ne survit pas à une restauration), `DELETE FROM _kesh_provider_secrets` **en entier** ; le
      nombre effacé entre au détail de l'audit `admin.full_import` (`providerSecretsErased`). Un refus ultérieur de la
      restauration annule aussi l'effacement (même transaction). Test : une connexion `id = N` avec secret, export,
-     suppression de la connexion, nouvelle connexion recréée puis **restauration de l'export** (la connexion revient
-     avec `id = N`) → `secretSet: false`, `unusableReason = "secret_missing"` ; et un second test où l'archive vient
+     puis **restauration de l'export sans rien supprimer entre-temps** (la connexion revient avec `id = N` et son ancien
+     chiffré, d'AAD identique, s'ouvrirait encore sans l'effacement) → `secretSet: false`, `unusableReason =
+     "secret_missing"`, et `_kesh_provider_secrets` **vide** après la restauration (aucun orphelin) — *une suppression
+     de la connexion avant la restauration rendrait ce test muet : la cascade aurait déjà effacé le secret* ; un second
+     test, où une connexion `N+1` créée après l'export porte un secret, vérifie qu'aucune ligne `connection_id = N+1` ne
+     survit à la restauration ; et un troisième test où l'archive vient
      d'une **autre** installation dont une connexion porte le même `id` qu'une connexion locale : aucun secret local
      ne s'y rattache. **Décidé (E2, ex-Q4)** : les secrets se ressaisissent après toute restauration, même avec la
      même clé.
@@ -318,10 +325,12 @@ Reprises de la fiche d'epic (§ *38-1*), complétées là où un AC en ajoute (m
       ligne **commentée** au `.env.example` (`#KESH_SECRETS_KEY=`, une par affectation : `controle_raisons_valeurs`)
       avec la commande de génération (`openssl rand -base64 32`) ; l'appel littéral à `env_nonempty` s'inscrit à
       `EMPLACEMENTS_AUTORISES` (`:1194`, entrée `Config::from_env`, dont le décompte est de 31 au relevé : **+1**, cumulé avec ce que l'Epic 37 y
-      ajoute, commentaire daté comme les précédents) ; la garde `configuration_transmise` (familles L, T, V, E, F) reste verte. `docker-compose.dev.yml` : clé de développement
-      factice **non gabarit** (comme les autres secrets de dev), si la garde G17 l'exige.
+      ajoute, commentaire daté comme les précédents) ; la garde `configuration_transmise` (familles L, T, V, E, F) reste verte. `docker-compose.dev.yml` (qui lance `kesh`, `:6`) : défaut
+      factice **non gabarit** de 32 octets base64 (`${KESH_SECRETS_KEY:-…}`, comme `KESH_JWT_SECRET`, `:30`) pour que
+      les écrans de 38-9a servent en développement — G17 ne l'exige pas (elle ne contrôle que `KESH_JWT_SECRET` et
+      `KESH_ADMIN_PASSWORD`).
     - **Manuel d'administration** (`docs/manual/fr/admin-manual.tex`, section des variables d'environnement, près de
-      `KESH_JWT_SECRET`, `:253`, `:577-579`) : rôle de la clé ; génération ; **perte ou changement de la clé = secrets à
+      `KESH_JWT_SECRET`, `:253`, `:577-579`, **et une ligne au tableau des variables**, `:732`) : rôle de la clé ; génération ; **perte ou changement de la clé = secrets à
       ressaisir** (rien d'autre n'est perdu) ; les secrets ne voyagent **ni** dans la sauvegarde **ni** dans la
       restauration, qui les efface : à ressaisir après toute restauration ; la clé ne se met **jamais** dans la
       sauvegarde ni à côté d'elle. PDF régénéré (`make fr` dans `docs/manual/`) et contrôlé aplati (`pdftotext … | tr
@@ -344,7 +353,8 @@ Reprises de la fiche d'epic (§ *38-1*), complétées là où un AC en ajoute (m
       liste close R1 et extension de son test, test d'import d'une sauvegarde d'avant l'Epic 38.
 - [ ] **T3 — Réglages typés** (AC-4) : `kesh-core::providers::{mod, settings}`, `Provider`, `ProviderSettings`,
       `PaypalSettings`, `parse_settings`, tests (clé inconnue refusée, `clientSecret` et `accountEmail` refusés,
-      prestataire inconnu, JSON non objet, `payerId` du client refusé et `payerId` stocké conservé au `PATCH`).
+      prestataire inconnu, JSON non objet, `payerId` du client refusé, `payerId` stocké conservé au `PATCH` qui garde
+      `clientId` et remis à `null` par celui qui le change).
 - [ ] **T4 — Entité, dépôt, routes** (AC-3 à AC-7) : `kesh-db` (entité, dépôt, mappage 1062/1451 par nom de
       contrainte), `kesh-api::routes::provider_connections`, variantes `AppError` (`PROVIDER_UNKNOWN`,
       `PROVIDER_SETTINGS_INVALID`, `PROVIDER_SECRETS_INVALID`, `PROVIDER_SECRETS_KEY_MISSING`,
@@ -414,3 +424,16 @@ Reprises de la fiche d'epic (§ *38-1*), complétées là où un AC en ajoute (m
   instantanés supprimés avec elle (tranché en 38-3a AC-4), `bank_imports.provider_fetch_run_id` seul `RESTRICT` ;
   renvois à 38-3 répartis entre 38-3a (tables) et 38-3b (passage, fabrique, lecture du Comptable) ; Q-38-1-a et
   Q-38-1-b barrées (closes par O7).
+- 2026-11-15 — validation P2 (Opus) : 0 CRITICAL, 0 HIGH, 2 MEDIUM, 2 LOW ; remédiés dans la fiche (aucun finding
+  inter-fiches). Trend : P1 = 9 (6 MEDIUM) → P2 = 4 (2 MEDIUM). MEDIUM : `payerId` conservé au `PATCH` même quand
+  `clientId` change (autre application, peut-être autre compte : reconnaissance des virements faussée) → remis à
+  `null` (AC-4, T3) ; test de restauration de l'AC-8 **muet** (la connexion supprimée avant la restauration emportait
+  son secret par cascade : vert sans l'effacement) → restauration sans suppression, coffre vide vérifié. LOW : lignes
+  `test_fixtures.rs:395` (`truncate_all`) et `onboarding_audit_e2e.rs:2046` (`EMPTY_BEFORE_RESET`) ; tableau des
+  variables du manuel (`admin-manual.tex:732`) et compose de développement (G17 n'exige rien). Lignes lues :
+  `config.rs:41, 352, 455, 590, 668-686, 1406, 1522-1545` ; `lib.rs:251-258, 505-520` ; `backup.rs:46, 95-110, 137,
+  156, 214, 703-753, 940-970, 1090-1215` ; `admin.rs:278, 361, 441, 517` ; `kesh-seed/src/lib.rs:555-570` ;
+  `audit_route_registry.rs:332-372, 382, 992-1030` ; `configuration_transmise.rs:21-70, 122, 136, 1194-1219` ;
+  `test_fixtures.rs:390-420` ; `admin_full_export_e2e.rs:262-290` ; `onboarding_audit_e2e.rs:2040-2050` ;
+  `audit_labels.rs:1-60` ; `exports/global.rs:160-172, 240` ; `docker-compose.dev.yml:6, 30` ;
+  `admin-manual.tex:243-253, 577-579, 732`.

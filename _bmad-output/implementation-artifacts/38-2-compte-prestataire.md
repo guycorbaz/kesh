@@ -42,12 +42,12 @@ compte de l'assistant.
 
 | Exigence | Texte | AC |
 |---|---|---|
-| `FR-38-2-1` | Pour un solde de devise, créer un compte bancaire `bank` sans IBAN avec ses réglages, ou poser les réglages sur un compte bancaire existant. | AC-3, AC-4 |
+| `FR-38-2-1` | Pour un solde de devise, créer un compte bancaire `bank` sans IBAN avec ses réglages, ou poser les réglages sur un compte bancaire existant (qui ne porte encore aucune transaction, P2). | AC-3, AC-4 |
 | `FR-38-2-2` | Lier ce compte à un compte du plan **déjà en devise**, en gardant numéro, historique et soldes (D8, levée de C-37-9 pour ce seul compte). | AC-3, AC-4, AC-6 |
 | `FR-38-2-3` | Désigner le compte de frais de la devise (charge, actif, même devise) ; le regroupement est son compte parent. | AC-3, AC-5 |
 | `FR-38-2-4` | Une seule devise par connexion (`PROVIDER_ACCOUNT_DUPLICATE_CURRENCY`) ; retrait des réglages refusé si le compte est utilisé (`PROVIDER_ACCOUNT_IN_USE`). | AC-3, AC-5 |
 | `FR-38-2-5` | Un compte prestataire n'est jamais principal et n'entre ni aux lots pain.001 ni à l'assistant. | AC-7 |
-| `FR-38-2-6` *(ajout)* | Un compte du plan en devise n'est lié qu'à un seul compte bancaire prestataire (`PROVIDER_ACCOUNT_LEDGER_SHARED`) : le contrôle de solde de 38-3b/38-10 compare un compte du plan à un solde du prestataire. | AC-3 |
+| `FR-38-2-6` *(ajout)* | Le compte du plan d'un compte prestataire — en devise (O8) ou en CHF (P2) — n'est lié à aucun autre compte bancaire (`PROVIDER_ACCOUNT_LEDGER_SHARED`) : le contrôle de solde de 38-3b/38-10 compare un compte du plan à un solde du prestataire. | AC-3, AC-4 |
 | `FR-38-2-7` *(ajout)* | La liste des comptes bancaires dit, pour chacun, s'il est compte prestataire (connexion, devise, compte de frais). | AC-8 |
 | `FR-38-2-8` *(ajout, FR-38-1-4)* | La suppression d'une connexion qui porte un compte prestataire est refusée (`PROVIDER_CONNECTION_IN_USE`). | AC-9 |
 | `NFR-38-2-1` | Gardes au serveur, sous le verrou de devise du compte du plan, dans la transaction du lien. | AC-3, AC-6 |
@@ -133,9 +133,10 @@ compte de l'assistant.
      d'un compte ordinaire sans IBAN restent refusés).
    - **Sites à reprendre** (le changement d'invariant, greppé : `grep -rn "bank_has_iban" crates docs`) :
      `entities/bank_account.rs:126-143` (doc de `iban` : le schéma ne garantit plus `Some` pour `Bank` ; garantit `Some`
-     pour le principal), `repositories/bank_accounts.rs:657-663` (`BankAccountPutFields`), `repositories/payment_batches.rs:158-162`
-     (commentaire : « l'IBAN d'un compte ne devient jamais nul » reste vrai — `iban` ne change pas de valeur par un
-     `PUT` d'un compte prestataire sans IBAN, AC-4 — à reformuler), `routes/invoice_pdf_service.rs:343-346`
+     pour le principal), `repositories/bank_accounts.rs:657-663` (`BankAccountPutFields`), `repositories/payment_batches.rs:157-162`
+     (commentaire : « l'IBAN d'un compte ne devient jamais nul » **devient faux** — un `PUT` d'un compte prestataire posé
+     en `attach` avec IBAN peut l'omettre et le passer à `NULL`, AC-4 ; reformulé : « hors compte prestataire, qui est
+     refusé sous verrou, AC-7 »), `routes/invoice_pdf_service.rs:343-346`
      (contrainte citée), tests `crates/kesh-db/tests/bank_accounts_repository.rs:2990-2996`
      (`sans_iban_les_invariants_du_schema` : le cas `bank` sans IBAN attend désormais un **succès** hors principal, et
      un refus `chk_bank_accounts_primary_has_iban` en principal) et `crates/kesh-db/tests/migrations_upgrade_path.rs:2500-2550`
@@ -161,7 +162,7 @@ compte de l'assistant.
      table des connexions est hors export, 38-1 AC-2), `currency`, `fee_account_id`, `fee_account_number` ; cas de test
      de l'en-tête contre le schéma. `account_kind` reste `'bank'` partout (aucune valeur neuve, B16).
    - **Sites de dénombrement** (même grep que 38-1) : `admin_full_export_e2e.rs:~281` (`data_count == 44` : +1,
-     cumulé avec 38-1 et l'Epic 37) ; `onboarding_audit_e2e.rs:2040` (`EMPTY_BEFORE_RESET`, liste fermée : la table y
+     cumulé avec 38-1 et l'Epic 37) ; `onboarding_audit_e2e.rs:2046` (`EMPTY_BEFORE_RESET`, liste fermée : la table y
      entre) ; le décompte de `TABLES_EXPORTEES` que `exports_global_e2e.rs` contrôle fichier par fichier
      (`payment_provider_accounts.csv` : 0 ligne).
 
@@ -190,8 +191,15 @@ compte de l'assistant.
      déjà son historique, D8).
    - **`"attach"`** — `{ mode, bankAccountId, currency, journalAccountId?, feeAccountId? }` : pose les réglages sur un
      compte bancaire **existant** de la société (`bank`, non archivé, non clos — sinon `409 BANK_ACCOUNT_CLOSED` ou
-     `404`), en gardant son id, son nom, son IBAN éventuel, ses imports et ses rapprochements ; `journalAccountId`
-     présent remplace le lien dans la même transaction, absent garde le lien courant. Carte de crédit → `400
+     `404`), **sans transaction** (ci-dessous), en gardant son id, son nom et son IBAN éventuel ; `journalAccountId`
+     présent remplace le lien dans la même transaction, absent garde le lien courant. ⛔ **Compte qui porte au moins
+     une transaction bancaire** (`count_transactions_for_bank_account`, `repositories/bank_accounts.rs:1544`, lu sous
+     le verrou de la ligne) → `409 PROVIDER_ACCOUNT_HAS_TRANSACTIONS`, `details.transactionCount`, rien n'est posé :
+     ses transactions de fichier (CAMT, CSV, relevé saisi) n'ont pas de `provider_tx_id`, et le premier passage (38-3b,
+     depuis `fetch_from`) retéléchargerait les mêmes mouvements sans que E6 les reconnaisse — doublons muets, deux
+     propositions pour un mouvement ; et ces transactions sont en CHF (aucun import n'en enregistre d'autre depuis
+     27-2, `reconciliation.rs:1097-1100`) quand la devise du solde ne l'est pas. Le compte du plan, lui, garde son
+     historique (D8) : un compte neuf (`create`) s'y lie. Carte de crédit → `400
      PROVIDER_ACCOUNT_KIND_INVALID` (une carte n'est pas un solde de prestataire). Compte principal → `409
      PROVIDER_ACCOUNT_CANNOT_BE_PRIMARY` (rien n'est posé ; retirer d'abord le statut principal). Compte déjà porteur de
      réglages → `409 PROVIDER_ACCOUNT_DUPLICATE_CURRENCY` s'il s'agit de la même connexion et devise, sinon `409
@@ -207,8 +215,10 @@ compte de l'assistant.
      prestataire est un avoir — `400` avec le refus de type existant, `ledger_type_refusal`) et **dans la devise du
      solde** — CHF : sans devise (`accounts.currency IS NULL`) ; autre : `accounts.currency = currency` — sinon `400
      PROVIDER_ACCOUNT_CURRENCY_MISMATCH`, `details` `{ accountId, accountCurrency, expectedCurrency }` → compte du plan
-     déjà lié à un **autre** compte bancaire (quel que soit son état) alors qu'il est en devise → `409
-     PROVIDER_ACCOUNT_LEDGER_SHARED` (`details.bankAccountId` ; FR-38-2-6) → compte de créance des réglages → refus
+     déjà lié à un **autre** compte bancaire (quel que soit son état), **en devise ou en CHF** → `409
+     PROVIDER_ACCOUNT_LEDGER_SHARED` (`details.bankAccountId` ; FR-38-2-6 — le contrôle de solde compare un compte du
+     plan à un solde du prestataire en CHF comme en devise ; O8 ne nomme que la devise, où C-37-9 ferme déjà le sens
+     inverse : en CHF, rien ne le ferme sans cette garde) → compte de créance des réglages → refus
      existant `BANK_ACCOUNT_LEDGER_IS_CLAIM_ACCOUNT` (`repositories/bank_accounts.rs:1699`) → **compte de frais**
      (`feeAccountId`, facultatif) : AC-5.
    - **Levée de C-37-9 (D8)** : le refus `ACCOUNT_IN_FOREIGN_CURRENCY` que 37-1 AC-4 pose sur le lien d'un compte
@@ -221,12 +231,20 @@ compte de l'assistant.
    - **`PATCH /api/v1/bank-accounts/{id}`** (lien, `patch_bank_account_journal_link`, `routes/bank_accounts.rs:2032`) et
      **`PUT /api/v1/bank-accounts/{id}`** (`update_bank_account`, :1383) : pour un compte **porteur de réglages**
      (`is_provider_account_in_tx`, lu sous le verrou de la ligne), le refus `ACCOUNT_IN_FOREIGN_CURRENCY` de 37-1 est
-     **remplacé** par la garde de devise de l'AC-3 (`PROVIDER_ACCOUNT_CURRENCY_MISMATCH` si la devise du compte visé
-     n'est pas celle des réglages ; `PROVIDER_ACCOUNT_LEDGER_SHARED`) ; **délier** (`journalAccountId: null`) un compte
-     prestataire → `409 PROVIDER_ACCOUNT_LEDGER_REQUIRED` s'il porte au moins une transaction
+     **remplacé** par la garde **entière** du compte du plan lié de l'AC-3, appelée par la **même fonction** (une seule
+     définition) : actif seulement — `BankAccountKind::Bank` admet aussi un passif (`entities/bank_account.rs:50`),
+     qu'un compte prestataire refuse —, imputable, `PROVIDER_ACCOUNT_CURRENCY_MISMATCH` si la devise du compte visé
+     n'est pas celle des réglages, `PROVIDER_ACCOUNT_LEDGER_SHARED`, compte de créance ; **délier** (`journalAccountId:
+     null`) un compte prestataire → `409 PROVIDER_ACCOUNT_LEDGER_REQUIRED` s'il porte au moins une transaction
      (`count_transactions_for_bank_account`, lue sous le verrou de la ligne ; arbitrage O8 : « délier n'est admis que
-     s'il ne porte aucune transaction téléchargée » — 38-3a y ajoute les soldes rapportés) ; sans transaction, le lien est
-     retiré et le compte reste « lien à désigner » (comme `fee_account_id NULL`), sans proposition possible d'ici là. Pour un compte **sans** réglages, rien ne change (37-1).
+     s'il ne porte aucune transaction téléchargée » — les soldes rapportés n'y comptent pas, O8 ne les nomme pas) ;
+     sans transaction, le lien est retiré et le compte reste « lien à désigner » (comme `fee_account_id NULL`), sans
+     proposition possible d'ici là. Pour un compte **sans** réglages, rien ne change (37-1), **hormis** le sens inverse
+     de FR-38-2-6 : le lier (`POST`, `PUT`, `PATCH`) au compte du plan d'un compte prestataire → `409
+     PROVIDER_ACCOUNT_LEDGER_SHARED` (en devise, C-37-9 refuse déjà ; en CHF, cette garde est la seule), lu par la
+     lecture des comptes bancaires liés à ce compte du plan (`bank_accounts` sur `journal_account_id`, `LOCK IN SHARE
+     MODE`, patron `first_active_bank_account_linked_to`, `repositories/bank_accounts.rs:1670-1676`, **sans** son filtre
+     `archived = FALSE`) jointe à `payment_provider_accounts` ; test pour chacun des trois chemins.
    - **`PUT`** d'un compte prestataire : `iban` **facultatif** (absent ou `null` → `NULL` ; présent → contrôlé comme
      aujourd'hui) — c'est la seule dérogation à `validate_bank_input` (`:557-570`), décidée sur
      `is_provider_account` **lu sous verrou** et non sur le corps ; `qrIban` présent → `400
@@ -236,7 +254,9 @@ compte de l'assistant.
    - **`POST /api/v1/bank-accounts`** ne crée jamais de compte prestataire (il n'a pas de champ pour cela) et continue
      d'exiger l'IBAN d'un `bank` : la seule voie d'un compte `bank` sans IBAN est l'AC-3.
    - **`DELETE /api/v1/bank-accounts/{id}`** (archivage) et `…/close` : admis sur un compte prestataire aux conditions
-     d'aujourd'hui (archivage refusé s'il a des transactions, `repositories/bank_accounts.rs:806`) ; la ligne de réglages **reste** (l'historique
+     d'aujourd'hui (archivage refusé s'il a des transactions : gardes « fonds » d'`archive_once`,
+     `routes/bank_accounts.rs:1645-1660`, la fonction du dépôt `archive_for_company`, `repositories/bank_accounts.rs:806`,
+     ne faisant que l'`UPDATE`) ; la ligne de réglages **reste** (l'historique
      du lien est gardé) ; 38-3b ne télécharge pas pour un compte archivé ou clos (point de contact). Limite écrite au
      manuel (38-9a) : la devise reste tenue par la connexion tant que la ligne existe (`uq_ppa_connection_currency`).
 
@@ -259,7 +279,11 @@ compte de l'assistant.
      **complète**, triée) ∈ `foreign_currency_link` (compte lié en devise : il deviendrait un compte ordinaire lié à un
      compte en devise, contraire à C-37-9), `transactions` (au moins une `bank_transactions` du compte,
      `count_transactions_for_bank_account`, `repositories/bank_accounts.rs:1544`), `no_iban` (le compte deviendrait un
-     `bank` sans IBAN hors prestataire), et **`balance_seen`** — au moins une ligne `provider_balance_snapshots`
+     `bank` sans IBAN hors prestataire — **sauf s'il est archivé** : un compte archivé est figé, hors des listes, aucun
+     `PUT` ni `PATCH` ne l'atteint, `repositories/bank_accounts.rs:570, 730` ; sans cette exception, un compte créé
+     par erreur (`create`, donc sans IBAN) ne perdrait jamais ses réglages, sa devise resterait prise par
+     `uq_ppa_connection_currency` et la connexion ne se supprimerait plus. Chemin écrit et testé : délier s'il est en
+     devise (AC-4, sans transaction), archiver, retirer les réglages, supprimer la connexion), et **`balance_seen`** — au moins une ligne `provider_balance_snapshots`
      (`opening` ou `reported`, instantanés compris) de la connexion dans la devise du compte —, **posée par 38-3a**
      (AC-4), qui crée la table ; le code et ses quatre messages listent les quatre raisons dès cette story. Audit
      `payment_provider_account.deleted`.
@@ -279,17 +303,26 @@ compte de l'assistant.
    compte prestataire EUR contre changement de devise du compte du plan (37-1) — l'un attend l'autre, jamais un compte
    prestataire EUR lié à un compte USD ; (b) deux `POST …/accounts` de même devise sur la même connexion — un `201`, un
    `409 PROVIDER_ACCOUNT_DUPLICATE_CURRENCY` ; (c) `DELETE` des réglages contre arrivée d'une transaction (import CSV
-   sur le compte) — le retrait voit la transaction ou l'import attend ; (d) archivage du compte de frais contre `PATCH`
-   qui le désigne.
+   sur le compte) — le retrait voit la transaction ou l'import attend ; ⚠️ 38-3a refuse cet import sur un compte
+   prestataire (AC-6 de 38-3a) : la course (c) y change de sens (l'import voit les réglages et refuse, ou passe avant
+   leur retrait) et 38-3b la rejoue contre l'insertion d'un passage ; (d) archivage du compte de frais contre `PATCH`
+   qui le désigne ; (e) `attach` contre import d'une transaction sur le même compte — l'`attach` voit la transaction
+   (`PROVIDER_ACCOUNT_HAS_TRANSACTIONS`) ou l'import attend.
 
 7. **AC-7 — Exclusions (FR-38-2-5).**
    - **Compte principal** : jamais (AC-3, AC-4), et `chk_bank_accounts_primary_has_iban` en filet pour un compte sans
      IBAN ; la QR-facture lit le principal (`routes/invoice_pdf_service.rs:332-353`), inchangée.
    - **Lots de paiement pain.001** : `create_batch` (`repositories/payment_batches.rs:158-185`) refuse un compte
      prestataire **même avec IBAN** → nouvelle variante `DbError::PaymentBatchProviderAccount { bank_account_id }` →
-     `409 PAYMENT_BATCH_ACCOUNT_IS_PROVIDER` (lu par `is_provider_account_in_tx` sous le verrou partagé déjà pris sur
-     la ligne) ; sans IBAN, le refus existant `PaymentBatchAccountHasNoIban` (:184) tombe le premier — ordre écrit,
-     test des deux. L'écran de création d'un lot (38-9a) n'offre pas ces comptes.
+     `409 PAYMENT_BATCH_ACCOUNT_IS_PROVIDER`, lu par `is_provider_account_in_tx` **après la revérification
+     verrouillante** de la ligne (`recheck_open_unarchived_locked_in_tx`, `LOCK IN SHARE MODE`, appelée après
+     l'`INSERT` du lot, `payment_batches.rs:236-248`) — ⚠️ la lecture de la ligne à `:165` est **non verrouillante**
+     (commentaire `:150-156`) : y lire les réglages laisserait passer une pose de réglages commitée entre-temps ; le
+     refus précoce à `:165` peut s'y ajouter, la décision reste sous verrou (`attach` tient la ligne `FOR UPDATE`, AC-2) ;
+     sans IBAN, le refus existant `PaymentBatchAccountHasNoIban` (:184) tombe le premier — ordre écrit, test des deux.
+     **Génération du `pain.001`** d'un lot créé avant la pose des réglages (`payment_batches.rs:875-886`) : même refus,
+     lu au même endroit que l'IBAN ; sans lui, un `PUT` qui retire l'IBAN du compte devenu prestataire (AC-4) ne
+     rendrait que `PaymentBatchAccountHasNoIban`. L'écran de création d'un lot (38-9a) n'offre pas ces comptes.
    - **Assistant d'installation** (`routes/onboarding.rs:612-700`, `upsert_primary_in_tx`) : il ne crée ou ne modifie que
      le compte **principal**, qu'un compte prestataire ne peut pas être ; les routes de cette story exigent l'onboarding
      terminé. Test : `set_bank_account` après la pose de réglages sur un autre compte ne touche pas ce dernier.
@@ -325,6 +358,7 @@ compte de l'assistant.
       `PROVIDER_ACCOUNT_CURRENCY_MISMATCH`, `PROVIDER_ACCOUNT_DUPLICATE_CURRENCY`, `PROVIDER_ACCOUNT_ALREADY_ATTACHED`,
       `PROVIDER_ACCOUNT_LEDGER_REQUIRED`, `PROVIDER_ACCOUNT_LEDGER_SHARED`, `PROVIDER_ACCOUNT_KIND_INVALID`,
       `PROVIDER_ACCOUNT_FIELD_NOT_ALLOWED`, `PROVIDER_ACCOUNT_CANNOT_BE_PRIMARY`, `PROVIDER_ACCOUNT_IN_USE`,
+      `PROVIDER_ACCOUNT_HAS_TRANSACTIONS` (P2),
       `FEE_ACCOUNT_INVALID` (repris par 38-6a, C-38-8), `ACCOUNT_USED_BY_PROVIDER_ACCOUNT`,
       `PAYMENT_BATCH_ACCOUNT_IS_PROVIDER`. Les cinq de C-38-3 y sont sous leur nom exact.
     - **MCP** : aucun outil ne liste les comptes bancaires (`crates/kesh-api/src/mcp/outils/`, relevé : `balance_agee`,
@@ -349,7 +383,8 @@ compte de l'assistant.
 - [ ] **T3 — Routes prestataire** (AC-3, AC-5, AC-9) : `create`/`attach`, `PATCH`, `DELETE`, `GET`, gardes dans
       l'ordre, enveloppe de rejeu, codes et messages.
 - [ ] **T4 — Routes des comptes bancaires** (AC-4, AC-8) : dérogation d'IBAN sur verrou, levée de C-37-9 pour le seul
-      compte prestataire, refus de délier, bloc `provider` de la liste, type TS.
+      compte prestataire, garde entière du compte lié (fonction de l'AC-3), `LEDGER_SHARED` dans les deux sens, refus
+      de délier, bloc `provider` de la liste, type TS. `attach` d'un compte à transactions refusé (T3).
 - [ ] **T5 — Comptes du plan** (AC-5) : archivage et changement de devise d'un compte désigné, retypage du compte de
       frais ; inventaire des sites de 37-1 complété.
 - [ ] **T6 — Exclusions** (AC-7) : lot pain.001, tests de l'assistant et du principal.
@@ -372,8 +407,8 @@ compte de l'assistant.
   devise d'un compte en devise est l'affaire de 37-4. Le contrôle « solde du prestataire = solde comptable » est 38-3b
   (complétude) et 38-10 (relevé).
 - **Archivage d'un compte prestataire** : la ligne de réglages reste et garde sa devise prise ; recréer un compte de
-  même devise pour la même connexion demande le retrait des réglages, refusé s'il a des transactions. Limite écrite
-  (38-9a) ; une issue si Beat la juge gênante.
+  même devise pour la même connexion demande le retrait des réglages, refusé s'il a des transactions ou un solde vu
+  (`no_iban` ne vaut pas pour un compte archivé, AC-5). Limite écrite (38-9a) ; une issue si Beat la juge gênante.
 - **Références** : epic E11, C-38-3, D8 (§ *Dépendance à l'Epic 37*) ; 37-1 AC-4 (refus `ACCOUNT_IN_FOREIGN_CURRENCY`,
   `ACCOUNT_CURRENCY_IN_USE`, liste close des sites) et AC-6 ; `migrations/20261110000001_bank_accounts_without_iban.sql:39-55`
   ; `entities/bank_account.rs:21-69, 126-143` ; `routes/bank_accounts.rs:205, 480-526, 539-637, 641-685, 700-715, 883, 964-1000,
@@ -410,3 +445,24 @@ compte de l'assistant.
   tolérant en 38-3a pour la source, en 38-4 pour les critères) ; AC-5 : `PROVIDER_ACCOUNT_IN_USE` liste `balance_seen`
   (instantanés, posée par 38-3a) et `FEE_ACCOUNT_INVALID` la raison `missing` (posée par 38-6a) ; renvois à 38-3 répartis
   entre 38-3a et 38-3b.
+- 2026-11-15 — validation P2 (Opus) : 0 CRITICAL, 1 HIGH, 5 MEDIUM, 1 LOW ; remédiés dans la fiche sauf les reports
+  inter-fiches de 38-2-P2-1 et 38-2-P2-3 (C-38-3, O8, 38-9a). Trend : P1 = 6 (1 HIGH, 3 MEDIUM) → P2 = 7 (1 HIGH,
+  5 MEDIUM) — défauts **distincts** de ceux de la P1 et non nés de sa remédiation, hormis P2-5 (phrase de
+  l'alignement inter-fiches) : pas de recyclage, signal de découpage non levé (règle de splitting, amendement D5).
+  HIGH : `attach` d'un compte qui porte des transactions de fichier → doublons muets au premier passage (aucun
+  `provider_tx_id`) et transactions CHF sous un solde en devise → refusé (`PROVIDER_ACCOUNT_HAS_TRANSACTIONS`, AC-3,
+  course (e) à l'AC-6). MEDIUM : `PATCH`/`PUT` du lien n'appliquaient qu'une partie de la garde de l'AC-3 (un passif
+  passait, `admits_ledger_type` l'admet pour `Bank`) → garde entière, une fonction ; `LEDGER_SHARED` limité à la
+  devise alors qu'en CHF rien ne ferme le partage, ni dans un sens ni dans l'autre → toute devise, sens inverse gardé
+  sur les comptes ordinaires (AC-3, AC-4, FR-38-2-6) ; `no_iban` rendait les réglages d'un compte créé (`create`)
+  irretirables à jamais (devise prise, connexion insupprimable), contre la Note sur l'archivage → exception du compte
+  archivé, chemin écrit (AC-5) ; « 38-3a y ajoute les soldes rapportés » au délier : contraire à O8 et absent de 38-3a
+  → retiré (AC-4) ; refus pain.001 lu « sous le verrou déjà pris » à `payment_batches.rs:165`, qui est une lecture
+  non verrouillante, et commentaire `:157-162` dit « reste vrai » alors qu'un `PUT` peut annuler l'IBAN → décision
+  après `recheck_open_unarchived_locked_in_tx`, génération gardée aussi (AC-7, AC-1). LOW : `onboarding_audit_e2e.rs:2046` ;
+  archivage gardé par `archive_once` (`routes/bank_accounts.rs:1645`), non par `:806` ; course (c) changée par 38-3a.
+  Lignes lues : `20261110000001_…sql:36-56` ; `20260513000001_…sql:36-70` ; `0001_schema_squash.sql:176, 1167, 1180` ;
+  `entities/bank_account.rs:47-69` ; `entities/reconciliation_rule.rs:20-110` ; `routes/bank_accounts.rs:338, 496-572,
+  883, 964-969, 1383-1405, 1600-1660, 2032` ; `repositories/bank_accounts.rs:544-555, 570, 655-665, 730, 800-870,
+  1544, 1650-1690, 1725, 1834` ; `payment_batches.rs:150-190, 232-250, 870-890` ; `post_restore.rs:415-445, 1245-1262` ;
+  `errors.rs:820-832, 2655-2670` ; `retry.rs:40` ; `CHANGELOG.md:1-20` ; P6 recompté (`grep -rc`, mêmes nombres).

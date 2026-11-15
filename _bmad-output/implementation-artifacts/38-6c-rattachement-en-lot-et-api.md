@@ -169,8 +169,9 @@ Reprises de la fiche d'epic (§ 38-6c), complétées là où un AC l'exige.
    Le plafond « une transaction liée au plus » (`linkable_side`, `:739-748`) est inchangé : au plus deux transactions
    par écriture, une de chaque côté. ⚠️ Le commentaire de `linkable_side` dit le plafond `<= 1` **inerte** parce que
    deux liens ont des montants opposés (`:730-737`) : entre deux devises, ce raisonnement ne tient plus — une troisième
-   transaction de sens contraire à `M` d'une troisième devise serait « l'autre côté » des deux premières selon le seul
-   signe ; le plafond **devient porteur**, ce que le commentaire annonçait (« il deviendrait porteur le jour où le
+   transaction, d'un troisième compte bancaire touché par l'écriture (une écriture ne porte qu'une devise étrangère :
+   ce troisième compte est en CHF ou dans cette devise), pourrait être « l'autre côté » des deux premières, au signe
+   pour celle de l'autre devise ; le plafond **devient porteur**, ce que le commentaire annonçait (« il deviendrait porteur le jour où le
    prédicat tolérerait un écart ») — un test de comportement le garde désormais (troisième lien refusé, mutation : le
    plafond retiré fait rougir ce test). Paramètres : l'ordre des `?` de `entry_sql`, de la lecture par page et de
    `transfer_other_side` est réécrit au doc-comment de chacun (la devise de `t` est **commune à une page**, toutes ses
@@ -311,7 +312,8 @@ Reprises de la fiche d'epic (§ 38-6c), complétées là où un AC l'exige.
    doublé. Les routes neuves de cette story ne sont **pas** sous `require_not_pat`.
 8. **AC-8 — Temps borné** (`NFR-38-6c-3`). Mesure au développement, écrite au Dev Agent Record avec son montage :
    base de 20 000 écritures dont 3 000 sur le compte prestataire (EUR), 3 000 transactions en attente sur l'année ;
-   `link-suggestions` sur l'année par pages de 500 : **cible ≤ 2 s par page** (deux lectures par page, comme la 34-4,
+   `link-suggestions` sur l'année par pages de 500 : **cible ≤ 2 s par page** (trois lectures par page avec celle des
+   membres de paire, AC-14 — jamais une par transaction —, comme la 34-4,
    qui avait mesuré ≈ 18,5 s pour 500 transactions à trois lectures **par transaction**, doc `:949-951`) ; lot de 500
    rattachements : durée mesurée, sans cible (séquentiel par construction, Écart 3). Une cible manquée se signale au
    Project Lead avant la revue, avec la mesure — jamais tue.
@@ -326,7 +328,17 @@ Reprises de la fiche d'epic (§ 38-6c), complétées là où un AC l'exige.
    `crates/kesh-db/test-schema/` mis à jour (`test_schema_guard`) ; `.keshbackup` : la table entre à l'inventaire, à
    l'export et à l'import complet (ordre des FK : après `bank_transactions` et `journal_entries`), test
    `admin_full_import_e2e` avec un groupe restauré à l'identique ; export CSV des tables (`exports/csv_tables.rs`,
-   patron de `bank_transactions` `:759`). Gate complet en cours de boucle (exception `kesh-db`).
+   patron de `bank_transactions` `:759`). **Inscriptions** (validation P2, au patron de 38-2 et 38-3a) :
+   `TABLES_TO_TRUNCATE` (`crates/kesh-db/src/backup.rs:46`, enfants → parents) **avant** `bank_transactions` et
+   `journal_entries` ; absente de `RESET_PRESERVED_TABLES` (la remise à zéro la vide) ;
+   `backup_inventory_matches_schema` vert ; **liste close des absences admises** (37-1 AC-6, R1, E18) :
+   `bank_transaction_extra_entries` en `Absence::Table` — sans elle, `parse_and_verify`
+   (`admin_backup/import.rs`, « table '…' absente du manifeste ») refuserait **toute** sauvegarde antérieure ; test
+   d'import d'une sauvegarde d'avant l'Epic 38 étendu (aucun groupe) ; export CSV : `TABLES_EXPORTEES`
+   (`exports/global.rs`) et sérialiseur écrit à la main avec son cas d'en-tête, **ou** `TABLES_HORS_EXPORT` avec son
+   motif — choix déclaré au Change Log ; sites de dénombrement (même grep que 38-1/38-2/38-3a) :
+   `admin_full_export_e2e.rs:~281` (`data_count`, cumulé), `onboarding_audit_e2e.rs` (`EMPTY_BEFORE_RESET`).
+   Gate complet en cours de boucle (exception `kesh-db`).
 10. **AC-10 — Registres, i18n, MCP, écrans, manuels.**
     - **Routes** (C-38-12) : `LIB_ROUTES` (`kesh-api/tests/audit_route_registry.rs:382`) gagne `("post",
       "reconciliation::post_link_entries", Traced, SansEcritureAuJournal)` — **+1** route mutante ; le total de
@@ -384,9 +396,10 @@ Reprises de la fiche d'epic (§ 38-6c), complétées là où un AC l'exige.
     - **Inventaire clos des lecteurs de `matched_entry_id` qui demandent « l'écriture est-elle rapprochée ? »**
       (relevé par `grep -rn matched_entry_id crates/*/src`, sur `57b26a5f`, à recompter à l'étape 0 du développement,
       citation au Change Log ; chacun **résolu** ou **écarté par construction**, aucun laissé muet) :
-      (a) `journal_entries.rs:2340-2344` (motif `MatchedBankTransaction` des refus de modification et de
-      contre-passation) — **résolu** : lit le fragment, un membre est non modifiable et non contre-passable comme la
-      principale ; (b) `bank_accounts.rs:1884-1898` (écart du relevé : mouvements postérieurs des écritures rapprochées)
+      (a) `journal_entries.rs:2340-2344` (`document_owners`, rang 7 : motif `MatchedBankTransaction` des refus de
+      modification, de contre-passation **et de suppression** — `invoices.rs:1506`, `journal_entries.rs:1813`) —
+      **résolu** : lit le fragment, un membre est non modifiable, non contre-passable et non supprimable comme la
+      principale (sans quoi la FK `RESTRICT` rendrait une erreur de base au lieu du refus nommé) ; (b) `bank_accounts.rs:1884-1898` (écart du relevé : mouvements postérieurs des écritures rapprochées)
       — **résolu** : le fragment, faute de quoi l'écriture de frais d'un groupe manquerait au calcul ; (c)
       `reconciliation_link.rs` (`linkable_side`, `HAS_LINK`, `transfer_other_side`, et le `NOT EXISTS` des règlements
       `:161`) — **résolu** (fragment) pour les trois premiers, **par construction** pour le quatrième ; (d)
@@ -418,7 +431,10 @@ Reprises de la fiche d'epic (§ 38-6c), complétées là où un AC l'exige.
       mutation M10) ; écriture : `UPDATE bank_transactions SET matched_entry_id = <principale>, status = 'reconciled'
       …` (gardes `status = 'pending' AND matched_entry_id IS NULL`, comme le lien simple) puis `INSERT` des autres ;
       `expected_version` (AC-5) contrôlée au même rang. Trace `reconciliation.entry_linked`, **une** par transaction,
-      champ additif `journalEntryIds` ; aucune action neuve.
+      champ additif `journal_entry_ids` (en snake_case comme les clés existantes de cette trace,
+      `reconciliation_link.rs`, et `docs/api-external.md:811`) ; aucune action neuve. La réponse de `…/link-entry`
+      (`LinkEntryResponse`, `{ bankTransactionId, journalEntryId }`) gagne le champ additif `journalEntryIds` (la
+      principale seule pour un lien simple).
     - **Refus** — geste unitaire : 409 `RECONCILIATION_ENTRY_NOT_LINKABLE` (code inchangé, message de l'AC-10) ; lot :
       `failed[]` avec le diagnostic (`diagnose_entry_link` étendu au groupe, lecture après refus, n'admet jamais) —
       `ENTRY_GROUP_SUM_MISMATCH` (G3 : `{ transactionAmount, movements: [{ journalEntryId, movement }], sum }`) ;
@@ -437,15 +453,25 @@ Reprises de la fiche d'epic (§ 38-6c), complétées là où un AC l'exige.
 14. **AC-14 — Paires suggérées ; « déjà comptabilisée »** (`FR-38-6c-9`, `NFR-38-6c-1`, B28). Une **paire** de `t` :
     deux écritures `{a, b}` satisfaisant G1, G2, G4, G5, G6, `M_a + M_b = t.amount`, datées toutes deux à
     `ENTRY_PAIR_WINDOW_DAYS` = 3 jours au plus de la date de paiement de `t`, **et** `t` sans aucune écriture seule
-    candidate (une écriture seule exacte prime : pas de paire à côté). Une requête (`entry_pairs_sql(basis)`,
-    auto-jointure des mouvements dans la fenêtre), triée par somme des écarts de jours puis identifiants, plafonnée à
-    `ENTRY_PAIRS_LIMIT` = 20 ; elle est lue par **les deux** — le dialogue (`GET …/entry-candidates` gagne `pairs`,
-    additif : `[{ entries: [PageEntry, PageEntry] }]`) et `entry_matches_for_page` (`PageMatches` gagne `pairs`) : le
-    test d'égalité de l'AC-3 compare aussi les paires (identifiants et ordre). Classement aux suggestions : AC-4
-    (`uniquePair`, `several_pairs`, `entry_shared` étendu aux paires). **« Déjà comptabilisée » (34-4)** :
-    `count_already_booked_for_page` compte une paire comme une candidate — sans quoi 38-6a proposerait une **seconde**
-    écriture pour une transaction de 2024 passée au brut avec frais à part, et `confirmAlreadyBooked` ne la garderait
-    pas (E15) ; test : transaction à paire seule → `alreadyBooked` vrai. Les groupes de trois écritures et plus ne
+    candidate (une écriture seule exacte prime : pas de paire à côté). **Une seule définition, deux lectures**
+    (validation P2) : un texte SQL, `PAIR_MEMBERS(basis)` — les écritures qui peuvent entrer dans une paire (G1, G2,
+    G4, G5, G6, mouvement `M ≠ 0` sur le compte, datées dans une plage `[d₁, d₂]` liée en paramètre), sans
+    auto-jointure — et **une** fonction pure, `pairs_for(t, members) -> Vec<Pair>` (somme exacte, fenêtre de
+    `ENTRY_PAIR_WINDOW_DAYS` = 3 jours autour de la date de paiement de `t`, tri par somme des écarts de jours puis
+    identifiants, plafond `ENTRY_PAIRS_LIMIT` = 20). Le dialogue (`find_entry_pairs`, lu par `GET …/entry-candidates`,
+    qui gagne `pairs`, additif : `[{ entries: [PageEntry, PageEntry] }]`) lit `PAIR_MEMBERS` sur la plage de `t` ;
+    `entry_matches_for_page` le lit **une fois par page**, sur l'union des plages (de la plus petite date de paiement −
+    3 jours à la plus grande + 3 jours), puis appelle `pairs_for` par transaction — d'où **trois** lectures par page
+    au plus (règlements, écritures, membres de paire), jamais une par transaction, et aucune condition recopiée en
+    Rust hors de `pairs_for`. `PageMatches` gagne `pairs` ; le test d'égalité de l'AC-3 compare aussi les paires
+    (identifiants et ordre). Classement aux suggestions : AC-4 (`uniquePair`, `several_pairs`, `entry_shared` étendu
+    aux paires). **« Déjà comptabilisée » (34-4)** : une paire **ne gonfle pas** `entry_count` (qui doit égaler la
+    longueur de `find_entry_candidates`, AC-3) ; `AlreadyBookedCounts` gagne **`pair_count`** (longueur de
+    `find_entry_pairs`, ≤ 20) et le DTO `AlreadyBooked` de `get_proposals` (`routes/reconciliation.rs:118-124`) le
+    champ additif **`pairCount`** ; le signal est « vrai » dès qu'un des quatre nombres est non nul — sans quoi 38-6a
+    proposerait une **seconde** écriture pour une transaction de 2024 passée au brut avec frais à part, et
+    `confirmAlreadyBooked` ne la garderait pas (E15) ; test : transaction à paire seule → `pairCount` 1,
+    `entryCount` 0, `alreadyBooked` non nul. Les groupes de trois écritures et plus ne
     sont **jamais suggérés** (combinatoire) : ils se forment à la main (AC-13), limite écrite au doc-comment et au
     manuel (38-9b). Tests HTTP : paire univoque ; deux paires → `ambiguous` `several_pairs` ; paire hors fenêtre (4
     jours) → `none` ; écriture seule exacte et paire → seule l'écriture (`unique`) ; écriture partagée entre les paires
@@ -458,7 +484,11 @@ Reprises de la fiche d'epic (§ 38-6c), complétées là où un AC l'exige.
     garantit) : contre-passée par `journal_entries::reverse_in_tx`, comme l'annulation d'un lien simple (v017-3a) ;
     un refus sur **une** écriture (exercice clos, verrou de période — rangs de `entry_cancel_chain`) refuse **tout**,
     rien d'écrit. La vue de l'annulation (`entry_cancel_outlook`) porte en plus `groupEntryIds` et le motif du premier
-    refus ; la trace d'annulation existante gagne `journalEntryIds` (additif). ⚠️ **Limite existante, étendue** :
+    refus ; la trace d'annulation existante (`reconciliation.cancelled`, clés en camelCase) gagne `journalEntryIds` et
+    `reversalJournalEntryIds` (additifs, dans l'ordre croissant des écritures ; `matchedEntryId` et
+    `reversalJournalEntryId` gardent la principale et sa contre-passation), et la réponse de `…/cancel`
+    (`ReconciliationCancellation`) gagne de même `reversalJournalEntryIds` — validation P2 : une seule contre-passation
+    ne se rend plus dans un champ unique. ⚠️ **Limite existante, étendue** :
     annuler un rattachement contre-passe ; dans un exercice clos (2024), l'annulation est donc refusée — un groupe
     rattaché à tort y reste ; à tracer en issue avec la PR (C-38-13), non traité ici. Tests : annulation d'un groupe →
     deux contre-passations, table vide pour `t`, `t` `pending` ; exercice clos → refus, rien d'écrit ; mutation « liens
@@ -540,3 +570,16 @@ Reprises de la fiche d'epic (§ 38-6c), complétées là où un AC l'exige.
   genre `uniquePair`. Taille signalée (découpage 38-6c1/38-6c2 si la validation stagne). Inter-fiches : 38-9b (écran
   des paires et des groupes, libellés des codes neufs, vue d'annulation d'un groupe, manuel) ; 38-6a (`alreadyBooked`
   vrai pour une paire, sans changement de sa fiche). B27 ne touche pas cette fiche. À revalider (P1 de la révision).
+- 2026-11-15 — validation P2 (Opus) : 0 CRITICAL, 1 HIGH, 4 MEDIUM, 4 LOW ; remédiés dans la fiche sauf P2-5
+  (découpage proposé, non appliqué, décision du Project Lead) et l'inter-fiche 38-6a (`pairCount`). P2-1 (HIGH) :
+  AC-9 sans liste close R1 ni inscriptions de sauvegarde (`TABLES_TO_TRUNCATE`, `TABLES_EXPORTEES` /
+  `TABLES_HORS_EXPORT`, dénombrements) — toute sauvegarde antérieure serait devenue non importable ; P2-2 : lecture
+  des paires par page non définie (une requête par transaction ou une seconde règle) → `PAIR_MEMBERS` + `pairs_for`,
+  trois lectures par page (AC-8 suivi) ; P2-3 : « une paire compte comme une candidate » cassait l'égalité
+  `entry_count` = dialogue → `pair_count` / `pairCount` ; P2-4 : annulation d'un groupe sans forme pour plusieurs
+  contre-passations → `reversalJournalEntryIds` ; P2-5 : taille (plus de cinq modules : `reconciliation_link`,
+  `reconciliation_cancel`, `journal_entries`, `bank_accounts`, `backup` et migration, routes de réconciliation et de
+  comptes bancaires, exports, i18n, `docs/api-external.md`) → découpage proposé 38-6c1 (AC-1 à AC-11) / 38-6c2
+  (AC-12 à AC-15, `journalEntryIds` au lot et `pairs`/`uniquePair` aux suggestions y migrant), 38-6c2 avant 38-6a ;
+  LOW : casse de la clé de trace `journal_entry_ids`, réponse de `…/link-entry` pour un groupe, suppression nommée à
+  l'inventaire (a), « troisième devise » reformulé (AC-2).

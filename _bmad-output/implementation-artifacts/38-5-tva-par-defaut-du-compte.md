@@ -87,7 +87,11 @@ Reprises de la fiche d'epic (§ 38-5), complétées là où un AC l'exige.
    exécuté, sites inspectés, au Change Log. **P8** : aucune migration appliquée retouchée. Squash de test régénéré
    (`scripts/regen-test-schema.sh`). Ordre de `TABLES_TO_TRUNCATE` (`kesh-db/src/backup.rs:46`) : `accounts` (`:105`)
    est vidée **avant** `vat_rates` (`:110`) et restaurée après elle (ordre inverse) — la FK neuve est satisfaite sans
-   changer la liste ; `company_invoice_settings` (`:95`) avant `accounts`, comme ses dix autres FK. Gate **complet**
+   changer la liste ; `company_invoice_settings` (`:95`) avant `accounts`, comme ses dix autres FK. Le commentaire de
+   `vat_rates` à `backup.rs:110` (« aucune table ne référence vat_rates ») devient **faux** : réécrit (« référencée
+   par `accounts.default_vat_rate_id`, RESTRICT, Story 38-5 ») ; de même le doc-comment de
+   `find_for_category_at_date` (`repositories/vat_rates.rs:81-88`, « destinée à l'assistant de saisie de facture »)
+   gagne son second lecteur, `default_vat_at` (AC-5). Grep du symptôme (`ne référence vat_rates`) au Change Log. Gate **complet**
    même en cours de boucle (exception `kesh-db`).
 2. **AC-2 — Fonctions pures** (`kesh-core::accounting::vat`, à côté de `line_vat_amount`, `vat.rs:40-44` ; toute
    l'arithmétique en `Decimal`, arrondi `Money::round_to_centimes`, `MidpointAwayFromZero`) :
@@ -97,7 +101,8 @@ Reprises de la fiche d'epic (§ 38-5), complétées là où un AC l'exige.
      `line_vat_amount`** (une seule règle de calcul HT × taux, DRY ; nom gardé pour C-38-7) ;
    - `VatTreatment { SaleIncluded, PurchaseIncluded, Acquisition }` et `split_default_vat(treatment, amount,
      rate_percent) -> DefaultVatSplit { base, vat }` — `amount` est une **grandeur** (≥ 0 ; le sens est celui de
-     l'appelant, 38-6a ; un montant négatif → `debug_assert` et résultat symétrique) : `SaleIncluded` et
+     l'appelant, qui passe `|G|`, 38-6a AC-8, 38-6b ; un montant négatif → résultat symétrique, **sans**
+     `debug_assert` : les tests tournent en debug, et la fixture porte des négatifs) : `SaleIncluded` et
      `PurchaseIncluded` : `vat = vat_from_gross(amount, t)`, `base = amount − vat` (par soustraction : `base + vat ==
      amount` exactement, l'écriture s'équilibre par construction) ; `Acquisition` : `base = amount`, `vat =
      acquisition_vat(amount, t)` (l'appelant écrit deux lignes de `vat`, l'une au débit de l'impôt préalable, l'autre
@@ -236,8 +241,10 @@ Reprises de la fiche d'epic (§ 38-5), complétées là où un AC l'exige.
      date de chaque transaction dans sa catégorie (Écart 1). Le champ disparaît pour un compte `Asset`/`Liability` ;
      changer le type d'un compte qui porte un genre propose de le retirer (sinon le serveur refuse,
      `DEFAULT_VAT_INVALID`, message affiché sous le champ par `details.field`). Le `PUT` envoie toujours le couple
-     (l'écran le connaît). Un genre `Other` lu s'affiche « Genre d'une version ultérieure (`x`) », non modifiable sans
-     le retirer. La liste porte une colonne ou une pastille « TVA » (genre et taux). Vitest : options par type,
+     (l'écran le connaît), **sauf** un genre `Other` laissé tel quel : le couple est alors **omis** (absent = inchangé,
+     AC-4) — l'envoyer rendrait 400 `kind_unknown` et empêcherait de corriger le seul libellé du compte. Un genre
+     `Other` lu s'affiche « Genre d'une version ultérieure (`x`) », non modifiable sans le retirer. Vitest : `PUT` du
+     libellé d'un compte à genre `Other` sans le couple. La liste porte une colonne ou une pastille « TVA » (genre et taux). Vitest : options par type,
      couple envoyé, retrait au retypage, affichage d'`Other`.
    - *Administration → Facturation* (`routes/(app)/settings/invoicing/+page.svelte`, patron des sélecteurs de TVA
      `:54-60`, `:106-122`, `:181-183`, `:238`, `:475-481`) : sélecteur « Compte TVA due sur acquisitions (Passif) »
@@ -320,3 +327,18 @@ Reprises de la fiche d'epic (§ 38-5), complétées là où un AC l'exige.
   (AC-5) ; P1-4 (LOW) renvois du manuel (`:219` est l'assistant d'installation ; `:491` et `:1791` sont les bons sites,
   AC-10) ; P1-5 (LOW, non appliqué) l'égalité du compte d'acquisitions n'est refusée qu'avec la TVA due (O6) : le
   compte de décompte et le compte créanciers (passifs aussi) restent admis ; P1-6 (LOW) renvoi à O1 en en-tête.
+- 2026-11-15 — validation P2 (Opus) : 3 findings (0 CRITICAL, 0 HIGH, 0 MEDIUM, 3 LOW) ; remédiés dans la fiche, aucun
+  report inter-fiches. LOW : P2-1 le commentaire « aucune table ne référence vat_rates » (`backup.rs:110`) devient faux
+  avec la FK neuve, et le doc-comment de `find_for_category_at_date` (`vat_rates.rs:81-88`) gagne un lecteur (AC-1) ;
+  P2-2 `split_default_vat` : `debug_assert` sur un montant négatif contredisait la symétrie testée par la fixture
+  (tests en debug) → retiré, l'appelant passe `|G|` (AC-2) ; P2-3 l'écran « envoie toujours le couple » : avec un genre
+  `Other` en place, tout `PUT` rendait 400 `kind_unknown` → couple omis s'il n'est pas touché (AC-8). Relu sans
+  écart : diff `e80f7695..7ef077cc` de la fiche ; `company_invoice_settings.rs` (dépôt) `:40-58, 92-96, 285-301,
+  396-400, 1226-1232, 1262-1284`, `MIRROR` `:121-159` ; route `:41, 96-144, 169, 180-200, 307, 365-371` ;
+  `accounts_designated_archive_e2e.rs:37, 142, 198, 202, 1075-1084` ; `accounts/+page.svelte:347, 795-797` ;
+  `vat_rates.rs:80-108, 140-165` ; `vat.rs:36-44` ; `money.rs:62-70` ; `vat-purchase.ts:30-45` ; `routes/accounts.rs:55-66,
+  76-114, 139, 215` ; `repositories/accounts.rs:27, 57, 80, 530, 622` ; `entities/account.rs:222, 249, 301` ;
+  `backup.rs:93-111, 136-144` ; `csv_tables.rs:265, 953` ; `plan_comptable.rs:31-43` ; `user-manual.tex:219, 491,
+  1791-1792, 3655` ; 37-1 AC-4 (`:420-446`, notes de dépendance onze et O3) ; 38-6a AC-8 et 38-6b (appel par `|G|`,
+  `default_vat_at`). Axes non exercés : aucune exécution ; MidpointAwayFromZero contre `Big.roundHalfUp` relu à la
+  documentation de mémoire (big.js : équidistant loin de zéro), non exécuté.

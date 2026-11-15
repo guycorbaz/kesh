@@ -6,10 +6,10 @@ Status: ready-for-dev
 E1, E2, E3, E10, E11, E12, E19, E20, E24 ; contrats C-38-1, C-38-2, C-38-3, C-38-5, C-38-12. Décisions B1, B2, B3,
 B8, B9, B11, B12, B22 ; arbitrages O1, O10, O12. **Dépend de** 38-1 (routes des connexions et des secrets), 38-2
 (comptes prestataires, bloc `provider` de `GET /bank-accounts` ; **porte la migration breaking**, O1), 38-3a (colonnes
-de `provider_fetch_runs` dont `truncated_from` et `ignored_count`, soldes vus et `PATCH …/balances-seen/{currency}`,
-en-tête `PROVIDER_API` et `providerConnection` des imports, gardes d'import), 38-3b (passage asynchrone
-`POST …/fetch` → 202, `GET …/runs`, `GET …/balances` et contrôle des soldes, `GET /provider-fetch/connections`,
-transport factice et route `_test`), 38-7 (« Tester la connexion »,
+de `provider_fetch_runs` dont `truncated_from` et `ignored_count`, table des soldes vus, en-tête `PROVIDER_API` et
+`providerConnection` des imports, gardes d'import), 38-3b (passage asynchrone `POST …/fetch` → 202, `GET …/runs`,
+`GET …/balances` et contrôle des soldes, **`PATCH …/balances-seen/{currency}`** (38-3b AC-7), `GET
+/provider-fetch/connections`, transport factice et route `_test`), 38-7 (« Tester la connexion »,
 `earliestFetchFrom`, codes d'erreur PayPal), 38-8 (surcharges `eventKindOverrides`), 37-4 (`account_balances::
 balances_as_of`). **Suivie de** 38-9b (règles, propositions, rattachement, file, E2E du parcours comptable).
 **Aucune migration** ; une route de lecture (AC-8, *Écart à l'epic*).*
@@ -74,7 +74,14 @@ rapproché.
      mouvements ; vous pouvez toujours télécharger à la demande », B9), **réglages PayPal** : `clientId` (identifiant
      de l'application REST ; aide : « non secret ; le secret se saisit à part ») ; `payerId` **en lecture seule**
      (posé par le serveur, 38-1 AC-4, 38-7 AC-8). **`accountEmail` n'est ni affiché ni saisi** : retiré du JSON par O10
-     (aucune API de PayPal ne le rend) — si 38-1 le garde encore, le champ est ignoré à l'écran.
+     (aucune API de PayPal ne le rend ; 38-1 AC-4 le refuse comme clé inconnue).
+   - **Corps de `settings` envoyé** (38-1 AC-4 : `settings` présent **remplace** les champs modifiables par le client et
+     **refuse** un champ posé par le serveur) : une fonction pure `providerSettingsBody(form)` construit l'objet à partir
+     des **seuls** champs du client — `clientId`, `eventKindOverrides`, `overlapDays` —, **jamais** `payerId` (sinon `400
+     PROVIDER_SETTINGS_INVALID`, `details.field = "payerId"`) et **toujours les trois** (un champ omis serait remis à son
+     défaut : surcharges effacées, recouvrement ramené à 3) ; l'objet `settings` lu au `GET` n'est jamais renvoyé tel
+     quel. Test Vitest : réglages lus avec `payerId` → corps sans `payerId` ; surcharges et recouvrement non touchés → corps
+     qui les porte inchangés. « Télécharger depuis » : maximum = lendemain du jour (38-1 AC-4, `VALIDATION_ERROR` sinon).
    - **Surcharges de codes** (38-8 AC-7), dans un bloc replié « Avancé » : paires code `T0000` (quatre chiffres, `^T\d{4}$`)
      → genre (liste fermée : vente, achat, frais, retrait, dépôt, litige, autre, ignorer ; ni conversion ni
      remboursement), ajout et retrait de lignes, **50 au plus** ; aide : « ne vaut que pour les codes que Kesh ne classe
@@ -109,7 +116,10 @@ rapproché.
    `errorCode` (AC-10) avec le remède : `PROVIDER_PERMISSION_MISSING` → « Dans PayPal Developer, cochez *Transaction
    Search* pour cette application, puis réessayez » ; `PROVIDER_AUTH_FAILED` → « Identifiant ou secret refusé par
    PayPal : vérifiez l'identifiant de l'application et remplacez le secret ». Succès : `payerId` et la liste des
-   soldes lus (devise, total, au format suisse ; « lus à l'instant, non enregistrés »). Pendant l'appel : bouton
+   soldes lus (devise, total, au format suisse ; « lus à l'instant, non enregistrés »). **La réponse porte `version`**
+   (38-7 AC-8 : un `payerId` neuf s'écrit avec `version + 1`) : la fiche adopte cette `version` et relit `payerId`
+   (`GET /provider-connections/{id}`) avant tout `PATCH` — sans quoi le formulaire ouvert avant le test échouerait en
+   `409 OPTIMISTIC_LOCK_CONFLICT` ; test Vitest : test réussi puis `PATCH` → corps à la version rendue. Pendant l'appel : bouton
    désactivé, indicateur ; `timeoutMs` du client à **250 s** (`CallOptions`, `frontend/src/lib/shared/utils/api-client.ts:61`)
    — le défaut de 30 s ne couvre pas un jeton puis des soldes à 60 s de délai chacun, avec un second essai après 2 s sur
    5xx (38-7 AC-1, AC-7 : au pire 2 × (60 + 2 + 60) s) ; la valeur se relit de 38-7 si ses bornes changent. `retry:
@@ -126,14 +136,23 @@ rapproché.
      PROVIDER_FETCH_IN_PROGRESS` (`details.runId` : l'écran se met à suivre ce passage), `404` ; bouton réactivé.
    - Résultat, lu de la ligne de passage (`GET …/runs` de 38-3b, colonnes de 38-3a) : nombres insérés
      (`inserted_count`), déjà présents (`known_count`), comptes non téléchargés faute de compte Kesh
-     (`skipped_unlinked_count`, renvoi à AC-6), état et code d'erreur (libellés AC-10). S'y ajoutent, **si 38-3b les
-     porte** (liste inter-fiches P1 ; forme exacte relue à la fiche 38-3b, *Questions ouvertes*, Q-38-9a-1) :
-     - les **enregistrements écartés** par le classement de 38-8 (`ignored_count`, total) et, si la ligne les détaille,
-       leur ventilation `skipped` — refusés (`denied`), en attente (`pending`, « relus au prochain téléchargement »),
-       hors solde (`non_balance`) — en texte discret, jamais en erreur ; zéro → rien d'affiché ;
-     - l'avis de **date de départ bornée** par l'historique de PayPal (38-7 AC-9, `truncated_from` non nul) : « PayPal
-       ne remonte que trois ans : téléchargé depuis le <date suisse de `truncated_from`> ».
-     Absents de la réponse : l'écran ne les affiche pas (aucune valeur inventée).
+     (`skipped_unlinked_count`, renvoi à AC-6), état et code d'erreur (libellés AC-10). S'y ajoutent (38-3b AC-6 :
+     colonnes de la table, `truncatedFrom` et `ignoredCount` compris ; Q-38-9a-1 close) :
+     - les **enregistrements écartés** (`ignoredCount`, **total seul** : 38-3b AC-4 somme `skipped.denied + pending +
+       non_balance` dans `ignored_count` et n'en garde pas la ventilation) — « N enregistrements PayPal écartés (refusés,
+       en attente — relus au prochain téléchargement —, ou sans effet sur le solde) », en texte discret, jamais en erreur ;
+       zéro → rien d'affiché ;
+     - l'avis de **date de départ bornée** par l'historique de PayPal (38-7 AC-9, `truncatedFrom` non nul) : « PayPal
+       ne remonte que trois ans : téléchargé depuis le <date suisse de `truncatedFrom`> » ;
+     - un passage `succeeded` dont `errorDetail` commence par `balances_unavailable:` (38-3b AC-7 : soldes non lus,
+       mouvements téléchargés) → « Soldes non lus à ce passage : contrôle de complétude non mis à jour », en
+       avertissement discret ; le reste d'`errorDetail` n'est jamais affiché brut.
+     **Deux vocabulaires de codes** (38-3b AC-4, 38-7 AC-7) : `errorCode` d'un **passage** est `code()` en minuscules
+     (`auth`, `permission`, `rate_limited`, `unavailable`, `invalid_response`, `transport`, `window_too_large`,
+     `rejected`, `invalid_window`) ou un code propre du passage (`connector_unavailable`, `interrupted`,
+     `account_unavailable`, `database`) ; `lastError` de la **connexion** et `errorCode` de « Tester » portent le
+     **code d'API** (`PROVIDER_AUTH_FAILED`…, `PROVIDER_FETCH_INTERRUPTED`…). `provider-labels.ts` a une table par
+     vocabulaire (AC-10), test : chaque valeur des deux listes a un libellé, une valeur inconnue → brute.
    - **État du dernier passage** (liste et fiche) : `lastRunAt`, `lastRunStatus` (texte par valeur ; une valeur
      inconnue → « État inconnu (`<valeur>`) », lecture tolérante E4), `lastError` → message du code (AC-10), jamais un
      texte de PayPal. **Historique** des derniers passages (déclencheur, utilisateur, fenêtre, durée, état, nombres) par
@@ -146,8 +165,8 @@ rapproché.
      ignoré). Données : `GET /api/v1/provider-connections/{id}/balances` (38-3b ; Comptable et Administrateur) →
      `unlinked: [{ currency, firstSeenAt, lastSeenAt, lastAmount, ignored }]` (devises déjà tenues par un compte
      exclues) et `accounts: […]` (AC-8 a). **Ignorer** : `PATCH /api/v1/provider-connections/{id}/balances-seen/
-     {currency}` `{ ignored }` (38-3a, Administrateur, session ; **pas de `version`**). Noms arrêtés par 38-3a et
-     38-3b (O12), plus à proposer.
+     {currency}` `{ ignored }` (**38-3b AC-7**, Administrateur, session ; **pas de `version`** ; table de 38-3a). Noms
+     arrêtés par 38-3b (O12), plus à proposer.
    - Actions, Administrateur : **« Créer le compte »** → dialogue `POST …/accounts` `mode: "create"` (38-2 AC-3) :
      devise **fixée** à celle du solde, nom proposé « <libellé de la connexion> <devise> » (modifiable), compte du plan
      **en cette devise** (sélecteur filtré : de bilan, actif, imputable, non lié à un autre compte prestataire —
@@ -165,19 +184,26 @@ rapproché.
    `{ version, feeAccountId }` ; sélecteur : comptes de charge actifs imputables **de la même devise** ; aide : « le
    regroupement des frais est le compte parent de ce compte dans le plan », B3) ; « Retirer les réglages » (`DELETE`,
    confirmation destructive : « le compte bancaire reste, il n'est plus alimenté par PayPal ») ; refus
-   `PROVIDER_ACCOUNT_IN_USE` → les raisons de `details.reasons`, une par ligne.
+   `PROVIDER_ACCOUNT_IN_USE` → les raisons de `details.reasons`, une par ligne, chacune libellée (`foreign_currency_link`,
+   `transactions`, `no_iban`, `balance_seen` — 38-2 AC-5, 38-3a AC-4 ; table de `provider-labels.ts`) ; de même les
+   raisons de `FEE_ACCOUNT_INVALID` (`not_found`, `archived`, `not_postable`, `not_expense`, `currency_mismatch`,
+   `missing`). Le sélecteur du compte de frais **suggère** un sous-compte par prestataire et par devise (B3, 38-2 AC-5),
+   sans l'imposer.
 8. **AC-8 — Contrôles de solde** (FR-38-9a-5, E20).
    - **(a) Complétude** (contrôle des soldes de 38-3b, C-38-5) : par compte, lue de `GET /provider-connections/{id}/balances` →
      `accounts[]` `{ bankAccountId, currency, opening, reported, expected, gap, complete }` : « Téléchargement complet au
      <`reported.asOf`> » (`complete: true`) ou **« Téléchargement incomplet : écart de <`gap`, devise> au <as_of> »** en
      avertissement (`complete: false`), avec le renvoi « Relancez un téléchargement ; si l'écart demeure, voir le
-     manuel » ; **`complete: null`** (compte sans solde d'ouverture ou sans solde rapporté, ou passage en
-     `balances_unavailable`) → « Contrôle non disponible » en gris, jamais en vert ; donnée lue telle que 38-3b la
-     calcule (jamais recalculée à l'écran).
+     manuel » ; **`complete: null`** (38-3b AC-7 : compte sans solde d'ouverture ou sans solde rapporté, ou
+     `fetched_through` du compte antérieur à l'`asOf` du dernier solde rapporté — un passage en `balances_unavailable`
+     ne rend pas `null`, il laisse le dernier solde rapporté, que l'avis de l'AC-5 signale) → « Contrôle non
+     disponible » en gris, jamais en vert ; donnée lue telle que 38-3b la calcule (jamais recalculée à l'écran).
    - **(b) Écart comptable** : *Écart à l'epic* — E20 (b) n'est porté par aucune route des fiches 38-1 à 38-3b ; cette
      story l'ajoute en **lecture seule** : `GET /api/v1/bank-accounts/{id}/provider-balance-check` (`authenticated_routes`,
-     `crates/kesh-api/src/lib.rs:1017`, comme la lecture `GET /api/v1/bank-accounts` de `:1229` ; tout rôle, clés d'API
-     admises en lecture), réponse
+     `crates/kesh-api/src/lib.rs:1017`, comme la lecture `GET /api/v1/bank-accounts` de `:1229` ; tout rôle authentifié
+     par **session** — **clés d'API refusées dans le handler** (`ApiKeyOperationForbidden`), comme `GET
+     /provider-connections/{id}/balances` de 38-3b AC-7, qui rend le même solde rapporté : les données du prestataire ne
+     s'ouvrent pas aux clés par une seconde porte (E23 ; test : clé `read` → 403), réponse
      `{ currency, asOf, reported, ledger, unreconciled, unexplained }` ou `404` si le compte n'est pas prestataire ou
      n'a aucun solde rapporté :
      - `reported` = dernier solde rapporté de la devise (`provider_balance_snapshots`, `kind = 'reported'`, table de 38-3a écrite par 38-3b), `asOf`
@@ -188,8 +214,13 @@ rapproché.
        `amount_currency`** (DRY avec 38-10, C-38-10-4) ; montant CHF pour un compte en CHF ;
      - `unreconciled` = Σ `amount` des transactions `pending` du compte (rejetées et « examinées » comprises : elles
        restent `pending`, 38-6b C-38-6b-6) dont **`booked_at ≤ asOf`** (l'instant, comme le contrôle de complétude de
-       38-3b, non `booking_date`) ;
-     - `unexplained` = `reported − ledger − unreconciled`. ⚠️ **Limite écrite** (doc-comment, manuel) : `ledger` est
+       38-3b, non `booking_date`) ; une transaction **sans** `booked_at` (import de fichier d'un compte posé en `attach`
+       avant ses réglages, 38-2 AC-3) compte si sa `booking_date ≤` la date de Zurich de `asOf` — sans quoi elle
+       manquerait en silence (test) ;
+     - `unexplained` = `reported − ledger − unreconciled`. ⚠️ **Sens** : relevé moins livres, **l'inverse** de
+       `statementGap` de la même page (`statement_gap`, `repositories/bank_accounts.rs:2019-2024` : livres − relevé) ;
+       l'écran ne montre donc jamais les deux nombres sous le même mot — « Inexpliqué » ici, « Écart » là — et le manuel
+       dit le sens de chacun. ⚠️ **Limite écrite** (doc-comment, manuel) : `ledger` est
        arrêté à la **journée** de Zurich de `asOf`, `reported` et `unreconciled` à l'**instant** ; un mouvement de la même
        journée postérieur à `asOf` et déjà rapproché fait apparaître un `unexplained` transitoire, résorbé au passage
        suivant — test à deux mouvements de part et d'autre de `asOf`.
@@ -197,9 +228,10 @@ rapproché.
      W = 0 en vert) sur la ligne du compte (AC-7) et sur la page des comptes bancaires (AC-9). Code dans un module de
      lecture neuf (`kesh-db::repositories::provider_balance_check`, une fonction), route dans
      `routes/provider_connections.rs` ou un fichier voisin — **pas** dans `routes/bank_accounts.rs`. Registre (C-38-12) :
-     route de lecture, hors `LIB_ROUTES` des mutantes ; décompte des routes en delta (+1 lecture) si le registre les
-     compte. Tests : compte EUR à transactions rapprochées et non rapprochées, écart construit, compte non prestataire →
-     404, autre société → 404, Consultation → 200.
+     route de lecture, hors `LIB_ROUTES` — le registre ne balaie que `post`, `put`, `delete`, `patch`
+     (`crates/kesh-api/tests/audit_route_registry.rs:151`) : **delta 0**. Tests : compte EUR à transactions rapprochées
+     et non rapprochées, écart construit, compte non prestataire → 404, autre société → 404, Consultation → 200, clé
+     d'API → 403.
    - Le **relevé joint** et son solde de clôture (E20, contrôle de clôture) sont à 38-10, pas ici.
 9. **AC-9 — Page des comptes bancaires** (FR-38-9a-6 ; bloc `provider` de 38-2 AC-8).
    - Ligne d'un compte prestataire : badge « PayPal · <libellé de connexion> · <devise> » (composant
@@ -222,7 +254,9 @@ rapproché.
     repli français (`frontend/src/lib/shared/utils/i18n.svelte`) ; **pas de sélecteur Fluent** (`{ $n -> … }`) — le
     client reçoit les messages pré-résolus (raison écrite dans `frontend/src/lib/features/reconciliation/already-booked.ts`) :
     paires `-one` / `-other` au besoin. Libellés des **codes** (`unusableReason`, `check`, `lastRunStatus`, codes
-    d'erreur de 38-1, 38-2, 38-3a, 38-3b, 38-7, motifs d'écart `skipped`, genres de mouvement des surcharges) dans un module unique
+    d'erreur d'API de 38-1, 38-2, 38-3a, 38-3b, 38-7, **codes de passage** `errorCode` en minuscules — table à part,
+    AC-5 —, raisons de `PROVIDER_ACCOUNT_IN_USE` et de `FEE_ACCOUNT_INVALID`, motifs de `PROVIDER_SETTINGS_INVALID`,
+    genres de mouvement des surcharges) dans un module unique
     `provider-labels.ts` (patron `failed-proposal-label.ts` : table écrite à la main, repli qui montre le code brut).
     Les messages d'erreur rendus par le serveur (`error.message`, traduits par `t(…)`) s'affichent tels quels quand le
     module n'a pas de libellé propre. `npm run lint-i18n-ownership` vert. Aucun texte ne promet une écriture
@@ -237,13 +271,27 @@ rapproché.
       devise et regroupement par le compte parent (B3) ; surcharges de codes ; contrôles de solde (a) et (b), et que
       faire d'un écart ; **les secrets ne voyagent pas avec les sauvegardes et se ressaisissent après toute
       restauration** (E2) ; rotation de la clé hors périmètre (C-38-13) ; la recette sur une instance jetable (B12).
-    - **Mise à jour** (E19, NFR-38-3-2 de l'ex-38-3, désormais en 38-3a) : sous-section `\subsubsection{Passer à la <X.Y.Z>}` dans
+    - **Limites et faits que les fiches amont renvoient à ce manuel** (inventaire relevé par `grep -n "38-9a"` sur les
+      fiches 38-1 à 38-8, à recompter au développement, chacun écrit ou dit sans objet au Change Log) :
+      - 38-2 AC-4 et Notes : un compte prestataire **archivé** garde sa ligne de réglages et **tient sa devise** pour la
+        connexion (`uq_ppa_connection_currency`) — recréer un compte de même devise exige le retrait des réglages,
+        refusé s'il a des transactions ;
+      - 38-3a AC-4 : retirer les réglages est refusé dès qu'un passage a lu le solde de la devise (`balance_seen`) — la
+        connexion ne se supprime donc plus ; on la passe « à la demande » pour arrêter les téléchargements ;
+      - 38-8 AC-7, AC-10 : comment PayPal est classé (familles de codes), ce qui va à la file « à examiner » (code
+        inconnu, litige), que les surcharges ne valent que pour les codes classés « autre » et pour les mouvements
+        téléchargés **après** leur écriture ;
+      - 38-7 AC-8, AC-9 : la permission *Transaction Search* et la création de l'application REST ; la borne de trois
+        ans ;
+      - le sens des nombres du contrôle (b) (« Inexpliqué » = selon PayPal − aux livres − non rapproché), distinct de
+        l'écart de relevé de la liste (AC-8).
+    - **Mise à jour** (E19, NFR-38-2-3 et 38-2 AC-1 — la migration breaking, O1) : sous-section `\subsubsection{Passer à la <X.Y.Z>}` dans
       `\section{Mise à jour de Kesh}` (patron de `\subsubsection{Passer à la 0.17.6}`, ligne 2538), **numéro de Q1**
       (Guy) : **sauvegarde manuelle complète obligatoire avant la mise à jour** (base, `.keshbackup`, dossier des
       documents) et **seul chemin de retour** ; la migration breaking, **celle de 38-2** (O1) : la contrainte
       « un compte bancaire a un IBAN » remplacée (un compte prestataire n'en a pas), `match_type` des règles élargi,
-      `kesh_version_min_required` relevé ; **aucun DDL** pour `source_format = 'PROVIDER_API'` (valeur écrite dès la
-      première téléchargement, que la version précédente ne sait plus lire) ; refus de la version précédente sur la base
+      `kesh_version_min_required` relevé ; **aucun DDL** pour `source_format = 'PROVIDER_API'` (valeur écrite dès le
+      premier téléchargement, que la version précédente ne sait plus lire) ; refus de la version précédente sur la base
       migrée et sur une sauvegarde de la nouvelle ; sauvegarde `backup/pre-upgrade/` écrite par Kesh (\S\ref{sec:sauvegarde-avant-maj}) ;
       variable neuve `KESH_SECRETS_KEY` (renvoi). Le texte **ne contient pas** de numéro de version tant que Q1 n'est pas
       tranchée : la sous-section s'écrit au développement si le numéro est connu, sinon la story attend (aucun
@@ -253,7 +301,9 @@ rapproché.
       retour »), résultat au Change Log. Manuels DE/IT/EN : « à traduire » noté si l'écart existe.
 12. **AC-12 — Tests** (Vitest, `npm run test:unit` ; E2E Playwright).
     - Vitest : formulaire de connexion (validation, `earliest`, surcharges, `overlapDays` et son refus `out_of_range`,
-      refus `details`), résultat d'un passage (écartés et `truncated_from` présents puis absents), composant du secret
+      refus `details`, `providerSettingsBody` sans `payerId` et avec les trois champs, version adoptée après le test),
+      résultat d'un passage (`ignoredCount` nul puis non nul, `truncatedFrom` présent puis nul, `balances_unavailable`,
+      code de passage et code d'API libellés chacun par sa table), composant du secret
       (vidé après succès et après échec ; jamais dans un `data-*` ni dans le DOM rendu : rendu du composant après saisie
       puis enregistrement, `container.innerHTML` ne contient pas la valeur marqueur), liste de contrôles du test
       (chaque `check`, `ok: null`), libellés (`provider-labels.ts` : chaque code connu a un libellé, code inconnu → brut),
@@ -266,7 +316,8 @@ rapproché.
     - Vitest du suivi de passage (AC-5) : 202 puis `running` puis `succeeded` ; `PROVIDER_FETCH_IN_PROGRESS` → suit
       `details.runId` ; abandon de la page → plus d'appel.
     - **E2E** `frontend/tests/e2e/provider-connections.spec.ts`, contre le **transport factice** de 38-3b et ses
-      réponses PayPal par défaut (38-7 AC-10) : Administrateur crée une connexion, dépose un secret marqueur, teste
+      réponses PayPal par défaut (38-7 AC-10) — préalables posés par l'API dans le `beforeAll` : société et exercice
+      **multi-devises** (37-1), sans quoi le compte EUR est refusé `MULTI_CURRENCY_DISABLED` — : Administrateur crée une connexion, dépose un secret marqueur, teste
       (✓ partout), télécharge, voit les soldes CHF/EUR/USD sans compte, crée le compte EUR (compte du plan EUR du seed
       ou créé par l'API dans le test), voit le badge sur `/bank-accounts` et le contrôle (b) ; **le secret marqueur
       n'apparaît jamais** dans `page.content()` ni dans les réponses interceptées (`page.on('response')`) ; route
@@ -308,18 +359,16 @@ rapproché.
 - **E20 (b) sans route** : l'epic veut l'écart comptable « affiché à l'écran du compte » mais aucune story n'en porte la
   lecture (38-3b : (a) ; 38-10 : relevé joint) ; 38-9a l'ajoute (AC-8), ce qui lui fait toucher `kesh-db` et `kesh-api`
   en plus de `frontend` (quatre modules avec i18n et manuels : dans la règle de splitting).
-- **Routes des soldes vus** (E12) : non nommées par l'epic ; arrêtées par 38-3a (`PATCH …/balances-seen`) et 38-3b
-  (`GET …/balances`), O12.
+- **Routes des soldes vus** (E12) : non nommées par l'epic ; arrêtées par 38-3b (`PATCH …/balances-seen`, `GET
+  …/balances`, AC-7), sur la table de 38-3a, O12.
 - **E2E** : l'epic n'en demande qu'en 38-9b ; un parcours d'administration est ajouté ici (AC-12) — c'est le seul test
   qui voie le secret ne pas traverser la frontière HTTP vers l'écran.
 
 ## Questions ouvertes
 
-- **Q-38-9a-1** *(réduite, P1 ; presque close par la liste inter-fiches)* : routes et droits **arrêtés** (O12) ; la
-  liste inter-fiches P1 ajoute à `provider_fetch_runs` (38-3a) `truncated_from` et `ignored_count`, rendus par
-  `GET …/runs` (38-3b), et le passage écrit `skipped { denied, pending, non_balance }` à son état. Reste à relire à la
-  fiche 38-3b la forme exacte (noms camelCase, `skipped` ventilé ou seul `ignored_count`) ; l'AC-5 n'affiche que ce
-  que la réponse porte.
+- ~~**Q-38-9a-1**~~ *(close, P2)* : relu à 38-3b AC-4 et AC-6 — le passage somme `skipped` dans `ignored_count` et ne
+  garde pas la ventilation ; `GET …/runs` rend les colonnes de la table, `truncatedFrom` et `ignoredCount` compris.
+  L'AC-5 affiche le total seul.
 - **Q-38-9a-2** (Guy, Q1 de l'epic) : numéro de la release, pour la sous-section *Passer à la …* (AC-11).
 - ~~**Q-38-9a-3**~~ *(close, P1)* : `accountEmail` retiré par O10.
 
@@ -354,8 +403,9 @@ rapproché.
 - **Secrets** : le composant ne tient la valeur que dans un `$state` local au composant, remis à `''` dans un
   `finally` ; pas de `bind:value` vers un store.
 - **Points de contact** : 38-1 (forme de réponse, `unusableReason`, contrôles du test, codes) ; 38-2 (routes et codes
-  des comptes, bloc `provider`) ; 38-3a (colonnes du passage, soldes vus et leur décision, en-tête `PROVIDER_API`,
-  gardes d'import) ; 38-3b (fetch, passages, soldes rapportés, complétude, transport factice, route `_test`) ; 38-7 (`earliestFetchFrom`, contrôles distants, codes) ; 38-8 (surcharges) ; 38-9b (même vocabulaire,
+  des comptes, bloc `provider`) ; 38-3a (colonnes du passage, table des soldes vus, en-tête `PROVIDER_API`,
+  gardes d'import) ; 38-3b (fetch, passages, soldes rapportés et décision « ignorer » d'un solde vu, complétude,
+  transport factice, route `_test`) ; 38-7 (`earliestFetchFrom`, contrôles distants, codes) ; 38-8 (surcharges) ; 38-9b (même vocabulaire,
   libellés des genres de mouvement partagés par `provider-labels.ts`).
 
 ### References
@@ -381,3 +431,20 @@ rapproché.
   bornes par requête, 60 s de 38-7, déjà prises par l'AC-4) ; découpage D-P1-1 : renvois à 38-3 portés sur 38-3a
   (colonnes, soldes vus et `PATCH …/balances-seen`, `PROVIDER_API`, gardes d'import) ou 38-3b (fetch, runs, `GET
   …/balances`, complétude, transport factice, `_test`).
+- 2026-11-15 — validation P2 (Opus) : 12 findings (0 CRITICAL, 0 HIGH, 7 MEDIUM, 5 LOW) ; remédiés dans la fiche, aucun
+  inter-fiches. MEDIUM : P2-1 corps de `settings` au `PATCH` (sans `payerId`, refusé par 38-1 AC-4 ; les trois champs du
+  client toujours, `settings` remplaçant) ; P2-2 `version` rendue par « Tester » (38-7 AC-8) adoptée, sinon 409 au
+  `PATCH` suivant ; P2-3 `PATCH …/balances-seen` posé par 38-3b AC-7, non 38-3a (en-tête, AC-6, Écart, Notes) ; P2-4
+  prémisse de Q-38-9a-1 fausse — 38-3b ne garde que `ignored_count` (somme) : ventilation retirée, Q close ; P2-5 deux
+  vocabulaires de codes (passage : `code()` en minuscules et codes propres ; connexion et test : codes d'API) et
+  `errorDetail` `balances_unavailable:` ; P2-6 la route (b) ouvrait aux clés d'API le solde rapporté que 38-3b AC-7
+  leur ferme — clés refusées ; P2-7 manuel : limites renvoyées ici par 38-2 (devise tenue par un compte archivé), 38-3a
+  (`balance_seen` rend la connexion insupprimable), 38-8 (classement, file, surcharges) absentes de l'AC-11. LOW : P2-8
+  cas de `complete: null` alignés sur 38-3b AC-7 ; P2-9 le registre ne balaie pas les `GET` (`audit_route_registry.rs:151`)
+  : delta 0 ; P2-10 sens d'« Inexpliqué » (relevé − livres) inverse de `statementGap` (`bank_accounts.rs:2019-2024`) ;
+  P2-11 transaction de fichier sans `booked_at` comptée par `booking_date` ; P2-12 rédaction (renvoi NFR-38-2-3,
+  « le premier téléchargement », reste d'`accountEmail`, préalable multi-devises de l'E2E, raisons de refus libellées,
+  suggestion d'un sous-compte de frais, date maximale). Relu au code : `+layout.svelte:147`, `api-client.ts:59-64`,
+  `lib.rs:1017`, `:1229`, `admin-manual.tex:2538`, `:3299`, `:2425`, `bank-import-display.ts:14-36`,
+  `audit_route_registry.rs:151`, `bank_accounts.rs:2019-2024`. Trend : P1 = 15 (3 HIGH, 7 MEDIUM) → P2 = 12 (0 HIGH, 7 MEDIUM). Axes non exercés : code
+  des stories amont (non écrit) ; PDF du manuel (non régénéré).

@@ -140,8 +140,9 @@ PayPal fiable, bornée et sans fuite de secret.
      `given_name` + `surname`, `payer_info.payer_name.alternate_full_name` ; `cart_info.item_details[].item_name`) ; les
      autres champs sont **ignorés** (PayPal en ajoute : `deny_unknown_fields` est **interdit** ici, à l'inverse des
      réglages E24), la réponse brute n'est **jamais** gardée (E8, données personnelles).
-   - **Validation stricte** (R5 de 37) — une violation rejette **la page entière** (`InvalidResponse { what, page,
-     record_index?, field? }` : le nom du champ et le rang de l'enregistrement, **jamais la valeur** ; écrits à
+   - **Validation stricte** (R5 de 37) — une violation rejette **la page entière** (`InvalidResponse { reason }`, la
+     variante de 38-3b, inchangée (AC-7) : `reason` est **composé de constantes** — quoi (`token`, `page`,
+     `pagination`, `as_of`, …), page, rang de l'enregistrement, nom du champ —, **jamais la valeur** ; écrits à
      `error_detail` du passage, car un enregistrement qui viole une règle bloque la fenêtre à chaque passage et doit
      se diagnostiquer sans lire la réponse brute ; rien de la page n'est rendu) : JSON non objet ; `transaction_details` absent ou non tableau ; plus de
      `page_size` enregistrements ; `page` rendu ≠ `page` demandé ; `total_pages` < `page` (sauf `total_items = 0`) ou
@@ -149,10 +150,17 @@ PayPal fiable, bornée et sans fuite de secret.
      `transaction_event_code` hors `^T\d{4}$` ; `transaction_status` hors `D|P|S|V` ; montant (`value`) qui n'est
      pas un décimal à au plus deux décimales ou dont la valeur absolue dépasse 10¹² ; `currency_code` hors
      `^[A-Z]{3}$` ; `fee_amount.currency_code` ≠ `transaction_amount.currency_code` ; date d'initiation non RFC 3339
-     ou hors `[start − 1 jour, end + 1 jour]` ; chaînes > 2000 caractères (sujet, nom, courriel > 254) ;
+     ou hors `[start − 1 jour, end + 1 jour]` (au-delà : réponse hostile ; **dans** cette tolérance mais hors de la
+     fenêtre demandée `[start, end)` : l'enregistrement est **retiré** avant le classement, sans compteur — il
+     appartient à la fenêtre voisine, qui le lit ; d'où une frontière juste quelle que soit la façon dont PayPal
+     borne `end_date`, et aucun `booked_at` hors fenêtre remis à `validate_page` de 38-3b, qui rejetterait la page —
+     validation P2) ; chaînes > 2000 caractères (sujet, nom, courriel > 254) ;
      `item_details` > 500 éléments. **Unicité** : deux enregistrements de même `transaction_id` **et** même devise dans
      une page → page rejetée (la doc dit que les identifiants ne sont pas uniques ; une collision dans une devise
      casserait `UNIQUE (bank_account_id, provider_tx_id)` de E6 en silence — à constater sur les réponses de Beat, AC-12).
+     ⚠️ Le même `transaction_id` dans **deux devises** est admis ici, mais `validate_page` de 38-3b refuse « deux fois
+     le même `provider_tx_id` dans une page » sans regarder la devise : texte à aligner chez 38-3b (« le même couple
+     `(provider_tx_id, currency)` », la clé unique étant par compte bancaire, donc par devise) — inter-fiche P2.
    - **Pages PayPal** (lues par le connecteur lui-même) : `total_pages` qui change d'une page à l'autre de la même
      fenêtre → `InvalidResponse { what: "pagination" }` (la fenêtre se reprend au passage suivant, passage de 38-3b,
      « un échec garde ce qui est inséré » : rien n'est rendu au passage tant que la fenêtre n'est pas lue en entier).
@@ -251,7 +259,13 @@ PayPal fiable, bornée et sans fuite de secret.
     est simulé) — 38-7 fournit les réponses synthétiques par défaut (jeton, soldes CHF/EUR/USD, une page de
     transactions couvrant les familles de 38-8), écrites en constantes du module et lues par les E2E de 38-9a/38-9b ;
     la route `_test` de 38-3b permet d'en servir d'autres (erreur 401, 403, 429, 500, `RESULTSET_TOO_LARGE`, réponse
-    invalide). Aucune route neuve : `LIB_ROUTES` et `TEST_ENDPOINT_ROUTES` sans entrée ajoutée (C-38-12 ; seul le
+    invalide). **Forme, décidée ici (validation P2)** : le corps de `POST /api/v1/_test/provider-connector` (38-3b,
+    pensé pour le `FakeConnector` : soldes, pages de mouvements, `skipped`) gagne, par `connectionId`, une variante
+    **additive** `paypalResponses: [{ method, path, query?, status, body }]` (JSON au format PayPal, servi dans
+    l'ordre, puis la dernière réponse répétée) ; une connexion `paypal` **sans** cette variante garde le
+    `FakeConnector` de 38-3b — les E2E de 38-9a/38-9b qui programment des mouvements ne changent pas —, une connexion
+    qui la porte tourne le `PaypalConnector` sur le transport factice. Aucune route neuve (`TEST_ENDPOINT_ROUTES`
+    inchangé) ; texte à porter à 38-3b AC-3 (inter-fiche P2). Aucune route neuve : `LIB_ROUTES` et `TEST_ENDPOINT_ROUTES` sans entrée ajoutée (C-38-12 ; seul le
     statut de `test_connection` change, AC-8).
 11. **AC-11 — Aucune fuite.** Le secret, l'en-tête `Authorization` et le jeton n'apparaissent dans **aucun** journal
     (`tracing` : les requêtes se journalisent par méthode et chemin, sans en-têtes ni requête complète), message
@@ -382,3 +396,14 @@ bornes par requête ; le passage lit `code()` ; `last_error` porte le code d'API
   (38-3a), rendue par `GET …/runs` (38-3b) ; découpage D-P1-1 : renvois à 38-3 portés sur 38-3b (crate, `Connector`,
   transport, fabrique, passage, déclenchement, transport factice, route `_test`) ou 38-3a (soldes vus, colonnes) ;
   dépendance à 38-3a ajoutée.
+- 2026-11-15 — validation P2 (Opus) : 0 CRITICAL, 0 HIGH, 4 MEDIUM, 0 LOW ; remédiés dans la fiche sauf les textes à
+  porter à 38-3b (P2-3, P2-4). P2-1 : `InvalidResponse { what, page, record_index?, field? }` (AC-4) contredisait
+  `InvalidResponse { reason }` de 38-3b et l'AC-7 (« aucune variante renommée ») → `reason` composé de constantes ;
+  P2-2 : un enregistrement hors de `[start, end)` dans la tolérance d'un jour passait à `validate_page` de 38-3b, qui
+  rejette la page (`booked_at` hors fenêtre), et la frontière de l'AC-5 dépendait de la borne de `end_date` →
+  retiré avant le classement ; P2-3 : unicité par devise ici, par page chez 38-3b → inter-fiche ; P2-4 : la route
+  `_test` de 38-3b ne savait pas servir de réponses au format PayPal → variante additive `paypalResponses`,
+  `FakeConnector` gardé sans elle. Code relu : `Cargo.toml:109`, `config.rs:1538`, `mail/mod.rs:33,69`,
+  `lib.rs:61,84,98,119`, `main.rs:439`, `middleware/auth.rs:285`, `test_endpoints.rs:349`, `api-client.ts:6,393`
+  (sous `frontend/src/lib/shared/utils/`), `audit_route_registry.rs:1009` — conformes ; documentation PayPal des
+  codes d'événement relue (WebFetch).
