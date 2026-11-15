@@ -277,7 +277,8 @@ Une mutation équivalente se dit.
 - QR-facture : le récépissé et la partie paiement sont délimités par deux lignes pointillées portant chacune des
   ciseaux, comme la directive SIX l'exige pour une QR-facture en PDF ; la ligne verticale entre le récépissé et la partie
   paiement manquait. L'intitulé du point de dépôt, au bas du récépissé, est désormais aligné à droite, comme la directive
-  le demande, et ne touche plus cette ligne, quelle que soit la langue du client. Le code QR et le reste du bulletin ne
+  le demande, et finit à 5 mm de cette ligne, quelle que soit la langue du client, là où il débordait jusqu'au bord de
+  la partie paiement en allemand, en anglais et en italien (revue P1, E-2). Le code QR et le reste du bulletin ne
   changent pas. **Les PDF déjà émis et figés ne changent pas** ; une facture validée jamais ouverte, un rappel et un PDF
   refigé par un administrateur prennent le nouveau rendu. (refs #944, refs #12)
 
@@ -291,6 +292,13 @@ Une mutation équivalente se dit.
   débordement (qui atteint déjà le QR, et que le manuel dit à `:1300` : « une ligne faite de lettres très larges peut
   encore atteindre le code QR au reçu »), neuf pour la ligne. Une adresse ordinaire reste en deçà de 57 (AC6). À écrire
   au Dev Agent Record.
+- **Seconde limite connue jusqu'à la 36-12b** (revue P1, E-1) : le récépissé se remplit vers le bas sans plancher
+  (`ADRESSE_PAS` 3,5 mm par ligne). Avec une référence QRR, la k-ième ligne du débiteur a sa base à 61,5 − 3,5 (Lc + k),
+  Lc les lignes du créancier : dès Lc + k ≥ 16, elle rencontre l'intitulé du point de dépôt (y de 4,52 à 7,04). Le cas
+  existait déjà (au-delà de 42 mm de ligne, l'intitulé partant de 47) ; l'intitulé partant désormais de 35,24 à 42,30,
+  une ligne de 30 à 42 mm le rencontre aussi. Seize lignes d'adresse cumulées : cas extrême, voisin de celui que le
+  manuel écrit déjà (« deux adresses … peuvent descendre hors de la feuille », `:1300`). Écrit au manuel (`:1302`) ;
+  la grille de la 36-12b fixe les positions verticales du récépissé et le reprend.
 - **#12** (CR-005, « Symbole ciseaux ✂ sur la ligne de séparation ») : la story en réalise la puce « Ajouter le glyph ✂ »
   (par un tracé, que § 3.7 permet : « scissors symbol ») ; ses autres puces (police embarquée, `é è ü €`, golden test)
   sont #943 (`docs/change_request.md:56-60`). **`refs #12`** à la PR, avec un commentaire qui dit ce qui est fait et
