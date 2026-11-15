@@ -152,14 +152,25 @@ rapproché.
        zéro → rien d'affiché ;
      - l'avis de **date de départ bornée** par l'historique de PayPal (38-7 AC-9, `truncatedFrom` non nul) : « PayPal
        ne remonte que trois ans : téléchargé depuis le <date suisse de `truncatedFrom`> » ;
-     - un passage `succeeded` dont `errorDetail` commence par `balances_unavailable:` (38-3b AC-7 : soldes non lus,
-       mouvements téléchargés) → « Soldes non lus à ce passage : contrôle de complétude non mis à jour », en
-       avertissement discret ;
-     - un passage `succeeded` dont `errorDetail` commence par `opening_unavailable:` (38-3b AC-7 : l'`opening` rendu
-       antérieur au début effectif n'a pu être complété — lecture de `[A, D)` en échec — et aucun solde d'ouverture n'a
-       été écrit ; inter-fiche P5) → « Solde d'ouverture non établi à ce passage : contrôle de complétude non
-       disponible, réessayé au passage suivant », en avertissement discret ; les deux préfixes peuvent coexister
-       (un avis chacun) ; le reste d'`errorDetail` (le `code()` qui suit) n'est jamais affiché brut.
+     - les **motifs** d'un passage `succeeded` : `errorDetail` en porte **un ou plusieurs, joints par `; `** (38-3b
+       AC-7 : `balances_unavailable`, puis `opening_unavailable`, un par devise au plus, chacun constant) ; une fonction
+       pure de `provider-labels.ts` **découpe** `errorDetail` sur `; ` et lit **chaque motif séparément** par son
+       préfixe (jamais `errorDetail` entier par « commence par » : le second motif d'un passage n'est pas en tête) ;
+       un avis par motif **distinct** (deux devises au même motif → un seul avis), en avertissement discret :
+       - `balances_unavailable: <code()>` (soldes non lus, mouvements téléchargés) → « Soldes non lus à ce passage :
+         contrôle de complétude non mis à jour » ;
+       - `opening_unavailable: <code()>` (l'`opening` rendu antérieur au début effectif n'a pu être complété —
+         lecture de `[A, D)` en échec — et aucun solde d'ouverture n'a été écrit) → « Solde d'ouverture non établi à
+         ce passage : contrôle de complétude non disponible, réessayé au passage suivant » ;
+       - `opening_unavailable: span` (même cas, lecture **non tentée** : `[A, D)` dépasse trois `max_window()`) →
+         « PayPal annonce un solde d'ouverture trop ancien pour être complété : contrôle de complétude non disponible
+         tant que PayPal annonce la même date (voir le manuel) » — jamais « réessayé » seul : 38-3b AC-7 le dit
+         **durablement** non disponible tant que PayPal sert le même `A` ;
+       - préfixe inconnu (lecture tolérante, E4) → « Avertissement de passage non reconnu (`<préfixe>`) », le seul
+         préfixe avant `:` ;
+       l'état du contrôle (a) de l'AC-8 reste celui que rend 38-3b (`complete: null` → « Contrôle non disponible »),
+       jamais déduit d'un motif ; le reste d'un motif (le `code()` ou `span` après `: `) n'est **jamais**
+       affiché brut, ni `errorDetail` entier ; libellés aux quatre locales (AC-10).
      **Deux vocabulaires de codes** (38-3b AC-4, 38-7 AC-7) : `errorCode` d'un **passage** est `code()` en minuscules
      (`auth`, `permission`, `rate_limited`, `unavailable`, `invalid_response`, `transport`, `window_too_large`,
      `rejected`, `invalid_window`) ou un code propre du passage (`connector_unavailable`, `interrupted`,
@@ -282,7 +293,8 @@ rapproché.
     paires `-one` / `-other` au besoin. Libellés des **codes** (`unusableReason`, `check`, `lastRunStatus`, codes
     d'erreur d'API de 38-1, 38-2, 38-3a, 38-3b, 38-7, **codes de passage** `errorCode` en minuscules — table à part,
     AC-5 —, raisons de `PROVIDER_ACCOUNT_IN_USE` et de `FEE_ACCOUNT_INVALID`, motifs de `PROVIDER_SETTINGS_INVALID`,
-    genres de mouvement des surcharges) dans un module unique
+    **motifs d'`errorDetail` d'un passage** — `balances_unavailable`, `opening_unavailable`, `opening_unavailable: span`
+    et le préfixe inconnu, AC-5 —, genres de mouvement des surcharges) dans un module unique
     `provider-labels.ts` (patron `failed-proposal-label.ts` : table écrite à la main, repli qui montre le code brut).
     Les messages d'erreur rendus par le serveur (`error.message`, traduits par `t(…)`) s'affichent tels quels quand le
     module n'a pas de libellé propre. `npm run lint-i18n-ownership` vert. Aucun texte ne promet une écriture
@@ -323,6 +335,10 @@ rapproché.
         qu'à l'AC-2) ;
       - l'instant des contrôles (a) et (b) est celui du **solde rapporté** que PayPal rend (`asOf`), qui peut précéder
         la fin de la fenêtre téléchargée (38-3b AC-7) ;
+      - 38-3b AC-7 : un solde d'ouverture que PayPal date avant le début du téléchargement se complète par une relecture ;
+        si elle échoue, le contrôle (a) reste « non disponible » et se retente au passage suivant ; si l'écart de dates
+        dépasse ce que Kesh relit (avis « trop ancien pour être complété », AC-5), il le reste **tant que PayPal annonce
+        la même date** ;
       - 38-7 AC-8, AC-9 : la permission *Transaction Search* et la création de l'application REST ; la borne de trois
         ans ;
       - le sens des nombres du contrôle (b) (« Inexpliqué » = selon PayPal − aux livres − non rapproché), distinct de
@@ -352,6 +368,10 @@ rapproché.
     - Vitest : formulaire de connexion (validation, `earliest`, surcharges, `overlapDays` et son refus `out_of_range`,
       refus `details`, `providerSettingsBody` sans `payerId` et avec les trois champs, version adoptée après le test),
       résultat d'un passage (`ignoredCount` nul puis non nul, `truncatedFrom` présent puis nul, `balances_unavailable`, `opening_unavailable` (avis distinct, contrôle (a) « non disponible »),
+      `opening_unavailable: span` (son propre libellé, sans « réessayé » seul), les deux motifs joints
+      `balances_unavailable: auth; opening_unavailable: span` (deux avis, le second reconnu hors de tête), deux
+      `opening_unavailable` identiques (un avis), préfixe inconnu (libellé générique, préfixe seul) ; le texte rendu
+      (`textContent` des avis, non `innerHTML`, qui porte des balises `<span>`) ne contient ni `auth` ni `span`,
       code de passage et code d'API libellés chacun par sa table), composant du secret
       (vidé après succès et après échec ; jamais dans un `data-*` ni dans le DOM rendu : rendu du composant après saisie
       puis enregistrement, `container.innerHTML` ne contient pas la valeur marqueur), liste de contrôles du test
@@ -559,3 +579,20 @@ rapproché.
   `lib.rs:522-524` ; la connexion multiple est permise (`uq_ppc_company_label`, 38-1) : seconde connexion réalisable —
   tous justes. Axes non exercés : code des stories amont, PDF, documentation PayPal. Trend : P4 = 5 (2 MEDIUM) → P5 =
   1 (1 MEDIUM) : une passe de plus est due (MEDIUM rendu, CLAUDE.md).
+- 2026-11-15 — validation P6 ciblée (Opus) : 2 findings (0 CRITICAL, 0 HIGH, 1 MEDIUM, 1 LOW), remédiés dans la fiche ;
+  aucun inter-fiche. Périmètre : `git diff 6ec31855 d6018f7d` de la fiche (remédiation P5) et le point inter-fiche du
+  prompt. MEDIUM : P6-1 AC-5 (remédiation P5-1, inter-fiche 38-3b AC-7 de la P5) — l'avis se déclenchait sur
+  « `errorDetail` commence par `opening_unavailable:` » ; or 38-3b AC-7 joint plusieurs motifs par `; `, dans l'ordre
+  `balances_unavailable` puis `opening_unavailable` : dans un passage aux deux motifs, `opening_unavailable` n'est pas en
+  tête et n'était jamais lu ; `opening_unavailable: span` (lecture non tentée, durable tant que PayPal sert le même `A`)
+  recevait le texte « réessayé au passage suivant », qui promet ce qui n'arrivera pas, et « le `code()` qui suit » ne
+  valait pas pour `span`. AC-5 réécrit : découpage sur `; `, un motif lu par préfixe, un avis par motif distinct, libellé
+  propre à `span`, préfixe inconnu → libellé générique au seul préfixe, état du (a) lu de 38-3b et jamais déduit du
+  motif ; AC-10 : motifs d'`errorDetail` dans `provider-labels.ts` ; AC-12 : Vitest (jointure, motif hors de tête,
+  `span`, doublon, préfixe inconnu, `textContent` sans `auth` ni `span` — non `innerHTML`, qui porte des `<span>`).
+  LOW : P6-2 AC-11 — la limite durable de `span` (38-3b AC-7) n'était pas au manuel : ajoutée à l'inventaire. Relu :
+  38-3b AC-7 (`opening` rendu antérieur, borne de trois `max_window()`, `opening_unavailable: <code()>` / `: span`,
+  jointure `; ` « dans cet ordre », « un par devise au plus », « 38-9a lit chaque motif séparément ») et son Change Log
+  P5 (LOW 38-3b-P5-1, P5-2) ; AC-8 (a) de la fiche (`complete: null` sans `opening` : juste, l'`opening` n'étant pas
+  écrit). Axes non exercés : code des stories amont (non écrit), PDF, documentation PayPal, reste de la fiche. Trend :
+  P5 = 1 (1 MEDIUM) → P6 = 2 (1 MEDIUM) : une passe de plus est due (MEDIUM rendu, CLAUDE.md).

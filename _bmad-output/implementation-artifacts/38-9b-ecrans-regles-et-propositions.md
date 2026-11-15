@@ -574,3 +574,14 @@ doublon et sans qu'aucune écriture ne passe sans que je l'aie vue.
   38-3b AC-3 (`"default"`), 38-7 AC-10 ; 38-6b AC-6 (dix motifs) ; propagation de P4-1 greppée dans la fiche
   (`aucune ligne`, `absente de l'onglet`) : aucun résidu. Axes non exercés : code des stories amont, PDF. Trend : P4 =
   4 (3 MEDIUM) → P5 = 1 (1 MEDIUM) : une passe de plus est due (MEDIUM rendu, CLAUDE.md).
+- 2026-11-15 — validation P6 ciblée (Opus) : 0 finding (0 CRITICAL, 0 HIGH, 0 MEDIUM, 0 LOW) ; aucun inter-fiche.
+  Périmètre : `git diff 6ec31855 d6018f7d` de la fiche (remédiation P5-1, AC-7). Vérifié : 38-6a AC-12 (l. 402-406 :
+  clé `reconciliation-review-reason-invoice-with-fee` « créée ici », quatre textes FR/DE/IT/EN identiques mot pour mot
+  à ceux de l'AC-7, 38-6b « pose celles des autres motifs ») ; 38-6b AC-10 (l. 362-364 : « posée par 38-6a AC-12 …
+  reprise ici sans être recréée ») ; 38-6b AC-6 : dix motifs, dont neuf hors `invoice_with_fee` — l'énumération de
+  l'AC-7 en donne neuf plus celui-ci, compte juste ; ligne 127 de la fiche (« libellés posés par 38-6a AC-12 et 38-6b
+  AC-10 ») cohérente ; aucun résidu de « posée par 38-6b » ni « 38-6b doit porter » hors Change Log daté (P4, laissé
+  tel quel). Remédiation P4-1 relue au code : `routes/reconciliation.rs:1282-1285` (`.map` sans filtre),
+  `ReconciliationProposals.svelte:600-603` (« Aucune correspondance ») — justes. Axes non exercés : code des stories
+  amont (non écrit), PDF, reste de la fiche. Trend : P5 = 1 (1 MEDIUM) → P6 = 0 : boucle close (aucun finding
+  au-dessus de LOW ; remédiation P5 hors code de production).
