@@ -268,7 +268,9 @@
 			toast.error(msg);
 		} finally {
 			importing = false;
-			if (!keepHold) {
+			// Une instance démontée ne touche plus au maintien (revue P2, E2-1) : il est
+			// un état de module, et pourrait appartenir à un autre panneau monté depuis.
+			if (!keepHold && !destroyed) {
 				// Story 36-5 — échec certain ou issue inconnue (aussi si le `catch` a jeté) :
 				// l'échéance est ramenée à au plus B à partir de maintenant, jamais allongée
 				// (revue P1, E1-2), et le maintien est levé au premier geste.

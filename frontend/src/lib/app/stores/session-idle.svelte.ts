@@ -28,7 +28,10 @@
  * une fois l'échéance atteinte, ni fermeture, ni écriture d'activité, ni
  * avertissement tant que le maintien dure — le serveur, lui, a déjà fermé la
  * session ; la fermeture a lieu au tic qui suit la levée ou l'échéance du
- * maintien. Elle est différée, jamais annulée.
+ * maintien. Elle est différée, jamais annulée — pendant l'import et après un
+ * échec ; après un import réussi, le panneau arrête ce module
+ * (`sessionIdle.stop()`) et termine lui-même la session au bout de B
+ * (`/login?reason=session_expired`).
  *
  * Ce qui compte comme activité : `keydown`, `pointerdown`, `pointermove`
  * (seulement si les coordonnées d'écran changent : le navigateur émet des

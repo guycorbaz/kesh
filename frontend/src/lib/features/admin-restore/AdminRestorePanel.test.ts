@@ -629,4 +629,69 @@ describe('AdminRestorePanel — Story 36-5 (maintien de session)', () => {
 		expect(authState.restoreHold).toBe(false);
 		expect(mockAuth.releaseRestoreHold).not.toHaveBeenCalled();
 	});
+
+	it('revue P2, E2-1 : la réponse tardive d’un panneau démonté ne raccourcit pas le maintien d’un autre', async () => {
+		horlogeSimulee();
+		const envoiA = enAttente<ReturnType<typeof succes>>();
+		const envoiB = enAttente<ReturnType<typeof succes>>();
+		mockApi.uploadFullImport.mockReturnValueOnce(envoiA.promise).mockReturnValueOnce(envoiB.promise);
+		// Panneau A : import en vol, puis démonté (le maintien est levé).
+		const a = render(AdminRestorePanel);
+		await importer(a.getByTestId, a.findByTestId);
+		a.unmount();
+		// Panneau B : import en vol, maintien de la phase 1.
+		const b = render(AdminRestorePanel);
+		await importer(b.getByTestId, b.findByTestId);
+		expect(authState.restoreHold).toBe(true);
+		// La réponse de A arrive tard, en échec : elle ne touche plus au maintien.
+		envoiA.reject({ code: 'INVALID_BACKUP_STRUCTURE', message: 'x', status: 400 });
+		await vi.advanceTimersByTimeAsync(0);
+		expect(mockAuth.shortenRestoreHold).not.toHaveBeenCalled();
+		await vi.advanceTimersByTimeAsync(60 * 60_000);
+		expect(authState.restoreHold).toBe(true);
+	});
+
+	it('revue P2, E2-2 : B est relu au succès (durée apprise pendant l’import)', async () => {
+		horlogeSimulee();
+		shared.minutes = 5;
+		const envoi = enAttente<ReturnType<typeof succes>>();
+		mockApi.uploadFullImport.mockReturnValue(envoi.promise);
+		const { getByTestId, findByTestId } = render(AdminRestorePanel);
+		await importer(getByTestId, findByTestId);
+		expect(mockAuth.holdForRestore).toHaveBeenNthCalledWith(1, PHASE_1);
+		shared.minutes = 1;
+		envoi.resolve(succes(0, 0));
+		await findByTestId('admin-restore-success');
+		expect(mockAuth.holdForRestore).toHaveBeenNthCalledWith(2, 60_000);
+		await vi.advanceTimersByTimeAsync(59_999);
+		expect(mockExpire).not.toHaveBeenCalled();
+		await vi.advanceTimersByTimeAsync(1);
+		expect(mockExpire).toHaveBeenCalledTimes(1);
+	});
+
+	it('revue P2, E2-2 : B est relu à l’échec (durée apprise pendant l’import)', async () => {
+		shared.minutes = 5;
+		const envoi = enAttente<ReturnType<typeof succes>>();
+		mockApi.uploadFullImport.mockReturnValue(envoi.promise);
+		const { getByTestId, findByTestId } = render(AdminRestorePanel);
+		await importer(getByTestId, findByTestId);
+		shared.minutes = 1;
+		envoi.reject({ code: 'INVALID_BACKUP_STRUCTURE', message: 'x', status: 400 });
+		await findByTestId('admin-restore-error');
+		expect(mockAuth.shortenRestoreHold).toHaveBeenCalledWith(60_000);
+	});
+
+	it('revue P2, E2-2 (B1-3) : au succès, la minuterie de lecture est armée AVANT le réarmement du maintien', async () => {
+		const espion = vi.spyOn(globalThis, 'setTimeout');
+		mockApi.uploadFullImport.mockResolvedValue(succes(0, 0));
+		const { getByTestId, findByTestId } = render(AdminRestorePanel);
+		await importer(getByTestId, findByTestId);
+		await findByTestId('admin-restore-success');
+		const index = espion.mock.calls.findIndex((c) => c[1] === B_DEFAUT);
+		expect(index).toBeGreaterThanOrEqual(0);
+		expect(espion.mock.invocationCallOrder[index]).toBeLessThan(
+			mockAuth.holdForRestore.mock.invocationCallOrder[1],
+		);
+		espion.mockRestore();
+	});
 });
