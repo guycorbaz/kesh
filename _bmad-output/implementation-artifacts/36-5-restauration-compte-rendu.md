@@ -644,6 +644,10 @@ expirée ». (refs #931)
 - L'angle mort de la 31-1b sur l'échec au `COMMIT` (`AdminRestorePanel.svelte:49-57`) : inchangé ; après un tel échec
   (500, échec « certain » pour l'écran), le maintien est levé au premier geste et un 401 renvoie alors à la connexion,
   comme aujourd'hui.
+- **Le maintien n'a pas de propriétaire** (revue de code P3, P3-2 ; tracé en **#1193**) : `onDestroy` du panneau lève le
+  maintien sans vérifier qu'il l'a posé ; deux panneaux vivants en même temps (cas que l'application ne rend pas : une
+  seule route à la fois) pourraient se lever le maintien l'un l'autre. La garde E2-1 (`!destroyed` dans le `finally`)
+  couvre la réponse tardive d'un panneau démonté ; le reste est hors périmètre, sans changement de code.
 
 ### Fichiers communs avec les autres stories de la phase 1
 
@@ -878,6 +882,28 @@ frontend complet — `check` 0 erreur (29 avertissements préexistants), `lint-i
 Vitest ciblé avant le commit : 163/163 (`r2-vitest-cible.log`, sans ligne de commit, annoté). **Non lancés** : `gate-ci` et
 l'E2E complet (clôture).
 
+### Remédiation de la passe ciblée P3 (2026-11-15)
+
+Passe ciblée P3 (Haiku) : 0/0/1/3 (`review-p3-ciblee.md`) ; la garde E2-1 est jugée correcte. Prémisses relues au code.
+Commit `68c949fa2` (manuel et test, **dernier commit de code** ; aucune ligne de production), puis ce compte rendu et le
+prompt de la passe ciblée P4 (`36-5-restauration-compte-rendu-review-prompt-p4-ciblee.md`).
+
+- **P3-1 (MEDIUM)** — confirmé : sans stockage local partagé, le module de session ne ferme rien de lui-même
+  (`session-idle.svelte.ts`, `tick` : `if (w !== null && shared && now >= last + w)` ; en-tête : « ne ferme rien de lui-même »),
+  si bien que l'écran d'une issue inconnue laissé ouvert ne mène pas toujours à la connexion. **Décision de l'orchestrateur** :
+  la demi-phrase ajoutée pour A2-6 (finding facultatif) à `admin-manual.tex:2342` est **retirée** ; la ligne `:2342` est de
+  nouveau celle de `f43562b4d`. La phrase de `:2340` (succès) ne dépend pas du stockage : la minuterie de lecture du panneau
+  termine la session au bout de B.
+- **P3-2 (LOW)** — tracé en **#1193** par l'orchestrateur ; cité aux Dev Notes (*Hors périmètre*), sans changement de code.
+- **P3-3 (LOW)** — le test « (B1-3) » restaure son espion et démonte son panneau dans un `finally`.
+- **P3-4 (LOW)** — les fichiers exécutés par `r1-vitest-cible.log` et `r2-vitest-cible.log` (cinq chacun) sont nommés par une
+  ligne datée ajoutée à leur fin.
+
+**Gates** (commit `68c949fa2` en première ligne) : Vitest ciblé `admin-restore/` 41/41 (`r3-vitest-cible.log`, avant le
+commit) ; frontend complet — `check` 0 erreur (29 avertissements préexistants), `lint-i18n-ownership` vert, `test:unit`
+**234 fichiers, 3467 tests**, `build` vert (`r3-front-*.log`). **Non relancés** : `test-fast` (aucun fichier Rust ni `.ftl`
+touché, consigne de l'orchestrateur), test de D5 (le code servi n'a pas changé) ; `gate-ci` et l'E2E complet à la clôture.
+
 ## Change Log
 
 - 2026-11-14 — Fiche rédigée (Epic 36, phase 1), sur `4de0bcc7e`. Choix propres : `e36-choix-autonomes-36-5.md`
@@ -1022,3 +1048,8 @@ l'E2E complet (clôture).
   changement. 4 tests Vitest, mutations M27 à M30 ; 40/40 tuées. `test-fast --ci`, frontend complet, test de D5 ×10 verts.
   Trend de la revue : P1 (B, E, A) 0/0/0/3, 0/1/1/2, 0/0/0/5 → P2 (E, A) 0/0/0/4, 0/0/0/6. Le correctif E2-1 touchant la
   production, la passe suivante est **ciblée** : `36-5-restauration-compte-rendu-review-prompt-p3-ciblee.md`.
+- 2026-11-15 — **Passe ciblée P3** (Haiku) : 0/0/1/3. P3-1 (MEDIUM, manuel) : la demi-phrase d'A2-6 à `admin-manual.tex:2342`
+  est **retirée** (décision de l'orchestrateur : fausse sans stockage local partagé ; A2-6 était facultatif). P3-2 tracé en
+  #1193 (Dev Notes) ; P3-3 (test en `finally`) et P3-4 (annotations) traités. Aucune ligne de production touchée
+  (`68c949fa2`) ; frontend complet vert. Trend : P1 0/1/1/10 (trois lentilles) → P2 0/0/0/10 (deux) → P3 ciblée 0/0/1/3. Le
+  MEDIUM appelle une passe de plus : **P4 ciblée**, `36-5-restauration-compte-rendu-review-prompt-p4-ciblee.md`.
