@@ -162,6 +162,13 @@ une release planifiée monte le chiffre mineur.*
   `getInvoiceSettings()` : journal, comptes bancaires, factures), sans écraser une désignation de l'utilisateur. Défaut
   trouvé à la validation de la fiche 36-17, qui reste frontend et ne doit pas en dépendre ; choix prudent et réversible,
   « limites voisines » (règles de cet epic), sans migration.
+- **Découpages des fiches de la 0.18.0** (règle de splitting préventif et règle de Guy du 2026-11-15, stories courtes ; décidés par l'orchestrateur à la rédaction ou à la validation des fiches) :
+  **36-7** → 36-7a (treize rouges de 2027, fusion avant le 2026-12-26) et 36-7b (neuf rouges sous instant antérieur) ;
+  **36-12** → 36-12a (lignes de séparation, ciseaux et déplacement minimal du point de dépôt, publiable seule) et
+  36-12b (grille, *Payable by*, largeurs mesurées, cascade ; peut glisser à la 0.19.0) ; **36-16** → 36-16a (facture
+  client, le patron), 36-16b (facture fournisseur), 36-16c (écriture manuelle) ; **36-18** → 36-18a (écrans qui
+  écrivent dans les livres) et 36-18b (réglages et filtres). Les sous-stories b et c partent de leur « a » fusionnée.
+  36-15, 36-16a et 36-18a attendent l'arbitrage de Guy sur les traductions de « compte analytique ».
 - **36-13 (#235) sort de l'Epic 36** et devient l'**Epic 41** (D3), lancée dès la fin de l'Epic 36, avant la clôture de
   l'exercice 2026 ; milestone « Plus tard ».
 - **Mandat** (M1) : autonomie jusqu'à l'image 0.18.0 publiée ; jalons notifiés (PR ouverte, tag, image) ; la fusion de la
