@@ -395,7 +395,7 @@ Ces décisions valent aussi pour la 36-7b, qui y renvoie.
    sous la commande de D3 — le backend par son **binaire construit** (`target/debug/kesh-api`), le runner par `npx
    playwright test` —, base `kesh_e2e_e367` recréée (clé fixée par l'orchestrateur ; la fiche proposait `e367a`, A1-3) :
    les échecs se nomment un par un contre `docs/testing.md` § *« Les échecs attendus »* — les sept de la KF-029 (#97), et
-   0 à 2 échecs de pollution d'état entre specs (`docs/testing.md:420`, `:450`), **chacun rejoué seul sous la même
+   0 à 2 échecs de pollution d'état entre specs (`docs/testing.md:420`, `:450`), **chacun des échecs de pollution rejoué seul sous la même
    horloge et vert** ; aucun autre (A1-1, revue P1). **Sonde positive jointe** : la spec de D6
    (`horloge-sonde.spec.ts`), jouée d'abord seule par le même runner sous la même horloge, avec
    `KESH_SONDE_JOUR_ATTENDU=2027-01-04` dans l'environnement du runner (B1-1), rend les trois jours égaux à
@@ -437,7 +437,7 @@ littéral `"2027-01-01"` ; ailleurs l'année 2026 ; V2-10) et doit être **tuée
 | M1a | `admin_full_import_e2e` `v0174a_decor`, exercice (`:4899-4901`) | `full_import_accepts_an_rc1_backup_with_supplier_invoices` (et `…_0_16_…`) | `2027-01-04T10:00:00Z` |
 | M1b | `admin_full_import_e2e` pièces `:4990`, `:5039` remises en 2026 | idem ; `full_import_round_trip_keeps_a_draft` (`:5152-5156`) reste vert *(constaté au développement : tué aussi — il valide une facture par `v0174a_invoice`, `FISCAL_YEAR_INVALID` ; Dev Agent Record, `mut/M1b.log` ; annoté à la revue P1, A1-2)* | `2029-06-15T10:00:00Z` |
 | M2a | `bank_statements_manual_e2e`, l'`UPDATE` de l'exercice dans `manual_statement_lines_reconcile_like_imported_ones` retiré (`setup()`, `:218-220`, intouché ; V4-1) | ce test | `2027-01-04T10:00:00Z` |
-| M2b | `bank_statements_manual_e2e` relevé dérivé du test (période, numéro, dates de lignes) remis aux valeurs de `body()` (2026) | idem : la facture en N-1 n'est plus candidate (`F ≤ D + 1`, `reconciliation.rs:402-408` ; assertion `:1098-1100`) | `2029-06-15T10:00:00Z` |
+| M2b | `bank_statements_manual_e2e` relevé dérivé du test (période, numéro, dates de lignes) remis aux valeurs de `body()` (2026) | idem : la facture en N-1 n'est plus candidate (`F ≤ D + 1`, `kesh-db/src/repositories/reconciliation.rs:402-408` ; assertion `:1098-1100`) | `2029-06-15T10:00:00Z` |
 | M2c | `bank_statements_manual_e2e:1036` (facture) remise au `'2026-08-20'` | idem : `A = F` hors de `D − 30` (assertion `:1098-1100`) | `2029-06-15T10:00:00Z` |
 | — | `bank_statements_manual_e2e:1008` (écriture, INSERT brut) | **jouée à la tâche 4**, après le correctif commité ; déclarée équivalente seulement si elle reste verte, raison constatée écrite ; aucune équivalence par lecture (V6-1, V6-2) | `2029-06-15T10:00:00Z` |
 | M3 à M6 | `dates_bornes_e2e` témoins `:1010`, `:1050`, `:1510`, `:1556` remis à `"2027-01-01"` — une mutation chacun | `c_facture_echeance`, `c_facture_maj_echeance`, `c_fournisseur_echeance`, `c_fournisseur_maj_echeance` (appariés à l'étape 0, ligne lue) | `2027-01-04T10:00:00Z` |
@@ -472,7 +472,7 @@ l'instant prescrit se dit (juste, test muet, ou mutant équivalent constaté), j
 5. Gates (§ *Dev Notes*), AC1, AC2, AC3, AC6 → `Status: review`, clé `review`, Dev Agent Record, prompt de la revue P1.
    **La fusion doit précéder le 2026-12-26** (D5).
 6. À la clôture : `gate-ci`, E2E complet à l'heure réelle (échecs nommés comme à l'AC5 : les sept de la KF-029 et 0 à 2
-   de pollution, chacun rejoué seul et vert ; A1-1), `binary(open_items_invariant)` sous `2026-12-26T10:00:00Z` (A1-5),
+   de pollution, chacun des échecs de pollution rejoué seul et vert ; A1-1), `binary(open_items_invariant)` sous `2026-12-26T10:00:00Z` (A1-5),
    **puis AC4 et AC5** ; ensuite seulement `done`.
 
 ## Note de version
@@ -622,7 +622,7 @@ Tous sous `/home/gcorbaz/devel/kesh-gate-logs/e36-7/`. Code de la story au commi
     !exercice.later_closed && locked_through.is_none_or(|borne| entry_date > borne)`), et l'exercice est lu **par son
     id**, sans ses bornes (`FiscalYearState { name, open, later_closed }`, `:452-456`). Or le montage ne pose aucun verrou
     des livres (`/usr/bin/grep -n 'books_locked_through\|lock_books'` dans `bank_statements_manual_e2e.rs` ne rend rien).
-    La fenêtre de proposition, elle, porte sur la date de la **facture** (`reconciliation.rs:402-408`). Équivalent **dans
+    La fenêtre de proposition, elle, porte sur la date de la **facture** (`kesh-db/src/repositories/reconciliation.rs:402-408`). Équivalent **dans
     ce montage** : sous un verrou des livres, le mutant deviendrait tuable.
 - **AC6 — tenu.** Vitest entier sous le préchargement `date-decalee-36-7.mjs` (`KESH_TEST_INSTANT_JS=2027-01-04T10:00:00Z`)
   au commit `12b9dd90f` : `Test Files 238 passed (238)`, `Tests 3709 passed (3709)`, `rc=0` (`ac6-vitest-A2027.log`) ;
