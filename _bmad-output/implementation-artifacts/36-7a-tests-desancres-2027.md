@@ -1,6 +1,6 @@
 # Story 36-7a : les tests ne figent plus 2026 — verts au 1er janvier 2027 (#1125, KF-060)
 
-Status: ready-for-dev
+Status: review
 
 *Fiche issue du découpage de la fiche `36-7-tests-desancres-2026.md` (`Status: split`), approuvé par l'orchestrateur le
 2026-11-15 sur la règle de Guy du même jour (« éviter les stories trop longues ou trop complexes ») ; choix C-36-7-7.
@@ -539,11 +539,119 @@ issue #1125 ; `docs/testing.md:119`.
 
 ### Agent Model Used
 
+Opus 5.5 (agent de développement de l'Epic 36, en autonomie), worktree `kesh-36-7`, voie 2 (`kesh-mariadb-dev2:3307`,
+base `kesh_e367`), `gate-ci` en voie 1 (`kesh_ci_e367`).
+
 ### Debug Log References
+
+Tous sous `/home/gcorbaz/devel/kesh-gate-logs/e36-7/`. Code de la story au commit `12b9dd90f` (aucun commit de code depuis).
+
+- Étape 0 (tête `b41129c85`, sans correctif) : `rouges.log` (synthèse), `e0-A2027.log`, `e0-N2027.log`,
+  `inventaire-C2029.log`, `e0-S1a.log`, `e0-S1b.log`, `e0-S2.log`, `e0-S1b-backtrace.log`, `e0-faketime-sonde.log` ;
+  script `etape0-36-7a.sh`.
+- Gate ciblé (sept binaires, `12b9dd90f` avant commit, arbre identique) : `c1-A2027.log`, `c1-C2029.log`, `c1-N2027.log`,
+  `c1-reel.log`, `c1-S1b.log` — 216 exécutés, 216 passés chacun ; script `cible-36-7a.sh`.
+- Mutations (`12b9dd90f`) : `mut/M*.log`, `mut/T4-*.log`, `mut/console.log`, `mut/console-2.log` ; script
+  `mut/mutations-36-7a.py`.
+- Gates du passage en `review` (`12b9dd90f`, base remise à neuf avant chacun, une prise de verrou chacun ; script
+  `gates-review-36-7a.sh`, console `gates-review-console.log`) : `gate-reel.log`, `gate-2027.log` (AC1),
+  `gate-N2027.log`, `gate-B2026.log`, `gate-C2029.log` ; AC3 (b) : `ac3b-invalide.log` ; `gate-ci-review.log`.
 
 ### Completion Notes List
 
+- **AC1 — tenu.** `scripts/test-fast.sh --ci` sous `KESH_TEST_INSTANT=2027-01-04T10:00:00Z`, voie 2, base remise à neuf :
+  `5452 tests run: 5452 passed (1 slow), 13 skipped`, `rc=0` (`gate-2027.log`, `12b9dd90f`). Les treize sont verts.
+- **AC2 — tenu.** Même suite, même commit : heure réelle `5452 passed` (`gate-reel.log`) ; nuit suisse
+  `2026-12-31T23:30:00Z` `5452 passed` (`gate-N2027.log`, neuf rouges à la base) ; **suite entière** sous
+  `2029-06-15T10:00:00Z` `5452 passed` (`gate-C2029.log` ; treize rouges à la base, `inventaire-C2029.log`, aucun
+  autre) ; `binary(open_items_invariant)` sous `2026-12-26T10:00:00Z` vert (`c1-S1b.log`, dans les sept binaires ;
+  rouge à la base, `e0-S1b.log`). **Non-régression sous l'instant antérieur** `2026-03-10T23:30:00Z` :
+  `5443 passed, 9 failed` (`gate-B2026.log`), **exactement les neuf de la 36-7b** (`inventaire-B2026.log`), chacun rouge
+  aux deux essais du profil `ci`, aucun autre. Aucun rouge de charge.
+- **AC3 — tenu.** (a) relevés rejoués à la tête (étape 0) ; (b) sous `KESH_TEST_INSTANT=pas-un-instant`, les sept
+  binaires : `216 tests run: 51 passed, 165 failed` (`ac3b-invalide.log`), les treize parmi les rouges, panique
+  « `KESH_TEST_INSTANT n'est pas un instant RFC 3339 ("pas-un-instant") : premature end of input` » ; les 51 verts ne
+  lisent pas l'horloge de test (constaté, non examiné un à un : hors périmètre de l'AC). (c) mutations, ci-dessous.
+- **Mutations (AC3 c)** — dix-neuf, **toutes tuées** par le test nommé sous l'instant nommé (`mut/<M>.log`, `rc=100`) :
+  M1a (`2027-01-04`) les deux `…backup_with_supplier_invoices` ; M1b (`2029-06-15`) les mêmes **et**
+  `full_import_round_trip_keeps_a_draft` — la fiche le disait resté vert : il valide aussi une facture par
+  `v0174a_invoice` (`admin_full_import_e2e.rs:4989`, `FISCAL_YEAR_INVALID`), il est donc un témoin de plus, non un
+  défaut ; M2a (`2027-01-04`), M2b, M2c (`2029-06-15`) `manual_statement_lines_reconcile_like_imported_ones` ; M3 à M6
+  (`2027-01-04`) appariés un à un : `c_facture_echeance`, `c_facture_maj_echeance`, `c_fournisseur_echeance`,
+  `c_fournisseur_maj_echeance` ; M7a (`2027-01-04`) les deux `…concurrent_reversal…` ; M7b (`2029-06-15`) les cinq tests
+  de `societe()` (montage refusé : écriture hors de l'exercice) ; M7c (`2029-06-15`) les deux `…close_of_a_later_year…`,
+  **premier rouge : l'attente** — « le PUT doit attendre sur le verrou des exercices postérieurs »
+  (`journal_entries_modification.rs:466`) et « le DELETE doit attendre … » (`:579`), comme D1 le prévoyait (V4-5) ; M8a
+  (`2027-01-04`) et M8b `:1319`, `:1498`, `:1716` (`2029-06-15`) les deux `draft_migration_preserves_a_populated_*_base` ;
+  M9a (`2027-01-04`), M9b (`2029-06-15`) `un_compte_contre_passe_reste_mouvemente` ; M10 (`2027-01-04`)
+  `open_items_balance_matches_the_ledger_and_the_trial_balance`. Restauration par `git restore --worktree` puis `touch`,
+  arbre propre vérifié par le script après chaque campagne.
+- **Les trois jouées à la tâche 4 restent vertes** sous `2029-06-15T10:00:00Z` : **mutants équivalents au constat**,
+  raison lue au code :
+  - `T4-1332` (`migrations_upgrade_path`, `invoice_date`/`due_date` de l'INSERT brut remis en 2026) : `2 passed`. Le test
+    n'asserte aucun numéro interne — `/usr/bin/grep -n internal_number` dans le test ne rend que les `ALTER TABLE` du
+    montage (`:1389`, `:1602`) — et la comparaison colonne par colonne porte sur les colonnes **d'avant** la montée ; les
+    deux factures revalidées reçoivent un `invoice_date` neuf par `update_draft` (`:1716`, en N-1) avant `validate`.
+    La classe par `invoice_date` de la migration `20261106000001` n'est donc pas observée par ce test.
+  - `T4-533` (`opening_complement_repository`, le `today` de `complete` remis à `d(2026, 6, 1)`) : `1 passed`.
+    `decide_date` rend `OpeningDay` dès que le premier exercice est ouvert et son premier jour hors verrou, sans lire
+    `today` (`opening_complement.rs:256-264`), et le refus `AccountMoved` vient de `check_lines` (`:663`), qui ne le lit
+    pas non plus.
+  - `T4-1008` (`bank_statements_manual_e2e`, date de l'écriture de vente remise au `'2026-08-20'`) : `1 passed`.
+    L'INSERT brut ne contrôle pas l'exercice, et rien dans le test ne relit cette date : la fenêtre de proposition porte
+    sur la date de la **facture** (`reconciliation.rs:402-408`), `git grep -n entry_date` ne rend rien dans
+    `kesh-db/src/repositories/reconciliation.rs`, et l'annulation contre-passe l'écriture du **règlement**, non celle-ci.
+- **AC6 — tenu.** Vitest entier sous le préchargement `date-decalee-36-7.mjs` (`KESH_TEST_INSTANT_JS=2027-01-04T10:00:00Z`)
+  au commit `12b9dd90f` : `Test Files 238 passed (238)`, `Tests 3709 passed (3709)`, `rc=0` (`ac6-vitest-A2027.log`) ;
+  sonde (`ac6-vitest-sonde.log`) : sans la variable `AssertionError: expected 2026 to be 2027`, avec `Tests 1 passed (1)`.
+- **AC7 — tenu.** `git diff --stat origin/epic/36-0.18.0...HEAD -- 'crates/*/src/*' 'crates/*/src/**' frontend/src` ne
+  rend que `frontend/src/lib/shared/utils/local-date-guard.test.ts | 14 +++++++++++---`.
+- **AC8 — tenu.** `docs/testing.md:119` : l'exception (a) nomme les neuf tests de la 36-7b (relevé `gate-B2026.log`,
+  identique à `inventaire-B2026.log`) ; « quatre sites » ; ce que `KESH_TEST_INSTANT` ne couvre pas (binaire servi,
+  runner, navigateur, Vitest, modules (b) et (c)) ; paragraphe neuf *Les tests dans une autre année* (règle de D1,
+  recettes nextest sous la variable, nextest et E2E sous faketime selon D3, Vitest sous préchargement, D4). Aucun
+  manuel touché (`git diff --stat … -- docs/manual` vide).
+- **AC9 — tenu.** `date_du_jour_garde.rs` non modifié, vert dans les cinq suites ; `local-date-guard.test.ts` vert
+  (`front-test-unit.log` ; ciblé avant commit : 15 passés), une seule entrée ajoutée (`horloge-sonde.spec.ts`, fragment
+  `new Date().toLocaleDateString('sv-SE', { timeZone: 'Europe/Zurich' }),`), trois mentions du nombre passées à quatre
+  (en-tête, commentaire d'`ALLOWLIST_SPECS`, titre du test).
+- **Spec de D6** : verte à l'heure réelle (`sonde-d6-reel.log`, `1 passed`) ; **rouge** sous faketime appliqué au runner
+  seul, backend à l'heure réelle (`sonde-d6-runner-seul.log`) : `serveur 2026-11-15`, `runner 2027-01-04`,
+  **`navigateur 2027-01-04`** — le navigateur lancé par le runner suit donc libfaketime, au moins dans ce montage ; l'AC5
+  le confirmera avec le backend sous faketime. Port `3367`, base `kesh_e2e_e367` recréée (script `e2e-36-7a.sh`,
+  binaire `target/debug/kesh-api` reconstruit à `12b9dd90f`).
+- **Gates du passage en `review`**, tous au commit de code `12b9dd90f` : `test-fast --ci` voie 2 cinq fois (ci-dessus) ;
+  `scripts/gate-ci.sh kesh_ci_e367` voie 1 : `gate-ci : 5459 passés, 0 échoués, 17 ignorés`, code 0 (`gate-ci-review.log`) ;
+  frontend complet : `npm run check` 0 erreur, 29 avertissements antérieurs, aucun dans les fichiers de la story
+  (`front-check.log`), `lint-i18n-ownership` `rc=0` (`front-lint-i18n-ownership.log`), `test:unit` 3709 passés
+  (`front-test-unit.log`), `build` `rc=0` (`front-build.log`) ; `cargo fmt --check` et `clippy -D warnings` du workspace
+  verts (`test-fast.sh` les rejoue). **Non lancés, gates de clôture** : `gate-ci` et E2E complet à l'heure réelle au
+  dernier commit de code, puis **AC4** et **AC5** sous faketime (C-36-7-6) ; la story ne passe pas `done` sans eux.
+- **Choix** : aucun choix neuf au registre. Écarts à la fiche, tous écrits ici : clé des bases `e367` (orchestrateur) au
+  lieu de `e367a` ; `body()` intact, relevé dérivé par une fonction `body_n1` (non une copie du littéral) ; le numéro de
+  facture `'F-2026-0042'` gardé (référence de la seconde ligne de `body()`, `:253`) ; l'`UPDATE` de l'exercice du test
+  corrigé ne renomme pas l'exercice (`'Exercice 2026'`, nom non lu) ; `opening_complement_repository` en un seul exercice
+  N-1..N (D1 a laisse le choix ; une ligne lue : `setup(&pool, &[(d(n - 1, 1, 1), d(n, 12, 31))])`) ; `a2` à
+  `jours_avant(30)` (D1 b : 0 < k < 300).
+- **Consigne Edit** : tout le code et la documentation par l'outil Edit (dont `replace_all` sur des occurrences
+  identiques de `journal_entries_modification.rs` et `bank_statements_manual_e2e.rs`), `cargo fmt` ensuite. Les scripts
+  de relevé et de mutation, sous `kesh-gate-logs/e36-7/`, ont été corrigés par un petit script Python (motifs à
+  adapter après `cargo fmt`) — ce ne sont pas des fichiers du dépôt.
+
 ### File List
+
+- `crates/kesh-api/tests/admin_full_import_e2e.rs` (modifié)
+- `crates/kesh-api/tests/bank_statements_manual_e2e.rs` (modifié)
+- `crates/kesh-api/tests/dates_bornes_e2e.rs` (modifié)
+- `crates/kesh-db/tests/journal_entries_modification.rs` (modifié)
+- `crates/kesh-db/tests/migrations_upgrade_path.rs` (modifié)
+- `crates/kesh-db/tests/opening_complement_repository.rs` (modifié)
+- `crates/kesh-report/tests/open_items_invariant.rs` (modifié)
+- `frontend/tests/e2e/horloge-sonde.spec.ts` (neuf)
+- `frontend/src/lib/shared/utils/local-date-guard.test.ts` (modifié)
+- `docs/testing.md` (modifié)
+- `_bmad-output/implementation-artifacts/36-7a-tests-desancres-2027.md`,
+  `36-7a-tests-desancres-2027-review-prompt-p1.md` (neuf), `sprint-status.yaml`
 
 ## Change Log
 
@@ -708,3 +816,11 @@ issue #1125 ; `docs/testing.md:119`.
     fichier, `/usr/bin/grep -n 'aujourd_hui_test'` ne rend que `:528` (le test corrigé) et `:898`, et tous ces tests sont
     verts sous les quatre instants (relevés ci-dessus) ; leur ancrage en 2026 relève, s'il rougit sous un instant
     antérieur, de la 36-7b.
+- **2026-11-15 — Développement** (Opus 5.5), commit de code `12b9dd90f`. Montages des treize tests corrigés selon D1 dans
+  les sept fichiers ; spec `horloge-sonde.spec.ts` et entrée de la garde (D6) ; `docs/testing.md` (AC8). Rouges d'abord
+  (étape 0, `rouges.log`), gate ciblé des sept binaires sous cinq instants (216/216 chacun), dix-neuf mutations toutes
+  tuées et les trois de la tâche 4 vertes, déclarées équivalentes au constat avec leur raison lue au code (Dev Agent
+  Record). Gates du passage en `review` : `test-fast --ci` à l'heure réelle et sous quatre instants, `gate-ci`, frontend
+  complet, Vitest sous préchargement — chiffres et journaux au Dev Agent Record. Écart à la prévision de la fiche : M1b tue
+  aussi `full_import_round_trip_keeps_a_draft` (la fiche le disait resté vert). **`Status: review`** ; gate-ci, E2E
+  complet, AC4 et AC5 à la clôture. Prompt de la revue P1 : `36-7a-tests-desancres-2027-review-prompt-p1.md`.
