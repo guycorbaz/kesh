@@ -1019,3 +1019,55 @@ async fn finalize_leaves_payable_empty_when_linked_to_a_bank_account(pool: MySql
         role_account(&pool, company_id, "Receivable").await
     );
 }
+
+/// AC11 (mutation M12) — le bras de `DefaultInvoiceAccountsUnavailable` lit
+/// **sa** clé du catalogue chargé : le test unitaire du bras (`errors.rs`) ne
+/// voit que le repli, égal au texte de la clé, et ne distingue donc pas une
+/// autre clé. Ici le catalogue est chargé (`spawn_app` → `init_error_i18n`, la
+/// locale de la configuration, `fr-CH`) : le message est le texte de
+/// `error-default-invoice-accounts-unavailable`, non celui
+/// d'`error-inactive-accounts`.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn default_invoice_accounts_unavailable_reads_its_catalogue_key(pool: MySqlPool) {
+    use axum::response::IntoResponse;
+    use http_body_util::BodyExt;
+    use kesh_db::errors::{
+        DbError, DefaultInvoiceAccountCause, DefaultInvoiceSetting,
+        UnavailableDefaultInvoiceAccount,
+    };
+
+    let _app = spawn_app(pool).await;
+    let catalogue = std::fs::read_to_string(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../kesh-i18n/locales/fr-CH/messages.ftl"
+    ))
+    .unwrap();
+    let texte = |cle: &str| -> String {
+        catalogue
+            .lines()
+            .find_map(|l| l.strip_prefix(&format!("{cle} = ")))
+            .unwrap_or_else(|| panic!("clé {cle} absente"))
+            .to_string()
+    };
+    let resp =
+        kesh_api::errors::AppError::Database(DbError::DefaultInvoiceAccountsUnavailable(vec![
+            UnavailableDefaultInvoiceAccount {
+                setting: DefaultInvoiceSetting::Revenue,
+                cause: DefaultInvoiceAccountCause::NoRoleAccount,
+            },
+        ]))
+        .into_response();
+    assert_eq!(resp.status(), 400);
+    let bytes = resp.into_body().collect().await.unwrap().to_bytes();
+    let body: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+    assert_eq!(body["error"]["code"], "VALIDATION_ERROR");
+    assert_eq!(
+        body["error"]["message"],
+        texte("error-default-invoice-accounts-unavailable")
+    );
+    assert_ne!(
+        body["error"]["message"],
+        texte("error-inactive-accounts"),
+        "montage : les deux textes diffèrent"
+    );
+}
