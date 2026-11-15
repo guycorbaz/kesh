@@ -56,27 +56,30 @@ l'assistant, nom « Exercice AAAA » ou « Exercice AAAA/AAAA » : AC-11). A22 e
 
 **Fonctionnelles**
 
-- FR-37-1-1 — La migration ajoute, sans écrire de données, les réglages de la société, le mode et les genres de cours de l'exercice, et la devise et les comptes de différence du compte, sans clé étrangère sur les comptes de différence (AC-1).
-- FR-37-1-2 — `GET /companies/current`, les exercices et `kesh_exercices` exposent `multiCurrencyEnabled`, les trois comptes FX, `baseCurrency: "CHF"`, `multiCurrency`, `openingRateKind`, `closingRateKind` (AC-2).
-- FR-37-1-3 — `PUT /companies/current/currency-settings` écrit le réglage avec verrou optimiste (AC-3).
-- FR-37-1-4 — Chaque exercice est mono-devise ou multi-devises : il prend le réglage de la société à sa création, et la bascule est refusée tant qu'un compte en devise n'est pas à zéro (AC-3 bis).
-- FR-37-1-5 — La devise d'un compte est facultative (absent ou `null` = CHF ; à la mise à jour : absent = inchangée, `null` = CHF) et se verrouille dès la première ligne (AC-4).
-- FR-37-1-6 — Un compte en devise suit les comptes de différence de la société ou porte les siens (AC-4 bis).
+- FR-37-1-1 — La migration ajoute, sans écrire de données, les réglages de la société, le mode et les genres de cours de l'exercice, et la devise et les comptes de différence du compte, sans clé étrangère sur les comptes de différence ; le schéma refuse une devise hors `[A-Z]{3}` ou égale à `CHF` (la devise principale s'écrit `NULL`), des comptes propres dépareillés ou posés sur un compte CHF (AC-1).
+- FR-37-1-2 — `GET /companies/current` expose `multiCurrencyEnabled`, les trois comptes FX et `baseCurrency: "CHF"` ; les exercices (`GET /fiscal-years`, détail) exposent `multiCurrency`, `openingRateKind`, `closingRateKind`, toujours présents ; l'outil MCP `kesh_exercices` gagne `multi_devises`, `genre_ouverture` et `genre_cloture` (types scellés, mono-devise compris) (AC-2).
+- FR-37-1-3 — `PUT /companies/current/currency-settings` écrit le réglage avec verrou optimiste (409) : l'activation exige les trois comptes (gains, pertes, conversion) et passe tous les exercices ouverts en multi-devises ; chaque compte **changé** passe les gardes — de la société, imputable, actif, sans devise, `Expense`/`Revenue` (`Asset`/`Liability` pour le compte de conversion), ni rôle `DefaultRevenue` ni désigné compte de produit par défaut — sous peine de 400 `FX_ACCOUNT_INVALID` (liste close des `reason`) ; la désactivation est refusée (409 `MULTI_CURRENCY_IN_USE`) tant qu'un compte, archivé compris, porte une devise, et remet les trois comptes à `NULL` et tous les exercices en mono-devise ; un no-op ne change pas la `version` et n'est pas audité ; aucune copie de cours à l'activation (AC-3).
+- FR-37-1-4 — Chaque exercice est mono-devise ou multi-devises : il prend le réglage de la société à sa création (trois chemins), et son genre d'ouverture reprend le genre de clôture de l'exercice qui le précède sans trou (`day` sinon). `PUT /fiscal-years/{id}/currency-mode` le bascule : vers multi-devises, refus 409 `MULTI_CURRENCY_DISABLED` dans une société mono-devise ; exercice clos → 400 `FISCAL_YEAR_CLOSED` ; vers mono-devise, refus 409 `FISCAL_YEAR_HAS_FOREIGN_BALANCES` tant qu'un compte en devise, archivé compris, a un solde ≠ 0 au début de l'exercice ou porte une ligne dans l'exercice, puis avertissement 409 `FISCAL_YEAR_FOREIGN_ACCOUNTS_ACTIVE` (liste complète des comptes en devise actifs à archiver), que `force: true` exécute en les archivant ; aucun compte n'est converti. L'écran *Exercices* montre le mode et la bascule, et son dialogue liste les comptes à archiver (AC-3 bis).
+- FR-37-1-5 — La devise d'un compte est facultative (absent ou `null` = CHF ; à la mise à jour : absent = inchangée, `null` = CHF), normalisée (`CHF` → `NULL` avant tout contrôle), refusée en mono-devise (409 `MULTI_CURRENCY_DISABLED`), hors ISO 4217 (400 `CURRENCY_UNKNOWN`), et se verrouille dès la première ligne, sans exception ni confirmation (409 `ACCOUNT_CURRENCY_LOCKED`) ; un compte que les chemins automatiques débitent en CHF (rôle, désignation de facturation, compte bancaire, article, règle de réconciliation) ne reçoit pas de devise (409 `ACCOUNT_CURRENCY_IN_USE`), et un compte en devise n'est pas désignable à ces sites (400 `ACCOUNT_IN_FOREIGN_CURRENCY`) ; `AccountResponse` porte `currency` et `currencyLocked` (AC-4).
+- FR-37-1-6 — Un compte en devise suit les comptes de différence de la société ou porte les siens (paire gains/pertes, à trois états à l'API), résolus par une seule fonction serveur et son miroir TypeScript et revalidés à l'usage ; les comptes propres changés passent les gardes de l'AC-3 (400 `FX_ACCOUNT_INVALID`, dont `missing` pour un seul champ et `unexpected` sur un compte qui reste ou devient CHF) (AC-4 bis).
 - FR-37-1-7 — La réinitialisation de la société remet à zéro les quatre colonnes du réglage (AC-5).
-- FR-37-1-8 — Un `.keshbackup` de la 0.17.6 se réimporte, l'import ne tolérant que la liste close des absences de l'Epic 37 (AC-6).
-- FR-37-1-9 — L'écran *Paramètres → Comptabilité* règle le mode et les trois comptes, éditable pour l'Administrateur, en lecture seule pour les autres rôles (AC-7).
+- FR-37-1-8 — Un `.keshbackup` de la 0.17.6 se réimporte, l'import ne tolérant que la liste close des absences de l'Epic 37 (toute autre table absente reste refusée, fenêtre d'import inchangée) ; l'aller-retour conserve réglage, devises, comptes propres et mode des exercices, et les exports CSV de la société, des comptes et des exercices portent les colonnes neuves (AC-6).
+- FR-37-1-9 — L'écran *Paramètres → Comptabilité* règle le mode et les trois comptes, éditable pour l'Administrateur, en lecture seule pour les autres rôles ; le *Plan comptable* offre, en multi-devises, la devise d'un compte (désactivée avec l'explication si verrouillée), sa colonne, et pour un compte en devise le choix « par défaut / propres » des comptes de différence ; en mono-devise, aucun changement visible (AC-7).
 - FR-37-1-10 — `kesh_plan_comptable` donne la devise d'un compte (`null` pour le CHF) (AC-8).
-- FR-37-1-11 — L'assistant de démarrage fixe les dates du premier exercice (AC-11).
+- FR-37-1-11 — L'assistant de démarrage fixe les dates du premier exercice : défaut 1er janvier de l'année courante, fin la veille du même jour un an plus tard ; fin ≤ début ou date hors bornes → 400, rien de créé ; nom « Exercice AAAA » ou « Exercice AAAA/AAAA » ; finalisation rejouée sans effet ; exercice créé mono-devise ; dates non modifiables ensuite (AC-11).
+- FR-37-1-12 — Un compte désigné gains, pertes ou conversion — par la société ou par un compte en devise, archivé compris — ne peut recevoir de devise, être archivé, changer de type (hors `Expense`/`Revenue`, ou `Asset`/`Liability` pour la conversion), passer non imputable, recevoir un sous-compte, le rôle `DefaultRevenue`, ni être désigné compte de produit par défaut (409 `ACCOUNT_IS_FX_DIFFERENCE_ACCOUNT`, `details.designation`, plus `holderAccountId` pour une désignation propre) ; la réactivation d'un compte en devise en mono-devise est refusée (409 `MULTI_CURRENCY_DISABLED`) (AC-4, AC-4 bis).
 
 **Non fonctionnelles**
 
 - NFR-37-1-1 — La migration est non breaking : DDL seul, aucune écriture de données (AC-1).
-- NFR-37-1-2 — Le `PUT` du réglage est réservé à l'Administrateur et refusé à une clé d'API (`API_KEY_ADMIN_FORBIDDEN`) (AC-3).
-- NFR-37-1-3 — Aucune régression mono-devise : un client qui ne connaît pas `currency` ne reçoit pas de 400 (AC-4).
-- NFR-37-1-4 — Sauvegarde et restauration : aller-retour du réglage, de la devise des comptes et du reset sans perte (AC-5, AC-6).
-- NFR-37-1-5 — La sortie MCP reste sous les tailles mesurées, sans `String` dans `sortie!` (AC-8).
+- NFR-37-1-2 — RBAC : le `PUT` du réglage est réservé à l'Administrateur en session (cookie, ou `Authorization: Bearer` après `POST /auth/login`), refusé au Comptable (403) et à une clé d'API (`API_KEY_ADMIN_FORBIDDEN`) ; la bascule d'un exercice est ouverte à l'Administrateur et au Comptable (clé d'API comprise, comme `close`), Consultation 403 (AC-3, AC-3 bis).
+- NFR-37-1-3 — Aucune régression mono-devise : un client qui ne connaît pas `currency` ne reçoit pas de 400, et le JSON des comptes est identique en mono-devise et pour un compte « par défaut » (`currency`, `currencyLocked`, `fxGainAccountId`, `fxLossAccountId` absents quand vides, C-37-9) (AC-4, AC-4 bis).
+- NFR-37-1-4 — Sauvegarde et restauration : l'aller-retour d'une sauvegarde 37-1 ne perd ni le réglage, ni les devises, ni les comptes propres, ni le mode des exercices ; une colonne de l'epic ne peut devenir obligatoire sans faire rougir un test (AC-5, AC-6).
+- NFR-37-1-5 — Sorties MCP : `kesh_plan_comptable` re-mesurée avec le champ `devise` ; `kesh_exercices`, non paginé, mesuré par un test dédié, le nombre d'exercices qui tient sous `MCP_ENVOI_OCTETS_MAX` écrit au Change Log ; jamais de `String` dans `sortie!` (AC-2, AC-8).
 - NFR-37-1-6 — Chaînes neuves dans les quatre locales, `lint-i18n-ownership` vert (AC-9).
-- NFR-37-1-7 — Manuel utilisateur à jour, PDF régénéré et contrôlé (AC-10).
+- NFR-37-1-7 — Manuel utilisateur et manuel d'administration (activation par session, jamais par clé d'API ; matrice MCP de `kesh_exercices`) à jour, PDF régénérés et contrôlés ; CHANGELOG (AC-10).
+- NFR-37-1-8 — Audit : `company.currency_settings_updated` (avant/après, exercices changés), `fiscal_year.currency_mode_updated` (`archivedAccountIds`), `account.archived` de chaque compte archivé sous `force`, comptes propres dans l'instantané d'un compte ; actions à `ACTIONS`, libellés dans les quatre locales, routes au registre (`Traced, SansEcritureAuJournal`) (AC-3, AC-3 bis, AC-4 bis).
+- NFR-37-1-9 — Concurrence : verrous dans l'ordre global du dépôt (`companies` → exercices → réglages → `accounts`), lectures verrouillantes sans lecture simple avant ; `currency-settings`, `currency-mode` et `accounts::create` rejoués sur interblocage, un test de victime par route (AC-3, AC-3 bis, AC-4, AC-4 bis).
 
 ## Critères d'acceptation
 
@@ -1222,3 +1225,13 @@ l'assistant, nom « Exercice AAAA » ou « Exercice AAAA/AAAA » : AC-11). A22 e
   avec la conversion V3 sous A31. Non exercés : AC-1, AC-3 bis à AC-7, AC-11 ; A32 (37-3a/3b, sans effet sur cette
   fiche) ; exécution des tests.
 - 2026-11-15 — exigences FR/NFR ajoutées (B26 ; orchestrateur, Sonnet) : 11 FR, 7 NFR.
+- 2026-11-15 — validation ciblée des exigences (Opus) : 11 MEDIUM, 5 LOW, tous corrigés. MEDIUM : FR-3 (gardes,
+  `FX_ACCOUNT_INVALID`, `MULTI_CURRENCY_IN_USE`, exercices à l'activation) ; FR-4 (bascule refusée **vers mono-devise**
+  seulement, aussi sur une ligne dans l'exercice ; avertissement et `force` ; `MULTI_CURRENCY_DISABLED`,
+  `FISCAL_YEAR_CLOSED` ; genre d'ouverture T4 ; écran *Exercices*) ; FR-5 (refus de la devise d'un compte) ; FR-6
+  (gardes à la désignation, revalidation) ; FR-9 (écran *Plan comptable* omis) ; FR-11 (défauts et refus 400) ;
+  NFR-2 (RBAC de `currency-mode`, session Bearer) ; NFR-3 (JSON identique en mono-devise, C-37-9) ; gardes inverses
+  `ACCOUNT_IS_FX_DIFFERENCE_ACCOUNT` sans exigence → **FR-37-1-12** ; audit sans exigence → **NFR-37-1-8** ; verrous et
+  rejeu sans exigence → **NFR-37-1-9**. LOW : FR-1 (contrôles du schéma), FR-2 (noms des champs MCP), NFR-4 (« reset
+  sans perte »), NFR-5 (« reste sous les tailles » : re-mesurées), NFR-7 (manuel d'administration, CHANGELOG) ; FR-8
+  précisé. Décompte : 12 FR, 9 NFR (+1, +2).

@@ -108,24 +108,29 @@ cours sans saisie.
 
 **Fonctionnelles**
 
-- FR-37-2-1 — La migration crée la table système des cours publiés (`_kesh_fetched_exchange_rates`) et `exchange_rates`, applicative (AC-1).
-- FR-37-2-2 — `parse_monthly_rates` lit le XML de l'AFC par noms locaux ; `rate_per_unit = published_rate / published_unit`, arrondi à 10 décimales (AC-2).
-- FR-37-2-3 — Une source de cours (`RateSource`, `fetch_month`, `fetch_day`) est portée par `AppState` (AC-3).
-- FR-37-2-4 — Les cours publiés utiles d'un exercice se copient dans `exchange_rates` ; la société ne lit que `exchange_rates` (AC-3 bis).
-- FR-37-2-5 — La récupération automatique ne vise que les exercices multi-devises ouverts, mois et jours utiles seulement (AC-4).
-- FR-37-2-6 — Le cours effectif est unique : le cours retenu par la société, avec sa source, lu par une seule fonction de dépôt (AC-5).
-- FR-37-2-7 — L'écran *Paramètres → Cours de change* montre un tableau annuel par exercice multi-devises, une valeur par case, modifiable (AC-6).
-- FR-37-2-8 — `exchange_rates` est sauvegardée et restaurée avec la société, sources comprises ; les tables `_kesh_*` ne sont pas touchées par l'import (AC-7).
-- FR-37-2-9 — Cours de la société et cours d'une ligne restent deux niveaux distincts ; saisie et reprise (↑) sont auditées, la copie ne l'est pas (AC-9).
+- FR-37-2-1 — La migration crée deux tables système — `_kesh_fetched_exchange_rates` (dernière valeur publiée par source, devise, genre et date) et `_kesh_exchange_rate_fetch` (état de la dernière récupération, codes d'erreur classés) — et la table applicative `exchange_rates` (cours retenu par la société et sa `source`, au format seul ; une source autre que `afc` se lit sans erreur et se traite comme `manual`) (AC-1).
+- FR-37-2-2 — `parse_monthly_rates` et `parse_daily_rates` lisent le XML de l'AFC/OFDF par noms locaux, par une seule analyse des devises ; `rate_per_unit = published_rate / published_unit`, arrondi à 10 décimales ; une devise invalide ou hors bornes est écartée sans bloquer les autres ; une seule fonction publique des bornes d'un cours (> 0, ≤ 10 décimales, ≤ 10⁶) sert aussi le `PUT` d'un cours, 37-3a et 37-5 (AC-2).
+- FR-37-2-3 — Une source de cours (`RateSource`, `fetch_month`, `fetch_day`) est portée par `AppState` ; une récupération écrit la valeur publiée par la règle (a) insérée, (b) confirmée, (c) corrigée et remplacée (`first_fetched_at` jamais avancé), en une transaction par mois ou par jour, et **ne modifie jamais une ligne existante d'`exchange_rates`**, ni `manual` ni `afc` (AC-3).
+- FR-37-2-4 — Les cours publiés utiles d'un exercice multi-devises se copient dans `exchange_rates`, pour les seules devises des comptes de la société (archivés compris), par insertion seule (une ligne présente n'est jamais modifiée), sans audit propre : à chaque récupération, à la création ou au passage d'un exercice en multi-devises, au changement de genre et quand un compte reçoit une devise — jamais à l'activation ; la société ne lit que `exchange_rates` (AC-3 bis).
+- FR-37-2-5 — La récupération automatique ne vise que les exercices multi-devises ouverts, mois et jours utiles seulement : quotidienne tant que le mois courant ou le mois suivant manque, puis en pause d'au plus 24 jours, jamais au-delà du 25 ; lancée aussi à la connexion (hors le seul mois suivant), elle revérifie le mois courant ; ni tâche ni déclenchement en mode test ; dates en Europe/Zurich (AC-4).
+- FR-37-2-6 — Le cours effectif est unique : le cours retenu par la société, avec sa source, lu par une seule fonction de dépôt ; `GET /exchange-rates`, `GET /exchange-rates/status`, `GET /exchange-rates/lookup` (lecture seule, 404 `RATE_UNAVAILABLE` à forme unique) et le tableau annuel `GET /fiscal-years/{id}/exchange-rates` le rendent ; `POST /exchange-rates/fetch` récupère un mois (≤ mois suivant) ou un jour (strictement passé), 404 `RATE_NOT_PUBLISHED`, 503 `RATE_SOURCE_UNAVAILABLE` sans bandeau dégradé, jamais 500 ni 502 ; toutes ces routes rendent 409 `MULTI_CURRENCY_DISABLED` en mono-devise, dans l'ordre des refus de l'AC-5 (AC-5).
+- FR-37-2-7 — L'écran *Paramètres → Cours de change* montre un tableau annuel par exercice multi-devises, une colonne par mois quelle que soit la durée, plus Ouverture et Clôture : une valeur par case, modifiable, avec la mention de sa source et de la valeur publiée et le ↑ ; choix des deux genres et dialogue de l'exercice suivant ; « Récupérer les cours manquants » et « Revérifier les cours publiés » ; exercice clos en lecture seule ; bandeau des corrections à acquitter (AC-6).
+- FR-37-2-8 — `exchange_rates` est sauvegardée et restaurée avec la société, sources comprises, et sert dès l'import ; une sauvegarde antérieure sans la table se réimporte (liste close de 37-1 AC-6, fenêtre d'import inchangée) ; les tables `_kesh_*` ne sont pas touchées par l'import, sont vidées par `_test/seed` et `_test/reset`, et la remise à zéro de démonstration vide `exchange_rates` en gardant les valeurs publiées (AC-1, AC-7).
+- FR-37-2-9 — Cours de la société et cours d'une ligne restent deux niveaux distincts ; saisie et reprise (↑) sont auditées, la copie ne l'est pas ; une ligne d'écriture est `afc` si son cours égale le cours `afc` retenu par la société, jamais la valeur publiée (AC-9).
+- FR-37-2-10 — `PUT /exchange-rates/rates` saisit un cours `manual` par unité (400 `FX_RATE_INVALID` ; 409 `OPTIMISTIC_LOCK_CONFLICT`, deux créations simultanées comprises, jamais 500) ; `POST /exchange-rates/rates/reset` (↑) reprend en `afc` la valeur publiée que l'écran a montrée (409 si elle a changé), ou retire un cours saisi sans valeur publiée ; ni l'un ni l'autre ne réécrit une écriture passée (AC-5).
+- FR-37-2-11 — `PUT /fiscal-years/{id}/rate-kinds` règle les genres d'ouverture et de clôture (404, 409 `MULTI_CURRENCY_DISABLED`, 400 `FISCAL_YEAR_CLOSED`, no-op sans audit) et, avec `applyToNextOpening`, applique le genre de clôture changé à l'ouverture de l'exercice suivant s'il est ouvert (`applied: false` s'il est clos), sans modifier aucune écriture (AC-5, AC-6).
+- FR-37-2-12 — Une correction de l'AFC ne change le cours retenu d'aucune société : elle s'annonce par société (`GET /exchange-rates/notices` : lignes `afc` qui diffèrent de la valeur publiée, non acquittées à cette valeur), s'acquitte par société et par valeur (`POST /exchange-rates/notices/acknowledge`, sans toucher `rate`, `source` ni `version`) et se reprend par le ↑ (AC-5, AC-6).
 
 **Non fonctionnelles**
 
 - NFR-37-2-1 — La migration est non breaking : DDL seul (AC-1).
 - NFR-37-2-2 — L'arrondi est déterministe (`MidpointAwayFromZero`) : la valeur lue est celle qui est stockée (AC-2).
-- NFR-37-2-3 — Appels sortants bornés : verrou de récupération et mémoire de 15 minutes (AC-3, AC-5).
-- NFR-37-2-4 — Aucun appel réseau en test ni en CI : source factice par défaut ; `lookup` après import répond sans appel sortant (AC-3, AC-7).
-- NFR-37-2-5 — Audit des saisies et reprises de cours (AC-9).
-- NFR-37-2-6 — Quatre locales (écran, erreurs dont `FX_RATE_INVALID`, libellés d'audit) et manuel à jour (AC-8).
+- NFR-37-2-3 — Appels sortants bornés : une récupération à la fois par unité (`rate_fetch_lock`), mémoire de 15 minutes des échecs et non-publications, au plus 36 unités par tour plus une revérification, au plus un tour de connexion par quart d'heure ; délais 5 s et 20 s, réponse ≤ 1 MiB (AC-3, AC-4, AC-5).
+- NFR-37-2-4 — Aucun appel réseau en test ni en CI : source factice par défaut, tâche automatique non lancée en mode test ; `lookup` après import répond sans appel sortant (AC-3, AC-4, AC-7).
+- NFR-37-2-5 — Audit : `exchange_rates.fetched` (entité `installation`, sur succès seulement), `exchange_rate.created`/`updated`/`reset`, `exchange_rates.corrections_acknowledged`, `fiscal_year.rate_kinds_updated` ; récupérations automatiques et copies non auditées ; routes mutantes au registre (`Traced, SansEcritureAuJournal`), rejouées sur interblocage (AC-4, AC-5, AC-9).
+- NFR-37-2-6 — Quatre locales (écran, erreurs dont `FX_RATE_INVALID`, libellés d'audit et de type d'entité) ; manuel utilisateur et manuel d'administration (accès sortant HTTPS, `HTTPS_PROXY`, réimport des sauvegardes antérieures, phrase du registre des routes), PDF régénérés (AC-8).
+- NFR-37-2-7 — RBAC : `POST /fetch`, `PUT …/rates`, `POST …/rates/reset`, `PUT /rate-kinds` et les deux routes de notices réservés à l'Administrateur et au Comptable (Consultation 403) ; `lookup` et le tableau annuel ouverts à tout rôle authentifié (AC-5).
+- NFR-37-2-8 — Source tenue pour hostile : URL de production constante, sans variable d'environnement, HTTPS seul, sans redirection ni cookies, `User-Agent` sans donnée personnelle ; XML filtré avant toute écriture (DOCTYPE et entités non prédéfinies refusés, tailles, profondeur, grammaire des nombres, codes ISO 4217 hors `CHF`) ; erreurs stockées en codes classés, jamais le texte d'une erreur `reqwest` (AC-1, AC-2, AC-3).
 
 ## Critères d'acceptation
 
@@ -1603,3 +1608,12 @@ cours sans saisie.
   (`afc|manual`, 37-3a) est une entrée client, non une lecture de source. Non exercés : reste des fiches hors diff,
   compilation, rendu.
 - 2026-11-15 — exigences FR/NFR ajoutées (B26 ; orchestrateur, Sonnet) : 9 FR, 6 NFR.
+- 2026-11-15 — validation ciblée des exigences (Opus) : 9 MEDIUM, 7 LOW, tous corrigés. MEDIUM : FR-3/FR-4 (une
+  récupération ne modifie jamais `exchange_rates` ; copie par insertion seule, devises des comptes, A24) ; FR-6
+  (contrat de l'API réduit à la fonction de lecture : routes, codes, jamais 500 ni 502, `MULTI_CURRENCY_DISABLED`) ;
+  FR-8 (réimport d'une sauvegarde sans la table, R1 ; remise à zéro) ; NFR-5 (audit réduit à la saisie et au ↑) ;
+  `PUT …/rates` et ↑ sans exigence → **FR-37-2-10** ; `PUT /rate-kinds` et U4 → **FR-37-2-11** ; corrections de l'AFC,
+  notices et acquittement → **FR-37-2-12** ; RBAC → **NFR-37-2-7** ; filtrage de la source hostile (R5) et client
+  HTTP → **NFR-37-2-8**. LOW : FR-1 (`_kesh_exchange_rate_fetch` omise), FR-2 (`parse_daily_rates`, fonction des
+  bornes), FR-5 (calendrier S1, connexion, A10), FR-7 (écran), NFR-3 (bornes), NFR-4 (renvoi AC-4), NFR-6 (manuel
+  d'administration) ; FR-9 précisé. Décompte : 12 FR, 8 NFR (+3, +2).
