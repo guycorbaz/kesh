@@ -2516,6 +2516,7 @@ reminders-link-aged = Vedi scadenziario per età
 # Story 16-1b (#152) — selecteur de compte de produit par ligne.
 common-account-clear = Cancella il conto selezionato
 common-account-invalid = Conto non valido — non imputabile, archiviato o di tipo inatteso
+common-account-no-match = Nessun conto corrisponde a questo inserimento: scegliete un conto dall'elenco.
 invoice-line-col-revenue-account = Conto di ricavo
 invoice-detail-project-label = Progetto analitico
 invoice-field-project = Progetto analitico (facoltativo)
