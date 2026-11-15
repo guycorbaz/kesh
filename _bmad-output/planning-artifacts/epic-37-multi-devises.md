@@ -374,6 +374,19 @@ Arbitrages de l'orchestrateur pendant la validation CR-6 — **approuvés par Be
   égale son CHF : cours exact, provenance `afc`. Sinon cours de `rate_from_chf`, `manual`. Raison : CHF ÷ montant
   ne redonne presque jamais le cours AFC à la décimale près (1125.83 ÷ 1234.56 ≈ 0.9119281 pour 0.91193), si bien que
   des livres tenus au cours AFC (import 2024) partiraient `manual`. L'écran applique la même règle à un CHF saisi.
+- **A33** (37-3b AC-2 bis, V3 ; **approuvé par Beat le 2026-11-15**) — frais de conversion sur un compte de charge en
+  devise : l'écriture à compléter (écriture 2) admet, en plus de **son** compte en devise au débit net, des lignes de
+  **frais** au **débit** de comptes de charge (`account_type = Expense`, `crates/kesh-db/src/entities/account.rs:16`)
+  de la **même devise** (p. ex. 6911 *Frais PayPal USD*). Ces lignes n'entrent pas dans la règle « un seul compte en
+  devise » (le compte en devise est le seul compte en devise **hors** comptes de charge ; c'est lui qui donne la paire
+  `fx_accounts_for`) ; la ligne de différence se calcule **après** elles (Σ débit, frais compris, contre Σ crédit) :
+  le frais ne va jamais dans la différence de change. Restent refusés, quand la forme est examinée (écriture complétée
+  ou portant une ligne de différence) : une ligne **au crédit** d'un compte de charge en devise → 400 `Validation`
+  (`details: { entry, line }`) ; un compte (de charge ou non) d'une **autre** devise → 400 `FX_MULTIPLE_CURRENCIES`
+  (`details: { entry, currencies }`), le code que le dépôt rendrait (37-3a AC-4, 2 bis), anticipé au rang de la
+  forme. Un frais en CHF (compte de charge sans devise) reste une ligne CHF ordinaire, comptée avant la différence
+  comme les autres. Raison : B3/B27 de l'Epic 38 — chaque sous-compte de frais se rapproche du relevé de son prestataire ; un
+  frais versé à la différence de change ne s'y rapprocherait plus.
 
 Aucune migration ni route neuve ; contrat d'API étendu sans rupture pour un corps complet (un corps sans `debit` sur
 une ligne CHF rend 400 au lieu de 422, déclaré). Les fiches 37-1, 37-3a, 37-3b, 37-4 et 37-5 sont à revalider (cycle
@@ -426,7 +439,7 @@ NFR-37-2-1 non breaking (AC-1) ; -2 arrondi déterministe (AC-2) ; -3 appels sor
 **37-3a** — FR-37-3a-1 colonnes et contraintes `chk_jel_fx_*` (AC-1) ; -2 `ForeignAmount`, `RateProvenance` (AC-2) ; -3 validation `kesh-core` (AC-3) ; -4 contrôle central et ordre des refus (AC-4) ; -5 chemins automatiques refusés (AC-5) ; -6 `foreign` à l'API (AC-6) ; -7 `PUT` et contre-passation (AC-7) ; -8 CSV, audit, MCP (AC-8) ; -9 limite du lettrage écrite (AC-9) ; -10 garde de l'exercice antérieur (AC-4) ; -11 qualification de la provenance, cours déduit (AC-2, AC-4) ; -12 bascule refusée sur solde en devise (AC-4) ; -13 réévaluation non modifiable (AC-7) ; -14 colonnes de pièce refusant un compte en devise (AC-5).
 NFR-37-3a-1 ligne CHF inchangée, JSON et audit compris (AC-1, AC-6, AC-8) ; -2 jamais de 500 sur validation (AC-3) ; -3 concurrence : verrous des comptes et de `companies`, cours lu sans verrou (AC-4) ; -4 audit des lignes en devise (AC-7, AC-8) ; -5 sauvegarde et CSV à 4 et 10 décimales (AC-1, AC-8) ; -6 refus par proposition dans les lots (AC-5).
 
-**37-3b** — FR-37-3b-1 soldes d'ouverture en devise, aucune lecture des cours avant les verrous (AC-1) ; -2 formulaire en devise (AC-2) ; -3 ligne d'écart ajoutée au formulaire et assistant *Conversion* avec ses gardes de désactivation (AC-2, AC-2 bis) ; -4 affichage, écriture de réévaluation non modifiable (AC-3) ; -5 sélecteurs sans compte en devise (AC-4) ; -6 cours proposé et provenance (AC-1, AC-2) ; -7 assistant TVA achat en devise (AC-2) ; -8 route de conversion, ses refus, leur ordre et ses verrous (AC-2 bis) ; -9 contrat des routes d'ouverture, 400 et non 422 ni 500 (AC-1) ; -10 refus FX du serveur affichés sur la ligne fautive (AC-1, AC-2, AC-2 bis).
+**37-3b** — FR-37-3b-1 soldes d'ouverture en devise, aucune lecture des cours avant les verrous (AC-1) ; -2 formulaire en devise (AC-2) ; -3 ligne d'écart ajoutée au formulaire et assistant *Conversion* avec ses gardes de désactivation, frais de l'écriture 2 admis sur un compte de charge de la devise (AC-2, AC-2 bis, A33) ; -4 affichage, écriture de réévaluation non modifiable (AC-3) ; -5 sélecteurs sans compte en devise (AC-4) ; -6 cours proposé et provenance (AC-1, AC-2) ; -7 assistant TVA achat en devise (AC-2) ; -8 route de conversion, ses refus, leur ordre et ses verrous, frais sur compte de charge de la devise hors différence (AC-2 bis, A33) ; -9 contrat des routes d'ouverture, 400 et non 422 ni 500 (AC-1) ; -10 refus FX du serveur affichés sur la ligne fautive (AC-1, AC-2, AC-2 bis).
 NFR-37-3b-1 pas de régression mono-devise (AC-1, AC-2, AC-5) ; -2 motifs de blocage en quatre locales (AC-3) ; -3 inventaire clos, garde Vitest (AC-4) ; -4 E2E sans réseau (AC-5) ; -5 manuel et guide d'API (AC-6) ; -6 calculs jumeaux de l'écran et du serveur (AC-1, AC-2).
 
 **37-4** — FR-37-4-1 règle du solde en devise, bornes d'exercice, inclusion, `balances_as_of` pour 37-5 (AC-1 à AC-1 quater) ; -2 grand livre (AC-1 bis, AC-2) ; -3 balance (AC-3) ; -4 bilan et compte de résultat (AC-4) ; -5 CSV et PDF des quatre rapports, disposition du PDF, affichage (AC-5) ; -6 JSON, vues, MCP (AC-6) ; -7 journal étendu au JSON et à l'écran seulement, autres rapports et sites hors rapports en CHF (AC-7).
