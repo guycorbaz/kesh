@@ -73,6 +73,16 @@
 						"Si les comptes 1100 et 3000 figurent dans votre plan comptable, ce refus vient d'un écran de Kesh ouvert avant la fin de la configuration. Dans Administration → Facturation, désignez le compte débiteurs et le compte de produit par défaut, vérifiez aussi les autres comptes par défaut (créanciers, arrondi, escompte, frais bancaires, pertes), enregistrez, puis réessayez."
 					)}
 				</p>
+				<!-- Revue P1 (E10) : le chemin du remède, d'un clic. -->
+				<p class="mb-2">
+					<a
+						href="/settings/invoicing"
+						class="font-medium text-primary underline hover:no-underline"
+						data-testid="onboarding-finalize-remedy-link"
+					>
+						{i18nMsg('onboarding-finalize-remedy-link', 'Ouvrir Administration → Facturation')}
+					</a>
+				</p>
 			{/if}
 			<p class="font-medium" data-testid="onboarding-finalize-motif">{motif}</p>
 		</div>

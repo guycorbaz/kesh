@@ -262,8 +262,10 @@ const PREFIXES = [
  * `-retry`, `-finalizing`, `-finalizing-desc`, `-finalize-remedy`, dix `-done-*`, `-start`,
  * `-demo-loading`, `-demo-ready`, `-demo-navigate-error`, `-fallback`, `-fallback-reload`), un
  * repli chacune, et deux retirées (`-already-finalized`, `-finalize-incomplete`, mortes, D2).
+ * Remédiation de la revue P1 : **453 → 455** (+2, `expected 455 to be 453`),
+ * `onboarding-done-credit-card` et `onboarding-finalize-remedy-link`.
  */
-const CLES_RELEVEES = 453;
+const CLES_RELEVEES = 455;
 
 
 /** Relève, pour chaque clé du domaine, l'ensemble de ses replis littéraux distincts. */

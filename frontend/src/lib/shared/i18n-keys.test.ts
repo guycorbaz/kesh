@@ -1022,7 +1022,10 @@ const ATTENDU = {
 	// ce nombre — les cinq écrans neufs de `features/onboarding/` et les textes neufs de
 	// `routes/onboarding/+page.svelte`, moins les deux clés mortes de D2. Que des littéraux. À
 	// relever de nouveau à l'union de la 0.18.0 (C-e350-18).
-	sitesTotal: 3081,
+	// Remédiation de la revue P1 de la 36-17 : **3081 → 3083**, relevé par la garde (« expected 3083
+	// to be 3081 », `kesh-gate-logs/e36-17/rem1-front-test-unit-releve.log`) —
+	// `onboarding-done-credit-card` (B7/E7) et `onboarding-finalize-remedy-link` (E10), deux littéraux.
+	sitesTotal: 3083,
 	sitesNonResolus: 31,
 	relais: 6,
 	// Story 26-1 (#620, AC3-bis) : **10 → 11** — `lib/features/bank-import/

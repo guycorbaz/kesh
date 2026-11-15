@@ -36,6 +36,9 @@ const CLES = [
 	'onboarding-done-chart',
 	'onboarding-done-fiscal-year',
 	'onboarding-done-bank-account',
+	// Revue P1 (B7/E7, E10).
+	'onboarding-done-credit-card',
+	'onboarding-finalize-remedy-link',
 	'onboarding-done-summary-error',
 	'onboarding-done-todo',
 	'onboarding-done-todo-vat',

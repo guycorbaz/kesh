@@ -13,8 +13,12 @@
 		/** Code de la langue comptable (`FR`, `DE`, `IT`, `EN`). */
 		accountingLanguage: string;
 		fiscalYears: ReadonlyArray<{ name: string; startDate: string; endDate: string }>;
-		/** Le nom d'affichage de chaque compte bancaire (`bankAccountName`), sans IBAN. */
-		bankAccounts: ReadonlyArray<string>;
+		/**
+		 * Chaque compte bancaire : son nom d'affichage (`bankAccountName`), sans IBAN, et s'il est
+		 * une carte de crédit (34-11 ; revue P1, B7/E7 : une carte ne se nomme pas « Compte
+		 * bancaire » et ne tient pas lieu de compte bancaire au « à faire »).
+		 */
+		bankAccounts: ReadonlyArray<{ name: string; card: boolean }>;
 	}
 </script>
 
@@ -58,7 +62,9 @@
 		}
 	}
 
-	const sansCompteBancaire = $derived(summary !== null && summary.bankAccounts.length === 0);
+	const sansCompteBancaire = $derived(
+		summary !== null && !summary.bankAccounts.some((compte) => !compte.card)
+	);
 
 	/**
 	 * La phrase de la lecture en échec ; le motif ne la suit que s'il en dit plus (la page
@@ -83,17 +89,21 @@
 				<dt class="text-text-muted">{i18nMsg('onboarding-done-company', 'Société')}</dt>
 				<dd>{summary.companyName}</dd>
 				<dt class="text-text-muted">{i18nMsg('onboarding-done-chart', 'Plan comptable')}</dt>
-				<dd>
-					{orgTypeLabel(summary.orgType)} — {i18nMsg('onboarding-choose-accounting-lang', 'Langue comptable')}
-					: {onboardingLanguageLabel(summary.accountingLanguage)}
-				</dd>
+				<dd>{orgTypeLabel(summary.orgType)}</dd>
+				<!-- Revue P1 (B5, E8) : une ligne à elle, sans ponctuation en dur hors du catalogue. -->
+				<dt class="text-text-muted">{i18nMsg('onboarding-choose-accounting-lang', 'Langue comptable')}</dt>
+				<dd>{onboardingLanguageLabel(summary.accountingLanguage)}</dd>
 				{#each summary.fiscalYears as fy (fy.name + fy.startDate)}
 					<dt class="text-text-muted">{i18nMsg('onboarding-done-fiscal-year', 'Exercice')}</dt>
 					<dd>{fy.name} ({formatSwissDate(fy.startDate)} – {formatSwissDate(fy.endDate)})</dd>
 				{/each}
-				{#each summary.bankAccounts as nom, i (i)}
-					<dt class="text-text-muted">{i18nMsg('onboarding-done-bank-account', 'Compte bancaire')}</dt>
-					<dd>{nom}</dd>
+				{#each summary.bankAccounts as compte, i (i)}
+					<dt class="text-text-muted">
+						{compte.card
+							? i18nMsg('onboarding-done-credit-card', 'Carte de crédit')
+							: i18nMsg('onboarding-done-bank-account', 'Compte bancaire')}
+					</dt>
+					<dd>{compte.name}</dd>
 				{/each}
 			</dl>
 		{:else if summaryError}

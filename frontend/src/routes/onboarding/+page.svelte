@@ -364,7 +364,10 @@
 				fiscalYears: [...years]
 					.sort((a, b) => a.startDate.localeCompare(b.startDate))
 					.map((y) => ({ name: y.name, startDate: y.startDate, endDate: y.endDate })),
-				bankAccounts: current.bankAccounts.map(bankAccountName),
+				bankAccounts: current.bankAccounts.map((compte) => ({
+					name: bankAccountName(compte),
+					card: compte.accountKind === 'credit_card',
+				})),
 			};
 		} catch (err) {
 			summaryError = errorMessageOf(
@@ -409,10 +412,14 @@
 			);
 			return;
 		}
-		await runFinalize();
+		await finalizeAfterBankStep();
 	}
 
 	async function handleSkipBank() {
+		// Revue P1 (B3, E3) : même garde de réentrée que `submitBankAccount` — un second appel
+		// relancerait `skipBank`, dont le refus remettrait `finalizing` à faux pendant la
+		// finalisation du premier.
+		if (finalizing) return;
 		finalizing = true;
 		try {
 			await onboardingState.skipBank();
@@ -421,6 +428,17 @@
 			toast.error(
 				errorMessageOf(err, msg('onboarding-bank-skip-error', 'Erreur lors du saut du compte bancaire'))
 			);
+			return;
+		}
+		await finalizeAfterBankStep();
+	}
+
+	// Revue P1 (E5) : la finalisation ne part qu'à l'étape 7, la seule où son écran (échec,
+	// en cours) se lit. Si l'étape bancaire rendait un autre état, la page montre simplement
+	// l'écran de cet état, boutons actifs, plutôt qu'un refus muet.
+	async function finalizeAfterBankStep() {
+		if (onboardingState.stepCompleted !== 7) {
+			finalizing = false;
 			return;
 		}
 		await runFinalize();

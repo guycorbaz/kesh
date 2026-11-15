@@ -256,6 +256,8 @@ describe('échec et Réessayer (AC4)', () => {
 		expect(motif.textContent).toContain('MOTIF-FIN');
 		// Ordre des nœuds : le remède précède le motif.
 		expect(remede.compareDocumentPosition(motif) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+		// Revue P1 (E10) : le chemin du remède, d'un clic.
+		expect(screen.getByTestId('onboarding-finalize-remedy-link').getAttribute('href')).toBe('/settings/invoicing');
 		expect(toastError).not.toHaveBeenCalled();
 		unmount();
 	});
@@ -413,6 +415,173 @@ describe('chemin démo (AC8)', () => {
 		await waitFor(() => expect(screen.queryByTestId('onboarding-demo-motif')).not.toBeNull());
 		expect(ecrans(container)).toEqual(['demo-ready']);
 		expect(screen.getByTestId('onboarding-demo-start').getAttribute('href')).toBe('/');
+		unmount();
+	});
+
+	it('pendant le chargement, le lien de restauration disparaît (revue P1, A2)', async () => {
+		await au(2);
+		const graine = enAttente<OnboardingState>();
+		vi.mocked(api.seedDemo).mockReturnValueOnce(graine.promesse);
+		gotoMock.mockResolvedValueOnce(undefined);
+		const { unmount } = render(Page);
+		expect(screen.queryByTestId('onboarding-restore-link')).not.toBeNull();
+		await fireEvent.click(screen.getByTestId('onboarding-path-demo'));
+		await waitFor(() => expect(screen.queryByTestId('onboarding-screen-demo-loading')).not.toBeNull());
+		expect(screen.queryByTestId('onboarding-restore-link')).toBeNull();
+		graine.resoudre(etat(3, true));
+		await waitFor(() => expect(gotoMock).toHaveBeenCalledWith('/'));
+		unmount();
+	});
+});
+
+/** Remplit l'étape bancaire et l'envoie (*Enregistrer*), une fois la liste des comptes chargée. */
+async function enregistrerLeCompte() {
+	await waitFor(() =>
+		expect((screen.getByTestId('onboarding-bank-save') as HTMLButtonElement).disabled).toBe(false)
+	);
+	for (const [id, v] of [
+		['bank-name', 'Exemple Banque SA'],
+		['bank-iban', IBAN_DEMO],
+	]) {
+		const el = document.getElementById(id) as HTMLInputElement;
+		el.value = v;
+		await fireEvent.input(el);
+	}
+	await fireEvent.submit(document.querySelector('form') as HTMLFormElement);
+}
+
+function boutonsBancairesActifs() {
+	expect((screen.getByTestId('onboarding-bank-save') as HTMLButtonElement).disabled).toBe(false);
+	expect((screen.getByTestId('onboarding-skip-bank') as HTMLButtonElement).disabled).toBe(false);
+}
+
+describe('les drapeaux se relâchent après un refus (revue P1, B2, E1)', () => {
+	it('refus de l’étape bancaire (Enregistrer) : écran 6, boutons de nouveau actifs', async () => {
+		await au(6);
+		vi.mocked(api.setBankAccount).mockRejectedValueOnce({ code: 'VALIDATION_ERROR', message: 'IBAN', status: 400 });
+		const { container, unmount } = render(Page);
+		await enregistrerLeCompte();
+		await waitFor(() => expect(toastError).toHaveBeenCalledTimes(1));
+		expect(ecrans(container)).toEqual(['6']);
+		await waitFor(() => boutonsBancairesActifs());
+		expect(api.finalize).not.toHaveBeenCalled();
+		unmount();
+	});
+
+	it('refus de Configurer plus tard : écran 6, boutons de nouveau actifs', async () => {
+		await au(6);
+		vi.mocked(api.skipBank).mockRejectedValueOnce({ code: 'X', message: 'REFUS', status: 400 });
+		const { container, unmount } = render(Page);
+		await fireEvent.click(screen.getByTestId('onboarding-skip-bank'));
+		await waitFor(() => expect(toastError).toHaveBeenCalledTimes(1));
+		expect(ecrans(container)).toEqual(['6']);
+		await waitFor(() => boutonsBancairesActifs());
+		unmount();
+	});
+
+	it('refus du chargement de la démo : écran 2, bouton de nouveau actif, pas d’indicateur', async () => {
+		await au(2);
+		vi.mocked(api.seedDemo).mockRejectedValueOnce({ code: 'X', message: 'REFUS-DEMO', status: 500 });
+		const { container, unmount } = render(Page);
+		await fireEvent.click(screen.getByTestId('onboarding-path-demo'));
+		await waitFor(() => expect(toastError).toHaveBeenCalledWith('REFUS-DEMO'));
+		await waitFor(() => expect(ecrans(container)).toEqual(['2']));
+		expect((screen.getByTestId('onboarding-path-demo') as HTMLButtonElement).disabled).toBe(false);
+		expect(gotoMock).not.toHaveBeenCalled();
+		unmount();
+	});
+
+	it('étape bancaire qui ne rend pas l’étape 7 : aucune finalisation, écran de l’état (E5)', async () => {
+		await au(6);
+		vi.mocked(api.skipBank).mockResolvedValueOnce(etat(6));
+		const { container, unmount } = render(Page);
+		await fireEvent.click(screen.getByTestId('onboarding-skip-bank'));
+		await waitFor(() => expect(api.skipBank).toHaveBeenCalledTimes(1));
+		await waitFor(() => boutonsBancairesActifs());
+		expect(ecrans(container)).toEqual(['6']);
+		expect(api.finalize).not.toHaveBeenCalled();
+		unmount();
+	});
+
+	it('double clic sur Configurer plus tard : un seul saut (B3, E3)', async () => {
+		await au(6);
+		const saut = enAttente<OnboardingState>();
+		vi.mocked(api.skipBank).mockReturnValueOnce(saut.promesse);
+		vi.mocked(api.finalize).mockResolvedValueOnce(etat(8));
+		const { container, unmount } = render(Page);
+		const bouton = screen.getByTestId('onboarding-skip-bank');
+		// Deux événements dans la même tâche, avant toute mise à jour du DOM.
+		bouton.click();
+		bouton.click();
+		saut.resoudre(etat(7));
+		await waitFor(() => expect(ecrans(container)).toEqual(['done']));
+		expect(api.skipBank).toHaveBeenCalledTimes(1);
+		expect(toastError).not.toHaveBeenCalled();
+		unmount();
+	});
+});
+
+describe('compléments de la revue P1 (A5, A6, E6, B7/E7)', () => {
+	it('Enregistrer : « Configuration en cours… » pendant la finalisation (A5)', async () => {
+		await au(6);
+		vi.mocked(api.setBankAccount).mockResolvedValueOnce(etat(7));
+		const fin = enAttente<OnboardingState>();
+		vi.mocked(api.finalize).mockReturnValueOnce(fin.promesse);
+		const { container, unmount } = render(Page);
+		await enregistrerLeCompte();
+		await waitFor(() => expect(ecrans(container)).toEqual(['finalizing']));
+		fin.resoudre(etat(8));
+		await waitFor(() => expect(ecrans(container)).toEqual(['done']));
+		unmount();
+	});
+
+	it('lecture des exercices en échec : la ligne et le motif (A6)', async () => {
+		yearsMock.mockRejectedValue({ code: 'INTERNAL_ERROR', message: 'MOTIF-EXERCICES', status: 500 });
+		await au(8);
+		const { unmount } = render(Page);
+		await waitFor(() => expect(screen.queryByTestId('onboarding-done-summary-error')).not.toBeNull());
+		expect(screen.getByTestId('onboarding-done-summary-error').textContent).toContain('MOTIF-EXERCICES');
+		expect(screen.getByTestId('onboarding-done-start')).toBeTruthy();
+		unmount();
+	});
+
+	it('exercices rendus dans l’ordre des dates (E6)', async () => {
+		yearsMock.mockResolvedValue([
+			{ ...EXERCICE, id: 2, name: 'Exercice 2027', startDate: '2027-01-01', endDate: '2027-12-31' },
+			EXERCICE,
+		]);
+		await au(8);
+		const { unmount } = render(Page);
+		await waitFor(() => expect(screen.queryByTestId('onboarding-done-summary')).not.toBeNull());
+		const texte = screen.getByTestId('onboarding-done-summary').textContent ?? '';
+		expect(texte.indexOf('Exercice 2026')).toBeGreaterThanOrEqual(0);
+		expect(texte.indexOf('Exercice 2026')).toBeLessThan(texte.indexOf('Exercice 2027'));
+		unmount();
+	});
+
+	it('une carte de crédit se nomme comme telle et ne tient pas lieu de compte bancaire (B7, E7)', async () => {
+		const avecCarte = societe(false);
+		avecCarte.bankAccounts = [
+			{
+				id: 2,
+				bankName: 'Exemple Carte',
+				description: null,
+				iban: null,
+				qrIban: null,
+				accountKind: 'credit_card',
+				cardLast4: '4242',
+				isPrimary: false,
+			},
+		];
+		companyMock.mockResolvedValue(avecCarte);
+		await au(8);
+		const { unmount } = render(Page);
+		await waitFor(() => expect(screen.queryByTestId('onboarding-done-summary')).not.toBeNull());
+		const texte = screen.getByTestId('onboarding-done-summary').textContent ?? '';
+		expect(texte).toContain('Carte de crédit');
+		expect(texte).toContain('Exemple Carte');
+		expect(texte).not.toContain('Compte bancaire');
+		expect(screen.getByTestId('onboarding-done-todo-bank')).toBeTruthy();
 		unmount();
 	});
 });
