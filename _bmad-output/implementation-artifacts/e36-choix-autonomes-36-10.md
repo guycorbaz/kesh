@@ -22,8 +22,9 @@ C-e355b-6 (`paid_at` est une date).
 - **Contexte** : `push_where_clauses` est la clause unique de la liste et de l'export ; `dateTo=9999-12-31` rendait une
   entrée posée à `23:59:59.999` UTC, qui est le `10000-01-01` à Zurich.
 - **Retenu** : la conversion dans `push_where_clauses`, `AuditLogListQuery` inchangé ; l'entrée de la dernière heure de
-  l'an 9999 n'est plus atteinte par un filtre de date (assumé, écrit) ; la borne basse de `1000-01-01` (`0999-12-31` UTC) se
-  vérifie au développement, plafonnée sinon.
+  l'an 9999 n'est plus atteinte par un filtre de date (assumé, écrit) ; la borne basse liée est **toujours plafonnée** à
+  `1000-01-01 00:00:00.000` (celle de `1000-01-01`, `0999-12-31` UTC, sortirait de la plage de `DATETIME`).
+  *(Annoté le 2026-11-15, validation P1, V1-3 : ce choix disait « se vérifie au développement, plafonnée sinon ».)*
 - **Écartées** : (a) convertir dans la route ; (b) étendre la plage admise à `10000-01-01` : hors de ce que la base stocke.
 - **Réversible** : oui.
 
@@ -41,15 +42,17 @@ C-e355b-6 (`paid_at` est une date).
 ### C-36-10-4 — La garde de la date du jour s'étend au jour d'un instant enregistré (fiche, D5)
 
 - **Contexte** : `date_du_jour_garde.rs` ne voit que la date du jour ; `DATE(rmd.last_sent_at)` lui échappait.
-- **Retenu** : une famille de plus, sur `crates/*/src` : `DATE(` SQL à 0, `.date()` en liste close ; sondes ; angles morts
-  écrits (dont les bornes `and_hms*` de #1147, tenues par le seul test du dépôt).
+- **Retenu** : une famille de plus, sur `crates/*/src` : `\bDATE\s*\(` SQL à 0 (motif sans lookahead, la crate `regex`
+  n'en ayant pas), `.date()` en liste close de trois ; sondes ; angles morts écrits (dont les bornes `and_hms*` de #1147,
+  tenues par le seul test du dépôt). *(Annoté le 2026-11-15, validation P1, V1-2, V1-4.)*
 - **Écartée** : n'écrire qu'un angle mort.
 - **Réversible** : oui (un test).
 
 ### C-36-10-5 — Les libellés des filtres perdent « jour UTC » ; le CSV garde ses heures UTC (fiche, D6)
 
 - **Contexte** : le libellé disait vrai d'un comportement qui disparaît ; le CSV porte des instants (#669).
-- **Retenu** : « Du » / « Au » (et les trois autres langues), sans clé neuve ; en-tête `Date (UTC)` et lignes `…Z`
-  inchangés.
+- **Retenu** : « Du » / « Au » (et les trois autres langues), sans clé neuve ; l'export inchangé — en-tête `Date (UTC)`
+  et lignes `AAAA-MM-JJ HH:MM:SS.mmm` sans fuseau écrit (`routes/audit_log.rs:374`). *(Annoté le 2026-11-15, validation
+  P1, V1-1 : ce choix disait « lignes `…Z` », forme de la réponse JSON, non du CSV.)*
 - **Écartées** : (a) « Du (jour suisse) » ; (b) le CSV à l'heure de Zurich : changement d'un export hors de #1147.
 - **Réversible** : oui (quatre valeurs de catalogue).

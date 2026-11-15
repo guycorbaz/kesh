@@ -61,7 +61,9 @@ l'opération ou le rappel a eu lieu.
   (`From (UTC day)`, `To (UTC day)`), `it-CH:3359-3360` (`Dal (giorno UTC)`, `Al (giorno UTC)`). Types :
   `frontend/src/lib/features/audit-log/audit-log.types.ts:44` (`/** Jour UTC, \`AAAA-MM-JJ\`. */`), `:46`.
 - **Le CSV** : en-tête `audit-log-csv-header-created-at = Date (UTC)` (`fr-CH:3414` ; repli `routes/audit_log.rs:279`,
-  `"Date (UTC)",`) ; chaque ligne porte l'instant UTC explicite (`:113`, `.format("%Y-%m-%dT%H:%M:%S%.3fZ")`).
+  `"Date (UTC)",`) ; chaque ligne porte l'instant UTC **sans fuseau écrit**, l'unité n'étant dite que par l'en-tête
+  (`:372-375`, `.created_at` `.format("%Y-%m-%d %H:%M:%S%.3f")` → `2026-09-14 22:00:00.000`). La forme à `T…Z` est celle
+  de la réponse **JSON** (`AuditLogEntryResponse::depuis`, `:113`, `.format("%Y-%m-%dT%H:%M:%S%.3fZ")`), non du CSV.
 - **Le serveur MCP** ne lit pas le journal d'audit (`git grep -n "audit_log::list\|list_for_export\b\|AuditLogListQuery" --
   'crates/*/src/*'` : seuls `routes/audit_log.rs` et des commentaires de `exports/csv_tables.rs:1521-1522`) ; l'export
   global (`exports/global.rs:395`, `list_all_by_company`) n'a pas de filtre de date. Les routes du journal sont **fermées aux
@@ -165,10 +167,12 @@ premier `#[cfg(test)]` du fichier compte pour test) :
 $ git grep -nE "\.date\(\)" -- 'crates/*/src/*.rs' | /usr/bin/grep -vE ":\s*//"      # 3 lignes, dont 2 hors tests :
 crates/kesh-api/src/routes/dunning_reminders.rs:272:    borner(body.sent_at.date(), "sentAt")?;
 crates/kesh-api/src/routes/invoices.rs:1573:                    .map(|d| format_date(&d.date()))
+crates/kesh-api/src/routes/payment_batches.rs:355:            requested_execution_date: moment.date(),   # mod tests (#[cfg(test)] :333)
 ```
 → `dunning_reminders.rs:272` **hors symptôme** : `borner` ne contrôle que la plage d'années stockable (Story 33-4), un jour
 UTC ou suisse y donne le même verdict sauf la nuit du 31 décembre 9999. `invoices.rs:1573` **hors symptôme** : `paid_at`
-du CSV de l'échéancier, une date à minuit (C-e355b-6, revue P1 de la 35-5b).
+du CSV de l'échéancier, une date à minuit (C-e355b-6, revue P1 de la 35-5b). `payment_batches.rs:355` est dans le
+`mod tests` du fichier (`#[cfg(test)]` à `:333`) : une fixture, hors symptôme. Liste close de D5 (b) : ces **trois**.
 
 **I4 — Rust : les instants qui bornent un jour** (un jour civil monté en instant par `and_hms*`, `and_time`,
 `NaiveTime::MIN`, puis comparé à un horodatage), hors modules de tests — 54 lignes au total, 19 hors tests :
@@ -197,6 +201,11 @@ src/lib/shared/utils/date-filtre.ts:24, local-date.ts:47-49 getUTC… — idem
 src/routes/(app)/invoices/[id]/+page.svelte:1291, invoices/due-dates/+page.svelte:610,
   supplier-invoices/[id]/+page.svelte:210   paidAt.slice(0, 10)    — paid_at, date à minuit
 ```
+Et, hors de ce motif (validation P1, V1-6) : `src/lib/features/fiscal-years/fiscal-years.helpers.ts:52`
+(`const year = new Date().getFullYear();`, dans `currentYearDefaults`, `:51`) — l'**année du poste**, pré-remplie dans le
+formulaire d'un exercice et modifiable : le jour local assumé de l'écran (manuel, `user-manual.tex:752-754`, « il propose
+la date \textbf{de votre poste} »), hors du symptôme (aucun jour UTC). Les autres `new Date()` de `frontend/src` sont des
+instants (sessions, `reminder-sent-at.ts:31`, instant UTC voulu) ou ce même jour local.
 → **aucun site dans le périmètre** : arithmétique sur des dates civiles, ou `paid_at`. Le jour UTC de la seule spec
 (`audit-log.spec.ts:56-59`) suit le correctif (D6). La garde `local-date-guard.test.ts` couvre le reste de la forme
 `toISOString().slice(0, 10)` (src et specs, #889, 35-5c).
@@ -213,10 +222,14 @@ porté par une variable au nom neutre.
   fonctions pures : `debut_du_jour_suisse(jour: NaiveDate) -> DateTime<Utc>`, le **premier** instant (à la milliseconde)
   dont `jour_suisse` vaut `jour`, et `fin_du_jour_suisse(jour) -> DateTime<Utc>`, le **dernier** (`debut(jour + 1) − 1 ms`,
   ou équivalent). Le contrat se dit et se teste par `jour_suisse` : `jour_suisse(debut(j)) == j`,
-  `jour_suisse(debut(j) − 1 ms) == j − 1`, de même pour `fin`. Aucune panique : minuit n'est jamais un trou à Zurich depuis
-  1894, mais le passage de l'heure de Berne à l'heure d'Europe centrale (1894-06-01) en fut un, et un `LocalResult::None`
-  doit rendre le premier instant du jour, non `expect`. Le jour de 23 heures (fin mars) et celui de 25 heures (fin
-  octobre) sortent juste par construction. — *Écartée* : écrire les bornes `+01:00`/`+02:00` à la main dans `kesh-db` : un
+  `jour_suisse(debut(j) − 1 ms) == j − 1`, de même pour `fin`. **L'algorithme** : `Europe::Zurich.from_local_datetime(
+  j 00:00:00.000)` ; `Single(t)` → `t` ; `Ambiguous(a, b)` → `min(a, b)` ; `None` (minuit n'existe pas : le seul cas est le
+  passage de l'heure de Berne, `+00:29:46`, à l'heure d'Europe centrale le 1894-06-01) → **recherche dichotomique à la
+  milliseconde** du premier instant `t` de `[j 00:00Z − 3 h, j 00:00Z + 1 h]` tel que `jour_suisse(t) >= j` — exacte parce
+  que `jour_suisse` est croissante au sens large et que tout décalage de Zurich est compris entre `0` et `+2 h` ; une
+  avance par minutes est écartée (elle tomberait jusqu'à 59 s après le vrai premier instant, et la propriété à − 1 ms
+  rougirait). `fin(j) = debut(j + 1) − 1 ms`. Aucun `expect`, aucune panique. Le jour de 23 heures (fin mars) et celui de
+  25 heures (fin octobre) sortent juste par construction. — *Écartée* : écrire les bornes `+01:00`/`+02:00` à la main dans `kesh-db` : un
   second calcul du fuseau, qui dériverait de `jour_suisse` (c'est le mélange de deux horloges que `jour_suisse` a fermé).
 - **D2 — Le journal d'audit filtre en jours de Zurich, dans `push_where_clauses` seul** (C-36-10-2). `date_from` borne à
   `created_at >= debut_du_jour_suisse(date_from)`, `date_to` à `created_at <= fin_du_jour_suisse(date_to)`, liés en
@@ -225,10 +238,11 @@ porté par une variable au nom neutre.
   **inclusives à la milliseconde**, sans `<` sur le lendemain (raison écrite `:211-215`). — *Écartée* : convertir dans la
   route et passer des instants au dépôt : deux types pour la même requête, et le doc-comment « Les dates s'entendent en
   JOURS » perdrait son seul lecteur.
-- **D3 — Les bornes extrêmes restent servies** (C-36-10-2). `dateFrom=1000-01-01` donne une borne au `0999-12-31` UTC
-  (l'heure locale moyenne de 1000, `+00:34:08` dans la base de fuseaux) : le développeur établit à l'étape 0, par un test,
-  que MariaDB compare cette borne sans erreur ni panique de `push_bind` (`sqlx-core-0.8.6/src/query_builder.rs:158`, cité
-  `:204`), et sinon la plafonne à `1000-01-01 00:00:00.000` (aucune ligne ne peut la précéder). `dateTo=9999-12-31` donne
+- **D3 — Les bornes extrêmes restent servies** (C-36-10-2). `dateFrom=1000-01-01` donnerait une borne au `0999-12-31` UTC
+  (l'heure locale moyenne de 1000, `+00:34:08` dans la base de fuseaux), hors de la plage documentée de `DATETIME` : la
+  borne basse liée est **toujours plafonnée** à `1000-01-01 00:00:00.000` (`max(debut, 1000-01-01 00:00:00.000)`), ce qui
+  ne change aucun résultat (aucune ligne ne peut la précéder) et ne laisse rien dépendre de la tolérance du MariaDB de
+  chaque installation, ni de `push_bind` (`sqlx-core-0.8.6/src/query_builder.rs:158`, cité `:204`). `dateTo=9999-12-31` donne
   `9999-12-31T22:59:59.999Z` : une entrée posée à `9999-12-31 23:59:59.999` UTC est, à Zurich, le `10000-01-01`, et
   **aucun filtre de date ne la rend plus** ; le test `la_borne_haute_9999_est_acceptee_et_rend_bien_l_entree`
   (`audit_log_e2e.rs:469`) se réécrit sur l'entrée `22:59:59.999` (rendue) et `23:00:00.000` (non rendue). Une date de l'an
@@ -253,19 +267,25 @@ porté par une variable au nom neutre.
     jour puis un tri en Rust : le `LIMIT 50` (`:741`) s'appliquerait avant le tri et pourrait écarter une vraie candidate.
 - **D5 — La garde s'étend au jour d'un instant enregistré** (C-36-10-4). Une famille de plus dans
   `date_du_jour_garde.rs`, sur `crates/*/src` (texte sans lignes `//`), en liste close à égalité stricte comme les autres :
-  (a) SQL : `\bDATE\s*\(` (casse respectée : le SQL du dépôt s'écrit en capitales, et `date(` minuscule est un helper de
-  test courant en Rust, `reconciliation.rs:1289`), non suivi de `)` — **0 partout** après le correctif ; (b) Rust :
-  `\.date\s*\(\s*\)` — liste close comptée depuis l'exécution (aujourd'hui `dunning_reminders.rs` 1, borne d'années ;
-  `routes/invoices.rs` 1, `paid_at` ; et l'occurrence de test, à recompter), chaque entrée avec son motif. Sondes positives
-  (une forme coupée sur deux lignes, une `DATE(x)` ajoutée à un fichier propre) ; angles morts écrits au doc-comment
+  (a) SQL : `\bDATE\s*\(` **seul** (casse respectée : le SQL du dépôt s'écrit en capitales, et `date(` minuscule est un
+  helper de test courant en Rust, `reconciliation.rs:1289`) — **0 partout** après le correctif. La garde emploie la crate
+  `regex` (`date_du_jour_garde.rs:42`, `use regex::Regex;` ; `kesh-api/Cargo.toml:92`, `regex = "1.10"`), **sans
+  lookahead** : l'exclusion de `DATE()` que portait la commande `git grep -P` d'I2 ne s'y écrit pas, et n'a aucun usage au
+  dépôt (`DATE_FORMAT(`, `STR_TO_DATE(`, `AS DATE)` ne correspondent pas au motif, borné par `\b` et suivi de `(`). Le motif
+  se compile avec `regex` : une sonde le construit par `re()` et compte 1 sur `"COALESCE(DATE(rmd.last_sent_at), i.date)"` ;
+  (b) Rust : `\.date\s*\(\s*\)` — liste close comptée depuis l'exécution, **trois** entrées aujourd'hui (I3 :
+  `dunning_reminders.rs` 1, borne d'années ; `routes/invoices.rs` 1, `paid_at` ; `routes/payment_batches.rs` 1, `mod
+  tests`), chaque entrée avec son motif. Sondes positives (le texte ci-dessus, une forme coupée sur deux lignes, une
+  `DATE(x)` ajoutée à un fichier propre) ; angles morts écrits au doc-comment
   (`date(` minuscule, `CAST(… AS DATE)`, un jour tiré par `format`, des bornes `and_hms*` — la classe de #1147, que seul le
   test de `push_where_clauses` tient). — *Écartée* : ne rien étendre et écrire l'angle mort : #1053 est née de ce trou, et
   un `DATE(` SQL est un motif d'une ligne.
 - **D6 — L'écran et les catalogues cessent de dire « jour UTC »** (C-36-10-5). Libellés `Du` / `Au`, `Von` / `Bis`,
   `From` / `To`, `Dal` / `Al` (les quatre `messages.ftl` et les deux replis de `+page.svelte`, égaux à la valeur fr-CH) ;
   commentaires `+page.svelte:8-10` et `audit-log.types.ts:44`, `:46` réécrits (« jour de Zurich »). **Le CSV garde ses
-  heures UTC** et son en-tête `Date (UTC)` : ses lignes sont des instants (#669, « les horodatages restent en UTC »), écrits
-  avec leur `Z` ; seul le filtre change. Aucune clé i18n ajoutée ni retirée (`i18n-keys.test.ts` non touché). — *Écartée* :
+  heures UTC**, **son format** et son en-tête `Date (UTC)` : ses lignes sont des instants (#669, « les horodatages restent
+  en UTC »), écrits `AAAA-MM-JJ HH:MM:SS.mmm` sans fuseau (`routes/audit_log.rs:374`), l'unité étant dite par l'en-tête
+  (`fr-CH:3414`, repli `:279`) ; **aucun changement du contenu de l'export** ; seul le filtre change. Aucune clé i18n ajoutée ni retirée (`i18n-keys.test.ts` non touché). — *Écartée* :
   « Du (jour suisse) » : une précision que plus rien ne contredit à l'écran, puisque le tableau affiche l'heure du poste ;
   et écrire les lignes du CSV à l'heure de Zurich : changement du contenu d'un export sans demande, hors de #1147.
 - **D7 — Aucun Playwright neuf ; la spec existante passe au jour de Zurich**. Le filtre se joue à la frontière HTTP de
@@ -294,11 +314,13 @@ porté par une variable au nom neutre.
    le squelette rend les deux du 15 UTC (`21:59:59.999`, `22:00:00.000`). Même jeu en hiver (`2026-01-15`, décalage d'une
    heure). `dateFrom` seul et `dateTo` seul bornent chacun leur côté. Le **total** (`total`) suit les lignes.
 3. **AC3 — L'export suit le même filtre** : `GET /api/v1/audit-log/export.csv?dateFrom=2026-09-15&dateTo=2026-09-15` porte
-   les mêmes trois lignes, chacune avec son instant UTC en `…Z` (`22:00:00.000Z`, `22:30:00.000Z` le 14) et l'en-tête
-   `Date (UTC)` inchangé ; le nom reste celui de la 35-5b (date de Zurich de l'horloge).
+   les mêmes trois lignes, chacune avec son instant UTC **au format inchangé** (`2026-09-14 22:00:00.000`,
+   `2026-09-14 22:30:00.000`, `2026-09-15 21:59:59.999`, sans `T` ni `Z`) et l'en-tête `Date (UTC)` inchangé ; le nom reste
+   celui de la 35-5b (date de Zurich de l'horloge).
 4. **AC4 — Les bornes extrêmes** (D3) : `dateFrom=1000-01-01` et `dateTo=9999-12-31` répondent 200 sans panique ; l'entrée à
    `9999-12-31 22:59:59.999` est rendue par `dateTo=9999-12-31`, celle à `23:00:00.000` ne l'est pas ; une entrée à
-   `1000-01-01 00:00:00.000` est rendue par `dateFrom=1000-01-01`. Le refus de `0999-12-31` reste 400
+   `1000-01-01 00:00:00.000` est rendue par `dateFrom=1000-01-01`, la borne liée valant `1000-01-01 00:00:00.000` (D3,
+   plafond ; constaté par un test du dépôt sur la valeur liée, ou par une mutation qui retire le plafond). Le refus de `0999-12-31` reste 400
    (`une_date_hors_plage_est_refusee_pour_la_plage_et_non_le_format`, `:449`, vert sans changement).
 5. **AC5 — La fenêtre de la réconciliation la nuit** (#1053, D4), par HTTP, `D = 2026-06-15` (été), `e = D − 30 =
    2026-05-16` : facture `F = D − 90`, `E = D − 60`, dernier rappel non annulé posé à **`2026-05-15T22:30:00Z`** (00 h 30 le
@@ -308,9 +330,12 @@ porté par une variable au nom neutre.
    acceptation disent **la même chose** pour chaque cas (l'assertion `proposed, accepted` du test existant, `:3311`).
    Les onze cas existants (`a` à `k`) restent tels quels.
 6. **AC6 — Deux écritures, une règle** (D4) : un test de `kesh-db` met d'accord le prédicat de la proposition et la valeur
-   de `invoice_payment_anchor_date` sur un balayage d'instants de rappel autour de minuit (de `e − 1` à `e`, de 20 h 30 à
-   0 h 30 UTC par pas de 30 min, plus `±1 s` des deux bornes, été et hiver) : la facture est candidate **si et seulement
-   si** `anchor >= e`. `the_anchor_is_the_latest_of_date_due_date_and_last_reminder` gagne deux cas de nuit.
+   de `invoice_payment_anchor_date` sur un balayage d'instants de rappel autour du passage de `e − 1` à `e` à Zurich :
+   **été**, `e = 2026-05-16`, de `2026-05-15T20:30:00Z` à `2026-05-16T00:30:00Z` inclus par pas de 30 min, plus
+   `2026-05-15T21:59:59Z` et `2026-05-15T22:00:01Z` (de part et d'autre de `debut(e) = 2026-05-15T22:00:00Z`) ; **hiver**,
+   `e = 2026-01-16`, de `2026-01-15T21:30:00Z` à `2026-01-16T01:30:00Z` inclus par pas de 30 min, plus `2026-01-15T22:59:59Z`
+   et `2026-01-15T23:00:01Z` (`debut(e) = 2026-01-15T23:00:00Z`). Facture `F = e − 60`, `E = e − 30` (l'ancre ne tient qu'au
+   rappel). Pour chaque instant, la facture est candidate **si et seulement si** `anchor >= e`. `the_anchor_is_the_latest_of_date_due_date_and_last_reminder` gagne deux cas de nuit.
 7. **AC7 — Un même rappel, un même jour** : un rappel posé à `2026-03-10T23:30:00Z` compte du **11 mars** pour le rappel
    suivant (`dunning_eligibility.rs:136`, inchangé) **et** pour l'ancre de la réconciliation (`invoice_payment_anchor_date`
    rend `2026-03-11` pour `F = E = 2026-03-01`).
@@ -319,7 +344,8 @@ porté par une variable au nom neutre.
    le doc-comment nomme les angles morts. **Le squelette** (D4 non appliqué) rougit sur `reconciliation.rs` 1.
 9. **AC9 — L'écran et la spec** (D6, D7) : les libellés des deux filtres ne disent plus « UTC » dans aucune des quatre
    langues, et les replis du composant égalent la valeur fr-CH ; captures en thème clair des filtres (base de démonstration
-   jetable, `kesh-gate-logs/e36-10/captures/`) ; `audit-log.spec.ts` pas 6 sur `todayInZurich()`, l'entrée
+   jetable, `kesh-gate-logs/e36-10/captures/`) ; `audit-log.spec.ts` pas 6 sur `todayInZurich()`, importé de
+   `./helpers/api-fixtures` (`:8`), l'entrée
    `audit-log.spec.ts` de `ALLOWLIST_SPECS` retirée, ses deux sondes réécrites et toujours rouges sur leur cas ;
    `npm run check`, `lint-i18n-ownership`, `test:unit` et `build` verts.
 10. **AC10 — Docs** : le manuel ne dit plus que les filtres du journal sont en jours UTC ni que la fenêtre compte du jour
@@ -353,14 +379,15 @@ ne mentent pas sur le jour —, puis AC2 à AC7 rouges contre lui) ; (2) le corr
 `git restore --worktree -- <fichier>` puis `touch`, E5) : **M1** `debut_du_jour_suisse` rendu à minuit UTC → AC1, AC2 ;
 **M2** `fin_du_jour_suisse` d'une milliseconde de plus → AC1, AC2 (`22:00:00.000` du 15) ; **M3** le second terme du
 prédicat lié à `earliest_anchor_date` en minuit UTC → AC5, AC6 ; **M4** l'acceptation revenue à `DATE(rmd.last_sent_at)` →
-AC5 (proposée mais refusée), AC6 ; **M5** `push_where_clauses` revenu à `and_hms_milli_opt` → AC2, AC3 ; **M6** un `DATE(x)`
-réintroduit dans une chaîne SQL de `src` → AC8. Une mutation équivalente se dit. Journaux `mut/M1.log` à `mut/M6.log`.
+AC5 (proposée mais refusée), AC6 ; **M5** `push_where_clauses` revenu à `and_hms_milli_opt` → AC2, AC3 ; **M7** le
+plafond de D3 retiré → AC4 (valeur liée) ; **M8** le repli de `debut_du_jour_suisse` sur `None` remplacé par une avance
+par minutes → AC1 (`1894-06-01`) ; **M6** un `DATE(x)`
+réintroduit dans une chaîne SQL de `src` → AC8. Une mutation équivalente se dit. Journaux `mut/M1.log` à `mut/M8.log`.
 
 ## Tâches
 
 - [ ] **Étape 0** : recompter I1 à I5 à la tête de la branche (commandes ci-dessus, sorties au Change Log) ; relancer
-      `date_du_jour_garde` (gate ciblé, journal) ; établir D3 (borne `0999-12-31` liée sans erreur, ou plafond) ; relire
-      les numéros de ligne cités.
+      `date_du_jour_garde` (gate ciblé, journal) ; relire les numéros de ligne cités.
 - [ ] **D1** : `debut_du_jour_suisse`, `fin_du_jour_suisse` et leurs tests (AC1) ; doc-comment du module
       (`horloge.rs:1-15`) complété.
 - [ ] Tests AC2 à AC8 commités, rouges consignés (`rouges.log`).
@@ -370,7 +397,9 @@ réintroduit dans une chaîne SQL de `src` → AC8. Une mutation équivalente se
       `:251-258`, `:559-569`, `:593-597`, `:718-721`) ; `/usr/bin/grep -n "UTC\|DATE(" ` sur le fichier, sortie au Change Log.
 - [ ] **D5** : famille de la garde, sondes, angles morts.
 - [ ] **D6, D7** : quatre `messages.ftl` (à côté du bloc `audit-log-filter-*`, jamais en fin de fichier), `+page.svelte`,
-      `audit-log.types.ts`, `audit-log.spec.ts`, `local-date-guard.test.ts` ; captures.
+      `audit-log.types.ts`, `audit-log.spec.ts` (**ajouter `todayInZurich` à l'import** de `./helpers/api-fixtures`,
+      `audit-log.spec.ts:8`, qui ne porte aujourd'hui que `createUser, USER_PASSWORD` ; retirer `todayUtc`, `:56-59`),
+      `local-date-guard.test.ts` ; captures.
 - [ ] **Tâche 5 — docs** : `docs/manual/fr/user-manual.tex:754-758` (la note « date du jour » : la fenêtre compte désormais
       du jour de Zurich du dernier rappel), `:3063` (« son dernier rappel » : son jour, à Zurich), `:4004-4007` (la puce « Les
       dates filtrent sur des jours UTC » devient : les dates filtrent sur des jours de Zurich, comme le tableau qui affiche
@@ -465,3 +494,24 @@ de l'horloge ; si la 36-7 les touche, hunks distincts) ; `messages.ftl` ×4 et `
   `:267`, `:314`, `:211-215`, `:204`, `:113`, `:311-313`, `:715-780` ; `reconciliation.rs` `:741`, `:195-229` ;
   `reconciliation_e2e.rs:3311`), faites dans la fiche neuve par un court script Python qui contrôlait l'unicité de chaque
   chaîne avant de la remplacer, au lieu de onze appels de l'outil Edit. Rien d'autre.
+- 2026-11-15 — **Validation P1** (0 CRITICAL, 0 HIGH, 2 MEDIUM, 4 LOW ; `kesh-gate-logs/e36-10/validation-p1.md`),
+  remédiée par l'agent de rédaction (Opus 5.5), par l'outil Edit seul. Prémisses relues à `0bf3c3b4b`, toutes confirmées :
+  `routes/audit_log.rs:374` (`.format("%Y-%m-%d %H:%M:%S%.3f")`), `:279` (`"Date (UTC)",`), `:113` (JSON) ;
+  `date_du_jour_garde.rs:42` (`use regex::Regex;`), `kesh-api/Cargo.toml:92` (`regex = "1.10"`) ;
+  `routes/payment_batches.rs:333` (`#[cfg(test)]`), `:355` (`requested_execution_date: moment.date(),`) ;
+  `fiscal-years.helpers.ts:52` (`const year = new Date().getFullYear();`) ; `audit-log.spec.ts:8`
+  (`import { createUser, USER_PASSWORD } from './helpers/api-fixtures';`).
+  - V1-1 (MEDIUM) : le CSV n'écrit pas de `Z` ; « Le CSV », D6 et AC3 disent le format réel, **inchangé** (aucun changement
+    de contrat de l'export) ; registre C-36-10-5 annoté.
+  - V1-2 (MEDIUM) : motif de D5 (a) ramené à `\bDATE\s*\(` (la crate `regex` n'a pas de lookahead), sonde de compilation et
+    de comptage ; registre C-36-10-4 annoté.
+  - V1-3 (LOW) : D1 nomme l'algorithme (`Single`, `Ambiguous` → min, `None` → dichotomie à la milliseconde) ; D3 plafonne
+    **toujours** la borne basse à `1000-01-01 00:00:00.000` ; AC4 le constate ; mutations M7, M8 ; registre C-36-10-2
+    annoté ; tâche de l'étape 0 allégée.
+  - V1-4 (LOW) : `payment_batches.rs:355` nommé dans I3 (`mod tests`) ; liste close de D5 (b) à trois.
+  - V1-5 (LOW) : AC6 borne son balayage par instants de début et de fin, été et hiver.
+  - V1-6 (LOW) : `fiscal-years.helpers.ts:52` trié dans I5 (année du poste, hors symptôme).
+  - AC9 / tâche : `todayInZurich` à importer dans `audit-log.spec.ts:8`.
+  - Symptômes greppés dans la fiche et le registre : `…Z`, `22:00:00.000Z` (CSV), `non suivi de`, `plafonnée sinon`,
+    `occurrence de test`, `mut/M6.log` — remplacés ; les `…Z` restants désignent la réponse JSON ou des instants UTC
+    d'AC1/AC5, à juste titre.
