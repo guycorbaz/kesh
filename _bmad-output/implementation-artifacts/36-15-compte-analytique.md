@@ -9,7 +9,7 @@ Status: ready-for-dev
 branche `story/36-15-compte-analytique`, par le workflow `bmad-create-story`. Release **0.18.0**. **Aucune migration**,
 aucune route, aucun champ JSON, aucun code d'erreur ne change. Code lu à **`0bf3c3b4b`** (`origin/epic/36-0.18.0`, le
 kickoff de la 0.18.0). Registres : `e36-choix-autonomes-e360.md` (C-e360-15, qui fait foi) ;
-`e36-choix-autonomes-36-15-compte-analytique.md` pour la story (C-36-15-1 à 6). Voie **1**. Validation non lancée.*
+`e36-choix-autonomes-36-15-compte-analytique.md` pour la story (C-36-15-1 à 6). Voie **1**. Validation : passes P1 et P2 remédiées (Change Log).*
 
 ## Story
 
@@ -50,10 +50,13 @@ Sortie : `de-CH 49`, `it-CH 49`, `en-CH 50`, `fr-CH 50`. Ventilation :
   (`# « projet analytique » = `Projekt`/`progetto`/`project` (on ne traduit pas « analytique »),`).
 - **de-CH, it-CH : 49 valeurs**, les mêmes 49 clés (relevé clé par clé, table de D2).
 - **en-CH, 50** = les 49 valeurs + **un faux positif** : `en-CH/messages.ftl:2423`
-  `dunning-example-heading = Projected schedule` — « projeté », sans rapport : **hors périmètre**.
+  `dunning-example-heading = Projected schedule` — « projeté », sans rapport : **hors périmètre**. (Faux positif du seul
+  motif brut `project` ; le motif de G25, `\bprojects?\b` sur la valeur, ne l'atteint pas — `awk 'index($0," = ")>0 &&
+  $0 ~ /^[a-zA-Z]/ {print substr($0, index($0," = ")+3)}' en-CH/messages.ftl | /usr/bin/grep -ciE '\bprojects?\b'`
+  rend **49**.)
 - Contrôle de l'autre sens (clés `*project*` dont la valeur ne dit pas « projet ») :
-  `/usr/bin/grep -nE '^[a-z0-9-]*project[a-z0-9-]* =' fr-CH/messages.ftl | /usr/bin/grep -viE '= .*projet'` rend 32
-  lignes, toutes neutres (« — Aucun », « Compte », « Montant », « Sous-total », « Archiver », « Code »…) :
+  `/usr/bin/grep -nE '^[a-z0-9-]*project[a-z0-9-]* =' fr-CH/messages.ftl | /usr/bin/grep -viE '= .*projet' | wc -l` rend
+  **31** lignes, toutes neutres (« — Aucun », « Compte », « Montant », « Sous-total », « Archiver », « Code »…) :
   `reports-project-expenses-col-account = Compte` désigne le **compte du plan** et reste « Compte ».
 - Aucune valeur ne dit « analytique » sans « projet » (`/usr/bin/grep -niE 'analyti' fr-CH/messages.ftl | /usr/bin/grep -vi projet` vide).
 
@@ -113,8 +116,13 @@ src/routes/(app)/settings/projects/+page.svelte:55: … 'Impossible de charger l
 src/routes/(app)/supplier-invoices/[id]/+page.svelte:813: <dt …>{i18nMsg('supplier-invoices-detail-project', 'Projet analytique')}</dt>
 ```
 
-**46 sites, tous au sens analytique** : 44 replis `i18nMsg`, le repli de nom de fichier `reports/+page.svelte:433`, et
-**un libellé en dur** : `journal-entries/[id]/+page.svelte:611` (`<th class="py-2 pr-2">Projet</th>`, voisin de
+**46 sites, tous au sens analytique** : **41 appels `i18nMsg`** (38 dont le repli est sur la ligne de l'appel, 3 dont le
+repli est sur la ligne suivante : `settings/projects/+page.svelte:168`, `export/+page.svelte:67`, `:76`), **3 replis en
+objet** (`+layout.svelte:130` `{ i18nKey, fallback }`, `reports/+page.svelte:527`, `:532` `{ labelKey, fallback }`), **le
+repli de nom de fichier** `reports/+page.svelte:433`, et **un libellé en dur** — 41 + 3 + 1 + 1 = 46. Recompté par le même
+détecteur, en classant chaque ligne (`node <scratchpad>/3615/compte.mjs frontend`, 2026-11-15) :
+`sites 46 ; appels i18nMsg 38 ; lignes 'fallback' hors i18nMsg 3 ; autres 5` — les 5 « autres » étant les trois replis
+sur ligne suivante, `:433` et `:611`. Le libellé en dur : `journal-entries/[id]/+page.svelte:611` (`<th class="py-2 pr-2">Projet</th>`, voisin de
 `<th class="py-2 pr-2">Compte</th>` à `:609`, lui aussi en dur — la famille que porte #339). Les commentaires et
 doc-comments qui disent « projet » (`InvoiceForm.svelte:165`, `projects.api.ts:2`, `reports.types.ts:186`…, 93 lignes de la
 recherche brute `git grep -n -iE "projet" -- frontend/src ':!*.test.ts'`, qui en rend 139) et les **sens courants**
@@ -166,7 +174,7 @@ de données des E2E (« Projet E2E 19-4 »…) sont des données, inchangés.
 `git grep -n -iE "includegraphics.*(proj|analyt)" -- docs/manual` vide ; `docs/manual/{de,en,it}/` ne portent qu'un
 `README.md`) :
 - `user-manual.tex`, **30 lignes, toutes analytiques** : `:748`, `:1755`, `:1880`, `:1882`, `:1883`, `:1890`, `:3170`,
-  `:3229`, `:3253`, `:3756`, la section `\section{Comptabilité analytique par projet}` `:3767` à `:3804` (20 lignes, dont
+  `:3229`, `:3253`, `:3756`, la section `\section{Comptabilité analytique par projet}` `:3767` à `:3804` (19 lignes, dont
   le chemin « \emph{Administration} → \emph{Projets analytiques} » `:3775` et les deux rapports `:3800`, `:3804`), `:3826`.
 - `admin-manual.tex`, **17 lignes, 2 analytiques** : `:2787` (« (projet compris ; … ») et `:3509` (« Les rapports de TVA,
   des journaux et des projets … ne sont pas servis à l'agent »). Les **15 autres** sont le **projet Docker Compose** ou
@@ -443,8 +451,9 @@ de données des E2E (« Projet E2E 19-4 »…) sont des données, inchangés.
 - **D9 — La documentation dit le lien entre le mot et l'identifiant.** `docs/api-external.md` reçoit une phrase, dans
   sa vue d'ensemble (§ 1) : « Ce que l'interface appelle **compte analytique** s'appelle `project` dans l'API — route
   `/api/v1/projects`, champs `projectId` et `defaultProjectId`, codes `PROJECT_ARCHIVED` et `PROJECT_NOT_FOUND` ; ces noms
-  ne changent pas. Le texte libre `failed[].details.message` d'un refus `PROJECT_ARCHIVED` du lot de réconciliation dit
-  encore « projet analytique » : seul le code fait foi. » Ses cinq lignes analytiques (§ 6) disent « compte analytique ».
+  ne changent pas. Le texte libre `failed[].details.message` d'un refus `PROJECT_ARCHIVED` du lot de réconciliation
+  reprend le libellé interne de Kesh, en français et non revu : seul le code fait foi. » La phrase ne contient pas le mot
+  « projet » : G25 n'a besoin d'aucune exception pour `api-external.md`. Ses cinq lignes analytiques (§ 6) disent « compte analytique ».
   `docs/i18n-glossaire.md` : selon la réponse de Guy, comme écrit à la fin de D2 (`:105`, `:169` aux termes arbitrés,
   `:168` supprimée, note `:172-189` annotée et suivie de la nouvelle, avec date et motif — le CR #1161 —, partie A
   recomptée). `README.md:47` (Fonctionnalités) dit
@@ -458,13 +467,13 @@ de données des E2E (« Projet E2E 19-4 »…) sont des données, inchangés.
   quatre `.ftl` ne touche que des lignes de valeur et le commentaire `:3089`). La garde G25 (AC-7) ne trouve, dans la
   **valeur** des messages (le texte après le premier ` = `, et les lignes de continuation) et dans les commentaires `#`
   des quatre catalogues, sans égard à la casse, aucune occurrence de `projet` (fr), `projekt` (de), `progett` (it),
-  `\bprojects?\b` (en), hors `en-CH` `dunning-example-heading` (« Projected schedule »), seule exception écrite. Les
+  `\bprojects?\b` (en), **sans aucune exception** (« Projected schedule » n'est pas atteint par `\b`, § 1). Les
   **clés** (`nav-projects`, `projects-title`…) ne sont pas lues (D3).
 - **AC-2 — Frontend.** Les 46 sites de § 2 disent « compte analytique » : chaque repli `i18nMsg` est **égal** à la
   nouvelle valeur fr-CH de sa clé ; le repli de nom de fichier (`reports/+page.svelte:433`) égale
   `depenses-par-compte-analytique` / `rendement-par-compte-analytique` ; `journal-entries/[id]/+page.svelte:611` dit
   « Compte analytique ». La garde Vitest (AC-8) ne trouve plus aucun `projet` hors commentaires dans `frontend/src`
-  (hors `*.test.ts`) et contrôle l'égalité repli = catalogue sur les 44 appels `i18nMsg` **et** sur les trois sites en
+  (hors `*.test.ts`) et contrôle l'égalité repli = catalogue sur les 41 appels `i18nMsg` **et** sur les trois sites en
   objet (`+layout.svelte:130` `{ i18nKey, fallback }`, `reports/+page.svelte:527` et `:532` `{ labelKey, fallback }`) et le
   repli de nom de fichier (`:433`, contre `reports-filename-project-*`).
 - **AC-3 — Backend.** Les 11 messages de `routes/projects.rs` et les 4 libellés de `ProjectExpensesPdfLabels` /
@@ -474,9 +483,12 @@ de données des E2E (« Projet E2E 19-4 »…) sont des données, inchangés.
 - **AC-4 — Rien d'autre ne bouge.** `git diff origin/epic/36-0.18.0 --stat` ne nomme aucun fichier sous
   `crates/kesh-db/`, aucune migration, ni `routes/reconciliation.rs`, ni `kesh-report/src/csv.rs`, ni
   `i18n-keys.test.ts` ; `sitesTotal` reste **3050** (`i18n-keys.test.ts:1020`) ; `npm run lint-i18n-ownership` vert sans
-  changement de son registre. Le couplage `reconciliation.rs:763` reste gardé par le test existant
-  `other_errors_keep_their_mapping` (`reconciliation.rs:6948`, littéral `:6955` →
-  `assert_eq!(f.error_code, "PROJECT_ARCHIVED")`), vert sans modification.
+  changement de son registre. Le couplage `reconciliation.rs:763` est tenu, de bout en bout, par **la clause « aucun
+  fichier sous `crates/kesh-db/` »** ci-dessus (les trois textes de production y vivent) et par le test existant
+  `crates/kesh-api/tests/reconciliation_rules_e2e.rs:1810`
+  (`assert_eq!(failed[0]["errorCode"].as_str(), Some("PROJECT_ARCHIVED"));`, compte analytique réellement archivé), vert
+  sans modification. `other_errors_keep_their_mapping` (`reconciliation.rs:6948`, littéral `:6955`) ne tient que la
+  fonction d'appariement : il fournit son propre littéral et resterait vert si `kesh-db` changeait de texte.
 - **AC-5 — E2E.** `reports.spec.ts` ouvre les onglets **par leurs nouveaux noms** (`/dépenses par compte analytique/i`,
   `/rendement par compte analytique/i`) et y vérifie, en plus, que le titre de la vue rendue commence par ce nom ; les deux
   tests rougissent sur les catalogues d'avant (AC de preuve, § Tests).
@@ -484,8 +496,8 @@ de données des E2E (« Projet E2E 19-4 »…) sont des données, inchangés.
   `\section{Comptabilité analytique}`, chemin « \emph{Administration} → \emph{Comptes analytiques} », les deux rapports
   sous leurs nouveaux noms, une phrase qui dit ce qu'un compte analytique peut suivre — un immeuble, un véhicule, une
   activité, un chantier) ; les 16 lignes au sens courant restent ; sur le PDF compilé localement (D8),
-  `pdftotext user-manual.pdf - | tr '\n' ' ' | tr -s ' ' | /usr/bin/grep -c 'projet analytique'` rend 0 et `… -c 'compte
-  analytique'` rend au moins 1, relevés au Change Log avec leur commit.
+  `pdftotext user-manual.pdf - | tr '\n' ' ' | tr -s ' ' | /usr/bin/grep -oi 'projet' | wc -l` rend 0 et `… | /usr/bin/grep
+  -c 'compte analytique'` rend au moins 1, relevés au Change Log avec leur commit.
 - **AC-7 — Garde de texte backend et documentation (G25).** Un test de `crates/kesh-api/tests/textes_coherents.rs`
   lit, et rougit en **nommant fichier et ligne** à toute occurrence de l'ancien mot, sans égard à la casse :
   - **catalogues** : la valeur seule, comme l'écrit l'AC-1 ;
@@ -494,20 +506,34 @@ de données des E2E (« Projet E2E 19-4 »…) sont des données, inchangés.
   - **`routes/projects.rs` et `kesh-report/src/pdf.rs`** : après `sans_modules_de_test` (`textes_coherents.rs:1076`),
     les **seuls littéraux de chaîne** (`"…"`, échappements compris), motif `projet` — les commentaires `//`, `///`,
     `//!` qui disent « projet » (`projects.rs:1`, `:138`, `:141`, `:142`, `:150`… ; `pdf.rs:1170`, `:1173`, `:1233`…)
-    restent hors de la garde (D6). L'extracteur de littéraux a son propre test : sur une source synthétique, il rend
-    `"Le code du projet est requis."` et ne rend rien de `// projet` ni de `/// projet` (sonde positive et négative) ;
-    sur les fichiers d'avant, il rend les 15 littéraux de § 3 (11 + 4).
+    restent hors de la garde (D6). L'extracteur de littéraux a son propre test, sur des sources synthétiques qui
+    reprennent les formes présentes dans les deux fichiers :
+    - sondes positives : `"Le code du projet est requis."` est rendu ; un littéral **continué** par `\` en fin de ligne
+      (forme de `pdf.rs:603-604`, `"… dans la section \` / `equity (…)"`), dont la seconde ligne dit « projet », est
+      rendu en entier ;
+    - sondes négatives : rien n'est rendu de `// projet`, `/// projet`, ni d'un **doc-comment à guillemets**
+      `/// renvoie "projet"` (forme de `pdf.rs:61` ``/// Code locale BCP-47 (e.g. `"fr-CH"`)``, `:67`, `:242-244`,
+      `:885` `// Section vide : on note "—"`, `:1062`) — l'extracteur saute les commentaires `//` avant d'apparier les
+      guillemets ;
+    - sur les fichiers d'avant, il rend les 15 littéraux de § 3 (11 + 4).
+
+    **Angles morts assumés** : chaînes brutes (`r"…"`, `r#"…"#`), caractère `'"'`, commentaires `/* … */`. Absents des
+    deux fichiers aujourd'hui : `/usr/bin/grep -nE '\br#*"' crates/kesh-api/src/routes/projects.rs
+    crates/kesh-report/src/pdf.rs`, `/usr/bin/grep -nF "'\"'" …` et `/usr/bin/grep -nF '/*' …`, sur les fichiers entiers,
+    sont vides (relevé du 2026-11-15 à `c513cc0a1`, recoupant la validation P2) ; le développement rejoue ces trois commandes et les cite au Change Log.
 
   Les exceptions forment une **liste fermée, par extrait de texte et non par numéro de ligne** (pour survivre aux
-  unions de la 0.18.0), comparés sans égard à la casse, chacun avec son motif. Proposés, relus contre les lignes de
-  § 5 : pour l'admin, le projet Docker Compose ou Container Manager — « Container Manager » (`:602`), « onglet
+  unions de la 0.18.0), comparés sans égard à la casse, chacun avec son motif et **attaché à son seul fichier** : un
+  extrait de l'admin n'excuse rien dans `user-manual.tex` ni ailleurs. Aucune exception pour les catalogues (AC-1), pour
+  `api-external.md` (D9), ni pour les deux fichiers Rust. Proposés, relus contre les lignes de § 5 : pour l'admin, le projet Docker Compose ou Container Manager — « Container Manager » (`:602`), « onglet
   \textbf{Projet} » (`:608`), « nom du projet » / « nom de projet » (`:612`, `:1676`, `:1766`, `:1975`), « Démarrer le
   projet » (`:617`), « <projet> » (`:1535`, `:2087`, `:2509`, `:2921`), « configuration des projets » (`:2001`),
   « projet compose » (`:2167`), « projets Docker » (`:2198`) — et le `.mcp.json` de Claude Code, « racine du projet »
   (`:3616`) ; « documentation projet » (brochure) ; « Structure du projet », « Le projet suit » (README) ; la ligne historique de l'E19 du tableau
-  des versions (extrait « E19 Comptabilité analytique par projet ») ; « Projected schedule ». Chaque extrait doit
-  **encore** se rencontrer au moins une fois (un extrait qui ne rencontre plus rien fait rougir) ; une occurrence n'est
-  excusée que si sa ligne contient un extrait. La liste exacte se fixe au développement contre les 15 + 1 + 3 + 1 + 1
+  des versions (extrait « E19 Comptabilité analytique par projet »). Une occurrence du motif n'est excusée que si **sa
+  ligne**, dans **son fichier**, contient un extrait attaché à ce fichier. « Doit encore se rencontrer » veut dire :
+  chaque extrait **excuse au moins une occurrence du motif** dans son fichier — un extrait qui n'excuse plus rien (la
+  ligne a disparu, ou ne dit plus « projet ») fait rougir en le nommant, ce qui tient la liste fermée et à jour. La liste exacte se fixe au développement contre les 15 + 1 + 3 + 1 (admin, brochure, README courant, README historique)
   lignes de § 5 et § 6, chacune devant être couverte par un extrait, ligne lue citée au Change Log. Une assertion
   positive par fichier prouve qu'il a été lu : dans chaque catalogue, la valeur de `projects-title` contient le terme
   arbitré de sa langue (D2) ; dans `user-manual.tex`, « Comptes analytiques ».
@@ -526,10 +552,18 @@ de données des E2E (« Projet E2E 19-4 »…) sont des données, inchangés.
   (`git log origin/epic/36-0.18.0..HEAD --format=%B | /usr/bin/grep -niE '\b(close[sd]?|fix(e[sd])?|resolve[sd]?) #[0-9]'`
   vide) ; aucune ligne de `CHANGELOG.md` (C-e360-11).
 - **AC-11 — PDF des manuels, à l'intégration** (condition de la PR de release, D8) : après l'union et `make fr`, les trois
-  PDF commités se contrôlent aplatis — `pdftotext docs/manual/fr/<f>.pdf - | tr '\n' ' ' | tr -s ' ' | /usr/bin/grep -c
-  '<phrase>'` — avec, pour `user-manual.pdf`, `projet analytique` → 0, `Dépenses par projet` → 0, `Rendement par projet`
-  → 0, `compte analytique` ≥ 1 ; pour `admin-manual.pdf` et `marketing-brochure.pdf`, `projets analytiques` → 0 et
-  `des projets, les règlements` → 0. La fiche le transmet à l'orchestrateur ; la story ne commite aucun PDF.
+  PDF commités se contrôlent aplatis, chaque contrôle étant **non vide aujourd'hui** (relevé à `c513cc0a1`) :
+  - `user-manual.pdf` : `pdftotext docs/manual/fr/user-manual.pdf - | tr '\n' ' ' | tr -s ' ' | /usr/bin/grep -oi 'projet' | wc -l`
+    → **0** (40 aujourd'hui). Le manuel utilisateur n'a **aucune** ligne au sens courant (§ 5 : ses 30 lignes sont
+    analytiques), d'où le motif nu, casse ignorée, qui voit aussi « Projets analytiques » et « sous-projets » ;
+  - `admin-manual.pdf` : `… | /usr/bin/grep -c 'projet compris'` (`:2787`) → **0** et `… | /usr/bin/grep -c 'des projets,
+    les règlements'` (`:3509`) → **0** (1 et 1 aujourd'hui). Les 15 lignes au sens courant (Docker Compose, Container
+    Manager, `.mcp.json`) gardent leur « projet » : elles ne sont pas contrôlées, G25 les tient sur le `.tex` ;
+  - `marketing-brochure.pdf` : `… | /usr/bin/grep -c 'projets analytiques y seront'` (`:195`) → **0** (1 aujourd'hui) ;
+    « documentation projet » (`:498`, sens courant) reste, non contrôlée ;
+  - et `… | /usr/bin/grep -c 'compte analytique'` ≥ 1 sur `user-manual.pdf` (0 aujourd'hui).
+
+  La fiche le transmet à l'orchestrateur ; la story ne commite aucun PDF.
 
 ## Tests à écrire, et la preuve du rouge
 
@@ -544,7 +578,8 @@ Ordre imposé (E5) : les gardes et tests neufs se commitent **avant** le correct
 | G25 — mutation 1 : réintroduire `projects-title = Projekte` en de-CH | rouge nommant `de-CH/messages.ftl:<ligne>` | `mut/g25-catalogue.log` |
 | G25 — mutation 2 : retirer un extrait d'exception (« Container Manager ») de la liste | rouge nommant `admin-manual.tex:<ligne>` | `mut/g25-exception.log` |
 | G25 — mutation 2-bis : mettre `projects-title` de en-CH en majuscules « PROJECTS » | rouge (casse ignorée) | `mut/g25-casse.log` |
-| G25 — mutation 3 : ajouter une exception qui ne rencontre rien | rouge « exception périmée » | `mut/g25-perimee.log` |
+| G25 — mutation 3 : ajouter à l'admin un extrait qui n'excuse aucune occurrence (« projet fictif ») | rouge « exception périmée » nommant l'extrait | `mut/g25-perimee.log` |
+| G25 — mutation 3-bis : écrire « nom du projet » dans une ligne analytique de `user-manual.tex` | rouge (l'extrait de l'admin ne vaut pas pour ce fichier) | `mut/g25-portee.log` |
 | `vocabulaire-analytique.test.ts` | 46 sites sur les sources d'avant | `rouges.log` |
 | idem — mutation : rendre un repli `'Projet archivé'` (`InvoiceForm.svelte:830`) | rouge sur ce site **et** sur l'écart repli ≠ catalogue | `mut/vitest-repli.log` |
 | `project_reports_e2e.rs` : `export_filenames_say_compte_analytique` (neuf) | `Content-Disposition` contient `depenses-par-projet` | `rouges.log` |
@@ -638,7 +673,7 @@ dire « projet », et le CR n'exige le geste unique que de ce que l'utilisateur 
   dans `other_errors_keep_their_mapping`) : `reconciliation.rs:763` les reconnaît à `msg.contains("projet")` pour rendre
   `PROJECT_ARCHIVED`.
 - `project_reports_e2e.rs:218` et `:350` (en-têtes CSV) restent verts sans modification.
-- `sitesTotal` 3050 inchangé ; les 32 clés `*project*` neutres (« — Aucun », « Compte »…) inchangées.
+- `sitesTotal` 3050 inchangé ; les 31 clés `*project*` neutres (« — Aucun », « Compte »…) inchangées.
 - Pas de migration (C-e360-3) : la story n'en demande aucune.
 
 ### Références
@@ -693,3 +728,29 @@ dire « projet », et le CR n'exige le geste unique que de ce que l'utilisateur 
   - Édition : le bloc D2 (≈ 75 lignes, tableaux) a été remplacé par une substitution de lignes en shell (`head`/`tail`
     vers un fichier du scratchpad, puis `cp`), artefact `_bmad-output` seulement ; source du bloc versionnée dans
     `kesh-gate-logs/e36-15/d2-v2.md`. Les autres corrections, par l'outil Edit. Gates : aucun (fiche seule).
+- **2026-11-15 — remédiation de la validation P2** (Opus 5.5 ; rapport `kesh-gate-logs/e36-15/validation-p2.md` :
+  0 CRITICAL, 0 HIGH, 2 MEDIUM, 5 LOW ; prémisses lues à `c513cc0a1`). Traductions toujours en attente de Guy (D2), non
+  tranchées. Toutes les corrections par l'outil Edit. *Annotation de l'entrée P1* : la substitution `head`/`tail`/`cp`
+  du bloc D2 était un écart à la consigne Edit, relevé par l'orchestrateur ; elle n'est pas reconduite.
+  - V2-1 (MEDIUM, corrigé) : la phrase de D9 pour `api-external.md` ne contient plus le mot « projet » (« reprend le
+    libellé interne de Kesh, en français et non revu ») ; aucune exception ajoutée.
+  - V2-2 (MEDIUM, corrigé) : recompté à la source par le détecteur à commentaires masqués, en classant les lignes :
+    `sites 46 ; appels i18nMsg 38 ; lignes 'fallback' hors i18nMsg 3 ; autres 5` ; 38 + 3 appels à repli sur la ligne
+    suivante (`settings/projects/+page.svelte:168`, `export/+page.svelte:67`, `:76`) = **41** appels, + 3 objets + 1 nom
+    de fichier + 1 en dur = 46. § 2 et AC-2 alignés (« 44 » retiré ; `\b44\b` grepé : plus aucune occurrence).
+  - V2-3 (LOW, corrigé) : prémisse confirmée (`awk … | /usr/bin/grep -ciE '\bprojects?\b'` sur les valeurs en-CH rend
+    49) ; « Projected schedule » retiré des exceptions (AC-1 : sans exception) ; chaque extrait est attaché à son seul
+    fichier ; « doit encore se rencontrer » = excuser au moins une occurrence du motif dans son fichier ; mutations 3
+    et 3-bis récrites.
+  - V2-4 (LOW, corrigé) : formes lues `pdf.rs:61`, `:67`, `:603-604`, `:885` ; sondes du littéral continué et du
+    doc-comment à guillemets ajoutées ; chaînes brutes, `'"'` et `/* */` écrits en angle mort, absents des deux fichiers
+    entiers (trois `grep` vides, relancés ce jour).
+  - V2-5 (LOW, corrigé) : AC-4 nomme `reconciliation_rules_e2e.rs:1810` (ligne lue) et la clause « aucun fichier sous
+    `crates/kesh-db/` » comme gardes réelles ; `other_errors_keep_their_mapping` ramené à la fonction d'appariement.
+  - V2-6 (LOW, corrigé) : AC-11 et AC-6 — `user-manual.pdf` par `grep -oi 'projet' | wc -l` → 0 (40 aujourd'hui) ;
+    admin `projet compris` (`:2787`) et `des projets, les règlements` (`:3509`), brochure `projets analytiques y
+    seront` : 1 chacun aujourd'hui (relevé ce jour), → 0 ; contrôles vides retirés ; sens courants laissés hors
+    contrôle PDF, tenus par G25 sur le `.tex`.
+  - V2-7 (LOW, corrigé) : 31 clés neutres (`… | wc -l` rend 31 ; § 1 et Dev Notes), 19 lignes pour `:3767-3804`,
+    en-tête « Validation non lancée » remplacé ; `\b32\b` et `\b20\b` grepés (restent les « 32 caractères » et « 150
+    caractères » de D4, légitimes).
