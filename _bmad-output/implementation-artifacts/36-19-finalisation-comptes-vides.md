@@ -1,6 +1,6 @@
 # Story 36-19 : la finalisation de l'assistant complète les comptes vides des réglages de facturation (#1200)
 
-Status: in-progress
+Status: review
 
 *Fiche rédigée le 2026-11-15 par l'agent de rédaction des fiches de l'Epic 36 (Opus 5.5), worktree `kesh-36-19`, branche
 `story/36-19-finalisation-comptes-vides`, par le workflow `bmad-create-story`. Release **0.18.0**, **sans migration**.
@@ -412,22 +412,23 @@ le correctif, ou correctif mis de côté par `git stash` **après** le commit du
 
 ## Tâches
 
-- [ ] **T0 — Étape 0** : relire les lignes citées à la tête de la branche (elles peuvent bouger à la fusion de la
+- [x] **T0 — Étape 0** : relire les lignes citées à la tête de la branche (elles peuvent bouger à la fusion de la
   36-7a) ; reprendre la sortie des deux commandes d'inventaire ; citer au Change Log ce qui a bougé.
-- [ ] **T1 — Bases** (voie 2 ; la station a redémarré, bases vides) : `kesh_e3619` et `kesh_e2e_e3619` créées sur
+- [x] **T1 — Bases** (faites en **voie 1**, `kesh-mariadb-dev:3306`, sur attribution du prompt d'appel — écart déclaré au
+  Change Log ; script `kesh-gate-logs/e36-19/bases-a-neuf.sh`) (voie 2 ; la station a redémarré, bases vides) : `kesh_e3619` et `kesh_e2e_e3619` créées sur
   `kesh-mariadb-dev2` (`docker exec kesh-mariadb-dev2 mariadb -uroot -pkesh_dev_root …`), migrées (`sqlx migrate run`,
   `DATABASE_URL=mysql://kesh:kesh_dev@127.0.0.1:3307/kesh_e3619`), semées (`scripts/seed-dev-db.sql`).
-- [ ] **T2 — Rouges** : T-D1, T-D2, T-D2b, T-D3, T-D4d, T-D4g, T-H1, T-H2, T-H2e, T-H3, T-H3d et l'E2E écrits et
+- [x] **T2 — Rouges** : T-D1, T-D2, T-D2b, T-D3, T-D4d, T-D4g, T-H1, T-H2, T-H2e, T-H3, T-H3d et l'E2E écrits et
   lancés **avant** le correctif (`rouges.log`) ; T-D4, T-D4f et T-D4s après le squelette (ci-dessous, V3-3), T-D5
   (M13), T-H4 (M4) et le test du bras (M12, AC11) se prouvent par mutation. **Le squelette** porte la variante, son `error_code()` (`kesh-db/src/errors.rs:1906`)
   et son bras de rendu (`kesh-api/src/errors.rs`, match exhaustif sans `_`, dernier bras `DbError::Sqlx(e)` `:5022`),
   sans quoi il ne compile pas.
-- [ ] **T3 — Dépôt** (`company_invoice_settings.rs`) : fonction neuve (insertion ou complément, D2, D3, D4, D6), rendu
+- [x] **T3 — Dépôt** (`company_invoice_settings.rs`) : fonction neuve (insertion ou complément, D2, D3, D4, D6), rendu
   de l'issue (inséré / complété avec `before` / inchangé) ; `insert_with_defaults_in_tx` en enveloppe (D5) ;
   `settings_snapshot_json` `pub` ; doc-comments de `:1-17`, `:1114-1164`, `:1186-1196` mis à jour, et celui de
   `find_singleton_role_in_tx` (`accounts.rs:405-418`, « Source unique de cette lecture ») : la finalisation y ajoute un
   filtre `postable` (V3-4) ; variante de `DbError` et son code (`errors.rs`, `error_code` `:1906`).
-- [ ] **T4 — Route** (`onboarding.rs`) : appel de la fonction neuve (`:999`), message de D5 (`:1005-1010`), audit du
+- [x] **T4 — Route** (`onboarding.rs`) : appel de la fonction neuve (`:999`), message de D5 (`:1005-1010`), audit du
   complément dans `audit_finalize_seed` (`:1139`) ; doc-comments `:854-867`, `:985-997`, `:907-912` (« `INSERT
   IGNORE` … idempotent ») et l'angle mort `:737-739` (fermé côté finalisation, renvoi à #987), et `:715-740` (« Les
   rôles sont lus ici **comme la finalisation les lira** » : la finalisation écarte en plus un candidat non imputable,
@@ -435,13 +436,13 @@ le correctif, ou correctif mis de côté par `git stash` **après** le commit du
   variante dans `crates/kesh-api/src/errors.rs` (`400 VALIDATION_ERROR`, clé de D5) ; la clé
   `error-default-invoice-accounts-unavailable` dans les quatre `messages.ftl`, à côté de `error-inactive-accounts`
   (`:333`).
-- [ ] **T5 — Tests** T-D4 (squelette d'abord), T-D5, T-H4, test du bras et entrée G9 (AC11) ; mutations M1 à M12.
-- [ ] **T6 — Documentation** : `user-manual.tex:217` (AC9) ; `docs/MULTI-TENANT-SCOPING-PATTERNS.md:333` (ligne de
+- [x] **T5 — Tests** T-D4 (squelette d'abord), T-D5, T-H4, test du bras et entrée G9 (AC11) ; mutations M1 à M14.
+- [x] **T6 — Documentation** : `user-manual.tex:217` (AC9) ; `docs/MULTI-TENANT-SCOPING-PATTERNS.md:333` (ligne de
   `finalize` : ajouter la ligne des réglages en `FOR UPDATE` et `bank_accounts` en partagé, **dans l'ordre de la 15-6c**,
   réglages avant `bank_accounts`). Cet ordre contredit le bloc « Global Lock Order » du même document
   (`:316-318` : « `5. bank_accounts` » avant « `6. company_invoice_settings` ») ; écart **préexistant**, non réconcilié
   dans la story : une issue est demandée à l'orchestrateur (Dev Notes).
-- [ ] **T7 — Gates** (Dev Notes, *Gates*) et Dev Agent Record.
+- [x] **T7 — Gates** (Dev Notes, *Gates*) et Dev Agent Record.
 
 ## Note de version
 
@@ -576,11 +577,75 @@ V3-4) ; `onboarding_path_b_e2e.rs`
 
 ### Agent Model Used
 
+Opus 5.5 (`claude-opus-5-5`), agent de développement de l'Epic 36, en autonomie, worktree `kesh-36-19`.
+
 ### Debug Log References
+
+Journaux hors dépôt, `/home/gcorbaz/devel/kesh-gate-logs/e36-19/` :
+
+- `rouges.log` (synthèse) ; `rouges-avant-correctif.log` (code `6c4f2229e` + tests de `6fb456e85`) ;
+  `rouges-squelette.log` (`57948b58d`) ; `e2e-spec-rouge-avant.log` (binaire d'avant le correctif, sauvé
+  `bin/kesh-api-avant-6fb456e85`) ;
+- `cible-apres-correctif.log` (`0723be024`) ; `e2e-spec-vert-apres.log` (binaire `bin/kesh-api-0723be024`) ;
+- `clippy-1.log` à `clippy-4.log` ; `front-build-1.log`, `front-check-1.log`, `front-lint-i18n-1.log` ;
+- `mut/M*.log`, `mut/bilan.txt`, `mut/campagne.log`, `mut/campagne-2.log` (scripts `mut/muter.py`, `mut/jouer.sh`,
+  `mut/campagne.sh`) ;
+- passage en `review` : `test-fast-ci-92266e805.log`, `gate-ci-92266e805.log` (+ `.sortie`), `bases-a-neuf-92266e805.log`.
 
 ### Completion Notes List
 
+- **Commits** (`git log --oneline 6c4f2229e..HEAD`) : `6c4f2229e` étape 0 (fiche) ; `6fb456e85` rouges d'avant correctif ;
+  `57948b58d` squelette (variante, code, bras, clé ×4, fonction qui délègue ; tests T-D4, T-D4f, T-D4s, T-D5, bras, G9 ;
+  manuel et `MULTI-TENANT-SCOPING-PATTERNS.md` dans le même commit) ; `0723be024` correctif ; `92266e805` test du bras au
+  catalogue chargé (M12 survivante) ; puis la fiche (ce commit). **Dernier commit de code : `92266e805`.**
+- **Rouges** (`rouges.log`) — avant correctif, 10 rouges sur 50 tests des deux binaires, chacun pour sa raison :
+  T-D1, T-D2, T-D2b, T-D3, T-D4d (`InactiveOrInvalidAccounts`), T-D4g (créanciers désigné sur le parent non imputable,
+  `left: Some(40)`), T-H1 et T-H3d (`400` au lieu de `200`), T-H2/T-H2e et T-H3 (ancien message « 1100, 3000
+  manquants »). Sous le squelette, T-D4 (`InactiveOrInvalidAccounts` au lieu de la variante), T-D4f et T-D4s (`Ok`,
+  parent non imputable désigné), T-D5 (le complément refusé) rouges ; le test du bras, G9 et `parity_between_locales`
+  verts. E2E (spec seule) contre le binaire d'avant : `Expected: 8 / Received: 7`, 1 échec ; après : 1 réussi.
+- **Mutations** (`mut/bilan.txt`), toutes restaurées par `git restore --worktree` puis `touch`, une seule prise des
+  verrous pour la campagne (`campagne.sh`) : M1, M2, M3, M4, M5 (route), M5r (dépôt, causes confondues), M5b (route,
+  une phrase), M5br (dépôt, une cause), M6a, M6b, M7, M8, M9, M10, M11 (filtre retiré des trois), M11p (produit
+  seul), M11t (débiteurs et créanciers), M12c (code du bras), M13, M14 **tuées** par les tests que nomme la table ;
+  **M12** (clé du bras) **a survécu** au test unitaire du bras — aucun catalogue n'y est chargé, le repli égal au
+  texte de la clé passe — : test neuf `default_invoice_accounts_unavailable_reads_its_catalogue_key`
+  (`onboarding_path_b_e2e.rs`, catalogue chargé par `spawn_app`), qui la tue (M12k). Écarts : M4 rejouée sur le dépôt
+  seul (T-D1, T-D5), non sur T-H4 (épargne une compilation de `kesh-api`) ; M6a tuée par T-D4 (c) au dépôt et non par
+  T-H3 (même raison) ; M11 jouée en trois formes, la fonction de rejet étant commune aux trois comptes.
+- **Choix** : C-36-19-9 (relecture verrouillante de `postable`), C-36-19-10 (compte désigné contrôlé en partagé après la
+  ligne), C-36-19-11 (forme de l'issue) au registre.
+- **Écarts** : voie 1 au lieu de la voie 2 de la fiche (prompt d'appel) ; `clippy::large_enum_variant` → `before` en
+  `Box` ; un seul test HTTP porte T-H1 et T-H4 (même montage), un seul T-H2 et T-H2e. **Consigne Edit** : code, tests et
+  fiche par l'outil Edit ; `cargo fmt` ; les scripts de `kesh-gate-logs` (dont deux retouches de `jouer.sh` et
+  `campagne.sh` par un `python3` de remplacement, hors dépôt) ; aucun `sed -i`.
+- **AC7** : `git diff 6c4f2229e HEAD -- <les quatre fichiers de tests existants>` n'a aucune ligne retirée (ajouts en fin
+  de fichier seulement) ; `git diff --stat 6c4f2229e HEAD -- crates/kesh-seed frontend/src` vide. **AC10** :
+  `ls crates/kesh-db/migrations/*.sql | wc -l` = 91.
+- **Décomptes** (périmètre `6c4f2229e..92266e805`) : `#[sqlx::test]` de `company_invoice_settings_repository.rs` 31 → 41
+  (+10) ; de `onboarding_path_b_e2e.rs` 9 → 14 (+5) ; un `#[tokio::test]` neuf (`errors.rs`) ; une spec E2E neuve.
+- **Ce qui n'a pas tourné** : l'E2E **complet** et le `gate-ci` de clôture (à la clôture, consignes de l'Epic 35) ; le PDF
+  du manuel n'est pas régénéré (AC9 : à l'intégration). Aucune capture : aucun contrôle visible ne change.
+- **Issues à ouvrir** (à l'orchestrateur) : #1201 existe déjà pour l'ordre des verrous du document. Aucune neuve.
+
 ### File List
+
+- `crates/kesh-db/src/errors.rs` — variante `DefaultInvoiceAccountsUnavailable`, types `DefaultInvoiceSetting`,
+  `DefaultInvoiceAccountCause`, `UnavailableDefaultInvoiceAccount`, `error_code()`.
+- `crates/kesh-db/src/repositories/company_invoice_settings.rs` — `complete_default_accounts_in_tx`,
+  `DefaultAccountsOutcome`, `is_blank`, `role_candidate_rejection`, `mandatory_account` ; enveloppe
+  `insert_with_defaults_in_tx` ; `settings_snapshot_json` public ; doc-comments.
+- `crates/kesh-db/src/repositories/accounts.rs` — doc-comments de `RoleLookupLock` et `find_singleton_role_in_tx`.
+- `crates/kesh-api/src/routes/onboarding.rs` — appel, motif (`finalize_refusal_message`, `finalize_refusal_phrase`),
+  audit `…updated`, doc-comments.
+- `crates/kesh-api/src/errors.rs` — bras de rendu, test du bras.
+- `crates/kesh-i18n/locales/{fr-CH,de-CH,it-CH,en-CH}/messages.ftl` — `error-default-invoice-accounts-unavailable`.
+- `crates/kesh-api/tests/textes_coherents.rs` — entrée G9.
+- `crates/kesh-db/tests/company_invoice_settings_repository.rs`, `crates/kesh-api/tests/onboarding_path_b_e2e.rs` — tests.
+- `frontend/tests/e2e/onboarding-finalize-reglages.spec.ts` — spec neuve.
+- `docs/manual/fr/user-manual.tex` (`:217`), `docs/MULTI-TENANT-SCOPING-PATTERNS.md` (`:333`).
+- `_bmad-output/implementation-artifacts/36-19-finalisation-comptes-vides.md`, `…-review-prompt-p1.md`,
+  `e36-choix-autonomes-36-19.md`, `sprint-status.yaml`.
 
 ## Change Log
 
@@ -645,3 +710,12 @@ V3-4) ; `onboarding_path_b_e2e.rs`
     sorties copiées.
   - **Écart d'environnement** : la fiche dit voie 2 ; le prompt d'appel attribue la **voie 1** (`kesh-mariadb-dev:3306`,
     verrous `/tmp/station-heavy.lock` et `.gate.lock`) : le développement suit le prompt.
+- 2026-11-15 — **Développement** (Opus 5.5, outil Edit) : rouges d'abord (`6fb456e85`), squelette (`57948b58d`),
+  correctif (`0723be024`), test du bras au catalogue chargé (`92266e805`, mutation M12 survivante). Détail au Dev Agent
+  Record. Gates au dernier commit de code `92266e805`, bases remises à neuf (`bases-a-neuf-92266e805.log`) :
+  `scripts/test-fast.sh --ci` vert, **5468 réussis, 13 ignorés**, aucun rejeu (`test-fast-ci-92266e805.log`) ;
+  `scripts/gate-ci.sh kesh_ci_e3619` vert, code 0, **5475 réussis, 0 échec, 17 ignorés** sur 228 binaires
+  (`gate-ci-92266e805.log`, sortie `gate-ci-92266e805.sortie`) ; frontend : `npm run check` 0 erreur (29 avertissements préexistants,
+  `front-check-1.log`), `npm run lint-i18n-ownership` vert (`front-lint-i18n-1.log`), `npm run build` vert
+  (`front-build-1.log`) — ces trois à `0723be024`, aucun fichier de `frontend/` touché depuis. **Non lancés** : E2E
+  complet et `gate-ci` de clôture (à la clôture) ; la spec neuve jouée seule (rouge puis verte). Statut `review`.
