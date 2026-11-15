@@ -265,7 +265,10 @@ clôturer l'exercice.
    fichier, solde de clôture et devise, **écart** au solde comptable — mis en évidence quand non nul, « non comparable »
    sinon), téléchargement, formulaire *Joindre un relevé* (fichier PDF, période, solde facultatif — la devise est
    affichée, celle du compte, non saisie), correction, retrait avec confirmation ; erreurs de l'API traduites par code.
-   API cliente dans `bank-accounts.api.ts`. `+page.svelte` des comptes bancaires (1 295 lignes, même fichier que
+   API cliente dans `bank-accounts.api.ts`. Clés i18n neuves au préfixe **`bank-accounts-`** pour le dialogue
+   (`lint-i18n-ownership.js:177-186` : sous `features/bank-accounts/`, nom à tiret → `startsWith('bank-accounts-')`)
+   et **`fiscal-years-checks-`** pour le contrôle de clôture (`closing-checks-labels.ts`, patron existant), `error-`
+   pour les messages serveur. `+page.svelte` des comptes bancaires (1 295 lignes, même fichier que
    38-9a AC-9) **ne reçoit que l'appel du composant** et le bouton de la ligne, sans logique inline. Le refus du compte
    clos (`BANK_ACCOUNT_CLOSED`) est tenu par les tests de route : `bank_account_closed_inventory.rs` ne lit que les
    sept tables de 28-4a, dont `bank_account_documents` ne fait pas partie (rien à y inscrire, dit au Change Log).
@@ -403,3 +406,10 @@ clôturer l'exercice.
   `website/` ni les manuels DE/IT/EN ; Q1 de l'epic (`epic-38-paypal.md:14`, `:339`) : numéro de release non fixé, la
   règle « jamais un gabarit » est juste. Axes non exercés : PDF, code de 37-4. Trend : P4 = 2 (1 MEDIUM) → P5 = 1 (0
   MEDIUM) : aucun finding au-dessus de LOW, boucle close.
+- 2026-11-15 — préfixes i18n (constat de la validation de l'Epic 40, Opus) : AC-9 ne nommait aucun préfixe ;
+  précisé contre `lint-i18n-ownership.js:177-186` — `bank-accounts-` (dialogue), `fiscal-years-checks-` (contrôle de
+  clôture), `error-` (global). Rédaction seule.
+- 2026-11-15 — validation ciblée des préfixes i18n (Sonnet) : 0 finding au-dessus de LOW, 0 LOW. `BankAccountDocumentsDialog.svelte`
+  (`features/bank-accounts/`, `bank-accounts-` : règle à tiret, `:177-186`) et `closing-checks-labels.ts` /
+  `FiscalYearChecks.svelte` (`features/fiscal-years/`, `fiscal-years-checks-`, déjà celui des clés existantes) relus ;
+  `error-` global (`:16`). Aucun inter-fiches.
