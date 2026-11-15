@@ -1488,14 +1488,15 @@ distingue de ce qui a été encaissé (\emph{Déjà réglé} / \emph{Soldé}). U
 ou le compte de TVA due est le \textbf{compte débiteurs de la facture} (un compte débiteurs
 changé de type depuis, puis désigné)~: un administrateur doit en désigner un autre dans
 \emph{Administration} → \emph{Facturation}. De même, \emph{depuis la 0.18.0}, un solde en
-\emph{escompte accordé} ou en \emph{perte sur débiteur} d'une facture qui porte de la TVA est
+\emph{escompte accordé} ou en \emph{perte sur débiteur} qui corrige de la TVA est
 \textbf{refusé}, sans rien écrire, si le compte \emph{TVA due} des paramètres a été
-\textbf{changé de type} depuis sa désignation (passé en actif ou en charge)~: le dialogue reste
+\textbf{changé de type} depuis sa désignation (il n'est plus un passif)~: le dialogue reste
 ouvert et le message nomme le compte, le réglage et le type qu'il demande (un passif). Un
 administrateur désigne alors un compte de passif dans \emph{Administration} →
 \emph{Facturation}, ou rend au compte son type dans le plan comptable~; le solde se confirme
 ensuite tel quel. Les \emph{frais bancaires} et le \emph{reste d'arrondi}, qui ne corrigent pas la
-TVA, ne sont pas concernés. Un solde s'\textbf{annule}
+TVA, ne sont pas concernés, non plus qu'un reste de quelques centimes dont la part de TVA,
+arrondie au centime, est nulle. Un solde s'\textbf{annule}
 comme un règlement --- bouton \emph{Annuler le solde}, contre-passation datée du jour, TVA
 comprise.
 

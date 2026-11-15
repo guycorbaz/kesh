@@ -1638,9 +1638,34 @@ mod tva_due_type {
         assert_nothing_written(&pool, inv, v, n).await;
     }
 
+    /// Revue P1 (B3, E2) — la TVA due retypée en **produit** : même refus. Le
+    /// contrôle est « n'est plus un passif », non une liste de types.
+    #[sqlx::test(migrations = "./test-schema")]
+    async fn a_vat_payable_retyped_as_a_revenue_is_refused(pool: MySqlPool) {
+        let seeded = company(&pool).await;
+        let inv = validated_invoice(&pool, &seeded, &[(dec!(100.00), dec!(8.1))]).await;
+        update_account(
+            &pool,
+            &seeded,
+            seeded.accounts["2000"],
+            AccountType::Revenue,
+            None,
+        )
+        .await;
+        let (v, n) = (version(&pool, inv).await, entry_count(&pool).await);
+
+        let err = write_off(&pool, &seeded, inv, Nature::BadDebt)
+            .await
+            .expect_err("le solde est refusé");
+        assert_eq!(wrong_type(err), vat_refusal(&seeded, AccountType::Revenue));
+        assert_nothing_written(&pool, inv, v, n).await;
+    }
+
     /// AC3 — garde de non-régression (vert au départ) : ce qui ne corrige pas la
     /// TVA ne lit pas le compte de TVA due, même retypé — frais bancaires et
-    /// reste d'arrondi d'une facture à TVA, escompte d'une facture sans TVA.
+    /// reste d'arrondi d'une facture à TVA, escompte d'une facture sans TVA, et
+    /// (revue P1, E1) escompte d'un reste si petit d'une facture à TVA que sa
+    /// part de TVA s'arrondit à zéro (`write_off_vat_shares` l'omet).
     #[sqlx::test(migrations = "./test-schema")]
     async fn what_does_not_correct_vat_passes_with_a_retyped_vat_payable(pool: MySqlPool) {
         let seeded = company(&pool).await;
@@ -1648,24 +1673,36 @@ mod tva_due_type {
         let fees = validated_invoice(&pool, &seeded, &[(dec!(100.00), dec!(8.1))]).await;
         let rounding = validated_invoice(&pool, &seeded, &[(dec!(100.00), dec!(8.1))]).await;
         let no_vat = validated_invoice(&pool, &seeded, &[(dec!(100.00), dec!(0))]).await;
+        let tiny = validated_invoice(&pool, &seeded, &[(dec!(100.00), dec!(8.1))]).await;
         // 108.10 − 108.06 : un reste de 4 centimes, soldable en reste d'arrondi.
         settle_cash(&pool, &seeded, rounding, dec!(108.06)).await;
+        // 108.10 − 108.04 : un reste de 6 centimes ; sa TVA, 0.06 × 8.10 / 108.10
+        // = 0.0045, s'arrondit à 0.00 : aucune part, la TVA due n'est pas lue.
+        settle_cash(&pool, &seeded, tiny, dec!(108.04)).await;
         update_account(&pool, &seeded, vat, AccountType::Asset, None).await;
 
         for (inv, nature) in [
             (fees, Nature::BankFees),
             (rounding, Nature::Rounding),
             (no_vat, Nature::Discount),
+            (tiny, Nature::Discount),
         ] {
             let out = write_off(&pool, &seeded, inv, nature)
                 .await
                 .unwrap_or_else(|e| panic!("{nature:?} : le solde passe : {e:?}"));
+            let lines = entry_lines(&pool, out.journal_entry_id).await;
+            // Revue P1 (B1) : l'écriture existe et crédite la créance — sans quoi
+            // le `all` ci-dessous passerait à vide.
             assert!(
-                entry_lines(&pool, out.journal_entry_id)
-                    .await
+                lines
                     .iter()
-                    .all(|(account, _, _)| *account != vat),
-                "{nature:?} : aucune ligne sur la TVA due"
+                    .any(|(account, _, credit)| *account == seeded.accounts["1100"]
+                        && *credit > Decimal::ZERO),
+                "{nature:?} : la créance est créditée : {lines:?}"
+            );
+            assert!(
+                lines.iter().all(|(account, _, _)| *account != vat),
+                "{nature:?} : aucune ligne sur la TVA due : {lines:?}"
             );
         }
     }

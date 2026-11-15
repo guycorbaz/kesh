@@ -112,7 +112,9 @@ async function retypeAccount(
  * actif depuis sa désignation, fait refuser le solde du reste en escompte : le
  * dialogue reste ouvert et montre le message du serveur, qui nomme le compte et
  * *Administration → Facturation* ; la facture reste validée, son reste dû
- * inchangé. Le compte est rendu à son type dans un `finally` (base partagée).
+ * inchangé. Le compte rendu à son type, le même dialogue se reconfirme tel quel
+ * et solde la facture ; en cas d'échec, le `finally` rend le compte à son type
+ * (base partagée).
  */
 test('un compte de TVA due changé de type fait refuser le solde en escompte', async ({ page }) => {
 	await login(page);
@@ -155,7 +157,9 @@ test('un compte de TVA due changé de type fait refuser le solde en escompte', a
 		await expect(error).toBeVisible();
 		await expect(error).toContainText(`Le compte ${vatNumber}`);
 		await expect(error).toContainText('Administration → Facturation');
-		await expect(page.getByTestId('write-off-confirm')).toBeVisible();
+		// Revue P1 (E3) : la relecture finie, le bouton redevient actionnable — la
+		// capture montre l'état où l'on peut reconfirmer.
+		await expect(page.getByTestId('write-off-confirm')).toBeEnabled();
 		// Capture (thème clair) si `KESH_E2E_CAPTURES_DIR` est posé ; sinon, rien.
 		const captures = process.env.KESH_E2E_CAPTURES_DIR;
 		if (captures) {
@@ -174,9 +178,19 @@ test('un compte de TVA due changé de type fait refuser le solde en escompte', a
 				await check.get(`/api/v1/invoices/${invoiceId}/settlements`)
 			).json();
 			expect(settlements, 'aucun règlement ni solde').toHaveLength(0);
+			// Le compte rendu à son type, le même dialogue se reconfirme tel quel.
+			await retypeAccount(check, vatAccountId!, originalType!);
+			originalType = null;
 		} finally {
 			await disposeContextSafe(check);
 		}
+		const accepted = page.waitForResponse((r) =>
+			r.url().includes(`/api/v1/invoices/${invoiceId}/write-off`),
+		);
+		await page.getByTestId('write-off-confirm').click();
+		expect((await accepted).status()).toBe(200);
+		await expect(page.getByTestId('write-off-error')).toHaveCount(0);
+		await expect(page.getByTestId('invoice-amount-due')).toContainText('0.00');
 	} finally {
 		if (vatAccountId !== null && originalType !== null) {
 			const ctx = await authedApiContext(page);
