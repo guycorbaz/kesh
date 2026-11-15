@@ -24,8 +24,9 @@ kickoff (`e36-choix-autonomes-e360.md`, C-e360-3 sans migration, C-e360-11 note 
 
 ### C-36-19-3 — Complément atomique, `version` incrémentée, audit `…updated` (D4)
 
-- **Retenu** : un seul `UPDATE … COALESCE …, version = version + 1` dans la transaction de la finalisation, seulement si
-  une colonne change ; audit `company_invoice_settings.updated` avec `trigger: "onboarding"`, `before`, `after`.
+- **Retenu** : un seul `UPDATE … COALESCE …` dans la transaction de la finalisation, seulement si une colonne change,
+  avec `version = version + 1` **seulement si la ligne existait** (C-36-19-7 ; aligné à la remédiation de la validation
+  P2, V2-5) ; audit `company_invoice_settings.updated` avec `trigger: "onboarding"`, `before`, `after`.
 - **Écartés** : pas de `version` (un écran ouvert avant effacerait le complément) ; action d'audit neuve.
 - **Réversible** : oui (aucun schéma, aucune donnée réécrite hors de la finalisation).
 
@@ -45,7 +46,8 @@ kickoff (`e36-choix-autonomes-e360.md`, C-e360-3 sans migration, C-e360-11 note 
   candidat invalide n'est jamais désigné. Pour les deux **obligatoires** (débiteurs, produit), il fait refuser la
   finalisation, avec un motif qui nomme le compte bancaire et le remède ; pour un **facultatif** (créanciers, arrondi,
   escompte, frais, pertes), le réglage **reste vide, sans refuser**. `refs #987` (la partie « désignation de rôle » y
-  reste).
+  reste). *Étendu à la remédiation de la validation P2 (V2-2, arbitrage de l'orchestrateur)* : un compte de rôle **non
+  imputable** est aussi un candidat invalide (filtre posé dans la fonction neuve, non dans `find_singleton_role_in_tx`).
 - **Écartés** : refuser aussi pour un créanciers lié (lettre de #987 ; bloquerait l'assistant pour un réglage
   facultatif — c'était le choix de la première rédaction) ; `400 BANK_ACCOUNT_LEDGER_IS_CLAIM_ACCOUNT`.
 - **Réversible** : oui (délier le compte bancaire, ou désigner un autre compte, puis réessayer ; un créanciers vide se

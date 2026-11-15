@@ -215,12 +215,16 @@ c'est **#987** (`bug`, P3, ouverte) : « Attendu : la finalisation, et toute dé
     le plan comptable. » (produit : « Compte de produit par défaut : … « Produit par défaut » — … », même remède) ;
   - réglage désigné mais archivé : « Compte débiteurs : le compte désigné ({numéro}) est archivé — désignez-en un autre
     dans Administration → Facturation, ou réactivez-le dans le plan comptable. » (produit : de même) ;
+  - compte de rôle non imputable (D6, V2-2) : « Compte débiteurs : le compte {numéro}, qui porte le rôle « Créances
+    clients », n'est pas imputable — désignez un compte imputable dans Administration → Facturation, ou attribuez ce rôle
+    à l'un de ses sous-comptes dans le plan comptable. » (produit : « Compte de produit par défaut : … « Produit par
+    défaut » … », même remède) ;
   - compte de rôle lié à un compte bancaire (D6, débiteurs seulement) : « Compte débiteurs : le compte {numéro}, qui
     porte le rôle « Créances clients », est le compte du compte bancaire « {libellé} » — déliez ce compte bancaire dans
     Administration → Comptes bancaires, ou désignez un autre compte débiteurs dans Administration → Facturation. »
   Forme : une variante neuve de `DbError` (par exemple `DefaultInvoiceAccountsUnavailable(Vec<…>)` ; chaque élément :
   le réglage, la cause, le numéro du compte et, pour D6, le libellé du compte bancaire), avec son code dans
-  `error_code` (`errors.rs:1906`). **Bras de rendu dans `crates/kesh-api/src/errors.rs`** (V1-6 ; match exhaustif ; aucune
+  `error_code` (`crates/kesh-db/src/errors.rs:1906`) : **`"VALIDATION_ERROR"`**, égal au code du rendu (V2-4). **Bras de rendu dans `crates/kesh-api/src/errors.rs`** (V1-6 ; match exhaustif ; aucune
   route ne l'atteint, la finalisation convertissant elle-même le refus) au patron de `InactiveOrInvalidAccounts`
   (`errors.rs:4692-4699`, « `"error-inactive-accounts",` » / « `"Un ou plusieurs comptes sont archivés ou invalides.",` ») :
   `400 VALIDATION_ERROR`, **clé neuve** `error-default-invoice-accounts-unavailable` dans les **quatre** locales, à côté
@@ -235,14 +239,22 @@ c'est **#987** (`bug`, P3, ouverte) : « Attendu : la finalisation, et toute dé
   refus (deux jugements du même état à tenir égaux) ; un code neuf (la 36-17 ne le reconnaîtrait pas).
 - **D6 — Un candidat invalide n'est jamais désigné ; seuls les deux obligatoires font refuser** (C-36-19-5 ; arbitrage
   de l'orchestrateur sur V1-2, choix prudent ; partie « finalisation » de #987, `refs #987`). Quand la finalisation tire
-  un compte du **rôle** ou du plan — ligne neuve, ou complément —, elle écarte un candidat invalide : pour le débiteurs et
-  le créanciers, le compte du grand livre d'un compte bancaire non archivé (garde existante
-  `first_active_bank_account_linked_to`) ; un compte archivé, non imputable ou de mauvais type l'est déjà à la lecture
-  (la colonne `singleton_role` ne vaut le rôle que pour un compte actif, `:1148` « `/// si le compte est actif ET le rôle
-  singleton, NULL sinon)` » ;
-  `designated_account_id`, `:558`, exige « `AND postable = TRUE AND account_type IN (?, ?)` », `:568`).
+  un compte du **rôle** ou du plan — ligne neuve, ou complément —, elle écarte un candidat invalide :
+  - pour le débiteurs et le créanciers, le compte du grand livre d'un compte bancaire non archivé (garde existante
+    `first_active_bank_account_linked_to`) ;
+  - pour les **trois comptes de rôle** (débiteurs, produit, créanciers), un compte **non imputable** — filtre neuf
+    (validation P2, V2-2, arbitrage de l'orchestrateur). Les comptes de rôle ne sont aujourd'hui filtrés que sur
+    `active` : la colonne générée ne lit que lui (squash `:86`, « `` `singleton_role` varchar(32) GENERATED ALWAYS AS
+    (case when `active` <> 0 and `role` in ('Receivable','DefaultRevenue','Payable', `` … »), et créer un sous-compte
+    rend son parent non imputable sans toucher à son rôle (`accounts.rs:205` « `UPDATE accounts SET postable = FALSE
+    WHERE id = ? AND company_id = ?` ») : un 1100 scindé aux étapes 6 ou 7 serait désigné. Le filtre se pose **dans la
+    fonction neuve** (lecture de `postable` du candidat, déjà verrouillé `FOR UPDATE`), **non** dans
+    `find_singleton_role_in_tx` (`accounts.rs:419`), que partage la garde de l'étape 6 (`refuse_future_claim_account`,
+    `onboarding.rs:740`) ;
+  - les quatre comptes marqués par le plan le sont déjà à la lecture : `designated_account_id` (`:558`) exige « `AND
+    postable = TRUE AND account_type IN (?, ?)` » (`:568`).
   - **Débiteurs et produit** (obligatoires) : un candidat invalide fait **refuser** la finalisation (D5) — elle ne peut
-    aboutir sans eux. En pratique, seul le débiteurs peut être lié à un compte bancaire.
+    aboutir sans eux. Seul le débiteurs peut être lié à un compte bancaire ; l'un ou l'autre peut être non imputable.
   - **Créanciers, arrondi, escompte, frais bancaires, pertes** (facultatifs) : un candidat invalide laisse le réglage
     **vide, sans refuser la finalisation** ; l'utilisateur le désigne plus tard dans *Administration → Facturation*. Un
     créanciers lié à un compte bancaire n'est donc jamais désigné d'office, et ne bloque pas l'assistant d'une personne
@@ -276,8 +288,11 @@ c'est **#987** (`bug`, P3, ouverte) : « Attendu : la finalisation, et toute dé
    par une espace, chacune avec sa cause et son remède (pour (c) : « déliez ce compte bancaire dans Administration →
    Comptes bancaires ») ; il ne contient plus « 1100, 3000 manquants » ; aucune écriture (ligne — absente si elle était
    neuve —, `version`, audit, étape inchangés).
+   (f) compte de rôle débiteurs **non imputable** (un sous-compte créé sous lui) : même refus, phrase « n'est pas
+   imputable » de D5.
    **AC4 bis (d)** — compte de rôle **créanciers** lié à un compte bancaire, ligne vierge ou neuve : la finalisation
-   **aboutit** (`200`, étape 8), débiteurs et produit posés, **créanciers vide** (D6).
+   **aboutit** (`200`, étape 8), débiteurs et produit posés, **créanciers vide** (D6). **(g)** — compte de rôle
+   créanciers non imputable : de même, créanciers vide.
 5. **AC5 — Idempotent et audité.** Une seconde finalisation (étape 8) ne change rien ; un appel répété de la fonction du
    dépôt sur une ligne complète rend « inchangé », sans `UPDATE` ni `version` changée. Le journal d'audit porte **une**
    `company_invoice_settings.updated` (`trigger` = `onboarding`, `before` aux comptes vides, `after` aux comptes posés) à
@@ -295,13 +310,19 @@ c'est **#987** (`bug`, P3, ouverte) : « Attendu : la finalisation, et toute dé
    assertion sur l'écran d'après la finalisation (que la 36-17 change).
 9. **AC9 — Manuel.** `docs/manual/fr/user-manual.tex`, § *Onboarding*, paragraphe `:217` : une phrase dit qu'à la
    finalisation Kesh désigne aussi les comptes par défaut de facturation que le plan fournit, même si un écran a été
-   ouvert avant, sans remplacer un compte déjà choisi, et que, s'il refuse, le message nomme le réglage en défaut. PDF
+   ouvert avant, sans remplacer un compte déjà choisi, et que, s'il refuse, le message nomme le réglage en défaut ; et
+   qu'un compte **facultatif** inutilisable (un créanciers lié à un compte bancaire, un compte non imputable) n'est pas
+   désigné : le réglage reste vide, à désigner dans *Administration → Facturation* (V2-6). PDF
    régénéré à l'intégration (contrôle aplati, forme E6, de cette phrase).
 10. **AC10 — Périmètre.** Aucune migration (`ls crates/kesh-db/migrations/*.sql | wc -l` = 91) ; au plus cinq modules
     (Dev Notes).
 11. **AC11 — Rendu de la variante.** Le bras de `kesh-api/src/errors.rs` rend `400 VALIDATION_ERROR` avec la clé
     `error-default-invoice-accounts-unavailable`, présente dans les quatre locales, repli égal à la valeur `fr-CH` ;
-    `parity_between_locales` (`crates/kesh-i18n/src/loader.rs`) et `npm run lint-i18n-ownership` verts.
+    `parity_between_locales` (`crates/kesh-i18n/src/loader.rs`) et `npm run lint-i18n-ownership` verts. **Preuves**
+    (V2-4) : la clé est **inscrite à la table G9** (`crates/kesh-api/tests/textes_coherents.rs:745`, « `const TABLE:
+    [(&str, Cles); 9] = [` », entrée du fichier `crates/kesh-api/src/errors.rs`, un site, sans variable), ce qui compare
+    le repli au catalogue ; un **test unitaire du bras** au patron de `kesh-api/src/errors.rs:5669-5672` (« `assert_eq!(err.error_code(),
+    code, "repli de error_code()");` » puis statut, `body["error"]["code"]` et message égal à `texte(clé)`) — tue M12.
 
 ## Tests à écrire, et la preuve du rouge
 
@@ -314,7 +335,8 @@ le correctif, ou correctif mis de côté par `git stash` **après** le commit du
 `company_with_chart` `:1043`) :
 
 - **T-D1** ligne vierge (`get_or_create_default`) puis `insert_with_defaults_in_tx` : rend « inséré = false »,
-  sept comptes égaux à ceux d'une seconde société PME finalisée à neuf, TVA vide, `version` 2 (AC1). **Rouge** :
+  sept comptes égaux à ceux d'une seconde société PME finalisée à neuf, TVA vide, `version` 2 ; **la seconde société
+  (ligne neuve) a `version` = 1** (C-36-19-7 ; tue M10) (AC1). **Rouge** :
   `InactiveOrInvalidAccounts` (`:1305`).
 - **T-D2** ligne enregistrée (`update`) : débiteurs choisi gardé, produit complété, arrondi vide gardé (AC2). **Rouge** :
   `InactiveOrInvalidAccounts`.
@@ -331,6 +353,11 @@ le correctif, ou correctif mis de côté par `git stash` **après** le commit du
   journalise dans `rouges.log`, puis écrit le correctif.
 - **T-D4d** compte de rôle créanciers lié à un compte bancaire (ligne vierge, puis ligne neuve) : succès, créanciers
   vide, débiteurs et produit posés (AC4 bis). **Rouge** : sur la ligne vierge, `InactiveOrInvalidAccounts` ; tue M6b.
+- **T-D4f** ligne neuve, sous-compte créé sous le compte de rôle débiteurs (`accounts::create` avec `parent_id`, qui rend
+  le parent non imputable, `accounts.rs:204-209`) : refus, cause « non imputable » (AC4 f). **Rouge** : aujourd'hui,
+  **succès**, le parent non imputable désigné ; tue M11.
+- **T-D4g** même geste sous le compte de rôle créanciers : succès, créanciers vide (AC4 bis g). **Rouge** : aujourd'hui,
+  créanciers désigné sur le parent non imputable ; tue M11.
 - **T-D5** appel répété sur ligne complétée : « inchangé », `version` égale, aucun `UPDATE` (`updated_at` égal) (AC5).
 
 **HTTP** (`crates/kesh-api/tests/onboarding_path_b_e2e.rs`, à côté de `full_path_b_flow` `:353`, mêmes helpers
@@ -368,7 +395,9 @@ le correctif, ou correctif mis de côté par `git stash` **après** le commit du
 | M7 | rétablir le refus anticipé pour un réglage désigné (`:1240`) | T-D3 |
 | M8 | ne pas écrire l'audit du complément | T-H1 |
 | M9 | « vierge » ramenée aux seuls dix comptes vides (moitié `version = 1` retirée) | T-D2b |
-| M10 | incrémenter `version` aussi sur une ligne neuve | `full_path_b_flow` (séquence et état), T-D1 (seconde société à `version` 1) |
+| M10 | incrémenter `version` aussi sur une ligne neuve | T-D1 (assertion `version` 1 de la seconde société) |
+| M11 | retirer le filtre `postable` des candidats de rôle (D6) | T-D4f, T-D4g |
+| M12 | bras de rendu : autre clé ou autre code que ceux de D5 | test du bras (AC11) |
 
 ## Tâches
 
@@ -377,7 +406,11 @@ le correctif, ou correctif mis de côté par `git stash` **après** le commit du
 - [ ] **T1 — Bases** (voie 2 ; la station a redémarré, bases vides) : `kesh_e3619` et `kesh_e2e_e3619` créées sur
   `kesh-mariadb-dev2` (`docker exec kesh-mariadb-dev2 mariadb -uroot -pkesh_dev_root …`), migrées (`sqlx migrate run`,
   `DATABASE_URL=mysql://kesh:kesh_dev@127.0.0.1:3307/kesh_e3619`), semées (`scripts/seed-dev-db.sql`).
-- [ ] **T2 — Rouges** : T-D1 à T-D3, T-H1 à T-H3, E2E écrits et lancés avant le correctif (`rouges.log`).
+- [ ] **T2 — Rouges** : T-D1, T-D2, T-D2b, T-D3, T-D4d, T-D4f, T-D4g, T-H1, T-H2, T-H2e, T-H3, T-H3d et l'E2E écrits et
+  lancés **avant** le correctif (`rouges.log`) ; T-D4 après le squelette (ci-dessous), T-D5, T-H4 et le test du bras
+  (AC11) se prouvent par mutation. **Le squelette** porte la variante, son `error_code()` (`kesh-db/src/errors.rs:1906`)
+  et son bras de rendu (`kesh-api/src/errors.rs`, match exhaustif sans `_`, dernier bras `DbError::Sqlx(e)` `:5022`),
+  sans quoi il ne compile pas.
 - [ ] **T3 — Dépôt** (`company_invoice_settings.rs`) : fonction neuve (insertion ou complément, D2, D3, D4, D6), rendu
   de l'issue (inséré / complété avec `before` / inchangé) ; `insert_with_defaults_in_tx` en enveloppe (D5) ;
   `settings_snapshot_json` `pub` ; doc-comments de `:1-17`, `:1114-1164`, `:1186-1196` mis à jour ; variante de
@@ -388,10 +421,12 @@ le correctif, ou correctif mis de côté par `git stash` **après** le commit du
   variante dans `crates/kesh-api/src/errors.rs` (`400 VALIDATION_ERROR`, clé de D5) ; la clé
   `error-default-invoice-accounts-unavailable` dans les quatre `messages.ftl`, à côté de `error-inactive-accounts`
   (`:333`).
-- [ ] **T5 — Tests** T-D2b, T-D4 (squelette d'abord), T-D4d, T-D5, T-H2e, T-H3d, T-H4 ; mutations M1 à M10.
-- [ ] **T6 — Documentation** : `user-manual.tex:217` (AC9) ; `docs/MULTI-TENANT-SCOPING-PATTERNS.md:333` (ordre des
-  verrous de `finalize` : ajouter la ligne des réglages en `FOR UPDATE` et `bank_accounts` en partagé, s'ils y
-  entrent).
+- [ ] **T5 — Tests** T-D4 (squelette d'abord), T-D5, T-H4, test du bras et entrée G9 (AC11) ; mutations M1 à M12.
+- [ ] **T6 — Documentation** : `user-manual.tex:217` (AC9) ; `docs/MULTI-TENANT-SCOPING-PATTERNS.md:333` (ligne de
+  `finalize` : ajouter la ligne des réglages en `FOR UPDATE` et `bank_accounts` en partagé, **dans l'ordre de la 15-6c**,
+  réglages avant `bank_accounts`). Cet ordre contredit le bloc « Global Lock Order » du même document
+  (`:316-318` : « `5. bank_accounts` » avant « `6. company_invoice_settings` ») ; écart **préexistant**, non réconcilié
+  dans la story : une issue est demandée à l'orchestrateur (Dev Notes).
 - [ ] **T7 — Gates** (Dev Notes, *Gates*) et Dev Agent Record.
 
 ## Note de version
@@ -426,6 +461,12 @@ le correctif, ou correctif mis de côté par `git stash` **après** le commit du
   la démonstration sème elle-même son plan et crée la ligne dans sa dernière transaction (`kesh-seed/src/lib.rs:417`), si
   bien qu'aucune ligne vide ne la précède et que la cause « réglage vide » n'y est pas atteignable ; le texte n'y est faux
   que pour un plan sans rôles, ce que la démonstration ne produit pas. Aucune issue demandée.
+- **Issue demandée à l'orchestrateur** (V2-3) — « `MULTI-TENANT-SCOPING-PATTERNS.md` : l'ordre global des verrous place
+  `bank_accounts` avant `company_invoice_settings`, contraire au code de la 15-6c », étiquettes `documentation`, `P3`.
+  Lignes : `docs/MULTI-TENANT-SCOPING-PATTERNS.md:316-318` (« `5. bank_accounts` », « `6. company_invoice_settings` ») ;
+  `crates/kesh-api/src/routes/bank_accounts.rs:418-419` (« ordre `companies` → réglages → `accounts` → ») ;
+  `crates/kesh-db/src/repositories/company_invoice_settings.rs:231` (`claim_accounts_in_share_mode`, réglages lus avant
+  les comptes bancaires).
 - **Facultatifs vides d'une ligne enregistrée** (D2) : restent à désigner dans *Administration → Facturation* ; la
   validation d'une facture fournisseur sans créanciers le dit déjà (`supplier_invoices.rs:1725-1726`).
 - **Un réglage facultatif désigné puis archivé** n'est pas contrôlé par la finalisation (inchangé : il l'est à l'usage).
@@ -462,7 +503,9 @@ découpage.
 
 Fichiers communs avec d'autres stories de la 0.18.0 : `user-manual.tex` (36-17, 36-15, 36-18 possibles : paragraphes
 distincts) ; `crates/kesh-db/src/errors.rs` et `crates/kesh-api/src/errors.rs` (toute story qui ajoute une variante :
-union) ; `messages.ftl` ×4 (une clé `error-*` à côté de `:333`, jamais en fin de fichier) ; `onboarding_path_b_e2e.rs`
+union) ; `messages.ftl` ×4 (une clé `error-*` à côté de `:333`, jamais en fin de fichier) ;
+`crates/kesh-api/tests/textes_coherents.rs` (table G9, `:745` : toute story qui ajoute un repli ; union, compte de la
+table recompté) ; `onboarding_path_b_e2e.rs`
 (36-17 n'y touche pas). `CHANGELOG.md` : non (C-e360-11).
 
 ### Ce qui doit rester vrai
@@ -473,6 +516,17 @@ union) ; `messages.ftl` ×4 (une clé `error-*` à côté de `:333`, jamais en f
 - Ordre des verrous de la finalisation, **ligne neuve comprise** (D4, étapes 1 à 4) : `onboarding_state → companies →
   accounts → company_invoice_settings → bank_accounts (partagé)` ; rejeu sur interblocage inchangé (`onboarding.rs:894`). Un `PUT` concurrent prend
   `company_invoice_settings` d'abord : l'interblocage possible est rejoué des deux côtés (`company_invoice_settings.rs:384-393`).
+- **Interblocage neuf, borné** (validation P2, V2-3) : avec le `FOR UPDATE` de la ligne existante (D4, étape 3), la
+  finalisation tient les comptes de rôle en exclusif et attend la ligne des réglages en exclusif ; le `PATCH` de liaison
+  d'un compte bancaire, qui ne prend pas la sentinelle `companies` (`routes/bank_accounts.rs:2085-2093`), tient les
+  réglages en partagé et attend le compte du grand livre en partagé (ordre « `companies` → réglages → `accounts` →
+  `bank_accounts` », `routes/bank_accounts.rs:418-419`). Même cycle avec la validation d'une facture sur une ligne
+  enregistrée (réglages en exclusif, `get_or_create_default_in_tx` `:161-168`, puis comptes). Le cycle est **rejoué des
+  deux côtés** (`routes/bank_accounts.rs:2061` `retry_app_on_deadlock("bank_accounts::patch", …)` ; `onboarding.rs:894`),
+  et une tentative annulée n'écrit rien : **rien de faux**. Aujourd'hui, sur une ligne existante, la finalisation ne
+  prend que le partagé de l'`INSERT IGNORE` (`:1250`), compatible : le cycle est neuf, et accepté. *Écartée* : prendre
+  la ligne des réglages avant les comptes candidats (ordre de la 15-6c, mais change l'ordre `onboarding_state →
+  companies → accounts` que la démonstration partage, `MULTI-TENANT-SCOPING-PATTERNS.md:341`).
 - La démonstration et les jeux de pièges gardent leur comportement (`insert_with_defaults_in_tx` en enveloppe) ; ni l'un
   ni l'autre ne crée de compte bancaire avant les réglages (`/usr/bin/grep -n "bank" crates/kesh-seed/src/pieges.rs` :
   aucune ligne avant `:399` ; `lib.rs` n'en crée pas).
@@ -531,3 +585,19 @@ union) ; `messages.ftl` ×4 (une clé `error-*` à côté de `:333`, jamais en f
   - V1-6 (LOW) : bras de rendu spécifié (clé neuve, quatre locales, repli égal à `fr-CH`), AC11 ; `kesh-i18n` devient le
     cinquième module ; `seed_demo` (`onboarding.rs:271`) au hors-périmètre avec sa raison ; C-36-19-8.
   - V1-7 (LOW) : squelette commité d'abord pour un rouge d'exécution de T-D4 ; cas à deux causes (AC4 e, T-H2e, M5b).
+- 2026-11-15 — **Validation P2** (`kesh-gate-logs/e36-19/validation-p2.md`) : 0 CRITICAL, 0 HIGH, 2 MEDIUM, 4 LOW.
+  Remédiée par l'agent de rédaction des fiches (Opus 5.5), outil Edit. Prémisses relues à `fed34a9c7` : squash `:86`
+  (`singleton_role` ne lit que `active`), `accounts.rs:204-209` et `:419-440`, `routes/bank_accounts.rs:418-419`,
+  `:2061`, `:2085-2093`, `docs/MULTI-TENANT-SCOPING-PATTERNS.md:312-319`, `textes_coherents.rs:723-760`,
+  `kesh-api/src/errors.rs:5022`, `:5665-5675`. Toutes confirmées, aucune réfutée.
+  - V2-1 (MEDIUM) : T-D1 porte l'assertion `version` 1 de la seconde société ; M10 tuée par T-D1 seul.
+  - V2-2 (MEDIUM), **arbitrage de l'orchestrateur** : filtre `postable` sur les candidats de rôle, dans la fonction
+    neuve (non dans `find_singleton_role_in_tx`, partagée par l'étape 6) ; obligatoire → refus, phrase « n'est pas
+    imputable » de D5 ; facultatif → vide. D6 corrigée (la phrase « déjà écarté à la lecture » était fausse pour les
+    comptes de rôle), AC4 f, AC4 bis g, T-D4f, T-D4g, M11.
+  - V2-3 (LOW) : interblocage neuf avec le `PATCH` de liaison (et la validation d'une facture) écrit, borné par les deux
+    rejeux ; T6 suit l'ordre de la 15-6c ; l'écart du bloc « Global Lock Order » n'est pas réconcilié : issue demandée.
+  - V2-4 (LOW) : `error_code()` = `VALIDATION_ERROR` ; AC11 prouvé par la table G9 et un test du bras (M12).
+  - V2-5 (LOW) : C-36-19-3 aligné sur C-36-19-7 ; T2 nomme tous les rouges d'avant correctif ; le squelette porte la
+    variante, son code et son bras.
+  - V2-6 (LOW) : AC9 dit qu'un facultatif inutilisable reste vide, à désigner dans *Facturation*.
