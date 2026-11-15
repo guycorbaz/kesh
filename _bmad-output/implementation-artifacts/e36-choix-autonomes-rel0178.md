@@ -31,3 +31,24 @@ son contexte, l'option retenue, les autres et sa réversibilité.
   repris en phrases pour l'utilisateur.
 - **Autres** : tout sous *Corrigé*, comme les fiches (laisse la rubrique *Modifié* vide).
 - **Réversibilité** : déplacement d'un point, avant le tag.
+
+## C-rel0178-4 — La recette du chemin de la 36-4 dans une recette complémentaire, jouée des deux côtés
+
+- **Contexte** : le § 3 du prompt demande une base peuplée par l'image 0.17.7 où une clé d'API a passé une écriture **et
+  annulé un règlement** ; le peuplement de `scripts/recette-montee.sh` ne porte ni clé ni rapprochement.
+- **Retenu** : `scripts/recette-montee.sh --image gcorbaz/kesh:0.17.7 --migrations-attendues 0 --import` tel quel, puis
+  `kesh-gate-logs/rel0178/recette-complement-rel0178.sh`, reprise de celle de la 0.17.7 : en 0.17.7, la clé passe une
+  écriture, rapproche une transaction, règle une facture et annule ce règlement ; montée par le binaire 0.17.8, empreinte
+  identique ; la clé règle et annule de nouveau **en 0.17.8**, et les six entrées d'audit de l'annulation doivent porter
+  `api_key` (elles portent `user` en 0.17.7) ; nouvelle empreinte, référence du retour ; l'image 0.17.7 relancée sur la
+  même base, sans restauration, doit la retrouver.
+- **Autres** : un crochet `--apres` dans `recette-montee.sh` (son peuplement n'a pas de clé d'API) ; comparer le retour à
+  l'empreinte d'avant (ne prouverait pas que la 0.17.7 relit ce que la 0.17.8 a écrit).
+- **Réversibilité** : un script de journal, hors du dépôt.
+
+## C-rel0178-5 — Le manuel d'administration décrit les deux recettes telles qu'elles ont tourné
+
+- **Contexte** : la sous-section *Passer à la 0.17.8* avait été écrite avant la recette (§ 1 avant § 3).
+- **Retenu** : la phrase des constats réécrite après la recette, en deux recettes, sur le modèle de *Passer à la 0.17.7* ;
+  PDF régénéré après.
+- **Réversibilité** : une phrase.
