@@ -80,3 +80,23 @@ attend celui de l'Epic 37, lui-même en attente du retour de Guy sur la page de 
 - Wise relevés : <https://docs.wise.com/api-reference/balance-statement>, jetons personnels
   <https://docs.wise.com/api-docs/features/authentication-access/personal-tokens>, SCA
   <https://docs.wise.com/guides/developer/auth-and-security/sca-over-api>.
+
+## Décisions de Beat — suite (2026-11-15, sur le projet d'epic 38)
+
+- **B16 — Aucune migration breaking.** Le caractère « prestataire » d'un compte bancaire, ses comptes liés (frais et
+  autres) et sa devise vivent dans les **réglages de la connexion du prestataire** (table neuve), non dans des valeurs
+  neuves de colonnes existantes. Le compte reste `account_kind = 'bank'` (IBAN facultatif depuis 34-11a1) ; les
+  critères neufs des règles vont dans des colonnes neuves ou une table enfant, non dans `match_type` ; les passages de
+  téléchargement ont leur propre table, non un `source_format` neuf. Toutes les migrations ajoutent des tables ou des
+  colonnes `NULL` : `kesh_version_min_required` inchangé. Un binaire antérieur voit un compte prestataire comme un
+  compte bancaire ordinaire.
+- **B17 — Exercice 2024** : déjà importé par l'API (recette de l'Epic 37) ; les transactions téléchargées de 2024 se
+  **rattachent en lot** aux écritures existantes (signal « déjà comptabilisée » de 34-4), sans doublon.
+- **B18 — Impôt sur les acquisitions** : compte distinct de TVA due sur acquisitions (p. ex. 2201).
+- **B19 — Ventes** : sous-comptes de ventes par devise, regroupés en CHF, ventilés par catégorie de vente (la
+  comptabilité analytique pourrait les remplacer : non tranché). Les règles d'affectation doivent proposer le bon
+  compte de ventes **par domaine de boutique** : critère « boutique / domaine » explicite.
+- **B20 — Remboursements et frais** : passés tels que le prestataire les rapporte. Les relevés sont les **sommes de
+  contrôle** : solde du prestataire comparé au relevé.
+- **B21 — WHMCS et CB Paid Subscriptions** : leurs exports CSV s'importent par un **script hors de Kesh**, par l'API ;
+  l'API doit permettre à ce script de créer les écritures ou de les rattacher aux transactions de prestataire.
