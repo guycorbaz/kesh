@@ -3,7 +3,7 @@ name: CI
 on:
   push:
     branches: [main]
-  # `epic/**` : une PR de story vers sa tranche d'epic passe la même CI qu'une PR vers
+  # `epic/**` : une PR de story vers la branche de son epic passe la même CI qu'une PR vers
   # `main` (CLAUDE.md § « Travailler à plusieurs développeurs », 2026-11-15).
   pull_request:
     branches: [main, 'epic/**']

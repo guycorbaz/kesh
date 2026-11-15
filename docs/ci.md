@@ -8,7 +8,7 @@ La pipeline `ci.yml` se déclenche sur :
 
 - **Pull request** vers `main` → le job `changes`, puis 4 jobs (`backend`, `frontend`, `docker-build`, `e2e-smoke`), qui doivent être sautés si la PR ne porte que `_bmad-output/` (cas nominal encore à relever ; l'échec, l'annulation et le délai dépassé du filtre l'ont été, voir ci-dessous)
 - **Push** sur `main` (= merge de PR) → `changes`, puis les mêmes 4 jobs, toujours
-- **Pull request** vers une branche `epic/**` (une tranche d'epic, depuis le 2026-11-15) → la même chose que vers `main`. Les branches d'epic ne sont pas protégées : la CI y informe, elle ne bloque pas la fusion d'une story dans sa tranche.
+- **Pull request** vers une branche `epic/**` (la branche d'un epic, depuis le 2026-11-15) → la même chose que vers `main`. Les branches d'epic ne sont pas protégées : la CI y informe, elle ne bloque pas la fusion d'une story dans sa tranche.
 
 **Le cache Rust** (`Swatinem/rust-cache`, job `backend`) porte la clé partagée `kesh-backend` et **n'est écrit que par les exécutions sur `main`** (`save-if`) : une PR lit le cache de sa base, puis celui de `main`, sans en écrire. Motif : GitHub plafonne le cache d'un dépôt à 10 Go (8,2 Go occupés le 2026-11-15, dont la moitié en caches de PR) et évince les plus anciens ; des branches d'epic écrivant chacune le leur feraient tout recompiler. Une PR qui change `Cargo.lock` ne trouve donc pas de cache à sa mesure et compile davantage. Le **cache Docker** (`type=gha`) n'est pas restreint : `e2e-smoke` reconstruit l'image de la PR depuis ce que `docker-build` vient d'y écrire (`CLAUDE.md` § *Travailler à plusieurs développeurs*).
 

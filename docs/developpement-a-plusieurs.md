@@ -40,8 +40,8 @@ bout en bout, alors que le numéro de release ne devient définitif qu'au tag (�
 
 ## 3. Les versions se numérotent sur deux niveaux
 
-- **Release planifiée** → chiffre **mineur** : 0.18.0, 0.19.0, 0.20.0. Elle a son milestone d'avance et reçoit des
-  tranches d'epic.
+- **Release planifiée** → chiffre **mineur** : 0.18.0, 0.19.0, 0.20.0. Elle a son milestone d'avance et reçoit un ou
+  plusieurs epics entiers.
 - **Correctif urgent** → chiffre de **correction** de la dernière release publiée : 0.18.1, 0.18.2. Son milestone naît
   avec le bug.
 
@@ -52,7 +52,12 @@ release — « 0.18.1 » ne porte que des corrections et se pose sur la 0.18.0 s
 déjà du travail inachevé de la release suivante ; une fois publié, il est **reporté dans `main`**. Il ne porte **aucune
 migration** : une correction qui en exige une n'est plus un correctif, elle va à la prochaine release planifiée.
 
-*(La v0.17.8 est la dernière release numérotée à l'ancienne, où chaque release montait le chiffre de correction.)*
+**Un epic = une release.** À partir de l'Epic 37, un epic ne s'étale plus sur plusieurs releases : un chantier trop grand
+pour une release se découpe en plusieurs epics dès le kickoff. Une release peut en revanche réunir plusieurs epics.
+*Pourquoi* : un epic se planifie, se livre et se juge d'un seul tenant, et sa branche se fusionne une seule fois (§ 5).
+
+*(La v0.17.8 est la dernière release numérotée à l'ancienne, où chaque release montait le chiffre de correction. L'Epic 36,
+réparti sur les releases 0.17.8, 0.18.0 et 0.19.0, est la dernière exception à « un epic = une release ».)*
 
 ## 4. Qui finit le premier sort le premier
 
@@ -80,27 +85,26 @@ ordonne les publications, et deux tags ne peuvent pas se croiser.
 
 | Branche ou tag | Rôle |
 |---|---|
-| `epic/N-slug` | une **tranche** d'epic : ce que l'epic livre dans une release, par son développeur |
-| `story/N-M-slug` | une story, partie de sa tranche et fusionnée dans sa tranche |
+| `epic/N-slug` | un epic, par son développeur |
+| `story/N-M-slug` | une story, partie de la branche de son epic et fusionnée dans celle-ci |
 | `main` | l'intégration : ce qui est terminé, revu, et attend sa release |
 | tag `vX.Y.Z` | la production : le code exact de l'image publiée |
 | `hotfix/X.Y.Z` | un correctif urgent, parti du tag, reporté ensuite dans `main` |
 
-Le cycle d'une tranche :
+Le cycle d'un epic :
 
 1. Créer `epic/40-stripe` depuis `main` à jour.
-2. Pour chaque story : `story/40-1-…` depuis la tranche, développée, revue, **gates locaux verts**, puis PR vers la
-   tranche — la CI y tourne comme vers `main` (§ 7).
-3. Après chaque release publiée par un autre, **reprendre `main` dans la tranche**.
-4. La tranche terminée : PR de `epic/40-stripe` vers `main`, **revue du code d'intégration** (§ 6), fusion.
-5. **La tranche se clôt** ; la suivante repart de `main`.
+2. Pour chaque story : `story/40-1-…` depuis la branche de l'epic, développée, revue, **gates locaux verts**, puis PR
+   vers `epic/40-stripe` — la CI y tourne comme vers `main` (§ 7).
+3. Après chaque release publiée par un autre, **reprendre `main` dans la branche de l'epic**.
+4. L'epic terminé : PR de `epic/40-stripe` vers `main`, **revue du code d'intégration** (§ 6), fusion, puis la release.
+5. **La branche se clôt** ; l'epic suivant repart de `main`.
 
-**Pourquoi une branche par tranche, et non une par epic entier.** Le dépôt fusionne en *squash* : toute la branche
-devient un seul commit dans `main`. Une branche qui continuerait après sa fusion ne reconnaîtrait pas son propre travail
-dans `main`, et chaque reprise de `main` rejouerait de faux conflits. Un epic qui livre en plusieurs releases a donc une
-branche par release.
+**Pourquoi une branche ne se fusionne qu'une fois.** Le dépôt fusionne en *squash* : toute la branche devient un seul
+commit dans `main`. Une branche qui continuerait après sa fusion ne reconnaîtrait pas son propre travail dans `main`, et
+chaque reprise de `main` rejouerait de faux conflits. C'est une raison de plus pour qu'un epic tienne dans une release.
 
-**Pas de branche `develop`** : `main` ne reçoit que des tranches terminées, et le tag tient lieu de branche de production.
+**Pas de branche `develop`** : `main` ne reçoit que des epics terminés, et le tag tient lieu de branche de production.
 Une branche de plus ajouterait une fusion à chaque release sans rien gagner en sûreté.
 
 **On ne touche ni aux branches ni aux bases de test d'un autre.**
@@ -137,12 +141,12 @@ module se voient avant la première ligne, et l'on choisit l'ordre ou le partage
 Le plus dangereux : deux epics qui changent **la même règle dans deux fichiers différents** — l'un modifie la lecture
 d'un montant, l'autre ajoute un écran qui lit les montants à l'ancienne. Git fusionne sans rien dire, et le résultat est
 faux. Deux filets : les tests, rejoués après chaque fusion ; et la **revue du code d'intégration**, obligatoire à chaque
-PR d'une tranche vers `main`, qui relit les commits de fusion et cherche ces interactions.
+PR d'un epic vers `main`, qui relit les commits de fusion et cherche ces interactions.
 
 ## 7. La CI
 
 - Elle tourne sur les PR vers `main` **et vers les branches `epic/…`** : une story passe la même CI avant d'entrer dans
-  sa tranche. Sur une tranche, elle informe sans bloquer ; vers `main`, ses quatre jobs sont requis.
+  la branche de son epic. Sur une branche d'epic, elle informe sans bloquer ; vers `main`, ses quatre jobs sont requis.
 - Elle ne remplace pas les gates locaux, qui restent la règle avant chaque `push` (`CLAUDE.md` § *Test Locally First*).
 - Le cache Rust n'est écrit que depuis `main` : le cache du dépôt est plafonné à 10 Go, et chaque branche qui écrirait
   le sien ferait tout recompiler aux autres. Détail : `docs/ci.md`.

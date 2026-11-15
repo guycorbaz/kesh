@@ -904,7 +904,7 @@ Branches typiques :
 - `chore/...` — maintenance, sprint-status, doc post-merge, infra.
 - `fix/...` — bugfix hors story (rare — préférer story dédiée si scope > trivial).
 - `docs/...` — mise à jour pure de documentation hors flux story.
-- `epic/N-slug` — une **tranche** d'epic, c'est-à-dire ce qu'un epic livre dans une release ; les branches `story/…` de la tranche en partent et y reviennent (§ *Travailler à plusieurs développeurs*).
+- `epic/N-slug` — un epic, livré dans une seule release ; les branches `story/…` de l'epic en partent et y reviennent (§ *Travailler à plusieurs développeurs*).
 - `hotfix/X.Y.Z` — un correctif urgent, parti du tag de la dernière release publiée (même section).
 
 **Commit systématique après chaque étape BMAD** :
@@ -997,6 +997,7 @@ Au-delà du planning README à chaque commit (ci-dessus), élargir la vérificat
 - **Une release planifiée monte le chiffre mineur** : 0.18.0, 0.19.0, 0.20.0. Elle reçoit son milestone d'avance.
 - **Un correctif urgent monte le chiffre de correction** de la dernière release publiée : 0.18.1, 0.18.2. Son milestone naît avec le bug. Il part du **tag** (branche `hotfix/X.Y.Z`), ne porte **aucune migration** — une correction qui en exige une n'est plus un correctif et va à la prochaine release planifiée —, et il est **reporté dans `main`** après publication.
 - La v0.17.8 est la dernière release numérotée à l'ancienne (chaque release montait le chiffre de correction) ; la phase 2 de l'Epic 36 se publie en 0.18.0 (sans migration) puis 0.19.0 (avec migrations).
+- **Un epic = une release** *(décision de Guy du 2026-11-15)* : à partir de l'Epic 37, un epic ne s'étale plus sur plusieurs releases. Un chantier trop grand pour une release se découpe en plusieurs epics au kickoff. L'Epic 36, déjà réparti sur 0.17.8, 0.18.0 et 0.19.0 (décision D2), est la dernière exception.
 
 ### Ordre des releases
 
@@ -1009,13 +1010,13 @@ Au-delà du planning README à chaque commit (ci-dessus), élargir la vérificat
 
 | Branche ou tag | Rôle |
 |---|---|
-| `epic/N-slug` | une tranche d'epic, par son développeur ; `story/…` en partent et y reviennent |
+| `epic/N-slug` | un epic, par son développeur ; `story/…` en partent et y reviennent |
 | `main` | intégration : ce qui est terminé, revu, et attend sa release |
 | tag `vX.Y.Z` | production : le code exact de l'image publiée |
 | `hotfix/X.Y.Z` | correctif urgent parti du tag, reporté ensuite dans `main` |
 
-- **Pas de branche `develop`** : `main` ne reçoit déjà que des tranches terminées, et le tag tient lieu de branche de production.
-- **Une branche par tranche, non par epic entier.** Le dépôt fusionne en squash : une branche qui continue après sa fusion ne reconnaît plus son propre travail dans `main` et rejoue de faux conflits. Une tranche fusionnée se clôt ; la suivante repart de `main`.
+- **Pas de branche `develop`** : `main` ne reçoit déjà que des epics terminés, et le tag tient lieu de branche de production.
+- **Une branche par epic, fusionnée une fois.** Le dépôt fusionne en squash : une branche qui continuerait après sa fusion ne reconnaîtrait plus son propre travail dans `main` et rejouerait de faux conflits. Un epic terminé se fusionne, sa branche se clôt. *(L'Epic 36, réparti sur trois releases, a une branche par release.)*
 - **Reprendre `main` dans sa branche au moins après chaque release publiée** par un autre : les conflits se paient par petits morceaux.
 - **On ne touche ni aux branches ni aux bases de test d'un autre.**
 
@@ -1034,10 +1035,10 @@ Au-delà du planning README à chaque commit (ci-dessus), élargir la vérificat
 | `Cargo.lock` | se régénère après la fusion |
 
 - **Le second arrivé résout, dans sa branche, jamais dans `main`.** La résolution garde **les deux intentions** (règle, test, texte, compteur) ; si elles se contredisent, il ne tranche pas seul : il en parle à l'autre, et le Project Lead arbitre.
-- **Toute PR d'une tranche vers `main` passe une revue du code d'intégration** (précédent : la 0.17.8) : les commits de fusion relus en diff combiné, et les **interactions sans conflit de texte** cherchées — deux epics qui changent la même règle dans deux fichiers différents, ce que Git fusionne sans rien dire.
+- **Toute PR d'un epic vers `main` passe une revue du code d'intégration** (précédent : la 0.17.8) : les commits de fusion relus en diff combiné, et les **interactions sans conflit de texte** cherchées — deux epics qui changent la même règle dans deux fichiers différents, ce que Git fusionne sans rien dire.
 
 ### CI
 
-- `ci.yml` se déclenche aussi sur les PR vers `epic/**` (toute branche dont le nom commence par `epic/`) : une story d'un contributeur passe la même CI avant d'entrer dans sa tranche.
+- `ci.yml` se déclenche aussi sur les PR vers `epic/**` (toute branche dont le nom commence par `epic/`) : une story d'un contributeur passe la même CI avant d'entrer dans la branche de son epic.
 - **Le cache Rust n'est sauvegardé que depuis `main`** (`save-if`) et porte une clé partagée (`shared-key`) : les PR le lisent sans l'écrire. Le cache du dépôt est plafonné à 10 Go par GitHub et en occupait 8,2 le 2026-11-15 ; chaque branche qui écrit le sien en évincerait d'autres et ferait tout recompiler. Le cache Docker (`type=gha`) n'est pas restreint : `e2e-smoke` reconstruit l'image de la PR depuis le cache que `docker-build` vient d'écrire.
 - Une CI allégée sur les PR vers `epic/**` reste à décider avec les contributeurs.
