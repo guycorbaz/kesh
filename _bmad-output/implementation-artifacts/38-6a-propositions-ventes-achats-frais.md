@@ -29,7 +29,7 @@ afin que **mes comptes PayPal se tiennent sans saisie, sans qu'aucune écriture 
 | `FR-38-6a-4` | Une transaction déjà comptabilisée porte `alreadyBooked` et n'est acceptée qu'avec `confirmAlreadyBooked: true`. | AC-9 |
 | `FR-38-6a-5` | Le cours est le cours retenu du mois ; cours manquant → `RATE_UNAVAILABLE`. | AC-6 |
 | `FR-38-6a-6` *(ajoutée)* | Une proposition qui ne peut pas s'accepter reste visible, avec le motif (`blockedBy`), au lieu de disparaître. | AC-1, AC-6 |
-| `FR-38-6a-7` *(ajoutée)* | Sur un compte prestataire, l'acceptation par les anciennes variantes `rule` et `split` (au net, sans frais ni TVA) reste refusée (garde de 38-3a) ; une facture client ou fournisseur n'y est proposée et acceptée que si `fee_amount = 0` (D-P2-2). | AC-1, AC-8 |
+| `FR-38-6a-7` *(ajoutée)* | Sur un compte prestataire, l'acceptation par les anciennes variantes `rule` et `split` (au net, sans frais ni TVA) reste refusée (garde de 38-3a) ; une facture client ou fournisseur n'y est proposée et acceptée que si `fee_amount = 0` (D-P2-2) ; une transaction qui correspond à une facture mais porte des frais n'a **aucune proposition** : elle va à la file « à examiner », motif `invoice_with_fee` (D-P2-5). | AC-1, AC-8 |
 | `NFR-38-6a-1` | *Pattern batch* : toute erreur par proposition en `failed[]`, codes constants ; aucune écriture d'office. | AC-7, AC-8 |
 | `NFR-38-6a-2` | Revalidation sous verrou à l'acceptation. | AC-8 |
 | `NFR-38-6a-3` | Code neuf hors de `reconciliation.rs`, constructeur pur testé sans base. | AC-2, AC-12 |
@@ -85,7 +85,8 @@ afin que **mes comptes PayPal se tiennent sans saisie, sans qu'aucune écriture 
   refuse ces variantes par proposition en `FailedProposal` **`PROVIDER_PROPOSAL_REQUIRED`** (38-3a AC-6, code unique
   de C-38-8, D-P2-1 ; motif : une règle ou une ventilation au **net** fausse B3). 38-6a part de cet état, non du code
   d'aujourd'hui : elle lève cette garde pour la variante `provider` (point de contact de 38-3a) ; `rule` et `split`
-  restent refusés ; les factures, selon D-P2-2 (C-38-6a-7) : admises seulement si `fee_amount = 0`.
+  restent refusés ; les factures, selon D-P2-2 et D-P2-5 (C-38-6a-7) : admises seulement si `fee_amount = 0` ; avec des
+  frais, la transaction qui correspond à une facture n'a aucune proposition (file, `invoice_with_fee`).
 - **Audit** : `reconciliation.accepted` et `reconciliation_rule.applied` existent (`crates/kesh-api/src/audit_labels.rs:184`,
   `:192`) : aucune action neuve.
 
@@ -95,7 +96,7 @@ afin que **mes comptes PayPal se tiennent sans saisie, sans qu'aucune écriture 
    `null` hors CHF tant que `transaction_can_be_linked_to_entry` n'admet que le CHF (`reconciliation_link.rs:535-537`), et
    FR-38-6a-4 vise surtout les transactions en devise de 2024 (B17). L'extension en devise est celle de **38-6c1** (AC-1,
    AC-3 ; E21 (1), C-38-14). Depuis B28, **38-6c2** compte aussi une **paire** d'écritures (vente au brut, frais à part)
-   comme « déjà comptabilisée » (champ `pairCount`, AC-14 de 38-6c avant découpage) : c'est voulu (E15), et l'AC-9 le
+   comme « déjà comptabilisée » (champ `pairCount`, **38-6c2 AC-3**) : c'est voulu (E15), et l'AC-9 le
    teste. 38-6a **dépend donc de 38-6c2** (qui suit 38-6c1, D-P2-3 : « 38-6c2 se développe avant 38-6a »).
 2. **« A32 sinon »** (E15, FR-38-6a-5) : A32 qualifie une ligne reçue en `{ amount, chf }`. PayPal ne rend aucun CHF pour un
    mouvement en devise : la proposition n'a que le montant en devise, et le seul cours possible est le **cours retenu du
@@ -160,10 +161,21 @@ afin que **mes comptes PayPal se tiennent sans saisie, sans qu'aucune écriture 
     (`rule_mask_for`, `has_strong_invoice_match` ; rejeu `load_rule_mask` à l'acceptation) : un paiement PayPal d'une
     facture saisie dans Kesh ne se passe pas en produit (faux rattachement muet, `CLAUDE.md`) ; leur acceptation
     (`invoice`, `supplier_invoice`) passe par les chemins existants ;
-  - **`fee_amount ≠ 0`** : aucune facture n'est proposée ; la proposition est le candidat `provider` ; une acceptation
-    `invoice` ou `supplier_invoice` est refusée par la garde de 38-3a (`PROVIDER_PROPOSAL_REQUIRED`). Le règlement
-    d'une facture **au brut** avec ligne de frais n'est pas traité ici : **issue à ouvrir avec la PR** (C-38-13). Le
-    cas se passe à la main (écriture manuelle 34-3, ou rattachement), écrit au manuel par 38-9b.
+  - **`fee_amount ≠ 0`** (D-P2-5, qui remplace « la proposition est le candidat `provider` ») : si la transaction
+    (genre `sale` ou `purchase`) **correspond à une facture** de Kesh, elle ne reçoit **aucune proposition** — ni
+    facture, ni candidat `provider`, qui passerait en produit le paiement d'une facture existante (doublon) — et va à
+    la file « à examiner » avec le motif **`invoice_with_fee`** (calculé, jamais stocké : `review_reason` reste
+    nul ; la file et son motif sont de 38-6b, C-38-6b-4). « Correspond à une facture » = la **même lecture** que sur un
+    compte ordinaire rend au moins un candidat facture client ou fournisseur, quel que soit son rang : une
+    **seule** fonction `pub(crate)` (`invoice_match_for_provider_tx`, module neuf de C-38-6a-1), appelée par la
+    proposition, par l'acceptation (rejeu sous verrou) et par la file de 38-6b (jamais recopiée) ; lue **par page**,
+    pour toutes les transactions `sale`/`purchase` d'un compte prestataire CHF (la lecture de 38-3a, `TxDocuments::Nothing`,
+    est levée à cette fin). Une transaction qui ne correspond à aucune facture reste servie par le candidat
+    `provider`. Une acceptation `invoice` ou `supplier_invoice` est refusée par la garde de 38-3a
+    (`PROVIDER_PROPOSAL_REQUIRED`) ; une acceptation `provider` → `PROVIDER_TX_UNDER_REVIEW` `{ reason:
+    "invoice_with_fee" }` (AC-8 (4)). Le règlement d'une facture **au brut** avec ligne de frais n'est pas traité ici :
+    **issue à ouvrir avec la PR** (C-38-13). Le cas se passe à la main (écriture manuelle 34-3, ou rattachement),
+    écrit au manuel par 38-9b.
   En devise, aucune facture (les factures de Kesh sont en CHF, C-37-8) ; `rule` et `split` restent refusés partout.
 - **C-38-6a-8 — Règle et devise.** 38-4 (AC sur la proposition) pose la règle : `first_matching_rule` reçoit
   `eligible_accounts: &HashMap<i64, Option<String>>` (comptes actifs, imputables, hors compte de la banque, avec leur
@@ -184,6 +196,8 @@ afin que **mes comptes PayPal se tiennent sans saisie, sans qu'aucune écriture 
   (frais seul). Tout autre genre (`conversion`, `refund`, `withdrawal`, `deposit`, `dispute`, `other`, valeur inconnue
   `Other`) : **aucun candidat** dans cette story (38-6b les traite) ; à l'acceptation, `PROVIDER_MOVEMENT_KIND_UNSUPPORTED`.
   Une transaction qui porte `review_reason` n'a jamais de candidat ; acceptée par l'API : `PROVIDER_TX_UNDER_REVIEW`.
+  Il en va de même d'une vente ou d'un achat qui correspond à une facture et porte des frais (`invoice_with_fee`,
+  C-38-6a-7, motif calculé).
 
 ## Critères d'acceptation
 
@@ -199,7 +213,8 @@ afin que **mes comptes PayPal se tiennent sans saisie, sans qu'aucune écriture 
      (compteur ou `EXPLAIN` : il ne croît pas avec le nombre de transactions, hormis les lectures de factures CHF qui
      existent déjà) ;
    - pour chaque transaction `pending` non rejetée de genre `sale`, `purchase` ou `fee` (C-38-6a-11) **sans**
-     `review_reason`, construit au plus un candidat `provider` (C-38-6a-3) par `build_provider_entry` ;
+     `review_reason` **et sans** le cas `invoice_with_fee` (C-38-6a-7 : facture correspondante et `fee_amount ≠ 0`),
+     construit au plus un candidat `provider` (C-38-6a-3) par `build_provider_entry` ;
    - pose `blockedBy` (C-38-6a-4) au lieu de lignes quand l'écriture ne se construit pas : `RATE_UNAVAILABLE`
      (`{ currency, month }`), `VAT_ACCOUNT_NOT_CONFIGURED` (`{ designation: payable|recoverable|acquisition }`), `VAT_KIND_UNKNOWN`,
      `VAT_RATE_UNAVAILABLE` (38-5), `VAT_KIND_MISMATCH`,
@@ -215,7 +230,10 @@ afin que **mes comptes PayPal se tiennent sans saisie, sans qu'aucune écriture 
      grand livre absent) : `providerLines: null`, code et `details` égaux à ceux du refus d'acceptation du même cas ;
    - ordre des candidates : `order_candidates` inchangé hors du bras neuf (rang 1) ; factures selon C-38-6a-7 ;
      tests : compte prestataire CHF, `fee_amount = 0`, une facture CHF à indice est proposée et masque le candidat
-     `provider` ; même facture, `fee_amount ≠ 0` → aucune facture proposée, le candidat `provider` est rendu.
+     `provider` ; même facture, `fee_amount ≠ 0` → **aucun candidat** (ni facture, ni `provider` : D-P2-5), la
+     transaction reste `pending` ; transaction à frais sans facture correspondante → candidat `provider` rendu ;
+     facture réglée ou annulée entre-temps → le candidat `provider` revient (la file se calcule). Le test de la file
+     (`GET …/review`, motif `invoice_with_fee`) est celui de 38-6b (AC-6), qui dépend de cette story.
 2. **AC-2 — Le constructeur pur (FR-38-6a-1, NFR-38-6a-3).** `kesh_reconciliation::provider::build_provider_entry(input:
    &ProviderEntryInput) -> Result<ProviderEntry, ProviderEntryError>`, sans I/O. `ProviderEntryInput` porte : la transaction
    (montant net signé, brut, frais, devise, genre, date), le compte du grand livre du prestataire et sa devise, la
@@ -282,7 +300,9 @@ afin que **mes comptes PayPal se tiennent sans saisie, sans qu'aucune écriture 
    1. le compte bancaire porte toujours ses réglages de prestataire, sinon `PROVIDER_ACCOUNT_REQUIRED` (code neuf) ;
    2. compte du grand livre du prestataire configuré et actif (`BANK_ACCOUNT_NOT_CONFIGURED`, `:3956-4019`) ;
    3. transaction relue strictement `pending` (`RECONCILIATION_TRANSACTION_NOT_PENDING`) ;
-   4. `review_reason` posé → `PROVIDER_TX_UNDER_REVIEW` (`{ reason }` = la valeur stockée, forme de 38-6b) ; genre hors `sale|purchase|fee` →
+   4. `review_reason` posé → `PROVIDER_TX_UNDER_REVIEW` (`{ reason }` = la valeur stockée, forme de 38-6b) ; vente ou
+      achat à `fee_amount ≠ 0` qui correspond à une facture (fonction de C-38-6a-7, relue **sous verrou**) →
+      `PROVIDER_TX_UNDER_REVIEW` (`{ reason: "invoice_with_fee" }`, motif calculé) ; genre hors `sale|purchase|fee` →
       `PROVIDER_MOVEMENT_KIND_UNSUPPORTED` (`{ movementKind }`) ; montants incohérents → `PROVIDER_AMOUNTS_INCONSISTENT` ;
    5. pour `sale`/`purchase` : règle relue active (`RECONCILIATION_RULE_NOT_FOUND`), contrepartie égale à celle de la
       règle (`RECONCILIATION_RULE_MISMATCH`), contrepartie ≠ compte du prestataire (`VALIDATION_ERROR`,
@@ -292,8 +312,8 @@ afin que **mes comptes PayPal se tiennent sans saisie, sans qu'aucune écriture 
       masquage rejoué en CHF (`RECONCILIATION_RULE_MASKED`, `load_rule_mask`) ; `ruleId` absent pour une vente ou un
       achat → `VALIDATION_ERROR` (`reason: rule_required`) ; présent pour un frais → `VALIDATION_ERROR`
       (`reason: rule_not_expected`) ;
-   6. compte de frais revalidé (de la société, actif, imputable, de charge, dans la devise du solde :
-      `FEE_ACCOUNT_INVALID` `{ accountId, reason }`, motifs de 38-2 AC-5) ;
+   6. compte de frais revalidé, **sur l'instantané que prend le verrou de (7)** (de la société, actif, imputable, de
+      charge, dans la devise du solde : `FEE_ACCOUNT_INVALID` `{ accountId, reason }`, motifs de 38-2 AC-5) ;
    7. TVA : `default_vat_at(conn, company_id, contrepartie, entry_date)` (38-5 AC-5, dans la transaction) —
       `VAT_KIND_UNKNOWN`, `VAT_RATE_UNAVAILABLE` ; compte de TVA requis présent, actif, imputable
       (`VAT_ACCOUNT_NOT_CONFIGURED` `{ designation }`) ; cohérence traitement/sens (`VAT_KIND_MISMATCH`). **Verrou des
@@ -323,7 +343,9 @@ afin que **mes comptes PayPal se tiennent sans saisie, sans qu'aucune écriture 
    `supplier_invoice` (C-38-6a-7, D-P2-2) : admises si la transaction relue sous verrou a `fee_amount = 0` (chemins
    existants, inchangés), refusées par la même garde sinon (`PROVIDER_PROPOSAL_REQUIRED`). Tests : un test par refus,
    chacun « rien d'écrit » (aucune écriture, transaction `pending`, `applied_count` inchangé), dont `invoice` avec
-   `fee_amount ≠ 0` ; `invoice` avec `fee_amount = 0` → facture réglée ; lot mixte (une acceptée, une refusée) → `200`,
+   `fee_amount ≠ 0` ; `provider` sur une vente à `fee_amount ≠ 0` qui correspond à une facture → `PROVIDER_TX_UNDER_REVIEW`
+   `{ reason: "invoice_with_fee" }` (D-P2-5) ; la même vente sans facture correspondante → acceptée ; `invoice` avec
+   `fee_amount = 0` → facture réglée ; lot mixte (une acceptée, une refusée) → `200`,
    `accepted[1]`, `failed[1]`, dans l'ordre reçu.
 9. **AC-9 — Déjà comptabilisée (FR-38-6a-4, B17).** Fixture : une écriture EUR qui meut le compte du plan EUR du
    prestataire du net de la transaction (comme une écriture 2024 passée par l'API). `GET …/proposals` rend
@@ -353,7 +375,9 @@ afin que **mes comptes PayPal se tiennent sans saisie, sans qu'aucune écriture 
     `PROVIDER_ACCOUNT_REQUIRED`, `TRANSACTION_ALREADY_BOOKED`, `MULTI_CURRENCY_DISABLED`
     (plus ceux de 37-3a remontés par le dépôt). Chacun : libellé dans `failed-proposal-label.ts` (clé
     `reconciliation-failed-*` écrite en toutes lettres, quatre locales, `details` lus pour `RATE_UNAVAILABLE` — devise et
-    mois —, `VAT_ACCOUNT_NOT_CONFIGURED` — désignation —, `TRANSACTION_ALREADY_BOOKED` — nombres) ; décompte des codes du
+    mois —, `VAT_ACCOUNT_NOT_CONFIGURED` — désignation —, `TRANSACTION_ALREADY_BOOKED` — nombres,
+    `PROVIDER_TX_UNDER_REVIEW` — `reason`, dont `invoice_with_fee`, clé `reconciliation-review-reason-invoice-with-fee`
+    de 38-6b AC-10, non recréée ici) ; décompte des codes du
     doc-comment recompté au `grep` (`grep -ohE 'error_code: "[A-Z_]+"' crates/kesh-api/src/routes/reconciliation*.rs | sort -u`,
     le fichier neuf compris) ; `reconciliation.types.ts` : `CandidateType` + `'provider'`, champs neufs (`rateSource`
     compris), `blockedBy`, `invoiceRef` et `eventCode` du DTO de transaction (C-38-6a-3 ; test HTTP : relus sur une
@@ -377,7 +401,9 @@ afin que **mes comptes PayPal se tiennent sans saisie, sans qu'aucune écriture 
 - [ ] T4 — Variante `Provider` : `AcceptProposalInput`, `bank_transaction_id()`, pré-validation de `post_accept`,
       message de l'extracteur, bras d'`accept_one` → `accept_one_provider` ; la garde de 38-3a
       (`PROVIDER_PROPOSAL_REQUIRED`) laissée sur `rule` et `split`, levée pour les factures si `fee_amount = 0`
-      (D-P2-2, C-38-6a-7) ; lecture des factures CHF dans `get_proposals` sous la même condition (AC-1, AC-7, AC-8).
+      (D-P2-2, C-38-6a-7) ; lecture des factures CHF dans `get_proposals` pour tout compte prestataire CHF, et
+      `invoice_match_for_provider_tx` (D-P2-5 : aucune proposition si frais et facture correspondante) (AC-1, AC-7,
+      AC-8).
 - [ ] T5 — `accept_one_provider` : étapes 1 à 12 de l'AC-8, audits de l'AC-10 ; mapping des refus du dépôt (37-3a).
 - [ ] T6 — Tests d'intégration HTTP (AC-4, AC-5, AC-6, AC-8, AC-9, AC-10, AC-11), compteur de requêtes (AC-1).
 - [ ] T7 — Frontend : types, libellés et i18n (AC-12) ; `api-external.md`.
@@ -402,6 +428,9 @@ afin que **mes comptes PayPal se tiennent sans saisie, sans qu'aucune écriture 
   l'écrit en invariant (C-38-6a-5) et le teste.
 - **Performance** : la page vaut au plus 500 transactions ; aucune lecture par transaction hormis celles des factures CHF
   déjà existantes. Mesure écrite au Change Log (page de 500 transactions de prestataire, 3 devises).
+- **Pourquoi `invoice_with_fee` n'est pas stocké** (D-P2-5) : la facture peut être saisie, réglée ou annulée après le
+  téléchargement ; un motif écrit au passage serait périmé (même raison que la file de 38-6b). 38-6a ne livre pas la
+  file : elle ne livre que la fonction et l'absence de proposition ; 38-6b lit la même fonction.
 - **Piège** : `order_candidates` est exhaustif ; `CandidateType` sert aussi au front (`reconciliation.types.ts`) — le
   variant ajouté sans le bras TS fait échouer `npm run check`.
 - **Piège** : `alreadyBooked` exige la version en devise de 38-6c1 et `pairCount` de 38-6c2 ; tant qu'elles ne sont
@@ -431,6 +460,16 @@ afin que **mes comptes PayPal se tiennent sans saisie, sans qu'aucune écriture 
 
 ## Change Log
 
+- 2026-11-15 — validation P3 (Sonnet) : 0 CRITICAL, 0 HIGH, 1 MEDIUM, 2 LOW ; remédiés dans la fiche sauf inter-fiches
+  (38-6b C-38-6b-4/AC-6, 38-9b, epic C-38-8, appliqués ou proposés par l'orchestrateur) : P3-1 (MEDIUM) D-P2-5 — une vente
+  à frais qui correspond à une facture recevait le candidat `provider` (doublon du produit) → aucune proposition, motif
+  calculé `invoice_with_fee`, fonction unique `invoice_match_for_provider_tx` (proposition, acceptation sous verrou,
+  file de 38-6b), `PROVIDER_TX_UNDER_REVIEW` à l'acceptation `provider` (FR-38-6a-7, C-38-6a-7, C-38-6a-11, AC-1, AC-8
+  (4), AC-12, T4) ; P3-2 (LOW) renvoi « AC-14 de 38-6c » → 38-6c2 AC-3 (Écart 1) ; P3-3 (LOW) AC-8 (6) : contrôle du
+  compte de frais sur l'instantané du verrou de (7) (Dev Notes, ordre `lock_designated_accounts_in_tx` avant
+  `fiscal_years`, relu à `invoices.rs:1978-1988` : exact). Prémisses de P2 relues au code : exactes. Renvois à
+  38-6c1/38-6c2 relus : AC-1 et AC-3 de 38-6c1 (règle en devise, lecture par page), AC-3 de 38-6c2 (`pairCount`) :
+  exacts. Taille : cinq modules, inchangée.
 - 2026-11-15 — alignement inter-fiches P2 (Opus) : D-P2-1 — code unique `PROVIDER_PROPOSAL_REQUIRED` (38-3a),
   `PROVIDER_TX_REQUIRES_PROVIDER_PROPOSAL` retiré (prémisse, AC-8, T4) ; D-P2-2 — Q-38-6a-1 close, option (b) :
   factures proposées et acceptées sur un compte prestataire CHF seulement si `fee_amount = 0`, sinon candidat

@@ -488,7 +488,10 @@ boutique PayPal = **préfixe du numéro de facture** (`invoice_id`) · B25 Q3 re
   `PROVIDER_MOVEMENT_KIND_UNSUPPORTED`, `PROVIDER_AMOUNTS_INCONSISTENT`, `PROVIDER_ACCOUNT_REQUIRED`,
   `PROVIDER_PROPOSAL_REQUIRED` (**seul** code du refus d'une proposition non `provider` sur un compte prestataire,
   posé par 38-3a et repris par 38-6a — D-P2-1 ; `PROVIDER_TX_REQUIRES_PROVIDER_PROPOSAL` n'existe plus ; sur un
-  compte prestataire, `rule` et `split` restent refusés, une facture n'est proposée que si `fee_amount = 0` — D-P2-2),
+  compte prestataire, `rule` et `split` restent refusés, une facture n'est proposée que si `fee_amount = 0` — D-P2-2 ;
+  une transaction qui correspond à une facture mais porte des frais n'a **aucune proposition** : file « à examiner »,
+  motif calculé `invoice_with_fee`, `PROVIDER_TX_UNDER_REVIEW { reason: "invoice_with_fee" }` à l'acceptation —
+  D-P2-5),
   `TRANSACTION_ALREADY_BOOKED`, `MULTI_CURRENCY_DISABLED` ; et ceux de 38-6b :
   `PROVIDER_CONVERSION_PAIR_INVALID`, `PROVIDER_PAIR_ACCOUNT_LOCKED`, `PROVIDER_PAIR_CHANGED`,
   `PROVIDER_TRANSFER_ACCOUNT_INVALID`, `PROVIDER_TRANSFER_CURRENCY_MISMATCH`, `PROVIDER_REFUND_ORIGIN_INVALID` (409

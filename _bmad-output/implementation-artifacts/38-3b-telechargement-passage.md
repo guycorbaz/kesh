@@ -131,9 +131,12 @@ d'imputation (38-6) reposent sur un relevé complet et vérifiable.
    - `AppState` gagne `connector_factory: Arc<dyn ConnectorFactory>` et `provider_fetch_guard` (AC-4). La fabrique
      construit le connecteur d'une connexion à partir d'un **`ConnectorContext`** : prestataire, réglages typés de
      38-1, **secret ouvert** (`Zeroizing<String>`, par la **voie unique** de 38-1 AC-1 — la garde des appelants
-     d'`open` gagne **ce seul site**), **`secret_updated_at`**, **cache de jeton** (champ d'`AppState` posé par 38-7
-     AC-3, passé tel quel), **`payerId` des autres connexions PayPal de la société** (38-8 AC-5, lus par la fabrique)
-     et transport. La route `POST …/test` (38-1 AC-7) construit son connecteur par la même fabrique (38-7). Sites de
+     d'`open` gagne **ce seul site**), **`secret_updated_at`**, **`other_payer_ids: Vec<String>`** (les `payerId` des
+     autres connexions PayPal de la société, lus par la fabrique dans leurs réglages typés ; vide quand il n'y en a
+     pas — consommés par 38-8 AC-5) et transport. **Le cache de jeton n'est pas posé ici** : son type
+     (`PaypalTokenCache`) est de `kesh_providers::paypal::auth` (38-7 AC-3), qui ajoute lui-même le champ à
+     `ConnectorContext` (`#[non_exhaustive]`, construit par un constructeur unique) et à `AppState` — 38-3b ne
+     référence aucun type d'une story suivante. La route `POST …/test` (38-1 AC-7) construit son connecteur par la même fabrique (38-7). Sites de
      construction littérale d'`AppState` : inventaire de 37-2 AC-3, à relancer (`grep -rn "AppState {"`).
    - **`KESH_TEST_MODE`** : `main.rs` installe une fabrique qui rend un `FakeConnector` pour **toute** connexion,
      piloté par `POST /api/v1/_test/provider-connector` (corps : soldes, pages de mouvements par fenêtre, `skipped`,
@@ -141,9 +144,10 @@ d'imputation (38-6) reposent sur un relevé complet et vérifiable.
      `routes/test_endpoints.rs:49-55`) ; `TEST_ENDPOINT_ROUTES` **+1** (`Exempt("chemin de test…")`). 38-7 remplace ce
      factice, pour `paypal`, par un **transport** factice au format PayPal (38-7 AC-10), programmé par une **variante
      additive** du corps de la même route : `paypalResponses: [{ method, path, query?, status, body }]` (par
-     `connectionId`) — réponses servies **dans l'ordre**, la dernière se répète ; quand elle est fournie, la fabrique de
-     test construit un vrai `PaypalConnector` sur ce transport factice au lieu du `FakeConnector` ; sans elle,
-     comportement ci-dessus. Le corps est défini ici (forme et validation, champs facultatifs), le connecteur qui le lit
+     `connectionId`) — réponses servies **dans l'ordre**, la dernière se répète — **ou la chaîne `"default"`** (le jeu de
+     réponses synthétiques par défaut de 38-7 AC-10, qui sinon ne servirait jamais : sans la variante, une connexion
+     garde le `FakeConnector`) ; quand elle est fournie, la fabrique de test construit un vrai `PaypalConnector` sur ce
+     transport factice au lieu du `FakeConnector` ; sans elle, comportement ci-dessus. Le corps est défini ici (forme et validation, champs facultatifs), le connecteur qui le lit
      en 38-7 ; **`TEST_ENDPOINT_ROUTES` inchangé** par cette variante (même route). L'état programmé vit dans une
      poignée d'`AppState` (`test_provider_connector`, patron de `test_rate_source` de 37-2) et se vide par
      `clear_transient_test_state` (`routes/test_endpoints.rs:349`, appelé par `/_test/reset`). La tâche quotidienne
@@ -306,7 +310,12 @@ d'imputation (38-6) reposent sur un relevé complet et vérifiable.
      `balances(Some(début effectif à 00:00 Zurich))` → instantané `opening`, où le **début effectif** est
      `max(fetch_from, history_start(now))` — c'est-à-dire `truncated_from` quand l'historique a borné (PayPal :
      `as_of_time`, 38-7 ; un `as_of` hors de l'historique serait refusé et le contrôle resterait « non disponible »
-     pour toujours). Un échec de lecture des soldes n'empêche pas les mouvements : le passage
+     pour toujours). **Le `as_of` écrit** aux instantanés (`opening` comme `reported`) est celui que **le connecteur
+     rend** dans `ProviderBalance.as_of` (PayPal : `as_of_time` de la réponse, 38-7 AC-6), **non l'instant demandé** :
+     PayPal peut servir « le dernier solde » d'avant l'instant demandé, et la somme des mouvements du contrôle doit
+     s'arrêter là où le solde s'arrête, faute de quoi un mouvement intermédiaire ferait un faux écart. Test : un
+     factice qui rend `as_of` antérieur de deux heures à la fin demandée, avec un mouvement entre les deux → écart nul.
+     Un échec de lecture des soldes n'empêche pas les mouvements : le passage
      reste `succeeded`, `error_code` reste `NULL` et le motif s'écrit dans `error_detail` (`balances_unavailable:
      <code()>`) ; contrôle « non disponible ».
    - ⚠️ **Heure des soldes rapportés** : la fenêtre s'arrête à *maintenant − 3 h* ; un solde lu « maintenant »
@@ -440,3 +449,17 @@ d'imputation (38-6) reposent sur un relevé complet et vérifiable.
   `paypalResponses: [{ method, path, query?, status, body }]` du corps de `POST /api/v1/_test/provider-connector`
   (servies dans l'ordre, la dernière se répète ; `PaypalConnector` sur le transport factice ; `TEST_ENDPOINT_ROUTES`
   inchangé) ; renvoi `NFR-38-6c-4` → `NFR-38-6c1-4` (D-P2-3).
+- 2026-11-15 — validation P3 (Sonnet) : 3 findings (0 CRITICAL, 0 HIGH, 2 MEDIUM, 1 LOW) ; remédiés dans la fiche sauf
+  38-3b-P3-3 (LOW, inter-fiche 38-3a). P3-1 (MEDIUM) : 38-7 AC-10 promet des réponses PayPal « par défaut » servies par
+  le transport factice, mais l'AC-3 ne les servait que sur `paypalResponses` explicite (sinon `FakeConnector`) → le
+  corps admet la chaîne `"default"` ; P3-2 (MEDIUM) : le `as_of` des instantanés n'était pas dit — l'instant demandé
+  aurait fait un faux écart quand PayPal sert un solde antérieur → `as_of` rendu par le connecteur, test ; P3-3 (LOW,
+  38-3a, non appliqué ici) : l'instantané `opening` y est défini « à `fetch_from` » alors qu'il se lit au **début
+  effectif** (AC-7), à aligner. Aussi : `ConnectorContext` ne référence plus le cache de jeton (type de 38-7, story
+  suivante) — `other_payer_ids: Vec<String>` posé ici, le cache ajouté par 38-7. Lignes relues et conformes :
+  `Cargo.toml:2-13` ; `Cargo.lock:508-515` ; `CLAUDE.md:60` ; `prepare-release.sh:7, 96, 219, 271, 280, 356` ;
+  `letterings.rs:1213` ; `bank_imports.rs:36-70` ; `20260504000001_bank_imports.sql:33, 64` ; `lib.rs:1434` ;
+  `test_endpoints.rs:49-55, 349` ; `main.rs:466` ; `auto_backup.rs:788-803` ; `routes/bank_imports.rs:1681-1690` ;
+  `kesh-db/src/retry.rs:151` ; registre `audit_route_registry.rs:335-377` (`SansEcritureAuJournal` = journal
+  comptable, cohérent avec 38-1). Axes non exercés : API `reqwest`, documentation PayPal, aucune exécution ; `ls`
+  du registre `TEST_ENDPOINT_ROUTES` seulement lu aux lignes 618-620.

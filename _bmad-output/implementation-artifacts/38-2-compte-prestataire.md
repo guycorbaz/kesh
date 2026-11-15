@@ -198,7 +198,7 @@ compte de l'assistant.
      ses transactions de fichier (CAMT, CSV, relevé saisi) n'ont pas de `provider_tx_id`, et le premier passage (38-3b,
      depuis `fetch_from`) retéléchargerait les mêmes mouvements sans que E6 les reconnaisse — doublons muets, deux
      propositions pour un mouvement ; et ces transactions sont en CHF (aucun import n'en enregistre d'autre depuis
-     27-2, `reconciliation.rs:1097-1100`) quand la devise du solde ne l'est pas. Le compte du plan, lui, garde son
+     27-2, `routes/reconciliation.rs:1097-1100`) quand la devise du solde ne l'est pas. Le compte du plan, lui, garde son
      historique (D8) : un compte neuf (`create`) s'y lie. Carte de crédit → `400
      PROVIDER_ACCOUNT_KIND_INVALID` (une carte n'est pas un solde de prestataire). Compte principal → `409
      PROVIDER_ACCOUNT_CANNOT_BE_PRIMARY` (rien n'est posé ; retirer d'abord le statut principal). Compte déjà porteur de
@@ -466,3 +466,10 @@ compte de l'assistant.
   883, 964-969, 1383-1405, 1600-1660, 2032` ; `repositories/bank_accounts.rs:544-555, 570, 655-665, 730, 800-870,
   1544, 1650-1690, 1725, 1834` ; `payment_batches.rs:150-190, 232-250, 870-890` ; `post_restore.rs:415-445, 1245-1262` ;
   `errors.rs:820-832, 2655-2670` ; `retry.rs:40` ; `CHANGELOG.md:1-20` ; P6 recompté (`grep -rc`, mêmes nombres).
+- 2026-11-15 — validation P3 (Sonnet) : 0 CRITICAL, 0 HIGH, 0 MEDIUM, 1 LOW ; remédié dans la fiche (aucun finding
+  inter-fiches). Périmètre : correctifs P2 (`attach` refusé avec transactions, garde entière du compte lié,
+  `LEDGER_SHARED` toute devise, `no_iban` et archivé, pain.001 sous verrou). LOW 38-2-P3-1 : `reconciliation.rs:1097-1100`
+  sans chemin (le fichier est `routes/reconciliation.rs`) → précisé. Lignes relues et justes :
+  `payment_batches.rs:150-166, 232-250` (lecture de `:165` non verrouillante, revérification `LOCK IN SHARE MODE` après
+  l'`INSERT`), `repositories/bank_accounts.rs:570, 730, 806, 1544, 1670`, `routes/bank_accounts.rs:1656` (`archive_once`),
+  `routes/reconciliation.rs:1096-1104`. D-P2-5 sans objet ici (propositions : 38-6a, 38-6b, 38-9b).

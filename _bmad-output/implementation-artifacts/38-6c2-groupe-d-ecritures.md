@@ -110,7 +110,8 @@ Reprises de 38-6c (B28), renumérotées au découpage (`FR-38-6c-8..10` → `FR-
      (relevé par `grep -rn matched_entry_id crates/*/src`, sur `57b26a5f`, à recompter à l'étape 0 du développement —
      38-6c1, 38-6a et 38-6b développées avant en ajoutent —, citation au Change Log ; chacun **résolu** ou **écarté
      par construction**, aucun laissé muet) :
-     (a) `journal_entries.rs:2340-2344` (`document_owners`, rang 7 : motif `MatchedBankTransaction` des refus de
+     (chemins sous `crates/kesh-db/src/repositories/` sauf mention ; `bank_accounts.rs` est celui du dépôt, non de
+     `kesh-api/src/routes/`) (a) `journal_entries.rs:2340-2344` (`document_owners`, rang 7 : motif `MatchedBankTransaction` des refus de
      modification, de contre-passation **et de suppression** — `invoices.rs:1506`, `journal_entries.rs:1813`) —
      **résolu** : lit le fragment, un membre est non modifiable, non contre-passable et non supprimable comme la
      principale (sans quoi la FK `RESTRICT` rendrait une erreur de base au lieu du refus nommé) ; (b)
@@ -129,6 +130,14 @@ Reprises de 38-6c (B28), renumérotées au découpage (`FR-38-6c-8..10` → `FR-
      groupe ; (g) `exports/csv_tables.rs:759`, sauvegarde — ci-dessus. Un test par site résolu : un groupe dont le
      **membre** (non la principale) est visé — refus de contre-passation directe `MatchedBankTransaction`, écart du
      relevé égal à celui d'un lien simple de même mouvement.
+   - **Teardowns de test qui suppriment des écritures** (la FK `RESTRICT` de la table neuve les ferait échouer sur
+     un groupe résiduel — famille KF-039) : `journal_entries::delete_all_by_company` (`journal_entries.rs:2085`, `pub`,
+     sans appelant de production) et `accounts.rs` `drop_company_deep` (`:1464`, `panic!` sur échec) vident la table
+     neuve **avant** les écritures ; `test_fixtures::truncate_all` la couvre par `TABLES_TO_TRUNCATE`. Un test de
+     chacun avec un groupe en base.
+   - **Lecture par l'API des scripts** : `matchedEntryId` (DTO `TransactionResponse`, 38-6c1 AC-6) ne porte que
+     l'écriture **principale** ; les autres membres ne se lisent qu'à `groupEntryIds` (vue d'annulation) — limite
+     écrite à `docs/api-external.md` avec les sections du groupe.
    Tests : schéma (FK, `UNIQUE`), mutation « fragment remplacé par `matched_entry_id` seul » sur (a) et (b) → rouge.
 2. **AC-2 — Rattacher un groupe, à l'unité et en lot** (`FR-38-6c2-1`, `NFR-38-6c2-3`, B28). `POST
    /reconciliation/transactions/{id}/link-entry` admet, **en plus** de `{ journalEntryId }` (inchangé),
@@ -207,7 +216,7 @@ Reprises de 38-6c (B28), renumérotées au découpage (`FR-38-6c-8..10` → `FR-
      `entry-candidates`).
    - **« Déjà comptabilisée » (34-4)** : une paire **ne gonfle pas** `entry_count` (qui doit égaler la longueur de
      `find_entry_candidates`, 38-6c1 AC-3) ; `AlreadyBookedCounts` gagne **`pair_count`** (longueur de
-     `find_entry_pairs`, ≤ 20) et le DTO `AlreadyBooked` de `get_proposals` (`routes/reconciliation.rs:118-124`) le
+     `find_entry_pairs`, ≤ 20) et le DTO `AlreadyBooked` de `get_proposals` (`routes/reconciliation.rs:140-145`, doc `:128-139`) le
      champ additif **`pairCount`** ; le signal est « vrai » dès qu'un des quatre nombres est non nul — sans quoi 38-6a
      proposerait une **seconde** écriture pour une transaction de 2024 passée au brut avec frais à part, et
      `confirmAlreadyBooked` ne la garderait pas (E15) ; test : transaction à paire seule → `pairCount` 1,
@@ -297,3 +306,8 @@ Reprises de 38-6c (B28), renumérotées au découpage (`FR-38-6c-8..10` → `FR-
   **un seul nom** pour les contre-passations d'un groupe, `reversalJournalEntryIds` (trace et
   `CancelReconciliationResponse`, `null` hors groupe ; `groupReversalJournalEntryIds` de 38-9b écarté — à aligner en
   38-9b). Dépendances : après 38-6c1, avant 38-6a.
+- 2026-11-15 — validation P3 (Sonnet) : fiche neuve relue en entier, citations vérifiées au code et renvois à
+  38-6c1 (AC-1, AC-3 à AC-5, AC-8) contrôlés ; 1 MEDIUM, 2 LOW ; remédiés dans la fiche : teardowns de test
+  (`delete_all_by_company`, `drop_company_deep`) à vider avant les écritures (MEDIUM), `AlreadyBooked` cité
+  `:140-145` et non `:118-124` (LOW), `matchedEntryId` = principale seule documenté (LOW) ; chemin de
+  `bank_accounts.rs` (dépôt) précisé ; aucun finding inter-fiches.

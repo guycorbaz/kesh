@@ -100,7 +100,8 @@ afin que **tout mouvement qui change un solde finisse comptabilisé, sans qu'auc
     `u.related_provider_tx_id = t.provider_tx_id` ; plus d'une → `Ambiguous` ;
   - `refund_origin_of(conn, company_id, t) -> OriginLookup { Found(BankTransaction) | Missing }` : la transaction de la même
     connexion dont `provider_tx_id = t.related_provider_tx_id`, de genre `sale` ou `purchase` ;
-  - `review_reason_of(…)` (pure, sur les deux précédentes) : le motif de file (C-38-6b-4).
+  - `review_reason_of(…)` (pure, sur les deux précédentes **et sur le fait « correspond à une facture »** rendu par
+    `invoice_match_for_provider_tx` de 38-6a, C-38-6a-7, jamais recopié ; D-P2-5) : le motif de file (C-38-6b-4).
 - **C-38-6b-2 — Conversion : deux écritures par 37-3b, jamais une copie.** La moitié **débitée** (montant < 0) donne
   l'écriture 1 (sa date, son cours), la moitié **créditée** l'écriture 2 ; elles se passent par la fonction de service de
   `POST /journal-entries/conversions` **appelée dans la transaction du lot** (si 37-3b ne l'a pas extraite en
@@ -154,7 +155,11 @@ afin que **tout mouvement qui change un solde finisse comptabilisé, sans qu'auc
   conversion dont la paire est `Missing` (`conversion_half_missing`) ou `Ambiguous` (`conversion_pair_ambiguous`), **ou**
   un remboursement dont l'origine est `Missing` (`refund_origin_missing`), **non réconciliée** (`refund_origin_not_reconciled`)
   ou **non inversible** (`refund_origin_not_invertible`, C-38-6b-5), **ou** une moitié dont l'autre est à la file
-  (`conversion_pair_under_review`, ci-dessous). Elle en sort d'elle-même quand la cause disparaît
+  (`conversion_pair_under_review`, ci-dessous), **ou** une vente ou un achat de compte CHF qui correspond à une
+  **facture** de Kesh et porte `fee_amount ≠ 0` (`invoice_with_fee`, motif **calculé**, `reasonSource: "computed"`, D-P2-5 :
+  la proposition `provider` passerait en produit le paiement d'une facture existante ; le règlement au brut avec frais
+  se passe à la main, issue C-38-13 ; test : facture réglée ou annulée → la transaction sort de la file et le candidat
+  `provider` de 38-6a revient). Elle en sort d'elle-même quand la cause disparaît
   (moitié téléchargée, origine réconciliée) ; une transaction de la file n'a jamais de candidat. **Moitié de
   conversion et motif stocké** (passe P2) : le classement de 38-8 (AC-5) pose `review_reason = 'other'` sur une moitié
   restée sans lien (aucun candidat ou plusieurs, paire coupée comprise) ; or l'autre moitié peut arriver au passage
@@ -203,7 +208,9 @@ afin que **tout mouvement qui change un solde finisse comptabilisé, sans qu'auc
   l'ordre de 38-6a AC-8 ; pour chaque genre de cette fiche :
   - **(4)** la liste admise s'élargit à `conversion`, `refund`, `withdrawal`, `deposit` ; `dispute`, `other` et un
     genre inconnu restent refusés, et une transaction de la file (C-38-6b-4, motif **calculé** compris) rend
-    `PROVIDER_TX_UNDER_REVIEW` (`{ reason }`) ; pour une conversion, l'étape vaut pour **les deux** moitiés ;
+    `PROVIDER_TX_UNDER_REVIEW` (`{ reason }`) ; pour une conversion, l'étape vaut pour **les deux** moitiés ; le motif
+    `invoice_with_fee` est déjà rendu par l'étape (4) de 38-6a AC-8 (vente ou achat à frais qui correspond à une
+    facture) : la file de cette fiche et l'acceptation lisent la même fonction ;
   - **(5)** sans objet (aucune règle) : `ruleId` présent → `VALIDATION_ERROR` (`reason: rule_not_expected`), comme
     pour un frais seul ;
   - **(6)/(7)** comptes de frais (des **deux** moitiés d'une conversion, B27) et, pour un remboursement, comptes de TVA
@@ -301,9 +308,13 @@ afin que **tout mouvement qui change un solde finisse comptabilisé, sans qu'auc
    relatedBankTransactionId }], hasMore }`, triés par `bookingDate` décroissante puis `id`. Motifs : ceux de C-38-6b-4
    (`dispute`, `refund_origin_missing`, `unknown_event`, `other` — C-38-4 — et `conversion_half_missing`,
    `conversion_pair_ambiguous`, `conversion_pair_under_review` — ajouté à la passe P2 —, `refund_origin_not_reconciled`,
-   `refund_origin_not_invertible`) ; une valeur stockée
+   `refund_origin_not_invertible`, `invoice_with_fee` — ajouté à la passe P3, D-P2-5 ; la lecture des factures est
+   **par page**, comme celle des paires, jamais par transaction) ; une valeur stockée
    inconnue (`Other`) est rendue telle quelle. Lecture seule, aucun verrou, rien d'écrit. Tests : chaque motif ; sortie
-   automatique de la file quand l'autre moitié est insérée ou l'origine réconciliée ; une transaction de la file n'a
+   automatique de la file quand l'autre moitié est insérée ou l'origine réconciliée ; vente à frais d'un compte CHF
+   dont le numéro de facture correspond à une facture ouverte → motif `invoice_with_fee`, `reasonSource: "computed"`,
+   aucun candidat dans `GET …/proposals` (38-6a AC-1), `PROVIDER_TX_UNDER_REVIEW` à l'acceptation `provider` ; même
+   vente à `fee_amount = 0` → pas dans la file (la facture se règle, 38-6a) ; une transaction de la file n'a
    aucun candidat dans `GET …/proposals` ; une transaction rejetée n'est pas dans la file.
 7. **AC-7 — « Examiné » (FR-38-6b-4, C-38-6b-6).** `POST /api/v1/reconciliation/transactions/{id}/review-done` (Comptable+,
    clés `read-write` admises comme `…/unreject` ; corps vide) → `204` ; transaction d'un autre compte ou société → 404
@@ -346,7 +357,8 @@ afin que **tout mouvement qui change un solde finisse comptabilisé, sans qu'auc
     quatre locales sont à ajouter ici, passe P1) — libellés dans `failed-proposal-label.ts` (clés écrites en toutes
     lettres, quatre locales ; `details.reason` de `PROVIDER_TX_UNDER_REVIEW` lu pour dire le motif), messages d'`AppError`
     aux quatre locales, décompte des codes du doc-comment recompté au `grep` ; motifs de la file : clés
-    `reconciliation-review-reason-*` (une par motif, quatre locales) ; action d'audit `reconciliation.review_done` à
+    `reconciliation-review-reason-*` (une par motif, `invoice_with_fee` compris — clé
+    `reconciliation-review-reason-invoice-with-fee`, que 38-6a AC-12 reprend —, quatre locales) ; action d'audit `reconciliation.review_done` à
     `audit_labels.rs` et sa clé `audit-log-action-reconciliation-review-done` aux quatre locales
     (`tests/audit_label_registry.rs` vert). `docs/api-external.md` : file, « examiné », variante `provider` des genres
     neufs (corps, refus), annulation d'une paire. Manuel utilisateur et écrans : **38-9b** (aucun contrôle visible ici,
@@ -398,7 +410,7 @@ afin que **tout mouvement qui change un solde finisse comptabilisé, sans qu'auc
   transaction d'un autre compte ». Les paires de cette fiche en écrivent une (l'autre moitié), sous le verrou nommé de
   **son** compte, pris avant (C-38-6b-7) : l'argument tient, mais sa phrase change, dans le même commit. Les poses
   neuves de `matched_entry_id` (paire, paire à moitié CHF, virement) portent sur une écriture **neuve** : elles
-  s'ajoutent au relevé (f) de l'inventaire de 38-6c2 (AC-12 de 38-6c), « par construction » (une écriture neuve n'est membre
+  s'ajoutent au relevé (f) de l'inventaire de 38-6c2 (AC-1 (f) de 38-6c2, déjà écrit par elle), « par construction » (une écriture neuve n'est membre
   d'aucun groupe).
 - **Références** : epic E7, E16, E20, C-38-4, C-38-8, C-38-9, C-38-14 ; 37-3b AC-2 bis (forme, ordre des refus) ; 34-11b
   (C-e341-22, C-e341-23) ; v017-3a ; 28-5a (unreject) ; 38-6a (C-38-6a-1 à 11).
@@ -419,6 +431,17 @@ afin que **tout mouvement qui change un solde finisse comptabilisé, sans qu'auc
 
 ## Change Log
 
+- 2026-11-15 — validation P3 (Sonnet) : 0 CRITICAL, 0 HIGH, 1 MEDIUM, 1 LOW ; remédiés dans la fiche sauf inter-fiches
+  (38-9b : motif `invoice_with_fee` à l'écran de la file) : P3-1 (MEDIUM) D-P2-5 — la file ne connaissait pas
+  `invoice_with_fee` (vente à frais qui correspond à une facture : aucune proposition, motif calculé) → C-38-6b-1
+  (`review_reason_of` reçoit le fait « facture correspondante » de 38-6a), C-38-6b-4, C-38-6b-8 (4), AC-6 (motif, test,
+  lecture par page), AC-10 (clé de libellé) ; P3-2 (LOW) renvoi « AC-12 de 38-6c » (Dev Notes) → AC-1 (f) de 38-6c2.
+  Renvois relus contre 38-6c1/38-6c2 : AC-2 et AC-11 de 38-6c1, `diagnose_entry_link` et codes `ENTRY_NOT_LINKABLE`,
+  `ENTRY_ALREADY_LINKED`, `AMOUNT_MISMATCH` (AC-5), `pairCount` (38-6c2 AC-3), relevé (f) (38-6c2 AC-1) : exacts ;
+  `reversalJournalEntryIds` (38-6c2 AC-4, groupe) et `pairedReversalJournalEntryId` (AC-8, paire) : deux champs de
+  sens distinct, sans collision. Prémisses relues au code : `LOCK_TIMEOUT_SECS` (`routes/reconciliation.rs:90`),
+  `reconciliation_link.rs:535-537` et `:1127-1135`, exacts. Taille : cinq modules, inchangée ; défauts de P2 non
+  recyclés.
 - 2026-11-15 — alignement inter-fiches P2 (Opus) : D-P2-3 — dépendance et renvois à 38-6c répartis entre 38-6c1
   (rattachement en devise, `link_entry_in_tx`, diagnostic du lot, exercice clos) et 38-6c2 (groupe, relevé (f),
   paires) ; voie (a) du retrait/dépôt : « aucune paire » écrit `pairCount = 0`. Numéros d'AC cités : ceux de 38-6c

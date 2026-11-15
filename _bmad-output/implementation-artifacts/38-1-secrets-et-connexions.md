@@ -437,3 +437,11 @@ Reprises de la fiche d'epic (§ *38-1*), complétées là où un AC en ajoute (m
   `test_fixtures.rs:390-420` ; `admin_full_export_e2e.rs:262-290` ; `onboarding_audit_e2e.rs:2040-2050` ;
   `audit_labels.rs:1-60` ; `exports/global.rs:160-172, 240` ; `docker-compose.dev.yml:6, 30` ;
   `admin-manual.tex:243-253, 577-579, 732`.
+- 2026-11-15 — validation P3 (Sonnet) : 0 finding (0 CRITICAL, 0 HIGH, 0 MEDIUM, 0 LOW) ; fiche inchangée hors ce
+  Change Log. Périmètre : correctifs P2 (`payerId` remis à `null` si `clientId` change ; tests de restauration non
+  muets : sans suppression préalable, coffre vide vérifié, connexion `N+1`, autre installation). Relu : la restauration
+  tronque puis réinsère la connexion `N` sans toucher au coffre (système) — le test échoue bien sans l'effacement ;
+  `PATCH` à `settings` sans `clientId` vaut changement de `clientId` (remise à `null`, couvert par T3). Lignes lues :
+  `test_fixtures.rs:395`, `onboarding_audit_e2e.rs:2046`, `docker-compose.dev.yml:6, 30`, `admin-manual.tex:728-732`.
+  Renvois sœurs (38-2 : `payment_provider_accounts` avant la connexion ; 38-3a : suppression des passages, `DELETE`
+  explicites) cohérents.

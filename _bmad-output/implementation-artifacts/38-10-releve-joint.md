@@ -135,8 +135,8 @@ clôturer l'exercice.
 
 1. **AC-1 — Migration (NFR-38-10-3).** Fichier `crates/kesh-db/migrations/<AAAAMMJJ>000001_bank_account_documents.sql`
    (date au développement, postérieure à **toutes les migrations présentes dans la branche de l'epic** à ce moment —
-   38-10 peut se développer « dès 38-3a », avant 38-4, 38-5 ou 38-6c2 — et de version **distincte** de celles que les
-   autres fiches de l'epic écrivent en `<date>000001` : 38-6c2, 38-4, 38-5 ; collision vérifiée par `ls
+   38-10 peut se développer « dès 38-3a », avant 38-4, 38-5 ou 38-6c2 — et de version **distincte** de celles que toutes
+   les autres fiches de l'epic écrivent en `<date>000001` (38-1, 38-2, 38-3a, 38-6c2, 38-4, 38-5) ; collision vérifiée par `ls
    crates/kesh-db/migrations/` au commit, citée au Change Log) : `CREATE TABLE
    bank_account_documents` — `id BIGINT AUTO_INCREMENT PK`, `company_id` (FK `companies`, `RESTRICT`), `bank_account_id`
    (FK `bank_accounts`, `RESTRICT`), `fiscal_year_id` (FK `fiscal_years`, `RESTRICT`), `kind VARCHAR(32) NOT NULL DEFAULT
@@ -211,7 +211,11 @@ clôturer l'exercice.
    `fiscal-years.types.ts`, `fiscal-years.api.ts`, `closing-checks.test-fixtures.ts`, `FiscalYearChecks.test.ts`,
    **`frontend/src/routes/(app)/settings/fiscal-years/+page.svelte` et `fiscal-years-page.test.ts:461`
    (`toHaveLength(8)`)**, `i18n-keys.test.ts` et `i18n-libelle-en-dur.test.ts` si les libellés du contrôle y entrent),
-   **E2E `frontend/tests/e2e/fiscal-year-closing-journey.spec.ts:158,165` (`toHaveCount(8)` : attend huit lignes)**,
+   **E2E `frontend/tests/e2e/fiscal-year-closing-journey.spec.ts:158,165` (`toHaveCount(8)` : attend huit lignes) et
+   `frontend/tests/e2e/fiscal-years.spec.ts:499-500` (même assertion, commentaire « huit contrôles, K8 en dernier »)**,
+   `fiscal-years-page.test.ts:447` (titre « les huit lignes »), `FiscalYearChecks.test.ts:48`, doc-comments
+   `closing_checks.rs:123` (« Toujours huit ») et `:566`, `docs/manual/fr/marketing-brochure.tex:437` (« Huit contrôles
+   préalables… », PDF de la brochure régénéré avec les autres),
    `user-manual.tex:890`, `admin-manual.tex:1866` ; grep du jeton `\bhuit\b` et `\b8\b` sur ces fichiers (liste relevée par `grep -rln
    "closing_checks\|closing-checks\|DRAFT_SUPPLIER_INVOICES" crates frontend/src frontend/tests docs`), résultat trié au
    Change Log. **Nom** : K9 est ici `ATTACHED_STATEMENT_GAP` ; le contrôle informatif futur de 37-5 (« comptes en devise
@@ -219,7 +223,10 @@ clôturer l'exercice.
    ignoré ; deux documents dans Y → le dernier compte ; dialogue de clôture (Vitest) qui rappelle K9.
 7. **AC-7 — Sauvegarde et restauration (NFR-38-10-2, E18).** (a) `bank_account_documents` entre à `TABLES_TO_TRUNCATE`
    **avant** `bank_transactions` (enfant de `bank_accounts`, `fiscal_years`, `users`, `companies`), donc vidée à la remise
-   à zéro de la société ; (b) `read_referenced_files` lit une **troisième** source (`SELECT storage_path, sha256 FROM
+   à zéro de la société — `backup_inventory_matches_schema` vert, et **sites de dénombrement** (même grep que 38-1,
+   38-2 et 38-6c2 AC-1, à relire à la source) : `crates/kesh-api/tests/admin_full_export_e2e.rs:~281` (`data_count`,
+   44 aujourd'hui, **+1** cumulé avec les tables des autres fiches de l'epic) et `onboarding_audit_e2e.rs:2046`
+   (`EMPTY_BEFORE_RESET`, liste fermée : la table y entre) ; (b) `read_referenced_files` lit une **troisième** source (`SELECT storage_path, sha256 FROM
    bank_account_documents`) **seulement si la table est au schéma présent** — lue dans le même instantané
    (`information_schema.TABLES` de `DATABASE()`, comme `tables_du_schema_present`), sinon aucune référence : la
    sauvegarde avant mise à jour (#847) est écrite par le binaire neuf sur le schéma **précédent**, où la table n'existe
@@ -274,7 +281,8 @@ clôturer l'exercice.
     par compte et par devise), l'écart, le contrôle K9, exercice clos (on joint, on ne corrige plus) ; § *Préparer la
     clôture* : « neuf contrôles », K9 décrit. `admin-manual.tex` : les relevés joints sont dans le dossier des documents
     et dans la sauvegarde complète ; la sauvegarde d'avant mise à jour les emporte ; « les huit contrôles » (`:1866`,
-    répétition d'une clôture) devient « les neuf contrôles ». PDF régénérés (`make fr` dans
+    répétition d'une clôture) devient « les neuf contrôles » ; `marketing-brochure.tex:437` (« Huit contrôles préalables à la clôture… ») devient
+    « Neuf », avec la mention de la livraison de K9. PDF régénérés (`make fr` dans
     `docs/manual/`) et vérifiés aplatis (`pdftotext … | tr '\n' ' '`). `docs/api-external.md` : les cinq routes, leurs
     codes, K9. **MCP** : aucun outil (E23) — `kesh_pieces` (`mcp/outils/pieces.rs`) liste les pièces fournisseur
     importées et n'est pas étendu ; les relevés joints ne sont pas exposés au serveur MCP (décision de l'epic, aucune
@@ -354,3 +362,19 @@ clôturer l'exercice.
   détail de compte (dialogue depuis la liste), suppression d'exercice ou de compte sans objet, story valable pour tout
   compte bancaire.
 - 2026-11-15 — alignement inter-fiches P2 (Opus) : renvois 38-6c → 38-6c2 (la migration du groupe, D-P2-3) à l'AC-1.
+- 2026-11-15 — validation P3 (Sonnet) : 4 findings (0 CRITICAL, 0 HIGH, 2 MEDIUM, 2 LOW) ; remédiés dans la fiche, aucun
+  inter-fiches. MEDIUM : P3-1 AC-7 omettait les **sites de dénombrement** que 38-2 AC-1 et 38-6c2 AC-1 listent pour
+  toute table neuve — `admin_full_export_e2e.rs:~281` (`data_count == 44`, +1 cumulé) et `onboarding_audit_e2e.rs:2046`
+  (`EMPTY_BEFORE_RESET`, liste fermée), relus à la source ; faute de quoi le gate runtime rougit sur deux tests sans
+  rapport apparent ; P3-2 le recensement des consommateurs du nombre de contrôles manquait `fiscal-years.spec.ts:499-500`
+  (`toHaveCount(8)`, E2E qui rougirait avec K9), `marketing-brochure.tex:437` (« Huit contrôles préalables », brochure et
+  PDF), `fiscal-years-page.test.ts:447`, `FiscalYearChecks.test.ts:48` et les doc-comments `closing_checks.rs:123`,
+  `:566` — trouvés par `grep -rniE "huit (contr|ligne)|toujours huit"` sur `crates`, `frontend`, `docs`. LOW : P3-3 la
+  garde `backup_inventory_matches_schema` n'était pas nommée à l'AC-7 ; P3-4 la liste des versions de migration à
+  distinguer (AC-1) ne citait que 38-6c2, 38-4 et 38-5 — toutes celles de l'epic. Relu au code : `document_storage.rs:90`,
+  `:142`, `:166`, `imported_supplier_invoices.rs:733`, `:768`, `inbox_import.rs:900`, `bank_imports.rs:365`, `:448`, `:872`,
+  `lib.rs:832-838`, `:1228-1231`, `backup.rs:423`, `:539`, `pre_upgrade_backup.rs:299`, `import.rs:115-140`,
+  `closing_checks.rs:51-60`, `tests/closing_checks.rs:1679`, `csv_tables.rs:2377`, `:2558`, `errors.rs:1887`, `:3506`,
+  `api-external.md:266-267`, `user-manual.tex:890`, `admin-manual.tex:1866` ; 37-1 AC-6 (`Absence::Table`), 37-4 AC-1 quater
+  (`balances_as_of`), 37-5 `:543-544` (K10) — tous concordent. Trend : P1 = 5 → P2 = 7 → P3 = 4 (0 HIGH, 2 MEDIUM).
+  Axes non exercés : code de 37-4 (non écrit) ; PDF du manuel (non régénéré) ; B27/B28 sans effet sur cette fiche.

@@ -59,8 +59,8 @@ plutôt qu'en vente, afin que les règles et les propositions des stories suivan
    (aucune horloge, aucune base). **Où elle s'appelle (contrat avec 38-3b et 38-7 AC-4)** : 38-3b reçoit des
    `ProviderMovement` **déjà classés** (`Connector::movements`), page par page ; le classement exigeant la fenêtre
    entière (paires, liens), c'est **`PaypalConnector::movements` qui lit toutes les pages d'une fenêtre, appelle
-   `classify_window` une fois, et rend une page unique** (`total_pages = 1`) avec `skipped` et `sums` (AC-6) — texte
-   à porter à 38-3b (`MovementPage`, liste inter-fiches P1). Aucun branchement dans le passage lui-même. Par enregistrement :
+   `classify_window` une fois, et rend une page unique** (`total_pages = 1`) avec `skipped` et `sums` (AC-6) — contrat porté par
+   38-3b AC-2 (`MovementPage`). Aucun branchement dans le passage lui-même. Par enregistrement :
    - `D` (refusée) → écarté, `skipped.denied` ;
    - `P` (en attente) → écarté, `skipped.pending` : un paiement en attente ne change pas encore le solde total ; il se
      relit réussi à un passage suivant **si** sa date reste dans la fenêtre relue (recouvrement de trois jours,
@@ -181,8 +181,15 @@ plutôt qu'en vente, afin que les règles et les propositions des stories suivan
    - clé : `^T\d{4}$` ; valeur : `sale` | `purchase` | `fee` | `withdrawal` | `deposit` | `dispute` | `other` |
      `ignore`. **Refusés** : `conversion` et `refund` (ils exigent un lien que la surcharge ne fournit pas) ; ≤ 50
      entrées ;
-   - **seuls les codes que la table classe `other`** (lignes « tout autre code connu » et « code absent ») se
-     surchargent : une clé visant un code classé autrement est refusée — un T0006 ne devient pas un achat par réglage ;
+   - **seuls les codes que la table classe `other` sans condition de signe** (les lignes T0014–T0017, T0020, T0021,
+     T0105/T0108/T0110, « tout autre code connu » et « code absent ») se surchargent : une clé visant un code classé
+     autrement — y compris `deposit`/`withdrawal` sous condition de signe, et T1110/T1111/T13xx/T15xx/T21xx/T98xx
+     « hors solde » — est refusée (`code_not_overridable`) ; un T0006 ne devient pas un achat par réglage ;
+   - **effets d'une surcharge** : `review_reason` = `NULL` pour `sale`, `purchase`, `fee`, `withdrawal`, `deposit` ;
+     `dispute` pour `dispute` ; `other` pour `other` ; `deposit`/`withdrawal` gardent la contrainte de signe (sinon
+     `other`/`other`), comme `sale`/`purchase` ; un surchargé `fee` suit la règle `fee` de l'AC-3 ; **`ignore` écarte
+     un code qui peut changer le solde** : le contrôle de complétude (E20 a, 38-3b AC-7) y verra alors un écart
+     durable — c'est dit sous le champ (38-9a) et au manuel ;
    - violation → `PROVIDER_SETTINGS_INVALID` (400, code de 38-1), `details: { field: "eventKindOverrides", code: "T…",
      reason: "kind_not_allowed" | "code_not_overridable" | "too_many" | "malformed" }` — validation dans la
      désérialisation typée de 38-1 (aucun JSON stocké tel quel, E24) ;
@@ -200,7 +207,7 @@ plutôt qu'en vente, afin que les règles et les propositions des stories suivan
      du « 3 jours » en dur ; liste inter-fiches P1). Au-delà, le contrôle de complétude (E20 a) signale l'écart.
 8. **AC-8 — Pureté.** `classify_window` et `event_codes` n'ont ni I/O, ni horloge, ni accès base, ni `tracing` autre
    que `warn!` de troncature ; ils vivent dans `kesh-providers`, qui ne dépend pas de `kesh-db` (E9). Dépendances :
-   `rust_decimal`, `chrono`, `chrono-tz` (déjà au `Cargo.lock`, 0.10.4), `kesh-core` pour `PaypalSettings` (si 38-1 l'a
+   `rust_decimal`, `chrono` (instants UTC seulement : pas de `chrono-tz`, la date comptable est de 38-3b), `kesh-core` pour `PaypalSettings` (si 38-1 l'a
    placé en `kesh-core::providers::settings`, E24).
 9. **AC-9 — Tests.**
    - **Table** : un test par ligne de l'AC-2, signe positif, négatif et nul pour les genres signés ; un test « aucun
@@ -218,7 +225,8 @@ plutôt qu'en vente, afin que les règles et les propositions des stories suivan
      composé ; articles vides et multiples.
    - **Liens** : remboursement `TXN`, `ODR` (→ `NULL`) ; conversion par référence, par instant, ambiguë (deux paires au
      même instant), orpheline ; virement entre deux connexions (même `payerId`).
-   - **Surcharges** : chaque refus de l'AC-7 ; `ignore` → écarté et compté ; surcharge `sale` sur un débit → `other`.
+   - **Surcharges** : chaque refus de l'AC-7 (dont un code `other` sous condition de signe, et T0014 admis) ; `ignore`
+     → écarté et compté ; surcharge `sale` sur un débit → `other` ; `review_reason` de chaque genre surchargé.
    - Aucun test ne touche la base ni le réseau.
 10. **AC-10 — Ce que la story ne touche pas.** Aucune migration ; aucune route (C-38-12 : delta 0) ; aucun outil MCP
     (E23) ; aucun écran (le champ des surcharges est à 38-9a) ; i18n : aucun texte neuf (les codes de refus sont ceux
@@ -314,3 +322,15 @@ plutôt qu'en vente, afin que les règles et les propositions des stories suivan
 - 2026-11-15 — alignement inter-fiches P2 (Opus) : AC-5, paire coupée — elle garde `review_reason = 'other'` comme
   toute moitié sans candidat (la phrase « 38-6b la met à la file, calculé » laissait croire à un motif non stocké) ;
   38-6b ignore ce motif dès que l'autre moitié s'y relie (C-38-6b-4).
+- 2026-11-15 — validation P3 (Sonnet) : 4 findings (0 CRITICAL, 0 HIGH, 2 MEDIUM, 2 LOW) ; tous remédiés dans la
+  fiche. MEDIUM : P3-1 AC-7 — « seuls les codes classés `other` se surchargent » ne disait pas le cas des codes
+  `other` **sous condition de signe** (T0300 à montant négatif…), classés `other` pour une transaction et `deposit` pour
+  une autre → seules les lignes `other` sans condition ; P3-2 AC-7 — `review_reason` d'un mouvement surchargé non dit
+  (`unknown_event` aurait pu survivre à une surcharge) → table des effets, `deposit`/`withdrawal` gardent la contrainte
+  de signe. LOW : P3-3 `ignore` sur un code qui change le solde laisse un écart durable au contrôle de complétude →
+  dit (38-9a, manuel) ; P3-4 AC-8 — `chrono-tz` listé sans usage (la date comptable est de 38-3b) retiré, et renvoi
+  périmé « texte à porter à 38-3b » de l'AC-1. Vérifié : aucun renvoi à 38-6c1/38-6c2 ni D-P2-5 dans cette fiche ;
+  `PaypalSettings` (`deny_unknown_fields`, `eventKindOverrides`, `overlapDays`) conforme à 38-1 AC-4 ; colonnes
+  (`invoice_ref VARCHAR(127)`, `item_names`, `review_reason`) conformes à 38-3a ; `details TEXT NOT NULL` à
+  `20260504000001_bank_imports.sql:64`. Axes non exercés : table des codes non reconfrontée à la page PayPal en P3
+  (relue en P2) ; aucune exécution.

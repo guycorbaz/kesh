@@ -62,8 +62,8 @@ Reprises de la fiche d'epic (§ 38-6c), complétées là où un AC l'exige ; ren
    **opposé** (`bt.amount = -(M)`, `other_side_predicate`, `reconciliation_link.rs:698-710`), comparaison sans
    objet entre deux devises. D'où `FR-38-6c1-6` et l'AC-2.
 2. **Corps du lot** : C-38-14 donne `[{bankTransactionId, journalEntryId, version}]`. Le lot porte en plus le
-   `bankAccountId` (un compte par lot), comme `POST /reconciliation/accept` (`routes/reconciliation.rs:1593-1600`,
-   `body.bank_account_id`) : le pré-vol du compte (archivé, clos, non lié) se fait une fois, et les suggestions sont
+   `bankAccountId` (un compte par lot), comme `POST /reconciliation/accept` (`post_accept`, `routes/reconciliation.rs:1592`,
+   `body.bank_account_id` lu `:1698-1700`) : le pré-vol du compte (archivé, clos, non lié) se fait une fois, et les suggestions sont
    par compte.
 3. **Le lot n'est pas une transaction à points de sauvegarde.** L'acceptation en lot tient un verrou et une
    transaction pour tout le lot (`accept_once`, `routes/reconciliation.rs:1822-1860`). Le rattachement **ne le peut
@@ -178,7 +178,7 @@ Reprises de la fiche d'epic (§ 38-6c), complétées là où un AC l'exige ; ren
    l'AC-2. (38-6c2 ajoute `pairs` à `PageMatches` et au test.)
 4. **AC-4 — Suggestions** (`FR-38-6c1-2`, B17). `GET
    /api/v1/reconciliation/link-suggestions?bankAccountId=…&from=…&to=…&limit=…&offset=…` (Comptable+, comme
-   `entry-candidates`, `lib.rs:921-925` ; clés d'API admises — une clé `read` lit, la méthode étant `GET`) :
+   `entry-candidates`, `lib.rs:925-933` ; clés d'API admises — une clé `read` lit, la méthode étant `GET`) :
    - **paramètres** : `bankAccountId` requis (> 0) ; `from`, `to` facultatifs (`AAAA-MM-JJ`, bornes **incluses** sur
      `booking_date`, `from ≤ to` sinon 400) ; `limit` 1..=500, défaut 200 (500 = `MAX_IN_CLAUSE_IDS`,
      `repositories/reconciliation.rs:1085`, borne de la clause `IN` des montants) ; `offset` ≥ 0 ;
@@ -391,3 +391,7 @@ Reprises de la fiche d'epic (§ 38-6c), complétées là où un AC l'exige ; ren
   **AC-9 récrit : aucune migration** (la table `bank_transaction_extra_entries` et ses inscriptions de sauvegarde
   passent en 38-6c2) ; Écart 5 récrit (renvoi à 38-6c2) ; AC-6 : `itemNames` lu par `BankTransaction::item_names()`
   (38-3a, inter-fiches P2). Dépendances : 38-3a ; 38-6c2 après elle ; 38-6a après 38-6c2.
+- 2026-11-15 — validation P3 (Sonnet) : fiche neuve relue en entier, citations vérifiées au code ; 2 LOW, 0 au-dessus ;
+  remédiés dans la fiche (`lib.rs:925-933` au lieu de `:921-925` ; `body.bank_account_id` de `post_accept` lu
+  `:1698-1700`, la fonction commençant `:1592`, et non `:1593-1600`) ; aucun finding inter-fiches. Renvois à 38-6c2
+  (AC-2, AC-1…AC-4 ; `uniquePair`, `several_pairs`, `journalEntryIds`) contrôlés : numérotation à jour.

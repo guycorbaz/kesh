@@ -104,7 +104,7 @@ PayPal fiable, bornée et sans fuite de secret.
    - **Cache en mémoire** : type `PaypalTokenCache` défini dans `kesh_providers::paypal::auth` (un `Mutex<HashMap<i64,
      CachedToken>>`, clé : connexion ; le connecteur étant reconstruit par la fabrique à chaque passage, le cache vit
      hors de lui), porté par `AppState.provider_token_cache: Arc<PaypalTokenCache>` et passé au connecteur par la
-     fabrique ; entrée `{ token, expires_at, secret_updated_at }` ; réutilisée tant que `now < expires_at − 120 s`
+     fabrique — **38-7 ajoute le champ à `ConnectorContext`** (38-3b ne le pose pas : son type est d'ici) ; entrée `{ token, expires_at, secret_updated_at }` ; réutilisée tant que `now < expires_at − 120 s`
      **et** que `secret_updated_at` égale celui de la connexion (un secret remplacé invalide le jeton sans autre
      signal) ; vidée par `PUT /{id}/secrets` et `DELETE /{id}` de 38-1 (appel ajouté ici), par la restauration
      complète (qui efface les secrets, E2) et par `clear_transient_test_state` (`routes/test_endpoints.rs:349`).
@@ -121,9 +121,9 @@ PayPal fiable, bornée et sans fuite de secret.
      fenêtre**, et O10 veut le découpage d'une fenêtre trop large **dans le connecteur**. D'où : `PaypalConnector::
      movements(window, page)` **lit en interne toutes les pages PayPal de la fenêtre** (`page_size=500`, `page` de 1 à
      `total_pages`, redécoupage AC-5), valide, passe l'ensemble à `classify_window` (38-8) et rend **une seule page**
-     `MovementPage { movements, page: 1, total_pages: 1, skipped }` ; `page ≥ 2` → `InvalidWindow`. `MovementPage`
-     gagne `skipped: SkippedCounts { denied, pending, non_balance }` et `sums: Vec<(devise, Σ net)>` (38-8 AC-1, AC-6),
-     que le passage écrit à son état. Bornes : une fenêtre de 31 jours reste sous 10 000 enregistrements
+     `MovementPage { movements, page: 1, total_pages: 1, skipped, sums }` ; `page ≥ 2` → `InvalidWindow`. `skipped:
+     SkippedCounts { denied, pending, non_balance }` et `sums: Vec<(devise, Σ net)>` sont des champs de
+     `MovementPage` (38-3b AC-2 ; rendus par `classify_window`, 38-8 AC-1, AC-6) ; le passage écrit `skipped` à son état. Bornes : une fenêtre de 31 jours reste sous 10 000 enregistrements
      (AC-5) : au plus 10 000 enregistrements validés en mémoire (chaque page ≤ 8 MiB, libérée après lecture).
    - Requête (par page PayPal) : `GET {base}/v1/reporting/transactions?start_date=…&end_date=…&fields=all&page_size=500&page=<n>
      &balance_affecting_records_only=Y`, dates **envoyées** en UTC `YYYY-MM-DDTHH:MM:SSZ` (secondes écrites) ; `page`
@@ -179,7 +179,9 @@ PayPal fiable, bornée et sans fuite de secret.
    n'est lue deux fois ni perdue, un test le vérifie à la frontière exacte. `Connector::max_window()` rend 31 jours
    pour PayPal.
 6. **AC-6 — Soldes** (`Connector::balances(as_of: Option<DateTime<Utc>>) -> Vec<ProviderBalance>` de 38-3b :
-   `{ currency, amount = total_balance, as_of }` ; la forme détaillée ci-dessous est la méthode **propre** à
+   `{ currency, amount = total_balance, as_of }`, **`as_of` = `as_of_time` rendu par PayPal** (non l'instant demandé :
+   38-3b AC-7 écrit ce `as_of` aux instantanés et arrête la somme des mouvements du contrôle à cet instant ; `as_of_time`
+   absent de la réponse → `InvalidResponse { reason: "as_of" }`) ; la forme détaillée ci-dessous est la méthode **propre** à
    `PaypalConnector`, `balances_detailed`, que son `Connector::test()` lit pour `account_ref`, AC-8).
    `GET {base}/v1/reporting/balances[?as_of_time=…]` (sans `currency_code` : toutes les devises). Rendu
    `Balances { payer_id, as_of, last_refresh, items: Vec<{ currency, total, available, withheld, primary }> }`.
@@ -223,7 +225,7 @@ PayPal fiable, bornée et sans fuite de secret.
 8. **AC-8 — « Tester la connexion »** : la route `POST /api/v1/provider-connections/{id}/test` de 38-1 (C-38-2,
    38-1 AC-7) garde sa forme **200** `{ usable, unusableReason, checks: [{ check, ok }] }` et ses contrôles locaux
    (`provider_known` … `secret_decryptable`). Quand ceux-ci passent, elle construit le connecteur par la **fabrique**
-   de 38-3b (`Box<dyn Connector>`) et appelle **`Connector::test()`** (méthode du trait, 38-3b AC-1 — aucun
+   de 38-3b (`Box<dyn Connector>`) et appelle **`Connector::test()`** (méthode du trait, 38-3b AC-2 — aucun
    transtypage vers `PaypalConnector`) ; `PaypalConnector` l'implémente : jeton (AC-3) puis soldes sans `as_of`
    (`balances_detailed`, AC-6), rendus en `ConnectorTest { account_ref: Some(account_id), balances }` ; la route
    ajoute :
@@ -251,7 +253,11 @@ PayPal fiable, bornée et sans fuite de secret.
    (date Europe/Zurich, aide de fuseau de 37-2 `aujourdhui_zurich`) ; `None` pour un prestataire sans limite.
    - **Écriture** : `POST` et `PATCH /provider-connections` (38-1) refusent, pour `paypal`, un `fetchFrom` antérieur :
      400 `PROVIDER_FETCH_FROM_TOO_OLD`, `details: { earliest: "AAAA-MM-JJ" }` (validation ajoutée à la fonction de
-     validation des réglages de 38-1, un seul point d'entrée).
+     validation des réglages de 38-1, un seul point d'entrée). **Sans construire de connecteur** (la création n'a
+     parfois pas encore de secret) : la règle est une **fonction libre** `kesh_providers::paypal::history_start(now)`,
+     que `PaypalConnector::history_start` appelle aussi (une seule règle) ; la route choisit la fonction par
+     `provider` (`earliest_fetch_from(provider, now) -> Option<NaiveDate>`, `None` pour un prestataire inconnu ou sans
+     limite) — c'est aussi ce que lisent `earliestFetchFrom` (ci-dessous) et le passage.
    - **Lecture** : `GET /provider-connections/{id}` et la liste gagnent `earliestFetchFrom` (date ou `null`), que
      l'écran de 38-9a lit pour borner le sélecteur (aucune constante recopiée dans le TypeScript).
    - **Passage** : une date acceptée vieillit ; le passage de 38-3b part de `max(début calculé, history_start(now))` et,
@@ -263,8 +269,10 @@ PayPal fiable, bornée et sans fuite de secret.
     `secret_updated_at`, le cache de jeton, la liste des `payerId` des **autres** connexions PayPal de la société
     — 38-8 AC-5 —, et le transport) : `paypal` → `PaypalConnector` ; en `KESH_TEST_MODE`, le **transport
     factice** de 38-3b sert des réponses **au format PayPal** (le connecteur PayPal tourne en entier, seul le transport
-    est simulé) — 38-7 fournit les réponses synthétiques par défaut (jeton, soldes CHF/EUR/USD, une page de
-    transactions couvrant les familles de 38-8), écrites en constantes du module et lues par les E2E de 38-9a/38-9b ;
+    est simulé) — 38-7 fournit **un jeu de réponses synthétiques** (jeton, soldes CHF/EUR/USD, une page de
+    transactions couvrant les familles de 38-8), écrit en constantes du module et que les E2E de 38-9a/38-9b demandent
+    par `paypalResponses: "default"` (38-3b AC-3 ; sans variante, la connexion garde le `FakeConnector`, donc rien
+    n'est « servi par défaut » sans demande) ;
     la route `_test` de 38-3b permet d'en servir d'autres (erreur 401, 403, 429, 500, `RESULTSET_TOO_LARGE`, réponse
     invalide). **Forme, décidée ici (validation P2)** : le corps de `POST /api/v1/_test/provider-connector` (38-3b,
     pensé pour le `FakeConnector` : soldes, pages de mouvements, `skipped`) gagne, par `connectionId`, une variante
@@ -422,3 +430,19 @@ bornes par requête ; le passage lit `code()` ; `last_error` porte le code d'API
   seulement) ; AC-8 — `PaypalConnector` implémente `Connector::test()` → `ConnectorTest { account_ref = account_id,
   balances }`, appelé par la route sur le connecteur de la fabrique ; contrats à 38-3b complétés
   (`max_movements_per_page()`, `test()`).
+- 2026-11-15 — validation P3 (Sonnet) : 5 findings (0 CRITICAL, 0 HIGH, 3 MEDIUM, 2 LOW) ; tous remédiés dans la
+  fiche ou, pour leur part commune, dans 38-3b (déjà alignée). MEDIUM : P3-1 AC-10 — les réponses « par défaut » ne
+  pouvaient jamais être servies (sans `paypalResponses`, la connexion garde le `FakeConnector`) → demandées par
+  `paypalResponses: "default"` (38-3b AC-3 amendée en conséquence) ; P3-2 AC-9 — la validation de `fetchFrom` à
+  l'écriture appelait `Connector::history_start`, méthode d'instance, alors qu'une connexion peut être créée sans secret
+  donc sans connecteur → fonction libre `paypal::history_start(now)` et `earliest_fetch_from(provider, now)`, une seule
+  règle ; P3-3 AC-6 — `ProviderBalance.as_of` non défini : instant demandé ou rendu ? → `as_of_time` rendu (38-3b AC-7
+  l'écrit tel quel pour que la somme du contrôle s'arrête où le solde s'arrête). LOW : P3-4 AC-3 — le champ du cache de
+  jeton ajouté à `ConnectorContext` par 38-7 (38-3b ne référence plus un type d'une story suivante) ; P3-5 AC-8 —
+  « 38-3b AC-1 » → AC-2 (le trait est à l'AC-2) et AC-4, `MovementPage` écrit avec `sums` (« gagne » périmé). Lignes
+  relues et conformes : `Cargo.toml:106-109` (`reqwest` en `[dev-dependencies]`) ; `Cargo.lock` (`base64` 0.22.1 et
+  0.23.1, `zeroize` 1.9.1) ; `lib.rs:61, 84, 98, 119` ; `main.rs:439` ; `middleware/auth.rs:285` ;
+  `middleware/rbac.rs:58` ; `mail/mod.rs:33, 69` ; `config.rs:1538` ; `audit_route_registry.rs:1009` ; `api-client.ts:6,
+  393-394` ; sites `AppState {` du `grep` (tous présents ; `tests/common/mcp.rs:215` est `fn etat`, qui passe par
+  `new_for_tests` — l'inventaire reste au `grep`). Axes non exercés : documentation PayPal non relue en P3 ; API
+  `reqwest` de mémoire ; aucune exécution.

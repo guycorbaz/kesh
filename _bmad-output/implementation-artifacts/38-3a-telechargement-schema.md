@@ -194,8 +194,11 @@ mouvements en attendant les propositions de 38-6a.
      **`PROVIDER_PROPOSAL_REQUIRED`**, le code de C-38-8 que reprend 38-6a AC-8 — un seul code pour ce refus, posé ici ;
      `details: { movementKind }`, `null` tant que 38-3b n'écrit rien —, *Pattern batch*). **38-6a** (point de contact)
      lève ce saut pour sa variante `provider` ; **`rule` et `split` restent refusés** sur un compte prestataire (même
-     code) ; une facture (client ou fournisseur) n'y est proposée **que si `fee_amount = 0`**, sinon la proposition
-     `provider` (D-P2-2, 38-6a AC-8 ; le règlement d'une facture au brut avec ligne de frais est tracé en issue,
+     code) ; une facture (client ou fournisseur) n'y est proposée **que si `fee_amount = 0`** ; si la transaction
+     correspond à une facture mais porte des frais (`fee_amount ≠ 0`), elle ne reçoit **aucune proposition** et va à la
+     file « à examiner » avec le motif `invoice_with_fee` (D-P2-5 ; **calculé, jamais stocké** : aucune valeur neuve de
+     `review_reason`, C-38-4 ; posé par 38-6a AC-8 — la proposition `provider` passerait en produit le paiement d'une
+     facture existante, un doublon ; le règlement d'une facture au brut avec ligne de frais est tracé en issue,
      C-38-13). Les voies manuelles restent : écriture manuelle (34-3), rattachement à une écriture (v017-3a, en CHF ;
      en devise par 38-6c1), virement entre ses comptes (34-11b). Tests : transaction posée par SQL sur un compte
      prestataire CHF → aucune proposition ; lot qui la vise → `failed[]` avec le code.
@@ -286,3 +289,8 @@ mouvements en attendant les propositions de 38-6a.
   `supplier_invoice` et `split` » de la P2 est caduc) ; `BankTransaction::item_names() -> Result<Vec<String>,
   DbError>` (la signature disait `Vec<String>` en annonçant une erreur) ; renvois 38-6c → 38-6c1 (AC-5, AC-6) et
   38-6c1/38-6c2 (en-tête), D-P2-3.
+- 2026-11-15 — validation P3 (Sonnet) : 0 CRITICAL, 0 HIGH, 1 MEDIUM, 0 LOW ; remédié dans la fiche (aucun finding
+  inter-fiches). MEDIUM 38-3a-P3-1 : le point de contact de l'AC-6 disait « sinon la proposition `provider` » pour une
+  facture à frais, ce que D-P2-5 a remplacé (file « à examiner », motif `invoice_with_fee`, calculé non stocké) →
+  réécrit (AC-6). Renvois à 38-6c1/38-6c2 relus (aucun numéro d'AC périmé). Lignes lues :
+  `routes/reconciliation.rs:1092-1104` ; `38-p2-inter-fiches.md:6-22` ; `38-validation-prompt-p3.md:53-56`.

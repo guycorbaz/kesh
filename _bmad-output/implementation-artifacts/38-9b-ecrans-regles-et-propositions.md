@@ -9,7 +9,7 @@ E14, E15, E16, E21, E22 ; contrats C-38-6, C-38-8, C-38-9, C-38-14. Décisions B
 `GET /reconciliation/review`, `…/review-done`, annulation d'une paire), **38-6c1** (`link-suggestions`, `link-entries`,
 rattachement en devise ; **`link-suggestions` paginé, lot ≤ 500, codes par élément** : AC-4 et AC-5 de 38-6c1),
 **38-6c2** (**groupes de B28** — `journalEntryIds`, paires `uniquePair`/`pairs`/`several_pairs`, `pairCount`,
-`ENTRY_GROUP_SUM_MISMATCH`, annulation d'un groupe et `reversalJournalEntryIds` : AC-12 à AC-15 de 38-6c, D-P2-3),
+`ENTRY_GROUP_SUM_MISMATCH`, annulation d'un groupe et `reversalJournalEntryIds` : AC-1 à AC-4 de 38-6c2, D-P2-3),
 38-6b pour **B27** (frais de la moitié créditée d'une conversion,
 conversion à moitié CHF en une écriture : AC-2, C-38-6b-2 bis), 38-8
 (genres de mouvement) et 38-9a (vocabulaire et `provider-labels.ts`). Arbitrage O12 : période par défaut du
@@ -32,10 +32,11 @@ doublon et sans qu'aucune écriture ne passe sans que je l'aie vue.
   lot → AC-3, AC-4, AC-5.
 - `FR-38-9b-3` — Rattachement en lot : univoques à cocher — écriture seule ou **paire** (B28) —, ambiguës une à une,
   où un **groupe** de deux à cinq écritures se compose à la main, somme affichée contre le montant → AC-6.
-- `FR-38-9b-4` — File « à examiner » et action « examiné » → AC-7.
+- `FR-38-9b-4` — File « à examiner » (dont, D-P2-5, une transaction qui correspond à une facture de Kesh mais porte
+  des frais) et action « examiné » → AC-7.
 - `FR-38-9b-5` *(ajoutée ; étendue P2, B28)* — Annuler le rapprochement d'une moitié de conversion, ou d'une transaction
   rattachée à un groupe, dit avant confirmation ce qui est défait avec elle (l'autre moitié, 38-6b AC-8 ; toutes les
-  écritures du groupe, 38-6c2) → AC-8.
+  écritures du groupe, 38-6c2 AC-4) → AC-8.
 - `NFR-38-9b-1` — E2E contre le transport factice (téléchargement → règle → proposition → acceptation, et rattachement
   en lot) → AC-11.
 - `NFR-38-9b-2` — Textes « proposer », jamais « comptabiliser automatiquement » ; quatre locales ; manuel utilisateur
@@ -134,8 +135,10 @@ doublon et sans qu'aucune écriture ne passe sans que je l'aie vue.
      brut, sans lien. La case de la ligne est **désactivée** (une proposition bloquée ne part pas dans un lot).
    - Les candidates existantes (facture, règle, facture fournisseur) gardent leur rendu ; sur un compte prestataire en
      CHF, une facture n'est proposée que si la transaction n'a pas de frais (`fee_amount = 0`, D-P2-2) ; elle masque
-     alors le candidat `provider` (38-6a C-38-6a-7) et est rendue comme aujourd'hui ; avec frais, seul le candidat
-     `provider` est rendu.
+     alors le candidat `provider` (38-6a C-38-6a-7) et est rendue comme aujourd'hui. **Avec frais (D-P2-5) : aucune
+     proposition, ni facture ni `provider`** — la proposition `provider` passerait en produit le paiement d'une
+     facture qui existe dans Kesh (doublon) : la transaction n'est **pas** dans l'onglet *Propositions*, elle est dans
+     la file « à examiner » avec le motif `invoice_with_fee` (AC-7), et l'écran n'en rend aucune ligne ici.
    - **Miroir `canLink`** (`ReconciliationProposals.svelte:262-264`, « CHF seulement ») : étendu comme la condition 1
      du serveur en devise (38-6c1 AC-1) — montant non nul et devise = celle de la base du compte (CHF pour un compte
      ordinaire ou en CHF ; devise du compte prestataire sinon) — pour que *Rattacher à une écriture existante* soit
@@ -166,7 +169,9 @@ doublon et sans qu'aucune écriture ne passe sans que je l'aie vue.
      avec elle (`pairedBankTransactionId` de l'`AcceptedProposal`).
 5. **AC-5 — Comptes et vocabulaire de la page de réconciliation.**
    - Le sélecteur de compte (`routes/(app)/reconciliation/+page.svelte`) marque les comptes prestataires (« PayPal ·
-     EUR », bloc `provider` de 38-2 AC-8, `GET /bank-accounts` — la page lit aujourd'hui `companies/current`,
+     EUR », bloc `provider` de 38-2 AC-8, `GET /bank-accounts` — **absent** du JSON d'un compte ordinaire
+      (`skip_serializing_if`), non `null` : le type TS le déclare optionnel, `canLink` et le sélecteur lisent
+      `provider?.…` — la page lit aujourd'hui `companies/current`,
      `+page.svelte:23`, qui **ne porte pas** le bloc (38-2 AC-8 ne l'ajoute qu'à `GET /api/v1/bank-accounts`) : la page
      lit donc ses comptes par `GET /api/v1/bank-accounts`, filtrés comme la liste d'aujourd'hui — à vérifier contre
      `companies/current` au développement, test Vitest du sélecteur).
@@ -195,20 +200,20 @@ doublon et sans qu'aucune écriture ne passe sans que je l'aie vue.
      (400, 404 `BANK_IMPORT_BANK_ACCOUNT_NOT_FOUND`, 5xx) arrête les suivants et le dit. Après le bilan, la liste se
      recharge (une écriture n'est jamais rattachée deux fois : `entry_shared` n'est vu que dans la page, 38-6c1 AC-4 —
      le second rattachement d'une même écriture est refusé `ENTRY_ALREADY_LINKED`).
-   - **Paires univoques** (`kind: uniquePair`, B28, 38-6c2 — AC-14 de 38-6c, sur les suggestions de 38-6c1 AC-4 :
+   - **Paires univoques** (`kind: uniquePair`, B28, 38-6c2 AC-3, sur les suggestions de 38-6c1 AC-4 :
      `entries` = deux `PageEntry`, mouvement
      compris) : même tableau, la transaction face à **ses deux** écritures (date, numéro, libellé, mouvement de chacune,
      **somme** des deux égale au montant de la transaction), mention « vente et frais passés à part » ; case **non
      cochée**, « Tout cocher » les inclut ; l'élément part avec `journalEntryIds: [a, b]` (jamais `journalEntryId`,
-     38-6c2 : exactement un des deux) ; l'écran n'ordonne pas les écritures — le serveur choisit l'écriture
-     principale (38-6c2 AC-12). Le bilan rattaché cite les deux écritures (`linked[].journalEntryIds`).
+     38-6c2 AC-2 : exactement un des deux) ; l'écran n'ordonne pas les écritures — le serveur choisit l'écriture
+     principale (38-6c2 AC-1). Le bilan rattaché cite les deux écritures (`linked[].journalEntryIds`).
    - **Ambiguës** (`kind: ambiguous`, `reasons` ⊂ `several_entries`, `settlement_candidate`, `matched_elsewhere`,
      `entry_shared`, **`several_pairs`** (B28), un libellé par motif — valeur inconnue → brute ; `candidates` ≤ 50 ou
      `pairs` ≤ 20) : liste à part, une ligne par transaction avec le nombre de candidates ou de paires ; « Choisir »
      ouvre la modale existante `LinkSettlementModal.svelte` (rattachement un par un, `…/entry-candidates` et
      `…/link-entry`, en devise depuis 38-6c1), qui rafraîchit la liste à la fermeture. Limite écrite au manuel : deux
      transactions de même montant et devise tombent toujours ici (38-6c1 Écart 7 — aucun appariement « au plus proche »).
-   - **La modale de rattachement à l'unité** (`LinkSettlementModal.svelte`, 38-6c1 AC-1, B28 et 38-6c2 AC-13, AC-14 ; le code
+   - **La modale de rattachement à l'unité** (`LinkSettlementModal.svelte`, 38-6c1 AC-1, B28 et 38-6c2 AC-2, AC-3 ; le code
      neuf dans un composant à part, `EntryGroupPicker.svelte`, la modale ne reçoit que l'appel) :
      - montants **dans la devise du compte** (base de la règle, 38-6c1 AC-1) ; pour un compte en devise, la section des
        règlements de factures n'apparaît pas (règlements CHF seulement, `settlement_count` = 0) ;
@@ -223,13 +228,13 @@ doublon et sans qu'aucune écriture ne passe sans que je l'aie vue.
        (débit − crédit, en devise sur les montants en devise des lignes pour une base en devise), jamais une règle :
        cocher **2 à 5** écritures, **somme** des mouvements affichée contre le montant de la transaction, bouton
        *Rattacher* actif **seulement** à somme exacte et entre 2 et 5 écritures — miroir de G3 et de la borne de 38-6c2
-       AC-13 (fonction pure `groupSumMatches`, test Vitest : somme exacte, écart d'un centime, une seule ou six
+       AC-2 (fonction pure `groupSumMatches`, test Vitest : somme exacte, écart d'un centime, une seule ou six
        écritures, ligne en devise) ; le serveur reste juge (`409 RECONCILIATION_ENTRY_NOT_LINKABLE`, message de 38-6c1
        AC-10 ; écriture de facture, contre-passée ou déjà liée refusée là) ; envoi `{ journalEntryIds }` ;
-     - l'aide le dit : un groupe de trois écritures ou plus n'est **jamais suggéré** (38-6c2 AC-14), il se compose ici ;
-       une écriture de frais **mensuelle** ne forme pas de paire exacte et se traite à la main (38-6c2 Écart 5).
+     - l'aide le dit : un groupe de trois écritures ou plus n'est **jamais suggéré** (38-6c2 AC-3), il se compose ici ;
+       une écriture de frais **mensuelle** ne forme pas de paire exacte et se traite à la main (38-6c2 Écart 1).
    - **Bilan** (`{ linked: [{ bankTransactionId, journalEntryId, journalEntryIds }], failed }`) : rattachées, et
-     `failed[]` avec libellés de **tous** les codes par élément de 38-6c1 AC-5 et 38-6c2 AC-13 : `ENTRY_NOT_LINKABLE`
+     `failed[]` avec libellés de **tous** les codes par élément de 38-6c1 AC-5 et 38-6c2 AC-2 : `ENTRY_NOT_LINKABLE`
      (`details.reason` ∈ `transaction_not_linkable`, `entry_not_found`, `entry_reversed`, `settlement_entry`,
      `unclassified`, **`entry_not_touching_account`**, **`entry_owned_by_document`** — B28 — : un libellé par motif ;
      `details.journalEntryId` du membre fautif cité pour un groupe), **`ENTRY_GROUP_SUM_MISMATCH`** (B28 : `{
@@ -249,9 +254,21 @@ doublon et sans qu'aucune écriture ne passe sans que je l'aie vue.
 7. **AC-7 — File « à examiner »** (FR-38-9b-4, C-38-9 ; 38-6b AC-6, AC-7).
    - Onglet « À examiner (N) » (N = longueur rendue, « 500+ » si `hasMore`) : `GET /api/v1/reconciliation/review?
      bankAccountId&limit=500` (le défaut de 38-6b AC-6 est 100 : sans `limit=500`, « 500+ » ne serait jamais juste) ; tableau date, montant, devise, genre, code d'événement, contrepartie, boutique, **motif**
-     (libellé par valeur de `reason` : litige, origine du remboursement absente, origine non rapprochée, origine non
-     inversible, moitié de conversion absente, paire de conversion ambiguë, code PayPal inconnu, autre ; valeur inconnue
-     → « Motif inconnu (`x`) »), lien vers la transaction liée (`relatedBankTransactionId`).
+     (libellé par valeur de `reason` — les neuf de 38-6b AC-6 : `dispute` litige, `refund_origin_missing` origine du
+     remboursement absente, `refund_origin_not_reconciled` origine non rapprochée, `refund_origin_not_invertible`
+     origine non inversible, `conversion_half_missing` moitié de conversion absente, `conversion_pair_ambiguous` paire
+     de conversion ambiguë, `conversion_pair_under_review` autre moitié à la file, `unknown_event` code PayPal
+     inconnu, `other` autre — **et `invoice_with_fee`** (D-P2-5) : « Facture de Kesh avec frais : à régler à la
+     main » (DE : « Rechnung in Kesh mit Gebühren: von Hand zu begleichen », IT : « Fattura di Kesh con commissioni:
+     da regolare a mano », EN : « Kesh invoice with fees: settle by hand »), motif **calculé** (`reasonSource:
+     "computed"`, jamais stocké) ; valeur inconnue → « Motif inconnu (`x`) »), lien vers la transaction liée
+     (`relatedBankTransactionId`). Les clés `reconciliation-review-reason-*` sont posées par 38-6b AC-10 (dont
+     `reconciliation-review-reason-invoice-with-fee` : D-P2-5 s'y applique aussi) : cette story les **consomme** sans
+     les redéfinir et ajoute la clé de `invoice_with_fee`, aux quatre catalogues, **si** 38-6b ne l'a pas posée (test
+     des catalogues : une clé par motif, quatre locales) ; le même libellé sert au `details.reason` de
+     `PROVIDER_TX_UNDER_REVIEW` (`failed-proposal-label.ts`). Une ligne `invoice_with_fee` dit en plus, sous le motif :
+     « Le règlement de la facture au brut avec ligne de frais se passe à la main (écriture manuelle ou rattachement) »
+     — limite tracée, C-38-13, 38-6a C-38-6a-7.
    - Actions par ligne : **« Écriture manuelle »** (modale existante `ManualMatchModal.svelte`, 34-3) ; **« Rattacher à
      une écriture existante »** (`LinkSettlementModal.svelte`) ; **« Marquer examiné »** → confirmation (« la
      transaction sort de la file et des propositions sans écriture : **elle reste en attente** — elle compte toujours
@@ -271,8 +288,8 @@ doublon et sans qu'aucune écriture ne passe sans que je l'aie vue.
    verrou de période — motif du premier refus porté par la vue) s'affiche **avant** confirmation, bouton désactivé, avec
    la phrase « annuler un rattachement contre-passe ; dans un exercice clos il est refusé » (limite tracée, C-38-13) ;
    après succès, le message cite les contre-passations du groupe, lues de la réponse de `…/cancel`
-   (`ReconciliationCancellation.reversalJournalEntryIds`, additif, dans l'ordre croissant des écritures, 38-6c2 —
-   nom aligné sur celui de 38-6c P2 ; `null` ou absent hors groupe → le message d'une annulation simple). Tests
+   (`CancelReconciliationResponse.reversalJournalEntryIds`, miroir TS `reconciliation.types.ts:226`, additif, dans
+   l'ordre croissant des écritures, 38-6c2 AC-4 ; `null` ou absent hors groupe → le message d'une annulation simple). Tests
    Vitest : paire, groupe (message à N contre-passations), groupe refusé.
 9. **AC-9 — Textes et i18n** (NFR-38-9b-2). Clés neuves écrites en toutes lettres (`reconciliation-provider-*`,
    `reconciliation-review-*`, `reconciliation-link-batch-*`, `reconciliation-link-group-*` (paires, groupe composé,
@@ -298,9 +315,10 @@ doublon et sans qu'aucune écriture ne passe sans que je l'aie vue.
       acceptation) ; retraits et dépôts (virement entre vos comptes, 34-11b) ; remboursements (inverse, montants
       rapportés, B20) ; litiges et la file « à examiner » ; **rattachement en lot de l'exercice déjà saisi** (B17) ;
       annuler une conversion ; le cours au moment de l'acceptation (C-38-6a-9) ; **une facture payée par PayPal** :
-      proposée seulement sans frais (`fee_amount = 0`) ; avec frais, la proposition est celle du prestataire, et le
-      règlement de la facture au brut avec ligne de frais se passe à la main (écriture manuelle ou rattachement ;
-      limite tracée, C-38-13, 38-6a C-38-6a-7).
+      proposée seulement sans frais (`fee_amount = 0`) ; avec frais (D-P2-5), **aucune proposition** : la transaction
+      est dans la file « à examiner », motif « Facture de Kesh avec frais », et le règlement de la facture au brut
+      avec ligne de frais se passe à la main (écriture manuelle ou rattachement ; limite tracée, C-38-13, 38-6a
+      C-38-6a-7).
     - **Voie des scripts externes** (E22, B21) : un paragraphe qui dit qu'un script (WHMCS, CB Paid Subscriptions) peut
       chercher une transaction de prestataire, créer l'écriture puis la rattacher par une clé d'API `read-write`, avec
       renvoi à `docs/api-external.md` (écrit par 38-6c1, complété par 38-6c2) — sans recopier l'API.
@@ -341,7 +359,8 @@ doublon et sans qu'aucune écriture ne passe sans que je l'aie vue.
       `ENTRY_GROUP_SUM_MISMATCH` et les deux raisons neuves, règle d'un sens inconnu non modifiable, filtre sur compte
       archivé conservé, `canLink` en devise, `blockedBy` d'un code inconnu), modale à l'unité (paires, groupe composé :
       `groupSumMatches`, `entryMovementOnAccount`), conversion avec frais de la moitié créditée et conversion à moitié
-      CHF, file (actions selon rôle, motif inconnu), dialogue d'annulation d'une paire et d'un groupe, catalogues sans
+      CHF, file (actions selon rôle, motif inconnu, motif `invoice_with_fee` libellé et accompagné de sa phrase, une clé
+      par motif aux quatre catalogues ; transaction à facture avec frais absente de l'onglet *Propositions*), dialogue d'annulation d'une paire et d'un groupe, catalogues sans
       les formules interdites.
     - **E2E** `frontend/tests/e2e/provider-reconciliation.spec.ts`, contre le **transport factice** de 38-3b et ses
       réponses PayPal par défaut (38-7 AC-10 : familles de 38-8 couvertes), connexion et comptes posés par l'API dans le
@@ -355,7 +374,9 @@ doublon et sans qu'aucune écriture ne passe sans que je l'aie vue.
       (3) la proposition de la vente montre brut, TVA, frais, cours ; (4) « Cocher les propositions prêtes » puis
       *Accepter* → écriture créée (vérifiée par `GET /journal-entries` : lignes, TVA, frais), transaction rapprochée ;
       (5) une conversion acceptée rapproche ses deux moitiés ; (6) un litige est dans « À examiner », « Marquer examiné »
-      l'en sort ; (7) **rattachement en lot** : une écriture posée par `POST /journal-entries` (en devise) pour une
+      l'en sort ; (6 bis) **D-P2-5** : une facture client validée posée par l'API, dont le paiement téléchargé porte des
+      frais, n'a aucune ligne dans *Propositions* et figure dans « À examiner » au motif « Facture de Kesh avec frais »
+      (la même facture sans frais reste proposée) ; (7) **rattachement en lot** : une écriture posée par `POST /journal-entries` (en devise) pour une
       transaction téléchargée, la suggestion univoque cochée et rattachée, la transaction sort des propositions ;
       (8) « déjà comptabilisée » : la ligne n'est pas cochée par « Cocher les propositions prêtes » ; (9) **paire (B28)** :
       deux écritures posées par l'API — vente au brut et frais à part — pour une transaction téléchargée au net, la
@@ -373,7 +394,7 @@ doublon et sans qu'aucune écriture ne passe sans que je l'aie vue.
     (suggéré, sans suggestion), de remboursement, bloquée (chaque remède), avec arrondi ; ligne « déjà comptabilisée » et
     dialogue de confirmation ; bilan d'un lot avec échecs ; onglet « Rattacher en lot » (univoques, paire univoque,
     ambiguës dont `several_pairs`, bilan) ; modale à l'unité (paires, groupe composé à somme exacte et inexacte) ; file
-    « à examiner » (chaque motif, confirmation) ; dialogue d'annulation d'une paire et d'un groupe (dont le refus en
+    « à examiner » (chaque motif, dont « Facture de Kesh avec frais » ; confirmation) ; dialogue d'annulation d'une paire et d'un groupe (dont le refus en
     exercice clos) ; sous-titre de la page.
 13. **AC-13 — Ce que la story ne touche pas.** Aucune migration ni route ; aucun audit neuf (les routes appelées
     auditent) ; **aucun outil MCP** (E23 : propositions, file et suggestions ne sont pas exposées ; les écritures
@@ -487,3 +508,25 @@ doublon et sans qu'aucune écriture ne passe sans que je l'aie vue.
   `…/cancel`, champ **`reversalJournalEntryIds`** (38-6c2 n'existant pas encore à cette écriture, nom pris de 38-6c P2,
   qui l'a ajouté ; la proposition `groupReversalJournalEntryIds` abandonnée — un seul nom) ; D-P2-2 — facture proposée
   sur un compte prestataire CHF seulement sans frais (AC-3, manuel AC-10).
+- 2026-11-15 — validation P3 (Sonnet) : 6 findings (0 CRITICAL, 0 HIGH, 4 MEDIUM, 2 LOW) ; remédiés dans la fiche sauf
+  l'inter-fiche P3-6 (ci-dessous). MEDIUM : P3-1 **D-P2-5** — une transaction qui correspond à une facture de Kesh mais
+  porte des frais n'a **aucune** proposition (ni facture ni `provider`) : l'AC-3 disait « seul le candidat `provider`
+  est rendu », contraire à D-P2-5 (doublon du produit) ; elle va à la file avec le motif calculé `invoice_with_fee`,
+  libellé aux quatre locales (AC-7), phrase du règlement à la main, manuel AC-10, E2E (6 bis), tests, captures ;
+  P3-2 renvois à 38-6c2 renumérotés (ex-AC-12 à AC-15 → AC-1 à AC-4 ; « Écart 5 » → Écart 1 de 38-6c2, relu aux deux
+  fiches) à l'en-tête, FR-38-9b-5 et aux AC-6 et AC-8 — la ligne du Change Log P2 qui les disait « à relire » reste
+  telle (relevé daté) ; P3-3 la liste des motifs de la file (AC-7) n'en portait que huit, sans `conversion_pair_under_review`
+  : les **neuf** de 38-6b AC-6, plus `invoice_with_fee`. LOW : P3-4 `provider` est **absent** (non `null`) du JSON d'un
+  compte ordinaire (38-2 AC-8, `skip_serializing_if`) — type optionnel ; P3-5 le champ de contre-passations d'un groupe
+  est celui de `CancelReconciliationResponse` (`reconciliation.types.ts:226`), non de `ReconciliationCancellation`
+  (struct Rust). **Inter-fiche** 38-9b-P3-6 (38-6b AC-6 et AC-10, MEDIUM) : D-P2-5 ajoute le motif `invoice_with_fee`
+  (calculé, `reasonSource: "computed"`) à la liste de `GET /reconciliation/review` et sa clé
+  `reconciliation-review-reason-invoice-with-fee` aux quatre catalogues ; texte proposé : « neuvième motif → dixième :
+  `invoice_with_fee` (compte prestataire ; transaction `pending` à facture candidate de `fee_amount ≠ 0`) ; FR « Facture
+  de Kesh avec frais : à régler à la main », DE « Rechnung in Kesh mit Gebühren: von Hand zu begleichen », IT « Fattura
+  di Kesh con commissioni: da regolare a mano », EN « Kesh invoice with fees: settle by hand » » ; 38-9b ne redéfinit
+  aucune clé que 38-6b pose. Relu au code : `RuleFormModal.svelte:147`, `RulesList.svelte:31`,
+  `ReconciliationProposals.svelte:262-264`, `:315`, `reconciliation.types.ts:109`, `reconciliation/+page.svelte:23`,
+  `:41-44`, `user-manual.tex:3004`, `:3188`, `:4125`, `routes/journal_entries.rs:310-334` ; aux fiches : 38-6c1 AC-4,
+  AC-5, AC-10, Écarts 6 et 7 ; 38-6c2 AC-1 à AC-4, Écart 1 ; 38-6b AC-6 (tous concordent hors P3-3). Trend : P1 = 11 → P2 =
+  8 → P3 = 6 (0 HIGH, 4 MEDIUM). Axes non exercés : code des stories amont (non écrit) ; PDF du manuel (non régénéré).
