@@ -466,6 +466,32 @@ x = 57, et même 62 (27 `W` finissent à 76,9) ; la ligne verticale la traverse 
 **Issues à ouvrir** : aucune. #12 en `refs` (puce « glyphe ✂ » réalisée par un tracé ; les autres à #943), #944 en
 `refs` (`closes` à la 36-12b).
 
+**Remédiation de la revue P1** (2026-11-15, Opus 5.5 ; rapports `kesh-gate-logs/e36-12/review-p1-{B,E,A}.md` :
+B 0/0/0/4, E 0/0/0/3, A 0/0/1/4). Les relevés ci-dessus restent tels qu'écrits à leur date ; ce qui les corrige :
+- **A-2** (annotation) : « `src/pdf.rs` +836/−19 » était faux ; `git diff --numstat origin/epic/36-0.18.0 55bf2232b --
+  crates` rend **+818/−18** pour `pdf.rs` (836 = 818 + 18, et 19 comptait la ligne de `validation.rs`). Au commit
+  `b78b097ca` de la remédiation : `pdf.rs` +856/−18, `largeurs.rs` +592, `types.rs` +17, `examples/…` +158, `lib.rs`
+  +1, `validation.rs` +1/−1, `user-manual.tex` +3/−1, `scripts/engendrer-largeurs-helvetica.py` +160.
+- **A-3** (annotation) : la phrase « Hors la liste de l'AC9 » omettait `traits_du_pointille` et `trait_droit`,
+  auxiliaires de `draw_separator` ; AC9 complété (y compris `depuis_ftl` et le script).
+- **A-4** (annotation) : `test-fast-ci-review.log` et `gate-ci-review.log` ne portent ni commit ni code de sortie ; ces
+  valeurs (commit `c797e5761`, exit 0) viennent de la console de lancement, non du journal. Les journaux de la
+  remédiation les portent en tête et en fin.
+- Corrigé dans le code (`b78b097ca`) : **A-1** (script au dépôt, `--verifier`, doc-comment), **B-1** (doc-comments de
+  l'origine du repère ; les lames se croisent à u ≈ 0,34, recalculé : (0,30 / 0,72) × 2,85 − 0,85), **B-2** (zéro pour
+  un caractère sans octet ; test `le_point_de_depot_ignore_ce_qui_ne_s_imprime_pas`), **B-3** (`QrBillI18n::depuis_ftl`),
+  **B-4 / A-5** (bornes [0, 210] et [0, 105], écart > 0,2 mm aux ciseaux), **E-2** (manuel `:1302`, note de version),
+  **E-3** (balayage jusqu'à U+10FFFF). **E-1** : seconde limite connue écrite (Dev Notes, manuel), recalculée : base
+  61,5 − 3,5 n, rencontre dès n ≥ 16. Aucun finding réfuté.
+- **Mutations neuves**, toutes tuées : M10 (`SEP_ECART_CISEAUX` à 0) → AC1, AC2 ; M11 (verticale jusqu'à 108) → AC2 ;
+  M12 (horizontale jusqu'à 215) → AC1 ; M13 (caractère sans octet compté 975) → `largeur_en_millimetres`,
+  `le_point_de_depot_ignore_ce_qui_ne_s_imprime_pas` (`mut/M10.log` à `M13.log`, au commit `f0c96cb84`).
+- **Gates de remédiation** (commit `f0c96cb84`, code identique à `b78b097ca`) : `cargo fmt --check` et `clippy
+  --workspace --all-targets -D warnings` verts ; `nextest -p kesh-qrbill` **118/118**, code 0
+  (`qrbill-remediation-p1.log`) ; `--verifier` « identiques : 436 lignes », code 0 (`verifier-largeurs-p1.log`), sonde
+  positive (`W` à 900) rendue en code 1 ; base `kesh_e3612` recréée, `test-fast --ci` voie 2 **5464 passés, 13 ignorés,
+  0 échec**, code 0 (`test-fast-ci-remediation-p1.log`). Ni `gate-ci` ni E2E (à la clôture).
+
 ### File List
 
 - `crates/kesh-qrbill/src/pdf.rs` (modifié)
@@ -473,6 +499,8 @@ x = 57, et même 62 (27 `W` finissent à 76,9) ; la ligne verticale la traverse 
 - `crates/kesh-qrbill/src/lib.rs` (modifié)
 - `crates/kesh-qrbill/src/validation.rs` (modifié, une ligne)
 - `crates/kesh-qrbill/examples/capture_qr_facture.rs` (neuf)
+- `crates/kesh-qrbill/src/types.rs` (modifié, `depuis_ftl` — remédiation P1)
+- `scripts/engendrer-largeurs-helvetica.py` (neuf — remédiation P1)
 - `docs/manual/fr/user-manual.tex` (modifié)
 - `_bmad-output/implementation-artifacts/36-12a-qr-facture-lignes-ciseaux.md`, `…-review-prompt-p1.md` (neuf),
   `36-12b-qr-facture-grille-largeurs.md` (annotée, V3-7), `e36-choix-autonomes-36-12.md`, `sprint-status.yaml`
