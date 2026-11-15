@@ -250,10 +250,11 @@ rapproché.
        inclusive, débit net brut CHF et en devise, signé comme un actif : Σ débit − crédit) — **aucune seconde somme
        `amount_currency`** (DRY avec 38-10, C-38-10-4) ; montant CHF pour un compte en CHF ;
      - `unreconciled` = Σ `amount` des transactions `pending` du compte (rejetées et « examinées » comprises : elles
-       restent `pending`, 38-6b C-38-6b-6) dont **`booked_at ≤ asOf`** (l'instant, comme le contrôle de complétude de
-       38-3b, non `booking_date`) ; une transaction **sans** `booked_at` (import de fichier d'un compte posé en `attach`
-       avant ses réglages, 38-2 AC-3) compte si sa `booking_date ≤` la date de Zurich de `asOf` — sans quoi elle
-       manquerait en silence (test) ;
+       restent `pending`, 38-6b C-38-6b-6) dont **`booked_at < asOf`** — borne **exclue**, comme le contrôle de complétude de
+       38-3b AC-7 (fenêtre demi-ouverte : un mouvement à l'instant exact du `reported` n'y est pas compris) ; l'instant,
+       non `booking_date` ; test : un mouvement `pending` à `booked_at = asOf` n'est pas compté ; une transaction
+       **sans** `booked_at` (import de fichier d'un compte posé en `attach` avant ses réglages, 38-2 AC-3) compte si sa `booking_date ≤` la date de Zurich de `asOf` (borne à la journée, comme
+       `ledger`) — sans quoi elle manquerait en silence (test) ;
      - `unexplained` = `reported − ledger − unreconciled`. ⚠️ **Sens** : relevé moins livres, **l'inverse** de
        `statementGap` de la même page (`statement_gap`, `repositories/bank_accounts.rs:2019-2024` : livres − relevé) ;
        l'écran ne montre donc jamais les deux nombres sous le même mot — « Inexpliqué » ici, « Écart » là — et le manuel
@@ -381,7 +382,8 @@ rapproché.
       bloc des soldes sans compte (actions selon le rôle), badge et formulaire des comptes bancaires (champs masqués
       pour un compte prestataire, présents pour un compte ordinaire et une carte), contrôle (b) (couleurs, signes ;
       rôle Consultation → badge rendu, route `provider-balance-check` non appelée et résumé absent, AC-8, AC-9).
-    - Rust : la route de l'AC-8 (cas écrits à l'AC-8, dont le mouvement de part et d'autre de `asOf`).
+    - Rust : la route de l'AC-8 (cas écrits à l'AC-8, dont le mouvement de part et d'autre de `asOf` et le mouvement
+      `pending` à `booked_at = asOf`, exclu de `unreconciled`).
     - Vitest de l'AC-15 : libellé « Téléchargé de <libellé> » (`providerConnection` non nul), valeur inconnue de
       `source_format` → « Source inconnue (`x`) », bouton *Supprimer* absent pour un import de prestataire,
       `PROVIDER_IMPORT_NOT_DELETABLE` et `BANK_IMPORT_PROVIDER_ACCOUNT` libellés, sélecteurs sans compte prestataire.
@@ -607,3 +609,18 @@ rapproché.
   complété. Relu sans défaut : renvois AC-5/8/10/11/12, état du (a) (`complete: null`), libellé `span` (durable),
   Vitest `textContent`. Axes non exercés : code amont, PDF, documentation PayPal, reste de la fiche. Trend : P6 = 2
   (1 MEDIUM) → P7 = 2 (0 MEDIUM) : aucun finding au-dessus de LOW, boucle clôturable pour cette fiche.
+- 2026-11-15 — constats de la validation de l'Epic 40 (Opus) : AC-8 (b), `unreconciled` borné par
+  `booked_at < asOf` (borne exclue) au lieu de `≤`, aligné sur la fenêtre demi-ouverte du contrôle de complétude
+  (38-3b AC-7, relu : « `< as_of` du dernier `reported` … à l'instant exact du `reported` … jamais ») ; repli sans
+  `booked_at` inchangé (journée de Zurich, inclusive, comme `ledger`) ; test Rust du mouvement à `booked_at = asOf`
+  ajouté (AC-8, tâches de test). Garde G4-bis (`textes_coherents.rs`, lue : manuel utilisateur, guide de démarrage,
+  quatre catalogues) : la fiche ne cite aucun numéro de compte du plan de Beat — rien à changer. À relire par une passe
+  ciblée.
+- 2026-11-15 — validation P8 ciblée (Sonnet) : 1 finding LOW, 0 au-dessus. Relu : `git diff be2ce1a9 d3abf458` de la
+  fiche ; AC-8 (b) `booked_at < asOf` concorde avec 38-3b AC-7 (« `< as_of` du dernier `reported` … à l'instant exact
+  du `reported` … jamais ») ; repli sans `booked_at` à la journée de Zurich cohérent avec `ledger` et avec la limite
+  écrite (`ledger` à la journée, `reported`/`unreconciled` à l'instant) ; test Rust présent aux tâches. LOW 38-9a-P8-1 :
+  ligne de la phrase de test trop longue, recoupée (rédaction). **Inter-fiche signalé, non appliqué** : 40-4 écrit encore
+  `booked_at ≤ asOf` (lignes 58, 65, 118) et son test (a) de la ligne 146-148 attend la borne incluse, Q-40-4-2 ; à
+  aligner sur `<` (son texte proposé, ligne ~300, est déjà celui de 38-9a). Axes non exercés : code amont, reste de la
+  fiche. Trend : P7 = 2 (0 MEDIUM) → P8 = 1 LOW : boucle clôturable pour cette fiche.
