@@ -194,14 +194,29 @@ function sharedRefresh(): Promise<boolean> {
  * Chemin 401 : renouvelle (sous le mutex) et, sur échec, efface la session et
  * mène à la connexion (`reason=session_expired`). Chaque requête rejetée
  * l'applique — plusieurs effacements sur un même échec, sans gravité.
+ *
+ * Story 36-5 (#931, KF-056) — sous maintien de restauration
+ * (`authState.restoreHold`), le renouvellement est **toujours tenté** (réussi,
+ * la requête est rejouée) ; échoué, ni effacement ni redirection : la requête
+ * rejetée jette `UNAUTHENTICATED`, et le compte rendu de l'import reste lu.
  */
 async function refreshTokens(): Promise<boolean> {
 	const refreshed = await sharedRefresh();
-	if (!refreshed) {
-		authState.clearSession();
-		window.location.replace('/login?reason=session_expired');
+	if (!refreshed && !authState.restoreHold) {
+		expireSession();
 	}
 	return refreshed;
+}
+
+/**
+ * Termine la session côté client : effacement de l'état, puis connexion
+ * (`reason=session_expired`). Story 36-5 (#931) — le chemin 401 et la fin de
+ * la lecture du compte rendu d'une restauration (`AdminRestorePanel`) la
+ * partagent.
+ */
+export function expireSession(): void {
+	authState.clearSession();
+	window.location.replace('/login?reason=session_expired');
 }
 
 /**
@@ -483,7 +498,8 @@ async function request<T>(
 			// Retry avec le nouveau token (isRetry = true pour le guard anti-boucle)
 			return request<T>(url, options, true, call);
 		}
-		// refreshTokens() a déjà fait clearSession + redirect si échec
+		// refreshTokens() a déjà fait clearSession + redirect si échec (hors maintien
+		// de restauration, Story 36-5 : la session reste alors, sans redirection)
 		const error: ApiError = {
 			code: 'UNAUTHENTICATED',
 			message: 'Session expirée',
