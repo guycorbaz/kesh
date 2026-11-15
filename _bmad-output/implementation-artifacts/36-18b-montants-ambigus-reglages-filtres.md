@@ -67,7 +67,9 @@ Fait pour toute la 36-18 (fiche 36-18a, § *Inventaire*, sept motifs, sonde posi
 
 ## Décisions
 
-*Lecture, aides, forme rouverte, messages communs et rognage : D1 à D4 et D9 de la 36-18a, réemployés sans modification.*
+*Lecture, aides, forme rouverte, messages communs et rognage : D1 à D4 et D9 de la 36-18a, réemployés sans modification —
+D3 compris dans sa forme remédiée à la validation P1 de la 36-18a (V1-6) : tout champ fautif porte la bordure,
+`aria-invalid="true"` et `aria-describedby` vers l'`id` de son message, aux quatre écrans de ce lot.*
 
 - **D1 — Prix d'article (#1173)** (C-36-18-8) : `classifyPriceInput` lit la saisie rognée : vide → `empty` ; signe →
   `negative` (avant la lecture, message inchangé) ; puis `readJournalAmount` : `ambiguous` → `ambiguous` (neuf, message
@@ -113,19 +115,33 @@ Fait pour toute la 36-18 (fiche 36-18a, § *Inventaire*, sept motifs, sonde posi
    appliqué », `fetchJournalEntries` appelé **sans** `amountMin`, URL sans `amountMin` ; « 1'250 » → `amountMin: '1250'` et
    `?amountMin=1250` ; URL `?amountMin=1.250` → message au chargement, borne non envoyée ; « 100 » → `amountMin: '100'`.
 5. **AC5 — Rien de juste n'est refusé** : pour chacun des quatre sites, un test par forme — « 1.25 », « 1250 », « 1'250.50 »,
-   « 1’250 », « 1,25 », « 0.50 » — sans message, envoyée normalisée ; les formes rouvertes d'AC1 à AC3 sans message.
+   « 1’250 », « 1,25 », « 0.50 » — sans message, envoyée normalisée ; une saisie bordée de blancs («  1250  ») sans
+   message, envoyée `1250` (les quatre sites rognent, D4 de la 36-18a) ; « 1250.0000 » (zéros de fin) accepté à l'article,
+   au minimum et aux filtres ; les formes rouvertes d'AC1 à AC3 sans message. Seules deviennent refusées la forme de la
+   règle et ce que la grammaire du journal ne lit pas — `1e3`, `.5`, `5.`, signe, blanc intérieur, **plus de quatre
+   décimales, même nulles** — : un test le constate aux frais (« 10.01000 », que `Number` lisait aujourd'hui). *(Propagé
+   de la validation P1 de la 36-18a, V1-1 et V1-5.)*
 6. **AC6 — E2E** (`frontend/tests/e2e/montants-ambigus.spec.ts`, créé par la 36-18a : un `test` de plus par écran) :
-   « 1.250 » → message visible et **zéro** requête d'écriture (`page.on('request')` armé avant le clic) ; « 1'250 » → le corps
-   porte `1250`, réponse 2xx, relecture par `authedApiContext` à 1250 (`1250.0000` article et minimum, `1250.00` frais).
-   Filtres : `GET /api/v1/journal-entries` porte `amountMin=1250` pour « 1'250 », aucune borne pour « 1.250 ».
+   « 1.250 » → message visible ; l'écouteur `page.on('request')`, armé avant le clic, compte les seules requêtes
+   d'écriture de l'écran, par **méthode et route** — `POST /api/v1/products` et `PUT /api/v1/products/{id}`
+   (`products.api.ts:40`, `:47`), `POST /api/v1/dunning-levels` et `PUT /api/v1/dunning-levels/{id}` (`dunning.api.ts:29`,
+   `:41`, `:49`), `PUT /api/v1/company/invoice-settings` (`invoices.api.ts:106`) — et en attend **zéro** ; la preuve est
+   la relecture par `authedApiContext` de l'état d'avant. Puis « 1'250 » → le corps porte `1250`, réponse 2xx, relecture
+   comparée **en valeur** (`new Big(lu).eq(1250)`), jamais en chaîne (`1250.0000` article et minimum, `1250.00` frais).
+   Filtres : la requête `GET /api/v1/journal-entries` (`journal-entries.api.ts:28`) porte `amountMin=1250` pour « 1'250 »,
+   aucune borne pour « 1.250 ». *(Propagé de V1-7 de la 36-18a.)*
 7. **AC7 — Textes** : une clé × quatre locales (D5) ; `lint-i18n-ownership` vert sans entrée neuve ; `sitesTotal` de
    `i18n-keys.test.ts` **recompté à la source** après la fusion de la 36-18a, sans addition.
 8. **AC8 — Manuels** (`.tex` ; PDF à l'intégration) : une phrase par écran, qui renvoie à la règle de *Saisie d'une écriture
-   en partie double* (`user-manual.tex:559`), exemple `1.250`, forme `1'250`, limite de décimales — `user-manual.tex` item
-   *Prix unitaire HT* (`:1126`), § *Le montant minimum* (`:1197`), § *Recherche d'écritures*, item *Montant* (`:881`, la borne
-   non appliquée) ; `admin-manual.tex` item *Frais* (`:1338`) et § *Montant minimum* (`:3856`). Contrôle :
-   `pdftotext docs/manual/fr/user-manual.pdf - | tr '\n' ' ' | tr -s ' ' | /usr/bin/grep -c 'refusé comme ambigu'`
-   supérieur de trois au moins à sa valeur à la base, et de deux pour `admin-manual.pdf`, relevées à l'étape 0.
+   en partie double* (`user-manual.tex:559`), porte la chaîne exacte `refusé comme ambigu`, l'exemple `1.250`, la forme
+   `1'250` et la limite de décimales — `user-manual.tex` item *Prix unitaire HT* (`:1126`), § *Le montant minimum*
+   (`:1197`), § *Recherche d'écritures*, item *Montant* (`:881`, la borne non appliquée) ; `admin-manual.tex` item *Frais*
+   (`:1338`) et § *Montant minimum* (`:3856`). **Contrôle de clôture de la story, sur le `.tex`** :
+   `/usr/bin/grep -n 'refusé comme ambigu' docs/manual/fr/user-manual.tex docs/manual/fr/admin-manual.tex` rend une ligne
+   dans chacune des cinq sections citées. **Contrôle d'intégration seulement** (PDF régénéré après l'union) :
+   `pdftotext <f>.pdf - | tr '\n' ' ' | tr -s ' ' | /usr/bin/grep -o 'refusé comme ambigu' | wc -l` pour chacun des deux
+   manuels, comparé à sa valeur à l'étape 0 — `grep -c` sur un flux aplati ne rend que 0 ou 1. *(Propagé de V1-2 de la
+   36-18a.)*
 9. **AC9 — Rien d'autre ne change** : `git diff <base> --stat` ne nomme ni `crates/` hors `kesh-i18n/locales/`, ni
    `balance.ts`, `unit-price.ts`, `supplier-invoice-form.ts`, `SettleInvoiceDialog.svelte`, `opening-balances`, ni les écrans
    des 36-3, 36-3b, 36-2 ; leurs tests verts sans modification.
@@ -157,6 +173,7 @@ Fait pour toute la 36-18 (fiche 36-18a, § *Inventaire*, sept motifs, sonde posi
 | M6 | minimum : `minimumAmount.trim()` envoyé brut | AC3 |
 | M7 | filtres : `buildQuery` envoie la borne brute | AC4 |
 | M8 | filtres : la phrase « pas appliqué » retirée | AC4 |
+| M9 | minimum : la lecture sans `trim()` | AC5 (« 1250 » bordé de blancs) |
 
 Une mutation équivalente se dit au Dev Agent Record.
 
@@ -167,7 +184,8 @@ Une mutation équivalente se dit au Dev Agent Record.
       (forme du minimum) ; valeurs de départ du contrôle PDF (AC8) ; relire les LOW du dernier rapport de validation.
 - [ ] Tests d'abord (AC1 à AC5) ; `product-helpers.ts` et la page (D1) ; `settings/dunning` (D2) ; `settings/invoicing` (D3) ;
       `journal-entries/+page.svelte` (D4, en dernier) ; quatre `messages.ftl` (D5) ; `i18n-keys.test.ts` recompté (AC7).
-- [ ] E2E (AC6), rouge d'abord ; manuels (AC8), `.tex` seuls ; captures (AC10) ; mutations M1 à M8.
+- [ ] E2E (AC6), rouge d'abord ; manuels (AC8), `.tex` seuls, leur contrôle `.tex` à la clôture ; captures (AC10) ;
+      mutations M1 à M9.
 - [ ] Gates (voie 2, `e35-dev-commun.md` § *Quels gates, quand*) : en cours, Vitest ciblé par `.gate-front.lock`,
       `npm run check`, `lint-i18n-ownership` ; **passage en `review`** : bases `kesh_e3618b` remises à neuf (voie 2),
       `scripts/test-fast.sh --ci`, `scripts/gate-ci.sh kesh_ci_e3618b` (voie 1, son verrou), frontend complet, pas d'E2E ;
@@ -184,9 +202,12 @@ Une mutation équivalente se dit au Dev Agent Record.
 - Le prix d'un article, les frais d'un niveau de rappel, le montant minimal d'une facture et les bornes du filtre des
   écritures lisent désormais un montant comme une écriture : « 1.250 » n'est plus lu 1,25 franc en silence ; il est refusé
   comme ambigu (le filtre ne s'applique pas, et l'écran le dit), et le message dit comment l'écrire (`1'250` ou `1.25`).
-  L'apostrophe des milliers et la virgule décimale sont acceptées ; la saisie à exposant (`1e3`) ou sans chiffre avant ou
-  après le point (`.5`, `5.`) n'est plus lue. Les frais de rappel ne disent plus seulement « deux décimales au plus » d'un
-  montant ambigu. (refs #1173, refs #1175, refs #1176, refs #1177)
+  L'apostrophe des milliers et la virgule décimale sont acceptées ; la saisie à exposant (`1e3`), sans chiffre avant ou
+  après le point (`.5`, `5.`) ou à plus de quatre décimales, même nulles, n'est plus lue. Les frais de rappel ne disent
+  plus seulement « deux décimales au plus » d'un montant ambigu. **Avant la 0.18.0**, un prix d'article ou un montant
+  minimal tapé avec trois chiffres après le point ou la virgule (« 1.250 ») a été lu sans avertissement comme un franc
+  vingt-cinq : relisez vos articles et votre montant minimal saisis ainsi, et les factures qui ont repris un tel prix.
+  (refs #1173, refs #1175, refs #1176, refs #1177)
 
 ## Dev Notes
 
@@ -241,3 +262,9 @@ Chaque montant part tel que tapé, et le filtre traverse la frontière HTTP : AC
 - 2026-11-15 — Fiche créée (Opus 5.5) par découpage de la 36-18 (C-36-18-10), à `fed34a9c7` : quatre sites, décisions D1 à
   D6 (les communes renvoyées à la 36-18a), AC1 à AC10, mutations M1 à M8 ; quatre modules ; aucune migration ; `backlog`
   jusqu'à la fusion de la 36-18a. Validation non lancée.
+- 2026-11-15 — Propagation de la validation P1 de la 36-18a (`kesh-gate-logs/e36-18/validation-36-18a-p1.md`) : `aria-invalid`
+  et `aria-describedby` (V1-6) ; AC5 : blancs, zéros de fin, plus de quatre décimales (V1-1, V1-5), M9 ; AC6 : requêtes
+  comptées par méthode et route, relecture en valeur (V1-7, routes lues `products.api.ts:40`, `:47`, `dunning.api.ts:29`,
+  `invoices.api.ts:106`, `journal-entries.api.ts:28`) ; AC8 : contrôle `.tex` à la clôture, PDF à l'intégration par
+  `grep -o | wc -l` (V1-2) ; note de version : relire les montants saisis avant la 0.18.0 (V1-10). V1-3, V1-4, V1-8 et
+  V1-9 ne visent que la 36-18a.

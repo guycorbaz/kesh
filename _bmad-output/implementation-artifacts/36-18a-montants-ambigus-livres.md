@@ -122,7 +122,8 @@ Aucun site hors des huit issues : aucune issue neuve.
   `formLineFromResponse` (`:248`) et `SupplierInvoiceForm.svelte:185`. *Écartées* : recopier la logique ; déplacer
   `readableAmount` (six importateurs).
 - **D3 — Deux messages communs, décimales en paramètre** (C-36-18-3). Sous chaque champ fautif (bordure
-  `border-destructive`, `aria-invalid`) : `common-amount-ambiguous` ou `common-amount-unreadable` (`{ $max }` : **4** pour
+  `border-destructive`, `aria-invalid="true"`, et `aria-describedby` vers l'`id` du message — *validation P1, V1-6* ; le
+  règlement compris, D8) : `common-amount-ambiguous` ou `common-amount-unreadable` (`{ $max }` : **4** pour
   les soldes, le prix et le montant attendu fournisseur ; **2** pour le règlement). Les autres refus de chaque écran restent.
   *Écartées* : réemployer `journal-entry-form-amount-*` (texte faux au centime, entrées `KNOWN_VIOLATIONS`) ; une paire par écran.
 - **D4 — Chaque écran rogne là où il rogne aujourd'hui** (C-36-18-4) : saisie rognée au règlement, au prix et au montant
@@ -132,8 +133,14 @@ Aucun site hors des huit issues : aucune issue neuve.
   devient `journalAmountPayload(…)` (jamais `null` : `canGenerate` exige `isBalanced`, `canSubmitComplement`
   `!complementInvalid`) ; `opening-balances-totals.ts` `amount(raw)` = `journalAmountReader(raw) ?? new Big(0)`. Sous chaque
   ligne fautive, dans les deux grilles, une rangée `<tr><td colspan=…>` avec le message de `lineAmountProblem(row.debit,
-  row.credit)` (`$max` 4), `data-testid="opening-balances-amount-ambiguous"` / `-unreadable`. `defaultAmountReader` reste
-  défaut de `computeBalance`/`classifyLine` ; son doc-comment cesse de nommer les soldes de départ.
+  row.credit)` (`$max` 4), `data-testid="opening-balances-amount-ambiguous"` / `-unreadable`, avec un `id` par ligne que
+  les deux champs de la ligne nomment dans `aria-describedby` (*V1-6*). *Validation P1, V1-9 :* après D5,
+  `defaultAmountReader` n'a plus aucun appelant de production (`git grep -n "computeBalance(\|classifyLine(" -- frontend/src ':!*.test.ts'`
+  à `fed34a9c7` : `JournalEntryForm.svelte:179-180`, qui passent `journalAmountReader`, et `opening-balances/+page.svelte:135`,
+  que D5 convertit) ; il est **retiré**, et le paramètre `read` de `computeBalance` et `classifyLine` devient obligatoire.
+  Les appels de `balance.test.ts` qui comptaient sur le défaut (`:105`, `:116`, `:126`, `:132`, `:140`, `:149`, `:159-187`)
+  passent `journalAmountReader` explicitement (mêmes attentes : aucun de ces montants n'est ambigu) ; les assertions qui ne
+  documentaient que l'ancien défaut (`:282-288`, `:318`) sont retirées, ce que le Dev Agent Record dit.
 - **D6 — Prix unitaire fournisseur (#1159)** : `linesInvalid` juge le prix par `amountEntryPayload(l.unitPrice.trim()) ===
   null` ; `sumTtc` et `lineNotInCentimes` lisent la même charge (`null` → ligne ignorée / `null`) ; `linesForServer` envoie
   la charge ; la quantité garde `isValidAmount` / `decimalForServer`. Sous la ligne : `amountEntryProblem` (`$max` 4),
@@ -143,11 +150,19 @@ Aucun site hors des huit issues : aucune issue neuve.
 - **D7 — Montant attendu (#1172)** : sans QR, une saisie ambiguë ou illisible arrête l'envoi (message commun `$max` 4 dans
   `formError` et sous le champ, `data-testid="supplier-invoice-expected-amount-ambiguous"` / `-unreadable`) ;
   `paymentFields` envoie la charge d'une saisie claire. Rouvert : D2. Le montant d'un scan QR n'est pas touché.
+  *Validation P1, V1-4 :* **contrat de `paymentFields`** — vide → `null` ; claire → la charge ; ambiguë ou illisible →
+  `null` (jamais la saisie brute : une fonction exportée ne doit pas pouvoir envoyer « 1.250 » ; la garde du formulaire
+  a arrêté l'envoi avant). **Ordre des gardes de l'envoi** : date de facture, échéance antérieure (`:371`), **montant
+  attendu** (sans QR), **prix des lignes** (D6), `linesInvalid` (`:372`), centime (`:382`).
 - **D8 — Règlement (#1174)** : `clientError`, après les dates, lit `amount.trim()` : vide → `invoice-error-amount-positive` ;
   `ambiguous` / `unreadable` → message commun (`$max` 2) ; `clear` : ≤ 0 → `invoice-error-amount-positive` ;
   `centimesDigits(payload) > 2` → `invoice-error-amount-scale` ; au-delà du reste dû → `invoice-error-amount-over-due`.
   `onConfirm` reçoit `amount: payload`. Les trois tests contraires (`:70-89`) sont réécrits : « 10.000 » et « 10.008 »
-  ambigus, « 1e-3 » illisible, l'échelle prouvée sur « 10.0081 » (C-36-18-5).
+  ambigus, « 1e-3 » illisible, l'échelle prouvée sur « 10.0081 » (C-36-18-5). *Validation P1, V1-1 :* les décimales se
+  comptent toujours sur la forme **canonique** de big.js (`centimesDigits`, `:67-76`, #476), appliquée à la charge —
+  « 10.0100 » et « 1250.0000 » restent acceptés et partent tels quels ; les deux tests réécrits ne gardant plus cet
+  invariant, deux tests neufs le gardent (AC5) et M16 le vise. *V1-6 :* le champ `settle-amount` (`:294`) reçoit la
+  bordure, `aria-invalid` et `aria-describedby` vers le bandeau (`id` posé à `:304-307`) quand l'erreur porte sur le montant.
 - **D9 — Textes** (quatre locales, jamais en fin de fichier ; fallbacks = texte fr-CH à l'identique) :
   - à la suite de `common-account-no-match` (fr-CH `:2657`, de-CH `:2529`, it-CH `:2527`, en-CH `:2534`) :
     - `common-amount-ambiguous` — fr-CH « Montant ambigu : un point ou une virgule suivis de trois chiffres peuvent
@@ -180,11 +195,15 @@ Aucun site hors des huit issues : aucune issue neuve.
    « 1.2340 » → `1.2340` ; `null` pour « 1.250 », « 12,500 », « 001.250 », « 12'50 », « -5 », « 1e3 », « .5 », « » ;
    `amountEntryProblem` — `ambiguous`, `unreadable`, `null` sur les mêmes cas ; `readableUnambiguousAmount(…, 2)` —
    « 1.2340 » → `1.2340`, « 12.3450 » → `12.3450`, « 1.2500 » → `1.25`, « 1250.0000 » → `1250.00`, « 33.3333 » →
-   `33.3333`, et chaque sortie non ambiguë. `unit-price.test.ts` et `balance.test.ts` d'avant la story verts **sans modification**.
-2. **AC2 — Soldes de départ** (`opening-balances-page.test.ts`, `opening-balances-totals.test.ts`) : « 1.250 » au débit →
-   message ambigu sous la ligne, *Générer* désactivé, aucun appel ; « 1'250 » au débit et au crédit du report → *Générer*
-   envoie `debit: '1250'` ; même chose en mode *Compléter* ; « 12'50 » → message illisible ; totaux : `1250` pour « 1'250 »,
-   `0` pour « 1.250 ».
+   `33.3333`, et chaque sortie non ambiguë. `unit-price.test.ts` vert **sans modification** ; `balance.test.ts` modifié
+   pour le seul retrait de `defaultAmountReader` (D5, V1-9), ses autres attentes inchangées.
+2. **AC2 — Soldes de départ** (`opening-balances-page.test.ts`, `opening-balances-totals.test.ts`) : *fixture équilibrée
+   sous l'ancienne lecture (V1-3)* — « 1.250 » au débit d'un compte d'actif et « 1.25 » au crédit du report : avant la
+   story, *Générer* est actif et envoie `debit: '1.250'` (le rouge) ; après, message ambigu sous la ligne, *Générer*
+   désactivé, aucun appel. Mode *Compléter* : « 1.250 » au débit d'un actif (contrepartie calculée) — avant,
+   `completeOpeningBalances` reçoit `1.250` ; après, aucun appel. « 1'250 » au débit et au crédit du report → *Générer*
+   envoie `debit: '1250'` ; « 12'50 » → message illisible ; totaux : `1250` pour « 1'250 », `0` pour « 1.250 » ; le
+   message a un `id` que les deux champs de la ligne nomment dans `aria-describedby`.
 3. **AC3 — Prix unitaire fournisseur** (`supplier-invoice-form.test.ts`, `SupplierInvoiceForm.test.ts`) : « 1.250 » →
    message sous la ligne, total vivant sans la ligne, *Enregistrer* → « Ligne 1 : prix unitaire ambigu », `onSubmit` non
    appelé ; « 12'34 » → « … illisible » ; « 1'250 » (quantité 2) → `unitPrice: '1250'`, `quantity: '2'` ; la quantité
@@ -192,33 +211,54 @@ Aucun site hors des huit issues : aucune issue neuve.
    cas `supplier-invoice-form.test.ts:48` (`['1.5', '3.333', '4.9995']`) passe à `'3.3330'`, ce que le Dev Agent Record dit.
 4. **AC4 — Montant attendu** : « 1.250 » sans QR → message sous le champ et dans `formError`, `onSubmit` non appelé ;
    « 1'250 » → `expectedPaymentAmount: '1250'` ; vide → `null` ; rouvert `1.2340` → `1.2340` sans message ; scan QR
-   `1250.00` → aucun message.
+   `1250.00` → aucun message. Test unitaire de `paymentFields` (V1-4) : « 1.250 » et « 12'34 » →
+   `expectedPaymentAmount: null`, « 1'250 » → `'1250'`. Ordre des gardes : échéance antérieure **et** montant attendu
+   ambigu → le message de l'échéance ; montant attendu ambigu **et** ligne au prix ambigu → celui du montant attendu.
 5. **AC5 — Règlement** (`SettleInvoiceDialog.test.ts`) : « 1.250 » → message ambigu, *Confirmer* sans effet ; « 1'250 »
    (reste dû 2000) → `amount: '1250'` ; « 1,25 » → `'1.25'` ; « 12'34 » → illisible, « 2 décimales au plus » ;
    « 10.0081 » → `invoice-error-amount-scale` ; « 0 » → `invoice-error-amount-positive` ; le pré-rempli (`10.01` pour
-   `10.0050`) sans message ; les trois tests contraires réécrits (D8).
+   `10.0050`) sans message ; les trois tests contraires réécrits (D8). *V1-1, règle #476 gardée* : « 10.0100 » (reste dû
+   `10.0100`) → aucun message, `amount: '10.0100'` ; « 1250.0000 » (reste dû 2000) → aucun message, `amount: '1250.0000'`.
+   *V1-6* : sur « 1.250 », le champ porte `aria-invalid="true"` et `aria-describedby` vers le bandeau.
 6. **AC6 — Rien de juste n'est refusé** : pour chacun des quatre sites, un test par forme — « 1.25 », « 1250 », « 1'250.50 »,
-   « 1’250 », « 1,25 », « 0.50 » — sans message, envoyée normalisée ; les formes rouvertes de D2 sans message. Seules
-   deviennent refusées la forme de la règle et ce que la grammaire du journal ne lit pas (`1e3`, `.5`, `5.`, signe, blanc
-   intérieur), dit à la note de version.
+   « 1’250 », « 1,25 », « 0.50 » — sans message, envoyée normalisée ; *V1-5* : une saisie bordée de blancs («  1250  »)
+   au règlement, au prix et au montant attendu fournisseur → sans message, envoyée `1250` (les soldes de départ, qui ne
+   rognent pas, la refusent comme aujourd'hui, D4) ; les formes rouvertes de D2 sans message. Seules deviennent refusées la
+   forme de la règle et ce que la grammaire du journal ne lit pas — `1e3`, `.5`, `5.`, signe, blanc intérieur, **plus de
+   quatre décimales, même nulles** (« 10.01000 », accepté au règlement avant la story : un test constate le refus
+   illisible) —, dit à la note de version.
 7. **AC7 — E2E** (fichier neuf `frontend/tests/e2e/montants-ambigus.spec.ts`, un `test` par écran : soldes de départ, facture
-   fournisseur prix et montant attendu, règlement ; fixtures synthétiques créées par l'API) : « 1.250 » → message visible et
-   **zéro** requête d'écriture (écouteur `page.on('request')` armé avant le clic) ; « 1'250 » → le corps de la requête
-   (`page.waitForRequest`) porte `1250`, réponse 2xx, relecture par `authedApiContext` à 1250.
+   fournisseur prix et montant attendu, règlement ; fixtures synthétiques créées par l'API ; société vierge par
+   `seedTestState('with-company')` pour les soldes, comme `opening-balances.spec.ts:74-80`) : « 1.250 » → message visible ;
+   *V1-7* : l'écouteur `page.on('request')`, armé avant le clic, compte les seules requêtes d'écriture de l'écran, par
+   **méthode et route** — `POST /api/v1/opening-balances` et `POST /api/v1/opening-balances/complete`
+   (`opening-balances.api.ts:27`, `:38`), `POST /api/v1/supplier-invoices` et `PUT /api/v1/supplier-invoices/{id}`
+   (`supplier-invoices.api.ts:57`, `:69`), `POST /api/v1/invoices/{id}/settlements` (`invoices.api.ts:150`) — et en
+   attend **zéro** ; le compteur n'est qu'un indice, la preuve est la relecture par `authedApiContext` de l'état d'avant
+   (aucune écriture d'ouverture, aucune facture fournisseur neuve, reste dû inchangé). Puis « 1'250 » → le corps
+   (`page.waitForRequest`, même filtre) porte `1250`, réponse 2xx, relecture comparée **en valeur**
+   (`new Big(lu).eq(1250)`, le serveur rendant `1250.0000`), jamais en chaîne.
 8. **AC8 — Textes** : quatre clés × quatre locales (D9) ; `npm run lint-i18n-ownership` vert sans entrée neuve ;
    `sitesTotal` de `frontend/src/lib/shared/i18n-keys.test.ts` (`:1020`, 3050 à `fed34a9c7`) **recompté à la source**, sans
    addition (C-e350-18).
 9. **AC9 — Manuel** (`docs/manual/fr/user-manual.tex` ; PDF à l'intégration) : une phrase par écran, qui renvoie à la règle
-   de *Saisie d'une écriture en partie double* (`:559`), exemple `1.250`, forme `1'250`, limite de décimales du champ — § *Reprise
-   de comptabilité*, après l'item *Saisissez les soldes* (`:1004`) ; § *Les montants* de la facture fournisseur
-   (`:1780-1784`) ; § *Enregistrer* du règlement (`:1443-1445`). Contrôle :
-   `pdftotext docs/manual/fr/user-manual.pdf - | tr '\n' ' ' | tr -s ' ' | /usr/bin/grep -c 'refusé comme ambigu'`
-   supérieur de trois au moins à sa valeur à `fed34a9c7`, relevée à l'étape 0.
+   de *Saisie d'une écriture en partie double* (`:559`), porte la chaîne exacte `refusé comme ambigu`, l'exemple `1.250`,
+   la forme `1'250` et la limite de décimales du champ — § *Reprise de comptabilité*, après l'item *Saisissez les soldes*
+   (`:1004`) ; § *Les montants* de la facture fournisseur (`:1780-1784`), dont la phrase « Kesh les lit tels quels et les
+   enregistre au point » (`:1781`), devenue fausse pour le prix et le montant attendu, est **corrigée** (*V1-8*) ;
+   § *Enregistrer* du règlement (`:1443-1445`), avec l'exemple « \texttt{10.000} est refusé comme ambigu : écrivez
+   \texttt{10.00} ou \texttt{10'000} » (*V1-8*). *V1-2* — **contrôle de clôture de la story, sur le `.tex`** :
+   `/usr/bin/grep -n 'refusé comme ambigu' docs/manual/fr/user-manual.tex` rend une ligne dans chacune des trois sections
+   citées (en plus de `:1158`, la 36-3b), et `/usr/bin/grep -n 'tels quels' docs/manual/fr/user-manual.tex` ne rend plus
+   la ligne du § *Les montants*. **Contrôle d'intégration seulement** (PDF régénéré après l'union des branches) :
+   `pdftotext docs/manual/fr/user-manual.pdf - | tr '\n' ' ' | tr -s ' ' | /usr/bin/grep -o 'refusé comme ambigu' | wc -l`,
+   comparé à sa valeur à l'étape 0 (**1** à `fed34a9c7`, relevé par la validation P1) — `grep -c` sur un flux aplati ne rend
+   que 0 ou 1.
 10. **AC10 — Rien d'autre ne change** : `git diff <base> --stat` ne nomme ni `crates/` hors `kesh-i18n/locales/`, ni
     `amount-ambiguity.ts`, `JournalEntryForm.svelte`, `VatPurchaseAssistant.svelte`, `TransactionSplitModal.svelte`,
     `InvoiceForm.svelte`, `bank-accounts/`, ni les fichiers de la 36-18b ; `amount-ambiguity.test.ts`, `unit-price.test.ts`,
     `InvoiceForm.test.ts`, `format.test.ts` verts sans modification ; `balance.ts` n'ajoute que les deux aides et des
-    doc-comments.
+    doc-comments, et ne retire que `defaultAmountReader` (D5) ; `readJournalAmount` inchangé.
 11. **AC11 — Captures** (thème clair, base jetable `kesh_e2e_e3618a`, `kesh-gate-logs/e36-18a/captures/`) : chaque écran à
     « 1.250 », à « 12'34 », et la valeur « 1'250 » enregistrée ; un brouillon fournisseur rouvert au prix `1.2340`.
 
@@ -257,6 +297,9 @@ se posent d'abord avec la lecture d'aujourd'hui (`amountEntryPayload` → le bru
 | M13 | règlement : `clientError` reprend `Number(amount)` | AC5, AC6 |
 | M14 | règlement : `onConfirm` reçoit `amount.trim()` | AC5, AC6 |
 | M15 | règlement : `$max` 4 au lieu de 2 | AC5 |
+| M16 | règlement : `centimesDigits` compte sur la chaîne de la charge, non sur la forme canonique (V1-1) | AC5 (« 10.0100 », « 1250.0000 ») |
+| M17 | règlement : la lecture sans `trim()` (V1-5) | AC6 (« 1250 » bordé de blancs) |
+| M18 | `paymentFields` rend la saisie brute pour une saisie non claire (V1-4) | AC4 (test de `paymentFields`) |
 
 Une mutation équivalente se dit au Dev Agent Record.
 
@@ -268,7 +311,8 @@ Une mutation équivalente se dit au Dev Agent Record.
 - [ ] Tests d'abord (AC1 à AC6), rouges consignés ; `balance.ts` et `unit-price.ts` (D1) ; `supplier-invoice-form.ts`
       (D2, D6, D7) ; `opening-balances-totals.ts` et la page (D5) ; `SupplierInvoiceForm.svelte` (D6, D7) ;
       `SettleInvoiceDialog.svelte` (D8) ; quatre `messages.ftl` (D9) ; `i18n-keys.test.ts` recompté (AC8).
-- [ ] E2E (AC7), rouge d'abord ; manuel (AC9), `.tex` seul ; captures (AC11) ; mutations M1 à M15.
+- [ ] E2E (AC7), rouge d'abord ; manuel (AC9), `.tex` seul, son contrôle `.tex` à la clôture ; captures (AC11) ;
+      mutations M1 à M18.
 - [ ] Gates (voie 2, `e35-dev-commun.md` § *Quels gates, quand*) : en cours, Vitest ciblé par `.gate-front.lock`,
       `npm run check`, `lint-i18n-ownership` ; **passage en `review`** : bases `kesh_e3618a` remises à neuf (voie 2),
       `scripts/test-fast.sh --ci`, `scripts/gate-ci.sh kesh_ci_e3618a` (voie 1, son verrou), frontend complet, pas d'E2E ;
@@ -286,10 +330,12 @@ Une mutation équivalente se dit au Dev Agent Record.
   lisent désormais un montant comme une écriture : un montant comme « 1.250 » — un point ou une virgule suivis de trois
   chiffres, sans séparateur de milliers avant — n'est plus lu 1,25 franc en silence ; il est refusé comme ambigu, rien ne
   s'enregistre, et le message dit comment l'écrire (`1'250` ou `1.25`). L'apostrophe des milliers et la virgule décimale
-  sont acceptées (`1'250`, `1,25`) ; la saisie à exposant (`1e3`) ou sans chiffre avant ou après le point (`.5`, `5.`)
-  n'est plus lue. Un règlement de « 10.000 » est refusé comme ambigu : écrivez `10.00` ou `10'000`. Un prix ou un montant
-  attendu enregistré au millième se rouvre sur quatre décimales (`1.2340`) et n'est pas refusé. (refs #1050, refs #1159,
-  refs #1172, refs #1174)
+  sont acceptées (`1'250`, `1,25`) ; la saisie à exposant (`1e3`), sans chiffre avant ou après le point (`.5`, `5.`) ou
+  à plus de quatre décimales, même nulles (`10.01000`), n'est plus lue. Un règlement de « 10.000 » est refusé comme ambigu :
+  écrivez `10.00` ou `10'000`. Un prix ou un montant attendu enregistré au millième se rouvre sur quatre décimales
+  (`1.2340`) et n'est pas refusé. **Avant la 0.18.0**, un montant tapé avec trois chiffres après le point ou la virgule
+  (« 1.250 ») a été lu sans avertissement comme un franc vingt-cinq : relisez vos soldes de départ, les prix et montants
+  attendus de vos factures fournisseur et vos règlements saisis ainsi. (refs #1050, refs #1159, refs #1172, refs #1174)
 
 ## Dev Notes
 
@@ -305,7 +351,9 @@ Une mutation équivalente se dit au Dev Agent Record.
 (1) `features/journal-entries` (`balance.ts`) ; (2) `features/invoices` (`unit-price.ts`, `SettleInvoiceDialog.svelte`) ;
 (3) `features/supplier-invoices` ; (4) soldes de départ (`features/opening-balances`, `routes/(app)/settings/opening-balances`) ;
 (5) `crates/kesh-i18n/locales`. S'y ajoutent le manuel et les tests transverses (`montants-ambigus.spec.ts`,
-`i18n-keys.test.ts`). **Cinq : la règle ne s'applique pas.**
+`i18n-keys.test.ts`). **Cinq : la règle ne s'applique pas — de justesse** (*V1-9*) : le compte range
+`features/opening-balances` et `routes/(app)/settings/opening-balances` en un seul module métier, et ne compte ni
+`shared/` (un test), ni `docs/manual`, ni `tests/e2e` ; compté par dossier de premier niveau, il en fait sept.
 
 ### Fichiers communs avec les autres stories de la phase 2
 
@@ -347,3 +395,15 @@ Le défaut se voit dans le navigateur et à la frontière HTTP (chaque montant p
 - 2026-11-15 — Fiche créée (Opus 5.5) par découpage de la 36-18 (C-36-18-10), à `fed34a9c7` : quatre sites, décisions D1
   à D10 (D1 à D4 et D9 communes aux deux lots), AC1 à AC11, mutations M1 à M15 ; cinq modules ; aucune migration.
   Validation non lancée.
+- 2026-11-15 — **Validation P1** (`kesh-gate-logs/e36-18/validation-36-18a-p1.md`) : 0 CRITICAL, 0 HIGH, 2 MEDIUM, 8 LOW ;
+  les dix remédiés, aucun réfuté. Prémisses relues au code : `SettleInvoiceDialog.svelte:69`
+  `const canon = new Big(raw.trim()).toFixed();` (V1-1) ; `/usr/bin/grep -c "refusé comme ambigu" docs/manual/fr/user-manual.tex`
+  → `1` (V1-2) ; `invoices.api.ts:150` `` apiClient.post(`/api/v1/invoices/${id}/settlements`, req) ``,
+  `opening-balances.api.ts:27`, `:38`, `supplier-invoices.api.ts:57`, `:69` (V1-7) ; `git grep -n "defaultAmountReader\|computeBalance(\|classifyLine("`
+  hors `balance.ts` : `JournalEntryForm.svelte:179-180`, `opening-balances/+page.svelte:135` et `balance.test.ts` seuls
+  (V1-9). Remèdes : V1-1 AC5 garde #476, M16 ; V1-2 contrôle `.tex` à la clôture, PDF à l'intégration par `grep -o | wc -l` ;
+  V1-3 fixture d'AC2 équilibrée sous l'ancienne lecture ; V1-4 contrat de `paymentFields` (`null`) et ordre des gardes,
+  M18 ; V1-5 blancs et cinq décimales, M17 ; V1-6 `aria-invalid` et `aria-describedby`, règlement compris ; V1-7 requêtes
+  comptées par méthode et route, relecture en valeur ; V1-8 `:1781` corrigée, « 10.000 » au manuel ; V1-9
+  `defaultAmountReader` retiré (mort en production), décompte nuancé ; V1-10 note de version : relire les montants à
+  trois décimales saisis avant la 0.18.0. Propagé à la 36-18b. Passe 2 à lancer.
