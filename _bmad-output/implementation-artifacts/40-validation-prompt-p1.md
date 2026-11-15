@@ -16,7 +16,7 @@ d'abord :
 ## Ce que tu cherches
 
 1. **Prémisse fausse au code** : vérifie chaque `fichier:ligne` cité ; un écart est un finding.
-2. **Contradiction** avec B*, O*, E*, C-38-* ou une fiche sœur (noms de tables, colonnes, codes d'erreur, routes,
+2. **Contradiction** avec B*, G*, P40-1, C-40-*, les fiches 38-* ou une fiche sœur 40-* (noms de tables, colonnes, codes d'erreur, routes,
    fonctions, qui fait quoi, ordre des stories). 
 3. **Sites non résolus** (inventaire, ne suppose pas) : migration (P1–P8 : breaking ou non, `min_required`, P2-bis,
    P5 ligne d'audit d'idempotence et compteurs, P6 tests positionnels, P7 triage), sauvegarde/restauration
