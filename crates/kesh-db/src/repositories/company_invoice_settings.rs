@@ -397,8 +397,10 @@ pub async fn update(
     // ligne existante un verrou PARTAGÉ, et le `FOR UPDATE` est une promotion
     // S → X. Deux écrivains qui font tous deux `INSERT IGNORE` puis `FOR UPDATE`
     // — deux PUT, ou un PUT et `get_or_create_default_in_tx` (validation de
-    // facture, avoir, facture fournisseur) — peuvent s'interbloquer (1213).
-    // Préexistant (l'`UPDATE` promouvait déjà), non aggravé ; la route rejoue
+    // facture, avoir, facture fournisseur), ou, depuis la Story 36-19, un PUT et
+    // la finalisation de l'assistant (`complete_default_accounts_in_tx`) —
+    // peuvent s'interbloquer (1213). Préexistant pour les premiers (l'`UPDATE`
+    // promouvait déjà), neuf pour la finalisation, borné : la route rejoue
     // l'interblocage (`retry_on_deadlock`, Story 15-5e1), et la `version` est
     // rejugée à chaque tentative.
     if is_no_op_change(&before, &changes) {
@@ -1200,14 +1202,23 @@ pub async fn insert_with_defaults(
 /// [`complete_default_accounts_in_tx`] (Story 36-19, #1200, D5), que la
 /// démonstration (`kesh-seed`) et les jeux de pièges appellent.
 ///
-/// Rend `(réglages, inséré)` (Story 15-7a1) : le booléen vaut `true` si la ligne
-/// a été créée par cet appel, `false` si elle existait déjà — complétée ou non
-/// (Story 36-19 : une ligne vierge, créée avant par `get_or_create_default`, est
-/// désormais complétée au lieu d'être refusée). Le refus détaillé
-/// [`DbError::DefaultInvoiceAccountsUnavailable`] est **ramené** à
-/// [`DbError::InactiveOrInvalidAccounts`] : le contrat de la démonstration, de
-/// sa boucle de rejeu et des tests d'avant la Story 36-19 ne change pas.
-/// **Ne commite ni n'annule jamais** : sur erreur, l'appelant annule.
+/// Rend `(réglages, posés)` (Story 15-7a1 ; Story 36-19, revue P1 B1/E5) : le
+/// booléen vaut `true` si **cet appel a posé les comptes d'une ligne qui n'en
+/// avait aucun** — la ligne créée par cet appel, **ou** une ligne **vierge**
+/// ([`is_blank`] : créée avant par `get_or_create_default`, le `GET` des
+/// réglages) qu'il vient de compléter — ; `false` si la ligne portait déjà des
+/// réglages (complétée ou non). C'est sur ce booléen que la démonstration et les
+/// jeux de pièges désignent les trois comptes de TVA
+/// (`designate_vat_accounts_in_tx`, `COALESCE`, dans la même transaction) : une
+/// démonstration précédée d'un `GET` reçoit donc ses comptes de TVA comme sur
+/// une base neuve. Avant la Story 36-19, une telle ligne vierge faisait refuser
+/// la démonstration (`InactiveOrInvalidAccounts`) ; désormais elle aboutit, la
+/// ligne en `version` 2 (complément d'une ligne existante).
+///
+/// Le refus détaillé [`DbError::DefaultInvoiceAccountsUnavailable`] est
+/// **ramené** à [`DbError::InactiveOrInvalidAccounts`] (boucle de rejeu de la
+/// démonstration et tests d'avant la Story 36-19). **Ne commite ni n'annule
+/// jamais** : sur erreur, l'appelant annule.
 ///
 /// F2/F3/F4 CRITICAL: Caller must hold SELECT FOR UPDATE lock on onboarding_state
 /// and company to prevent deletion races. This function's SELECT FOR UPDATE on accounts
@@ -1218,8 +1229,8 @@ pub async fn insert_with_defaults_in_tx(
 ) -> Result<(CompanyInvoiceSettings, bool), DbError> {
     match complete_default_accounts_in_tx(tx, company_id).await {
         Ok(outcome) => {
-            let inserted = outcome.inserted();
-            Ok((outcome.into_settings(), inserted))
+            let posed = outcome.posed_on_empty_row();
+            Ok((outcome.into_settings(), posed))
         }
         Err(DbError::DefaultInvoiceAccountsUnavailable(_)) => {
             Err(DbError::InactiveOrInvalidAccounts)
@@ -1258,6 +1269,17 @@ impl DefaultAccountsOutcome {
     /// `true` si la ligne a été créée par cet appel.
     pub fn inserted(&self) -> bool {
         matches!(self, Self::Inserted(_))
+    }
+
+    /// `true` si cet appel a posé les comptes d'une ligne qui n'en avait aucun :
+    /// ligne créée, ou ligne **vierge** complétée (revue P1, B1/E5) — ce que
+    /// l'enveloppe [`insert_with_defaults_in_tx`] rend à la démonstration.
+    pub fn posed_on_empty_row(&self) -> bool {
+        match self {
+            Self::Inserted(_) => true,
+            Self::Completed { before, .. } => is_blank(before),
+            Self::Unchanged(_) => false,
+        }
     }
 
     /// Les réglages tels qu'ils sont après l'appel, par valeur.
@@ -1343,9 +1365,14 @@ async fn role_candidate_rejection(
 ///
 /// - Réglage **désigné** : gardé (D3 : le rôle n'est pas cherché), pourvu que le
 ///   compte soit encore de la société et actif — relu `LOCK IN SHARE MODE`
-///   après la ligne des réglages (C-36-19-10) ; sinon cause « archivé ». Il n'est
-///   pas recontrôlé autrement (le `PUT` l'a contrôlé ; la garde à l'usage reste
-///   le filet).
+///   après la ligne des réglages (C-36-19-10) ; sinon cause « archivé », ou
+///   « pas un compte de la société » s'il n'est pas de la société. Il n'est pas
+///   recontrôlé autrement (le `PUT` l'a contrôlé ; la garde à l'usage reste le
+///   filet). ⛔ La lecture est **verrouillante** : dans la route, le cliché
+///   `REPEATABLE READ` de la transaction est pris avant (par la lecture simple
+///   de `companies.org_type`, `chart_designated_accounts`), et un archivage
+///   validé entre ce cliché et cette lecture serait invisible à une lecture
+///   simple (revue P1, E2 ; test T-D4a, mutation M15).
 /// - Réglage **vide** : le compte de rôle, s'il existe et n'est pas écarté par
 ///   [`role_candidate_rejection`] ; sinon la cause.
 async fn mandatory_account(
@@ -1370,11 +1397,9 @@ async fn mandatory_account(
             match row {
                 Some((_, true)) => return Ok(None),
                 Some((number, false)) => DefaultInvoiceAccountCause::DesignatedArchived {
-                    account_number: Some(number),
+                    account_number: number,
                 },
-                None => DefaultInvoiceAccountCause::DesignatedArchived {
-                    account_number: None,
-                },
+                None => DefaultInvoiceAccountCause::DesignatedOutsideCompany,
             }
         }
         (None, None) => DefaultInvoiceAccountCause::NoRoleAccount,
@@ -1435,12 +1460,22 @@ async fn mandatory_account(
 ///    neuve n'a été lue par personne : elle garde `version` 1). Sinon aucune
 ///    écriture : rejouée ou appelée deux fois, la fonction rend « inchangé ».
 ///
-/// ⚠️ **Interblocage neuf, borné** : avec le `FOR UPDATE` de la ligne existante,
-/// la finalisation tient les comptes de rôle en exclusif et attend la ligne des
-/// réglages en exclusif, quand le `PATCH` de liaison d'un compte bancaire (ou la
-/// validation d'une facture) tient la ligne et attend un compte. Le cycle est
-/// rejoué des deux côtés (`retry_app_on_deadlock`) et une tentative annulée
-/// n'écrit rien.
+/// ⚠️ **Interblocages neufs, bornés** (revue P1, E1/B4), tous deux sur une ligne
+/// **existante** — l'ancien code ne la relisait qu'en lecture simple :
+/// - **comptes ↔ réglages** : la finalisation tient les comptes de rôle en
+///   exclusif et attend la ligne des réglages en exclusif, quand le `PATCH` de
+///   liaison d'un compte bancaire (ou la validation d'une facture) tient la
+///   ligne et attend un compte ;
+/// - **promotion S → X** : l'`INSERT IGNORE` (étape 2) pose sur la ligne
+///   existante un verrou **partagé**, que le `FOR UPDATE` (étape 3) promeut en
+///   exclusif — le motif que décrit [`update`] : face à un `PUT` des réglages ou
+///   à `get_or_create_default_in_tx` (validation d'une facture, avoir, facture
+///   fournisseur), qui font de même, deux promotions s'interbloquent (1213).
+///
+/// Chaque cycle est rejoué des deux côtés — la finalisation et le `PATCH` par
+/// `kesh_api::retry::retry_app_on_deadlock`, le `PUT` des réglages, la
+/// validation d'une facture, l'avoir et la facture fournisseur par
+/// `kesh_db::retry::retry_on_deadlock` —, et une tentative annulée n'écrit rien.
 ///
 /// L'audit est écrit par l'appelant, selon l'issue ([`DefaultAccountsOutcome`]).
 /// **Ne commite ni n'annule jamais.**
@@ -1757,7 +1792,10 @@ async fn lock_usable_role_account(
 /// pris après la ligne de réglages (ordre `accounts → company_invoice_settings`).
 ///
 /// N'incrémente pas `version` : l'appelant (`seed_demo`) ne l'emploie que sur une
-/// ligne que la même transaction vient de créer, que personne n'a donc pu lire.
+/// ligne que la même transaction vient de créer, que personne n'a donc pu lire —
+/// ou, depuis la Story 36-19 (revue P1, B1/E5), sur une ligne **vierge** que la
+/// même transaction vient de compléter et tient en `FOR UPDATE` : sa `version` a
+/// déjà été incrémentée par le complément, et personne ne l'a lue depuis.
 /// Ne commite ni n'annule.
 pub async fn designate_vat_accounts_in_tx(
     tx: &mut sqlx::Transaction<'_, sqlx::MySql>,

@@ -2087,7 +2087,9 @@ async fn finalize_completes_a_blank_row_like_a_fresh_one(pool: MySqlPool) {
     let (completed, inserted) = finalize_settings(&pool, blank)
         .await
         .expect("une ligne vierge se complète");
-    assert!(!inserted, "la ligne existait");
+    // Revue P1, B1/E5 : l'enveloppe rend « posés » pour une ligne vierge
+    // complétée — c'est ce qui fait désigner la TVA à la démonstration.
+    assert!(inserted, "ligne vierge complétée : comptes posés");
 
     let fresh = company_with_pme_chart(&pool, "Neuve SA").await;
     let (neuve, inserted_fresh) = finalize_settings(&pool, fresh).await.unwrap();
@@ -2403,7 +2405,7 @@ async fn finalize_refusal_names_the_setting_and_its_cause(pool: MySqlPool) {
             unavailable(&[(
                 Revenue,
                 Cause::DesignatedArchived {
-                    account_number: Some("3000".into())
+                    account_number: "3000".into()
                 }
             )]),
             "(b)"
@@ -2482,6 +2484,133 @@ async fn finalize_refusal_names_the_setting_and_its_cause(pool: MySqlPool) {
         avant,
         "(e) rien d'écrit"
     );
+    // Revue P1, A7 : l'enveloppe, pour (e) aussi.
+    assert!(matches!(
+        finalize_settings(&pool, c).await,
+        Err(DbError::InactiveOrInvalidAccounts)
+    ));
+
+    // (h) deux causes **différentes** (revue P1, E6) : débiteurs désigné archivé,
+    // produit vide sans rôle — les deux examinés, débiteurs d'abord.
+    let c = company_with_pme_chart(&pool, "Deux causes").await;
+    let user_id = create_admin_user(&pool, c).await;
+    let pre = company_invoice_settings::get_or_create_default(&pool, c)
+        .await
+        .unwrap();
+    let chosen = account_id_by_number(&pool, c, "1020").await;
+    company_invoice_settings::update(
+        &pool,
+        c,
+        pre.version,
+        user_id,
+        update_with_receivable(&pre, Some(chosen)),
+    )
+    .await
+    .unwrap();
+    sqlx::query("UPDATE accounts SET active = FALSE WHERE company_id = ? AND number = '1020'")
+        .bind(c)
+        .execute(&pool)
+        .await
+        .unwrap();
+    sqlx::query("UPDATE accounts SET role = NULL WHERE company_id = ? AND number = '3000'")
+        .bind(c)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let avant = settings_row_state(&pool, c).await;
+    match complete_defaults(&pool, c).await {
+        Err(DbError::DefaultInvoiceAccountsUnavailable(v)) => assert_eq!(
+            v,
+            unavailable(&[
+                (
+                    Receivable,
+                    Cause::DesignatedArchived {
+                        account_number: "1020".into()
+                    }
+                ),
+                (Revenue, Cause::NoRoleAccount)
+            ]),
+            "(h)"
+        ),
+        other => panic!("(h) : obtenu {other:?}"),
+    }
+    assert_eq!(
+        settings_row_state(&pool, c).await,
+        avant,
+        "(h) rien d'écrit"
+    );
+
+    // (i) compte désigné d'une **autre** société (revue P1, B6/E3) : la cause ne
+    // dit pas « archivé ».
+    let c = company_with_pme_chart(&pool, "Autre société A").await;
+    let other = company_with_pme_chart(&pool, "Autre société B").await;
+    company_invoice_settings::get_or_create_default(&pool, c)
+        .await
+        .unwrap();
+    let foreign = account_id_by_number(&pool, other, "1100").await;
+    sqlx::query(
+        "UPDATE company_invoice_settings SET default_receivable_account_id = ?, version = 2 \
+         WHERE company_id = ?",
+    )
+    .bind(foreign)
+    .bind(c)
+    .execute(&pool)
+    .await
+    .unwrap();
+    match complete_defaults(&pool, c).await {
+        Err(DbError::DefaultInvoiceAccountsUnavailable(v)) => assert_eq!(
+            v,
+            unavailable(&[(Receivable, Cause::DesignatedOutsideCompany)]),
+            "(i)"
+        ),
+        other => panic!("(i) : obtenu {other:?}"),
+    }
+}
+
+/// T-D4a (revue P1, E2 ; mutation M15) — le compte **déjà désigné** est relu
+/// sous verrou partagé : la transaction ouvre d'abord un cliché (lecture simple
+/// des comptes), le compte de produit désigné est ensuite archivé et validé sur
+/// le pool, et la fonction, appelée dans la même transaction, le voit archivé.
+/// Une lecture simple lirait le cliché, où il était encore actif.
+#[sqlx::test(migrations = "./test-schema")]
+async fn finalize_reads_the_designated_account_under_lock(pool: MySqlPool) {
+    use kesh_db::errors::DbError;
+    use kesh_db::errors::DefaultInvoiceAccountCause as Cause;
+    use kesh_db::errors::DefaultInvoiceSetting::Revenue;
+
+    let c = company_with_pme_chart(&pool, "Cliché désigné SA").await;
+    let (first, _) = finalize_settings(&pool, c).await.unwrap();
+    let revenue = account_id_by_number(&pool, c, "3000").await;
+    assert_eq!(first.default_revenue_account_id, Some(revenue), "montage");
+
+    let mut tx = pool.begin().await.unwrap();
+    let active_in_snapshot: bool = sqlx::query_scalar("SELECT active FROM accounts WHERE id = ?")
+        .bind(revenue)
+        .fetch_one(&mut *tx)
+        .await
+        .unwrap();
+    assert!(active_in_snapshot, "montage : cliché pris, 3000 actif");
+
+    sqlx::query("UPDATE accounts SET active = FALSE WHERE id = ?")
+        .bind(revenue)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    let res = company_invoice_settings::complete_default_accounts_in_tx(&mut tx, c).await;
+    tx.rollback().await.unwrap();
+    match res {
+        Err(DbError::DefaultInvoiceAccountsUnavailable(v)) => assert_eq!(
+            v,
+            unavailable(&[(
+                Revenue,
+                Cause::DesignatedArchived {
+                    account_number: "3000".into()
+                }
+            )])
+        ),
+        other => panic!("obtenu {other:?}"),
+    }
 }
 
 /// T-D4f (AC4 f) — un sous-compte créé sous le compte de rôle **débiteurs**, puis

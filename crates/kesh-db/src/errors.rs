@@ -1800,9 +1800,13 @@ pub enum DefaultInvoiceSetting {
 pub enum DefaultInvoiceAccountCause {
     /// Le réglage est vide et aucun compte actif ne porte le rôle.
     NoRoleAccount,
-    /// Le réglage désigne un compte archivé (ou qui n'est plus celui de la
-    /// société) ; `None` si son numéro n'a pas pu être lu.
-    DesignatedArchived { account_number: Option<String> },
+    /// Le réglage désigne un compte de la société **archivé**.
+    DesignatedArchived { account_number: String },
+    /// Le réglage désigne un compte qui n'est pas de la société (revue P1,
+    /// B6/E3) : la clé étrangère ne porte que sur `accounts.id`. Inatteignable
+    /// par l'API d'une installation mono-société (le `PUT` contrôle la société),
+    /// nommé pour ne pas dire « archivé » d'un compte qui ne l'est pas.
+    DesignatedOutsideCompany,
     /// Le réglage est vide et le compte qui porte le rôle n'est pas imputable
     /// (un sous-compte a été créé sous lui).
     RoleAccountNotPostable { account_number: String },

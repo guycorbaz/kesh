@@ -986,7 +986,7 @@ async fn finalize_refuses_a_receivable_role_account_linked_to_a_bank_account(poo
     assert_eq!(
         body["error"]["message"],
         finalize_refusal(&[
-            "Compte débiteurs : le compte 1100, qui porte le rôle « Créances clients », est le compte du compte bancaire « PostFinance » — déliez ce compte bancaire dans Administration → Comptes bancaires, ou désignez un autre compte débiteurs dans Administration → Facturation."
+            "Compte débiteurs : le compte 1100, qui porte le rôle « Créances clients », est le compte du compte bancaire « PostFinance » — déliez ce compte bancaire dans Administration → Comptes bancaires (s'il est clos, rouvrez-le d'abord), ou désignez un autre compte débiteurs dans Administration → Facturation."
         ])
     );
     assert_eq!(unwritten_state(&pool).await, avant, "rien d'écrit");

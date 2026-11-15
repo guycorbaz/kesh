@@ -877,17 +877,21 @@ pub async fn skip_bank(
 /// If company was deleted before we acquired lock, SELECT returns no row → error.
 ///
 /// F4 HIGH FIX: Pessimistic lock on onboarding_state prevents concurrent finalize() races.
-/// Once locked, only one finalize() can proceed. INSERT IGNORE remains idempotent.
+/// Once locked, only one finalize() can proceed. Les réglages ne s'écrivent que sur
+/// une colonne vide (`COALESCE`), et pas du tout s'il n'y a rien à poser (Story
+/// 36-19) : rejouée, la finalisation n'écrit rien de plus.
 ///
 /// F1 CRITICAL VALIDATION: le compte débiteurs et le compte de produit par défaut
 /// doivent être posés ; sinon refus `400 VALIDATION_ERROR` qui nomme chaque
 /// réglage en défaut, sa cause et son remède (Story 36-19, D5).
 ///
 /// ORDRE DES VERROUS (cf. `docs/MULTI-TENANT-SCOPING-PATTERNS.md`, Pattern 5) :
-/// ce handler prend trois `FOR UPDATE` successifs, dans l'ordre
-/// `onboarding_state → companies → accounts`, puis la ligne des réglages
-/// `FOR UPDATE` et, en partagé, les comptes déjà désignés et les comptes
-/// bancaires (Story 36-19). Cet ordre est une **convention
+/// ce handler verrouille, dans l'ordre, `onboarding_state` (`FOR UPDATE`),
+/// `companies` (`FOR UPDATE`), les comptes candidats (`FOR UPDATE` : les trois
+/// rôles, puis les comptes que le plan marque), la ligne des réglages (`INSERT
+/// IGNORE` puis `FOR UPDATE`), puis, en partagé, les comptes déjà désignés et les
+/// comptes bancaires (Story 36-19 ; le détail est au doc-comment de
+/// `company_invoice_settings::complete_default_accounts_in_tx`). Cet ordre est une **convention
 /// de fréquence** : il réduit les interblocages, il ne les exclut pas — la
 /// défense est le rejeu (Story 15-5e2).
 ///
@@ -990,7 +994,7 @@ async fn finalize_inner(
         return response_with_stub(pool, onboarding).await;
     }
 
-    // F3 CRITICAL FIX: Lock company row before insert_with_defaults()
+    // F3 CRITICAL FIX: Lock company row before complete_default_accounts_in_tx()
     // Prevents concurrent deletion between our check and INSERT INTO company_invoice_settings.
     // R2-001 Fix: Add explicit rollback on error
     // P5: ORDER BY id for deterministic row selection. v0.1 is mono-tenant so the
@@ -1171,29 +1175,33 @@ fn finalize_refusal_phrase(item: &UnavailableDefaultInvoiceAccount) -> String {
              rôle « {role} » — désignez-le dans Administration → Facturation, ou attribuez ce rôle \
              à un compte dans le plan comptable."
         ),
-        DefaultInvoiceAccountCause::DesignatedArchived { account_number } => {
-            let account = match account_number {
-                Some(number) => format!("le compte désigné ({number})"),
-                None => "le compte désigné".to_string(),
-            };
-            format!(
-                "{setting} : {account} est archivé — désignez-en un autre dans Administration → \
-                 Facturation, ou réactivez-le dans le plan comptable."
-            )
-        }
+        DefaultInvoiceAccountCause::DesignatedArchived { account_number } => format!(
+            "{setting} : le compte désigné ({account_number}) est archivé — désignez-en un autre \
+             dans Administration → Facturation, ou réactivez-le dans le plan comptable."
+        ),
+        // Revue P1, B6/E3 : un compte qui n'est pas de la société n'est pas dit
+        // « archivé » (le remède « réactivez-le » serait impossible).
+        DefaultInvoiceAccountCause::DesignatedOutsideCompany => format!(
+            "{setting} : le compte désigné n'est pas un compte de cette société — désignez-en un \
+             autre dans Administration → Facturation."
+        ),
         DefaultInvoiceAccountCause::RoleAccountNotPostable { account_number } => format!(
             "{setting} : le compte {account_number}, qui porte le rôle « {role} », n'est pas \
              imputable — désignez un compte imputable dans Administration → Facturation, ou, dans \
              le plan comptable, retirez d'abord ce rôle au compte {account_number}, puis \
              attribuez-le à l'un de ses sous-comptes."
         ),
+        // Revue P1, E4 : la garde retient aussi les comptes bancaires clos
+        // (`first_active_bank_account_linked_to`, Story 28-4a), dont le lien ne
+        // se change pas (`409 BANK_ACCOUNT_CLOSED`) tant qu'ils ne sont pas rouverts.
         DefaultInvoiceAccountCause::RoleAccountLinkedToBankAccount {
             account_number,
             bank_label,
         } => format!(
             "{setting} : le compte {account_number}, qui porte le rôle « {role} », est le compte \
              du compte bancaire « {bank_label} » — déliez ce compte bancaire dans Administration → \
-             Comptes bancaires, ou désignez un autre {} dans Administration → Facturation.",
+             Comptes bancaires (s'il est clos, rouvrez-le d'abord), ou désignez un autre {} dans \
+             Administration → Facturation.",
             setting.to_lowercase()
         ),
     }
@@ -1596,6 +1604,97 @@ async fn update_company_coordinates_in_tx(
 #[cfg(test)]
 mod tests {
     use super::BankAccountRequest;
+
+    /// Story 36-19 (revue P1, B5/E6 ; mutation M16) — le motif du refus de la
+    /// finalisation, **mot pour mot**, pour chacune des cinq causes et pour un
+    /// refus à deux causes **différentes** (débiteurs désigné archivé, produit
+    /// vide sans rôle), débiteurs d'abord. Les continuations `\` de Rust sont
+    /// ainsi vérifiées à l'exécution, et non seulement à l'œil.
+    #[test]
+    fn finalize_refusal_message_names_each_cause_word_for_word() {
+        use super::finalize_refusal_message;
+        use kesh_db::errors::DefaultInvoiceAccountCause as Cause;
+        use kesh_db::errors::DefaultInvoiceSetting::{Receivable, Revenue};
+        use kesh_db::errors::UnavailableDefaultInvoiceAccount as Item;
+
+        let message = |items: Vec<(kesh_db::errors::DefaultInvoiceSetting, Cause)>| {
+            finalize_refusal_message(
+                &items
+                    .into_iter()
+                    .map(|(setting, cause)| Item { setting, cause })
+                    .collect::<Vec<_>>(),
+            )
+        };
+        let entoure =
+            |p: &str| format!("La configuration ne peut pas se terminer. {p} Réessayez ensuite.");
+
+        assert_eq!(
+            message(vec![(
+                Revenue,
+                Cause::DesignatedArchived {
+                    account_number: "3000".into()
+                }
+            )]),
+            entoure(
+                "Compte de produit par défaut : le compte désigné (3000) est archivé — désignez-en un autre dans Administration → Facturation, ou réactivez-le dans le plan comptable."
+            )
+        );
+        assert_eq!(
+            message(vec![(Receivable, Cause::DesignatedOutsideCompany)]),
+            entoure(
+                "Compte débiteurs : le compte désigné n'est pas un compte de cette société — désignez-en un autre dans Administration → Facturation."
+            )
+        );
+        assert_eq!(
+            message(vec![(
+                Receivable,
+                Cause::RoleAccountNotPostable {
+                    account_number: "1100".into()
+                }
+            )]),
+            entoure(
+                "Compte débiteurs : le compte 1100, qui porte le rôle « Créances clients », n'est pas imputable — désignez un compte imputable dans Administration → Facturation, ou, dans le plan comptable, retirez d'abord ce rôle au compte 1100, puis attribuez-le à l'un de ses sous-comptes."
+            )
+        );
+        assert_eq!(
+            message(vec![(
+                Revenue,
+                Cause::RoleAccountNotPostable {
+                    account_number: "3000".into()
+                }
+            )]),
+            entoure(
+                "Compte de produit par défaut : le compte 3000, qui porte le rôle « Produit par défaut », n'est pas imputable — désignez un compte imputable dans Administration → Facturation, ou, dans le plan comptable, retirez d'abord ce rôle au compte 3000, puis attribuez-le à l'un de ses sous-comptes."
+            )
+        );
+        assert_eq!(
+            message(vec![(
+                Receivable,
+                Cause::RoleAccountLinkedToBankAccount {
+                    account_number: "1100".into(),
+                    bank_label: "UBS — Courant".into(),
+                }
+            )]),
+            entoure(
+                "Compte débiteurs : le compte 1100, qui porte le rôle « Créances clients », est le compte du compte bancaire « UBS — Courant » — déliez ce compte bancaire dans Administration → Comptes bancaires (s'il est clos, rouvrez-le d'abord), ou désignez un autre compte débiteurs dans Administration → Facturation."
+            )
+        );
+        // Deux causes différentes, débiteurs d'abord, une espace entre elles.
+        assert_eq!(
+            message(vec![
+                (
+                    Receivable,
+                    Cause::DesignatedArchived {
+                        account_number: "1100".into()
+                    }
+                ),
+                (Revenue, Cause::NoRoleAccount),
+            ]),
+            entoure(
+                "Compte débiteurs : le compte désigné (1100) est archivé — désignez-en un autre dans Administration → Facturation, ou réactivez-le dans le plan comptable. Compte de produit par défaut : le réglage est vide et aucun compte actif du plan comptable ne porte le rôle « Produit par défaut » — désignez-le dans Administration → Facturation, ou attribuez ce rôle à un compte dans le plan comptable."
+            )
+        );
+    }
 
     /// Story 34-1 (#966, AC-1, C-e341-34) — la double option du corps de
     /// l'étape bancaire : **absent** → `None` (inchangé), **`null`** →
