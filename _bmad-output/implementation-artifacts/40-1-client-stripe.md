@@ -105,7 +105,7 @@ paginée sans perte, à version d'API fixe et sans fuite de la clé.
    Zurich a une date UTC antérieure d'un jour, et une égalité stricte rejetterait toute la page à chaque passage.
 6. **`Connector::account_ref` (D40-P3-1)** : méthode additive du trait de 38-3b (défaut `Ok(None)` = aucune garde
    possible ; PayPal et le `FakeConnector` inchangés, leurs suites sans retouche d'attentes), lue **au début de chaque
-   passage** et, pour `stripe`, par la route « Tester » **après** `test()` — **une seule** lecture du compte pour les
+   passage** et, pour `stripe`, par la route « Tester » **après** `test()` — **un seul** appel, la même méthode, pour les
    deux appelants (AC-9). Raisons : le passage ne dispose que du trait objet, et `test()` lit soldes et droits (deux
    requêtes) là où le passage n'a besoin que du compte ; et `test()` ne rend qu'**une** `ConnectorError` — un 403 du
    compte y serait indiscernable d'un 403 de la liste (`permission_present`), alors qu'un appel distinct dit lequel des
@@ -367,7 +367,7 @@ paginée sans perte, à version d'API fixe et sans fuite de la clé.
     lu, au journal) ; 5xx, 424, délai → `Unavailable`, **un** second essai après 2 s (patron 38-7 AC-7) ; réseau, TLS,
     redirection → `Transport` ; corps invalide ou trop gros → `InvalidResponse`. `error.message`, `error.param`,
     `request-id` : au `tracing::warn!` seulement, jamais à l'écran ni à `last_error`. Codes d'API : ceux de 38-7 AC-7
-    (`app_code()`), plus `PROVIDER_SECRET_NOT_RESTRICTED` (AppError, AC-4), `PROVIDER_MODE_CHANGED` (constante, AC-5) et
+    (`app_code()`), plus `PROVIDER_SECRET_NOT_RESTRICTED` (AppError, AC-4), `PROVIDER_MODE_CHANGED` (constante, AC-5),
     `PROVIDER_ACCOUNT_CHANGED` et `PROVIDER_ACCOUNT_UNREADABLE` (constantes, AC-9). `/v1/account` : 403 et 404 → `Permission`
     (exception à la ligne 404 → `Rejected`, propre à cette route).
 11. **AC-11 — Fabrique et transport factice (G16, C-40-2 e).**
@@ -423,8 +423,8 @@ d'aujourd'hui** — l'Epic 38 n'étant pas développé) ; aucun outil
     Stripe) et les codes neufs sont **transmis à 40-6** pour `provider-labels.ts`. **i18n**, quatre locales
     (`crates/kesh-i18n/locales/{fr-CH,de-CH,it-CH,en-CH}/messages.ftl`) : message de `PROVIDER_SECRET_NOT_RESTRICTED`
     (AppError), `provider-error-provider-mode-changed`, `provider-error-provider-account-changed` et
-    `provider-error-provider-account-unreadable` (D40-P3-1 : « la clé ne peut pas lire le compte Stripe : ajoutez le
-    droit de lecture du compte »). CHANGELOG : une
+    `provider-error-provider-account-unreadable` (D40-P3-1 : « Cette clé ne peut pas lire le compte Stripe : ajoutez le
+    droit de lecture du compte », le texte que 40-6 AC-3 reprend à l'écran). CHANGELOG : une
     ligne de l'entrée non datée de l'epic.
 15. **AC-15 — Documentation de l'API (`docs/api-external.md`).** Les routes des connexions de prestataire restent
     fermées aux clés (§4, `403 API_KEY_ADMIN_FORBIDDEN`) ; la section qui décrit la connexion PayPal (38-1), ou à défaut
@@ -499,6 +499,19 @@ d'aujourd'hui** — l'Epic 38 n'étant pas développé) ; aucun outil
 
 ## Change Log
 
+- 2026-11-15 — validation P5 ciblée (Sonnet) : 0 CRITICAL, 0 HIGH, 0 MEDIUM, 3 LOW ; remédiés dans la fiche. Périmètre :
+  `git diff 98bca548 b5d23154` de la fiche (remédiation P4). Confirmés : « Tester » appelle `test()` (deux requêtes :
+  `/v1/balance`, `/v1/balance_transactions`) puis `account_ref()`, erreur attribuée à `account_readable` (`Permission` →
+  `PROVIDER_ACCOUNT_UNREADABLE`) ; `lastError` du passage = `PROVIDER_MODE_CHANGED` / `_ACCOUNT_CHANGED` /
+  `_ACCOUNT_UNREADABLE`, amendement de 38-3b AC-4 (Échec, `:256-260`) déclaré à l'Écart 6, `error_code` restant un
+  `code()` ; ordre des programmes du factice (AC-11) conforme à l'AC-9 ; `account_decision` à six combinaisons, `read`
+  toujours connu ; plus aucun « trois requêtes » ni `PROVIDER_RESPONSE_INVALID` au passage. LOW : P5-1 AC-14, texte du
+  message `unreadable` (« la clé ne peut pas… ») différent de celui que 40-6 AC-3 reprend (« Cette clé ne peut
+  pas… ») → aligné ; P5-2 Écart 6, « une seule lecture du compte » ambigu (un appel par appelant) → « un seul appel,
+  la même méthode » ; P5-3 AC-10, « et … et » → énumération. Lignes relues : 38-3b `:250-260`, `:372-380` (`lastError`,
+  constantes), 38-9a AC-5 (deux vocabulaires), epic C-40-3 (`:326-333`) et périmètre de 40-1 (`:390-392`). Inter-fiches :
+  aucun. Axes exercés : chaque phrase changée en P4 contre 38-3b, 38-9a, 40-6, l'epic ; cohérence AC-5/AC-9/AC-10/AC-11/
+  AC-14/AC-15 et Tâches. Non exercés : le reste de la fiche, exécution de code.
 - 2026-11-15 — validation P4 ciblée (Opus) : 0 CRITICAL, 0 HIGH, 2 MEDIUM, 3 LOW ; tous remédiés dans la fiche.
   MEDIUM : P4-1 AC-9/Écart 6, `test()` ne rend qu'une `ConnectorError` : un 403 de `/v1/account` y était
   indiscernable d'un 403 de la liste (`permission_present`), et l'AC-10 interdit une variante neuve — le contrôle

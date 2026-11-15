@@ -311,6 +311,15 @@ soit juste et que rien ne soit compté deux fois ni écrit sans moi.
   `entry_date` existant), 38-9b (écriture manuelle à la file), 40-2 AC-5, AC-6, 40-1 AC-7. Axes exercés : prémisses,
   contradictions, sites non résolus (migration, sauvegarde, audit, RBAC, i18n, MCP, manuels), comptabilité, exigences,
   tests, taille. Non exercés : sécurité (aucun secret), réponses Stripe réelles d'échec de versement, exécution de code.
+- 2026-11-15 — validation P5 ciblée (Sonnet) : 0 finding. Périmètre : `git diff 98bca548 b5d23154` de la fiche
+  (remédiation P4 : AC-8 et Écart 3). AC-8 n'excepte que la clé `entryDate` du candidat `provider` de retrait, comme
+  l'AC-3 (« gagne `entryDate` et rien d'autre », retouche déclarée au Change Log du développement) ; les autres
+  attentes (date d'écriture, fenêtre, acceptations, `file_hash`) restent sans retouche ; Écart 3 : renvoi à la section
+  « Validation P1 » de l'epic, point « DTO des propositions » (`epic-40-stripe.md:556-559`, lu : `valueDate` déjà
+  rendu, `entryDate` seule) juste. Lignes relues : `routes/reconciliation.rs:176`, `:1478`, `:3771`, `:4207`,
+  `repositories/reconciliation.rs:277`, `lib.rs:931`. Note (non remédiée, historique daté) : l'entrée P4 ci-dessous cite
+  `:551-554` pour ce point, qui est aujourd'hui `:556-559`. Inter-fiches : aucun. Axes exercés : chaque phrase changée
+  en P4 contre le code, l'epic, 38-6b, 40-6 AC-4. Non exercés : le reste de la fiche, exécution de code.
 - 2026-11-15 — validation P4 ciblée (Opus) : 0 CRITICAL, 0 HIGH, 1 MEDIUM, 1 LOW ; remédiés dans la fiche. Périmètre :
   `git diff b4dc35dc 88c6b022` de la fiche (remédiation P3). MEDIUM 40-3-P4-1 (AC-8 contre AC-3) : la P3 a admis
   qu'une attente de clés exactes de 38-6b/38-9b gagne `entryDate`, mais l'AC-8 disait toujours les retraits PayPal de

@@ -1084,9 +1084,9 @@ development_status:
   39-6-ecrans-et-manuels: backlog
   epic-40: in-progress  # 2026-11-15 : epic-40-stripe.md (cadrage, B3, B4, B6, B10, B12, B13, B14 de epics-38-40-cadrage.md ; socle de l'Epic 38, amendements de 39 repris ; G1–G19 ; aucune migration) ; numéro 40 provisoire, à confirmer par Guy (Q-40-1) ; demande de Beat ; après les Epics 37, 38 et 39, une PR à la fin
   40-0-kickoff: done  # cadrage écrit le 2026-11-15 (recette en mode test faite par l'orchestrateur) ; décomptes, validation du fichier d'epic et recette en mode réel de Beat à tenir (bloquent les fiches)
-  40-1-client-stripe: backlog
-  40-2-classement-des-types-stripe: backlog
-  40-3-versements-et-rattachement: backlog
-  40-4-controle-de-solde: backlog
-  40-5-rapports-joints: backlog
-  40-6-ecrans-et-manuels: backlog
+  40-1-client-stripe: ready-for-dev  # validée le 2026-11-15 (cycle P1–P5 clos, 0 au-dessus de LOW)
+  40-2-classement-des-types-stripe: ready-for-dev  # validée le 2026-11-15 (cycle P1–P5 clos, 0 au-dessus de LOW)
+  40-3-versements-et-rattachement: ready-for-dev  # validée le 2026-11-15 (cycle P1–P5 clos, 0 au-dessus de LOW)
+  40-4-controle-de-solde: ready-for-dev  # validée le 2026-11-15 (cycle P1–P5 clos, 0 au-dessus de LOW)
+  40-5-rapports-joints: ready-for-dev  # validée le 2026-11-15 (cycle P1–P5 clos, 0 au-dessus de LOW)
+  40-6-ecrans-et-manuels: ready-for-dev  # validée le 2026-11-15 (cycle P1–P5 clos, 0 au-dessus de LOW)

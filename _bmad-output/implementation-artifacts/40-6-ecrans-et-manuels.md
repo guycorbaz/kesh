@@ -274,7 +274,7 @@ afin de tenir les comptes Stripe sans saisie, en sachant ce qui est une créance
    compte bancaire UBS USD) ; Administrateur : crée la connexion Stripe à l'écran, puis le test appelle `POST
    /api/v1/_test/provider-connector` avec **`stripeResponses: "default"`** pour ce `connectionId` (40-1 AC-11 : servi
    **par chemin**, `/v1/account` compris, si bien que la lecture du compte au début du passage, D40-P3-1, n'exige rien de
-   plus ; un programme **ordonné** — capture de l'AC-10 — sert la réponse de `/v1/account` **en premier** pour un
+   plus ; un programme **ordonné** — captures de l'AC-10 (✗ `permission_present`, ✗ `account_readable`) — sert la réponse de `/v1/account` **en premier** pour un
    passage, et dans l'ordre de 40-1 AC-9 pour « Tester » : `/v1/balance`, `/v1/balance_transactions`, `/v1/account`) ; colle
    d'abord une clé `sk_test_…` → refus local, **aucune requête `PUT …/secrets`** (interception) ; dépose une clé
    `rk_test_` marqueur ; teste (✓, mode test, `available`/`pending` affichés) ; crée le compte USD depuis le bloc des
@@ -345,6 +345,17 @@ afin de tenir les comptes Stripe sans saisie, en sachant ce qui est une créance
 
 ## Change Log
 
+- 2026-11-15 — validation P5 ciblée (Sonnet) : 0 CRITICAL, 0 HIGH, 0 MEDIUM, 1 LOW ; remédié dans la fiche. Périmètre :
+  `git diff 98bca548 b5d23154` de la fiche (remédiation P4). Confirmés : AC-2, tout `sk_` → `secret_key` (40-1 AC-4,
+  valeur rognée, serveur sans rognage) ; AC-3, contrôle `account_readable` après `permission_present` et avant
+  `account_unchanged` (ordre de 40-1 AC-9), codes lus dans `lastError` (38-9a AC-5, deux vocabulaires ; passage
+  `permission` / `invalid_response`, `errorDetail` `account`, 40-1 AC-9), texte du message identique à 40-1 AC-14 (après
+  P5-1 de 40-1) ; AC-4, `valueDate` déjà rendu (`routes/reconciliation.rs:172-176`), `entryDate` seule à 40-3 AC-3 ;
+  AC-9, ordre des programmes (passage : `/v1/account` d'abord ; « Tester » : balance, balance_transactions, account) =
+  40-1 AC-9 et AC-11 ; AC-10, capture ✗ `account_readable`. LOW : P5-1 AC-9, « capture de l'AC-10 » au singulier pour
+  deux états (✗ `permission_present`, ✗ `account_readable`) → les deux nommés. Inter-fiches : 40-1 AC-14 aligné sur le
+  texte de l'écran (fait, fiche 40-1). Axes exercés : chaque phrase changée en P4 contre 40-1, 38-9a, 40-3 et le code.
+  Non exercés : code des écrans (non écrit), PDF des manuels, noms de ressources Stripe (Q-40-8).
 - 2026-11-15 — rédaction (Opus) : 11 AC ; 5 FR de l'epic, 5 NFR (4 + 1) ; aucune migration, aucune route ; un test
   Rust de concordance (codes courts : table de 40-2, TypeScript, manuel) ; écarts : écran CSV livré par 40-5, tuile de
   l'accueil par 40-4, clé de test admise (P40-1). Relu : fiches 38-9a (AC-1 à AC-13), 38-9b (AC-1, AC-3, AC-10), 40-1
