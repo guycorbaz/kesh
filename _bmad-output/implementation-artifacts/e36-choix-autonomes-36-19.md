@@ -41,10 +41,15 @@ kickoff (`e36-choix-autonomes-e360.md`, C-e360-3 sans migration, C-e360-11 note 
 
 - **Contexte** : compléter la ligne ouvrirait un chemin aujourd'hui fermé par le refus : compte bancaire lié au compte
   1100 aux étapes 6 et 7, puis 1100 désigné compte débiteurs (état interdit par la 15-6c).
-- **Retenu** : un compte débiteurs ou créanciers tiré du **rôle** et lié à un compte bancaire non archivé fait refuser
-  la finalisation, avec un motif qui nomme le compte bancaire ; `refs #987` (la partie « désignation de rôle » y reste).
-- **Écartés** : laisser le créancier vide en silence ; `400 BANK_ACCOUNT_LEDGER_IS_CLAIM_ACCOUNT`.
-- **Réversible** : oui (délier le compte bancaire, ou désigner un autre compte, puis réessayer).
+- **Retenu** *(récrit à la remédiation de la validation P1, V1-2, sur arbitrage de l'orchestrateur, choix prudent)* : un
+  candidat invalide n'est jamais désigné. Pour les deux **obligatoires** (débiteurs, produit), il fait refuser la
+  finalisation, avec un motif qui nomme le compte bancaire et le remède ; pour un **facultatif** (créanciers, arrondi,
+  escompte, frais, pertes), le réglage **reste vide, sans refuser**. `refs #987` (la partie « désignation de rôle » y
+  reste).
+- **Écartés** : refuser aussi pour un créanciers lié (lettre de #987 ; bloquerait l'assistant pour un réglage
+  facultatif — c'était le choix de la première rédaction) ; `400 BANK_ACCOUNT_LEDGER_IS_CLAIM_ACCOUNT`.
+- **Réversible** : oui (délier le compte bancaire, ou désigner un autre compte, puis réessayer ; un créanciers vide se
+  désigne dans *Administration → Facturation*).
 - **À trancher par l'orchestrateur** : garder #987 ouverte en `refs`, ou la scinder.
 
 ### C-36-19-6 — L'E2E n'affirme rien de l'écran d'après la finalisation (fiche, AC8)
@@ -53,4 +58,24 @@ kickoff (`e36-choix-autonomes-e360.md`, C-e360-3 sans migration, C-e360-11 note 
 - **Retenu** : spec neuf, l'action par l'interface (journal ouvert, puis *Configurer plus tard*), le résultat lu par
   l'API (`stepCompleted`, réglages).
 - **Écarté** : attendre l'URL `/` ou la page « Configuration terminée ».
+- **Réversible** : oui.
+
+### C-36-19-7 — Un seul ordre pour une ligne neuve et une ligne existante (fiche, D4 ; validation P1, V1-3)
+
+- **Contexte** : les contrôles de D6 lisent `bank_accounts` en partagé ; le geste bancaire prend les réglages avant les
+  comptes bancaires. Un contrôle placé avant l'insertion d'une ligne neuve inverserait cet ordre.
+- **Retenu** : comptes candidats, puis `INSERT IGNORE` nu, `FOR UPDATE` de la ligne, contrôles, et un seul `UPDATE …
+  COALESCE` ; `version` incrémentée seulement si la ligne existait (une ligne neuve garde `version` 1, comme aujourd'hui).
+- **Écartés** : contrôler avant l'insertion ; garder deux chemins (insertion complète, complément) aux ordres distincts.
+- **Réversible** : oui.
+
+### C-36-19-8 — Bras de rendu de la variante traduit (fiche, D5 ; validation P1, V1-6)
+
+- **Contexte** : le rendu des `DbError` passe par `t(clé, repli)` ; la finalisation convertit elle-même le refus, si
+  bien que le bras n'est atteint par aucune route, mais le match l'exige.
+- **Retenu** : clé neuve `error-default-invoice-accounts-unavailable` dans les quatre locales, repli égal à la valeur
+  `fr-CH`, `400 VALIDATION_ERROR` ; `kesh-i18n` devient le cinquième module. Le refus de `seed_demo` (`onboarding.rs:271`)
+  reste hors périmètre (cause « réglage vide » non atteignable par la démonstration).
+- **Écartés** : un repli sans clé (rendu non traduit, à côté de bras traduits) ; un bras `unreachable!()` (interdit par le
+  `CLAUDE.md`, § *Pattern batch*, garde-fou défensif).
 - **Réversible** : oui.
