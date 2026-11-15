@@ -166,3 +166,36 @@ C-e360-18 (périmètre de #1187), qui fait foi. Option prudente et réversible �
 - **Retenu** : « Lassen Sie diese Seite geöffnet. » ; la bannière garde la forme séparable admise
   (« Schliessen Sie die Einrichtung ab, … »).
 - **Réversible** : oui.
+
+### C-36-17-15 — Le lien de restauration se cache pendant le chargement de la démo (développement, déclaré à la revue P1, A2)
+
+- **Contexte** : la fiche classait le lien de restauration (`+page.svelte`, `showRestoreLink`) « hors, inchangé ». Pendant
+  `seedDemo()`, l'écran de l'étape 2 cède la place à `demo-loading` ; le lien restait affiché sous l'indicateur.
+- **Retenu** : `!demoLoading` ajouté à `showRestoreLink` (`09a9dac47`) ; épinglé par un test (`onboarding-end.test.ts`,
+  « pendant le chargement, le lien de restauration disparaît »).
+- **Écartée** : laisser le lien (proposer une restauration pendant un chargement qui écrit des données).
+- **Réversible** : oui.
+
+### C-36-17-16 — Récapitulatif : une carte de crédit se nomme comme telle (revue P1, B7/E7)
+
+- **Contexte** : `OnboardingDone` nommait tout compte « Compte bancaire » et comptait une carte pour un compte bancaire au
+  « à faire » ; une installation restaurée (étape ≥ 8) peut porter une carte (34-11).
+- **Retenu** : le récapitulatif porte `{ name, card }` (`accountKind === 'credit_card'`), libellé « Carte de crédit » (clé
+  `onboarding-done-credit-card`, quatre locales), et la phrase « ajoutez votre compte bancaire » paraît tant qu'aucun compte
+  hors carte n'existe. La lecture reste tout ou rien (AC3, inchangé).
+- **Écartée** : `Promise.allSettled` (AC3 prévoit une ligne d'échec unique) ; écrire la carte en limite.
+- **Réversible** : oui.
+
+### C-36-17-17 — L'écran d'échec mène à Administration → Facturation (revue P1, E10)
+
+- **Retenu** : sous la phrase de remède, un lien vers `/settings/invoicing` (clé `onboarding-finalize-remedy-link`, quatre
+  locales).
+- **Écartée** : une issue (le correctif tient en un lien).
+- **Réversible** : oui.
+
+### C-36-17-18 — La finalisation ne part qu'à l'étape 7 (revue P1, E5) ; *Configurer plus tard* gardé contre la réentrée (B3, E3)
+
+- **Retenu** : `finalizeAfterBankStep` n'appelle `runFinalize` que si l'étape bancaire a rendu l'étape 7 ; sinon l'écran de
+  l'état rendu, boutons actifs. `handleSkipBank` commence par `if (finalizing) return;`, comme `submitBankAccount`.
+- **Écartée** : laisser un refus muet à l'étape 6 (cas théorique, mais sans écran).
+- **Réversible** : oui.

@@ -638,7 +638,9 @@ Journaux hors dépôt, `/home/gcorbaz/devel/kesh-gate-logs/e36-17/` :
 - `front-test-unit-1.log` — Vitest complet à `62d05833e` : **7 rouges** (3809/3816), quatre gardes d'inventaire à relever
   (`i18n-keys` 3050 → 3081, `i18n-libelle-en-dur` 92 → 95 et `conforme` 78 → 81, `i18n-un-repli-par-cle` 434 → 453,
   `bank-name-inventory` : `bankName` lu à la main dans le récapitulatif → passé par `bankAccountName`) ;
-  `front-test-unit-2.log` — **3816/3816, 244 fichiers**, à `074453a9f` ;
+  `front-test-unit-2.log` — **3816/3816, 244 fichiers**, sur l'arbre de travail devenu `074453a9f` (*annoté à la remédiation
+  de la revue P1, A3* : le run a commencé à 17:20:53, le commit date de 17:23:17 ; le journal ne prouve pas l'identité au
+  commit — le Vitest de la remédiation, lui, tourne au commit) ;
 - `front-build-1.log` (`62d05833e`), `front-build-2.log` (`074453a9f`, vert) ;
 - `mut/resultats.log`, `mut/M1.log` à `mut/M17.log`, script `mut/mutations-36-17.mjs` ;
 - `captures.log`, `captures-backend.log`, `captures/` ; scripts `captures-36-17.sh`, `captures-36-17.cjs`,
@@ -653,6 +655,16 @@ Journaux hors dépôt, `/home/gcorbaz/devel/kesh-gate-logs/e36-17/` :
     `lint-i18n-ownership` vert (`front-lint-i18n-2.log`) ; Vitest **3816/3816, 244 fichiers** (`front-test-unit-2.log`) ;
     `npm run build` vert (`front-build-2.log`).
   - **Non lancés** : l'E2E complet (à la clôture, avec `gate-ci`).
+- **Remédiation de la revue P1**, au commit de code **`f4b1bb554`** (`gates-rem1.log`, « HEAD f4b1bb554 ; code modifié hors
+  commit : 0 », script `gates-rem1-36-17.sh`) :
+  - `npm run check` 0 erreur, 29 avertissements (`rem1-front-check.log`) ; `lint-i18n-ownership` vert
+    (`rem1-front-lint-i18n.log`) ; Vitest complet **3833/3833, 245 fichiers** (`rem1-front-test-unit.log`, fin 19:32:39) ;
+    `npm run build` vert (`rem1-front-build.log`) ;
+  - `scripts/test-fast.sh --ci`, voie 2, `kesh_e3617` remise à neuf : **5452 exécutés, 5452 passés, 13 ignorés**
+    (`rem1-test-fast-ci.log`, fin 19:45:20) ;
+  - relevé préalable des gardes (`rem1-front-test-unit-releve.log`, avant le commit, 2 rouges attendus : `sitesTotal` 3083,
+    `CLES_RELEVEES` 455) ; Vitest ciblé `rem1-vitest-cible-1.log` (196/196, avant l'ajout de deux clés à la liste fermée) ;
+  - mutations M8 et M18 à M24 (`mut/resultats.log`) ; **non lancés** : `gate-ci` et E2E (consigne : à la clôture).
 
 ### Completion Notes List
 
@@ -670,6 +682,11 @@ Journaux hors dépôt, `/home/gcorbaz/devel/kesh-gate-logs/e36-17/` :
   en démo », (0, production) passe « zone non vide » et rougit sur l'identifiant seul ; la garde (`onboarding-guard.test.ts`)
   a « démo 3 → / » et « non authentifié → /login » **verts** au départ (`load` s'exécute sous `browser: true`), production 7,
   8, 10 rouges ; la bannière rougit à l'import (module absent : rouge de construction).
+  *Précisé à la remédiation de la revue P1 (A4)* : les tests d'AC1 (« Configurer plus tard… »), d'AC4 et de la fenêtre
+  rougissent au départ **faute d'identifiant** (`Unable to find an element by: [data-testid="onboarding-skip-bank"]`,
+  identifiant posé par la story, C-36-17-12), non sur le comportement que la fiche annonçait (« `goto('/')` appelé ») : ce
+  sont des rouges de construction. Leur preuve de comportement est aux mutations : M2 (`goto` d'office), M3 (toast), M10
+  (fenêtre), M15 à M17 (remède, ordre, effacement de l'erreur), toutes tuées par ces tests.
 - **Mutations** (`mut/resultats.log`, HEAD `62d05833e`) : **M1 à M17 toutes tuées**, chacune restaurée (`git restore
   --worktree` puis `touch`, « restauré oui ») ; M8 rejouée après `074453a9f` (récapitulatif par `bankAccountName`) : tuée.
   **M10 n'est pas équivalente** (V3-3) : elle rougit le test de la fenêtre (`onboarding-end.test.ts`, « l'écran de reprise
@@ -686,6 +703,8 @@ Journaux hors dépôt, `/home/gcorbaz/devel/kesh-gate-logs/e36-17/` :
   `bankAccountName` (`bank-name-inventory.test.ts` refusait la lecture à la main de `bankName`). Les commentaires KF-029 des
   specs E2E sont **en fin de ligne**, pour ne pas décaler les numéros de ligne de `docs/testing.md` § *Les échecs attendus*
   (`onboarding-path-b.spec.ts:65`, `:92`, `onboarding.spec.ts:150` inchangés). Modules : cinq, inchangés.
+  *Ajouté à la remédiation de la revue P1 (A2)* : le lien de restauration se cache pendant le chargement de la démo
+  (`!demoLoading` dans `showRestoreLink`), écart à « lien de restauration inchangé » — C-36-17-15, test ajouté.
 - **Consigne Edit** : code, tests, fiches et locales par l'outil Edit (ou Write pour un fichier neuf) ; aucun `sed -i`. Hors
   dépôt seulement : `rouges.log` complété par `awk` puis `cat >>` (mon propre journal), mutations par script (permis, E5).
 - **E7** : la file de la voie 2 était tenue par la 36-10 ; un Vitest ciblé et la campagne de mutations (voie frontend) ont
@@ -706,7 +725,17 @@ Journaux hors dépôt, `/home/gcorbaz/devel/kesh-gate-logs/e36-17/` :
   Vitest (`onboarding-end.test.ts`, AC8). La capture 11 vient d'un **refus réel** du serveur (#1200 : réglages de facturation
   lus avant la finalisation, `captures-3.log`, « invoice-settings lus avant la finalisation : 200 ») ; la 10 simule un 503 de
   `GET /onboarding/state`, ce qui fait aussi paraître la bannière globale « Base de données temporairement indisponible » du
-  client HTTP (sans rapport avec la story) ; la 06 simule un 500 de `companies/current`.
+  client HTTP (sans rapport avec la story) ; la 06 simule un 500 de `companies/current`. *Annoté à la remédiation de la
+  revue P1* : les captures 04, 05 et 11 précèdent la remédiation (la langue comptable est désormais une ligne à elle, l'écran
+  d'échec porte un lien vers *Administration → Facturation*) ; elles ne sont pas refaites (rien d'autre ne change à l'écran).
+- **Limites connues, écrites à la remédiation de la revue P1** :
+  - **E4** : une finalisation qui « réussit » en rendant l'étape 7, ou une relecture de « déjà finalisé » qui rend 7, ramène
+    l'écran de reprise sans un mot. Côté serveur, `finalize_inner` réussit à l'étape 8 et ne refuse « déjà finalisé » qu'à
+    `step < 7`, `step > 8` ou en démo (`crates/kesh-api/src/routes/onboarding.rs:948-957`, « `if onboarding.step_completed < 7 || onboarding.step_completed > 8 {` ») : l'état exige une écriture
+    concurrente. Non couvert, laissé tel quel.
+  - **B6** : les trois attentes E2E de la KF-029 (`onboarding-path-b.spec.ts:88`, `:115`, `onboarding.spec.ts:175`) restent
+    annotées, non corrigées : ces specs sont rouges plus haut (`#coord-address`) et leur réparation est celle de la KF-029
+    (#97), hors périmètre.
 
 ### File List
 
@@ -814,3 +843,38 @@ Journaux hors dépôt, `/home/gcorbaz/devel/kesh-gate-logs/e36-17/` :
   (`09a9dac47`), garde des textes et allemand (`62d05833e`), récapitulatif par `bankAccountName` et gardes d'inventaire i18n
   relevées (`074453a9f`, **dernier commit de code**). Mutations M1 à M17 tuées. Choix C-36-17-11 à C-36-17-14. Gates du
   passage en revue au Dev Agent Record ; **E2E non lancé** (à la clôture) ; PDF à l'intégration. Statut `review`.
+- 2026-11-15 — **Remédiation de la revue P1** (Opus 5.5 ; rapports `kesh-gate-logs/e36-17/review-p1-B.md` 0/0/2/5,
+  `review-p1-A.md` 0/0/1/6, `review-p1-E.md` 0/0/2/8), commit de code **`f4b1bb554`**. Prémisses lues au code, aucune
+  réfutée :
+  - **B1 = A1 = E2 (MEDIUM), corrigé** : lu `user-manual.tex:232` « … puis revenez à l'assistant et cliquez sur
+    \emph{Réessayer}. » ; `finalizeError` est un `$state` local de `+page.svelte` (« `let finalizeError = $state<…>(null);` »),
+    perdu en quittant la page : au retour, `onboardingScreenFor` rend `resume` et son bouton *Terminer la configuration*. Le
+    manuel nomme désormais *Terminer la configuration* (et le lien de l'écran d'échec) ; `admin-manual.tex:1463` était juste.
+  - **B2 = E1 (MEDIUM), corrigé** : lu `+page.svelte` « `finalizing = false;` » aux deux `catch` de l'étape bancaire et
+    « `demoLoading = false;` » au `finally` de la démo ; aucun test ne lisait les boutons après un refus. Trois tests
+    (`onboarding-end.test.ts`, « les drapeaux se relâchent après un refus ») ; **M18, M19, M20 jouées et tuées**.
+  - **B3 = E3 (LOW), corrigé** : `handleSkipBank` sans garde (lu « `async function handleSkipBank() {` / `finalizing = true;` ») ;
+    `if (finalizing) return;` ajouté, test du double clic, **M21 tuée**.
+  - **B4 (LOW), corrigé** : lu `restore/+page.ts:12` « la garde inverse « assistant terminé → / » » ; commentaire réécrit.
+  - **B5 = E8 (LOW), corrigé** : lu `OnboardingDone.svelte:87-88` (« `: {onboardingLanguageLabel(…)}` ») ; la langue comptable
+    devient une ligne `dt`/`dd` à elle, sans ponctuation en dur.
+  - **B6 (LOW), laissé** : attentes KF-029 annotées, hors périmètre (Dev Agent Record, *Limites connues*).
+  - **B7 = E7 (LOW), corrigé** : lu `OnboardingDone.svelte:95` (« `'Compte bancaire'` » pour tout compte) ; libellé « Carte de
+    crédit » (clé neuve, quatre locales), la phrase d'ajout tant qu'aucun compte hors carte n'existe ; test, **M23 tuée**
+    (C-36-17-16). La lecture tout ou rien est gardée (AC3).
+  - **A2 (LOW), corrigé** : `!demoLoading` déclaré (C-36-17-15, Dev Agent Record), test ajouté.
+  - **A3 (LOW), corrigé** : relevé annoté ; le Vitest complet de la remédiation tourne **au commit** `f4b1bb554`.
+  - **A4 (LOW), corrigé** : rouges de construction et preuve par les mutations écrits au Dev Agent Record.
+  - **A5 (LOW), corrigé** : test *Enregistrer* avec finalisation retenue → `finalizing`.
+  - **A6 (LOW), corrigé** : test `listFiscalYears` rejeté → ligne d'échec et motif.
+  - **A7 (LOW), corrigé** : « détail d'une écriture » ajouté à `admin-manual.tex:1463`.
+  - **E4 (LOW), écrit en limite** (Dev Agent Record) ; **E5 (LOW), corrigé** : `finalizeAfterBankStep` (C-36-17-18), test,
+    **M22 tuée**.
+  - **E6 (LOW), corrigé** : test à deux exercices dans le désordre, **M24 tuée** ; **E9 (LOW), corrigé** :
+    `onboarding-screen-for.test.ts` (1,5 ; 7,5 ; NaN ; ∞ → repli).
+  - **E10 (LOW), corrigé** : lien vers `/settings/invoicing` sous la phrase de remède (C-36-17-17), assertion ajoutée.
+  - Gardes d'inventaire relevées : `sitesTotal` 3081 → 3083, `CLES_RELEVEES` 453 → 455 (`rem1-front-test-unit-releve.log`).
+  - Mutations (`mut/resultats.log`) : M8 (motif mis à jour) et M18 à M24, **toutes tuées** ; incident écrit au journal : la
+    restauration de M20 a échoué au premier essai (`index.lock` pris par un `git status` que j'ai lancé en parallèle),
+    fichier restauré par `git restore --worktree` puis `touch`, M20 à M24 rejouées.
+  - Gates de remédiation au commit `f4b1bb554` : voir *Debug Log References*.
