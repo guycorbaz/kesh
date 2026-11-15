@@ -156,7 +156,8 @@ rapproché.
        AC-7 : `balances_unavailable`, puis `opening_unavailable`, un par devise au plus, chacun constant) ; une fonction
        pure de `provider-labels.ts` **découpe** `errorDetail` sur `; ` et lit **chaque motif séparément** par son
        préfixe (jamais `errorDetail` entier par « commence par » : le second motif d'un passage n'est pas en tête) ;
-       un avis par motif **distinct** (deux devises au même motif → un seul avis), en avertissement discret :
+       un avis par **libellé** distinct (deux devises au même motif, ou `opening_unavailable: auth` et
+       `opening_unavailable: transport`, qui portent le même libellé → un seul avis), en avertissement discret :
        - `balances_unavailable: <code()>` (soldes non lus, mouvements téléchargés) → « Soldes non lus à ce passage :
          contrôle de complétude non mis à jour » ;
        - `opening_unavailable: <code()>` (l'`opening` rendu antérieur au début effectif n'a pu être complété —
@@ -167,7 +168,7 @@ rapproché.
          tant que PayPal annonce la même date (voir le manuel) » — jamais « réessayé » seul : 38-3b AC-7 le dit
          **durablement** non disponible tant que PayPal sert le même `A` ;
        - préfixe inconnu (lecture tolérante, E4) → « Avertissement de passage non reconnu (`<préfixe>`) », le seul
-         préfixe avant `:` ;
+         préfixe avant `:` (motif sans `:` : le motif entier, tronqué à 40 caractères) ;
        l'état du contrôle (a) de l'AC-8 reste celui que rend 38-3b (`complete: null` → « Contrôle non disponible »),
        jamais déduit d'un motif ; le reste d'un motif (le `code()` ou `span` après `: `) n'est **jamais**
        affiché brut, ni `errorDetail` entier ; libellés aux quatre locales (AC-10).
@@ -370,7 +371,8 @@ rapproché.
       résultat d'un passage (`ignoredCount` nul puis non nul, `truncatedFrom` présent puis nul, `balances_unavailable`, `opening_unavailable` (avis distinct, contrôle (a) « non disponible »),
       `opening_unavailable: span` (son propre libellé, sans « réessayé » seul), les deux motifs joints
       `balances_unavailable: auth; opening_unavailable: span` (deux avis, le second reconnu hors de tête), deux
-      `opening_unavailable` identiques (un avis), préfixe inconnu (libellé générique, préfixe seul) ; le texte rendu
+      `opening_unavailable` identiques ou de codes différents (un avis), préfixe inconnu (libellé générique, préfixe
+      seul ; sans `:`, motif tronqué) ; le texte rendu
       (`textContent` des avis, non `innerHTML`, qui porte des balises `<span>`) ne contient ni `auth` ni `span`,
       code de passage et code d'API libellés chacun par sa table), composant du secret
       (vidé après succès et après échec ; jamais dans un `data-*` ni dans le DOM rendu : rendu du composant après saisie
@@ -596,3 +598,12 @@ rapproché.
   P5 (LOW 38-3b-P5-1, P5-2) ; AC-8 (a) de la fiche (`complete: null` sans `opening` : juste, l'`opening` n'étant pas
   écrit). Axes non exercés : code des stories amont (non écrit), PDF, documentation PayPal, reste de la fiche. Trend :
   P5 = 1 (1 MEDIUM) → P6 = 2 (1 MEDIUM) : une passe de plus est due (MEDIUM rendu, CLAUDE.md).
+- 2026-11-15 — validation P7 ciblée (Sonnet) : 2 findings (0 CRITICAL, 0 HIGH, 0 MEDIUM, 2 LOW), remédiés dans la fiche ;
+  aucun inter-fiche. Périmètre : `git diff d0b7c24f e7814a45` de la fiche (remédiation P6) ; point inter-fiche (motifs
+  `opening_unavailable` / `: span`, jointure `; `) vérifié contre 38-3b AC-7 (lignes 337-347 : ordre, un par devise,
+  constants, « 38-9a lit chaque motif séparément ») : appliqué et cohérent. LOW : P7-1 AC-5 — « motif distinct »
+  ambigu (`opening_unavailable: auth` et `: transport` partagent un libellé) → un avis par libellé distinct, test
+  complété ; P7-2 AC-5 — préfixe inconnu sans `:` : repli non défini → motif entier tronqué à 40 caractères, test
+  complété. Relu sans défaut : renvois AC-5/8/10/11/12, état du (a) (`complete: null`), libellé `span` (durable),
+  Vitest `textContent`. Axes non exercés : code amont, PDF, documentation PayPal, reste de la fiche. Trend : P6 = 2
+  (1 MEDIUM) → P7 = 2 (0 MEDIUM) : aucun finding au-dessus de LOW, boucle clôturable pour cette fiche.

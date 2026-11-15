@@ -1055,22 +1055,22 @@ development_status:
   37-3b-ecritures-en-devise-ecrans: ready-for-dev  # validée ; revalidée après CR-1 à CR-5 (revues de Beat) et CR-6 (couverture API et MCP), 2026-11-14
   37-4-rapports-en-devise: ready-for-dev  # validée ; revalidée après CR-1 à CR-5 (revues de Beat) et CR-6 (couverture API et MCP), 2026-11-14
   37-5-reevaluation-fin-exercice: ready-for-dev  # validée ; revalidée après CR-1 à CR-5 (revues de Beat) et CR-6 (couverture API et MCP), 2026-11-14
-  epic-38: backlog  # 2026-11-15 : epic-38-paypal.md (cadrage, B1–B21 de epics-38-40-cadrage.md ; révisé B16–B21, puis B22–B26 ; O1 : une seule migration breaking, en 38-2 ; FR/NFR par fiche ; P1 : 38-3 découpée en 38-3a/38-3b, D-P1-1) ; demande de Beat ; après l'Epic 37, une PR à la fin
-  38-0-kickoff: backlog  # cadrage écrit le 2026-11-15 ; décomptes et validation du fichier d'epic à tenir ; numéro de release à Guy (Q1, bloque la fiche 38-2)
-  38-1-secrets-et-connexions: backlog  # socle (B11, B23) ; KESH_SECRETS_KEY, AES-256-GCM, réglages settings JSON typés ; migration non breaking
-  38-2-compte-prestataire: backlog  # socle (B1, B3, B16, B23, D8) ; compte bank + réglages payment_provider_accounts, comptes liés en FK ; LA migration breaking (O1 : contrainte d'IBAN, match_type VARCHAR, min_required relevé, crates bumpés)
+  epic-38: in-progress  # 2026-11-15 : epic-38-paypal.md (cadrage, B1–B21 de epics-38-40-cadrage.md ; révisé B16–B21, puis B22–B26 ; O1 : une seule migration breaking, en 38-2 ; FR/NFR par fiche ; P1 : 38-3 découpée en 38-3a/38-3b, D-P1-1) ; demande de Beat ; après l'Epic 37, une PR à la fin
+  38-0-kickoff: done  # cadrage écrit le 2026-11-15 ; décomptes et validation du fichier d'epic à tenir ; numéro de release à Guy (Q1, bloque la fiche 38-2)
+  38-1-secrets-et-connexions: ready-for-dev  # validée le 2026-11-15 (cycle P1–P7 clos, 0 au-dessus de LOW)
+  38-2-compte-prestataire: ready-for-dev  # validée le 2026-11-15 (cycle P1–P7 clos, 0 au-dessus de LOW)
   38-3-telechargement-cadre: split  # 2026-11-15, D-P1-1 (six modules) : découpée en 38-3a et 38-3b ; fiche gardée comme historique
-  38-3a-telechargement-schema: backlog  # socle (B2, B22) ; migration non breaking (colonnes de prestataire, provider_fetch_runs, soldes), lecture de PROVIDER_API, suppression d'en-tête et imports de fichier refusés
-  38-3b-telechargement-passage: backlog  # socle (B8, B9, B12, B20) ; crate kesh-providers, Connector, transport, passage, planification, soldes et complétude ; aucune migration
-  38-4-criteres-des-regles: backlog  # socle (B5, B19, B22, B24) ; types neufs de match_type (boutique = préfixe de facture), filtres sens/devise/compte ; migration non breaking
-  38-5-tva-par-defaut-du-compte: backlog  # socle (B6, B18) ; compte d'impôt sur les acquisitions ; migration non breaking
-  38-6a-propositions-ventes-achats-frais: backlog  # socle (B3, B5, B6, B17) ; accept_batch, variante provider, confirmAlreadyBooked
-  38-6b-conversions-remboursements-litiges: backlog  # socle (B4, B7, B20) ; file « à examiner »
+  38-3a-telechargement-schema: ready-for-dev  # validée le 2026-11-15 (cycle P1–P7 clos, 0 au-dessus de LOW)
+  38-3b-telechargement-passage: ready-for-dev  # validée le 2026-11-15 (cycle P1–P7 clos, 0 au-dessus de LOW)
+  38-4-criteres-des-regles: ready-for-dev  # validée le 2026-11-15 (cycle P1–P7 clos, 0 au-dessus de LOW)
+  38-5-tva-par-defaut-du-compte: ready-for-dev  # validée le 2026-11-15 (cycle P1–P7 clos, 0 au-dessus de LOW)
+  38-6a-propositions-ventes-achats-frais: ready-for-dev  # validée le 2026-11-15 (cycle P1–P7 clos, 0 au-dessus de LOW)
+  38-6b-conversions-remboursements-litiges: ready-for-dev  # validée le 2026-11-15 (cycle P1–P7 clos, 0 au-dessus de LOW)
   38-6c-rattachement-en-lot-et-api: split  # 2026-11-15, D-P2-3 (validation P2 : plus de cinq modules) : découpée en 38-6c1 et 38-6c2 ; fiche gardée comme historique
-  38-6c1-rattachement-en-lot: backlog  # socle (B17, B21) ; rattachement en devise, suggestions, lot link-entries, recherche, API des scripts, exercice clos ; aucune migration
-  38-6c2-groupe-d-ecritures: backlog  # B28 ; groupe de 2 à 5 écritures, table bank_transaction_extra_entries (migration non breaking), paires suggérées, annulation du groupe ; après 38-6c1, avant 38-6a
-  38-7-client-paypal: backlog  # PayPal : OAuth2, Transaction Search, fenêtres de 31 jours, pagination
-  38-8-codes-evenement-paypal: backlog  # PayPal : codes T… vers mouvements, invoice_id → invoice_ref (boutique, B24), à valider sur les réponses enregistrées
-  38-9a-ecrans-connexions-et-comptes: backlog  # écrans, réglages, contrôles de solde, manuel d'administration (sauvegarde d'avant la mise à jour)
-  38-9b-ecrans-regles-et-propositions: backlog  # écrans, rattachement en lot, manuel utilisateur, E2E
-  38-10-releve-joint: backlog  # B10, B20 ; solde de clôture = somme de contrôle ; migration non breaking (bank_account_documents)
+  38-6c1-rattachement-en-lot: ready-for-dev  # validée le 2026-11-15 (cycle P1–P7 clos, 0 au-dessus de LOW)
+  38-6c2-groupe-d-ecritures: ready-for-dev  # validée le 2026-11-15 (cycle P1–P7 clos, 0 au-dessus de LOW)
+  38-7-client-paypal: ready-for-dev  # validée le 2026-11-15 (cycle P1–P7 clos, 0 au-dessus de LOW)
+  38-8-codes-evenement-paypal: ready-for-dev  # validée le 2026-11-15 (cycle P1–P7 clos, 0 au-dessus de LOW)
+  38-9a-ecrans-connexions-et-comptes: ready-for-dev  # validée le 2026-11-15 (cycle P1–P7 clos, 0 au-dessus de LOW)
+  38-9b-ecrans-regles-et-propositions: ready-for-dev  # validée le 2026-11-15 (cycle P1–P7 clos, 0 au-dessus de LOW)
+  38-10-releve-joint: ready-for-dev  # validée le 2026-11-15 (cycle P1–P7 clos, 0 au-dessus de LOW)
