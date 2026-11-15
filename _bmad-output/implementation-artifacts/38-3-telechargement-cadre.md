@@ -1,20 +1,23 @@
-# Story 38-3 : téléchargement — cadre commun des prestataires, et la migration breaking
+# Story 38-3 : téléchargement — cadre commun des prestataires
 
 Status: ready-for-dev
 
 *Fiche rédigée le 2026-11-15 (Opus), branche `epic/38-paypal`, numéros de ligne relevés au commit `8b3d548d`. Epic 38 :
-décisions E4, E5, E6, E7, E8, E9, E10, E12, E18, **E19**, E20 (a) ; contrats **C-38-0**, **C-38-4**, **C-38-5**,
-C-38-11, C-38-12 ; décisions de Beat B2, B8, B9, B12, B20, **B22**. **Dépend de** : 38-1, 38-2, l'Epic 37 (client HTTP
-borné et patron « source objet-safe + factice en mode test + route `_test` » de 37-2 AC-3, C-37-6 ; liste close de
-37-1 AC-6) et du **numéro de release fixé par Guy (Q1)**. **Suivie par** : 38-4 (évalue les critères neufs déclarés
-ici), 38-6a/b/c (propositions et rattachement des transactions téléchargées), 38-7 (connecteur PayPal réel), 38-8
-(classement des codes PayPal), 38-9a (écrans, libellé « Téléchargé de … », sauvegarde d'avant la mise à jour au
-manuel), 38-10 (relevé joint).*
+décisions E4, E5, E6, E7, E8, E9, E10, E12, E18, E20 (a) ; contrats **C-38-0**, **C-38-4**, **C-38-5**,
+C-38-11, C-38-12 ; décisions de Beat B2, B8, B9, B12, B20, **B22** ; arbitrage **O1** (voir ci-dessous). **Dépend de** :
+38-1, **38-2 (qui porte l'unique migration breaking de l'epic)**, l'Epic 37 (client HTTP borné et patron « source
+objet-safe + factice en mode test + route `_test` » de 37-2 AC-3, C-37-6 ; liste close de 37-1 AC-6). **Suivie par** :
+38-4 (évalue les critères neufs déclarés ici), 38-6a/b/c (propositions et rattachement des transactions téléchargées),
+38-7 (connecteur PayPal réel), 38-8 (classement des codes PayPal), 38-9a (écrans, libellé « Téléchargé de … »),
+38-10 (relevé joint).*
 
-⛔ **Prérequis bloquant — Q1 (Guy).** La migration breaking fige dans son SQL la version `<X.Y.Z>` de la release qui
-la porte (P2) et impose le bump des crates **dans le même commit** (P2-bis). Proposition de l'epic : `0.18.0`. Cette
-fiche écrit `<X.Y.Z>` partout ; la tâche T0 le remplace par la valeur obtenue, **avant toute ligne de code**. Si la
-valeur change après coup, la migration, non publiée, se corrige délibérément (P8 : bases de dev reconstruites).
+⚠️ **O1 (arbitrage de l'orchestrateur, 2026-11-15) — plus de migration breaking dans cette story.** L'unique migration
+breaking de l'epic est en **38-2** (contrainte d'IBAN + `match_type` en `VARCHAR(40)`, relèvement de
+`kesh_version_min_required` en dernière instruction, bump des crates dans le même commit : P2, P2-bis, P7, version
+`<X.Y.Z>` = Q1 de Guy, à elle). 38-3 n'a que sa migration **non breaking** (AC-3). Ses écritures de
+`source_format = 'PROVIDER_API'` et de la colonne `match_type` élargie **s'appuient sur le relèvement posé par 38-2**
+(même release : un binaire antérieur est déjà refusé sur la base migrée). **Prérequis** : la migration de 38-2 est
+appliquée avant celle-ci (numéro de date postérieur) ; la version `<X.Y.Z>` n'est pas écrite ici.
 
 ## Story
 
@@ -37,8 +40,8 @@ d'imputation (38-6) reposent sur un relevé complet et vérifiable.
 | `FR-38-3-6` | Une source ou un type de règle inconnus se lisent sans erreur (E4). | AC-2 |
 | `FR-38-3-7` *(ajout)* | Un compte prestataire ne reçoit ni import de fichier ni relevé saisi à la main, et ses transactions ne reçoivent aucune des propositions existantes (facture, règle, ventilation) avant la variante `provider` de 38-6a. | AC-11 |
 | `FR-38-3-8` *(ajout, Q-38-1-a)* | Le Comptable lit l'état des connexions (sans réglages ni secrets) pour lancer un passage. | AC-8 |
-| `NFR-38-3-1` | La seule migration breaking de l'epic : `UPDATE _kesh_version … kesh_version_min_required` en dernière instruction, crates bumpés dans le même commit, gate runtime complet avant `done` (P2, P2-bis). | AC-1 |
-| `NFR-38-3-2` | Retour à la version précédente par la seule sauvegarde d'avant la mise à jour ; recette de montée depuis l'image publiée précédente. | AC-12 |
+| `NFR-38-3-1` | Migration **non breaking** (DDL seul, aucune écriture de données) ; la migration breaking de l'epic est celle de 38-2 (O1), dont cette story dépend. | AC-1, AC-3 |
+| `NFR-38-3-2` | Une sauvegarde d'avant l'Epic 38 se réimporte (liste close R1) ; la recette de montée et le retour par la seule sauvegarde d'avant la mise à jour sont ceux de 38-2, étendus aux tables et colonnes de cette story. | AC-3, AC-12 |
 | `NFR-38-3-3` | Un passage à la fois par connexion ; un échec garde l'inséré et dit où reprendre. | AC-6 |
 | `NFR-38-3-4` | Aucun appel réseau en CI ; transport factice piloté par une route `_test`, inactif hors `KESH_TEST_MODE`. | AC-5, AC-7 |
 | `NFR-38-3-5` *(ajout)* | Toute réponse d'un prestataire est validée avant écriture ; une page invalide n'écrit rien et fait échouer le passage avec un état lisible (R5 de 37, C-38-11). | AC-4 |
@@ -46,65 +49,44 @@ d'imputation (38-6) reposent sur un relevé complet et vérifiable.
 
 ## Critères d'acceptation
 
-1. **AC-1 — La migration breaking `2026111X000004_provider_api_source_and_rule_types.sql` (E19, C-38-0, NFR-38-3-1).**
-   Fichier **à part** de la migration non breaking de l'AC-3 (pour que l'exemption P7 ne couvre qu'elle), numéro de
-   date postérieur à elle.
-   - En tête : `-- BREAKING (P1, P3 : MODIFY COLUMN) : relève kesh_version_min_required à <X.Y.Z> (dernière
-     instruction).` puis la raison, au patron de `20261110000001_bank_accounts_without_iban.sql:1-6` et de
-     `20261030000001_bank_imports_manual_source.sql` : un binaire antérieur décode `bank_imports.source_format` et
-     `reconciliation_rules.match_type` par un `FromStr` **qui refuse l'inconnu**
-     (`crates/kesh-db/src/entities/bank_import.rs:57-67`, `entities/reconciliation_rule.rs:66-77`) — toute liste
-     d'imports ou de règles échouerait sur `'PROVIDER_API'` ou sur un critère neuf.
-   - (1) `ALTER TABLE reconciliation_rules MODIFY COLUMN match_type VARCHAR(40) CHARACTER SET ascii COLLATE ascii_bin
-     NOT NULL, ADD CONSTRAINT chk_reconciliation_rules_match_type_format CHECK (BINARY match_type REGEXP
-     '^[a-z][a-z_]{1,39}$')` — aujourd'hui `ENUM('counterparty_contains','counterparty_exact','reference_contains',
-     'iban_exact')` (`migrations/20260513000001_reconciliation_rules.sql:39`). Les quatre valeurs restent, **aucune
-     ligne réécrite**. *Écart léger à l'epic* (E14 : « `VARCHAR(40)` sans `CHECK` ») : le `CHECK` proposé est de
-     **format seul**, sans énumération — Wise et Stripe ajoutent un critère sans DDL (E4) — et la collation `ascii_bin`
-     ferme la casse et l'espace final que `utf8mb4_unicode_ci` confondrait dans l'index unique et que le décodage
-     exact refuserait (précédent `BINARY` de 34-11a1 et de 37-1) ; à retirer si Beat tient à la lettre de E14.
-     **Index** : `uq_reconciliation_rules_match_active (company_id, match_type, active_uniq)` (`:65-66`) se reconstruit
-     avec l'`ALTER` (MariaDB, `ALGORITHM=COPY`) — **aucun `DROP INDEX`** ; un test lit `information_schema.STATISTICS`
-     après la migration (l'index existe, mêmes colonnes) et vérifie qu'une règle active en double reste refusée.
-   - (2) **Aucun DDL** pour `bank_imports.source_format` (`VARCHAR(32)` sans `CHECK`,
-     `migrations/20260504000001_bank_imports.sql:25`) : seul le relèvement protège un binaire antérieur.
-   - (3) **En dernière instruction** : `UPDATE _kesh_version SET kesh_version_min_required = '<X.Y.Z>' WHERE id = 1;`
-     (P2). **P3/P4** : pas de `breaking-skip-bump`. **P2-bis** : les crates du workspace passent à `<X.Y.Z>` **dans le
-     même commit** — ⚠️ *écart à l'epic* : **onze** crates et non dix, `kesh-providers` (AC-5) naissant à `<X.Y.Z>`
-     dans ce même commit ; `scripts/prepare-release.sh` lit `crates/*/Cargo.toml` par motif (`:96`) et ne compte rien,
-     seuls ses commentaires disent « 10 » (`:7`, `:219`) — à corriger, comme `CLAUDE.md` § *Repository Structure*
-     (« workspace de 10 crates ») et le membre neuf au `Cargo.toml` racine (`members`, `:2-13`).
-   - **P5** : ligne à `docs/migrations-idempotence-audit.md` (`tracked-by-sqlx` ; **BREAKING** écrit en clair, comme la
-     ligne de `20261110000001`, `:113`) ; compteurs recomptés à la source. **P6** : `grep -rn
-     "migrations.len()\|apply_migrations_up_to" crates/` (relevé au commit : `migrations_upgrade_path.rs` ×27,
-     `invoice_lines_revenue_account_backfill.rs` ×13, `lettering_documents_backfill.rs` ×6,
-     `accounts_role_backfill.rs` ×5, `closing_accounts_backfill.rs` ×5, `pre_upgrade_backup/tests.rs` ×3, quatre autres
-     ×2) — chaque site inspecté, cité au Change Log. **P7** : `EXEMPT_MIGRATIONS` (`crates/kesh-db/src/post_restore.rs`,
-     patron des entrées `20261030000001`, `:634-637`, et `20261110000001`, `:646-652`), `ExemptionBasis::Durable`,
-     justification « UPDATE sur _kesh_version (bump à <X.Y.Z>), table système jamais restaurée ; le reste est du DDL
-     (match_type en VARCHAR, contrainte de format) : aucune valeur à recalculer » ; l'assertion de taille du registre
-     (`:1252-1256`, **24** au commit de relevé) suit en delta, cumulée avec l'Epic 37. **P8** : aucune migration
-     appliquée retouchée.
-   - **Valeur à greper** (CLAUDE.md, *Propagation*) : `grep -rn '"0\.17\.6"' crates` rend les assertions de version
-     minimale de `migrations_upgrade_path.rs` (`:552-620, 704, 1144, 1654, 2598`), `migrations_fresh_install.rs` et
-     `admin_full_import_e2e.rs:4650` — chacune trie : relevé historique (garder) ou valeur courante (passer à
-     `<X.Y.Z>`). Gate **runtime complet** avant `done` : `admin_backup_e2e`, `admin_full_import_e2e`,
-     `migrations_fresh_install` (P2-bis), plus le démarrage réel contre une base persistante (E2E).
-   - **Retour** : un binaire antérieur refuse la base migrée (`check_downgrade_protection`) et un `.keshbackup` de
-     cette version (version minimale du manifeste, `routes/admin.rs`, étape 3b) ; **le retour passe uniquement par la
-     sauvegarde d'avant la mise à jour** (`backup/pre-upgrade/`, #847) — dit au manuel par 38-9a (E19) ; **aucun SQL
-     de retour** (retiré par B22).
+1. **AC-1 — La migration breaking est celle de 38-2 (O1, E19, C-38-0, NFR-38-3-1) ; ce que cette story en attend.**
+   Le fichier `…_provider_api_source_and_rule_types.sql` de la rédaction (type `match_type` en `VARCHAR(40)` +
+   relèvement de `kesh_version_min_required`) n'existe plus ici : il est repris par 38-2 avec la contrainte d'IBAN
+   (O1, O2). 38-3 **ne contient ni `MODIFY COLUMN`, ni `DROP`, ni `UPDATE _kesh_version`** : ni P2, ni P2-bis, ni P7
+   ne la concernent (le détecteur P7 classe sur le premier mot-clé ; ses statements sont des `CREATE`/`ALTER ADD`).
+   - **Ce que 38-3 lit de 38-2** : `reconciliation_rules.match_type` est un `VARCHAR(40)` `ascii_bin` (CHECK de
+     format) — les bras `Other(String)` et les quatre variantes déclarées de l'AC-2 en dépendent ; `bank_imports.
+     source_format` reste un `VARCHAR(32)` sans `CHECK` (`migrations/20260504000001_bank_imports.sql:25`), la valeur
+     `'PROVIDER_API'` n'exigeant aucun DDL ; la version minimale relevée par 38-2 protège un binaire antérieur, dont
+     le `FromStr` refuse l'inconnu (`crates/kesh-db/src/entities/bank_import.rs:57-67`,
+     `entities/reconciliation_rule.rs:66-77`). **Test de garde** (T10) : la liste des migrations de la branche place
+     celle de 38-2 avant celle de l'AC-3, et `kesh_version_min_required` y est déjà relevé.
+   - **Crate `kesh-providers`** (AC-4) : né **après** le bump de 38-2, il porte la version courante des crates à sa
+     création (`version = "<X.Y.Z>"` de 38-2) ; le workspace passe à **onze** membres : `members` du `Cargo.toml`
+     racine (`:2-13`), commentaires « 10 crates » de `scripts/prepare-release.sh` (`:7`, `:219` ; le script lit
+     `crates/*/Cargo.toml` par motif, `:96`, et ne compte rien) et `CLAUDE.md` § *Repository Structure* (`:60`,
+     « workspace de 10 crates »). Un test relit que les onze `Cargo.toml` portent la même version (P2-bis : un crate
+     en retard rend le binaire plus ancien que sa base).
+   - **P6** (cette story ajoute une migration) : `grep -rn "migrations.len()\|apply_migrations_up_to" crates/`
+     (relevé au commit : `migrations_upgrade_path.rs` ×27, `invoice_lines_revenue_account_backfill.rs` ×13,
+     `lettering_documents_backfill.rs` ×6, `accounts_role_backfill.rs` ×5, `closing_accounts_backfill.rs` ×5,
+     `pre_upgrade_backup/tests.rs` ×3, quatre autres ×2), chaque site inspecté, cité au Change Log. **P5** : ligne
+     d'audit de l'AC-3. **P8** : aucune migration appliquée retouchée.
 
 2. **AC-2 — Décodage tolérant (E4, FR-38-3-6).**
    - **`BankImportSourceFormat`** gagne `ProviderApi` (`"PROVIDER_API"`) et `Other(String)` ; `FromStr` ne refuse
      plus rien (`Other` pour l'inconnu) ; `Serialize`/`Deserialize` à la main (la chaîne brute, `Other` compris).
+     `as_str` perd son `&'static str` (il rend `&str`, emprunté à `Other`) : `Display`, `Encode`
+     (`entities/bank_import.rs:~85`) et les sites qui exigent `'static` suivent ; `SourceFormatTag::as_db_str` reste
+     `&'static str` (pas de `Other` côté tag).
      `kesh_core::bank_imports::SourceFormatTag` (`crates/kesh-core/src/bank_imports.rs:145-170`, aligné par contrat sur
      `as_db_str`) gagne `ProviderApi` ; aucun chemin d'import de fichier ne le rend (`from_imported`, comme `Manual`).
    - **`ReconciliationMatchType`** gagne les **quatre variantes déclarées** de C-38-6 — `CounterpartyEmailExact`
      (`counterparty_email_exact`), `InvoicePrefix` (`invoice_prefix`), `ItemNameContains` (`item_name_contains`),
      `EventCodePrefix` (`event_code_prefix`) — et `Other(String)`. **Évaluation** : `rule_matches`
-     (`crates/kesh-reconciliation/src/rules.rs:46-71`) rend **`false`** pour les quatre neuves et pour `Other` (test
-     nommé par variante) ; 38-4 les évalue. **Écriture** (`routes/reconciliation_rules.rs`, `matchType` lu à `:63`,
+     (`crates/kesh-reconciliation/src/rules.rs:46-70` ; `match rule.match_type` devient `match &rule.match_type`, le
+     type perdant `Copy`) rend **`false`** pour les quatre neuves et pour `Other` (test nommé par variante) ; 38-4 les
+     évalue. **Écriture** (`routes/reconciliation_rules.rs`, `matchType` lu à `:63`,
      `:82`) : un type `Other` → `400 RULE_CRITERION_UNKNOWN` (`details.matchType`) ; les quatre neuves → même refus
      **jusqu'à 38-4**, qui le lève (point de contact écrit des deux côtés) ; une modification d'une règle stockée en
      `Other` → `409 RULE_CRITERION_UNKNOWN` (le type n'est pas modifiable, `:121`, mais la règle ne se réécrit pas non
@@ -118,7 +100,9 @@ d'imputation (38-6) reposent sur un relevé complet et vérifiable.
    - Tests : décodage de `'PROVIDER_API'`, `'FUTUR_X'` (→ `Other`), d'un type de règle inconnu (→ `Other`, liste
      rendue, aucune proposition) ; un import `Other` s'affiche (code brut) et se supprime comme aujourd'hui.
 
-3. **AC-3 — Migration non breaking `2026111X000003_provider_fetch.sql` (C-38-4, C-38-5, E5–E8, E12, E20).** DDL seul.
+3. **AC-3 — Migration non breaking `2026111X0000NN_provider_fetch.sql` (C-38-4, C-38-5, E5–E8, E12, E20).** DDL seul,
+   de date **postérieure** à la migration breaking de 38-2 et à celle de 38-2 qui crée `payment_provider_accounts`
+   (`NN` fixé au développement) ; **seule migration de cette story** (aucun `UPDATE`, aucun `MODIFY`).
    - **`bank_transactions`** (`migrations/20260504000001_bank_imports.sql:54-88`) gagne, toutes `NULL` (lues par
      listes de colonnes nommées — `repositories/bank_transactions.rs:21-24` `COLUMNS`, à étendre — : un binaire
      antérieur les ignore) : `provider_tx_id VARCHAR(64) CHARACTER SET ascii COLLATE ascii_bin`, `booked_at
@@ -133,15 +117,20 @@ d'imputation (38-6) reposent sur un relevé complet et vérifiable.
      manuel inchangés, E6) ; `chk_bank_transactions_provider_amounts CHECK (provider_tx_id IS NULL OR (gross_amount IS
      NOT NULL AND fee_amount IS NOT NULL AND amount = gross_amount + fee_amount AND booked_at IS NOT NULL))` ; index
      `(company_id, related_provider_tx_id)` (lu par 38-6b). Entité `BankTransaction` (`entities/bank_transaction.rs`)
-     : champs `Option`.
+     : champs `Option` ; `item_names` se lit en chaîne JSON (`item_names_json: Option<String>`, patron de
+     `column_mapping_json`, E24) et **l'accesseur `BankTransaction::item_names() -> Vec<String>`** (liste vide si
+     `NULL`, `DbError::Invariant` sur un JSON illisible) est celui que lit 38-4 (AC-3 de 38-4).
    - **`provider_fetch_runs`** (applicative) : `id`, `company_id` (FK `RESTRICT`), `connection_id` (FK
      `payment_provider_connections` **`ON DELETE CASCADE`**, AC-6), `trigger_kind VARCHAR(10)` ascii_bin `CHECK BINARY
      IN ('daily','manual')`, `requested_by_user_id BIGINT NULL` (FK `users` `RESTRICT` ; `NULL` pour `daily`),
      `window_from`, `window_to` `DATETIME(3) NOT NULL` (UTC), `started_at DATETIME(3) NOT NULL`, `finished_at NULL`,
-     `status VARCHAR(20)` ascii_bin (format seul, `running`|`succeeded`|`failed`, lu avec `Other`, E4), `error_code
+     `status VARCHAR(20)` ascii_bin (format seul, `running`|`succeeded`|`failed`, lu avec `Other`, E4), index
+     `(connection_id, started_at)` (lecture des passages, AC-8, et recherche du dernier passage, AC-7), `error_code
      VARCHAR(40) NULL`, `error_detail VARCHAR(500) NULL` (jamais un secret ni une URL avec jeton), `inserted_count`,
      `known_count`, `skipped_unlinked_count`, `accounts_touched` `INT NOT NULL DEFAULT 0`.
-   - **`bank_imports.provider_fetch_run_id BIGINT NULL`**, FK `provider_fetch_runs` `RESTRICT`, index.
+   - **`bank_imports.provider_fetch_run_id BIGINT NULL`**, FK `provider_fetch_runs` `RESTRICT`, index ; l'entité
+     `BankImport` et `COLUMNS` de `repositories/bank_imports.rs` (`:72` et sa constante) gagnent la colonne
+     (`Option<i64>`), comme `COLUMNS` de `bank_transactions` (`repositories/bank_transactions.rs:21-24`) gagne les onze.
    - **`payment_provider_accounts.fetched_through DATETIME(3) NULL`** (UTC) — **ajout à l'epic** : le point de reprise
      **par compte** (un compte créé après coup repart de `fetch_from` ; un point par connexion le priverait de tout ce
      qui précède sa création, E12).
@@ -185,7 +174,8 @@ d'imputation (38-6) reposent sur un relevé complet et vérifiable.
      ASCII imprimable ; devise ISO à trois lettres majuscules ; montants à deux décimales au plus et
      `|montant| < 10^16` ; `net == gross + fee` ; `booked_at` dans la fenêtre ; textes bornés aux longueurs des
      colonnes (refus, jamais de troncature silencieuse d'un identifiant ; troncature **signalée** des textes libres
-     `details`/`counterparty_name` à leur borne) ; `item_names` ≤ 50 noms de ≤ 255 ; pagination cohérente (`page ≤
+     `details`/`counterparty_name` à leur borne) ; `item_names` ≤ 50 noms de ≤ 255 ; **au plus 500 mouvements par page** (borne déclarée du connecteur, jamais lue de
+     la réponse) ; pagination cohérente (`page ≤
      total_pages`, `total_pages` constant d'une page à l'autre d'une même fenêtre, ≤ un plafond déclaré par le
      connecteur) ; pas deux fois le même `provider_tx_id` dans une page. Échec → `InvalidResponse { reason }`, **aucune
      ligne de la page écrite**. Tests de réponses **hostiles** (C-38-11) : chacun des refus ci-dessus a son test.
@@ -217,8 +207,13 @@ d'imputation (38-6) reposent sur un relevé complet et vérifiable.
    `run_fetch(state, connection_id, trigger, user)` :
    - **Un passage à la fois par connexion** : verrou en mémoire (`provider_fetch_guard`, ensemble des connexions en
      cours, `tokio::sync::Mutex`) **et** en base — la ligne `provider_fetch_runs` `running` se crée sous `SELECT … FOR
-     UPDATE` de la connexion, refusée s'il en existe une (`409 PROVIDER_FETCH_IN_PROGRESS`, `details.runId`). Au
-     démarrage du binaire, un passage resté `running` passe `failed`, `error_code = "interrupted"` (`tracing::warn!`).
+     UPDATE` de la connexion, refusée s'il en existe une **que le verrou en mémoire tient, ou qui a commencé il y a
+     moins de 6 h** (`409 PROVIDER_FETCH_IN_PROGRESS`, `details.runId`) ; une ligne `running` plus ancienne et sans
+     verrou en mémoire passe `failed`, `error_code = "interrupted"` à cette lecture. *Raison* : une sauvegarde
+     importée (restauration complète, sans redémarrage) peut porter un passage `running` d'une autre instance, que
+     ni le démarrage ni le verrou en mémoire ne verraient — la connexion resterait bloquée. Au démarrage du binaire
+     (`main.rs` seulement), tout passage resté `running` passe de même `failed`, `error_code = "interrupted"`
+     (`tracing::warn!`). Test : ligne `running` de 7 h posée par SQL → un passage démarre ; de 1 h → 409.
    - **Préalables** : connexion utilisable (38-1 AC-3 : prestataire connu, réglages lisibles, clé, secret) — sinon
      `409 PROVIDER_CONNECTION_UNUSABLE`, `details.reason` = `unusableReason` de 38-1 ; aucun passage créé.
    - **Fenêtre** : fin = maintenant − 3 h (délai de PayPal) ; début = **min sur les comptes prestataires actifs
@@ -227,24 +222,37 @@ d'imputation (38-6) reposent sur un relevé complet et vérifiable.
      → passage `succeeded` sans mouvement (soldes lus quand même, AC-9).
    - **Pour chaque sous-fenêtre et chaque page** : `movements(window, page)` → `validate_page` (AC-4) → **une
      transaction** : pour chaque mouvement, compte bancaire = la ligne `payment_provider_accounts` (connexion, devise)
-     d'un compte actif ; devise sans compte → compté `skipped_unlinked` et **non écrit** (E12, B2) ; mouvement d'un
-     compte dont `fetched_through` dépasse déjà la fin de la sous-fenêtre → réécrit sans effet (idempotent) ; en-tête
-     `bank_imports` du (passage, compte) **créé à la première insertion** (E5 : `source_format = 'PROVIDER_API'`,
+     d'un compte actif ; devise sans compte → compté `skipped_unlinked` et **non écrit** (E12, B2) ; un compte
+     **archivé ou clos** entre la sélection et l'écriture est refusé par la même garde que `create_with_transactions`
+     (`repositories/bank_imports.rs:~40-66`, Story 28-4a/29-4a : compte relu sous verrou, `NotFound` ou
+     `BankAccountClosed`) — la transaction de la page est annulée, le passage se termine `failed`, `error_code =
+     "account_unavailable"` (ajouté à la liste ci-dessous) ; le suivant n'élit que les comptes actifs ; mouvement
+     d'un compte dont `fetched_through` dépasse déjà la fin de la sous-fenêtre → connu, sans effet (idempotent) ;
+     **connu ou inséré se décide par une lecture, non par `rows_affected`** : sqlx pose `CLIENT_FOUND_ROWS`
+     (`repositories/letterings.rs:1213`), si bien qu'un `ON DUPLICATE KEY UPDATE id = id` rend **1** pour une ligne
+     insérée **et** pour une ligne connue — la distinction annoncée serait fausse. Par page et par compte :
+     `SELECT provider_tx_id FROM bank_transactions WHERE bank_account_id = ? AND provider_tx_id IN (…)` (≤ 500, même
+     transaction, verrou de passage tenu), puis `INSERT` des seuls identifiants absents ; le `ON DUPLICATE KEY UPDATE
+     id = id` ne reste que comme filet d'une course impossible sous le verrou, et un test insère deux fois la même page
+     pour vérifier `inserted_count` et `known_count` ; en-tête
+     `bank_imports` du (passage, compte) **créé à la première insertion réelle** — jamais avant la lecture ci-dessus :
+     une page entièrement connue ne crée aucun en-tête (« un en-tête sans transaction n'existe pas », ci-dessous), et
+     l'en-tête déjà créé par une page précédente du même passage est réutilisé (E5 : `source_format = 'PROVIDER_API'`,
      `filename = telechargement-<provider>-<AAAA-MM-JJ>-<AAAA-MM-JJ>` (bornes de la fenêtre du passage, dates Zurich),
      `file_hash` provisoire = SHA-256 de `run:<id>:account:<id>`, `statement_id`, soldes `NULL`, période = fenêtre,
      `imported_by_user_id` = le demandeur, ou `created_by_user_id` de la connexion pour `daily` (colonne `NOT NULL`,
      `migrations/20260504000001_bank_imports.sql:33` ; un utilisateur désactivé reste une ligne valide),
      `provider_fetch_run_id`) ; **`INSERT … ON DUPLICATE KEY UPDATE id = id`** sur `uq_bank_transactions_provider_tx`
-     — un mouvement connu n'est **jamais réécrit** (E6) ; `rows_affected` distingue inséré et connu ; colonnes de
-     l'AC-3 remplies, `status = 'pending'`. À la fin de la sous-fenêtre (toutes pages) : `fetched_through` de chaque
-     compte traité avancé à la fin de la sous-fenêtre, **dans la transaction de la dernière page** ; point de reprise
-     = ce champ.
+     — un mouvement connu n'est **jamais réécrit** (E6) ; colonnes de l'AC-3 remplies, `status = 'pending'`. À la fin
+     de la sous-fenêtre (toutes pages) : `fetched_through` de chaque compte traité avancé à la fin de la
+     sous-fenêtre, **dans la transaction de la dernière page** — ou, quand la fenêtre n'a aucune page (`total_pages =
+     0`), dans une transaction à lui seul, pour que le point de reprise avance quand même ; point de reprise = ce champ.
    - **Fin** : en-têtes finalisés (`transaction_count`, `file_hash` = SHA-256 des enregistrements normalisés insérés,
      triés par `provider_tx_id` — forme écrite au module), passage `succeeded` ; `payment_provider_connections.last_run_at`,
      `last_run_status`, `last_error` mis à jour (38-1 AC-2). Un en-tête sans transaction insérée n'existe pas.
    - **Échec** (erreur du connecteur, page invalide, base) : ce qui est commité **reste** ; passage `failed`,
      `error_code` constant (`auth`, `permission`, `rate_limited`, `unavailable`, `invalid_response`, `transport`,
-     `connector_unavailable`, `interrupted`, `database`), `error_detail` sans secret ; `fetched_through` dit où reprendre.
+     `connector_unavailable`, `interrupted`, `account_unavailable`, `database`), `error_detail` sans secret ; `fetched_through` dit où reprendre.
      Le passage suivant repart de là (−3 jours). Test : échec à la page 3 de la 2ᵉ sous-fenêtre → pages 1-2 gardées,
      relance → aucun doublon, total final égal à un passage sans échec.
    - **Statut tardif** : un mouvement déjà connu n'est jamais modifié ; une inversion ou un remboursement arrive chez
@@ -286,16 +294,25 @@ d'imputation (38-6) reposent sur un relevé complet et vérifiable.
      ≤ 100, défaut 20), colonnes de la table, `error_detail` compris (sans secret par construction, AC-6).
 
 9. **AC-9 — Soldes vus, soldes rapportés, complétude (E12, E20 a, FR-38-3-4, FR-38-3-5).**
-   - À chaque passage, **avant** les mouvements : `balances(None)` → une ligne `provider_balance_snapshots` `reported`
-     par devise ; devise sans compte prestataire actif → `provider_balances_seen` (insérée ou `last_seen_at`,
+   - À chaque passage, **avant** les mouvements : `balances(Some(fin de fenêtre))` → une ligne `provider_balance_snapshots` `reported`
+     par devise (lu **à la fin de la fenêtre**, voir ci-dessous) ; devise sans compte prestataire actif → `provider_balances_seen` (insérée ou `last_seen_at`,
      `last_amount` mis à jour ; `ignored` gardé). Au premier passage d'un compte (aucun `opening` pour sa devise) :
      `balances(Some(fetch_from à 00:00 Zurich))` → instantané `opening` (PayPal : `as_of_time`, 38-7). Un échec de
-     lecture des soldes n'empêche pas les mouvements : passage `succeeded`, `error_code = "balances_unavailable"`
-     n'est **pas** un échec — écrit dans `error_detail`, contrôle « non disponible ».
+     lecture des soldes n'empêche pas les mouvements : le passage reste `succeeded`, `error_code` reste `NULL`
+     (`balances_unavailable` n'est **pas** un code d'échec de l'AC-6) et le motif s'écrit dans `error_detail`
+     (`balances_unavailable: <code du connecteur>`) ; contrôle « non disponible ».
+   - ⚠️ **Heure des soldes rapportés** : la fenêtre du passage s'arrête à *maintenant − 3 h* (AC-6) ; un solde lu
+     « maintenant » compterait des mouvements que le passage n'a pas pu télécharger et ferait de chaque passage un
+     faux « téléchargement incomplet ». Le solde `reported` se lit donc **à la fin de la fenêtre du passage** :
+     `balances(Some(fin))`, `as_of = fin` (le « solde actuel » `balances(None)` ne sert qu'à « Tester la connexion »,
+     38-7). Test : un mouvement daté de *maintenant − 1 h*, compté dans le solde « actuel » mais absent de la fenêtre,
+     ne fait pas apparaître d'écart.
    - **Contrôle de complétude**, calculé à la lecture (jamais stocké, jamais d'écriture comptable) : pour chaque compte
      prestataire, `attendu = opening + Σ amount` des transactions du compte de `booked_at ≥ fetch_from 00:00 Zurich`
      et `≤ as_of` du dernier `reported` ; `écart = reported − attendu` ; `≠ 0` → « téléchargement incomplet ». Route
-     `GET /api/v1/provider-connections/{id}/balances` (Comptable, Administrateur) : `{ accounts: [{ bankAccountId,
+     `GET /api/v1/provider-connections/{id}/balances` (Comptable, Administrateur ; **clés d'API refusées dans le
+     handler**, `ApiKeyOperationForbidden`, comme l'AC-8 — NFR-38-6c-4) ; `complete: null` aussi quand
+     `fetched_through` du compte est antérieur au `as_of` du `reported` (passage échoué ou en cours) : `{ accounts: [{ bankAccountId,
      currency, opening: {amount, asOf}|null, reported: {amount, asOf}|null, expected, gap, complete }], unlinked:
      [{ currency, firstSeenAt, lastSeenAt, lastAmount, ignored }] }` — `unlinked` exclut les devises désormais tenues
      par un compte. Tests : écart nul, écart d'un mouvement manquant (montant exact), compte sans `opening`
@@ -338,15 +355,14 @@ d'imputation (38-6) reposent sur un relevé complet et vérifiable.
       en CHF ; en devise par 38-6c), virement entre ses comptes (34-11b).
 
 12. **AC-12 — Retour, recette, documentation (NFR-38-3-2).**
-    - **Recette de montée** (`scripts/recette-montee.sh`, `docs/testing.md`) depuis l'**image publiée précédente**,
-      jouée à cette story et au journal de la release : sauvegarde `pre-upgrade/` écrite avant la migration ;
-      `--diff-attendu` : `migrations`, `min_required`, `bank_transactions`, `bank_imports`, `reconciliation_rules` (type
-      de colonne), `payment_provider_accounts`, plus les tables neuves ; refus de l'image précédente sur la base migrée
-      et sur un `.keshbackup` de cette version ; retour par le dump et import du `.keshbackup` de l'image précédente,
-      empreintes identiques.
-    - **CHANGELOG** : entrée non datée (la date est posée par `prepare-release.sh`) qui annonce la migration breaking,
-      la version minimale relevée et la **sauvegarde d'avant la mise à jour comme seul retour** ; le manuel
-      d'administration (38-9a) en fait autant.
+    - **Recette de montée** (`scripts/recette-montee.sh`, `docs/testing.md`) : la montée depuis l'**image publiée
+      précédente**, le relèvement de `min_required`, le refus de l'image précédente et le retour par la sauvegarde sont
+      ceux de **38-2** (O1) ; cette story **étend** le `--diff-attendu` à ses objets (`bank_transactions` et
+      `bank_imports` : colonnes neuves ; `payment_provider_accounts` : `fetched_through` ; les trois tables neuves) et
+      la rejoue au journal de la release.
+    - **CHANGELOG** : une ligne de la même entrée non datée que 38-2 (la date est posée par `prepare-release.sh`) ;
+      c'est 38-2 qui annonce la migration breaking, la version minimale relevée et la **sauvegarde d'avant la mise à
+      jour comme seul retour**, au CHANGELOG et au manuel d'administration (38-9a).
     - **Registres** : `LIB_ROUTES` **+2** (`fetch`, `balances-seen`, toutes deux `Traced, SansEcritureAuJournal`),
       `TEST_ENDPOINT_ROUTES` **+1** ;
       décomptes en delta cumulés avec 38-1 et 38-2. Audit : types d'entité `provider_fetch_run`,
@@ -359,11 +375,12 @@ d'imputation (38-6) reposent sur un relevé complet et vérifiable.
 
 ## Tâches / sous-tâches
 
-- [ ] **T0 — Q1** : version `<X.Y.Z>` obtenue de Guy, remplacée dans la fiche et au Change Log ; sinon arrêt.
+- [ ] **T0 — Prérequis (O1)** : la migration breaking de 38-2 est fusionnée dans la branche et la version minimale
+      relevée (relu au code : `kesh_version_min_required`, version des crates) ; sinon arrêt.
 - [ ] **T1 — Migration non breaking** (AC-3) : SQL, squash, audit d'idempotence, P6, inscriptions, R1, exports CSV.
-- [ ] **T2 — Migration breaking et version** (AC-1) : SQL, `EXEMPT_MIGRATIONS` et sa taille, bump des onze crates dans
-      le même commit, `members`, commentaires de `prepare-release.sh` et `CLAUDE.md`, grep de `"0.17.6"` trié, test de
-      l'index unique reconstruit.
+- [ ] **T2 — Workspace et version** (AC-1) : crate `kesh-providers` à la version courante des crates, `members`,
+      commentaires de `prepare-release.sh` et `CLAUDE.md` (« 10 » → « 11 »), test de versions égales ; aucune
+      migration breaking, aucun `EXEMPT_MIGRATIONS` (38-2).
 - [ ] **T3 — Décodage tolérant** (AC-2) : deux enums, `SourceFormatTag`, `rule_matches`, routes des règles,
       `RULE_CRITERION_UNKNOWN`, perte de `Copy`.
 - [ ] **T4 — `kesh-providers`** (AC-4) : types, traits, validation, fuseau, `FakeConnector`, tests hostiles.
@@ -374,16 +391,20 @@ d'imputation (38-6) reposent sur un relevé complet et vérifiable.
       imports, refus des imports de fichier, exclusion des propositions existantes.
 - [ ] **T9 — Registres, audit, i18n, CHANGELOG** (AC-12) ; recette de montée jouée, journal sous `kesh-gate-logs/`.
 - [ ] **T10 — Gates** : gate complet (migrations, dépôts : ciblage interdit) sur base remise à zéro, **gate runtime**
-      (`admin_backup_e2e`, `admin_full_import_e2e`, `migrations_fresh_install`), `scripts/gate-ci.sh` (la CI lance
+      (`admin_backup_e2e`, `admin_full_import_e2e`, `migrations_fresh_install` : relus parce que la story ajoute une
+      migration et des tables à l'inventaire de sauvegarde), `scripts/gate-ci.sh` (la CI lance
       `cargo test` par binaire), E2E complet au dernier commit de code (démarrage réel sur `kesh_e2e` : P8 et version).
 
 ## Notes de développement
 
-- **Taille** : cette story touche cinq modules (`kesh-providers` neuf, `kesh-db`, `kesh-core`, `kesh-api`,
-  `kesh-reconciliation` pour les bras de `rule_matches`) — à la limite de la règle de découpage, sans la franchir ; le
-  frontend est laissé à 38-9a. **Découpage proposé si la validation ne converge pas** (Q-38-3-b) : **38-3a** — les
-  deux migrations, le décodage tolérant, les colonnes, la suppression refusée, les gardes de l'AC-11 ; **38-3b** — le
-  crate, le transport, le passage, la planification, les soldes.
+- **Taille** : cette story touche **six** modules (`kesh-providers` neuf, `kesh-db`, `kesh-core`, `kesh-api`,
+  `kesh-reconciliation` pour les bras de `rule_matches`, `kesh-i18n` pour les quatre locales) — au-dessus des cinq de
+  la règle de découpage, même allégée de la migration breaking (O1) ; le frontend est laissé à 38-9a. **Découpage
+  proposé** (Q-38-3-b ; décision à l'orchestrateur, qui renumérote le registre de l'epic) : **38-3a** — la migration
+  non breaking, les colonnes de `bank_transactions`/`bank_imports`, le décodage tolérant (AC-2), la suppression
+  refusée et les gardes de l'AC-11 (`kesh-db`, `kesh-core`, `kesh-reconciliation`, `kesh-api`) ; **38-3b** — le
+  crate `kesh-providers`, le transport, le passage, la planification, la lecture de l'état, les soldes (AC-4 à AC-9).
+  38-3b ne dépend de 38-3a que par les colonnes. Les deux restent dans l'Epic 38, avant 38-4 et 38-6a.
 - **Point de reprise par compte** (`fetched_through`) plutôt que par connexion : sans lui, un compte créé pour un solde
   vu après coup (B2) ne recevrait jamais ce qui précède sa création. Le prix est de relire, pour une connexion, depuis
   le compte le plus en retard — l'insertion idempotente rend la relecture sans effet.
@@ -403,10 +424,9 @@ d'imputation (38-6) reposent sur un relevé complet et vérifiable.
 
 ## Questions ouvertes
 
-- **Q1 (Guy, bloquante)** — numéro de la release `<X.Y.Z>` (proposition : `0.18.0`).
-- **Q-38-3-a** — `CHECK` de format sur `match_type` et collation `ascii_bin` (AC-1) : écart léger à E14 (« sans
-  `CHECK` »), proposé ; à confirmer.
-- **Q-38-3-b** — découpage préventif en 38-3a / 38-3b (notes) : à décider à la validation si elle stagne.
+- *(Q1 — numéro de release de la migration breaking — est portée par 38-2 ; Q-38-3-a — `CHECK` de format et
+  `ascii_bin` sur `match_type` — est tranchée par O2 et vit dans la migration de 38-2.)*
+- **Q-38-3-b** — découpage préventif en 38-3a / 38-3b (notes) : **recommandé** (six modules) ; à décider.
 - **Q-38-3-c** — refus des imports de fichier sur un compte prestataire (AC-11) : proposé ; une reprise d'historique
   antérieur aux trois ans de PayPal par CSV en serait empêchée (Beat part du 1.1.2024, B8 : sans effet pour lui).
 
@@ -415,3 +435,19 @@ d'imputation (38-6) reposent sur un relevé complet et vérifiable.
 - 2026-11-15 — rédaction (Opus). Écarts à l'epic écrits : onze crates bumpés (non dix) ; `CHECK` de format et
   `ascii_bin` sur `match_type` ; point de reprise par compte (`payment_provider_accounts.fetched_through`) ;
   version `<X.Y.Z>` en attente de Q1.
+- 2026-11-15 — validation P1 (Sonnet) : 14 findings (2 HIGH, 6 MEDIUM, 6 LOW) ; remédiés dans la fiche sauf
+  38-3-P1-7 (découpage, décision de l'orchestrateur) et 38-3-P1-14 (fiches sœurs). HIGH : P1-1 migration breaking
+  déplacée en 38-2 (O1) — AC-1, NFR-38-3-1/2, AC-3, AC-12, T0/T2, questions Q1/Q-38-3-a, en-tête réalignés, aucune
+  écriture de `_kesh_version` ni `MODIFY` ici ; P1-2 `rows_affected` ne distingue pas inséré et connu (sqlx pose
+  `CLIENT_FOUND_ROWS`, `repositories/letterings.rs:1213` : `ON DUPLICATE KEY UPDATE id = id` rend 1 dans les deux
+  cas) — lecture préalable des identifiants (AC-6). MEDIUM : P1-3 en-tête créé avant de savoir si une ligne est neuve
+  (en-tête orphelin) ; P1-4 solde rapporté lu « maintenant » contre une fenêtre arrêtée à maintenant − 3 h (faux
+  « incomplet ») — lu à la fin de la fenêtre (AC-9) ; P1-5 passage `running` importé par une sauvegarde bloquant la
+  connexion (règle de péremption de 6 h, AC-6) ; P1-6 garde compte archivé/clos de `create_with_transactions` non
+  reprise ; P1-7 six modules (`kesh-i18n` compté) : découpage 38-3a/38-3b recommandé ; P1-8 route `balances` sans
+  refus des clés d'API. LOW : P1-9 fenêtre sans page n'avance pas `fetched_through` ; P1-10 `as_str` perd `'static`,
+  `match &rule.match_type` ; P1-11 nombre de mouvements par page non borné ; P1-12 `balances_unavailable` ambigu
+  (code d'erreur sur un passage réussi) ; P1-13 entité/`COLUMNS` de `bank_imports` et index des passages absents ;
+  P1-14 (inter-fiche) `PATCH …/balances/{currency}` avec `version` de 38-9a contre `balances-seen/{currency}` de
+  l'AC-9, et signe des frais de 38-6a (fixé ici : `fee_amount` signé comme il change le solde, négatif pour un frais).
+  Axes non exercés : réponses réelles de PayPal (38-7), exécution de la migration sur MariaDB (aucun `cargo`).

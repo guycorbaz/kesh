@@ -7,8 +7,10 @@ E14, E15, E16, E21, E22 ; contrats C-38-6, C-38-8, C-38-9, C-38-14. Décisions B
 **Dépend de** 38-4 (règles : types, filtres, `RULE_CRITERION_UNKNOWN`), 38-6a (candidat `provider`, `providerLines`,
 `blockedBy`, variante `provider` du lot, `confirmAlreadyBooked`), 38-6b (conversions, retraits, remboursements, file
 `GET /reconciliation/review`, `…/review-done`, annulation d'une paire), 38-6c (`link-suggestions`, `link-entries`,
-rattachement en devise), 38-8 (genres de mouvement) et 38-9a (vocabulaire et `provider-labels.ts`). **Aucune
-migration, aucune route.** Dernière story de l'epic avant 38-10 côté écrans.*
+rattachement en devise ; **`link-suggestions` paginé, lot ≤ 500, codes par élément** : AC-4 et AC-5 de 38-6c), 38-8
+(genres de mouvement) et 38-9a (vocabulaire et `provider-labels.ts`). Arbitrage O12 : période par défaut du
+rattachement en lot = l'exercice ouvert le plus ancien. **Aucune migration, aucune route.** Dernière story de l'epic
+avant 38-10 côté écrans.*
 
 ## Story
 
@@ -51,10 +53,12 @@ doublon et sans qu'aucune écriture ne passe sans que je l'aie vue.
      `LG-` ; les majuscules et les espaces ne comptent pas » ; courriel → « Adresse exacte du payeur ou du marchand » ;
      article → « Une partie du nom d'un article » ; code → « Code PayPal, p. ex. `T0006` ou `T00` ». Les quatre types
      neufs ne valent que pour des transactions de prestataire (champs vides ailleurs) : l'aide le dit.
-   - Une règle d'un type **inconnu** de ce binaire (38-4 AC-7) s'affiche « Critère d'une version ultérieure (`x`) » ;
-     son bouton *Modifier* est **désactivé** avec l'infobulle « Cette règle a été créée par une version plus récente de
-     Kesh ; elle n'est jamais appliquée ici. Vous pouvez la désactiver. » ; *Désactiver* reste. Un `409
-     RULE_CRITERION_UNKNOWN` reçu quand même (liste périmée) affiche son message.
+   - Une règle d'un type **ou d'un sens** inconnu de ce binaire (38-4 AC-7 : `direction` ∉ {`in`, `out`}, p. ex. `both`)
+     s'affiche « Critère d'une version ultérieure (`x`) » ; ses boutons *Modifier* **et *Réactiver*** (toute
+     modification, réactivation comprise, est refusée en 409) sont **désactivés** avec l'infobulle « Cette règle a été
+     créée par une version plus récente de Kesh ; elle n'est jamais appliquée ici. Vous pouvez la désactiver. » ;
+     *Désactiver* (`DELETE`, admis par 38-4 AC-7) reste. Un `409 RULE_CRITERION_UNKNOWN` reçu quand même (liste
+     périmée) affiche son message.
 2. **AC-2 — Filtres** (38-4 AC-3, AC-4, AC-6).
    - Trois champs facultatifs, en création **et** en modification : **Sens** (« Entrées et sorties » = `null`,
      « Entrées » = `in`, « Sorties » = `out`), **Devise** (« Toutes » = `null`, puis les devises des comptes bancaires
@@ -69,7 +73,10 @@ doublon et sans qu'aucune écriture ne passe sans que je l'aie vue.
      `RULE_ACCOUNT_CURRENCY_MISMATCH`, que le serveur rend de toute façon (message affiché).
    - Refus affichés sous le champ concerné : `RECONCILIATION_RULE_DUPLICATE` (message qui cite type, valeur **et
      filtres**, `details` de 38-4 AC-5), `CURRENCY_UNKNOWN`, `BANK_IMPORT_BANK_ACCOUNT_NOT_FOUND`,
-     `RULE_ACCOUNT_CURRENCY_MISMATCH`, `VALIDATION_ERROR` du courriel.
+     `RULE_ACCOUNT_CURRENCY_MISMATCH` (**400 à l'écriture** quand le filtre de devise contredit la devise du compte,
+     `details { accountId, accountCurrency, filterCurrency }` ; aussi `FailedProposal` à l'acceptation), `409
+     MULTI_CURRENCY_DISABLED` (filtre de devise non CHF dans une société mono-devise, 38-4 AC-4 : renvoi aux réglages
+     de devise), `VALIDATION_ERROR` du courriel ou du sens.
    - **Liste** (`RulesList.svelte`) : les filtres s'affichent déjà depuis 38-4 AC-10 ; rien de plus ici que les
      libellés partagés.
 3. **AC-3 — Proposition de prestataire à l'écran** (38-6a C-38-6a-3, C-38-6a-4 ; 38-6b AC-1). Dans
@@ -77,14 +84,21 @@ doublon et sans qu'aucune écriture ne passe sans que je l'aie vue.
    `ProviderProposalPreview.svelte` (le fichier hôte ne reçoit que l'appel et le bras du `switch`) :
    - en-tête : genre (`movementKind`, libellé de `provider-labels.ts` de 38-9a : « Vente », « Achat », « Frais »,
      « Conversion », « Retrait », « Dépôt », « Remboursement » ; inconnu → « Mouvement (`x`) »), règle appliquée
-     (libellé et critère), boutique (`invoiceRef`) si présente, code d'événement ;
+     (libellé et critère), boutique (`invoiceRef`) si présente, code d'événement (`eventCode`) — **ces deux champs sont
+     ceux de la transaction** de la proposition (`transaction.invoiceRef`, `transaction.eventCode`) : ni 38-6a (C-38-6a-3)
+     ni 38-3 ne disent que le DTO de transaction des propositions les porte (*Questions ouvertes*, Q-38-9b-3) ; absents,
+     l'en-tête ne les montre pas. **Tous les montants s'affichent dans la devise de la transaction ou de la ligne**,
+     jamais « CHF » supposé (test : proposition en EUR) ;
    - **aperçu des lignes** (`providerLines`) en tableau : compte (numéro, nom), débit, crédit, et pour une ligne en
      devise le montant en devise et le cours ; la ligne de **TVA** (genre et taux : « TVA due 8.1 % », « Impôt préalable
      8.1 % », « Impôt sur les acquisitions 8.1 % — deux lignes égales ») ; la ligne de **frais** (compte de frais de la
      devise) ; la **ligne d'arrondi** si elle existe, nommée (« Arrondi de change », 38-6a C-38-6a-6 : jamais
-     silencieuse) ; le **cours** (`rate`, `rateMonth`, source « AFC » ou « saisi ») ; totaux débit = crédit en CHF ;
+     silencieuse) ; le **cours** (`rate`, `rateMonth` : champs du candidat, C-38-6a-3 ; **la source « AFC » ou « saisi » ne
+     s'affiche que si le candidat la porte** — 38-6a ne la liste pas, Q-38-9b-3) ; totaux débit = crédit en CHF ;
    - **conversion** (38-6b AC-1) : les **deux** écritures (`providerLines` et `pairedLines`), la ligne de différence de
-     change, et la mention « accepter rapproche aussi la transaction <date, montant, devise> du compte <nom> » ;
+     change, et la mention « accepter rapproche aussi l'autre moitié de la conversion » avec, **si le candidat porte la
+     transaction de l'autre moitié** (Q-38-9b-3 : proposé à 38-6b) « <date, montant, devise> du compte <nom> », sinon
+     son seul identifiant ;
    - **retrait / dépôt** : le compte bancaire suggéré (`transferBankAccountId`, sélecteur des comptes bancaires de même
      devise quand il est `null` ou à changer) **ou** l'écriture existante à rattacher (`linkJournalEntryId`, avec lien
      vers l'écriture) ;
@@ -92,11 +106,21 @@ doublon et sans qu'aucune écriture ne passe sans que je l'aie vue.
      d'origine, aux montants rapportés par PayPal » ;
    - **bloquée** (`blockedBy`) : pas de lignes ; le message du code (`failed-proposal-label.ts`, libellés posés par 38-6a
      AC-12 et 38-6b AC-10, `details` lus) et **le remède** en lien : `RATE_UNAVAILABLE` → cours de la devise et du mois
-     (page des cours de 37-2) ; `VAT_ACCOUNT_NOT_CONFIGURED` → `/settings/invoicing` (réglages TVA, désignation) ;
-     `FEE_ACCOUNT_INVALID` → réglages de la connexion (38-9a, Administrateur) ; `MULTI_CURRENCY_DISABLED` → réglages de
-     devise. La case de la ligne est **désactivée** (une proposition bloquée ne part pas dans un lot).
+     (écran des cours de 37-2) ; `VAT_ACCOUNT_NOT_CONFIGURED` → `/settings/invoicing` (réglages TVA, désignation :
+     `details.designation`) ; `VAT_KIND_UNKNOWN`, `VAT_RATE_UNAVAILABLE`, `VAT_KIND_MISMATCH` (38-5) → réglage TVA du
+     compte de la règle (plan comptable) ; `FEE_ACCOUNT_INVALID` → réglages de la connexion (38-9a, Administrateur) ;
+     `MULTI_CURRENCY_DISABLED`, `FX_ACCOUNT_INVALID` → réglages de devise ; `RULE_ACCOUNT_CURRENCY_MISMATCH` → la
+     règle ; `PROVIDER_AMOUNTS_INCONSISTENT`, `BANK_ACCOUNT_NOT_CONFIGURED`, `PROVIDER_TRANSFER_CURRENCY_MISMATCH` :
+     message seul. **Tout autre `blockedBy.code`** (valeur d'une version ultérieure) → le message serveur ou le code
+     brut, sans lien. La case de la ligne est **désactivée** (une proposition bloquée ne part pas dans un lot).
    - Les candidates existantes (facture, règle, facture fournisseur) gardent leur rendu ; sur un compte prestataire en
      CHF, une facture qui masque le candidat `provider` (38-6a C-38-6a-7) est rendue comme aujourd'hui.
+   - **Miroir `canLink`** (`ReconciliationProposals.svelte:262-264`, « CHF seulement ») : étendu comme la condition 1
+     du serveur en devise (38-6c AC-1) — montant non nul et devise = celle de la base du compte (CHF pour un compte
+     ordinaire ou en CHF ; devise du compte prestataire sinon) — pour que *Rattacher à une écriture existante* soit
+     offert sur une ligne en devise ; la base lue du bloc `provider` de `GET /bank-accounts` (38-2 AC-8). Sans cela, la
+     voie de rattachement à l'unité de 2024 n'est pas atteignable depuis la ligne (38-6c Écart 6). Test Vitest : ligne
+     EUR sur compte prestataire EUR → bouton ; ligne USD sur ce même compte → pas de bouton.
 4. **AC-4 — Acceptation en lot** (38-6a AC-7, C-38-6a-9 ; 38-6b AC-2 à AC-5). `reconciliation.api.ts` : le type
    `AcceptProposalInput` (`reconciliation.types.ts:109`) gagne la variante `{ type: 'provider', bankTransactionId,
    ruleId?, counterpartyAccountId?, confirmAlreadyBooked?, pairedBankTransactionId?, transferBankAccountId?,
@@ -125,21 +149,39 @@ doublon et sans qu'aucune écriture ne passe sans que je l'aie vue.
      réécrite aux quatre locales) — NFR-38-9b-2.
    - Pour un compte prestataire, trois onglets : **Propositions** (existant), **À examiner (N)** (AC-7), **Rattacher en
      lot** (AC-6) ; pour tout autre compte, la page est inchangée.
-6. **AC-6 — Rattachement en lot** (FR-38-9b-3, E21, C-38-14 ; routes de 38-6c).
-   - Onglet « Rattacher en lot » : période (du, au ; défaut : l'exercice de la transaction en attente la plus ancienne),
-     bouton « Chercher » → `GET /api/v1/reconciliation/link-suggestions?bankAccountId&from&to`.
-   - **Univoques** : tableau transaction (date, montant en devise, contrepartie, boutique) ↔ écriture (date, numéro,
+6. **AC-6 — Rattachement en lot** (FR-38-9b-3, E21, C-38-14 ; routes de 38-6c AC-4 et AC-5).
+   - Onglet « Rattacher en lot » : période (du, au ; **défaut : l'exercice ouvert le plus ancien**, O12 ; l'exercice
+     est lu de `GET /api/v1/fiscal-years`), bouton « Chercher » → `GET /api/v1/reconciliation/link-suggestions?
+     bankAccountId&from&to&limit&offset` (38-6c AC-4 : `limit` 1 à 500, défaut 200, réponse paginée `{ items, total,
+     limit, offset }`). L'écran **pagine** (« Charger la suite » tant que `offset + limit < total`) et affiche `total`.
+     Éléments par `kind` : `unique`, `ambiguous`, `none` (compté seulement : « N transactions sans écriture
+     candidate »), `notLinkable` (compté, « montant nul ou autre devise »). Une transaction `rejected: true` est marquée
+     « écartée » ; elle se rattache comme une autre (38-6c).
+   - **Univoques** (`kind: unique`, `entry { journalEntryId, entryNumber, entryDate, description, amount }`) : tableau
+     transaction (date, montant **dans la devise de la transaction**, contrepartie, boutique) ↔ écriture (date, numéro,
      libellé, montant sur le compte), une case par ligne, **non cochées** ; bouton « Tout cocher » (geste explicite) ;
-     « Rattacher (N) » → `POST /api/v1/reconciliation/link-entries` avec `[{ bankTransactionId, journalEntryId, version
-     }]` tels que la suggestion les rend ; si 38-6c borne la taille d'un lot, l'écran envoie par paquets de cette borne,
-     séquentiellement, et agrège le bilan ; un paquet en échec HTTP (4xx/5xx global) arrête les suivants et le dit.
-   - **Ambiguës** : liste à part, une ligne par transaction avec le nombre de candidates ; « Choisir » ouvre la modale
-     existante `LinkSettlementModal.svelte` (rattachement un par un, `…/entry-candidates` et `…/link-entry`, en devise
-     depuis 38-6c), qui rafraîchit la liste à la fermeture.
-   - **Bilan** : rattachées, et `failed[]` avec libellés (`ENTRY_NOT_LINKABLE`, `ENTRY_ALREADY_LINKED`,
-     `AMOUNT_MISMATCH`, `VERSION_CONFLICT` : codes de C-38-14, libellés posés par 38-6c ; sinon ajoutés ici dans
-     `failed-proposal-label.ts`, quatre locales, décompte du doc-comment recompté). Une conversion (deux transactions,
-     une écriture) apparaît avec ses deux transactions (34-11b) ; le texte le dit.
+     « Rattacher (N) » → `POST /api/v1/reconciliation/link-entries` `{ bankAccountId, items: [{ bankTransactionId,
+     journalEntryId, version }] }` tels que la suggestion les rend (`version` y est, 38-6c AC-4) ; **le lot admet 500
+     éléments au plus** (38-6c AC-5, `check_batch_size`) : la page de 200 ne l'atteint pas, mais l'écran envoie par
+     paquets de 500 si la page est portée à 500, séquentiellement, et agrège le bilan ; un paquet en échec HTTP global
+     (400, 404 `BANK_IMPORT_BANK_ACCOUNT_NOT_FOUND`, 5xx) arrête les suivants et le dit. Après le bilan, la liste se
+     recharge (une écriture n'est jamais rattachée deux fois : `entry_shared` n'est vu que dans la page, 38-6c AC-4 —
+     le second rattachement d'une même écriture est refusé `ENTRY_ALREADY_LINKED`).
+   - **Ambiguës** (`kind: ambiguous`, `reasons` ⊂ `several_entries`, `settlement_candidate`, `matched_elsewhere`,
+     `entry_shared`, un libellé par motif ; `candidates` ≤ 50) : liste à part, une ligne par transaction avec le nombre
+     de candidates ; « Choisir » ouvre la modale existante `LinkSettlementModal.svelte` (rattachement un par un,
+     `…/entry-candidates` et `…/link-entry`, en devise depuis 38-6c), qui rafraîchit la liste à la fermeture.
+   - **Bilan** (`{ linked: [{ bankTransactionId, journalEntryId }], failed }`) : rattachées, et `failed[]` avec libellés
+     de **tous** les codes par élément de 38-6c AC-5 : `ENTRY_NOT_LINKABLE` (`details.reason` ∈
+     `transaction_not_linkable`, `entry_not_found`, `entry_reversed`, `settlement_entry`, `unclassified` : un libellé par
+     motif), `AMOUNT_MISMATCH` (`transactionAmount`, `entryMovement`), `ENTRY_ALREADY_LINKED` (`linkedBankTransactionIds`),
+     `VERSION_CONFLICT` (`expected`, `actual`), `RECONCILIATION_TRANSACTION_NOT_PENDING`, `RECONCILIATION_ALREADY_RECONCILED`,
+     `BANK_TRANSACTION_NOT_FOUND`, `BANK_ACCOUNT_CLOSED`, `BANK_ACCOUNT_NOT_CONFIGURED`, `RECONCILIATION_ACCOUNT_LOCKED`,
+     `DATABASE_ERROR` ; libellés posés par 38-6c si elle les pose (38-6c AC-10 : « l'écran traduit les codes »), sinon
+     ajoutés ici dans `failed-proposal-label.ts`, quatre locales, décompte du doc-comment recompté. Une conversion (deux
+     transactions, une écriture) apparaît avec ses deux transactions (34-11b) ; le texte le dit.
+   - **Exercice clos ou période verrouillée** : le rattachement **n'écrit aucune écriture** et s'accomplit dans un
+     exercice clos (38-6c AC-11) ; l'écran ne l'interdit pas et le manuel le dit (AC-10).
    - Aucun rattachement sans clic ; le vocabulaire est « rattacher », jamais « comptabiliser ».
 7. **AC-7 — File « à examiner »** (FR-38-9b-4, C-38-9 ; 38-6b AC-6, AC-7).
    - Onglet « À examiner (N) » (N = longueur rendue, « 500+ » si `hasMore`) : `GET /api/v1/reconciliation/review?
@@ -149,13 +191,17 @@ doublon et sans qu'aucune écriture ne passe sans que je l'aie vue.
      → « Motif inconnu (`x`) »), lien vers la transaction liée (`relatedBankTransactionId`).
    - Actions par ligne : **« Écriture manuelle »** (modale existante `ManualMatchModal.svelte`, 34-3) ; **« Rattacher à
      une écriture existante »** (`LinkSettlementModal.svelte`) ; **« Marquer examiné »** → confirmation (« la
-     transaction sort de la file sans écriture ; *Annuler le rejet* depuis le détail de l'import la fait revenir ») puis
+     transaction sort de la file et des propositions sans écriture : **elle reste en attente** — elle compte toujours
+     dans les contrôles de solde et de clôture (38-6b C-38-6b-6) ; *Annuler le rejet* depuis le détail de l'import la
+     fait revenir ») puis
      `POST /api/v1/reconciliation/transactions/{id}/review-done` (204) ; refus (`PROVIDER_ACCOUNT_REQUIRED`,
      `BANK_ACCOUNT_CLOSED`, `RECONCILIATION_TRANSACTION_NOT_PENDING`, `RECONCILIATION_ALREADY_REJECTED`) avec leur
      message. Rôles : boutons d'écriture pour Comptable et Administrateur ; Consultation lit la file sans action.
 8. **AC-8 — Annuler une paire** (FR-38-9b-5 ; 38-6b AC-8). `CancelReconciliationDialog.svelte` : quand la vue de la
    transaction porte `pairedBankTransactionId`, le dialogue l'annonce avant confirmation (« L'autre moitié de cette
-   conversion — <date, montant, devise, compte> — sera annulée aussi ; deux écritures seront contre-passées ») ; après
+   conversion — <date, montant, devise, compte> — sera annulée aussi ; deux écritures seront contre-passées ») ; ces
+   détails de l'autre moitié se lisent de la vue de **cette** transaction si 38-6b AC-8 les y met, sinon de
+   `GET /reconciliation/transactions/{pairedBankTransactionId}` (Q-38-9b-3) ; à défaut, l'identifiant seul ; après
    succès, le message cite les deux contre-passations (`pairedReversalJournalEntryId`). Test Vitest.
 9. **AC-9 — Textes et i18n** (NFR-38-9b-2). Clés neuves écrites en toutes lettres (`reconciliation-provider-*`,
    `reconciliation-review-*`, `reconciliation-link-batch-*`, `reconciliation-rules-filter-*` complétées,
@@ -185,6 +231,14 @@ doublon et sans qu'aucune écriture ne passe sans que je l'aie vue.
       renvoi à `docs/api-external.md` (écrit par 38-6c) — sans recopier l'API.
     - FAQ `Une transaction bancaire ne propose aucun match automatique` (ligne 4125) : complétée pour un compte
       prestataire (file « à examiner », proposition bloquée).
+    - **Rattachement en devise** (38-6c Écart 6, AC-1, AC-11) : les phrases du manuel qui bornent le rattachement au CHF
+      — `user-manual.tex:3088` (« toute ligne en CHF de montant non nul … se rattache aussi ») et `:3104` (« Cette
+      transaction semble déjà comptabilisée ») — et la § `sec:rattacher-reglement` sont reprises : sur un compte
+      prestataire, la devise est celle du compte ; **un rattachement n'écrit rien au journal et s'accomplit dans un
+      exercice clos ou sous verrou de période** (38-6c AC-11) ; une conversion se rattache des deux côtés.
+    - Sur la page *Comptes bancaires* (38-9a AC-9) : une phrase pour le badge « PayPal · … », « Télécharger maintenant »
+      et le contrôle « Selon PayPal / Aux livres / Non rapproché / Inexpliqué » (38-9a AC-8 b), renvoyant au manuel
+      d'administration pour la connexion.
     - Captures référencées (`\keshscreenshot`, `docs/manual/fr/screenshots/`) pour la proposition multi-lignes, la file
       et le rattachement en lot ; PDF régénéré (`make fr`), contrôle du **PDF aplati** (`pdftotext user-manual.pdf - | tr
       '\n' ' ' | tr -s ' '`) : « une seule condition » et « qu'aux transactions en CHF » absents ou requalifiés,
@@ -195,7 +249,9 @@ doublon et sans qu'aucune écriture ne passe sans que je l'aie vue.
       (vente avec TVA et frais, achat avec acquisitions, frais seul, conversion à deux écritures, retrait suggéré et sans
       suggestion, remboursement, bloquée avec remède, arrondi visible), « Cocher les propositions prêtes » (exclut
       bloquées et signalées), lot avec `confirmAlreadyBooked` sur les seules lignes confirmées, rattachement en lot
-      (paquets, arrêt sur erreur globale, bilan), file (actions selon rôle, motif inconnu), dialogue d'annulation d'une
+      (pagination `limit`/`total`, `kind` `none` et `notLinkable` comptés, paquets de 500, arrêt sur erreur globale,
+      bilan avec chaque code de 38-6c, règle d'un sens inconnu non modifiable, `canLink` en devise, `blockedBy` d'un
+      code inconnu), file (actions selon rôle, motif inconnu), dialogue d'annulation d'une
       paire, catalogues sans les formules interdites.
     - **E2E** `frontend/tests/e2e/provider-reconciliation.spec.ts`, contre le **transport factice** de 38-3 et ses
       réponses PayPal par défaut (38-7 AC-10 : familles de 38-8 couvertes), connexion et comptes posés par l'API dans le
@@ -235,10 +291,14 @@ doublon et sans qu'aucune écriture ne passe sans que je l'aie vue.
 
 ## Questions ouvertes
 
-- **Q-38-9b-1** (validation de 38-6c) : borne de taille d'un lot `link-entries` et forme exacte de la réponse de
-  `link-suggestions` (champs de l'écriture, `version`).
-- **Q-38-9b-2** (Beat) : défaut de la période du rattachement en lot — l'exercice de la plus ancienne transaction en
-  attente (proposé) ou l'exercice 2024 désigné ?
+- ~~**Q-38-9b-1**~~ *(close, P1)* : lot de 500 au plus, réponse de `link-suggestions` et `version` arrêtés par 38-6c AC-4
+  et AC-5 (AC-6).
+- ~~**Q-38-9b-2**~~ *(close, P1)* : période par défaut = exercice ouvert le plus ancien (O12).
+- **Q-38-9b-3** (validation de 38-6a et 38-6b) : le DTO de transaction des propositions porte-t-il `invoiceRef` et
+  `eventCode` (38-3 AC-3 les ajoute à `bank_transactions`, non au DTO des propositions) ? Le candidat `provider`
+  porte-t-il la source du cours (`rateSource`) et, pour une conversion, la transaction de l'autre moitié (date, montant,
+  devise, nom du compte) ? La vue de la transaction (`ReconciliationView`) porte-t-elle ces détails de la paire ? Tant que
+  non, l'écran ne montre que ce que les fiches listent (AC-3, AC-8).
 
 ## Tâches
 
@@ -281,3 +341,6 @@ doublon et sans qu'aucune écriture ne passe sans que je l'aie vue.
 ## Change Log
 
 - 2026-11-15 — rédaction (Opus).
+- 2026-11-15 — validation P1 (Sonnet) : 11 findings (0 CRITICAL, 2 HIGH, 6 MEDIUM, 3 LOW) ; remédiés dans la fiche sauf
+  l'inter-fiche 38-9b-P1-6 (Q-38-9b-3 : champs `invoiceRef`/`eventCode`/`rateSource`/transaction de la paire absents de
+  38-6a et 38-6b). Trend : P1 = 11. Axes non exercés : code des stories amont (non écrit) ; PDF du manuel.

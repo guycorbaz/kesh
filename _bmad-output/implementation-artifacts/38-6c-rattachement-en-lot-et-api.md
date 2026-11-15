@@ -35,6 +35,8 @@ Reprises de la fiche d'epic (§ 38-6c), complétées là où un AC l'exige.
   6. `FR-38-6c-6` *(ajoutée par la fiche)* — Une écriture qui mouvemente deux comptes bancaires de devises
      différentes (conversion CHF ↔ devise en une écriture, retrait d'un solde PayPal en devise vers la banque en CHF)
      se rattache **des deux côtés**. → AC-2.
+  7. `FR-38-6c-7` *(ajoutée par la validation P1)* — Le rattachement n'écrit aucune écriture : une écriture d'un
+     exercice clos ou sous verrou de période se rattache, en lot comme à l'unité. → AC-11.
 - **NFR**
   1. `NFR-38-6c-1` — Une seule règle de rattachement : lecture par page égale aux fonctions du dialogue, en devise.
      → AC-3.
@@ -85,6 +87,16 @@ Reprises de la fiche d'epic (§ 38-6c), complétées là où un AC l'exige.
    (`docs/manual/fr/user-manual.tex:3088`, `:3104`, § `sec:rattacher-reglement`) ne changent qu'en **38-9b** ; tant
    que 38-6a n'a pas levé le saut hors CHF de `get_proposals` (`routes/reconciliation.rs:1101-1104`), aucune
    transaction en devise n'apparaît à cet écran. Cette story liste au Change Log les sites à reprendre.
+
+7. **Montants égaux : le lot ne tranche pas.** Deux transactions de même montant et de même devise (abonnements
+   mensuels, ventes d'un même tarif) ont chacune **deux** écritures candidates : elles tombent en `ambiguous`
+   (`several_entries`, `entry_shared`) et se traitent une à une au dialogue (38-9b). Aucun appariement « au plus
+   proche » n'est ajouté (*Un appariement automatique propose, il ne crée jamais* : un faux rattachement est muet).
+   Limite assumée, écrite au doc-comment de `entry_matches_for_page` et au manuel (38-9b).
+8. **Le texte du refus unitaire devient faux.** `RECONCILIATION_ENTRY_NOT_LINKABLE` dit « la transaction n'est pas en
+   CHF » (`errors.rs:3236`, doc-comment `:1100-1112`, `crates/kesh-i18n/locales/*/messages.ftl`, clé
+   `reconciliation-errors-entry-not-linkable`, `fr-CH:1530`) : faux pour un compte en devise. Reformulé en AC-10 (le
+   code et le statut ne changent pas).
 
 ## Questions ouvertes
 
@@ -246,8 +258,11 @@ Reprises de la fiche d'epic (§ 38-6c), complétées là où un AC l'exige.
      `invoiceRef` (égalité après `trim`, selon la collation que 38-3 donne à la colonne), `status` ∈ {`pending`,
      `reconciled`} (sinon 400), `from`/`to` sur `booking_date`, inclus ; `limit` 1..=500 (défaut 50), `offset` ;
    - tri `booking_date DESC, id DESC` ; réponse `ListResponse<TransactionResponse>` — le DTO du détail d'un import
-     (`routes/bank_imports.rs:302-345`, étendu par 38-3 des champs de prestataire) **réutilisé**, gagnant `version` et
-     `bankAccountId` (additifs) ;
+     (`routes/bank_imports.rs:302-345`, **ne porte aujourd'hui aucun champ de prestataire** : 38-3 (AC-10) n'étend que la liste des imports de
+     `providerConnection`, non ce DTO) **réutilisé** et étendu **ici**, champs additifs : `version`, `bankAccountId`,
+     et, lus des colonnes de 38-3 (AC-3) — `providerTxId`, `grossAmount`, `feeAmount`, `movementKind`, `eventCode`,
+     `counterpartyEmail`, `invoiceRef`, `itemNames`, `relatedProviderTxId`, `reviewReason`, `bookedAt` (`null` pour une
+     transaction de fichier) ; sans eux, le script ne peut pas lire ce qu'il cherche. Test de sérialisation ;
    - lecture seule ; aucune donnée d'un autre compte ni d'une autre société (test).
    Pas d'index neuf sur `invoice_ref` : la recherche est bornée au compte (`idx_bank_transactions_company_account_date`,
    `20260504000001_bank_imports.sql:86`) ; si la mesure de l'AC-8 la montre lente, la fiche le dit **avant** toute
@@ -278,15 +293,26 @@ Reprises de la fiche d'epic (§ 38-6c), complétées là où un AC l'exige.
       `the_registry_partition_is_what_the_story_declares` (`:1007-1018`) et son message passent de N à N + 1 (N relu à
       la source au moment du développement : 146 sur `8b3d548d`, avant l'Epic 37 et 38-1 à 38-3) ; les deux `GET` ne
       sont pas des routes mutantes (hors registre). Doc-comment du module (`:262-270`, point (vi)) complété pour le lot.
-    - **i18n** : aucun message serveur neuf (les codes du lot sont des `FailedProposal` sans texte ; les refus globaux
-      réutilisent des codes existants) ; l'écran (38-9b) traduit les codes — liste au Change Log.
+    - **i18n** : aucun message serveur **neuf** (les codes du lot sont des `FailedProposal` sans texte ; les refus
+      globaux réutilisent des codes existants). **Un message existant est reformulé** (Écart 8) :
+      `reconciliation-errors-entry-not-linkable` aux **quatre** locales (`crates/kesh-i18n/locales/{fr-CH,de-CH,
+      it-CH,en-CH}/messages.ftl`), repli de `errors.rs:3236` égal mot pour mot au catalogue `fr-CH` (G9), doc-comment
+      `errors.rs:1100-1112` — « la transaction n'est pas dans la devise du compte, ou son montant est nul, … ».
+      L'écran (38-9b) traduit les codes du lot (`failed-proposal-label.ts`, quatre locales : **ajoutés par 38-9b**,
+      cette story ne touche pas `frontend/`) — liste au Change Log.
+    - **Documentation de l'API** (`docs/api-external.md`, ni manuel ni frontend ; **38-9b y renvoie comme à un fichier
+      « écrit par 38-6c »**) : sections des trois routes neuves (paramètres, réponses, codes par élément du lot, limite
+      de 500, clés `read` / `read-write`), règle du rattachement en devise et de l'autre côté entre devises (§ de
+      `…/entry-candidates` et `…/link-entry`, `:807-811` : `amount` est dans la devise du compte), tableau des codes
+      (`:1076-1077`, texte « hors CHF » corrigé), parcours du script en trois appels (AC-7). Relu contre le code, à
+      livrer dans la même PR.
     - **MCP** (E23) : aucun outil neuf ; les écritures rattachées se lisent déjà par `kesh_ecritures`
       (`mcp/outils/ecritures.rs:198`) ; le rattachement est une écriture d'état hors du périmètre en lecture seule du
       serveur MCP.
     - **Écran et manuel** : 38-9b (Écart 6) ; cette story ne touche aucun fichier de `frontend/` ni `docs/manual/` —
       les sites à reprendre (miroir `canLink`, manuel `:3088`, `:3104`, § `sec:rattacher-reglement`, et la voie API
       des scripts : clé `read-write`, trois appels, codes du lot) sont listés au Change Log pour 38-9b.
-11. **AC-11 — Exercice clos, période verrouillée** (risque de l'epic, « à confirmer à la fiche » — **confirmé au
+11. **AC-11 — Exercice clos, période verrouillée** (`FR-38-6c-7` ; risque de l'epic, « à confirmer à la fiche » — **confirmé au
     code**). Le rattachement n'écrit aucune écriture et ne lit ni `fiscal_years` ni le verrou de période
     (`link_entry_in_tx`, doc `reconciliation_link.rs:1089-1093` : « le geste ne prend **jamais** `invoice_settlements`,
     `supplier_invoices`, `invoices`, `bank_accounts` ni `fiscal_years` : il n'écrit rien au journal ») : une écriture de
@@ -300,7 +326,12 @@ Reprises de la fiche d'epic (§ 38-6c), complétées là où un AC l'exige.
       `entry_matches_for_page` et `count_already_booked_for_page` projeté (AC-3) ; `expected_version`,
       `LinkRefusal::VersionConflict` (AC-5) ; `diagnose_entry_link` (AC-5) ; tests unitaires de texte et de la
       condition 1.
-- [ ] `kesh-api` : `link_preflight` rend la base ; appelants mis à jour ; `get_link_suggestions` (AC-4) ;
+- [ ] Messages et documentation (AC-10) : message `reconciliation-errors-entry-not-linkable` aux quatre locales,
+      `docs/api-external.md`.
+- [ ] `kesh-api` : `link_preflight` rend la base ; les gestionnaires `get_link_suggestions` et `post_link_entries`
+      restent **déclarés dans `routes/reconciliation.rs`** (l'identité du registre est `reconciliation::…`), minces :
+      la logique du lot va dans un module neuf (`routes/reconciliation_link_batch.rs`), le fichier faisant déjà
+      7 439 lignes ; appelants mis à jour ; `get_link_suggestions` (AC-4) ;
       `post_link_entries` (AC-5) ; route de recherche dans `routes/bank_accounts.rs` (AC-6) ; enregistrement à
       `lib.rs` (comptable : les deux routes de réconciliation ; authentifiées : la recherche) ; `LIB_ROUTES`.
 - [ ] Tests HTTP des AC-1 à AC-7 et AC-11 ; extension de `s34_4_ac8_…` (AC-3) ; mesure (AC-8).
@@ -325,6 +356,9 @@ Reprises de la fiche d'epic (§ 38-6c), complétées là où un AC l'exige.
 - **Montant de la transaction en devise et `M` à quatre décimales** : `amount_currency` est un `DECIMAL(19,4)` (37-3a
   AC-1) ; une ligne PayPal en EUR a deux décimales ; l'égalité exacte est la bonne (une écriture saisie à quatre
   décimales qui ne tombe pas au centime n'est pas le mouvement de la transaction).
+- **`LinkEntryRequest` perd `Copy`** : `MovementBasis::Currency(String)` porte un `String` (le dérivé `Copy` de
+  `reconciliation_link.rs:1059` ne tient plus) ; passer la requête par référence, ou une base `Currency([u8; 3])`
+  (`Copy`) — au développement, sans changer le texte des requêtes.
 - **Réutilisations** : `ListResponse` (`routes/mod.rs`) ; `FailedProposal` et `merge_failed_in_order`
   (`routes/reconciliation.rs:571`, `:1568`) ; `TransactionResponse` (`routes/bank_imports.rs:302`) ;
   `locked_link_attempt` (`:6411`) ; `link_preflight` (`:6228`).
@@ -334,3 +368,7 @@ Reprises de la fiche d'epic (§ 38-6c), complétées là où un AC l'exige.
 ## Change Log
 
 - 2026-11-15 — rédaction (Opus).
+- 2026-11-15 — validation P1 (Sonnet) : 0 CRITICAL, 0 HIGH, 3 MEDIUM, 3 LOW ; remédiés dans la fiche (FR-38-6c-7, Écarts
+  7 et 8, DTO de la recherche étendu par la story, message du refus unitaire reformulé aux quatre locales,
+  `docs/api-external.md` livré par la story, emplacement des gestionnaires, perte de `Copy`) ; inter-fiches : 38-9b
+  (libellés du lot à y ajouter ; elle renvoie à `docs/api-external.md`, désormais bien écrit ici).

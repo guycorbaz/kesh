@@ -96,8 +96,10 @@ clôturer l'exercice.
   absent avec `closingBalance` présent → la devise du compte. Les deux colonnes sont tout-ou-rien (`CHECK`).
 - **C-38-10-4 — L'écart se calcule à la lecture.** Solde comptable du compte du grand livre lié à `period_to` inclus :
   en CHF, `SUM(debit) − SUM(credit)` (convention de `BALANCES_SQL`, signe libre, une dette de carte est négative) ; en
-  devise, le **solde en devise** de 37-4 (AC-1 : `Σ amount_currency` au débit − au crédit, fragment de
-  `repositories/account_balances.rs`, réévaluations sans effet). Écart = règle de `statement_gap` (deux soldes arrondis
+  devise, le **solde en devise** de 37-4 (AC-1 : `Σ amount_currency` au débit − au crédit, par
+  `kesh_db::repositories::account_balances::balances_as_of(conn, company_id, as_of, Some(&[compte]))`, 37-4 AC-1 quater :
+  borne inclusive, débit net brut CHF et en devise, réévaluations sans effet) — **la même fonction que le contrôle de
+  solde de 38-9a (AC-8 b)**, jamais une seconde somme. Écart = règle de `statement_gap` (deux soldes arrondis
   au centime, puis différence ; `null` si nul) — par la même fonction ou une fonction commune extraite, jamais une
   seconde règle. Compte sans grand livre lié, ou grand livre partagé (`bank_accounts::is_shared`) → `notComparable: true`,
   écart `null`.
@@ -187,8 +189,15 @@ clôturer l'exercice.
    `crates/kesh-db/tests/closing_checks.rs:1679`, `crates/kesh-api/tests/closing_checks_e2e.rs`, `docs/api-external.md`
    (« toujours neuf », contrôle décrit, changement de contrat annoncé comme la ligne `:267` l'exige), front
    (`closing-checks-labels.ts`, `FiscalYearChecks.svelte` avec lien vers le dialogue des relevés du compte,
-   `fiscal-years.types.ts`, fixtures, tests Vitest), `user-manual.tex:890` ; grep du jeton `\bhuit\b` et `\b8\b` sur ces
-   fichiers, résultat trié au Change Log. Tests : écart → `attention` ; aucun document → `ok` ; document daté hors Y
+   `fiscal-years.types.ts`, `fiscal-years.api.ts`, `closing-checks.test-fixtures.ts`, `FiscalYearChecks.test.ts`,
+   **`frontend/src/routes/(app)/settings/fiscal-years/+page.svelte` et `fiscal-years-page.test.ts:461`
+   (`toHaveLength(8)`)**, `i18n-keys.test.ts` et `i18n-libelle-en-dur.test.ts` si les libellés du contrôle y entrent),
+   **E2E `frontend/tests/e2e/fiscal-year-closing-journey.spec.ts:158,165` (`toHaveCount(8)` : attend huit lignes)**,
+   `user-manual.tex:890` ; grep du jeton `\bhuit\b` et `\b8\b` sur ces fichiers (liste relevée par `grep -rln
+   "closing_checks\|closing-checks\|DRAFT_SUPPLIER_INVOICES" crates frontend/src frontend/tests docs`), résultat trié au
+   Change Log. ⚠️ **Collision de nom** : 37-5 réserve « K9 de `closing_checks.rs` » pour un contrôle informatif futur
+   « comptes en devise à réévaluer » (C-37-8, à ouvrir en issue) ; **K9 est ici `ATTACHED_STATEMENT_GAP`**, livré, et
+   celui de 37-5 devient K10 (finding inter-fiche P1-2). Tests : écart → `attention` ; aucun document → `ok` ; document daté hors Y
    ignoré ; deux documents dans Y → le dernier compte ; dialogue de clôture (Vitest) qui rappelle K9.
 7. **AC-7 — Sauvegarde et restauration (NFR-38-10-2, E18).** (a) `bank_account_documents` entre à `TABLES_TO_TRUNCATE`
    **avant** `bank_transactions` (enfant de `bank_accounts`, `fiscal_years`, `users`, `companies`), donc vidée à la remise
@@ -219,7 +228,11 @@ clôturer l'exercice.
    fichier, solde de clôture et devise, **écart** au solde comptable — mis en évidence quand non nul, « non comparable »
    sinon), téléchargement, formulaire *Joindre un relevé* (fichier PDF, période, solde facultatif — la devise est
    affichée, celle du compte, non saisie), correction, retrait avec confirmation ; erreurs de l'API traduites par code.
-   API cliente dans `bank-accounts.api.ts`. Vitest : liste, écart, formulaire (champs exigés, PDF seul côté écran),
+   API cliente dans `bank-accounts.api.ts`. `+page.svelte` des comptes bancaires (1 295 lignes, même fichier que
+   38-9a AC-9) **ne reçoit que l'appel du composant** et le bouton de la ligne, sans logique inline. Le refus du compte
+   clos (`BANK_ACCOUNT_CLOSED`) est tenu par les tests de route : `bank_account_closed_inventory.rs` ne lit que les
+   sept tables de 28-4a, dont `bank_account_documents` ne fait pas partie (rien à y inscrire, dit au Change Log).
+   Vitest : liste, écart, formulaire (champs exigés, PDF seul côté écran),
    rôles, compte clos. **E2E Playwright** (`frontend/tests/e2e/bank-account-documents.spec.ts`) : joindre un PDF de
    fixture avec un solde qui diffère des livres → écart affiché → panneau *Préparer la clôture* : K9 en attention →
    corriger le solde → écart nul, K9 `ok` → télécharger (contenu identique) → retirer. **Recette visuelle** : captures
@@ -279,6 +292,10 @@ clôturer l'exercice.
 
 ## Change Log
 
+- 2026-11-15 — validation P1 (Sonnet) : 5 findings (0 CRITICAL, 0 HIGH, 2 MEDIUM, 3 LOW) ; prémisses `fichier:ligne`
+  toutes relues au code et justes (`document_storage.rs`, `backup.rs`, `import.rs`, `global.rs`, `closing_checks.rs`,
+  `errors.rs`, `lib.rs`, `bank_imports.rs`) ; remédiés dans la fiche sauf l'inter-fiche 38-10-P1-2 (K9 de 37-5 → K10).
+  Axes non exercés : code de 37-4 (`balances_as_of`, non écrit) ; PDF du manuel.
 - 2026-11-15 — rédaction (Opus) : 10 AC, 5 FR (4 de l'epic + 1 ajoutée), 4 NFR (3 + 1) ; une migration non breaking
   (`bank_account_documents`) ; +3 routes mutantes, +2 lectures ; contrôle de clôture K9 neuf ; écarts : pas d'écran de
   détail de compte (dialogue depuis la liste), suppression d'exercice ou de compte sans objet, story valable pour tout

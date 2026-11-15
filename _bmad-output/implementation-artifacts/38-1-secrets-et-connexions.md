@@ -7,7 +7,7 @@ Status: ready-for-dev
 **C-38-2**, C-38-11, C-38-12, C-38-13 ; décisions de Beat B11, B14, B22, B23 (`epics-38-40-cadrage.md`), qui priment.
 **Dépend de** : l'Epic 37 livré (liste close des absences admises de 37-1 AC-6, R1 ; numéros de migration postérieurs à
 `20261114000003`). **Suivie par** : 38-2 (comptes prestataires, première table enfant d'une connexion), 38-3
-(passages, colonnes `last_run_*`), 38-7 (« Tester la connexion » réel, `accountEmail`, `payerId`), 38-9a (écrans).
+(passages, colonnes `last_run_*`), 38-7 (« Tester la connexion » réel, `payerId`), 38-9a (écrans).
 **Migration non breaking** (DDL seul, deux tables neuves). Aucun écran : l'interface est en 38-9a.*
 
 ## Story
@@ -46,7 +46,8 @@ Reprises de la fiche d'epic (§ *38-1*), complétées là où un AC en ajoute (m
      retirés par `env_nonempty`). Trois issues, testées :
      - **absente ou vide** → `Config.secrets_key = None`, démarrage normal, **un** `tracing::warn!` sans valeur
        (« KESH_SECRETS_KEY absente : les connexions de prestataire sont inutilisables ») ;
-     - **gabarit** (`is_template_placeholder`, `config.rs:1538`, appelé comme pour `KESH_JWT_SECRET`, `:683`) →
+     - **gabarit** (`is_template_placeholder`, `config.rs:1538`, appelé comme pour `KESH_JWT_SECRET`, `:683` ; la
+       fonction est aujourd'hui **privée** au module `config` : elle passe en `pub(crate)` pour servir aussi AC-6) →
        `ConfigError::InsecureSecretsKey`, refus de démarrer, `Display` sans la valeur (patron
        `InsecureJwtSecret`, `config.rs:41`) ;
      - **illisible** (base64 invalide, ou longueur décodée ≠ 32) → `ConfigError::InvalidSecretsKey { decoded_len:
@@ -57,7 +58,11 @@ Reprises de la fiche d'epic (§ *38-1*), complétées là où un AC en ajoute (m
      `SecretsKey(<masquée>, empreinte=…)`, effacement à la libération (`zeroize`), jamais `Serialize`. L'**empreinte**
      de la clé = 16 premiers caractères hexadécimaux de SHA-256(clé) (`sha2`, déjà dépendance, `Cargo.toml:55`) : elle
      ne révèle rien d'utile et permet de dire « la clé a changé » plutôt que « secret corrompu ». `Config` porte
-     `secrets_key: Option<Arc<SecretsKey>>` ; son `Debug` reste masqué (patron du module, `config.rs:1-5`), test.
+     `secrets_key: Option<Arc<SecretsKey>>` ; son `Debug` reste masqué (patron du module, `config.rs:1-5` ; l'`impl Debug for Config` est **écrit à la main**,
+     `config.rs:352` : le champ s'y ajoute masqué), test. **Les tests d'intégration** construisent `Config` par
+     `from_fields_for_test` (`config.rs:455`, 111 sites d'appel) : ne **pas** lui ajouter de paramètre ; un
+     constructeur `#[doc(hidden)] with_secrets_key_for_test(self, key)` pose la clé, et `secrets_key` vaut `None`
+     par défaut dans `from_fields_for_test`.
    - **`seal(key, aad, plaintext) -> Sealed { nonce: [u8; 12], ciphertext: Vec<u8> }`** et **`open(key, aad, &Sealed)
      -> Result<Zeroizing<String>, SecretError>`** : AES-256-GCM (crate `aes-gcm` 0.10, RustCrypto, licence
      Apache-2.0 OR MIT, compatible EUPL-1.2 — **dépendance neuve**, déclarée au `Cargo.toml` de `kesh-api` avec un
@@ -114,6 +119,18 @@ Reprises de la fiche d'epic (§ *38-1*), complétées là où un AC en ajoute (m
      site inspecté et cité au Change Log. **P7** : aucune écriture de données, rien à trier
      (`every_data_backfill_migration_is_triaged` reste vert sans entrée). **P8** : sans objet (fichier neuf).
      **Squash de test** `crates/kesh-db/test-schema/` mis à jour (garde `test_schema_guard.rs`).
+   - **Autres sites qui énumèrent les tables** (greppés : `grep -rn "mcp_server_settings\|_kesh_installation_settings"
+     crates/*/src crates/*/tests`), à reprendre : `kesh_db::test_fixtures::truncate_all` (`test_fixtures.rs:370`) ne
+     vide que `TABLES_TO_TRUNCATE` et **remet les `AUTO_INCREMENT` à zéro** : il **vide aussi**
+     `_kesh_provider_secrets` (sinon un secret orphelin se rattache à la connexion de même `id` d'un test suivant :
+     `secretSet` faux-vrai, le mode d'échec d'AC-8 en test) ; `admin_full_export_e2e.rs:~281` (`data_count == 44` : +1,
+     `payment_provider_connections` entre à l'export de sauvegarde ; nommer l'entrant, jamais aligner le chiffre) ;
+     `onboarding_audit_e2e.rs:2040` (`EMPTY_BEFORE_RESET`, liste **fermée** des tables vides avant la remise à zéro :
+     la table y entre, ou le test la peuple) ; `crates/kesh-api/README.md` (variables d'environnement) si elle les
+     liste. Test de schéma des `CHECK` (provider, schedule, settings objet, label, secret `name`) au patron de
+     `sans_iban_les_invariants_du_schema` (`bank_accounts_repository.rs`).
+   - **Numéro de la migration** : `<date>000001_provider_connections.sql` avec une date **postérieure à
+     `20261114000003`** (dernière migration de l'Epic 37), p. ex. `20261115000001` ; les fiches 38-2/38-3 suivent.
    - **Liste close des absences admises** (37-1 AC-6, R1, E18) : `payment_provider_connections` y entre en
      `Absence::Table` (nom de la constante fixé au développement de 37-1) ; une sauvegarde antérieure à l'Epic 38
      s'importe sans connexion. Le test de 37-1 qui vérifie chaque entrée (table dans `TABLES_TO_TRUNCATE`, ajoutée par
@@ -160,7 +177,7 @@ Reprises de la fiche d'epic (§ *38-1*), complétées là où un AC en ajoute (m
    routes mutantes — `("post", "provider_connections::create_connection", Traced, SansEcritureAuJournal)`,
    `("patch", "…::update_connection", Traced, …)`, `("delete", "…::delete_connection", Traced, …)`, `("put",
    "…::put_secrets", Traced, …)`, `("post", "…::test_connection", NoMatter("n'écrit rien en 38-1 : contrôle local ;
-   38-7 y écrit accountEmail et payerId et la passe à Traced"), SansEcritureAuJournal)` — ; le total de
+   38-7 y écrit payerId et la passe à Traced"), SansEcritureAuJournal)` — ; le total de
    `the_registry_partition_is_what_the_story_declares` (`:1009`) et son message suivent **en delta** (+5 routes, +4
    tracées, +1 sans mutation), **cumulés** avec ceux de l'Epic 37 tels qu'ils seront à la fusion (146 au commit de
    relevé, avant l'Epic 37). Le partitionnement de rejeu suit (`SansEcritureAuJournal` ×5 : aucune n'écrit au journal
@@ -171,8 +188,9 @@ Reprises de la fiche d'epic (§ *38-1*), complétées là où un AC en ajoute (m
      38-3, par `kesh-providers`) : `enum Provider { Paypal, Other(String) }` (`as_str`, `FromStr` **tolérant** : jamais
      d'erreur, E4) ; `enum ProviderSettings { Paypal(PaypalSettings), Other }` ; `PaypalSettings`
      `#[serde(deny_unknown_fields, rename_all = "camelCase")]` : `client_id: Option<String>` (identifiant de
-     l'application REST, non secret chez PayPal), `account_email: Option<String>` et `payer_id: Option<String>`
-     (**posés par le serveur** en 38-7, lus en 38-1). Tout champ ajouté plus tard est `Option` + `#[serde(default)]`
+     l'application REST, non secret chez PayPal) et `payer_id: Option<String>` (**posé par le serveur** en 38-7, lu
+     en 38-1). **Pas de `account_email`** (arbitrage O10 : aucune API PayPal ne le rend ; un client qui l'envoie
+     reçoit le refus de clé inconnue). Tout champ ajouté plus tard est `Option` + `#[serde(default)]`
      (`eventKindOverrides` : 38-8). ⚠️ `deny_unknown_fields` est **voulu** (contrat de `ColumnMapping`,
      `crates/kesh-import/src/csv/profile.rs:36-48`) : un binaire antérieur refuse bruyamment des réglages écrits par
      un binaire ultérieur, jamais en silence. `parse_settings(provider, json) -> Result<ProviderSettings,
@@ -194,16 +212,17 @@ Reprises de la fiche d'epic (§ *38-1*), complétées là où un AC en ajoute (m
      `crates/kesh-api/src/services/rapports.rs:862-870` ; la tolérance d'un jour admet le jour de Zurich entre minuit et
      2 h) (la borne des trois
      ans de PayPal est en 38-7) ; `schedule` absent = `manual` ; `settings` absent = `{}` ; `settings` désérialisé
-     dans la struct du prestataire (refus → `400 PROVIDER_SETTINGS_INVALID`, `details.reason` = message serde **sans
-     valeur reçue** — le nom de la clé fautive seulement) ; un champ posé par le serveur (`accountEmail`, `payerId`)
-     fourni par le client → même refus, `details.field`. `clientId` : 1 à 128 caractères `[A-Za-z0-9_-]`, sinon même
+     dans la struct du prestataire (refus → `400 PROVIDER_SETTINGS_INVALID`, `details.field` = le nom
+     de la clé fautive, `details.reason` ∈ `unknown_field`, `invalid_type`, `invalid_format` — **jamais le texte de
+     l'erreur serde**, qui répète la valeur reçue pour un type invalide) ; un champ posé par le serveur
+     (`payerId`) fourni par le client → même refus, `details.field`. `clientId` : 1 à 128 caractères `[A-Za-z0-9_-]`, sinon même
      refus. Libellé déjà pris dans la société → `409 PROVIDER_CONNECTION_LABEL_DUPLICATE` (contrainte
      `uq_ppc_company_label`, mappage de l'erreur 1062 sur ce nom d'index). `created_by_user_id` = l'Administrateur.
      Réponse `201`, forme de l'AC-3. La struct est **resérialisée** avant l'écriture : aucun JSON reçu n'est stocké tel
      quel (E24).
    - **`PATCH /api/v1/provider-connections/{id}`**, corps `{ version, label?, fetchFrom?, schedule?, settings? }` —
      champ absent = inchangé ; `settings` présent **remplace** les champs modifiables du prestataire (`clientId`) et
-     **conserve** ceux que le serveur pose (`accountEmail`, `payerId`) ; `provider` **immuable** (présent → `400
+     **conserve** celui que le serveur pose (`payerId`) ; `provider` **immuable** (présent → `400
      VALIDATION_ERROR`, `details.field = "provider"`). Mêmes refus qu'au `POST` ; connexion d'un prestataire inconnu →
      `409 PROVIDER_UNKNOWN` (on ne réécrit pas des réglages qu'on ne sait pas lire) ; réglages stockés illisibles et
      `settings` absent du corps → l'écriture des autres champs passe (le libellé se corrige), `settings` présent →
@@ -231,15 +250,21 @@ Reprises de la fiche d'epic (§ *38-1*), complétées là où un AC en ajoute (m
 
 6. **AC-6 — Déposer les secrets (FR-38-1-2, NFR-38-1-1, E3).** `PUT /api/v1/provider-connections/{id}/secrets`,
    corps propre au prestataire, `deny_unknown_fields` — PayPal : `{ "clientSecret": "<chaîne>" }` (1 à 512 caractères
-   ASCII imprimables, sans espace de bord ; gabarit `<…>` ou `changeme` refusé par la même fonction que la
-   configuration). Clé absente → `409 PROVIDER_SECRETS_KEY_MISSING` (rien n'est écrit) ; prestataire inconnu → `409
-   PROVIDER_UNKNOWN` ; corps refusé → `400 PROVIDER_SECRETS_INVALID`, `details.field` seulement, **jamais la valeur**
-   (le corps refusé n'est ni journalisé ni renvoyé). Écriture : `seal` (AC-1) avec l'AAD de la ligne, `INSERT … ON
-   DUPLICATE KEY UPDATE` de chaque nom (`client_secret`), `key_version`, `key_fingerprint`, `updated_by_user_id`,
-   `updated_at` ; la connexion prend `version + 1` et `updated_at`, sous `SELECT … FOR UPDATE` de sa ligne (pas de
-   `version` dans le corps : remplacer un secret n'entre pas en conflit avec une modification de libellé ; le
-   verrou de ligne sérialise deux dépôts concurrents) ; audit `payment_provider_connection.secrets_updated`, détail
-   `{ names }`. Réponse `200` : `{ secretSet: true, secretUpdatedAt, version }` — rien d'autre. Le clair est tenu dans
+   ASCII imprimables, sans espace de bord ; gabarit refusé par `is_template_placeholder` (`GENERATE_ME`, forme
+   `<…>`) **et** `changeme` par un contrôle `eq_ignore_ascii_case` à côté, comme le mot de passe administrateur :
+   la fonction seule ne connaît pas `changeme`, `TEMPLATE_PLACEHOLDERS`, `config.rs:1522`). **Corps lu par
+   `impl_validation_extractor`** (`crates/kesh-api/src/extractors.rs`, message fixe, jamais le texte serde) et non
+   par `Json<T>` nu, dont le refus répète la valeur reçue (test : type invalide, JSON tronqué ; ces rejets rendent
+   `400 VALIDATION_ERROR`). Clé absente → `409 PROVIDER_SECRETS_KEY_MISSING` (rien n'est écrit) ; prestataire inconnu
+   → `409 PROVIDER_UNKNOWN` ; champ de contenu refusé (longueur, caractères, gabarit, clé en trop) → `400
+   PROVIDER_SECRETS_INVALID`, `details.field` seulement, **jamais la valeur** (le corps refusé n'est ni journalisé ni
+   renvoyé). Écriture : `seal` (AC-1) avec l'AAD de la ligne, `INSERT … ON DUPLICATE KEY UPDATE` de chaque nom
+   (`client_secret`), `key_version`, `key_fingerprint`, `updated_by_user_id`, `updated_at` ; sous `SELECT … FOR
+   UPDATE` de la ligne de la connexion, qui prend `updated_at` mais **pas** `version + 1` : un incrément ferait
+   échouer en 409 le `PATCH` d'un formulaire ouvert avant le dépôt, alors que le corps n'a pas de `version` justement
+   pour que remplacer un secret n'entre pas en conflit avec une modification de libellé (le verrou de ligne sérialise
+   deux dépôts concurrents) ; audit `payment_provider_connection.secrets_updated`, détail `{ names }`. Réponse `200`
+   : `{ secretSet: true, secretUpdatedAt, version }` (version inchangée) — rien d'autre. Le clair est tenu dans
    un `Zeroizing<String>` du corps à `seal`, et le type du corps n'implémente ni `Debug` dérivé ni `Serialize`
    (`Debug` manuel masqué) : un `tracing::debug!(?body)` futur n'emporterait rien.
 
@@ -248,7 +273,7 @@ Reprises de la fiche d'epic (§ *38-1*), complétées là où un AC en ajoute (m
    `client_id_present` (PayPal), `secrets_key_present`, `secret_present`, `secret_decryptable` — ce dernier **ouvre**
    le secret par la voie unique de l'AC-1 et jette le clair aussitôt (aucune comparaison, aucune trace). Rien n'est
    écrit. *Point de contact* : 38-3 ajoute le contrôle `provider_reachable` par `Connector::balances`, et 38-7 pose
-   `accountEmail`/`payerId` aux réglages (la route passe alors `Traced`). Tests : clé absente, secret absent, clé
+   `payerId` aux réglages (la route passe alors `Traced`). Tests : clé absente, secret absent, clé
    changée (`secret_unreadable` par l'empreinte), chiffré altéré en base (`secret_unreadable` par GCM), tout vert.
 
 8. **AC-8 — Restauration, remise à zéro, sauvegarde (FR-38-1-5, FR-38-1-6, E2).**
@@ -283,10 +308,13 @@ Reprises de la fiche d'epic (§ *38-1*), complétées là où un AC en ajoute (m
 
 10. **AC-10 — Configuration distribuée et manuel (NFR-38-1-6).**
     - `KESH_SECRETS_KEY` transmise par `docker-compose.yml` et `docker-compose.prod.yml` sous `environment:` (forme
-      `${KESH_SECRETS_KEY:-}` : vide signifiant « absente », liste `VIDE_SIGNIFIANT` de
-      `crates/kesh-api/tests/configuration_transmise.rs`) ; ligne commentée au `.env.example` avec la commande de
-      génération (`openssl rand -base64 32`) ; emplacement de lecture inscrit à `EMPLACEMENTS_AUTORISES` ; la garde
-      `configuration_transmise` (familles L, T, V, E, F) reste verte. `docker-compose.dev.yml` : clé de développement
+      `${KESH_SECRETS_KEY:-}` : vide signifiant « absente »). ⚠️ La liste est **`SANS_DEFAUT`** de
+      `crates/kesh-api/tests/configuration_transmise.rs:136` (forme `${NOM:-}` et aucune autre ; patron
+      `KESH_SKIP_PRE_UPGRADE_BACKUP`), **non** `VIDE_SIGNIFIANT` (`:122`), qui exige `${NOM-défaut}` à défaut non vide ;
+      ligne **commentée** au `.env.example` (`#KESH_SECRETS_KEY=`, une par affectation : `controle_raisons_valeurs`)
+      avec la commande de génération (`openssl rand -base64 32`) ; l'appel littéral à `env_nonempty` s'inscrit à
+      `EMPLACEMENTS_AUTORISES` (`:1194`, entrée `Config::from_env`, dont le décompte est de 31 au relevé : **+1**, cumulé avec ce que l'Epic 37 y
+      ajoute, commentaire daté comme les précédents) ; la garde `configuration_transmise` (familles L, T, V, E, F) reste verte. `docker-compose.dev.yml` : clé de développement
       factice **non gabarit** (comme les autres secrets de dev), si la garde G17 l'exige.
     - **Manuel d'administration** (`docs/manual/fr/admin-manual.tex`, section des variables d'environnement, près de
       `KESH_JWT_SECRET`, `:253`, `:577-579`) : rôle de la clé ; génération ; **perte ou changement de la clé = secrets à
@@ -357,6 +385,8 @@ Reprises de la fiche d'epic (§ *38-1*), complétées là où un AC en ajoute (m
 
 ## Questions ouvertes
 
+- *Closes par l'arbitrage O7 (2026-11-15) : Q-38-1-a (le Comptable lit l'état des connexions par la route de lecture
+  restreinte de 38-3 ; 38-1 reste réservée à l'Administrateur) et Q-38-1-b (unicité du libellé gardée).*
 - **Q-38-1-a** (38-3, 38-9a) : le Comptable, qui peut lancer un passage (`POST …/fetch`, E10), doit-il **lire**
   l'état des connexions (lecture restreinte sans `settings`) ? 38-1 réserve tout à l'Administrateur, conformément à
   NFR-38-1-3 ; à trancher en 38-3.
@@ -366,3 +396,12 @@ Reprises de la fiche d'epic (§ *38-1*), complétées là où un AC en ajoute (m
 ## Change Log
 
 - 2026-11-15 — rédaction (Opus).
+- 2026-11-15 — validation P1 (Sonnet) : 0 CRITICAL, 0 HIGH, 6 MEDIUM, 3 LOW ; remédiés dans la fiche sauf 38-1-P1-9
+  (inter-fiches : récapitulatif des exigences de l'epic). Trend : P1 = 9. MEDIUM : liste de `configuration_transmise`
+  fausse (`SANS_DEFAUT`, pas `VIDE_SIGNIFIANT`) et décompte de `EMPLACEMENTS_AUTORISES` ; `is_template_placeholder`
+  privée et muette sur `changeme` ; sites d'énumération des tables oubliés (`truncate_all`, `data_count`,
+  `EMPTY_BEFORE_RESET`) ; `accountEmail` à retirer (O10) ; corps des secrets à lire par `impl_validation_extractor`
+  et raison des refus de réglages sans texte serde ; clé injectée aux tests sans changer les 111 appels de
+  `from_fields_for_test`. LOW : `version` incrémentée par le dépôt d'un secret (contredit son propre motif) ; numéro de
+  migration ; test des `CHECK`. Lignes lues : `config.rs:1522-1545`, `configuration_transmise.rs:122-136`,
+  `extractors.rs:15-60`, `test_fixtures.rs:360-385`, `admin_full_export_e2e.rs:281`, `onboarding_audit_e2e.rs:2040`.

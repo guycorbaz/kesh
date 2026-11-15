@@ -109,7 +109,8 @@ afin que **mes comptes PayPal se tiennent sans saisie, sans qu'aucune écriture 
   d'`order_candidates`.
 - **C-38-6a-2 — Qu'est-ce qu'un compte prestataire.** Un compte bancaire qui porte une ligne `payment_provider_accounts`
   (E11, 38-2), lue par le dépôt de 38-2 (`payment_provider_accounts::find_by_bank_account_in_tx`, 38-2 AC-2 ;
-  `fee_account_id` `NULL` = à désigner, refusé ici en `FEE_ACCOUNT_INVALID`, `reason: "missing"`) ; jamais déduit d'`account_kind` (reste `'bank'`, B16) ni de la devise. Sur un tel
+  `fee_account_id` `NULL` = à désigner, refusé ici en `FEE_ACCOUNT_INVALID`, `details: { accountId: null, reason: "missing" }` — forme de 38-2 AC-5, dont les motifs
+  `not_found`, `archived`, `not_postable`, `not_expense`, `currency_mismatch` sont repris tels quels ; `missing` est le seul motif de 38-6a) ; jamais déduit d'`account_kind` (reste `'bank'`, B16) ni de la devise. Sur un tel
   compte, `get_proposals` emprunte le chemin prestataire ; sur tout autre, **rien ne change** (saut hors CHF compris).
 - **C-38-6a-3 — Le candidat `provider`.** `CandidateType::Provider` (`"provider"`), rang **1** dans `order_candidates` (celui
   de la règle, qu'il remplace sur un compte prestataire) ; au plus **un** par transaction. Champs additifs du candidat
@@ -132,8 +133,13 @@ afin que **mes comptes PayPal se tiennent sans saisie, sans qu'aucune écriture 
   (`Money::round_to_centimes`, C-37-4) ; les lignes de TVA sont en CHF (`round(TVA en devise × cours, 2)`, A13, S5). Si
   Σ débit ≠ Σ crédit en CHF, une **ligne d'arrondi** CHF solde l'écart sur les comptes de différence de change du compte
   du grand livre du prestataire (`fx_accounts_for`, 37-1 ; gain au crédit si les débits l'emportent, perte au débit
-  sinon — la règle de 37-3b AC-2 bis). Bornée à `0.005 × n` (n = lignes en devise) ; au-delà, `DbError::Invariant`
-  (défaut du constructeur, 500, jamais une écriture). Visible à l'aperçu (D6 de 37-3b : jamais silencieuse).
+  sinon — la règle de 37-3b AC-2 bis). Bornée à `0.005 × n`, **n = le nombre de lignes dont le CHF est arrondi d'un montant en devise** — lignes en devise,
+  **mais aussi** contrepartie CHF et TVA, calculées par `round(x × cours, 2)` (passe P1 : avec n = lignes en devise
+  seules, une vente EUR à contrepartie CHF, quatre arrondis, pouvait s'écarter de 0.02 pour une borne de 0.01 et rendre
+  un 500 sur une transaction valide) ; au-delà, `DbError::Invariant`
+  (défaut du constructeur, 500, jamais une écriture). Test : vente EUR, contrepartie CHF, TVA et frais, cas construit
+  où les quatre arrondis vont dans le même sens (écart de 0.02 = 0.005 × 4 : ligne d'arrondi de 0.02) ; écart simulé
+  au-delà de `0.005 × n` : erreur du constructeur, aucune écriture. Visible à l'aperçu (D6 de 37-3b : jamais silencieuse).
 - **C-38-6a-7 — Factures en CHF.** Sur un compte prestataire **en CHF**, les factures client ou fournisseur candidates
   restent lues et proposées comme aujourd'hui, et elles **masquent** le candidat `provider` par la même règle
   (`rule_mask_for`, `has_strong_invoice_match` ; rejeu `load_rule_mask` à l'acceptation) : un paiement PayPal d'une
@@ -177,11 +183,15 @@ afin que **mes comptes PayPal se tiennent sans saisie, sans qu'aucune écriture 
    - pose `blockedBy` (C-38-6a-4) au lieu de lignes quand l'écriture ne se construit pas : `RATE_UNAVAILABLE`
      (`{ currency, month }`), `VAT_ACCOUNT_NOT_CONFIGURED` (`{ designation: payable|recoverable|acquisition }`), `VAT_KIND_UNKNOWN`,
      `VAT_RATE_UNAVAILABLE` (38-5), `VAT_KIND_MISMATCH`,
-     `FEE_ACCOUNT_INVALID` (`{ feeAccountId, reason }`), `MULTI_CURRENCY_DISABLED` (`{ fiscalYearId }`, exercice de la date
+     `FEE_ACCOUNT_INVALID` (`{ accountId, reason }`, 38-2 AC-5), `MULTI_CURRENCY_DISABLED` (`{ fiscalYearId }`, exercice de la date
      en mono-devise, 37-1 C-37-10), `RULE_ACCOUNT_CURRENCY_MISMATCH` (ne survient pas à la proposition grâce à
      C-38-6a-8 ; présent pour l'acceptation), `PROVIDER_AMOUNTS_INCONSISTENT` (C-38-6a-5), `BANK_ACCOUNT_NOT_CONFIGURED`
      (compte du grand livre absent ou inactif) ;
    - le champ `alreadyBooked` des propositions du compte est celui de 34-4, **étendu en devise par 38-6c** (Écart 1) ;
+   - **Tests** (passe P1 : seul le refus à l'acceptation avait un test par code) : un test HTTP de `GET …/proposals` par
+     motif de `blockedBy` (cours absent, compte de TVA non désigné, genre inconnu posé par SQL, taux indisponible,
+     genre de TVA incohérent avec le sens, compte de frais absent, exercice mono-devise, montants incohérents, compte du
+     grand livre absent) : `providerLines: null`, code et `details` égaux à ceux du refus d'acceptation du même cas ;
    - ordre des candidates : `order_candidates` inchangé hors du bras neuf (rang 1) ; test : une facture CHF à indice
      passe devant le candidat `provider`, et le masque (C-38-6a-7).
 2. **AC-2 — Le constructeur pur (FR-38-6a-1, NFR-38-6a-3).** `kesh_reconciliation::provider::build_provider_entry(input:
@@ -256,15 +266,23 @@ afin que **mes comptes PayPal se tiennent sans saisie, sans qu'aucune écriture 
       règle (`RECONCILIATION_RULE_MISMATCH`), contrepartie ≠ compte du prestataire (`VALIDATION_ERROR`,
       `counterparty_equals_bank_ledger`, constructeur existant), active et imputable (`ACCOUNT_NOT_FOUND`,
       `ACCOUNT_NOT_POSTABLE`), en CHF ou dans la devise de la transaction (`RULE_ACCOUNT_CURRENCY_MISMATCH`
-      `{ ruleId, accountCurrency, transactionCurrency }`), `rule_matches` rejoué (`RECONCILIATION_RULE_NO_LONGER_MATCHES`),
+      `{ ruleId, accountId, accountCurrency, transactionCurrency }`, comme C-38-6a-8 et 38-4), `rule_matches` rejoué (`RECONCILIATION_RULE_NO_LONGER_MATCHES`),
       masquage rejoué en CHF (`RECONCILIATION_RULE_MASKED`, `load_rule_mask`) ; `ruleId` absent pour une vente ou un
       achat → `VALIDATION_ERROR` (`reason: rule_required`) ; présent pour un frais → `VALIDATION_ERROR`
       (`reason: rule_not_expected`) ;
    6. compte de frais revalidé (de la société, actif, imputable, de charge, dans la devise du solde :
-      `FEE_ACCOUNT_INVALID` `{ feeAccountId, reason }`) ;
+      `FEE_ACCOUNT_INVALID` `{ accountId, reason }`, motifs de 38-2 AC-5) ;
    7. TVA : `default_vat_at(conn, company_id, contrepartie, entry_date)` (38-5 AC-5, dans la transaction) —
       `VAT_KIND_UNKNOWN`, `VAT_RATE_UNAVAILABLE` ; compte de TVA requis présent, actif, imputable
-      (`VAT_ACCOUNT_NOT_CONFIGURED` `{ designation }`) ; cohérence traitement/sens (`VAT_KIND_MISMATCH`) ;
+      (`VAT_ACCOUNT_NOT_CONFIGURED` `{ designation }`) ; cohérence traitement/sens (`VAT_KIND_MISMATCH`). **Verrou des
+      comptes désignés** (passe P1) : les comptes de TVA des réglages (dont celui d'acquisitions) et le compte de frais
+      sont des comptes que l'écriture automatique **écrit sans contrôle d'imputabilité** par le dépôt
+      (`create_in_tx(…, false)`) : ils se lisent par le **seul helper de verrou** de la 15-6a,
+      `company_invoice_settings::lock_designated_accounts_in_tx` (`LOCK IN SHARE MODE`, `ORDER BY id`, avant
+      `create_in_tx`), et non par un `SELECT` nu comme la contrepartie de `accept_one_rule` (`:4073`, qui n'écrit pas
+      de compte de réglage) ; test : archivage du compte d'acquisitions ou de TVA concurrent à l'acceptation → refus
+      nommé, rien d'écrit (patron des tests de la 15-6a) ; le manuel (`user-manual.tex:491`, comptes désignés contrôlés
+      « au moment où une écriture automatique veut l'utiliser ») est complété par 38-9b ;
    8. `alreadyBooked` relu pour **cette** transaction par les fonctions du dialogue (38-6c, en devise) : un nombre non nul
       et `confirmAlreadyBooked` faux → `TRANSACTION_ALREADY_BOOKED` (`{ settlementCount, entryCount,
       matchedElsewhereCount }`) — écart assumé à 34-4 AC-4, E15 ;
@@ -363,6 +381,15 @@ afin que **mes comptes PayPal se tiennent sans saisie, sans qu'aucune écriture 
 
 ## Change Log
 
+- 2026-11-15 — validation P1 (Sonnet) : 0 CRITICAL, 0 HIGH, 3 MEDIUM, 4 LOW ; remédiés dans la fiche sauf les
+  inter-fiches P1-5 et P1-6 : P1-1 (MEDIUM) borne de la ligne d'arrondi `0.005 × n` comptée sur les seules lignes en
+  devise, trop étroite quand la contrepartie CHF et la TVA sont arrondies aussi (C-38-6a-6) ; P1-2 (MEDIUM)
+  `FEE_ACCOUNT_INVALID` : `details` `{ feeAccountId, reason }` ici contre `{ accountId, reason }` à 38-2 AC-5 (C-38-6a-2,
+  AC-1, AC-8 (6)) ; P1-3 (MEDIUM) comptes de TVA, d'acquisitions et de frais lus sans le helper de verrou des comptes
+  désignés (AC-8 (7)) ; P1-4 (LOW) `details` de `RULE_ACCOUNT_CURRENCY_MISMATCH` sans `accountId` à l'AC-8 (5) ; P1-5
+  (LOW, inter-fiches) table de l'epic : 38-6a dépend aussi de 38-6c, codes neufs de C-38-8, totaux FR/NFR ; P1-6 (LOW,
+  inter-fiches) 38-2 AC-5 : motif `missing` ; P1-7 (LOW) tests de `blockedBy` absents (AC-1). Taille : cinq modules
+  (`kesh-reconciliation`, `kesh-api`, `kesh-db`, `kesh-i18n`, frontend) — limite, pas de découpage proposé.
 - 2026-11-15 — rédaction (Opus) : 12 AC, 7 FR (5 de l'epic + 2 ajoutées), 5 NFR (3 + 2) ; aucune migration ; écarts :
   dépendance à 38-6c, « A32 sinon » sans objet, noms des colonnes de TVA ; codes neufs ajoutés à C-38-8 :
   `VAT_KIND_MISMATCH`, `PROVIDER_MOVEMENT_KIND_UNSUPPORTED`, `PROVIDER_AMOUNTS_INCONSISTENT`, `PROVIDER_ACCOUNT_REQUIRED`,

@@ -79,8 +79,8 @@ afin que **tout mouvement qui change un solde finisse comptabilisé, sans qu'auc
 3. **« Origine absente ou non réconciliée → file »** (E16) : tenu tel quel, mais **calculé à la lecture** (NFR-38-6b-4) ;
    la valeur `refund_origin_missing` que 38-3/38-8 peut poser dans `review_reason` est une indication, non l'autorité
    (C-38-6b-4). La fiche 38-8 (AC-4, AC-5) écrit que `refund_origin_missing` « est posé par 38-6b » : ici il n'est
-   **posé nulle part**, il se **calcule** (rien n'est écrit pour entrer dans la file) ; à aligner à la validation des deux
-   fiches.
+   **posé nulle part**, il se **calcule** (rien n'est écrit pour entrer dans la file) ; tranché par **O11** (calculé, jamais écrit) :
+   38-8 AC-4 et AC-5 (`:90`, `:123`) sont à aligner (inter-fiches).
 
 ## Choix
 
@@ -103,6 +103,23 @@ afin que **tout mouvement qui change un solde finisse comptabilisé, sans qu'auc
   crédit transit CHF₁, ligne de différence ajoutée par le serveur (comptes de X2, `fx_accounts_for`). Les frais `F₂` de
   la moitié créditée ne font pas de ligne (Écart 2) : ils sont dans la différence. Cours : cours retenu du mois de chaque
   date (C-38-6a-10, AC-6 de 38-6a).
+- **C-38-6b-2 bis — Conversion dont un côté est en CHF (ajoutée à la passe P1).** B1 donne trois soldes par compte
+  (CHF, EUR, USD) : la conversion CHF ↔ devise est la plus courante, et **37-3b AC-2 bis ne la couvre pas** (l'assistant
+  et `POST /journal-entries/conversions` valent entre **deux devises étrangères** — « sinon une écriture ordinaire
+  suffit » —, et `completeDifference` exige un compte en devise au débit net). 38-6c AC-2 rattache déjà des deux côtés
+  l'écriture « débit 1030 PayPal CHF 100 / crédit 1031 PayPal EUR 92 EUR (CHF 100) ». Quand l'une des deux moitiés est
+  en CHF (compte du grand livre sans devise, 37-1), la paire se passe donc en **une seule écriture**, sans compte de
+  transit ni appel à la fonction de 37-3b : débit du compte qui reçoit, crédit du compte qui paie, **une seule devise
+  étrangère** (celle de l'autre moitié, 37-3a), frais de la moitié débitée au compte de frais du solde débité, et une
+  **ligne de différence** (Σ crédits − Σ débits en CHF) aux comptes de différence de change du compte en devise
+  (`fx_accounts_for`, S2 ; gain au crédit, perte au débit), calculée par le constructeur, montrée à l'aperçu (D6),
+  jamais silencieuse. Cours : cours retenu du mois de la date de la moitié **en devise** (C-38-6a-10). Date de
+  l'écriture : celle de la moitié débitée. Les **deux** transactions sont réconciliées sur cette écriture (virement
+  entre ses comptes, 34-11b, 38-6c AC-2 : `matched_entry_id` des deux), `pairedJournalEntryId` = l'écriture elle-même.
+  Seules les paires **sans CHF** (deux devises étrangères) passent par les deux écritures de C-38-6b-2. Annulation :
+  celle de 34-11b, inchangée (le lien de la moitié annulée est retiré, la dernière contre-passe l'écriture) — la route
+  à deux verrous (AC-8) ne vise que les paires à deux écritures. *(À valider avec l'orchestrateur : la date unique et la
+  condition de date du rattachement 34-11b/38-6c, à relire au développement.)*
 - **C-38-6b-3 — Retrait et dépôt : virement entre ses comptes.** Deux voies, toutes deux par la variante `provider` :
   (a) **rattacher** : si l'écriture du virement existe déjà (le côté banque a été passé — 34-4 : `matchedElsewhereCount
   = entryCount = 1`, l'écriture candidate étant celle-là), la proposition porte `linkJournalEntryId` et l'acceptation
@@ -139,8 +156,13 @@ afin que **tout mouvement qui change un solde finisse comptabilisé, sans qu'auc
   transaction quitte la file et les propositions ; elle **reste `pending`** (rien n'est comptabilisé) et compte toujours
   dans le contrôle de complétude (E20) ; on revient en arrière par `…/unreject` (28-5a, inchangé). Aucune colonne neuve.
 - **C-38-6b-7 — Paire et verrous.** L'acceptation d'une moitié, depuis l'un ou l'autre compte, prend le verrou du lot
-  (compte du corps) puis, dans la proposition, celui de l'autre compte (`with_account_lock`, `LOCK_TIMEOUT_SECS`) ; échec →
-  `FailedProposal` `PROVIDER_PAIR_ACCOUNT_LOCKED` (`{ bankAccountId }`), rien d'écrit. L'annulation lit la paire hors
+  (compte du corps) puis, dans la proposition, celui de l'autre compte (`with_account_lock` **imbriqué**,
+  `LOCK_TIMEOUT_SECS` = 5, `mutex.rs:70`) ; `AccountLocked` → `FailedProposal` `PROVIDER_PAIR_ACCOUNT_LOCKED`
+  (`{ bankAccountId }`), rien d'écrit. ⚠️ `with_account_lock` rend `Result<T, ReconciliationError>` et sa fermeture doit
+  en rendre un : la proposition est exécutée dans la fermeture et son `FailedProposal` en ressort par la valeur `T`
+  (non par l'erreur) ; **`LockReleaseFailed` n'est jamais un `FailedProposal`** — il remonte, le lot entier est refusé et
+  la transaction abandonnée, comme `post_accept` le fait pour le verrou du lot (en-tête de `mutex.rs`, « caller
+  pattern ») ; un `GET_LOCK` rendu en interblocage (1213) suit le rejeu existant de `post_accept` (`retry_with`). L'annulation lit la paire hors
   verrou, prend les **deux** verrous dans l'ordre croissant des identifiants de compte, relit la paire sous verrou
   (changée → 409 `PROVIDER_PAIR_CHANGED`), puis appelle `cancel_in_tx` **deux fois** dans la même transaction.
 
@@ -150,7 +172,8 @@ afin que **tout mouvement qui change un solde finisse comptabilisé, sans qu'auc
    /api/v1/reconciliation/proposals` (forme de 38-6a) donne, pour une transaction hors de la file (C-38-6b-4) :
    `conversion` → un candidat `provider` portant `pairedBankTransactionId`, `providerLines` (écriture de **cette** moitié)
    et `pairedLines` (écriture de l'autre), différence calculée pour l'aperçu par la même règle que 37-3b (gain au crédit
-   si les débits l'emportent, perte au débit ; comptes de X2) ; `withdrawal`/`deposit` → un candidat portant
+   si les débits l'emportent, perte au débit ; comptes de X2) ; conversion à moitié **CHF** (C-38-6b-2 bis) → `providerLines` = l'écriture unique,
+   `pairedLines: null` ; `withdrawal`/`deposit` → un candidat portant
    `linkJournalEntryId` (voie a) **ou** `transferBankAccountId` (voie b, `null` si aucun ou plusieurs comptes suggérés) et
    ses lignes ; `refund` → un candidat portant `originBankTransactionId` et les lignes de l'inverse. `blockedBy` (38-6a
    C-38-6a-4) pour un cours absent, un compte de frais invalide, `MULTI_CURRENCY_DISABLED`, `FX_ACCOUNT_INVALID` (comptes de
@@ -165,7 +188,11 @@ afin que **tout mouvement qui change un solde finisse comptabilisé, sans qu'auc
    ligne de différence en dernière ligne de l'écriture 2 ; compte de transit à **0** ; **les deux** transactions
    `reconciled`, chacune sur son écriture ; `AcceptedProposal` porte les champs additifs `pairedBankTransactionId` et
    `pairedJournalEntryId`. Variante : frais `F₂ ≠ 0` sur la moitié créditée → aucune ligne de frais à l'écriture 2, la
-   différence les contient (Écart 2), montré à l'aperçu.
+   différence les contient (Écart 2), montré à l'aperçu. **Variante CHF** (C-38-6b-2 bis) : solde CHF (compte 1030) et
+   solde EUR, moitiés −100.00 CHF (frais −1.00) et +92.00 EUR → **une** écriture (crédit 1030 100.00 ; débit compte de
+   frais CHF 1.00 ; débit compte EUR `EUR 92.00` × cours du mois ; ligne de différence aux comptes de change du compte
+   EUR), les deux transactions `reconciled` sur elle, aucun passage par le compte de transit ; paire EUR/USD du test
+   ci-dessus inchangée ; annulation d'une moitié de la paire CHF → retrait de son seul lien (34-11b).
 3. **AC-3 — Conversion : refus (NFR-38-6b-1, NFR-38-6b-2).** Corps `provider` d'une moitié : `pairedBankTransactionId`
    **exigé** et égal à la paire résolue sous verrou, sinon `PROVIDER_CONVERSION_PAIR_INVALID` (`{ expected, actual }`) ;
    paire `Missing`/`Ambiguous` → `PROVIDER_TX_UNDER_REVIEW` (`{ reason }`) ; autre moitié non `pending` →
@@ -201,8 +228,9 @@ afin que **tout mouvement qui change un solde finisse comptabilisé, sans qu'auc
 6. **AC-6 — La file « à examiner » (FR-38-6b-4, FR-38-6b-5, NFR-38-6b-4).** `GET /api/v1/reconciliation/review?bankAccountId&limit`
    (C-38-9 ; même groupe de routes, mêmes rôles et mêmes clés d'API que `GET /reconciliation/proposals` ; `bankAccountId`
    facultatif : sans lui, tous les comptes prestataires de la société ; `limit` défaut 100, plafond 500 ;
-   `bankAccountId` d'un compte non prestataire, archivé ou d'une autre société → 404 `BANK_ACCOUNT_NOT_FOUND`, comme
-   `get_proposals`) rend `{ items: [{ bankTransactionId, bankAccountId, bankAccountName, bookingDate, amount, currency,
+   `bankAccountId` d'un compte non prestataire, archivé ou d'une autre société → 404 `BANK_IMPORT_BANK_ACCOUNT_NOT_FOUND`
+   (`AppError::BankAccountNotFound`, `errors.rs:2553`, que `get_proposals` rend `:1020-1028` ; `BANK_ACCOUNT_NOT_FOUND`
+   est le seul code de `failed[]`, `reconciliation.rs:2626`, passe P1)) rend `{ items: [{ bankTransactionId, bankAccountId, bankAccountName, bookingDate, amount, currency,
    movementKind, eventCode, counterpartyName, invoiceRef, reason, reasonSource: "stored"|"computed",
    relatedBankTransactionId }], hasMore }`, triés par `bookingDate` décroissante puis `id`. Motifs : ceux de C-38-6b-4
    (`dispute`, `refund_origin_missing`, `unknown_event`, `other` — C-38-4 — et `conversion_half_missing`,
@@ -241,7 +269,9 @@ afin que **tout mouvement qui change un solde finisse comptabilisé, sans qu'auc
 10. **AC-10 — Textes, i18n, documentation.** Codes neufs (`failed[]`, `blockedBy` ou `AppError`) :
     `PROVIDER_CONVERSION_PAIR_INVALID`, `PROVIDER_PAIR_ACCOUNT_LOCKED`, `PROVIDER_PAIR_CHANGED`,
     `PROVIDER_TRANSFER_ACCOUNT_INVALID`, `PROVIDER_TRANSFER_CURRENCY_MISMATCH`, `PROVIDER_REFUND_ORIGIN_INVALID`,
-    `RECONCILIATION_ALREADY_REJECTED` (en `AppError`) — libellés dans `failed-proposal-label.ts` (clés écrites en toutes
+    `RECONCILIATION_ALREADY_REJECTED` (en `AppError`) — **et `PROVIDER_ACCOUNT_REQUIRED` rendu en `AppError` 409 par
+    `review-done`** (code de 38-6a, créé comme `FailedProposal` : sa variante d'`AppError` et son message d'erreur aux
+    quatre locales sont à ajouter ici, passe P1) — libellés dans `failed-proposal-label.ts` (clés écrites en toutes
     lettres, quatre locales ; `details.reason` de `PROVIDER_TX_UNDER_REVIEW` lu pour dire le motif), messages d'`AppError`
     aux quatre locales, décompte des codes du doc-comment recompté au `grep` ; motifs de la file : clés
     `reconciliation-review-reason-*` (une par motif, quatre locales) ; action d'audit `reconciliation.review_done` à
@@ -310,6 +340,17 @@ afin que **tout mouvement qui change un solde finisse comptabilisé, sans qu'auc
 
 ## Change Log
 
+- 2026-11-15 — validation P1 (Sonnet) : 0 CRITICAL, 1 HIGH, 2 MEDIUM, 2 LOW ; remédiés dans la fiche sauf l'inter-fiches
+  P1-5 : P1-1 (HIGH) conversion dont un côté est en CHF non couverte (37-3b AC-2 bis ne vaut qu'entre deux
+  devises étrangères ; 38-6c AC-2 la rattache déjà en une écriture) → C-38-6b-2 bis, AC-1, AC-2 ; P1-2 (MEDIUM)
+  verrou imbriqué de l'autre compte : type de retour de `with_account_lock`, `LockReleaseFailed` (C-38-6b-7) ; P1-3
+  (MEDIUM) `PROVIDER_ACCOUNT_REQUIRED` rendu en `AppError` par `review-done` sans variante ni message (AC-10) ; P1-4
+  (LOW) 404 de `GET …/review` : le code est `BANK_IMPORT_BANK_ACCOUNT_NOT_FOUND`, non `BANK_ACCOUNT_NOT_FOUND` (AC-6) ;
+  P1-5 (LOW, inter-fiches) 38-8 AC-4/AC-5 :
+  `refund_origin_missing` « posé par 38-6b » contre O11, table de l'epic (38-6b dépend de 38-6c, totaux FR/NFR, 38-6b
+  ajoute un code d'audit et une route). Taille : cinq modules (`kesh-db`, `kesh-reconciliation`, `kesh-api`, `kesh-i18n`,
+  frontend), 11 AC dont l'annulation de paire qui touche `cancel_in_tx` : limite — à découper en 38-6b1 (conversions,
+  retraits, annulation de paire) / 38-6b2 (remboursements, file, « examiné ») si la validation stagne.
 - 2026-11-15 — rédaction (Opus) : 11 AC, 5 FR (4 de l'epic + 1 ajoutée), 4 NFR (2 + 2) ; aucune migration
   (« examiné » réutilise `auto_match_rejected_at`) ; +1 route mutante (`review-done`), +1 lecture (`GET …/review`) ;
   action d'audit neuve `reconciliation.review_done` ; écarts : citation du virement (`:6373` → `post_link_entry`), frais

@@ -9,7 +9,14 @@ FR-38-1-4), C-38-0, C-38-12 ; décisions de Beat B1, B3, B16 (maintenu par B22),
 close des absences admises, 37-1 AC-6). **Suivie par** : 38-3 (transactions et soldes vus d'un compte prestataire,
 qui étendent le refus `PROVIDER_ACCOUNT_IN_USE`), 38-6a (compte de frais), 38-9a (écrans).*
 
-⚠️ **Écart à l'epic, bloquant pour la migration — à trancher avant le développement (Q-38-2-a, C-38-0).** L'epic
+⛔ **Arbitrage O1 (2026-11-15), qui prime sur le reste de cette fiche : la migration de cette story est l'UNIQUE
+migration breaking de l'epic** (la fiche d'origine la disait non breaking et laissait la décision à Beat, Q-38-2-a :
+close). Elle porte, dans **un seul fichier** : la table `payment_provider_accounts`, le remplacement de la contrainte
+d'IBAN, `reconciliation_rules.match_type` en `VARCHAR(40)` (O2), et `kesh_version_min_required` relevé en dernière
+instruction (P2, P2-bis : **dix** crates, `kesh-providers` naissant en 38-3 ; numéro de release à Guy, Q1 de l'epic —
+bloquant pour cette fiche comme il l'était pour 38-3). Détail à l'AC-1.
+
+⚠️ **Écart à l'epic, relevé au code (résolu par O1).** L'epic
 (E11, inventaire) tient qu'un compte `bank` **sans IBAN** est admis depuis 34-11a1. **C'est faux au code** :
 `chk_bank_accounts_bank_has_iban CHECK (account_kind <> 'bank' OR iban IS NOT NULL)`
 (`crates/kesh-db/migrations/20261110000001_bank_accounts_without_iban.sql:48-49`) l'interdit au schéma, et
@@ -17,9 +24,10 @@ qui étendent le refus `PROVIDER_ACCOUNT_IN_USE`), 38-6a (compte de frais), 38-9
 la carte de crédit en est dispensée. Un solde PayPal n'a pas d'IBAN. Le code avait prévu ce cas pour **un type neuf**
 (`crates/kesh-db/src/entities/bank_account.rs:137-142` : « un futur type sans IBAN devra ajouter `CHECK (is_primary =
 FALSE OR iban IS NOT NULL)` »), que B16/B22 écartent. Cette fiche **propose** (AC-1) de retirer la contrainte et de la
-remplacer par `chk_bank_accounts_primary_has_iban` ; c'est un `DROP CONSTRAINT`, qu'une fiche autre que 38-3 doit
-annoncer avant de l'écrire (C-38-0). Elle le dit ici, avec l'analyse de compatibilité ; **sans accord, la story ne se
-développe pas**.
+remplacer par `chk_bank_accounts_primary_has_iban` ; c'est un `DROP CONSTRAINT` (C-38-0), **dans la migration
+breaking de cette story** (O1), avec l'analyse de compatibilité de l'AC-1. Un `CHECK` ne pouvant lire une autre table,
+« IBAN obligatoire sauf compte prestataire » ne s'écrit pas au schéma : l'exigence d'IBAN d'un compte `bank` ordinaire
+reste portée par `validate_bank_input` (garde d'application, testée à l'AC-4), le schéma ne gardant que le principal.
 
 ## Story
 
@@ -44,11 +52,37 @@ compte de l'assistant.
 | `FR-38-2-8` *(ajout, FR-38-1-4)* | La suppression d'une connexion qui porte un compte prestataire est refusée (`PROVIDER_CONNECTION_IN_USE`). | AC-9 |
 | `NFR-38-2-1` | Gardes au serveur, sous le verrou de devise du compte du plan, dans la transaction du lien. | AC-3, AC-6 |
 | `NFR-38-2-2` | Comptes désignés en colonnes FK `ON DELETE RESTRICT`, archivage refusé tant qu'un réglage les désigne (B23). | AC-1, AC-5 |
-| `NFR-38-2-3` | Migration non breaking ; `account_kind` toujours `'bank'`. | AC-1 |
+| `NFR-38-2-3` | **Migration breaking (O1)** : `kesh_version_min_required` relevé en dernière instruction, crates bumpés dans le même commit, retour par la sauvegarde d'avant la mise à jour ; `account_kind` toujours `'bank'`. | AC-1 |
 
 ## Critères d'acceptation
 
-1. **AC-1 — Migration `2026111X000002_payment_provider_accounts.sql`** (après celle de 38-1 ; DDL seul) :
+1. **AC-1 — Migration `<date>000002_payment_provider_accounts.sql`** (après celle de 38-1, date postérieure à
+   `20261114000003` ; **breaking (O1)** ; DDL, plus l'`UPDATE` de version en dernière instruction ; en tête du fichier
+   `-- BREAKING (P1, P3 : MODIFY COLUMN) : relève kesh_version_min_required à <X.Y.Z>`, patron de
+   `20261110000001`). Ordre des instructions : (1) `CREATE TABLE payment_provider_accounts` ; (2) le remplacement de la
+   contrainte d'IBAN ; (3) `ALTER TABLE reconciliation_rules MODIFY COLUMN match_type VARCHAR(40) CHARACTER SET ascii
+   COLLATE ascii_bin NOT NULL` avec `CHECK (BINARY match_type REGEXP '^[a-z][a-z0-9_]{1,39}$')` — format seul, sans
+   énumération (O2) ; les quatre valeurs existantes sont conservées, aucune ligne réécrite ; l'index
+   `uq_reconciliation_rules_match_active (company_id, match_type, active_uniq)` se reconstruit à l'`ALTER` (vérifier
+   qu'aucun `DROP INDEX` n'est requis ; la comparaison passe de `utf8mb4_unicode_ci` à `ascii_bin`, sans effet sur des
+   valeurs en minuscules ASCII) ; (4) **en dernière instruction** `UPDATE _kesh_version SET
+   kesh_version_min_required = '<X.Y.Z>' WHERE id = 1;` (P2). **Hors périmètre de cette story** : le décodage
+   tolérant `Other(String)` de `ReconciliationMatchType` et de `BankImportSourceFormat` (E4) — tant qu'aucune valeur
+   neuve n'est écrite, l'enum reste tel quel et la désérialisation de l'API refuse l'inconnu en 400 ; il vient avec la
+   première écriture d'une valeur neuve (38-3 pour `PROVIDER_API`, 38-4 pour les critères) — **à confirmer à l'orchestrateur**
+   (inter-fiche, 38-2-P1-3). **P2-bis** : les **dix** crates passent à `<X.Y.Z>` dans le même commit ; gate
+   **runtime** complet (`admin_backup_e2e`, `admin_full_import_e2e`, `migrations_fresh_install`) avant `done` ;
+   `<X.Y.Z>` est à Guy (Q1 de l'epic). **P3/P4** : pas de `breaking-skip-bump`. **P7** : l'`UPDATE _kesh_version`
+   écrit une table système jamais restaurée → une entrée **`Durable`** à `EXEMPT_MIGRATIONS`
+   (`crates/kesh-db/src/post_restore.rs:425`, patron de `20261110000001`, `:645`) et le décompte de
+   `every_exemption_declares_a_coherent_basis` (24 au relevé, `post_restore.rs:1252` : +1, cumulé) ; les autres instructions sont du DDL. **Retour** :
+   un binaire antérieur refuse de démarrer sur la base migrée et d'importer un `.keshbackup` de cette version ; **le
+   retour à la version précédente passe uniquement par la sauvegarde d'avant la mise à jour** (`backup/pre-upgrade/`,
+   #847, et celle que les notes exigent) — à écrire en tête des notes de version et au manuel d'administration
+   (38-9a) ; recette de montée `scripts/recette-montee.sh` depuis l'image publiée précédente, jouée ici et à la
+   release (`docs/testing.md`). Test de montée au patron de `bank_accounts_without_iban` (`migrations_upgrade_path.rs`),
+   index résolus **par version** (P6) : règles existantes inchangées après la montée, unicité encore tenue, un compte
+   `bank` sans IBAN non principal accepté et un principal sans IBAN refusé.
    - **`payment_provider_accounts`** (table **applicative**, E11, C-38-3) : `bank_account_id BIGINT NOT NULL PRIMARY
      KEY` (FK `bank_accounts`, `RESTRICT`), `company_id BIGINT NOT NULL` (FK `companies`, `RESTRICT` ; égal à celui du
      compte bancaire et de la connexion, contrôlé par le dépôt), `connection_id BIGINT NOT NULL` (FK
@@ -60,18 +94,18 @@ compte de l'assistant.
      `created_at`, `updated_at` `DATETIME(3) NOT NULL` ; `UNIQUE uq_ppa_connection_currency (connection_id,
      currency)` (B1 : un compte par solde et par devise). Colonnes `NULL` de comptes liés d'autres prestataires (p. ex.
      compte intermédiaire de Stripe) : **ajoutées par leur epic**, en FK `RESTRICT` (B23) — aucune ici.
-   - **Contrainte de `bank_accounts` (Q-38-2-a)** : `ALTER TABLE bank_accounts DROP CONSTRAINT
+   - **Contrainte de `bank_accounts` (Q-38-2-a, close par O1)** : `ALTER TABLE bank_accounts DROP CONSTRAINT
      chk_bank_accounts_bank_has_iban, ADD CONSTRAINT chk_bank_accounts_primary_has_iban CHECK (is_primary = FALSE OR
      iban IS NOT NULL)`. *Analyse de compatibilité* : la colonne `iban` est déjà `NULL` et lue `Option<String>` depuis
      la 0.17.6 (`entities/bank_account.rs:126-143`) ; les sites qui exigent un IBAN refusent **sur `iban.is_none()`,
      jamais sur le type** (C-e341-18 : lot pain.001, `repositories/payment_batches.rs:170-185, 884-886` ; import CAMT ;
      QR-facture, `routes/invoice_pdf_service.rs:342-353`, qui lit le **principal**, désormais gardé par la contrainte
      neuve) ; un binaire antérieur qui lirait un compte `bank` sans IBAN le refuserait en `400` à la modification
-     (`validate_bank_input`), sans corruption. Le `DROP CONSTRAINT` n'est pas dans la liste de P3 ; il n'appelle donc
-     **pas** de relèvement ici — et la release relève de toute façon `kesh_version_min_required` en 38-3 (E19),
-     qu'aucune story de l'epic ne quitte sans. Les lignes existantes satisfont la contrainte neuve (un `bank` a un
-     IBAN, une carte n'est jamais principale). **Si Beat préfère** placer ce `DROP` dans la migration breaking de 38-3,
-     38-2 doit passer **après** 38-3 dans l'ordre de l'epic (la création d'un compte sans IBAN en dépend) : à arbitrer.
+     (`validate_bank_input`), sans corruption — et, la version minimale étant relevée par ce même fichier, un binaire antérieur ne démarre de
+     toute façon pas sur la base migrée. Les lignes existantes satisfont la contrainte neuve (un `bank` a un
+     IBAN, une carte n'est jamais principale). Le schéma **ne garantit plus** qu'un compte `bank` non principal porte
+     un IBAN : l'invariant passe à `validate_bank_input` et au dépôt (`create`/`PUT`), à tester (le `POST` et le `PUT`
+     d'un compte ordinaire sans IBAN restent refusés).
    - **Sites à reprendre** (le changement d'invariant, greppé : `grep -rn "bank_has_iban" crates docs`) :
      `entities/bank_account.rs:126-143` (doc de `iban` : le schéma ne garantit plus `Some` pour `Bank` ; garantit `Some`
      pour le principal), `repositories/bank_accounts.rs:657-663` (`BankAccountPutFields`), `repositories/payment_batches.rs:158-162`
@@ -82,11 +116,14 @@ compte de l'assistant.
      un refus `chk_bank_accounts_primary_has_iban` en principal) et `crates/kesh-db/tests/migrations_upgrade_path.rs:2500-2550`
      (montée de 34-11a1 : après `MIGRATOR.run()` complet, le refus attendu par `chk_bank_accounts_bank_has_iban`
      n'existe plus — l'assertion porte désormais sur l'état à la version `20261110000001`, résolue **par version**
-     (P6), ou devient le refus de la contrainte neuve en principal).
-   - **P5** : ligne d'audit d'idempotence (`tracked-by-sqlx` ; `CREATE TABLE` et `ALTER TABLE … DROP/ADD CONSTRAINT`
-     sans `IF EXISTS` : re-exécution hors sqlx → erreur 1050) ; total et partition recomptés à la source. **P6** :
-     grep exécuté, sites inspectés et cités (le test de 34-11a1 ci-dessus en est un). **P7** : aucune écriture de
-     données. **P8** : sans objet. Squash `test-schema` mis à jour.
+     (P6), ou devient le refus de la contrainte neuve en principal), et le **squash** `crates/kesh-db/test-schema/
+     0001_schema_squash.sql` (`:176` pour la contrainte, `:1167` pour `match_type`, `:1180` pour l'index ; garde
+     `test_schema_guard.rs`).
+   - **P5** : ligne d'audit d'idempotence (`tracked-by-sqlx` ; `CREATE TABLE`, `ALTER TABLE … DROP/ADD CONSTRAINT`
+     et `MODIFY COLUMN` sans `IF EXISTS` : re-exécution hors sqlx → erreur 1050 ; l'`UPDATE` de version est
+     idempotent) ; total (**deux** sites) et partition recomptés à la source. **P6** : `grep -rn "migrations.len()\|
+     apply_migrations_up_to" crates/` exécuté, sites inspectés et cités (le test de 34-11a1 ci-dessus en est un).
+     **P8** : sans objet (fichier neuf).
    - **Liste close des absences admises** (37-1 AC-6, E18) : `payment_provider_accounts` en `Absence::Table` ; test
      d'import d'une sauvegarde d'avant l'Epic 38 étendu (aucun compte prestataire). ⚠️ Le `DROP CONSTRAINT` ne change
      rien à l'import d'une sauvegarde antérieure (ses lignes satisfont les deux contraintes).
@@ -98,6 +135,10 @@ compte de l'assistant.
      `csv_tables.rs:640`) : `bank_account_id`, `connection_id`, `provider` et `connection_label` (lus par jointure : la
      table des connexions est hors export, 38-1 AC-2), `currency`, `fee_account_id`, `fee_account_number` ; cas de test
      de l'en-tête contre le schéma. `account_kind` reste `'bank'` partout (aucune valeur neuve, B16).
+   - **Sites de dénombrement** (même grep que 38-1) : `admin_full_export_e2e.rs:~281` (`data_count == 44` : +1,
+     cumulé avec 38-1 et l'Epic 37) ; `onboarding_audit_e2e.rs:2040` (`EMPTY_BEFORE_RESET`, liste fermée : la table y
+     entre) ; le décompte de `TABLES_EXPORTEES` que `exports_global_e2e.rs` contrôle fichier par fichier
+     (`payment_provider_accounts.csv` : 0 ligne).
 
 2. **AC-2 — Dépôt `kesh-db::repositories::payment_provider_accounts`** : `list_by_company`, `list_by_connection`,
    `find_by_bank_account_in_tx` (verrou au choix de l'appelant), `insert_in_tx`, `update_fee_account_in_tx` (version),
@@ -157,7 +198,10 @@ compte de l'assistant.
      (`is_provider_account_in_tx`, lu sous le verrou de la ligne), le refus `ACCOUNT_IN_FOREIGN_CURRENCY` de 37-1 est
      **remplacé** par la garde de devise de l'AC-3 (`PROVIDER_ACCOUNT_CURRENCY_MISMATCH` si la devise du compte visé
      n'est pas celle des réglages ; `PROVIDER_ACCOUNT_LEDGER_SHARED`) ; **délier** (`journalAccountId: null`) un compte
-     prestataire → `409 PROVIDER_ACCOUNT_LEDGER_REQUIRED`. Pour un compte **sans** réglages, rien ne change (37-1).
+     prestataire → `409 PROVIDER_ACCOUNT_LEDGER_REQUIRED` s'il porte au moins une transaction
+     (`count_transactions_for_bank_account`, lue sous le verrou de la ligne ; arbitrage O8 : « délier n'est admis que
+     s'il ne porte aucune transaction téléchargée » — 38-3 y ajoute les soldes vus) ; sans transaction, le lien est
+     retiré et le compte reste « lien à désigner » (comme `fee_account_id NULL`), sans proposition possible d'ici là. Pour un compte **sans** réglages, rien ne change (37-1).
    - **`PUT`** d'un compte prestataire : `iban` **facultatif** (absent ou `null` → `NULL` ; présent → contrôlé comme
      aujourd'hui) — c'est la seule dérogation à `validate_bank_input` (`:557-570`), décidée sur
      `is_provider_account` **lu sous verrou** et non sur le corps ; `qrIban` présent → `400
@@ -221,9 +265,9 @@ compte de l'assistant.
      le compte **principal**, qu'un compte prestataire ne peut pas être ; les routes de cette story exigent l'onboarding
      terminé. Test : `set_bank_account` après la pose de réglages sur un autre compte ne touche pas ce dernier.
    - **Import CAMT** : sélection par IBAN ; un compte PayPal sans IBAN n'y est jamais choisi (rien à changer) ; un
-     compte prestataire **avec** IBAN : l'import CAMT reste admis en 38-2 — **point de contact 38-3**, qui décide
-     d'interdire ou non les imports de fichier sur un compte prestataire (mélange de `provider_tx_id` et de clés de
-     doublon par fenêtre).
+     compte prestataire **avec** IBAN : l'import CAMT reste admis en 38-2 — **point de contact 38-3**, qui refuse les
+     imports de fichier sur un compte prestataire (arbitrage O9 : mélange de `provider_tx_id` et de clés de doublon
+     par fenêtre) ; 38-2 ne pose pas ce refus.
 
 8. **AC-8 — Lecture (FR-38-2-7).** `GET /api/v1/bank-accounts` (`list_bank_accounts`, :883, tous rôles) : chaque
    élément gagne `provider` — `null` pour un compte ordinaire, sinon `{ connectionId, connectionLabel, provider,
@@ -264,10 +308,14 @@ compte de l'assistant.
 
 ## Tâches / sous-tâches
 
-- [ ] **T0 — Arbitrage Q-38-2-a** obtenu (contrainte d'IBAN), écrit au Change Log ; sinon arrêt.
+- [ ] **T0 — Numéro de release `<X.Y.Z>` obtenu de Guy** (Q1 de l'epic), écrit au Change Log, **avant toute ligne de
+      code** (la migration le fige, P2) ; l'arbitrage Q-38-2-a est acquis (O1).
 - [ ] **T1 — Migration** (AC-1) : fichier, squash, audit d'idempotence et compteurs, P6 (dont
       `migrations_upgrade_path.rs:2500-2550`), inscriptions (`TABLES_TO_TRUNCATE`, `TABLES_EXPORTEES` et sérialiseur,
-      liste close R1 et son test), sites de l'invariant d'IBAN.
+      liste close R1 et son test), sites de l'invariant d'IBAN, `match_type` en `VARCHAR(40)`, `UPDATE
+      _kesh_version`, dix crates à `<X.Y.Z>` dans le même commit, `EXEMPT_MIGRATIONS` (+1), sites de dénombrement
+      (`data_count`, `EMPTY_BEFORE_RESET`), recette de montée, gate runtime (`admin_backup_e2e`,
+      `admin_full_import_e2e`, `migrations_fresh_install`).
 - [ ] **T2 — Dépôt** (AC-2) : entité, fonctions, ordre des verrous écrit et testé.
 - [ ] **T3 — Routes prestataire** (AC-3, AC-5, AC-9) : `create`/`attach`, `PATCH`, `DELETE`, `GET`, gardes dans
       l'ordre, enveloppe de rejeu, codes et messages.
@@ -289,7 +337,8 @@ compte de l'assistant.
   décide sur la ligne `payment_provider_accounts` **lue sous verrou**, jamais sur un champ du corps.
 - **Pourquoi pas `account_kind = 'provider'`** : B16, maintenu par B22 — `BankAccountKind::from_str` refuse l'inconnu
   (`entities/bank_account.rs:61-69`), si bien qu'une valeur neuve serait une migration breaking de plus ; la seule
-  breaking de l'epic est en 38-3. Le prix est l'écart sur `chk_bank_accounts_bank_has_iban` (en tête).
+  breaking de l'epic est celle de cette story (O1). Le prix est le remplacement de `chk_bank_accounts_bank_has_iban`
+  (en tête).
 - **Soldes** : `currentBalance` de la liste reste calculé comme aujourd'hui (en devise principale) ; l'affichage en
   devise d'un compte en devise est l'affaire de 37-4. Le contrôle « solde du prestataire = solde comptable » est 38-3
   (complétude) et 38-10 (relevé).
@@ -306,16 +355,22 @@ compte de l'assistant.
 
 ## Questions ouvertes
 
-- **Q-38-2-a — Contrainte `chk_bank_accounts_bank_has_iban` (Beat, bloquante ; C-38-0)** : (1) la retirer en 38-2 au
-  profit de `chk_bank_accounts_primary_has_iban` (proposé, analyse en AC-1) ; ou (2) la retirer dans la migration
-  breaking de 38-3 et passer 38-2 après 38-3 ; ou (3) une autre voie (type de compte neuf : contraire à B16/B22). Le
-  fichier d'epic (E11, inventaire « IBAN facultatif ») est à corriger par l'orchestrateur dans les deux premiers cas.
-- **Q-38-2-b** : un compte prestataire peut-il être **délié** de son compte du plan ? Proposé : non
-  (`PROVIDER_ACCOUNT_LEDGER_REQUIRED`) — sans lien, ni proposition ni contrôle de solde n'ont de sens.
-- **Q-38-2-c** : l'unicité d'un compte du plan en devise par compte prestataire (`PROVIDER_ACCOUNT_LEDGER_SHARED`) est
-  un ajout ; la lever si Beat tient deux soldes au même compte du plan.
+- *Q-38-2-a **close** par l'arbitrage O1 (2026-11-15) : contrainte remplacée par `chk_bank_accounts_primary_has_iban`
+  dans la migration breaking de cette story ; le fichier d'epic (E11, inventaire « IBAN facultatif ») reste à corriger
+  par l'orchestrateur.*
+- *Q-38-2-b **close** par l'arbitrage O8 : délier n'est refusé que si le compte porte des transactions (AC-4).*
+- *Q-38-2-c **close** par l'arbitrage O8 : un compte du plan en devise n'est lié qu'à un seul compte prestataire
+  (`PROVIDER_ACCOUNT_LEDGER_SHARED`).*
 
 ## Change Log
 
 - 2026-11-15 — rédaction (Opus). Écart à l'epic relevé au code : `chk_bank_accounts_bank_has_iban` interdit un compte
   `bank` sans IBAN (Q-38-2-a, bloquante).
+- 2026-11-15 — validation P1 (Sonnet) : 0 CRITICAL, 1 HIGH, 3 MEDIUM, 2 LOW ; remédiés dans la fiche sauf 38-2-P1-3 et
+  38-2-P1-6 (inter-fiches). Trend : P1 = 6. HIGH : la migration est **breaking** (O1) — la fiche la disait non
+  breaking (NFR-38-2-3, AC-1, Q-38-2-a) : relèvement de version, `match_type`, P2-bis, exemption P7, retour par la
+  sauvegarde, recette de montée. MEDIUM : arbitrage O8 sur le délier (le refus ne vaut qu'avec des transactions) ;
+  sites de dénombrement oubliés (`data_count`, `EMPTY_BEFORE_RESET`, squash `:176/:1167/:1180`) ; import de fichier
+  sur compte prestataire refusé par O9. LOW : T0 ; `exemptions` décompte. Lignes lues :
+  `20261110000001_…sql:39-55`, `post_restore.rs:639-653, 1252`, `20260513000001_reconciliation_rules.sql:40, 69`,
+  `0001_schema_squash.sql:176, 1167, 1180`, `payment_batches.rs:158-185`, `invoice_pdf_service.rs:332-353`.

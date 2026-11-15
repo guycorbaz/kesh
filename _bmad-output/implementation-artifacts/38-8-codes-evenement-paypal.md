@@ -53,11 +53,16 @@ plutôt qu'en vente, afin que les règles et les propositions des stories suivan
 
 1. **AC-1 — Statuts et sort d'un enregistrement.** `classify_window(records: &[PaypalRecord], ctx: &ClassifyCtx) ->
    Classified { movements: Vec<ProviderMovement>, skipped: SkipCounts }` (`kesh-providers::paypal::classify`).
-   `ClassifyCtx` porte les surcharges (AC-7) et rien d'autre (aucune horloge, aucune base). Par enregistrement :
+   `ClassifyCtx` porte les surcharges (AC-7) et la liste des `payerId` des autres connexions (AC-5), rien d'autre
+   (aucune horloge, aucune base). **Où elle s'appelle (contrat avec 38-3 et 38-7 AC-4)** : 38-3 reçoit des
+   `ProviderMovement` **déjà classés** (`Connector::movements`), page par page ; le classement exigeant la fenêtre
+   entière (paires, liens), c'est **`PaypalConnector::movements` qui lit toutes les pages d'une fenêtre, appelle
+   `classify_window` une fois, et rend une page unique** (`total_pages = 1`) avec `skipped` et `sums` (AC-6) — texte
+   à porter à 38-3 (`MovementPage`). Aucun branchement dans le passage lui-même. Par enregistrement :
    - `D` (refusée) → écarté, `skipped.denied` ;
    - `P` (en attente) → écarté, `skipped.pending` : un paiement en attente ne change pas encore le solde total ; il se
      relit réussi à un passage suivant **si** sa date reste dans la fenêtre relue (recouvrement de trois jours,
-     C-38-5) — sinon le contrôle de complétude (E20 a) le signale ; voir Q-38-8-2 ;
+     C-38-5) — sinon le contrôle de complétude (E20 a) le signale ; le recouvrement se règle (`overlapDays`, AC-7, O11) ;
    - `S` et `V` → classés (AC-2) : `V` est une transaction **réussie puis inversée** ; l'inversion arrive comme un
      enregistrement séparé (T11xx) et l'original a bien changé le solde ;
    - genre « hors solde » (AC-2 : T13xx, T15xx, T21xx, T98xx, T1110, T1111) → écarté, `skipped.non_balance`.
@@ -69,10 +74,10 @@ plutôt qu'en vente, afin que les règles et les propositions des stories suivan
 
    | Codes | Genre (`movement_kind`, C-38-4) | `review_reason` |
    |---|---|---|
-   | T0000–T0019, T0022, T0023 | signe > 0 → `sale` ; < 0 → `purchase` ; nul → `other` | `other` si nul |
-   | T0020 (taxe d'une place de marché), T0021 (crypto) | `other` | `other` |
-   | T0100–T0104, T0106, T0107, T0111–T0118, T0121 | `fee` (débit **ou** crédit : un crédit est un frais rendu) | — |
-   | T0105, T0108, T0109, T0110 | `withdrawal` si < 0, sinon `other` | `other` sinon |
+   | T0000–T0013, T0018, T0019, T0022, T0023 | signe > 0 → `sale` ; < 0 → `purchase` ; nul → `other` | `other` si nul |
+   | T0014 (rabais, cash back), T0015 (versement de tiers), T0016 (récupération de tiers), T0017 (paiement **ou remboursement** chaîné), T0020 (taxe d'une place de marché), T0021 (crypto) | `other` | `other` |
+   | T0100–T0104, T0106–T0110, T0111–T0118, T0121 | `fee` (débit **ou** crédit : un crédit est un frais rendu) | — |
+   | T0105 (retrait par chèque) | `other` (ni frais ni retrait vérifiable sur le relevé) | `other` |
    | T0200, T0201, T0202 | `conversion` (AC-5) | — |
    | T0300–T0303 | `deposit` si > 0, sinon `other` | `other` sinon |
    | T0400–T0403 | `withdrawal` si < 0, sinon `other` | `other` sinon |
@@ -84,6 +89,13 @@ plutôt qu'en vente, afin que les règles et les propositions des stories suivan
    | T1110, T1111, T13xx, T15xx, T21xx, T98xx | **écarté** (« hors solde », AC-1) | — |
    | **tout autre code connu** (T05xx, T08xx–T10xx, T1100–T1105, T1112, T1113, T1116–T1119, T1200, T1203, T1204, T14xx, T16xx–T20xx, T30xx, T97xx, T99xx) | `other` | `other` |
    | **code absent de la page PayPal** | `other` | `unknown_event` |
+
+   *Relevé de la page PayPal le 2026-11-15 (validation P1) : T0108 « ATM withdrawal fee », T0109 « Auto-sweep fee »,
+   T0110 « International credit card withdrawal fee » sont des **frais**, non des retraits (la fiche les rangeait en
+   `withdrawal`) ; T0014 à T0017 ne sont pas des ventes (rabais, versement, récupération, paiement ou remboursement
+   chaîné) ; T0105 est un retrait par chèque, sans ligne de relevé bancaire à rattacher. La page avertit que les codes
+   « may change » : la table se rejoue contre les réponses de Beat (AC-9), et le contrôle de somme (AC-6) en est le
+   filet.*
 
    ⛔ Aucun code hors des lignes `sale` ne devient une vente, ni par défaut ni par famille (« T00 » ne se lit **jamais**
    par préfixe : un T0024 futur est inconnu). Un mouvement `dispute` ou `other` n'a **aucune proposition** (E16 ; 38-6b
@@ -101,13 +113,17 @@ plutôt qu'en vente, afin que les règles et les propositions des stories suivan
 4. **AC-4 — Champs textuels** (C-38-4, E8) :
    - `provider_tx_id` = `transaction_id` (tel quel ; unicité par devise garantie par 38-7 AC-4) ;
    - `event_code` = `transaction_event_code` ;
-   - `booking_date` = date **Europe/Zurich** de `transaction_initiation_date` (UTC → `chrono-tz`), `value_date` =
-     `NULL` ; un enregistrement initié le 31.12 à 23 h 30 UTC est du **1.1** à Zurich (test) ;
+   - `booked_at` (`ProviderMovement`, 38-3 AC-4) = `transaction_initiation_date` **en UTC** (instant) ; **ce n'est
+     pas ce classement qui calcule `booking_date`** : le passage de 38-3 le dérive de `booked_at` à Europe/Zurich
+     (38-3 AC-4 « Temps », NFR-38-3-6), `value_date` reste `NULL`. Le test du 31.12 à 23 h 30 UTC (→ du **1.1** à
+     Zurich) vit donc en 38-3 ; ici, un test fige `booked_at` à l'instant UTC reçu (décalages `Z`, `+00:00`,
+     `+0000` de 38-7 AC-4) ;
    - **`invoice_ref` = `invoice_id`, et `reference` = `invoice_id`**, **sans transformation** (ni casse, ni espaces :
      la normalisation est celle de la règle `invoice_prefix`, une seule fonction, 38-4 NFR-38-4-2) ; `invoice_id`
-     absent ou vide → `NULL` aux deux (aucune règle `invoice_prefix` ne s'applique ; B24) ; > 255 caractères → tronqué
-     à 255 **pour `reference`** (colonne `VARCHAR(255)`, `migrations/20260504000001_bank_imports.sql:64`) et
-     `invoice_ref` à la longueur de sa colonne (38-3), avec `tracing::warn!` ;
+     absent ou vide → `NULL` aux deux (aucune règle `invoice_prefix` ne s'applique ; B24) ; > **127** caractères (colonne
+     `invoice_ref VARCHAR(127)`, 38-3 AC-3 ; `reference` est `VARCHAR(255)`, `migrations/20260504000001_bank_imports.sql:64`)
+     → tronqué à 127 **aux deux colonnes** (le préfixe, seul lu par la règle, est conservé), avec `tracing::warn!`
+     sans la valeur ; `provider_tx_id` n'est jamais tronqué (refus, 38-3 AC-4) ;
    - `counterparty_name` = `payer_name.full_name`, sinon `given_name` + `surname`, sinon `alternate_full_name`, sinon
      `NULL` (≤ 255) ; `counterparty_email` = `payer_info.email_address` tel quel (la normalisation est celle de la
      règle `counterparty_email_exact`, 38-4) ;
@@ -120,19 +136,25 @@ plutôt qu'en vente, afin que les règles et les propositions des stories suivan
 5. **AC-5 — Liens** (`related_provider_tx_id`, E7, E16) :
    - **remboursement, inversion, rétrofacturation, frais rendus** (`refund`, `dispute`, T1108, T1109) :
      `related_provider_tx_id` = `paypal_reference_id` si `paypal_reference_id_type = 'TXN'` ; sinon `NULL` (38-6b
-     envoie alors le remboursement à la file, `refund_origin_missing`) ;
+     envoie alors le remboursement à la file : le motif `refund_origin_missing` est **calculé à la lecture** par 38-6b,
+     jamais écrit ici — O11, 38-6b C-38-6b-4 ; `review_reason` reste `NULL` pour un remboursement) ;
    - **conversion** : les deux moitiés (deux enregistrements T02xx de devises différentes, de signes opposés) se
-     **relient l'une à l'autre** (`related_provider_tx_id` de chacune = `provider_tx_id` de l'autre). Appariement,
+     **relient l'une à l'autre** (`related_provider_tx_id` de chacune = `provider_tx_id` de l'autre ; 38-6b lit l'un
+     **ou** l'autre sens). Appariement (O11 : par `paypal_reference_id`, à constater sur les réponses de Beat),
      dans la fenêtre classée : d'abord par `paypal_reference_id` commun ; sinon par **même instant d'initiation**
      (à la seconde), devises différentes, signes opposés, un seul candidat de chaque côté. Plusieurs candidats ou
      aucun → la moitié reste `conversion` sans lien et `review_reason = 'other'` (38-6b la met à la file au lieu de
      proposer une demi-conversion). La règle d'appariement **se confirme sur les réponses de Beat** (AC-9) avant d'être
      figée ; si elles montrent un autre lien (p. ex. `paypal_reference_id` vers le paiement qui a déclenché la
      conversion), la fiche est amendée avant le développement de l'appariement ;
-   - **paire coupée** : `classify_window` reçoit **toutes les pages d'une fenêtre** (contrat avec 38-3, C-38-5 : le
-     passage classe une fenêtre entière, non page par page) ; une moitié à la frontière d'une fenêtre (instants
-     identiques, donc même fenêtre en pratique) se traite comme « aucun candidat ».
-   - **virement entre les deux comptes PayPal de Beat** (E24) : un T00xx dont `payer_info.account_id` égale le
+   - **paire coupée** : `classify_window` reçoit **tous les enregistrements d'une fenêtre** (AC-1 : le connecteur
+     lit toutes les pages avant de classer) ; une moitié à la frontière d'une fenêtre (instants identiques, donc
+     même fenêtre en pratique) se traite comme « aucun candidat » — la moitié reste sans lien et 38-6b la met à la
+     file (`conversion_half_missing`, calculé) ; si l'autre moitié arrive plus tard, le recouvrement du passage suivant relit
+     la première (déjà connue, jamais réécrite, sans lien) : seule la seconde porte alors le lien, et 38-6b le lit
+     dans les deux sens (`u.related_provider_tx_id = t.provider_tx_id`).
+   - **virement entre les deux comptes PayPal de Beat** (E24 ; *suppose que `payer_info.account_id` désigne la
+     contrepartie, y compris pour un débit : à constater sur les réponses de Beat, Q-38-8-4*) : un T00xx dont `payer_info.account_id` égale le
      `payerId` d'une **autre connexion PayPal de la même société** n'est pas une vente ni un achat : genre `other`,
      `review_reason = 'other'`. `ClassifyCtx` porte la liste des `payerId` des autres connexions (lue par 38-3, passée
      ici ; aucune base dans le classement). Le rattachement des deux côtés se fait à la main ou par 38-6b.
@@ -154,7 +176,14 @@ plutôt qu'en vente, afin que les règles et les propositions des stories suivan
    - une surcharge vaut pour les mouvements classés **après** son écriture ; les transactions déjà téléchargées ne sont
      pas reclassées (l'insertion idempotente de E6 n'écrase rien) : celles de la file se traitent à la main (34-3).
      L'écran de 38-9a le dit sous le champ ; le manuel aussi (38-9a) ;
-   - audit : celui de la modification des réglages de 38-1 (avant/après) ; aucun libellé neuf.
+   - audit : celui de la modification des réglages de 38-1 (avant/après) ; aucun libellé neuf ;
+   - **amende 38-1 AC-4** (`PATCH` : « `settings` présent remplace les champs modifiables (`clientId`) et conserve
+     ceux que le serveur pose ») : `eventKindOverrides` et `overlapDays` sont **modifiables par le client** et
+     remplacés par le `PATCH` ; seul `payerId` est posé par le serveur (O10 : `accountEmail` n'existe plus) ;
+   - **`overlapDays`** (O11, « recouvrement réglable » ; `Option<u8>`, 1 à 30, défaut 3, `PROVIDER_SETTINGS_INVALID`
+     `reason: "out_of_range"` sinon) : un paiement `P` écarté puis réussi plus de trois jours après son initiation se
+     relit en élargissant le recouvrement du passage (`Connector::overlap()`, lu par 38-3 AC-6 à la place du « 3
+     jours » en dur ; texte à porter à 38-3). Au-delà, le contrôle de complétude (E20 a) signale l'écart.
 8. **AC-8 — Pureté.** `classify_window` et `event_codes` n'ont ni I/O, ni horloge, ni accès base, ni `tracing` autre
    que `warn!` de troncature ; ils vivent dans `kesh-providers`, qui ne dépend pas de `kesh-db` (E9). Dépendances :
    `rust_decimal`, `chrono`, `chrono-tz` (déjà au `Cargo.lock`, 0.10.4), `kesh-core` pour `PaypalSettings` (si 38-1 l'a
@@ -170,7 +199,8 @@ plutôt qu'en vente, afin que les règles et les propositions des stories suivan
      une **instance jetable**, jamais sur la production de Beat.
    - **Montants** : frais négatifs et positifs, frais absents, T01xx à `fee_amount` non nul, net de signe contraire,
      |frais| > |brut|.
-   - **Champs** : minuit Zurich (hiver et été), `invoice_id` absent, vide, de 300 caractères ; payeur sans nom, à nom
+   - **Champs** : `booked_at` UTC pour chaque forme de décalage, `invoice_id` absent, vide, de 300 caractères
+     (tronqué à 127) ; payeur sans nom, à nom
      composé ; articles vides et multiples.
    - **Liens** : remboursement `TXN`, `ODR` (→ `NULL`) ; conversion par référence, par instant, ambiguë (deux paires au
      même instant), orpheline ; virement entre deux connexions (même `payerId`).
@@ -187,7 +217,8 @@ plutôt qu'en vente, afin que les règles et les propositions des stories suivan
   remboursements » et les litiges en T12xx ; ces deux codes sont des **blocages** (ils ne changent pas
   `total_balance`) et sont **écartés** comme T15xx/T21xx. Le litige qui déplace de l'argent arrive en T1201 ou en
   remboursement.
-- **T01xx** contient des **retraits** (T0105, T0108–T0110) : classés `withdrawal`, non `fee`.
+- **T01xx** contient un retrait par chèque (T0105) : classé `other` (file), non `fee` ; T0108–T0110, malgré leur
+  nom de retrait, sont des **frais** (page PayPal).
 - **`reference`** : l'epic E8 la veut « numéro de facture du prestataire » ; FR-38-8-3 la veut égale à `invoice_id`.
   Retenu : `invoice_id` (seule valeur qui soit un numéro de facture ; le sujet va à `details`).
 - **Virement entre deux comptes PayPal de Beat** : non classé par l'epic ; retenu `other`, reconnu par `payerId`
@@ -197,12 +228,13 @@ plutôt qu'en vente, afin que les règles et les propositions des stories suivan
 
 - **Q-38-8-1** (recette, Beat) : comment PayPal relie-t-il les deux moitiés d'une conversion dans ses réponses
   (référence commune, instant identique) ? Bloque l'appariement (AC-5), pas le reste.
-- **Q-38-8-2** (validation de 38-3) : un paiement en attente (`P`) plus de trois jours, puis réussi, se relit-il ?
-  Dépend du champ de date que filtre PayPal (initiation ou mise à jour) ; à constater sur les réponses de Beat ; à
-  défaut, 38-3 élargit le recouvrement ou relit les `P` vus (compteur de l'AC-1).
-- **Q-38-8-3** (Beat) : faut-il garder `ignore` parmi les surcharges (écarter un code qui change pourtant le solde
-  ferait signaler un téléchargement incomplet) ? Proposé : oui, pour un code « display-only » que PayPal rendrait à
-  tort.
+- ~~Q-38-8-2~~ close par O11 : recouvrement réglable (`overlapDays`, AC-7). ~~Q-38-8-3~~ close par O11 : `ignore`
+  gardé.
+- **Q-38-8-4** (recette, Beat) : pour un **débit** (achat, virement vers l'autre compte), `payer_info` désigne-t-il la
+  contrepartie (marchand, autre compte) ou le titulaire lui-même ? Décide la source de `counterparty_name`,
+  `counterparty_email` (critère `counterparty_email_exact`, B5) et du `payerId` du virement entre comptes (AC-5) ;
+  si c'est le titulaire, la contrepartie se lit ailleurs (`shipping_info`, `cart_info`) et la fiche est amendée avant
+  le développement des champs.
 
 ## Tâches
 
@@ -210,8 +242,10 @@ plutôt qu'en vente, afin que les règles et les propositions des stories suivan
 - [ ] `classify_window` : statuts, montants, champs, liens, conversions, virements entre connexions, compteurs
       (AC-1, AC-3 à AC-6).
 - [ ] `PaypalSettings.event_kind_overrides` et sa validation dans la désérialisation de 38-1 (AC-7).
-- [ ] Branchement dans le passage de 38-3 : classement d'une fenêtre entière, `ClassifyCtx` (surcharges, `payerId` des
-      autres connexions), compteurs à l'état du passage (contrat C-38-5).
+- [ ] Appel depuis `PaypalConnector::movements` (38-7 AC-4) : `classify_window` sur la fenêtre entière, `ClassifyCtx`
+      (surcharges, `payerId` des autres connexions, passés par la fabrique de 38-3) ; `skipped` et `sums` dans
+      `MovementPage`, écrits à l'état du passage par 38-3.
+- [ ] `PaypalSettings` : `event_kind_overrides` et `overlap_days`, validation (AC-7), refus d'un champ inconnu.
 - [ ] Tests de l'AC-9, dont le balayage des 10 000 codes et le test « code relevé sans test ».
 - [ ] Gate : `cargo fmt`, `clippy -D warnings`, `cargo nextest` (crates `kesh-providers`, `kesh-core`), gate complet
       avant `done`.
@@ -243,3 +277,8 @@ plutôt qu'en vente, afin que les règles et les propositions des stories suivan
 ## Change Log
 
 - 2026-11-15 — rédaction (Opus).
+- 2026-11-15 — validation P1 (Sonnet) : 0 CRITICAL, 1 HIGH, 5 MEDIUM, 3 LOW ; remédiés dans la fiche (appel par le
+  connecteur sur la fenêtre entière, `booked_at` et non `booking_date`, table recoupée à la page PayPal — T0108 à
+  T0110 en frais, T0105 et T0014 à T0017 en `other` —, `invoice_ref` à 127, `refund_origin_missing` calculé, `overlapDays`,
+  champs modifiables au `PATCH`, Q-38-8-4) sauf les inter-fiches 38-3 (`MovementPage.skipped`/`sums`, `overlap()`,
+  recouvrement réglable) et 38-1 (PATCH, `accountEmail`).

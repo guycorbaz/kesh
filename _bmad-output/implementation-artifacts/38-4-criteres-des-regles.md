@@ -4,10 +4,11 @@ Status: ready-for-dev
 
 *Fiche rédigée le 2026-11-15 (Opus), branche `epic/38-paypal`, numéros de ligne relevés sur `8b3d548d`. Epic 38
 (`_bmad-output/planning-artifacts/epic-38-paypal.md`) : E4, E14, E18, E19, C-38-0, C-38-6, C-38-12 ; décisions de Beat
-B5, B19, B22, B24 (`epics-38-40-cadrage.md`). **Dépend de 38-3** (C-38-4 : colonnes `counterparty_email`,
-`invoice_ref`, `item_names`, `event_code` de `bank_transactions` ; C-38-5 / E19 : `reconciliation_rules.match_type`
-passé en `VARCHAR(40)` par **la** migration breaking, `ReconciliationMatchType` tolérant avec `Other(String)` et ses
-quatre variantes neuves **déclarées**) et de l'**Epic 37** (37-1 : `accounts.currency`, liste ISO 4217 de `kesh-core`,
+B5, B19, B22, B24 (`epics-38-40-cadrage.md`) ; arbitrages O1, O2, O3, O4 de l'epic. **Dépend de 38-2** (O1 : **la**
+migration breaking de l'epic, qui passe `reconciliation_rules.match_type` en `VARCHAR(40)` `ascii_bin` avec `CHECK` de
+format et relève `kesh_version_min_required`) **et de 38-3** (C-38-4 : colonnes `counterparty_email`, `invoice_ref`,
+`item_names`, `event_code` de `bank_transactions` ; C-38-5 : `ReconciliationMatchType` tolérant avec `Other(String)`
+et ses quatre variantes neuves **déclarées**) et de l'**Epic 37** (37-1 : `accounts.currency`, liste ISO 4217 de `kesh-core`,
 `CURRENCY_UNKNOWN`, `MULTI_CURRENCY_DISABLED` 409, verrou des deux côtés C-37-9, liste close des absences admises de
 37-1 AC-6). **Migration non breaking** (DDL seul). Aucune route neuve.*
 
@@ -64,8 +65,9 @@ Reprises de la fiche d'epic (§ 38-4), complétées là où un AC l'exige.
 
 ## Critères d'acceptation
 
-1. **AC-1 — Migration** `<AAAAMMJJ>000001_reconciliation_rule_filters.sql` (version strictement postérieure aux
-   deux migrations de 38-3 et à toute migration de la branche au moment de la fusion), **non breaking**, DDL seul,
+1. **AC-1 — Migration** `<AAAAMMJJ>000001_reconciliation_rule_filters.sql` (version strictement postérieure à la
+   migration breaking de 38-2, à la migration non breaking de 38-3 et à toute migration de la branche au moment de la
+   fusion), **non breaking**, DDL seul,
    une seule instruction `ALTER TABLE reconciliation_rules` :
    - `ADD COLUMN direction VARCHAR(16) CHARACTER SET ascii COLLATE ascii_bin NULL` + `CONSTRAINT
      chk_reconciliation_rules_direction CHECK (direction IS NULL OR BINARY direction REGEXP '^[a-z_]{1,16}$')` —
@@ -82,12 +84,17 @@ Reprises de la fiche d'epic (§ 38-4), complétées là où un AC l'exige.
    - `DROP INDEX uq_reconciliation_rules_match_active, ADD CONSTRAINT uq_reconciliation_rules_match_active UNIQUE
      (company_id, match_type, active_uniq, filter_key)` — **même nom**, pour que
      `is_duplicate_rule_constraint` (`repositories/reconciliation_rules.rs:37-43`, test sur le nom) reste vrai ; index
-     d'origine `20260513000001_reconciliation_rules.sql:68-69` sur `active_uniq` (`:54`, `IF(active, match_value,
-     NULL)`) ; longueur de clé à vérifier au développement (BIGINT + `match_type` de 38-3 + 255 × 4 + 48 octets,
-     sous la limite InnoDB de 3072).
+     d'origine `20260513000001_reconciliation_rules.sql:65-66` sur `active_uniq` (`:54`, `IF(active, match_value,
+     NULL)`, `VIRTUAL` : précédent d'un index unique sur colonne virtuelle) — **reconstruit une première fois par
+     l'`ALTER` de 38-2** (`MODIFY COLUMN match_type`), le nom et les colonnes inchangés (test de 38-2) ; longueur de clé à vérifier au développement (BIGINT + `match_type` `ascii` de 38-2 + 255 × 4 + 48
+     octets, sous la limite InnoDB de 3072). `filter_key` dépend de `bank_account_id`, colonne de base d'une colonne
+     générée, et MariaDB restreint les actions référentielles sur une telle colonne : seule `RESTRICT` (écrite ici)
+     est sûre — un test de migration pose la FK **et** la colonne générée dans l'ordre écrit sur la version de
+     MariaDB du dépôt, et vérifie la valeur de `filter_key` à l'octet (`'in|EUR|12'`, charset `ascii` de la colonne,
+     `CAST(… AS CHAR)` compris).
    **Non breaking** (P1) : ajouts de colonnes `NULL`, d'une colonne générée et remplacement d'un index unique par un
-   index plus large. `DROP INDEX` n'est pas dans la liste P3 ; un binaire antérieur à 38-3 ne démarre de toute façon
-   plus sur une base passée par la migration breaking de 38-3 (C-38-0). **Aucun `UPDATE`** : P7 sans objet (le
+   index plus large. `DROP INDEX` n'est pas dans la liste P3 ; un binaire antérieur ne démarre de toute façon
+   plus sur une base passée par la migration breaking de 38-2 (C-38-0, O1) — aucun relèvement ici. **Aucun `UPDATE`** : P7 sans objet (le
    détecteur classe sur le premier mot-clé, `ALTER`) — vérifié par `every_data_backfill_migration_is_triaged`.
    **P5** : une ligne à `docs/migrations-idempotence-audit.md` (verdict `tracked-by-sqlx` : DDL non rejouable — `ADD
    COLUMN` sans `IF NOT EXISTS`), en-tête `## Table d'audit (N migrations)` et ligne `Total` recomptés à la source
@@ -150,8 +157,9 @@ Reprises de la fiche d'epic (§ 38-4), complétées là où un AC l'exige.
      `Other(String)` pour une neuvième — AC-7) ;
    - `UpdateRuleRequest` (`:115-133`) gagne les trois filtres en `Option<Option<…>>` par
      `crate::helpers::double_option` (patron de `default_project_id`, `:131-132`) : absent = inchangé, `null` =
-     retiré, valeur = posée. `matchType` reste **non modifiable** (absent de la struct, `deny_unknown_fields` : 400 de
-     désérialisation si un client l'envoie — comportement actuel, gardé : changer le type briserait la lecture des
+     retiré, valeur = posée. `matchType` reste **non modifiable** (absent de la struct, `deny_unknown_fields` : si un client
+     l'envoie, le rejet de désérialisation d'`axum::Json` rend **422** (`routes/reconciliation_rules.rs:368`, sans
+     conversion en 400, cf. Écart 1) — comportement actuel, gardé : changer le type briserait la lecture des
      traces `reconciliation_rule.applied`, `entities/reconciliation_rule.rs:150-152`) ;
    - validation, **avant** la transaction, dans cet ordre : forme existante (libellé, valeur, priorité) → `matchType`
      inconnu (AC-7) → forme du courriel (AC-2) → `direction` ∉ {`in`, `out`} → 400 `VALIDATION_ERROR` →
@@ -175,7 +183,7 @@ Reprises de la fiche d'epic (§ 38-4), complétées là où un AC l'exige.
      Option<String>`, `bank_account_id: Option<i64>`.
    Tests HTTP (`kesh-api/tests/reconciliation_rules_e2e.rs`) : création de chaque type neuf (201, valeur stockée
    normalisée), chaque refus ci-dessus avec son code et son statut, `PATCH` d'un filtre (posé, retiré par `null`,
-   inchangé si absent), `PATCH` portant `matchType` → 400, filtre sur un compte bancaire d'une autre société → 404,
+   inchangé si absent), `PATCH` portant `matchType` → 422 (comportement actuel), filtre sur un compte bancaire d'une autre société → 404,
    devise non CHF en mono-devise → 409.
 5. **AC-5 — Unicité** (`FR-38-4-3`). Deux règles **actives** de mêmes société, type, `match_value` stockée et filtres
    (`filter_key`) → 409 `RECONCILIATION_RULE_DUPLICATE` (création, `PATCH`, réactivation) ; les `details` actuels
@@ -209,8 +217,8 @@ Reprises de la fiche d'epic (§ 38-4), complétées là où un AC l'exige.
    - **Acceptation** (`accept_one_rule`, `routes/reconciliation.rs:3946`) : à l'étape 5 (`:4068`), la lecture du
      compte de contrepartie lit aussi sa devise ; après l'étape 6 (transaction relue sous verrou), si
      `!rule_account_admits(…)` → `FailedProposal` `RULE_ACCOUNT_CURRENCY_MISMATCH`, `details: { ruleId, accountId,
-     accountCurrency, transactionCurrency }`, **avant** l'étape 7 (`rule_matches`, `:4154`) ; HTTP 200 (*Pattern
-     batch*). Le refus `RECONCILIATION_CURRENCY_MISMATCH` des transactions hors CHF (`:4142-4151`) reste en place
+     accountCurrency, transactionCurrency }`, **avant** le refus hors CHF (étape 6.5, `:4142`) et l'étape 7
+     (`rule_matches`, `:4154`) ; HTTP 200 (*Pattern batch*). Le refus `RECONCILIATION_CURRENCY_MISMATCH` des transactions hors CHF (`:4142-4151`) reste en place
      (levé par 38-6a pour la seule variante `provider`).
    Tests : unitaires de `rule_account_admits` et de `first_matching_rule` (compte EUR sauté pour une transaction CHF,
    règle suivante prise) ; HTTP : règle sur compte EUR créée (201, société multi-devises), même règle en mono-devise →
@@ -219,8 +227,9 @@ Reprises de la fiche d'epic (§ 38-4), complétées là où un AC l'exige.
    pose la devise par SQL et vérifie `failed[0].errorCode == "RULE_ACCOUNT_CURRENCY_MISMATCH"`.
 7. **AC-7 — Type ou sens inconnus** (`FR-38-4-5`, E4). `RULE_CRITERION_UNKNOWN` (code **posé par 38-3** — 400 à l'écriture d'un
    `Other`, 409 à la modification d'une règle `Other`, et refus provisoire des quatre types neufs que **cette story
-   lève** ; fiche 38-3, `ReconciliationMatchType`) ; cette story l'étend au **sens** (`details: { direction }` à côté
-   de `{ matchType }`) :
+   lève** ; fiche 38-3, `ReconciliationMatchType`) ; cette story l'étend au **sens** **pour la seule lecture d'une
+   règle stockée** : le 409 d'une modification porte `details: { direction }` à côté de `{ matchType }` — une valeur de
+   sens inconnue **écrite** par l'API reste un 400 `VALIDATION_ERROR` (ci-dessous) :
    - **400** à l'écriture d'une valeur inconnue (création ; un `PATCH` ne porte pas de type) — `matchType` décodé en
      `Other(_)`, ou `direction` ∉ {`in`, `out`} rend, lui, 400 `VALIDATION_ERROR` (AC-4 : une valeur de sens n'est pas
      un critère) ;
@@ -231,7 +240,7 @@ Reprises de la fiche d'epic (§ 38-4), complétées là où un AC l'exige.
    - jamais appliquée : `rule_matches` faux (AC-3) ; `accept_one_rule` la rend
      `RECONCILIATION_RULE_NO_LONGER_MATCHES` (étape 7, code existant) — aucune écriture fausse ;
    - lue sans erreur : `GET` liste et détail, export CSV (valeur brute).
-   Test : une ligne posée par SQL avec `match_type = 'future_criterion'` (possible depuis le `VARCHAR` de 38-3) et une
+   Test : une ligne posée par SQL avec `match_type = 'future_criterion'` (possible depuis le `VARCHAR` de 38-2) et une
    avec `direction = 'both'` : `GET` 200, `PATCH` 409, `DELETE` 204, proposition sans cette règle (la suivante
    s'applique).
 8. **AC-8 — Non-régression** (`NFR-38-4-1`). Tous les tests existants de `rules.rs` (8 tests, `:216-507`) et de
@@ -308,10 +317,11 @@ Reprises de la fiche d'epic (§ 38-4), complétées là où un AC l'exige.
 - **Site de l'évaluation** : `rule_matches` est appelée par `first_matching_rule` (proposition) et par l'étape 7
   d'`accept_one_rule` (revalidation, `routes/reconciliation.rs:4154`). Les deux reçoivent la même règle et la même
   transaction : filtres et critère neufs y sont donc revalidés sous verrou sans code de plus.
-- **Ce que 38-3 doit livrer et que cette fiche lit** (fiche 38-3 relue le 2026-11-15) : `match_type VARCHAR(40)
-  CHARACTER SET ascii COLLATE ascii_bin` (8 + 40 + 1020 + 48 octets de clé pour l'index de l'AC-1),
+- **Ce que 38-2 et 38-3 doivent livrer et que cette fiche lit** (fiche 38-3 relue le 2026-11-15) : **de 38-2** (O1)
+  `match_type VARCHAR(40) CHARACTER SET ascii COLLATE ascii_bin` (8 + 40 + 1020 + 48 octets de clé pour l'index de
+  l'AC-1) ; **de 38-3**
   `item_names JSON` tableau de chaînes (`CHECK … JSON_TYPE = 'ARRAY'`, ≤ 50 noms — l'évaluation de l'AC-3 lit le
-  tableau décodé, nom par nom), `ReconciliationMatchType::{CounterpartyEmailExact, InvoicePrefix, ItemNameContains,
+  tableau décodé, nom par nom, par `BankTransaction::item_names() -> Vec<String>`, posé par 38-3 AC-3), `ReconciliationMatchType::{CounterpartyEmailExact, InvoicePrefix, ItemNameContains,
   EventCodePrefix, Other(String)}` (`Copy` perdu : 38-3 suit les sites ; `routes/reconciliation_rules.rs:288`,
   `:411` copient aujourd'hui `match_type` — `clone()`), les colonnes `counterparty_email`, `invoice_ref`,
   `item_names`, `event_code` de `BankTransaction` (C-38-4). 38-3 fait rendre `false` à `rule_matches` pour les
@@ -335,3 +345,17 @@ Reprises de la fiche d'epic (§ 38-4), complétées là où un AC l'exige.
 ## Change Log
 
 - 2026-11-15 — rédaction (Opus).
+- 2026-11-15 — validation P1 (Sonnet) : 8 findings (0 CRITICAL, 0 HIGH, 5 MEDIUM, 3 LOW) ; remédiés dans la fiche sauf
+  38-4-P1-8 (inter-fiche, 37-1). MEDIUM : P1-1 la fiche attribuait la migration breaking et `match_type VARCHAR(40)` à
+  38-3 (O1 les place en 38-2) — en-tête, AC-1 (ordre des migrations, absence de relèvement), notes réalignés ;
+  P1-2 « `PATCH` portant `matchType` → 400 » contredisait l'Écart 1 de la fiche (extracteur `axum::Json` des règles :
+  rejet de données = 422, `routes/reconciliation_rules.rs:26, 368`, `extractors.rs:11-13`) — corrigé à 422 aux deux
+  sites ; P1-3 colonne générée `filter_key` sur une colonne de base à FK : actions référentielles restreintes par
+  MariaDB, charset du `CAST` — test de migration ajouté à l'AC-1 ; P1-4 l'« accesseur » d'`item_names` que 38-3 devait
+  fournir n'existait pas dans 38-3 — posé à 38-3 AC-3. LOW : P1-5 numéros de ligne de l'index d'origine
+  (`:65-66`, non `:68-69`) ; P1-6 position du refus `RULE_ACCOUNT_CURRENCY_MISMATCH` par rapport au refus hors CHF
+  (`:4142`) ; P1-7 `RULE_CRITERION_UNKNOWN` « étendu au sens » ambigu contre le 400 `VALIDATION_ERROR` de l'écriture.
+  P1-8 (inter-fiche) : 37-1 AC-4 et C-37-9 de l'epic 37 refusent encore « désigner un compte en devise » pour les règles
+  (`ACCOUNT_IN_FOREIGN_CURRENCY`) — la levée de l'AC-6 (O3) doit s'y écrire. Axes non exercés : le décompte des
+  dix-neuf FK de 37-1 (relu sur la fiche 37-1, non sur le code), l'exécution de la migration (aucun `cargo`), les
+  littéraux de test (`ReconciliationRule {` ×1, `NewReconciliationRule {` ×5, `UpdateReconciliationRule {` ×12).

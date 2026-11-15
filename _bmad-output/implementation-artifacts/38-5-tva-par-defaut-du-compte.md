@@ -8,7 +8,7 @@ C-38-13 ; décisions de Beat B6, B18 (`epics-38-40-cadrage.md`) ; *Point TVA pou
 `accounts.currency`, verrou des deux côtés C-37-9 par `DESIGNATED_ACCOUNT_COLUMNS`, liste close des absences admises
 de 37-1 AC-6 ; 37-3a : produit CHF = round(montant × cours, 2), AC-3 ; 37-3b : patron de la fixture partagée Rust/TS).
 **Ne dépend d'aucune autre story de l'Epic 38** : se développe en parallèle de 38-1 à 38-4. **Migration non breaking**
-(DDL seul). Aucune route neuve. Consommée par 38-6a (propositions) et 38-6b (remboursements).*
+(DDL seul ; O1 : la seule migration breaking de l'epic est celle de 38-2, celle-ci n'en dépend pas). Aucune route neuve. Consommée par 38-6a (propositions) et 38-6b (remboursements).*
 
 ## Story
 
@@ -130,8 +130,9 @@ Reprises de la fiche d'epic (§ 38-5), complétées là où un AC l'exige.
    `currency` de 37-1 AC-4 ; `columns!` (`repositories/accounts.rs:27-31`) lit les deux colonnes ; `is_no_op_change`
    (`:530-539`) les compare ; `account_snapshot_json` (`:57-72`) les porte (`defaultVatKind`, `defaultVatRateId`) — sans
    quoi le diff d'audit d'un changement de TVA serait vide, précédent écrit `:66-67`. Littéraux à compléter : l'échec de
-   compilation les inventorie (`AccountUpdate {` 26 sites, ` Account {` 3, hors déclarations, recomptés au
-   développement).
+   compilation les inventorie (`AccountUpdate {` 26 sites, ` Account {` 3, `NewAccount {` une cinquantaine — 13 dans
+   `repositories/accounts.rs`, le reste en tests —, hors déclarations, recomptés au développement : `grep -rn "NewAccount {"
+   crates --include=*.rs`, passe P1 du 2026-11-15).
 4. **AC-4 — Écriture d'un compte** (`FR-38-5-1`). `POST /api/v1/accounts` et `PUT /api/v1/accounts/{id}`
    (`routes/accounts.rs:35-47`, `:76-114` ; rôles inchangés : Comptable+, clés d'API `read-write` admises,
    `lib.rs:525-536`) gagnent `defaultVatKind` et `defaultVatRateId` :
@@ -171,10 +172,10 @@ Reprises de la fiche d'epic (§ 38-5), complétées là où un AC l'exige.
    (lectures ordinaires ; aucune écriture) :
    - `DefaultVatResolution::None` — le compte n'a pas de genre ;
    - `::Resolved { treatment: VatTreatment, rate_percent: Decimal, vat_rate_id: i64 }` — `vat_rate_id` est celui de la
-     ligne **en vigueur à `date`** dans la catégorie de la ligne désignée (`find_for_category_at_date`, `vat_rates.rs:89`,
-     étendue en variante prenant une connexion, ou appelée telle quelle si elle reste sur le pool : à trancher au
-     développement, les autres lectures de 38-6a étant dans sa transaction) ; ce peut être la ligne désignée ou une
-     autre de même catégorie ;
+     ligne **en vigueur à `date`** dans la catégorie de la ligne désignée (`find_for_category_at_date`, `vat_rates.rs:89-108`, **qui prend aujourd'hui un `&MySqlPool`** : **décidé** — la requête
+     passe en variante `find_for_category_at_date_in_conn(conn: &mut MySqlConnection, …)`, la version du pool lui
+     délègue (une seule requête, DRY) ; 38-6a AC-8 (7) lit dans sa transaction, `get_proposals` sur une connexion
+     prise au pool) ; ce peut être la ligne désignée ou une autre de même catégorie ;
    - `::VatKindUnknown { kind }` — genre `Other` (écrit par une version ultérieure) → 38-6a : `FailedProposal`
      `VAT_KIND_UNKNOWN` ; jamais traité comme « sans TVA » (aucune écriture fausse) ;
    - `::VatRateUnavailable { category, date }` — aucune ligne active de la catégorie à `date` → 38-6a :
@@ -202,13 +203,27 @@ Reprises de la fiche d'epic (§ 38-5), complétées là où un AC l'exige.
      propre ici ;
    - audit : `company_invoice_settings.updated` (existant) ; `settings_snapshot_json`
      (`repositories/company_invoice_settings.rs:94`) porte le champ.
+   - **Sites du dépôt qui énumèrent les colonnes à la main** (inventaire de la passe P1 ; `COLUMNS` seule ne suffit pas) :
+     `is_no_op_change` (`:287-300`, sinon un `PUT` qui ne change que ce compte est pris pour un no-op) ; le `UPDATE …
+     SET` et ses `bind` dans `update` (`:398-420` et suivants) ; la liste **préfixée `cis.`** du `SELECT` de la branche
+     `rows == 0` d'`insert_with_defaults_in_tx` (`:1230-1250`, doublon de `COLUMNS` : un oubli n'y échoue qu'à ce
+     chemin) ; `get_or_create_default` et `_in_tx` (commentaire `MIRROR`, à relire) ; `settings_snapshot_json`. Littéraux
+     de test à compléter (compilation) : `kesh-db/tests/company_invoice_settings_repository.rs`,
+     `kesh-api/tests/onboarding_path_b_e2e.rs`, `kesh-db/tests/invoice_lines_revenue_account_backfill.rs`,
+     `kesh-api/tests/accounts_designated_archive_e2e.rs`. Test : un `PUT` qui ne change que le compte d'acquisitions
+     est écrit (version +1) ; la branche `rows == 0` d'`insert_with_defaults_in_tx` rend la colonne.
    La ligne de **préalable** des acquisitions va au compte d'impôt préalable existant (`default_vat_recoverable`, E13) ;
    un réglage manquant à l'usage → `VAT_ACCOUNT_NOT_CONFIGURED` `designation: "acquisition"` (38-6a, C-38-8) — non
    contrôlé ici. Tests HTTP : posé, préservé si absent, effacé par `null`, type faux, archivé, égal au compte TVA due,
    d'une autre société.
-7. **AC-7 — Réglage désigné** (Écart 3). `DESIGNATED_ACCOUNT_COLUMNS` passe à **onze** :
-   `("default_vat_acquisition_account_id", "vatAcquisition")` ; le test qui compare la liste aux colonnes
-   `default_%_account_id` (`accounts_designated_archive_e2e.rs:1077-1080`) reste vert ; l'archivage d'un compte ainsi
+7. **AC-7 — Réglage désigné** (Écart 3). `DESIGNATED_ACCOUNT_COLUMNS` (`[(&str, &str); 10]`, `company_invoice_settings.rs:46`) passe à **onze** :
+   `("default_vat_acquisition_account_id", "vatAcquisition")`, type du tableau et doc-comment (`:42`, « Les dix
+   comptes ») compris ; le test qui compare la liste aux colonnes `default_%_account_id`
+   (`accounts_designated_archive_e2e.rs:1077-1078`) reste vert, **mais la seconde assertion (`:1079-1083`,
+   `DESIGNATED_ACCOUNT_COLUMNS == TEN_SETTINGS`, « les codes de l'API sont stables ») rougit** : la constante
+   `TEN_SETTINGS` (`:37`, `[…; 10]`) et ses lecteurs (`:142`, `:202`, l'intitulé « chacun des dix réglages », `:198`)
+   passent à onze (`ELEVEN_SETTINGS`), avec un cas d'archivage du compte d'acquisitions ; le commentaire
+   `frontend/src/routes/(app)/accounts/+page.svelte:796` (« vaut pour les dix réglages ») est mis à jour ; l'archivage d'un compte ainsi
    désigné rend 409 `ACCOUNT_DESIGNATED_IN_SETTINGS` qui le nomme (`errors.rs:3587`) ; l'écran d'archivage traduit le
    code (`designatedSettingLabel`, `frontend/src/routes/(app)/accounts/+page.svelte:347-371` : cas `vatAcquisition`).
    Test : archiver le compte d'acquisitions → 409 avec `vatAcquisition` ; avec `confirmDesignated` → 200.
@@ -252,8 +267,9 @@ Reprises de la fiche d'epic (§ 38-5), complétées là où un AC l'exige.
     - **Manuel utilisateur** (`docs/manual/fr/user-manual.tex`) : au plan comptable, « TVA par défaut d'un compte »
       (genres, taux par catégorie à la date de la transaction, compte de résultat seulement, à quoi elle sert —
       propositions des prestataires de paiement, 38-6a —, et ce qu'elle ne fait **pas** : la saisie manuelle et
-      l'assistant d'achat ne la lisent pas encore) ; aux réglages de facturation (`:219` et voisinage, comptes de TVA) :
-      le compte d'impôt sur les acquisitions, distinct, et ⚠️ **ce que le rapport TVA ne fait pas** — il tire la TVA
+      l'assistant d'achat ne la lisent pas encore) ; aux réglages de facturation (section *Comptes par défaut*, `:1791-1792`, et le paragraphe des comptes désignés
+      contrôlés à l'usage, `:491` — y ajouter le compte d'acquisitions, que 38-6a contrôle à l'usage ; `:219` est le
+      texte de l'assistant d'installation, à compléter d'un mot seulement) : le compte d'impôt sur les acquisitions, distinct, et ⚠️ **ce que le rapport TVA ne fait pas** — il tire la TVA
       due des seules factures (`kesh-report/src/vat_report.rs:1-25`, manuel `:3655`) : la TVA séparée par les
       propositions et l'impôt sur les acquisitions **n'y figurent pas** (C-38-13, *Point TVA pour Guy*). PDF régénéré
       (`make fr` dans `docs/manual/`) et contrôlé aplati (`pdftotext … | tr '\n' ' ' | tr -s ' '`), les deux phrases
@@ -296,3 +312,11 @@ Reprises de la fiche d'epic (§ 38-5), complétées là où un AC l'exige.
 ## Change Log
 
 - 2026-11-15 — rédaction (Opus).
+- 2026-11-15 — validation P1 (Sonnet) : 0 CRITICAL, 0 HIGH, 3 MEDIUM, 3 LOW ; remédiés dans la fiche sauf 38-5-P1-5
+  (LOW, arbitrage) et la note inter-fiches sur 37-1 (38-5-P1-1) : P1-1 (MEDIUM) le test `TEN_SETTINGS` rougit au
+  onzième réglage (AC-7) ; P1-2 (MEDIUM) sites du dépôt des réglages qui énumèrent les colonnes à la main
+  (`is_no_op_change`, `UPDATE`, liste `cis.` d'`insert_with_defaults_in_tx`) et littéraux `NewAccount` (AC-6, AC-3) ;
+  P1-3 (MEDIUM) `find_for_category_at_date` est sur le pool, contrat de `default_vat_at` tranché en variante `_in_conn`
+  (AC-5) ; P1-4 (LOW) renvois du manuel (`:219` est l'assistant d'installation ; `:491` et `:1791` sont les bons sites,
+  AC-10) ; P1-5 (LOW, non appliqué) l'égalité du compte d'acquisitions n'est refusée qu'avec la TVA due (O6) : le
+  compte de décompte et le compte créanciers (passifs aussi) restent admis ; P1-6 (LOW) renvoi à O1 en en-tête.
