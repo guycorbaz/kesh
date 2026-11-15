@@ -38,6 +38,8 @@ réversibilité. Code lu à `fed34a9c7`. Fiche : `36-16-reimputation-analytique.
 
 ### C-36-16-4 — Période close : accusé de réception exigé, `409 PROJECT_REASSIGNMENT_CLOSED_PERIOD` (D5)
 
+*Annoté le 2026-11-15 : **révisé par C-36-16-11** (l'accusé est réservé à l'Administrateur en session).*
+
 - **Contexte** : #1167, point 5 : « possible sur un exercice clos ou une période verrouillée, avec un avertissement à l'écran ».
   Une clé d'API n'a pas d'écran.
 - **Retenu** : sans `acknowledgeClosedPeriods: true`, refus sans écriture, `details { entryCount, fiscalYears, lockedThrough }` ;
@@ -96,3 +98,32 @@ réversibilité. Code lu à `fed34a9c7`. Fiche : `36-16-reimputation-analytique.
 - **Écartées** : garder une story (dix modules) ; un découpage par couche (dépôt, API, écran) — aucune tranche ne livrerait un
   geste utilisable ni ne se testerait de bout en bout.
 - **Réversible** : oui, tant qu'aucune n'est développée.
+
+### C-36-16-11 — L'accusé de période close est réservé à l'Administrateur en session (révise C-36-16-4 ; arbitrage de l'orchestrateur, validation P1 de 36-16a, V1-5)
+
+- **Contexte** : la réouverture d'un exercice et la levée du verrou de période sont « Admin uniquement + motif obligatoire »
+  (`lib.rs:474-489`, « DÉVERROUILLER DÉFAIT UNE GARANTIE ») ; C-36-16-4 ouvrait l'accusé à tout Comptable et à toute clé
+  `read-write`, sans écran pour une clé.
+- **Retenu** (choix prudent) : une écriture exposée qui changerait → `403 PROJECT_REASSIGNMENT_CLOSED_PERIOD_ADMIN_ONLY` pour un
+  Comptable et pour toute clé d'API, accusé ou non ; un Administrateur en session reçoit `409 PROJECT_REASSIGNMENT_CLOSED_PERIOD`
+  sans accusé et réussit avec. En période ouverte, Comptable et clé `read-write` réimputent. Vaut pour 36-16a, b et c.
+- **Écartées** : l'accusé ouvert à tous (C-36-16-4 d'origine) ; un motif obligatoire comme la réouverture (non demandé ; ajout
+  possible sans changer le contrat).
+- **Réversible** : oui ; élargir plus tard ne casse aucun client.
+
+### C-36-16-12 — « Rien à faire » compare la pièce et les lignes ; `entryCount` compte ce qui changerait (V1-14, V1-16)
+
+- **Retenu** : `200` sans écriture seulement si la pièce **et** toutes les lignes de l'ensemble portent déjà le compte visé ; sinon
+  le geste réaligne les lignes divergentes. `entryCount` du refus de période = écritures exposées qui changeraient.
+- **Écartée** : comparer à la seule pièce — une dérive historique ne se réparerait jamais.
+- **Réversible** : oui.
+
+### C-36-16-13 — Lectures verrouillantes et ordre des refus (V1-9, V1-13)
+
+- **Retenu** : sentinelle `companies` toujours (elle porte `books_locked_through` et sérialise la pose du verrou) → pièce `FOR
+  UPDATE` → version → ensemble relu sous verrou → en-têtes et lignes `FOR UPDATE` par `id` → rien à faire → compte visé (validé
+  seulement s'il diffère de l'actuel) → exercices exposés `FOR UPDATE` → `403` / `409` de période → écritures, audit, `COMMIT`. Le
+  rejeu sur interblocage couvre l'ordre exercice-après-pièce, inverse de l'acceptation par rapprochement.
+- **Écartée** : lire exercice et verrou sans verrou, comme `modification_blocker` — une clôture concurrente commiterait entre le
+  contrôle et l'écriture.
+- **Réversible** : oui.

@@ -450,3 +450,8 @@ détaché) ; stories 19-3, 19-4 (propagation du projet), 34-5 (version lue sous 
   `36-16a-reimputation-facture-client.md` (lot A, décisions communes, étape 0 sur `reconciliation.rs:2814`),
   `36-16b-reimputation-facture-fournisseur.md` (lot B, étape 0 sur `supplier_invoices.rs:2163`),
   `36-16c-reimputation-ecriture-manuelle.md` (lot C). `Status: split` (C-36-16-10).
+- 2026-11-15 — *Annotation* (validation P1 de 36-16a, V1-1, V1-2, V1-5, V1-6) : cette fiche, relevé laissé tel quel, contient
+  quatre erreurs corrigées dans les fiches filles — l'AC-A1 décrit un état impossible (un avoir exclut tout règlement,
+  `credit_notes.rs:391`) ; le remède de D9 pour `reconciliation.rs:2814` (y poser un verrou) désarmerait le verrou optimiste
+  `:2952-2955` ; l'accusé de période close est réservé à l'Administrateur (C-36-16-11) ; le verrou des livres se pose par `POST
+  …/books-lock` `{ through }`, non par `PUT`. Les fiches 36-16a à 36-16c font foi.
