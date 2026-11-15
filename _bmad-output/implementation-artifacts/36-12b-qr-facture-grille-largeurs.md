@@ -34,7 +34,8 @@ Repère : origine en bas à gauche, mm, section de paiement `y ∈ [0, 105]` ; �
 `let top = SEP_Y - 5.0;` ; titre 11 pt gras à la ligne de base 100 (haut ≈ 102,8 : **2,2 mm du bord**) ; `:912`
 `let mut y = top - 7.0;` ; IBAN, créancier, référence ; **puis le montant**, `:926` `y -= 8.0;` (il **suit** le contenu) ;
 **puis *Payable by***, `:949-950` `// Debtor.` `y -= 8.0;` ; point de dépôt `:963-969`, `Mm(RECEIPT_W - 15.0),`
-`Mm(5.0),` — **ancré à gauche** à x = 47, ligne de base 5.
+`Mm(5.0),` — **ancré à gauche** à x = 47, ligne de base 5 *(lecture d'avant la 36-12a, qui l'aligne à droite au bord
+x = 57 par `largeur_mm` ; annoté le 2026-11-15, V3-7)*.
 
 **La partie paiement** — `draw_payment_part`, `:977-1083` : titre à x = 67, base 100 ; QR `:999-1000` `let qr_top = top -
 7.0;` `draw_qr_matrix(layer, qr, qr_x, qr_top, 46.0)?;` (x 67→113, y 47→93) ; croix `:1001` `draw_swiss_cross(layer,
@@ -244,7 +245,8 @@ Une mutation équivalente se dit.
 
 0. **Étape 0** : relire chaque ligne citée **après la fusion de la 36-12a** (les numéros de `pdf.rs` ont bougé) ; rejouer
    l'inventaire ; relever la charge utile de la fixture de type S (AC9) ; `ls -l` des deux AFM et de
-   `mappings.rs` ; relire les LOW de la validation de cette fiche.
+   `mappings.rs` *(la table est livrée par la 36-12a, `crates/kesh-qrbill/src/largeurs.rs` : relire son script et son
+   empreinte plutôt que les AFM — annoté le 2026-11-15, V3-7)* ; relire les LOW de la validation de cette fiche.
 1. **Capture « avant »** par l'exemple de la 36-12a (`captures/avant/`), avec les fixtures de cette story ajoutées.
 2. *(La table est livrée par la 36-12a.)*
 3. **Tests de comportement** rouges, commit, `rouges.log`.

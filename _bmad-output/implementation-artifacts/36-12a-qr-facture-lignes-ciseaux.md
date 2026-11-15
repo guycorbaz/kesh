@@ -1,6 +1,6 @@
 # Story 36-12a : QR-facture — les deux lignes de séparation, leurs ciseaux, et le point de dépôt aligné à droite (SIX § 3.7, #944)
 
-Status: ready-for-dev
+Status: in-progress
 
 *Fiche rédigée le 2026-11-15 (Opus 5.5) par le découpage de la fiche `36-12-qr-facture-separation.md` (`split`), décidé
 par l'orchestrateur à la remédiation de la passe 1 de validation (V1-7, `kesh-gate-logs/e36-12/validation-p1.md`), puis
@@ -118,7 +118,10 @@ larges (doc-comment `:803-804` : « 27 `W` occupent 72 mm depuis x = 5, jusqu'à
 
 - **D1 — Deux lignes pointillées** : l'horizontale d'aujourd'hui inchangée (y = 105, x de 0 à 210, traits de 2 mm tous les
   4 mm, 0,3 pt) et une **verticale** à x = 62, de y = 0 à y = 105, même motif. *Écartée* : un trait plein — les
-  échantillons SIX sont en pointillé, et c'est le motif déjà imprimé.
+  échantillons SIX sont en pointillé, et c'est le motif déjà imprimé. *(Étape 0, V3-6 : la verticale reste à x = 62, la
+  cote normative du § 3.3 — récépissé de 62 mm ; d'une épaisseur de 0,3 pt, soit 0,106 mm, elle mord de 0,05 mm sur la
+  zone de 5 mm autour du QR, que § 3.5.2 fait commencer à x = 62 ; écart assumé, sans effet sur un lecteur. Les
+  échantillons SIX, mesurés à 61,7–61,9, le sont à 150 dpi, soit 0,17 mm par pixel : ils ne départagent pas 61,9 et 62.)*
 - **D2 — Des ciseaux dessinés au trait, sur chaque ligne** (C-36-12-2) : un symbole vectoriel (deux anneaux en Bézier,
   deux lames), **au trait seul** (`RG` noir, chemins `S`/`s` ; aucun `rg`, aucun `re`, aucun remplissage), dessiné par une
   fonction `dessiner_ciseaux` appelée de `draw_separator`. Dimensions : **grande dimension de 3 à 5 mm, petite de 3,5 mm
@@ -126,7 +129,15 @@ larges (doc-comment `:803-804` : « 27 `W` occupent 72 mm depuis x = 5, jusqu'à
   droit ≤ 36,05 dans les quatre langues), pour que sa boîte ne rencontre pas leur boîte réelle, qui monte à 103,73.
   Vertical : tourné d'un quart de tour, centré sur x = 62 (± 0,5), **centre y ∈ [101 ; 102,5]**, de sorte que sa boîte
   reste dans y ∈ ]98 ; 105] — au-dessus de la bordure de 5 mm du QR, qui monte à 98 tant que le QR est à 93 (V1-6 ; la
-  36-12b garde la contrainte). Le pointillé s'interrompt sous chaque symbole, et seulement là. *Écartées* : un ciseau
+  36-12b garde la contrainte). Le pointillé s'interrompt sous chaque symbole, et seulement là. *(Étape 0, V3-2, V3-4 :
+  supprimer ou écourter les traits de la grille d'aujourd'hui laisse, selon où tombe le symbole, un trou qui déborde
+  la boîte élargie de 0,5 mm de l'AC1 — un trou de 6,1 mm pour un symbole de [46,15 ; 50] —, et la règle « écourter le
+  trait qui rencontre la boîte » de V3-2 ne le comble pas du côté où aucun trait ne la rencontre. Retenu (C-36-12a-1) :
+  de chaque côté d'un symbole, le pointillé s'arrête à 0,25 mm de sa boîte et repart à 0,25 mm de l'autre côté, ses
+  traits de 2 mm tous les 4 mm **partant de ces deux points vers l'extérieur**, le dernier écourté au bord de la ligne ;
+  le motif est celui d'aujourd'hui, son phasage seul change. Le centre du ciseau vertical se borne à y ∈ [101 ; 102],
+  et sa boîte reste sous y = 104 : elle ne rencontre pas l'horizontale à leur croisement, ce que l'AC1 contrôle.)*
+  *Écartées* : un ciseau
   horizontal près du bord gauche (x ∈ [5, 15]), sur les titres (V2-4) ; la mention « A détacher avant le versement » (ne
   porte pas la ligne verticale) ; le glyphe de ZapfDingbats (encodage imposé) ; une police embarquée (#943) ; des ciseaux
   remplis (un `rg` de plus romprait `chaque_texte_s_imprime_en_noir` — V1-10).
@@ -154,22 +165,28 @@ larges (doc-comment `:803-804` : « 27 `W` occupent 72 mm depuis x = 5, jusqu'à
 (opérateurs `m`, `l`, `c`, `v`, `y`, jusqu'à `S` ou `s`), hors `re` ; ceux dont le centre de boîte est à x < 57 forment le
 ciseau horizontal, ceux dont le centre est à x ∈ [57, 67] le ciseau vertical. *Boîte d'un texte* : de `Td.x` à `Td.x +
 largeur_mm(texte)` + 0,5 mm, de la ligne de base − 0,228 × taille × 0,35278 à la ligne de base + 0,962 × taille ×
-0,35278 (`FontBBox`). *Disjointes* : deux boîtes fermées d'intersection vide (inégalités strictes).
+0,35278 (`FontBBox`). *Disjointes* : deux boîtes fermées d'intersection vide (inégalités strictes). *(Étape 0, V3-3 :
+segments et symboles se cherchent **dans la section de paiement**, parmi les chemins dont la boîte tient dans y ≤ 108 —
+les filets du corps, `hline` à `pdf.rs:594` et `:657`, en sont exclus ; le ciseau n'a aucune lame rectiligne couchée sur
+y = 105 ou x = 62 de 2,05 mm au plus, ses lames étant des triangles fermés, en biais.)*
 
 ## Critères d'acceptation
 
 1. **Ligne horizontale** : des segments de pointillé sur y = 105 couvrent x de 0 à 210 ; tout trou de plus de 2,5 mm est
-   contenu dans la boîte du ciseau horizontal élargie de 0,5 mm ; **aucun segment ne rencontre cette boîte**.
+   contenu dans la boîte du ciseau horizontal élargie de 0,5 mm ; **aucun segment ne rencontre cette boîte**, ni celle
+   du ciseau vertical (V3-4).
 2. **Ligne verticale** : des segments sur x = 62 couvrent y de 0 à 105, même règle avec le ciseau vertical.
 3. **Ciseaux** : un symbole horizontal, grande dimension de 3 à 5 mm, petite ≤ 3,5 mm, centré sur y = 105 (± 0,5), centre
-   x ∈ [45, 52] ; un symbole vertical, mêmes dimensions, centré sur x = 62 (± 0,5), centre y ∈ [101 ; 102,5].
+   x ∈ [45, 52] ; un symbole vertical, mêmes dimensions, centré sur x = 62 (± 0,5), centre y ∈ [101 ; 102] (borne
+   resserrée de 102,5 à 102 à l'étape 0, V3-4).
 4. **Les ciseaux ne touchent rien** : chaque symbole est disjoint de la boîte de tout texte et du rectangle du QR élargi
    de 5 mm (x ∈ [62, 118], y ∈ [42, 98]).
 5. **Le point de dépôt** : dans **les quatre langues** (libellés des quatre `messages.ftl` posés dans `QrBillI18n`) et au
    repli anglais, l'intitulé a son `Td.x` égal à 42,30 (fr), 41,94 (de), 39,36 (en), 35,24 (it) à 0,05 mm près — valeurs
    calculées depuis l'AFM et écrites en dur dans le test, indépendantes de la table —, donc son bord droit à 57, soit
    **une marge d'au moins 4,5 mm à gauche de la ligne verticale** ; sa ligne de base reste 5. Rouge à `fed34a9c7` : `Td.x`
-   vaut 47 dans les quatre langues, et la marge est négative en **anglais et en italien** (bords à 64,64 et 68,76).
+   vaut 47 dans les quatre langues, et la marge est négative en **allemand, anglais et italien** (bords à 62,06, 64,64
+   et 68,76 ; « allemand » ajouté à l'étape 0, V3-5).
 6. **La ligne verticale ne traverse aucun texte** : aucune boîte de texte du récépissé ne rencontre un segment sur x = 62,
    pour les fixtures du jeu (ordinaire de type S, rue longue, sans référence), **en français et en anglais**. Une adresse
    de capitales très larges est hors de ce critère, comme limite connue (Dev Notes).
@@ -180,7 +197,8 @@ largeur_mm(texte)` + 0,5 mm, de la ligne de base − 0,228 × taille × 0,35278 
 9. **Le reste inchangé** : tous les tests existants de `kesh-qrbill` passent sans modification (décompte des `#[test]` aux
    deux bornes, `git show <ref>:<fichier> | /usr/bin/grep -c '#\[test\]'`) ; le diff de production se limite à
    `draw_separator`, `dessiner_ciseaux`, leurs constantes, l'appel du point de dépôt dans `draw_receipt`, le doc-comment du
-   module (`:1-9`), le module `largeurs.rs` et sa déclaration dans `lib.rs` (`git diff origin/epic/36-0.18.0 --
+   module (`:1-9`), le module `largeurs.rs` et sa déclaration dans `lib.rs`, et la visibilité de `est_caractere_qr`
+   (`validation.rs:222`, une ligne, `pub(crate)` pour le test de l'AC8 ; ajouté à l'étape 0, V3-1) (`git diff origin/epic/36-0.18.0 --
    crates/kesh-qrbill/src` lu et cité au Dev Agent Record).
 10. **Le figé** : `git diff origin/epic/36-0.18.0 --stat -- crates/kesh-api crates/kesh-db crates/kesh-i18n` vide ;
     `invoice_frozen_pdf_e2e.rs` et `invoice_pdf_e2e.rs` passent sans modification.
@@ -208,8 +226,8 @@ qui compilent alors et se lancent sur le rendu de `fed34a9c7` : journal
 | `une_ligne_verticale_separe_le_recepisse` | 2 | aucun segment sur x = 62 |
 | `des_ciseaux_sur_chaque_ligne` | 3 | aucun symbole |
 | `les_ciseaux_ne_touchent_rien` | 4 | rouge : le test exige les deux symboles avant de comparer |
-| `le_point_de_depot_est_aligne_a_droite` (quatre langues) | 5 | `Td.x` = 47 partout ; marge négative en anglais et en italien |
-| `la_ligne_verticale_ne_traverse_aucun_texte` (fr, en) | 6 | rouge : le test exige des segments sur x = 62 ; après le correctif, son rouge par M7 en anglais |
+| `le_point_de_depot_est_aligne_a_droite` (quatre langues) | 5 | `Td.x` = 47 partout ; marge négative en allemand, anglais et italien |
+| `la_ligne_verticale_ne_traverse_aucun_texte` (fr, en) | 6 | rouge : le test exige des segments sur x = 62 ; après le correctif, son rouge par M7 en français et en anglais |
 | `lignes_et_ciseaux_au_trait_noir` | 7 | rouge : aucun ciseau |
 
 **Mutations** (après le commit du code, E5 ; scripts dans `/home/gcorbaz/devel/kesh-gate-logs/e36-12/mut/`, restauration
@@ -221,7 +239,8 @@ qui compilent alors et se lancent sur le rendu de `fed34a9c7` : journal
 - **M5** ciseaux remplis (`set_fill_color` + remplissage) → `chaque_texte_s_imprime_en_noir` ;
 - **M6** ciseau horizontal centré à x = 10 → `des_ciseaux_sur_chaque_ligne`, `les_ciseaux_ne_touchent_rien` (V2-5) ;
 - **M7** point de dépôt remis à `Mm(RECEIPT_W - 15.0)` (ancré à gauche) → `le_point_de_depot_est_aligne_a_droite` dans les
-  quatre langues, `la_ligne_verticale_ne_traverse_aucun_texte` en anglais ;
+  quatre langues, `la_ligne_verticale_ne_traverse_aucun_texte` en français et en anglais (le français ajouté à l'étape 0,
+  V3-5 : 61,70 + 0,5 = 62,20 rencontre x = 62) ;
 - **M8** `W` à 900 dans la table maigre → `table_des_largeurs_temoins` ;
 - **M9** pointillé non interrompu sous le ciseau horizontal → `la_ligne_horizontale_couvre_la_largeur` (V2-5).
 
@@ -235,9 +254,13 @@ Une mutation équivalente se dit.
    la 36-12b y ajoute les siennes), le committer seul, le lancer (`scripts/mem-guard.sh cargo run -p kesh-qrbill
    --example capture_qr_facture -- <dir>`), rendre en PNG (`mutool draw -r 150 -o <png> <pdf>`), `captures/avant/`.
 2. **Table** : script, `largeurs.rs`, témoins, couverture, `pub(crate)` pour `est_caractere_qr` si le test l'exige ;
-   **commit seul** ; M8.
+   **commit seul** ; M8. *(Étape 0, V3-8 : à ce commit, rien de la cible `lib` n'emploie encore `largeur_mm`, et
+   `clippy -D warnings` rougirait en `dead_code` ; la déclaration porte `#[cfg_attr(not(test), allow(dead_code))]`
+   jusqu'au commit du correctif (tâche 4), qui la retire. `clippy` passe ainsi à chaque commit.)*
 3. Tests de comportement rouges, commit, `rouges-12a.log`.
-4. `draw_separator` (ligne verticale, interruption sous les ciseaux), `dessiner_ciseaux(layer, cx, cy, vertical)`, point
+4. `draw_separator` (ligne verticale, interruption sous les ciseaux : de chaque côté, le pointillé s'arrête à 0,25 mm
+   de la boîte du symbole et repart à 0,25 mm de l'autre côté, ses traits partant de ces deux points vers l'extérieur —
+   D2, V3-2), `dessiner_ciseaux(layer, cx, cy, vertical)`, point
    de dépôt aligné à droite par `largeur_mm` ; constantes nommées et documentées (source de chaque cote) ; le commentaire
    `:744` disparaît ; doc-comment du module (`:1-9`) mis à jour.
 5. Mutations M1 à M9.
@@ -345,3 +368,29 @@ d'origine `36-12-qr-facture-separation.md` (`split`) ; validations `kesh-gate-lo
   - **V2-6** : AC9 aligné sur la tâche 4.
   - **V2-7** : fichier d'epic, à la charge de l'orchestrateur.
   Passe de validation suivante due.
+- 2026-11-15 — **Validation terminée** sur la P3. Trend : P1 (Sonnet, sur la 36-12 d'origine) 0 CRITICAL / 0 HIGH /
+  4 MEDIUM / 9 LOW → P2 (complète, Opus 5.5) 0/0/1/6 → **P3 (ciblée, Sonnet, sur la remédiation `179b720e1`) 0/0/0/8**
+  (`kesh-gate-logs/e36-12/validation-36-12a-p3-ciblee.md`) : la boucle se clôt sur une passe sans rien au-dessus de LOW.
+- 2026-11-15 — **Étape 0 du développement** (Opus 5.5), au worktree `kesh-36-12`, commit `179b720e1` (le code y est
+  celui de `fed34a9c7`, la remédiation n'ayant touché que les fiches). Inventaire rejoué :
+  `git grep -n "generate_qr_bill_pdf\|draw_separator(" -- crates`, hors `kesh-qrbill`, rend toujours
+  `kesh-api/src/qr_decode.rs:900` et `kesh-api/src/routes/invoice_pdf_service.rs:244`. `ls -l` : `phvr8a.afm` 17839 o,
+  `phvb8a.afm` 17155 o, `lopdf-0.31.0/src/encodings/mappings.rs` 34110 o, `printpdf-0.7.0/src/line.rs` 9716 o. Les huit
+  LOW de la P3, chacun traité dans cette fiche, ligne lue citée :
+  - **V3-1** : `crates/kesh-qrbill/src/validation.rs:222` `fn est_caractere_qr(c: char) -> bool {` (privée) → ajoutée
+    à la liste de l'AC9. La phrase du Change Log de la P2 « V2-6 : AC9 aligné sur la tâche 4 » est laissée telle quelle
+    (relevé daté) ; elle n'était vraie que de la tâche 4.
+  - **V3-2** : `pdf.rs:733` `while x < PAGE_W {`, `:742` `x += 4.0;` — la grille d'aujourd'hui ; écourter le seul trait qui
+    rencontre la boîte ne suffit pas (un trou de 6,1 mm reste de l'autre côté). Retenu : le pointillé s'arrête et repart à
+    0,25 mm de la boîte, ses traits partant de ces deux points (D2, tâche 4, C-36-12a-1).
+  - **V3-3** : `pdf.rs:594` `hline(layer, left, PAGE_W - 20.0, ty);`, `:657` `hline(layer, col_unit, PAGE_W - 20.0, ty);`
+    → définitions bornées à la section de paiement (y ≤ 108) ; lames en triangles fermés, en biais.
+  - **V3-4** : `pdf.rs:733` (traits à x multiple de 4, dont 60–62 sur y = 105) → centre vertical borné à y ∈ [101 ; 102]
+    (D2, AC3) et l'AC1 étendu à la boîte du ciseau vertical.
+  - **V3-5** : `crates/kesh-i18n/locales/de-CH/messages.ftl:737` `invoice-pdf-qr-acceptance-point = Annahmestelle` (bord
+    62,06 depuis 47) → AC5 « allemand, anglais et italien » ; M7 « en français et en anglais » (61,70 + 0,5).
+  - **V3-6** : fiche, § *Ce qui se lit au code* : « bordure de 5 mm (§ 3.5.2) de x = 62 à 118 » → la verticale reste à
+    62, écart de 0,05 mm assumé et écrit à D1.
+  - **V3-7** : `36-12b-qr-facture-grille-largeurs.md:37` « **ancré à gauche** à x = 47 » → annoté « lecture d'avant la
+    36-12a » ; sa tâche 0 renvoie au module livré.
+  - **V3-8** : tâche 2 — `#[cfg_attr(not(test), allow(dead_code))]` sur la déclaration du module jusqu'à la tâche 4.

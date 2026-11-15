@@ -145,3 +145,32 @@ Les choix ci-dessus sont laissés tels qu'écrits ; ce qui les corrige :
   pour la 36-12b).
 - **Réversible** : oui. Limite connue jusqu'à la 36-12b : une adresse de capitales très larges peut encore dépasser 57,
   et la ligne verticale la traverse alors.
+
+## Choix du développement de la 36-12a (2026-11-15, Opus 5.5)
+
+### C-36-12a-1 — Le pointillé repart du symbole, de chaque côté
+
+- **Contexte** : étape 0, V3-2 et V3-4 de la validation P3. Les traits d'aujourd'hui partent de x = 0 tous les 4 mm
+  (`pdf.rs:733` `while x < PAGE_W {`, `:742` `x += 4.0;`). Supprimer ou écourter les traits qui rencontrent le symbole
+  laisse un trou qui dépend de l'endroit où tombe sa boîte : pour une boîte de [46,15 ; 50], 6,1 mm, qui sort de la boîte
+  élargie de 0,5 mm que l'AC1 exige ; écourter le trait de gauche ne comble pas le côté droit, où aucun trait ne la
+  rencontre.
+- **Retenu** : de chaque côté d'un symbole, le pointillé s'arrête à 0,25 mm de sa boîte et repart à 0,25 mm de l'autre
+  côté ; ses traits de 2 mm tous les 4 mm partent de ces deux points vers l'extérieur, le dernier écourté au bord de la
+  ligne. Le motif est celui d'aujourd'hui ; seul son phasage change, sur toute la ligne horizontale.
+- **Écartées** : (a) la grille d'aujourd'hui, traits supprimés sous le symbole : trou hors de l'AC1 ; (b) poser le
+  symbole sur la grille pour que ses bords tombent sur des fins de traits : une grande dimension de 5 mm exactement, à
+  l'égalité près des bornes, fragile ; (c) un trait partiel collé au suivant : un trait de 3,75 mm à l'œil.
+- **Réversible** : oui (rendu seul ; aucun PDF figé ne change).
+
+### C-36-12a-2 — Une table des chasses par nom de glyphe, les deux polices en colonnes
+
+- **Contexte** : D4 demande deux tables indexées par nom de glyphe WinAnsi, et une lecture qui passe du caractère à son
+  octet, puis au nom. Les deux polices ont exactement les mêmes noms de glyphes (`phvr8a.afm` et `phvb8a.afm`).
+- **Retenu** : deux tableaux engendrés par le script `kesh-gate-logs/e36-12/engendrer-largeurs.py` : `WINANSI` (octet,
+  caractère, nom ; dans l'ordre des octets, la première occurrence d'un caractère gagnant comme dans
+  `lopdf::encodings::string_to_bytes`) et `CHASSES` (nom, maigre, gras ; triés par nom, cherchés par dichotomie). Les
+  deux polices sont les deux colonnes d'une même table par nom.
+- **Écartées** : deux tableaux par nom séparés (les noms écrits deux fois, et un désaccord possible entre eux) ; une table
+  indexée par le seul caractère (perd l'étape par le nom, qui est ce que l'AFM indexe).
+- **Réversible** : oui (interne au module).
