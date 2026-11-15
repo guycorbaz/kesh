@@ -409,3 +409,7 @@ clôturer l'exercice.
 - 2026-11-15 — préfixes i18n (constat de la validation de l'Epic 40, Opus) : AC-9 ne nommait aucun préfixe ;
   précisé contre `lint-i18n-ownership.js:177-186` — `bank-accounts-` (dialogue), `fiscal-years-checks-` (contrôle de
   clôture), `error-` (global). Rédaction seule.
+- 2026-11-15 — validation ciblée des préfixes i18n (Sonnet) : 0 finding au-dessus de LOW, 0 LOW. `BankAccountDocumentsDialog.svelte`
+  (`features/bank-accounts/`, `bank-accounts-` : règle à tiret, `:177-186`) et `closing-checks-labels.ts` /
+  `FiscalYearChecks.svelte` (`features/fiscal-years/`, `fiscal-years-checks-`, déjà celui des clés existantes) relus ;
+  `error-` global (`:16`). Aucun inter-fiches.

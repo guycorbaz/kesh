@@ -274,6 +274,10 @@ Reprises de la fiche d'epic (§ 38-5), complétées là où un AC l'exige.
       premier segment `accounts` — `accounts-`, non `account-` ; sous `features/settings/`, `settings-`) : préfixes
       **`accounts-`** (plan comptable), **`settings-invoicing-`** (réglage, patron de
       `routes/(app)/settings/invoicing/+page.svelte`), `error-` pour les messages serveur de `DEFAULT_VAT_INVALID` ;
+      les écrans de l'AC-8 sont des pages de `routes/(app)/`, que le linter ne balaie pas (il ne lit que
+      `src/lib/features/`) : ces préfixes suivent l'usage des pages (39 clés `accounts-`, 36 `settings-invoicing-`
+      au catalogue `fr-CH`) et ne lient au linter que tout composant ou `.ts` neuf posé sous `features/accounts/` ou
+      `features/settings/` ;
       décompte recompté par `grep -c` aux deux bornes.
     - **Manuel utilisateur** (`docs/manual/fr/user-manual.tex`) : au plan comptable, « TVA par défaut d'un compte »
       (genres, taux par catégorie à la date de la transaction, compte de résultat seulement, à quoi elle sert —
@@ -349,3 +353,7 @@ Reprises de la fiche d'epic (§ 38-5), complétées là où un AC l'exige.
 - 2026-11-15 — préfixes i18n (constat de la validation de l'Epic 40, Opus) : AC-10 ne nommait aucun préfixe ;
   précisé contre `lint-i18n-ownership.js:177-186` — `accounts-` (et non `account-`, refusé sous `features/accounts/`),
   `settings-invoicing-`, `error-` (global). Rédaction seule.
+- 2026-11-15 — validation ciblée des préfixes i18n (Sonnet) : 1 finding (0 CRITICAL, 0 HIGH, 0 MEDIUM, 1 LOW), remédié.
+  38-5-I18N-1 AC-10 : les écrans de l'AC-8 sont des pages de `routes/(app)/`, hors du balayage du linter ; l'AC
+  présentait `accounts-` comme imposé — précisé : préfixe d'usage (39 et 36 clés au catalogue), contraignant seulement
+  sous `features/`. `:16` et `:177-186` relus, justes. Aucun inter-fiches.

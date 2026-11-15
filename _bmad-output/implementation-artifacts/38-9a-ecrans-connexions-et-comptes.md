@@ -48,7 +48,8 @@ rapproché.
 ## Critères d'acceptation
 
 1. **AC-1 — Navigation et pages** (Administrateur seul).
-   - Entrée **« Prestataires de paiement »** dans le groupe Paramètres, liste `adminOnly` de
+   - Entrée **« Prestataires de paiement »** (clé `nav-admin-providers`, AC-10) dans le groupe Administration
+     (`nav-administration`), liste `adminOnly` de
      `frontend/src/routes/(app)/+layout.svelte:147` (à côté de `/admin/backup`, `/admin/mcp`), lien `/admin/providers`.
    - Pages `frontend/src/routes/(app)/admin/providers/+page.svelte` (liste) et `…/admin/providers/[id]/+page.svelte`
      (fiche) ; code dans une fonctionnalité neuve **`frontend/src/lib/features/provider-connections/`** (`*.api.ts`,
@@ -298,7 +299,11 @@ rapproché.
     `routes/(app)/+layout.svelte`) ; un texte neuf écrit **dans** une autre fonctionnalité porte le préfixe de celle-ci
     (`bank-import-` pour `bank-import-display.ts`, AC-15 : « Téléchargé de … », « Source inconnue (`x`) » ;
     `payment-batches-`, `bank-accounts-`, `accounts-` de même), sinon le libellé est lu par un appel à
-    `provider-labels.ts`, jamais par une clé `provider-connections-*` écrite hors de sa fonctionnalité. Clés **écrites en toutes lettres** (pas de clé construite par gabarit, `i18n-keys.test.ts`), aux
+    `provider-labels.ts`, jamais par une clé `provider-connections-*` écrite hors de sa fonctionnalité. Le linter ne
+    balaie que `src/lib/features/` : les pages de `routes/(app)/` (comptes bancaires, plan comptable, import) ne
+    sont pas contrôlées, et le préfixe y suit l'usage de la page (`bank-accounts-`, `accounts-`) ; la règle ci-dessus
+    ne lie que les fichiers posés sous `features/`. Clés **écrites en toutes lettres** (pas de clé construite par
+    gabarit, `i18n-keys.test.ts`), aux
     quatre catalogues `crates/kesh-i18n/locales/{fr-CH,de-CH,it-CH,en-CH}/messages.ftl`, consommées par `i18nMsg` avec
     repli français (`frontend/src/lib/shared/utils/i18n.svelte`) ; **pas de sélecteur Fluent** (`{ $n -> … }`) — le
     client reçoit les messages pré-résolus (raison écrite dans `frontend/src/lib/features/reconciliation/already-booked.ts`) :
@@ -641,3 +646,10 @@ rapproché.
   `+layout.svelte`, hors du linter) ; textes neufs des autres fonctionnalités (AC-15 : `bank-import-display.ts` ;
   `payment-batches`, `bank-accounts`, `accounts`) au préfixe de la leur, ou lus par appel à `provider-labels.ts`.
   AC-1 renvoie à AC-10. Correction de rédaction, sans passe de plus (aucune règle métier touchée).
+- 2026-11-15 — validation ciblée des préfixes i18n (Sonnet) : 2 findings (0 CRITICAL, 0 HIGH, 0 MEDIUM, 2 LOW), remédiés.
+  Relu au code : `lint-i18n-ownership.js:16`, `:177-186` justes ; le linter ne balaie que `src/lib/features/`.
+  38-9a-I18N-1 AC-10 : précisé que les pages de `routes/(app)/` ne sont pas contrôlées (préfixe d'usage), la règle ne
+  liant que les fichiers sous `features/` ; 38-9a-I18N-2 AC-1 disait « groupe Paramètres » pour le groupe
+  `nav-administration` (liste `adminOnly`, `+layout.svelte:147`) — corrigé. `nav-admin-providers` suit `nav-admin-backup`,
+  `nav-admin-mcp` (liste `adminOnly`). Inter-fiches : 40-6 (lecture seule) cite encore `nav-providers` (Questions
+  ouvertes, « Inter-fiches 38-9a (P2-3) », et `:185-187`) ; 38-9b, 38-6a, 38-6b : aucun renvoi faux.
