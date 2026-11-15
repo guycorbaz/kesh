@@ -223,7 +223,7 @@ cd /opt/kesh
 Télécharger le fichier de référence depuis le dépôt officiel, \textbf{au tag de la version que décrit ce manuel} (\texttt{v\keshVersion}) --- non à la branche \texttt{main}, qui peut être en avance sur l'image publiée ; pour une autre version, remplacez le tag dans l'adresse :
 
 \begin{lstlisting}[language=bash]
-curl -fsSL https://raw.githubusercontent.com/guycorbaz/kesh/v0.17.7/docker-compose.yml \
+curl -fsSL https://raw.githubusercontent.com/guycorbaz/kesh/v0.17.8/docker-compose.yml \
     -o docker-compose.yml
 \end{lstlisting}
 
@@ -234,7 +234,7 @@ Ce fichier désigne l'image publiée \texttt{gcorbaz/kesh:latest} : \keshcommand
 Copier le fichier d'exemple et l'adapter :
 
 \begin{lstlisting}[language=bash]
-curl -fsSL https://raw.githubusercontent.com/guycorbaz/kesh/v0.17.7/.env.example \
+curl -fsSL https://raw.githubusercontent.com/guycorbaz/kesh/v0.17.8/.env.example \
     -o .env
 \end{lstlisting}
 
@@ -570,7 +570,7 @@ Télécharger le \keshpath{docker-compose.yml} canonique depuis le dépôt Kesh,
 
 \begin{lstlisting}[language=bash]
 cd /volume1/docker/kesh
-DEPOT=https://raw.githubusercontent.com/guycorbaz/kesh/v0.17.7
+DEPOT=https://raw.githubusercontent.com/guycorbaz/kesh/v0.17.8
 curl -fsSL "$DEPOT/docker-compose.prod.yml" -o docker-compose.yml
 curl -fsSL "$DEPOT/.env.example" -o .env
 
@@ -1743,7 +1743,7 @@ Les exports ne doivent pas rester dans le dossier de téléchargements : Synolog
 \Needspace{15\baselineskip}
     \item \textbf{Compose et \keshpath{.env.example} au tag de la version relevée, et variables qu'il lit.} Remplacez \texttt{0.15.0} par la version relevée. Les exemples de cette sous-section portent \texttt{0.15.0}, la version de ce manuel ; une production qui satisfait le prérequis porte \textbf{0.15.0 ou plus} : à une version suivante, l'exemple recopié tel quel donnerait une copie qui n'est pas celle de la production. Le contrôle~9 arrête une \textbf{image} d'une autre version ; le tag de \keshcommand{DEPOT}, lui, n'est contrôlé par rien : remplacez les deux.
 \begin{lstlisting}[language=bash]
-DEPOT=https://raw.githubusercontent.com/guycorbaz/kesh/v0.17.7
+DEPOT=https://raw.githubusercontent.com/guycorbaz/kesh/v0.17.8
 curl -fsSL "$DEPOT/docker-compose.yml" -o "$COPIE/docker-compose.yml"
 curl -fsSL "$DEPOT/.env.example" -o "$COPIE/.env"
 grep -oE '\$\{?[A-Za-z_][A-Za-z0-9_]*' "$COPIE/docker-compose.yml" \
@@ -2062,7 +2062,7 @@ Les deux scripts sont des fichiers du dépôt Kesh, \keshpath{scripts/synology/k
 
 \begin{lstlisting}[language=bash]
 cd /volume1/docker/kesh
-DEPOT=https://raw.githubusercontent.com/guycorbaz/kesh/v0.17.7
+DEPOT=https://raw.githubusercontent.com/guycorbaz/kesh/v0.17.8
 curl -fsSLO "$DEPOT/scripts/synology/kesh-dump.sh"
 curl -fsSLO "$DEPOT/scripts/synology/kesh-restore.sh"
 chmod 700 kesh-dump.sh kesh-restore.sh
@@ -2534,6 +2534,17 @@ L'opération s'inscrit au journal d'audit sous \emph{Réparation de l'installati
 La session ouverte doit être \textbf{rouverte} --- reconnexion, ou au plus la durée du \textbf{jeton d'accès} (\texttt{KESH\_JWT\_EXPIRY\_MINUTES}) plus une minute ; d'ici là, certains écrans de la société répondent par une erreur, d'autres s'affichent vides. Si le journal du serveur porte « réparation de l'installation au démarrage » suivi d'une erreur, voir la section \emph{Dépannage}.
 
 \textbf{Limite} : les données de démonstration laissées par une réinitialisation antérieure (taux de TVA, réglages de facturation, contacts, articles, factures, avoirs) qui désignent la société effacée restent en base, invisibles et inertes (\#546).
+
+\subsubsection{Passer à la 0.17.8}\label{sec:maj-0-17-8}
+\sloppy
+
+La 0.17.8 est une version corrective, qui se pose sur la 0.17.7 : elle n'exige ni nouveau compose ni nouvelle variable de \keshpath{.env} ; on tire l'image et on redémarre (\S\ref{sec:mise-a-jour}). Depuis une version antérieure à la 0.17.7, appliquez d'abord les sections suivantes (\S\ref{sec:maj-0-17-7}). \textbf{Prenez avant la mise à jour la sauvegarde complète} --- la base, un \keshcommand{.keshbackup} et le dossier des documents ---, comme avant toute mise à jour d'une installation qui tient des livres : la 0.17.8 n'a pas de migration, mais c'est cette sauvegarde qui rattrape un imprévu.
+
+\paragraph{Aucune migration, retour à la 0.17.7 sans restauration.} \textbf{La 0.17.8 n'a aucune migration} : elle ne modifie pas le schéma, \texttt{kesh\_version\_min\_required} reste à \texttt{0.17.6}, et Kesh n'écrit \textbf{aucune} sauvegarde dans \keshpath{backup/pre-upgrade/} à cette mise à jour (il n'en écrit qu'avant une migration, \S\ref{sec:sauvegarde-avant-maj}). \textbf{Le retour à la 0.17.7 se fait sans restauration} : reprenez l'image \texttt{gcorbaz/kesh:0.17.7} dans le compose et redémarrez ; la 0.17.7 démarre sur la base telle que la 0.17.8 l'a laissée, et ce qui a été saisi entre-temps reste. Une sauvegarde \keshcommand{.keshbackup} prise en 0.17.7 s'importe dans la 0.17.8. Ces comportements ont été constatés à la préparation de la release, avec l'image publiée \texttt{gcorbaz/kesh:0.17.7} et des données synthétiques (factures validées, dont une réglée, facture fournisseur payée, relevé rapproché, écriture passée et règlement annulé par une clé d'API) : aucune migration appliquée, aucun fichier dans \keshpath{pre-upgrade/}, données comptables identiques après la montée, après l'import d'une sauvegarde 0.17.7 dans une 0.17.8 neuve, et après le retour à la 0.17.7 sur la même base.
+
+\paragraph{Ce qu'il faut savoir.} \textbf{L'annulation d'un règlement faite par une clé d'API est attribuée à la clé} : un règlement ou un solde de facture client, le paiement d'une facture fournisseur, annulés par leur route ou par l'annulation du rapprochement bancaire qui les avait passés, portent au journal d'audit la marque « clé API » et le numéro de la clé --- le geste, la contre-passation et le délettrage ---, au lieu du seul nom de son créateur (\S\ref{sec:api-keys}, \emph{Journal d'audit}). \textbf{Les entrées écrites avant la 0.17.8 ne se corrigent pas} : elles gardent la marque « utilisateur ». Les routes et les réponses de l'API ne changent pas. \textbf{Le compte rendu d'une restauration reste affiché} (\S\ref{sec:backup-ui-keshbackup}) : après l'import d'une sauvegarde, le nombre de pièces restaurées et l'avertissement des pièces introuvables restent à l'écran jusqu'à ce que vous cliquiez \emph{Se reconnecter}, quittiez la page ou laissiez passer la durée d'inactivité réglée ; ils pouvaient disparaître aussitôt, l'écran passant à la connexion avec « session expirée ». Côté saisie, rien n'est à régler : le manuel utilisateur décrit les montants ambigus refusés (« 1.234 ») dans l'écriture manuelle, l'assistant d'achat, l'éclatement d'une transaction et le prix unitaire d'une facture, et la touche Entrée du champ de compte.
+
+\fussy
 
 \subsubsection{Passer à la 0.17.7}\label{sec:maj-0-17-7}
 \sloppy
