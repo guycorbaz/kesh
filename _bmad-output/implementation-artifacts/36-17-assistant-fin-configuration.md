@@ -99,7 +99,7 @@ navigation ne se fait d'office après la finalisation. Le nominal local ne repro
   configuration` » (`crates/kesh-i18n/locales/fr-CH/messages.ftl:159` ; même sens en `de-CH`, `it-CH`, `en-CH`, `:159`) ne
   dit rien de la facturation.
 - Corriger la finalisation (compléter une ligne existante aux comptes vides) touche `kesh-db` et `kesh-api` : hors de la
-  story (arbitrage de l'orchestrateur, cinq modules) ; **issue demandée** (Dev Notes). La story l'écrit comme **limite
+  story (arbitrage de l'orchestrateur, cinq modules) ; **#1200** (Dev Notes). La story l'écrit comme **limite
   connue** — bannière, écran de reprise, écran d'échec, manuels (D5).
 
 ### Le chemin démo
@@ -179,7 +179,7 @@ Sonde positive : la commande rend bien `+page.svelte:257`, le site connu de #118
 **retiré** (D1) ; `+page.svelte:71` **dans le périmètre** (D7) ; `setup.api.ts:29` est un commentaire ;
 `SetupForm.svelte:82` **hors** — renvoi au login après un 410, dans un `setTimeout`, voulu (« `void` ») ;
 `DemoBanner.svelte:28` **hors** — après la remise à zéro de la démo, l'application reste affichée si la navigation
-échoue (pas de page blanche) ; **issue à demander** (« Bannière de démo : la navigation vers l'assistant après la remise à
+échoue (pas de page blanche) ; porté par **#1199** (« Bannière de démo : la navigation vers l'assistant après la remise à
 zéro n'est ni attendue ni traitée en échec », `technical-debt`, P3).
 
 ### Les manuels
@@ -238,7 +238,7 @@ $ git grep -n -i "finalis\|configurer plus tard\|Configuration terminée" docs/m
   débiteurs et le compte de produit par défaut, enregistrez, puis réessayez. » (remède de la limite connue, ci-dessus ;
   reconnu au **code d'erreur** `VALIDATION_ERROR` de cette seule route, non au texte du motif).
   **Limite connue** : la finalisation reste refusée dans ce cas tant que l'utilisateur n'a pas fait ce geste ; la
-  correction serveur est l'issue demandée (Dev Notes).
+  correction serveur est portée par #1200 (Dev Notes).
   *Écartées* : renvoyer l'application à l'assistant à l'étape 7 (une finalisation refusée en 422, `onboarding.rs:991`,
   enfermerait l'utilisateur hors des écrans qui la réparent) ; corriger la finalisation dans la story (`kesh-db`,
   `kesh-api` : six modules et plus, arbitrage de l'orchestrateur).
@@ -319,7 +319,7 @@ $ git grep -n -i "finalis\|configurer plus tard\|Configuration terminée" docs/m
 10. **AC10 — Manuels.** `user-manual.tex` (§ *Onboarding*, après `:217`) décrit l'indicateur, la page terminée et son
     récapitulatif, *Commencer*, l'échec et *Réessayer*, la reprise au rechargement, l'indicateur de la démo, et la
     **limite connue** de D5 : terminer la configuration avant d'ouvrir les réglages de facturation, et, faute de quoi, le
-    remède (désigner les comptes débiteurs et de produit, enregistrer, réessayer), avec le numéro de l'issue demandée ;
+    remède (désigner les comptes débiteurs et de produit, enregistrer, réessayer), avec le numéro de l'issue, #1200 ;
     `admin-manual.tex` dit, après `:1461`, que l'assistant se termine sur la page « Configuration terminée », et la même
     limite en une phrase.
     PDF régénérés à l'intégration (contrôle aplati, forme E6, de la phrase neuve).
@@ -457,13 +457,13 @@ remède de D5 retirée de l'écran d'échec (AC4). Une mutation équivalente se 
   réglages de facturation ou de facturer. Le chargement des données de démonstration affiche lui aussi un indicateur.
   *Limite connue* : si les réglages de facturation ont été ouverts avant la fin de la configuration, la mise en place est
   refusée tant que le compte débiteurs et le compte de produit par défaut n'y sont pas désignés et enregistrés ; l'écran
-  d'échec le dit (refs #<issue demandée>). (refs #1187)
+  d'échec le dit (refs #1200). (refs #1187)
 
 ## Dev Notes
 
 ### Hors périmètre, et les issues demandées
 
-- **Limite connue, issue demandée** (V1-1, arbitrage de l'orchestrateur) — « Assistant : la finalisation est refusée
+- **Limite connue, #1200** (V1-1, arbitrage de l'orchestrateur ; ouverte par l'orchestrateur) — « Assistant : la finalisation est refusée
   (« 1100, 3000 manquants ») si les réglages de facturation ont été ouverts avant elle », `bug`, P2. Lignes :
   `crates/kesh-db/src/repositories/company_invoice_settings.rs:129` (ligne créée sans comptes par
   `get_or_create_default`), `:1250` (`INSERT IGNORE` de la finalisation, sans effet sur une ligne existante),
@@ -471,10 +471,10 @@ remède de D5 retirée de l'écran d'échec (AC4). Une mutation équivalente se 
   `crates/kesh-api/src/routes/onboarding.rs:1008` (motif faux) ; appelants qui créent la ligne avant la finalisation :
   `routes/company_invoice_settings.rs:300`, `:336`, `exports/global.rs:335` ; ouverture de l'application avant la
   finalisation : `frontend/src/routes/(app)/+layout.ts:42`. Remède attendu côté serveur : la finalisation complète les
-  comptes vides d'une ligne existante (sans écraser une désignation). Le numéro remplace `#<issue demandée>` de la note de
-  version et des manuels.
-- `DemoBanner.svelte:28` — navigation non attendue après la remise à zéro de la démo : **issue à ouvrir** (inventaire,
-  symptôme 2 ; `technical-debt`, P3).
+  comptes vides d'une ligne existante (sans écraser une désignation). #1200 est cité par la note de version et se cite aux
+  manuels (AC10).
+- `DemoBanner.svelte:28` — navigation non attendue après la remise à zéro de la démo : **#1199** (inventaire, symptôme 2 ;
+  `technical-debt`, P3).
 - KF-029 (#97) : `onboarding-path-b.spec.ts:65`, `:92`, `onboarding.spec.ts:150` restent rouges (sélecteurs périmés) ; la
   story n'y ajoute qu'un commentaire. `onboarding-path-b.spec.ts:27` reste `fixme` (KF-032, #124, fermée).
 - Le nom de la société non modifiable après l'assistant (#1097) : hors epic, sans clé.
@@ -499,7 +499,8 @@ remédiation de la validation P1 : inchangé — les enveloppes des étapes 0 à
 l'application** (`(app)/+layout.svelte` et la bannière qu'il rend, sans autre usage : `git grep -n IncompleteBanner --
 frontend/src ':!*.test.ts'` → `(app)/+layout.svelte:10` et `:370` seulement). Si ce regroupement n'est pas admis, le
 décompte est de **six** ; le repli peut alors rester l'ancien texte (la clé seule change), au prix d'un repli différent de
-`fr-CH` — à arbitrer par l'orchestrateur, la fiche retient le regroupement.
+`fr-CH` — à arbitrer par l'orchestrateur, la fiche retient le regroupement. *(Regroupement accepté par l'orchestrateur le
+2026-11-15 : cinq modules ; C-36-17-10.)*
 
 ### Gates (voie 2 ; `e35-dev-commun.md` § *Quels gates, quand*)
 
@@ -526,7 +527,7 @@ décompte est de **six** ; le repli peut alors rester l'ancien texte (la clé se
 - **Limite connue, assumée** : l'application reste ouverte aux étapes 6 et 7 (D5) ; si les réglages de facturation y sont
   ouverts avant la finalisation, celle-ci est refusée (« 1100, 3000 manquants ») jusqu'à ce que les comptes débiteurs et de
   produit y soient désignés et enregistrés. La story ne la corrige pas ; elle la dit (bannière, écran de reprise, écran
-  d'échec, manuels) ; l'issue demandée la porte. Le serveur ne change pas.
+  d'échec, manuels) ; #1200 la porte. Le serveur ne change pas.
 
 ### Références
 
@@ -571,3 +572,8 @@ décompte est de **six** ; le repli peut alors rester l'ancien texte (la clé se
   - **V1-6 (LOW), corrigé** : garde Vitest avec `browser: true` simulé et sonde positive (cas verts au départ) ; limite au
     manuel (AC10).
   Choix C-36-17-3, -5 et -8 annotés, C-36-17-9 ajouté. Modules : cinq, inchangé.
+- 2026-11-15 — **Issues ouvertes par l'orchestrateur** : **#1200** (limite connue de V1-1, `bug`, P2) et **#1199**
+  (`DemoBanner.svelte:28`, `technical-debt`, P3) ; citées à leurs sites (code lu, D5, AC10, note de version, Dev Notes, ce
+  qui doit rester vrai). Les entrées datées ci-dessus, qui disent « issue à ouvrir » et « issue demandée », restent telles
+  quelles. Regroupement de `IncompleteBanner.svelte` avec la coquille de l'application accepté : cinq modules
+  (C-36-17-10).

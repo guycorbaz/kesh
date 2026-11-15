@@ -58,7 +58,7 @@ C-e360-18 (périmètre de #1187), qui fait foi. Option prudente et réversible �
 - *Complété le 2026-11-15 à la remédiation de la validation P1 (V1-1 ; arbitrage de l'orchestrateur : D5 gardée)* :
   ouvrir les réglages de facturation avant la finalisation crée leur ligne sans comptes
   (`company_invoice_settings.rs:129`), et la finalisation est ensuite refusée à motif faux (`:1280-1306`, `:1305` ;
-  `onboarding.rs:1008`). **Limite connue**, issue demandée ; la bannière (`incomplete-banner-text`, quatre locales) dit
+  `onboarding.rs:1008`). **Limite connue**, portée par **#1200** ; la bannière (`incomplete-banner-text`, quatre locales) dit
   désormais de terminer avant d'ouvrir les réglages de facturation ou de facturer, l'écran de reprise aussi, et l'écran
   d'échec ajoute le remède sous un refus `VALIDATION_ERROR`. Écartée en plus : corriger la finalisation ici (`kesh-db`,
   `kesh-api`, au-delà de cinq modules).
@@ -100,4 +100,13 @@ C-e360-18 (périmètre de #1187), qui fait foi. Option prudente et réversible �
 - **Retenu** : `loaded` faux hors chargement → écran « L'état de la configuration n'a pas pu être lu. » et *Réessayer*
   (`fetchState()`, `catch` dans `+page.svelte`).
 - **Écartées** : l'écran de l'étape 0 (aujourd'hui) ; une garde qui bloque `/onboarding` à l'échec.
+- **Réversible** : oui.
+
+### C-36-17-10 — `IncompleteBanner.svelte` compte avec la coquille de l'application (décompte des modules)
+
+- **Contexte** : le texte neuf de la bannière (D5) change le repli de `frontend/src/lib/shared/components/IncompleteBanner.svelte:14`,
+  pour rester égal à `fr-CH` ; le composant n'est rendu que par `(app)/+layout.svelte` (`:10`, `:370`).
+- **Retenu** (accepté par l'orchestrateur le 2026-11-15) : il compte avec `(app)/+layout.svelte` dans le module 3,
+  « coquille de l'application » ; la story touche **cinq** modules.
+- **Écartée** : changer la clé seule et garder l'ancien repli (repli différent de `fr-CH`).
 - **Réversible** : oui.
