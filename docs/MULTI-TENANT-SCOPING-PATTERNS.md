@@ -330,7 +330,7 @@ Rationale: this matches the natural dependency direction (state machine → tena
 
 | Endpoint | Lock sequence | File |
 |----------|---------------|------|
-| `POST /onboarding/finalize` | onboarding_state → company → accounts → settings → fiscal_years (auto-create via `create_if_absent_in_tx`) | `routes/onboarding.rs` finalize |
+| `POST /onboarding/finalize` | onboarding_state → company → accounts (role and chart candidates, `FOR UPDATE`) → settings (`INSERT IGNORE`, then the row `FOR UPDATE`, Story 36-19) → accounts already designated as receivable or revenue (`LOCK IN SHARE MODE`, after the row — the order of `invoices::validate_invoice`) → bank_accounts (`LOCK IN SHARE MODE`, `first_active_bank_account_linked_to`; settings before bank accounts, as in Story 15-6c) → fiscal_years (auto-create via `create_if_absent_in_tx`). ⚠️ Settings before bank accounts contradicts items 5 and 6 of the Global Lock Order above: pre-existing gap, not reconciled here | `routes/onboarding.rs` finalize, `company_invoice_settings::complete_default_accounts_in_tx` |
 | `POST /onboarding/language` | onboarding_state → company (one transaction, Story 15-7a2) | `routes/onboarding.rs` |
 | `POST /onboarding/mode`, `/start-production`, `/skip-bank` | onboarding_state only (one transaction, Story 15-7a2) | same |
 | `POST /onboarding/org-type`, `/coordinates` | onboarding_state → company (one transaction, Story 15-7a2) | same |

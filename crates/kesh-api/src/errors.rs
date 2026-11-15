@@ -4697,6 +4697,18 @@ impl IntoResponse for AppError {
                         "Un ou plusieurs comptes sont archivés ou invalides.",
                     ),
                 ),
+                // Story 36-19 (#1200, C-36-19-8) — aucune route ne l'atteint : la
+                // finalisation convertit elle-même ce refus, en nommant chaque
+                // réglage en défaut. Ce bras, exigé par le match exhaustif, rend
+                // un message générique traduit, sous le code de ce refus.
+                DbError::DefaultInvoiceAccountsUnavailable(_) => build_response(
+                    StatusCode::BAD_REQUEST,
+                    "VALIDATION_ERROR",
+                    &t(
+                        "error-default-invoice-accounts-unavailable",
+                        "Les comptes par défaut de facturation ne sont pas utilisables : terminez leur désignation dans Administration → Facturation.",
+                    ),
+                ),
                 // Story 15-5a (#429, choix C3/C16/C18/C29) — un compte de la
                 // société, actif, mais non imputable. Le message NOMME les
                 // comptes et la cause ; le détail est celui du jumeau
@@ -5554,6 +5566,43 @@ mod tests {
                 );
             }
         }
+    }
+
+    /// Story 36-19 (#1200, AC11) — le bras de
+    /// `DbError::DefaultInvoiceAccountsUnavailable` rend `400 VALIDATION_ERROR`
+    /// (égal à `error_code()`) et le texte de la clé
+    /// `error-default-invoice-accounts-unavailable` du catalogue `fr-CH`. Tue
+    /// M12 (autre clé ou autre code). L'égalité du repli et du FTL est aussi la
+    /// part de G9 (`textes_coherents.rs`).
+    #[tokio::test]
+    async fn default_invoice_accounts_unavailable_maps_to_validation_error() {
+        use kesh_db::errors::{
+            DefaultInvoiceAccountCause, DefaultInvoiceSetting, UnavailableDefaultInvoiceAccount,
+        };
+        let catalogue = std::fs::read_to_string(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../kesh-i18n/locales/fr-CH/messages.ftl"
+        ))
+        .expect("catalogue fr-CH");
+        let attendu = catalogue
+            .lines()
+            .find_map(|l| l.strip_prefix("error-default-invoice-accounts-unavailable = "))
+            .expect("clé absente du catalogue")
+            .to_string();
+        let err =
+            DbError::DefaultInvoiceAccountsUnavailable(vec![UnavailableDefaultInvoiceAccount {
+                setting: DefaultInvoiceSetting::Receivable,
+                cause: DefaultInvoiceAccountCause::NoRoleAccount,
+            }]);
+        assert_eq!(
+            err.error_code(),
+            "VALIDATION_ERROR",
+            "repli de error_code()"
+        );
+        let (status, body) = response_body(AppError::Database(err).into_response()).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        assert_eq!(body["error"]["code"], "VALIDATION_ERROR");
+        assert_eq!(body["error"]["message"], attendu);
     }
 
     /// Story 15-1a-i (#518) — chaque refus du lettrage a son statut, son code

@@ -1317,6 +1317,51 @@ pub async fn insert_with_defaults_in_tx(
     Ok((settings, inserted))
 }
 
+/// Ce que [`complete_default_accounts_in_tx`] a fait de la ligne des réglages
+/// (Story 36-19, #1200).
+#[derive(Debug, Clone)]
+pub enum DefaultAccountsOutcome {
+    /// La ligne n'existait pas : elle est créée, comptes posés, `version` 1.
+    Inserted(CompanyInvoiceSettings),
+    /// La ligne existait : des comptes vides ont été complétés, `version` + 1.
+    Completed {
+        /// La ligne avant le complément, lue sous verrou.
+        before: CompanyInvoiceSettings,
+        /// La ligne relue après le complément.
+        after: CompanyInvoiceSettings,
+    },
+    /// La ligne existait et rien n'était à compléter : aucune écriture.
+    Unchanged(CompanyInvoiceSettings),
+}
+
+impl DefaultAccountsOutcome {
+    /// Les réglages tels qu'ils sont après l'appel.
+    pub fn settings(&self) -> &CompanyInvoiceSettings {
+        match self {
+            Self::Inserted(s) | Self::Unchanged(s) => s,
+            Self::Completed { after, .. } => after,
+        }
+    }
+
+    /// `true` si la ligne a été créée par cet appel.
+    pub fn inserted(&self) -> bool {
+        matches!(self, Self::Inserted(_))
+    }
+}
+
+/// SQUELETTE (Story 36-19, T2) — délègue au code d'avant le correctif.
+pub async fn complete_default_accounts_in_tx(
+    tx: &mut sqlx::Transaction<'_, sqlx::MySql>,
+    company_id: i64,
+) -> Result<DefaultAccountsOutcome, DbError> {
+    let (settings, inserted) = insert_with_defaults_in_tx(tx, company_id).await?;
+    Ok(if inserted {
+        DefaultAccountsOutcome::Inserted(settings)
+    } else {
+        DefaultAccountsOutcome::Unchanged(settings)
+    })
+}
+
 /// Les comptes retenus pour les trois réglages de TVA (Story 31-5, #707), dans
 /// l'ordre des colonnes `default_vat_payable_account_id`,
 /// `default_vat_recoverable_account_id`, `default_vat_decompte_account_id`.

@@ -331,6 +331,7 @@ journal-entry-modified = Modified
 journal-entry-history = History
 error-fiscal-year-closed-generic = The fiscal year is closed — no entries can be added, modified or deleted (Swiss CO art. 957-964).
 error-inactive-accounts = One or more accounts are archived or invalid.
+error-default-invoice-accounts-unavailable = The default invoicing accounts cannot be used: finish designating them in Administration → Invoicing.
 error-account-not-postable = { $count ->
     [one] Account { $numbers } is not postable (grouping, result or closing account): choose a postable account.
    *[other] Accounts { $numbers } are not postable (grouping, result or closing accounts): choose postable accounts.

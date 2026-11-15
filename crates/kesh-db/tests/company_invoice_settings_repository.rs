@@ -2290,3 +2290,312 @@ async fn finalize_leaves_payable_empty_when_its_role_account_is_not_postable(poo
     );
     assert!(s.default_receivable_account_id.is_some());
 }
+
+/// La fonction neuve de la finalisation dans sa propre transaction : commit sur
+/// succès, `rollback` sur refus — comme la route.
+async fn complete_defaults(
+    pool: &MySqlPool,
+    company_id: i64,
+) -> Result<company_invoice_settings::DefaultAccountsOutcome, kesh_db::errors::DbError> {
+    let mut tx = pool.begin().await.unwrap();
+    let res = company_invoice_settings::complete_default_accounts_in_tx(&mut tx, company_id).await;
+    if res.is_ok() {
+        tx.commit().await.unwrap();
+    } else {
+        tx.rollback().await.unwrap();
+    }
+    res
+}
+
+/// `(version, dix comptes)` de la ligne des réglages, `None` si elle est absente.
+async fn settings_row_state(pool: &MySqlPool, company_id: i64) -> Option<(i32, [Option<i64>; 10])> {
+    sqlx::query_as::<_, kesh_db::entities::CompanyInvoiceSettings>(
+        "SELECT company_id, invoice_number_format, default_receivable_account_id, \
+         default_revenue_account_id, default_vat_payable_account_id, \
+         default_vat_recoverable_account_id, default_vat_decompte_account_id, \
+         default_sales_journal, journal_entry_description_template, \
+         credit_note_number_format, supplier_internal_number_format, default_payable_account_id, \
+         default_rounding_account_id, round_to_5_centimes, minimum_invoice_amount, \
+         default_discount_account_id, default_bank_fees_account_id, default_bad_debt_account_id, \
+         version, created_at, updated_at FROM company_invoice_settings WHERE company_id = ?",
+    )
+    .bind(company_id)
+    .fetch_optional(pool)
+    .await
+    .unwrap()
+    .map(|s| (s.version, designated_ids(&s)))
+}
+
+fn unavailable(
+    items: &[(
+        kesh_db::errors::DefaultInvoiceSetting,
+        kesh_db::errors::DefaultInvoiceAccountCause,
+    )],
+) -> Vec<kesh_db::errors::UnavailableDefaultInvoiceAccount> {
+    items
+        .iter()
+        .map(
+            |(setting, cause)| kesh_db::errors::UnavailableDefaultInvoiceAccount {
+                setting: *setting,
+                cause: cause.clone(),
+            },
+        )
+        .collect()
+}
+
+/// T-D4 (AC4 a, b, c, e) — chaque refus nomme le réglage obligatoire en défaut et
+/// sa cause, débiteurs d'abord ; rien n'est écrit (ligne absente si elle était
+/// neuve) ; l'enveloppe rend `InactiveOrInvalidAccounts` pour chacun.
+#[sqlx::test(migrations = "./test-schema")]
+async fn finalize_refusal_names_the_setting_and_its_cause(pool: MySqlPool) {
+    use kesh_db::errors::DbError;
+    use kesh_db::errors::DefaultInvoiceAccountCause as Cause;
+    use kesh_db::errors::DefaultInvoiceSetting::{Receivable, Revenue};
+
+    // (a) débiteurs vide, rôle absent — ligne vierge, puis ligne neuve.
+    for blank_first in [true, false] {
+        let c = company_with_pme_chart(&pool, &format!("Sans rôle {blank_first}")).await;
+        if blank_first {
+            company_invoice_settings::get_or_create_default(&pool, c)
+                .await
+                .unwrap();
+        }
+        sqlx::query("UPDATE accounts SET role = NULL WHERE company_id = ? AND number = '1100'")
+            .bind(c)
+            .execute(&pool)
+            .await
+            .unwrap();
+        let avant = settings_row_state(&pool, c).await;
+        match complete_defaults(&pool, c).await {
+            Err(DbError::DefaultInvoiceAccountsUnavailable(v)) => assert_eq!(
+                v,
+                unavailable(&[(Receivable, Cause::NoRoleAccount)]),
+                "(a) vierge={blank_first}"
+            ),
+            other => panic!("(a) vierge={blank_first} : obtenu {other:?}"),
+        }
+        assert_eq!(
+            settings_row_state(&pool, c).await,
+            avant,
+            "(a) vierge={blank_first} : rien d'écrit"
+        );
+        if !blank_first {
+            assert_eq!(avant, None, "(a) ligne neuve absente après rollback");
+        }
+        assert!(matches!(
+            finalize_settings(&pool, c).await,
+            Err(DbError::InactiveOrInvalidAccounts)
+        ));
+    }
+
+    // (b) produit désigné archivé.
+    let c = company_with_pme_chart(&pool, "Produit archivé").await;
+    finalize_settings(&pool, c).await.unwrap();
+    sqlx::query("UPDATE accounts SET active = FALSE WHERE company_id = ? AND number = '3000'")
+        .bind(c)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let avant = settings_row_state(&pool, c).await;
+    match complete_defaults(&pool, c).await {
+        Err(DbError::DefaultInvoiceAccountsUnavailable(v)) => assert_eq!(
+            v,
+            unavailable(&[(
+                Revenue,
+                Cause::DesignatedArchived {
+                    account_number: Some("3000".into())
+                }
+            )]),
+            "(b)"
+        ),
+        other => panic!("(b) : obtenu {other:?}"),
+    }
+    assert_eq!(
+        settings_row_state(&pool, c).await,
+        avant,
+        "(b) rien d'écrit"
+    );
+    assert!(matches!(
+        finalize_settings(&pool, c).await,
+        Err(DbError::InactiveOrInvalidAccounts)
+    ));
+
+    // (c) compte de rôle débiteurs lié à un compte bancaire, ligne vierge.
+    let c = company_with_pme_chart(&pool, "Débiteurs lié").await;
+    company_invoice_settings::get_or_create_default(&pool, c)
+        .await
+        .unwrap();
+    let receivable = account_id_by_number(&pool, c, "1100").await;
+    link_new_bank_account(&pool, c, receivable).await;
+    let avant = settings_row_state(&pool, c).await;
+    match complete_defaults(&pool, c).await {
+        Err(DbError::DefaultInvoiceAccountsUnavailable(v)) => assert_eq!(
+            v,
+            unavailable(&[(
+                Receivable,
+                Cause::RoleAccountLinkedToBankAccount {
+                    account_number: "1100".into(),
+                    bank_label: "Banque Y".into(),
+                }
+            )]),
+            "(c)"
+        ),
+        other => panic!("(c) : obtenu {other:?}"),
+    }
+    assert_eq!(
+        settings_row_state(&pool, c).await,
+        avant,
+        "(c) rien d'écrit"
+    );
+    assert!(matches!(
+        finalize_settings(&pool, c).await,
+        Err(DbError::InactiveOrInvalidAccounts)
+    ));
+
+    // (e) débiteurs et produit vides, aucun des deux rôles : deux causes, dans
+    // l'ordre (tue M5b).
+    let c = company_with_pme_chart(&pool, "Deux rôles").await;
+    company_invoice_settings::get_or_create_default(&pool, c)
+        .await
+        .unwrap();
+    sqlx::query(
+        "UPDATE accounts SET role = NULL WHERE company_id = ? AND number IN ('1100', '3000')",
+    )
+    .bind(c)
+    .execute(&pool)
+    .await
+    .unwrap();
+    let avant = settings_row_state(&pool, c).await;
+    match complete_defaults(&pool, c).await {
+        Err(DbError::DefaultInvoiceAccountsUnavailable(v)) => assert_eq!(
+            v,
+            unavailable(&[
+                (Receivable, Cause::NoRoleAccount),
+                (Revenue, Cause::NoRoleAccount)
+            ]),
+            "(e)"
+        ),
+        other => panic!("(e) : obtenu {other:?}"),
+    }
+    assert_eq!(
+        settings_row_state(&pool, c).await,
+        avant,
+        "(e) rien d'écrit"
+    );
+}
+
+/// T-D4f (AC4 f) — un sous-compte créé sous le compte de rôle **débiteurs**, puis
+/// sous celui du **produit** : refus, cause « non imputable » (tue M11 sur les
+/// deux obligatoires).
+#[sqlx::test(migrations = "./test-schema")]
+async fn finalize_refuses_a_mandatory_role_account_that_is_not_postable(pool: MySqlPool) {
+    use kesh_db::entities::AccountType;
+    use kesh_db::errors::DbError;
+    use kesh_db::errors::DefaultInvoiceAccountCause as Cause;
+    use kesh_db::errors::DefaultInvoiceSetting::{Receivable, Revenue};
+
+    for (setting, parent, child, account_type) in [
+        (Receivable, "1100", "1101", AccountType::Asset),
+        (Revenue, "3000", "3001", AccountType::Revenue),
+    ] {
+        let c = company_with_pme_chart(&pool, &format!("Scindé {parent}")).await;
+        let user_id = create_admin_user(&pool, c).await;
+        create_sub_account(&pool, c, user_id, parent, child, account_type).await;
+        match complete_defaults(&pool, c).await {
+            Err(DbError::DefaultInvoiceAccountsUnavailable(v)) => assert_eq!(
+                v,
+                unavailable(&[(
+                    setting,
+                    Cause::RoleAccountNotPostable {
+                        account_number: parent.into()
+                    }
+                )]),
+                "{parent}"
+            ),
+            other => panic!("{parent} : obtenu {other:?}"),
+        }
+        assert_eq!(
+            settings_row_state(&pool, c).await,
+            None,
+            "{parent} : rien d'écrit"
+        );
+    }
+}
+
+/// T-D4s (V3-1) — la lecture de `postable` du candidat est **verrouillante** : la
+/// transaction ouvre d'abord un cliché (lecture non verrouillante des comptes),
+/// un sous-compte est ensuite créé et validé sous le compte de rôle débiteurs, et
+/// la fonction, appelée dans la même transaction, le voit non imputable. Une
+/// lecture simple lirait le cliché, où il l'était encore (tue M14).
+#[sqlx::test(migrations = "./test-schema")]
+async fn finalize_reads_the_candidates_postable_flag_under_lock(pool: MySqlPool) {
+    use kesh_db::errors::DbError;
+    use kesh_db::errors::DefaultInvoiceAccountCause as Cause;
+    use kesh_db::errors::DefaultInvoiceSetting::Receivable;
+
+    let c = company_with_pme_chart(&pool, "Cliché SA").await;
+    let user_id = create_admin_user(&pool, c).await;
+    let mut tx = pool.begin().await.unwrap();
+    let postable_in_snapshot: bool = sqlx::query_scalar(
+        "SELECT postable FROM accounts WHERE company_id = ? AND number = '1100'",
+    )
+    .bind(c)
+    .fetch_one(&mut *tx)
+    .await
+    .unwrap();
+    assert!(
+        postable_in_snapshot,
+        "montage : cliché pris, 1100 imputable"
+    );
+
+    create_sub_account(
+        &pool,
+        c,
+        user_id,
+        "1100",
+        "1101",
+        kesh_db::entities::AccountType::Asset,
+    )
+    .await;
+
+    let res = company_invoice_settings::complete_default_accounts_in_tx(&mut tx, c).await;
+    tx.rollback().await.unwrap();
+    match res {
+        Err(DbError::DefaultInvoiceAccountsUnavailable(v)) => assert_eq!(
+            v,
+            unavailable(&[(
+                Receivable,
+                Cause::RoleAccountNotPostable {
+                    account_number: "1100".into()
+                }
+            )])
+        ),
+        other => panic!("obtenu {other:?}"),
+    }
+}
+
+/// T-D5 (AC5) — un appel répété sur une ligne complétée rend « inchangé » :
+/// aucune écriture, `version` et `updated_at` égaux (tue M13).
+#[sqlx::test(migrations = "./test-schema")]
+async fn finalize_is_idempotent_on_a_completed_row(pool: MySqlPool) {
+    use company_invoice_settings::DefaultAccountsOutcome;
+
+    let c = company_with_pme_chart(&pool, "Rejeu SA").await;
+    company_invoice_settings::get_or_create_default(&pool, c)
+        .await
+        .unwrap();
+    let first = complete_defaults(&pool, c).await.expect("complément");
+    let DefaultAccountsOutcome::Completed { before, after } = &first else {
+        panic!("premier appel : complément attendu, obtenu {first:?}");
+    };
+    assert_eq!(designated_ids(before), [None; 10]);
+    assert_eq!(after.version, 2);
+
+    let again = complete_defaults(&pool, c).await.expect("rejeu");
+    let DefaultAccountsOutcome::Unchanged(s) = &again else {
+        panic!("rejeu : « inchangé » attendu, obtenu {again:?}");
+    };
+    assert_eq!(designated_ids(s), designated_ids(after));
+    assert_eq!(s.version, after.version, "aucun UPDATE");
+    assert_eq!(s.updated_at, after.updated_at, "aucun UPDATE");
+}

@@ -331,6 +331,7 @@ journal-entry-modified = Modificata
 journal-entry-history = Cronologia
 error-fiscal-year-closed-generic = L'esercizio contabile è chiuso — nessuna scrittura può essere aggiunta, modificata o eliminata (CO art. 957-964).
 error-inactive-accounts = Uno o più conti sono archiviati o non validi.
+error-default-invoice-accounts-unavailable = I conti predefiniti della fatturazione non sono utilizzabili: completatene la designazione in Amministrazione → Fatturazione.
 error-account-not-postable = { $count ->
     [one] Il conto { $numbers } non è registrabile (conto di raggruppamento, di risultato o di chiusura): scegliere un conto registrabile.
    *[other] I conti { $numbers } non sono registrabili (conti di raggruppamento, di risultato o di chiusura): scegli conti registrabili.
