@@ -1089,7 +1089,7 @@ development_status:
   36-11c-acteur-fournisseurs-paiements: backlog  # refs #431 ; phase 2 ; lot 3 ; après 36-11b
   36-11d-acteur-reglages-restauration: backlog  # #431 (fermée par la PR qui porte ce lot), #1132 ; phase 2 ; lot 4, table finale de la garde et documents (V1-1 à V1-3 de la P1 de la 35-8b)
   36-12-qr-facture-separation: split  # #944 ; phase 2 ; découpée le 2026-11-15 à la validation P1 (V1-7, C-36-12-8) en 36-12a et 36-12b
-  36-12a-qr-facture-lignes-ciseaux: in-progress  # refs #944, refs #12 ; lignes de séparation et ciseaux (§ 3.7), seule draw_separator change
+  36-12a-qr-facture-lignes-ciseaux: review  # refs #944, refs #12 ; lignes de séparation et ciseaux (§ 3.7), seule draw_separator change
   36-12b-qr-facture-grille-largeurs: backlog  # #944 (closes à la PR de release) ; grille, Payable by, largeurs, cascade ; part de 36-12a fusionnée
   36-13-pieces-justificatives: superseded  # 2026-11-15 sortie de l'Epic 36 sur décision de Guy (D3) : #235 devient l'Epic 41, lancée dès la fin de l'Epic 36, avant la clôture de l'exercice 2026. — #235 (P1) ; phase 2 ; avant la clôture de l'exercice 2026 (Q5) ; migration probable, découpage à sa fiche
   36-15-compte-analytique: backlog  # CR #1161 ; phase 2 ; ajoutée le 2026-11-14 sur décision de Guy (C-e360-15) ; vocabulaire visible seulement, sans migration ; passe avant la story de solde

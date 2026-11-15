@@ -1,6 +1,6 @@
 # Story 36-12a : QR-facture — les deux lignes de séparation, leurs ciseaux, et le point de dépôt aligné à droite (SIX § 3.7, #944)
 
-Status: in-progress
+Status: review
 
 *Fiche rédigée le 2026-11-15 (Opus 5.5) par le découpage de la fiche `36-12-qr-facture-separation.md` (`split`), décidé
 par l'orchestrateur à la remédiation de la passe 1 de validation (V1-7, `kesh-gate-logs/e36-12/validation-p1.md`), puis
@@ -339,11 +339,126 @@ d'origine `36-12-qr-facture-separation.md` (`split`) ; validations `kesh-gate-lo
 
 ### Agent Model Used
 
+Opus 5.5 (`claude-opus-5-5`), 2026-11-15, en autonomie (prompts `e36-dev.md` et `e36-p2-commun.md`).
+
 ### Debug Log References
+
+Journaux hors dépôt, sous `/home/gcorbaz/devel/kesh-gate-logs/e36-12/` :
+- `rouges-12a.log` — les sept tests de comportement sur le rendu de `fed34a9c7` (worktree à `df7977d17`, tests non
+  encore commités) : 7 rouges, chacun avec son message (« aucun trait sur x = 62 », « pas de ciseau horizontal »,
+  « Td.x = 47.000008, attendu 42.3 »…).
+- `mut/M1.log` à `mut/M9.log`, `mut/muter.py`, `mut/jouer.sh` — mutations (ci-dessous).
+- `engendrer-largeurs.py` (sha256 `3c2c6969…`) et sa sortie `largeurs-tables.rs.txt` (437 lignes, sha256 `08e4ca80…`) ;
+  AFM lus : `phvr8a.afm` sha256 `2adf0a69189db6cf3d10120adbd5f62689835040f1beba1e689cff44d4e2eabe`, `phvb8a.afm` sha256
+  `340c783381e32fbbc034225b73eb64d38564a25f93d28697790dd3da1f9752f3`. Commande : `python3 -I engendrer-largeurs.py`.
+  La table de `largeurs.rs` a été **recopiée** de cette sortie par l'outil Write, puis comparée à elle par `diff` (lignes
+  vides et commentaires ôtés) : **identique** (`largeurs-tables-transcrit.txt`), avant et après `cargo fmt`
+  (`#[rustfmt::skip]`).
+- `comparaison-avant-apres.log` — contenu des PDF ordinaires fr et en, avant (`captures/avant`, code de `fed34a9c7`) et
+  après : **1742 rectangles `re` identiques** (QR et croix) dans chaque langue ; tous les `Tf`, `Td`, `Tj` identiques,
+  **sauf le seul `Td` du point de dépôt** (133,228 pt = 47 mm → 119,905 pt = 42,30 mm en fr, 111,565 pt = 39,36 mm en
+  en).
+- `t4-pdfium.log` — AC11.
+- `test-fast-ci-review.log`, `gate-ci-review.log` — gates du passage en revue.
+- `captures/` — AC13.
 
 ### Completion Notes List
 
+**Ce qui est fait.** Tâches 0 à 8 de la fiche. `draw_separator` dessine l'horizontale (y = 105) et la verticale neuve
+(x = 62, de 0 à 105), chacune interrompue sous son ciseau, le pointillé repartant à 0,25 mm de la boîte du symbole,
+ses traits de 2 mm tous les 4 mm partant de ces deux points (C-36-12a-1). `dessiner_ciseaux` : deux anneaux (quatre
+Bézier `c` chacun, `s`) et deux lames (triangles fermés `m l l s`), au trait seul, `RG` noir, épaisseur 0,3 pt.
+Boîtes : horizontal x ∈ [46,15 ; 50], y ∈ [103,65 ; 106,35] (centre (48,075 ; 105)) ; vertical x ∈ [60,65 ; 63,35],
+y ∈ [99,5 ; 103,35] (centre (62 ; 101,425)) — grande dimension 3,85 mm, petite 2,7 mm. Le point de dépôt est posé à
+`RECU_BORD_DROIT − largeur_mm(libellé, 6, gras)`, `RECU_BORD_DROIT` = 57. Table des largeurs : `WINANSI` (216 caractères)
+et `CHASSES` (216 noms, maigre et gras), C-36-12a-2.
+
+**Les AC.**
+- AC1 à AC7 : tests `la_ligne_horizontale_couvre_la_largeur`, `une_ligne_verticale_separe_le_recepisse`,
+  `des_ciseaux_sur_chaque_ligne`, `les_ciseaux_ne_touchent_rien`, `le_point_de_depot_est_aligne_a_droite` (quatre
+  langues, libellés lus aux `messages.ftl` par `include_str!`, et repli anglais),
+  `la_ligne_verticale_ne_traverse_aucun_texte` (fr, en ; ordinaire, rue longue, sans référence),
+  `lignes_et_ciseaux_au_trait_noir`. Rouges à `fed34a9c7` : `rouges-12a.log`. `chaque_texte_s_imprime_en_noir` passe sans
+  modification.
+- AC8 : `largeurs::tests::table_des_largeurs_temoins` (témoins lus à l'AFM à la main), `table_couvre_les_sorties_imprimees`
+  (tout `c` de 0 à 0x2FFF admis par `est_caractere_qr`, passé par `texte_imprime` ; `Ĳ` → `IJ`), plus
+  `table_triee_et_complete` et `largeur_en_millimetres` (8335 millièmes pour « Acceptance point » gras, 17,642 mm).
+- AC9 : `#[test]` de `kesh-qrbill`, `git show <ref>:<fichier> | /usr/bin/grep -c '#\[test\]'` aux deux bornes
+  (`origin/epic/36-0.18.0` → `HEAD` `c797e5761`) : `pdf.rs` 45 → 52 (+7), `largeurs.rs` 0 → 4, `generator.rs` 12,
+  `parser.rs` 12, `texte.rs` 6, `validation.rs` 29, `tests/golden_test.rs` 2, inchangés : 106 → 117. Aucun test existant
+  modifié : les lignes retirées du diff de `pdf.rs` sont toutes de production (doc-comment du module, `draw_separator`
+  d'origine, l'appel du point de dépôt). `git diff origin/epic/36-0.18.0 --stat -- crates docs` : `examples/
+  capture_qr_facture.rs` +174 (tâche 1), `src/largeurs.rs` +587, `src/lib.rs` +1, `src/pdf.rs` +836/−19 (production et
+  tests), `src/validation.rs` 1 ligne, `docs/manual/fr/user-manual.tex` 2 paragraphes. Hors la liste de l'AC9, la
+  production ajoute l'import `use crate::largeurs::largeur_mm;` et la constante `RECU_BORD_DROIT`, constantes de
+  l'appel du point de dépôt.
+- AC10 : `git diff origin/epic/36-0.18.0 --stat -- crates/kesh-api crates/kesh-db crates/kesh-i18n` vide ;
+  `invoice_frozen_pdf_e2e.rs` (29 tests) et `invoice_pdf_e2e.rs` (27) verts dans `test-fast-ci-review.log`
+  (`/usr/bin/grep -cE "PASS .*kesh-api::invoice_frozen_pdf_e2e"`, idem pour `invoice_pdf_e2e` ; aucun `FAIL`).
+- AC11 : `t4_pdfium_scans_synthetiques` rejoué avec la commande de `qr_decode.rs:913-914` (libpdfium présente sous
+  `kesh-gate-logs/pdfium-7920/lib`), au commit `55bf2232b` : **vert**, le témoin vectoriel (une QR-facture émise par
+  Kesh, donc avec la ligne verticale à 5 mm du QR) lu dès la première passe (`t4-pdfium.log`).
+- AC12 : `git grep -n "Deux lignes à découper" -- docs/manual/fr/user-manual.tex` → `:1302` ; `:1304` dit le PDF figé
+  d'avant la 0.18.0. **PDF du manuel non régénéré** (à l'intégration, comme la fiche le prévoit). Les gardes
+  `textes_coherents` (26) passent sur le `.tex` modifié.
+- AC13 : `captures/avant/` et `captures/apres/` (PDF et PNG à 150 dpi des trois fixtures, fr et en ; sections recadrées
+  `ordinaire-{fr,en}-section.png`), `captures/comparaison-{fr,en}.png` (avant, après, échantillon SIX Nr. 1, de haut en
+  bas), `captures/apres/zoom-ciseaux-deux-fr.png` (600 dpi). **Constaté à l'œil** : les deux symboles se lisent comme
+  des ciseaux (anneaux et lames croisées) ; le point de dépôt finit au même bord que l'« Acceptance point » de
+  l'échantillon SIX, dégagé de la ligne ; rien d'autre ne bouge.
+
+**Mutations** (code commité avant, E5 ; restauration `git restore --worktree` puis `touch`, constatée au journal) :
+M1 → `une_ligne_verticale_separe_le_recepisse`, `la_ligne_verticale_ne_traverse_aucun_texte` ; M2 → les cinq tests des
+ciseaux et des lignes ; M3 → `la_ligne_horizontale_couvre_la_largeur` (trou 148,25 → 210) ; M4 →
+`des_ciseaux_sur_chaque_ligne`, `les_ciseaux_ne_touchent_rien` (boîte sur le QR) ; M5 → `chaque_texte_s_imprime_en_noir`,
+`lignes_et_ciseaux_au_trait_noir` (chemin peint par `f`) ; M6 → `des_ciseaux_sur_chaque_ligne`,
+`les_ciseaux_ne_touchent_rien` (sur « Récépissé ») ; M7 (rejouée au commit `55bf2232b`, après la réunion des écarts) →
+`le_point_de_depot_est_aligne_a_droite` en fr, de, en, it et au repli, `la_ligne_verticale_ne_traverse_aucun_texte` en
+fr et en anglais, trois fixtures chacun ; M8 (jouée au commit de la table `df7977d17`, table inchangée depuis) →
+`table_des_largeurs_temoins` ; M9 → `la_ligne_horizontale_couvre_la_largeur` (aucun trou). **Aucune survivante, aucune
+équivalente.**
+
+**Gates** (au commit `c797e5761` ; le dernier commit de code est `55bf2232b`, `c797e5761` n'ajoute que le manuel) :
+- en cours : `cargo fmt --all -- --check` vert ; `cargo clippy --workspace --all-targets -- -D warnings` vert (au commit
+  de la table, avec le `cfg_attr` de V3-8) ; `cargo clippy -p kesh-qrbill --all-targets -- -D warnings` vert après le
+  correctif ; `cargo nextest run -p kesh-qrbill` : 117/117.
+- passage en revue : base `kesh_e3612` recréée sur `kesh-mariadb-dev2:3307` (91 migrations, seed) ;
+  `scripts/test-fast.sh --ci` en voie 2 : **5463 passés, 13 ignorés, 0 échec** (`test-fast-ci-review.log`) ;
+  `scripts/gate-ci.sh kesh_ci_e3612` en voie 1 (base recréée par le script) : **exit 0, 5470 passés, 0 échec,
+  17 ignorés**, 228 binaires (`gate-ci-review.log`, somme des lignes `test result:`).
+- **E2E complet : non lancé** (à la clôture, comme le veut `e35-dev-commun.md`) ; frontend non touché.
+
+**Factures réelles de Guy.** Aucune lue (`~/kesh/` interdit). Ce qui établit qu'elles ne changent pas : le PDF figé est
+relu sur disque et jamais régénéré (`crates/kesh-api/src/routes/issued_invoice_pdf.rs:9-16`), aucune ligne de
+`kesh-api` ne change (AC10), et `invoice_frozen_pdf_e2e` est vert. Le code QR d'une facture nouvellement rendue ne change
+pas : 1742 `re` identiques (`comparaison-avant-apres.log`), aucune donnée du QR ne passe par le code neuf.
+
+**Limite connue (jusqu'à la 36-12b).** Une ligne d'adresse du récépissé faite de capitales très larges peut dépasser
+x = 57, et même 62 (27 `W` finissent à 76,9) ; la ligne verticale la traverse alors. Écrite au manuel (`:1302`).
+
+**Écarts.**
+- La table de `largeurs.rs` vient d'un script (engendrée), recopiée par Write et vérifiée par `diff` : le script ne
+  touche pas au dépôt. Les mutations utilisent un script de remplacement (`mut/muter.py`), permis pour elles.
+- `textes_mesures` (helper de test) a été corrigé au commit du correctif : `Document::get_page_fonts` ne suit pas les
+  ressources indirectes de printpdf ; le helper les déréférence. Les rouges de `rouges-12a.log` n'en dépendaient pas
+  (chacun échouait avant de l'appeler).
+- AC5 et AC6 réunissent leurs écarts avant d'échouer (commit `55bf2232b`), pour qu'un rouge nomme chaque langue.
+- La fiche prévoyait la table « commitée seule » avec un `cfg_attr` (V3-8) : fait ; le `cfg_attr` est retiré au
+  correctif.
+
+**Issues à ouvrir** : aucune. #12 en `refs` (puce « glyphe ✂ » réalisée par un tracé ; les autres à #943), #944 en
+`refs` (`closes` à la 36-12b).
+
 ### File List
+
+- `crates/kesh-qrbill/src/pdf.rs` (modifié)
+- `crates/kesh-qrbill/src/largeurs.rs` (neuf)
+- `crates/kesh-qrbill/src/lib.rs` (modifié)
+- `crates/kesh-qrbill/src/validation.rs` (modifié, une ligne)
+- `crates/kesh-qrbill/examples/capture_qr_facture.rs` (neuf)
+- `docs/manual/fr/user-manual.tex` (modifié)
+- `_bmad-output/implementation-artifacts/36-12a-qr-facture-lignes-ciseaux.md`, `…-review-prompt-p1.md` (neuf),
+  `36-12b-qr-facture-grille-largeurs.md` (annotée, V3-7), `e36-choix-autonomes-36-12.md`, `sprint-status.yaml`
 
 ## Change Log
 
@@ -394,3 +509,8 @@ d'origine `36-12-qr-facture-separation.md` (`split`) ; validations `kesh-gate-lo
   - **V3-7** : `36-12b-qr-facture-grille-largeurs.md:37` « **ancré à gauche** à x = 47 » → annoté « lecture d'avant la
     36-12a » ; sa tâche 0 renvoie au module livré.
   - **V3-8** : tâche 2 — `#[cfg_attr(not(test), allow(dead_code))]` sur la déclaration du module jusqu'à la tâche 4.
+- 2026-11-15 — **Développement** (Opus 5.5), commits `922c58e87` (exemple de capture), `df7977d17` (table), `bdab5545f`
+  (tests rouges), `f0d22d37e` (correctif), `55bf2232b` (tests réunissant leurs écarts ; **dernier commit de code**),
+  `c797e5761` (manuel). Rouges, mutations M1 à M9 (toutes tuées), `t4_pdfium` vert, `test-fast --ci` 5463/0/13 et
+  `gate-ci` 5470/0/17 au commit `c797e5761` : Dev Agent Record. E2E complet : à la clôture. Choix C-36-12a-1, -2.
+  `Status: review` ; prompt de la revue P1 : `36-12a-qr-facture-lignes-ciseaux-review-prompt-p1.md`.
