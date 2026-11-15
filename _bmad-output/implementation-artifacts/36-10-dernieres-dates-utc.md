@@ -231,11 +231,14 @@ porté par une variable au nom neutre.
   rougirait). `fin(j) = debut(j + 1) − 1 ms`. **Précondition** écrite au doc-comment des deux fonctions, comme celle de
   `push_where_clauses` (`audit_log.rs:202-205`) : `jour` dans `[1000-01-01, 9999-12-31]`, plage que la route garantit
   (`routes/audit_log.rs:226`, `if !annee_stockable(date) {`) ; hors d'elle (`NaiveDate::MIN`, `MAX`), le résultat n'est pas
-  défini. Dans ce domaine, aucun `expect`, aucune panique. Le jour de 23 heures (fin mars) et celui de
+  défini. Dans ce domaine, aucun `expect`, aucune panique. Le doc-comment dit aussi que la base de fuseaux de
+  `chrono-tz` 0.10.4 ne modélise l'heure d'été de Zurich que jusqu'en 2099 (dernière transition, octobre 2099) : au-delà,
+  `jour_suisse` et ses inverses comptent en CET, d'accord entre eux, sans effet sur des données réelles. Le jour de 23 heures (fin mars) et celui de
   25 heures (fin octobre) sortent juste par construction. — *Écartée* : écrire les bornes `+01:00`/`+02:00` à la main dans `kesh-db` : un
   second calcul du fuseau, qui dériverait de `jour_suisse` (c'est le mélange de deux horloges que `jour_suisse` a fermé).
-- **D2 — Le journal d'audit filtre en jours de Zurich, dans `push_where_clauses` seul** (C-36-10-2). `date_from` borne à
-  `created_at >= debut_du_jour_suisse(date_from)`, `date_to` à `created_at <= fin_du_jour_suisse(date_to)`, liés en
+- **D2 — Le journal d'audit filtre en jours de Zurich, dans `push_where_clauses` seul, par `bornes_du_filtre` (D3,
+  plafond compris)** (C-36-10-2). `date_from` borne à
+  `created_at >= debut_du_jour_suisse(date_from)` (plafonné, D3), `date_to` à `created_at <= fin_du_jour_suisse(date_to)`, liés en
   `NaiveDateTime` UTC (`.naive_utc()`) ; `AuditLogListQuery` garde ses `NaiveDate`, la route et l'écran n'envoient rien de
   neuf ; liste et export restent une seule clause (doc-comment de `list_for_export`, `:311-313`). Les bornes restent
   **inclusives à la milliseconde**, sans `<` sur le lendemain (raison écrite `:211-215`). — *Écartée* : convertir dans la
@@ -286,8 +289,8 @@ porté par une variable au nom neutre.
   tests`), chaque entrée avec son motif. Sondes positives (le texte ci-dessus, une forme coupée sur deux lignes, une
   `DATE(x)` ajoutée à un fichier propre) ; angles morts écrits au doc-comment
   (`date(` minuscule, `CAST(… AS DATE)`, un jour tiré par `format`, des bornes `and_hms*` — la classe de #1147, que seul le
-  test de `bornes_du_filtre` tient —, et le SQL hors `.rs` : les `.sql` de `crates/kesh-db/src/post_restore/` et la
-  migration que `post_restore.rs:378` inclut, exécutés à l'import). — *Écartée* : ne rien étendre et écrire l'angle mort : #1053 est née de ce trou, et
+  test de `bornes_du_filtre` tient —, et le SQL hors `.rs` : les `.sql` de `crates/kesh-db/src/post_restore/` et les
+  deux migrations que `post_restore.rs:303` et `:378` incluent, exécutés à l'import). — *Écartée* : ne rien étendre et écrire l'angle mort : #1053 est née de ce trou, et
   un `DATE(` SQL est un motif d'une ligne.
 - **D6 — L'écran et les catalogues cessent de dire « jour UTC »** (C-36-10-5). Libellés `Du` / `Au`, `Von` / `Bis`,
   `From` / `To`, `Dal` / `Al` (les quatre `messages.ftl` et les deux replis de `+page.svelte`, égaux à la valeur fr-CH) ;
@@ -308,7 +311,7 @@ porté par une variable au nom neutre.
   et l'entrée de la garde frontend (`local-date-guard.test.ts:272-275`) disparaît, les deux sondes `:346-373` se réécrivant
   sur une autre entrée ou sur un texte synthétique ; les trois mentions du compte de l'allowlist des specs
   (`local-date-guard.test.ts:29`, « close de trois entrées », `:263`, « Les trois sites admis », `:318`, « les trois sites
-  de l’allowlist ») passent à « deux ». **Elle ne joue la nuit que lancée entre 22 h ou 23 h et minuit UTC** ;
+  de l’allowlist ») passent à « deux », de même que `docs/testing.md:119` (« n'y admet que trois sites, nommés »). **Elle ne joue la nuit que lancée entre 22 h ou 23 h et minuit UTC** ;
   c'est écrit dans la spec et ici.
 
 ## Critères d'acceptation
@@ -362,8 +365,8 @@ porté par une variable au nom neutre.
    jetable, `kesh-gate-logs/e36-10/captures/`) ; `audit-log.spec.ts` pas 6 sur `todayInZurich()`, importé de
    `./helpers/api-fixtures` (`:8`), l'entrée
    `audit-log.spec.ts` de `ALLOWLIST_SPECS` retirée, ses deux sondes réécrites et toujours rouges sur leur cas, les
-   mentions « trois » de `local-date-guard.test.ts:29`, `:263`, `:318` passées à « deux » (valeur recomptée à
-   l'intégration avec la 36-7a, Fichiers communs) ;
+   mentions « trois » de `local-date-guard.test.ts:29`, `:263`, `:318` et de `docs/testing.md:119` passées à « deux »
+   (valeur recomptée à l'intégration avec la 36-7a, Fichiers communs) ;
    `npm run check`, `lint-i18n-ownership`, `test:unit` et `build` verts.
 10. **AC10 — Docs** : le manuel ne dit plus que les filtres du journal sont en jours UTC ni que la fenêtre compte du jour
     UTC du dernier rappel (sites de la Tâche 5) ; il dit que les **heures** du tableau, du détail et du CSV restent celles
@@ -417,8 +420,8 @@ réintroduit dans une chaîne SQL de `src` → AC8. Une mutation équivalente se
 - [ ] **D4** : proposition, acceptation, doc-comments de `reconciliation.rs` (module `:11-15`, `:116-125`, `:195-229`,
       `:251-258`, `:559-569`, `:593-597`, `:718-721`) ; `/usr/bin/grep -n "UTC\|DATE(" ` sur le fichier, sortie au Change Log.
 - [ ] **D5** : famille de la garde, sondes, angles morts — dont les `.sql` de `crates/kesh-db/src/post_restore/` (quatre
-      fichiers, `git ls-files 'crates/*/src/*' | /usr/bin/grep -v "\.rs$"`) et celui que `post_restore.rs:378` inclut depuis
-      `../migrations/` : du SQL exécuté à l'import, que la garde ne lit pas (elle ne balaie que les `.rs`) ; aucun ne
+      fichiers, `git ls-files 'crates/*/src/*' | /usr/bin/grep -v "\.rs$"`) et les deux que `post_restore.rs:303` et `:378`
+      incluent depuis `../migrations/` : du SQL exécuté à l'import, que la garde ne lit pas (elle ne balaie que les `.rs`) ; aucun ne
       contient `DATE(` aujourd'hui (`/usr/bin/grep -nP "\bDATE\s*\(" crates/kesh-db/src/post_restore/*.sql` vide).
 - [ ] **D6, D7** : quatre `messages.ftl` (à côté du bloc `audit-log-filter-*`, jamais en fin de fichier), `+page.svelte`,
       `audit-log.types.ts`, `audit-log.spec.ts` (**ajouter `todayInZurich` à l'import** de `./helpers/api-fixtures`,
@@ -430,7 +433,8 @@ réintroduit dans une chaîne SQL de `src` → AC8. Une mutation équivalente se
       dates filtrent sur des jours UTC » devient : les dates filtrent sur des jours de Zurich, comme le tableau qui affiche
       l'heure du poste), `:4039-4041` (l'export : heures en UTC, filtres en jours de Zurich) ; `admin-manual.tex:2558`
       (retirer « que ses filtres et son export lisent encore en jours UTC » et la phrase de #1053, ajouter « depuis la
-      0.18.0 »), `:3633` (« les dates filtrent sur des jours UTC ») ; `docs/api-external.md:681`. `git grep -n -i "jour UTC\|jours
+      0.18.0 »), `:3633` (« les dates filtrent sur des jours UTC ») ; `docs/api-external.md:681` ; `docs/testing.md:119`
+      (« trois sites » → « deux », D7). `git grep -n -i "jour UTC\|jours
       UTC\|UTC-Tag\|UTC day\|giorno UTC\|#1053\|\\\\#1053\|1147" -- docs/ crates/kesh-i18n frontend/src frontend/tests` à
       la fin, sortie au Change Log (le README et le CHANGELOG de la 0.17.7, publiés, ne se réécrivent pas).
 - [ ] **Gates** (`e35-dev-commun.md` § *Quels gates, quand* ; voie 2) — **`kesh-db` est touché** : gate complet en cours
@@ -482,9 +486,9 @@ l'intégration : `crates/kesh-db/src/repositories/reconciliation.rs` et `kesh-ap
 de l'horloge ; si la 36-7 les touche, hunks distincts) ; `messages.ftl` ×4 et `docs/manual/fr/user-manual.tex` avec la
 **36-15** (« compte analytique ») et la **36-17** — paragraphes et blocs distincts (`audit-log-filter-*` ici) ;
 `date_du_jour_garde.rs` avec toute story qui ajoute un site de date (aucune annoncée).
-⚠️ `frontend/src/lib/shared/utils/local-date-guard.test.ts` avec la **36-7a**, parallèle : elle **ajoute** une entrée à
-l'allowlist des specs et fait passer les mentions de `:29`, `:263`, `:318` de « trois » à « quatre », quand celle-ci en
-**retire** une (« trois » → « deux ») ; après les deux fusions, la valeur juste est le nombre d'entrées réellement
+⚠️ `frontend/src/lib/shared/utils/local-date-guard.test.ts` et `docs/testing.md:119` avec la **36-7a**, parallèle : elle
+**ajoute** une entrée à l'allowlist des specs et fait passer les mentions de `:29`, `:263`, `:318` (et de
+`docs/testing.md:119`, « trois sites ») de « trois » à « quatre », quand celle-ci en **retire** une (« trois » → « deux ») ; après les deux fusions, la valeur juste est le nombre d'entrées réellement
 présentes (attendu : trois), **recompté à la source à l'intégration**, sans additionner les deux diffs (C-e350-18). `CHANGELOG.md` : aucun (C-e360-11).
 
 ### Ce qui doit rester vrai
