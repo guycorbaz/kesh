@@ -435,7 +435,7 @@ NFR-37-4-1 CSV identique octet pour octet sans compte en devise (AC-5) ; -2 JSON
 **37-5** — FR-37-5-1 aperçu, sans écriture, `blockers[]` limités à cinq codes, refus comme la passation pour le reste (AC-1, AC-4) ; -2 cours retenu par la société selon le genre de clôture (`day` : jour puis mois ; `month` : mois seul) (AC-1, AC-2, AC-7) ; -3 passation atomique, une écriture par compte, serveur recalcule, verrous (AC-2) ; -4 rejouable compte par compte, correction (AC-3) ; -5 gardes en deux temps, ordre des refus, bornes (AC-4) ; -6 action pour un exercice ouvert multi-devises, Comptable et Administrateur, écriture prévue par compte, bouton désactivé tant que `blockers[]` (AC-1, AC-4, AC-5, AC-6).
 NFR-37-5-1 RBAC, Consultation 403 (AC-5) ; -2 pas d'outil MCP d'aperçu (AC-5) ; -3 audit `fx_revaluation.posted` et registres (AC-2) ; -4 exactitude CHF = round(devise × cours), cas de signe, recette par l'API seule (AC-1, AC-7) ; -5 aucune récupération de cours par le serveur, aucun réseau en test (AC-1, AC-7) ; -6 manuel (AC-8).
 
-**Total** : 60 FR et 42 NFR (recomptés aux fiches le 2026-11-15 après la validation ciblée ; 47 et 37 à la rédaction).
+**Total** : 61 FR et 42 NFR (recomptés aux fiches le 2026-11-15 après la validation ciblée P2 ; 60 et 42 après la P1 ; 47 et 37 à la rédaction).
 
 ## Règles de cet epic
 
