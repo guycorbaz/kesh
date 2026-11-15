@@ -1393,10 +1393,13 @@ pub async fn cancel_invoice_settlement_handler(
     // Story 35-5a0 — la date du jour, lue une fois : bloqueur et
     // contre-passation la partagent, rejeux compris.
     let aujourd_hui = state.horloge.aujourd_hui();
+    // Story 36-4 (#1131) : l'acteur de la requête, clé d'API comprise — tiré
+    // une fois, hors de la fermeture de rejeu (`Acteur` est `Copy`).
+    let acteur = kesh_db::entities::audit_log::Acteur::from(&current_user);
     let done = kesh_db::retry::retry_on_deadlock("invoices::cancel_settlement", || {
         kesh_db::repositories::invoice_settlements_write::cancel_settlement(
             &state.pool,
-            current_user.user_id,
+            acteur,
             company.id,
             id,
             settlement_id,
