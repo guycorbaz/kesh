@@ -58,7 +58,10 @@ pour une release se découpe en plusieurs epics dès le kickoff. Une release peu
 
 **Un epic reste petit, en règle générale.** Un epic de correction ou d'amélioration se borne à ce qu'une release courte
 peut livrer ; seul l'ajout d'une fonctionnalité nouvelle peut justifier un epic plus important. Au kickoff, un epic qui
-paraît trop grand se découpe en plusieurs epics, chacun avec sa release. *Pourquoi* : un petit epic se termine vite, sa
+paraît trop grand se découpe en plusieurs epics, chacun avec sa release. **Borne** : au plus six stories, story de solde
+comprise, pour un epic de correction ou d'amélioration ; un epic de fonctionnalité nouvelle peut dépasser, si on le dit
+au kickoff. **Et surtout, pas de story trop longue ni trop complexe** : une story qui touche plus de cinq modules se
+découpe dès sa fiche (`CLAUDE.md` § *Règle de splitting préventif*). *Pourquoi* : un petit epic se termine vite, sa
 branche vieillit peu, et ses conflits avec le travail des autres restent petits.
 
 *(La v0.17.8 est la dernière release numérotée à l'ancienne, où chaque release montait le chiffre de correction. L'Epic 36,
