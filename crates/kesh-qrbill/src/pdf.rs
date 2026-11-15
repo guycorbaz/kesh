@@ -3697,6 +3697,8 @@ mod tests {
             39.36,
             17.64,
         ));
+        // Les écarts de toutes les langues, réunis : un rouge les nomme toutes.
+        let mut ecarts = Vec::new();
         for (langue, i18n, libelle, x_attendu, largeur) in cas {
             assert_eq!(
                 i18n.get("invoice-pdf-qr-acceptance-point"),
@@ -3707,14 +3709,18 @@ mod tests {
             let trouves: Vec<_> = textes.iter().filter(|(_, _, t)| t == libelle).collect();
             assert_eq!(trouves.len(), 1, "{langue} : {trouves:?}");
             let (x, y, _) = trouves[0];
-            assert!(
-                (x - x_attendu).abs() <= 0.05,
-                "{langue} : Td.x = {x}, attendu {x_attendu}"
-            );
-            assert!((y - 5.0).abs() < 0.01, "{langue} : ligne de base {y}");
+            if (x - x_attendu).abs() > 0.05 {
+                ecarts.push(format!("{langue} : Td.x = {x}, attendu {x_attendu}"));
+            }
+            if (y - 5.0).abs() >= 0.01 {
+                ecarts.push(format!("{langue} : ligne de base {y}"));
+            }
             let marge = RECEIPT_W - (x + largeur);
-            assert!(marge >= 4.5, "{langue} : marge de {marge} mm à la ligne");
+            if marge < 4.5 {
+                ecarts.push(format!("{langue} : marge de {marge} mm à la ligne"));
+            }
         }
+        assert!(ecarts.is_empty(), "{ecarts:#?}");
     }
 
     /// **AC6** (Story 36-12a) — la ligne verticale ne traverse aucun texte du récépissé, pour
@@ -3724,6 +3730,8 @@ mod tests {
     #[test]
     fn la_ligne_verticale_ne_traverse_aucun_texte() {
         let rue = "Chemin des Trois-Fontaines de la Vieille Tour du Haut-Plateau";
+        // Les textes traversés de toutes les langues et fixtures, réunis.
+        let mut traverses = Vec::new();
         for langue in ["fr", "en"] {
             let i18n = i18n_de(langue);
             for (nom, creancier, debiteur, sans_reference) in [
@@ -3773,16 +3781,18 @@ mod tests {
                             x1: RECEIPT_W,
                             y1: b,
                         };
-                        assert!(
-                            t.boite().disjointe(&trait_),
-                            "{langue}, {nom} : {:?} ({:?}) traversé par {a}..{b}",
-                            t.texte,
-                            t.boite()
-                        );
+                        if !t.boite().disjointe(&trait_) {
+                            traverses.push(format!(
+                                "{langue}, {nom} : {:?} ({:?}) traversé par {a}..{b}",
+                                t.texte,
+                                t.boite()
+                            ));
+                        }
                     }
                 }
             }
         }
+        assert!(traverses.is_empty(), "{traverses:#?}");
     }
 
     /// **AC7** (Story 36-12a) — lignes et ciseaux au trait seul (`S` ou `s`), en noir (`RG`
