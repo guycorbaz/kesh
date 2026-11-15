@@ -503,6 +503,17 @@ describe('les drapeaux se relâchent après un refus (revue P1, B2, E1)', () => 
 		unmount();
 	});
 
+	it('étape bancaire qui rend l’étape 8 (finalisée ailleurs) : la page terminée, sans finalisation (revue P2, LOW-1)', async () => {
+		await au(6);
+		vi.mocked(api.skipBank).mockResolvedValueOnce(etat(8));
+		const { container, unmount } = render(Page);
+		await fireEvent.click(screen.getByTestId('onboarding-skip-bank'));
+		await waitFor(() => expect(ecrans(container)).toEqual(['done']));
+		expect(api.finalize).not.toHaveBeenCalled();
+		expect(toastError).not.toHaveBeenCalled();
+		unmount();
+	});
+
 	it('double clic sur Configurer plus tard : un seul saut (B3, E3)', async () => {
 		await au(6);
 		const saut = enAttente<OnboardingState>();
