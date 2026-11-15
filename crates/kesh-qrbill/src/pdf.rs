@@ -6,7 +6,7 @@
 //! - Receipt column (62 mm wide) + Payment Part column (remaining width), separated by a
 //!   vertical line at x = 62 mm ; each of the two dotted lines bears a scissors symbol
 //!   drawn in strokes (SIX § 3.7, Story 36-12a). The "Acceptance point" heading is
-//!   right-aligned at x = 57 mm (§ 3.6.4), measured by [`crate::largeurs`].
+//!   right-aligned at x = 57 mm (§ 3.6.4), measured by the private module `largeurs`.
 //! - QR Code 46×46 mm with 7×7 mm white square + Swiss cross in the center.
 //!
 //! Uses `BuiltinFont::Helvetica` (PDF standard 14) — no external font embedding.
