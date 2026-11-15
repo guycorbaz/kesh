@@ -22,6 +22,12 @@
 //! (code 0 si les tableaux sont identiques). Sans argument, le script écrit les tableaux sur
 //! la sortie standard, à recopier ici entre les deux `#[rustfmt::skip]`.
 //!
+//! ⚠️ **À rejouer à chaque montée de `lopdf`** (revue P2 ciblée, LOW-2). [`largeur_mm`] compte
+//! zéro un caractère sans entrée parce que, avec `WIN_ANSI_ENCODING` de `lopdf` 0.31.0, « sans
+//! entrée » veut dire « sans octet », donc non imprimé. Aucun test de la CI ne relit la table
+//! contre la source de `lopdf` : une version qui ajouterait un octet laisserait la table
+//! incomplète, et la largeur sous-estimée en silence. Seul `--verifier` le révèle.
+//!
 //! Seul ajout à la main : **`Euro`**, absent des AFM de 1990, reçoit **556** en maigre et en
 //! gras, sa chasse dans les métriques Adobe actuelles d'Helvetica. Pour un caractère porté
 //! par plusieurs octets (U+2022 aux octets 0x7F, 0x81…), le premier octet est retenu, comme
@@ -495,7 +501,11 @@ fn chasse(c: char, gras: bool) -> Option<u16> {
 /// `lopdf` le retire à l'écriture (`lopdf-0.31.0/src/encodings/mod.rs:14-18`,
 /// `string_to_bytes`) : il ne s'imprime pas. Une espace insécable (U+00A0, que WinAnsi place à
 /// 0xA0 sous le nom `space`, déjà pris par 0x20) en est un exemple. La largeur rendue est donc
-/// celle du texte réellement imprimé (revue P1, B-2).
+/// celle du texte réellement imprimé (revue P1, B-2) — à la condition que `texte` soit
+/// **exactement la chaîne passée à `use_text`**, donc, pour un champ d'adresse ou de message,
+/// le résultat de [`crate::texte::texte_imprime`] : avant ce repli, une lettre hors WinAnsi
+/// (`Ĳ`, qui s'imprime `IJ`) compterait zéro et la largeur serait sous-estimée (revue P2
+/// ciblée, LOW-1).
 pub(crate) fn largeur_mm(texte: &str, taille: f32, gras: bool) -> f32 {
     let milliemes: u32 = texte
         .chars()
