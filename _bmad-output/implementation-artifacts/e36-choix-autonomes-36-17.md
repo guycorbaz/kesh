@@ -127,3 +127,42 @@ C-e360-18 (périmètre de #1187), qui fait foi. Option prudente et réversible �
   « coquille de l'application » ; la story touche **cinq** modules.
 - **Écartée** : changer la clé seule et garder l'ancien repli (repli différent de `fr-CH`).
 - **Réversible** : oui.
+
+### C-36-17-11 — L'écran de reprise reçoit la phrase et le bouton de la bannière en props (développement)
+
+- **Contexte** : D3 veut « même phrase et même clé que la bannière » (`incomplete-banner-text`, `incomplete-banner-cta`) ; mais
+  `npm run lint-i18n-ownership` refuse, dans `src/lib/features/onboarding/`, une clé d'un autre espace
+  (`front-lint-i18n-1.log` : « uses key "incomplete-banner-text" (incomplete namespace) from different feature »).
+- **Retenu** : `+page.svelte` (hors de `features/`) résout les deux clés et les passe à `OnboardingFinalizeScreen` (props
+  `resumeText`, `resumeCta`) : même clé, même phrase, lint vert.
+- **Écartées** : deux clés `onboarding-*` à la même valeur (deux textes à tenir égaux) ; une exception au lint (dette #30).
+- **Réversible** : oui.
+
+### C-36-17-12 — Identifiants de test ajoutés aux boutons des étapes 0 à 6 (développement)
+
+- **Contexte** : la spec E2E joue l'assistant à l'interface sans sélecteur de texte (fiche, E2E ; V3-6) ; les boutons de la
+  langue, du mode, du chemin, de la langue comptable, des coordonnées et de l'étape bancaire n'avaient pas d'identifiant.
+- **Retenu** : `data-testid` ajoutés (`onboarding-language-<code>`, `onboarding-mode-guided|expert`, `onboarding-path-demo|production`,
+  `onboarding-accounting-lang-<code>`, `onboarding-coordinates-submit`, `onboarding-skip-bank`, `onboarding-bank-save`), sans autre
+  changement du contenu de ces écrans (D8).
+- **Écartée** : sélecteurs `button:has-text(...)` (texte traduit).
+- **Réversible** : oui.
+
+### C-36-17-13 — L'état non lu se teste dans son propre fichier (développement)
+
+- **Contexte** : `_loaded` est un état de module qui ne repasse jamais à faux (`onboarding.svelte.ts:21`, `:48`) ; la matrice
+  d'AC7 (`onboarding-screens.test.ts`) lit l'état avant chaque cas.
+- **Retenu** : les cas « non chargé » d'AC7 et le *Réessayer* de D9 vivent dans `onboarding-unloaded.test.ts`, en **un seul**
+  `it` ordonné (Vitest isole les modules par fichier) ; la fiche les plaçait dans `onboarding-screens.test.ts` et
+  `onboarding-end.test.ts`.
+- **Écartées** : `vi.resetModules()` et imports dynamiques (deux copies du moteur Svelte entre la page et le rendu de
+  Testing Library) ; une remise à zéro du store réservée aux tests (code de production pour un test).
+- **Réversible** : oui.
+
+### C-36-17-14 — Allemand : « Lassen Sie diese Seite geöffnet » (développement)
+
+- **Contexte** : la garde `la_cloture_d_exercice_ne_parle_pas_comme_un_panneau` (`crates/kesh-i18n/src/loader.rs:1368`) réserve
+  « schliessen » nu aux panneaux ; « Schliessen Sie diese Seite nicht » l'a fait rougir (`nextest-cible-i18n-1.log`).
+- **Retenu** : « Lassen Sie diese Seite geöffnet. » ; la bannière garde la forme séparable admise
+  (« Schliessen Sie die Einrichtung ab, … »).
+- **Réversible** : oui.
