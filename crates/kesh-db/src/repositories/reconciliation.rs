@@ -66,6 +66,7 @@
 //! dans tx ouverte).
 
 use chrono::{NaiveDate, NaiveDateTime};
+use kesh_core::dates::borne_basse_stockable;
 use kesh_core::horloge::{debut_du_jour_suisse, jour_suisse};
 use rust_decimal::Decimal;
 use sqlx::MySql;
@@ -232,8 +233,8 @@ pub fn invoice_payment_anchor(
 /// Le prédicat `A >= e` de la proposition, sans calcul de jour en SQL
 /// (Story 36-10, #1053) : `max(X, R) >= e ⟺ X >= e OR R >= e`, et
 /// `jour_suisse(r) >= e ⟺ r >= debut_du_jour_suisse(e)`. **Deux `?`**, liés
-/// dans cet ordre : `e` (`earliest_anchor_date`), puis
-/// `debut_du_jour_suisse(e)` en `NaiveDateTime` UTC. Un `last_sent_at`
+/// dans cet ordre : les deux valeurs de [`liaisons_de_l_ancre`], seule écriture
+/// des liaisons, partagée par les deux lecteurs du prédicat. Un `last_sent_at`
 /// `NULL` (aucun rappel non annulé) rend le second terme faux : la facture
 /// n'est candidate que par son exigibilité, ce qui est la règle.
 /// **Prérequis : alias `i` sur `invoices` et la jointure
@@ -245,6 +246,23 @@ pub const INVOICE_PAYMENT_ANCHOR_PREDICATE_SQL: &str = concat!(
     invoice_exigibility_date_sql!(),
     " >= ? OR rmd.last_sent_at >= ?)"
 );
+
+/// Les deux valeurs que lie [`INVOICE_PAYMENT_ANCHOR_PREDICATE_SQL`], dans
+/// l'ordre de ses `?` : `e` (`earliest_anchor_date`), puis le premier instant
+/// du jour `e` à Zurich ([`debut_du_jour_suisse`]), en `NaiveDateTime` UTC,
+/// ramené au plancher de la plage de la base ([`borne_basse_stockable`], comme
+/// le filtre du journal d'audit). **Seule écriture des liaisons** : les deux
+/// lecteurs du prédicat ([`find_unpaid_invoices_for_window`],
+/// [`find_invoices_slightly_overpaid_for_window`]) l'appellent (Story 36-10,
+/// revue P1, E1-1), si bien que les tests de l'un tiennent l'autre. Le plancher
+/// n'agit que pour un paiement de janvier de l'an 1000 ; la borne `DATE` `e`
+/// d'à côté peut alors sortir de la plage, comme avant la story.
+pub(crate) fn liaisons_de_l_ancre(earliest_anchor_date: NaiveDate) -> (NaiveDate, NaiveDateTime) {
+    (
+        earliest_anchor_date,
+        borne_basse_stockable(debut_du_jour_suisse(earliest_anchor_date).naive_utc()),
+    )
+}
 
 /// `invoice_payment_anchor_join_sql!` en `const`, pour les requêtes
 /// composées par `format!`.
@@ -663,13 +681,14 @@ pub async fn find_unpaid_invoices_for_window<'e, E>(
 where
     E: sqlx::Executor<'e, Database = MySql>,
 {
+    let (e, debut_de_e) = liaisons_de_l_ancre(window.earliest_anchor_date);
     sqlx::query_as::<_, UnpaidInvoiceCandidate>(&unpaid_invoices_in_window_sql(
         "amount_due BETWEEN ? AND ? + ?",
     ))
     .bind(company_id)
     .bind(window.latest_invoice_date)
-    .bind(window.earliest_anchor_date)
-    .bind(debut_du_jour_suisse(window.earliest_anchor_date).naive_utc())
+    .bind(e)
+    .bind(debut_de_e)
     .bind(least_due_without_overpayment(tx_amount))
     .bind(tx_amount)
     .bind(underpayment_tolerance)
@@ -711,13 +730,14 @@ pub async fn find_invoices_slightly_overpaid_for_window<'e, E>(
 where
     E: sqlx::Executor<'e, Database = MySql>,
 {
+    let (e, debut_de_e) = liaisons_de_l_ancre(window.earliest_anchor_date);
     sqlx::query_as::<_, UnpaidInvoiceCandidate>(&unpaid_invoices_in_window_sql(
         "amount_due >= ? - ? AND amount_due < ?",
     ))
     .bind(company_id)
     .bind(window.latest_invoice_date)
-    .bind(window.earliest_anchor_date)
-    .bind(debut_du_jour_suisse(window.earliest_anchor_date).naive_utc())
+    .bind(e)
+    .bind(debut_de_e)
     .bind(tx_amount)
     .bind(overpayment_tolerance)
     .bind(least_due_without_overpayment(tx_amount))
@@ -730,9 +750,9 @@ where
 /// [`find_invoices_slightly_overpaid_for_window`] : filtres 1 à 3, ordre
 /// d'imputation, `LIMIT 50` ; seule la condition `having` sur le reste dû
 /// diffère. Les quatre premiers `?` sont `company_id`, `latest_invoice_date`,
-/// `earliest_anchor_date` et `debut_du_jour_suisse(earliest_anchor_date)` (les
-/// deux `?` de [`INVOICE_PAYMENT_ANCHOR_PREDICATE_SQL`], Story 36-10) ; ceux
-/// de `having` suivent.
+/// puis les deux valeurs de [`liaisons_de_l_ancre`] (les deux `?` de
+/// [`INVOICE_PAYMENT_ANCHOR_PREDICATE_SQL`], Story 36-10) ; ceux de `having`
+/// suivent.
 fn unpaid_invoices_in_window_sql(having: &str) -> String {
     // Alias `i` requis par les tables dérivées du reste dû (`… ON … = i.id`).
     // Elles n'exposent que `invoice_id` et leur agrégat : les colonnes de
@@ -1297,6 +1317,29 @@ mod tests {
 
     fn days(n: i64) -> chrono::Duration {
         chrono::Duration::days(n)
+    }
+
+    /// Story 36-10 (revue P1, E1-1, B1-6) — les deux liaisons du prédicat de
+    /// l'ancre, partagées par les deux lecteurs : `e`, puis le premier instant
+    /// du jour `e` à Zurich (été, hiver), ramené au plancher `1000-01-01
+    /// 00:00:00` pour un `e` de l'an 999. Attendus écrits en clair.
+    #[test]
+    fn liaisons_de_l_ancre_jour_de_zurich_et_plancher() {
+        let instant = |s: &str| {
+            NaiveDateTime::parse_from_str(s, "%Y-%m-%d %H:%M:%S").expect("instant de test valide")
+        };
+        assert_eq!(
+            liaisons_de_l_ancre(date(2026, 5, 16)),
+            (date(2026, 5, 16), instant("2026-05-15 22:00:00"))
+        );
+        assert_eq!(
+            liaisons_de_l_ancre(date(2026, 1, 16)),
+            (date(2026, 1, 16), instant("2026-01-15 23:00:00"))
+        );
+        assert_eq!(
+            liaisons_de_l_ancre(date(999, 12, 15)),
+            (date(999, 12, 15), instant("1000-01-01 00:00:00"))
+        );
     }
 
     fn tx(booking_date: NaiveDate, value_date: Option<NaiveDate>) -> BankTransaction {

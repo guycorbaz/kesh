@@ -1805,9 +1805,15 @@ async fn proposal_and_acceptance_agree_on_the_zurich_day_of_the_last_reminder(po
 
 /// Story 36-10 (#1053), AC7 — **un même rappel, un même jour** : posé à
 /// `2026-03-10T23:30Z` (0 h 30 le 11 mars à Zurich, CET), il ancre la
-/// réconciliation au **11 mars**, le jour que l'éligibilité au rappel suivant
-/// lui donne déjà (`dunning_eligibility`, `jour_suisse(lr.and_utc())`, depuis
-/// la Story 35-5b). Rouge sur le code d'avant : ancre au 10 mars, jour UTC.
+/// réconciliation au **11 mars**. Rouge sur le code d'avant : ancre au 10 mars,
+/// jour UTC. L'autre moitié d'AC7 — le même rappel, au même instant, compte du
+/// 11 mars pour le rappel suivant — est tenue par le lecteur réel de
+/// l'éligibilité, dans `tests/dunning_eligibility.rs`,
+/// `le_jour_du_dernier_rappel_est_celui_de_zurich` (Story 35-5b : rappel à
+/// `2026-03-10 23:30` UTC, niveau suivant dû le 18 mars et non le 17). Ce test-ci
+/// ne la rejoue pas : appeler `jour_suisse` ici ne prouverait rien (revue P1,
+/// B1-2), et le montage de l'éligibilité (niveaux de rappel, facture échue)
+/// n'est pas celui de ce fichier.
 #[sqlx::test(migrations = "./test-schema")]
 async fn a_reminder_sent_after_midnight_in_zurich_anchors_on_its_zurich_day(pool: MySqlPool) {
     let company_id = create_test_company(&pool, "Acme").await;
@@ -1836,11 +1842,6 @@ async fn a_reminder_sent_after_midnight_in_zurich_anchors_on_its_zurich_day(pool
             .await
             .unwrap(),
         Some(NaiveDate::from_ymd_opt(2026, 3, 11).unwrap())
-    );
-    // Le même jour que celui de l'éligibilité aux rappels.
-    assert_eq!(
-        kesh_core::horloge::jour_suisse(instant("2026-03-10 23:30:00").and_utc()),
-        NaiveDate::from_ymd_opt(2026, 3, 11).unwrap()
     );
 }
 

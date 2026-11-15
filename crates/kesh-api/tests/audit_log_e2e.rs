@@ -490,9 +490,9 @@ async fn la_borne_haute_9999_est_acceptee_et_rend_bien_l_entree(pool: MySqlPool)
 }
 
 /// AC4 (Story 36-10, D3) — `dateFrom=1000-01-01` répond 200 et rend une entrée
-/// posée à `1000-01-01 00:00:00.000` : la borne basse liée est plafonnée au
+/// posée à `1000-01-01 00:00:00.000` : la borne basse liée a pour plancher le
 /// premier instant de `DATETIME` (le début du jour à Zurich, en heure locale
-/// moyenne, tomberait au `0999-12-31`). Le plafond lui-même se constate sur la
+/// moyenne, tomberait au `0999-12-31`). Le plancher lui-même se constate sur la
 /// valeur calculée, `bornes_du_filtre_jours_de_zurich_et_plafond` (`kesh-db`).
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn la_borne_basse_1000_est_acceptee_et_rend_bien_l_entree(pool: MySqlPool) {

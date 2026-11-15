@@ -43,7 +43,8 @@
 //! d'une écriture, etc.). Si la transaction ROLLBACK, l'entrée d'audit
 //! disparaît avec le reste — garantie de cohérence.
 
-use chrono::{NaiveDate, NaiveDateTime, NaiveTime};
+use chrono::{NaiveDate, NaiveDateTime};
+use kesh_core::dates::borne_basse_stockable;
 use kesh_core::horloge::{debut_du_jour_suisse, fin_du_jour_suisse};
 use sqlx::mysql::MySqlPool;
 use sqlx::{MySql, QueryBuilder, Transaction};
@@ -196,24 +197,19 @@ pub struct AuditLogListResult {
     pub limit: i64,
 }
 
-/// Le premier instant de la plage documentée de `DATETIME` : la borne basse
-/// liée n'en descend jamais (Story 36-10, D3).
-const PREMIER_INSTANT_STOCKABLE: NaiveDateTime = match NaiveDate::from_ymd_opt(1000, 1, 1) {
-    Some(jour) => jour.and_time(NaiveTime::MIN),
-    None => panic!("1000-01-01 est une date valide"),
-};
-
 /// Les instants UTC qui bornent le filtre de dates du journal d'audit — **jours
 /// de Zurich** (Story 36-10, #1147) : `date_from` donne le premier instant du
 /// jour à Zurich ([`debut_du_jour_suisse`]), `date_to` le dernier
 /// ([`fin_du_jour_suisse`]), en `NaiveDateTime` UTC, la forme de `created_at`.
 /// `None` donne `None`. Fonction pure, appelée par [`push_where_clauses`] seul.
 ///
-/// ⛔ **La borne basse est plafonnée** à `1000-01-01 00:00:00.000` (D3) : le
-/// début du `1000-01-01` à Zurich, en heure locale moyenne (`+00:34:08`), tombe
-/// au `0999-12-31 23:25:52` UTC, hors de la plage documentée de `DATETIME`.
-/// Le plafond ne change aucun résultat (aucune ligne ne peut le précéder) ; il
-/// évite de dépendre de la tolérance du MariaDB de chaque installation.
+/// ⛔ **La borne basse a un plancher**, `1000-01-01 00:00:00.000` (D3,
+/// [`borne_basse_stockable`]) : le début du `1000-01-01` à Zurich, en heure
+/// locale moyenne (`+00:34:08`), tombe au `0999-12-31 23:25:52` UTC, hors de la
+/// plage documentée de `DATETIME`. Le plancher ne change aucun résultat (aucune
+/// ligne ne peut le précéder) ; il évite de dépendre de la tolérance du MariaDB
+/// de chaque installation. (Le test `bornes_du_filtre_jours_de_zurich_et_plafond`
+/// garde son nom de la fiche, où « plafond » désignait ce plancher.)
 ///
 /// ⚠️ **L'an 9999 perd sa dernière heure** : `date_to = 9999-12-31` borne à
 /// `9999-12-31 22:59:59.999` UTC ; une entrée posée après est, à Zurich, du
@@ -226,11 +222,8 @@ pub(crate) fn bornes_du_filtre(
     date_from: Option<NaiveDate>,
     date_to: Option<NaiveDate>,
 ) -> (Option<NaiveDateTime>, Option<NaiveDateTime>) {
-    let depuis = date_from.map(|jour| {
-        debut_du_jour_suisse(jour)
-            .naive_utc()
-            .max(PREMIER_INSTANT_STOCKABLE)
-    });
+    let depuis =
+        date_from.map(|jour| borne_basse_stockable(debut_du_jour_suisse(jour).naive_utc()));
     let jusqu_a = date_to.map(|jour| fin_du_jour_suisse(jour).naive_utc());
     (depuis, jusqu_a)
 }
@@ -242,9 +235,11 @@ pub(crate) fn bornes_du_filtre(
 /// après un `build_*` (cf. `journal_entries.rs:745-747`).
 ///
 /// ⛔ **Précondition** : `date_from` et `date_to` sont dans
-/// `[1000-01-01, 9999-12-31]`. Hors de cette plage, `push_bind` **panique**
-/// (`sqlx-core-0.8.6/src/query_builder.rs:158`), et aucun `CatchPanic`
-/// n'existe dans `kesh-api` : c'est la route qui valide et répond 400.
+/// `[1000-01-01, 9999-12-31]`. Hors de cette plage, le résultat n'est pas
+/// défini (une année hors de `u16` ferait paniquer `push_bind`,
+/// `sqlx-core-0.8.6/src/query_builder.rs:158` ; une année comme 999 s'encode
+/// sans erreur), et aucun `CatchPanic` n'existe dans `kesh-api` : c'est la route
+/// qui valide et répond 400.
 ///
 /// ⛔ **Filtre strict par société** : `company_id = ?`, sans `OR company_id IS
 /// NULL` (arbitrage du 2026-09-15). Une entrée sans société n'apparaît dans
@@ -676,9 +671,10 @@ mod tests {
 
     /// Story 36-10 (#1147), AC2 et AC4 — les bornes liées par le filtre, sur la
     /// valeur calculée, sans base : jours de Zurich (été, hiver, 9999) et
-    /// plafond de la borne basse au `1000-01-01`. Attendus écrits en clair.
-    /// C'est le seul test qui voie le plafond (M7) : l'entrée du `1000-01-01`
-    /// est rendue avec ou sans lui.
+    /// plancher de la borne basse au `1000-01-01` (le nom du test, venu de la
+    /// fiche, dit « plafond »). Attendus écrits en clair. C'est le seul test du
+    /// journal qui voie le plancher (M7) : l'entrée du `1000-01-01` est rendue
+    /// avec ou sans lui.
     #[test]
     fn bornes_du_filtre_jours_de_zurich_et_plafond() {
         let cas = [
@@ -703,7 +699,7 @@ mod tests {
         assert_eq!(
             bornes_du_filtre(Some(jour("1000-01-01")), None),
             (Some(instant("1000-01-01 00:00:00.000")), None),
-            "plafond de la borne basse"
+            "plancher de la borne basse"
         );
         assert_eq!(
             bornes_du_filtre(None, Some(jour("9999-12-31"))),

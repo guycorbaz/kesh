@@ -1,6 +1,6 @@
 //! Story 35-5a0 (#929, #1022, #907), D5 — **la garde de la date du jour**.
 //!
-//! Deux familles de contrôles, en **listes closes à égalité stricte par fichier** sur
+//! Quatre familles de contrôles, en **listes closes à égalité stricte par fichier** sur
 //! `crates/*/src/**/*.rs` et `crates/*/tests/**/*.rs` (ce fichier exclu nommément) : un fichier
 //! absent d'une liste doit compter 0, un compte qui diffère du nombre écrit, dans un sens ou dans
 //! l'autre, rougit.
@@ -25,9 +25,11 @@
 //!    `DATE(rmd.last_sent_at)` que la famille 1, qui ne lit que la date **du jour**, ne voyait pas.
 //!    Liste close à égalité stricte ; ses angles morts sont écrits à `JOUR_D_UN_INSTANT`.
 //!
-//! **Angle mort assumé** (inventaire) : un jour tiré d'une variable d'instant
-//! (`let n = Utc::now().naive_utc(); n.date()`) n'est pas relevé — `.date()` sur tout récepteur
-//! rendrait des centaines de lignes légitimes. Ne sont pas relevées non plus, faute d'usage au
+//! **Angle mort assumé** (inventaire, famille 1) : un jour tiré d'une variable d'instant
+//! (`let n = Utc::now().naive_utc(); n.date()`) n'est pas relevé par la famille 1 — `.date()` sur
+//! tout récepteur y relèverait aussi les tests (une douzaine au 2026-11-15) ; **dans
+//! `crates/*/src`, la famille 4 le relève** (Story 36-10), en liste close de trois sites. Il reste
+//! non relevé dans `crates/*/tests`. Ne sont pas relevées non plus, faute d'usage au
 //! dépôt le 2026-11-13 (revue P1, B3 : `git grep` sans résultat utile) : `Utc::now().date()`
 //! (API dépréciée), `NaiveDate::from(… naive_utc())`, et en SQL `CAST(NOW() AS DATE)`,
 //! `SYSDATE()`, `DATE_FORMAT(NOW(), …)`, une comparaison `… < NOW()` ; la première qui
@@ -547,9 +549,11 @@ const JOUR_D_UN_INSTANT_ADMIS: &[Exemption] = &[
         "kesh-api/src/routes/dunning_reminders.rs",
         1,
         "36-10 (D5)",
-        "`borner(body.sent_at.date(), \"sentAt\")?;` — contrôle de la seule plage d'années \
-         stockable (Story 33-4) : jour UTC et jour suisse donnent le même verdict, hors la nuit du \
-         31 décembre 9999",
+        "`borner(body.sent_at.date(), \"sentAt\")?;` — contrôle de la plage stockable de \
+         l'**instant** (Story 33-4) : c'est son jour UTC, celui de la colonne, qui compte. Le futur \
+         est refusé avant (`:267`) ; jour UTC et jour suisse ne divergent d'année que la nuit du \
+         31 décembre 999, où le jour UTC refuse (à juste titre : l'instant précède \
+         `1000-01-01 00:00` UTC) ce que le jour suisse admettrait (revue P1 de la 36-10, B1-4, E1-2)",
     ),
     (
         "kesh-api/src/routes/invoices.rs",
@@ -810,7 +814,7 @@ fn sonde_le_jour_d_un_instant_enregistre_rougit() {
     rouge(
         "kesh-db/src/repositories/audit_log.rs",
         "const Q: &str = \"SELECT DATE(created_at) FROM audit_log\";",
-        "audit_log.rs : 1 occurrence(s), 0 écrite(s)",
+        &format!("{m} kesh-db/src/repositories/audit_log.rs : 1 occurrence(s), 0 écrite(s)"),
     );
     rouge(
         "kesh-db/src/repositories/audit_log.rs",
@@ -820,13 +824,13 @@ fn sonde_le_jour_d_un_instant_enregistre_rougit() {
     rouge(
         "kesh-db/src/repositories/invoices.rs",
         "fn f(n: chrono::NaiveDateTime) -> chrono::NaiveDate {\n    n\n        .date()\n}",
-        "invoices.rs : 1 occurrence(s), 0 écrite(s)",
+        &format!("{m} kesh-db/src/repositories/invoices.rs : 1 occurrence(s), 0 écrite(s)"),
     );
     // Un compte + 1 dans un fichier admis rougit.
     rouge(
         "kesh-api/src/routes/dunning_reminders.rs",
         "fn f(n: chrono::NaiveDateTime) -> chrono::NaiveDate { n.date() }",
-        "dunning_reminders.rs : 2 occurrence(s), 1 écrite(s)",
+        &format!("{m} kesh-api/src/routes/dunning_reminders.rs : 2 occurrence(s), 1 écrite(s)"),
     );
     // Hors de `src` (un fichier de `tests`) et dans un commentaire : vert.
     vert(

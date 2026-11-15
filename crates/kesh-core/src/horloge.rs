@@ -80,11 +80,14 @@ pub fn jour_suisse(instant: DateTime<Utc>) -> NaiveDate {
 /// Berne, `+00:29:46`, à l'heure d'Europe centrale) → recherche **dichotomique à la
 /// milliseconde** du premier instant de `[j 00:00Z − 3 h, j 00:00Z + 1 h]` dont le jour suisse
 /// est au moins `j`. Elle est exacte parce que [`jour_suisse`] est croissante au sens large et
-/// que tout décalage de Zurich est compris entre `0` et `+2 h`.
+/// que tout décalage de Zurich est compris entre `0` et `+2 h`. Le bras `Ambiguous` n'est
+/// atteint par aucune date de la base de fuseaux de Zurich (aucun recul d'heure à minuit) : il
+/// est écrit pour la sûreté, sans test qui l'exerce.
 ///
 /// ⛔ **Précondition** : `jour` dans `[1000-01-01, 9999-12-31]`, la plage que les routes
 /// garantissent (`kesh_core::dates::annee_stockable`). Hors d'elle, le résultat n'est pas défini
-/// (il ne panique pas pour autant : les débordements retombent sur une borne).
+/// (il ne panique pas pour autant : les débordements retombent sur une borne ; constaté sur
+/// `NaiveDate::MIN` et `NaiveDate::MAX` par un test).
 ///
 /// ⚠️ La base de fuseaux de `chrono-tz` 0.10.4 ne modélise l'heure d'été de Zurich que jusqu'en
 /// 2099 (dernière transition en octobre 2099) : au-delà, [`jour_suisse`] et ses deux inverses
@@ -106,7 +109,9 @@ pub fn debut_du_jour_suisse(jour: NaiveDate) -> DateTime<Utc> {
 /// base de fuseaux que [`debut_du_jour_suisse`].
 pub fn fin_du_jour_suisse(jour: NaiveDate) -> DateTime<Utc> {
     match jour.succ_opt() {
-        Some(lendemain) => debut_du_jour_suisse(lendemain) - Duration::milliseconds(1),
+        Some(lendemain) => debut_du_jour_suisse(lendemain)
+            .checked_sub_signed(Duration::milliseconds(1))
+            .unwrap_or(DateTime::<Utc>::MIN_UTC),
         // Hors précondition (`NaiveDate::MAX`) : aucune panique, la borne la plus haute.
         None => DateTime::<Utc>::MAX_UTC,
     }
@@ -381,6 +386,16 @@ mod tests {
             debut_du_jour_suisse(jour(1894, 6, 1)),
             instant("1894-05-31T23:30:14.000Z")
         );
+    }
+
+    /// Revue P1 de la 36-10 (E1-3) — hors précondition, aucune panique : les bornes de `chrono`
+    /// rendent un instant, dont la valeur n'est pas définie (aucune assertion de valeur).
+    #[test]
+    fn hors_precondition_les_bornes_ne_paniquent_pas() {
+        for j in [NaiveDate::MIN, NaiveDate::MAX] {
+            let _ = debut_du_jour_suisse(j);
+            let _ = fin_du_jour_suisse(j);
+        }
     }
 
     #[test]
