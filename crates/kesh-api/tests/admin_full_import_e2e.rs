@@ -4892,15 +4892,32 @@ fn a_0_17_6_backup_is_refused_by_a_0_17_5_binary() {
 // Story v017-4a (#849, AC-3) — les sauvegardes et les factures fournisseur
 // ============================================================
 
-/// Le décor fournisseur d'une société de test : exercice 2026, comptes (banque,
-/// TVA récupérable, créanciers, charges), réglages, fournisseur, compte
-/// bancaire lié. Synthétique. Rend `(fournisseur, charges, compte bancaire)`.
+/// Story 36-7a (#1125) — une date de pièce du décor fournisseur : l'année N-1
+/// (N, l'année du jour du test), dans l'exercice N-1..N de [`v0174a_decor`] ;
+/// l'annulation, datée au jour par le serveur, tombe dans le même exercice.
+fn v0174a_jour(m: u32, j: u32) -> String {
+    use chrono::Datelike;
+    let n = crate::common::jour::aujourd_hui_test().year();
+    chrono::NaiveDate::from_ymd_opt(n - 1, m, j)
+        .unwrap()
+        .to_string()
+}
+
+/// Le décor fournisseur d'une société de test : exercice N-1..N (Story 36-7a ;
+/// 2026 jusque-là), comptes (banque, TVA récupérable, créanciers, charges),
+/// réglages, fournisseur, compte bancaire lié. Synthétique. Rend
+/// `(fournisseur, charges, compte bancaire)`.
 async fn v0174a_decor(pool: &MySqlPool, company_id: i64) -> (i64, i64, i64) {
+    use chrono::Datelike;
+    let n = crate::common::jour::aujourd_hui_test().year();
     sqlx::query(
         "INSERT INTO fiscal_years (company_id, name, start_date, end_date, status) \
-         VALUES (?, 'Exercice 2026', '2026-01-01', '2026-12-31', 'Open')",
+         VALUES (?, ?, ?, ?, 'Open')",
     )
     .bind(company_id)
+    .bind(format!("Exercice {}-{n}", n - 1))
+    .bind(chrono::NaiveDate::from_ymd_opt(n - 1, 1, 1).unwrap())
+    .bind(chrono::NaiveDate::from_ymd_opt(n, 12, 31).unwrap())
     .execute(pool)
     .await
     .unwrap();
@@ -4987,7 +5004,8 @@ async fn v0174a_invoice(
         jwt,
         "/api/v1/supplier-invoices",
         serde_json::json!({
-            "contactId": supplier, "supplierInvoiceNumber": numero, "invoiceDate": "2026-06-15",
+            "contactId": supplier, "supplierInvoiceNumber": numero,
+            "invoiceDate": v0174a_jour(6, 15),
             "creditorIban": "CH5604835012345678009",
             "lines": [{ "description": "Fourniture", "quantity": "1", "unitPrice": "100.00",
                         "vatRate": "8.1", "expenseAccountId": expense }],
@@ -5036,7 +5054,7 @@ async fn v0174a_backup_without_link_origin(pool: MySqlPool, version: &str, min_r
         &admin.jwt,
         &format!("/api/v1/supplier-invoices/{}/pay", paid["id"]),
         serde_json::json!({ "settlementType": "bank_transfer", "bankAccountId": bank,
-                            "paymentDate": "2026-06-20" }),
+                            "paymentDate": v0174a_jour(6, 20) }),
         200,
     )
     .await;
