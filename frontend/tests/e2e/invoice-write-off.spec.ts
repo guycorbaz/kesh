@@ -137,9 +137,12 @@ test('un compte de TVA due changé de type fait refuser le solde en escompte', a
 			await disposeContextSafe(ctx);
 		}
 
+		// La ligne « Reste dû » de la fiche n'apparaît qu'après un premier
+		// règlement (`+page.svelte`, `amountSettled > 0`) : sur cette facture non
+		// réglée, le reste se lit dans le dialogue, puis par l'API.
 		await page.goto(`/invoices/${invoiceId}`);
-		await expect(page.getByTestId('invoice-amount-due')).toContainText('972.90');
 		await page.getByTestId('write-off-open').click();
+		await expect(page.getByTestId('write-off-amount')).toContainText('972.90');
 		await page.getByTestId('write-off-nature-discount').check();
 		const refused = page.waitForResponse((r) =>
 			r.url().includes(`/api/v1/invoices/${invoiceId}/write-off`),
@@ -160,12 +163,17 @@ test('un compte de TVA due changé de type fait refuser le solde en escompte', a
 		}
 
 		// Rien n'a été écrit : la facture reste validée, son reste dû inchangé.
-		await expect(page.getByTestId('invoice-amount-due')).toContainText('972.90');
+		await expect(page.getByTestId('write-off-amount')).toContainText('972.90');
 		const check = await authedApiContext(page);
 		try {
 			const invoice = await (await check.get(`/api/v1/invoices/${invoiceId}`)).json();
 			expect(invoice.status).toBe('validated');
 			expect(invoice.paidAt).toBeNull();
+			expect(Number(invoice.amountDue)).toBe(972.9);
+			const settlements = await (
+				await check.get(`/api/v1/invoices/${invoiceId}/settlements`)
+			).json();
+			expect(settlements, 'aucun règlement ni solde').toHaveLength(0);
 		} finally {
 			await disposeContextSafe(check);
 		}
