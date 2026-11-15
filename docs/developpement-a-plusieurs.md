@@ -56,6 +56,11 @@ migration** : une correction qui en exige une n'est plus un correctif, elle va �
 pour une release se découpe en plusieurs epics dès le kickoff. Une release peut en revanche réunir plusieurs epics.
 *Pourquoi* : un epic se planifie, se livre et se juge d'un seul tenant, et sa branche se fusionne une seule fois (§ 5).
 
+**Un epic reste petit, en règle générale.** Un epic de correction ou d'amélioration se borne à ce qu'une release courte
+peut livrer ; seul l'ajout d'une fonctionnalité nouvelle peut justifier un epic plus important. Au kickoff, un epic qui
+paraît trop grand se découpe en plusieurs epics, chacun avec sa release. *Pourquoi* : un petit epic se termine vite, sa
+branche vieillit peu, et ses conflits avec le travail des autres restent petits.
+
 *(La v0.17.8 est la dernière release numérotée à l'ancienne, où chaque release montait le chiffre de correction. L'Epic 36,
 réparti sur les releases 0.17.8, 0.18.0 et 0.19.0, est la dernière exception à « un epic = une release ».)*
 
