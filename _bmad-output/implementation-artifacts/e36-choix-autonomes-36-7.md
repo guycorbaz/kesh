@@ -117,3 +117,6 @@ de C-e360-13. Chaque choix : contexte, option retenue, options écartées, réve
   mutations** (M1a à M10) et trois mutants équivalents déclarés ; sa **fusion doit précéder le 2026-12-26**
   (`open_items_invariant` rougit à l'heure réelle dès ce jour, D5 de la 36-7a), l'échéance du 2026-12-28 restant celle de
   Guy pour la story.
+- **Amendé le 2026-11-15 (validation P4 ciblée de la 36-7a, V4-1, V4-4)** : deux mutants équivalents déclarés (`:1332`,
+  `:533`), et non trois — l'équivalence de `bank_statements_manual_e2e:1008` se tranche à l'étape 0 ; M2a porte sur un
+  `UPDATE` de l'exercice dans le seul test corrigé, `setup()` restant intouché (21 tests). Dix-neuf mutations, inchangé.
