@@ -160,6 +160,9 @@ test('un compte de TVA due changé de type fait refuser le solde en escompte', a
 		// Revue P1 (E3) : la relecture finie, le bouton redevient actionnable — la
 		// capture montre l'état où l'on peut reconfirmer.
 		await expect(page.getByTestId('write-off-confirm')).toBeEnabled();
+		// `disabled:opacity-50` sous `transition-all` : attendre la fin du fondu,
+		// sans quoi la capture montre encore le bouton pâle.
+		await expect(page.getByTestId('write-off-confirm')).toHaveCSS('opacity', '1');
 		// Capture (thème clair) si `KESH_E2E_CAPTURES_DIR` est posé ; sinon, rien.
 		const captures = process.env.KESH_E2E_CAPTURES_DIR;
 		if (captures) {
