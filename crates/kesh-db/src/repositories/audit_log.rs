@@ -728,11 +728,16 @@ mod tests {
             }
         };
 
-        let veille_fin = pose(1, "2026-09-14 23:59:59.999").await;
-        let debut = pose(2, "2026-09-15 00:00:00.000").await;
-        let fin = pose(3, "2026-09-15 23:59:59.999").await;
-        let lendemain = pose(4, "2026-09-16 00:00:00.000").await;
-        let dernier_jour = pose(5, "9999-12-31 23:59:59.999").await;
+        // Story 36-10 (#1147) : les bornes d'un jour sont celles du jour **de
+        // Zurich** (CEST en septembre, `+02:00`) — le 15 septembre commence à
+        // `2026-09-14 22:00:00.000` UTC et finit à `2026-09-15 21:59:59.999` UTC.
+        let veille_fin = pose(1, "2026-09-14 21:59:59.999").await;
+        let debut = pose(2, "2026-09-14 22:00:00.000").await;
+        let fin = pose(3, "2026-09-15 21:59:59.999").await;
+        let lendemain = pose(4, "2026-09-15 22:00:00.000").await;
+        // Le 31 décembre 9999 à Zurich (CET) finit à `22:59:59.999` UTC.
+        let dernier_jour = pose(5, "9999-12-31 22:59:59.999").await;
+        let _dix_mille = pose(6, "9999-12-31 23:00:00.000").await;
 
         let query = AuditLogListQuery {
             date_from: Some(jour("2026-09-15")),
@@ -747,22 +752,23 @@ mod tests {
 
         assert!(
             ids.contains(&debut),
-            "00:00:00.000 du jour `date_from` est INCLUS"
+            "minuit à Zurich du jour `date_from` est INCLUS"
         );
         assert!(
             ids.contains(&fin),
-            "23:59:59.999 du jour `date_to` est INCLUS"
+            "23:59:59.999 à Zurich du jour `date_to` est INCLUS"
         );
         assert!(
             !ids.contains(&veille_fin),
-            "la veille à 23:59:59.999 est EXCLUE"
+            "la veille à 23:59:59.999 à Zurich est EXCLUE"
         );
         assert!(
             !ids.contains(&lendemain),
-            "le lendemain à 00:00:00.000 est EXCLU"
+            "le lendemain à minuit à Zurich est EXCLU"
         );
 
-        // Dernier jour représentable : la borne ne calcule rien, donc ne déborde pas.
+        // Dernier jour représentable : aucune panique ; la dernière heure UTC de
+        // l'an 9999 est le `10000-01-01` à Zurich, hors de tout filtre (D3).
         let query_max = AuditLogListQuery {
             date_from: Some(jour("9999-12-31")),
             date_to: Some(jour("9999-12-31")),
@@ -775,7 +781,7 @@ mod tests {
         assert_eq!(
             page_max.items.iter().map(|e| e.id).collect::<Vec<_>>(),
             vec![dernier_jour],
-            "au 9999-12-31, l'entrée de 23:59:59.999 est rendue"
+            "au 9999-12-31, l'entrée de 22:59:59.999 UTC est rendue, celle de 23:00 UTC non"
         );
     }
 

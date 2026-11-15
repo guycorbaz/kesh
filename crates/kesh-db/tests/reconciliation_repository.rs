@@ -15,7 +15,7 @@
 //! sous test est le repository de réconciliation, pas le pipeline de
 //! création/validation invoice.
 
-use chrono::NaiveDate;
+use chrono::{NaiveDate, NaiveDateTime};
 use kesh_db::entities::{
     BankImportSourceFormat, ContactType, NewBankAccount, NewBankImport, NewBankTransaction,
     NewContact, NewUser, OrgType, Role,
@@ -1442,6 +1442,18 @@ async fn insert_test_reminder(
     cancelled: bool,
 ) {
     let sent_at = sent_on.and_hms_opt(12, 30, 0).unwrap();
+    insert_test_reminder_at(pool, company_id, invoice_id, sent_at, cancelled).await;
+}
+
+/// Insère un rappel envoyé à l'**instant UTC** `sent_at` (Story 36-10, #1053) —
+/// les cas de nuit, où le jour de Zurich est le lendemain du jour UTC.
+async fn insert_test_reminder_at(
+    pool: &MySqlPool,
+    company_id: i64,
+    invoice_id: i64,
+    sent_at: NaiveDateTime,
+    cancelled: bool,
+) {
     sqlx::query(
         "INSERT INTO invoice_reminders (company_id, invoice_id, level_number, fee_amount, \
          sent_at, channel, subject, body, cancelled_at) \
@@ -1636,6 +1648,200 @@ async fn the_anchor_is_the_latest_of_date_due_date_and_last_reminder(pool: MySql
         let expected = if case.candidate { vec![id] } else { vec![] };
         assert_eq!(listed, expected, "cas {} : candidates", case.name);
     }
+
+    // Story 36-10 (#1053) — deux cas de nuit : le rappel compte du jour **de
+    // Zurich** de son envoi. `e = D − 30 = 2026-05-16` ; un rappel posé à
+    // `2026-05-15T22:30Z` (0 h 30 le 16 à Zurich, CEST) ancre au 16, candidate ;
+    // à `2026-05-15T21:30Z` (23 h 30 le 15), au 15, non candidate. Facture
+    // `D − 90`, échéance `D − 60` : l'ancre ne tient qu'au rappel.
+    let nuit = [
+        ("m", "2026-05-15 22:30:00", at(-30), true),
+        ("n", "2026-05-15 21:30:00", at(-31), false),
+    ];
+    for (n, (name, sent_at, anchor, candidate)) in nuit.iter().enumerate() {
+        let amount = Decimal::new(20_100 + 100 * n as i64, 2);
+        let id = insert_test_invoice(
+            &pool,
+            company_id,
+            contact_id,
+            at(-90),
+            amount,
+            "validated",
+            Some(je_id),
+            None,
+        )
+        .await;
+        set_test_due_date(&pool, id, Some(at(-60))).await;
+        insert_test_reminder_at(&pool, company_id, id, instant(sent_at), false).await;
+        assert_eq!(
+            reconciliation_repo::invoice_payment_anchor_date(&pool, company_id, id)
+                .await
+                .unwrap(),
+            Some(*anchor),
+            "cas {name} : ancre"
+        );
+        let listed: Vec<i64> = reconciliation_repo::find_unpaid_invoices_for_window(
+            &pool,
+            company_id,
+            window,
+            amount,
+            dec!(0.05),
+        )
+        .await
+        .unwrap()
+        .iter()
+        .map(|c| c.invoice.id)
+        .collect();
+        let expected = if *candidate { vec![id] } else { vec![] };
+        assert_eq!(listed, expected, "cas {name} : candidates");
+    }
+}
+
+/// Un instant UTC de test, `AAAA-MM-JJ HH:MM:SS`.
+fn instant(s: &str) -> NaiveDateTime {
+    NaiveDateTime::parse_from_str(s, "%Y-%m-%d %H:%M:%S").expect("instant de test valide")
+}
+
+/// Story 36-10 (#1053), AC6 — **deux écritures, une règle** : la proposition
+/// (prédicat SQL `X >= e OR last_sent_at >= début du jour e à Zurich`) et
+/// l'acceptation (`max(X, jour_suisse(r))` en Rust) disent la même chose sur un
+/// balayage d'instants de rappel autour du passage de `e − 1` à `e` à Zurich,
+/// en été puis en hiver. Facture `e − 60`, échéance `e − 30` : l'ancre ne tient
+/// qu'au rappel.
+///
+/// L'accord seul ne voit pas un défaut commun aux deux écritures : chaque
+/// verdict est aussi écrit **en clair**, par l'instant de minuit à Zurich
+/// recopié en dur (`2026-05-15 22:00:00` en été, `2026-01-15 23:00:00` en
+/// hiver), sans appeler `debut_du_jour_suisse`.
+#[sqlx::test(migrations = "./test-schema")]
+async fn proposal_and_acceptance_agree_on_the_zurich_day_of_the_last_reminder(pool: MySqlPool) {
+    let company_id = create_test_company(&pool, "Acme").await;
+    let user_id = create_test_user(&pool, "alice", company_id).await;
+    let contact_id = create_test_contact(&pool, company_id, user_id, "Client A").await;
+    let fy_id = insert_fake_fiscal_year(&pool, company_id).await;
+    let je_id = insert_fake_journal_entry(&pool, company_id, fy_id).await;
+
+    // (e, minuit à Zurich du jour e en UTC, premier instant du balayage,
+    //  nombre de pas de 30 min, instants de part et d'autre de minuit, saison)
+    let saisons = [
+        (
+            NaiveDate::from_ymd_opt(2026, 5, 16).unwrap(),
+            "2026-05-15 22:00:00",
+            "2026-05-15 20:30:00",
+            ["2026-05-15 21:59:59", "2026-05-15 22:00:01"],
+            "été",
+        ),
+        (
+            NaiveDate::from_ymd_opt(2026, 1, 16).unwrap(),
+            "2026-01-15 23:00:00",
+            "2026-01-15 21:30:00",
+            ["2026-01-15 22:59:59", "2026-01-15 23:00:01"],
+            "hiver",
+        ),
+    ];
+    let mut n: i64 = 0;
+    for (e, minuit, premier, autour, saison) in saisons {
+        let d = e + chrono::Duration::days(30);
+        let window = InvoiceDateWindow::for_payment_date(d);
+        assert_eq!(window.earliest_anchor_date, e, "montage : e = D − 30");
+        let minuit = instant(minuit);
+        // De `premier` à `premier + 4 h` inclus, par pas de 30 min : 9 instants.
+        let mut instants: Vec<NaiveDateTime> = (0..=8)
+            .map(|k| instant(premier) + chrono::Duration::minutes(30 * k))
+            .collect();
+        instants.extend(autour.iter().map(|s| instant(s)));
+
+        for r in instants {
+            n += 1;
+            let amount = Decimal::new(30_000 + 100 * n, 2);
+            let id = insert_test_invoice(
+                &pool,
+                company_id,
+                contact_id,
+                e - chrono::Duration::days(60),
+                amount,
+                "validated",
+                Some(je_id),
+                None,
+            )
+            .await;
+            set_test_due_date(&pool, id, Some(e - chrono::Duration::days(30))).await;
+            insert_test_reminder_at(&pool, company_id, id, r, false).await;
+
+            let anchor = reconciliation_repo::invoice_payment_anchor_date(&pool, company_id, id)
+                .await
+                .unwrap()
+                .expect("facture de la société");
+            let candidate = reconciliation_repo::find_unpaid_invoices_for_window(
+                &pool,
+                company_id,
+                window,
+                amount,
+                dec!(0.05),
+            )
+            .await
+            .unwrap()
+            .iter()
+            .any(|c| c.invoice.id == id);
+
+            assert_eq!(
+                candidate,
+                window.check(e - chrono::Duration::days(60), anchor).is_ok(),
+                "{saison}, rappel à {r} : proposition et acceptation d'accord"
+            );
+            let (anchor_attendue, candidate_attendue) = if r >= minuit {
+                (e, true)
+            } else {
+                (e - chrono::Duration::days(1), false)
+            };
+            assert_eq!(anchor, anchor_attendue, "{saison}, rappel à {r} : ancre");
+            assert_eq!(
+                candidate, candidate_attendue,
+                "{saison}, rappel à {r} : candidate"
+            );
+        }
+    }
+}
+
+/// Story 36-10 (#1053), AC7 — **un même rappel, un même jour** : posé à
+/// `2026-03-10T23:30Z` (0 h 30 le 11 mars à Zurich, CET), il ancre la
+/// réconciliation au **11 mars**, le jour que l'éligibilité au rappel suivant
+/// lui donne déjà (`dunning_eligibility`, `jour_suisse(lr.and_utc())`, depuis
+/// la Story 35-5b). Rouge sur le code d'avant : ancre au 10 mars, jour UTC.
+#[sqlx::test(migrations = "./test-schema")]
+async fn a_reminder_sent_after_midnight_in_zurich_anchors_on_its_zurich_day(pool: MySqlPool) {
+    let company_id = create_test_company(&pool, "Acme").await;
+    let user_id = create_test_user(&pool, "alice", company_id).await;
+    let contact_id = create_test_contact(&pool, company_id, user_id, "Client A").await;
+    let fy_id = insert_fake_fiscal_year(&pool, company_id).await;
+    let je_id = insert_fake_journal_entry(&pool, company_id, fy_id).await;
+    let le_1er_mars = NaiveDate::from_ymd_opt(2026, 3, 1).unwrap();
+
+    let id = insert_test_invoice(
+        &pool,
+        company_id,
+        contact_id,
+        le_1er_mars,
+        dec!(700.00),
+        "validated",
+        Some(je_id),
+        None,
+    )
+    .await;
+    set_test_due_date(&pool, id, Some(le_1er_mars)).await;
+    insert_test_reminder_at(&pool, company_id, id, instant("2026-03-10 23:30:00"), false).await;
+
+    assert_eq!(
+        reconciliation_repo::invoice_payment_anchor_date(&pool, company_id, id)
+            .await
+            .unwrap(),
+        Some(NaiveDate::from_ymd_opt(2026, 3, 11).unwrap())
+    );
+    // Le même jour que celui de l'éligibilité aux rappels.
+    assert_eq!(
+        kesh_core::horloge::jour_suisse(instant("2026-03-10 23:30:00").and_utc()),
+        NaiveDate::from_ymd_opt(2026, 3, 11).unwrap()
+    );
 }
 
 /// Story 29-2, AC5 — le rappel d'une facture X ne déplace pas l'ancre d'une

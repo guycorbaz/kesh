@@ -20,6 +20,10 @@
 //!    `HorlogeFixe(chrono::Utc::now())`) rend un jour juste mais **sourd à `KESH_TEST_INSTANT`**,
 //!    forme qu'aucune des deux familles ci-dessus ne voit. Liste close, à égalité stricte, sur le
 //!    texte entier sans ses lignes `//` (une forme coupée est vue).
+//! 4. **Le jour d'un instant enregistré** (Story 36-10, #1053, D5) : `DATE(` en SQL et `.date()`
+//!    en Rust, sur `crates/*/src` — un instant UTC coupé à son jour UTC, la forme de
+//!    `DATE(rmd.last_sent_at)` que la famille 1, qui ne lit que la date **du jour**, ne voyait pas.
+//!    Liste close à égalité stricte ; ses angles morts sont écrits à `JOUR_D_UN_INSTANT`.
 //!
 //! **Angle mort assumé** (inventaire) : un jour tiré d'une variable d'instant
 //! (`let n = Utc::now().naive_utc(); n.date()`) n'est pas relevé — `.date()` sur tout récepteur
@@ -514,6 +518,86 @@ fn horloge_reelle_d_un_test() {
     );
 }
 
+// ---------------------------------------------------------------------------
+// 4. Le jour d'un instant enregistré (Story 36-10, #1053, D5)
+// ---------------------------------------------------------------------------
+
+/// Le jour civil tiré d'un **instant enregistré** : en SQL, `DATE(` (casse respectée — le SQL du
+/// dépôt s'écrit en capitales, et `date(` minuscule est un helper de test courant) ; en Rust,
+/// `.date()` sur un `NaiveDateTime`. Un instant UTC coupé à son jour UTC est le symptôme de #1053
+/// (`DATE(rmd.last_sent_at)`, l'ancre de la réconciliation) : le jour de Zurich d'un instant se
+/// prend par `jour_suisse`. Motifs sans lookahead (la crate `regex` n'en a pas) : `DATE_FORMAT(`,
+/// `STR_TO_DATE(`, `CAST(… AS DATE)`, `CURRENT_DATE` ne correspondent pas (bornés par `\b` et
+/// suivis de `(`). Appliqués au texte de l'inventaire (lignes `//` écartées, blancs réduits autour
+/// des `.`), sur `crates/*/src` seulement.
+///
+/// **Angles morts assumés** : `date(` en minuscules ; un jour tiré par `CAST(x AS DATE)` (seuls
+/// les `CAST(GREATEST(…) AS DATE)` de `reconciliation.rs`, sur des `DATE`, existent au
+/// 2026-11-15) ou par `format("%Y-%m-%d")` d'un instant ; un instant porté par une variable que
+/// rien ne nomme ; **les bornes d'un jour posées par `and_hms*`** — la classe de #1147, que seul le
+/// test `bornes_du_filtre_jours_de_zurich_et_plafond` (`kesh-db`, `repositories/audit_log.rs`)
+/// tient ; et **le SQL hors `.rs`**, exécuté à l'import d'une sauvegarde : les `.sql` de
+/// `crates/kesh-db/src/post_restore/` et les deux migrations que `post_restore.rs` inclut depuis
+/// `../migrations/` (aucun `DATE(` au 2026-11-15).
+const JOUR_D_UN_INSTANT: &[&str] = &[r"\bDATE\s*\(", r"\.date\s*\(\s*\)"];
+
+/// La liste close, comptée depuis l'exécution (Story 36-10) : trois `.date()`, aucun `DATE(`.
+const JOUR_D_UN_INSTANT_ADMIS: &[Exemption] = &[
+    (
+        "kesh-api/src/routes/dunning_reminders.rs",
+        1,
+        "36-10 (D5)",
+        "`borner(body.sent_at.date(), \"sentAt\")?;` — contrôle de la seule plage d'années \
+         stockable (Story 33-4) : jour UTC et jour suisse donnent le même verdict, hors la nuit du \
+         31 décembre 9999",
+    ),
+    (
+        "kesh-api/src/routes/invoices.rs",
+        1,
+        "36-10 (D5)",
+        "`.map(|d| format_date(&d.date()))` — `paid_at` du CSV de l'échéancier, une date posée à \
+         minuit (C-e355b-6), non un instant",
+    ),
+    (
+        "kesh-api/src/routes/payment_batches.rs",
+        1,
+        "36-10 (D5)",
+        "`requested_execution_date: moment.date(),` — fixture du `mod tests` du fichier",
+    ),
+];
+
+fn occurrences_jour_d_un_instant(texte: &str) -> usize {
+    let t = texte_inventaire(texte);
+    JOUR_D_UN_INSTANT
+        .iter()
+        .map(|f| re(f).find_iter(&t).count())
+        .sum()
+}
+
+fn ecarts_jour_d_un_instant(sources: &[(String, String)]) -> Vec<String> {
+    let trouve: BTreeMap<String, usize> = sources
+        .iter()
+        .filter(|(f, _)| dans(Portee::Src, f))
+        .map(|(f, t)| (f.clone(), occurrences_jour_d_un_instant(t)))
+        .filter(|(_, n)| *n > 0)
+        .collect();
+    ecarts(&trouve, JOUR_D_UN_INSTANT_ADMIS)
+        .into_iter()
+        .map(|e| format!("[jour d'un instant enregistré] {e}"))
+        .collect()
+}
+
+#[test]
+fn jour_d_un_instant_enregistre() {
+    let e = ecarts_jour_d_un_instant(&sources());
+    assert!(
+        e.is_empty(),
+        "jour civil tiré d'un instant enregistré (liste close, égalité stricte) — le jour de \
+         Zurich d'un instant se prend par `kesh_core::horloge::jour_suisse` :\n{}",
+        e.join("\n")
+    );
+}
+
 fn tous_les_ecarts(sources: &[(String, String)]) -> Vec<String> {
     let mut v = ecarts(&inventaire(sources), EXEMPTIONS);
     for d in DURCISSEMENTS {
@@ -521,6 +605,7 @@ fn tous_les_ecarts(sources: &[(String, String)]) -> Vec<String> {
     }
     v.extend(ecarts_memoire(sources));
     v.extend(ecarts_horloge_reelle(sources));
+    v.extend(ecarts_jour_d_un_instant(sources));
     v
 }
 
@@ -701,6 +786,56 @@ fn sonde_l_horloge_reelle_d_un_test_rougit() {
     vert(
         "kesh-api/tests/horloge_etat.rs",
         "// jour_suisse(chrono::Utc::now())",
+    );
+}
+
+#[test]
+fn sonde_le_jour_d_un_instant_enregistre_rougit() {
+    let m = "[jour d'un instant enregistré]";
+    // Le motif SQL se compile avec `regex` et compte le site de #1053.
+    assert_eq!(
+        occurrences_jour_d_un_instant(
+            "const Q: &str = \"COALESCE(DATE(rmd.last_sent_at), i.date)\";"
+        ),
+        1
+    );
+    // Les formes voisines ne comptent pas.
+    assert_eq!(
+        occurrences_jour_d_un_instant(
+            "const Q: &str = \"DATE_FORMAT(x, '%Y') STR_TO_DATE(y) CAST(z AS DATE) CURRENT_DATE\";"
+        ),
+        0
+    );
+    // Dans un fichier propre de `src`, entière puis coupée sur deux lignes.
+    rouge(
+        "kesh-db/src/repositories/audit_log.rs",
+        "const Q: &str = \"SELECT DATE(created_at) FROM audit_log\";",
+        "audit_log.rs : 1 occurrence(s), 0 écrite(s)",
+    );
+    rouge(
+        "kesh-db/src/repositories/audit_log.rs",
+        "const Q: &str = \"SELECT COALESCE(DATE\n    (created_at), x) FROM audit_log\";",
+        m,
+    );
+    rouge(
+        "kesh-db/src/repositories/invoices.rs",
+        "fn f(n: chrono::NaiveDateTime) -> chrono::NaiveDate {\n    n\n        .date()\n}",
+        "invoices.rs : 1 occurrence(s), 0 écrite(s)",
+    );
+    // Un compte + 1 dans un fichier admis rougit.
+    rouge(
+        "kesh-api/src/routes/dunning_reminders.rs",
+        "fn f(n: chrono::NaiveDateTime) -> chrono::NaiveDate { n.date() }",
+        "dunning_reminders.rs : 2 occurrence(s), 1 écrite(s)",
+    );
+    // Hors de `src` (un fichier de `tests`) et dans un commentaire : vert.
+    vert(
+        "kesh-api/tests/horloge_etat.rs",
+        "fn f(n: chrono::NaiveDateTime) -> chrono::NaiveDate { n.date() }",
+    );
+    vert(
+        "kesh-db/src/repositories/audit_log.rs",
+        "// SELECT DATE(created_at) FROM audit_log",
     );
 }
 
