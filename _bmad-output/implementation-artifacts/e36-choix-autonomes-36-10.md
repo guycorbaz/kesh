@@ -25,6 +25,8 @@ C-e355b-6 (`paid_at` est une date).
   l'an 9999 n'est plus atteinte par un filtre de date (assumé, écrit) ; la borne basse liée est **toujours plafonnée** à
   `1000-01-01 00:00:00.000` (celle de `1000-01-01`, `0999-12-31` UTC, sortirait de la plage de `DATETIME`).
   *(Annoté le 2026-11-15, validation P1, V1-3 : ce choix disait « se vérifie au développement, plafonnée sinon ».)*
+  *(Annoté le 2026-11-15, validation P2, V2-1 : les deux bornes, plafond compris, se calculent dans une fonction pure de
+  `kesh-db`, `bornes_du_filtre`, testée sans base ; c'est le seul test qui voit le plafond.)*
 - **Écartées** : (a) convertir dans la route ; (b) étendre la plage admise à `10000-01-01` : hors de ce que la base stocke.
 - **Réversible** : oui.
 

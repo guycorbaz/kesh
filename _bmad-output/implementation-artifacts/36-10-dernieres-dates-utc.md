@@ -228,7 +228,10 @@ porté par une variable au nom neutre.
   milliseconde** du premier instant `t` de `[j 00:00Z − 3 h, j 00:00Z + 1 h]` tel que `jour_suisse(t) >= j` — exacte parce
   que `jour_suisse` est croissante au sens large et que tout décalage de Zurich est compris entre `0` et `+2 h` ; une
   avance par minutes est écartée (elle tomberait jusqu'à 59 s après le vrai premier instant, et la propriété à − 1 ms
-  rougirait). `fin(j) = debut(j + 1) − 1 ms`. Aucun `expect`, aucune panique. Le jour de 23 heures (fin mars) et celui de
+  rougirait). `fin(j) = debut(j + 1) − 1 ms`. **Précondition** écrite au doc-comment des deux fonctions, comme celle de
+  `push_where_clauses` (`audit_log.rs:202-205`) : `jour` dans `[1000-01-01, 9999-12-31]`, plage que la route garantit
+  (`routes/audit_log.rs:226`, `if !annee_stockable(date) {`) ; hors d'elle (`NaiveDate::MIN`, `MAX`), le résultat n'est pas
+  défini. Dans ce domaine, aucun `expect`, aucune panique. Le jour de 23 heures (fin mars) et celui de
   25 heures (fin octobre) sortent juste par construction. — *Écartée* : écrire les bornes `+01:00`/`+02:00` à la main dans `kesh-db` : un
   second calcul du fuseau, qui dériverait de `jour_suisse` (c'est le mélange de deux horloges que `jour_suisse` a fermé).
 - **D2 — Le journal d'audit filtre en jours de Zurich, dans `push_where_clauses` seul** (C-36-10-2). `date_from` borne à
@@ -242,7 +245,12 @@ porté par une variable au nom neutre.
   (l'heure locale moyenne de 1000, `+00:34:08` dans la base de fuseaux), hors de la plage documentée de `DATETIME` : la
   borne basse liée est **toujours plafonnée** à `1000-01-01 00:00:00.000` (`max(debut, 1000-01-01 00:00:00.000)`), ce qui
   ne change aucun résultat (aucune ligne ne peut la précéder) et ne laisse rien dépendre de la tolérance du MariaDB de
-  chaque installation, ni de `push_bind` (`sqlx-core-0.8.6/src/query_builder.rs:158`, cité `:204`). `dateTo=9999-12-31` donne
+  chaque installation (`push_bind` ne panique pas sur l'an 999, `sqlx-mysql-0.8.6/src/types/chrono.rs:262-265`,
+  `u16::try_from(date.year())` : le plafond est une défense de la base, non de `sqlx`). **Le calcul des deux bornes est une
+  fonction pure de `kesh-db`**, dans `repositories/audit_log.rs` (aucun module neuf ; le plafond est une affaire de plage
+  `DATETIME`, non de fuseau, d'où sa place hors de `kesh-core`) : `bornes_du_filtre(date_from: Option<NaiveDate>, date_to:
+  Option<NaiveDate>) -> (Option<NaiveDateTime>, Option<NaiveDateTime>)`, appelée par `push_where_clauses`, qui ne fait plus
+  que lier ; c'est elle que teste `bornes_du_filtre_jours_de_zurich_et_plafond` (tableau des tests, M7). `dateTo=9999-12-31` donne
   `9999-12-31T22:59:59.999Z` : une entrée posée à `9999-12-31 23:59:59.999` UTC est, à Zurich, le `10000-01-01`, et
   **aucun filtre de date ne la rend plus** ; le test `la_borne_haute_9999_est_acceptee_et_rend_bien_l_entree`
   (`audit_log_e2e.rs:469`) se réécrit sur l'entrée `22:59:59.999` (rendue) et `23:00:00.000` (non rendue). Une date de l'an
@@ -278,7 +286,8 @@ porté par une variable au nom neutre.
   tests`), chaque entrée avec son motif. Sondes positives (le texte ci-dessus, une forme coupée sur deux lignes, une
   `DATE(x)` ajoutée à un fichier propre) ; angles morts écrits au doc-comment
   (`date(` minuscule, `CAST(… AS DATE)`, un jour tiré par `format`, des bornes `and_hms*` — la classe de #1147, que seul le
-  test de `push_where_clauses` tient). — *Écartée* : ne rien étendre et écrire l'angle mort : #1053 est née de ce trou, et
+  test de `bornes_du_filtre` tient —, et le SQL hors `.rs` : les `.sql` de `crates/kesh-db/src/post_restore/` et la
+  migration que `post_restore.rs:378` inclut, exécutés à l'import). — *Écartée* : ne rien étendre et écrire l'angle mort : #1053 est née de ce trou, et
   un `DATE(` SQL est un motif d'une ligne.
 - **D6 — L'écran et les catalogues cessent de dire « jour UTC »** (C-36-10-5). Libellés `Du` / `Au`, `Von` / `Bis`,
   `From` / `To`, `Dal` / `Al` (les quatre `messages.ftl` et les deux replis de `+page.svelte`, égaux à la valeur fr-CH) ;
@@ -297,7 +306,9 @@ porté par une variable au nom neutre.
   **un Playwright ne peut pas jouer la nuit à coup sûr**. La spec `audit-log.spec.ts` prend `todayInZurich()` (sans second
   helper) au pas 6 — faute de quoi, après le correctif, elle rougirait la nuit —, son commentaire faux de sens est réécrit,
   et l'entrée de la garde frontend (`local-date-guard.test.ts:272-275`) disparaît, les deux sondes `:346-373` se réécrivant
-  sur une autre entrée ou sur un texte synthétique. **Elle ne joue la nuit que lancée entre 22 h ou 23 h et minuit UTC** ;
+  sur une autre entrée ou sur un texte synthétique ; les trois mentions du compte de l'allowlist des specs
+  (`local-date-guard.test.ts:29`, « close de trois entrées », `:263`, « Les trois sites admis », `:318`, « les trois sites
+  de l’allowlist ») passent à « deux ». **Elle ne joue la nuit que lancée entre 22 h ou 23 h et minuit UTC** ;
   c'est écrit dans la spec et ici.
 
 ## Critères d'acceptation
@@ -320,7 +331,7 @@ porté par une variable au nom neutre.
 4. **AC4 — Les bornes extrêmes** (D3) : `dateFrom=1000-01-01` et `dateTo=9999-12-31` répondent 200 sans panique ; l'entrée à
    `9999-12-31 22:59:59.999` est rendue par `dateTo=9999-12-31`, celle à `23:00:00.000` ne l'est pas ; une entrée à
    `1000-01-01 00:00:00.000` est rendue par `dateFrom=1000-01-01`, la borne liée valant `1000-01-01 00:00:00.000` (D3,
-   plafond ; constaté par un test du dépôt sur la valeur liée, ou par une mutation qui retire le plafond). Le refus de `0999-12-31` reste 400
+   plafond ; constaté par le test unitaire `bornes_du_filtre_jours_de_zurich_et_plafond`, sur la valeur calculée). Le refus de `0999-12-31` reste 400
    (`une_date_hors_plage_est_refusee_pour_la_plage_et_non_le_format`, `:449`, vert sans changement).
 5. **AC5 — La fenêtre de la réconciliation la nuit** (#1053, D4), par HTTP, `D = 2026-06-15` (été), `e = D − 30 =
    2026-05-16` : facture `F = D − 90`, `E = D − 60`, dernier rappel non annulé posé à **`2026-05-15T22:30:00Z`** (00 h 30 le
@@ -335,7 +346,11 @@ porté par une variable au nom neutre.
    `2026-05-15T21:59:59Z` et `2026-05-15T22:00:01Z` (de part et d'autre de `debut(e) = 2026-05-15T22:00:00Z`) ; **hiver**,
    `e = 2026-01-16`, de `2026-01-15T21:30:00Z` à `2026-01-16T01:30:00Z` inclus par pas de 30 min, plus `2026-01-15T22:59:59Z`
    et `2026-01-15T23:00:01Z` (`debut(e) = 2026-01-15T23:00:00Z`). Facture `F = e − 60`, `E = e − 30` (l'ancre ne tient qu'au
-   rappel). Pour chaque instant, la facture est candidate **si et seulement si** `anchor >= e`. `the_anchor_is_the_latest_of_date_due_date_and_last_reminder` gagne deux cas de nuit.
+   rappel). Pour chaque instant, la facture est candidate **si et seulement si** `anchor >= e`, **et** le verdict est écrit
+   en clair, sans appeler `debut_du_jour_suisse` dans le test : en été, candidate et ancre `e` (`2026-05-16`) pour
+   `r >= 2026-05-15T22:00:00Z`, non candidate et ancre `e − 1` (`2026-05-15`) avant ; en hiver, de même pour
+   `r >= 2026-01-15T23:00:00Z`, ancres `2026-01-16` et `2026-01-15`. (Un défaut commun aux deux écritures passerait l'accord
+   seul ; il ne passe pas l'attendu fixe.) `the_anchor_is_the_latest_of_date_due_date_and_last_reminder` gagne deux cas de nuit.
 7. **AC7 — Un même rappel, un même jour** : un rappel posé à `2026-03-10T23:30:00Z` compte du **11 mars** pour le rappel
    suivant (`dunning_eligibility.rs:136`, inchangé) **et** pour l'ancre de la réconciliation (`invoice_payment_anchor_date`
    rend `2026-03-11` pour `F = E = 2026-03-01`).
@@ -346,7 +361,9 @@ porté par une variable au nom neutre.
    langues, et les replis du composant égalent la valeur fr-CH ; captures en thème clair des filtres (base de démonstration
    jetable, `kesh-gate-logs/e36-10/captures/`) ; `audit-log.spec.ts` pas 6 sur `todayInZurich()`, importé de
    `./helpers/api-fixtures` (`:8`), l'entrée
-   `audit-log.spec.ts` de `ALLOWLIST_SPECS` retirée, ses deux sondes réécrites et toujours rouges sur leur cas ;
+   `audit-log.spec.ts` de `ALLOWLIST_SPECS` retirée, ses deux sondes réécrites et toujours rouges sur leur cas, les
+   mentions « trois » de `local-date-guard.test.ts:29`, `:263`, `:318` passées à « deux » (valeur recomptée à
+   l'intégration avec la 36-7a, Fichiers communs) ;
    `npm run check`, `lint-i18n-ownership`, `test:unit` et `build` verts.
 10. **AC10 — Docs** : le manuel ne dit plus que les filtres du journal sont en jours UTC ni que la fenêtre compte du jour
     UTC du dernier rappel (sites de la Tâche 5) ; il dit que les **heures** du tableau, du détail et du CSV restent celles
@@ -369,6 +386,7 @@ ne mentent pas sur le jour —, puis AC2 à AC7 rouges contre lui) ; (2) le corr
 | filtre de nuit, été et hiver (AC2) | `kesh-api/tests/audit_log_e2e.rs` | rend `21:59:59.999` et `22:00` du 15, non celles du 14 |
 | export de nuit (AC3) | idem | idem, dans le CSV |
 | bornes extrêmes (AC4) | idem, et `la_borne_haute_9999_…` réécrit | l'entrée `23:00:00.000` rendue |
+| `bornes_du_filtre_jours_de_zurich_et_plafond` (AC2, AC4 ; `#[test]` sans base) | `kesh-db/src/repositories/audit_log.rs`, `mod tests` | (fonction neuve ; tue M1, M2, M5, M7) : `1000-01-01` → `1000-01-01 00:00:00.000` (début) ; `2026-09-15` → `2026-09-14 22:00:00.000` / `2026-09-15 21:59:59.999` ; `2026-01-15` → `2026-01-14 23:00:00.000` / `2026-01-15 22:59:59.999` ; `9999-12-31` → `9999-12-31 22:59:59.999` (fin) ; `None` → `None` |
 | bornes de `push_where_clauses` (AC2, dépôt) | `kesh-db/src/repositories/audit_log.rs`, `list_date_bounds_are_inclusive_to_the_millisecond` réécrit en jour de Zurich | ses nouveaux attendus |
 | fenêtre de nuit, été et hiver (AC5) | `kesh-api/tests/reconciliation_e2e.rs` (helper de rappel à **instant** à côté de `insert_reminder_292`) | refus `payment_date_outside_window` aux cas `22:00Z`, `22:30Z` |
 | accord des deux écritures (AC6) | `kesh-db/tests/reconciliation_repository.rs` | désaccord, ou ancre au 15 |
@@ -379,8 +397,10 @@ ne mentent pas sur le jour —, puis AC2 à AC7 rouges contre lui) ; (2) le corr
 `git restore --worktree -- <fichier>` puis `touch`, E5) : **M1** `debut_du_jour_suisse` rendu à minuit UTC → AC1, AC2 ;
 **M2** `fin_du_jour_suisse` d'une milliseconde de plus → AC1, AC2 (`22:00:00.000` du 15) ; **M3** le second terme du
 prédicat lié à `earliest_anchor_date` en minuit UTC → AC5, AC6 ; **M4** l'acceptation revenue à `DATE(rmd.last_sent_at)` →
-AC5 (proposée mais refusée), AC6 ; **M5** `push_where_clauses` revenu à `and_hms_milli_opt` → AC2, AC3 ; **M7** le
-plafond de D3 retiré → AC4 (valeur liée) ; **M8** le repli de `debut_du_jour_suisse` sur `None` remplacé par une avance
+AC5 (proposée mais refusée), AC6 ; **M5** `bornes_du_filtre` revenue à `and_hms_milli_opt` → AC2, AC3,
+`bornes_du_filtre_jours_de_zurich_et_plafond` ; **M7** le plafond de D3 retiré →
+`bornes_du_filtre_jours_de_zurich_et_plafond` (`1000-01-01` rend `0999-12-31 23:25:52.000` au lieu de
+`1000-01-01 00:00:00.000` ; aucun test HTTP ne la voit, l'entrée du `1000-01-01` étant rendue avec ou sans plafond) ; **M8** le repli de `debut_du_jour_suisse` sur `None` remplacé par une avance
 par minutes → AC1 (`1894-06-01`) ; **M6** un `DATE(x)`
 réintroduit dans une chaîne SQL de `src` → AC8. Une mutation équivalente se dit. Journaux `mut/M1.log` à `mut/M8.log`.
 
@@ -391,15 +411,20 @@ réintroduit dans une chaîne SQL de `src` → AC8. Une mutation équivalente se
 - [ ] **D1** : `debut_du_jour_suisse`, `fin_du_jour_suisse` et leurs tests (AC1) ; doc-comment du module
       (`horloge.rs:1-15`) complété.
 - [ ] Tests AC2 à AC8 commités, rouges consignés (`rouges.log`).
-- [ ] **D2, D3** : `push_where_clauses` et son doc-comment (`audit_log.rs:171-176`, `:211-215`) ; commentaire
+- [ ] **D2, D3** : `bornes_du_filtre` (fonction pure, plafond compris) et son test unitaire ; `push_where_clauses` qui
+      l'appelle, et son doc-comment (`audit_log.rs:171-176`, `:211-215`) ; commentaire
       `routes/audit_log.rs:420-421`.
 - [ ] **D4** : proposition, acceptation, doc-comments de `reconciliation.rs` (module `:11-15`, `:116-125`, `:195-229`,
       `:251-258`, `:559-569`, `:593-597`, `:718-721`) ; `/usr/bin/grep -n "UTC\|DATE(" ` sur le fichier, sortie au Change Log.
-- [ ] **D5** : famille de la garde, sondes, angles morts.
+- [ ] **D5** : famille de la garde, sondes, angles morts — dont les `.sql` de `crates/kesh-db/src/post_restore/` (quatre
+      fichiers, `git ls-files 'crates/*/src/*' | /usr/bin/grep -v "\.rs$"`) et celui que `post_restore.rs:378` inclut depuis
+      `../migrations/` : du SQL exécuté à l'import, que la garde ne lit pas (elle ne balaie que les `.rs`) ; aucun ne
+      contient `DATE(` aujourd'hui (`/usr/bin/grep -nP "\bDATE\s*\(" crates/kesh-db/src/post_restore/*.sql` vide).
 - [ ] **D6, D7** : quatre `messages.ftl` (à côté du bloc `audit-log-filter-*`, jamais en fin de fichier), `+page.svelte`,
       `audit-log.types.ts`, `audit-log.spec.ts` (**ajouter `todayInZurich` à l'import** de `./helpers/api-fixtures`,
       `audit-log.spec.ts:8`, qui ne porte aujourd'hui que `createUser, USER_PASSWORD` ; retirer `todayUtc`, `:56-59`),
-      `local-date-guard.test.ts` ; captures.
+      `local-date-guard.test.ts` (entrée retirée, deux sondes réécrites, « trois » → « deux » à `:29`, `:263`, `:318`) ;
+      captures.
 - [ ] **Tâche 5 — docs** : `docs/manual/fr/user-manual.tex:754-758` (la note « date du jour » : la fenêtre compte désormais
       du jour de Zurich du dernier rappel), `:3063` (« son dernier rappel » : son jour, à Zurich), `:4004-4007` (la puce « Les
       dates filtrent sur des jours UTC » devient : les dates filtrent sur des jours de Zurich, comme le tableau qui affiche
@@ -456,7 +481,11 @@ l'intégration : `crates/kesh-db/src/repositories/reconciliation.rs` et `kesh-ap
 **36-7** (désancrage des tests de 2026 : les dates fixes `2026-06-15` de ces tests sont des dates de **données**, non le jour
 de l'horloge ; si la 36-7 les touche, hunks distincts) ; `messages.ftl` ×4 et `docs/manual/fr/user-manual.tex` avec la
 **36-15** (« compte analytique ») et la **36-17** — paragraphes et blocs distincts (`audit-log-filter-*` ici) ;
-`date_du_jour_garde.rs` avec toute story qui ajoute un site de date (aucune annoncée). `CHANGELOG.md` : aucun (C-e360-11).
+`date_du_jour_garde.rs` avec toute story qui ajoute un site de date (aucune annoncée).
+⚠️ `frontend/src/lib/shared/utils/local-date-guard.test.ts` avec la **36-7a**, parallèle : elle **ajoute** une entrée à
+l'allowlist des specs et fait passer les mentions de `:29`, `:263`, `:318` de « trois » à « quatre », quand celle-ci en
+**retire** une (« trois » → « deux ») ; après les deux fusions, la valeur juste est le nombre d'entrées réellement
+présentes (attendu : trois), **recompté à la source à l'intégration**, sans additionner les deux diffs (C-e350-18). `CHANGELOG.md` : aucun (C-e360-11).
 
 ### Ce qui doit rester vrai
 
@@ -515,3 +544,19 @@ de l'horloge ; si la 36-7 les touche, hunks distincts) ; `messages.ftl` ×4 et `
   - Symptômes greppés dans la fiche et le registre : `…Z`, `22:00:00.000Z` (CSV), `non suivi de`, `plafonnée sinon`,
     `occurrence de test`, `mut/M6.log` — remplacés ; les `…Z` restants désignent la réponse JSON ou des instants UTC
     d'AC1/AC5, à juste titre.
+- 2026-11-15 — **Validation P2** (0 CRITICAL, 0 HIGH, 1 MEDIUM, 4 LOW ; `kesh-gate-logs/e36-10/validation-p2.md`),
+  remédiée par l'agent de rédaction (Opus 5.5), outil Edit seul. Prémisses relues, toutes confirmées :
+  `local-date-guard.test.ts:29` (« close de trois entrées »), `:263` (« Les trois sites admis »), `:318` (« les trois sites
+  de l’allowlist ») ; `ls crates/kesh-db/src/post_restore/` (quatre `.sql`), `post_restore.rs:378`
+  (`include_str!("../migrations/20261010000001_lettering_documents_backfill.sql")`), aucun `DATE(` dans ces `.sql` ;
+  `audit_log.rs:202-205` (précondition de `push_where_clauses`). La preuve de V2-1 (`push_bind` ne panique pas sur l'an
+  999) est reprise du rapport, sans relecture de la source de `sqlx`.
+  - V2-1 (MEDIUM) : le calcul des bornes, plafond compris, devient la fonction pure `bornes_du_filtre` de
+    `kesh-db/src/repositories/audit_log.rs` (aucun module neuf), testée par `bornes_du_filtre_jours_de_zurich_et_plafond`,
+    qui tue M7 (et M1, M2, M5) ; « ou par une mutation » retiré d'AC4 ; table des tests et mutations à jour ; D3 corrige sa
+    justification (« ni de `push_bind` ») ; registre C-36-10-2 annoté.
+  - V2-2 (LOW) : précondition `[1000-01-01, 9999-12-31]` écrite à D1.
+  - V2-3 (LOW) : AC6 porte le verdict en instants fixes (`22:00Z` été, `23:00Z` hiver, ancres `e` et `e − 1`).
+  - V2-4 (LOW) : `local-date-guard.test.ts:29`, `:263`, `:318` (« trois » → « deux ») nommés dans D7, AC9 et la tâche ;
+    fichier commun avec la 36-7a écrit (« trois » → « quatre » de son côté, recompte à l'intégration).
+  - V2-5 (LOW) : angle mort des `.sql` de `post_restore/` écrit à D5 et à la tâche D5.
