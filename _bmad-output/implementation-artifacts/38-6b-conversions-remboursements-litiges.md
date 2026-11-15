@@ -7,7 +7,8 @@ Status: ready-for-dev
 - **Dépend de** : **38-6a** (chemin prestataire de `get_proposals`, variante `provider`, constructeur `build_provider_entry`,
   codes de C-38-8), **38-6c** (rattachement en devise, `link_entry_in_tx` en devise, C-38-14), **38-3a** (colonnes
   `movement_kind`, `related_provider_tx_id`, `review_reason`, `provider_tx_id`, C-38-4), **38-2** (connexion d'un compte,
-  compte de frais, C-38-3), **37-3b** (conversion par le compte de transit, `completeDifference`, AC-2 bis).
+  compte de frais, C-38-3), **37-3b** (conversion par le compte de transit, `completeDifference`, AC-2 bis ; frais au
+  débit d'un compte de charge de la devise dans l'écriture 2, **A33**, qu'exige B27).
 - **Prépare** : 38-9b (file « à examiner », aperçu d'une conversion, annulation d'une paire à l'écran).
 - **Migration** : aucune (C-38-0). « Examiné » réutilise `bank_transactions.auto_match_rejected_at` (C-38-6b-6).
 
@@ -71,11 +72,16 @@ afin que **tout mouvement qui change un solde finisse comptabilisé, sans qu'auc
 1. **Citation du virement** : E16 renvoie à `reconciliation.rs:6373`, qui est `post_link_transaction` (rattachement à un
    **règlement**, 29-8) ; le virement entre ses comptes passe par `post_link_entry` (`:6656`) et `link_entry_in_tx`
    (`reconciliation_link.rs:1156`). C'est celui-ci que la fiche emploie.
-2. **Frais d'une conversion du côté crédité** (B4 : « coût au compte de frais quand le prestataire le donne à part ») :
-   l'écriture 2 de 37-3b ne se complète qu'avec **un seul** compte en devise ; une ligne de frais sur le compte de frais
-   USD y serait un second compte en devise, refusé. Les frais de la moitié **débitée** vont au compte de frais (écriture 1,
-   jamais complétée) ; ceux de la moitié **créditée** restent dans la ligne de différence (gain ou perte de change),
-   montrés à l'aperçu. **Question à Beat (Q-6b-1)** ci-dessous.
+2. **Frais d'une conversion du côté crédité — tranché par B27 et A33** (B4 : « coût au compte de frais quand le
+   prestataire le donne à part »). Un frais donné à part sur la moitié **créditée** va au **compte de frais du
+   prestataire et de la devise** (B3 ; `payment_provider_accounts.fee_account_id` du compte de la moitié créditée,
+   gardé par 38-2 : compte de charge, même devise — raisons `not_expense`, `currency_mismatch`), **jamais** dans la
+   différence de change. L'écriture 2 de 37-3b l'admet depuis A33 (37-3b AC-2 bis, FR-37-3b-8) : une ligne **au débit**
+   d'un compte de charge de la même devise n'entre pas dans la règle « un seul compte en devise » (hors comptes de
+   charge), et la ligne de différence se calcule **après** elle. Les frais de la moitié **débitée** vont, comme avant,
+   au compte de frais de son solde (écriture 1, jamais complétée). *(La limite écrite à la rédaction — frais de la
+   moitié créditée laissés dans la différence, Q-6b-1 — est retirée : elle aurait mis un frais dans un gain ou une
+   perte de change, et le sous-compte de frais ne se rapprocherait plus du relevé du prestataire, B3/B27.)*
 3. **« Origine absente ou non réconciliée → file »** (E16) : tenu tel quel, mais **calculé à la lecture** (NFR-38-6b-4) ;
    la valeur `refund_origin_missing` que le passage (38-3b, classement de 38-8) peut poser dans `review_reason` est une indication, non l'autorité
    (C-38-6b-4). La fiche 38-8 (AC-4, AC-5) écrit que `refund_origin_missing` « est posé par 38-6b » : ici il n'est
@@ -100,9 +106,13 @@ afin que **tout mouvement qui change un solde finisse comptabilisé, sans qu'auc
   `…_in_tx`, cette story l'extrait, sans recopie), `completeDifference: true` (A31). Écriture 1 : crédit compte
   prestataire X1 `|N₁|` (devise de X1), débit compte de frais X1 `|F₁|` si `F₁ ≠ 0`, débit compte de transit
   `round(|N₁| × c₁, 2) − round(|F₁| × c₁, 2)` (CHF₁, équilibre exact). Écriture 2 : débit compte prestataire X2 `|N₂|`,
-  crédit transit CHF₁, ligne de différence ajoutée par le serveur (comptes de X2, `fx_accounts_for`). Les frais `F₂` de
-  la moitié créditée ne font pas de ligne (Écart 2) : ils sont dans la différence. Cours : cours retenu du mois de chaque
-  date (C-38-6a-10, AC-6 de 38-6a).
+  débit compte de frais X2 `|F₂|` si `F₂ ≠ 0` (compte de charge en X2, montant en devise `|F₂|`, CHF
+  `round(|F₂| × c₂, 2)` ; ligne de frais admise par A33), crédit transit CHF₁, ligne de différence ajoutée par le serveur
+  **après** les frais (comptes de X2, `fx_accounts_for` ; Σ débit, frais compris, contre Σ crédit — A33) : la différence
+  ne contient que l'écart de change, jamais `F₂` (Écart 2, B27). Le constructeur pur ne pose pas la différence (37-3b la
+  calcule) ; il rend la différence **attendue**, frais déduits, pour l'aperçu. Compte de frais X2 absent ou invalide au
+  moment de l'acceptation → `FEE_ACCOUNT_INVALID` (raison de 38-2/38-6a, `missing` comprise) en `failed[]`, rien de
+  créé (comme pour `F₁`). Cours : cours retenu du mois de chaque date (C-38-6a-10, AC-6 de 38-6a).
 - **C-38-6b-2 bis — Conversion dont un côté est en CHF (ajoutée à la passe P1).** B1 donne trois soldes par compte
   (CHF, EUR, USD) : la conversion CHF ↔ devise est la plus courante, et **37-3b AC-2 bis ne la couvre pas** (l'assistant
   et `POST /journal-entries/conversions` valent entre **deux devises étrangères** — « sinon une écriture ordinaire
@@ -110,7 +120,8 @@ afin que **tout mouvement qui change un solde finisse comptabilisé, sans qu'auc
   l'écriture « débit 1030 PayPal CHF 100 / crédit 1031 PayPal EUR 92 EUR (CHF 100) ». Quand l'une des deux moitiés est
   en CHF (compte du grand livre sans devise, 37-1), la paire se passe donc en **une seule écriture**, sans compte de
   transit ni appel à la fonction de 37-3b : débit du compte qui reçoit, crédit du compte qui paie, **une seule devise
-  étrangère** (celle de l'autre moitié, 37-3a), frais de la moitié débitée au compte de frais du solde débité, et une
+  étrangère** (celle de l'autre moitié, 37-3a), frais de **chaque** moitié au compte de frais de **son** solde (B27 : la
+  moitié créditée comprise ; CHF et la devise étrangère seulement, l'écriture garde une seule devise étrangère), et une
   **ligne de différence** (Σ crédits − Σ débits en CHF) aux comptes de différence de change du compte en devise
   (`fx_accounts_for`, S2 ; gain au crédit, perte au débit), calculée par le constructeur, montrée à l'aperçu (D6),
   jamais silencieuse. Cours : cours retenu du mois de la date de la moitié **en devise** (C-38-6a-10). Date de
@@ -188,11 +199,19 @@ afin que **tout mouvement qui change un solde finisse comptabilisé, sans qu'auc
    dans le test ; acceptée depuis X1, deux écritures créées par la fonction de 37-3b avec `completeDifference: true`, la
    ligne de différence en dernière ligne de l'écriture 2 ; compte de transit à **0** ; **les deux** transactions
    `reconciled`, chacune sur son écriture ; `AcceptedProposal` porte les champs additifs `pairedBankTransactionId` et
-   `pairedJournalEntryId`. Variante : frais `F₂ ≠ 0` sur la moitié créditée → aucune ligne de frais à l'écriture 2, la
-   différence les contient (Écart 2), montré à l'aperçu. **Variante CHF** (C-38-6b-2 bis) : solde CHF (compte 1030) et
+   `pairedJournalEntryId`. **Variante frais sur la moitié créditée** (B27, A33, Écart 2) : moitié +107.84 USD avec frais
+   −0.50 USD (compte de frais USD 6911, compte de charge en USD) → l'écriture 2 porte la ligne **débit 6911 `USD 0.50`**
+   (CHF au cours du mois), créée par la fonction de 37-3b avec `completeDifference: true` ; la ligne de différence vient
+   **après** et vaut l'écart de change seul — chiffres écrits dans le test, égaux à la différence attendue de l'aperçu,
+   et différents de ceux du même cas sans la ligne de frais (le frais n'est pas dans la différence) ; solde de 6911
+   augmenté de `USD 0.50` ; compte de transit à 0. Compte de frais USD non désigné → `FEE_ACCOUNT_INVALID`
+   (`reason: missing`) en `failed[]`, aucune écriture. Frais sur les **deux** moitiés → une ligne de frais dans chaque
+   écriture, chacune à son compte. **Variante CHF** (C-38-6b-2 bis) : solde CHF (compte 1030) et
    solde EUR, moitiés −100.00 CHF (frais −1.00) et +92.00 EUR → **une** écriture (crédit 1030 100.00 ; débit compte de
    frais CHF 1.00 ; débit compte EUR `EUR 92.00` × cours du mois ; ligne de différence aux comptes de change du compte
-   EUR), les deux transactions `reconciled` sur elle, aucun passage par le compte de transit ; paire EUR/USD du test
+   EUR), les deux transactions `reconciled` sur elle, aucun passage par le compte de transit ; même paire avec frais
+   −0.40 EUR sur la moitié créditée → ligne de débit au compte de frais EUR (`EUR 0.40`), différence calculée après elle
+   (B27) ; paire EUR/USD du test
    ci-dessus inchangée ; annulation d'une moitié de la paire CHF → retrait de son seul lien (34-11b).
 3. **AC-3 — Conversion : refus (NFR-38-6b-1, NFR-38-6b-2).** Corps `provider` d'une moitié : `pairedBankTransactionId`
    **exigé** et égal à la paire résolue sous verrou, sinon `PROVIDER_CONVERSION_PAIR_INVALID` (`{ expected, actual }`) ;
@@ -266,7 +285,11 @@ afin que **tout mouvement qui change un solde finisse comptabilisé, sans qu'auc
 9. **AC-9 — Constructeur et paire, purs (NFR-38-6b-3).** `kesh-reconciliation::provider` : `build_provider_conversion`
    (deux `NewJournalEntry`, sans ligne de différence, plus la différence attendue pour l'aperçu), `build_provider_transfer`,
    et `build_provider_entry` étendu de `reversal` (C-38-6b-5) ; `review_reason_of` pur. Tests unitaires sans base :
-   conversion avec et sans frais de chaque côté, équilibre exact de l'écriture 1 ; virement avec frais ; inverse d'une
+   conversion avec et sans frais de chaque côté, équilibre exact de l'écriture 1, ligne de frais de la moitié créditée
+   au **débit** du compte de frais de sa devise dans l'écriture 2 et différence attendue calculée **après** elle (B27,
+   A33 : à brut `|N₂| + |F₂|` et cours fixes, la différence attendue ne dépend pas de la part des frais, au centime
+   d'arrondi près — propriété testée) ; virement avec
+   frais ; inverse d'une
    vente, d'un achat, d'acquisitions ; chaque motif de la file.
 10. **AC-10 — Textes, i18n, documentation.** Codes neufs (`failed[]`, `blockedBy` ou `AppError`) :
     `PROVIDER_CONVERSION_PAIR_INVALID`, `PROVIDER_PAIR_ACCOUNT_LOCKED`, `PROVIDER_PAIR_CHANGED`,
@@ -328,9 +351,9 @@ afin que **tout mouvement qui change un solde finisse comptabilisé, sans qu'auc
 
 ## Questions ouvertes
 
-- **Q-6b-1 (Beat)** — Frais donnés à part sur la moitié **créditée** d'une conversion : les laisser dans la différence de
-  change (choix de la fiche, Écart 2), ou demander à 37-3b d'admettre, dans l'écriture à compléter, un second compte
-  **de la même devise** (le compte de frais) ? Le second choix touche une fiche validée de l'Epic 37.
+- *Close* — **Q-6b-1** (frais donnés à part sur la moitié créditée d'une conversion) : tranchée par **B27** (Beat,
+  2026-11-15) — au compte de frais de la devise, jamais dans la différence —, rendue possible par **A33** (37-3b). Voir
+  Écart 2.
 
 ## Dev Agent Record
 
@@ -342,6 +365,13 @@ afin que **tout mouvement qui change un solde finisse comptabilisé, sans qu'auc
 
 ## Change Log
 
+- 2026-11-15 — B27/B28 (Opus) : **B27** — le frais donné à part sur la moitié créditée d'une conversion va au compte de
+  frais du prestataire et de sa devise, ligne au débit de l'écriture 2 admise par A33 (37-3b), différence calculée
+  après lui ; la limite « frais dans la différence » (Écart 2, Q-6b-1) est retirée ; C-38-6b-2 (écriture 2, refus
+  `FEE_ACCOUNT_INVALID`), C-38-6b-2 bis (frais de chaque moitié à son compte), AC-2 (variantes frais sur la moitié
+  créditée, deux écritures et écriture unique), AC-9 (constructeur : ligne de frais, différence attendue indépendante
+  de la part des frais). B28 ne touche pas cette fiche (rattachement à plusieurs écritures : 38-6c) ; le rattachement
+  des deux moitiés d'une conversion reste celui d'une transaction à **une** écriture. Aucun FR/NFR ajouté.
 - 2026-11-15 — alignement inter-fiches P1 (Opus) : AC-1 — le candidat `conversion` porte `pairedTransaction
   { bookingDate, amount, currency, bankAccountName }` ; AC-8 — la vue porte de même `pairedTransaction` à côté de
   `pairedBankTransactionId` (liste inter-fiches, point 38-6b) ; découpage D-P1-1 : dépendance portée sur 38-3a

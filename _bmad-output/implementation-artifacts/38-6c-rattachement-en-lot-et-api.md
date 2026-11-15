@@ -4,20 +4,22 @@ Status: ready-for-dev
 
 *Fiche rédigée le 2026-11-15 (Opus), branche `epic/38-paypal`, numéros de ligne relevés sur `8b3d548d`. Epic 38
 (`_bmad-output/planning-artifacts/epic-38-paypal.md`) : E3, E11, E15, E21, E22, E23, C-38-0, C-38-12, C-38-14 ;
-décisions de Beat B17, B21 (`epics-38-40-cadrage.md`). **Dépend de 38-3a** (colonnes `provider_tx_id`, `invoice_ref`
+décisions de Beat B17, B21, **B28** (`epics-38-40-cadrage.md`). **Dépend de 38-3a** (colonnes `provider_tx_id`, `invoice_ref`
 de `bank_transactions`, C-38-4 ; comptes prestataires porteurs de transactions) et, à travers elle, de **38-2** (compte
 bancaire lié à un compte du plan **en devise**, levée de C-37-9, E11) et de l'**Epic 37** (37-1 : `accounts.currency` ;
 37-3a : `journal_entry_lines.amount_currency` toujours positif, sens porté par débit/crédit, `chk_jel_fx_amount` ;
 37-3b : conversion entre deux devises = **deux** écritures par le compte de conversion). Fiches sœurs : 38-6a (lève le
 saut hors CHF de `get_proposals`, `confirmAlreadyBooked`), 38-9b (écran du rattachement en lot, manuel utilisateur et
-voie API des scripts). **Aucune migration** (attendu par l'epic, confirmé : AC-9). Se développe de préférence **avant
-38-6a** (epic, § *Stories*).*
+voie API des scripts). **Une migration non breaking** (B28 : table `bank_transaction_extra_entries`, AC-9, AC-12 ;
+l'epic n'en attendait pas — signalée par la révision B27–B28, C-38-0). Se développe de préférence **avant 38-6a**
+(epic, § *Stories*).*
 
 ## Story
 
 En tant que comptable qui a déjà passé ses livres 2024 par l'API, je veux que Kesh me **suggère**, pour chaque
 transaction PayPal téléchargée, l'écriture existante qui lui correspond — dans la devise du compte — et que je les
-rattache **en lot**, sans qu'aucune écriture ne soit créée ni doublée ; et, en tant qu'auteur d'un script externe
+rattache **en lot**, sans qu'aucune écriture ne soit créée ni doublée — y compris quand la vente est passée au brut et
+ses frais par une **écriture à part** (B28 : la transaction se rattache alors aux **deux**) ; et, en tant qu'auteur d'un script externe
 (exports WHMCS, CB Paid Subscriptions), je veux retrouver la transaction de prestataire d'une facture, créer l'écriture
 et la rattacher par une clé d'API, afin que mes encaissements soient comptés une fois et rapprochés.
 
@@ -37,12 +39,25 @@ Reprises de la fiche d'epic (§ 38-6c), complétées là où un AC l'exige.
      se rattache **des deux côtés**. → AC-2.
   7. `FR-38-6c-7` *(ajoutée par la validation P1)* — Le rattachement n'écrit aucune écriture : une écriture d'un
      exercice clos ou sous verrou de période se rattache, en lot comme à l'unité. → AC-11.
+  8. `FR-38-6c-8` *(B28)* — Une transaction se rattache, à l'unité comme en lot, à un **groupe** de deux à cinq
+     écritures existantes dont les mouvements sur le compte du prestataire somment **exactement** à son montant
+     (typiquement la vente au brut et l'écriture de frais séparée de 2024). → AC-12, AC-13.
+  9. `FR-38-6c-9` *(B28)* — Kesh suggère une **paire** (deux écritures datées à ±3 jours de la transaction, de somme
+     exacte) quand aucune écriture seule ne correspond : univoque, ou « ambiguë » ; une paire compte comme « déjà
+     comptabilisée » (34-4). → AC-14.
+  10. `FR-38-6c-10` *(B28)* — L'annulation d'une transaction rattachée à un groupe défait **tout le groupe** en une
+      fois. → AC-15.
 - **NFR**
   1. `NFR-38-6c-1` — Une seule règle de rattachement : lecture par page égale aux fonctions du dialogue, en devise.
      → AC-3.
   2. `NFR-38-6c-2` — *Pattern batch* ; rien de rattaché d'office. → AC-4, AC-5.
   3. `NFR-38-6c-3` — Une année de transactions se suggère en temps borné (mesure à la fiche). → AC-8.
   4. `NFR-38-6c-4` — Routes des connexions et des secrets toujours fermées aux clés d'API. → AC-7.
+  5. `NFR-38-6c-5` *(B28)* — Migration **non breaking** (`CREATE TABLE` seul) ; une écriture appartient au plus à un
+     groupe, tenu par la base (`UNIQUE (journal_entry_id)`) et par la règle sous verrou. → AC-9, AC-12.
+  6. `NFR-38-6c-6` *(B28)* — « Écriture rapprochée » a **une** définition (fragment SQL partagé, lien direct **ou**
+     membre d'un groupe), lue par **tous** les sites de l'inventaire clos de l'AC-12 ; aucun ne relit
+     `matched_entry_id` seul. → AC-12, AC-15.
 
 ## Écarts à l'epic
 
@@ -74,14 +89,20 @@ Reprises de la fiche d'epic (§ 38-6c), complétées là où un AC l'exige.
    RECONCILIATION_ENTRY_NOT_LINKABLE` (`errors.rs:3241`) — changer le code d'une route publiée casserait ses clients.
    Le diagnostic qui distingue les motifs est une lecture de plus, après le refus de la règle, qui **étiquette** et
    n'admet jamais (AC-5).
-5. **Écritures 2024 « au brut, frais à part ».** Une transaction se rattache à **une** écriture dont le mouvement sur
-   le compte prestataire égale son montant (net, E7). Si Beat a passé en 2024 une vente au brut (débit PayPal 100) et
-   ses frais par une **autre** écriture (crédit PayPal 3.20), aucune écriture ne vaut 96.80 : la transaction reste
-   « sans correspondance » et se traite à la main. Si les frais sont une ligne de la même écriture (débit PayPal 96.80,
-   débit frais 3.20, crédit ventes 100), elle se rattache. **À vérifier sur les écritures de la recette de l'Epic 37
-   avant le développement** (question Q-38-6c-1 ci-dessous) ; aucune règle « somme de plusieurs écritures » n'est
-   introduite (elle ne se décide pas sans faux rattachement possible : *Un appariement automatique propose, il ne crée
-   jamais*).
+5. **Écritures 2024 « au brut, frais à part » — tranché par B28 : elles se rattachent.** Dans les livres 2024 de Beat,
+   les frais PayPal sont des **écritures à part** (B28) : une vente passée au brut (débit PayPal 100) et ses frais par
+   une autre écriture (crédit PayPal 3.20) ; aucune écriture seule ne vaut 96.80. L'epic (E21) ne prévoyait que « une
+   transaction ↔ une écriture » ; or le modèle actuel ne peut pas dire plus : **une** colonne,
+   `bank_transactions.matched_entry_id` (`20260504000001_bank_imports.sql:71`, FK `ON DELETE SET NULL`), une écriture
+   par transaction — l'inverse (deux transactions sur une écriture, 34-11b) étant déjà admis. D'où une **table de
+   liaison** pour les écritures **en plus** de la première (AC-12, migration non breaking), le rattachement à un groupe
+   à l'unité et en lot (AC-13), la suggestion d'une **paire** (AC-14) et l'annulation du groupe (AC-15). La règle
+   « somme de plusieurs écritures » **propose et ne tranche jamais** (*Un appariement automatique propose, il ne crée
+   jamais*) : la paire n'est suggérée que si aucune écriture seule ne correspond, datée à ±3 jours, de somme exacte,
+   et l'utilisateur coche ; plusieurs paires possibles → « ambiguë ». Une écriture de frais **mensuelle** (frais
+   d'un mois en une écriture) ne forme pas de paire exacte avec une vente : elle reste hors de cette règle et se traite
+   à la main (limite écrite au doc-comment et au manuel, 38-9b). Si les frais sont une ligne de la même écriture, la
+   règle d'une écriture suffit (inchangé).
 6. **Écran et manuel** : le miroir de la condition 1 à l'écran (`canLink`,
    `frontend/src/lib/features/reconciliation/ReconciliationProposals.svelte:262-264`, « CHF seulement ») et le manuel
    (`docs/manual/fr/user-manual.tex:3088`, `:3104`, § `sec:rattacher-reglement`) ne changent qu'en **38-9b** ; tant
@@ -100,8 +121,8 @@ Reprises de la fiche d'epic (§ 38-6c), complétées là où un AC l'exige.
 
 ## Questions ouvertes
 
-- **Q-38-6c-1 (Beat)** — Comment les frais PayPal de 2024 ont-ils été passés : ligne de l'écriture de vente, ou
-  écriture à part ? (Écart 5 ; décide si le rattachement en lot couvre l'essentiel de 2024.)
+- *Close* — **Q-38-6c-1** (frais PayPal de 2024 : ligne de l'écriture de vente, ou écriture à part ?) : **écritures à
+  part**, B28 (Beat, 2026-11-15) ; d'où l'Écart 5 récrit et les AC-12 à AC-15.
 
 ## Critères d'acceptation
 
@@ -191,12 +212,16 @@ Reprises de la fiche d'epic (§ 38-6c), complétées là où un AC l'exige.
      - `unique` — **une** écriture candidate, **aucun** règlement candidat, l'écriture **non** liée ailleurs, et elle
        n'est candidate d'**aucune autre** transaction de la page ; l'élément porte `entry { journalEntryId,
        entryNumber, entryDate, description, amount }` ;
-     - `ambiguous` — sinon, s'il y a au moins une candidate : `reasons` ⊂ {`several_entries`, `settlement_candidate`,
-       `matched_elsewhere`, `entry_shared`} et `candidates` (les `PageEntry`, ≤ 50) ;
-     - `none` — aucune écriture ni aucun règlement candidat ;
+     - `uniquePair` *(B28, AC-14)* — **aucune** écriture seule ni aucun règlement candidat, et **une** paire, dont
+       aucune des deux écritures n'est candidate (seule ou en paire) d'une autre transaction de la page ; l'élément
+       porte `entries` (les deux `PageEntry`, mouvement compris) ;
+     - `ambiguous` — sinon, s'il y a au moins une candidate ou une paire : `reasons` ⊂ {`several_entries`,
+       `settlement_candidate`, `matched_elsewhere`, `entry_shared`, `several_pairs`} et `candidates` (les `PageEntry`,
+       ≤ 50) ou `pairs` (≤ 20, AC-14) ;
+     - `none` — aucune écriture, aucun règlement, aucune paire candidats ;
    - **réponse** `ListResponse` (`items`, `total`, `limit`, `offset`, `routes/mod.rs`) ; un élément : `bankTransactionId`,
      `version` (pour le lot), `bookingDate`, `valueDate`, `amount`, `currency`, `rejected`, `kind`, `entry?`,
-     `candidates?`, `reasons?`, `settlementCount`, `matchedElsewhereCount` ;
+     `candidates?`, `entries?` (paire univoque), `pairs?`, `reasons?`, `settlementCount`, `matchedElsewhereCount` ;
    - **rien n'est écrit, rien n'est coché d'office** : la réponse ne propose aucun lot ; l'écran (38-9b) fait cocher.
    Limite écrite au doc-comment et au Change Log : `entry_shared` n'est vu que **dans la page** ; une écriture
    candidate univoque de deux transactions de deux pages différentes du même compte est refusée au second
@@ -207,10 +232,13 @@ Reprises de la fiche d'epic (§ 38-6c), complétées là où un AC l'exige.
 5. **AC-5 — Lot** (`FR-38-6c-3`, `NFR-38-6c-2`, *Pattern batch*). `POST /api/v1/reconciliation/link-entries`
    (Comptable+, clés d'API `read-write` admises — la clé `read` reçoit le 403 `API_KEY_READ_ONLY` du middleware,
    `middleware/auth.rs:141-147`) :
-   - **corps** `{ bankAccountId, items: [{ bankTransactionId, journalEntryId, version }] }` ; extracteur
+   - **corps** `{ bankAccountId, items: [{ bankTransactionId, journalEntryId | journalEntryIds, version }] }` —
+     `journalEntryIds` (B28, groupe, AC-13) **ou** `journalEntryId`, exactement un des deux ; extracteur
      `impl_validation_extractor` (`extractors.rs`) : tout rejet de corps → 400 `VALIDATION_ERROR` ; `items` vide, plus
      de 500 éléments (`check_batch_size`, `routes/reconciliation.rs:1554`), identifiant ≤ 0, `version` < 1,
-     `bankTransactionId` en double → 400 ; un `journalEntryId` répété est admis (la règle refuse le second) ;
+     `bankTransactionId` en double, ni l'un ni les deux de `journalEntryId`/`journalEntryIds`, `journalEntryIds` de
+     longueur hors 2..=5 ou portant un doublon → 400 ; un identifiant d'écriture répété **entre** éléments est admis (la
+     règle refuse le second) ;
    - **erreurs globales** (seules admises, *Pattern batch*) : 400 ci-dessus, 401, 403, 404
      `BANK_IMPORT_BANK_ACCOUNT_NOT_FOUND` (compte absent ou archivé, comme `post_accept`, `:1700-1708`), 500 ;
    - **compte clos** → 200, chaque élément en `failed[]` `BANK_ACCOUNT_CLOSED` (`closed_account_failed`, `:6735`) ;
@@ -235,11 +263,14 @@ Reprises de la fiche d'epic (§ 38-6c), complétées là où un AC l'exige.
      `ENTRY_NOT_LINKABLE` (`reason` ∈ `transaction_not_linkable` — condition 1 —, `entry_not_found`, `entry_reversed`
      — condition 5 —, `settlement_entry` — condition 6 —, `unclassified`) ; `AMOUNT_MISMATCH` (condition 3 :
      `{ transactionAmount, entryMovement }`, `entryMovement` `null` si l'écriture ne touche pas le compte) ;
-     `ENTRY_ALREADY_LINKED` (condition 4 : `{ linkedBankTransactionIds }`) ; tout autre `DbError` →
+     `ENTRY_ALREADY_LINKED` (condition 4 : `{ linkedBankTransactionIds }`) ; pour un groupe, les codes de l'AC-13
+     (`ENTRY_GROUP_SUM_MISMATCH`, et les trois précédents portant `journalEntryId` du membre fautif) ; tout autre `DbError` →
      `DATABASE_ERROR` (`{ message }`, précédent d'`accept_one_rule`). Test : un refus de chaque classe ; et une
      propriété — pour toute écriture refusée par la règle, le diagnostic ne rend jamais « rattachable » (il n'a pas
      de variante pour cela) et `unclassified` n'apparaît dans aucun cas construit ;
-   - **réponse** 200 `{ linked: [{ bankTransactionId, journalEntryId }], failed: [FailedProposal] }` — la struct
+   - **réponse** 200 `{ linked: [{ bankTransactionId, journalEntryId, journalEntryIds }], failed: [FailedProposal] }`
+     (`journalEntryId` = l'écriture principale, `journalEntryIds` = tout le groupe, `[journalEntryId]` pour un lien
+     simple) — la struct
      `FailedProposal` existante (`routes/reconciliation.rs:571-576`), `failed` dans l'ordre des éléments reçus
      (`merge_failed_in_order`, `:1568`) ;
    - **audit** : chaque élément rattaché écrit `reconciliation.entry_linked` (dans `link_entry_in_tx`, existant ;
@@ -284,28 +315,42 @@ Reprises de la fiche d'epic (§ 38-6c), complétées là où un AC l'exige.
    qui avait mesuré ≈ 18,5 s pour 500 transactions à trois lectures **par transaction**, doc `:949-951`) ; lot de 500
    rattachements : durée mesurée, sans cible (séquentiel par construction, Écart 3). Une cible manquée se signale au
    Project Lead avant la revue, avec la mesure — jamais tue.
-9. **AC-9 — Aucune migration** (C-38-0). La story n'ajoute ni table, ni colonne, ni index ; `crates/kesh-db/migrations/`
-   n'est pas touché (contrôle `git diff --stat` au Change Log). Le gate complet reste obligatoire en cours de boucle
-   (exception `kesh-db` : un dépôt est modifié — `reconciliation_link.rs`).
+9. **AC-9 — Une migration, non breaking** (C-38-0, B28, `NFR-38-6c-5`). **Un** fichier,
+   `<date>000001_bank_transaction_extra_entries.sql` : `CREATE TABLE` seul (AC-12) — ni `DROP`, ni `MODIFY`, ni
+   valeur neuve dans une colonne existante, **aucune donnée écrite** : non breaking au sens de P1/P3,
+   `kesh_version_min_required` **non relevé** par ce fichier (le relèvement de la release est celui de 38-2, C-38-0) ;
+   comme toute migration, il empêche le binaire précédent de démarrer (sqlx), retour par la sauvegarde d'avant la mise
+   à jour (E19). Gardes : ligne à `docs/migrations-idempotence-audit.md` et compteurs **recomptés** (P5) ; `grep -rn
+   "migrations.len()\|apply_migrations_up_to" crates/` et chaque site inspecté (P6) ; aucun triage P7 (aucun `INSERT`,
+   `UPDATE`, `DELETE`) — vérifié par `every_data_backfill_migration_is_triaged`, vert sans exemption ; squash
+   `crates/kesh-db/test-schema/` mis à jour (`test_schema_guard`) ; `.keshbackup` : la table entre à l'inventaire, à
+   l'export et à l'import complet (ordre des FK : après `bank_transactions` et `journal_entries`), test
+   `admin_full_import_e2e` avec un groupe restauré à l'identique ; export CSV des tables (`exports/csv_tables.rs`,
+   patron de `bank_transactions` `:759`). Gate complet en cours de boucle (exception `kesh-db`).
 10. **AC-10 — Registres, i18n, MCP, écrans, manuels.**
     - **Routes** (C-38-12) : `LIB_ROUTES` (`kesh-api/tests/audit_route_registry.rs:382`) gagne `("post",
       "reconciliation::post_link_entries", Traced, SansEcritureAuJournal)` — **+1** route mutante ; le total de
       `the_registry_partition_is_what_the_story_declares` (`:1007-1018`) et son message passent de N à N + 1 (N relu à
       la source au moment du développement : 146 sur `8b3d548d`, avant l'Epic 37 et 38-1 à 38-3b) ; les deux `GET` ne
       sont pas des routes mutantes (hors registre). Doc-comment du module (`:262-270`, point (vi)) complété pour le lot.
+      Le groupe (B28) n'ajoute **aucune** route : `…/link-entry`, `…/cancel` et le lot l'admettent (AC-13, AC-15).
     - **i18n** : aucun message serveur **neuf** (les codes du lot sont des `FailedProposal` sans texte ; les refus
       globaux réutilisent des codes existants). **Un message existant est reformulé** (Écart 8) :
       `reconciliation-errors-entry-not-linkable` aux **quatre** locales (`crates/kesh-i18n/locales/{fr-CH,de-CH,
       it-CH,en-CH}/messages.ftl`), repli de `errors.rs:3236` égal mot pour mot au catalogue `fr-CH` (G9), doc-comment
-      `errors.rs:1100-1112` — « la transaction n'est pas dans la devise du compte, ou son montant est nul, … ».
-      L'écran (38-9b) traduit les codes du lot (`failed-proposal-label.ts`, quatre locales : **ajoutés par 38-9b**,
+      `errors.rs:1100-1112` — « la transaction n'est pas dans la devise du compte, ou son montant est nul, … » ; il
+      couvre aussi le refus d'un groupe par le geste unitaire (AC-13 : « … ou les mouvements des écritures choisies ne
+      somment pas à son montant »). L'écran (38-9b) traduit les codes du lot (`failed-proposal-label.ts`, quatre locales : **ajoutés par 38-9b**,
       cette story ne touche pas `frontend/`) — liste au Change Log.
     - **Documentation de l'API** (`docs/api-external.md`, ni manuel ni frontend ; **38-9b y renvoie comme à un fichier
       « écrit par 38-6c »**) : sections des trois routes neuves (paramètres, réponses, codes par élément du lot, limite
       de 500, clés `read` / `read-write`), règle du rattachement en devise et de l'autre côté entre devises (§ de
       `…/entry-candidates` et `…/link-entry`, `:807-811` : `amount` est dans la devise du compte), tableau des codes
-      (`:1076-1077`, texte « hors CHF » corrigé), parcours du script en trois appels (AC-7). Relu contre le code, à
-      livrer dans la même PR.
+      (`:1076-1077`, texte « hors CHF » corrigé), parcours du script en trois appels (AC-7), et **le groupe** (B28) :
+      `journalEntryIds` à `…/link-entry` et dans le lot (2 à 5, exclusif de `journalEntryId`), règle de la somme
+      exacte, écriture principale, `ENTRY_GROUP_SUM_MISMATCH` et les `reason` neufs d'`ENTRY_NOT_LINKABLE`, paires de
+      `link-suggestions` et d'`entry-candidates` (`uniquePair`, `pairs`, `several_pairs`), annulation de tout le groupe
+      (contre-passation de chaque écriture, refus dans un exercice clos). Relu contre le code, à livrer dans la même PR.
     - **MCP** (E23) : aucun outil neuf ; les écritures rattachées se lisent déjà par `kesh_ecritures`
       (`mcp/outils/ecritures.rs:198`) ; le rattachement est une écriture d'état hors du périmètre en lecture seule du
       serveur MCP.
@@ -317,7 +362,107 @@ Reprises de la fiche d'epic (§ 38-6c), complétées là où un AC l'exige.
     (`link_entry_in_tx`, doc `reconciliation_link.rs:1089-1093` : « le geste ne prend **jamais** `invoice_settlements`,
     `supplier_invoices`, `invoices`, `bank_accounts` ni `fiscal_years` : il n'écrit rien au journal ») : une écriture de
     2024 dans un exercice clos ou sous verrou de période **se rattache**, en lot comme à l'unité. Test HTTP : exercice
-    2024 clos, transaction de 2024 rattachée par le lot (200) ; le comportement est écrit pour 38-9b (manuel).
+    2024 clos, transaction de 2024 rattachée par le lot (200) ; le comportement est écrit pour 38-9b (manuel). Vaut
+    pour un groupe (AC-13) : vente et frais de 2024 dans un exercice clos, rattachés (200).
+12. **AC-12 — Le modèle du groupe et la définition unique de « rapprochée »** (`FR-38-6c-8`, `NFR-38-6c-5`,
+    `NFR-38-6c-6`, B28). **Relevé au code** : un lien est `bank_transactions.matched_entry_id` (une écriture par
+    transaction ; jusqu'à deux transactions par écriture, 34-11b, `linkable_side`, `reconciliation_link.rs:739-748`) ;
+    aucune table de lien. **Forme retenue, la plus étroite** : `matched_entry_id` garde l'**écriture principale** du
+    groupe — tous ses lecteurs actuels restent justes pour elle —, et les **autres** écritures vont dans une table neuve
+    `bank_transaction_extra_entries (bank_transaction_id BIGINT NOT NULL, journal_entry_id BIGINT NOT NULL, company_id
+    BIGINT NOT NULL, created_at DATETIME(3) NOT NULL, PRIMARY KEY (bank_transaction_id, journal_entry_id), UNIQUE
+    (journal_entry_id), FK bank_transactions / journal_entries / companies ON DELETE RESTRICT)`. `RESTRICT` et non `SET
+    NULL` : un lien ne s'efface jamais en silence (en-tête de `reconciliation_cancel.rs`, « jamais par la
+    suppression ») ; `UNIQUE (journal_entry_id)` : une écriture est membre d'un groupe au plus, tenu par la base.
+    **Écriture principale** : celle de plus grand `|M|`, puis plus petit identifiant — décidée par le serveur, jamais
+    par l'ordre du corps. Un lien simple n'écrit **rien** dans la table (aucune ligne réécrite, aucun rejeu).
+    - **Fragment partagé** (seule définition, `reconciliation_link.rs`) : `LINKED_TRANSACTIONS_OF(e)` = transactions
+      `bt` telles que `bt.matched_entry_id = e.id` **ou** une ligne `(bt.id, e.id)` de la table ; `IN_GROUP(e)` = `e`
+      est membre d'un groupe (ligne de la table, ou principale d'une transaction qui a une ligne). `linkable_side`,
+      `HAS_LINK` et `transfer_other_side` le lisent ; la condition 4 refuse en plus toute écriture `IN_GROUP` (un membre
+      de groupe n'a pas d'autre côté).
+    - **Inventaire clos des lecteurs de `matched_entry_id` qui demandent « l'écriture est-elle rapprochée ? »**
+      (relevé par `grep -rn matched_entry_id crates/*/src`, sur `57b26a5f`, à recompter à l'étape 0 du développement,
+      citation au Change Log ; chacun **résolu** ou **écarté par construction**, aucun laissé muet) :
+      (a) `journal_entries.rs:2340-2344` (motif `MatchedBankTransaction` des refus de modification et de
+      contre-passation) — **résolu** : lit le fragment, un membre est non modifiable et non contre-passable comme la
+      principale ; (b) `bank_accounts.rs:1884-1898` (écart du relevé : mouvements postérieurs des écritures rapprochées)
+      — **résolu** : le fragment, faute de quoi l'écriture de frais d'un groupe manquerait au calcul ; (c)
+      `reconciliation_link.rs` (`linkable_side`, `HAS_LINK`, `transfer_other_side`, et le `NOT EXISTS` des règlements
+      `:161`) — **résolu** (fragment) pour les trois premiers, **par construction** pour le quatrième ; (d)
+      `reconciliation_cancel.rs:202`, `:670` — **résolu** par l'AC-15 ; (e) `invoices.rs:1622`,
+      `supplier_invoices.rs:1318`, `:1445`, `settlement_cancellation.rs:142` (écritures de factures et de règlements)
+      — **par construction** : un membre de groupe n'est **jamais** une écriture possédée par une pièce (AC-13,
+      condition G4) ; (f) `routes/reconciliation.rs` (`is_reconciled`, poses de `matched_entry_id` des huit chemins sur
+      une écriture **neuve**) et `bank_imports.rs` (`is_reconciled`) — portent sur la transaction, non sur l'écriture :
+      inchangés ; (g) `exports/csv_tables.rs:759`, sauvegarde — AC-9. Un test par site résolu : un groupe dont le
+      **membre** (non la principale) est visé — refus de contre-passation directe `MatchedBankTransaction`, écart du
+      relevé égal à celui d'un lien simple de même mouvement.
+    Tests : schéma (FK, `UNIQUE`), mutation « fragment remplacé par `matched_entry_id` seul » sur (a) et (b) → rouge.
+13. **AC-13 — Rattacher un groupe, à l'unité et en lot** (`FR-38-6c-8`, B28). `POST
+    /reconciliation/transactions/{id}/link-entry` admet, **en plus** de `{ journalEntryId }` (inchangé),
+    `{ journalEntryIds: [..] }` — exactement un des deux, sinon 400 `VALIDATION_ERROR` ; 2 à 5 identifiants distincts
+    (> 0), sinon 400. Le lot (AC-5) le porte par élément. **Aucune route neuve** (la forme « deux temps » — rattacher
+    puis ajouter — est écartée : entre les deux appels, la transaction serait `reconciled` sur un montant faux).
+    - **Règle du groupe** `{e₁…e_k}` pour `t` (une seule définition, `group_sql`, mêmes textes que l'AC-1 :
+      `entry_movements(basis)`, `ENTRY_NOT_REVERSED_NOR_SETTLEMENT`, fragment de l'AC-12) : condition 1 sur `t`
+      (inchangée) ; **G1** chaque `eᵢ` de la société ; **G2** chaque `eᵢ` mouvemente le compte du grand livre, `Mᵢ ≠ 0`
+      (une écriture qui ne le touche pas n'entre pas dans un groupe) ; **G3** `Σ Mᵢ = t.amount`, égalité décimale exacte
+      dans la base (CHF ou devise, AC-1) ; **G4** chaque `eᵢ` est une écriture **propre** : ni `invoices.journal_entry_id`,
+      ni ligne `invoice_settlements`, ni `supplier_invoices.journal_entry_id` / `settlement_journal_entry_id` (critères du
+      classement `reconciliation_cancel::classify`) ; **G5** conditions 5 et 6 pour chaque `eᵢ` ; **G6** aucune
+      `eᵢ` n'a de transaction liée (`LINKED_TRANSACTIONS_OF`) ni n'est `IN_GROUP` — un groupe n'a pas d'« autre côté ».
+    - **Verrous** : ceux du geste unitaire (verrou nommé → `t` `FOR UPDATE`), puis **chaque** `eᵢ` `FOR UPDATE` dans
+      l'ordre **croissant** des identifiants, **puis seulement** la première lecture ordinaire et la requête restreinte
+      à `e.id IN (…)` — la vue de lecture naît après le **dernier** verrou de ligne (invariant de `link_entry_in_tx`,
+      mutation M10) ; écriture : `UPDATE bank_transactions SET matched_entry_id = <principale>, status = 'reconciled'
+      …` (gardes `status = 'pending' AND matched_entry_id IS NULL`, comme le lien simple) puis `INSERT` des autres ;
+      `expected_version` (AC-5) contrôlée au même rang. Trace `reconciliation.entry_linked`, **une** par transaction,
+      champ additif `journalEntryIds` ; aucune action neuve.
+    - **Refus** — geste unitaire : 409 `RECONCILIATION_ENTRY_NOT_LINKABLE` (code inchangé, message de l'AC-10) ; lot :
+      `failed[]` avec le diagnostic (`diagnose_entry_link` étendu au groupe, lecture après refus, n'admet jamais) —
+      `ENTRY_GROUP_SUM_MISMATCH` (G3 : `{ transactionAmount, movements: [{ journalEntryId, movement }], sum }`) ;
+      `ENTRY_NOT_LINKABLE` (`{ journalEntryId, reason }`, `reason` ∈ existants + `entry_not_touching_account` (G2),
+      `entry_owned_by_document` (G4)) ; `ENTRY_ALREADY_LINKED` (G6 : `{ journalEntryId, linkedBankTransactionIds }`) ;
+      ordre : premier membre fautif dans l'ordre croissant des identifiants, puis la somme.
+    - Tests HTTP (compte EUR et compte CHF) : vente +100.00, frais −3.20 (écriture à part), transaction +96.80 → groupe
+      rattaché, principale = la vente, une ligne dans la table, trace avec les deux ; même lot avec `journalEntryIds`
+      inversés → même principale ; somme fausse (+96.70) → `ENTRY_GROUP_SUM_MISMATCH` ; membre déjà lié à une autre
+      transaction → `ENTRY_ALREADY_LINKED` ; membre qui ne touche pas le compte → `entry_not_touching_account` ; membre
+      écriture de facture → `entry_owned_by_document` ; tentative de lien **simple** d'une autre transaction à
+      l'écriture de frais d'un groupe → refusée (condition 4, `IN_GROUP`) ; `journalEntryIds` de longueur 1 ou 6, ou
+      avec doublon, ou avec `journalEntryId` → 400 ; concurrence : deux lots qui groupent la même écriture de frais avec
+      deux ventes → un seul groupe, l'autre `ENTRY_ALREADY_LINKED` (montage de T-race-3) ; groupe dans un exercice clos
+      (AC-11) → 200.
+14. **AC-14 — Paires suggérées ; « déjà comptabilisée »** (`FR-38-6c-9`, `NFR-38-6c-1`, B28). Une **paire** de `t` :
+    deux écritures `{a, b}` satisfaisant G1, G2, G4, G5, G6, `M_a + M_b = t.amount`, datées toutes deux à
+    `ENTRY_PAIR_WINDOW_DAYS` = 3 jours au plus de la date de paiement de `t`, **et** `t` sans aucune écriture seule
+    candidate (une écriture seule exacte prime : pas de paire à côté). Une requête (`entry_pairs_sql(basis)`,
+    auto-jointure des mouvements dans la fenêtre), triée par somme des écarts de jours puis identifiants, plafonnée à
+    `ENTRY_PAIRS_LIMIT` = 20 ; elle est lue par **les deux** — le dialogue (`GET …/entry-candidates` gagne `pairs`,
+    additif : `[{ entries: [PageEntry, PageEntry] }]`) et `entry_matches_for_page` (`PageMatches` gagne `pairs`) : le
+    test d'égalité de l'AC-3 compare aussi les paires (identifiants et ordre). Classement aux suggestions : AC-4
+    (`uniquePair`, `several_pairs`, `entry_shared` étendu aux paires). **« Déjà comptabilisée » (34-4)** :
+    `count_already_booked_for_page` compte une paire comme une candidate — sans quoi 38-6a proposerait une **seconde**
+    écriture pour une transaction de 2024 passée au brut avec frais à part, et `confirmAlreadyBooked` ne la garderait
+    pas (E15) ; test : transaction à paire seule → `alreadyBooked` vrai. Les groupes de trois écritures et plus ne
+    sont **jamais suggérés** (combinatoire) : ils se forment à la main (AC-13), limite écrite au doc-comment et au
+    manuel (38-9b). Tests HTTP : paire univoque ; deux paires → `ambiguous` `several_pairs` ; paire hors fenêtre (4
+    jours) → `none` ; écriture seule exacte et paire → seule l'écriture (`unique`) ; écriture partagée entre les paires
+    de deux transactions de la page → `entry_shared` ; aucune écriture en base après l'appel. Mesure de l'AC-8 étendue
+    aux paires (même cible).
+15. **AC-15 — Annuler un groupe** (`FR-38-6c-10`, B28). `POST /reconciliation/transactions/{id}/cancel` d'une
+    transaction rattachée à un groupe défait **tout le groupe**, dans une transaction : verrou de `t`, puis des
+    écritures du groupe dans l'ordre croissant ; **le lien d'abord** — `matched_entry_id` à `NULL` et `DELETE` des
+    lignes de la table pour `t` —, **puis** chaque écriture traitée comme le genre `Entry` du classement (G4 le
+    garantit) : contre-passée par `journal_entries::reverse_in_tx`, comme l'annulation d'un lien simple (v017-3a) ;
+    un refus sur **une** écriture (exercice clos, verrou de période — rangs de `entry_cancel_chain`) refuse **tout**,
+    rien d'écrit. La vue de l'annulation (`entry_cancel_outlook`) porte en plus `groupEntryIds` et le motif du premier
+    refus ; la trace d'annulation existante gagne `journalEntryIds` (additif). ⚠️ **Limite existante, étendue** :
+    annuler un rattachement contre-passe ; dans un exercice clos (2024), l'annulation est donc refusée — un groupe
+    rattaché à tort y reste ; à tracer en issue avec la PR (C-38-13), non traité ici. Tests : annulation d'un groupe →
+    deux contre-passations, table vide pour `t`, `t` `pending` ; exercice clos → refus, rien d'écrit ; mutation « liens
+    retirés après la contre-passation » → rouge (motif `MatchedBankTransaction`).
 
 ## Tâches
 
@@ -334,7 +479,11 @@ Reprises de la fiche d'epic (§ 38-6c), complétées là où un AC l'exige.
       7 439 lignes ; appelants mis à jour ; `get_link_suggestions` (AC-4) ;
       `post_link_entries` (AC-5) ; route de recherche dans `routes/bank_accounts.rs` (AC-6) ; enregistrement à
       `lib.rs` (comptable : les deux routes de réconciliation ; authentifiées : la recherche) ; `LIB_ROUTES`.
-- [ ] Tests HTTP des AC-1 à AC-7 et AC-11 ; extension de `s34_4_ac8_…` (AC-3) ; mesure (AC-8).
+- [ ] Groupe (B28) : migration `bank_transaction_extra_entries`, audit P5, P6, squash, sauvegarde, export CSV (AC-9) ;
+      fragment `LINKED_TRANSACTIONS_OF` / `IN_GROUP` et les sites de l'inventaire de l'AC-12 ; `group_sql`, verrous et
+      écritures du groupe, `journalEntryIds` à `link-entry` et au lot, diagnostic étendu (AC-13) ; `entry_pairs_sql`,
+      `pairs` au dialogue et à la page, « déjà comptabilisée » (AC-14) ; annulation du groupe (AC-15).
+- [ ] Tests HTTP des AC-1 à AC-7, AC-11 à AC-15 ; extension de `s34_4_ac8_…` (AC-3, paires comprises) ; mesure (AC-8).
 - [ ] Gate complet (base remise à zéro avant), `scripts/gate-ci.sh` au dernier commit de code ; frontend non touché
       (gate frontend tout de même au push, *Test Locally First*) ; E2E complet au dernier commit de code (les specs du
       rattachement existantes, `reconciliation*`, doivent rester vertes : la règle CHF ne change pas).
@@ -342,7 +491,7 @@ Reprises de la fiche d'epic (§ 38-6c), complétées là où un AC l'exige.
 ## Notes de développement
 
 - **L'invariant le plus cher** est celui de la 34-4 / v017-3a : **une seule règle** (C-v017-3-7). Toute condition
-  ajoutée (base, autre côté entre devises) se pose **dans les textes partagés** (`entry_movements`, `linkable_side`,
+  ajoutée (base, autre côté entre devises, groupe et paire) se pose **dans les textes partagés** (`entry_movements`, `linkable_side`,
   `other_side_predicate`), jamais dans une copie pour la page ou les suggestions. Le test d'égalité de l'AC-3 est ce
   qui le garde ; il compare désormais des identifiants, non plus des longueurs.
 - **Ordre des verrous** du geste unitaire, inchangé : verrou nommé → `bank_transactions` (`t`) `FOR UPDATE` →
@@ -362,8 +511,14 @@ Reprises de la fiche d'epic (§ 38-6c), complétées là où un AC l'exige.
 - **Réutilisations** : `ListResponse` (`routes/mod.rs`) ; `FailedProposal` et `merge_failed_in_order`
   (`routes/reconciliation.rs:571`, `:1568`) ; `TransactionResponse` (`routes/bank_imports.rs:302`) ;
   `locked_link_attempt` (`:6411`) ; `link_preflight` (`:6228`).
-- **Hors périmètre** : saut hors CHF de `get_proposals` et `confirmAlreadyBooked` (38-6a) ; écran (38-9b) ; somme de
-  plusieurs écritures pour une transaction (Écart 5).
+- **Hors périmètre** : saut hors CHF de `get_proposals` et `confirmAlreadyBooked` (38-6a) ; écran (38-9b) ; groupes de
+  trois écritures et plus **suggérés** (formés à la main seulement, AC-14) ; écriture de frais mensuelle groupant
+  plusieurs ventes (Écart 5) ; annulation d'un groupe dans un exercice clos (AC-15, issue).
+- **Taille** (règle de splitting) : le groupe (AC-12 à AC-15) touche `kesh-db` (dépôts `reconciliation_link`,
+  `reconciliation_cancel`, `journal_entries`, `bank_accounts`, migration, sauvegarde) et `kesh-api` — deux crates,
+  mais une **règle neuve** et un inventaire de lecteurs. Si la validation stagne (sévérité égale ou supérieure de passe
+  en passe, sur des défauts recyclés), découper en **38-6c1** (AC-1 à AC-11) et **38-6c2** (AC-12 à AC-15, le groupe),
+  38-6c2 avant 38-6a (« déjà comptabilisée » des paires, AC-14).
 
 ## Change Log
 
@@ -372,3 +527,16 @@ Reprises de la fiche d'epic (§ 38-6c), complétées là où un AC l'exige.
   7 et 8, DTO de la recherche étendu par la story, message du refus unitaire reformulé aux quatre locales,
   `docs/api-external.md` livré par la story, emplacement des gestionnaires, perte de `Copy`) ; inter-fiches : 38-9b
   (libellés du lot à y ajouter ; elle renvoie à `docs/api-external.md`, désormais bien écrit ici).
+- 2026-11-15 — B27/B28 (Opus) : **B28** — les frais PayPal de 2024 sont des écritures à part (Q-38-6c-1 close) ; une
+  transaction se rattache à un **groupe** de 2 à 5 écritures de somme exacte. Relevé au code (`57b26a5f`) : un lien est
+  la seule colonne `bank_transactions.matched_entry_id` ; forme retenue : l'écriture principale y reste, les autres
+  vont dans une table neuve `bank_transaction_extra_entries` (**une migration, non breaking**, `CREATE TABLE` seul,
+  `min_required` non relevé par elle), « rapprochée » lue par un fragment unique sur un inventaire clos de lecteurs ;
+  `journalEntryIds` à `link-entry` et au lot (aucune route neuve, la forme « deux temps » écartée) ; paires suggérées
+  (±3 jours, somme exacte, seulement sans écriture seule) et comptées « déjà comptabilisées » ; annulation de tout le
+  groupe. Écart 5 récrit ; AC-4, AC-5, AC-9 (migration), AC-10 (message, documentation de l'API), AC-11 étendus ;
+  AC-12 à AC-15 neufs ; FR-38-6c-8 à -10, NFR-38-6c-5 et -6 ajoutées (recompté : 10 FR, 6 NFR) ; codes neufs du lot
+  `ENTRY_GROUP_SUM_MISMATCH`, raisons `entry_not_touching_account`, `entry_owned_by_document`, motif `several_pairs`,
+  genre `uniquePair`. Taille signalée (découpage 38-6c1/38-6c2 si la validation stagne). Inter-fiches : 38-9b (écran
+  des paires et des groupes, libellés des codes neufs, vue d'annulation d'un groupe, manuel) ; 38-6a (`alreadyBooked`
+  vrai pour une paire, sans changement de sa fiche). B27 ne touche pas cette fiche. À revalider (P1 de la révision).
