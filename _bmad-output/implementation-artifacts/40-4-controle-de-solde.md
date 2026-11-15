@@ -146,7 +146,9 @@ je lise le solde de 1101–1103 pour ce qu'il est : une créance (B13).
 - **C-40-4-3 — Créance hors total** (Q-40-10, défaut proposé en attendant Guy) : la nature du solde d'un compte
   prestataire se dit au bloc `provider` de `GET /bank-accounts` par un champ `balanceNature` ∈ `liquidity`,
   `receivable`, posé par **une** fonction de `kesh-api` sur le prestataire (`stripe` → `receivable` ; `paypal`, `wise`
-  et tout autre → `liquidity`). La tuile de l'accueil **n'additionne pas** une créance à son total et la montre à part.
+  et tout autre → `liquidity`), **rendu seulement quand il vaut `receivable`** (`skip_serializing_if`, patron C-37-9 :
+  absent = liquidité) — le bloc `provider` d'un compte PayPal reste ainsi **identique** à celui de 38-2 AC-8 (G18,
+  NFR-40-4-3 ; aucune attente de clés exactes de 38-2 ou 38-9a à retoucher). La tuile de l'accueil **n'additionne pas** une créance à son total et la montre à part.
   Si Guy tranche autrement, seule la fonction pure de l'accueil change (AC-7).
 
 ## Critères d'acceptation
@@ -165,16 +167,16 @@ je lise le solde de 1101–1103 pour ce qu'il est : une créance (B13).
    ne pointe jamais d'écriture) → rien dans `date_shifts`, et son montant est dans `unreconciled` du contrôle (b) (test de
    route, AC-2 : aucun double compte) ;
    (e) rattaché en voie (a) à une écriture datée D − 2 (avant la sortie) avec `booking_date` = D → rien ; (f) vente
-   rapprochée d'une écriture datée D + 1 → `other = +115.80`, `in_transit_payouts` nul ; (g) transaction comptée après
-   la coupe, écriture datée ≤ D → `other` négatif ; (h) membre de groupe (38-6c2) daté D + 1 → compté ; (i) compte CHF,
+   rapprochée d'une écriture datée D + 1 → `other = +115.80`, `in_transit_payouts` nul ; (g) transaction **non comptée**
+   (`booked_at ≥ as_of`), écriture datée ≤ D → `other` négatif ; (h) membre de groupe (38-6c2) daté D + 1 → compté ; (i) compte CHF,
    montants en CHF ; (j) `booked_at` nul (transaction de fichier, 38-2 AC-3) → `booking_date` ; (k) autre société →
    rien (KF-002). Mutation déclarée au Change Log : prédicat `>` changé en `>=` sur `entry_date` → (c) rougit.
 2. **AC-2 — Contrôle (b) ventilé (FR-40-4-1, NFR-40-4-3 ; C-40-2 c).** `GET /api/v1/bank-accounts/{id}/provider-balance-check`
    (38-9a AC-8 b ; droits, refus et 404 inchangés) rend en plus `inTransitPayouts` et `otherDateShifts` (chaînes
    décimales signées, devise de la réponse), **absents quand nuls** (`skip_serializing_if`, patron C-37-9 : la réponse
    d'un compte PayPal sans décalage reste identique, G18) ; `unexplained = reported − ledger − unreconciled −
-   inTransitPayouts − otherDateShifts` (termes absents = 0), calculé par la **même** fonction que l'écran ne recalcule
-   jamais. Appel de `date_shifts(…, Cut::AtInstant(asOf))` avec l'`asOf` de l'instantané. Doc-comment de la réponse :
+   inTransitPayouts − otherDateShifts` (termes absents = 0), calculé côté serveur, une seule fois :
+   l'écran ne le recalcule jamais. Appel de `date_shifts(…, Cut::AtInstant(asOf))` avec l'`asOf` de l'instantané. Doc-comment de la réponse :
    le sens de chaque terme (« Selon Stripe = livres + non rapproché + en route + autres décalages + inexpliqué »).
    Tests de route : compte USD, ventes rapprochées, versement rapproché daté de l'arrivée postérieure à `asOf` →
    `inTransitPayouts: "-300.00"`, `unexplained: "0.00"` ; même cas sans la ventilation (mutation)
@@ -195,8 +197,9 @@ je lise le solde de 1101–1103 pour ce qu'il est : une créance (B13).
    T-a2 au doc du module (`closing_checks.rs:51-60`), son SQL relu sans verrou en revue ; aucune constante neuve à
    `ALL_SQL` (la requête vit dans `provider_balance_check`). Tests (`crates/kesh-db/tests/closing_checks.rs`) : rapport
    joint au 31.12 dont le solde est le solde Stripe, versement parti le 30.12 arrivé le 3.1 → K9 `attention`, `gap`
-   = 300.00 (livres − relevé), `inTransitPayouts = "-300.00"` ; sans versement → champs absents ; compte ordinaire →
-   absents. Type TS `fiscal-years.types.ts` gagne les deux champs facultatifs (affichage : 40-6).
+   = 300.00 (livres − relevé), `inTransitPayouts = "-300.00"` ; sans versement → champs absents ; compte ordinaire
+   **sans décalage de date** → absents (avec un décalage, il porte `otherDateShifts`, comme tout compte : la fonction
+   ne distingue pas les comptes). Type TS `fiscal-years.types.ts` gagne les deux champs facultatifs (affichage : 40-6).
 5. **AC-5 — `available` et `pending` à « Tester » (FR-40-4-2 ; Écart 2).** `kesh_providers::ProviderBalance` (38-3b
    AC-2) gagne `parts: Option<BalanceParts { available: Decimal, pending: Decimal }>` (additif ; `None` pour PayPal, le
    factice et tout solde à une date passée) ; `StripeConnector::balances(None)` (40-1) le pose par devise, avec
@@ -221,34 +224,38 @@ je lise le solde de 1101–1103 pour ce qu'il est : une créance (B13).
    | Rendement par projet (`project_report.rs:458`) | non concerné : règle par numéro (1101 compté « investi » comme 1100) ; constat noté au Change Log pour l'issue de C-40-7 si la revue le juge défaut |
    | Liste des comptes bancaires (`bank-accounts/+page.svelte:407`, `:981`) | non concerné : soldes par compte, aucun total |
    | Règlement d'une facture (`SettleInvoiceDialog.svelte:113-114`) | admis : une créance Stripe éteint une créance client |
-   | Sélecteurs de comptes (`GET /companies/current`, `companies.rs:457` ; export CSV, `exports/global.rs:322`) | non concernés : listes de comptes, aucun total |
+   | Sélecteurs de comptes (`GET /companies/current`, `routes/companies.rs:457` ; export CSV, `crates/kesh-api/src/exports/global.rs:322`) | non concernés : listes de comptes, aucun total |
    | Lot de paiement pain.001 | déjà exclu (`PAYMENT_BATCH_ACCOUNT_IS_PROVIDER`, 38-2 AC-7) |
    | K3 `BANK_STATEMENT_AT_YEAR_END` | inchangé : un compte Stripe sans CAMT y est `NO_BALANCE_STATEMENT` ; K9 le contrôle |
    | Bilan, balance, grand livre | non concernés : classe du plan (1101 = actif circulant, créance) |
    | Outils MCP | aucun ne lit les soldes bancaires |
    Tout lecteur trouvé au grep et absent de ce tableau y entre avec sa décision avant la revue.
 7. **AC-7 — La créance à part sur l'accueil (FR-40-4-3, NFR-40-4-3 ; C-40-4-3, Q-40-10).** Bloc `provider` de `GET
-   /api/v1/bank-accounts` (38-2 AC-8) : `balanceNature` (`liquidity` | `receivable`) par la fonction unique de
-   C-40-4-3 ; type TS `BankAccountSummary` à jour. `ledgerTotal` (fonction pure, `homepage.ts`) n'ajoute plus au total un
+   /api/v1/bank-accounts` (38-2 AC-8 ; et `GET …/provider-connections/{id}/accounts`, « même forme ») : `balanceNature`
+   (`receivable`, **absent** pour une liquidité) par la fonction unique de C-40-4-3 ; type TS `BankAccountSummary` à jour
+   (`balanceNature?: 'receivable'`, toute autre valeur ou absence = liquidité). `ledgerTotal` (fonction pure, `homepage.ts`) n'ajoute plus au total un
    compte dont `provider?.balanceNature === 'receivable'` et rend en plus `receivables: Big` et `anyReceivable: boolean`
    (une valeur inconnue de `balanceNature` → comptée comme aujourd'hui, liquidité, et non masquée). La tuile garde la
-   ligne du compte et son solde, y ajoute « Créance sur Stripe — hors total » sous le nom (`data-testid`
+   ligne du compte et son solde, y ajoute « Créance sur Stripe — hors total » (`$provider` = Stripe) sous le nom (`data-testid`
    `homepage-bank-receivable-{id}`), et sous le total « Hors total : créances sur prestataires, X » quand
    `anyReceivable` (`homepage-bank-receivables`). Clés `homepage-bank-receivable-note`,
-   `homepage-bank-total-excludes-receivables` aux **quatre** locales (`crates/kesh-i18n/locales/{fr,de,it,en}-CH/messages.ftl`),
+   `homepage-bank-total-excludes-receivables` aux **quatre** locales (la première porte la variable `$provider`, nom
+   d'affichage du prestataire : « Créance sur { $provider } — hors total », sans « Stripe » écrit en dur — la fonction de
+   nature décidera d'autres prestataires) (`crates/kesh-i18n/locales/{fr,de,it,en}-CH/messages.ftl`),
    écrites en toutes lettres (`i18n-keys.test.ts`). Vitest (`homepage.test.ts`, `HomepageCards.test.ts`) : compte
    Stripe exclu du total et montré à part ; compte PayPal compté ; compte ordinaire inchangé ; `balanceNature` inconnu
    compté ; compte du grand livre partagé inchangé ; **société dont tous les comptes liés sont des créances** : total `0` non
    affiché comme un solde de liquidités (`any` ne compte pas les créances ; la tuile dit « aucune liquidité » ou n'affiche
-   que le bloc des créances, au choix du développement, écrit au Change Log). Test Rust du bloc : `stripe` → `receivable`, `paypal` →
-   `liquidity`, compte ordinaire → bloc absent (JSON inchangé).
+   que le bloc des créances, au choix du développement, écrit au Change Log). Test Rust du bloc : `stripe` → `balanceNature: "receivable"`, `paypal` → **clé absente** (ensemble exact des clés du
+   bloc de 38-2 AC-8), compte ordinaire → bloc absent (JSON inchangé).
 8. **AC-8 — Ce que la story n'écrit pas (NFR-40-4-2).** Aucune écriture comptable (contrôle, et clôture : le solde de
    1101–1103 au 31.12 **est** la créance, `fiscal_years::close` inchangé — test de caractérisation existant
    `closing_a_year_writes_no_entry_and_changes_nothing` non touché) ; aucune migration, aucun relèvement de
    `kesh_version_min_required` ; aucune route neuve (`LIB_ROUTES` et `TEST_ENDPOINT_ROUTES` : delta 0, C-40-6) ;
    aucune action d'audit (lectures) ; **aucun outil MCP** (G17, E23 : contrôles et connexions ne sont pas exposés).
    `docs/api-external.md` : si 38-9a et 38-10 y documentent le contrôle (b) et K9, les deux champs y sont ajoutés avec
-   leur sens ; manuels à 40-6.
+   leur sens ; il décrit aussi `available`/`pending` de la réponse de « Tester » (si 38-7 y documente cette route) et
+   `balanceNature` du bloc `provider` ; manuels à 40-6.
 9. **AC-9 — Recette visuelle (NFR-40-4-3).** Captures (thème clair, base de démonstration, `kesh-gate-logs/`, hors
    dépôt) de la tuile de l'accueil avec un compte Stripe en créance et un compte PayPal, et sans compte Stripe ; jointes
    au Dev Agent Record et au prompt de revue. E2E : aucun neuf ici (la tuile est couverte par Vitest ; le parcours
@@ -342,3 +349,27 @@ je lise le solde de 1101–1103 pour ce qu'il est : une créance (B13).
   exercés : prémisses, contradictions (38-9a, 38-3b, 38-10, 38-6c2, 38-2, 40-1, 40-6, epic), sites non résolus
   (migration, MCP, routes, audit, i18n, tests, captures), comptabilité (signes, bornes), exigences, taille. Non exercés :
   exécution du SQL, réponses Stripe réelles, sécurité (aucun secret touché par la story).
+- 2026-11-15 — validation P3 (Sonnet) : 0 CRITICAL, 0 HIGH, 1 MEDIUM, 5 LOW (dont 1 inter-fiches) ; remédiés dans la
+  fiche sauf 40-4-P3-7 (epic). MEDIUM 40-4-P3-1 (AC-7, C-40-4-3, NFR-40-4-3) : `balanceNature` rendu pour **tout** compte
+  prestataire ajoutait une clé au bloc `provider` d'un compte PayPal (38-2 AC-8), contre G18 et la NFR-40-4-3 qui le
+  dit identique, sans retouche déclarée → rendu **seulement pour `receivable`** (`skip_serializing_if`, absent =
+  liquidité), test de clés exactes du bloc PayPal, type TS `balanceNature?: 'receivable'`. LOW : 40-4-P3-2 (AC-7)
+  la clé « Créance sur Stripe — hors total » écrit le prestataire en dur → variable `$provider` ; 40-4-P3-3 (AC-2)
+  phrase « même fonction que l'écran ne recalcule jamais » illisible → reformulée ; 40-4-P3-4 (AC-1 g) « comptée après la
+  coupe » contredit la définition de « comptée » → « non comptée (`booked_at ≥ as_of`) » ; 40-4-P3-5 (AC-4) « compte
+  ordinaire → absents » vrai seulement sans décalage de date → précisé ; 40-4-P3-6 (AC-6, AC-8) chemins complets de
+  `exports/global.rs` et `routes/companies.rs` ; `api-external.md` décrit aussi `available`/`pending` de « Tester » et
+  `balanceNature`. Inter-fiches : 40-4-P3-7 (LOW, epic G12 et FR-40-4-2 : « L'écran du compte montre aussi `available` et
+  `pending` (… à « Tester » et au passage, non stockée) » — texte proposé : « « Tester » montre `available` et `pending`
+  (lus à l'instant, non stockés : l'instantané ne garde que le total, 38-3a) ; l'écran du compte montre le solde
+  rapporté total » ; et G18 « sans retouche de leurs attentes » : « sauf l'attente de 38-9a que 40-4 Écart 6 corrige »).
+  Recalculés à la main : (a), (b), (b′), (f), (g) et l'identité `reported = ledger + unreconciled + inTransit + other +
+  unexplained`, K9 (`gap = +300.00`, `inTransitPayouts = −300.00`) : justes. Lignes lues et justes :
+  `bank_accounts.rs:1867, 1878, 1890, 1972, 2019-2024`, `closing_checks.rs:51-53, 550, 714`, `homepage.ts:33-50`,
+  `BankAccountsCard.svelte:18`, `SettleInvoiceDialog.svelte:113-114` (`accountIdsWithRole(…, 'Receivable')` : un compte
+  lié à 1101 n'est pas exclu si 1101 n'a pas ce rôle), `project_report.rs:392, 458`, `companies.rs:457`,
+  `exports/global.rs:322`, `messages.ftl:1688`, `user-manual.tex:337` ; 38-9a AC-8 b (borne `<`, limite écrite), 38-10
+  C-38-10-4, -5, AC-6 (`details.accounts[]`), 38-6c2 (`LINKED_TRANSACTIONS_OF`), 40-1 AC-8 (`amount = available +
+  pending`) lus et concordants. Axes exercés : prémisses, contradictions (G18, 38-2, 38-9a, 38-10, 40-1, epic), sites non
+  résolus (migration, MCP, routes, audit, i18n, tests, captures, docs), comptabilité (signes, bornes), exigences, taille
+  (cinq modules). Non exercés : exécution du SQL, réponses Stripe réelles, sécurité (aucun secret touché).

@@ -161,7 +161,8 @@ plutôt qu'en vente, afin que les règles et les propositions travaillent sur de
    - **Échec et annulation de versement** (`payout_failure`, `payout_cancel`, source `payout`) : lien =
      `source.balance_transaction` (la transaction du versement d'origine, doc ci-dessus) s'il diffère de `id` ; sinon `NULL`.
      **De même** `refund_failure` (source `refund`) et `topup_reversal` (source `topup`) : `source.balance_transaction`
-     s'il diffère de `id`.
+     s'il diffère de `id` ; la source de `topup_reversal` (objet `topup` ou objet propre) se constate à 40-0 : champ
+     absent → `NULL`, jamais une erreur.
    - **Résolution des origines hors fenêtre** (`stripe::origins`, appelé par `StripeConnector::movements` **avant**
      `classify_window`, I/O hors du classement, Écart 1) : pour chaque charge citée par un remboursement ou un litige et
      absente des sources de la fenêtre, `GET {base}/v1/balance_transactions?source=<charge>&limit=10&expand[]=data.source` (en-têtes de 40-1
@@ -216,7 +217,7 @@ plutôt qu'en vente, afin que les règles et les propositions travaillent sur de
      tout autre genre → `None`.
    - **Montants** : vente, remboursement à frais rendus (`+0.49`), litige à frais (`−20.00`), frais seul, frais à `fee ≠ 0`,
      net de signe contraire, `|fee| > |gross|`, devise à zéro décimale (`JPY 500` → `500`).
-   - **Champs** : chaque `invoiceRefSource`, clé vide, 300 caractères (→ 127), courriel de `receipt_email` seul.
+   - **Champs** : chaque `invoiceRefSource`, valeur de métadonnée absente ou vide (la clé `metadata:` vide est déjà refusée par 40-1 AC-2), 300 caractères (→ 127), courriel de `receipt_email` seul.
    - **Liens** : remboursement et litige dans la fenêtre, hors fenêtre (origines), sans origine ; échec et annulation de
      versement ; `refund_failure`, `topup_reversal`.
    - **Surcharges** : chaque refus ; `ignore` compté ; `PAYOUT_FAIL` surchargé `deposit` sur un montant positif → `deposit`
@@ -224,7 +225,7 @@ plutôt qu'en vente, afin que les règles et les propositions travaillent sur de
    - Aucun test de classement ne touche la base ni le réseau ; ceux de l'AC-5 utilisent le serveur local de 40-1.
 8. **AC-8 — Ce que la story ne touche pas.** Aucune migration (C-40-0 : `event_code` ≤ 16 tient dans `VARCHAR(16)` de
    38-3a — test : chaque code de la table ≤ 16 ; `movement_kind` et `review_reason` à domaine ouvert, valeurs de C-38-4) ;
-   aucune route (C-40-6) ; aucun outil MCP (G17) ; aucun écran ni manuel (40-6 : liste des codes courts en aide du critère
+   aucune route (C-40-6) ; aucun outil MCP (G17) ; CHANGELOG : une ligne de l'entrée non datée de l'epic (classement des types, surcharges) ; aucun écran ni manuel (40-6 : liste des codes courts en aide du critère
    `event_code_prefix`, champ des surcharges, ce qui va à la file) ; i18n : aucun texte neuf (codes de refus de 38-1/38-8).
 
 ## Tâches
@@ -281,6 +282,13 @@ plutôt qu'en vente, afin que les règles et les propositions travaillent sur de
 
 ## Change Log
 
+- 2026-11-15 — validation P3 (Sonnet) : 0 CRITICAL, 0 HIGH, 0 MEDIUM, 3 LOW ; remédiés dans la fiche (aucun
+  inter-fiches). Remédiation P2 relue (`EVENT_CODES`/`OVERRIDABLE_CODES` dans `kesh-core` : cohérent avec 38-3b AC-1 et
+  38-8 AC-7 ; `Rejected` d'une origine → `NULL` ; dix codes surchargeables recomptés contre la table) ; montants
+  recalculés sur les fixtures (vente −4.20/net 115.80, remboursement +0.49/net −14.51, litige −20.00/net −50.00 : `net =
+  gross + fee`). LOW : P3-1 AC-7, « clé vide » ambigu (clé refusée par 40-1, valeur vide visée) ; P3-2 AC-8, CHANGELOG
+  non mentionné ; P3-3 AC-5, source de `topup_reversal` à constater (champ absent → `NULL`). Axes non exercés : réponses
+  réelles de `topup`/`topup_reversal` (absentes des fixtures).
 - 2026-11-15 — alignement inter-fiches P2 (Opus) : AC-2, les codes de la table (`EVENT_CODES`, `OTHER` compris, définie
   dans `kesh_core::providers::settings::stripe_codes`, réexportée) sont une constante `pub` lue par la garde de 40-6
   AC-6 (finding 40-6-P2-8).

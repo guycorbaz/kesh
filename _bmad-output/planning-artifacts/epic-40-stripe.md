@@ -340,8 +340,7 @@ l'API).
   — décidé (D40-P2-1, orchestrateur, 2026-11-15)** : `accountId` lu par « Tester » ≠ celui des réglages sur une
   connexion **déjà téléchargée** → refusé, contrôle `account_unchanged` en échec, code `PROVIDER_ACCOUNT_CHANGED`
   (patron de `PROVIDER_MODE_CHANGED`), réglages inchangés ; sans téléchargement → réécrit et tracé (`accountIdChanged`)
-  (40-1 AC-9). Reste tracé : le passage ne lit pas le compte (clé d'un autre compte suivie d'un passage sans
-  « Tester »), et une clé sans droit sur `/v1/account` n'est pas gardée (Q-40-8) — le contrôle de solde en montre l'effet.
+  (40-1 AC-9). Fermé (D40-P3-1) : le passage lit aussi le compte à chaque passage et applique la même règle ; une clé sans droit de lecture du compte est refusée (`PROVIDER_ACCOUNT_UNREADABLE`, Q-40-8).
 
 ## Stories
 

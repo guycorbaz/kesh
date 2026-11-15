@@ -61,7 +61,9 @@ que la pièce soit gardée et sauvegardée dans son format d'origine.
   story change cette attente exprès (NFR-40-5-3).
 - **Multipart** : `parse_multipart` (`crates/kesh-api/src/routes/bank_imports.rs:484-485`) tronque le nom d'origine à
   `FILENAME_MAX_BYTES` et pose `upload.xml` quand la partie n'en a pas ; il garde le type de la partie tel quel,
-  paramètres compris (`:486`).
+  paramètres compris (`:486`). **38-10 reprend ce parseur** (Dev Notes de 38-10 : « reprendre `parse_multipart` …,
+  extraire un utilitaire commun si la forme diffère ») : le nom qu'il rend est donc **déjà tronqué** et, sans nom,
+  `upload.xml` ; l'annonce de C-40-5-1 exige le nom d'origine (P3-1, T2).
 
 ## Écarts à l'epic
 
@@ -84,7 +86,9 @@ que la pièce soit gardée et sauvegardée dans son format d'origine.
   L'annonce se lit sur le nom **d'origine non tronqué** (`parse_multipart` de `bank_imports.rs:484-485` tronque le nom à
   `FILENAME_MAX_BYTES` et pose `upload.xml` quand il manque : ni la troncature ni ce repli ne décident du type ; seul le
   nom rangé est tronqué) et sur l'**essence** du type de la partie (paramètres après `;` retirés, casse ignorée :
-  `text/csv; charset=utf-8` → `text/csv`).
+  `text/csv; charset=utf-8` → `text/csv`). **L'utilitaire multipart de 38-10 rend donc, en plus du nom rangé (tronqué),
+  le nom d'origine non tronqué et si la partie en portait un** (champ additif ; les tests de 38-10 n'en changent pas) :
+  `classify_document` reçoit le nom d'origine, jamais le nom tronqué ni le repli `upload.xml`.
 - **C-40-5-2 — Contrôle CSV, sans interprétation** : BOM UTF-8 (`EF BB BF`) retiré pour le contrôle seul (le fichier est
   rangé tel quel) ; BOM UTF-16/32 ou octets non UTF-8 (`std::str::from_utf8` strict sur le reste) → motif `not_utf8` ;
   octet nul ou caractère de contrôle autre que tabulation, `\r`, `\n` (`char::is_control` : C0, DEL et C1) → `binary` ;
@@ -92,7 +96,9 @@ que la pièce soit gardée et sauvegardée dans son format d'origine.
   ou sans séparateur (`,`, `;` ou tabulation) → `no_header`.
   Rien d'autre n'est lu (ni colonnes, ni solde : le solde est **saisi**, G13).
 - **C-40-5-3 — Rangement d'un CSV** : extension `csv`, `mime_type = 'text/csv'` (via `mime_for_ext`, qui gagne `csv`),
-  `kind = 'provider_report'`, `source = 'manual'`.
+  `kind = 'provider_report'`, `source = 'manual'`. Une partie **sans nom de fichier** (type `text/csv` seul) est rangée
+  sous le nom d'origine `rapport.csv`, non sous le repli `upload.xml` du parseur : le téléchargement ne porterait pas
+  une extension `.xml` sur un CSV (`Content-Disposition` lit le nom d'origine).
 - **C-40-5-4 — Téléchargement au type stocké, par une table fermée** : `application/pdf` → `application/pdf` ;
   `text/csv` → `text/csv; charset=utf-8` ; toute autre valeur (version ultérieure, Wise 39) →
   `application/octet-stream`. Toujours `attachment` et `X-Content-Type-Options: nosniff` (un CSV n'est jamais rendu dans
@@ -116,7 +122,9 @@ que la pièce soit gardée et sauvegardée dans son format d'origine.
   → CSV ; type `application/vnd.ms-excel` seul → CSV ; nom sans extension et type `application/octet-stream` → `NOT_PDF` ;
   fichier vide nommé `.csv` → refus de 38-10 (pas `no_header`) ; en-tête d'une seule colonne (sans séparateur) →
   `no_header` (limite assumée, dite au manuel) ; type `text/csv; charset=utf-8` seul → CSV ; nom de plus de 255 octets
-  terminé par `.csv` → CSV (annonce lue avant troncature). Tests de route : CSV joint → `201`, `kind: "provider_report"`,
+  terminé par `.csv` → CSV (annonce lue avant troncature : test **de route**, qui exerce l'utilitaire multipart, car
+  `classify_document` seul reçoit déjà le nom entier) ; partie `text/csv` sans nom → `201`, `originalFilename`
+  `rapport.csv`. Tests de route : CSV joint → `201`, `kind: "provider_report"`,
    `mimeType: "text/csv"` ; doublon du même CSV → `409 BANK_DOCUMENT_DUPLICATE` (38-10) ; même CSV sur deux comptes →
    admis ; les tests **serveur** de 38-10 passent **sans retouche** de leurs attentes (NFR-40-5-3). `mime_for_ext("csv") == "text/csv"` (test
    `:421-426` étendu) ; l'inbox refuse toujours un `.csv` (`ALLOWED_EXT` inchangé ; test existant cité au Change Log, ou ajouté s'il n'y en a
@@ -138,7 +146,8 @@ que la pièce soit gardée et sauvegardée dans son format d'origine.
    et un CSV au 31.12 → le CSV compte (dernier `periodTo`).
 5. **AC-5 — Audit, sauvegarde, export (NFR-40-5-2, C-40-6).** Trace `bank_account_document.attached` (38-10) : son
    `details` porte `{ kind, mimeType }` en plus de ce que 38-10 y met (C-40-6 ; aucun libellé d'action neuf, aucune
-   route neuve : `LIB_ROUTES` delta 0). Sauvegarde : rien à changer (38-10 lit `storage_path`, `sha256`, quel que soit le
+   route neuve : `LIB_ROUTES` delta 0) — test de route : après l'ajout d'un CSV puis d'un PDF, la ligne d'audit porte
+   `kind: "provider_report"`, `mimeType: "text/csv"`, puis `statement`, `application/pdf`, et aucun extrait du fichier. Sauvegarde : rien à changer (38-10 lit `storage_path`, `sha256`, quel que soit le
    type) — test : export complet puis import dans une instance neuve (`admin_full_import_e2e` de 38-10 étendu d'un CSV)
    → le CSV se télécharge, empreinte identique. Export CSV de souveraineté : colonnes inchangées (`kind` exporté dit le
    genre ; `mime_type` reste à `COLONNES_HORS_EXPORT`, motif de 38-10) — un test le constate. **MCP** : aucun outil
@@ -154,7 +163,11 @@ que la pièce soit gardée et sauvegardée dans son format d'origine.
    `reporting_category`, `count, currency, fee, gross, net` ; le solde de fin est l'objet d'`ending_balance_reconciliation`
    et du rapport de solde) : y saisir un solde ferait un écart K9 fictif ; les refus `BANK_DOCUMENT_UNSUPPORTED_TYPE` (un libellé par `reason`) et `BANK_DOCUMENT_NOT_PDF`
    (message élargi : « Le fichier n'est ni un PDF ni un CSV ») traduits ; API cliente et types (`bank-accounts.api.ts`,
-   champ `mimeType`) ; `+page.svelte` des comptes bancaires **non touché**. Clés aux **quatre** locales
+   champ `mimeType`) ; `+page.svelte` des comptes bancaires **non touché**. **Préfixes** (`lint-i18n-ownership.js:177-186`) :
+   les clés neuves du dialogue (titre, aide, type affiché, un libellé par `reason`) sont au préfixe **`bank-accounts-`**
+   (`features/bank-accounts/`, comme 38-10 AC-9) ; le message serveur de `BANK_DOCUMENT_UNSUPPORTED_TYPE` suit le patron
+   des messages d'erreur du serveur (`t("bank-import-errors-…", …)`, `errors.rs:2553-2558`), et celui de
+   `BANK_DOCUMENT_NOT_PDF` garde la clé que 38-10 lui donne ; jamais une entrée à `KNOWN_VIOLATIONS`. Clés aux **quatre** locales
    (`crates/kesh-i18n/locales/{fr,de,it,en}-CH/messages.ftl`), en toutes lettres ; message de `BANK_DOCUMENT_NOT_PDF`
    mis à jour aux quatre (le code ne change pas). **Attentes de 38-10 changées exprès** (NFR-40-5-3) : les Vitest de
    38-10 AC-9 qui tiennent « PDF seul côté écran », le titre « Joindre un relevé », l'attribut `accept` et le texte de
@@ -174,7 +187,8 @@ que la pièce soit gardée et sauvegardée dans son format d'origine.
 ## Tâches
 
 - [ ] T1 — `classify_document`, code d'erreur, `mime_for_ext("csv")`, tests unitaires (AC-1).
-- [ ] T2 — Route d'ajout : branche CSV, genre, rangement ; tests de route (AC-1, AC-2).
+- [ ] T2 — Route d'ajout : branche CSV, genre, rangement ; utilitaire multipart de 38-10 étendu du nom d'origine non
+  tronqué ; tests de route (AC-1, AC-2).
 - [ ] T3 — Liste (`mimeType`) et téléchargement par table fermée (AC-3) ; K9 et écart avec un CSV (AC-4).
 - [ ] T4 — Audit `details`, sauvegarde et export constatés (AC-5).
 - [ ] T5 — Dialogue, i18n, Vitest, E2E, captures (AC-6, AC-7) ; `api-external.md` (AC-8).
@@ -237,3 +251,14 @@ que la pièce soit gardée et sauvegardée dans son format d'origine.
   → P2 = 4 (2 MEDIUM, distincts, d'origine et non de remédiation : pas de signal de découpage) ; une passe de plus est
   due. Axes non exercés : code de 38-10 (non écrit) ; PDF du manuel (non régénéré) ; encodage réel d'un CSV du tableau
   de bord Stripe (non documenté à la page lue, à constater à la recette 40-0).
+- 2026-11-15 — validation P3 (Sonnet) : 4 findings (0 CRITICAL, 0 HIGH, 2 MEDIUM, 2 LOW) ; remédiés dans la fiche, aucun
+  inter-fiches (le point touchant 38-10 est un champ additif de l'utilitaire multipart, porté par T2). MEDIUM : P3-1 la
+  fiche exigeait le nom d'origine non tronqué alors que 38-10 reprend `parse_multipart`, qui tronque (`bank_imports.rs:485`)
+  — l'utilitaire rend désormais aussi le nom d'origine, test de route pour le nom > 255 octets ; P3-2 AC-6 ne nommait aucun
+  préfixe i18n (même défaut que 38-9a/38-10, `lint-i18n-ownership.js:177-186`) — `bank-accounts-` et patron serveur. LOW :
+  P3-3 partie `text/csv` sans nom rangée sous `upload.xml` (téléchargement en `.xml`) — `rapport.csv`, test ; P3-4 le détail
+  d'audit `{ kind, mimeType }` n'avait aucun test. Relu au code : `document_storage.rs:54-131`, `:421-426`,
+  `inbox_import.rs:98`, `:576`, `:733`, `bank_imports.rs:415-486`, `admin_backup/export.rs:175-185`, `errors.rs:2553`,
+  `encoding.rs:48-64` ; 38-10 (AC-2, AC-3, AC-8, AC-9, Dev Notes), 40-6 AC-8, epic G13, C-40-6 — concordants. Axes non
+  exercés : code de 38-10 (non écrit) ; PDF du manuel ; encodage réel d'un CSV du tableau de bord Stripe (recette 40-0).
+  Trend : P2 = 4 (2 MEDIUM) → P3 = 4 (2 MEDIUM, d'origine) ; une passe de plus est due.

@@ -63,7 +63,9 @@ soit juste et que rien ne soit compté deux fois ni écrit sans moi.
    (`conversion_pair_under_review`). FR-40-3-4 (« relié au versement d'origine ») l'exige pour un échec de versement :
    champ rempli, **additif**, pour toute transaction de la file dont `related_provider_tx_id` désigne une transaction du
    même compte (AC-7).
-3. **`value_date` posée par le classement** (40-2 AC-2, FR-40-2-7), et non « par le connecteur » de cette story : 40-3
+3. **`valueDate` est déjà au DTO de `GET …/proposals`** (`TransactionSummary`, `routes/reconciliation.rs:172-176`,
+   P3) : l'epic (C-40-5, lu par 40-6 AC-4) la tient pour neuve ; seule `entryDate` l'est (AC-3).
+4. **`value_date` posée par le classement** (40-2 AC-2, FR-40-2-7), et non « par le connecteur » de cette story : 40-3
    l'écrit en base et s'en sert.
 
 ## Critères d'acceptation
@@ -87,7 +89,8 @@ soit juste et que rien ne soit compté deux fois ni écrit sans moi.
      (`providerLines`) et à l'acceptation ; cours (compte en devise) du mois de cette date ; exercice ouvert et verrou de
      période contrôlés **sur cette date** (refus existants de 38-6a AC-8 (9) : `RECONCILIATION_FISCAL_YEAR_CLOSED`,
      verrou de période ; en `failed[]`, *Pattern batch*). Si 38-6b lit déjà `payment_date`, rien n'est changé et le test
-     le fige (Écart 1).
+     le fige (Écart 1). Test : l'aperçu (`providerLines`, `entryDate`) et l'écriture acceptée portent la **même** date,
+     y compris quand `value_date` est nulle (`booking_date`).
    - voie (a) « rattacher » : aucune date lue (`link_entry_in_tx`, 38-6c1 AC-11) ; une écriture côté banque datée d'un
      autre jour se rattache (test).
    - **Créance au 31 décembre** (G10, G12) : test — versement CHF −500.00 sorti le 31.12.2026 à 15 h (Zurich), arrivée
@@ -108,17 +111,24 @@ soit juste et que rien ne soit compté deux fois ni écrit sans moi.
    Tests : versement sorti le J, arrivée J + 3, ligne UBS à J + 3 → suggérée ; à J + 9 → non suggérée
    (`transferBankAccountId: null`, à choisir) ; ligne UBS à J + 1 (avant l'arrivée prévue) → **non suggérée** (risque dit
    au manuel par 40-6 : le compte se choisit alors à la main, le rattachement ne regarde pas de date).
-   - **DTO de la lecture (additif, lu par 40-6 AC-4)** : le DTO de transaction de `GET /api/v1/reconciliation/proposals`
-     gagne **`valueDate`** (`AAAA-MM-JJ` ou `null`) ; la proposition `provider` de type retrait gagne **`entryDate`**
-     (date de l'écriture proposée, `payment_date` de l'AC-2, la même qu'à l'acceptation). PayPal : `valueDate: null`,
-     `entryDate` = `bookingDate`. Tests : versement Stripe → `valueDate` = date d'arrivée, `entryDate` = `valueDate` ;
-     test de **clés exactes** des réponses PayPal de 38-6b, **inchangées** hors ces deux clés additives (attentes de 38-6b
-     non retouchées) ; `docs/api-external.md` les décrit.
+   - La **date de la transaction candidate** (celle de l'autre compte) se lit comme à 38-6b C-38-6b-3 (b), inchangée par
+     cette story : seul le point de départ `d` change (la fiche 38-6b dit « datée de… » sans nommer la colonne : le
+     développement lit son code et l'écrit au doc-comment de l'expression ; un test avec une candidate dont
+     `booking_date` et `value_date` diffèrent fige le choix).
+   - **DTO de la lecture (additif, lu par 40-6 AC-4)** : **`valueDate` est déjà rendu** — `TransactionSummary.value_date`
+     (`crates/kesh-api/src/routes/reconciliation.rs:172-176`, posé à `:1478`), clé `transaction.valueDate`, `null` pour
+     PayPal — **rien à ajouter** ; la seule clé neuve est **`entryDate`** sur la proposition `provider` de type retrait,
+     voie (b) (date de l'écriture proposée, `payment_date` de l'AC-2, la même qu'à l'acceptation ; absente en voie (a),
+     où aucune écriture n'est proposée). PayPal : `entryDate` = `bookingDate`. Tests : versement Stripe →
+     `transaction.valueDate` = date d'arrivée, `entryDate` = `valueDate` ; test de **clés exactes** des réponses PayPal de
+     38-6b, **inchangées** hors cette clé additive ; si une attente de 38-6b ou 38-9b énumère les clés du candidat
+     `provider` de retrait, **elle gagne `entryDate` et rien d'autre** (retouche déclarée au Change Log du
+     développement, comme 40-4 Écart 6) ; `docs/api-external.md` décrit `entryDate`.
 4. **AC-4 — La ligne UBS se rattache à la même écriture (FR-40-3-3, 34-11b).** Test d'intégration HTTP, deux comptes :
    Stripe CHF (compte `bank` sans IBAN lié à **1101**, frais 6914 ; ligne `payment_provider_accounts`, 38-2) et UBS (lié
    à 1020). Versement −500.00 CHF sorti le J, arrivée J + 2 ; ligne UBS +500.00 du J + 2 (relevé CAMT ou saisie, 34-11b).
    - Voie (b) : `GET /api/v1/reconciliation/proposals?bankAccountId=<Stripe>` → candidat `transferBankAccountId = UBS`,
-     lignes datées J + 2 ; `POST /api/v1/reconciliation/accept` → `200 { accepted: [1], failed: [] }`, une écriture
+     lignes datées J + 2 ; `POST /api/v1/reconciliation/accept` → `200`, `accepted` d'un élément, `failed: []`, une écriture
      `D 1020 500.00 / C 1101 500.00` du J + 2, transaction Stripe `reconciled` ; puis `GET …/transactions/<UBS>/entry-
      candidates` liste cette écriture (`matchedElsewhereCount = 1`) et `POST …/link-entry` (`crates/kesh-api/src/lib.rs:931`) la rattache : **une**
      écriture, **deux** transactions rapprochées (Stripe et UBS), 1020 augmenté et 1101 diminué de 500.00 une seule
@@ -141,7 +151,8 @@ soit juste et que rien ne soit compté deux fois ni écrit sans moi.
    l'API, non rapprochées, ne remplissent pas — la proposition n'y porte donc pas `linkJournalEntryId`. Le rattachement
    des versements 2024 passe par **`GET /api/v1/reconciliation/link-suggestions`** (38-6c1 AC-4 : genre `unique` ou
    `ambiguous`, `version` par élément), puis le lot `POST /api/v1/reconciliation/link-entries` de 38-6c1 (corps
-   `{ bankAccountId, items: [{ bankTransactionId, journalEntryId, version }] }`, *Pattern batch* : `{ accepted, failed }`,
+   `{ bankAccountId, items: [{ bankTransactionId, journalEntryId, version }] }`, *Pattern batch* : réponse
+   `{ linked: [{ bankTransactionId, journalEntryId }], failed }` (38-6c1 AC-5 : `linked`, non `accepted`),
    `FailedProposal` par élément, codes de C-38-14) qui rattache plusieurs versements d'un coup. Test : trois versements
    2024 téléchargés, de **montants distincts**, trois écritures existantes dont l'une datée de la sortie et deux de
    l'arrivée → les suggestions les rendent `unique`, le lot les rattache tous, aucune écriture créée ; deux versements
@@ -176,7 +187,7 @@ soit juste et que rien ne soit compté deux fois ni écrit sans moi.
    - Tests : versement rapproché puis échec téléchargé → échec à la file, `relatedBankTransactionId` = versement,
      versement toujours `reconciled` ; voie (ii) : `POST …/manual` sur l'échec → `200`, transaction `reconciled`, hors de
      la file, solde de 1101 rétabli ; échec dont l'origine est hors de Kesh (antérieure à `fetch_from`) →
-     `relatedBankTransactionId: null`.
+     `relatedBankTransactionId: null` ; même parcours pour un `payout_cancel` (file, lien, aucun candidat).
 8. **AC-8 — Non-régression (NFR-40-3-2, G18).** Retraits et dépôts PayPal de 38-6b (AC-4 de 38-6b, `value_date NULL`) :
    tests verts **sans retouche de leurs attentes** (date d'écriture = `booking_date`, fenêtre de suggestion inchangée) ;
    acceptations par règle, manuelle, de partage : inchangées (même `payment_date`) ; empreintes `file_hash` PayPal
@@ -278,3 +289,22 @@ soit juste et que rien ne soit compté deux fois ni écrit sans moi.
   contradictions, sites non résolus (migration, routes, audit, i18n, MCP — aucun outil ne lit les propositions —,
   manuels renvoyés à 40-6), comptabilité (date, créance, échec), exigences, tests, taille. Non exercés : sécurité
   (aucun secret), réponses Stripe réelles d'échec de versement, exécution de code.
+- 2026-11-15 — validation P3 (Sonnet) : 0 CRITICAL, 0 HIGH, 2 MEDIUM, 3 LOW (+ 2 inter-fiches LOW) ; remédiés dans la
+  fiche sauf 40-3-P3-6 (40-6) et 40-3-P3-7 (epic). MEDIUM 40-3-P3-1 (AC-3, Écarts) : « le DTO gagne `valueDate` » est
+  faux — `TransactionSummary.value_date` (`routes/reconciliation.rs:172-176`, construit `:1478`) le rend déjà
+  (`transaction.valueDate`) ; seule `entryDate` est neuve (voie b) → AC-3 et Écart 3 réécrits. MEDIUM 40-3-P3-2 (AC-6) :
+  le lot `link-entries` rend `{ linked, failed }` (38-6c1 AC-5, lu), non `{ accepted, failed }`. LOW : 40-3-P3-3 (AC-3)
+  la date de la transaction candidate n'est nommée ni par 38-6b ni ici → lue comme 38-6b, test à `booking_date` ≠
+  `value_date` ; 40-3-P3-4 (AC-3) l'ajout d'`entryDate` au candidat PayPal peut retoucher une attente de clés exactes de
+  38-6b/38-9b → déclarée, « cette clé et rien d'autre » ; 40-3-P3-5 (AC-2, AC-7) tests : aperçu et acceptation à la même
+  date, `payout_cancel`. Inter-fiches : 40-3-P3-6 (LOW, 40-6 AC-4 : « champ que 40-3 AC-3 ajoute au DTO » → `valueDate`
+  existe déjà (`transaction.valueDate`), seule `entryDate` est neuve) ; 40-3-P3-7 (LOW, epic « DTO des propositions » :
+  « gagne `valueDate` » → « `valueDate` est déjà rendu ; gagne `entryDate` seule » ; et G18 « sans retouche de leurs
+  attentes » à nuancer de 40-4 Écart 6). Lignes lues et justes : `reconciliation.rs:277`, `routes/reconciliation.rs:3748,
+  3771, 4198, 4207, 4686-4689, 5084, 5566`, `reconciliation_link.rs:526, 626-628`, `lib.rs:931`, `api-external.md:704`,
+  `bank_imports.sql:61`, `bank_transaction.rs:87`, `bank_imports.rs:150-162` ; fixture `payouts.json` (`created`
+  1794710640 = 15.11.2026 03:44 Zurich, `arrival_date` 1794787200 = 16.11.2026). Contrôlés aux fiches : 38-3b AC-4
+  (`file_hash` relu en base), 38-6b C-38-6b-3, -4, -6, AC-6, AC-7, 38-6c1 AC-4, AC-5, 38-6a C-38-6a-10, AC-10 (audit
+  `entry_date` existant), 38-9b (écriture manuelle à la file), 40-2 AC-5, AC-6, 40-1 AC-7. Axes exercés : prémisses,
+  contradictions, sites non résolus (migration, sauvegarde, audit, RBAC, i18n, MCP, manuels), comptabilité, exigences,
+  tests, taille. Non exercés : sécurité (aucun secret), réponses Stripe réelles d'échec de versement, exécution de code.
