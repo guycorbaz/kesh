@@ -890,7 +890,18 @@ fn parse_attribute(trimmed: &str) -> Option<String> {
 }
 
 /// Répertoires sans code Rust du workspace, et dont la traversée coûte cher.
-const SKIPPED_DIRS: &[&str] = &["target", ".git", "node_modules", "build", ".svelte-kit"];
+///
+/// `.claude` porte les worktrees de Claude Code (`.claude/worktrees/<nom>`) :
+/// chacun est une copie du dépôt sur une autre branche, dont les attributs
+/// `#[sqlx::test]` ne relèvent pas de l'arbre balayé.
+const SKIPPED_DIRS: &[&str] = &[
+    "target",
+    ".git",
+    "node_modules",
+    "build",
+    ".svelte-kit",
+    ".claude",
+];
 
 fn collect_rs(dir: &std::path::Path, acc: &mut Vec<std::path::PathBuf>) {
     // ⚠️ Une erreur de lecture ROUGIT, elle ne se saute pas : un sous-arbre
