@@ -249,12 +249,13 @@ Ces décisions valent aussi pour la 36-7b, qui y renvoie.
     nommé `format!("Exercice {}", N + 1)` (assertions `:458`, `:571` assorties) — aucun chevauchement avec N-1..N, vérifié
     sous l'instant `2029-06-15` (N+1 = 2030, dans la borne) ; `migrations_upgrade_path` : exercice de la base peuplée
     (`:1413-1415`) en N-1..N, pièces `:1319`, `:1332`, `:1498`, `:1716` en N-1, sites positionnels intouchés (P6) ; `:1332`
-    est un INSERT brut (`INSERT INTO supplier_invoices … '2026-06-15', '2026-07-15'`) ; il suit par cohérence, et sa
-    mutation seule est équivalente parce qu'**aucune lecture ultérieure ne soumet cette date à une règle de date** (V3-3,
-    V4-4) : `validate_in_tx` lit bien `invoice_date` (`kesh-db/src/repositories/supplier_invoices.rs:1584`) et cherche
-    l'exercice qui la couvre (`:1718`), mais les factures revalidées passent d'abord par `update_draft`, qui écrase la date
-    (`migrations_upgrade_path.rs:1716`) ; la migration `20261106000001` numérote par `je.fiscal_year_id` (`:50`, `:66`), non
-    par la date. L'étape 0 relit ce parcours, ligne citée.
+    est un INSERT brut (`INSERT INTO supplier_invoices … '2026-06-15', '2026-07-15'`) ; il suit par cohérence. Son équivalence **n'est
+    pas déclarée** (V5-1) : `validate_in_tx` lit `invoice_date` (`kesh-db/src/repositories/supplier_invoices.rs:1584`,
+    `:1718`), les factures revalidées passent d'abord par `update_draft` (`migrations_upgrade_path.rs:1716`), mais la
+    migration `20261106000001` **classe par `invoice_date`** pour poser le numéro interne (`:47`, `:63` : `ORDER BY
+    f.start_date, s.invoice_date, s.id`). Comme pour `:1008`, l'étape 0 **joue la mutation** sous `2029-06-15T10:00:00Z` ;
+    seulement si elle reste verte, elle l'écrit équivalente, avec la raison constatée (par exemple : le test n'asserte aucun
+    numéro interne, à vérifier alors, ligne lue).
   **Modèle** au dépôt pour (a) : `crates/kesh-db/tests/supplier_invoices_draft.rs:2059` `let date = jour(x.y - 2, 6, 15);`,
   avec `scinder` (`:1522-1547`), qui pose les exercices `y - 2`, `y - 1`, `y` depuis `let y = aujourdhui().year();`
   (`:1524`) et garde `assert!(y <= 2029, …)` (`:1525-1528`). **Preuve** : l'AC2 joue l'instant `2029-06-15T10:00:00Z`, où
@@ -438,10 +439,10 @@ littéral `"2027-01-01"` ; ailleurs l'année 2026 ; V2-10) et doit être **tuée
 | M3 à M6 | `dates_bornes_e2e` témoins `:1010`, `:1050`, `:1510`, `:1556` remis à `"2027-01-01"` — une mutation chacun | `c_facture_echeance`, `c_facture_maj_echeance`, `c_fournisseur_echeance`, `c_fournisseur_maj_echeance` (appariés à l'étape 0, ligne lue) | `2027-01-04T10:00:00Z` |
 | M7a | `journal_entries_modification` `societe()` (`:268-275`), exercice — un montage pour **cinq** tests | `update_waits_for_a_concurrent_reversal_then_refuses` (et `delete_…`) | `2027-01-04T10:00:00Z` |
 | M7b | `journal_entries_modification` écritures et corps (`:373`, `:388`, `:426`, `:437`, `:487`, `:540`, `:593`, `:612`) remis en 2026 — un groupe | l'un des cinq tests, nommé à l'étape 0 | `2029-06-15T10:00:00Z` |
-| M7c | exercice postérieur `:425`, `:539` remis à `2027` | `update_waits_for_a_concurrent_close_of_a_later_year_then_refuses` (et `delete_…`) : sous 2029, l'exercice 2027 est **antérieur** à N-1..N (2028-2029), `find_later_closed_in_tx(…, fy_start)` (`journal_entries.rs:1548`, `:1896` ; `fiscal_years.rs:865-876`, `start_date > fy_start`) ne le voit plus (V3-3). Premier rouge attendu : **l'attente** — le `PUT` ne bloque plus sur le verrou de B, et l'assertion `:443-448` (« le PUT doit attendre sur le verrou des exercices postérieurs ») échoue avant le `match` `LaterFiscalYearClosed` (`:452-461`) ; à défaut, **le refus** n'arrive pas. Le journal `mut/M7c.log` tranche (V4-5) | `2029-06-15T10:00:00Z` |
+| M7c | exercice postérieur `:425`, `:539` remis à `2027` | `update_waits_for_a_concurrent_close_of_a_later_year_then_refuses` (et `delete_…`) : sous 2029, l'exercice 2027 est **antérieur** à N-1..N (2028-2029), `find_later_closed_in_tx(…, fy_start)` (`journal_entries.rs:1548`, `:1896` ; `fiscal_years.rs:892`, `FIND_LATER_CLOSED_SQL` : `WHERE company_id = ? AND start_date > ? AND status = 'Closed'`) ne le voit plus (V3-3). Premier rouge attendu : **l'attente** — le `PUT` ne bloque plus sur le verrou de B, et l'assertion `:443-448` (« le PUT doit attendre sur le verrou des exercices postérieurs ») échoue avant le `match` `LaterFiscalYearClosed` (`:452-461`) ; à défaut, **le refus** n'arrive pas. Le journal `mut/M7c.log` tranche (V4-5) | `2029-06-15T10:00:00Z` |
 | M8a | `migrations_upgrade_path` exercice de la base peuplée (`:1413-1415`) | `draft_migration_preserves_a_populated_016_base` (et `…_rc1_…`) | `2027-01-04T10:00:00Z` |
 | M8b | `migrations_upgrade_path` pièces `:1319` (`create_in_tx`), `:1498`, `:1716` remises en 2026 — une mutation chacune ; celles que l'étape 0 trouve équivalentes se disent, ligne lue | idem | `2029-06-15T10:00:00Z` |
-| — | `migrations_upgrade_path:1332` (INSERT brut de `supplier_invoices`) | **équivalente** : aucune lecture ultérieure sous règle de date — date écrasée par `update_draft` (`:1716`) avant `validate_in_tx` (`supplier_invoices.rs:1584`, `:1718`), numérotation par `je.fiscal_year_id` (migration `20261106000001`, `:50`, `:66`) (V3-3, V4-4) | — |
+| — | `migrations_upgrade_path:1332` (INSERT brut de `supplier_invoices`) | **jouée à l'étape 0** ; déclarée équivalente seulement si elle reste verte, raison constatée écrite — la migration `20261106000001` classe par `invoice_date` (`:47`, `:63`) (V5-1) | `2029-06-15T10:00:00Z` |
 | M9a | `opening_complement_repository` exercice de `un_compte_contre_passe_reste_mouvemente` (`:514`) | ce test | `2027-01-04T10:00:00Z` |
 | M9b | l'écriture `:519` remise à `d(2026, 2, 1)` | ce test : `create_in_tx` refuse une date hors de l'exercice N-1..N (`DateOutsideFiscalYear`, `journal_entries.rs:392`), `post` panique sur `.expect("écriture")` (`:144`) (V3-1) | `2029-06-15T10:00:00Z` |
 | — | `:533`, le `today` de `complete` (passé à `aujourd_hui_test()`) | s'il est gardé à une date passée, sa remise en 2026 est **équivalente** : premier exercice ouvert et non verrouillé, `decide_date` rend la branche `OpeningDay` quel que soit `today` (`opening_complement.rs:256-259`), `AccountMoved` suit (`:663`) | — |
@@ -456,7 +457,9 @@ l'instant prescrit se dit (juste, test muet, ou mutant équivalent démontré), 
 1. **Étape 0** : relire `e36-choix-autonomes-e360.md` (C-e360-13) et `e36-choix-autonomes-36-7.md` ; rejouer la sonde du
    détecteur de libfaketime (D3) ; rejouer les relevés A2027, N2027 et les sondes S1a, S1b, S2 à la tête (`rouges.log`) ;
    confirmer l'appel fautif d'`open_items_invariant` sous `RUST_BACKTRACE=1` (D5) ; relever par `/usr/bin/grep -nE
-   '\b2026\b'` toutes les dates de 2026 des treize tests (D1 a).
+   '\b2026\b'` toutes les dates de 2026 des treize tests (D1 a) ; **relever la suite entière à la base sous
+   `2029-06-15T10:00:00Z`** (`inventaire-36-7.sh`, journal joint), référence de l'AC2 pour juger un rouge hors des treize
+   (V5-2) ; jouer les mutations de `bank_statements_manual_e2e:1008` et `migrations_upgrade_path:1332` (§ *Tests*).
 2. Corriger les montages des sept fichiers du tableau (D1).
 3. Écrire la spec de D6 et l'entrée de la garde ; mettre à jour `docs/testing.md:119` (AC8, dont « trois sites » → quatre) ; recettes de D3/D4.
 4. Mutations M1a à M10 (AC3 c).
@@ -634,3 +637,12 @@ issue #1125 ; `docs/testing.md:119`.
     datée, n'est pas réécrite).
   - **V4-5, corrigé** : M7c nomme le premier rouge attendu, l'attente (`:443-448`), avant le refus (`:452-461`) ; le journal
     tranche.
+- **2026-11-15 — Remédiation de la validation P5 ciblée** (`kesh-gate-logs/e36-7/validation-36-7a-p5-ciblee.md` :
+  0/0/1/3). Prémisses lues ; aucun finding réfuté.
+  - **V5-1, corrigé** : la migration `20261106000001` classe par `invoice_date` (`:47`, `:63`, lus) ; l'équivalence de
+    `migrations_upgrade_path:1332` déclarée à la P4 était fausse dans sa raison. Elle n'est plus déclarée : l'étape 0 joue la
+    mutation, comme pour `:1008`, et ne l'écrit équivalente que si elle reste verte, raison constatée. Mutants équivalents
+    déclarés : **un** (`opening_complement_repository:533`). Les entrées P3 et P4 ci-dessus, datées, ne sont pas réécrites.
+  - **V5-2, corrigé** : la tâche 1 relève la suite entière à la base sous `2029-06-15T10:00:00Z`.
+  - **V5-3, corrigé** : M7c cite `FIND_LATER_CLOSED_SQL`, `fiscal_years.rs:892` (lu).
+  - **V5-4, corrigé** : mutations : **dix-neuf, plus jusqu'à deux jouées à l'étape 0** (`:1008`, `:1332`).

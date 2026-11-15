@@ -120,3 +120,6 @@ de C-e360-13. Chaque choix : contexte, option retenue, options écartées, réve
 - **Amendé le 2026-11-15 (validation P4 ciblée de la 36-7a, V4-1, V4-4)** : deux mutants équivalents déclarés (`:1332`,
   `:533`), et non trois — l'équivalence de `bank_statements_manual_e2e:1008` se tranche à l'étape 0 ; M2a porte sur un
   `UPDATE` de l'exercice dans le seul test corrigé, `setup()` restant intouché (21 tests). Dix-neuf mutations, inchangé.
+- **Amendé le 2026-11-15 (validation P5 ciblée de la 36-7a, V5-1, V5-4)** : l'équivalence de `migrations_upgrade_path:1332`
+  n'est plus déclarée (la migration `20261106000001` classe par `invoice_date`, `:47`, `:63`) ; elle se joue à l'étape 0
+  comme `:1008`. Un seul mutant équivalent déclaré (`:533`) ; **dix-neuf mutations, plus jusqu'à deux jouées à l'étape 0**.
