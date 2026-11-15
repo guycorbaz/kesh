@@ -165,18 +165,28 @@ plutôt qu'en vente, afin que les règles et les propositions travaillent sur de
      AC-1 ; **l'expansion est requise** : sans elle `source` est une chaîne et la règle `"record.source"` de 40-1 AC-6
      rejetterait la lecture ; validation des enregistrements de 40-1 AC-6 hors la règle `created` dans la fenêtre) ; exactement une transaction
      de type `charge` ou `payment` → `origins[charge] = id` ; aucune ou plusieurs → rien ; **au plus 50 lectures par
-     fenêtre** (au-delà : rien, `tracing::warn!` du nombre) ; 404 → rien ; toute autre erreur → l'erreur du connecteur,
-     la fenêtre échoue (relue au passage suivant, 38-3b). Test : remboursement d'une charge d'une fenêtre antérieure →
-     lien posé par une lecture ; 51 origines manquantes → 50 lectures ; 404 → lien `NULL`.
+     fenêtre** (au-delà : rien, `tracing::warn!` du nombre ; ces lectures sont comptées **à part** du plafond global de
+     1 000 requêtes de 40-1 AC-7, qui ne borne que le parcours des pages) ; **`Rejected`** (400, 402, 404 : charge
+     inconnue, d'un autre compte, filtre refusé) → rien, `tracing::warn!` sans la valeur — la lecture n'est qu'un
+     enrichissement, et un refus **durable** ferait échouer la même fenêtre à chaque passage, bloquant tout le
+     téléchargement ; `Auth`, `Permission`, `RateLimited`, `Unavailable`, `Transport`, `InvalidResponse` → l'erreur du
+     connecteur, la fenêtre échoue (relue au passage suivant, 38-3b). Test : remboursement d'une charge d'une fenêtre
+     antérieure → lien posé par une lecture ; 51 origines manquantes → 50 lectures ; 404 et 400 → lien `NULL`, fenêtre
+     rendue ; 503 deux fois → fenêtre en échec.
 6. **AC-6 — Surcharges `eventKindOverrides` (FR-40-2-6, patron 38-8 AC-7).** Champ de `StripeSettings`
    (`kesh-core`, 40-1 AC-2), modifiable par le client, `#[serde(default)]`, `BTreeMap<String, OverrideKind>` :
    - clé : un code court de l'AC-2 ; **seuls** ceux que la table classe `other` sans condition de signe se surchargent —
      `ADJUSTMENT`, `PAYOUT_CANCEL`, `PAYOUT_FAIL`, `TOPUP_REV`, `REFUND_FAIL`, `PAY_FAIL_REFUND`, `PAY_REVERSAL`,
      `RESERVE`, `CONNECT`, `ISSUING` ; **refusés** : `OTHER` (Écart 2), les codes classés autrement (`CHARGE`, `REFUND`,
      `PAYOUT`, `DISPUTE`, …) → `code_not_overridable` ; un code absent de la table → `malformed` ; les codes
-     surchargeables sont une constante `pub` **`OVERRIDABLE_CODES`** du module `stripe::event_codes`, lue par la
-     validation et par la garde de 40-6 (AC-6, manuel) — test : elle égale l'ensemble des codes que la table classe
-     `other` sans condition de signe, `OTHER` exclu ;
+     surchargeables sont une constante `pub` **`OVERRIDABLE_CODES`**, lue par la validation et par la garde de 40-6
+     (AC-6, manuel). ⚠️ **Elle vit dans `kesh-core`** (`kesh_core::providers::settings::stripe_codes`, avec
+     `EVENT_CODES`, la liste de tous les codes, que `malformed` exige), **non** dans `kesh-providers` : la validation de
+     `StripeSettings` est dans `kesh-core` (désérialisation typée de 38-1), et `kesh-providers` dépend de `kesh-core`
+     (38-3b AC-1) — l'inverse ferait un cycle. `kesh_providers::stripe::event_codes` les **réexporte** (`pub use`), si
+     bien que le chemin `kesh_providers::stripe::event_codes::OVERRIDABLE_CODES` que lit 40-6 reste valable. Tests
+     (`kesh-providers`) : `EVENT_CODES` égale l'ensemble des codes de la table ; `OVERRIDABLE_CODES` égale l'ensemble des
+     codes que la table classe `other` sans condition de signe, `OTHER` exclu ;
    - valeur : `sale` | `purchase` | `fee` | `withdrawal` | `deposit` | `dispute` | `other` | `ignore` ; `conversion` et
      `refund` refusés (`kind_not_allowed`) ; ≤ 50 entrées (`too_many`) ;
    - effets (38-8 AC-7) : `review_reason` `NULL` pour `sale`, `purchase`, `fee`, `withdrawal`, `deposit` ; `dispute` pour
@@ -191,7 +201,9 @@ plutôt qu'en vente, afin que les règles et les propositions travaillent sur de
 7. **AC-7 — Tests (NFR-40-2-1 à -3).**
    - **Table** : un test par ligne de l'AC-2, signes positif, négatif et nul pour les genres signés ; un test qui balaie la
      liste **complète** des `type` de la page de liste (relevée en constante de test, avec sa source) et vérifie qu'aucun ne
-     rend `sale` hors `charge`/`payment` ; `charge_x` et `foo` → `OTHER` ; `adjustment` sans catégorie → `ADJUSTMENT`.
+     rend `sale` hors `charge`/`payment` ; `charge_x` et `foo` → `OTHER` ; `adjustment` sans catégorie → `ADJUSTMENT` ;
+     `climate_order_purchase` à source `climorder_…` → `OTHER` dans une page **acceptée** (règle `source.id` de 40-1
+     AC-6).
    - **Réponses de Beat** (fixtures anonymisées de 40-1 et de 40-0) : chaque type relevé a un test qui fige son genre ; le
      test échoue en nommant le type si une fixture en contient un sans test (liste construite depuis les fixtures).
    - **Somme** (NFR-40-2-3) : sur la fixture de test, Σ `net` des mouvements (aucun écarté dans cette fixture,
@@ -218,7 +230,8 @@ plutôt qu'en vente, afin que les règles et les propositions travaillent sur de
 - [ ] T2 — `stripe::classify` : `ClassifyCtx`, `classify_window`, montants, champs, liens dans la fenêtre ; branchement
       dans `StripeConnector::movements` à la place du classement provisoire de 40-1 (AC-1, AC-3, AC-4, AC-5).
 - [ ] T3 — `stripe::origins` : lecture bornée par `source`, tests au serveur local (AC-5).
-- [ ] T4 — `kesh-core` : `eventKindOverrides` de `StripeSettings`, validation, tests (AC-6).
+- [ ] T4 — `kesh-core` : constantes `EVENT_CODES` et `OVERRIDABLE_CODES` (réexportées par `stripe::event_codes`),
+      `eventKindOverrides` de `StripeSettings`, validation, tests (AC-6).
 - [ ] T5 — Tests de l'AC-7 ; gate complet (fmt, clippy, nextest complet, `scripts/gate-ci.sh`).
 
 ## Dev Notes
@@ -264,6 +277,16 @@ plutôt qu'en vente, afin que les règles et les propositions travaillent sur de
 ### File List
 
 ## Change Log
+
+- 2026-11-15 — validation P2 (Opus) : 0 CRITICAL, 0 HIGH, 2 MEDIUM, 2 LOW ; remédiés dans la fiche (aucun
+  inter-fiches). MEDIUM : P2-1 AC-6, `OVERRIDABLE_CODES` placée dans `kesh-providers` (alignement P1) mais lue par la
+  validation de `StripeSettings`, qui est dans `kesh-core` — `kesh-providers` dépendant de `kesh-core` (38-3b AC-1),
+  c'était un cycle → constantes `EVENT_CODES` et `OVERRIDABLE_CODES` dans `kesh-core`, réexportées par
+  `stripe::event_codes` (chemin lu par 40-6 inchangé) ; P2-2 AC-5, un 400 à la lecture d'une origine faisait échouer la
+  fenêtre à chaque passage (seul 404 était toléré) → `Rejected` = lien `NULL`. LOW : P2-3 AC-5, lectures d'origine
+  hors du plafond global de 40-1 dit ; P2-4 AC-7, test d'une source à préfixe long (`climorder_`) après la correction
+  40-1-P2-3. Relu : 38-3b AC-1 (l. 56, dépendance à `kesh-core`), 38-8 AC-7, réponses de test
+  (`balance_transactions.json`, `balance.json`, `payouts.json`), migration `20260504000001_bank_imports.sql:64-65`.
 
 - 2026-11-15 — alignement inter-fiches P1 (Opus) : AC-6, les codes surchargeables deviennent la constante `pub`
   `OVERRIDABLE_CODES` de `stripe::event_codes`, lue par la validation et par la garde de 40-6 (finding de 40-6 P1).

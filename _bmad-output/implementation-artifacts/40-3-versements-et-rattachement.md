@@ -29,8 +29,10 @@ soit juste et que rien ne soit compté deux fois ni écrit sans moi.
   (`crates/kesh-db/src/repositories/bank_imports.rs:152, 161`).
 - **Une seule « date de paiement »** : `kesh_db::repositories::reconciliation::payment_date(tx) = tx.value_date
   .unwrap_or(tx.booking_date)` (`crates/kesh-db/src/repositories/reconciliation.rs:277`) ; l'acceptation par règle date
-  l'écriture ainsi (`crates/kesh-api/src/routes/reconciliation.rs:4198`), comme le partage en lot (`accept_one_split`, `:3748`), l'acceptation manuelle
-  (`post_manual_once`, `:5084`) et le partage unitaire (`post_split_once`, `:5566`). 38-6a en fait la règle de toute proposition `provider` (C-38-6a-10 : `entry_date =
+  l'écriture par la même règle (`crates/kesh-api/src/routes/reconciliation.rs:4198`), comme le partage en lot (`accept_one_split`, `:3748`), l'acceptation manuelle
+  (`post_manual_once`, `:5084`) et le partage unitaire (`post_split_once`, `:5566`) — **écrite en ligne** à ces quatre
+  sites, sans appel à `payment_date`, et les trois derniers font primer une date du corps (`value_date.or(bt.value_date)
+  .unwrap_or(…)`) ; le corps `provider` de 38-6a (C-38-6a-9) n'en porte pas. 38-6a en fait la règle de toute proposition `provider` (C-38-6a-10 : `entry_date =
   value_date ?? booking_date`, cours du mois de `entry_date`).
 - Les écritures candidates d'un rattachement (`GET …/entry-candidates`, 34-11b) **ne filtrent aucune date** ; elles se
   trient par proximité à la date de paiement, « liée en paramètre » (`crates/kesh-db/src/repositories/reconciliation_link.rs:626`,
@@ -141,25 +143,39 @@ soit juste et que rien ne soit compté deux fois ni écrit sans moi.
    `ambiguous`, `version` par élément), puis le lot `POST /api/v1/reconciliation/link-entries` de 38-6c1 (corps
    `{ bankAccountId, items: [{ bankTransactionId, journalEntryId, version }] }`, *Pattern batch* : `{ accepted, failed }`,
    `FailedProposal` par élément, codes de C-38-14) qui rattache plusieurs versements d'un coup. Test : trois versements
-   2024 téléchargés, trois écritures existantes dont l'une datée de la sortie et deux de l'arrivée → les suggestions les
-   rendent `unique`, le lot les rattache tous, aucune écriture créée ; un lot qui porte pour l'un des trois un
+   2024 téléchargés, de **montants distincts**, trois écritures existantes dont l'une datée de la sortie et deux de
+   l'arrivée → les suggestions les rendent `unique`, le lot les rattache tous, aucune écriture créée ; deux versements
+   de **même montant** (versements réguliers) → `ambiguous` (`several_entries` / `entry_shared`, 38-6c1 AC-4), choisis à
+   la main, le lot les rattache ; versement 2024 dont la ligne UBS est **déjà rapprochée** de l'écriture → la
+   proposition porte `linkJournalEntryId` (voie a, `matchedElsewhereCount = entryCount = 1`), la suggestion est
+   `ambiguous` (`matched_elsewhere`) et le lot rattache aussi (condition 4 de 34-11b : écriture rapprochée d'une
+   transaction de sens contraire d'un autre compte) ; un lot qui porte pour l'un des trois un
    `journalEntryId` inexistant → ce seul élément en `failed[]` `ENTRY_NOT_LINKABLE`, les deux autres acceptés ;
    écriture déjà rattachée à un autre versement → `ENTRY_ALREADY_LINKED`. **Garde contre le doublon** : accepter en
    `provider` (voie b) un versement 2024 dont `alreadyBooked` est non nul, sans `confirmAlreadyBooked`, →
    `failed[]` `TRANSACTION_ALREADY_BOOKED`, rien d'écrit (38-6a AC-8 (8)).
 7. **AC-7 — Versement échoué ou annulé (FR-40-3-4, G11).** Une transaction `payout_failure` / `payout_cancel` classée
-   `other` / `unknown_event` avec `related_provider_tx_id` = le versement d'origine (40-2 AC-5) :
+   `other` / `unknown_event` avec `related_provider_tx_id` = le versement d'origine (40-2 AC-5) — **sauf surcharge** :
+   `PAYOUT_FAIL` et `PAYOUT_CANCEL` sont surchargeables (40-2 AC-6, `OVERRIDABLE_CODES`) ; surchargée, la transaction
+   suit son genre (p. ex. `deposit`, 38-6b) et ne va pas à la file, ce que cette story n'ajoute ni ne teste :
    - elle est à la file (`GET /api/v1/reconciliation/review`, 38-6b AC-6 : `reason: "unknown_event"`,
      `reasonSource: "stored"`) et n'a aucun candidat (`GET …/proposals`) ; `POST …/accept` en `provider` →
      `failed[]` `PROVIDER_TX_UNDER_REVIEW` ;
    - **`relatedBankTransactionId`** de l'élément de la file (Écart 2, additif) = l'`id` de la transaction du même compte
      dont `provider_tx_id` = `related_provider_tx_id`, sinon `null` ; lu par la requête de page de la file (une lecture
      par page, non par élément ; test du compteur de 38-6b AC-1 tenu) ; `docs/api-external.md` le dit ;
-   - le versement d'origine, s'il est rapproché, **reste** rapproché : défaire est un geste humain (annulation 34-11b,
-     `POST …/transactions/{id}/cancel`, inchangée) ; l'échec se traite alors à la main (écriture manuelle 34-3, puis
-     « examiné », `…/review-done`) ;
+   - le versement d'origine, s'il est rapproché, **reste** rapproché : défaire est un geste humain. Deux voies, à la
+     main, écrites au manuel par 40-6 : (i) **annuler** le rapprochement du versement (34-11b, `POST
+     …/transactions/{id}/cancel`, inchangée : son écriture est défaite), puis marquer versement et échec « examinés »
+     (`…/review-done`, ou rejet) — ils restent `pending` et se compensent dans `unreconciled` (40-4) ; (ii) **rapprocher
+     l'échec** par une écriture manuelle (34-3, `POST /api/v1/reconciliation/manual`, `D <compte Stripe> / C <banque>`)
+     — la transaction d'échec devient `reconciled` et quitte la file. ⛔ Jamais « écriture manuelle **puis** examiné » :
+     « examiné » ne comptabilise rien et ne vaut que pour une transaction `pending` (C-38-6b-6 : même `UPDATE` que le
+     rejet, `routes/reconciliation.rs:4686-4689`, `status = 'pending' AND matched_entry_id IS NULL`) ; et « examiné » **seul**, sans (i) ni (ii), laisserait 1101 diminué d'un versement qui n'a
+     pas eu lieu et la banque augmentée d'autant ;
    - Tests : versement rapproché puis échec téléchargé → échec à la file, `relatedBankTransactionId` = versement,
-     versement toujours `reconciled` ; échec dont l'origine est hors de Kesh (antérieure à `fetch_from`) →
+     versement toujours `reconciled` ; voie (ii) : `POST …/manual` sur l'échec → `200`, transaction `reconciled`, hors de
+     la file, solde de 1101 rétabli ; échec dont l'origine est hors de Kesh (antérieure à `fetch_from`) →
      `relatedBankTransactionId: null`.
 8. **AC-8 — Non-régression (NFR-40-3-2, G18).** Retraits et dépôts PayPal de 38-6b (AC-4 de 38-6b, `value_date NULL`) :
    tests verts **sans retouche de leurs attentes** (date d'écriture = `booking_date`, fenêtre de suggestion inchangée) ;
@@ -197,7 +213,9 @@ soit juste et que rien ne soit compté deux fois ni écrit sans moi.
   `reconciliation_link.rs:626` n'en est pas le précédent : il interdit la réécriture, la date y étant liée en paramètre).
 - **Débit du compte bancaire par Stripe** (solde négatif) : à la file par 40-2 (Q-40-2-1), hors de cette story.
 - **Points de contact** : 38-6b C-38-6b-3, AC-1, AC-4, AC-6, AC-9 ; 38-6a C-38-6a-10, AC-8 ; 38-6c1 AC-4, AC-5, AC-11 ;
-  34-11b (second côté) ; 40-4 (versements en route : `booked_at < as_of ≤ value_date`) ; 40-6 (écrans, manuel).
+  34-11b (second côté) ; 40-4 (versements en route : versement compté au solde rapporté dont l'écriture rapprochée est
+  datée après la date de `as_of` — 40-4 *Écarts à l'epic*, 1, qui remplace la règle `booked_at < as_of ≤ value_date`
+  de G12) ; 40-6 (écrans, manuel, dont les deux voies de l'AC-7).
 - **Splitting** : trois modules (≤ 5).
 
 ### References
@@ -239,3 +257,24 @@ soit juste et que rien ne soit compté deux fois ni écrit sans moi.
 - 2026-11-15 — alignement inter-fiches P1 (Opus) : AC-3, le DTO de transaction de `GET …/proposals` gagne `valueDate`
   et la proposition `provider` de retrait `entryDate` (additifs ; PayPal `valueDate: null`, `entryDate` = `bookingDate` ;
   test de clés exactes PayPal) — demandés par 40-6 AC-4 (finding de 40-6 P1).
+- 2026-11-15 — validation P2 (Opus) : 0 CRITICAL, 0 HIGH, 1 MEDIUM, 6 LOW (dont 2 inter-fiches) ; remédiés dans la fiche
+  sauf 40-3-P2-6 (40-6) et 40-3-P2-7 (epic). MEDIUM 40-3-P2-1 (AC-7) : « écriture manuelle 34-3, puis « examiné » »
+  est impossible et faux — une écriture manuelle rapproche l'échec (il n'est plus `pending` ; l'`UPDATE` du rejet que
+  reprend `review-done` exige `status = 'pending' AND matched_entry_id IS NULL`, `routes/reconciliation.rs:4686-4689`), et « examiné » seul ne comptabilise rien (C-38-6b-6) et
+  laisserait 1101 et la banque faux de 300.00 → deux voies écrites (annuler puis examiner ; ou rapprocher l'échec par
+  `/manual`), test de la voie (ii). LOW : 40-3-P2-2 (prémisses) les quatre sites d'acceptation écrivent la règle en
+  ligne, sans appeler `payment_date`, trois avec une date du corps qui prime (lignes lues `:3748`, `:4198`, `:5084`,
+  `:5566`) ; 40-3-P2-3 (AC-6) test à montants distincts (sinon `ambiguous`), cas des versements de même montant et
+  d'une ligne UBS 2024 déjà rapprochée (voie a, `matched_elsewhere`) ; 40-3-P2-4 (AC-7) `PAYOUT_FAIL`/`PAYOUT_CANCEL`
+  surchargeables (40-2 AC-6) : l'AC vaut sans surcharge ; 40-3-P2-5 (Dev Notes) la règle « en route » citée était celle
+  de G12, remplacée par 40-4 Écart 1. Inter-fiches : 40-3-P2-6 (LOW, 40-6 AC-4 : l'aide de `PAYOUT_FAIL` ne dit que
+  « annulez ce rapprochement » — ajouter la voie (ii) et « examiner ensuite les deux ») ; 40-3-P2-7 (LOW, epic C-40-2
+  (a) dit `value_date ≥ date de booked_at`, 40-1 AC-7 admet `− 1 jour`, Écart 5). Lignes relues justes (code inchangé
+  depuis `a2b1da9c`) : `reconciliation.rs:277`, `routes/reconciliation.rs:3748, 3771, 4198, 4207, 5084, 5566`,
+  `reconciliation_link.rs:526, 626-628`, `bank_imports.sql:61`, `bank_transaction.rs:87`, `bank_imports.rs:150-162`,
+  `lib.rs:931`, `api-external.md:704`. Contrôlés aux fiches : 38-6b C-38-6b-3, C-38-6b-6, C-38-6b-8 (8) (voie b
+  soumise à `TRANSACTION_ALREADY_BOOKED`, voie a non), AC-4, AC-6 ; 38-6a C-38-6a-9, -10, AC-8 (8), (9) ; 38-6c1 AC-4,
+  AC-5 ; 38-3b AC-4 (`file_hash`, statut tardif) ; 40-2 AC-2, AC-5, AC-6 ; 40-1 AC-7. Axes exercés : prémisses,
+  contradictions, sites non résolus (migration, routes, audit, i18n, MCP — aucun outil ne lit les propositions —,
+  manuels renvoyés à 40-6), comptabilité (date, créance, échec), exigences, tests, taille. Non exercés : sécurité
+  (aucun secret), réponses Stripe réelles d'échec de versement, exécution de code.

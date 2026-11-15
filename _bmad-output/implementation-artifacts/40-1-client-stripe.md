@@ -70,8 +70,8 @@ paginée sans perte, à version d'API fixe et sans fuite de la clé.
 - `FR-40-1-5` — Lire le solde d'une devise à un instant passé, par sommation (G5) → AC-8.
 - `FR-40-1-6` — Chaque erreur Stripe devient un code lisible (C-40-3) ; la fabrique construit un `StripeConnector` pour
   `stripe`, sur le transport factice `stripeResponses` en mode test → AC-10, AC-11.
-- `FR-40-1-7` *(ajoutée)* — Le mode (test ou réel) de la connexion se fixe au premier « Tester » réussi ; une clé de
-  l'autre mode est refusée tant que la connexion a des transactions téléchargées → AC-5, AC-9.
+- `FR-40-1-7` *(ajoutée)* — Le mode (test ou réel) de la connexion se fixe au premier « Tester » réussi ou au premier
+  passage ; une clé de l'autre mode est refusée tant que la connexion a des transactions téléchargées → AC-5, AC-9.
 - `NFR-40-1-1` — URL de base constante, client borné de 37-2, bornes de 38-3b par requête, plafonds de requêtes par
   fenêtre et par lecture de solde → AC-1, AC-7, AC-8.
 - `NFR-40-1-2` — Clé absente de tout journal, erreur, réponse, audit, export et sauvegarde (test au marqueur) → AC-12.
@@ -82,11 +82,12 @@ paginée sans perte, à version d'API fixe et sans fuite de la clé.
 
 ## Écarts à l'epic
 
-1. **Clé de test admise hors mode test (P40-1).** G4, FR-40-1-2 et C-40-3 réservent `rk_test_` à `KESH_TEST_MODE` ;
-   l'orchestrateur a décidé (P40-1) que `rk_test_` est admise partout — le compte de test de Beat sert à la recette —,
-   le mode étant montré et contrôlé. `PROVIDER_SECRET_NOT_RESTRICTED` ne vise donc plus que les clés non restreintes.
-   *Garde ajoutée en contrepartie* (FR-40-1-7, AC-5) : une connexion ne change pas de mode après son premier
-   téléchargement — sans elle, des transactions de test et réelles se mêleraient dans les mêmes comptes.
+1. **Clé de test admise hors mode test (P40-1) — écart levé.** À la rédaction, G4, FR-40-1-2 et C-40-3 réservaient
+   `rk_test_` à `KESH_TEST_MODE` ; depuis l'alignement inter-fiches P1, l'epic porte P40-1 (G4, C-40-1, C-40-3,
+   FR-40-1-2, NFR-40-1-3 et la garde de mode FR-40-1-7 alignés, § *Validation P1* de l'epic) : `rk_live_` et `rk_test_`
+   admises partout, `PROVIDER_SECRET_NOT_RESTRICTED` ne visant que `sk_`, `pk_` et les préfixes inconnus. Il ne reste
+   aucun écart sur ce point ; la fiche garde le détail de la garde (AC-5) — sans elle, des transactions de test et
+   réelles se mêleraient dans les mêmes comptes.
 2. **`livemode` « sur chaque réponse » (NFR-40-1-3)** : la transaction de solde et la liste n'ont **pas** de champ
    `livemode` (constat ci-dessus) ; le contrôle porte sur chaque objet qui en porte un — solde, compte, sources
    développées (`charge`, `payout`, `dispute`, …) — et sur le préfixe de la clé (AC-5). Un remboursement (`refund`, sans
@@ -150,8 +151,12 @@ paginée sans perte, à version d'API fixe et sans fuite de la clé.
    - préfixe `sk_live_`, `sk_test_` → `400 PROVIDER_SECRET_NOT_RESTRICTED`, `details: { field: "restrictedKey", reason:
      "secret_key" }` ; `pk_` → `reason: "publishable_key"` ; tout autre préfixe que `rk_live_` / `rk_test_` →
      `reason: "unknown_prefix"`. Variante d'`AppError` neuve (statut 400), message aux quatre locales ;
-   - suite du préfixe : 1 à 247 caractères `[A-Za-z0-9]` (longueur totale ≤ 255) ; gabarit (`is_template_placeholder`,
-     `crates/kesh-api/src/config.rs:1538`, `changeme`) → `400 PROVIDER_SECRETS_INVALID`, `details.field` (38-1 AC-6).
+   - suite du préfixe : 1 à 247 caractères `[A-Za-z0-9]` (longueur totale ≤ 255) → sinon `400 PROVIDER_SECRETS_INVALID`,
+     `details.field` (38-1 AC-6). **Gabarit** : couvert par ces deux contrôles, sans appel distinct — `changeme`,
+     `<…>` ou `GENERATE_ME` seuls n'ont pas de préfixe admis (`unknown_prefix`) ; après `rk_live_`/`rk_test_`, `<`, `>`
+     et `_` sont hors du jeu `[A-Za-z0-9]` (`PROVIDER_SECRETS_INVALID`). (`is_template_placeholder`,
+     `crates/kesh-api/src/config.rs:1538`, ne connaît d'ailleurs que `generate_me` et `<…>`, `config.rs:1522` ;
+     `changeme` est un contrôle à côté, 38-1 AC-6.)
    - **Secrets exigés par prestataire (C-40-2 f)** : si 39-1 est livré, `stripe → ["restricted_key"]` s'inscrit dans sa
      liste (C-39-2, F2) ; sinon 40-1 la pose **dans la forme de C-39-2** — fonction `required_secrets(provider) ->
      &'static [&'static str]` (`paypal → ["client_secret"]`, `stripe → ["restricted_key"]`) lue par les contrôles
@@ -159,25 +164,34 @@ paginée sans perte, à version d'API fixe et sans fuite de la clé.
      **nommés** (`secrets: BTreeMap<&'static str, Zeroizing<String>>`, F2), PayPal lisant `client_secret` sans changement
      de comportement.
    - Tests : `sk_live_…`, `sk_test_…`, `pk_live_…`, `whsec_…` refusés (raison juste, valeur absente du corps de réponse et
-     de la sortie `tracing` capturée) ; `rk_live_…` et `rk_test_…` admis ; caractère interdit ; 256 caractères ; gabarit ;
-     clé en trop (`clientSecret`) → `PROVIDER_SECRETS_INVALID`.
+     de la sortie `tracing` capturée) ; `rk_live_…` et `rk_test_…` admis ; caractère interdit ; 256 caractères ; gabarits
+     `changeme` → `unknown_prefix`, `rk_live_GENERATE_ME` → `PROVIDER_SECRETS_INVALID` ; clé en trop (`clientSecret`) →
+     `PROVIDER_SECRETS_INVALID`.
 5. **AC-5 — Le mode : lu, montré, contrôlé (P40-1, NFR-40-1-3, FR-40-1-7).**
    - **Mode de la clé** : `rk_live_` → réel, `rk_test_` → test (fonction pure `key_mode(&str) -> Option<Livemode>`,
      testée). Le connecteur le reçoit à sa construction.
    - **Chaque objet qui porte `livemode`** (solde, compte, sources développées) doit l'avoir égal au mode de la clé ;
      sinon `InvalidResponse { reason: "livemode" }`, la page entière rejetée (Écart 2).
-   - **Mode de la connexion** : `StripeSettings.livemode` est posé par le premier « Tester » réussi (AC-9). Ensuite, si le
-     mode de la clé déposée diffère de `livemode` :
-     - « Tester » : contrôle `mode_unchanged` en échec, `errorCode = PROVIDER_MODE_CHANGED`, **sauf** si aucune
-       transaction n'a encore été téléchargée pour la connexion (aucune ligne `bank_transactions` dont le compte porte
-       une ligne `payment_provider_accounts` de la connexion) : le mode est alors réécrit (version + 1, audit `tested`) ;
-     - passage (38-3b) : la fabrique compare avant tout appel ; différence → le connecteur rend `InvalidResponse {
-       reason: "livemode" }` sans appel réseau (passage `failed`, `error_code = invalid_response`, `error_detail =
-       "livemode"`, `lastError = PROVIDER_RESPONSE_INVALID`).
-     - **connexion jamais testée** (`livemode` à `None` : 38-3b n'exige pas de « Tester » préalable pour qu'un passage
-       tourne) : le passage **pose** `livemode` (mode de la clé) dans la transaction qui écrit sa première page, version
-       + 1 — sans quoi la garde ne couvrirait que les connexions testées avant leur premier téléchargement ; test : passage
-       sans « Tester », puis clé de l'autre mode → refus sans appel.
+   - **Mode de la connexion** : `StripeSettings.livemode`, posé par le premier « Tester » réussi (AC-9) ou par le premier
+     passage. **Une seule règle**, fonction pure `mode_decision(stored: Option<bool>, key: bool, has_downloaded: bool) ->
+     Keep | Pose | Refuse` (`kesh-api`, module des connexions Stripe, testée sur ses huit combinaisons) : `stored =
+     Some(key)` → `Keep` ; `stored = None`, ou `stored ≠ key` sans transaction téléchargée → `Pose` (mode de la clé
+     écrit) ; `stored ≠ key` avec transaction téléchargée → `Refuse`. *Transaction téléchargée* : une ligne
+     `bank_transactions` dont le compte porte une ligne `payment_provider_accounts` de la connexion. **La comparaison
+     n'est faite ni par la fabrique ni par le connecteur** — un connecteur bâti pour refuser rendrait impossible la
+     réécriture que « Tester » doit faire quand rien n'est téléchargé ; le connecteur ne contrôle que `livemode` des
+     objets contre le mode **de la clé** (puce précédente). Appelants, avant tout appel au connecteur :
+     - « Tester » : `Refuse` → contrôle `mode_unchanged` en échec, `errorCode = PROVIDER_MODE_CHANGED`, suivants `ok:
+       null`, aucun appel ; `Pose` → le mode s'écrit avec les autres champs du serveur au succès (version + 1, audit
+       `tested`, AC-9) ;
+     - passage (38-3b) : `Refuse` → passage `failed` **sans appel**, `error_code = invalid_response`, `error_detail =
+       "livemode"`, `lastError = PROVIDER_RESPONSE_INVALID` (aucun code de passage neuf) ; `Pose` → `livemode` écrit
+       dans la transaction qui écrit la première page, version + 1 (rien d'écrit si aucune page ne l'est : le mode reste
+       à établir, sans effet puisque rien n'est téléchargé) ; pas d'action d'audit (passage `daily` non audité, C-37-6 :
+       le mode se déduit de la clé déposée, auditée par `secrets_updated`), `tracing::info!` sans la clé.
+     Tests : passage sans « Tester » → mode posé ; puis clé de l'autre mode → passage refusé sans appel (compteur du
+     serveur local à 0) et « Tester » en échec `mode_unchanged` ; clé de l'autre mode sans transaction → « Tester » et
+     passage réécrivent le mode.
      Changer de mode après un téléchargement demande une **connexion neuve** (dit au manuel par 40-6).
    - `PROVIDER_MODE_CHANGED` : chaîne constante de `errorCode`/`lastError` (non une `AppError`, comme les codes de 38-7
      AC-7), message `provider-error-*` aux quatre locales.
@@ -207,11 +221,17 @@ paginée sans perte, à version d'API fixe et sans fuite de la clé.
      (`"record.fee_details"`) ; `created` entier dans `[s0, s1)` (`"record.created"` — Stripe filtre exactement : hors
      intervalle = réponse hostile) ; `status` hors `available|pending` → `"record.status"` ; `exchange_rate` nul ou
      décimal > 0 ; textes > 2000 caractères, courriel > 254, `metadata` > 50 clés ou valeur > 500 → `"record.text"` ;
+     motifs des autres règles : `"record.type"` (`type`, `reporting_category`), `"record.amount"` (bornes),
+     `"record.exchange_rate"` ;
      `source` **chaîne** (non développée) → `"record.source"` (droit d'expansion manquant : jamais un mouvement sans ses
-     champs) ; `source` nulle admise ; `source.id` `^[a-z]{2,4}_[A-Za-z0-9]{1,60}$` ; `source.livemode` ≠ mode de la clé →
+     champs ; **sauf** dans les lectures sans expansion de l'AC-8, où la source n'est pas lue) ; `source` nulle admise ;
+     `source.id` `^[a-z][a-z0-9]{0,19}_[A-Za-z0-9]{1,200}$` (`"record.source"` ; préfixes réels de longueur variable :
+     `ch_`, `pyr_`, `iauth_` — doc *Issuing Authorization*, relue le 2026-11-15 —, `climorder_` ; un préfixe trop
+     étroit rejetterait la page entière d'un type que G9 range en `other`) ; `source.livemode` ≠ mode de la clé →
      `"livemode"` (AC-5) ; **versement** (`type = payout`, source `payout`) : `source.amount == −amount` et même devise,
      sinon `"record.payout"` (G10) ; `arrival_date` entier lu comme **date UTC** (minuit UTC observé).
-   - Tests hostiles : un par règle ; `has_more` absent ; `data` non tableau ; 101 éléments.
+   - Tests hostiles : un par règle ; `has_more` absent ; `data` non tableau ; 101 éléments. Tests admis : sources
+     `iauth_…`, `climorder_…`, `pyr_…` (page acceptée).
 7. **AC-7 — Une fenêtre entière, curseur suivi dans le connecteur (G3, O10, FR-40-1-4, NFR-40-1-1).**
    `StripeConnector::movements(window, page)` (forme de 38-3b AC-2) :
    - fenêtre refusée **avant tout appel** si `to − from > max_window()` ou `from ≥ to` → `InvalidWindow` ; `page ≥ 2` →
@@ -254,7 +274,9 @@ paginée sans perte, à version d'API fixe et sans fuite de la clé.
      available + pending` (absente d'un tableau = 0) ; `as_of` = instant de la lecture (horloge injectée).
    - `balances(Some(as_of))` : `T0` = horloge juste **avant** la lecture du solde ; solde courant (ci-dessus) − Σ `net` des
      transactions `created ∈ [⌈as_of⌉, ⌈T0⌉)` lues par le même parcours de curseur (AC-7, sans expansion :
-     `limit=100`, pas d'`expand`), **hors** `balance_type` ≠ `payments` ; au plus **50 requêtes**, sinon
+     `limit=100`, pas d'`expand`), **hors** `balance_type` ≠ `payments` ; validation de l'AC-6 **sauf** les règles de la
+     source (chaîne admise, non lue, aucun `livemode` à contrôler sur elle) — test : page sans expansion acceptée,
+     somme juste ; au plus **50 requêtes**, sinon
      `WindowTooLarge { total_items: None }` (38-3b AC-7 : motif `balances_unavailable` ou `opening_unavailable`, contrôle
      « non disponible ») ; `as_of` rendu = `as_of` demandé ; une transaction créée **entre `T0` et la lecture du solde** est dans
      le solde mais hors de la somme (bornée à `T0`) : le solde passé rendu est trop fort de son `net` — écart
@@ -268,7 +290,8 @@ paginée sans perte, à version d'API fixe et sans fuite de la clé.
    `StripeConnector::test()` :
    - `provider_reachable` : `balances(None)` ;
    - `permission_present` : `GET /v1/balance_transactions?limit=1&expand[]=data.source` (403 → `Permission`) — le droit
-     de lire les transactions et d'en développer la source se constate ici, non au premier passage ;
+     de lire les transactions et d'en développer la source se constate ici, non au premier passage ; page validée par
+     l'AC-6 hors la règle `created` (aucune fenêtre) ;
    - compte : `GET {base}/v1/account` → `account_ref = id` (`^acct_[A-Za-z0-9]{1,60}$`) ; **403 ou 404 n'échouent pas**
      le test (`account_ref = None` : la clé n'a pas ce droit, Q-40-8) ; 401 → `Auth`.
    - `ConnectorTest { account_ref, balances, livemode: Some(mode) }` (Écart 3). Un contrôle en échec porte `errorCode`
@@ -278,13 +301,18 @@ paginée sans perte, à version d'API fixe et sans fuite de la clé.
      diffèrent**, version + 1, dans la transaction de l'audit ; `last_error` remis à `NULL`. Échec : `last_error` = code.
    - Audit `payment_provider_connection.tested` (38-7 AC-8, libellé existant) : `details` `{ result, accountIdChanged,
      livemode, currencies }` — ni clé ni montant.
+   - **Limite assumée** : un `accountId` lu différent de celui des réglages (clé d'un **autre** compte Stripe déposée
+     sur une connexion qui a déjà téléchargé) est réécrit et tracé (`accountIdChanged`), non refusé — la clé peut ne pas
+     lire `/v1/account` (Q-40-8), la garde ne serait pas totale ; le contrôle de solde (E20 b) en montre l'effet. Tracé
+     au registre C-40-7 (inter-fiche, au rapport) pour une garde `account_unchanged` à décider.
    - Devises lues sans compte Kesh : listées à la réponse ; leur écriture à `provider_balances_seen` reste l'affaire du
      passage (38-3b AC-7, E12, B2).
    - Tests HTTP : succès qui pose les trois champs ; second succès sans changement (rien d'écrit, audit seul) ; 401 →
      `PROVIDER_AUTH_FAILED` ; liste en 403 → `permission_present` faux, `PROVIDER_PERMISSION_MISSING` ; compte en 403 →
      succès, `accountId: null` ; Comptable → 403 ; clé d'API → `403 API_KEY_ADMIN_FORBIDDEN`.
 10. **AC-10 — Erreurs (C-40-3, FR-40-1-6).** `ConnectorError` de 38-3b, **aucune variante neuve** ; table : 401 →
-    `Auth` ; 403 → `Permission` ; 400, 402, 404, 409 → `Rejected` ; 429 → `RateLimited { retry_after }` (`Retry-After`
+    `Auth` ; 403 → `Permission` ; 400, 402, 404, 409 → `Rejected` (409, absent de C-40-3 — conflit d'idempotence,
+    sans objet en `GET` —, y est rangé par défaut sûr) ; 429 → `RateLimited { retry_after }` (`Retry-After`
     lu, au journal) ; 5xx, 424, délai → `Unavailable`, **un** second essai après 2 s (patron 38-7 AC-7) ; réseau, TLS,
     redirection → `Transport` ; corps invalide ou trop gros → `InvalidResponse`. `error.message`, `error.param`,
     `request-id` : au `tracing::warn!` seulement, jamais à l'écran ni à `last_error`. Codes d'API : ceux de 38-7 AC-7
@@ -300,7 +328,8 @@ paginée sans perte, à version d'API fixe et sans fuite de la clé.
       `StripeConnector` sur le transport factice. `TEST_ENDPOINT_ROUTES` inchangé (même route).
     - **Jeu `"default"`** (`stripe::fake`, constantes et une fonction `default_responses(now)`) : servi **par chemin** et
       non dans l'ordre — `/v1/balance`, `/v1/account`, `/v1/balance_transactions` (le factice applique lui-même
-      `created[gte]`, `created[lt]`, `source`, `limit`, `starting_after` à une liste constante) — afin qu'un E2E (40-6,
+      `created[gte]`, `created[lt]`, `source`, `limit`, `starting_after` à une liste constante, et ne développe les sources
+      que si `expand[]=data.source` est demandé — chaîne sinon, comme Stripe, pour exercer la lecture de l'AC-8) — afin qu'un E2E (40-6,
       NFR-40-6-3) puisse tester puis télécharger à n'importe quelle date : transactions datées de `now − 20 jours` à
       `now − 4 jours` (hors du délai de 3 h du passage), couvrant vente CHF, EUR et USD (dont une `pending`), remboursement
       partiel à frais rendus, litige, frais `stripe_fee`, versement USD ; solde = Σ `net` par devise ; `livemode: false` ;
@@ -319,7 +348,9 @@ paginée sans perte, à version d'API fixe et sans fuite de la clé.
       (`txn_`, `ch_`, `py_`, `re_`, `du_`, `po_`, `pi_`, `ba_`, `acct_`, `cus_`) remplacés de façon **cohérente** (une même
       valeur → une même valeur factice, liens gardés), courriels et noms remplacés, `calculated_statement_descriptor` et
       `metadata` hors `invoice` remplacés ; montants, devises, types, catégories, statuts, dates gardés. Test : aucune
-      fixture ne contient `@` hors `example.invalid`, ni `sk_`, ni `rk_` ; les identifiants factices suivent une forme
+      fixture ne contient `@` hors `example.invalid`, ni de clé — motif `\b(sk|rk|pk)_(live|test)_[A-Za-z0-9]` ; **pas**
+      la sous-chaîne `rk_` seule, que portent des noms de champs réels des réponses de test (`network_status`,
+      `network_token`, `risk_level`) ; les identifiants factices suivent une forme
       reconnaissable (`<préfixe>_kesh<n>`), et le test refuse tout identifiant qui ne l'a pas.
     - Serveur axum local (`with_base_url`, `HttpTransport::for_local_tests()`) : forme exacte de chaque requête (chemin,
       paramètres, `expand[]`, `Stripe-Version`, `Bearer`) ; chaque ligne de la table d'erreurs ; 500 puis 200 ; délai ;
@@ -371,7 +402,7 @@ d'aujourd'hui** — l'Epic 38 n'étant pas développé) ; aucun outil
   `ProviderMovement.value_date` ; 40-6 affiche `livemode`, `accountId`, `apiVersion`, les contrôles et les codes neufs.
 - **Lignes relues** (commit `a2b1da9c`) : `crates/kesh-api/src/config.rs:1522, 1538` ; `crates/kesh-api/src/extractors.rs:18` ;
   `crates/kesh-api/src/routes/test_endpoints.rs:349` ; `crates/kesh-api/src/audit_labels.rs:24, 70` ; `Cargo.toml:2-13`
-  (dix crates : `kesh-providers` vient de 38-3b). Le reste du socle est **à venir** (Epic 38 non développé) : ses noms
+  (dix crates aujourd'hui, sans `kesh-providers` : il sera le onzième, posé par 38-3b AC-1). Le reste du socle est **à venir** (Epic 38 non développé) : ses noms
   sont ceux des fiches 38-1, 38-3b, 38-7, citées par AC.
 - **Splitting** : quatre modules (≤ 5).
 
@@ -399,6 +430,22 @@ d'aujourd'hui** — l'Epic 38 n'étant pas développé) ; aucun outil
 ### File List
 
 ## Change Log
+
+- 2026-11-15 — validation P2 (Opus) : 0 CRITICAL, 0 HIGH, 4 MEDIUM, 8 LOW ; remédiés dans la fiche sauf 40-1-P2-10
+  (registre C-40-7 de l'epic), 40-1-P2-11 (40-6 AC-2) et 40-1-P2-12 (40-4 AC-5), inter-fiches, au rapport. MEDIUM :
+  P2-1 AC-8, somme du solde passé lue sans expansion rejetée par la règle `record.source` de l'AC-6 → règles de la
+  source levées dans ce parcours, jeu `"default"` qui ne développe que sur demande ; P2-2 AC-5, comparaison du mode
+  placée dans la fabrique : « Tester » n'aurait jamais pu réécrire le mode d'une connexion sans téléchargement, et
+  passage et « Tester » suivaient deux règles → fonction pure `mode_decision` partagée, avant tout appel ; P2-3 AC-6,
+  `source.id` `^[a-z]{2,4}_` rejetait des sources réelles (`iauth_`, doc relue ; `climorder_`) et toute leur page →
+  préfixe 1 à 20 ; P2-4 AC-13, test « ni `rk_` » infaisable (`network_status`, `risk_level` dans les réponses de
+  test) → motif de clé. LOW : P2-5 Écart 1 périmé (epic aligné sur P40-1) ; P2-6 AC-4, contrôle de gabarit
+  inatteignable après préfixe et jeu de caractères, `changeme` inconnu d'`is_template_placeholder` (`config.rs:1522`)
+  → tests précisés ; P2-7 AC-6/AC-9, motifs non nommés, règle `created` sans fenêtre ; P2-8 AC-10, 409 hors C-40-3
+  dit ; P2-9 « dix crates » ambigu ; P2-10 changement de compte Stripe non gardé (limite dite, à tracer) ; P2-11, P2-12
+  inter-fiches. FR-40-1-7 : « ou au premier passage ». Lignes relues : `config.rs:1522, 1538`, `extractors.rs:18`,
+  `audit_labels.rs:24, 70`, `Cargo.toml:1-14` ; réponses de test (`balance_transactions.json`, `balance.json`,
+  `payouts.json`).
 
 *(Findings de la validation P1 : P1-1 MEDIUM AC-5, passage d'une connexion jamais testée sans mode posé ; P1-2 MEDIUM
 AC-7, plafond de requêtes par sous-fenêtre seulement ; P1-3 MEDIUM AC-11, `query?` de `stripeResponses` sans valeurs

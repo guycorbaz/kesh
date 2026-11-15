@@ -65,8 +65,8 @@ afin de tenir les comptes Stripe sans saisie, en sachant ce qui est une créance
 1. **CSV aux *Relevés joints*** (FR-40-6-5) : l'écran est livré par **40-5** (AC-6, avec ses Vitest, E2E et captures) ;
    40-6 n'y ajoute que le manuel (AC-8). Aucune double écriture.
 2. **Tuile de l'accueil** (créance hors total) : livrée par **40-4** (AC-7, AC-9) ; 40-6 l'écrit au manuel.
-3. **Clé de test** : G4 la réservait au mode test ; P40-1 l'admet (40-1 *Écart* 1). L'écran dit le mode au lieu de
-   refuser la clé.
+3. ~~**Clé de test**~~ — plus un écart : l'epic est aligné sur P40-1 (G4, C-40-1, C-40-3, FR-40-1-2, § *Validation
+   P1*) ; `rk_test_` est admise, l'écran dit le mode (AC-1, AC-2) au lieu de refuser la clé.
 4. **Un test Rust** (AC-6) dans une story d'écrans : la liste des codes courts écrite au TypeScript et au manuel doit
    égaler la table de 40-2 ; seul un test qui lit les deux côtés le garantit.
 
@@ -145,30 +145,52 @@ afin de tenir les comptes Stripe sans saisie, en sachant ce qui est une créance
    arrivés en banque selon leur écriture : c'est encore une créance sur Stripe ». Les termes se montrent **dans le signe où le serveur
    les rend** (un versement en route : `−300.00`, 40-4 Dev Notes) ; le manuel dit le sens. « Selon Stripe » au lieu de « Selon
    PayPal » par le libellé du prestataire (`provider-labels.ts`, jamais un nom écrit en dur ; PayPal inchangé, Vitest).
+   **Inventaire des textes de 38-9a/38-9b qui nomment PayPal** (relevé par `grep -no "«[^»]*PayPal[^»]*»"` des deux
+   fiches, refait au développement sur le code livré) — chacun passe par le libellé du prestataire, rendu PayPal
+   identique (Vitest de 38-9a/38-9b sans retouche) : 38-9a AC-5 « N enregistrements PayPal écartés (refusés, en attente
+   …, ou sans effet sur le solde) » — pour Stripe, **texte propre** : « N transactions Stripe écartées (hors du solde des
+   paiements : réserves, Issuing…) », seul `skipped.non_balance` y entrant (G9) — et « PayPal annonce un solde
+   d'ouverture trop ancien… » (`opening_unavailable: span`) ; 38-9a AC-6 « Soldes PayPal sans compte dans Kesh » ;
+   AC-7 « … n'est plus alimenté par PayPal » ; AC-9 badge « PayPal · <libellé> · <devise> » ; 38-9b AC-3 « Frais PayPal
+   (<devise>) » (la ligne de frais d'une vente Stripe) et « PayPal · … » (`:350`). L'avis « PayPal ne remonte que trois
+   ans » (`truncatedFrom`) ne concerne pas Stripe (`history_start` `None`, G3). Vitest : chaque site rendu « Stripe » pour
+   une connexion `stripe`.
    Panneau de clôture (`FiscalYearChecks.svelte`) : pour un compte K9 en écart portant `inTransitPayouts` (40-4 AC-4),
    « dont versements en route : T » sous l'écart (et « autres décalages de date : O ») ; absent sinon. Vitest des deux.
 6. **AC-6 — Codes courts Stripe dans l'aide et garde de concordance (FR-40-6-5).** `provider-labels.ts` porte
    `STRIPE_EVENT_CODES` (tous les codes de la table de 40-2 AC-2, ordre de la table, chacun avec son libellé :
    « `CHARGE` — paiement par carte », « `PAYOUT` — versement vers la banque », …) et `STRIPE_OVERRIDABLE_CODES` (40-2
    AC-6). Formulaire des règles (38-9b AC-1, `rules-labels.ts`) : l'aide du critère `event_code_prefix` **de 38-9b (« Code PayPal, p. ex. `T0006` ou `T00` ») reste telle quelle** (G18,
-   AC-11 : ses Vitest passent sans retouche) et gagne une **ligne en dessous**, clé neuve `rules-help-event-code-stripe` :
+   AC-11 : ses Vitest passent sans retouche) et gagne une **ligne en dessous**, clé neuve
+   `reconciliation-rules-help-event-code-stripe` (préfixe des aides de 38-9b AC-9 ; `rules-labels.ts` vit sous
+   `features/reconciliation/`, où `lint-i18n-ownership` n'admet que l'espace `reconciliation-`) :
    « Stripe : `CHARGE`, `PAY_`, `PAYOUT` — liste complète au manuel », avec un lien « Codes Stripe » qui ouvre la liste
    (composant à part) ; l'aide du critère `invoice_prefix` ajoute « Stripe : lu à l'endroit
    réglé dans la connexion (métadonnée ou description) ». **Garde** (`crates/kesh-api/tests/textes_coherents.rs`, garde
    neuve au tableau d'en-tête du fichier) : l'ensemble des codes de `kesh_providers::stripe::event_codes` (40-2 ; la table doit être **`pub`** et lisible d'un test de
-   `kesh-api`, `kesh-providers` étant sa dépendance) égale celui de `STRIPE_EVENT_CODES` (lu dans le `.ts`) **et** celui du
+   `kesh-api`, `kesh-providers` étant sa dépendance — 40-2 AC-2 ne le dit que d'`OVERRIDABLE_CODES` : inter-fiches
+   40-2, P2-8) égale celui de `STRIPE_EVENT_CODES` (lu dans le `.ts`) **et** celui du
    tableau du manuel utilisateur (AC-8 : une ligne par code, le code en première colonne en `\texttt{…}`, sous un
    `\label` que la garde cherche — présence positive du tableau exigée avant toute égalité) ; les surchargeables égalent
    `kesh_providers::stripe::event_codes::OVERRIDABLE_CODES` (constante `pub` de 40-2 AC-6) ; rouge en nommant le code en trop ou manquant. Mutation déclarée au Change Log
    (un code retiré du `.ts` → rouge).
-7. **AC-7 — Textes et i18n (NFR-40-6-2, NFR-40-6-5).** Clés neuves au préfixe `provider-stripe-` (et `rules-help-*` pour
-   l'aide), écrites en toutes lettres (`i18n-keys.test.ts`), aux **quatre** locales
-   (`crates/kesh-i18n/locales/{fr,de,it,en}-CH/messages.ftl`) ; `npm run lint-i18n-ownership` vert. Aucun texte ne dit
+7. **AC-7 — Textes et i18n (NFR-40-6-2, NFR-40-6-5).** Clés neuves au préfixe des clés de prestataire que fixe 38-9a
+   AC-10, suivi de `stripe-` (et `reconciliation-rules-help-*` pour l'aide, AC-6), écrites en toutes lettres
+   (`i18n-keys.test.ts`), aux **quatre** locales (`crates/kesh-i18n/locales/{fr,de,it,en}-CH/messages.ftl`) ;
+   `npm run lint-i18n-ownership` vert — ⚠️ le script (`frontend/scripts/lint-i18n-ownership.js`, `keyBelongsToFeature`)
+   exige qu'une clé appelée par `i18nMsg('…', …)` sous `features/provider-connections/` (nom à tiret) commence par
+   `provider-connections-` : le préfixe `provider-` de 38-9a AC-10 y rougit (inter-fiches 38-9a, P2-3) ; 40-6 suit le
+   préfixe que 38-9a retiendra, jamais une entrée à `KNOWN_VIOLATIONS`. Aucun texte ne dit
    « comptabiliser automatiquement » ni « importer » pour un téléchargement (grep des clés neuves au Change Log). **G4-bis** (`textes_coherents.rs`) lit le manuel utilisateur et les catalogues : tout
    nombre de quatre chiffres y doit être un compte des plans livrés — les clés neuves et la section Stripe du **manuel
    utilisateur** nomment « Débiteurs Stripe » **sans numéro** (1101–1103, 6912–6914 sont des comptes de la société, non des
-   plans livrés) ; les numéros ne se citent qu'au manuel d'administration, que G4-bis ne lit pas. `cargo test -p kesh-api
-   --test textes_coherents` vert, cité au Change Log.
+   plans livrés) ; les numéros ne se citent qu'au manuel d'administration, que G4-bis ne lit pas — mais que **G4-ter**
+   lit (`la_forme_libre_nnnn_nom_est_juste_partout`, `textes_coherents.rs:565-600` : `admin-manual.tex`, brochure,
+   README, `api-external.md`, `frontend/src`) : un nombre suivi d'une espace et d'un mot qui ouvre un nom de compte d'un
+   plan livré y est contrôlé, et « 1101 Débiteurs Stripe » **rougit** (1101 absent des trois plans, « Débiteurs » ouvre
+   le nom de 1100). Au manuel d'administration, un numéro de la société de Beat ne précède donc jamais un nom : « le
+   compte « Débiteurs Stripe CHF » (p. ex. 1101) », « 1101–1103 » ; jamais `NNNN Débiteurs…`. `cargo test -p kesh-api
+   --test textes_coherents` vert (G4-bis et G4-ter), cité au Change Log.
 8. **AC-8 — Manuels (NFR-40-6-2, FR-40-6-5).**
    - **Administration** (`admin-manual.tex`, section des prestataires de 38-9a AC-11, renommée « Prestataires de paiement
      (PayPal, Stripe) » ou sous-section *Stripe* — renvois `\ref` mis à jour) : créer la clé restreinte (*Développeurs →
@@ -185,10 +207,20 @@ afin de tenir les comptes Stripe sans saisie, en sachant ce qui est une créance
      le **versement** sort de Stripe un jour et arrive en banque plus tard : son écriture est datée de l'**arrivée** et
      la ligne du relevé UBS se rattache à la même écriture (40-3, 34-11b) ; versement échoué ou annulé : à examiner ;
      litige : à examiner, sans proposition (B7) ; **l'écart ventilé** (non rapproché, versements en route, autres
-     décalages, inexpliqué) et son sens ; à la clôture, le solde de 1101–1103 **est** la créance, aucune écriture à
-     passer ; joindre le rapport de solde Stripe en CSV au compte et à l'exercice, saisir son solde de clôture, K9 et
+     décalages, inexpliqué) et son sens ; à la clôture, le solde des comptes « Débiteurs Stripe » **est** la créance
+     (aucun numéro au manuel utilisateur, AC-7), aucune écriture à passer ; joindre le rapport de solde Stripe en CSV au compte et à l'exercice, saisir son solde de clôture, K9 et
      « dont versements en route » (40-5, 40-4) ; le rapport CSV doit avoir un en-tête à au moins deux colonnes (limite de
-     40-5, `no_header`) ; la tuile de l'accueil montre la créance hors total (40-4) — et le
+     40-5, `no_header`) ; le solde saisi est celui de fin de période du **rapport de solde** — le rapprochement des
+     versements se joint sans solde (40-5 AC-6, texte de l'aide repris) ;
+   - **Utilisateur, section des relevés joints de 38-10 AC-10** (*Joindre un relevé à un compte bancaire*), **hors** de la
+     sous-section Stripe — 40-5 AC-8 la confie ici : une pièce est un **PDF ou un CSV**, sur **tout** compte bancaire
+     (40-5 Écart 3) ; la liste dit le type (« PDF », « Rapport CSV ») ; le CSV est gardé tel quel, jamais lu (son solde
+     se saisit) ; refus d'un CSV et leurs trois motifs (`not_utf8` : enregistrer le fichier en UTF-8 ; `binary` ;
+     `no_header`) ; le nouveau message « ni un PDF ni un CSV » ; les phrases de 38-10 qui disent « un PDF » seul relues
+     et ajustées (grep `PDF` dans la section, résultat au Change Log) ;
+   - **Administration, surcharges de codes** : une surcharge vaut pour les mouvements téléchargés **après** elle (aucun
+     reclassement, 40-2 AC-6, E6) ; `ignore` laisse un écart durable au contrôle de complétude (avertissement sous le
+     champ hérité de 38-9a AC-2, dit aussi au manuel) ; la tuile de l'accueil montre la créance hors total (40-4) — et le
      paragraphe de la tuile (`:318-330`) le dit ; **liste des codes courts** (tableau `CHARGE` … `OTHER`, AC-6) en aide
      du critère `event_code_prefix` ; rattachement en lot des transactions de 2024 aux écritures existantes (B17, 38-6c1).
    - PDF régénérés (`make fr` dans `docs/manual/`) et commités ; contrôle **aplati** (`pdftotext user-manual.pdf - | tr
@@ -197,7 +229,9 @@ afin de tenir les comptes Stripe sans saisie, en sachant ce qui est une créance
      `README.md` § *Fonctionnalités* : Stripe ajouté là où PayPal l'est (relu au développement), `website/` relu
      (aucune promesse au-delà de `main`).
 9. **AC-9 — E2E du parcours Stripe (NFR-40-6-3, NFR-40-6-1).** `frontend/tests/e2e/provider-stripe.spec.ts`, contre le
-   transport factice : préalables par l'API au `beforeAll` (société et exercice **multi-devises**, 37-1 ; compte du plan
+   transport factice : préalables par l'API au `beforeAll` (société et exercice **multi-devises**, 37-1 — l'exercice et
+   la date « Télécharger depuis » se fixent sur les dates du jeu `"default"` de 40-1 AC-11, jamais sur la date du jour :
+   un versement arrivé après la date du run apparaît « en route », et l'assertion ne porte que sur « Inexpliqué » ; compte du plan
    USD « Débiteurs Stripe USD », compte de frais USD, règle `event_code_prefix` `CHARGE` → compte de produits USD,
    compte bancaire UBS USD) ; Administrateur : crée la connexion Stripe à l'écran, puis le test appelle `POST
    /api/v1/_test/provider-connector` avec **`stripeResponses: "default"`** pour ce `connectionId` (40-1 AC-11) ; colle
@@ -252,6 +286,12 @@ afin de tenir les comptes Stripe sans saisie, en sachant ce qui est une créance
   droits (AC-8) ; la story ne se développe pas avant que 40-0 les ait relevés.
 - ~~Inter-fiches 40-3 (`valueDate`, `entryDate`)~~ et ~~inter-fiches 40-2 (`OVERRIDABLE_CODES`)~~ — **réglées** le
   2026-11-15 (alignement inter-fiches P1) : 40-3 AC-3 et 40-2 AC-6 portent les noms que lisent AC-4 et AC-6.
+- **Inter-fiches 38-9a (P2-3)** — préfixe des clés i18n de `features/provider-connections/` : `provider-` (38-9a AC-10)
+  rougit à `lint-i18n-ownership` ; texte proposé à 38-9a AC-10 : « Clés neuves au préfixe `provider-connections-`
+  (fonctionnalité `features/provider-connections/`, règle de `keyBelongsToFeature` pour un nom à tiret) et
+  `nav-providers` ». 40-6 AC-7 suit.
+- **Inter-fiches 40-2 (P2-8)** — 40-2 AC-2 : « la table `stripe::event_codes` est une constante **`pub`**, lue par la
+  garde de concordance de 40-6 AC-6 (codes, `OTHER` compris) ».
 
 ## Dev Agent Record
 
@@ -281,3 +321,29 @@ afin de tenir les comptes Stripe sans saisie, en sachant ce qui est une créance
 - 2026-11-15 — alignement inter-fiches P1 (Opus) : P1-1 et P1-3 réglés aux fiches sources — AC-4 lit `valueDate`,
   `bookingDate` et `entryDate` de 40-3 AC-3 ; AC-6 lit `stripe::event_codes::OVERRIDABLE_CODES` de 40-2 AC-6 ; Questions
   ouvertes inter-fiches closes.
+- 2026-11-15 — validation P2 (Opus) : 9 findings (0 CRITICAL, 0 HIGH, 5 MEDIUM, 4 LOW) ; remédiés dans la fiche sauf
+  P2-3 (part 38-9a) et P2-8 (40-2), inter-fiches, texte proposé aux Questions ouvertes. MEDIUM : P2-1 AC-8 écrivait
+  « le solde de 1101–1103 » au manuel **utilisateur**, contre la règle de l'AC-7 (résidu de P1-4 : 1101 absent des trois
+  plans, `pme.json`, G4-bis rouge) ; P2-2 AC-7 disait le manuel d'administration hors des gardes, or **G4-ter**
+  (`textes_coherents.rs:565-600`) le lit en forme libre : « 1101 Débiteurs Stripe » rougirait (« Débiteurs » ouvre 1100)
+  — forme admise écrite ; P2-3 clé `rules-help-event-code-stripe` appelée sous `features/reconciliation/` : refusée par
+  `lint-i18n-ownership` (`keyBelongsToFeature`) et contraire au préfixe `reconciliation-rules-help-*` de 38-9b AC-9 —
+  renommée ; même règle pour `provider-stripe-` sous `features/provider-connections/` (préfixe de 38-9a AC-10 : inter-
+  fiches) ; P2-4 seul « Selon PayPal » était adapté : sept autres textes de 38-9a/38-9b nomment PayPal (écartés, solde
+  d'ouverture, soldes sans compte, retrait des réglages, badge, « Frais PayPal (<devise>) », résumé) — inventaire à
+  l'AC-5, texte propre des écartés Stripe (`non_balance` seul) ; P2-5 40-5 AC-8 confie à 40-6 le manuel des relevés
+  joints, que l'AC-8 ne traitait que dans la sous-section Stripe : la section générique de 38-10 aurait dit « PDF » seul
+  pour tout compte — puce ajoutée (PDF ou CSV, motifs, solde du rapport de solde seulement). LOW : P2-6 Écart 3 périmé
+  (l'epic est aligné sur P40-1) ; P2-7 E2E : exercice et « Télécharger depuis » sur les dates du jeu `"default"` (versement
+  arrivé le lendemain de sa sortie : « en route » selon la date du run) ; P2-8 la table `stripe::event_codes` doit être
+  `pub` pour la garde, 40-2 ne le dit que d'`OVERRIDABLE_CODES` ; P2-9 manuel d'administration : surcharge non
+  rétroactive et `ignore` (40-2 AC-6 : « dit par 40-6 au manuel »). Relu : `admin-manual.tex:3299`,
+  `user-manual.tex:3004`, `:316-358`, `textes_coherents.rs:50-56`, `:105-112`, `:228-267`, `:372-445`, `:510-600`,
+  `crates/kesh-core/assets/charts/*.json` (ni 1101–1103 ni 6910–6914), `frontend/scripts/lint-i18n-ownership.js`
+  (`GLOBAL_NAMESPACES`, `extractFeatureFromPath`, `keyBelongsToFeature`) ; fiches 38-9a (AC-2, AC-5 à AC-10), 38-9b
+  (AC-1, AC-3, AC-9), 40-1 (AC-2, AC-4, AC-5, AC-11, AC-14, Écart 1), 40-2 (AC-2, AC-6, Dev Notes), 40-3 (AC-3, AC-7),
+  40-4 (AC-2, AC-4, AC-5, AC-7, Dev Notes), 40-5 (AC-6, AC-8, Écart 3) — noms concordants. Trend : P1 = 7 (1 HIGH,
+  3 MEDIUM) → P2 = 9 (5 MEDIUM ; P2-1 est un résidu de remédiation P1, les autres d'origine) ; une passe de plus est due.
+  Axes non exercés : code des écrans de 38-9a/38-9b (non écrit) ; PDF des manuels (non régénérés) ; `api-external.md`
+  pour la connexion Stripe (réglages, corps `restrictedKey`, codes neufs) — aucune fiche 40-1/40-2 ne le nomme,
+  signalé à l'orchestrateur, hors de cette fiche.

@@ -36,7 +36,7 @@ je lise le solde de 1101–1103 pour ce qu'il est : une créance (B13).
 | `FR-40-4-4` *(ajoutée)* | Le contrôle préalable à la clôture K9 dit, pour un compte en écart, la part des versements en route à la date du relevé joint ; son statut est inchangé. | AC-4 |
 | `NFR-40-4-1` | Une seule définition de « versement en route », testée aux bornes (`as_of` = `booked_at`, date d'écriture = date de `as_of`). | AC-1, AC-3 |
 | `NFR-40-4-2` | Contrôle sans écriture ; aucune migration. | AC-8 |
-| `NFR-40-4-3` *(ajoutée)* | Additif, non régressif (G18) : PayPal et les comptes ordinaires gardent leurs réponses JSON à l'identique quand rien n'est en route ; quatre locales ; captures de la tuile. | AC-2, AC-4, AC-5, AC-7, AC-9 |
+| `NFR-40-4-3` *(ajoutée)* | Additif, non régressif (G18) : PayPal et les comptes ordinaires gardent leurs réponses JSON à l'identique quand aucun décalage de date n'est compté (une seule attente de 38-9a retouchée, *Écarts à l'epic*, 6) ; quatre locales ; captures de la tuile. | AC-2, AC-4, AC-5, AC-7, AC-9 |
 
 ## Ce que le code dit (prémisses vérifiées le 2026-11-15 sur `a2b1da9c`)
 
@@ -55,14 +55,18 @@ je lise le solde de 1101–1103 pour ce qu'il est : une créance (B13).
   versement en route** : un `payout` sorti de Stripe le jour J (`booking_date`), dont l'écriture `D 1020 / C 1101` est
   datée de l'arrivée (40-3, G10).
 - **Le contrôle (b) de 38-9a ne corrige pas les dates** (38-9a AC-8 b) : `ledger` = `balances_as_of` à la date de
-  Zurich de `asOf` (37-4, en devise), `unreconciled` = Σ `amount` des `pending` à `booked_at ≤ asOf`, `unexplained =
+  Zurich de `asOf` (37-4, en devise), `unreconciled` = Σ `amount` des `pending` à `booked_at < asOf` (borne exclue), `unexplained =
   reported − ledger − unreconciled`. Un versement rapproché dont l'écriture est datée après `asOf` y tombe donc en
   « inexpliqué ». Le contrôle K9 de 38-10 (C-38-10-4) compare de même le solde saisi à `balances_as_of` à `period_to`,
   sans correction.
 - **Le solde d'un instantané `reported` s'arrête avant son instant** : la complétude de 38-3b somme les mouvements
   `booked_at < as_of` du `reported` (38-3b AC-7, fenêtre demi-ouverte) ; Stripe : `balances(Some(as_of))` = solde
-  courant − Σ `net` des transactions `created ≥ as_of` (G5). 38-9a AC-8 b compte en revanche les `pending` à
-  **`booked_at ≤ asOf`** (voir *Questions*, Q-40-4-2).
+  courant − Σ `net` des transactions `created ≥ as_of` (G5). 38-9a AC-8 b compte les `pending` à **`booked_at <
+  asOf`**, borne **exclue**, alignée sur cette fenêtre (38-9a corrigée et close à sa P8 ; Q-40-4-2 close).
+- **38-9a AC-8 b écrit une limite que cette story lève** : « un mouvement de la même journée postérieur à `asOf` et déjà
+  rapproché fait apparaître un `unexplained` transitoire » (doc-comment, manuel, test « deux mouvements de part et
+  d'autre de `asOf` »). Ce mouvement est exactement un décalage de date au sens de C-40-4-1 (non compté, écriture datée
+  ≤ D) : il passe dans `otherDateShifts` (*Écarts à l'epic*, 6).
 - **Graphiques de l'accueil** : revenus et charges seulement (`a.account_type IN ('Revenue', 'Expense')`,
   `crates/kesh-report/src/homepage_summary.rs:252-292`, `:295-334`) — aucun compte bancaire lu.
 - **Tuile « Comptes bancaires » de l'accueil** : `ledgerTotal` additionne `currentBalance` de **tous** les comptes
@@ -107,6 +111,14 @@ je lise le solde de 1101–1103 pour ce qu'il est : une créance (B13).
    route, sans dire pourquoi.
 5. **Modules** : `kesh-providers` (champ de `ProviderBalance`) et `frontend` (tuile) s'ajoutent à la liste de l'epic ;
    cinq au total, dans la règle.
+6. **Une attente de 38-9a change, contre la lettre de G18** (« suites vertes sans retouche de leurs attentes ») : la
+   ventilation vaut pour **tout** compte prestataire, PayPal compris ; le test de route de 38-9a AC-8 b « deux
+   mouvements de part et d'autre de `asOf` » (mouvement rapproché le même jour après `asOf`) attendait un `unexplained`
+   transitoire non nul : il rend désormais `otherDateShifts` = le mouvement de ce côté et `unexplained: "0.00"`. Son
+   attente est **retouchée par cette story** (AC-2), écrite au Change Log du développement ; la « limite écrite » du
+   doc-comment de 38-9a est remplacée par le renvoi à `date_shifts` ; le manuel (texte de 38-9a/38-9b) est repris par
+   40-6. *Raison* : c'est une correction (l'écart disparaît), non une régression ; la garder transitoire demanderait
+   d'exclure PayPal de la ventilation, une seconde règle.
 
 ## Choix
 
@@ -115,7 +127,8 @@ je lise le solde de 1101–1103 pour ce qu'il est : une créance (B13).
   38-9a AC-8 b), où `Cut::AtInstant(as_of)` (contrôle (b)) ou `Cut::AtDate(d)` (K9). Pour une coupe, avec `D` = la date
   de la coupe (date de Zurich de `as_of`, ou `d`) :
   - *comptée au solde rapporté* : `AtInstant` → le prédicat de `unreconciled` de 38-9a AC-8 b, **le même code** (une
-    aide partagée : `booked_at ≤ as_of`, ou `booking_date ≤ D` si `booked_at` est nul) ; `AtDate` → `booking_date ≤ d` ;
+    aide partagée : `booked_at < as_of`, borne exclue, ou `booking_date ≤ D` si `booked_at` est nul) ; `AtDate` →
+    `booking_date ≤ d` ;
   - `plus` = Σ des lignes, **sur le compte du plan lié**, des écritures `e` rapprochées
     (`LINKED_TRANSACTIONS_OF(e)` de 38-6c2, `status = 'reconciled'`) à une transaction du compte **comptée**, et
     `e.entry_date > D` ; `minus` = de même pour une transaction **non comptée** et `e.entry_date ≤ D` ;
@@ -143,9 +156,11 @@ je lise le solde de 1101–1103 pour ce qu'il est : une créance (B13).
    « une transaction, une écriture » (et les groupes de 38-6c2 : toute écriture du groupe compte, par
    `LINKED_TRANSACTIONS_OF`), la limite « une transaction `reconciled` à `matched_entry_id` nul (écriture supprimée) ne
    compte nulle part ». Tests d'intégration (`#[sqlx::test]` sur le squash), compte prestataire USD lié à un compte du
-   plan USD (1103), versement de 300.00 : (a) sorti à `booked_at` = `as_of` exact, rapproché d'une écriture datée D + 1
-   → `in_transit_payouts = −300.00` (borne `≤` du prédicat de 38-9a ; l'instantané `reported` s'arrête, lui, à
-   `booked_at < as_of` — Q-40-4-2 : ce test se retourne avec 38-9a si elle passe à `<`) ; (b) même versement, `booked_at` = `as_of` + 1 ms → rien ; (c) écriture datée D
+   plan USD (1103), versement de 300.00 : (a) sorti à `booked_at` = `as_of` − 1 ms, rapproché d'une écriture datée D + 1
+   → `in_transit_payouts = −300.00` ; (b) même versement, `booked_at` = `as_of` exact → rien (borne **exclue**, comme
+   `unreconciled` de 38-9a AC-8 b et l'instantané `reported`, 38-3b AC-7 : ni au solde rapporté ni au grand livre à D) ;
+   (b′) `booked_at` = `as_of` exact, écriture datée D → `minus = −300.00`, `other = +300.00`, `in_transit_payouts` nul
+   (au grand livre à D, pas encore au solde rapporté ; `unexplained` nul au test de route) ; (c) écriture datée D
    → rien (au grand livre à D) ; (d) versement **non rapproché** (`pending`, `matched_entry_id` nul : une transaction `pending`
    ne pointe jamais d'écriture) → rien dans `date_shifts`, et son montant est dans `unreconciled` du contrôle (b) (test de
    route, AC-2 : aucun double compte) ;
@@ -162,12 +177,16 @@ je lise le solde de 1101–1103 pour ce qu'il est : une créance (B13).
    jamais. Appel de `date_shifts(…, Cut::AtInstant(asOf))` avec l'`asOf` de l'instantané. Doc-comment de la réponse :
    le sens de chaque terme (« Selon Stripe = livres + non rapproché + en route + autres décalages + inexpliqué »).
    Tests de route : compte USD, ventes rapprochées, versement rapproché daté de l'arrivée postérieure à `asOf` →
-   `inTransitPayouts: "-300.00"`, `unexplained` absent de l'écart (`"0.00"`) ; même cas sans la ventilation (mutation)
+   `inTransitPayouts: "-300.00"`, `unexplained: "0.00"` ; même cas sans la ventilation (mutation)
    → `unexplained: "-300.00"` ; compte PayPal sans décalage → ensemble exact des clés de 38-9a ; Consultation → 403,
-   clé d'API → 403 (inchangé).
+   clé d'API → 403 (inchangé). **Attente de 38-9a retouchée** (Écart 6) : son test « deux mouvements de part et d'autre
+   de `asOf` » (compte PayPal, mouvement rapproché le même jour après `asOf`) rend `otherDateShifts` = la ligne de son
+   écriture sur le compte lié, de signe opposé, et `unexplained: "0.00"` ; le doc-comment de la route remplace la
+   « limite écrite » de 38-9a par le renvoi à `date_shifts`.
 3. **AC-3 — Concordance avec `BALANCES_SQL` (NFR-40-4-1).** Test : compte bancaire CHF ordinaire, relevé CAMT au 31.12,
    deux transactions rapprochées de part et d'autre (écriture postérieure, écriture antérieure) → `date_shifts(…,
-   AtDate(31.12))` égale `booked_before_entered_after − booked_after_entered_before` de `balances_by_bank_account(…,
+   AtDate(31.12))`, en `in_transit_payouts + other` (= `plus − minus`), égale `booked_before_entered_after −
+   booked_after_entered_before` de `balances_by_bank_account(…,
    Some(31.12))` ; écrit comme garde de la seconde écriture de la règle (C-40-4-2).
 4. **AC-4 — K9 : part des versements en route (FR-40-4-4, NFR-40-4-3).** Dans `closing_checks` (38-10 AC-6), chaque
    compte de `details.accounts[]` en écart gagne `inTransitPayouts` et `otherDateShifts` (même sens, même absence
@@ -181,9 +200,9 @@ je lise le solde de 1101–1103 pour ce qu'il est : une créance (B13).
 5. **AC-5 — `available` et `pending` à « Tester » (FR-40-4-2 ; Écart 2).** `kesh_providers::ProviderBalance` (38-3b
    AC-2) gagne `parts: Option<BalanceParts { available: Decimal, pending: Decimal }>` (additif ; `None` pour PayPal, le
    factice et tout solde à une date passée) ; `StripeConnector::balances(None)` (40-1) le pose par devise, avec
-   `amount` **dérivé** de ces deux parties (40-1 AC-6 : `amount = available + pending`, absente d'un tableau = 0) — une
+   `amount` **dérivé** de ces deux parties (40-1 AC-8 : `amount = available + pending`, absente d'un tableau = 0) — une
    seule source, donc aucun contrôle croisé ni motif `balance_parts` (il serait tautologique) ; une partie qui n'est pas
-   un entier de la devise → `InvalidResponse` par la lecture de montants de 40-1. La route `POST
+   un entier de la devise → `InvalidResponse` par la lecture de montants de 40-1 (AC-8, `minor_to_decimal`). La route `POST
    …/provider-connections/{id}/test` (38-7 AC-8 : `balances: [{ currency, total }]`) rend en plus `available` et
    `pending` (chaînes décimales) **quand présents**, absents sinon (réponse PayPal inchangée, G18). Le passage (38-3b)
    n'en écrit rien. Si 40-1 a déjà posé ce champ, rien n'est à refaire : le dire au Change Log. Tests : fixture
@@ -266,9 +285,9 @@ je lise le solde de 1101–1103 pour ce qu'il est : une créance (B13).
   relevés importés (le manuel le promet pour l'écart du relevé, `user-manual.tex:337`) ? Alors un versement en route
   ne mettrait plus K9 en attention. Proposé ici : statut inchangé, détail ajouté (AC-4) ; la correction serait un
   amendement de 38-10 (C-38-10-4).
-- **Q-40-4-2 (inter-fiches 38-9a / 38-3b)** — borne de l'instant : 38-9a compte `booked_at ≤ asOf`, l'instantané
-  `reported` s'arrête à `booked_at < asOf` (38-3b AC-7 ; G5). Un mouvement Stripe à la seconde exacte de `asOf` ferait un
-  écart d'un mouvement. 40-4 suit le prédicat de 38-9a (le même code) ; l'aligner sur `<` relève de 38-9a.
+- ~~**Q-40-4-2 (inter-fiches 38-9a / 38-3b)** — borne de l'instant~~ — **close** (validation P2) : 38-9a AC-8 b compte
+  désormais `booked_at < asOf` (borne exclue, corrigée et close à sa P8), comme l'instantané `reported` (38-3b AC-7) ;
+  40-4 suit le même prédicat (C-40-4-1, AC-1 (a), (b), (b′)).
 - **Q-40-10 (Guy)** — créance dans le total de trésorerie ou hors total : défaut « hors total, dit » (C-40-4-3).
 
 ## Dev Agent Record
@@ -301,3 +320,25 @@ je lise le solde de 1101–1103 pour ce qu'il est : une créance (B13).
   `amount` des transactions `pending` dont `booked_at < asOf` (borne exclue, comme `reported`, 38-3b AC-7) », ce qui
   clôt Q-40-4-2. Axes exercés : prémisses, contradictions, sites non résolus, comptabilité (signes), sécurité, exigences,
   tests, taille (cinq modules). Non exercés : exécution du SQL, rendu visuel de la tuile.
+- 2026-11-15 — validation P2 (Opus) : 0 CRITICAL, 0 HIGH, 2 MEDIUM, 5 LOW (dont 2 inter-fiches) ; remédiés dans la fiche sauf 40-4-P2-6
+  (40-6) et 40-4-P2-7 (epic). MEDIUM 40-4-P2-1 : borne de `unreconciled` **exclue** (`booked_at < asOf`), alignée sur
+  38-9a AC-8 b (corrigée, ligne lue : « dont **`booked_at < asOf`** — borne **exclue** ») et 38-3b AC-7 → prémisses,
+  C-40-4-1, AC-1 (a) réécrit à `as_of − 1 ms`, (b) à `as_of` exact → rien, (b′) ajouté (écriture datée D → `other`),
+  Q-40-4-2 close. MEDIUM 40-4-P2-2 : la ventilation `otherDateShifts`, valant pour PayPal, absorbe l'`unexplained`
+  transitoire que 38-9a AC-8 b écrit comme limite et teste (« deux mouvements de part et d'autre de `asOf` ») — attente
+  de 38-9a changée en silence, contre G18 et l'ancienne NFR-40-4-3 → Écart 6, attente retouchée déclarée à l'AC-2,
+  NFR-40-4-3 reformulée. LOW : 40-4-P2-3 AC-5 renvoyait à 40-1 AC-6 pour `amount = available + pending` (règle à 40-1
+  AC-8, lue `:251-254`) ; 40-4-P2-4 AC-2 « `unexplained` absent de l'écart » alors que le champ est toujours rendu →
+  `"0.00"` ; 40-4-P2-5 AC-3 : `date_shifts` rend deux champs, la concordance porte sur leur somme. Inter-fiches :
+  40-4-P2-6 (LOW, 40-6 AC-3 cite le motif `balance_parts`, retiré en P1 ; et le manuel doit retirer la limite
+  « inexpliqué transitoire » de 38-9a, Écart 6) ; 40-4-P2-7 (LOW, epic G12 et C-40-2 (c) gardent la règle
+  `booked_at < as_of ≤ value_date`, remplacée par l'Écart 1). Signes recalculés : (b′) `minus = −300.00`, `other =
+  +300.00`, identité `reported = ledger + unreconciled + inTransit + other + unexplained` tenue. Lignes relues au code
+  (code inchangé depuis `a2b1da9c`) : `bank_accounts.rs:1796-1834, 1867-1928, 1972-2002, 2019-2024`,
+  `closing_checks.rs:51-60, 550, 714`, `homepage.ts:33-50`, `BankAccountsCard.svelte:18, 91-94`, `messages.ftl:1688`,
+  `homepage_summary.rs:269`, `project_report.rs:392, 458`, `SettleInvoiceDialog.svelte:113-114`,
+  `bank-accounts/+page.svelte:407, 981`, `companies.rs:457`, `exports/global.rs:322` (sous `crates/kesh-api/src/`),
+  `journal_entries.sql:21`, `bank_imports.sql:61-84`, `user-manual.tex:337` ; fichiers de test cités existants. Axes
+  exercés : prémisses, contradictions (38-9a, 38-3b, 38-10, 38-6c2, 38-2, 40-1, 40-6, epic), sites non résolus
+  (migration, MCP, routes, audit, i18n, tests, captures), comptabilité (signes, bornes), exigences, taille. Non exercés :
+  exécution du SQL, réponses Stripe réelles, sécurité (aucun secret touché par la story).

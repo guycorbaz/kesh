@@ -33,13 +33,13 @@ que la pièce soit gardée et sauvegardée dans son format d'origine.
 | `FR-40-5-4` *(ajoutée)* | La liste des pièces dit le type de chaque pièce (PDF, CSV) ; le dialogue accepte les deux. | AC-3, AC-6 |
 | `NFR-40-5-1` | Fichier contrôlé (UTF-8, en-tête, borne de taille) ; aucun contenu interprété. | AC-1 |
 | `NFR-40-5-2` | Pièce auditée et sauvegardée par 38-10 ; aucune migration. | AC-5 |
-| `NFR-40-5-3` *(ajoutée)* | Additif, non régressif : les tests de 38-10 restent verts sans retouche de leurs attentes (G18) ; quatre locales ; captures. | AC-1, AC-6, AC-7 |
+| `NFR-40-5-3` *(ajoutée)* | Additif, non régressif : les tests **serveur** de 38-10 (codes, statuts, rangement d'un PDF, téléchargement d'un PDF) restent verts sans retouche de leurs attentes ; les seules attentes de 38-10 que la story change exprès (écran : PDF seul, titre, `accept`, message de `BANK_DOCUMENT_NOT_PDF`) sont inventoriées et modifiées (AC-6) ; quatre locales ; captures. | AC-1, AC-6, AC-7 |
 
 ## Ce que le code dit (prémisses vérifiées le 2026-11-15 sur `a2b1da9c`)
 
 - **Rangement** : `document_storage::store_document(dir, bytes, ext, original_filename, mime_type)`
   (`crates/kesh-api/src/document_storage.rs:90-131`) accepte toute extension alphanumérique de 8 caractères au plus
-  (`is_safe_ext`, `:66-68`) — `csv` comprise — et nomme le fichier `{sha256}.{ext}` (`:116`) ; `mime_for_ext` ne connaît
+  (`is_safe_ext`, `:66-68`) — `csv` comprise — et nomme le fichier `{sha256}.{ext}` (`:117`) ; `mime_for_ext` ne connaît
   que `pdf`, `png`, `jpg`/`jpeg` (`:54-62`, test `:421-426`). L'inbox filtre ses extensions **avant** d'appeler
   `mime_for_ext` (`ALLOWED_EXT`, `crates/kesh-api/src/inbox_import.rs:98`, `:576`, `:733`) : y ajouter `csv` n'ouvre
   pas l'inbox aux CSV.
@@ -57,7 +57,11 @@ que la pièce soit gardée et sauvegardée dans son format d'origine.
   (`manual`) lus en enum à variante `Other(String)` (C-38-10-6) ; `mime_type VARCHAR(100) NOT NULL` (AC-1) ; liste sans
   `mimeType` (AC-3) ; K9 retient le dernier document **à solde** du compte, sans filtre de genre (C-38-10-5) ; la
   sauvegarde lit `storage_path`, `sha256` sans regarder le type (AC-7) ; l'export CSV écarte `mime_type`
-  (`COLONNES_HORS_EXPORT`, AC-7 d) et exporte `kind`.
+  (`COLONNES_HORS_EXPORT`, AC-7 d) et exporte `kind`. Ses Vitest d'écran (AC-9) tiennent « PDF seul côté écran » : la
+  story change cette attente exprès (NFR-40-5-3).
+- **Multipart** : `parse_multipart` (`crates/kesh-api/src/routes/bank_imports.rs:484-485`) tronque le nom d'origine à
+  `FILENAME_MAX_BYTES` et pose `upload.xml` quand la partie n'en a pas ; il garde le type de la partie tel quel,
+  paramètres compris (`:486`).
 
 ## Écarts à l'epic
 
@@ -77,10 +81,15 @@ que la pièce soit gardée et sauvegardée dans son format d'origine.
   inchangé) ; (2) sinon, **annoncé CSV** — nom d'origine terminé par `.csv` (casse ignorée) **ou** type de la partie `text/csv`,
   `application/csv` ou `application/vnd.ms-excel` (type qu'envoie un navigateur sous Windows) — → contrôle CSV ; (3)
   sinon → `400 BANK_DOCUMENT_NOT_PDF`. Un CSV n'a pas de signature : l'annonce choisit le contrôle, le contenu le tranche.
+  L'annonce se lit sur le nom **d'origine non tronqué** (`parse_multipart` de `bank_imports.rs:484-485` tronque le nom à
+  `FILENAME_MAX_BYTES` et pose `upload.xml` quand il manque : ni la troncature ni ce repli ne décident du type ; seul le
+  nom rangé est tronqué) et sur l'**essence** du type de la partie (paramètres après `;` retirés, casse ignorée :
+  `text/csv; charset=utf-8` → `text/csv`).
 - **C-40-5-2 — Contrôle CSV, sans interprétation** : BOM UTF-8 (`EF BB BF`) retiré pour le contrôle seul (le fichier est
   rangé tel quel) ; BOM UTF-16/32 ou octets non UTF-8 (`std::str::from_utf8` strict sur le reste) → motif `not_utf8` ;
-  octet nul ou caractère de contrôle autre que tabulation, `\r`, `\n` → `binary` ; première ligne (jusqu'au premier
-  `\n`, `\r` final retiré) vide, de plus de 4 096 octets, ou sans séparateur (`,`, `;` ou tabulation) → `no_header`.
+  octet nul ou caractère de contrôle autre que tabulation, `\r`, `\n` (`char::is_control` : C0, DEL et C1) → `binary` ;
+  première ligne (jusqu'au premier `\n`, `\r` final retiré, mesurée après retrait du BOM) vide, de plus de 4 096 octets,
+  ou sans séparateur (`,`, `;` ou tabulation) → `no_header`.
   Rien d'autre n'est lu (ni colonnes, ni solde : le solde est **saisi**, G13).
 - **C-40-5-3 — Rangement d'un CSV** : extension `csv`, `mime_type = 'text/csv'` (via `mime_for_ext`, qui gagne `csv`),
   `kind = 'provider_report'`, `source = 'manual'`.
@@ -106,9 +115,10 @@ que la pièce soit gardée et sauvegardée dans son format d'origine.
    `application/vnd.ms-excel` + `.csv` → CSV ; nom `.CSV` (majuscules) → CSV ; type `text/csv` **seul** (nom sans extension)
   → CSV ; type `application/vnd.ms-excel` seul → CSV ; nom sans extension et type `application/octet-stream` → `NOT_PDF` ;
   fichier vide nommé `.csv` → refus de 38-10 (pas `no_header`) ; en-tête d'une seule colonne (sans séparateur) →
-  `no_header` (limite assumée, dite au manuel). Tests de route : CSV joint → `201`, `kind: "provider_report"`,
+  `no_header` (limite assumée, dite au manuel) ; type `text/csv; charset=utf-8` seul → CSV ; nom de plus de 255 octets
+  terminé par `.csv` → CSV (annonce lue avant troncature). Tests de route : CSV joint → `201`, `kind: "provider_report"`,
    `mimeType: "text/csv"` ; doublon du même CSV → `409 BANK_DOCUMENT_DUPLICATE` (38-10) ; même CSV sur deux comptes →
-   admis ; les tests de 38-10 passent **sans retouche** de leurs attentes. `mime_for_ext("csv") == "text/csv"` (test
+   admis ; les tests **serveur** de 38-10 passent **sans retouche** de leurs attentes (NFR-40-5-3). `mime_for_ext("csv") == "text/csv"` (test
    `:421-426` étendu) ; l'inbox refuse toujours un `.csv` (`ALLOWED_EXT` inchangé ; test existant cité au Change Log, ou ajouté s'il n'y en a
    pas).
 2. **AC-2 — Genre `provider_report` (FR-40-5-1).** L'enum du genre de 38-10 (`kesh-db`, entité `BankAccountDocument`,
@@ -136,13 +146,20 @@ que la pièce soit gardée et sauvegardée dans son format d'origine.
 6. **AC-6 — Écran (FR-40-5-4, NFR-40-5-3).** `BankAccountDocumentsDialog.svelte` (38-10 AC-9) : le titre du formulaire
    devient « Joindre un relevé ou un rapport » ; le champ fichier accepte `.pdf,.csv,application/pdf,text/csv` ; contrôle
    côté écran : PDF ou `.csv` (le serveur décide) ; la liste montre le type (« PDF » / « Rapport CSV », lu de `mimeType`
-   et `kind` ; valeur inconnue → « Pièce ») ; aide sous le champ : « Stripe ne fournit pas de relevé PDF : joignez le
-   rapport de solde ou de rapprochement des versements, téléchargé du tableau de bord Stripe en CSV, et saisissez son
-   solde de clôture » ; les refus `BANK_DOCUMENT_UNSUPPORTED_TYPE` (un libellé par `reason`) et `BANK_DOCUMENT_NOT_PDF`
+   et `kind` ; valeur inconnue → « Pièce ») ; aide sous le champ, valable pour tout compte (Écart 3) : « Un relevé PDF,
+   ou le rapport CSV d'un prestataire qui n'en fournit pas (Stripe : le rapport de solde, *Balance*, téléchargé du
+   tableau de bord ; son solde de fin de période est le solde de clôture à saisir). Un rapport sans solde de fin, comme
+   le rapprochement des versements, se joint sans solde. » — le rapport de rapprochement des versements ne porte pas le
+   solde Stripe de fin de période (<https://docs.stripe.com/reports/report-types/payout-reconciliation> : résumés par
+   `reporting_category`, `count, currency, fee, gross, net` ; le solde de fin est l'objet d'`ending_balance_reconciliation`
+   et du rapport de solde) : y saisir un solde ferait un écart K9 fictif ; les refus `BANK_DOCUMENT_UNSUPPORTED_TYPE` (un libellé par `reason`) et `BANK_DOCUMENT_NOT_PDF`
    (message élargi : « Le fichier n'est ni un PDF ni un CSV ») traduits ; API cliente et types (`bank-accounts.api.ts`,
    champ `mimeType`) ; `+page.svelte` des comptes bancaires **non touché**. Clés aux **quatre** locales
    (`crates/kesh-i18n/locales/{fr,de,it,en}-CH/messages.ftl`), en toutes lettres ; message de `BANK_DOCUMENT_NOT_PDF`
-   mis à jour aux quatre (le code ne change pas). Vitest : formulaire avec CSV, libellés des trois motifs, type affiché,
+   mis à jour aux quatre (le code ne change pas). **Attentes de 38-10 changées exprès** (NFR-40-5-3) : les Vitest de
+   38-10 AC-9 qui tiennent « PDF seul côté écran », le titre « Joindre un relevé », l'attribut `accept` et le texte de
+   `BANK_DOCUMENT_NOT_PDF` (et `i18n-keys.test.ts` s'il cite la valeur) sont modifiés, chacun cité au Change Log avec
+   l'attente d'avant et d'après ; aucune autre attente de 38-10 ne bouge. Vitest : formulaire avec CSV, libellés des trois motifs, type affiché,
    valeur inconnue. **E2E** (`frontend/tests/e2e/bank-account-documents.spec.ts` de 38-10, cas ajouté) : joindre un CSV
    synthétique avec un solde qui diffère des livres → écart affiché, type « Rapport CSV » → télécharger (contenu
    identique) → retirer ; joindre un `.csv` Latin-1 → refus libellé.
@@ -202,3 +219,21 @@ que la pièce soit gardée et sauvegardée dans son format d'origine.
   seule colonne refusé, limite non dite (test et manuel). Prémisses relues et justes : `document_storage.rs:54-131`,
   `:421-426`, `inbox_import.rs:98`, `imported_supplier_invoices.rs:768-784`, `encoding.rs:48-100`, 38-10 AC-2/AC-3/AC-7,
   40-4 AC-4.
+- 2026-11-15 — validation P2 (Opus) : 4 findings (0 CRITICAL, 0 HIGH, 2 MEDIUM, 2 LOW) ; remédiés dans la fiche, aucun
+  inter-fiches. MEDIUM : P2-1 NFR-40-5-3 et AC-1 promettaient les tests de 38-10 « sans retouche » (G18) alors que l'AC-6
+  change exprès des attentes que 38-10 AC-9 fixe (Vitest « PDF seul côté écran », titre, `accept`, texte de
+  `BANK_DOCUMENT_NOT_PDF`) ; G18 vise PayPal et Wise — portée réduite aux tests serveur, attentes changées inventoriées
+  au Change Log ; P2-2 l'aide disait de saisir le solde de clôture du rapport de rapprochement des versements, qui ne
+  porte pas de solde Stripe de fin de période (docs.stripe.com, payout-reconciliation : résumés par
+  `reporting_category`) — K9 fictif ; aide réécrite (rapport de solde, *Balance* ; rapprochement joint sans solde),
+  valable pour tout compte (Écart 3). LOW : P2-3 annonce lue sur le nom tronqué par `parse_multipart`
+  (`bank_imports.rs:484-485`, repli `upload.xml`) et type de partie avec paramètres (`text/csv; charset=utf-8`) —
+  C-40-5-1 précisé, deux tests ; P2-4 rédaction : `store_document` nomme le fichier à `:117` (non `:116`) ; « caractère
+  de contrôle » = `char::is_control` ; longueur de la première ligne mesurée après retrait du BOM. Relu au code :
+  `document_storage.rs:54-131`, `:421-426`, `inbox_import.rs:98`, `:576`, `:733`, `bank_imports.rs:448-486`, `:614`,
+  `imported_supplier_invoices.rs:768-784`, `admin_backup/export.rs:175-185`, `encoding.rs:48-91`,
+  `tests/support/pieces.rs:113` (seul autre appelant de `mime_for_ext` : extension passée par le test, aucun `csv`) ;
+  fiches 38-10 (AC-2, AC-3, AC-7, AC-9), 40-4 AC-4, 40-6 AC-8 ; epic G13, C-40-2 (d), C-40-6. Trend : P1 = 4 (2 MEDIUM)
+  → P2 = 4 (2 MEDIUM, distincts, d'origine et non de remédiation : pas de signal de découpage) ; une passe de plus est
+  due. Axes non exercés : code de 38-10 (non écrit) ; PDF du manuel (non régénéré) ; encodage réel d'un CSV du tableau
+  de bord Stripe (non documenté à la page lue, à constater à la recette 40-0).
