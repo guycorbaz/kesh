@@ -116,3 +116,13 @@ attend celui de l'Epic 37, lui-même en attente du retour de Guy sur la page de 
 - **B25 — Q3** reportée ; **Q9** : Stripe = Epic **40** en attendant Guy.
 - **B26 — Exigences** : chaque fiche des Epics 37 à 40 liste ses **FR** (exigences fonctionnelles) et **NFR**
   (non fonctionnelles), numérotées ; Guy dira s'il les veut en issues GitHub ou dans les fiches.
+
+## Décisions de Beat — suite (2026-11-15, questions de la rédaction)
+
+- **B27 — Frais sur une conversion** : un frais donné à part sur la moitié créditée d'une conversion va au
+  **sous-compte de frais** du prestataire et de la devise (B3), jamais dans la différence de change. Demande un
+  amendement de 37-3b (A33, Epic 37) : l'écriture complétée d'une conversion admet en plus des lignes sur des comptes de
+  charge de la même devise.
+- **B28 — Frais 2024** : dans les livres 2024, les frais PayPal sont des **écritures à part**. Le rattachement en lot
+  (38-6c) doit donc rattacher une transaction (montant net) à **plusieurs** écritures existantes — la vente au brut et
+  l'écriture de frais — dont les mouvements sur le compte prestataire somment au net.

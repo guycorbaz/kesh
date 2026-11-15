@@ -4,7 +4,7 @@ Status: ready-for-dev
 
 - **Epic** : 38 (`_bmad-output/planning-artifacts/epic-38-paypal.md`, § *38-6a*, E13, E15, C-38-8) ; décisions de Beat B3, B5,
   B6, B17 (`epics-38-40-cadrage.md`), qui priment.
-- **Dépend de** : **38-3** (colonnes de transaction de prestataire, C-38-4), **38-4** (critères et filtres des règles, C-38-6),
+- **Dépend de** : **38-3a** (colonnes de transaction de prestataire, C-38-4), **38-4** (critères et filtres des règles, C-38-6),
   **38-5** (TVA par défaut, C-38-7), **38-2** (réglages de compte prestataire, C-38-3), **38-6c** (signal « déjà
   comptabilisée » en devise, C-38-14 — voir *Écart 1*), et l'Epic 37 (37-1 `fx_accounts_for`, 37-2
   `find_company_rate_in_tx`, 37-3a ligne en devise et contrôle central).
@@ -85,7 +85,7 @@ afin que **mes comptes PayPal se tiennent sans saisie, sans qu'aucune écriture 
 
 ## Écarts à l'epic
 
-1. **Dépendance à 38-6c.** La table de l'epic fait dépendre 38-6a de 38-3, 38-4, 38-5 seulement ; or `alreadyBooked` est
+1. **Dépendance à 38-6c.** La table de l'epic faisait dépendre 38-6a de 38-3, 38-4, 38-5 seulement (corrigée à la P1) ; or `alreadyBooked` est
    `null` hors CHF tant que `transaction_can_be_linked_to_entry` n'admet que le CHF (`reconciliation_link.rs:535-537`), et
    FR-38-6a-4 vise surtout les transactions en devise de 2024 (B17). L'extension en devise est celle de 38-6c (E21 (1),
    C-38-14). 38-6a **dépend donc de 38-6c**, conforme à l'ordre conseillé de l'epic (« 38-6c avant 38-6a de préférence »).
@@ -115,7 +115,11 @@ afin que **mes comptes PayPal se tiennent sans saisie, sans qu'aucune écriture 
 - **C-38-6a-3 — Le candidat `provider`.** `CandidateType::Provider` (`"provider"`), rang **1** dans `order_candidates` (celui
   de la règle, qu'il remplace sur un compte prestataire) ; au plus **un** par transaction. Champs additifs du candidat
   (`Option`, `None` hors `provider`) : `movementKind`, `providerLines` (aperçu), `rate`, `rateMonth`, `vat`
-  (`{ treatment, vatRateId, ratePercent }`, 38-5), `feeAccountId`, `blockedBy` (`{ code, details }`). Les champs de règle existants
+  (`{ treatment, vatRateId, ratePercent }`, 38-5), `rateSource` (`afc` | `manual`, provenance du cours retenu du mois,
+  37-3a ; `null` en CHF), `feeAccountId`, `blockedBy` (`{ code, details }`). **Le DTO de transaction des propositions**
+  (celui qui porte aujourd'hui date, montant, contrepartie) gagne, additifs et `null` hors compte prestataire,
+  `invoiceRef` et `eventCode` (colonnes `invoice_ref`, `event_code` de 38-3a) : 38-9b les affiche (sa Q-38-9b-3 close
+  par ce choix). Les champs de règle existants
   (`ruleId`, `ruleLabel`, `ruleMatchType`, `counterpartyAccountId`, `counterpartyAccountName`) sont remplis quand une règle
   s'applique. `score` = `{ total: 1.0, … 0.0 }`, convention de la règle (`reconciliation.rs:1462`).
 - **C-38-6a-4 — Une proposition bloquée reste visible (FR-38-6a-6).** Quand la règle et les comptes sont connus mais que
@@ -159,7 +163,7 @@ afin que **mes comptes PayPal se tiennent sans saisie, sans qu'aucune écriture 
   cours changé entre l'affichage et l'acceptation (cours saisi par un Administrateur, 37-2) donne l'écriture au cours du
   moment : écrit au manuel (38-9b) et à `api-external.md`.
 - **C-38-6a-10 — Date.** `entry_date = value_date ?? booking_date` (patron `accept_one_rule`, `:4198`) ; le cours est celui
-  du mois de `entry_date`. 38-3 pose `booking_date` en Europe/Zurich.
+  du mois de `entry_date`. Le passage de 38-3b pose `booking_date` en Europe/Zurich.
 - **C-38-6a-11 — Genres traités ici.** `sale` (montant > 0, avec règle), `purchase` (montant < 0, avec règle), `fee`
   (frais seul). Tout autre genre (`conversion`, `refund`, `withdrawal`, `deposit`, `dispute`, `other`, valeur inconnue
   `Other`) : **aucun candidat** dans cette story (38-6b les traite) ; à l'acceptation, `PROVIDER_MOVEMENT_KIND_UNSUPPORTED`.
@@ -230,7 +234,7 @@ afin que **mes comptes PayPal se tiennent sans saisie, sans qu'aucune écriture 
    et d'arrondi sont en CHF (comptes de TVA en CHF, S5). Test d'intégration : l'écriture passée par l'acceptation est
    relue (`GET /journal-entries/{id}`) avec `foreign { currency, amount, rate, rateSource }` sur les lignes en devise.
 4. **AC-4 — Vente et achat de bout en bout (FR-38-6a-1).** Test d'intégration HTTP (Bearer, base `#[sqlx::test]`,
-   transactions de prestataire posées par le dépôt de 38-3, sans réseau) : compte prestataire EUR lié à un compte du plan
+   transactions de prestataire posées par SQL sur les colonnes de 38-3a, sans réseau ni passage) : compte prestataire EUR lié à un compte du plan
    EUR, compte de frais EUR (38-2), règle `invoice_prefix` « LG » + filtre devise EUR vers un sous-compte de ventes EUR
    (38-4), genre `sale` 8.1 % sur ce compte (38-5), cours retenu de mars (37-2) : la proposition rend les quatre lignes
    attendues (montants en devise et CHF au centime, chiffres écrits dans le test) ; l'acceptation crée **une** écriture,
@@ -323,7 +327,9 @@ afin que **mes comptes PayPal se tiennent sans saisie, sans qu'aucune écriture 
     `reconciliation-failed-*` écrite en toutes lettres, quatre locales, `details` lus pour `RATE_UNAVAILABLE` — devise et
     mois —, `VAT_ACCOUNT_NOT_CONFIGURED` — désignation —, `TRANSACTION_ALREADY_BOOKED` — nombres) ; décompte des codes du
     doc-comment recompté au `grep` (`grep -ohE 'error_code: "[A-Z_]+"' crates/kesh-api/src/routes/reconciliation*.rs | sort -u`,
-    le fichier neuf compris) ; `reconciliation.types.ts` : `CandidateType` + `'provider'`, champs neufs, `blockedBy` ;
+    le fichier neuf compris) ; `reconciliation.types.ts` : `CandidateType` + `'provider'`, champs neufs (`rateSource`
+    compris), `blockedBy`, `invoiceRef` et `eventCode` du DTO de transaction (C-38-6a-3 ; test HTTP : relus sur une
+    transaction de prestataire, `null` sur un compte non prestataire) ;
     `i18n-keys.test.ts` vert. `docs/api-external.md` § *Accepter des propositions* : variante `provider`, son corps, ses
     refus, la ligne d'arrondi, le recalcul au moment de l'acceptation (C-38-6a-9), `alreadyBooked` exigeant la
     confirmation sur un compte prestataire. Manuel utilisateur : **38-9b** (écran) ; cette story n'ajoute pas de contrôle
@@ -359,7 +365,7 @@ afin que **mes comptes PayPal se tiennent sans saisie, sans qu'aucune écriture 
   `find_open_covering_date`, puis `create_in_tx` qui prend `companies` en partage, 37-3a AC-4). La lecture du cours et
   des comptes de différence se fait dans la transaction ; cycle éventuel avec la bascule de 37-1 défendu par le rejeu
   existant de `post_accept` (`retry_with`, 1213 et 1305) — à écrire au Change Log.
-- **Signe des frais** : à confirmer avec 38-3/38-8 (C-38-4 ne fixe pas le signe de `fee_amount`) ; le constructeur
+- **Signe des frais** : à confirmer avec 38-3a/38-8 (C-38-4 ne fixe pas le signe de `fee_amount`) ; le constructeur
   l'écrit en invariant (C-38-6a-5) et le teste.
 - **Performance** : la page vaut au plus 500 transactions ; aucune lecture par transaction hormis celles des factures CHF
   déjà existantes. Mesure écrite au Change Log (page de 500 transactions de prestataire, 3 devises).
@@ -381,6 +387,11 @@ afin que **mes comptes PayPal se tiennent sans saisie, sans qu'aucune écriture 
 
 ## Change Log
 
+- 2026-11-15 — alignement inter-fiches P1 (Opus) : C-38-6a-3 et AC-12 — le DTO de transaction des propositions porte
+  `invoiceRef` et `eventCode`, le candidat `rateSource` (liste inter-fiches, point 38-6a) ; découpage D-P1-1 : renvois à
+  38-3 portés sur 38-3a (colonnes, dépendance) ou 38-3b (passage, `booking_date` à Europe/Zurich) ; AC-4 : transactions
+  de prestataire posées par SQL sur les colonnes de 38-3a (le dépôt qui les insère est le passage de 38-3b, dont 38-6a
+  ne dépend pas) ; Écart 1 : la table de l'epic est dite corrigée.
 - 2026-11-15 — validation P1 (Sonnet) : 0 CRITICAL, 0 HIGH, 3 MEDIUM, 4 LOW ; remédiés dans la fiche sauf les
   inter-fiches P1-5 et P1-6 : P1-1 (MEDIUM) borne de la ligne d'arrondi `0.005 × n` comptée sur les seules lignes en
   devise, trop étroite quand la contrepartie CHF et la TVA sont arrondies aussi (C-38-6a-6) ; P1-2 (MEDIUM)

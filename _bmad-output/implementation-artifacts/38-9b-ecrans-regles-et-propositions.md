@@ -85,20 +85,20 @@ doublon et sans qu'aucune écriture ne passe sans que je l'aie vue.
    - en-tête : genre (`movementKind`, libellé de `provider-labels.ts` de 38-9a : « Vente », « Achat », « Frais »,
      « Conversion », « Retrait », « Dépôt », « Remboursement » ; inconnu → « Mouvement (`x`) »), règle appliquée
      (libellé et critère), boutique (`invoiceRef`) si présente, code d'événement (`eventCode`) — **ces deux champs sont
-     ceux de la transaction** de la proposition (`transaction.invoiceRef`, `transaction.eventCode`) : ni 38-6a (C-38-6a-3)
-     ni 38-3 ne disent que le DTO de transaction des propositions les porte (*Questions ouvertes*, Q-38-9b-3) ; absents,
+     ceux de la transaction** de la proposition (`transaction.invoiceRef`, `transaction.eventCode`), que le DTO de
+     transaction des propositions porte depuis 38-6a C-38-6a-3 (colonnes de 38-3a ; Q-38-9b-3 close) ; `null`,
      l'en-tête ne les montre pas. **Tous les montants s'affichent dans la devise de la transaction ou de la ligne**,
      jamais « CHF » supposé (test : proposition en EUR) ;
    - **aperçu des lignes** (`providerLines`) en tableau : compte (numéro, nom), débit, crédit, et pour une ligne en
      devise le montant en devise et le cours ; la ligne de **TVA** (genre et taux : « TVA due 8.1 % », « Impôt préalable
      8.1 % », « Impôt sur les acquisitions 8.1 % — deux lignes égales ») ; la ligne de **frais** (compte de frais de la
      devise) ; la **ligne d'arrondi** si elle existe, nommée (« Arrondi de change », 38-6a C-38-6a-6 : jamais
-     silencieuse) ; le **cours** (`rate`, `rateMonth` : champs du candidat, C-38-6a-3 ; **la source « AFC » ou « saisi » ne
-     s'affiche que si le candidat la porte** — 38-6a ne la liste pas, Q-38-9b-3) ; totaux débit = crédit en CHF ;
+     silencieuse) ; le **cours** (`rate`, `rateMonth` et sa source `rateSource` — « AFC » ou « saisi » —, champs du candidat,
+     C-38-6a-3 ; `rateSource` nul ou valeur inconnue → source non affichée) ; totaux débit = crédit en CHF ;
    - **conversion** (38-6b AC-1) : les **deux** écritures (`providerLines` et `pairedLines`), la ligne de différence de
-     change, et la mention « accepter rapproche aussi l'autre moitié de la conversion » avec, **si le candidat porte la
-     transaction de l'autre moitié** (Q-38-9b-3 : proposé à 38-6b) « <date, montant, devise> du compte <nom> », sinon
-     son seul identifiant ;
+     change, et la mention « accepter rapproche aussi l'autre moitié de la conversion » avec « <date, montant, devise> du compte
+     <nom> », lus de `pairedTransaction { bookingDate, amount, currency, bankAccountName }` (38-6b AC-1) ; `null` →
+     l'identifiant seul ;
    - **retrait / dépôt** : le compte bancaire suggéré (`transferBankAccountId`, sélecteur des comptes bancaires de même
      devise quand il est `null` ou à changer) **ou** l'écriture existante à rattacher (`linkJournalEntryId`, avec lien
      vers l'écriture) ;
@@ -177,8 +177,10 @@ doublon et sans qu'aucune écriture ne passe sans que je l'aie vue.
      motif), `AMOUNT_MISMATCH` (`transactionAmount`, `entryMovement`), `ENTRY_ALREADY_LINKED` (`linkedBankTransactionIds`),
      `VERSION_CONFLICT` (`expected`, `actual`), `RECONCILIATION_TRANSACTION_NOT_PENDING`, `RECONCILIATION_ALREADY_RECONCILED`,
      `BANK_TRANSACTION_NOT_FOUND`, `BANK_ACCOUNT_CLOSED`, `BANK_ACCOUNT_NOT_CONFIGURED`, `RECONCILIATION_ACCOUNT_LOCKED`,
-     `DATABASE_ERROR` ; libellés posés par 38-6c si elle les pose (38-6c AC-10 : « l'écran traduit les codes »), sinon
-     ajoutés ici dans `failed-proposal-label.ts`, quatre locales, décompte du doc-comment recompté. Une conversion (deux
+     `DATABASE_ERROR` ; **libellés portés par cette story** (liste inter-fiches P1 ; 38-6c AC-10 : « l'écran traduit
+     les codes ») dans `failed-proposal-label.ts` — clés écrites en toutes lettres, motifs de `ENTRY_NOT_LINKABLE` et
+     `details` lus, quatre locales, `i18n-keys.test.ts` vert, décompte du doc-comment recompté au `grep` ; un code
+     déjà libellé (34-11b, 38-6a, 38-6b) est repris, non dupliqué. Une conversion (deux
      transactions, une écriture) apparaît avec ses deux transactions (34-11b) ; le texte le dit.
    - **Exercice clos ou période verrouillée** : le rattachement **n'écrit aucune écriture** et s'accomplit dans un
      exercice clos (38-6c AC-11) ; l'écran ne l'interdit pas et le manuel le dit (AC-10).
@@ -200,8 +202,8 @@ doublon et sans qu'aucune écriture ne passe sans que je l'aie vue.
 8. **AC-8 — Annuler une paire** (FR-38-9b-5 ; 38-6b AC-8). `CancelReconciliationDialog.svelte` : quand la vue de la
    transaction porte `pairedBankTransactionId`, le dialogue l'annonce avant confirmation (« L'autre moitié de cette
    conversion — <date, montant, devise, compte> — sera annulée aussi ; deux écritures seront contre-passées ») ; ces
-   détails de l'autre moitié se lisent de la vue de **cette** transaction si 38-6b AC-8 les y met, sinon de
-   `GET /reconciliation/transactions/{pairedBankTransactionId}` (Q-38-9b-3) ; à défaut, l'identifiant seul ; après
+   détails de l'autre moitié se lisent de `pairedTransaction` de la vue de **cette** transaction (38-6b AC-8) ;
+   `null`, l'identifiant seul ; après
    succès, le message cite les deux contre-passations (`pairedReversalJournalEntryId`). Test Vitest.
 9. **AC-9 — Textes et i18n** (NFR-38-9b-2). Clés neuves écrites en toutes lettres (`reconciliation-provider-*`,
    `reconciliation-review-*`, `reconciliation-link-batch-*`, `reconciliation-rules-filter-*` complétées,
@@ -253,7 +255,7 @@ doublon et sans qu'aucune écriture ne passe sans que je l'aie vue.
       bilan avec chaque code de 38-6c, règle d'un sens inconnu non modifiable, `canLink` en devise, `blockedBy` d'un
       code inconnu), file (actions selon rôle, motif inconnu), dialogue d'annulation d'une
       paire, catalogues sans les formules interdites.
-    - **E2E** `frontend/tests/e2e/provider-reconciliation.spec.ts`, contre le **transport factice** de 38-3 et ses
+    - **E2E** `frontend/tests/e2e/provider-reconciliation.spec.ts`, contre le **transport factice** de 38-3b et ses
       réponses PayPal par défaut (38-7 AC-10 : familles de 38-8 couvertes), connexion et comptes posés par l'API dans le
       `beforeAll` (le parcours d'administration est l'E2E de 38-9a) : (1) téléchargement à la demande ; (2) création
       d'une règle `invoice_prefix` (`LG-`, filtre EUR, entrées) vers un compte de ventes EUR à TVA par défaut (38-5) ;
@@ -291,14 +293,12 @@ doublon et sans qu'aucune écriture ne passe sans que je l'aie vue.
 
 ## Questions ouvertes
 
-- ~~**Q-38-9b-1**~~ *(close, P1)* : lot de 500 au plus, réponse de `link-suggestions` et `version` arrêtés par 38-6c AC-4
-  et AC-5 (AC-6).
+- ~~**Q-38-9b-1**~~ *(close par 38-6c, P1)* : lot de 500 au plus (38-6c AC-5), champs de `link-suggestions` — dont
+  `version` — à l'AC-4 de 38-6c (AC-6 ci-dessus).
 - ~~**Q-38-9b-2**~~ *(close, P1)* : période par défaut = exercice ouvert le plus ancien (O12).
-- **Q-38-9b-3** (validation de 38-6a et 38-6b) : le DTO de transaction des propositions porte-t-il `invoiceRef` et
-  `eventCode` (38-3 AC-3 les ajoute à `bank_transactions`, non au DTO des propositions) ? Le candidat `provider`
-  porte-t-il la source du cours (`rateSource`) et, pour une conversion, la transaction de l'autre moitié (date, montant,
-  devise, nom du compte) ? La vue de la transaction (`ReconciliationView`) porte-t-elle ces détails de la paire ? Tant que
-  non, l'écran ne montre que ce que les fiches listent (AC-3, AC-8).
+- ~~**Q-38-9b-3**~~ *(close, alignement inter-fiches P1)* : `invoiceRef` et `eventCode` au DTO de transaction des
+  propositions, `rateSource` au candidat (38-6a C-38-6a-3 ; colonnes de 38-3a) ; `pairedTransaction { bookingDate,
+  amount, currency, bankAccountName }` au candidat `conversion` (38-6b AC-1) et à la vue (38-6b AC-8).
 
 ## Tâches
 
@@ -344,3 +344,9 @@ doublon et sans qu'aucune écriture ne passe sans que je l'aie vue.
 - 2026-11-15 — validation P1 (Sonnet) : 11 findings (0 CRITICAL, 2 HIGH, 6 MEDIUM, 3 LOW) ; remédiés dans la fiche sauf
   l'inter-fiche 38-9b-P1-6 (Q-38-9b-3 : champs `invoiceRef`/`eventCode`/`rateSource`/transaction de la paire absents de
   38-6a et 38-6b). Trend : P1 = 11. Axes non exercés : code des stories amont (non écrit) ; PDF du manuel.
+- 2026-11-15 — alignement inter-fiches P1 (Opus) : AC-6 — libellés des codes du lot de rattachement (`ENTRY_NOT_LINKABLE`
+  et ses motifs, `AMOUNT_MISMATCH`, `ENTRY_ALREADY_LINKED`…) portés par cette story dans `failed-proposal-label.ts`,
+  quatre locales (plus de « si 38-6c les pose ») ; Q-38-9b-1 dite close par 38-6c (500 au plus, champs à l'AC-4) ;
+  Q-38-9b-3 close — AC-3 lit `invoiceRef`, `eventCode` (DTO de 38-6a), `rateSource` et `pairedTransaction` (38-6b
+  AC-1), AC-8 lit `pairedTransaction` de la vue (38-6b AC-8) ; découpage D-P1-1 : transport factice de 38-3b,
+  colonnes de 38-3a.

@@ -4,7 +4,8 @@ Status: ready-for-dev
 
 *Fiche rédigée le 2026-11-15 (Opus), branche `epic/38-paypal`. Epic 38 (`planning-artifacts/epic-38-paypal.md`),
 E2, E3, E9, E10, E20, E24 ; contrats C-38-1, C-38-2, C-38-5, C-38-11, C-38-12. Décisions B1, B8, B11, B12, B23.
-**Dépend de** 38-3 (crate `kesh-providers`, trait de transport, `Connector`, passage, transport factice) et, par lui,
+**Dépend de** 38-3b (crate `kesh-providers`, trait de transport, `Connector`, passage, transport factice) et, par lui,
+de 38-3a (colonnes et tables du passage, décodage tolérant),
 de 38-1 (coffre `secrets::{seal, open}`, connexions, `settings` typé) et de l'Epic 37 (client HTTP borné, 37-2 AC-3).
 **Suivie de** 38-8 (classement des enregistrements que ce client lit) ; **lue par** 38-9a (écran, messages
 d'erreur). **Aucune migration.***
@@ -14,7 +15,7 @@ d'erreur). **Aucune migration.***
 En tant qu'Administrateur d'une société qui tient un compte PayPal *business*, je veux que Kesh s'authentifie auprès
 de PayPal avec l'identifiant de mon application REST et son secret, lise les soldes de chaque devise et les
 transactions qui changent le solde, toutes les pages, par fenêtres que PayPal accepte, et que « Tester la connexion »
-me dise en clair si l'accès marche — et sinon pourquoi —, afin que le téléchargement de 38-3 dispose d'une source
+me dise en clair si l'accès marche — et sinon pourquoi —, afin que le téléchargement de 38-3b dispose d'une source
 PayPal fiable, bornée et sans fuite de secret.
 
 ## Source (relevée le 2026-11-15, documentation officielle de PayPal)
@@ -67,14 +68,14 @@ PayPal fiable, bornée et sans fuite de secret.
 
 ## Critères d'acceptation
 
-1. **AC-1 — Transport HTTP de production** (`kesh-api`, module `providers`). **Pas de second transport** : 38-3
-   (AC-5) pose `kesh_providers::Transport` (trait objet-safe) et son implémentation `kesh-api::providers::HttpTransport` ;
+1. **AC-1 — Transport HTTP de production** (`kesh-api`, module `providers`). **Pas de second transport** : 38-3b
+   (transport) pose `kesh_providers::Transport` (trait objet-safe) et son implémentation `kesh-api::providers::HttpTransport` ;
    38-7 n'écrit que les **bornes propres à PayPal** qu'elle lui passe. Le client **réutilise le constructeur du client borné de 37-2**
    (37-2 AC-3 : `reqwest` en production, `default-features = false`, `rustls-tls`, `redirect(Policy::none())`,
    `https_only(true)`, pas de magasin de cookies, `User-Agent: Kesh/<version>`, lecture par `chunk()` bornée) ; si 37-2
    l'a écrit avec des bornes en dur, 38-7 en fait des **paramètres** (`connect_timeout`, délai total, taille maximale
-   du corps) sans changer les valeurs de 37-2 (DRY, pas de second client). Bornes PayPal **par requête** (38-3 AC-5
-   donne 30 s et 8 MiB par défaut : `HttpTransport` les prend en paramètre, ce qu'amende 38-3) : connexion 5 s,
+   du corps) sans changer les valeurs de 37-2 (DRY, pas de second client). Bornes PayPal **par requête** (le `HttpTransport` de
+   38-3b prend ses bornes par requête ; les valeurs ci-dessous sont celles du connecteur PayPal) : connexion 5 s,
    délai total **60 s** (Transaction Search à 500 lignes avec `fields=all`), corps **≤ 8 MiB** (`Content-Length` contrôlé, puis
    lecture bornée ; dépassement → `ResponseTooLarge`). `reqwest` est aujourd'hui une dev-dependency seulement
    (`crates/kesh-api/Cargo.toml:109`) ; la dépendance de production est celle de 37-2.
@@ -87,7 +88,7 @@ PayPal fiable, bornée et sans fuite de secret.
    - Requête : `POST {base}/v1/oauth2/token`, `Authorization: Basic base64(clientId:secret)`,
      `Content-Type: application/x-www-form-urlencoded`, corps `grant_type=client_credentials`. `clientId` lu dans
      `PaypalSettings` (E24, `kesh-core::providers::settings`, posé par 38-1) ; le secret est ouvert **une seule fois
-     par la fabrique de connecteurs de 38-3** (`ConnectorFactory`, AC-5 de 38-3 : c'est **son** site qui entre à la
+     par la fabrique de connecteurs de 38-3b** (`ConnectorFactory`, transport et mode test de 38-3b : c'est **son** site qui entre à la
      garde des appelants d'`open`, 38-1 AC-1) et remis en `Zeroizing<String>` au `PaypalConnector`, qui ne le garde
      que pour la vie du connecteur (un passage, ou un test) ; **38-7 n'ajoute aucun appelant d'`open`** : l'en-tête
      `Basic` se construit dans `kesh_providers::paypal::auth` (dépendances neuves du crate : `base64`, `zeroize`,
@@ -111,8 +112,8 @@ PayPal fiable, bornée et sans fuite de secret.
      l'échec de compilation le complète).
    - Un `401` sur un appel de données avec un jeton en cache → **un** renouvellement du jeton puis **un** nouvel essai ;
      un second `401` → `Auth`.
-4. **AC-4 — Transactions** (`PaypalConnector::movements`, forme de `Connector::movements(window, page)` de 38-3 AC-4).
-   - **Contrat avec 38-3 (à y écrire)** : 38-3 rend des `ProviderMovement` **classés**, page par page, et écrit une
+4. **AC-4 — Transactions** (`PaypalConnector::movements`, forme de `Connector::movements(window, page)` de 38-3b).
+   - **Contrat avec 38-3b (à y écrire)** : 38-3b rend des `ProviderMovement` **classés**, page par page, et écrit une
      page par transaction ; or le classement de 38-8 (paire de conversion, remboursement lié) exige **toute la
      fenêtre**, et O10 veut le découpage d'une fenêtre trop large **dans le connecteur**. D'où : `PaypalConnector::
      movements(window, page)` **lit en interne toutes les pages PayPal de la fenêtre** (`page_size=500`, `page` de 1 à
@@ -153,19 +154,19 @@ PayPal fiable, bornée et sans fuite de secret.
      une page → page rejetée (la doc dit que les identifiants ne sont pas uniques ; une collision dans une devise
      casserait `UNIQUE (bank_account_id, provider_tx_id)` de E6 en silence — à constater sur les réponses de Beat, AC-12).
    - **Pages PayPal** (lues par le connecteur lui-même) : `total_pages` qui change d'une page à l'autre de la même
-     fenêtre → `InvalidResponse { what: "pagination" }` (la fenêtre se reprend au passage suivant, 38-3 AC-6
+     fenêtre → `InvalidResponse { what: "pagination" }` (la fenêtre se reprend au passage suivant, passage de 38-3b,
      « un échec garde ce qui est inséré » : rien n'est rendu au passage tant que la fenêtre n'est pas lue en entier).
    - `ending_balance` et `available_balance` ne sont **pas** lus (vides dès qu'un paramètre facultatif est donné —
      doc ci-dessus) : la complétude se contrôle par les soldes (AC-6, E20 a).
 5. **AC-5 — Fenêtre trop large.** `RESULTSET_TOO_LARGE` (corps d'erreur `name`), **ou** `total_items > 10 000` à la
    page 1 → `ConnectorError::WindowTooLarge { total_items: Option<u32> }` sans lire d'autre page. **Le découpage se fait
-   dans le connecteur (O10, décidé ; Q-38-7-2 close)** : 38-3 ne découpe qu'en sous-fenêtres de `max_window()`
+   dans le connecteur (O10, décidé ; Q-38-7-2 close)** : 38-3b ne découpe qu'en sous-fenêtres de `max_window()`
    (31 jours) ; dans `PaypalConnector::movements`, la fenêtre se **coupe en deux moitiés** (récursivement) et chaque
    moitié se relit ; sous **une heure**, `WindowTooLarge` est rendu tel quel (`PROVIDER_WINDOW_TOO_LARGE`, AC-7). Les
-   moitiés sont disjointes (`[from, mid)`, `[mid, to)`, demi-ouvertes comme `Window` de 38-3) : aucune transaction
+   moitiés sont disjointes (`[from, mid)`, `[mid, to)`, demi-ouvertes comme `Window` de 38-3b) : aucune transaction
    n'est lue deux fois ni perdue, un test le vérifie à la frontière exacte. `Connector::max_window()` rend 31 jours
    pour PayPal.
-6. **AC-6 — Soldes** (`Connector::balances(as_of: Option<DateTime<Utc>>) -> Vec<ProviderBalance>` de 38-3 AC-4 :
+6. **AC-6 — Soldes** (`Connector::balances(as_of: Option<DateTime<Utc>>) -> Vec<ProviderBalance>` de 38-3b :
    `{ currency, amount = total_balance, as_of }` ; la forme détaillée ci-dessous est la méthode **propre** à
    `PaypalConnector`, `balances_detailed`, que `test()` lit pour `payer_id`).
    `GET {base}/v1/reporting/balances[?as_of_time=…]` (sans `currency_code` : toutes les devises). Rendu
@@ -175,14 +176,15 @@ PayPal fiable, bornée et sans fuite de secret.
    devises `^[A-Z]{3}$` **uniques**, montants comme AC-4, `total_balance.currency_code` égale `currency`, `account_id`
    non vide ≤ 64, `as_of_time` RFC 3339. `as_of` demandé et `as_of_time` rendu **postérieur** de plus d'un jour →
    `InvalidResponse { what: "as_of" }` (PayPal ne doit pas rendre un solde d'après la date demandée ; antérieur :
-   accepté, c'est « le dernier solde servi »). Un solde de devise sans compte Kesh est l'affaire de 38-3 (E12).
-7. **AC-7 — Erreurs PayPal → états lisibles.** `kesh_providers::ConnectorError` est **celui de 38-3 AC-4** (`Auth`,
+   accepté, c'est « le dernier solde servi »). Un solde de devise sans compte Kesh est l'affaire de 38-3a (soldes vus, E12), écrit par le
+   passage de 38-3b.
+7. **AC-7 — Erreurs PayPal → états lisibles.** `kesh_providers::ConnectorError` est **celui de 38-3b** (`Auth`,
    `Permission`, `RateLimited { retry_after }`, `Unavailable`, `InvalidResponse { reason }`, `Transport { kind }`) ;
    38-7 **n'en renomme aucune variante** et en ajoute deux : `WindowTooLarge { total_items }` et `Rejected` (400),
    plus `InvalidWindow`. Aucun texte de PayPal recopié (le `message` et `debug_id` de PayPal vont au
    `tracing::warn!`, jamais à l'écran ni à `last_error`). **Une seule fonction** `ConnectorError::code()` rend le code
-   du passage de 38-3 AC-6 (`auth`, `permission`, `rate_limited`, `unavailable`, `invalid_response`, `transport` ;
-   38-3 y ajoute `window_too_large`, `rejected`, `invalid_window`) et une seule `app_code()` le code d'API ci-dessous ;
+   du passage de 38-3b (`auth`, `permission`, `rate_limited`, `unavailable`, `invalid_response`, `transport` ;
+   38-3b y ajoute `window_too_large`, `rejected`, `invalid_window`) et une seule `app_code()` le code d'API ci-dessous ;
    `last_error` de la connexion et l'erreur de « Tester » portent le **code d'API** :
 
    | Cause | Variante | Code d'API (`last_error`, `errorCode` de `POST /test`) | `code()` du passage |
@@ -196,7 +198,7 @@ PayPal fiable, bornée et sans fuite de secret.
    | fenêtre indivisible (AC-5) | `WindowTooLarge` | `PROVIDER_WINDOW_TOO_LARGE` | `window_too_large` |
    | 400 `INVALID_REQUEST` | `Rejected` | `PROVIDER_REQUEST_REJECTED` | `rejected` |
 
-   ⚠️ **Aucune de ces erreurs n'est un statut HTTP de `POST …/fetch`** : 38-3 (AC-7) répond `202 { runId }` et le
+   ⚠️ **Aucune de ces erreurs n'est un statut HTTP de `POST …/fetch`** : 38-3b (déclenchement) répond `202 { runId }` et le
    passage court en tâche de fond ; l'erreur se lit à l'état du passage (`GET …/runs`, `error_code`) et à `lastError`
    de la connexion. Seul `POST …/test` rend l'état de l'appel distant, **toujours en 200** (AC-8) : aucune de ces
    erreurs ne sort donc en 401, 403 **ni 503** — un 503 allumerait le bandeau « service dégradé » de tout le
@@ -211,7 +213,7 @@ PayPal fiable, bornée et sans fuite de secret.
    (`provider_known` … `secret_decryptable`). Quand ceux-ci passent, elle appelle, pour `provider = 'paypal'`,
    `PaypalConnector::test()` = jeton (AC-3) puis soldes sans `as_of` (AC-6), et ajoute :
    - aux `checks` : `token_obtained`, `permission_present` (portée de l'AC-3) et `provider_reachable` (soldes lus ;
-     contrôle annoncé par 38-1 AC-7 pour 38-3 — **un seul** site l'écrit, celui de 38-7 pour PayPal, 38-3 n'en posant
+     contrôle annoncé par 38-1 AC-7 pour 38-3 (désormais 38-3b) — **un seul** site l'écrit, celui de 38-7 pour PayPal, 38-3b n'en posant
      que la forme générique) ; un contrôle échoué porte `errorCode` (code de l'AC-7) et les suivants ne sont pas
      tentés (`ok: null`) ;
    - à la réponse : `payerId` (ou `null`), `balances: [{ currency, total }]` (lus, non enregistrés — les soldes
@@ -227,7 +229,7 @@ PayPal fiable, bornée et sans fuite de secret.
      posée par 38-1 en `NoMatter(…)` passe à `Traced` — delta 0 route, +1 tracée, −1 sans mutation, total et message
      de `the_registry_partition_is_what_the_story_declares` (`tests/audit_route_registry.rs:1009`) suivis.
    - Rôle : Administrateur, session seulement (`admin_routes`, `require_not_pat`, `middleware/rbac.rs:58` ; 38-1 AC-3).
-   - Le secret s'ouvre par la **voie unique** de 38-1 AC-1, au site de la fabrique de 38-3 (AC-3 ci-dessus) : 38-7
+   - Le secret s'ouvre par la **voie unique** de 38-1 AC-1, au site de la fabrique de 38-3b (AC-3 ci-dessus) : 38-7
      **n'ajoute aucun appelant** à la garde de source ; la route `test` construit son connecteur par cette fabrique.
      Le contrôle local `secret_decryptable` de 38-1 reste le seul autre site.
 9. **AC-9 — Historique de trois ans.** `Connector::history_start(now)` rend, pour PayPal, `now − 3 ans + 1 jour`
@@ -237,17 +239,18 @@ PayPal fiable, bornée et sans fuite de secret.
      validation des réglages de 38-1, un seul point d'entrée).
    - **Lecture** : `GET /provider-connections/{id}` et la liste gagnent `earliestFetchFrom` (date ou `null`), que
      l'écran de 38-9a lit pour borner le sélecteur (aucune constante recopiée dans le TypeScript).
-   - **Passage** : une date acceptée vieillit ; le passage de 38-3 part de `max(début calculé, history_start(now))` et,
-     s'il a borné, l'écrit à l'état du passage (`truncated_from`, champ ou détail fixé par 38-3) — affiché par 38-9a.
+   - **Passage** : une date acceptée vieillit ; le passage de 38-3b part de `max(début calculé, history_start(now))` et,
+     s'il a borné, l'écrit à l'état du passage (`provider_fetch_runs.truncated_from`, colonne de 38-3a, rendue par
+     `GET …/runs` de 38-3b) — affiché par 38-9a.
      Jamais d'appel PayPal avant `history_start` (il rendrait `INVALID_REQUEST`).
 10. **AC-10 — Branchement.** `kesh-api` choisit le connecteur par `provider` (`ConnectorFactory`, `AppState.
-    connector_factory`, posée par 38-3 AC-5 ; elle passe au `PaypalConnector` les réglages, le secret ouvert, le
+    connector_factory`, posée par 38-3b ; elle passe au `PaypalConnector` les réglages, le secret ouvert, le
     `secret_updated_at`, le cache de jeton, la liste des `payerId` des **autres** connexions PayPal de la société
     — 38-8 AC-5 —, et le transport) : `paypal` → `PaypalConnector` ; en `KESH_TEST_MODE`, le **transport
-    factice** de 38-3 sert des réponses **au format PayPal** (le connecteur PayPal tourne en entier, seul le transport
+    factice** de 38-3b sert des réponses **au format PayPal** (le connecteur PayPal tourne en entier, seul le transport
     est simulé) — 38-7 fournit les réponses synthétiques par défaut (jeton, soldes CHF/EUR/USD, une page de
     transactions couvrant les familles de 38-8), écrites en constantes du module et lues par les E2E de 38-9a/38-9b ;
-    la route `_test` de 38-3 permet d'en servir d'autres (erreur 401, 403, 429, 500, `RESULTSET_TOO_LARGE`, réponse
+    la route `_test` de 38-3b permet d'en servir d'autres (erreur 401, 403, 429, 500, `RESULTSET_TOO_LARGE`, réponse
     invalide). Aucune route neuve : `LIB_ROUTES` et `TEST_ENDPOINT_ROUTES` sans entrée ajoutée (C-38-12 ; seul le
     statut de `test_connection` change, AC-8).
 11. **AC-11 — Aucune fuite.** Le secret, l'en-tête `Authorization` et le jeton n'apparaissent dans **aucun** journal
@@ -302,8 +305,9 @@ PayPal fiable, bornée et sans fuite de secret.
 - **Limite de 10 000 résultats** : non chiffrée par la référence actuelle (voir *Source*) ; Kesh traite le code
   d'erreur et le seuil (AC-5).
 - **Erreurs « en états lisibles »** : l'epic ne fixe ni codes ni statuts HTTP ; la table de l'AC-7 fixe les codes, et
-  **aucun statut HTTP** (le passage est asynchrone, 38-3 AC-7).
-- **Un appel de `movements` rend la fenêtre entière** (AC-4) : écart au `MovementPage` paginé de 38-3, justifié par
+  **aucun statut HTTP** (le passage est asynchrone, 38-3b).
+- **Un appel de `movements` rend la fenêtre entière** (AC-4) : écart au `MovementPage` paginé de 38-3b (qui admet une
+  page unique, `total_pages = 1`), justifié par
   le classement de 38-8 et le découpage de O10.
 
 ## Questions ouvertes
@@ -313,7 +317,7 @@ PayPal fiable, bornée et sans fuite de secret.
   constater sur les réponses de Beat avant la fixture ; le code n'en suppose qu'un, testé. Idem : forme du décalage
   des dates rendues (`Z`, `+00:00`, `+0000`).
 
-## Contrats à amender chez 38-3 (texte proposé, cf. rapport de validation)
+## Contrats à amender chez 38-3b (texte proposé, cf. rapport de validation ; portés par la liste inter-fiches P1)
 
 `Connector` gagne `history_start(now) -> Option<NaiveDate>` (AC-9) et `overlap()` (38-8 AC-7) ; `MovementPage` gagne
 `skipped` et `sums` ; `ConnectorError` gagne `WindowTooLarge`, `Rejected`, `InvalidWindow` ; `HttpTransport` prend ses
@@ -321,7 +325,7 @@ bornes par requête ; le passage lit `code()` ; `last_error` porte le code d'API
 
 ## Tâches
 
-- [ ] Bornes PayPal passées au `HttpTransport` de 38-3 (AC-1) sur le constructeur paramétré du client de 37-2 ; tests
+- [ ] Bornes PayPal passées au `HttpTransport` de 38-3b (AC-1) sur le constructeur paramétré du client de 37-2 ; tests
       de bornes.
 - [ ] `kesh-providers::paypal` : `LIVE_BASE_URL`, `with_base_url`, `auth` (jeton, portée, cache, renouvellement sur
       401), `movements` (requête, validation, `WindowTooLarge`), `balances`, `test()`, `history_start`, `max_window`
@@ -333,7 +337,7 @@ bornes par requête ; le passage lit `code()` ; `last_error` porte le code d'API
 - [ ] Route `POST /provider-connections/{id}/test` (38-1) branchée sur PayPal ; écriture de `payerId` ; audit
       `payment_provider_connection.tested` (`audit_labels.rs`, quatre locales), registre `test_connection` → `Traced`
       (AC-8).
-- [ ] Validation `fetchFrom` et champ `earliestFetchFrom` dans les routes de 38-1 ; borne au passage de 38-3 (AC-9).
+- [ ] Validation `fetchFrom` et champ `earliestFetchFrom` dans les routes de 38-1 ; borne au passage de 38-3b (AC-9).
 - [ ] Réponses synthétiques par défaut du transport factice au format PayPal (AC-10).
 - [ ] Fixtures anonymisées, relevé sur instance jetable, test « aucun courriel réel » ; tests hostiles ; tests de
       route ; test de non-fuite (AC-11, AC-12).
@@ -355,7 +359,7 @@ bornes par requête ; le passage lit `code()` ; `last_error` porte le code d'API
   qu'on lit (AC-4), non sur ce qu'on ignore. À l'inverse, les **réglages** (E24) refusent l'inconnu.
 - **Gabarit `<…>`** : un `clientId` de la forme `<…>` est refusé par la validation de 38-1 comme les autres gabarits
   (`is_template_placeholder`, `crates/kesh-api/src/config.rs:1538`) — à confirmer à la fiche 38-1, sinon ajouté ici.
-- **Points de contact** : C-38-5 (`Connector`, transport, découpage, passage) et la fabrique de 38-3 ; C-38-2 (routes,
+- **Points de contact** : C-38-5 (`Connector`, transport, découpage, passage) et la fabrique de 38-3b ; C-38-2 (routes,
   `settings`, `version`, audit de 38-1) ; C-38-1 (`secrets::open`) ; 38-8 consomme `PaypalRecord` et `Balances`
   (noms fixés ici) ; 38-9a affiche les codes de l'AC-7, `earliestFetchFrom` et la date bornée du passage.
 - **Splitting** : deux modules (`kesh-providers`, `kesh-api`), dans la règle (≤ 5).
@@ -372,3 +376,9 @@ bornes par requête ; le passage lit `code()` ; `last_error` porte le code d'API
 - 2026-11-15 — validation P1 (Sonnet) : 0 CRITICAL, 1 HIGH, 6 MEDIUM, 3 LOW ; remédiés dans la fiche sauf les
   inter-fiches 38-3 (`Connector`, `MovementPage`, `ConnectorError`, bornes du transport, codes du passage, `last_error`),
   38-1 (`accountEmail`, O10) et 38-8 (contrat de classement par fenêtre).
+- 2026-11-15 — alignement inter-fiches P1 (Opus) : AC-7 vérifié — aucun statut HTTP sur `POST …/fetch` (202, erreur
+  lue à l'état du passage), rien à changer ; AC-1 : la contradiction 30 s/60 s est levée (bornes par requête du
+  `HttpTransport` de 38-3b, valeurs PayPal ici) ; AC-9 : `truncated_from` nommé colonne de `provider_fetch_runs`
+  (38-3a), rendue par `GET …/runs` (38-3b) ; découpage D-P1-1 : renvois à 38-3 portés sur 38-3b (crate, `Connector`,
+  transport, fabrique, passage, déclenchement, transport factice, route `_test`) ou 38-3a (soldes vus, colonnes) ;
+  dépendance à 38-3a ajoutée.

@@ -5,7 +5,7 @@ Status: ready-for-dev
 - **Epic** : 38 (`_bmad-output/planning-artifacts/epic-38-paypal.md`, § *38-6b*, E7, E16, C-38-8, C-38-9) ; décisions de Beat
   B4, B7, B20 (`epics-38-40-cadrage.md`), qui priment.
 - **Dépend de** : **38-6a** (chemin prestataire de `get_proposals`, variante `provider`, constructeur `build_provider_entry`,
-  codes de C-38-8), **38-6c** (rattachement en devise, `link_entry_in_tx` en devise, C-38-14), **38-3** (colonnes
+  codes de C-38-8), **38-6c** (rattachement en devise, `link_entry_in_tx` en devise, C-38-14), **38-3a** (colonnes
   `movement_kind`, `related_provider_tx_id`, `review_reason`, `provider_tx_id`, C-38-4), **38-2** (connexion d'un compte,
   compte de frais, C-38-3), **37-3b** (conversion par le compte de transit, `completeDifference`, AC-2 bis).
 - **Prépare** : 38-9b (file « à examiner », aperçu d'une conversion, annulation d'une paire à l'écran).
@@ -77,7 +77,7 @@ afin que **tout mouvement qui change un solde finisse comptabilisé, sans qu'auc
    jamais complétée) ; ceux de la moitié **créditée** restent dans la ligne de différence (gain ou perte de change),
    montrés à l'aperçu. **Question à Beat (Q-6b-1)** ci-dessous.
 3. **« Origine absente ou non réconciliée → file »** (E16) : tenu tel quel, mais **calculé à la lecture** (NFR-38-6b-4) ;
-   la valeur `refund_origin_missing` que 38-3/38-8 peut poser dans `review_reason` est une indication, non l'autorité
+   la valeur `refund_origin_missing` que le passage (38-3b, classement de 38-8) peut poser dans `review_reason` est une indication, non l'autorité
    (C-38-6b-4). La fiche 38-8 (AC-4, AC-5) écrit que `refund_origin_missing` « est posé par 38-6b » : ici il n'est
    **posé nulle part**, il se **calcule** (rien n'est écrit pour entrer dans la file) ; tranché par **O11** (calculé, jamais écrit) :
    38-8 AC-4 et AC-5 (`:90`, `:123`) sont à aligner (inter-fiches).
@@ -170,7 +170,8 @@ afin que **tout mouvement qui change un solde finisse comptabilisé, sans qu'auc
 
 1. **AC-1 — Propositions des quatre genres (NFR-38-6b-2, NFR-38-6b-3).** Sur un compte prestataire, `GET
    /api/v1/reconciliation/proposals` (forme de 38-6a) donne, pour une transaction hors de la file (C-38-6b-4) :
-   `conversion` → un candidat `provider` portant `pairedBankTransactionId`, `providerLines` (écriture de **cette** moitié)
+   `conversion` → un candidat `provider` portant `pairedBankTransactionId`, `pairedTransaction { bookingDate, amount,
+   currency, bankAccountName }` (l'autre moitié, lue par la même requête de page que la paire), `providerLines` (écriture de **cette** moitié)
    et `pairedLines` (écriture de l'autre), différence calculée pour l'aperçu par la même règle que 37-3b (gain au crédit
    si les débits l'emportent, perte au débit ; comptes de X2) ; conversion à moitié **CHF** (C-38-6b-2 bis) → `providerLines` = l'écriture unique,
    `pairedLines: null` ; `withdrawal`/`deposit` → un candidat portant
@@ -255,7 +256,8 @@ afin que **tout mouvement qui change un solde finisse comptabilisé, sans qu'auc
    `reconciliation.cancelled`, chacune avec `pairedBankTransactionId` (paramètre neuf de `cancel_in_tx`,
    `Option<i64>`, écrit en camelCase avec les autres détails) ; réponse `CancelReconciliationResponse` +
    `pairedBankTransactionId`, `pairedReversalJournalEntryId` (additifs, `null` hors paire) ; la vue `GET
-   …/transactions/{id}` porte `pairedBankTransactionId` (`ReconciliationView`, Rust, `reconciliation.types.ts`,
+   …/transactions/{id}` porte `pairedBankTransactionId` et `pairedTransaction { bookingDate, amount, currency,
+   bankAccountName }` (`null` hors paire ; `ReconciliationView`, Rust, `reconciliation.types.ts`,
    `api-external.md`). Verrous et relecture : C-38-6b-7 ; un refus de l'une des deux annulations (exercice clos, verrou
    de période, compte clos) annule le tout, rien n'est écrit. Une moitié rapprochée seule (l'autre `pending`) s'annule
    seule, comme aujourd'hui. Test à deux connexions : annulations simultanées depuis les deux moitiés → une réussit,
@@ -305,8 +307,8 @@ afin que **tout mouvement qui change un solde finisse comptabilisé, sans qu'auc
 
 ## Dev Notes
 
-- **Pourquoi la file ne s'écrit pas** : la moitié manquante ou l'origine arrive au passage suivant (recouvrement de trois
-  jours, 38-3) ; écrire un état « à examiner » demanderait de le défaire à chaque passage. Calculée, la file dit toujours
+- **Pourquoi la file ne s'écrit pas** : la moitié manquante ou l'origine arrive au passage suivant (recouvrement `overlapDays`,
+  trois jours par défaut, 38-3b) ; écrire un état « à examiner » demanderait de le défaire à chaque passage. Calculée, la file dit toujours
   vrai au moment de la lecture.
 - **Pourquoi « examiné » = rejet** : un mouvement qui change le solde doit finir comptabilisé (E20 : la complétude et
   l'écart comptable le signalent tant qu'il ne l'est pas) ; « examiné » ne comptabilise rien, il range. Le rejet a déjà
@@ -340,6 +342,10 @@ afin que **tout mouvement qui change un solde finisse comptabilisé, sans qu'auc
 
 ## Change Log
 
+- 2026-11-15 — alignement inter-fiches P1 (Opus) : AC-1 — le candidat `conversion` porte `pairedTransaction
+  { bookingDate, amount, currency, bankAccountName }` ; AC-8 — la vue porte de même `pairedTransaction` à côté de
+  `pairedBankTransactionId` (liste inter-fiches, point 38-6b) ; découpage D-P1-1 : dépendance portée sur 38-3a
+  (colonnes), `review_reason` posé par le passage de 38-3b, recouvrement `overlapDays` de 38-3b (Dev Notes).
 - 2026-11-15 — validation P1 (Sonnet) : 0 CRITICAL, 1 HIGH, 2 MEDIUM, 2 LOW ; remédiés dans la fiche sauf l'inter-fiches
   P1-5 : P1-1 (HIGH) conversion dont un côté est en CHF non couverte (37-3b AC-2 bis ne vaut qu'entre deux
   devises étrangères ; 38-6c AC-2 la rattache déjà en une écriture) → C-38-6b-2 bis, AC-1, AC-2 ; P1-2 (MEDIUM)
