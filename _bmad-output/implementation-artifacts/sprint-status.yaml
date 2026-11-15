@@ -1074,3 +1074,11 @@ development_status:
   38-9a-ecrans-connexions-et-comptes: ready-for-dev  # validée le 2026-11-15 (cycle P1–P7 clos, 0 au-dessus de LOW)
   38-9b-ecrans-regles-et-propositions: ready-for-dev  # validée le 2026-11-15 (cycle P1–P7 clos, 0 au-dessus de LOW)
   38-10-releve-joint: ready-for-dev  # validée le 2026-11-15 (cycle P1–P7 clos, 0 au-dessus de LOW)
+  epic-39: in-progress  # 2026-11-15 : epic-39-wise.md (cadrage, B1, B3, B4, B9, B10, B12, B14 de epics-38-40-cadrage.md ; socle de l'Epic 38 ; F1–F17 ; aucune migration) ; demande de Beat ; après les Epics 37 et 38, une PR à la fin ; faisabilité à établir en 39-0 (Q-39-1, Q-39-2)
+  39-0-kickoff: done  # cadrage écrit le 2026-11-15 ; décomptes, validation du fichier d'epic et recette de faisabilité de Beat à tenir (bloquent les fiches)
+  39-1-client-wise: backlog
+  39-2-authentification-forte: backlog
+  39-3-releve-json-mouvements: backlog
+  39-4-classement-des-types-wise: backlog
+  39-5-releve-pdf: backlog
+  39-6-ecrans-et-manuels: backlog
