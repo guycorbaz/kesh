@@ -981,3 +981,37 @@ d'`invoice_id`, B24), **Q11** (`PROVIDER_API` retenu, B22).
   réels, avec une application REST en lecture seule (*Transaction Search*), sur une **instance jetable** (B12).
 - Aucun appel réseau en CI ; aucune réponse réelle non anonymisée dans le dépôt.
 - On trace toujours : un défaut voisin non traité se note au registre (C-38-13), pour devenir une issue avec la PR.
+
+## Arbitrages de l'orchestrateur après la rédaction des fiches (2026-11-15)
+
+Questions des fiches tranchées par l'orchestrateur (Beat peut les contester ; Q-6b-1 et Q-38-6c-1 lui sont posées) :
+
+- **O1 — Migration breaking déplacée en 38-2.** Un compte `bank` exige un IBAN (`chk_bank_accounts_bank_has_iban`,
+  `20261110000001_bank_accounts_without_iban.sql:48-49` ; `routes/bank_accounts.rs:557-570`) : E11 était faux.
+  **L'unique migration breaking de l'epic est celle de 38-2**, première story qui en a besoin : elle remplace la
+  contrainte (IBAN obligatoire sauf pour un compte qui porte une ligne `payment_provider_accounts` — forme exacte à la
+  fiche), passe `match_type` en `VARCHAR(40)` (CHECK de format seul, `ascii_bin`, O2) et relève
+  `kesh_version_min_required` en dernière instruction (P2, P2-bis : onze crates si `kesh-providers` naît avant, sinon
+  dix — à recompter au développement). 38-3 n'a plus que sa migration non breaking ; ses écritures de `PROVIDER_API`
+  s'appuient sur le relèvement de 38-2 (même release). Fiches 38-2, 38-3, 38-4 à aligner.
+- **O2** — `match_type` : `CHECK` de format (sans énumération) et collation `ascii_bin` admis (Q-38-3-a).
+- **O3** — 38-4 : le verrou « un compte désigné par une règle ne reçoit pas de devise » (`ACCOUNT_CURRENCY_IN_USE`)
+  reste ; seul « désigner un compte en devise » est levé.
+- **O4** — 38-4 : la désactivation (`DELETE`) d'une règle de type inconnu est admise.
+- **O5** — 38-5 : le taux TVA par défaut d'un compte désigne sa **catégorie**, résolue à la date de la transaction
+  (`find_for_category_at_date`).
+- **O6** — 38-5 : compte d'impôt sur les acquisitions égal au compte de TVA due → refusé.
+- **O7** — 38-1 : unicité du libellé d'une connexion par société gardée (Q-38-1-b) ; le Comptable lit l'état des
+  connexions par la route de lecture restreinte de 38-3 (Q-38-1-a).
+- **O8** — 38-2 : délier un compte prestataire n'est admis que s'il ne porte aucune transaction téléchargée
+  (Q-38-2-b) ; un compte du plan en devise est lié à **un seul** compte prestataire (Q-38-2-c).
+- **O9** — 38-3 : imports de fichier refusés sur un compte prestataire (Q-38-3-c) ; découpage 38-3a/38-3b si la
+  validation stagne (Q-38-3-b, règle de splitting).
+- **O10** — 38-7 : `accountEmail` retiré du JSON (aucune API ne le rend) ; une fenêtre trop large se découpe **dans le
+  connecteur** ; la pagination PayPal commence à 1 (`page` par défaut 1 dans la doc Transaction Search) — à constater
+  sur les réponses enregistrées.
+- **O11** — 38-8 : les deux moitiés d'une conversion se relient par `paypal_reference_id` (à constater sur les réponses
+  de Beat) ; un paiement en attente au-delà du recouvrement de trois jours est relu par un recouvrement réglable ;
+  surcharge `ignore` gardée ; `refund_origin_missing` est **calculé** (38-6b), jamais écrit (38-8 à aligner).
+- **O12** — 38-9a : routes des soldes vus et de l'historique des passages arrêtées par 38-3 ; 38-9b : période par
+  défaut du rattachement en lot = l'exercice ouvert le plus ancien.
