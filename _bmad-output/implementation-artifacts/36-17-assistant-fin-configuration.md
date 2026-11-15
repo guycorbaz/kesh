@@ -79,12 +79,29 @@ navigation ne se fait d'office après la finalisation. Le nominal local ne repro
 *Ajouté à la remédiation de la validation P1 (V1-1 ; prémisse lue au code, corrigée sur son issue).*
 
 - La garde de l'application laisse entrer dès l'étape 6 (`(app)/+layout.ts:42`, cité plus haut), donc avant la
-  finalisation. Y ouvrir *Administration → Facturation* crée la ligne de réglages **sans comptes** : le `GET` et le `PUT`
-  des réglages (`crates/kesh-api/src/routes/company_invoice_settings.rs:300`, `:336`,
-  « `company_invoice_settings::get_or_create_default(&state.pool, company.id).await?;` ») appellent
+  finalisation. **Tout** `GET /api/v1/company/invoice-settings` y crée la ligne de réglages **sans comptes** : la route
+  (`crates/kesh-api/src/routes/company_invoice_settings.rs:300`, et le `PUT` à `:336`,
+  « `company_invoice_settings::get_or_create_default(&state.pool, company.id).await?;` ») appelle
   `get_or_create_default`, qui fait « `INSERT IGNORE INTO company_invoice_settings (company_id) VALUES (?)` »
   (`crates/kesh-db/src/repositories/company_invoice_settings.rs:129`) ; l'export global aussi
-  (`crates/kesh-api/src/exports/global.rs:335`).
+  (`crates/kesh-api/src/exports/global.rs:335`). *(Corrigé à la remédiation de la validation P2, V2-1 : la version
+  précédente ne nommait que les réglages de facturation.)* Le frontend lance ce `GET` par `getInvoiceSettings()`
+  (`frontend/src/lib/features/invoices/invoices.api.ts:99-100`) depuis **cinq écrans** :
+  ```
+  $ git grep -n "getInvoiceSettings" -- frontend/src ':!*.test.ts' | /usr/bin/grep -v "export\|import\|//"
+  frontend/src/lib/components/invoices/InvoiceForm.svelte:408:      const settings = await getInvoiceSettings();
+  frontend/src/lib/components/invoices/InvoiceForm.svelte:620:      const freshSettings = await getInvoiceSettings();
+  frontend/src/routes/(app)/bank-accounts/+page.svelte:163:      getInvoiceSettings(),
+  frontend/src/routes/(app)/invoices/[id]/+page.svelte:289:      invoiceSettings = await getInvoiceSettings();
+  frontend/src/routes/(app)/journal-entries/+page.svelte:160:    void getInvoiceSettings()
+  frontend/src/routes/(app)/journal-entries/[id]/+page.svelte:306:        getInvoiceSettings(),
+  frontend/src/routes/(app)/settings/invoicing/+page.svelte:193:      const [s, a] = await Promise.all([getInvoiceSettings(), fetchAccounts(true)]);
+  frontend/src/routes/(app)/settings/invoicing/+page.svelte:293:          const fresh = await getInvoiceSettings();
+  ```
+  Ouvrir le journal, les comptes bancaires (ce que la page terminée recommande quand le compte a été passé), une facture
+  ou son formulaire, le détail d'une écriture, les réglages de facturation, ou exporter, suffit donc. La validation d'une
+  facture, elle, passe par `get_or_create_default_in_tx` (`crates/kesh-db/src/repositories/invoices.rs:2156`) dans une
+  transaction annulée par son propre refus (`ConfigurationRequired`, `:2158-2163`) : sans effet durable.
 - La finalisation pose ensuite les comptes par un autre `INSERT IGNORE` (`company_invoice_settings.rs:1250`), sans effet
   sur une ligne déjà là ; elle relit alors la ligne **jointe aux comptes de créance et de produit actifs**
   (`:1280-1306`) — une ligne aux comptes vides ne se joint pas — et rend une erreur (`:1305`,
@@ -94,13 +111,17 @@ navigation ne se fait d'office après la finalisation. Le nominal local ne repro
   avec un motif faux (les comptes 1100 et 3000 existent), tant que les comptes de créance et de produit ne sont pas
   désignés et enregistrés dans *Administration → Facturation* (un `PUT` qui les pose rend la jointure possible, `update`,
   `:323`). Le défaut existe déjà à l'étape 6 ; D5 le garde à l'étape 7, où la finalisation interrompue de #1187 le rend
-  plus probable.
+  plus probable. **Effet résiduel** (V2-3) : sur une ligne neuve, la finalisation pose aussi les comptes créanciers,
+  d'arrondi, d'escompte, de frais bancaires et de pertes (`company_invoice_settings.rs:1251-1265`, `.bind(payable)`,
+  `.bind(designated.rounding)`…) ; sur la ligne créée avant elle, ils restent vides après le remède, à désigner aussi.
 - **La bannière actuelle ne prévient pas** : « `incomplete-banner-text = Configuration incomplète — Terminer la
   configuration` » (`crates/kesh-i18n/locales/fr-CH/messages.ftl:159` ; même sens en `de-CH`, `it-CH`, `en-CH`, `:159`) ne
   dit rien de la facturation.
 - Corriger la finalisation (compléter une ligne existante aux comptes vides) touche `kesh-db` et `kesh-api` : hors de la
-  story (arbitrage de l'orchestrateur, cinq modules) ; **#1200** (Dev Notes). La story l'écrit comme **limite
-  connue** — bannière, écran de reprise, écran d'échec, manuels (D5).
+  story (arbitrage de l'orchestrateur, cinq modules) ; **#1200** (Dev Notes), **corrigée dans la même release 0.18.0 par
+  une story dédiée, 36-19** (arbitrage de l'orchestrateur sur V2-1 de la validation P2). La 36-17 **n'en dépend pas** :
+  elle écrit la limite — bannière, écran de reprise, écran d'échec, manuels (D5) — de façon à rester juste si la 36-19
+  glissait ; la 36-19 fusionnée, la limite disparaît et ces textes se relisent à l'intégration (Dev Notes).
 
 ### Le chemin démo
 
@@ -168,6 +189,7 @@ Symptôme 2 — **une navigation lancée sans être attendue** dans l'assistant 
 ```
 $ git grep -nE "goto\(" -- frontend/src/routes/onboarding frontend/src/lib/features/onboarding \
     frontend/src/lib/features/setup frontend/src/lib/shared/components ':!*.test.ts' | /usr/bin/grep -v "await goto"
+frontend/src/lib/features/setup/SetupForm.svelte:27:  // `goto('/login')` s'exécute hors contexte → navigation surprenante.
 frontend/src/lib/features/setup/SetupForm.svelte:82:            void goto('/login');
 frontend/src/lib/features/setup/setup.api.ts:29: * `await` cette fonction puis `goto('/onboarding')`.
 frontend/src/lib/shared/components/DemoBanner.svelte:28:        goto('/onboarding');
@@ -176,7 +198,8 @@ frontend/src/routes/onboarding/+page.svelte:257:            goto('/');
 ```
 
 Sonde positive : la commande rend bien `+page.svelte:257`, le site connu de #1187. Classement : `+page.svelte:257`
-**retiré** (D1) ; `+page.svelte:71` **dans le périmètre** (D7) ; `setup.api.ts:29` est un commentaire ;
+**retiré** (D1) ; `+page.svelte:71` **dans le périmètre** (D7) ; `setup.api.ts:29` et `SetupForm.svelte:27` sont des
+commentaires (la ligne `:27` manquait à la sortie citée jusqu'à la validation P2, V2-6) ;
 `SetupForm.svelte:82` **hors** — renvoi au login après un 410, dans un `setTimeout`, voulu (« `void` ») ;
 `DemoBanner.svelte:28` **hors** — après la remise à zéro de la démo, l'application reste affichée si la navigation
 échoue (pas de page blanche) ; porté par **#1199** (« Bannière de démo : la navigation vers l'assistant après la remise à
@@ -212,8 +235,15 @@ $ git grep -n -i "finalis\|configurer plus tard\|Configuration terminée" docs/m
   *Écartées* : toast et écran (message doublé) ; toast seul.
 - **D3 — L'écran de l'étape 7 a trois états** (C-36-17-3) : **en cours** — « Configuration en cours… » sur toute la zone de
   l'assistant (`role="status"`, `aria-busy="true"`) ; **échec** — le motif et *Réessayer* ; **repris** (après un
-  rechargement, ni appel ni échec) — « La configuration n'est pas terminée : terminez-la avant d'utiliser Kesh. » et
+  rechargement, ni appel ni échec) — « Configuration incomplète : terminez-la avant d'utiliser Kesh. » (même phrase et
+  même clé que la bannière, D5) et
   *Terminer la configuration*, même geste que *Réessayer*. **Aucun `POST` au chargement.**
+  **Ordre du geste** (V2-4) : *Réessayer* et *Terminer la configuration* **effacent d'abord l'erreur**, puis posent
+  `finalizing`, puis appellent `finalize()` : pendant la relance, « Configuration en cours… » s'affiche, non l'écran
+  d'échec. `finalizing` et l'erreur de finalisation **ne se lisent qu'à l'étape 7** : posé à l'étape 6 avant
+  `setBankAccount` / `skipBank`, `finalizing` laisse l'écran bancaire en place (boutons désactivés, comme aujourd'hui)
+  jusqu'au passage à l'étape 7 ; un refus de l'étape bancaire elle-même reste un toast sur l'écran bancaire (inchangé) et
+  remet `finalizing` à faux.
   L'état « en cours » se lit sur un **drapeau local de la page**, `finalizing`, et non sur `onboardingState.loading`
   (V1-3) : posé à vrai **avant** l'appel de l'étape bancaire (`setBankAccount` / `skipBank`) et avant tout rappel de
   `finalize()`, remis à faux dans le `finally` de la finalisation, ou à l'échec de l'étape bancaire. Sans lui, l'état
@@ -228,20 +258,28 @@ $ git grep -n -i "finalis\|configurer plus tard\|Configuration terminée" docs/m
   `/onboarding` (`restore/+page.ts:32-33`), qui montre désormais l'écran de l'état au lieu de renvoyer à `/`.
   *Écartée* : renvoi à `/` à l'étape ≥ 8 (la page terminée invisible au rechargement, contraire à #1187, point 2).
 - **D5 — L'application reste ouverte à l'étape 7 ; la bannière « Configuration incomplète » s'y affiche et dit de
-  terminer avant de facturer** (C-36-17-5, arbitrage de l'orchestrateur sur V1-1) : condition `stepCompleted >= 6 &&
-  stepCompleted < 8` à `(app)/+layout.svelte:369` ; son lien mène à `/onboarding`, donc à l'écran de reprise. La garde
-  `(app)/+layout.ts` ne change pas. **Le texte de la bannière change** (clé existante `incomplete-banner-text`, quatre
-  locales) : « Configuration incomplète : terminez-la avant d'ouvrir les réglages de facturation ou de facturer. » ; le
-  bouton garde `incomplete-banner-cta` (« Terminer la configuration »). L'écran de reprise porte la même mise en garde. Si
-  la finalisation est refusée par le motif « 1100, 3000 manquants » (`onboarding.rs:1008`), l'écran d'échec ajoute sous ce
-  motif une phrase fixe : « Si vous avez ouvert les réglages de facturation avant de terminer, désignez-y le compte
-  débiteurs et le compte de produit par défaut, enregistrez, puis réessayez. » (remède de la limite connue, ci-dessus ;
-  reconnu au **code d'erreur** `VALIDATION_ERROR` de cette seule route, non au texte du motif).
-  **Limite connue** : la finalisation reste refusée dans ce cas tant que l'utilisateur n'a pas fait ce geste ; la
-  correction serveur est portée par #1200 (Dev Notes).
-  *Écartées* : renvoyer l'application à l'assistant à l'étape 7 (une finalisation refusée en 422, `onboarding.rs:991`,
+  terminer avant d'utiliser Kesh** (C-36-17-5, arbitrages de l'orchestrateur sur V1-1 et V2-1) : condition
+  `stepCompleted >= 6 && stepCompleted < 8` à `(app)/+layout.svelte:369` ; son lien mène à `/onboarding`, donc à l'écran
+  de reprise. La garde `(app)/+layout.ts` ne change pas. **Le texte de la bannière change** (clé existante
+  `incomplete-banner-text`, quatre locales, repli égal à `fr-CH`) : « Configuration incomplète : terminez-la avant
+  d'utiliser Kesh. » ; le bouton garde `incomplete-banner-cta` (« Terminer la configuration »). L'écran de reprise porte la
+  même phrase (D3). *(Le texte « … avant d'ouvrir les réglages de facturation ou de facturer », écrit à la remédiation P1,
+  nommait un déclencheur trop étroit : V2-1.)*
+  **Écran d'échec sous un refus `VALIDATION_ERROR`** (le seul de la finalisation : `onboarding.rs:1005-1008`, rendu en
+  **400** par `errors.rs:1848`, « `build_response(StatusCode::BAD_REQUEST, "VALIDATION_ERROR", &msg)` » ; reconnu au code,
+  non au texte) : une phrase fixe s'affiche **avant** le motif du serveur, et ne le contredit pas (V2-2) : « Si les comptes
+  1100 et 3000 figurent dans votre plan comptable, ce refus vient d'un écran de Kesh ouvert avant la fin de la
+  configuration. Dans Administration → Facturation, désignez le compte débiteurs et le compte de produit par défaut,
+  vérifiez aussi les autres comptes par défaut (créanciers, arrondi, escompte, frais bancaires, pertes), enregistrez,
+  puis réessayez. » ; le motif du serveur suit, tel quel. La phrase est conditionnelle : si les comptes manquent vraiment,
+  le motif du serveur reste juste et la phrase ne le nie pas.
+  **Limite connue** : la finalisation reste refusée dans ce cas tant que l'utilisateur n'a pas fait ce geste. Elle est
+  portée par **#1200**, que la **36-19** corrige dans la même release ; la 36-17 ne suppose pas cette correction (ses
+  textes restent justes sans elle ; ils se relisent à l'intégration si la 36-19 est fusionnée, Dev Notes).
+  *Écartées* : renvoyer l'application à l'assistant à l'étape 7 (une finalisation refusée en **400** `VALIDATION_ERROR`
   enfermerait l'utilisateur hors des écrans qui la réparent) ; corriger la finalisation dans la story (`kesh-db`,
-  `kesh-api` : six modules et plus, arbitrage de l'orchestrateur).
+  `kesh-api` : au-delà de cinq modules ; c'est la 36-19) ; nommer les écrans déclencheurs dans la bannière (liste longue,
+  qui se périmerait).
 - **D6 — Le récapitulatif** (C-36-17-6), lu à l'affichage de la page terminée par `fetchCompanyCurrent()` et
   `listFiscalYears()` :
   - *Créé* : la société (nom) ; le plan comptable (type d'organisation, par les clés existantes `onboarding-org-independant`,
@@ -268,7 +306,8 @@ $ git grep -n -i "finalis\|configurer plus tard\|Configuration terminée" docs/m
   **Identifiants** (V1-2) : chaque branche existante 0 à 6 de `+page.svelte` reçoit une enveloppe
   `<div data-testid="onboarding-screen-<n>">` (`n` = l'étape), sans autre changement de son contenu ; les écrans neufs :
   `onboarding-screen-unloaded`, `-finalizing`, `-finalize-error`, `-resume`, `-done`, `-demo-loading`, `-demo-ready`,
-  `-fallback`. Correspondance fixée : production 7 → `finalizing`, `finalize-error` ou `resume` (précédence D3) ;
+  `-fallback`. Correspondance fixée : production 7 → `finalizing`, `finalize-error` ou `resume` selon les drapeaux locaux
+  `finalizing` et erreur (précédence D3 ; ces drapeaux ne se lisent qu'à 7) ; production 6 avec `finalizing` vrai → `6` ;
   production ≥ 8 (9 et 10 compris) → `done` ; démo ≥ 3 → `demo-ready` ; démo 2 pendant `seedDemo()` → `demo-loading` ;
   −1 → `fallback` ; non chargé → `unloaded` (D9) ; chargement initial (`loading` et non `loaded`) → `unloaded` en son état
   « Chargement… » (`:320-323` reprise).
@@ -297,19 +336,23 @@ $ git grep -n -i "finalis\|configurer plus tard\|Configuration terminée" docs/m
    l'étape 7 avec le motif (`role="alert"`) — ou, sans motif lisible, « Finalisation échouée — réessayez. » — et
    *Réessayer* ; aucun toast. *Réessayer* rappelle la finalisation ; à son succès, la page terminée s'affiche. Sur
    `ONBOARDING_STEP_ALREADY_COMPLETED`, l'état est relu et son écran s'affiche (étape 6 relue → l'écran bancaire). Un
-   refus `VALIDATION_ERROR` de la finalisation porte, sous le motif, la phrase de remède de D5. Pendant la finalisation,
-   l'écran de reprise n'apparaît à aucun instant entre l'étape bancaire et la finalisation, et *Réessayer* est désactivé
-   tant qu'un appel ou le verrou du store est en cours (D3).
+   refus `VALIDATION_ERROR` de la finalisation porte, **avant** le motif, la phrase de remède de D5 ; un échec réseau ou
+   un autre code ne la porte pas. Pendant la finalisation, l'écran de reprise n'apparaît à aucun instant entre l'étape
+   bancaire et la finalisation ; pendant une relance par *Réessayer*, « Configuration en cours… » s'affiche (l'erreur est
+   effacée avant) ; *Réessayer* est désactivé tant qu'un appel ou le verrou du store est en cours (D3).
 5. **AC5 — Rechargement.** `/onboarding` rechargé à l'étape 7 (production) montre l'écran de reprise et *Terminer la
    configuration*, qui finalise et mène à la page terminée ; aucun `POST` n'est envoyé au chargement. Rechargé à
    l'étape ≥ 8, il montre la page terminée et son récapitulatif. La démo à l'étape ≥ 3 est toujours renvoyée à `/`.
-6. **AC6 — L'application aux étapes 6 et 7** montre la bannière, au texte neuf de D5 (« … terminez-la avant d'ouvrir les
-   réglages de facturation ou de facturer. », quatre locales), dont le lien mène à l'écran de l'état (bancaire à 6, reprise
-   à 7) ; aux étapes < 6 et ≥ 8, la garde et l'absence de bannière sont celles d'avant.
+6. **AC6 — L'application aux étapes 6 et 7** montre la bannière, au texte neuf de D5 (« Configuration incomplète :
+   terminez-la avant d'utiliser Kesh. », quatre locales, repli égal à `fr-CH`), dont le lien mène à l'écran de l'état
+   (bancaire à 6, reprise à 7) ; aux étapes < 6 et ≥ 8, la garde et l'absence de bannière sont celles d'avant. L'écran de
+   reprise porte la même phrase.
 7. **AC7 — Un écran pour chaque état.** Pour tout `stepCompleted` de −1 à 10, `isDemo` vrai ou faux, chargement en cours
    ou non, état chargé — et pour l'état non chargé —, la page rend **exactement un** élément `[data-testid^="onboarding-screen-"]`,
-   celui de la correspondance de D8 (branches 0 à 6 comprises) ; l'écran du type d'organisation n'apparaît jamais en démo ;
-   un état non lu ne rend jamais l'écran de la langue (D9).
+   celui de la correspondance de D8 (branches 0 à 6 comprises) ; **à l'étape 7 (production) et à l'étape 6, la matrice
+   porte aussi les drapeaux locaux** — aucun appel, finalisation en attente, finalisation rejetée, relance après rejet ;
+   à l'étape 6, étape bancaire en attente — pilotés par les promesses de l'API simulée, chacun avec son écran attendu ;
+   l'écran du type d'organisation n'apparaît jamais en démo ; un état non lu ne rend jamais l'écran de la langue (D9).
 8. **AC8 — Chemin démo.** Pendant le chargement des données de démonstration, « Chargement des données de
    démonstration… » occupe la zone de l'assistant ; à son succès, `/` s'ouvre ; si la navigation échoue, l'écran « Les
    données de démonstration sont prêtes » et son *Commencer* restent, avec le motif.
@@ -318,13 +361,15 @@ $ git grep -n -i "finalis\|configurer plus tard\|Configuration terminée" docs/m
    et `npm run lint-i18n-ownership` verts ; les deux clés mortes de D2 retirées (ou leur lecteur restant cité).
 10. **AC10 — Manuels.** `user-manual.tex` (§ *Onboarding*, après `:217`) décrit l'indicateur, la page terminée et son
     récapitulatif, *Commencer*, l'échec et *Réessayer*, la reprise au rechargement, l'indicateur de la démo, et la
-    **limite connue** de D5 : terminer la configuration avant d'ouvrir les réglages de facturation, et, faute de quoi, le
-    remède (désigner les comptes débiteurs et de produit, enregistrer, réessayer), avec le numéro de l'issue, #1200 ;
-    `admin-manual.tex` dit, après `:1461`, que l'assistant se termine sur la page « Configuration terminée », et la même
-    limite en une phrase.
+    **limite connue** de D5 : terminer la configuration avant d'utiliser Kesh — ouvrir le journal, les comptes bancaires,
+    une facture, le détail d'une écriture, les réglages de facturation, ou exporter, avant la fin, fait refuser la mise en
+    place —, et, faute de quoi, le remède (désigner les comptes débiteurs et de produit, vérifier les autres comptes par
+    défaut, enregistrer, réessayer), avec #1200 ; `admin-manual.tex` dit, après `:1461`, que l'assistant se termine sur la
+    page « Configuration terminée », et la même limite en une phrase. Si la 36-19 (#1200) est fusionnée dans la release,
+    l'intégration retire la limite des deux manuels (Dev Notes).
     PDF régénérés à l'intégration (contrôle aplati, forme E6, de la phrase neuve).
-11. **AC11 — Périmètre serveur nul.** `git diff --stat origin/epic/36-0.18.0 -- crates/ ':!crates/kesh-i18n/locales'` ne
-    rend rien ; aucune migration (`ls crates/kesh-db/migrations/*.sql | wc -l` = 91).
+11. **AC11 — Périmètre serveur nul.** `git diff --stat origin/epic/36-0.18.0...HEAD -- crates/ ':!crates/kesh-i18n/locales'`
+    (trois points : les seuls changements de la branche, V2-7) ne rend rien ; aucune migration (`ls crates/kesh-db/migrations/*.sql | wc -l` = 91).
 12. **AC12 — Recette visuelle** : captures, thème clair, base de démonstration jetable, de chaque état touché — en cours,
     échec avec *Réessayer*, reprise, terminée avec compte bancaire, terminée sans compte bancaire, récapitulatif en échec,
     chargement de la démo, démo prête, écran de repli, état non lu, échec avec la phrase de remède de D5, application à
@@ -354,12 +399,17 @@ l'assistant, i18n, `$app/navigation`, `svelte-sonner` simulés) :
   - AC3 : récapitulatif (société, type, langue, exercice en date suisse, banque et description, pas d'IBAN — la chaîne
     `CH93` absente du rendu) ; sans compte bancaire, la phrase d'ajout ; `fetchCompanyCurrent` en échec → la ligne et le
     motif, *Commencer* présent.
-  - AC4 : refus `VALIDATION_ERROR` → motif à l'écran et phrase de remède de D5, `toastError` non appelé ; `TypeError` →
-    « Finalisation échouée — réessayez. », sans phrase de remède ; *Réessayer* → `finalize` appelé une seconde fois → page
-    terminée ; `ONBOARDING_STEP_ALREADY_COMPLETED` → `fetchState` appelé, écran de l'état relu (6 → `onboarding-screen-6`).
-  - D3 (V1-3) : `skipBank` résolu à l'étape 7 et `finalize` **en attente** → après chaque tour de microtâches
-    (`await tick()` répété entre la résolution de `skipBank` et l'appel de `finalize`), `onboarding-screen-resume` absent
-    et `onboarding-screen-finalizing` présent ; `finalize` rejeté → *Réessayer* désactivé jusqu'au tour suivant, puis actif.
+  - AC4 : refus `VALIDATION_ERROR` → phrase de remède de D5 **avant** le motif (ordre des nœuds vérifié), `toastError` non
+    appelé ; `TypeError` → « Finalisation échouée — réessayez. », sans phrase de remède ; *Réessayer* → l'écran
+    « en cours » pendant la relance (seconde promesse en attente ; `onboarding-screen-finalize-error` absent), puis
+    `finalize` appelé une seconde fois → page terminée ; `ONBOARDING_STEP_ALREADY_COMPLETED` → `fetchState` appelé, écran
+    de l'état relu (6 → `onboarding-screen-6`).
+  - D3 (V1-3, V2-5) : la fenêtre entre la fin de `skipBank` et le début de `finalize` dure moins d'une microtâche ; un test
+    qui reprend la main par `await tick()` ne s'y intercale pas. Le test pose donc, **avant** le clic sur *Configurer plus
+    tard*, un `MutationObserver` (`childList`, `subtree`) sur le conteneur du rendu, qui enregistre tout nœud ajouté portant
+    `data-testid="onboarding-screen-resume"` (un nœud ajouté puis retiré reste dans les enregistrements), puis exige **zéro**
+    apparition jusqu'à `onboarding-screen-finalizing` ; `finalize` rejeté → *Réessayer* désactivé jusqu'au tour suivant,
+    puis actif. M10 doit y rougir (sinon, la mutation se déclare équivalente pour ce test, avec la raison).
   - D9 : `fetchState` rejeté → `onboarding-screen-unloaded`, *Réessayer* → `fetchState` rappelé → écran de l'état lu.
   - AC5 : état chargé à 7 sans appel → écran de reprise, `finalize` **non** appelé au rendu ; *Terminer la configuration*
     → appelé.
@@ -377,7 +427,8 @@ l'assistant, i18n, `$app/navigation`, `svelte-sonner` simulés) :
   (`redirect` levé, `+layout.ts:30-32`).
 - Bannière (AC6) : la condition extraite en fonction pure, `showIncompleteBanner(state)`, dans `features/onboarding/`, lue
   par `(app)/+layout.svelte:369` : 5 → non, 6 → oui, 7 → oui, 8 → non, démo → non ; et `IncompleteBanner` rendu avec le
-  texte neuf (repli égal à `fr-CH`). Rouge au départ sur 7 et sur le texte.
+  texte neuf « Configuration incomplète : terminez-la avant d'utiliser Kesh. » (repli égal à `fr-CH`). Rouge au départ
+  sur 7 et sur le texte.
 
 **E2E** (le défaut se voit dans le navigateur : exigé) — `frontend/tests/e2e/onboarding-fin.spec.ts`, préréglage `fresh`,
 connexion `changeme`, **assistant joué à l'interface** jusqu'à l'étape bancaire (sélecteurs `id` et `data-testid`, aucun
@@ -411,8 +462,10 @@ frontend, ou construction à `0bf3c3b4b`) — E1 rouge à l'attente de `onboardi
 `fetchState` retiré du cas « déjà finalisé » (AC4) ; **M10** l'écran « en cours » lu sur `onboardingState.loading` au lieu
 de `finalizing` (D3, test de la fenêtre) ; **M11** *Réessayer* non désactivé pendant le verrou du store (D3) ; **M12**
 l'état non chargé rendu comme l'étape 0 (D9, AC7) ; **M13** l'enveloppe `onboarding-screen-4` retirée (AC7 : le
-détecteur voit les branches 0 à 6) ; **M14** l'ancien texte de la bannière rétabli dans `fr-CH` (AC6) ; **M15** la phrase de
-remède de D5 retirée de l'écran d'échec (AC4). Une mutation équivalente se dit.
+détecteur voit les branches 0 à 6) ; **M14** l'ancien texte de la bannière (« Configuration incomplète — Terminer la
+configuration ») rétabli dans `fr-CH` (AC6) ; **M15** la phrase de remède de D5 retirée de l'écran d'échec (AC4) ;
+**M16** la phrase de remède placée après le motif (AC4) ; **M17** *Réessayer* qui pose `finalizing` sans effacer l'erreur
+(AC4, AC7 : écran d'échec pendant la relance). Une mutation équivalente se dit.
 
 ## Tâches
 
@@ -439,7 +492,7 @@ remède de D5 retirée de l'écran d'échec (AC4). Une mutation équivalente se 
 - [ ] **T7 — Manuels** (AC10) : `user-manual.tex` § *Onboarding*, limite connue comprise ; `admin-manual.tex` après
   `:1461`. PDF à l'intégration.
 - [ ] **T8 — Captures** (AC12), backend lancé pour elles, sur `kesh_e2e_e3617` recréée.
-- [ ] **T9 — Mutations** M1 à M15, après commit du code.
+- [ ] **T9 — Mutations** M1 à M17, après commit du code.
 - [ ] **T10 — Gates** (voir Dev Notes) ; Dev Agent Record ; `Status: review` et clé `review` dans le même commit ; prompt
   de la revue P1 (trois lentilles B, E, A ; manuel, PDF et captures nommés ; axes exercés et non exercés déclarés).
 
@@ -453,11 +506,18 @@ remède de D5 retirée de l'écran d'échec (AC4). Une mutation équivalente se 
   vous êtes assujetti, le compte bancaire si vous l'avez passé) ; le bouton *Commencer* ouvre Kesh. Si la mise en place
   échoue, son motif reste affiché avec *Réessayer* ; si vous rechargez la page avant la fin, l'assistant vous propose de
   terminer la configuration au lieu de vous laisser entrer dans Kesh sans exercice ni réglages de facturation, et la
-  bannière « Configuration incomplète » le rappelle dans l'application, en demandant de terminer avant d'ouvrir les
-  réglages de facturation ou de facturer. Le chargement des données de démonstration affiche lui aussi un indicateur.
-  *Limite connue* : si les réglages de facturation ont été ouverts avant la fin de la configuration, la mise en place est
-  refusée tant que le compte débiteurs et le compte de produit par défaut n'y sont pas désignés et enregistrés ; l'écran
-  d'échec le dit (refs #1200). (refs #1187)
+  bannière « Configuration incomplète » le rappelle dans l'application, en demandant de la terminer avant d'utiliser
+  Kesh. Le chargement des données de démonstration affiche lui aussi un indicateur. (refs #1187)
+
+*À l'intégration, l'orchestrateur garde **une seule** des deux phrases suivantes, selon que la 36-19 (#1200) est fusionnée
+dans la 0.18.0 ou non ; elles ne se mélangent pas :*
+
+- *Si la 36-19 n'est pas dans la release* — *Limite connue* : si vous ouvrez un écran de Kesh (journal, comptes bancaires,
+  factures, réglages de facturation) avant la fin de la configuration, la mise en place est ensuite refusée tant que le
+  compte débiteurs et le compte de produit par défaut ne sont pas désignés et enregistrés dans Administration →
+  Facturation ; l'écran d'échec dit comment faire. (refs #1200)
+- *Si la 36-19 est dans la release* — aucune phrase ici : la correction de #1200 a sa propre note, celle de la 36-19, et
+  les textes de la 36-17 qui la mentionnent (phrase de remède, manuels) se relisent à l'intégration.
 
 ## Dev Notes
 
@@ -469,10 +529,16 @@ remède de D5 retirée de l'écran d'échec (AC4). Une mutation équivalente se 
   `get_or_create_default`), `:1250` (`INSERT IGNORE` de la finalisation, sans effet sur une ligne existante),
   `:1280-1306` (relecture jointe aux comptes actifs → `InactiveOrInvalidAccounts`, `:1305`) ;
   `crates/kesh-api/src/routes/onboarding.rs:1008` (motif faux) ; appelants qui créent la ligne avant la finalisation :
-  `routes/company_invoice_settings.rs:300`, `:336`, `exports/global.rs:335` ; ouverture de l'application avant la
-  finalisation : `frontend/src/routes/(app)/+layout.ts:42`. Remède attendu côté serveur : la finalisation complète les
-  comptes vides d'une ligne existante (sans écraser une désignation). #1200 est cité par la note de version et se cite aux
-  manuels (AC10).
+  `routes/company_invoice_settings.rs:300`, `:336`, `exports/global.rs:335`, et, côté frontend, tout appel à
+  `getInvoiceSettings()` (cinq écrans : journal, comptes bancaires, formulaire et détail de facture, détail d'écriture,
+  réglages de facturation — sortie citée sous « Ce qui se lit au code » ; lignes ajoutées en commentaire sur #1200 par
+  l'orchestrateur) ; ouverture de l'application avant la finalisation : `frontend/src/routes/(app)/+layout.ts:42`.
+  **Corrigée par la story 36-19 dans la même release 0.18.0** (arbitrage de l'orchestrateur) : la finalisation complète
+  les comptes vides d'une ligne existante, côté serveur, sans écraser une désignation. **La 36-17 n'en dépend pas.** Si la
+  36-19 est fusionnée avant le tag, l'intégration relit : la phrase de remède de l'écran d'échec (D5) — devenue sans
+  objet, à retirer ou à garder pour une installation restée sur l'ancien serveur, au choix de l'intégration —, la limite
+  des deux manuels (AC10), la note de version (une seule des deux phrases) ; la bannière et l'écran de reprise
+  (« terminez-la avant d'utiliser Kesh ») restent justes dans les deux cas.
 - `DemoBanner.svelte:28` — navigation non attendue après la remise à zéro de la démo : **#1199** (inventaire, symptôme 2 ;
   `technical-debt`, P3).
 - KF-029 (#97) : `onboarding-path-b.spec.ts:65`, `:92`, `onboarding.spec.ts:150` restent rouges (sélecteurs périmés) ; la
@@ -524,10 +590,12 @@ décompte est de **six** ; le repli peut alors rester l'ancien texte (la clé se
 - Le récapitulatif n'affiche aucun IBAN ; aucune donnée réelle dans les tests, captures ou journaux (fixtures
   synthétiques : « Exemple Banque SA », IBAN de démonstration de la suite).
 - Le chemin démo : rechargé à l'étape ≥ 3, toujours `/`.
-- **Limite connue, assumée** : l'application reste ouverte aux étapes 6 et 7 (D5) ; si les réglages de facturation y sont
-  ouverts avant la finalisation, celle-ci est refusée (« 1100, 3000 manquants ») jusqu'à ce que les comptes débiteurs et de
-  produit y soient désignés et enregistrés. La story ne la corrige pas ; elle la dit (bannière, écran de reprise, écran
-  d'échec, manuels) ; #1200 la porte. Le serveur ne change pas.
+- **Limite connue, assumée** : l'application reste ouverte aux étapes 6 et 7 (D5) ; si un écran qui lit les réglages de
+  facturation (journal, comptes bancaires, factures, détail d'écriture, réglages de facturation) ou l'export y est ouvert
+  avant la finalisation, celle-ci est refusée (« 1100, 3000 manquants ») jusqu'à ce que les comptes débiteurs et de produit
+  soient désignés et enregistrés dans les réglages de facturation, les autres comptes par défaut restant à vérifier. La
+  story ne la corrige pas ; elle la dit (bannière, écran de reprise, écran d'échec, manuels) ; #1200 la porte, corrigée par
+  la 36-19 dans la même release ; **la 36-17 reste juste sans elle**. Le serveur ne change pas.
 
 ### Références
 
@@ -577,3 +645,22 @@ décompte est de **six** ; le repli peut alors rester l'ancien texte (la clé se
   qui doit rester vrai). Les entrées datées ci-dessus, qui disent « issue à ouvrir » et « issue demandée », restent telles
   quelles. Regroupement de `IncompleteBanner.svelte` avec la coquille de l'application accepté : cinq modules
   (C-36-17-10).
+- 2026-11-15 — **Remédiation de la validation P2** (Opus 5.5 ; rapport `kesh-gate-logs/e36-17/validation-p2.md` : 0/0/1/6).
+  Prémisses lues au code, aucune réfutée :
+  - **V2-1 (MEDIUM), corrigé** : `git grep -n "getInvoiceSettings" -- frontend/src ':!*.test.ts'` rend les huit appels de
+    cinq écrans (sortie citée) ; `invoices.api.ts:99-100` (`GET /api/v1/company/invoice-settings`) ; la validation passe par
+    `get_or_create_default_in_tx` (`invoices.rs:2156`) dans une transaction annulée (`:2158-2163`). Arbitrage de
+    l'orchestrateur : bannière et écran de reprise « Configuration incomplète : terminez-la avant d'utiliser Kesh » ;
+    #1200 corrigée par la 36-19 dans la même release, la 36-17 n'en dépend pas ; déclencheur juste dans « Ce qui se lit
+    au code », D5, AC6, AC10, Dev Notes, ce qui doit rester vrai ; note de version en deux cas exclusifs.
+  - **V2-2 (LOW), corrigé** : un seul `AppError::Validation` dans la finalisation (`onboarding.rs:1005-1008`), 400 par
+    `errors.rs:1848` ; phrase de remède conditionnelle, placée avant le motif ; test d'ordre et M16.
+  - **V2-3 (LOW), corrigé** : `company_invoice_settings.rs:1251-1265` lu ; les autres comptes par défaut nommés au remède,
+    au code lu et au manuel.
+  - **V2-4 (LOW), corrigé** : ordre du geste (effacer l'erreur, poser `finalizing`, appeler) et lecture des drapeaux à
+    l'étape 7 seulement (D3, D8) ; matrice d'AC7 étendue aux drapeaux ; M17.
+  - **V2-5 (LOW), corrigé** : test de la fenêtre par `MutationObserver` posé avant le clic, zéro apparition exigée.
+  - **V2-6 (LOW), corrigé** : 400 et non 422 (D5) ; `SetupForm.svelte:27` ajouté à la sortie de l'inventaire.
+  - **V2-7 (LOW), corrigé** : AC11 en `origin/epic/36-0.18.0...HEAD` (la base a avancé : `9172e9fe8`, `ca5d02ed0`,
+    `e849b605d`, `c7ca079d2`).
+  C-36-17-3, -5 annotés. Modules : cinq, inchangé (aucun fichier neuf hors des cinq).

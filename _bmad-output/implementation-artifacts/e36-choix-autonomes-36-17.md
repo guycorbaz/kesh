@@ -38,6 +38,10 @@ C-e360-18 (périmètre de #1187), qui fait foi. Option prudente et réversible �
   `finalizing`, posé avant l'appel de l'étape bancaire, et non sur `onboardingState.loading` (fenêtre entre le `finally`
   de `skipBank`, `onboarding.svelte.ts:144-150`, et `:160`) ; précédence échec > en cours > repris ; boutons désactivés
   pendant un appel ou le verrou d'un tour du store (`:166-168`).
+- *Complété le 2026-11-15 à la remédiation de la validation P2 (V2-4, V2-1)* : *Réessayer* et *Terminer la configuration*
+  effacent l'erreur, puis posent `finalizing`, puis appellent la finalisation ; `finalizing` et l'erreur ne se lisent qu'à
+  l'étape 7. L'écran de reprise dit « Configuration incomplète : terminez-la avant d'utiliser Kesh. » (même clé que la
+  bannière).
 
 ### C-36-17-4 — La garde de `/onboarding` ne renvoie plus le chemin production à `/` ; celle du chemin démo reste (D4)
 
@@ -62,6 +66,15 @@ C-e360-18 (périmètre de #1187), qui fait foi. Option prudente et réversible �
   désormais de terminer avant d'ouvrir les réglages de facturation ou de facturer, l'écran de reprise aussi, et l'écran
   d'échec ajoute le remède sous un refus `VALIDATION_ERROR`. Écartée en plus : corriger la finalisation ici (`kesh-db`,
   `kesh-api`, au-delà de cinq modules).
+- *Complété le 2026-11-15 à la remédiation de la validation P2 (V2-1, V2-2, V2-3, V2-6 ; arbitrage de l'orchestrateur)* :
+  le déclencheur est **tout** `GET /api/v1/company/invoice-settings`, lancé par `getInvoiceSettings()` depuis cinq écrans
+  (journal, comptes bancaires, formulaire et détail de facture, détail d'écriture, réglages de facturation) et par
+  l'export — non les seuls réglages. La bannière et l'écran de reprise disent donc « Configuration incomplète :
+  terminez-la avant d'utiliser Kesh. » (remplace le texte du complément précédent). La phrase de remède est conditionnelle
+  (« Si les comptes 1100 et 3000 figurent dans votre plan comptable… »), placée **avant** le motif du serveur, et nomme les
+  autres comptes par défaut à vérifier. Le refus est un **400** `VALIDATION_ERROR` (`errors.rs:1848`), non un 422 comme
+  l'écrivait la ligne « Écartée » ci-dessus. #1200 est corrigée par la **36-19** dans la même release ; ce choix ne
+  suppose pas cette correction.
 
 ### C-36-17-6 — Le récapitulatif se lit par les routes existantes ; son échec ne bloque pas la page (D6)
 
