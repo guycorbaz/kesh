@@ -1,6 +1,11 @@
 # Story 36-12 : la QR-facture conforme à SIX — lignes de séparation, ciseaux, *Payable by*, largeurs (#944)
 
-Status: ready-for-dev
+Status: split
+
+> *Annoté le 2026-11-15 : fiche découpée à la remédiation de la validation P1 (`kesh-gate-logs/e36-12/validation-p1.md`,
+> 0 / 0 / 4 / 9), sur décision de l'orchestrateur (V1-7) — **36-12a** (`36-12a-qr-facture-lignes-ciseaux.md`) et
+> **36-12b** (`36-12b-qr-facture-grille-largeurs.md`). Le texte ci-dessous est laissé tel qu'il a été validé ; les
+> findings sont traités dans les deux fiches filles.*
 
 *Fiche rédigée le 2026-11-15 par l'agent de rédaction des fiches de l'Epic 36 (Opus 5.5), worktree `kesh-36-12`, branche
 `story/36-12-qr-facture-separation`, partie de `origin/epic/36-0.18.0` (`fed34a9c7`), par le workflow
@@ -451,3 +456,9 @@ tourne à la clôture (règle de l'epic).
   C-36-12-1 à C-36-12-7 au registre `e36-choix-autonomes-36-12.md`. Échantillons SIX mesurés
   (`kesh-gate-logs/e36-12/mesure-echantillon-six-nr1.log`). Clé passée à `ready-for-dev` au `sprint-status.yaml`.
   Validation non lancée.
+- 2026-11-15 — **Validation P1** (complète, `kesh-gate-logs/e36-12/validation-p1.md`) : 0 CRITICAL / 0 HIGH / 4 MEDIUM /
+  9 LOW. Prémisses relues au code, toutes confirmées ; une citation du rapport corrigée : la table `WIN_ANSI_ENCODING` est
+  à `lopdf-0.31.0/src/encodings/mappings.rs:521`, non `encodings.rs`. **Découpage** décidé par l'orchestrateur (V1-7) :
+  statut `split`, fiches 36-12a (lignes et ciseaux, `ready-for-dev`) et 36-12b (grille, *Payable by*, largeurs,
+  cascade, `backlog`). Répartition : 36-12a — V1-5, V1-6, V1-8, V1-9, V1-10 ; 36-12b — V1-1, V1-2, V1-3, V1-4, V1-5,
+  V1-6 (contrainte gardée), V1-8, V1-11, V1-12, V1-13. Choix C-36-12-8 et C-36-12-9 au registre. Fiches filles à valider.

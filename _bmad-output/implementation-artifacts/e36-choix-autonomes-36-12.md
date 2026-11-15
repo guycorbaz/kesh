@@ -87,3 +87,44 @@ retenue, options écartées, réversibilité.
 - **Retenu** : une ordonnée fixe, commune aux deux colonnes, au moins 5 mm sous le QR. Conséquence : sans référence, le
   montant ne remonte plus (le test `sans_reference_aucune_rubrique` change d'attente, dit au Dev Agent Record).
 - **Écartée** : le montant qui suit le contenu : c'est lui qui laissait recouvrir le point de dépôt. **Réversible** : oui.
+
+### Annotations du 2026-11-15, à la remédiation de la validation P1 (`kesh-gate-logs/e36-12/validation-p1.md`)
+
+Les choix ci-dessus sont laissés tels qu'écrits ; ce qui les corrige :
+- **C-36-12-1** : les deux issues sont ouvertes, **#1203** (cadre vide du débiteur) et **#1204** (type K) (V1-8) ; `closes
+  #944` à la PR de release une fois 36-12a et 36-12b fusionnées ; **#12 en `refs`**, avec un commentaire qui renvoie à
+  #943, et non `closes` (V1-9).
+- **C-36-12-2** : ciseaux **au trait seul**, sans `rg` ni `re` (V1-10) ; centre vertical y ∈ [100,5 ; 102,5], hors de la
+  bordure du QR (V1-6).
+- **C-36-12-4** : la table s'indexe **par nom de glyphe WinAnsi** (`lopdf-0.31.0/src/encodings/mappings.rs:521`), non par
+  le code AFM, qui est l'*AdobeStandardEncoding* (`C 39 … N quoteright` contre `quotesingle` en WinAnsi) ; `Euro`, absent
+  des AFM de 1990 (`/usr/bin/grep -ic euro` : 0 et 0), s'ajoute à 556 (V1-1).
+- **C-36-12-5** : l'erreur de dernier recours est remplacée par un palier infaillible (C-36-12-9) ; une fixture uniforme
+  n'était pas le pire cas en hauteur (V1-3).
+
+### C-36-12-8 — La story découpée en 36-12a et 36-12b
+
+- **Contexte** : V1-7 (taille : 14 AC, 12 tests, 9 mutations, une table de deux fois 230 valeurs) ; règle de Guy du
+  2026-11-15 (« éviter les stories trop longues ») ; V1-3 montre que la mise en page complète porte un risque de 500 à
+  la première ouverture d'une facture valide. Décision de l'orchestrateur.
+- **Retenu** : **36-12a** — les deux lignes et les ciseaux, seule `draw_separator` change : l'exigence normative du § 3.7,
+  sans aucun déplacement de texte, donc sans risque de débordement neuf ; **36-12b** — la grille, *Payable by*, la section
+  montant, le point de dépôt, les largeurs mesurées, la cascade et le pire cas, partant de 36-12a fusionnée (même fichier).
+- **Écartées** : (a) une seule story (C-36-12-1 d'origine) ; (b) la coupe que proposait la fiche d'origine (grille d'un
+  côté, largeurs de l'autre) : la grille seule fait déborder les longues adresses sur la section montant.
+- **Réversible** : oui ; la 36-12b peut passer à la release suivante sans toucher la 36-12a.
+
+### C-36-12-9 — Le dernier palier de la cascade ne peut pas échouer
+
+- **Contexte** : V1-3 : des mots de longueur juste supérieure à la moitié de la colonne, et une ligne NPA-localité non
+  bornée par R3, dépassent la place du récépissé même après R3 ; l'erreur `PdfGeneration` deviendrait un 500
+  (`invoice_pdf_service.rs:507`) pour une adresse valide, là où le PDF se rend aujourd'hui.
+- **Retenu** : un palier R4 (récépissé : une ligne de nom et une ligne NPA-localité par adresse, chacune ramenée à la
+  colonne avec « ... ») et P3 (partie paiement : message sur une ligne, nom, rue et NPA-localité d'une ligne chacun) de
+  **hauteur fixe**, prouvée par le calcul sur les constantes ; la mise en page ne rend plus d'erreur ; une propriété sur
+  des entrées admises adverses prouve qu'aucune n'échoue. Écarts à la lettre de la directive assumés et écrits à la fiche
+  36-12b (D9) : troncature du nom du créancier, de la rue et de la localité au dernier palier, intitulés à 6 pt en R2,
+  premier intitulé du récépissé à 3,1 mm du titre comme l'échantillon de SIX.
+- **Écartées** : (a) garder l'erreur en dernier recours ; (b) borner seulement la ligne NPA-localité et prouver par
+  propriété sans palier infaillible — une preuve par échantillonnage, non par construction.
+- **Réversible** : oui.
