@@ -256,8 +256,14 @@ const PREFIXES = [
  *
  * Intégration de la release 0.17.6 (2026-11-12), recompté par la garde après chaque fusion
  * (non additionné) : 412 après la 34-8 (34-1, 34-8), **434** après la 34-9.
+ *
+ * ⚠️ **Story 36-17** (#1187) : **434 → 453** (+19), relevé par la garde (`expected 453 to be
+ * 434`) : vingt et une clés `onboarding-` neuves de la fin de l'assistant (`-state-load-error`,
+ * `-retry`, `-finalizing`, `-finalizing-desc`, `-finalize-remedy`, dix `-done-*`, `-start`,
+ * `-demo-loading`, `-demo-ready`, `-demo-navigate-error`, `-fallback`, `-fallback-reload`), un
+ * repli chacune, et deux retirées (`-already-finalized`, `-finalize-incomplete`, mortes, D2).
  */
-const CLES_RELEVEES = 434;
+const CLES_RELEVEES = 453;
 
 
 /** Relève, pour chaque clé du domaine, l'ensemble de ses replis littéraux distincts. */

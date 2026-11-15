@@ -14,6 +14,7 @@
 	import { accountIdsWithRole } from '$lib/features/accounts/account-options';
 	import {
 		BANK_ACCOUNT_DESCRIPTION_MAX,
+		bankAccountName,
 		linkableLedgerAccounts,
 		preselectedBankLedgerId,
 	} from '$lib/features/bank-accounts/format';
@@ -347,8 +348,8 @@
 	const finalizeDisabled = $derived(finalizing || onboardingState.loading);
 
 	// Story 36-17 (#1187, D6) : le récapitulatif de la page terminée, lu une fois à son
-	// affichage. Seuls le nom de la banque et la description des comptes bancaires sont
-	// recopiés : aucun IBAN n'atteint l'écran.
+	// affichage. De chaque compte bancaire, seul son nom d'affichage (`bankAccountName` : la
+	// banque et la description) est recopié : aucun IBAN n'atteint l'écran.
 	let summary = $state<OnboardingSummary | null>(null);
 	let summaryError = $state<string | null>(null);
 	let summaryRequested = false;
@@ -363,10 +364,7 @@
 				fiscalYears: [...years]
 					.sort((a, b) => a.startDate.localeCompare(b.startDate))
 					.map((y) => ({ name: y.name, startDate: y.startDate, endDate: y.endDate })),
-				bankAccounts: current.bankAccounts.map((b) => ({
-					bankName: b.bankName,
-					description: b.description,
-				})),
+				bankAccounts: current.bankAccounts.map(bankAccountName),
 			};
 		} catch (err) {
 			summaryError = errorMessageOf(

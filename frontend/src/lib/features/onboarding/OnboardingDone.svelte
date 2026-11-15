@@ -2,8 +2,9 @@
 	/**
 	 * Le récapitulatif de la page « Configuration terminée », tel que la page le construit
 	 * depuis `GET /api/v1/companies/current` et `GET /api/v1/fiscal-years`. Il ne porte
-	 * **aucun IBAN** : la page ne recopie des comptes bancaires que le nom de la banque et
-	 * la description.
+	 * **aucun IBAN** : la page ne recopie de chaque compte bancaire que son nom d'affichage,
+	 * `bankAccountName` (`features/bank-accounts/format.ts` : la banque, et la description
+	 * s'il y en a une).
 	 */
 	export interface OnboardingSummary {
 		companyName: string;
@@ -12,7 +13,8 @@
 		/** Code de la langue comptable (`FR`, `DE`, `IT`, `EN`). */
 		accountingLanguage: string;
 		fiscalYears: ReadonlyArray<{ name: string; startDate: string; endDate: string }>;
-		bankAccounts: ReadonlyArray<{ bankName: string; description: string | null }>;
+		/** Le nom d'affichage de chaque compte bancaire (`bankAccountName`), sans IBAN. */
+		bankAccounts: ReadonlyArray<string>;
 	}
 </script>
 
@@ -89,9 +91,9 @@
 					<dt class="text-text-muted">{i18nMsg('onboarding-done-fiscal-year', 'Exercice')}</dt>
 					<dd>{fy.name} ({formatSwissDate(fy.startDate)} – {formatSwissDate(fy.endDate)})</dd>
 				{/each}
-				{#each summary.bankAccounts as ba, i (i)}
+				{#each summary.bankAccounts as nom, i (i)}
 					<dt class="text-text-muted">{i18nMsg('onboarding-done-bank-account', 'Compte bancaire')}</dt>
-					<dd>{ba.bankName}{#if ba.description} — {ba.description}{/if}</dd>
+					<dd>{nom}</dd>
 				{/each}
 			</dl>
 		{:else if summaryError}
