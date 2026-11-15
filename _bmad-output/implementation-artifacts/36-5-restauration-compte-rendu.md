@@ -835,6 +835,49 @@ mises à jour pour le `finally` en bloc et la minuterie de `reading`).
 - Test de D5 dix fois sur ce build : **10 passés** (`repetition-apres-d5-r3.log`, test à `:381`).
 - **Non lancés**, selon la consigne : `gate-ci` et l'E2E complet (clôture).
 
+### Remédiation de la revue de code P2 (2026-11-15)
+
+Revue P2, complète à deux lentilles : E 0/0/0/4, A 0/0/0/6 (`review-p2-{E,A}.md`) — rien au-dessus de LOW. Décision de
+l'orchestrateur (« Tarir la source ») : les LOW se corrigent dans la story ; E2-1 touchant la production, une passe ciblée P3
+relit ce correctif (`36-5-restauration-compte-rendu-review-prompt-p3-ciblee.md`). Prémisses relues au code. Commits :
+`fb2012f1b` (code et tests, **dernier commit de code**), `eea1e0ea6` (fiche, manuel, `sprint-status.yaml`), puis ce compte
+rendu.
+
+- **E2-1** — confirmé (`AdminRestorePanel.svelte`, `finally` : le `return` sur `destroyed` laissait `keepHold` faux, et
+  `shortenRestoreHold` touchait un maintien de module qui pouvait appartenir à un autre panneau). Corrigé :
+  `if (!keepHold && !destroyed)`. Test : panneau A démonté pendant son import, panneau B sous maintien, la réponse de A
+  arrive en échec — `shortenRestoreHold` non appelé, le maintien de B tient après une heure. **M27** tuée.
+- **E2-2** — deux tests : B relu au succès (`minutes` 5 → 1 pendant l'import : `holdForRestore(60 000)`, fin à `+60 000`) et
+  à l'échec (`shortenRestoreHold(60 000)`) ; **M28**, **M29** tuées. L'ordre minuterie puis maintien (B1-3) est observable par
+  l'ordre des appels (espion sur `setTimeout`, appel de délai B avant le second `holdForRestore`) : test ajouté, **M30** tuée.
+  Ce test fixe l'ordre, non une différence de comportement (à échéance égale sous horloge simulée, les deux ordres donnent
+  le même résultat).
+- **E2-3** — en-tête de `session-idle.svelte.ts` : « différée, jamais annulée » vaut pendant l'import et après un échec ;
+  après un succès, le panneau arrête le module et termine la session au bout de B.
+- **E2-4** — **rien à changer** : après un échec suivant un import plus long que B, le premier geste lève le maintien et le
+  tic suivant ferme (`/login?reason=idle`) — c'est D2 (fermeture différée, jamais annulée), conforme à la fiche.
+- **A2-1** — D1 nomme la troisième méthode, `shortenRestoreHold` ; *Simulacres* aussi.
+- **A2-2** — la définition de B dit qu'il est lu à la confirmation pour la phase 1, relu au succès et à l'échec.
+- **A2-3** — `r1-vitest-cible.log` (et `r2-vitest-cible.log`), lancés avant leur commit : une ligne datée l'écrit à leur fin ;
+  annotation au Dev Agent Record, sans réécrire le relevé.
+- **A2-4** — décompte des tests et lignes de l'AC9 annotés (valeurs à `fb2012f1b` : `auth.svelte.test.ts` 29,
+  `AdminRestorePanel.test.ts` 35 ; **36** Vitest ajoutés au total), relevés d'origine laissés tels quels.
+- **A2-5** — `sprint-status.yaml:1078` à jour.
+- **A2-6** — demi-phrase ajoutée à `admin-manual.tex:2342` : « Laissé ouvert sans activité, cet écran mène à la connexion
+  au plus tard au bout de la durée d'inactivité réglée. » Vraie au code : après une issue inconnue, le maintien est ramené à
+  au plus `échec + B` ; sans activité, `last + w` est alors passé et le tic suivant ferme (ou, la session invalidée, le
+  premier 401 mène à la connexion). PDF à l'intégration.
+
+**Tests** de la remédiation P2 : Vitest +4 (`AdminRestorePanel.test.ts` 31 → 35). **Mutations**, campagne 3 sur `fb2012f1b`
+(`mut/campagne-3.console.log`) : **40 sur 40 tuées** (M1 à M30).
+
+**Gates** (bases `kesh_e365` et `kesh_e2e_e365` remises à neuf ; commit `eea1e0ea6`, dernier commit de code `fb2012f1b`, en
+première ligne de chaque journal) : `scripts/test-fast.sh --ci` **5445 passés, 13 ignorés** (`r2-test-fast-ci.log`) ;
+frontend complet — `check` 0 erreur (29 avertissements préexistants), `lint-i18n-ownership` vert, `test:unit` **234 fichiers,
+3467 tests**, `build` vert (`r2-front-*.log`) ; test de D5 dix fois sur ce build : **10 passés** (`repetition-apres-d5-r4.log`).
+Vitest ciblé avant le commit : 163/163 (`r2-vitest-cible.log`, sans ligne de commit, annoté). **Non lancés** : `gate-ci` et
+l'E2E complet (clôture).
+
 ## Change Log
 
 - 2026-11-14 — Fiche rédigée (Epic 36, phase 1), sur `4de0bcc7e`. Choix propres : `e36-choix-autonomes-36-5.md`
@@ -973,3 +1016,9 @@ mises à jour pour le `finally` en bloc et la minuterie de `reading`).
   jamais allongée », C-36-5-14) ; les dix LOW traités (code, fiche, journaux, manuel). 4 tests Vitest, mutations M24 à M26 ;
   36/36 tuées. `test-fast --ci`, frontend complet, test de D5 ×10 verts. La règle de la borne changeant, la passe suivante
   est **complète, à deux lentilles** (E, A) : `36-5-restauration-compte-rendu-review-prompt-p2.md`.
+- 2026-11-15 — **Revue de code P2** (E, A, passe complète) : 0/0/0/4, 0/0/0/6 — rien au-dessus de LOW. LOW corrigés dans la
+  story (décision de l'orchestrateur, « Tarir la source ») : E2-1 en production (`fb2012f1b`), E2-2 (tests de B relu et de
+  l'ordre), E2-3 (commentaire), A2-1 à A2-6 (fiche, annotations datées, `sprint-status.yaml`, manuel `:2342`) ; E2-4 sans
+  changement. 4 tests Vitest, mutations M27 à M30 ; 40/40 tuées. `test-fast --ci`, frontend complet, test de D5 ×10 verts.
+  Trend de la revue : P1 (B, E, A) 0/0/0/3, 0/1/1/2, 0/0/0/5 → P2 (E, A) 0/0/0/4, 0/0/0/6. Le correctif E2-1 touchant la
+  production, la passe suivante est **ciblée** : `36-5-restauration-compte-rendu-review-prompt-p3-ciblee.md`.
