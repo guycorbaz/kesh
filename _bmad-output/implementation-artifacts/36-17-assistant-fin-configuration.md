@@ -1,6 +1,6 @@
 # Story 36-17 : l'assistant de configuration ne laisse plus de page blanche à la fin — « Configuration en cours… », « Configuration terminée », *Réessayer* (#1187)
 
-Status: ready-for-dev
+Status: review
 
 *Fiche rédigée le 2026-11-15 par l'agent de rédaction des fiches de l'Epic 36 (Opus 5.5), worktree `kesh-36-17`, branche
 `story/36-17-assistant-fin-configuration`, par le workflow `bmad-create-story`. Release **0.18.0** (phase 2), branche de
@@ -9,7 +9,8 @@ i18n (quatre locales) et manuels. Code lu à la tête du worktree, **`0bf3c3b4b`
 fichier d'epic, Phase 2, rang 16 ; registre `e36-choix-autonomes-e360.md`, **C-e360-18** (et C-e360-3, -11) ; choix propres
 à la story : `e36-choix-autonomes-36-17.md` (C-36-17-1 à C-36-17-9). Voie de développement : **voie 2** (bases `kesh_e3617`,
 `kesh_e2e_e3617` sur `kesh-mariadb-dev2:3307` ; `kesh_ci_e3617` en voie 1 pour `gate-ci.sh`). Journaux :
-`/home/gcorbaz/devel/kesh-gate-logs/e36-17/`. Validation : passe P1 remédiée (Change Log), passe suivante à lancer.*
+`/home/gcorbaz/devel/kesh-gate-logs/e36-17/`. Validation terminée en trois passes ; développement fait le 2026-11-15 (Dev
+Agent Record), en revue.*
 
 ## Story
 
@@ -480,31 +481,31 @@ configuration ») rétabli dans `fr-CH` (AC6) ; **M15** la phrase de remède de 
 
 ## Tâches
 
-- [ ] **T0 — Étape 0** : relire le dernier rapport de validation ; recontrôler au code les lignes citées ci-dessus à la tête
+- [x] **T0 — Étape 0** : relire le dernier rapport de validation ; recontrôler au code les lignes citées ci-dessus à la tête
   de la branche (elle a pu bouger : 36-7, 36-15 en parallèle), ligne lue citée au Change Log.
-- [ ] **T1 — Rouges** : les tests de la section précédente, écrits et journalisés rouges (`rouges.log`), sonde positive du
+- [x] **T1 — Rouges** : les tests de la section précédente, écrits et journalisés rouges (`rouges.log`), sonde positive du
   détecteur comprise.
-- [ ] **T2 — Écrans** (D3, D6, D7, D8, D9) : composants présentationnels sous `frontend/src/lib/features/onboarding/`
+- [x] **T2 — Écrans** (D3, D6, D7, D8, D9) : composants présentationnels sous `frontend/src/lib/features/onboarding/`
   (non chargé, en cours, échec, reprise, terminée avec récapitulatif, démo en chargement, démo prête, repli) ;
   identifiants de D8 ; fonction pure `showIncompleteBanner`.
-- [ ] **T3 — Page** (D1, D2, D3, D7, D8, D9) : `+page.svelte` — enveloppes `onboarding-screen-0` à `-6` des branches
+- [x] **T3 — Page** (D1, D2, D3, D7, D8, D9) : `+page.svelte` — enveloppes `onboarding-screen-0` à `-6` des branches
   existantes ; branches 7, ≥ 8, démo ≥ 3, non chargé, `{:else}` ; drapeau `finalizing` et précédence de D3 ;
   `navigateHomeIfFinalized` retiré ; `reportFinalizeError` vers l'état d'écran, avec la phrase de remède de D5 ;
   *Réessayer* / *Terminer la configuration* désactivés pendant un appel ; chargement du récapitulatif ; *Réessayer* de
   l'état non lu ; `chooseDemoPath` attend `goto` ; plancher de la garde recompté.
-- [ ] **T4 — Gardes et bannière** (D4, D5) : `routes/onboarding/+layout.ts` ; `(app)/+layout.svelte:369` par
+- [x] **T4 — Gardes et bannière** (D4, D5) : `routes/onboarding/+layout.ts` ; `(app)/+layout.svelte:369` par
   `showIncompleteBanner`.
-- [ ] **T5 — Textes** (AC9, AC6) : clés `onboarding-*` neuves aux quatre `messages.ftl` ; `incomplete-banner-text` réécrite
+- [x] **T5 — Textes** (AC9, AC6) : clés `onboarding-*` neuves aux quatre `messages.ftl` ; `incomplete-banner-text` réécrite
   dans les quatre (`:159`) et son repli (`IncompleteBanner.svelte:14`) ; clés mortes retirées ; replis égaux à `fr-CH`.
-- [ ] **T6 — E2E** : `onboarding-fin.spec.ts` (E1 à E4) ; `onboarding-bank-account.spec.ts:83` adapté ; une ligne de
+- [x] **T6 — E2E** (écrite ; **non exécutée** — E2E à la clôture, consigne de l'Epic 35) : `onboarding-fin.spec.ts` (E1 à E4) ; `onboarding-bank-account.spec.ts:83` adapté ; une ligne de
   commentaire à `onboarding-path-b.spec.ts:65`, `:92` et `onboarding.spec.ts:150` (leur fin passe désormais par
   *Commencer* ; KF-029 inchangée) et à `onboarding-path-b.spec.ts:27` (le `fixme` KF-032, #124, reste : la bannière ne
   s'affiche pas à l'étape 8).
-- [ ] **T7 — Manuels** (AC10) : `user-manual.tex` § *Onboarding*, limite connue comprise ; `admin-manual.tex` après
+- [x] **T7 — Manuels** (AC10) : `user-manual.tex` § *Onboarding*, limite connue comprise ; `admin-manual.tex` après
   `:1461`. PDF à l'intégration.
-- [ ] **T8 — Captures** (AC12), backend lancé pour elles, sur `kesh_e2e_e3617` recréée.
-- [ ] **T9 — Mutations** M1 à M17, après commit du code.
-- [ ] **T10 — Gates** (voir Dev Notes) ; Dev Agent Record ; `Status: review` et clé `review` dans le même commit ; prompt
+- [x] **T8 — Captures** (AC12), backend lancé pour elles, sur `kesh_e2e_e3617` recréée.
+- [x] **T9 — Mutations** M1 à M17, après commit du code.
+- [x] **T10 — Gates** (voir Dev Notes) ; Dev Agent Record ; `Status: review` et clé `review` dans le même commit ; prompt
   de la revue P1 (trois lentilles B, E, A ; manuel, PDF et captures nommés ; axes exercés et non exercés déclarés).
 
 ## Note de version
@@ -619,11 +620,121 @@ décompte est de **six** ; le repli peut alors rester l'ancien texte (la clé se
 
 ### Agent Model Used
 
+Opus 5.5 (`claude-opus-5-5`), agent de développement de l'Epic 36, en autonomie (prompts `e36-dev.md`, `e36-p2-commun.md`).
+
 ### Debug Log References
+
+Journaux hors dépôt, `/home/gcorbaz/devel/kesh-gate-logs/e36-17/` :
+
+- `rouges.log` (synthèse) et `rouges-vitest-brut.log` — les tests neufs sur le code d'avant la story (HEAD `e3cbe6c7d`, dont le
+  code est celui de `0bf3c3b4b`) : **76 rouges sur 136**, sondes positives écrites en fin de `rouges.log` ;
+- `vitest-cible-1.log` (154/154, code de `09a9dac47`), `vitest-cible-2.log` (181/181, avec la garde des textes) ;
+- `nextest-cible-i18n-1.log` — gate ciblé `package(kesh-i18n) | binary(textes_coherents)` : **66 passés, 1 rouge**
+  (`la_cloture_d_exercice_ne_parle_pas_comme_un_panneau`, allemand « Schliessen Sie diese Seite nicht ») → C-36-17-14, corrigé
+  à `62d05833e` ; le rejeu ciblé (`nextest-cible-i18n-2.log`) a été **annulé** dans la file de la voie 2 (par moi, `kill` de mon
+  `flock`) : la garde est rejouée par `test-fast --ci` ci-dessous ;
+- `front-check-1.log`, `front-lint-i18n-1.log` (lint **rouge** : clés de la bannière dans `features/onboarding/` → C-36-17-11),
+  `front-check-2.log` et `front-lint-i18n-2.log` (verts, `074453a9f`) ;
+- `front-test-unit-1.log` — Vitest complet à `62d05833e` : **7 rouges** (3809/3816), quatre gardes d'inventaire à relever
+  (`i18n-keys` 3050 → 3081, `i18n-libelle-en-dur` 92 → 95 et `conforme` 78 → 81, `i18n-un-repli-par-cle` 434 → 453,
+  `bank-name-inventory` : `bankName` lu à la main dans le récapitulatif → passé par `bankAccountName`) ;
+  `front-test-unit-2.log` — **3816/3816, 244 fichiers**, à `074453a9f` ;
+- `front-build-1.log` (`62d05833e`), `front-build-2.log` (`074453a9f`, vert) ;
+- `mut/resultats.log`, `mut/M1.log` à `mut/M17.log`, script `mut/mutations-36-17.mjs` ;
+- `captures.log`, `captures-backend.log`, `captures/` ; scripts `captures-36-17.sh`, `captures-36-17.cjs`,
+  `reset-db-e3617.sh`, `gates-review-36-17.sh` ;
+- `gates-review.log`, `test-fast-ci.log`, `gate-ci.log` (et `gate-ci-sortie.log`) — gates du passage en revue, au **dernier
+  commit de code `074453a9f`** (journal `gates-review.log`, « HEAD 074453a9f ») :
+  - `scripts/test-fast.sh --ci`, voie 2 (`kesh_e3617` remise à neuf, `TMPDIR=/tmp/kesh-voie2`) : **5452 exécutés, 5452 passés,
+    13 ignorés**, « ✅ Gate backend rapide vert » (`test-fast-ci.log`, fin 18:05:15) ;
+  - `scripts/gate-ci.sh kesh_ci_e3617`, voie 1 : **sortie 0 ; 5459 passés, 0 échoué, 17 ignorés** sur 228 lignes
+    `test result` (somme par `awk` des lignes `^test result`, `gate-ci.log`, fin 19:10:19) ;
+  - frontend complet : `npm run check` 0 erreur, 29 avertissements, aucun dans un fichier de la story (`front-check-2.log`) ;
+    `lint-i18n-ownership` vert (`front-lint-i18n-2.log`) ; Vitest **3816/3816, 244 fichiers** (`front-test-unit-2.log`) ;
+    `npm run build` vert (`front-build-2.log`).
+  - **Non lancés** : l'E2E complet (à la clôture, avec `gate-ci`).
 
 ### Completion Notes List
 
+- **Le livré** : `onboardingScreenFor` (`features/onboarding/onboarding-screens.ts`) choisit l'écran de chaque état (D8) ;
+  cinq composants présentationnels (`OnboardingUnloaded`, `OnboardingFinalizeScreen` — en cours / échec / reprise —,
+  `OnboardingDone`, `OnboardingDemo`, `OnboardingFallback`) ; `+page.svelte` porte les enveloppes `onboarding-screen-0` à
+  `-6`, le drapeau `finalizing`, `runFinalize` (erreur effacée, drapeau posé, appel), l'échec à l'écran avec la phrase de remède
+  sous `VALIDATION_ERROR`, la relecture de « déjà finalisé », le récapitulatif (`bankAccountName`, aucun IBAN), le
+  *Réessayer* de l'état non lu, la navigation attendue de la démo ; `navigateHomeIfFinalized` et les deux clés mortes retirés.
+  Garde de `/onboarding` sans renvoi du chemin production ; bannière par `showIncompleteBanner` (étapes 6 et 7), texte neuf
+  aux quatre locales et au repli. Manuels FR (`.tex`) ; **PDF non régénérés** (AC10 : à l'intégration ; contrôle E6 du PDF
+  actuel : « Vous êtes alors prêt à saisir vos premières écritures » → `1`, « Configuration terminée » → `0`).
+- **Rouges d'abord** (`rouges.log`) : 76 sur 136 au code d'avant ; sondes — (7, production) et (8, production) rougissent sur
+  « zone de l'assistant vide » (le groupe compte exactement les étapes 7 à 10), (3, démo) sur « écran du type d'organisation
+  en démo », (0, production) passe « zone non vide » et rougit sur l'identifiant seul ; la garde (`onboarding-guard.test.ts`)
+  a « démo 3 → / » et « non authentifié → /login » **verts** au départ (`load` s'exécute sous `browser: true`), production 7,
+  8, 10 rouges ; la bannière rougit à l'import (module absent : rouge de construction).
+- **Mutations** (`mut/resultats.log`, HEAD `62d05833e`) : **M1 à M17 toutes tuées**, chacune restaurée (`git restore
+  --worktree` puis `touch`, « restauré oui ») ; M8 rejouée après `074453a9f` (récapitulatif par `bankAccountName`) : tuée.
+  **M10 n'est pas équivalente** (V3-3) : elle rougit le test de la fenêtre (`onboarding-end.test.ts`, « l'écran de reprise
+  n'apparaît à aucun instant », `MutationObserver`), plus « Terminer la configuration est désactivé pendant un appel du
+  store » et (7, production, en chargement) de la matrice (`mut/M10.log`) : l'AC4 reste constaté tel qu'écrit. M4 a fait
+  tomber le processus de `onboarding-end.test.ts` (`mut/M4.log`, « Worker exited unexpectedly ») ; elle est tuée par
+  `onboarding-screens.test.ts` (« expected [ 'finalizing' ] to deeply equal [ 'resume' ] », trois cas). M14 est tuée par la
+  garde des textes neuve (`onboarding-fin-i18n.test.ts`).
+- **Écarts à la fiche**, tous consignés : les clés de la bannière passées en props à l'écran de reprise (C-36-17-11, lint) ;
+  identifiants `data-testid` ajoutés aux boutons des étapes 0 à 6 (C-36-17-12) ; l'état non lu testé dans son propre fichier,
+  `onboarding-unloaded.test.ts`, en un seul `it` ordonné (C-36-17-13) ; allemand « Lassen Sie diese Seite geöffnet »
+  (C-36-17-14) ; une garde des textes neuve, `features/onboarding/onboarding-fin-i18n.test.ts` (liste fermée des clés de la
+  story : quatre locales, repli égal à `fr-CH`, clés mortes absentes), non prévue par la fiche ; récapitulatif par
+  `bankAccountName` (`bank-name-inventory.test.ts` refusait la lecture à la main de `bankName`). Les commentaires KF-029 des
+  specs E2E sont **en fin de ligne**, pour ne pas décaler les numéros de ligne de `docs/testing.md` § *Les échecs attendus*
+  (`onboarding-path-b.spec.ts:65`, `:92`, `onboarding.spec.ts:150` inchangés). Modules : cinq, inchangés.
+- **Consigne Edit** : code, tests, fiches et locales par l'outil Edit (ou Write pour un fichier neuf) ; aucun `sed -i`. Hors
+  dépôt seulement : `rouges.log` complété par `awk` puis `cat >>` (mon propre journal), mutations par script (permis, E5).
+- **E7** : la file de la voie 2 était tenue par la 36-10 ; un Vitest ciblé et la campagne de mutations (voie frontend) ont
+  tourné pendant qu'un `flock` de la voie 2 était seulement **en attente** (rien d'autre de lourd ne tournait pour moi).
+  Une tentative de lancer le gate ciblé hors verrou a été refusée par l'outil ; je l'ai laissée. **Écart E7** : le
+  deuxième essai des captures (`captures-2.log`, 18:29–18:38, en attente de la voie 2 jusqu'à ~18:37) a fini pendant que
+  `gate-ci` démarrait en voie 1 (~18:38) : une minute de chevauchement, sans effet sur les journaux (gate-ci vert).
+- **Ce qui n'a pas tourné** : l'**E2E** (aucun, ni rouge ni vert : `onboarding-fin.spec.ts` est écrite, non exécutée — à la
+  clôture ; la preuve de son rouge, prévue à `e2e-rouge.log`, aussi) ; la régénération des **PDF**.
+- **Captures** (AC12), thème clair, base jetable `kesh_e2e_e3617` recréée, backend de test sur le port 3617, frontend
+  construit à `074453a9f` : **douze**, `kesh-gate-logs/e36-17/captures/01-en-cours.png` à `12-application-etape-7-banniere.png`
+  (en cours ; échec réseau avec *Réessayer* ; reprise ; terminée avec et sans compte ; récapitulatif en échec ; démo en
+  chargement ; démo prête ; repli ; état non lu ; échec avec la phrase de remède ; application à l'étape 7 avec la bannière).
+  Trois passes : `captures.log` (01 à 06, puis la démo échoue : la page de l'assistant charge ses modules après `goto`, que le
+  script refusait trop tôt), `captures-2.log` (la démo échoue encore : refuser les modules de `/` ne fait pas rejeter `goto`,
+  SvelteKit retombe sur une navigation complète), `captures-3.log` (07 à 12, vert). En conséquence, **la capture 08 montre
+  « démo prête » sans motif** (navigation retenue) ; l'écran avec le motif d'une navigation échouée n'est constaté que par
+  Vitest (`onboarding-end.test.ts`, AC8). La capture 11 vient d'un **refus réel** du serveur (#1200 : réglages de facturation
+  lus avant la finalisation, `captures-3.log`, « invoice-settings lus avant la finalisation : 200 ») ; la 10 simule un 503 de
+  `GET /onboarding/state`, ce qui fait aussi paraître la bannière globale « Base de données temporairement indisponible » du
+  client HTTP (sans rapport avec la story) ; la 06 simule un 500 de `companies/current`.
+
 ### File List
+
+- `frontend/src/lib/features/onboarding/onboarding-screens.ts` (neuf)
+- `frontend/src/lib/features/onboarding/OnboardingUnloaded.svelte` (neuf)
+- `frontend/src/lib/features/onboarding/OnboardingFinalizeScreen.svelte` (neuf)
+- `frontend/src/lib/features/onboarding/OnboardingDone.svelte` (neuf)
+- `frontend/src/lib/features/onboarding/OnboardingDemo.svelte` (neuf)
+- `frontend/src/lib/features/onboarding/OnboardingFallback.svelte` (neuf)
+- `frontend/src/lib/features/onboarding/incomplete-banner.test.ts` (neuf)
+- `frontend/src/lib/features/onboarding/onboarding-fin-i18n.test.ts` (neuf)
+- `frontend/src/routes/onboarding/+page.svelte`
+- `frontend/src/routes/onboarding/+layout.ts`
+- `frontend/src/routes/onboarding/onboarding-screens.test.ts` (neuf)
+- `frontend/src/routes/onboarding/onboarding-unloaded.test.ts` (neuf)
+- `frontend/src/routes/onboarding/onboarding-end.test.ts` (neuf)
+- `frontend/src/routes/onboarding/onboarding-guard.test.ts` (neuf)
+- `frontend/src/routes/onboarding/onboarding-motif.test.ts`
+- `frontend/src/routes/onboarding/onboarding-catch-guard.test.ts` (plancher 11 → 15)
+- `frontend/src/routes/(app)/+layout.svelte`
+- `frontend/src/lib/shared/components/IncompleteBanner.svelte`
+- `frontend/src/lib/shared/i18n-keys.test.ts`, `i18n-libelle-en-dur.test.ts`, `i18n-un-repli-par-cle.test.ts` (relevés)
+- `frontend/tests/e2e/onboarding-fin.spec.ts` (neuf), `onboarding-bank-account.spec.ts`, `onboarding-path-b.spec.ts`,
+  `onboarding.spec.ts`
+- `crates/kesh-i18n/locales/{fr-CH,de-CH,it-CH,en-CH}/messages.ftl`
+- `docs/manual/fr/user-manual.tex`, `docs/manual/fr/admin-manual.tex`
+- `_bmad-output/implementation-artifacts/36-17-assistant-fin-configuration.md`, `e36-choix-autonomes-36-17.md`,
+  `36-17-assistant-fin-configuration-review-prompt-p1.md` (neuf), `sprint-status.yaml`
 
 ## Change Log
 
@@ -699,3 +810,7 @@ décompte est de **six** ; le repli peut alors rester l'ancien texte (la clé se
   - **T0** : lignes de code citées recontrôlées à la tête de la branche (`327c7edbd`, dont le code est celui de
     `0bf3c3b4b` ; `origin/epic/36-0.18.0` n'a avancé que de documentation) : `+page.svelte:320`, `:478`, `:567`, `:239-266`,
     `:268-315` ; `routes/onboarding/+layout.ts:28-32` ; `(app)/+layout.ts:42` ; `(app)/+layout.svelte:369` — inchangées.
+- 2026-11-15 — **Développement** (Opus 5.5, `bmad-dev-story`) : rouges journalisés (76 sur 136, sondes), écrans et page
+  (`09a9dac47`), garde des textes et allemand (`62d05833e`), récapitulatif par `bankAccountName` et gardes d'inventaire i18n
+  relevées (`074453a9f`, **dernier commit de code**). Mutations M1 à M17 tuées. Choix C-36-17-11 à C-36-17-14. Gates du
+  passage en revue au Dev Agent Record ; **E2E non lancé** (à la clôture) ; PDF à l'intégration. Statut `review`.
