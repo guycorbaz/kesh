@@ -1,6 +1,6 @@
 # Story 36-7 : les tests ne figent plus 2026 — verts au 1er janvier 2027 (#1125, KF-060)
 
-Status: ready-for-dev
+Status: split
 
 *Fiche rédigée le 2026-11-15 par l'agent de rédaction des fiches de l'Epic 36 (Opus 5.5), worktree `kesh-36-7`, branche
 `story/36-7-tests-desancres-2026`, partie de `epic/36-0.18.0` (`0bf3c3b4b`), par le workflow `bmad-create-story`. Release
@@ -514,3 +514,12 @@ tests suivent D1 (année du jour, pas 2026). Aucun fichier de manuel : `git grep
     trois relevés de la fiche).
   - Propagation grepée dans la fiche (`seize`, `trois de D2`, `huit mutations`, `C-36-7-5`, `1er janvier de l'année`,
     `2026 à 2030`, nombres de rouges et d'AC) : aucun résidu. Registre : C-36-7-3 amendé, C-36-7-6 ajouté.
+- **2026-11-15 — Découpage** (approuvé par l'orchestrateur, règle de Guy du même jour ; C-36-7-7). La fiche passe à
+  `Status: split` ; son texte ci-dessus est laissé tel qu'il était à la remédiation P1 (historique, non réécrit). Elle se
+  remplace par :
+  - `36-7a-tests-desancres-2027.md` — les treize rouges de 2027, sept fichiers, quatre modules, mutations M1 à M10 (M1,
+    M4 à M12 d'ici) ; AC1, AC3 à AC9 d'ici, l'heure réelle et la nuit de l'AC2 ; AC4 et AC5 gates de clôture ; urgente,
+    d'ici le 2026-12-28 ; porte les décisions communes (D1 en N-1, D3 faketime, D4, D5).
+  - `36-7b-tests-bornes-anterieures.md` — les neuf rouges sous instant antérieur, huit fichiers, trois modules, mutations
+    M1 à M9 (M2, M3, M13 à M19 d'ici) ; l'instant de mars de l'AC2 ; sans échéance, après la fusion de la 36-7a.
+  La PR de release ne porte `closes #1125` qu'avec la 36-7b close et AC4, AC5 de la 36-7a joués.

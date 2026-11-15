@@ -69,3 +69,19 @@ de C-e360-13. Chaque choix : contexte, option retenue, options écartées, réve
   différence de l'aperçu de numérotation de `settings/invoicing/+page.svelte:159`, pour lequel une issue est demandée.
 - **Écartée** : une issue P4 de plus.
 - **Réversible** : oui.
+
+### C-36-7-7 — La 36-7 se découpe en 36-7a (2027) et 36-7b (instant antérieur)
+
+- **Contexte** : après la remédiation de la validation P1, la story portait vingt-deux tests, quatorze fichiers,
+  dix-neuf mutations et quatre campagnes de suite entière, plus un E2E dépendant de libfaketime. Règle de Guy du
+  2026-11-15 : « éviter les stories trop longues ou trop complexes ». Découpage proposé par l'agent de la fiche, approuvé
+  par l'orchestrateur le même jour.
+- **Retenu** : **36-7a** — les treize rouges de 2027 (sept fichiers, quatre modules, M1 à M10), AC4 et AC5 sous faketime
+  en gates de clôture (C-36-7-6), urgente d'ici le 2026-12-28, porteuse des décisions communes ; **36-7b** — les neuf rouges
+  sous instant antérieur (huit fichiers, trois modules, M1 à M9), sans échéance, développée après la fusion de la 36-7a
+  (fichiers communs : `admin_full_import_e2e.rs`, `docs/testing.md`). Les deux portent `refs #1125` ; la PR de release ne
+  porte `closes #1125` qu'avec la 36-7b close et AC4, AC5 joués. La fiche d'origine passe à `split`.
+- **Écartées** : une seule story (trop longue) ; un découpage par crate (la 36-7a mêlerait alors 2027 et l'instant
+  antérieur, et l'échéance du 2026-12-28 porterait sur des tests qui n'en ont pas) ; AC4/AC5 en story à part (le critère de
+  l'epic les lie aux treize rouges).
+- **Réversible** : oui (fiches seulement).
