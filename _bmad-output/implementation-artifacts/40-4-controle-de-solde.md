@@ -167,8 +167,9 @@ je lise le solde de 1101–1103 pour ce qu'il est : une créance (B13).
    ne pointe jamais d'écriture) → rien dans `date_shifts`, et son montant est dans `unreconciled` du contrôle (b) (test de
    route, AC-2 : aucun double compte) ;
    (e) rattaché en voie (a) à une écriture datée D − 2 (avant la sortie) avec `booking_date` = D → rien ; (f) vente
-   rapprochée d'une écriture datée D + 1 → `other = +115.80`, `in_transit_payouts` nul ; (g) transaction **non comptée**
-   (`booked_at ≥ as_of`), écriture datée ≤ D → `other` négatif ; (h) membre de groupe (38-6c2) daté D + 1 → compté ; (i) compte CHF,
+   rapprochée d'une écriture datée D + 1 → `other = +115.80`, `in_transit_payouts` nul ; (g) vente de +115.80 **non comptée**
+   (`booked_at ≥ as_of`), écriture datée ≤ D → `other = −115.80` (le signe suit la ligne : un retrait non compté
+   donne un `other` positif, cas (b′)) ; (h) membre de groupe (38-6c2) daté D + 1 → compté ; (i) compte CHF,
    montants en CHF ; (j) `booked_at` nul (transaction de fichier, 38-2 AC-3) → `booking_date` ; (k) autre société →
    rien (KF-002). Mutation déclarée au Change Log : prédicat `>` changé en `>=` sur `entry_date` → (c) rougit.
 2. **AC-2 — Contrôle (b) ventilé (FR-40-4-1, NFR-40-4-3 ; C-40-2 c).** `GET /api/v1/bank-accounts/{id}/provider-balance-check`
@@ -236,7 +237,8 @@ je lise le solde de 1101–1103 pour ce qu'il est : une créance (B13).
    (`balanceNature?: 'receivable'`, toute autre valeur ou absence = liquidité). `ledgerTotal` (fonction pure, `homepage.ts`) n'ajoute plus au total un
    compte dont `provider?.balanceNature === 'receivable'` et rend en plus `receivables: Big` et `anyReceivable: boolean`
    (une valeur inconnue de `balanceNature` → comptée comme aujourd'hui, liquidité, et non masquée). La tuile garde la
-   ligne du compte et son solde, y ajoute « Créance sur Stripe — hors total » (`$provider` = Stripe) sous le nom (`data-testid`
+   ligne du compte et son solde, y ajoute « Créance sur Stripe — hors total » (`$provider` = nom d'affichage du prestataire, lu du code `provider` du bloc par
+   la même table que le badge de 38-9a, « Stripe » pour `stripe`) sous le nom (`data-testid`
    `homepage-bank-receivable-{id}`), et sous le total « Hors total : créances sur prestataires, X » quand
    `anyReceivable` (`homepage-bank-receivables`). Clés `homepage-bank-receivable-note`,
    `homepage-bank-total-excludes-receivables` aux **quatre** locales (la première porte la variable `$provider`, nom
@@ -373,3 +375,16 @@ je lise le solde de 1101–1103 pour ce qu'il est : une créance (B13).
   pending`) lus et concordants. Axes exercés : prémisses, contradictions (G18, 38-2, 38-9a, 38-10, 40-1, epic), sites non
   résolus (migration, MCP, routes, audit, i18n, tests, captures, docs), comptabilité (signes, bornes), exigences, taille
   (cinq modules). Non exercés : exécution du SQL, réponses Stripe réelles, sécurité (aucun secret touché).
+- 2026-11-15 — validation P4 ciblée (Opus) : 0 CRITICAL, 0 HIGH, 0 MEDIUM, 2 LOW ; remédiés dans la fiche. Périmètre :
+  `git diff b4dc35dc 88c6b022` de la fiche (remédiation P3). LOW 40-4-P4-1 (AC-1 g) : « `other` négatif » ne vaut que
+  pour une transaction positive — par C-40-4-1, `minus` suit le signe de la ligne, et (b′) donne `other = +300.00` pour
+  un retrait non compté → (g) nomme une vente de +115.80 et attend `other = −115.80`. LOW 40-4-P4-2 (AC-7) : la
+  variable `$provider` (P3) n'avait pas de source → nom d'affichage tiré du code `provider` du bloc, comme le badge de
+  38-9a. Contrôlés et justes : C-40-4-3/AC-7 `balanceNature` absent hors `receivable` (patron C-37-9,
+  `epic-37-multi-devises.md:535-537`, `skip_serializing_if`) ; 38-2 AC-8 (`:334-339`, bloc `provider` et « même forme »
+  de `…/provider-connections/{id}/accounts`) ; aucun autre lecteur de `balanceNature` aux 40-*, ni à l'epic ; AC-4
+  « compte ordinaire » : K9 vaut pour tout compte bancaire à document (38-10 C-38-10-5), la précision P3 est juste ;
+  AC-5/AC-8 « Tester » = `POST …/provider-connections/{id}/test` (38-1, 38-7 AC-8). Inter-fiches : aucun neuf
+  (40-4-P3-7 porté par la mission 40-1 de cette passe). Axes exercés : chaque phrase changée en P3 (C-40-4-3, AC-1 g,
+  AC-2, AC-4, AC-6, AC-7, AC-8) contre la fiche, l'epic, 37, 38-2, 38-10 ; signes de `date_shifts`. Non exercés : le
+  reste de la fiche (hors périmètre), exécution du SQL.

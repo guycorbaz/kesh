@@ -266,9 +266,9 @@ l'API).
   `as_of` contre le solde rapporté (`available + pending`) — gagne une ligne de ventilation **« versements en route »** :
   versement compté au solde rapporté (`booked_at < as_of`) dont l'écriture rapprochée est datée après la date de
   Zurich de `as_of` ; montant = ligne de l'écriture sur le compte lié (40-4 Écart 1) — en plus des « transactions non
-  rapprochées » et du « reste inexpliqué ». L'écran du compte montre aussi
-  `available` et `pending` (lecture de `balances(None)` à « Tester » et au passage, non stockée : l'instantané garde le
-  total, 38-3a). **À la clôture**, le solde de 1101–1103 est la créance (B13) : aucune écriture neuve ; le contrôle
+  rapprochées » et du « reste inexpliqué ». « Tester » montre `available` et `pending` (lus à l'instant, non stockés :
+  l'instantané ne garde que le total, 38-3a) ; l'écran du compte montre le solde rapporté total (40-4 Écart 2).
+  **À la clôture**, le solde de 1101–1103 est la créance (B13) : aucune écriture neuve ; le contrôle
   préalable à la clôture (K9 de 38-10) compare le rapport joint (G13) au solde comptable.
 - **G13 — Rapports Stripe joints à la main** (B10). Stripe ne fournit aucun relevé PDF ; ses rapports (solde,
   rapprochement des versements) sont des **CSV** du tableau de bord. 38-10 admet donc, **en plus du PDF**, un CSV
@@ -294,7 +294,8 @@ l'API).
   (patron `paypalResponses`, chaîne `"default"` comprise).
 - **G17 — Aucun outil MCP neuf** (E23).
 - **G18 — Amendements du socle : additifs, non régressifs.** PayPal (et Wise s'il est livré) inchangés : leurs suites
-  restent vertes sans retouche de leurs attentes ; `value_date` reste `NULL` pour eux.
+  restent vertes sans retouche de leurs attentes — sauf l'attente de 38-9a que 40-4 Écart 6 corrige et la clé
+  `entryDate` déclarée par 40-3 ; `value_date` reste `NULL` pour eux.
 - **G19 — Conversions.** Le règlement multi-devises garde un solde par devise (observé : trois soldes, `exchange_rate`
   nul partout ; reste à constater en mode réel, Q-40-3) ; un paiement présenté dans une
   autre devise est converti par Stripe **à la charge** : Kesh passe le montant de la devise de règlement, la TVA tirée de
@@ -308,7 +309,8 @@ l'API).
   domaine fermé, un `MODIFY`/`CHANGE COLUMN` ou un `DROP` s'arrête et le dit.
 - **C-40-1 — Connexion Stripe** (40-1) : `provider = 'stripe'` ; `StripeSettings` `#[serde(deny_unknown_fields,
   rename_all = "camelCase")]` : modifiables par le client — `overlapDays` (1–30, défaut 3), `invoiceRefSource` (G14),
-  `eventKindOverrides` (40-2) ; posés par le serveur — `accountId` (`acct_…`, si la clé peut le lire, Q-40-8),
+  `eventKindOverrides` (40-2) ; posés par le serveur — `accountId` (`acct_…`, lu par « Tester » ou le premier passage ; une clé qui ne peut pas le lire est refusée,
+  D40-P3-1, Q-40-8),
   `apiVersion` (lecture seule, égale à la constante, G4), `livemode` (mode de la connexion, posé par le premier
   « Tester » réussi ou le premier passage, puis gardé, G4). Secret `restrictedKey` (`PUT …/secrets`, corps propre au
   prestataire, 38-1 AC-6) ; préfixes de G4. URL de base constante `https://api.stripe.com`.
@@ -325,7 +327,9 @@ l'API).
   d'API neuf `PROVIDER_SECRET_NOT_RESTRICTED` (400, dépôt d'une clé `sk_…`, `pk_…` ou de préfixe inconnu ; `rk_live_` et
   `rk_test_` admises, G4) ; `PROVIDER_MODE_CHANGED` (chaîne de `errorCode`/`lastError` : clé de l'autre mode que la
   connexion, FR-40-1-7) ; `PROVIDER_ACCOUNT_CHANGED` (même forme : `accountId` lu par « Tester » ≠ celui des réglages
-  sur une connexion déjà téléchargée, D40-P2-1, C-40-7). Aucun texte de
+  sur une connexion déjà téléchargée, D40-P2-1, C-40-7) ; `PROVIDER_ACCOUNT_UNREADABLE` (même forme : `GET /v1/account`
+  en 403 ou 404 — exception à la ligne 404 → `Rejected`, propre à cette route —, la clé ne lit pas le compte ; refus
+  à « Tester », contrôle `account_readable`, et au passage, D40-P3-1, 40-1 AC-9, AC-10). Aucun texte de
   Stripe à l'écran ni dans `last_error`.
 - **C-40-4 — Mouvement Stripe** (40-1 lecture, 40-2 correspondance) : G6 à G9, G14 ; correspondance vers
   `ProviderMovement` en **une** fonction pure.
@@ -385,7 +389,7 @@ réseau en CI, recette visuelle) ne s'y répètent que là où la story les port
 - *Intention* : un Administrateur crée une connexion Stripe, dépose sa clé restreinte, et Kesh lit les soldes et les
   transactions de solde de chaque devise.
 - *Périmètre* : `Provider::Stripe`, `StripeSettings` (C-40-1) ; corps de `PUT …/secrets` (`restrictedKey`, G4) ;
-  `StripeConnector` derrière `ConnectorFactory` : `test()` (soldes par devise, `account_ref` = `accountId` si lisible),
+  `StripeConnector` derrière `ConnectorFactory` : `test()` (soldes par devise, droit de lecture des transactions), `account_ref()` (`accountId`, exigé : lu par « Tester » et au début de chaque passage, D40-P3-1),
   `balances(None | Some)` (G5), `movements(window, page)` (G3 : curseur suivi dans le connecteur, page unique,
   expansion, validation `livemode`, ordre décroissant reclassé, fenêtre respectée, curseur cohérent) ; `Stripe-Version`
   constante ; erreurs (C-40-3) ; type `value_date` (C-40-2 a, posé à `None` ici) ; `stripeResponses` et jeu
@@ -469,7 +473,8 @@ réseau en CI, recette visuelle) ne s'y répètent que là où la story les port
 - **FR**
   1. `FR-40-4-1` — L'écart entre solde comptable et solde rapporté se ventile en non rapprochées, versements en route et
      reste inexpliqué.
-  2. `FR-40-4-2` — L'écran du compte et « Tester » montrent `available` et `pending`.
+  2. `FR-40-4-2` — « Tester » montre `available` et `pending` (lus à l'instant, non stockés : l'instantané ne garde que
+     le total, 38-3a) ; l'écran du compte montre le solde rapporté total.
   3. `FR-40-4-3` — Un compte prestataire Stripe n'est pas compté comme liquidité là où Kesh additionne la trésorerie
      (ou l'est en le disant), selon le recensement.
 - **NFR**
@@ -549,8 +554,9 @@ Décisions transverses issues de la validation P1 des fiches 40-1 à 40-6, repor
   `PROVIDER_MODE_CHANGED`) ; `livemode` contrôlé sur chaque objet qui le porte. G4, C-40-1, C-40-3, FR-40-1-2 et
   NFR-40-1-3 alignés.
 - **DTO des propositions** (40-3 AC-3, lu par 40-6 AC-4) : le DTO de transaction de `GET
-  /api/v1/reconciliation/proposals` gagne `valueDate` (`AAAA-MM-JJ` ou `null`, additif) ; la proposition `provider` de
-  retrait gagne `entryDate` (date de l'écriture proposée) ; PayPal : `valueDate: null`, `entryDate` = `bookingDate` ;
+  /api/v1/reconciliation/proposals` rend **déjà** `valueDate` (`transaction.valueDate`, `TransactionSummary.value_date`,
+  `crates/kesh-api/src/routes/reconciliation.rs:176`) ; la proposition `provider` de retrait gagne `entryDate` seule
+  (date de l'écriture proposée) ; PayPal : `valueDate: null`, `entryDate` = `bookingDate` ;
   test de clés exactes PayPal inchangées. Aucune route neuve (C-40-6 inchangé).
 - **Codes surchargeables publics** (40-2 AC-6, lus par 40-6 AC-6) : constante `pub` `OVERRIDABLE_CODES` du module
   `stripe::event_codes`, lue par la validation de `eventKindOverrides` et par la garde de concordance de

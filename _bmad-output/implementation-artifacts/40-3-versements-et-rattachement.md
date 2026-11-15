@@ -64,7 +64,8 @@ soit juste et que rien ne soit compté deux fois ni écrit sans moi.
    champ rempli, **additif**, pour toute transaction de la file dont `related_provider_tx_id` désigne une transaction du
    même compte (AC-7).
 3. **`valueDate` est déjà au DTO de `GET …/proposals`** (`TransactionSummary`, `routes/reconciliation.rs:172-176`,
-   P3) : l'epic (C-40-5, lu par 40-6 AC-4) la tient pour neuve ; seule `entryDate` l'est (AC-3).
+   P3) : l'epic (« Validation P1 », point « DTO des propositions », lu par 40-6 AC-4) la tient pour neuve ; seule
+   `entryDate` l'est (AC-3).
 4. **`value_date` posée par le classement** (40-2 AC-2, FR-40-2-7), et non « par le connecteur » de cette story : 40-3
    l'écrit en base et s'en sert.
 
@@ -189,7 +190,9 @@ soit juste et que rien ne soit compté deux fois ni écrit sans moi.
      la file, solde de 1101 rétabli ; échec dont l'origine est hors de Kesh (antérieure à `fetch_from`) →
      `relatedBankTransactionId: null` ; même parcours pour un `payout_cancel` (file, lien, aucun candidat).
 8. **AC-8 — Non-régression (NFR-40-3-2, G18).** Retraits et dépôts PayPal de 38-6b (AC-4 de 38-6b, `value_date NULL`) :
-   tests verts **sans retouche de leurs attentes** (date d'écriture = `booking_date`, fenêtre de suggestion inchangée) ;
+   tests verts **sans retouche de leurs attentes** (date d'écriture = `booking_date`, fenêtre de suggestion inchangée),
+   à la seule exception de l'AC-3 : une attente de clés exactes du candidat `provider` de retrait gagne `entryDate` et
+   rien d'autre, retouche déclarée au Change Log du développement ;
    acceptations par règle, manuelle, de partage : inchangées (même `payment_date`) ; empreintes `file_hash` PayPal
    inchangées (AC-1).
 9. **AC-9 — Ce que la story ne touche pas, documentation.** Aucune migration (C-40-0 ; P1–P8 sans objet ;
@@ -308,3 +311,15 @@ soit juste et que rien ne soit compté deux fois ni écrit sans moi.
   `entry_date` existant), 38-9b (écriture manuelle à la file), 40-2 AC-5, AC-6, 40-1 AC-7. Axes exercés : prémisses,
   contradictions, sites non résolus (migration, sauvegarde, audit, RBAC, i18n, MCP, manuels), comptabilité, exigences,
   tests, taille. Non exercés : sécurité (aucun secret), réponses Stripe réelles d'échec de versement, exécution de code.
+- 2026-11-15 — validation P4 ciblée (Opus) : 0 CRITICAL, 0 HIGH, 1 MEDIUM, 1 LOW ; remédiés dans la fiche. Périmètre :
+  `git diff b4dc35dc 88c6b022` de la fiche (remédiation P3). MEDIUM 40-3-P4-1 (AC-8 contre AC-3) : la P3 a admis
+  qu'une attente de clés exactes de 38-6b/38-9b gagne `entryDate`, mais l'AC-8 disait toujours les retraits PayPal de
+  38-6b verts « sans retouche de leurs attentes » → exception de l'AC-3 écrite à l'AC-8. LOW 40-3-P4-2 (Écart 3) :
+  « l'epic (C-40-5) » — C-40-5 (`epic-40-stripe.md:332`) ne parle que de la fenêtre ; le DTO est au point « DTO des
+  propositions » de la section « Validation P1 » (`:551-554`) → renvoi corrigé. Lignes lues et justes :
+  `routes/reconciliation.rs:170-180` (`TransactionSummary.value_date`), `:1476-1478` (`value_date: tx.value_date`) ;
+  38-6c1 AC-5 (`:246`, `{ linked, failed }`) ; 38-6b C-38-6b-3 (b) (« datée de `booking_date` à… », colonne de la
+  candidate non nommée : prémisse de la P3 juste). Inter-fiches : aucun neuf (40-3-P3-6 et -P3-7 sont portés par les
+  missions 40-6 et 40-1 de cette passe). Axes exercés : chaque phrase changée en P3 (AC-2, AC-3, AC-4, AC-6, AC-7,
+  Écart 3) contre le code, la fiche, l'epic, 38-6b, 38-6c1 ; propagation de `valueDate`/`entryDate` aux 40-* et à
+  l'epic. Non exercés : le reste de la fiche (hors périmètre), exécution de code.

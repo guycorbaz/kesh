@@ -103,10 +103,16 @@ paginée sans perte, à version d'API fixe et sans fuite de la clé.
 5. **`value_date` (C-40-2 a)** : la règle de `validate_page` admet `value_date ≥ date Zurich de booked_at − 1 jour`
    (et non `≥` strict) : `arrival_date` est une date UTC (G10) ; un versement créé entre minuit et 1 h (2 h en été) à
    Zurich a une date UTC antérieure d'un jour, et une égalité stricte rejetterait toute la page à chaque passage.
-6. **`Connector::account_ref` (D40-P3-1)** : méthode additive du trait de 38-3b (défaut `Ok(None)` ; PayPal et le
-   `FakeConnector` inchangés, leurs suites sans retouche d'attentes), lue **au début de chaque passage** pour garder le
-   compte (AC-9) — la route « Tester » passe, elle, par `test()`. Raison : le passage ne dispose que du trait objet, et
-   `test()` lit soldes et droits (trois requêtes) là où le passage n'a besoin que du compte.
+6. **`Connector::account_ref` (D40-P3-1)** : méthode additive du trait de 38-3b (défaut `Ok(None)` = aucune garde
+   possible ; PayPal et le `FakeConnector` inchangés, leurs suites sans retouche d'attentes), lue **au début de chaque
+   passage** et, pour `stripe`, par la route « Tester » **après** `test()` — **une seule** lecture du compte pour les
+   deux appelants (AC-9). Raisons : le passage ne dispose que du trait objet, et `test()` lit soldes et droits (deux
+   requêtes) là où le passage n'a besoin que du compte ; et `test()` ne rend qu'**une** `ConnectorError` — un 403 du
+   compte y serait indiscernable d'un 403 de la liste (`permission_present`), alors qu'un appel distinct dit lequel des
+   deux contrôles a échoué sans variante neuve (AC-10). **Amendement de 38-3b AC-4 (Échec)** : `last_error` y porte
+   `err.app_code()` ou un code propre du passage ; les deux gardes du passage (mode, AC-5 ; compte, AC-9) y écrivent
+   leur constante (`PROVIDER_MODE_CHANGED`, `PROVIDER_ACCOUNT_CHANGED`, `PROVIDER_ACCOUNT_UNREADABLE`) — les mêmes que
+   « Tester », libellées une fois (AC-14) ; `error_code` reste un code de `code()` (aucun code de passage neuf).
 
 ## Critères d'acceptation
 
@@ -192,7 +198,8 @@ paginée sans perte, à version d'API fixe et sans fuite de la clé.
        null`, aucun appel ; `Pose` → le mode s'écrit avec les autres champs du serveur au succès (version + 1, audit
        `tested`, AC-9) ;
      - passage (38-3b) : `Refuse` → passage `failed` **sans appel**, `error_code = invalid_response`, `error_detail =
-       "livemode"`, `lastError = PROVIDER_RESPONSE_INVALID` (aucun code de passage neuf) ; `Pose` → `livemode` écrit
+       "livemode"`, `lastError = PROVIDER_MODE_CHANGED` (aucun code de passage neuf ; même constante qu'à « Tester »,
+       Écart 6) ; `Pose` → `livemode` écrit
        dans la transaction qui écrit la première page, version + 1 (rien d'écrit si aucune page ne l'est : le mode reste
        à établir, sans effet puisque rien n'est téléchargé) ; pas d'action d'audit (passage `daily` non audité, C-37-6 :
        le mode se déduit de la clé déposée, auditée par `secrets_updated`), `tracing::info!` sans la clé.
@@ -204,7 +211,8 @@ paginée sans perte, à version d'API fixe et sans fuite de la clé.
      AC-7), message `provider-error-*` aux quatre locales.
    - Tests : clé `rk_test_` et solde `livemode: true` → refus ; source `charge` `livemode: true` dans une page de clé
      de test → page refusée ; changement de clé `rk_test_` → `rk_live_` sans transaction → mode réécrit ; avec une
-     transaction → `mode_unchanged` en échec, passage refusé sans appel (compteur du serveur local à 0).
+     transaction → `mode_unchanged` en échec, passage refusé sans appel (compteur du serveur local à 0),
+     `lastError = PROVIDER_MODE_CHANGED`.
 6. **AC-6 — Lecture d'une page de transactions de solde et validation (G3, G7, C-38-11).**
    - Requête : `GET {base}/v1/balance_transactions?created[gte]=<s0>&created[lt]=<s1>&limit=100&expand[]=data.source`
      (+ `starting_after=<id>` aux pages suivantes) ; `s0 = ⌈from⌉`, `s1 = ⌈to⌉` en secondes Unix (`created` est entier :
@@ -294,24 +302,28 @@ paginée sans perte, à version d'API fixe et sans fuite de la clé.
 9. **AC-9 — « Tester la connexion » (FR-40-1-3, FR-40-1-7).** `POST /api/v1/provider-connections/{id}/test` (38-1 AC-7,
    38-7 AC-8 : forme `200 { usable, unusableReason, checks, … }`, toujours 200, Administrateur session, connecteur par la
    fabrique, `Connector::test()`). Pour `stripe`, après les contrôles locaux : `mode_unchanged` (AC-5, sans réseau), puis
-   `StripeConnector::test()` :
+   `StripeConnector::test()` (deux requêtes) :
    - `provider_reachable` : `balances(None)` ;
    - `permission_present` : `GET /v1/balance_transactions?limit=1&expand[]=data.source` (403 → `Permission`) — le droit
      de lire les transactions et d'en développer la source se constate ici, non au premier passage ; page validée par
      l'AC-6 hors la règle `created` (aucune fenêtre) ;
-   - compte : `GET {base}/v1/account` → `account_ref = id` (`^acct_[A-Za-z0-9]{1,60}$`) ; **403 et 404 → `Permission`**
-     (D40-P3-1 : une clé qui ne lit pas le compte ne peut pas être gardée contre un changement de compte ; elle est
-     **refusée**, comme au passage), 401 → `Auth`. Contrôle **`account_readable`** en échec : `errorCode =
-     PROVIDER_ACCOUNT_UNREADABLE` (constante, patron de `PROVIDER_MODE_CHANGED`), `usable: false`, aucun champ du
-     serveur écrit, `last_error` = ce code ; `account_ref` est donc toujours posé quand le test réussit (Q-40-8).
-   - `ConnectorTest { account_ref: Some(id), balances, livemode: Some(mode) }` (Écart 3). Un contrôle en échec porte `errorCode`
-     (table de l'AC-10), les suivants `ok: null`.
-   - Réponse : `accountId` (`null` seulement si un contrôle antérieur a échoué), `livemode`, `apiVersion`, `balances: [{ currency, total }]` (lus, non enregistrés),
+   - `ConnectorTest { account_ref: None, balances, livemode: Some(mode) }` (Écart 3 ; le compte n'est pas lu par
+     `test()`, ci-dessous). Un contrôle en échec porte `errorCode` (table de l'AC-10), les suivants `ok: null`.
+   - puis, si `test()` a réussi, contrôle **`account_readable`** : la route appelle **`Connector::account_ref()`**
+     (Écart 6 — la **même** méthode que le passage) : `GET {base}/v1/account` → `id` (`^acct_[A-Za-z0-9]{1,60}$`, sinon
+     `InvalidResponse { reason: "account" }`) ; **403 et 404 → `Permission`** (D40-P3-1 : une clé qui ne lit pas le
+     compte ne peut pas être gardée contre un changement de compte ; elle est **refusée**, comme au passage), 401 →
+     `Auth`. Erreur de cet appel → `account_readable` en échec, `usable: false`, aucun champ du serveur écrit,
+     `last_error` = son `errorCode` : `Permission` → `PROVIDER_ACCOUNT_UNREADABLE` (constante, patron de
+     `PROVIDER_MODE_CHANGED`), toute autre variante → son code de la table de l'AC-10. L'erreur venant d'un appel
+     distinct, un 403 du compte ne se confond jamais avec celui de la liste (`permission_present`). Le compte est donc
+     toujours connu quand le test réussit (Q-40-8).
+   - Réponse : `accountId` (`null` si le compte n'a pas été lu : contrôle antérieur ou `account_readable` en échec), `livemode`, `apiVersion`, `balances: [{ currency, total }]` (lus, non enregistrés),
      `version`. Succès : `accountId`, `apiVersion` (= `API_VERSION`) et `livemode` écrits aux réglages **s'ils
      diffèrent**, version + 1, dans la transaction de l'audit ; `last_error` remis à `NULL`. Échec : `last_error` = code.
    - Audit `payment_provider_connection.tested` (38-7 AC-8, libellé existant) : `details` `{ result, accountIdChanged,
      livemode, currencies }` — ni clé ni montant.
-   - **Compte gardé (D40-P2-1, C-40-7 de l'epic)** : contrôle `account_unchanged`, après la lecture du compte. **Une
+   - **Compte gardé (D40-P2-1, C-40-7 de l'epic)** : contrôle `account_unchanged`, après `account_readable`. **Une
      seule règle**, fonction pure `account_decision(stored: Option<&str>, read: &str, has_downloaded: bool) ->
      Keep | Pose | Refuse` (même module que `mode_decision`, même définition de *transaction téléchargée*, AC-5 ; testée
      sur ses six combinaisons ; **`read` est toujours connu** : un compte illisible est refusé en amont,
@@ -326,8 +338,9 @@ paginée sans perte, à version d'API fixe et sans fuite de la clé.
    - **Le passage garde aussi le compte (D40-P3-1, orchestrateur).** Au **début de chaque passage** (après
      `mode_decision`, avant tout téléchargement), le passage lit `GET /v1/account` — **une requête, hors plafond** de
      l'AC-7 — par une méthode neuve `Connector::account_ref(&self) -> Result<Option<String>, ConnectorError>`
-     (additive, Écart 6 ; défaut `Ok(None)` : PayPal et le factice inchangés ; `StripeConnector` : même lecture,
-     même validation `^acct_…`, mêmes en-têtes que « Tester ») et applique la **même** `account_decision` :
+     (additive, Écart 6 ; défaut `Ok(None)` : PayPal et le factice inchangés, et `Ok(None)` → **aucune garde**, le
+     passage continue ; `StripeConnector` ne rend jamais `Ok(None)` : `Ok(Some(id))` ou une erreur ; c'est l'appel
+     que fait aussi « Tester », ci-dessus) et applique la **même** `account_decision` :
      `Pose` → `accountId` écrit dans la transaction qui écrit la première page, avec `livemode` (version + 1, rien
      d'écrit si aucune page ne l'est) ; `Keep` → rien ; `Refuse` → passage `failed` **sans téléchargement**,
      `error_code = invalid_response`, `error_detail = "account"`, `lastError = PROVIDER_ACCOUNT_CHANGED` ;
@@ -343,7 +356,8 @@ paginée sans perte, à version d'API fixe et sans fuite de la clé.
      passage (38-3b AC-7, E12, B2).
    - Tests HTTP : succès qui pose les trois champs ; second succès sans changement (rien d'écrit, audit seul) ; 401 →
      `PROVIDER_AUTH_FAILED` ; liste en 403 → `permission_present` faux, `PROVIDER_PERMISSION_MISSING` ; compte en 403 →
-     `account_readable` en échec, `PROVIDER_ACCOUNT_UNREADABLE`, `usable: false`, rien d'écrit ; compte en 404 : idem ; Comptable → 403 ; clé d'API → `403 API_KEY_ADMIN_FORBIDDEN` ; `accountId` lu ≠ réglages
+     `account_readable` en échec, `PROVIDER_ACCOUNT_UNREADABLE`, `usable: false`, rien d'écrit ; compte en 404 : idem ; compte en 500 (deux fois) → `account_readable` en échec,
+     `PROVIDER_UNAVAILABLE` ; Comptable → 403 ; clé d'API → `403 API_KEY_ADMIN_FORBIDDEN` ; `accountId` lu ≠ réglages
      sans transaction → réécrit, `accountIdChanged: true` ; avec une transaction → `account_unchanged` en échec,
      `PROVIDER_ACCOUNT_CHANGED`, réglages et version inchangés ; compte en 403 sur une connexion téléchargée →
      `account_readable` en échec, `accountId` des réglages gardé.
@@ -361,7 +375,9 @@ paginée sans perte, à version d'API fixe et sans fuite de la clé.
       voie unique — **aucun appelant d'`open` ajouté**, le site de la fabrique reste le seul —, mode de la clé, transport).
     - **`KESH_TEST_MODE`** : variante additive `stripeResponses` du corps de `POST /api/v1/_test/provider-connector`
       (forme et validation de `paypalResponses`, 38-3b AC-3 : tableau non vide `{ method ∈ GET, path "/…", query?, status
-      100–599, body }` servi dans l'ordre, dernière répétée, **ou** exactement `"default"` ; sinon 400
+      100–599, body }` servi dans l'ordre, dernière répétée — d'où l'ordre des requêtes Stripe à programmer : « Tester »
+     lit `/v1/balance`, `/v1/balance_transactions`, puis `/v1/account` ; un passage lit **d'abord** `/v1/account`
+     (AC-9, D40-P3-1), puis ses autres lectures dans l'ordre de 38-3b —, **ou** exactement `"default"` ; sinon 400
       `AppError::Validation` ; **`query?` admet une liste de valeurs par clé** — `expand[]`, ou `created[gte]` unique —,
       amendement additif de la forme « objet de chaînes » de 38-3b AC-3, PayPal inchangé) ; une connexion `stripe` sans variante garde le `FakeConnector` ; avec elle, un vrai
       `StripeConnector` sur le transport factice. `TEST_ENDPOINT_ROUTES` inchangé (même route).
@@ -424,7 +440,7 @@ d'aujourd'hui** — l'Epic 38 n'étant pas développé) ; aucun outil
 - [ ] T0 — Prérequis : Epic 38 fusionné ; 40-0 tenue (version d'API des fixtures, droits de la clé constatés) ; sinon arrêt.
 - [ ] T1 — `kesh-core` : `Provider::Stripe`, `StripeSettings`, validation, `parse_settings`, tests (AC-2).
 - [ ] T2 — `kesh-providers::stripe` : constantes, requête, `amounts`, `StripeRecord`/`StripeSource` et validation,
-      curseur et découpage, `balances`, `test()`, `key_mode`, `classify_window` provisoire ; `value_date` dans
+      curseur et découpage, `balances`, `test()`, `account_ref()` (méthode additive du trait, Écart 6), `key_mode`, `classify_window` provisoire ; `value_date` dans
       `ProviderMovement` et `validate_page` (AC-1, AC-5 à AC-8).
 - [ ] T3 — `kesh-api` : lecture du compte au début du passage (`Connector::account_ref`, `account_decision`, D40-P3-1), corps de secrets Stripe, `PROVIDER_SECRET_NOT_RESTRICTED`, `required_secrets` et secrets nommés si
       39 n'est pas livré, fabrique, route `test` (contrôles, écriture des champs du serveur, audit), garde de mode au passage,
@@ -483,6 +499,22 @@ d'aujourd'hui** — l'Epic 38 n'étant pas développé) ; aucun outil
 
 ## Change Log
 
+- 2026-11-15 — validation P4 ciblée (Opus) : 0 CRITICAL, 0 HIGH, 2 MEDIUM, 3 LOW ; tous remédiés dans la fiche.
+  MEDIUM : P4-1 AC-9/Écart 6, `test()` ne rend qu'une `ConnectorError` : un 403 de `/v1/account` y était
+  indiscernable d'un 403 de la liste (`permission_present`), et l'AC-10 interdit une variante neuve — le contrôle
+  `account_readable` n'était pas implémentable → `StripeConnector::test()` ne lit plus le compte (deux requêtes,
+  `account_ref: None`) ; la route appelle `Connector::account_ref()` après `test()`, la même méthode que le passage, et
+  attribue son erreur à `account_readable` (`Permission` → `PROVIDER_ACCOUNT_UNREADABLE`, sinon table de l'AC-10) ;
+  P4-2 AC-9/AC-5, `lastError = PROVIDER_ACCOUNT_CHANGED`/`_UNREADABLE` au passage contredisait 38-3b AC-4 (Échec :
+  `last_error` = `app_code()` ou code propre du passage), amendement non déclaré, et divergeait de la garde de mode
+  (`PROVIDER_RESPONSE_INVALID`) → amendement déclaré à l'Écart 6, garde de mode alignée (`PROVIDER_MODE_CHANGED`,
+  test). LOW : P4-3 `account_ref() = Ok(None)` au passage sans effet dit (aucune garde) ; P4-4 AC-11, ordre des
+  requêtes à programmer en tableau (`/v1/account` d'abord au passage) ; P4-5 AC-9, `accountId` `null` aussi quand
+  `account_readable` échoue ; test `/v1/account` en 500 ajouté. Lignes relues : 38-3b AC-2 (trait, `ConnectorTest`,
+  `code()`/`app_code()`), 38-3b AC-4 (Échec), 38-7 AC-8 ; `crates/kesh-api/src/routes/reconciliation.rs:170-176, 1478`
+  (`valueDate` déjà rendu). Epic (points inter-fiches de la passe) : C-40-3 gagne `PROVIDER_ACCOUNT_UNREADABLE` ; DTO
+  des propositions (`valueDate` déjà rendu, `entryDate` seule) ; G12 et FR-40-4-2 ; G18 nuancé ; propagés : C-40-1
+  (`accountId` exigé) et périmètre de 40-1 (`account_ref()`).
 - 2026-11-15 — validation P3 (Sonnet) : 0 CRITICAL, 0 HIGH, 1 MEDIUM, 4 LOW ; remédiés dans la fiche sauf 40-1-P3-5
   (inter-fiches : 40-6 et C-40-3 de l'epic, au rapport : le contrôle `account_readable` et le code neuf). MEDIUM : P3-1 décision D40-P3-1 appliquée (AC-9) — le passage
   lit `/v1/account` au début de chaque passage (`Connector::account_ref`, Écart 6, une requête hors plafond) et applique

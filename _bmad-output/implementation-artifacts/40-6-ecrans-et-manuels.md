@@ -6,8 +6,9 @@ Status: ready-for-dev
   C-40-1 à C-40-6) ; décisions de Beat B3, B6, B10, B13, B17, B20, B21 (`epics-38-40-cadrage.md`), qui priment ;
   décision de l'orchestrateur **P40-1** (clés `rk_live_` et `rk_test_` admises, `sk_` refusée, mode montré).
 - **Dépend de** : **40-1** (réglages `StripeSettings`, secret `restrictedKey`, refus `PROVIDER_SECRET_NOT_RESTRICTED`
-  et ses motifs, mode et `PROVIDER_MODE_CHANGED`, contrôles de « Tester » `mode_unchanged`, `permission_present`,
-  `provider_reachable`, réponse `accountId`/`livemode`/`apiVersion`, jeu factice `stripeResponses: "default"`), **40-2**
+  et ses motifs, mode et `PROVIDER_MODE_CHANGED`, compte gardé et `PROVIDER_ACCOUNT_CHANGED`,
+  `PROVIDER_ACCOUNT_UNREADABLE`, contrôles de « Tester » `mode_unchanged`, `permission_present`, `account_readable`,
+  `account_unchanged`, `provider_reachable`, réponse `accountId`/`livemode`/`apiVersion`, jeu factice `stripeResponses: "default"`), **40-2**
   (codes courts `stripe::event_codes`, surcharges et leurs refus), **40-3** (versement : `value_date`, écriture datée de
   l'arrivée, ligne UBS rattachée, échecs à la file), **40-4** (`inTransitPayouts`, `otherDateShifts`, `available` et
   `pending` à « Tester », détail de K9, tuile de l'accueil), **40-5** (rapports CSV aux relevés joints) ; **38-9a** et
@@ -89,9 +90,11 @@ afin de tenir les comptes Stripe sans saisie, en sachant ce qui est une créance
        surchargeables (`STRIPE_OVERRIDABLE_CODES` de `provider-labels.ts`, AC-6 ; 40-2 AC-6), non un `T0000` ; un refus
        `code_not_overridable` ou `malformed`, `kind_not_allowed` ou `too_many` (40-2 AC-6) s'affiche à la ligne ou au bloc, un libellé par motif ; la valeur se
        choisit parmi les genres admis par 40-2 AC-6 (`conversion` et `refund` absents) ;
-     - **posés par le serveur, en lecture seule** : « Compte Stripe » (`accountId` ; « non lu » tant que `null` — connexion
-       jamais testée avec succès : depuis D40-P3-1 de 40-1, un test ou un passage refuse une clé sans droit de lire le
-       compte, si bien que `null` ne vaut plus « test réussi, droit absent »), « Version de l'API » (`apiVersion`), **mode** (`livemode` : badge « Mode test »
+     - **posés par le serveur, en lecture seule** : « Compte Stripe » (`accountId` ; « non lu » tant que `null` — ni
+       « Tester » réussi, ni passage qui ait écrit une page (40-1 AC-9 : `Pose` au test ou avec la première page d'un
+       passage) ; depuis D40-P3-1 de 40-1, un test ou un passage refuse une clé sans droit de lire le compte
+       (`account_readable`, `PROVIDER_ACCOUNT_UNREADABLE`), si bien que `null` ne vaut plus « test réussi, droit
+       absent »), « Version de l'API » (`apiVersion`), **mode** (`livemode` : badge « Mode test »
        ou « Mode réel » ; `null` → « Mode : à établir — lancez « Tester la connexion » »).
    - `providerSettingsBody(form)` (38-9a AC-2) gagne le bras Stripe : il envoie **toujours** `overlapDays`,
      `invoiceRefSource`, `eventKindOverrides`, **jamais** `accountId`, `apiVersion`, `livemode` (40-1 AC-2 : refusés du
@@ -101,11 +104,11 @@ afin de tenir les comptes Stripe sans saisie, en sachant ce qui est une créance
    libellé « Clé restreinte Stripe », corps `{ restrictedKey }` (40-1 AC-4), mêmes garanties (jamais pré-rempli, vidé
    après succès **et** échec, aucun store, journal, `toast` ni `data-*`).
    - **Contrôle avant envoi** (fonction pure `stripeKeyRefusal(value) -> reason | null`, `provider-labels.ts`), sur la
-     valeur **sans espaces ni fin de ligne en tête et en queue** (un collage en porte souvent ; la valeur envoyée est
-     celle-là, comme le serveur la lit) : une
+     valeur **sans espaces ni fin de ligne en tête et en queue** (un collage en porte souvent ; la valeur rognée est
+     celle qui est envoyée — le serveur, lui, ne rogne pas : 40-1 AC-4 n'admet que `[A-Za-z0-9]` après le préfixe) : une
      valeur qui commence par `sk_` est refusée **sans être envoyée** (une clé qui peut tout faire ne quitte pas le
-     navigateur), motif `secret_key` — le serveur ne motive `secret_key` que pour `sk_live_` et `sk_test_`
-     (40-1 AC-4) et rend `unknown_prefix` pour un autre `sk_…` : le contrôle local est plus strict, par prudence ;
+     navigateur), motif `secret_key` — comme au serveur, qui motive `secret_key` pour **tout** préfixe `sk_`
+     (`sk_live_`, `sk_test_` ou autre, 40-1 AC-4) ;
      `pk_` → `publishable_key` ; tout préfixe autre que `rk_live_` / `rk_test_` →
      `unknown_prefix` — motifs de 40-1 AC-4, le serveur restant l'autorité. Le champ est alors vidé.
    - Messages, par motif (local ou `400 PROVIDER_SECRET_NOT_RESTRICTED`, `details.reason`) : `secret_key` → « C'est une
@@ -129,20 +132,27 @@ afin de tenir les comptes Stripe sans saisie, en sachant ce qui est une créance
    clé le droit *Lecture* sur les ressources listées au manuel » ; `PROVIDER_MODE_CHANGED` → « Cette clé n'est pas du même
    mode que les mouvements déjà téléchargés : créez une connexion neuve pour changer de mode » ;
    `PROVIDER_ACCOUNT_CHANGED` → « Cette clé est celle d'un autre compte Stripe que les mouvements déjà téléchargés :
-   déposez la clé du bon compte, ou créez une connexion neuve » ; **refus d'une clé sans droit de lire le compte**
-   (D40-P3-1 de 40-1 : même `account_decision` à « Tester » et au passage) → le code ou le motif que 40-1 AC-9/AC-10
-   lui donne (relevé au développement par le `grep` ci-dessous), libellé « Dans Stripe, donnez à la clé le droit de lire
-   le compte (ressource relevée à la recette 40-0, Q-40-8) » — au contrôle `account_unchanged` ou au contrôle que 40-1
-   nomme ; sans libellé, jamais un texte vide (rendu brut). Succès : compte Stripe,
+   déposez la clé du bon compte, ou créez une connexion neuve » ; **clé sans droit de lire le compte** (D40-P3-1, 40-1
+   AC-9) : contrôle **`account_readable`** (libellé « Droit de lire le compte Stripe », listé après `permission_present`
+   et avant `account_unchanged`, dans l'ordre de 40-1 AC-9) et code `PROVIDER_ACCOUNT_UNREADABLE` → « Cette clé ne peut
+   pas lire le compte Stripe : ajoutez le droit de lecture du compte » (texte de `provider-error-provider-account-unreadable`,
+   40-1 AC-14). Les trois codes `PROVIDER_MODE_CHANGED`, `PROVIDER_ACCOUNT_CHANGED` et `PROVIDER_ACCOUNT_UNREADABLE`
+   se lisent aussi dans **`lastError`** de la connexion (table des codes d'API de 38-9a AC-5) : un passage refusé pour
+   le compte (40-1 AC-9 : `errorCode` `permission` ou `invalid_response`, `errorDetail` `account`) laisse
+   `lastError = PROVIDER_ACCOUNT_UNREADABLE` ou `PROVIDER_ACCOUNT_CHANGED`, rendu par le même libellé qu'à « Tester ».
+   Succès : compte Stripe,
    mode, version, et par devise : **total**, **disponible** (`available`) et **en attente** (`pending`) quand présents
    (40-4 AC-5), au format suisse, avec « lus à l'instant, non enregistrés » ; une devise sans compte Kesh renvoie au bloc
    des soldes sans compte (38-9a AC-6). `provider-labels.ts` : chaque contrôle, chaque code et chaque **motif
-   d'`errorDetail`** neufs (40-1 AC-5, AC-6, AC-7, AC-10 : `livemode`, `pagination`, `value_date`, `currency`, … ; liste relevée par `grep -n 'reason: "' ` des fiches 40-1 à 40-4 au développement) ont leur libellé,
+   d'`errorDetail`** neufs (40-1 AC-5, AC-6, AC-7, AC-9, AC-10 : `livemode`, `pagination`, `value_date`, `currency`,
+   `account`, … ; liste relevée par `grep -n 'reason: "' ` des fiches 40-1 à 40-4 au développement) ont leur libellé,
    et `provider_reachable` le sien (test de table de 38-9a étendu ; code ou motif inconnu → rendu brut, jamais vide). Vitest : réponse Stripe complète ; `accountId: null` (connexion jamais testée : « non lu ») ; ✗
-   `mode_unchanged` ; ✗ du refus de clé sans droit de lire le compte.
+   `mode_unchanged` ; ✗ `account_readable` avec `PROVIDER_ACCOUNT_UNREADABLE` (libellé, jamais vide) ; connexion à
+   `lastError: "PROVIDER_ACCOUNT_UNREADABLE"` → même libellé ; passage à `errorDetail: "account"` → libellé du motif.
 4. **AC-4 — Versement : sortie, arrivée, proposition (FR-40-6-3, NFR-40-6-5).** Dans `ProviderProposalPreview.svelte`
-   (38-9b AC-3), bras **retrait** : quand la transaction porte `valueDate` (champ que 40-3 AC-3 ajoute au DTO de
-   transaction de `GET …/proposals`), l'en-tête dit « Sorti de Stripe le <`bookingDate`> · arrivée en banque
+   (38-9b AC-3), bras **retrait** : quand la transaction porte `valueDate` (**déjà rendu** au DTO de `GET …/proposals` :
+   `transaction.valueDate`, `TransactionSummary.value_date`, `crates/kesh-api/src/routes/reconciliation.rs:172-176` ;
+   40-3 AC-3 n'y ajoute que `entryDate`), l'en-tête dit « Sorti de Stripe le <`bookingDate`> · arrivée en banque
    prévue le <`valueDate`> » et l'aperçu « Écriture proposée au <`entryDate`> » (`entryDate` de la proposition
    `provider` de retrait, 40-3 AC-3) ; le compte bancaire
    suggéré (`transferBankAccountId`, cherché à partir de l'arrivée, C-40-5) et l'écriture existante à rattacher (voie a)
@@ -218,7 +228,8 @@ afin de tenir les comptes Stripe sans saisie, en sachant ce qui est une créance
      Clés API → Créer une clé restreinte* ; *Lecture* sur les seules ressources relevées à la recette 40-0 — Q-40-8 —,
      *Aucun* sur toutes les autres ; jamais une clé `sk_`) ; la valeur ne se relit pas chez Stripe et ne se réaffiche
      pas dans Kesh ; mode test et réel, connexion neuve pour changer de mode ; « Tester » et chaque contrôle avec son
-     remède ; compte « Débiteurs Stripe » par devise (1101–1103, numéros de la société de Beat : à écrire comme exemple) lié au compte
+     remède, dont `account_readable` : le droit de **lire le compte** est exigé — sans lui, « Tester » **et chaque
+     passage** refusent la clé (`PROVIDER_ACCOUNT_UNREADABLE`, D40-P3-1, 40-1 AC-9) ; compte « Débiteurs Stripe » par devise (1101–1103, numéros de la société de Beat : à écrire comme exemple) lié au compte
      bancaire Kesh de la devise, frais au sous-compte de la devise (6912–6914, B3) ; boutique (`invoiceRefSource`) ; surcharges de codes ; **la clé est effacée
      à toute restauration et se ressaisit** (E2) ; révocation dans Stripe ; recette sur une instance jetable (B12).
    - **Utilisateur** (`user-manual.tex`, sous la sous-section des prestataires de 38-9b AC-10, sous-section « Stripe ») :
@@ -244,7 +255,8 @@ afin de tenir les comptes Stripe sans saisie, en sachant ce qui est une créance
      champ hérité de 38-9a AC-2, dit aussi au manuel) ; la tuile de l'accueil montre la créance hors total (40-4) — et le
      paragraphe de la tuile (`:318-330`) le dit ; **liste des codes courts** (tableau `CHARGE` … `OTHER`, AC-6) en aide
      du critère `event_code_prefix` ; rattachement en lot des transactions de 2024 aux écritures existantes (B17, 38-6c1) ;
-     changer de compte Stripe après un téléchargement demande une connexion neuve (`PROVIDER_ACCOUNT_CHANGED`, 40-1 AC-9).
+     changer de compte Stripe après un téléchargement demande une connexion neuve (`PROVIDER_ACCOUNT_CHANGED`, 40-1 AC-9) —
+     le passage lit le compte à chaque fois et refuse de même une clé d'un autre compte, sans attendre « Tester ».
    - **Limite de 38-9a retirée** : la phrase que 38-9a (AC-8 b, « limite écrite ») pose au manuel — un mouvement de la
      même journée postérieur à `asOf` et déjà rapproché fait un « inexpliqué » transitoire — est **retirée** et remplacée
      par le terme « autres décalages de date » de l'écart ventilé (40-4 Écart 6, `otherDateShifts`) ; `grep -n
@@ -260,7 +272,10 @@ afin de tenir les comptes Stripe sans saisie, en sachant ce qui est une créance
    un versement arrivé après la date du run apparaît « en route », et l'assertion ne porte que sur « Inexpliqué » ; compte du plan
    USD « Débiteurs Stripe USD », compte de frais USD, règle `event_code_prefix` `CHARGE` → compte de produits USD,
    compte bancaire UBS USD) ; Administrateur : crée la connexion Stripe à l'écran, puis le test appelle `POST
-   /api/v1/_test/provider-connector` avec **`stripeResponses: "default"`** pour ce `connectionId` (40-1 AC-11) ; colle
+   /api/v1/_test/provider-connector` avec **`stripeResponses: "default"`** pour ce `connectionId` (40-1 AC-11 : servi
+   **par chemin**, `/v1/account` compris, si bien que la lecture du compte au début du passage, D40-P3-1, n'exige rien de
+   plus ; un programme **ordonné** — capture de l'AC-10 — sert la réponse de `/v1/account` **en premier** pour un
+   passage, et dans l'ordre de 40-1 AC-9 pour « Tester » : `/v1/balance`, `/v1/balance_transactions`, `/v1/account`) ; colle
    d'abord une clé `sk_test_…` → refus local, **aucune requête `PUT …/secrets`** (interception) ; dépose une clé
    `rk_test_` marqueur ; teste (✓, mode test, `available`/`pending` affichés) ; crée le compte USD depuis le bloc des
    soldes sans compte (38-9a AC-6) ; télécharge ; Comptable : la vente USD est **proposée** et acceptée ; importe par
@@ -273,7 +288,7 @@ afin de tenir les comptes Stripe sans saisie, en sachant ce qui est une créance
 10. **AC-10 — Recette visuelle (NFR-40-6-4).** Captures (thème clair, base de démonstration, `kesh-gate-logs/`, hors
     dépôt), jointes au Dev Agent Record et au prompt de revue : formulaire Stripe (boutique « métadonnée » et
     « description », bloc « Avancé ») ; refus d'une clé `sk_` ; clé de test déposée (badge « Mode test ») ; résultat de
-    « Tester » tout vert avec `available`/`pending`, et avec ✗ `permission_present` ; proposition d'un versement (sortie,
+    « Tester » tout vert avec `available`/`pending`, avec ✗ `permission_present` et avec ✗ `account_readable` ; proposition d'un versement (sortie,
     arrivée) ; échec de versement à la file ; résumé du contrôle (b) avec versements en route ; K9 avec « dont versements
     en route » ; aide des codes Stripe au formulaire des règles.
 11. **AC-11 — Ce que la story ne touche pas.** Aucune migration ; aucune route ni action d'audit (C-40-6) ; **aucun outil
@@ -300,9 +315,10 @@ afin de tenir les comptes Stripe sans saisie, en sachant ce qui est une créance
   format complet (40-1 AC-4) recopiée au TypeScript.
 - **Montants** : en devise de la transaction ou du compte, jamais « CHF » supposé (38-9b AC-3) ; `big.js`, jamais
   `Number`.
-- **Libellés de 40-1 transmis** : contrôles `mode_unchanged`, `account_unchanged`, `permission_present` ; codes
-  `PROVIDER_SECRET_NOT_RESTRICTED` (motifs `secret_key`, `publishable_key`, `unknown_prefix`), `PROVIDER_MODE_CHANGED`,
-  `PROVIDER_ACCOUNT_CHANGED` (40-1 AC-9, AC-14).
+- **Libellés de 40-1 transmis** : contrôles `mode_unchanged`, `account_unchanged`, `account_readable`,
+  `permission_present` ; codes `PROVIDER_SECRET_NOT_RESTRICTED` (motifs `secret_key`, `publishable_key`,
+  `unknown_prefix`), `PROVIDER_MODE_CHANGED`, `PROVIDER_ACCOUNT_CHANGED`, `PROVIDER_ACCOUNT_UNREADABLE` ; motif
+  d'`errorDetail` `account` (40-1 AC-9, AC-14).
 - **Références** : epic G4, G8, G10, G12, G13, G14, G19, C-40-1 à C-40-6, Q-40-2, Q-40-8, Q-40-10 ; 40-1 AC-2, AC-4,
   AC-5, AC-9, AC-11, AC-14 ; 40-2 AC-2, AC-6 ; 40-4 AC-2, AC-4, AC-5, AC-7 ; 40-5 AC-6 ; 38-9a AC-2 à AC-13 ; 38-9b
   AC-1, AC-3, AC-10, AC-11.
@@ -397,3 +413,28 @@ afin de tenir les comptes Stripe sans saisie, en sachant ce qui est une créance
   AC-7), 40-4 (AC-2, AC-4), 40-5 (AC-6, AC-8) — noms concordants. Axes non exercés : code des écrans (non écrit) ; PDF des
   manuels ; noms de ressources Stripe (Q-40-8). Trend : P2 = 9 (5 MEDIUM) → P3 = 4 (1 MEDIUM, d'origine inter-fiches) ;
   une passe de plus est due.
+- 2026-11-15 — validation P4 ciblée (Opus) : 6 findings (0 CRITICAL, 0 HIGH, 2 MEDIUM, 4 LOW), braquée sur la remédiation
+  P3 (`git diff b4dc35dc 88c6b022`) et les points inter-fiches de D40-P3-1 ; remédiés dans la fiche. MEDIUM : P4-1 AC-2
+  (écrit en P3-2) disait que le serveur ne motive `secret_key` que pour `sk_live_`/`sk_test_` et rend `unknown_prefix`
+  pour un autre `sk_` — faux depuis la P3 de 40-1, dont l'AC-4 motive `secret_key` pour **tout** `sk_` : local et serveur
+  concordent, phrase réécrite ; P4-2 AC-3 (écrit en P3-1) laissait le refus d'une clé sans droit de lire le compte sans
+  contrôle ni code (« relevé au développement »), avec un libellé d'écran portant une référence interne
+  (« recette 40-0, Q-40-8 »), ni lecture dans `lastError`, ni motif `account`, ni capture, ni phrase au manuel — point
+  inter-fiches appliqué : contrôle `account_readable` (« Droit de lire le compte Stripe », ordre de 40-1 AC-9), code
+  `PROVIDER_ACCOUNT_UNREADABLE` → « Cette clé ne peut pas lire le compte Stripe : ajoutez le droit de lecture du compte »
+  (texte de 40-1 AC-14), les trois codes `PROVIDER_*_CHANGED`/`UNREADABLE` lus dans `lastError` (38-9a AC-5), motif
+  `account` du passage, trois Vitest, capture ✗ `account_readable` (AC-10), AC-8 : droit de lire le compte exigé, refus
+  au passage comme à « Tester », compte d'un autre Stripe refusé au passage. LOW : P4-3 AC-1 « non lu » ⇔ « jamais
+  testée » oubliait le `Pose` du passage (40-1 AC-9) ; P4-4 AC-2 « comme le serveur la lit » laissait croire que le
+  serveur rogne (40-1 AC-4 : `[A-Za-z0-9]` après le préfixe) ; P4-5 AC-4 attribuait `valueDate` à 40-3 — déjà rendu
+  (`routes/reconciliation.rs:172-176`, posé à `:1478` ; 40-3 AC-3 n'ajoute que `entryDate`, point inter-fiches) ; P4-6
+  AC-9 : jeu `"default"` servi par chemin (lecture du compte au passage sans rien à programmer), programme ordonné :
+  `/v1/account` en premier pour un passage, ordre de 40-1 AC-9 pour « Tester » ; « Dépend de » et Dev Notes gagnent
+  `account_readable`, `account_unchanged`, `PROVIDER_ACCOUNT_UNREADABLE`. Aucune mention « passage sans « Tester » non
+  gardé » dans la fiche (grep `non gardé`, `sans « Tester »` : aucune occurrence, rien à retirer). Relu :
+  40-1 AC-4, AC-9 (« Tester », compte gardé, passage), AC-10, AC-11 (jeu `"default"` par chemin), AC-14 ; 40-3 AC-3 et
+  Écart 3 ; 38-9a AC-5 (`:177-186`, deux vocabulaires), AC-10 (`:296-298`) ; 38-3b `:313` (soldes avant les mouvements) ;
+  `routes/reconciliation.rs:172-176`, `:1478`. Axes non exercés : code des écrans (non écrit) ; PDF des manuels ; noms
+  de ressources Stripe (Q-40-8). Trend : P3 = 4 (1 MEDIUM) → P4 = 6 (2 MEDIUM, nés de la remédiation P3 et d'une
+  remédiation concurrente de 40-1 : recyclage d'inter-fiches, non défaut d'origine — signal déclaré) ; une passe de plus
+  est due.

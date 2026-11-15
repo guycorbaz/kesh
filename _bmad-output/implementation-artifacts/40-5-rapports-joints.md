@@ -61,8 +61,9 @@ que la pièce soit gardée et sauvegardée dans son format d'origine.
   story change cette attente exprès (NFR-40-5-3).
 - **Multipart** : `parse_multipart` (`crates/kesh-api/src/routes/bank_imports.rs:484-485`) tronque le nom d'origine à
   `FILENAME_MAX_BYTES` et pose `upload.xml` quand la partie n'en a pas ; il garde le type de la partie tel quel,
-  paramètres compris (`:486`). **38-10 reprend ce parseur** (Dev Notes de 38-10 : « reprendre `parse_multipart` …,
-  extraire un utilitaire commun si la forme diffère ») : le nom qu'il rend est donc **déjà tronqué** et, sans nom,
+  paramètres compris (`:486`). **38-10 reprend ce parseur** (Dev Notes de 38-10 : « reprendre
+  `parse_multipart`/`map_multipart_err` de `bank_imports.rs` (extraire un utilitaire commun si la forme diffère trop,
+  sans recopie) ») : le nom qu'il rend est donc **déjà tronqué** et, sans nom,
   `upload.xml` ; l'annonce de C-40-5-1 exige le nom d'origine (P3-1, T2).
 
 ## Écarts à l'epic
@@ -96,9 +97,11 @@ que la pièce soit gardée et sauvegardée dans son format d'origine.
   ou sans séparateur (`,`, `;` ou tabulation) → `no_header`.
   Rien d'autre n'est lu (ni colonnes, ni solde : le solde est **saisi**, G13).
 - **C-40-5-3 — Rangement d'un CSV** : extension `csv`, `mime_type = 'text/csv'` (via `mime_for_ext`, qui gagne `csv`),
-  `kind = 'provider_report'`, `source = 'manual'`. Une partie **sans nom de fichier** (type `text/csv` seul) est rangée
-  sous le nom d'origine `rapport.csv`, non sous le repli `upload.xml` du parseur : le téléchargement ne porterait pas
-  une extension `.xml` sur un CSV (`Content-Disposition` lit le nom d'origine).
+  `kind = 'provider_report'`, `source = 'manual'`. Une partie **sans nom de fichier**, annoncée CSV par son seul type
+  (l'un des trois de C-40-5-1), est rangée sous le nom d'origine `rapport.csv`, non sous le repli `upload.xml` du
+  parseur : le téléchargement ne porterait pas une extension `.xml` sur un CSV (`Content-Disposition` lit le nom
+  d'origine). Limite assumée : un nom de plus de 255 octets est rangé tronqué (38-10 AC-2) et peut perdre son `.csv` ;
+  le type du téléchargement se lit de `mime_type` (C-40-5-4), non du nom.
 - **C-40-5-4 — Téléchargement au type stocké, par une table fermée** : `application/pdf` → `application/pdf` ;
   `text/csv` → `text/csv; charset=utf-8` ; toute autre valeur (version ultérieure, Wise 39) →
   `application/octet-stream`. Toujours `attachment` et `X-Content-Type-Options: nosniff` (un CSV n'est jamais rendu dans
@@ -121,10 +124,10 @@ que la pièce soit gardée et sauvegardée dans son format d'origine.
    `application/vnd.ms-excel` + `.csv` → CSV ; nom `.CSV` (majuscules) → CSV ; type `text/csv` **seul** (nom sans extension)
   → CSV ; type `application/vnd.ms-excel` seul → CSV ; nom sans extension et type `application/octet-stream` → `NOT_PDF` ;
   fichier vide nommé `.csv` → refus de 38-10 (pas `no_header`) ; en-tête d'une seule colonne (sans séparateur) →
-  `no_header` (limite assumée, dite au manuel) ; type `text/csv; charset=utf-8` seul → CSV ; nom de plus de 255 octets
-  terminé par `.csv` → CSV (annonce lue avant troncature : test **de route**, qui exerce l'utilitaire multipart, car
-  `classify_document` seul reçoit déjà le nom entier) ; partie `text/csv` sans nom → `201`, `originalFilename`
-  `rapport.csv`. Tests de route : CSV joint → `201`, `kind: "provider_report"`,
+  `no_header` (limite assumée, dite au manuel) ; type `text/csv; charset=utf-8` seul → CSV. Tests de route : nom de plus
+  de 255 octets terminé par `.csv` → `201`, CSV, `mimeType: "text/csv"` (annonce lue avant troncature : test **de
+  route**, qui exerce l'utilitaire multipart, car `classify_document` seul reçoit déjà le nom entier) ; partie
+  `text/csv` sans nom → `201`, `originalFilename` `rapport.csv` ; CSV joint → `201`, `kind: "provider_report"`,
    `mimeType: "text/csv"` ; doublon du même CSV → `409 BANK_DOCUMENT_DUPLICATE` (38-10) ; même CSV sur deux comptes →
    admis ; les tests **serveur** de 38-10 passent **sans retouche** de leurs attentes (NFR-40-5-3). `mime_for_ext("csv") == "text/csv"` (test
    `:421-426` étendu) ; l'inbox refuse toujours un `.csv` (`ALLOWED_EXT` inchangé ; test existant cité au Change Log, ou ajouté s'il n'y en a
@@ -164,10 +167,12 @@ que la pièce soit gardée et sauvegardée dans son format d'origine.
    et du rapport de solde) : y saisir un solde ferait un écart K9 fictif ; les refus `BANK_DOCUMENT_UNSUPPORTED_TYPE` (un libellé par `reason`) et `BANK_DOCUMENT_NOT_PDF`
    (message élargi : « Le fichier n'est ni un PDF ni un CSV ») traduits ; API cliente et types (`bank-accounts.api.ts`,
    champ `mimeType`) ; `+page.svelte` des comptes bancaires **non touché**. **Préfixes** (`lint-i18n-ownership.js:177-186`) :
-   les clés neuves du dialogue (titre, aide, type affiché, un libellé par `reason`) sont au préfixe **`bank-accounts-`**
-   (`features/bank-accounts/`, comme 38-10 AC-9) ; le message serveur de `BANK_DOCUMENT_UNSUPPORTED_TYPE` suit le patron
-   des messages d'erreur du serveur (`t("bank-import-errors-…", …)`, `errors.rs:2553-2558`), et celui de
-   `BANK_DOCUMENT_NOT_PDF` garde la clé que 38-10 lui donne ; jamais une entrée à `KNOWN_VIOLATIONS`. Clés aux **quatre** locales
+   les clés neuves du dialogue (titre, aide, type affiché) sont au préfixe **`bank-accounts-`**
+   (`features/bank-accounts/`, comme 38-10 AC-9) ; les libellés des refus (un par `reason`) vont à l'espace que 38-10
+   AC-9 donne aux messages d'erreur du dialogue (`error-`, global, `lint-i18n-ownership.js:16`) ; le message serveur de
+   `BANK_DOCUMENT_UNSUPPORTED_TYPE` suit le patron des erreurs des comptes bancaires (`t("bank-accounts-errors-…", …)`,
+   `errors.rs:1373`, `:2576`), et celui de `BANK_DOCUMENT_NOT_PDF` garde la clé que 38-10 lui donne ; jamais une entrée
+   à `KNOWN_VIOLATIONS`. Clés aux **quatre** locales
    (`crates/kesh-i18n/locales/{fr,de,it,en}-CH/messages.ftl`), en toutes lettres ; message de `BANK_DOCUMENT_NOT_PDF`
    mis à jour aux quatre (le code ne change pas). **Attentes de 38-10 changées exprès** (NFR-40-5-3) : les Vitest de
    38-10 AC-9 qui tiennent « PDF seul côté écran », le titre « Joindre un relevé », l'attribut `accept` et le texte de
@@ -262,3 +267,18 @@ que la pièce soit gardée et sauvegardée dans son format d'origine.
   `encoding.rs:48-64` ; 38-10 (AC-2, AC-3, AC-8, AC-9, Dev Notes), 40-6 AC-8, epic G13, C-40-6 — concordants. Axes non
   exercés : code de 38-10 (non écrit) ; PDF du manuel ; encodage réel d'un CSV du tableau de bord Stripe (recette 40-0).
   Trend : P2 = 4 (2 MEDIUM) → P3 = 4 (2 MEDIUM, d'origine) ; une passe de plus est due.
+- 2026-11-15 — validation P4 ciblée (Opus) : 3 findings (0 CRITICAL, 0 HIGH, 0 MEDIUM, 3 LOW), braquée sur la
+  remédiation P3 (`git diff b4dc35dc 88c6b022`) ; remédiés dans la fiche. P4-1 citation des Dev Notes de 38-10
+  tronquée (« diffère » pour « diffère trop, sans recopie », 38-10 `:322-323`) — rétablie. P4-2 préfixes : le message
+  serveur prenait le patron `bank-import-errors-` (`errors.rs:2553-2558`, erreur de l'import) alors que les erreurs des
+  comptes bancaires sont en `bank-accounts-errors-` (`errors.rs:1373`, `:2576`), et les libellés des motifs allaient à
+  `bank-accounts-` quand 38-10 AC-9 range les messages d'erreur du dialogue en `error-` (global, `:16`) — alignés sur
+  les deux (les deux formes passaient le contrôle, `:177-186`). P4-3 C-40-5-3 ne visait que `text/csv` pour une partie
+  sans nom (C-40-5-1 en admet trois) ; les deux tests de route (nom > 255 octets, partie sans nom) étaient rangés dans la
+  liste des tests unitaires de `classify_document` — déplacés sous « Tests de route » ; limite dite : un nom > 255
+  octets rangé tronqué peut perdre `.csv` (le téléchargement lit `mime_type`). Relu au code : `bank_imports.rs:365`,
+  `:448-487`, `lint-i18n-ownership.js:16`, `:170-186`, `errors.rs:1368-1376`, `:2553-2558`, `:2576` ; 38-10 AC-2, AC-8,
+  AC-9, Dev Notes `:322-323`. Inter-fiches (38-10, signalé à l'orchestrateur) : une partie **PDF** sans nom est rangée
+  sous `upload.xml` (repli de `parse_multipart`, `:484`) et se télécharge sous ce nom. Axes non exercés : code de 38-10
+  (non écrit) ; PDF du manuel ; encodage réel d'un CSV Stripe (recette 40-0). Trend : P3 = 4 (2 MEDIUM) → P4 = 3
+  (0 MEDIUM) : aucun finding au-dessus de LOW, remédiation hors production (fiche seule) — boucle close.
