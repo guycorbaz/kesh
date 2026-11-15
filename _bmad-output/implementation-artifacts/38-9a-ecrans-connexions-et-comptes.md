@@ -48,11 +48,13 @@ rapproché.
 ## Critères d'acceptation
 
 1. **AC-1 — Navigation et pages** (Administrateur seul).
-   - Entrée **« Prestataires de paiement »** dans le groupe Paramètres, liste `adminOnly` de
+   - Entrée **« Prestataires de paiement »** (clé `nav-admin-providers`, AC-10) dans le groupe Administration
+     (`nav-administration`), liste `adminOnly` de
      `frontend/src/routes/(app)/+layout.svelte:147` (à côté de `/admin/backup`, `/admin/mcp`), lien `/admin/providers`.
    - Pages `frontend/src/routes/(app)/admin/providers/+page.svelte` (liste) et `…/admin/providers/[id]/+page.svelte`
      (fiche) ; code dans une fonctionnalité neuve **`frontend/src/lib/features/provider-connections/`** (`*.api.ts`,
-     `*.types.ts` — miroir de `ProviderConnectionResponse` de 38-1 AC-3, composants, tests Vitest) ; la page des comptes
+     `*.types.ts` — miroir de `ProviderConnectionResponse` de 38-1 AC-3, composants, tests Vitest ; clés i18n au
+     préfixe `provider-connections-`, AC-10) ; la page des comptes
      bancaires (`routes/(app)/bank-accounts/+page.svelte`, **1 295 lignes**) ne reçoit que des appels de composants neufs
      (AC-9), pas de logique inline de plus.
    - Un Comptable ou une Consultation qui ouvre `/admin/providers` voit le refus habituel des pages
@@ -287,8 +289,21 @@ rapproché.
      inchangé (un compte prestataire se crée depuis la connexion, AC-6). Les `data-testid` existants
      (`edit-iban`, `edit-is-primary`, `edit-kind`, `edit-card-last4`) restent pour les comptes ordinaires.
    - Un compte prestataire archivé ou clos (28-4a) garde son badge ; « Télécharger maintenant » y est absent.
-10. **AC-10 — Textes et i18n** (NFR-38-9a-2, NFR-38-9a-4). Clés neuves au préfixe `provider-` (écran) et
-    `nav-providers`, **écrites en toutes lettres** (pas de clé construite par gabarit, `i18n-keys.test.ts`), aux
+10. **AC-10 — Textes et i18n** (NFR-38-9a-2, NFR-38-9a-4). Préfixes imposés par `lint-i18n-ownership`
+    (`frontend/scripts/lint-i18n-ownership.js:177-186`, `keyBelongsToFeature` : sous `features/<f>/`, un nom à tiret
+    exige `key.startsWith('<f>-')`, sinon le premier segment de la clé doit valoir `<f>` ; seuls `error-`, `tooltip-`,
+    `common-`, `mode-`, `shortcut-`, `demo-` y échappent, `:16`) : clés neuves de l'écran au préfixe
+    **`provider-connections-`** (tout fichier de `features/provider-connections/`, `provider-labels.ts` et
+    `ProviderAccountBadge.svelte` compris — le badge vit dans cette fonctionnalité, la page des comptes bancaires
+    l'importe) ; entrée de menu **`nav-admin-providers`** (patron `nav-admin-backup`, `nav-admin-mcp` ; posée dans
+    `routes/(app)/+layout.svelte`) ; un texte neuf écrit **dans** une autre fonctionnalité porte le préfixe de celle-ci
+    (`bank-import-` pour `bank-import-display.ts`, AC-15 : « Téléchargé de … », « Source inconnue (`x`) » ;
+    `payment-batches-`, `bank-accounts-`, `accounts-` de même), sinon le libellé est lu par un appel à
+    `provider-labels.ts`, jamais par une clé `provider-connections-*` écrite hors de sa fonctionnalité. Le linter ne
+    balaie que `src/lib/features/` : les pages de `routes/(app)/` (comptes bancaires, plan comptable, import) ne
+    sont pas contrôlées, et le préfixe y suit l'usage de la page (`bank-accounts-`, `accounts-`) ; la règle ci-dessus
+    ne lie que les fichiers posés sous `features/`. Clés **écrites en toutes lettres** (pas de clé construite par
+    gabarit, `i18n-keys.test.ts`), aux
     quatre catalogues `crates/kesh-i18n/locales/{fr-CH,de-CH,it-CH,en-CH}/messages.ftl`, consommées par `i18nMsg` avec
     repli français (`frontend/src/lib/shared/utils/i18n.svelte`) ; **pas de sélecteur Fluent** (`{ $n -> … }`) — le
     client reçoit les messages pré-résolus (raison écrite dans `frontend/src/lib/features/reconciliation/already-booked.ts`) :
@@ -624,3 +639,17 @@ rapproché.
   `booked_at ≤ asOf` (lignes 58, 65, 118) et son test (a) de la ligne 146-148 attend la borne incluse, Q-40-4-2 ; à
   aligner sur `<` (son texte proposé, ligne ~300, est déjà celui de 38-9a). Axes non exercés : code amont, reste de la
   fiche. Trend : P7 = 2 (0 MEDIUM) → P8 = 1 LOW : boucle clôturable pour cette fiche.
+- 2026-11-15 — préfixes i18n (constat de la validation de l'Epic 40, Opus) : le préfixe `provider-` sous
+  `features/provider-connections/` aurait fait rougir `lint-i18n-ownership` (`lint-i18n-ownership.js:177-186`, nom à
+  tiret → `startsWith('provider-connections-')`). AC-10 : clés de l'écran en `provider-connections-`, badge et
+  `provider-labels.ts` dans cette fonctionnalité ; `nav-providers` → `nav-admin-providers` (patron `nav-admin-*`,
+  `+layout.svelte`, hors du linter) ; textes neufs des autres fonctionnalités (AC-15 : `bank-import-display.ts` ;
+  `payment-batches`, `bank-accounts`, `accounts`) au préfixe de la leur, ou lus par appel à `provider-labels.ts`.
+  AC-1 renvoie à AC-10. Correction de rédaction, sans passe de plus (aucune règle métier touchée).
+- 2026-11-15 — validation ciblée des préfixes i18n (Sonnet) : 2 findings (0 CRITICAL, 0 HIGH, 0 MEDIUM, 2 LOW), remédiés.
+  Relu au code : `lint-i18n-ownership.js:16`, `:177-186` justes ; le linter ne balaie que `src/lib/features/`.
+  38-9a-I18N-1 AC-10 : précisé que les pages de `routes/(app)/` ne sont pas contrôlées (préfixe d'usage), la règle ne
+  liant que les fichiers sous `features/` ; 38-9a-I18N-2 AC-1 disait « groupe Paramètres » pour le groupe
+  `nav-administration` (liste `adminOnly`, `+layout.svelte:147`) — corrigé. `nav-admin-providers` suit `nav-admin-backup`,
+  `nav-admin-mcp` (liste `adminOnly`). Inter-fiches : 40-6 (lecture seule) cite encore `nav-providers` (Questions
+  ouvertes, « Inter-fiches 38-9a (P2-3) », et `:185-187`) ; 38-9b, 38-6a, 38-6b : aucun renvoi faux.
