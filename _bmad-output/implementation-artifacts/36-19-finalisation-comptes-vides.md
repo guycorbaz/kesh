@@ -1,6 +1,6 @@
 # Story 36-19 : la finalisation de l'assistant complète les comptes vides des réglages de facturation (#1200)
 
-Status: ready-for-dev
+Status: in-progress
 
 *Fiche rédigée le 2026-11-15 par l'agent de rédaction des fiches de l'Epic 36 (Opus 5.5), worktree `kesh-36-19`, branche
 `story/36-19-finalisation-comptes-vides`, par le workflow `bmad-create-story`. Release **0.18.0**, **sans migration**.
@@ -216,8 +216,8 @@ c'est **#987** (`bug`, P3, ouverte) : « Attendu : la finalisation, et toute dé
   - réglage désigné mais archivé : « Compte débiteurs : le compte désigné ({numéro}) est archivé — désignez-en un autre
     dans Administration → Facturation, ou réactivez-le dans le plan comptable. » (produit : de même) ;
   - compte de rôle non imputable (D6, V2-2) : « Compte débiteurs : le compte {numéro}, qui porte le rôle « Créances
-    clients », n'est pas imputable — désignez un compte imputable dans Administration → Facturation, ou attribuez ce rôle
-    à l'un de ses sous-comptes dans le plan comptable. » (produit : « Compte de produit par défaut : … « Produit par
+    clients », n'est pas imputable — désignez un compte imputable dans Administration → Facturation, ou, dans le plan
+    comptable, retirez d'abord ce rôle au compte {numéro}, puis attribuez-le à l'un de ses sous-comptes. » (produit : « Compte de produit par défaut : … « Produit par
     défaut » … », même remède) ;
   - compte de rôle lié à un compte bancaire (D6, débiteurs seulement) : « Compte débiteurs : le compte {numéro}, qui
     porte le rôle « Créances clients », est le compte du compte bancaire « {libellé} » — déliez ce compte bancaire dans
@@ -248,7 +248,10 @@ c'est **#987** (`bug`, P3, ouverte) : « Attendu : la finalisation, et toute dé
     (case when `active` <> 0 and `role` in ('Receivable','DefaultRevenue','Payable', `` … »), et créer un sous-compte
     rend son parent non imputable sans toucher à son rôle (`accounts.rs:205` « `UPDATE accounts SET postable = FALSE
     WHERE id = ? AND company_id = ?` ») : un 1100 scindé aux étapes 6 ou 7 serait désigné. Le filtre se pose **dans la
-    fonction neuve** (lecture de `postable` du candidat, déjà verrouillé `FOR UPDATE`), **non** dans
+    fonction neuve** (lecture de `postable` du candidat par une requête **verrouillante**, `SELECT … FOR UPDATE` sur la
+    ligne que la recherche du rôle a déjà verrouillée : une lecture simple lirait, sous `REPEATABLE READ`, le cliché de
+    la première lecture non verrouillante de la transaction, et un sous-compte créé entre ce cliché et le verrou
+    laisserait le candidat lu imputable — validation P3, V3-1 ; T-D4s, M14), **non** dans
     `find_singleton_role_in_tx` (`accounts.rs:419`), que partage la garde de l'étape 6 (`refuse_future_claim_account`,
     `onboarding.rs:740`) ;
   - les quatre comptes marqués par le plan le sont déjà à la lecture : `designated_account_id` (`:558`) exige « `AND
@@ -354,8 +357,14 @@ le correctif, ou correctif mis de côté par `git stash` **après** le commit du
 - **T-D4d** compte de rôle créanciers lié à un compte bancaire (ligne vierge, puis ligne neuve) : succès, créanciers
   vide, débiteurs et produit posés (AC4 bis). **Rouge** : sur la ligne vierge, `InactiveOrInvalidAccounts` ; tue M6b.
 - **T-D4f** ligne neuve, sous-compte créé sous le compte de rôle débiteurs (`accounts::create` avec `parent_id`, qui rend
-  le parent non imputable, `accounts.rs:204-209`) : refus, cause « non imputable » (AC4 f). **Rouge** : aujourd'hui,
-  **succès**, le parent non imputable désigné ; tue M11.
+  le parent non imputable, `accounts.rs:204-209`), puis de même sous le compte de rôle **produit** (V3-2) : refus, cause
+  « non imputable » (AC4 f). Il lit un champ de la variante : il s'écrit **après le squelette**, avec T-D4 (V3-3).
+  **Rouge à l'exécution** : sous le squelette, `InactiveOrInvalidAccounts` n'est pas rendu — le code d'aujourd'hui
+  **réussit**, le parent non imputable désigné ; tue M11 (débiteurs et produit).
+- **T-D4s** (V3-1) ligne neuve ; la transaction de la fonction ouvre d'abord une lecture **non verrouillante** des
+  comptes (cliché `REPEATABLE READ`), puis, sur le pool, un sous-compte est créé et commité sous le compte de rôle
+  débiteurs, puis la fonction est appelée dans la transaction : refus, cause « non imputable ». Tue M14 (lecture de
+  `postable` rendue non verrouillante : le cliché le dit imputable).
 - **T-D4g** même geste sous le compte de rôle créanciers : succès, créanciers vide (AC4 bis g). **Rouge** : aujourd'hui,
   créanciers désigné sur le parent non imputable ; tue M11.
 - **T-D5** appel répété sur ligne complétée : « inchangé », `version` égale, aucun `UPDATE` (`updated_at` égal) (AC5).
@@ -396,8 +405,10 @@ le correctif, ou correctif mis de côté par `git stash` **après** le commit du
 | M8 | ne pas écrire l'audit du complément | T-H1 |
 | M9 | « vierge » ramenée aux seuls dix comptes vides (moitié `version = 1` retirée) | T-D2b |
 | M10 | incrémenter `version` aussi sur une ligne neuve | T-D1 (assertion `version` 1 de la seconde société) |
-| M11 | retirer le filtre `postable` des candidats de rôle (D6) | T-D4f, T-D4g |
+| M11 | retirer le filtre `postable` des candidats de rôle (D6), joué sur **chacun** des trois comptes (V3-2) | débiteurs et produit : T-D4f ; créanciers : T-D4g |
 | M12 | bras de rendu : autre clé ou autre code que ceux de D5 | test du bras (AC11) |
+| M13 | rendre l'`UPDATE` de complément inconditionnel (V3-2) | T-D5 |
+| M14 | lecture de `postable` du candidat rendue non verrouillante (V3-1) | T-D4s |
 
 ## Tâches
 
@@ -406,18 +417,21 @@ le correctif, ou correctif mis de côté par `git stash` **après** le commit du
 - [ ] **T1 — Bases** (voie 2 ; la station a redémarré, bases vides) : `kesh_e3619` et `kesh_e2e_e3619` créées sur
   `kesh-mariadb-dev2` (`docker exec kesh-mariadb-dev2 mariadb -uroot -pkesh_dev_root …`), migrées (`sqlx migrate run`,
   `DATABASE_URL=mysql://kesh:kesh_dev@127.0.0.1:3307/kesh_e3619`), semées (`scripts/seed-dev-db.sql`).
-- [ ] **T2 — Rouges** : T-D1, T-D2, T-D2b, T-D3, T-D4d, T-D4f, T-D4g, T-H1, T-H2, T-H2e, T-H3, T-H3d et l'E2E écrits et
-  lancés **avant** le correctif (`rouges.log`) ; T-D4 après le squelette (ci-dessous), T-D5, T-H4 et le test du bras
-  (AC11) se prouvent par mutation. **Le squelette** porte la variante, son `error_code()` (`kesh-db/src/errors.rs:1906`)
+- [ ] **T2 — Rouges** : T-D1, T-D2, T-D2b, T-D3, T-D4d, T-D4g, T-H1, T-H2, T-H2e, T-H3, T-H3d et l'E2E écrits et
+  lancés **avant** le correctif (`rouges.log`) ; T-D4, T-D4f et T-D4s après le squelette (ci-dessous, V3-3), T-D5
+  (M13), T-H4 (M4) et le test du bras (M12, AC11) se prouvent par mutation. **Le squelette** porte la variante, son `error_code()` (`kesh-db/src/errors.rs:1906`)
   et son bras de rendu (`kesh-api/src/errors.rs`, match exhaustif sans `_`, dernier bras `DbError::Sqlx(e)` `:5022`),
   sans quoi il ne compile pas.
 - [ ] **T3 — Dépôt** (`company_invoice_settings.rs`) : fonction neuve (insertion ou complément, D2, D3, D4, D6), rendu
   de l'issue (inséré / complété avec `before` / inchangé) ; `insert_with_defaults_in_tx` en enveloppe (D5) ;
-  `settings_snapshot_json` `pub` ; doc-comments de `:1-17`, `:1114-1164`, `:1186-1196` mis à jour ; variante de
-  `DbError` et son code (`errors.rs`, `error_code` `:1906`).
+  `settings_snapshot_json` `pub` ; doc-comments de `:1-17`, `:1114-1164`, `:1186-1196` mis à jour, et celui de
+  `find_singleton_role_in_tx` (`accounts.rs:405-418`, « Source unique de cette lecture ») : la finalisation y ajoute un
+  filtre `postable` (V3-4) ; variante de `DbError` et son code (`errors.rs`, `error_code` `:1906`).
 - [ ] **T4 — Route** (`onboarding.rs`) : appel de la fonction neuve (`:999`), message de D5 (`:1005-1010`), audit du
   complément dans `audit_finalize_seed` (`:1139`) ; doc-comments `:854-867`, `:985-997`, `:907-912` (« `INSERT
-  IGNORE` … idempotent ») et l'angle mort `:737-739` (fermé côté finalisation, renvoi à #987) ; bras de rendu de la
+  IGNORE` … idempotent ») et l'angle mort `:737-739` (fermé côté finalisation, renvoi à #987), et `:715-740` (« Les
+  rôles sont lus ici **comme la finalisation les lira** » : la finalisation écarte en plus un candidat non imputable,
+  V3-4) ; bras de rendu de la
   variante dans `crates/kesh-api/src/errors.rs` (`400 VALIDATION_ERROR`, clé de D5) ; la clé
   `error-default-invoice-accounts-unavailable` dans les quatre `messages.ftl`, à côté de `error-inactive-accounts`
   (`:333`).
@@ -443,7 +457,11 @@ le correctif, ou correctif mis de côté par `git stash` **après** le commit du
   (refs #1200)
 - Assistant de configuration : la mise en place ne désigne plus comme compte débiteurs ou créanciers un compte lié à un
   compte bancaire. Pour le compte débiteurs, elle refuse et dit comment faire (délier le compte bancaire, ou choisir un
-  autre compte) ; le compte créanciers reste alors vide, à désigner dans Administration → Facturation. (refs #987)
+  autre compte) ; le compte créanciers reste alors vide, à désigner dans Administration → Facturation. De même, elle
+  ne désigne plus un compte devenu non imputable (un compte sous lequel vous avez créé un sous-compte) : pour le compte
+  débiteurs ou le compte de produit par défaut, elle refuse et dit comment faire (désigner un compte imputable, ou
+  retirer d'abord le rôle à ce compte puis l'attribuer à un sous-compte) ; le compte créanciers reste alors vide.
+  (refs #987)
 
 ## Dev Notes
 
@@ -504,8 +522,9 @@ découpage.
 Fichiers communs avec d'autres stories de la 0.18.0 : `user-manual.tex` (36-17, 36-15, 36-18 possibles : paragraphes
 distincts) ; `crates/kesh-db/src/errors.rs` et `crates/kesh-api/src/errors.rs` (toute story qui ajoute une variante :
 union) ; `messages.ftl` ×4 (une clé `error-*` à côté de `:333`, jamais en fin de fichier) ;
-`crates/kesh-api/tests/textes_coherents.rs` (table G9, `:745` : toute story qui ajoute un repli ; union, compte de la
-table recompté) ; `onboarding_path_b_e2e.rs`
+`crates/kesh-api/tests/textes_coherents.rs` (table G9, `:745` : toute story qui ajoute un repli ; union ; la 36-19
+ajoute une clé à l'entrée existante de `crates/kesh-api/src/errors.rs`, si bien que le `9` de la table ne bouge pas,
+V3-4) ; `onboarding_path_b_e2e.rs`
 (36-17 n'y touche pas). `CHANGELOG.md` : non (C-e360-11).
 
 ### Ce qui doit rester vrai
@@ -601,3 +620,28 @@ table recompté) ; `onboarding_path_b_e2e.rs`
   - V2-5 (LOW) : C-36-19-3 aligné sur C-36-19-7 ; T2 nomme tous les rouges d'avant correctif ; le squelette porte la
     variante, son code et son bras.
   - V2-6 (LOW) : AC9 dit qu'un facultatif inutilisable reste vide, à désigner dans *Facturation*.
+- 2026-11-15 — **Validation P3, ciblée** (`kesh-gate-logs/e36-19/validation-p3-ciblee.md`, Sonnet, une lentille sur
+  `d6a9c1b6c`) : 0 CRITICAL, 0 HIGH, 0 MEDIUM, 4 LOW. **Validation terminée** : trend P1 0/0/2/5 (Sonnet) → P2 0/0/2/4
+  (Opus) → P3 ciblée 0/0/0/4 (Sonnet) ; dernière passe sans rien au-dessus de LOW, aucune remédiation de la P2 dans la
+  production (la fiche seule). Les quatre LOW traités à l'étape 0 du développement (agent de développement, Opus 5.5,
+  outil Edit), lignes relues à la tête `d6a9c1b6c` (code identique à `fed34a9c7` :
+  `git diff --stat fed34a9c7 HEAD -- crates frontend docs` vide) :
+  - V3-1 : `company_invoice_settings.rs:1458-1459` (`lock_usable_role_account`) « `SELECT id, account_type, postable FROM
+    accounts WHERE company_id = ? AND singleton_role = ? FOR UPDATE` » — le patron d'une lecture de `postable` sous
+    verrou existe ; `accounts.rs:430` « `"SELECT id FROM accounts WHERE company_id = ? AND singleton_role = ? ORDER BY id
+    LIMIT 1 FOR UPDATE"` » ne lit pas `postable`. D6 dit la lecture verrouillante ; T-D4s et M14 ajoutés. **Correctif de
+    production**, couvert par T-D4s.
+  - V3-2 : la table des mutations (M1 à M12) ne nommait pas T-D5 ; M13 ajoutée (→ T-D5) ; T-D4f étendu au produit, M11
+    jouée sur chacun des trois comptes de rôle.
+  - V3-3 : T-D4f déplacé après le squelette (il lit la cause de la variante), T2 récrit.
+  - V3-4 : `accounts.rs:415-418` « Source unique de cette lecture : la finalisation de l'assistant
+    (`insert_with_defaults_in_tx`, trois rôles, [`RoleLookupLock::ForUpdate`]) et l'étape bancaire » et
+    `onboarding.rs:724-725` « Les rôles sont lus ici **comme la finalisation les lira** » ajoutés à T3 et T4 ; note de
+    version complétée du refus « non imputable » ; remède de D5 « retirez d'abord ce rôle au compte {numéro}, puis
+    attribuez-le à l'un de ses sous-comptes » (`accounts.rs:691` « `return Err(role_conflict(role, holder));` » : un
+    rôle singleton porté refuse sa seconde attribution) ; formule G9 : la clé s'ajoute à l'entrée existante de
+    `errors.rs`, le `9` ne bouge pas (`textes_coherents.rs:745` « `const TABLE: [(&str, Cles); 9] = [` »).
+  - T0 : inventaires rejoués à la tête : 17 lignes (producteurs) et 10 lignes (`getInvoiceSettings`), égales aux
+    sorties copiées.
+  - **Écart d'environnement** : la fiche dit voie 2 ; le prompt d'appel attribue la **voie 1** (`kesh-mariadb-dev:3306`,
+    verrous `/tmp/station-heavy.lock` et `.gate.lock`) : le développement suit le prompt.
