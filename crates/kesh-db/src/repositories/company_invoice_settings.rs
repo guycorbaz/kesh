@@ -662,10 +662,22 @@ pub async fn write_off_account_for_write(
 }
 
 /// Le compte de **TVA due** d'un solde qui corrige la TVA (Story 25-4-d2a),
-/// relu au moment d'écrire : actif, imputable, de la société, `FOR UPDATE` —
-/// comme le compte de la nature, sans contrainte de type (un compte de TVA due
-/// est un passif). Absent ou inutilisable → `ConfigurationRequired`, le même
-/// refus que l'avoir pour un réglage absent.
+/// relu au moment d'écrire, de la société, `FOR UPDATE`, et jugé dans cet ordre
+/// (Story 36-9, #1044, D2 — l'ordre de la validation, `check_written`) :
+///
+/// 1. réglage vide, compte absent, d'une autre société ou **archivé** →
+///    `ConfigurationRequired` (divergence assumée avec la validation, C28 : le
+///    même refus que l'avoir pour un réglage absent) ;
+/// 2. **type** autre que celui du réglage
+///    ([`DesignatedRole::VatPayable`]`.expected_type()`, un passif) →
+///    [`DbError::DesignatedAccountsWrongType`], le refus de la validation d'une
+///    facture (Story 35-3) : un compte retypé depuis sa désignation ;
+/// 3. **non imputable** → `ConfigurationRequired`.
+///
+/// Le type et l'imputabilité sont lus dans **la** requête verrouillante : une
+/// lecture séparée, non verrouillante, lirait l'instantané REPEATABLE READ de
+/// l'appelant, ouvert avant le verrou, et manquerait un retypage validé
+/// entre-temps (D5 de la 35-3).
 pub async fn vat_payable_account_for_write(
     conn: &mut sqlx::MySqlConnection,
     company_id: i64,
@@ -679,16 +691,34 @@ pub async fn vat_payable_account_for_write(
     .await
     .map_err(map_db_error)?;
     let account_id = designated.flatten().ok_or_else(missing)?;
-    sqlx::query_scalar::<_, i64>(
-        "SELECT id FROM accounts WHERE id = ? AND company_id = ? AND active = TRUE \
-         AND postable = TRUE FOR UPDATE",
-    )
-    .bind(account_id)
-    .bind(company_id)
-    .fetch_optional(&mut *conn)
-    .await
-    .map_err(map_db_error)?
-    .ok_or_else(missing)
+    let (id, number, postable, account_type) =
+        sqlx::query_as::<_, (i64, String, bool, AccountType)>(
+            "SELECT id, number, postable, account_type FROM accounts WHERE id = ? \
+             AND company_id = ? AND active = TRUE FOR UPDATE",
+        )
+        .bind(account_id)
+        .bind(company_id)
+        .fetch_optional(&mut *conn)
+        .await
+        .map_err(map_db_error)?
+        .ok_or_else(missing)?;
+    let role = DesignatedRole::VatPayable;
+    let expected = role.expected_type();
+    if account_type != expected {
+        return Err(DbError::DesignatedAccountsWrongType(
+            WrongTypeDesignatedAccounts::new([WrongTypeDesignatedAccount {
+                account_id: id,
+                account_number: number,
+                setting: role.setting(),
+                expected_type: expected,
+                actual_type: account_type,
+            }]),
+        ));
+    }
+    if !postable {
+        return Err(missing());
+    }
+    Ok(id)
 }
 
 /// Le cœur commun des relectures de compte désigné : lit le réglage par
@@ -950,8 +980,10 @@ pub struct DesignatedAccountsSnapshot(Vec<LockedDesignatedAccount>);
 ///   comptes de produit — et jamais `postable` : une contre-passation vise les
 ///   mêmes comptes que l'origine ;
 /// - le **solde du reste** garde son refus `ConfigurationRequired` pour une TVA
-///   due inutilisable ([`vat_payable_account_for_write`]) — divergence assumée
-///   (C28).
+///   due absente, archivée ou non imputable ([`vat_payable_account_for_write`])
+///   — divergence assumée (C28) ; son **type**, en revanche, y est contrôlé
+///   comme ici, par la même constante et le même refus
+///   `DesignatedAccountsWrongType`, avant l'imputabilité (Story 36-9, #1044).
 ///
 /// `journal_entries::create_in_tx` garde `enforce_postable = false` (D-A0) : la
 /// garde est en amont, sur les seuls comptes de réglage. Elle révise la limite

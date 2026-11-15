@@ -341,7 +341,7 @@ error-designated-account-not-postable = { $count ->
 }
 # Story 35-3 (#537) — un conto designato e poi cambiato di tipo: una frase per conto, poi la frase d’azione.
 error-designated-account-wrong-type = Il conto { $account }, designato come { $setting } in Amministrazione → Fatturazione, è un { $actual }; questa impostazione richiede un { $expected }.
-error-designated-account-wrong-type-action = Nulla è stato registrato. Un amministratore deve correggere l’impostazione interessata — designare un conto del tipo giusto, oppure restituire al conto il suo tipo d’origine —, poi la convalida potrà essere rilanciata così com’è.
+error-designated-account-wrong-type-action = Nulla è stato registrato. Un amministratore deve correggere l’impostazione interessata — designare un conto del tipo giusto, oppure restituire al conto il suo tipo d’origine —, poi l’operazione potrà essere rilanciata così com’è.
 error-designated-account-setting-receivable = conto crediti verso clienti
 error-designated-account-setting-vat-payable = conto IVA dovuta
 error-designated-account-setting-payable = conto debiti verso fornitori

@@ -694,8 +694,8 @@ impl DesignatedSetting {
 ///
 /// Comme [`NonPostableAccount`], il n'est construit que pour un compte **de la
 /// société et actif** (un compte absent, étranger ou archivé reste
-/// [`DbError::InactiveOrInvalidAccounts`] et prime) : son numéro est toujours
-/// connu.
+/// [`DbError::InactiveOrInvalidAccounts`] et prime — au solde du reste,
+/// `ConfigurationRequired`, Story 36-9) : son numéro est toujours connu.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WrongTypeDesignatedAccount {
     pub account_id: i64,
@@ -706,7 +706,8 @@ pub struct WrongTypeDesignatedAccount {
     /// Le type que ce réglage exige (`VAT_SETTING_ACCOUNT_TYPES` et
     /// `CLAIM_SETTING_ACCOUNT_TYPES` de `company_invoice_settings`).
     pub expected_type: AccountType,
-    /// Le type que le compte porte au moment de la validation.
+    /// Le type que le compte porte au moment d'écrire (validation d'une
+    /// facture ou d'une facture fournisseur, solde du reste).
     pub actual_type: AccountType,
 }
 
@@ -1032,7 +1033,12 @@ pub enum DbError {
     /// n'ont plus le **type** que leur réglage exige au moment où la validation
     /// d'une facture ou d'une facture fournisseur veut y écrire (Story 35-3,
     /// #537) : un compte retypé après sa désignation (la page des réglages ne
-    /// contrôle le type qu'à l'enregistrement).
+    /// contrôle le type qu'à l'enregistrement). Depuis la Story 36-9 (#1044),
+    /// le **solde du reste** en escompte ou en perte le rend aussi, pour le seul
+    /// compte de TVA due (`vat_payable_account_for_write`) : une liste d'une
+    /// entrée, après l'absent ou l'archivé (`ConfigurationRequired`, et non
+    /// `InactiveOrInvalidAccounts`) et avant le non imputable
+    /// (`ConfigurationRequired`).
     ///
     /// Mappé vers HTTP **400 `DESIGNATED_ACCOUNT_WRONG_TYPE`**, détail
     /// [`WrongTypeDesignatedAccounts::details`]. Le message nomme chaque compte,
