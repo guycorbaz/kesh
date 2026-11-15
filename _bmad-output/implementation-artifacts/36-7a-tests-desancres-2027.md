@@ -12,7 +12,7 @@ C-e360-13) — ⚠️ **la fusion doit précéder le 2026-12-26** : `open_items_
 jour-là (D5 ; sondes `sonde-p2-S1a.log` vert au 2026-12-24, `sonde-p2-S1b.log` rouge au 2026-12-26 ; validation P2,
 V2-3). Voie de base **2** (`kesh-mariadb-dev2:3307`), `gate-ci.sh` en voie 1. Clé courte des bases proposée : `e367a`
 (à confirmer par l'orchestrateur). Choix : `e36-choix-autonomes-36-7.md` (C-36-7-1 à C-36-7-8). Relevés de la fiche :
-`/home/gcorbaz/devel/kesh-gate-logs/e36-7/` ; journaux de la story : `kesh-gate-logs/e36-7a/`. Sœur : `36-7b-tests-bornes-anterieures.md`
+`/home/gcorbaz/devel/kesh-gate-logs/e36-7/` ; journaux de la story : le même dossier (V7-3). Sœur : `36-7b-tests-bornes-anterieures.md`
 (les neuf tests qui rougissent sous un instant antérieur à leur date de 2026), développée après la fusion de celle-ci.*
 
 ## Story
@@ -366,12 +366,12 @@ Ces décisions valent aussi pour la 36-7b, qui y renvoie.
 
 1. **AC1 — nextest vert sous l'instant du critère.** `scripts/test-fast.sh --ci`, sous
    `KESH_TEST_INSTANT=2027-01-04T10:00:00Z`, voie 2, base remise à neuf : 0 échec (journal
-   `kesh-gate-logs/e36-7a/gate-2027.log`, commit cité). Les treize tests du tableau sont verts.
+   `kesh-gate-logs/e36-7/gate-2027.log`, commit cité). Les treize tests du tableau sont verts.
 2. **AC2 — et sous les autres réglages, sans régression.** La même suite verte sous `2026-12-31T23:30:00Z` (nuit suisse du
    1er janvier 2027 : neuf rouges à la base, `inventaire-N2027.log`), sans la variable (heure réelle) et sous
    `2029-06-15T10:00:00Z` (N-1 = 2028 ≠ 2026, V2-1 ; **suite entière**, une prise de verrou, V3-7 — à la base, les sept
    binaires corrigés y rendaient 216 exécutés, 13 échecs, les treize, `sonde-p2-S2.log` ; la suite entière n'y a pas été
-   relevée à la base, l'étape 0 la relève, journal `kesh-gate-logs/e36-7a/inventaire-C2029.log` (V6-3) ; un rouge hors des treize sous cet instant **compte contre l'AC2 s'il vient de
+   relevée à la base, l'étape 0 la relève, journal `kesh-gate-logs/e36-7/inventaire-C2029.log` (V6-3, V7-3) ; un rouge hors des treize sous cet instant **compte contre l'AC2 s'il vient de
    la story** — tel `manual_statement_feeds_the_tile_and_k3` si `setup()` était modifié, V4-1 — ; sinon il se nomme, ne
    compte pas contre l'AC, et une issue est **demandée à l'orchestrateur**, avec la preuve qu'il rougit déjà à la base sous
    le même instant, journal joint) ; `binary(open_items_invariant)` vert sous `2026-12-26T10:00:00Z`
@@ -417,11 +417,11 @@ Ces décisions valent aussi pour la 36-7b, qui y renvoie.
 La story **corrige les montages** de treize tests, dans sept fichiers, et **ajoute une spec**, la sonde d'horloge de D6.
 Le rouge de chacun des treize est constaté, sans correctif, par `inventaire-A2027.log` (et neuf d'entre eux par
 `inventaire-N2027.log`), celui d'`open_items_invariant` à l'heure du 2026-12-26 par `sonde-p2-S1b.log` — à rejouer à
-l'étape 0 à la tête de la branche, journal `kesh-gate-logs/e36-7a/rouges.log`. La spec de D6 est verte à l'heure réelle
+l'étape 0 à la tête de la branche, journal `kesh-gate-logs/e36-7/rouges.log`. La spec de D6 est verte à l'heure réelle
 par construction ; son rouge se prouve en la jouant sous faketime appliqué au runner **seul** (backend à l'heure réelle) :
 le jour du serveur diffère, elle rougit (journal `rouges.log`).
 
-**Mutations** (script versionné dans `kesh-gate-logs/e36-7a/mut/`, code commité avant, restauration
+**Mutations** (script versionné dans `kesh-gate-logs/e36-7/mut/`, code commité avant, restauration
 `git restore --worktree -- <fichier>` puis `touch`) : **une par site corrigé** (ou par groupe de sites qui partagent un
 même montage, dit comme tel) ; chacune remet le site à sa **forme d'origine** (pour les témoins de `dates_bornes_e2e`, le
 littéral `"2027-01-01"` ; ailleurs l'année 2026 ; V2-10) et doit être **tuée par le test nommé, sous l'instant nommé**
@@ -441,16 +441,16 @@ littéral `"2027-01-01"` ; ailleurs l'année 2026 ; V2-10) et doit être **tuée
 | M7b | `journal_entries_modification` écritures et corps (`:373`, `:388`, `:426`, `:437`, `:487`, `:540`, `:593`, `:612`) remis en 2026 — un groupe | l'un des cinq tests, nommé à l'étape 0 | `2029-06-15T10:00:00Z` |
 | M7c | exercice postérieur `:425`, `:539` remis à `2027` | `update_waits_for_a_concurrent_close_of_a_later_year_then_refuses` (et `delete_…`) : sous 2029, l'exercice 2027 est **antérieur** à N-1..N (2028-2029), `find_later_closed_in_tx(…, fy_start)` (`journal_entries.rs:1548`, `:1896` ; `fiscal_years.rs:892`, `FIND_LATER_CLOSED_SQL` : `WHERE company_id = ? AND start_date > ? AND status = 'Closed'`) ne le voit plus (V3-3). Premier rouge attendu : **l'attente** — le `PUT` ne bloque plus sur le verrou de B, et l'assertion `:443-448` (« le PUT doit attendre sur le verrou des exercices postérieurs ») échoue avant le `match` `LaterFiscalYearClosed` (`:452-461`) ; à défaut, **le refus** n'arrive pas. Le journal `mut/M7c.log` tranche (V4-5) | `2029-06-15T10:00:00Z` |
 | M8a | `migrations_upgrade_path` exercice de la base peuplée (`:1413-1415`) | `draft_migration_preserves_a_populated_016_base` (et `…_rc1_…`) | `2027-01-04T10:00:00Z` |
-| M8b | `migrations_upgrade_path` pièces `:1319` (`create_in_tx`), `:1498`, `:1716` remises en 2026 — une mutation chacune ; celles que l'étape 0 trouve équivalentes se disent, ligne lue | idem | `2029-06-15T10:00:00Z` |
+| M8b | `migrations_upgrade_path` pièces `:1319` (`create_in_tx`), `:1498`, `:1716` remises en 2026 — une mutation chacune ; celles qui restent vertes une fois jouées à la tâche 4 se disent équivalentes, raison constatée ; `:1716` traité comme `:1332` (V7-1) | idem | `2029-06-15T10:00:00Z` |
 | — | `migrations_upgrade_path:1332` (INSERT brut de `supplier_invoices`) | **jouée à la tâche 4**, après le correctif commité (V6-1) ; déclarée équivalente seulement si elle reste verte, raison constatée écrite — la migration `20261106000001` classe par `invoice_date` (`:47`, `:63`) (V5-1) | `2029-06-15T10:00:00Z` |
 | M9a | `opening_complement_repository` exercice de `un_compte_contre_passe_reste_mouvemente` (`:514`) | ce test | `2027-01-04T10:00:00Z` |
 | M9b | l'écriture `:519` remise à `d(2026, 2, 1)` | ce test : `create_in_tx` refuse une date hors de l'exercice N-1..N (`DateOutsideFiscalYear`, `journal_entries.rs:392`), `post` panique sur `.expect("écriture")` (`:144`) (V3-1) | `2029-06-15T10:00:00Z` |
-| — | `:533`, le `today` de `complete` (passé à `aujourd_hui_test()`) | s'il est gardé à une date passée, sa remise en 2026 est **équivalente** : premier exercice ouvert et non verrouillé, `decide_date` rend la branche `OpeningDay` quel que soit `today` (`opening_complement.rs:256-259`), `AccountMoved` suit (`:663`) | — |
+| — | `:533`, le `today` de `complete` (passé à `aujourd_hui_test()`) | **jouée à la tâche 4**, après le correctif commité ; ne se dit équivalente qu'au constat (restée verte), raison constatée écrite — attendu à la lecture : `decide_date` rend `OpeningDay` quel que soit `today` (`opening_complement.rs:256-259`), `AccountMoved` suit (`:663`) (V7-2) | `2029-06-15T10:00:00Z` |
 | M10 | `open_items_invariant` `a2` remis à `ymd(2026, 3, 1)` (D5) | `open_items_balance_matches_the_ledger_and_the_trial_balance` | `2027-01-04T10:00:00Z` |
 
 Les autres appels de `year_span(2026)` d'`opening_complement_repository` (`:246` à `:383`), s'ils sont corrigés, reçoivent
 chacun leur mutation ; sinon l'étape 0 dit pourquoi ils restent justes (ligne lue). Une mutation qui ne rougit pas sous
-l'instant prescrit se dit (juste, test muet, ou mutant équivalent démontré), jamais à taire.
+l'instant prescrit se dit (juste, test muet, ou mutant équivalent constaté), jamais à taire.
 
 ## Tâches
 
@@ -458,12 +458,13 @@ l'instant prescrit se dit (juste, test muet, ou mutant équivalent démontré), 
    détecteur de libfaketime (D3) ; rejouer les relevés A2027, N2027 et les sondes S1a, S1b, S2 à la tête (`rouges.log`) ;
    confirmer l'appel fautif d'`open_items_invariant` sous `RUST_BACKTRACE=1` (D5) ; relever par `/usr/bin/grep -nE
    '\b2026\b'` toutes les dates de 2026 des treize tests (D1 a) ; **relever la suite entière à la base sous
-   `2029-06-15T10:00:00Z`** (`inventaire-36-7.sh`, journal `kesh-gate-logs/e36-7a/inventaire-C2029.log`), référence de
+   `2029-06-15T10:00:00Z`** (`inventaire-36-7.sh`, journal `kesh-gate-logs/e36-7/inventaire-C2029.log`), référence de
    l'AC2 pour juger un rouge hors des treize (V5-2, V6-3).
 2. Corriger les montages des sept fichiers du tableau (D1).
 3. Écrire la spec de D6 et l'entrée de la garde ; mettre à jour `docs/testing.md:119` (AC8, dont « trois sites » → quatre) ; recettes de D3/D4.
 4. Mutations M1a à M10 (AC3 c), le correctif commité ; puis les mutations de `bank_statements_manual_e2e:1008` et
-   `migrations_upgrade_path:1332` sous `2029-06-15T10:00:00Z` (§ *Tests*, V6-1).
+   `migrations_upgrade_path:1332` et de `opening_complement_repository:533` sous `2029-06-15T10:00:00Z` (§ *Tests*, V6-1,
+   V7-2).
 5. Gates (§ *Dev Notes*), AC1, AC2, AC3, AC6 → `Status: review`, clé `review`, Dev Agent Record, prompt de la revue P1.
    **La fusion doit précéder le 2026-12-26** (D5).
 6. À la clôture : `gate-ci`, E2E complet à l'heure réelle, **puis AC4 et AC5** ; ensuite seulement `done`.
@@ -656,3 +657,11 @@ issue #1125 ; `docs/testing.md:119`.
   - **V6-2, corrigé** : `:1008` — la voie « équivalence par lecture » est retirée ; seule la mutation jouée fait preuve.
   - **V6-3, corrigé** : relevé de base sous 2029 nommé `kesh-gate-logs/e36-7a/inventaire-C2029.log` (tâche 1, AC2).
   - **V6-4, corrigé** : propagé à la 36-7b (D1 et Change Log).
+- **2026-11-15 — Remédiation de la validation P7 ciblée** (`kesh-gate-logs/e36-7/validation-36-7a-p7-ciblee.md` :
+  0/0/1/2), par l'outil Edit. Aucun finding réfuté.
+  - **V7-1, corrigé** : M8b — « celles qui restent vertes une fois jouées à la tâche 4 se disent équivalentes, raison
+    constatée » ; `:1716` traité comme `:1332`. Aucune autre formule d'équivalence par lecture hors des entrées datées.
+  - **V7-2, corrigé** : `:533` jouée à la tâche 4, équivalente seulement au constat. Plus aucun mutant équivalent déclaré
+    d'avance. Décompte : **dix-neuf, plus jusqu'à trois jouées à la tâche 4** (`:1008`, `:1332`, `:533`).
+  - **V7-3, corrigé** : tous les journaux de la story dans `/home/gcorbaz/devel/kesh-gate-logs/e36-7/` (en-tête, AC1, AC2,
+    tâche 1, § *Tests*). L'entrée V6-3 ci-dessus, datée, n'est pas réécrite.

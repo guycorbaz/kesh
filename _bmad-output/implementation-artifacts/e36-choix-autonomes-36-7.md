@@ -126,3 +126,6 @@ de C-e360-13. Chaque choix : contexte, option retenue, options écartées, réve
 - **Amendé le 2026-11-15 (validation P6 ciblée de la 36-7a, V6-1, V6-2)** : les mutations de `:1008` et `:1332` se jouent
   à la **tâche 4, après le correctif commité**, non à l'étape 0 ; aucune équivalence par simple lecture. **Dix-neuf
   mutations, plus jusqu'à deux jouées à la tâche 4.**
+- **Amendé le 2026-11-15 (validation P7 ciblée de la 36-7a, V7-2, V7-3)** : `:533` se joue aussi à la tâche 4 ; aucun
+  mutant équivalent déclaré d'avance. **Dix-neuf mutations, plus jusqu'à trois jouées à la tâche 4** (`:1008`, `:1332`,
+  `:533`). Journaux de la story dans `kesh-gate-logs/e36-7/`.
