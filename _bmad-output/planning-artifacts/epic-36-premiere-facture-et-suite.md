@@ -157,6 +157,11 @@ une release planifiée monte le chiffre mineur.*
 - **0.19.0** : 36-6 (#823), **découpée d'emblée** à sa fiche — 36-6a modèle, migration et API ; 36-6b réconciliation et
   écran ; éventuellement 36-6c lots pain.001 (D4) ; 36-8 (#1158, #268) ; les quatre lots 36-11a à 36-11d (D5 ; s'ils ne
   tiennent pas, les lots non commencés passent à un epic suivant) ; 36-14, la story de solde.
+- **36-19 (#1200, ajoutée par l'orchestrateur le 2026-11-15, dans la 0.18.0)** : la finalisation de l'assistant de
+  configuration complète les comptes vides d'une ligne de réglages de facturation déjà créée (par tout appel à
+  `getInvoiceSettings()` : journal, comptes bancaires, factures), sans écraser une désignation de l'utilisateur. Défaut
+  trouvé à la validation de la fiche 36-17, qui reste frontend et ne doit pas en dépendre ; choix prudent et réversible,
+  « limites voisines » (règles de cet epic), sans migration.
 - **36-13 (#235) sort de l'Epic 36** et devient l'**Epic 41** (D3), lancée dès la fin de l'Epic 36, avant la clôture de
   l'exercice 2026 ; milestone « Plus tard ».
 - **Mandat** (M1) : autonomie jusqu'à l'image 0.18.0 publiée ; jalons notifiés (PR ouverte, tag, image) ; la fusion de la
