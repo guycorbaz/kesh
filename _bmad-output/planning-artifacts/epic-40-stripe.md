@@ -264,8 +264,9 @@ l'API).
   passe `failed` (doc) se voit à la transaction d'échec.
 - **G12 — Contrôle de solde : créance, en route, inexpliqué.** Le contrôle E20 (b) — solde du compte du plan en devise à
   `as_of` contre le solde rapporté (`available + pending`) — gagne une ligne de ventilation **« versements en route »** :
-  Σ des versements du compte dont `booked_at < as_of ≤ value_date` (sortis du solde Stripe, écriture datée après
-  `as_of`), en plus des « transactions non rapprochées » et du « reste inexpliqué ». L'écran du compte montre aussi
+  versement compté au solde rapporté (`booked_at < as_of`) dont l'écriture rapprochée est datée après la date de
+  Zurich de `as_of` ; montant = ligne de l'écriture sur le compte lié (40-4 Écart 1) — en plus des « transactions non
+  rapprochées » et du « reste inexpliqué ». L'écran du compte montre aussi
   `available` et `pending` (lecture de `balances(None)` à « Tester » et au passage, non stockée : l'instantané garde le
   total, 38-3a). **À la clôture**, le solde de 1101–1103 est la créance (B13) : aucune écriture neuve ; le contrôle
   préalable à la clôture (K9 de 38-10) compare le rapport joint (G13) au solde comptable.
@@ -312,16 +313,19 @@ l'API).
   « Tester » réussi ou le premier passage, puis gardé, G4). Secret `restrictedKey` (`PUT …/secrets`, corps propre au
   prestataire, 38-1 AC-6) ; préfixes de G4. URL de base constante `https://api.stripe.com`.
 - **C-40-2 — Amendements additifs du socle** : (a) `ProviderMovement.value_date: Option<NaiveDate>` (date seule, déjà
-  locale), validé par `validate_page` (≥ date de `booked_at` à Zurich, ≤ + 30 jours), écrit dans
+  locale), validé par `validate_page` (`value_date ≥ date Zurich de booked_at − 1 jour`, 40-1 Écart 5 ; ≤ + 30 jours), écrit dans
   `bank_transactions.value_date` par le passage (38-3b), `NULL` ailleurs (40-1 pour le type, 40-3 pour l'usage) ;
   (b) 38-6b, retrait : date de l'écriture créée et départ de la fenêtre de suggestion = `value_date` si posée (40-3) ;
-  (c) ventilation de l'écart E20 (b) : `inTransitPayouts` (40-4) ; (d) 38-10 : CSV admis, `kind = 'provider_report'`
+  (c) ventilation de l'écart E20 (b) : `inTransitPayouts` (40-4) — versement compté au solde rapporté (`booked_at <
+  as_of`) dont l'écriture rapprochée est datée après la date de Zurich de `as_of` ; montant = ligne de l'écriture sur
+  le compte lié (40-4 Écart 1) ; (d) 38-10 : CSV admis, `kind = 'provider_report'`
   (40-5) ; (e) `stripeResponses` (40-1) ; (f) secrets exigés par prestataire si 39 n'est pas livré (40-1).
 - **C-40-3 — Erreurs** : table de 38-7 AC-7 — 401 → `Auth` ; 403 → `Permission` ; 400, 402, 404 → `Rejected` ; 429 →
   `RateLimited` ; 5xx, 424, délai → `Unavailable` ; `livemode` d'un objet ≠ mode de la clé → `InvalidResponse` ; code
   d'API neuf `PROVIDER_SECRET_NOT_RESTRICTED` (400, dépôt d'une clé `sk_…`, `pk_…` ou de préfixe inconnu ; `rk_live_` et
   `rk_test_` admises, G4) ; `PROVIDER_MODE_CHANGED` (chaîne de `errorCode`/`lastError` : clé de l'autre mode que la
-  connexion, FR-40-1-7). Aucun texte de
+  connexion, FR-40-1-7) ; `PROVIDER_ACCOUNT_CHANGED` (même forme : `accountId` lu par « Tester » ≠ celui des réglages
+  sur une connexion déjà téléchargée, D40-P2-1, C-40-7). Aucun texte de
   Stripe à l'écran ni dans `last_error`.
 - **C-40-4 — Mouvement Stripe** (40-1 lecture, 40-2 correspondance) : G6 à G9, G14 ; correspondance vers
   `ProviderMovement` en **une** fonction pure.
@@ -332,7 +336,12 @@ l'API).
 - **C-40-7 — Tracé pour plus tard** (issues avec la PR) : rapports par l'API (`balance.summary`,
   `payout_reconciliation.by_id`) ; contenu d'un versement (transactions de solde par `payout`) à l'écran ; impôt sur les
   acquisitions des frais Stripe et PayPal (Q-40-5) ; montant et devise de présentation d'un paiement converti (non
-  gardés) ; réserves et soldes `risk_reserved` (Q-40-6) ; changement de `Stripe-Version`.
+  gardés) ; réserves et soldes `risk_reserved` (Q-40-6) ; changement de `Stripe-Version`. **Changement de compte Stripe
+  — décidé (D40-P2-1, orchestrateur, 2026-11-15)** : `accountId` lu par « Tester » ≠ celui des réglages sur une
+  connexion **déjà téléchargée** → refusé, contrôle `account_unchanged` en échec, code `PROVIDER_ACCOUNT_CHANGED`
+  (patron de `PROVIDER_MODE_CHANGED`), réglages inchangés ; sans téléchargement → réécrit et tracé (`accountIdChanged`)
+  (40-1 AC-9). Reste tracé : le passage ne lit pas le compte (clé d'un autre compte suivie d'un passage sans
+  « Tester »), et une clé sans droit sur `/v1/account` n'est pas gardée (Q-40-8) — le contrôle de solde en montre l'effet.
 
 ## Stories
 
@@ -457,7 +466,7 @@ réseau en CI, recette visuelle) ne s'y répètent que là où la story les port
   à « Tester » ; contrôle préalable à la clôture inchangé (K9 de 38-10) ; recensement des lecteurs qui traitent un compte
   bancaire lié comme une liquidité (accueil, 33-3) et décision par lecteur (G1).
 - *Risques* : définition unique de « versement en route » (une fonction, lue par l'écart et par l'écran) ; versement
-  sans `value_date` (compté non rapproché, non en route) ; double comptage d'un versement en route non rapproché.
+  sans `value_date` (jugé à son écriture comme les autres, 40-4 Écart 1) ; double comptage d'un versement en route non rapproché.
 - **FR**
   1. `FR-40-4-1` — L'écart entre solde comptable et solde rapporté se ventile en non rapprochées, versements en route et
      reste inexpliqué.
@@ -465,8 +474,8 @@ réseau en CI, recette visuelle) ne s'y répètent que là où la story les port
   3. `FR-40-4-3` — Un compte prestataire Stripe n'est pas compté comme liquidité là où Kesh additionne la trésorerie
      (ou l'est en le disant), selon le recensement.
 - **NFR**
-  1. `NFR-40-4-1` — Une seule définition de « versement en route », testée aux bornes (`as_of` = `booked_at`,
-     = `value_date`).
+  1. `NFR-40-4-1` — Une seule définition de « versement en route », testée aux bornes (`as_of` = `booked_at`, date
+     d'écriture = date de `as_of` ; 40-4, alignement P2).
   2. `NFR-40-4-2` — Contrôle sans écriture ; aucune migration.
 
 ### 40-5 — Rapports Stripe joints à la main
@@ -549,6 +558,30 @@ Décisions transverses issues de la validation P1 des fiches 40-1 à 40-6, repor
   `textes_coherents.rs`.
 - **Exigences ajoutées par les fiches** : `FR-40-1-7`, `FR-40-2-7`, `FR-40-3-5`, `FR-40-4-4`, `FR-40-5-4`,
   `NFR-40-4-3`, `NFR-40-5-3`, `NFR-40-6-5` — récapitulatif mis à jour (35 FR, 23 NFR).
+
+## Validation P2 (2026-11-15)
+
+Alignements inter-fiches issus de la validation P2 des fiches 40-1 à 40-6, reportés ici et aux fiches concernées :
+
+- **`value_date`** (C-40-2 a) : `value_date ≥ date Zurich de booked_at − 1 jour` (40-1 Écart 5 : `arrival_date` est une
+  date UTC).
+- **Versement en route** (G12, C-40-2 c) : la règle `booked_at < as_of ≤ value_date` cède la place à la date de
+  l'écriture rapprochée — versement compté au solde rapporté, écriture datée après la date de Zurich de `as_of`, montant
+  = ligne de l'écriture sur le compte lié (40-4 Écart 1) ; non rapproché → `unreconciled`, jamais en route.
+- **D40-P2-1 — Changement de compte Stripe** (C-40-3, C-40-7 ; 40-1 AC-9, AC-10, AC-14 ; 40-6 AC-3, AC-8) : refusé
+  (`PROVIDER_ACCOUNT_CHANGED`, contrôle `account_unchanged`) sur une connexion déjà téléchargée, réécrit et tracé sinon.
+- **Documentation de l'API** (40-1 AC-15) : `docs/api-external.md` décrit la connexion Stripe (réglages, corps du
+  secret, `PROVIDER_SECRET_NOT_RESTRICTED`, `PROVIDER_MODE_CHANGED`, `PROVIDER_ACCOUNT_CHANGED`).
+- **Codes publics** (40-2 AC-2, lus par 40-6 AC-6) : `EVENT_CODES` (`OTHER` compris), constante `pub` de
+  `kesh_core::providers::settings::stripe_codes`, réexportée par `kesh_providers::stripe::event_codes`.
+- **40-6** : badge du mode « à établir » tant que ni « Tester » ni un passage ne l'a posé ; motif `balance_parts` retiré
+  (supprimé par 40-4) ; aide des échecs de versement complétée (écriture manuelle, versement et échec marqués
+  examinés) ; limite « inexpliqué transitoire » de 38-9a retirée du manuel au profit des « autres décalages de date »
+  (40-4 Écart 6) ; préfixe i18n `provider-connections-stripe-` (règle `keyBelongsToFeature` de `lint-i18n-ownership`,
+  correction de 38-9a AC-10 sur la branche 38).
+- 40-4 AC-5 renvoyait déjà à 40-1 AC-8 pour `amount = available + pending` (rien à faire). Propagé dans ce fichier :
+  NFR-40-4-1 (bornes : date d'écriture = date de `as_of`) et risque de 40-4 (versement sans `value_date` jugé à son
+  écriture).
 
 ## Questions ouvertes
 

@@ -90,7 +90,10 @@ plutôt qu'en vente, afin que les règles et les propositions travaillent sur de
      `skipped.denied` et `skipped.pending` restent à 0.
    `sums` = Σ `net` par devise des mouvements rendus.
 2. **AC-2 — Table des types (G8, G9 ; `stripe::event_codes`, une constante `&[(type, code, Rule)]` documentée ligne
-   par ligne avec la page Stripe).** Code court (`event_code`, ≤ 16, majuscules) et genre :
+   par ligne avec la page Stripe).** Code court (`event_code`, ≤ 16, majuscules) et genre. **Ses codes** — la constante
+   `EVENT_CODES`, définie dans `kesh_core::providers::settings::stripe_codes` (AC-6) et réexportée par
+   `kesh_providers::stripe::event_codes` — sont une constante **`pub`**, lue par la garde de concordance de 40-6 AC-6
+   (codes, `OTHER` compris) ; test : `EVENT_CODES` égale l'ensemble des codes de la table (AC-6) :
 
    | `type` (`reporting_category`) | `event_code` | Genre (`movement_kind`) | `review_reason` | Champs propres |
    |---|---|---|---|---|
@@ -278,6 +281,9 @@ plutôt qu'en vente, afin que les règles et les propositions travaillent sur de
 
 ## Change Log
 
+- 2026-11-15 — alignement inter-fiches P2 (Opus) : AC-2, les codes de la table (`EVENT_CODES`, `OTHER` compris, définie
+  dans `kesh_core::providers::settings::stripe_codes`, réexportée) sont une constante `pub` lue par la garde de 40-6
+  AC-6 (finding 40-6-P2-8).
 - 2026-11-15 — validation P2 (Opus) : 0 CRITICAL, 0 HIGH, 2 MEDIUM, 2 LOW ; remédiés dans la fiche (aucun
   inter-fiches). MEDIUM : P2-1 AC-6, `OVERRIDABLE_CODES` placée dans `kesh-providers` (alignement P1) mais lue par la
   validation de `StripeSettings`, qui est dans `kesh-core` — `kesh-providers` dépendant de `kesh-core` (38-3b AC-1),

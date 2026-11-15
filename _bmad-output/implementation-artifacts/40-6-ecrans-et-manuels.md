@@ -111,20 +111,23 @@ afin de tenir les comptes Stripe sans saisie, en sachant ce qui est une créance
    - Après dépôt d'une clé `rk_test_` : avis « Clé de test : Kesh lira votre compte Stripe en mode test (aucun argent
      réel) », tiré du **seul préfixe** lu avant que le champ soit vidé (un booléen d'état du composant, jamais la valeur ni
      un fragment) ; il disparaît au rechargement. Le **badge** de mode, lui, est celui de la connexion (AC-1), lu du
-     serveur : « à établir » tant que « Tester » n'a pas réussi (le dépôt ne pose pas `livemode`, 40-1 AC-9).
+     serveur : « à établir » tant que ni « Tester » ni un passage ne l'a posé (le dépôt ne pose pas `livemode`, 40-1 AC-5,
+     AC-9).
    - Vitest : `sk_live_…` → aucun appel réseau (espion sur `fetch`), champ vidé, message ; `rk_test_…` envoyé ; la valeur
      marqueur absente de `container.innerHTML` après succès et après refus.
 3. **AC-3 — « Tester la connexion » Stripe (FR-40-6-1, FR-40-6-4).** Liste de contrôles de 38-9a AC-4 : libellés de
-   `mode_unchanged` (« Même mode que les téléchargements passés ») et, pour Stripe, de `permission_present` (« Droit de
+   `mode_unchanged` (« Même mode que les téléchargements passés »), de `account_unchanged` (« Même compte Stripe que les
+   téléchargements passés », 40-1 AC-9) et, pour Stripe, de `permission_present` (« Droit de
    lire les transactions de solde et leurs paiements ») ; remèdes : `PROVIDER_AUTH_FAILED` → « Clé refusée par Stripe :
    elle a pu être révoquée ; créez-en une et remplacez-la » ; `PROVIDER_PERMISSION_MISSING` → « Dans Stripe, donnez à la
    clé le droit *Lecture* sur les ressources listées au manuel » ; `PROVIDER_MODE_CHANGED` → « Cette clé n'est pas du même
-   mode que les mouvements déjà téléchargés : créez une connexion neuve pour changer de mode ». Succès : compte Stripe,
+   mode que les mouvements déjà téléchargés : créez une connexion neuve pour changer de mode » ;
+   `PROVIDER_ACCOUNT_CHANGED` → « Cette clé est celle d'un autre compte Stripe que les mouvements déjà téléchargés :
+   déposez la clé du bon compte, ou créez une connexion neuve ». Succès : compte Stripe,
    mode, version, et par devise : **total**, **disponible** (`available`) et **en attente** (`pending`) quand présents
    (40-4 AC-5), au format suisse, avec « lus à l'instant, non enregistrés » ; une devise sans compte Kesh renvoie au bloc
    des soldes sans compte (38-9a AC-6). `provider-labels.ts` : chaque contrôle, chaque code et chaque **motif
-   d'`errorDetail`** neufs (40-1 AC-5, AC-6, AC-7, AC-10 : `livemode`, `pagination`, `value_date`, `currency`,
-   `balance_parts`, … ; liste relevée par `grep -n 'reason: "' ` des fiches 40-1 à 40-4 au développement) ont leur libellé,
+   d'`errorDetail`** neufs (40-1 AC-5, AC-6, AC-7, AC-10 : `livemode`, `pagination`, `value_date`, `currency`, … ; liste relevée par `grep -n 'reason: "' ` des fiches 40-1 à 40-4 au développement) ont leur libellé,
    et `provider_reachable` le sien (test de table de 38-9a étendu ; code ou motif inconnu → rendu brut, jamais vide). Vitest : réponse Stripe complète ; `accountId: null` ; ✗
    `mode_unchanged`.
 4. **AC-4 — Versement : sortie, arrivée, proposition (FR-40-6-3, NFR-40-6-5).** Dans `ProviderProposalPreview.svelte`
@@ -135,7 +138,8 @@ afin de tenir les comptes Stripe sans saisie, en sachant ce qui est une créance
    suggéré (`transferBankAccountId`, cherché à partir de l'arrivée, C-40-5) et l'écriture existante à rattacher (voie a)
    gardent le rendu de 38-9b. Sans `valueDate` (PayPal) : rendu de 38-9b inchangé (Vitest). File « à examiner » : les
    codes `PAYOUT_FAIL`, `PAYOUT_CANCEL` portent l'aide « Le versement est revenu sur le solde Stripe ; s'il avait été
-   rapproché, annulez ce rapprochement » et le lien vers le versement d'origine (`relatedBankTransactionId` de l'élément de la file, 40-3 AC-7 ; `null` → « versement
+   rapproché, annulez ce rapprochement, ou rapprochez l'échec par une écriture manuelle ; après une annulation, marquez
+   versement et échec examinés » et le lien vers le versement d'origine (`relatedBankTransactionId` de l'élément de la file, 40-3 AC-7 ; `null` → « versement
    d'origine hors de Kesh », sans lien) ; un litige (`DISPUTE`, `DISPUTE_REV`) « à examiner, sans proposition » (B7). Libellés de genre et de code inconnus :
    lecture tolérante de 38-9b. Vitest : retrait avec et sans `valueDate`, échec de versement.
 5. **AC-5 — Écart ventilé et K9 (FR-40-6-4).** Résumé du contrôle (b) (38-9a AC-8 b, ligne du compte et page des
@@ -167,20 +171,26 @@ afin de tenir les comptes Stripe sans saisie, en sachant ce qui est une créance
    « Stripe : `CHARGE`, `PAY_`, `PAYOUT` — liste complète au manuel », avec un lien « Codes Stripe » qui ouvre la liste
    (composant à part) ; l'aide du critère `invoice_prefix` ajoute « Stripe : lu à l'endroit
    réglé dans la connexion (métadonnée ou description) ». **Garde** (`crates/kesh-api/tests/textes_coherents.rs`, garde
-   neuve au tableau d'en-tête du fichier) : l'ensemble des codes de `kesh_providers::stripe::event_codes` (40-2 ; la table doit être **`pub`** et lisible d'un test de
-   `kesh-api`, `kesh-providers` étant sa dépendance — 40-2 AC-2 ne le dit que d'`OVERRIDABLE_CODES` : inter-fiches
-   40-2, P2-8) égale celui de `STRIPE_EVENT_CODES` (lu dans le `.ts`) **et** celui du
+   neuve au tableau d'en-tête du fichier) : l'ensemble des codes de `kesh_providers::stripe::event_codes::EVENT_CODES` (constante **`pub`** de 40-2 AC-2,
+   `OTHER` compris, définie dans `kesh_core::providers::settings::stripe_codes` et réexportée ; lisible d'un test de
+   `kesh-api`) égale celui de `STRIPE_EVENT_CODES` (lu dans le `.ts`) **et** celui du
    tableau du manuel utilisateur (AC-8 : une ligne par code, le code en première colonne en `\texttt{…}`, sous un
    `\label` que la garde cherche — présence positive du tableau exigée avant toute égalité) ; les surchargeables égalent
    `kesh_providers::stripe::event_codes::OVERRIDABLE_CODES` (constante `pub` de 40-2 AC-6) ; rouge en nommant le code en trop ou manquant. Mutation déclarée au Change Log
    (un code retiré du `.ts` → rouge).
-7. **AC-7 — Textes et i18n (NFR-40-6-2, NFR-40-6-5).** Clés neuves au préfixe des clés de prestataire que fixe 38-9a
-   AC-10, suivi de `stripe-` (et `reconciliation-rules-help-*` pour l'aide, AC-6), écrites en toutes lettres
-   (`i18n-keys.test.ts`), aux **quatre** locales (`crates/kesh-i18n/locales/{fr,de,it,en}-CH/messages.ftl`) ;
-   `npm run lint-i18n-ownership` vert — ⚠️ le script (`frontend/scripts/lint-i18n-ownership.js`, `keyBelongsToFeature`)
-   exige qu'une clé appelée par `i18nMsg('…', …)` sous `features/provider-connections/` (nom à tiret) commence par
-   `provider-connections-` : le préfixe `provider-` de 38-9a AC-10 y rougit (inter-fiches 38-9a, P2-3) ; 40-6 suit le
-   préfixe que 38-9a retiendra, jamais une entrée à `KNOWN_VIOLATIONS`. Aucun texte ne dit
+7. **AC-7 — Textes et i18n (NFR-40-6-2, NFR-40-6-5).** Règle de `lint-i18n-ownership`, relue au code
+   (`frontend/scripts/lint-i18n-ownership.js` : `extractFeatureFromPath` `:144`, `getNamespace` `:163`,
+   `keyBelongsToFeature` `:177-186`, `GLOBAL_NAMESPACES` `:16`) : une clé appelée par `i18nMsg('…', …)` dans un fichier
+   sous `src/lib/features/<dossier>/` doit, si `<dossier>` porte un tiret, **valoir** `<dossier>` ou **commencer par**
+   `<dossier>-` ; sinon avoir `<dossier>` pour premier segment ; les espaces globaux (`error`, `tooltip`, `common`,
+   `mode`, `shortcut`, `demo`) sont admis partout. Donc : clés neuves des écrans de connexion **`provider-connections-stripe-…`**
+   (`features/provider-connections/` ; préfixe attendu de la correction de 38-9a AC-10 sur la branche 38 — si elle en
+   retient un autre conforme à la même règle, 40-6 le suit) ;
+   aide des règles `reconciliation-rules-help-*` (AC-6, `features/reconciliation/`) ; résumé (b) et K9 au préfixe de
+   leur dossier hôte (`bank-accounts-…`, `fiscal-years-…`) ; les messages `provider-error-*` du serveur (40-1 AC-14)
+   ne sont pas appelés par `i18nMsg` sous un dossier de fonctionnalité (sinon : clé du dossier qui les relaie). Écrites
+   en toutes lettres (`i18n-keys.test.ts`), aux **quatre** locales (`crates/kesh-i18n/locales/{fr,de,it,en}-CH/messages.ftl`) ;
+   `npm run lint-i18n-ownership` vert, jamais une entrée à `KNOWN_VIOLATIONS`. Aucun texte ne dit
    « comptabiliser automatiquement » ni « importer » pour un téléchargement (grep des clés neuves au Change Log). **G4-bis** (`textes_coherents.rs`) lit le manuel utilisateur et les catalogues : tout
    nombre de quatre chiffres y doit être un compte des plans livrés — les clés neuves et la section Stripe du **manuel
    utilisateur** nomment « Débiteurs Stripe » **sans numéro** (1101–1103, 6912–6914 sont des comptes de la société, non des
@@ -222,7 +232,12 @@ afin de tenir les comptes Stripe sans saisie, en sachant ce qui est une créance
      reclassement, 40-2 AC-6, E6) ; `ignore` laisse un écart durable au contrôle de complétude (avertissement sous le
      champ hérité de 38-9a AC-2, dit aussi au manuel) ; la tuile de l'accueil montre la créance hors total (40-4) — et le
      paragraphe de la tuile (`:318-330`) le dit ; **liste des codes courts** (tableau `CHARGE` … `OTHER`, AC-6) en aide
-     du critère `event_code_prefix` ; rattachement en lot des transactions de 2024 aux écritures existantes (B17, 38-6c1).
+     du critère `event_code_prefix` ; rattachement en lot des transactions de 2024 aux écritures existantes (B17, 38-6c1) ;
+     changer de compte Stripe après un téléchargement demande une connexion neuve (`PROVIDER_ACCOUNT_CHANGED`, 40-1 AC-9).
+   - **Limite de 38-9a retirée** : la phrase que 38-9a (AC-8 b, « limite écrite ») pose au manuel — un mouvement de la
+     même journée postérieur à `asOf` et déjà rapproché fait un « inexpliqué » transitoire — est **retirée** et remplacée
+     par le terme « autres décalages de date » de l'écart ventilé (40-4 Écart 6, `otherDateShifts`) ; `grep -n
+     transitoire` des deux manuels, résultat au Change Log.
    - PDF régénérés (`make fr` dans `docs/manual/`) et commités ; contrôle **aplati** (`pdftotext user-manual.pdf - | tr
      '\n' ' ' | tr -s ' '`, et de même `admin-manual.pdf` : « clé restreinte », « Lecture », « Tester ») : chaque code de la liste, « clé restreinte », « versements en route », « créance » ; résultat
      au Change Log. Manuels DE/IT/EN : « à traduire » noté si l'écart existe. Brochure (`marketing-brochure.tex`) et
@@ -274,8 +289,9 @@ afin de tenir les comptes Stripe sans saisie, en sachant ce qui est une créance
   format complet (40-1 AC-4) recopiée au TypeScript.
 - **Montants** : en devise de la transaction ou du compte, jamais « CHF » supposé (38-9b AC-3) ; `big.js`, jamais
   `Number`.
-- **Libellés de 40-1 transmis** : contrôles `mode_unchanged`, `permission_present` ; codes `PROVIDER_SECRET_NOT_RESTRICTED`
-  (motifs `secret_key`, `publishable_key`, `unknown_prefix`), `PROVIDER_MODE_CHANGED` (40-1 AC-14).
+- **Libellés de 40-1 transmis** : contrôles `mode_unchanged`, `account_unchanged`, `permission_present` ; codes
+  `PROVIDER_SECRET_NOT_RESTRICTED` (motifs `secret_key`, `publishable_key`, `unknown_prefix`), `PROVIDER_MODE_CHANGED`,
+  `PROVIDER_ACCOUNT_CHANGED` (40-1 AC-9, AC-14).
 - **Références** : epic G4, G8, G10, G12, G13, G14, G19, C-40-1 à C-40-6, Q-40-2, Q-40-8, Q-40-10 ; 40-1 AC-2, AC-4,
   AC-5, AC-9, AC-11, AC-14 ; 40-2 AC-2, AC-6 ; 40-4 AC-2, AC-4, AC-5, AC-7 ; 40-5 AC-6 ; 38-9a AC-2 à AC-13 ; 38-9b
   AC-1, AC-3, AC-10, AC-11.
@@ -286,12 +302,10 @@ afin de tenir les comptes Stripe sans saisie, en sachant ce qui est une créance
   droits (AC-8) ; la story ne se développe pas avant que 40-0 les ait relevés.
 - ~~Inter-fiches 40-3 (`valueDate`, `entryDate`)~~ et ~~inter-fiches 40-2 (`OVERRIDABLE_CODES`)~~ — **réglées** le
   2026-11-15 (alignement inter-fiches P1) : 40-3 AC-3 et 40-2 AC-6 portent les noms que lisent AC-4 et AC-6.
-- **Inter-fiches 38-9a (P2-3)** — préfixe des clés i18n de `features/provider-connections/` : `provider-` (38-9a AC-10)
-  rougit à `lint-i18n-ownership` ; texte proposé à 38-9a AC-10 : « Clés neuves au préfixe `provider-connections-`
-  (fonctionnalité `features/provider-connections/`, règle de `keyBelongsToFeature` pour un nom à tiret) et
-  `nav-providers` ». 40-6 AC-7 suit.
-- **Inter-fiches 40-2 (P2-8)** — 40-2 AC-2 : « la table `stripe::event_codes` est une constante **`pub`**, lue par la
-  garde de concordance de 40-6 AC-6 (codes, `OTHER` compris) ».
+- ~~Inter-fiches 38-9a (P2-3)~~ — **alignée** le 2026-11-15 : 40-6 AC-7 écrit la règle de `keyBelongsToFeature` et le
+  préfixe `provider-connections-stripe-` ; la correction de 38-9a AC-10 se fait sur la branche 38 (autre agent).
+- ~~Inter-fiches 40-2 (P2-8)~~ — **réglée** le 2026-11-15 : 40-2 AC-2 rend `EVENT_CODES` `pub` (`OTHER` compris), lue
+  par l'AC-6.
 
 ## Dev Agent Record
 
@@ -347,3 +361,12 @@ afin de tenir les comptes Stripe sans saisie, en sachant ce qui est une créance
   Axes non exercés : code des écrans de 38-9a/38-9b (non écrit) ; PDF des manuels (non régénérés) ; `api-external.md`
   pour la connexion Stripe (réglages, corps `restrictedKey`, codes neufs) — aucune fiche 40-1/40-2 ne le nomme,
   signalé à l'orchestrateur, hors de cette fiche.
+- 2026-11-15 — alignement inter-fiches P2 (Opus) : AC-2, badge « à établir » tant que ni « Tester » ni un passage n'a
+  posé le mode (40-1 AC-5, AC-9) ; AC-3, motif `balance_parts` retiré (supprimé en P1 de 40-4), contrôle
+  `account_unchanged` et remède de `PROVIDER_ACCOUNT_CHANGED` (D40-P2-1, 40-1 AC-9) ; AC-4, aide `PAYOUT_FAIL`/`PAYOUT_CANCEL`
+  complétée (écriture manuelle ; versement et échec marqués examinés après une annulation) ; AC-6, garde lue sur
+  `EVENT_CODES` `pub` de 40-2 AC-2 ; AC-7, règle de `lint-i18n-ownership` relue au code (`:16`, `:144`, `:163`,
+  `:177-186`), préfixe `provider-connections-stripe-` ; AC-8, limite « inexpliqué transitoire » de 38-9a retirée du
+  manuel au profit des « autres décalages de date » (40-4 Écart 6), changement de compte Stripe au manuel
+  d'administration ; Dev Notes et Questions ouvertes mises à jour. Le point `api-external.md` signalé en P2 est porté
+  par 40-1 AC-15.
