@@ -1053,18 +1053,18 @@ development_status:
   37-3b-ecritures-en-devise-ecrans: ready-for-dev  # validée ; revalidée après CR-1 à CR-5 (revues de Beat) et CR-6 (couverture API et MCP), 2026-11-14
   37-4-rapports-en-devise: ready-for-dev  # validée ; revalidée après CR-1 à CR-5 (revues de Beat) et CR-6 (couverture API et MCP), 2026-11-14
   37-5-reevaluation-fin-exercice: ready-for-dev  # validée ; revalidée après CR-1 à CR-5 (revues de Beat) et CR-6 (couverture API et MCP), 2026-11-14
-  epic-38: backlog  # 2026-11-15 : epic-38-paypal.md (cadrage, B1–B21 de epics-38-40-cadrage.md ; révisé B16–B21 : aucune migration breaking) ; demande de Beat ; après l'Epic 37, une PR à la fin
-  38-0-kickoff: backlog  # cadrage écrit le 2026-11-15 ; décomptes et validation du fichier d'epic à tenir
-  38-1-secrets-et-connexions: backlog  # socle (B11) ; KESH_SECRETS_KEY, AES-256-GCM ; migration non breaking
-  38-2-compte-prestataire: backlog  # socle (B1, B3, B16, D8) ; compte bank + réglages payment_provider_accounts ; migration non breaking
-  38-3-telechargement-cadre: backlog  # socle (B8, B9, B2, B20) ; crate kesh-providers, provider_fetch_runs, en-tête MANUAL ; migration non breaking
-  38-4-criteres-des-regles: backlog  # socle (B5, B19) ; reconciliation_rule_conditions, critère boutique ; migration non breaking
+  epic-38: backlog  # 2026-11-15 : epic-38-paypal.md (cadrage, B1–B21 de epics-38-40-cadrage.md ; révisé B16–B21, puis B22–B26 : une seule migration breaking, en 38-3 ; FR/NFR par fiche) ; demande de Beat ; après l'Epic 37, une PR à la fin
+  38-0-kickoff: backlog  # cadrage écrit le 2026-11-15 ; décomptes et validation du fichier d'epic à tenir ; numéro de release à Guy (Q1, bloque la fiche 38-3)
+  38-1-secrets-et-connexions: backlog  # socle (B11, B23) ; KESH_SECRETS_KEY, AES-256-GCM, réglages settings JSON typés ; migration non breaking
+  38-2-compte-prestataire: backlog  # socle (B1, B3, B16, B23, D8) ; compte bank + réglages payment_provider_accounts, comptes liés en FK ; migration non breaking
+  38-3-telechargement-cadre: backlog  # socle (B8, B9, B2, B20, B22) ; crate kesh-providers, provider_fetch_runs, en-tête PROVIDER_API ; LA migration breaking (match_type VARCHAR, min_required relevé, crates bumpés)
+  38-4-criteres-des-regles: backlog  # socle (B5, B19, B22, B24) ; types neufs de match_type (boutique = préfixe de facture), filtres sens/devise/compte ; migration non breaking
   38-5-tva-par-defaut-du-compte: backlog  # socle (B6, B18) ; compte d'impôt sur les acquisitions ; migration non breaking
   38-6a-propositions-ventes-achats-frais: backlog  # socle (B3, B5, B6, B17) ; accept_batch, variante provider, confirmAlreadyBooked
   38-6b-conversions-remboursements-litiges: backlog  # socle (B4, B7, B20) ; file « à examiner »
   38-6c-rattachement-en-lot-et-api: backlog  # socle (B17, B21) ; rattachement en devise et en lot aux écritures existantes (2024), API des scripts externes
   38-7-client-paypal: backlog  # PayPal : OAuth2, Transaction Search, fenêtres de 31 jours, pagination
-  38-8-codes-evenement-paypal: backlog  # PayPal : codes T… vers mouvements, champ de boutique (B19), à valider sur les réponses enregistrées
-  38-9a-ecrans-connexions-et-comptes: backlog  # écrans, contrôles de solde, manuel d'administration (SQL de retour)
+  38-8-codes-evenement-paypal: backlog  # PayPal : codes T… vers mouvements, invoice_id → invoice_ref (boutique, B24), à valider sur les réponses enregistrées
+  38-9a-ecrans-connexions-et-comptes: backlog  # écrans, réglages, contrôles de solde, manuel d'administration (sauvegarde d'avant la mise à jour)
   38-9b-ecrans-regles-et-propositions: backlog  # écrans, rattachement en lot, manuel utilisateur, E2E
   38-10-releve-joint: backlog  # B10, B20 ; solde de clôture = somme de contrôle ; migration non breaking (bank_account_documents)
