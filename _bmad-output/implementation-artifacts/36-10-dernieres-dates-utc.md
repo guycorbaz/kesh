@@ -1,6 +1,6 @@
 # Story 36-10 : les dernières dates en UTC — les filtres du journal d'audit et la fenêtre de la réconciliation lisent le jour de Zurich (#1147, #1053)
 
-Status: review
+Status: done
 
 *Fiche rédigée le 2026-11-15 par l'agent de rédaction des fiches de l'Epic 36 (Opus 5.5), worktree `kesh-36-10`, branche
 `story/36-10-dernieres-dates-utc`, par le workflow `bmad-create-story`. Phase 2, release **0.18.0**, **sans migration**.
@@ -437,13 +437,13 @@ réintroduit dans une chaîne SQL de `src` → AC8. Une mutation équivalente se
       (« trois sites » → « deux », D7). `git grep -n -i "jour UTC\|jours
       UTC\|UTC-Tag\|UTC day\|giorno UTC\|#1053\|\\\\#1053\|1147" -- docs/ crates/kesh-i18n frontend/src frontend/tests` à
       la fin, sortie au Change Log (le README et le CHANGELOG de la 0.17.7, publiés, ne se réécrivent pas).
-- [ ] **Gates** (`e35-dev-commun.md` § *Quels gates, quand* ; voie 2) — **`kesh-db` est touché** : gate complet en cours
+- [x] **Gates** (`e35-dev-commun.md` § *Quels gates, quand* ; voie 2) — **`kesh-db` est touché** : gate complet en cours
       de boucle, non ciblé. Passage en `review` : bases `kesh_e3610` remises à neuf sur `kesh-mariadb-dev2:3307`,
       `scripts/test-fast.sh --ci` sous `flock /home/gcorbaz/devel/kesh-gate-logs/.gate-base2.lock scripts/mem-guard.sh`,
       `TMPDIR=/tmp/kesh-voie2`, `DATABASE_URL=mysql://kesh:kesh_dev@127.0.0.1:3307/kesh_e3610` ; `scripts/gate-ci.sh
       kesh_ci_e3610` en **voie 1** (son verrou) ; frontend complet. Une commande lourde à la fois (E7). Clôture : `gate-ci`
       et E2E complet sur `kesh_e2e_e3610` (voie 2) recréée, au dernier commit de code ; les échecs nommés contre
-      `docs/testing.md` § « Les échecs attendus ». *(Passage en `review` fait ; clôture — `gate-ci` et E2E — à venir.)*
+      `docs/testing.md` § « Les échecs attendus ». *(Passage en `review` et clôture faits : Dev Agent Record, § *Clôture*.)*
 - [x] Note de version, Dev Agent Record, prompt de la revue P1.
 
 ## Note de version
@@ -603,6 +603,17 @@ C-36-10-7 (AC5 en hiver à `D − 45`/`D − 31`, dans l'exercice de la fixture)
 - Décompte de la remédiation (de `0e4c2725a` à `2f0f88d2a`) : +2 tests Rust (`horloge.rs` 11 → 12,
   `reconciliation.rs` `mod tests` +1) ; une assertion retirée d'AC7 (B1-2).
 
+#### Clôture (dernier commit de code `2f0f88d2a`, gates lancés à `23820d5a7`, qui ne touche que la fiche)
+
+- `scripts/gate-ci.sh kesh_ci_e3610`, voie 1, sous ses verrous : code 0, **5473 passés, 0 échec, 17 ignorés** sur 228
+  `test result` (somme recomptée de `gate-ci-cloture.log` ; console `gate-ci-cloture.console.log`, `HEAD` en tête).
+- **E2E complet**, voie 2, port 3610, base `kesh_e2e_e3610` recréée vide, backend et frontend reconstruits au commit
+  (`e2e-cloture.sh`, journal `e2e-cloture.log`, `HEAD` en tête ; `e2e-backend.log`) : **426 passés, 7 échecs, 18 ignorés**
+  (18,0 min). Les **sept échecs sont exactement ceux de la KF-029 (#97)** de `docs/testing.md` § « Les échecs attendus » :
+  `mode-expert.spec.ts:26`, `:41`, `onboarding-path-b.spec.ts:65`, `:92`, `onboarding.spec.ts:57`, `:77`, `:150` ; aucun
+  échec variable. Les deux tests d'`audit-log.spec.ts` (`:56`, `:136`), modifiés par la story, passent. Port 3610 libre
+  avant et après ; backend arrêté par son PID.
+
 ### File List
 
 - `crates/kesh-core/src/horloge.rs`
@@ -742,3 +753,15 @@ C-36-10-7 (AC5 en hiver à `D − 45`/`D − 31`, dans l'exercice de la fixture)
   - **A1-4** (journaux frontend sans commit) : les journaux de gates de la remédiation portent `HEAD` en tête. Le frontend
     n'est pas touché par la remédiation : Vitest non relancé.
   Gates et mutations de la remédiation : au *Dev Agent Record*, § *Remédiation P1*.
+- 2026-11-15 — **Revue de code P2, ciblée** sur la remédiation `2f0f88d2a` (lentille « chasseur de régressions », lecture
+  seule ; modèle non indiqué au rapport) : 0 CRITICAL, 0 HIGH, 0 MEDIUM, **1 LOW**
+  (`kesh-gate-logs/e36-10/review-p2-ciblee.md`). LOW-1 — la justification de l'exemption de `dunning_reminders.rs` dans
+  `date_du_jour_garde.rs` cite un numéro de ligne (`:267`), fragile au moindre décalage, juste aujourd'hui : **laissé tel
+  quel**, sur décision de l'orchestrateur (le corriger rouvrirait une boucle pour un numéro de ligne).
+- 2026-11-15 — **Clôture de la story.** Synthèse de la boucle :
+  - **Validation de la fiche** : P1 Sonnet 0/0/2/4 → P2 Opus 0/0/1/4 → P3 ciblée Sonnet 0/0/0/4, LOW traités à l'étape 0.
+  - **Revue de code** : P1 complète, trois lentilles (Opus 5.5, contexte frais), B 0/0/0/6, A 0/0/0/5, E 0/0/0/3 — rien
+    au-dessus de LOW ; les 14 LOW corrigés dans la story (règle « Tarir la source », commit `2f0f88d2a`) ; P2 ciblée sur ce
+    seul correctif 0/0/0/1, LOW laissé tel quel. La boucle se clôt sur une passe sans rien au-dessus de LOW.
+  - **Gates de clôture** au dernier commit de code `2f0f88d2a` : `gate-ci` 5473/0/17, E2E 426 passés et les sept échecs
+    de la KF-029 seuls (*Dev Agent Record*, § *Clôture*). `Status: done`.
