@@ -50,6 +50,34 @@ pas `exchange_rates` : AC-3) ; A18 et A19 (fin du premier exercice saisie dans
 l'assistant, nom « Exercice AAAA » ou « Exercice AAAA/AAAA » : AC-11). A22 est remplacé par U4 ; A1 était déjà retiré
 (S4).
 
+## Exigences
+
+*(B26, 2026-11-15 : tirées des critères d'acceptation ci-dessous, sans en créer ni en modifier.)*
+
+**Fonctionnelles**
+
+- FR-37-1-1 — La migration ajoute, sans écrire de données, les réglages de la société, le mode et les genres de cours de l'exercice, et la devise et les comptes de différence du compte, sans clé étrangère sur les comptes de différence (AC-1).
+- FR-37-1-2 — `GET /companies/current`, les exercices et `kesh_exercices` exposent `multiCurrencyEnabled`, les trois comptes FX, `baseCurrency: "CHF"`, `multiCurrency`, `openingRateKind`, `closingRateKind` (AC-2).
+- FR-37-1-3 — `PUT /companies/current/currency-settings` écrit le réglage avec verrou optimiste (AC-3).
+- FR-37-1-4 — Chaque exercice est mono-devise ou multi-devises : il prend le réglage de la société à sa création, et la bascule est refusée tant qu'un compte en devise n'est pas à zéro (AC-3 bis).
+- FR-37-1-5 — La devise d'un compte est facultative (absent ou `null` = CHF ; à la mise à jour : absent = inchangée, `null` = CHF) et se verrouille dès la première ligne (AC-4).
+- FR-37-1-6 — Un compte en devise suit les comptes de différence de la société ou porte les siens (AC-4 bis).
+- FR-37-1-7 — La réinitialisation de la société remet à zéro les quatre colonnes du réglage (AC-5).
+- FR-37-1-8 — Un `.keshbackup` de la 0.17.6 se réimporte, l'import ne tolérant que la liste close des absences de l'Epic 37 (AC-6).
+- FR-37-1-9 — L'écran *Paramètres → Comptabilité* règle le mode et les trois comptes, éditable pour l'Administrateur, en lecture seule pour les autres rôles (AC-7).
+- FR-37-1-10 — `kesh_plan_comptable` donne la devise d'un compte (`null` pour le CHF) (AC-8).
+- FR-37-1-11 — L'assistant de démarrage fixe les dates du premier exercice (AC-11).
+
+**Non fonctionnelles**
+
+- NFR-37-1-1 — La migration est non breaking : DDL seul, aucune écriture de données (AC-1).
+- NFR-37-1-2 — Le `PUT` du réglage est réservé à l'Administrateur et refusé à une clé d'API (`API_KEY_ADMIN_FORBIDDEN`) (AC-3).
+- NFR-37-1-3 — Aucune régression mono-devise : un client qui ne connaît pas `currency` ne reçoit pas de 400 (AC-4).
+- NFR-37-1-4 — Sauvegarde et restauration : aller-retour du réglage, de la devise des comptes et du reset sans perte (AC-5, AC-6).
+- NFR-37-1-5 — La sortie MCP reste sous les tailles mesurées, sans `String` dans `sortie!` (AC-8).
+- NFR-37-1-6 — Chaînes neuves dans les quatre locales, `lint-i18n-ownership` vert (AC-9).
+- NFR-37-1-7 — Manuel utilisateur à jour, PDF régénéré et contrôlé (AC-10).
+
 ## Critères d'acceptation
 
 1. **AC-1 — Migration** `20261114000001_multi_currency_settings.sql`, non breaking (DDL seul, aucune écriture de
@@ -1193,3 +1221,4 @@ l'assistant, nom « Exercice AAAA » ou « Exercice AAAA/AAAA » : AC-11). A22 e
   `ff3ea962..f46de99c` et révision, V6, V10, V11, MCP (`champ_enum!`, taille, matrice du manuel), RBAC Bearer, cycle
   avec la conversion V3 sous A31. Non exercés : AC-1, AC-3 bis à AC-7, AC-11 ; A32 (37-3a/3b, sans effet sur cette
   fiche) ; exécution des tests.
+- 2026-11-15 — exigences FR/NFR ajoutées (B26 ; orchestrateur, Sonnet) : 11 FR, 7 NFR.

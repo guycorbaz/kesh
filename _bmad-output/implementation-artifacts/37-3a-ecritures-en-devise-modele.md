@@ -24,6 +24,31 @@ USD, cours du mois proposé (le cours mensuel AFC, ou le cours que la société 
 CHF calculé — et, pour une conversion, passer par le compte de conversion en CHF deux écritures d'une seule devise
 chacune (R7), l'écart de change dans la seconde, afin que mes comptes en devise portent leur solde en devise et en CHF.
 
+## Exigences
+
+*(B26, 2026-11-15 : tirées des critères d'acceptation ci-dessous, sans en créer ni en modifier.)*
+
+**Fonctionnelles**
+
+- FR-37-3a-1 — `journal_entry_lines` gagne `amount_currency`, `exchange_rate`, `rate_source`, avec contraintes nommées `chk_jel_fx_*` (AC-1).
+- FR-37-3a-2 — `ForeignAmount` et `RateProvenance` portent le montant, le cours et la provenance ; la devise se lit sur le compte (AC-2).
+- FR-37-3a-3 — `kesh-core` valide une ligne en devise : échelle (4 et 10 décimales), bornes, CHF arrondi (AC-3).
+- FR-37-3a-4 — Le dépôt contrôle toute écriture dans l'ordre des refus fixé, dont `MULTI_CURRENCY_DISABLED`, `FX_RATE_NOT_AFC`, `RATE_UNAVAILABLE` (AC-4).
+- FR-37-3a-5 — Les chemins automatiques ne construisent aucune ligne en devise et refusent un compte en devise (`ACCOUNT_REQUIRES_CURRENCY`, `FX_MULTIPLE_CURRENCIES`) (AC-5).
+- FR-37-3a-6 — `POST`/`PUT /journal-entries` prennent `foreign` ; l'API complète la ligne sans calcul du client ; `revaluation` y est refusé (AC-6).
+- FR-37-3a-7 — Le `PUT` et la contre-passation traitent les lignes en devise ; changer le compte d'une ligne la juge sur le nouveau compte (AC-7).
+- FR-37-3a-8 — CSV, audit (`foreign`) et MCP portent les champs en devise (AC-8).
+- FR-37-3a-9 — La limite du lettrage en devise est écrite au CHANGELOG et au registre (AC-9).
+
+**Non fonctionnelles**
+
+- NFR-37-3a-1 — Une ligne CHF reste inchangée : les contraintes tolèrent les trois `NULL` (AC-1).
+- NFR-37-3a-2 — Une erreur de validation d'une ligne est un refus clair, jamais un 500 (AC-3).
+- NFR-37-3a-3 — Les contrôles se font sous verrou, la devise d'un compte ne se lisant qu'après le contrôle d'appartenance (AC-4).
+- NFR-37-3a-4 — Audit avant/après porte `foreign` pour les seules lignes en devise (AC-7, AC-8).
+- NFR-37-3a-5 — Sauvegarde : colonnes inscrites à la liste close des absences admises ; CSV à 4 et 10 décimales (AC-1, AC-8).
+- NFR-37-3a-6 — Les lots (`accept_batch`) rendent le refus par proposition, non en erreur globale (AC-5).
+
 ## Critères d'acceptation
 
 1. **AC-1 — Migration** `20261114000003_journal_lines_foreign_currency.sql` : sur `journal_entry_lines`,
@@ -1128,3 +1153,4 @@ chacune (R7), l'écart de change dans la seconde, afin que mes comptes en devise
   vérifiée (100 × 0.91193 et × 0.91194 → 91.19). Axes exercés : chaque phrase du diff (règle `manual`, rang dans le groupe, signe
   `foreign`, tests) contre le code, le reste d'AC-4/AC-6, l'epic, 37-3b, 37-5 ; comptabilité (`chk_jel_fx_chf` tenu par CHF
   inchangé). Non exercés : reste de la fiche, MCP, i18n, compilation.
+- 2026-11-15 — exigences FR/NFR ajoutées (B26 ; orchestrateur, Sonnet) : 9 FR, 6 NFR.

@@ -102,6 +102,31 @@ cours sans saisie.
   refusée par la source, et `date_mismatch` ne la voit pas (`<datum>` ≤ D) — seule la garde « strictement antérieur à
   aujourd'hui » (AC-5) empêche de stocker la publication du vendredi sous la date du lendemain.
 
+## Exigences
+
+*(B26, 2026-11-15 : tirées des critères d'acceptation ci-dessous, sans en créer ni en modifier.)*
+
+**Fonctionnelles**
+
+- FR-37-2-1 — La migration crée la table système des cours publiés (`_kesh_fetched_exchange_rates`) et `exchange_rates`, applicative (AC-1).
+- FR-37-2-2 — `parse_monthly_rates` lit le XML de l'AFC par noms locaux ; `rate_per_unit = published_rate / published_unit`, arrondi à 10 décimales (AC-2).
+- FR-37-2-3 — Une source de cours (`RateSource`, `fetch_month`, `fetch_day`) est portée par `AppState` (AC-3).
+- FR-37-2-4 — Les cours publiés utiles d'un exercice se copient dans `exchange_rates` ; la société ne lit que `exchange_rates` (AC-3 bis).
+- FR-37-2-5 — La récupération automatique ne vise que les exercices multi-devises ouverts, mois et jours utiles seulement (AC-4).
+- FR-37-2-6 — Le cours effectif est unique : le cours retenu par la société, avec sa source, lu par une seule fonction de dépôt (AC-5).
+- FR-37-2-7 — L'écran *Paramètres → Cours de change* montre un tableau annuel par exercice multi-devises, une valeur par case, modifiable (AC-6).
+- FR-37-2-8 — `exchange_rates` est sauvegardée et restaurée avec la société, sources comprises ; les tables `_kesh_*` ne sont pas touchées par l'import (AC-7).
+- FR-37-2-9 — Cours de la société et cours d'une ligne restent deux niveaux distincts ; saisie et reprise (↑) sont auditées, la copie ne l'est pas (AC-9).
+
+**Non fonctionnelles**
+
+- NFR-37-2-1 — La migration est non breaking : DDL seul (AC-1).
+- NFR-37-2-2 — L'arrondi est déterministe (`MidpointAwayFromZero`) : la valeur lue est celle qui est stockée (AC-2).
+- NFR-37-2-3 — Appels sortants bornés : verrou de récupération et mémoire de 15 minutes (AC-3, AC-5).
+- NFR-37-2-4 — Aucun appel réseau en test ni en CI : source factice par défaut ; `lookup` après import répond sans appel sortant (AC-3, AC-7).
+- NFR-37-2-5 — Audit des saisies et reprises de cours (AC-9).
+- NFR-37-2-6 — Quatre locales (écran, erreurs dont `FX_RATE_INVALID`, libellés d'audit) et manuel à jour (AC-8).
+
 ## Critères d'acceptation
 
 1. **AC-1 — Migration** `20261114000002_exchange_rates.sql` (non breaking, DDL seul) :
@@ -1577,3 +1602,4 @@ cours sans saisie.
   37-1 et 37-4 : aucun site restant qui traite une autre source autrement que `manual` ; `rateSource` reçu en entrée
   (`afc|manual`, 37-3a) est une entrée client, non une lecture de source. Non exercés : reste des fiches hors diff,
   compilation, rendu.
+- 2026-11-15 — exigences FR/NFR ajoutées (B26 ; orchestrateur, Sonnet) : 9 FR, 6 NFR.

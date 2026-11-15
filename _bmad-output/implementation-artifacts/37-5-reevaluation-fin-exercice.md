@@ -24,6 +24,28 @@ comptes de bilan en devise au cours de clôture choisi pour l'exercice — cours
 mon contrôle, en **une écriture par compte réévalué** (R9), afin que mon bilan présente ces comptes au cours de
 clôture et que l'écart aille aux différences de change.
 
+## Exigences
+
+*(B26, 2026-11-15 : tirées des critères d'acceptation ci-dessous, sans en créer ni en modifier.)*
+
+**Fonctionnelles**
+
+- FR-37-5-1 — `POST /fiscal-years/{id}/fx-revaluation/preview` donne, par compte de bilan imputable en devise, solde, cours, CHF réévalué, écart et contrepartie (AC-1).
+- FR-37-5-2 — Le cours par défaut est le cours journalier de la date de fin, à défaut le cours mensuel, sinon `RATE_UNAVAILABLE` (AC-1, AC-7).
+- FR-37-5-3 — `POST …/fx-revaluation` passe une écriture par compte réévalué, le serveur recalculant sans se fier à l'aperçu (AC-2).
+- FR-37-5-4 — La passation est rejouable compte par compte : un second passage sans mouvement ne passe rien (AC-3).
+- FR-37-5-5 — Les gardes refusent dans l'ordre fixé : exercice inconnu, société ou exercice mono-devise (`MULTI_CURRENCY_DISABLED`), exercice clos (`FISCAL_YEAR_CLOSED`), `EARLIER_FISCAL_YEAR_OPEN` (AC-4).
+- FR-37-5-6 — L'action « Réévaluer les devises » n'apparaît qu'en multi-devises et aux rôles Comptable et Administrateur (AC-6).
+
+**Non fonctionnelles**
+
+- NFR-37-5-1 — Les deux routes sont dans `comptable_routes` : Consultation reçoit 403, aperçu compris (AC-5).
+- NFR-37-5-2 — Aucun outil MCP pour l'aperçu ; les écritures passées se lisent par `kesh_ecriture(s)` (AC-5).
+- NFR-37-5-3 — Le serveur ne fait pas confiance à l'aperçu et l'audit porte la source du cours (`fx_revaluation.posted`) (AC-2, AC-5).
+- NFR-37-5-4 — Exactitude : solde CHF = round(solde devise × cours) sur deux exercices (AC-7).
+- NFR-37-5-5 — Aucun appel réseau en test : cours servis par la source factice de 37-2 (AC-7).
+- NFR-37-5-6 — Manuel à jour (AC-8).
+
 ## Critères d'acceptation
 
 1. **AC-1 — Aperçu.** `POST /api/v1/fiscal-years/{id}/fx-revaluation/preview { rates?: {USD: "0.8846", …},
@@ -805,3 +827,4 @@ clôture et que l'écart aille aux différences de change.
   cohérence avec 37-3a/3b et l'epic, ordre des refus de la conversion dans les deux modes, la règle « aucun calcul côté
   client » de la même étape. Non exercés : reste de la fiche (hors périmètre), appariement au `PUT` (la recette n'en
   joue aucun), exécution des tests, rendu.
+- 2026-11-15 — exigences FR/NFR ajoutées (B26 ; orchestrateur, Sonnet) : 6 FR, 6 NFR.

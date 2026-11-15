@@ -413,6 +413,30 @@ rédaction (règle de splitting préventif : plus de cinq modules). Une story qu
 avant de l'écrire. Toutes les migrations attendues sont **non breaking** (`CREATE TABLE`, `ADD COLUMN` nullable ou à
 défaut) : `kesh_version_min_required` reste à 0.17.6.
 
+## Exigences (FR/NFR) par story
+
+*(B26, 2026-11-15 : chaque fiche liste ses exigences, tirées de ses critères d'acceptation ; le texte complet est dans la fiche. Guy dira s'il les veut en issues GitHub ou dans les fiches.)*
+
+**37-1** — FR-37-1-1 migration des réglages (AC-1) ; -2 lecture du réglage, des exercices et de `kesh_exercices` (AC-2) ; -3 `PUT currency-settings` (AC-3) ; -4 mode par exercice (AC-3 bis) ; -5 devise d'un compte et verrou (AC-4) ; -6 comptes de différence propres (AC-4 bis) ; -7 réinitialisation de la société (AC-5) ; -8 réimport d'une sauvegarde 0.17.6 (AC-6) ; -9 écran *Paramètres → Comptabilité* (AC-7) ; -10 devise dans `kesh_plan_comptable` (AC-8) ; -11 dates du premier exercice (AC-11).
+NFR-37-1-1 non breaking (AC-1) ; -2 Administrateur seul, clé d'API refusée (AC-3) ; -3 pas de régression mono-devise (AC-4) ; -4 sauvegarde et restauration (AC-5, AC-6) ; -5 tailles MCP (AC-8) ; -6 quatre locales (AC-9) ; -7 manuel (AC-10).
+
+**37-2** — FR-37-2-1 tables des cours (AC-1) ; -2 analyse XML et arrondi à 10 décimales (AC-2) ; -3 `RateSource` dans `AppState` (AC-3) ; -4 copie des cours publiés (AC-3 bis) ; -5 récupération des exercices multi-devises ouverts (AC-4) ; -6 cours effectif unique (AC-5) ; -7 écran *Cours de change* (AC-6) ; -8 sauvegarde et restauration des cours (AC-7) ; -9 cours de la société et cours d'une ligne, audit (AC-9).
+NFR-37-2-1 non breaking (AC-1) ; -2 arrondi déterministe (AC-2) ; -3 appels sortants bornés (AC-3, AC-5) ; -4 aucun réseau en test et en CI (AC-3, AC-7) ; -5 audit (AC-9) ; -6 quatre locales et manuel (AC-8).
+
+**37-3a** — FR-37-3a-1 colonnes et contraintes `chk_jel_fx_*` (AC-1) ; -2 `ForeignAmount`, `RateProvenance` (AC-2) ; -3 validation `kesh-core` (AC-3) ; -4 contrôle central et ordre des refus (AC-4) ; -5 chemins automatiques refusés (AC-5) ; -6 `foreign` à l'API (AC-6) ; -7 `PUT` et contre-passation (AC-7) ; -8 CSV, audit, MCP (AC-8) ; -9 limite du lettrage écrite (AC-9).
+NFR-37-3a-1 ligne CHF inchangée (AC-1) ; -2 jamais de 500 sur validation (AC-3) ; -3 contrôles sous verrou (AC-4) ; -4 audit des lignes en devise (AC-7, AC-8) ; -5 sauvegarde et CSV à 4 et 10 décimales (AC-1, AC-8) ; -6 refus par proposition dans les lots (AC-5).
+
+**37-3b** — FR-37-3b-1 soldes d'ouverture en devise (AC-1) ; -2 formulaire en devise (AC-2) ; -3 ligne d'écart et assistant *Conversion* (AC-2, AC-2 bis) ; -4 affichage, écriture de réévaluation non modifiable (AC-3) ; -5 sélecteurs sans compte en devise (AC-4).
+NFR-37-3b-1 pas de régression mono-devise (AC-2, AC-5) ; -2 motifs de blocage en quatre locales (AC-3) ; -3 inventaire clos (AC-4) ; -4 E2E sans réseau (AC-5) ; -5 manuel (AC-6).
+
+**37-4** — FR-37-4-1 règle du solde en devise (AC-1) ; -2 grand livre (AC-2) ; -3 balance (AC-3) ; -4 bilan et compte de résultat (AC-4) ; -5 CSV et PDF (AC-5) ; -6 JSON, vues, MCP (AC-6) ; -7 journal étendu, autres rapports en CHF (AC-7).
+NFR-37-4-1 CSV identique octet pour octet sans compte en devise (AC-5) ; -2 JSON et écran inchangés en mono-devise (AC-6) ; -3 aucun total en devise étrangère (AC-3, AC-4) ; -4 champs MCP à `null`, tailles (AC-6) ; -5 quatre locales (AC-6) ; -6 concordance des quatre rapports (AC-8) ; -7 manuel et PDF (AC-9).
+
+**37-5** — FR-37-5-1 aperçu (AC-1) ; -2 cours par défaut jour puis mois (AC-1, AC-7) ; -3 passation par compte, serveur recalcule (AC-2) ; -4 rejouable compte par compte (AC-3) ; -5 gardes et ordre des refus (AC-4) ; -6 action affichée en multi-devises, Comptable et Administrateur (AC-6).
+NFR-37-5-1 RBAC, Consultation 403 (AC-5) ; -2 pas d'outil MCP d'aperçu (AC-5) ; -3 aucune confiance à l'aperçu, audit de la source (AC-2, AC-5) ; -4 exactitude CHF = round(devise × cours) (AC-7) ; -5 aucun réseau en test (AC-7) ; -6 manuel (AC-8).
+
+**Total** : 47 FR et 37 NFR.
+
 ## Règles de cet epic
 
 - Méthode du dépôt : `CLAUDE.md` (fiche → validation en boucle → développement → revue en boucle, Sonnet ↔ Opus pour

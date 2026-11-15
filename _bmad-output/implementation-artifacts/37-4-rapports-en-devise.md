@@ -12,6 +12,30 @@ En tant que comptable en multi-devises, je veux voir, pour chaque compte en devi
 devise à côté du montant en devise principale (aujourd'hui CHF), dans le grand livre, la balance, le bilan et le compte de résultat, à l'écran et dans les
 exports, afin de rapprocher mes comptes PayPal ou Wise de leurs relevés et de contrôler ma réévaluation.
 
+## Exigences
+
+*(B26, 2026-11-15 : tirées des critères d'acceptation ci-dessous, sans en créer ni en modifier.)*
+
+**Fonctionnelles**
+
+- FR-37-4-1 — Le solde en devise d'un compte est Σ `amount_currency` au débit moins au crédit, signé par le type du compte, la devise étant celle du compte (AC-1).
+- FR-37-4-2 — Le grand livre montre montant, cours, solde progressif et totaux en devise d'un compte en devise (AC-2).
+- FR-37-4-3 — La balance porte les colonnes en devise d'un compte en devise (AC-3).
+- FR-37-4-4 — Le bilan et le compte de résultat portent la devise et le solde en devise (AC-4).
+- FR-37-4-5 — Les exports CSV et PDF portent les champs en devise (AC-5).
+- FR-37-4-6 — JSON, vues et outils MCP (`kesh_grand_livre`, `kesh_balance`, `kesh_bilan`, `kesh_compte_de_resultat`) portent les champs en devise (AC-6).
+- FR-37-4-7 — Le journal est étendu ; accueil, projets, TVA et balance âgée restent en CHF (AC-7).
+
+**Non fonctionnelles**
+
+- NFR-37-4-1 — CSV identique octet pour octet à l'actuel s'il n'y a aucun compte en devise dans le rapport ; PDF aux mêmes lignes de texte (AC-5).
+- NFR-37-4-2 — JSON d'un rapport sans compte en devise identique à l'actuel ; rien ne change à l'écran en mono-devise (AC-6).
+- NFR-37-4-3 — Aucun total en devise étrangère : les totaux restent en devise principale (AC-3, AC-4).
+- NFR-37-4-4 — Champs MCP présents à `null` hors compte en devise, dans les limites de taille mesurées (AC-6).
+- NFR-37-4-5 — Quatre locales, `i18n-keys` et `i18n-libelle-en-dur` verts (AC-6).
+- NFR-37-4-6 — Concordance grand livre, balance, bilan et compte de résultat en devise sur un jeu à deux exercices, `offset > 0` compris (AC-8).
+- NFR-37-4-7 — Manuel et PDF à jour (AC-9).
+
 ## Critères d'acceptation
 
 1. **AC-1 — Règle unique.** Le solde en devise d'un compte = Σ `amount_currency` au débit − Σ au crédit, signé comme le
@@ -305,3 +329,4 @@ exports, afin de rapprocher mes comptes PayPal ou Wise de leurs relevés et de c
   `Montant` seulement), `services/postes_ouverts.rs:98`, `letterings/open_items.rs:83-91`. AC touchés : AC-7, Tâches.
   Fiche à revalider (cycle CR-6).
 - 2026-11-14 — validation CR-6 P1 (Sonnet) : 0 CRITICAL, 0 HIGH, 0 MEDIUM, 2 LOW ; remédiés dans la fiche sauf <aucun inter-fiches>. LOW 37-4-CR6-P1-1 : l'inventaire AC-7 disait « sommes relevées par grep » et y rangeait un outil MCP sans `SUM` — précisé (atteint par `letterings::open_items`). LOW -P1-2 : l'agent MCP lit des CHF sans l'avoir dit (`solde`) — renvoi à `kesh_plan_comptable.devise` écrit ; test : `reste_du` à `null`. Relu au code : `mcp/outils/postes_ouverts.rs:210` (`nom`), `:125-161` (`Poste`, `PostesOuverts`, `Montant` seulement, aucun champ en devise), `services/postes_ouverts.rs:98` (`letterings::open_items`), `open_items.rs:83-91` (`SUM(jel.debit - jel.credit)`), `:346-355` (`require_viewable_account` : un compte de bilan en devise est atteignable) ; 37-3a AC-9 (limite du lettrage) cohérent ; epic l. 363 (V13). Non exercés : relecture complète hors diff CR-6, compilation, rendu, 37-1 AC-8 (`devise` de `kesh_plan_comptable`, citée, non relue).
+- 2026-11-15 — exigences FR/NFR ajoutées (B26 ; orchestrateur, Sonnet) : 7 FR, 7 NFR.
