@@ -1,6 +1,6 @@
 # Story 36-17 : l'assistant de configuration ne laisse plus de page blanche à la fin — « Configuration en cours… », « Configuration terminée », *Réessayer* (#1187)
 
-Status: review
+Status: done
 
 *Fiche rédigée le 2026-11-15 par l'agent de rédaction des fiches de l'Epic 36 (Opus 5.5), worktree `kesh-36-17`, branche
 `story/36-17-assistant-fin-configuration`, par le workflow `bmad-create-story`. Release **0.18.0** (phase 2), branche de
@@ -10,7 +10,7 @@ fichier d'epic, Phase 2, rang 16 ; registre `e36-choix-autonomes-e360.md`, **C-e
 à la story : `e36-choix-autonomes-36-17.md` (C-36-17-1 à C-36-17-9). Voie de développement : **voie 2** (bases `kesh_e3617`,
 `kesh_e2e_e3617` sur `kesh-mariadb-dev2:3307` ; `kesh_ci_e3617` en voie 1 pour `gate-ci.sh`). Journaux :
 `/home/gcorbaz/devel/kesh-gate-logs/e36-17/`. Validation terminée en trois passes ; développement fait le 2026-11-15 (Dev
-Agent Record), en revue.*
+Agent Record), revue close le 2026-11-15, story `done`.*
 
 ## Story
 
@@ -713,7 +713,30 @@ Journaux hors dépôt, `/home/gcorbaz/devel/kesh-gate-logs/e36-17/` :
   deuxième essai des captures (`captures-2.log`, 18:29–18:38, en attente de la voie 2 jusqu'à ~18:37) a fini pendant que
   `gate-ci` démarrait en voie 1 (~18:38) : une minute de chevauchement, sans effet sur les journaux (gate-ci vert).
 - **Ce qui n'a pas tourné** : l'**E2E** (aucun, ni rouge ni vert : `onboarding-fin.spec.ts` est écrite, non exécutée — à la
-  clôture ; la preuve de son rouge, prévue à `e2e-rouge.log`, aussi) ; la régénération des **PDF**.
+  clôture ; la preuve de son rouge, prévue à `e2e-rouge.log`, aussi) ; la régénération des **PDF**. *Annoté à la clôture* :
+  l'E2E complet et sa preuve du rouge ont tourné à la clôture (`ca89bf46a`, voir *Clôture* ci-dessous) ; les PDF restent à
+  l'intégration.
+- **Clôture** (au dernier commit de code **`ca89bf46a`**, `cloture.log` : « HEAD ca89bf46a ; modifié hors commit (code) : 0 »,
+  script `cloture-36-17.sh`, une commande lourde à la fois) :
+  - **Preuve du rouge** d'`onboarding-fin.spec.ts` contre le frontend d'**avant** la story (`0bf3c3b4b`, construit à part dans
+    `target/rouge-0bf3c3b4b/`) : **4 rouges sur 4** (`e2e-rouge.log`). E3 rougit **sur le comportement** : « Expected pattern:
+    /\/onboarding$/ — Received string: "http://127.0.0.1:3617/" » (l'ancienne garde renvoyait à `/` dès l'étape 7). E1, E2 et
+    E4 rougissent faute d'identifiant (« waiting for getByTestId('onboarding-language-FR') ») : rouges de construction, comme
+    au Vitest (A4) ; leur comportement est prouvé par les mutations.
+  - **Captures** 01 à 06, 11 et 12 refaites au frontend de `ca89bf46a` (`captures-4.log`, vert) ; 04 montre la langue comptable
+    sur sa propre ligne, 11 le lien vers *Administration → Facturation*.
+  - **E2E complet**, voie 2, `kesh_e2e_e3617` remise à neuf, montage de `docs/testing.md` (port 3617) : **430 passés,
+    7 échecs, 18 ignorés** (`e2e-complet.log`, 20,9 min). Les sept échecs sont **exactement** les sept de la KF-029 (#97) de
+    `docs/testing.md` § *Les échecs attendus* : `mode-expert.spec.ts:26`, `:41`, `onboarding-path-b.spec.ts:65`, `:92`,
+    `onboarding.spec.ts:57`, `:77`, `:150` ; aucun huitième. Points d'échec comparés à l'E2E de la release 0.17.8
+    (`rel0178/e2e-final.log`) : mêmes lignes (`#coord-address` pour `path-b:65`, `:92` et `onboarding:150` ; `onboarding:72`
+    et `:83` pour `:57` et `:77`). `onboarding-fin.spec.ts` (E1 à E4) et `onboarding-bank-account.spec.ts` passent.
+  - `gate-ci.sh kesh_ci_e3617`, voie 1 : **sortie 0 ; 5459 passés, 0 échoué, 17 ignorés** sur 228 lignes `test result`
+    (`clo-gate-ci.log`, fin 21:01:14).
+  - Rien ne reste lancé : backend arrêté par son PID (port 3617 libre, `e2e-complet.log`, dernière ligne « 0 »), aucun verrou
+    tenu. Les bases `kesh_e3617`, `kesh_e2e_e3617`, `kesh_ci_e3617` sont gardées jusqu'à l'intégration (consigne de
+    l'orchestrateur). Le frontend d'avant la story, construit pour la preuve du rouge, vit sous `target/rouge-0bf3c3b4b/`
+    (hors suivi git ; part avec le worktree).
 - **Captures** (AC12), thème clair, base jetable `kesh_e2e_e3617` recréée, backend de test sur le port 3617, frontend
   construit à `074453a9f` : **douze**, `kesh-gate-logs/e36-17/captures/01-en-cours.png` à `12-application-etape-7-banniere.png`
   (en cours ; échec réseau avec *Réessayer* ; reprise ; terminée avec et sans compte ; récapitulatif en échec ; démo en
@@ -878,3 +901,15 @@ Journaux hors dépôt, `/home/gcorbaz/devel/kesh-gate-logs/e36-17/` :
     restauration de M20 a échoué au premier essai (`index.lock` pris par un `git status` que j'ai lancé en parallèle),
     fichier restauré par `git restore --worktree` puis `touch`, M20 à M24 rejouées.
   - Gates de remédiation au commit `f4b1bb554` : voir *Debug Log References*.
+- 2026-11-15 — **Revue P2 ciblée** (rapport `kesh-gate-logs/e36-17/review-p2-ciblee.md`, sur la remédiation `f4b1bb554`) :
+  **0/0/0/2** — la boucle de revue se clôt.
+  - **LOW-1, corrigé (test seul)** : le retour de l'étape 8 après l'étape bancaire (finalisée ailleurs) n'était pas joué ;
+    test « étape bancaire qui rend l'étape 8 … la page terminée, sans finalisation » (`onboarding-end.test.ts`,
+    `ca89bf46a`), aucune ligne de production. Vitest ciblé 27/27 (`clo-vitest-cible.log`).
+  - **LOW-2, rien à faire** : pour une carte seule, « Ajoutez votre compte bancaire » reste exact (remarque de la passe).
+- 2026-11-15 — **Clôture** : dernier commit de code **`ca89bf46a`** ; preuve du rouge E2E, captures refaites, E2E complet
+  (430 passés, les 7 échecs de la KF-029, 18 ignorés) et `gate-ci` — chiffres au Dev Agent Record (*Clôture*). Statut `done`.
+  **Synthèse de la boucle** : validation P1 Sonnet 0/0/2/4 → P2 Opus 0/0/1/6 → P3 ciblée Sonnet 0/0/0/6 (clôture de la
+  validation) ; revue de code P1 en trois lentilles B 0/0/2/5, A 0/0/1/6, E 0/0/2/8 (deux MEDIUM convergents : le manuel qui
+  nommait *Réessayer*, la remise à zéro des drapeaux sans test) → remédiation `f4b1bb554` → P2 ciblée **0/0/0/2**. Aucun
+  finding réfuté. Mutations : M1 à M24, toutes tuées. Choix C-36-17-1 à 18.
