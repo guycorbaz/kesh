@@ -10,7 +10,7 @@ Rédigée par l'agent de rédaction des fiches de l'Epic 36 (Opus 5.5), worktree
 aucun changement d'API. Code lu à `0bf3c3b4b`. **Échéance ferme : d'ici le 2026-12-28** (décision de Guy, Q1 ;
 C-e360-13) — ⚠️ **la fusion doit précéder le 2026-12-26** : `open_items_invariant` rougit **à l'heure réelle** dès ce
 jour-là (D5 ; sondes `sonde-p2-S1a.log` vert au 2026-12-24, `sonde-p2-S1b.log` rouge au 2026-12-26 ; validation P2,
-V2-3). Voie de base **2** (`kesh-mariadb-dev2:3307`), `gate-ci.sh` en voie 1. Clé courte des bases proposée : `e367a`
+V2-3). Voie de base **2** (`kesh-mariadb-dev2:3307`), `gate-ci.sh` en voie 1. Clé courte des bases proposée : `e367a` *(fixée à `e367` par l'orchestrateur : `kesh_e367`, `kesh_e2e_e367`, `kesh_ci_e367` ; A1-3)*
 (à confirmer par l'orchestrateur). Choix : `e36-choix-autonomes-36-7.md` (C-36-7-1 à C-36-7-8). Relevés de la fiche :
 `/home/gcorbaz/devel/kesh-gate-logs/e36-7/` ; journaux de la story : le même dossier (V7-3). Sœur : `36-7b-tests-bornes-anterieures.md`
 (les neuf tests qui rougissent sous un instant antérieur à leur date de 2026), développée après la fusion de celle-ci.*
@@ -393,10 +393,13 @@ Ces décisions valent aussi pour la 36-7b, qui y renvoie.
    test du tableau ramené à sa version de la base rougit sous la même commande.
 5. **AC5 — E2E complet en 2027** (D3 ; **gate de clôture**, C-36-7-6) : la suite Playwright complète, backend et runner
    sous la commande de D3 — le backend par son **binaire construit** (`target/debug/kesh-api`), le runner par `npx
-   playwright test` —, base `kesh_e2e_e367a` recréée : les échecs se nomment un par un contre `docs/testing.md` § *« Les
-   échecs attendus »* (les sept de la KF-029, #97) ; aucun autre. **Sonde positive jointe** : la spec de D6
-   (`horloge-sonde.spec.ts`), jouée d'abord seule par le même runner sous la même horloge, rend les trois jours égaux à
-   `2027-01-04` — serveur (`asOf` par défaut, `routes/letterings.rs:311` « absent (ou vide) → aujourd'hui », tenu par
+   playwright test` —, base `kesh_e2e_e367` recréée (clé fixée par l'orchestrateur ; la fiche proposait `e367a`, A1-3) :
+   les échecs se nomment un par un contre `docs/testing.md` § *« Les échecs attendus »* — les sept de la KF-029 (#97), et
+   0 à 2 échecs de pollution d'état entre specs (`docs/testing.md:420`, `:450`), **chacun rejoué seul sous la même
+   horloge et vert** ; aucun autre (A1-1, revue P1). **Sonde positive jointe** : la spec de D6
+   (`horloge-sonde.spec.ts`), jouée d'abord seule par le même runner sous la même horloge, avec
+   `KESH_SONDE_JOUR_ATTENDU=2027-01-04` dans l'environnement du runner (B1-1), rend les trois jours égaux à
+   `2027-01-04` et les publie (ligne `horloge-sonde : {…}`) — serveur (`asOf` par défaut, `routes/letterings.rs:311` « absent (ou vide) → aujourd'hui », tenu par
    `postes_ouverts::lister`, `:524-530`), runner (`todayInZurich()`) et navigateur (`page.evaluate`) ; journal joint, avec
    la variante (`-m` ou non) jouée. Si l'étage navigateur rend 2026, repli de D3 (non constatable pour le navigateur,
    arbitrage), jamais « vert ».
@@ -432,7 +435,7 @@ littéral `"2027-01-01"` ; ailleurs l'année 2026 ; V2-10) et doit être **tuée
 | M | Site corrigé | Test qui la tue | Instant |
 |---|---|---|---|
 | M1a | `admin_full_import_e2e` `v0174a_decor`, exercice (`:4899-4901`) | `full_import_accepts_an_rc1_backup_with_supplier_invoices` (et `…_0_16_…`) | `2027-01-04T10:00:00Z` |
-| M1b | `admin_full_import_e2e` pièces `:4990`, `:5039` remises en 2026 | idem ; `full_import_round_trip_keeps_a_draft` (`:5152-5156`) reste vert | `2029-06-15T10:00:00Z` |
+| M1b | `admin_full_import_e2e` pièces `:4990`, `:5039` remises en 2026 | idem ; `full_import_round_trip_keeps_a_draft` (`:5152-5156`) reste vert *(constaté au développement : tué aussi — il valide une facture par `v0174a_invoice`, `FISCAL_YEAR_INVALID` ; Dev Agent Record, `mut/M1b.log` ; annoté à la revue P1, A1-2)* | `2029-06-15T10:00:00Z` |
 | M2a | `bank_statements_manual_e2e`, l'`UPDATE` de l'exercice dans `manual_statement_lines_reconcile_like_imported_ones` retiré (`setup()`, `:218-220`, intouché ; V4-1) | ce test | `2027-01-04T10:00:00Z` |
 | M2b | `bank_statements_manual_e2e` relevé dérivé du test (période, numéro, dates de lignes) remis aux valeurs de `body()` (2026) | idem : la facture en N-1 n'est plus candidate (`F ≤ D + 1`, `reconciliation.rs:402-408` ; assertion `:1098-1100`) | `2029-06-15T10:00:00Z` |
 | M2c | `bank_statements_manual_e2e:1036` (facture) remise au `'2026-08-20'` | idem : `A = F` hors de `D − 30` (assertion `:1098-1100`) | `2029-06-15T10:00:00Z` |
@@ -468,7 +471,9 @@ l'instant prescrit se dit (juste, test muet, ou mutant équivalent constaté), j
    V7-2).
 5. Gates (§ *Dev Notes*), AC1, AC2, AC3, AC6 → `Status: review`, clé `review`, Dev Agent Record, prompt de la revue P1.
    **La fusion doit précéder le 2026-12-26** (D5).
-6. À la clôture : `gate-ci`, E2E complet à l'heure réelle, **puis AC4 et AC5** ; ensuite seulement `done`.
+6. À la clôture : `gate-ci`, E2E complet à l'heure réelle (échecs nommés comme à l'AC5 : les sept de la KF-029 et 0 à 2
+   de pollution, chacun rejoué seul et vert ; A1-1), `binary(open_items_invariant)` sous `2026-12-26T10:00:00Z` (A1-5),
+   **puis AC4 et AC5** ; ensuite seulement `done`.
 
 ## Note de version
 
@@ -482,10 +487,13 @@ changement pour l'utilisateur. (refs #1125)
 - Les neuf tests à date de 2026 qui rougissent sous un instant antérieur : **36-7b**.
 - **L'aperçu du format de numérotation montre toujours l'année 2026** — `frontend/src/routes/(app)/settings/invoicing/+page.svelte:159`,
   `:173`, `:180` (`previewInvoiceNumber(format, 2026, '2026', 1)`) : en 2027, *Paramètres → Facturation* affiche
-  `FF-2026-001` comme exemple du prochain numéro. Code de production : **issue à ouvrir** (P4, `bug`). Si elle est
-  corrigée, `supplier-internal-number.spec.ts:237` (`KF-2026-0001`) devra suivre.
+  `FF-2026-001` comme exemple du prochain numéro. Code de production : **issue à ouvrir** (P4, `bug`) — ouverte :
+  **#1196** (A1-4). Si elle est corrigée, `supplier-internal-number.spec.ts:237` (`KF-2026-0001`) devra suivre.
 - **L'exercice de test 2020-2030** (`crates/kesh-db/src/test_fixtures.rs:118-119`) expirera le 2030-12-31 : **issue à
-  ouvrir** (P4, `technical-debt`).
+  ouvrir** (P4, `technical-debt`) — ouverte : **#1197** (A1-4).
+- **N relu plusieurs fois dans un montage** (revue P1, E1-2) : à l'heure réelle, un test qui chevauche minuit suisse le
+  31 décembre pourrait poser l'exercice N-1..N puis dater l'opération du jour en N+1 ; issue ouverte : **#1205**
+  (`technical-debt`), hors story.
 - Le placeholder `CLI-2026-00042` (`contacts/+page.svelte:1067`) : laissé (C-36-7-5).
 
 ### Modules touchés (règle de splitting)
@@ -499,17 +507,17 @@ neuve, une garde, aucun fichier de production.
 
 ### Gates (voie 2 ; `e35-dev-commun.md` § *Quels gates, quand*)
 
-- **`kesh-db` est touché** : gate complet en cours de boucle (`scripts/test-fast.sh --ci`, base `kesh_e367a` remise à
+- **`kesh-db` est touché** : gate complet en cours de boucle (`scripts/test-fast.sh --ci`, base `kesh_e367` remise à
   neuf), non ciblé. ⚠️ Ne pas toucher aux sites positionnels de `migrations_upgrade_path.rs` (`apply_migrations_up_to`,
   `migrations.len()`, P6) : seules les dates changent.
 - **Passage en `review`** : `test-fast --ci` à l'heure réelle, puis sous `2027-01-04T10:00:00Z`, `2026-12-31T23:30:00Z` et
   `2026-03-10T23:30:00Z` (une campagne par prise de verrou), et la **suite entière** sous `2029-06-15T10:00:00Z` (AC2 ;
   conduite à tenir devant un rouge hors des treize : AC2) ;
-  `scripts/gate-ci.sh kesh_ci_e367a` en voie 1 ; frontend complet (`npm run check`, `lint-i18n-ownership`, `test:unit`,
+  `scripts/gate-ci.sh kesh_ci_e367` en voie 1 ; frontend complet (`npm run check`, `lint-i18n-ownership`, `test:unit`,
   `build`), la garde des specs étant touchée (D6).
 - **Clôture** : `gate-ci` et E2E complet à l'heure réelle au dernier commit de code, **puis** AC4 et AC5.
 - Une commande lourde à la fois (E7). Verrou voie 2 : `flock /home/gcorbaz/devel/kesh-gate-logs/.gate-base2.lock
-  scripts/mem-guard.sh …`, `TMPDIR=/tmp/kesh-voie2`, `DATABASE_URL=mysql://kesh:kesh_dev@127.0.0.1:3307/kesh_e367a`.
+  scripts/mem-guard.sh …`, `TMPDIR=/tmp/kesh-voie2`, `DATABASE_URL=mysql://kesh:kesh_dev@127.0.0.1:3307/kesh_e367` (clé `e367`, A1-3).
 - faketime et cargo : construire **avant**, à l'heure réelle (`cargo nextest run --no-run`), puis lancer sous faketime.
 
 ### Fichiers communs
@@ -592,15 +600,30 @@ Tous sous `/home/gcorbaz/devel/kesh-gate-logs/e36-7/`. Code de la story au commi
     n'asserte aucun numéro interne — `/usr/bin/grep -n internal_number` dans le test ne rend que les `ALTER TABLE` du
     montage (`:1389`, `:1602`) — et la comparaison colonne par colonne porte sur les colonnes **d'avant** la montée ; les
     deux factures revalidées reçoivent un `invoice_date` neuf par `update_draft` (`:1716`, en N-1) avant `validate`.
-    La classe par `invoice_date` de la migration `20261106000001` n'est donc pas observée par ce test.
+    La classe par `invoice_date` de la migration `20261106000001` n'est donc pas observée par ce test. *Complété à la
+    revue P1 (E1-5)* : elle ne changerait de toute façon rien — la migration tire l'année du numéro de l'exercice de
+    l'écriture d'achat (`YEAR(f.start_date)`, `JOIN fiscal_years f ON f.id = je.fiscal_year_id`, `:45-:50`) et
+    n'emploie `invoice_date` qu'au rang (`ORDER BY f.start_date, s.invoice_date, s.id`, `:47`, `:63`) ; or les huit
+    factures de `facture_ouverte_rc1` portent **toutes la même** date, sous la forme corrigée (`piece_montee(6, 15)`)
+    comme sous la mutation (`'2026-06-15'`) : le rang retombe sur `s.id` dans les deux cas, et les numéros posés sont
+    identiques.
   - `T4-533` (`opening_complement_repository`, le `today` de `complete` remis à `d(2026, 6, 1)`) : `1 passed`.
     `decide_date` rend `OpeningDay` dès que le premier exercice est ouvert et son premier jour hors verrou, sans lire
     `today` (`opening_complement.rs:256-264`), et le refus `AccountMoved` vient de `check_lines` (`:663`), qui ne le lit
     pas non plus.
   - `T4-1008` (`bank_statements_manual_e2e`, date de l'écriture de vente remise au `'2026-08-20'`) : `1 passed`.
-    L'INSERT brut ne contrôle pas l'exercice, et rien dans le test ne relit cette date : la fenêtre de proposition porte
-    sur la date de la **facture** (`reconciliation.rs:402-408`), `git grep -n entry_date` ne rend rien dans
-    `kesh-db/src/repositories/reconciliation.rs`, et l'annulation contre-passe l'écriture du **règlement**, non celle-ci.
+    *Raison récrite à la revue P1 (E1-1 ; la version du passage en `review` disait « rien dans le test ne relit cette
+    date », ce qui était faux).* L'INSERT brut ne contrôle pas l'exercice. La date **est** relue : l'acceptation du
+    rapprochement synchronise le lettrage de la facture (`letterings::sync_invoice_in_tx`,
+    `kesh-api/src/routes/reconciliation.rs:2984`), qui passe les `(fiscal_year_id, entry_date)` des lignes de la pièce
+    (`line_periods`, `letterings.rs:1648-1652`) à la règle des périodes (`letterings.rs:1749`) ; l'annulation y passe de
+    même (`dissolve_invoice_document_group_in_tx`, `invoice_settlements_write.rs:1020`). Mais cette règle ne compare la
+    date qu'à `books_locked_through` (`line_open_in_period`, `letterings.rs:609` : `exercice.open &&
+    !exercice.later_closed && locked_through.is_none_or(|borne| entry_date > borne)`), et l'exercice est lu **par son
+    id**, sans ses bornes (`FiscalYearState { name, open, later_closed }`, `:452-456`). Or le montage ne pose aucun verrou
+    des livres (`/usr/bin/grep -n 'books_locked_through\|lock_books'` dans `bank_statements_manual_e2e.rs` ne rend rien).
+    La fenêtre de proposition, elle, porte sur la date de la **facture** (`reconciliation.rs:402-408`). Équivalent **dans
+    ce montage** : sous un verrou des livres, le mutant deviendrait tuable.
 - **AC6 — tenu.** Vitest entier sous le préchargement `date-decalee-36-7.mjs` (`KESH_TEST_INSTANT_JS=2027-01-04T10:00:00Z`)
   au commit `12b9dd90f` : `Test Files 238 passed (238)`, `Tests 3709 passed (3709)`, `rc=0` (`ac6-vitest-A2027.log`) ;
   sonde (`ac6-vitest-sonde.log`) : sans la variable `AssertionError: expected 2026 to be 2027`, avec `Tests 1 passed (1)`.
@@ -824,3 +847,45 @@ Tous sous `/home/gcorbaz/devel/kesh-gate-logs/e36-7/`. Code de la story au commi
   complet, Vitest sous préchargement — chiffres et journaux au Dev Agent Record. Écart à la prévision de la fiche : M1b tue
   aussi `full_import_round_trip_keeps_a_draft` (la fiche le disait resté vert). **`Status: review`** ; gate-ci, E2E
   complet, AC4 et AC5 à la clôture. Prompt de la revue P1 : `36-7a-tests-desancres-2027-review-prompt-p1.md`.
+- **2026-11-15 — Remédiation de la revue P1** (Opus 5.5 ; rapports `kesh-gate-logs/e36-7/review-p1-{B,A,E}.md` :
+  B 0/0/1/2, A 0/0/1/5, E 0/0/1/4 — trois MEDIUM, onze LOW). Prémisse de chaque finding lue au code ; aucun réfuté. Commit
+  de code `30ef36348`.
+  - **B1-1 (MEDIUM), corrigé** : `horloge-sonde.spec.ts` lit `KESH_SONDE_JOUR_ATTENDU` (facultative, runner) et exige
+    alors que les trois jours la valent ; elle publie les trois jours sur un vert (annotation `jours`, ligne
+    `horloge-sonde : {…}` de la console) ; `docs/testing.md` le dit, avec l'avertissement « son vert seul ne prouve pas
+    le décalage » ; l'AC5 pose la variable. **Sonde positive** au commit `30ef36348`, à l'heure réelle :
+    `rem1-sonde-d6-sans.log` vert, `{"serveur":"2026-11-15","runner":"2026-11-15","navigateur":"2026-11-15"}` ;
+    `rem1-sonde-d6-2026-11-15.log` vert ; `rem1-sonde-d6-2027-01-04.log` **rouge** (`- "serveur": "2027-01-04"`,
+    `+ "serveur": "2026-11-15"`).
+  - **A1-1 (MEDIUM), corrigé** : l'AC5 et la tâche 6 admettent les sept de la KF-029 et 0 à 2 échecs de pollution,
+    chacun rejoué seul sous la même horloge et vert. Les lignes citées par la revue sont `docs/testing.md:420` et
+    `:450` (le rapport disait `:443` ; `/usr/bin/grep -nF 'Le compte attendu est'` rend `450`, à `51a451134` comme à
+    `30ef36348`).
+  - **E1-1 (MEDIUM), corrigé** : raison de l'équivalence de `T4-1008` récrite au Dev Agent Record — la date est relue par
+    le lettrage (`sync_invoice_in_tx`, `kesh-api/src/routes/reconciliation.rs:2984` ; `letterings.rs:1648-1652`, `:1749`),
+    mais comparée au seul `books_locked_through` (`:609`), absent du montage, l'exercice étant lu par son id
+    (`FiscalYearState`, `:452-456`) ; équivalent dans ce montage seulement.
+  - **E1-5 (LOW), corrigé** : raison de `T4-1332` complétée (mêmes dates sous les deux formes, rang sur `s.id`, mêmes
+    numéros ; migration `:45-:50`, `:47`, `:63`).
+  - **B1-2 (LOW), corrigé** : l'`UPDATE` du test (`bank_statements_manual_e2e.rs:1093`) renomme l'exercice
+    `Exercice {N-1}-{N}` ; **M2a rejouée** sur le site modifié (`mut/M2a.log`, commit `30ef36348`, `2027-01-04` : tuée ;
+    le relevé du passage en `review` est gardé sous `mut/M2a-review.log`). Script de mutation adapté.
+  - **B1-3 (LOW), corrigé** : la recette faketime de `docs/testing.md` dit pourquoi `cargo nextest run` sous faketime ne
+    recompile rien (construction préalable `--no-run`, `NO_FAKE_STAT=1`).
+  - **E1-3 (LOW), corrigé** : `docs/testing.md:121` distingue ce que la règle tient par construction (un montage qui la
+    suit) de ce qui est relevé (la suite, sous les instants nommés).
+  - **E1-4 (LOW), corrigé** : recette de fin d'année en forme relative à N, les instants de 2026-2027 en exemple ; un
+    instant antérieur au jour réel ne teste pas l'année suivante.
+  - **E1-2 (LOW), en issue** : **#1205** (`technical-debt`), N relu plusieurs fois dans un montage ; citée aux Dev Notes.
+  - **A1-2 (LOW), corrigé** : ligne M1b du tableau annotée (constaté : tuée aussi), sans réécrire la prévision.
+  - **A1-3 (LOW), corrigé** : clé `e367` à l'en-tête (annotation), à l'AC5 et aux Dev Notes.
+  - **A1-4 (LOW), corrigé** : les deux issues des Dev Notes sont **#1196** (aperçu de numérotation, P4 `bug`) et **#1197**
+    (exercice de test 2020-2030, P4 `technical-debt`), citées.
+  - **A1-5 (LOW), corrigé** : `binary(open_items_invariant)` sous `2026-12-26T10:00:00Z` au commit `30ef36348` :
+    `1 test run: 1 passed` (`rem1-S1b.log`) ; rejoué de nouveau à la clôture (tâche 6).
+  - **A1-6 (LOW), corrigé** : le prompt P1 est annoté (`gate-ci` a tourné au passage en `review`, se rejoue à la
+    clôture), sans réécrire la passe.
+  - **Gates de la remédiation** (commit `30ef36348`) : `test-fast --ci` voie 2, base remise à neuf, heure réelle :
+    `5452 tests run: 5452 passed (1 slow), 13 skipped`, `rc=0` (`rem1-gate-reel.log`) ; frontend complet : `check`
+    0 erreur (29 avertissements antérieurs), `lint-i18n-ownership` `rc=0`, `test:unit` 3709 passés, `build` `rc=0`
+    (`rem1-front-*.log`). Ni `gate-ci` ni E2E (remédiation), comme le veut `e35-dev-commun.md`.

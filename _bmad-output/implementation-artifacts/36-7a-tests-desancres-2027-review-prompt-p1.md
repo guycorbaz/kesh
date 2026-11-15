@@ -43,6 +43,10 @@ Record de la fiche les cite avec leurs commits.
 sonde à trois étages) sont des **gates de clôture** (C-36-7-6) : leur absence n'est pas un finding ; une prescription
 fausse de la fiche à leur sujet en est un.
 
+*(Annoté après la passe 1, finding A1-6 : `scripts/gate-ci.sh kesh_ci_e367` **a tourné** au passage en `review`, au
+commit de code `12b9dd90f` — `kesh-gate-logs/e36-7/gate-ci-review.log`, 5459 passés, 0 échec ; il se **rejoue** à la
+clôture, au dernier commit de code. Seuls l'E2E complet, AC4 et AC5 n'ont pas encore tourné.)*
+
 ## Axes obligatoires
 
 1. **D1 tenu partout** : chaque date de 2026 des treize tests (relevé de l'étape 0 au Change Log) est-elle dérivée de N,
