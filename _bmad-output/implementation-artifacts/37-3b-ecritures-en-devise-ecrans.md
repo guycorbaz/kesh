@@ -588,9 +588,13 @@ devise au cours d'ouverture choisi pour l'exercice (R6), afin de tenir mes livre
      devise** que ce compte (p. ex. 6911 *Frais PayPal USD*) ; elles ne comptent pas dans « un seul compte en devise »
      et entrent dans Σ débit **avant** le calcul de la différence — le frais reste sur son compte, jamais dans la
      différence de change (B3/B27 de l'Epic 38 : chaque sous-compte de frais se rapproche du relevé du prestataire).
+     **Frais en CHF** (compte de charge sans devise) : ligne CHF ordinaire, hors de toute règle de forme (elle n'est pas
+     sur un compte en devise) ; elle entre dans Σ débit avant la différence comme un frais en devise, au débit ou au
+     crédit sans autre contrôle que ceux de 37-3a (l'assistant, lui, ne les offre qu'au débit) ; elle ne modifie ni
+     l'identification de l'écriture à compléter ni sa paire.
      Quand la forme est examinée (écriture complétée, ou qui porte une ligne de différence), après le seul refus A31
      (champ et ligne portée) et avant tout autre contrôle de forme : comptes en devise (charges comprises) de **deux devises** → 400 `FX_MULTIPLE_CURRENCIES`
-     (`details: { entry, currencies }`, le code et les `details` du dépôt, 37-3a AC-4, 2 bis, anticipés à ce rang pour
+     (`details: { currencies }` du dépôt, 37-3a AC-4, 2 bis, plus `entry` posé par la route ; le code est celui du dépôt, anticipé à ce rang pour
      ne pas rendre un `ENTRY_UNBALANCED` trompeur) ; puis une ligne **au crédit** d'un compte de charge en devise →
      400 `Validation` (`details: { entry, line }`, message : « un frais de conversion se passe au débit d'un compte de
      charge de la devise <code> »). Le type et la devise des comptes se lisent par la requête de reconnaissance
@@ -708,7 +712,9 @@ devise au cours d'ouverture choisi pour l'exercice (R6), afin de tenir mes livre
    aucune ligne ajoutée, rien de créé ; frais sur le compte de charge **EUR** dans l'écriture USD → 400
    `FX_MULTIPLE_CURRENCIES` (`details: { entry, currencies: ["EUR", "USD"] }`), rien de créé — avec le champ et
    avec une ligne de différence portée sans le champ ; écriture à compléter dont le seul compte en devise est 6911
-   (aucun compte en devise hors charges) → `ENTRY_UNBALANCED` ;
+   (aucun compte en devise hors charges) → `ENTRY_UNBALANCED` ; frais en CHF (compte de charge CHF, au débit) avec un
+   frais sur 6911 USD → 201, les deux frais tels quels, différence calculée après eux, l'écriture n'étant ni refusée
+   ni re-déterminée par la ligne CHF ;
    Vitest de l'assistant (calcul de la différence sur la fixture partagée, frais, cours OU CHF, bouton désactivé hors
    exercice multi-devises, et désactivé avec le motif de la paire indéterminée pour une ligne de frais de l'écriture 2 sur un second compte en devise qui n'est pas un compte de charge de la devise, avec une différence non nulle (AC-2 bis) ; frais de l'écriture 2 sur 6911 USD (compte de charge) → bouton actif, différence calculée après le frais, aperçu avec la ligne du frais (A33) ; compte USD à comptes propres → ligne de différence sur ces comptes, compte USD « par
    défaut » → comptes de la société, S2) ; E2E (AC-5). L'écriture 2 reste modifiable après coup comme toute écriture (le lien entre
@@ -1263,3 +1269,17 @@ devise au cours d'ouverture choisi pour l'exercice (R6), afin de tenir mes livre
   crédit → 400 `Validation` ; frais sur un compte de charge EUR dans l'écriture USD → `FX_MULTIPLE_CURRENCIES` ; seul
   compte en devise de charge → `ENTRY_UNBALANCED` ; Vitest : frais sur 6911 → bouton actif. Fiche à revalider
   (passe ciblée sur ce diff).
+- 2026-11-15 — validation ciblée A33 (Sonnet) : 0 CRITICAL, 0 HIGH, 0 MEDIUM, 2 LOW ; remédiés. Périmètre : diff
+  `c6274a58..3c98a3dc`. LOW : 37-3b-A33-1 (AC-2 bis, *forme*) sort d'un frais en CHF (compte de charge sans devise) non
+  écrit : ligne CHF ordinaire, hors forme, comptée dans Σ débit avant la différence, sans effet sur l'identification ni
+  la paire — phrase et test API ajoutés (frais CHF + frais 6911 USD → 201), A33 de l'epic aligné ; -2 (AC-2 bis,
+  *forme*) « le code et les `details` du dépôt » contredisait `details: { entry, currencies }` (37-3a AC-4, 2 bis :
+  `{ currencies }` seul) — dit : `{ currencies }` du dépôt plus `entry` posé par la route. Axes exercés : chaque phrase
+  ajoutée contre le diff entier ; citations de code (`account.rs:16`, `AccountType::Expense` ; `accounts.types.ts:50`,
+  `accountType`) vérifiées au code ; sens gain/perte (Σ débit frais compris > Σ crédit → crédit du compte de gains,
+  sinon débit du compte de pertes ; formule du test = CHF conversion − (CHF₂ + frais)) ; cohérence avec A31 (refus
+  A31 d'abord), A32, 37-3a AC-4 rang 2 bis ; ordre des refus (`FX_MULTIPLE_CURRENCIES` avant le refus du frais au crédit,
+  avant `ENTRY_UNBALANCED` ; tests « deux comptes distincts » restreints à la même devise, aucun résidu à deux devises
+  attendant `ENTRY_UNBALANCED` par grep) ; 37-1 (rien n'interdit une devise sur un compte `Expense` non désigné) ;
+  requête de reconnaissance (type et devise, sans lecture de plus) ; guide d'API, Tâches, FR-3, FR-8, récapitulatif.
+  Non exercés : le reste de la fiche ; code (aucun n'existe).

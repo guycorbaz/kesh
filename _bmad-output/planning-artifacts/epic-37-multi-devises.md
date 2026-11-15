@@ -384,7 +384,8 @@ Arbitrages de l'orchestrateur pendant la validation CR-6 — **approuvés par Be
   ou portant une ligne de différence) : une ligne **au crédit** d'un compte de charge en devise → 400 `Validation`
   (`details: { entry, line }`) ; un compte (de charge ou non) d'une **autre** devise → 400 `FX_MULTIPLE_CURRENCIES`
   (`details: { entry, currencies }`), le code que le dépôt rendrait (37-3a AC-4, 2 bis), anticipé au rang de la
-  forme. Raison : B3/B27 de l'Epic 38 — chaque sous-compte de frais se rapproche du relevé de son prestataire ; un
+  forme. Un frais en CHF (compte de charge sans devise) reste une ligne CHF ordinaire, comptée avant la différence
+  comme les autres. Raison : B3/B27 de l'Epic 38 — chaque sous-compte de frais se rapproche du relevé de son prestataire ; un
   frais versé à la différence de change ne s'y rapprocherait plus.
 
 Aucune migration ni route neuve ; contrat d'API étendu sans rupture pour un corps complet (un corps sans `debit` sur
