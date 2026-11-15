@@ -252,8 +252,8 @@ rapproché.
      - `unreconciled` = Σ `amount` des transactions `pending` du compte (rejetées et « examinées » comprises : elles
        restent `pending`, 38-6b C-38-6b-6) dont **`booked_at < asOf`** — borne **exclue**, comme le contrôle de complétude de
        38-3b AC-7 (fenêtre demi-ouverte : un mouvement à l'instant exact du `reported` n'y est pas compris) ; l'instant,
-       non `booking_date` ; test : un mouvement `pending` à `booked_at = asOf` n'est pas compté ; une transaction **sans** `booked_at` (import de fichier d'un compte posé en `attach`
-       avant ses réglages, 38-2 AC-3) compte si sa `booking_date ≤` la date de Zurich de `asOf` (borne à la journée, comme
+       non `booking_date` ; test : un mouvement `pending` à `booked_at = asOf` n'est pas compté ; une transaction
+       **sans** `booked_at` (import de fichier d'un compte posé en `attach` avant ses réglages, 38-2 AC-3) compte si sa `booking_date ≤` la date de Zurich de `asOf` (borne à la journée, comme
        `ledger`) — sans quoi elle manquerait en silence (test) ;
      - `unexplained` = `reported − ledger − unreconciled`. ⚠️ **Sens** : relevé moins livres, **l'inverse** de
        `statementGap` de la même page (`statement_gap`, `repositories/bank_accounts.rs:2019-2024` : livres − relevé) ;
@@ -616,3 +616,11 @@ rapproché.
   ajouté (AC-8, tâches de test). Garde G4-bis (`textes_coherents.rs`, lue : manuel utilisateur, guide de démarrage,
   quatre catalogues) : la fiche ne cite aucun numéro de compte du plan de Beat — rien à changer. À relire par une passe
   ciblée.
+- 2026-11-15 — validation P8 ciblée (Sonnet) : 1 finding LOW, 0 au-dessus. Relu : `git diff be2ce1a9 d3abf458` de la
+  fiche ; AC-8 (b) `booked_at < asOf` concorde avec 38-3b AC-7 (« `< as_of` du dernier `reported` … à l'instant exact
+  du `reported` … jamais ») ; repli sans `booked_at` à la journée de Zurich cohérent avec `ledger` et avec la limite
+  écrite (`ledger` à la journée, `reported`/`unreconciled` à l'instant) ; test Rust présent aux tâches. LOW 38-9a-P8-1 :
+  ligne de la phrase de test trop longue, recoupée (rédaction). **Inter-fiche signalé, non appliqué** : 40-4 écrit encore
+  `booked_at ≤ asOf` (lignes 58, 65, 118) et son test (a) de la ligne 146-148 attend la borne incluse, Q-40-4-2 ; à
+  aligner sur `<` (son texte proposé, ligne ~300, est déjà celui de 38-9a). Axes non exercés : code amont, reste de la
+  fiche. Trend : P7 = 2 (0 MEDIUM) → P8 = 1 LOW : boucle clôturable pour cette fiche.
