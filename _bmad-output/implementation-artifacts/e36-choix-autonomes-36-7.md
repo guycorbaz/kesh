@@ -36,6 +36,23 @@ de C-e360-13. Chaque choix : contexte, option retenue, options écartées, réve
   rouge attendu.
 - **Écartée** : une issue à part — même classe, même fichier pour deux d'entre eux.
 - **Réversible** : oui.
+- **Amendé le 2026-11-15 (validation P1, V1-1)** : la classe compte **neuf** tests, non trois. Relevé par la suite
+  entière sous `KESH_TEST_INSTANT=2026-03-10T23:30:00Z` à la tête (`kesh-gate-logs/e36-7/inventaire-B2026.log`, 9
+  failed) : les trois d'origine, plus `invoice_echeancier_e2e`, `reconciliation_e2e`, `supplier_settlement_cancel_e2e`
+  (les trois au `lock_books` d'une borne de 2026), `project_reports_e2e`, `supplier_invoice_draft_e2e` et
+  `kesh-db::supplier_invoices_draft`. Tous entrent au périmètre ; l'AC2 garde l'instant antérieur, désormais atteignable.
+
+### C-36-7-6 — AC4 et AC5 (libfaketime) sont des gates de clôture
+
+- **Contexte** : libfaketime est absente de la station ; Guy a été prié de l'installer (orchestrateur, 2026-11-15). Les
+  corrections de montage (AC1-AC3, AC6-AC9) n'en dépendent pas.
+- **Retenu** : le développement passe en `review` sans libfaketime ; la story ne passe pas `done` et la PR de release ne
+  porte pas `closes #1125` tant qu'AC4 et AC5 n'ont pas tourné ; un rouge rattaché à l'angle mort MariaDB exige sa preuve
+  (ligne SQL, colonne, rejeu isolé) ; si le navigateur ne suit pas `LD_PRELOAD`, l'AC5 se déclare non constatable pour
+  lui, sans contournement non éprouvé ; `TZ=Europe/Zurich` fixé dans la commande.
+- **Écartées** : sortir AC4/AC5 de la story (le critère de l'epic exige l'E2E en 2027) ; bloquer tout le développement
+  sur l'installation.
+- **Réversible** : oui.
 
 ### C-36-7-4 — Aucun outillage versionné : les recettes vont dans `docs/testing.md`
 
