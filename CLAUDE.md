@@ -904,6 +904,8 @@ Branches typiques :
 - `chore/...` — maintenance, sprint-status, doc post-merge, infra.
 - `fix/...` — bugfix hors story (rare — préférer story dédiée si scope > trivial).
 - `docs/...` — mise à jour pure de documentation hors flux story.
+- `epic/N-slug` — une **tranche** d'epic, c'est-à-dire ce qu'un epic livre dans une release ; les branches `story/…` de la tranche en partent et y reviennent (§ *Travailler à plusieurs développeurs*).
+- `hotfix/X.Y.Z` — un correctif urgent, parti du tag de la dernière release publiée (même section).
 
 **Commit systématique après chaque étape BMAD** :
 
@@ -977,3 +979,65 @@ Au-delà du planning README à chaque commit (ci-dessus), élargir la vérificat
 **Si la doc n'est pas touchée** (refactor interne, fix de bug sans changement comportemental visible, code review patches cosmétiques) : tous les supports restent tels quels — pas de "doc-only commit" cosmétique pour la forme.
 
 **Coût d'oubli** : un manuel admin obsolète après une story qui change le format `.env` ou les ports réseau induit du support utilisateur cassé. Une feuille de route README qui ment fait perdre la confiance d'un éval/contributeur. Un CHANGELOG manquant à la release rend impossible le diff "qu'est-ce qui change pour mes utilisateurs". Les 3 minutes de vérification valent les heures de support en aval.
+
+## Travailler à plusieurs développeurs
+
+**Depuis le 2026-11-15, Kesh a plusieurs développeurs** : le Project Lead et l'orchestrateur qui travaille sur son mandat, et des contributeurs à qui des numéros d'epic sont réservés (37 à 39, 40). Les règles ci-dessous, décidées par Guy ce jour-là, en découlent ; `docs/developpement-a-plusieurs.md` les explique à un contributeur, avec leurs motifs. **Elles font foi ici** ; le document les commente.
+
+### Planification — GitHub Projects
+
+- **Un projet GitHub « Kesh »** porte la planification à long terme, au niveau des **issues** : **release = milestone** (une issue n'appartient qu'à une release), **epic = champ du projet**, **qui = l'assigné**. Les vues : feuille de route par release, table par epic, tableau par développeur.
+- **Les stories BMAD restent dans `sprint-status.yaml`** : le projet ne les recopie pas (§ *Issue Tracking Rule*, pas de double suivi). Le projet dit *quoi, pour quand, par qui* ; le dépôt dit *comment*.
+- **Seules les deux ou trois prochaines releases sont datées** ; le reste va au milestone « Plus tard », sans date. N'entrent au projet que les issues qu'un epic ou une release retient ; les autres restent en triage.
+- **Réserver un epic**, c'est ajouter sa valeur au champ *Epic* avec son responsable et son objet — non un échange d'e-mails. **Rattacher une issue à une release est une décision du Project Lead** ; les contributeurs proposent.
+- **On parle d'epics, non de numéros de release** (e-mails, fiches, décisions) : l'epic est stable, le numéro de release ne l'est qu'au tag.
+
+### Numérotation des versions — deux niveaux
+
+- **Une release planifiée monte le chiffre mineur** : 0.18.0, 0.19.0, 0.20.0. Elle reçoit son milestone d'avance.
+- **Un correctif urgent monte le chiffre de correction** de la dernière release publiée : 0.18.1, 0.18.2. Son milestone naît avec le bug. Il part du **tag** (branche `hotfix/X.Y.Z`), ne porte **aucune migration** — une correction qui en exige une n'est plus un correctif et va à la prochaine release planifiée —, et il est **reporté dans `main`** après publication.
+- La v0.17.8 est la dernière release numérotée à l'ancienne (chaque release montait le chiffre de correction) ; la phase 2 de l'Epic 36 se publie en 0.18.0 (sans migration) puis 0.19.0 (avec migrations).
+
+### Ordre des releases
+
+- **La première release terminée sort la première.** Un numéro n'est acquis qu'au tag : si le contenu prévu pour la 0.20.0 est prêt avant celui de la 0.19.0, il prend 0.19.0, et l'on échange les milestones.
+- **Le second arrivé reprend `main`** dans sa branche, résout, puis rejoue tous les gates et l'E2E complet. Si les deux releases portent des migrations, leur ordre se contrôle à cette intégration, sur une base peuplée par la release du premier ; la recette de montée part toujours de la **dernière image publiée**.
+- Un correctif en cours dont la base a été dépassée par une release planifiée se publie depuis cette dernière (0.19.1 plutôt que 0.18.2), sauf décision contraire du Project Lead.
+- **Seul le Project Lead pose un tag et publie une image**, ou l'orchestrateur sur son mandat explicite : un seul point ordonne les publications.
+
+### Branches
+
+| Branche ou tag | Rôle |
+|---|---|
+| `epic/N-slug` | une tranche d'epic, par son développeur ; `story/…` en partent et y reviennent |
+| `main` | intégration : ce qui est terminé, revu, et attend sa release |
+| tag `vX.Y.Z` | production : le code exact de l'image publiée |
+| `hotfix/X.Y.Z` | correctif urgent parti du tag, reporté ensuite dans `main` |
+
+- **Pas de branche `develop`** : `main` ne reçoit déjà que des tranches terminées, et le tag tient lieu de branche de production.
+- **Une branche par tranche, non par epic entier.** Le dépôt fusionne en squash : une branche qui continue après sa fusion ne reconnaît plus son propre travail dans `main` et rejoue de faux conflits. Une tranche fusionnée se clôt ; la suivante repart de `main`.
+- **Reprendre `main` dans sa branche au moins après chaque release publiée** par un autre : les conflits se paient par petits morceaux.
+- **On ne touche ni aux branches ni aux bases de test d'un autre.**
+
+### Fusions et fichiers communs
+
+- **Au kickoff de chaque epic**, le fichier d'epic déclare les fichiers et modules qu'il touchera (tableau des fichiers communs). Deux epics en cours sur le même module se voient alors avant la première ligne ; l'ordre ou le partage se décide avec le Project Lead.
+- **Les fichiers que tout le monde touche ont leur règle** :
+
+| Fichier | Règle |
+|---|---|
+| `CHANGELOG.md` | jamais écrit en cours d'epic : assemblé à la release depuis les *Notes de version* des fiches |
+| PDF des manuels | jamais commités dans une branche `epic/…` ou `story/…` : seul le `.tex` change, les PDF se régénèrent à la release |
+| catalogues i18n (quatre locales), `sprint-status.yaml` | chaque epic écrit dans son propre bloc ; le conflit se résout en gardant les deux côtés |
+| compteurs (`sitesTotal` de `i18n-keys.test.ts`, totaux de `docs/migrations-idempotence-audit.md`, schéma de test) | se **recomptent** depuis la source après la fusion, ne se fusionnent pas |
+| migrations | un fichier chacune, nommé par horodatage ; l'ordre se contrôle à l'intégration |
+| `Cargo.lock` | se régénère après la fusion |
+
+- **Le second arrivé résout, dans sa branche, jamais dans `main`.** La résolution garde **les deux intentions** (règle, test, texte, compteur) ; si elles se contredisent, il ne tranche pas seul : il en parle à l'autre, et le Project Lead arbitre.
+- **Toute PR d'une tranche vers `main` passe une revue du code d'intégration** (précédent : la 0.17.8) : les commits de fusion relus en diff combiné, et les **interactions sans conflit de texte** cherchées — deux epics qui changent la même règle dans deux fichiers différents, ce que Git fusionne sans rien dire.
+
+### CI
+
+- `ci.yml` se déclenche aussi sur les PR vers `epic/**` (toute branche dont le nom commence par `epic/`) : une story d'un contributeur passe la même CI avant d'entrer dans sa tranche.
+- **Le cache Rust n'est sauvegardé que depuis `main`** (`save-if`) et porte une clé partagée (`shared-key`) : les PR le lisent sans l'écrire. Le cache du dépôt est plafonné à 10 Go par GitHub et en occupait 8,2 le 2026-11-15 ; chaque branche qui écrit le sien en évincerait d'autres et ferait tout recompiler. Le cache Docker (`type=gha`) n'est pas restreint : `e2e-smoke` reconstruit l'image de la PR depuis le cache que `docker-build` vient d'écrire.
+- Une CI allégée sur les PR vers `epic/**` reste à décider avec les contributeurs.

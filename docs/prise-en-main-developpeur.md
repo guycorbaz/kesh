@@ -85,7 +85,8 @@ effet si systemd utilisateur est absent) ; `scripts/test-fast.sh` le fait seul.
 - **Une issue d'abord**, sur GitHub, avec le gabarit qui convient (`.github/ISSUE_TEMPLATE/` : bug, known failure,
   demande). GitHub Issues est l'unique registre : pas de liste de défauts dans le dépôt. **Un point qu'on décide de ne pas
   traiter s'ouvre aussi en issue** (« on trace toujours »), une issue par problème.
-- **Une branche par travail**, créée depuis `main` à jour : `story/…`, `fix/…`, `chore/…`, `docs/…`.
+- **Une branche par travail** : une tranche d'epic `epic/…` depuis `main` à jour, ses stories `story/…` depuis la tranche ;
+  hors epic, `fix/…`, `chore/…`, `docs/…` depuis `main` (`docs/developpement-a-plusieurs.md` § 5).
 - **Commits** : un par étape, au format Conventional Commits (`fix(kesh-api) : …`), chacun en `refs #N`. ⛔ **Aucun mot-clé
   de fermeture** (`closes`, `fixes`, `resolves`) dans un message de commit : il ne s'écrit que dans le corps de la **PR**,
   que le dépôt fusionne en squash.
@@ -106,9 +107,12 @@ attendu pour vos PR.
 - **Vos epics portent les numéros 37, 38 et 39**, réservés pour vous (`_bmad-output/planning-artifacts/epics-37-39-reserves.md`,
   versé par la PR #1160).
   Leur contenu se décide avec le Project Lead.
-- **D'autres travaux avancent en parallèle** (l'Epic 36, puis 40 et suivants). Deux points se règlent au début de chaque
-  epic : les **fichiers communs** (qui touche quoi, et dans quel ordre les fusionner) et les **migrations**, numérotées par
-  horodatage et dont l'ordre se contrôle à l'intégration.
+- **D'autres travaux avancent en parallèle** (l'Epic 36, l'Epic 40 d'un autre contributeur, puis 41 et suivants). Deux
+  points se règlent au début de chaque epic : les **fichiers communs** (qui touche quoi, et dans quel ordre les fusionner)
+  et les **migrations**, numérotées par horodatage et dont l'ordre se contrôle à l'intégration.
+- **Planification, numéros de version, branches d'epic et fusions** : `docs/developpement-a-plusieurs.md`, qui explique
+  les règles du `CLAUDE.md` § *Travailler à plusieurs développeurs* — le projet GitHub « Kesh », les releases à deux
+  niveaux, l'ordre de sortie, une branche `epic/…` par tranche, et qui résout un conflit.
 - **Migrations** : toute PR qui en ajoute une suit la politique P1 à P8 du `CLAUDE.md` (bump de version minimale pour une
   migration *breaking*, ligne à `docs/migrations-idempotence-audit.md`, triage des backfills, une migration appliquée ne se
   modifie plus jamais). Annoncez-la avant de l'écrire.
