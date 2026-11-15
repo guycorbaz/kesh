@@ -424,9 +424,13 @@ l'assistant, nom « Exercice AAAA » ou « Exercice AAAA/AAAA » : AC-11). A22 e
      compte bancaire (`bank_accounts.journal_account_id`) ; compte de produit par défaut d'un article
      (`products.default_revenue_account_id`) ; contrepartie d'une règle de réconciliation
      (`reconciliation_rules.counterparty_account_id`) (le compte par défaut des factures fournisseur,
-     `default_payable_account_id`, est déjà l'une des dix colonnes de `DESIGNATED_ACCOUNT_COLUMNS`). **Inversement**,
+     `default_payable_account_id`, est déjà l'une des dix colonnes de `DESIGNATED_ACCOUNT_COLUMNS`). *(Note de dépendance
+     future, sans effet sur 37 : l'Epic 38 (38-5) portera les colonnes désignées à onze, avec
+     `default_vat_acquisition_account_id`.)* **Inversement**,
      lier à un compte bancaire, désigner dans les réglages de facturation, choisir comme compte d'un article ou d'une
      règle de réconciliation, ou poser un rôle sur un compte **en devise** → 400 `ACCOUNT_IN_FOREIGN_CURRENCY`.
+     *(Note de dépendance future, sans effet sur 37 : l'Epic 38 (38-4, O3) lèvera `ACCOUNT_IN_FOREIGN_CURRENCY` pour
+     `reconciliation_rules.counterparty_account_id` ; `ACCOUNT_CURRENCY_IN_USE` y restera.)*
      **C'est la 37-1 qui pose ces refus des deux côtés, pour ces sites de configuration** ; les comptes choisis ligne
      par ligne (`invoice_lines`/`credit_note_lines.revenue_account_id`, `supplier_invoice_lines.expense_account_id`,
      `supplier_invoices`/`invoice_settlements.settlement_account_id`) ne sont **pas** gardés par la 37-1 : la 37-3a (AC-5) les
@@ -1237,3 +1241,4 @@ l'assistant, nom « Exercice AAAA » ou « Exercice AAAA/AAAA » : AC-11). A22 e
   précisé. Décompte : 12 FR, 9 NFR (+1, +2).
 - 2026-11-15 — validation ciblée P2 des exigences (Sonnet) : 1 MEDIUM, 6 LOW, tous corrigés. MEDIUM : FR-12 (le refus du rôle `DefaultRevenue` et du compte de produit par défaut ne vise pas le compte de conversion, AC-4). LOW : FR-3 (même ambiguïté), FR-4 (genre de clôture `day`, no-op, `FISCAL_YEAR_CLOSED` des deux sens), FR-6 (conversion réglage de la société seul), FR-11 (écran de l'assistant, absence de borne de durée), FR-12 (archivage du compte désignant admis), NFR-9 (test de victime de `accounts::update`). Décompte : 12 FR, 9 NFR (inchangé).
 - 2026-11-15 — validation ciblée P3 des exigences (Opus) : 0 MEDIUM, 3 LOW, tous corrigés. LOW : FR-4 (ordre des refus de la bascule ramené à celui de l'AC-3 bis — `MULTI_CURRENCY_DISABLED` → `FISCAL_YEAR_CLOSED` → no-op ; ensemble de l'avertissement et de `force` précisé : imputables, sans ligne après la fin, sans sous-compte actif, sans plafond) ; FR-12 (compte de conversion désigné par la société seule, AC-4 bis ; le correctif P2 disait que le refus du rôle `DefaultRevenue` ne le vise pas, alors que l'AC-4 lui applique « mêmes refus » sauf le type et la désignation « produit par défaut » — récrit : le rôle lui est fermé par son type, `accepts_account_type`) ; FR-12 (`details.designation` à trois valeurs, `holderNumber`). Récapitulatif de l'epic concordant. Décompte : 12 FR, 9 NFR (inchangé).
+- 2026-11-15 — notes de dépendance de l'Epic 38 (orchestrateur, Sonnet) : AC-4 / C-37-9, levée de `ACCOUNT_IN_FOREIGN_CURRENCY` pour la règle de réconciliation (38-4, O3) et colonnes désignées portées à onze (38-5) ; aucun changement de comportement de 37.
