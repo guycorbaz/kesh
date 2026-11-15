@@ -103,7 +103,9 @@ d'imputation (38-6) reposent sur un relevé complet et vérifiable.
      jamais de troncature silencieuse d'un identifiant ; troncature **signalée** des textes libres `details` /
      `counterparty_name` à leur borne) ; `item_names` ≤ 50 noms de ≤ 255 ; au plus `max_movements` mouvements ;
      pagination cohérente (`page ≤ total_pages`, `total_pages` constant d'une page à l'autre d'une même fenêtre) ; pas
-     deux fois le même `provider_tx_id` dans une page ; **`sums` égale la somme recalculée** par devise. Échec →
+     deux fois le même couple **`(provider_tx_id, currency)`** dans une page (unicité du couple, non de l'identifiant
+     seul : le doublon se juge par compte, donc par devise — index `(bank_account_id, provider_tx_id)` de 38-3a ; un
+     même identifiant dans deux devises vise deux comptes) ; **`sums` égale la somme recalculée** par devise. Échec →
      `InvalidResponse { reason }`, **aucune ligne de la page écrite**. Tests de réponses **hostiles** (C-38-11) : chacun
      des refus ci-dessus a son test.
    - **Temps** : `booking_date = booked_at` converti en `Europe/Zurich` (`chrono-tz`), date seule ; tests à 23 h 30 UTC
@@ -137,7 +139,12 @@ d'imputation (38-6) reposent sur un relevé complet et vérifiable.
      piloté par `POST /api/v1/_test/provider-connector` (corps : soldes, pages de mouvements par fenêtre, `skipped`,
      erreur ou délai à servir, par `connectionId`), monté avec les autres routes `_test` (`lib.rs:1434`,
      `routes/test_endpoints.rs:49-55`) ; `TEST_ENDPOINT_ROUTES` **+1** (`Exempt("chemin de test…")`). 38-7 remplace ce
-     factice, pour `paypal`, par un **transport** factice au format PayPal (38-7 AC-10). L'état programmé vit dans une
+     factice, pour `paypal`, par un **transport** factice au format PayPal (38-7 AC-10), programmé par une **variante
+     additive** du corps de la même route : `paypalResponses: [{ method, path, query?, status, body }]` (par
+     `connectionId`) — réponses servies **dans l'ordre**, la dernière se répète ; quand elle est fournie, la fabrique de
+     test construit un vrai `PaypalConnector` sur ce transport factice au lieu du `FakeConnector` ; sans elle,
+     comportement ci-dessus. Le corps est défini ici (forme et validation, champs facultatifs), le connecteur qui le lit
+     en 38-7 ; **`TEST_ENDPOINT_ROUTES` inchangé** par cette variante (même route). L'état programmé vit dans une
      poignée d'`AppState` (`test_provider_connector`, patron de `test_rate_source` de 37-2) et se vide par
      `clear_transient_test_state` (`routes/test_endpoints.rs:349`, appelé par `/_test/reset`). La tâche quotidienne
      **n'est pas lancée** en mode test (AC-5). Aucun appel réseau en CI : seul `HttpTransport` ouvre une connexion, et
@@ -221,6 +228,13 @@ d'imputation (38-6) reposent sur un relevé complet et vérifiable.
      identifiants connus) ; au-delà, échec
      `database`. Test : deux comptes, l'un sans aucun mouvement → les deux avancent ; compte neuf ajouté à une
      connexion déjà à jour → l'ancien compte ne recule pas.
+   - **Course avec le retrait des réglages** (38-2 AC-6 (c), rejouée ici contre l'insertion d'un passage, comme 38-3a
+     AC-6 la rejoue contre un import) : `DELETE …/accounts/{bankAccountId}` concurrent de l'écriture d'une page sur ce
+     compte — le retrait voit les transactions insérées (`PROVIDER_ACCOUNT_IN_USE`, raison des transactions de
+     prestataire, 38-2) ou la page attend son verrou puis, relisant sous ce verrou la ligne de réglages
+     (`is_provider_account_in_tx`, 38-2 AC-2, à côté de la garde d'archivage ci-dessus) et ne la trouvant plus, annule
+     sa transaction et se termine comme un compte devenu indisponible (`account_unavailable`) ; **jamais** une transaction de prestataire écrite sur un compte qui
+     n'a plus de réglages. Test de course au patron de 38-2 AC-6 (attente sur le texte du verrou), les deux ordres.
    - **Fin** — et de même à l'**échec**, dans la transaction qui écrit l'état `failed` : en-têtes finalisés (`file_hash`
      = SHA-256 des enregistrements normalisés **de l'en-tête**, relus en base par `import_id`, triés par
      `provider_tx_id` — forme écrite au module ; la période reste la fenêtre du passage), passage `succeeded` ou
@@ -251,7 +265,7 @@ d'imputation (38-6) reposent sur un relevé complet et vérifiable.
      automatique **non audité** (`tracing` + état du passage), C-37-6 ; erreurs journalisées sans secret.
    - **À la demande** : `POST /api/v1/provider-connections/{id}/fetch` — **Comptable ou Administrateur, session
      seule** : dans `comptable_routes`, refus d'une clé d'API dans le handler par `ApiKeyOperationForbidden` (patron de
-     `bank_imports::delete`, `routes/bank_imports.rs:1681-1690` ; NFR-38-6c-4) ; vaut pour `daily` **et** `manual`
+     `bank_imports::delete`, `routes/bank_imports.rs:1681-1690` ; NFR-38-6c1-4) ; vaut pour `daily` **et** `manual`
      (B9). Réponse **`202`** `{ runId }` : le passage court dans un `tokio::spawn` ; refus synchrones : `404`, `409
      PROVIDER_CONNECTION_UNUSABLE`, `409 PROVIDER_FETCH_IN_PROGRESS`. **Aucune erreur du connecteur n'est un statut
      HTTP** de cette route (38-7 AC-7) : elle se lit à l'état du passage. **Audit** : à la fin du passage, dans la
@@ -419,3 +433,10 @@ d'imputation (38-6) reposent sur un relevé complet et vérifiable.
   38-3a AC-3/AC-4, 38-7 AC-1 à AC-10, 38-8 AC-1, 38-9a AC-5 à AC-8, AC-11. Axes non exercés : l'API de `reqwest`
   relue de mémoire (registre local absent ; `RequestBuilder::timeout` existe, `connect_timeout` est du seul
   `ClientBuilder`) ; la documentation PayPal (`as_of_time`, borne de l'historique) non relue ; aucune exécution.
+- 2026-11-15 — alignement inter-fiches P2 (Opus) : AC-4 — course de 38-2 AC-6 (c) rejouée contre l'insertion d'un
+  passage (retrait des réglages contre écriture d'une page : réglages relus sous le verrou du compte, jamais une
+  transaction de prestataire sur un compte sans réglages, les deux ordres testés) ; AC-2 — `validate_page` : unicité
+  du couple `(provider_tx_id, currency)` dans une page (et non de l'identifiant seul) ; AC-3 — variante additive
+  `paypalResponses: [{ method, path, query?, status, body }]` du corps de `POST /api/v1/_test/provider-connector`
+  (servies dans l'ordre, la dernière se répète ; `PaypalConnector` sur le transport factice ; `TEST_ENDPOINT_ROUTES`
+  inchangé) ; renvoi `NFR-38-6c-4` → `NFR-38-6c1-4` (D-P2-3).

@@ -1,3 +1,4 @@
+# last_updated: 2026-11-15 (Epic 38 : alignement inter-fiches de la P2 ; 38-6c split en 38-6c1 et 38-6c2, D-P2-3)
 # last_updated: 2026-11-15 (Epic 38 : alignement inter-fiches de la P1 ; 38-3 split en 38-3a et 38-3b, D-P1-1 ; migration breaking en 38-2, O1)
 # last_updated: 2026-11-12 (rétrospective de l'Epic 34 tenue en autonomie, epic-34-retro-2026-11-12.md ; epic-34 done ; v0.17.6 publiée)
 # last_updated: 2026-11-12 (Epic 34, intégration de la 0.17.6 : 34-1 à 34-11a2 done et réunies sur release/0.17.6 ; 34-11b en revue, à fusionner)
@@ -1065,7 +1066,9 @@ development_status:
   38-5-tva-par-defaut-du-compte: backlog  # socle (B6, B18) ; compte d'impôt sur les acquisitions ; migration non breaking
   38-6a-propositions-ventes-achats-frais: backlog  # socle (B3, B5, B6, B17) ; accept_batch, variante provider, confirmAlreadyBooked
   38-6b-conversions-remboursements-litiges: backlog  # socle (B4, B7, B20) ; file « à examiner »
-  38-6c-rattachement-en-lot-et-api: backlog  # socle (B17, B21) ; rattachement en devise et en lot aux écritures existantes (2024), API des scripts externes
+  38-6c-rattachement-en-lot-et-api: split  # 2026-11-15, D-P2-3 (validation P2 : plus de cinq modules) : découpée en 38-6c1 et 38-6c2 ; fiche gardée comme historique
+  38-6c1-rattachement-en-lot: backlog  # socle (B17, B21) ; rattachement en devise, suggestions, lot link-entries, recherche, API des scripts, exercice clos ; aucune migration
+  38-6c2-groupe-d-ecritures: backlog  # B28 ; groupe de 2 à 5 écritures, table bank_transaction_extra_entries (migration non breaking), paires suggérées, annulation du groupe ; après 38-6c1, avant 38-6a
   38-7-client-paypal: backlog  # PayPal : OAuth2, Transaction Search, fenêtres de 31 jours, pagination
   38-8-codes-evenement-paypal: backlog  # PayPal : codes T… vers mouvements, invoice_id → invoice_ref (boutique, B24), à valider sur les réponses enregistrées
   38-9a-ecrans-connexions-et-comptes: backlog  # écrans, réglages, contrôles de solde, manuel d'administration (sauvegarde d'avant la mise à jour)

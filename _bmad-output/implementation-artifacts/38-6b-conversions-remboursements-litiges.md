@@ -5,7 +5,8 @@ Status: ready-for-dev
 - **Epic** : 38 (`_bmad-output/planning-artifacts/epic-38-paypal.md`, § *38-6b*, E7, E16, C-38-8, C-38-9) ; décisions de Beat
   B4, B7, B20 (`epics-38-40-cadrage.md`), qui priment.
 - **Dépend de** : **38-6a** (chemin prestataire de `get_proposals`, variante `provider`, constructeur `build_provider_entry`,
-  codes de C-38-8), **38-6c** (rattachement en devise, `link_entry_in_tx` en devise, C-38-14), **38-3a** (colonnes
+  codes de C-38-8), **38-6c1** (rattachement en devise, `link_entry_in_tx` en devise, diagnostic du lot, C-38-14),
+  **38-6c2** (groupe d'écritures B28, paires, `pairCount` ; D-P2-3), **38-3a** (colonnes
   `movement_kind`, `related_provider_tx_id`, `review_reason`, `provider_tx_id`, C-38-4), **38-2** (connexion d'un compte,
   compte de frais, C-38-3), **37-3b** (conversion par le compte de transit, `completeDifference`, AC-2 bis ; frais au
   débit d'un compte de charge de la devise dans l'écriture 2, **A33**, qu'exige B27).
@@ -49,7 +50,7 @@ afin que **tout mouvement qui change un solde finisse comptabilisé, sans qu'auc
   (`reconciliation_link.rs`, `linkable_side` `:739`, `transfer_other_side` `:773-795`) ; le rattachement
   `link_entry_in_tx(tx, LinkEntryRequest)` prend une transaction ouverte (`:1156-1159`) et rend `Result<Result<EntryLinked,
   LinkRefusal>, DbError>` ; la route `post_link_entry` (`reconciliation.rs:6656`) l'appelle sous le verrou du compte. Le
-  rattachement n'admet aujourd'hui que le CHF (`transaction_can_be_linked_to_entry`, `:535-537`) : 38-6c l'étend en
+  rattachement n'admet aujourd'hui que le CHF (`transaction_can_be_linked_to_entry`, `:535-537`) : 38-6c1 l'étend en
   devise (C-38-14).
 - **Rejeter** pose `auto_match_rejected_at = NOW(3)` sur une transaction `pending` non rapprochée (`reject_batch`,
   `reconciliation.rs:4668-4700`) ; la transaction quitte alors les propositions (`find_pending_transactions_for_account`,
@@ -116,7 +117,7 @@ afin que **tout mouvement qui change un solde finisse comptabilisé, sans qu'auc
 - **C-38-6b-2 bis — Conversion dont un côté est en CHF (ajoutée à la passe P1).** B1 donne trois soldes par compte
   (CHF, EUR, USD) : la conversion CHF ↔ devise est la plus courante, et **37-3b AC-2 bis ne la couvre pas** (l'assistant
   et `POST /journal-entries/conversions` valent entre **deux devises étrangères** — « sinon une écriture ordinaire
-  suffit » —, et `completeDifference` exige un compte en devise au débit net). 38-6c AC-2 rattache déjà des deux côtés
+  suffit » —, et `completeDifference` exige un compte en devise au débit net). 38-6c1 (AC-2) rattache déjà des deux côtés
   l'écriture « débit 1030 PayPal CHF 100 / crédit 1031 PayPal EUR 92 EUR (CHF 100) ». Quand l'une des deux moitiés est
   en CHF (compte du grand livre sans devise, 37-1), la paire se passe donc en **une seule écriture**, sans compte de
   transit ni appel à la fonction de 37-3b : débit du compte qui reçoit, crédit du compte qui paie, **une seule devise
@@ -126,7 +127,7 @@ afin que **tout mouvement qui change un solde finisse comptabilisé, sans qu'auc
   (`fx_accounts_for`, S2 ; gain au crédit, perte au débit), calculée par le constructeur, montrée à l'aperçu (D6),
   jamais silencieuse. Cours : cours retenu du mois de la date de la moitié **en devise** (C-38-6a-10). Date de
   l'écriture : celle de la moitié débitée. Les **deux** transactions sont réconciliées sur cette écriture (virement
-  entre ses comptes, 34-11b, 38-6c AC-2 : `matched_entry_id` des deux), `pairedJournalEntryId` = l'écriture elle-même.
+  entre ses comptes, 34-11b, 38-6c1 AC-2 : `matched_entry_id` des deux), `pairedJournalEntryId` = l'écriture elle-même.
   Seules les paires **sans CHF** (deux devises étrangères) passent par les deux écritures de C-38-6b-2. Annulation :
   celle de 34-11b, inchangée (le lien de la moitié annulée est retiré, la dernière contre-passe l'écriture) — la route
   à deux verrous (AC-8) ne vise que les paires à deux écritures. La date unique ne heurte aucune règle : le
@@ -135,16 +136,16 @@ afin que **tout mouvement qui change un solde finisse comptabilisé, sans qu'auc
   l'écriture qu'elle crée *(réserve de la rédaction levée à la passe P2)*.
 - **C-38-6b-3 — Retrait et dépôt : virement entre ses comptes.** Deux voies, toutes deux par la variante `provider` :
   (a) **rattacher** : si l'écriture du virement existe déjà (le côté banque a été passé — 34-4 : `matchedElsewhereCount
-  = entryCount = 1`, l'écriture candidate étant celle-là, **et aucune paire** au sens de 38-6c AC-14), la proposition
-  porte `linkJournalEntryId` et l'acceptation appelle `link_entry_in_tx` (38-6c, en devise) — aucune écriture ; un
-  refus du rattachement rend en `failed[]` le diagnostic du lot de 38-6c (`diagnose_entry_link` : `ENTRY_NOT_LINKABLE`,
+  = entryCount = 1`, l'écriture candidate étant celle-là, **et aucune paire** : `pairCount = 0`, 38-6c2), la proposition
+  porte `linkJournalEntryId` et l'acceptation appelle `link_entry_in_tx` (38-6c1, en devise) — aucune écriture ; un
+  refus du rattachement rend en `failed[]` le diagnostic du lot de 38-6c1 (`diagnose_entry_link` : `ENTRY_NOT_LINKABLE`,
   `ENTRY_ALREADY_LINKED`, `AMOUNT_MISMATCH`, C-38-14), non le code d'`AppError` du geste unitaire ; (b) **créer** : sinon, la proposition porte
   `transferBankAccountId` (le compte bancaire de l'autre côté, suggéré : **un seul** compte bancaire non archivé, non
   clos, lié à un compte du grand livre, ayant une transaction `pending` de montant `−G` dans la même devise, datée de
   `booking_date` à `booking_date + 5 jours` pour un retrait, de `booking_date − 5 jours` à `booking_date` pour un dépôt ;
   sinon `null`, à choisir) ; l'acceptation crée l'écriture « compte du grand livre de l'autre compte ↔ compte du
   prestataire », frais au compte de frais, et réconcilie la seule transaction du prestataire ; le côté banque se
-  rattache ensuite à cette écriture (34-11b, 38-6c, 38-9b). Devise du compte du grand livre de l'autre compte = devise de
+  rattache ensuite à cette écriture (34-11b, 38-6c1, 38-9b). Devise du compte du grand livre de l'autre compte = devise de
   la transaction, sinon `PROVIDER_TRANSFER_CURRENCY_MISMATCH` (un retrait avec change passe chez PayPal par une
   conversion, puis un retrait dans la devise reçue).
 - **C-38-6b-4 — La file « à examiner » se calcule (NFR-38-6b-4).** Une transaction de prestataire `pending`, non
@@ -173,7 +174,7 @@ afin que **tout mouvement qui change un solde finisse comptabilisé, sans qu'auc
   `fx_accounts_for` du compte du prestataire, ligne CHF sans montant en devise ; passe P2 — sans cette exception,
   toute vente en devise dont l'écriture porte un arrondi serait « non inversible » et irait à la file), et **exactement
   une** autre ligne : la contrepartie. `E` est l'écriture **principale** de `o` (`matched_entry_id`) : si `o` est
-  rattachée à un groupe (B28, 38-6c AC-12 — vente de 2024 au brut, frais à part), les membres en plus ne sont pas lus,
+  rattachée à un groupe (B28, 38-6c2 — vente de 2024 au brut, frais à part), les membres en plus ne sont pas lus,
   la principale (plus grand mouvement) étant la vente ; test : remboursement d'une vente EUR dont l'écriture porte une
   ligne d'arrondi → inversible ; d'une vente rattachée à un groupe → inversible, sur la principale. Traitement de TVA déduit des
   lignes (ligne de TVA due seule : `SaleIncluded` ; préalable seul : `PurchaseIncluded` ; préalable et TVA sur
@@ -213,7 +214,7 @@ afin que **tout mouvement qui change un solde finisse comptabilisé, sans qu'auc
     des deux moitiés, `TRANSACTION_ALREADY_BOOKED` avec `details.bankTransactionId` de la moitié en cause), virement
     voie (b) ; **ne vaut pas** pour la voie (a) d'un retrait ou d'un dépôt, qui **rattache** l'écriture même que
     signale `alreadyBooked` (aucune seconde écriture) : `confirmAlreadyBooked` y est ignoré ;
-  - **(9)–(12)** inchangées ; la voie (a) ne lit ni exercice ni cours (`link_entry_in_tx` n'en lit pas, 38-6c AC-11).
+  - **(9)–(12)** inchangées ; la voie (a) ne lit ni exercice ni cours (`link_entry_in_tx` n'en lit pas, 38-6c1 AC-11).
 
 ## Critères d'acceptation
 
@@ -276,8 +277,8 @@ afin que **tout mouvement qui change un solde finisse comptabilisé, sans qu'auc
    `linkJournalEntryId` tous deux ou aucun → `VALIDATION_ERROR` (`reason: transfer_target_required`) ; compte cible
    inexistant, archivé, clos, d'une autre société, sans grand livre, égal au compte du prestataire →
    `PROVIDER_TRANSFER_ACCOUNT_INVALID` (`{ bankAccountId, reason }`) ; devise →
-   `PROVIDER_TRANSFER_CURRENCY_MISMATCH` ; refus du rattachement → le code du lot de 38-6c (`ENTRY_NOT_LINKABLE`
-   `{ journalEntryId, reason }`, `ENTRY_ALREADY_LINKED`, `AMOUNT_MISMATCH` ; C-38-14, libellés de 38-6c réutilisés)
+   `PROVIDER_TRANSFER_CURRENCY_MISMATCH` ; refus du rattachement → le code du lot de 38-6c1 (`ENTRY_NOT_LINKABLE`
+   `{ journalEntryId, reason }`, `ENTRY_ALREADY_LINKED`, `AMOUNT_MISMATCH` ; C-38-14, libellés de 38-6c1 réutilisés)
    — passe P2 : `RECONCILIATION_ENTRY_NOT_LINKABLE` est le 409 du geste unitaire, non un code de `failed[]` ; voie (a)
    sur une transaction dont `alreadyBooked` est non nul, sans `confirmAlreadyBooked` → acceptée (C-38-6b-8). Frais d'un retrait
    (`F ≠ 0`) : ligne au compte de frais. Dépôt depuis la banque : symétrique, test.
@@ -397,7 +398,7 @@ afin que **tout mouvement qui change un solde finisse comptabilisé, sans qu'auc
   transaction d'un autre compte ». Les paires de cette fiche en écrivent une (l'autre moitié), sous le verrou nommé de
   **son** compte, pris avant (C-38-6b-7) : l'argument tient, mais sa phrase change, dans le même commit. Les poses
   neuves de `matched_entry_id` (paire, paire à moitié CHF, virement) portent sur une écriture **neuve** : elles
-  s'ajoutent au relevé (f) de l'inventaire de 38-6c AC-12, « par construction » (une écriture neuve n'est membre
+  s'ajoutent au relevé (f) de l'inventaire de 38-6c2 (AC-12 de 38-6c), « par construction » (une écriture neuve n'est membre
   d'aucun groupe).
 - **Références** : epic E7, E16, E20, C-38-4, C-38-8, C-38-9, C-38-14 ; 37-3b AC-2 bis (forme, ordre des refus) ; 34-11b
   (C-e341-22, C-e341-23) ; v017-3a ; 28-5a (unreject) ; 38-6a (C-38-6a-1 à 11).
@@ -418,6 +419,10 @@ afin que **tout mouvement qui change un solde finisse comptabilisé, sans qu'auc
 
 ## Change Log
 
+- 2026-11-15 — alignement inter-fiches P2 (Opus) : D-P2-3 — dépendance et renvois à 38-6c répartis entre 38-6c1
+  (rattachement en devise, `link_entry_in_tx`, diagnostic du lot, exercice clos) et 38-6c2 (groupe, relevé (f),
+  paires) ; voie (a) du retrait/dépôt : « aucune paire » écrit `pairCount = 0`. Numéros d'AC cités : ceux de 38-6c
+  avant découpage, à relire contre les deux fiches.
 - 2026-11-15 — validation P2 (Opus) : 0 CRITICAL, 0 HIGH, 4 MEDIUM, 3 LOW ; remédiés dans la fiche sauf les
   inter-fiches P2-3 (38-8) et P2-2/P2-1 (38-6c, nom du décompte des paires) : P2-1 (MEDIUM) les étapes de 38-6a AC-8
   n'étaient pas dites pour les genres neufs — liste admise de l'étape 4, verrou des comptes de frais des **deux**

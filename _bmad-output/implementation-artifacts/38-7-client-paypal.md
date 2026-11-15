@@ -74,11 +74,14 @@ PayPal fiable, bornée et sans fuite de secret.
    (37-2 AC-3 : `reqwest` en production, `default-features = false`, `rustls-tls`, `redirect(Policy::none())`,
    `https_only(true)`, pas de magasin de cookies, `User-Agent: Kesh/<version>`, lecture par `chunk()` bornée) ; si 37-2
    l'a écrit avec des bornes en dur, 38-7 en fait des **paramètres** (`connect_timeout`, délai total, taille maximale
-   du corps) sans changer les valeurs de 37-2 (DRY, pas de second client). Bornes PayPal **par requête** (le `HttpTransport` de
-   38-3b prend ses bornes par requête ; les valeurs ci-dessous sont celles du connecteur PayPal) : connexion 5 s,
-   délai total **60 s** (Transaction Search à 500 lignes avec `fields=all`), corps **≤ 8 MiB** (`Content-Length` contrôlé, puis
-   lecture bornée ; dépassement → `ResponseTooLarge`). `reqwest` est aujourd'hui une dev-dependency seulement
-   (`crates/kesh-api/Cargo.toml:109`) ; la dépendance de production est celle de 37-2.
+   du corps) sans changer les valeurs de 37-2 (DRY, pas de second client). Bornes (38-3b AC-3) : le délai de
+   **connexion**, 5 s, est une borne **du client**, posée à sa construction (`reqwest` n'a pas de `connect_timeout` par
+   requête) ; **par requête** (`TransportLimits` passées par le connecteur PayPal avec chaque requête) : délai total
+   **60 s** (Transaction Search à 500 lignes avec `fields=all` ; dépassé → `Unavailable`), corps **≤ 8 MiB**
+   (`Content-Length` contrôlé, puis lecture bornée ; dépassement → `InvalidResponse`). Les tests de bornes passent par
+   `HttpTransport::for_local_tests()` (HTTP admis, serveur axum local ; 38-3b AC-3), jamais par `HttpTransport::new()`.
+   `reqwest` est aujourd'hui une dev-dependency seulement (`crates/kesh-api/Cargo.toml:109`) ; la dépendance de
+   production est celle de 37-2.
 2. **AC-2 — URL de base constante.** `kesh_providers::paypal::LIVE_BASE_URL = "https://api-m.paypal.com"`, **aucune
    variable d'environnement** ne la change (C-37-6). Les tests construisent `PaypalConnector::with_base_url(…)` contre
    un serveur axum local en HTTP — `#[doc(hidden)] pub`, jamais `pub(crate)` ni `#[cfg(test)]` (invisibles des tests
@@ -95,7 +98,7 @@ PayPal fiable, bornée et sans fuite de secret.
      déjà au `Cargo.lock`), à partir de ce clair, puis est effacé. Le connecteur reçoit aussi le `secret_updated_at`
      de la connexion (clé de validité du cache ci-dessous).
    - Réponse validée : `token_type` égal à `Bearer` (casse ignorée), `access_token` non vide ≤ 4096 caractères,
-     `expires_in` entier 60 ≤ n ≤ 86 400 ; sinon `InvalidResponse { what: "token" }`. Le `scope` rendu **doit
+     `expires_in` entier 60 ≤ n ≤ 86 400 ; sinon `InvalidResponse { reason: "token" }`. Le `scope` rendu **doit
      contenir** `https://uri.paypal.com/services/reporting/search/read` ; sinon `Permission` dès le jeton
      (message plus clair qu'un 403 plus tard).
    - **Cache en mémoire** : type `PaypalTokenCache` défini dans `kesh_providers::paypal::auth` (un `Mutex<HashMap<i64,
@@ -140,11 +143,12 @@ PayPal fiable, bornée et sans fuite de secret.
      `given_name` + `surname`, `payer_info.payer_name.alternate_full_name` ; `cart_info.item_details[].item_name`) ; les
      autres champs sont **ignorés** (PayPal en ajoute : `deny_unknown_fields` est **interdit** ici, à l'inverse des
      réglages E24), la réponse brute n'est **jamais** gardée (E8, données personnelles).
-   - **Validation stricte** (R5 de 37) — une violation rejette **la page entière** (`InvalidResponse { reason }`, la
-     variante de 38-3b, inchangée (AC-7) : `reason` est **composé de constantes** — quoi (`token`, `page`,
-     `pagination`, `as_of`, …), page, rang de l'enregistrement, nom du champ —, **jamais la valeur** ; écrits à
-     `error_detail` du passage, car un enregistrement qui viole une règle bloque la fenêtre à chaque passage et doit
-     se diagnostiquer sans lire la réponse brute ; rien de la page n'est rendu) : JSON non objet ; `transaction_details` absent ou non tableau ; plus de
+   - **Validation stricte** (R5 de 37) — une violation rejette **la page entière** (`InvalidResponse { reason:
+     &'static str }`, la variante de 38-3b, inchangée (AC-7) : `reason` est **une constante** qui nomme la règle ou le
+     champ en défaut — `"token"`, `"page"`, `"pagination"`, `"as_of"`, `"record.transaction_id"`,
+     `"record.amount"`, … —, **jamais la valeur** ; il finit à `error_detail` du passage, car un enregistrement qui viole
+     une règle bloque la fenêtre à chaque passage et doit se diagnostiquer sans lire la réponse brute ; la page PayPal
+     et le rang de l'enregistrement, non constants, vont au `tracing::warn!` seulement ; rien de la page n'est rendu) : JSON non objet ; `transaction_details` absent ou non tableau ; plus de
      `page_size` enregistrements ; `page` rendu ≠ `page` demandé ; `total_pages` < `page` (sauf `total_items = 0`) ou
      `total_items > total_pages × 500` ; `transaction_id` absent, vide, > 64 caractères ou hors `[A-Za-z0-9-]` ;
      `transaction_event_code` hors `^T\d{4}$` ; `transaction_status` hors `D|P|S|V` ; montant (`value`) qui n'est
@@ -162,7 +166,7 @@ PayPal fiable, bornée et sans fuite de secret.
      le même `provider_tx_id` dans une page » sans regarder la devise : texte à aligner chez 38-3b (« le même couple
      `(provider_tx_id, currency)` », la clé unique étant par compte bancaire, donc par devise) — inter-fiche P2.
    - **Pages PayPal** (lues par le connecteur lui-même) : `total_pages` qui change d'une page à l'autre de la même
-     fenêtre → `InvalidResponse { what: "pagination" }` (la fenêtre se reprend au passage suivant, passage de 38-3b,
+     fenêtre → `InvalidResponse { reason: "pagination" }` (la fenêtre se reprend au passage suivant, passage de 38-3b,
      « un échec garde ce qui est inséré » : rien n'est rendu au passage tant que la fenêtre n'est pas lue en entier).
    - `ending_balance` et `available_balance` ne sont **pas** lus (vides dès qu'un paramètre facultatif est donné —
      doc ci-dessus) : la complétude se contrôle par les soldes (AC-6, E20 a).
@@ -176,18 +180,18 @@ PayPal fiable, bornée et sans fuite de secret.
    pour PayPal.
 6. **AC-6 — Soldes** (`Connector::balances(as_of: Option<DateTime<Utc>>) -> Vec<ProviderBalance>` de 38-3b :
    `{ currency, amount = total_balance, as_of }` ; la forme détaillée ci-dessous est la méthode **propre** à
-   `PaypalConnector`, `balances_detailed`, que `test()` lit pour `payer_id`).
+   `PaypalConnector`, `balances_detailed`, que son `Connector::test()` lit pour `account_ref`, AC-8).
    `GET {base}/v1/reporting/balances[?as_of_time=…]` (sans `currency_code` : toutes les devises). Rendu
    `Balances { payer_id, as_of, last_refresh, items: Vec<{ currency, total, available, withheld, primary }> }`.
    **Le solde comparé (E20) est `total_balance`** — somme de tous les autres selon PayPal ; le classement de 38-8
    écarte les blocages, qui ne changent pas `total_balance`. Validation stricte : `balances` tableau ≤ 50 éléments,
    devises `^[A-Z]{3}$` **uniques**, montants comme AC-4, `total_balance.currency_code` égale `currency`, `account_id`
    non vide ≤ 64, `as_of_time` RFC 3339. `as_of` demandé et `as_of_time` rendu **postérieur** de plus d'un jour →
-   `InvalidResponse { what: "as_of" }` (PayPal ne doit pas rendre un solde d'après la date demandée ; antérieur :
+   `InvalidResponse { reason: "as_of" }` (PayPal ne doit pas rendre un solde d'après la date demandée ; antérieur :
    accepté, c'est « le dernier solde servi »). Un solde de devise sans compte Kesh est l'affaire de 38-3a (soldes vus, E12), écrit par le
    passage de 38-3b.
 7. **AC-7 — Erreurs PayPal → états lisibles.** `kesh_providers::ConnectorError` est **celui de 38-3b** (`Auth`,
-   `Permission`, `RateLimited { retry_after }`, `Unavailable`, `InvalidResponse { reason }`, `Transport { kind }`) ;
+   `Permission`, `RateLimited { retry_after }`, `Unavailable`, `InvalidResponse { reason: &'static str }`, `Transport { kind }`) ;
    38-7 **n'en renomme aucune variante** et en ajoute deux : `WindowTooLarge { total_items }` et `Rejected` (400),
    plus `InvalidWindow`. Aucun texte de PayPal recopié (le `message` et `debug_id` de PayPal vont au
    `tracing::warn!`, jamais à l'écran ni à `last_error`). **Une seule fonction** `ConnectorError::code()` rend le code
@@ -218,15 +222,18 @@ PayPal fiable, bornée et sans fuite de secret.
    (clés `provider-error-*` aux quatre locales, `messages.ftl`).
 8. **AC-8 — « Tester la connexion »** : la route `POST /api/v1/provider-connections/{id}/test` de 38-1 (C-38-2,
    38-1 AC-7) garde sa forme **200** `{ usable, unusableReason, checks: [{ check, ok }] }` et ses contrôles locaux
-   (`provider_known` … `secret_decryptable`). Quand ceux-ci passent, elle appelle, pour `provider = 'paypal'`,
-   `PaypalConnector::test()` = jeton (AC-3) puis soldes sans `as_of` (AC-6), et ajoute :
+   (`provider_known` … `secret_decryptable`). Quand ceux-ci passent, elle construit le connecteur par la **fabrique**
+   de 38-3b (`Box<dyn Connector>`) et appelle **`Connector::test()`** (méthode du trait, 38-3b AC-1 — aucun
+   transtypage vers `PaypalConnector`) ; `PaypalConnector` l'implémente : jeton (AC-3) puis soldes sans `as_of`
+   (`balances_detailed`, AC-6), rendus en `ConnectorTest { account_ref: Some(account_id), balances }` ; la route
+   ajoute :
    - aux `checks` : `token_obtained`, `permission_present` (portée de l'AC-3) et `provider_reachable` (soldes lus ;
      contrôle annoncé par 38-1 AC-7 pour 38-3 (désormais 38-3b) — **un seul** site l'écrit, celui de 38-7 pour PayPal, 38-3b n'en posant
      que la forme générique) ; un contrôle échoué porte `errorCode` (code de l'AC-7) et les suivants ne sont pas
      tentés (`ok: null`) ;
    - à la réponse : `payerId` (ou `null`), `balances: [{ currency, total }]` (lus, non enregistrés — les soldes
      enregistrés sont ceux des passages, E20) et `version` (de la connexion après l'écriture éventuelle).
-   - Succès : `payerId` (= `account_id`) **écrit dans `settings`** (`PaypalSettings.payer_id`, champ posé par le serveur,
+   - Succès : `payerId` (= `account_ref` = `account_id`) **écrit dans `settings`** (`PaypalSettings.payer_id`, champ posé par le serveur,
      38-1 AC-4) s'il diffère, en transaction avec `version` + 1 et l'audit ; sinon rien d'écrit. `last_error` remis à
      `NULL`. Échec d'un contrôle distant : `last_error` posé au code (sans texte de PayPal) ; aucune autre écriture.
      Toujours **200** : le résultat d'un test est une donnée, non une erreur de la requête.
@@ -333,7 +340,8 @@ PayPal fiable, bornée et sans fuite de secret.
 
 ## Contrats à amender chez 38-3b (texte proposé, cf. rapport de validation ; portés par la liste inter-fiches P1)
 
-`Connector` gagne `history_start(now) -> Option<NaiveDate>` (AC-9) et `overlap()` (38-8 AC-7) ; `MovementPage` gagne
+`Connector` gagne `history_start(now) -> Option<NaiveDate>` (AC-9), `overlap()` (38-8 AC-7),
+`max_movements_per_page()` et `test()` (AC-8 ; portés à 38-3b et C-38-5 à la P2) ; `MovementPage` gagne
 `skipped` et `sums` ; `ConnectorError` gagne `WindowTooLarge`, `Rejected`, `InvalidWindow` ; `HttpTransport` prend ses
 bornes par requête ; le passage lit `code()` ; `last_error` porte le code d'API.
 
@@ -342,7 +350,7 @@ bornes par requête ; le passage lit `code()` ; `last_error` porte le code d'API
 - [ ] Bornes PayPal passées au `HttpTransport` de 38-3b (AC-1) sur le constructeur paramétré du client de 37-2 ; tests
       de bornes.
 - [ ] `kesh-providers::paypal` : `LIVE_BASE_URL`, `with_base_url`, `auth` (jeton, portée, cache, renouvellement sur
-      401), `movements` (requête, validation, `WindowTooLarge`), `balances`, `test()`, `history_start`, `max_window`
+      401), `movements` (requête, validation, `WindowTooLarge`), `balances`, `Connector::test()`, `history_start`, `max_window`, `max_movements_per_page()` (10 000)
       (AC-2 à AC-6, AC-9).
 - [ ] `ConnectorError` : trois variantes ajoutées, `code()` et `app_code()` (AC-7) ; messages `provider-error-*` et
       `PROVIDER_FETCH_FROM_TOO_OLD`, quatre locales.
@@ -407,3 +415,10 @@ bornes par requête ; le passage lit `code()` ; `last_error` porte le code d'API
   `lib.rs:61,84,98,119`, `main.rs:439`, `middleware/auth.rs:285`, `test_endpoints.rs:349`, `api-client.ts:6,393`
   (sous `frontend/src/lib/shared/utils/`), `audit_route_registry.rs:1009` — conformes ; documentation PayPal des
   codes d'événement relue (WebFetch).
+- 2026-11-15 — alignement inter-fiches P2 (Opus) : AC-1 — délai de connexion 5 s posé sur le client, délai total
+  60 s et corps ≤ 8 MiB par requête (`TransportLimits`), tests par `HttpTransport::for_local_tests()`, corps trop
+  gros → `InvalidResponse` (`ResponseTooLarge` retiré) ; AC-3, AC-4, AC-6, AC-7 — `InvalidResponse { reason:
+  &'static str }` (les `{ what: … }` remplacés ; page et rang de l'enregistrement, non constants, au `tracing::warn!`
+  seulement) ; AC-8 — `PaypalConnector` implémente `Connector::test()` → `ConnectorTest { account_ref = account_id,
+  balances }`, appelé par la route sur le connecteur de la fabrique ; contrats à 38-3b complétés
+  (`max_movements_per_page()`, `test()`).

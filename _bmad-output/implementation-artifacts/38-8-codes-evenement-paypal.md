@@ -162,8 +162,9 @@ plutôt qu'en vente, afin que les règles et les propositions des stories suivan
      conversion), la fiche est amendée avant le développement de l'appariement ;
    - **paire coupée** : `classify_window` reçoit **tous les enregistrements d'une fenêtre** (AC-1 : le connecteur
      lit toutes les pages avant de classer) ; une moitié à la frontière d'une fenêtre (instants identiques, donc
-     même fenêtre en pratique) se traite comme « aucun candidat » — la moitié reste sans lien et 38-6b la met à la
-     file (`conversion_half_missing`, calculé) ; si l'autre moitié arrive plus tard, le recouvrement du passage suivant relit
+     même fenêtre en pratique) se traite comme « aucun candidat » — la moitié reste sans lien et, comme toute moitié
+     sans candidat, **garde `review_reason = 'other'`** ; 38-6b la met à la file (motif rendu `conversion_half_missing`)
+     et **ignore ce motif stocké dès que l'autre moitié s'y relie** (C-38-6b-4) ; si l'autre moitié arrive plus tard, le recouvrement du passage suivant relit
      la première (déjà connue, jamais réécrite, sans lien) : seule la seconde porte alors le lien, et 38-6b le lit
      dans les deux sens (`u.related_provider_tx_id = t.provider_tx_id`).
    - **virement entre les deux comptes PayPal de Beat** (E24 ; *suppose que `payer_info.account_id` désigne la
@@ -310,3 +311,6 @@ plutôt qu'en vente, afin que les règles et les propositions des stories suivan
   de 50 noms de 255 caractères → bornés et tronqués avec avertissement ; LOW : `SkipCounts` → `SkippedCounts` et
   `Classified` porte `sums` ; compteur d'une surcharge `ignore` nommé (`non_balance`). Grep du symptôme
   (`T0108`, `T0110`, `SkipCounts`) fait dans la fiche ; l'entrée P1 ci-dessus, relevé daté, n'est pas réécrite.
+- 2026-11-15 — alignement inter-fiches P2 (Opus) : AC-5, paire coupée — elle garde `review_reason = 'other'` comme
+  toute moitié sans candidat (la phrase « 38-6b la met à la file, calculé » laissait croire à un motif non stocké) ;
+  38-6b ignore ce motif dès que l'autre moitié s'y relie (C-38-6b-4).

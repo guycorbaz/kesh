@@ -135,8 +135,8 @@ clôturer l'exercice.
 
 1. **AC-1 — Migration (NFR-38-10-3).** Fichier `crates/kesh-db/migrations/<AAAAMMJJ>000001_bank_account_documents.sql`
    (date au développement, postérieure à **toutes les migrations présentes dans la branche de l'epic** à ce moment —
-   38-10 peut se développer « dès 38-3a », avant 38-4, 38-5 ou 38-6c — et de version **distincte** de celles que les
-   autres fiches de l'epic écrivent en `<date>000001` : 38-6c, 38-4, 38-5 ; collision vérifiée par `ls
+   38-10 peut se développer « dès 38-3a », avant 38-4, 38-5 ou 38-6c2 — et de version **distincte** de celles que les
+   autres fiches de l'epic écrivent en `<date>000001` : 38-6c2, 38-4, 38-5 ; collision vérifiée par `ls
    crates/kesh-db/migrations/` au commit, citée au Change Log) : `CREATE TABLE
    bank_account_documents` — `id BIGINT AUTO_INCREMENT PK`, `company_id` (FK `companies`, `RESTRICT`), `bank_account_id`
    (FK `bank_accounts`, `RESTRICT`), `fiscal_year_id` (FK `fiscal_years`, `RESTRICT`), `kind VARCHAR(32) NOT NULL DEFAULT
@@ -353,3 +353,4 @@ clôturer l'exercice.
   (`bank_account_documents`) ; +3 routes mutantes, +2 lectures ; contrôle de clôture K9 neuf ; écarts : pas d'écran de
   détail de compte (dialogue depuis la liste), suppression d'exercice ou de compte sans objet, story valable pour tout
   compte bancaire.
+- 2026-11-15 — alignement inter-fiches P2 (Opus) : renvois 38-6c → 38-6c2 (la migration du groupe, D-P2-3) à l'AC-1.

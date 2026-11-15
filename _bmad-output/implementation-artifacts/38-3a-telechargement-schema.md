@@ -8,8 +8,8 @@ Status: ready-for-dev
 contrats **C-38-0**, **C-38-4**, **C-38-5** (schéma, en-tête, gardes) ; décisions de Beat B2, B22 ; arbitrages **O1**,
 O9. **Dépend de** : 38-1 (connexions), **38-2** (unique migration breaking de l'epic, `payment_provider_accounts`,
 `is_provider_account_in_tx`), Epic 37 (liste close de 37-1 AC-6). **Suivie par** : **38-3b** (le passage, qui écrit
-dans ce schéma), 38-4 (lit `counterparty_email`, `invoice_ref`, `item_names`, `event_code`), 38-6a/b/c (lisent les
-colonnes et lèvent la garde de l'AC-6), 38-9a (libellé « Téléchargé de … »). **Migration non breaking** (DDL seul).
+dans ce schéma), 38-4 (lit `counterparty_email`, `invoice_ref`, `item_names`, `event_code`), 38-6a, 38-6b, 38-6c1, 38-6c2
+(lisent les colonnes ; 38-6a lève la garde de l'AC-6 pour sa variante `provider`), 38-9a (libellé « Téléchargé de … »). **Migration non breaking** (DDL seul).
 Aucune route neuve, aucun écran.*
 
 *Modules : `kesh-db`, `kesh-core` (`SourceFormatTag`), `kesh-api` (routes d'import, réconciliation, export CSV,
@@ -96,8 +96,9 @@ mouvements en attendant les propositions de 38-6a.
      NULL AND fee_amount IS NOT NULL AND amount = gross_amount + fee_amount AND booked_at IS NOT NULL))` ; index
      `(company_id, related_provider_tx_id)` (lu par 38-6b). Entité `BankTransaction` (`entities/bank_transaction.rs`) :
      champs `Option` ; `item_names` se lit en chaîne JSON (`item_names_json: Option<String>`, patron de
-     `column_mapping_json`, E24) et **l'accesseur `BankTransaction::item_names() -> Vec<String>`** (liste vide si
-     `NULL`, `DbError::Invariant` sur un JSON illisible) est celui que lit 38-4 (AC-3 de 38-4).
+     `column_mapping_json`, E24) et **l'accesseur `BankTransaction::item_names() -> Result<Vec<String>,
+     DbError>`** (`Ok` d'une liste vide si `NULL`, `Err(DbError::Invariant)` sur un JSON illisible) est celui que lisent
+     38-4 (AC-3 de 38-4) et 38-6c1 (AC-6, `itemNames` de la recherche).
    - **`provider_fetch_runs`** (applicative) : `id`, `company_id` (FK `RESTRICT`), `connection_id` (FK
      `payment_provider_connections` **`ON DELETE CASCADE`**, AC-4), `trigger_kind VARCHAR(10)` ascii_bin `CHECK BINARY
      IN ('daily','manual')`, `requested_by_user_id BIGINT NULL` (FK `users` `RESTRICT` ; `NULL` pour `daily`),
@@ -174,7 +175,7 @@ mouvements en attendant les propositions de 38-6a.
      (`frontend/src/lib/features/bank-import/bank-import-display.ts:14-36`) est **laissé à 38-9a** — d'ici là, la liste
      montre `PROVIDER_API` et le `filename` lisible ; limite écrite. Le DTO des **transactions** (`TransactionResponse`,
      `routes/bank_imports.rs:302-345`) **n'est pas étendu ici** : son extension aux champs de prestataire est portée par
-     38-6c (AC-6).
+     38-6c1 (AC-6).
 
 6. **AC-6 — Garde des chemins existants (FR-38-3a-4, O9).**
    - **Imports de fichier et relevé saisi** sur un compte prestataire (`POST /api/v1/bank-imports/preview`,
@@ -192,10 +193,11 @@ mouvements en attendant les propositions de 38-6a.
      fausserait B3 (brut par la règle, frais à part) ; `post_accept` refuse de même par proposition (`FailedProposal`
      **`PROVIDER_PROPOSAL_REQUIRED`**, le code de C-38-8 que reprend 38-6a AC-8 — un seul code pour ce refus, posé ici ;
      `details: { movementKind }`, `null` tant que 38-3b n'écrit rien —, *Pattern batch*). **38-6a** (point de contact)
-     ajoute sa variante `provider`, **garde** le refus de la variante `rule` et **réadmet** `invoice`,
-     `supplier_invoice` et `split` sur un compte prestataire (38-6a AC-8) : le refus de ces trois-là est provisoire,
-     le temps de 38-3a à 38-6a. Les voies manuelles restent : écriture manuelle (34-3), rattachement à une écriture (v017-3a, en CHF ;
-     en devise par 38-6c), virement entre ses comptes (34-11b). Tests : transaction posée par SQL sur un compte
+     lève ce saut pour sa variante `provider` ; **`rule` et `split` restent refusés** sur un compte prestataire (même
+     code) ; une facture (client ou fournisseur) n'y est proposée **que si `fee_amount = 0`**, sinon la proposition
+     `provider` (D-P2-2, 38-6a AC-8 ; le règlement d'une facture au brut avec ligne de frais est tracé en issue,
+     C-38-13). Les voies manuelles restent : écriture manuelle (34-3), rattachement à une écriture (v017-3a, en CHF ;
+     en devise par 38-6c1), virement entre ses comptes (34-11b). Tests : transaction posée par SQL sur un compte
      prestataire CHF → aucune proposition ; lot qui la vise → `failed[]` avec le code.
 
 7. **AC-7 — Registres, i18n, recette, documentation (NFR-38-3a-2).**
@@ -278,3 +280,9 @@ mouvements en attendant les propositions de 38-6a.
   `reconciliation_cancel.rs:219-222` ; `routes/reconciliation.rs:855-880, 995-1002, 1090-1110` ; `lib.rs:825-862,
   875-932` ; `routes/bank_imports.rs:304` ; `csv_tables.rs:689, 736` ; `backup.rs:95-110, 1060-1215` ;
   `38-6a-…md:296-310`.
+- 2026-11-15 — alignement inter-fiches P2 (Opus) : D-P2-1 — `PROVIDER_PROPOSAL_REQUIRED` seul code, confirmé (AC-6,
+  AC-7) ; point de contact de l'AC-6 récrit selon D-P2-2 — 38-6a lève le saut pour sa variante `provider`, `rule` et
+  `split` restent refusés, factures proposées seulement si `fee_amount = 0` (le « réadmet `invoice`,
+  `supplier_invoice` et `split` » de la P2 est caduc) ; `BankTransaction::item_names() -> Result<Vec<String>,
+  DbError>` (la signature disait `Vec<String>` en annonçant une erreur) ; renvois 38-6c → 38-6c1 (AC-5, AC-6) et
+  38-6c1/38-6c2 (en-tête), D-P2-3.

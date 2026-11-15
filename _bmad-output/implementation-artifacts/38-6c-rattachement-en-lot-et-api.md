@@ -1,6 +1,12 @@
 # Story 38-6c : rattachement aux écritures existantes — en devise, en lot (2024) ; API des scripts externes
 
-Status: ready-for-dev
+Status: split
+
+> ⚠️ **Découpée le 2026-11-15 (D-P2-3, `38-p2-inter-fiches.md`)** en **38-6c1** (`38-6c1-rattachement-en-lot.md` :
+> AC-1 à AC-11 — base de mouvement, suggestions, lot, recherche, API, exercice clos ; aucune migration) et **38-6c2**
+> (`38-6c2-groupe-d-ecritures.md` : AC-12 à AC-15 renumérotés AC-1 à AC-4 — groupe d'écritures B28, table
+> `bank_transaction_extra_entries`, paires, annulation du groupe), 38-6c2 avant 38-6a. **Ces deux fiches font foi** ;
+> le contenu ci-dessous est conservé comme historique (rédaction, P1, révision B28, P2).
 
 *Fiche rédigée le 2026-11-15 (Opus), branche `epic/38-paypal`, numéros de ligne relevés sur `8b3d548d`. Epic 38
 (`_bmad-output/planning-artifacts/epic-38-paypal.md`) : E3, E11, E15, E21, E22, E23, C-38-0, C-38-12, C-38-14 ;
@@ -583,3 +589,5 @@ Reprises de la fiche d'epic (§ 38-6c), complétées là où un AC l'exige.
   (AC-12 à AC-15, `journalEntryIds` au lot et `pairs`/`uniquePair` aux suggestions y migrant), 38-6c2 avant 38-6a ;
   LOW : casse de la clé de trace `journal_entry_ids`, réponse de `…/link-entry` pour un groupe, suppression nommée à
   l'inventaire (a), « troisième devise » reformulé (AC-2).
+- 2026-11-15 — découpage (D-P2-3, Opus) : `split` en 38-6c1 (AC-1 à AC-11, aucune migration) et 38-6c2 (AC-12 à
+  AC-15 → AC-1 à AC-4, avec la migration de l'AC-9) ; voir leurs Change Logs. Fiche gardée telle quelle.

@@ -73,7 +73,9 @@ rapproché.
      début = `max(fetch_from, fetched_through − overlap())`), réglage (`daily` | `manual`, avec la phrase « Chaque jour, Kesh télécharge les nouveaux
      mouvements ; vous pouvez toujours télécharger à la demande », B9), **réglages PayPal** : `clientId` (identifiant
      de l'application REST ; aide : « non secret ; le secret se saisit à part ») ; `payerId` **en lecture seule**
-     (posé par le serveur, 38-1 AC-4, 38-7 AC-8). **`accountEmail` n'est ni affiché ni saisi** : retiré du JSON par O10
+     (posé par le serveur, 38-1 AC-4, 38-7 AC-8) ; **un `clientId` changé remet `payerId` à `null`** dans la même
+     écriture (38-1 AC-4) : après l'enregistrement, la fiche relit la connexion, affiche « Identifiant du compte : à
+     reconnaître — lancez « Tester la connexion » » et « Tester » le repose (AC-4) ; test Vitest. **`accountEmail` n'est ni affiché ni saisi** : retiré du JSON par O10
      (aucune API de PayPal ne le rend ; 38-1 AC-4 le refuse comme clé inconnue).
    - **Corps de `settings` envoyé** (38-1 AC-4 : `settings` présent **remplace** les champs modifiables par le client et
      **refuse** un champ posé par le serveur) : une fonction pure `providerSettingsBody(form)` construit l'objet à partir
@@ -177,6 +179,10 @@ rapproché.
      `PROVIDER_ACCOUNT_ALREADY_ATTACHED`, `PROVIDER_ACCOUNT_LEDGER_REQUIRED`, `PROVIDER_ACCOUNT_LEDGER_SHARED`,
      `PROVIDER_ACCOUNT_KIND_INVALID`, `PROVIDER_ACCOUNT_CANNOT_BE_PRIMARY`, `FEE_ACCOUNT_INVALID`, `BANK_ACCOUNT_CLOSED`)
      s'affiche dans le dialogue avec son message ; `MULTI_CURRENCY_DISABLED` (37-1) → renvoi aux réglages de devise.
+     **`409 PROVIDER_ACCOUNT_HAS_TRANSACTIONS`** (« Lier », 38-2 AC-3 : réglages refusés sur un compte qui porte des
+     transactions) → message « Ce compte bancaire porte déjà <`details.transactionCount`> transactions (relevés
+     importés ou saisis) : PayPal les téléchargerait une seconde fois. Créez un compte neuf pour cette devise, ou
+     liez un compte sans transaction » ; libellé dans `provider-labels.ts`, quatre locales ; test Vitest.
 7. **AC-7 — Comptes prestataires de la connexion** (FR-38-9a-4 ; `GET|PATCH|DELETE …/accounts` de 38-2 AC-5, AC-8).
    Tableau : devise, compte bancaire (nom, lien vers `/bank-accounts`), compte du plan (numéro, nom), **compte de
    frais de la devise** (numéro, nom ; « non désigné » en avertissement : les propositions de frais seront bloquées,
@@ -278,6 +284,18 @@ rapproché.
         refusé s'il a des transactions ;
       - 38-3a AC-4 : retirer les réglages est refusé dès qu'un passage a lu le solde de la devise (`balance_seen`) — la
         connexion ne se supprime donc plus ; on la passe « à la demande » pour arrêter les téléchargements ;
+      - **retrait d'un compte créé par erreur**, dans l'ordre : délier le compte du plan, archiver le compte bancaire,
+        retirer ses réglages de prestataire (AC-7), supprimer la connexion (AC-2) ; chaque refus
+        (`PROVIDER_ACCOUNT_IN_USE` et ses raisons, `PROVIDER_CONNECTION_IN_USE`) dit ce qui reste à défaire, et un
+        compte qui porte des transactions ou dont le solde a été lu garde ses réglages (point précédent) ;
+      - 38-2 AC-3 : « lier » un compte bancaire qui porte déjà des transactions est refusé
+        (`PROVIDER_ACCOUNT_HAS_TRANSACTIONS`, doublons évités) — créer un compte neuf ;
+      - 38-3b AC-8 : le passage quotidien est vérifié **toutes les heures** et lancé **24 h après le début** du
+        dernier passage (un échec attend donc le lendemain, sauf « Télécharger maintenant »), jamais en mode test ; le
+        passage est **asynchrone** (bouton, puis suivi) ; un passage interrompu (redémarrage, panique) passe
+        « interrompu » ; un passage en cours venu d'une **sauvegarde importée** bloque la connexion **6 h** au plus ;
+        recouvrement de 3 jours (`overlapDays`) ; date de départ bornée par l'historique (`truncated_from`) ; la devise
+        d'un compte archivé ou clos n'est ni téléchargée ni proposée ;
       - 38-8 AC-7, AC-10 : comment PayPal est classé (familles de codes), ce qui va à la file « à examiner » (code
         inconnu, litige), que les surcharges ne valent que pour les codes classés « autre » et pour les mouvements
         téléchargés **après** leur écriture ;
@@ -448,3 +466,10 @@ rapproché.
   `lib.rs:1017`, `:1229`, `admin-manual.tex:2538`, `:3299`, `:2425`, `bank-import-display.ts:14-36`,
   `audit_route_registry.rs:151`, `bank_accounts.rs:2019-2024`. Trend : P1 = 15 (3 HIGH, 7 MEDIUM) → P2 = 12 (0 HIGH, 7 MEDIUM). Axes non exercés : code
   des stories amont (non écrit) ; PDF du manuel (non régénéré).
+- 2026-11-15 — alignement inter-fiches P2 (Opus) : Q-38-9a-1 (seul `ignoredCount`) et AC-6 (`PATCH …/balances-seen`
+  de 38-3b AC-7) constatées déjà alignées par la P2 ; AC-2 — `payerId` remis à `null` quand `clientId` change (38-1
+  AC-4), « Tester » le repose ; AC-6 — message de `PROVIDER_ACCOUNT_HAS_TRANSACTIONS` (« Lier », 38-2 AC-3) ; AC-11 —
+  faits de 38-3b AC-8 (contrôle chaque heure, passage 24 h après le début du dernier, asynchrone, « interrompu »,
+  blocage 6 h au plus après une sauvegarde importée, `overlapDays`, `truncated_from`, devise d'un compte archivé ou
+  clos), retrait d'un compte créé par erreur (délier, archiver, retirer les réglages, supprimer la connexion), refus
+  de « lier » un compte à transactions.

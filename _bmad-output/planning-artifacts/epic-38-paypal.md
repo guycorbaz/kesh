@@ -228,7 +228,9 @@ boutique PayPal = **préfixe du numéro de facture** (`invoice_id`) · B25 Q3 re
   admis pour le solde CHF ; `fee_account_id` de charge, actif, dans la même devise (`FEE_ACCOUNT_INVALID`) ; le
   regroupement des frais est son **compte parent** (`accounts.parent_id`), aucun réglage de plus ; jamais principal
   (`is_primary` refusé, la QR-facture lit le compte principal, `invoice_pdf_service.rs:332`). La ligne de réglages et
-  le lien au compte du plan en devise se posent **dans la même transaction** ; c'est elle qui lève C-37-9 (D8). Retirer
+  le lien au compte du plan en devise se posent **dans la même transaction** ; c'est elle qui lève C-37-9 (D8). Le
+  compte du plan d'un compte prestataire, en devise **ou en CHF**, n'est lié à aucun autre compte bancaire, dans les
+  deux sens (`PROVIDER_ACCOUNT_LEDGER_SHARED`, O8 étendu, D-P2-4). Retirer
   la ligne est refusé tant que le compte est lié à un compte du plan en devise, a des transactions de prestataire ou un
   solde vu (`PROVIDER_ACCOUNT_IN_USE`). Lier un compte bancaire **existant** garde son numéro, son historique et ses
   soldes. Le binaire de l'epic lit cette table partout où un compte prestataire doit être écarté : compte principal,
@@ -385,13 +387,14 @@ boutique PayPal = **préfixe du numéro de facture** (`invoice_id`) · B25 Q3 re
   **groupe** de 2 à 5 écritures existantes dont les mouvements sur le compte prestataire somment exactement à son
   montant (vente au brut + écriture de frais), à l'unité et en lot (`journalEntryIds`) ; `matched_entry_id` garde
   l'écriture principale, les autres vont dans une table neuve `bank_transaction_extra_entries` (**migration non
-  breaking** de 38-6c) ; une **paire** (±3 jours, somme exacte, aucune écriture seule candidate) est suggérée et
-  compte comme « déjà comptabilisée » ; l'annulation défait tout le groupe (38-6c AC-12 à AC-15).
+  breaking** de 38-6c2) ; une **paire** (±3 jours, somme exacte, aucune écriture seule candidate) est suggérée et
+  compte comme « déjà comptabilisée » ; l'annulation défait tout le groupe (38-6c2 AC-1 à AC-4 ; (1) et (2) :
+  38-6c1).
 - **E22 — L'API des scripts externes (B21).** Un script hors de Kesh (exports CSV de WHMCS et de CB Paid
   Subscriptions) passe par une **clé d'API `read-write`**. Relevé au code : `POST /journal-entries` (écritures
   multi-lignes, en devise par 37-3a), `POST /reconciliation/accept`, `/manual` et `…/transactions/{id}/link-entry` sont
   des routes Comptable où les clés `read-write` sont admises (`lib.rs:523-545, 921-929` ; `require_not_pat` ne garde
-  que l'administration, `:518`). **Manques**, comblés par 38-6c : (1) retrouver la transaction de prestataire d'une
+  que l'administration, `:518`). **Manques**, comblés par 38-6c1 : (1) retrouver la transaction de prestataire d'une
   facture — aucune route ne cherche par identifiant du prestataire ni par numéro de facture : `GET
   /bank-accounts/{id}/transactions?providerTxId&invoiceRef&status&from&to` (lecture, tout rôle, clés admises) ; (2)
   rattacher une transaction **en devise** (E21, (1)) ; (3) le lot `link-entries` (E21), clés admises. Le script crée
@@ -450,7 +453,9 @@ boutique PayPal = **préfixe du numéro de facture** (`invoice_id`) · B25 Q3 re
   /api/v1/provider-connections/{id}/accounts` (créer le compte bancaire `bank` et ses réglages, ou lier un compte
   bancaire existant), `PATCH|DELETE /…/accounts/{bankAccountId}` ; codes `PROVIDER_ACCOUNT_CURRENCY_MISMATCH`,
   `PROVIDER_ACCOUNT_DUPLICATE_CURRENCY`, `FEE_ACCOUNT_INVALID`, `PROVIDER_ACCOUNT_IN_USE`,
-  `PROVIDER_ACCOUNT_CANNOT_BE_PRIMARY` ; levée de C-37-9 pour un compte bancaire porteur de réglages ; `account_kind`
+  `PROVIDER_ACCOUNT_CANNOT_BE_PRIMARY`, `PROVIDER_ACCOUNT_HAS_TRANSACTIONS` (pose de réglages refusée sur un compte
+  bancaire qui porte déjà des transactions, `details.transactionCount` ; 38-2 AC-3), `PROVIDER_ACCOUNT_LEDGER_SHARED`
+  (O8 étendu au CHF, D-P2-4) ; levée de C-37-9 pour un compte bancaire porteur de réglages ; `account_kind`
   toujours `bank`.
 - **C-38-4 — Transaction de prestataire** (schéma 38-3a, écriture 38-3b) : colonnes E6, E7, E8 ; `movement_kind` ∈ `sale`, `purchase`, `fee`,
   `conversion`, `refund`, `dispute`, `withdrawal`, `deposit`, `other` (tolérant) ; `review_reason` ∈ `dispute`,
@@ -462,7 +467,9 @@ boutique PayPal = **préfixe du numéro de facture** (`invoice_id`) · B25 Q3 re
   (`BANK_IMPORT_PROVIDER_ACCOUNT`) ; `BankImportSourceFormat` tolérant (E4, 38-3a) ; passages, soldes vus et
   instantanés **supprimés avec leur connexion** (38-3a AC-4) ; `kesh_providers::Connector` (`balances(as_of)`,
   `movements(window, page)` → `MovementPage { …, skipped, sums }`, page unique admise, `max_window()`,
-  `history_start(now)`, `overlap()`) ; `ConnectorError` (`code()` au passage, `app_code()` à `lastError`) ; transport à
+  `history_start(now)`, `overlap()`, `max_movements_per_page()` — plafond déclaré par le connecteur, lu par
+  `validate_page` —, `test()` → `ConnectorTest { account_ref, balances }`, forme générique de « Tester la connexion »,
+  38-3b AC-2, 38-7 AC-8) ; `ConnectorError` (`code()` au passage, `app_code()` à `lastError`) ; transport à
   bornes par requête ; fenêtre ≤ `max_window()` (31 jours), redécoupée **dans le connecteur** au besoin (O10) ;
   recouvrement `overlap()` (défaut 3 jours, O11) ; fin = maintenant − 3 h ; début = max(`fetch_from`, point de reprise
   du compte − `overlap()`, `history_start`) ; un échec garde ce qui est inséré, l'état dit où reprendre ; soldes
@@ -479,7 +486,10 @@ boutique PayPal = **préfixe du numéro de facture** (`invoice_id`) · B25 Q3 re
   `RATE_UNAVAILABLE`, `VAT_ACCOUNT_NOT_CONFIGURED`, `VAT_KIND_MISMATCH`, `VAT_KIND_UNKNOWN`, `VAT_RATE_UNAVAILABLE`,
   `RULE_ACCOUNT_CURRENCY_MISMATCH`, `FEE_ACCOUNT_INVALID` (raison `missing` comprise), `PROVIDER_TX_UNDER_REVIEW`,
   `PROVIDER_MOVEMENT_KIND_UNSUPPORTED`, `PROVIDER_AMOUNTS_INCONSISTENT`, `PROVIDER_ACCOUNT_REQUIRED`,
-  `PROVIDER_PROPOSAL_REQUIRED`, `TRANSACTION_ALREADY_BOOKED`, `MULTI_CURRENCY_DISABLED` ; et ceux de 38-6b :
+  `PROVIDER_PROPOSAL_REQUIRED` (**seul** code du refus d'une proposition non `provider` sur un compte prestataire,
+  posé par 38-3a et repris par 38-6a — D-P2-1 ; `PROVIDER_TX_REQUIRES_PROVIDER_PROPOSAL` n'existe plus ; sur un
+  compte prestataire, `rule` et `split` restent refusés, une facture n'est proposée que si `fee_amount = 0` — D-P2-2),
+  `TRANSACTION_ALREADY_BOOKED`, `MULTI_CURRENCY_DISABLED` ; et ceux de 38-6b :
   `PROVIDER_CONVERSION_PAIR_INVALID`, `PROVIDER_PAIR_ACCOUNT_LOCKED`, `PROVIDER_PAIR_CHANGED`,
   `PROVIDER_TRANSFER_ACCOUNT_INVALID`, `PROVIDER_TRANSFER_CURRENCY_MISMATCH`, `PROVIDER_REFUND_ORIGIN_INVALID` (409
   hors lot, `failed[]` dans le lot).
@@ -489,18 +499,20 @@ boutique PayPal = **préfixe du numéro de facture** (`invoice_id`) · B25 Q3 re
 - **C-38-10 — Pièces de compte** (38-10) : E17 ; `GET|POST /api/v1/bank-accounts/{id}/documents`,
   `GET|PATCH|DELETE /…/documents/{docId}` ; PDF seul, taille bornée ; solde de clôture facultatif ; écart au solde
   comptable aux contrôles de clôture (E20).
-- **C-38-14 — Rattachement aux écritures existantes et API des scripts** (38-6c) : E21, E22 ; `GET
+- **C-38-14 — Rattachement aux écritures existantes et API des scripts** (38-6c1 ; groupe : 38-6c2) : E21, E22 ; `GET
   /reconciliation/link-suggestions`, `POST /reconciliation/link-entries` (lot), `GET
   /bank-accounts/{id}/transactions` (recherche) ; `link-entry` et `entry-candidates` en devise ; clés `read-write`
   admises sur les écritures et le rattachement, lecture pour la recherche ; codes `ENTRY_NOT_LINKABLE`,
-  `ENTRY_ALREADY_LINKED`, `AMOUNT_MISMATCH`, `VERSION_CONFLICT` ; la voie des scripts est documentée par 38-6c à
-  `docs/api-external.md` (dans son périmètre). **Groupe (B28)** : `journalEntryIds` (2 à 5, exclusif de
+  `ENTRY_ALREADY_LINKED`, `AMOUNT_MISMATCH`, `VERSION_CONFLICT` ; la voie des scripts est documentée par 38-6c1 à
+  `docs/api-external.md` (dans son périmètre ; le groupe par 38-6c2). **Groupe (B28, 38-6c2)** : `journalEntryIds` (2 à 5, exclusif de
   `journalEntryId`) à `POST …/transactions/{id}/link-entry` et par élément du lot ; `linked[]` porte
   `journalEntryIds` ; code neuf `ENTRY_GROUP_SUM_MISMATCH`, raisons `entry_not_touching_account` et
   `entry_owned_by_document` d'`ENTRY_NOT_LINKABLE` ; suggestions : genre `uniquePair`, motif `several_pairs`, `pairs`
-  (aussi à `GET …/entry-candidates`) ; une paire rend `alreadyBooked` vrai (34-4, lu par 38-6a) ; annulation de tout
-  le groupe par `…/cancel` (vue : `groupEntryIds`) ; table `bank_transaction_extra_entries` et fragment unique
-  « écriture rapprochée » (lien direct ou membre de groupe) lu par tous les sites de l'inventaire de 38-6c AC-12.
+  (aussi à `GET …/entry-candidates`) ; une paire rend `alreadyBooked` vrai (`pairCount`, 34-4, lu par 38-6a) ;
+  annulation de tout le groupe par `…/cancel` (vue : `groupEntryIds` ; trace et réponse
+  `CancelReconciliationResponse` : `reversalJournalEntryIds`, `null` hors groupe — un seul nom) ; table
+  `bank_transaction_extra_entries` et fragment unique « écriture rapprochée » (lien direct ou membre de groupe) lu par
+  tous les sites de l'inventaire de 38-6c2 AC-1.
   Aucune route neuve.
 - **C-38-11 — Tests** (toutes) : aucun appel réseau en CI ; fixtures enregistrées **anonymisées** (courriels, noms,
   identifiants remplacés ; montants et codes gardés) sous `crates/kesh-providers/tests/fixtures/paypal/` ; tests de
@@ -510,7 +522,8 @@ boutique PayPal = **préfixe du numéro de facture** (`invoice_id`) · B25 Q3 re
 - **C-38-13 — Tracé pour plus tard** (issues avec la PR) : rotation de `KESH_SECRETS_KEY` (décidé, ex-Q5) ; TVA due
   des ventes hors facture et impôt sur les acquisitions dans le rapport TVA (voir *Point TVA pour Guy*) ; catégorie
   de vente par analytique (B19, Q3, reportée B25) ; annulation d'un rattachement dans un exercice clos (refusée parce
-  qu'elle contre-passe ; B28, 38-6c AC-15). *(L'unicité des règles par sens ou devise n'y est plus : réglée par
+  qu'elle contre-passe ; B28, 38-6c2 AC-4) ; règlement d'une facture au brut avec une ligne de frais sur un compte
+  prestataire (une facture n'y est proposée que si `fee_amount = 0`, D-P2-2). *(L'unicité des règles par sens ou devise n'y est plus : réglée par
   `filter_key`, E14.)* *(Les
   outils MCP n'y sont plus : décidé, aucun outil neuf, E23.)*
 
@@ -526,20 +539,24 @@ boutique PayPal = **préfixe du numéro de facture** (`invoice_id`) · B25 Q3 re
 | 38-3b | téléchargement, passage : crate `kesh-providers` (`Connector`, validation, factice), transport à bornes par requête, fabrique, passage sans doublon, planifié et à la demande, état et historique, soldes rapportés et contrôle de complétude | `kesh-providers` (neuf), `kesh-api`, `kesh-db`, `kesh-i18n` | 38-1, 38-2, 38-3a | non |
 | 38-4 | critères neufs des règles (types de `match_type`, dont boutique = préfixe de facture), filtres sens, devise, compte ; `ReconciliationMatchType` tolérant | `kesh-db`, `kesh-reconciliation`, `kesh-api` (reconciliation_rules), `frontend` (libellés), i18n | 38-2, 38-3a | oui, non breaking (trois colonnes de filtre, `filter_key`, index unique remplacé) |
 | 38-5 | code TVA par défaut d'un compte, extraction de la TVA, compte d'impôt sur les acquisitions | `kesh-db`, `kesh-core`, `kesh-api` (accounts, réglages TVA), `frontend` (accounts, réglages) | Epic 37 | oui, non breaking (`accounts` × 2, `company_invoice_settings` × 1) |
-| 38-6a | propositions de prestataire : vente, achat, frais (brut, TVA, frais, cours) et acceptation en lot ; « déjà comptabilisée » | `kesh-reconciliation`, `kesh-api` (reconciliation), `kesh-db` | 38-3a, 38-4, 38-5, 38-6c | non attendue |
-| 38-6b | conversions (une écriture si un côté est en CHF ; frais de chaque moitié au compte de frais, B27), retraits, remboursements (tels que rapportés), litiges ; file « à examiner » | `kesh-reconciliation`, `kesh-api` (reconciliation, conversions), `kesh-db` | 38-2, 38-3a, 38-6a, 38-6c, 37-3b (A33) | non attendue |
-| 38-6c | rattachement aux écritures existantes : en devise, en lot (2024, B17), à plusieurs écritures (B28) ; API des scripts externes (B21) | `kesh-db` (reconciliation_link, reconciliation_cancel, bank_transactions, migration), `kesh-api` (reconciliation, bank_accounts, sauvegarde), `docs/api-external.md` | 38-3a | oui, non breaking (`bank_transaction_extra_entries`, B28) |
+| 38-6a | propositions de prestataire : vente, achat, frais (brut, TVA, frais, cours) et acceptation en lot ; « déjà comptabilisée » | `kesh-reconciliation`, `kesh-api` (reconciliation), `kesh-db` | 38-3a, 38-4, 38-5, 38-6c1, 38-6c2 | non attendue |
+| 38-6b | conversions (une écriture si un côté est en CHF ; frais de chaque moitié au compte de frais, B27), retraits, remboursements (tels que rapportés), litiges ; file « à examiner » | `kesh-reconciliation`, `kesh-api` (reconciliation, conversions), `kesh-db` | 38-2, 38-3a, 38-6a, 38-6c1, 38-6c2, 37-3b (A33) | non attendue |
+| 38-6c | *découpée en 38-6c1 et 38-6c2 (`split`, D-P2-3 : plus de cinq modules)* | — | — | — |
+| 38-6c1 | rattachement aux écritures existantes : en devise, suggestions, en lot (2024, B17) ; recherche et API des scripts externes (B21) ; exercice clos | `kesh-db` (reconciliation_link), `kesh-api` (reconciliation, bank_accounts), `kesh-i18n`, `docs/api-external.md` | 38-3a | non |
+| 38-6c2 | rattachement à un groupe de 2 à 5 écritures (B28), paires suggérées et « déjà comptabilisées », annulation du groupe | `kesh-db` (reconciliation_link, reconciliation_cancel, lecteurs de l'inventaire, migration, sauvegarde), `kesh-api` (reconciliation, exports), `kesh-i18n`, `docs/api-external.md` | 38-6c1 | oui, non breaking (`bank_transaction_extra_entries`, B28) |
 | 38-7 | client PayPal : OAuth2, Transaction Search, fenêtres de 31 jours redécoupées dans le connecteur, pagination, soldes (`as_of_time`), historique de trois ans | `kesh-providers` (paypal), `kesh-api` (transport) | 38-3b | non |
 | 38-8 | correspondance des codes d'événement PayPal vers les mouvements ; `invoice_id` → `invoice_ref` (boutique, B24) ; surcharges `eventKindOverrides` | `kesh-providers` (paypal), `kesh-core` (réglages) | 38-7 | non |
 | 38-9a | écrans : connexions, réglages, secrets, soldes proposés, comptes prestataires, contrôles de solde | `frontend` (provider-connections neuf, bank-accounts), i18n, manuel d'administration (sauvegarde d'avant la mise à jour obligatoire, E19) | 38-1, 38-2, 38-3a, 38-3b, 38-7 | non |
-| 38-9b | écrans : règles étendues, propositions multi-lignes, rattachement en lot, file « à examiner », E2E | `frontend` (reconciliation, règles), i18n, manuel utilisateur, E2E | 38-4 à 38-6c, 38-8 | non |
+| 38-9b | écrans : règles étendues, propositions multi-lignes, rattachement en lot, file « à examiner », E2E | `frontend` (reconciliation, règles), i18n, manuel utilisateur, E2E | 38-4 à 38-6c2, 38-8 | non |
 | 38-10 | relevé joint à la main (compte et exercice ou mois), solde de clôture, écart aux contrôles de clôture | `kesh-db`, `kesh-api` (routes, sauvegarde, closing-checks), `frontend` (bank-accounts) | 38-2, 38-3a | oui, non breaking (`bank_account_documents`) |
 
 **Migrations : sept fichiers, dont une seule breaking** (38-1, **38-2 — la breaking** (O1) —, 38-3a, 38-4, 38-5,
-38-6c — ajoutée par B28 —, 38-10) ; seule la breaking écrit une donnée (`_kesh_version`, exemptée P7) ; les autres n'en écrivent pas (sauf
-découverte à la fiche). **Ordre** : 38-1 → 38-2 → 38-3a → (38-3b, 38-4, 38-5, 38-6c en parallèle possibles) → 38-7
-(après 38-3b) → 38-8 → 38-6a (après 38-4, 38-5, 38-6c) → 38-6b → 38-9a → 38-9b ; 38-10 dès 38-3a. 38-6c avant 38-6a :
-les transactions de 2024 se rattachent avant que des propositions ne leur soient faites. Une story qui découvre une
+38-6c2 — ajoutée par B28, en 38-6c avant le découpage D-P2-3 —, 38-10) ; seule la breaking écrit une donnée
+(`_kesh_version`, exemptée P7) ; les autres n'en écrivent pas (sauf
+découverte à la fiche). **Ordre** : 38-1 → 38-2 → 38-3a → (38-3b, 38-4, 38-5, 38-6c1 en parallèle possibles) → 38-6c2
+(après 38-6c1) ; 38-7 (après 38-3b) → 38-8 → 38-6a (après 38-4, 38-5, 38-6c2) → 38-6b → 38-9a → 38-9b ; 38-10 dès
+38-3a. 38-6c1 et 38-6c2 avant 38-6a : les transactions de 2024 se rattachent avant que des propositions ne leur
+soient faites, et 38-6a lit `pairCount` (38-6c2 AC-3) pour « déjà comptabilisée ». Une story qui découvre une
 migration non prévue le dit avant de l'écrire (C-38-0).
 
 Chaque fiche porte ses **exigences numérotées** (B26) : `FR-38-n-k` (fonctionnelles), `NFR-38-n-k` (non
@@ -771,6 +788,12 @@ cadrage**.
 
 ### 38-6c — Rattachement aux écritures existantes ; API des scripts externes (B17, B21)
 
+*Découpée le 2026-11-15 (D-P2-3) en **38-6c1** (rattachement en devise, suggestions, lot, recherche, API des scripts,
+exercice clos ; aucune migration) et **38-6c2** (groupe d'écritures B28, table `bank_transaction_extra_entries`,
+paires, annulation du groupe) ; 38-6c2 avant 38-6a. Les listes ci-dessous sont celles du cadrage (`FR-38-6c-k`) ; les
+fiches les renumérotent : `FR-38-6c-1..7` → `FR-38-6c1-1..7`, `NFR-38-6c-1..4` → `NFR-38-6c1-1..4`, `FR-38-6c-8..10`
+→ `FR-38-6c2-1..3`, `NFR-38-6c-5..6` → `NFR-38-6c2-1..2`, plus `NFR-38-6c2-3`.*
+
 - *Intention* : les transactions téléchargées de 2024, déjà passées par l'API, se rattachent **en lot** à leurs
   écritures, sans doublon ; un script externe (WHMCS, CB Paid Subscriptions) retrouve une transaction de prestataire,
   crée l'écriture et la rattache, par une clé d'API.
@@ -876,8 +899,12 @@ cadrage**.
   1. `FR-38-9b-1` — Formulaire des règles : types neufs (dont boutique) et filtres sens, devise, compte.
   2. `FR-38-9b-2` — Propositions multi-lignes lisibles (lignes, TVA, frais, cours, « déjà comptabilisée »), acceptées
      en lot.
-  3. `FR-38-9b-3` — Rattachement en lot : univoques à cocher, ambiguës une à une.
+  3. `FR-38-9b-3` — Rattachement en lot : univoques à cocher (écritures seules et **paires**, `uniquePair`),
+     ambiguës une à une ; au dialogue, paires proposées et **groupe composé à la main** (2 à 5 écritures, somme
+     affichée contre le montant ; 38-6c2).
   4. `FR-38-9b-4` — File « à examiner » et action « examiné ».
+  5. `FR-38-9b-5` *(fiche)* — L'annulation d'une **paire** de conversion (38-6b) ou d'un **groupe** d'écritures
+     (38-6c2) est annoncée avant d'être faite (les deux moitiés, ou toutes les écritures contre-passées).
 - **NFR (38-9b)**
   1. `NFR-38-9b-1` — E2E contre le transport factice (téléchargement → règle → proposition → acceptation, et
      rattachement en lot).
@@ -907,7 +934,7 @@ cadrage**.
 
 Récapitulatif (B26) ; le texte de chaque exigence est dans la **fiche, qui fait foi** — les listes des sections
 ci-dessus sont celles du cadrage, les fiches en ont ajouté (*ajout*). **Forme définitive — issues GitHub ou fiches —
-à Guy** (Q12). Recompté **aux fiches** le 2026-11-15, après la P1 et le découpage D-P1-1 (identifiants distincts de
+à Guy** (Q12). Recompté **aux fiches** le 2026-11-15, après la P2 et les découpages D-P1-1 et D-P2-3 (identifiants distincts de
 la story dans sa fiche : `grep -oE "\bFR-38-<n>-[0-9]+" <fiche> | sort -u | wc -l`, de même pour `NFR`) ; 38-0 n'a pas
 de fiche : compté à sa section ci-dessus ; 38-3 (`split`) n'est plus comptée.
 
@@ -922,24 +949,27 @@ de fiche : compté à sa section ci-dessus ; 38-3 (`split`) n'est plus comptée.
 | 38-5 | 5 — 1 genre et taux par compte · 2 extraction, acquisitions · 3 compte d'acquisitions · 4 taux à la date · 5 traitement TVA d'un compte à une date | 3 — 1 centime, Rust = TS · 2 TVA en devise principale · 3 non breaking |
 | 38-6a | 7 — 1 proposition vente/achat · 2 frais seuls · 3 lot `provider` · 4 déjà comptabilisée · 5 cours · 6 proposition bloquée visible (`blockedBy`) · 7 variante `rule` refusée sur un compte prestataire | 5 — 1 *Pattern batch* · 2 revalidation sous verrou · 3 module à part, pur · 4 équilibre exact, ligne d'arrondi · 5 comptes non prestataires inchangés |
 | 38-6b | 5 — 1 conversion (une écriture si un côté est en CHF) · 2 retrait/dépôt · 3 remboursement inverse · 4 file « à examiner » · 5 file lue par l'API | 4 — 1 paire liée · 2 aucune écriture d'office · 3 une seule définition de la paire, de l'origine, de la file · 4 file calculée à la lecture |
-| 38-6c | 10 — 1 rattachement en devise · 2 suggestions · 3 lot · 4 recherche · 5 script externe · 6 écriture sur deux comptes bancaires · 7 rattacher n'écrit aucune écriture · 8 groupe d'écritures de somme exacte (B28) · 9 paire suggérée, « déjà comptabilisée » (B28) · 10 annulation du groupe (B28) | 6 — 1 une seule règle · 2 *Pattern batch* · 3 temps borné · 4 connexions fermées aux clés · 5 migration non breaking, une écriture dans un groupe au plus (B28) · 6 définition unique d'« écriture rapprochée » (B28) |
+| 38-6c1 | 7 — 1 rattachement en devise · 2 suggestions · 3 lot · 4 recherche · 5 script externe · 6 écriture sur deux comptes bancaires · 7 rattacher n'écrit aucune écriture | 4 — 1 une seule règle · 2 *Pattern batch* · 3 temps borné · 4 connexions fermées aux clés |
+| 38-6c2 | 3 — 1 groupe d'écritures de somme exacte (B28) · 2 paire suggérée, « déjà comptabilisée » (B28) · 3 annulation du groupe (B28) | 3 — 1 migration non breaking, une écriture dans un groupe au plus · 2 définition unique d'« écriture rapprochée » · 3 une seule règle, paires comprises, temps borné (*ajout* au découpage) |
 | 38-7 | 6 — 1 OAuth2 · 2 transactions par fenêtres · 3 soldes · 4 « Tester » (`payerId`) · 5 erreurs lisibles · 6 trois ans d'historique | 4 — 1 URL constante, client borné · 2 jeton en mémoire · 3 validation stricte · 4 aucun secret ni jeton |
 | 38-8 | 6 — 1 classement des codes · 2 champs lus · 3 `invoice_id` → `invoice_ref` · 4 surcharges · 5 moitiés de conversion reliées · 6 seuls les enregistrements qui changent le solde | 3 — 1 test par code relevé · 2 classement pur · 3 classement vérifiable par la somme des nets |
 | 38-9a | 7 — 1 écrans des connexions · 2 Tester, Télécharger · 3 soldes proposés · 4 comptes prestataires · 5 contrôles de solde · 6 compte prestataire reconnu dans la liste · 7 écrans existants touchés par les gardes | 4 — 1 aucun secret au DOM · 2 i18n, manuel admin · 3 captures · 4 « télécharger », « proposer » |
 | 38-9b | 5 — 1 formulaire des règles · 2 propositions multi-lignes · 3 rattachement en lot · 4 file « à examiner » · 5 annulation d'une moitié de conversion annoncée | 4 — 1 E2E · 2 textes, i18n, manuel utilisateur · 3 captures · 4 composants à part |
 | 38-10 | 5 — 1 joindre un PDF · 2 solde de clôture · 3 écart affiché · 4 contrôles de clôture · 5 lister, corriger, retirer | 4 — 1 PDF borné · 2 sauvegarde · 3 non breaking · 4 audit, i18n, manuel, captures |
 
-**Total : 91 FR et 58 NFR** sur 15 stories (38-0 comprise, 38-3a et 38-3b comptées à part, 38-3 `split` exclue ;
-38-9a et 38-9b à part), recomptés aux fiches le 2026-11-15 après la révision B27–B28 (88 FR et 56 NFR avant : +3 FR
-et +2 NFR de 38-6c ; les autres lignes inchangées, égales à la commande, 38-0 comptée à sa section). *(Avant la P1 : 64 FR et 41 NFR, compte des seules listes
-du cadrage.)* ⚠️ 38-6a, 38-6b, 38-7, 38-8, 38-9a et 38-9b étaient alignées en parallèle au moment du recompte : à
-recompter par la même commande après leur alignement.
+**Total : 91 FR et 59 NFR** sur 16 stories (38-0 comprise, 38-3a et 38-3b, 38-6c1 et 38-6c2 comptées à part, 38-3
+et 38-6c `split` exclues ; 38-9a et 38-9b à part), recomptés aux fiches le 2026-11-15 après l'alignement
+inter-fiches de la P2 et le découpage D-P2-3 (même commande, chaque ligne égale à sa fiche, 38-0 comptée à sa
+section) : 91 FR et 58 NFR avant ; 38-6c (10 FR, 6 NFR) devient 38-6c1 (7, 4) et 38-6c2 (3, 3) — **+1 NFR**,
+`NFR-38-6c2-3`. *(Après B27–B28 : 91 FR et 58 NFR ; après la P1 : 88 et 56 ; avant la P1 : 64 FR et 41 NFR, compte des
+seules listes du cadrage.)* ⚠️ 38-6a, 38-6b, 38-7, 38-8, 38-9a et 38-9b étaient alignées en parallèle au moment de ce
+recompte (leurs décomptes lus ce jour-là égalent la table) : à recompter par la même commande après leur alignement.
 
 ## Ce que réutiliseront les Epics 39 (Wise) et 40 (Stripe)
 
 **Réutilisé tel quel** : coffre des secrets et connexions (38-1), réglages de compte prestataire et compte de frais
 (38-2), cadre de téléchargement, passages, doublon, planification, soldes vus et contrôles (38-3a, 38-3b), règles étendues
-(38-4), TVA par défaut (38-5), propositions et file (38-6a, 38-6b), rattachement en lot et API des scripts (38-6c),
+(38-4), TVA par défaut (38-5), propositions et file (38-6a, 38-6b), rattachement en lot et API des scripts (38-6c1, 38-6c2),
 écrans génériques (38-9a, 38-9b), pièces de compte (38-10). **Aucune migration breaking pour 39 et 40** : l'en-tête
 `PROVIDER_API` sert tel quel ; les valeurs neuves (`provider`, genres de mouvement, critères de règle éventuels) vont
 dans des colonnes lues avec tolérance (E4) — `match_type` en `VARCHAR` sans `CHECK` compris ; les options propres au
@@ -1086,7 +1116,9 @@ Questions des fiches tranchées par l'orchestrateur (Beat peut les contester ; Q
 - **O7** — 38-1 : unicité du libellé d'une connexion par société gardée (Q-38-1-b) ; le Comptable lit l'état des
   connexions par la route de lecture restreinte de 38-3 (Q-38-1-a).
 - **O8** — 38-2 : délier un compte prestataire n'est admis que s'il ne porte aucune transaction téléchargée
-  (Q-38-2-b) ; un compte du plan en devise est lié à **un seul** compte prestataire (Q-38-2-c).
+  (Q-38-2-b) ; un compte du plan en devise est lié à **un seul** compte prestataire (Q-38-2-c). *(Étendu le
+  2026-11-15, D-P2-4 : le compte du plan d'un compte prestataire, en devise **ou en CHF**, n'est lié à aucun autre
+  compte bancaire, dans les deux sens — `PROVIDER_ACCOUNT_LEDGER_SHARED`, 38-2 FR-38-2-6.)*
 - **O9** — 38-3 : imports de fichier refusés sur un compte prestataire (Q-38-3-c) ; découpage 38-3a/38-3b si la
   validation stagne (Q-38-3-b, règle de splitting).
 - **O10** — 38-7 : `accountEmail` retiré du JSON (aucune API ne le rend) ; une fenêtre trop large se découpe **dans le
@@ -1142,4 +1174,21 @@ Q-38-6c-1.
 - **Tracé pour plus tard** (C-38-13) : annulation d'un rattachement (simple ou groupe) dans un exercice clos —
   refusée, parce qu'elle contre-passe (v017-3a) ; un rattachement fait à tort en 2024 y reste.
 - **Taille** : 38-6c grossit (règle neuve, inventaire de lecteurs) ; découpage 38-6c1/38-6c2 prévu si sa validation
-  stagne (fiche, *Notes*). Les deux fiches sont à revalider.
+  stagne (fiche, *Notes*). Les deux fiches sont à revalider. *(Annoté le 2026-11-15 : découpée à la P2, D-P2-3.)*
+
+## Validation P2 — décisions et alignement inter-fiches (2026-11-15)
+
+Liste : `implementation-artifacts/38-p2-inter-fiches.md`.
+
+- **D-P2-1** — un seul code du refus d'une proposition non `provider` sur un compte prestataire,
+  `PROVIDER_PROPOSAL_REQUIRED`, posé par 38-3a, repris par 38-6a (C-38-8).
+- **D-P2-2** — sur un compte prestataire, `rule` et `split` restent refusés ; une facture n'est proposée que si
+  `fee_amount = 0`, sinon la proposition `provider` ; règlement d'une facture au brut avec frais tracé (C-38-13).
+- **D-P2-3 — 38-6c découpée** en **38-6c1** (AC-1 à AC-11 ; aucune migration) et **38-6c2** (AC-12 à AC-15 → AC-1 à
+  AC-4, avec la migration `bank_transaction_extra_entries`) ; 38-6c `split` ; 38-6c2 après 38-6c1, avant 38-6a.
+  Contre-passations d'un groupe : un seul nom, `reversalJournalEntryIds` (C-38-14).
+- **D-P2-4** — O8 étendu au CHF (E11, C-38-3 : `PROVIDER_ACCOUNT_LEDGER_SHARED`, deux sens).
+- **Alignements** de ce fichier : C-38-3 (`PROVIDER_ACCOUNT_HAS_TRANSACTIONS`, `PROVIDER_ACCOUNT_LEDGER_SHARED`),
+  C-38-5 (`max_movements_per_page()`, `test()`), C-38-8, C-38-13, C-38-14, E11, E21, E22, O8 ; table des stories,
+  dépendances, ordre, migrations (sept fichiers, 38-6c2 au lieu de 38-6c) ; § 38-9b (FR-38-9b-3 et -5 reprises des
+  fiches) ; récapitulatif FR/NFR recompté aux fiches (91 FR, 59 NFR, 16 stories).
