@@ -82,3 +82,17 @@ réversibilité. Code lu à `fed34a9c7`. Fiche : `36-16-reimputation-analytique.
   (écriture) proposés à l'orchestrateur.
 - **Écartée** : écrire trois fiches (hors du mandat de ce prompt).
 - **Réversible** : oui ; la décision revient à l'orchestrateur.
+
+### C-36-16-10 — Découpage écrit en 36-16a, 36-16b, 36-16c (décision de l'orchestrateur du 2026-11-15)
+
+- **Contexte** : C-36-16-9 proposait le découpage ; l'orchestrateur l'a approuvé (règle de splitting préventif : dix modules ;
+  règle de Guy du 2026-11-15, stories courtes).
+- **Retenu** : la fiche d'origine passe à `split` ; **36-16a** (`ready-for-dev`) pose le patron — dépôt `project_reassignment.rs`,
+  route, dialogue partagé à plusieurs rangées (D12), audit, accusé de période close — sur la facture client, cinq modules de code,
+  et porte les décisions communes C-36-16-1 à -9 ; **36-16b** (fournisseur) et **36-16c** (écriture manuelle) en partent fusionnée
+  (`backlog` jusque-là) et y renvoient. Le point d'étape 0 « projet lu sous le verrou de la pièce » est rangé par pièce :
+  `reconciliation.rs:2814` en 36-16a, `supplier_invoices.rs:2163` en 36-16b. Les trois partent de la 36-15 fusionnée pour le
+  vocabulaire.
+- **Écartées** : garder une story (dix modules) ; un découpage par couche (dépôt, API, écran) — aucune tranche ne livrerait un
+  geste utilisable ni ne se testerait de bout en bout.
+- **Réversible** : oui, tant qu'aucune n'est développée.

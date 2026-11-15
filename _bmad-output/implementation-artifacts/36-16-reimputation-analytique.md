@@ -1,6 +1,10 @@
 # Story 36-16 : changer le compte analytique d'une facture, même payée, et d'une écriture passée (#1167)
 
-Status: ready-for-dev
+Status: split
+
+> **Découpée le 2026-11-15** (C-36-16-10) en **36-16a** (`36-16a-reimputation-facture-client.md`, le patron et la facture
+> client), **36-16b** (`36-16b-reimputation-facture-fournisseur.md`) et **36-16c** (`36-16c-reimputation-ecriture-manuelle.md`).
+> Ces trois fiches font foi ; celle-ci reste comme relevé de l'inventaire et des décisions d'origine.
 
 *Fiche rédigée le 2026-11-15 par l'agent de rédaction des fiches de l'Epic 36 (Opus 5.5), worktree `kesh-36-16`, branche
 `story/36-16-reimputation-analytique` partie de `epic/36-0.18.0`, par le workflow `bmad-create-story`. Phase 2, release
@@ -442,3 +446,7 @@ détaché) ; stories 19-3, 19-4 (propagation du projet), 34-5 (version lue sous 
 - 2026-11-15 — Création de la fiche (Opus 5.5, `bmad-create-story`), code lu à `fed34a9c7`. Inventaire par le symptôme journalisé
   (`kesh-gate-logs/e36-16/inventaire-fiche.log`, sonde positive `invoices.rs:2446`). Aucune migration. Dix modules : découpage en
   trois lots proposé à l'orchestrateur, non écrit. Choix C-36-16-1 à C-36-16-9 au registre de la story.
+- 2026-11-15 — **Découpage approuvé par l'orchestrateur** (dix modules ; règle des stories courtes de Guy du 2026-11-15) et écrit :
+  `36-16a-reimputation-facture-client.md` (lot A, décisions communes, étape 0 sur `reconciliation.rs:2814`),
+  `36-16b-reimputation-facture-fournisseur.md` (lot B, étape 0 sur `supplier_invoices.rs:2163`),
+  `36-16c-reimputation-ecriture-manuelle.md` (lot C). `Status: split` (C-36-16-10).
