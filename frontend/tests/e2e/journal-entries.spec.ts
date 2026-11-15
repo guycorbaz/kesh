@@ -253,11 +253,75 @@ test.describe("Page écritures — saisie", () => {
     await page.getByRole("listbox").getByRole("option").first().click();
     await page.locator('input[inputmode="decimal"]').nth(3).fill("10.99999");
 
-    // Message "Maximum 4 décimales" doit apparaître
-    await expect(page.getByText(/Maximum 4 décimales/).first()).toBeVisible();
+    // Story 36-3 (#1051, C-36-3-3) : l'ancien message des quatre décimales est
+    // devenu « Montant illisible », qui décrit la forme admise.
+    await expect(page.getByText(/Montant illisible/).first()).toBeVisible();
 
     // Le bouton Valider reste désactivé.
     await expect(page.getByRole("button", { name: "Valider" })).toBeDisabled();
+  });
+
+  // Story 36-3 (#1051, AC7) — « 1.234 » n'est plus lu 1,234 franc en silence :
+  // refusé comme ambigu, rien ne part, même par Ctrl+S ; « 1'234,50 » part en 1234.50.
+  test("montant ambigu « 1.234 » refusé, « 1'234,50 » enregistré (Story 36-3)", async ({
+    page,
+  }) => {
+    await goToJournalEntries(page);
+    const { debitNumber, creditNumber } = await getSeedAccountNumbers(page);
+    const description = `E2E 36-3 montant ambigu ${Date.now()}`;
+
+    // Écouteur armé avant toute saisie : aucun POST ne doit partir tant que le
+    // montant est ambigu.
+    let posts = 0;
+    page.on("request", (req) => {
+      if (req.method() === "POST" && /\/api\/v1\/journal-entries$/.test(req.url())) {
+        posts += 1;
+      }
+    });
+
+    await page.getByRole("button", { name: /Nouvelle écriture/ }).click();
+    await page.fill("#entry-description", description);
+
+    const accountInputs = page.locator('input[aria-autocomplete="list"]');
+    const montants = page.locator('input[inputmode="decimal"]');
+    await accountInputs.nth(0).fill(debitNumber);
+    await page.getByRole("listbox").getByRole("option").first().click();
+    await montants.nth(0).fill("1.234");
+    await accountInputs.nth(1).fill(creditNumber);
+    await page.getByRole("listbox").getByRole("option").first().click();
+    await montants.nth(3).fill("1.234");
+
+    await expect(page.getByText(/Montant ambigu/).first()).toBeVisible();
+    await expect(page.getByRole("button", { name: "Valider" })).toBeDisabled();
+    await page.keyboard.press("Control+s");
+    // Laisse au raccourci le temps d'agir s'il envoyait quelque chose.
+    await page.waitForTimeout(500);
+    expect(posts).toBe(0);
+
+    await montants.nth(0).fill("1'234,50");
+    await montants.nth(3).fill("1'234,50");
+    await expect(page.getByText(/Montant ambigu/)).toHaveCount(0);
+    await expect(page.getByText(/✓ Équilibré/)).toBeVisible();
+
+    const requestPromise = page.waitForRequest(
+      (req) => req.method() === "POST" && /\/api\/v1\/journal-entries$/.test(req.url()),
+    );
+    const responsePromise = page.waitForResponse(
+      (resp) =>
+        resp.request().method() === "POST" &&
+        /\/api\/v1\/journal-entries$/.test(resp.url()),
+    );
+    await page.getByRole("button", { name: "Valider" }).click();
+    const body = (await requestPromise).postDataJSON() as {
+      lines: Array<{ debit: string; credit: string }>;
+    };
+    expect(body.lines[0].debit).toBe("1234.50");
+    expect(body.lines[1].credit).toBe("1234.50");
+    expect((await responsePromise).status()).toBe(201);
+
+    const row = page.getByRole("row").filter({ hasText: description });
+    await expect(row).toBeVisible({ timeout: 5000 });
+    await expect(row).toContainText("1’234.50");
   });
 
   test("raccourci Ctrl+N ouvre le formulaire", async ({ page }) => {

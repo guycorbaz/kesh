@@ -984,7 +984,17 @@ const ATTENDU = {
 	// recompté par la garde après chaque fusion (relevé à la source avant d'écrire ce nombre).
 	// Story 36-1 (#1095, D2) : **3036 → 3037** (+1) sur sa branche, `AccountAutocomplete.svelte`
 	// (`common-account-no-match`, littéral). Relevé à 3037 par la garde avant d'écrire.
-	sitesTotal: 3037,
+	// Story 36-3 (#1051, D4-D5) : **3036 → 3038** sur sa branche — `JournalEntryForm.svelte`
+	// perd l'ancien message des quatre décimales et gagne `-amount-ambiguous` et
+	// `-amount-unreadable`, `VatPurchaseAssistant.svelte` gagne `-amount-ambiguous`.
+	// Revue P1 de la 36-3 (B3, E3) : **3038 → 3040** — l'assistant gagne
+	// `journal-entry-form-amount-unreadable` et `vat-purchase-ht-below-centime`. Que des
+	// littéraux ; relevé à 3040 par la garde avant d'écrire ce nombre (à recompter après
+	// l'union avec 36-1).
+	// Union 36-1 + 36-3 dans la branche de la 36-2 (orchestrateur, 2026-11-14) : 3036 + 1 + 4 =
+	// **3041**, à recompter par la garde au premier Vitest de la 36-2 (C-e350-18 : relever, ne pas
+	// additionner de confiance).
+	sitesTotal: 3041,
 	sitesNonResolus: 31,
 	relais: 6,
 	// Story 26-1 (#620, AC3-bis) : **10 → 11** — `lib/features/bank-import/
