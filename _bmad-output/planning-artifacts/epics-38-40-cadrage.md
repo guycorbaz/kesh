@@ -100,3 +100,19 @@ attend celui de l'Epic 37, lui-même en attente du retour de Guy sur la page de 
   contrôle** : solde du prestataire comparé au relevé.
 - **B21 — WHMCS et CB Paid Subscriptions** : leurs exports CSV s'importent par un **script hors de Kesh**, par l'API ;
   l'API doit permettre à ce script de créer les écritures ou de les rattacher aux transactions de prestataire.
+
+## Décisions de Beat — suite (2026-11-15, après la révision B16–B21)
+
+- **B22 — Une migration breaking acceptée** (remplace B16 sur ce point) : valeurs honnêtes `source_format =
+  'PROVIDER_API'` et types de critère neufs des règles (`match_type`), sans détour (`MANUAL`, clé inerte
+  `reference_contains`). `kesh_version_min_required` relevé (P2, P2-bis ; numéro de release à Guy). Les comptes liés
+  et la devise restent dans les **réglages de la connexion** (B16 maintenu sur ce point).
+- **B23 — Réglages d'un compte prestataire** : Kesh n'a pas de magasin générique de paramètres ; il a des colonnes
+  `JSON` typées (`bank_profiles.column_mapping` → struct `ColumnMapping` ; `mcp_server_settings`). Les options propres
+  au prestataire vont dans une colonne `settings JSON` lue en struct typée par prestataire (MariaDB : `JSON` = texte
+  validé, pas de JSONB) ; **les références à des comptes** (frais par devise, autres comptes liés) restent des
+  colonnes à clé étrangère (`ON DELETE RESTRICT`, gardes d'archivage) ; les secrets restent dans leur table chiffrée.
+- **B24 — Q10** : chez PayPal, la boutique se reconnaît au **préfixe du numéro de facture** (`invoice_id`).
+- **B25 — Q3** reportée ; **Q9** : Stripe = Epic **40** en attendant Guy.
+- **B26 — Exigences** : chaque fiche des Epics 37 à 40 liste ses **FR** (exigences fonctionnelles) et **NFR**
+  (non fonctionnelles), numérotées ; Guy dira s'il les veut en issues GitHub ou dans les fiches.
