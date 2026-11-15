@@ -310,7 +310,8 @@ journal-entry-form-unbalanced = Unbalanced
 journal-entry-form-submit = Save
 journal-entry-form-cancel = Cancel
 journal-entry-form-incomplete-line = Incomplete line
-journal-entry-form-max-decimals = Maximum 4 decimals
+journal-entry-form-amount-ambiguous = Ambiguous amount: a point or a comma followed by three digits may separate thousands. Write 1'234 for one thousand two hundred thirty-four, or 1.2340 for one franc and 23.4 centimes.
+journal-entry-form-amount-unreadable = Unreadable amount: digits, apostrophe for thousands (1'234), point or comma for decimals, at most four decimals.
 journal-entry-form-amount-too-large = Amount too large
 account-autocomplete-unavailable = Autocomplete unavailable — enter account ID
 journal-achats = Purchases
@@ -386,6 +387,7 @@ vat-purchase-config-required = Configure the input VAT account in Administration
 vat-purchase-no-rates = No VAT rate configured — see Settings → VAT rates.
 vat-purchase-charge-account = Expense account
 vat-purchase-ht = Amount excl. VAT
+vat-purchase-ht-below-centime = The amount excl. VAT rounds to 0.00 at the centime: the expense line would be zero.
 vat-purchase-rate = VAT rate
 vat-purchase-rate-placeholder = Choose a rate
 vat-purchase-counterparty = Counterparty account
@@ -1540,7 +1542,9 @@ reconciliation-manual-claim-notice-payable = This is the accounts payable accoun
 # Story 8-5a-bis FR48 — split aggregated transaction.
 reconciliation-split-button-label = Split
 reconciliation-split-modal-title = Split transaction
-reconciliation-split-balance-indicator = Balance
+reconciliation-split-balance-indicator = Balanced: { $expected }
+reconciliation-split-balance-gap = Not balanced — expected { $expected }, difference { $diff }
+reconciliation-split-balance-incomplete = Not balanced — expected { $expected }, difference not computable
 reconciliation-split-error-imbalance = The split does not balance the transaction amount.
 
 # Story 29-8 (#670) — rattacher une transaction au règlement saisi depuis la fiche.
@@ -1769,6 +1773,10 @@ reconciliation-split-error-min-lines = At least { $min } lines are required
 reconciliation-split-error-max-lines = At most { $max } lines
 reconciliation-split-error-account-required = Line { $line }: account required
 reconciliation-split-error-amount-positive = Line { $line }: amount > 0 required
+reconciliation-split-error-amount-unreadable = Line { $line }: unreadable amount — digits, apostrophe for thousands (1'234), point or comma for decimals, at most two decimals, no sign, no space.
+reconciliation-split-error-amount-ambiguous = Line { $line }: ambiguous amount — a point or comma followed by three digits may separate thousands; write 1'234 for one thousand two hundred and thirty-four francs.
+reconciliation-split-error-amount-cents = Line { $line }: at most two decimals — the amount is counted in cents.
+reconciliation-split-error-imbalance-detail = Adjust the amounts: their sum must equal { $expected } (current difference { $diff }).
 reconciliation-split-error-description-too-long = Line { $line }: description too long (max { $max })
 
 # === Story 9-1 — Accounting reports (34 keys) ===
@@ -2523,6 +2531,7 @@ reminders-link-aged = View aged balance
 # Story 16-1b (#152) — selecteur de compte de produit par ligne.
 common-account-clear = Clear selected account
 common-account-invalid = Invalid account — not postable, archived, or unexpected type
+common-account-no-match = No account matches this entry: choose an account from the list.
 invoice-line-col-revenue-account = Revenue account
 invoice-detail-project-label = Analytical project
 invoice-field-project = Analytical project (optional)
@@ -2532,6 +2541,8 @@ invoice-project-none = — None
 invoice-line-revenue-account-default = { $account } (company default)
 invoice-line-vat-rate-disabled-option = { $rate }% (deactivated)
 invoice-line-vat-rate-disabled-error = Line { $line }: the VAT rate { $rate }% has been deactivated. Choose an active rate.
+invoice-line-unit-price-ambiguous-error = Line { $line }: ambiguous unit price — write 1'250 for one thousand two hundred fifty francs, or 1.2500 for one franc and 25 centimes.
+invoice-line-unit-price-unreadable-error = Line { $line }: unreadable unit price — digits, apostrophe for thousands (1'250), point or comma for decimals, at most four decimals.
 invoice-lines-revenue-account-invalid = Invalid revenue account on the following lines: { $lines }
 invoice-default-revenue-account-unusable = The company default revenue account is no longer usable (archived, not postable, or unexpected type). Lines following it cannot be validated — fix it in Administration → Invoicing, or pick an account on each line.
 common-account-default-suffix = (default)

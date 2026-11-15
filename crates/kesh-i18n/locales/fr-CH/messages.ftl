@@ -310,7 +310,8 @@ journal-entry-form-unbalanced = Déséquilibré
 journal-entry-form-submit = Valider
 journal-entry-form-cancel = Annuler
 journal-entry-form-incomplete-line = Ligne incomplète
-journal-entry-form-max-decimals = Maximum 4 décimales
+journal-entry-form-amount-ambiguous = Montant ambigu : un point ou une virgule suivis de trois chiffres peuvent séparer les milliers. Écrivez 1'234 pour mille deux cent trente-quatre, ou 1.2340 pour un franc vingt-trois et quatre dixièmes de centime.
+journal-entry-form-amount-unreadable = Montant illisible : chiffres, apostrophe des milliers (1'234), point ou virgule décimale, quatre décimales au plus.
 journal-entry-form-amount-too-large = Montant trop élevé
 account-autocomplete-unavailable = Autocomplétion indisponible — saisir l'ID du compte
 journal-achats = Achats
@@ -386,6 +387,7 @@ vat-purchase-config-required = Configurez le compte d'impôt préalable dans Adm
 vat-purchase-no-rates = Aucun taux de TVA configuré — voir Paramètres → Taux de TVA.
 vat-purchase-charge-account = Compte de charge
 vat-purchase-ht = Montant HT
+vat-purchase-ht-below-centime = Le montant HT s'arrondit à 0.00 au centime : la ligne de charge serait nulle.
 vat-purchase-rate = Taux TVA
 vat-purchase-rate-placeholder = Choisir un taux
 vat-purchase-counterparty = Compte de contrepartie
@@ -1617,7 +1619,9 @@ reconciliation-manual-claim-notice-payable = Ce compte est celui des créanciers
 # Story 8-5a-bis FR48 — éclatement de transaction agrégée.
 reconciliation-split-button-label = Éclater
 reconciliation-split-modal-title = Éclater la transaction
-reconciliation-split-balance-indicator = Balance
+reconciliation-split-balance-indicator = Balance équilibrée : { $expected }
+reconciliation-split-balance-gap = Balance non équilibrée — attendu { $expected }, écart { $diff }
+reconciliation-split-balance-incomplete = Balance non équilibrée — attendu { $expected }, écart non calculable
 reconciliation-split-error-imbalance = L'éclatement n'équilibre pas le montant de la transaction.
 
 # Story 29-8 (#670) — rattacher une transaction au règlement saisi depuis la fiche.
@@ -1847,6 +1851,10 @@ reconciliation-split-error-min-lines = Au moins { $min } lignes requises
 reconciliation-split-error-max-lines = Maximum { $max } lignes
 reconciliation-split-error-account-required = Ligne { $line } : compte requis
 reconciliation-split-error-amount-positive = Ligne { $line } : montant > 0 requis
+reconciliation-split-error-amount-unreadable = Ligne { $line } : montant illisible — chiffres, apostrophe des milliers (1'234), point ou virgule décimale, deux décimales au plus, sans signe ni espace.
+reconciliation-split-error-amount-ambiguous = Ligne { $line } : montant ambigu — un point ou une virgule suivis de trois chiffres peuvent séparer les milliers ; écrivez 1'234 pour mille deux cent trente-quatre francs.
+reconciliation-split-error-amount-cents = Ligne { $line } : deux décimales au plus — le montant se compte en centimes.
+reconciliation-split-error-imbalance-detail = Ajustez les montants : leur somme doit égaler { $expected } (écart actuel { $diff }).
 reconciliation-split-error-description-too-long = Ligne { $line } : description trop longue (max { $max })
 
 # === Story 9-1 — Rapports comptables (34 clés) ===
@@ -2646,6 +2654,7 @@ reminders-link-aged = Voir la balance âgée
 # Story 16-1b (#152) — selecteur de compte de produit par ligne.
 common-account-clear = Effacer le compte sélectionné
 common-account-invalid = Compte invalide — non imputable, archivé ou de type inattendu
+common-account-no-match = Aucun compte ne correspond à cette saisie : choisissez un compte dans la liste.
 invoice-line-col-revenue-account = Compte de produit
 invoice-detail-project-label = Projet analytique
 invoice-field-project = Projet analytique (optionnel)
@@ -2655,6 +2664,8 @@ invoice-project-none = — Aucun
 invoice-line-revenue-account-default = { $account } (défaut société)
 invoice-line-vat-rate-disabled-option = { $rate }% (désactivé)
 invoice-line-vat-rate-disabled-error = Ligne { $line } : le taux de TVA { $rate }% a été désactivé. Choisissez un taux actif.
+invoice-line-unit-price-ambiguous-error = Ligne { $line } : prix unitaire ambigu — écrivez 1'250 pour mille deux cent cinquante francs, ou 1.2500 pour un franc vingt-cinq.
+invoice-line-unit-price-unreadable-error = Ligne { $line } : prix unitaire illisible — chiffres, apostrophe des milliers (1'250), point ou virgule décimale, quatre décimales au plus.
 invoice-lines-revenue-account-invalid = Compte de produit invalide sur les lignes suivantes : { $lines }
 invoice-default-revenue-account-unusable = Le compte de produit par défaut de la société n'est plus utilisable (archivé, non imputable ou de type inattendu). Les lignes qui le suivent ne pourront pas être validées — corrigez-le dans Administration → Facturation, ou choisissez un compte sur chaque ligne.
 common-account-default-suffix = (défaut)

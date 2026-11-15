@@ -11,6 +11,7 @@
  */
 
 import Big from 'big.js';
+import { isAmbiguousThousands } from '$lib/shared/utils/amount-ambiguity';
 
 /**
  * Options de format d'un montant — Story v016-2b (#816) : le relevé saisi à la
@@ -70,6 +71,95 @@ export function parseAmount(raw: string): Big {
 	return new Big(raw.replace(',', '.'));
 }
 
+/** Story 36-3 — le classement d'une saisie du journal. */
+export type JournalAmountKind = 'empty' | 'clear' | 'ambiguous' | 'unreadable';
+
+/** Story 36-3 — la lecture d'une saisie du journal ; `value` et `payload` pour une saisie claire. */
+export type JournalAmountReading =
+	| { kind: 'clear'; value: Big; payload: string }
+	| { kind: 'empty' | 'ambiguous' | 'unreadable' };
+
+/**
+ * Story 36-3 (D2, C-36-3-2, C-36-3-7) — la grammaire d'un montant du journal :
+ * une partie entière **groupée** (premier groupe de un à trois chiffres sans zéro de
+ * tête, puis des groupes de trois chiffres exactement, chacun précédé d'une apostrophe
+ * droite U+0027 ou typographique U+2019) ou **non groupée** (un à quinze chiffres),
+ * puis, facultativement, un point ou une virgule et une à quatre décimales. Aucun
+ * signe, aucun blanc, aucun rognage.
+ */
+const JOURNAL_AMOUNT_RE = /^([1-9]\d{0,2}(?:['’]\d{3})+|\d{1,15})(?:[.,](\d{1,4}))?$/;
+const APOSTROPHES = /['’]/g;
+/** Chiffres entiers au plus, apostrophes retirées (`DECIMAL(19,4)`, comme `AMOUNT_RE`). */
+const JOURNAL_MAX_INTEGER_DIGITS = 15;
+
+/**
+ * Story 36-3 (#1051, D2) — lit une saisie de montant de l'écriture manuelle et de
+ * l'assistant TVA achat :
+ *
+ * - `empty` : la chaîne vide ;
+ * - `unreadable` : hors de la grammaire (`JOURNAL_AMOUNT_RE`), ou plus de quinze
+ *   chiffres entiers une fois les apostrophes retirées ;
+ * - `ambiguous` : le prédicat partagé avec la 35-6 (`isAmbiguousThousands`) —
+ *   « 1.234 », « 12,500 » ;
+ * - `clear` : `value` et `payload`, chiffres entiers sans apostrophe puis `.` et la
+ *   fraction telle que saisie (« 1'234,50 » → `1234.50` ; zéros de tête gardés).
+ *
+ * Une écriture rouverte en édition porte les montants du serveur à quatre décimales
+ * (« 1.2340 ») : jamais ambigus.
+ */
+export function readJournalAmount(raw: string): JournalAmountReading {
+	if (raw === '') return { kind: 'empty' };
+	const m = JOURNAL_AMOUNT_RE.exec(raw);
+	if (m === null) return { kind: 'unreadable' };
+	const integerPart = m[1];
+	const fraction = m[2] ?? '';
+	const integerDigits = integerPart.replace(APOSTROPHES, '');
+	if (integerDigits.length > JOURNAL_MAX_INTEGER_DIGITS) return { kind: 'unreadable' };
+	const grouped = integerDigits.length !== integerPart.length;
+	if (isAmbiguousThousands({ integerDigits, fraction, grouped })) return { kind: 'ambiguous' };
+	const payload = fraction === '' ? integerDigits : `${integerDigits}.${fraction}`;
+	return { kind: 'clear', value: new Big(payload), payload };
+}
+
+/**
+ * Story 36-3 (D4) — le message à afficher sous une ligne d'écriture : `ambiguous` si
+ * l'un des deux montants l'est, sinon `unreadable` si l'un l'est, sinon `null`.
+ */
+export function lineAmountProblem(
+	debit: string,
+	credit: string
+): 'ambiguous' | 'unreadable' | null {
+	const kinds = [readJournalAmount(debit).kind, readJournalAmount(credit).kind];
+	if (kinds.includes('ambiguous')) return 'ambiguous';
+	if (kinds.includes('unreadable')) return 'unreadable';
+	return null;
+}
+
+/**
+ * Story 36-3 (D4) — la charge à envoyer pour une saisie du journal : `payload` d'une
+ * saisie claire, `'0'` pour le vide ; `null` pour une saisie ambiguë ou illisible,
+ * que le formulaire ne laisse jamais partir (`canSubmit`).
+ */
+export function journalAmountPayload(raw: string): string | null {
+	const r = readJournalAmount(raw);
+	if (r.kind === 'empty') return '0';
+	return r.kind === 'clear' ? r.payload : null;
+}
+
+/** Story 36-3 (D3) — un lecteur de montant : `null` hors format, `Big(0)` pour le vide. */
+export type AmountReader = (raw: string) => Big | null;
+
+/** Story 36-3 (D3) — la lecture d'avant la story, que gardent les soldes de départ (#1050). */
+export const defaultAmountReader: AmountReader = (raw) =>
+	isValidAmount(raw) ? parseAmount(raw) : null;
+
+/** Story 36-3 (D3) — la lecture du journal (`readJournalAmount`). */
+export const journalAmountReader: AmountReader = (raw) => {
+	const r = readJournalAmount(raw);
+	if (r.kind === 'empty') return new Big(0);
+	return r.kind === 'clear' ? r.value : null;
+};
+
 export interface BalanceResult {
 	totalDebit: Big;
 	totalCredit: Big;
@@ -80,20 +170,20 @@ export interface BalanceResult {
 	hasInvalidAmount: boolean;
 }
 
+/**
+ * Totaux et équilibre des lignes, chaque montant lu par `read` (Story 36-3, D3) :
+ * par défaut `defaultAmountReader`, la lecture d'avant la story (soldes de départ,
+ * #1050) ; l'écriture manuelle passe `journalAmountReader`. Un montant que le
+ * lecteur rend `null` compte pour zéro et rend `hasInvalidAmount` vrai.
+ */
 export function computeBalance(
-	lines: { debit: string; credit: string }[]
+	lines: { debit: string; credit: string }[],
+	read: AmountReader = defaultAmountReader
 ): BalanceResult {
-	const hasInvalidAmount = lines.some(
-		(l) => !isValidAmount(l.debit) || !isValidAmount(l.credit)
-	);
-	const totalDebit = lines.reduce(
-		(acc, l) => acc.plus(isValidAmount(l.debit) ? parseAmount(l.debit) : new Big(0)),
-		new Big(0)
-	);
-	const totalCredit = lines.reduce(
-		(acc, l) => acc.plus(isValidAmount(l.credit) ? parseAmount(l.credit) : new Big(0)),
-		new Big(0)
-	);
+	const read0 = (raw: string) => read(raw) ?? new Big(0);
+	const hasInvalidAmount = lines.some((l) => read(l.debit) === null || read(l.credit) === null);
+	const totalDebit = lines.reduce((acc, l) => acc.plus(read0(l.debit)), new Big(0));
+	const totalCredit = lines.reduce((acc, l) => acc.plus(read0(l.credit)), new Big(0));
 	return {
 		totalDebit,
 		totalCredit,
@@ -140,22 +230,33 @@ export function formatSwissAmount(big: Big, decimals = 2): string {
 	return `${negative ? '-' : ''}${withSeparators}${fraction}`;
 }
 
-export function classifyLine(line: {
-	accountId: number | null;
-	debit: string;
-	credit: string;
-}): LineStatus {
+/**
+ * Classe une ligne, ses montants lus par `read` (Story 36-3, D3 ; défaut :
+ * `defaultAmountReader`). ⚠️ Ne pas passer cette fonction telle quelle à
+ * `Array.prototype.map` : `map` donnerait l'indice pour lecteur. Écrire
+ * `lines.map((l) => classifyLine(l, journalAmountReader))`.
+ */
+export function classifyLine(
+	line: {
+		accountId: number | null;
+		debit: string;
+		credit: string;
+	},
+	read: AmountReader = defaultAmountReader
+): LineStatus {
 	const emptyDebit = line.debit === '';
 	const emptyCredit = line.credit === '';
 	if (line.accountId === null && emptyDebit && emptyCredit) return 'empty';
 
 	if (line.accountId === null) return 'partial';
-	if (!isValidAmount(line.debit) || !isValidAmount(line.credit)) return 'partial';
+	const debit = read(line.debit);
+	const credit = read(line.credit);
+	if (debit === null || credit === null) return 'partial';
 	if (emptyDebit && emptyCredit) return 'partial';
 	if (!emptyDebit && !emptyCredit) return 'partial';
 
 	// Un seul des deux non vide
-	const amount = emptyDebit ? parseAmount(line.credit) : parseAmount(line.debit);
+	const amount = emptyDebit ? credit : debit;
 	if (amount.lte(0)) return 'partial';
 
 	return 'valid';

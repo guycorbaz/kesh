@@ -912,6 +912,10 @@ pub struct SettlementCancellation {
 /// motif : deux gardes du même motif masqueraient chacune la mutation de
 /// l'autre.
 ///
+/// `acteur` est l'auteur du geste, clé d'API comprise (Story 36-4, #1131) : le
+/// délettrage de la pièce, la contre-passation (son lettrage compris) et
+/// l'entrée `invoice.settlement_cancelled` le portent tous trois.
+///
 /// N'exécute **pas** de rollback : l'appelant, propriétaire de la transaction,
 /// en est responsable.
 pub async fn cancel_settlement_in_tx(
@@ -919,7 +923,7 @@ pub async fn cancel_settlement_in_tx(
     company_id: i64,
     invoice_id: i64,
     settlement_id: i64,
-    user_id: i64,
+    acteur: Acteur,
     aujourd_hui: NaiveDate,
 ) -> Result<SettlementCancellation, DbError> {
     // (1) Verrou facture — même ordre que `settle_invoice`.
@@ -1018,10 +1022,8 @@ pub async fn cancel_settlement_in_tx(
         company_id,
         invoice_id,
         settlement_fiscal_year_id,
-        Actor {
-            user_id,
-            api_key_id: None,
-        },
+        // Story 36-4 (#1131) : l'acteur du geste, clé comprise.
+        acteur,
     )
     .await?;
 
@@ -1030,8 +1032,8 @@ pub async fn cancel_settlement_in_tx(
         tx,
         company_id,
         entry_id,
-        // Story 35-8a2 (#431) : au nom de l'utilisateur (`AConvertir`, Epic 36).
-        Acteur::utilisateur(user_id),
+        // Story 36-4 (#1131) : l'acteur du geste, clé comprise.
+        acteur,
         ReversalAuthority::ClientSettlement { settlement_id },
         aujourd_hui,
     )
@@ -1097,8 +1099,8 @@ pub async fn cancel_settlement_in_tx(
     //     l'une dit le fait comptable, l'autre le geste métier.
     audit_log::insert_in_tx(
         tx,
-        NewAuditLogEntry::user(
-            user_id,
+        NewAuditLogEntry::par(
+            acteur,
             "invoice.settlement_cancelled",
             "invoice",
             invoice_id,
@@ -1139,9 +1141,11 @@ pub struct CancelledSettlement {
 ///
 /// La lecture vit ici, non dans la forme `_in_tx` : le dé-rapprochement réemploie
 /// celle-ci et n'a pas besoin de la facture (C-e334-9).
+///
+/// `acteur` : l'auteur du geste, clé d'API comprise (Story 36-4, #1131).
 pub async fn cancel_settlement(
     pool: &MySqlPool,
-    user_id: i64,
+    acteur: Acteur,
     company_id: i64,
     invoice_id: i64,
     settlement_id: i64,
@@ -1154,7 +1158,7 @@ pub async fn cancel_settlement(
             company_id,
             invoice_id,
             settlement_id,
-            user_id,
+            acteur,
             aujourd_hui,
         )
         .await?;

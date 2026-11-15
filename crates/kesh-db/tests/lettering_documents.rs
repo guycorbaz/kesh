@@ -380,7 +380,7 @@ async fn cancel_settlement_dissolves_and_pairs(pool: MySqlPool) {
 
     invoice_settlements_write::cancel_settlement(
         &pool,
-        seeded.admin_user_id,
+        Acteur::utilisateur(seeded.admin_user_id),
         seeded.company_id,
         inv,
         sid,
@@ -424,7 +424,7 @@ async fn cancel_write_off_dissolves_and_pairs(pool: MySqlPool) {
 
     invoice_settlements_write::cancel_settlement(
         &pool,
-        seeded.admin_user_id,
+        Acteur::utilisateur(seeded.admin_user_id),
         seeded.company_id,
         inv,
         sid,
@@ -457,7 +457,7 @@ async fn unreconcile_dissolves_and_pairs(pool: MySqlPool) {
         &pool,
         seeded.company_id,
         bt,
-        seeded.admin_user_id,
+        Acteur::utilisateur(seeded.admin_user_id),
         crate::jour::aujourd_hui_test(),
     )
     .await
@@ -481,7 +481,7 @@ async fn cancel_partial_without_group_is_a_noop(pool: MySqlPool) {
     let (sid, _) = regler(&pool, &seeded, inv, dec!(40.00), jours_avant(90)).await;
     invoice_settlements_write::cancel_settlement(
         &pool,
-        seeded.admin_user_id,
+        Acteur::utilisateur(seeded.admin_user_id),
         seeded.company_id,
         inv,
         sid,
@@ -540,7 +540,7 @@ async fn closed_year_n_settled_and_cancelled_in_n1(pool: MySqlPool) {
 
     invoice_settlements_write::cancel_settlement(
         &pool,
-        seeded.admin_user_id,
+        Acteur::utilisateur(seeded.admin_user_id),
         seeded.company_id,
         inv,
         sid,
@@ -654,7 +654,7 @@ async fn audit_details_carry_the_invoice(pool: MySqlPool) {
     let (sid, _) = regler(&pool, &seeded, inv, dec!(100.00), jours_avant(90)).await;
     invoice_settlements_write::cancel_settlement(
         &pool,
-        seeded.admin_user_id,
+        Acteur::utilisateur(seeded.admin_user_id),
         seeded.company_id,
         inv,
         sid,
@@ -749,7 +749,7 @@ async fn receivable_not_letterable_is_skipped(pool: MySqlPool) {
     // non lettrable (R6) : la ligne de règlement reste libre.
     invoice_settlements_write::cancel_settlement(
         &pool,
-        seeded.admin_user_id,
+        Acteur::utilisateur(seeded.admin_user_id),
         seeded.company_id,
         survivante,
         sid,
@@ -844,7 +844,7 @@ async fn locked_period_cancel_is_refused_until_unlocked(pool: MySqlPool) {
         let marques = toutes_les_marques(&pool, seeded.company_id).await;
         let err = invoice_settlements_write::cancel_settlement(
             &pool,
-            seeded.admin_user_id,
+            Acteur::utilisateur(seeded.admin_user_id),
             seeded.company_id,
             facture_id,
             ligne,
@@ -883,7 +883,7 @@ async fn locked_period_cancel_is_refused_until_unlocked(pool: MySqlPool) {
     .expect("déverrouillage");
     invoice_settlements_write::cancel_settlement(
         &pool,
-        seeded.admin_user_id,
+        Acteur::utilisateur(seeded.admin_user_id),
         seeded.company_id,
         inv,
         sid,
@@ -1297,7 +1297,7 @@ async fn supplier_settlement_cancel_dissolves_and_pairs(pool: MySqlPool) {
         &pool,
         seeded.company_id,
         s,
-        seeded.admin_user_id,
+        Acteur::utilisateur(seeded.admin_user_id),
         crate::jour::aujourd_hui_test(),
     )
     .await
@@ -1473,7 +1473,7 @@ async fn internal_account_payment_pairs_its_counterpart_on_cancel(pool: MySqlPoo
         &pool,
         seeded.company_id,
         s,
-        seeded.admin_user_id,
+        Acteur::utilisateur(seeded.admin_user_id),
         crate::jour::aujourd_hui_test(),
     )
     .await
@@ -1577,7 +1577,7 @@ async fn locked_period_supplier_cancels_are_refused_until_unlocked(pool: MySqlPo
         &pool,
         seeded.company_id,
         s1,
-        seeded.admin_user_id,
+        Acteur::utilisateur(seeded.admin_user_id),
         crate::jour::aujourd_hui_test(),
     )
     .await
@@ -1661,7 +1661,7 @@ async fn locked_period_supplier_cancels_are_refused_until_unlocked(pool: MySqlPo
         &pool,
         seeded.company_id,
         s1,
-        seeded.admin_user_id,
+        Acteur::utilisateur(seeded.admin_user_id),
         crate::jour::aujourd_hui_test(),
     )
     .await
@@ -1772,7 +1772,7 @@ async fn supplier_audit_details_carry_the_invoice(pool: MySqlPool) {
             &pool,
             seeded.company_id,
             s,
-            seeded.admin_user_id,
+            Acteur::utilisateur(seeded.admin_user_id),
             crate::jour::aujourd_hui_test(),
         )
         .await

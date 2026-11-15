@@ -1019,14 +1019,11 @@ pub async fn cancel_supplier_invoice_settlement(
     // Story 35-5a0 — la date du jour, lue une fois : bloqueur et
     // contre-passation la partagent, rejeux compris.
     let aujourd_hui = state.horloge.aujourd_hui();
+    // Story 36-4 (#1131) : l'acteur de la requête, clé d'API comprise — tiré
+    // une fois, hors de la fermeture de rejeu (`Acteur` est `Copy`).
+    let acteur = Acteur::from(&current_user);
     let done = kesh_db::retry::retry_on_deadlock("supplier_invoices::cancel_settlement", || {
-        supplier_invoices::cancel_settlement(
-            &state.pool,
-            company.id,
-            id,
-            current_user.user_id,
-            aujourd_hui,
-        )
+        supplier_invoices::cancel_settlement(&state.pool, company.id, id, acteur, aujourd_hui)
     })
     .await?;
     Ok(Json(CancelSupplierSettlementResponse {

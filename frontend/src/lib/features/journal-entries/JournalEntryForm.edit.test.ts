@@ -150,6 +150,37 @@ describe('JournalEntryForm — mode édition', () => {
 		expect(champ.value).toBe('1000 — Compte 1000');
 	});
 
+	// Story 36-3 (#1051, AC4) — le serveur rend quatre décimales (`DECIMAL(19,4)`) :
+	// « 1.2340 » n'est jamais refusé comme ambigu, et repart tel quel.
+	it('Story 36-3 — une écriture à 1.2340 (forme du serveur) s’affiche sans message et repart en 1.2340', async () => {
+		updateMock.mockResolvedValueOnce(ENTRY);
+		const entry: JournalEntryResponse = {
+			...ENTRY,
+			lines: [
+				{ ...ENTRY.lines[0], debit: '1.2340', credit: '0.0000' },
+				{ ...ENTRY.lines[1], debit: '0.0000', credit: '1.2340' }
+			]
+		};
+		render(JournalEntryForm, {
+			props: {
+				accounts: [account(1, '1000'), account(2, '2000')],
+				accountsLoadError: false,
+				initialEntry: entry,
+				onSuccess: vi.fn(),
+				onCancel: vi.fn()
+			}
+		});
+		expect(screen.queryByText(/Montant ambigu/)).toBeNull();
+		expect(screen.queryByText(/Montant illisible/)).toBeNull();
+		await fireEvent.click(screen.getByRole('button', { name: 'Valider' }));
+		await new Promise((r) => setTimeout(r, 0));
+		const payload = updateMock.mock.calls[0][1] as {
+			lines: Array<{ debit: string; credit: string }>;
+		};
+		expect(payload.lines[0].debit).toBe('1.2340');
+		expect(payload.lines[1].credit).toBe('1.2340');
+	});
+
 	it('envoie le PUT avec la version lue', async () => {
 		updateMock.mockResolvedValueOnce(ENTRY);
 		const onSuccess = vi.fn();

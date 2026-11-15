@@ -191,7 +191,7 @@ async fn a_concurrent_close_waits_for_the_unreconciliation(pool: MySqlPool) {
             &p,
             company_id,
             tx_id,
-            user_id,
+            Acteur::utilisateur(user_id),
             crate::jour::aujourd_hui_test(),
         )
         .await
@@ -252,7 +252,7 @@ async fn reconciliation_cancel_letters_the_reversal_pair(pool: MySqlPool) {
         &pool,
         seeded.company_id,
         tx_id,
-        seeded.admin_user_id,
+        Acteur::utilisateur(seeded.admin_user_id),
         crate::jour::aujourd_hui_test(),
     )
     .await
@@ -418,7 +418,7 @@ async fn unreconciling_a_supplier_settlement_undoes_it(pool: MySqlPool) {
         &pool,
         c,
         r.bank_transaction_id,
-        seeded.admin_user_id,
+        Acteur::utilisateur(seeded.admin_user_id),
         crate::jour::aujourd_hui_test(),
     )
     .await
@@ -535,7 +535,7 @@ async fn a_closed_year_refuses_the_supplier_unreconciliation(pool: MySqlPool) {
         &pool,
         seeded.company_id,
         r.bank_transaction_id,
-        seeded.admin_user_id,
+        Acteur::utilisateur(seeded.admin_user_id),
         crate::jour::aujourd_hui_test(),
     )
     .await;
@@ -653,7 +653,13 @@ async fn unreconciliation_and_invoice_cancellation_race_without_a_mixed_state(po
     let bt = r.bank_transaction_id;
     let derapprochement = tokio::spawn(async move {
         retry_on_deadlock("test::reconciliation_cancel", || {
-            reconciliation_cancel::cancel(&p, c, bt, u, crate::jour::aujourd_hui_test())
+            reconciliation_cancel::cancel(
+                &p,
+                c,
+                bt,
+                Acteur::utilisateur(u),
+                crate::jour::aujourd_hui_test(),
+            )
         })
         .await
     });
@@ -756,7 +762,14 @@ async fn a_supplier_unreconciliation_waits_for_a_concurrent_close(pool: MySqlPoo
         r.bank_transaction_id,
     );
     let annulation = tokio::spawn(async move {
-        reconciliation_cancel::cancel(&p, c, bt, u, crate::jour::aujourd_hui_test()).await
+        reconciliation_cancel::cancel(
+            &p,
+            c,
+            bt,
+            Acteur::utilisateur(u),
+            crate::jour::aujourd_hui_test(),
+        )
+        .await
     });
     let vue = attendre_des_requetes_en_cours(&pool, &["fiscal_years", "FOR UPDATE"], 1, || {
         annulation.is_finished()

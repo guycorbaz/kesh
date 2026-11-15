@@ -310,7 +310,8 @@ journal-entry-form-unbalanced = Unausgeglichen
 journal-entry-form-submit = Speichern
 journal-entry-form-cancel = Abbrechen
 journal-entry-form-incomplete-line = Unvollständige Zeile
-journal-entry-form-max-decimals = Maximal 4 Nachkommastellen
+journal-entry-form-amount-ambiguous = Mehrdeutiger Betrag: Ein Punkt oder ein Komma gefolgt von drei Ziffern kann Tausender trennen. Schreiben Sie 1'234 für eintausendzweihundertvierunddreissig oder 1.2340 für einen Franken und 23,4 Rappen.
+journal-entry-form-amount-unreadable = Unlesbarer Betrag: Ziffern, Apostroph als Tausendertrennzeichen (1'234), Punkt oder Komma als Dezimaltrennzeichen, höchstens vier Nachkommastellen.
 journal-entry-form-amount-too-large = Betrag zu hoch
 account-autocomplete-unavailable = Autovervollständigung nicht verfügbar — Konto-ID eingeben
 journal-achats = Einkäufe
@@ -386,6 +387,7 @@ vat-purchase-config-required = Konfigurieren Sie das Vorsteuerkonto unter Admini
 vat-purchase-no-rates = Kein MWST-Satz konfiguriert — siehe Einstellungen → MWST-Sätze.
 vat-purchase-charge-account = Aufwandskonto
 vat-purchase-ht = Betrag exkl. MWST
+vat-purchase-ht-below-centime = Der Betrag exkl. MWST rundet auf den Rappen zu 0.00: Die Aufwandzeile wäre null.
 vat-purchase-rate = MWST-Satz
 vat-purchase-rate-placeholder = Satz wählen
 vat-purchase-counterparty = Gegenkonto
@@ -1540,7 +1542,9 @@ reconciliation-manual-claim-notice-payable = Dieses Konto ist das Kreditorenkont
 # Story 8-5a-bis FR48 — Aufteilung einer aggregierten Transaktion.
 reconciliation-split-button-label = Aufteilen
 reconciliation-split-modal-title = Transaktion aufteilen
-reconciliation-split-balance-indicator = Saldo
+reconciliation-split-balance-indicator = Saldo ausgeglichen: { $expected }
+reconciliation-split-balance-gap = Saldo nicht ausgeglichen — erwartet { $expected }, Differenz { $diff }
+reconciliation-split-balance-incomplete = Saldo nicht ausgeglichen — erwartet { $expected }, Differenz nicht berechenbar
 reconciliation-split-error-imbalance = Die Aufteilung gleicht den Transaktionsbetrag nicht aus.
 
 # Story 29-8 (#670) — rattacher une transaction au règlement saisi depuis la fiche.
@@ -1769,6 +1773,10 @@ reconciliation-split-error-min-lines = Mindestens { $min } Zeilen erforderlich
 reconciliation-split-error-max-lines = Maximal { $max } Zeilen
 reconciliation-split-error-account-required = Zeile { $line }: Konto erforderlich
 reconciliation-split-error-amount-positive = Zeile { $line }: Betrag > 0 erforderlich
+reconciliation-split-error-amount-unreadable = Zeile { $line }: unlesbarer Betrag — Ziffern, Apostroph als Tausendertrennzeichen (1'234), Punkt oder Komma als Dezimaltrennzeichen, höchstens zwei Nachkommastellen, ohne Vorzeichen und ohne Leerzeichen.
+reconciliation-split-error-amount-ambiguous = Zeile { $line }: mehrdeutiger Betrag — ein Punkt oder Komma mit drei folgenden Ziffern kann Tausender trennen; schreiben Sie 1'234 für tausendzweihundertvierunddreissig Franken.
+reconciliation-split-error-amount-cents = Zeile { $line }: höchstens zwei Nachkommastellen — der Betrag wird in Rappen angegeben.
+reconciliation-split-error-imbalance-detail = Passen Sie die Beträge an: Die Summe muss { $expected } ergeben (aktuelle Differenz { $diff }).
 reconciliation-split-error-description-too-long = Zeile { $line }: Beschreibung zu lang (max. { $max })
 
 # === Story 9-1 — Buchhaltungsberichte (34 Schlüssel) ===
@@ -2518,6 +2526,7 @@ reminders-link-aged = Altersstruktur anzeigen
 # Story 16-1b (#152) — selecteur de compte de produit par ligne.
 common-account-clear = Ausgewähltes Konto löschen
 common-account-invalid = Ungültiges Konto — nicht buchbar, archiviert oder unerwarteter Typ
+common-account-no-match = Kein Konto entspricht dieser Eingabe: Wählen Sie ein Konto aus der Liste.
 invoice-line-col-revenue-account = Ertragskonto
 invoice-detail-project-label = Analyseprojekt
 invoice-field-project = Analyseprojekt (optional)
@@ -2527,6 +2536,8 @@ invoice-project-none = — Keines
 invoice-line-revenue-account-default = { $account } (Standard der Firma)
 invoice-line-vat-rate-disabled-option = { $rate }% (deaktiviert)
 invoice-line-vat-rate-disabled-error = Zeile { $line }: Der MWST-Satz { $rate }% wurde deaktiviert. Wählen Sie einen aktiven Satz.
+invoice-line-unit-price-ambiguous-error = Zeile { $line }: mehrdeutiger Einzelpreis — schreiben Sie 1'250 für eintausendzweihundertfünfzig Franken oder 1.2500 für einen Franken und 25 Rappen.
+invoice-line-unit-price-unreadable-error = Zeile { $line }: unlesbarer Einzelpreis — Ziffern, Apostroph als Tausendertrennzeichen (1'250), Punkt oder Komma als Dezimaltrennzeichen, höchstens vier Nachkommastellen.
 invoice-lines-revenue-account-invalid = Ungültiges Ertragskonto auf den folgenden Zeilen: { $lines }
 invoice-default-revenue-account-unusable = Das Standard-Ertragskonto der Firma ist nicht mehr verwendbar (archiviert, nicht buchbar oder unerwarteter Typ). Zeilen, die ihm folgen, können nicht validiert werden — korrigieren Sie es unter Administration → Fakturierung oder wählen Sie pro Zeile ein Konto.
 common-account-default-suffix = (Standard)

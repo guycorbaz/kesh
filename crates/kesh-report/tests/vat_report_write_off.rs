@@ -295,7 +295,7 @@ async fn a_cancelled_write_off_disappears(pool: MySqlPool) {
     let sid = write_off(&pool, &seeded, inv, Nature::Discount, ymd(2026, 3, 10)).await;
     invoice_settlements_write::cancel_settlement(
         &pool,
-        seeded.admin_user_id,
+        kesh_db::entities::audit_log::Acteur::utilisateur(seeded.admin_user_id),
         seeded.company_id,
         inv,
         sid,
