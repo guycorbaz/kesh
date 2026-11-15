@@ -52,3 +52,27 @@ réversibilité. Code lu à `0bf3c3b4b`. Fiche : `36-9-solde-reste-type-compte.m
 - **Écartées** : un contexte dans la variante `DesignatedAccountsWrongType` et une seconde clé (un champ neuf dans
   `kesh-db`, tous les constructeurs touchés, pour un mot) ; la phrase gardée telle quelle (fausse au solde).
 - **Réversible** : oui ; texte seulement, ni code ni `details` ne changent.
+
+### C-36-9-5 — La story ouvre la section *Passer à la 0.18.0* du manuel d'administration (étape 0, V1-5)
+
+- **Contexte** : le changement de contrat de `POST /invoices/{id}/write-off` relève du paragraphe « Pour les
+  intégrations » de la section de mise à jour de la release (patron de la 0.17.7, `admin-manual.tex:2563`) ; à
+  `0bf3c3b4b`, la section *Passer à la 0.18.0* n'existe pas (`:2538` est *Passer à la 0.17.8*). Le prompt d'appel dit
+  que ce paragraphe s'écrit dans la story.
+- **Retenu** : la story ouvre `\subsubsection{Passer à la 0.18.0}\label{sec:maj-0-18-0}` avant celle de la 0.17.8, avec
+  ce seul paragraphe ; un commentaire LaTeX dit que l'introduction (sauvegarde, aucune migration, retour) revient à
+  l'intégration de la release, qui unit les paragraphes des autres stories.
+- **Écartées** : laisser le paragraphe à l'intégration (contraire au prompt) ; l'écrire dans la section de la 0.17.8
+  (fausse : la 0.17.8 est publiée).
+- **Réversible** : oui ; texte seulement. Conflit probable avec une autre story qui ouvrirait la même section : il se
+  résout à l'union, en gardant les deux paragraphes.
+
+### C-36-9-6 — Le Vitest qui simule l'ancienne phrase est aligné (étape 0, V1-2)
+
+- **Contexte** : `invoice-validate-page.test.ts:188` simule le message du serveur avec « … puis la validation pourra
+  être relancée telle quelle. » ; il resterait vert sans retouche (mock).
+- **Retenu** : l'aligner sur la phrase neutre, pour que le simulacre dise ce que le serveur rend ; `npm run test:unit`
+  entre dans les gates.
+- **Écartée** : le laisser (vert, mais un simulacre d'un texte que le serveur ne rend plus, et un résidu au grep de
+  l'AC8).
+- **Réversible** : oui.

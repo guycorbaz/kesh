@@ -1,6 +1,6 @@
 # Story 36-9 : le solde du reste d'un règlement refuse un compte de TVA due retypé, comme la validation d'une facture (#1044)
 
-Status: ready-for-dev
+Status: in-progress
 
 *Fiche rédigée le 2026-11-15 par l'agent de rédaction des fiches de l'Epic 36 (Opus 5.5), worktree `kesh-36-9`, branche
 `story/36-9-solde-reste-type-compte`, par le workflow `bmad-create-story`. Release **0.18.0**, phase 2, rang 9 (fichier
@@ -202,7 +202,9 @@ le bilan (`kesh-report/src/balance_sheet.rs:419`, lecture) et des tests.
    constante `ACTION` de `designated_account_type_e2e.rs:29` suit, et les trois tests de validation de ce fichier
    restent verts. Greper l'ancienne fin de phrase (« la validation pourra être relancée », « die Validierung unverändert »,
    « la convalida potrà », « the validation can then ») sur `crates`, `frontend`, `docs` et écrire le verdict de chaque
-   occurrence.
+   occurrence. *(Étape 0, V1-2)* Le Vitest `frontend/src/routes/(app)/invoices/[id]/invoice-validate-page.test.ts:188`
+   simule le message du serveur avec l'ancienne phrase : il est **aligné** sur la phrase neutre (C-36-9-6), si bien que
+   `npm run test:unit` entre dans les gates du frontend (complet au passage en `review`).
 9. **AC9 — Le navigateur** (D5) : un scénario de `frontend/tests/e2e/invoice-write-off.spec.ts` retype la TVA due par
    l'API, ouvre *Solder le reste*, choisit *escompte accordé*, confirme : le dialogue **reste ouvert** et montre le message
    du serveur (le numéro du compte et « Administration → Facturation » au moins) ; la facture reste « validée », reste dû
@@ -217,10 +219,13 @@ le bilan (`kesh-report/src/balance_sheet.rs:419`, lecture) et des tests.
     `invoice_write_off.rs:1437-1438`. Greper `sans contrainte de type`, `n'en a aucun`, `seule garde`, `la validation veut
     y écrire` sur `crates/` et écrire le verdict de chaque occurrence au Change Log.
 11. **AC11 — Documentation et manuels** (`.tex` dans la story ; PDF régénérés à l'intégration, contrôlés aplatis) :
-    - `docs/api-external.md:595` : une ligne neuve **après** celle de `CONFIGURATION_REQUIRED` du tableau des refus du solde
+    - `docs/api-external.md:596` *(étape 0, V1-1 : `:595` est la ligne de `WRITE_OFF_ACCOUNT_NOT_CONFIGURED`)* : une ligne
+      neuve **après** celle de `CONFIGURATION_REQUIRED` du tableau des refus du solde
       — « Compte de TVA due retypé depuis sa désignation — n'est plus un passif (escompte, perte) *(depuis la v0.18.0)* |
       `DESIGNATED_ACCOUNT_WRONG_TYPE` | `400`, `details.rejected` » ; la ligne `CONFIGURATION_REQUIRED` dit que le refus de
-      type passe avant le non imputable ; `:1054` (ligne de `DESIGNATED_ACCOUNT_WRONG_TYPE` du tableau des erreurs) nomme
+      type passe avant le non imputable ; la ligne `SETTLEMENT_COUNTERPARTY_IS_CLAIM_ACCOUNT` (`:597`) dit qu'une TVA due
+      égale à la créance **et** qui n'est pas un passif rend désormais le refus de type (*étape 0, V1-3* : changement de
+      contrat, D3) ; `:1054` (ligne de `DESIGNATED_ACCOUNT_WRONG_TYPE` du tableau des erreurs) nomme
       la route `POST /invoices/{id}/write-off` (TVA due, escompte et perte), son ordre propre (absent ou archivé →
       `CONFIGURATION_REQUIRED`, type, non imputable → `CONFIGURATION_REQUIRED`), le changement de contrat *(depuis la
       v0.18.0)*, et que « le `message` … puis dit qu'un administrateur doit corriger le réglage » reste vrai ;
@@ -230,6 +235,11 @@ le bilan (`kesh-report/src/balance_sheet.rs:419`, lecture) et des tests.
       perte, et les deux voies pour corriger ;
     - `docs/manual/fr/admin-manual.tex:3846` (« fait refuser ces validations ») et `:2556` (*Après la mise à jour : les
       comptes désignés*) : le solde du reste en escompte ou en perte est refusé de même, *depuis la 0.18.0* ;
+    - *(étape 0, V1-5)* `admin-manual.tex`, section *Passer à la 0.18.0* : elle n'existe pas à `0bf3c3b4b` (`:2538` est
+      *Passer à la 0.17.8*) ; **la story l'ouvre** (`\subsubsection{Passer à la 0.18.0}\label{sec:maj-0-18-0}`, avant
+      `:2538`) avec le seul paragraphe **« Pour les intégrations »** de ce changement de contrat — route, code, ordre,
+      phrase d'action ; l'introduction de la section (sauvegarde, retour) revient à l'intégration de la release
+      (C-36-9-5) ;
     - le PDF se contrôle par la seule forme permise (E6) :
       `pdftotext docs/manual/fr/user-manual.pdf - | tr '\n' ' ' | tr -s ' ' | /usr/bin/grep -c 'limite connue, #1044'`
       rend `0` après la régénération.
@@ -254,8 +264,10 @@ départ** et y rougissent par leur attendu. Écrire d'abord, lancer sur `0bf3c3b
 **Mutations** (code commité d'abord ; scripts dans `/home/gcorbaz/devel/kesh-gate-logs/e36-9/mut/` ; restauration
 `git restore --worktree -- <fichier>` puis `touch`) : **M1** le contrôle de type retiré de l'accesseur (AC1, AC2, AC7,
 AC9) ; **M2** `postable = TRUE` remis dans le `WHERE` (AC4, retypé et non imputable) ; **M3** le type lu par une requête
-séparée non verrouillante après la lecture verrouillante (AC5) ; **M4** la comparaison à la créance déplacée avant
-l'accesseur au site d'appel (AC4, créance non retypée) ; **M5** le type attendu écrit en dur `AccountType::Asset` dans
+séparée non verrouillante après la lecture verrouillante (AC5) ; **M4** *(reformulée à l'étape 0, V1-4 : la
+comparaison prend l'identifiant que rend l'accesseur et ne peut pas le précéder)* le contrôle de type sorti de
+l'accesseur et jugé **après** la comparaison à la créance, au site d'appel (AC4, créance non retypée : rouge par
+`SettlementCounterpartyIsClaimAccount`) ; **M5** le type attendu écrit en dur `AccountType::Asset` dans
 l'accesseur au lieu de `DesignatedRole::VatPayable.expected_type()` (AC1 et AC3 nominal rougissent ; rend visible qu'aucune
 seconde source n'est écrite) ; **M6** le repli Rust de la phrase d'action laissé à l'ancienne valeur (AC8, G9).
 
@@ -289,7 +301,8 @@ Rubrique **Corrigé** (section `## [0.18.0] — Non publié`, assemblée par l'o
 >   message de la validation d'une facture, qui nomme le compte et le réglage. Désignez un compte de passif, ou rendez au
 >   compte son type, puis soldez à nouveau. ⚠️ **Changement de contrat de l'API** : `POST /api/v1/invoices/{id}/write-off`
 >   rend `400 DESIGNATED_ACCOUNT_WRONG_TYPE` là où il réussissait (et là où il rendait `400 CONFIGURATION_REQUIRED` pour
->   un compte à la fois retypé et non imputable) ; la dernière phrase du message de ce code dit désormais « l’opération »
+>   un compte à la fois retypé et non imputable, ou `400 SETTLEMENT_COUNTERPARTY_IS_CLAIM_ACCOUNT` pour un compte de TVA
+>   due désigné sur la créance et resté un actif : le type est jugé avant) ; la dernière phrase du message de ce code dit désormais « l’opération »
 >   au lieu de « la validation », sur les trois routes qui le rendent. Le solde en frais bancaires ou en reste d'arrondi
 >   n'est pas concerné. L'avoir ne contrôle toujours pas ce compte ([#525](https://github.com/guycorbaz/kesh/issues/525)).
 >   ([#1044](https://github.com/guycorbaz/kesh/issues/1044))
@@ -361,3 +374,43 @@ Le tableau du fichier d'epic ne couvre que la phase 1 ; recensés ici, à confir
   inventaire par le symptôme (40 lignes de `git grep`, un site dans le périmètre, l'avoir hors périmètre par #525) ;
   décisions D1 à D5, registre `e36-choix-autonomes-36-9.md` (C-36-9-1 à C-36-9-4) ; aucune migration ; cinq modules.
   Validation non lancée.
+- **2026-11-15 — Validation terminée** : **une passe**, P1 Sonnet (complète), **0 CRITICAL / 0 HIGH / 0 MEDIUM / 5 LOW**
+  (V1-1 à V1-5), rapport `/home/gcorbaz/devel/kesh-gate-logs/e36-9/validation-p1.md`. Trend : P1 0 > LOW — boucle
+  close sur une passe sans finding au-dessus de LOW (`CLAUDE.md`, § *Review Iteration Rule*). Les cinq LOW traités à
+  l'étape 0 ci-dessous, aucun reclassement.
+- **2026-11-15 — Développement, étape 0** (agent de développement, Opus 5.5, worktree `kesh-36-9`, tête `4c5019c5d`).
+  Les cinq LOW de la validation, chacun avec la ligne lue :
+  - **V1-1** — `/usr/bin/grep -n 'Compte de TVA due absent ou inutilisable' docs/api-external.md` →
+    `596:| Compte de TVA due absent ou inutilisable — archivé, non imputable (escompte, perte) | CONFIGURATION_REQUIRED | 400 |`
+    (`:595` : « Aucun compte utilisable désigné pour la nature »). AC11 cite désormais `:596` et `:597`.
+  - **V1-2** — `frontend/src/routes/(app)/invoices/[id]/invoice-validate-page.test.ts:188` : `const TYPE = "Le compte
+    1100, … puis la validation pourra être relancée telle quelle.";` (simulacre de `validateInvoiceMock`). Aligné sur
+    la phrase neutre (C-36-9-6) ; AC8 le nomme ; `npm run test:unit` entre dans les gates.
+  - **V1-3** — `docs/api-external.md:597` : « … `SETTLEMENT_COUNTERPARTY_IS_CLAIM_ACCOUNT` | `400`, `details.role`
+    (`write_off_nature`, `rounding`, `vat_payable`) ; refusés dans cet ordre, le premier nommé » ; et
+    `invoice_settlements_write.rs:682-693` (`vat_payable_account_for_write` puis `refuse_if_claim_account(.., vat, ..)`) :
+    avec le type dans l'accesseur, une TVA due égale à la créance et restée un actif rend le refus de type. Écrit à AC11
+    (ligne `:597`) et à la note de version.
+  - **V1-4** — `invoice_settlements_write.rs:681-693` : `let vat = …vat_payable_account_for_write(…).await?;` puis
+    `refuse_if_claim_account(&mut tx, company_id, vat, …)` : la comparaison consomme l'identifiant rendu par
+    l'accesseur, M4 telle qu'écrite était irréalisable. M4 reformulée : le type jugé après la comparaison, au site
+    d'appel (rouge attendu : le cas « créance non retypée » d'AC4).
+  - **V1-5** — `admin-manual.tex:2538` : `\subsubsection{Passer à la 0.17.8}\label{sec:maj-0-17-8}`, première section de
+    mise à jour ; aucune section *Passer à la 0.18.0* (`/usr/bin/grep -n 'Passer à la 0.18' docs/manual/fr/admin-manual.tex`
+    vide). La story l'ouvre avec le seul paragraphe « Pour les intégrations » (C-36-9-5, AC11).
+  Recomptes : `git grep -n 'default_vat_payable_account_id' -- 'crates/*/src/*' 'crates/*/src/**' | wc -l` → **40**
+  (comme la fiche) ; `git grep -n vat_payable_account_for_write -- 'crates/*/src/**'` → définition
+  `company_invoice_settings.rs:669`, doc `:953`, **un** appelant `invoice_settlements_write.rs:682`. AC6 :
+  `git grep -l -E 'write_off_invoice|/write-off' -- 'crates/*/tests/*'` → **douze** fichiers (onze de tests et
+  `crates/kesh-db/tests/support/lettering_documents.rs` ; le « 11 » de la validation exclut ce dernier). Verdicts des
+  montages qui désignent une TVA due ou retypent un compte : `accounts_designated_archive_e2e.rs:429` (archive la TVA
+  due, puis **valide** ; ne solde pas), `:1098` et `:1181` (réglages seulement, aucun solde) ;
+  `invoice_echeancier_e2e.rs:1418` (compte d'arrondi retypé en produit, puis règlement ; ne solde pas),
+  `:1931` (créance retypée en charge, désignée escompte, facture à 8.10 % — `create_validated_invoice`, `vat_rate:
+  dec!(8.10)` — : refus par la nature, comparée avant la lecture de la TVA due, `2000` n'étant pas retypé) ; `invoice_write_off.rs:575` (TVA due vidée → `ConfigurationRequired`, inchangé), `:1228`
+  (`retype_receivable`, la créance), `:1418` (TVA due vidée, nature égale à la créance : la nature précède), `:1447`
+  (TVA due désignée sur la créance **retypée en passif** : le type passe, la comparaison refuse) — **aucun ne voit son
+  attendu changer**. Motifs d'AC5 : `"SELECT id, number, postable, account_type FROM accounts WHERE id"` et
+  `"FOR UPDATE"`, uniques — le verrou de la validation lit `SELECT id, number, active, postable, account_type FROM
+  accounts FORCE INDEX` (`company_invoice_settings.rs:999`), celui des natures `SELECT id FROM accounts WHERE id = ?`
+  (`:713`).
