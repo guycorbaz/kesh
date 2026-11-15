@@ -154,7 +154,12 @@ rapproché.
        ne remonte que trois ans : téléchargé depuis le <date suisse de `truncatedFrom`> » ;
      - un passage `succeeded` dont `errorDetail` commence par `balances_unavailable:` (38-3b AC-7 : soldes non lus,
        mouvements téléchargés) → « Soldes non lus à ce passage : contrôle de complétude non mis à jour », en
-       avertissement discret ; le reste d'`errorDetail` n'est jamais affiché brut.
+       avertissement discret ;
+     - un passage `succeeded` dont `errorDetail` commence par `opening_unavailable:` (38-3b AC-7 : l'`opening` rendu
+       antérieur au début effectif n'a pu être complété — lecture de `[A, D)` en échec — et aucun solde d'ouverture n'a
+       été écrit ; inter-fiche P5) → « Solde d'ouverture non établi à ce passage : contrôle de complétude non
+       disponible, réessayé au passage suivant », en avertissement discret ; les deux préfixes peuvent coexister
+       (un avis chacun) ; le reste d'`errorDetail` (le `code()` qui suit) n'est jamais affiché brut.
      **Deux vocabulaires de codes** (38-3b AC-4, 38-7 AC-7) : `errorCode` d'un **passage** est `code()` en minuscules
      (`auth`, `permission`, `rate_limited`, `unavailable`, `invalid_response`, `transport`, `window_too_large`,
      `rejected`, `invalid_window`) ou un code propre du passage (`connector_unavailable`, `interrupted`,
@@ -212,8 +217,9 @@ rapproché.
      avertissement (`complete: false`), avec le renvoi « Relancez un téléchargement ; si l'écart demeure, voir le
      manuel » ; **`complete: null`** (38-3b AC-7 : compte sans solde d'ouverture ou sans solde rapporté, ou
      `fetched_through` du compte antérieur à l'`asOf` du dernier solde rapporté — un passage en `balances_unavailable`
-     ne rend pas `null`, il laisse le dernier solde rapporté, que l'avis de l'AC-5 signale) → « Contrôle non
-     disponible » en gris, jamais en vert ; donnée lue telle que 38-3b la calcule (jamais recalculée à l'écran).
+     ne rend pas `null`, il laisse le dernier solde rapporté, que l'avis de l'AC-5 signale ; un passage en
+     `opening_unavailable` laisse le compte sans solde d'ouverture, d'où `null`, et l'avis de l'AC-5 en dit le motif) →
+     « Contrôle non disponible » en gris, jamais en vert ; donnée lue telle que 38-3b la calcule (jamais recalculée à l'écran).
    - **(b) Écart comptable** : *Écart à l'epic* — E20 (b) n'est porté par aucune route des fiches 38-1 à 38-3b ; cette
      story l'ajoute en **lecture seule** : `GET /api/v1/bank-accounts/{id}/provider-balance-check` (`comptable_routes`,
      `crates/kesh-api/src/lib.rs:524`, **mêmes droits que `GET /provider-connections/{id}/balances` de 38-3b AC-7**, qui
@@ -345,7 +351,7 @@ rapproché.
 12. **AC-12 — Tests** (Vitest, `npm run test:unit` ; E2E Playwright).
     - Vitest : formulaire de connexion (validation, `earliest`, surcharges, `overlapDays` et son refus `out_of_range`,
       refus `details`, `providerSettingsBody` sans `payerId` et avec les trois champs, version adoptée après le test),
-      résultat d'un passage (`ignoredCount` nul puis non nul, `truncatedFrom` présent puis nul, `balances_unavailable`,
+      résultat d'un passage (`ignoredCount` nul puis non nul, `truncatedFrom` présent puis nul, `balances_unavailable`, `opening_unavailable` (avis distinct, contrôle (a) « non disponible »),
       code de passage et code d'API libellés chacun par sa table), composant du secret
       (vidé après succès et après échec ; jamais dans un `data-*` ni dans le DOM rendu : rendu du composant après saisie
       puis enregistrement, `container.innerHTML` ne contient pas la valeur marqueur), liste de contrôles du test
@@ -542,3 +548,14 @@ rapproché.
   38-1 AC-4 (`clientId`, motifs) ; 38-3a AC-6, AC-7 (manuel utilisateur) ; `lib.rs:522-524`, `:1015-1017`. Remédiations
   P3 confirmées : P3-1, P3-2, P3-4, P3-5. Axes non exercés : code des stories amont (non écrit), PDF, documentation
   PayPal. Trend : P3 = 7 (2 MEDIUM) → P4 = 5 (2 MEDIUM) : une passe de plus est due (MEDIUM rendus, CLAUDE.md).
+- 2026-11-15 — validation P5 ciblée (Sonnet) : 1 finding (0 CRITICAL, 0 HIGH, 1 MEDIUM, 0 LOW), remédié dans la fiche ;
+  aucun autre inter-fiche. MEDIUM : P5-1 inter-fiche de la passe — le motif `opening_unavailable` d'`errorDetail`
+  (38-3b AC-7 : `opening` antérieur au début effectif, lecture de `[A, D)` en échec, aucun solde d'ouverture écrit, passage
+  `succeeded`) n'avait ni libellé ni état à l'écran : avis ajouté à l'AC-5 (à côté de `balances_unavailable:`, reste de
+  `errorDetail` jamais affiché brut), `complete: null` de l'AC-8 (a) en dit la cause, cas ajouté aux Vitest de l'AC-12
+  (quatre locales par l'AC-10). Remédiation P4 relue : 38-3b AC-3 (`paypalResponses`, `"default"`, état par
+  `connectionId`), AC-7 ; 38-7 AC-3 (portée absente → `Permission` dès le jeton ; cache vidé par secret, suppression,
+  `clear_transient_test_state`), AC-8 (`permission_present` = portée, contrôles suivants `ok: null`), AC-10 ;
+  `lib.rs:522-524` ; la connexion multiple est permise (`uq_ppc_company_label`, 38-1) : seconde connexion réalisable —
+  tous justes. Axes non exercés : code des stories amont, PDF, documentation PayPal. Trend : P4 = 5 (2 MEDIUM) → P5 =
+  1 (1 MEDIUM) : une passe de plus est due (MEDIUM rendu, CLAUDE.md).

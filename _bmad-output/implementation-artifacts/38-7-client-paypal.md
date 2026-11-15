@@ -180,7 +180,9 @@ PayPal fiable, bornée et sans fuite de secret.
    pour PayPal.
 6. **AC-6 — Soldes** (`Connector::balances(as_of: Option<DateTime<Utc>>) -> Vec<ProviderBalance>` de 38-3b :
    `{ currency, amount = total_balance, as_of }`, **`as_of` = `as_of_time` rendu par PayPal** (non l'instant demandé :
-   38-3b AC-7 écrit ce `as_of` aux instantanés et arrête la somme des mouvements du contrôle à cet instant ; `as_of_time`
+   38-3b AC-7 écrit ce `as_of` à l'instantané `reported` et arrête la somme des mouvements du contrôle à cet instant ;
+   pour l'`opening`, il l'écrit tel quel sauf s'il est antérieur au début effectif, auquel cas 38-3b AC-7 le complète
+   en lisant `[as_of, début effectif)` par `movements` ; `as_of_time`
    absent de la réponse → `InvalidResponse { reason: "as_of" }`) ; la forme détaillée ci-dessous est la méthode **propre** à
    `PaypalConnector`, `balances_detailed`, que son `Connector::test()` lit pour `account_ref`, AC-8).
    `GET {base}/v1/reporting/balances[?as_of_time=…]` (sans `currency_code` : toutes les devises). Rendu
@@ -190,8 +192,10 @@ PayPal fiable, bornée et sans fuite de secret.
    devises `^[A-Z]{3}$` **uniques**, montants comme AC-4, `total_balance.currency_code` égale `currency`, `account_id`
    non vide ≤ 64, `as_of_time` RFC 3339. `as_of` demandé et `as_of_time` rendu **postérieur** de plus d'un jour →
    `InvalidResponse { reason: "as_of" }` (PayPal ne doit pas rendre un solde d'après la date demandée ; antérieur :
-   accepté, c'est « le dernier solde servi ») ; dans les deux cas admis, c'est `as_of_time` qui est rendu en `as_of` :
-   postérieur (≤ 1 jour) à la fin de fenêtre, il laisse le contrôle « non disponible » pour ce relevé (38-3b AC-7 :
+   accepté, c'est « le dernier solde servi ») ; dans les deux cas admis, c'est `as_of_time` qui est rendu en `as_of`,
+   le connecteur ne corrigeant rien. Un `opening` antérieur au début effectif est complété par 38-3b AC-7 (lecture de
+   `[A, D)`, à `movements` : fenêtre au plus à `history_start` et d'au plus trois `max_window()`, sinon contrôle « non
+   disponible », motif `opening_unavailable`). Un `reported` postérieur (≤ 1 jour) à la fin de fenêtre laisse le contrôle « non disponible » pour ce relevé (38-3b AC-7 :
    `fetched_through` antérieur au `as_of` du `reported`), sans faux écart. Un solde de devise sans compte Kesh est l'affaire de 38-3a (soldes vus, E12), écrit par le
    passage de 38-3b.
 7. **AC-7 — Erreurs PayPal → états lisibles.** `kesh_providers::ConnectorError` est **celui de 38-3b** (`Auth`,
@@ -317,6 +321,8 @@ PayPal fiable, bornée et sans fuite de secret.
       en échec avec `errorCode`, `last_error` posé, contrôles suivants à `null` ; rôle Comptable → 403 ; clé d'API →
       `403 API_KEY_ADMIN_FORBIDDEN` ; clé `KESH_SECRETS_KEY` absente → contrôle local en échec (38-1 AC-7), **aucun
       appel sortant** (compteur du serveur local à 0).
+    - `history_start` (fonction libre) : `now` = 2028-02-29 → 2025-03-01 (29 février ramené au 28, plus un jour) ;
+      `now` = 31 décembre 23 h 30 UTC → date de Zurich (le 1er janvier) ; `earliest_fetch_from("inconnu", now)` → `None`.
     - `fetchFrom` : 3 ans moins un jour accepté, 3 ans plus un jour → 400 `PROVIDER_FETCH_FROM_TOO_OLD` ; passage
       borné (connecteur factice).
 13. **AC-13 — Ce que la story ne touche pas.** Aucune migration (P1–P8 sans objet) ; aucune table ni colonne ;
@@ -377,7 +383,9 @@ bornes par requête ; le passage lit `code()` ; `last_error` porte le code d'API
 - [ ] Fonctions libres `paypal::history_start(now)` et `earliest_fetch_from(provider, now)` (`kesh-providers`) ;
       validation `fetchFrom` et champ `earliestFetchFrom` dans les routes de 38-1 ; borne au passage de 38-3b par
       `Connector::history_start` (AC-9).
-- [ ] Réponses synthétiques par défaut du transport factice au format PayPal (AC-10).
+- [ ] Réponses synthétiques par défaut du transport factice au format PayPal, et branchement de la variante
+      `paypalResponses` (tableau ou `"default"`, validée par 38-3b AC-3) dans la fabrique de test : un test E2E-serveur
+      par forme (AC-10).
 - [ ] Fixtures anonymisées, relevé sur instance jetable, test « aucun courriel réel » ; tests hostiles ; tests de
       route ; test de non-fuite (AC-11, AC-12).
 - [ ] Gate : `cargo fmt`, `clippy -D warnings`, `cargo nextest` complet (le crate `kesh-providers` et `kesh-api`),
@@ -473,3 +481,13 @@ bornes par requête ; le passage lit `code()` ; `last_error` porte le code d'API
   (`as_of` rendu écrit aux instantanés) ; 38-8 AC-1 (`Classified` rend `skipped` et `sums`). Axes non exercés :
   documentation PayPal (`as_of_time`) non relue (aucun réseau) ; reste de la fiche hors remédiation ; aucune
   exécution.
+- 2026-11-15 — validation P5 ciblée (Sonnet) : 0 CRITICAL, 0 HIGH, 0 MEDIUM, 3 LOW ; remédiés dans la fiche. Périmètre :
+  `git diff 7e64e03b c6ea4402` de la fiche (remédiation P4). LOW 38-7-P5-1 (AC-6) : « 38-3b AC-7 écrit ce `as_of` aux
+  instantanés » devenait faux pour l'`opening` antérieur au début effectif (complété par 38-3b AC-7, borne de trois
+  `max_window()`) → point inter-fiche appliqué, effet du `reported` postérieur conservé. LOW 38-7-P5-2 (AC-9, AC-12) :
+  `history_start` et `earliest_fetch_from`, désormais fonctions libres de `kesh-providers`, n'avaient aucun test propre
+  (29 février, date de Zurich à 23 h 30 UTC, prestataire inconnu) → ajoutés. LOW 38-7-P5-3 (AC-10, Tâches) : le
+  branchement de la variante `paypalResponses` dans la fabrique de test (38-3b la valide seulement) n'était dans aucune
+  tâche → ajouté. Vérifié conforme : renvois aux AC de 38-3b (AC-2 `MovementPage`, AC-3 variante et `"default"`, AC-4
+  `Connector::history_start`), `chrono-tz` dans `kesh-providers`, `aujourdhui_zurich` hors de `kesh-providers`.
+  Axes non exercés : documentation PayPal, reste de la fiche, aucune exécution.

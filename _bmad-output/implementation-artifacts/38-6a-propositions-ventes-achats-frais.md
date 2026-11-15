@@ -401,7 +401,9 @@ afin que **mes comptes PayPal se tiennent sans saisie, sans qu'aucune écriture 
     mois —, `VAT_ACCOUNT_NOT_CONFIGURED` — désignation —, `TRANSACTION_ALREADY_BOOKED` — nombres,
     `PROVIDER_TX_UNDER_REVIEW` — `reason` : la clé `reconciliation-review-reason-invoice-with-fee` est **créée ici**,
     aux quatre locales, puisque 38-6a se développe avant 38-6b, qui la reprend (38-6b AC-10) et pose celles des autres
-    motifs ; un `reason` sans clé encore — motifs stockés de 38-3a — garde le libellé générique du code) ; décompte des codes du
+    motifs ; textes : FR « Facture de Kesh avec frais : à régler à la main », DE « Rechnung in Kesh mit Gebühren: von
+    Hand zu begleichen », IT « Fattura di Kesh con commissioni: da regolare a mano », EN « Kesh invoice with fees:
+    settle by hand » (test `i18n-keys.test.ts` : la clé existe aux quatre locales) ; un `reason` sans clé encore — motifs stockés de 38-3a — garde le libellé générique du code) ; décompte des codes du
     doc-comment recompté au `grep` (`grep -ohE 'error_code: "[A-Z_]+"' crates/kesh-api/src/routes/reconciliation*.rs | sort -u`,
     le fichier neuf compris) ; `reconciliation.types.ts` : `CandidateType` + `'provider'`, champs neufs (`rateSource`
     compris), `blockedBy`, `invoiceRef` et `eventCode` du DTO de transaction (C-38-6a-3 ; test HTTP : relus sur une
@@ -486,6 +488,13 @@ afin que **mes comptes PayPal se tiennent sans saisie, sans qu'aucune écriture 
 
 ## Change Log
 
+- 2026-11-15 — validation P5 ciblée (Sonnet) : 0 CRITICAL, 0 HIGH, 0 MEDIUM, 1 LOW ; remédié. P5-1 (LOW, inter-fiches)
+  AC-12 : textes des quatre locales de la clé `reconciliation-review-reason-invoice-with-fee` ajoutés. Vérifié au code
+  (lignes lues) : `reconciliation.rs:646-663` (`amount_due BETWEEN`), `:813-832` (`total_amount = ?`), `:872` (lot de
+  paiement par `amount`), `for_transaction`/`for_supplier_transaction` (`:504`, `:520`), `invoices.rs:1972-1990`,
+  `company_invoice_settings.rs:921-946` ; colonnes `default_vat_payable/recoverable_account_id` + acquisitions (38-5) =
+  trois comptes de TVA ; `gross_amount` (38-3a). Verrou en tête de (6), lectures au brut par transaction et clé créée ici :
+  cohérents entre C-38-6a-7, AC-1, AC-8, AC-12, T4, Dev Notes et 38-6b AC-6/AC-10. Axes non exercés : le reste de la fiche.
 - 2026-11-15 — validation P4 ciblée (Opus) : 0 CRITICAL, 1 HIGH, 3 MEDIUM, 1 LOW ; tous remédiés dans la fiche.
   P4-1 (HIGH) « correspond à une facture » = la lecture d'un compte ordinaire, qui filtre au **montant** de la
   transaction (`kesh-db/src/repositories/reconciliation.rs:657-663`, `:825`, lus) : au net, une facture de CHF 100

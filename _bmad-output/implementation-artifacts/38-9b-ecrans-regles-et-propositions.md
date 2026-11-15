@@ -267,11 +267,11 @@ doublon et sans qu'aucune écriture ne passe sans que je l'aie vue.
      main » (DE : « Rechnung in Kesh mit Gebühren: von Hand zu begleichen », IT : « Fattura di Kesh con commissioni:
      da regolare a mano », EN : « Kesh invoice with fees: settle by hand »), motif **calculé** (`reasonSource:
      "computed"`, jamais stocké) ; valeur inconnue → « Motif inconnu (`x`) »), lien vers la transaction liée
-     (`relatedBankTransactionId`). Les clés `reconciliation-review-reason-*` sont posées par 38-6b AC-10 (dont
-     `reconciliation-review-reason-invoice-with-fee`, 38-6b AC-10, reprise par 38-6a AC-12) : cette story les
-     **consomme** sans en poser ni en redéfinir aucune (une clé posée deux fois casserait le catalogue) ; les quatre
-     textes ci-dessus sont ceux que 38-6b doit porter (inter-fiche P4) — si la clé posée par 38-6b dit autre chose,
-     c'est son texte qui vaut et cette fiche s'aligne (test des catalogues : une clé par motif, quatre locales) ; le même libellé sert au `details.reason` de
+     (`relatedBankTransactionId`). Les clés `reconciliation-review-reason-*` des neuf autres motifs sont posées par 38-6b AC-10 ; celle
+     de `invoice_with_fee` (`reconciliation-review-reason-invoice-with-fee`) l'est par **38-6a AC-12** (développée avant
+     38-6b) et reprise, sans être redéfinie, par 38-6b AC-10 : cette story les **consomme** sans en poser ni en
+     redéfinir aucune (une clé posée deux fois casserait le catalogue) ; les quatre textes ci-dessus sont ceux que
+     38-6a AC-12 porte — si la clé posée par 38-6a dit autre chose, c'est son texte qui vaut et cette fiche s'aligne (test des catalogues : une clé par motif, quatre locales) ; le même libellé sert au `details.reason` de
      `PROVIDER_TX_UNDER_REVIEW` (`failed-proposal-label.ts`). Une ligne `invoice_with_fee` dit en plus, sous le motif :
      « Le règlement de la facture au brut avec ligne de frais se passe à la main (écriture manuelle ou rattachement) »
      — limite tracée, C-38-13, 38-6a C-38-6a-7.
@@ -563,3 +563,14 @@ doublon et sans qu'aucune écriture ne passe sans que je l'aie vue.
   Relu : 38-6b AC-6, AC-10 ; 38-6a AC-1, AC-8 ; 38-6c2 AC-1 à AC-4, Écart 1 ; 38-3b AC-2, AC-3 ; 38-7 AC-10 ; 38-2
   AC-8 (`skip_serializing_if`, `:337`) ; `reconciliation.types.ts:226` ; remédiations P3-2 à P3-5 confirmées. Axes non
   exercés : code des stories amont, PDF. Trend : P3 = 6 (4 MEDIUM) → P4 = 4 (3 MEDIUM) : une passe de plus est due.
+- 2026-11-15 — validation P5 ciblée (Sonnet) : 1 finding (0 CRITICAL, 0 HIGH, 1 MEDIUM, 0 LOW), remédié dans la fiche ;
+  un inter-fiche retiré. MEDIUM : P5-1 AC-7 (remédiation P4-4) — la clé `reconciliation-review-reason-invoice-with-fee`
+  est posée par **38-6a AC-12** (`38-6a` l. 402-404 : « créée ici », textes FR/DE/IT/EN compris ; 38-6b AC-10 : « posée par
+  38-6a AC-12 … reprise ici sans être recréée »), non par 38-6b : la P4 avait écrit l'inverse (« posée par 38-6b AC-10,
+  reprise par 38-6a AC-12 ») et chargé 38-6b de porter les quatre textes ; AC-7 réécrit (neuf motifs par 38-6b, celui-ci
+  par 38-6a), textes rattachés à 38-6a AC-12. **L'inter-fiche 38-9b-P4-4 (38-6b AC-10 : porter les quatre textes) est
+  caduc** : 38-6a les porte déjà, 38-6b ne redéfinit rien. Relu : `routes/reconciliation.rs:1282-1285` (`.map` sans
+  filtre) et `ReconciliationProposals.svelte:600-603` (« Aucune correspondance ») — la remédiation P4-1 est juste ;
+  38-3b AC-3 (`"default"`), 38-7 AC-10 ; 38-6b AC-6 (dix motifs) ; propagation de P4-1 greppée dans la fiche
+  (`aucune ligne`, `absente de l'onglet`) : aucun résidu. Axes non exercés : code des stories amont, PDF. Trend : P4 =
+  4 (3 MEDIUM) → P5 = 1 (1 MEDIUM) : une passe de plus est due (MEDIUM rendu, CLAUDE.md).

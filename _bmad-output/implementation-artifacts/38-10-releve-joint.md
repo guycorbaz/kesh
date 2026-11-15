@@ -304,7 +304,7 @@ clôturer l'exercice.
       son test de sauvegarde avant mise à jour sur le schéma précédent, `ParsedBackup::referenced_files`, inventaire
       clos, absences admises (R1), export CSV et garde de colonnes (AC-7).
 - [ ] T6 — Frontend : dialogue, API, i18n, Vitest, E2E, captures (AC-9).
-- [ ] T7 — Manuels FR (PDF régénérés), `api-external.md` (AC-10).
+- [ ] T7 — Manuels FR (PDF régénérés), brochure, `README.md:48` (« neuf contrôles »), `api-external.md` (AC-10).
 - [ ] T8 — Gate complet **même en cours de boucle** (migration et dépôts touchés) ; runtime : `admin_backup_e2e`,
       `admin_full_import_e2e`, `migrations_fresh_install` ; E2E complet au dernier commit de code.
 
@@ -394,3 +394,12 @@ clôturer l'exercice.
   `marketing-brochure.tex:437` ; liste des migrations de l'epic (AC-1) recoupée aux fiches 38-1, 38-2, 38-3a, 38-4, 38-5,
   38-6c2 (les autres : aucune migration) ; `truncate_all` couvert par `TABLES_TO_TRUNCATE` (`test_fixtures.rs:377-395`).
   Axes non exercés : PDF, code de 37-4. Trend : P3 = 4 (2 MEDIUM) → P4 = 2 (1 MEDIUM) : une passe de plus est due.
+- 2026-11-15 — validation P5 ciblée (Sonnet) : 1 finding (0 CRITICAL, 0 HIGH, 0 MEDIUM, 1 LOW), remédié dans la fiche,
+  aucun inter-fiches. LOW : P5-1 la tâche T7 ne nommait pas `README.md:48`, ajouté à l'AC-10 en P4 (liste de tâches
+  alignée sur l'AC). Remédiation P4 relue à la source : `README.md:48` et `CHANGELOG.md:486` portent bien « Huit
+  contrôles » ; `grep -rniE "huit contr|…"` sur le dépôt (hors `_bmad-output`, `target`, `node_modules`) ne rend que les
+  sites déjà inventoriés (`closing_checks.rs:566`, `tests/closing_checks.rs:1679`, `closing-checks.test-fixtures.ts:24`,
+  `fiscal-years.spec.ts:499`, `admin-manual.tex:1866`, `marketing-brochure.tex:437`, README, CHANGELOG), aucun dans
+  `website/` ni les manuels DE/IT/EN ; Q1 de l'epic (`epic-38-paypal.md:14`, `:339`) : numéro de release non fixé, la
+  règle « jamais un gabarit » est juste. Axes non exercés : PDF, code de 37-4. Trend : P4 = 2 (1 MEDIUM) → P5 = 1 (0
+  MEDIUM) : aucun finding au-dessus de LOW, boucle close.

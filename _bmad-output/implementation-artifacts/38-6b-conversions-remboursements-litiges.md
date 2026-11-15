@@ -434,6 +434,10 @@ afin que **tout mouvement qui change un solde finisse comptabilisé, sans qu'auc
 
 ## Change Log
 
+- 2026-11-15 — validation P5 ciblée (Sonnet) : 0 finding. Remédiation P4 relue : lecture au brut et par transaction
+  (`reconciliation.rs:646-663`, `:813-832`, lues) cohérente avec 38-6a C-38-6a-7, AC-1 et AC-12 ; chiffres du test de l'AC-6
+  (100.00, −3.20, 96.80) justes ; clé `…-invoice-with-fee` posée par 38-6a AC-12 (textes aux quatre locales y sont
+  écrits) et reprise ici sans être redéfinie. Axes non exercés : le reste de la fiche.
 - 2026-11-15 — validation P4 ciblée (Opus) : 0 CRITICAL, 0 HIGH, 2 MEDIUM, 2 LOW ; remédiés dans la fiche. P4-1
   (MEDIUM) le test de l'AC-6 décidait `invoice_with_fee` sur le « numéro de facture », critère que la fonction de 38-6a
   n'emploie pas (montant et fenêtre) ; et au net, la lecture ne retrouvait jamais la facture (38-6a P4-1) → brut, chiffres

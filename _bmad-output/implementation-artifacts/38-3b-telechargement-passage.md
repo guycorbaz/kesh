@@ -153,7 +153,7 @@ d'imputation (38-6) reposent sur un relevé complet et vérifiable.
      en 38-7 ; **validation posée ici** : `paypalResponses` est soit un tableau non vide d'objets `{ method ∈ GET|POST,
      path commençant par "/", query? objet de chaînes, status 100 à 599, body JSON }`, soit **exactement** la chaîne
      `"default"` — toute autre chaîne ou forme → `400` (`AppError::Validation`, patron de
-     `routes/test_endpoints.rs:387-392`), rien de programmé ; **en 38-3b**, faute de `PaypalConnector`, la variante est
+     `routes/test_endpoints.rs:391-395`), rien de programmé ; **en 38-3b**, faute de `PaypalConnector`, la variante est
      validée et gardée dans l'état programmé, et la fabrique de test rend encore le `FakeConnector` (38-7 branche la
      variante). Tests : `"default"` admis, `"autre"` → 400, tableau vide ou `status` hors bornes → 400 ; **`TEST_ENDPOINT_ROUTES` inchangé** par cette variante (même route). L'état programmé vit dans une
      poignée d'`AppState` (`test_provider_connector`, patron de `test_rate_source` de 37-2) et se vide par
@@ -330,15 +330,23 @@ d'imputation (38-6) reposent sur un relevé complet et vérifiable.
      écart faux et **durable**. Dans ce cas seulement, le passage lit `movements(Window { from: A, to: D })`
      (sous-fenêtres de `max_window()`, pages validées par `validate_page`, **rien d'écrit**, ni transaction ni
      compteur) et écrit l'`opening` à **`as_of = D`**, montant = solde rendu + `Σ sums` de la devise sur `[A, D)` ;
-     si cette lecture échoue (`A` antérieur à `history_start`, ou erreur du connecteur), **aucun `opening`** n'est
-     écrit (contrôle « non disponible », relu au passage suivant ; motif dans `error_detail`, `opening_unavailable:
-     <code()>`, le passage reste `succeeded`). Un `opening` rendu à `A ≥ D` s'écrit tel quel (les mouvements de
+     si cette lecture échoue (`A` antérieur à `history_start`, erreur du connecteur) **ou n'est pas tentée** (`D − A`
+     supérieur à trois `max_window()` : au plus trois appels supplémentaires par passage et par `A`, un `A` très
+     ancien — compte dormant — ne multiplie pas les appels à chaque passage), **aucun `opening`** n'est
+     écrit (contrôle « non disponible », relu au passage suivant — et **durablement** non disponible tant que
+     PayPal sert le même `A` hors de portée ; motif dans `error_detail`, `opening_unavailable: <code()>` ou
+     `opening_unavailable: span` quand la lecture n'est pas tentée ; le passage reste `succeeded`). Une lecture par
+     `A` distinct (PayPal : un seul `as_of_time` par réponse, donc une seule lecture) : `Σ sums` ne vaut que pour la
+     bande `[A, D)` de sa devise. Un `opening` rendu à `A ≥ D` s'écrit tel quel (les mouvements de
      `[D, A)` sont téléchargés et déjà dans le solde). Tests : `opening` rendu deux heures avant `D` avec un mouvement
      dans l'intervalle → `opening` à `D`, montant corrigé du mouvement, écart nul ; même cas, lecture de `[A, D)` en
      échec → aucun `opening`, `complete: null`.
      Un échec de lecture des soldes n'empêche pas les mouvements : le passage
      reste `succeeded`, `error_code` reste `NULL` et le motif s'écrit dans `error_detail` (`balances_unavailable:
-     <code()>`) ; contrôle « non disponible ».
+     <code()>`) ; contrôle « non disponible ». `error_detail` étant une seule colonne, **plusieurs motifs** d'un même
+     passage (`balances_unavailable`, `opening_unavailable`, un par devise au plus) s'y joignent par `; ` dans cet
+     ordre, chacun constant (jamais de texte du prestataire) ; 38-9a lit chaque motif séparément. Test : deux motifs
+     dans un passage → les deux présents.
    - ⚠️ **Heure des soldes rapportés** : la fenêtre s'arrête à *maintenant − 3 h* ; un solde lu « maintenant »
      compterait des mouvements que le passage n'a pas pu télécharger. Le solde `reported` se lit donc **à la fin de la
      fenêtre** (`as_of = fin` ; `balances(None)` ne sert qu'à « Tester la connexion », 38-7). Test : un mouvement daté
@@ -501,3 +509,18 @@ d'imputation (38-6) reposent sur un relevé complet et vérifiable.
   périmètre), la documentation PayPal (sens exact de `as_of_time` : « dernier solde rafraîchi »), aucune exécution.
   Inter-fiches signalés, non appliqués : 38-7 AC-6 pourrait dire que l'`opening` rendu antérieur se complète par
   38-3b AC-7 ; 38-9a (contrôle) : motif `opening_unavailable` dans `errorDetail`.
+- 2026-11-15 — validation P5 ciblée (Sonnet) : 0 CRITICAL, 0 HIGH, 0 MEDIUM, 3 LOW ; remédiés dans la fiche. Périmètre :
+  `git diff 7e64e03b c6ea4402` de la fiche (remédiation P4). LOW 38-3b-P5-1 (AC-7) : la lecture de `[A, D)` de
+  l'`opening` rendu antérieur n'avait pas de borne (jusqu'à trois ans de sous-fenêtres, rejouées à chaque passage tant
+  que l'`opening` manque) → au plus trois `max_window()`, sinon non tentée (`opening_unavailable: span`) ; une lecture par
+  `A` distinct (`Σ sums` ne vaut que pour la bande de sa devise) ; l'indisponibilité durable (même `A` hors de portée)
+  dite. LOW 38-3b-P5-2 (AC-7) : `error_detail` est une colonne, deux motifs (`balances_unavailable`,
+  `opening_unavailable`) pouvaient s'y écraser → jointure par `; `, testée. LOW 38-3b-P5-3 (AC-3) : renvoi
+  `test_endpoints.rs:387-392` (commentaire) → `:391-395` (le `AppError::Validation`). Vérifié conforme : la somme
+  `opening` corrigée (solde à `A` + `Σ net` de `[A, D)` = solde à `D`, `sums` = Σ `net` des seuls mouvements rendus,
+  comme les mouvements écrits), `D < fin` garanti par la règle de la fenêtre vide, `fetched_through` pour le `reported`
+  postérieur, `paypalResponses` ≡ 38-7 AC-10, `ConnectorContext` dans `kesh-api` (le crate voit `kesh-providers`).
+  Lignes lues : `38-3b` AC-2 (trait, `sums`), AC-4 (fenêtre), `38-3a:120-135` ; `38-7` AC-6, AC-10 ; `test_endpoints.rs:
+  384-395`. Axes non exercés : documentation PayPal (`as_of_time`), reste de la fiche, aucune exécution. Inter-fiches
+  signalés, non appliqués : 38-9a — motifs `opening_unavailable` (dont `span`) et jointure `; ` dans `errorDetail`,
+  libellé et état « contrôle non disponible » aux quatre locales.
