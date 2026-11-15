@@ -75,6 +75,10 @@ C-e360-18 (périmètre de #1187), qui fait foi. Option prudente et réversible �
   autres comptes par défaut à vérifier. Le refus est un **400** `VALIDATION_ERROR` (`errors.rs:1848`), non un 422 comme
   l'écrivait la ligne « Écartée » ci-dessus. #1200 est corrigée par la **36-19** dans la même release ; ce choix ne
   suppose pas cette correction.
+- *Annoté le 2026-11-15 à l'étape 0 du développement (V3-2, V3-5 de la validation P3)* : « cinq écrans » ci-dessus en
+  énumère six — cinq pages et le formulaire de facture (`InvoiceForm.svelte`) ; outre la facture, l'avoir
+  (`credit_notes.rs:434`) et la facture fournisseur (`supplier_invoices.rs:1651`) passent par
+  `get_or_create_default_in_tx` dans une transaction annulée par leur refus : sans effet durable non plus.
 
 ### C-36-17-6 — Le récapitulatif se lit par les routes existantes ; son échec ne bloque pas la page (D6)
 

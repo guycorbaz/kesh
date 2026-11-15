@@ -86,22 +86,30 @@ navigation ne se fait d'office après la finalisation. Le nominal local ne repro
   (`crates/kesh-db/src/repositories/company_invoice_settings.rs:129`) ; l'export global aussi
   (`crates/kesh-api/src/exports/global.rs:335`). *(Corrigé à la remédiation de la validation P2, V2-1 : la version
   précédente ne nommait que les réglages de facturation.)* Le frontend lance ce `GET` par `getInvoiceSettings()`
-  (`frontend/src/lib/features/invoices/invoices.api.ts:99-100`) depuis **cinq écrans** :
+  (`frontend/src/lib/features/invoices/invoices.api.ts:99-100`) depuis **six écrans** (cinq pages et le formulaire de
+  facture, V3-2) :
   ```
   $ git grep -n "getInvoiceSettings" -- frontend/src ':!*.test.ts' | /usr/bin/grep -v "export\|import\|//"
-  frontend/src/lib/components/invoices/InvoiceForm.svelte:408:      const settings = await getInvoiceSettings();
-  frontend/src/lib/components/invoices/InvoiceForm.svelte:620:      const freshSettings = await getInvoiceSettings();
-  frontend/src/routes/(app)/bank-accounts/+page.svelte:163:      getInvoiceSettings(),
-  frontend/src/routes/(app)/invoices/[id]/+page.svelte:289:      invoiceSettings = await getInvoiceSettings();
-  frontend/src/routes/(app)/journal-entries/+page.svelte:160:    void getInvoiceSettings()
-  frontend/src/routes/(app)/journal-entries/[id]/+page.svelte:306:        getInvoiceSettings(),
-  frontend/src/routes/(app)/settings/invoicing/+page.svelte:193:      const [s, a] = await Promise.all([getInvoiceSettings(), fetchAccounts(true)]);
-  frontend/src/routes/(app)/settings/invoicing/+page.svelte:293:          const fresh = await getInvoiceSettings();
+  frontend/src/lib/components/invoices/InvoiceForm.svelte:408:				const settings = await getInvoiceSettings();
+  frontend/src/lib/components/invoices/InvoiceForm.svelte:620:			const freshSettings = await getInvoiceSettings();
+  frontend/src/routes/(app)/bank-accounts/+page.svelte:163:			getInvoiceSettings(),
+  frontend/src/routes/(app)/invoices/[id]/+page.svelte:30:		getInvoiceSettings,
+  frontend/src/routes/(app)/invoices/[id]/+page.svelte:289:			invoiceSettings = await getInvoiceSettings();
+  frontend/src/routes/(app)/journal-entries/+page.svelte:160:		void getInvoiceSettings()
+  frontend/src/routes/(app)/journal-entries/[id]/+page.svelte:306:				getInvoiceSettings(),
+  frontend/src/routes/(app)/settings/invoicing/+page.svelte:11:		getInvoiceSettings,
+  frontend/src/routes/(app)/settings/invoicing/+page.svelte:193:			const [s, a] = await Promise.all([getInvoiceSettings(), fetchAccounts(true)]);
+  frontend/src/routes/(app)/settings/invoicing/+page.svelte:293:						const fresh = await getInvoiceSettings();
   ```
+  Dix lignes (sortie rejouée à l'étape 0 du développement, V3-1) : `invoices/[id]/+page.svelte:30` et
+  `settings/invoicing/+page.svelte:11` sont des **membres d'import** multiligne, que le filtre ne reconnaît pas ; les huit
+  autres sont les appels.
   Ouvrir le journal, les comptes bancaires (ce que la page terminée recommande quand le compte a été passé), une facture
   ou son formulaire, le détail d'une écriture, les réglages de facturation, ou exporter, suffit donc. La validation d'une
   facture, elle, passe par `get_or_create_default_in_tx` (`crates/kesh-db/src/repositories/invoices.rs:2156`) dans une
-  transaction annulée par son propre refus (`ConfigurationRequired`, `:2158-2163`) : sans effet durable.
+  transaction annulée par son propre refus (`ConfigurationRequired`, `:2158-2163`) : sans effet durable. De même l'avoir
+  (`credit_notes.rs:434`, refus `:437`) et la facture fournisseur (`supplier_invoices.rs:1651`, refus `:1725-1727`)
+  (V3-5).
 - La finalisation pose ensuite les comptes par un autre `INSERT IGNORE` (`company_invoice_settings.rs:1250`), sans effet
   sur une ligne déjà là ; elle relit alors la ligne **jointe aux comptes de créance et de produit actifs**
   (`:1280-1306`) — une ligne aux comptes vides ne se joint pas — et rend une erreur (`:1305`,
@@ -409,7 +417,9 @@ l'assistant, i18n, `$app/navigation`, `svelte-sonner` simulés) :
     tard*, un `MutationObserver` (`childList`, `subtree`) sur le conteneur du rendu, qui enregistre tout nœud ajouté portant
     `data-testid="onboarding-screen-resume"` (un nœud ajouté puis retiré reste dans les enregistrements), puis exige **zéro**
     apparition jusqu'à `onboarding-screen-finalizing` ; `finalize` rejeté → *Réessayer* désactivé jusqu'au tour suivant,
-    puis actif. M10 doit y rougir (sinon, la mutation se déclare équivalente pour ce test, avec la raison).
+    puis actif. M10 est **exécutée** (T9) ; elle ne se dit équivalente qu'après exécution, sortie citée au Dev Agent
+    Record ; si elle survit, l'AC (« l'écran de reprise n'apparaît à aucun instant ») se reformule sur ce que le test
+    constate, et le moyen qui le constate encore s'écrit au Dev Agent Record (V3-3).
   - D9 : `fetchState` rejeté → `onboarding-screen-unloaded`, *Réessayer* → `fetchState` rappelé → écran de l'état lu.
   - AC5 : état chargé à 7 sans appel → écran de reprise, `finalize` **non** appelé au rendu ; *Terminer la configuration*
     → appelé.
@@ -432,7 +442,8 @@ l'assistant, i18n, `$app/navigation`, `svelte-sonner` simulés) :
 
 **E2E** (le défaut se voit dans le navigateur : exigé) — `frontend/tests/e2e/onboarding-fin.spec.ts`, préréglage `fresh`,
 connexion `changeme`, **assistant joué à l'interface** jusqu'à l'étape bancaire (sélecteurs `id` et `data-testid`, aucun
-sélecteur de texte traduit ; champs de coordonnées `#coord-name`, `#coord-street`, `#coord-npa`, `#coord-city`,
+sélecteur de texte traduit, **jamais une sous-chaîne d'un libellé** — « Configuration incomplète » est aussi le début de
+`errors.rs:4911` et de `InvoiceForm.svelte:782`, V3-6 ; la bannière se lit par `incomplete-config-banner` ; champs de coordonnées `#coord-name`, `#coord-street`, `#coord-npa`, `#coord-city`,
 `+page.svelte:414-452`), **aucun `page.reload()` ni `page.goto()` entre le clic bancaire et l'assertion de la page
 terminée** :
 
@@ -530,15 +541,16 @@ dans la 0.18.0 ou non ; elles ne se mélangent pas :*
   `:1280-1306` (relecture jointe aux comptes actifs → `InactiveOrInvalidAccounts`, `:1305`) ;
   `crates/kesh-api/src/routes/onboarding.rs:1008` (motif faux) ; appelants qui créent la ligne avant la finalisation :
   `routes/company_invoice_settings.rs:300`, `:336`, `exports/global.rs:335`, et, côté frontend, tout appel à
-  `getInvoiceSettings()` (cinq écrans : journal, comptes bancaires, formulaire et détail de facture, détail d'écriture,
+  `getInvoiceSettings()` (six écrans — cinq pages et le formulaire de facture : journal, comptes bancaires, formulaire et détail de facture, détail d'écriture,
   réglages de facturation — sortie citée sous « Ce qui se lit au code » ; lignes ajoutées en commentaire sur #1200 par
   l'orchestrateur) ; ouverture de l'application avant la finalisation : `frontend/src/routes/(app)/+layout.ts:42`.
   **Corrigée par la story 36-19 dans la même release 0.18.0** (arbitrage de l'orchestrateur) : la finalisation complète
   les comptes vides d'une ligne existante, côté serveur, sans écraser une désignation. **La 36-17 n'en dépend pas.** Si la
-  36-19 est fusionnée avant le tag, l'intégration relit : la phrase de remède de l'écran d'échec (D5) — devenue sans
-  objet, à retirer ou à garder pour une installation restée sur l'ancien serveur, au choix de l'intégration —, la limite
-  des deux manuels (AC10), la note de version (une seule des deux phrases) ; la bannière et l'écran de reprise
-  (« terminez-la avant d'utiliser Kesh ») restent justes dans les deux cas.
+  36-19 est fusionnée avant le tag, l'intégration relit : la phrase de remède de l'écran d'échec (D5) — **gardée, sauf
+  décision contraire** (elle reste conditionnelle et juste) ; la retirer touche aussi le test d'AC4 (`onboarding-end.test.ts`,
+  phrase de remède avant le motif), les mutations M15 et M16, la capture « échec avec la phrase de remède » d'AC12 et la
+  ligne de T8 (V3-4) —, la limite des deux manuels (AC10), la note de version (une seule des deux phrases) ; la bannière et
+  l'écran de reprise (« terminez-la avant d'utiliser Kesh ») restent justes dans les deux cas.
 - `DemoBanner.svelte:28` — navigation non attendue après la remise à zéro de la démo : **#1199** (inventaire, symptôme 2 ;
   `technical-debt`, P3).
 - KF-029 (#97) : `onboarding-path-b.spec.ts:65`, `:92`, `onboarding.spec.ts:150` restent rouges (sélecteurs périmés) ; la
@@ -664,3 +676,26 @@ décompte est de **six** ; le repli peut alors rester l'ancien texte (la clé se
   - **V2-7 (LOW), corrigé** : AC11 en `origin/epic/36-0.18.0...HEAD` (la base a avancé : `9172e9fe8`, `ca5d02ed0`,
     `e849b605d`, `c7ca079d2`).
   C-36-17-3, -5 annotés. Modules : cinq, inchangé (aucun fichier neuf hors des cinq).
+- 2026-11-15 — **Validation terminée** en trois passes : P1 Sonnet 0/0/2/4 → P2 Opus 0/0/1/6 → P3 ciblée Sonnet 0/0/0/6
+  (rapport `kesh-gate-logs/e36-17/validation-p3-ciblee.md`, sur la remédiation `327c7edbd`). Close sur une passe sans rien
+  au-dessus de LOW ; MEDIUM V1-1, V1-2, V2-1 remédiés et relus par la passe suivante.
+- 2026-11-15 — **Étape 0 du développement** (Opus 5.5) : les six LOW de la P3 traités dans la fiche, ligne lue citée.
+  - **V3-1** : commande rejouée au worktree ; elle rend dix lignes, dont `invoices/[id]/+page.svelte:30:		getInvoiceSettings,`
+    et `settings/invoicing/+page.svelte:11:		getInvoiceSettings,` (membres d'import) ; sortie complète recopiée sous
+    « Une limite connue… », classement écrit.
+  - **V3-2** : « cinq écrans » → « six écrans (cinq pages et le formulaire de facture) » (« Une limite connue… », Dev
+    Notes) ; registre annoté (C-36-17-5). L'entrée datée de la remédiation P2 ci-dessus reste telle quelle.
+  - **V3-3** : M10 exécutée en T9, équivalence seulement après exécution et sortie citée ; si elle survit, l'AC se
+    reformule et le moyen qui la constate s'écrit au Dev Agent Record.
+  - **V3-4** : liste de relecture à l'intégration complétée (test d'AC4, M15, M16, capture d'AC12, ligne de T8) ; phrase
+    de remède « gardée, sauf décision contraire ».
+  - **V3-5** : lu `credit_notes.rs:434` « `company_invoice_settings::get_or_create_default_in_tx(&mut tx, company_id).await?;` »,
+    `:437` « `.ok_or_else(|| DbError::ConfigurationRequired("default_revenue_account_id".into()))?;` » ;
+    `supplier_invoices.rs:1651` « `company_invoice_settings::get_or_create_default_in_tx(&mut *tx, company_id).await?;` »,
+    `:1725-1727` (`default_payable_account_id`, `ConfigurationRequired`) ; cités sous « Une limite connue… ».
+  - **V3-6** : lu `errors.rs:4911` « `"Configuration incomplète : configurez les paramètres de facturation avant de valider.",` »
+    et `InvoiceForm.svelte:782` « `{i18nMsg('config-incomplete-title', 'Configuration incomplète')} —` » ; règle écrite à la
+    section E2E : sélecteurs par `data-testid`, jamais par sous-chaîne d'un libellé.
+  - **T0** : lignes de code citées recontrôlées à la tête de la branche (`327c7edbd`, dont le code est celui de
+    `0bf3c3b4b` ; `origin/epic/36-0.18.0` n'a avancé que de documentation) : `+page.svelte:320`, `:478`, `:567`, `:239-266`,
+    `:268-315` ; `routes/onboarding/+layout.ts:28-32` ; `(app)/+layout.ts:42` ; `(app)/+layout.svelte:369` — inchangées.
