@@ -383,7 +383,8 @@ Ces décisions valent aussi pour la 36-7b, qui y renvoie.
    (`cargo nextest run -E 'binary(admin_full_import_e2e) | binary(bank_statements_manual_e2e) | binary(dates_bornes_e2e) |
    binary(journal_entries_modification) | binary(migrations_upgrade_path) | binary(opening_complement_repository) |
    binary(open_items_invariant)'`) rougissent sous `KESH_TEST_INSTANT=pas-un-instant` (panique d'`instant_de_test`, message
-   qui nomme la variable) ; (c) les mutations M1a à M10 de § *Tests*, chacune tuée par le test nommé sous l'instant nommé.
+   qui nomme la variable) ; (c) les mutations M1a à M10 de § *Tests*, chacune tuée par le test nommé sous l'instant nommé, ou déclarée
+   équivalente au constat, raison écrite (§ *Tests*, « Une mutation qui ne rougit pas […] se dit » ; V8-1).
 4. **AC4 — nextest sous horloge de processus décalée** (D3 ; **gate de clôture**, C-36-7-6) : `cargo nextest run
    --workspace --profile ci` sous la commande de D3 (`flock … mem-guard … env TZ=Europe/Zurich NO_FAKE_STAT=1 faketime
    --exclude-monotonic -f '@2027-01-04 11:00:00' cargo nextest run …`, variante `-m` dite au journal), **sans**
@@ -441,7 +442,7 @@ littéral `"2027-01-01"` ; ailleurs l'année 2026 ; V2-10) et doit être **tuée
 | M7b | `journal_entries_modification` écritures et corps (`:373`, `:388`, `:426`, `:437`, `:487`, `:540`, `:593`, `:612`) remis en 2026 — un groupe | l'un des cinq tests, nommé à l'étape 0 | `2029-06-15T10:00:00Z` |
 | M7c | exercice postérieur `:425`, `:539` remis à `2027` | `update_waits_for_a_concurrent_close_of_a_later_year_then_refuses` (et `delete_…`) : sous 2029, l'exercice 2027 est **antérieur** à N-1..N (2028-2029), `find_later_closed_in_tx(…, fy_start)` (`journal_entries.rs:1548`, `:1896` ; `fiscal_years.rs:892`, `FIND_LATER_CLOSED_SQL` : `WHERE company_id = ? AND start_date > ? AND status = 'Closed'`) ne le voit plus (V3-3). Premier rouge attendu : **l'attente** — le `PUT` ne bloque plus sur le verrou de B, et l'assertion `:443-448` (« le PUT doit attendre sur le verrou des exercices postérieurs ») échoue avant le `match` `LaterFiscalYearClosed` (`:452-461`) ; à défaut, **le refus** n'arrive pas. Le journal `mut/M7c.log` tranche (V4-5) | `2029-06-15T10:00:00Z` |
 | M8a | `migrations_upgrade_path` exercice de la base peuplée (`:1413-1415`) | `draft_migration_preserves_a_populated_016_base` (et `…_rc1_…`) | `2027-01-04T10:00:00Z` |
-| M8b | `migrations_upgrade_path` pièces `:1319` (`create_in_tx`), `:1498`, `:1716` remises en 2026 — une mutation chacune ; celles qui restent vertes une fois jouées à la tâche 4 se disent équivalentes, raison constatée ; `:1716` traité comme `:1332` (V7-1) | idem | `2029-06-15T10:00:00Z` |
+| M8b | `migrations_upgrade_path` pièces `:1319` (`create_in_tx`), `:1498`, `:1716` remises en 2026 — une mutation chacune ; celles qui restent vertes une fois jouées à la tâche 4 se disent équivalentes, raison constatée ; `:1716` (un `invoice_date`, comme `:1332`) ne se dit équivalente qu'au constat, et reste dans M8b (V7-1, V8-2) | idem | `2029-06-15T10:00:00Z` |
 | — | `migrations_upgrade_path:1332` (INSERT brut de `supplier_invoices`) | **jouée à la tâche 4**, après le correctif commité (V6-1) ; déclarée équivalente seulement si elle reste verte, raison constatée écrite — la migration `20261106000001` classe par `invoice_date` (`:47`, `:63`) (V5-1) | `2029-06-15T10:00:00Z` |
 | M9a | `opening_complement_repository` exercice de `un_compte_contre_passe_reste_mouvemente` (`:514`) | ce test | `2027-01-04T10:00:00Z` |
 | M9b | l'écriture `:519` remise à `d(2026, 2, 1)` | ce test : `create_in_tx` refuse une date hors de l'exercice N-1..N (`DateOutsideFiscalYear`, `journal_entries.rs:392`), `post` panique sur `.expect("écriture")` (`:144`) (V3-1) | `2029-06-15T10:00:00Z` |
@@ -665,3 +666,45 @@ issue #1125 ; `docs/testing.md:119`.
     d'avance. Décompte : **dix-neuf, plus jusqu'à trois jouées à la tâche 4** (`:1008`, `:1332`, `:533`).
   - **V7-3, corrigé** : tous les journaux de la story dans `/home/gcorbaz/devel/kesh-gate-logs/e36-7/` (en-tête, AC1, AC2,
     tâche 1, § *Tests*). L'entrée V6-3 ci-dessus, datée, n'est pas réécrite.
+- **2026-11-15 — Clôture de la validation** (agent de développement, Opus 5.5). Huit passes, au plafond : P1 (fiche
+  d'origine `36-7`, Sonnet 5.5) 0/1/4/3 → découpage 36-7a / 36-7b (C-36-7-7) → P2 complète (Opus 5.5) 0/0/5/5 → P3 complète
+  (Sonnet 5.5) 0/0/2/6 → P4 ciblée (Opus 5.5) 0/0/1/4 → P5 ciblée (Sonnet 5.5) 0/0/1/3 → P6 ciblée (Opus 5.5) 0/0/1/3 → P7
+  ciblée (modèle non écrit au rapport) 0/0/1/2 → **P8 ciblée (Opus 5.5) 0/0/0/2**
+  (`kesh-gate-logs/e36-7/validation-36-7a-p8-ciblee.md`). Validation terminée sur une passe sans finding au-dessus de LOW ;
+  les MEDIUM de P5 à P7 portaient sur l'équivalence des mutations (« par lecture » contre « au constat ») et la place des
+  journaux, aucun sur un site ou une décision. Aucun finding reclassé.
+- **2026-11-15 — Étape 0 du développement** (Opus 5.5). Bases : l'orchestrateur a fixé la clé `e367` (`kesh_e367`,
+  `kesh_e2e_e367`, `kesh_ci_e367`) ; la fiche proposait `e367a` (en-tête, AC5, Dev Notes) : à lire `e367` partout.
+  - **V8-1, corrigé** (LOW) : l'AC3 (c) admet « ou déclarée équivalente au constat, raison écrite », renvoi à la clause de
+    § *Tests* (« Une mutation qui ne rougit pas sous l'instant prescrit se dit (juste, test muet, ou mutant équivalent
+    constaté), jamais à taire »).
+  - **V8-2, corrigé** (LOW) : M8b dit « `:1716` (un `invoice_date`, comme `:1332`) ne se dit équivalente qu'au constat, et
+    reste dans M8b ». Ligne lue (`migrations_upgrade_path.rs` à `b41129c85`) : `1716: invoice_date:
+    chrono::NaiveDate::from_ymd_opt(2026, 6, 15).unwrap(),`.
+  - **Registres relus** : `e36-choix-autonomes-e360.md` (C-e360-13, échéance du 2026-12-28) et `e36-choix-autonomes-36-7.md`
+    (C-36-7-1 à C-36-7-8) ; aucun choix nouveau à l'étape 0.
+  - **Sonde du détecteur de libfaketime (D3)**, `kesh-gate-logs/e36-7/e0-faketime-sonde.log` : `ls -l` rend
+    `/usr/bin/faketime`, `libfaketime.so.1` et `libfaketimeMT.so.1` ; sans faketime `2026-11-15T15:13:12Z`, avec
+    `2027-01-04T10:00:00Z` (de même sous `-m`) ; Node sous faketime `2027-01-04T10:00:00.047Z` ; `stat` sous
+    `NO_FAKE_STAT=1`, la date réelle du fichier (`2026-01-20 20:37:26`). **La sonde passe.**
+  - **Relevés rejoués à la tête** (`b41129c85`, aucun correctif, voie 2, script `kesh-gate-logs/e36-7/etape0-36-7a.sh`,
+    synthèse `rouges.log`) : `e0-A2027.log` 5452 exécutés, **13 échecs**, les treize ; `e0-N2027.log` **9 échecs**, les neuf
+    attendus (les treize hors `dates_bornes_e2e`) ; **`inventaire-C2029.log`** (suite entière sous `2029-06-15T10:00:00Z`,
+    référence de l'AC2) **13 échecs, exactement les treize**, aucun autre ; `e0-S1a.log` 1 passé (2026-12-24) ;
+    `e0-S1b.log` 1 échoué (2026-12-26) ; `e0-S2.log` 216 exécutés, 13 échecs. AC3 (a) tenu. Les relevés datés de la fiche
+    (`inventaire-A2027.log`, `inventaire-N2027.log`, `sonde-p2-*.log`) ne sont pas réécrits.
+  - **D5 confirmée** sous `RUST_BACKTRACE=1` (`e0-S1b-backtrace.log`) : panique à `open_items_invariant.rs:181:14`, appelée
+    depuis `open_items_invariant.rs:220:33` — le lettrage du groupe à cheval.
+  - **Dates de 2026 des treize tests** (D1 a), `/usr/bin/grep -nE '\b2026\b'` sur leurs corps et leurs décors, à
+    `b41129c85` : `admin_full_import_e2e` `:4901` (exercice), `:4990` (`invoiceDate`), `:5039` (`paymentDate`) ;
+    `bank_statements_manual_e2e` `:218-220` (exercice de `setup()`, intouché), `body()` `:244-253` (intouché, relevé
+    dérivé), `:1008` (écriture), `:1036` (date de la facture ; son numéro `'F-2026-0042'` reste : c'est la référence que porte
+    la seconde ligne de `body()`, `:253`) ; `dates_bornes_e2e` : aucune dans les quatre tests (le témoin est `"2027-01-01"`,
+    `:1010`, `:1050`, `:1510`, `:1556`) ; `journal_entries_modification` `:273-274`, `:373`, `:388`, `:425`, `:426`, `:437`,
+    `:458`, `:487`, `:539`, `:540`, `:571`, `:593`, `:612` ; `migrations_upgrade_path` `:1319`, `:1332`, `:1415`, `:1498`,
+    `:1716` (le second `'Exercice 2026'` du fichier, `:972`, est d'un autre test, vert sous les quatre instants) ;
+    `opening_complement_repository` `:514`, `:519`, `:533` ; `open_items_invariant` `:216` (et le commentaire `:203`).
+    Les autres `year_span(2026)` d'`opening_complement_repository` (`:246` à `:995`) ne sont pas corrigés : dans tout le
+    fichier, `/usr/bin/grep -n 'aujourd_hui_test'` ne rend que `:528` (le test corrigé) et `:898`, et tous ces tests sont
+    verts sous les quatre instants (relevés ci-dessus) ; leur ancrage en 2026 relève, s'il rougit sous un instant
+    antérieur, de la 36-7b.
