@@ -11,6 +11,11 @@
  * gabarits et regex.
  *
  * Plancher : **onze** `catch` (S1 à S11 de la fiche) — un recueil qui passe à vide rougit.
+ * Story 36-17 (#1187) : **quinze**, recomptés — douze à `327c7edbd` (les onze, plus le
+ * chargement de la liste des comptes de la 34-1) ; les deux `catch` de la finalisation
+ * (après la banque, après le saut) deviennent un seul (`runFinalize`), et s'ajoutent la
+ * navigation de la démo, la relecture de l'état non lu, la relecture de « déjà finalisé »
+ * et la lecture du récapitulatif : 12 − 1 + 4 = 15.
  *
  * ## Ce qu'elle ne voit pas
  *
@@ -25,7 +30,7 @@ import { join } from 'node:path';
 import { blocEquilibre, corpsDeFonction, masquerCommentaires } from '$lib/shared/i18n-literal-reader.js';
 
 const PAGE = join('src', 'routes', 'onboarding', '+page.svelte');
-const PLANCHER = 11;
+const PLANCHER = 15;
 
 type Releve = { recueillis: number; violations: string[] };
 

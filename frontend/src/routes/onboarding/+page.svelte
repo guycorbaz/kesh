@@ -17,18 +17,54 @@
 		linkableLedgerAccounts,
 		preselectedBankLedgerId,
 	} from '$lib/features/bank-accounts/format';
+	import { fetchCompanyCurrent } from '$lib/features/settings/settings.api';
+	import { listFiscalYears } from '$lib/features/fiscal-years/fiscal-years.api';
+	import { ONBOARDING_LANGUAGES, onboardingScreenFor } from '$lib/features/onboarding/onboarding-screens';
+	import OnboardingUnloaded from '$lib/features/onboarding/OnboardingUnloaded.svelte';
+	import OnboardingFinalizeScreen from '$lib/features/onboarding/OnboardingFinalizeScreen.svelte';
+	import OnboardingDone, { type OnboardingSummary } from '$lib/features/onboarding/OnboardingDone.svelte';
+	import OnboardingDemo from '$lib/features/onboarding/OnboardingDemo.svelte';
+	import OnboardingFallback from '$lib/features/onboarding/OnboardingFallback.svelte';
 
 	function msg(key: string, fallback: string): string {
 		return i18nMsg(key, fallback);
 	}
 
+	// Story 36-17 (#1187) — les drapeaux locaux de la fin de l'assistant (fiche, D3, D7).
+	//
+	// `finalizing` est posé AVANT l'appel de l'étape bancaire et avant tout rappel de
+	// `finalize()`, remis à faux dans le `finally` de la finalisation (ou à l'échec de
+	// l'étape bancaire). Il ne se lit pas sur `onboardingState.loading` : entre la fin de
+	// `skipBank()` (son `finally`) et le `_loading = true` de `finalize()`, l'état
+	// « étape 7, chargé, au repos » existe, et l'écran de reprise s'y rendrait un instant.
+	let finalizing = $state(false);
+	/** L'échec de la dernière finalisation : son motif, et s'il appelle la phrase de remède. */
+	let finalizeError = $state<{ motif: string; remedy: boolean } | null>(null);
+	let demoLoading = $state(false);
+	let demoMotif = $state<string | null>(null);
+	let unloadedMotif = $state<string | null>(null);
+
+	/** L'écran de l'état (fiche, D8) : chaque combinaison en a un. */
+	const screen = $derived(
+		onboardingScreenFor({
+			loaded: onboardingState.loaded,
+			stepCompleted: onboardingState.stepCompleted,
+			isDemo: onboardingState.isDemo,
+			finalizing,
+			finalizeFailed: finalizeError !== null,
+			demoLoading,
+		})
+	);
+
 	// Story 31-1b (AC15, #503) — restaurer une sauvegarde au lieu de configurer :
 	// aux étapes 0 à 2 seulement (avant le choix démo / production, qui crée des
 	// données), et pour l'Administrateur seulement (le compte créé par /setup
-	// l'est ; le serveur refuse de toute façon les autres rôles, 403).
+	// l'est ; le serveur refuse de toute façon les autres rôles, 403). Story 36-17 :
+	// pas pendant le chargement des données de démonstration.
 	const showRestoreLink = $derived(
 		onboardingState.loaded &&
 			onboardingState.stepCompleted <= 2 &&
+			!demoLoading &&
 			authState.currentUser?.role === 'Admin'
 	);
 
@@ -65,14 +101,41 @@
 		}
 	}
 
+	// Story 36-17 (#1187, D7) : un indicateur pendant le chargement, puis une navigation
+	// ATTENDUE ; si elle échoue, l'écran « démo prête » reste, avec son motif et
+	// *Commencer*. Un refus du chargement lui-même reste un toast sur l'écran du choix.
 	async function chooseDemoPath() {
+		demoLoading = true;
 		try {
 			await onboardingState.seedDemo();
-			goto('/');
 		} catch (err) {
 			toast.error(
 				errorMessageOf(err, msg('onboarding-demo-load-error', 'Erreur lors du chargement des données de démo'))
 			);
+			return;
+		} finally {
+			demoLoading = false;
+		}
+		try {
+			await goto('/');
+		} catch (err) {
+			demoMotif = errorMessageOf(
+				err,
+				msg('onboarding-demo-navigate-error', "Kesh n'a pas pu s'ouvrir : cliquez sur Commencer.")
+			);
+		}
+	}
+
+	// Story 36-17 (#1187, D9) : *Réessayer* de l'écran « état non lu ».
+	async function retryFetchState() {
+		unloadedMotif = null;
+		try {
+			await onboardingState.fetchState();
+		} catch (err) {
+			// Le constat est déjà à l'écran : le motif ne le suit que s'il en dit plus.
+			const constat = msg('onboarding-state-load-error', "L'état de la configuration n'a pas pu être lu.");
+			const motif = errorMessageOf(err, constat);
+			unloadedMotif = motif === constat ? null : motif;
 		}
 	}
 
@@ -236,43 +299,101 @@
 	// 1100/3000 manquants » s'affichait donc « Finalisation échouée ». Toute erreur autre
 	// que « déjà finalisé » passe désormais par `errorMessageOf` : le motif du serveur,
 	// sinon le message de la finalisation.
-	function reportFinalizeError(err: unknown) {
+	//
+	// Story 36-17 (#1187, D2, D5) : l'échec s'affiche À L'ÉCRAN de l'étape 7, avec
+	// *Réessayer* — plus de toast passager sur une page vide. Sous `VALIDATION_ERROR` (le
+	// seul refus de validation de la finalisation, reconnu au code et non au texte), la
+	// phrase de remède précède le motif (limite connue, #1200). « Déjà finalisé » relit
+	// l'état et montre son écran ; une relecture en échec s'affiche de même.
+	async function reportFinalizeError(err: unknown) {
 		if (isApiError(err) && err.code === 'ONBOARDING_STEP_ALREADY_COMPLETED') {
-			toast.error(
-				msg(
-					'onboarding-already-finalized',
-					"L'onboarding est déjà finalisé. Veuillez recharger la page."
-				)
-			);
+			try {
+				await onboardingState.fetchState();
+			} catch (relecture) {
+				finalizeError = {
+					motif: errorMessageOf(
+						relecture,
+						msg('onboarding-state-load-error', "L'état de la configuration n'a pas pu être lu.")
+					),
+					remedy: false,
+				};
+			}
 			return;
 		}
-		toast.error(errorMessageOf(err, msg('onboarding-finalize-error', 'Finalisation échouée — réessayez.')));
+		finalizeError = {
+			motif: errorMessageOf(err, msg('onboarding-finalize-error', 'Finalisation échouée — réessayez.')),
+			remedy: isApiError(err) && err.code === 'VALIDATION_ERROR',
+		};
 	}
 
-	// P6-L7: defense-in-depth — never navigate to / unless the backend confirmed
-	// stepCompleted == 8. A bug or race that returns a stale snapshot would
-	// otherwise drop the user into the main app with onboarding incomplete.
-	function navigateHomeIfFinalized() {
-		if (onboardingState.stepCompleted === 8) {
-			goto('/');
-		} else {
-			toast.error(
-				msg(
-					'onboarding-finalize-incomplete',
-					"La finalisation n'a pas été confirmée. Veuillez recharger la page."
-				)
+	// Story 36-17 (#1187, D1, D3) : la finalisation, après l'étape bancaire ou par
+	// *Réessayer* / *Terminer la configuration*. Ordre du geste : effacer l'erreur, poser
+	// `finalizing`, appeler — pendant une relance, « Configuration en cours… » s'affiche,
+	// non l'écran d'échec. Aucune navigation d'office : l'étape 8 rend la page
+	// « Configuration terminée », dont *Commencer* recharge l'application.
+	async function runFinalize() {
+		finalizeError = null;
+		finalizing = true;
+		try {
+			await onboardingState.finalize();
+		} catch (err) {
+			await reportFinalizeError(err);
+		} finally {
+			finalizing = false;
+		}
+	}
+
+	/** *Réessayer* et *Terminer la configuration* ne répondent pas pendant un appel (D3). */
+	const finalizeDisabled = $derived(finalizing || onboardingState.loading);
+
+	// Story 36-17 (#1187, D6) : le récapitulatif de la page terminée, lu une fois à son
+	// affichage. Seuls le nom de la banque et la description des comptes bancaires sont
+	// recopiés : aucun IBAN n'atteint l'écran.
+	let summary = $state<OnboardingSummary | null>(null);
+	let summaryError = $state<string | null>(null);
+	let summaryRequested = false;
+
+	async function loadSummary() {
+		try {
+			const [current, years] = await Promise.all([fetchCompanyCurrent(), listFiscalYears()]);
+			summary = {
+				companyName: current.company.name,
+				orgType: current.company.orgType,
+				accountingLanguage: current.company.accountingLanguage,
+				fiscalYears: [...years]
+					.sort((a, b) => a.startDate.localeCompare(b.startDate))
+					.map((y) => ({ name: y.name, startDate: y.startDate, endDate: y.endDate })),
+				bankAccounts: current.bankAccounts.map((b) => ({
+					bankName: b.bankName,
+					description: b.description,
+				})),
+			};
+		} catch (err) {
+			summaryError = errorMessageOf(
+				err,
+				msg('onboarding-done-summary-error', "Le récapitulatif n'a pas pu être lu.")
 			);
 		}
 	}
+
+	$effect(() => {
+		if (screen === 'done' && !summaryRequested) {
+			summaryRequested = true;
+			void loadSummary();
+		}
+	});
 
 	async function submitBankAccount() {
 		// Revue P1 (B-2) : pas d'envoi avant la fin du chargement de la liste (le
 		// bouton est désactivé ; ce garde couvre la touche Entrée).
-		if (bankLedgerLoading) return;
+		if (bankLedgerLoading || finalizing) return;
 		if (!bankName.trim() || !bankIban.trim()) {
 			toast.error(msg('onboarding-bank-required', 'Nom de banque et IBAN sont obligatoires'));
 			return;
 		}
+		// Story 36-17 (D3) : posé AVANT l'étape bancaire, pour qu'aucun instant de l'étape 7
+		// ne rende l'écran de reprise avant la finalisation.
+		finalizing = true;
 		try {
 			// Story 34-1 (AC-1) : description et compte lié toujours envoyés, `null`
 			// compris — un champ absent vaudrait « inchangé » côté serveur.
@@ -284,88 +405,93 @@
 				journalAccountId: bankJournalAccountId,
 			});
 		} catch (err) {
+			finalizing = false;
 			toast.error(
 				errorMessageOf(err, msg('onboarding-bank-save-error', 'Erreur lors de la sauvegarde du compte bancaire'))
 			);
 			return;
 		}
-		try {
-			await onboardingState.finalize();
-			navigateHomeIfFinalized();
-		} catch (err) {
-			reportFinalizeError(err);
-		}
+		await runFinalize();
 	}
 
 	async function handleSkipBank() {
+		finalizing = true;
 		try {
 			await onboardingState.skipBank();
 		} catch (err) {
+			finalizing = false;
 			toast.error(
 				errorMessageOf(err, msg('onboarding-bank-skip-error', 'Erreur lors du saut du compte bancaire'))
 			);
 			return;
 		}
-		try {
-			await onboardingState.finalize();
-			navigateHomeIfFinalized();
-		} catch (err) {
-			reportFinalizeError(err);
-		}
+		await runFinalize();
 	}
 
 	const cardClass = "rounded-lg border border-border bg-white p-6 text-left shadow-sm transition-colors hover:border-primary hover:bg-primary-light/5";
 </script>
 
-{#if onboardingState.loading && !onboardingState.loaded}
-	<div class="flex justify-center p-8">
-		<p class="text-text-muted">{msg('common-loading', 'Chargement…')}</p>
-	</div>
+<!--
+	Story 36-17 (#1187, D8) : un écran pour chaque état, choisi par `onboardingScreenFor`.
+	Chaque écran porte `data-testid="onboarding-screen-<id>"` (les étapes 0 à 6 par une
+	enveloppe, sans autre changement de leur contenu) ; le détecteur
+	`onboarding-screens.test.ts` exige exactement un écran par état.
+-->
+{#if screen === 'unloaded'}
+	<OnboardingUnloaded loading={onboardingState.loading} motif={unloadedMotif} onRetry={retryFetchState} />
 
-{:else if onboardingState.stepCompleted === 0}
+{:else if screen === '0'}
 	<!-- Step 1 : Langue -->
+	<div data-testid="onboarding-screen-0">
 	<div class="grid grid-cols-2 gap-4">
-		{#each [['FR', 'Français'], ['DE', 'Deutsch'], ['IT', 'Italiano'], ['EN', 'English']] as [code, label]}
-			<button class={cardClass + " text-center text-lg font-medium"} onclick={() => chooseLanguage(code)} disabled={onboardingState.loading}>
+		{#each ONBOARDING_LANGUAGES as [code, label]}
+			<button class={cardClass + " text-center text-lg font-medium"} onclick={() => chooseLanguage(code)} disabled={onboardingState.loading} data-testid={`onboarding-language-${code}`}>
 				{label}
 			</button>
 		{/each}
 	</div>
+	</div>
 
-{:else if onboardingState.stepCompleted === 1}
+{:else if screen === '1'}
 	<!-- Step 2 : Mode -->
+	<div data-testid="onboarding-screen-1">
 	<h2 class="mb-6 text-center text-xl font-semibold">
 		{msg('onboarding-choose-mode', 'Choisissez votre mode d\'utilisation')}
 	</h2>
 	<div class="flex flex-col gap-4">
-		<button class={cardClass} onclick={() => chooseMode('guided')} disabled={onboardingState.loading}>
+		<button class={cardClass} onclick={() => chooseMode('guided')} disabled={onboardingState.loading} data-testid="onboarding-mode-guided">
 			<div class="text-lg font-medium">{msg('onboarding-mode-guided', 'Guidé')}</div>
 			<div class="mt-1 text-sm text-text-muted">{msg('onboarding-mode-guided-desc', 'Espacements généreux, aide contextuelle, confirmations avant actions')}</div>
 		</button>
-		<button class={cardClass} onclick={() => chooseMode('expert')} disabled={onboardingState.loading}>
+		<button class={cardClass} onclick={() => chooseMode('expert')} disabled={onboardingState.loading} data-testid="onboarding-mode-expert">
 			<div class="text-lg font-medium">{msg('onboarding-mode-expert', 'Expert')}</div>
 			<div class="mt-1 text-sm text-text-muted">{msg('onboarding-mode-expert-desc', 'Interface compacte, raccourcis clavier, actions directes')}</div>
 		</button>
 	</div>
+	</div>
 
-{:else if onboardingState.stepCompleted === 2}
+{:else if screen === '2'}
 	<!-- Step 3 : Chemin A/B -->
+	<div data-testid="onboarding-screen-2">
 	<h2 class="mb-6 text-center text-xl font-semibold">
 		{msg('onboarding-choose-path', 'Comment souhaitez-vous commencer ?')}
 	</h2>
 	<div class="flex flex-col gap-4">
-		<button class={cardClass} onclick={chooseDemoPath} disabled={onboardingState.loading}>
+		<button class={cardClass} onclick={chooseDemoPath} disabled={onboardingState.loading} data-testid="onboarding-path-demo">
 			<div class="text-lg font-medium">{msg('onboarding-path-demo', 'Explorer avec des données de démo')}</div>
 			<div class="mt-1 text-sm text-text-muted">{msg('onboarding-path-demo-desc', 'Découvrez Kesh avec des données fictives réalistes')}</div>
 		</button>
-		<button class={cardClass} onclick={chooseProductionPath} disabled={onboardingState.loading}>
+		<button class={cardClass} onclick={chooseProductionPath} disabled={onboardingState.loading} data-testid="onboarding-path-production">
 			<div class="text-lg font-medium">{msg('onboarding-path-production', 'Configurer pour la production')}</div>
 			<div class="mt-1 text-sm text-text-muted">{msg('onboarding-path-production-desc', 'Configurez votre organisation pour commencer à travailler')}</div>
 		</button>
 	</div>
+	</div>
 
-{:else if onboardingState.stepCompleted === 3}
-	<!-- Step 4 : Type d'organisation -->
+{:else if screen === '3'}
+	<!-- Step 4 : Type d'organisation (chemin production seulement : la démo à l'étape 3
+	     a son propre écran, `demo-ready`) -->
+	<div data-testid="onboarding-screen-3">
 	<h2 class="mb-6 text-center text-xl font-semibold">
 		{msg('onboarding-choose-org-type', 'Type d\'organisation')}
 	</h2>
@@ -383,9 +509,11 @@
 			<div class="mt-1 text-sm text-text-muted">{msg('onboarding-org-pme-desc', 'Petite et moyenne entreprise (SA, Sàrl)')}</div>
 		</button>
 	</div>
+	</div>
 
-{:else if onboardingState.stepCompleted === 4}
+{:else if screen === '4'}
 	<!-- Step 5 : Langue comptable -->
+	<div data-testid="onboarding-screen-4">
 	<h2 class="mb-6 text-center text-xl font-semibold">
 		{msg('onboarding-choose-accounting-lang', 'Langue comptable')}
 	</h2>
@@ -393,15 +521,17 @@
 		{msg('onboarding-accounting-lang-desc', 'Langue des libellés du plan comptable (découplée de la langue de l\'interface)')}
 	</p>
 	<div class="grid grid-cols-2 gap-4">
-		{#each [['FR', 'Français'], ['DE', 'Deutsch'], ['IT', 'Italiano'], ['EN', 'English']] as [code, label]}
-			<button class={cardClass + " text-center text-lg font-medium"} onclick={() => chooseAccountingLang(code)} disabled={onboardingState.loading}>
+		{#each ONBOARDING_LANGUAGES as [code, label]}
+			<button class={cardClass + " text-center text-lg font-medium"} onclick={() => chooseAccountingLang(code)} disabled={onboardingState.loading} data-testid={`onboarding-accounting-lang-${code}`}>
 				{label}
 			</button>
 		{/each}
 	</div>
+	</div>
 
-{:else if onboardingState.stepCompleted === 5}
+{:else if screen === '5'}
 	<!-- Step 6 : Coordonnées -->
+	<div data-testid="onboarding-screen-5">
 	<h2 class="mb-6 text-center text-xl font-semibold">
 		{msg('onboarding-coordinates-title', 'Coordonnées de votre organisation')}
 	</h2>
@@ -470,13 +600,16 @@
 			</label>
 			<Input id="coord-ide" bind:value={coordIde} placeholder="CHE-123.456.789" />
 		</div>
-		<Button type="submit" disabled={onboardingState.loading}>
+		<Button type="submit" disabled={onboardingState.loading} data-testid="onboarding-coordinates-submit">
 			{msg('onboarding-next', 'Continuer')}
 		</Button>
 	</form>
+	</div>
 
-{:else if onboardingState.stepCompleted === 6}
-	<!-- Step 7 : Compte bancaire -->
+{:else if screen === '6'}
+	<!-- Step 7 : Compte bancaire (reste affiché pendant l'appel de l'étape bancaire,
+	     boutons désactivés, jusqu'au passage à l'étape 7 — Story 36-17, D3) -->
+	<div data-testid="onboarding-screen-6">
 	<h2 class="mb-6 text-center text-xl font-semibold">
 		{msg('onboarding-bank-title', 'Compte bancaire principal')}
 	</h2>
@@ -556,14 +689,35 @@
 			)}
 		</p>
 		<div class="flex gap-3">
-			<Button type="button" variant="outline" onclick={handleSkipBank} disabled={onboardingState.loading} class="flex-1">
+			<Button type="button" variant="outline" onclick={handleSkipBank} disabled={onboardingState.loading || finalizing} class="flex-1" data-testid="onboarding-skip-bank">
 				{msg('onboarding-skip-bank', 'Configurer plus tard')}
 			</Button>
-			<Button type="submit" disabled={onboardingState.loading || bankLedgerLoading} class="flex-1">
+			<Button type="submit" disabled={onboardingState.loading || bankLedgerLoading || finalizing} class="flex-1" data-testid="onboarding-bank-save">
 				{msg('onboarding-save', 'Enregistrer')}
 			</Button>
 		</div>
 	</form>
+	</div>
+
+{:else if screen === 'finalizing' || screen === 'finalize-error' || screen === 'resume'}
+	<OnboardingFinalizeScreen
+		mode={screen}
+		motif={finalizeError?.motif ?? null}
+		remedy={finalizeError?.remedy ?? false}
+		disabled={finalizeDisabled}
+		onFinalize={runFinalize}
+		resumeText={msg('incomplete-banner-text', "Configuration incomplète : terminez-la avant d'utiliser Kesh.")}
+		resumeCta={msg('incomplete-banner-cta', 'Terminer la configuration')}
+	/>
+
+{:else if screen === 'done'}
+	<OnboardingDone {summary} {summaryError} />
+
+{:else if screen === 'demo-loading' || screen === 'demo-ready'}
+	<OnboardingDemo mode={screen} motif={demoMotif} />
+
+{:else}
+	<OnboardingFallback />
 {/if}
 
 {#if showRestoreLink}

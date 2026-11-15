@@ -1460,6 +1460,8 @@ Une fois connecté, l'\textbf{assistant d'onboarding} (wizard) configure la comp
     \item \textbf{Compte bancaire} principal (optionnel, configurable plus tard).
 \end{enumerate}
 
+Depuis la 0.18.0 (\#1187), l'assistant se termine sur la page \textbf{« Configuration terminée »} --- récapitulatif de ce qui a été créé, de ce qui reste à faire, bouton \emph{Commencer} ---, après l'écran « Configuration en cours… » pendant la mise en place~; un échec de la mise en place reste affiché avec \emph{Réessayer}, et une configuration interrompue se reprend depuis l'assistant (\emph{Terminer la configuration}), jamais d'office. \textbf{Limite connue (\#1200)} : un écran de l'application ouvert avant la fin de la configuration (journal, comptes bancaires, factures, réglages de facturation, export) fait refuser la mise en place tant que le compte débiteurs et le compte de produit par défaut ne sont pas désignés et enregistrés dans \emph{Administration} → \emph{Facturation} --- d'où la consigne de la bannière : terminer la configuration avant d'utiliser Kesh.
+
 Tant que les coordonnées ne sont pas renseignées, une bannière non-bloquante rappelle que l'entreprise porte un nom provisoire (correctif catch-22 fresh-install, v0.1.1).
 
 \subsection{Choix du plan comptable}

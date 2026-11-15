@@ -55,6 +55,13 @@ vi.mock('svelte-sonner', () => ({ toast: { success: vi.fn(), error: toastError }
 vi.mock('$lib/features/accounts/accounts.api', () => ({
 	fetchAccounts: vi.fn().mockResolvedValue([]),
 }));
+// Story 36-17 : la page terminée lit son récapitulatif ; lectures en attente, hors réseau.
+vi.mock('$lib/features/settings/settings.api', () => ({
+	fetchCompanyCurrent: vi.fn(() => new Promise(() => {})),
+}));
+vi.mock('$lib/features/fiscal-years/fiscal-years.api', () => ({
+	listFiscalYears: vi.fn(() => new Promise(() => {})),
+}));
 
 import * as api from '$lib/features/onboarding/onboarding.api';
 import { onboardingState } from '$lib/features/onboarding/onboarding.svelte';
@@ -233,8 +240,11 @@ describe('assistant — le motif du refus (#809, AC-2, AC-3)', () => {
 	);
 });
 
-describe('assistant — la finalisation dit son motif (#809, AC-4)', () => {
-	const DEJA = "L'onboarding est déjà finalisé. Veuillez recharger la page.";
+// Story 36-17 (#1187, D2) : le motif de la finalisation s'affiche À L'ÉCRAN de l'étape 7
+// (`onboarding-finalize-motif`), avec *Réessayer*, et non plus en toast passager sur une
+// page vide ; « déjà finalisé » relit l'état et montre son écran (l'avis « Veuillez
+// recharger la page » a disparu avec sa clé).
+describe('assistant — la finalisation dit son motif (#809, AC-4 ; #1187, D2)', () => {
 	const ECHEC = 'Finalisation échouée — réessayez.';
 
 	const CHEMINS = [
@@ -254,37 +264,57 @@ describe('assistant — la finalisation dit son motif (#809, AC-4)', () => {
 		},
 	];
 
-	async function finaliser(chemin: (typeof CHEMINS)[number], rejet: unknown) {
+	/** Joue le chemin jusqu'à la finalisation rejetée ; rend le texte affiché à la fin. */
+	async function finaliser(
+		chemin: (typeof CHEMINS)[number],
+		rejet: unknown,
+		attendre: () => void,
+		relecture?: Etat
+	) {
 		await atStep(6);
+		// La relecture de « déjà finalisé » se pose APRÈS `atStep`, qui consommerait sinon
+		// la réponse unique.
+		if (relecture) vi.mocked(api.fetchState).mockResolvedValueOnce(relecture);
 		chemin.preparer();
 		vi.mocked(api.finalize).mockRejectedValueOnce(rejet);
-		const { unmount } = render(Page);
+		const { container, unmount } = render(Page);
 		await chemin.declencher();
-		await vi.waitFor(() => expect(toastError).toHaveBeenCalledTimes(1));
+		await vi.waitFor(attendre);
+		const texte = container.textContent ?? '';
 		unmount();
 		// Laisser `finalize` relâcher son verrou (`setTimeout(0)`) avant le scénario suivant.
 		await new Promise((r) => setTimeout(r, 0));
+		return texte;
 	}
 
+	const motifAffiche = () => expect(screen.getByTestId('onboarding-finalize-motif')).toBeTruthy();
+
 	for (const chemin of CHEMINS) {
-		it(`${chemin.nom} : un refus VALIDATION_ERROR → son motif`, async () => {
-			await finaliser(chemin, { code: 'VALIDATION_ERROR', message: 'MOTIF-FIN', status: 400 });
-			expect(toastError).toHaveBeenCalledWith('MOTIF-FIN');
+		it(`${chemin.nom} : un refus VALIDATION_ERROR → son motif à l'écran, sans toast`, async () => {
+			const texte = await finaliser(
+				chemin,
+				{ code: 'VALIDATION_ERROR', message: 'MOTIF-FIN', status: 400 },
+				motifAffiche
+			);
+			expect(texte).toContain('MOTIF-FIN');
+			expect(toastError).not.toHaveBeenCalled();
 		});
 
-		it(`${chemin.nom} : ONBOARDING_STEP_ALREADY_COMPLETED → l'avis propre, non le message du serveur`, async () => {
-			await finaliser(chemin, {
-				code: 'ONBOARDING_STEP_ALREADY_COMPLETED',
-				message: 'MOTIF-DEJA',
-				status: 400,
-			});
-			expect(toastError).toHaveBeenCalledWith(DEJA);
-			expect(toastError).not.toHaveBeenCalledWith('MOTIF-DEJA');
+		it(`${chemin.nom} : ONBOARDING_STEP_ALREADY_COMPLETED → l'état relu, ni toast ni message du serveur`, async () => {
+			const texte = await finaliser(
+				chemin,
+				{ code: 'ONBOARDING_STEP_ALREADY_COMPLETED', message: 'MOTIF-DEJA', status: 400 },
+				() => expect(screen.getByTestId('onboarding-screen-done')).toBeTruthy(),
+				etat(8)
+			);
+			expect(texte).not.toContain('MOTIF-DEJA');
+			expect(toastError).not.toHaveBeenCalled();
 		});
 
-		it(`${chemin.nom} : une TypeError → le message de la finalisation`, async () => {
-			await finaliser(chemin, new TypeError('Failed to fetch'));
-			expect(toastError).toHaveBeenCalledWith(ECHEC);
+		it(`${chemin.nom} : une TypeError → le message de la finalisation, à l'écran`, async () => {
+			const texte = await finaliser(chemin, new TypeError('Failed to fetch'), motifAffiche);
+			expect(texte).toContain(ECHEC);
+			expect(toastError).not.toHaveBeenCalled();
 		});
 	}
 });
