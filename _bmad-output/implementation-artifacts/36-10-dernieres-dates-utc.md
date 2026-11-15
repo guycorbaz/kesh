@@ -587,6 +587,22 @@ C-36-10-7 (AC5 en hiver à `D − 45`/`D − 31`, dans l'exercice de la fixture)
 
 **Aucune migration** (`git diff --stat f1ffed694 HEAD -- crates/kesh-db/migrations` vide).
 
+#### Remédiation P1 (commit de code `2f0f88d2a`)
+
+- `scripts/test-fast.sh --ci`, voie 2, bases remises à neuf : **5466 passés, 13 ignorés** (5464 + les deux tests neufs,
+  `liaisons_de_l_ancre_jour_de_zurich_et_plancher` et `hors_precondition_les_bornes_ne_paniquent_pas`), journal
+  `test-fast-ci-remed-p1.log`, qui porte `HEAD 2f0f88d2a` en tête (A1-4). `clippy -D warnings` workspace vert avant le
+  commit (`clippy-remed-p1.log`). Frontend non touché : Vitest non relancé. `gate-ci` et E2E : à la clôture.
+- **Mutations** sur le code changé, motifs au code d'après (`mut/appliquer.py`, clés `M2r`, `M3r`, `M5r`, `M7r`, `M9`),
+  **5 sur 5 tuées** : M2r (`fin_du_jour_suisse` sans sa milliseconde, forme `checked_sub_signed`) — 7 rouges, AC1 à AC4 ;
+  M3r (la seconde liaison partagée à minuit UTC, qui frappe désormais les **deux** lecteurs) — 4 rouges, le test pur, l'accord
+  d'AC6, les cas m/n, AC5 HTTP ; M5r (bornes revenues aux jours UTC) — 5 ; M7r (plancher du journal retiré) — 1,
+  `bornes_du_filtre_jours_de_zurich_et_plafond` ; M9 (plancher de la réconciliation retiré, B1-6) — 1,
+  `liaisons_de_l_ancre_jour_de_zurich_et_plancher`. Journaux `mut/M2r.log` … `mut/M9.log`, résumé `mut/resume.log`. M1, M4,
+  M6, M8 visent du code inchangé et ne sont pas rejouées.
+- Décompte de la remédiation (de `0e4c2725a` à `2f0f88d2a`) : +2 tests Rust (`horloge.rs` 11 → 12,
+  `reconciliation.rs` `mod tests` +1) ; une assertion retirée d'AC7 (B1-2).
+
 ### File List
 
 - `crates/kesh-core/src/horloge.rs`
@@ -685,3 +701,44 @@ C-36-10-7 (AC5 en hiver à `D − 45`/`D − 31`, dans l'exercice de la fixture)
   touchés et les modules de tests d'`horloge` et d'`audit_log`), puis complet (`test-fast --ci`, `gate-ci`) ; la boucle de
   revue n'ayant pas commencé, l'exception `kesh-db` (gate complet entre deux passes) s'appliquera aux remédiations.
   `Status: review`.
+- 2026-11-15 — **Revue de code P1** (B 0/0/0/6, A 0/0/0/5, E 0/0/0/3 ; rapports `kesh-gate-logs/e36-10/review-p1-{B,A,E}.md`),
+  rien au-dessus de LOW. Règle « Tarir la source » : les LOW qui touchent les fichiers de la story sont corrigés ici
+  (Opus 5.5, outil Edit), commit **`2f0f88d2a`** ; la boucle se rouvre sur une passe ciblée de ce seul correctif. Chaque
+  prémisse relue au code, aucune réfutée :
+  - **E1-1** (`reconciliation.rs:719-720`, `.bind(debut_du_jour_suisse(window.earliest_anchor_date).naive_utc())` écrit deux
+    fois) : **factorisé** — `liaisons_de_l_ancre(e) -> (NaiveDate, NaiveDateTime)`, seule écriture des deux liaisons du
+    prédicat, appelée par les deux lecteurs ; test pur `liaisons_de_l_ancre_jour_de_zurich_et_plancher`. Préféré au cas de
+    nuit + M3-bis : il supprime la seconde écriture au lieu de la surveiller, si bien que les tests de la proposition
+    (accord AC6, AC5 HTTP) tiennent aussi le lecteur « légèrement trop payé », et que la mutation M3r frappe les deux à la
+    fois.
+  - **B1-6** (`:672`, `:720`, borne sans plancher) : **aligné**, plancher commun déplacé dans `kesh-core/src/dates.rs`
+    (`PREMIER_INSTANT_STOCKABLE`, `borne_basse_stockable`), employé par le journal et par `liaisons_de_l_ancre` ; tenu par
+    le test pur (cas `e = 999-12-15`) et la mutation M9. La borne `DATE` `e` d'à côté peut toujours sortir de la plage pour
+    un paiement de janvier de l'an 1000, comme avant la story (écrit au doc-comment).
+  - **B1-2** (`reconciliation_repository.rs:1842`, `kesh_core::horloge::jour_suisse(instant("2026-03-10 23:30:00")…)`) :
+    assertion tautologique **retirée** ; le doc-comment renvoie au test réel de l'éligibilité,
+    `tests/dunning_eligibility.rs`, `le_jour_du_dernier_rappel_est_celui_de_zurich` (même instant `2026-03-10 23:30` UTC,
+    niveau suivant dû le 18 mars). Appeler `list_reminder_candidates` ici demanderait le montage des niveaux de rappel,
+    étranger à ce fichier.
+  - **B1-3 = A1-5** (`date_du_jour_garde.rs:813`, `:823`, `:829`) : trois marques préfixées de `[jour d'un instant
+    enregistré]` et du chemin complet.
+  - **E1-3** (`horloge.rs`, promesse « aucune panique ») : test `hors_precondition_les_bornes_ne_paniquent_pas`
+    (`NaiveDate::MIN`, `MAX`) ; `fin_du_jour_suisse` soustrait sa milliseconde par `checked_sub_signed` (repli `MIN_UTC`),
+    seul calcul qui pouvait déborder ; le doc-comment dit que le bras `Ambiguous` n'est atteint par aucune date de Zurich.
+  - **B1-1** (`kesh-api/src/routes/reconciliation.rs:1161` « même expression des deux côtés », `:2484` « la même expression
+    SQL ») : deux commentaires réécrits (même règle, deux écritures tenues d'accord par le test d'AC6, jour de Zurich).
+  - **B1-4 = E1-2** (justification de `dunning_reminders.rs`, « hors la nuit du 31 décembre 9999 ») : réécrite — le futur est
+    refusé avant (`:267`) ; la seule divergence est la nuit du 31 décembre 999, où le jour UTC refuse à juste titre.
+  - **B1-5** (« plafond » pour un `.max`) : « plancher » dans les doc-comments et commentaires (`audit_log.rs`,
+    `audit_log_e2e.rs`) ; le nom du test `bornes_du_filtre_jours_de_zurich_et_plafond` est gardé pour la traçabilité avec
+    la fiche, ce que son doc-comment dit.
+  - **A1-1** (`date_du_jour_garde.rs:3` « Deux familles », `:28-30` angle mort `n.date()`) : « Quatre familles » ; l'angle
+    mort dit que la famille 4 relève `n.date()` dans `src`, non dans `tests`.
+  - **A1-2** (`audit_log.rs:245`, « `push_bind` **panique** » hors plage) : précondition réécrite — résultat non défini, une
+    année hors de `u16` seule ferait paniquer `push_bind`.
+  - **A1-3** (`user-manual.tex:4042-4045`, heures UTC dites deux fois) : la redite retirée ; le **détail** n'affiche aucune
+    heure (`+page.svelte:376`, seul `dateFormat.format(new Date(e.createdAt))`, dans le tableau) : « du détail » d'AC10 est
+    sans objet.
+  - **A1-4** (journaux frontend sans commit) : les journaux de gates de la remédiation portent `HEAD` en tête. Le frontend
+    n'est pas touché par la remédiation : Vitest non relancé.
+  Gates et mutations de la remédiation : au *Dev Agent Record*, § *Remédiation P1*.
