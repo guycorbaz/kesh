@@ -21,11 +21,17 @@ use serde_json::json;
 use kesh_db::entities::audit_log::{AUDIT_ENTITY_ID_NONE, NewAuditLogEntry};
 use kesh_db::entities::onboarding::UiMode;
 use kesh_db::entities::{
-    BankAccount, Company, CompanyInvoiceSettings, CompanyUpdate, Language, NewBankAccount,
-    NewFiscalYear, OnboardingState, OrgType, VatRate,
+    BankAccount, Company, CompanyUpdate, Language, NewBankAccount, NewFiscalYear, OnboardingState,
+    OrgType, VatRate,
 };
-use kesh_db::errors::map_db_error;
+use kesh_db::errors::{
+    DefaultInvoiceAccountCause, DefaultInvoiceSetting, UnavailableDefaultInvoiceAccount,
+    map_db_error,
+};
 use kesh_db::repositories::bank_accounts::{self, UpsertPrimaryOutcome};
+use kesh_db::repositories::company_invoice_settings::{
+    DefaultAccountsOutcome, settings_snapshot_json,
+};
 use kesh_db::repositories::{audit_log, companies, onboarding};
 
 use crate::AppState;
@@ -718,13 +724,15 @@ pub async fn set_bank_account(
 /// À l'étape 6, les réglages de facturation n'existent pas encore : la
 /// finalisation les créera en y désignant comme comptes débiteurs et
 /// créanciers les comptes de **rôle** `Receivable` et `Payable`
-/// (`insert_with_defaults_in_tx`). Les comptes de créance que lirait
-/// `claim_accounts_in_share_mode` sont donc vides, et un lien vers le futur
-/// compte débiteurs passerait — puis la finalisation produirait l'état que la
-/// Story 15-6c interdit. Les rôles sont lus ici **comme la finalisation les
-/// lira** (`accounts::find_singleton_role_in_tx`, source unique), puis
-/// `refuse_if_ledger_is_claim_account` rend le refus de `POST /bank-accounts`
-/// (`400 BANK_ACCOUNT_LEDGER_IS_CLAIM_ACCOUNT`, même rendu).
+/// (`company_invoice_settings::complete_default_accounts_in_tx`). Les comptes de
+/// créance que lirait `claim_accounts_in_share_mode` sont donc vides, et un lien
+/// vers le futur compte débiteurs passerait. Les rôles sont lus ici par la même
+/// recherche que la finalisation (`accounts::find_singleton_role_in_tx`, source
+/// unique), puis `refuse_if_ledger_is_claim_account` rend le refus de
+/// `POST /bank-accounts` (`400 BANK_ACCOUNT_LEDGER_IS_CLAIM_ACCOUNT`, même
+/// rendu). ⚠️ La finalisation écarte en plus un compte de rôle **non imputable**
+/// (Story 36-19, D6) ; ce garde-ci, plus strict, refuse le lien au compte qui
+/// porte le rôle, imputable ou non.
 ///
 /// ⛔ Lit le **rôle**, jamais le numéro (Story 14-3a).
 ///
@@ -734,9 +742,13 @@ pub async fn set_bank_account(
 /// finalisation reverrouille ces lignes en `FOR UPDATE`. Lu dans la
 /// transaction, jamais sur le pool.
 ///
-/// ⚠️ Angle mort (validation P2 de la fiche, issue demandée) : entre l'étape 6
-/// et la finalisation, `PUT /api/v1/accounts/{id}` peut poser le rôle sur le
-/// compte qui vient d'être lié ; la finalisation ne le contrôle pas.
+/// Entre l'étape 6 et la finalisation, `PUT /api/v1/accounts/{id}` peut poser le
+/// rôle sur le compte qui vient d'être lié, ou `POST /api/v1/bank-accounts` lier
+/// un compte de rôle. **Fermé côté finalisation depuis la Story 36-19** (D6,
+/// refs #987) : un compte de rôle lié à un compte bancaire n'est jamais désigné —
+/// refus pour le compte débiteurs, réglage laissé vide pour le compte
+/// créanciers. La désignation de rôle elle-même (`PUT /api/v1/accounts/{id}`)
+/// reste à #987.
 async fn refuse_future_claim_account(
     tx: &mut Tx<'_>,
     company_id: i64,
@@ -851,7 +863,10 @@ pub async fn skip_bank(
 }
 
 /// POST /api/v1/onboarding/finalize — step 7→complete (Path B only)
-/// Pre-fills invoice settings with default accounts (1100, 3000) if they exist in the chart.
+/// Pose les comptes par défaut de facturation que le plan fournit, par **rôle** —
+/// en créant la ligne des réglages, ou en **complétant** celle qu'un écran a créée
+/// vide avant la fin de l'assistant, sans remplacer un compte déjà choisi (Story
+/// 36-19, #1200 : `company_invoice_settings::complete_default_accounts_in_tx`).
 ///
 /// F2 CRITICAL FIX: SELECT FOR UPDATE on onboarding_state serializes all finalize() calls.
 /// Prevents multiple concurrent requests from both passing the step check and duplicating work.
@@ -864,11 +879,15 @@ pub async fn skip_bank(
 /// F4 HIGH FIX: Pessimistic lock on onboarding_state prevents concurrent finalize() races.
 /// Once locked, only one finalize() can proceed. INSERT IGNORE remains idempotent.
 ///
-/// F1 CRITICAL VALIDATION: Ensure account pre-fill succeeded (1100, 3000 not NULL).
+/// F1 CRITICAL VALIDATION: le compte débiteurs et le compte de produit par défaut
+/// doivent être posés ; sinon refus `400 VALIDATION_ERROR` qui nomme chaque
+/// réglage en défaut, sa cause et son remède (Story 36-19, D5).
 ///
 /// ORDRE DES VERROUS (cf. `docs/MULTI-TENANT-SCOPING-PATTERNS.md`, Pattern 5) :
 /// ce handler prend trois `FOR UPDATE` successifs, dans l'ordre
-/// `onboarding_state → companies → accounts`. Cet ordre est une **convention
+/// `onboarding_state → companies → accounts`, puis la ligne des réglages
+/// `FOR UPDATE` et, en partagé, les comptes déjà désignés et les comptes
+/// bancaires (Story 36-19). Cet ordre est une **convention
 /// de fréquence** : il réduit les interblocages, il ne les exclut pas — la
 /// défense est le rejeu (Story 15-5e2).
 ///
@@ -906,15 +925,18 @@ pub async fn finalize(
 ///
 /// **Idempotence requise** : la fonction est rappelée à l'identique en cas
 /// de retry. C'est sûr ici car (a) le `step_completed == 8` court-circuite
-/// proprement (return Ok early), (b) `INSERT IGNORE` sur invoice_settings
-/// et vat_rates est idempotent, (c) `create_if_absent_in_tx` sur fiscal_year
+/// proprement (return Ok early), (b) les réglages ne s'écrivent que sur une
+/// colonne vide (`COALESCE`, et aucun `UPDATE` s'il n'y a rien à poser — Story
+/// 36-19), et l'`INSERT IGNORE` des vat_rates est idempotent, (c)
+/// `create_if_absent_in_tx` sur fiscal_year
 /// est idempotent, (d) l'`UPDATE` final ne se déclenche que si step était
 /// 7 → bumpe à 8 ou laisse no-op si quelqu'un d'autre a déjà bumpé.
 ///
 /// **Audit (Story 15-7a2)** : les entrées s'écrivent DANS cette fonction, donc
-/// dans la tentative rejouée : le booléen « inséré » des réglages et la liste
-/// des taux insérés sont ceux de la tentative qui commite — l'audit d'un essai
-/// annulé disparaît avec lui. Ordre : `company_invoice_settings.created`,
+/// dans la tentative rejouée : l'issue des réglages et la liste des taux
+/// insérés sont celles de la tentative qui commite — l'audit d'un essai annulé
+/// disparaît avec lui. Ordre : `company_invoice_settings.created` (ligne neuve)
+/// ou `company_invoice_settings.updated` (ligne complétée, Story 36-19), puis
 /// `vat_rate.created` (ordre du seed), `fiscal_year.created`, l'étape.
 ///
 /// `aujourd_hui` (Story 35-5a0) : la date du jour, lue par l'appelant sur
@@ -928,7 +950,7 @@ async fn finalize_inner(
     // 1. Lock onboarding_state (serializes all finalize() calls on same session)
     // 2. Check state is still at step 7 or 8 (prevents TOCTOU on onboarding progression)
     // 3. Lock company row (prevents deletion during finalize)
-    // 4. Proceed with insert_with_defaults() with guaranteed exclusive access
+    // 4. Proceed with complete_default_accounts_in_tx() (Story 36-19) with guaranteed exclusive access
     let mut tx = pool.begin().await.map_err(map_db_error)?;
 
     let onboarding = match onboarding::lock_state_in_tx(&mut tx).await {
@@ -982,32 +1004,24 @@ async fn finalize_inner(
         }
     };
 
-    // Pre-fill invoice settings with default accounts (1100, 3000).
-    // Uses INSERT IGNORE pattern for database-level idempotency.
-    // Account lookups use SELECT FOR UPDATE to prevent concurrent deletes.
-    // F2/F3/F4: Transaction-level variant keeps account locks within this transaction,
-    // preserving company and onboarding_state locks until step update completes.
-    // R2-002 Fix: Add explicit rollback on error.
-    // P6-L4: insert_with_defaults_in_tx fails fast with DbError::InactiveOrInvalidAccounts
-    // when accounts 1100/3000 are missing — surface that as an actionable 422 with
-    // remediation guidance instead of a generic 500. The previous downstream NULL
-    // re-check on `settings.default_*_account_id` was dead code after the fail-fast
-    // change (P1-004 + P1-007); it has been removed in this pass.
-    // Open follow-up: KF-002-CR-001 (issue #44) — fallback UI to add missing accounts
-    // during onboarding so the user has a recovery path.
-    let (settings, settings_inserted) =
-        match kesh_db::repositories::company_invoice_settings::insert_with_defaults_in_tx(
+    // Story 36-19 (#1200, refs #987) — les réglages de facturation : créés, ou
+    // **complétés** si un écran les a créés vides avant la fin de l'assistant
+    // (`GET /api/v1/company/invoice-settings`), sans remplacer un compte déjà
+    // choisi. Lectures des comptes candidats `FOR UPDATE`, puis la ligne, dans
+    // cette transaction (ordre `accounts → company_invoice_settings →
+    // bank_accounts`). Un refus nomme chaque réglage obligatoire en défaut, sa
+    // cause et son remède (`400 VALIDATION_ERROR`, code que la Story 36-17
+    // reconnaît).
+    let settings_outcome =
+        match kesh_db::repositories::company_invoice_settings::complete_default_accounts_in_tx(
             &mut tx, company.id,
         )
         .await
         {
-            Ok(s) => s,
-            Err(kesh_db::errors::DbError::InactiveOrInvalidAccounts) => {
+            Ok(outcome) => outcome,
+            Err(kesh_db::errors::DbError::DefaultInvoiceAccountsUnavailable(items)) => {
                 best_effort_rollback(tx).await;
-                return Err(AppError::Validation(
-                "Impossible de pré-remplir les comptes de facturation (1100, 3000 manquants du plan comptable). \
-                 Veuillez ajouter ces comptes avant de finaliser l'onboarding.".into(),
-            ));
+                return Err(AppError::Validation(finalize_refusal_message(&items)));
             }
             Err(e) => {
                 best_effort_rollback(tx).await;
@@ -1031,13 +1045,8 @@ async fn finalize_inner(
             }
         };
 
-    let seeded = audit_finalize_seed(
-        &mut tx,
-        current_user,
-        settings_inserted.then_some(&settings),
-        &inserted_rates,
-    )
-    .await;
+    let seeded =
+        audit_finalize_seed(&mut tx, current_user, &settings_outcome, &inserted_rates).await;
     if let Err(e) = seeded {
         best_effort_rollback(tx).await;
         return Err(e);
@@ -1133,16 +1142,95 @@ async fn finalize_inner(
     response_with_stub(pool, updated).await
 }
 
-/// Trace ce que `finalize` a **réellement inséré** (Story 15-7a2, AC 5) :
-/// `company_invoice_settings.created` si la ligne de réglages est neuve, puis
-/// un `vat_rate.created` par taux inséré, dans l'ordre du seed.
+/// Le motif du refus de la finalisation (Story 36-19, #1200, D5, C-36-19-4) :
+/// « La configuration ne peut pas se terminer. » puis une phrase par réglage
+/// obligatoire en défaut — dans l'ordre reçu, débiteurs d'abord —, séparées par
+/// une espace, chacune avec sa cause et son remède, puis « Réessayez ensuite. ».
+///
+/// En français seulement, comme les autres refus de cette route (limite #710,
+/// écrite au manuel) ; rendu `400 VALIDATION_ERROR` par `AppError::Validation`.
+fn finalize_refusal_message(items: &[UnavailableDefaultInvoiceAccount]) -> String {
+    let phrases: Vec<String> = items.iter().map(finalize_refusal_phrase).collect();
+    format!(
+        "La configuration ne peut pas se terminer. {} Réessayez ensuite.",
+        phrases.join(" ")
+    )
+}
+
+/// Une phrase du motif de [`finalize_refusal_message`] : le réglage, la cause,
+/// le remède. Libellés des rôles : `account-role-receivable` et
+/// `account-role-default-revenue` du catalogue `fr-CH`.
+fn finalize_refusal_phrase(item: &UnavailableDefaultInvoiceAccount) -> String {
+    let (setting, role) = match item.setting {
+        DefaultInvoiceSetting::Receivable => ("Compte débiteurs", "Créances clients"),
+        DefaultInvoiceSetting::Revenue => ("Compte de produit par défaut", "Produit par défaut"),
+    };
+    match &item.cause {
+        DefaultInvoiceAccountCause::NoRoleAccount => format!(
+            "{setting} : le réglage est vide et aucun compte actif du plan comptable ne porte le \
+             rôle « {role} » — désignez-le dans Administration → Facturation, ou attribuez ce rôle \
+             à un compte dans le plan comptable."
+        ),
+        DefaultInvoiceAccountCause::DesignatedArchived { account_number } => {
+            let account = match account_number {
+                Some(number) => format!("le compte désigné ({number})"),
+                None => "le compte désigné".to_string(),
+            };
+            format!(
+                "{setting} : {account} est archivé — désignez-en un autre dans Administration → \
+                 Facturation, ou réactivez-le dans le plan comptable."
+            )
+        }
+        DefaultInvoiceAccountCause::RoleAccountNotPostable { account_number } => format!(
+            "{setting} : le compte {account_number}, qui porte le rôle « {role} », n'est pas \
+             imputable — désignez un compte imputable dans Administration → Facturation, ou, dans \
+             le plan comptable, retirez d'abord ce rôle au compte {account_number}, puis \
+             attribuez-le à l'un de ses sous-comptes."
+        ),
+        DefaultInvoiceAccountCause::RoleAccountLinkedToBankAccount {
+            account_number,
+            bank_label,
+        } => format!(
+            "{setting} : le compte {account_number}, qui porte le rôle « {role} », est le compte \
+             du compte bancaire « {bank_label} » — déliez ce compte bancaire dans Administration → \
+             Comptes bancaires, ou désignez un autre {} dans Administration → Facturation.",
+            setting.to_lowercase()
+        ),
+    }
+}
+
+/// Trace ce que `finalize` a **réellement écrit** (Story 15-7a2, AC 5) :
+/// `company_invoice_settings.created` si la ligne de réglages est neuve, ou
+/// `company_invoice_settings.updated` (`trigger` = `onboarding`, `before`,
+/// `after` au format de `settings_snapshot_json`) si une ligne existante a été
+/// complétée (Story 36-19, AC5), rien si elle est restée inchangée ; puis un
+/// `vat_rate.created` par taux inséré, dans l'ordre du seed.
 async fn audit_finalize_seed(
     tx: &mut Tx<'_>,
     user: &CurrentUser,
-    inserted_settings: Option<&CompanyInvoiceSettings>,
+    settings: &DefaultAccountsOutcome,
     inserted_rates: &[VatRate],
 ) -> Result<(), AppError> {
-    if let Some(s) = inserted_settings {
+    if let DefaultAccountsOutcome::Completed { before, after } = settings {
+        // Même action et même forme que le `PUT` des réglages (l'écran du journal
+        // d'audit la connaît), attribuée par `from_current_user` comme `…created`.
+        audit_log::insert_in_tx(
+            tx,
+            NewAuditLogEntry::from_current_user(
+                user,
+                "company_invoice_settings.updated",
+                "company_invoice_settings",
+                after.company_id,
+                Some(json!({
+                    "trigger": "onboarding",
+                    "before": settings_snapshot_json(before),
+                    "after": settings_snapshot_json(after),
+                })),
+            ),
+        )
+        .await?;
+    }
+    if let DefaultAccountsOutcome::Inserted(s) = settings {
         // La table est clée par société : `entity_id = company_id`. Clés en
         // snake_case (convention des entrées neuves) — `.updated`, écrit par
         // `settings_snapshot_json`, est en camelCase par héritage.

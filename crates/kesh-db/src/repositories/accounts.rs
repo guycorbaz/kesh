@@ -398,7 +398,7 @@ pub enum RoleLookupLock {
     /// `FOR UPDATE` : la ligne du compte (et l'entrée d'index du rôle, ou
     /// l'intervalle où elle serait) reste verrouillée jusqu'à la fin de la
     /// transaction — la finalisation de l'assistant
-    /// (`company_invoice_settings::insert_with_defaults_in_tx`).
+    /// (`company_invoice_settings::complete_default_accounts_in_tx`).
     ForUpdate,
 }
 
@@ -413,9 +413,16 @@ pub enum RoleLookupLock {
 /// un plan renuméroté est suivi.
 ///
 /// Source unique de cette lecture : la finalisation de l'assistant
-/// (`insert_with_defaults_in_tx`, trois rôles, [`RoleLookupLock::ForUpdate`]) et
-/// l'étape bancaire de l'assistant (comptes `Receivable` et `Payable` qu'un
-/// compte bancaire ne peut pas lier, [`RoleLookupLock::None`]).
+/// (`company_invoice_settings::complete_default_accounts_in_tx`, trois rôles,
+/// [`RoleLookupLock::ForUpdate`]) et l'étape bancaire de l'assistant (comptes
+/// `Receivable` et `Payable` qu'un compte bancaire ne peut pas lier,
+/// [`RoleLookupLock::None`]).
+///
+/// ⚠️ Ne lit pas `postable` : un compte de rôle sous lequel un sous-compte a été
+/// créé reste rendu (la colonne générée ne lit que `active`). La finalisation
+/// l'écarte ensuite, par une relecture verrouillante (Story 36-19, D6, V3-1) ;
+/// l'étape bancaire, plus stricte, refuse le lien au compte qui porte le rôle,
+/// imputable ou non.
 pub async fn find_singleton_role_in_tx(
     tx: &mut sqlx::Transaction<'_, sqlx::MySql>,
     company_id: i64,
