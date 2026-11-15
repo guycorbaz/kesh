@@ -34,6 +34,10 @@ C-e360-18 (périmètre de #1187), qui fait foi. Option prudente et réversible �
 - **Écartées** : finaliser d'office au chargement (une écriture sans geste de l'utilisateur) ; garder le renvoi à `/`
   (la finalisation inachevée reste ignorée, contraire à #1187, point 4).
 - **Réversible** : oui.
+- *Complété le 2026-11-15 à la remédiation de la validation P1 (V1-3)* : l'état « en cours » se lit sur un drapeau local
+  `finalizing`, posé avant l'appel de l'étape bancaire, et non sur `onboardingState.loading` (fenêtre entre le `finally`
+  de `skipBank`, `onboarding.svelte.ts:144-150`, et `:160`) ; précédence échec > en cours > repris ; boutons désactivés
+  pendant un appel ou le verrou d'un tour du store (`:166-168`).
 
 ### C-36-17-4 — La garde de `/onboarding` ne renvoie plus le chemin production à `/` ; celle du chemin démo reste (D4)
 
@@ -51,6 +55,13 @@ C-e360-18 (périmètre de #1187), qui fait foi. Option prudente et réversible �
 - **Écartée** : renvoyer l'application à `/onboarding` à l'étape 7 — une installation dont la finalisation est refusée
   (422, comptes 1100/3000 absents, `onboarding.rs:991`) perdrait l'accès aux écrans qui permettent de la réparer.
 - **Réversible** : oui.
+- *Complété le 2026-11-15 à la remédiation de la validation P1 (V1-1 ; arbitrage de l'orchestrateur : D5 gardée)* :
+  ouvrir les réglages de facturation avant la finalisation crée leur ligne sans comptes
+  (`company_invoice_settings.rs:129`), et la finalisation est ensuite refusée à motif faux (`:1280-1306`, `:1305` ;
+  `onboarding.rs:1008`). **Limite connue**, issue demandée ; la bannière (`incomplete-banner-text`, quatre locales) dit
+  désormais de terminer avant d'ouvrir les réglages de facturation ou de facturer, l'écran de reprise aussi, et l'écran
+  d'échec ajoute le remède sous un refus `VALIDATION_ERROR`. Écartée en plus : corriger la finalisation ici (`kesh-db`,
+  `kesh-api`, au-delà de cinq modules).
 
 ### C-36-17-6 — Le récapitulatif se lit par les routes existantes ; son échec ne bloque pas la page (D6)
 
@@ -77,4 +88,16 @@ C-e360-18 (périmètre de #1187), qui fait foi. Option prudente et réversible �
   finalisation et la navigation démo, avec leurs `catch`, vivent dans `+page.svelte` ; le plancher monte au nombre
   recompté.
 - **Écartée** : étendre la garde aux composants (portée de la garde changée pour une story d'écran).
+- **Réversible** : oui.
+- *Complété le 2026-11-15 à la remédiation de la validation P1 (V1-2)* : les branches existantes 0 à 6 reçoivent une
+  enveloppe `data-testid="onboarding-screen-<n>"`, et une table fixe l'écran de chaque état (fiche, D8), pour que le
+  détecteur d'AC7 voie aussi les écrans existants.
+
+### C-36-17-9 — Un état non lu a son écran, avec *Réessayer* (D9)
+
+- **Contexte** (V1-4) : la garde de `/onboarding` avale l'échec de `fetchState()` (`routes/onboarding/+layout.ts:33-38`) ;
+  l'état par défaut du module (`onboarding.svelte.ts:14-21`, étape 0) fait rendre l'écran de la langue.
+- **Retenu** : `loaded` faux hors chargement → écran « L'état de la configuration n'a pas pu être lu. » et *Réessayer*
+  (`fetchState()`, `catch` dans `+page.svelte`).
+- **Écartées** : l'écran de l'étape 0 (aujourd'hui) ; une garde qui bloque `/onboarding` à l'échec.
 - **Réversible** : oui.

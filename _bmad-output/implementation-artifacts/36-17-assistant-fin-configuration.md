@@ -7,9 +7,9 @@ Status: ready-for-dev
 release `epic/36-0.18.0`. **Aucune migration**, **aucun changement du serveur ni du contrat de l'API** : frontend, clés
 i18n (quatre locales) et manuels. Code lu à la tête du worktree, **`0bf3c3b4b`** (kickoff de la 0.18.0). Ce qui fait foi :
 fichier d'epic, Phase 2, rang 16 ; registre `e36-choix-autonomes-e360.md`, **C-e360-18** (et C-e360-3, -11) ; choix propres
-à la story : `e36-choix-autonomes-36-17.md` (C-36-17-1 à C-36-17-8). Voie de développement : **voie 2** (bases `kesh_e3617`,
+à la story : `e36-choix-autonomes-36-17.md` (C-36-17-1 à C-36-17-9). Voie de développement : **voie 2** (bases `kesh_e3617`,
 `kesh_e2e_e3617` sur `kesh-mariadb-dev2:3307` ; `kesh_ci_e3617` en voie 1 pour `gate-ci.sh`). Journaux :
-`/home/gcorbaz/devel/kesh-gate-logs/e36-17/`. Validation non lancée.*
+`/home/gcorbaz/devel/kesh-gate-logs/e36-17/`. Validation : passe P1 remédiée (Change Log), passe suivante à lancer.*
 
 ## Story
 
@@ -74,6 +74,34 @@ navigation ne se fait d'office après la finalisation. Le nominal local ne repro
   (`frontend/src/lib/features/settings/settings.types.ts:84-87`, `fetchCompanyCurrent`, `settings.api.ts:12`), et
   `GET /api/v1/fiscal-years` (`lib.rs:1210-1213`, `listFiscalYears`, `fiscal-years.api.ts:14`).
 
+### Une limite connue de l'application ouverte avant la finalisation (étapes 6 et 7)
+
+*Ajouté à la remédiation de la validation P1 (V1-1 ; prémisse lue au code, corrigée sur son issue).*
+
+- La garde de l'application laisse entrer dès l'étape 6 (`(app)/+layout.ts:42`, cité plus haut), donc avant la
+  finalisation. Y ouvrir *Administration → Facturation* crée la ligne de réglages **sans comptes** : le `GET` et le `PUT`
+  des réglages (`crates/kesh-api/src/routes/company_invoice_settings.rs:300`, `:336`,
+  « `company_invoice_settings::get_or_create_default(&state.pool, company.id).await?;` ») appellent
+  `get_or_create_default`, qui fait « `INSERT IGNORE INTO company_invoice_settings (company_id) VALUES (?)` »
+  (`crates/kesh-db/src/repositories/company_invoice_settings.rs:129`) ; l'export global aussi
+  (`crates/kesh-api/src/exports/global.rs:335`).
+- La finalisation pose ensuite les comptes par un autre `INSERT IGNORE` (`company_invoice_settings.rs:1250`), sans effet
+  sur une ligne déjà là ; elle relit alors la ligne **jointe aux comptes de créance et de produit actifs**
+  (`:1280-1306`) — une ligne aux comptes vides ne se joint pas — et rend une erreur (`:1305`,
+  « `None => Err(DbError::InactiveOrInvalidAccounts),` »), que la route traduit en refus « Impossible de pré-remplir les
+  comptes de facturation (1100, 3000 manquants du plan comptable). … » (`onboarding.rs:1008`).
+- **Effet** : la finalisation n'aboutit pas « sans comptes » comme le suppose V1-1 : elle est **refusée à chaque essai**,
+  avec un motif faux (les comptes 1100 et 3000 existent), tant que les comptes de créance et de produit ne sont pas
+  désignés et enregistrés dans *Administration → Facturation* (un `PUT` qui les pose rend la jointure possible, `update`,
+  `:323`). Le défaut existe déjà à l'étape 6 ; D5 le garde à l'étape 7, où la finalisation interrompue de #1187 le rend
+  plus probable.
+- **La bannière actuelle ne prévient pas** : « `incomplete-banner-text = Configuration incomplète — Terminer la
+  configuration` » (`crates/kesh-i18n/locales/fr-CH/messages.ftl:159` ; même sens en `de-CH`, `it-CH`, `en-CH`, `:159`) ne
+  dit rien de la facturation.
+- Corriger la finalisation (compléter une ligne existante aux comptes vides) touche `kesh-db` et `kesh-api` : hors de la
+  story (arbitrage de l'orchestrateur, cinq modules) ; **issue demandée** (Dev Notes). La story l'écrit comme **limite
+  connue** — bannière, écran de reprise, écran d'échec, manuels (D5).
+
 ### Le chemin démo
 
 - `chooseDemoPath` (`+page.svelte:68-77`) attend `seedDemo()` puis `goto('/')` (`:71`) **sans l'attendre**. Pendant le
@@ -90,18 +118,27 @@ navigation ne se fait d'office après la finalisation. Le nominal local ne repro
 - `onboarding-catch-guard.test.ts:27-28` : la garde ne lit que `+page.svelte`, plancher de **onze** `catch`.
 - `frontend/tests/e2e/onboarding-bank-account.spec.ts:83` attend `/` après l'envoi de l'étape bancaire : il passera par la
   page terminée et *Commencer* (D1).
-- Les E2E de fin du chemin production `onboarding-path-b.spec.ts:65`, `:92` et `onboarding.spec.ts:150` sont **déjà
-  rouges**, KF-029 (#97), par des sélecteurs périmés (`#coord-address`, `onboarding-path-b.spec.ts:73`, champ disparu avec
-  l'adresse structurée) — `docs/testing.md:398-402`. Ils ne sont pas un appui ; la story ne les répare pas (hors périmètre),
-  mais leur attente de `/` après *Configurer plus tard* devient fausse et se note au commentaire de chacun.
+- Les E2E de fin du chemin production `onboarding-path-b.spec.ts:65` (*Enregistrer*), `:92` (*Configurer plus tard*) et
+  `onboarding.spec.ts:150` (*Configurer plus tard*) sont **déjà rouges**, KF-029 (#97) — `docs/testing.md:398-402` —, par
+  un sélecteur périmé, `#coord-address` (`onboarding-path-b.spec.ts:73`, `:106` ; `onboarding.spec.ts:168`), champ disparu
+  avec l'adresse structurée. Ils ne sont pas un appui ; la story ne les répare pas (hors périmètre), mais leur attente de
+  `/` après l'étape bancaire devient fausse et se note au commentaire de chacun.
+- `onboarding-path-b.spec.ts:27` ne tourne pas : `test.fixme` à `:32`, « `KF-032 (#124) — bannière config-incomplète
+  jamais affichée après finalize` » (#124 est fermée). Il attend la bannière après *Configurer plus tard* ; avec D5 elle
+  s'affiche à l'étape 7, mais la finalisation mène à l'étape 8, où elle ne s'affiche pas : son attente reste fausse, le
+  `fixme` reste, un commentaire le dit (T6).
 
 ### Inventaire par le symptôme
 
 Symptôme 1 — **un état de l'assistant sans écran**. Détecteur par exécution (règle de `e35-dev-commun.md`) : un test Vitest
-qui rend la page pour chaque état `stepCompleted ∈ {−1, 0, …, 10}` × `isDemo ∈ {faux, vrai}` × `loading ∈ {faux, vrai}`
-(état chargé) et exige un écran identifié (`data-testid` de la forme `onboarding-screen-*`) ; **sonde positive** : à
-`0bf3c3b4b`, (7, faux, faux) et (8, faux, faux) ne rendent rien — le test doit y rougir avant le correctif (journal
-`rouges.log`). Par lecture, les sites qui branchent sur l'étape :
+qui rend la page pour chaque état `stepCompleted ∈ {−1, 0, …, 10}` × `isDemo ∈ {faux, vrai}` × `loading ∈ {faux, vrai}`,
+l'état chargé, plus l'état **non chargé** (`loaded` faux, `loading` vrai ou faux), et exige exactement un écran identifié
+(`data-testid` de la forme `onboarding-screen-*`, posé par la story sur les écrans neufs **et** sur les branches 0 à 6
+existantes, D8). Aucun identifiant de cette forme n'existe à `0bf3c3b4b` (`git grep onboarding-screen frontend/src` →
+vide) : avant le correctif, le détecteur rougit sur tous les états ; sa **sonde positive** se lit donc sur des cas qui
+rougissent **pour la raison visée** et non faute d'identifiant — (7, production) et (8, production) ne rendent **aucun**
+élément dans la zone de l'assistant (assertion « zone non vide », écrite avec la matrice), et (3, démo) rend
+`onboarding-org-type-*` (journal `rouges.log`). Par lecture, les sites qui branchent sur l'étape :
 
 ```
 $ git grep -nE "stepCompleted (===|>=|<|>|<=) [0-9]+" -- frontend/src ':!*.test.ts'
@@ -120,6 +157,11 @@ et `+layout.ts:30` **dans le périmètre** (D3, D4) ; `(app)/+layout.svelte:369`
 `(app)/+layout.svelte:39` (Ctrl+N, mode expert, étape ≥ 3) **hors** — raccourci, aucun écran en jeu ;
 `+page.svelte:31` (lien de restauration, étapes 0 à 2) et `:37` (chargement des messages) **hors**, inchangés ;
 `(app)/+layout.ts:39-44` **hors**, inchangé par décision (D5).
+
+Même classe, autre forme (V1-4) : **un état jamais lu**. La garde de `/onboarding` avale l'échec de `fetchState()`
+(`routes/onboarding/+layout.ts:33-38`, « `console.error('[onboarding layout] fetchState failed:', err);` ») ; l'état
+reste celui du module (`onboarding.svelte.ts:14-21`, `stepCompleted: 0`, `_loaded = false`), et la page rend alors
+l'écran de l'étape 0 (choix de la langue) pour une installation peut-être à l'étape 7 : **dans le périmètre** (D9).
 
 Symptôme 2 — **une navigation lancée sans être attendue** dans l'assistant et ses bannières :
 
@@ -169,19 +211,37 @@ $ git grep -n -i "finalis\|configurer plus tard\|Configuration terminée" docs/m
   retirées des quatre locales si `git grep` n'en trouve plus aucun lecteur.
   *Écartées* : toast et écran (message doublé) ; toast seul.
 - **D3 — L'écran de l'étape 7 a trois états** (C-36-17-3) : **en cours** — « Configuration en cours… » sur toute la zone de
-  l'assistant (`role="status"`, `aria-busy="true"`), tant que `onboardingState.loading` ; **échec** — le motif et
-  *Réessayer* ; **repris** (après un rechargement, ni appel ni échec) — « La configuration n'est pas terminée. » et
+  l'assistant (`role="status"`, `aria-busy="true"`) ; **échec** — le motif et *Réessayer* ; **repris** (après un
+  rechargement, ni appel ni échec) — « La configuration n'est pas terminée : terminez-la avant d'utiliser Kesh. » et
   *Terminer la configuration*, même geste que *Réessayer*. **Aucun `POST` au chargement.**
-  *Écartée* : finaliser d'office au chargement de la page.
+  L'état « en cours » se lit sur un **drapeau local de la page**, `finalizing`, et non sur `onboardingState.loading`
+  (V1-3) : posé à vrai **avant** l'appel de l'étape bancaire (`setBankAccount` / `skipBank`) et avant tout rappel de
+  `finalize()`, remis à faux dans le `finally` de la finalisation, ou à l'échec de l'étape bancaire. Sans lui, l'état
+  (7, chargé, `loading` faux) existe entre la fin de `skipBank()` (`onboarding.svelte.ts:144-150`, `finally`) et le
+  `_loading = true` de `finalize()` (`:160`) : l'écran de reprise s'y rendrait un instant. **Précédence** : échec
+  > en cours > repris. *Réessayer* et *Terminer la configuration* sont **désactivés** tant que `finalizing` est vrai ou que
+  `onboardingState.loading` l'est (le verrou d'un tour de `finalize()`, `:166-168`, avalerait sinon le clic sans rien
+  dire, `:159`).
+  *Écartée* : finaliser d'office au chargement de la page ; lire `onboardingState.loading` (fenêtre ci-dessus).
 - **D4 — Gardes de `/onboarding`** (C-36-17-4) : production à l'étape 7 → écran de reprise (plus de renvoi à `/`) ; à
   l'étape ≥ 8 → page terminée. Démo à l'étape ≥ 3 → `/`, inchangé. `/onboarding/restore` à l'étape > 2 renvoie toujours à
   `/onboarding` (`restore/+page.ts:32-33`), qui montre désormais l'écran de l'état au lieu de renvoyer à `/`.
   *Écartée* : renvoi à `/` à l'étape ≥ 8 (la page terminée invisible au rechargement, contraire à #1187, point 2).
-- **D5 — L'application reste ouverte à l'étape 7 ; la bannière « Configuration incomplète » s'y affiche** (C-36-17-5) :
-  condition `stepCompleted >= 6 && stepCompleted < 8` à `(app)/+layout.svelte:369` ; son lien mène à `/onboarding`, donc à
-  l'écran de reprise. La garde `(app)/+layout.ts` ne change pas.
-  *Écartée* : renvoyer l'application à l'assistant à l'étape 7 (une finalisation refusée en 422, `onboarding.rs:991`,
-  enfermerait l'utilisateur hors des écrans qui la réparent).
+- **D5 — L'application reste ouverte à l'étape 7 ; la bannière « Configuration incomplète » s'y affiche et dit de
+  terminer avant de facturer** (C-36-17-5, arbitrage de l'orchestrateur sur V1-1) : condition `stepCompleted >= 6 &&
+  stepCompleted < 8` à `(app)/+layout.svelte:369` ; son lien mène à `/onboarding`, donc à l'écran de reprise. La garde
+  `(app)/+layout.ts` ne change pas. **Le texte de la bannière change** (clé existante `incomplete-banner-text`, quatre
+  locales) : « Configuration incomplète : terminez-la avant d'ouvrir les réglages de facturation ou de facturer. » ; le
+  bouton garde `incomplete-banner-cta` (« Terminer la configuration »). L'écran de reprise porte la même mise en garde. Si
+  la finalisation est refusée par le motif « 1100, 3000 manquants » (`onboarding.rs:1008`), l'écran d'échec ajoute sous ce
+  motif une phrase fixe : « Si vous avez ouvert les réglages de facturation avant de terminer, désignez-y le compte
+  débiteurs et le compte de produit par défaut, enregistrez, puis réessayez. » (remède de la limite connue, ci-dessus ;
+  reconnu au **code d'erreur** `VALIDATION_ERROR` de cette seule route, non au texte du motif).
+  **Limite connue** : la finalisation reste refusée dans ce cas tant que l'utilisateur n'a pas fait ce geste ; la
+  correction serveur est l'issue demandée (Dev Notes).
+  *Écartées* : renvoyer l'application à l'assistant à l'étape 7 (une finalisation refusée en 422, `onboarding.rs:991`,
+  enfermerait l'utilisateur hors des écrans qui la réparent) ; corriger la finalisation dans la story (`kesh-db`,
+  `kesh-api` : six modules et plus, arbitrage de l'orchestrateur).
 - **D6 — Le récapitulatif** (C-36-17-6), lu à l'affichage de la page terminée par `fetchCompanyCurrent()` et
   `listFiscalYears()` :
   - *Créé* : la société (nom) ; le plan comptable (type d'organisation, par les clés existantes `onboarding-org-independant`,
@@ -205,7 +265,21 @@ $ git grep -n -i "finalis\|configurer plus tard\|Configuration terminée" docs/m
   plancher (`:28`) monte au nombre recompté. Un `{:else}` final rend un écran de repli (« État de l'assistant inattendu »,
   lien *Recharger la page* vers `/onboarding` avec `data-sveltekit-reload`) : plus aucune combinaison sans écran. Les
   libellés des langues (`+page.svelte:328` et l'étape 5) se partagent par une constante, non recopiés.
-  *Écartée* : étendre la garde aux composants.
+  **Identifiants** (V1-2) : chaque branche existante 0 à 6 de `+page.svelte` reçoit une enveloppe
+  `<div data-testid="onboarding-screen-<n>">` (`n` = l'étape), sans autre changement de son contenu ; les écrans neufs :
+  `onboarding-screen-unloaded`, `-finalizing`, `-finalize-error`, `-resume`, `-done`, `-demo-loading`, `-demo-ready`,
+  `-fallback`. Correspondance fixée : production 7 → `finalizing`, `finalize-error` ou `resume` (précédence D3) ;
+  production ≥ 8 (9 et 10 compris) → `done` ; démo ≥ 3 → `demo-ready` ; démo 2 pendant `seedDemo()` → `demo-loading` ;
+  −1 → `fallback` ; non chargé → `unloaded` (D9) ; chargement initial (`loading` et non `loaded`) → `unloaded` en son état
+  « Chargement… » (`:320-323` reprise).
+  *Écartée* : étendre la garde aux composants ; un détecteur qui ne compterait que les écrans neufs (il ne verrait plus
+  rien des étapes 0 à 6).
+- **D9 — Un état non lu a son écran** (C-36-17-9, V1-4) : si l'état n'a pu être lu (`loaded` faux hors chargement), la page
+  rend `onboarding-screen-unloaded` — « L'état de la configuration n'a pas pu être lu. » et *Réessayer*, qui rappelle
+  `onboardingState.fetchState()` (son `catch` dans `+page.svelte`, motif par `errorMessageOf`) — et non l'écran de la
+  langue. La garde de `+layout.ts` continue de journaliser sans bloquer.
+  *Écartée* : rendre l'étape 0 (l'état d'aujourd'hui) ; bloquer la garde (`/onboarding` deviendrait inaccessible au
+  moindre échec réseau).
 
 ## Critères d'acceptation
 
@@ -222,15 +296,20 @@ $ git grep -n -i "finalis\|configurer plus tard\|Configuration terminée" docs/m
 4. **AC4 — Échec et *Réessayer*.** Une finalisation refusée (motif du serveur) ou interrompue (réseau) laisse l'écran de
    l'étape 7 avec le motif (`role="alert"`) — ou, sans motif lisible, « Finalisation échouée — réessayez. » — et
    *Réessayer* ; aucun toast. *Réessayer* rappelle la finalisation ; à son succès, la page terminée s'affiche. Sur
-   `ONBOARDING_STEP_ALREADY_COMPLETED`, l'état est relu et son écran s'affiche.
+   `ONBOARDING_STEP_ALREADY_COMPLETED`, l'état est relu et son écran s'affiche (étape 6 relue → l'écran bancaire). Un
+   refus `VALIDATION_ERROR` de la finalisation porte, sous le motif, la phrase de remède de D5. Pendant la finalisation,
+   l'écran de reprise n'apparaît à aucun instant entre l'étape bancaire et la finalisation, et *Réessayer* est désactivé
+   tant qu'un appel ou le verrou du store est en cours (D3).
 5. **AC5 — Rechargement.** `/onboarding` rechargé à l'étape 7 (production) montre l'écran de reprise et *Terminer la
    configuration*, qui finalise et mène à la page terminée ; aucun `POST` n'est envoyé au chargement. Rechargé à
    l'étape ≥ 8, il montre la page terminée et son récapitulatif. La démo à l'étape ≥ 3 est toujours renvoyée à `/`.
-6. **AC6 — L'application à l'étape 7** montre la bannière « Configuration incomplète », dont le lien mène à l'écran de
-   reprise ; aux étapes < 6 et ≥ 8, la garde et la bannière se comportent comme avant.
+6. **AC6 — L'application aux étapes 6 et 7** montre la bannière, au texte neuf de D5 (« … terminez-la avant d'ouvrir les
+   réglages de facturation ou de facturer. », quatre locales), dont le lien mène à l'écran de l'état (bancaire à 6, reprise
+   à 7) ; aux étapes < 6 et ≥ 8, la garde et l'absence de bannière sont celles d'avant.
 7. **AC7 — Un écran pour chaque état.** Pour tout `stepCompleted` de −1 à 10, `isDemo` vrai ou faux, chargement en cours
-   ou non (état chargé), la page rend exactement un écran identifié `onboarding-screen-*` ; l'écran du type
-   d'organisation n'apparaît jamais en démo.
+   ou non, état chargé — et pour l'état non chargé —, la page rend **exactement un** élément `[data-testid^="onboarding-screen-"]`,
+   celui de la correspondance de D8 (branches 0 à 6 comprises) ; l'écran du type d'organisation n'apparaît jamais en démo ;
+   un état non lu ne rend jamais l'écran de la langue (D9).
 8. **AC8 — Chemin démo.** Pendant le chargement des données de démonstration, « Chargement des données de
    démonstration… » occupe la zone de l'assistant ; à son succès, `/` s'ouvre ; si la navigation échoue, l'écran « Les
    données de démonstration sont prêtes » et son *Commencer* restent, avec le motif.
@@ -238,14 +317,18 @@ $ git grep -n -i "finalis\|configurer plus tard\|Configuration terminée" docs/m
    `en-CH`), son repli français égal à la valeur `fr-CH` ; `parity_between_locales` (`crates/kesh-i18n/src/loader.rs:771`)
    et `npm run lint-i18n-ownership` verts ; les deux clés mortes de D2 retirées (ou leur lecteur restant cité).
 10. **AC10 — Manuels.** `user-manual.tex` (§ *Onboarding*, après `:217`) décrit l'indicateur, la page terminée et son
-    récapitulatif, *Commencer*, l'échec et *Réessayer*, la reprise au rechargement, l'indicateur de la démo ;
-    `admin-manual.tex` dit en une phrase, après `:1461`, que l'assistant se termine sur la page « Configuration terminée ».
+    récapitulatif, *Commencer*, l'échec et *Réessayer*, la reprise au rechargement, l'indicateur de la démo, et la
+    **limite connue** de D5 : terminer la configuration avant d'ouvrir les réglages de facturation, et, faute de quoi, le
+    remède (désigner les comptes débiteurs et de produit, enregistrer, réessayer), avec le numéro de l'issue demandée ;
+    `admin-manual.tex` dit, après `:1461`, que l'assistant se termine sur la page « Configuration terminée », et la même
+    limite en une phrase.
     PDF régénérés à l'intégration (contrôle aplati, forme E6, de la phrase neuve).
 11. **AC11 — Périmètre serveur nul.** `git diff --stat origin/epic/36-0.18.0 -- crates/ ':!crates/kesh-i18n/locales'` ne
     rend rien ; aucune migration (`ls crates/kesh-db/migrations/*.sql | wc -l` = 91).
 12. **AC12 — Recette visuelle** : captures, thème clair, base de démonstration jetable, de chaque état touché — en cours,
     échec avec *Réessayer*, reprise, terminée avec compte bancaire, terminée sans compte bancaire, récapitulatif en échec,
-    chargement de la démo, démo prête, écran de repli, application à l'étape 7 avec la bannière — dans
+    chargement de la démo, démo prête, écran de repli, état non lu, échec avec la phrase de remède de D5, application à
+    l'étape 7 avec la bannière au texte neuf — dans
     `/home/gcorbaz/devel/kesh-gate-logs/e36-17/captures/`, jointes au Dev Agent Record et au prompt de la revue.
 
 ## Tests à écrire, et la preuve du rouge
@@ -257,8 +340,13 @@ restauration par `git restore --worktree -- <fichier>` puis `touch`.
 **Vitest** (fichiers à côté de la page, nom sans préfixe `+`, patron de `onboarding-bank-step.test.ts:20-60` : API de
 l'assistant, i18n, `$app/navigation`, `svelte-sonner` simulés) :
 
-- `onboarding-screens.test.ts` — **le détecteur d'AC7** : la matrice des états, un écran identifié pour chacun. Rouge au
-  départ sur (7, production) et (8, production), et sur (3, démo) qui rend `onboarding-org-type-*` (sonde positive).
+- `onboarding-screens.test.ts` — **le détecteur d'AC7** : la matrice des états (D8), exactement un écran identifié pour
+  chacun, l'identifiant attendu nommé par la table. Deux assertions par cas : l'identifiant attendu, et une zone de
+  l'assistant non vide. Au départ, tout rougit sur l'identifiant (aucun n'existe) ; la sonde positive porte sur la seconde
+  assertion et sur la démo : (7, production) et (8, production) rougissent sur « zone non vide », (3, démo) sur la présence
+  de `onboarding-org-type-*`, et (0, production) **passe** la seconde — preuve que l'assertion « zone non vide » n'est pas
+  rouge partout (`rouges.log`). État non chargé : (rejet de `fetchState`) rend aujourd'hui l'écran de la langue
+  (`onboarding-screen-0` attendu absent après le correctif).
 - `onboarding-end.test.ts` :
   - AC1 : *Configurer plus tard* avec `finalize` en attente (promesse non résolue) → `onboarding-screen-finalizing` ;
     résolue à l'étape 8 → `onboarding-screen-done`, `goto` jamais appelé. Rouge au départ (rien rendu, `goto('/')`
@@ -266,20 +354,30 @@ l'assistant, i18n, `$app/navigation`, `svelte-sonner` simulés) :
   - AC3 : récapitulatif (société, type, langue, exercice en date suisse, banque et description, pas d'IBAN — la chaîne
     `CH93` absente du rendu) ; sans compte bancaire, la phrase d'ajout ; `fetchCompanyCurrent` en échec → la ligne et le
     motif, *Commencer* présent.
-  - AC4 : refus `VALIDATION_ERROR` → motif à l'écran, `toastError` non appelé ; `TypeError` → « Finalisation échouée —
-    réessayez. » ; *Réessayer* → `finalize` appelé une seconde fois → page terminée ; `ONBOARDING_STEP_ALREADY_COMPLETED`
-    → `fetchState` appelé, écran de l'état relu.
+  - AC4 : refus `VALIDATION_ERROR` → motif à l'écran et phrase de remède de D5, `toastError` non appelé ; `TypeError` →
+    « Finalisation échouée — réessayez. », sans phrase de remède ; *Réessayer* → `finalize` appelé une seconde fois → page
+    terminée ; `ONBOARDING_STEP_ALREADY_COMPLETED` → `fetchState` appelé, écran de l'état relu (6 → `onboarding-screen-6`).
+  - D3 (V1-3) : `skipBank` résolu à l'étape 7 et `finalize` **en attente** → après chaque tour de microtâches
+    (`await tick()` répété entre la résolution de `skipBank` et l'appel de `finalize`), `onboarding-screen-resume` absent
+    et `onboarding-screen-finalizing` présent ; `finalize` rejeté → *Réessayer* désactivé jusqu'au tour suivant, puis actif.
+  - D9 : `fetchState` rejeté → `onboarding-screen-unloaded`, *Réessayer* → `fetchState` rappelé → écran de l'état lu.
   - AC5 : état chargé à 7 sans appel → écran de reprise, `finalize` **non** appelé au rendu ; *Terminer la configuration*
     → appelé.
   - AC8 : `seedDemo` en attente → indicateur de la démo ; `goto` rejeté → écran « démo prête » et motif.
 - `onboarding-motif.test.ts:235-290` : réécrit — le motif lu à l'écran, `toastError` non appelé (D2). Rouge au départ par
   construction (le toast est l'état d'aujourd'hui).
 - `onboarding-catch-guard.test.ts` : plancher monté au nombre recompté (le recompte se cite au Change Log).
-- `onboarding-guard.test.ts` (neuf) — la fonction `load` de `routes/onboarding/+layout.ts` : production 7 et 8 → pas de
-  `redirect` ; démo 3 → `redirect(302, '/')` ; non authentifié → `/login`. Rouge au départ sur 7 et 8.
-- Bannière (AC6) : un test du rendu de `(app)/+layout.svelte` ou, à défaut, de la condition extraite en fonction pure
-  (`showIncompleteBanner(state)`) dans `features/onboarding/` : 5 → non, 6 → oui, 7 → oui, 8 → non, démo → non. Rouge au
-  départ sur 7.
+- `onboarding-guard.test.ts` (neuf) — la fonction `load` de `routes/onboarding/+layout.ts`. ⚠️ Sous Vitest,
+  `browser` (`$app/environment`) vaut faux, et `load` ne fait alors **rien** (`+layout.ts:10`, `:15`) : sans simulacre, le
+  cas « production 7 → pas de `redirect` » passerait à vide. Le test simule donc `vi.mock('$app/environment', () => ({
+  browser: true }))`, `$lib/app/stores/auth.svelte` (`authState.isAuthenticated`) et l'API de l'assistant (patron
+  `onboarding-bank-step.test.ts:30-46`). Cas : production 7 et 8 (et 10) → pas de `redirect` ; démo 3 →
+  `redirect(302, '/')` ; non authentifié → `redirect(302, '/login')`. **Sonde positive** : les deux derniers cas sont
+  **verts au départ** — preuve que `load` s'exécute bien sous le simulacre ; production 7 et 8 sont **rouges au départ**
+  (`redirect` levé, `+layout.ts:30-32`).
+- Bannière (AC6) : la condition extraite en fonction pure, `showIncompleteBanner(state)`, dans `features/onboarding/`, lue
+  par `(app)/+layout.svelte:369` : 5 → non, 6 → oui, 7 → oui, 8 → non, démo → non ; et `IncompleteBanner` rendu avec le
+  texte neuf (repli égal à `fr-CH`). Rouge au départ sur 7 et sur le texte.
 
 **E2E** (le défaut se voit dans le navigateur : exigé) — `frontend/tests/e2e/onboarding-fin.spec.ts`, préréglage `fresh`,
 connexion `changeme`, **assistant joué à l'interface** jusqu'à l'étape bancaire (sélecteurs `id` et `data-testid`, aucun
@@ -289,13 +387,17 @@ terminée** :
 
 - **E1 — compte saisi** : `onboarding-screen-done` visible, URL `/onboarding`, récapitulatif (société, banque) ; *Commencer*
   → `/`, menu latéral visible ; contrôle par `authedApiContext` que `GET /api/v1/onboarding/state` rend l'étape 8.
-- **E2 — compte passé, finalisation lente puis interrompue** : `page.route('**/api/v1/onboarding/finalize', …)` retarde la
-  première requête (l'indicateur se constate) puis l'interrompt (`route.abort()`) → message et *Réessayer* ; la route
-  rendue au serveur, *Réessayer* → page terminée, sans compte bancaire, avec la phrase d'ajout.
+- **E2 — compte passé, finalisation retenue puis interrompue**, sans délai fixe : un gestionnaire
+  `page.route('**/api/v1/onboarding/finalize', …, { times: 1 })` **retient** la première requête sur une promesse ; le test
+  attend `onboarding-screen-finalizing` **visible**, puis libère la promesse et le gestionnaire fait `route.abort()` → écran
+  d'échec et *Réessayer* (la requête n'a jamais atteint le serveur : l'état reste 7). `page.unroute(…)`, puis *Réessayer*
+  → page terminée, sans compte bancaire, avec la phrase d'ajout. (Le client ne rejoue pas seul un `POST` :
+  `api-client.ts:311`, « `/** True si la méthode HTTP est idempotente — éligible au retry exponentiel. */` ».)
 - **E3 — reprise** : étapes jouées par l'API jusqu'à `skip-bank` (étape 7, sans finalisation), puis `page.goto('/onboarding')`
   → écran de reprise (et non `/`) ; *Terminer la configuration* → page terminée ; `page.reload()` → page terminée de
   nouveau.
-- **E4 — démo** : chemin démo avec `seed-demo` retardé par `page.route` → indicateur, puis `/`.
+- **E4 — démo** : chemin démo avec `seed-demo` retenu de même par `page.route` (promesse libérée après l'attente de
+  `onboarding-screen-demo-loading` visible, puis `route.continue()`) → `/`.
 
 Preuve du rouge de l'E2E : la spec jouée contre le frontend construit au code d'avant le correctif (`git stash` du seul
 frontend, ou construction à `0bf3c3b4b`) — E1 rouge à l'attente de `onboarding-screen-done` — journal
@@ -306,7 +408,11 @@ frontend, ou construction à `0bf3c3b4b`) — E1 rouge à l'attente de `onboardi
 `reportFinalizeError` (AC4) ; **M4** finalisation d'office au rendu de l'étape 7 (AC5 : `finalize` non appelé au rendu) ;
 **M5** garde `step >= 7 → '/'` rétablie (AC5, `onboarding-guard.test.ts`) ; **M6** condition de bannière `< 7` rétablie
 (AC6) ; **M7** l'écran du type d'organisation sans `!isDemo` (AC7) ; **M8** IBAN ajouté au récapitulatif (AC3) ; **M9**
-`fetchState` retiré du cas « déjà finalisé » (AC4). Une mutation équivalente se dit.
+`fetchState` retiré du cas « déjà finalisé » (AC4) ; **M10** l'écran « en cours » lu sur `onboardingState.loading` au lieu
+de `finalizing` (D3, test de la fenêtre) ; **M11** *Réessayer* non désactivé pendant le verrou du store (D3) ; **M12**
+l'état non chargé rendu comme l'étape 0 (D9, AC7) ; **M13** l'enveloppe `onboarding-screen-4` retirée (AC7 : le
+détecteur voit les branches 0 à 6) ; **M14** l'ancien texte de la bannière rétabli dans `fr-CH` (AC6) ; **M15** la phrase de
+remède de D5 retirée de l'écran d'échec (AC4). Une mutation équivalente se dit.
 
 ## Tâches
 
@@ -314,21 +420,26 @@ frontend, ou construction à `0bf3c3b4b`) — E1 rouge à l'attente de `onboardi
   de la branche (elle a pu bouger : 36-7, 36-15 en parallèle), ligne lue citée au Change Log.
 - [ ] **T1 — Rouges** : les tests de la section précédente, écrits et journalisés rouges (`rouges.log`), sonde positive du
   détecteur comprise.
-- [ ] **T2 — Écrans** (D3, D6, D7, D8) : composants présentationnels sous `frontend/src/lib/features/onboarding/`
-  (en cours, échec/reprise de l'étape 7, terminée avec récapitulatif, démo en chargement, démo prête, repli) ;
-  `data-testid="onboarding-screen-*"`.
-- [ ] **T3 — Page** (D1, D2, D3, D7, D8) : `+page.svelte` — branches 7, ≥ 8, démo ≥ 3, `{:else}` ; `navigateHomeIfFinalized`
-  retiré ; `reportFinalizeError` vers l'état d'écran ; *Réessayer* / *Terminer la configuration* ; chargement du
-  récapitulatif ; `chooseDemoPath` attend `goto` ; plancher de la garde recompté.
-- [ ] **T4 — Gardes et bannière** (D4, D5) : `routes/onboarding/+layout.ts` ; `(app)/+layout.svelte:369`.
-- [ ] **T5 — Textes** (AC9) : clés `onboarding-*` neuves aux quatre `messages.ftl` ; clés mortes retirées ; replis égaux à
-  `fr-CH`.
+- [ ] **T2 — Écrans** (D3, D6, D7, D8, D9) : composants présentationnels sous `frontend/src/lib/features/onboarding/`
+  (non chargé, en cours, échec, reprise, terminée avec récapitulatif, démo en chargement, démo prête, repli) ;
+  identifiants de D8 ; fonction pure `showIncompleteBanner`.
+- [ ] **T3 — Page** (D1, D2, D3, D7, D8, D9) : `+page.svelte` — enveloppes `onboarding-screen-0` à `-6` des branches
+  existantes ; branches 7, ≥ 8, démo ≥ 3, non chargé, `{:else}` ; drapeau `finalizing` et précédence de D3 ;
+  `navigateHomeIfFinalized` retiré ; `reportFinalizeError` vers l'état d'écran, avec la phrase de remède de D5 ;
+  *Réessayer* / *Terminer la configuration* désactivés pendant un appel ; chargement du récapitulatif ; *Réessayer* de
+  l'état non lu ; `chooseDemoPath` attend `goto` ; plancher de la garde recompté.
+- [ ] **T4 — Gardes et bannière** (D4, D5) : `routes/onboarding/+layout.ts` ; `(app)/+layout.svelte:369` par
+  `showIncompleteBanner`.
+- [ ] **T5 — Textes** (AC9, AC6) : clés `onboarding-*` neuves aux quatre `messages.ftl` ; `incomplete-banner-text` réécrite
+  dans les quatre (`:159`) et son repli (`IncompleteBanner.svelte:14`) ; clés mortes retirées ; replis égaux à `fr-CH`.
 - [ ] **T6 — E2E** : `onboarding-fin.spec.ts` (E1 à E4) ; `onboarding-bank-account.spec.ts:83` adapté ; une ligne de
-  commentaire à `onboarding-path-b.spec.ts:65`, `:92` et `onboarding.spec.ts:150` : leur fin passe désormais par
-  *Commencer* (KF-029 inchangée).
-- [ ] **T7 — Manuels** (AC10) : `user-manual.tex` § *Onboarding* ; `admin-manual.tex` après `:1461`. PDF à l'intégration.
+  commentaire à `onboarding-path-b.spec.ts:65`, `:92` et `onboarding.spec.ts:150` (leur fin passe désormais par
+  *Commencer* ; KF-029 inchangée) et à `onboarding-path-b.spec.ts:27` (le `fixme` KF-032, #124, reste : la bannière ne
+  s'affiche pas à l'étape 8).
+- [ ] **T7 — Manuels** (AC10) : `user-manual.tex` § *Onboarding*, limite connue comprise ; `admin-manual.tex` après
+  `:1461`. PDF à l'intégration.
 - [ ] **T8 — Captures** (AC12), backend lancé pour elles, sur `kesh_e2e_e3617` recréée.
-- [ ] **T9 — Mutations** M1 à M9, après commit du code.
+- [ ] **T9 — Mutations** M1 à M15, après commit du code.
 - [ ] **T10 — Gates** (voir Dev Notes) ; Dev Agent Record ; `Status: review` et clé `review` dans le même commit ; prompt
   de la revue P1 (trois lentilles B, E, A ; manuel, PDF et captures nommés ; axes exercés et non exercés déclarés).
 
@@ -342,17 +453,30 @@ frontend, ou construction à `0bf3c3b4b`) — E1 rouge à l'attente de `onboardi
   vous êtes assujetti, le compte bancaire si vous l'avez passé) ; le bouton *Commencer* ouvre Kesh. Si la mise en place
   échoue, son motif reste affiché avec *Réessayer* ; si vous rechargez la page avant la fin, l'assistant vous propose de
   terminer la configuration au lieu de vous laisser entrer dans Kesh sans exercice ni réglages de facturation, et la
-  bannière « Configuration incomplète » le rappelle dans l'application. Le chargement des données de démonstration affiche
-  lui aussi un indicateur. (refs #1187)
+  bannière « Configuration incomplète » le rappelle dans l'application, en demandant de terminer avant d'ouvrir les
+  réglages de facturation ou de facturer. Le chargement des données de démonstration affiche lui aussi un indicateur.
+  *Limite connue* : si les réglages de facturation ont été ouverts avant la fin de la configuration, la mise en place est
+  refusée tant que le compte débiteurs et le compte de produit par défaut n'y sont pas désignés et enregistrés ; l'écran
+  d'échec le dit (refs #<issue demandée>). (refs #1187)
 
 ## Dev Notes
 
 ### Hors périmètre, et les issues demandées
 
+- **Limite connue, issue demandée** (V1-1, arbitrage de l'orchestrateur) — « Assistant : la finalisation est refusée
+  (« 1100, 3000 manquants ») si les réglages de facturation ont été ouverts avant elle », `bug`, P2. Lignes :
+  `crates/kesh-db/src/repositories/company_invoice_settings.rs:129` (ligne créée sans comptes par
+  `get_or_create_default`), `:1250` (`INSERT IGNORE` de la finalisation, sans effet sur une ligne existante),
+  `:1280-1306` (relecture jointe aux comptes actifs → `InactiveOrInvalidAccounts`, `:1305`) ;
+  `crates/kesh-api/src/routes/onboarding.rs:1008` (motif faux) ; appelants qui créent la ligne avant la finalisation :
+  `routes/company_invoice_settings.rs:300`, `:336`, `exports/global.rs:335` ; ouverture de l'application avant la
+  finalisation : `frontend/src/routes/(app)/+layout.ts:42`. Remède attendu côté serveur : la finalisation complète les
+  comptes vides d'une ligne existante (sans écraser une désignation). Le numéro remplace `#<issue demandée>` de la note de
+  version et des manuels.
 - `DemoBanner.svelte:28` — navigation non attendue après la remise à zéro de la démo : **issue à ouvrir** (inventaire,
   symptôme 2 ; `technical-debt`, P3).
 - KF-029 (#97) : `onboarding-path-b.spec.ts:65`, `:92`, `onboarding.spec.ts:150` restent rouges (sélecteurs périmés) ; la
-  story n'y ajoute qu'un commentaire.
+  story n'y ajoute qu'un commentaire. `onboarding-path-b.spec.ts:27` reste `fixme` (KF-032, #124, fermée).
 - Le nom de la société non modifiable après l'assistant (#1097) : hors epic, sans clé.
 - Le serveur : aucune ligne. Si l'étape 0 trouvait une cause côté serveur, la story s'arrête et le dit (périmètre changé).
 
@@ -360,15 +484,22 @@ frontend, ou construction à `0bf3c3b4b`) — E1 rouge à l'attente de `onboardi
 
 | Fichier | Autres stories | Règle |
 |---|---|---|
-| `crates/kesh-i18n/locales/*/messages.ftl` | 36-15 (vocabulaire « compte analytique », quatre locales), 36-18 | union à l'intégration ; clés `onboarding-*` seulement |
+| `crates/kesh-i18n/locales/*/messages.ftl` | 36-15 (vocabulaire « compte analytique », quatre locales), 36-18 | union à l'intégration ; clés `onboarding-*` et `incomplete-banner-text` seulement |
 | `docs/manual/fr/user-manual.tex`, `admin-manual.tex` | 36-15, 36-10, 36-9 | union ; § *Onboarding* et `sec:onboarding-config` seulement |
 | `frontend/src/routes/(app)/+layout.svelte` | 36-15 (libellés du menu, possibles) | union ; une condition à `:369` |
 
 ### Modules touchés (règle de splitting)
 
-1. `frontend/src/routes/onboarding/` (page, garde) ; 2. `frontend/src/lib/features/onboarding/` (écrans) ;
-3. `frontend/src/routes/(app)/+layout.svelte` (une condition) ; 4. `crates/kesh-i18n/locales/` (textes) ;
-5. `docs/manual/fr/`. **Cinq** : à la limite, pas au-delà — pas de découpage. Les E2E accompagnent le module 1.
+1. `frontend/src/routes/onboarding/` (page, garde) ; 2. `frontend/src/lib/features/onboarding/` (écrans, fonction de la
+bannière) ; 3. `frontend/src/routes/(app)/+layout.svelte` (une condition) ; 4. `crates/kesh-i18n/locales/` (textes) ;
+5. `docs/manual/fr/`. **Cinq** : à la limite, pas au-delà — pas de découpage. Les E2E accompagnent le module 1. Après la
+remédiation de la validation P1 : inchangé — les enveloppes des étapes 0 à 6 et l'écran non chargé restent dans
+`+page.svelte` (module 1). Le texte neuf de la bannière ajoute un fichier, `frontend/src/lib/shared/components/IncompleteBanner.svelte`
+(son seul repli, `:14`, pour rester égal à `fr-CH`) : il est compté avec le module 3 sous le nom de **coquille de
+l'application** (`(app)/+layout.svelte` et la bannière qu'il rend, sans autre usage : `git grep -n IncompleteBanner --
+frontend/src ':!*.test.ts'` → `(app)/+layout.svelte:10` et `:370` seulement). Si ce regroupement n'est pas admis, le
+décompte est de **six** ; le repli peut alors rester l'ancien texte (la clé seule change), au prix d'un repli différent de
+`fr-CH` — à arbitrer par l'orchestrateur, la fiche retient le regroupement.
 
 ### Gates (voie 2 ; `e35-dev-commun.md` § *Quels gates, quand*)
 
@@ -392,6 +523,10 @@ frontend, ou construction à `0bf3c3b4b`) — E1 rouge à l'attente de `onboardi
 - Le récapitulatif n'affiche aucun IBAN ; aucune donnée réelle dans les tests, captures ou journaux (fixtures
   synthétiques : « Exemple Banque SA », IBAN de démonstration de la suite).
 - Le chemin démo : rechargé à l'étape ≥ 3, toujours `/`.
+- **Limite connue, assumée** : l'application reste ouverte aux étapes 6 et 7 (D5) ; si les réglages de facturation y sont
+  ouverts avant la finalisation, celle-ci est refusée (« 1100, 3000 manquants ») jusqu'à ce que les comptes débiteurs et de
+  produit y soient désignés et enregistrés. La story ne la corrige pas ; elle la dit (bannière, écran de reprise, écran
+  d'échec, manuels) ; l'issue demandée la porte. Le serveur ne change pas.
 
 ### Références
 
@@ -415,3 +550,24 @@ frontend, ou construction à `0bf3c3b4b`) — E1 rouge à l'attente de `onboardi
   pour les étapes 7 et 8 (`+page.svelte:320-567`), finalisation sans indicateur, `goto('/')` non attendu (`:257`), échec
   en toast passager, garde de `/onboarding` qui renvoie à `/` dès l'étape 7 (`+layout.ts:30`) ; serveur hors de cause.
   Choix C-36-17-1 à C-36-17-8. Une issue à ouvrir (`DemoBanner.svelte:28`). Cinq modules, sans migration.
+- 2026-11-15 — **Remédiation de la validation P1** (Opus 5.5 ; rapport `kesh-gate-logs/e36-17/validation-p1.md` : 0/0/2/4).
+  Prémisses lues au code avant correction :
+  - **V1-1 (MEDIUM), corrigé, prémisse corrigée sur son effet** : la ligne sans comptes est bien créée par
+    `get_or_create_default` (`company_invoice_settings.rs:129`, appelée par `routes/company_invoice_settings.rs:300`,
+    `:336`, `exports/global.rs:335`) et l'`INSERT IGNORE` de la finalisation (`:1250`) est sans effet ; mais la
+    finalisation n'aboutit **pas** « sans comptes » : la relecture jointe aux comptes actifs (`:1280-1306`) rend
+    `InactiveOrInvalidAccounts` (`:1305`, « `None => Err(DbError::InactiveOrInvalidAccounts),` »), d'où un refus à motif
+    faux (`onboarding.rs:1008`). Arbitrage de l'orchestrateur : D5 gardée ; limite connue écrite (Ce qui se lit au code,
+    D5, AC4, AC6, AC10, Ce qui doit rester vrai, note de version) ; bannière vérifiée au code — elle ne dit pas de terminer
+    avant de facturer (`fr-CH/messages.ftl:159`) — et réécrite ; issue demandée (Dev Notes).
+  - **V1-2 (MEDIUM), corrigé** : `git grep onboarding-screen frontend/src` → vide, confirmé ; enveloppes des étapes 0 à 6,
+    table de correspondance (D8), sonde positive redéfinie sur l'assertion « zone non vide ».
+  - **V1-3 (LOW), corrigé** : fenêtre confirmée (`onboarding.svelte.ts:144-150`, `finally` de `skipBank` ; `:160`) ;
+    drapeau `finalizing`, précédence, boutons désactivés (D3) ; test et mutations M10, M11.
+  - **V1-4 (LOW), corrigé** : `+layout.ts:33-38` avale l'erreur, état par défaut `onboarding.svelte.ts:14-21` ; D9.
+  - **V1-5 (LOW), corrigé** : `#coord-address` aux `onboarding-path-b.spec.ts:73`, `:106` (et non `:76`, lu à `:73`),
+    `onboarding.spec.ts:168` ; `:27` est le `fixme` KF-032 (#124, fermée), `:32` ; E2 et E4 attendent l'indicateur affiché,
+    non un délai ; `api-client.ts:311` (pas de rejeu d'un `POST`).
+  - **V1-6 (LOW), corrigé** : garde Vitest avec `browser: true` simulé et sonde positive (cas verts au départ) ; limite au
+    manuel (AC10).
+  Choix C-36-17-3, -5 et -8 annotés, C-36-17-9 ajouté. Modules : cinq, inchangé.
