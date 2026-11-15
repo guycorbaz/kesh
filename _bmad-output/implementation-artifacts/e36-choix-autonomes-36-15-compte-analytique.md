@@ -3,20 +3,23 @@
 Registre de la story `36-15-compte-analytique` (#1161). Mise à jour par union, jamais par écrasement. Les choix du
 kickoff (C-e360-15) font foi ; ceux-ci les complètent.
 
-### C-36-15-1 — Les traductions de « compte analytique » (fiche, D2)
+### C-36-15-1 — Les traductions de « compte analytique » (fiche, D2) — **en attente de l'arbitrage de Guy**
 
 - **Contexte** : le CR #1161 demande que la fiche fixe, une fois, les termes de-CH, it-CH et en ; il propose
   « Kostenstelle » ou « Kostenträger », « centro di costo » ou « conto analitico », « cost centre » ou « analytical
-  account ». Le glossaire (`docs/i18n-glossaire.md:172-189`) porte l'arbitrage de Guy du 2026-08-19 qui écartait
-  `Kostenstelle` pour un objet de type *projet*.
-- **Retenu** : **Kostenstelle** (f.), **conto analitico**, **analytical account** ; hiérarchie *übergeordnete
-  Kostenstelle* / *Unterkostenstelle* / *Hauptkostenstelle*, *conto analitico superiore* / *sottoconto analitico* /
-  *conto analitico radice*, *parent analytical account* / *analytical sub-account* / *root analytical account*.
-- **Écartées** : `Kostenträger` (le « pour quoi ? » de 2026-08-19, trop étroit pour un immeuble ou un centre de coûts) ;
-  `Analysekonto` (calque, collision avec `Konto`) ; `centro di costo` et *cost centre* (coûts seuls, alors que le
-  rendement compte des revenus) ; garder `Projekt` / `progetto` / *project*.
-- **Réversible** : oui, textes seulement (49 valeurs par langue). ⚠️ Défait un arbitrage de Guy, sur le CR de Guy qui
-  le demande : signalé au rapport.
+  account ». Le glossaire (`docs/i18n-glossaire.md:172-189`) porte l'arbitrage de Guy du 2026-08-19 (« on ne traduit pas
+  « analytique » », `Kostenstelle` écarté).
+- **Acquis** : fr-CH « compte analytique » (CR, recommandation 2).
+- **En attente** (validation P1, V1-3 ; page de décision de l'orchestrateur) : **A** analytisches Konto / conto analitico
+  / analytical account — recommandée par l'orchestrateur, suit le français (glossaire `:29`) ; **B** Kostenstelle /
+  centro di costo / cost centre ; **C** Kostenstelle / conto analitico / analytical account (première version de la fiche,
+  `54b513a71`). La fiche ne tranche pas ; la table clé par clé est donnée pour chaque terme.
+- **Fondement** : le CR #1161 de Guy, non un changement de l'objet (la table `projects` est la même qu'au 2026-08-19).
+- **Écartées d'emblée** : `Kostenträger`, `commessa` (trop étroits) ; garder `Projekt` / `progetto` / *project*.
+- **À écrire à la réponse** : date, option, terme par langue, ici et au Change Log de la fiche ; le glossaire suit (D2, fin).
+- **Réversible** : oui, textes seulement (49 valeurs par langue).
+- *Annoté le 2026-11-15 (remédiation P1)* : la première rédaction retenait l'option C et la disait « signalée au
+  rapport » ; elle n'était pas à l'agent de trancher.
 
 ### C-36-15-2 — Les refus de `/api/v1/projects` changent de mot (fiche, D4)
 
@@ -59,3 +62,6 @@ kickoff (C-e360-15) font foi ; ceux-ci les complètent.
   masqués, repli = catalogue) ; listes d'exceptions fermées, chacune devant encore se rencontrer ; sondes positives.
 - **Écartée** : une seule garde Rust lisant aussi le Svelte (le masquage des commentaires existe en JS, pas en Rust).
 - **Réversible** : oui.
+- *Annoté le 2026-11-15 (remédiation P1, V1-1, V1-2, V1-4, V1-5)* : côté Rust, G25 ne lit que les littéraux de chaîne
+  (extracteur testé) ; côté catalogues, la valeur seule, casse ignorée ; exceptions par extrait de texte, non par numéro
+  de ligne ; la garde Vitest lit aussi les replis en objet et celui du nom de fichier.
