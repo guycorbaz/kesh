@@ -116,3 +116,24 @@ kickoff (`e36-choix-autonomes-e360.md`, C-e360-3 sans migration, C-e360-11 note 
 - **Écartés** : un triplet de booléens ; écrire l'audit dans le dépôt (la route l'écrit déjà pour `…created`, par
   `from_current_user`).
 - **Réversible** : oui.
+
+### C-36-19-12 — La démonstration précédée d'un `GET` des réglages désigne sa TVA (revue P1, B1/E5)
+
+- **Contexte** : après le correctif, une ligne vierge créée avant la démonstration était complétée, mais l'enveloppe
+  rendait « non insérée », et `seed_demo` sautait la désignation de la TVA. Arbitrage de l'orchestrateur : choix
+  prudent, la démonstration aboutit **avec** sa TVA, sans toucher au code de `kesh-seed` si possible.
+- **Retenu** : le booléen de `insert_with_defaults_in_tx` dit « comptes posés sur une ligne qui n'en avait aucun »
+  (`DefaultAccountsOutcome::posed_on_empty_row` : ligne créée, ou vierge complétée) ; `kesh-seed` ne change que par ses
+  commentaires. La synthèse `installation.demo_seeded` dit alors `invoice_settings_created = true` pour une ligne vierge
+  complétée ; la ligne est en `version` 2.
+- **Écartés** : exposer `DefaultAccountsOutcome` à `kesh-seed` (code de `kesh-seed` touché) ; refuser la démonstration sur
+  une ligne existante (comportement d'avant, mais un refus pour un `GET` inoffensif).
+- **Réversible** : oui.
+
+### C-36-19-13 — Cause « autre société » distincte, remède du compte bancaire clos (revue P1, B6/E3, E4)
+
+- **Retenu** : `DefaultInvoiceAccountCause::DesignatedOutsideCompany` (phrase sans « réactivez-le ») ;
+  `DesignatedArchived` porte désormais un numéro toujours connu. La phrase du compte lié dit « (s'il est clos,
+  rouvrez-le d'abord) », la garde retenant aussi les comptes bancaires clos.
+- **Écartés** : une phrase neutre unique « n'est plus utilisable » (perd la cause) ; ne rien dire du compte clos.
+- **Réversible** : oui.

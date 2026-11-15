@@ -215,13 +215,18 @@ c'est **#987** (`bug`, P3, ouverte) : « Attendu : la finalisation, et toute dé
     le plan comptable. » (produit : « Compte de produit par défaut : … « Produit par défaut » — … », même remède) ;
   - réglage désigné mais archivé : « Compte débiteurs : le compte désigné ({numéro}) est archivé — désignez-en un autre
     dans Administration → Facturation, ou réactivez-le dans le plan comptable. » (produit : de même) ;
+  - réglage désigné sur un compte d'une **autre société** (revue P1, B6/E3, inatteignable par l'API) : « Compte
+    débiteurs : le compte désigné n'est pas un compte de cette société — désignez-en un autre dans Administration →
+    Facturation. » ;
   - compte de rôle non imputable (D6, V2-2) : « Compte débiteurs : le compte {numéro}, qui porte le rôle « Créances
     clients », n'est pas imputable — désignez un compte imputable dans Administration → Facturation, ou, dans le plan
     comptable, retirez d'abord ce rôle au compte {numéro}, puis attribuez-le à l'un de ses sous-comptes. » (produit : « Compte de produit par défaut : … « Produit par
     défaut » … », même remède) ;
   - compte de rôle lié à un compte bancaire (D6, débiteurs seulement) : « Compte débiteurs : le compte {numéro}, qui
     porte le rôle « Créances clients », est le compte du compte bancaire « {libellé} » — déliez ce compte bancaire dans
-    Administration → Comptes bancaires, ou désignez un autre compte débiteurs dans Administration → Facturation. »
+    Administration → Comptes bancaires (s'il est clos, rouvrez-le d'abord), ou désignez un autre compte débiteurs dans
+    Administration → Facturation. » (la parenthèse : revue P1, E4 — la garde retient les comptes clos, dont le lien ne
+    se change pas sans réouverture)
   Forme : une variante neuve de `DbError` (par exemple `DefaultInvoiceAccountsUnavailable(Vec<…>)` ; chaque élément :
   le réglage, la cause, le numéro du compte et, pour D6, le libellé du compte bancaire), avec son code dans
   `error_code` (`crates/kesh-db/src/errors.rs:1906`) : **`"VALIDATION_ERROR"`**, égal au code du rendu (V2-4). **Bras de rendu dans `crates/kesh-api/src/errors.rs`** (V1-6 ; match exhaustif ; aucune
@@ -306,6 +311,10 @@ c'est **#987** (`bug`, P3, ouverte) : « Attendu : la finalisation, et toute dé
 7. **AC7 — Contrats gardés.** Tous les tests existants de `company_invoice_settings_repository.rs`,
    `onboarding_path_b_e2e.rs`, `onboarding_audit_e2e.rs` et de la démonstration passent **sans modification** de leurs
    assertions ; `git diff --stat origin/epic/36-0.18.0...HEAD -- crates/kesh-seed frontend/src` est vide.
+   *Amendé à la remédiation de la revue P1 (B1/E5, B3, arbitrage de l'orchestrateur)* : `crates/kesh-seed/src/lib.rs`
+   change par **trois commentaires seulement** (séquence de verrous de `final_body`, et les deux commentaires de la
+   désignation de la TVA, qui disaient « ligne neuve seulement ») ; aucune ligne de code de `kesh-seed` ne change, le
+   correctif étant porté par l'enveloppe (`kesh-db`). Le diff de `frontend/src` reste vide.
 8. **AC8 — E2E.** `frontend/tests/e2e/onboarding-finalize-reglages.spec.ts` (neuf) : preset `fresh`, assistant jusqu'à
    l'étape du compte bancaire, `/journal-entries` ouvert dans le navigateur (attente de la réponse de
    `GET /api/v1/company/invoice-settings`), retour à `/onboarding`, *Configurer plus tard* ; puis, **par l'API**
@@ -337,7 +346,9 @@ le correctif, ou correctif mis de côté par `git stash` **après** le commit du
 **Dépôt** (`crates/kesh-db/tests/company_invoice_settings_repository.rs`, helpers `company_with_pme_chart` `:853`,
 `company_with_chart` `:1043`) :
 
-- **T-D1** ligne vierge (`get_or_create_default`) puis `insert_with_defaults_in_tx` : rend « inséré = false »,
+- **T-D1** ligne vierge (`get_or_create_default`) puis `insert_with_defaults_in_tx` : rend « posés = true » (« inséré =
+  false » jusqu'à la remédiation de la revue P1, B1/E5 : le booléen de l'enveloppe dit désormais « comptes posés sur une
+  ligne qui n'en avait aucun », ce sur quoi la démonstration désigne la TVA),
   sept comptes égaux à ceux d'une seconde société PME finalisée à neuf, TVA vide, `version` 2 ; **la seconde société
   (ligne neuve) a `version` = 1** (C-36-19-7 ; tue M10) (AC1). **Rouge** :
   `InactiveOrInvalidAccounts` (`:1305`).
@@ -387,6 +398,21 @@ le correctif, ou correctif mis de côté par `git stash` **après** le commit du
   **Rouge** : `400` (ancien message) ; tue M6b.
 - **T-H4** après T-H1, `PUT` en `version: 1` → `409` (AC6).
 
+**Ajoutés à la remédiation de la revue P1** :
+
+- **T-D4 (h)** deux causes **différentes** (débiteurs désigné archivé, produit vide sans rôle), débiteurs d'abord (E6) ;
+  **T-D4 (i)** compte désigné d'une autre société → `DesignatedOutsideCompany` (B6/E3) ; **T-D4 (e)** contrôle aussi
+  l'enveloppe (A7).
+- **T-D4a** `finalize_reads_the_designated_account_under_lock` : cliché pris, compte désigné archivé et validé sur le
+  pool, refus « archivé » dans la même transaction (E2 ; tue M15).
+- **Motif mot pour mot** `finalize_refusal_message_names_each_cause_word_for_word` (`onboarding.rs`, test unitaire) : les
+  cinq causes et un refus à deux causes différentes (B5/E6 ; tue M16).
+- **T-H5** `seed_demo_after_a_settings_get_designates_the_vat_accounts` (`onboarding_audit_e2e.rs`) : `GET` des réglages,
+  puis démonstration → trois comptes de TVA posés, `invoice_settings_created = true` (B1/E5 ; tue M18, qui rétablit la
+  ligne d'avant la remédiation).
+- **T-H6** `finalize_completion_by_an_api_key_is_attributed_to_the_key` (`onboarding_audit_e2e.rs`) :
+  `company_invoice_settings.updated` attribuée à la clé (E7 ; tue M17).
+
 **E2E** : AC8. **Rouge** : `stepCompleted` reste 7 (la finalisation rend 400) — journal du run rouge dans `rouges.log`.
 
 **Mutations** (chacune doit faire rougir au moins un test nommé) :
@@ -409,6 +435,10 @@ le correctif, ou correctif mis de côté par `git stash` **après** le commit du
 | M12 | bras de rendu : autre clé ou autre code que ceux de D5 | test du bras (AC11) |
 | M13 | rendre l'`UPDATE` de complément inconditionnel (V3-2) | T-D5 |
 | M14 | lecture de `postable` du candidat rendue non verrouillante (V3-1) | T-D4s |
+| M15 | lecture du compte **désigné** sans `LOCK IN SHARE MODE` (revue P1, E2) | T-D4a |
+| M16 | phrase « archivé » amputée de « dans le plan comptable » (revue P1, E6) | test du motif mot pour mot |
+| M17 | `…updated` écrit par `NewAuditLogEntry::user` au lieu de `from_current_user` (revue P1, E7) | T-H6 |
+| M18 | l'enveloppe rend `inserted()` au lieu de « posés sur une ligne vierge » (revue P1, B1/E5) | T-H5 |
 
 ## Tâches
 
@@ -476,10 +506,17 @@ le correctif, ou correctif mis de côté par `git stash` **après** le commit du
 - **Créanciers laissé vide quand son compte de rôle est lié à un compte bancaire** (D6, arbitrage de l'orchestrateur) :
   écart assumé à la lettre de #987 (« refusent »), à dire sur l'issue.
 - **Refus de `seed_demo`** (`onboarding.rs:269-275`, « `"Comptes par défaut introuvables (1100, 3000). \` », même
-  formule que l'ancien refus) : **hors périmètre**, inchangé. L'enveloppe lui rend toujours `InactiveOrInvalidAccounts` ;
-  la démonstration sème elle-même son plan et crée la ligne dans sa dernière transaction (`kesh-seed/src/lib.rs:417`), si
-  bien qu'aucune ligne vide ne la précède et que la cause « réglage vide » n'y est pas atteignable ; le texte n'y est faux
-  que pour un plan sans rôles, ce que la démonstration ne produit pas. Aucune issue demandée.
+  formule que l'ancien refus) : **hors périmètre**, inchangé. L'enveloppe lui rend toujours `InactiveOrInvalidAccounts`
+  pour un refus ; le texte n'y est faux que pour un plan sans rôles, ce que la démonstration ne produit pas. Aucune
+  issue demandée. *Corrigé à la remédiation de la revue P1 (B1/E5)* : cette fiche disait ici qu'aucune ligne vide ne
+  précède la démonstration. **C'est faux** : `GET /api/v1/company/invoice-settings` n'a aucune garde d'étape (le
+  middleware ne bloque que l'absence d'utilisateur), si bien qu'un appel direct ou une clé d'API crée la ligne vierge
+  avant l'étape 2 — l'interface seule l'empêche (`(app)/+layout.ts:42`). Avant la story, la démonstration refusait alors ;
+  après le correctif, elle complétait la ligne **sans** désigner sa TVA (le booléen de l'enveloppe disait « non
+  insérée »). Arbitrage de l'orchestrateur, choix prudent : l'enveloppe rend « posés » pour une ligne vierge complétée,
+  et la démonstration désigne sa TVA comme sur une base neuve (T-H5, M18) ; `kesh-seed` ne change que par ses
+  commentaires (AC7 amendé). Écart restant, assumé : la ligne de la démonstration est alors en `version` 2 (complément),
+  au lieu de 1.
 - **Issue demandée à l'orchestrateur** (V2-3) — « `MULTI-TENANT-SCOPING-PATTERNS.md` : l'ordre global des verrous place
   `bank_accounts` avant `company_invoice_settings`, contraire au code de la 15-6c », étiquettes `documentation`, `P3`.
   Lignes : `docs/MULTI-TENANT-SCOPING-PATTERNS.md:316-318` (« `5. bank_accounts` », « `6. company_invoice_settings` ») ;
@@ -553,6 +590,10 @@ V3-4) ; `onboarding_path_b_e2e.rs`
 
 ### Gates (consignes `e35-dev-commun.md` § *Quels gates, quand* ; voie 2)
 
+*Annoté à la remédiation de la revue P1 (A8)* : le développement et la remédiation ont tourné en **voie 1**
+(`kesh-mariadb-dev:3306`, verrous `/tmp/station-heavy.lock` puis `.gate.lock`), sur attribution du prompt d'appel ; ce qui
+suit, rédigé pour la voie 2, est gardé tel quel (cf. Change Log, écart d'environnement).
+
 - Voie 2 : `flock /home/gcorbaz/devel/kesh-gate-logs/.gate-base2.lock scripts/mem-guard.sh …`, avec `TMPDIR=/tmp/kesh-voie2`
   et `DATABASE_URL=mysql://kesh:kesh_dev@127.0.0.1:3307/kesh_e3619` exportés ; une commande lourde à la fois (E7).
 - **`kesh-db` est touché** : gate **complet** (`scripts/test-fast.sh --ci`, bases remises à neuf) en cours de
@@ -612,7 +653,9 @@ Journaux hors dépôt, `/home/gcorbaz/devel/kesh-gate-logs/e36-19/` :
   texte de la clé passe — : test neuf `default_invoice_accounts_unavailable_reads_its_catalogue_key`
   (`onboarding_path_b_e2e.rs`, catalogue chargé par `spawn_app`), qui la tue (M12k). Écarts : M4 rejouée sur le dépôt
   seul (T-D1, T-D5), non sur T-H4 (épargne une compilation de `kesh-api`) ; M6a tuée par T-D4 (c) au dépôt et non par
-  T-H3 (même raison) ; M11 jouée en trois formes, la fonction de rejet étant commune aux trois comptes.
+  T-H3 (même raison) ; M11 jouée en trois formes, la fonction de rejet étant commune aux trois comptes. *Complété à la
+  remédiation de la revue P1 (A6)* : **M1** n'a été jouée que sur le dépôt (tuée par T-D1 et quinze autres), non sur
+  T-H1 ; **M6b** que sur le dépôt (tuée par T-D4d), non sur T-H3d — même raison. Ces deux écarts n'étaient pas déclarés.
 - **Choix** : C-36-19-9 (relecture verrouillante de `postable`), C-36-19-10 (compte désigné contrôlé en partagé après la
   ligne), C-36-19-11 (forme de l'issue) au registre.
 - **Écarts** : voie 1 au lieu de la voie 2 de la fiche (prompt d'appel) ; `clippy::large_enum_variant` → `before` en
@@ -719,3 +762,37 @@ Journaux hors dépôt, `/home/gcorbaz/devel/kesh-gate-logs/e36-19/` :
   `front-check-1.log`), `npm run lint-i18n-ownership` vert (`front-lint-i18n-1.log`), `npm run build` vert
   (`front-build-1.log`) — ces trois à `0723be024`, aucun fichier de `frontend/` touché depuis. **Non lancés** : E2E
   complet et `gate-ci` de clôture (à la clôture) ; la spec neuve jouée seule (rouge puis verte). Statut `review`.
+- 2026-11-15 — **Revue de code P1** (Opus, trois lentilles ; `kesh-gate-logs/e36-19/review-p1-{B,E,A}.md`) : B 0/0/1/5,
+  E 0/0/0/7, A 0/0/0/8 (B1 = E5, E1 = B4, E3 = B6, B5 couvert par E6 : 17 findings distincts). **Remédiée** par l'agent
+  de développement (Opus 5.5, outil Edit), commit de code `e19dd034d`, prémisses relues au code ; **aucune réfutée**.
+  - **B1 = E5 (MEDIUM)**, arbitrage de l'orchestrateur, choix prudent (C-36-19-12) : prémisse confirmée,
+    `kesh-seed/src/lib.rs:418` « `if invoice_settings_created {` » sautait la TVA d'une ligne vierge complétée.
+    L'enveloppe rend « posés » (`posed_on_empty_row`) pour une ligne vierge complétée ; T-H5 ; M18 tuée ; doc-comments de
+    l'enveloppe et de `designate_vat_accounts_in_tx` ; fiche (Dev Notes, refus de `seed_demo`) corrigée ; T-D1 (mon test)
+    passe de « inséré = false » à « posés = true ». AC7 amendé : `kesh-seed` change par trois commentaires, aucun code.
+  - **E2** : T-D4a (cliché, archivage validé, refus « archivé ») ; M15 tuée ; doc-comment de `mandatory_account`.
+  - **E6 / B5** : test unitaire du motif mot pour mot (cinq causes, refus à deux causes différentes) ; T-D4 (h) au dépôt
+    (deux causes différentes) ; M16 tuée.
+  - **E7** : T-H6 (finalisation par une clé d'API sur une ligne vierge, `…updated` en `api_key`) ; M17 tuée.
+  - **E3 = B6** : cause `DesignatedOutsideCompany` (C-36-19-13), phrase sans « réactivez-le » ; T-D4 (i).
+  - **E4** : remède « (s'il est clos, rouvrez-le d'abord) », la garde retenant les comptes clos
+    (`bank_accounts.rs:1676` « `AND archived = FALSE` » ; route `POST /api/v1/bank-accounts/{id}/reopen`, `lib.rs:966`).
+  - **E1 = B4** : doc-comment de `complete_default_accounts_in_tx` — promotion S → X nommée, primitives nommées juste
+    (`retry_on_deadlock` pour le `PUT`, la validation, l'avoir, la facture fournisseur ; `retry_app_on_deadlock` pour la
+    finalisation et le `PATCH`) ; la finalisation ajoutée à la liste du commentaire d'`update`.
+  - **B2** : commentaires de `finalize` (`INSERT IGNORE remains idempotent`, « trois `FOR UPDATE` », `insert_with_defaults()`).
+  - **B3** : séquence de `seed_demo` à `MULTI-TENANT-SCOPING-PATTERNS.md:341` et au doc de `final_body`.
+  - **A1** : le commit `57948b58d` (squelette) portait aussi le manuel, `MULTI-TENANT-SCOPING-PATTERNS.md` et l'entrée G9,
+    sans que son message les nomme, et ces documents décrivaient un comportement codé seulement à `0723be024`. Constaté,
+    l'historique n'est pas réécrit.
+  - **A2, A3** : `user-manual.tex:217` (« comptes d'arrondi, d'escompte, de frais bancaires et de pertes » ; « modifié
+    et enregistré … un *Enregistrer* sans rien changer ne compte pas »). **A4** : `admin-manual.tex:3848` (exceptions
+    de D2 et D6). PDF à l'intégration. **A5** : `MULTI-TENANT-SCOPING-PATTERNS.md:333` renvoie à #1201. **A6** : M1
+    et M6b déclarées au Dev Agent Record. **A7** : T-D4 (e) contrôle l'enveloppe. **A8** : en-tête, T1 et *Gates*
+    annotés (voie 1).
+  - Mutations M15 à M18 (`mut/campagne-r1.log`, `mut/M15.log` à `M18.log`), une prise des verrous, toutes tuées et
+    restaurées. Gate de remédiation : `scripts/test-fast.sh --ci` au commit `e19dd034d`, bases remises à neuf :
+    vert, **5472 réussis, 13 ignorés**, un rejeu réussi au second essai —
+    `kesh-api::mcp_transport_e2e abandon_au_delai_le_permis_reste_pris` (`FLAKY 2/2`), test d'un délai du serveur MCP
+    sans rapport avec la story, station chargée (`test-fast-ci-e19dd034d-r1.log`, dont la première ligne porte le
+    commit). Ni `gate-ci` ni E2E (consignes : à la clôture).
