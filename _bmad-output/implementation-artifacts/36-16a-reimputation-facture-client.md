@@ -9,7 +9,8 @@ patron** — dépôt, route, dialogue partagé, audit, avertissement et accusé 
 et 36-16c (écriture manuelle) partent d'elle fusionnée. Phase 2, release **0.18.0**. **Aucune migration** (D0). **`kesh-db`
 touché : gate complet même en cours de boucle.** Voie **1** (`kesh-mariadb-dev:3306`, bases `kesh_e3616a`, `kesh_e2e_e3616a`,
 `kesh_ci_e3616a`). Code lu à **`fed34a9c7`**. Registres : `e36-choix-autonomes-e360.md` (C-e360-3, -11, -15, -16) ;
-`e36-choix-autonomes-36-16-reimputation-analytique.md` (**C-36-16-1 à -10, communs aux trois stories**). Validation non lancée.*
+`e36-choix-autonomes-36-16-reimputation-analytique.md` (**C-36-16-1 à -13** ; le -10 consigne le découpage, les autres sont
+communs aux trois stories). Validation : P1 remédiée (`e6d580952`), P2 remédiée (Change Log).*
 
 **Issues** : la PR porte `refs #1167` ; aucun mot-clé de fermeture dans un commit (#1167 se ferme avec la dernière des trois).
 **Vocabulaire** : la story part de `epic/36-0.18.0` **après la fusion de la 36-15** (#1161), dont elle reprend les termes
@@ -121,8 +122,10 @@ code*) et au journal `kesh-gate-logs/e36-16/inventaire-fiche.log` (sonde positiv
 - **D6 — Une trace par geste, dans la transaction** (C-36-16-6) : `invoice.project_reassigned`, écrite **par le dépôt, avant le
   `COMMIT`**, par `NewAuditLogEntry::par(acteur, …)` — le dépôt reçoit l'`Acteur` (signature en tâche T1), le handler passe
   `Acteur::from(&current_user)` ; jamais un `user_id` nu (sans quoi `Acteur::utilisateur(` ferait rougir `audit_acteur_garde.rs`).
-  `details { fromProjectId, toProjectId, journalEntryIds, closedPeriodsAcknowledged }`, libellé ×4. *Écartées* : une trace par
-  écriture ; l'audit au handler après commit (geste réussi, trace perdue).
+  `details { fromProjectId, toProjectId, journalEntryIds, closedPeriodsAcknowledged }`, libellé ×4 ; `closedPeriodsAcknowledged`
+  vaut `true` **seulement** si des écritures exposées ont changé, `false` sinon (accusé envoyé en période ouverte compris). Un échec
+  de l'insertion de la trace fait échouer le geste entier. *Écartées* : une trace par écriture ; l'audit au handler après commit
+  (geste réussi, trace perdue).
 - **D7 — Versions** (C-36-16-7) : version de la facture exigée, lue sous `FOR UPDATE` (patron 34-5,
   `invoice_settlements_write.rs:132-135`), **incrémentée d'une unité** ; version de **chaque** écriture touchée incrémentée d'une
   unité ; écritures hors de l'ensemble inchangées. C'est l'incrément de la facture qui protège l'encaissement par rapprochement (D9).
@@ -141,15 +144,28 @@ code*) et au journal `kesh-gate-logs/e36-16/inventaire-fiche.log` (sonde positiv
   4. lignes de ces écritures `FOR UPDATE` ; court-circuit D8 (`200`) ;
   5. compte visé (`validate_taggable_in_tx` : `404`, `409 ILLEGAL_STATE_TRANSITION`) — la sentinelle étant déjà tenue, l'ordre
      projets-après-facture ne crée pas d'inversion avec la création ni l'archivage, qui la prennent d'abord ;
-  6. exercices des écritures exposées `FOR UPDATE` par `id` croissant, `find_later_closed_in_tx` — sérialisé avec la clôture
-     (`fiscal_years.rs:163`) ; l'acceptation par rapprochement tient l'exercice **avant** la facture : interblocage possible,
-     rattrapé par le rejeu, couvert par T5 (cas « clôture concurrente » joué en deux transactions) ;
-  7. exposition → `403` (non-Administrateur) ou `409` (sans accusé) ;
+  6. l'exercice de **chaque écriture qui changerait** (D8), qu'il soit ouvert ou non, `FOR UPDATE`, **par `start_date`
+     croissant** (l'ordre de la clôture, `fiscal_years.rs:1116`, et du `PUT`, `journal_entries.rs:1395-1397`), son statut lu
+     **sous ce verrou** ; puis `find_later_closed_in_tx` (`fiscal_years.rs:865`, `FOR UPDATE`) depuis le plus ancien. Une
+     clôture concurrente attend donc le geste, ou le geste attend la clôture et lit `Closed` ;
+  7. exposition, calculée sur ces lectures verrouillées et sur `books_locked_through` lu à l'étape 1 → `403`
+     (non-Administrateur) ou `409` (sans accusé) ;
   8. `UPDATE` des lignes, des versions, de la facture ; audit ; `COMMIT`.
   Aucun `UPDATE` ne précède l'étape 8 : un refus n'écrit rien. **L'encaissement par rapprochement n'est pas modifié** (§ *Ce qui se
-  lit au code* : protégé par `version = ?`, `:2952-2955`) ; règlement, solde et avoir lisent le projet sous le verrou de la facture,
-  donc après le geste.
-- **D10 — Tout statut à l'API, bouton hors brouillon** (C-36-16-5), pour `canManage`.
+  lit au code* : protégé par `version = ?`, `:2952-2955`).
+  **Cycles connus, bornés par le rejeu des deux côtés** (tous `Rejouee` au registre `audit_route_registry.rs`, le geste compris) :
+  - **facture ↔ `companies`** : la validation (`invoices.rs:2105`), le règlement (`invoice_settlements_write.rs:146` puis `:338`),
+    le solde (`:555` puis `:702`), l'annulation d'un règlement (`:931`) et l'avoir (`credit_notes.rs:309`) tiennent la facture
+    puis prennent le verrou partagé de clé étrangère `company_id` à l'`INSERT INTO journal_entries`
+    (`journal_entries.rs:1418-1420`) ; le geste tient `companies` puis demande la facture. Le perdant est rejoué ; s'il s'agit du
+    règlement, il relit le projet sous le verrou de la facture, **après** le geste ;
+  - **exercice ↔ `companies`** : l'acceptation par rapprochement tient l'exercice ouvert (`reconciliation.rs:2765`) puis prend la
+    clé étrangère `companies` à son `INSERT` ; le geste tient `companies` puis demande l'exercice (étape 6) ;
+  - **exercice ↔ exercice** avec la clôture, si deux exercices sont pris dans des ordres différents — évité par l'ordre
+    `start_date` ; sinon rattrapé par `retry_on_deadlock("fiscal_years::close", …)` (`routes/fiscal_years.rs:361`).
+  Le cas « clôture concurrente » est joué par **T7**.
+- **D10 — Tout statut à l'API, bouton hors brouillon** (C-36-16-5), pour `canManage`. Un brouillon n'a aucune écriture : le geste
+  ne change que la facture (version +1, trace, `journalEntryIds: []`) ; même compte → rien à faire.
 - **D11 — Vocabulaire** : pour le nom « compte analytique », les clés neuves reprennent **le mot que porte la 36-15 fusionnée** dans
   chaque locale, relu à l'étape 0 (de-CH, it-CH, en-CH attendent l'arbitrage de Guy : la story ne tranche rien ; si la 36-15 change
   ensuite ses termes, elle change aussi ceux-ci).
@@ -157,12 +173,16 @@ code*) et au journal `kesh-gate-logs/e36-16/inventaire-fiche.log` (sonde positiv
   - Props : `rows: { id: number; label: string; currentProjectId: number | null }[]` (36-16a et 36-16b : une rangée, `id` = la
     facture ; 36-16c : une rangée par ligne, `id` = `lineId`) ; `projects: ProjectResponse[]` (chargés par la page, archivés
     compris — la page de la facture le fait déjà, `:269`) ; `submit: (choices: { id: number; projectId: number | null }[],
-    acknowledge: boolean) => Promise<void>` (rejette avec l'erreur de l'API) ; `onDone: () => void`.
+    acknowledge: boolean) => Promise<void>` (rejette avec l'erreur de l'API) ; `onDone: () => void`. La `submit` fournie par la
+    page **reprend l'objet rendu** — pour la facture, `invoice = res.invoice`, version comprise, comme après un règlement
+    (`invoices/[id]/+page.svelte:646-647`) — pour que le geste suivant de la page n'envoie pas une version périmée.
   - Sélecteur : « — Aucun », projets non archivés, plus l'actuel de la rangée s'il est archivé.
   - *Enregistrer* inactif tant qu'aucune rangée n'a changé.
   - `409 PROJECT_REASSIGNMENT_CLOSED_PERIOD` : avertissement nommant `details.fiscalYears` et/ou `details.lockedThrough` (date
     suisse) et `entryCount`, bouton *Confirmer* qui rappelle `submit(choices, true)`. `403 …_ADMIN_ONLY` : message (seul un
-    Administrateur peut changer le compte analytique d'un exercice clos ou d'une période verrouillée), sans *Confirmer*. Autres
+    Administrateur **connecté à l'interface web** peut changer le compte analytique d'un exercice clos ou d'une période
+    verrouillée — le message de l'API le dit aussi à une clé, patron d'`API_KEY_ADMIN_FORBIDDEN`, `kesh-api/src/errors.rs:1968`,
+    « Utilisez l'interface web »), sans *Confirmer*. Autres
     erreurs : message de l'API sous le formulaire.
   - Les fonctions d'appel vivent dans `frontend/src/lib/features/projects/projects.api.ts` (`reassignInvoiceProject` ici ; 36-16b
     et 36-16c y ajoutent les leurs) : un seul module d'API pour le geste.
@@ -190,7 +210,8 @@ code*) et au journal `kesh-gate-logs/e36-16/inventaire-fiche.log` (sonde positiv
 6. **AC6** — Les rapports « Dépenses » / « Rendement » de Q contiennent ce que ceux de P contenaient pour la facture ; ceux de P ne
    le contiennent plus (hors paires déliées).
 7. **AC7** — **Période close** (exercice clos ; puis, séparément, verrou des livres au-delà de la vente) : un Comptable reçoit `403
-   PROJECT_REASSIGNMENT_CLOSED_PERIOD_ADMIN_ONLY` avec ou sans accusé ; une clé `read-write` aussi ; un Administrateur en session
+   PROJECT_REASSIGNMENT_CLOSED_PERIOD_ADMIN_ONLY` avec ou sans accusé ; une clé `read-write` **créée par un Administrateur**, avec
+   l'accusé, aussi (une clé porte le rôle de son créateur, `auth/api_key.rs:206`) ; un Administrateur en session
    reçoit `409 PROJECT_REASSIGNMENT_CLOSED_PERIOD` sans accusé et `200` avec, audit `closedPeriodsAcknowledged: true` ; chaque
    refus n'écrit rien ; `entryCount` ne compte que les écritures exposées qui changeraient.
 8. **AC8** — **Ordre des refus** (D9) : facture absente ou d'une autre société `404` → version périmée `409
@@ -201,9 +222,11 @@ code*) et au journal `kesh-gate-logs/e36-16/inventaire-fiche.log` (sonde positiv
    closedPeriodsAcknowledged }`, écrit dans la transaction du geste ; par clé, `actor_type = 'api_key'` et la clé ; libellé ×4.
 10. **AC10** — **Paires déliées** : après l'annulation d'un règlement, ce règlement et sa contre-passation gardent P et leur version.
 11. **AC11** — **Rien à faire** : facture et lignes déjà à Q → `200`, versions inchangées, aucun audit ; facture à Q dont une ligne
-    diverge → la ligne est réalignée ; `projectId: null` retire le compte partout.
+    diverge → la ligne est réalignée ; `projectId: null` retire le compte partout. **Brouillon** : `200`, facture seule, version +1,
+    trace, `journalEntryIds: []`. Accusé envoyé en période ouverte : `200`, `closedPeriodsAcknowledged: false`.
 12. **AC12** — **Écran** (facture payée) : *Changer le compte analytique* (Comptable, Admin) ouvre le dialogue partagé ; *Enregistrer*
-    inactif tant que rien ne change ; envoi, libellé rafraîchi sans rechargement, message ; Administrateur en période close :
+    inactif tant que rien ne change ; envoi, la page **remplace `invoice` par `res.invoice`** (version comprise) et le libellé change
+    sans rechargement, message ; un règlement enregistré ensuite depuis la page réussit ; Administrateur en période close :
     avertissement nommant l'exercice ou la date du verrou, *Confirmer* ; Comptable en période close : le message du `403`, sans
     *Confirmer*. Lecture, brouillon : pas de bouton.
 13. **AC13** — La route est au registre `audit_route_registry.rs` (`Traced`, `Rejouee`) ; `audit_acteur_garde.rs` vert **sans entrée
@@ -226,15 +249,15 @@ mutation par propriété (E5 : script dans `kesh-gate-logs/e36-16a/mut/`, restau
 | T1b facture annulée par avoir (vente, avoir), par les routes | idem | retirer `credit_notes` de l'ensemble |
 | T2 instantané hors `project_id`, `version`, `updated_at` identique | idem | ajouter `lettering_key = NULL` à l'`UPDATE` |
 | T3 versions : facture +1, chaque écriture touchée +1, hors ensemble inchangée | idem | retirer le `version = version + 1` des écritures |
-| T4 encaissement concurrent (AC5) : transaction d'acceptation ouverte et facture lue, geste commité, `accept_one_invoice` → `race_during_update`, rien d'écrit | `crates/kesh-api` (test d'intégration de la route de rapprochement, deux connexions) | retirer le `version = version + 1` de la **facture** dans le geste |
+| T4 encaissement concurrent (AC5), patron `reconciliation_e2e.rs:5604-5700` : `LOCK TABLES contacts WRITE` sur une connexion détachée, acceptation par la **route** en tâche, `attendre_une_requete_en_cours(&pool, &["FROM contacts"], …)` (`kesh-db/src/test_fixtures.rs:566`) — elle a lu la facture (`reconciliation.rs:2430-2433`) et attend sur le contact (`:2453`) —, geste commité, `UNLOCK TABLES` → `RECONCILIATION_INVOICE_NOT_ELIGIBLE`, `race_during_update`, aucun `invoice_settlements` ni écriture neuve ; relancée → règlement au compte Q. Aucune fonction privée appelée | `crates/kesh-api/tests/project_reassignment_e2e.rs` | retirer le `version = version + 1` de la **facture** dans le geste |
 | T5 paire déliée intacte (AC10) | idem T1 | étendre l'ensemble à toute écriture de libellé « Règlement facture » (sonde) |
 | T6 invariant D3 sur les créations automatiques | `crates/kesh-db/tests/project_reassignment.rs` (squash `test-schema`) | `project_id: None` dans `credit_notes.rs:718` (sonde sur un site existant) |
-| T7 période close : Comptable `403`, clé `403`, Admin `409` puis `200` ; verrou au jour exact (seuil inclusif) ; clôture concurrente en deux transactions | `project_reassignment_e2e.rs` | réserver le `403` aux clés seules ; `<` au lieu de `<=` sur `books_locked_through` ; lecture de l'exercice sans `FOR UPDATE` (le cas concurrent passe sans accusé) |
-| T8 audit dans la transaction, acteur clé | idem | `Acteur::utilisateur(current_user.user_id)` au lieu de `Acteur::from` ; trace écrite après le `COMMIT` (un échec injecté après commit la perd : le test lit la trace dans la même transaction de test) |
+| T7 période close : Comptable `403` ; clé **d'un Administrateur** avec accusé `403` ; Administrateur en session `409` puis `200` ; verrou au jour exact (seuil inclusif) ; **clôture concurrente, déterministe** : une transaction de test tient l'exercice `FOR UPDATE` et l'a passé `Closed` (forme de l'étape (e) de `fiscal_years::close`, `:1116`), geste lancé en tâche, `attendre_une_requete_en_cours(&pool, &["FROM fiscal_years"], …)`, `COMMIT` → `409` (Admin sans accusé) ou `403`, rien d'écrit | `project_reassignment_e2e.rs` | retirer `&& current_user.api_key_id.is_none()` de `may_acknowledge` (tuée par la clé d'Administrateur) ; réserver le `403` aux clés seules ; `<` au lieu de `<=` sur `books_locked_through` ; lire le statut de l'exercice sans `FOR UPDATE` (le cas concurrent passe sans accusé) |
+| T8 audit dans la transaction, acteur clé ; **échec de la trace** : déclencheur `BEFORE INSERT ON audit_log … SIGNAL SQLSTATE '45000'` (patron `onboarding_audit_e2e.rs:872-873`) → le geste rend une erreur et l'instantané de T2 (lignes, facture, versions) est identique à celui d'avant | idem | `Acteur::utilisateur(current_user.user_id)` au lieu de `Acteur::from` ; trace écrite **après** le `COMMIT` (tuée : les lignes auraient changé malgré l'échec) |
 | T9 ordre des refus (AC8), une paire voisine par test | idem | permuter version et rien-à-faire ; valider le compte visé même s'il est l'actuel |
-| T10 rien à faire ; ligne divergente réalignée | idem | comparer à la facture seule |
+| T10 rien à faire ; ligne divergente réalignée ; brouillon (`journalEntryIds: []`, version +1, trace) ; accusé en période ouverte → `closedPeriodsAcknowledged: false` | idem | comparer à la facture seule ; recopier `acknowledge` dans la trace |
 | T11 dialogue partagé : deux rangées et leurs `id` dans `submit` ; *Enregistrer* inactif sans changement ; `409` → avertissement → *Confirmer* → `submit(…, true)` ; `403` → message sans *Confirmer* | Vitest `frontend/src/lib/features/projects/ProjectReassignDialog.test.ts` | ne pas renvoyer `acknowledge` ; montrer *Confirmer* sur `403` |
-| T12 page de la facture | `frontend/src/routes/(app)/invoices/[id]/invoice-display-page.test.ts` | ne pas rafraîchir le libellé ; bouton au rôle Lecture |
+| T12 page de la facture : après le geste, un règlement envoyé depuis la page porte la version rendue (ancienne + 1) | `frontend/src/routes/(app)/invoices/[id]/invoice-display-page.test.ts` | ne reprendre que `projectId` (tuée : le règlement part avec l'ancienne version) ; bouton au rôle Lecture |
 | T13 libellé d'audit ×4 | `tests/audit_label_registry.rs` (existant) | rougit d'office si le code manque |
 
 **E2E exigé** — `frontend/tests/e2e/project-reassignment.spec.ts`, en Administrateur (utilisateur de l'E2E) : (1) facture client
@@ -254,10 +277,12 @@ pour que la suite complète ne reste pas verrouillée. Rouge d'abord (correctif 
     Option<i64>, version: i32, acknowledge: bool) -> Result<Reassigned, DbError>` — les étapes de D9, la trace
     `invoice.project_reassigned` par `NewAuditLogEntry::par(acteur, …)` **avant** le `COMMIT` ;
   - génériques, réemployés par b et c : `entry_ids_in_tx(…, include_reversals)`, `lock_entries_and_lines_in_tx`,
-    `period_exposure_in_tx` (exercices `FOR UPDATE`, postérieur clos, `books_locked_through` lu sur la sentinelle),
+    `period_exposure_in_tx` (l'exercice de **chaque écriture qui changerait** `FOR UPDATE` par `start_date` croissant, statut lu
+    sous ce verrou, puis `find_later_closed_in_tx` depuis le plus ancien ; `books_locked_through` lu sur la sentinelle),
     `reassign_lines_in_tx` (`UPDATE journal_entry_lines SET project_id = ? WHERE entry_id IN (…)`, versions +1) ;
-  - variantes `DbError::ProjectReassignmentClosedPeriod { … }` et `…ClosedPeriodAdminOnly { … }`, codes aux deux tables de
-    `errors.rs` (`:232`, `:1967`).
+  - variantes `DbError::ProjectReassignmentClosedPeriod { … }` et `…ClosedPeriodAdminOnly { … }` : leur code dans
+    `DbError::error_code` (`crates/kesh-db/src/errors.rs:1906`), leur réponse `409`/`403` et leurs `details` dans le mappage de
+    `crates/kesh-api/src/errors.rs` (voisin : `DbError::OptimisticLockConflict`, `:3742`).
 - [ ] **T2 kesh-api** — `invoices::reassign_project_handler` : `may_acknowledge = current_user.role == Role::Admin &&
   current_user.api_key_id.is_none()`, `Acteur::from(&current_user)`, `retry_on_deadlock`, mappage `409`/`403` et `details` ; route ;
   registre des routes ; `audit_labels.rs`. `reconciliation.rs` n'est **pas** modifié.
@@ -351,3 +376,12 @@ Fiche d'origine `36-16-reimputation-analytique.md` ; fichier d'epic (rang 15) ; 
   le `COMMIT` (D6, T1, T8). V1-9 : lectures et ordre (D9, C-36-16-13). V1-10 : citations (`:145-146`, test de mappage, chemins).
   V1-11 : paragraphe « Interblocages ». V1-12 : appel dans `projects.api.ts`, cinq modules. V1-13 : ordre des refus (AC8, T9).
   V1-14 : rien-à-faire compare aussi les lignes (C-36-16-12). V1-15 : D11. V1-16 : `entryCount`. Aucun finding réfuté.
+- 2026-11-15 — Remédiation de la validation P2 (Opus 5.5, `kesh-gate-logs/e36-16/validation-36-16a-p2.md`, 0/0/4/6), prémisses
+  relues au code (`fiscal_years.rs:1116`, `test_fixtures.rs:566`, `onboarding_audit_e2e.rs:872-873`, `errors.rs:1906`,
+  `kesh-api/src/errors.rs:3742`, `:1968`, page `:646-647`, `reconciliation_e2e.rs:5604`, `journal_entries.rs:1395-1397`,
+  `:1418-1420`). V2-1 : D9 (6) — exercice de chaque écriture qui changerait, `FOR UPDATE` par `start_date`, statut lu sous le
+  verrou ; T7 joue la clôture concurrente de façon déterministe ; T1 et C-36-16-13 suivent. V2-2 : clé d'un Administrateur dans
+  AC7 et T7, mutation `api_key_id.is_none()`. V2-3 : T8 par le déclencheur qui fait échouer l'audit. V2-4 : la page reprend
+  `res.invoice` (D12, AC12, T12). V2-5 : T4 par `LOCK TABLES contacts WRITE`, par la route. V2-6 : cycles connus et leur rejeu
+  (D9), renvoi à T7. V2-7 : `DbError::error_code` (`:1906`) et le mappage de `kesh-api`. V2-8 : message du `403` (interface web).
+  V2-9 : en-tête. V2-10 : brouillon et `closedPeriodsAcknowledged` (D6, D10, AC11, T10). Aucun finding réfuté.

@@ -80,9 +80,11 @@ de D12 (une rangée par ligne, `id` = `lineId`) — **non modifié** ici.*
 
 1. **AC1** — Écriture manuelle **rapprochée** de trois lignes sur deux comptes analytiques : nommer une ligne vers Q rend `200` ;
    cette ligne seule change ; montants, comptes, dates, numéro, lettrage, rapprochement intacts ; version de l'écriture +1.
-2. **AC2** — Écriture **lettrée** : réimputée, le lettrage reste. Écriture d'un **exercice clos** : Comptable ou clé → `403
-   PROJECT_REASSIGNMENT_CLOSED_PERIOD_ADMIN_ONLY` ; Administrateur en session → `409 PROJECT_REASSIGNMENT_CLOSED_PERIOD` sans
-   accusé, `200` avec ; rien d'écrit aux refus.
+2. **AC2** — Écriture **lettrée** : réimputée, le lettrage reste. Écriture d'un **exercice clos** : Comptable → `403
+   PROJECT_REASSIGNMENT_CLOSED_PERIOD_ADMIN_ONLY` ; clé **créée par un Administrateur**, avec l'accusé → `403` aussi ;
+   Administrateur en session → `409 PROJECT_REASSIGNMENT_CLOSED_PERIOD` sans accusé, `200` avec ; rien d'écrit aux refus ; exercice
+   de chaque écriture qui changerait lu sous verrou, clôture concurrente comprise (D9 de 36-16a) ; accusé en période ouverte →
+   `closedPeriodsAcknowledged: false`.
 3. **AC3** — **Paire** : sur une écriture contre-passée (et, séparément, sur sa contre-passation), la ligne de même rang de l'autre
    écriture prend le même compte ; un règlement client annulé et sa contre-passation se réimputent ainsi.
 4. **AC4** — Refus : écriture de vente, de règlement, d'avoir, d'achat ou de paiement fournisseur → `409
@@ -92,7 +94,9 @@ de D12 (une rangée par ligne, `id` = `lineId`) — **non modifié** ici.*
    nommées (et leurs miroirs) déjà à leur valeur → `200` sans écriture, version ni audit.
 6. **AC6** — Un `PUT` lu avant le geste est refusé ensuite (`409 OPTIMISTIC_LOCK_CONFLICT`, version incrémentée, D7).
 7. **AC7** — Écran : dialogue partagé, une rangée par ligne (`id` = `lineId`), avertissement et *Confirmer* pour l'Administrateur,
-   message du `403` pour le Comptable, succès, libellés rafraîchis ; écriture de pièce, rôle Lecture : pas de bouton.
+   message du `403` pour le Comptable, succès ; la page **remplace l'écriture par celle que rend le geste** (version comprise) et
+   les libellés changent ; une modification ouverte ensuite depuis la page part avec la nouvelle version ; écriture de pièce, rôle
+   Lecture : pas de bouton.
 8. **AC8** — Route au registre `audit_route_registry.rs` ; `audit_acteur_garde.rs` vert sans entrée neuve.
 9. **AC9** — Manuel (sous-section de 36-16a : l'écriture passée, la paire, le refus des écritures de pièce, les paires déliées) et
    `docs/api-external.md` (route, codes au § 10, paragraphe « Interblocages » `:1103`) ; textes ×4 selon D11.
@@ -108,8 +112,8 @@ Premier rouge : route `404` avant le correctif (`kesh-gate-logs/e36-16c/rouges.l
 | T3 refus d'une écriture de pièce (chaque `DocumentKind` sauf banque) | idem | retirer le contrôle `document_owners` ; y laisser passer `Settlement` |
 | T4 validation du corps (étrangère, doublon, vide) | `crates/kesh-api/tests/project_reassignment_e2e.rs` | retirer le contrôle d'appartenance |
 | T5 version et `PUT` périmé | idem | ne pas incrémenter `journal_entries.version` |
-| T6 période close par rôle, acteur et audit dans la transaction, ordre des refus | idem | `403` réservé aux clés seules ; `Acteur::utilisateur` ; contrôle de propriété après celui du corps |
-| T7 écran | `frontend/src/routes/(app)/journal-entries/[id]/journal-entry-page.test.ts` | bouton affiché sur une écriture de vente ; `id` de rangée autre que `lineId` |
+| T6 période close par rôle (clé **d'un Administrateur** comprise), clôture concurrente (patron T7 de 36-16a), acteur, ordre des refus ; échec de la trace par le déclencheur `BEFORE INSERT ON audit_log` (`onboarding_audit_e2e.rs:872-873`) → rien de changé | idem | retirer `&& current_user.api_key_id.is_none()` ; `Acteur::utilisateur` ; contrôle de propriété après celui du corps ; trace écrite après le `COMMIT` |
+| T7 écran : après le geste, la modification envoyée depuis la page porte la version rendue | `frontend/src/routes/(app)/journal-entries/[id]/journal-entry-page.test.ts` | bouton affiché sur une écriture de vente ; `id` de rangée autre que `lineId` ; ne reprendre que les comptes des lignes |
 
 **E2E exigé** — cas ajouté à `frontend/tests/e2e/project-reassignment.spec.ts` : écriture de contrepartie **rapprochée** préparée
 par l'API (import manuel d'un relevé et rapprochement), une ligne changée au navigateur, `GET /journal-entries/{id}` : la ligne au
@@ -183,3 +187,7 @@ stories 19-2, 24-4a, 15-8a, 15-1b-0.
   accusé réservé à l'Administrateur (C-36-16-11 ; AC2, T6) ; audit dans la transaction avec l'`Acteur` ; ordre des lectures et des
   refus de D9 appliqué à l'écriture ; rien-à-faire sur les lignes nommées ; dialogue au contrat fermé de D12, non modifié ; appel
   dans `features/projects/projects.api.ts` ; paragraphe « Interblocages ».
+- 2026-11-15 — Propagation de la remédiation de la validation P2 de 36-16a (`kesh-gate-logs/e36-16/validation-36-16a-p2.md`) :
+  clé d'Administrateur et mutation `api_key_id.is_none()` (AC2, T6) ; exercice de chaque écriture qui changerait lu sous verrou,
+  clôture concurrente (AC2, T6) ; échec de la trace par déclencheur (T6) ; la page reprend l'écriture rendue (AC7, T7) ;
+  `closedPeriodsAcknowledged` en période ouverte (AC2).

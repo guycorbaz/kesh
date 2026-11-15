@@ -31,10 +31,14 @@ achat, son paiement et la contre-passation de l'achat passent au nouveau compte,
   `settlement_journal_entry_id`. **Lu sous le verrou de la facture — établi** : `pay_in_tx_as` (`supplier_invoices.rs:1976`)
   commence par « (1) Verrou facture + garde statut » et `let inv = sqlx::query_as::<_, SupplierInvoice>(&format!("{FIND_SCOPED_SQL}
   FOR UPDATE"))` (`:1988-1989`) ; `:2163` lit `inv.project_id` de **cette** lecture. Le rapprochement n'emploie le projet de sa
-  lecture ordinaire que pour les `details` d'un refus (`routes/reconciliation.rs:3441`). Conséquence : le geste, qui prend la même
-  ligne `FOR UPDATE` (D9 de 36-16a), et le paiement se **sérialisent** ; un paiement commité avant le geste est relu par lui sous
-  verrou et réimputé, un paiement qui suit lit le nouveau compte. **Aucun verrou optimiste n'est en jeu** ici (au contraire de
-  l'encaissement client), et rien n'est modifié dans `pay_in_tx_as`.
+  lecture ordinaire que pour les `details` d'un refus (`routes/reconciliation.rs:3441`). Conséquence : le geste et le paiement
+  prennent la même ligne `FOR UPDATE`, mais **dans des ordres opposés** — le geste tient la sentinelle `companies` puis demande la
+  facture (D9 de 36-16a) ; le paiement tient la facture puis prend le verrou partagé de clé étrangère `companies` à l'`INSERT INTO
+  journal_entries` (`journal_entries.rs:1418-1420`). C'est le **cycle facture ↔ `companies`** de D9, **borné par le rejeu** :
+  l'un des deux est annulé par InnoDB et rejoué. Rejoué, le geste relit l'ensemble sous verrou et réimpute le paiement commité ;
+  rejoué, le paiement relit la facture sous verrou et prend le nouveau compte. Sans cycle (le paiement commite avant que le geste ne
+  demande la facture, ou l'inverse), même résultat. **Aucun verrou optimiste n'est en jeu** ici (au contraire de l'encaissement
+  client), et rien n'est modifié dans `pay_in_tx_as`.
 - **Annulation** — `supplier_invoices.rs:2636-2640` : `status = 'cancelled'`, vide `settlement_*`, **garde**
   `purchase_journal_entry_id` ; la contre-passation de l'achat se retrouve par `reverses_entry_id`. Une facture annulée **alors que
   payée** garde un paiement « détaché », retrouvé par la seule trace d'audit (`journal_entries.rs:1074-1093`,
@@ -65,8 +69,11 @@ D12 (une rangée, `id` = la facture).* Propres à cette story :
   d'une annulée payée n'est **pas** pris (palliatif d'audit de #541, lecture fragile ; comptes de bilan seuls, invisible des
   rapports analytiques) : réimputable par le geste de 36-16c. *Écartée* : le lire par `DETACHED_SETTLEMENT_TRACES` — une trace
   étrangère restaurée peut désigner un paiement sans rapport (`journal_entries.rs:1086-1092`, « faux positif possible après restauration »).
-- **Db3 — Paiement concurrent (D9, établi)** : sérialisation par le `FOR UPDATE` de la facture, des deux côtés (§ *Ce qui se lit
-  au code*). L'étape 0 relit `supplier_invoices.rs:1988-1989` et `:2163` sur la base de départ ; `pay_in_tx_as` n'est pas modifié.
+- **Db3 — Paiement concurrent (D9, établi)** : **cycle borné par le rejeu** (§ *Ce qui se lit au code*) : le `FOR UPDATE` de la
+  facture des deux côtés, en ordre opposé à la sentinelle `companies`. L'étape 0 relit `supplier_invoices.rs:1988-1989` et
+  `:2163` sur la base de départ, et vérifie au registre `audit_route_registry.rs` que **chaque route qui appelle `pay_in_tx_as`**
+  (paiement direct, confirmation d'un lot, rapprochement) est `Rejouee` — une route qui ne le serait pas fait demander une issue,
+  sans la modifier ici ; `pay_in_tx_as` n'est pas modifié.
 - **Db4 — Audit** : `supplier_invoice.project_reassigned` (35 caractères, `audit_log.action VARCHAR(64)`), mêmes `details` que D6.
 
 ## Critères d'acceptation
@@ -80,16 +87,20 @@ D12 (une rangée, `id` = la facture).* Propres à cette story :
 3. **AC3** — Rien d'autre ne change (instantané hors `project_id`, `version`, `updated_at` : montants, comptes, dates, numéros dont
    le numéro interne, lettrage, rapprochement, statut, lot de paiement, document).
 4. **AC4** — Versions : facture +1, chaque écriture touchée +1, hors ensemble inchangée.
-5. **AC5** — **Paiement concurrent** : un paiement non commité tient la facture ; le geste lancé sur une autre connexion attend, puis
-   réimpute le paiement commité ; un paiement fait après le geste porte Q.
-6. **AC6** — Période close : Comptable ou clé → `403 PROJECT_REASSIGNMENT_CLOSED_PERIOD_ADMIN_ONLY` ; Administrateur en session →
-   `409 PROJECT_REASSIGNMENT_CLOSED_PERIOD` sans accusé, `200` avec ; rien d'écrit aux refus.
+5. **AC5** — **Paiement concurrent** : paiement et geste lancés ensemble sur deux connexions (paiement arrêté après le verrou de la
+   facture) : quel que soit celui que le rejeu reprend, à la fin le paiement existe une fois et toutes ses lignes portent Q, comme
+   l'achat ; un paiement fait après le geste porte Q.
+6. **AC6** — Période close : Comptable → `403 PROJECT_REASSIGNMENT_CLOSED_PERIOD_ADMIN_ONLY` ; clé **créée par un Administrateur**,
+   avec l'accusé → `403` aussi ; Administrateur en session → `409 PROJECT_REASSIGNMENT_CLOSED_PERIOD` sans accusé, `200` avec ;
+   rien d'écrit aux refus ; exercice lu sous verrou (clôture concurrente, D9 de 36-16a). **Brouillon** : `200`, facture seule,
+   `journalEntryIds: []` ; accusé en période ouverte → `closedPeriodsAcknowledged: false`.
 7. **AC7** — Refus dans l'ordre de D9 (36-16a) : `404` → version `409 OPTIMISTIC_LOCK_CONFLICT` → rien à faire `200` → compte visé
    `404` / archivé `409 ILLEGAL_STATE_TRANSITION` → période ; Lecture ou clé `read` `403` d'abord.
 8. **AC8** — Audit `supplier_invoice.project_reassigned`, écrit dans la transaction, acteur compris (clé d'API), libellé ×4 ;
    facture et lignes déjà à Q → rien d'écrit ; une ligne divergente est réalignée ; `null` retire le compte.
 9. **AC9** — Écran de la facture fournisseur : le dialogue partagé de 36-16a (avertissement et *Confirmer* pour l'Administrateur,
-   message du `403` pour le Comptable) ; Lecture et brouillon sans bouton.
+   message du `403` pour le Comptable) ; la page **remplace la facture par celle que rend le geste** (version comprise) : un paiement
+   enregistré ensuite depuis la page réussit ; Lecture et brouillon sans bouton.
 10. **AC10** — Route au registre `audit_route_registry.rs` ; `audit_acteur_garde.rs` vert sans entrée neuve.
 11. **AC11** — Manuel (sous-section de 36-16a étendue à la facture fournisseur et au paiement détaché) et `docs/api-external.md`
     (route, ordre des refus, paragraphe « Interblocages » `:1103`) ; textes ×4 selon D11.
@@ -104,10 +115,10 @@ Premier rouge : route `404` avant le correctif (`kesh-gate-logs/e36-16b/rouges.l
 | T2 annulée, et annulée alors que payée : achat et contre-passation ; détaché intact | idem | `include_reversals = faux` pour la fournisseur |
 | T3 instantané hors `project_id`, `version`, `updated_at` identique | idem | `UPDATE` qui touche `account_id` (sonde) |
 | T4 versions | idem | retirer le `version = version + 1` des écritures, puis de la facture |
-| T5 paiement concurrent (deux connexions : `pay_in_tx_as` ouvert, geste en attente, commit) | `crates/kesh-db/tests/project_reassignment.rs` | geste qui lit la facture sans `FOR UPDATE` (s'il ne rougit pas à l'exécution, la déclarer équivalente au Change Log, avec la raison) |
+| T5 paiement concurrent (deux connexions, `attendre_une_requete_en_cours`, chacun sous `retry_on_deadlock`) ; état final vérifié quel que soit le rejoué | `crates/kesh-db/tests/project_reassignment.rs` | geste qui collecte l'ensemble par une lecture ordinaire **avant** de verrouiller la facture (le paiement commité entre-temps garde P) ; si elle ne rougit pas à l'exécution, la déclarer équivalente au Change Log, avec la raison |
 | T6 invariant : achat et paiement créés portent le projet de la facture | idem | `project_id: None` à `supplier_invoices.rs:2163` |
-| T7 période close par rôle, ordre des refus, acteur et audit dans la transaction | `project_reassignment_e2e.rs` | `403` réservé aux clés seules ; `Acteur::utilisateur` au lieu de `Acteur::from` ; permuter version et rien-à-faire |
-| T8 écran | `frontend/src/routes/(app)/supplier-invoices/[id]/supplier-invoice-display-page.test.ts` | masquer le bouton ; ne pas rafraîchir le libellé |
+| T7 période close par rôle (clé **d'un Administrateur** comprise), clôture concurrente (patron T7 de 36-16a), ordre des refus, brouillon, acteur ; échec de la trace par le déclencheur `BEFORE INSERT ON audit_log` (`onboarding_audit_e2e.rs:872-873`) → rien de changé | `project_reassignment_e2e.rs` | retirer `&& current_user.api_key_id.is_none()` ; `Acteur::utilisateur` au lieu de `Acteur::from` ; permuter version et rien-à-faire ; trace écrite après le `COMMIT` |
+| T8 écran : après le geste, un paiement envoyé depuis la page porte la version rendue | `frontend/src/routes/(app)/supplier-invoices/[id]/supplier-invoice-display-page.test.ts` | masquer le bouton ; ne reprendre que `projectId` |
 
 **E2E exigé** — cas ajouté à `frontend/tests/e2e/project-reassignment.spec.ts` (de 36-16a) : facture fournisseur **payée** préparée
 par l'API, geste au navigateur, `GET` de l'achat et du paiement : lignes au nouveau compte. Rouge d'abord (`e2e-rouge.log`).
@@ -180,3 +191,8 @@ Fiches `36-16-reimputation-analytique.md` (origine) et `36-16a-reimputation-fact
   versions (AC4, T4) ; `include_reversals = vrai` éprouvé sur un état réel (T2) ; audit dans la transaction avec l'`Acteur`, ordre
   des refus, rien-à-faire sur les lignes ; appel dans `features/projects/projects.api.ts` (cinq modules) ; paragraphe
   « Interblocages ».
+- 2026-11-15 — Propagation de la remédiation de la validation P2 de 36-16a (`kesh-gate-logs/e36-16/validation-36-16a-p2.md`) :
+  le paiement concurrent n'est pas une « sérialisation » (entrée précédente) mais un **cycle facture ↔ `companies` borné par le
+  rejeu** (`journal_entries.rs:1418-1420`) — Db3, AC5, T5, contrôle des routes `Rejouee` à l'étape 0 ; clé d'Administrateur et
+  mutation `api_key_id.is_none()` (AC6, T7) ; échec de la trace par déclencheur (T7) ; la page reprend la facture rendue (AC9, T8) ;
+  brouillon et `closedPeriodsAcknowledged` (AC6) ; exercice lu sous verrou (D9 de 36-16a).

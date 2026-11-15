@@ -122,8 +122,11 @@ réversibilité. Code lu à `fed34a9c7`. Fiche : `36-16-reimputation-analytique.
 
 - **Retenu** : sentinelle `companies` toujours (elle porte `books_locked_through` et sérialise la pose du verrou) → pièce `FOR
   UPDATE` → version → ensemble relu sous verrou → en-têtes et lignes `FOR UPDATE` par `id` → rien à faire → compte visé (validé
-  seulement s'il diffère de l'actuel) → exercices exposés `FOR UPDATE` → `403` / `409` de période → écritures, audit, `COMMIT`. Le
-  rejeu sur interblocage couvre l'ordre exercice-après-pièce, inverse de l'acceptation par rapprochement.
+  seulement s'il diffère de l'actuel) → l'exercice de **chaque écriture qui changerait** `FOR UPDATE` par `start_date` croissant,
+  statut lu sous ce verrou, puis `find_later_closed_in_tx` → `403` / `409` de période → écritures, audit, `COMMIT`. *(Corrigé à la
+  validation P2 de 36-16a, V2-1 : la version du P1 disait « exercices exposés `FOR UPDATE` », ce qui obligeait à lire le statut
+  hors verrou.)* Cycles connus, bornés par le rejeu des deux côtés : facture ↔ `companies` (validation, règlement, solde,
+  annulation, avoir) et exercice ↔ `companies` (acceptation par rapprochement) — fiche 36-16a, D9.
 - **Écartée** : lire exercice et verrou sans verrou, comme `modification_blocker` — une clôture concurrente commiterait entre le
   contrôle et l'écriture.
 - **Réversible** : oui.
