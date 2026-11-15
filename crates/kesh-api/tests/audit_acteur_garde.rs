@@ -67,12 +67,16 @@
 //!
 //! 1. Le `None` positionnel passé à une fonction **autre que** `delete_in_tx` qui
 //!    prend `actor_api_key_id: Option<i64>` (26 fonctions de `src` hors
-//!    `delete_in_tx` à la fiche, P3 ; 23 lignes de paramètre depuis la Story
-//!    35-8a2, qui a converti `delete_in_tx`, `delete_by_id`, `update` et
-//!    `update_in_tx` — `git grep -nE 'actor_api_key_id:\s*Option<i64>'` rend 30
-//!    lignes, dont 6 champs et 1 doc-comment ; `reconciliation_cancel.rs` (`cancel` →
-//!    `cancel_in_tx`) et `kesh-seed/src/pieges.rs` (`invoices::mark_emailed`)
-//!    aujourd'hui) — à reprendre au déploiement (Epic 36).
+//!    `delete_in_tx` à la fiche de la 35-8a1, P3 — relevé daté, non recompté
+//!    depuis). Depuis la Story 36-4, qui a converti
+//!    `reconciliation_cancel::cancel_in_tx` et `cancel_reconciliation_once`
+//!    (`routes/reconciliation.rs`) : `git grep -nE
+//!    'actor_api_key_id:\s*Option<i64>' -- crates/ ':!crates/*/tests/*'` rend 28
+//!    lignes, dont 6 champs et 1 doc-comment, soit 21 lignes de paramètre (23 après
+//!    la Story 35-8a2, qui avait converti `delete_in_tx`, `delete_by_id`, `update`
+//!    et `update_in_tx`) ; un `None` positionnel passé à l'une d'elles :
+//!    `kesh-seed/src/pieges.rs` (`invoices::mark_emailed`) aujourd'hui — à
+//!    reprendre au déploiement (Epic 36, lot 36-11d).
 //! 2. Un fichier de `src` **entièrement** sous `#[cfg(test)]` par un `mod x;` ou
 //!    un `#[path]` de son parent (`pre_upgrade_backup/tests.rs`,
 //!    `kesh-core/src/bank_imports/manual_tests.rs`,
@@ -183,6 +187,10 @@ use Raison::{AConvertir, AdminSansCle, Definition, Fixture, Mcp, PreAuth, Restau
 /// `routes/reconciliation.rs`, `routes/journal_entries.rs` ni
 /// `repositories/reconciliation_cancel.rs` (AC5b) ; le cinquième motif
 /// (`delete_in_tx(…, None, …)`) tombe à zéro : `delete_in_tx` prend l'acteur.
+/// Puis à la Story 36-4 (#1131) : les deux `cancel_settlement_in_tx` (règlement
+/// client, paiement fournisseur) prennent l'acteur, que leurs routes et le
+/// dé-rapprochement leur passent — leurs six entrées `AConvertir` sortent de la
+/// table (93 entrées et 98 sites → 87 et 92).
 #[rustfmt::skip]
 const SITES: &[(&str, &str, Motif, usize, Raison, &str)] = &[
     // ── kesh-api ────────────────────────────────────────────────────────────
@@ -291,12 +299,6 @@ const SITES: &[(&str, &str, Motif, usize, Raison, &str)] = &[
         "`fiscal_years::create` ×2, `update`, `close`, `reopen` : `create_fiscal_year` (lib.rs:826), `close_fiscal_year` (lib.rs:834), `update_fiscal_year` (lib.rs:830), `reopen_fiscal_year` (lib.rs:479, admin) — une raison finale exigerait les cinq"),
     ("crates/kesh-db/src/repositories/installation_settings.rs", "update_session_idle_minutes", User, 1, AdminSansCle,
         "`update_session_settings` (lib.rs:375), `require_not_pat`"),
-    ("crates/kesh-db/src/repositories/invoice_settlements_write.rs", "cancel_settlement_in_tx", User, 1, AConvertir,
-        "`cancel_invoice_settlement_handler` (lib.rs:775)"),
-    ("crates/kesh-db/src/repositories/invoice_settlements_write.rs", "cancel_settlement_in_tx", ApiKeyNone, 1, AConvertir,
-        "`cancel_invoice_settlement_handler` (lib.rs:775)"),
-    ("crates/kesh-db/src/repositories/invoice_settlements_write.rs", "cancel_settlement_in_tx", Utilisateur, 1, AConvertir,
-        "`cancel_invoice_settlement_handler` (lib.rs:775) et le dé-rapprochement d'un règlement (`reconciliation_cancel.rs`), la contre-passation — 35-8a2"),
     ("crates/kesh-db/src/repositories/invoice_settlements_write.rs", "settle_invoice", User, 1, AConvertir,
         "`settle_invoice_handler` (lib.rs:771)"),
     ("crates/kesh-db/src/repositories/invoice_settlements_write.rs", "settle_invoice", ApiKeyNone, 1, AConvertir,
@@ -353,12 +355,6 @@ const SITES: &[(&str, &str, Motif, usize, Raison, &str)] = &[
         "`cancel_supplier_invoice` (lib.rs:677), lettrage `reversal`"),
     ("crates/kesh-db/src/repositories/supplier_invoices.rs", "cancel_in_tx", Utilisateur, 1, AConvertir,
         "`cancel_supplier_invoice` (lib.rs:677), la contre-passation de l'achat — 35-8a2"),
-    ("crates/kesh-db/src/repositories/supplier_invoices.rs", "cancel_settlement_in_tx", User, 1, AConvertir,
-        "`cancel_supplier_invoice_settlement` (lib.rs:683)"),
-    ("crates/kesh-db/src/repositories/supplier_invoices.rs", "cancel_settlement_in_tx", ApiKeyNone, 1, AConvertir,
-        "`cancel_supplier_invoice_settlement` (lib.rs:683)"),
-    ("crates/kesh-db/src/repositories/supplier_invoices.rs", "cancel_settlement_in_tx", Utilisateur, 1, AConvertir,
-        "`cancel_supplier_invoice_settlement` (lib.rs:683) et le dé-rapprochement d'un règlement (`reconciliation_cancel.rs`), la contre-passation — 35-8a2"),
     ("crates/kesh-db/src/repositories/supplier_invoices.rs", "create_draft_in_tx", User, 1, AConvertir,
         "`create_supplier_invoice` (lib.rs:655)"),
     ("crates/kesh-db/src/repositories/supplier_invoices.rs", "delete_draft_in_tx", User, 2, AdminSansCle,

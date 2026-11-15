@@ -2812,11 +2812,15 @@ pub struct SupplierSettlementCancellation {
 /// refusent une facture en lot `generated`, et `confirm_batch` règle et confirme
 /// dans la même transaction). Le lot confirmé qui l'a éventuellement réglée
 /// **n'est pas modifié** (arbitrage : il reste l'historique de l'ordre transmis).
+///
+/// `acteur` est l'auteur du geste, clé d'API comprise (Story 36-4, #1131) : le
+/// délettrage de la pièce, la contre-passation (son lettrage compris) et
+/// l'entrée `supplier_invoice.settlement_cancelled` le portent tous trois.
 pub async fn cancel_settlement_in_tx(
     tx: &mut sqlx::Transaction<'_, sqlx::MySql>,
     company_id: i64,
     id: i64,
-    user_id: i64,
+    acteur: Acteur,
     aujourd_hui: NaiveDate,
 ) -> Result<SupplierSettlementCancellation, DbError> {
     use crate::errors::SettlementCancelBlocker;
@@ -2896,10 +2900,8 @@ pub async fn cancel_settlement_in_tx(
         company_id,
         id,
         settlement_fiscal_year_id,
-        letterings::Actor {
-            user_id,
-            api_key_id: None,
-        },
+        // Story 36-4 (#1131) : l'acteur du geste, clé comprise.
+        acteur,
     )
     .await?;
 
@@ -2910,8 +2912,8 @@ pub async fn cancel_settlement_in_tx(
         tx,
         company_id,
         entry_id,
-        // Story 35-8a2 (#431) : au nom de l'utilisateur (`AConvertir`, Epic 36).
-        Acteur::utilisateur(user_id),
+        // Story 36-4 (#1131) : l'acteur du geste, clé comprise.
+        acteur,
         ReversalAuthority::SupplierSettlement {
             supplier_invoice_id: id,
         },
@@ -2951,8 +2953,8 @@ pub async fn cancel_settlement_in_tx(
     // (5) L'audit du GESTE — il garde le lien que la colonne vient de perdre.
     audit_log::insert_in_tx(
         tx,
-        NewAuditLogEntry::user(
-            user_id,
+        NewAuditLogEntry::par(
+            acteur,
             "supplier_invoice.settlement_cancelled".to_string(),
             "supplier_invoice".to_string(),
             id,
@@ -3000,15 +3002,17 @@ pub struct SupplierSettlementCancelled {
 
 /// Annule le règlement d'une facture fournisseur, transaction comprise. Rend la
 /// vue de la facture, lue avant le commit ([`commit_with_view`], Story 34-8).
+///
+/// `acteur` : l'auteur du geste, clé d'API comprise (Story 36-4, #1131).
 pub async fn cancel_settlement(
     pool: &MySqlPool,
     company_id: i64,
     id: i64,
-    user_id: i64,
+    acteur: Acteur,
     aujourd_hui: NaiveDate,
 ) -> Result<SupplierSettlementCancelled, DbError> {
     let mut tx = pool.begin().await.map_err(map_db_error)?;
-    let result = cancel_settlement_in_tx(&mut tx, company_id, id, user_id, aujourd_hui).await;
+    let result = cancel_settlement_in_tx(&mut tx, company_id, id, acteur, aujourd_hui).await;
     let (view, done) = commit_with_view(tx, company_id, result, |_| id, aujourd_hui).await?;
     Ok(SupplierSettlementCancelled {
         invoice: view,

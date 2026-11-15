@@ -895,7 +895,7 @@ async fn as_of_under_the_lock_is_stable_until_an_admin_unlocks(pool: MySqlPool) 
 
     let refus = invoice_settlements_write::cancel_settlement(
         &pool,
-        m.s.admin_user_id,
+        kesh_db::entities::audit_log::Acteur::utilisateur(m.s.admin_user_id),
         m.company(),
         inv,
         sid,
@@ -932,7 +932,7 @@ async fn as_of_under_the_lock_is_stable_until_an_admin_unlocks(pool: MySqlPool) 
     .expect("déverrouillage");
     invoice_settlements_write::cancel_settlement(
         &pool,
-        m.s.admin_user_id,
+        kesh_db::entities::audit_log::Acteur::utilisateur(m.s.admin_user_id),
         m.company(),
         inv,
         sid,

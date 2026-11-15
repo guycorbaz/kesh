@@ -453,7 +453,7 @@ async fn cancelled_settlement_leaves_the_aggregates(pool: MySqlPool) {
             .unwrap();
     invoice_settlements_write::cancel_settlement(
         &pool,
-        seeded.admin_user_id,
+        kesh_db::entities::audit_log::Acteur::utilisateur(seeded.admin_user_id),
         seeded.company_id,
         inv,
         settlement_id,

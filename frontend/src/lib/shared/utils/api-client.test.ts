@@ -33,7 +33,7 @@ vi.mock('$lib/shared/utils/api-health.svelte', () => ({
 	HEALTH_POLL_INTERVAL_MS: 5000,
 }));
 
-import { apiClient, isApiError } from './api-client';
+import { apiClient, expireSession, isApiError } from './api-client';
 import { loadI18nMessages } from './i18n.svelte';
 import { authState } from '$lib/app/stores/auth.svelte';
 
@@ -821,6 +821,114 @@ describe('apiClient', () => {
 			expect(mockFetch).toHaveBeenCalledTimes(2);
 			expect(mockApiHealth.setDegraded).toHaveBeenCalled();
 			expect(mockApiHealth.clearDegraded).toHaveBeenCalled();
+		});
+	});
+
+	// --- Story 36-5 (#931, KF-056) — le maintien de session pendant une restauration ---
+
+	describe('Story 36-5 — sous maintien, un 401 ne renvoie pas à la connexion', () => {
+		const HOLD_MS = 3_600_000;
+		const unauth = () => mockResponse(401, { error: { code: 'UNAUTHENTICATED', message: '' } });
+		const refreshRefused = () =>
+			mockResponse(401, { error: { code: 'INVALID_REFRESH_TOKEN', message: 'Session expirée' } });
+		const refreshOk = () => mockResponse(200, { accessToken: NEW_TOKEN, refreshToken: 'r', expiresIn: 900 });
+		const meOk = () => mockResponse(200, { userId: 1, username: 'test', role: 'Admin', expiresIn: 900 });
+
+		beforeEach(() => {
+			authState.login({ userId: '1', username: 'test', role: 'Admin', expiresIn: 900 });
+		});
+
+		afterEach(() => {
+			// L'état du maintien vit au module : un test qui le pose le lève.
+			authState.releaseRestoreHold();
+		});
+
+		it('AC1 (a) : 401, renouvellement tenté et refusé ⇒ UNAUTHENTICATED, sans effacement ni redirection', async () => {
+			authState.holdForRestore(HOLD_MS);
+			mockFetch.mockResolvedValueOnce(unauth()).mockResolvedValueOnce(refreshRefused());
+
+			await expect(apiClient.post('/api/v1/auth/activity', { idleMs: 0 })).rejects.toMatchObject({
+				code: 'UNAUTHENTICATED',
+				status: 401,
+			});
+			expect(mockFetch.mock.calls[1][0]).toBe('/api/v1/auth/refresh');
+			expect(authState.isAuthenticated).toBe(true);
+			expect(locationReplaceMock).not.toHaveBeenCalled();
+		});
+
+		it('AC1 (b) : 401 puis renouvellement réussi ⇒ le même FormData est rejoué, la réponse rendue', async () => {
+			authState.holdForRestore(HOLD_MS);
+			mockFetch
+				.mockResolvedValueOnce(unauth())
+				.mockResolvedValueOnce(refreshOk())
+				.mockResolvedValueOnce(meOk())
+				.mockResolvedValueOnce(mockResponse(200, { filesRestored: 2 }));
+			const form = new FormData();
+			form.append('file', new Blob(['PK']), 'inst.keshbackup');
+
+			const result = await apiClient.postFormData<{ filesRestored: number }>(
+				'/api/v1/admin/full-import',
+				form,
+				{ retry: false },
+			);
+			expect(result).toEqual({ filesRestored: 2 });
+			expect(mockFetch).toHaveBeenCalledTimes(4);
+			expect(mockFetch.mock.calls[3][0]).toBe('/api/v1/admin/full-import');
+			expect((mockFetch.mock.calls[3][1] as RequestInit).body).toBe(form);
+			expect(locationReplaceMock).not.toHaveBeenCalled();
+		});
+
+		it('AC1 bis : un renouvellement réussi (login() appelé) ne lève pas le maintien', async () => {
+			authState.holdForRestore(HOLD_MS);
+			const loginSpy = vi.spyOn(authState, 'login');
+			mockFetch
+				.mockResolvedValueOnce(unauth())
+				.mockResolvedValueOnce(refreshOk())
+				.mockResolvedValueOnce(meOk())
+				.mockResolvedValueOnce(mockResponse(200, { ok: true }))
+				.mockResolvedValueOnce(unauth())
+				.mockResolvedValueOnce(refreshRefused());
+
+			await expect(apiClient.get('/api/v1/users')).resolves.toEqual({ ok: true });
+			expect(loginSpy).toHaveBeenCalled();
+			expect(authState.restoreHold).toBe(true);
+
+			await expect(apiClient.get('/api/v1/users')).rejects.toMatchObject({ code: 'UNAUTHENTICATED' });
+			expect(authState.isAuthenticated).toBe(true);
+			expect(locationReplaceMock).not.toHaveBeenCalled();
+		});
+
+		it('AC5 bis (a) : à l’échéance du maintien, un 401 refusé efface et redirige comme hors maintien', async () => {
+			vi.useFakeTimers({ toFake: ['Date'] });
+			vi.setSystemTime(1_000_000);
+			authState.holdForRestore(60_000);
+			vi.setSystemTime(1_060_000);
+			mockFetch.mockResolvedValueOnce(unauth()).mockResolvedValueOnce(refreshRefused());
+
+			await expect(apiClient.get('/api/v1/users')).rejects.toMatchObject({ code: 'UNAUTHENTICATED' });
+			expect(authState.isAuthenticated).toBe(false);
+			expect(locationReplaceMock).toHaveBeenCalledWith('/login?reason=session_expired');
+		});
+
+		it('AC5 (a) : maintien levé (démontage du panneau) ⇒ un 401 refusé redirige', async () => {
+			authState.holdForRestore(HOLD_MS);
+			authState.releaseRestoreHold();
+			mockFetch.mockResolvedValueOnce(unauth()).mockResolvedValueOnce(refreshRefused());
+
+			await expect(apiClient.get('/api/v1/users')).rejects.toMatchObject({ code: 'UNAUTHENTICATED' });
+			expect(authState.isAuthenticated).toBe(false);
+			expect(locationReplaceMock).toHaveBeenCalledWith('/login?reason=session_expired');
+		});
+
+		it('AC5 bis (b) : expireSession() efface l’état puis mène à /login?reason=session_expired', () => {
+			const clear = vi.spyOn(authState, 'clearSession');
+			expireSession();
+			expect(clear).toHaveBeenCalledTimes(1);
+			expect(authState.isAuthenticated).toBe(false);
+			expect(locationReplaceMock).toHaveBeenCalledWith('/login?reason=session_expired');
+			expect(clear.mock.invocationCallOrder[0]).toBeLessThan(
+				locationReplaceMock.mock.invocationCallOrder[0],
+			);
 		});
 	});
 });

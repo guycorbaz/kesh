@@ -5,6 +5,7 @@
 import Big from 'big.js';
 import type { AccountResponse } from '$lib/features/accounts/accounts.types';
 import { admitsLedgerType } from './credit-card';
+import { isAmbiguousThousands } from '$lib/shared/utils/amount-ambiguity';
 // F17 Pass 1 code review : factoriser `shortIban` entre `+page.svelte`
 // homepage et `bank-accounts/+page.svelte` pour éviter la divergence de
 // seuil (4 vs 8 caractères).
@@ -314,12 +315,9 @@ export function openingAmountKind(raw: string): OpeningAmountReading {
 		typedFraction.slice(0, 4) + typedFraction.slice(4).replace(/0+$/, '');
 	if (fraction.length > 4) return UNREADABLE;
 	if (negative && /[1-9]/.test(integerDigits + fraction)) return { kind: 'negative' };
-	if (
-		hasDecimal &&
-		typedFraction.length === 3 &&
-		!grouped &&
-		/^0*[1-9][0-9]{0,2}$/.test(integerDigits)
-	) {
+	// Story 36-3 (D1) : le prédicat, partagé avec le journal ; `typedFraction` est
+	// vide sans séparateur décimal, d'où `hasDecimal` implicite.
+	if (isAmbiguousThousands({ integerDigits, fraction: typedFraction, grouped })) {
 		return { kind: 'ambiguous' };
 	}
 	const payload = (integerDigits === '' ? '0' : integerDigits) + (fraction === '' ? '' : `.${fraction}`);

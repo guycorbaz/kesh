@@ -982,7 +982,42 @@ const ATTENDU = {
 	// « montant positif » restent un site chacun).
 	// Union de l'intégration 0.17.7 (C-e350-8) : 35-1 (+6), 35-4 (+3) et 35-6 (+1) sur 3026 ;
 	// recompté par la garde après chaque fusion (relevé à la source avant d'écrire ce nombre).
-	sitesTotal: 3036,
+	// Story 36-1 (#1095, D2) : **3036 → 3037** (+1) sur sa branche, `AccountAutocomplete.svelte`
+	// (`common-account-no-match`, littéral). Relevé à 3037 par la garde avant d'écrire.
+	// Story 36-3 (#1051, D4-D5) : **3036 → 3038** sur sa branche — `JournalEntryForm.svelte`
+	// perd l'ancien message des quatre décimales et gagne `-amount-ambiguous` et
+	// `-amount-unreadable`, `VatPurchaseAssistant.svelte` gagne `-amount-ambiguous`.
+	// Revue P1 de la 36-3 (B3, E3) : **3038 → 3040** — l'assistant gagne
+	// `journal-entry-form-amount-unreadable` et `vat-purchase-ht-below-centime`. Que des
+	// littéraux ; relevé à 3040 par la garde avant d'écrire ce nombre (à recompter après
+	// l'union avec 36-1).
+	// Union 36-1 + 36-3 dans la branche de la 36-2 (orchestrateur, 2026-11-14) : 3036 + 1 + 4 =
+	// **3041**, à recompter par la garde au premier Vitest de la 36-2 (C-e350-18 : relever, ne pas
+	// additionner de confiance).
+	// Story 36-3b (#1171, D3, D6) : **3040 → 3044** sur sa branche — `InvoiceForm.svelte`
+	// gagne `journal-entry-form-amount-ambiguous` et `-amount-unreadable` sous le champ du
+	// prix, `invoice-line-unit-price-ambiguous-error` et `-unreadable-error` au refus. Que
+	// des littéraux ; relevé à 3044 par la garde avant d'écrire ce nombre (à recompter
+	// après l'union avec 36-1).
+	// Union de l'intégration 0.17.8 (36-1, 36-3, 36-3b, puis 36-2, 36-4, 36-5) : relevé par la
+	// garde après chaque fusion, jamais additionné (C-e350-18) — **3045** après 36-1 + 36-3 + 36-3b
+	// (garde rouge à 3044, « expected 3045 », avant d'écrire ce nombre).
+	// Story 36-2 (#1150, D3, D5) : **3041 → 3044**, relevé par la garde avant d'écrire ce nombre
+	// (C-e350-18). 3041 n'a pas été relevé seul à la tête fusionnée : la garde a rendu 3044 avec
+	// les trois sites neufs de `TransactionSplitModal.svelte` (`-amount-unreadable`,
+	// `-amount-ambiguous`, `-amount-cents`) ; l'indicateur et le message de déséquilibre gardent
+	// leurs trois sites, sous d'autres clés. Que des littéraux.
+	// Remédiation de la revue P1 de la 36-2 (B3) : **3044 → 3046**, relevé par la garde
+	// (`expected 3046 to be 3044`) — `reconciliation-split-balance-incomplete` (l'écart non
+	// calculable) et `reconciliation-split-error-imbalance` (montant de transaction illisible),
+	// deux littéraux.
+	// Union de l'intégration 0.17.8 après la 36-2 : **3050**, relevé par la garde
+	// (« expected 3050 to be 3046 ») avant d'écrire ce nombre.
+	// Note (revue P1 de l'intégration 0.17.8, E9) : le « 3041 » plus haut, écrit dans la branche
+	// de la 36-2, a été rejoué par `rerere` à la fusion de la 36-3 dans la branche de release
+	// (`0e562af37`) sans y être relevé ; dans cette branche, 3050 = 3036 + 1 (36-1) + 4 (36-3)
+	// + 4 (36-3b) + 5 (36-2), relevé par la garde à la fusion de la 36-2.
+	sitesTotal: 3050,
 	sitesNonResolus: 31,
 	relais: 6,
 	// Story 26-1 (#620, AC3-bis) : **10 → 11** — `lib/features/bank-import/

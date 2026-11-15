@@ -1700,13 +1700,15 @@ impl Annulation {
         user_id: i64,
     ) -> Result<(), kesh_db::errors::DbError> {
         use kesh_db::repositories::{invoice_settlements_write, reconciliation_cancel};
+        // Story 36-4 (#1131) : les annulations de règlement et le dé-rapprochement
+        // prennent l'acteur entier.
+        let acteur = kesh_db::entities::audit_log::Acteur::utilisateur(user_id);
         match self {
             Annulation::Rapprochement(t) => reconciliation_cancel::cancel_in_tx(
                 tx,
                 company_id,
                 t,
-                user_id,
-                None,
+                acteur,
                 None,
                 crate::common::jour::aujourd_hui_test(),
             )
@@ -1724,7 +1726,7 @@ impl Annulation {
                     company_id,
                     facture,
                     reglement,
-                    user_id,
+                    acteur,
                     crate::common::jour::aujourd_hui_test(),
                 )
                 .await
@@ -1743,7 +1745,7 @@ impl Annulation {
                 tx,
                 company_id,
                 f,
-                user_id,
+                acteur,
                 crate::common::jour::aujourd_hui_test(),
             )
             .await

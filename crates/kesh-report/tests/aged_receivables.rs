@@ -613,7 +613,7 @@ async fn aged_cancelled_settlement_no_longer_counts(pool: MySqlPool) {
             .unwrap();
     invoice_settlements_write::cancel_settlement(
         &pool,
-        seeded.admin_user_id,
+        kesh_db::entities::audit_log::Acteur::utilisateur(seeded.admin_user_id),
         seeded.company_id,
         v.invoice.id,
         settlement_id,

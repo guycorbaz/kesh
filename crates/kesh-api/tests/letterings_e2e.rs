@@ -880,7 +880,7 @@ async fn forecast_equals_delete_over_http(pool: MySqlPool) {
     let (sid, reglement) = regler(&pool, s, inv2, dec!(40.00), jours_avant(60)).await;
     invoice_settlements_write::cancel_settlement(
         &pool,
-        s.admin_user_id,
+        kesh_db::entities::audit_log::Acteur::utilisateur(s.admin_user_id),
         s.company_id,
         inv2,
         sid,

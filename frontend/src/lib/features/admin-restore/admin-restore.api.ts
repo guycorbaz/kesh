@@ -30,6 +30,24 @@ export interface FullImportResponse {
 }
 
 /**
+ * Story 36-5 (#931) — marge du maintien de session pendant l'import (ms) : le
+ * renouvellement et la relecture de `/me` entre les deux envois possibles.
+ * Hypothèse, non borne : ni l'un ni l'autre n'a de délai d'abandon.
+ */
+export const RESTORE_HOLD_MARGIN_MS = 60_000;
+
+/**
+ * Story 36-5 (#931) — durée du maintien posé à la confirmation de l'import (ms).
+ * L'import tient en au plus deux envois (un 401 renouvelé fait un rejeu, avec un
+ * délai neuf de `LONG_OPERATION_TIMEOUT_MS`) et un renouvellement ; jamais moins
+ * que la durée de lecture `readingMs` (la durée d'inactivité réglée). Seule
+ * écriture de ce maximum.
+ */
+export function importHoldMs(readingMs: number): number {
+	return Math.max(readingMs, 2 * LONG_OPERATION_TIMEOUT_MS + RESTORE_HOLD_MARGIN_MS);
+}
+
+/**
  * Téléverse un `.keshbackup` et déclenche le restore complet d'installation.
  *
  * `apiClient.postFormData` jette une `ApiError` sur HTTP non-2xx (409 version,

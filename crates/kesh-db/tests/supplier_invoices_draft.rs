@@ -1099,10 +1099,15 @@ async fn paid_then_settlement_cancelled_then_unvalidated(pool: MySqlPool) {
         dec!(55),
     )
     .await;
-    let annule =
-        supplier_invoices::cancel_settlement(&pool, c, id, u, crate::jour::aujourd_hui_test())
-            .await
-            .expect("règlement annulé");
+    let annule = supplier_invoices::cancel_settlement(
+        &pool,
+        c,
+        id,
+        Acteur::utilisateur(u),
+        crate::jour::aujourd_hui_test(),
+    )
+    .await
+    .expect("règlement annulé");
     let d = supplier_invoices::unvalidate(
         &pool,
         c,
@@ -2419,7 +2424,7 @@ async fn cancelled_paid_invoice_redrafts_after_unreconciliation(pool: MySqlPool)
         &pool,
         seeded.company_id,
         r.bank_transaction_id,
-        seeded.admin_user_id,
+        Acteur::utilisateur(seeded.admin_user_id),
         crate::jour::aujourd_hui_test(),
     )
     .await
@@ -2649,7 +2654,7 @@ async fn a_reconciled_paid_invoice_goes_back_to_draft_through_unreconciliation(p
         &pool,
         c,
         r.bank_transaction_id,
-        u,
+        Acteur::utilisateur(u),
         crate::jour::aujourd_hui_test(),
     )
     .await

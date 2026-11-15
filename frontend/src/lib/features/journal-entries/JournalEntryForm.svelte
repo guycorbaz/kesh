@@ -17,7 +17,15 @@
 		JournalEntryResponse,
 		UpdateJournalEntryRequest
 	} from './journal-entries.types';
-	import { computeBalance, classifyLine, formatSwissAmount, isValidAmount } from './balance';
+	import {
+		computeBalance,
+		classifyLine,
+		formatSwissAmount,
+		journalAmountPayload,
+		journalAmountReader,
+		lineAmountProblem,
+		readJournalAmount
+	} from './balance';
 	import {
 		editRefusalOutcome,
 		entryDateBounds,
@@ -165,8 +173,18 @@
 		pendingAssistant = null;
 	}
 
-	const balance = $derived(computeBalance(lines));
-	const lineStatuses = $derived(lines.map(classifyLine));
+	// Story 36-3 (#1051, D3) : les montants se lisent par la lecture du journal —
+	// apostrophe des milliers admise, « 1.234 » refusé comme ambigu. ⚠️ Pas de
+	// `lines.map(classifyLine)` : `map` passerait l'indice pour lecteur.
+	const balance = $derived(computeBalance(lines, journalAmountReader));
+	const lineStatuses = $derived(lines.map((l) => classifyLine(l, journalAmountReader)));
+	/** Story 36-3 (D4) : le message de chaque ligne, ambigu prioritaire. */
+	const lineProblems = $derived(lines.map((l) => lineAmountProblem(l.debit, l.credit)));
+	/** Story 36-3 (D4) : bordure rouge d'un champ ni vide ni clair. */
+	function amountFlagged(raw: string): boolean {
+		const kind = readJournalAmount(raw).kind;
+		return kind !== 'empty' && kind !== 'clear';
+	}
 
 	const nonEmptyLines = $derived.by(() => {
 		return lines.map((l, i) => ({ line: l, status: lineStatuses[i], index: i }))
@@ -197,18 +215,23 @@
 
 	async function handleSubmit() {
 		if (!canSubmit) return;
+		// Story 36-3 (D4) : la charge de chaque montant, sans apostrophe ni virgule.
+		// `canSubmit` exclut déjà toute ligne ambiguë ou illisible ; un `null` ici
+		// n'envoie rien plutôt que de deviner.
+		const payloadLines = nonEmptyLines.map(({ line }) => ({
+			accountId: line.accountId!,
+			debit: journalAmountPayload(line.debit),
+			credit: journalAmountPayload(line.credit),
+			projectId: line.projectId
+		}));
+		if (payloadLines.some((l) => l.debit === null || l.credit === null)) return;
 		submitting = true;
 
 		const payload: CreateJournalEntryRequest = {
 			entryDate,
 			journal,
 			description: description.trim(),
-			lines: nonEmptyLines.map(({ line }) => ({
-				accountId: line.accountId!,
-				debit: (line.debit === '' ? '0' : line.debit.replace(',', '.')),
-				credit: (line.credit === '' ? '0' : line.credit.replace(',', '.')),
-				projectId: line.projectId
-			}))
+			lines: payloadLines.map((l) => ({ ...l, debit: l.debit!, credit: l.credit! }))
 		};
 
 		try {
@@ -414,7 +437,7 @@
 							type="text"
 							inputmode="decimal"
 							bind:value={lines[i].debit}
-							class={!isValidAmount(line.debit) ? 'border-destructive' : 'tabular-nums text-right'}
+							class={amountFlagged(line.debit) ? 'border-destructive' : 'tabular-nums text-right'}
 							placeholder="0.00"
 						/>
 					</td>
@@ -424,7 +447,7 @@
 							inputmode="decimal"
 							bind:value={lines[i].credit}
 							onkeydown={(e) => handleLineCreditKeydown(e, i)}
-							class={!isValidAmount(line.credit) ? 'border-destructive' : 'tabular-nums text-right'}
+							class={amountFlagged(line.credit) ? 'border-destructive' : 'tabular-nums text-right'}
 							placeholder="0.00"
 						/>
 					</td>
@@ -476,10 +499,30 @@
 						</td>
 					</tr>
 				{/if}
-				{#if !isValidAmount(line.debit) || !isValidAmount(line.credit)}
+				{#if lineProblems[i] === 'ambiguous'}
 					<tr>
-						<td colspan={tableColCount} class="text-xs text-destructive pb-2">
-							{i18nMsg('journal-entry-form-max-decimals', 'Maximum 4 décimales')}
+						<td
+							colspan={tableColCount}
+							class="text-xs text-destructive pb-2"
+							data-testid="journal-entry-line-amount-ambiguous"
+						>
+							{i18nMsg(
+								'journal-entry-form-amount-ambiguous',
+								'Montant ambigu : un point ou une virgule suivis de trois chiffres peuvent séparer les milliers. Écrivez 1\'234 pour mille deux cent trente-quatre, ou 1.2340 pour un franc vingt-trois et quatre dixièmes de centime.'
+							)}
+						</td>
+					</tr>
+				{:else if lineProblems[i] === 'unreadable'}
+					<tr>
+						<td
+							colspan={tableColCount}
+							class="text-xs text-destructive pb-2"
+							data-testid="journal-entry-line-amount-unreadable"
+						>
+							{i18nMsg(
+								'journal-entry-form-amount-unreadable',
+								'Montant illisible : chiffres, apostrophe des milliers (1\'234), point ou virgule décimale, quatre décimales au plus.'
+							)}
 						</td>
 					</tr>
 				{/if}
