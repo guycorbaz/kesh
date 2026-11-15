@@ -1939,3 +1939,354 @@ async fn designate_vat_fills_nulls_and_is_idempotent(pool: MySqlPool) {
         "rejouée, la désignation ne change ni les colonnes ni `version`"
     );
 }
+
+// ─── Story 36-19 (#1200, refs #987) : la finalisation complète les comptes vides ───
+
+/// Les dix comptes désignés de `s`, dans l'ordre de
+/// `company_invoice_settings::DESIGNATED_ACCOUNT_COLUMNS`.
+fn designated_ids(s: &kesh_db::entities::CompanyInvoiceSettings) -> [Option<i64>; 10] {
+    [
+        s.default_receivable_account_id,
+        s.default_revenue_account_id,
+        s.default_vat_payable_account_id,
+        s.default_vat_recoverable_account_id,
+        s.default_vat_decompte_account_id,
+        s.default_payable_account_id,
+        s.default_rounding_account_id,
+        s.default_discount_account_id,
+        s.default_bank_fees_account_id,
+        s.default_bad_debt_account_id,
+    ]
+}
+
+/// Les **numéros** des dix comptes désignés : deux sociétés de même plan ont des
+/// identifiants différents, pas des numéros différents.
+async fn designated_numbers(
+    pool: &MySqlPool,
+    s: &kesh_db::entities::CompanyInvoiceSettings,
+) -> Vec<Option<String>> {
+    let mut numbers = Vec::new();
+    for id in designated_ids(s) {
+        numbers.push(match id {
+            Some(id) => Some(
+                sqlx::query_scalar::<_, String>("SELECT number FROM accounts WHERE id = ?")
+                    .bind(id)
+                    .fetch_one(pool)
+                    .await
+                    .unwrap(),
+            ),
+            None => None,
+        });
+    }
+    numbers
+}
+
+/// La finalisation des réglages (l'enveloppe `insert_with_defaults_in_tx`, que la
+/// démonstration appelle) dans sa propre transaction : commit sur succès,
+/// `rollback` sur refus — comme la route.
+async fn finalize_settings(
+    pool: &MySqlPool,
+    company_id: i64,
+) -> Result<(kesh_db::entities::CompanyInvoiceSettings, bool), kesh_db::errors::DbError> {
+    let mut tx = pool.begin().await.unwrap();
+    let res = company_invoice_settings::insert_with_defaults_in_tx(&mut tx, company_id).await;
+    if res.is_ok() {
+        tx.commit().await.unwrap();
+    } else {
+        tx.rollback().await.unwrap();
+    }
+    res
+}
+
+/// Le corps d'un `update` qui ne change que le format de numéro de facture.
+fn update_with_number_format(
+    s: &kesh_db::entities::CompanyInvoiceSettings,
+    format: &str,
+) -> CompanyInvoiceSettingsUpdate {
+    let mut changes = update_with_receivable(s, s.default_receivable_account_id);
+    changes.invoice_number_format = format.to_string();
+    changes
+}
+
+/// Relie un compte bancaire neuf de la société au compte `account_id`.
+async fn link_new_bank_account(pool: &MySqlPool, company_id: i64, account_id: i64) -> i64 {
+    let bank_account_id = kesh_db::repositories::bank_accounts::create(
+        pool,
+        kesh_db::entities::NewBankAccount {
+            company_id,
+            bank_name: "Banque Y".into(),
+            iban: "CH9300762011623852957".into(),
+            qr_iban: None,
+            is_primary: true,
+        },
+    )
+    .await
+    .unwrap()
+    .id;
+    sqlx::query(
+        "UPDATE bank_accounts SET journal_account_id = ?, version = version + 1 WHERE id = ?",
+    )
+    .bind(account_id)
+    .bind(bank_account_id)
+    .execute(pool)
+    .await
+    .unwrap();
+    bank_account_id
+}
+
+/// Crée un sous-compte sous `parent_number`, ce qui rend le parent non imputable
+/// (`accounts::create`) sans lui retirer son rôle.
+async fn create_sub_account(
+    pool: &MySqlPool,
+    company_id: i64,
+    user_id: i64,
+    parent_number: &str,
+    number: &str,
+    account_type: kesh_db::entities::AccountType,
+) {
+    let parent = account_id_by_number(pool, company_id, parent_number).await;
+    accounts::create(
+        pool,
+        user_id,
+        kesh_db::entities::NewAccount {
+            company_id,
+            number: number.into(),
+            name: format!("Sous-compte {number}"),
+            account_type,
+            parent_id: Some(parent),
+            role: None,
+            postable: true,
+        },
+    )
+    .await
+    .expect("création du sous-compte");
+    let postable: bool = sqlx::query_scalar("SELECT postable FROM accounts WHERE id = ?")
+        .bind(parent)
+        .fetch_one(pool)
+        .await
+        .unwrap();
+    assert!(
+        !postable,
+        "montage : le parent {parent_number} n'est plus imputable"
+    );
+}
+
+/// T-D1 (AC1) — une ligne **vierge** (créée par `get_or_create_default`, le `GET`
+/// des réglages) est complétée comme une ligne neuve : mêmes sept comptes que la
+/// finalisation d'une société de même plan sans `GET`, TVA vide, `version` 2 ; la
+/// ligne neuve garde `version` 1 (C-36-19-7, tue M10).
+#[sqlx::test(migrations = "./test-schema")]
+async fn finalize_completes_a_blank_row_like_a_fresh_one(pool: MySqlPool) {
+    let blank = company_with_pme_chart(&pool, "Vierge SA").await;
+    let pre = company_invoice_settings::get_or_create_default(&pool, blank)
+        .await
+        .unwrap();
+    assert_eq!(designated_ids(&pre), [None; 10], "montage : ligne vierge");
+    assert_eq!(pre.version, 1, "montage : ligne vierge");
+
+    let (completed, inserted) = finalize_settings(&pool, blank)
+        .await
+        .expect("une ligne vierge se complète");
+    assert!(!inserted, "la ligne existait");
+
+    let fresh = company_with_pme_chart(&pool, "Neuve SA").await;
+    let (neuve, inserted_fresh) = finalize_settings(&pool, fresh).await.unwrap();
+    assert!(inserted_fresh, "montage : ligne neuve");
+    let attendus = designated_numbers(&pool, &neuve).await;
+    assert_eq!(
+        attendus,
+        [
+            Some("1100"),
+            Some("3000"),
+            None,
+            None,
+            None,
+            Some("2000"),
+            Some("6940"),
+            Some("3800"),
+            Some("6900"),
+            Some("3805"),
+        ]
+        .map(|n| n.map(String::from)),
+        "montage : les sept comptes d'une ligne neuve, TVA vide"
+    );
+    assert_eq!(designated_numbers(&pool, &completed).await, attendus);
+    assert_eq!(completed.invoice_number_format, neuve.invoice_number_format);
+    assert_eq!(completed.default_sales_journal, neuve.default_sales_journal);
+    assert_eq!(
+        completed.journal_entry_description_template,
+        neuve.journal_entry_description_template
+    );
+    assert_eq!(completed.version, 2, "complément d'une ligne existante");
+    assert_eq!(neuve.version, 1, "ligne neuve : personne ne l'a lue");
+
+    let reread = company_invoice_settings::get_or_create_default(&pool, blank)
+        .await
+        .unwrap();
+    assert_eq!(designated_ids(&reread), designated_ids(&completed), "relu");
+    assert_eq!(reread.version, 2, "relu");
+}
+
+/// T-D2 (AC2) — une ligne **enregistrée** par un `PUT` (débiteurs = 1020) : le
+/// débiteurs choisi est gardé, le produit complété, les facultatifs (arrondi
+/// compris) restent vides ; aucune autre colonne ne change.
+#[sqlx::test(migrations = "./test-schema")]
+async fn finalize_keeps_a_designation_and_leaves_saved_optionals_empty(pool: MySqlPool) {
+    let company = company_with_pme_chart(&pool, "Enregistrée SA").await;
+    let user_id = create_admin_user(&pool, company).await;
+    let pre = company_invoice_settings::get_or_create_default(&pool, company)
+        .await
+        .unwrap();
+    let chosen = account_id_by_number(&pool, company, "1020").await;
+    let saved = company_invoice_settings::update(
+        &pool,
+        company,
+        pre.version,
+        user_id,
+        update_with_receivable(&pre, Some(chosen)),
+    )
+    .await
+    .unwrap();
+    assert_eq!(saved.version, 2, "montage : ligne enregistrée");
+
+    let (after, inserted) = finalize_settings(&pool, company)
+        .await
+        .expect("une désignation valable ne fait pas refuser");
+    assert!(!inserted);
+    let mut attendus = designated_ids(&saved);
+    attendus[1] = Some(account_id_by_number(&pool, company, "3000").await);
+    assert_eq!(
+        designated_ids(&after),
+        attendus,
+        "débiteurs gardé, produit complété, le reste inchangé (arrondi vide)"
+    );
+    assert_eq!(after.default_receivable_account_id, Some(chosen));
+    assert_eq!(after.default_rounding_account_id, None);
+    assert_eq!(after.invoice_number_format, saved.invoice_number_format);
+    assert_eq!(after.round_to_5_centimes, saved.round_to_5_centimes);
+}
+
+/// T-D2b (AC2 bis) — une ligne de `version` 2 aux **dix comptes vides** (un `PUT`
+/// qui n'a changé que le format) est enregistrée, non vierge : débiteurs et
+/// produit complétés, les cinq facultatifs restent vides (tue M9).
+#[sqlx::test(migrations = "./test-schema")]
+async fn finalize_completes_only_the_mandatory_accounts_of_a_saved_empty_row(pool: MySqlPool) {
+    let company = company_with_pme_chart(&pool, "Format SA").await;
+    let user_id = create_admin_user(&pool, company).await;
+    let pre = company_invoice_settings::get_or_create_default(&pool, company)
+        .await
+        .unwrap();
+    let saved = company_invoice_settings::update(
+        &pool,
+        company,
+        pre.version,
+        user_id,
+        update_with_number_format(&pre, "FA-{YEAR}-{SEQ:04}"),
+    )
+    .await
+    .unwrap();
+    assert_eq!(saved.version, 2, "montage");
+    assert_eq!(
+        designated_ids(&saved),
+        [None; 10],
+        "montage : dix comptes vides"
+    );
+
+    let (after, _) = finalize_settings(&pool, company)
+        .await
+        .expect("les deux obligatoires se complètent");
+    let mut attendus = [None; 10];
+    attendus[0] = Some(account_id_by_number(&pool, company, "1100").await);
+    attendus[1] = Some(account_id_by_number(&pool, company, "3000").await);
+    assert_eq!(
+        designated_ids(&after),
+        attendus,
+        "créanciers, arrondi, escompte, frais bancaires, pertes restés vides"
+    );
+    assert_eq!(after.invoice_number_format, "FA-{YEAR}-{SEQ:04}");
+}
+
+/// T-D3 (AC3) — débiteurs et produit désignés et actifs, **aucun** compte ne
+/// portant plus le rôle `Receivable` : la finalisation aboutit sans rien écrire.
+#[sqlx::test(migrations = "./test-schema")]
+async fn finalize_does_not_need_a_role_for_a_designated_account(pool: MySqlPool) {
+    let company = company_with_pme_chart(&pool, "Sans rôle SA").await;
+    let (first, inserted) = finalize_settings(&pool, company).await.unwrap();
+    assert!(inserted, "montage");
+    sqlx::query("UPDATE accounts SET role = NULL WHERE company_id = ? AND number = '1100'")
+        .bind(company)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    let (again, inserted_again) = finalize_settings(&pool, company)
+        .await
+        .expect("un débiteurs désigné et actif suffit");
+    assert!(!inserted_again);
+    assert_eq!(designated_ids(&again), designated_ids(&first));
+    assert_eq!(again.version, first.version, "rien d'écrit");
+    assert_eq!(again.updated_at, first.updated_at, "rien d'écrit");
+}
+
+/// T-D4d (AC4 bis d) — le compte de rôle **créanciers** est lié à un compte
+/// bancaire : sur une ligne vierge comme sur une ligne neuve, la finalisation
+/// aboutit, débiteurs et produit posés, **créanciers vide** (tue M6b).
+#[sqlx::test(migrations = "./test-schema")]
+async fn finalize_leaves_payable_empty_when_its_role_account_is_bank_linked(pool: MySqlPool) {
+    for blank_first in [true, false] {
+        let company = company_with_pme_chart(&pool, &format!("Lié {blank_first}")).await;
+        if blank_first {
+            company_invoice_settings::get_or_create_default(&pool, company)
+                .await
+                .unwrap();
+        }
+        let payable_role = account_id_by_number(&pool, company, "2000").await;
+        link_new_bank_account(&pool, company, payable_role).await;
+
+        let (s, _) = finalize_settings(&pool, company)
+            .await
+            .unwrap_or_else(|e| panic!("vierge={blank_first} : la finalisation aboutit ({e:?})"));
+        assert_eq!(
+            s.default_payable_account_id, None,
+            "vierge={blank_first} : créanciers lié jamais désigné"
+        );
+        assert_eq!(
+            s.default_receivable_account_id,
+            Some(account_id_by_number(&pool, company, "1100").await),
+            "vierge={blank_first}"
+        );
+        assert_eq!(
+            s.default_revenue_account_id,
+            Some(account_id_by_number(&pool, company, "3000").await),
+            "vierge={blank_first}"
+        );
+    }
+}
+
+/// T-D4g (AC4 bis g) — un sous-compte créé sous le compte de rôle **créanciers**
+/// le rend non imputable : la finalisation aboutit, créanciers vide (tue M11,
+/// créanciers).
+#[sqlx::test(migrations = "./test-schema")]
+async fn finalize_leaves_payable_empty_when_its_role_account_is_not_postable(pool: MySqlPool) {
+    let company = company_with_pme_chart(&pool, "Scindé SA").await;
+    let user_id = create_admin_user(&pool, company).await;
+    create_sub_account(
+        &pool,
+        company,
+        user_id,
+        "2000",
+        "2001",
+        kesh_db::entities::AccountType::Liability,
+    )
+    .await;
+
+    let (s, inserted) = finalize_settings(&pool, company)
+        .await
+        .expect("un facultatif inutilisable ne fait pas refuser");
+    assert!(inserted);
+    assert_eq!(
+        s.default_payable_account_id, None,
+        "un compte non imputable n'est jamais désigné"
+    );
+    assert!(s.default_receivable_account_id.is_some());
+}

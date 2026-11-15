@@ -81,3 +81,38 @@ kickoff (`e36-choix-autonomes-e360.md`, C-e360-3 sans migration, C-e360-11 note 
 - **Écartés** : un repli sans clé (rendu non traduit, à côté de bras traduits) ; un bras `unreachable!()` (interdit par le
   `CLAUDE.md`, § *Pattern batch*, garde-fou défensif).
 - **Réversible** : oui.
+
+### C-36-19-9 — La lecture de `postable` du candidat : une seconde lecture verrouillante (développement, V3-1)
+
+- **Contexte** : V3-1 exige une lecture verrouillante ; deux formes possibles — étendre la requête de rôle, ou relire la
+  ligne déjà verrouillée.
+- **Retenu** : `find_singleton_role_in_tx` reste la source unique de la recherche du rôle (inchangée, partagée avec
+  l'étape 6) ; la fonction neuve relit ensuite `number, postable` du candidat par `SELECT … WHERE id = ? AND
+  company_id = ? FOR UPDATE` — une ligne que la transaction tient déjà, donc aucun verrou neuf, et une lecture du dernier
+  état validé.
+- **Écartés** : une variante de `find_singleton_role_in_tx` qui rendrait `postable` (deux formes de la même recherche à
+  tenir égales) ; une lecture simple (le cliché de V3-1).
+- **Réversible** : oui.
+
+### C-36-19-10 — Le compte obligatoire déjà désigné : contrôlé sous verrou partagé, après la ligne (développement, D3)
+
+- **Contexte** : D3 refuse un débiteurs ou un produit désigné **archivé**. On ne sait quels comptes sont désignés
+  qu'après avoir lu la ligne des réglages (étape 3 de D4) ; l'ancien code le jugeait par une jointure non verrouillante.
+- **Retenu** : après le `FOR UPDATE` de la ligne, `SELECT number, active FROM accounts WHERE id = ? AND company_id = ?
+  LOCK IN SHARE MODE` pour chacun des deux, débiteurs d'abord ; absent de la société ou archivé → cause « archivé »
+  (numéro rendu s'il existe). Le verrou partagé est pris **après** la ligne des réglages, l'ordre de la validation d'une
+  facture (réglages, puis comptes) ; quand le compte désigné est le compte de rôle — le cas courant —, la ligne est déjà
+  tenue en exclusif et rien de neuf n'est pris. Un interblocage reste rejoué (`onboarding.rs:894`).
+- **Écartés** : une lecture simple (cliché, comme V3-1) ; lire la ligne avant les comptes candidats (inverserait
+  `accounts → company_invoice_settings`).
+- **Réversible** : oui.
+
+### C-36-19-11 — Forme de l'issue de la fonction neuve (développement, D4)
+
+- **Retenu** : `company_invoice_settings::complete_default_accounts_in_tx` rend
+  `DefaultAccountsOutcome::{Inserted(réglages), Completed { before, after }, Unchanged(réglages)}` ; la route écrit
+  `…created` pour `Inserted`, `…updated` (`trigger` = `onboarding`, `before`, `after` au format de
+  `settings_snapshot_json`) pour `Completed`, rien pour `Unchanged`.
+- **Écartés** : un triplet de booléens ; écrire l'audit dans le dépôt (la route l'écrit déjà pour `…created`, par
+  `from_current_user`).
+- **Réversible** : oui.
