@@ -446,6 +446,10 @@ async fn final_body(
                 "accounts_created": facts.accounts_created,
                 "fiscal_year_id": facts.fiscal_year_id,
                 "vat_rates_created": rates.len(),
+                // Story 36-19 (revue P2, LOW-1) : `true` si la démonstration a
+                // posé les comptes d'une ligne qui n'en avait aucun — ligne créée,
+                // ou ligne VIERGE (créée avant par un `GET` des réglages) qu'elle
+                // a complétée. Le nom de la clé, contrat d'audit, n'est pas changé.
                 "invoice_settings_created": invoice_settings_created,
             })),
         ),
