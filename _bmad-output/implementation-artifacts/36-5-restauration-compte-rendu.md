@@ -618,8 +618,12 @@ la fois (E7). Les deux répétitions ne remplacent pas l'E2E complet de la clôt
 
 *Corrigé* — Après une restauration (*Administration → Restaurer / Importer*, ou depuis l'assistant d'une installation
 neuve), le compte rendu de l'import — pièces restaurées, pièces introuvables — reste affiché jusqu'à ce que vous cliquiez
-*Se reconnecter* ou quittiez la page ; il pouvait disparaître aussitôt, l'écran passant à la connexion avec « session
-expirée ». (refs #931)
+*Se reconnecter*, quittiez la page ou laissiez passer la durée d'inactivité réglée ; il pouvait disparaître aussitôt,
+l'écran passant à la connexion avec « session expirée ». (refs #931)
+
+*(Annoté le 2026-11-15, revue P1 du code d'intégration 0.17.8, E2/B2/A6 : « ou laissiez passer la durée d'inactivité
+réglée » ajouté — la borne de D2/D3, récrite à la revue P1 de la story, que la note écrite avant n'avait pas suivie ; le
+manuel la disait déjà, `admin-manual.tex:2340`.)*
 
 ## Dev Notes
 

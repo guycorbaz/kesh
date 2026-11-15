@@ -1013,6 +1013,10 @@ const ATTENDU = {
 	// deux littéraux.
 	// Union de l'intégration 0.17.8 après la 36-2 : **3050**, relevé par la garde
 	// (« expected 3050 to be 3046 ») avant d'écrire ce nombre.
+	// Note (revue P1 de l'intégration 0.17.8, E9) : le « 3041 » plus haut, écrit dans la branche
+	// de la 36-2, a été rejoué par `rerere` à la fusion de la 36-3 dans la branche de release
+	// (`0e562af37`) sans y être relevé ; dans cette branche, 3050 = 3036 + 1 (36-1) + 4 (36-3)
+	// + 4 (36-3b) + 5 (36-2), relevé par la garde à la fusion de la 36-2.
 	sitesTotal: 3050,
 	sitesNonResolus: 31,
 	relais: 6,

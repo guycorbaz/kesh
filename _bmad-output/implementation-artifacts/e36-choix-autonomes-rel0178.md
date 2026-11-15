@@ -52,3 +52,28 @@ son contexte, l'option retenue, les autres et sa réversibilité.
 - **Retenu** : la phrase des constats réécrite après la recette, en deux recettes, sur le modèle de *Passer à la 0.17.7* ;
   PDF régénéré après.
 - **Réversibilité** : une phrase.
+
+## C-rel0178-6 — Remédiation de la revue P1 du code d'intégration : l'empreinte `api_keys` et la recette rejouée
+
+- **Contexte** : A1 (MEDIUM) — `recette-complement-rel0178.sh:106` lisait `created_by` (la colonne est
+  `created_by_user_id`, `20260605000001_api_keys.sql:21`), erreur avalée par `2>/dev/null || true` : empreinte vide aux
+  quatre états. Même défaut dans `rel0177/recette-complement-rel0177.sh:103`, laissé tel quel (journal d'une release
+  publiée).
+- **Retenu** : requête sur `id, company_id, created_by_user_id, name, key_hash, scope, expires_at, revoked_at, version,
+  created_at` — `last_used_at` et `updated_at` exclus, la clé servant en 0.17.8 ; erreur fatale (`|| return 1`) ; sonde
+  positive (empreintes `migrations`, `users`, `api_keys`, `audit_log`, `min_required` non vides, sinon échec). Recette
+  rejouée à `f1f0cc740` : `recette-complement-2.log`, journal `recette-complement-journal-2/` ; `api_keys` 133 octets,
+  md5 `46349c3d3b41b3889651445cab78e3ee` identique aux quatre états.
+- **Autres** : garder `last_used_at` (bouge à chaque usage de la clé, donc entre « montee » et « montee2 » : bruit sans
+  objet) ; écrire seulement que `api_keys` n'était pas comparée (laissait la table de la clé hors recette).
+- **Réversibilité** : un script de journal, hors du dépôt.
+
+## C-rel0178-7 — Remédiation P1, B3 : la phrase de la 36-2 précisée, non déplacée
+
+- **Contexte** : B3 lisait « depuis la 0.17.7, le champ se vide et le message le dit » comme un message venu de la
+  0.17.8. Lu à la source : `git show v0.17.7:…/TransactionSplitModal.svelte:427-429` rend `{:else if clientError}` /
+  `{clientError}`, et `reconciliation-split-error-account-required` (« Ligne { $line } : compte requis ») y est déjà ; D4
+  de la 36-2 n'ajoute qu'un `data-testid`. La phrase de la fiche est juste.
+- **Retenu** : au CHANGELOG, « depuis la 0.17.7 déjà, le champ se vide et le message « Ligne N : compte requis » le
+  signale » — le message nommé, le sens de la fiche gardé ; la fiche n'est pas réécrite.
+- **Réversibilité** : une phrase.
