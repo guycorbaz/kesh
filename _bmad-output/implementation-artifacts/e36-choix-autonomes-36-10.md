@@ -58,3 +58,36 @@ C-e355b-6 (`paid_at` est une date).
   P1, V1-1 : ce choix disait « lignes `…Z` », forme de la réponse JSON, non du CSV.)*
 - **Écartées** : (a) « Du (jour suisse) » ; (b) le CSV à l'heure de Zurich : changement d'un export hors de #1147.
 - **Réversible** : oui (quatre valeurs de catalogue).
+
+---
+
+*Choix pris au développement (Opus 5.5, 2026-11-15).*
+
+### C-36-10-6 — L'ancre en Rust : une fonction pure publique, `invoice_payment_anchor` (D4)
+
+- **Contexte** : D4 demande `max(X, jour_suisse(r))` côté acceptation ; la fiche laisse ouvert où l'écrire.
+- **Retenu** : `pub fn invoice_payment_anchor(exigibility_date, last_sent_at) -> NaiveDate` dans
+  `repositories/reconciliation.rs`, appelée par `invoice_payment_anchor_date` sur une requête qui lit les deux termes
+  (`INVOICE_PAYMENT_ANCHOR_TERMS_SQL`) ; le prédicat de la proposition devient la constante
+  `INVOICE_PAYMENT_ANCHOR_PREDICATE_SQL` ; la macro `invoice_payment_anchor_sql!`, `INVOICE_PAYMENT_ANCHOR_SQL` et la
+  requête scalaire sont retirées (aucun autre lecteur : `git grep` hors `_bmad-output` vide).
+- **Écartées** : calcul en ligne dans la fonction async (non testable sans base) ; garder la macro pour un seul lecteur.
+- **Réversible** : oui (aucun schéma).
+
+### C-36-10-7 — AC5 en hiver : facture à `D − 45`, échéance à `D − 31` (fiche, AC5)
+
+- **Contexte** : AC5 écrit le jeu d'hiver avec `D = 2026-02-15` sans fixer `F` et `E` ; le jeu d'été (`D − 90`, `D − 60`)
+  placerait la facture en 2025, hors de l'exercice 2026 de la fixture (`insert_fake_fiscal_year`, `reconciliation_e2e.rs`).
+- **Retenu** : `F = D − 45 = 2026-01-01`, `E = D − 31 = 2026-01-15` : l'exigibilité précède `e = 2026-01-16`, l'ancre ne
+  tient qu'au rappel, et tout reste dans l'exercice.
+- **Écartée** : un second exercice 2025 dans la fixture.
+- **Réversible** : oui (un test).
+
+### C-36-10-8 — Les deux sondes de `local-date-guard.test.ts` sur une entrée synthétique (D7)
+
+- **Contexte** : D7 laisse le choix entre « une autre entrée » et « un texte synthétique » ; aucune des deux entrées restantes
+  ne porte deux motifs sur une ligne, ce que la première sonde exige.
+- **Retenu** : une entrée synthétique `x.spec.ts` de même forme que l'entrée retirée ; la première sonde montre en plus le
+  rouge sans l'entrée.
+- **Écartée** : viser `invoices.spec.ts` (un seul motif sur sa ligne : la sonde ne prouverait plus le relevé unique).
+- **Réversible** : oui.

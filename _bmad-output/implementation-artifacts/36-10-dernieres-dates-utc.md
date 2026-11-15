@@ -1,6 +1,6 @@
 # Story 36-10 : les dernières dates en UTC — les filtres du journal d'audit et la fenêtre de la réconciliation lisent le jour de Zurich (#1147, #1053)
 
-Status: ready-for-dev
+Status: review
 
 *Fiche rédigée le 2026-11-15 par l'agent de rédaction des fiches de l'Epic 36 (Opus 5.5), worktree `kesh-36-10`, branche
 `story/36-10-dernieres-dates-utc`, par le workflow `bmad-create-story`. Phase 2, release **0.18.0**, **sans migration**.
@@ -409,26 +409,26 @@ réintroduit dans une chaîne SQL de `src` → AC8. Une mutation équivalente se
 
 ## Tâches
 
-- [ ] **Étape 0** : recompter I1 à I5 à la tête de la branche (commandes ci-dessus, sorties au Change Log) ; relancer
+- [x] **Étape 0** : recompter I1 à I5 à la tête de la branche (commandes ci-dessus, sorties au Change Log) ; relancer
       `date_du_jour_garde` (gate ciblé, journal) ; relire les numéros de ligne cités.
-- [ ] **D1** : `debut_du_jour_suisse`, `fin_du_jour_suisse` et leurs tests (AC1) ; doc-comment du module
+- [x] **D1** : `debut_du_jour_suisse`, `fin_du_jour_suisse` et leurs tests (AC1) ; doc-comment du module
       (`horloge.rs:1-15`) complété.
-- [ ] Tests AC2 à AC8 commités, rouges consignés (`rouges.log`).
-- [ ] **D2, D3** : `bornes_du_filtre` (fonction pure, plafond compris) et son test unitaire ; `push_where_clauses` qui
+- [x] Tests AC2 à AC8 commités, rouges consignés (`rouges.log`).
+- [x] **D2, D3** : `bornes_du_filtre` (fonction pure, plafond compris) et son test unitaire ; `push_where_clauses` qui
       l'appelle, et son doc-comment (`audit_log.rs:171-176`, `:211-215`) ; commentaire
       `routes/audit_log.rs:420-421`.
-- [ ] **D4** : proposition, acceptation, doc-comments de `reconciliation.rs` (module `:11-15`, `:116-125`, `:195-229`,
+- [x] **D4** : proposition, acceptation, doc-comments de `reconciliation.rs` (module `:11-15`, `:116-125`, `:195-229`,
       `:251-258`, `:559-569`, `:593-597`, `:718-721`) ; `/usr/bin/grep -n "UTC\|DATE(" ` sur le fichier, sortie au Change Log.
-- [ ] **D5** : famille de la garde, sondes, angles morts — dont les `.sql` de `crates/kesh-db/src/post_restore/` (quatre
+- [x] **D5** : famille de la garde, sondes, angles morts — dont les `.sql` de `crates/kesh-db/src/post_restore/` (quatre
       fichiers, `git ls-files 'crates/*/src/*' | /usr/bin/grep -v "\.rs$"`) et les deux que `post_restore.rs:303` et `:378`
       incluent depuis `../migrations/` : du SQL exécuté à l'import, que la garde ne lit pas (elle ne balaie que les `.rs`) ; aucun ne
       contient `DATE(` aujourd'hui (`/usr/bin/grep -nP "\bDATE\s*\(" crates/kesh-db/src/post_restore/*.sql` vide).
-- [ ] **D6, D7** : quatre `messages.ftl` (à côté du bloc `audit-log-filter-*`, jamais en fin de fichier), `+page.svelte`,
+- [x] **D6, D7** : quatre `messages.ftl` (à côté du bloc `audit-log-filter-*`, jamais en fin de fichier), `+page.svelte`,
       `audit-log.types.ts`, `audit-log.spec.ts` (**ajouter `todayInZurich` à l'import** de `./helpers/api-fixtures`,
       `audit-log.spec.ts:8`, qui ne porte aujourd'hui que `createUser, USER_PASSWORD` ; retirer `todayUtc`, `:56-59`),
       `local-date-guard.test.ts` (entrée retirée, deux sondes réécrites, « trois » → « deux » à `:29`, `:263`, `:318`) ;
       captures.
-- [ ] **Tâche 5 — docs** : `docs/manual/fr/user-manual.tex:754-758` (la note « date du jour » : la fenêtre compte désormais
+- [x] **Tâche 5 — docs** : `docs/manual/fr/user-manual.tex:754-758` (la note « date du jour » : la fenêtre compte désormais
       du jour de Zurich du dernier rappel), `:3063` (« son dernier rappel » : son jour, à Zurich), `:4004-4007` (la puce « Les
       dates filtrent sur des jours UTC » devient : les dates filtrent sur des jours de Zurich, comme le tableau qui affiche
       l'heure du poste), `:4039-4041` (l'export : heures en UTC, filtres en jours de Zurich) ; `admin-manual.tex:2558`
@@ -443,8 +443,8 @@ réintroduit dans une chaîne SQL de `src` → AC8. Une mutation équivalente se
       `TMPDIR=/tmp/kesh-voie2`, `DATABASE_URL=mysql://kesh:kesh_dev@127.0.0.1:3307/kesh_e3610` ; `scripts/gate-ci.sh
       kesh_ci_e3610` en **voie 1** (son verrou) ; frontend complet. Une commande lourde à la fois (E7). Clôture : `gate-ci`
       et E2E complet sur `kesh_e2e_e3610` (voie 2) recréée, au dernier commit de code ; les échecs nommés contre
-      `docs/testing.md` § « Les échecs attendus ».
-- [ ] Note de version, Dev Agent Record, prompt de la revue P1.
+      `docs/testing.md` § « Les échecs attendus ». *(Passage en `review` fait ; clôture — `gate-ci` et E2E — à venir.)*
+- [x] Note de version, Dev Agent Record, prompt de la revue P1.
 
 ## Note de version
 
@@ -511,11 +511,100 @@ présentes (attendu : trois), **recompté à la source à l'intégration**, sans
 
 ### Agent Model Used
 
+Opus 5.5 (agent de développement de l'Epic 36, en autonomie), worktree `kesh-36-10`, voie 2 (`kesh-mariadb-dev2:3307`),
+2026-11-15.
+
 ### Debug Log References
+
+Journaux hors dépôt, `/home/gcorbaz/devel/kesh-gate-logs/e36-10/` : `etape0-inventaire.log`, `etape0-garde.log` (garde à
+`f1ffed694`, 9/9) ; `rouges-run.log` et `rouges.log` (tests neufs contre le code d'avant) ; `verts-cibles.log` ;
+`clippy-1.log`, `clippy-2.log` ; `mut/M1.log` à `mut/M8.log`, `mut/resume.log`, `mut/appliquer.py`, `mut/jouer.sh` ;
+`test-fast-ci.log` ; `gate-ci.log`, `gate-ci.console.log` ; `front-check.log`, `front-lint-i18n.log`, `front-test-unit.log`,
+`front-build.log` ; `captures/`, `captures-36-10.sh`, `captures-36-10.mjs`, `captures.log` ; `grep-docs-fin.log`.
 
 ### Completion Notes List
 
+**Commits** (de `f1ffed694`, la fiche validée) : `3f272a5bc` D1 et ses tests (AC1) + étape 0 de la fiche ; `ec807b913` les
+tests AC2 à AC8, rouges ; `ee35a8076` le correctif (D2 à D7, docs) — **dernier commit de code** ; puis la fiche, le registre,
+le `sprint-status.yaml` et le prompt de la revue P1.
+
+**Rouges** (`rouges.log`, tests de `ec807b913` contre le code de `3f272a5bc`, D1 seul appliqué) : **14 rouges sur 34**
+exécutés — `audit_log_e2e` : `le_filtre_d_un_jour_lit_le_jour_de_zurich_la_nuit` (rendait `[4, 5]`, les deux du 15 UTC, au
+lieu de `[2, 3, 4]`), `l_export_d_un_jour_suit_le_filtre_de_zurich`, `la_borne_haute_9999_…` (rendait aussi l'entrée de
+`23:00`) ; `kesh-db` : `list_date_bounds_are_inclusive_to_the_millisecond`, `the_anchor_is_the_latest_…` (cas m : ancre au 15),
+`proposal_and_acceptance_agree_…`, `a_reminder_sent_after_midnight_…` (ancre `2026-03-10`) ; `reconciliation_e2e` :
+`the_window_starts_on_the_zurich_day_…` (aucune proposition) ; `date_du_jour_garde` : `jour_d_un_instant_enregistre`
+(« `reconciliation.rs : 1 occurrence(s), 0 écrite(s)` » — **le squelette rougit comme AC8 le dit**) et cinq sondes, rouges
+parce que `tous_les_ecarts` portait déjà cet écart. Vert dès le rouge : `la_borne_basse_1000_est_acceptee_…` (attendu : le
+plafond ne change aucun résultat HTTP, D3).
+
+**Mutations** (code commité avant, `ee35a8076` ; restauration `git restore --worktree` + `touch` ; `mut/resume.log`) — **8
+sur 8 tuées** : M1 (7 rouges, dont AC1, `bornes_du_filtre_…`, AC2, AC3) ; M2 (7) ; M3 (3 : accord, cas m/n, AC5) ; M4 (4 : AC5,
+AC6, AC7, cas m) ; M5 (5 : `bornes_du_filtre_…`, test du dépôt, trois HTTP) ; M6 (6 : la famille neuve et les cinq sondes) ;
+M7 (1 : `bornes_du_filtre_jours_de_zurich_et_plafond` seul, comme la fiche le prévoit) ; M8 (2 : le jour de 1894 et le
+balayage — la branche `None` est donc bien exercée). ⚠️ **Incidents** : la première exécution de M3 a été tuée au plafond
+mémoire (8 G) avec le script entier, mutation laissée en place ; restaurée à la main (`git restore` + `touch`, noté au
+`resume.log`), `jouer.sh` corrigé pour que `mem-guard` n'enveloppe que `cargo`, M3 à M7 rejouées avec `CARGO_BUILD_JOBS=2`.
+Les premiers essais de M5 et M7 ont refusé de muter (motif d'avant `cargo fmt`, trouvé 0 fois : `mut/M5-essai1-…log`) ;
+motifs corrigés, rejoués.
+
+**Gates au passage en `review`** (commit de code `ee35a8076`) :
+- `scripts/test-fast.sh --ci`, voie 2, bases `kesh_e3610`/`kesh_e2e_e3610` remises à neuf : **5464 passés, 13 ignorés**,
+  fmt et clippy compris (`test-fast-ci.log`).
+- `scripts/gate-ci.sh kesh_ci_e3610`, voie 1 : code 0, **5471 passés, 0 échec, 17 ignorés** sur 228 `test result`
+  (somme recomptée du journal `gate-ci.log` ; console `gate-ci.console.log`, `HEAD ee35a8076`).
+- Frontend : `npm run check` 0 erreur (29 avertissements, aucun dans un fichier touché ; `front-check.log`) ;
+  `lint-i18n-ownership` PASS ; `npm run test:unit` **3709 tests, 238 fichiers** (`front-test-unit.log`) ; `npm run build` vert
+  (`front-build.log`).
+- ⚠️ **E2E complet non lancé** : il se joue à la clôture (consigne de l'Epic 36). La spec `audit-log.spec.ts` est modifiée
+  (import, pas 6) et n'a donc pas encore tourné.
+- ⚠️ **Écart E7** : `gate-ci` a obtenu le verrou de la voie 1 pendant que tournait le Vitest complet (verrou frontend) : les
+  deux commandes lourdes ont tourné ensemble une minute et demie. Tous deux verts.
+
+**Décomptes** (de `f1ffed694` à `ee35a8076`, `#[test]` et `#[sqlx::test]` aux deux bornes) : **+12 tests Rust** —
+`kesh-core/src/horloge.rs` 8 → 11, `kesh-db/src/repositories/audit_log.rs` 10 → 11, `kesh-api/tests/audit_log_e2e.rs`
+15 → 18, `kesh-db/tests/reconciliation_repository.rs` 32 → 34, `kesh-api/tests/reconciliation_e2e.rs` 134 → 135,
+`kesh-api/tests/date_du_jour_garde.rs` 9 → 11 ; deux tests existants réécrits sur le jour de Zurich
+(`list_date_bounds_are_inclusive_to_the_millisecond`, `la_borne_haute_9999_…`) et un enrichi (deux cas de nuit à
+`the_anchor_is_the_latest_…`) ; Vitest : 15 → 15 `it(` dans `local-date-guard.test.ts` (deux sondes réécrites).
+
+**Garde (D5)** : liste close de trois `.date()` admis, `DATE(` à 0 ; angles morts écrits au doc-comment de
+`JOUR_D_UN_INSTANT`. **Inventaire après le correctif** : `git grep -nP "\bDATE\s*\((?!\s*\))" -- 'crates/*/src/*.rs'` hors
+`//` (commande d'I2) ne rend plus rien à `ee35a8076` (la garde le confirme à 0).
+
+**Captures** (thème clair, base jetable `kesh_e2e_e3610`, preset `with-company`) : `captures/01-filtres-vides.png`,
+`02-ecran-entier.png`, `03-filtre-du-jour.png` ; libellés relevés : `["Du","Au","Type d'entité","N° d'entité","Action"]`
+(`captures/notes.txt`).
+
+**Docs** : manuels utilisateur (`:754-758`, `:3063`, `:4004-4009`, `:4041-4043`) et administrateur (`:2558`, `:3633`),
+`api-external.md:681`, `testing.md:119` (« deux sites », famille neuve). **PDF non régénérés** (à l'intégration, fiche
+AC10). Grep de fin (`grep-docs-fin.log`) : restent des mentions historiques (« avant, … jour UTC »), justes.
+
+**Choix consignés** : C-36-10-6 (ancre en Rust, `invoice_payment_anchor` publique ; macro et constantes de l'ancre retirées),
+C-36-10-7 (AC5 en hiver à `D − 45`/`D − 31`, dans l'exercice de la fixture), C-36-10-8 (sondes sur entrée synthétique).
+
+**Écart à la consigne Edit** : aucun sur le code ; les mutations passent par `mut/appliquer.py` (permis pour les mutations).
+
+**Aucune migration** (`git diff --stat f1ffed694 HEAD -- crates/kesh-db/migrations` vide).
+
 ### File List
+
+- `crates/kesh-core/src/horloge.rs`
+- `crates/kesh-db/src/repositories/audit_log.rs`
+- `crates/kesh-db/src/repositories/reconciliation.rs`
+- `crates/kesh-db/tests/reconciliation_repository.rs`
+- `crates/kesh-api/src/routes/audit_log.rs`
+- `crates/kesh-api/tests/audit_log_e2e.rs`
+- `crates/kesh-api/tests/reconciliation_e2e.rs`
+- `crates/kesh-api/tests/date_du_jour_garde.rs`
+- `crates/kesh-i18n/locales/{fr-CH,de-CH,en-CH,it-CH}/messages.ftl`
+- `frontend/src/routes/(app)/audit-log/+page.svelte`
+- `frontend/src/lib/features/audit-log/audit-log.types.ts`
+- `frontend/src/lib/shared/utils/local-date-guard.test.ts`
+- `frontend/tests/e2e/audit-log.spec.ts`
+- `docs/manual/fr/user-manual.tex`, `docs/manual/fr/admin-manual.tex`, `docs/api-external.md`, `docs/testing.md`
+- `_bmad-output/implementation-artifacts/36-10-dernieres-dates-utc.md`, `e36-choix-autonomes-36-10.md`,
+  `36-10-dernieres-dates-utc-review-prompt-p1.md`, `sprint-status.yaml`
 
 ## Change Log
 
@@ -564,3 +653,35 @@ présentes (attendu : trois), **recompté à la source à l'intégration**, sans
   - V2-4 (LOW) : `local-date-guard.test.ts:29`, `:263`, `:318` (« trois » → « deux ») nommés dans D7, AC9 et la tâche ;
     fichier commun avec la 36-7a écrit (« trois » → « quatre » de son côté, recompte à l'intégration).
   - V2-5 (LOW) : angle mort des `.sql` de `post_restore/` écrit à D5 et à la tâche D5.
+- 2026-11-15 — **Validation P3, ciblée** (Sonnet ; 0 CRITICAL, 0 HIGH, 0 MEDIUM, 4 LOW ;
+  `kesh-gate-logs/e36-10/validation-p3-ciblee.md`). **Clôture de la validation** : trend P1 0/0/2/4 (Sonnet) → P2 0/0/1/4
+  (Opus) → P3 ciblée 0/0/0/4 (Sonnet), la boucle se close sur une passe sans rien au-dessus de LOW ; aucune remédiation
+  de validation n'a touché de ligne de production. Les quatre LOW de la P3 traités à l'**étape 0 du développement**
+  (Opus 5.5, outil Edit), chacun sur sa ligne lue à `f1ffed694` :
+  - V3-1 : `docs/testing.md:119` lu (« `local-date-guard.test.ts` parcourt aussi `tests/e2e` et n'y admet que trois sites,
+    nommés. ») — ajouté à D7, AC9, Tâche 5 et aux fichiers communs avec la 36-7a ; **la valeur finale (attendu : trois,
+    après les deux fusions) se recompte à la source à l'intégration**, sans additionner les diffs.
+  - V3-2 : `crates/kesh-db/src/post_restore.rs:303` (`"../migrations/20260729000001_invoice_lines_revenue_account_backfill.sql"`)
+    et `:378` (`sql: include_str!("../migrations/20261010000001_lettering_documents_backfill.sql"),`) lus — D5 et sa tâche
+    nomment les deux ; aucun `DATE(` dans les six fichiers (`/usr/bin/grep -nP "\bDATE\s*\("` vide, journal
+    `kesh-gate-logs/e36-10/etape0-inventaire.log`).
+  - V3-3 : titre de D2 complété (« par `bornes_du_filtre` (D3, plafond compris) »).
+  - V3-4 : `chrono-tz-0.10.4/src/prebuilt/timezones.rs:995` (`Europe__Zurich,`) et la table relue par la P3 (dernière
+    transition `4096573200`, ≈ 2099-10-25) — D1 dit la limite de 2099 ; la phrase est au doc-comment de
+    `debut_du_jour_suisse` (commit `3f272a5bc`).
+- 2026-11-15 — **Étape 0 du développement** (Opus 5.5). Inventaires I1 à I5 relancés à `f1ffed694`, sorties identiques à
+  la fiche (I1 : `horloge.rs:61`, `admin.rs:724` hors commentaires ; I2 : `reconciliation.rs:237` seul en `src`, la
+  migration `20260419000001` hors périmètre ; I3 : `dunning_reminders.rs:272`, `invoices.rs:1573`, `payment_batches.rs:355` ;
+  I4 : 54 lignes ; I5 : les onze lignes de la fiche) — journal `kesh-gate-logs/e36-10/etape0-inventaire.log`. Garde
+  `date_du_jour_garde` relancée à `f1ffed694` : 9 passés sur 9 (`kesh-gate-logs/e36-10/etape0-garde.log`). Numéros de
+  ligne cités par la fiche relus au code (audit_log `:224-240`, reconciliation `:231-258`, `:570-583`, `:722-746`,
+  `local-date-guard.test.ts:272-275`, `audit-log.spec.ts:56-59`, catalogues) : justes.
+- 2026-11-15 — **Développement** (Opus 5.5), commits `3f272a5bc` (D1), `ec807b913` (tests rouges), `ee35a8076` (correctif,
+  dernier commit de code) ; détail, rouges, mutations et gates au *Dev Agent Record*. `/usr/bin/grep -n "UTC\|DATE("` sur
+  `reconciliation.rs` à `ee35a8076` (tâche D4) : huit lignes, toutes de doc-comment — `:162-163` (le jour d'un instant se
+  prend en Rust, « jamais par `DATE()` »), `:204-209` (l'histoire du jour UTC et la nature UTC de `sent_at`), `:236` (la
+  borne liée en `NaiveDateTime` UTC), `:438` (la contrainte `DATE(paid_at)` de `test-schema`, hors périmètre) ; aucune en
+  SQL exécuté. Gate entre le correctif et le passage en `review` : ciblé (`verts-cibles.log`, 223/223 : les six binaires
+  touchés et les modules de tests d'`horloge` et d'`audit_log`), puis complet (`test-fast --ci`, `gate-ci`) ; la boucle de
+  revue n'ayant pas commencé, l'exception `kesh-db` (gate complet entre deux passes) s'appliquera aux remédiations.
+  `Status: review`.
