@@ -137,8 +137,12 @@ doublon et sans qu'aucune écriture ne passe sans que je l'aie vue.
      CHF, une facture n'est proposée que si la transaction n'a pas de frais (`fee_amount = 0`, D-P2-2) ; elle masque
      alors le candidat `provider` (38-6a C-38-6a-7) et est rendue comme aujourd'hui. **Avec frais (D-P2-5) : aucune
      proposition, ni facture ni `provider`** — la proposition `provider` passerait en produit le paiement d'une
-     facture qui existe dans Kesh (doublon) : la transaction n'est **pas** dans l'onglet *Propositions*, elle est dans
-     la file « à examiner » avec le motif `invoice_with_fee` (AC-7), et l'écran n'en rend aucune ligne ici.
+     facture qui existe dans Kesh (doublon) : `GET …/proposals` rend toute transaction en attente, candidats vides
+     compris (`routes/reconciliation.rs:1282-1284`, un `.map` sans filtre ; 38-6a ne dit qu'« aucun candidat »), si bien
+     que la transaction reste une **ligne sans candidat** de l'onglet *Propositions* — rendu existant « Aucune
+     correspondance » (`ReconciliationProposals.svelte:600-603`), aucune case cochée par « Cocher les propositions
+     prêtes », aucun candidat `provider` ni facture — et figure **aussi** dans la file « à examiner » avec le motif
+     `invoice_with_fee` (AC-7), où se trouvent ses actions.
    - **Miroir `canLink`** (`ReconciliationProposals.svelte:262-264`, « CHF seulement ») : étendu comme la condition 1
      du serveur en devise (38-6c1 AC-1) — montant non nul et devise = celle de la base du compte (CHF pour un compte
      ordinaire ou en CHF ; devise du compte prestataire sinon) — pour que *Rattacher à une écriture existante* soit
@@ -254,7 +258,8 @@ doublon et sans qu'aucune écriture ne passe sans que je l'aie vue.
 7. **AC-7 — File « à examiner »** (FR-38-9b-4, C-38-9 ; 38-6b AC-6, AC-7).
    - Onglet « À examiner (N) » (N = longueur rendue, « 500+ » si `hasMore`) : `GET /api/v1/reconciliation/review?
      bankAccountId&limit=500` (le défaut de 38-6b AC-6 est 100 : sans `limit=500`, « 500+ » ne serait jamais juste) ; tableau date, montant, devise, genre, code d'événement, contrepartie, boutique, **motif**
-     (libellé par valeur de `reason` — les neuf de 38-6b AC-6 : `dispute` litige, `refund_origin_missing` origine du
+     (libellé par valeur de `reason` — les dix de 38-6b AC-6 (neuf stockés ou de paire, plus `invoice_with_fee`, ajouté
+     à sa passe P3) : `dispute` litige, `refund_origin_missing` origine du
      remboursement absente, `refund_origin_not_reconciled` origine non rapprochée, `refund_origin_not_invertible`
      origine non inversible, `conversion_half_missing` moitié de conversion absente, `conversion_pair_ambiguous` paire
      de conversion ambiguë, `conversion_pair_under_review` autre moitié à la file, `unknown_event` code PayPal
@@ -263,9 +268,10 @@ doublon et sans qu'aucune écriture ne passe sans que je l'aie vue.
      da regolare a mano », EN : « Kesh invoice with fees: settle by hand »), motif **calculé** (`reasonSource:
      "computed"`, jamais stocké) ; valeur inconnue → « Motif inconnu (`x`) »), lien vers la transaction liée
      (`relatedBankTransactionId`). Les clés `reconciliation-review-reason-*` sont posées par 38-6b AC-10 (dont
-     `reconciliation-review-reason-invoice-with-fee` : D-P2-5 s'y applique aussi) : cette story les **consomme** sans
-     les redéfinir et ajoute la clé de `invoice_with_fee`, aux quatre catalogues, **si** 38-6b ne l'a pas posée (test
-     des catalogues : une clé par motif, quatre locales) ; le même libellé sert au `details.reason` de
+     `reconciliation-review-reason-invoice-with-fee`, 38-6b AC-10, reprise par 38-6a AC-12) : cette story les
+     **consomme** sans en poser ni en redéfinir aucune (une clé posée deux fois casserait le catalogue) ; les quatre
+     textes ci-dessus sont ceux que 38-6b doit porter (inter-fiche P4) — si la clé posée par 38-6b dit autre chose,
+     c'est son texte qui vaut et cette fiche s'aligne (test des catalogues : une clé par motif, quatre locales) ; le même libellé sert au `details.reason` de
      `PROVIDER_TX_UNDER_REVIEW` (`failed-proposal-label.ts`). Une ligne `invoice_with_fee` dit en plus, sous le motif :
      « Le règlement de la facture au brut avec ligne de frais se passe à la main (écriture manuelle ou rattachement) »
      — limite tracée, C-38-13, 38-6a C-38-6a-7.
@@ -360,10 +366,12 @@ doublon et sans qu'aucune écriture ne passe sans que je l'aie vue.
       archivé conservé, `canLink` en devise, `blockedBy` d'un code inconnu), modale à l'unité (paires, groupe composé :
       `groupSumMatches`, `entryMovementOnAccount`), conversion avec frais de la moitié créditée et conversion à moitié
       CHF, file (actions selon rôle, motif inconnu, motif `invoice_with_fee` libellé et accompagné de sa phrase, une clé
-      par motif aux quatre catalogues ; transaction à facture avec frais absente de l'onglet *Propositions*), dialogue d'annulation d'une paire et d'un groupe, catalogues sans
+      par motif aux quatre catalogues ; transaction à facture avec frais rendue sans candidat dans l'onglet *Propositions*, ni facture ni `provider`), dialogue d'annulation d'une paire et d'un groupe, catalogues sans
       les formules interdites.
     - **E2E** `frontend/tests/e2e/provider-reconciliation.spec.ts`, contre le **transport factice** de 38-3b et ses
-      réponses PayPal par défaut (38-7 AC-10 : familles de 38-8 couvertes), connexion et comptes posés par l'API dans le
+      réponses PayPal par défaut (38-7 AC-10 : familles de 38-8 couvertes), **demandées explicitement** par `POST
+      /api/v1/_test/provider-connector` `{ connectionId, paypalResponses: "default" }` après la création de la
+      connexion (38-3b AC-3 : sans la variante, la connexion garde le `FakeConnector` et rien n'est téléchargé), connexion et comptes posés par l'API dans le
       `beforeAll` (le parcours d'administration est l'E2E de 38-9a), **avec les préalables sans lesquels la proposition
       serait bloquée** : société et exercice multi-devises et comptes de différence de change (37-1), cours du mois de
       chaque devise saisi par `PUT /api/v1/exchange-rates/rates` (37-2 ; aucun cours AFC en mode test →
@@ -374,9 +382,14 @@ doublon et sans qu'aucune écriture ne passe sans que je l'aie vue.
       (3) la proposition de la vente montre brut, TVA, frais, cours ; (4) « Cocher les propositions prêtes » puis
       *Accepter* → écriture créée (vérifiée par `GET /journal-entries` : lignes, TVA, frais), transaction rapprochée ;
       (5) une conversion acceptée rapproche ses deux moitiés ; (6) un litige est dans « À examiner », « Marquer examiné »
-      l'en sort ; (6 bis) **D-P2-5** : une facture client validée posée par l'API, dont le paiement téléchargé porte des
-      frais, n'a aucune ligne dans *Propositions* et figure dans « À examiner » au motif « Facture de Kesh avec frais »
-      (la même facture sans frais reste proposée) ; (7) **rattachement en lot** : une écriture posée par `POST /journal-entries` (en devise) pour une
+      l'en sort ; (6 bis) **D-P2-5**, sur un compte prestataire **en CHF** (D-P2-2 et D-P2-5 ne
+      valent que là : 38-6a ne lit les factures que pour un compte CHF) d'une **seconde connexion** gardée sur le
+      `FakeConnector` (sans `paypalResponses` : les réponses par défaut sont des constantes qui ne connaissent pas les
+      numéros de factures du test) : deux factures client CHF validées par l'API, puis deux ventes CHF programmées par
+      `POST /api/v1/_test/provider-connector` (pages de mouvements, 38-3b AC-3), chacune `movement_kind = sale`, au numéro
+      (`invoice_ref` de `ProviderMovement`, 38-3b AC-2) et au montant brut (`gross`) de l'une des factures — la première
+      avec `fee ≠ 0` (colonne `fee_amount ≠ 0`), la seconde avec `fee = 0` — et téléchargées ; la première n'a aucun candidat dans *Propositions* (ligne « Aucune correspondance », ni facture ni
+      `provider`) et figure dans « À examiner » au motif « Facture de Kesh avec frais » ; la seconde est proposée en facture (règlement par le chemin existant) ; (7) **rattachement en lot** : une écriture posée par `POST /journal-entries` (en devise) pour une
       transaction téléchargée, la suggestion univoque cochée et rattachée, la transaction sort des propositions ;
       (8) « déjà comptabilisée » : la ligne n'est pas cochée par « Cocher les propositions prêtes » ; (9) **paire (B28)** :
       deux écritures posées par l'API — vente au brut et frais à part — pour une transaction téléchargée au net, la
@@ -530,3 +543,23 @@ doublon et sans qu'aucune écriture ne passe sans que je l'aie vue.
   `:41-44`, `user-manual.tex:3004`, `:3188`, `:4125`, `routes/journal_entries.rs:310-334` ; aux fiches : 38-6c1 AC-4,
   AC-5, AC-10, Écarts 6 et 7 ; 38-6c2 AC-1 à AC-4, Écart 1 ; 38-6b AC-6 (tous concordent hors P3-3). Trend : P1 = 11 → P2 =
   8 → P3 = 6 (0 HIGH, 4 MEDIUM). Axes non exercés : code des stories amont (non écrit) ; PDF du manuel (non régénéré).
+- 2026-11-15 — validation P4 ciblée (Opus) : 4 findings (0 CRITICAL, 0 HIGH, 3 MEDIUM, 1 LOW), tous remédiés dans la
+  fiche ; un inter-fiche (38-6b). MEDIUM : P4-1 AC-3 (remédiation P3-1) — « la transaction n'est pas dans l'onglet
+  *Propositions*, aucune ligne » contredit le serveur : `get_proposals` rend toute transaction en attente, candidats
+  vides compris (`routes/reconciliation.rs:1282-1284`, `.map` sans filtre ; 38-6a ne dit qu'« aucun candidat »), et
+  l'écran rend une telle ligne « Aucune correspondance » (`ReconciliationProposals.svelte:600-603`) → ligne sans
+  candidat, ni facture ni `provider`, et transaction aussi dans la file ; Vitest et E2E (6 bis) alignés ; P4-2 E2E
+  (6 bis) irréalisable tel qu'écrit : les réponses par défaut sont des constantes qui ignorent les numéros des factures
+  du test, et D-P2-2/D-P2-5 ne valent que sur un compte prestataire **CHF** → seconde connexion sur le `FakeConnector`,
+  compte CHF, deux factures validées puis deux ventes programmées (`invoice_ref`, `gross`, `fee` ≠ 0 et = 0 ;
+  `ProviderMovement` de 38-3b AC-2) ; « la même facture sans frais » remplacé par une seconde facture ; P4-3 E2E —
+  `paypalResponses: "default"` jamais demandé (38-3b AC-3, 38-7 AC-10 : « que les E2E de 38-9a/38-9b demandent ») ;
+  sans lui, `FakeConnector` vide, rien de téléchargé. LOW : P4-4 AC-7 — 38-6b AC-6 compte désormais **dix** motifs
+  (`invoice_with_fee` ajouté à sa P3) et 38-6b AC-10 **pose** la clé `reconciliation-review-reason-invoice-with-fee` :
+  la clause « ajoute la clé si 38-6b ne l'a pas posée » retirée (une clé posée deux fois casse le catalogue).
+  **Inter-fiche** 38-9b-P4-4 (38-6b AC-10, LOW) : y porter les quatre textes de la clé (FR « Facture de Kesh avec
+  frais : à régler à la main », DE « Rechnung in Kesh mit Gebühren: von Hand zu begleichen », IT « Fattura di Kesh con
+  commissioni: da regolare a mano », EN « Kesh invoice with fees: settle by hand ») — proposés en P3-6, non repris.
+  Relu : 38-6b AC-6, AC-10 ; 38-6a AC-1, AC-8 ; 38-6c2 AC-1 à AC-4, Écart 1 ; 38-3b AC-2, AC-3 ; 38-7 AC-10 ; 38-2
+  AC-8 (`skip_serializing_if`, `:337`) ; `reconciliation.types.ts:226` ; remédiations P3-2 à P3-5 confirmées. Axes non
+  exercés : code des stories amont, PDF. Trend : P3 = 6 (4 MEDIUM) → P4 = 4 (3 MEDIUM) : une passe de plus est due.

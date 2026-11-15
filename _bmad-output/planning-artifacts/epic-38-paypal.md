@@ -490,7 +490,7 @@ boutique PayPal = **préfixe du numéro de facture** (`invoice_id`) · B25 Q3 re
   posé par 38-3a et repris par 38-6a — D-P2-1 ; `PROVIDER_TX_REQUIRES_PROVIDER_PROPOSAL` n'existe plus ; sur un
   compte prestataire, `rule` et `split` restent refusés, une facture n'est proposée que si `fee_amount = 0` — D-P2-2 ;
   une transaction qui correspond à une facture mais porte des frais n'a **aucune proposition** : file « à examiner »,
-  motif calculé `invoice_with_fee`, `PROVIDER_TX_UNDER_REVIEW { reason: "invoice_with_fee" }` à l'acceptation —
+  motif calculé `invoice_with_fee` (facture lue **au brut**, `gross_amount`, 38-6a C-38-6a-7), `PROVIDER_TX_UNDER_REVIEW { reason: "invoice_with_fee" }` à l'acceptation —
   D-P2-5),
   `TRANSACTION_ALREADY_BOOKED`, `MULTI_CURRENCY_DISABLED` ; et ceux de 38-6b :
   `PROVIDER_CONVERSION_PAIR_INVALID`, `PROVIDER_PAIR_ACCOUNT_LOCKED`, `PROVIDER_PAIR_CHANGED`,

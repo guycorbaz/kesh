@@ -123,8 +123,10 @@ mouvements en attendant les propositions de 38-6a.
      `PRIMARY KEY (connection_id, currency)`.
    - **`provider_balance_snapshots`** (applicative, E20) : `id`, `connection_id` (FK `CASCADE`), `run_id` (FK
      `provider_fetch_runs` `CASCADE`), `currency`, `as_of DATETIME(3)` (UTC), `amount DECIMAL(18,2)`, `kind VARCHAR(10)`
-     ascii_bin `CHECK BINARY IN ('opening','reported')` (`opening` = solde à `fetch_from`, lu une fois par compte),
-     index `(connection_id, currency, as_of)`.
+     ascii_bin `CHECK BINARY IN ('opening','reported')` (`opening` = solde au **début effectif** du premier passage
+     du compte, `max(fetch_from, history_start)` à 00:00 Zurich — `truncated_from` quand l'historique a borné —, lu une
+     fois par compte ; la valeur de `as_of` de chaque genre est fixée par 38-3b AC-7), index `(connection_id,
+     currency, as_of)`.
    - **Entités** (lecture) : `ProviderFetchRun` (`status` et `error_code` tolérants), `ProviderBalanceSeen`,
      `ProviderBalanceSnapshot`, et les dépôts de **lecture** qu'exigent l'AC-4 et l'AC-5 ; les écritures sont à 38-3b.
    - **Inscriptions** : `TABLES_TO_TRUNCATE` (`backup.rs:46`, enfants → parents) — `provider_balance_snapshots` puis
@@ -193,13 +195,15 @@ mouvements en attendant les propositions de 38-6a.
      fausserait B3 (brut par la règle, frais à part) ; `post_accept` refuse de même par proposition (`FailedProposal`
      **`PROVIDER_PROPOSAL_REQUIRED`**, le code de C-38-8 que reprend 38-6a AC-8 — un seul code pour ce refus, posé ici ;
      `details: { movementKind }`, `null` tant que 38-3b n'écrit rien —, *Pattern batch*). **38-6a** (point de contact)
-     lève ce saut pour sa variante `provider` ; **`rule` et `split` restent refusés** sur un compte prestataire (même
-     code) ; une facture (client ou fournisseur) n'y est proposée **que si `fee_amount = 0`** ; si la transaction
-     correspond à une facture mais porte des frais (`fee_amount ≠ 0`), elle ne reçoit **aucune proposition** et va à la
-     file « à examiner » avec le motif `invoice_with_fee` (D-P2-5 ; **calculé, jamais stocké** : aucune valeur neuve de
-     `review_reason`, C-38-4 ; posé par 38-6a AC-8 — la proposition `provider` passerait en produit le paiement d'une
-     facture existante, un doublon ; le règlement d'une facture au brut avec ligne de frais est tracé en issue,
-     C-38-13). Les voies manuelles restent : écriture manuelle (34-3), rattachement à une écriture (v017-3a, en CHF ;
+     lève ce saut pour sa variante `provider` et, sur un compte prestataire **en CHF**, lève `TxDocuments::Nothing`
+     pour **lire les factures** client et fournisseur des transactions `sale`/`purchase` (C-38-6a-7) ; **`rule` et
+     `split` restent refusés** sur un compte prestataire (même code) ; une facture (client ou fournisseur) n'y est
+     proposée **que si `fee_amount = 0`** (D-P2-2) ; si la transaction correspond à une facture mais porte des frais
+     (`fee_amount ≠ 0`), elle ne reçoit **aucune proposition** et va à la file « à examiner » avec le motif
+     `invoice_with_fee` (D-P2-5 ; **calculé, jamais stocké** : aucune valeur neuve de `review_reason`, C-38-4 ; posé
+     par 38-6a C-38-6a-7, AC-1 à la proposition et AC-8 à l'acceptation — la proposition `provider` passerait en
+     produit le paiement d'une facture existante, un doublon ; le règlement d'une facture au brut avec ligne de frais
+     est tracé en issue, C-38-13). Les voies manuelles restent : écriture manuelle (34-3), rattachement à une écriture (v017-3a, en CHF ;
      en devise par 38-6c1), virement entre ses comptes (34-11b). Tests : transaction posée par SQL sur un compte
      prestataire CHF → aucune proposition ; lot qui la vise → `failed[]` avec le code.
 
@@ -294,3 +298,12 @@ mouvements en attendant les propositions de 38-6a.
   facture à frais, ce que D-P2-5 a remplacé (file « à examiner », motif `invoice_with_fee`, calculé non stocké) →
   réécrit (AC-6). Renvois à 38-6c1/38-6c2 relus (aucun numéro d'AC périmé). Lignes lues :
   `routes/reconciliation.rs:1092-1104` ; `38-p2-inter-fiches.md:6-22` ; `38-validation-prompt-p3.md:53-56`.
+- 2026-11-15 — validation P4 ciblée (Opus) : 0 CRITICAL, 0 HIGH, 0 MEDIUM, 3 LOW ; remédiés dans la fiche. Périmètre :
+  `git diff f005ba2f a5682b2e` de la fiche et les deux points inter-fiches du prompt P4. LOW 38-3a-P4-1 (38-3b-P3-3) :
+  l'instantané `opening` était « solde à `fetch_from` » → solde au **début effectif** `max(fetch_from,
+  history_start)` du premier passage, `as_of` fixé par 38-3b AC-7 (AC-3) ; LOW 38-3a-P4-2 : le point de contact de
+  l'AC-6 ne disait pas que 38-6a lève `TxDocuments::Nothing` pour lire les factures (ventes et achats) d'un compte
+  prestataire CHF → écrit, même formulation que D-P2-2/D-P2-5 ; LOW 38-3a-P4-3 : `invoice_with_fee` « posé par 38-6a
+  AC-8 » → C-38-6a-7, AC-1 (proposition) et AC-8 (acceptation). Lignes lues : `routes/reconciliation.rs:335-337,
+  995-1003, 1096-1110` ; `38-6a-…md:80-90, 156-180, 210-236, 336-349` ; `38-3b-…md:305-336` ; `epic-38-paypal.md:
+  488-494, 1180-1197`. Axes non exercés : le reste de la fiche (hors périmètre), aucune exécution.

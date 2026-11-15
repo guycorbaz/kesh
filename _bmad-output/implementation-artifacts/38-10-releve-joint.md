@@ -282,7 +282,11 @@ clôturer l'exercice.
     clôture* : « neuf contrôles », K9 décrit. `admin-manual.tex` : les relevés joints sont dans le dossier des documents
     et dans la sauvegarde complète ; la sauvegarde d'avant mise à jour les emporte ; « les huit contrôles » (`:1866`,
     répétition d'une clôture) devient « les neuf contrôles » ; `marketing-brochure.tex:437` (« Huit contrôles préalables à la clôture… ») devient
-    « Neuf », avec la mention de la livraison de K9. PDF régénérés (`make fr` dans
+    « Neuf », avec la mention de la livraison de K9 (numéro de version écrit seulement s'il est connu au développement
+    — Q1 de l'epic —, jamais un gabarit `<…>` dans le `.tex`) ; **`README.md:48`** (§ *Fonctionnalités*, « huit contrôles
+    en lecture seule avant de clôturer un exercice ») devient « neuf contrôles » — le README est un support de la liste
+    de contrôle pré-push de `CLAUDE.md`, hors du grep de la P3 (`crates`, `frontend`, `docs`) ; `CHANGELOG.md:486`
+    (entrée publiée) reste tel ; `website/` et manuels DE/IT/EN relus sans occurrence (P4). PDF régénérés (`make fr` dans
     `docs/manual/`) et vérifiés aplatis (`pdftotext … | tr '\n' ' '`). `docs/api-external.md` : les cinq routes, leurs
     codes, K9. **MCP** : aucun outil (E23) — `kesh_pieces` (`mcp/outils/pieces.rs`) liste les pièces fournisseur
     importées et n'est pas étendu ; les relevés joints ne sont pas exposés au serveur MCP (décision de l'epic, aucune
@@ -378,3 +382,15 @@ clôturer l'exercice.
   `api-external.md:266-267`, `user-manual.tex:890`, `admin-manual.tex:1866` ; 37-1 AC-6 (`Absence::Table`), 37-4 AC-1 quater
   (`balances_as_of`), 37-5 `:543-544` (K10) — tous concordent. Trend : P1 = 5 → P2 = 7 → P3 = 4 (0 HIGH, 2 MEDIUM).
   Axes non exercés : code de 37-4 (non écrit) ; PDF du manuel (non régénéré) ; B27/B28 sans effet sur cette fiche.
+- 2026-11-15 — validation P4 ciblée (Opus) : 2 findings (0 CRITICAL, 0 HIGH, 1 MEDIUM, 1 LOW), remédiés dans la fiche,
+  aucun inter-fiches. MEDIUM : P4-1 propagation de P3-2 incomplète — `README.md:48` (§ *Fonctionnalités* : « huit
+  contrôles en lecture seule avant de clôturer un exercice ») restait hors de l'inventaire, le grep de la P3 ne
+  couvrant que `crates`, `frontend`, `docs` ; ajouté à l'AC-10 (`CHANGELOG.md:486`, publié, reste tel ; `website/` et
+  manuels DE/IT/EN sans occurrence, relus par `grep -rniE "huit contr|eight|acht|otto"`). LOW : P4-2 la brochure
+  « avec la mention de la livraison de K9 » appelait un numéro de version que Q1 n'a pas fixé — écrit seulement s'il est
+  connu, jamais de gabarit `<…>`. Remédiations P3 relues à la source et confirmées : `admin_full_export_e2e.rs:281-283`
+  (`data_count, 44`), `onboarding_audit_e2e.rs:2046` (`EMPTY_BEFORE_RESET`), `fiscal-years.spec.ts:499-500`,
+  `fiscal-years-page.test.ts:447`, `FiscalYearChecks.test.ts:48`, `kesh-db/src/repositories/closing_checks.rs:123`,
+  `marketing-brochure.tex:437` ; liste des migrations de l'epic (AC-1) recoupée aux fiches 38-1, 38-2, 38-3a, 38-4, 38-5,
+  38-6c2 (les autres : aucune migration) ; `truncate_all` couvert par `TABLES_TO_TRUNCATE` (`test_fixtures.rs:377-395`).
+  Axes non exercés : PDF, code de 37-4. Trend : P3 = 4 (2 MEDIUM) → P4 = 2 (1 MEDIUM) : une passe de plus est due.

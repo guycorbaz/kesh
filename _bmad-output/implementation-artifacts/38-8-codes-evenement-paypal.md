@@ -187,7 +187,10 @@ plutôt qu'en vente, afin que les règles et les propositions des stories suivan
      « hors solde » — est refusée (`code_not_overridable`) ; un T0006 ne devient pas un achat par réglage ;
    - **effets d'une surcharge** : `review_reason` = `NULL` pour `sale`, `purchase`, `fee`, `withdrawal`, `deposit` ;
      `dispute` pour `dispute` ; `other` pour `other` ; `deposit`/`withdrawal` gardent la contrainte de signe (sinon
-     `other`/`other`), comme `sale`/`purchase` ; un surchargé `fee` suit la règle `fee` de l'AC-3 ; **`ignore` écarte
+     `other`/`other`), comme `sale`/`purchase` ; un surchargé `fee` suit la règle `fee` de l'AC-3 ; la surcharge
+     remplace la **ligne de table** seulement : le contrôle de cohérence des montants (AC-3) et le virement entre
+     connexions (AC-5 — T0014 à T0017, T0020, T0021 sont des T00xx) s'appliquent **après** elle et la priment (un
+     virement entre les deux comptes de Beat surchargé `sale` reste `other`/`other`) ; **`ignore` écarte
      un code qui peut changer le solde** : le contrôle de complétude (E20 a, 38-3b AC-7) y verra alors un écart
      durable — c'est dit sous le champ (38-9a) et au manuel ;
    - violation → `PROVIDER_SETTINGS_INVALID` (400, code de 38-1), `details: { field: "eventKindOverrides", code: "T…",
@@ -226,7 +229,8 @@ plutôt qu'en vente, afin que les règles et les propositions des stories suivan
    - **Liens** : remboursement `TXN`, `ODR` (→ `NULL`) ; conversion par référence, par instant, ambiguë (deux paires au
      même instant), orpheline ; virement entre deux connexions (même `payerId`).
    - **Surcharges** : chaque refus de l'AC-7 (dont un code `other` sous condition de signe, et T0014 admis) ; `ignore`
-     → écarté et compté ; surcharge `sale` sur un débit → `other` ; `review_reason` de chaque genre surchargé.
+     → écarté et compté ; surcharge `sale` sur un débit → `other` ; `review_reason` de chaque genre surchargé ;
+     T0015 surchargé `sale` dont `payer_info.account_id` est le `payerId` d'une autre connexion → `other`/`other`.
    - Aucun test ne touche la base ni le réseau.
 10. **AC-10 — Ce que la story ne touche pas.** Aucune migration ; aucune route (C-38-12 : delta 0) ; aucun outil MCP
     (E23) ; aucun écran (le champ des surcharges est à 38-9a) ; i18n : aucun texte neuf (les codes de refus sont ceux
@@ -334,3 +338,14 @@ plutôt qu'en vente, afin que les règles et les propositions des stories suivan
   (`invoice_ref VARCHAR(127)`, `item_names`, `review_reason`) conformes à 38-3a ; `details TEXT NOT NULL` à
   `20260504000001_bank_imports.sql:64`. Axes non exercés : table des codes non reconfrontée à la page PayPal en P3
   (relue en P2) ; aucune exécution.
+- 2026-11-15 — validation P4 ciblée (Opus) : 1 finding (0 CRITICAL, 0 HIGH, 0 MEDIUM, 1 LOW), braqué sur la
+  remédiation P3 (`git diff f005ba2f a5682b2e`) ; remédié dans la fiche. LOW : P4-1 AC-7 — l'ordre entre une
+  surcharge et les contrôles qui suivent la table n'était pas dit : les codes surchargeables T0014–T0017, T0020, T0021
+  sont des T00xx, que l'AC-5 range `other` quand la contrepartie est une autre connexion ; une surcharge `sale` aurait
+  pu en faire une vente → la surcharge remplace la ligne de table seulement, AC-3 et AC-5 la priment ; test ajouté
+  (AC-9). Vérifié conforme : la liste des lignes surchargeables recoupe exactement les lignes `other` sans condition de
+  l'AC-2 (T0109, T0300–T0303, T0400–T0403, T0600, T0700/T0701 exclues) ; effets cohérents avec l'AC-2, l'AC-3 et
+  l'AC-5 (`dispute` surchargé relié par `paypal_reference_id`) ; « contrat porté par 38-3b AC-2 » exact (`MovementPage`
+  à l'AC-2 de 38-3b) ; retrait de `chrono-tz` sans effet (38-8 n'écrit que l'instant UTC ; 38-3b AC-2 déclare la
+  dépendance au crate) ; l'avertissement `ignore` est porté par 38-9a (lignes 94-97). Axes non exercés : manuel (écrit
+  par 38-9a) ; page PayPal non relue (aucun réseau) ; aucune exécution.

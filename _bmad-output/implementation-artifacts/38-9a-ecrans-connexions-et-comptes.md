@@ -93,7 +93,8 @@ rapproché.
      pas ; s'applique aux mouvements téléchargés ensuite, les mouvements déjà téléchargés se traitent à la main »
      (texte de 38-8 AC-7). **Genre « ignorer »** : avertissement sous la ligne choisie (38-8 AC-7, « c'est dit sous le
      champ ») — « ignorer un code qui peut changer le solde fera apparaître un écart durable au contrôle de
-     complétude (AC-8 a) » ; test Vitest : genre `ignore` choisi → avertissement affiché, autre genre → absent. Refus du serveur (`PROVIDER_SETTINGS_INVALID`, `details.field`, `details.code`,
+     complétude » (le contrôle (a) de l'AC-8 ; aucun renvoi interne dans le texte affiché ; dit aussi au manuel,
+     AC-11) ; test Vitest : genre `ignore` choisi → avertissement affiché, autre genre → absent. Refus du serveur (`PROVIDER_SETTINGS_INVALID`, `details.field`, `details.code`,
      `details.reason` ∈ `kind_not_allowed`, `code_not_overridable`, `too_many`, `malformed` : un libellé par motif)
      affiché à la ligne fautive.
    - **Recouvrement** (`overlapDays`, 38-8 AC-7, O11), dans le même bloc « Avancé » : nombre de jours (1 à 30 ; vide =
@@ -203,7 +204,11 @@ rapproché.
 8. **AC-8 — Contrôles de solde** (FR-38-9a-5, E20).
    - **(a) Complétude** (contrôle des soldes de 38-3b, C-38-5) : par compte, lue de `GET /provider-connections/{id}/balances` →
      `accounts[]` `{ bankAccountId, currency, opening, reported, expected, gap, complete }` : « Téléchargement complet au
-     <`reported.asOf`> » (`complete: true`) ou **« Téléchargement incomplet : écart de <`gap`, devise> au <as_of> »** en
+     <`reported.asOf`> » (`complete: true`) ou **« Téléchargement incomplet : écart de <`gap`, devise> au
+     <`reported.asOf`> »** — l'instant affiché est **celui du solde affiché** : `reported.asOf`, l'`as_of` que le
+     connecteur rend pour ce solde (38-3b AC-7 : PayPal peut servir un solde antérieur à la fin de la fenêtre), en date
+     et heure suisses de Zurich, jamais l'heure du passage ni la fin de la fenêtre demandée ; test Vitest : `asOf`
+     antérieur au `finishedAt` du passage → c'est `asOf` qui s'affiche — en
      avertissement (`complete: false`), avec le renvoi « Relancez un téléchargement ; si l'écart demeure, voir le
      manuel » ; **`complete: null`** (38-3b AC-7 : compte sans solde d'ouverture ou sans solde rapporté, ou
      `fetched_through` du compte antérieur à l'`asOf` du dernier solde rapporté — un passage en `balances_unavailable`
@@ -220,7 +225,8 @@ rapproché.
      `{ currency, asOf, reported, ledger, unreconciled, unexplained }` ou `404` si le compte n'est pas prestataire ou
      n'a aucun solde rapporté :
      - `reported` = dernier solde rapporté de la devise (`provider_balance_snapshots`, `kind = 'reported'`, table de 38-3a écrite par 38-3b), `asOf`
-       son instant (UTC) ;
+       son instant (UTC) — l'`as_of` de l'instantané, **rendu par le connecteur** (38-3b AC-7), non l'instant demandé ;
+       l'écran l'affiche avec le solde (« Selon PayPal, au <`asOf`> : X »), comme au (a) ;
      - `ledger` = solde **en devise** du compte du plan lié, **par `kesh_db::repositories::account_balances::
        balances_as_of(conn, company_id, date de asOf à Europe/Zurich, Some(&[compte]))`** (37-4 AC-1 quater : borne
        inclusive, débit net brut CHF et en devise, signé comme un actif : Σ débit − crédit) — **aucune seconde somme
@@ -237,7 +243,7 @@ rapproché.
        arrêté à la **journée** de Zurich de `asOf`, `reported` et `unreconciled` à l'**instant** ; un mouvement de la même
        journée postérieur à `asOf` et déjà rapproché fait apparaître un `unexplained` transitoire, résorbé au passage
        suivant — test à deux mouvements de part et d'autre de `asOf`.
-     Écran : « Selon PayPal : X · Aux livres : Y · Non rapproché : Z · **Inexpliqué : W** » (W ≠ 0 en avertissement,
+     Écran : « Selon PayPal, au <`asOf`> : X · Aux livres : Y · Non rapproché : Z · **Inexpliqué : W** » (W ≠ 0 en avertissement,
      W = 0 en vert) sur la ligne du compte (AC-7) et sur la page des comptes bancaires (AC-9). Code dans un module de
      lecture neuf (`kesh-db::repositories::provider_balance_check`, une fonction), route dans
      `routes/provider_connections.rs` ou un fichier voisin — **pas** dans `routes/bank_accounts.rs`. Registre (C-38-12) :
@@ -306,7 +312,11 @@ rapproché.
         d'un compte archivé ou clos n'est ni téléchargée ni proposée ;
       - 38-8 AC-7, AC-10 : comment PayPal est classé (familles de codes), ce qui va à la file « à examiner » (code
         inconnu, litige), que les surcharges ne valent que pour les codes classés « autre » et pour les mouvements
-        téléchargés **après** leur écriture ;
+        téléchargés **après** leur écriture, et qu'**ignorer** un code qui peut changer le solde fait apparaître un
+        écart durable au contrôle de complétude (38-8 AC-7 : « c'est dit sous le champ et au manuel » ; même phrase
+        qu'à l'AC-2) ;
+      - l'instant des contrôles (a) et (b) est celui du **solde rapporté** que PayPal rend (`asOf`), qui peut précéder
+        la fin de la fenêtre téléchargée (38-3b AC-7) ;
       - 38-7 AC-8, AC-9 : la permission *Transaction Search* et la création de l'application REST ; la borne de trois
         ans ;
       - le sens des nombres du contrôle (b) (« Inexpliqué » = selon PayPal − aux livres − non rapproché), distinct de
@@ -341,7 +351,8 @@ rapproché.
       puis enregistrement, `container.innerHTML` ne contient pas la valeur marqueur), liste de contrôles du test
       (chaque `check`, `ok: null`), libellés (`provider-labels.ts` : chaque code connu a un libellé, code inconnu → brut),
       bloc des soldes sans compte (actions selon le rôle), badge et formulaire des comptes bancaires (champs masqués
-      pour un compte prestataire, présents pour un compte ordinaire et une carte), contrôle (b) (couleurs, signes).
+      pour un compte prestataire, présents pour un compte ordinaire et une carte), contrôle (b) (couleurs, signes ;
+      rôle Consultation → badge rendu, route `provider-balance-check` non appelée et résumé absent, AC-8, AC-9).
     - Rust : la route de l'AC-8 (cas écrits à l'AC-8, dont le mouvement de part et d'autre de `asOf`).
     - Vitest de l'AC-15 : libellé « Téléchargé de <libellé> » (`providerConnection` non nul), valeur inconnue de
       `source_format` → « Source inconnue (`x`) », bouton *Supprimer* absent pour un import de prestataire,
@@ -349,12 +360,21 @@ rapproché.
     - Vitest du suivi de passage (AC-5) : 202 puis `running` puis `succeeded` ; `PROVIDER_FETCH_IN_PROGRESS` → suit
       `details.runId` ; abandon de la page → plus d'appel.
     - **E2E** `frontend/tests/e2e/provider-connections.spec.ts`, contre le **transport factice** de 38-3b et ses
-      réponses PayPal par défaut (38-7 AC-10) — préalables posés par l'API dans le `beforeAll` : société et exercice
+      réponses PayPal par défaut (38-7 AC-10), **demandées explicitement** : sitôt la connexion créée à l'écran (son id
+      lu de l'URL de la fiche), le test appelle `POST /api/v1/_test/provider-connector` avec, pour ce `connectionId`,
+      **`paypalResponses: "default"`** (38-3b AC-3 : sans la variante, la connexion garde le `FakeConnector`, qui ne
+      rend ni `payerId` ni les contrôles distants de PayPal) — préalables posés par l'API dans le `beforeAll` : société et exercice
       **multi-devises** (37-1), sans quoi le compte EUR est refusé `MULTI_CURRENCY_DISABLED` — : Administrateur crée une connexion, dépose un secret marqueur, teste
       (✓ partout), télécharge, voit les soldes CHF/EUR/USD sans compte, crée le compte EUR (compte du plan EUR du seed
       ou créé par l'API dans le test), voit le badge sur `/bank-accounts` et le contrôle (b) ; **le secret marqueur
       n'apparaît jamais** dans `page.content()` ni dans les réponses interceptées (`page.on('response')`) ; route
-      `_test` de 38-3b (variante `paypalResponses`, un 403 servi à la lecture des soldes) → contrôle `permission_present` ✗ avec le remède ; Comptable : pas d'entrée de
+      `_test` de 38-3b (variante `paypalResponses` : une seule réponse, le jeton `POST /v1/oauth2/token` en 200 dont le
+      `scope` ne contient pas `https://uri.paypal.com/services/reporting/search/read`) → contrôle `permission_present` ✗
+      avec le remède, `provider_reachable` « non tenté » (38-7 AC-3, AC-8 : `permission_present` est la **portée du
+      jeton** ; un 403 servi à la lecture des soldes, lui, ferait échouer `provider_reachable`, non `permission_present`)
+      — sur une **seconde connexion** (avec son secret), ou après avoir remplacé le secret de la première : le cache de
+      jeton, par connexion, n'est vidé que par le remplacement du secret, la suppression ou `/_test/reset` (38-7 AC-3),
+      et un jeton déjà obtenu sur les réponses par défaut masquerait la portée manquante ; Comptable : pas d'entrée de
       menu, `/admin/providers` refusé, bouton « Télécharger maintenant » présent sur `/bank-accounts`. La recette E2E
       de `CLAUDE.md` gagne `KESH_SECRETS_KEY` (posée par 38-1 AC-10 ; vérifier qu'elle y est).
     - Gates : `npm run check`, `lint-i18n-ownership`, `test:unit`, `build` ; E2E complet au dernier commit de code ;
@@ -505,3 +525,20 @@ rapproché.
   aux fiches : 38-1 AC-4, AC-7 ; 38-2 AC-5, AC-8 ; 38-3a AC-7 ; 38-3b AC-5 à AC-8 ; 38-7 AC-8, AC-9 ; 38-8 AC-7 (tous
   concordent). Trend : P1 = 15 → P2 = 12 → P3 = 7 (0 HIGH, 2 MEDIUM). Axes non exercés : code des stories amont (non
   écrit) ; PDF du manuel (non régénéré) ; site web de PayPal (aucun WebFetch).
+- 2026-11-15 — validation P4 ciblée (Opus) : 5 findings (0 CRITICAL, 0 HIGH, 2 MEDIUM, 3 LOW), tous remédiés dans la
+  fiche ; périmètre : `git diff f005ba2f a5682b2e` et les trois points inter-fiches visant 38-9a. MEDIUM : P4-1 E2E
+  (remédiation P3-6) — « un 403 servi à la lecture des soldes → `permission_present` ✗ » est faux : `permission_present`
+  est la **portée du jeton** (38-7 AC-3, AC-8 ; table de l'AC-7 : « portée absente du jeton »), un 403 aux soldes ferait
+  échouer `provider_reachable` ; remplacé par un jeton 200 dont le `scope` n'a pas `…/reporting/search/read`, sur une
+  seconde connexion ou après remplacement du secret (le cache de jeton par connexion masquerait sinon la portée) ;
+  P4-2 E2E — les réponses PayPal par défaut ne sont servies que sur `paypalResponses: "default"` (38-3b AC-3, 38-7
+  AC-10 : sans elle, `FakeConnector`) : l'appel `POST /_test/provider-connector` est écrit, après la création de la
+  connexion (état par `connectionId`). LOW : P4-3 instant affiché du contrôle (a) — `<as_of>` indéterminé → `reported.asOf`,
+  l'`as_of` rendu par le connecteur (38-3b AC-7), en date et heure de Zurich, test ; même instant au (b) (« Selon PayPal,
+  au <`asOf`> ») ; P4-4 avertissement « ignorer » : renvoi « (AC-8 a) » sorti du texte affiché, et la phrase ajoutée au
+  manuel (AC-11, 38-8 AC-7 : « sous le champ et au manuel »), avec l'instant des contrôles ; P4-5 Vitest du rôle
+  Consultation (route (b) non appelée, résumé absent, badge présent) qui manquait à la remédiation P3-1. Relu : 38-3b
+  AC-3 (`paypalResponses`, `"default"`), AC-6, AC-7 ; 38-7 AC-3 (portée, cache), AC-7 (table), AC-8, AC-10 ; 38-8 AC-7 ;
+  38-1 AC-4 (`clientId`, motifs) ; 38-3a AC-6, AC-7 (manuel utilisateur) ; `lib.rs:522-524`, `:1015-1017`. Remédiations
+  P3 confirmées : P3-1, P3-2, P3-4, P3-5. Axes non exercés : code des stories amont (non écrit), PDF, documentation
+  PayPal. Trend : P3 = 7 (2 MEDIUM) → P4 = 5 (2 MEDIUM) : une passe de plus est due (MEDIUM rendus, CLAUDE.md).

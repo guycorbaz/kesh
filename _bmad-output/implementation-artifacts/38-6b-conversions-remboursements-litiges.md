@@ -155,8 +155,8 @@ afin que **tout mouvement qui change un solde finisse comptabilisé, sans qu'auc
   conversion dont la paire est `Missing` (`conversion_half_missing`) ou `Ambiguous` (`conversion_pair_ambiguous`), **ou**
   un remboursement dont l'origine est `Missing` (`refund_origin_missing`), **non réconciliée** (`refund_origin_not_reconciled`)
   ou **non inversible** (`refund_origin_not_invertible`, C-38-6b-5), **ou** une moitié dont l'autre est à la file
-  (`conversion_pair_under_review`, ci-dessous), **ou** une vente ou un achat de compte CHF qui correspond à une
-  **facture** de Kesh et porte `fee_amount ≠ 0` (`invoice_with_fee`, motif **calculé**, `reasonSource: "computed"`, D-P2-5 :
+  (`conversion_pair_under_review`, ci-dessous), **ou** une vente ou un achat de compte CHF dont le **brut** correspond
+  à une **facture** de Kesh (lecture de 38-6a C-38-6a-7) et qui porte `fee_amount ≠ 0` (`invoice_with_fee`, motif **calculé**, `reasonSource: "computed"`, D-P2-5 :
   la proposition `provider` passerait en produit le paiement d'une facture existante ; le règlement au brut avec frais
   se passe à la main, issue C-38-13 ; test : facture réglée ou annulée → la transaction sort de la file et le candidat
   `provider` de 38-6a revient). Elle en sort d'elle-même quand la cause disparaît
@@ -237,7 +237,7 @@ afin que **tout mouvement qui change un solde finisse comptabilisé, sans qu'auc
    C-38-6a-4) pour un cours absent, un compte de frais invalide, `MULTI_CURRENCY_DISABLED`, `FX_ACCOUNT_INVALID` (comptes de
    différence), `PROVIDER_TRANSFER_CURRENCY_MISMATCH`. Lectures par page, nombre de requêtes non proportionnel au nombre
    de transactions (paires, origines et suggestions de compte lues en une requête chacune pour la page) : test du
-   compteur.
+   compteur — hormis les lectures de factures CHF par transaction de 38-6a (C-38-6a-7, au brut).
 2. **AC-2 — Conversion : les deux écritures (FR-38-6b-1).** Test d'intégration HTTP : soldes EUR (X1) et USD (X2) d'une
    même connexion, liés à des comptes du plan EUR et USD, compte de transit et comptes de différence de la société
    (37-1), cours retenus de mars ; moitiés −100.00 EUR (frais −1.00) et +107.84 USD reliées par
@@ -308,11 +308,13 @@ afin que **tout mouvement qui change un solde finisse comptabilisé, sans qu'auc
    relatedBankTransactionId }], hasMore }`, triés par `bookingDate` décroissante puis `id`. Motifs : ceux de C-38-6b-4
    (`dispute`, `refund_origin_missing`, `unknown_event`, `other` — C-38-4 — et `conversion_half_missing`,
    `conversion_pair_ambiguous`, `conversion_pair_under_review` — ajouté à la passe P2 —, `refund_origin_not_reconciled`,
-   `refund_origin_not_invertible`, `invoice_with_fee` — ajouté à la passe P3, D-P2-5 ; la lecture des factures est
-   **par page**, comme celle des paires, jamais par transaction) ; une valeur stockée
+   `refund_origin_not_invertible`, `invoice_with_fee` — ajouté à la passe P3, D-P2-5 ; les factures se lisent par
+   `invoice_match_for_provider_tx` de 38-6a (C-38-6a-7), **au brut** et **par transaction** (fonctions de dépôt des
+   factures CHF, une à deux lectures par vente ou achat à frais d'un compte CHF), seule exception au compteur de
+   requêtes de la route, comme dans `get_proposals`) ; une valeur stockée
    inconnue (`Other`) est rendue telle quelle. Lecture seule, aucun verrou, rien d'écrit. Tests : chaque motif ; sortie
    automatique de la file quand l'autre moitié est insérée ou l'origine réconciliée ; vente à frais d'un compte CHF
-   dont le numéro de facture correspond à une facture ouverte → motif `invoice_with_fee`, `reasonSource: "computed"`,
+   dont le **brut** (100.00, frais −3.20, net 96.80) égale une facture client ouverte de la fenêtre → motif `invoice_with_fee`, `reasonSource: "computed"`,
    aucun candidat dans `GET …/proposals` (38-6a AC-1), `PROVIDER_TX_UNDER_REVIEW` à l'acceptation `provider` ; même
    vente à `fee_amount = 0` → pas dans la file (la facture se règle, 38-6a) ; une transaction de la file n'a
    aucun candidat dans `GET …/proposals` ; une transaction rejetée n'est pas dans la file.
@@ -358,7 +360,8 @@ afin que **tout mouvement qui change un solde finisse comptabilisé, sans qu'auc
     lettres, quatre locales ; `details.reason` de `PROVIDER_TX_UNDER_REVIEW` lu pour dire le motif), messages d'`AppError`
     aux quatre locales, décompte des codes du doc-comment recompté au `grep` ; motifs de la file : clés
     `reconciliation-review-reason-*` (une par motif, `invoice_with_fee` compris — clé
-    `reconciliation-review-reason-invoice-with-fee`, que 38-6a AC-12 reprend —, quatre locales) ; action d'audit `reconciliation.review_done` à
+    `reconciliation-review-reason-invoice-with-fee`, **posée par 38-6a AC-12** (développée avant) et reprise ici sans
+    être recréée —, quatre locales) ; action d'audit `reconciliation.review_done` à
     `audit_labels.rs` et sa clé `audit-log-action-reconciliation-review-done` aux quatre locales
     (`tests/audit_label_registry.rs` vert). `docs/api-external.md` : file, « examiné », variante `provider` des genres
     neufs (corps, refus), annulation d'une paire. Manuel utilisateur et écrans : **38-9b** (aucun contrôle visible ici,
@@ -431,6 +434,15 @@ afin que **tout mouvement qui change un solde finisse comptabilisé, sans qu'auc
 
 ## Change Log
 
+- 2026-11-15 — validation P4 ciblée (Opus) : 0 CRITICAL, 0 HIGH, 2 MEDIUM, 2 LOW ; remédiés dans la fiche. P4-1
+  (MEDIUM) le test de l'AC-6 décidait `invoice_with_fee` sur le « numéro de facture », critère que la fonction de 38-6a
+  n'emploie pas (montant et fenêtre) ; et au net, la lecture ne retrouvait jamais la facture (38-6a P4-1) → brut, chiffres
+  du test (AC-6, C-38-6b-4). P4-2 (MEDIUM) « lecture des factures par page, jamais par transaction » : irréalisable avec
+  la fonction unique de 38-6a, bâtie sur les fonctions de dépôt par transaction (`kesh-db/src/repositories/
+  reconciliation.rs:646-663`, `:813-832`, lues) → par transaction, seule exception au compteur (AC-6, AC-1). P4-3
+  (LOW) AC-10 disait la clé `…-invoice-with-fee` posée ici et reprise par 38-6a, développée avant → posée par 38-6a
+  AC-12, reprise ici. P4-4 (LOW) AC-1 : exception du compteur pour ces lectures. Inter-fiches : 38-9b (la clé de
+  `invoice_with_fee` vient de 38-6a, non de 38-6b).
 - 2026-11-15 — validation P3 (Sonnet) : 0 CRITICAL, 0 HIGH, 1 MEDIUM, 1 LOW ; remédiés dans la fiche sauf inter-fiches
   (38-9b : motif `invoice_with_fee` à l'écran de la file) : P3-1 (MEDIUM) D-P2-5 — la file ne connaissait pas
   `invoice_with_fee` (vente à frais qui correspond à une facture : aucune proposition, motif calculé) → C-38-6b-1

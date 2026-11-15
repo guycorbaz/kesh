@@ -108,7 +108,8 @@ Reprises de 38-6c (B28), renumérotées au découpage (`FR-38-6c-8..10` → `FR-
      (un membre de groupe n'a pas d'autre côté).
    - **Inventaire clos des lecteurs de `matched_entry_id` qui demandent « l'écriture est-elle rapprochée ? »**
      (relevé par `grep -rn matched_entry_id crates/*/src`, sur `57b26a5f`, à recompter à l'étape 0 du développement —
-     38-6c1, 38-6a et 38-6b développées avant en ajoutent —, citation au Change Log ; chacun **résolu** ou **écarté
+     38-6c1, développée avant, en ajoute ; 38-6a et 38-6b, développées après (D-P2-3), s'y rangent par le relevé (f)
+     —, citation au Change Log ; chacun **résolu** ou **écarté
      par construction**, aucun laissé muet) :
      (chemins sous `crates/kesh-db/src/repositories/` sauf mention ; `bank_accounts.rs` est celui du dépôt, non de
      `kesh-api/src/routes/`) (a) `journal_entries.rs:2340-2344` (`document_owners`, rang 7 : motif `MatchedBankTransaction` des refus de
@@ -127,7 +128,7 @@ Reprises de 38-6c (B28), renumérotées au découpage (`FR-38-6c-8..10` → `FR-
      `matched_entry_id` de 38-6b** (paire de conversion, paire à moitié CHF, virement de retrait ou de dépôt) — **par
      construction** : elles portent sur une écriture neuve de l'acceptation, ou sur l'écriture d'un virement par la
      règle de 38-6c1 (conditions 4 et G6 : une écriture `IN_GROUP` n'a jamais d'autre côté), jamais sur un membre de
-     groupe ; (g) `exports/csv_tables.rs:759`, sauvegarde — ci-dessus. Un test par site résolu : un groupe dont le
+     groupe ; (g) `crates/kesh-api/src/exports/csv_tables.rs:759`, sauvegarde — ci-dessus. Un test par site résolu : un groupe dont le
      **membre** (non la principale) est visé — refus de contre-passation directe `MatchedBankTransaction`, écart du
      relevé égal à celui d'un lien simple de même mouvement.
    - **Teardowns de test qui suppriment des écritures** (la FK `RESTRICT` de la table neuve les ferait échouer sur
@@ -311,3 +312,12 @@ Reprises de 38-6c (B28), renumérotées au découpage (`FR-38-6c-8..10` → `FR-
   (`delete_all_by_company`, `drop_company_deep`) à vider avant les écritures (MEDIUM), `AlreadyBooked` cité
   `:140-145` et non `:118-124` (LOW), `matchedEntryId` = principale seule documenté (LOW) ; chemin de
   `bank_accounts.rs` (dépôt) précisé ; aucun finding inter-fiches.
+- 2026-11-15 — validation P4 ciblée (Opus) : 0 CRITICAL, 0 HIGH, 0 MEDIUM, 2 LOW ; remédiés. Remédiation P3 relue au
+  code : `delete_all_by_company` (`journal_entries.rs:2078`, DELETE `:2085`, `pub`, appelants en `mod tests` seuls),
+  `drop_company_deep` (`accounts.rs:1462-1479`, `panic!` sur échec), `test_fixtures::truncate_all`
+  (`test_fixtures.rs:395`) sur `TABLES_TO_TRUNCATE` (`backup.rs:46`), `AlreadyBooked` (`routes/reconciliation.rs:140`,
+  doc `:128-137`), `TransactionResponse` (`routes/bank_imports.rs:304`) : exacts ; les autres suppressions d'écritures
+  de test (`invoices.rs:4460`, `journal_entries.rs:3784`) visent des écritures par identifiant, hors groupe. P4-1 (LOW)
+  le préfixe « chemins sous `kesh-db/src/repositories/` » rendait (g) faux → `crates/kesh-api/src/exports/csv_tables.rs`.
+  P4-2 (LOW, hors remédiation) l'inventaire disait 38-6a et 38-6b « développées avant » 38-6c2, contre D-P2-3 → corrigé.
+  Aucun finding inter-fiches.

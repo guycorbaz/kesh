@@ -135,7 +135,9 @@ d'imputation (38-6) reposent sur un relevé complet et vérifiable.
      autres connexions PayPal de la société, lus par la fabrique dans leurs réglages typés ; vide quand il n'y en a
      pas — consommés par 38-8 AC-5) et transport. **Le cache de jeton n'est pas posé ici** : son type
      (`PaypalTokenCache`) est de `kesh_providers::paypal::auth` (38-7 AC-3), qui ajoute lui-même le champ à
-     `ConnectorContext` (`#[non_exhaustive]`, construit par un constructeur unique) et à `AppState` — 38-3b ne
+     `ConnectorContext` et à `AppState` (`ConnectorContext` et le trait `ConnectorFactory` vivent dans
+     `kesh-api::providers`, à côté de la fabrique — `kesh-api` voit les types de `kesh-providers`, l'inverse non ;
+     construit par un **constructeur unique**, seul site que l'ajout d'un champ touche) — 38-3b ne
      référence aucun type d'une story suivante. La route `POST …/test` (38-1 AC-7) construit son connecteur par la même fabrique (38-7). Sites de
      construction littérale d'`AppState` : inventaire de 37-2 AC-3, à relancer (`grep -rn "AppState {"`).
    - **`KESH_TEST_MODE`** : `main.rs` installe une fabrique qui rend un `FakeConnector` pour **toute** connexion,
@@ -148,7 +150,12 @@ d'imputation (38-6) reposent sur un relevé complet et vérifiable.
      réponses synthétiques par défaut de 38-7 AC-10, qui sinon ne servirait jamais : sans la variante, une connexion
      garde le `FakeConnector`) ; quand elle est fournie, la fabrique de test construit un vrai `PaypalConnector` sur ce
      transport factice au lieu du `FakeConnector` ; sans elle, comportement ci-dessus. Le corps est défini ici (forme et validation, champs facultatifs), le connecteur qui le lit
-     en 38-7 ; **`TEST_ENDPOINT_ROUTES` inchangé** par cette variante (même route). L'état programmé vit dans une
+     en 38-7 ; **validation posée ici** : `paypalResponses` est soit un tableau non vide d'objets `{ method ∈ GET|POST,
+     path commençant par "/", query? objet de chaînes, status 100 à 599, body JSON }`, soit **exactement** la chaîne
+     `"default"` — toute autre chaîne ou forme → `400` (`AppError::Validation`, patron de
+     `routes/test_endpoints.rs:387-392`), rien de programmé ; **en 38-3b**, faute de `PaypalConnector`, la variante est
+     validée et gardée dans l'état programmé, et la fabrique de test rend encore le `FakeConnector` (38-7 branche la
+     variante). Tests : `"default"` admis, `"autre"` → 400, tableau vide ou `status` hors bornes → 400 ; **`TEST_ENDPOINT_ROUTES` inchangé** par cette variante (même route). L'état programmé vit dans une
      poignée d'`AppState` (`test_provider_connector`, patron de `test_rate_source` de 37-2) et se vide par
      `clear_transient_test_state` (`routes/test_endpoints.rs:349`, appelé par `/_test/reset`). La tâche quotidienne
      **n'est pas lancée** en mode test (AC-5). Aucun appel réseau en CI : seul `HttpTransport` ouvre une connexion, et
@@ -310,11 +317,25 @@ d'imputation (38-6) reposent sur un relevé complet et vérifiable.
      `balances(Some(début effectif à 00:00 Zurich))` → instantané `opening`, où le **début effectif** est
      `max(fetch_from, history_start(now))` — c'est-à-dire `truncated_from` quand l'historique a borné (PayPal :
      `as_of_time`, 38-7 ; un `as_of` hors de l'historique serait refusé et le contrôle resterait « non disponible »
-     pour toujours). **Le `as_of` écrit** aux instantanés (`opening` comme `reported`) est celui que **le connecteur
-     rend** dans `ProviderBalance.as_of` (PayPal : `as_of_time` de la réponse, 38-7 AC-6), **non l'instant demandé** :
+     pour toujours). **Le `as_of` écrit** aux instantanés (`reported`, et `opening` hors de l'exception ci-dessous) est
+     celui que **le connecteur rend** dans `ProviderBalance.as_of` (PayPal : `as_of_time` de la réponse, 38-7 AC-6), **non l'instant demandé** :
      PayPal peut servir « le dernier solde » d'avant l'instant demandé, et la somme des mouvements du contrôle doit
      s'arrêter là où le solde s'arrête, faute de quoi un mouvement intermédiaire ferait un faux écart. Test : un
      factice qui rend `as_of` antérieur de deux heures à la fin demandée, avec un mouvement entre les deux → écart nul.
+     Un `reported` rendu **postérieur** à la fin demandée (38-7 AC-6 l'admet jusqu'à un jour) laisse le contrôle
+     `complete: null` par la règle de `fetched_through` ci-dessous (les mouvements d'après la fenêtre ne sont pas
+     téléchargés) ; test. **Exception de l'`opening` rendu antérieur** : la borne basse de la somme est l'`as_of` de
+     l'`opening`, et rien n'est téléchargé avant le début effectif — un `opening` à `as_of` rendu `A` antérieur au
+     début effectif `D` laisserait hors de la somme les mouvements de `[A, D)`, déjà comptés dans le solde, d'où un
+     écart faux et **durable**. Dans ce cas seulement, le passage lit `movements(Window { from: A, to: D })`
+     (sous-fenêtres de `max_window()`, pages validées par `validate_page`, **rien d'écrit**, ni transaction ni
+     compteur) et écrit l'`opening` à **`as_of = D`**, montant = solde rendu + `Σ sums` de la devise sur `[A, D)` ;
+     si cette lecture échoue (`A` antérieur à `history_start`, ou erreur du connecteur), **aucun `opening`** n'est
+     écrit (contrôle « non disponible », relu au passage suivant ; motif dans `error_detail`, `opening_unavailable:
+     <code()>`, le passage reste `succeeded`). Un `opening` rendu à `A ≥ D` s'écrit tel quel (les mouvements de
+     `[D, A)` sont téléchargés et déjà dans le solde). Tests : `opening` rendu deux heures avant `D` avec un mouvement
+     dans l'intervalle → `opening` à `D`, montant corrigé du mouvement, écart nul ; même cas, lecture de `[A, D)` en
+     échec → aucun `opening`, `complete: null`.
      Un échec de lecture des soldes n'empêche pas les mouvements : le passage
      reste `succeeded`, `error_code` reste `NULL` et le motif s'écrit dans `error_detail` (`balances_unavailable:
      <code()>`) ; contrôle « non disponible ».
@@ -463,3 +484,20 @@ d'imputation (38-6) reposent sur un relevé complet et vérifiable.
   `kesh-db/src/retry.rs:151` ; registre `audit_route_registry.rs:335-377` (`SansEcritureAuJournal` = journal
   comptable, cohérent avec 38-1). Axes non exercés : API `reqwest`, documentation PayPal, aucune exécution ; `ls`
   du registre `TEST_ENDPOINT_ROUTES` seulement lu aux lignes 618-620.
+- 2026-11-15 — validation P4 ciblée (Opus) : 0 CRITICAL, 0 HIGH, 2 MEDIUM, 2 LOW ; remédiés dans la fiche. Périmètre :
+  `git diff f005ba2f a5682b2e` de la fiche (remédiation P3). MEDIUM 38-3b-P4-1 (AC-7) : le `as_of` rendu, appliqué
+  aussi à l'`opening`, faisait de la borne basse de la somme un instant `A` antérieur au début effectif `D` quand
+  PayPal sert un solde plus ancien (38-7 AC-6 l'admet) — les mouvements de `[A, D)`, comptés dans le solde mais jamais
+  téléchargés, auraient fait un écart faux et durable → dans ce cas seul, lecture sans écriture de `[A, D)` et
+  `opening` écrit à `as_of = D`, montant corrigé de `Σ sums` ; lecture en échec → aucun `opening` (contrôle « non
+  disponible », relu au passage suivant), tests. MEDIUM 38-3b-P4-2 (AC-3) : la forme `"default"` de `paypalResponses`
+  n'avait ni règle de validation (quelle chaîne ?), ni test, ni comportement en 38-3b, avant tout `PaypalConnector` →
+  validation (tableau d'objets bornés ou exactement `"default"`, sinon 400 `AppError::Validation`), variante gardée
+  mais `FakeConnector` jusqu'à 38-7, tests. LOW 38-3b-P4-3 (AC-7) : `reported` rendu postérieur (≤ 1 jour, 38-7 AC-6)
+  → `complete: null` par la règle de `fetched_through`, dit et testé. LOW 38-3b-P4-4 (AC-3) : `#[non_exhaustive]` est
+  sans effet dans le crate qui construit ; `ConnectorContext` et `ConnectorFactory` placés dans `kesh-api::providers`,
+  constructeur unique. Lignes lues : `routes/test_endpoints.rs:380-396` ; `errors.rs:139-153` ; `38-7-…md:100-110,
+  181-196, 262-276` ; `38-8-…md:149-176, 265-272` ; `38-9a-…md:206`. Axes non exercés : le reste de la fiche (hors
+  périmètre), la documentation PayPal (sens exact de `as_of_time` : « dernier solde rafraîchi »), aucune exécution.
+  Inter-fiches signalés, non appliqués : 38-7 AC-6 pourrait dire que l'`opening` rendu antérieur se complète par
+  38-3b AC-7 ; 38-9a (contrôle) : motif `opening_unavailable` dans `errorDetail`.
