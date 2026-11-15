@@ -101,3 +101,15 @@ réversible (règles de l'epic) ; aucun n'écrit de donnée ni ne touche le serv
 - **Retenu** : la fiche est écrite entière, chaque critère étiqueté lot A ou lot B ; le découpage est proposé au rapport,
   à l'orchestrateur de l'écrire (consigne `e36-fiche.md`).
 - **Réversible** : oui.
+
+## C-36-18-10 — Le découpage, approuvé et écrit
+
+- **Contexte** : l'orchestrateur a approuvé le 2026-11-15 le découpage de C-36-18-9 (sept modules ; règle de Guy, stories
+  courtes) et demandé de l'écrire. La dette des messages est ouverte en #1202 ; #1175 est commentée avec le constat de
+  C-36-18-6.
+- **Retenu** : `36-18a-montants-ambigus-livres` (#1050, #1159, #1172, #1174 ; cinq modules ; porte les décisions communes —
+  C-36-18-1 à 5 —, ses D1 à D4 et D9) en `ready-for-dev`, partie de la 36-15 fusionnée ;
+  `36-18b-montants-ambigus-reglages-filtres` (#1173, #1175, #1176, puis #1177 ; quatre modules ; C-36-18-6 à 8 ; renvoie à
+  la 36-18a) en `backlog`, partie de la 36-18a fusionnée. La fiche d'origine passe à `split`. Bases `e3618a` et `e3618b`.
+- **Écartée** : une fiche par issue — huit stories pour une seule règle, et les aides partagées en dépendance de chacune.
+- **Réversible** : oui (fiches seules).

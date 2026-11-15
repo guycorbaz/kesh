@@ -1,6 +1,6 @@
 # Story 36-18 : les autres montants « 1.250 » — la règle de la 36-3 sur les sept écrans qui écrivent un montant (#1050, #1159, #1172 à #1177)
 
-Status: ready-for-dev
+Status: split
 
 *Fiche rédigée le 2026-11-15 par l'agent de rédaction des fiches de l'Epic 36 (Opus 5.5), worktree `kesh-36-18`, branche
 `story/36-18-montants-ambigus-autres-ecrans`, partie de `epic/36-0.18.0` (`fed34a9c7`), par le workflow
@@ -542,3 +542,8 @@ test par écran.
   mutations M1 à M23 ; registre `e36-choix-autonomes-36-18.md` (C-36-18-1 à C-36-18-9). Écart à l'issue #1175 relevé
   (le serveur refuse déjà « 1.250 » en frais de rappel, C-36-18-6). Sept modules de code : découpage en deux lots proposé,
   non écrit. Aucune migration. Validation non lancée.
+- 2026-11-15 — **Découpée** sur approbation de l'orchestrateur (C-36-18-10) : `36-18a-montants-ambigus-livres.md`
+  (#1050, #1159, #1172, #1174 ; cinq modules ; décisions communes), `ready-for-dev`, et
+  `36-18b-montants-ambigus-reglages-filtres.md` (#1173, #1175, #1176, #1177 ; quatre modules ; part de la 36-18a fusionnée),
+  `backlog`. Cette fiche passe à `split` et reste comme trace de l'inventaire complet. La convergence des messages est
+  ouverte en #1202 ; #1175 est commentée avec le constat de C-36-18-6.
