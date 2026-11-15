@@ -994,7 +994,15 @@ const ATTENDU = {
 	// Union 36-1 + 36-3 dans la branche de la 36-2 (orchestrateur, 2026-11-14) : 3036 + 1 + 4 =
 	// **3041**, à recompter par la garde au premier Vitest de la 36-2 (C-e350-18 : relever, ne pas
 	// additionner de confiance).
-	sitesTotal: 3041,
+	// Story 36-3b (#1171, D3, D6) : **3040 → 3044** sur sa branche — `InvoiceForm.svelte`
+	// gagne `journal-entry-form-amount-ambiguous` et `-amount-unreadable` sous le champ du
+	// prix, `invoice-line-unit-price-ambiguous-error` et `-unreadable-error` au refus. Que
+	// des littéraux ; relevé à 3044 par la garde avant d'écrire ce nombre (à recompter
+	// après l'union avec 36-1).
+	// Union de l'intégration 0.17.8 (36-1, 36-3, 36-3b, puis 36-2, 36-4, 36-5) : relevé par la
+	// garde après chaque fusion, jamais additionné (C-e350-18) — **3045** après 36-1 + 36-3 + 36-3b
+	// (garde rouge à 3044, « expected 3045 », avant d'écrire ce nombre).
+	sitesTotal: 3045,
 	sitesNonResolus: 31,
 	relais: 6,
 	// Story 26-1 (#620, AC3-bis) : **10 → 11** — `lib/features/bank-import/
