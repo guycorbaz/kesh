@@ -1,6 +1,6 @@
 # Story 36-2 : *Éclater* — le bouton s'active quand les lignes sont complètes et équilibrées, ou l'écran dit ce qui manque (#1150)
 
-Status: review
+Status: done
 
 *Fiche rédigée le 2026-11-14 par l'agent de rédaction des fiches de l'Epic 36 (Opus 5.5), worktree `kesh-36-2`, branche
 `story/36-2-eclater-grise`, par le workflow `bmad-create-story`. Release **0.17.8** (phase 1). **Aucune migration** (C-e360-3),
@@ -534,7 +534,7 @@ n'est pas un test comme un autre*).
       `i18n-entrees-a-variables.test.ts` complétées si la garde l'exige.
 - [x] Verts ; mutations M1 à M9 (M1-bis, M1-ter, M2-bis, M2-ter, M3-bis, M8-bis comprises) ; captures (AC10) ; manuel
       (AC9).
-- [ ] *(En cours et passage en `review` faits ; clôture à venir : `gate-ci` et E2E complet.)* Gates selon `e35-dev-commun.md` § *Quels gates, quand*, voie 2 : en cours, gate ciblé — Vitest des fichiers touchés,
+- [x] *(En cours, passage en `review`, remédiation et clôture faits — Dev Agent Record.)* Gates selon `e35-dev-commun.md` § *Quels gates, quand*, voie 2 : en cours, gate ciblé — Vitest des fichiers touchés,
       `npm run check`, `npm run lint-i18n-ownership`, `cargo nextest run -E 'binary(...)'` du crate `kesh-i18n` (les `.ftl` y
       sont lus), E2E ciblé `reconciliation-split.spec.ts` ; **au passage en `review`** : bases remises à neuf,
       `scripts/test-fast.sh --ci` (voie 2), `scripts/gate-ci.sh kesh_ci_36_2` (voie 1), frontend complet ; pas d'E2E
@@ -769,6 +769,22 @@ chaque journal porte son commit en première ligne) :
 - greps de propagation (`écart —`, `sans signe.`, largeurs) : `propagation-rem1.log` — aucun résidu dans la story ;
 - **non lancés : `gate-ci` et E2E complet** (clôture).
 
+**Gates de clôture** (dernier commit de code `a188f3518`, LOW de la passe ciblée P2 compris ; commit en première ligne
+de chaque journal) :
+- bases `kesh_e362` et `kesh_e2e_e362` recréées, migrées, semées — `remise-a-neuf-cloture.log` ;
+- `scripts/test-fast.sh --ci` (voie 2) : **5445 exécutés, 5445 passés, 13 ignorés** — `test-fast-ci-cloture.log` ;
+- `npm run check` : 0 erreur, 29 avertissements, aucun dans les fichiers de la story — `check-avertissements-cloture.log` ;
+  lint i18n vert, **Vitest 3609 passés (237 fichiers)**, build — `front-complet-cloture.log` ;
+- `reconciliation-split.spec.ts` entière : **13 passés** ; R0 (g390) `tableau=32+326 dialogue=16+358`,
+  `liste=32+89` — `r0-cloture.log` ;
+- `scripts/gate-ci.sh kesh_ci_e362` (voie 1) : **5452 passés, 0 échoué, 17 ignorés** — `gate-ci-cloture.log` ; aucun
+  rouge, donc aucun rejeu (KF-061 #1126, KF-062 #1189 : non rencontrées) ;
+- **E2E complet** (voie 2, port 3362, `kesh_e2e_e362` recréée à neuf — `e2e-complet-base.log`, port libre avant ;
+  recette entière de `e2e-36-2.sh`) : **425 passés, 7 échoués, 17 ignorés** (18,6 min) — `e2e-complet.log`, port
+  libre après. Les sept échecs sont **exactement les sept de la KF-029 (#97)** de `docs/testing.md` § « Les échecs
+  attendus » : `mode-expert.spec.ts:26`, `:41` ; `onboarding-path-b.spec.ts:65`, `:92` ; `onboarding.spec.ts:57`,
+  `:77`, `:150`. Aucun échec de pollution, aucun hors liste.
+
 **Mutations** (code commité avant, `7efe74db4` ; script `kesh-gate-logs/e36-2/mut/mut-36-2.py`, motif vérifié unique ;
 restauration `git restore --worktree` puis `touch`, arbre propre constaté après chaque campagne) — campagne Vitest
 (`mut/campagne-vitest.log`), campagne E2E (`mut/campagne-e2e.log`, `mut/campagne-e2e-2.log`), un journal par mutation
@@ -960,7 +976,7 @@ dont le code muté a été retiré. Aucune survivante sur du code resté en plac
   - **E2** (lu : `w-[30%]` sans préfixe) — largeurs en `sm:` ; R0 (g390) à 390×844 : dialogue `16+358`, dans la
     fenêtre ; capture `r0-rem1-g390-telephone.png`. Les champs s'y serrent (compte 170/87, description 270/104 :
     attendu d'un tableau à cinq colonnes sur un téléphone). Constat hors story : la page sous le dialogue mesure 1280 px
-    de large à 390 px (`R0 (g390) page=1280 fenetre=390`).
+    de large à 390 px (`R0 (g390) page=1280 fenetre=390`) — ouverte depuis : **#1192**.
   - **B3** (lu : `if (sumAmounts === null || expectedBig === null) return '—';`) — clé neuve
     `reconciliation-split-balance-incomplete` (« écart non calculable »), message de déséquilibre récrit pour dire quoi
     faire (C-36-2-21), quatre locales.
@@ -975,3 +991,18 @@ dont le code muté a été retiré. Aucune survivante sur du code resté en plac
     **E6** (manuel : zéros au-delà admis, `60.0000`).
   - `sitesTotal` 3044 → **3046**, relevé par la garde. Symptôme grepé : `écart —`, `sans signe.`, `w-[3` dans
     `frontend/src`, `crates/kesh-i18n/locales`, `docs/manual/fr` (voir gates de remédiation au Record).
+- 2026-11-15 — **Passe ciblée P2** (Opus, une lentille, sur `ee9f15714..46c26744f`) : 0/0/0/4
+  (`kesh-gate-logs/e36-2/review-p2-ciblee.md`). Les quatre LOW corrigés au commit `a188f3518`, aucune ligne de logique
+  de production :
+  - **P2-1** — en-tête de `split-i18n.test.ts` : trois sites appellent la clé générique sans arguments, dont le dialogue.
+  - **P2-2** — R0 (g390) juge le **tableau** contre le dialogue (`tableau=32+326 dialogue=16+358`) et ouvre la liste du
+    champ de compte à 390 px (`liste=32+89`, dans la fenêtre ; capture `g390-liste-ouverte`) ; d'où vient `page=1280` :
+    la page de réconciliation sous le dialogue, **#1192**. M7-ter rejouée : sans effet à 390 px (largeurs `sm:`), tuée
+    par R0 (g) ; M13 (tableau forcé à 600 px) tuée par R0 (g390) (`tableau=32+600`) — `mut/campagne-p2-e2e.log`.
+  - **P2-3** — manuel : « la saisie en admet jusqu'à quatre, les zéros au-delà de deux étant admis » (`60.00000` est
+    illisible).
+  - **P2-4** — de-CH : « Ihre Summe » → « Die Summe ». **Seul changement de texte du produit après la dernière passe** :
+    une traduction, aucune variable changée.
+- 2026-11-15 — **Clôture.** Trend de la revue de code : P1 (trois lentilles) B 0/0/0/4, E 0/0/0/6, A 0/0/0/6 → remédiés
+  (`2248951a1`, `46c26744f`) → P2 ciblée Opus 0/0/0/4 → LOW corrigés hors logique de production (`a188f3518`, dernier
+  commit de code). Gates de clôture au Dev Agent Record. Pour la PR : `closes #1150`, `closes #1151`.
