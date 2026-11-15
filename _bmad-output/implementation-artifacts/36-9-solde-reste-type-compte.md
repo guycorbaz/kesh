@@ -1,6 +1,6 @@
 # Story 36-9 : le solde du reste d'un règlement refuse un compte de TVA due retypé, comme la validation d'une facture (#1044)
 
-Status: in-progress
+Status: review
 
 *Fiche rédigée le 2026-11-15 par l'agent de rédaction des fiches de l'Epic 36 (Opus 5.5), worktree `kesh-36-9`, branche
 `story/36-9-solde-reste-type-compte`, par le workflow `bmad-create-story`. Release **0.18.0**, phase 2, rang 9 (fichier
@@ -273,14 +273,14 @@ seconde source n'est écrite) ; **M6** le repli Rust de la phrase d'action laiss
 
 ## Tâches
 
-- [ ] Étape 0 : relire à la tête du worktree les lignes citées ; recompter l'inventaire (la commande et sa sortie au
+- [x] Étape 0 : relire à la tête du worktree les lignes citées ; recompter l'inventaire (la commande et sa sortie au
       Change Log) ; verdicts d'AC6 ; motifs d'AC5.
-- [ ] Tests ci-dessus, rouges consignés.
-- [ ] `kesh-db` : `vat_payable_account_for_write` lit le type et l'imputabilité sous son verrou (D1, D2) ; doc-comments
+- [x] Tests ci-dessus, rouges consignés.
+- [x] `kesh-db` : `vat_payable_account_for_write` lit le type et l'imputabilité sous son verrou (D1, D2) ; doc-comments
       (AC10).
-- [ ] `kesh-api` et `kesh-i18n` : phrase d'action neutre ×4 et son repli (D4, AC8) ; commentaire du bras (AC10).
-- [ ] E2E et capture (AC9) ; `docs/api-external.md`, deux manuels (AC11).
-- [ ] Gates (ci-dessous) ; mutations consignées ; Dev Agent Record recompté ; prompt de la revue P1.
+- [x] `kesh-api` et `kesh-i18n` : phrase d'action neutre ×4 et son repli (D4, AC8) ; commentaire du bras (AC10).
+- [x] E2E et capture (AC9) ; `docs/api-external.md`, deux manuels (AC11, `.tex` seulement : PDF à l'intégration).
+- [x] Gates (ci-dessous) ; mutations consignées ; Dev Agent Record recompté ; prompt de la revue P1.
 
 **Gates** (voie 1, `flock /tmp/station-heavy.lock flock /home/gcorbaz/devel/kesh-gate-logs/.gate.lock
 scripts/mem-guard.sh …`, une commande par prise, `free -g` avant) : un **repository de `kesh-db`** est touché, donc
@@ -362,11 +362,104 @@ Le tableau du fichier d'epic ne couvre que la phase 1 ; recensés ici, à confir
 
 ### Agent Model Used
 
+Opus 5.5 (agent de développement de l'Epic 36), le 2026-11-15, worktree `/home/gcorbaz/devel/kesh-36-9`, voie 1.
+
 ### Debug Log References
+
+Journaux sous `/home/gcorbaz/devel/kesh-gate-logs/e36-9/` (hors dépôt) :
+
+- **Rouges** (code de départ, tests neufs écrits, commit `ce95b8b5a` + tests non commités) : `rouges.log` — 35 tests, 27
+  passés, **8 échecs** : AC1 et AC2 (le solde **réussit** : `WriteOffOutcome { journal_entry_id: 3, amount: 108.1000, … }`
+  et `journal_entry_id: 2` — la correction de TVA débitée sur `2000` retypé), AC4 (`attendu DesignatedAccountsWrongType,
+  obtenu ConfigurationRequired("default_vat_payable_account_id")`, le cas retypé et non imputable), AC5 (le solde n'est
+  jamais vu en attente sur la requête neuve : `moins de 1 requête(s) contenant ["SELECT id, number, postable,
+  account_type FROM accounts WHERE id", "FOR UPDATE"]`), et les trois `ac7_*` de validation de la 35-3 (AC8 : `ACTION`
+  changée avant la clé). AC7 (`ac7_write_off_names_the_retyped_vat_payable`) rougissait d'abord sur son **montage** (409
+  `ACCOUNT_HAS_ENTRIES` du retypage, voir *Écarts*) ; rejoué après la correction du helper : `rouges-ac7-bis.log`, rouge
+  pour la bonne raison (`left: 200, right: 400`, le solde passe). AC3 et AC4 « créance non retypée » : verts au départ pour
+  le premier (garde de non-régression), le second n'a pas été atteint (le test s'arrête au cas non imputable).
+- **Vert ciblé** : `cible-vert.log` (commit de travail, avant `dec591150`, contenu identique) — `invoice_write_off`,
+  `designated_account_type_e2e`, `textes_coherents`, `kesh-i18n` : 102 tests, 102 passés.
+- **Clippy** : `clippy-dev.log`, workspace `--all-targets -D warnings`, vert.
+- **Mutations** (code commité `dec591150` d'abord ; scripts `mut/muter.py`, `mut/jouer.sh` ; restauration
+  `git restore --worktree` puis `touch`, chaque journal finit par « restauré : 0 fichier(s) modifié(s) restant(s) ») :
+  | Mutation | Journal | Tuée par |
+  |---|---|---|
+  | M1 contrôle de type retiré | `mut/M1.log` | AC1, AC2, AC4, AC5, AC7 (5 échecs sur 35) |
+  | M2 `postable = TRUE` remis au `WHERE` | `mut/M2.log` | AC4 (`the_type_comes_after_archived_and_before_non_postable_and_claim`) |
+  | M3 type relu par une requête séparée non verrouillante | `mut/M3.log` | AC5 (`the_vat_payable_type_is_read_fresh_under_the_lock`) |
+  | M4 comparaison à la créance avant le type (V1-4) | `mut/M4.log` | AC4 (même test, cas « créance non retypée » : seule partie que M4 change) |
+  | M5 type attendu écrit en dur `Asset` | `mut/M5.log` | 12 échecs : les soldes nominaux à TVA, AC1, AC2, AC4, AC5, AC7 |
+  | M6 repli Rust à l'ancienne phrase | `mut/M6.log` | G9 `les_replis_rust_suivent_le_catalogue` |
+- **Gates du passage en `review`**, au dernier commit de code **backend** `dec591150` (le commit suivant, `84246f671`, ne
+  touche qu'une spec E2E) :
+  - bases `kesh_e369` remises à neuf (DROP/CREATE, migrations, seed) ; `scripts/test-fast.sh --ci` :
+    `test-fast-ci-dec591150.log` — **5459 exécutés, 5459 passés, 13 ignorés** ;
+  - `scripts/gate-ci.sh kesh_ci_e369` : premier run `gate-ci-dec591150.log` — **rouge** sur
+    `mcp_transport_e2e::abandon_au_delai_le_permis_reste_pris` (« témoin : sonde servie », KF-061, **#1126**, minutage ;
+    une suite de la voie 2 tournait en même temps) : 2122 passés, 1 échec, `cargo test` arrêté à ce binaire ; second
+    run `gate-ci-dec591150-r2.log` — **5466 passés, 0 échec, 17 ignorés** ;
+  - frontend complet (le Vitest aligné, C-36-9-6) : `front-check-dec591150.log` (0 erreur, 29 avertissements, tous
+    hors des fichiers touchés), `front-lint-i18n-ownership-dec591150.log` (vert), `front-test-unit-dec591150.log`
+    (**238 fichiers, 3709 tests passés**), `front-build-dec591150.log` (vert) ; après `84246f671` :
+    `front-check-r2.log` (0 erreur).
+  - **E2E** : la suite complète **n'a pas tourné** (à la clôture). La seule spec `invoice-write-off.spec.ts` a été jouée
+    pour la capture, sur `kesh_e2e_e369` recréée, backend port 3369 : `e2e-spec-write-off.log` (1 échec, le scénario neuf
+    — voir *Écarts*), `e2e-spec-write-off-r3.log` au fichier de `84246f671` : **2 passés**.
 
 ### Completion Notes List
 
+- **D1 à D5 appliquées sans écart.** `vat_payable_account_for_write` lit `id, number, postable, account_type` sous
+  `FOR UPDATE`, `active = TRUE` gardé au `WHERE` ; ordre absent/archivé → type → non imputable ; le refus
+  `DesignatedAccountsWrongType` réemploie `DesignatedRole::VatPayable.{expected_type, setting}` et
+  `WrongTypeDesignatedAccounts::new` ; signature inchangée. Aucune migration.
+- **Changement de contrat** écrit dans `docs/api-external.md` (tableau du solde, deux lignes modifiées et une neuve ;
+  § 10), au manuel d'administration (section neuve *Passer à la 0.18.0*, « Pour les intégrations », C-36-9-5) et dans la
+  note de version — non au `CHANGELOG.md`.
+- **Manuels** : `.tex` seulement ; les PDF se régénèrent à l'intégration (`CLAUDE.md`, § *Travailler à plusieurs
+  développeurs*). Le PDF publié porte encore « limite connue, #1044 » (`pdftotext docs/manual/fr/user-manual.pdf - | tr
+  '\n' ' ' | tr -s ' ' | /usr/bin/grep -c 'limite connue, #1044'` → `1`) : le contrôle de l'AC11 (`0`) se fait à
+  l'intégration.
+- **Capture** (AC9, thème clair, base jetable `kesh_e2e_e369`) :
+  `/home/gcorbaz/devel/kesh-gate-logs/e36-9/captures/write-off-tva-due-retypee.png` — le dialogue *Solder le reste*
+  ouvert, *Escompte accordé* coché, le message du serveur en entier, phrase d'action neutre comprise.
+- **AC8, grep de l'ancienne phrase** (`git grep -n -e 'la validation pourra être relancée' -e 'die Validierung
+  unverändert' -e 'la convalida potrà' -e 'the validation can then' -- crates frontend docs`) : **vide** après
+  `dec591150`. **AC10** (`git grep -n -e 'sans contrainte de type' -e "n'en a aucun" -e 'seule garde' -e 'la validation
+  veut y écrire' -- crates/`) : douze lignes, aucune sur ce sujet hormis `invoice_write_off.rs:1439` (doc reformulée du
+  test 15-6b, juste : la créance retypée en passif passe le type, la comparaison est alors la seule garde) ; les onze
+  autres portent sur d'autres gardes (lettrage, réconciliation, MCP…).
+- **Écarts** :
+  1. *Helper `retype` de la 35-3* (`designated_account_type_e2e.rs`) : il envoyait `"confirmRetype": true`, champ que la
+     route ignore (`routes/accounts.rs:109` : `confirm_account_retype`) — sans effet tant que les comptes retypés ne
+     portaient aucune écriture. Corrigé en `confirmAccountRetype` dans le fichier que la story touche ; même champ dans
+     la spec E2E. Défaut de test de la 35-3, corrigé sur place, sans issue.
+  2. *Scénario E2E* : il lisait d'abord `invoice-amount-due`, ligne que la fiche n'affiche qu'après un premier règlement
+     (`+page.svelte`, `amountSettled > 0`) ; corrigé (`84246f671`) : le reste se lit dans le dialogue
+     (`write-off-amount`) et par l'API, avec l'absence de tout règlement.
+  3. *Prettier* : lancé une fois en `--write` sur les deux fichiers du frontend touchés, il a réécrit 427 lignes du
+     dépôt (le dépôt n'a pas de configuration Prettier et ces fichiers ne la suivent pas) ; rétabli par `git restore
+     --worktree` et les deux modifications de la spec rejouées par l'outil Edit. Aucune trace dans les commits.
+  4. Consigne Edit : code, tests, fiche par l'outil Edit ; `cargo fmt --all` lancé (permis) ; scripts Python seulement
+     pour les mutations.
+- **Branche** : en retard de trois commits documentaires sur `origin/epic/36-0.18.0` (`CLAUDE.md`, `ci.yml`, fichier
+  d'epic) ; non rebasée (interdit), sans recouvrement avec ce diff.
+
 ### File List
+
+- `crates/kesh-db/src/repositories/company_invoice_settings.rs` — l'accesseur ; doc de la garde à l'usage.
+- `crates/kesh-db/src/repositories/invoice_settlements_write.rs` — doc-comment de `write_off_invoice`, commentaire de
+  l'appel.
+- `crates/kesh-db/src/errors.rs` — doc de `WrongTypeDesignatedAccount` et de `DesignatedAccountsWrongType`.
+- `crates/kesh-db/tests/invoice_write_off.rs` — module `tva_due_type` (six tests, 21 → 27 `sqlx::test`), doc d'un test.
+- `crates/kesh-api/src/errors.rs` — repli de la phrase d'action, commentaire du bras.
+- `crates/kesh-api/tests/designated_account_type_e2e.rs` — `ACTION`, helper `retype`, un test (4 → 5).
+- `crates/kesh-i18n/locales/{fr-CH,de-CH,it-CH,en-CH}/messages.ftl` — ligne 344.
+- `frontend/src/routes/(app)/invoices/[id]/invoice-validate-page.test.ts` — simulacre aligné.
+- `frontend/tests/e2e/invoice-write-off.spec.ts` — un scénario (1 → 2).
+- `docs/api-external.md`, `docs/manual/fr/user-manual.tex`, `docs/manual/fr/admin-manual.tex`.
+- `_bmad-output/implementation-artifacts/36-9-solde-reste-type-compte.md`, `e36-choix-autonomes-36-9.md` (C-36-9-5,
+  -6), `sprint-status.yaml`, `36-9-solde-reste-type-compte-review-prompt-p1.md`.
 
 ## Change Log
 
@@ -414,3 +507,9 @@ Le tableau du fichier d'epic ne couvre que la phase 1 ; recensés ici, à confir
   `"FOR UPDATE"`, uniques — le verrou de la validation lit `SELECT id, number, active, postable, account_type FROM
   accounts FORCE INDEX` (`company_invoice_settings.rs:999`), celui des natures `SELECT id FROM accounts WHERE id = ?`
   (`:713`).
+- **2026-11-15 — Développement terminé, passage en `review`** (Opus 5.5). Commits `dec591150` (code, tests, documents)
+  et `84246f671` (scénario E2E corrigé). Rouges, mutations M1 à M6 (toutes tuées), gates et écarts : *Dev Agent Record*.
+  Gates au dernier commit de code backend `dec591150` : `test-fast --ci` 5459/5459 (13 ignorés) ; `gate-ci` 5466 passés,
+  17 ignorés, au second run (le premier rouge sur KF-061, #1126) ; frontend complet vert (Vitest 3709). **Non lancés** :
+  l'E2E complet et le `gate-ci` de clôture (à la clôture) ; la seule spec `invoice-write-off.spec.ts` a tourné (2 passés).
+  Prompt de la revue P1 : `36-9-solde-reste-type-compte-review-prompt-p1.md`.

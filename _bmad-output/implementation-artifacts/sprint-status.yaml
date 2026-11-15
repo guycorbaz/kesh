@@ -1082,7 +1082,7 @@ development_status:
   36-6-transaction-plusieurs-ecritures: backlog  # #823 ; phase 2, rang 1 ; migration possible (à dire avant d'écrire) ; découpage préventif probable
   36-7-tests-desancres-2026: backlog  # #1125 (KF-060) ; phase 2 ; À TERMINER D'ICI LE 2026-12-28 (Guy, Q1) ; critère E1 sous KESH_TEST_INSTANT=2027-01-04T10:00:00Z
   36-8-remarque-interne: backlog  # #1158, #268 ; phase 2 ; PORTE UNE MIGRATION
-  36-9-solde-reste-type-compte: in-progress  # #1044 ; phase 2 ; patron de la 35-3 (Q6)
+  36-9-solde-reste-type-compte: review  # #1044 ; phase 2 ; patron de la 35-3 (Q6)
   36-10-dernieres-dates-utc: backlog  # #1147, #1053 ; phase 2 (Q11)
   36-11a-acteur-tiers-catalogue: backlog  # refs #431 ; phase 2 ; lot 1 de la 35-8b (C-e360-9) ; après 36-4
   36-11b-acteur-facturation-client: backlog  # refs #431 ; phase 2 ; lot 2 ; après 36-11a
