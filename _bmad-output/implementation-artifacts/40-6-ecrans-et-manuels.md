@@ -128,9 +128,10 @@ afin de tenir les comptes Stripe sans saisie, en sachant ce qui est une créance
    et `provider_reachable` le sien (test de table de 38-9a étendu ; code ou motif inconnu → rendu brut, jamais vide). Vitest : réponse Stripe complète ; `accountId: null` ; ✗
    `mode_unchanged`.
 4. **AC-4 — Versement : sortie, arrivée, proposition (FR-40-6-3, NFR-40-6-5).** Dans `ProviderProposalPreview.svelte`
-   (38-9b AC-3), bras **retrait** : quand la transaction porte `valueDate` (champ que 40-3 ajoute au DTO de transaction
-   des propositions ; nom relevé à 40-3), l'en-tête dit « Sorti de Stripe le <date de la transaction> · arrivée en banque
-   prévue le <`valueDate`> » et l'aperçu « Écriture proposée au <date de l'écriture proposée, 40-3> » ; le compte bancaire
+   (38-9b AC-3), bras **retrait** : quand la transaction porte `valueDate` (champ que 40-3 AC-3 ajoute au DTO de
+   transaction de `GET …/proposals`), l'en-tête dit « Sorti de Stripe le <`bookingDate`> · arrivée en banque
+   prévue le <`valueDate`> » et l'aperçu « Écriture proposée au <`entryDate`> » (`entryDate` de la proposition
+   `provider` de retrait, 40-3 AC-3) ; le compte bancaire
    suggéré (`transferBankAccountId`, cherché à partir de l'arrivée, C-40-5) et l'écriture existante à rattacher (voie a)
    gardent le rendu de 38-9b. Sans `valueDate` (PayPal) : rendu de 38-9b inchangé (Vitest). File « à examiner » : les
    codes `PAYOUT_FAIL`, `PAYOUT_CANCEL` portent l'aide « Le versement est revenu sur le solde Stripe ; s'il avait été
@@ -158,7 +159,7 @@ afin de tenir les comptes Stripe sans saisie, en sachant ce qui est une créance
    `kesh-api`, `kesh-providers` étant sa dépendance) égale celui de `STRIPE_EVENT_CODES` (lu dans le `.ts`) **et** celui du
    tableau du manuel utilisateur (AC-8 : une ligne par code, le code en première colonne en `\texttt{…}`, sous un
    `\label` que la garde cherche — présence positive du tableau exigée avant toute égalité) ; les surchargeables égalent
-   ceux de 40-2 (liste **publique** `OVERRIDABLE_CODES` à demander à 40-2, sinon la garde ne peut la lire — inter-fiches) ; rouge en nommant le code en trop ou manquant. Mutation déclarée au Change Log
+   `kesh_providers::stripe::event_codes::OVERRIDABLE_CODES` (constante `pub` de 40-2 AC-6) ; rouge en nommant le code en trop ou manquant. Mutation déclarée au Change Log
    (un code retiré du `.ts` → rouge).
 7. **AC-7 — Textes et i18n (NFR-40-6-2, NFR-40-6-5).** Clés neuves au préfixe `provider-stripe-` (et `rules-help-*` pour
    l'aide), écrites en toutes lettres (`i18n-keys.test.ts`), aux **quatre** locales
@@ -249,14 +250,8 @@ afin de tenir les comptes Stripe sans saisie, en sachant ce qui est une créance
 
 - **Q-40-8 (recette 40-0)** — noms exacts des ressources à cocher en *Lecture* : sans eux, le manuel ne peut lister les
   droits (AC-8) ; la story ne se développe pas avant que 40-0 les ait relevés.
-- **Inter-fiches 40-3** — la fiche 40-3 (relue le 2026-11-15) n'ajoute **aucun** `valueDate` au DTO de transaction des
-  propositions (38-6b/38-9b ne portent que `bookingDate`) ; la date de l'écriture proposée (`entry_date`, 38-6a C-38-6a-10)
-  n'est pas non plus nommée au DTO. Texte proposé à 40-3 (AC-3 ou AC-1) : « le DTO de transaction de `GET
-  /api/v1/reconciliation/proposals` gagne `valueDate` (`AAAA-MM-JJ` ou `null`, additif) et la proposition `provider` de
-  type retrait gagne `entryDate` (la date de l'écriture proposée), PayPal : `valueDate: null`, `entryDate` = `bookingDate` ;
-  test de clés exactes PayPal inchangées ». 40-6 AC-4 lit ces deux noms.
-- **Inter-fiches 40-2** — liste publique `OVERRIDABLE_CODES` (AC-6) : texte proposé à 40-2 AC-6 : « les codes surchargeables
-  sont une constante `pub` du module `stripe::event_codes`, lue par la validation et par la garde de 40-6 ».
+- ~~Inter-fiches 40-3 (`valueDate`, `entryDate`)~~ et ~~inter-fiches 40-2 (`OVERRIDABLE_CODES`)~~ — **réglées** le
+  2026-11-15 (alignement inter-fiches P1) : 40-3 AC-3 et 40-2 AC-6 portent les noms que lisent AC-4 et AC-6.
 
 ## Dev Agent Record
 
@@ -283,3 +278,6 @@ afin de tenir les comptes Stripe sans saisie, en sachant ce qui est une créance
   que `livemode` n'est posé qu'à « Tester » ; P1-7 motifs d'`errorDetail` neufs, signe des versements en route, PDF du
   manuel d'administration non aplati, refus `kind_not_allowed`/`too_many`/`invalid_format` sans libellé. Prémisses relues et
   justes : `admin-manual.tex:3299`, `user-manual.tex:3004`, `textes_coherents.rs:54,109`, codes courts G8 (22) = table 40-2.
+- 2026-11-15 — alignement inter-fiches P1 (Opus) : P1-1 et P1-3 réglés aux fiches sources — AC-4 lit `valueDate`,
+  `bookingDate` et `entryDate` de 40-3 AC-3 ; AC-6 lit `stripe::event_codes::OVERRIDABLE_CODES` de 40-2 AC-6 ; Questions
+  ouvertes inter-fiches closes.

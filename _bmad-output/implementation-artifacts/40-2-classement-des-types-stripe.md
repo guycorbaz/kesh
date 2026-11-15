@@ -173,7 +173,10 @@ plutôt qu'en vente, afin que les règles et les propositions travaillent sur de
    - clé : un code court de l'AC-2 ; **seuls** ceux que la table classe `other` sans condition de signe se surchargent —
      `ADJUSTMENT`, `PAYOUT_CANCEL`, `PAYOUT_FAIL`, `TOPUP_REV`, `REFUND_FAIL`, `PAY_FAIL_REFUND`, `PAY_REVERSAL`,
      `RESERVE`, `CONNECT`, `ISSUING` ; **refusés** : `OTHER` (Écart 2), les codes classés autrement (`CHARGE`, `REFUND`,
-     `PAYOUT`, `DISPUTE`, …) → `code_not_overridable` ; un code absent de la table → `malformed` ;
+     `PAYOUT`, `DISPUTE`, …) → `code_not_overridable` ; un code absent de la table → `malformed` ; les codes
+     surchargeables sont une constante `pub` **`OVERRIDABLE_CODES`** du module `stripe::event_codes`, lue par la
+     validation et par la garde de 40-6 (AC-6, manuel) — test : elle égale l'ensemble des codes que la table classe
+     `other` sans condition de signe, `OTHER` exclu ;
    - valeur : `sale` | `purchase` | `fee` | `withdrawal` | `deposit` | `dispute` | `other` | `ignore` ; `conversion` et
      `refund` refusés (`kind_not_allowed`) ; ≤ 50 entrées (`too_many`) ;
    - effets (38-8 AC-7) : `review_reason` `NULL` pour `sale`, `purchase`, `fee`, `withdrawal`, `deposit` ; `dispute` pour
@@ -261,6 +264,9 @@ plutôt qu'en vente, afin que les règles et les propositions travaillent sur de
 ### File List
 
 ## Change Log
+
+- 2026-11-15 — alignement inter-fiches P1 (Opus) : AC-6, les codes surchargeables deviennent la constante `pub`
+  `OVERRIDABLE_CODES` de `stripe::event_codes`, lue par la validation et par la garde de 40-6 (finding de 40-6 P1).
 
 - 2026-11-15 — validation P1 (Sonnet) : 0 CRITICAL, 0 HIGH, 2 MEDIUM, 3 LOW ; remédiés dans la fiche (aucun
   inter-fiches). P1-1 MEDIUM AC-5, lecture d'origine sans `expand` rejetée par la règle `record.source` de 40-1 ; P1-2

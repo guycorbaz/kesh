@@ -190,11 +190,14 @@ l'API).
   `history_start` `None` sauf constat (Q-40-7) ; `overlap()` = `overlapDays`, **défaut 3** (1–30). *Raison* : la
   transaction de solde est la seule source qui dit le mouvement **net** du solde, ses frais et sa date ; les objets
   charge, remboursement ou versement ne servent qu'à l'enrichir (expansion).
-- **G4 — Clé restreinte en lecture seule, et rien d'autre.** Le secret est une clé `rk_live_…` ; une clé secrète
-  `sk_…` est **refusée** au dépôt (`PROVIDER_SECRET_NOT_RESTRICTED`, 400) — elle peut tout faire sur le compte ; une clé
-  `rk_test_…` n'est admise qu'en `KESH_TEST_MODE` ; toute réponse `livemode: false` hors mode test → `InvalidResponse
-  { reason: "livemode" }`. Kesh **ne peut pas** vérifier qu'une clé restreinte n'a pas de droit d'écriture (aucune API ne
-  le dit) : le manuel liste les droits **en lecture** à donner (Q-40-8) et dit de n'en donner aucun autre.
+- **G4 — Clé restreinte en lecture seule, et rien d'autre.** Le secret est une clé restreinte : `rk_live_…` **et**
+  `rk_test_…` sont admises (décision P40-1 : le compte de test de Beat sert à la recette) ; `PROVIDER_SECRET_NOT_RESTRICTED`
+  (400) ne vise que `sk_…` (elle peut tout faire sur le compte), `pk_…` et les préfixes inconnus. Le **mode**
+  (`livemode`) est lu de la clé, montré à l'écran, posé aux réglages par le premier « Tester » réussi ou le premier
+  passage, puis **gardé** : une clé de l'autre mode est refusée tant que la connexion a des transactions téléchargées
+  (FR-40-1-7, `PROVIDER_MODE_CHANGED`) ; tout objet de réponse dont `livemode` diffère du mode de la clé →
+  `InvalidResponse { reason: "livemode" }`. Kesh **ne peut pas** vérifier qu'une clé restreinte n'a pas de droit
+  d'écriture (aucune API ne le dit) : le manuel liste les droits **en lecture** à donner (Q-40-8) et dit de n'en donner aucun autre.
   **`Stripe-Version` épinglée** : constante du connecteur, envoyée à chaque requête, celle des réponses enregistrées
   (fixtures) ; changer de version est une story (le classement en dépend). *Raison* : B11, B12, « accès en lecture
   seule » ; une version flottante changerait la forme des réponses sans que rien ne rougisse.
@@ -305,7 +308,8 @@ l'API).
 - **C-40-1 — Connexion Stripe** (40-1) : `provider = 'stripe'` ; `StripeSettings` `#[serde(deny_unknown_fields,
   rename_all = "camelCase")]` : modifiables par le client — `overlapDays` (1–30, défaut 3), `invoiceRefSource` (G14),
   `eventKindOverrides` (40-2) ; posés par le serveur — `accountId` (`acct_…`, si la clé peut le lire, Q-40-8),
-  `apiVersion` (lecture seule, égale à la constante, G4). Secret `restrictedKey` (`PUT …/secrets`, corps propre au
+  `apiVersion` (lecture seule, égale à la constante, G4), `livemode` (mode de la connexion, posé par le premier
+  « Tester » réussi ou le premier passage, puis gardé, G4). Secret `restrictedKey` (`PUT …/secrets`, corps propre au
   prestataire, 38-1 AC-6) ; préfixes de G4. URL de base constante `https://api.stripe.com`.
 - **C-40-2 — Amendements additifs du socle** : (a) `ProviderMovement.value_date: Option<NaiveDate>` (date seule, déjà
   locale), validé par `validate_page` (≥ date de `booked_at` à Zurich, ≤ + 30 jours), écrit dans
@@ -314,8 +318,10 @@ l'API).
   (c) ventilation de l'écart E20 (b) : `inTransitPayouts` (40-4) ; (d) 38-10 : CSV admis, `kind = 'provider_report'`
   (40-5) ; (e) `stripeResponses` (40-1) ; (f) secrets exigés par prestataire si 39 n'est pas livré (40-1).
 - **C-40-3 — Erreurs** : table de 38-7 AC-7 — 401 → `Auth` ; 403 → `Permission` ; 400, 402, 404 → `Rejected` ; 429 →
-  `RateLimited` ; 5xx, 424, délai → `Unavailable` ; `livemode` faux → `InvalidResponse` ; code d'API neuf
-  `PROVIDER_SECRET_NOT_RESTRICTED` (400, dépôt d'une clé `sk_…` ou d'une clé de test hors mode test). Aucun texte de
+  `RateLimited` ; 5xx, 424, délai → `Unavailable` ; `livemode` d'un objet ≠ mode de la clé → `InvalidResponse` ; code
+  d'API neuf `PROVIDER_SECRET_NOT_RESTRICTED` (400, dépôt d'une clé `sk_…`, `pk_…` ou de préfixe inconnu ; `rk_live_` et
+  `rk_test_` admises, G4) ; `PROVIDER_MODE_CHANGED` (chaîne de `errorCode`/`lastError` : clé de l'autre mode que la
+  connexion, FR-40-1-7). Aucun texte de
   Stripe à l'écran ni dans `last_error`.
 - **C-40-4 — Mouvement Stripe** (40-1 lecture, 40-2 correspondance) : G6 à G9, G14 ; correspondance vers
   `ProviderMovement` en **une** fonction pure.
@@ -381,8 +387,8 @@ réseau en CI, recette visuelle) ne s'y répètent que là où la story les port
   une longue période (borne de G5) ; clé `sk_` collée par erreur (refus, G4).
 - **FR**
   1. `FR-40-1-1` — Créer une connexion `stripe` avec ses réglages (C-40-1), validés par `StripeSettings`.
-  2. `FR-40-1-2` — Déposer la clé restreinte, jamais réaffichée ; une clé `sk_…`, ou de test hors mode test, est refusée
-     (`PROVIDER_SECRET_NOT_RESTRICTED`).
+  2. `FR-40-1-2` — Déposer la clé restreinte, jamais réaffichée ; `rk_live_` et `rk_test_` admises ; une clé `sk_…`,
+     `pk_…` ou de préfixe inconnu est refusée (`PROVIDER_SECRET_NOT_RESTRICTED`) ; le mode se garde (FR-40-1-7, G4).
   3. `FR-40-1-3` — « Tester la connexion » lit les soldes `available + pending` par devise ; une devise sans compte Kesh
      est listée (B2).
   4. `FR-40-1-4` — Lire les transactions de solde d'une fenêtre de `created`, toutes les pages du curseur, en une
@@ -394,7 +400,8 @@ réseau en CI, recette visuelle) ne s'y répètent que là où la story les port
   1. `NFR-40-1-1` — URL de base constante, client borné de 37-2, bornes de 38-3b par requête, plafonds de requêtes par
      fenêtre et par lecture de solde.
   2. `NFR-40-1-2` — Clé absente de tout journal, erreur, réponse, audit, export et sauvegarde (test au marqueur).
-  3. `NFR-40-1-3` — `Stripe-Version` épinglée sur chaque requête ; `livemode` contrôlé sur chaque réponse.
+  3. `NFR-40-1-3` — `Stripe-Version` épinglée sur chaque requête ; `livemode` contrôlé sur chaque objet qui le porte (la transaction
+     de solde n'en a pas, 40-1).
   4. `NFR-40-1-4` — Validation stricte ; un test par refus, réponses hostiles comprises (C-38-11) ; PayPal inchangé.
 
 ### 40-2 — Classement des types Stripe
@@ -506,20 +513,42 @@ réseau en CI, recette visuelle) ne s'y répètent que là où la story les port
 ## Exigences (FR/NFR) par story
 
 Récapitulatif (B26) ; compté aux sections ci-dessus le 2026-11-15 (`grep -oE "\bFR-40-[0-9]+-[0-9]+" epic-40-stripe.md |
-sort -u | wc -l`, de même pour `NFR`). Les fiches feront foi. Forme définitive — issues ou fiches — à Guy (Q12 de
-l'Epic 38).
+sort -u | wc -l`, de même pour `NFR`). **Les fiches font foi** : recompté le 2026-11-15 (alignement P1) aux fiches 40-1 à
+40-6, identifiants **propres** à chaque fiche seulement (`grep -oE "\bN?FR-40-<n>-[0-9]+" 40-<n>-*.md | sort -u`, renvois
+à une autre fiche exclus) ; 40-0 n'a pas de fiche, ses exigences sont celles de ce fichier. Forme définitive — issues ou
+fiches — à Guy (Q12 de l'Epic 38).
 
 | Story | FR | NFR |
 |---|---|---|
 | 40-0 | 3 — 1 décomptes · 2 validation · 3 recette | 2 — 1 décomptes recomptés · 2 rien de réel au dépôt |
-| 40-1 | 6 — 1 connexion `stripe` · 2 clé restreinte · 3 « Tester », soldes · 4 transactions par curseur · 5 solde passé · 6 erreurs, fabrique, factice | 4 — 1 bornes · 2 clé nulle part · 3 version, `livemode` · 4 validation, PayPal inchangé |
-| 40-2 | 6 — 1 table des types · 2 montants · 3 identifiants, liens · 4 contrepartie, boutique · 5 litiges · 6 surcharges | 3 — 1 pur · 2 test par type · 3 somme des nets |
-| 40-3 | 4 — 1 date d'arrivée · 2 écriture datée de l'arrivée · 3 ligne UBS rattachée · 4 échecs | 3 — 1 *Pattern batch* · 2 retraits sans date inchangés · 3 aucune migration |
-| 40-4 | 3 — 1 écart ventilé · 2 `available`/`pending` · 3 liquidité | 2 — 1 définition unique · 2 sans écriture |
-| 40-5 | 3 — 1 joindre un CSV · 2 solde de clôture · 3 télécharger | 2 — 1 fichier contrôlé · 2 audit, sauvegarde |
-| 40-6 | 5 — 1 connexion · 2 boutique · 3 versement · 4 écart · 5 CSV, codes | 4 — 1 aucun secret au DOM · 2 i18n, manuels · 3 E2E · 4 captures |
+| 40-1 | 7 — 1 connexion `stripe` · 2 clé restreinte · 3 « Tester », soldes · 4 transactions par curseur · 5 solde passé · 6 erreurs, fabrique, factice · `FR-40-1-7` mode gardé *(fiche)* | 4 — 1 bornes · 2 clé nulle part · 3 version, `livemode` · 4 validation, PayPal inchangé |
+| 40-2 | 7 — 1 table des types · 2 montants · 3 identifiants, liens · 4 contrepartie, boutique · 5 litiges · 6 surcharges · `FR-40-2-7` date d'arrivée lue *(fiche)* | 3 — 1 pur · 2 test par type · 3 somme des nets |
+| 40-3 | 5 — 1 date d'arrivée · 2 écriture datée de l'arrivée · 3 ligne UBS rattachée · 4 échecs · `FR-40-3-5` versements 2024 en lot *(fiche)* | 3 — 1 *Pattern batch* · 2 retraits sans date inchangés · 3 aucune migration |
+| 40-4 | 4 — 1 écart ventilé · 2 `available`/`pending` · 3 liquidité · `FR-40-4-4` K9 et versements en route *(fiche)* | 3 — 1 définition unique · 2 sans écriture · `NFR-40-4-3` additif *(fiche)* |
+| 40-5 | 4 — 1 joindre un CSV · 2 solde de clôture · 3 télécharger · `FR-40-5-4` type de pièce à la liste *(fiche)* | 3 — 1 fichier contrôlé · 2 audit, sauvegarde · `NFR-40-5-3` additif *(fiche)* |
+| 40-6 | 5 — 1 connexion · 2 boutique · 3 versement · 4 écart · 5 CSV, codes | 5 — 1 aucun secret au DOM · 2 i18n, manuels · 3 E2E · 4 captures · `NFR-40-6-5` textes, PayPal inchangé *(fiche)* |
 
-**Total : 30 FR et 20 NFR** sur 7 stories (40-0 comprise).
+**Total : 35 FR et 23 NFR** sur 7 stories (40-0 comprise) — 30 et 20 au cadrage, plus les cinq FR et trois NFR
+ajoutées par les fiches (*(fiche)* ci-dessus).
+
+## Validation P1 (2026-11-15)
+
+Décisions transverses issues de la validation P1 des fiches 40-1 à 40-6, reportées ici et aux fiches concernées :
+
+- **P40-1 — Clés de test admises, mode gardé** (40-1 AC-4, AC-5, AC-9 ; 40-6 AC-1 à AC-3) : `rk_live_` et `rk_test_`
+  admises partout ; `PROVIDER_SECRET_NOT_RESTRICTED` ne vise que `sk_`, `pk_` et les préfixes inconnus ; `livemode` lu de
+  la clé, montré, posé aux réglages par le premier « Tester » ou le premier passage, puis gardé (FR-40-1-7,
+  `PROVIDER_MODE_CHANGED`) ; `livemode` contrôlé sur chaque objet qui le porte. G4, C-40-1, C-40-3, FR-40-1-2 et
+  NFR-40-1-3 alignés.
+- **DTO des propositions** (40-3 AC-3, lu par 40-6 AC-4) : le DTO de transaction de `GET
+  /api/v1/reconciliation/proposals` gagne `valueDate` (`AAAA-MM-JJ` ou `null`, additif) ; la proposition `provider` de
+  retrait gagne `entryDate` (date de l'écriture proposée) ; PayPal : `valueDate: null`, `entryDate` = `bookingDate` ;
+  test de clés exactes PayPal inchangées. Aucune route neuve (C-40-6 inchangé).
+- **Codes surchargeables publics** (40-2 AC-6, lus par 40-6 AC-6) : constante `pub` `OVERRIDABLE_CODES` du module
+  `stripe::event_codes`, lue par la validation de `eventKindOverrides` et par la garde de concordance de
+  `textes_coherents.rs`.
+- **Exigences ajoutées par les fiches** : `FR-40-1-7`, `FR-40-2-7`, `FR-40-3-5`, `FR-40-4-4`, `FR-40-5-4`,
+  `NFR-40-4-3`, `NFR-40-5-3`, `NFR-40-6-5` — récapitulatif mis à jour (35 FR, 23 NFR).
 
 ## Questions ouvertes
 

@@ -106,6 +106,12 @@ soit juste et que rien ne soit compté deux fois ni écrit sans moi.
    Tests : versement sorti le J, arrivée J + 3, ligne UBS à J + 3 → suggérée ; à J + 9 → non suggérée
    (`transferBankAccountId: null`, à choisir) ; ligne UBS à J + 1 (avant l'arrivée prévue) → **non suggérée** (risque dit
    au manuel par 40-6 : le compte se choisit alors à la main, le rattachement ne regarde pas de date).
+   - **DTO de la lecture (additif, lu par 40-6 AC-4)** : le DTO de transaction de `GET /api/v1/reconciliation/proposals`
+     gagne **`valueDate`** (`AAAA-MM-JJ` ou `null`) ; la proposition `provider` de type retrait gagne **`entryDate`**
+     (date de l'écriture proposée, `payment_date` de l'AC-2, la même qu'à l'acceptation). PayPal : `valueDate: null`,
+     `entryDate` = `bookingDate`. Tests : versement Stripe → `valueDate` = date d'arrivée, `entryDate` = `valueDate` ;
+     test de **clés exactes** des réponses PayPal de 38-6b, **inchangées** hors ces deux clés additives (attentes de 38-6b
+     non retouchées) ; `docs/api-external.md` les décrit.
 4. **AC-4 — La ligne UBS se rattache à la même écriture (FR-40-3-3, 34-11b).** Test d'intégration HTTP, deux comptes :
    Stripe CHF (compte `bank` sans IBAN lié à **1101**, frais 6914 ; ligne `payment_provider_accounts`, 38-2) et UBS (lié
    à 1020). Versement −500.00 CHF sorti le J, arrivée J + 2 ; ligne UBS +500.00 du J + 2 (relevé CAMT ou saisie, 34-11b).
@@ -230,3 +236,6 @@ soit juste et que rien ne soit compté deux fois ni écrit sans moi.
   `lib.rs:931`, `api-external.md:704`. Axes exercés : prémisses, contradictions B*/G*/C-40-*/38-*/40-2, sites non
   résolus (migration, sauvegarde, audit, RBAC, i18n, MCP, manuels), comptabilité, sécurité, exigences, tests, taille.
   Non exercés : réponses Stripe réelles (aucune d'échec de versement), exécution de code.
+- 2026-11-15 — alignement inter-fiches P1 (Opus) : AC-3, le DTO de transaction de `GET …/proposals` gagne `valueDate`
+  et la proposition `provider` de retrait `entryDate` (additifs ; PayPal `valueDate: null`, `entryDate` = `bookingDate` ;
+  test de clés exactes PayPal) — demandés par 40-6 AC-4 (finding de 40-6 P1).
