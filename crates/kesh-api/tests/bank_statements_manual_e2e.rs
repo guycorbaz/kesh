@@ -1090,7 +1090,8 @@ async fn manual_statement_lines_reconcile_like_imported_ones(pool: MySqlPool) {
     {
         use chrono::Datelike;
         let n = crate::common::jour::aujourd_hui_test().year();
-        sqlx::query("UPDATE fiscal_years SET start_date = ?, end_date = ? WHERE id = ?")
+        sqlx::query("UPDATE fiscal_years SET name = ?, start_date = ?, end_date = ? WHERE id = ?")
+            .bind(format!("Exercice {}-{n}", n - 1))
             .bind(jour_n1(1, 1))
             .bind(NaiveDate::from_ymd_opt(n, 12, 31).unwrap())
             .bind(c.fiscal_year_id)

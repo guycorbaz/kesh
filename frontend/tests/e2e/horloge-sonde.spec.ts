@@ -27,6 +27,13 @@ import { todayInZurich } from './helpers/api-fixtures';
  * suit pas l'horloge décalée, elle rougit et nomme lequel. Elle rougit aussi quand le
  * runner seul est décalé (backend à l'heure réelle) : c'est la preuve de son rouge.
  *
+ * ⚠️ **L'accord seul ne prouve pas le décalage** (revue P1, B1-1) : si libfaketime ne
+ * s'appliquait à aucun des trois, ils diraient ensemble le jour réel. D'où
+ * `KESH_SONDE_JOUR_ATTENDU` (`AAAA-MM-JJ`, facultative, lue par le runner) : posée, la spec
+ * exige en plus que les trois jours valent ce jour-là — la recette de l'E2E décalé la pose
+ * au jour de l'instant de faketime. Et les trois jours sont publiés sur un vert (annotation
+ * `jours` du rapport et ligne de la console), pour que le journal les montre.
+ *
  * Angle mort assumé : à minuit à Zurich, les trois lectures, faites à quelques
  * millisecondes d'intervalle, peuvent tomber de part et d'autre du changement de jour.
  */
@@ -64,10 +71,15 @@ test('serveur, runner et navigateur disent le même jour suisse', async ({ page 
 			new Date().toLocaleDateString('sv-SE', { timeZone: 'Europe/Zurich' }),
 		);
 
+		const jours = JSON.stringify({ serveur, runner, navigateur });
+		test.info().annotations.push({ type: 'jours', description: jours });
+		console.log(`horloge-sonde : ${jours}`);
+
+		const attendu = process.env.KESH_SONDE_JOUR_ATTENDU?.trim() || runner;
 		expect({ serveur, runner, navigateur }, 'les trois jours suisses').toEqual({
-			serveur: runner,
-			runner,
-			navigateur: runner,
+			serveur: attendu,
+			runner: attendu,
+			navigateur: attendu,
 		});
 	} finally {
 		await clearAuthStorage(page);
