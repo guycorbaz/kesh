@@ -8,9 +8,11 @@
 //!   ([`find_unpaid_invoices_for_window`]) **et** par l'acceptation
 //!   (`accept_one_invoice`, `kesh-api`). Sa borne basse porte sur la
 //!   **date d'ancrage** de la facture (Story 29-2, #529) :
-//!   [`INVOICE_PAYMENT_ANCHOR_SQL`], la plus tardive de sa date, de son
-//!   échéance et de son dernier rappel non annulé, lue par l'acceptation
-//!   au moyen de [`invoice_payment_anchor_date`].
+//!   [`invoice_payment_anchor`], la plus tardive de sa date, de son
+//!   échéance et du jour de Zurich de son dernier rappel non annulé (Story
+//!   36-10, #1053), lue par l'acceptation au moyen de
+//!   [`invoice_payment_anchor_date`] et par la proposition au moyen de
+//!   [`INVOICE_PAYMENT_ANCHOR_PREDICATE_SQL`].
 //! - [`invoice_exigibility_date`], [`imputation_order`] et
 //!   [`INVOICE_EXIGIBILITY_DATE_SQL`] : la **date d'exigibilité** d'une
 //!   facture et l'**ordre d'imputation** qui en découle (art. 87 CO ;
@@ -63,7 +65,8 @@
 //! `&MySqlPool` (preview) ou `&mut Transaction<MySql>` (handler create
 //! dans tx ouverte).
 
-use chrono::NaiveDate;
+use chrono::{NaiveDate, NaiveDateTime};
+use kesh_core::horloge::{debut_du_jour_suisse, jour_suisse};
 use rust_decimal::Decimal;
 use sqlx::MySql;
 use std::collections::HashMap;
@@ -115,7 +118,7 @@ const BANK_TX_COLUMNS: &str = "id, company_id, import_id, bank_account_id, booki
 
 /// Un paiement règle une facture au plus **30 jours après sa date
 /// d'ancrage** — la plus tardive de sa date, de son échéance et de son
-/// dernier rappel non annulé ([`INVOICE_PAYMENT_ANCHOR_SQL`]) ; borne de
+/// dernier rappel non annulé ([`invoice_payment_anchor`]) ; borne de
 /// [`InvoiceDateWindow::earliest_anchor_date`].
 ///
 /// Au-delà, le paiement n'est ni proposé ni accepté. Jusqu'à la Story 29-2
@@ -156,6 +159,8 @@ pub const INVOICE_WINDOW_DAYS_AFTER_INVOICE: i64 = 30;
 ///
 /// Macro et non `const` : `concat!` n'accepte que des littéraux, et la
 /// requête scalaire d'[`invoice_payment_anchor_date`] s'y compose.
+/// `last_sent_at` est un **instant** UTC : son jour se prend en Rust
+/// ([`invoice_payment_anchor`]), jamais par `DATE()` (Story 36-10).
 macro_rules! invoice_payment_anchor_join_sql {
     () => {
         "LEFT JOIN (SELECT invoice_id, MAX(sent_at) AS last_sent_at FROM invoice_reminders \
@@ -177,11 +182,10 @@ macro_rules! invoice_payment_anchor_join_sql {
 /// #245). Le `CAST(… AS DATE)` fait du type rendu une garantie : il est
 /// décodé en `NaiveDate`.
 ///
-/// Macro et non `const` seule : `concat!` n'accepte que des littéraux, et la
-/// macro d'ancre de la Story 29-2 la compose (`invoice_payment_anchor_sql!`,
-/// premier terme réservé à cet usage, C-29-2-15). Elle est donc définie
-/// **avant** elle : une `macro_rules!` n'est visible qu'après sa définition
-/// dans le texte.
+/// Macro et non `const` seule : `concat!` n'accepte que des littéraux, et le
+/// prédicat de l'ancre et la requête scalaire de l'acceptation la composent
+/// (C-29-2-15 ; Story 36-10). Elle est donc définie **avant** eux : une
+/// `macro_rules!` n'est visible qu'après sa définition dans le texte.
 macro_rules! invoice_exigibility_date_sql {
     () => {
         "CAST(GREATEST(i.date, COALESCE(i.due_date, i.date)) AS DATE)"
@@ -192,68 +196,67 @@ macro_rules! invoice_exigibility_date_sql {
 /// par `format!` (l'`ORDER BY` de [`find_unpaid_invoices_for_window`]).
 pub const INVOICE_EXIGIBILITY_DATE_SQL: &str = invoice_exigibility_date_sql!();
 
-/// La **date d'ancrage** d'une facture, en SQL : `A = max(F, E, R)`, `F`
-/// sa date, `E` son échéance, `R` le jour de son dernier rappel non annulé,
-/// `E` et `R` absents valant `F` (Story 29-2, #529). **Prérequis : alias `i`
-/// sur `invoices` et la jointure [`INVOICE_PAYMENT_ANCHOR_JOIN_SQL`].**
+/// La **date d'ancrage** d'une facture, la règle : `A = max(X, R)`, `X` sa
+/// date d'exigibilité ([`INVOICE_EXIGIBILITY_DATE_SQL`], `max(F, E)`, `F` sa
+/// date, `E` son échéance), `R` le **jour de Zurich** de son dernier rappel
+/// non annulé ([`jour_suisse`]), `R` absent ne comptant pas (Story 29-2,
+/// #529 ; jour de Zurich depuis la Story 36-10, #1053 — jusque-là
+/// `DATE(rmd.last_sent_at)`, le jour **UTC**, si bien qu'un même rappel avait
+/// deux jours : celui de Zurich pour le rappel suivant, `dunning_eligibility`,
+/// et celui d'UTC pour la réconciliation).
 ///
-/// Elle se compose en deux termes, `GREATEST(<F, E>, <R>)` : le premier est
-/// la date à laquelle la facture devient **exigible**,
-/// [`INVOICE_EXIGIBILITY_DATE_SQL`] — composée ici par sa macro depuis la
-/// Story 29-5 (#668), à la place de `GREATEST(i.date, COALESCE(i.due_date,
-/// i.date))` qui y était écrit (C-29-2-15) : le `CAST(… AS DATE)` qu'elle
-/// ajoute est l'identité sur une `DATE` jamais `NULL` (`i.date` est
-/// `NOT NULL`), si bien que l'ancre ne change pas.
+/// `sent_at` est un instant UTC (`DATETIME(6)`, l'envoi par e-mail comme le
+/// rappel manuel, que l'écran construit en instant UTC). Le premier terme
+/// porte `F` à lui seul : un rappel non annulé antérieur à la date ne fait
+/// pas descendre l'ancre au-dessous de `F` (mutation M14 de la 29-2, tuée par
+/// le cas l de `the_anchor_is_the_latest_of_date_due_date_and_last_reminder`).
 ///
-/// ⛔ **Chaque argument porte son `COALESCE`** : en MariaDB, `GREATEST`
-/// rend `NULL` dès qu'un argument est `NULL`, et `NULL >= ?` est faux — une
-/// facture sans échéance ou sans rappel disparaîtrait des candidates. Le
-/// `GREATEST` sur `i.date` couvre une échéance antérieure à la date
-/// (données d'avant #245, la garde de l'API ne portant que sur une paire
-/// modifiée). Le repli `i.date` du terme du rappel ne la couvre **pas** à
-/// lui seul : il ne vaut `F` que sans rappel. Une échéance **et** un rappel
-/// non annulé tous deux antérieurs à la date (rien n'interdit un rappel
-/// manuel daté avant la facture) rendraient, sans le `i.date` du premier
-/// terme, une ancre antérieure à `F` — la mutation M14, tuée par le cas l
-/// de `the_anchor_is_the_latest_of_date_due_date_and_last_reminder`. Le
-/// premier terme doit donc valoir l'exigibilité à lui seul.
-///
-/// `DATE(rmd.last_sent_at)` : `sent_at` est un `DATETIME(6)`, saisi (rappel
-/// manuel) ou UTC (rappel envoyé par e-mail) ; l'écart de fuseau d'un jour
-/// au plus est un angle mort écrit (C-29-2-3), sans effet mesurable sur une
-/// borne de 30 jours. Le `CAST(… AS DATE)` extérieur fait du type rendu une
-/// garantie (C-29-2-10) : il est décodé en `NaiveDate`.
-///
-/// **Deux lecteurs, une expression** : la proposition
-/// ([`find_unpaid_invoices_for_window`], dans son `WHERE`) et l'acceptation
-/// ([`invoice_payment_anchor_date`], forme scalaire, puis
-/// [`InvoiceDateWindow::check`]).
-macro_rules! invoice_payment_anchor_sql {
-    () => {
-        concat!(
-            "CAST(GREATEST(",
-            invoice_exigibility_date_sql!(),
-            ", ",
-            "COALESCE(DATE(rmd.last_sent_at), i.date)",
-            ") AS DATE)"
-        )
-    };
+/// **Deux écritures, une règle**, tenues d'accord par le test
+/// `proposal_and_acceptance_agree_on_the_zurich_day_of_the_last_reminder`
+/// (`tests/reconciliation_repository.rs`) : celle-ci, lue par l'acceptation
+/// ([`invoice_payment_anchor_date`], puis [`InvoiceDateWindow::check`]), et le
+/// prédicat de la proposition, [`INVOICE_PAYMENT_ANCHOR_PREDICATE_SQL`]. Le
+/// jour de Zurich ne se calcule pas en SQL : `CONVERT_TZ` dépendrait des
+/// tables de fuseaux du serveur de chaque installation, et rendrait `NULL`
+/// sans elles (C-36-10-3).
+pub fn invoice_payment_anchor(
+    exigibility_date: NaiveDate,
+    last_sent_at: Option<NaiveDateTime>,
+) -> NaiveDate {
+    match last_sent_at {
+        Some(r) => exigibility_date.max(jour_suisse(r.and_utc())),
+        None => exigibility_date,
+    }
 }
+
+/// Le prédicat `A >= e` de la proposition, sans calcul de jour en SQL
+/// (Story 36-10, #1053) : `max(X, R) >= e ⟺ X >= e OR R >= e`, et
+/// `jour_suisse(r) >= e ⟺ r >= debut_du_jour_suisse(e)`. **Deux `?`**, liés
+/// dans cet ordre : `e` (`earliest_anchor_date`), puis
+/// `debut_du_jour_suisse(e)` en `NaiveDateTime` UTC. Un `last_sent_at`
+/// `NULL` (aucun rappel non annulé) rend le second terme faux : la facture
+/// n'est candidate que par son exigibilité, ce qui est la règle.
+/// **Prérequis : alias `i` sur `invoices` et la jointure
+/// [`INVOICE_PAYMENT_ANCHOR_JOIN_SQL`].** Seconde écriture de
+/// [`invoice_payment_anchor`] : un `OR` et non un pré-filtre élargi suivi d'un
+/// tri en Rust, que le `LIMIT 50` couperait avant le tri.
+pub const INVOICE_PAYMENT_ANCHOR_PREDICATE_SQL: &str = concat!(
+    "(",
+    invoice_exigibility_date_sql!(),
+    " >= ? OR rmd.last_sent_at >= ?)"
+);
 
 /// `invoice_payment_anchor_join_sql!` en `const`, pour les requêtes
 /// composées par `format!`.
 pub const INVOICE_PAYMENT_ANCHOR_JOIN_SQL: &str = invoice_payment_anchor_join_sql!();
 
-/// `invoice_payment_anchor_sql!` en `const`, pour les requêtes composées
-/// par `format!`.
-pub const INVOICE_PAYMENT_ANCHOR_SQL: &str = invoice_payment_anchor_sql!();
-
-/// La requête scalaire d'[`invoice_payment_anchor_date`], assemblée à la
-/// compilation sur les mêmes macros que la proposition.
-const INVOICE_PAYMENT_ANCHOR_SCALAR_SQL: &str = concat!(
+/// La requête scalaire d'[`invoice_payment_anchor_date`] : les deux termes de
+/// l'ancre, l'exigibilité et l'instant du dernier rappel non annulé, sur les
+/// mêmes macros que la proposition ; [`invoice_payment_anchor`] les combine.
+const INVOICE_PAYMENT_ANCHOR_TERMS_SQL: &str = concat!(
     "SELECT ",
-    invoice_payment_anchor_sql!(),
-    " FROM invoices i ",
+    invoice_exigibility_date_sql!(),
+    ", rmd.last_sent_at FROM invoices i ",
     invoice_payment_anchor_join_sql!(),
     " WHERE i.company_id = ? AND i.id = ?"
 );
@@ -403,8 +406,8 @@ pub fn imputation_order<D: PayableDocument + ?Sized>(a: &D, b: &D) -> std::cmp::
 /// (Story 28-7, #548 ; Story 29-2, #529) : `F ≤ D + 1 jour` **et**
 /// `A ≥ D − 30 jours`, `D` étant la [date de paiement](payment_date), `F` la
 /// date de la facture et `A` sa **date d'ancrage**
-/// ([`INVOICE_PAYMENT_ANCHOR_SQL`] : la plus tardive de `F`, de l'échéance et
-/// du dernier rappel non annulé), bornes incluses. Une facture sans échéance
+/// ([`invoice_payment_anchor`] : la plus tardive de `F`, de l'échéance et
+/// du jour de Zurich du dernier rappel non annulé), bornes incluses. Une facture sans échéance
 /// ni rappel (`A = F`) garde la fenêtre `D − 30 ≤ F ≤ D + 1` de la 28-7.
 ///
 /// ⛔ **La borne haute reste sur `F`**, jamais sur `A` : la porter sur l'ancre
@@ -556,15 +559,17 @@ impl InvoiceDateWindow {
     }
 }
 
-/// La **date d'ancrage** d'une facture ([`INVOICE_PAYMENT_ANCHOR_SQL`]),
-/// sous forme scalaire — la lecture de l'acceptation (`accept_one_invoice`,
-/// `kesh-api`), qui la compare ensuite par [`InvoiceDateWindow::check`]
-/// (Story 29-2, #529).
+/// La **date d'ancrage** d'une facture ([`invoice_payment_anchor`]) — la
+/// lecture de l'acceptation (`accept_one_invoice`, `kesh-api`), qui la compare
+/// ensuite par [`InvoiceDateWindow::check`] (Story 29-2, #529).
 ///
-/// Même expression, même jointure que la proposition
-/// ([`find_unpaid_invoices_for_window`]) : aucune seconde écriture de la
-/// règle. Scopée société (KF-002) : `Ok(None)` si la facture n'existe pas
-/// dans `company_id`.
+/// Lit l'exigibilité et l'instant du dernier rappel non annulé, sur la même
+/// jointure que la proposition ([`find_unpaid_invoices_for_window`]), puis
+/// les combine en Rust par [`invoice_payment_anchor`] — le jour de Zurich du
+/// rappel (Story 36-10, #1053). La proposition en a la seconde écriture,
+/// [`INVOICE_PAYMENT_ANCHOR_PREDICATE_SQL`], tenue d'accord par un test.
+/// Scopée société (KF-002) : `Ok(None)` si la facture n'existe pas dans
+/// `company_id`.
 ///
 /// `SELECT` ordinaire, **sans** `FOR UPDATE` : ne prend aucun verrou.
 pub async fn invoice_payment_anchor_date<'e, E>(
@@ -575,12 +580,15 @@ pub async fn invoice_payment_anchor_date<'e, E>(
 where
     E: sqlx::Executor<'e, Database = MySql>,
 {
-    sqlx::query_scalar::<_, NaiveDate>(INVOICE_PAYMENT_ANCHOR_SCALAR_SQL)
-        .bind(company_id)
-        .bind(invoice_id)
-        .fetch_optional(executor)
-        .await
-        .map_err(map_db_error)
+    let termes =
+        sqlx::query_as::<_, (NaiveDate, Option<NaiveDateTime>)>(INVOICE_PAYMENT_ANCHOR_TERMS_SQL)
+            .bind(company_id)
+            .bind(invoice_id)
+            .fetch_optional(executor)
+            .await
+            .map_err(map_db_error)?;
+    Ok(termes
+        .map(|(exigibilite, dernier_rappel)| invoice_payment_anchor(exigibilite, dernier_rappel)))
 }
 
 /// Charge les factures candidates pour la réconciliation d'une
@@ -592,8 +600,10 @@ where
 ///    (factures éligibles à la réconciliation v0.1).
 /// 3. `date <= window.latest_invoice_date AND <ancre> >= window.earliest_anchor_date`
 ///    — la fenêtre de l'acceptation ([`InvoiceDateWindow`], Story 28-7), dont
-///    la borne basse porte sur la date d'ancrage ([`INVOICE_PAYMENT_ANCHOR_SQL`],
-///    sur la jointure [`INVOICE_PAYMENT_ANCHOR_JOIN_SQL`] ; Story 29-2, #529).
+///    la borne basse porte sur la date d'ancrage
+///    ([`INVOICE_PAYMENT_ANCHOR_PREDICATE_SQL`], sur la jointure
+///    [`INVOICE_PAYMENT_ANCHOR_JOIN_SQL`] ; Story 29-2, #529 ; jour de Zurich
+///    du dernier rappel, Story 36-10, #1053).
 ///    Résultat trié dans l'**ordre d'imputation** ([`imputation_order`] :
 ///    [`INVOICE_EXIGIBILITY_DATE_SQL`], puis `date`, puis `id`, croissants ;
 ///    Story 29-5, #668 — `date ASC, id ASC` jusque-là, C-28-7-10) **avant**
@@ -659,6 +669,7 @@ where
     .bind(company_id)
     .bind(window.latest_invoice_date)
     .bind(window.earliest_anchor_date)
+    .bind(debut_du_jour_suisse(window.earliest_anchor_date).naive_utc())
     .bind(least_due_without_overpayment(tx_amount))
     .bind(tx_amount)
     .bind(underpayment_tolerance)
@@ -706,6 +717,7 @@ where
     .bind(company_id)
     .bind(window.latest_invoice_date)
     .bind(window.earliest_anchor_date)
+    .bind(debut_du_jour_suisse(window.earliest_anchor_date).naive_utc())
     .bind(tx_amount)
     .bind(overpayment_tolerance)
     .bind(least_due_without_overpayment(tx_amount))
@@ -717,8 +729,10 @@ where
 /// La requête commune de [`find_unpaid_invoices_for_window`] et de
 /// [`find_invoices_slightly_overpaid_for_window`] : filtres 1 à 3, ordre
 /// d'imputation, `LIMIT 50` ; seule la condition `having` sur le reste dû
-/// diffère. Les trois premiers `?` sont `company_id`, `latest_invoice_date`
-/// et `earliest_anchor_date` ; ceux de `having` suivent.
+/// diffère. Les quatre premiers `?` sont `company_id`, `latest_invoice_date`,
+/// `earliest_anchor_date` et `debut_du_jour_suisse(earliest_anchor_date)` (les
+/// deux `?` de [`INVOICE_PAYMENT_ANCHOR_PREDICATE_SQL`], Story 36-10) ; ceux
+/// de `having` suivent.
 fn unpaid_invoices_in_window_sql(having: &str) -> String {
     // Alias `i` requis par les tables dérivées du reste dû (`… ON … = i.id`).
     // Elles n'exposent que `invoice_id` et leur agrégat : les colonnes de
@@ -735,7 +749,7 @@ fn unpaid_invoices_in_window_sql(having: &str) -> String {
            AND i.paid_at IS NULL \
            AND i.journal_entry_id IS NOT NULL \
            AND i.date <= ? \
-           AND {INVOICE_PAYMENT_ANCHOR_SQL} >= ? \
+           AND {INVOICE_PAYMENT_ANCHOR_PREDICATE_SQL} \
          HAVING {having} \
          ORDER BY {INVOICE_EXIGIBILITY_DATE_SQL} ASC, i.date ASC, i.id ASC \
          LIMIT 50",

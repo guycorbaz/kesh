@@ -570,7 +570,9 @@ async fn le_filtre_d_un_jour_lit_le_jour_de_zurich_la_nuit(pool: MySqlPool) {
         ("2026-09-14", "2026-09-15", 22, "été"),
         ("2026-01-14", "2026-01-15", 23, "hiver"),
     ];
-    let mut poses: Vec<(Vec<(i64, bool)>, &str, &str)> = Vec::new();
+    // (entrées posées : identifiant et « du jour à Zurich ? », jour, saison).
+    type Saison<'a> = (Vec<(i64, bool)>, &'a str, &'a str);
+    let mut poses: Vec<Saison> = Vec::new();
     for (veille, jour, bascule, saison) in saisons {
         let mut entrees = Vec::new();
         for (instant, du_jour) in instants_de_nuit(veille, jour, bascule) {

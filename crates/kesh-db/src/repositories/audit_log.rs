@@ -43,7 +43,8 @@
 //! d'une écriture, etc.). Si la transaction ROLLBACK, l'entrée d'audit
 //! disparaît avec le reste — garantie de cohérence.
 
-use chrono::NaiveDate;
+use chrono::{NaiveDate, NaiveDateTime, NaiveTime};
+use kesh_core::horloge::{debut_du_jour_suisse, fin_du_jour_suisse};
 use sqlx::mysql::MySqlPool;
 use sqlx::{MySql, QueryBuilder, Transaction};
 
@@ -169,7 +170,9 @@ pub const MAX_LIMIT: i64 = 200;
 
 /// Filtres de consultation du journal d'audit (Story 25-1c-a).
 ///
-/// ⚠️ **Les dates s'entendent en JOURS UTC.** Ce n'est pas le réglage du
+/// ⚠️ **Les dates s'entendent en JOURS DE ZURICH** (Story 36-10, #1147 ; jours
+/// UTC jusque-là) : [`bornes_du_filtre`] en tire les instants UTC qui les
+/// bornent. `created_at` est un instant **UTC** — ce n'est pas le réglage du
 /// serveur qui le garantit (`@@time_zone` vaut `SYSTEM`) mais **sqlx**, qui
 /// impose `time_zone='+00:00'` à chaque session
 /// (`sqlx-mysql-0.8.6/src/options/mod.rs:112`).
@@ -193,6 +196,45 @@ pub struct AuditLogListResult {
     pub limit: i64,
 }
 
+/// Le premier instant de la plage documentée de `DATETIME` : la borne basse
+/// liée n'en descend jamais (Story 36-10, D3).
+const PREMIER_INSTANT_STOCKABLE: NaiveDateTime = match NaiveDate::from_ymd_opt(1000, 1, 1) {
+    Some(jour) => jour.and_time(NaiveTime::MIN),
+    None => panic!("1000-01-01 est une date valide"),
+};
+
+/// Les instants UTC qui bornent le filtre de dates du journal d'audit — **jours
+/// de Zurich** (Story 36-10, #1147) : `date_from` donne le premier instant du
+/// jour à Zurich ([`debut_du_jour_suisse`]), `date_to` le dernier
+/// ([`fin_du_jour_suisse`]), en `NaiveDateTime` UTC, la forme de `created_at`.
+/// `None` donne `None`. Fonction pure, appelée par [`push_where_clauses`] seul.
+///
+/// ⛔ **La borne basse est plafonnée** à `1000-01-01 00:00:00.000` (D3) : le
+/// début du `1000-01-01` à Zurich, en heure locale moyenne (`+00:34:08`), tombe
+/// au `0999-12-31 23:25:52` UTC, hors de la plage documentée de `DATETIME`.
+/// Le plafond ne change aucun résultat (aucune ligne ne peut le précéder) ; il
+/// évite de dépendre de la tolérance du MariaDB de chaque installation.
+///
+/// ⚠️ **L'an 9999 perd sa dernière heure** : `date_to = 9999-12-31` borne à
+/// `9999-12-31 22:59:59.999` UTC ; une entrée posée après est, à Zurich, du
+/// `10000-01-01`, et aucun filtre de date ne la rend. Une date de l'an 9999
+/// n'est pas une date réelle : perte assumée.
+///
+/// Précondition : celle de [`push_where_clauses`] (jours dans
+/// `[1000-01-01, 9999-12-31]`, garantis par la route).
+pub(crate) fn bornes_du_filtre(
+    date_from: Option<NaiveDate>,
+    date_to: Option<NaiveDate>,
+) -> (Option<NaiveDateTime>, Option<NaiveDateTime>) {
+    let depuis = date_from.map(|jour| {
+        debut_du_jour_suisse(jour)
+            .naive_utc()
+            .max(PREMIER_INSTANT_STOCKABLE)
+    });
+    let jusqu_a = date_to.map(|jour| fin_du_jour_suisse(jour).naive_utc());
+    (depuis, jusqu_a)
+}
+
 /// Pousse les clauses WHERE dans un `QueryBuilder`.
 ///
 /// **CRITIQUE** : à appeler sur DEUX `QueryBuilder` **distincts** (count et
@@ -208,11 +250,12 @@ pub struct AuditLogListResult {
 /// NULL` (arbitrage du 2026-09-15). Une entrée sans société n'apparaît dans
 /// aucune consultation.
 ///
-/// ⛔ **Bornes de date INCLUSIVES à la milliseconde, sans arithmétique** :
-/// `created_at` est un `DATETIME(3)` ; aucune valeur ne tient entre
-/// `23:59:59.999` et le lendemain. La forme « `< date_to + 1 jour` », essayée
-/// d'abord, paniquait au dernier jour représentable et rendait zéro ligne à
-/// l'an 10000.
+/// ⛔ **Bornes de date INCLUSIVES à la milliseconde** : `created_at` est un
+/// `DATETIME(3)` ; aucune valeur ne tient entre la fin d'un jour de Zurich
+/// ([`fin_du_jour_suisse`], `…:59:59.999`) et le début du suivant. La forme
+/// « `< date_to + 1 jour` », essayée d'abord, paniquait au dernier jour
+/// représentable et rendait zéro ligne à l'an 10000. Les bornes viennent de
+/// [`bornes_du_filtre`], la seule écriture du calcul.
 fn push_where_clauses<'a>(
     qb: &mut QueryBuilder<'a, sqlx::MySql>,
     company_id: i64,
@@ -221,20 +264,12 @@ fn push_where_clauses<'a>(
     qb.push(" WHERE company_id = ");
     qb.push_bind(company_id);
 
-    if let Some(date_from) = query.date_from {
-        // `and_hms_milli_opt(0, 0, 0, 0)` ne rend `None` que pour des valeurs
-        // hors plage horaire — impossible avec des constantes littérales.
-        let borne = date_from
-            .and_hms_milli_opt(0, 0, 0, 0)
-            .expect("00:00:00.000 est une heure valide");
+    let (depuis, jusqu_a) = bornes_du_filtre(query.date_from, query.date_to);
+    if let Some(borne) = depuis {
         qb.push(" AND created_at >= ");
         qb.push_bind(borne);
     }
-
-    if let Some(date_to) = query.date_to {
-        let borne = date_to
-            .and_hms_milli_opt(23, 59, 59, 999)
-            .expect("23:59:59.999 est une heure valide");
+    if let Some(borne) = jusqu_a {
         qb.push(" AND created_at <= ");
         qb.push_bind(borne);
     }
@@ -633,6 +668,49 @@ mod tests {
 
     fn jour(s: &str) -> NaiveDate {
         NaiveDate::parse_from_str(s, "%Y-%m-%d").expect("date de test valide")
+    }
+
+    fn instant(s: &str) -> NaiveDateTime {
+        NaiveDateTime::parse_from_str(s, "%Y-%m-%d %H:%M:%S%.3f").expect("instant de test valide")
+    }
+
+    /// Story 36-10 (#1147), AC2 et AC4 — les bornes liées par le filtre, sur la
+    /// valeur calculée, sans base : jours de Zurich (été, hiver, 9999) et
+    /// plafond de la borne basse au `1000-01-01`. Attendus écrits en clair.
+    /// C'est le seul test qui voie le plafond (M7) : l'entrée du `1000-01-01`
+    /// est rendue avec ou sans lui.
+    #[test]
+    fn bornes_du_filtre_jours_de_zurich_et_plafond() {
+        let cas = [
+            (
+                "2026-09-15",
+                "2026-09-14 22:00:00.000",
+                "2026-09-15 21:59:59.999",
+            ),
+            (
+                "2026-01-15",
+                "2026-01-14 23:00:00.000",
+                "2026-01-15 22:59:59.999",
+            ),
+        ];
+        for (j, debut, fin) in cas {
+            assert_eq!(
+                bornes_du_filtre(Some(jour(j)), Some(jour(j))),
+                (Some(instant(debut)), Some(instant(fin))),
+                "{j}"
+            );
+        }
+        assert_eq!(
+            bornes_du_filtre(Some(jour("1000-01-01")), None),
+            (Some(instant("1000-01-01 00:00:00.000")), None),
+            "plafond de la borne basse"
+        );
+        assert_eq!(
+            bornes_du_filtre(None, Some(jour("9999-12-31"))),
+            (None, Some(instant("9999-12-31 22:59:59.999"))),
+            "fin du 31 décembre 9999 à Zurich"
+        );
+        assert_eq!(bornes_du_filtre(None, None), (None, None));
     }
 
     #[sqlx::test(migrations = "./test-schema")]

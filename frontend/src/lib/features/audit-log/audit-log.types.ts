@@ -41,9 +41,9 @@ export interface AuditLogVocabulary {
 
 /** Les filtres et la pagination de la liste. */
 export interface AuditLogQuery {
-	/** Jour UTC, `AAAA-MM-JJ`. */
+	/** Jour de Zurich, `AAAA-MM-JJ` (Story 36-10, #1147). */
 	dateFrom?: string;
-	/** Jour UTC, `AAAA-MM-JJ`, inclus. */
+	/** Jour de Zurich, `AAAA-MM-JJ`, inclus. */
 	dateTo?: string;
 	entityType?: string;
 	/** N'a de sens qu'avec `entityType` : la route répond 400 sinon. */

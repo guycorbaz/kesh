@@ -5,9 +5,10 @@
 	 * Consulter le journal d'audit de la société : filtrer, déplier le
 	 * détail d'une entrée, exporter. ⛔ L'écran ne traduit RIEN du vocabulaire :
 	 * la route rend `actionLabel`, `entityTypeLabel` et le vocabulaire traduit
-	 * (Story 25-1c-a). ⚠️ Les dates filtrent sur des jours **UTC** (contrat de la
-	 * route) ; le tableau affiche l'heure **locale** — d'où les libellés « jour
-	 * UTC » des filtres.
+	 * (Story 25-1c-a). Les dates filtrent sur des jours **de Zurich** (contrat de
+	 * la route depuis la Story 36-10, #1147) : le jour choisi part tel quel, la
+	 * route en tire les instants qui le bornent. Le tableau affiche l'heure du
+	 * **poste** ; l'export CSV, l'instant UTC.
 	 */
 	import { onMount, untrack } from 'svelte';
 	import { page } from '$app/state';
@@ -234,7 +235,7 @@
 	<div class="mb-4 flex flex-wrap items-end gap-3">
 		<div>
 			<label class="mb-1 block text-xs text-text-muted" for="audit-log-filter-date-from">
-				{i18nMsg('audit-log-filter-date-from', 'Du (jour UTC)')}
+				{i18nMsg('audit-log-filter-date-from', 'Du')}
 			</label>
 			<Input
 				id="audit-log-filter-date-from"
@@ -253,7 +254,7 @@
 		</div>
 		<div>
 			<label class="mb-1 block text-xs text-text-muted" for="audit-log-filter-date-to">
-				{i18nMsg('audit-log-filter-date-to', 'Au (jour UTC)')}
+				{i18nMsg('audit-log-filter-date-to', 'Au')}
 			</label>
 			<Input
 				id="audit-log-filter-date-to"
