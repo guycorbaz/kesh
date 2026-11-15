@@ -83,6 +83,29 @@ function makeAccounts(): AccountResponse[] {
 	];
 }
 
+/**
+ * Choisit le compte `numero` sur la ligne `ligne`, avec le vrai `AccountAutocomplete` (Story
+ * 28-2, B14). Partagé depuis la Story 36-2 (V-b) : sans compte choisi, `clientError` s'arrête
+ * à « Ligne N : compte requis » avant toute règle de montant ou d'équilibre.
+ */
+async function choisirCompte(
+	findByTestId: (id: string) => Promise<HTMLElement>,
+	ligne: number,
+	numero: string,
+) {
+	const rang = await findByTestId(`split-row-${ligne}`);
+	const champ = rang.querySelector('input[aria-autocomplete="list"]') as HTMLInputElement;
+	await fireEvent.focus(champ);
+	const options = await waitFor(() => {
+		const o = Array.from(rang.querySelectorAll<HTMLElement>('[role="option"]'));
+		expect(o.length).toBeGreaterThan(0);
+		return o;
+	});
+	const option = options.find((o) => o.textContent?.includes(numero));
+	expect(option, `le compte ${numero} doit être proposé`).toBeTruthy();
+	await fireEvent.mouseDown(option as HTMLElement);
+}
+
 describe('TransactionSplitModal', () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
@@ -218,24 +241,6 @@ describe('TransactionSplitModal — soumission rejetée (Story 28-2, B14)', () =
 	afterEach(() => {
 		vi.restoreAllMocks();
 	});
-
-	async function choisirCompte(
-		findByTestId: (id: string) => Promise<HTMLElement>,
-		ligne: number,
-		numero: string,
-	) {
-		const rang = await findByTestId(`split-row-${ligne}`);
-		const champ = rang.querySelector('input[aria-autocomplete="list"]') as HTMLInputElement;
-		await fireEvent.focus(champ);
-		const options = await waitFor(() => {
-			const o = Array.from(rang.querySelectorAll<HTMLElement>('[role="option"]'));
-			expect(o.length).toBeGreaterThan(0);
-			return o;
-		});
-		const option = options.find((o) => o.textContent?.includes(numero));
-		expect(option, `le compte ${numero} doit être proposé`).toBeTruthy();
-		await fireEvent.mouseDown(option as HTMLElement);
-	}
 
 	async function soumettre(rejet: unknown) {
 		mockApi.splitTransaction.mockRejectedValue(rejet);
@@ -557,5 +562,205 @@ describe('TransactionSplitModal — compte retiré de la sélection (Story 35-7,
 		await waitFor(() => expect(submit.disabled).toBe(false));
 		expect((await champ(r, 0)).value).toBe('6900 — Frais financiers');
 		expect((await champ(r, 1)).value).toBe('6900 — Frais financiers');
+	});
+});
+
+// Story 36-2 (#1150) — le bouton *Éclater* s'active quand les lignes sont complètes et
+// équilibrées, sinon le message dit ce qui manque ; les montants partent en chaînes décimales
+// au centime (le serveur, `serde-str`, refuse un nombre JSON). Le mock d'`i18nMsg` rend le
+// repli interpolé : ces tests vérifient le repli et ses arguments, le catalogue l'est par
+// `split-i18n.test.ts` et par l'E2E R0.
+describe('TransactionSplitModal — Éclater, montants et messages (Story 36-2)', () => {
+	beforeEach(() => {
+		vi.clearAllMocks();
+		mockApi.splitTransaction.mockResolvedValue({ bankTransactionId: 42, journalEntryId: 7 });
+	});
+
+	afterEach(() => {
+		vi.restoreAllMocks();
+	});
+
+	/** Monte le dialogue, choisit `5000` et `5700`, et tape les deux montants. */
+	async function remplir(montants: [string, string], txAmount = '-100.00') {
+		const r = render(TransactionSplitModal, {
+			open: true,
+			onOpenChange: () => {},
+			bankAccountId: 17,
+			proposal: makeProposal(txAmount),
+			accounts: makeAccounts(),
+			onSuccess: () => {},
+		});
+		await choisirCompte(r.findByTestId, 0, '5000');
+		await choisirCompte(r.findByTestId, 1, '5700');
+		await fireEvent.input(await r.findByTestId('split-amount-0'), {
+			target: { value: montants[0] },
+		});
+		await fireEvent.input(await r.findByTestId('split-amount-1'), {
+			target: { value: montants[1] },
+		});
+		const submit = (await r.findByTestId('split-submit')) as HTMLButtonElement;
+		return { r, submit };
+	}
+
+	/** Clique sur *Éclater* et rend les montants envoyés. */
+	async function envoyer(submit: HTMLButtonElement): Promise<unknown[]> {
+		await waitFor(() => expect(submit.disabled).toBe(false));
+		await fireEvent.click(submit);
+		await waitFor(() => expect(mockApi.splitTransaction).toHaveBeenCalledTimes(1));
+		return mockApi.splitTransaction.mock.calls[0][2].map((s) => s.amount);
+	}
+
+	it('V-a — les montants partent en chaînes décimales au centime, jamais en nombres', async () => {
+		const { submit } = await remplir(['60', '40']);
+		const montants = await envoyer(submit);
+		expect(montants.map((m) => typeof m)).toEqual(['string', 'string']);
+		expect(montants).toEqual(['60.00', '40.00']);
+	});
+
+	it('V-a — « 70,00 » et « 30,00 » tapés partent « 70.00 » et « 30.00 »', async () => {
+		const { submit } = await remplir(['70,00', '30,00']);
+		expect(await envoyer(submit)).toEqual(['70.00', '30.00']);
+	});
+
+	it('V-b — somme fausse : le message et l’indicateur disent l’attendu et l’écart', async () => {
+		const { r, submit } = await remplir(['40', '30']);
+		const message = await r.findByTestId('split-client-error');
+		// Revue P1 (B3) : le message dit quoi faire, l'indicateur constate — deux phrases.
+		expect(message.textContent?.trim()).toBe(
+			'Ajustez les montants : leur somme doit égaler 100.00 (écart actuel -30.00).',
+		);
+		const indicateur = await r.findByTestId('split-balance-indicator');
+		expect(indicateur.textContent?.trim()).toBe(
+			'Balance non équilibrée — attendu 100.00, écart -30.00',
+		);
+		expect(submit.disabled).toBe(true);
+	});
+
+	// C-36-2-19 (R0 (f)) : le serveur rend le montant normalisé (« -388.2 ») ; l'attendu se
+	// dit à deux décimales, comme l'écart.
+	it('V-b — un montant normalisé par le serveur se dit à deux décimales', async () => {
+		const { r } = await remplir(['10', '20'], '-388.2');
+		const message = await r.findByTestId('split-client-error');
+		expect(message.textContent).toContain('doit égaler 388.20 (écart actuel -358.20)');
+		const indicateur = await r.findByTestId('split-balance-indicator');
+		expect(indicateur.textContent).toContain('attendu 388.20, écart -358.20');
+	});
+
+	// Revue P1 (B3) : une ligne sans montant lu — l'écart n'est pas calculable, et se dit tel.
+	it('V-b — une ligne sans montant lu : « écart non calculable », jamais « écart — »', async () => {
+		const { r } = await remplir(['', '40']);
+		const indicateur = await r.findByTestId('split-balance-indicator');
+		expect(indicateur.textContent?.trim()).toBe(
+			'Balance non équilibrée — attendu 100.00, écart non calculable',
+		);
+		expect(indicateur.textContent).not.toContain('—,');
+	});
+
+	// Revue P1 (E4) : une transaction au crédit (montant positif) s'éclate comme un débit.
+	it('V-f — transaction au crédit : la valeur absolue est attendue, l’envoi passe', async () => {
+		const { r, submit } = await remplir(['60', '40'], '100.00');
+		expect(r.queryByTestId('split-client-error')).toBeNull();
+		expect((await r.findByTestId('split-balance-indicator')).textContent).toContain(
+			'Balance équilibrée : 100.00',
+		);
+		expect(await envoyer(submit)).toEqual(['60.00', '40.00']);
+	});
+
+	// Revue P1 (E4) : un montant de transaction illisible (`expectedBig` nul) — rien ne part,
+	// l'écart n'est pas calculable et le message générique le dit.
+	it('V-f — montant de transaction illisible : grisé, écart non calculable', async () => {
+		const { r, submit } = await remplir(['60', '40'], 'abc');
+		expect(submit.disabled).toBe(true);
+		expect((await r.findByTestId('split-client-error')).textContent?.trim()).toBe(
+			"L'éclatement n'équilibre pas le montant de la transaction.",
+		);
+		expect((await r.findByTestId('split-balance-indicator')).textContent).toContain(
+			'écart non calculable',
+		);
+	});
+
+	// Revue P1 (E4) : un montant de transaction nul — aucune somme positive ne l'égale.
+	it('V-f — montant de transaction nul : grisé, l’écart est dit', async () => {
+		const { r, submit } = await remplir(['60', '40'], '0.00');
+		expect(submit.disabled).toBe(true);
+		expect((await r.findByTestId('split-client-error')).textContent).toContain(
+			'doit égaler 0.00 (écart actuel +100.00)',
+		);
+	});
+
+	// Revue P1 (E4, B4) : les lignes sont rendues par indice ; après la suppression d'une ligne
+	// saisie, les lectures et l'envoi suivent les lignes restantes.
+	it('V-f — envoi après suppression d’une ligne saisie : les montants des lignes restantes', async () => {
+		const { r } = await remplir(['5', '40']);
+		await fireEvent.click(await r.findByTestId('split-add-line'));
+		await choisirCompte(r.findByTestId, 2, '5000');
+		await fireEvent.input(await r.findByTestId('split-amount-2'), { target: { value: '60' } });
+		await fireEvent.click(await r.findByTestId('split-remove-0'));
+		const submit = (await r.findByTestId('split-submit')) as HTMLButtonElement;
+		expect(await envoyer(submit)).toEqual(['40.00', '60.00']);
+		expect(mockApi.splitTransaction.mock.calls[0][2].map((s) => s.counterpartyAccountId)).toEqual([
+			5700, 5000,
+		]);
+	});
+
+	it('V-c — à l’ouverture, le message nommé dit « Ligne 1 : compte requis »', async () => {
+		const { findByTestId } = render(TransactionSplitModal, {
+			open: true,
+			onOpenChange: () => {},
+			bankAccountId: 17,
+			proposal: makeProposal('-100.00'),
+			accounts: makeAccounts(),
+			onSuccess: () => {},
+		});
+		const message = await findByTestId('split-client-error');
+		expect(message.textContent?.trim()).toBe('Ligne 1 : compte requis');
+	});
+
+	// V-d — la table de D5 : une saisie de la ligne 1, la ligne 2 complétant la somme.
+	it.each([
+		['', 'Ligne 1 : montant > 0 requis'],
+		['0', 'Ligne 1 : montant > 0 requis'],
+		['0,00', 'Ligne 1 : montant > 0 requis'],
+		['-70.00', 'Ligne 1 : montant illisible'],
+		['7O', 'Ligne 1 : montant illisible'],
+		['1.234', 'Ligne 1 : montant ambigu'],
+		['0.005', 'Ligne 1 : deux décimales au plus'],
+		['30.0050', 'Ligne 1 : deux décimales au plus'],
+		// Revue P1 (B1, E5) : une espace (en tête, en fin, entre les milliers) rend la saisie
+		// illisible, et le message dit « sans signe ni espace ».
+		[' 70', 'Ligne 1 : montant illisible'],
+		['70 ', 'sans signe ni espace'],
+		['1 200.50', 'Ligne 1 : montant illisible'],
+		// Revue P1 (B4) : seize chiffres entiers dépassent la grammaire (quinze au plus).
+		['1234567890123456', 'Ligne 1 : montant illisible'],
+	])('V-d — « %s » : bouton grisé, « %s »', async (saisie, attendu) => {
+		const { r, submit } = await remplir([saisie, '40']);
+		const message = await r.findByTestId('split-client-error');
+		expect(message.textContent).toContain(attendu);
+		expect(submit.disabled).toBe(true);
+	});
+
+	it.each([
+		['60.0000', '40', '-100.00', ['60.00', '40.00']],
+		['70,00', '30', '-100.00', ['70.00', '30.00']],
+		["1'200.50", '100', '-1300.50', ['1200.50', '100.00']],
+		['0.10', '0.20', '-0.30', ['0.10', '0.20']],
+		// Revue P1 (B4, E3) : l'apostrophe typographique U+2019 (ponctuation automatique de macOS
+		// et d'iOS), et quinze chiffres entiers, le plus long que lit la grammaire.
+		['1’200.50', '100', '-1300.50', ['1200.50', '100.00']],
+		['123456789012345', '1', '-123456789012346.00', ['123456789012345.00', '1.00']],
+	])('V-d — « %s » + « %s » sur %s : lu, part %j', async (a, b, tx, attendus) => {
+		const { r, submit } = await remplir([a, b], tx);
+		expect(r.queryByTestId('split-client-error')).toBeNull();
+		expect(await envoyer(submit)).toEqual(attendus);
+	});
+
+	it('V-e — lignes équilibrées : l’indicateur dit « Balance équilibrée » et le montant', async () => {
+		const { r, submit } = await remplir(['60', '40']);
+		await waitFor(() => expect(submit.disabled).toBe(false));
+		const indicateur = await r.findByTestId('split-balance-indicator');
+		expect(indicateur.textContent).toContain('Balance équilibrée');
+		expect(indicateur.textContent).toContain('100.00');
+		expect(indicateur.textContent).not.toContain('{ $');
 	});
 });

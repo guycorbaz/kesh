@@ -1002,7 +1002,18 @@ const ATTENDU = {
 	// Union de l'intégration 0.17.8 (36-1, 36-3, 36-3b, puis 36-2, 36-4, 36-5) : relevé par la
 	// garde après chaque fusion, jamais additionné (C-e350-18) — **3045** après 36-1 + 36-3 + 36-3b
 	// (garde rouge à 3044, « expected 3045 », avant d'écrire ce nombre).
-	sitesTotal: 3045,
+	// Story 36-2 (#1150, D3, D5) : **3041 → 3044**, relevé par la garde avant d'écrire ce nombre
+	// (C-e350-18). 3041 n'a pas été relevé seul à la tête fusionnée : la garde a rendu 3044 avec
+	// les trois sites neufs de `TransactionSplitModal.svelte` (`-amount-unreadable`,
+	// `-amount-ambiguous`, `-amount-cents`) ; l'indicateur et le message de déséquilibre gardent
+	// leurs trois sites, sous d'autres clés. Que des littéraux.
+	// Remédiation de la revue P1 de la 36-2 (B3) : **3044 → 3046**, relevé par la garde
+	// (`expected 3046 to be 3044`) — `reconciliation-split-balance-incomplete` (l'écart non
+	// calculable) et `reconciliation-split-error-imbalance` (montant de transaction illisible),
+	// deux littéraux.
+	// Union de l'intégration 0.17.8 après la 36-2 : **3050**, relevé par la garde
+	// (« expected 3050 to be 3046 ») avant d'écrire ce nombre.
+	sitesTotal: 3050,
 	sitesNonResolus: 31,
 	relais: 6,
 	// Story 26-1 (#620, AC3-bis) : **10 → 11** — `lib/features/bank-import/

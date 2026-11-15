@@ -1619,7 +1619,9 @@ reconciliation-manual-claim-notice-payable = Ce compte est celui des créanciers
 # Story 8-5a-bis FR48 — éclatement de transaction agrégée.
 reconciliation-split-button-label = Éclater
 reconciliation-split-modal-title = Éclater la transaction
-reconciliation-split-balance-indicator = Balance
+reconciliation-split-balance-indicator = Balance équilibrée : { $expected }
+reconciliation-split-balance-gap = Balance non équilibrée — attendu { $expected }, écart { $diff }
+reconciliation-split-balance-incomplete = Balance non équilibrée — attendu { $expected }, écart non calculable
 reconciliation-split-error-imbalance = L'éclatement n'équilibre pas le montant de la transaction.
 
 # Story 29-8 (#670) — rattacher une transaction au règlement saisi depuis la fiche.
@@ -1849,6 +1851,10 @@ reconciliation-split-error-min-lines = Au moins { $min } lignes requises
 reconciliation-split-error-max-lines = Maximum { $max } lignes
 reconciliation-split-error-account-required = Ligne { $line } : compte requis
 reconciliation-split-error-amount-positive = Ligne { $line } : montant > 0 requis
+reconciliation-split-error-amount-unreadable = Ligne { $line } : montant illisible — chiffres, apostrophe des milliers (1'234), point ou virgule décimale, deux décimales au plus, sans signe ni espace.
+reconciliation-split-error-amount-ambiguous = Ligne { $line } : montant ambigu — un point ou une virgule suivis de trois chiffres peuvent séparer les milliers ; écrivez 1'234 pour mille deux cent trente-quatre francs.
+reconciliation-split-error-amount-cents = Ligne { $line } : deux décimales au plus — le montant se compte en centimes.
+reconciliation-split-error-imbalance-detail = Ajustez les montants : leur somme doit égaler { $expected } (écart actuel { $diff }).
 reconciliation-split-error-description-too-long = Ligne { $line } : description trop longue (max { $max })
 
 # === Story 9-1 — Rapports comptables (34 clés) ===

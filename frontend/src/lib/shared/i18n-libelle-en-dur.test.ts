@@ -335,8 +335,15 @@ const SUFFIXES = ['Label', 'Text', 'Display'];
  * phrase du serveur par un gabarit : aucun littéral rendu, donc `conforme` **76 → 77** ;
  * `ecartee` ne bouge pas. *Identifiée en cherchant les suffixes `Label`, `Text`, `Display`
  * dans le diff de la story (`50623755` → tête) — la seule déclaration neuve qui en porte un.*
+ *
+ * **91 → 92, et la déclaration est NOMMÉE** (Story 36-2, #1150, C-36-2-19) : `expectedLabel`
+ * (`lib/features/reconciliation/TransactionSplitModal.svelte`), le montant attendu affiché à
+ * deux décimales (`Big(…).toFixed(2)`) — une donnée, aucun littéral rendu : `conforme`
+ * **77 → 78** ; `ecartee` ne bouge pas. Relevé par la garde (`expected 92 to be 91`), non
+ * additionné ; seule déclaration neuve du diff de la story à porter un suffixe `Label`, `Text`
+ * ou `Display`.
  */
-const CANDIDATES_ATTENDUES = 91;
+const CANDIDATES_ATTENDUES = 92;
 
 /** Les trois délimiteurs de littéral en JS/TS. */
 const QUOTES = ["'", '"', '`'];
@@ -853,7 +860,7 @@ describe('libellés en dur — l’angle mort #255', () => {
 			else if (c.retours.length > 0) classes.ecartee += 1;
 			else classes.conforme += 1;
 		}
-		expect(classes).toEqual({ nonAnalysee: 0, enViolation: 0, ecartee: 14, conforme: 77 });
+		expect(classes).toEqual({ nonAnalysee: 0, enViolation: 0, ecartee: 14, conforme: 78 });
 		// La somme est recalculée depuis les classes, jamais depuis le total qu'elle contrôle.
 		const somme = Object.values(classes).reduce((a, b) => a + b, 0);
 		expect(somme).toBe(CANDIDATES_ATTENDUES);
