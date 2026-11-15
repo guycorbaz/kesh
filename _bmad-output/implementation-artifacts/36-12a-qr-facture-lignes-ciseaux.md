@@ -154,7 +154,12 @@ larges (doc-comment `:803-804` : « 27 `W` occupent 72 mm depuis x = 5, jusqu'à
   un caractère sans entrée compte pour la plus large de la table. Script de génération versionné dans
   `kesh-gate-logs/e36-12/`, commande et empreinte des AFM au Dev Agent Record ; doc-comment : la table change avec la
   police (#943). La 36-12a ne s'en sert que pour le point de dépôt et les tests ; la 36-12b, pour couper les lignes.
-  *Écartée* : une table du seul gras (même script ; la 36-12b aurait à le refaire).
+  *Écartée* : une table du seul gras (même script ; la 36-12b aurait à le refaire). *(Remédiation de la revue P1,
+  2026-11-15 : « versionné dans `kesh-gate-logs/e36-12/` » était faux — ce dossier n'est pas un dépôt (A-1). Le script
+  est désormais au dépôt, `scripts/engendrer-largeurs-helvetica.py`, avec la provenance des AFM (paquet
+  `texlive-fonts-recommended`, empreintes) et un mode `--verifier` qui compare la table de `largeurs.rs` à sa sortie. Et
+  un caractère sans entrée compte **zéro**, non la plus large : il n'a pas d'octet WinAnsi, `lopdf` ne l'imprime pas
+  (B-2).)*
 - **D5 — Rien d'autre ne bouge** : récépissé (hors point de dépôt), partie paiement, QR et corps de la facture dessinés
   comme à `fed34a9c7`.
 - **D6 — Le figé ne bouge pas** : aucune ligne de `crates/kesh-api`, `crates/kesh-db` ni `crates/kesh-i18n` ne change.
@@ -199,7 +204,11 @@ y = 105 ou x = 62 de 2,05 mm au plus, ses lames étant des triangles fermés, en
    `draw_separator`, `dessiner_ciseaux`, leurs constantes, l'appel du point de dépôt dans `draw_receipt`, le doc-comment du
    module (`:1-9`), le module `largeurs.rs` et sa déclaration dans `lib.rs`, et la visibilité de `est_caractere_qr`
    (`validation.rs:222`, une ligne, `pub(crate)` pour le test de l'AC8 ; ajouté à l'étape 0, V3-1) (`git diff origin/epic/36-0.18.0 --
-   crates/kesh-qrbill/src` lu et cité au Dev Agent Record).
+   crates/kesh-qrbill/src` lu et cité au Dev Agent Record). *(Complété à la remédiation de la revue P1, A-3 : les
+   auxiliaires de `draw_separator`, `traits_du_pointille` et `trait_droit` ; la constante `RECU_BORD_DROIT` et l'import de
+   `largeur_mm` ; `QrBillI18n::depuis_ftl` (`types.rs`, `#[doc(hidden)]`, lecteur de `messages.ftl` des tests et de
+   l'exemple, B-3) ; hors `src`, `examples/capture_qr_facture.rs` (tâche 1) et `scripts/engendrer-largeurs-helvetica.py`
+   (A-1).)*
 10. **Le figé** : `git diff origin/epic/36-0.18.0 --stat -- crates/kesh-api crates/kesh-db crates/kesh-i18n` vide ;
     `invoice_frozen_pdf_e2e.rs` et `invoice_pdf_e2e.rs` passent sans modification.
 11. **Le lecteur de scans** : `t4_pdfium_scans_synthetiques` rejoué (`qr_decode.rs:913-914`), vert, journal cité ; dit non
