@@ -154,7 +154,10 @@ le second grep couvre `goto` et `redirect`. Aucun autre site.
   réarme : `restoreHoldUntil = Date.now() + durationMs`, **remplace** toute échéance précédente, plus longue ou plus
   courte) et `releaseRestoreHold()`, avec **un accesseur public**, `get restoreHold(): boolean`, qui vaut exactement
   `restoreHoldUntil !== null && Date.now() < restoreHoldUntil` ;
-  `restoreHoldUntil` reste privé au module. Le maintien expire seul (D3 fixe les durées). *(L'accesseur
+  `restoreHoldUntil` reste privé au module. **Troisième méthode, ajoutée à la revue de code P1 (E1-2, C-36-5-14)** :
+  `shortenRestoreHold(durationMs)` ramène l'échéance à au plus `maintenant + durationMs`, ne l'allonge jamais, ne pose
+  rien sans maintien et ne lève pas ; le panneau l'appelle après un échec certain ou une issue inconnue. Le maintien
+  expire seul (D3 fixe les durées). *(L'accesseur
   `restoreHoldDeadline` ajouté à la P3 pour D2 est **retiré** à la P4 : D2 simplifié ne lit plus l'échéance, C-36-5-9 ; les
   tests constatent les échéances par `restoreHold` à `échéance − 1` et à `échéance` ms.)*
   **Qui le lève** (amendé à la validation P2, V2-1 ; C-36-5-7) : `releaseRestoreHold()` (le panneau), `logout()` et
@@ -234,7 +237,8 @@ le second grep couvre `goto` et `redirect`. Aucun autre site.
   l'avertissement dès la pose : *Rester connecté* n'était plus offert avant `last + w`.
 - **D3 — Le panneau pose, borne et lève le maintien** (C-36-5-2, amendé à la validation P1, V1-3, V1-4, V1-9). Le
   maintien ne couvre que **deux phases** : l'import en cours (phase 1), et la lecture du compte rendu d'un import réussi
-  (phase 2). **B** = la durée d'inactivité réglée (`sessionIdle.minutes`, `session-idle.svelte.ts:499-501`, en minutes ;
+  (phase 2). **B** = la durée d'inactivité réglée — lue à la confirmation pour la phase 1, **relue au succès et à l'échec**
+  (revue de code P1, E1-4, C-36-5-15) — (`sessionIdle.minutes`, `session-idle.svelte.ts:499-501`, en minutes ;
   60 si elle est inconnue, la valeur par défaut du serveur, manuel d'administration `:2651`).
   - **Borne de la phase 1 : `importHoldMs(B)`**, la fonction unique décrite plus bas (amendé aux validations
     P3, V3-1, décision de l'orchestrateur, C-36-5-8, et P4, V4-4). Lu au code : `api-client.ts:53`,
@@ -503,7 +507,8 @@ rouge au départ (maintien inerte, la seconde requête redirige). AC6 :
 départ, et dits : les tests existants de l'AC6.
 
 **Simulacres** (V1-5) : ceux d'`authState` de `AdminRestorePanel.test.ts:24-29` et de `session-idle.svelte.test.ts:17-19`
-gagnent `holdForRestore`, `releaseRestoreHold` et `restoreHold` — dans `session-idle.svelte.test.ts`, un accesseur que
+gagnent `holdForRestore`, `releaseRestoreHold` et `restoreHold` (celui du panneau aussi `shortenRestoreHold`, depuis la
+revue de code P1 ; celui de `session-idle` n'en a pas besoin, le module ne l'appelle pas) — dans `session-idle.svelte.test.ts`, un accesseur que
 le test règle (`get restoreHold() { return hold; }` sur une variable du fichier), seul membre du maintien que lit D2 ;
 `restoreHoldDeadline` n'existe plus (V4-1) ; le simulacre du panneau n'a pas besoin de `clearSession` (V4-6) ;
 `AdminRestorePanel.test.ts`
@@ -562,6 +567,10 @@ devient partiel de la même façon, `uploadFullImport` restant un `vi.fn()`, fau
 | M24 | le retrait de l'écouteur en tête de `confirmImport` supprimé (revue P1, E1-1) | AC3 (a), E1-1 (nouvel import par `click` seul : geste pendant l'import) |
 | M25 | `shortenRestoreHold(B)` retiré du `finally` (l'échéance de la confirmation gardée, revue P1, E1-2) | AC3 (a), E1-2 (`restoreHold` faux à `échec + 60 000`) |
 | M26 | `shortenRestoreHold` prend le maximum au lieu du minimum (l'échéance allongée) | AC3 (a), E1-2 au store (« n'allonge jamais ») |
+| M27 | la garde `!destroyed` retirée du `finally` (revue P2, E2-1) | E2-1 (réponse tardive d'un panneau démonté : `shortenRestoreHold` non appelé, maintien de l'autre panneau intact) |
+| M28 | au succès, B de la confirmation au lieu de B relu (`const reading = b`) | E2-2 (B relu au succès : `holdForRestore(60 000)`, fin à `+60 000`) |
+| M29 | à l'échec, B de la confirmation au lieu de B relu | E2-2 (B relu à l'échec : `shortenRestoreHold(60 000)`) |
+| M30 | au succès, le maintien réarmé AVANT la minuterie (B1-3) | E2-2 (ordre des appels : `setTimeout(…, B)` avant le second `holdForRestore`) |
 
 *Retirées à la P4 (simplification de D2, V4-1)* : M15 (« maintien gardé à l'issue inconnue ») — l'issue inconnue garde
 désormais le maintien jusqu'au premier geste, ce que tuent M5 et M5″. Recompte de la table : M1, M1′, M2, M3, M4, M5,
@@ -700,7 +709,10 @@ Rust, aucune migration, aucune clé i18n.
 **Tests ajoutés** (recomptés `git show <ref>:<fichier> | grep -cE "^\s*(it|test)\("`, de `f43562b4d` à `HEAD`) :
 Vitest **28** — `api-client.test.ts` 36 → 42 (+6), `auth.svelte.test.ts` 21 → 27 (+6), `session-idle.svelte.test.ts`
 52 → 54 (+2), `AdminRestorePanel.test.ts` 15 → 29 (+14) ; E2E **1** — `backup-restore-new-install.spec.ts` 3 → 4 (le
-test « KF-056 », `:381`). Les tests existants n'ont changé ni de corps ni d'assertion ; seuls les simulacres sont
+test « KF-056 », `:381`). *(Annoté le 2026-11-15, revue P2, A2-4 : « `HEAD` » valait `1fbda93a7` à la date de ce
+relevé. Recompté à `fb2012f1b`, même commande : `auth.svelte.test.ts` **29**, `AdminRestorePanel.test.ts` **35**, les
+autres inchangés (42, 54, E2E 4) — Vitest **36** ajoutés au total de `f43562b4d` à `fb2012f1b` : 28 au développement,
+4 à la remédiation P1, 4 à la remédiation P2.)* Les tests existants n'ont changé ni de corps ni d'assertion ; seuls les simulacres sont
 étendus (`session-idle.svelte.test.ts` : `restoreHold` réglable, remis à faux au `beforeEach` ; `AdminRestorePanel.test.ts` :
 simulacres partiels d'`admin-restore.api` et d'`api-client`, `sessionIdle` simulé, maintien délégué au vrai `authState`,
 C-36-5-11).
@@ -749,7 +761,10 @@ Vitest seulement ; la seconde partie de l'E2E (M8) n'a pas été mutée en E2E.
 - **Non lancé** : l'E2E complet (à la clôture, consigne de l'Epic 36).
 
 **AC9** : `git grep -nE "holdForRestore\(" -- frontend/src ':!*.test.ts'` → `auth.svelte.ts:151` (définition),
-`AdminRestorePanel.svelte:221` (confirmation), `:235` (succès) ; aucune ligne de commentaire rendue. **AC8** :
+`AdminRestorePanel.svelte:221` (confirmation), `:235` (succès) ; aucune ligne de commentaire rendue. *(Annoté le
+2026-11-15, revue P2, A2-4 : lignes valables à `69f18b23a`. À `fb2012f1b` : `auth.svelte.ts:155` (définition),
+`AdminRestorePanel.svelte:230` (confirmation), `:254` (succès) ; et `shortenRestoreHold(` : `auth.svelte.ts:163`
+(définition), `AdminRestorePanel.svelte:277` (le `finally`).)* **AC8** :
 `git grep -n "KF-056" -- docs/testing.md` → `:431` ; `git grep -n "Laissé ouvert, ou quitté"` → `admin-manual.tex:2340` ;
 PDF (non régénéré, D6) : « Prenez le temps de lire, puis cliquez » → `1`, la phrase neuve → `0` (attendu jusqu'à
 l'intégration).
@@ -812,6 +827,8 @@ mises à jour pour le `finally` en bloc et la minuterie de `reading`).
 **Gates de la remédiation** (bases `kesh_e365` et `kesh_e2e_e365` remises à neuf ; commit `85359e0f2`, dernier commit de code
 `f142298e7`, en première ligne de chaque journal) :
 - Vitest ciblé : 5 fichiers, 194/194 (`r1-vitest-cible.log`, sur `f142298e7` non commité encore — avant le commit, mêmes sources).
+  *(Annoté le 2026-11-15, revue P2, A2-3 : « commit en première ligne de chaque journal » est faux pour ce journal-là,
+  lancé avant le commit ; une ligne datée l'écrit à sa fin.)*
 - `scripts/test-fast.sh --ci` : **5445 passés, 13 ignorés** (`r1-test-fast-ci.log`).
 - Frontend complet : `check` 0 erreur (29 avertissements préexistants) ; `lint-i18n-ownership` vert ; `test:unit` **234 fichiers,
   3463 tests** ; `build` vert (`r1-front-*.log`).
