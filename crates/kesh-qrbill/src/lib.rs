@@ -10,6 +10,10 @@
 //! - [`parse_spc_payload`] — decode a scanned SPC payload back into typed data.
 
 pub mod generator;
+// Story 36-12a (V3-8) : employé par la production au commit du correctif, qui retire
+// cette exception ; jusque-là, seuls les tests l'appellent.
+#[cfg_attr(not(test), allow(dead_code))]
+pub(crate) mod largeurs;
 pub mod parser;
 pub mod pdf;
 pub(crate) mod texte;
