@@ -46,6 +46,9 @@ que la pièce soit gardée et sauvegardée dans son format d'origine.
 - **Téléchargement** : `content_disposition` rend toujours `attachment; filename=…; filename*=UTF-8''…`
   (`crates/kesh-api/src/routes/imported_supplier_invoices.rs:768-784`) ; 38-10 AC-3 la rend partagée et force
   `application/pdf` et `nosniff` au téléchargement d'une pièce de compte.
+- **Restauration** : un nom de pièce de sauvegarde est contrôlé par `NOM_DE_PIECE` (`^[0-9a-f]{64}\.[a-z0-9]{1,8}$`) et
+  `is_safe_storage_path` (`crates/kesh-api/src/admin_backup/export.rs:177-185`) : `{sha256}.csv` passe, sans changement
+  (AC-5) ; aucun filtre d'extension à `pdf` n'existe côté export ni import.
 - **Encodage** : `kesh_import::csv::detect_encoding` (`crates/kesh-import/src/csv/encoding.rs:48-100`) rend `Utf8`
   **sans valider le reste du fichier** quand il porte un BOM UTF-8 (`:58-63`), et admet `Iso8859_1` par `chardetng`
   (`:83-90`) : il ne garantit pas un UTF-8 valide et n'est pas réutilisé ici (contrôle direct, AC-1).
@@ -69,8 +72,9 @@ que la pièce soit gardée et sauvegardée dans son format d'origine.
 
 ## Choix
 
-- **C-40-5-1 — Le type se décide au contenu, puis à l'annonce.** (1) commence par `%PDF-` → PDF (38-10 inchangé) ;
-  (2) sinon, **annoncé CSV** — nom d'origine terminé par `.csv` (casse ignorée) **ou** type de la partie `text/csv`,
+- **C-40-5-1 — Le type se décide au contenu, puis à l'annonce.** (0) fichier **vide** → refus de 38-10, inchangé, **avant**
+  toute lecture de l'annonce (un `.csv` vide n'est donc jamais `no_header`) ; (1) commence par `%PDF-` → PDF (38-10
+  inchangé) ; (2) sinon, **annoncé CSV** — nom d'origine terminé par `.csv` (casse ignorée) **ou** type de la partie `text/csv`,
   `application/csv` ou `application/vnd.ms-excel` (type qu'envoie un navigateur sous Windows) — → contrôle CSV ; (3)
   sinon → `400 BANK_DOCUMENT_NOT_PDF`. Un CSV n'a pas de signature : l'annonce choisit le contrôle, le contenu le tranche.
 - **C-40-5-2 — Contrôle CSV, sans interprétation** : BOM UTF-8 (`EF BB BF`) retiré pour le contrôle seul (le fichier est
@@ -99,7 +103,10 @@ que la pièce soit gardée et sauvegardée dans son format d'origine.
    fixture **synthétique**, aucune donnée réelle) admis avec et sans BOM, fin de ligne `\r\n` ; Latin-1 (`é` en `0xE9`)
    → `not_utf8` ; BOM UTF-16 → `not_utf8` ; octet nul → `binary` ; première ligne sans séparateur ou de 4 097 octets →
    `no_header` ; fichier `.csv` commençant par `%PDF-` → PDF ; fichier `.txt` annoncé `text/plain` → `NOT_PDF` ;
-   `application/vnd.ms-excel` + `.csv` → CSV. Tests de route : CSV joint → `201`, `kind: "provider_report"`,
+   `application/vnd.ms-excel` + `.csv` → CSV ; nom `.CSV` (majuscules) → CSV ; type `text/csv` **seul** (nom sans extension)
+  → CSV ; type `application/vnd.ms-excel` seul → CSV ; nom sans extension et type `application/octet-stream` → `NOT_PDF` ;
+  fichier vide nommé `.csv` → refus de 38-10 (pas `no_header`) ; en-tête d'une seule colonne (sans séparateur) →
+  `no_header` (limite assumée, dite au manuel). Tests de route : CSV joint → `201`, `kind: "provider_report"`,
    `mimeType: "text/csv"` ; doublon du même CSV → `409 BANK_DOCUMENT_DUPLICATE` (38-10) ; même CSV sur deux comptes →
    admis ; les tests de 38-10 passent **sans retouche** de leurs attentes. `mime_for_ext("csv") == "text/csv"` (test
    `:421-426` étendu) ; l'inbox refuse toujours un `.csv` (`ALLOWED_EXT` inchangé ; test existant cité au Change Log, ou ajouté s'il n'y en a
@@ -188,3 +195,10 @@ que la pièce soit gardée et sauvegardée dans son format d'origine.
   annoncé CSV, genre déduit du type, CSV admis sur tout compte. Relu au code : `document_storage.rs:54-131`, `:421-426`,
   `inbox_import.rs:98`, `:576`, `:733`, `:897-905`, `imported_supplier_invoices.rs:733-784`,
   `kesh-import/src/csv/encoding.rs:48-100` ; fiche 38-10 (AC-1 à AC-9, C-38-10-*).
+- 2026-11-15 — validation P1 (Sonnet) : 0 CRITICAL, 0 HIGH, 2 MEDIUM, 2 LOW ; remédiés dans la fiche, aucun
+  inter-fiches. MEDIUM : P1-1 fichier vide annoncé CSV, ordre des contrôles non fixé (C-40-5-1 étape 0 ajoutée) ; P1-2
+  annonce par le seul type de partie ou par un nom en majuscules sans test (AC-1 étendu). LOW : P1-3 compatibilité de la
+  restauration avec une pièce `.csv` non vérifiée (relu : `export.rs:177-185`, ajouté aux prémisses) ; P1-4 en-tête à une
+  seule colonne refusé, limite non dite (test et manuel). Prémisses relues et justes : `document_storage.rs:54-131`,
+  `:421-426`, `inbox_import.rs:98`, `imported_supplier_invoices.rs:768-784`, `encoding.rs:48-100`, 38-10 AC-2/AC-3/AC-7,
+  40-4 AC-4.

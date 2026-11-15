@@ -78,7 +78,8 @@ plutôt qu'en vente, afin que les règles et les propositions travaillent sur de
 
 1. **AC-1 — Contrat (C-40-4, patron 38-8 AC-1).** `kesh_providers::stripe::classify::classify_window(records:
    &[StripeRecord], ctx: &ClassifyCtx) -> Classified { movements, skipped, sums }` (types de 38-8/38-3b) ; `ClassifyCtx {
-   overrides: BTreeMap<String, OverrideKind>, invoice_ref_source: InvoiceRefSource, origins: BTreeMap<String, String> }`
+   overrides: BTreeMap<String, OverrideKind>, invoice_ref_source: InvoiceRefSource (`enum { Description, Metadata(String) }`, défini ici dans `stripe::classify` et
+   tiré du réglage déjà validé de 40-1 AC-2), origins: BTreeMap<String, String> }`
    (`origins` : identifiant de charge → `id` de sa transaction de solde, rempli par AC-5) — rien d'autre : ni horloge, ni
    base, ni réseau, ni `tracing` hors `warn!` de troncature (NFR-40-2-1). Appelée **une fois par fenêtre** par
    `StripeConnector::movements` (40-1 AC-7), qui remplace le classement provisoire de 40-1. Ordre de sortie : celui des
@@ -100,13 +101,13 @@ plutôt qu'en vente, afin que les règles et les propositions travaillent sur de
    | `adjustment` (`dispute`) | `DISPUTE` | `dispute` | `dispute` | lien à la charge |
    | `adjustment` (`dispute_reversal`) | `DISPUTE_REV` | `dispute` | `dispute` | lien à la charge |
    | `adjustment` (autre ou absente) | `ADJUSTMENT` | `other` | `unknown_event` | — |
-   | `payout` | `PAYOUT` | `withdrawal` si `amount < 0`, sinon `other` | — ; `unknown_event` sinon | `value_date` (ci-dessous) |
+   | `payout` | `PAYOUT` | `withdrawal` si `amount < 0`, sinon `other` | — ; `other` sinon | `value_date` (ci-dessous) |
    | `payout_cancel` | `PAYOUT_CANCEL` | `other` | `unknown_event` | lien au versement (AC-5, G11) |
    | `payout_failure` | `PAYOUT_FAIL` | `other` | `unknown_event` | lien au versement (AC-5, G11) |
    | `stripe_fee` | `STRIPE_FEE` | `fee` | — | montants de genre `fee` (AC-3) |
    | `stripe_fx_fee` | `FX_FEE` | `fee` | — | idem |
    | `tax_fee` | `TAX_FEE` | `fee` | — | idem |
-   | `topup` | `TOPUP` | `deposit` si `amount > 0`, sinon `other` | — ; `unknown_event` sinon | — |
+   | `topup` | `TOPUP` | `deposit` si `amount > 0`, sinon `other` | — ; `other` sinon | — |
    | `topup_reversal` | `TOPUP_REV` | `other` | `unknown_event` | lien au dépôt (AC-5) |
    | `refund_failure` | `REFUND_FAIL` | `other` | `unknown_event` | lien au remboursement (AC-5) |
    | `payment_failure_refund` | `PAY_FAIL_REFUND` | `other` | `unknown_event` | — |
@@ -120,7 +121,7 @@ plutôt qu'en vente, afin que les règles et les propositions travaillent sur de
      futur est inconnu. ⛔ **Aucun type hors des deux premières lignes ne devient une vente**, ni par défaut ni par surcharge
      non admise (AC-6).
    - **`value_date` d'un versement** (`withdrawal`, FR-40-2-7, G10) : `source.payout.arrival_date` (date UTC, 40-1 AC-6) ;
-     source absente ou non `payout` → genre `other`, `unknown_event` (un versement sans date d'arrivée ne se propose pas).
+     source absente ou non `payout` → genre `other`, `review_reason` `other` (Écart 4 : forme incohérente) (un versement sans date d'arrivée ne se propose pas).
      Tous les autres genres : `value_date = None`. Un versement à `amount > 0` (débit du compte bancaire par Stripe pour un
      solde négatif, forme à constater, Q-40-2-1) va à la file par la ligne ci-dessus.
    - `dispute` et `other` n'ont **aucune proposition** (38-6a C-38-6a-11, 38-6b C-38-6b-4 : la file).
@@ -139,9 +140,9 @@ plutôt qu'en vente, afin que les règles et les propositions travaillent sur de
 4. **AC-4 — Champs (G6, G14, FR-40-2-3, FR-40-2-4).**
    - `provider_tx_id = id` (`txn_…`, jamais tronqué) ; `booked_at = created` (UTC ; la date comptable est de 38-3b) ;
      `event_code` de l'AC-2 ; `reference = source.id` (`ch_`, `py_`, `re_`, `po_`, `du_`, `dp_`, …) ou `NULL`.
-   - **Vente** (`charge`, `payment`, source `charge`) : `counterparty_email = billing_details.email`, sinon
-     `receipt_email`, sinon `NULL` (tel quel, la normalisation est celle de la règle, 38-4) ; `counterparty_name =
-     billing_details.name` ; **`invoice_ref`** selon `invoice_ref_source` : `description` → `source.description` ;
+   - **Vente** (`charge`, `payment`, source `charge`) : `counterparty_email = source.billing_email` (champ de
+     `StripeSource`, 40-1 AC-6), sinon `source.receipt_email`, sinon `NULL` (tel quel, la normalisation est celle de la
+     règle, 38-4) ; `counterparty_name = source.billing_name` ; **`invoice_ref`** selon `invoice_ref_source` : `description` → `source.description` ;
      `metadata:<clé>` → `source.metadata[<clé>]` ; absente ou vide → `NULL`, **jamais de repli** sur l'autre source
      (G14) ; > 127 caractères → tronquée à 127 (frontière de caractère, `tracing::warn!` sans la valeur, patron 38-8 AC-4).
      Autres genres : contrepartie et `invoice_ref` `NULL`.
@@ -160,8 +161,9 @@ plutôt qu'en vente, afin que les règles et les propositions travaillent sur de
      s'il diffère de `id`.
    - **Résolution des origines hors fenêtre** (`stripe::origins`, appelé par `StripeConnector::movements` **avant**
      `classify_window`, I/O hors du classement, Écart 1) : pour chaque charge citée par un remboursement ou un litige et
-     absente des sources de la fenêtre, `GET {base}/v1/balance_transactions?source=<charge>&limit=10` (en-têtes de 40-1
-     AC-1, validation des enregistrements de 40-1 AC-6 hors la règle `created` dans la fenêtre) ; exactement une transaction
+     absente des sources de la fenêtre, `GET {base}/v1/balance_transactions?source=<charge>&limit=10&expand[]=data.source` (en-têtes de 40-1
+     AC-1 ; **l'expansion est requise** : sans elle `source` est une chaîne et la règle `"record.source"` de 40-1 AC-6
+     rejetterait la lecture ; validation des enregistrements de 40-1 AC-6 hors la règle `created` dans la fenêtre) ; exactement une transaction
      de type `charge` ou `payment` → `origins[charge] = id` ; aucune ou plusieurs → rien ; **au plus 50 lectures par
      fenêtre** (au-delà : rien, `tracing::warn!` du nombre) ; 404 → rien ; toute autre erreur → l'erreur du connecteur,
      la fenêtre échoue (relue au passage suivant, 38-3b). Test : remboursement d'une charge d'une fenêtre antérieure →
@@ -192,6 +194,8 @@ plutôt qu'en vente, afin que les règles et les propositions travaillent sur de
    - **Somme** (NFR-40-2-3) : sur la fixture de test, Σ `net` des mouvements (aucun écarté dans cette fixture,
      toutes `balance_type: payments`) = `available + pending` du `balance.json` par devise (USD 398.61, EUR 77.15, CHF 48.07 — le compte de
      test a commencé à zéro) ; sur deux lectures de solde encadrant une fenêtre (fixtures de 40-0), Σ nets = variation.
+   - **`value_date`** (FR-40-2-7) : versement `arrival_date` → date UTC lue ; source absente ou non `payout` → `other` ;
+     tout autre genre → `None`.
    - **Montants** : vente, remboursement à frais rendus (`+0.49`), litige à frais (`−20.00`), frais seul, frais à `fee ≠ 0`,
      net de signe contraire, `|fee| > |gross|`, devise à zéro décimale (`JPY 500` → `500`).
    - **Champs** : chaque `invoiceRefSource`, clé vide, 300 caractères (→ 127), courriel de `receipt_email` seul.
@@ -257,6 +261,12 @@ plutôt qu'en vente, afin que les règles et les propositions travaillent sur de
 ### File List
 
 ## Change Log
+
+- 2026-11-15 — validation P1 (Sonnet) : 0 CRITICAL, 0 HIGH, 2 MEDIUM, 3 LOW ; remédiés dans la fiche (aucun
+  inter-fiches). P1-1 MEDIUM AC-5, lecture d'origine sans `expand` rejetée par la règle `record.source` de 40-1 ; P1-2
+  MEDIUM AC-2, `review_reason` de `payout`/`topup` incohérents (`unknown_event`) contre l'Écart 4 (`other`) ; P1-3 LOW
+  AC-4, `billing_details.*` au lieu des champs `billing_email`/`billing_name` de `StripeSource` ; P1-4 LOW AC-1, type
+  `InvoiceRefSource` non défini ; P1-5 LOW AC-7, aucun test de `value_date` (FR-40-2-7).
 
 - 2026-11-15 — rédaction (Opus). 8 AC ; 7 FR (dont 1 ajoutée), 3 NFR ; aucune migration ; quatre écarts à l'epic
   (origine hors fenêtre par le filtre `source` au lieu de l'expansion, `OTHER` non surchargeable, `value_date` posée au

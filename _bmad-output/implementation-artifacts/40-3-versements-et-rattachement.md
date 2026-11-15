@@ -91,13 +91,16 @@ soit juste et que rien ne soit compté deux fois ni écrit sans moi.
    - **Créance au 31 décembre** (G10, G12) : test — versement CHF −500.00 sorti le 31.12.2026 à 15 h (Zurich), arrivée
      le 4.1.2027, exercices 2026 et 2027 ouverts : écriture `D 1020 / C 1101` datée du **4.1.2027** ; solde de 1101 au
      31.12.2026 = 500.00 de plus qu'au lendemain de l'arrivée ; même versement, exercice 2027 absent → `failed[]`
-     `RECONCILIATION_FISCAL_YEAR_CLOSED` (ou le code existant de 38-6a AC-8 (9) pour un exercice introuvable), rien
-     d'écrit.
+     `RECONCILIATION_FISCAL_YEAR_CLOSED` (code de 38-6a AC-8 (9), posé aux sites d'acceptation,
+     `routes/reconciliation.rs:3771`, `:4207` ; le test fige ce code, aucune alternative), rien d'écrit.
    - Audit : `reconciliation.accepted` existant (`type: provider`, `movement_kind: withdrawal`) ; aucun champ neuf.
 3. **AC-3 — Suggestion du compte de l'autre côté (C-40-5, C-38-6b-3 amendé).** La lecture qui suggère
    `transferBankAccountId` (38-6b AC-1, une requête par page) part de **`payment_date`** de la transaction du
-   prestataire, calculée en SQL `COALESCE(value_date, booking_date)` dans **une** expression nommée du module (ou liée en
-   paramètre, patron de `reconciliation_link.rs:626`) : retrait → transactions candidates datées de `d` à `d + 5 jours`,
+   prestataire, calculée en SQL `COALESCE(value_date, booking_date)` dans **une** expression nommée du module (la lecture
+   porte sur une page de transactions : la date ne peut pas être liée en paramètre comme le fait `reconciliation_link.rs:626`,
+   dont le commentaire interdit au contraire de réécrire ce `COALESCE` — c'est donc la **première** copie SQL de
+   `payment_date`, et un test de concordance la tient : sur les cas `value_date` nulle et posée, l'expression SQL rend la
+   même date que `payment_date`, `repositories/reconciliation.rs:277`) : retrait → transactions candidates datées de `d` à `d + 5 jours`,
    dépôt → de `d − 5` à `d` ; autres conditions inchangées (un seul compte non archivé, non clos, lié au grand livre,
    transaction `pending` de montant opposé, même devise). PayPal (`value_date NULL`) : `d = booking_date`, inchangé.
    Tests : versement sorti le J, arrivée J + 3, ligne UBS à J + 3 → suggérée ; à J + 9 → non suggérée
@@ -110,7 +113,8 @@ soit juste et que rien ne soit compté deux fois ni écrit sans moi.
      lignes datées J + 2 ; `POST /api/v1/reconciliation/accept` → `200 { accepted: [1], failed: [] }`, une écriture
      `D 1020 500.00 / C 1101 500.00` du J + 2, transaction Stripe `reconciled` ; puis `GET …/transactions/<UBS>/entry-
      candidates` liste cette écriture (`matchedElsewhereCount = 1`) et `POST …/link-entry` (`crates/kesh-api/src/lib.rs:931`) la rattache : **une**
-     écriture, **deux** transactions rapprochées, solde de 1101 revenu à son niveau d'avant la vente-versement.
+     écriture, **deux** transactions rapprochées (Stripe et UBS), 1020 augmenté et 1101 diminué de 500.00 une seule
+     fois (aucun doublon d'écriture).
    - Voie (a), ordre inverse : la ligne UBS passée d'abord par écriture manuelle `D 1020 / C 1101` (34-3) ; la proposition
      Stripe porte `linkJournalEntryId` ; l'acceptation rattache sans écriture.
    - Aucune acceptation sans geste : `GET …/proposals` n'écrit rien (compteur d'écritures inchangé), *un appariement
@@ -124,13 +128,19 @@ soit juste et que rien ne soit compté deux fois ni écrit sans moi.
    compte prestataire, daté dans la fenêtre `[d − 5, d]` du dépôt.
 6. **AC-6 — Versements de 2024 rattachés en lot (FR-40-3-5, B17, 38-6c1).** Les versements Stripe de 2024 passés par
    l'API (écritures `D 1020 / C 1101` existantes, datées par Beat — date de sortie ou d'arrivée, Q-40-4) : la proposition
-   d'un versement téléchargé porte `alreadyBooked` (34-4) et, quand une écriture univoque existe, `linkJournalEntryId`
-   (voie a) ; le lot `POST /api/v1/reconciliation/link-entries` de 38-6c1 (corps `{ bankAccountId, items:
-   [{ bankTransactionId, journalEntryId, version }] }`, *Pattern batch* : `{ accepted, failed }`, `FailedProposal` par
-   élément, codes de C-38-14) rattache plusieurs versements d'un coup. Test : trois versements 2024 téléchargés, trois
-   écritures existantes dont l'une datée de la sortie et deux de l'arrivée → les trois rattachés, aucune écriture créée ;
-   un quatrième sans écriture → `failed[]` `ENTRY_NOT_LINKABLE` pour un `journalEntryId` faux, les autres acceptés ;
-   écriture déjà rattachée à un autre versement → `ENTRY_ALREADY_LINKED`.
+   d'un versement téléchargé porte `alreadyBooked` (34-4, `entryCount ≥ 1`) ; **ce n'est pas la voie (a)** de C-38-6b-3 : celle-ci
+   exige `matchedElsewhereCount = entryCount = 1` (côté banque déjà rapproché), ce que des écritures de 2024 passées par
+   l'API, non rapprochées, ne remplissent pas — la proposition n'y porte donc pas `linkJournalEntryId`. Le rattachement
+   des versements 2024 passe par **`GET /api/v1/reconciliation/link-suggestions`** (38-6c1 AC-4 : genre `unique` ou
+   `ambiguous`, `version` par élément), puis le lot `POST /api/v1/reconciliation/link-entries` de 38-6c1 (corps
+   `{ bankAccountId, items: [{ bankTransactionId, journalEntryId, version }] }`, *Pattern batch* : `{ accepted, failed }`,
+   `FailedProposal` par élément, codes de C-38-14) qui rattache plusieurs versements d'un coup. Test : trois versements
+   2024 téléchargés, trois écritures existantes dont l'une datée de la sortie et deux de l'arrivée → les suggestions les
+   rendent `unique`, le lot les rattache tous, aucune écriture créée ; un lot qui porte pour l'un des trois un
+   `journalEntryId` inexistant → ce seul élément en `failed[]` `ENTRY_NOT_LINKABLE`, les deux autres acceptés ;
+   écriture déjà rattachée à un autre versement → `ENTRY_ALREADY_LINKED`. **Garde contre le doublon** : accepter en
+   `provider` (voie b) un versement 2024 dont `alreadyBooked` est non nul, sans `confirmAlreadyBooked`, →
+   `failed[]` `TRANSACTION_ALREADY_BOOKED`, rien d'écrit (38-6a AC-8 (8)).
 7. **AC-7 — Versement échoué ou annulé (FR-40-3-4, G11).** Une transaction `payout_failure` / `payout_cancel` classée
    `other` / `unknown_event` avec `related_provider_tx_id` = le versement d'origine (40-2 AC-5) :
    - elle est à la file (`GET /api/v1/reconciliation/review`, 38-6b AC-6 : `reason: "unknown_event"`,
@@ -159,7 +169,7 @@ soit juste et que rien ne soit compté deux fois ni écrit sans moi.
 
 ## Tâches
 
-- [ ] T0 — Prérequis : 38-6a, 38-6b, 38-6c1 et 40-2 fusionnées ; sinon arrêt.
+- [ ] T0 — Prérequis : 38-3b, 38-6a, 38-6b, 38-6c1, 40-1 et 40-2 fusionnées ; sinon arrêt.
 - [ ] T1 — Passage : `value_date` dans la correspondance et dans l'empreinte (si posée) ; tests (AC-1).
 - [ ] T2 — Voie (b) datée par `payment_date`, passée au constructeur ; tests de date, d'exercice, de cours (AC-2).
 - [ ] T3 — Suggestion à partir de `COALESCE(value_date, booking_date)` ; tests de fenêtre (AC-3).
@@ -177,7 +187,8 @@ soit juste et que rien ne soit compté deux fois ni écrit sans moi.
 - **`arrival_date` est une prévision** (doc : « *Date that you can expect the payout to arrive* ») : la ligne UBS peut
   arriver un autre jour ; seule la suggestion en dépend (AC-3), jamais le rattachement.
 - **Une seule date de paiement** : ne pas écrire un second `COALESCE` dans le constructeur ou la route ; la règle vit dans
-  `payment_date` (Rust) et dans une seule expression SQL (AC-3), précédent du commentaire de `reconciliation_link.rs:626`.
+  `payment_date` (Rust) et dans une seule expression SQL (AC-3, gardée par un test de concordance ; le commentaire de
+  `reconciliation_link.rs:626` n'en est pas le précédent : il interdit la réécriture, la date y étant liée en paramètre).
 - **Débit du compte bancaire par Stripe** (solde négatif) : à la file par 40-2 (Q-40-2-1), hors de cette story.
 - **Points de contact** : 38-6b C-38-6b-3, AC-1, AC-4, AC-6, AC-9 ; 38-6a C-38-6a-10, AC-8 ; 38-6c1 AC-4, AC-5, AC-11 ;
   34-11b (second côté) ; 40-4 (versements en route : `booked_at < as_of ≤ value_date`) ; 40-6 (écrans, manuel).
@@ -208,3 +219,14 @@ soit juste et que rien ne soit compté deux fois ni écrit sans moi.
 
 - 2026-11-15 — rédaction (Opus). 9 AC ; 5 FR (dont 1 ajoutée), 3 NFR ; aucune migration ; trois écarts à l'epic (date de
   l'écriture déjà dans le socle, `relatedBankTransactionId` additif de la file, `value_date` posée par 40-2).
+- 2026-11-15 — validation P1 (Sonnet) : 0 CRITICAL, 0 HIGH, 2 MEDIUM, 3 LOW ; remédiés dans la fiche, aucun inter-fiches.
+  MEDIUM 40-3-P1-1 (AC-6) : la proposition ne porte pas `linkJournalEntryId` pour des écritures 2024 non rapprochées
+  (C-38-6b-3 a exige `matchedElsewhereCount = entryCount = 1`) → rattachement par `link-suggestions` puis `link-entries`
+  (38-6c1 AC-4, AC-5), garde `TRANSACTION_ALREADY_BOOKED` contre le doublon, test du « quatrième versement » réécrit.
+  MEDIUM 40-3-P1-2 (AC-3, Dev Notes) : `reconciliation_link.rs:626` cité en précédent d'un `COALESCE` SQL alors qu'il
+  l'interdit → première copie assumée, test de concordance avec `payment_date`. LOW : code d'exercice absent figé (AC-2) ;
+  formulation « solde de 1101 revenu… » (AC-4) ; T0 sans 38-3b ni 40-1. Lignes lues et justes : `reconciliation.rs:277`,
+  `routes/reconciliation.rs:3748, 4198, 5084, 5566`, `bank_imports.sql:61`, `bank_transaction.rs:87`, `bank_imports.rs:152-161`,
+  `lib.rs:931`, `api-external.md:704`. Axes exercés : prémisses, contradictions B*/G*/C-40-*/38-*/40-2, sites non
+  résolus (migration, sauvegarde, audit, RBAC, i18n, MCP, manuels), comptabilité, sécurité, exigences, tests, taille.
+  Non exercés : réponses Stripe réelles (aucune d'échec de versement), exécution de code.

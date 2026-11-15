@@ -144,8 +144,11 @@ je lise le solde de 1101–1103 pour ce qu'il est : une créance (B13).
    `LINKED_TRANSACTIONS_OF`), la limite « une transaction `reconciled` à `matched_entry_id` nul (écriture supprimée) ne
    compte nulle part ». Tests d'intégration (`#[sqlx::test]` sur le squash), compte prestataire USD lié à un compte du
    plan USD (1103), versement de 300.00 : (a) sorti à `booked_at` = `as_of` exact, rapproché d'une écriture datée D + 1
-   → `in_transit_payouts = −300.00` ; (b) même versement, `booked_at` = `as_of` + 1 ms → rien ; (c) écriture datée D
-   → rien (au grand livre à D) ; (d) écriture datée D + 1, transaction `pending` → rien (elle est à `unreconciled`) ;
+   → `in_transit_payouts = −300.00` (borne `≤` du prédicat de 38-9a ; l'instantané `reported` s'arrête, lui, à
+   `booked_at < as_of` — Q-40-4-2 : ce test se retourne avec 38-9a si elle passe à `<`) ; (b) même versement, `booked_at` = `as_of` + 1 ms → rien ; (c) écriture datée D
+   → rien (au grand livre à D) ; (d) versement **non rapproché** (`pending`, `matched_entry_id` nul : une transaction `pending`
+   ne pointe jamais d'écriture) → rien dans `date_shifts`, et son montant est dans `unreconciled` du contrôle (b) (test de
+   route, AC-2 : aucun double compte) ;
    (e) rattaché en voie (a) à une écriture datée D − 2 (avant la sortie) avec `booking_date` = D → rien ; (f) vente
    rapprochée d'une écriture datée D + 1 → `other = +115.80`, `in_transit_payouts` nul ; (g) transaction comptée après
    la coupe, écriture datée ≤ D → `other` négatif ; (h) membre de groupe (38-6c2) daté D + 1 → compté ; (i) compte CHF,
@@ -177,13 +180,17 @@ je lise le solde de 1101–1103 pour ce qu'il est : une créance (B13).
    absents. Type TS `fiscal-years.types.ts` gagne les deux champs facultatifs (affichage : 40-6).
 5. **AC-5 — `available` et `pending` à « Tester » (FR-40-4-2 ; Écart 2).** `kesh_providers::ProviderBalance` (38-3b
    AC-2) gagne `parts: Option<BalanceParts { available: Decimal, pending: Decimal }>` (additif ; `None` pour PayPal, le
-   factice et tout solde à une date passée) ; `StripeConnector::balances(None)` (40-1) le pose par devise, avec le
-   contrôle `available + pending == amount` (sinon `InvalidResponse { reason: "balance_parts" }`). La route `POST
+   factice et tout solde à une date passée) ; `StripeConnector::balances(None)` (40-1) le pose par devise, avec
+   `amount` **dérivé** de ces deux parties (40-1 AC-6 : `amount = available + pending`, absente d'un tableau = 0) — une
+   seule source, donc aucun contrôle croisé ni motif `balance_parts` (il serait tautologique) ; une partie qui n'est pas
+   un entier de la devise → `InvalidResponse` par la lecture de montants de 40-1. La route `POST
    …/provider-connections/{id}/test` (38-7 AC-8 : `balances: [{ currency, total }]`) rend en plus `available` et
    `pending` (chaînes décimales) **quand présents**, absents sinon (réponse PayPal inchangée, G18). Le passage (38-3b)
    n'en écrit rien. Si 40-1 a déjà posé ce champ, rien n'est à refaire : le dire au Change Log. Tests : fixture
-   `balance.json` anonymisée (40-1, G16) → USD `available 369.89`, `pending 28.72`, total `398.61` ; parties
-   incohérentes → `InvalidResponse` ; PayPal → clés exactes de 38-7.
+   `balance.json` anonymisée (40-1, G16) → USD `available 369.89`, `pending 28.72`, total `398.61` (`amount =
+   available + pending`, relu sur la fixture) ; devise présente dans un seul des deux tableaux → l'autre partie vaut
+   `0.00` ; PayPal et le factice → `parts: None`, clés exactes de 38-7 ; tous les sites qui construisent un
+   `ProviderBalance` (PayPal, `FakeConnector`, tests) gagnent `parts: None`, relevés par `grep -rn "ProviderBalance {"`.
 6. **AC-6 — Recensement des lecteurs « liquidité » (FR-40-4-3 ; G1).** Tableau tenu au doc de la fonction de C-40-4-3 et
    recopié au Change Log, relevé par `grep -rn "currentBalance\|current_balance\|ledgerTotal\|bank_accounts::list"
    crates/*/src frontend/src` et `grep -rnE "trésorerie|liquidit|LIKE '10" crates/*/src frontend/src` (relancés au
@@ -195,6 +202,7 @@ je lise le solde de 1101–1103 pour ce qu'il est : une créance (B13).
    | Rendement par projet (`project_report.rs:458`) | non concerné : règle par numéro (1101 compté « investi » comme 1100) ; constat noté au Change Log pour l'issue de C-40-7 si la revue le juge défaut |
    | Liste des comptes bancaires (`bank-accounts/+page.svelte:407`, `:981`) | non concerné : soldes par compte, aucun total |
    | Règlement d'une facture (`SettleInvoiceDialog.svelte:113-114`) | admis : une créance Stripe éteint une créance client |
+   | Sélecteurs de comptes (`GET /companies/current`, `companies.rs:457` ; export CSV, `exports/global.rs:322`) | non concernés : listes de comptes, aucun total |
    | Lot de paiement pain.001 | déjà exclu (`PAYMENT_BATCH_ACCOUNT_IS_PROVIDER`, 38-2 AC-7) |
    | K3 `BANK_STATEMENT_AT_YEAR_END` | inchangé : un compte Stripe sans CAMT y est `NO_BALANCE_STATEMENT` ; K9 le contrôle |
    | Bilan, balance, grand livre | non concernés : classe du plan (1101 = actif circulant, créance) |
@@ -211,7 +219,9 @@ je lise le solde de 1101–1103 pour ce qu'il est : une créance (B13).
    `homepage-bank-total-excludes-receivables` aux **quatre** locales (`crates/kesh-i18n/locales/{fr,de,it,en}-CH/messages.ftl`),
    écrites en toutes lettres (`i18n-keys.test.ts`). Vitest (`homepage.test.ts`, `HomepageCards.test.ts`) : compte
    Stripe exclu du total et montré à part ; compte PayPal compté ; compte ordinaire inchangé ; `balanceNature` inconnu
-   compté ; compte du grand livre partagé inchangé. Test Rust du bloc : `stripe` → `receivable`, `paypal` →
+   compté ; compte du grand livre partagé inchangé ; **société dont tous les comptes liés sont des créances** : total `0` non
+   affiché comme un solde de liquidités (`any` ne compte pas les créances ; la tuile dit « aucune liquidité » ou n'affiche
+   que le bloc des créances, au choix du développement, écrit au Change Log). Test Rust du bloc : `stripe` → `receivable`, `paypal` →
    `liquidity`, compte ordinaire → bloc absent (JSON inchangé).
 8. **AC-8 — Ce que la story n'écrit pas (NFR-40-4-2).** Aucune écriture comptable (contrôle, et clôture : le solde de
    1101–1103 au 31.12 **est** la créance, `fiscal_years::close` inchangé — test de caractérisation existant
@@ -278,3 +288,16 @@ je lise le solde de 1101–1103 pour ce qu'il est : une créance (B13).
   `bank_accounts.rs:1761-2025`, `closing_checks.rs:1-66`, `:550`, `:714`, `homepage.ts:1-65`,
   `BankAccountsCard.svelte:1-116`, `homepage_summary.rs:252-334`, `project_report.rs:392`, `:440-470`,
   `SettleInvoiceDialog.svelte:113-114`, `user-manual.tex:318-356`, `messages.ftl:1679-1693`.
+- 2026-11-15 — validation P1 (Sonnet) : 0 CRITICAL, 0 HIGH, 1 MEDIUM, 4 LOW ; remédiés dans la fiche, un inter-fiches
+  (38-9a, ci-dessous). MEDIUM 40-4-P1-1 (AC-5) : le contrôle `available + pending == amount` / `InvalidResponse
+  balance_parts` est tautologique, 40-1 AC-6 calculant `amount` comme cette somme → retiré, test remplacé. LOW :
+  AC-1 (d), cas « `pending` + écriture datée D + 1 » impossible (une transaction `pending` n'a pas d'écriture) →
+  réécrit en non rapproché ; AC-1 (a) pointe Q-40-4-2 (borne `≤` contre `<`) ; AC-6, deux lecteurs de la liste des
+  comptes absents du tableau (`companies.rs:457`, `exports/global.rs:322`, non concernés) ; AC-7, cas d'une société sans
+  autre compte que Stripe. Identité de signe, formule de `unexplained`, `plus`/`minus` et exemple K9 (`gap = +300.00`,
+  `inTransitPayouts = −300.00`) recalculés à la main : justes. `BALANCES_SQL` (`bank_accounts.rs:1867-1928`),
+  `closing_checks.rs:51-60, 550, 714`, `homepage.ts:33-50`, `BankAccountsCard.svelte:16-19`, `project_report.rs:458`,
+  `bank_imports.sql:70-84` relus et justes. **Inter-fiches (38-9a AC-8 b)** — texte proposé : « `unreconciled` = Σ
+  `amount` des transactions `pending` dont `booked_at < asOf` (borne exclue, comme `reported`, 38-3b AC-7) », ce qui
+  clôt Q-40-4-2. Axes exercés : prémisses, contradictions, sites non résolus, comptabilité (signes), sécurité, exigences,
+  tests, taille (cinq modules). Non exercés : exécution du SQL, rendu visuel de la tuile.

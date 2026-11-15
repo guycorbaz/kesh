@@ -174,6 +174,10 @@ paginée sans perte, à version d'API fixe et sans fuite de la clé.
      - passage (38-3b) : la fabrique compare avant tout appel ; différence → le connecteur rend `InvalidResponse {
        reason: "livemode" }` sans appel réseau (passage `failed`, `error_code = invalid_response`, `error_detail =
        "livemode"`, `lastError = PROVIDER_RESPONSE_INVALID`).
+     - **connexion jamais testée** (`livemode` à `None` : 38-3b n'exige pas de « Tester » préalable pour qu'un passage
+       tourne) : le passage **pose** `livemode` (mode de la clé) dans la transaction qui écrit sa première page, version
+       + 1 — sans quoi la garde ne couvrirait que les connexions testées avant leur premier téléchargement ; test : passage
+       sans « Tester », puis clé de l'autre mode → refus sans appel.
      Changer de mode après un téléchargement demande une **connexion neuve** (dit au manuel par 40-6).
    - `PROVIDER_MODE_CHANGED` : chaîne constante de `errorCode`/`lastError` (non une `AppError`, comme les codes de 38-7
      AC-7), message `provider-error-*` aux quatre locales.
@@ -213,11 +217,15 @@ paginée sans perte, à version d'API fixe et sans fuite de la clé.
    - fenêtre refusée **avant tout appel** si `to − from > max_window()` ou `from ≥ to` → `InvalidWindow` ; `page ≥ 2` →
      `InvalidWindow` ;
    - lit **toutes** les pages : `starting_after` = `id` du **dernier** élément de la page précédente, jusqu'à `has_more =
-     false` ; `has_more: true` avec `data` vide, un `id` déjà vu, ou un `created` croissant d'un élément au suivant (la liste
-     est décroissante) → `InvalidResponse { reason: "pagination" }` ; rien n'est rendu tant que la fenêtre n'est pas lue ;
+     false` ; `has_more: true` avec `data` vide, un `id` déjà vu, ou un `created` **supérieur** à celui de l'élément précédent, d'une
+     page à l'autre comprise (la liste est décroissante ; l'égalité est admise : plusieurs transactions par seconde) → `InvalidResponse { reason: "pagination" }` ; rien n'est rendu tant que la fenêtre n'est pas lue ;
    - au-delà de **100 requêtes** ou de `max_movements_per_page()` = **10 000** enregistrements → la fenêtre se coupe en deux
      moitiés `[from, mid)`, `[mid, to)` relues récursivement (patron 38-7 AC-5) ; sous **une heure** →
      `WindowTooLarge { total_items: None }` ; aucune transaction lue deux fois ni perdue (test à la frontière exacte) ;
+     **plafond global** de **1 000 requêtes** par appel de `movements` (toutes sous-fenêtres comprises, relectures du
+     découpage comprises), au-delà `WindowTooLarge { total_items: None }` — sans lui, une réponse hostile (`has_more` vrai
+     partout) multiplierait les 100 requêtes par le nombre de sous-fenêtres (jusqu'à 744 d'une heure) ; test au serveur
+     local ;
    - enregistrements reclassés en ordre **croissant** `(created, id)`, puis remis au classement : en 40-1,
      `classify_window` provisoire (Écart 4) qui rend chaque enregistrement en `ProviderMovement { provider_tx_id = id,
      booked_at = created, currency, gross = amount, fee = −fee, net = net` (exposant, AC-8), `movement_kind` = genre `other` (C-38-4, valeur de 38-3b telle que 38-8 la rend),
@@ -236,7 +244,8 @@ paginée sans perte, à version d'API fixe et sans fuite de la clé.
      (`= s1`) refusé, (`= s0`) admis ; transaction `balance_type: issuing` → `skipped.non_balance = 1`.
 8. **AC-8 — Soldes (G5, FR-40-1-5).**
    - **Exposants** (`stripe::amounts`, table constante, réutilisée par 40-2) : CHF, EUR, USD et les devises à deux
-     décimales de la liste Stripe relevée à 40-0 → 2 ; devises à zéro décimale (`jpy`, `krw`, … : liste de Stripe recopiée
+     décimales de la liste Stripe relevée à 40-0 → 2 (les « cas spéciaux » de Stripe — ISK, HUF, TWD, UGX — gardent
+     l'exposant 2, comme la page *Currencies* le dit : à relever à 40-0 et à tester) ; devises à zéro décimale (`jpy`, `krw`, … : liste de Stripe recopiée
      avec sa source) → 0 ; trois décimales ou inconnue → `InvalidResponse { reason: "currency" }` ;
      `minor_to_decimal(i64, devise) -> Decimal`, testée.
    - `balances(None)` : `GET {base}/v1/balance` ; validation : `livemode` (AC-5), `available` et `pending` tableaux
@@ -247,9 +256,10 @@ paginée sans perte, à version d'API fixe et sans fuite de la clé.
      transactions `created ∈ [⌈as_of⌉, ⌈T0⌉)` lues par le même parcours de curseur (AC-7, sans expansion :
      `limit=100`, pas d'`expand`), **hors** `balance_type` ≠ `payments` ; au plus **50 requêtes**, sinon
      `WindowTooLarge { total_items: None }` (38-3b AC-7 : motif `balances_unavailable` ou `opening_unavailable`, contrôle
-     « non disponible ») ; `as_of` rendu = `as_of` demandé ; une transaction créée entre `T0` et la lecture de la liste est
-     hors de la somme (bornée à `T0`), une transaction créée juste avant `T0` mais encore absente du solde fait un écart
-     **transitoire**, corrigé au passage suivant (dit au Change Log du développement si observé).
+     « non disponible ») ; `as_of` rendu = `as_of` demandé ; une transaction créée **entre `T0` et la lecture du solde** est dans
+     le solde mais hors de la somme (bornée à `T0`) : le solde passé rendu est trop fort de son `net` — écart
+     **transitoire**, corrigé au passage suivant (l'`opening` se relit, 38-3b AC-7) ; de même une transaction créée juste
+     avant `T0` mais encore absente du solde (dit au Change Log du développement si observé).
    - Tests : identité G5 sur la fixture (USD 39861, EUR 7715, CHF 4807) ; solde passé à l'instant de la première
      transaction ; 51ᵉ requête → `WindowTooLarge` ; devise en double ; devise inconnue ; `livemode` faux.
 9. **AC-9 — « Tester la connexion » (FR-40-1-3, FR-40-1-7).** `POST /api/v1/provider-connections/{id}/test` (38-1 AC-7,
@@ -285,7 +295,8 @@ paginée sans perte, à version d'API fixe et sans fuite de la clé.
     - **`KESH_TEST_MODE`** : variante additive `stripeResponses` du corps de `POST /api/v1/_test/provider-connector`
       (forme et validation de `paypalResponses`, 38-3b AC-3 : tableau non vide `{ method ∈ GET, path "/…", query?, status
       100–599, body }` servi dans l'ordre, dernière répétée, **ou** exactement `"default"` ; sinon 400
-      `AppError::Validation`) ; une connexion `stripe` sans variante garde le `FakeConnector` ; avec elle, un vrai
+      `AppError::Validation` ; **`query?` admet une liste de valeurs par clé** — `expand[]`, ou `created[gte]` unique —,
+      amendement additif de la forme « objet de chaînes » de 38-3b AC-3, PayPal inchangé) ; une connexion `stripe` sans variante garde le `FakeConnector` ; avec elle, un vrai
       `StripeConnector` sur le transport factice. `TEST_ENDPOINT_ROUTES` inchangé (même route).
     - **Jeu `"default"`** (`stripe::fake`, constantes et une fonction `default_responses(now)`) : servi **par chemin** et
       non dans l'ordre — `/v1/balance`, `/v1/account`, `/v1/balance_transactions` (le factice applique lui-même
@@ -318,7 +329,8 @@ paginée sans perte, à version d'API fixe et sans fuite de la clé.
 14. **AC-14 — Ce que la story ne touche pas, registres, i18n.** Aucune migration (C-40-0 : `provider = 'stripe'` et
     `settings` dans des colonnes existantes à domaine ouvert ; P1–P8 sans objet, ni `TABLES_TO_TRUNCATE`, ni registre de
     rejeu) ; aucune route (`LIB_ROUTES`, `TEST_ENDPOINT_ROUTES` inchangés, C-40-6) ; aucune action d'audit neuve
-    (`secrets_updated`, `tested`, `created`, `updated` existent : `crates/kesh-api/src/audit_labels.rs:70`) ; aucun outil
+    (`secrets_updated`, `tested`, `created`, `updated` : posées par 38-1 au registre `ACTIONS` de `crates/kesh-api/src/audit_labels.rs:70`, **absentes du code
+d'aujourd'hui** — l'Epic 38 n'étant pas développé) ; aucun outil
     MCP (G17, E23 : connexions non exposées) ; sauvegarde : la ligne de connexion et ses réglages partent comme toute
     connexion (38-1 AC-8), la clé est effacée à la restauration et se ressaisit (dit au manuel par 40-6) ; aucun écran ni
     manuel (40-6) — les noms de contrôles neufs (`mode_unchanged`, `permission_present` pour Stripe) et les codes
@@ -388,6 +400,13 @@ paginée sans perte, à version d'API fixe et sans fuite de la clé.
 
 ## Change Log
 
+*(Findings de la validation P1 : P1-1 MEDIUM AC-5, passage d'une connexion jamais testée sans mode posé ; P1-2 MEDIUM
+AC-7, plafond de requêtes par sous-fenêtre seulement ; P1-3 MEDIUM AC-11, `query?` de `stripeResponses` sans valeurs
+répétées pour `expand[]` ; P1-4 LOW AC-8, course de `T0` mal décrite ; P1-5 LOW AC-8, devises spéciales ; P1-6 LOW AC-14,
+actions d'audit dites existantes ; P1-7 LOW AC-7, « croissant » ambigu ; P1-8 LOW inter-fiche, voir rapport.)*
+
+- 2026-11-15 — validation P1 (Sonnet) : 0 CRITICAL, 0 HIGH, 3 MEDIUM, 5 LOW ; remédiés dans la fiche sauf 40-1-P1-8
+  (inter-fiche : fichier d'epic, au rapport).
 - 2026-11-15 — rédaction (Opus). 14 AC ; 7 FR (dont 1 ajoutée), 4 NFR ; aucune migration ; cinq écarts à l'epic
   (P40-1 et sa garde de mode, `livemode` absent des transactions de solde, `ConnectorTest.livemode`, classement provisoire,
   tolérance d'un jour sur `value_date`). Documentation Stripe relue (WebFetch) : authentification, versions, liste des
