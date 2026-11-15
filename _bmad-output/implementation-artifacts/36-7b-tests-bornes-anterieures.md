@@ -84,7 +84,11 @@ temps, sans date de 2026, hors périmètre ; s'il rougit, il se nomme comme roug
   `admin_full_import_e2e:2007`, `:2281`, `supplier_invoices_draft:1778` ; forme (b), `jours_avant(k)`, réservée à un verrou
   **glissant** de la fixture, qu'aucun des neuf ne relève à la lecture de son site — l'étape 0 le vérifie, ligne lue).
   Toutes les dates de 2026 des neuf tests suivent, relevées par `/usr/bin/grep -nE '\b2026\b'`. Sous l'instant de mars,
-  N-1 = 2025 : une mutation qui remet 2026 y est distinguable. Pour les tests dont le seul défaut est
+  N-1 = 2025 : une mutation qui remet 2026 y est distinguable. Les précisions de la validation P3 de la 36-7a valent ici :
+  un paramètre `today` d'un appel est l'opération du jour, non une date de pièce (`aujourd_hui_test()`) ; une date d'un
+  **décor partagé** par d'autres tests ne se change pas, le test corrigé en dérive sa copie ; une date posée par **INSERT
+  SQL brut** ne se contrôle pas contre l'exercice, et sa mutation n'est retenue que si une autre règle la fait rougir —
+  sinon elle se déclare équivalente, ligne lue. Pour les tests dont le seul défaut est
   de lire à l'`asOf` du jour une pièce de date fixe (`project_reports_e2e`, `services_rollout`,
   `supplier_invoice_draft_e2e`), l'alternative est un `asOf` (ou une borne de rapport) **explicite** dans le montage ; le
   développeur choisit, ligne lue, celle qui garde ce que le test vérifie, et le dit au Change Log.
@@ -224,3 +228,6 @@ fiche sœur `36-7a-tests-desancres-2027.md` ; issue #1125 et ses commentaires de
 - **2026-11-15 — Propagation de la remédiation P2 de la 36-7a** (`kesh-gate-logs/e36-7/validation-36-7a-p2.md`) : D1
   renvoie à la règle récrite (formes a et b) et nomme la forme de chacun des neuf sites ; AC2 gagne l'instant
   `2029-06-15T10:00:00Z` sur les huit binaires. Le reste inchangé.
+- **2026-11-15 — Propagation de la remédiation P3 de la 36-7a** (`kesh-gate-logs/e36-7/validation-36-7a-p3.md`) : D1
+  reprend les trois précisions de V3-1 à V3-3 (paramètre `today`, décor partagé, INSERT brut et mutants équivalents). Le
+  reste inchangé.

@@ -20,9 +20,11 @@ de C-e360-13. Chaque choix : contexte, option retenue, options écartées, réve
 - **Contexte** : le critère de l'epic exige l'E2E vert « sous `KESH_TEST_INSTANT` », variable que ni le binaire servi
   (`docs/testing.md:119`), ni le runner (`api-fixtures.ts:393`), ni le navigateur ne lisent. La bibliothèque n'est pas
   installée (`apt-cache policy faketime` : « Installé : (aucun) »).
-- **Retenu** : backend et runner lancés sous `faketime -f '@2027-01-04 11:00:00'`, `FAKETIME_DONT_FAKE_MONOTONIC=1` ;
-  sonde à trois étages (serveur, runner, navigateur) ; MariaDB à l'heure réelle, angle mort écrit. Le paquet `faketime`
-  s'installe par Guy (geste système). Sans lui, l'agent s'arrête sur AC4 et AC5 et le dit.
+- **Retenu** *(récrit le 2026-11-15, validation P3 de la 36-7a, V3-6 ; la forme d'origine portait
+  `FAKETIME_DONT_FAKE_MONOTONIC=1` et l'installation à faire)* : backend (binaire construit) et runner lancés sous
+  `flock … scripts/mem-guard.sh env TZ=Europe/Zurich NO_FAKE_STAT=1 faketime --exclude-monotonic -f '@2027-01-04
+  11:00:00' <commande>` ; sonde à trois étages (serveur, runner, navigateur) ; MariaDB à l'heure réelle, angle mort écrit
+  et preuve exigée pour tout rouge qui s'y rattache. La bibliothèque est installée (amendement ci-dessous).
 - **Écartées** : faire lire la variable au binaire en mode test (code de production, contraire à la garde) ; `page.clock`
   (navigateur seul) ; conclure sur la seule lecture des specs ; construire libfaketime depuis ses sources hors dépôt
   (téléchargement de code externe, à décider par l'orchestrateur si Guy n'installe pas le paquet).
@@ -48,8 +50,9 @@ de C-e360-13. Chaque choix : contexte, option retenue, options écartées, réve
 
 ### C-36-7-6 — AC4 et AC5 (libfaketime) sont des gates de clôture
 
-- **Contexte** : libfaketime est absente de la station ; Guy a été prié de l'installer (orchestrateur, 2026-11-15). Les
-  corrections de montage (AC1-AC3, AC6-AC9) n'en dépendent pas.
+- **Contexte** *(récrit le 2026-11-15, validation P3 de la 36-7a, V3-6 ; la forme d'origine disait libfaketime absente)* :
+  AC4 et AC5 dépendent de libfaketime, installée depuis le 2026-11-15 ; les corrections de montage (AC1-AC3, AC6-AC9) n'en
+  dépendent pas.
 - **Retenu** : le développement passe en `review` sans libfaketime ; la story ne passe pas `done` et la PR de release ne
   porte pas `closes #1125` tant qu'AC4 et AC5 n'ont pas tourné ; un rouge rattaché à l'angle mort MariaDB exige sa preuve
   (ligne SQL, colonne, rejeu isolé) ; si le navigateur ne suit pas `LD_PRELOAD`, l'AC5 se déclare non constatable pour
@@ -70,6 +73,13 @@ de C-e360-13. Chaque choix : contexte, option retenue, options écartées, réve
 - **Écartées** : spec hors dépôt (non lue par le runner) ; `chromium.launch()` autonome (autres conditions) ; aucune
   sonde navigateur.
 - **Réversible** : oui (une spec et une entrée de garde).
+- **Amendé le 2026-11-15 (validation P3 de la 36-7a, V3-4)** : l'alternative d'une configuration Playwright hors dépôt,
+  qui importe celle du dépôt et ne déplace que `testDir`, a été **essayée** (`kesh-gate-logs/e36-7/sonde-pw/`, journal
+  `sonde-pw-list.log`) : la spec hors dépôt résout `@playwright/test` dans `/usr/share/nodejs/playwright` (paquet système),
+  Playwright refuse (« two different versions of @playwright/test »), 0 test listé. La faire marcher demanderait un
+  contournement non éprouvé ; la spec versionnée est gardée, au prix du cinquième module, et sert aussi aux campagnes de
+  fin d'année. L'arbitrage reste à l'orchestrateur, qui le sait. La garde reçoit l'entrée et ses trois mentions du nombre
+  (`:28-29`, `:263`, `:318`) passent à quatre.
 
 ### C-36-7-4 — Aucun outillage versionné : les recettes vont dans `docs/testing.md`
 
@@ -102,3 +112,8 @@ de C-e360-13. Chaque choix : contexte, option retenue, options écartées, réve
   antérieur, et l'échéance du 2026-12-28 porterait sur des tests qui n'en ont pas) ; AC4/AC5 en story à part (le critère de
   l'epic les lie aux treize rouges).
 - **Réversible** : oui (fiches seulement).
+- **Amendé le 2026-11-15 (validations P2 et P3 de la 36-7a, V3-6)** : la 36-7a compte désormais **cinq modules**
+  (`frontend` ajouté par la sonde navigateur, C-36-7-8), sept fichiers corrigés plus une spec et la garde, **dix-neuf
+  mutations** (M1a à M10) et trois mutants équivalents déclarés ; sa **fusion doit précéder le 2026-12-26**
+  (`open_items_invariant` rougit à l'heure réelle dès ce jour, D5 de la 36-7a), l'échéance du 2026-12-28 restant celle de
+  Guy pour la story.
