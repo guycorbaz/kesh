@@ -8,8 +8,10 @@ Rédigée par l'agent de rédaction des fiches de l'Epic 36 (Opus 5.5), worktree
 `story/36-7-tests-desancres-2026`, partie de `epic/36-0.18.0` (`0bf3c3b4b`). Release **0.18.0**, phase 2, rang 7,
 **première de la phase** (D1 du 2026-11-15). **Aucune migration**, aucune ligne de code de production, aucune clé i18n,
 aucun changement d'API. Code lu à `0bf3c3b4b`. **Échéance ferme : d'ici le 2026-12-28** (décision de Guy, Q1 ;
-C-e360-13). Voie de base **2** (`kesh-mariadb-dev2:3307`), `gate-ci.sh` en voie 1. Clé courte des bases proposée : `e367a`
-(à confirmer par l'orchestrateur). Choix : `e36-choix-autonomes-36-7.md` (C-36-7-1 à C-36-7-7). Relevés de la fiche :
+C-e360-13) — ⚠️ **la fusion doit précéder le 2026-12-26** : `open_items_invariant` rougit **à l'heure réelle** dès ce
+jour-là (D5 ; sondes `sonde-p2-S1a.log` vert au 2026-12-24, `sonde-p2-S1b.log` rouge au 2026-12-26 ; validation P2,
+V2-3). Voie de base **2** (`kesh-mariadb-dev2:3307`), `gate-ci.sh` en voie 1. Clé courte des bases proposée : `e367a`
+(à confirmer par l'orchestrateur). Choix : `e36-choix-autonomes-36-7.md` (C-36-7-1 à C-36-7-8). Relevés de la fiche :
 `/home/gcorbaz/devel/kesh-gate-logs/e36-7/` ; journaux de la story : `kesh-gate-logs/e36-7a/`. Sœur : `36-7b-tests-bornes-anterieures.md`
 (les neuf tests qui rougissent sous un instant antérieur à leur date de 2026), développée après la fusion de celle-ci.*
 
@@ -93,13 +95,13 @@ tous sauf les quatre de `dates_bornes_e2e`, dont le témoin `"2027-01-01"` n'y p
 
 | Test(s) | Site du montage | Ce qui se date au jour |
 |---|---|---|
-| `admin_full_import_e2e` ×2 | `:4899-4901` `v0174a_decor` : `VALUES (?, 'Exercice 2026', '2026-01-01', '2026-12-31', 'Open')` ; pièces `"invoiceDate": "2026-06-15"` (`:4990`), `"paymentDate": "2026-06-20"` (`:5039`) | l'annulation `/api/v1/supplier-invoices/3/cancel` (contre-passation au jour) |
-| `bank_statements_manual_e2e` | `:218-220` `VALUES (?, 'Exercice 2026', '2026-01-01', '2026-12-31', 'Open')` | l'écriture passée à `:1149` |
+| `admin_full_import_e2e` ×2 | `:4899-4901` `v0174a_decor` : `VALUES (?, 'Exercice 2026', '2026-01-01', '2026-12-31', 'Open')` ; pièces `"invoiceDate": "2026-06-15"` (`:4990`), `"paymentDate": "2026-06-20"` (`:5039`). Troisième consommateur du décor, hors des treize : `full_import_round_trip_keeps_a_draft` (`:5152-5156`) | l'annulation `/api/v1/supplier-invoices/3/cancel` (contre-passation au jour) |
+| `bank_statements_manual_e2e` | `:218-220` `VALUES (?, 'Exercice 2026', '2026-01-01', '2026-12-31', 'Open')` ; pièces en dur `:253` `"bookingDate": "2026-09-15", "valueDate": "2026-09-15"`, `:1008` écriture `'2026-08-20'`, `:1036` facture `'F-2026-0042'` du `'2026-08-20'` | l'annulation du rapprochement (`:1141` « Annulation du rapprochement. », `:1149` `assert_eq!(s, 200, "{r}")`) : contre-passation du règlement au jour |
 | `dates_bornes_e2e` ×4 | témoin `"2027-01-01"` (`:1010`, `:1050`, `:1510`, `:1556`) pour `dueDate`, face à `"date": aujourd_hui()` (`:1017`) | la facture du jour : au 2027-01-04, l'échéance témoin la précède |
-| `journal_entries_modification` ×2 | `:268-275` exercice du seed « ramené à l'année 2026 » (`UPDATE fiscal_years SET name = 'Exercice 2026', start_date = '2026-01-01', end_date = '2026-12-31'`) ; écritures `d(2026, 3, 1)` (`:373`, `:426`, `:487`, …) | la contre-passation `crate::jour::aujourd_hui_test()` (`:381`) |
-| `migrations_upgrade_path` ×2 | base 0.16 / rc1 peuplée, `day = … from_ymd_opt(2026, 6, 20)` (`:1498`) | `cancel_in_tx(…, crate::jour::aujourd_hui_test())` (`:1515-1520`) |
-| `opening_complement_repository` | `year_span(2026)` (`:47-49`, appelé `:246`, `:277`, `:298`, `:311`, `:331`, `:346`, `:355`, `:383`, …) | `journal_entries::reverse(…, crate::jour::aujourd_hui_test())` (`:523-528`) |
-| `open_items_invariant` | exercices 2024 (clos) et 2025-2030 (`:106-116`) ; groupe « à cheval » `2024-06-30` / `2026-03-01` (`:203`) ; écritures à `jours_avant(n)` | le lettrage `:170-181` refusé `LetteringAllLinesInClosedPeriods` — cause à établir (D5) |
+| `journal_entries_modification` ×2 | `:268-275` `societe()`, exercice du seed « ramené à l'année 2026 » (`UPDATE fiscal_years SET name = 'Exercice 2026', start_date = '2026-01-01', end_date = '2026-12-31'`). **Cinq** tests le montent (`/usr/bin/grep -c 'societe(&pool)'` rend 5 : `:372`, `:424`, `:486`, `:538`, `:592`), dont les deux rouges et trois verts ; deux d'entre eux créent un exercice postérieur par SQL brut, sans contrôle de chevauchement (`exercice()`, `:336-356`) : `:425` et `:539` `exercice(&pool, &s, "Exercice 2027", 2027, "Open")`, nom assertionné `:458`, `:571`. Écritures `d(2026, 3, 1)` (`:373`, `:426`, `:487`, `:540`, `:593`), corps `d(2026, 3, 2)` (`:388`, `:437`), `d(2026, 3, 1)` (`:612`) | la contre-passation `crate::jour::aujourd_hui_test()` (`:381`) |
+| `migrations_upgrade_path` ×2 | exercice de la base 0.16 / rc1 peuplée `:1413-1415` (`VALUES (?, 'Exercice 2026', '2026-01-01', '2026-12-31') RETURNING id`) ; pièces `:1319` (`entry_date` `2026-06-15`), `:1332` (`'2026-06-15', '2026-07-15'`), `:1498` (`day = … from_ymd_opt(2026, 6, 20)`), `:1716` (`invoice_date` `2026-06-15`) | `cancel_in_tx(…, crate::jour::aujourd_hui_test())` (`:1515-1520`), puis les opérations du jour d'après la montée (`:1537`, `:1661`, `:1701`, `:1742`) |
+| `opening_complement_repository` | `setup(&pool, &[year_span(2026)])` (`:514`), écriture `d(2026, 2, 1)` (`:519`), complément `complete(…, d(2026, 6, 1))` (`:533`) ; `year_span` (`:47-49`) appelé ailleurs (`:246`, `:277`, `:298`, `:311`, `:331`, `:346`, `:355`, `:383`, …) par des tests verts | `journal_entries::reverse(…, crate::jour::aujourd_hui_test())` (`:523-528`) |
+| `open_items_invariant` | exercices 2024 (clos) et `fy` à partir du 2025-01-01 (`:106-116`) ; groupe « à cheval » `a1` `ymd(2024, 6, 30)` / `a2` `ymd(2026, 3, 1)` (`:208-218`), lettré `:220` ; verrou des livres de la fixture partagée à **jour − 300** (D5) | le lettrage `:220` refusé `LetteringAllLinesInClosedPeriods` (cause établie, D5) |
 
 **Hors de cette story** : les neuf tests qui rougissent sous un instant **antérieur** à leur date de 2026 (relevé
 `inventaire-B2026.log`) sont la story **36-7b**. **Rouge de charge exclu** :
@@ -191,32 +193,80 @@ rouge sous AC5** : `supplier-invoice-draft-cycle.spec.ts` (dates `2026-05-10` à
 
 Ces décisions valent aussi pour la 36-7b, qui y renvoie.
 
-- **D1 — Le montage prend ses années du jour du test (N = année de `aujourd_hui_test()`) ; une date qui doit précéder le
-  jour se place dans N-1, jamais dans N.** Le « 1er janvier de l'année du jour » **est** le jour sous
-  `2026-12-31T23:30:00Z` (jour suisse 2027-01-01) et fait alors rougir les gardes « borne passée » et `veille >= date`
-  (validation P1 de la fiche d'origine, V1-2). Règle, juste pour tout jour d'une année :
-  - l'exercice du montage couvre **N-1 et N** (deux exercices civils, ou un seul qui couvre les deux), N+1 en plus là où le
-    test le demande (`journal_entries_modification:268` « pour qu'un exercice 2027 puisse le suivre ») ;
-  - pièces, paiements et bornes de verrou qui doivent être **passés** se datent dans **N-1** (par exemple `d(N-1, 6, 15)`,
-    borne `d(N-1, 12, 31)`) ; l'opération du jour (contre-passation, annulation, verrou) garde `aujourd_hui_test()` ;
-  - aucune date « fixe dans l'année du jour » ni décalage `aujourd_hui - n` qui puisse traverser le 1er janvier.
-  **Modèle** au dépôt : `crates/kesh-db/tests/supplier_invoices_draft.rs:2059` `let date = jour(x.y - 2, 6, 15);`, avec
-  `scinder` (`:1522-1547`) qui pose les exercices `y - 2`, `y - 1` et `y` depuis `let y = aujourdhui().year();` (`:1524`)
-  et garde `assert!(y <= 2029, …)` (`:1525-1528`). Le témoin de `dates_bornes_e2e` devient une échéance **postérieure** à
-  la date du jour (`aujourd_hui() + n` jours). Là où un montage « base 0.16 / rc1 peuplée » (`migrations_upgrade_path`) ou
-  un exercice existant du seed ne peut pas être déplacé, l'étape 0 le dit, ligne lue. *Écartée* : passer à chaque opération
-  une date fixe de 2026 (`cancel(…, 2026-06-20)`) — le test cesserait d'exercer la date du jour ; *écartée* aussi : un
-  exercice 2020-2030 dans chaque montage — il masquerait le jour et repousse la panne à 2031.
+- **D1 — Le montage prend ses années du jour du test (N = année de `aujourd_hui_test()`), et chaque date passée se place
+  selon ce qui la contraint.** *(Récrite à la remédiation de la validation P2, V2-1, V2-2, V2-4 : la version précédente
+  disait « dans N-1, jamais dans N » et se donnait pour « juste pour tout jour d'une année » ; c'est faux sous le verrou
+  glissant d'`open_items_invariant`, et sous l'instant `2027-01-04` N-1 vaut 2026, si bien que rien ne la prouvait.)* La
+  règle doit tenir **pour tout jour du 2026-01-01 au 2029-12-31** (borne : exercice de la base de dev 2020-2030, garde
+  `y <= 2029` du modèle), deux formes selon le site :
+  - **(a) Dates contraintes par un exercice** (cas général) : l'exercice du montage couvre **N-1 et N** — un seul exercice
+    `d(N-1, 1, 1)`–`d(N, 12, 31)`, ou deux civils, au choix du développeur, ligne lue ; pièces, paiements et bornes qui
+    doivent être passés se datent en **N-1** (`d(N-1, m, j)`) ; l'opération du jour garde `aujourd_hui_test()`. **Toutes** les
+    dates de 2026 du test corrigé suivent, non seulement le site du tableau : l'étape 0 les relève par
+    `/usr/bin/grep -nE '\b2026\b'` dans le test et les cite (V2-1 : `bank_statements_manual_e2e` porte `:253`, `:1008`,
+    `:1036` en dur ; laissées, elles passeraient AC1 et rougiraient en 2028). *Écartée* : garder les dates de 2026 sous un
+    exercice borné `2026-01-01`–`d(N, 12, 31)` — juste jusqu'en 2029, mais aucune mutation ne la distinguerait de la forme
+    d'origine, et l'année 2026 resterait en dur.
+  - **(b) Dates contraintes par un verrou glissant** (`open_items_invariant`, verrou `jours_avant(300)` de la fixture,
+    D5) : la date suit le jour, `jours_avant(k)` avec **0 < k < 300**, dans un exercice ouvert qui la couvre (`fy`, à partir du
+    2025-01-01 : `jours_avant(k)` y tombe pour tout jour à partir du 2026-01-01 dès que k ≤ 365). Une date en N-1 y serait
+    fausse une partie de l'année (`d(N-1, 12, 1)` passe sous le verrou dès la fin septembre de N).
+  - Le décalage interdit est celui qui **sort de l'exercice du montage**, non tout décalage qui traverse le 1er janvier.
+  - Sites particuliers : le témoin de `dates_bornes_e2e` devient une échéance **postérieure** au jour
+    (`aujourd_hui() + n` jours, n > 0) ; `journal_entries_modification::societe()` pose l'exercice N-1..N, ses écritures et
+    corps en N-1, et l'exercice **postérieur** des deux tests `…close_of_a_later_year…` (`:425`, `:539`) se crée en **N+1**,
+    nommé `format!("Exercice {}", N + 1)` (assertions `:458`, `:571` assorties) — aucun chevauchement avec N-1..N, vérifié
+    sous l'instant `2029-06-15` (N+1 = 2030, dans la borne) ; `migrations_upgrade_path` : exercice de la base peuplée
+    (`:1413-1415`) en N-1..N, pièces `:1319`, `:1332`, `:1498`, `:1716` en N-1, sites positionnels intouchés (P6).
+  **Modèle** au dépôt pour (a) : `crates/kesh-db/tests/supplier_invoices_draft.rs:2059` `let date = jour(x.y - 2, 6, 15);`,
+  avec `scinder` (`:1522-1547`), qui pose les exercices `y - 2`, `y - 1`, `y` depuis `let y = aujourdhui().year();`
+  (`:1524`) et garde `assert!(y <= 2029, …)` (`:1525-1528`). **Preuve** : l'AC2 joue l'instant `2029-06-15T10:00:00Z`, où
+  N-1 = 2028 ≠ 2026, et les mutations des sites (a) y sont tuées (§ *Tests*). *Écartées* : passer à chaque opération une
+  date fixe de 2026 (`cancel(…, 2026-06-20)`) — le test cesserait d'exercer la date du jour ; un exercice 2020-2030 dans
+  chaque montage — il masquerait le jour et repousse la panne à 2031.
 - **D2 — Le périmètre est celui des treize rouges de 2027** (C-36-7-7). Les neuf tests qui ne rougissent que sous un
   instant antérieur à leur date de 2026 sont la 36-7b. *Écartée* : une seule story pour les vingt-deux (validation P1 de
   la fiche d'origine, axe 5 : trop longue, et la dépendance à libfaketime aurait retenu les deux).
 - **D3 — L'E2E en 2027 se joue sous une horloge de processus (libfaketime), non sous `KESH_TEST_INSTANT`** (C-36-7-2). Le
   binaire servi ignore la variable (`docs/testing.md:119`, garde `date_du_jour_garde.rs`) et le runner lit l'heure réelle
-  (`api-fixtures.ts:393`). Le backend et le runner se lancent sous
-  `TZ=Europe/Zurich FAKETIME_DONT_FAKE_MONOTONIC=1 faketime -f '@2027-01-04 11:00:00' <commande>` — `faketime` lit la date
-  dans le fuseau du processus : « 11 h » ne vaut 10:00Z qu'avec `TZ=Europe/Zurich` fixé dans la commande. Que Chromium
-  hérite de `LD_PRELOAD` est une **hypothèse non éprouvée** (le navigateur de Playwright lance ses processus avec son bac à
-  sable) : la sonde de l'AC5 la tranche. MariaDB, en conteneur, reste à l'heure réelle (angle mort écrit : `NOW(3)` de
+  (`api-fixtures.ts:393`). *(Commande récrite à la remédiation de la validation P2, V2-5 et V2-9 ; chaque option est tirée
+  de `man faketime` ou d'une exécution, citée.)* La forme, pour toute commande sous horloge décalée — le verrou et
+  `mem-guard` **dehors**, à l'heure réelle, `faketime` en dernier :
+
+  ```sh
+  flock <verrou de voie> scripts/mem-guard.sh env TZ=Europe/Zurich NO_FAKE_STAT=1 \
+    faketime --exclude-monotonic -f '@2027-01-04 11:00:00' <commande>
+  ```
+
+  - `-f '@AAAA-MM-JJ hh:mm:ss'` : « Start-at timestamps […] The wall clock will start counting at the given timestamp »
+    (`man faketime`, *ADVANCED TIMESTAMP FORMAT*) — l'horloge part de l'instant et avance ; elle se lit dans le fuseau du
+    processus, d'où `TZ=Europe/Zurich` (11 h à Zurich = 10:00Z, constaté : `sonde-p2-S3.log`, « avec faketime :
+    2027-01-04T10:00:00Z »).
+  - `--exclude-monotonic` : « Do not fake time when the program makes a call to clock_gettime with a CLOCK_MONOTONIC
+    clock » (`man faketime`) — les délais de tokio et des minuteries restent réels.
+  - `NO_FAKE_STAT=1` : « Faking of filesystem timestamps may be disabled by setting the NO_FAKE_STAT environment variable
+    to a non-empty value » (`man faketime`) — sans lui, faketime décale aussi les dates des fichiers (« Filesystem
+    timestamps will also be reported relative to this timestamp ») ; cargo ne doit pas les voir bouger.
+  - `-m` (« use the multi-threading variant of libfaketime ») : **non tranché par la documentation** ; la variante simple
+    se joue d'abord, et si l'étage serveur de la sonde de l'AC5 échoue ou si le backend ne répond pas, `-m` est rejouée. La
+    variante jouée s'écrit en tête du journal. Les deux rendent l'instant sur `date` (`sonde-p2-S3.log`).
+  - Un **binaire construit avant**, jamais `cargo run` ni `cargo build` sous faketime : `target/debug/kesh-api` pour le
+    backend (comme `kesh-gate-logs/e36-3/e2e-36-3.sh`), `cargo nextest run --no-run` à l'heure réelle puis
+    `cargo nextest run` sous faketime pour l'AC4.
+  - Chaque processus fils démarre sa propre horloge à l'instant (« a new instance of libfaketime is used for each child
+    process, which means that the libfaketime start time […] will also be re-initialized », `man faketime`, *BUGS*) :
+    l'écart entre deux processus vaut leur écart de démarrage, sans effet sur un jour.
+  - `mem-guard` exécute par `systemd-run --user --scope` (`~/.local/bin/mem-guard:185`) : faketime placé **après** lui ne
+    dépend pas de la propagation de l'environnement au scope, et ne fausse ni `flock` ni `systemd-run`.
+  - **Détecteur et sonde positive** (V2-5 : `ldconfig -p | /usr/bin/grep -i faketime` rend vide **avec** la bibliothèque
+    installée, sous `/usr/lib/x86_64-linux-gnu/faketime/`) : `ls -l /usr/bin/faketime
+    /usr/lib/x86_64-linux-gnu/faketime/` ; `TZ=Europe/Zurich faketime --exclude-monotonic -f '@2027-01-04 11:00:00' date -u
+    +%FT%TZ` rend `2027-01-04T10:00:00Z` et la même commande sans faketime la date réelle ; `node -e 'console.log(new
+    Date().toISOString())'` sous faketime rend `2027-01-04T10:00:00.033Z`, et `stat -c %y /usr/bin/faketime` sous
+    `NO_FAKE_STAT=1` rend la date réelle du fichier (`2026-01-20 20:37:26`) — constaté le 2026-11-15 avec la commande
+    ci-dessus, `sonde-p2-S3b.log` ; l'étape 0 rejoue la sonde.
+  Que Chromium hérite de `LD_PRELOAD` est une **hypothèse non éprouvée** (le navigateur de Playwright lance ses processus
+  avec son bac à sable) : l'étage navigateur de la sonde de l'AC5 la tranche (D6). MariaDB, en conteneur, reste à l'heure réelle (angle mort écrit : `NOW(3)` de
   `refresh_tokens.rs:61`, `:221`, `UTC_TIMESTAMP(6)` d'`invoice_reminders.rs:176`, `invoices.rs:2620`,
   `CURRENT_TIMESTAMP(3)` de `journal_entries.rs:1658`, `payment_batches.rs:640`, `DEFAULT CURRENT_TIMESTAMP` des colonnes
   d'horodatage ; liste non close). **Un rouge ne se rattache à cet angle mort que prouvé** : la ligne de SQL qui lit
@@ -224,100 +274,138 @@ Ces décisions valent aussi pour la 36-7b, qui y renvoie.
   exemple : vert sous `KESH_TEST_INSTANT` seul, rouge sous faketime). Sans cette preuve, il compte comme un rouge de la
   story. **Repli si le navigateur reste en 2026** (étage 3 de la sonde) : aucun contournement n'est éprouvé ; l'AC5 se
   déclare **non constatable** pour la partie navigateur — non « vert » —, avec les étages serveur et runner joints, et
-  l'orchestrateur arbitre (piste à éprouver, non prescrite : `page.clock` posé par un fixture). **Prérequis** : la
-  bibliothèque, absente de la station (`ldconfig -p | /usr/bin/grep -i faketime` vide ; `apt-cache policy faketime` :
-  « Installé : (aucun) », candidat `0.9.10+2024-06-05+gba9ed5b2-0.6build1`) ; son installation est un geste de Guy,
-  demandé par l'orchestrateur le 2026-11-15. *Écartées* : faire lire `KESH_TEST_INSTANT` au binaire en `KESH_TEST_MODE`
+  l'orchestrateur arbitre (piste à éprouver, non prescrite : `page.clock` posé par un fixture). **Prérequis** : libfaketime,
+  **installée** sur la station depuis le 2026-11-15 (`/usr/bin/faketime`, `/usr/lib/x86_64-linux-gnu/faketime/libfaketime.so.1`
+  et `libfaketimeMT.so.1`, `sonde-p2-S3.log`) ; la fiche de la P1 la disait absente sur un détecteur qui ne la voit pas.
+  *Écartées* : faire lire `KESH_TEST_INSTANT` au binaire en `KESH_TEST_MODE`
   (code de production, contraire à la garde) ; `page.clock` seul (le serveur resterait en 2026) ; déclarer l'E2E « vert en
   2027 » sur la seule lecture.
   **AC4 et AC5 sont des gates de clôture** (C-36-7-6) : le développement **peut passer en `review` sans libfaketime**
   (AC1-AC3, AC6-AC9) ; la story **ne passe pas `done`** tant qu'AC4 et AC5 n'ont pas tourné, journaux joints. Si la
-  bibliothèque manque à l'étape 0, la **première ligne** du rapport de l'agent est la demande à Guy. La PR de release ne
-  porte `closes #1125` qu'avec la 36-7b close **et** AC4, AC5 joués.
+  sonde du détecteur échoue à l'étape 0, la **première ligne** du rapport de l'agent le dit. La PR de release ne porte
+  `closes #1125` qu'avec la 36-7b close **et** AC4, AC5 joués.
 - **D4 — Aucun outillage versionné de plus** (C-36-7-4). Les recettes (nextest et E2E sous horloge décalée, Vitest sous
   préchargement) s'écrivent dans `docs/testing.md`, à côté du paragraphe de `KESH_TEST_INSTANT` ; le préchargement Vitest et
   les scripts restent hors dépôt. *Écartée* : un `scripts/test-2027.sh` ou un setup Vitest qui lit `KESH_TEST_INSTANT`,
   fonction d'outillage neuve, à proposer en issue si l'orchestrateur le juge utile.
-- **D5 — La cause du rouge d'`open_items_invariant` se lit avant d'écrire** : le lettrage de la fermeture `lettrer`
-  (`:170-181`) est refusé `LetteringAllLinesInClosedPeriods`. Établi, ligne lue : la règle est celle de
-  `crates/kesh-db/src/repositories/letterings.rs:89-94` (« Une ligne est **« en période ouverte »** si son exercice est
-  `Open`, si aucun exercice postérieur n'est `Closed`, et si sa date est strictement postérieure à
-  `companies.books_locked_through` ») ; la fermeture est appelée deux fois, `:185` (`p1`, `p2` à `jours_avant(60)` et
-  `jours_avant(50)`, exercice `fy` 2025-2030) et `:220` (groupe à cheval `2024-06-30` / `2026-03-01`, avant la clôture de
-  2024 à `:222`) ; le rouge apparaît sous `2027-01-04` et sous `2026-12-31T23:30:00Z`, non sous `2026-03-10T23:30:00Z`.
-  Non établi : **lequel** des deux appels rougit, et pourquoi (la panique porte `:181` dans les deux cas). L'étape 0 rejoue
-  le test seul sous `RUST_BACKTRACE=1` et `KESH_TEST_INSTANT=2027-01-04T10:00:00Z`, cite la ligne qui produit le refus, et
-  **seulement alors** choisit le correctif.
+- **D5 — La cause du rouge d'`open_items_invariant` est établie** *(récrite à la remédiation de la validation P2, V2-2 ;
+  la version précédente la laissait à l'étape 0)*. Ligne lue : la fixture partagée (`open_items_invariant.rs:37` `#[path =
+  "../../kesh-db/tests/support/lettering_documents.rs"]`) pose le verrou des livres à **jour − 300** —
+  `lettering_documents.rs:51` `pub fn jours_avant(n: i64) -> NaiveDate {`, `:552` `let ancienne = jours_avant(300);`,
+  `:556-562` `companies::lock_books(pool, seeded.admin_user_id, seeded.company_id, ancienne, jour::aujourd_hui_test())` ; une
+  ligne n'est en période ouverte que si sa date est strictement postérieure à la borne (`letterings.rs:89-94`). Le groupe à
+  cheval (`:203` « 2024-06-30 et 2026-03-01 (au-dessus de la borne) ») est `a1` `ymd(2024, 6, 30)` et `a2` `ymd(2026, 3,
+  1)` (`:216`), lettré à **`:220`** ; dès que le verrou atteint le 2026-03-01, les deux lignes sont closes et `:220` est
+  refusé (la panique porte `:181`, l'`.expect("lettrage")` de la fermeture). L'appel `:185` (`p1`, `p2` à `jours_avant(60)`,
+  `jours_avant(50)`) n'est pas en cause. Le verrou atteint le 2026-03-01 quand le jour vaut 2026-03-01 + 300 j =
+  **2026-12-26** : le test **rougit à l'heure réelle dès le 2026-12-26** — exécuté sur `binary(open_items_invariant)` à la
+  tête : vert sous `KESH_TEST_INSTANT=2026-12-24T10:00:00Z` (`sonde-p2-S1a.log`, 1 passé), rouge sous
+  `2026-12-26T10:00:00Z` (`sonde-p2-S1b.log`, 1 échoué). Correctif : `a2` suit D1 (b), `jours_avant(k)`, 0 < k < 300
+  (dans `fy`) ; M10 le défait. L'étape 0 confirme l'appel fautif par une exécution sous `RUST_BACKTRACE=1` (ligne citée).
+- **D6 — L'étage navigateur de la sonde de l'AC5 est une spec versionnée, jouée par le runner de la suite** (C-36-7-8 ;
+  V2-9). `frontend/tests/e2e/horloge-sonde.spec.ts` : le jour du navigateur (`page.evaluate`, `toLocaleDateString('sv-SE',
+  { timeZone: 'Europe/Zurich' })`), celui du runner (`todayInZurich()`) et celui du serveur (`asOf` de `GET
+  /api/v1/accounts/{id}/open-items` sans `asOf` sur la créance 1100, compte lettrable du preset — la route refuse un compte
+  non lettrable, `routes/letterings.rs:513-517`) sont égaux. Vraie à toute heure réelle (les trois horloges disent le même
+  jour), elle est sous faketime la sonde à trois étages, dans les conditions exactes de la suite (`playwright.config.ts:22`
+  `testDir: 'tests/e2e'`, `:59` `timezoneId: 'Europe/Zurich'`). Elle lit l'horloge du navigateur : la garde
+  `src/lib/shared/utils/local-date-guard.test.ts` (`ALLOWLIST_SPECS`, liste close de trois sites, `:263`) reçoit son entrée,
+  fragment au texte exact, justifiée. Angle mort écrit : à minuit à Zurich, les trois lectures peuvent tomber de part et
+  d'autre (fenêtre de quelques millisecondes). *Écartées* : une spec hors dépôt (le runner ne lit que `testDir`) ; un
+  `chromium.launch()` autonome (autres conditions que la suite) ; aucune sonde navigateur (l'hypothèse de `LD_PRELOAD`
+  resterait non éprouvée).
 
 ## Critères d'acceptation
 
 1. **AC1 — nextest vert sous l'instant du critère.** `scripts/test-fast.sh --ci`, sous
    `KESH_TEST_INSTANT=2027-01-04T10:00:00Z`, voie 2, base remise à neuf : 0 échec (journal
    `kesh-gate-logs/e36-7a/gate-2027.log`, commit cité). Les treize tests du tableau sont verts.
-2. **AC2 — et sous deux autres réglages, sans régression.** La même suite verte sous `2026-12-31T23:30:00Z` (nuit suisse du
-   1er janvier 2027 : neuf rouges à la base, `inventaire-N2027.log`) et sans la variable (heure réelle). **Non-régression
-   sous l'instant antérieur** : sous `2026-03-10T23:30:00Z`, les rouges sont exactement les neuf de la 36-7b
-   (`inventaire-B2026.log`), aucun autre. Un rouge de charge se relance et se nomme, sans compter contre l'AC.
+2. **AC2 — et sous les autres réglages, sans régression.** La même suite verte sous `2026-12-31T23:30:00Z` (nuit suisse du
+   1er janvier 2027 : neuf rouges à la base, `inventaire-N2027.log`) et sans la variable (heure réelle). Les **sept
+   binaires corrigés** (filtre de l'AC3 b) verts sous `2029-06-15T10:00:00Z` (N-1 = 2028 ≠ 2026, V2-1 ; à la base : 216
+   exécutés, 13 échecs, les treize, `sonde-p2-S2.log`) et `binary(open_items_invariant)` vert sous `2026-12-26T10:00:00Z`
+   (rouge à la base, `sonde-p2-S1b.log`). **Non-régression sous l'instant antérieur** : sous `2026-03-10T23:30:00Z`, les
+   rouges sont exactement les neuf de la 36-7b (`inventaire-B2026.log`), aucun autre. Un rouge de charge se relance et se
+   nomme, sans compter contre l'AC.
 3. **AC3 — Sonde positive de la lecture.** (a) Les relevés `inventaire-A2027.log` (13 rouges) et `inventaire-N2027.log`
    (9) sont rejoués à l'étape 0 à la tête de la branche et joints ; (b) après le correctif, les **sept binaires corrigés**
    (`cargo nextest run -E 'binary(admin_full_import_e2e) | binary(bank_statements_manual_e2e) | binary(dates_bornes_e2e) |
    binary(journal_entries_modification) | binary(migrations_upgrade_path) | binary(opening_complement_repository) |
    binary(open_items_invariant)'`) rougissent sous `KESH_TEST_INSTANT=pas-un-instant` (panique d'`instant_de_test`, message
-   qui nomme la variable) ; (c) les mutations M1 à M10 de § *Tests*, chacune tuée par le test nommé.
+   qui nomme la variable) ; (c) les mutations M1a à M10 de § *Tests*, chacune tuée par le test nommé sous l'instant nommé.
 4. **AC4 — nextest sous horloge de processus décalée** (D3 ; **gate de clôture**, C-36-7-6) : `cargo nextest run
-   --workspace --profile ci` sous `TZ=Europe/Zurich FAKETIME_DONT_FAKE_MONOTONIC=1 faketime -f '@2027-01-04 11:00:00'`,
-   **sans** `KESH_TEST_INSTANT`, binaires construits avant à l'heure réelle (`--no-run`) : 0 échec, ou chaque rouge nommé
+   --workspace --profile ci` sous la commande de D3 (`flock … mem-guard … env TZ=Europe/Zurich NO_FAKE_STAT=1 faketime
+   --exclude-monotonic -f '@2027-01-04 11:00:00' cargo nextest run …`, variante `-m` dite au journal), **sans**
+   `KESH_TEST_INSTANT`, binaires construits avant à l'heure réelle (`--no-run`) : 0 échec, ou chaque rouge nommé
    et rattaché — à un site de la story, ou à l'angle mort MariaDB **avec la preuve exigée par D3** et une issue. Sonde : un
    test du tableau ramené à sa version de la base rougit sous la même commande.
 5. **AC5 — E2E complet en 2027** (D3 ; **gate de clôture**, C-36-7-6) : la suite Playwright complète, backend et runner
-   sous la même horloge décalée (`TZ=Europe/Zurich` compris), base `kesh_e2e_e367a` recréée : les échecs se nomment un par
-   un contre `docs/testing.md` § *« Les échecs attendus »* (les sept de la KF-029, #97) ; aucun autre. **Sonde positive
-   jointe** : avant la suite, un appel qui rend la date du serveur (`GET /api/v1/accounts/{id}/open-items` sans `asOf` :
-   `asOf` vaut `2027-01-04`, `crates/kesh-api/src/routes/letterings.rs:388`), `todayInZurich()` du runner qui commence par
-   `2027-`, et `new Date().getFullYear()` du navigateur à 2027 (`page.evaluate`) — par un script hors dépôt, journal joint.
-   Si l'étage navigateur rend 2026, repli de D3 (non constatable pour le navigateur, arbitrage), jamais « vert ».
+   sous la commande de D3 — le backend par son **binaire construit** (`target/debug/kesh-api`), le runner par `npx
+   playwright test` —, base `kesh_e2e_e367a` recréée : les échecs se nomment un par un contre `docs/testing.md` § *« Les
+   échecs attendus »* (les sept de la KF-029, #97) ; aucun autre. **Sonde positive jointe** : la spec de D6
+   (`horloge-sonde.spec.ts`), jouée d'abord seule par le même runner sous la même horloge, rend les trois jours égaux à
+   `2027-01-04` — serveur (`asOf` par défaut, `routes/letterings.rs:311` « absent (ou vide) → aujourd'hui », tenu par
+   `postes_ouverts::lister`, `:524-530`), runner (`todayInZurich()`) et navigateur (`page.evaluate`) ; journal joint, avec
+   la variante (`-m` ou non) jouée. Si l'étage navigateur rend 2026, repli de D3 (non constatable pour le navigateur,
+   arbitrage), jamais « vert ».
 6. **AC6 — Vitest reste vert en 2027** : le relevé `inventaire-vitest-A2027.log` se rejoue au dernier commit de code, avec
    sa sonde.
 7. **AC7 — Aucune ligne de production ne bouge** : `git diff --stat origin/epic/36-0.18.0...HEAD -- 'crates/*/src/*'
-   'crates/*/src/**' frontend/src` vide.
+   'crates/*/src/**' frontend/src` ne rend que `frontend/src/lib/shared/utils/local-date-guard.test.ts` (entrée de D6),
+   fichier de test.
 8. **AC8 — La documentation dit vrai** : `docs/testing.md:119` dit ce que `KESH_TEST_INSTANT` ne couvre pas (binaire servi,
    runner, navigateur, deux modules de tests de `src`) et donne les recettes de D3 et D4 ; l'exception (a) nomme les neuf
    tests de la 36-7b (la 36-7b la retire).
-9. **AC9 — Garde intacte** : `date_du_jour_garde.rs` verte sans retouche de ses listes closes.
+9. **AC9 — Garde intacte** : `date_du_jour_garde.rs` verte sans retouche de ses listes closes ; `local-date-guard.test.ts`
+   vert avec la seule entrée de D6 ajoutée (quatre sites).
 
 ## Tests à écrire, et la preuve du rouge
 
-La story n'ajoute pas de test : elle **corrige les montages** de treize tests, dans sept fichiers. Le rouge de chacun est
-constaté, sans correctif, par `inventaire-A2027.log` (et neuf d'entre eux par `inventaire-N2027.log`) — à rejouer à
-l'étape 0 à la tête de la branche, journal `kesh-gate-logs/e36-7a/rouges.log`.
+La story **corrige les montages** de treize tests, dans sept fichiers, et **ajoute une spec**, la sonde d'horloge de D6.
+Le rouge de chacun des treize est constaté, sans correctif, par `inventaire-A2027.log` (et neuf d'entre eux par
+`inventaire-N2027.log`), celui d'`open_items_invariant` à l'heure du 2026-12-26 par `sonde-p2-S1b.log` — à rejouer à
+l'étape 0 à la tête de la branche, journal `kesh-gate-logs/e36-7a/rouges.log`. La spec de D6 est verte à l'heure réelle
+par construction ; son rouge se prouve en la jouant sous faketime appliqué au runner **seul** (backend à l'heure réelle) :
+le jour du serveur diffère, elle rougit (journal `rouges.log`).
 
 **Mutations** (script versionné dans `kesh-gate-logs/e36-7a/mut/`, code commité avant, restauration
 `git restore --worktree -- <fichier>` puis `touch`) : **une par site corrigé** (ou par groupe de sites qui partagent un
-même montage, dit comme tel), qui remet la date ou l'exercice du site à sa forme de 2026 ; chacune **tuée par le test
-nommé sous `KESH_TEST_INSTANT=2027-01-04T10:00:00Z`** (journal `mut/M<n>.log`).
+même montage, dit comme tel) ; chacune remet le site à sa **forme d'origine** (pour les témoins de `dates_bornes_e2e`, le
+littéral `"2027-01-01"` ; ailleurs l'année 2026 ; V2-10) et doit être **tuée par le test nommé, sous l'instant nommé**
+(journal `mut/M<n>.log`). Les parts « exercice N » se tuent sous `2027-01-04` ; les parts « pièces en N-1 » y seraient des
+**mutants équivalents** (N-1 = 2026, V2-1) et se tuent sous `2029-06-15`.
 
-| M | Site corrigé | Test qui la tue |
-|---|---|---|
-| M1 | `admin_full_import_e2e` `v0174a_decor` (`:4899-4901` et ses pièces) — un groupe | `full_import_accepts_an_rc1_backup_with_supplier_invoices` (et `…_0_16_…`) |
-| M2 | `bank_statements_manual_e2e:218-220` | `manual_statement_lines_reconcile_like_imported_ones` |
-| M3 à M6 | `dates_bornes_e2e` témoins `:1010`, `:1050`, `:1510`, `:1556` — une mutation chacun | `c_facture_echeance`, `c_facture_maj_echeance`, `c_fournisseur_echeance`, `c_fournisseur_maj_echeance` (appariés à l'étape 0, ligne lue) |
-| M7 | `journal_entries_modification` `societe()` (`:268-275`) — un montage pour deux tests | `update_waits_for_a_concurrent_reversal_then_refuses` (et `delete_…`) |
-| M8 | `migrations_upgrade_path` (`:1498` et l'exercice de la base peuplée) — un groupe | `draft_migration_preserves_a_populated_016_base` (et `…_rc1_…`) |
-| M9 | `opening_complement_repository` `year_span(…)` de `un_compte_contre_passe_reste_mouvemente` | ce test ; les autres appels de `year_span(2026)` (`:246` à `:383`) se mutent chacun s'ils sont corrigés, sinon l'étape 0 dit pourquoi ils restent justes |
-| M10 | `open_items_invariant` (site établi par D5) | `open_items_balance_matches_the_ledger_and_the_trial_balance` |
+| M | Site corrigé | Test qui la tue | Instant |
+|---|---|---|---|
+| M1a | `admin_full_import_e2e` `v0174a_decor`, exercice (`:4899-4901`) | `full_import_accepts_an_rc1_backup_with_supplier_invoices` (et `…_0_16_…`) | `2027-01-04T10:00:00Z` |
+| M1b | `admin_full_import_e2e` pièces `:4990`, `:5039` remises en 2026 | idem ; `full_import_round_trip_keeps_a_draft` (`:5152-5156`) reste vert | `2029-06-15T10:00:00Z` |
+| M2a | `bank_statements_manual_e2e:218-220`, exercice | `manual_statement_lines_reconcile_like_imported_ones` | `2027-01-04T10:00:00Z` |
+| M2b | `bank_statements_manual_e2e` pièces `:253`, `:1008`, `:1036` (et les autres relevées à l'étape 0) remises en 2026 — un groupe | idem | `2029-06-15T10:00:00Z` |
+| M3 à M6 | `dates_bornes_e2e` témoins `:1010`, `:1050`, `:1510`, `:1556` remis à `"2027-01-01"` — une mutation chacun | `c_facture_echeance`, `c_facture_maj_echeance`, `c_fournisseur_echeance`, `c_fournisseur_maj_echeance` (appariés à l'étape 0, ligne lue) | `2027-01-04T10:00:00Z` |
+| M7a | `journal_entries_modification` `societe()` (`:268-275`), exercice — un montage pour **cinq** tests | `update_waits_for_a_concurrent_reversal_then_refuses` (et `delete_…`) | `2027-01-04T10:00:00Z` |
+| M7b | `journal_entries_modification` écritures et corps (`:373`, `:388`, `:426`, `:437`, `:487`, `:540`, `:593`, `:612`) remis en 2026 — un groupe | l'un des cinq tests, nommé à l'étape 0 | `2029-06-15T10:00:00Z` |
+| M7c | exercice postérieur `:425`, `:539` remis à `2027` | `update_waits_for_a_concurrent_close_of_a_later_year_then_refuses` (et `delete_…`) : chevauchement ou nom faux | `2029-06-15T10:00:00Z` |
+| M8a | `migrations_upgrade_path` exercice de la base peuplée (`:1413-1415`) | `draft_migration_preserves_a_populated_016_base` (et `…_rc1_…`) | `2027-01-04T10:00:00Z` |
+| M8b | `migrations_upgrade_path` pièces `:1319`, `:1332`, `:1498`, `:1716` remises en 2026 — un groupe | idem | `2029-06-15T10:00:00Z` |
+| M9a | `opening_complement_repository` exercice de `un_compte_contre_passe_reste_mouvemente` (`:514`) | ce test | `2027-01-04T10:00:00Z` |
+| M9b | ses dates `:519`, `:533` remises en 2026 | ce test (`NoOpenFiscalYear` au lieu d'`AccountMoved`, V2-1) | `2029-06-15T10:00:00Z` |
+| M10 | `open_items_invariant` `a2` remis à `ymd(2026, 3, 1)` (D5) | `open_items_balance_matches_the_ledger_and_the_trial_balance` | `2027-01-04T10:00:00Z` |
 
-Une mutation qui ne rougit pas signale un montage qui ne dépend plus du jour : à dire (juste, ou test muet).
+Les autres appels de `year_span(2026)` d'`opening_complement_repository` (`:246` à `:383`), s'ils sont corrigés, reçoivent
+chacun leur mutation ; sinon l'étape 0 dit pourquoi ils restent justes (ligne lue). Une mutation qui ne rougit pas sous
+l'instant prescrit se dit (juste, test muet, ou mutant équivalent démontré), jamais à taire.
 
 ## Tâches
 
-1. **Étape 0** : relire `e36-choix-autonomes-e360.md` (C-e360-13) et `e36-choix-autonomes-36-7.md` ; constater la présence
-   de libfaketime (D3) ; rejouer les relevés A2027 et N2027 à la tête (`rouges.log`) ; lire la cause
-   d'`open_items_invariant` (D5) et la citer.
+1. **Étape 0** : relire `e36-choix-autonomes-e360.md` (C-e360-13) et `e36-choix-autonomes-36-7.md` ; rejouer la sonde du
+   détecteur de libfaketime (D3) ; rejouer les relevés A2027, N2027 et les sondes S1a, S1b, S2 à la tête (`rouges.log`) ;
+   confirmer l'appel fautif d'`open_items_invariant` sous `RUST_BACKTRACE=1` (D5) ; relever par `/usr/bin/grep -nE
+   '\b2026\b'` toutes les dates de 2026 des treize tests (D1 a).
 2. Corriger les montages des sept fichiers du tableau (D1).
-3. Mettre à jour `docs/testing.md:119` (AC8) ; recettes de D3/D4.
-4. Mutations M1 à M10 (AC3 c).
+3. Écrire la spec de D6 et l'entrée de la garde ; mettre à jour `docs/testing.md:119` (AC8) ; recettes de D3/D4.
+4. Mutations M1a à M10 (AC3 c).
 5. Gates (§ *Dev Notes*), AC1, AC2, AC3, AC6 → `Status: review`, clé `review`, Dev Agent Record, prompt de la revue P1.
-   **Sans libfaketime, la story s'arrête là** (C-36-7-6).
+   **La fusion doit précéder le 2026-12-26** (D5).
 6. À la clôture : `gate-ci`, E2E complet à l'heure réelle, **puis AC4 et AC5** ; ensuite seulement `done`.
 
 ## Note de version
@@ -342,8 +430,10 @@ changement pour l'utilisateur. (refs #1125)
 
 `kesh-api` (tests, trois fichiers : `admin_full_import_e2e.rs`, `bank_statements_manual_e2e.rs`, `dates_bornes_e2e.rs`),
 `kesh-db` (tests, trois : `journal_entries_modification.rs`, `migrations_upgrade_path.rs`,
-`opening_complement_repository.rs`), `kesh-report` (tests, un : `open_items_invariant.rs`), `docs` (`testing.md`) :
-**quatre modules**, sept fichiers de tests, aucun fichier de production.
+`opening_complement_repository.rs`), `kesh-report` (tests, un : `open_items_invariant.rs`), `frontend` (tests : la spec
+neuve `tests/e2e/horloge-sonde.spec.ts`, l'entrée de `src/lib/shared/utils/local-date-guard.test.ts` ; D6), `docs`
+(`testing.md`) : **cinq modules** — à la limite de la règle, non au-delà —, sept fichiers de tests corrigés, une spec
+neuve, une garde, aucun fichier de production.
 
 ### Gates (voie 2 ; `e35-dev-commun.md` § *Quels gates, quand*)
 
@@ -351,8 +441,9 @@ changement pour l'utilisateur. (refs #1125)
   neuf), non ciblé. ⚠️ Ne pas toucher aux sites positionnels de `migrations_upgrade_path.rs` (`apply_migrations_up_to`,
   `migrations.len()`, P6) : seules les dates changent.
 - **Passage en `review`** : `test-fast --ci` à l'heure réelle, puis sous `2027-01-04T10:00:00Z`, `2026-12-31T23:30:00Z` et
-  `2026-03-10T23:30:00Z` (une campagne par prise de verrou) ; `scripts/gate-ci.sh kesh_ci_e367a` en voie 1. Frontend non
-  touché : pas de frontend complet, sauf si AC5 fait toucher une spec.
+  `2026-03-10T23:30:00Z` (une campagne par prise de verrou), et les sept binaires sous `2029-06-15T10:00:00Z` ;
+  `scripts/gate-ci.sh kesh_ci_e367a` en voie 1 ; frontend complet (`npm run check`, `lint-i18n-ownership`, `test:unit`,
+  `build`), la garde des specs étant touchée (D6).
 - **Clôture** : `gate-ci` et E2E complet à l'heure réelle au dernier commit de code, **puis** AC4 et AC5.
 - Une commande lourde à la fois (E7). Verrou voie 2 : `flock /home/gcorbaz/devel/kesh-gate-logs/.gate-base2.lock
   scripts/mem-guard.sh …`, `TMPDIR=/tmp/kesh-voie2`, `DATABASE_URL=mysql://kesh:kesh_dev@127.0.0.1:3307/kesh_e367a`.
@@ -360,6 +451,8 @@ changement pour l'utilisateur. (refs #1125)
 
 ### Fichiers communs
 
+- `frontend/src/lib/shared/utils/local-date-guard.test.ts` : touché par toute story qui ajoute une lecture de l'horloge
+  dans les specs (liste close).
 - `crates/kesh-api/tests/admin_full_import_e2e.rs` et `docs/testing.md` : **communs avec la 36-7b**, qui part de la 36-7a
   fusionnée (`v0174a_decor` ici ; `:2007`, `:2281` là-bas — paragraphes distincts).
 - `admin_full_import_e2e.rs` : possible avec les lots 36-11 (0.19.0). 36-10 (#1147, #1053) : ses tests suivent D1.
@@ -397,3 +490,37 @@ issue #1125 ; `docs/testing.md:119`.
   l'heure réelle et la nuit de l'AC2 (l'instant de mars ne sert ici qu'à la non-régression), les mutations M1, M4 à M12
   d'origine renumérotées M1 à M10, et les décisions communes (D1 en N-1, D3 faketime, D4, D5), auxquelles la 36-7b renvoie.
   Aucune passe de validation propre encore.
+- **2026-11-15 — Remédiation de la validation P2** (Opus 5.5 : 0 CRITICAL, 0 HIGH, 5 MEDIUM, 5 LOW ;
+  `kesh-gate-logs/e36-7/validation-36-7a-p2.md`). Prémisse de chaque finding lue au code ou exécutée ; aucun réfuté.
+  Sondes neuves, à la tête, voie 2 (`kesh-gate-logs/e36-7/sondes-p2-36-7a.sh`) : S1a `binary(open_items_invariant)` sous
+  `2026-12-24T10:00:00Z` 1 passé ; S1b sous `2026-12-26T10:00:00Z` 1 échoué ; S2 les sept binaires sous
+  `2029-06-15T10:00:00Z` 216 exécutés, 13 échecs (les treize, aucun autre) ; S3, S3b détecteur de libfaketime.
+  - **V2-1, corrigé** : instant `2029-06-15T10:00:00Z` ajouté à l'AC2 sur les sept binaires ; mutations scindées en parts
+    « exercice » (tuées sous 2027-01-04) et « pièces en N-1 » (tuées sous 2029-06-15) ; sites de 2026 en dur nommés
+    (`bank_statements_manual_e2e:253`, `:1008`, `:1036` ; `opening_complement_repository:519`, `:533` ;
+    `migrations_upgrade_path:1319`, `:1332`, `:1498`, `:1716` ; `journal_entries_modification:373` … `:612`) et D1 (a) qui
+    étend la règle à toutes les dates de 2026 des tests corrigés ; exercice borné 2026→N écarté.
+  - **V2-2, corrigé** : D1 récrite en deux formes, (a) exercice N-1..N et dates en N-1, (b) verrou glissant, `jours_avant(k)`,
+    0 < k < 300 ; l'interdit ne vise plus que le décalage qui sort de l'exercice ; D5 établie au code
+    (`lettering_documents.rs:51`, `:552`, `:556-562` ; `open_items_invariant.rs:216`, `:220`) — la suggestion de la P1
+    (V1-8, « un autre lettrage, à `jours_avant(n)` ») était fausse.
+  - **V2-3, corrigé** : `open_items_invariant` rougit à l'heure réelle dès le 2026-12-26 (S1a, S1b) ; en-tête et tâche 5 :
+    fusion avant le 2026-12-26. Le fichier d'epic et `sprint-status.yaml` sont corrigés par l'orchestrateur.
+  - **V2-4, corrigé** : `societe()` monte cinq tests (`:372`, `:424`, `:486`, `:538`, `:592`) ; exercice N-1..N, exercice
+    postérieur en N+1 nommé `format!("Exercice {}", N + 1)` (`:425`, `:539`, assertions `:458`, `:571`) ; M7a, M7b, M7c.
+  - **V2-5, corrigé** : libfaketime est installée (`/usr/bin/faketime`, `/usr/lib/x86_64-linux-gnu/faketime/`) ; détecteur
+    `ldconfig` remplacé par `ls -l` et une sonde positive (`sonde-p2-S3b.log` : `2027-01-04T10:00:00Z` sous faketime, date
+    réelle sans).
+  - **V2-6, corrigé** : troisième consommateur de `v0174a_decor` (`:5152-5156`) et sites de `migrations_upgrade_path`
+    (`:1413-1415`, `:1537`, `:1661`, `:1701`, `:1742`) nommés.
+  - **V2-7, corrigé** : `bank_statements_manual_e2e:1149` est l'annulation du rapprochement (`:1141`).
+  - **V2-8, corrigé** : étage serveur cité à `routes/letterings.rs:311` et `:524-530`, sur la créance 1100 (compte
+    lettrable ; refus `:513-517`).
+  - **V2-9, corrigé** : commande écrite (`flock` et `mem-guard` dehors, `env TZ=… NO_FAKE_STAT=1 faketime
+    --exclude-monotonic -f '@…'` dedans), chaque option citée de `man faketime` ; binaire construit ; `-m` non tranché par la
+    documentation, variante dite au journal ; étage navigateur par une spec versionnée, D6 (C-36-7-8), qui ajoute le module
+    `frontend` (cinq modules).
+  - **V2-10, corrigé** : mutations « à la forme d'origine », `"2027-01-01"` pour les témoins.
+  - Propagation grepée (`absente`, `ldconfig`, `FAKETIME_DONT`, `M1 à M10`, `quatre modules`, `un montage pour deux`,
+    `forme de 2026`, `Non établi`, `cause à établir`, `Sans libfaketime`) : résidus traités ; les mentions restantes sont
+    citées comme historique.

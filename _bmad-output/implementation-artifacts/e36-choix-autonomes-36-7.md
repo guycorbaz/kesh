@@ -27,6 +27,10 @@ de C-e360-13. Chaque choix : contexte, option retenue, options écartées, réve
   (navigateur seul) ; conclure sur la seule lecture des specs ; construire libfaketime depuis ses sources hors dépôt
   (téléchargement de code externe, à décider par l'orchestrateur si Guy n'installe pas le paquet).
 - **Réversible** : oui (outillage de la station, aucun fichier du dépôt).
+- **Amendé le 2026-11-15 (validation P2 de la 36-7a, V2-5, V2-9)** : libfaketime est **installée**
+  (`/usr/bin/faketime`, `/usr/lib/x86_64-linux-gnu/faketime/`) ; le détecteur `ldconfig -p` ne la voyait pas. Commande
+  retenue : `flock … scripts/mem-guard.sh env TZ=Europe/Zurich NO_FAKE_STAT=1 faketime --exclude-monotonic -f '@2027-01-04
+  11:00:00' <binaire construit>`, chaque option citée de `man faketime`, sonde `sonde-p2-S3b.log`.
 
 ### C-36-7-3 — Les trois sites à borne de 2026 antérieure entrent au périmètre
 
@@ -53,6 +57,19 @@ de C-e360-13. Chaque choix : contexte, option retenue, options écartées, réve
 - **Écartées** : sortir AC4/AC5 de la story (le critère de l'epic exige l'E2E en 2027) ; bloquer tout le développement
   sur l'installation.
 - **Réversible** : oui.
+- **Amendé le 2026-11-15 (validation P2 de la 36-7a, V2-5)** : la prémisse « absente » est tombée (bibliothèque
+  installée) ; la règle reste : pas de `done` sans AC4 et AC5 joués.
+
+### C-36-7-8 — L'étage navigateur de la sonde est une spec versionnée
+
+- **Contexte** : validation P2 de la 36-7a, V2-9 — l'étage navigateur doit se jouer dans les conditions de la suite ; le
+  runner ne lit que `testDir: 'tests/e2e'` (`frontend/playwright.config.ts:22`).
+- **Retenu** : `frontend/tests/e2e/horloge-sonde.spec.ts`, qui vérifie que serveur, runner et navigateur disent le même
+  jour ; vraie à l'heure réelle, sonde à trois étages sous faketime ; entrée justifiée dans `ALLOWLIST_SPECS` de
+  `local-date-guard.test.ts`. Ajoute le module `frontend` à la 36-7a (cinq modules).
+- **Écartées** : spec hors dépôt (non lue par le runner) ; `chromium.launch()` autonome (autres conditions) ; aucune
+  sonde navigateur.
+- **Réversible** : oui (une spec et une entrée de garde).
 
 ### C-36-7-4 — Aucun outillage versionné : les recettes vont dans `docs/testing.md`
 

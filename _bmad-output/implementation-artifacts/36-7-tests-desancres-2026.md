@@ -523,3 +523,9 @@ tests suivent D1 (année du jour, pas 2026). Aucun fichier de manuel : `git grep
   - `36-7b-tests-bornes-anterieures.md` — les neuf rouges sous instant antérieur, huit fichiers, trois modules, mutations
     M1 à M9 (M2, M3, M13 à M19 d'ici) ; l'instant de mars de l'AC2 ; sans échéance, après la fusion de la 36-7a.
   La PR de release ne porte `closes #1125` qu'avec la 36-7b close et AC4, AC5 de la 36-7a joués.
+- **2026-11-15 — Note** : la validation P2 de la 36-7a (`kesh-gate-logs/e36-7/validation-36-7a-p2.md`) a montré que la
+  règle D1 ci-dessus (« dans N-1, jamais dans N », « juste pour tout jour d'une année ») est fausse sous le verrou glissant
+  d'`open_items_invariant` et invérifiable sous l'instant `2027-01-04`, que la cause de D5 se lit au code (lettrage `:220`,
+  verrou jour − 300), que ce test rougit à l'heure réelle dès le 2026-12-26, et que libfaketime est installée. La règle
+  récrite et ces faits sont dans `36-7a-tests-desancres-2027.md` (D1, D3, D5, D6), dont le périmètre compte désormais cinq
+  modules et seize mutations (M1a à M10) ; le texte de cette fiche n'est pas réécrit.

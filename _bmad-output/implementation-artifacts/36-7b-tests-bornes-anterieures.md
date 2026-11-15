@@ -78,9 +78,13 @@ temps, sans date de 2026, hors périmètre ; s'il rougit, il se nomme comme roug
 
 ## Décisions
 
-- **D1 — Les dates passées se placent dans N-1** : la règle D1 de la 36-7a, sans changement (exercices couvrant N-1 et N,
-  pièces, paiements et bornes de verrou dans N-1, opération du jour à `aujourd_hui_test()`, modèle
-  `crates/kesh-db/tests/supplier_invoices_draft.rs:2059` et `scinder` `:1522-1547`). Pour les tests dont le seul défaut est
+- **D1 — Les dates passées se placent selon la règle D1 de la 36-7a** (récrite à sa validation P2 : forme (a), exercice
+  couvrant N-1 et N et dates passées en N-1, pour les sites contraints par un exercice ou par une borne de verrou **fixe**
+  posée par le test — `invoice_echeancier_e2e:2018`, `reconciliation_e2e:7283`, `supplier_settlement_cancel_e2e:809`,
+  `admin_full_import_e2e:2007`, `:2281`, `supplier_invoices_draft:1778` ; forme (b), `jours_avant(k)`, réservée à un verrou
+  **glissant** de la fixture, qu'aucun des neuf ne relève à la lecture de son site — l'étape 0 le vérifie, ligne lue).
+  Toutes les dates de 2026 des neuf tests suivent, relevées par `/usr/bin/grep -nE '\b2026\b'`. Sous l'instant de mars,
+  N-1 = 2025 : une mutation qui remet 2026 y est distinguable. Pour les tests dont le seul défaut est
   de lire à l'`asOf` du jour une pièce de date fixe (`project_reports_e2e`, `services_rollout`,
   `supplier_invoice_draft_e2e`), l'alternative est un `asOf` (ou une borne de rapport) **explicite** dans le montage ; le
   développeur choisit, ligne lue, celle qui garde ce que le test vérifie, et le dit au Change Log.
@@ -98,7 +102,8 @@ temps, sans date de 2026, hors périmètre ; s'il rougit, il se nomme comme roug
    voie 2, base remise à neuf : 0 échec (journal `kesh-gate-logs/e36-7b/gate-B2026.log`, commit cité). Les neuf tests du
    tableau sont verts.
 2. **AC2 — Sans régression** (la 36-7a fusionnée) : la même suite verte sous `2027-01-04T10:00:00Z`, sous
-   `2026-12-31T23:30:00Z` et sans la variable (heure réelle). **Borne** : un instant antérieur au 2026-01-01 ou postérieur
+   `2026-12-31T23:30:00Z` et sans la variable (heure réelle) ; les **huit binaires corrigés** (filtre de l'AC3 b) verts sous
+   `2029-06-15T10:00:00Z` (N-1 = 2028, instant ajouté à la validation P2 de la 36-7a, V2-1). **Borne** : un instant antérieur au 2026-01-01 ou postérieur
    au 2029-12-31 n'est pas visé (exercice de la base de dev 2020-2030, garde `y <= 2029` de `supplier_invoices_draft.rs:1525`).
    Un rouge de charge se relance et se nomme, sans compter contre l'AC.
 3. **AC3 — Sonde positive de la lecture.** (a) Le relevé `inventaire-B2026.log` (9 rouges) est rejoué à l'étape 0 à la tête
@@ -216,3 +221,6 @@ fiche sœur `36-7a-tests-desancres-2027.md` ; issue #1125 et ses commentaires de
   le même jour (C-36-7-7). Reprend les neuf tests de D2 d'origine, l'instant de mars de l'AC2 d'origine (devenu AC1), les
   mutations M2, M3, M13 à M19 d'origine renumérotées M1 à M9 ; renvoie à la 36-7a pour la règle D1. Aucune passe de
   validation propre encore.
+- **2026-11-15 — Propagation de la remédiation P2 de la 36-7a** (`kesh-gate-logs/e36-7/validation-36-7a-p2.md`) : D1
+  renvoie à la règle récrite (formes a et b) et nomme la forme de chacun des neuf sites ; AC2 gagne l'instant
+  `2029-06-15T10:00:00Z` sur les huit binaires. Le reste inchangé.
