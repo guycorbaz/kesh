@@ -231,9 +231,9 @@ Ces décisions valent aussi pour la 36-7b, qui y renvoie.
     exige `F ≤ D + 1 jour` et `A ≥ D − 30 jours` (`kesh-db/src/repositories/reconciliation.rs:402-408`, `:116-118`) ; la
     facture de `:1036` n'a pas d'échéance (colonnes de l'INSERT, `:1034-1036`), donc `A = F` — restée en 2026 face à un
     relevé de 2028, elle ne serait plus candidate (assertion `:1098-1100`, « la facture est candidate »). L'écriture de
-    `:1008` ne participe pas à cette fenêtre et suit par cohérence ; aucune lecture de sa date sous une règle de date n'a
-    été trouvée à la lecture du parcours du test, mais l'équivalence de sa mutation **n'est pas démontrée par la fiche** :
-    l'étape 0 la démontre (lecture citée) ou la tue (mutation jouée sous `2029-06-15T10:00:00Z`, journal).
+    `:1008` ne participe pas à cette fenêtre et suit par cohérence ; son équivalence **n'est pas déclarée** : la tâche 4,
+    après le correctif commité, **joue sa mutation** sous `2029-06-15T10:00:00Z` (journal) — seule preuve admise, aucune
+    équivalence par simple lecture (V6-1, V6-2).
   - **(b) Dates contraintes par un verrou glissant** (`open_items_invariant`, verrou `jours_avant(300)` de la fixture,
     D5) : la date suit le jour, `jours_avant(k)` avec **0 < k < 300**, dans un exercice ouvert qui la couvre (`fy`, à partir du
     2025-01-01 : `jours_avant(k)` y tombe pour tout jour à partir du 2026-01-01 dès que k ≤ 365). Une date en N-1 y serait
@@ -253,8 +253,8 @@ Ces décisions valent aussi pour la 36-7b, qui y renvoie.
     pas déclarée** (V5-1) : `validate_in_tx` lit `invoice_date` (`kesh-db/src/repositories/supplier_invoices.rs:1584`,
     `:1718`), les factures revalidées passent d'abord par `update_draft` (`migrations_upgrade_path.rs:1716`), mais la
     migration `20261106000001` **classe par `invoice_date`** pour poser le numéro interne (`:47`, `:63` : `ORDER BY
-    f.start_date, s.invoice_date, s.id`). Comme pour `:1008`, l'étape 0 **joue la mutation** sous `2029-06-15T10:00:00Z` ;
-    seulement si elle reste verte, elle l'écrit équivalente, avec la raison constatée (par exemple : le test n'asserte aucun
+    f.start_date, s.invoice_date, s.id`). Comme pour `:1008`, la tâche 4, **après le correctif commité**, joue la mutation sous
+    `2029-06-15T10:00:00Z` (V6-1) ; seulement si elle reste verte, elle l'écrit équivalente, avec la raison constatée (par exemple : le test n'asserte aucun
     numéro interne, à vérifier alors, ligne lue).
   **Modèle** au dépôt pour (a) : `crates/kesh-db/tests/supplier_invoices_draft.rs:2059` `let date = jour(x.y - 2, 6, 15);`,
   avec `scinder` (`:1522-1547`), qui pose les exercices `y - 2`, `y - 1`, `y` depuis `let y = aujourdhui().year();`
@@ -371,7 +371,7 @@ Ces décisions valent aussi pour la 36-7b, qui y renvoie.
    1er janvier 2027 : neuf rouges à la base, `inventaire-N2027.log`), sans la variable (heure réelle) et sous
    `2029-06-15T10:00:00Z` (N-1 = 2028 ≠ 2026, V2-1 ; **suite entière**, une prise de verrou, V3-7 — à la base, les sept
    binaires corrigés y rendaient 216 exécutés, 13 échecs, les treize, `sonde-p2-S2.log` ; la suite entière n'y a pas été
-   relevée à la base, l'étape 0 la relève ; un rouge hors des treize sous cet instant **compte contre l'AC2 s'il vient de
+   relevée à la base, l'étape 0 la relève, journal `kesh-gate-logs/e36-7a/inventaire-C2029.log` (V6-3) ; un rouge hors des treize sous cet instant **compte contre l'AC2 s'il vient de
    la story** — tel `manual_statement_feeds_the_tile_and_k3` si `setup()` était modifié, V4-1 — ; sinon il se nomme, ne
    compte pas contre l'AC, et une issue est **demandée à l'orchestrateur**, avec la preuve qu'il rougit déjà à la base sous
    le même instant, journal joint) ; `binary(open_items_invariant)` vert sous `2026-12-26T10:00:00Z`
@@ -435,14 +435,14 @@ littéral `"2027-01-01"` ; ailleurs l'année 2026 ; V2-10) et doit être **tuée
 | M2a | `bank_statements_manual_e2e`, l'`UPDATE` de l'exercice dans `manual_statement_lines_reconcile_like_imported_ones` retiré (`setup()`, `:218-220`, intouché ; V4-1) | ce test | `2027-01-04T10:00:00Z` |
 | M2b | `bank_statements_manual_e2e` relevé dérivé du test (période, numéro, dates de lignes) remis aux valeurs de `body()` (2026) | idem : la facture en N-1 n'est plus candidate (`F ≤ D + 1`, `reconciliation.rs:402-408` ; assertion `:1098-1100`) | `2029-06-15T10:00:00Z` |
 | M2c | `bank_statements_manual_e2e:1036` (facture) remise au `'2026-08-20'` | idem : `A = F` hors de `D − 30` (assertion `:1098-1100`) | `2029-06-15T10:00:00Z` |
-| — | `bank_statements_manual_e2e:1008` (écriture, INSERT brut) | équivalence **à démontrer à l'étape 0** (lecture citée), ou mutation jouée et tuée ; hors de la fenêtre de rapprochement (V4-4) | `2029-06-15T10:00:00Z` si jouée |
+| — | `bank_statements_manual_e2e:1008` (écriture, INSERT brut) | **jouée à la tâche 4**, après le correctif commité ; déclarée équivalente seulement si elle reste verte, raison constatée écrite ; aucune équivalence par lecture (V6-1, V6-2) | `2029-06-15T10:00:00Z` |
 | M3 à M6 | `dates_bornes_e2e` témoins `:1010`, `:1050`, `:1510`, `:1556` remis à `"2027-01-01"` — une mutation chacun | `c_facture_echeance`, `c_facture_maj_echeance`, `c_fournisseur_echeance`, `c_fournisseur_maj_echeance` (appariés à l'étape 0, ligne lue) | `2027-01-04T10:00:00Z` |
 | M7a | `journal_entries_modification` `societe()` (`:268-275`), exercice — un montage pour **cinq** tests | `update_waits_for_a_concurrent_reversal_then_refuses` (et `delete_…`) | `2027-01-04T10:00:00Z` |
 | M7b | `journal_entries_modification` écritures et corps (`:373`, `:388`, `:426`, `:437`, `:487`, `:540`, `:593`, `:612`) remis en 2026 — un groupe | l'un des cinq tests, nommé à l'étape 0 | `2029-06-15T10:00:00Z` |
 | M7c | exercice postérieur `:425`, `:539` remis à `2027` | `update_waits_for_a_concurrent_close_of_a_later_year_then_refuses` (et `delete_…`) : sous 2029, l'exercice 2027 est **antérieur** à N-1..N (2028-2029), `find_later_closed_in_tx(…, fy_start)` (`journal_entries.rs:1548`, `:1896` ; `fiscal_years.rs:892`, `FIND_LATER_CLOSED_SQL` : `WHERE company_id = ? AND start_date > ? AND status = 'Closed'`) ne le voit plus (V3-3). Premier rouge attendu : **l'attente** — le `PUT` ne bloque plus sur le verrou de B, et l'assertion `:443-448` (« le PUT doit attendre sur le verrou des exercices postérieurs ») échoue avant le `match` `LaterFiscalYearClosed` (`:452-461`) ; à défaut, **le refus** n'arrive pas. Le journal `mut/M7c.log` tranche (V4-5) | `2029-06-15T10:00:00Z` |
 | M8a | `migrations_upgrade_path` exercice de la base peuplée (`:1413-1415`) | `draft_migration_preserves_a_populated_016_base` (et `…_rc1_…`) | `2027-01-04T10:00:00Z` |
 | M8b | `migrations_upgrade_path` pièces `:1319` (`create_in_tx`), `:1498`, `:1716` remises en 2026 — une mutation chacune ; celles que l'étape 0 trouve équivalentes se disent, ligne lue | idem | `2029-06-15T10:00:00Z` |
-| — | `migrations_upgrade_path:1332` (INSERT brut de `supplier_invoices`) | **jouée à l'étape 0** ; déclarée équivalente seulement si elle reste verte, raison constatée écrite — la migration `20261106000001` classe par `invoice_date` (`:47`, `:63`) (V5-1) | `2029-06-15T10:00:00Z` |
+| — | `migrations_upgrade_path:1332` (INSERT brut de `supplier_invoices`) | **jouée à la tâche 4**, après le correctif commité (V6-1) ; déclarée équivalente seulement si elle reste verte, raison constatée écrite — la migration `20261106000001` classe par `invoice_date` (`:47`, `:63`) (V5-1) | `2029-06-15T10:00:00Z` |
 | M9a | `opening_complement_repository` exercice de `un_compte_contre_passe_reste_mouvemente` (`:514`) | ce test | `2027-01-04T10:00:00Z` |
 | M9b | l'écriture `:519` remise à `d(2026, 2, 1)` | ce test : `create_in_tx` refuse une date hors de l'exercice N-1..N (`DateOutsideFiscalYear`, `journal_entries.rs:392`), `post` panique sur `.expect("écriture")` (`:144`) (V3-1) | `2029-06-15T10:00:00Z` |
 | — | `:533`, le `today` de `complete` (passé à `aujourd_hui_test()`) | s'il est gardé à une date passée, sa remise en 2026 est **équivalente** : premier exercice ouvert et non verrouillé, `decide_date` rend la branche `OpeningDay` quel que soit `today` (`opening_complement.rs:256-259`), `AccountMoved` suit (`:663`) | — |
@@ -458,11 +458,12 @@ l'instant prescrit se dit (juste, test muet, ou mutant équivalent démontré), 
    détecteur de libfaketime (D3) ; rejouer les relevés A2027, N2027 et les sondes S1a, S1b, S2 à la tête (`rouges.log`) ;
    confirmer l'appel fautif d'`open_items_invariant` sous `RUST_BACKTRACE=1` (D5) ; relever par `/usr/bin/grep -nE
    '\b2026\b'` toutes les dates de 2026 des treize tests (D1 a) ; **relever la suite entière à la base sous
-   `2029-06-15T10:00:00Z`** (`inventaire-36-7.sh`, journal joint), référence de l'AC2 pour juger un rouge hors des treize
-   (V5-2) ; jouer les mutations de `bank_statements_manual_e2e:1008` et `migrations_upgrade_path:1332` (§ *Tests*).
+   `2029-06-15T10:00:00Z`** (`inventaire-36-7.sh`, journal `kesh-gate-logs/e36-7a/inventaire-C2029.log`), référence de
+   l'AC2 pour juger un rouge hors des treize (V5-2, V6-3).
 2. Corriger les montages des sept fichiers du tableau (D1).
 3. Écrire la spec de D6 et l'entrée de la garde ; mettre à jour `docs/testing.md:119` (AC8, dont « trois sites » → quatre) ; recettes de D3/D4.
-4. Mutations M1a à M10 (AC3 c).
+4. Mutations M1a à M10 (AC3 c), le correctif commité ; puis les mutations de `bank_statements_manual_e2e:1008` et
+   `migrations_upgrade_path:1332` sous `2029-06-15T10:00:00Z` (§ *Tests*, V6-1).
 5. Gates (§ *Dev Notes*), AC1, AC2, AC3, AC6 → `Status: review`, clé `review`, Dev Agent Record, prompt de la revue P1.
    **La fusion doit précéder le 2026-12-26** (D5).
 6. À la clôture : `gate-ci`, E2E complet à l'heure réelle, **puis AC4 et AC5** ; ensuite seulement `done`.
@@ -646,3 +647,12 @@ issue #1125 ; `docs/testing.md:119`.
   - **V5-2, corrigé** : la tâche 1 relève la suite entière à la base sous `2029-06-15T10:00:00Z`.
   - **V5-3, corrigé** : M7c cite `FIND_LATER_CLOSED_SQL`, `fiscal_years.rs:892` (lu).
   - **V5-4, corrigé** : mutations : **dix-neuf, plus jusqu'à deux jouées à l'étape 0** (`:1008`, `:1332`).
+- **2026-11-15 — Remédiation de la validation P6 ciblée** (`kesh-gate-logs/e36-7/validation-36-7a-p6-ciblee.md` :
+  0/0/1/3), par l'outil Edit. Aucun finding réfuté.
+  - **V6-1, corrigé** : une mutation remet un site **corrigé** à sa forme d'origine ; à l'étape 0 rien n'est corrigé. Les
+    mutations de `bank_statements_manual_e2e:1008` et `migrations_upgrade_path:1332` passent à la **tâche 4**, après le
+    correctif commité (D1, tableau, tâches 1 et 4, registre). Décompte : **dix-neuf, plus jusqu'à deux jouées à la tâche 4**.
+    L'entrée P5 ci-dessus (« à l'étape 0 »), datée, n'est pas réécrite.
+  - **V6-2, corrigé** : `:1008` — la voie « équivalence par lecture » est retirée ; seule la mutation jouée fait preuve.
+  - **V6-3, corrigé** : relevé de base sous 2029 nommé `kesh-gate-logs/e36-7a/inventaire-C2029.log` (tâche 1, AC2).
+  - **V6-4, corrigé** : propagé à la 36-7b (D1 et Change Log).

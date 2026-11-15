@@ -123,3 +123,6 @@ de C-e360-13. Chaque choix : contexte, option retenue, options écartées, réve
 - **Amendé le 2026-11-15 (validation P5 ciblée de la 36-7a, V5-1, V5-4)** : l'équivalence de `migrations_upgrade_path:1332`
   n'est plus déclarée (la migration `20261106000001` classe par `invoice_date`, `:47`, `:63`) ; elle se joue à l'étape 0
   comme `:1008`. Un seul mutant équivalent déclaré (`:533`) ; **dix-neuf mutations, plus jusqu'à deux jouées à l'étape 0**.
+- **Amendé le 2026-11-15 (validation P6 ciblée de la 36-7a, V6-1, V6-2)** : les mutations de `:1008` et `:1332` se jouent
+  à la **tâche 4, après le correctif commité**, non à l'étape 0 ; aucune équivalence par simple lecture. **Dix-neuf
+  mutations, plus jusqu'à deux jouées à la tâche 4.**

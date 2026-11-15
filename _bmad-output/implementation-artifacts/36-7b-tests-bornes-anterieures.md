@@ -87,8 +87,9 @@ temps, sans date de 2026, hors périmètre ; s'il rougit, il se nomme comme roug
   N-1 = 2025 : une mutation qui remet 2026 y est distinguable. Les précisions de la validation P3 de la 36-7a valent ici :
   un paramètre `today` d'un appel est l'opération du jour, non une date de pièce (`aujourd_hui_test()`) ; une date d'un
   **décor partagé** par d'autres tests (exercice d'un `setup()` compris) ne se change pas, le test corrigé en dérive sa copie ; une date posée par **INSERT
-  SQL brut** ne se contrôle pas contre l'exercice, et sa mutation n'est retenue que si une autre règle la fait rougir —
-  sinon elle se déclare équivalente, ligne lue. Pour les tests dont le seul défaut est
+  SQL brut** ne se contrôle pas contre l'exercice ; aucune équivalence ne se déclare par simple lecture : sa mutation se
+  joue **après le correctif commité** (tâche des mutations), et elle ne s'écrit équivalente que si elle reste verte, raison
+  constatée (V6-4). Pour les tests dont le seul défaut est
   de lire à l'`asOf` du jour une pièce de date fixe (`project_reports_e2e`, `services_rollout`,
   `supplier_invoice_draft_e2e`), l'alternative est un `asOf` (ou une borne de rapport) **explicite** dans le montage ; le
   développeur choisit, ligne lue, celle qui garde ce que le test vérifie, et le dit au Change Log.
@@ -233,3 +234,6 @@ fiche sœur `36-7a-tests-desancres-2027.md` ; issue #1125 et ses commentaires de
   reste inchangé.
 - **2026-11-15 — Propagation de la remédiation P4 de la 36-7a** (`kesh-gate-logs/e36-7/validation-36-7a-p4-ciblee.md`,
   V4-1) : la règle du décor partagé vaut aussi pour l'exercice posé par un `setup()` commun (D1). Le reste inchangé.
+- **2026-11-15 — Propagation de la remédiation P6 de la 36-7a** (`kesh-gate-logs/e36-7/validation-36-7a-p6-ciblee.md`,
+  V6-4) : D1 — aucune équivalence par simple lecture ; la mutation d'un site posé par INSERT brut se joue après le
+  correctif commité. Le reste inchangé.
