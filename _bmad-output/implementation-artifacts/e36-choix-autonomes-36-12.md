@@ -128,3 +128,20 @@ Les choix ci-dessus sont laissés tels qu'écrits ; ce qui les corrige :
 - **Écartées** : (a) garder l'erreur en dernier recours ; (b) borner seulement la ligne NPA-localité et prouver par
   propriété sans palier infaillible — une preuve par échantillonnage, non par construction.
 - **Réversible** : oui.
+
+### C-36-12-10 — La 36-12a publiable seule : elle aligne le point de dépôt et apporte la table des largeurs
+
+- **Contexte** : validation P2 de la 36-12a, V2-1 (`kesh-gate-logs/e36-12/validation-36-12a-p2.md`) : la ligne verticale
+  à x = 62 traverse l'intitulé du point de dépôt, ancré à x = 47 (`pdf.rs:966` `Mm(RECEIPT_W - 15.0),`), en anglais (bord
+  64,64) et en italien (68,76), et le touche en allemand (62,06) — chasses recalculées à l'AFM gras. Arbitrage de
+  l'orchestrateur : la 36-12a doit rester publiable seule ; elle aligne l'intitulé au bord x = 57 de la directive, et rien
+  d'autre de la grille.
+- **Retenu** : alignement à droite mesuré, donc la table des largeurs (`largeurs.rs`, deux polices, par nom de glyphe
+  WinAnsi, `Euro` compris) passe de la 36-12b à la 36-12a ; la 36-12b la réemploie et ne garde du point de dépôt que sa
+  hauteur. Le ciseau horizontal se place à x ∈ [45, 52], à droite des titres du récépissé (bord droit ≤ 36,05), pour que
+  sa boîte ne rencontre pas leur boîte réelle (V2-4).
+- **Écartées** : (a) lier la publication des deux stories (une story qui ne part pas seule n'est pas une coupe) ; (b) une
+  ancre fixe à 57 − 21,76, qui casse avec une traduction plus longue ; (c) la table du seul gras (même script, à refaire
+  pour la 36-12b).
+- **Réversible** : oui. Limite connue jusqu'à la 36-12b : une adresse de capitales très larges peut encore dépasser 57,
+  et la ligne verticale la traverse alors.

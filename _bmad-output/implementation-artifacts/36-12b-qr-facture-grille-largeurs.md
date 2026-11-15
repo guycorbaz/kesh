@@ -8,7 +8,14 @@ par l'orchestrateur à la remédiation de la passe 1 de validation (V1-7, `kesh-
 par l'orchestrateur (proposé : clé de base `e3612b`). Release **0.18.0**, phase 2. **Aucune migration** ; aucune ligne
 de `kesh-api`, `kesh-db` ni `kesh-i18n` ne change. Code lu à `fed34a9c7` : **les numéros de ligne de `pdf.rs` se relisent
 à l'étape 0**, la 36-12a ayant réécrit `draw_separator` (`:728-745`) et décalé ce qui suit. Registres : C-e350-1 ;
-`e36-choix-autonomes-36-12.md` (C-36-12-1, -3 à -9).*
+`e36-choix-autonomes-36-12.md` (C-36-12-1, -3 à -10).*
+
+> **Dépendance à la 36-12a** (annoté le 2026-11-15, remédiation de la validation P2 de la 36-12a, V2-1) : la 36-12a
+> livre désormais la **table des largeurs** (`crates/kesh-qrbill/src/largeurs.rs`, par nom de glyphe WinAnsi, `Euro`
+> compris, ses témoins et sa couverture) et l'**alignement à droite du point de dépôt** au bord x = 57. La 36-12b les
+> réemploie sans les refaire : elle ne garde du point de dépôt que sa **hauteur** (grille), et de la table que son usage
+> pour couper les lignes. Ce qui suit en tient compte ; les mentions de la table comme livrable de cette story ont été
+> retirées.
 
 ## Story
 
@@ -92,9 +99,9 @@ Symptôme : « une QR-facture en PDF est produite ». `git grep -n "generate_qr_
 
 ## Décisions
 
-- **D1 — Périmètre** (C-36-12-1) : la grille, *Payable by*, la section montant, le point de dépôt, les largeurs mesurées,
-  le message, la cascade et le pire cas. Hors : lignes et ciseaux (36-12a) ; cadre vide du débiteur (**#1203**) ; type K
-  (**#1204**).
+- **D1 — Périmètre** (C-36-12-1) : la grille, *Payable by*, la section montant, la **hauteur** du point de dépôt, la coupe
+  des lignes à la largeur mesurée, le message, la cascade et le pire cas. Hors : lignes, ciseaux, alignement à droite du
+  point de dépôt et table des largeurs (36-12a, C-36-12-10) ; cadre vide du débiteur (**#1203**) ; type K (**#1204**).
 - **D2 — La grille** (C-36-12-3), en mm depuis le bas :
 
   | Élément | Aujourd'hui | Cible | Source |
@@ -108,21 +115,15 @@ Symptôme : « une QR-facture en PDF est produite ». `git grep -n "generate_qr_
   | Section montant | suit le contenu / base 41 | **même ligne de base des deux côtés**, haut des intitulés ∈ [35,4, 37,0] | § 3.5 ; échantillons 68,6 |
   | *Payable by* | sous le montant | **section d'information** : après la référence (récépissé), après *Additional information* (partie paiement) | § 3.5.4, § 3.6.2 |
   | Fin de l'information du récépissé | non bornée | bas ≥ haut des intitulés du montant + 5 | § 3.6 |
-  | Point de dépôt (6 pt gras) | x = 47, base 5 | **bord droit 57** (± 0,3), haut ∈ [21,3, 23,3] | § 3.6.4 ; échantillons 82,7 |
+  | Point de dépôt (6 pt gras) | bord droit 57 (36-12a), base 5 | bord droit 57 inchangé ; **haut ∈ [21,3, 23,3]** | § 3.6.4 ; échantillons 82,7 |
   | Bas de toute ligne | non borné | ≥ 5 | marges |
 
   Cotes du texte de la directive exactes dans les tests ; cotes des échantillons à ± 1 mm. Les ciseaux de la 36-12a
   restent hors de la bordure du QR (y ≥ 93 une fois le QR descendu).
-- **D3 — Largeurs mesurées** (C-36-12-4, corrigé par V1-1) : module neuf `crates/kesh-qrbill/src/largeurs.rs`, deux tables
-  (Helvetica, Helvetica-Bold) **indexées par nom de glyphe WinAnsi** : pour chaque octet 0x20–0xFF de `WIN_ANSI_ENCODING`
-  (`lopdf-0.31.0/src/encodings/mappings.rs:521`), le nom du glyphe, puis sa chasse `WX` lue à l'AFM par ce nom ; **`Euro`
-  ajouté à la main, 556 en maigre et en gras** (valeur de l'AFM Adobe actuel d'Helvetica, absente de l'AFM de 1990 —
-  provenance écrite au doc-comment). `largeur_mm(texte, taille, gras)` part du caractère Unicode (après `texte_imprime`),
-  passe par son octet WinAnsi puis par le nom ; un caractère sans entrée compte pour la plus large de la table. Le script
-  qui génère la table est versionné dans `kesh-gate-logs/e36-12b/`, sa commande et l'empreinte des AFM au Dev Agent
-  Record. Le doc-comment dit que la table change avec la police (#943). `couper_ligne` coupe à une largeur en mm (52 au
-  récépissé, 87 dans la colonne d'information), à une frontière de mot, un mot trop large au dernier caractère qui tient ;
-  `MAX_CARACTERES_RECU` et `MAX_CARACTERES_PAIEMENT` disparaissent.
+- **D3 — Largeurs mesurées** (C-36-12-4) : `largeur_mm(texte, taille, gras)` de `crates/kesh-qrbill/src/largeurs.rs`,
+  **livré par la 36-12a** (tables par nom de glyphe WinAnsi, `Euro` compris, témoins et couverture), réemployé tel quel.
+  `couper_ligne` coupe à une largeur en mm (52 au récépissé, 87 dans la colonne d'information), à une frontière de mot, un
+  mot trop large au dernier caractère qui tient ; `MAX_CARACTERES_RECU` et `MAX_CARACTERES_PAIEMENT` disparaissent.
 - **D4 — Le message** coupé dans les 87 mm comme une adresse ; raccourci, « ... » en fin, seulement à l'étape P1.
 - **D5 — La cascade, dont le dernier palier ne peut pas échouer** (C-36-12-5, C-36-12-9 ; V1-3) : étapes appliquées
   dans l'ordre, chacune seulement si la précédente ne tient pas :
@@ -161,7 +162,9 @@ Symptôme : « une QR-facture en PDF est produite ». `git grep -n "generate_qr_
 
 1. **La grille de D2** est tenue, mesurée dans le PDF produit (`Td`, largeurs par la table) : titres, QR (x = 67, haut
    88, 46 mm), colonne d'information à 118, premiers intitulés, section montant alignée et ≥ 5 mm sous le QR, point de
-   dépôt au bord droit 57 dans **les quatre langues** (libellés des quatre `messages.ftl` posés dans `QrBillI18n`).
+   dépôt à sa nouvelle hauteur, son bord droit restant à 57 dans **les quatre langues** (libellés des quatre
+   `messages.ftl` posés dans `QrBillI18n` ; le test de la 36-12a, `le_point_de_depot_est_aligne_a_droite`, mis à jour pour
+   la seule ligne de base, justifié au Dev Agent Record).
 2. ***Payable by*** : en partie paiement, à x = 118, sous *Additional information* (ou sous la référence) ; au récépissé,
    à x = 5, avant la section montant ; plus rien à x = 67 sous la section montant.
 3. **Aucune ligne hors de sa zone**, pour chaque fixture (ordinaire de type S, rue longue, étrangère, sans référence,
@@ -194,9 +197,8 @@ Symptôme : « une QR-facture en PDF est produite ». `git grep -n "generate_qr_
 11. **Tests existants** : ceux dont la position change sont listés au Dev Agent Record (ancienne et nouvelle valeur,
     raison), aucun retiré sans remplaçant (décompte des `#[test]` aux deux bornes) ; `chaque_texte_s_imprime_en_noir`
     garde ses cinq `rg` et son compte de `Tj` après le dernier `re` (à recompter et justifier s'il change).
-12. **La table** : témoins recopiés de l'AFM (maigre : espace 278, `A` 667, `W` 944, `@` 1015, `é` 556, `'` **191**
-    (`quotesingle`), `` ` `` **333** (`grave`) ; gras : `A` 722, `W` 944, `'` **238**) et `€` **556** (ajout écrit) ;
-    toute **sortie** de `texte_imprime` sur le jeu admis (`IJ` compris) a son entrée.
+12. *(La table et ses témoins sont l'AC8 de la 36-12a ; rien à refaire ici. Numéro gardé pour ne pas décaler les
+    références.)*
 13. **Manuel** : ne dit plus « à 27~caractères au reçu et à 46 en partie paiement » ni « faute de borne de largeur
     (issue \#944) » ni « Ce que cette coupe ne garantit pas » sous sa forme actuelle ; dit la grille, *Payable by*, la
     cascade (rue omise au récépissé, taille réduite, noms puis lignes raccourcis par « ... », message) ; contrôle par
@@ -206,15 +208,13 @@ Symptôme : « une QR-facture en PDF est produite ». `git grep -n "generate_qr_
 
 ## Tests à écrire, et la preuve du rouge
 
-**Ordre (V1-2)** : la table d'abord — `largeurs.rs`, ses témoins et sa couverture, **commitée seule** (elle ne change
-aucun rendu, aucun test existant ne bouge) ; son rouge se prouve par mutation (une valeur témoin altérée). **Puis** les
-tests de comportement, qui compilent alors et rougissent un à un contre l'ancienne mise en page ; journal
-`/home/gcorbaz/devel/kesh-gate-logs/e36-12b/rouges.log` (nom et message d'échec de chacun).
+**Ordre (V1-2)** : la table est déjà là (36-12a) ; les tests de comportement compilent donc à la base de la story et
+rougissent un à un contre l'ancienne mise en page ; journal `/home/gcorbaz/devel/kesh-gate-logs/e36-12b/rouges.log` (nom
+et message d'échec de chacun).
 
 | Test | AC | Rouge attendu (36-12a fusionnée) |
 |---|---|---|
-| `table_des_largeurs_temoins`, `table_couvre_les_sorties_imprimees` | 12 | par mutation d'une valeur (M12) |
-| `la_grille_six_est_tenue` (quatre langues) | 1 | titre haut 102,8 ; colonne 117 ; QR haut 93 ; montant 4,5 mm sous le QR ; point de dépôt à gauche |
+| `la_grille_six_est_tenue` (quatre langues) | 1 | titre haut 102,8 ; colonne 117 ; QR haut 93 ; montant 4,5 mm sous le QR ; point de dépôt à la base 5 |
 | `payable_by_dans_la_section_d_information` | 2 | débiteur à (67, 26,0) ; au récépissé, sous le montant |
 | `chaque_ligne_dans_sa_zone` | 3 | colonne à 117 dans la bordure ; lignes hors de la feuille pour les fixtures longues |
 | `la_coupe_mesure_les_largeurs` | 4 | 27 caractères les plus larges jusqu'à x ≈ 77 |
@@ -230,13 +230,12 @@ tests de comportement, qui compilent alors et rougissent un à un contre l'ancie
 - **M3** l'étape R1 sautée → `la_cascade_par_etape` ;
 - **M4a** *Payable by* remis sous le montant en partie paiement → `payable_by_dans_la_section_d_information` ;
 - **M4b** *Payable by* remis sous le montant au récépissé → idem (V1-12) ;
-- **M5** point de dépôt ancré à gauche → `la_grille_six_est_tenue`, dans chacune des quatre langues ;
+- **M5** point de dépôt remis à la ligne de base 5 → `la_grille_six_est_tenue`, dans chacune des quatre langues ;
 - **M6** un module du QR décalé d'un cran → `le_code_qr_est_inchange` ;
 - **M7** R4 retiré (la cascade s'arrête à R3) → `aucune_entree_admise_n_echoue` ;
 - **M8** P3 retiré → idem ;
 - **M10** croix laissée à l'ancien centre (`qr_top` d'avant) → `le_code_qr_est_inchange` (V1-4) ;
 - **M11** message raccourci sans « ... » → `la_cascade_par_etape` (V1-12) ;
-- **M12** `W` à 900 dans la table → `table_des_largeurs_temoins` ;
 - **M13** hauteur de ligne de R4 portée à 5 mm → `les_derniers_paliers_tiennent_par_construction`.
 
 Une mutation équivalente se dit.
@@ -247,11 +246,10 @@ Une mutation équivalente se dit.
    l'inventaire ; relever la charge utile de la fixture de type S (AC9) ; `ls -l` des deux AFM et de
    `mappings.rs` ; relire les LOW de la validation de cette fiche.
 1. **Capture « avant »** par l'exemple de la 36-12a (`captures/avant/`), avec les fixtures de cette story ajoutées.
-2. **Table** : script de génération (nom de glyphe → `WX`, `Euro` ajouté), `largeurs.rs`, témoins et couverture,
-   `pub(crate)` pour `est_caractere_qr` si le test l'exige ; **commit seul** ; M12.
+2. *(La table est livrée par la 36-12a.)*
 3. **Tests de comportement** rouges, commit, `rouges.log`.
 4. `pdf.rs` : grille en constantes nommées et sourcées ; mise en page pure (étapes R0–R4, P0–P3) puis dessin ;
-   `couper_ligne` à la largeur ; *Payable by* ; section montant ; point de dépôt aligné à droite ; doc-comments du module et
+   `couper_ligne` à la largeur ; *Payable by* ; section montant ; hauteur du point de dépôt ; doc-comments du module et
    des fonctions ; disparition des constantes `MAX_CARACTERES_*` et du doc-comment `:803-804`.
 5. Tests de position existants mis à jour (AC11), chacun justifié.
 6. Mutations.
@@ -265,7 +263,7 @@ Une mutation équivalente se dit.
 
 - QR-facture : la section de paiement suit la grille de la directive SIX. *Payable by* s'imprime dans la section
   d'information, avant le montant ; le montant est à la même hauteur au récépissé et en partie paiement ; le point de
-  dépôt est aligné à droite ; aucun texte ne touche plus le code QR ni ne sort de la feuille, même fait de lettres très
+  dépôt remonte à la place que la directive lui donne ; aucun texte ne touche plus le code QR ni ne sort de la feuille, même fait de lettres très
   larges, et un message trop long se termine par « ... ». Une adresse trop longue pour le récépissé y perd d'abord la rue
   et le numéro, comme la directive le permet, puis s'imprime plus petit ; une adresse hors de toute mesure est raccourcie
   par « ... » plutôt que de faire échouer le PDF. Le code QR et son contenu ne changent pas. **Les PDF déjà émis et figés
@@ -282,7 +280,7 @@ suivis par #1203 et #1204).
 
 ### Splitting — deux modules
 
-`crates/kesh-qrbill` (`src/pdf.rs`, `src/largeurs.rs` neuf, `src/lib.rs`) et le manuel utilisateur.
+`crates/kesh-qrbill` (`src/pdf.rs` ; `src/largeurs.rs` et `examples/` réemployés de la 36-12a) et le manuel utilisateur.
 
 ### Fichiers communs
 
@@ -331,3 +329,7 @@ Directive § 3.3–3.7, § 6.4 ; échantillons SIX et leur mesure ; AFM `phvr8a.
   P3 infaillibles, propriété AC8), V1-4 (croix, M10, fixture de type S), V1-5 (témoin `qr_decode.rs:900`), V1-8 (#1203,
   #1204), V1-11 et V1-13 (écarts assumés, D9), V1-12 (M4a/M4b, M11). Choix C-36-12-8 et C-36-12-9. Statut `backlog`
   jusqu'à la fusion de la 36-12a. Validation de cette fiche non lancée.
+- 2026-11-15 — Remédiation de la validation P2 **de la 36-12a** (V2-1, arbitrage de l'orchestrateur) : l'alignement à
+  droite du point de dépôt et la table des largeurs (V1-1, V1-2 : D3, AC12, M12, tâche 2) passent à la 36-12a ; cette
+  story garde la hauteur du point de dépôt (D2, AC1, M5) et réemploie `largeur_mm`. Dépendance écrite en tête. Choix
+  C-36-12-10.
