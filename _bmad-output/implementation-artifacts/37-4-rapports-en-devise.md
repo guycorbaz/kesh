@@ -508,3 +508,4 @@ Opus 5.5 (agent de développement), 2026-11-16.
   `frontend/tests/e2e/reports-currency.spec.ts` (neuf)
 - `docs/manual/fr/user-manual.tex`, `docs/manual/fr/admin-manual.tex`
 - `_bmad-output/implementation-artifacts/e37-choix-autonomes-37-4.md` (neuf), `sprint-status.yaml`, cette fiche
+- 2026-11-16 — revue de code P3 ciblée (Haiku ; entrée écrite par l'orchestrateur, la passe n'ayant rien remédié) : 0 CRITICAL, 0 HIGH, 0 MEDIUM, 1 LOW tracé (troncature des noms en devise au nombre de caractères et non à la largeur : un nom de 34 capitales larges touche le solde) ; la seconde ligne remontée ne chevauche rien, les fixtures mono-devise sont inchangées, le test de la remontée rougit avec `FX_RAISE_MM = 0` (exécuté). **Boucle de revue close** : P1 (Opus) 4 MEDIUM, 9 LOW corrigés → P2 (Sonnet) 2 MEDIUM, 2 LOW corrigés → P3 ciblée (Haiku) 0 au-dessus de LOW. Clôture (fusion des correctifs de la 37-3a, gates et E2E complet) après la fin de la 37-3a.
