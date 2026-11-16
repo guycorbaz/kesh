@@ -89,3 +89,24 @@ kickoff (C-e360-15) font foi ; ceux-ci les complètent.
   frontend, et resterait à la merci d'une traduction plus longue ; (b) laisser couper : le nom de fichier dirait
   « compte » seul.
 - **Réversible** : oui (une constante).
+- *Annoté le 2026-11-16 (revue P1)* : les noms allemands cités ci-dessus sont devenus `ausgaben-pro-analytisches-konto`
+  (31) et `rendite-pro-analytisches-konto` (30), C-36-15-8 ; toujours sous 40. E1-3 a établi que la coupe ne touchait
+  que le `Content-Disposition` (clients de l'API) : le navigateur nomme le fichier lui-même, type entier.
+
+### C-36-15-8 — de-CH : « pro analytisches Konto » (accusatif) — arbitrage de Guy du 2026-11-16 (revue P1, B1-4)
+
+- **Contexte** : la lentille B relève que *pro* régit l'accusatif (Duden) ; la fiche écrivait « pro analytischem Konto ».
+- **Retenu (Guy)** : « Ausgaben pro analytisches Konto », « Rendite pro analytisches Konto » (`reports-project-expenses`,
+  `-title`, `reports-project-return`, `-title`) et les noms de fichier `ausgaben-pro-analytisches-konto`,
+  `rendite-pro-analytisches-konto` ; test `slugify_max_keeps_the_analytical_report_types_whole` et glossaire alignés.
+- **Écartée** : garder le datif, toléré à l'oral.
+- **Réversible** : oui.
+
+### C-36-15-9 — de-CH : « Analytisches Standardkonto », « analytisches Hauptkonto » gardés — arbitrage de Guy du 2026-11-16 (revue P1, B1-5)
+
+- **Contexte** : *Standardkonto* et *Hauptkonto* sont aussi des termes du plan comptable.
+- **Retenu (Guy)** : les deux composés restent, l'adjectif les distinguant du plan ; inscrits en partie A du glossaire
+  (`docs/i18n-glossaire.md`) avec leur sens : compte analytique **par défaut** d'une règle d'affectation, compte
+  analytique **racine** (sans parent) — non un compte du plan.
+- **Écartées** : « Standardmässiges analytisches Konto », « oberstes analytisches Konto ».
+- **Réversible** : oui.
