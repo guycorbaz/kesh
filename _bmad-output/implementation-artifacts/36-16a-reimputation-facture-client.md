@@ -149,7 +149,10 @@ code*) et au journal `kesh-gate-logs/e36-16/inventaire-fiche.log` (sonde positiv
      **sous ce verrou** ; puis `find_later_closed_in_tx` (`fiscal_years.rs:865`, `FOR UPDATE`) depuis le plus ancien. Une
      clôture concurrente attend donc le geste, ou le geste attend la clôture et lit `Closed`. *(Annoté le 2026-11-16, revue
      P1, A-5 : au code, **tous** les exercices de l'ensemble sont verrouillés d'abord, puis l'exercice postérieur clos est
-     cherché pour chacun resté ouvert ; `fiscalYears` nomme l'exercice **clos en cause** — A-1, B-1, E-3.)* ;
+     cherché pour chacun resté ouvert ; `fiscalYears` nomme l'exercice **clos en cause** — A-1, B-1, E-3. Réserve (revue P2,
+     P2-1, #1218) : l'ordre est croissant sur les exercices de l'ensemble, non sur un exercice ouvert intermédiaire sans
+     écriture de la pièce, verrouillé seulement par le balayage de `find_later_closed_in_tx` ; le cycle possible avec un `PUT`
+     d'écriture dans cet exercice est rattrapé par `retry_on_deadlock`.)* ;
   7. exposition, calculée sur ces lectures verrouillées et sur `books_locked_through` lu à l'étape 1 → `403`
      (non-Administrateur) ou `409` (sans accusé) ;
   8. `UPDATE` des lignes, des versions, de la facture ; audit ; `COMMIT`.
@@ -491,7 +494,9 @@ Journaux sous `/home/gcorbaz/devel/kesh-gate-logs/e36-16/` (C-36-16a-8) :
   E (Opus) 0/0/0/6 ; prémisses relues au code, aucune réfutée. **Remédiation** (Opus 5.5, arbitrages de l'orchestrateur,
   C-36-16a-12), code `61f86ae3e`, tests `9af468c76`, `1ae14918f` :
   - **A-1 = B-1 = E-3 (MEDIUM)** : `period_exposure_in_tx` nomme l'**exercice clos en cause** (le sien, sinon le postérieur
-    rendu par `find_later_closed_in_tx`, comme `journal_entries.rs:1286`) ; test `an_open_year_followed_by_a_closed_one_is_exposed`
+    rendu par `find_later_closed_in_tx`, comme `journal_entries.rs:1287` *(annoté, revue P2, P2-2 : `:1286` écrit d'abord ; et
+    `:1287` est le motif d'écran non verrouillant — les gardes verrouillantes de la modification et de la suppression sont à
+    `:1569` et `:1908`)*) ; test `an_open_year_followed_by_a_closed_one_is_exposed`
     (exercice 2031 posé `Closed` en SQL) ; mutations M18 (recherche retirée) et M19 (exercice ouvert nommé) tuées.
     `api-external.md` (« les noms des exercices clos en cause ») dit vrai désormais ; doc-comments du module, de la fonction et
     de `ClosedPeriodExposure::fiscal_years` alignés.

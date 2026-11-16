@@ -240,7 +240,8 @@ réversibilité. Code lu à `fed34a9c7`. Fiche : `36-16-reimputation-analytique.
 ### C-36-16a-12 — Remédiation de la revue P1 : ce qui change, ce qui ne change pas (arbitrages de l'orchestrateur)
 
 - **`fiscalYears` = l'exercice clos en cause** (A-1 = B-1 = E-3) : le sien s'il est clos, sinon le postérieur clos que rend
-  `find_later_closed_in_tx` — comme `LaterFiscalYearClosed { fiscal_year_name: later.name }` (`journal_entries.rs:1286`).
+  `find_later_closed_in_tx` — comme `LaterFiscalYearClosed { fiscal_year_name: later.name }` (`journal_entries.rs:1287`, motif
+  d'écran ; gardes verrouillantes `:1569` et `:1908` — citation corrigée à la revue P2, P2-2).
   Révise C-36-16a-5 sur ce point. Test à deux exercices, le postérieur posé `Closed` en SQL (exception de C-36-16a-2 : la
   clôture par la route refuse un exercice antérieur ouvert).
 - **Ordre des verrous** (A-5) : tous les exercices de l'ensemble verrouillés d'abord, puis les postérieurs clos.
