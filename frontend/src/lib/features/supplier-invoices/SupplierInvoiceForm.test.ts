@@ -1074,7 +1074,13 @@ describe('SupplierInvoiceForm — le prix unitaire « 1.250 » (Story 36-18a, #1
 
 	it('un brouillon rouvert au prix 1.2340 se montre 1.2340, sans message, et repart 1.2340 (M10)', async () => {
 		const brouillon = initial();
-		brouillon.lines[0] = { ...brouillon.lines[0], unitPrice: '1.2340', lineTotal: '1.23' };
+		// Quantité 10 : 10 × 1.234 = 12.34, au centime (sinon #687 refuse la ligne).
+		brouillon.lines[0] = {
+			...brouillon.lines[0],
+			quantity: '10.0000',
+			unitPrice: '1.2340',
+			lineTotal: '12.34',
+		};
 		const { getByTestId, onSubmit, queryByTestId } = renderForm({ document: null, initial: brouillon });
 		expect((getByTestId('supplier-invoice-line-unit-price') as HTMLInputElement).value).toBe('1.2340');
 		expect(queryByTestId('supplier-invoice-line-unit-price-ambiguous')).toBeNull();

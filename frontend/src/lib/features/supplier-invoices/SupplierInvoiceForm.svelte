@@ -66,9 +66,11 @@
 		dueBeforeInvoiceDateMessage,
 		emptyLine,
 		firstLineNotInCentimes,
+		firstLineUnitPriceProblem,
 		formatLiveTotal,
 		formLineFromResponse,
 		readableAmount,
+		readableUnambiguousAmount,
 		lineNotInCentimes,
 		linesForServer,
 		linesInvalid,
@@ -76,6 +78,8 @@
 		sumTtc,
 		type SupplierInvoiceFormInitial,
 	} from './supplier-invoice-form';
+	import { amountEntryProblem } from '$lib/features/journal-entries/balance';
+	import { amountEntryMessage } from '$lib/features/journal-entries/amount-entry-message';
 	import { addDaysIso, hasSubCentime } from '$lib/features/invoices/invoice-helpers';
 	import { todayLocal } from '$lib/features/open-items/open-items';
 	import SupplierCreatePanel from './SupplierCreatePanel.svelte';
@@ -180,9 +184,12 @@
 			dueDate: init.dueDate ?? '',
 			iban: init.creditorQrIban ?? init.creditorIban ?? '',
 			reference: init.paymentReference ?? '',
-			// Revue P1 (B-8) : lisible comme le prix (`100.0000` → `100.00`).
+			// Revue P1 (B-8) : lisible comme le prix (`100.0000` → `100.00`). Story 36-18a
+			// (D2) : jamais ambigu (`1.2340` gardé, non `1.234`).
 			expectedAmount:
-				init.expectedPaymentAmount == null ? '' : readableAmount(init.expectedPaymentAmount, 2),
+				init.expectedPaymentAmount == null
+					? ''
+					: readableUnambiguousAmount(init.expectedPaymentAmount, 2),
 			projectId: init.projectId,
 			lines:
 				init.lines.length > 0
@@ -237,6 +244,12 @@
 		const days = suppliers.find((s) => s.id === fContactId)?.defaultPaymentTermsDays ?? null;
 		fDueDate = days != null ? addDaysIso(fInvoiceDate, days) : fInvoiceDate;
 	});
+
+	/**
+	 * Story 36-18a (#1172, D7) — le montant attendu saisi à la main (sans QR) : ambigu
+	 * (« 1.250 ») ou illisible, signalé sous le champ en direct ; l'envoi s'arrête dessus.
+	 */
+	const expectedAmountProblem = $derived(qrLocked ? null : amountEntryProblem(fExpectedAmount.trim()));
 
 	/** Story v017-4b (#853) — l'échéance précède la date : signalée en direct. */
 	const dueBefore = $derived(dueBeforeInvoiceDate(fInvoiceDate, fDueDate));
@@ -369,6 +382,30 @@
 		}
 		// L'échéance antérieure : déjà signalée sous son champ, elle bloque l'envoi.
 		if (dueBefore) return;
+		// Story 36-18a (#1172, D7) — le montant attendu ambigu ou illisible (sans QR) :
+		// signalé sous son champ, il bloque l'envoi, avant les lignes.
+		if (expectedAmountProblem !== null) {
+			formError = amountEntryMessage(expectedAmountProblem, 4);
+			return;
+		}
+		// Story 36-18a (#1159, D6) — la première ligne au prix ambigu ou illisible, nommée,
+		// AVANT `linesInvalid` : son message dit comment écrire le prix.
+		const priceProblem = firstLineUnitPriceProblem(fLines);
+		if (priceProblem !== null) {
+			formError =
+				priceProblem.problem === 'ambiguous'
+					? i18nMsg(
+							'supplier-invoices-err-line-unit-price-ambiguous',
+							"Ligne { $line } : prix unitaire ambigu — écrivez 1'250 pour mille deux cent cinquante francs, ou 1.25 pour un franc vingt-cinq.",
+							{ line: priceProblem.index + 1 },
+						)
+					: i18nMsg(
+							'supplier-invoices-err-line-unit-price-unreadable',
+							"Ligne { $line } : prix unitaire illisible — chiffres, apostrophe des milliers (1'250), point ou virgule décimale, quatre décimales au plus.",
+							{ line: priceProblem.index + 1 },
+						);
+			return;
+		}
 		if (linesInvalid(fLines)) {
 			formError = i18nMsg(
 				'supplier-invoices-err-lines',
@@ -746,12 +783,27 @@
 						>({scannedCurrency})</span
 					>
 				{/if}
+				<!-- Story 36-18a (#1172, D3, D7) — un montant ambigu ou illisible : bordure,
+				     `aria-invalid`, et le message sous le champ, qu'il nomme. -->
 				<input
 					class="mt-1 w-full rounded border px-2 py-1"
+					class:border-destructive={expectedAmountProblem !== null}
 					data-testid="supplier-invoice-expected-amount"
 					inputmode="decimal"
+					aria-invalid={expectedAmountProblem !== null}
+					aria-describedby={expectedAmountProblem !== null
+						? `supplier-invoice-expected-amount-${expectedAmountProblem}`
+						: undefined}
 					bind:value={fExpectedAmount}
 				/>
+				{#if expectedAmountProblem !== null}
+					<span
+						class="mt-1 block text-xs text-destructive"
+						id="supplier-invoice-expected-amount-{expectedAmountProblem}"
+						data-testid="supplier-invoice-expected-amount-{expectedAmountProblem}"
+						>{amountEntryMessage(expectedAmountProblem, 4)}</span
+					>
+				{/if}
 			</label>
 		{/if}
 		{#if projects.length > 0}
@@ -781,6 +833,7 @@
 		<div class="mb-2 text-sm font-medium">{i18nMsg('supplier-invoices-lines', 'Lignes')}</div>
 		{#each fLines as line, idx (idx)}
 			{@const subCentime = lineNotInCentimes(line)}
+			{@const priceProblem = amountEntryProblem(line.unitPrice.trim())}
 			<div class="mb-2 grid grid-cols-12 gap-2" data-testid="supplier-invoice-line">
 				<input
 					class="col-span-4 rounded border px-2 py-1 text-sm"
@@ -797,9 +850,14 @@
 				/>
 				<input
 					class="col-span-2 rounded border px-2 py-1 text-sm"
+					class:border-destructive={priceProblem !== null}
 					data-testid="supplier-invoice-line-unit-price"
 					inputmode="decimal"
 					placeholder={i18nMsg('supplier-invoices-line-ht', 'HT')}
+					aria-invalid={priceProblem !== null}
+					aria-describedby={priceProblem !== null
+						? `supplier-invoice-line-${idx}-unit-price-${priceProblem}`
+						: undefined}
 					bind:value={line.unitPrice}
 				/>
 				<select
@@ -834,6 +892,17 @@
 					disabled={fLines.length === 1}>✕</button
 				>
 			</div>
+			<!-- Story 36-18a (#1159, D3, D6) — le prix ambigu ou illisible, sous la ligne,
+			     nommé par le champ (`aria-describedby`). -->
+			{#if priceProblem !== null}
+				<p
+					class="mb-2 text-sm text-destructive"
+					id="supplier-invoice-line-{idx}-unit-price-{priceProblem}"
+					data-testid="supplier-invoice-line-unit-price-{priceProblem}"
+				>
+					{amountEntryMessage(priceProblem, 4)}
+				</p>
+			{/if}
 			{#if subCentime !== null}
 				<p class="mb-2 text-sm text-destructive" data-testid="supplier-invoice-line-subcentime">
 					{i18nMsg(

@@ -13,7 +13,7 @@
  */
 
 import Big from 'big.js';
-import { isValidAmount, parseAmount } from '$lib/features/journal-entries/balance';
+import { journalAmountReader } from '$lib/features/journal-entries/balance';
 import type { AccountResponse } from '$lib/features/accounts/accounts.types';
 
 /** Une ligne de la grille d'ouverture, réduite à ce qu'il faut pour les totaux. */
@@ -36,8 +36,13 @@ export interface OpeningTotals {
 	remainingGap: Big;
 }
 
+/**
+ * Story 36-18a (#1050, D5) — un solde lu comme le montant d'une écriture
+ * (`journalAmountReader`) : « 1'250 » vaut 1250 ; « 1.250 » (ambigu) et une saisie
+ * illisible comptent pour zéro, la page les signalant sous leur ligne.
+ */
 function amount(raw: string): Big {
-	return isValidAmount(raw) ? parseAmount(raw) : new Big(0);
+	return journalAmountReader(raw) ?? new Big(0);
 }
 
 /** Totaux de l'AC 2. Un compte saisi contre sa nature compte avec son signe. */

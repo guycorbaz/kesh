@@ -9,7 +9,13 @@
 
 import Big from 'big.js';
 import { lineVatAmount } from '$lib/features/journal-entries/vat-purchase';
-import { isValidAmount, parseAmount } from '$lib/features/journal-entries/balance';
+import {
+	amountEntryPayload,
+	amountEntryProblem,
+	isValidAmount,
+	parseAmount,
+	readJournalAmount,
+} from '$lib/features/journal-entries/balance';
 import { formatExactAmount } from '$lib/features/invoices/invoice-helpers';
 import { formatSwissDate } from '$lib/features/reports/reports.api';
 import { isApiError } from '$lib/shared/utils/api-error';
@@ -64,18 +70,29 @@ function quantityOf(l: CreateSupplierInvoiceLineRequest): Big {
 }
 
 /**
+ * Story 36-18a (#1159, D6) — le prix d'une ligne tel qu'il partira : la charge de la
+ * lecture du journal sur la saisie rognée (« 1'250 » → `1250`), `null` pour un prix
+ * vide, ambigu (« 1.250 ») ou illisible.
+ */
+function unitPriceOf(l: CreateSupplierInvoiceLineRequest): string | null {
+	return amountEntryPayload(l.unitPrice.trim());
+}
+
+/**
  * Σ TTC pleine précision, en parité avec le serveur (`Σ line_total + Σ
  * line_vat_amount`, `purchase_invoice_totals`) ; une ligne incomplète est ignorée.
- * Story v017-4b (#830) : quantité et prix lus par `parseAmount` (virgule admise),
- * la quantité vide vaut 1, comme l'envoi.
+ * Story v017-4b (#830) : quantité lue par `parseAmount` (virgule admise), la quantité
+ * vide vaut 1, comme l'envoi. Story 36-18a (#1159) : le prix est lu comme l'envoi
+ * ({@link unitPriceOf}) — un prix ambigu ou illisible n'est pas totalisé.
  */
 export function sumTtc(lines: CreateSupplierInvoiceLineRequest[]): Big {
 	let total = new Big(0);
 	for (const l of lines) {
 		let lineTotal: Big;
 		try {
-			if (l.unitPrice.trim() === '') continue; // prix vide → rien à totaliser
-			lineTotal = quantityOf(l).times(parseAmount(l.unitPrice.trim()));
+			const price = unitPriceOf(l);
+			if (price === null) continue; // prix vide, ambigu ou illisible → rien à totaliser
+			lineTotal = quantityOf(l).times(new Big(price));
 		} catch {
 			continue; // saisie incomplète → ignorée pour le total vivant
 		}
@@ -110,14 +127,16 @@ export function amountMismatch(lines: CreateSupplierInvoiceLineRequest[], target
  * `quantité × prix` en `big.js` (jamais `parseFloat`) ; la quantité vide se lit `1`,
  * comme l'envoi ; la virgule décimale, qu'`AMOUNT_RE` admet, se lit comme un point —
  * par `parseAmount`, la même lecture que l'envoi (Story v017-4b, #830).
- * Une saisie vide ou illisible ne refuse rien (`try/catch`, comme
- * {@link amountMismatch}) : c'est {@link linesInvalid} qui la juge. Le montant rendu
- * l'est par `toFixed()`, jamais en notation exponentielle.
+ * Une saisie vide, ambiguë ou illisible ne refuse rien (Story 36-18a : le prix lu par
+ * {@link unitPriceOf} ; la quantité en `try/catch`, comme {@link amountMismatch}) :
+ * c'est {@link linesInvalid} qui la juge. Le montant rendu l'est par `toFixed()`,
+ * jamais en notation exponentielle.
  */
 export function lineNotInCentimes(line: CreateSupplierInvoiceLineRequest): string | null {
-	if (!line.unitPrice.trim()) return null;
+	const price = unitPriceOf(line);
+	if (price === null) return null;
 	try {
-		const total = quantityOf(line).times(parseAmount(line.unitPrice.trim()));
+		const total = quantityOf(line).times(new Big(price));
 		return total.round(2, Big.roundDown).eq(total) ? null : total.toFixed();
 	} catch {
 		return null;
@@ -138,10 +157,12 @@ export function firstLineNotInCentimes(
 /**
  * Lignes **structurellement** invalides (description, compte, quantité, prix).
  *
- * Story v017-4b (#830, AC-24 (c), C-v017-4-36) — le prix est **obligatoire**
- * (`allowEmpty: false`) : un prix vide n'est jamais lu `0` (`parseAmount('')` rend `0`),
- * et le formulaire le refuse avant le serveur. La quantité vide reste admise (elle vaut
- * 1).
+ * Story v017-4b (#830, AC-24 (c), C-v017-4-36) — le prix est **obligatoire** : un prix
+ * vide n'est jamais lu `0`, et le formulaire le refuse avant le serveur. La quantité vide
+ * reste admise (elle vaut 1). Story 36-18a (#1159, D6) : le prix se lit comme le montant
+ * d'une écriture ({@link unitPriceOf}) — « 1.250 » (ambigu) et « 12'34 » (illisible)
+ * rendent la ligne invalide ; la quantité garde `isValidAmount` (hors de la règle,
+ * C-e360-6).
  */
 export function linesInvalid(lines: CreateSupplierInvoiceLineRequest[]): boolean {
 	if (lines.length === 0) return true;
@@ -150,15 +171,34 @@ export function linesInvalid(lines: CreateSupplierInvoiceLineRequest[]): boolean
 			!l.description.trim() ||
 			!l.expenseAccountId ||
 			!isValidAmount(l.quantity.trim()) ||
-			!isValidAmount(l.unitPrice.trim(), { allowEmpty: false }),
+			unitPriceOf(l) === null,
 	);
 }
 
 /**
+ * Story 36-18a (#1159, D6) — la première ligne (rang 0-based) dont le prix est ambigu ou
+ * illisible, et le refus, ou `null`. Un prix vide n'est pas un refus de prix : c'est
+ * {@link linesInvalid} qui le dit. L'envoi s'arrête dessus **avant** `linesInvalid`,
+ * pour nommer la ligne et dire comment écrire le prix.
+ */
+export function firstLineUnitPriceProblem(
+	lines: CreateSupplierInvoiceLineRequest[],
+): { index: number; problem: 'ambiguous' | 'unreadable' } | null {
+	for (const [index, l] of lines.entries()) {
+		const problem = amountEntryProblem(l.unitPrice.trim());
+		if (problem !== null) return { index, problem };
+	}
+	return null;
+}
+
+/**
  * Story v017-4b (#830) — les lignes telles qu'elles partent au serveur : description
- * rognée, quantité (vide → `1`) et prix lus une fois et envoyés avec un point, taux
- * (choisi dans une liste, sans virgule) tel quel. À n'appeler qu'après
- * {@link linesInvalid}.
+ * rognée, quantité (vide → `1`) lue une fois et envoyée avec un point, taux (choisi dans
+ * une liste, sans virgule) tel quel. Story 36-18a (#1159, D6) : le prix part sous la
+ * charge de la lecture du journal (« 1'250 » → `1250`). À n'appeler qu'après
+ * {@link linesInvalid}, qui garantit une charge ; appelée hors de cette garde, une ligne
+ * au prix ambigu part avec un prix vide, que le serveur refuse — jamais avec « 1.250 »,
+ * qu'il lirait 1,25.
  */
 export function linesForServer(
 	lines: CreateSupplierInvoiceLineRequest[],
@@ -166,7 +206,7 @@ export function linesForServer(
 	return lines.map((l) => ({
 		description: l.description.trim(),
 		quantity: l.quantity.trim() === '' ? '1' : decimalForServer(l.quantity),
-		unitPrice: decimalForServer(l.unitPrice),
+		unitPrice: unitPriceOf(l) ?? '',
 		vatRate: l.vatRate || '0',
 		expenseAccountId: Number(l.expenseAccountId),
 	}));
@@ -223,23 +263,26 @@ export function readableAmount(raw: string, minDecimals: number): string {
 	}
 }
 
-/** Story 36-18a — PROVISOIRE (rouges d'abord) : aucun refus aujourd'hui. */
-export function firstLineUnitPriceProblem(
-	_lines: CreateSupplierInvoiceLineRequest[],
-): { index: number; problem: 'ambiguous' | 'unreadable' } | null {
-	return null;
-}
-
-/** Story 36-18a — PROVISOIRE (rouges d'abord) : la forme d'aujourd'hui. */
+/**
+ * Story 36-18a (#1159, #1172 ; D2, C-36-18-2) — un montant du serveur rendu à un champ
+ * qui le relira par la lecture du journal : la forme lisible de {@link readableAmount}
+ * (« 1.2500 » → `1.25`, « 1250.0000 » → `1250.00`), **sauf** si elle serait ambiguë
+ * (« 1.2340 » → `1.234`) : alors les quatre décimales du serveur (`1.2340`), forme
+ * jamais ambiguë. Un montant rouvert n'est ainsi jamais refusé. Une valeur illisible
+ * pour big.js est rendue telle quelle (contrat de `readableAmount`).
+ */
 export function readableUnambiguousAmount(raw: string, minDecimals: number): string {
-	return readableAmount(raw, minDecimals);
+	const lisible = readableAmount(raw, minDecimals);
+	if (readJournalAmount(lisible).kind !== 'ambiguous') return lisible;
+	return new Big(raw).toFixed(4);
 }
 
 /**
  * Story v017-4b (AC-23) — une ligne lue du serveur, rendue au formulaire : quantité sans
  * zéros inutiles (`1.0000` → `1`), prix à deux décimales au moins (`100.2000` →
  * `100.20`, `33.3333` gardé), taux aligné sur la valeur d'une option de la liste (`0.00`
- * → `0`, `8.1` → `8.10` si la liste porte `8.10`).
+ * → `0`, `8.1` → `8.10` si la liste porte `8.10`). Story 36-18a (D2) : un prix qui se
+ * lirait ambigu se rouvre sur quatre décimales (`1.2340`), {@link readableUnambiguousAmount}.
  */
 export function formLineFromResponse(
 	line: SupplierInvoiceLineResponse,
@@ -257,7 +300,7 @@ export function formLineFromResponse(
 	return {
 		description: line.description,
 		quantity: readable(line.quantity, 0),
-		unitPrice: readable(line.unitPrice, 2),
+		unitPrice: readableUnambiguousAmount(line.unitPrice, 2),
 		vatRate,
 		expenseAccountId: line.expenseAccountId,
 	};
@@ -275,6 +318,12 @@ export interface PaymentInput {
  * **routé** vers `creditorQrIban` s'il a la forme d'un QR-IBAN
  * ({@link qrIbanHasValidQrIid}), vers `creditorIban` sinon ; une saisie vide vaut
  * `null`. La validation est celle du serveur (`INVALID_PAYMENT_DETAILS`).
+ *
+ * Story 36-18a (#1172, D7, V1-4) — le montant attendu : vide → `null` ; clair → la
+ * charge de la lecture du journal sur la saisie rognée (« 1'250 » → `1250`) ; ambigu ou
+ * illisible → `null`, jamais la saisie brute — le formulaire a arrêté l'envoi avant
+ * (garde du montant attendu), et une fonction exportée ne doit pas pouvoir envoyer
+ * « 1.250 », que le serveur lirait 1,25.
  */
 export function paymentFields(
 	input: PaymentInput,
@@ -284,15 +333,15 @@ export function paymentFields(
 > {
 	const iban = normalizeIban(input.iban);
 	const isQr = iban !== '' && qrIbanHasValidQrIid(iban);
-	const expected = input.expectedAmount.trim();
 	return {
 		creditorIban: iban !== '' && !isQr ? iban : null,
 		creditorQrIban: isQr ? iban : null,
 		paymentReference: input.reference.trim() || null,
-		// Story v017-4b (#830, M32) : lu une fois, envoyé avec un point ; une saisie
-		// illisible part telle quelle et le serveur la refuse (400).
-		expectedPaymentAmount:
-			expected === '' ? null : isValidAmount(expected) ? decimalForServer(expected) : expected,
+		// Story v017-4b (#830, M32) : lu une fois, envoyé avec un point. Story 36-18a
+		// (V2-7) : une saisie ambiguë ou illisible n'est plus envoyée (`null`) — le refus
+		// serveur `INVALID_PAYMENT_DETAILS` d'un montant illisible n'est plus atteint
+		// depuis le formulaire, qui l'arrête avant ; il le reste par l'API.
+		expectedPaymentAmount: amountEntryPayload(input.expectedAmount.trim()),
 	};
 }
 

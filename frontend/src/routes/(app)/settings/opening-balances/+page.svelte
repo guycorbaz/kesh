@@ -24,9 +24,11 @@
 	import {
 		computeBalance,
 		formatSwissAmount,
-		isValidAmount,
-		parseAmount
+		journalAmountPayload,
+		journalAmountReader,
+		lineAmountProblem
 	} from '$lib/features/journal-entries/balance';
+	import { amountEntryMessage } from '$lib/features/journal-entries/amount-entry-message';
 	import { formatSwissDate } from '$lib/features/reports/reports.api';
 	import type Big from 'big.js';
 
@@ -132,7 +134,26 @@
 	});
 
 	// Bandeau de total en direct (D3) — big.js via balance.ts, jamais parseFloat.
-	const balance = $derived(computeBalance(rows));
+	// Story 36-18a (#1050, D5) : chaque solde se lit comme le montant d'une écriture —
+	// « 1.250 » (ambigu) n'est plus lu 1,25 franc, il rend la saisie invalide.
+	const balance = $derived(computeBalance(rows, journalAmountReader));
+
+	/** Story 36-18a (D5) — un montant que la lecture du journal ne rend pas (ambigu ou illisible). */
+	function unread(raw: string): boolean {
+		return journalAmountReader(raw) === null;
+	}
+
+	/**
+	 * Story 36-18a (D5) — une ligne saisie : non vide, et soit à un montant non lu (gardée
+	 * par prudence, le bouton étant désactivé en amont), soit à un montant > 0.
+	 */
+	function isEnteredLine(r: { debit: string; credit: string }): boolean {
+		if (r.debit === '' && r.credit === '') return false;
+		const debit = journalAmountReader(r.debit);
+		const credit = journalAmountReader(r.credit);
+		if (debit === null || credit === null) return true;
+		return debit.gt(0) || credit.gt(0);
+	}
 
 	// Lignes non vides envoyées au POST (les autres sont ignorées). Une ligne
 	// dont les deux côtés valent 0 — vide OU « 0 »/« 0.00 » tapé explicitement —
@@ -144,13 +165,7 @@
 	// sans risque (elle n'apporte rien à l'écriture). Les montants invalides
 	// restent inclus par prudence — `balance.hasInvalidAmount` fait retomber
 	// `isBalanced` (balance.ts:65) et désactive le bouton en amont.
-	const nonEmptyRows = $derived(
-		rows.filter((r) => {
-			if (r.debit === '' && r.credit === '') return false;
-			if (!isValidAmount(r.debit) || !isValidAmount(r.credit)) return true;
-			return parseAmount(r.debit).gt(0) || parseAmount(r.credit).gt(0);
-		})
-	);
+	const nonEmptyRows = $derived(rows.filter(isEnteredLine));
 
 	const canGenerate = $derived(!submitting && balance.isBalanced);
 
@@ -160,16 +175,8 @@
 	const warning = $derived(retainedEarningsWarning(accounts, rows, balance.isBalanced));
 
 	// Complément : lignes saisies, contrepartie en direct (arbitrage 3).
-	const complementLines = $derived(
-		complementRows.filter((r) => {
-			if (r.debit === '' && r.credit === '') return false;
-			if (!isValidAmount(r.debit) || !isValidAmount(r.credit)) return true;
-			return parseAmount(r.debit).gt(0) || parseAmount(r.credit).gt(0);
-		})
-	);
-	const complementInvalid = $derived(
-		complementRows.some((r) => !isValidAmount(r.debit) || !isValidAmount(r.credit))
-	);
+	const complementLines = $derived(complementRows.filter(isEnteredLine));
+	const complementInvalid = $derived(complementRows.some((r) => unread(r.debit) || unread(r.credit)));
 	const counterpart = $derived(complementCounterpart(complementLines));
 	const canSubmitComplement = $derived(
 		!completing && complementLines.length > 0 && !complementInvalid
@@ -194,10 +201,12 @@
 		submitError = null;
 		try {
 			await generateOpeningBalances({
+				// Story 36-18a (D5) : la charge de la lecture du journal (« 1'250 » → `1250`,
+				// vide → `0`) ; jamais `null` ici, `canGenerate` exigeant `isBalanced`.
 				lines: nonEmptyRows.map((r) => ({
 					accountId: r.account.id,
-					debit: r.debit === '' ? '0' : r.debit.replace(',', '.'),
-					credit: r.credit === '' ? '0' : r.credit.replace(',', '.')
+					debit: journalAmountPayload(r.debit) ?? '0',
+					credit: journalAmountPayload(r.credit) ?? '0'
 				}))
 			});
 			notifySuccess(i18nMsg('opening-balances-success', 'Écriture d’ouverture générée.'));
@@ -240,10 +249,11 @@
 		completeError = null;
 		try {
 			await completeOpeningBalances({
+				// Story 36-18a (D5) : idem ; `canSubmitComplement` exige `!complementInvalid`.
 				lines: complementLines.map((r) => ({
 					accountId: r.account.id,
-					debit: r.debit === '' ? '0' : r.debit.replace(',', '.'),
-					credit: r.credit === '' ? '0' : r.credit.replace(',', '.')
+					debit: journalAmountPayload(r.debit) ?? '0',
+					credit: journalAmountPayload(r.credit) ?? '0'
 				}))
 			});
 			notifySuccess(i18nMsg('opening-balances-complete-success', 'Complément enregistré.'));
@@ -472,6 +482,8 @@
 						</thead>
 						<tbody>
 							{#each complementRows as row (row.account.id)}
+								{@const problem = lineAmountProblem(row.debit, row.credit)}
+								{@const problemId = `opening-balances-complete-amount-problem-${row.account.number}`}
 								<tr class="border-b border-border/50" data-testid="opening-balances-complete-row-{row.account.number}">
 									<td class="py-1.5 pr-2">
 										<span class="tabular-nums font-medium">{row.account.number}</span>
@@ -487,7 +499,8 @@
 											oninput={() => {
 												if (row.debit !== '') row.credit = '';
 											}}
-											aria-invalid={!isValidAmount(row.debit)}
+											aria-invalid={unread(row.debit)}
+											aria-describedby={problem ? problemId : undefined}
 											aria-label={i18nMsg('opening-balances-debit-for', 'Débit du compte { $number } « { $name } »', { number: row.account.number, name: row.account.name })}
 											data-testid="opening-balances-complete-debit-{row.account.number}"
 										/>
@@ -502,12 +515,26 @@
 											oninput={() => {
 												if (row.credit !== '') row.debit = '';
 											}}
-											aria-invalid={!isValidAmount(row.credit)}
+											aria-invalid={unread(row.credit)}
+											aria-describedby={problem ? problemId : undefined}
 											aria-label={i18nMsg('opening-balances-credit-for', 'Crédit du compte { $number } « { $name } »', { number: row.account.number, name: row.account.name })}
 											data-testid="opening-balances-complete-credit-{row.account.number}"
 										/>
 									</td>
 								</tr>
+								{#if problem}
+									<!-- Story 36-18a (#1050, D3, D5) — le montant ambigu ou illisible, sous sa ligne. -->
+									<tr>
+										<td
+											colspan="3"
+											class="pb-2 text-xs text-destructive"
+											id={problemId}
+											data-testid="opening-balances-amount-{problem}"
+										>
+											{amountEntryMessage(problem, 4)}
+										</td>
+									</tr>
+								{/if}
 							{/each}
 						</tbody>
 					</table>
@@ -594,6 +621,8 @@
 			</thead>
 			<tbody>
 				{#each rows as row (row.account.id)}
+					{@const problem = lineAmountProblem(row.debit, row.credit)}
+					{@const problemId = `opening-balances-amount-problem-${row.account.number}`}
 					<tr
 						class="border-b border-border/50"
 						data-testid="opening-balances-row-{row.account.number}"
@@ -618,7 +647,8 @@
 								class="text-right tabular-nums"
 								bind:value={row.debit}
 								oninput={() => onDebitInput(row)}
-								aria-invalid={!isValidAmount(row.debit)}
+								aria-invalid={unread(row.debit)}
+								aria-describedby={problem ? problemId : undefined}
 								aria-label={i18nMsg('opening-balances-debit-for', 'Débit du compte { $number } « { $name } »', { number: row.account.number, name: row.account.name })}
 								data-testid="opening-balances-debit-{row.account.number}"
 							/>
@@ -631,12 +661,26 @@
 								class="text-right tabular-nums"
 								bind:value={row.credit}
 								oninput={() => onCreditInput(row)}
-								aria-invalid={!isValidAmount(row.credit)}
+								aria-invalid={unread(row.credit)}
+								aria-describedby={problem ? problemId : undefined}
 								aria-label={i18nMsg('opening-balances-credit-for', 'Crédit du compte { $number } « { $name } »', { number: row.account.number, name: row.account.name })}
 								data-testid="opening-balances-credit-{row.account.number}"
 							/>
 						</td>
 					</tr>
+					{#if problem}
+						<!-- Story 36-18a (#1050, D3, D5) — le montant ambigu ou illisible, sous sa ligne. -->
+						<tr>
+							<td
+								colspan="3"
+								class="pb-2 text-xs text-destructive"
+								id={problemId}
+								data-testid="opening-balances-amount-{problem}"
+							>
+								{amountEntryMessage(problem, 4)}
+							</td>
+						</tr>
+					{/if}
 				{/each}
 			</tbody>
 		</table>
