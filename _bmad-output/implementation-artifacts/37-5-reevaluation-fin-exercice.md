@@ -184,7 +184,7 @@ devise n'est pas réévalué (A37).
      pas et n'en dépend pas.
    - **Fonction de dépôt unique** `fx_revaluation::post(pool, user_id, actor_api_key_id, company_id, fiscal_year_id,
      rates, account_ids)` (`actor_api_key_id: Option<i64>`, propagé depuis `CurrentUser` par le handler : c'est
-     l'argument qu'exige `NewAuditLogEntry::for_actor`, `entities/audit_log.rs:195`, pour l'audit ci-dessous), qui ouvre **une transaction** ; c'est le **handler** qui l'appelle dans
+     l'argument qu'exige `NewAuditLogEntry::for_actor`, `entities/audit_log.rs:238` (`par`, :263, depuis l'Epic 35), pour l'audit ci-dessous), qui ouvre **une transaction** ; c'est le **handler** qui l'appelle dans
      `kesh_db::retry::retry_on_deadlock("fx_revaluation::post", …)`, comme `close_fiscal_year`
      (`routes/fiscal_years.rs:361`) — le registre des routes (ci-dessous) contrôle l'enveloppe au handler. Elle
      appelle ensuite `create_in_tx(…, enforce_postable = true)` **une fois par compte réévalué** (R9), dans l'ordre des
@@ -575,7 +575,8 @@ devise n'est pas réévalué (A37).
    exercice mono-devise (R3 ; CR-7 : un exercice clos avant l'activation puis rouvert), cours saisi par la société (D9), récupération du cours du jour, gains et pertes non réalisés
    comptabilisés (CO 960b, choix assumé ; la neutralisation par provision n'est pas offerte, C-37-8), postes non
    monétaires (stocks, immobilisations, capital en devise : à décocher à la passation, mais ils bloquent la clôture
-   tant que leur écart n'est pas nul — les tenir sur un compte en CHF, A37, AC-9), la source du cours (« AFC » ou « cours saisi ») conservée à l'audit et non
+   tant que leur écart n'est pas nul — les tenir sur un compte en CHF, A37 et A41 : aucune marque « non monétaire »
+   n'existe, AC-9), la source du cours (« AFC » ou « cours saisi ») conservée à l'audit et non
    sur la ligne, une correction de l'AFC non reprise (↑) ne changeant pas le cours proposé (U1), la reprise de livres
    tenus ailleurs dont la réévaluation se **repasse** par cette fonction avec les cours de clôture d'origine, non par
    des écritures importées (V8, AC-2) ; **CR-8** : l'aperçu enrichi (réévaluations déjà passées, ancienne et nouvelle
@@ -635,8 +636,9 @@ devise n'est pas réévalué (A37).
      comptes de l'aperçu : décocher un compte (poste non monétaire — stock, immobilisation, capital en devise — que
      l'écran de l'AC-6 permet de décocher à la passation) ne le sort pas de K9, et l'exercice ne se clôt pas tant que
      son écart n'est pas nul. Conséquence **assumée** de la décision de Beat (A37, qui ne prévoit pas
-     d'exception) ; le manuel (AC-8) dit de tenir un tel poste sur un compte **en CHF**. À confirmer par Beat : une
-     exception (marque « non monétaire » du compte) serait une exigence neuve, hors CR-8.
+     d'exception) ; le manuel (AC-8) dit de tenir un tel poste sur un compte **en CHF**. **Tranché par Beat (A41,
+     epic 37, section CR-8, 2026-11-16, option a)** : un poste non monétaire se tient sur un compte en CHF, aucune
+     marque « non monétaire » n'est ajoutée aux comptes (KISS) — ni colonne, ni case, ni exception dans K9.
    - **Le refus à la clôture.** **Tout est dans `fiscal_years::close`** (37-5-CR8-P1-1) : sa signature **ne change pas**
      (`close(pool, user_id, company_id, id)` compte 64 appels de tests, dont deux dans le `mod tests` de
      `journal_entries.rs`, qui n'auraient plus compilé, et un appelant qui oublierait de passer les cours contournerait K9 ; le handler
@@ -1108,3 +1110,18 @@ l'Epic 38).
   pas qu'un compte décoché bloque la clôture (A37) ; hors périmètre de la passe, `audit_log.rs:195` a dérivé
   (`for_actor` à :238 depuis l'Epic 35, qui ajoute `NewAuditLogEntry::par`/`Acteur`, 35-8a1) — à relire à la prochaine
   passe complète. Axes non exercés : code de 37-1 à 37-4 (non écrit), E2E, reste de la fiche hors diff P1.
+- 2026-11-16 — validation CR-8 P3 ciblée (Sonnet) : 0 CRITICAL, 0 HIGH, 0 MEDIUM, 2 LOW ; remédiés dans la fiche.
+  LOW **37-5-CR8-P3-1** : la référence `entities/audit_log.rs:195` de l'AC-2 (signalée périmée par la P2) n'avait pas
+  été corrigée — `for_actor` est à `:238`, `NewAuditLogEntry::par` à `:263` (Epic 35, relus). LOW **-2** : A41 (Beat,
+  option a) appliqué — « À confirmer par Beat » de l'AC-9 (*Un compte en devise qu'on ne veut pas réévaluer*) remplacé
+  par le renvoi à A41 (poste non monétaire tenu sur un compte en CHF, aucune marque « non monétaire », K9 sans
+  exception) ; AC-8 (manuel) dit déjà de tenir ces postes en CHF, renvoi à A41 ajouté. Remédiation P2 relue au code,
+  sans défaut : résolution des cours dans `kesh-db` (`find_company_rate_in_tx` existe, `kesh-db` ne dépend pas de
+  `kesh-api`) ; `fiscal_years::close` (:1116-1222) lit aujourd'hui (a)/(b) dans la transaction, la fiche les sort
+  avant `begin`, voulu, signature conservée ; (d-bis) jugé sur la ligne verrouillée, échec fermé ; 65 occurrences de
+  `fiscal_years::close(` (64 + la route), recomptées ; cas de Beat au 31.12.2024 juste ; K9 `ok` sans avis, ligne
+  « Rien à signaler » ; inventaire P2 sans résidu ; Tâches cohérentes. Inter-fiches : aucun (epic A41 déjà écrit, C-37-7
+  lu sous cette réserve). Axes exercés : diff P2 `47abae1e..5f295c8f`, blocage et ordre des refus, verrous, comptabilité
+  du résidu, écran, inventaire, tests, KISS, A41. Non exercés : code de 37-1 à 37-4 (non écrit), E2E, manuels `.tex`
+  (contrôlés à la passe précédente). Aucun finding au-dessus de LOW, remédiation sans code de production : boucle CR-8
+  de 37-5 clôturable.
