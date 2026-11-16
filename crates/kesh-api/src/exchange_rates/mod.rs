@@ -163,7 +163,7 @@ pub enum Declencheur {
 /// Le bilan d'un tour, pour le journal et les tests.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct BilanTour {
-    /// Les unités demandées (manquantes, au plus [`MAX_UNITES_PAR_TOUR`]).
+    /// Les unités demandées (manquantes ; au plus [`MAX_UNITES_PAR_TOUR`], mois courant et mois suivant manquants compris).
     pub demandees: Vec<RateUnit>,
     /// La revérification du mois courant, si elle a été demandée.
     pub reverifiee: Option<RateUnit>,
@@ -171,9 +171,37 @@ pub struct BilanTour {
     pub statut: Option<FetchOutcomeStatus>,
 }
 
+/// Les unités demandées par un tour : au plus [`MAX_UNITES_PAR_TOUR`] des
+/// `manquantes`, dans l'ordre chronologique — mais les unités `prioritaires`
+/// (mois courant et mois suivant) qui manquent y sont **toujours** : sans
+/// cela, 36 unités plus anciennes en échec durable (un jour d'ouverture que la
+/// source ne sert pas, par exemple) occupaient chaque tour, et le mois courant
+/// n'était jamais demandé (revue de code P1, 37-2-CR-P1-4). Le plafond et
+/// l'ordre chronologique de la liste rendue sont gardés.
+pub(crate) fn choisir_demandees(
+    manquantes: &[RateUnit],
+    prioritaires: &[RateUnit],
+) -> Vec<RateUnit> {
+    let avant: Vec<RateUnit> = manquantes
+        .iter()
+        .copied()
+        .filter(|u| prioritaires.contains(u))
+        .collect();
+    let place = MAX_UNITES_PAR_TOUR.saturating_sub(avant.len());
+    let mut demandees: Vec<RateUnit> = manquantes
+        .iter()
+        .copied()
+        .filter(|u| !prioritaires.contains(u))
+        .take(place)
+        .chain(avant)
+        .collect();
+    demandees.sort_by_key(|u| (u.date, u.kind));
+    demandees
+}
+
 /// Un tour de récupération automatique (AC-4) : unités utiles manquantes des
-/// exercices multi-devises ouverts (toutes sociétés), au plus
-/// [`MAX_UNITES_PAR_TOUR`], dans l'ordre chronologique, chacune jugée
+/// exercices multi-devises ouverts (toutes sociétés), choisies par
+/// [`choisir_demandees`] (au plus [`MAX_UNITES_PAR_TOUR`], dans l'ordre chronologique), chacune jugée
 /// manquante **sous le verrou** ; puis revérification du mois courant s'il
 /// était présent et couvert. Rien ne manque → aucun appel, revérification
 /// comprise. Écrit le pire statut (`triggered_by = 'auto'`), non audité.
@@ -199,11 +227,7 @@ pub async fn un_tour(state: &AppState, declencheur: Declencheur) -> Result<Bilan
     }
     let suivant = RateUnit::month_of(next_month(aujourdhui));
     let courant = RateUnit::month_of(aujourdhui);
-    let demandees: Vec<RateUnit> = manquantes
-        .iter()
-        .copied()
-        .take(MAX_UNITES_PAR_TOUR)
-        .collect();
+    let demandees = choisir_demandees(&manquantes, &[courant, suivant]);
     let reverifiee =
         (utiles.contains(&courant) && !manquantes.contains(&courant)).then_some(courant);
 

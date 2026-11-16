@@ -280,6 +280,33 @@ describe('ExchangeRatesScreen — écritures', () => {
 		await saisir('USD-month-2024-10-01', '0.95');
 		expect((await screen.findByTestId('exchange-rates-message')).textContent).toBe('Cours USD invalide (serveur)');
 	});
+
+	it('revue P1 (37-2-CR-P1-5) — PUT refusé (500) : la case revient à la valeur enregistrée', async () => {
+		await monter(gridVarie());
+		const avant = (screen.getByTestId('exchange-rates-input-USD-month-2024-10-01') as HTMLInputElement).value;
+		api.putRate.mockRejectedValue({ code: 'INTERNAL_ERROR', message: 'Erreur interne', status: 500 });
+		await saisir('USD-month-2024-10-01', '0.95');
+		expect((await screen.findByTestId('exchange-rates-message')).textContent).toBe('Erreur interne');
+		await waitFor(() =>
+			expect((screen.getByTestId('exchange-rates-input-USD-month-2024-10-01') as HTMLInputElement).value).toBe(avant),
+		);
+		expect(avant).not.toBe('0.95');
+	});
+
+	it('revue P1 (37-2-CR-P1-6) — une lecture périmée du tableau est ignorée', async () => {
+		await monter(gridVarie());
+		let lente: (g: FiscalYearRatesResponse) => void = () => {};
+		api.getYearGrid.mockImplementationOnce(() => new Promise((r) => (lente = r)));
+		api.getYearGrid.mockResolvedValueOnce(gridVarie());
+		await fireEvent.click(screen.getByTestId('exchange-rates-all'));
+		await fireEvent.click(screen.getByTestId('exchange-rates-all'));
+		await waitFor(() => expect(api.getYearGrid).toHaveBeenCalledTimes(3));
+		const ancienne = gridVarie();
+		ancienne.rows = [];
+		lente(ancienne);
+		await new Promise((r) => setTimeout(r, 0));
+		expect(screen.getByTestId('exchange-rates-input-USD-month-2024-10-01')).toBeTruthy();
+	});
 });
 
 describe('ExchangeRatesScreen — dialogue U3 (condition unique)', () => {
@@ -292,7 +319,9 @@ describe('ExchangeRatesScreen — dialogue U3 (condition unique)', () => {
 		await monter(gridVarie(), { canManageSeveralCompanies: true });
 		api.resetRate.mockResolvedValue({});
 		await fireEvent.click(arrow('USD-month-2024-08-01')!);
-		expect(await screen.findByTestId('exchange-rates-correction-dialog')).toBeTruthy();
+		const dialogue = await screen.findByTestId('exchange-rates-correction-dialog');
+		// Revue de code P2 (37-2-CR-P2-4) : le groupe de choix porte une légende.
+		expect(dialogue.querySelector('fieldset > legend')?.textContent?.trim()).toBeTruthy();
 		expect(api.resetRate).not.toHaveBeenCalled();
 		await fireEvent.click(screen.getByTestId('exchange-rates-correction-confirm'));
 		await waitFor(() =>
@@ -456,6 +485,16 @@ describe('ExchangeRatesScreen — rôles et exercice clos', () => {
 		expect((screen.getByTestId('exchange-rates-closing-month') as HTMLInputElement).disabled).toBe(true);
 		expect(screen.getByTestId('exchange-rates-fetch-missing')).toBeTruthy();
 		expect(screen.getByTestId('exchange-rates-closed')).toBeTruthy();
+	});
+
+	it('revue P1 (37-2-CR-P1-7) — échec de lecture des exercices : l’erreur, pas « aucun exercice »', async () => {
+		auth.currentUser = { role: 'Admin' };
+		settings.fetchCompanyCurrent.mockResolvedValue(company());
+		fys.listFiscalYears.mockRejectedValue({ code: 'INTERNAL_ERROR', message: 'Lecture impossible', status: 500 });
+		render(ExchangeRatesScreen);
+		expect((await screen.findByTestId('exchange-rates-load-error')).textContent).toBe('Lecture impossible');
+		expect(screen.queryByTestId('exchange-rates-no-fiscal-year')).toBeNull();
+		expect(screen.queryByTestId('exchange-rates-mono')).toBeNull();
 	});
 
 	it('mono-devise : message, aucun exercice lu', async () => {

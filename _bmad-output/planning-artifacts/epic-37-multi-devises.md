@@ -646,3 +646,28 @@ Revue 4 de Guy (page `epic-35-revue.html`, 35-N = 37-N) : tout approuvé, 37-5 s
   d'avance en devise, etc.) se tient sur un compte **en CHF** : tout compte de bilan en devise est réévalué, et un compte
   décoché à la passation garde un résidu qui bloque la clôture (A37). Aucune marque « non monétaire » sur les comptes
   (KISS). Le manuel le dit ; C-37-7 (« décochables ») est lu sous cette réserve.
+
+## Recoupements avec l'Epic 36, release 0.18.0 (relevé du 2026-11-16)
+
+Relevé sur `origin/epic/36-0.18.0` à `e50586b8`, **pas encore dans `main`**. Fusion d'essai dans `epic/37-multi-devises`
+à `6ad579f6`, sans commit, puis annulée. Dix fichiers sont en conflit de texte :
+- `routes/onboarding.rs` et `onboarding/+page.svelte` : les 36-17 (un écran pour chaque étape) et 36-19 (la
+  finalisation complète les comptes vides des réglages de facturation) contre le corps de `finalize` de la 37-1
+  (dates du premier exercice) ;
+- les quatre catalogues i18n ;
+- `user-manual.tex` ;
+- `i18n-keys.test.ts`, `i18n-libelle-en-dur.test.ts` et `i18n-un-repli-par-cle.test.ts` (compteurs à recompter).
+
+Le second arrivé résout, dans sa branche ; ici, la reprise de `main` après la fusion de la 0.18.0 par Guy (A40).
+**Interactions sans conflit de texte**, à contrôler à cette reprise :
+- **36-19** écrit les comptes des réglages de facturation à la finalisation. Elle ne doit pas désigner un compte de
+  différence ni de conversion, et ne doit pas contourner les gardes de la 37-1 (`company_invoice_settings`). Il faut
+  un test.
+- **36-9** contrôle le type du compte désigné au solde du reste. Elle touche `accounts.rs` et
+  `company_invoice_settings.rs`, comme la 37-1 : relire l'ordre des verrous.
+- **36-10** : les dernières dates en jours UTC passent à Zurich. La 37-2 se sert déjà de `kesh_core::horloge`.
+- **36-15** : le vocabulaire visible devient « compte analytique » au lieu de « projet analytique ». Les textes des
+  Epics 37 à 40 suivent ce vocabulaire. Les fiches de l'Epic 37 ne disent « projets » que dans des notes internes.
+- **36-6 (#823, une transaction et plusieurs écritures)** : aucun code dans les branches publiées au 2026-11-16, et la
+  story est encore `backlog`. Selon la règle de cadence de Guy (branche `chore/cadence-hebdomadaire`), l'Epic 36 se
+  clôt avec la 0.18.0, et #823 passe à un epic neuf. Elle concerne la 38-6c2 (A40), non l'Epic 37.

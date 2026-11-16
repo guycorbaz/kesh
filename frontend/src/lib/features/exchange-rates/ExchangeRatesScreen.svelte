@@ -88,7 +88,11 @@
 	let selectedId = $state<number | null>(null);
 	let grid = $state<FiscalYearRatesResponse | null>(null);
 	let gridError = $state('');
+	/** Échec du chargement initial (société ou exercices) : rendu à la place des états vides. */
+	let loadError = $state('');
 	let loadCount = $state(0);
+	/** Numéro de la dernière lecture du tableau : une réponse tardive est ignorée. */
+	let gridSeq = 0;
 	let all = $state(false);
 	let extraCurrencies = $state<string[]>([]);
 	let currencyToAdd = $state('');
@@ -146,11 +150,17 @@
 
 	async function loadGrid() {
 		if (selectedId === null) return;
+		const mine = ++gridSeq;
 		gridError = '';
 		try {
-			grid = await getYearGrid(selectedId, all);
+			const g = await getYearGrid(selectedId, all);
+			// Revue de code P1 (37-2-CR-P1-6) : un changement d'exercice ou de
+			// « Toutes les devises » pendant la lecture rend celle-ci périmée.
+			if (mine !== gridSeq) return;
+			grid = g;
 			loadCount += 1;
 		} catch (e) {
+			if (mine !== gridSeq) return;
 			grid = null;
 			gridError = errorMessageOf(e);
 		}
@@ -182,7 +192,10 @@
 			selectedId = defaultFiscalYear(fiscalYears, today, initialDate)?.id ?? null;
 			await Promise.all([loadGrid(), loadStatus()]);
 		} catch (e) {
-			gridError = errorMessageOf(e);
+			// Revue de code P1 (37-2-CR-P1-7) : un échec de lecture de la société
+			// ou des exercices ne se fait pas passer pour « mono-devise » ou
+			// « aucun exercice ».
+			loadError = errorMessageOf(e);
 		} finally {
 			loading = false;
 		}
@@ -209,6 +222,10 @@
 			return;
 		}
 		message = { kind: 'error', text: errorMessageOf(e) };
+		// Revue de code P1 (37-2-CR-P1-5) : la case ou le choix de genre refusé
+		// revient à la valeur enregistrée (les cases et les boutons radio se
+		// remontent), au lieu de montrer une valeur non enregistrée.
+		loadCount += 1;
 	}
 
 	async function savePut(currency: string, cell: Cell, rate: string) {
@@ -386,6 +403,8 @@
 
 	{#if loading}
 		<p class="text-sm text-text-muted">{i18nMsg('common-loading', 'Chargement…')}</p>
+	{:else if loadError}
+		<p class="text-sm text-error" data-testid="exchange-rates-load-error">{loadError}</p>
 	{:else if !multiCurrency}
 		<p class="text-sm" data-testid="exchange-rates-mono">
 			{i18nMsg(

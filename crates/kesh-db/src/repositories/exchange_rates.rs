@@ -936,6 +936,16 @@ pub async fn write_fetched_unit_in_tx(
 /// présente, `afc` ou `manual`, n'est jamais modifiée ; `source = 'afc'`,
 /// `updated_by = NULL`, aucune ligne d'audit. Rend le nombre de lignes copiées.
 ///
+/// **Lecture verrouillée** (`LOCK IN SHARE MODE`, AC-3 bis : « ce n'est pas
+/// une lecture sans verrou ») : elle lit la dernière valeur validée et
+/// **attend** une récupération en cours au lieu de la manquer dans
+/// l'instantané de la transaction appelante — sans quoi une récupération et
+/// une copie concurrentes (création d'un exercice, compte qui reçoit une
+/// devise) ne copiaient ni l'une ni l'autre, et l'unité, plus manquante, ne
+/// se redemandait jamais (revue de code P1, 37-2-CR-P1-3). Réciproquement,
+/// les verrous de cette lecture font attendre l'insertion d'une récupération
+/// qui suit, dont l'instantané voit alors l'exercice ou le compte validé.
+///
 /// **Lecture, puis une insertion par ligne**, dans l'ordre de la clé (date,
 /// genre, devise) — et non un `INSERT … SELECT` : celui-ci est une insertion
 /// « en masse » qui prend le verrou `AUTO-INC` de toute la table, et deux
@@ -965,7 +975,8 @@ pub async fn copy_fetched_in_tx(
            AND NOT EXISTS (SELECT 1 FROM exchange_rates x WHERE x.company_id = ? \
                            AND x.currency = f.currency AND x.kind = f.kind \
                            AND x.rate_date = f.rate_date) \
-         ORDER BY f.rate_date, f.kind, f.currency",
+         ORDER BY f.rate_date, f.kind, f.currency \
+         LOCK IN SHARE MODE",
         vec!["(?, ?)"; units.len()].join(", "),
         if currency.is_some() {
             "AND f.currency = ?"
@@ -1173,7 +1184,8 @@ pub async fn set_manual_rate(
 /// Contrôles, dans l'ordre : absence (404), puis `expected_version`
 /// (obligatoire si la ligne existe, sinon conflit ; donné sans ligne →
 /// [`DbError::InvalidInput`] `versionForbidden`), puis `expected_published`
-/// (la valeur que l'écran a montrée, comparée en valeur ; changée → conflit).
+/// (la valeur que l'écran a montrée, comparée en valeur ; changée, ou disparue
+/// depuis → conflit, jamais une suppression).
 /// La valeur publiée est lue sans verrou. Rend la ligne avant et après, et la
 /// valeur reprise, pour l'audit.
 #[allow(clippy::too_many_arguments)]
@@ -1201,10 +1213,15 @@ pub async fn reset_rate(
         check_version(before.as_ref(), expected_version)?;
     }
     let published_rate = published.as_ref().map(|p| p.rate_per_unit);
-    if let (Some(attendu), Some(actuel)) = (expected_published, published_rate)
-        && attendu != actuel
-    {
-        return Err(DbError::OptimisticLockConflict);
+    // La valeur publiée que l'écran a montrée doit être encore celle de la
+    // source : changée, ou disparue depuis (revue de code P1, 37-2-CR-P1-1 —
+    // sans quoi « reprendre la valeur publiée » supprimerait le cours saisi).
+    match (expected_published, published_rate) {
+        (Some(attendu), Some(actuel)) if attendu != actuel => {
+            return Err(DbError::OptimisticLockConflict);
+        }
+        (Some(_), None) => return Err(DbError::OptimisticLockConflict),
+        _ => {}
     }
     match (&before, published_rate) {
         (None, Some(p)) => {
