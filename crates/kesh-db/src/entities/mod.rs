@@ -46,8 +46,8 @@ pub mod user;
 pub mod vat_rate;
 
 pub use account::{
-    Account, AccountRole, AccountType, AccountUpdate, CurrencyChange, NewAccount, OwnFxAccounts,
-    OwnFxAccountsChange,
+    Account, AccountRole, AccountType, AccountUpdate, CurrencyChange, FxAccounts, FxAccountsOrigin,
+    NewAccount, OwnFxAccounts, OwnFxAccountsChange,
 };
 pub use api_key::{ApiKey, ApiKeyScope, NewApiKey};
 pub use audit_log::{AUDIT_ENTITY_ID_NONE, Acteur, ActorType, AuditLogEntry, NewAuditLogEntry};
@@ -55,7 +55,7 @@ pub use bank_account::{BankAccount, BankAccountKind, NewBankAccount};
 pub use bank_import::{BankImport, BankImportSourceFormat, NewBankImport};
 pub use bank_profile::{BankProfile, NewBankProfile};
 pub use bank_transaction::{BankTransaction, BankTransactionStatus, NewBankTransaction};
-pub use company::{Company, CompanyUpdate, Language, NewCompany, OrgType};
+pub use company::{Company, CompanyUpdate, CurrencySettingsUpdate, Language, NewCompany, OrgType};
 pub use company_dunning_settings::{CompanyDunningSettings, CompanyDunningSettingsUpdate};
 pub use company_invoice_settings::{CompanyInvoiceSettings, CompanyInvoiceSettingsUpdate};
 pub use contact::{Contact, ContactType, ContactUpdate, NewContact};

@@ -4,6 +4,86 @@ use thiserror::Error;
 
 use crate::entities::AccountType;
 
+/// Le champ d'un compte de différence de change refusé (Story 37-1, AC-3,
+/// AC-4 bis) — `details.field` de `FX_ACCOUNT_INVALID`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub enum FxAccountField {
+    /// Compte des gains de change (`fxGainAccountId`).
+    Gain,
+    /// Compte des pertes de change (`fxLossAccountId`).
+    Loss,
+    /// Compte de conversion entre devises (`fxTransitAccountId`), réglage de
+    /// la société seul.
+    Transit,
+}
+
+impl FxAccountField {
+    /// Le nom du champ côté API (`details.field`).
+    pub fn as_api_field(self) -> &'static str {
+        match self {
+            Self::Gain => "fxGainAccountId",
+            Self::Loss => "fxLossAccountId",
+            Self::Transit => "fxTransitAccountId",
+        }
+    }
+}
+
+/// Raison du refus d'un compte de différence de change (Story 37-1, AC-3) —
+/// `details.reason` de `FX_ACCOUNT_INVALID`. **Liste close**, reprise par la
+/// 37-5 : aucune raison ne s'y ajoute sans changer le contrat de l'API.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum FxAccountReason {
+    /// Champ requis absent (activation sans l'un des comptes, compte vidé
+    /// alors que le mode est actif, paire de comptes propres incomplète).
+    Missing,
+    /// Identifiant posé alors que la société reste mono-devise.
+    Unexpected,
+    /// Compte introuvable ou d'une autre société (non distingués, anti-IDOR).
+    Unknown,
+    /// Compte archivé.
+    Archived,
+    /// Compte non imputable.
+    NotPostable,
+    /// Mauvais type : `Expense`/`Revenue` attendu pour les gains et pertes,
+    /// `Asset`/`Liability` pour la conversion.
+    AccountType,
+    /// Le compte porte une devise étrangère : un compte de différence est en CHF.
+    ForeignCurrency,
+    /// Le compte est un compte de chiffre d'affaires (rôle `DefaultRevenue`,
+    /// ou désigné `default_revenue_account_id` des réglages de facturation ou
+    /// d'un article) — les gains de change n'y vont pas (CO 959b).
+    RevenueAccount,
+}
+
+impl FxAccountReason {
+    /// Le code de la raison côté API (`details.reason`).
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Missing => "missing",
+            Self::Unexpected => "unexpected",
+            Self::Unknown => "unknown",
+            Self::Archived => "archived",
+            Self::NotPostable => "notPostable",
+            Self::AccountType => "accountType",
+            Self::ForeignCurrency => "foreignCurrency",
+            Self::RevenueAccount => "revenueAccount",
+        }
+    }
+
+    /// La liste close, dans l'ordre où les gardes d'un compte sont jugées
+    /// (après `missing` et `unexpected`, qui portent sur la forme du corps).
+    pub const ALL: [Self; 8] = [
+        Self::Missing,
+        Self::Unexpected,
+        Self::Unknown,
+        Self::Archived,
+        Self::NotPostable,
+        Self::AccountType,
+        Self::ForeignCurrency,
+        Self::RevenueAccount,
+    ];
+}
+
 /// Raison du refus d'un compte de produit référencé par une ligne de facture
 /// (Story 16-1a, #152 — décision D3).
 ///
@@ -953,6 +1033,29 @@ pub enum DbError {
         fiscal_year_id: i64,
         fiscal_year_name: String,
     },
+
+    /// Un compte de différence de change est refusé (Story 37-1, AC-3,
+    /// AC-4 bis) : réglage de la société (`companies::update_currency_settings`),
+    /// comptes propres d'un compte en devise, ou revalidation à l'usage
+    /// (`accounts::validate_fx_accounts_in_tx`). Mappé vers HTTP **400**
+    /// `FX_ACCOUNT_INVALID`, `details: { field, reason[, holderAccountId] }`.
+    #[error("Compte de différence de change refusé : {field:?} ({reason:?})")]
+    FxAccountInvalid {
+        /// Le champ visé.
+        field: FxAccountField,
+        /// La raison, de la liste close.
+        reason: FxAccountReason,
+        /// Le compte en devise qui porte ce compte propre, quand le refus
+        /// porte sur ses comptes propres (`origin = Own`) ; `None` pour un
+        /// compte de la société.
+        holder_account_id: Option<i64>,
+    },
+
+    /// `multiCurrencyEnabled: false` sur une société multi-devises (Story 37-1,
+    /// CR-7, A34) : le mode est irréversible. Mappé vers HTTP **409**
+    /// `MULTI_CURRENCY_IRREVERSIBLE`, `details: {}`.
+    #[error("Le mode multi-devises est irréversible")]
+    MultiCurrencyIrreversible,
 
     /// La clôture d'un exercice est refusée : un exercice **antérieur** de la
     /// même société est encore ouvert (Story 15-12a, #543).
@@ -1931,6 +2034,8 @@ impl DbError {
             Self::FiscalYearClosed => "FISCAL_YEAR_CLOSED",
             Self::LaterFiscalYearClosed { .. } => "LATER_FISCAL_YEAR_CLOSED",
             Self::LaterFiscalYearMonoCurrency { .. } => "LATER_FISCAL_YEAR_MONO_CURRENCY",
+            Self::FxAccountInvalid { .. } => "FX_ACCOUNT_INVALID",
+            Self::MultiCurrencyIrreversible => "MULTI_CURRENCY_IRREVERSIBLE",
             Self::EarlierFiscalYearOpen { .. } => "EARLIER_FISCAL_YEAR_OPEN",
             Self::NextFiscalYearMissing { .. } => "NEXT_FISCAL_YEAR_MISSING",
             Self::NextFiscalYearClosed { .. } => "NEXT_FISCAL_YEAR_CLOSED",

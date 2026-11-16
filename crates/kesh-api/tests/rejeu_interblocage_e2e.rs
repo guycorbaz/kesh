@@ -2538,6 +2538,95 @@ async fn fiscal_year_reopen_is_replayed_when_it_is_the_deadlock_victim(pool: MyS
 }
 
 // ============================================================
+// Test 37-1 — activation du multi-devises victime (Story 37-1, AC-3)
+// ============================================================
+
+/// `PUT /companies/current/currency-settings` (activation), victime, est
+/// **rejouée** (Story 37-1, AC-3, 37-1-CR2-P1-1).
+///
+/// Montage : la transaction lourde tient l'exercice du semis (comme une saisie
+/// d'écriture qui a pris son exercice `FOR UPDATE`) ; l'activation, lancée en
+/// tâche, tient `companies` `FOR UPDATE` puis est vue en attente sur la lecture
+/// verrouillante des exercices (motif `multi_currency FROM fiscal_years`). La
+/// transaction demande la ligne `companies` : cycle ; InnoDB annule
+/// l'activation, plus légère ; la transaction obtient `companies`, annule ; la
+/// route rejoue et rend **200**, l'exercice multi-devises, une seule entrée
+/// d'audit.
+///
+/// ⛔ Tue la mutation « appel hors de `retry_on_deadlock` » : 500, et pas de
+/// témoin de rejeu.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn currency_settings_activation_is_replayed_when_it_is_the_deadlock_victim(pool: MySqlPool) {
+    let ctx = monter(&pool).await;
+    let capture = CaptureRejeu::installer();
+    let company_id = ctx.company_id();
+    let fy = ctx.societe.fiscal_year_id;
+    let mut ids = Vec::new();
+    for (numero, genre) in [("6950", "Expense"), ("1090", "Asset")] {
+        let id = sqlx::query(
+            "INSERT INTO accounts (company_id, number, name, account_type) VALUES (?, ?, ?, ?)",
+        )
+        .bind(company_id)
+        .bind(numero)
+        .bind(format!("Compte {numero}"))
+        .bind(genre)
+        .execute(&pool)
+        .await
+        .unwrap()
+        .last_insert_id() as i64;
+        ids.push(id);
+    }
+
+    let mut lourde = transaction_lourde(&pool).await;
+    sqlx::query("SELECT id FROM fiscal_years WHERE id = ? FOR UPDATE")
+        .bind(fy)
+        .fetch_one(&mut *lourde)
+        .await
+        .unwrap();
+
+    let route = requete_en_tache(
+        &ctx,
+        reqwest::Method::PUT,
+        "/api/v1/companies/current/currency-settings",
+        Some(json!({
+            "multiCurrencyEnabled": true,
+            "fxGainAccountId": ids[0],
+            "fxLossAccountId": ids[0],
+            "fxTransitAccountId": ids[1],
+            "version": 1,
+        })),
+    );
+    let (status, corps) = victime(
+        &pool,
+        lourde,
+        route,
+        &["multi_currency FROM fiscal_years", "FOR UPDATE"],
+        "SELECT id FROM companies WHERE id = ? FOR UPDATE",
+        company_id,
+    )
+    .await;
+
+    assert_eq!(status, 200, "⛔ l'interblocage doit être rejoué : {corps}");
+    assert_eq!(corps["multiCurrencyEnabled"], true);
+    let multi: bool = sqlx::query_scalar("SELECT multi_currency FROM fiscal_years WHERE id = ?")
+        .bind(fy)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert!(multi, "l'exercice ouvert est passé en multi-devises");
+    let audits: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM audit_log WHERE action = 'company.currency_settings_updated' \
+         AND entity_id = ?",
+    )
+    .bind(company_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(audits, 1, "une seule entrée d'audit");
+    capture.exiger_un_rejeu("companies::update_currency_settings");
+}
+
+// ============================================================
 // Test 34-7 — renommage d'un exercice victime (Story 34-7, #945)
 // ============================================================
 

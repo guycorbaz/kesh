@@ -11,8 +11,8 @@ use axum::Json;
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use kesh_db::errors::{
-    DbError, ModificationGuard, RejectedRevenueAccount, RevenueAccountRejection, ReversalBlocker,
-    SettlementCancelBlocker, UnvalidationBlocker,
+    DbError, FxAccountField, FxAccountReason, ModificationGuard, RejectedRevenueAccount,
+    RevenueAccountRejection, ReversalBlocker, SettlementCancelBlocker, UnvalidationBlocker,
 };
 use kesh_i18n::{FluentArgs, I18nBundle, Locale};
 use serde::Serialize;
@@ -1491,6 +1491,88 @@ fn later_fiscal_year_mono_currency_response(
         "error-fiscal-year-create-later-mono-currency",
         &fallback,
     )
+}
+
+/// Corps `400 FX_ACCOUNT_INVALID` (Story 37-1, AC-3, AC-4 bis) : un compte de
+/// différence de change refusé. `details` : `field` (`fxGainAccountId` |
+/// `fxLossAccountId` | `fxTransitAccountId`), `reason` (liste close de
+/// [`FxAccountReason`]) et, pour les comptes propres d'un compte en devise,
+/// `holderAccountId`. Le message nomme le champ puis la raison ; l'écran
+/// l'affiche tel quel sous le sélecteur désigné par `details.field`.
+fn fx_account_invalid_response(
+    field: FxAccountField,
+    reason: FxAccountReason,
+    holder_account_id: Option<i64>,
+) -> Response {
+    let (subject_key, subject_fallback) = match field {
+        FxAccountField::Gain => (
+            "error-fx-account-subject-gain",
+            "Le compte des gains de change",
+        ),
+        FxAccountField::Loss => (
+            "error-fx-account-subject-loss",
+            "Le compte des pertes de change",
+        ),
+        FxAccountField::Transit => (
+            "error-fx-account-subject-transit",
+            "Le compte de conversion",
+        ),
+    };
+    let subject = t(subject_key, subject_fallback);
+    let (key, fallback) = match reason {
+        FxAccountReason::Missing => (
+            "error-fx-account-missing",
+            format!("{subject} est obligatoire en mode multi-devises."),
+        ),
+        FxAccountReason::Unexpected => (
+            "error-fx-account-unexpected",
+            format!("{subject} ne se désigne qu’en mode multi-devises."),
+        ),
+        FxAccountReason::Unknown => (
+            "error-fx-account-unknown",
+            format!("{subject} est introuvable ou n’appartient pas à cette société."),
+        ),
+        FxAccountReason::Archived => (
+            "error-fx-account-archived",
+            format!("{subject} est archivé."),
+        ),
+        FxAccountReason::NotPostable => (
+            "error-fx-account-not-postable",
+            format!("{subject} n’est pas imputable."),
+        ),
+        FxAccountReason::AccountType if field == FxAccountField::Transit => (
+            "error-fx-account-account-type-transit",
+            format!("{subject} doit être un compte de bilan (actif ou passif)."),
+        ),
+        FxAccountReason::AccountType => (
+            "error-fx-account-account-type",
+            format!("{subject} doit être un compte de charges ou de produits."),
+        ),
+        FxAccountReason::ForeignCurrency => (
+            "error-fx-account-foreign-currency",
+            format!("{subject} doit être tenu en CHF, sans devise."),
+        ),
+        FxAccountReason::RevenueAccount => (
+            "error-fx-account-revenue-account",
+            format!(
+                "{subject} ne peut pas être un compte de chiffre d’affaires (compte de produit par défaut des factures ou d’un article)."
+            ),
+        ),
+    };
+    let mut args = FluentArgs::new();
+    args.set("subject", subject);
+    let message = t_args(key, &fallback, &args);
+    let mut details = serde_json::json!({
+        "field": field.as_api_field(),
+        "reason": reason.as_str(),
+    });
+    if let Some(holder) = holder_account_id {
+        details["holderAccountId"] = serde_json::json!(holder);
+    }
+    let body = serde_json::json!({
+        "error": { "code": "FX_ACCOUNT_INVALID", "message": message, "details": details }
+    });
+    (StatusCode::BAD_REQUEST, Json(body)).into_response()
 }
 
 /// Clé i18n et repli d'un motif de contre-passation (Story 24-4a), partagés
@@ -4243,6 +4325,29 @@ impl IntoResponse for AppError {
                     fiscal_year_id,
                     fiscal_year_name,
                 } => later_fiscal_year_mono_currency_response(fiscal_year_id, &fiscal_year_name),
+                // Story 37-1 (AC-3, AC-4 bis) — un compte de différence de
+                // change refusé : 400, champ et raison en `details`.
+                DbError::FxAccountInvalid {
+                    field,
+                    reason,
+                    holder_account_id,
+                } => fx_account_invalid_response(field, reason, holder_account_id),
+                // Story 37-1 (CR-7, A34) — le mode multi-devises ne se
+                // désactive pas : 409, `details: {}`.
+                DbError::MultiCurrencyIrreversible => {
+                    let message = t(
+                        "error-multi-currency-irreversible",
+                        "Le mode multi-devises est activé et ne se désactive pas.",
+                    );
+                    let body = serde_json::json!({
+                        "error": {
+                            "code": "MULTI_CURRENCY_IRREVERSIBLE",
+                            "message": message,
+                            "details": {},
+                        }
+                    });
+                    (StatusCode::CONFLICT, Json(body)).into_response()
+                }
                 // Story 15-12a (#543) — la clôture d'un exercice précédé d'un
                 // exercice ouvert. 409, comme les autres refus de transition de
                 // l'écran des exercices, mais un code DÉDIÉ : l'écran traduit

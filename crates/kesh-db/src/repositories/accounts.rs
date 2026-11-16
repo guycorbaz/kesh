@@ -12,9 +12,12 @@
 
 use sqlx::mysql::MySqlPool;
 
-use crate::entities::account::{Account, AccountRole, AccountType, AccountUpdate, NewAccount};
+use crate::entities::Company;
+use crate::entities::account::{
+    Account, AccountRole, AccountType, AccountUpdate, FxAccounts, FxAccountsOrigin, NewAccount,
+};
 use crate::entities::audit_log::NewAuditLogEntry;
-use crate::errors::{DbError, map_db_error};
+use crate::errors::{DbError, FxAccountField, FxAccountReason, map_db_error};
 use crate::repositories::{audit_log, company_invoice_settings};
 
 /// Colonnes de `accounts` sélectionnées pour hydrater [`Account`], sous forme de
@@ -25,16 +28,15 @@ use crate::repositories::{audit_log, company_invoice_settings};
 /// n'existe que pour porter la contrainte d'unicité partielle des rôles
 /// singleton, elle n'a pas de représentation Rust.
 ///
-/// ⚠️ **`currency` se lit par `CAST(currency AS CHAR(3))`** (Story 37-1) : la
-/// colonne est en `ascii_bin`, collation binaire que le serveur signale par le
-/// drapeau `BINARY` de la colonne, et `sqlx` refuse de décoder une colonne
-/// `BINARY` en `String` (`sqlx-mysql`, `str::compatible`). Le `CAST` rend une
-/// chaîne de la connexion, sans drapeau, même valeur. Toute autre lecture de
-/// `accounts.currency` décodée en `String` doit faire de même.
+/// `currency` se lit telle quelle (Story 37-1, choix C-37-1-1) : la colonne est
+/// en `ascii_general_ci`, non en collation binaire — une collation `_bin` est
+/// signalée `BINARY` par le serveur, et `sqlx` refuse alors de la décoder en
+/// `String` (`sqlx-mysql`, `str::compatible`). La casse reste fermée par les
+/// `CHECK … BINARY` de la migration.
 macro_rules! columns {
     () => {
         "id, company_id, number, name, account_type, parent_id, active, role, postable, \
-         CAST(currency AS CHAR(3)) AS currency, fx_gain_account_id, fx_loss_account_id, \
+         currency, fx_gain_account_id, fx_loss_account_id, \
          version, created_at, updated_at"
     };
 }
@@ -1416,6 +1418,260 @@ pub async fn bulk_create_from_chart_in_tx(
         query = query.bind(id);
     }
     query.fetch_all(&mut **tx).await.map_err(map_db_error)
+}
+
+// ---------------------------------------------------------------------------
+// Story 37-1 (AC-3, AC-4 bis) — comptes de différence de change
+// ---------------------------------------------------------------------------
+
+/// Les comptes de différence de change d'un compte en devise (Story 37-1,
+/// AC-4 bis, « résolution unique ») : ses comptes **propres** s'il en porte,
+/// sinon ceux de la **société** (`companies.fx_gain_account_id` et
+/// `fx_loss_account_id`). `None` pour un compte en CHF (sans devise), ou si la
+/// société n'en désigne pas (état hérité).
+///
+/// Fonction **pure**, sans I/O : **seule** fonction qui choisit ces comptes côté
+/// serveur. La réévaluation (37-5) et la conversion (37-3b) l'appellent, **puis**
+/// [`validate_fx_accounts_in_tx`] sous leurs verrous — la résolution ne juge pas
+/// la validité des comptes, la revalidation le fait.
+pub fn fx_accounts_for(company: &Company, account: &Account) -> Option<FxAccounts> {
+    account.currency.as_ref()?;
+    if let Some(own) = account.own_fx_accounts() {
+        return Some(FxAccounts {
+            gain: own.gain,
+            loss: own.loss,
+            origin: FxAccountsOrigin::Own,
+            holder_account_id: account.id,
+        });
+    }
+    match (company.fx_gain_account_id, company.fx_loss_account_id) {
+        (Some(gain), Some(loss)) => Some(FxAccounts {
+            gain,
+            loss,
+            origin: FxAccountsOrigin::Company,
+            holder_account_id: account.id,
+        }),
+        _ => None,
+    }
+}
+
+/// Verrou de ligne des lectures de [`check_fx_accounts_in_tx`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FxAccountLock {
+    /// `FOR UPDATE` : le compte est **désigné** par le geste en cours (réglage
+    /// de la société, comptes propres d'un compte) — il ne change pas avant le
+    /// `COMMIT`, et un geste concurrent sur lui attend.
+    ForUpdate,
+    /// `LOCK IN SHARE MODE` : le compte est **employé** (revalidation à l'usage,
+    /// [`validate_fx_accounts_in_tx`]) — il ne change pas avant le `COMMIT`.
+    Share,
+}
+
+/// Un compte de différence de change à contrôler (Story 37-1, AC-3, AC-4 bis).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FxAccountCheck {
+    /// Le champ visé : gains, pertes ou conversion.
+    pub field: FxAccountField,
+    /// Le compte désigné.
+    pub account_id: i64,
+    /// Le compte en devise qui porte ce compte comme compte **propre** ;
+    /// `None` pour un compte de la société. Reporté tel quel dans le refus
+    /// (`holderAccountId`).
+    pub holder_account_id: Option<i64>,
+}
+
+/// La raison pour laquelle `account` ne peut pas tenir le rôle `field` (Story
+/// 37-1, AC-3), ou `None` s'il le peut — fonction pure, partagée par toutes les
+/// gardes d'un compte de différence de change.
+///
+/// Gardes, dans l'ordre de la liste close : de la société (`unknown`), actif
+/// (`archived`), imputable (`notPostable`), du bon type (`accountType` :
+/// `Expense`/`Revenue` pour les gains et pertes, `Asset`/`Liability` pour la
+/// conversion), sans devise (`foreignCurrency`), et — gains et pertes seulement
+/// — ni au rôle `DefaultRevenue`, ni désigné compte de produit par défaut
+/// (`revenueAccount`, CO 959b ; `revenue_designated` dit si les réglages de
+/// facturation ou un article le désignent). Les autres désignations (arrondi,
+/// frais bancaires…) restent admises.
+pub fn fx_account_rejection(
+    field: FxAccountField,
+    company_id: i64,
+    account: Option<&Account>,
+    revenue_designated: bool,
+) -> Option<FxAccountReason> {
+    let Some(account) = account.filter(|a| a.company_id == company_id) else {
+        return Some(FxAccountReason::Unknown);
+    };
+    if !account.active {
+        return Some(FxAccountReason::Archived);
+    }
+    if !account.postable {
+        return Some(FxAccountReason::NotPostable);
+    }
+    let type_ok = match field {
+        FxAccountField::Gain | FxAccountField::Loss => {
+            matches!(
+                account.account_type,
+                AccountType::Expense | AccountType::Revenue
+            )
+        }
+        FxAccountField::Transit => {
+            matches!(
+                account.account_type,
+                AccountType::Asset | AccountType::Liability
+            )
+        }
+    };
+    if !type_ok {
+        return Some(FxAccountReason::AccountType);
+    }
+    if account.currency.is_some() {
+        return Some(FxAccountReason::ForeignCurrency);
+    }
+    if field != FxAccountField::Transit
+        && (account.role == Some(AccountRole::DefaultRevenue) || revenue_designated)
+    {
+        return Some(FxAccountReason::RevenueAccount);
+    }
+    None
+}
+
+/// Contrôle partagé des comptes de différence de change **changés** ou
+/// **employés** (Story 37-1, AC-3, AC-4 bis), dans la transaction de
+/// l'appelant : `companies::update_currency_settings` (comptes de la société,
+/// [`FxAccountLock::ForUpdate`]), les comptes propres d'un compte en devise
+/// (`accounts::create`/`update`, même verrou) et la revalidation à l'usage
+/// ([`validate_fx_accounts_in_tx`], [`FxAccountLock::Share`]).
+///
+/// Le premier compte de `checks` (dans l'ordre reçu) qui échoue rend
+/// [`DbError::FxAccountInvalid`] ; `checks` vide ne lit rien.
+///
+/// **Verrous, dans l'ordre global du dépôt** (`companies` → réglages →
+/// `accounts`) : les réglages de facturation `LOCK IN SHARE MODE` (s'il y a un
+/// compte de gains ou de pertes à juger), puis les comptes, en une requête
+/// triée par `id`, sous `lock`, puis les articles qui les désignent compte de
+/// produit (`LOCK IN SHARE MODE`). L'appelant qui verrouille `companies` ou des
+/// exercices le fait **avant**. Aucune lecture simple ne précède ces lectures
+/// verrouillantes dans la fonction (REPEATABLE READ : une lecture simple
+/// figerait l'instantané avant l'attente des verrous).
+///
+/// Motif C4 : l'appelant ne passe que les comptes **changés** (réglage) ou
+/// **employés** (revalidation) — un compte inchangé devenu invalide n'empêche
+/// pas d'enregistrer l'autre.
+pub async fn check_fx_accounts_in_tx(
+    conn: &mut sqlx::MySqlConnection,
+    company_id: i64,
+    checks: &[FxAccountCheck],
+    lock: FxAccountLock,
+) -> Result<(), DbError> {
+    if checks.is_empty() {
+        return Ok(());
+    }
+    let revenue_ids: Vec<i64> = checks
+        .iter()
+        .filter(|c| c.field != FxAccountField::Transit)
+        .map(|c| c.account_id)
+        .collect();
+
+    // 1. Réglages de facturation, en partage (avant les comptes).
+    let settings_revenue: Option<i64> = if revenue_ids.is_empty() {
+        None
+    } else {
+        sqlx::query_scalar::<_, Option<i64>>(
+            "SELECT default_revenue_account_id FROM company_invoice_settings \
+             WHERE company_id = ? LOCK IN SHARE MODE",
+        )
+        .bind(company_id)
+        .fetch_optional(&mut *conn)
+        .await
+        .map_err(map_db_error)?
+        .flatten()
+    };
+
+    // 2. Les comptes, en une requête triée par `id` (ordre de verrouillage stable).
+    let mut ids: Vec<i64> = checks.iter().map(|c| c.account_id).collect();
+    ids.sort_unstable();
+    ids.dedup();
+    let placeholders = std::iter::repeat_n("?", ids.len())
+        .collect::<Vec<_>>()
+        .join(",");
+    let lock_clause = match lock {
+        FxAccountLock::ForUpdate => "FOR UPDATE",
+        FxAccountLock::Share => "LOCK IN SHARE MODE",
+    };
+    let sql = format!(
+        "SELECT {COLUMNS} FROM accounts WHERE id IN ({placeholders}) ORDER BY id {lock_clause}"
+    );
+    let mut query = sqlx::query_as::<_, Account>(&sql);
+    for id in &ids {
+        query = query.bind(id);
+    }
+    let accounts: Vec<Account> = query.fetch_all(&mut *conn).await.map_err(map_db_error)?;
+
+    // 3. Les articles qui désignent l'un d'eux compte de produit, en partage.
+    let mut product_revenue: Vec<i64> = Vec::new();
+    if !revenue_ids.is_empty() {
+        let placeholders = std::iter::repeat_n("?", revenue_ids.len())
+            .collect::<Vec<_>>()
+            .join(",");
+        let sql = format!(
+            "SELECT DISTINCT default_revenue_account_id FROM products \
+             WHERE company_id = ? AND default_revenue_account_id IN ({placeholders}) \
+             LOCK IN SHARE MODE"
+        );
+        let mut query = sqlx::query_scalar::<_, i64>(&sql).bind(company_id);
+        for id in &revenue_ids {
+            query = query.bind(id);
+        }
+        product_revenue = query.fetch_all(&mut *conn).await.map_err(map_db_error)?;
+    }
+
+    for check in checks {
+        let account = accounts.iter().find(|a| a.id == check.account_id);
+        let revenue_designated = settings_revenue == Some(check.account_id)
+            || product_revenue.contains(&check.account_id);
+        if let Some(reason) =
+            fx_account_rejection(check.field, company_id, account, revenue_designated)
+        {
+            return Err(DbError::FxAccountInvalid {
+                field: check.field,
+                reason,
+                holder_account_id: check.holder_account_id,
+            });
+        }
+    }
+    Ok(())
+}
+
+/// **Revalidation à l'usage** des comptes de différence de change résolus par
+/// [`fx_accounts_for`] (Story 37-1, AC-4 bis, C-37-2 (3)) : relit les deux
+/// comptes `LOCK IN SHARE MODE` et leur applique les gardes de l'AC-3
+/// ([`fx_account_rejection`]) — sinon [`DbError::FxAccountInvalid`] (`field`
+/// `fxGainAccountId` | `fxLossAccountId`, `holderAccountId` quand
+/// `origin = Own`).
+///
+/// Appelée sous les verrous de l'appelant : la réévaluation (37-5) et la route
+/// de conversion (37-3b). Un compte de la société invalide mais **non employé**
+/// n'arrête rien : seuls les comptes résolus pour les comptes touchés se
+/// passent ici.
+pub async fn validate_fx_accounts_in_tx(
+    conn: &mut sqlx::MySqlConnection,
+    company_id: i64,
+    fx: &FxAccounts,
+) -> Result<(), DbError> {
+    let holder_account_id = (fx.origin == FxAccountsOrigin::Own).then_some(fx.holder_account_id);
+    let checks = [
+        FxAccountCheck {
+            field: FxAccountField::Gain,
+            account_id: fx.gain,
+            holder_account_id,
+        },
+        FxAccountCheck {
+            field: FxAccountField::Loss,
+            account_id: fx.loss,
+            holder_account_id,
+        },
+    ];
+    check_fx_accounts_in_tx(conn, company_id, &checks, FxAccountLock::Share).await
 }
 
 #[cfg(test)]

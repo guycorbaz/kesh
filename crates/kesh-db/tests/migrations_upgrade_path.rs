@@ -2810,7 +2810,7 @@ async fn multi_devises_la_montee_pose_les_defauts(pool: MySqlPool) {
         vec![(false, "day".to_string(), "day".to_string()); 2]
     );
     let comptes: Vec<(Option<String>, Option<i64>, Option<i64>)> = sqlx::query_as(
-        "SELECT CAST(currency AS CHAR(3)), fx_gain_account_id, fx_loss_account_id \
+        "SELECT currency, fx_gain_account_id, fx_loss_account_id \
          FROM accounts ORDER BY id",
     )
     .fetch_all(&pool)

@@ -85,7 +85,7 @@ CREATE TABLE `accounts` (
   `role` varchar(32) DEFAULT NULL COMMENT 'Rôle métier explicite (Story 14-3a) — NULL = aucun',
   `postable` tinyint(1) NOT NULL DEFAULT 1 COMMENT 'FALSE = compte titre/regroupement ou compte de résultat calculé',
   `singleton_role` varchar(32) GENERATED ALWAYS AS (case when `active` <> 0 and `role` in ('Receivable','DefaultRevenue','Payable','VatRecoverable','VatPayable','VatSettlement','RetainedEarnings','CurrentYearResult') then `role` else NULL end) VIRTUAL,
-  `currency` char(3) CHARACTER SET ascii COLLATE ascii_bin DEFAULT NULL COMMENT 'Code ISO 4217 de la devise du compte, NULL = devise principale (CHF)',
+  `currency` char(3) CHARACTER SET ascii COLLATE ascii_general_ci DEFAULT NULL COMMENT 'Code ISO 4217 de la devise du compte, NULL = devise principale (CHF)',
   `fx_gain_account_id` bigint(20) DEFAULT NULL COMMENT 'Compte de gains de change propre (accounts.id, sans FK), NULL = réglage de la société',
   `fx_loss_account_id` bigint(20) DEFAULT NULL COMMENT 'Compte de pertes de change propre (accounts.id, sans FK), NULL = réglage de la société',
   PRIMARY KEY (`id`),

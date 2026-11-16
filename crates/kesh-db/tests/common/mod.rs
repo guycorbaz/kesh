@@ -112,7 +112,7 @@ const COLONNES_MULTI_DEVISES: &[(&str, &str, &str)] = &[
     (
         "accounts",
         "currency",
-        "CHAR(3) CHARACTER SET ascii COLLATE ascii_bin NULL",
+        "CHAR(3) CHARACTER SET ascii COLLATE ascii_general_ci NULL",
     ),
     ("accounts", "fx_gain_account_id", "BIGINT NULL"),
     ("accounts", "fx_loss_account_id", "BIGINT NULL"),

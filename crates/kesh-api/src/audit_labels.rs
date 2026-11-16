@@ -103,6 +103,7 @@ pub const ACTIONS: &[&str] = &[
     "books.restored",
     "books.unlocked",
     "company.created",
+    "company.currency_settings_updated",
     "company.updated",
     "company_dunning_settings.updated",
     "company_invoice_settings.created",

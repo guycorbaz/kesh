@@ -5858,7 +5858,7 @@ async fn reglage_multi_devises(
 /// `(currency, fx_gain, fx_loss)` d'un compte.
 async fn devise_du_compte(pool: &MySqlPool, id: i64) -> (Option<String>, Option<i64>, Option<i64>) {
     sqlx::query_as(
-        "SELECT CAST(currency AS CHAR(3)), fx_gain_account_id, fx_loss_account_id \
+        "SELECT currency, fx_gain_account_id, fx_loss_account_id \
          FROM accounts WHERE id = ?",
     )
     .bind(id)

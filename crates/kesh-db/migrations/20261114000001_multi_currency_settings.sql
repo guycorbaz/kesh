@@ -20,10 +20,13 @@
 --    cours d'ouverture et de clôture (day = cours journalier, month = cours
 --    mensuel). Les exercices existants prennent FALSE, 'day', 'day' : une base
 --    0.17.6 est mono-devise.
--- 3. accounts.currency : NULL = la devise principale (CHF). Collation binaire
---    ASCII ET BINARY dans les CHECK : la table est en utf8mb4_unicode_ci, sous
---    laquelle REGEXP ignorerait la casse et 'usd' passerait. 'CHF' est refusé :
---    la devise principale n'a qu'une graphie, NULL.
+-- 3. accounts.currency : NULL = la devise principale (CHF). Jeu ASCII en
+--    collation ascii_general_ci, et BINARY dans les CHECK : sans BINARY, REGEXP
+--    suivrait une collation insensible à la casse et 'usd' passerait ; la casse
+--    reste donc refusée par le schéma. Choix C-37-1-1 : PAS ascii_bin — le
+--    serveur marque BINARY une colonne en collation binaire, et sqlx-mysql
+--    refuse de la décoder en String (il fallait un CAST à chaque lecture).
+--    'CHF' est refusé : la devise principale n'a qu'une graphie, NULL.
 -- 4. accounts.fx_gain_account_id / fx_loss_account_id : comptes de différence
 --    de change propres à un compte en devise ; NULL = suivre le réglage de la
 --    société, lu à l'usage. Sans clé étrangère, même raison qu'en 1 (relation
@@ -54,7 +57,7 @@ ALTER TABLE fiscal_years
         COMMENT 'Genre du cours de clôture : day = end_date, month = mois de end_date';
 
 ALTER TABLE accounts
-    ADD COLUMN currency CHAR(3) CHARACTER SET ascii COLLATE ascii_bin NULL
+    ADD COLUMN currency CHAR(3) CHARACTER SET ascii COLLATE ascii_general_ci NULL
         COMMENT 'Code ISO 4217 de la devise du compte, NULL = devise principale (CHF)',
     ADD COLUMN fx_gain_account_id BIGINT NULL
         COMMENT 'Compte de gains de change propre (accounts.id, sans FK), NULL = réglage de la société',

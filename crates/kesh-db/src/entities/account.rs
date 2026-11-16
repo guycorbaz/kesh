@@ -317,6 +317,37 @@ impl OwnFxAccountsChange {
     }
 }
 
+/// D'où viennent les comptes de différence de change résolus pour un compte en
+/// devise (Story 37-1, AC-4 bis).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum FxAccountsOrigin {
+    /// Les comptes propres du compte (`accounts.fx_gain_account_id` et
+    /// `fx_loss_account_id`).
+    Own,
+    /// Le réglage de la société (`companies.fx_gain_account_id` et
+    /// `fx_loss_account_id`), défaut des comptes sans comptes propres.
+    Company,
+}
+
+/// Comptes de différence de change **résolus** pour un compte en devise
+/// (Story 37-1, AC-4 bis) — rendus par
+/// [`crate::repositories::accounts::fx_accounts_for`], seule fonction qui les
+/// choisit côté serveur.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FxAccounts {
+    /// Compte des gains de change.
+    pub gain: i64,
+    /// Compte des pertes de change.
+    pub loss: i64,
+    /// Comptes propres du compte, ou réglage de la société.
+    pub origin: FxAccountsOrigin,
+    /// Le compte en devise pour lequel la paire a été résolue — rendu par
+    /// `FX_ACCOUNT_INVALID` en `holderAccountId` quand `origin = Own`.
+    pub holder_account_id: i64,
+}
+
 impl Account {
     /// Les comptes de différence propres du compte, s'il en porte (les deux
     /// colonnes posées ; une seule ne se rencontre pas, `chk_accounts_fx_own_pair`).
