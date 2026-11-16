@@ -2310,7 +2310,7 @@ async fn reset_keeps_mcp_keys_that_authenticate_and_disables_the_server(pool: My
 
 // --- Test 5 (15-7b2) --------------------------------------------------------
 
-/// Les 19 colonnes de `companies` que le montage du test 5 perturbe — liste
+/// Les 23 colonnes de `companies` que le montage du test 5 perturbe — liste
 /// FERMÉE : l'inventaire du schéma doit l'égaler, aux quatre exclusions près.
 const PERTURBED: &[&str] = &[
     "name",
@@ -2332,6 +2332,11 @@ const PERTURBED: &[&str] = &[
     "phone",
     "website",
     "books_locked_through",
+    // Story 37-1 (AC-5) : le réglage multi-devises et ses trois comptes.
+    "multi_currency_enabled",
+    "fx_gain_account_id",
+    "fx_loss_account_id",
+    "fx_transit_account_id",
 ];
 
 /// Colonnes de `companies` exclues de la comparaison au stub de référence.
@@ -2350,7 +2355,8 @@ async fn reset_restores_the_stub_columns_in_place(pool: MySqlPool) {
             address_street = 'x', address_building = 'x', address_postal_code = 'x', \
             address_city = 'x', address_country = 'FR', first_name = 'x', last_name = 'x', \
             email = 'x@example.ch', phone = 'x', website = 'x', \
-            books_locked_through = '2024-12-31' \
+            books_locked_through = '2024-12-31', multi_currency_enabled = TRUE, \
+            fx_gain_account_id = 1, fx_loss_account_id = 2, fx_transit_account_id = 3 \
          WHERE id = ?",
     )
     .bind(company_id)

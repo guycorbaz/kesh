@@ -188,6 +188,21 @@ pub struct Company {
     /// `None` = aucun verrou. Aucune écriture ne peut être créée avec une
     /// `entry_date <= ` cette date, quel que soit le chemin de création.
     pub books_locked_through: Option<NaiveDate>,
+    /// Mode multi-devises (Story 37-1) : `false` par défaut ; une fois activé,
+    /// il ne repasse jamais à `false` (seule la remise à zéro de la société le
+    /// remet à `false`, en vidant comptes, exercices et écritures).
+    pub multi_currency_enabled: bool,
+    /// Compte des gains de change de la société (Story 37-1) — défaut des
+    /// comptes en devise qui n'ont pas leurs comptes propres. Pointeur logique
+    /// vers `accounts.id`, **sans clé étrangère** : l'intégrité est tenue par
+    /// le dépôt et revalidée à l'usage.
+    pub fx_gain_account_id: Option<i64>,
+    /// Compte des pertes de change de la société (Story 37-1), même régime
+    /// que [`Self::fx_gain_account_id`].
+    pub fx_loss_account_id: Option<i64>,
+    /// Compte de conversion entre devises (Story 37-1) : compte de bilan en
+    /// CHF, réglage de la société seul. Sans clé étrangère.
+    pub fx_transit_account_id: Option<i64>,
     /// Version pour optimistic locking (incrémentée à chaque update).
     pub version: i32,
     pub created_at: NaiveDateTime,
@@ -251,4 +266,72 @@ pub struct CompanyUpdate {
     pub phone: Option<String>,
     #[serde(default)]
     pub website: Option<String>,
+}
+
+/// Le réglage multi-devises d'une société (Story 37-1, AC-3) : écrit par
+/// `companies::update_currency_settings`, fonction **dédiée** — jamais par
+/// [`CompanyUpdate`], remplacement complet que chaque route e-mail,
+/// coordonnées, adresse et l'assistant devraient sinon recopier.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CurrencySettingsUpdate {
+    /// Mode multi-devises — irréversible une fois activé.
+    pub multi_currency_enabled: bool,
+    /// Compte des gains de change (`Expense`/`Revenue`).
+    pub fx_gain_account_id: Option<i64>,
+    /// Compte des pertes de change (`Expense`/`Revenue`, le même que les gains
+    /// est admis).
+    pub fx_loss_account_id: Option<i64>,
+    /// Compte de conversion entre devises (`Asset`/`Liability`).
+    pub fx_transit_account_id: Option<i64>,
+}
+
+impl CurrencySettingsUpdate {
+    /// Le réglage actuel d'une société.
+    pub fn of(company: &Company) -> Self {
+        Self {
+            multi_currency_enabled: company.multi_currency_enabled,
+            fx_gain_account_id: company.fx_gain_account_id,
+            fx_loss_account_id: company.fx_loss_account_id,
+            fx_transit_account_id: company.fx_transit_account_id,
+        }
+    }
+
+    /// Les trois comptes, dans l'ordre où leurs refus sont jugés (gains,
+    /// pertes, conversion).
+    pub fn accounts(&self) -> [(crate::errors::FxAccountField, Option<i64>); 3] {
+        use crate::errors::FxAccountField;
+        [
+            (FxAccountField::Gain, self.fx_gain_account_id),
+            (FxAccountField::Loss, self.fx_loss_account_id),
+            (FxAccountField::Transit, self.fx_transit_account_id),
+        ]
+    }
+
+    /// Contrôle de **forme** du corps, avant toute transaction (AC-3, premier
+    /// rang des refus) : le mode actif exige les trois comptes (`missing`, le
+    /// premier vide) ; le mode inactif n'en admet aucun (`unexpected`, le
+    /// premier posé).
+    pub fn validate_shape(&self) -> Result<(), crate::errors::DbError> {
+        use crate::errors::{DbError, FxAccountReason};
+        let offending = self.accounts().into_iter().find(|(_, id)| {
+            if self.multi_currency_enabled {
+                id.is_none()
+            } else {
+                id.is_some()
+            }
+        });
+        match offending {
+            None => Ok(()),
+            Some((field, _)) => Err(DbError::FxAccountInvalid {
+                field,
+                reason: if self.multi_currency_enabled {
+                    FxAccountReason::Missing
+                } else {
+                    FxAccountReason::Unexpected
+                },
+                holder_account_id: None,
+            }),
+        }
+    }
 }

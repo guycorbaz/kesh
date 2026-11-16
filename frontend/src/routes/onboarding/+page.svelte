@@ -17,6 +17,14 @@
 		linkableLedgerAccounts,
 		preselectedBankLedgerId,
 	} from '$lib/features/bank-accounts/format';
+	import { todayLocal } from '$lib/shared/utils/local-date';
+	import { formatSwissDate } from '$lib/features/reports/reports.api';
+	import type { FinalizePayload } from '$lib/features/onboarding/onboarding.api';
+	import {
+		defaultFiscalYearEnd,
+		defaultFiscalYearStart,
+		fiscalYearRangeProblem,
+	} from '$lib/features/onboarding/premier-exercice';
 
 	function msg(key: string, fallback: string): string {
 		return i18nMsg(key, fallback);
@@ -227,6 +235,44 @@
 		}
 	});
 
+	// Story 37-1 (AC-11) — le premier exercice, choisi sur la dernière page : début
+	// au 1er janvier de l'année du poste (`todayLocal`, #889), fin à la veille du
+	// même jour un an plus tard, recalculée à chaque changement du début tant
+	// qu'elle n'a pas été retouchée. Les deux boutons envoient ces dates à
+	// `finalize`, et restent désactivés, avec le motif, tant qu'elles ne
+	// conviennent pas.
+	const fyDefaultStart = defaultFiscalYearStart(todayLocal());
+	let fyStart = $state(fyDefaultStart);
+	let fyEnd = $state(defaultFiscalYearEnd(fyDefaultStart) ?? '');
+	let fyEndTouched = $state(false);
+	const fyProblem = $derived(fiscalYearRangeProblem(fyStart, fyEnd));
+
+	function setFyStart(value: string) {
+		fyStart = value;
+		if (!fyEndTouched) {
+			const end = defaultFiscalYearEnd(value);
+			if (end !== null) fyEnd = end;
+		}
+	}
+
+	function setFyEnd(value: string) {
+		fyEnd = value;
+		fyEndTouched = true;
+	}
+
+	function fyProblemText(): string {
+		return fyProblem === 'end-not-after-start'
+			? msg('onboarding-fiscal-year-end-not-after-start', 'La date de fin doit suivre la date de début.')
+			: msg(
+					'onboarding-fiscal-year-invalid-date',
+					'Saisissez une date de début et une date de fin valides.'
+				);
+	}
+
+	function finalizeBody(): FinalizePayload {
+		return { fiscalYearStartDate: fyStart, fiscalYearEndDate: fyEnd };
+	}
+
 	// P9: distinguish bank-step errors from finalize() errors so the user gets an
 	// actionable message and doesn't end up stuck at /onboarding step 7 with the
 	// bank account already saved.
@@ -269,6 +315,9 @@
 		// Revue P1 (B-2) : pas d'envoi avant la fin du chargement de la liste (le
 		// bouton est désactivé ; ce garde couvre la touche Entrée).
 		if (bankLedgerLoading) return;
+		// Story 37-1 (AC-11) : dates du premier exercice d'abord (bouton désactivé ;
+		// ce garde couvre la touche Entrée) — rien ne s'enregistre avant.
+		if (fyProblem !== null) return;
 		if (!bankName.trim() || !bankIban.trim()) {
 			toast.error(msg('onboarding-bank-required', 'Nom de banque et IBAN sont obligatoires'));
 			return;
@@ -290,7 +339,7 @@
 			return;
 		}
 		try {
-			await onboardingState.finalize();
+			await onboardingState.finalize(finalizeBody());
 			navigateHomeIfFinalized();
 		} catch (err) {
 			reportFinalizeError(err);
@@ -298,6 +347,7 @@
 	}
 
 	async function handleSkipBank() {
+		if (fyProblem !== null) return;
 		try {
 			await onboardingState.skipBank();
 		} catch (err) {
@@ -307,7 +357,7 @@
 			return;
 		}
 		try {
-			await onboardingState.finalize();
+			await onboardingState.finalize(finalizeBody());
 			navigateHomeIfFinalized();
 		} catch (err) {
 			reportFinalizeError(err);
@@ -477,6 +527,56 @@
 
 {:else if onboardingState.stepCompleted === 6}
 	<!-- Step 7 : Compte bancaire -->
+	<!-- Story 37-1 (AC-11) : le premier exercice, au-dessus du compte bancaire. Les
+	     champs sont ceux de l'écran Exercices (`type="date"`) ; la forme suisse
+	     JJ.MM.AAAA se relit sous les champs. -->
+	<section class="mb-8 flex flex-col gap-4" data-testid="onboarding-fiscal-year">
+		<h2 class="text-center text-xl font-semibold">
+			{msg('onboarding-fiscal-year-title', 'Premier exercice')}
+		</h2>
+		<div class="grid grid-cols-2 gap-3">
+			<div>
+				<label for="fy-start" class="mb-1 block text-sm font-medium">
+					{msg('onboarding-fiscal-year-start', 'Début')}
+				</label>
+				<Input
+					id="fy-start"
+					type="date"
+					bind:value={() => fyStart, setFyStart}
+					data-testid="onboarding-fiscal-year-start"
+				/>
+			</div>
+			<div>
+				<label for="fy-end" class="mb-1 block text-sm font-medium">
+					{msg('onboarding-fiscal-year-end', 'Fin')}
+				</label>
+				<Input
+					id="fy-end"
+					type="date"
+					bind:value={() => fyEnd, setFyEnd}
+					data-testid="onboarding-fiscal-year-end"
+					aria-invalid={fyProblem !== null}
+					aria-describedby={fyProblem !== null ? 'fy-problem' : undefined}
+				/>
+			</div>
+		</div>
+		{#if fyProblem === null}
+			<p class="text-sm" data-testid="onboarding-fiscal-year-summary">
+				{i18nMsg('onboarding-fiscal-year-summary', 'Du { $start } au { $end }', {
+					start: formatSwissDate(fyStart),
+					end: formatSwissDate(fyEnd),
+				})}
+			</p>
+		{:else}
+			<p id="fy-problem" class="text-sm text-destructive" role="alert" data-testid="onboarding-fiscal-year-problem">
+				{fyProblemText()}
+			</p>
+		{/if}
+		<p class="text-sm text-text-muted" data-testid="onboarding-fiscal-year-immutable">
+			{msg('onboarding-fiscal-year-immutable', 'Les dates d’un exercice ne se modifient plus une fois créé.')}
+		</p>
+	</section>
+
 	<h2 class="mb-6 text-center text-xl font-semibold">
 		{msg('onboarding-bank-title', 'Compte bancaire principal')}
 	</h2>
@@ -556,10 +656,17 @@
 			)}
 		</p>
 		<div class="flex gap-3">
-			<Button type="button" variant="outline" onclick={handleSkipBank} disabled={onboardingState.loading} class="flex-1">
+			<Button
+				type="button"
+				variant="outline"
+				onclick={handleSkipBank}
+				disabled={onboardingState.loading || fyProblem !== null}
+				class="flex-1"
+				data-testid="onboarding-skip-bank"
+			>
 				{msg('onboarding-skip-bank', 'Configurer plus tard')}
 			</Button>
-			<Button type="submit" disabled={onboardingState.loading || bankLedgerLoading} class="flex-1">
+			<Button type="submit" disabled={onboardingState.loading || bankLedgerLoading || fyProblem !== null} class="flex-1">
 				{msg('onboarding-save', 'Enregistrer')}
 			</Button>
 		</div>

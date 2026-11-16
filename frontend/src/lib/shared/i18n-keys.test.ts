@@ -1017,7 +1017,17 @@ const ATTENDU = {
 	// de la 36-2, a été rejoué par `rerere` à la fusion de la 36-3 dans la branche de release
 	// (`0e562af37`) sans y être relevé ; dans cette branche, 3050 = 3036 + 1 (36-1) + 4 (36-3)
 	// + 4 (36-3b) + 5 (36-2), relevé par la garde à la fusion de la 36-2.
-	sitesTotal: 3050,
+	// Story 37-1 (AC-7) : **3050 → 3086**, relevé par la garde (`expected 3086 to be 3050`)
+	// avant d'écrire ce nombre, et ventilé au code : 23 sites dans
+	// `features/settings/CurrencySettingsSection.svelte` (neuf), 11 dans
+	// `features/accounts/AccountCurrencyFields.svelte` (neuf), 2 dans
+	// `routes/(app)/accounts/+page.svelte` (92 → 94 : la colonne « Devise » et le message
+	// des comptes propres incomplets) — 23 + 11 + 2 = 36. Que des littéraux.
+	// Story 37-1 (AC-11) : **3086 → 3093**, relevé par la garde (`expected 3093 to be 3086`)
+	// avant d'écrire ce nombre, et ventilé au code : 7 sites dans `routes/onboarding/+page.svelte`
+	// (section « Premier exercice » : titre, début, fin, résumé, phrase des dates définitives,
+	// deux motifs de refus). Que des littéraux.
+	sitesTotal: 3093,
 	sitesNonResolus: 31,
 	relais: 6,
 	// Story 26-1 (#620, AC3-bis) : **10 → 11** — `lib/features/bank-import/

@@ -5,6 +5,7 @@ import {
 	authedApiContext,
 	disposeContextSafe,
 } from './helpers/test-state';
+import { todayInZurich } from './helpers/api-fixtures';
 
 /**
  * Story 34-1 (#966) — l'étape bancaire de l'assistant pose la description et le compte
@@ -104,5 +105,29 @@ test.describe('Assistant — compte bancaire lié dès l’installation (#966)',
 		} finally {
 			await disposeContextSafe(ctx);
 		}
+	});
+
+	// Story 37-1 (AC-11) — le premier exercice choisi sur la même page : un début au
+	// 1er avril propose la fin au 31 mars suivant, et l'écran Exercices relit
+	// l'exercice créé à ces dates (les dates traversent la frontière HTTP).
+	test('premier exercice au 1er avril : Exercices liste 01.04.AAAA–31.03.AAAA+1', async ({
+		page,
+	}) => {
+		const annee = Number(todayInZurich().slice(0, 4));
+		await expect(page.locator('#fy-start')).toHaveValue(`${annee}-01-01`);
+		await expect(page.locator('#fy-end')).toHaveValue(`${annee}-12-31`);
+		await expect(page.getByTestId('onboarding-fiscal-year-immutable')).toBeVisible();
+
+		await page.fill('#fy-start', `${annee}-04-01`);
+		await expect(page.locator('#fy-end')).toHaveValue(`${annee + 1}-03-31`);
+		await page.getByTestId('onboarding-skip-bank').click();
+		await expect(page).toHaveURL(/\/$/);
+
+		await page.goto('/settings/fiscal-years');
+		const ligne = page.getByTestId('fiscal-year-table').locator('tbody tr');
+		await expect(ligne).toHaveCount(1);
+		await expect(ligne).toContainText(`${annee}/${annee + 1}`);
+		await expect(ligne).toContainText(`01.04.${annee}`);
+		await expect(ligne).toContainText(`31.03.${annee + 1}`);
 	});
 });

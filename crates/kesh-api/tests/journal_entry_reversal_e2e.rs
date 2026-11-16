@@ -185,6 +185,8 @@ async fn make_account(pool: &MySqlPool, company_id: i64, number: &str, ty: Accou
             parent_id: None,
             role: None,
             postable: true,
+            currency: Default::default(),
+            own_fx_accounts: Default::default(),
         },
     )
     .await
@@ -3593,6 +3595,8 @@ async fn reversal_group_survives_retyping_and_bank_attachment_and_dissolves(pool
             account_type: AccountType::Expense,
             role: None,
             postable: true,
+            currency: Default::default(),
+            own_fx_accounts: Default::default(),
         },
         true,
     )

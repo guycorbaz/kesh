@@ -43,6 +43,11 @@ vi.mock('$lib/features/accounts/accounts.api', () => ({
 	archiveAccount: (id: number, req: unknown) => archiveAccountMock(id, req),
 	reactivateAccount: vi.fn(),
 }));
+// Story 37-1 : la page lit la société (multi-devises) ; ici, une lecture qui
+// échoue laisse l'écran du mono-devise, celui que ces tests exercent.
+vi.mock('$lib/features/settings/settings.api', () => ({
+	fetchCompanyCurrent: () => Promise.reject(new Error('non simulée')),
+}));
 
 import Page from './+page.svelte';
 

@@ -177,6 +177,8 @@ async fn make_account(pool: &MySqlPool, company_id: i64, number: &str, ty: Accou
             parent_id: None,
             role: None,
             postable: true,
+            currency: None,
+            own_fx_accounts: None,
         },
     )
     .await

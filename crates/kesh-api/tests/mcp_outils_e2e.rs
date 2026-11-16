@@ -179,7 +179,8 @@ fn bornes_des_schemas() {
     // balance âgée révisée sur la mesure (C-32-9-44 : 40 / 75 → 38 / 68), les factures
     // fournisseur aussi, qui portent le numéro interne (C-e331-27 : 70 / 40 → 62 / 34).
     let mesurees: BTreeMap<&str, (i64, i64)> = [
-        ("kesh_plan_comptable", (70, 40)),
+        // Story 37-1 (AC-8) : le champ `devise` re-mesuré, 70 / 40 → 68 / 38.
+        ("kesh_plan_comptable", (68, 38)),
         ("kesh_ecritures", (22, 12)),
         ("kesh_grand_livre", (30, 15)),
         ("kesh_balance", (55, 30)),
@@ -1876,4 +1877,170 @@ async fn ac5_l_echeancier_du_mcp_juge_au_jour_suisse(pool: MySqlPool) {
         vec![(vec![f.id], json!(1)), (vec![], json!(0))],
         "(00 h 30 le 11 mars, 23 h 30 le 10 mars)"
     );
+}
+
+// ---------------------------------------------------------------------------
+// Story 37-1 (AC-2 V10, AC-8) — le mode et les genres des exercices, la devise
+// d'un compte
+// ---------------------------------------------------------------------------
+
+/// Pose un exercice ouvert en SQL direct, aux bornes de l'année `annee`.
+async fn exercice_brut(pool: &MySqlPool, c: i64, nom: &str, annee: i32) -> i64 {
+    sqlx::query_scalar(
+        "INSERT INTO fiscal_years (company_id, name, start_date, end_date, status, created_at, \
+         updated_at) VALUES (?, ?, ?, ?, 'Open', NOW(3), NOW(3)) RETURNING id",
+    )
+    .bind(c)
+    .bind(nom)
+    .bind(date(annee, 1, 1))
+    .bind(date(annee, 12, 31))
+    .fetch_one(pool)
+    .await
+    .unwrap()
+}
+
+/// AC-2 (V10) — `kesh_exercices` rend `multiDevises`, `genreOuverture` et
+/// `genreCloture` pour chaque exercice : un exercice multi-devises au genre
+/// `month`/`day` et un exercice mono-devise (`day`/`day`), présents en
+/// mono-devise aussi. Le mode est posé en SQL direct (l'activation vient en
+/// phase suivante).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn kesh_exercices_rend_le_mode_et_les_genres(pool: MySqlPool) {
+    use chrono::Datelike;
+    let a = societe_piegee(&pool, "Société A 371", 'A').await;
+    sqlx::query(
+        "UPDATE fiscal_years SET multi_currency = TRUE, opening_rate_kind = 'month' WHERE id = ?",
+    )
+    .bind(a.p.exercice_id)
+    .execute(&pool)
+    .await
+    .unwrap();
+    let mono = exercice_brut(&pool, a.c, "Exercice mono", a.p.exercice_debut.year() - 1).await;
+    let jeton = cle_de(&pool, &a, &[McpScope::BooksRead], SendValidation::Exempt).await;
+    let s = structure(
+        &banc(&pool)
+            .appeler(&jeton, "kesh_exercices", json!({}))
+            .await,
+        "kesh_exercices",
+    );
+    let par_id = |id: i64| {
+        s["exercices"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|e| e["id"] == id)
+            .cloned()
+            .unwrap_or_else(|| panic!("exercice {id} absent : {s}"))
+    };
+    let multi = par_id(a.p.exercice_id);
+    assert_eq!(multi["multiDevises"], json!(true));
+    assert_eq!(multi["genreOuverture"], json!("month"));
+    assert_eq!(multi["genreCloture"], json!("day"));
+    let m = par_id(mono);
+    assert_eq!(m["multiDevises"], json!(false));
+    assert_eq!(m["genreOuverture"], json!("day"));
+    assert_eq!(m["genreCloture"], json!("day"));
+}
+
+/// AC-2 (V10) — **mesure de taille** de `kesh_exercices`, non paginé (aucune
+/// `limit`, son `SansArgument` refuse tout argument) : la différence de texte
+/// entre deux réponses qui diffèrent d'un exercice au nom de 50 caractères (la
+/// longueur maximale de la colonne), trois champs neufs compris, donne la
+/// taille d'un exercice ; le nombre d'exercices qui tient sous
+/// `MCP_ENVOI_OCTETS_MAX` s'en déduit (écrit au Change Log). Au-delà,
+/// `TropVolumineux`, sans recours : état existant, aggravé de trois champs.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn kesh_exercices_taille_mesuree(pool: MySqlPool) {
+    use chrono::Datelike;
+    use kesh_api::services::envois_mcp::MCP_ENVOI_OCTETS_MAX;
+    let a = societe_piegee(&pool, "Société A 371", 'A').await;
+    let jeton = cle_de(&pool, &a, &[McpScope::BooksRead], SendValidation::Exempt).await;
+    let b = banc(&pool);
+    let mut annee = a.p.exercice_debut.year() - 1;
+    let nom_long = |annee: i32| format!("Exercice {annee} {}", "x".repeat(36));
+    assert_eq!(nom_long(annee).chars().count(), 50, "nom de 50 caractères");
+    exercice_brut(&pool, a.c, &nom_long(annee), annee).await;
+    let lire = || async {
+        let r = b.appeler(&jeton, "kesh_exercices", json!({})).await;
+        structure(&r, "kesh_exercices");
+        texte(&r).len()
+    };
+    let t1 = lire().await;
+    annee -= 1;
+    exercice_brut(&pool, a.c, &nom_long(annee), annee).await;
+    let t2 = lire().await;
+    let element = t2 - t1;
+    let compte: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM fiscal_years WHERE company_id = ?")
+        .bind(a.c)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    // Les exercices présents, plus autant d'exercices à nom de 50 caractères
+    // que la marge en admet.
+    let tient = usize::try_from(compte).unwrap() + (MCP_ENVOI_OCTETS_MAX - t2) / element;
+    eprintln!(
+        "TAILLE kesh_exercices : un exercice (nom de 50 caractères) {element} o ; \
+         {compte} exercices → {t2} o ; {tient} exercices sous {MCP_ENVOI_OCTETS_MAX} o"
+    );
+    assert!(
+        (150..=400).contains(&element),
+        "taille d'un exercice hors de l'ordre attendu : {element} o"
+    );
+    assert!(
+        tient >= 60,
+        "au moins soixante exercices doivent tenir : {tient}"
+    );
+}
+
+/// AC-8 — `kesh_plan_comptable` donne la devise d'un compte : le code ISO 4217
+/// d'un compte en devise (posé en SQL direct), `null` pour un compte CHF —
+/// clé toujours présente.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn kesh_plan_comptable_rend_la_devise(pool: MySqlPool) {
+    let a = societe_piegee(&pool, "Société A 371", 'A').await;
+    let comptes = accounts::list_by_company(&pool, a.c, false).await.unwrap();
+    let usd = comptes
+        .iter()
+        .find(|c| c.account_type == AccountType::Asset && c.role.is_none() && c.postable)
+        .expect("un compte d'actif sans rôle")
+        .id;
+    let chf = comptes
+        .iter()
+        .find(|c| c.id != usd)
+        .expect("un second compte")
+        .id;
+    sqlx::query("UPDATE accounts SET currency = 'USD' WHERE id = ?")
+        .bind(usd)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let jeton = cle_de(&pool, &a, &[McpScope::BooksRead], SendValidation::Exempt).await;
+    let b = banc(&pool);
+    let mut vus = BTreeMap::new();
+    let mut offset = 0;
+    loop {
+        let s = structure(
+            &b.appeler(
+                &jeton,
+                "kesh_plan_comptable",
+                json!({"limit": outils::plan_comptable::LIMITE_MAX_MCP, "offset": offset}),
+            )
+            .await,
+            "kesh_plan_comptable",
+        );
+        let page = s["comptes"].as_array().unwrap().clone();
+        for c in &page {
+            assert!(
+                c.get("devise").is_some(),
+                "clé devise toujours présente : {c}"
+            );
+            vus.insert(c["id"].as_i64().unwrap(), c["devise"].clone());
+        }
+        offset += usize::try_from(outils::plan_comptable::LIMITE_MAX_MCP).unwrap();
+        if offset >= usize::try_from(s["total"].as_i64().unwrap()).unwrap() {
+            break;
+        }
+    }
+    assert_eq!(vus[&usd], json!("USD"));
+    assert_eq!(vus[&chf], Value::Null);
 }

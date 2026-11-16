@@ -212,6 +212,9 @@ async fn colonnes_du_numero_interne(pool: &MySqlPool, poser: bool) {
             .await
             .expect("colonnes du numéro interne");
     }
+    // Story 37-1 : de même, les colonnes multi-devises (`20261114000001`) que
+    // lisent `companies`, `fiscal_years` et `accounts` du dépôt courant.
+    common::colonnes_multi_devises(pool, poser).await;
 }
 
 /// La fixture étendue, puis (a), (b), (c). La base doit être montée jusqu'à M1

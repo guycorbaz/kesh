@@ -471,6 +471,13 @@ pub fn build_router_avec_registre(
             "/api/v1/companies/current/address",
             put(routes::companies::update_company_address),
         )
+        // Story 37-1 (AC-3) : le réglage multi-devises (mode irréversible et
+        // comptes de différence de change). Administrateur en session seul,
+        // jamais par une clé d'API, comme les autres `PUT /companies/current/*`.
+        .route(
+            "/api/v1/companies/current/currency-settings",
+            put(routes::companies::update_currency_settings),
+        )
         // Story 14-2 : réouverture d'un exercice clôturé (Admin uniquement +
         // motif obligatoire + audit + garde LIFO). Plus strict que la clôture
         // (Comptable+, comptable_routes) — opération réglementaire sensible.
