@@ -1,6 +1,6 @@
 # Story 37-2 : table des cours (mensuels AFC et journaliers), cours saisis par la société, récupération des cours officiels (AFC / OFDF)
 
-Status: review
+Status: done
 
 *Fiche rédigée le 2026-11-14 (Opus 5.5), branche `epic/37-multi-devises`. Epic 37, C-37-1 (amendé par D9/D10, CR-1),
 C-37-6, D9, D10. Suit 37-1. **Migration non breaking** : deux tables système `_kesh_*` et **une table applicative**
@@ -1238,6 +1238,23 @@ cours sans saisie.
 B1 (source, récupération, tâche), B2 (routes des cours de la société, tableau, genres, copie), C (frontend), D (manuels,
 E2E, captures) — chacune remise à l'orchestrateur de la story, qui a commité. Journaux, rapports de phase, captures et
 scripts dans `kesh-gate-logs/s37-2/` (hors dépôt).)*
+
+### E2E complet au dernier commit de code (`9a665075`) — fin de story, 2026-11-16
+
+Frontend et `kesh-api` reconstruits à `9a665075` ; base `kesh_e2e_s37_2` remise à zéro (DROP/CREATE, migrations au
+démarrage du backend), recette de `docs/testing.md`, port 3372, dossiers `/tmp/kesh-e2e-s372/…` passés au backend et
+au runner, `LANG=fr_CH.UTF-8` : **432 passés, 9 échecs, 18 ignorés**, 40,8 min (`final2/e2e.log`). Les trois tests de
+`exchange-rates.spec.ts` passent. Échecs :
+
+- **7 KF-029 (#97)**, attendus : `mode-expert.spec.ts:26`, `:41` ; `onboarding-path-b.spec.ts:65`, `:92` ;
+  `onboarding.spec.ts:57`, `:77`, `:150` ;
+- **2 hors liste, préexistants** : `backup-restore-new-install.spec.ts:262` et `:381`, établis sur la base `19bf12fb`
+  (avant l'Epic 37, point 7 de la liste des issues de l'epic), non rejoués ;
+- `opening-balances.spec.ts:156` et `bank-import.spec.ts:130`, rouges au run précédent (et déjà sur `19bf12fb`),
+  **passent** à ce run : intermittents, sans lien avec la story.
+
+Aucun échec causé par la story. Verdict : vert au sens de `docs/testing.md` (les sept KF-029 plus les échecs
+préexistants nommés).
 
 ### Commits
 
