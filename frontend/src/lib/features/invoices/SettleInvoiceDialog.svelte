@@ -23,6 +23,8 @@
 	import { bankAccountOptionLabel } from '$lib/features/bank-accounts/format';
 	import { withoutCreditCards } from '$lib/features/bank-accounts/credit-card';
 	import { dueToCentime } from './invoice-helpers';
+	import { readJournalAmount } from '$lib/features/journal-entries/balance';
+	import { amountEntryMessage } from '$lib/features/journal-entries/amount-entry-message';
 	import { todayLocal } from '$lib/shared/utils/local-date';
 	import {
 		accountIdsWithRole,
@@ -151,6 +153,16 @@
 		),
 	);
 
+	/** Story 36-18a (#1174, D8) — la lecture du montant saisi, rogné. */
+	let reading = $derived(readJournalAmount(amount.trim()));
+	/**
+	 * Story 36-18a (D8, V1-6) — le montant est-il ambigu ou illisible ? Le champ reçoit
+	 * alors la bordure et `aria-invalid`, et `aria-describedby` vers le bandeau quand
+	 * celui-ci dit ce refus (une date fautive passe avant). Un montant vide n'en est pas :
+	 * il garde son seul message « supérieur à zéro ».
+	 */
+	let amountInvalid = $derived(reading.kind === 'ambiguous' || reading.kind === 'unreadable');
+
 	let clientError = $derived.by(() => {
 		if (!settledOn) {
 			return i18nMsg('invoice-error-settled-on-required', 'Date de règlement obligatoire');
@@ -163,15 +175,21 @@
 				'La date de règlement ne peut être antérieure à la date de facture',
 			);
 		}
-		const n = Number(amount);
-		if (!amount || !Number.isFinite(n) || n <= 0) {
+		// Story 36-18a (#1174, D8) — le montant se lit comme celui d'une écriture, sur la
+		// saisie rognée (C-36-18-4) : « 1.250 » est ambigu (dix francs, ou dix mille ?),
+		// « 1'250 » et « 1,25 » sont lus ; « 1e-3 » et cinq décimales sont illisibles.
+		const r = reading;
+		if (r.kind === 'ambiguous' || r.kind === 'unreadable') {
+			return amountEntryMessage(r.kind, 2);
+		}
+		if (r.kind !== 'clear' || r.value.lte(0)) {
 			return i18nMsg('invoice-error-amount-positive', 'Le montant doit être supérieur à zéro');
 		}
 		// Story 25-4-c3-b (#476) : un règlement se fait au centime. Les décimales
-		// se comptent sur la forme CANONIQUE de big.js — jamais sur la saisie : le
-		// champ est du texte libre, et « 1e-3 » n'a pas de point pour trois
-		// décimales réelles ; « 10.000 », lui, en a trois pour une valeur au centime.
-		if (centimesDigits(amount) > 2) {
+		// se comptent sur la forme CANONIQUE de big.js — jamais sur la saisie :
+		// « 10.0100 » en a quatre écrites pour une valeur au centime (Story 36-18a,
+		// V1-1 : appliqué à la charge de la lecture).
+		if (centimesDigits(r.payload) > 2) {
 			return i18nMsg(
 				'invoice-error-amount-scale',
 				'Le montant ne peut avoir plus de deux décimales',
@@ -180,8 +198,9 @@
 		// Comparé au reste dû AU CENTIME, celui que le champ pré-remplit : le
 		// comparer au brut (10.0050) refusait le 10.01 proposé. Avec deux
 		// décimales au plus, « saisie > reste arrondi » est exactement la règle à
-		// double borne du serveur (`classify_payment`).
-		if (amountDue !== null && new Big(amount.trim()).gt(dueToCentime(amountDue))) {
+		// double borne du serveur (`classify_payment`). Story 36-18a (V2-2) : sur la
+		// valeur lue (`new Big("1'250")` lèverait).
+		if (amountDue !== null && r.value.gt(dueToCentime(amountDue))) {
 			return i18nMsg(
 				'invoice-error-amount-over-due',
 				'Le montant dépasse ce qui reste dû sur cette facture',
@@ -196,13 +215,21 @@
 		return '';
 	});
 
+	/** Story 36-18a (V1-6) — le bandeau dit-il le refus du montant ? */
+	let amountErrorShown = $derived(
+		(reading.kind === 'ambiguous' || reading.kind === 'unreadable') &&
+			clientError === amountEntryMessage(reading.kind, 2),
+	);
+
 	function handleConfirm() {
 		if (clientError) return;
 		onConfirm({
 			settlementType,
 			bankAccountId: settlementType === 'bank_transfer' ? (bankAccountId ?? undefined) : undefined,
 			accountId: settlementType === 'internal_account' ? (accountId ?? undefined) : undefined,
-			amount: amount.trim(),
+			// Story 36-18a (D8) : la charge de la lecture (« 1'250 » → `1250`) ; `clientError`
+			// vide garantit une lecture claire.
+			amount: reading.kind === 'clear' ? reading.payload : amount.trim(),
 			settledOn,
 		});
 	}
@@ -291,7 +318,16 @@
 				<label class="mb-1 block text-xs text-text-muted" for="settle-amount">
 					{i18nMsg('invoice-settle-amount-label', 'Montant')}
 				</label>
-				<Input id="settle-amount" type="text" inputmode="decimal" bind:value={amount} />
+				<!-- Story 36-18a (D8, V1-6) : un montant ambigu ou illisible marque le champ,
+				     décrit par le bandeau. -->
+				<Input
+					id="settle-amount"
+					type="text"
+					inputmode="decimal"
+					bind:value={amount}
+					aria-invalid={amountInvalid}
+					aria-describedby={amountErrorShown ? 'settle-client-error' : undefined}
+				/>
 			</div>
 			<div>
 				<label class="mb-1 block text-xs text-text-muted" for="settle-date">
@@ -303,6 +339,7 @@
 
 		{#if clientError}
 			<div
+				id="settle-client-error"
 				class="rounded-md border border-destructive bg-destructive/10 px-3 py-2 text-sm text-destructive"
 			>
 				{clientError}
