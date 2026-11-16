@@ -1,6 +1,6 @@
 # Story 37-1 : réglage multi-devises de la société et devise des comptes
 
-Status: in-progress
+Status: review
 
 *Fiche rédigée le 2026-11-14 (Opus 5.5), branche `epic/37-multi-devises`, numéros de ligne de `67efc51f`. Epic 37
 (`_bmad-output/planning-artifacts/epic-37-multi-devises.md`), registre C-37-1 à C-37-8. **Migration non breaking**.
@@ -837,10 +837,10 @@ bascule par exercice, de S3 l'avertissement, d'A4/A5 la bascule et `force`, A27)
 
 ## Tâches
 
-- [ ] Migration + `migrations.sha384` + audit d'idempotence + squash (AC-1).
-- [ ] `kesh-core` : module `currency` — liste ISO 4217 (codes actifs, trois lettres), `CurrencyCode` validé,
+- [x] Migration + `migrations.sha384` + audit d'idempotence + squash (AC-1).
+- [x] `kesh-core` : module `currency` — liste ISO 4217 (codes actifs, trois lettres), `CurrencyCode` validé,
       `BASE_CURRENCY = "CHF"` ; tests (AC-4).
-- [ ] `kesh-db` : `Company` + **les quatre listes de colonnes écrites à la main** qui la construisent par
+- [x] `kesh-db` : `Company` + **les quatre listes de colonnes écrites à la main** qui la construisent par
       `query_as::<_, Company>` — `FIND_BY_ID_SQL`/`LIST_SQL` (`companies.rs:24,29`), la macro `company_select!` de
       `routes/onboarding.rs:1273-1287` (`COMPANY_SELECT_FOR_UPDATE`, `COMPANY_BY_ID_FOR_UPDATE`, lues :1292, :1376,
       :1482) et la requête de `kesh-seed/src/lib.rs:210-214` (`seed_demo`). ⚠️ `FromRow` : une colonne manquante
@@ -859,18 +859,18 @@ bascule par exercice, de S3 l'avertissement, d'A4/A5 la bascule et `force`, A27)
       `kesh-seed` n'en construit aucun, vérifié) ;
       gardes croisées de l'AC-4 dans les transactions du dépôt des réglages de facturation, comptes bancaires,
       articles et règles de réconciliation (les colonnes de pièce, factures fournisseur comprises, sont à la 37-3a) ; `reset_to_stub_in_tx` (AC-5) ; `test_fixtures.rs`, seed.
-- [ ] `kesh-api` : `CompanyJson` (`routes/companies.rs:31`, miroir écrit à la main) ; `serialize_accounts_csv` et
+- [x] `kesh-api` : `CompanyJson` (`routes/companies.rs:31`, miroir écrit à la main) ; `serialize_accounts_csv` et
       `serialize_company_csv` (AC-6).
-- [ ] `kesh-api` : routes, DTO, codes d'erreur (`errors.rs` + i18n), audit (`audit_labels.rs`), MCP (AC-2 à AC-8).
-- [ ] Frontend : `settings` (section Comptabilité), `accounts` (champ, colonne), types, API, Vitest (AC-7).
-- [ ] `kesh-api` : registre des routes d'audit et phrase du manuel d'administration (AC-3).
-- [ ] Manuel (AC-10, `.tex` seulement), section *Note de version* de la fiche — pas d'écriture au `CHANGELOG.md` (nouveau champ `currency` du compte, absent = inchangé ; réglage
+- [x] `kesh-api` : routes, DTO, codes d'erreur (`errors.rs` + i18n), audit (`audit_labels.rs`), MCP (AC-2 à AC-8).
+- [x] Frontend : `settings` (section Comptabilité), `accounts` (champ, colonne), types, API, Vitest (AC-7).
+- [x] `kesh-api` : registre des routes d'audit et phrase du manuel d'administration (AC-3).
+- [x] Manuel (AC-10, `.tex` seulement), section *Note de version* de la fiche — pas d'écriture au `CHANGELOG.md` (nouveau champ `currency` du compte, absent = inchangé ; réglage
       réservé à l'Administrateur, par une session — écran ou client HTTP en Bearer —, hors clé d'API, V6).
-- [ ] Tests : dépôt (gardes, verrou, reset), API (codes), sauvegarde (AC-6), E2E Playwright (créer d'abord un compte de
+- [x] Tests : dépôt (gardes, verrou, reset), API (codes), sauvegarde (AC-6), E2E Playwright (créer d'abord un compte de
       bilan pour la conversion — aucun plan livré n'en a, AC-3 —, activer le mode avec les trois comptes, créer un
       compte USD, verrou : écriture passée par l'API sur un compte **CHF**, puis devise refusée à l'écran — AC-4 ;
       dialogue de confirmation de l'activation, case désactivée ensuite — AC-7, CR-7).
-- [ ] CR-2 — `kesh-db` : `FiscalYear` (`entities/fiscal_year.rs:73`) gagne `multi_currency`, `opening_rate_kind`,
+- [x] CR-2 — `kesh-db` : `FiscalYear` (`entities/fiscal_year.rs:73`) gagne `multi_currency`, `opening_rate_kind`,
       `closing_rate_kind` (énumération `RateKindChoice`/nom au développement) ; **quinze listes de colonnes écrites à la
       main** à compléter (`FromRow` échoue à l'exécution, non à la compilation) — quatorze constantes et requêtes de
       `repositories/fiscal_years.rs` (`FIND_BY_ID_SQL` :145, `LIST_BY_COMPANY_SQL` :150, `LOCK_IN_COMPANY_SQL` :162,
@@ -884,12 +884,12 @@ bascule par exercice, de S3 l'avertissement, d'A4/A5 la bascule et `force`, A27)
       `update_currency_settings` étendu (compte de conversion, exercices à l'activation, refus
       `MULTI_CURRENCY_IRREVERSIBLE` — CR-7) ; liste close des absences admises et son
       emploi dans `parse_and_verify_avec_inventaire` et `creates_application_table` (AC-6).
-- [ ] CR-2 — tests manquants (37-1-CR2-P1-3) : activation → exercices **ouverts** multi-devises, clos inchangés,
+- [x] CR-2 — tests manquants (37-1-CR2-P1-3) : activation → exercices **ouverts** multi-devises, clos inchangés,
       identifiants au détail d'audit ; `false` après activation → 409 `MULTI_CURRENCY_IRREVERSIBLE` (CR-7) ; compte de
       conversion : `reason: "accountType"` pour `Expense`/`Revenue`, `details.designation = "transit"` à l'archivage, au
       retypage, à la devise et au sous-compte ; refus de l'activation sans l'un des trois comptes ; rejeu sur
       interblocage de `currency-settings` (AC-3).
-- [ ] CR-2 — `kesh-api` : code `MULTI_CURRENCY_IRREVERSIBLE` (409, quatre locales, CR-7), code
+- [x] CR-2 — `kesh-api` : code `MULTI_CURRENCY_IRREVERSIBLE` (409, quatre locales, CR-7), code
       `LATER_FISCAL_YEAR_MONO_CURRENCY` (400, `map_create_error`, variante `AppError`, gabarit de réponse généralisé d'un
       `code`, quatre locales, D-CR7-2) et ses tests (AC-3 bis),
       `FiscalYearResponse` ;
@@ -897,24 +897,24 @@ bascule par exercice, de S3 l'avertissement, d'A4/A5 la bascule et `force`, A27)
       d'import d'une sauvegarde 0.17.6 (AC-6). *(CR-7 : route `currency-mode`, ses codes, son audit et l'écran
       *Exercices* retirés.)*
       *(CR-4 : la phrase « l'assistant n'est pas touché » ne vaut plus ; voir la tâche T1 ci-dessous.)*
-- [ ] CR-4 (T1) — dates du premier exercice dans l'assistant (AC-11) : `FinalizeRequest`, calcul de la fin et du
+- [x] CR-4 (T1) — dates du premier exercice dans l'assistant (AC-11) : `FinalizeRequest`, calcul de la fin et du
       nom, `borner`, refus avant la transaction, écran de la dernière étape, `onboarding.api.ts` /
       `onboarding.svelte.ts`, i18n, tests d'API, Vitest, E2E, manuel (`user-manual.tex:217`, `:1004`).
-- [ ] CR-4 (T4) — défaut du genre d'ouverture à la création (AC-3 bis) : fragment SQL partagé des trois chemins de
+- [x] CR-4 (T4) — défaut du genre d'ouverture à la création (AC-3 bis) : fragment SQL partagé des trois chemins de
       création, tests ; sens des genres écrit au doc-comment de `FiscalYear` (AC-1).
-- [ ] CR-5 — rien à développer ici pour U1, A24 et U4 : la copie des cours (appels dans `fiscal_years::create`,
+- [x] CR-5 — rien à développer ici pour U1, A24 et U4 : la copie des cours (appels dans `fiscal_years::create`,
       `accounts::create` et `accounts::update` ; **aucun** dans
       `update_currency_settings`, vide par construction) et `applyToNextOpening` sont des tâches de **37-2** (AC-3 bis,
       AC-5, AC-6) ; cette story laisse ces fonctions prêtes à recevoir l'appel (transaction ouverte, verrous pris,
       détail d'audit extensible).
-- [ ] CR-6 — **V6** : test d'API de l'activation en session Bearer (`POST /auth/login`, `PUT
+- [x] CR-6 — **V6** : test d'API de l'activation en session Bearer (`POST /auth/login`, `PUT
       /companies/current/currency-settings` avec `Authorization: Bearer`, sans cookie → 200) à côté du refus par clé
       d'API ; manuel d'administration et Note de version : « s'active par une session, jamais par une clé d'API » (non « à
       l'écran »), point **Administration** du manuel d'administration (`:3183`) amendé (AC-10) ; **V10** :
       `kesh_exercices` — `multi_devises`, `genre_ouverture`, `genre_cloture` (type scellé),
       description, ligne de la matrice MCP du manuel d'administration (`:3447`, AC-10), test `mcp_outils_e2e.rs`, mesure de taille d'un exercice écrite au Change Log, `mcp_contrat` et
       `mcp_gardes_lexicales` verts ; **V11** : « aucun outil n'expose la société » écrit au Change Log du développement.
-- [ ] CR-3 (S2) — comptes de différence propres (AC-4 bis) : colonnes et deux `CHECK` dans la migration de l'AC-1 ;
+- [x] CR-3 (S2) — comptes de différence propres (AC-4 bis) : colonnes et deux `CHECK` dans la migration de l'AC-1 ;
       `Account`, `NewAccount`, `AccountUpdate` (un champ à trois états), macro `columns!`, `bulk_create` et
       `bulk_create_from_chart_in_tx` (`NULL`) ; `fx_accounts_for` (pure) et `validate_fx_accounts_in_tx` (dépôt) ;
       gardes à la désignation et gardes inverses (`holderAccountId`) dans `create`, `update`, `archive_guarded`,
@@ -950,6 +950,193 @@ bascule par exercice, de S3 l'avertissement, d'A4/A5 la bascule et `force`, A27)
   `NULL` par l'AC-4).
 - `CHECK` : collation binaire de la colonne **et** `BINARY` dans les `CHECK` (AC-1) — `20261110000001` ne met
   `BINARY` que sur son `IN`, son `REGEXP` ne porte que sur des chiffres : ne pas le recopier tel quel.
+
+## Dev Agent Record
+
+*(Développement du 2026-11-16, worktree `kesh-s37-1`, branche `story/37-1-reglage-et-devise-des-comptes`, base `19bf12fb`.
+Mené par phases successives — A1 schéma et plomberie, A2 réglage de la société, B devise des comptes et gardes, C
+assistant, D écrans, E manuels, F E2E, captures et gate complet —, chacune remise à l'orchestrateur qui a commité.
+Journaux, captures et notes dans `kesh-gate-logs/s37-1/` (hors dépôt).)*
+
+### Commits
+
+`6781cf75` (story en cours) · `2cb3e214` (écrans, AC-7) · `4e9f9a4c` (migration, entités, exercices, sauvegarde, MCP) ·
+`883b3a8a` (réglage, AC-3) · `09e71fd0` (manuels, AC-10) · `3f423eda` (devise des comptes, AC-4, AC-4 bis) · `478ca803`
+(assistant, AC-11 ; guide d'API) · `e597054a` (E2E ; acteur d'audit inventorié — **dernier commit de code**).
+
+### Gates réellement exécutés au dernier commit de code (`e597054a`)
+
+- `cargo fmt --all -- --check` rc 0 ; `cargo clippy --workspace --all-targets -- -D warnings` rc 0 ; `cargo build
+  --workspace --all-targets` rc 0 (`final2-*.log`).
+- Base de gate `kesh_s37_1` remise à zéro avant (DROP/CREATE, migrations, seed).
+- `scripts/test-fast.sh --ci` (nextest complet du workspace, sous les verrous) : **5547 exécutés, 5547 passés, 0 échec,
+  13 ignorés**, 807,9 s (`final2-nextest.log`). Le passage précédent (`final-nextest.log`, 5546/5547) avait rougi sur
+  `audit_acteur_garde` : le site d'audit de `companies::update_currency_settings` n'était pas inventorié — défaut de la
+  story, corrigé dans la garde (`AdminSansCle`, la route passe `require_not_pat`), seul changement entre les deux passages.
+- Frontend (au contenu frontend final ; le correctif suivant ne touche que `crates/kesh-api/tests/`) : `npm run check`
+  0 erreur, 29 avertissements (fichiers non touchés) ; `lint-i18n-ownership` vert ; `test:unit` **244 fichiers, 3790
+  tests passés** ; `npm run build` réussi (`final-front-*.log`).
+- **E2E complet** (après le gate backend, base `kesh_e2e_s37_1` remise à zéro, recette de `docs/testing.md`, port 3371) :
+  **426 passés, 12 échecs, 18 ignorés**, 34 min (`final-e2e.log`). Échecs : **7 KF-029 (#97)** attendus
+  (`mode-expert` ×2, `onboarding-path-b` ×2, `onboarding` ×3) ; **5 hors liste**, sur des specs et des pages que la
+  branche ne touche pas (diff contre `main`) :
+  - `date-filtre-frappe.spec.ts:87` ×4 (cas « jusqu'à/au/fin ») — dépend de la locale de l'hôte : la station tourne en
+    `LANG=C.UTF-8`, Chromium ordonne alors les champs date en MM/JJ malgré `locale: 'fr-CH'` ; rejouée avec
+    `LANG=fr_CH.UTF-8`, les sept tests de la spec passent (`final-e2e-rejeu-lang-fr.log`) ;
+  - `opening-balances.spec.ts:156` — course entre le toast « Écriture d'ouverture générée » et le bouton *Compléter*
+    (le survol suspend le toast) ; échoue seule 3/3, mais **passe** dans le run de ses voisines au même code
+    (`f-e2e-iter3-voisines.log`).
+  Non rejoués sur `main` faute d'un second worktree : **à confirmer par l'orchestrateur** (issues demandées ci-dessous).
+- La spec neuve `multi-currency.spec.ts` : 4/4, seule, avec ses voisines (25/25) et dans le run complet.
+
+### Tests ajoutés (recomptés au diff `19bf12fb..e597054a`)
+
+- Rust : **95** attributs `#[test]`/`#[tokio::test]`/`#[sqlx::test]` ajoutés, aucun retiré (hors 2 doctests de
+  `kesh-core::currency`). Binaires neufs : `kesh-db/tests/currency_settings_repository.rs`,
+  `kesh-db/tests/account_currency_repository.rs` (dont sept tests de course, par `attendre_une_requete_en_cours`),
+  `kesh-api/tests/currency_settings_e2e.rs`, `kesh-api/tests/account_currency_e2e.rs` ; tests ajoutés aussi à
+  `fiscal_years_repository`, `migrations_upgrade_path`, `fiscal_years_e2e`, `accounts_e2e`, `companies_e2e`,
+  `mcp_outils_e2e`, `admin_full_import_e2e`, `rejeu_interblocage_e2e` (+3 victimes : `currency-settings`,
+  `accounts::update`, `accounts::create`), tests lib (`currency`, `exercice`, `backup`, `csv_tables`, `onboarding`,
+  `company_invoice_settings`).
+- Frontend : **76** appels `it(`/`test(` ajoutés, dont **71 Vitest** et **5 E2E** (4 dans `multi-currency.spec.ts`, 1
+  dans `onboarding-bank-account.spec.ts`).
+
+### Fichiers
+
+133 fichiers modifiés ou créés (`git diff --stat 19bf12fb..e597054a`). Principaux : migration
+`crates/kesh-db/migrations/20261114000001_multi_currency_settings.sql`, `migrations.sha384`, squash
+`test-schema/0001_schema_squash.sql`, `docs/migrations-idempotence-audit.md` ; `kesh-core/src/currency.rs`,
+`kesh-core/src/accounting/exercice.rs` ; `kesh-db` : entités `account`, `company`, `fiscal_year`, `errors.rs`,
+dépôts `accounts`, `companies`, `fiscal_years`, `company_invoice_settings`, `products`, `reconciliation_rules`,
+`closing_checks`, `backup.rs`, `post_restore.rs`, `test_fixtures.rs` ; `kesh-seed/src/lib.rs` ; `kesh-api` :
+`errors.rs`, `lib.rs`, `audit_labels.rs`, routes `accounts`, `companies`, `fiscal_years`, `onboarding`,
+`bank_accounts`, `admin_backup/import.rs`, `exports/csv_tables.rs`, MCP `sortie.rs`, `outils/exercices.rs`,
+`outils/plan_comptable.rs` ; quatre `messages.ftl` ; frontend : `features/accounts/{fx-accounts.ts,
+AccountCurrencyFields.svelte}`, `features/settings/CurrencySettingsSection.svelte`, `features/onboarding/
+premier-exercice.ts`, `shared/utils/iso4217.ts`, pages `settings`, `accounts`, `onboarding`, types et API ; manuels
+`docs/manual/fr/{user,admin}-manual.tex`, `docs/api-external.md`, `docs/user-guide/fr/getting-started.md`.
+
+### Étape 0 — prémisses vérifiées au code, écarts à la fiche
+
+- `FiscalYear` : 14 listes de colonnes dans `fiscal_years.rs` (13 de production + `REFERENCE_FIGEE`, texte de test), 1
+  dans `closing_checks.rs`, plus la copie de test de `reversal_next_fiscal_year.rs:555` — la fiche disait « 14 + 1 de
+  production ». `Company` : 4 listes (9 sites `query_as::<_, Company>`), plus 5 littéraux `Company {` corrigés.
+- `INSERT INTO fiscal_years` de production : `create_if_absent_in_tx` et `insert_fiscal_year_in_tx` (passés à `INSERT …
+  SELECT … FROM companies c`, fragment partagé `NEW_FY_DERIVED_COLUMNS`) ; tests : `test_fixtures.rs:118`,
+  `accounts.rs:1575`, `journal_entries.rs:4065/4263/4411`, `invoices.rs:4402` (défaut de colonne, admis).
+- `NewAccount {` : 52 sites ; `AccountUpdate {` : 28 ; `bulk_create` lie `new.currency` (appelants : `None`) plutôt
+  qu'un `NULL` en dur ; `bulk_create_from_chart_in_tx` écrit `NULL`.
+- `REFERENCES accounts` : **19** (recompté) — `parent_id`, `journal_entry_lines.account_id`, les dix colonnes des
+  réglages de facturation, `products.default_revenue_account_id`, `reconciliation_rules.counterparty_account_id`, les
+  cinq colonnes de pièce laissées à la 37-3a ; lien sans FK : `bank_accounts.journal_account_id`.
+- Écritures de `accounts.currency` : `create` et `update` (gardés), `bulk_create` (`None`), chargement de plan
+  (`NULL`), import et remise à zéro (comptes et lignes remplacés ensemble).
+- P6 : `migrations_upgrade_path` (compteur 91 → 92, soustracteur 57 → 58, frontière 34) ; neuf tests de montée qui
+  sèment par le dépôt courant sur une base antérieure → helper `common::colonnes_multi_devises`. P7 : aucune donnée
+  écrite. P5 : 92 migrations (en-tête et `Total`), 11 `yes`, 81 `tracked-by-sqlx`, 0 `no`. Non breaking :
+  `kesh_version_min_required` inchangé.
+- Date du jour de l'assistant : `state.horloge.aujourd_hui()` (Zurich, depuis la 35-5a0), non `Utc::now()` comme le dit
+  l'AC-11 ; la limite assumée reste vraie avec Zurich pour référence.
+- Libellé du second bouton de l'assistant : « Configurer plus tard », non « Passer ».
+- Aucun composant de saisie JJ.MM.AAAA dans les écrans comptables (#880 ne vise que l'affichage) : champs `type=date`
+  et une ligne de résumé en forme suisse (`formatSwissDate`).
+- Société inexistante à la création d'un exercice : `NotFound` (lecture de tête de `companies`) au lieu de
+  `ForeignKeyViolation` ; test renommé `missing_company_is_not_found`.
+
+### Choix tranchés (à reporter au registre de l'epic)
+
+- **C-37-1-1 — collation** : `accounts.currency` en `ascii_general_ci` (et non `ascii_bin`), les deux `CHECK` gardant
+  `BINARY` (la casse reste refusée, test `usd`). Motif : le serveur marque une colonne `_bin` du drapeau `BINARY` et
+  `sqlx-mysql` 0.8.6 refuse alors de la décoder en `String` ; le contournement par `CAST` à la lecture aurait piégé
+  toute lecture future (jointures de la 37-3). Écart à la lettre de l'AC-1 ; réversible tant que non publié.
+- **C-37-1-2 — numéros des comptes dans le manuel** : 6840 et 1090 ne sont pas écrits (garde G4-bis de
+  `textes_coherents` : tout nombre de quatre chiffres du manuel doit être un compte d'un plan livré) ; le manuel dit où
+  les créer (classe 6 sous le groupe 6, non sous 6800 ; actif « Transferts de fonds » sous le groupe 10).
+- **C-37-1-3 — bornes de `kesh_plan_comptable`** : 70/40 → **68/38** comptes (334 o par compte avec `devise` ; page
+  par défaut 13 729 o pour 13 312, page maximale 23 779 o pour 23 552), précédent C-32-9-44. Aucune borne citée aux
+  manuels ni au guide d'API.
+- **C-37-1-4 — verrous des comptes** : `accounts::create`/`update` prennent les réglages de facturation en partage à
+  chaque geste (type et rôle inconnus avant le `FOR UPDATE`), sans cycle ; `ACCOUNT_IN_FOREIGN_CURRENCY` aux sites de
+  configuration au seul changement de valeur (motif C4) ; parent pris `FOR UPDATE` avant l'`INSERT` d'un sous-compte.
+- **C-37-1-5 — `details` des codes** : `ACCOUNT_CURRENCY_IN_USE {site, role|setting|bankAccountId|productId|ruleId}` ;
+  `ACCOUNT_IN_FOREIGN_CURRENCY {accountId|null, currency}` ; `CURRENCY_UNKNOWN {value}` ; `MULTI_CURRENCY_DISABLED` et
+  `ACCOUNT_CURRENCY_LOCKED` `{}` (la variante admet `fiscalYearId` pour la 37-3a) ; audit du réglage `{ before, after,
+  fiscalYearIds }`.
+- **C-37-1-6 — liste ISO 4217** : 152 monnaies actives côté serveur (ANG exclu, remplacé par XCG ; VED inclus), même
+  liste au frontend, tenue égale par un test Vitest qui lit `currency.rs`.
+- **C-37-1-7 — écran** : la colonne « Devise » du plan comptable est un badge (la page est une liste) ; les sélecteurs
+  de gains/pertes excluent aussi le rôle `DefaultRevenue` ; le contrôle de l'assistant refuse aussi une date vide ou
+  invalide.
+
+### Ordre de pose des verrous par site (AC-4)
+
+- `update` : `company_id` sur le pool → `companies` en partage (`FOR UPDATE`, premier verrou, si le `PUT` porte des
+  comptes propres) → réglages en partage → compte `FOR UPDATE` (company_id comparé) → désignations propres (deux
+  recherches par index, `FORCE INDEX`) → ligne d'écriture → comptes bancaires, articles, règles, comptes propres en
+  lecture verrouillante.
+- `create` : `companies` en partage (ou `FOR UPDATE`) → réglages en partage → parent `FOR UPDATE` → désignations du
+  parent → comptes propres en partage.
+- `archive_guarded` : `company_id` sur le pool → `companies` en partage → réglages en partage → compte `FOR UPDATE` →
+  sous-comptes → désignations propres → désignation de facturation → version.
+- Réglages de facturation : `companies` en partage → `INSERT IGNORE` → réglages `FOR UPDATE` → comptes changés en
+  partage. Articles : `companies` en partage → compte en partage → article. Règles : sentinelle du projet → compte en
+  partage → règle. Routes bancaires : sentinelle → réglages → `type_in_share_mode` (devise) → `bank_accounts`.
+  Assistant (étape bancaire) : pré-vol sur le pool seulement — **limite assumée** (société d'un assistant en cours sans
+  exercice ni compte en devise).
+- `update_currency_settings` : `companies` `FOR UPDATE` → exercices `FOR UPDATE` (ordre `start_date, id`, à
+  l'activation) → réglages en partage → comptes `FOR UPDATE` → articles en partage. Autres cycles couverts par le rejeu
+  (37-1-CR2-P2-2) : validation de facture, avoir et saisie fournisseur prennent les réglages `FOR UPDATE` avant
+  l'exercice ; l'activation les prend en partage après — routes rejouées des deux côtés.
+
+### Registre et compteurs (recomptés depuis la source)
+
+`LIB_ROUTES` 146 → 147, tracées 139 → 140, total du registre 149 → 150, `sans_ecriture` 119 → 120, `tout.len()`
+149 → 150 ; point (vi) « vingt-cinq » → « vingt-sept » (25 handlers `SansEcritureAuJournal` sous enveloppe, plus
+`seed_demo` et `reset`) ; manuel d'administration « 140 des 147 routes », « 140 + 4 + 3 = 147 ».
+`admin_pat_denied_e2e` répartition (15, 38) → (15, 39). `sitesTotal` 3050 → 3093 ; `i18n-libelle-en-dur` 92 → 94
+candidates, `conforme` 78 → 80 ; `CLES_RELEVEES` 434 → 441 ; `COMPTE_CHAMPS` (dates reçues) 68 → 70 ;
+`MULTI_SOCIETE_TOTAL` 22 → 23.
+
+### MCP
+
+`kesh_exercices` : 294 o par exercice au nom de 50 caractères → **82 exercices** sous `MCP_ENVOI_OCTETS_MAX` (24 576
+o) ; au-delà, `TropVolumineux` sans recours (aucune pagination) — état existant, aggravé de trois champs ; pagination
+hors périmètre. V11 : aucun outil MCP n'expose la société (réglage lu par `GET /companies/current`). Les comptes de
+différence propres ne sont pas dans la sortie MCP (hors périmètre).
+
+### Hors périmètre et limites
+
+- La copie des cours (`copied`) et `applyToNextOpening` sont des tâches de la 37-2 : `fiscal_years::create`,
+  `accounts::create` et `accounts::update` sont prêts à recevoir l'appel (transaction ouverte, verrous pris, détail
+  d'audit extensible) ; `update_currency_settings` n'en reçoit aucun (vide par construction).
+- Refus des colonnes de pièce (lignes de facture, d'avoir, de facture fournisseur, règlements) : 37-3a.
+
+### Demandes à l'orchestrateur (issues, non ouvertes ici)
+
+1. `accounts::archive_account` n'est pas rejoué et prend maintenant `companies` et les réglages en partage : un flux qui
+   tient un compte puis demande `companies` en exclusif (p. ex. `journal_entries::update` avec projets) pourrait
+   l'interbloquer en 500 — raisonné, non mesuré.
+2. Assistant : si `finalize` échoue après un enregistrement bancaire ou « Configurer plus tard » réussi, la page reste
+   vide (étape 7 sans rendu) — défaut préexistant.
+3. E2E `date-filtre-frappe.spec.ts` : dépend de la locale système de l'hôte (`LANG=C.UTF-8` → champs date en MM/JJ).
+4. E2E `opening-balances.spec.ts:156` : course entre le toast et le bouton *Compléter* — à confirmer sur `main`.
+
+### Écarts aux consignes de travail
+
+Sept éditions de fichiers par commande shell plutôt que par l'outil d'édition, déclarées par les phases A1 (script
+python sur `onboarding_audit_e2e.rs`, `sed -i` d'une ligne sur `entities/mod.rs`, `cat >>` en fin de
+`fiscal_years_repository.rs`, `echo >>` sur `migrations.sha384`, valeur corrigée ensuite) et E (quatre remplacements
+python de chaînes uniques dans `user-manual.tex`) ; résultats relus au diff. Squash régénéré avec le `mariadb-dump` du
+conteneur (client de l'hôte : SSL exigé, bruit de version) ; diff final du squash : les colonnes de la migration.
+
+### Captures (recette visuelle, thème clair)
+
+Quatorze captures dans `kesh-gate-logs/s37-1/captures/` : plan comptable en mono-devise (liste et création sans champ
+Devise), Paramètres → Comptabilité (case décochée, cochée avec les trois sélecteurs, dialogue de confirmation, actif
+avec case désactivée, lecture seule pour un Comptable), création avec champ Devise (CHF, USD avec comptes « par
+défaut », « propres »), badges de devise dans la liste, champ Devise verrouillé, assistant (premier exercice par
+défaut ; fin = début, boutons désactivés). Les champs `type=date` y paraissent en MM/JJ/AAAA (locale de la station).
 
 ## Change Log
 
@@ -1317,3 +1504,4 @@ bascule par exercice, de S3 l'avertissement, d'A4/A5 la bascule et `force`, A27)
   FR-4 complétée).
 - 2026-11-16 — validation CR-7 P3 ciblée (Sonnet) : 0 CRITICAL, 0 HIGH, 0 MEDIUM, 1 LOW ; remédié. LOW 37-1-CR7-P3-1 (AC-3 bis, D-CR7-2 et tâche CR-2) : « réponse construite comme `later_fiscal_year_closed_response` » laissait croire à une copie du gabarit, dont le code `LATER_FISCAL_YEAR_CLOSED` est écrit en dur (`errors.rs:1438-1450`) et dont le doc-comment dit « un seul gabarit » ; la variante `AppError` (comme `FiscalYearBeforeClosedYear`, `errors.rs:358`) manquait aux tâches — gabarit généralisé d'un paramètre `code`, variante nommée. Vérifié au code : `fiscal_years::create` :331-395 (garde de l'invariant I après les pré-contrôles, la garde D-CR7-2 s'y insère à sa suite), `map_create_error` :143-153, rejeu :286, `create_if_absent_in_tx` (aucun exercice), clé `error-fiscal-year-create-later-closed` (messages.ftl:1087, la nouvelle clé en suit le nommage). Raisonnement contrôlé : préfixe mono-devise (invariant I à l'activation, aucune bascule, refus de création avant un mono), ordre de verrouillage companies → exercices sans cycle avec l'activation, lecture simple de l'exercice postérieur sûre sous le partage de `companies`, ordre des deux refus testé, société mono-devise inchangée, limite assumée retirée (grep : ne restent que la liste « Retiré » et des Change Logs datés). Axes exercés : AC-3 bis, FR-4, AC-10, tâches, NFR-9, résidus. Non exercés : PDF, i18n, reste de la fiche. Décompte : 12 FR, 9 NFR (inchangé).
 - 2026-11-16 — alignement sur les règles de travail à plusieurs (Sonnet) : PDF des manuels non commités (`.tex` seulement, régénération à la release ; 4 remplacements) ; CHANGELOG remplacé par la section *Note de version* (4 remplacements, section ajoutée) ; compteurs « recomptés depuis la source après chaque reprise de `main` » (2 ajouts). Fond des AC inchangé.
+- 2026-11-16 — développement (dev-story, Opus 5.5, par phases A1, A2, B, C, D, E, F) : AC-1 à AC-11 livrées ; gate complet au dernier commit de code `e597054a` — nextest 5547/5547 (13 ignorés), Vitest 3790 (244 fichiers), E2E 426 passés, 12 échecs (7 KF-029, 5 hors liste sur des specs non touchées, à confirmer sur `main`), 18 ignorés ; choix C-37-1-1 à C-37-1-7 (collation `ascii_general_ci`, comptes du manuel sans numéro, bornes MCP 68/38…) ; détail au Dev Agent Record. Statut → `review`.
