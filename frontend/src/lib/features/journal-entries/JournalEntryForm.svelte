@@ -910,6 +910,7 @@
 								type="text"
 								inputmode="decimal"
 								bind:value={lines[i].debit}
+								data-testid="journal-entry-line-debit-{i}"
 								oninput={() => (lines[i].chfFromForeign = null)}
 								class={amountFlagged(line.debit) ? 'border-destructive' : 'tabular-nums text-right'}
 								placeholder="0.00"
@@ -920,6 +921,7 @@
 								type="text"
 								inputmode="decimal"
 								bind:value={lines[i].credit}
+								data-testid="journal-entry-line-credit-{i}"
 								oninput={() => (lines[i].chfFromForeign = null)}
 								onkeydown={(e) => handleLineCreditKeydown(e, i)}
 								class={amountFlagged(line.credit) ? 'border-destructive' : 'tabular-nums text-right'}
