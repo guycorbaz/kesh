@@ -676,8 +676,10 @@ async fn bilan_et_resultat_en_devise(pool: MySqlPool) {
         (dec!(376.00), Some(dec!(400)))
     );
     assert!(bs.equation_holds);
-    let caisse = a(j.caisse).unwrap();
-    assert!(caisse.currency.is_none() && caisse.balance_currency.is_none());
+    // Un compte CHF (1100, 470 − 94) : aucun champ en devise.
+    let banque = a(j.s.accounts["1100"]).unwrap();
+    assert_eq!(banque.balance, dec!(376.00));
+    assert!(banque.currency.is_none() && banque.balance_currency.is_none());
 
     let is_ = generate_income_statement(&pool, j.s.company_id, &fy2026(&j))
         .await
@@ -823,8 +825,18 @@ async fn t3_devise_du_compte_et_ligne_hors_depot(pool: MySqlPool) {
     let bs = generate_balance_sheet(&pool, j.s.company_id, &p)
         .await
         .unwrap();
-    let a = bs.assets.iter().find(|a| a.account_id == j.caisse).unwrap();
-    assert!(a.currency.is_none() && a.balance_currency.is_none());
+    // La caisse est à CHF 0 : la ligne SQL ne la fait pas lister par un solde
+    // « en devise » (compte CHF) — et aucun compte CHF du bilan n'en porte.
+    assert!(!bs.assets.iter().any(|a| a.account_id == j.caisse));
+    let en_devise = [j.banque_usd, j.caisse_eur, j.emprunt_eur];
+    for a in bs.assets.iter().chain(&bs.liabilities).chain(&bs.equity) {
+        assert_eq!(
+            a.currency.is_some() || a.balance_currency.is_some(),
+            en_devise.contains(&a.account_id),
+            "compte {}",
+            a.account_number
+        );
+    }
 
     let jr = kesh_report::journal_report::generate(&pool, j.s.company_id, &p, None)
         .await
@@ -838,17 +850,20 @@ async fn t3_devise_du_compte_et_ligne_hors_depot(pool: MySqlPool) {
     assert!(
         lignes
             .iter()
-            .filter(|l| l.account_id == j.caisse)
-            .all(|l| l.currency.is_none()
-                && l.amount_currency.is_none()
-                && l.exchange_rate.is_none())
+            .filter(|ligne| ligne.account_id == j.caisse)
+            .all(|ligne| ligne.currency.is_none()
+                && ligne.amount_currency.is_none()
+                && ligne.exchange_rate.is_none())
     );
     // Les lignes du compte EUR, elles, portent la devise du compte.
     let eur: Vec<_> = lignes
         .iter()
-        .filter(|l| l.account_id == j.emprunt_eur)
+        .filter(|ligne| ligne.account_id == j.emprunt_eur)
         .collect();
-    assert!(eur.iter().all(|l| l.currency.as_deref() == Some("EUR")));
+    assert!(
+        eur.iter()
+            .all(|ligne| ligne.currency.as_deref() == Some("EUR"))
+    );
     assert_eq!(
         eur.iter()
             .map(|l| l.amount_currency.unwrap())
@@ -876,20 +891,20 @@ async fn journal_porte_les_champs_en_devise(pool: MySqlPool) {
         .flat_map(|s| &s.entries)
         .find(|e| e.description == "E4 réévaluation")
         .unwrap();
-    let l = reeval
+    let ligne = reeval
         .lines
         .iter()
-        .find(|l| l.account_id == j.banque_usd)
+        .find(|ligne| ligne.account_id == j.banque_usd)
         .unwrap();
     assert_eq!(
         (
-            l.currency.as_deref(),
-            l.amount_currency,
-            l.rate_source.as_deref()
+            ligne.currency.as_deref(),
+            ligne.amount_currency,
+            ligne.rate_source.as_deref()
         ),
         (Some("USD"), Some(Decimal::ZERO), Some("revaluation"))
     );
-    let v = serde_json::to_value(l).unwrap();
+    let v = serde_json::to_value(ligne).unwrap();
     assert_eq!(v["exchangeRate"], "0.9312000000");
 }
 
