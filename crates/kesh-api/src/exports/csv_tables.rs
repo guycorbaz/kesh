@@ -114,6 +114,12 @@ fn fmt_opt_decimal(d: Option<Decimal>) -> String {
     d.map(fmt_decimal).unwrap_or_default()
 }
 
+/// Format `Option<Decimal>` à l'échelle **de sa colonne** (Story 37-3a :
+/// `amount_currency` à 4, `exchange_rate` à 10 décimales) ou chaîne vide.
+fn fmt_opt_decimal_scale(d: Option<Decimal>, scale: usize) -> String {
+    d.map(|d| format!("{d:.scale$}")).unwrap_or_default()
+}
+
 /// Format `Option<i64>` → `i64.to_string()` ou chaîne vide.
 fn fmt_opt_i64(v: Option<i64>) -> String {
     v.map(|i| i.to_string()).unwrap_or_default()
@@ -396,6 +402,12 @@ pub fn serialize_journal_entry_lines_csv<W: Write>(
         // que l'utilisateur vérifie ce que Kesh affirme, ce qui est soldé compris.
         "lettering_key",
         "lettering_origin",
+        // Story 37-3a (AC-8) — la partie en devise, aux échelles de ses
+        // colonnes (4 et 10 décimales) ; aucune colonne de devise : la devise
+        // d'une ligne se lit dans le CSV des comptes.
+        "amount_currency",
+        "exchange_rate",
+        "rate_source",
     ])
     .map_err(|e| map_csv_err("journal_entry_lines", e))?;
     for jl in rows {
@@ -414,6 +426,10 @@ pub fn serialize_journal_entry_lines_csv<W: Write>(
             // comme toute cellule texte lue en base.
             jl.lettering_key.map(|k| k.to_string()).unwrap_or_default(),
             txt(jl.lettering_origin.clone().unwrap_or_default()),
+            // Jamais `fmt_decimal` (deux décimales) : montant à 4, cours à 10.
+            fmt_opt_decimal_scale(jl.amount_currency, 4),
+            fmt_opt_decimal_scale(jl.exchange_rate, 10),
+            fmt_opt_str(&jl.rate_source),
         ])
         .map_err(|e| map_csv_err("journal_entry_lines", e))?;
     }
@@ -1923,6 +1939,10 @@ mod tests {
             project_id: None,
             lettering_key: None,
             lettering_origin: None,
+            amount_currency: None,
+            exchange_rate: None,
+            rate_source: None,
+            account_currency: None,
         }
     }
 
@@ -2429,11 +2449,32 @@ mod tests {
         let text = std::str::from_utf8(&buf[3..]).unwrap();
         // Decimal formaté 2 décimales — debit 150.25 + credit 0.00,
         // project_id vide (ligne non taguée, Story 19-2).
-        assert!(text.contains(";150.25;0.00;;;\r\n"), "got: {text}");
+        assert!(text.contains(";150.25;0.00;;;;;;\r\n"), "got: {text}");
         // Header
         assert!(text.starts_with(
-            "id;entry_id;account_id;line_order;debit;credit;project_id;lettering_key;lettering_origin"
+            "id;entry_id;account_id;line_order;debit;credit;project_id;lettering_key;lettering_origin;\
+             amount_currency;exchange_rate;rate_source\r\n"
         ));
+    }
+
+    /// Story 37-3a (AC-8) — une ligne en devise s'exporte à l'échelle de ses
+    /// colonnes : montant à 4 décimales, cours à 10, jamais ramenés à deux.
+    #[test]
+    fn serialize_journal_entry_lines_csv_foreign_line_keeps_column_scales() {
+        let mut line = sample_line();
+        line.debit = dec!(1125.83);
+        line.amount_currency = Some(dec!(1234.56));
+        line.exchange_rate = Some(dec!(0.9119281363));
+        line.rate_source = Some("manual".into());
+        line.account_currency = Some("USD".into());
+        let mut buf = Vec::new();
+        serialize_journal_entry_lines_csv(&[line], &mut buf).expect("serialize ok");
+        let text = std::str::from_utf8(&buf[3..]).unwrap();
+        let lignes: Vec<&str> = text.lines().collect();
+        assert_eq!(
+            lignes[1],
+            "100;10;1;1;1125.83;0.00;;;;1234.5600;0.9119281363;manual"
+        );
     }
 
     #[test]
@@ -2443,7 +2484,7 @@ mod tests {
         let mut buf = Vec::new();
         serialize_journal_entry_lines_csv(&[line], &mut buf).expect("serialize ok");
         let text = std::str::from_utf8(&buf[3..]).unwrap();
-        assert!(text.contains(";150.25;0.00;7;;\r\n"), "got: {text}");
+        assert!(text.contains(";150.25;0.00;7;;;;;\r\n"), "got: {text}");
     }
 
     /// Story 15-1a-i (AC14) — l'export des lignes porte la marque du lettrage :
@@ -2462,10 +2503,11 @@ mod tests {
         let lignes: Vec<&str> = text.lines().collect();
         assert_eq!(
             lignes[0],
-            "id;entry_id;account_id;line_order;debit;credit;project_id;lettering_key;lettering_origin"
+            "id;entry_id;account_id;line_order;debit;credit;project_id;lettering_key;lettering_origin;\
+             amount_currency;exchange_rate;rate_source"
         );
-        assert_eq!(lignes[1], "100;10;1;1;150.25;0.00;;100;manual");
-        assert_eq!(lignes[2], "101;10;1;1;150.25;0.00;;;");
+        assert_eq!(lignes[1], "100;10;1;1;150.25;0.00;;100;manual;;;");
+        assert_eq!(lignes[2], "101;10;1;1;150.25;0.00;;;;;;");
     }
 
     #[test]

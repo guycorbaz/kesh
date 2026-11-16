@@ -181,7 +181,8 @@ fn bornes_des_schemas() {
     let mesurees: BTreeMap<&str, (i64, i64)> = [
         // Story 37-1 (AC-8) : le champ `devise` re-mesuré, 70 / 40 → 68 / 38.
         ("kesh_plan_comptable", (68, 38)),
-        ("kesh_ecritures", (22, 12)),
+        // Story 37-3a (AC-8) : lignes en devise re-mesurées, 22 / 12 → 18 / 10.
+        ("kesh_ecritures", (18, 10)),
         ("kesh_grand_livre", (30, 15)),
         ("kesh_balance", (55, 30)),
         ("kesh_postes_ouverts", (24, 12)),
@@ -810,9 +811,35 @@ async fn fixture_tailles(pool: &MySqlPool, s: &Societe, large: bool) {
         .await
         .unwrap();
     }
+    // Story 37-3a (AC-8) — le pire cas des écritures compte des lignes en
+    // devise : société et exercice multi-devises, un compte en USD et sa
+    // contrepartie CHF, hors des comptes que mesurent les autres outils.
+    sqlx::query("UPDATE companies SET multi_currency_enabled = TRUE WHERE id = ?")
+        .bind(s.c)
+        .execute(pool)
+        .await
+        .unwrap();
+    sqlx::query("UPDATE fiscal_years SET multi_currency = TRUE WHERE id = ?")
+        .bind(p.exercice_id)
+        .execute(pool)
+        .await
+        .unwrap();
+    let compte_usd = sqlx::query(
+        "INSERT INTO accounts (company_id, number, name, account_type, currency) \
+         VALUES (?, '09901', ?, 'Asset', 'USD')",
+    )
+    .bind(s.c)
+    .bind(texte_de(compte, "Compte en devise 09901"))
+    .execute(pool)
+    .await
+    .unwrap()
+    .last_insert_id() as i64;
     // 31 écritures sur K1 : écritures, grand livre, postes ouverts — chacune à
     // **trois** lignes, comme le prescrit la fiche (§ *Les tailles mesurées* ;
-    // revue de code P1, A5) : K2 au débit, K1 et CR au crédit.
+    // revue de code P1, A5) : une ligne au débit, K1 et CR au crédit. Story
+    // 37-3a : la ligne au débit est **en devise**, aux décimaux les plus larges
+    // (montant à 4 décimales, cours à 10), sur un compte USD (elle était sur K2,
+    // que le pire cas n'exige pas).
     for i in 0..31 {
         journal_entries::create(
             pool,
@@ -826,22 +853,31 @@ async fn fixture_tailles(pool: &MySqlPool, s: &Societe, large: bool) {
                 project_id: None,
                 lines: vec![
                     NewJournalEntryLine {
-                        account_id: p.compte_k2,
+                        account_id: compte_usd,
                         debit: Decimal::new(1234, 2),
                         credit: Decimal::ZERO,
                         project_id: None,
+                        foreign: Some(kesh_db::entities::ForeignAmount {
+                            declared_currency: None,
+                            amount: Decimal::new(12_345_678, 4),
+                            rate: Decimal::new(99_956_789, 10),
+                            source: Some(kesh_db::entities::RateProvenance::Manual),
+                            rate_derived: false,
+                        }),
                     },
                     NewJournalEntryLine {
                         account_id: p.compte_k1,
                         debit: Decimal::ZERO,
                         credit: Decimal::new(617, 2),
                         project_id: None,
+                        foreign: None,
                     },
                     NewJournalEntryLine {
                         account_id: p.compte_cr,
                         debit: Decimal::ZERO,
                         credit: Decimal::new(617, 2),
                         project_id: None,
+                        foreign: None,
                     },
                 ],
             },
@@ -1265,12 +1301,14 @@ async fn grand_livre_pagine_egal_a_la_lecture_entiere(pool: MySqlPool) {
                         debit: montant,
                         credit: Decimal::ZERO,
                         project_id: None,
+                        foreign: None,
                     },
                     NewJournalEntryLine {
                         account_id: p.compte_k1,
                         debit: Decimal::ZERO,
                         credit: montant,
                         project_id: None,
+                        foreign: None,
                     },
                 ],
             },
@@ -1512,12 +1550,14 @@ async fn bilan_montants_une_seule_forme(pool: MySqlPool) {
                     debit: dix,
                     credit: Decimal::ZERO,
                     project_id: None,
+                    foreign: None,
                 },
                 NewJournalEntryLine {
                     account_id: passif,
                     debit: Decimal::ZERO,
                     credit: dix,
                     project_id: None,
+                    foreign: None,
                 },
             ],
         },
@@ -1641,6 +1681,96 @@ async fn un_brouillon_lu_par_les_outils(pool: MySqlPool) {
         avant["numero"]["nonFiable"],
         json!(pieges::texte_seme('A', pieges::par_cle("ff_numero"))),
         "`numero` reste le numéro du fournisseur : {avant}"
+    );
+}
+
+/// Story 37-3a (AC-8) — `kesh_ecriture` et `kesh_ecritures` rendent la partie en
+/// devise d'une ligne : la devise **du compte**, le montant, le cours et la
+/// provenance ; sur une ligne CHF, les quatre champs sont présents à `null`.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn une_ligne_en_devise_dans_kesh_ecriture(pool: MySqlPool) {
+    let a = societe_piegee(&pool, "Société A 329", 'A').await;
+    let jeton = cle_de(&pool, &a, &LECTURE, SendValidation::Exempt).await;
+    let b = banc(&pool);
+    sqlx::query("UPDATE companies SET multi_currency_enabled = TRUE WHERE id = ?")
+        .bind(a.c)
+        .execute(&pool)
+        .await
+        .unwrap();
+    sqlx::query("UPDATE fiscal_years SET multi_currency = TRUE WHERE id = ?")
+        .bind(a.p.exercice_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let usd = sqlx::query(
+        "INSERT INTO accounts (company_id, number, name, account_type, currency) \
+         VALUES (?, '09911', 'Banque USD', 'Asset', 'USD')",
+    )
+    .bind(a.c)
+    .execute(&pool)
+    .await
+    .unwrap()
+    .last_insert_id() as i64;
+    let je = journal_entries::create(
+        &pool,
+        a.p.exercice_id,
+        kesh_db::entities::audit_log::Acteur::utilisateur(a.u),
+        NewJournalEntry {
+            company_id: a.c,
+            entry_date: common::jour::aujourd_hui_test(),
+            journal: Journal::OD,
+            description: "Encaissement USD".into(),
+            project_id: None,
+            lines: vec![
+                NewJournalEntryLine {
+                    account_id: usd,
+                    debit: Decimal::new(912, 2),
+                    credit: Decimal::ZERO,
+                    project_id: None,
+                    foreign: Some(kesh_db::entities::ForeignAmount {
+                        declared_currency: None,
+                        amount: Decimal::new(10, 0),
+                        rate: Decimal::new(912, 3),
+                        source: Some(kesh_db::entities::RateProvenance::Manual),
+                        rate_derived: false,
+                    }),
+                },
+                NewJournalEntryLine {
+                    account_id: a.p.compte_k2,
+                    debit: Decimal::ZERO,
+                    credit: Decimal::new(912, 2),
+                    project_id: None,
+                    foreign: None,
+                },
+            ],
+        },
+    )
+    .await
+    .unwrap();
+    let ecriture = structure(
+        &b.appeler(&jeton, "kesh_ecriture", json!({"id": je.entry.id}))
+            .await,
+        "kesh_ecriture",
+    );
+    let lignes = &ecriture["ecriture"]["lignes"];
+    assert_eq!(lignes[0]["devise"], "USD", "{ecriture}");
+    assert_eq!(lignes[0]["montantDevise"], "10.00", "{ecriture}");
+    assert_eq!(lignes[0]["cours"], "0.912", "{ecriture}");
+    assert_eq!(lignes[0]["sourceCours"], "manual", "{ecriture}");
+    for champ in ["devise", "montantDevise", "cours", "sourceCours"] {
+        assert!(
+            lignes[1].get(champ).is_some_and(Value::is_null),
+            "{champ} présent à null sur une ligne CHF : {ecriture}"
+        );
+    }
+    let liste = structure(
+        &b.appeler(&jeton, "kesh_ecritures", json!({"accountId": usd}))
+            .await,
+        "kesh_ecritures",
+    );
+    assert_eq!(
+        liste["ecritures"][0]["lignes"][0]["devise"], "USD",
+        "{liste}"
     );
 }
 

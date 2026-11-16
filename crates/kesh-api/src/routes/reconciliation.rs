@@ -740,11 +740,47 @@ fn counterparty_is_bank_ledger_error(field: &str) -> AppError {
     AppError::Validation(format!("{field} ne peut pas être le compte ledger banque"))
 }
 
+/// Story 37-3a (AC-5) — les refus du contrôle central des lignes en devise dans
+/// une acceptation par lot, sous la forme du § *Pattern batch* du `CLAUDE.md` :
+/// le **code canonique** et les `details` du refus HTTP
+/// ([`crate::errors::fx_db_refusal`], une seule table), jamais un repli
+/// `DATABASE_ERROR`. Couvre `ACCOUNT_REQUIRES_CURRENCY`,
+/// `FX_MULTIPLE_CURRENCIES` et `MULTI_CURRENCY_DISABLED` (`details.fiscalYearId`)
+/// — les seuls qu'un rapprochement, qui n'écrit qu'en CHF, puisse rencontrer —
+/// et, par prudence, les autres refus du contrôle central.
+///
+/// ⛔ **Un seul constructeur pour les quatre sites** (patron de
+/// [`period_locked_failed_proposal`]). `None` pour toute autre variante.
+fn fx_failed_proposal(bank_transaction_id: i64, err: &DbError) -> Option<FailedProposal> {
+    let (error_code, details) = match err {
+        DbError::MultiCurrencyDisabled { fiscal_year_id } => (
+            err.error_code(),
+            serde_json::json!({ "fiscalYearId": fiscal_year_id }),
+        ),
+        DbError::RateUnavailable { currency, month } => (
+            err.error_code(),
+            serde_json::json!({ "currency": currency, "month": month.format("%Y-%m-01").to_string() }),
+        ),
+        other => {
+            let (_, code, _, details) = crate::errors::fx_db_refusal(other)?;
+            (code, details)
+        }
+    };
+    Some(FailedProposal {
+        bank_transaction_id,
+        error_code: error_code.to_string(),
+        details: Some(details),
+    })
+}
+
 fn project_error_to_failed_proposal(
     bank_transaction_id: i64,
     project_id: Option<i64>,
     err: DbError,
 ) -> FailedProposal {
+    if let Some(fp) = fx_failed_proposal(bank_transaction_id, &err) {
+        return fp;
+    }
     let details = |extra: Option<&str>| {
         let mut obj = serde_json::Map::new();
         if let Some(pid) = project_id {
@@ -3173,6 +3209,10 @@ fn supplier_payment_error_to_failed_proposal(
             details: None,
         }
     };
+    // Story 37-3a (AC-5) — refus du contrôle central des lignes en devise.
+    if let Some(fp) = fx_failed_proposal(bank_transaction_id, &err) {
+        return fp;
+    }
     match &err {
         DbError::SettlementCounterpartyIsClaimAccount { .. } => {
             claim_account_failed_proposal(bank_transaction_id, err, Some(bank_account_id))
@@ -4329,6 +4369,11 @@ async fn accept_one_rule(
                     *fiscal_year_id,
                     fiscal_year_name,
                 ));
+            }
+            // Story 37-3a (AC-5) : les refus du contrôle central des lignes en
+            // devise, même constructeur que les trois autres voies.
+            if let Some(fp) = fx_failed_proposal(bank_transaction_id, &e) {
+                return Err(fp);
             }
             return Err(FailedProposal {
                 bank_transaction_id,
