@@ -223,6 +223,18 @@ export function readableAmount(raw: string, minDecimals: number): string {
 	}
 }
 
+/** Story 36-18a — PROVISOIRE (rouges d'abord) : aucun refus aujourd'hui. */
+export function firstLineUnitPriceProblem(
+	_lines: CreateSupplierInvoiceLineRequest[],
+): { index: number; problem: 'ambiguous' | 'unreadable' } | null {
+	return null;
+}
+
+/** Story 36-18a — PROVISOIRE (rouges d'abord) : la forme d'aujourd'hui. */
+export function readableUnambiguousAmount(raw: string, minDecimals: number): string {
+	return readableAmount(raw, minDecimals);
+}
+
 /**
  * Story v017-4b (AC-23) — une ligne lue du serveur, rendue au formulaire : quantité sans
  * zéros inutiles (`1.0000` → `1`), prix à deux décimales au moins (`100.2000` →

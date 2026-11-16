@@ -6,8 +6,13 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, fireEvent, cleanup, waitFor } from '@testing-library/svelte';
 
+// Story 36-18a (validation P2, V2-1) — le mock interpole, comme celui de
+// `SupplierInvoiceForm.test.ts` : sans quoi `{ $max }` resterait invisible (M15).
 vi.mock('$lib/shared/utils/i18n.svelte', () => ({
-	i18nMsg: (_k: string, fallback: string) => fallback,
+	i18nMsg: (_k: string, fallback: string, args?: Record<string, string | number>) =>
+		args
+			? fallback.replace(/\{\s*\$(\w+)\s*\}/g, (_, n) => String(args[n] ?? ''))
+			: fallback,
 }));
 
 import SettleInvoiceDialog from './SettleInvoiceDialog.svelte';
@@ -30,6 +35,11 @@ const banque = {
 
 const SCALE = 'Le montant ne peut avoir plus de deux décimales';
 const OVER = 'Le montant dépasse ce qui reste dû sur cette facture';
+const POSITIVE = 'Le montant doit être supérieur à zéro';
+const AMBIGU =
+	"Montant ambigu : un point ou une virgule suivis de trois chiffres peuvent séparer les milliers. Écrivez 1'250 pour mille deux cent cinquante, ou 1.25 pour un franc vingt-cinq.";
+const ILLISIBLE_2 =
+	"Montant illisible : chiffres, apostrophe des milliers (1'250), point ou virgule décimale, 2 décimales au plus.";
 
 afterEach(() => cleanup());
 
@@ -67,25 +77,52 @@ describe('SettleInvoiceDialog — le reste dû au centime', () => {
 		expect(await findByText(OVER)).toBeTruthy();
 	});
 
-	it('10.008 est refusé pour ses décimales, pas accepté comme partiel (mutation : contrôle d’échelle retiré)', async () => {
+	// Story 36-18a (C-36-18-5) — « 10.008 » et « 10.000 » sont désormais AMBIGUS (dix francs, ou
+	// dix mille ?), « 1e-3 » illisible ; le refus d'échelle se constate sur « 10.0081 », et la
+	// règle des zéros de fin (#476) sur « 10.0100 » et « 1250.0000 » (tests suivants).
+	it('10.0081 est refusé pour ses décimales, pas accepté comme partiel (mutation : contrôle d’échelle retiré)', async () => {
 		const { input, findByText, queryByText } = ouvrir('10.0050');
-		await saisir(input(), '10.008');
+		await saisir(input(), '10.0081');
 		expect(await findByText(SCALE)).toBeTruthy();
 		expect(queryByText(OVER)).toBeNull();
 	});
 
-	it('« 1e-3 » a trois décimales réelles (mutation : décimales comptées sur la saisie brute)', async () => {
-		const { input, findByText } = ouvrir('10.0050');
-		await saisir(input(), '1e-3');
-		expect(await findByText(SCALE)).toBeTruthy();
+	it('« 10.008 » est ambigu, et non un refus d’échelle', async () => {
+		const { input, findByText, queryByText } = ouvrir('10.0050');
+		await saisir(input(), '10.008');
+		expect(await findByText(AMBIGU)).toBeTruthy();
+		expect(queryByText(SCALE)).toBeNull();
 	});
 
-	it('« 10.000 » est un montant au centime (mutation : zéros de fin comptés)', async () => {
-		const { input, getByTestId, queryByText, onConfirm } = ouvrir('10.0050');
+	it('« 1e-3 » est illisible', async () => {
+		const { input, findByText } = ouvrir('10.0050');
+		await saisir(input(), '1e-3');
+		expect(await findByText(ILLISIBLE_2)).toBeTruthy();
+	});
+
+	it('« 10.000 » est ambigu : Confirmer sans effet', async () => {
+		const { input, getByTestId, findByText, onConfirm } = ouvrir('10.0050');
 		await saisir(input(), '10.000');
+		expect(await findByText(AMBIGU)).toBeTruthy();
+		await fireEvent.click(getByTestId('settle-confirm'));
+		expect(onConfirm).not.toHaveBeenCalled();
+	});
+
+	it('« 10.0100 » sur un reste dû de 10.0100 : zéros de fin non comptés, envoyé tel quel (#476, mutation M16)', async () => {
+		const { input, getByTestId, queryByText, onConfirm } = ouvrir('10.0100');
+		await saisir(input(), '10.0100');
+		expect(queryByText(SCALE)).toBeNull();
+		expect(queryByText(OVER)).toBeNull();
+		await fireEvent.click(getByTestId('settle-confirm'));
+		expect(onConfirm).toHaveBeenCalledWith(expect.objectContaining({ amount: '10.0100' }));
+	});
+
+	it('« 1250.0000 » sur un reste dû de 2000 : envoyé tel quel (#476, mutation M16)', async () => {
+		const { input, getByTestId, queryByText, onConfirm } = ouvrir('2000');
+		await saisir(input(), '1250.0000');
 		expect(queryByText(SCALE)).toBeNull();
 		await fireEvent.click(getByTestId('settle-confirm'));
-		expect(onConfirm).toHaveBeenCalledWith(expect.objectContaining({ amount: '10.000' }));
+		expect(onConfirm).toHaveBeenCalledWith(expect.objectContaining({ amount: '1250.0000' }));
 	});
 
 	it('10.00 sur un reste brut de 10.004 est accepté (arrondi au-dessous du brut)', async () => {
@@ -93,6 +130,81 @@ describe('SettleInvoiceDialog — le reste dû au centime', () => {
 		await waitFor(() => expect(input().value).toBe('10.00'));
 		expect(queryByText(OVER)).toBeNull();
 		expect(queryByText(SCALE)).toBeNull();
+	});
+});
+
+// Story 36-18a (#1174 ; D3, D8 ; AC5, AC6) — le montant d'un règlement se lit comme celui
+// d'une écriture : « 1.250 » refusé comme ambigu, « 1'250 » et « 1,25 » acceptés.
+describe('SettleInvoiceDialog — le montant « 1.250 » (Story 36-18a, #1174)', () => {
+	it('« 1.250 » : message ambigu, champ marqué et décrit par le bandeau, Confirmer sans effet (M13)', async () => {
+		const { input, getByTestId, findByText, onConfirm } = ouvrir('2000');
+		await saisir(input(), '1.250');
+		const bandeau = await findByText(AMBIGU);
+		expect(input().getAttribute('aria-invalid')).toBe('true');
+		expect(input().getAttribute('aria-describedby')).toBe(bandeau.id);
+		expect(bandeau.id).not.toBe('');
+		await fireEvent.click(getByTestId('settle-confirm'));
+		expect(onConfirm).not.toHaveBeenCalled();
+	});
+
+	it('« 1’250 » sur un reste dû de 2000 → amount 1250 (M14)', async () => {
+		const { input, getByTestId, queryByText, onConfirm } = ouvrir('2000');
+		await saisir(input(), "1'250");
+		expect(queryByText(POSITIVE)).toBeNull();
+		expect(input().getAttribute('aria-invalid')).not.toBe('true');
+		await fireEvent.click(getByTestId('settle-confirm'));
+		expect(onConfirm).toHaveBeenCalledWith(expect.objectContaining({ amount: '1250' }));
+	});
+
+	it('« 1,25 » → amount 1.25', async () => {
+		const { input, getByTestId, onConfirm } = ouvrir('2000');
+		await saisir(input(), '1,25');
+		await fireEvent.click(getByTestId('settle-confirm'));
+		expect(onConfirm).toHaveBeenCalledWith(expect.objectContaining({ amount: '1.25' }));
+	});
+
+	it('« 12’34 » : illisible, « 2 décimales au plus » (M15)', async () => {
+		const { input, findByText } = ouvrir('2000');
+		await saisir(input(), "12'34");
+		expect(await findByText(ILLISIBLE_2)).toBeTruthy();
+	});
+
+	it('« 10.01000 » (cinq décimales, accepté avant la story) : illisible (AC6)', async () => {
+		const { input, findByText } = ouvrir('2000');
+		await saisir(input(), '10.01000');
+		expect(await findByText(ILLISIBLE_2)).toBeTruthy();
+	});
+
+	it('« 0 » et le vide : « supérieur à zéro »', async () => {
+		const { input, findByText } = ouvrir('2000');
+		await saisir(input(), '0');
+		expect(await findByText(POSITIVE)).toBeTruthy();
+		await saisir(input(), '   ');
+		expect(await findByText(POSITIVE)).toBeTruthy();
+	});
+
+	it('le pré-rempli (10.01 pour 10.0050) : aucun message', async () => {
+		const { input, queryByText } = ouvrir('10.0050');
+		await waitFor(() => expect(input().value).toBe('10.01'));
+		expect(queryByText(AMBIGU)).toBeNull();
+		expect(input().getAttribute('aria-invalid')).not.toBe('true');
+	});
+
+	it.each([
+		['1.25', '1.25'],
+		['1250', '1250'],
+		["1'250.50", '1250.50'],
+		['1’250', '1250'],
+		['1,25', '1.25'],
+		['0.50', '0.50'],
+		['  1250  ', '1250'],
+	])('« %s » : aucun message, envoyé %s (AC6, M17)', async (raw, sent) => {
+		const { input, getByTestId, onConfirm, queryByText } = ouvrir('2000');
+		await saisir(input(), raw);
+		expect(queryByText(AMBIGU)).toBeNull();
+		expect(queryByText(ILLISIBLE_2)).toBeNull();
+		await fireEvent.click(getByTestId('settle-confirm'));
+		expect(onConfirm).toHaveBeenCalledWith(expect.objectContaining({ amount: sent }));
 	});
 });
 

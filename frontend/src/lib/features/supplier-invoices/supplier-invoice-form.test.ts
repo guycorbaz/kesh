@@ -19,13 +19,17 @@ import {
 	dueBeforeInvoiceDate,
 	emptyLine,
 	firstLineNotInCentimes,
+	firstLineUnitPriceProblem,
 	formatLiveTotal,
 	formLineFromResponse,
 	lineNotInCentimes,
+	linesForServer,
 	linesInvalid,
 	paymentFields,
+	readableUnambiguousAmount,
 	sumTtc,
 } from './supplier-invoice-form';
+import { readJournalAmount } from '$lib/features/journal-entries/balance';
 import type { CreateSupplierInvoiceLineRequest } from './supplier-invoices.types';
 
 function line(quantity: string, unitPrice: string): CreateSupplierInvoiceLineRequest {
@@ -45,7 +49,9 @@ describe('lineNotInCentimes — les cas de l’AC-1', () => {
 
 	it.each([
 		['3', '33.3333', '99.9999'],
-		['1.5', '3.333', '4.9995'],
+		// Story 36-18a (AC3) : « 3.333 » est ambigu (trois décimales, entier sans groupement)
+		// et la ligne n'est plus totalisée ; le même prix au millième s'écrit « 3.3330 ».
+		['1.5', '3.3330', '4.9995'],
 		['1', '0.005', '0.005'],
 	])('%s × %s n’est pas au centime (montant %s)', (q, p, total) => {
 		expect(lineNotInCentimes(line(q, p))).toBe(total);
@@ -190,6 +196,115 @@ describe('formLineFromResponse', () => {
 		expect(l.quantity).toBe('3');
 		expect(l.unitPrice).toBe('33.3333');
 		expect(l.vatRate).toBe('0');
+	});
+});
+
+// Story 36-18a (#1159, #1172 ; D2, D6, D7 ; AC1, AC3, AC4, AC6) — le prix unitaire et le
+// montant attendu se lisent comme le montant d'une écriture ; un montant du serveur ne se
+// rouvre jamais ambigu.
+describe('Story 36-18a — readableUnambiguousAmount (D2, mutation M2)', () => {
+	it.each([
+		['1.2340', '1.2340'],
+		['12.3450', '12.3450'],
+		['1.2500', '1.25'],
+		['1250.0000', '1250.00'],
+		['33.3333', '33.3333'],
+		['100.2000', '100.20'],
+		['0.1250', '0.125'],
+		['1000.1230', '1000.123'],
+	])('%s → %s', (raw, shown) => {
+		const s = readableUnambiguousAmount(raw, 2);
+		expect(s).toBe(shown);
+		expect(readJournalAmount(s).kind).toBe('clear');
+	});
+
+	it('une valeur illisible est rendue telle quelle', () => {
+		expect(readableUnambiguousAmount('abc', 2)).toBe('abc');
+	});
+});
+
+describe('Story 36-18a — le prix unitaire fournisseur (D6, AC3, AC6)', () => {
+	it('« 1.250 » rend la ligne invalide et n’est pas totalisé (mutation M7)', () => {
+		expect(linesInvalid([line('1', '1.250')])).toBe(true);
+		expect(sumTtc([line('1', '1.250'), line('1', '10')]).toFixed()).toBe('10');
+		expect(lineNotInCentimes(line('1', '1.250'))).toBeNull();
+	});
+
+	it('« 12’34 » est illisible : ligne invalide', () => {
+		expect(linesInvalid([line('1', "12'34")])).toBe(true);
+	});
+
+	it('« 1’250 », quantité 2 → unitPrice 1250, quantity 2 (mutation M8)', () => {
+		const [l] = linesForServer([line('2', "1'250")]);
+		expect(l.unitPrice).toBe('1250');
+		expect(l.quantity).toBe('2');
+		expect(sumTtc([line('2', "1'250")]).toFixed()).toBe('2500');
+	});
+
+	it('la quantité « 1.250 » reste acceptée (hors de la règle, C-e360-6)', () => {
+		expect(linesInvalid([line('1.250', '10')])).toBe(false);
+		expect(linesForServer([line('1.250', '10')])[0].quantity).toBe('1.250');
+	});
+
+	it.each([
+		['1.25', '1.25'],
+		['1250', '1250'],
+		["1'250.50", '1250.50'],
+		['1’250', '1250'],
+		['1,25', '1.25'],
+		['0.50', '0.50'],
+		['  1250  ', '1250'],
+	])('« %s » : ligne valide, prix envoyé %s (AC6)', (raw, sent) => {
+		expect(linesInvalid([line('1', raw)])).toBe(false);
+		expect(linesForServer([line('1', raw)])[0].unitPrice).toBe(sent);
+	});
+
+	it('la première ligne au prix ambigu ou illisible est nommée (mutation M9)', () => {
+		expect(firstLineUnitPriceProblem([line('1', '10'), line('1', '1.250')])).toEqual({
+			index: 1,
+			problem: 'ambiguous',
+		});
+		expect(firstLineUnitPriceProblem([line('1', "12'34"), line('1', '1.250')])).toEqual({
+			index: 0,
+			problem: 'unreadable',
+		});
+		expect(firstLineUnitPriceProblem([line('1', ''), line('1', '10')])).toBeNull();
+	});
+
+	it('une ligne rouverte au prix 1.2340 se montre 1.2340, lisible, et repart 1.2340 (mutation M10)', () => {
+		const l = formLineFromResponse(
+			{
+				position: 0,
+				description: 'x',
+				quantity: '1.0000',
+				unitPrice: '1.2340',
+				vatRate: '0.00',
+				lineTotal: '1.23',
+				expenseAccountId: 40,
+			},
+			[],
+		);
+		expect(l.unitPrice).toBe('1.2340');
+		expect(linesInvalid([l])).toBe(false);
+		expect(linesForServer([l])[0].unitPrice).toBe('1.2340');
+	});
+});
+
+describe('Story 36-18a — le montant attendu, contrat de paymentFields (D7, V1-4, mutation M18)', () => {
+	const expected = (v: string) =>
+		paymentFields({ iban: '', reference: '', expectedAmount: v }).expectedPaymentAmount;
+	it('saisie claire → la charge', () => {
+		expect(expected("1'250")).toBe('1250');
+		expect(expected('1,25')).toBe('1.25');
+		expect(expected('  1250  ')).toBe('1250');
+		expect(expected('1.2340')).toBe('1.2340');
+	});
+	it('vide → null', () => {
+		expect(expected('')).toBeNull();
+	});
+	it('ambiguë ou illisible → null, jamais la saisie brute', () => {
+		expect(expected('1.250')).toBeNull();
+		expect(expected("12'34")).toBeNull();
 	});
 });
 

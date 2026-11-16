@@ -904,3 +904,140 @@ describe('AC 6 — le mode « compléter »', () => {
 		expect(locked.textContent).toContain('ci-dessous');
 	});
 });
+
+// Story 36-18a (#1050 ; D3, D5 ; AC2, AC6) — un solde de départ se lit comme le montant
+// d'une écriture : « 1.250 » est ambigu, plus lu 1,25 franc en silence.
+describe('Story 36-18a — les soldes de départ « 1.250 » (#1050)', () => {
+	const AMBIGU =
+		"Montant ambigu : un point ou une virgule suivis de trois chiffres peuvent séparer les milliers. Écrivez 1'250 pour mille deux cent cinquante, ou 1.25 pour un franc vingt-cinq.";
+	const ILLISIBLE_4 =
+		"Montant illisible : chiffres, apostrophe des milliers (1'250), point ou virgule décimale, 4 décimales au plus.";
+	async function renderReadyGrid() {
+		getStatusMock.mockResolvedValue(readyStatus());
+		render(Page);
+		await screen.findByTestId('opening-balances-grid');
+	}
+	const generate = () => screen.getByTestId('opening-balances-generate') as HTMLButtonElement;
+
+	it('« 1.250 » au débit de l’actif, « 1.25 » au report (équilibré sous l’ancienne lecture) : message, Générer désactivé, aucun appel (M3, M4, M5)', async () => {
+		generateMock.mockResolvedValue({ id: 1 });
+		await renderReadyGrid();
+		await type('opening-balances-debit-1000', '1.250');
+		await type('opening-balances-credit-2970', '1.25');
+		const msg = await screen.findByTestId('opening-balances-amount-ambiguous');
+		expect(msg.textContent?.trim()).toBe(AMBIGU);
+		expect(generate().disabled).toBe(true);
+		await fireEvent.click(generate());
+		expect(generateMock).not.toHaveBeenCalled();
+		// Le message est nommé par les deux champs de la ligne (V1-6).
+		expect(msg.id).not.toBe('');
+		expect(screen.getByTestId('opening-balances-debit-1000').getAttribute('aria-describedby')).toBe(msg.id);
+		expect(screen.getByTestId('opening-balances-credit-1000').getAttribute('aria-describedby')).toBe(msg.id);
+		expect(screen.getByTestId('opening-balances-debit-1000').getAttribute('aria-invalid')).toBe('true');
+	});
+
+	it('« 1’250 » au débit et au crédit du report → Générer envoie debit 1250', async () => {
+		generateMock.mockResolvedValue({ id: 1 });
+		await renderReadyGrid();
+		await type('opening-balances-debit-1000', "1'250");
+		await type('opening-balances-credit-2970', '1’250');
+		await waitFor(() => expect(generate().disabled).toBe(false));
+		expect(screen.queryByTestId('opening-balances-amount-ambiguous')).toBeNull();
+		await fireEvent.click(generate());
+		await waitFor(() =>
+			expect(generateMock).toHaveBeenCalledWith({
+				lines: [
+					{ accountId: 1, debit: '1250', credit: '0' },
+					{ accountId: 2, debit: '0', credit: '1250' },
+				],
+			})
+		);
+	});
+
+	it('« 12’50 » : message illisible, quatre décimales au plus', async () => {
+		await renderReadyGrid();
+		await type('opening-balances-debit-1000', "12'50");
+		expect((await screen.findByTestId('opening-balances-amount-unreadable')).textContent?.trim()).toBe(
+			ILLISIBLE_4
+		);
+	});
+
+	it('totaux : 1250 pour « 1’250 », 0 pour « 1.250 » (M6)', async () => {
+		await renderReadyGrid();
+		await type('opening-balances-debit-1000', "1'250");
+		expect(screen.getByTestId('opening-balances-total-assets').textContent).toBe('1’250.00');
+		expect(screen.getByTestId('opening-balances-total-debit').textContent).toBe('1’250.00');
+		await type('opening-balances-debit-1000', '1.250');
+		expect(screen.getByTestId('opening-balances-total-assets').textContent).toBe('0.00');
+		expect(screen.getByTestId('opening-balances-total-debit').textContent).toBe('0.00');
+	});
+
+	it.each([
+		['1.25', '1.25'],
+		['1250', '1250'],
+		["1'250.50", '1250.50'],
+		['1’250', '1250'],
+		['1,25', '1.25'],
+		['0.50', '0.50'],
+	])('« %s » : aucun message, envoyé %s (AC6)', async (raw, sent) => {
+		generateMock.mockResolvedValue({ id: 1 });
+		await renderReadyGrid();
+		await type('opening-balances-debit-1000', raw);
+		await type('opening-balances-credit-2970', raw);
+		await waitFor(() => expect(generate().disabled).toBe(false));
+		expect(screen.queryByTestId('opening-balances-amount-ambiguous')).toBeNull();
+		expect(screen.queryByTestId('opening-balances-amount-unreadable')).toBeNull();
+		await fireEvent.click(generate());
+		await waitFor(() =>
+			expect(generateMock).toHaveBeenCalledWith({
+				lines: [
+					{ accountId: 1, debit: sent, credit: '0' },
+					{ accountId: 2, debit: '0', credit: sent },
+				],
+			})
+		);
+	});
+
+	it('une saisie bordée de blancs reste refusée, comme aujourd’hui (D4 : les soldes ne rognent pas)', async () => {
+		await renderReadyGrid();
+		await type('opening-balances-debit-1000', ' 1250 ');
+		await type('opening-balances-credit-2970', '1250');
+		expect(await screen.findByTestId('opening-balances-amount-unreadable')).toBeTruthy();
+		expect(generate().disabled).toBe(true);
+	});
+
+	it('mode Compléter : « 1.250 » au débit d’un actif → message, aucun appel', async () => {
+		vi.spyOn(window, 'confirm').mockReturnValue(true);
+		completeMock.mockResolvedValue({ id: 9 });
+		getStatusMock.mockResolvedValue(completableStatus());
+		render(Page);
+		await screen.findByTestId('opening-balances-complete');
+		await type('opening-balances-complete-debit-1100', '1.250');
+		const msg = await screen.findByTestId('opening-balances-amount-ambiguous');
+		expect(msg.textContent?.trim()).toBe(AMBIGU);
+		expect(
+			screen.getByTestId('opening-balances-complete-debit-1100').getAttribute('aria-describedby')
+		).toBe(msg.id);
+		const btn = screen.getByTestId('opening-balances-complete-submit') as HTMLButtonElement;
+		expect(btn.disabled).toBe(true);
+		await fireEvent.click(btn);
+		expect(completeMock).not.toHaveBeenCalled();
+	});
+
+	it('mode Compléter : « 1’250 » → debit 1250', async () => {
+		vi.spyOn(window, 'confirm').mockReturnValue(true);
+		completeMock.mockResolvedValue({ id: 9 });
+		getStatusMock.mockResolvedValue(completableStatus());
+		render(Page);
+		await screen.findByTestId('opening-balances-complete');
+		await type('opening-balances-complete-debit-1100', "1'250");
+		const btn = screen.getByTestId('opening-balances-complete-submit') as HTMLButtonElement;
+		await waitFor(() => expect(btn.disabled).toBe(false));
+		await fireEvent.click(btn);
+		await waitFor(() =>
+			expect(completeMock).toHaveBeenCalledWith({
+				lines: [{ accountId: 7, debit: '1250', credit: '0' }],
+			})
+		);
+	});
+});

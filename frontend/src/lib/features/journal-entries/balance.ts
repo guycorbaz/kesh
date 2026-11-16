@@ -160,6 +160,16 @@ export const journalAmountReader: AmountReader = (raw) => {
 	return r.kind === 'clear' ? r.value : null;
 };
 
+/** Story 36-18a — PROVISOIRE (rouges d'abord) : la lecture d'aujourd'hui. */
+export function amountEntryPayload(raw: string): string | null {
+	return raw !== '' && isValidAmount(raw) ? raw : null;
+}
+
+/** Story 36-18a — PROVISOIRE (rouges d'abord) : la lecture d'aujourd'hui. */
+export function amountEntryProblem(raw: string): 'ambiguous' | 'unreadable' | null {
+	return isValidAmount(raw) ? null : 'unreadable';
+}
+
 export interface BalanceResult {
 	totalDebit: Big;
 	totalCredit: Big;

@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import Big from 'big.js';
 import {
+	amountEntryPayload,
+	amountEntryProblem,
 	classifyLine,
 	computeBalance,
 	defaultAmountReader,
@@ -332,5 +334,41 @@ describe('lineAmountProblem (Story 36-3, D4)', () => {
 		expect(lineAmountProblem("1'234,50", '')).toBeNull();
 		expect(lineAmountProblem('', '')).toBeNull();
 		expect(lineAmountProblem('1.2340', '')).toBeNull();
+	});
+});
+
+// Story 36-18a (#1050, #1159, #1172, #1174 ; D1, AC1) — les aides communes aux écrans qui
+// écrivent un montant. Mutation M1 : `amountEntryPayload` rend `payload` pour `ambiguous`.
+describe('amountEntryPayload et amountEntryProblem (Story 36-18a, D1)', () => {
+	const clairs: [string, string][] = [
+		["1'250", '1250'],
+		['1’250.50', '1250.50'],
+		['1,25', '1.25'],
+		['1250', '1250'],
+		['0.500', '0.500'],
+		['1234.567', '1234.567'],
+		['1.2340', '1.2340']
+	];
+	it.each(clairs)('« %s » → charge %s, sans problème', (raw, payload) => {
+		expect(amountEntryPayload(raw)).toBe(payload);
+		expect(amountEntryProblem(raw)).toBeNull();
+	});
+
+	it.each(['1.250', '12,500', '001.250'])('« %s » est ambigu : aucune charge', (raw) => {
+		expect(amountEntryPayload(raw)).toBeNull();
+		expect(amountEntryProblem(raw)).toBe('ambiguous');
+	});
+
+	it.each(["12'50", '-5', '1e3', '.5', '5.', '10.01000', ' 1250'])(
+		'« %s » est illisible : aucune charge',
+		(raw) => {
+			expect(amountEntryPayload(raw)).toBeNull();
+			expect(amountEntryProblem(raw)).toBe('unreadable');
+		}
+	);
+
+	it('le vide : aucune charge, aucun message (un prix effacé ne part pas à zéro)', () => {
+		expect(amountEntryPayload('')).toBeNull();
+		expect(amountEntryProblem('')).toBeNull();
 	});
 });

@@ -56,6 +56,19 @@ describe('computeOpeningTotals', () => {
 		const t = computeOpeningTotals([{ account: ASSET, debit: 'abc', credit: '' }]);
 		expect(t.assets.toString()).toBe('0');
 	});
+
+	// Story 36-18a (#1050, D5, mutation M6) — la lecture du journal.
+	it('« 1’250 » vaut 1250, « 1.250 » (ambigu) ne compte pas', () => {
+		expect(computeOpeningTotals([{ account: ASSET, debit: "1'250", credit: '' }]).assets.toString()).toBe(
+			'1250',
+		);
+		expect(computeOpeningTotals([{ account: ASSET, debit: '1.250', credit: '' }]).assets.toString()).toBe(
+			'0',
+		);
+		expect(computeOpeningTotals([{ account: LIAB, debit: '', credit: '1,25' }]).liabilities.toString()).toBe(
+			'1.25',
+		);
+	});
 });
 
 describe('retainedEarningsWarning', () => {
@@ -81,6 +94,11 @@ describe('retainedEarningsWarning', () => {
 });
 
 describe('complementCounterpart', () => {
+	it('Story 36-18a : « 1.250 » ne compte pas, « 1’250 » vaut 1250', () => {
+		expect(complementCounterpart([{ debit: '1.250', credit: '' }]).side).toBe('none');
+		expect(complementCounterpart([{ debit: "1'250", credit: '' }]).amount.toString()).toBe('1250');
+	});
+
 	it('sens et montant', () => {
 		expect(complementCounterpart([{ debit: '10', credit: '' }])).toMatchObject({ side: 'credit' });
 		const d = complementCounterpart([{ debit: '', credit: '10.5' }]);
