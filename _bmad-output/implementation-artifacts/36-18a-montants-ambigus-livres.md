@@ -554,6 +554,25 @@ Passe P2 ciblée (Sonnet, `kesh-gate-logs/e36-18/review-p2-R.md`) : 0/0/0/4. Pr�
   propre). **Non lancés** : `gate-ci` et E2E complet, à la clôture ; PDF à l'intégration.
 - Prompt de la passe P3 ciblée, sur le seul `56cc62386` : `36-18a-montants-ambigus-livres-review-prompt-p3.md`.
 
+### Remédiation de la revue P3 (2026-11-16)
+
+Passe P3 ciblée (Haiku, `kesh-gate-logs/e36-18/review-p3-R.md`) : 0/0/0/2. Prémisses relues au code.
+
+- **R1** — confirmé, régression de `56cc62386` : le refus « Une ligne n'est pas au centime » restait posé dans `formError`
+  (`SupplierInvoiceForm.svelte`, garde de `submit`), que la saisie du prix n'efface plus ; corriger le prix levait le
+  marqueur vivant de la ligne mais laissait le bandeau. Le refus est posé dans `amountError` ; le commentaire
+  d'`amountError`, qui le disait « sans rapport », est corrigé. Test : envoi à `0.005`, saisie de `10.00`, bandeau et marqueur
+  absents (M30, tuée). La saisie de la quantité, qui lève aussi ce refus, ne l'efface pas — comme avant la story.
+- **R2** — **non corrigé**, sur décision de l'orchestrateur (la boucle doit converger) : un seul `amountError` pour le montant
+  attendu et le prix de chaque ligne ; issue demandée (P4).
+- **Commit** : `c123e0f66` — **dernier commit de code**.
+- **Gates**, à `c123e0f66` : `scripts/test-fast.sh --ci`, voie 2, bases remises à neuf, arbre propre : **5510 exécutés,
+  5510 passés, 13 ignorés** (`rem3-test-fast.log`) ; `npm run check` **0 erreur, 29 avertissements** (sortie entière),
+  Vitest complet **246 fichiers, 3948 tests, tous verts**, `npm run build` vert (`rem3-front.log`) ; spec
+  `montants-ambigus.spec.ts` **4/4** (run r6, `rem3-e2e-spec.log`). Seul fichier non commité pendant ces gates : le prompt
+  P4 (lu par aucun d'eux). **Non lancés** : `gate-ci` et E2E complet, à la clôture ; PDF à l'intégration.
+- Prompt de la passe P4 ciblée, sur le seul `c123e0f66` : `36-18a-montants-ambigus-livres-review-prompt-p4.md`.
+
 ### File List
 
 - `frontend/src/lib/features/journal-entries/balance.ts` — D1, D5 (aides, retrait du lecteur par défaut)
@@ -603,6 +622,9 @@ Passe P2 ciblée (Sonnet, `kesh-gate-logs/e36-18/review-p2-R.md`) : 0/0/0/4. Pr�
   V2-4 `imported-supplier-invoices.api.ts:63` `` apiClient.post(`/api/v1/imported-supplier-invoices/${id}/complete`, req) ``
   (AC7) ; V2-5 `balance.ts:181` `read: AmountReader = defaultAmountReader` (D5, AC10) ; V2-6 registre, C-36-18-11 ; V2-7
   `supplier-invoice-form.ts:281` `// illisible part telle quelle et le serveur la refuse (400).` (D7) ; V2-8 en-tête.
+- 2026-11-16 — **Remédiation de la passe P3 ciblée** (Opus 5.5) : P3 (Haiku) 0/0/0/2 ; R1 (régression de `56cc62386`)
+  corrigé dans la story, R2 en issue ; M30 tuée ; `test-fast --ci` 5510/5510, Vitest 3948/3948, `check`, `build`, spec E2E
+  4/4, à `c123e0f66`. Statut inchangé : `review`. Prompt P4 ciblée : `36-18a-montants-ambigus-livres-review-prompt-p4.md`.
 - 2026-11-16 — **Remédiation de la passe P2 ciblée** (Opus 5.5) : P2 (Sonnet) 0/0/0/4 ; R2 et R3 corrigés dans la story
   (règle « tarir la source »), R1 annoté, R4 établi ; M26 à M29 tuées ; `test-fast --ci` 5510/5510, Vitest 3947/3947,
   `check`, `build`, spec E2E 4/4. Statut inchangé : `review`. Prompt de la passe P3 ciblée :
