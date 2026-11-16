@@ -33,6 +33,8 @@
 	import { pdfErrorMessage } from '$lib/shared/utils/pdf-error';
 	import { isSettlementOutcomeUnknown } from '$lib/shared/utils/unknown-outcome';
 	import { fetchAccounts } from '$lib/features/accounts/accounts.api';
+	// fx-filtre-comptes : exempté — libellés des lignes ; les comptes du règlement
+	// sont filtrés à l'entrée de `SettleInvoiceDialog`.
 	import type { AccountResponse } from '$lib/features/accounts/accounts.types';
 	import type { InvoiceSettingsResponse } from '$lib/features/invoices/invoices.types';
 	import { invoiceRevenueAccountLabel } from '$lib/features/accounts/account-label';

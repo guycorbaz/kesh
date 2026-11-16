@@ -19,6 +19,8 @@
 	import { i18nMsg } from '$lib/shared/utils/i18n.svelte';
 	import { withCurrentAccount } from './account-options';
 	import type { AccountResponse } from './accounts.types';
+	// fx-filtre-comptes : exempté — propose les comptes de différence de change par
+	// `fxDifferenceAccountOptions`, qui ne garde que des comptes en CHF (37-1).
 	import {
 		fxAccountsFor,
 		fxDifferenceAccountOptions,

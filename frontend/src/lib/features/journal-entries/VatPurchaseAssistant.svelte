@@ -2,13 +2,28 @@
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
 	import * as Select from '$lib/components/ui/select';
+	import { untrack } from 'svelte';
 	import { ChevronDown, ChevronRight } from '@lucide/svelte';
 	import { i18nMsg } from '$lib/features/onboarding/onboarding.svelte';
-	import type { AccountResponse } from '$lib/features/accounts/accounts.types';
+	import { accountCurrency, type AccountResponse } from '$lib/features/accounts/accounts.types';
 	import { getVatRates } from '$lib/features/vat-rates/vat-rates.store.svelte';
 	import type { VatRateResponse } from '$lib/features/vat-rates/vat-rates.types';
 	import type { LineDraft } from './form-helpers';
-	import { htAmountProblem, purchaseVatEntry, readHtAmount } from './vat-purchase';
+	import {
+		foreignPurchaseVatEntry,
+		htAmountProblem,
+		purchaseVatEntry,
+		readHtAmount
+	} from './vat-purchase';
+	import {
+		accountsForCurrencies,
+		applyLookup,
+		monthOf,
+		newForeign,
+		type LineForeign
+	} from './fx-lines';
+	import { readRate } from './fx';
+	import type { LookupResult } from './rate-lookup';
 	import AccountAutocomplete from './AccountAutocomplete.svelte';
 
 	interface Props {
@@ -18,9 +33,29 @@
 		recoverableAccountId: number | null;
 		/** Appelé à l'insertion : lignes générées + libellé suggéré. */
 		onApply: (result: { lines: LineDraft[]; description: string }) => void;
+		/**
+		 * Story 37-3b (S5) — société multi-devises : la charge ou la contrepartie
+		 * peut être un compte en devise ; l'assistant passe alors en devise.
+		 */
+		multiCurrency?: boolean;
+		/** Story 37-3b (S5) — la date de l'écriture (mois du cours proposé). */
+		entryDate?: string;
+		/** Story 37-3b (S5) — le `lookup` mémoïsé du formulaire (aucun second cache). */
+		lookupRate?: (currency: string, date: string) => Promise<LookupResult>;
 	}
 
-	let { accounts, accountsLoadError, recoverableAccountId, onApply }: Props = $props();
+	let {
+		accounts,
+		accountsLoadError,
+		recoverableAccountId,
+		onApply,
+		multiCurrency = false,
+		entryDate = '',
+		lookupRate = undefined
+	}: Props = $props();
+	// fx-filtre-comptes : exempté — en multi-devises, ses deux sélecteurs offrent les
+	// comptes en devise (`excludeForeignCurrency = false`) et l'assistant restreint
+	// lui-même à CHF plus une devise (37-3b, S5) ; en mono-devise, le défaut filtre.
 
 	const uid = $props.id();
 
@@ -83,6 +118,74 @@
 		counterpartyAccountId !== null && counterpartyAccountId === recoverableAccountId
 	);
 
+	// --- Story 37-3b (S5) : l'assistant en devise -----------------------------
+	function currencyOf(id: number | null): string | null {
+		if (id === null) return null;
+		const a = accounts.find((x) => x.id === id);
+		return a ? accountCurrency(a) : null;
+	}
+	const chargeCurrency = $derived(multiCurrency ? currencyOf(chargeAccountId) : null);
+	const counterpartyCurrency = $derived(multiCurrency ? currencyOf(counterpartyAccountId) : null);
+	/** Charge et contrepartie dans deux devises différentes : refusé (R7). */
+	const twoCurrencies = $derived(
+		chargeCurrency !== null && counterpartyCurrency !== null && chargeCurrency !== counterpartyCurrency
+	);
+	/** La devise de l'assistant, `null` en CHF. */
+	const fxCurrency = $derived(twoCurrencies ? null : (chargeCurrency ?? counterpartyCurrency));
+	/** Le sélecteur de l'autre compte n'offre que CHF et la devise déjà choisie. */
+	const chargeOptions = $derived(
+		accountsForCurrencies(accounts, counterpartyCurrency ? new Set([counterpartyCurrency]) : null)
+	);
+	const counterpartyOptions = $derived(
+		accountsForCurrencies(accounts, chargeCurrency ? new Set([chargeCurrency]) : null)
+	);
+
+	/** Le cours de l'assistant (gabarit des lignes en devise), proposé par `lookup`. */
+	let fxTemplate = $state<LineForeign | null>(null);
+	let fxLookupToken = 0;
+	$effect(() => {
+		const currency = fxCurrency;
+		const date = entryDate;
+		if (currency === null) {
+			fxTemplate = null;
+			return;
+		}
+		untrack(() => {
+			if (fxTemplate === null || fxTemplate.currency !== currency) fxTemplate = newForeign(currency);
+		});
+		if (!lookupRate || !/^\d{4}-\d{2}-\d{2}$/.test(date)) return;
+		const token = ++fxLookupToken;
+		void lookupRate(currency, date).then((r) => {
+			if (token !== fxLookupToken || fxTemplate === null) return;
+			fxTemplate = applyLookup(fxTemplate, monthOf(date), r.outcome);
+		});
+	});
+	const fxRateValid = $derived(
+		fxTemplate === null || (() => {
+			const r = readRate(fxTemplate.rate);
+			return r !== null && r !== 'empty';
+		})()
+	);
+	/** Refus du calcul en devise (ligne CHF dérivée à 0.00), à l'insertion. */
+	let fxError = $state<string | null>(null);
+
+	/** Prévisualisation du refus « ligne CHF à zéro » (insertion désactivée). */
+	const fxPreview = $derived.by(() => {
+		if (fxTemplate === null || recoverableAccountId === null || ratePercent === null) return null;
+		if (chargeAccountId === null || counterpartyAccountId === null) return null;
+		return foreignPurchaseVatEntry(
+			{
+				chargeAccountId,
+				htAmount,
+				ratePercent,
+				counterpartyAccountId,
+				recoverableAccountId
+			},
+			{ template: fxTemplate, chargeIsForeign: chargeCurrency !== null, counterpartyIsForeign: counterpartyCurrency !== null }
+		);
+	});
+	const fxPreviewError = $derived(fxPreview !== null && 'error' in fxPreview ? fxPreview.error : null);
+
 	const canInsert = $derived(
 		!configMissing &&
 			!noRates &&
@@ -92,21 +195,39 @@
 			htValid &&
 			!sameChargeCounterparty &&
 			!chargeIsRecoverable &&
-			!counterpartyIsRecoverable
+			!counterpartyIsRecoverable &&
+			!twoCurrencies &&
+			fxRateValid &&
+			fxPreviewError === null
 	);
 
 	function insert() {
 		if (!canInsert || recoverableAccountId === null || ratePercent === null) return;
-		// Story 36-3 (D5) : lignes tirées de la charge normalisée (« 1'234.50 » →
-		// 1234.50), jamais du HT brut ; `null` si le HT n'est pas utilisable.
-		const entry = purchaseVatEntry({
+		fxError = null;
+		const params = {
 			chargeAccountId: chargeAccountId!,
 			htAmount,
 			ratePercent,
 			counterpartyAccountId: counterpartyAccountId!,
 			recoverableAccountId
-		});
+		};
+		// Story 36-3 (D5) : lignes tirées de la charge normalisée (« 1'234.50 » →
+		// 1234.50), jamais du HT brut ; `null` si le HT n'est pas utilisable.
+		// Story 37-3b (S5) : en devise, la TVA se calcule sur le montant en devise
+		// et chaque ligne CHF au même cours.
+		const entry =
+			fxTemplate !== null
+				? foreignPurchaseVatEntry(params, {
+						template: fxTemplate,
+						chargeIsForeign: chargeCurrency !== null,
+						counterpartyIsForeign: counterpartyCurrency !== null
+					})
+				: purchaseVatEntry(params);
 		if (entry === null) return;
+		if ('error' in entry) {
+			fxError = entry.error;
+			return;
+		}
 		const { lines, isExempt } = entry;
 		const description = isExempt
 			? i18nMsg('vat-purchase-description-exempt', 'Achat — sans TVA')
@@ -157,15 +278,22 @@
 						{i18nMsg('vat-purchase-charge-account', 'Compte de charge')}
 					</label>
 					<AccountAutocomplete
-						{accounts}
+						accounts={chargeOptions}
 						value={chargeAccountId}
 						loadError={accountsLoadError}
+						excludeForeignCurrency={!multiCurrency}
 						onSelect={(id) => (chargeAccountId = id)}
 					/>
 				</div>
 				<div>
 					<label for="{uid}-ht" class="mb-1 block text-sm font-medium">
-						{i18nMsg('vat-purchase-ht', 'Montant HT')}
+						{#if fxCurrency !== null}
+							{i18nMsg('journal-entries-vat-ht-currency', 'Montant HT ({ $currency })', {
+								currency: fxCurrency
+							})}
+						{:else}
+							{i18nMsg('vat-purchase-ht', 'Montant HT')}
+						{/if}
 					</label>
 					<Input
 						id="{uid}-ht"
@@ -225,13 +353,66 @@
 						{i18nMsg('vat-purchase-counterparty', 'Compte de contrepartie')}
 					</label>
 					<AccountAutocomplete
-						{accounts}
+						accounts={counterpartyOptions}
 						value={counterpartyAccountId}
 						loadError={accountsLoadError}
+						excludeForeignCurrency={!multiCurrency}
 						onSelect={(id) => (counterpartyAccountId = id)}
 					/>
 				</div>
+				{#if fxTemplate !== null}
+					<div>
+						<label for="{uid}-fx-rate" class="mb-1 block text-sm font-medium">
+							{i18nMsg('journal-entries-vat-fx-rate', 'Cours ({ $currency } → CHF)', {
+								currency: fxTemplate.currency
+							})}
+						</label>
+						<Input
+							id="{uid}-fx-rate"
+							type="text"
+							inputmode="decimal"
+							data-testid="vat-purchase-fx-rate"
+							value={fxTemplate.rate}
+							oninput={(e) => {
+								if (fxTemplate === null) return;
+								fxTemplate = {
+									...fxTemplate,
+									rate: (e.currentTarget as HTMLInputElement).value,
+									rateProposed: false,
+									touched: true
+								};
+							}}
+							class={fxRateValid ? 'tabular-nums text-right' : 'border-destructive'}
+							placeholder="0.0000"
+						/>
+						{#if !fxRateValid}
+							<p class="mt-1 text-xs text-destructive">
+								{i18nMsg(
+									'journal-entries-fx-rate-invalid',
+									'Cours invalide : strictement positif, dix décimales et 1 000 000 au plus.'
+								)}
+							</p>
+						{/if}
+					</div>
+				{/if}
 			</div>
+
+			{#if twoCurrencies}
+				<p class="text-xs text-destructive" data-testid="vat-purchase-two-currencies">
+					{i18nMsg(
+						'journal-entries-vat-two-currencies',
+						'La charge et la contrepartie sont dans deux devises différentes : une écriture ne porte qu’une devise étrangère.'
+					)}
+				</p>
+			{/if}
+			{#if fxPreviewError === 'FX_LINE_ROUNDS_TO_ZERO' || fxError === 'FX_LINE_ROUNDS_TO_ZERO'}
+				<p class="text-xs text-destructive" data-testid="vat-purchase-rounds-to-zero">
+					{i18nMsg(
+						'journal-entries-fx-rounds-to-zero',
+						'Le montant en CHF calculé s’arrondit à zéro.'
+					)}
+				</p>
+			{/if}
 
 			{#if sameChargeCounterparty}
 				<p class="text-xs text-destructive">

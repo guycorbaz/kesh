@@ -6,6 +6,8 @@
 	import { isApiError } from '$lib/shared/utils/api-client';
 	import { notifySuccess } from '$lib/shared/utils/notify';
 	import { fetchAccounts } from '$lib/features/accounts/accounts.api';
+	// fx-filtre-comptes : exempté — les soldes d'ouverture se saisissent aussi sur les
+	// comptes en devise (C-37-5, 37-3b AC-1).
 	import { accountRoleKey, type AccountResponse } from '$lib/features/accounts/accounts.types';
 	import {
 		completeOpeningBalances,

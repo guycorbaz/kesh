@@ -3,7 +3,7 @@
 // optionnelle), source unique de leur forme côté frontend ; même règle que
 // `bank_account_display_name` côté serveur (`kesh_db::entities::bank_account`).
 import Big from 'big.js';
-import type { AccountResponse } from '$lib/features/accounts/accounts.types';
+import { isForeignCurrencyAccount, type AccountResponse } from '$lib/features/accounts/accounts.types';
 import { admitsLedgerType } from './credit-card';
 import { isAmbiguousThousands } from '$lib/shared/utils/amount-ambiguity';
 // F17 Pass 1 code review : factoriser `shortIban` entre `+page.svelte`
@@ -191,7 +191,9 @@ export function linkableLedgerAccounts(
 				// Intégration de la 0.17.6 (C-e34a2-1, raccord 1) : la règle du type
 				// est `admitsLedgerType`, source unique avec l'écran de création.
 				admitsLedgerType(options.liabilityOnly ? 'credit_card' : 'bank', a.accountType) &&
-				!excludedIds.has(a.id),
+				!excludedIds.has(a.id) &&
+				// Story 37-3b (AC-4) : un compte lié ne porte jamais de devise (37-1).
+				!isForeignCurrencyAccount(a),
 		)
 		.sort((a, b) => a.number.localeCompare(b.number));
 }

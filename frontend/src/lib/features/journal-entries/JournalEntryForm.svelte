@@ -37,6 +37,36 @@
 	import AccountAutocomplete from './AccountAutocomplete.svelte';
 	import VatPurchaseAssistant from './VatPurchaseAssistant.svelte';
 	import AccountingTooltip from '$lib/shared/components/AccountingTooltip.svelte';
+	// Story 37-3b (AC-2) — lignes en devise.
+	import { untrack } from 'svelte';
+	import { SvelteSet } from 'svelte/reactivity';
+	import Big from 'big.js';
+	import { authState } from '$lib/app/stores/auth.svelte';
+	import { canEditRates } from '$lib/features/exchange-rates/exchange-rates-access';
+	import { fetchRates, lookupRate } from '$lib/features/exchange-rates/exchange-rates.api';
+	import type { CompanyJson } from '$lib/features/settings/settings.types';
+	import { readRate } from './fx';
+	import {
+		accountsForCurrencies,
+		adoptCompanyRate,
+		allowedCurrencies,
+		applyAccountChange,
+		applyChfEntry,
+		applyLookup,
+		companyRateHint,
+		foreignLineProblem,
+		formIndexOfServerLine,
+		lineCurrencies,
+		lineToPayload,
+		monthOf,
+		planDifferenceLine,
+		rateIndicator,
+		syncDerivedChf,
+		type CompanyRate
+	} from './fx-lines';
+	import { fxRefusalMessage, isFxRefusalCode, refusalLine } from './fx-refusals';
+	import { RateLookupCache, type LookupResult } from './rate-lookup';
+	import { debounce } from './debounce';
 
 	interface Props {
 		accounts: AccountResponse[];
@@ -71,6 +101,19 @@
 		 * ⛔ Remplace la modale de conflit de la 3.3, qui ne revient pas.
 		 */
 		onStale?: () => void;
+		/**
+		 * Story 37-3b (AC-2) — société multi-devises : les lignes sur un compte en
+		 * devise se saisissent en devise. Faux : formulaire strictement inchangé.
+		 */
+		multiCurrency?: boolean;
+		/**
+		 * Story 37-3b (AC-2, R8) — les comptes de différence de change **de la
+		 * société** (défaut) ; les comptes propres d'un compte en devise se lisent
+		 * sur son `AccountResponse`. `null` : inconnus (le bouton d'écart l'explique).
+		 */
+		companyFx?: Pick<CompanyJson, 'fxGainAccountId' | 'fxLossAccountId'> | null;
+		/** Story 37-3b — cache des cours injectable (tests) ; défaut : appels de l'API. */
+		rateLookup?: RateLookupCache;
 	}
 
 	let {
@@ -83,8 +126,14 @@
 		recoverableAccountId = null,
 		onSuccess,
 		onCancel,
-		onStale
+		onStale,
+		multiCurrency = false,
+		companyFx = null,
+		rateLookup = undefined
 	}: Props = $props();
+	// fx-filtre-comptes : exempté — le formulaire d'écriture saisit en devise : son
+	// sélecteur offre les comptes en devise (`excludeForeignCurrency={false}`), restreints
+	// à une devise par écriture (R7, `allowedCurrencies`).
 
 	const isEdit = $derived(initialEntry !== null);
 
@@ -140,8 +189,352 @@
 	 */
 	function lineAccountUnusable(accountId: number | null): boolean {
 		if (accountId === null) return false;
-		return isAccountUnusable(accounts.find((a) => a.id === accountId));
+		// Story 37-3b (AC-4) : un compte en devise n'est pas inutilisable ici.
+		return isAccountUnusable(
+			accounts.find((a) => a.id === accountId),
+			{ excludeForeignCurrency: false }
+		);
 	}
+
+	// =========================================================================
+	// Story 37-3b (AC-2) — lignes en devise
+	// =========================================================================
+
+	/** Date relue en édition (provenance relue gardée tant qu'elle ne change pas). */
+	/* svelte-ignore state_referenced_locally */
+	const initialDate = initialEntry?.entryDate ?? null;
+	const dateChanged = $derived(isEdit && entryDate !== initialDate);
+	/** Devises de l'écriture relue (R7 : plusieurs = ouverture, complément, état hérité). */
+	/* svelte-ignore state_referenced_locally */
+	const loadedCurrencies = new Set(
+		(initialEntry?.lines ?? []).flatMap((l) => (l.foreign ? [l.foreign.currency] : []))
+	);
+	/* svelte-ignore state_referenced_locally */
+	const cache =
+		rateLookup ??
+		new RateLookupCache({
+			lookup: lookupRate,
+			fetch: fetchRates,
+			canFetch: () => canEditRates(authState.currentUser?.role),
+			today: () => todayLocal()
+		});
+	/** `lookup` en cours, par `devise|mois` (le ↑ attend la fin de celui du mois). */
+	const pendingKeys = new SvelteSet<string>();
+	/** `devise|mois` sans cours lisible ni récupérable : saisie manuelle exigée. */
+	const manualRequired = new SvelteSet<string>();
+	/** Promesses en cours, que l'envoi attend. */
+	const inflight = new Set<Promise<void>>();
+
+	/** Une date complète dans les bornes du champ (aucun `lookup` sinon). */
+	function lookupDateValid(d: string): boolean {
+		if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) return false;
+		if (dateBounds.min && d < dateBounds.min) return false;
+		if (dateBounds.max && d > dateBounds.max) return false;
+		return true;
+	}
+
+	/** Applique le résultat d'un `lookup` aux lignes de la devise, si le mois est toujours celui de la date. */
+	function track(p: Promise<LookupResult>, currency: string, month: string) {
+		const key = `${currency}|${month}`;
+		pendingKeys.add(key);
+		const done: Promise<void> = p
+			.then((r) => {
+				if (monthOf(entryDate) !== month) return;
+				lines = lines.map((l) =>
+					l.foreign && l.foreign.currency === currency
+						? syncDerivedChf({ ...l, foreign: applyLookup(l.foreign, month, r.outcome) })
+						: l
+				);
+				if (r.note === 'manual-required') manualRequired.add(key);
+				else manualRequired.delete(key);
+			})
+			.finally(() => {
+				pendingKeys.delete(key);
+				inflight.delete(done);
+			});
+		inflight.add(done);
+	}
+
+	/** Lance (mémoïsé) le `lookup` du mois de la date pour les devises des lignes (ou une seule). */
+	function refreshRates(only?: string) {
+		if (!multiCurrency || !lookupDateValid(entryDate)) return;
+		const date = entryDate;
+		for (const currency of lineCurrencies(lines)) {
+			if (only !== undefined && currency !== only) continue;
+			track(cache.get(currency, date), currency, monthOf(date));
+		}
+	}
+
+	// Changement de date : `lookup` (débounce) pour toutes les lignes en devise ;
+	// le cours n'est remplacé que pour les lignes proposées. En édition, aucun
+	// `lookup` au montage.
+	const refreshOnDate = debounce(() => refreshRates(), 300);
+	/* svelte-ignore state_referenced_locally */
+	let lastDate = entryDate;
+	$effect(() => {
+		const d = entryDate;
+		if (d === untrack(() => lastDate)) return;
+		lastDate = d;
+		refreshOnDate();
+	});
+	$effect(() => () => refreshOnDate.cancel());
+
+	/** Le compte d'une ligne change (U2) : la devise suit le compte. */
+	function selectAccount(index: number, id: number | null) {
+		const account = id === null ? undefined : accounts.find((a) => a.id === id);
+		if (!multiCurrency) {
+			lines[index].accountId = id;
+			return;
+		}
+		const before = lines[index].foreign?.currency ?? null;
+		const next = applyAccountChange({ ...lines[index] }, account);
+		lines[index] = next;
+		clearLineRefusal(index);
+		if (next.foreign && next.foreign.currency !== before) refreshRates(next.foreign.currency);
+	}
+
+	/** Le montant en devise saisi dans la colonne `side`. */
+	function setForeignAmount(index: number, side: 'debit' | 'credit', value: string) {
+		const f = lines[index].foreign;
+		if (!f) return;
+		lines[index] = syncDerivedChf({
+			...lines[index],
+			foreign: { ...f, side, amount: value, chfEntry: null, chfError: null }
+		});
+		clearLineRefusal(index);
+	}
+
+	/** Le cours retapé : `manual` sauf s'il égale le cours `afc` du mois (lu par `lookup`). */
+	function setForeignRate(index: number, value: string) {
+		const f = lines[index].foreign;
+		if (!f) return;
+		lines[index] = syncDerivedChf({
+			...lines[index],
+			foreign: {
+				...f,
+				rate: value,
+				rateProposed: false,
+				touched: true,
+				forceManual: false,
+				chfEntry: null,
+				chfError: null
+			}
+		});
+		clearLineRefusal(index);
+		// En édition, `afcRate` est inconnu tant qu'aucun `lookup` n'a eu lieu :
+		// l'envoi attend celui-ci avant d'appliquer la règle d'égalité.
+		refreshRates(f.currency);
+	}
+
+	/** Le CHF saisi à la main : le cours s'en déduit (A32). */
+	function setForeignChf(index: number, value: string) {
+		const f = lines[index].foreign;
+		if (!f) return;
+		lines[index] = syncDerivedChf({ ...lines[index], foreign: applyChfEntry(f, value, entryDate) });
+		clearLineRefusal(index);
+		refreshRates(f.currency);
+	}
+
+	/** Le ↑ : la ligne reprend le cours de la société (la table des cours n'est pas touchée). */
+	function adoptRate(index: number, company: CompanyRate) {
+		const f = lines[index].foreign;
+		if (!f) return;
+		lines[index] = syncDerivedChf({ ...lines[index], foreign: adoptCompanyRate(f, company) });
+		clearLineRefusal(index);
+	}
+
+	/** La valeur affichée dans le champ CHF d'une ligne en devise. */
+	function chfFieldValue(index: number): string {
+		const l = lines[index];
+		const f = l.foreign;
+		if (!f) return '';
+		if (f.chfEntry !== null) return f.chfEntry;
+		return f.side === 'debit' ? l.debit : l.credit;
+	}
+
+	/** Le message traduit d'un problème de ligne en devise. */
+	function foreignProblemMessage(problem: string): string {
+		switch (problem) {
+			case 'FX_VALUE_OUT_OF_RANGE':
+				return i18nMsg(
+					'journal-entries-fx-value-out-of-range',
+					'Montant en devise, cours ou montant CHF hors des limites : montant positif à quatre décimales au plus, cours positif à dix décimales et 1 000 000 au plus.'
+				);
+			case 'FX_LINE_ROUNDS_TO_ZERO':
+				return i18nMsg(
+					'journal-entries-fx-rounds-to-zero',
+					'Le montant en CHF calculé s’arrondit à zéro.'
+				);
+			case 'FX_AMOUNT_MISMATCH':
+				return i18nMsg(
+					'journal-entries-fx-chf-no-rate',
+					'Aucun cours à dix décimales ne redonne ce montant CHF : corrigez le CHF ou saisissez le cours.'
+				);
+			case 'amount-unreadable':
+				return i18nMsg(
+					'journal-entries-fx-amount-unreadable',
+					'Montant en devise illisible ou ambigu : chiffres, apostrophe des milliers (1\'234), point ou virgule décimale, quatre décimales au plus.'
+				);
+			case 'rate-unreadable':
+				return i18nMsg(
+					'journal-entries-fx-rate-invalid',
+					'Cours invalide : strictement positif, dix décimales et 1 000 000 au plus.'
+				);
+			default:
+				return i18nMsg(
+					'journal-entries-fx-incomplete',
+					'Saisissez le montant en devise et le cours (ou le montant CHF).'
+				);
+		}
+	}
+
+	/** Le libellé de l'indicateur du cours d'une ligne. */
+	function indicatorLabel(index: number): string {
+		const f = lines[index].foreign;
+		if (!f) return '';
+		const ind = rateIndicator(f);
+		if (ind.kind === 'afc') return i18nMsg('journal-entries-fx-indicator-afc', 'AFC');
+		if (ind.kind === 'saisi') {
+			return ind.source === null
+				? i18nMsg('journal-entries-fx-indicator-saisi', 'cours saisi')
+				: i18nMsg('journal-entries-fx-indicator-saisi-source', 'cours saisi ({ $source })', {
+						source: ind.source
+					});
+		}
+		return i18nMsg('journal-entries-fx-indicator-manual', 'manuel');
+	}
+
+	/** La mention du cours de la société sous le champ, et son ↑ (D9, U1). */
+	function hintFor(index: number): { company: CompanyRate; label: string } | null {
+		const f = lines[index].foreign;
+		if (!f) return null;
+		const pending = pendingKeys.has(`${f.currency}|${monthOf(entryDate)}`);
+		const company = companyRateHint(f, entryDate, pending);
+		if (company === null) return null;
+		const rate = new Big(company.rate).toFixed();
+		const label =
+			company.source === 'afc'
+				? i18nMsg('journal-entries-fx-hint-afc', 'AFC : { $rate }', { rate })
+				: company.source === 'manual'
+					? i18nMsg('journal-entries-fx-hint-saisi', 'Cours saisi : { $rate }', { rate })
+					: i18nMsg('journal-entries-fx-hint-saisi-source', 'Cours saisi ({ $source }) : { $rate }', {
+							rate,
+							source: company.source
+						});
+		return { company, label };
+	}
+
+	/** Une devise par écriture (R7) : les comptes offerts au sélecteur de la ligne. */
+	function accountsForLine(index: number) {
+		if (!multiCurrency) return accounts;
+		return accountsForCurrencies(accounts, allowedCurrencies(lines, index, loadedCurrencies));
+	}
+
+	// --- Refus du serveur sur une ligne (FX) ------------------------------------
+	/** Message d'un refus du serveur, par indice de ligne du formulaire. */
+	let lineRefusals = $state<Record<number, string>>({});
+	/** `FX_RATE_NOT_AFC` : le cours attendu par ligne (`null` : la société a son cours). */
+	let rateNotAfc = $state<Record<number, string | null>>({});
+	/** `RATE_UNAVAILABLE` reçu : la devise et le mois à récupérer. */
+	let rateUnavailable = $state<{ currency: string; month: string } | null>(null);
+	/** Refus FX sans ligne (exercice mono-devise, deux devises…), affiché au pied. */
+	let formRefusal = $state<string | null>(null);
+
+	function clearLineRefusal(index: number) {
+		if (index in lineRefusals) {
+			const { [index]: _, ...rest } = lineRefusals;
+			void _;
+			lineRefusals = rest;
+		}
+		if (index in rateNotAfc) {
+			const { [index]: _, ...rest } = rateNotAfc;
+			void _;
+			rateNotAfc = rest;
+		}
+	}
+
+	/** « Reprendre le cours attendu » : la ligne passe au cours AFC (le CHF change). */
+	function takeExpectedRate(index: number) {
+		const f = lines[index].foreign;
+		const expected = rateNotAfc[index];
+		if (!f || !expected) return;
+		const month = monthOf(entryDate);
+		lines[index] = syncDerivedChf({
+			...lines[index],
+			foreign: {
+				...f,
+				rate: new Big(expected).toFixed(),
+				afcRate: expected,
+				afcMonth: month,
+				touched: true,
+				forceManual: false,
+				rateProposed: false,
+				chfEntry: null,
+				chfError: null
+			}
+		});
+		clearLineRefusal(index);
+	}
+
+	/** « Garder mon cours » : la ligne part `manual` à son cours, CHF inchangé. */
+	function keepMyRate(index: number) {
+		const f = lines[index].foreign;
+		if (!f) return;
+		lines[index] = { ...lines[index], foreign: { ...f, forceManual: true } };
+		clearLineRefusal(index);
+	}
+
+	/** `RATE_UNAVAILABLE` → « Récupérer le mois », puis le renvoi. */
+	async function fetchMissingMonth() {
+		const missing = rateUnavailable;
+		if (!missing) return;
+		rateUnavailable = null;
+		const month = monthOf(missing.month);
+		track(cache.refresh(missing.currency, month), missing.currency, month);
+		await Promise.all([...inflight]);
+		await handleSubmit();
+	}
+
+	/** `RATE_UNAVAILABLE` → les lignes de la devise passent `manual`. */
+	function keepManualForCurrency() {
+		const missing = rateUnavailable;
+		if (!missing) return;
+		rateUnavailable = null;
+		lines = lines.map((l) =>
+			l.foreign && l.foreign.currency === missing.currency
+				? { ...l, foreign: { ...l.foreign, forceManual: true } }
+				: l
+		);
+	}
+
+	// --- Ligne d'écart (R8) -------------------------------------------------------
+	const hasForeignLine = $derived(multiCurrency && lines.some((l) => l.foreign));
+	/** Ajoute **une ligne** à l'écriture en cours (aucune écriture créée, rien d'envoyé). */
+	function addDifferenceLine() {
+		const plan = differencePlan;
+		if (plan.kind !== 'line') return;
+		lines = [
+			...lines,
+			{
+				accountId: plan.accountId,
+				debit: plan.side === 'debit' ? plan.amount : '',
+				credit: plan.side === 'credit' ? plan.amount : '',
+				projectId: null
+			}
+		];
+	}
+	/** Un cours a changé depuis l'insertion de l'assistant TVA (lignes CHF dérivées gardées). */
+	const vatRateChanged = $derived.by(() => {
+		const derived = lines.filter((l) => l.chfFromForeign);
+		if (derived.length === 0) return false;
+		return lines.some((l) => {
+			if (!l.foreign) return false;
+			const r = readRate(l.foreign.rate);
+			return derived.some(
+				(d) => r === null || r === 'empty' || !r.eq(new Big(d.chfFromForeign!.rate))
+			);
+		});
+	});
 
 	let submitting = $state(false);
 
@@ -177,6 +570,12 @@
 	// apostrophe des milliers admise, « 1.234 » refusé comme ambigu. ⚠️ Pas de
 	// `lines.map(classifyLine)` : `map` passerait l'indice pour lecteur.
 	const balance = $derived(computeBalance(lines, journalAmountReader));
+	/** Story 37-3b (R8) — la ligne d'écart que le bouton ajouterait. */
+	const differencePlan = $derived(
+		hasForeignLine && !balance.hasInvalidAmount
+			? planDifferenceLine(lines, accounts, companyFx, balance.totalDebit, balance.totalCredit)
+			: ({ kind: 'none' } as const)
+	);
 	const lineStatuses = $derived(lines.map((l) => classifyLine(l, journalAmountReader)));
 	/** Story 36-3 (D4) : le message de chaque ligne, ambigu prioritaire. */
 	const lineProblems = $derived(lines.map((l) => lineAmountProblem(l.debit, l.credit)));
@@ -215,23 +614,40 @@
 
 	async function handleSubmit() {
 		if (!canSubmit) return;
+		// Story 37-3b (AC-2) : l'envoi attend les `lookup` en cours (provenance).
+		if (inflight.size > 0) {
+			submitting = true;
+			await Promise.all([...inflight]);
+			submitting = false;
+			if (!canSubmit) return;
+		}
+		lineRefusals = {};
+		rateNotAfc = {};
+		formRefusal = null;
 		// Story 36-3 (D4) : la charge de chaque montant, sans apostrophe ni virgule.
 		// `canSubmit` exclut déjà toute ligne ambiguë ou illisible ; un `null` ici
-		// n'envoie rien plutôt que de deviner.
-		const payloadLines = nonEmptyLines.map(({ line }) => ({
-			accountId: line.accountId!,
-			debit: journalAmountPayload(line.debit),
-			credit: journalAmountPayload(line.credit),
-			projectId: line.projectId
-		}));
-		if (payloadLines.some((l) => l.debit === null || l.credit === null)) return;
+		// n'envoie rien plutôt que de deviner. Story 37-3b : une ligne en devise
+		// porte `foreign` (devise du compte toujours envoyée).
+		const sentIndexes = nonEmptyLines.map(({ index }) => index);
+		const payloadLines = nonEmptyLines.map(({ line }) =>
+			multiCurrency || line.foreign
+				? lineToPayload(line, entryDate, dateChanged)
+				: (() => {
+						const debit = journalAmountPayload(line.debit);
+						const credit = journalAmountPayload(line.credit);
+						return debit === null || credit === null
+							? null
+							: { accountId: line.accountId!, debit, credit, projectId: line.projectId };
+					})()
+		);
+		if (payloadLines.some((l) => l === null)) return;
 		submitting = true;
 
 		const payload: CreateJournalEntryRequest = {
 			entryDate,
 			journal,
 			description: description.trim(),
-			lines: payloadLines.map((l) => ({ ...l, debit: l.debit!, credit: l.credit! }))
+			lines: payloadLines.map((l) => l!)
 		};
 
 		try {
@@ -266,6 +682,34 @@
 					}
 					toast.error(message);
 					onStale?.();
+					return;
+				}
+				// Story 37-3b (AC-2) — refus propres aux devises : message traduit sur la
+				// ligne fautive (rang du corps envoyé, sans les lignes vides), saisie
+				// conservée, formulaire ouvert.
+				if (isFxRefusalCode(code)) {
+					const message = fxRefusalMessage(code, err.details, err.message);
+					const index = formIndexOfServerLine(sentIndexes, refusalLine(err.details));
+					if (index !== null) {
+						lineRefusals = { ...lineRefusals, [index]: message };
+						if (code === 'FX_RATE_NOT_AFC') {
+							const expected = err.details?.expectedRate;
+							rateNotAfc = {
+								...rateNotAfc,
+								[index]: typeof expected === 'string' && expected !== '' ? expected : null
+							};
+						}
+					} else {
+						formRefusal = message;
+					}
+					if (code === 'RATE_UNAVAILABLE') {
+						const currency = err.details?.currency;
+						const month = err.details?.month;
+						if (typeof currency === 'string' && typeof month === 'string') {
+							rateUnavailable = { currency, month };
+						}
+					}
+					toast.error(message);
 					return;
 				}
 				// Story 3.7 AC #22 — fallback toast actionnable pour NO_FISCAL_YEAR / FISCAL_YEAR_CLOSED.
@@ -379,6 +823,9 @@
 			{accountsLoadError}
 			{recoverableAccountId}
 			onApply={handleAssistantApply}
+			{multiCurrency}
+			{entryDate}
+			lookupRate={(currency, date) => cache.get(currency, date)}
 		/>
 	{/if}
 
@@ -418,10 +865,11 @@
 				<tr class="border-b border-border/50">
 					<td class="py-2 pr-2">
 						<AccountAutocomplete
-							{accounts}
+							accounts={accountsForLine(i)}
 							value={line.accountId}
 							loadError={accountsLoadError}
-							onSelect={(id) => (lines[i].accountId = id)}
+							excludeForeignCurrency={false}
+							onSelect={(id) => selectAccount(i, id)}
 						/>
 						{#if lineAccountUnusable(line.accountId)}
 							<p class="mt-1 text-xs text-destructive" data-testid="line-account-unusable">
@@ -432,25 +880,53 @@
 							</p>
 						{/if}
 					</td>
-					<td class="py-2 pr-2">
-						<Input
-							type="text"
-							inputmode="decimal"
-							bind:value={lines[i].debit}
-							class={amountFlagged(line.debit) ? 'border-destructive' : 'tabular-nums text-right'}
-							placeholder="0.00"
-						/>
-					</td>
-					<td class="py-2 pr-2">
-						<Input
-							type="text"
-							inputmode="decimal"
-							bind:value={lines[i].credit}
-							onkeydown={(e) => handleLineCreditKeydown(e, i)}
-							class={amountFlagged(line.credit) ? 'border-destructive' : 'tabular-nums text-right'}
-							placeholder="0.00"
-						/>
-					</td>
+					{#if line.foreign}
+						{@const f = line.foreign}
+						<!-- Story 37-3b (AC-2) : montant en devise dans la colonne du sens. -->
+						{#each ['debit', 'credit'] as const as side (side)}
+							<td class="py-2 pr-2">
+								<div class="flex items-center gap-1">
+									<span class="text-xs text-muted-foreground">{f.currency}</span>
+									<Input
+										type="text"
+										inputmode="decimal"
+										data-testid="journal-entry-line-fx-{side}-{i}"
+										aria-label={i18nMsg('journal-entries-fx-amount-label', 'Montant ({ $currency })', {
+											currency: f.currency
+										})}
+										value={f.side === side ? f.amount : ''}
+										oninput={(e) =>
+											setForeignAmount(i, side, (e.currentTarget as HTMLInputElement).value)}
+										onkeydown={side === 'credit' ? (e) => handleLineCreditKeydown(e, i) : undefined}
+										class="tabular-nums text-right"
+										placeholder="0.00"
+									/>
+								</div>
+							</td>
+						{/each}
+					{:else}
+						<td class="py-2 pr-2">
+							<Input
+								type="text"
+								inputmode="decimal"
+								bind:value={lines[i].debit}
+								oninput={() => (lines[i].chfFromForeign = null)}
+								class={amountFlagged(line.debit) ? 'border-destructive' : 'tabular-nums text-right'}
+								placeholder="0.00"
+							/>
+						</td>
+						<td class="py-2 pr-2">
+							<Input
+								type="text"
+								inputmode="decimal"
+								bind:value={lines[i].credit}
+								oninput={() => (lines[i].chfFromForeign = null)}
+								onkeydown={(e) => handleLineCreditKeydown(e, i)}
+								class={amountFlagged(line.credit) ? 'border-destructive' : 'tabular-nums text-right'}
+								placeholder="0.00"
+							/>
+						</td>
+					{/if}
 					{#if showProjectColumn}
 						<td class="py-2 pr-2">
 							<!-- Sélecteur arbre 2 niveaux (racines + sous-projets indentés),
@@ -492,10 +968,106 @@
 						{/if}
 					</td>
 				</tr>
-				{#if status === 'partial'}
+				{#if line.foreign}
+					{@const f = line.foreign}
+					{@const hint = hintFor(i)}
+					{@const problem = foreignLineProblem(f)}
+					<!-- Story 37-3b (AC-2) : cours OU CHF, provenance, cours de la société et ↑. -->
+					<tr data-testid="journal-entry-line-fx-{i}">
+						<td colspan={tableColCount} class="pb-2">
+							<div class="flex flex-wrap items-center gap-2 text-sm">
+								<label class="flex items-center gap-1">
+									<span class="text-xs text-muted-foreground">
+										{i18nMsg('journal-entries-fx-rate', 'Cours')}
+									</span>
+									<Input
+										type="text"
+										inputmode="decimal"
+										class="w-32 tabular-nums text-right"
+										data-testid="journal-entry-line-fx-rate-{i}"
+										value={f.rate}
+										oninput={(e) => setForeignRate(i, (e.currentTarget as HTMLInputElement).value)}
+										placeholder="0.0000"
+									/>
+								</label>
+								<span class="text-xs text-muted-foreground" data-testid="journal-entry-line-fx-indicator-{i}">
+									{indicatorLabel(i)}
+								</span>
+								<label class="flex items-center gap-1">
+									<span class="text-xs text-muted-foreground">CHF</span>
+									<Input
+										type="text"
+										inputmode="decimal"
+										class="w-32 tabular-nums text-right"
+										data-testid="journal-entry-line-fx-chf-{i}"
+										aria-label={i18nMsg('journal-entries-fx-chf-label', 'Montant CHF')}
+										value={chfFieldValue(i)}
+										oninput={(e) => setForeignChf(i, (e.currentTarget as HTMLInputElement).value)}
+										placeholder="0.00"
+									/>
+								</label>
+								{#if hint}
+									<span class="text-xs" data-testid="journal-entry-line-fx-hint-{i}">{hint.label}</span>
+									<button
+										type="button"
+										class="rounded border border-border px-2 text-xs hover:bg-muted"
+										data-testid="journal-entry-line-fx-adopt-{i}"
+										aria-label={i18nMsg('journal-entries-fx-adopt', 'Reprendre le cours de la société')}
+										title={i18nMsg('journal-entries-fx-adopt', 'Reprendre le cours de la société')}
+										onclick={() => adoptRate(i, hint.company)}
+									>
+										↑
+									</button>
+								{/if}
+							</div>
+							{#if problem !== null && (f.amount.trim() !== '' || f.chfError !== null)}
+								<p class="mt-1 text-xs text-destructive" data-testid="journal-entry-line-fx-problem-{i}">
+									{foreignProblemMessage(problem)}
+								</p>
+							{/if}
+							{#if manualRequired.has(`${f.currency}|${monthOf(entryDate)}`) && f.rate.trim() === ''}
+								<p class="mt-1 text-xs text-muted-foreground" data-testid="journal-entry-line-fx-manual-{i}">
+									{i18nMsg(
+										'journal-entries-fx-manual-required',
+										'Aucun cours n’est disponible pour ce mois : saisissez le cours ou le montant CHF.'
+									)}
+								</p>
+							{/if}
+						</td>
+					</tr>
+				{:else if status === 'partial'}
 					<tr>
 						<td colspan={tableColCount} class="text-xs text-destructive pb-2">
 							{i18nMsg('journal-entry-form-incomplete-line', 'Ligne incomplète')}
+						</td>
+					</tr>
+				{/if}
+				{#if lineRefusals[i] !== undefined}
+					<tr>
+						<td colspan={tableColCount} class="pb-2 text-xs text-destructive" data-testid="journal-entry-line-refusal-{i}">
+							{lineRefusals[i]}
+							{#if i in rateNotAfc}
+								<span class="ml-2 inline-flex gap-2">
+									{#if rateNotAfc[i] !== null}
+										<button
+											type="button"
+											class="underline"
+											data-testid="journal-entry-line-take-expected-{i}"
+											onclick={() => takeExpectedRate(i)}
+										>
+											{i18nMsg('journal-entries-fx-take-expected', 'Reprendre le cours attendu')}
+										</button>
+									{/if}
+									<button
+										type="button"
+										class="underline"
+										data-testid="journal-entry-line-keep-rate-{i}"
+										onclick={() => keepMyRate(i)}
+									>
+										{i18nMsg('journal-entries-fx-keep-rate', 'Garder mon cours')}
+									</button>
+								</span>
+							{/if}
 						</td>
 					</tr>
 				{/if}
@@ -530,10 +1102,96 @@
 		</tbody>
 	</table>
 
-	<Button type="button" variant="outline" size="sm" onclick={addLine}>
-		<Plus class="w-4 h-4 mr-1" />
-		{i18nMsg('journal-entry-form-add-line', '+ Ajouter une ligne')}
-	</Button>
+	<div class="flex flex-wrap items-center gap-2">
+		<Button type="button" variant="outline" size="sm" onclick={addLine}>
+			<Plus class="w-4 h-4 mr-1" />
+			{i18nMsg('journal-entry-form-add-line', '+ Ajouter une ligne')}
+		</Button>
+		{#if differencePlan.kind === 'line'}
+			<Button
+				type="button"
+				variant="outline"
+				size="sm"
+				data-testid="journal-entry-add-fx-difference"
+				aria-label={i18nMsg('journal-entries-fx-difference-aria', 'Ajouter une ligne de différence de change')}
+				title={i18nMsg('journal-entries-fx-difference-aria', 'Ajouter une ligne de différence de change')}
+				onclick={addDifferenceLine}
+			>
+				{i18nMsg('journal-entries-fx-difference', 'Ajouter la différence de change')}
+			</Button>
+		{/if}
+		{#if hasForeignLine}
+			<a
+				href="/journal-entries/conversion"
+				class="text-sm underline text-primary"
+				data-testid="journal-entry-conversion-link"
+			>
+				{i18nMsg('journal-entries-fx-conversion-link', 'Changer de devise : assistant Conversion')}
+			</a>
+		{/if}
+	</div>
+	{#if differencePlan.kind === 'line'}
+		<p class="text-xs text-muted-foreground" data-testid="journal-entry-fx-difference-note">
+			{differencePlan.beyondRounding
+				? i18nMsg(
+						'journal-entries-fx-difference-not-rounding',
+						'Écart de { $amount } CHF : ce n’est pas un arrondi. Vérifiez les montants et les cours avant d’ajouter la ligne.',
+						{ amount: differencePlan.amount }
+					)
+				: i18nMsg(
+						'journal-entries-fx-difference-rounding',
+						'Écart de { $amount } CHF : un arrondi des conversions en CHF.',
+						{ amount: differencePlan.amount }
+					)}
+			{#if differencePlan.mixedPairs}
+				{i18nMsg(
+					'journal-entries-fx-difference-mixed',
+					'Les comptes en devise de l’écriture n’ont pas les mêmes comptes de différence : la ligne suit ceux du compte { $number }.',
+					{ number: differencePlan.holderNumber }
+				)}
+			{/if}
+		</p>
+	{:else if differencePlan.kind === 'invalid'}
+		<p class="text-xs text-destructive" data-testid="journal-entry-fx-difference-invalid">
+			{differencePlan.origin === 'own'
+				? i18nMsg(
+						'journal-entries-fx-difference-invalid-own',
+						'Les comptes de différence de change propres du compte { $number } sont archivés, non imputables ou invalides : corrigez-les dans le plan comptable.',
+						{ number: differencePlan.holderNumber }
+					)
+				: differencePlan.origin === 'company'
+					? i18nMsg(
+							'journal-entries-fx-difference-invalid-company',
+							'Les comptes de différence de change du réglage de la société sont archivés, non imputables ou invalides : corrigez-les dans Paramètres → Comptabilité.'
+						)
+					: i18nMsg(
+							'journal-entries-fx-difference-missing',
+							'Aucun compte de différence de change n’est désigné (réglage de la société, ou comptes propres du compte { $number }) : désignez-les avant d’ajouter la différence.',
+							{ number: differencePlan.holderNumber }
+						)}
+		</p>
+	{/if}
+	{#if vatRateChanged}
+		<p class="text-xs text-destructive" data-testid="journal-entry-vat-rate-changed">
+			{i18nMsg(
+				'journal-entries-fx-vat-rate-changed',
+				'Cours changé depuis l’insertion de l’assistant TVA : réinsérez l’assistant.'
+			)}
+		</p>
+	{/if}
+	{#if formRefusal}
+		<p class="text-sm text-destructive" data-testid="journal-entry-form-refusal">{formRefusal}</p>
+	{/if}
+	{#if rateUnavailable}
+		<div class="flex flex-wrap gap-2 text-sm" data-testid="journal-entry-rate-unavailable">
+			<Button type="button" size="sm" variant="outline" onclick={fetchMissingMonth}>
+				{i18nMsg('journal-entries-fx-fetch-month', 'Récupérer le mois')}
+			</Button>
+			<Button type="button" size="sm" variant="outline" onclick={keepManualForCurrency}>
+				{i18nMsg('journal-entries-fx-keep-manual', 'Garder les cours comme cours saisis')}
+			</Button>
+		</div>
+	{/if}
 
 	<div
 		class="flex items-center justify-between rounded-md border p-4 tabular-nums {balance.isBalanced

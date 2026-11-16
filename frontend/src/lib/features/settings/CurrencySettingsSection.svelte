@@ -18,6 +18,9 @@
 	import * as Dialog from '$lib/components/ui/dialog';
 	import { Button } from '$lib/components/ui/button';
 	import { fetchAccounts } from '$lib/features/accounts/accounts.api';
+	// fx-filtre-comptes : exempté — choisit les comptes de gains, de pertes et de
+	// conversion par `fxDifferenceAccountOptions` et `fxTransitAccountOptions`, qui ne
+	// gardent que des comptes en CHF (37-1).
 	import type { AccountResponse } from '$lib/features/accounts/accounts.types';
 	import { withCurrentAccount } from '$lib/features/accounts/account-options';
 	import {
