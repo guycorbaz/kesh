@@ -201,7 +201,7 @@ soit juste et que rien ne soit compté deux fois ni écrit sans moi.
    aucun texte neuf. `docs/api-external.md` : date de l'écriture d'un retrait de prestataire = date de valeur ; fenêtre de
    suggestion ; `relatedBankTransactionId` de la file. Manuel utilisateur et écrans (dates de sortie et d'arrivée à la
    proposition, créance au 31 décembre, ligne UBS avant la date prévue) : **40-6**, qui reçoit ces faits ; aucun contrôle
-   visible ici, aucune capture. CHANGELOG : une ligne de l'entrée non datée de l'epic.
+   visible ici, aucune capture. Aucune ligne au `CHANGELOG.md` : section **Note de version** de la fiche.
 
 ## Tâches
 
@@ -211,9 +211,17 @@ soit juste et que rien ne soit compté deux fois ni écrit sans moi.
 - [ ] T3 — Suggestion à partir de `COALESCE(value_date, booking_date)` ; tests de fenêtre (AC-3).
 - [ ] T4 — Tests d'intégration des deux voies et du second côté UBS ; devises ; lot 2024 (AC-4, AC-5, AC-6).
 - [ ] T5 — File : `relatedBankTransactionId` additif ; tests (AC-7).
-- [ ] T6 — `docs/api-external.md`, CHANGELOG ; non-régression PayPal (AC-8, AC-9).
+- [ ] T6 — `docs/api-external.md`, Note de version ; non-régression PayPal (AC-8, AC-9).
 - [ ] T7 — Gate complet (dépôts touchés : ciblage interdit) sur base remise à zéro, `scripts/gate-ci.sh`, E2E complet au
-      dernier commit de code.
+      dernier commit de code ; compteurs (registres, `Cargo.lock`) recomptés depuis la source après chaque reprise de `main`.
+
+## Note de version
+
+*Texte prêt à assembler au `CHANGELOG.md` à la release ; aucune ligne n'y est ajoutée dans la branche.*
+
+- **Ajouté** : un versement Stripe se passe à la **date de son arrivée en banque** (la créance reste au compte
+  intermédiaire jusque-là) et se **rattache**, par le geste de l'utilisateur, à la ligne bancaire correspondante ; un
+  versement échoué va à la file ; la file dit la ligne liée (`relatedBankTransactionId`, additif).
 
 ## Dev Notes
 
@@ -254,6 +262,9 @@ soit juste et que rien ne soit compté deux fois ni écrit sans moi.
 ### File List
 
 ## Change Log
+
+- 2026-11-16 — alignement sur les règles de travail à plusieurs (Sonnet) : CHANGELOG remplacé par la section Note de
+  version ; compteurs « recomptés depuis la source après chaque reprise de `main` » (T7).
 
 - 2026-11-15 — rédaction (Opus). 9 AC ; 5 FR (dont 1 ajoutée), 3 NFR ; aucune migration ; trois écarts à l'epic (date de
   l'écriture déjà dans le socle, `relatedBankTransactionId` additif de la file, `value_date` posée par 40-2).

@@ -14,7 +14,7 @@ est développé avant. Kickoff (décomptes, validation de ce fichier, **recette 
 et `mime_type` (38-10). `kesh_version_min_required` inchangé ; P5–P8 sans objet. Une fiche qui découvre un besoin de
 DDL s'arrête et le dit (C-40-0).
 
-**Numéro : 40, provisoire** (B25, Q9 de l'Epic 38) — **à confirmer par Guy** (Q-40-1). Une branche par story,
+**Numéro : 40, confirmé** (attribué à Beat, `docs/developpement-a-plusieurs.md` § 2 ; Q-40-1 close). Une branche par story,
 fusionnée localement dans `epic/40-stripe`, puis **une PR** vers le dépôt de Guy (remote `beat`), **après celles des
 Epics 37, 38 et 39**. Pas d'issue GitHub à ce stade ; issues et PR à la fin.
 
@@ -148,7 +148,7 @@ L'Epic 40 **ne se développe qu'après l'Epic 38** (développé et fusionné), d
 | Propositions vente, achat, frais ; conversions, retraits, remboursements, file | 38-6a, 38-6b | versement = `withdrawal` (G10) |
 | Rattachement en devise, en lot, à un groupe ; API des scripts | 38-6c1, 38-6c2 | livres 2024 (B17, B28), scripts WHMCS et CB Paid Subscriptions (B21) |
 | Écrans génériques | 38-9a, 38-9b | complétés par 40-6 |
-| Pièces de compte, écart au solde, contrôle de clôture K9 | 38-10 | rapports CSV ou PDF (G13) |
+| Pièces de compte, écart au solde, contrôle de clôture K10 | 38-10 | rapports CSV ou PDF (G13) |
 
 ### Repris de l'Epic 39 s'il est développé avant (C-39-2)
 
@@ -269,7 +269,7 @@ l'API).
   rapprochées » et du « reste inexpliqué ». « Tester » montre `available` et `pending` (lus à l'instant, non stockés :
   l'instantané ne garde que le total, 38-3a) ; l'écran du compte montre le solde rapporté total (40-4 Écart 2).
   **À la clôture**, le solde de 1101–1103 est la créance (B13) : aucune écriture neuve ; le contrôle
-  préalable à la clôture (K9 de 38-10) compare le rapport joint (G13) au solde comptable.
+  préalable à la clôture (K10 de 38-10) compare le rapport joint (G13) au solde comptable.
 - **G13 — Rapports Stripe joints à la main** (B10). Stripe ne fournit aucun relevé PDF ; ses rapports (solde,
   rapprochement des versements) sont des **CSV** du tableau de bord. 38-10 admet donc, **en plus du PDF**, un CSV
   (`kind = 'provider_report'`, `mime_type = 'text/csv'`, colonnes existantes à domaine ouvert, C-38-10-6) : texte UTF-8,
@@ -357,6 +357,21 @@ l'API).
 | 40-4 | contrôle de solde : `available + pending` contre Débiteurs Stripe, versements en route, créance à la clôture ; recensement des lecteurs « liquidité » | `kesh-db` (écart, en route), `kesh-api` (contrôles), `kesh-i18n` | 40-3, 38-3b, 38-10 | aucune |
 | 40-5 | rapports joints à la main : CSV admis par 38-10, solde de clôture saisi | `kesh-api` (documents), `kesh-db` (lecture `mime_type`), `frontend` (bank-accounts), `kesh-i18n` | 38-10 | aucune |
 | 40-6 | écrans et manuels : connexion Stripe, droits de la clé, versements en route, codes courts ; E2E et captures | `frontend`, `kesh-i18n`, `docs/manual`, E2E | 40-1 à 40-5, 38-9a, 38-9b | aucune |
+
+**Release : un epic = une release ; 6 stories** (40-1 à 40-6 ; 40-0 est le kickoff) — dans la borne des règles de travail à
+plusieurs (au plus six pour un epic de correction ou d'amélioration ; l'epic est une fonctionnalité nouvelle et ne
+dépasse pas).
+
+**Modules touchés** (liste tirée des fiches 40-1 à 40-6, à tenir à jour avec elles) :
+
+| Fiche | Crates | Frontend | Manuels |
+|---|---|---|---|
+| 40-1 | `kesh-providers` (stripe), `kesh-core` (réglages), `kesh-api` (secrets, fabrique, `_test`), `kesh-i18n` | — | — |
+| 40-2 | `kesh-providers` (stripe::classify, event_codes, origins), `kesh-core` (surcharges) | — | — |
+| 40-3 | `kesh-api` (passage, propositions, file), `kesh-db`, `kesh-reconciliation` | — | — |
+| 40-4 | `kesh-providers`, `kesh-db` (écart, K10), `kesh-api` (contrôles, bloc `provider`), `kesh-i18n` | tuile de l'accueil | — |
+| 40-5 | `kesh-api` (documents), `kesh-db` (`mime_type`), `kesh-i18n` | dialogue des relevés joints (bank-accounts) | — |
+| 40-6 | `kesh-i18n`, `kesh-api` (test `textes_coherents.rs`) | écrans Stripe, E2E `provider-stripe.spec.ts` | `docs/manual/fr/{admin,user}-manual.tex` (`.tex` seulement, PDF à la release) |
 
 **Ordre** : 40-0 (recette) → 40-1 → 40-2 → 40-3 → 40-4 → 40-6 ; 40-5 dès 38-10, en parallèle. **Migrations : aucune**
 (C-40-0). Chaque fiche porte ses exigences numérotées (B26) ; les gardes communes (P1–P8, *Pattern batch*, aucun appel
@@ -466,7 +481,7 @@ réseau en CI, recette visuelle) ne s'y répètent que là où la story les port
 - *Intention* : le solde Stripe (`available + pending`) se compare au compte « Débiteurs Stripe » de la devise, et l'écart
   s'explique par les transactions non rapprochées et les versements en route.
 - *Périmètre* : G12, C-40-2 (c) ; ventilation `inTransitPayouts` dans l'écart E20 (b) ; `available` et `pending` montrés
-  à « Tester » ; contrôle préalable à la clôture inchangé (K9 de 38-10) ; recensement des lecteurs qui traitent un compte
+  à « Tester » ; contrôle préalable à la clôture inchangé (K10 de 38-10) ; recensement des lecteurs qui traitent un compte
   bancaire lié comme une liquidité (accueil, 33-3) et décision par lecteur (G1).
 - *Risques* : définition unique de « versement en route » (une fonction, lue par l'écart et par l'écran) ; versement
   sans `value_date` (jugé à son écriture comme les autres, 40-4 Écart 1) ; double comptage d'un versement en route non rapproché.
@@ -518,7 +533,7 @@ réseau en CI, recette visuelle) ne s'y répètent que là où la story les port
   5. `FR-40-6-5` — Joindre un rapport CSV ; codes courts Stripe en aide du critère « code d'événement ».
 - **NFR**
   1. `NFR-40-6-1` — Aucun secret au DOM ni dans les réponses lues.
-  2. `NFR-40-6-2` — Quatre locales ; manuels d'administration et utilisateur à jour, PDF régénérés et contrôlés aplatis.
+  2. `NFR-40-6-2` — Quatre locales ; manuels d'administration et utilisateur à jour (`.tex` seulement ; PDF régénérés à la release, rendu contrôlé aplati en local, non commité).
   3. `NFR-40-6-3` — E2E contre le transport factice (`stripeResponses: "default"`) : connexion → test → téléchargement →
      vente proposée et acceptée → versement rattaché à la ligne UBS.
   4. `NFR-40-6-4` — Captures d'écran de chaque état touché (*Recette visuelle*).
@@ -537,7 +552,7 @@ fiches — à Guy (Q12 de l'Epic 38).
 | 40-1 | 7 — 1 connexion `stripe` · 2 clé restreinte · 3 « Tester », soldes · 4 transactions par curseur · 5 solde passé · 6 erreurs, fabrique, factice · `FR-40-1-7` mode gardé *(fiche)* | 4 — 1 bornes · 2 clé nulle part · 3 version, `livemode` · 4 validation, PayPal inchangé |
 | 40-2 | 7 — 1 table des types · 2 montants · 3 identifiants, liens · 4 contrepartie, boutique · 5 litiges · 6 surcharges · `FR-40-2-7` date d'arrivée lue *(fiche)* | 3 — 1 pur · 2 test par type · 3 somme des nets |
 | 40-3 | 5 — 1 date d'arrivée · 2 écriture datée de l'arrivée · 3 ligne UBS rattachée · 4 échecs · `FR-40-3-5` versements 2024 en lot *(fiche)* | 3 — 1 *Pattern batch* · 2 retraits sans date inchangés · 3 aucune migration |
-| 40-4 | 4 — 1 écart ventilé · 2 `available`/`pending` · 3 liquidité · `FR-40-4-4` K9 et versements en route *(fiche)* | 3 — 1 définition unique · 2 sans écriture · `NFR-40-4-3` additif *(fiche)* |
+| 40-4 | 4 — 1 écart ventilé · 2 `available`/`pending` · 3 liquidité · `FR-40-4-4` K10 et versements en route *(fiche)* | 3 — 1 définition unique · 2 sans écriture · `NFR-40-4-3` additif *(fiche)* |
 | 40-5 | 4 — 1 joindre un CSV · 2 solde de clôture · 3 télécharger · `FR-40-5-4` type de pièce à la liste *(fiche)* | 3 — 1 fichier contrôlé · 2 audit, sauvegarde · `NFR-40-5-3` additif *(fiche)* |
 | 40-6 | 5 — 1 connexion · 2 boutique · 3 versement · 4 écart · 5 CSV, codes | 5 — 1 aucun secret au DOM · 2 i18n, manuels · 3 E2E · 4 captures · `NFR-40-6-5` textes, PayPal inchangé *(fiche)* |
 
@@ -590,7 +605,7 @@ Alignements inter-fiches issus de la validation P2 des fiches 40-1 à 40-6, repo
 
 ## Questions ouvertes
 
-- **Q-40-1 — Numéro (Guy)** : 40 retenu provisoirement (B25) ; confirmation attendue.
+- **Q-40-1 — Numéro** : **close** — 40 est attribué à Beat (`docs/developpement-a-plusieurs.md` § 2).
 - **Q-40-2 — Boutique (Beat, recette)** : où WHMCS et CB Paid Subscriptions posent-ils le numéro de facture dans
   Stripe — `description` (« Invoice #… »), une clé de `metadata`, autre ? Défaut proposé : `metadata:invoice`, la forme
   des paiements de test (G14).
@@ -623,4 +638,7 @@ Alignements inter-fiches issus de la validation P2 des fiches 40-1 à 40-6, repo
 - Aucun appel réseau en CI ni par un agent ; aucune réponse réelle non anonymisée ni aucune clé dans le dépôt.
 - Un appariement automatique **propose**, il ne crée jamais : le versement ne se rattache à la ligne UBS que par le geste
   de l'utilisateur.
+- Travail à plusieurs (`CLAUDE.md` § *Travailler à plusieurs développeurs*) : aucune ligne au `CHANGELOG.md` dans la branche
+  (chaque fiche porte une section **Note de version**, assemblée à la release) ; manuels : `.tex` seulement, PDF régénérés à
+  la release ; compteurs recomptés depuis la source après chaque reprise de `main`.
 - On trace toujours : un défaut voisin non traité se note au registre (C-40-7), pour devenir une issue avec la PR.

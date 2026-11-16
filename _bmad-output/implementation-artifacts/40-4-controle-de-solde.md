@@ -8,13 +8,13 @@ Status: ready-for-dev
 - **Dépend de** : **40-3** (versements : `movement_kind = 'withdrawal'`, écriture datée de `value_date`, rattachement à
   la ligne UBS), **40-1** (`StripeConnector::balances`, « Tester »), **38-9a** (route et module du contrôle (b) :
   `GET /api/v1/bank-accounts/{id}/provider-balance-check`, `kesh-db::repositories::provider_balance_check`, AC-8),
-  **38-10** (contrôle K9 `ATTACHED_STATEMENT_GAP`), **38-6c2** (fragment `LINKED_TRANSACTIONS_OF(e)`), **38-3b**
+  **38-10** (contrôle K10 `ATTACHED_STATEMENT_GAP`), **38-6c2** (fragment `LINKED_TRANSACTIONS_OF(e)`), **38-3b**
   (`ProviderBalance`, instantanés `reported`), **38-2** (bloc `provider` de `GET /bank-accounts`, AC-8), **37-4**
   (`account_balances::balances_as_of` et fragment de somme en devise, AC-1 quater).
-- **Suivie de** : **40-6** (écrans : ventilation, `available`/`pending` à « Tester », détail de K9 ; manuels).
+- **Suivie de** : **40-6** (écrans : ventilation, `available`/`pending` à « Tester », détail de K10 ; manuels).
 - **Migration** : **aucune** (C-40-0, NFR-40-4-2).
 - **Modules** (≤ 5, règle de splitting) : `kesh-providers` (champ additif de `ProviderBalance`), `kesh-db` (décalages
-  de date, contrôle (b), K9), `kesh-api` (réponses de « Tester », du contrôle (b), bloc `provider`), `kesh-i18n`,
+  de date, contrôle (b), K10), `kesh-api` (réponses de « Tester », du contrôle (b), bloc `provider`), `kesh-i18n`,
   `frontend` (tuile de l'accueil seule).
 
 ## Story
@@ -33,7 +33,7 @@ je lise le solde de 1101–1103 pour ce qu'il est : une créance (B13).
 | `FR-40-4-1` | L'écart entre solde comptable et solde rapporté se ventile en non rapprochées, versements en route et reste inexpliqué. | AC-1, AC-2, AC-3 |
 | `FR-40-4-2` | « Tester » montre `available` et `pending` ; l'écran du compte montre le solde rapporté (voir *Écarts à l'epic*, 2). | AC-5 |
 | `FR-40-4-3` | Un compte prestataire Stripe n'est pas compté comme liquidité là où Kesh additionne la trésorerie (ou l'est en le disant), selon le recensement. | AC-6, AC-7 |
-| `FR-40-4-4` *(ajoutée)* | Le contrôle préalable à la clôture K9 dit, pour un compte en écart, la part des versements en route à la date du relevé joint ; son statut est inchangé. | AC-4 |
+| `FR-40-4-4` *(ajoutée)* | Le contrôle préalable à la clôture K10 dit, pour un compte en écart, la part des versements en route à la date du relevé joint ; son statut est inchangé. | AC-4 |
 | `NFR-40-4-1` | Une seule définition de « versement en route », testée aux bornes (`as_of` = `booked_at`, date d'écriture = date de `as_of`). | AC-1, AC-3 |
 | `NFR-40-4-2` | Contrôle sans écriture ; aucune migration. | AC-8 |
 | `NFR-40-4-3` *(ajoutée)* | Additif, non régressif (G18) : PayPal et les comptes ordinaires gardent leurs réponses JSON à l'identique quand aucun décalage de date n'est compté (une seule attente de 38-9a retouchée, *Écarts à l'epic*, 6) ; quatre locales ; captures de la tuile. | AC-2, AC-4, AC-5, AC-7, AC-9 |
@@ -57,7 +57,7 @@ je lise le solde de 1101–1103 pour ce qu'il est : une créance (B13).
 - **Le contrôle (b) de 38-9a ne corrige pas les dates** (38-9a AC-8 b) : `ledger` = `balances_as_of` à la date de
   Zurich de `asOf` (37-4, en devise), `unreconciled` = Σ `amount` des `pending` à `booked_at < asOf` (borne exclue), `unexplained =
   reported − ledger − unreconciled`. Un versement rapproché dont l'écriture est datée après `asOf` y tombe donc en
-  « inexpliqué ». Le contrôle K9 de 38-10 (C-38-10-4) compare de même le solde saisi à `balances_as_of` à `period_to`,
+  « inexpliqué ». Le contrôle K10 de 38-10 (C-38-10-4) compare de même le solde saisi à `balances_as_of` à `period_to`,
   sans correction.
 - **Le solde d'un instantané `reported` s'arrête avant son instant** : la complétude de 38-3b somme les mouvements
   `booked_at < as_of` du `reported` (38-3b AC-7, fenêtre demi-ouverte) ; Stripe : `balances(Some(as_of))` = solde
@@ -105,9 +105,9 @@ je lise le solde de 1101–1103 pour ce qu'il est : une créance (B13).
 3. **Décalages de date autres que les versements** : la même règle, appliquée à toutes les transactions rapprochées
    (comme `BALANCES_SQL`), donne une seconde ligne de ventilation, `otherDateShifts` (un rattachement en lot des
    livres 2024, 38-6c1, n'a pas de fenêtre de date). Sans elle, ces décalages tomberaient en « inexpliqué ».
-4. **K9 gagne un détail** (FR-40-4-4) alors que l'epic le dit « inchangé » : son **statut** l'est, son `details` gagne
+4. **K10 gagne un détail** (FR-40-4-4) alors que l'epic le dit « inchangé » : son **statut** l'est, son `details` gagne
    deux champs facultatifs. *Raison* : le rapport Stripe de fin d'année (40-5) arrête le solde Stripe au 31.12, versements
-   partis compris ; 1101 les porte jusqu'à leur arrivée : K9 serait en écart à **chaque** clôture qui a un versement en
+   partis compris ; 1101 les porte jusqu'à leur arrivée : K10 serait en écart à **chaque** clôture qui a un versement en
    route, sans dire pourquoi.
 5. **Modules** : `kesh-providers` (champ de `ProviderBalance`) et `frontend` (tuile) s'ajoutent à la liste de l'epic ;
    cinq au total, dans la règle.
@@ -124,7 +124,7 @@ je lise le solde de 1101–1103 pour ce qu'il est : une créance (B13).
 
 - **C-40-4-1 — Une fonction, deux appelants.** `kesh_db::repositories::provider_balance_check::date_shifts(conn,
   company_id, bank_account_id, ledger_account_id, cut: Cut) -> DateShifts { in_transit_payouts, other }` (module de
-  38-9a AC-8 b), où `Cut::AtInstant(as_of)` (contrôle (b)) ou `Cut::AtDate(d)` (K9). Pour une coupe, avec `D` = la date
+  38-9a AC-8 b), où `Cut::AtInstant(as_of)` (contrôle (b)) ou `Cut::AtDate(d)` (K10). Pour une coupe, avec `D` = la date
   de la coupe (date de Zurich de `as_of`, ou `d`) :
   - *comptée au solde rapporté* : `AtInstant` → le prédicat de `unreconciled` de 38-9a AC-8 b, **le même code** (une
     aide partagée : `booked_at < as_of`, borne exclue, ou `booking_date ≤ D` si `booked_at` est nul) ; `AtDate` →
@@ -191,13 +191,13 @@ je lise le solde de 1101–1103 pour ce qu'il est : une créance (B13).
    AtDate(31.12))`, en `in_transit_payouts + other` (= `plus − minus`), égale `booked_before_entered_after −
    booked_after_entered_before` de `balances_by_bank_account(…,
    Some(31.12))` ; écrit comme garde de la seconde écriture de la règle (C-40-4-2).
-4. **AC-4 — K9 : part des versements en route (FR-40-4-4, NFR-40-4-3).** Dans `closing_checks` (38-10 AC-6), chaque
+4. **AC-4 — K10 : part des versements en route (FR-40-4-4, NFR-40-4-3).** Dans `closing_checks` (38-10 AC-6), chaque
    compte de `details.accounts[]` en écart gagne `inTransitPayouts` et `otherDateShifts` (même sens, même absence
    quand nuls), lus par `date_shifts(…, Cut::AtDate(periodTo))` du document retenu, sur la connexion de l'instantané ;
-   **statut, `count`, `gap` et règle de K9 inchangés** (Q-40-4-1). `date_shifts` entre à la liste de l'angle mort de
+   **statut, `count`, `gap` et règle de K10 inchangés** (Q-40-4-1). `date_shifts` entre à la liste de l'angle mort de
    T-a2 au doc du module (`closing_checks.rs:51-60`), son SQL relu sans verrou en revue ; aucune constante neuve à
    `ALL_SQL` (la requête vit dans `provider_balance_check`). Tests (`crates/kesh-db/tests/closing_checks.rs`) : rapport
-   joint au 31.12 dont le solde est le solde Stripe, versement parti le 30.12 arrivé le 3.1 → K9 `attention`, `gap`
+   joint au 31.12 dont le solde est le solde Stripe, versement parti le 30.12 arrivé le 3.1 → K10 `attention`, `gap`
    = 300.00 (livres − relevé), `inTransitPayouts = "-300.00"` ; sans versement → champs absents ; compte ordinaire
    **sans décalage de date** → absents (avec un décalage, il porte `otherDateShifts`, comme tout compte : la fonction
    ne distingue pas les comptes). Type TS `fiscal-years.types.ts` gagne les deux champs facultatifs (affichage : 40-6).
@@ -227,7 +227,7 @@ je lise le solde de 1101–1103 pour ce qu'il est : une créance (B13).
    | Règlement d'une facture (`SettleInvoiceDialog.svelte:113-114`) | admis : une créance Stripe éteint une créance client |
    | Sélecteurs de comptes (`GET /companies/current`, `routes/companies.rs:457` ; export CSV, `crates/kesh-api/src/exports/global.rs:322`) | non concernés : listes de comptes, aucun total |
    | Lot de paiement pain.001 | déjà exclu (`PAYMENT_BATCH_ACCOUNT_IS_PROVIDER`, 38-2 AC-7) |
-   | K3 `BANK_STATEMENT_AT_YEAR_END` | inchangé : un compte Stripe sans CAMT y est `NO_BALANCE_STATEMENT` ; K9 le contrôle |
+   | K3 `BANK_STATEMENT_AT_YEAR_END` | inchangé : un compte Stripe sans CAMT y est `NO_BALANCE_STATEMENT` ; K10 le contrôle |
    | Bilan, balance, grand livre | non concernés : classe du plan (1101 = actif circulant, créance) |
    | Outils MCP | aucun ne lit les soldes bancaires |
    Tout lecteur trouvé au grep et absent de ce tableau y entre avec sa décision avant la revue.
@@ -255,7 +255,7 @@ je lise le solde de 1101–1103 pour ce qu'il est : une créance (B13).
    `closing_a_year_writes_no_entry_and_changes_nothing` non touché) ; aucune migration, aucun relèvement de
    `kesh_version_min_required` ; aucune route neuve (`LIB_ROUTES` et `TEST_ENDPOINT_ROUTES` : delta 0, C-40-6) ;
    aucune action d'audit (lectures) ; **aucun outil MCP** (G17, E23 : contrôles et connexions ne sont pas exposés).
-   `docs/api-external.md` : si 38-9a et 38-10 y documentent le contrôle (b) et K9, les deux champs y sont ajoutés avec
+   `docs/api-external.md` : si 38-9a et 38-10 y documentent le contrôle (b) et K10, les deux champs y sont ajoutés avec
    leur sens ; il décrit aussi `available`/`pending` de la réponse de « Tester » (si 38-7 y documente cette route) et
    `balanceNature` du bloc `provider` ; manuels à 40-6.
 9. **AC-9 — Recette visuelle (NFR-40-4-3).** Captures (thème clair, base de démonstration, `kesh-gate-logs/`, hors
@@ -267,17 +267,25 @@ je lise le solde de 1101–1103 pour ce qu'il est : une créance (B13).
 
 - [ ] T1 — `date_shifts` et `Cut`, aide partagée « comptée au solde rapporté » avec `unreconciled` (AC-1).
 - [ ] T2 — Contrôle (b) : deux champs, formule de `unexplained`, tests de route (AC-2) ; concordance (AC-3).
-- [ ] T3 — K9 : détail additif, angle mort de T-a2, tests (AC-4).
+- [ ] T3 — K10 : détail additif, angle mort de T-a2, tests (AC-4).
 - [ ] T4 — `ProviderBalance.parts`, `StripeConnector`, réponse de « Tester » (AC-5).
 - [ ] T5 — Recensement (AC-6) ; `balanceNature`, `ledgerTotal`, tuile, i18n, Vitest, captures (AC-7, AC-9).
 - [ ] T6 — Gate complet **même en cours de boucle** (dépôts `kesh-db` touchés) ; E2E complet au dernier commit de
-      code ; `api-external.md` (AC-8).
+      code ; compteurs (`LIB_ROUTES`, `TEST_ENDPOINT_ROUTES`, `Cargo.lock`) recomptés depuis la source après chaque reprise de `main` ; `api-external.md` (AC-8).
+
+## Note de version
+
+*Texte prêt à assembler au `CHANGELOG.md` à la release ; aucune ligne n'y est ajoutée dans la branche.*
+
+- **Ajouté** : le contrôle de solde d'un compte Stripe compare `available + pending` au compte intermédiaire et ventile
+  l'écart (versements en route, autres décalages de date) ; le contrôle préalable à la clôture (K10) dit la part des
+  versements en route ; la créance Stripe figure à part sur l'accueil, hors total de trésorerie. Aucune écriture passée.
 
 ## Dev Notes
 
 - **Signes** : `unreconciled` est Σ `amount` (un versement est négatif) ; `inTransitPayouts` est la ligne de
   l'écriture sur 1101 (`C 1101` → négatif) — même signe que le mouvement du solde Stripe. Identité tenue par les tests :
-  `reported = ledger + unreconciled + inTransitPayouts + otherDateShifts + unexplained`. K9 garde son sens propre
+  `reported = ledger + unreconciled + inTransitPayouts + otherDateShifts + unexplained`. K10 garde son sens propre
   (`gap` = livres − relevé) : un versement en route y donne `gap = +300.00` et `inTransitPayouts = −300.00` ; 40-6
   écrit « dont versements en route » sans changer de signe à l'écran (le manuel dit le sens).
 - **Piège** : ne pas lire `value_date` pour dire « en route » (Écart 1) ; ne pas compter `amount` mais la ligne de
@@ -290,9 +298,9 @@ je lise le solde de 1101–1103 pour ce qu'il est : une créance (B13).
 
 ## Questions ouvertes
 
-- **Q-40-4-1 (Beat, Guy)** — K9 doit-il **corriger** le solde comptable des décalages de date, comme K3 le fait pour les
+- **Q-40-4-1 (Beat, Guy)** — K10 doit-il **corriger** le solde comptable des décalages de date, comme K3 le fait pour les
   relevés importés (le manuel le promet pour l'écart du relevé, `user-manual.tex:337`) ? Alors un versement en route
-  ne mettrait plus K9 en attention. Proposé ici : statut inchangé, détail ajouté (AC-4) ; la correction serait un
+  ne mettrait plus K10 en attention. Proposé ici : statut inchangé, détail ajouté (AC-4) ; la correction serait un
   amendement de 38-10 (C-38-10-4).
 - ~~**Q-40-4-2 (inter-fiches 38-9a / 38-3b)** — borne de l'instant~~ — **close** (validation P2) : 38-9a AC-8 b compte
   désormais `booked_at < asOf` (borne exclue, corrigée et close à sa P8), comme l'instantané `reported` (38-3b AC-7) ;
@@ -308,6 +316,10 @@ je lise le solde de 1101–1103 pour ce qu'il est : une créance (B13).
 ### File List
 
 ## Change Log
+
+- 2026-11-16 — alignement sur les règles de travail à plusieurs (Sonnet) : section Note de version ajoutée ; compteurs
+  « recomptés depuis la source après chaque reprise de `main` » (T6) ; contrôle K9 de 38-10 renommé K10 partout dans la
+  fiche (l'Epic 37 prend K9).
 
 - 2026-11-15 — rédaction (Opus) : 9 AC ; 4 FR (3 de l'epic + 1 ajoutée), 3 NFR (2 + 1) ; aucune migration ; aucune route
   neuve ; écarts : règle d'« en route » par la date de l'écriture rapprochée (non `value_date`), `available`/`pending` à

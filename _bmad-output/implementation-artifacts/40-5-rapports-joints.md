@@ -5,7 +5,7 @@ Status: ready-for-dev
 - **Epic** : 40 (`_bmad-output/planning-artifacts/epic-40-stripe.md`, § *40-5*, G13, C-40-0, C-40-2 (d), C-40-6) ;
   décisions de Beat **B10** (Stripe : pas de PDF, rapports joints à la main) et **B20** (le relevé est la somme de
   contrôle), `epics-38-40-cadrage.md`, qui priment.
-- **Dépend de** : **38-10** seulement (table `bank_account_documents`, routes `…/documents`, K9, dialogue
+- **Dépend de** : **38-10** seulement (table `bank_account_documents`, routes `…/documents`, K10, dialogue
   `BankAccountDocumentsDialog.svelte`) — ordre de l'epic : « 40-5 dès 38-10, en parallèle ». Rien de 40-1 à 40-4 n'est
   lu : la story vaut pour tout compte bancaire (C-38-10-1).
 - **Suivie de** : **40-6** (manuel utilisateur : rapports Stripe à joindre ; aide de l'écran du compte Stripe).
@@ -20,7 +20,7 @@ En tant que **Comptable**,
 je veux **joindre au compte bancaire Stripe d'une devise le rapport CSV** que je télécharge du tableau de bord Stripe
 (solde, rapprochement des versements) — ou son impression PDF —, pour un exercice ou une période, avec le solde de
 clôture qu'il annonce,
-afin que ce solde serve de somme de contrôle comme un relevé PDF (écart au solde comptable, contrôle de clôture K9) et
+afin que ce solde serve de somme de contrôle comme un relevé PDF (écart au solde comptable, contrôle de clôture K10) et
 que la pièce soit gardée et sauvegardée dans son format d'origine.
 
 ## Exigences
@@ -55,7 +55,7 @@ que la pièce soit gardée et sauvegardée dans son format d'origine.
 - **38-10 (fiche, non encore développée)** : le contrôle du fichier est « non vide qui commence par `%PDF-` » (`400
   BANK_DOCUMENT_NOT_PDF`), le fichier rangé en `pdf`/`application/pdf` (AC-2) ; `kind` (`statement`) et `source`
   (`manual`) lus en enum à variante `Other(String)` (C-38-10-6) ; `mime_type VARCHAR(100) NOT NULL` (AC-1) ; liste sans
-  `mimeType` (AC-3) ; K9 retient le dernier document **à solde** du compte, sans filtre de genre (C-38-10-5) ; la
+  `mimeType` (AC-3) ; K10 retient le dernier document **à solde** du compte, sans filtre de genre (C-38-10-5) ; la
   sauvegarde lit `storage_path`, `sha256` sans regarder le type (AC-7) ; l'export CSV écarte `mime_type`
   (`COLONNES_HORS_EXPORT`, AC-7 d) et exporte `kind`. Ses Vitest d'écran (AC-9) tiennent « PDF seul côté écran » : la
   story change cette attente exprès (NFR-40-5-3).
@@ -144,8 +144,8 @@ que la pièce soit gardée et sauvegardée dans son format d'origine.
    `mime_type = 'text/html'` → `application/octet-stream`, `attachment`.
 4. **AC-4 — Solde de clôture et contrôles (FR-40-5-2).** `closingBalance`/`closingCurrency` saisis comme pour un PDF
    (38-10 AC-2, C-38-10-3 : devise du compte) ; correction et retrait (38-10 AC-4) identiques. Tests : rapport CSV d'un
-   compte EUR au 31.12 avec solde → `gap` de la liste calculé comme pour un PDF (C-38-10-4) ; K9 retient un CSV comme
-   tout document à solde (C-38-10-5) : CSV au 31.12 en écart → K9 `attention` avec `documentId` du CSV ; un PDF au 30.11
+   compte EUR au 31.12 avec solde → `gap` de la liste calculé comme pour un PDF (C-38-10-4) ; K10 retient un CSV comme
+   tout document à solde (C-38-10-5) : CSV au 31.12 en écart → K10 `attention` avec `documentId` du CSV ; un PDF au 30.11
    et un CSV au 31.12 → le CSV compte (dernier `periodTo`).
 5. **AC-5 — Audit, sauvegarde, export (NFR-40-5-2, C-40-6).** Trace `bank_account_document.attached` (38-10) : son
    `details` porte `{ kind, mimeType }` en plus de ce que 38-10 y met (C-40-6 ; aucun libellé d'action neuf, aucune
@@ -164,7 +164,7 @@ que la pièce soit gardée et sauvegardée dans son format d'origine.
    le rapprochement des versements, se joint sans solde. » — le rapport de rapprochement des versements ne porte pas le
    solde Stripe de fin de période (<https://docs.stripe.com/reports/report-types/payout-reconciliation> : résumés par
    `reporting_category`, `count, currency, fee, gross, net` ; le solde de fin est l'objet d'`ending_balance_reconciliation`
-   et du rapport de solde) : y saisir un solde ferait un écart K9 fictif ; les refus `BANK_DOCUMENT_UNSUPPORTED_TYPE` (un libellé par `reason`) et `BANK_DOCUMENT_NOT_PDF`
+   et du rapport de solde) : y saisir un solde ferait un écart K10 fictif ; les refus `BANK_DOCUMENT_UNSUPPORTED_TYPE` (un libellé par `reason`) et `BANK_DOCUMENT_NOT_PDF`
    (message élargi : « Le fichier n'est ni un PDF ni un CSV ») traduits ; API cliente et types (`bank-accounts.api.ts`,
    champ `mimeType`) ; `+page.svelte` des comptes bancaires **non touché**. **Préfixes** (`lint-i18n-ownership.js:177-186`) :
    les clés neuves du dialogue (titre, aide, type affiché) sont au préfixe **`bank-accounts-`**
@@ -186,18 +186,27 @@ que la pièce soit gardée et sauvegardée dans son format d'origine.
 8. **AC-8 — Documentation.** `docs/api-external.md` : la route `POST …/documents` admet un CSV (C-40-5-1, C-40-5-2), le
    code `BANK_DOCUMENT_UNSUPPORTED_TYPE` et ses motifs, `mimeType` de la liste, `Content-Type` du téléchargement. Manuel
    utilisateur : à 40-6 (rapports Stripe à joindre), avec le texte de l'aide de l'AC-6 ; si 40-6 n'est pas livrée dans la
-   même PR, la sous-section *Joindre un relevé* de 38-10 gagne ici une phrase (« un rapport CSV s'y joint de même »), PDF
-   régénéré.
+   même PR, la sous-section *Joindre un relevé* de 38-10 gagne ici une phrase (« un rapport CSV s'y joint de même »), `.tex`
+   seulement : le PDF se régénère à la release (contrôle local du rendu permis, PDF non commité).
 
 ## Tâches
 
 - [ ] T1 — `classify_document`, code d'erreur, `mime_for_ext("csv")`, tests unitaires (AC-1).
 - [ ] T2 — Route d'ajout : branche CSV, genre, rangement ; utilitaire multipart de 38-10 étendu du nom d'origine non
   tronqué ; tests de route (AC-1, AC-2).
-- [ ] T3 — Liste (`mimeType`) et téléchargement par table fermée (AC-3) ; K9 et écart avec un CSV (AC-4).
+- [ ] T3 — Liste (`mimeType`) et téléchargement par table fermée (AC-3) ; K10 et écart avec un CSV (AC-4).
 - [ ] T4 — Audit `details`, sauvegarde et export constatés (AC-5).
 - [ ] T5 — Dialogue, i18n, Vitest, E2E, captures (AC-6, AC-7) ; `api-external.md` (AC-8).
-- [ ] T6 — Gate complet (dépôt `kesh-db` touché) ; E2E complet au dernier commit de code.
+- [ ] T6 — Gate complet (dépôt `kesh-db` touché) ; E2E complet au dernier commit de code ; compteurs (`LIB_ROUTES`,
+      `Cargo.lock`) recomptés depuis la source après chaque reprise de `main`.
+
+## Note de version
+
+*Texte prêt à assembler au `CHANGELOG.md` à la release ; aucune ligne n'y est ajoutée dans la branche.*
+
+- **Ajouté** : un rapport **CSV** (rapport de solde ou de rapprochement des versements du tableau de bord Stripe) se joint
+  à un compte bancaire comme un relevé PDF ; son solde de clôture sert de somme de contrôle. **Changé** : le refus d'un
+  fichier ni PDF ni CSV le dit (`BANK_DOCUMENT_UNSUPPORTED_TYPE` pour un type annoncé non admis).
 
 ## Dev Notes
 
@@ -208,7 +217,7 @@ que la pièce soit gardée et sauvegardée dans son format d'origine.
 - **Rapports Stripe** : <https://docs.stripe.com/reports/report-types/balance>,
   <https://docs.stripe.com/reports/report-types/payout-reconciliation> (CSV, téléchargeables du tableau de bord) ; le
   solde de clôture d'un rapport de solde arrête le solde Stripe à la fin de la période, versements partis compris — d'où
-  le détail « versements en route » de K9 (40-4 AC-4).
+  le détail « versements en route » de K10 (40-4 AC-4).
 - **Références** : epic G13, C-40-2 (d), C-40-6, C-40-7 ; 38-10 AC-1 à AC-9, C-38-10-1 à C-38-10-7 ; 40-4 AC-4.
 
 ## Questions ouvertes
@@ -225,6 +234,10 @@ que la pièce soit gardée et sauvegardée dans son format d'origine.
 ### File List
 
 ## Change Log
+
+- 2026-11-16 — alignement sur les règles de travail à plusieurs (Sonnet) : section Note de version ajoutée ; AC-8 :
+  `.tex` seulement, PDF régénéré à la release ; compteurs recomptés après chaque reprise de `main` (T6) ; K9 → K10
+  partout (l'Epic 37 prend K9).
 
 - 2026-11-15 — rédaction (Opus) : 8 AC ; 4 FR (3 de l'epic + 1 ajoutée), 3 NFR (2 + 1) ; aucune migration ; un code
   d'erreur neuf (`BANK_DOCUMENT_UNSUPPORTED_TYPE`) ; écarts : `BANK_DOCUMENT_NOT_PDF` gardé pour un fichier ni PDF ni

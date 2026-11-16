@@ -424,8 +424,8 @@ d'aujourd'hui** — l'Epic 38 n'étant pas développé) ; aucun outil
     (`crates/kesh-i18n/locales/{fr-CH,de-CH,it-CH,en-CH}/messages.ftl`) : message de `PROVIDER_SECRET_NOT_RESTRICTED`
     (AppError), `provider-error-provider-mode-changed`, `provider-error-provider-account-changed` et
     `provider-error-provider-account-unreadable` (D40-P3-1 : « Cette clé ne peut pas lire le compte Stripe : ajoutez le
-    droit de lecture du compte », le texte que 40-6 AC-3 reprend à l'écran). CHANGELOG : une
-    ligne de l'entrée non datée de l'epic.
+    droit de lecture du compte », le texte que 40-6 AC-3 reprend à l'écran). Aucune ligne au `CHANGELOG.md` :
+    la section **Note de version** de cette fiche porte le texte, assemblé à la release.
 15. **AC-15 — Documentation de l'API (`docs/api-external.md`).** Les routes des connexions de prestataire restent
     fermées aux clés (§4, `403 API_KEY_ADMIN_FORBIDDEN`) ; la section qui décrit la connexion PayPal (38-1), ou à défaut
     une sous-section du §7, gagne Stripe : `provider: "stripe"`, réglages `StripeSettings` (modifiables : `overlapDays`,
@@ -445,10 +445,19 @@ d'aujourd'hui** — l'Epic 38 n'étant pas développé) ; aucun outil
 - [ ] T3 — `kesh-api` : lecture du compte au début du passage (`Connector::account_ref`, `account_decision`, D40-P3-1), corps de secrets Stripe, `PROVIDER_SECRET_NOT_RESTRICTED`, `required_secrets` et secrets nommés si
       39 n'est pas livré, fabrique, route `test` (contrôles, écriture des champs du serveur, audit), garde de mode au passage,
       variante `stripeResponses` et jeu `"default"` (AC-3, AC-4, AC-5, AC-9, AC-11).
-- [ ] T4 — i18n quatre locales, CHANGELOG (AC-14) ; `docs/api-external.md` (AC-15).
+- [ ] T4 — i18n quatre locales, Note de version (AC-14) ; `docs/api-external.md` (AC-15).
 - [ ] T5 — Fixtures anonymisées et leurs tests, tests hostiles, test au marqueur, non-régression PayPal (AC-12, AC-13).
 - [ ] T6 — Gate complet (fmt, clippy `-D warnings`, nextest complet sur base remise à zéro, `scripts/gate-ci.sh`) ;
-      `Cargo.lock` commité si une dépendance change (aucune attendue : `zeroize`, `chrono-tz`, `rust_decimal` déjà là).
+      `Cargo.lock` commité si une dépendance change (aucune attendue : `zeroize`, `chrono-tz`, `rust_decimal` déjà là) ;
+      compteurs (`Cargo.lock`, registres) recomptés depuis la source après chaque reprise de `main`.
+
+## Note de version
+
+*Texte prêt à assembler au `CHANGELOG.md` à la release ; aucune ligne n'y est ajoutée dans la branche.*
+
+- **Ajouté** : compte Stripe — connexion par clé d'API **restreinte en lecture** (`rk_live_` ou `rk_test_` ; une clé
+  secrète `sk_` est refusée), version d'API épinglée, bouton « Tester » (mode, compte, droits, soldes `available` et
+  `pending`), téléchargement des transactions de solde par curseur, une devise après l'autre. Aucune migration.
 
 ## Dev Notes
 
@@ -498,6 +507,9 @@ d'aujourd'hui** — l'Epic 38 n'étant pas développé) ; aucun outil
 ### File List
 
 ## Change Log
+
+- 2026-11-16 — alignement sur les règles de travail à plusieurs (Sonnet) : CHANGELOG remplacé par la section Note de
+  version ; compteurs « recomptés depuis la source après chaque reprise de `main` » (T6).
 
 - 2026-11-15 — validation P5 ciblée (Sonnet) : 0 CRITICAL, 0 HIGH, 0 MEDIUM, 3 LOW ; remédiés dans la fiche. Périmètre :
   `git diff 98bca548 b5d23154` de la fiche (remédiation P4). Confirmés : « Tester » appelle `test()` (deux requêtes :

@@ -11,7 +11,7 @@ Status: ready-for-dev
   `account_unchanged`, `provider_reachable`, réponse `accountId`/`livemode`/`apiVersion`, jeu factice `stripeResponses: "default"`), **40-2**
   (codes courts `stripe::event_codes`, surcharges et leurs refus), **40-3** (versement : `value_date`, écriture datée de
   l'arrivée, ligne UBS rattachée, échecs à la file), **40-4** (`inTransitPayouts`, `otherDateShifts`, `available` et
-  `pending` à « Tester », détail de K9, tuile de l'accueil), **40-5** (rapports CSV aux relevés joints) ; **38-9a** et
+  `pending` à « Tester », détail de K10, tuile de l'accueil), **40-5** (rapports CSV aux relevés joints) ; **38-9a** et
   **38-9b** (écrans génériques des prestataires, qu'elle complète sans les recopier).
 - **Migration** : **aucune** (C-40-0).
 - **Modules** : `frontend`, `kesh-i18n`, `docs/manual`, E2E (`frontend/tests/e2e`) ; un test de concordance dans
@@ -36,7 +36,7 @@ afin de tenir les comptes Stripe sans saisie, en sachant ce qui est une créance
 | `FR-40-6-4` | Voir l'écart ventilé et `available` / `pending` d'un compte Stripe. | AC-3, AC-5 |
 | `FR-40-6-5` | Joindre un rapport CSV ; codes courts Stripe en aide du critère « code d'événement ». | AC-6, AC-8 (CSV : écran livré par 40-5) |
 | `NFR-40-6-1` | Aucun secret au DOM ni dans les réponses lues. | AC-2, AC-9 |
-| `NFR-40-6-2` | Quatre locales ; manuels d'administration et utilisateur à jour, PDF régénérés et contrôlés aplatis. | AC-7, AC-8 |
+| `NFR-40-6-2` | Quatre locales ; manuels d'administration et utilisateur à jour (`.tex` seulement ; PDF régénérés à la release, rendu contrôlé aplati en local, non commité). | AC-7, AC-8 |
 | `NFR-40-6-3` | E2E contre le transport factice (`stripeResponses: "default"`) : connexion → test → téléchargement → vente proposée et acceptée → versement rattaché à la ligne UBS. | AC-9 |
 | `NFR-40-6-4` | Captures d'écran de chaque état touché (*Recette visuelle*). | AC-10 |
 | `NFR-40-6-5` *(ajoutée)* | Textes « télécharger », « proposer », jamais « comptabiliser automatiquement » ; écrans PayPal inchangés (G18). | AC-1, AC-4, AC-7 |
@@ -49,11 +49,11 @@ afin de tenir les comptes Stripe sans saisie, en sachant ce qui est une créance
   **38-9b** (`ProviderProposalPreview.svelte`, `rules-labels.ts`, aide du critère `event_code_prefix` « Code PayPal, p. ex.
   `T0006` », AC-1). Cette story s'y branche ; ses noms sont ceux de ces fiches.
 - Relevés joints : `BankAccountDocumentsDialog.svelte` (38-10 AC-9), étendu aux CSV par **40-5** (AC-6) ; panneau des
-  contrôles de clôture `frontend/src/lib/features/fiscal-years/FiscalYearChecks.svelte` (existant ; K9 par 38-10).
+  contrôles de clôture `frontend/src/lib/features/fiscal-years/FiscalYearChecks.svelte` (existant ; K10 par 38-10).
 - Manuels : `docs/manual/fr/admin-manual.tex` (`\section{Le serveur MCP}` ligne 3299, après laquelle 38-9a AC-11 pose
   « Prestataires de paiement (PayPal) ») ; `docs/manual/fr/user-manual.tex` (`\section{Réconciliation bancaire}` ligne
   3004, sous laquelle 38-9b AC-10 pose « Comptes de prestataires de paiement (PayPal) » ; tuile des comptes bancaires
-  `:318-356`). PDF par `make fr` dans `docs/manual/`.
+  `:318-356`). Rendu local par `make fr` dans `docs/manual/` : PDF non commité, régénéré à la release.
 - Garde des textes : `crates/kesh-api/tests/textes_coherents.rs` lit déjà manuels et catalogues (`manuels_fr`, `:54`,
   `catalogue`, `:109`) — lieu d'une garde de concordance de plus.
 - Restriction des clés Stripe (<https://docs.stripe.com/keys/restricted-api-keys>, relu le 2026-11-15) : préfixe
@@ -162,7 +162,7 @@ afin de tenir les comptes Stripe sans saisie, en sachant ce qui est une créance
    versement et échec examinés » et le lien vers le versement d'origine (`relatedBankTransactionId` de l'élément de la file, 40-3 AC-7 ; `null` → « versement
    d'origine hors de Kesh », sans lien) ; un litige (`DISPUTE`, `DISPUTE_REV`) « à examiner, sans proposition » (B7). Libellés de genre et de code inconnus :
    lecture tolérante de 38-9b. Vitest : retrait avec et sans `valueDate`, échec de versement.
-5. **AC-5 — Écart ventilé et K9 (FR-40-6-4).** Résumé du contrôle (b) (38-9a AC-8 b, ligne du compte et page des
+5. **AC-5 — Écart ventilé et K10 (FR-40-6-4).** Résumé du contrôle (b) (38-9a AC-8 b, ligne du compte et page des
    comptes bancaires) : « Selon Stripe, au <`asOf`> : X · Aux livres : Y · Non rapproché : Z · **Versements en route :
    T** · Autres décalages de date : O · Inexpliqué : W », les deux termes neufs **seulement quand présents** (40-4 AC-2 :
    absents = 0) ; l'écran ne recalcule rien ; une infobulle sur « Versements en route » : « Partis de Stripe, pas encore
@@ -179,7 +179,7 @@ afin de tenir les comptes Stripe sans saisie, en sachant ce qui est une créance
    (<devise>) » (la ligne de frais d'une vente Stripe) et « PayPal · … » (`:350`). L'avis « PayPal ne remonte que trois
    ans » (`truncatedFrom`) ne concerne pas Stripe (`history_start` `None`, G3). Vitest : chaque site rendu « Stripe » pour
    une connexion `stripe`.
-   Panneau de clôture (`FiscalYearChecks.svelte`) : pour un compte K9 en écart portant `inTransitPayouts` (40-4 AC-4),
+   Panneau de clôture (`FiscalYearChecks.svelte`) : pour un compte K10 en écart portant `inTransitPayouts` (40-4 AC-4),
    « dont versements en route : T » sous l'écart (et « autres décalages de date : O ») ; absent sinon. Vitest des deux.
 6. **AC-6 — Codes courts Stripe dans l'aide et garde de concordance (FR-40-6-5).** `provider-labels.ts` porte
    `STRIPE_EVENT_CODES` (tous les codes de la table de 40-2 AC-2, ordre de la table, chacun avec son libellé :
@@ -207,7 +207,7 @@ afin de tenir les comptes Stripe sans saisie, en sachant ce qui est une créance
    (`features/provider-connections/` ; préfixe **retenu par 38-9a AC-10, corrigée et close** : `provider-connections-`,
    `provider-labels.ts` et `ProviderAccountBadge.svelte` compris ; l'entrée de menu est `nav-admin-providers`, déjà posée
    par 38-9a, que Stripe ne change pas) ;
-   aide des règles `reconciliation-rules-help-*` (AC-6, `features/reconciliation/`) ; résumé (b) et K9 au préfixe de
+   aide des règles `reconciliation-rules-help-*` (AC-6, `features/reconciliation/`) ; résumé (b) et K10 au préfixe de
    leur dossier hôte (`bank-accounts-…`, `fiscal-years-…`) ; les messages `provider-error-*` du serveur (40-1 AC-14)
    ne sont pas appelés par `i18nMsg` sous un dossier de fonctionnalité (sinon : clé du dossier qui les relaie). Écrites
    en toutes lettres (`i18n-keys.test.ts`), aux **quatre** locales (`crates/kesh-i18n/locales/{fr,de,it,en}-CH/messages.ftl`) ;
@@ -240,7 +240,7 @@ afin de tenir les comptes Stripe sans saisie, en sachant ce qui est une créance
      la ligne du relevé UBS se rattache à la même écriture (40-3, 34-11b) ; versement échoué ou annulé : à examiner ;
      litige : à examiner, sans proposition (B7) ; **l'écart ventilé** (non rapproché, versements en route, autres
      décalages, inexpliqué) et son sens ; à la clôture, le solde des comptes « Débiteurs Stripe » **est** la créance
-     (aucun numéro au manuel utilisateur, AC-7), aucune écriture à passer ; joindre le rapport de solde Stripe en CSV au compte et à l'exercice, saisir son solde de clôture, K9 et
+     (aucun numéro au manuel utilisateur, AC-7), aucune écriture à passer ; joindre le rapport de solde Stripe en CSV au compte et à l'exercice, saisir son solde de clôture, K10 et
      « dont versements en route » (40-5, 40-4) ; le rapport CSV doit avoir un en-tête à au moins deux colonnes (limite de
      40-5, `no_header`) ; le solde saisi est celui de fin de période du **rapport de solde** — le rapprochement des
      versements se joint sans solde (40-5 AC-6, texte de l'aide repris) ;
@@ -261,7 +261,7 @@ afin de tenir les comptes Stripe sans saisie, en sachant ce qui est une créance
      même journée postérieur à `asOf` et déjà rapproché fait un « inexpliqué » transitoire — est **retirée** et remplacée
      par le terme « autres décalages de date » de l'écart ventilé (40-4 Écart 6, `otherDateShifts`) ; `grep -n
      transitoire` des deux manuels, résultat au Change Log.
-   - PDF régénérés (`make fr` dans `docs/manual/`) et commités ; contrôle **aplati** (`pdftotext user-manual.pdf - | tr
+   - Modifier les `.tex` seulement : le PDF se régénère à la release (aucun PDF commité dans la branche) ; rendu contrôlé en local par `make fr`, **aplati** (`pdftotext user-manual.pdf - | tr
      '\n' ' ' | tr -s ' '`, et de même `admin-manual.pdf` : « clé restreinte », « Lecture », « Tester ») : chaque code de la liste, « clé restreinte », « versements en route », « créance » ; résultat
      au Change Log. Manuels DE/IT/EN : « à traduire » noté si l'écart existe. Brochure (`marketing-brochure.tex`) et
      `README.md` § *Fonctionnalités* : Stripe ajouté là où PayPal l'est (relu au développement), `website/` relu
@@ -289,7 +289,7 @@ afin de tenir les comptes Stripe sans saisie, en sachant ce qui est une créance
     dépôt), jointes au Dev Agent Record et au prompt de revue : formulaire Stripe (boutique « métadonnée » et
     « description », bloc « Avancé ») ; refus d'une clé `sk_` ; clé de test déposée (badge « Mode test ») ; résultat de
     « Tester » tout vert avec `available`/`pending`, avec ✗ `permission_present` et avec ✗ `account_readable` ; proposition d'un versement (sortie,
-    arrivée) ; échec de versement à la file ; résumé du contrôle (b) avec versements en route ; K9 avec « dont versements
+    arrivée) ; échec de versement à la file ; résumé du contrôle (b) avec versements en route ; K10 avec « dont versements
     en route » ; aide des codes Stripe au formulaire des règles.
 11. **AC-11 — Ce que la story ne touche pas.** Aucune migration ; aucune route ni action d'audit (C-40-6) ; **aucun outil
     MCP** (G17, E23 : connexions, contrôles et transactions de prestataire ne sont pas exposés ; `kesh_ecritures` lit les
@@ -301,10 +301,19 @@ afin de tenir les comptes Stripe sans saisie, en sachant ce qui est une créance
 - [ ] T1 — `StripeSettingsFields.svelte`, bras Stripe de `providerSettingsBody`, mode (AC-1).
 - [ ] T2 — Bloc de la clé : `stripeKeyRefusal`, messages, avis du mode test (AC-2).
 - [ ] T3 — « Tester » Stripe : libellés, remèdes, `available`/`pending` (AC-3).
-- [ ] T4 — Proposition de versement, file des échecs (AC-4) ; résumé (b) et K9 (AC-5).
+- [ ] T4 — Proposition de versement, file des échecs (AC-4) ; résumé (b) et K10 (AC-5).
 - [ ] T5 — Codes courts : constantes, aides des règles, garde `textes_coherents.rs` (AC-6) ; i18n (AC-7).
-- [ ] T6 — Manuels admin et utilisateur, PDF aplatis, brochure, README, site (AC-8).
-- [ ] T7 — E2E `provider-stripe.spec.ts`, captures (AC-9, AC-10) ; gates complets.
+- [ ] T6 — Manuels admin et utilisateur, rendu aplati contrôlé (PDF non commité), brochure, README, site (AC-8).
+- [ ] T7 — E2E `provider-stripe.spec.ts`, captures (AC-9, AC-10) ; gates complets ; compteurs (`Cargo.lock`, registres)
+      recomptés depuis la source après chaque reprise de `main`.
+
+## Note de version
+
+*Texte prêt à assembler au `CHANGELOG.md` à la release ; aucune ligne n'y est ajoutée dans la branche.*
+
+- **Ajouté** : écrans du compte Stripe — formulaire de connexion et clé restreinte (mode test signalé), résultat de
+  « Tester » avec les droits manquants, proposition et file des versements, écart ventilé avec versements en route, aide
+  des codes courts ; manuels d'administration et utilisateur mis à jour (`.tex`).
 
 ## Dev Notes
 
@@ -344,6 +353,11 @@ afin de tenir les comptes Stripe sans saisie, en sachant ce qui est une créance
 ### File List
 
 ## Change Log
+
+- 2026-11-16 — alignement sur les règles de travail à plusieurs (Sonnet) : section Note de version ajoutée ; AC-8, T6,
+  NFR-40-6-2 : `.tex` seulement, PDF non commité, régénéré à la release (rendu aplati contrôlé en local) ; compteurs
+  recomptés après chaque reprise de `main` (T7) ; K9 → K10 partout (l'Epic 37 prend K9), y compris dans les entrées
+  antérieures de ce journal.
 
 - 2026-11-15 — validation P5 ciblée (Sonnet) : 0 CRITICAL, 0 HIGH, 0 MEDIUM, 1 LOW ; remédié dans la fiche. Périmètre :
   `git diff 98bca548 b5d23154` de la fiche (remédiation P4). Confirmés : AC-2, tout `sk_` → `secret_key` (40-1 AC-4,

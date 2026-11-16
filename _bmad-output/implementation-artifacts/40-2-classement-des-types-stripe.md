@@ -225,7 +225,7 @@ plutôt qu'en vente, afin que les règles et les propositions travaillent sur de
    - Aucun test de classement ne touche la base ni le réseau ; ceux de l'AC-5 utilisent le serveur local de 40-1.
 8. **AC-8 — Ce que la story ne touche pas.** Aucune migration (C-40-0 : `event_code` ≤ 16 tient dans `VARCHAR(16)` de
    38-3a — test : chaque code de la table ≤ 16 ; `movement_kind` et `review_reason` à domaine ouvert, valeurs de C-38-4) ;
-   aucune route (C-40-6) ; aucun outil MCP (G17) ; CHANGELOG : une ligne de l'entrée non datée de l'epic (classement des types, surcharges) ; aucun écran ni manuel (40-6 : liste des codes courts en aide du critère
+   aucune route (C-40-6) ; aucun outil MCP (G17) ; aucune ligne au `CHANGELOG.md` (section **Note de version** de la fiche : classement des types, surcharges) ; aucun écran ni manuel (40-6 : liste des codes courts en aide du critère
    `event_code_prefix`, champ des surcharges, ce qui va à la file) ; i18n : aucun texte neuf (codes de refus de 38-1/38-8).
 
 ## Tâches
@@ -236,7 +236,16 @@ plutôt qu'en vente, afin que les règles et les propositions travaillent sur de
 - [ ] T3 — `stripe::origins` : lecture bornée par `source`, tests au serveur local (AC-5).
 - [ ] T4 — `kesh-core` : constantes `EVENT_CODES` et `OVERRIDABLE_CODES` (réexportées par `stripe::event_codes`),
       `eventKindOverrides` de `StripeSettings`, validation, tests (AC-6).
-- [ ] T5 — Tests de l'AC-7 ; gate complet (fmt, clippy, nextest complet, `scripts/gate-ci.sh`).
+- [ ] T5 — Tests de l'AC-7 ; gate complet (fmt, clippy, nextest complet, `scripts/gate-ci.sh`) ; compteurs (registres, `Cargo.lock`)
+      recomptés depuis la source après chaque reprise de `main`.
+
+## Note de version
+
+*Texte prêt à assembler au `CHANGELOG.md` à la release ; aucune ligne n'y est ajoutée dans la branche.*
+
+- **Ajouté** : les transactions Stripe téléchargées sont classées en mouvements (vente, remboursement, litige, frais,
+  versement) avec un code court, les montants et les liens entre elles ; le numéro de facture de la boutique est repris ;
+  les types peuvent être reclassés par des surcharges réglables dans la connexion.
 
 ## Dev Notes
 
@@ -281,6 +290,9 @@ plutôt qu'en vente, afin que les règles et les propositions travaillent sur de
 ### File List
 
 ## Change Log
+
+- 2026-11-16 — alignement sur les règles de travail à plusieurs (Sonnet) : CHANGELOG remplacé par la section Note de
+  version ; compteurs « recomptés depuis la source après chaque reprise de `main` » (T5).
 
 - 2026-11-15 — validation P3 (Sonnet) : 0 CRITICAL, 0 HIGH, 0 MEDIUM, 3 LOW ; remédiés dans la fiche (aucun
   inter-fiches). Remédiation P2 relue (`EVENT_CODES`/`OVERRIDABLE_CODES` dans `kesh-core` : cohérent avec 38-3b AC-1 et
