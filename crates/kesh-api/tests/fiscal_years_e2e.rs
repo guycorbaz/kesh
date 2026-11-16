@@ -2100,6 +2100,117 @@ async fn create_before_a_closed_year_returns_400_later_fiscal_year_closed(pool: 
     assert_eq!(n, 0, "rien n'est inséré");
 }
 
+/// Story 37-1 (AC-2, AC-3 bis, D-CR7-2) — les exercices exposent `multiCurrency`,
+/// `openingRateKind` et `closingRateKind` (toujours présents) ; dans une société
+/// multi-devises, `POST /fiscal-years` avant un exercice mono-devise rend **400
+/// `LATER_FISCAL_YEAR_MONO_CURRENCY`**, mêmes `details` que
+/// `LATER_FISCAL_YEAR_CLOSED`, message propre ; rien n'est inséré ni audité.
+/// L'activation (phase suivante) est simulée en SQL direct.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn create_before_a_mono_currency_year_returns_400_later_fiscal_year_mono_currency(
+    pool: MySqlPool,
+) {
+    let (app, token) = bootstrap_admin(&pool).await;
+    let y2026 = create_fy(&app, &token, 2026).await;
+
+    // Lecture : mono-devise, genres `day`, en liste et au détail.
+    let resp = app
+        .client
+        .get(app.url(&format!("/api/v1/fiscal-years/{y2026}")))
+        .header("Authorization", auth(&token))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+    let detail: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(detail["multiCurrency"], false);
+    assert_eq!(detail["openingRateKind"], "day");
+    assert_eq!(detail["closingRateKind"], "day");
+
+    sqlx::query("UPDATE companies SET multi_currency_enabled = TRUE")
+        .execute(&pool)
+        .await
+        .unwrap();
+    sqlx::query("UPDATE fiscal_years SET closing_rate_kind = 'month' WHERE id = ?")
+        .bind(y2026)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let audits_avant: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM audit_log WHERE action = 'fiscal_year.created'")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+
+    let resp = app
+        .client
+        .post(app.url("/api/v1/fiscal-years"))
+        .header("Authorization", auth(&token))
+        .json(&json!({
+            "name": "Exercice 2025",
+            "startDate": "2025-01-01",
+            "endDate": "2025-12-31"
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 400);
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(body["error"]["code"], "LATER_FISCAL_YEAR_MONO_CURRENCY");
+    assert_eq!(body["error"]["details"]["fiscalYearId"], y2026);
+    assert_eq!(body["error"]["details"]["fiscalYearName"], "Exercice 2026");
+    let msg = body["error"]["message"].as_str().unwrap_or("");
+    assert!(
+        msg.contains("« Exercice 2026 », postérieur, est mono-devise"),
+        "message de error-fiscal-year-create-later-mono-currency attendu, obtenu : {msg}"
+    );
+    let n: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM fiscal_years WHERE name = 'Exercice 2025'")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(n, 0, "rien n'est inséré");
+    let audits_apres: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM audit_log WHERE action = 'fiscal_year.created'")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(audits_apres, audits_avant, "rien n'est audité");
+
+    // Après lui : multi-devises, ouverture reprise de sa clôture `month`.
+    let resp = app
+        .client
+        .post(app.url("/api/v1/fiscal-years"))
+        .header("Authorization", auth(&token))
+        .json(&json!({
+            "name": "Exercice 2027",
+            "startDate": "2027-01-01",
+            "endDate": "2027-12-31"
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 201);
+    let cree: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(cree["multiCurrency"], true);
+    assert_eq!(cree["openingRateKind"], "month");
+    assert_eq!(cree["closingRateKind"], "day");
+
+    let resp = app
+        .client
+        .get(app.url("/api/v1/fiscal-years"))
+        .header("Authorization", auth(&token))
+        .send()
+        .await
+        .unwrap();
+    let liste: serde_json::Value = resp.json().await.unwrap();
+    for fy in liste.as_array().expect("liste") {
+        assert!(fy.get("multiCurrency").is_some(), "{fy}");
+        assert!(fy.get("openingRateKind").is_some(), "{fy}");
+        assert!(fy.get("closingRateKind").is_some(), "{fy}");
+    }
+}
+
 /// AC 4 / AC 5 (revue P1, E5) — les deux refus neufs atteignent une
 /// **intégration** : avec une clé d'API `read-write`, la clôture hors d'ordre rend
 /// `409 EARLIER_FISCAL_YEAR_OPEN` et la création sous un exercice clos `400

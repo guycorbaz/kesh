@@ -1,16 +1,17 @@
 -- SQUASH DU SCHÉMA DE TEST — Story 22-5 (#251). GÉNÉRÉ, NE PAS ÉDITER.
 -- Régénérer : scripts/regen-test-schema.sh
--- Équivalent des 91 migrations de crates/kesh-db/migrations/,
+-- Équivalent des 92 migrations de crates/kesh-db/migrations/,
 -- rejouées en UN batch DDL par base éphémère de test.
 --
 -- Le garde-fou crates/kesh-db/tests/test_schema_guard.rs compare ce schéma
 -- au vrai à chaque gate : une migration ajoutée sans régénération rougit.
 
+/*M!999999\- enable the sandbox mode */ 
 
 /*!40101 SET @OLD_CHARACTER_SET_CLIENT=@@CHARACTER_SET_CLIENT */;
 /*!40101 SET @OLD_CHARACTER_SET_RESULTS=@@CHARACTER_SET_RESULTS */;
 /*!40101 SET @OLD_COLLATION_CONNECTION=@@COLLATION_CONNECTION */;
-/*!50503 SET NAMES utf8mb4 */;
+/*!40101 SET NAMES utf8mb4 */;
 /*!40103 SET @OLD_TIME_ZONE=@@TIME_ZONE */;
 /*!40103 SET TIME_ZONE='+00:00' */;
 /*!40014 SET @OLD_UNIQUE_CHECKS=@@UNIQUE_CHECKS, UNIQUE_CHECKS=0 */;
@@ -19,7 +20,7 @@
 /*!40111 SET @OLD_SQL_NOTES=@@SQL_NOTES, SQL_NOTES=0 */;
 DROP TABLE IF EXISTS `_kesh_backup_schedule`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
-/*!50503 SET character_set_client = utf8mb4 */;
+/*!40101 SET character_set_client = utf8mb4 */;
 CREATE TABLE `_kesh_backup_schedule` (
   `id` tinyint(3) unsigned NOT NULL DEFAULT 1,
   `enabled` tinyint(1) NOT NULL DEFAULT 1,
@@ -43,7 +44,7 @@ CREATE TABLE `_kesh_backup_schedule` (
 /*!40101 SET character_set_client = @saved_cs_client */;
 DROP TABLE IF EXISTS `_kesh_installation_settings`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
-/*!50503 SET character_set_client = utf8mb4 */;
+/*!40101 SET character_set_client = utf8mb4 */;
 CREATE TABLE `_kesh_installation_settings` (
   `id` tinyint(3) unsigned NOT NULL DEFAULT 1,
   `session_idle_minutes` int(11) NOT NULL DEFAULT 60,
@@ -56,7 +57,7 @@ CREATE TABLE `_kesh_installation_settings` (
 /*!40101 SET character_set_client = @saved_cs_client */;
 DROP TABLE IF EXISTS `_kesh_version`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
-/*!50503 SET character_set_client = utf8mb4 */;
+/*!40101 SET character_set_client = utf8mb4 */;
 CREATE TABLE `_kesh_version` (
   `id` tinyint(3) unsigned NOT NULL DEFAULT 1,
   `kesh_version_min_required` varchar(40) NOT NULL,
@@ -69,7 +70,7 @@ CREATE TABLE `_kesh_version` (
 /*!40101 SET character_set_client = @saved_cs_client */;
 DROP TABLE IF EXISTS `accounts`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
-/*!50503 SET character_set_client = utf8mb4 */;
+/*!40101 SET character_set_client = utf8mb4 */;
 CREATE TABLE `accounts` (
   `id` bigint(20) NOT NULL AUTO_INCREMENT,
   `company_id` bigint(20) NOT NULL,
@@ -84,21 +85,30 @@ CREATE TABLE `accounts` (
   `role` varchar(32) DEFAULT NULL COMMENT 'Rôle métier explicite (Story 14-3a) — NULL = aucun',
   `postable` tinyint(1) NOT NULL DEFAULT 1 COMMENT 'FALSE = compte titre/regroupement ou compte de résultat calculé',
   `singleton_role` varchar(32) GENERATED ALWAYS AS (case when `active` <> 0 and `role` in ('Receivable','DefaultRevenue','Payable','VatRecoverable','VatPayable','VatSettlement','RetainedEarnings','CurrentYearResult') then `role` else NULL end) VIRTUAL,
+  `currency` char(3) CHARACTER SET ascii COLLATE ascii_bin DEFAULT NULL COMMENT 'Code ISO 4217 de la devise du compte, NULL = devise principale (CHF)',
+  `fx_gain_account_id` bigint(20) DEFAULT NULL COMMENT 'Compte de gains de change propre (accounts.id, sans FK), NULL = réglage de la société',
+  `fx_loss_account_id` bigint(20) DEFAULT NULL COMMENT 'Compte de pertes de change propre (accounts.id, sans FK), NULL = réglage de la société',
   PRIMARY KEY (`id`),
   UNIQUE KEY `uq_accounts_company_number` (`company_id`,`number`),
   UNIQUE KEY `uq_accounts_company_singleton_role` (`company_id`,`singleton_role`),
   KEY `fk_accounts_parent` (`parent_id`),
+  KEY `idx_accounts_fx_gain` (`company_id`,`fx_gain_account_id`),
+  KEY `idx_accounts_fx_loss` (`company_id`,`fx_loss_account_id`),
   CONSTRAINT `fk_accounts_company` FOREIGN KEY (`company_id`) REFERENCES `companies` (`id`),
   CONSTRAINT `fk_accounts_parent` FOREIGN KEY (`parent_id`) REFERENCES `accounts` (`id`),
   CONSTRAINT `chk_accounts_type` CHECK (cast(`account_type` as char charset binary) in (cast('Asset' as char charset binary),cast('Liability' as char charset binary),cast('Revenue' as char charset binary),cast('Expense' as char charset binary))),
   CONSTRAINT `chk_accounts_number_nonempty` CHECK (char_length(trim(`number`)) > 0),
   CONSTRAINT `chk_accounts_name_nonempty` CHECK (char_length(trim(`name`)) > 0),
-  CONSTRAINT `chk_accounts_role` CHECK (`role` is null or cast(`role` as char charset binary) in (cast('Receivable' as char charset binary),cast('DefaultRevenue' as char charset binary),cast('Payable' as char charset binary),cast('VatRecoverable' as char charset binary),cast('VatPayable' as char charset binary),cast('VatSettlement' as char charset binary),cast('EquityCapital' as char charset binary),cast('EquityOther' as char charset binary),cast('RetainedEarnings' as char charset binary),cast('CurrentYearResult' as char charset binary)))
+  CONSTRAINT `chk_accounts_role` CHECK (`role` is null or cast(`role` as char charset binary) in (cast('Receivable' as char charset binary),cast('DefaultRevenue' as char charset binary),cast('Payable' as char charset binary),cast('VatRecoverable' as char charset binary),cast('VatPayable' as char charset binary),cast('VatSettlement' as char charset binary),cast('EquityCapital' as char charset binary),cast('EquityOther' as char charset binary),cast('RetainedEarnings' as char charset binary),cast('CurrentYearResult' as char charset binary))),
+  CONSTRAINT `chk_accounts_currency_format` CHECK (`currency` is null or cast(`currency` as char charset binary) regexp '^[A-Z]{3}$'),
+  CONSTRAINT `chk_accounts_currency_not_base` CHECK (`currency` is null or cast(`currency` as char charset binary) <> cast('CHF' as char charset binary)),
+  CONSTRAINT `chk_accounts_fx_own_pair` CHECK (`fx_gain_account_id` is null = (`fx_loss_account_id` is null)),
+  CONSTRAINT `chk_accounts_fx_own_foreign` CHECK (`fx_gain_account_id` is null or `currency` is not null)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 DROP TABLE IF EXISTS `api_keys`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
-/*!50503 SET character_set_client = utf8mb4 */;
+/*!40101 SET character_set_client = utf8mb4 */;
 CREATE TABLE `api_keys` (
   `id` bigint(20) NOT NULL AUTO_INCREMENT,
   `company_id` bigint(20) NOT NULL,
@@ -125,7 +135,7 @@ CREATE TABLE `api_keys` (
 /*!40101 SET character_set_client = @saved_cs_client */;
 DROP TABLE IF EXISTS `audit_log`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
-/*!50503 SET character_set_client = utf8mb4 */;
+/*!40101 SET character_set_client = utf8mb4 */;
 CREATE TABLE `audit_log` (
   `id` bigint(20) NOT NULL AUTO_INCREMENT,
   `user_id` bigint(20) NOT NULL,
@@ -148,7 +158,7 @@ CREATE TABLE `audit_log` (
 /*!40101 SET character_set_client = @saved_cs_client */;
 DROP TABLE IF EXISTS `bank_accounts`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
-/*!50503 SET character_set_client = utf8mb4 */;
+/*!40101 SET character_set_client = utf8mb4 */;
 CREATE TABLE `bank_accounts` (
   `id` bigint(20) NOT NULL AUTO_INCREMENT,
   `company_id` bigint(20) NOT NULL,
@@ -180,7 +190,7 @@ CREATE TABLE `bank_accounts` (
 /*!40101 SET character_set_client = @saved_cs_client */;
 DROP TABLE IF EXISTS `bank_imports`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
-/*!50503 SET character_set_client = utf8mb4 */;
+/*!40101 SET character_set_client = utf8mb4 */;
 CREATE TABLE `bank_imports` (
   `id` bigint(20) NOT NULL AUTO_INCREMENT,
   `company_id` bigint(20) NOT NULL,
@@ -211,7 +221,7 @@ CREATE TABLE `bank_imports` (
 /*!40101 SET character_set_client = @saved_cs_client */;
 DROP TABLE IF EXISTS `bank_profiles`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
-/*!50503 SET character_set_client = utf8mb4 */;
+/*!40101 SET character_set_client = utf8mb4 */;
 CREATE TABLE `bank_profiles` (
   `id` bigint(20) NOT NULL AUTO_INCREMENT,
   `company_id` bigint(20) NOT NULL,
@@ -244,7 +254,7 @@ CREATE TABLE `bank_profiles` (
 /*!40101 SET character_set_client = @saved_cs_client */;
 DROP TABLE IF EXISTS `bank_transactions`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
-/*!50503 SET character_set_client = utf8mb4 */;
+/*!40101 SET character_set_client = utf8mb4 */;
 CREATE TABLE `bank_transactions` (
   `id` bigint(20) NOT NULL AUTO_INCREMENT,
   `company_id` bigint(20) NOT NULL,
@@ -282,7 +292,7 @@ CREATE TABLE `bank_transactions` (
 /*!40101 SET character_set_client = @saved_cs_client */;
 DROP TABLE IF EXISTS `companies`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
-/*!50503 SET character_set_client = utf8mb4 */;
+/*!40101 SET character_set_client = utf8mb4 */;
 CREATE TABLE `companies` (
   `id` bigint(20) NOT NULL AUTO_INCREMENT,
   `name` varchar(255) NOT NULL,
@@ -307,6 +317,10 @@ CREATE TABLE `companies` (
   `phone` varchar(50) DEFAULT NULL,
   `website` varchar(255) DEFAULT NULL,
   `books_locked_through` date DEFAULT NULL COMMENT 'Story 24-4c (#380) : borne INCLUSIVE du verrou de période. NULL = aucun verrou. Aucune écriture ne peut être créée avec une entry_date <= cette date.',
+  `multi_currency_enabled` tinyint(1) NOT NULL DEFAULT 0 COMMENT 'Mode multi-devises de la société, irréversible une fois activé',
+  `fx_gain_account_id` bigint(20) DEFAULT NULL COMMENT 'Compte des gains de change (accounts.id, sans FK : intégrité par le dépôt)',
+  `fx_loss_account_id` bigint(20) DEFAULT NULL COMMENT 'Compte des pertes de change (accounts.id, sans FK : intégrité par le dépôt)',
+  `fx_transit_account_id` bigint(20) DEFAULT NULL COMMENT 'Compte de conversion entre devises, de bilan, en CHF (accounts.id, sans FK)',
   PRIMARY KEY (`id`),
   UNIQUE KEY `uq_companies_ide_number` (`ide_number`),
   CONSTRAINT `chk_companies_org_type` CHECK (cast(`org_type` as char charset binary) in (cast('Independant' as char charset binary),cast('Association' as char charset binary),cast('Pme' as char charset binary))),
@@ -320,7 +334,7 @@ CREATE TABLE `companies` (
 /*!40101 SET character_set_client = @saved_cs_client */;
 DROP TABLE IF EXISTS `company_dunning_settings`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
-/*!50503 SET character_set_client = utf8mb4 */;
+/*!40101 SET character_set_client = utf8mb4 */;
 CREATE TABLE `company_dunning_settings` (
   `company_id` bigint(20) NOT NULL,
   `grace_period_days` int(11) NOT NULL DEFAULT 5,
@@ -335,7 +349,7 @@ CREATE TABLE `company_dunning_settings` (
 /*!40101 SET character_set_client = @saved_cs_client */;
 DROP TABLE IF EXISTS `company_invoice_settings`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
-/*!50503 SET character_set_client = utf8mb4 */;
+/*!40101 SET character_set_client = utf8mb4 */;
 CREATE TABLE `company_invoice_settings` (
   `company_id` bigint(20) NOT NULL,
   `invoice_number_format` varchar(64) NOT NULL DEFAULT 'F-{YEAR}-{SEQ:04}',
@@ -390,7 +404,7 @@ CREATE TABLE `company_invoice_settings` (
 /*!40101 SET character_set_client = @saved_cs_client */;
 DROP TABLE IF EXISTS `contact_persons`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
-/*!50503 SET character_set_client = utf8mb4 */;
+/*!40101 SET character_set_client = utf8mb4 */;
 CREATE TABLE `contact_persons` (
   `id` bigint(20) NOT NULL AUTO_INCREMENT,
   `company_id` bigint(20) NOT NULL,
@@ -414,7 +428,7 @@ CREATE TABLE `contact_persons` (
 /*!40101 SET character_set_client = @saved_cs_client */;
 DROP TABLE IF EXISTS `contacts`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
-/*!50503 SET character_set_client = utf8mb4 */;
+/*!40101 SET character_set_client = utf8mb4 */;
 CREATE TABLE `contacts` (
   `id` bigint(20) NOT NULL AUTO_INCREMENT,
   `company_id` bigint(20) NOT NULL,
@@ -462,7 +476,7 @@ CREATE TABLE `contacts` (
 /*!40101 SET character_set_client = @saved_cs_client */;
 DROP TABLE IF EXISTS `credit_note_lines`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
-/*!50503 SET character_set_client = utf8mb4 */;
+/*!40101 SET character_set_client = utf8mb4 */;
 CREATE TABLE `credit_note_lines` (
   `id` bigint(20) NOT NULL AUTO_INCREMENT,
   `credit_note_id` bigint(20) NOT NULL,
@@ -489,7 +503,7 @@ CREATE TABLE `credit_note_lines` (
 /*!40101 SET character_set_client = @saved_cs_client */;
 DROP TABLE IF EXISTS `credit_note_number_sequences`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
-/*!50503 SET character_set_client = utf8mb4 */;
+/*!40101 SET character_set_client = utf8mb4 */;
 CREATE TABLE `credit_note_number_sequences` (
   `id` bigint(20) NOT NULL AUTO_INCREMENT,
   `company_id` bigint(20) NOT NULL,
@@ -508,7 +522,7 @@ CREATE TABLE `credit_note_number_sequences` (
 /*!40101 SET character_set_client = @saved_cs_client */;
 DROP TABLE IF EXISTS `credit_notes`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
-/*!50503 SET character_set_client = utf8mb4 */;
+/*!40101 SET character_set_client = utf8mb4 */;
 CREATE TABLE `credit_notes` (
   `id` bigint(20) NOT NULL AUTO_INCREMENT,
   `company_id` bigint(20) NOT NULL,
@@ -541,7 +555,7 @@ CREATE TABLE `credit_notes` (
 /*!40101 SET character_set_client = @saved_cs_client */;
 DROP TABLE IF EXISTS `dunning_levels`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
-/*!50503 SET character_set_client = utf8mb4 */;
+/*!40101 SET character_set_client = utf8mb4 */;
 CREATE TABLE `dunning_levels` (
   `id` bigint(20) NOT NULL AUTO_INCREMENT,
   `company_id` bigint(20) NOT NULL,
@@ -562,7 +576,7 @@ CREATE TABLE `dunning_levels` (
 /*!40101 SET character_set_client = @saved_cs_client */;
 DROP TABLE IF EXISTS `email_templates`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
-/*!50503 SET character_set_client = utf8mb4 */;
+/*!40101 SET character_set_client = utf8mb4 */;
 CREATE TABLE `email_templates` (
   `id` bigint(20) NOT NULL AUTO_INCREMENT,
   `company_id` bigint(20) NOT NULL,
@@ -584,7 +598,7 @@ CREATE TABLE `email_templates` (
 /*!40101 SET character_set_client = @saved_cs_client */;
 DROP TABLE IF EXISTS `fiscal_years`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
-/*!50503 SET character_set_client = utf8mb4 */;
+/*!40101 SET character_set_client = utf8mb4 */;
 CREATE TABLE `fiscal_years` (
   `id` bigint(20) NOT NULL AUTO_INCREMENT,
   `company_id` bigint(20) NOT NULL,
@@ -595,6 +609,9 @@ CREATE TABLE `fiscal_years` (
   `created_at` datetime(3) NOT NULL DEFAULT current_timestamp(3),
   `updated_at` datetime(3) NOT NULL DEFAULT current_timestamp(3) ON UPDATE current_timestamp(3),
   `supplier_invoice_next_number` bigint(20) NOT NULL DEFAULT 1,
+  `multi_currency` tinyint(1) NOT NULL DEFAULT 0 COMMENT 'Exercice multi-devises, posé à la création et à l''activation, jamais changé ensuite',
+  `opening_rate_kind` enum('day','month') NOT NULL DEFAULT 'day' COMMENT 'Genre du cours d''ouverture : day = veille de start_date, month = mois de la veille',
+  `closing_rate_kind` enum('day','month') NOT NULL DEFAULT 'day' COMMENT 'Genre du cours de clôture : day = end_date, month = mois de end_date',
   PRIMARY KEY (`id`),
   UNIQUE KEY `uq_fiscal_years_company_name` (`company_id`,`name`),
   UNIQUE KEY `uq_fiscal_years_company_start_date` (`company_id`,`start_date`),
@@ -607,7 +624,7 @@ CREATE TABLE `fiscal_years` (
 /*!40101 SET character_set_client = @saved_cs_client */;
 DROP TABLE IF EXISTS `imported_supplier_invoices`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
-/*!50503 SET character_set_client = utf8mb4 */;
+/*!40101 SET character_set_client = utf8mb4 */;
 CREATE TABLE `imported_supplier_invoices` (
   `id` bigint(20) NOT NULL AUTO_INCREMENT,
   `company_id` bigint(20) NOT NULL,
@@ -653,7 +670,7 @@ CREATE TABLE `imported_supplier_invoices` (
 /*!40101 SET character_set_client = @saved_cs_client */;
 DROP TABLE IF EXISTS `invoice_lines`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
-/*!50503 SET character_set_client = utf8mb4 */;
+/*!40101 SET character_set_client = utf8mb4 */;
 CREATE TABLE `invoice_lines` (
   `id` bigint(20) NOT NULL AUTO_INCREMENT,
   `invoice_id` bigint(20) NOT NULL,
@@ -680,7 +697,7 @@ CREATE TABLE `invoice_lines` (
 /*!40101 SET character_set_client = @saved_cs_client */;
 DROP TABLE IF EXISTS `invoice_number_sequences`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
-/*!50503 SET character_set_client = utf8mb4 */;
+/*!40101 SET character_set_client = utf8mb4 */;
 CREATE TABLE `invoice_number_sequences` (
   `id` bigint(20) NOT NULL AUTO_INCREMENT,
   `company_id` bigint(20) NOT NULL,
@@ -699,7 +716,7 @@ CREATE TABLE `invoice_number_sequences` (
 /*!40101 SET character_set_client = @saved_cs_client */;
 DROP TABLE IF EXISTS `invoice_reminders`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
-/*!50503 SET character_set_client = utf8mb4 */;
+/*!40101 SET character_set_client = utf8mb4 */;
 CREATE TABLE `invoice_reminders` (
   `id` bigint(20) NOT NULL AUTO_INCREMENT,
   `company_id` bigint(20) NOT NULL,
@@ -727,7 +744,7 @@ CREATE TABLE `invoice_reminders` (
 /*!40101 SET character_set_client = @saved_cs_client */;
 DROP TABLE IF EXISTS `invoice_settlements`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
-/*!50503 SET character_set_client = utf8mb4 */;
+/*!40101 SET character_set_client = utf8mb4 */;
 CREATE TABLE `invoice_settlements` (
   `id` bigint(20) NOT NULL AUTO_INCREMENT,
   `company_id` bigint(20) NOT NULL,
@@ -760,7 +777,7 @@ CREATE TABLE `invoice_settlements` (
 /*!40101 SET character_set_client = @saved_cs_client */;
 DROP TABLE IF EXISTS `invoices`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
-/*!50503 SET character_set_client = utf8mb4 */;
+/*!40101 SET character_set_client = utf8mb4 */;
 CREATE TABLE `invoices` (
   `id` bigint(20) NOT NULL AUTO_INCREMENT,
   `company_id` bigint(20) NOT NULL,
@@ -810,7 +827,7 @@ CREATE TABLE `invoices` (
 /*!40101 SET character_set_client = @saved_cs_client */;
 DROP TABLE IF EXISTS `journal_entries`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
-/*!50503 SET character_set_client = utf8mb4 */;
+/*!40101 SET character_set_client = utf8mb4 */;
 CREATE TABLE `journal_entries` (
   `id` bigint(20) NOT NULL AUTO_INCREMENT,
   `company_id` bigint(20) NOT NULL,
@@ -839,7 +856,7 @@ CREATE TABLE `journal_entries` (
 /*!40101 SET character_set_client = @saved_cs_client */;
 DROP TABLE IF EXISTS `journal_entry_lines`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
-/*!50503 SET character_set_client = utf8mb4 */;
+/*!40101 SET character_set_client = utf8mb4 */;
 CREATE TABLE `journal_entry_lines` (
   `id` bigint(20) NOT NULL AUTO_INCREMENT,
   `entry_id` bigint(20) NOT NULL,
@@ -869,7 +886,7 @@ CREATE TABLE `journal_entry_lines` (
 /*!40101 SET character_set_client = @saved_cs_client */;
 DROP TABLE IF EXISTS `journal_entry_number_sequences`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
-/*!50503 SET character_set_client = utf8mb4 */;
+/*!40101 SET character_set_client = utf8mb4 */;
 CREATE TABLE `journal_entry_number_sequences` (
   `id` bigint(20) NOT NULL AUTO_INCREMENT,
   `company_id` bigint(20) NOT NULL,
@@ -888,7 +905,7 @@ CREATE TABLE `journal_entry_number_sequences` (
 /*!40101 SET character_set_client = @saved_cs_client */;
 DROP TABLE IF EXISTS `mcp_keys`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
-/*!50503 SET character_set_client = utf8mb4 */;
+/*!40101 SET character_set_client = utf8mb4 */;
 CREATE TABLE `mcp_keys` (
   `id` bigint(20) NOT NULL AUTO_INCREMENT,
   `company_id` bigint(20) NOT NULL,
@@ -917,7 +934,7 @@ CREATE TABLE `mcp_keys` (
 /*!40101 SET character_set_client = @saved_cs_client */;
 DROP TABLE IF EXISTS `mcp_prompt_versions`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
-/*!50503 SET character_set_client = utf8mb4 */;
+/*!40101 SET character_set_client = utf8mb4 */;
 CREATE TABLE `mcp_prompt_versions` (
   `id` bigint(20) NOT NULL AUTO_INCREMENT,
   `prompt_id` bigint(20) NOT NULL,
@@ -955,7 +972,7 @@ CREATE TABLE `mcp_prompt_versions` (
 /*!40101 SET character_set_client = @saved_cs_client */;
 DROP TABLE IF EXISTS `mcp_prompts`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
-/*!50503 SET character_set_client = utf8mb4 */;
+/*!40101 SET character_set_client = utf8mb4 */;
 CREATE TABLE `mcp_prompts` (
   `id` bigint(20) NOT NULL AUTO_INCREMENT,
   `company_id` bigint(20) NOT NULL,
@@ -973,7 +990,7 @@ CREATE TABLE `mcp_prompts` (
 /*!40101 SET character_set_client = @saved_cs_client */;
 DROP TABLE IF EXISTS `mcp_sends`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
-/*!50503 SET character_set_client = utf8mb4 */;
+/*!40101 SET character_set_client = utf8mb4 */;
 CREATE TABLE `mcp_sends` (
   `id` bigint(20) NOT NULL AUTO_INCREMENT,
   `company_id` bigint(20) NOT NULL,
@@ -1004,7 +1021,7 @@ CREATE TABLE `mcp_sends` (
 /*!40101 SET character_set_client = @saved_cs_client */;
 DROP TABLE IF EXISTS `mcp_server_settings`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
-/*!50503 SET character_set_client = utf8mb4 */;
+/*!40101 SET character_set_client = utf8mb4 */;
 CREATE TABLE `mcp_server_settings` (
   `company_id` bigint(20) NOT NULL,
   `enabled` tinyint(1) NOT NULL DEFAULT 0,
@@ -1023,7 +1040,7 @@ CREATE TABLE `mcp_server_settings` (
 /*!40101 SET character_set_client = @saved_cs_client */;
 DROP TABLE IF EXISTS `onboarding_state`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
-/*!50503 SET character_set_client = utf8mb4 */;
+/*!40101 SET character_set_client = utf8mb4 */;
 CREATE TABLE `onboarding_state` (
   `id` bigint(20) NOT NULL AUTO_INCREMENT,
   `singleton` tinyint(1) NOT NULL DEFAULT 1 COMMENT 'Sentinelle UNIQUE — garantit une seule row',
@@ -1042,7 +1059,7 @@ CREATE TABLE `onboarding_state` (
 /*!40101 SET character_set_client = @saved_cs_client */;
 DROP TABLE IF EXISTS `password_reset_tokens`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
-/*!50503 SET character_set_client = utf8mb4 */;
+/*!40101 SET character_set_client = utf8mb4 */;
 CREATE TABLE `password_reset_tokens` (
   `id` bigint(20) NOT NULL AUTO_INCREMENT,
   `user_id` bigint(20) NOT NULL,
@@ -1059,7 +1076,7 @@ CREATE TABLE `password_reset_tokens` (
 /*!40101 SET character_set_client = @saved_cs_client */;
 DROP TABLE IF EXISTS `payment_batch_items`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
-/*!50503 SET character_set_client = utf8mb4 */;
+/*!40101 SET character_set_client = utf8mb4 */;
 CREATE TABLE `payment_batch_items` (
   `id` bigint(20) NOT NULL AUTO_INCREMENT,
   `payment_batch_id` bigint(20) NOT NULL,
@@ -1079,7 +1096,7 @@ CREATE TABLE `payment_batch_items` (
 /*!40101 SET character_set_client = @saved_cs_client */;
 DROP TABLE IF EXISTS `payment_batches`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
-/*!50503 SET character_set_client = utf8mb4 */;
+/*!40101 SET character_set_client = utf8mb4 */;
 CREATE TABLE `payment_batches` (
   `id` bigint(20) NOT NULL AUTO_INCREMENT,
   `company_id` bigint(20) NOT NULL,
@@ -1105,7 +1122,7 @@ CREATE TABLE `payment_batches` (
 /*!40101 SET character_set_client = @saved_cs_client */;
 DROP TABLE IF EXISTS `products`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
-/*!50503 SET character_set_client = utf8mb4 */;
+/*!40101 SET character_set_client = utf8mb4 */;
 CREATE TABLE `products` (
   `id` bigint(20) NOT NULL AUTO_INCREMENT,
   `company_id` bigint(20) NOT NULL,
@@ -1134,7 +1151,7 @@ CREATE TABLE `products` (
 /*!40101 SET character_set_client = @saved_cs_client */;
 DROP TABLE IF EXISTS `projects`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
-/*!50503 SET character_set_client = utf8mb4 */;
+/*!40101 SET character_set_client = utf8mb4 */;
 CREATE TABLE `projects` (
   `id` bigint(20) NOT NULL AUTO_INCREMENT,
   `company_id` bigint(20) NOT NULL,
@@ -1159,7 +1176,7 @@ CREATE TABLE `projects` (
 /*!40101 SET character_set_client = @saved_cs_client */;
 DROP TABLE IF EXISTS `reconciliation_rules`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
-/*!50503 SET character_set_client = utf8mb4 */;
+/*!40101 SET character_set_client = utf8mb4 */;
 CREATE TABLE `reconciliation_rules` (
   `id` bigint(20) NOT NULL AUTO_INCREMENT,
   `company_id` bigint(20) NOT NULL,
@@ -1192,7 +1209,7 @@ CREATE TABLE `reconciliation_rules` (
 /*!40101 SET character_set_client = @saved_cs_client */;
 DROP TABLE IF EXISTS `refresh_tokens`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
-/*!50503 SET character_set_client = utf8mb4 */;
+/*!40101 SET character_set_client = utf8mb4 */;
 CREATE TABLE `refresh_tokens` (
   `id` bigint(20) NOT NULL AUTO_INCREMENT,
   `user_id` bigint(20) NOT NULL,
@@ -1212,7 +1229,7 @@ CREATE TABLE `refresh_tokens` (
 /*!40101 SET character_set_client = @saved_cs_client */;
 DROP TABLE IF EXISTS `supplier_invoice_lines`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
-/*!50503 SET character_set_client = utf8mb4 */;
+/*!40101 SET character_set_client = utf8mb4 */;
 CREATE TABLE `supplier_invoice_lines` (
   `id` bigint(20) NOT NULL AUTO_INCREMENT,
   `supplier_invoice_id` bigint(20) NOT NULL,
@@ -1239,7 +1256,7 @@ CREATE TABLE `supplier_invoice_lines` (
 /*!40101 SET character_set_client = @saved_cs_client */;
 DROP TABLE IF EXISTS `supplier_invoices`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
-/*!50503 SET character_set_client = utf8mb4 */;
+/*!40101 SET character_set_client = utf8mb4 */;
 CREATE TABLE `supplier_invoices` (
   `id` bigint(20) NOT NULL AUTO_INCREMENT,
   `company_id` bigint(20) NOT NULL,
@@ -1291,7 +1308,7 @@ CREATE TABLE `supplier_invoices` (
 /*!40101 SET character_set_client = @saved_cs_client */;
 DROP TABLE IF EXISTS `users`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
-/*!50503 SET character_set_client = utf8mb4 */;
+/*!40101 SET character_set_client = utf8mb4 */;
 CREATE TABLE `users` (
   `id` bigint(20) NOT NULL AUTO_INCREMENT,
   `username` varchar(64) NOT NULL,
@@ -1315,7 +1332,7 @@ CREATE TABLE `users` (
 /*!40101 SET character_set_client = @saved_cs_client */;
 DROP TABLE IF EXISTS `vat_rates`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
-/*!50503 SET character_set_client = utf8mb4 */;
+/*!40101 SET character_set_client = utf8mb4 */;
 CREATE TABLE `vat_rates` (
   `id` bigint(20) NOT NULL AUTO_INCREMENT,
   `company_id` bigint(20) NOT NULL,

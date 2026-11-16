@@ -8,6 +8,7 @@ pub mod accounting;
 pub mod bank_imports;
 pub mod card_number;
 pub mod chart_of_accounts;
+pub mod currency;
 pub mod dates;
 pub mod email_template_engine;
 pub mod errors;

@@ -23,12 +23,16 @@ use crate::repositories::{api_keys, audit_log, mcp_keys};
 
 const FIND_BY_ID_SQL: &str = "SELECT id, name, first_name, last_name, address, address_street, address_building, \
             address_postal_code, address_city, address_country, ide_number, org_type, \
-            accounting_language, instance_language, email, phone, website, is_stub, books_locked_through, version, created_at, updated_at \
+            accounting_language, instance_language, email, phone, website, is_stub, books_locked_through, \
+            multi_currency_enabled, fx_gain_account_id, fx_loss_account_id, fx_transit_account_id, \
+            version, created_at, updated_at \
      FROM companies WHERE id = ?";
 
 const LIST_SQL: &str = "SELECT id, name, first_name, last_name, address, address_street, address_building, \
             address_postal_code, address_city, address_country, ide_number, org_type, \
-            accounting_language, instance_language, email, phone, website, is_stub, books_locked_through, version, created_at, updated_at \
+            accounting_language, instance_language, email, phone, website, is_stub, books_locked_through, \
+            multi_currency_enabled, fx_gain_account_id, fx_loss_account_id, fx_transit_account_id, \
+            version, created_at, updated_at \
      FROM companies ORDER BY id LIMIT ? OFFSET ?";
 
 /// Crée une nouvelle company et retourne l'entité persistée.
@@ -202,9 +206,12 @@ where
 /// Écrit les valeurs de [`insert_stub`] (`Language::Fr` pour les deux
 /// langues), `is_stub = TRUE`, `version = version + 1`, et ramène **chaque
 /// autre colonne** à la valeur qu'elle prend à l'insertion du stub, c'est-à-dire
-/// à son défaut du schéma : `NULL` pour les sept colonnes nullables, `''` pour
-/// les quatre `address_*` textuelles (`NOT NULL DEFAULT ''`), `'CH'` pour
-/// `address_country` et `country`. Cette énumération est **ouverte** par
+/// à son défaut du schéma : `NULL` pour les dix colonnes nullables (dont les
+/// trois comptes de différence de change, Story 37-1), `''` pour les quatre
+/// `address_*` textuelles (`NOT NULL DEFAULT ''`), `'CH'` pour
+/// `address_country` et `country`, `FALSE` pour `multi_currency_enabled` (la
+/// remise à zéro est le seul chemin qui ramène une société en mono-devise :
+/// elle vide aussi comptes, exercices et écritures). Cette énumération est **ouverte** par
 /// nature : ce qui la ferme est le test 5 de la story
 /// (`reset_restores_the_stub_columns_in_place`, `onboarding_audit_e2e.rs`), qui
 /// compare **toutes** les colonnes lues dans `information_schema.COLUMNS` à un
@@ -220,6 +227,8 @@ pub async fn reset_to_stub_in_tx(tx: &mut Transaction<'_, MySql>, id: i64) -> Re
             phone = NULL, website = NULL, books_locked_through = NULL, \
             address_street = '', address_building = '', address_postal_code = '', \
             address_city = '', address_country = 'CH', country = 'CH', \
+            multi_currency_enabled = FALSE, fx_gain_account_id = NULL, \
+            fx_loss_account_id = NULL, fx_transit_account_id = NULL, \
             version = version + 1 \
          WHERE id = ?",
     )

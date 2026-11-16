@@ -353,6 +353,8 @@ async fn new_account(
             parent_id: None,
             role: None,
             postable: true,
+            currency: None,
+            own_fx_accounts: None,
         },
     )
     .await

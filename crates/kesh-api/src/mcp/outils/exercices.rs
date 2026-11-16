@@ -26,6 +26,11 @@ sortie! {
         debut: Date,
         fin: Date,
         statut: kesh_db::entities::FiscalYearStatus,
+        // Story 37-1 (AC-2, V10) : le mode et les genres de cours, présents en
+        // mono-devise aussi (ce ne sont pas des champs en devise).
+        multi_devises: bool,
+        genre_ouverture: kesh_db::entities::RateKind,
+        genre_cloture: kesh_db::entities::RateKind,
     }
 }
 
@@ -41,8 +46,10 @@ impl McpTool for KeshExercices {
 
     fn description(&self) -> &'static str {
         "Liste les exercices comptables de la société (identifiant, nom, dates, statut \
-         ouvert ou clos), du plus récent au plus ancien. L'identifiant sert aux rapports \
-         (kesh_balance, kesh_bilan, kesh_compte_de_resultat)."
+         ouvert ou clos, mode multi-devises, genre du cours d'ouverture et de clôture : \
+         day pour le cours journalier, month pour le cours mensuel), du plus récent au \
+         plus ancien. L'identifiant sert aux rapports (kesh_balance, kesh_bilan, \
+         kesh_compte_de_resultat)."
     }
 
     fn schema_entree(&self) -> &'static str {
@@ -72,6 +79,9 @@ impl McpTool for KeshExercices {
                         debut: Date(fy.start_date),
                         fin: Date(fy.end_date),
                         statut: fy.status,
+                        multi_devises: fy.multi_currency,
+                        genre_ouverture: fy.opening_rate_kind,
+                        genre_cloture: fy.closing_rate_kind,
                     })
                     .collect(),
             };

@@ -937,6 +937,23 @@ pub enum DbError {
         fiscal_year_name: String,
     },
 
+    /// La création d'un exercice est refusée, dans une société multi-devises :
+    /// un exercice **postérieur** est **mono-devise** (Story 37-1, D-CR7-2).
+    ///
+    /// Un exercice mono-devise d'une société multi-devises est un exercice clos
+    /// à l'activation (puis peut-être rouvert) : les exercices mono-devise
+    /// forment toujours un préfixe de l'ordre chronologique, et aucun exercice
+    /// multi-devises ne se crée avant eux. Rendue par `fiscal_years::create`,
+    /// **après** [`DbError::LaterFiscalYearClosed`] (un exercice clos parle
+    /// d'abord). Mappé vers HTTP **400** `LATER_FISCAL_YEAR_MONO_CURRENCY`,
+    /// mêmes `details` que `LATER_FISCAL_YEAR_CLOSED` ; code distinct, car
+    /// l'exercice visé peut être ouvert (rouvrir n'y fait rien).
+    #[error("Exercice postérieur {fiscal_year_name} mono-devise — création refusée")]
+    LaterFiscalYearMonoCurrency {
+        fiscal_year_id: i64,
+        fiscal_year_name: String,
+    },
+
     /// La clôture d'un exercice est refusée : un exercice **antérieur** de la
     /// même société est encore ouvert (Story 15-12a, #543).
     ///
@@ -1913,6 +1930,7 @@ impl DbError {
             Self::IllegalStateTransition(_) => "ILLEGAL_STATE_TRANSITION",
             Self::FiscalYearClosed => "FISCAL_YEAR_CLOSED",
             Self::LaterFiscalYearClosed { .. } => "LATER_FISCAL_YEAR_CLOSED",
+            Self::LaterFiscalYearMonoCurrency { .. } => "LATER_FISCAL_YEAR_MONO_CURRENCY",
             Self::EarlierFiscalYearOpen { .. } => "EARLIER_FISCAL_YEAR_OPEN",
             Self::NextFiscalYearMissing { .. } => "NEXT_FISCAL_YEAR_MISSING",
             Self::NextFiscalYearClosed { .. } => "NEXT_FISCAL_YEAR_CLOSED",

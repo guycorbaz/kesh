@@ -9,7 +9,10 @@ use axum::{Extension, Json};
 use chrono::NaiveDateTime;
 use serde::{Deserialize, Serialize};
 
-use kesh_db::entities::account::{Account, AccountRole, AccountType, AccountUpdate, NewAccount};
+use kesh_db::entities::account::{
+    Account, AccountRole, AccountType, AccountUpdate, CurrencyChange, NewAccount,
+    OwnFxAccountsChange,
+};
 use kesh_db::errors::{DbError, map_db_error};
 use kesh_db::repositories::{accounts, letterings};
 
@@ -152,6 +155,22 @@ pub struct AccountResponse {
     /// passif, et désigné par aucun compte bancaire — archivé compris. Calculé
     /// par la seule règle `letterings::is_letterable`.
     pub letterable: bool,
+    /// Devise du compte (Story 37-1, AC-4), code ISO 4217 ; **absente** pour
+    /// un compte en CHF (C-37-9 : le JSON reste identique en mono-devise).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub currency: Option<String>,
+    /// La devise est verrouillée : le compte porte au moins une ligne
+    /// d'écriture (Story 37-1, AC-4). **Absent** quand `false`.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub currency_locked: bool,
+    /// Compte de gains de change propre (Story 37-1, AC-4 bis) ; absent pour
+    /// un compte « par défaut ».
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub fx_gain_account_id: Option<i64>,
+    /// Compte de pertes de change propre (Story 37-1, AC-4 bis) ; absent pour
+    /// un compte « par défaut ».
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub fx_loss_account_id: Option<i64>,
     pub version: i32,
     pub created_at: NaiveDateTime,
     pub updated_at: NaiveDateTime,
@@ -160,8 +179,10 @@ pub struct AccountResponse {
 impl AccountResponse {
     /// `letterable` ne se déduit pas de l'entité seule (un compte bancaire peut
     /// le désigner) : l'appelant le lit par `letterings::is_letterable_account`
-    /// (une réponse) ou `letterings::letterable_account_ids` (la liste).
-    pub fn new(a: Account, letterable: bool) -> Self {
+    /// (une réponse) ou `letterings::letterable_account_ids` (la liste). De même
+    /// `currency_locked` (Story 37-1) : `accounts::is_currency_locked` ou
+    /// `accounts::currency_locked_account_ids`.
+    pub fn new(a: Account, letterable: bool, currency_locked: bool) -> Self {
         Self {
             id: a.id,
             company_id: a.company_id,
@@ -173,6 +194,10 @@ impl AccountResponse {
             role: a.role,
             postable: a.postable,
             letterable,
+            currency: a.currency,
+            currency_locked,
+            fx_gain_account_id: a.fx_gain_account_id,
+            fx_loss_account_id: a.fx_loss_account_id,
             version: a.version,
             created_at: a.created_at,
             updated_at: a.updated_at,
@@ -185,12 +210,15 @@ impl AccountResponse {
 // ---------------------------------------------------------------------------
 
 /// La réponse d'un compte unique : sa lettrabilité en une requête
-/// (`letterings::is_letterable_account`, Story 15-1b AC11).
+/// (`letterings::is_letterable_account`, Story 15-1b AC11) et le verrou de sa
+/// devise en une autre (`accounts::is_currency_locked`, Story 37-1).
 async fn response(state: &AppState, account: Account) -> Result<AccountResponse, AppError> {
     let mut conn = state.pool.acquire().await.map_err(map_db_error)?;
     let letterable =
         letterings::is_letterable_account(&mut conn, account.company_id, account.id).await?;
-    Ok(AccountResponse::new(account, letterable))
+    let currency_locked =
+        accounts::is_currency_locked(&mut conn, account.company_id, account.id).await?;
+    Ok(AccountResponse::new(account, letterable, currency_locked))
 }
 
 /// GET /api/v1/accounts — liste les comptes de la company courante.
@@ -205,7 +233,7 @@ pub async fn list_accounts(
     Ok(Json(
         comptes
             .into_iter()
-            .map(|c| AccountResponse::new(c.compte, c.lettrable))
+            .map(|c| AccountResponse::new(c.compte, c.lettrable, c.devise_verrouillee))
             .collect(),
     ))
 }
@@ -262,6 +290,10 @@ pub async fn create_account(
         parent_id: req.parent_id,
         role: req.role,
         postable: req.postable,
+        // Story 37-1 : la devise et les comptes propres arrivent par la route
+        // en phase suivante (DTO et gardes) ; un compte créé ici est en CHF.
+        currency: None,
+        own_fx_accounts: None,
     };
 
     let account = accounts::create(&state.pool, current_user.user_id, new).await?;
@@ -317,6 +349,9 @@ pub async fn update_account(
         account_type: req.account_type,
         role,
         postable,
+        // Story 37-1 : absents de la requête = inchangés (DTO en phase suivante).
+        currency: CurrencyChange::Unchanged,
+        own_fx_accounts: OwnFxAccountsChange::Unchanged,
     };
 
     // Story 25-2-a : le dépôt refuse en 409 `ACCOUNT_HAS_ENTRIES` si le compte

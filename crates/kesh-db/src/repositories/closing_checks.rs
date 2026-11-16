@@ -436,7 +436,7 @@ const MAX_LISTED: usize = 20;
 
 /// L'exercice Y, lu **dans l'instantané** et scopé à la société (AC1) : absent
 /// ou d'une autre société → [`DbError::NotFound`] (anti-énumération).
-const FISCAL_YEAR_SQL: &str = "SELECT id, company_id, name, start_date, end_date, status, created_at, updated_at \
+const FISCAL_YEAR_SQL: &str = "SELECT id, company_id, name, start_date, end_date, status, multi_currency, opening_rate_kind, closing_rate_kind, created_at, updated_at \
      FROM fiscal_years WHERE id = ? AND company_id = ?";
 
 /// K2 : transactions `pending` datées dans Y, par compte bancaire ; les

@@ -188,6 +188,21 @@ pub struct Company {
     /// `None` = aucun verrou. Aucune écriture ne peut être créée avec une
     /// `entry_date <= ` cette date, quel que soit le chemin de création.
     pub books_locked_through: Option<NaiveDate>,
+    /// Mode multi-devises (Story 37-1) : `false` par défaut ; une fois activé,
+    /// il ne repasse jamais à `false` (seule la remise à zéro de la société le
+    /// remet à `false`, en vidant comptes, exercices et écritures).
+    pub multi_currency_enabled: bool,
+    /// Compte des gains de change de la société (Story 37-1) — défaut des
+    /// comptes en devise qui n'ont pas leurs comptes propres. Pointeur logique
+    /// vers `accounts.id`, **sans clé étrangère** : l'intégrité est tenue par
+    /// le dépôt et revalidée à l'usage.
+    pub fx_gain_account_id: Option<i64>,
+    /// Compte des pertes de change de la société (Story 37-1), même régime
+    /// que [`Self::fx_gain_account_id`].
+    pub fx_loss_account_id: Option<i64>,
+    /// Compte de conversion entre devises (Story 37-1) : compte de bilan en
+    /// CHF, réglage de la société seul. Sans clé étrangère.
+    pub fx_transit_account_id: Option<i64>,
     /// Version pour optimistic locking (incrémentée à chaque update).
     pub version: i32,
     pub created_at: NaiveDateTime,

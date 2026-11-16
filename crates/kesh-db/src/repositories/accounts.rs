@@ -24,9 +24,18 @@ use crate::repositories::{audit_log, company_invoice_settings};
 /// ⚠️ La colonne générée `singleton_role` est **volontairement absente** : elle
 /// n'existe que pour porter la contrainte d'unicité partielle des rôles
 /// singleton, elle n'a pas de représentation Rust.
+///
+/// ⚠️ **`currency` se lit par `CAST(currency AS CHAR(3))`** (Story 37-1) : la
+/// colonne est en `ascii_bin`, collation binaire que le serveur signale par le
+/// drapeau `BINARY` de la colonne, et `sqlx` refuse de décoder une colonne
+/// `BINARY` en `String` (`sqlx-mysql`, `str::compatible`). Le `CAST` rend une
+/// chaîne de la connexion, sans drapeau, même valeur. Toute autre lecture de
+/// `accounts.currency` décodée en `String` doit faire de même.
 macro_rules! columns {
     () => {
-        "id, company_id, number, name, account_type, parent_id, active, role, postable, version, created_at, updated_at"
+        "id, company_id, number, name, account_type, parent_id, active, role, postable, \
+         CAST(currency AS CHAR(3)) AS currency, fx_gain_account_id, fx_loss_account_id, \
+         version, created_at, updated_at"
     };
 }
 
@@ -67,6 +76,11 @@ fn account_snapshot_json(account: &Account) -> serde_json::Value {
         // modifications de rôle et de postabilité (le diff before/after serait vide).
         "role": account.role.map(|r| r.as_str()),
         "postable": account.postable,
+        // Story 37-1 : la devise et les comptes de différence propres, sans
+        // quoi le diff before/after d'un changement de devise serait vide.
+        "currency": account.currency,
+        "fxGainAccountId": account.fx_gain_account_id,
+        "fxLossAccountId": account.fx_loss_account_id,
         "version": account.version,
     })
 }
@@ -168,9 +182,13 @@ pub async fn create(pool: &MySqlPool, user_id: i64, new: NewAccount) -> Result<A
         return Err(role_conflict(role, holder));
     }
 
+    // Story 37-1 : la devise et les comptes propres s'écrivent tels que reçus
+    // (déjà normalisés par l'appelant) ; le schéma refuse une graphie hors
+    // `[A-Z]{3}`, `CHF`, et des comptes propres dépareillés ou sur un compte CHF.
     let result = sqlx::query(
-        "INSERT INTO accounts (company_id, number, name, account_type, parent_id, role, postable) \
-         VALUES (?, ?, ?, ?, ?, ?, ?)",
+        "INSERT INTO accounts (company_id, number, name, account_type, parent_id, role, postable, \
+             currency, fx_gain_account_id, fx_loss_account_id) \
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
     )
     .bind(new.company_id)
     .bind(&new.number)
@@ -179,6 +197,9 @@ pub async fn create(pool: &MySqlPool, user_id: i64, new: NewAccount) -> Result<A
     .bind(new.parent_id)
     .bind(new.role)
     .bind(postable)
+    .bind(&new.currency)
+    .bind(new.own_fx_accounts.map(|o| o.gain))
+    .bind(new.own_fx_accounts.map(|o| o.loss))
     .execute(&mut *tx)
     .await
     .map_err(map_db_error)?;
@@ -238,6 +259,46 @@ pub async fn create(pool: &MySqlPool, user_id: i64, new: NewAccount) -> Result<A
 
     tx.commit().await.map_err(map_db_error)?;
     Ok(account)
+}
+
+/// Les comptes de la société dont la devise est **verrouillée** (Story 37-1,
+/// AC-4) : ceux qui portent au moins une ligne d'écriture, archivés compris —
+/// en **une** requête bornée à la société, par l'index de la clé étrangère
+/// `fk_jel_account`, pour `GET /accounts` (jamais une requête par compte).
+/// Lecture ordinaire : c'est l'indication de l'écran, non la garde.
+pub async fn currency_locked_account_ids(
+    conn: &mut sqlx::MySqlConnection,
+    company_id: i64,
+) -> Result<std::collections::BTreeSet<i64>, DbError> {
+    let ids: Vec<i64> = sqlx::query_scalar(
+        "SELECT a.id FROM accounts a WHERE a.company_id = ? \
+         AND EXISTS (SELECT 1 FROM journal_entry_lines l WHERE l.account_id = a.id)",
+    )
+    .bind(company_id)
+    .fetch_all(conn)
+    .await
+    .map_err(map_db_error)?;
+    Ok(ids.into_iter().collect())
+}
+
+/// [`currency_locked_account_ids`] pour un seul compte (réponses à un compte :
+/// création, modification, détail). `false` pour un compte d'une autre
+/// société ou introuvable.
+pub async fn is_currency_locked(
+    conn: &mut sqlx::MySqlConnection,
+    company_id: i64,
+    account_id: i64,
+) -> Result<bool, DbError> {
+    let locked: Option<i64> = sqlx::query_scalar(
+        "SELECT a.id FROM accounts a WHERE a.id = ? AND a.company_id = ? \
+         AND EXISTS (SELECT 1 FROM journal_entry_lines l WHERE l.account_id = a.id)",
+    )
+    .bind(account_id)
+    .bind(company_id)
+    .fetch_optional(conn)
+    .await
+    .map_err(map_db_error)?;
+    Ok(locked.is_some())
 }
 
 /// Retourne un compte par ID (ou None).
@@ -535,6 +596,10 @@ fn is_no_op_change(before: &Account, changes: &AccountUpdate) -> bool {
         // valeur — un bug utilisateur invisible.
         && before.role == changes.role
         && before.postable == changes.postable
+        // Story 37-1 : renvoyer la devise en place, ou les comptes propres en
+        // place, n'est pas un changement.
+        && changes.currency.resolve(before.currency.as_deref()) == before.currency
+        && changes.own_fx_accounts.resolve(before.own_fx_accounts()) == before.own_fx_accounts()
 }
 
 /// Recense ce qu'un changement d'`account_type` infligerait à l'historique d'un
@@ -737,14 +802,23 @@ pub async fn update(
         }
     }
 
+    // Story 37-1 : devise et comptes propres résolus ICI, sous le `FOR UPDATE`
+    // du compte (« absent = inchangé » ne se résout jamais par une lecture de
+    // la route).
+    let currency = changes.currency.resolve(before.currency.as_deref());
+    let own_fx = changes.own_fx_accounts.resolve(before.own_fx_accounts());
     let rows = sqlx::query(
         "UPDATE accounts SET name = ?, account_type = ?, role = ?, postable = ?, \
+         currency = ?, fx_gain_account_id = ?, fx_loss_account_id = ?, \
          version = version + 1 WHERE id = ? AND version = ? AND active = TRUE",
     )
     .bind(&changes.name)
     .bind(changes.account_type)
     .bind(changes.role)
     .bind(changes.postable)
+    .bind(&currency)
+    .bind(own_fx.map(|o| o.gain))
+    .bind(own_fx.map(|o| o.loss))
     .bind(id)
     .bind(version)
     .execute(&mut *tx)
@@ -1155,9 +1229,13 @@ pub async fn bulk_create(
     let mut created_ids: Vec<i64> = Vec::with_capacity(accounts.len());
 
     for new in &accounts {
+        // Story 37-1 : la devise et les comptes propres sont liés, non omis —
+        // un `INSERT` qui les ignorerait les perdrait en silence (les appelants
+        // passent `None` : comptes neufs en CHF).
         let result = sqlx::query(
-            "INSERT INTO accounts (company_id, number, name, account_type, parent_id, role, postable) \
-             VALUES (?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO accounts (company_id, number, name, account_type, parent_id, role, postable, \
+                 currency, fx_gain_account_id, fx_loss_account_id) \
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         )
         .bind(new.company_id)
         .bind(&new.number)
@@ -1166,6 +1244,9 @@ pub async fn bulk_create(
         .bind(new.parent_id)
         .bind(new.role)
         .bind(new.postable)
+        .bind(&new.currency)
+        .bind(new.own_fx_accounts.map(|o| o.gain))
+        .bind(new.own_fx_accounts.map(|o| o.loss))
         .execute(&mut *tx)
         .await
         .map_err(map_db_error)?;
@@ -1291,9 +1372,12 @@ pub async fn bulk_create_from_chart_in_tx(
         let role = entry.role.map(|r| r.as_str());
         let postable = kesh_core::chart_of_accounts::is_postable(entry, &parent_numbers);
 
+        // Story 37-1 : un compte d'un plan livré est en CHF, sans comptes de
+        // différence propres — `NULL` écrit explicitement.
         let result = sqlx::query(
-            "INSERT INTO accounts (company_id, number, name, account_type, parent_id, role, postable) \
-             VALUES (?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO accounts (company_id, number, name, account_type, parent_id, role, postable, \
+                 currency, fx_gain_account_id, fx_loss_account_id) \
+             VALUES (?, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL)",
         )
         .bind(company_id)
         .bind(&entry.number)
@@ -1526,6 +1610,8 @@ mod tests {
                 parent_id: None,
                 role: None,
                 postable: true,
+                currency: Default::default(),
+                own_fx_accounts: Default::default(),
             },
         )
         .await
@@ -1767,6 +1853,8 @@ mod tests {
                 account_type: AccountType::Asset,
                 role: None,
                 postable: true,
+                currency: Default::default(),
+                own_fx_accounts: Default::default(),
             },
             false,
         )
@@ -1825,6 +1913,8 @@ mod tests {
                 account_type: AccountType::Asset,
                 role: None,
                 postable: true,
+                currency: Default::default(),
+                own_fx_accounts: Default::default(),
             },
             false,
         )
@@ -1866,6 +1956,8 @@ mod tests {
                 account_type: AccountType::Asset,
                 role: None,
                 postable: true,
+                currency: Default::default(),
+                own_fx_accounts: Default::default(),
             },
             true,
         )
@@ -1897,6 +1989,8 @@ mod tests {
                 account_type: AccountType::Asset,
                 role: None,
                 postable: true,
+                currency: Default::default(),
+                own_fx_accounts: Default::default(),
             },
             false,
         )
@@ -1932,6 +2026,8 @@ mod tests {
                 account_type: before.account_type,
                 role: None,
                 postable: true,
+                currency: Default::default(),
+                own_fx_accounts: Default::default(),
             },
             false,
         )
@@ -1970,6 +2066,8 @@ mod tests {
                 account_type: AccountType::Asset,
                 role: None,
                 postable: true,
+                currency: Default::default(),
+                own_fx_accounts: Default::default(),
             },
             false,
         )
@@ -2016,6 +2114,8 @@ mod tests {
                 account_type: AccountType::Asset,
                 role: None,
                 postable: true,
+                currency: Default::default(),
+                own_fx_accounts: Default::default(),
             },
             true,
         )
@@ -2084,6 +2184,8 @@ mod tests {
                 account_type: before.account_type,
                 role: None,
                 postable: true,
+                currency: Default::default(),
+                own_fx_accounts: Default::default(),
             },
             false,
         )
@@ -2122,6 +2224,8 @@ mod tests {
                 account_type: AccountType::Asset,
                 role: None,
                 postable: true,
+                currency: Default::default(),
+                own_fx_accounts: Default::default(),
             },
             false,
         )
@@ -2155,6 +2259,8 @@ mod tests {
             parent_id: None,
             role: None,
             postable: true,
+            currency: Default::default(),
+            own_fx_accounts: Default::default(),
         };
         let account = create(&pool, admin_user_id, new).await.unwrap();
         assert_eq!(account.number, "T100");
@@ -2189,6 +2295,8 @@ mod tests {
                 parent_id: None,
                 role: None,
                 postable: true,
+                currency: Default::default(),
+                own_fx_accounts: Default::default(),
             },
         )
         .await
@@ -2205,6 +2313,8 @@ mod tests {
                 parent_id: None,
                 role: None,
                 postable: true,
+                currency: Default::default(),
+                own_fx_accounts: Default::default(),
             },
         )
         .await
@@ -2244,6 +2354,8 @@ mod tests {
                 parent_id: None,
                 role: None,
                 postable: true,
+                currency: Default::default(),
+                own_fx_accounts: Default::default(),
             },
         )
         .await
@@ -2260,6 +2372,8 @@ mod tests {
                 account_type: AccountType::Liability,
                 role: None,
                 postable: true,
+                currency: Default::default(),
+                own_fx_accounts: Default::default(),
             },
             false,
         )
@@ -2280,6 +2394,8 @@ mod tests {
                 account_type: AccountType::Asset,
                 role: None,
                 postable: true,
+                currency: Default::default(),
+                own_fx_accounts: Default::default(),
             },
             false,
         )
@@ -2308,6 +2424,8 @@ mod tests {
                 parent_id: None,
                 role: None,
                 postable: true,
+                currency: Default::default(),
+                own_fx_accounts: Default::default(),
             },
         )
         .await
@@ -2341,6 +2459,8 @@ mod tests {
                 parent_id: None,
                 role: None,
                 postable: true,
+                currency: Default::default(),
+                own_fx_accounts: Default::default(),
             },
         )
         .await
@@ -2358,6 +2478,8 @@ mod tests {
                 parent_id: None,
                 role: None,
                 postable: true,
+                currency: Default::default(),
+                own_fx_accounts: Default::default(),
             },
         )
         .await
@@ -2387,6 +2509,8 @@ mod tests {
                 parent_id: None,
                 role: None,
                 postable: true,
+                currency: Default::default(),
+                own_fx_accounts: Default::default(),
             },
         )
         .await
@@ -2440,6 +2564,8 @@ mod tests {
                 parent_id: None,
                 role: None,
                 postable: true,
+                currency: Default::default(),
+                own_fx_accounts: Default::default(),
             },
         )
         .await
@@ -2455,6 +2581,8 @@ mod tests {
                 account_type: AccountType::Liability,
                 role: None,
                 postable: true,
+                currency: Default::default(),
+                own_fx_accounts: Default::default(),
             },
             false,
         )
@@ -2522,6 +2650,8 @@ mod tests {
                 parent_id: None,
                 role: None,
                 postable: true,
+                currency: Default::default(),
+                own_fx_accounts: Default::default(),
             },
         )
         .await
@@ -2628,6 +2758,8 @@ mod tests {
                 parent_id: None,
                 role: None,
                 postable: true,
+                currency: Default::default(),
+                own_fx_accounts: Default::default(),
             },
         )
         .await
@@ -2645,6 +2777,8 @@ mod tests {
                 account_type: account.account_type,
                 role: None,
                 postable: true,
+                currency: Default::default(),
+                own_fx_accounts: Default::default(),
             },
             false,
         )
@@ -2685,6 +2819,8 @@ mod tests {
                 parent_id: None,
                 role: None,
                 postable: true,
+                currency: Default::default(),
+                own_fx_accounts: Default::default(),
             },
         )
         .await
@@ -2701,6 +2837,8 @@ mod tests {
                 account_type: account.account_type,
                 role: None,
                 postable: true,
+                currency: Default::default(),
+                own_fx_accounts: Default::default(),
             },
             false,
         )
@@ -2801,6 +2939,8 @@ mod tests {
                 account_type: a.account_type,
                 role: Some(AccountRole::EquityCapital),
                 postable: true,
+                currency: Default::default(),
+                own_fx_accounts: Default::default(),
             },
             false,
         )
@@ -2855,6 +2995,8 @@ mod tests {
                 account_type: a.account_type,
                 role: a.role,
                 postable: a.postable,
+                currency: Default::default(),
+                own_fx_accounts: Default::default(),
             },
             false,
         )
@@ -2873,6 +3015,8 @@ mod tests {
                 account_type: a.account_type,
                 role: a.role,
                 postable: true,
+                currency: Default::default(),
+                own_fx_accounts: Default::default(),
             },
             false,
         )
@@ -2911,6 +3055,8 @@ mod tests {
                 account_type: other.account_type,
                 role: Some(AccountRole::Receivable),
                 postable: true,
+                currency: Default::default(),
+                own_fx_accounts: Default::default(),
             },
             false,
         )
@@ -3038,6 +3184,8 @@ mod tests {
                 account_type: b.account_type,
                 role: None,
                 postable: true,
+                currency: Default::default(),
+                own_fx_accounts: Default::default(),
             },
             false,
         )
@@ -3239,6 +3387,8 @@ mod tests {
                 account_type: AccountType::Expense,
                 role: Some(AccountRole::Receivable),
                 postable: true,
+                currency: Default::default(),
+                own_fx_accounts: Default::default(),
             },
             false,
         )
@@ -3320,6 +3470,8 @@ mod tests {
                 account_type: parent.account_type,
                 role: parent.role,
                 postable: true,
+                currency: Default::default(),
+                own_fx_accounts: Default::default(),
             },
             false,
         )

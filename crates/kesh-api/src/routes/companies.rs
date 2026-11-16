@@ -60,6 +60,19 @@ pub struct CompanyJson {
     /// `null` = aucun verrou. L'écran s'en sert pour le bandeau et pour le
     /// `min` du champ date de saisie.
     pub books_locked_through: Option<chrono::NaiveDate>,
+    /// Mode multi-devises de la société (Story 37-1, AC-2). Toujours présent :
+    /// ce n'est pas un champ en devise (C-37-9).
+    pub multi_currency_enabled: bool,
+    /// Compte des gains de change de la société (Story 37-1) ; `null` si non
+    /// désigné. Toujours présent.
+    pub fx_gain_account_id: Option<i64>,
+    /// Compte des pertes de change de la société (Story 37-1). Toujours présent.
+    pub fx_loss_account_id: Option<i64>,
+    /// Compte de conversion entre devises (Story 37-1). Toujours présent.
+    pub fx_transit_account_id: Option<i64>,
+    /// Devise principale de la comptabilité (Story 37-1) : la constante
+    /// [`kesh_core::currency::BASE_CURRENCY`] (`"CHF"`) ; elle ne change pas.
+    pub base_currency: &'static str,
     /// Verrou optimiste — requis par les routes `PUT /companies/current/*`.
     pub version: i32,
 }
@@ -88,6 +101,11 @@ impl From<Company> for CompanyJson {
             phone: c.phone,
             website: c.website,
             books_locked_through: c.books_locked_through,
+            multi_currency_enabled: c.multi_currency_enabled,
+            fx_gain_account_id: c.fx_gain_account_id,
+            fx_loss_account_id: c.fx_loss_account_id,
+            fx_transit_account_id: c.fx_transit_account_id,
+            base_currency: kesh_core::currency::BASE_CURRENCY,
             version: c.version,
         }
     }

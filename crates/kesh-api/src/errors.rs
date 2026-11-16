@@ -360,6 +360,18 @@ pub enum AppError {
         fiscal_year_name: String,
     },
 
+    /// Story 37-1 (D-CR7-2) — la **création** d'un exercice est refusée, dans
+    /// une société multi-devises : un exercice postérieur est mono-devise
+    /// (clos à l'activation). `400 LATER_FISCAL_YEAR_MONO_CURRENCY`, mêmes
+    /// `details` que [`AppError::FiscalYearBeforeClosedYear`] (même gabarit de
+    /// réponse), message `error-fiscal-year-create-later-mono-currency`.
+    /// Produite par `routes::fiscal_years::map_create_error`.
+    #[error("Exercice postérieur {fiscal_year_name} mono-devise — création refusée")]
+    FiscalYearBeforeMonoCurrencyYear {
+        fiscal_year_id: i64,
+        fiscal_year_name: String,
+    },
+
     // --- Story 4.1 ---
     /// Un contact avec ce numéro IDE (CHE) existe déjà dans la même company.
     /// Code client dédié (`IDE_ALREADY_EXISTS`) pour UX précise côté form,
@@ -1430,12 +1442,16 @@ fn build_response(status: StatusCode, code: &'static str, message: &str) -> Resp
         .into_response()
 }
 
-/// Corps `400 LATER_FISCAL_YEAR_CLOSED` (Stories 15-8a, 15-12a) : un seul
-/// gabarit pour les deux messages — celui des écritures
-/// (`error-later-fiscal-year-closed`) et celui de la création d'un exercice
-/// (`error-fiscal-year-create-later-closed`) —, pour que leurs `details` ne
-/// divergent jamais.
+/// Corps `400` d'un refus qui nomme un exercice **postérieur** (Stories 15-8a,
+/// 15-12a, 37-1) : un seul gabarit pour les trois messages — celui des
+/// écritures (`error-later-fiscal-year-closed`) et celui de la création d'un
+/// exercice (`error-fiscal-year-create-later-closed`), sous le code
+/// `LATER_FISCAL_YEAR_CLOSED`, et celui de la création avant un exercice
+/// mono-devise (`error-fiscal-year-create-later-mono-currency`, Story 37-1),
+/// sous le code `LATER_FISCAL_YEAR_MONO_CURRENCY` —, pour que leurs `details`
+/// (`fiscalYearId`, `fiscalYearName`) ne divergent jamais.
 fn later_fiscal_year_closed_response(
+    code: &str,
     fiscal_year_id: i64,
     fiscal_year_name: &str,
     key: &str,
@@ -1446,7 +1462,7 @@ fn later_fiscal_year_closed_response(
     let message = t_args(key, fallback, &args);
     let body = serde_json::json!({
         "error": {
-            "code": "LATER_FISCAL_YEAR_CLOSED",
+            "code": code,
             "message": message,
             "details": {
                 "fiscalYearId": fiscal_year_id,
@@ -1455,6 +1471,26 @@ fn later_fiscal_year_closed_response(
         }
     });
     (StatusCode::BAD_REQUEST, Json(body)).into_response()
+}
+
+/// Corps `400 LATER_FISCAL_YEAR_MONO_CURRENCY` (Story 37-1, D-CR7-2) — un seul
+/// site pour le message et son repli, partagé par
+/// `AppError::FiscalYearBeforeMonoCurrencyYear` et
+/// `DbError::LaterFiscalYearMonoCurrency`.
+fn later_fiscal_year_mono_currency_response(
+    fiscal_year_id: i64,
+    fiscal_year_name: &str,
+) -> Response {
+    let fallback = format!(
+        "L’exercice « {fiscal_year_name} », postérieur, est mono-devise (clos avant l’activation du multi-devises) : aucun exercice ne peut être créé avant lui."
+    );
+    later_fiscal_year_closed_response(
+        "LATER_FISCAL_YEAR_MONO_CURRENCY",
+        fiscal_year_id,
+        fiscal_year_name,
+        "error-fiscal-year-create-later-mono-currency",
+        &fallback,
+    )
 }
 
 /// Clé i18n et repli d'un motif de contre-passation (Story 24-4a), partagés
@@ -2079,12 +2115,18 @@ impl IntoResponse for AppError {
                     "L’exercice « {fiscal_year_name} », postérieur, est clôturé, et son bilan reprend tout ce qui le précède : aucun exercice ne peut être créé avant sa date de début tant qu’il l’est. Pour créer celui-ci, un administrateur rouvre d’abord les exercices postérieurs clôturés, en commençant par le plus récent."
                 );
                 later_fiscal_year_closed_response(
+                    "LATER_FISCAL_YEAR_CLOSED",
                     fiscal_year_id,
                     &fiscal_year_name,
                     "error-fiscal-year-create-later-closed",
                     &fallback,
                 )
             }
+
+            AppError::FiscalYearBeforeMonoCurrencyYear {
+                fiscal_year_id,
+                fiscal_year_name,
+            } => later_fiscal_year_mono_currency_response(fiscal_year_id, &fiscal_year_name),
 
             AppError::DateOutsideFiscalYear { date } => {
                 let fallback =
@@ -4186,12 +4228,21 @@ impl IntoResponse for AppError {
                         "L’exercice « {fiscal_year_name} », postérieur, est clôturé, et son bilan reprend tout ce qui le précède : aucune écriture datée avant sa date de début ne peut être enregistrée, modifiée ni supprimée tant qu’il l’est. Une écriture existante se corrige par une contre-passation ; sinon, un administrateur rouvre les exercices postérieurs clôturés, en commençant par le plus récent."
                     );
                     later_fiscal_year_closed_response(
+                        "LATER_FISCAL_YEAR_CLOSED",
                         fiscal_year_id,
                         &fiscal_year_name,
                         "error-later-fiscal-year-closed",
                         &fallback,
                     )
                 }
+                // Story 37-1 (D-CR7-2) — normalement converti en
+                // `AppError::FiscalYearBeforeMonoCurrencyYear` par
+                // `routes::fiscal_years::map_create_error` ; le même corps si
+                // une autre route le laissait remonter.
+                DbError::LaterFiscalYearMonoCurrency {
+                    fiscal_year_id,
+                    fiscal_year_name,
+                } => later_fiscal_year_mono_currency_response(fiscal_year_id, &fiscal_year_name),
                 // Story 15-12a (#543) — la clôture d'un exercice précédé d'un
                 // exercice ouvert. 409, comme les autres refus de transition de
                 // l'écran des exercices, mais un code DÉDIÉ : l'écran traduit

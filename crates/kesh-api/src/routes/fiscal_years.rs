@@ -25,7 +25,7 @@ use axum::{Extension, Json};
 use chrono::{NaiveDate, NaiveDateTime};
 use serde::{Deserialize, Serialize};
 
-use kesh_db::entities::{FiscalYear, FiscalYearStatus, NewFiscalYear};
+use kesh_db::entities::{FiscalYear, FiscalYearStatus, NewFiscalYear, RateKind};
 use kesh_db::errors::DbError;
 use kesh_db::repositories::closing_checks::{self, ClosingChecks};
 use kesh_db::repositories::fiscal_years::{
@@ -56,6 +56,13 @@ pub struct FiscalYearResponse {
     pub end_date: NaiveDate,
     /// `"Open"` ou `"Closed"` (PascalCase, cohérent avec l'enum DB).
     pub status: FiscalYearStatus,
+    /// Exercice multi-devises (Story 37-1, AC-2). Toujours présent.
+    pub multi_currency: bool,
+    /// Genre du cours d'ouverture, `"day"` ou `"month"` (Story 37-1, AC-2 ;
+    /// sens : doc de `FiscalYear`). Toujours présent.
+    pub opening_rate_kind: RateKind,
+    /// Genre du cours de clôture, `"day"` ou `"month"`. Toujours présent.
+    pub closing_rate_kind: RateKind,
     pub created_at: NaiveDateTime,
     pub updated_at: NaiveDateTime,
 }
@@ -69,6 +76,9 @@ impl From<FiscalYear> for FiscalYearResponse {
             start_date: fy.start_date,
             end_date: fy.end_date,
             status: fy.status,
+            multi_currency: fy.multi_currency,
+            opening_rate_kind: fy.opening_rate_kind,
+            closing_rate_kind: fy.closing_rate_kind,
             created_at: fy.created_at,
             updated_at: fy.updated_at,
         }
@@ -147,6 +157,15 @@ fn map_create_error(err: DbError) -> AppError {
             fiscal_year_id,
             fiscal_year_name,
         } => AppError::FiscalYearBeforeClosedYear {
+            fiscal_year_id,
+            fiscal_year_name,
+        },
+        // Story 37-1 (D-CR7-2) — un exercice postérieur est mono-devise, dans
+        // une société multi-devises : code propre, mêmes `details`.
+        DbError::LaterFiscalYearMonoCurrency {
+            fiscal_year_id,
+            fiscal_year_name,
+        } => AppError::FiscalYearBeforeMonoCurrencyYear {
             fiscal_year_id,
             fiscal_year_name,
         },

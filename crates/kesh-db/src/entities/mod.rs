@@ -45,7 +45,10 @@ pub mod supplier_invoice;
 pub mod user;
 pub mod vat_rate;
 
-pub use account::{Account, AccountRole, AccountType, AccountUpdate, NewAccount};
+pub use account::{
+    Account, AccountRole, AccountType, AccountUpdate, CurrencyChange, NewAccount, OwnFxAccounts,
+    OwnFxAccountsChange,
+};
 pub use api_key::{ApiKey, ApiKeyScope, NewApiKey};
 pub use audit_log::{AUDIT_ENTITY_ID_NONE, Acteur, ActorType, AuditLogEntry, NewAuditLogEntry};
 pub use bank_account::{BankAccount, BankAccountKind, NewBankAccount};
@@ -60,7 +63,7 @@ pub use credit_note::{CreditNote, CreditNoteLine, NewCreditNote};
 pub use dunning_level::{DunningLevel, NewDunningLevel, UpdateDunningLevel};
 pub use email_template::{EffectiveEmailTemplate, EmailTemplate, EmailTemplateType};
 pub use email_template_defaults::default_template;
-pub use fiscal_year::{FiscalYear, FiscalYearStatus, NewFiscalYear};
+pub use fiscal_year::{FiscalYear, FiscalYearStatus, NewFiscalYear, RateKind};
 pub use imported_supplier_invoice::{
     DocumentMeta, ImportedSupplierInvoice, NewImportedSupplierInvoice, QrColumns,
 };

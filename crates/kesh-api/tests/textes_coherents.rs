@@ -780,6 +780,9 @@ fn les_replis_rust_suivent_le_catalogue() {
                 ("error-lettering-is-document", 1, &[]),
                 ("error-fiscal-year-create-later-closed", 1, NOM),
                 ("error-later-fiscal-year-closed", 1, NOM),
+                // Story 37-1 (D-CR7-2) — un seul site,
+                // `later_fiscal_year_mono_currency_response`.
+                ("error-fiscal-year-create-later-mono-currency", 1, NOM),
                 // Story 29-1b (#232) — les deux refus de la contre-passation au
                 // début de l'exercice suivant.
                 ("error-next-fiscal-year-missing", 1, NOM),

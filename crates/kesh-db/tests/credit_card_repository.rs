@@ -132,6 +132,8 @@ async fn retype(
             account_type: to,
             role: None,
             postable: true,
+            currency: Default::default(),
+            own_fx_accounts: Default::default(),
         },
         true,
     )

@@ -1041,3 +1041,135 @@ async fn reactivate_is_scoped_to_company(pool: MySqlPool) {
         "IDOR : un compte d'une autre société doit être invisible"
     );
 }
+
+// ============================================================
+// Story 37-1 (AC-4, AC-4 bis) — `AccountResponse` : devise, verrou de
+// devise, comptes de différence propres. Les DTO de requête et les gardes
+// viennent en phase suivante : la devise est posée ici en SQL direct.
+// ============================================================
+
+/// C-37-9 — le JSON d'un compte CHF sans ligne n'a **aucune** des quatre clés
+/// (`currency`, `currencyLocked`, `fxGainAccountId`, `fxLossAccountId`), en
+/// réponse à un compte comme en liste ; un compte en devise à comptes propres
+/// les porte ; un compte qui porte une ligne a `currencyLocked: true` (calculé
+/// pour la liste en une requête) ; un `PUT` sans le champ garde la devise.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn account_response_porte_devise_verrou_et_comptes_propres(pool: MySqlPool) {
+    let app = spawn_app(pool.clone()).await;
+    let (company_id, admin_id, token) = setup(&pool).await;
+
+    let res = app
+        .client
+        .post(app.url("/api/v1/accounts"))
+        .bearer_auth(&token)
+        .json(&json!({ "number": "1000", "name": "Caisse", "accountType": "Asset" }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(res.status(), 201);
+    let chf: Value = res.json().await.unwrap();
+    for cle in [
+        "currency",
+        "currencyLocked",
+        "fxGainAccountId",
+        "fxLossAccountId",
+    ] {
+        assert!(
+            chf.get(cle).is_none(),
+            "compte CHF sans ligne : {cle} absente — {chf}"
+        );
+    }
+    let caisse = chf["id"].as_i64().unwrap();
+
+    let gain = mk_typed_account(&pool, company_id, admin_id, "6950", AccountType::Revenue).await;
+    let perte = mk_typed_account(&pool, company_id, admin_id, "6940", AccountType::Expense).await;
+    let usd = mk_typed_account(&pool, company_id, admin_id, "1030", AccountType::Asset).await;
+    sqlx::query(
+        "UPDATE accounts SET currency = 'USD', fx_gain_account_id = ?, fx_loss_account_id = ? \
+         WHERE id = ?",
+    )
+    .bind(gain)
+    .bind(perte)
+    .bind(usd)
+    .execute(&pool)
+    .await
+    .unwrap();
+    let jour = common::jour::aujourd_hui_test();
+    let fy = mk_fiscal_year(&pool, company_id, admin_id, jour).await;
+    mk_entry(&pool, company_id, fy, admin_id, caisse, perte, jour).await;
+
+    let liste: Value = app
+        .client
+        .get(app.url("/api/v1/accounts"))
+        .bearer_auth(&token)
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    let par_id = |id: i64| {
+        liste
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|a| a["id"] == id)
+            .cloned()
+            .unwrap_or_else(|| panic!("compte {id} absent de la liste"))
+    };
+    let c = par_id(caisse);
+    assert_eq!(
+        c["currencyLocked"], true,
+        "une ligne : devise verrouillée — {c}"
+    );
+    assert!(c.get("currency").is_none(), "{c}");
+    let u = par_id(usd);
+    assert_eq!(u["currency"], "USD");
+    assert_eq!(u["fxGainAccountId"], gain);
+    assert_eq!(u["fxLossAccountId"], perte);
+    assert!(u.get("currencyLocked").is_none(), "aucune ligne : {u}");
+    let g = par_id(gain);
+    for cle in [
+        "currency",
+        "currencyLocked",
+        "fxGainAccountId",
+        "fxLossAccountId",
+    ] {
+        assert!(g.get(cle).is_none(), "compte CHF sans ligne : {cle} — {g}");
+    }
+
+    // Un PUT qui ne porte pas le champ garde la devise et les comptes propres.
+    let res = app
+        .client
+        .put(app.url(&format!("/api/v1/accounts/{usd}")))
+        .bearer_auth(&token)
+        .json(&json!({
+            "name": "Banque USD", "accountType": "Asset",
+            "role": null, "postable": true, "version": 1
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(res.status(), 200);
+    let apres: Value = res.json().await.unwrap();
+    assert_eq!(apres["name"], "Banque USD");
+    assert_eq!(apres["currency"], "USD");
+    assert_eq!(apres["fxGainAccountId"], gain);
+    assert_eq!(apres["fxLossAccountId"], perte);
+
+    // La réponse à un compte porte aussi le verrou (une requête par compte).
+    let res = app
+        .client
+        .put(app.url(&format!("/api/v1/accounts/{caisse}")))
+        .bearer_auth(&token)
+        .json(&json!({
+            "name": "Caisse principale", "accountType": "Asset",
+            "role": null, "postable": true, "version": 1
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(res.status(), 200);
+    let apres: Value = res.json().await.unwrap();
+    assert_eq!(apres["currencyLocked"], true, "{apres}");
+}
