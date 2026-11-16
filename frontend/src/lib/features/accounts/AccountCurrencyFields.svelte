@@ -36,10 +36,22 @@
 		locked?: boolean;
 		/** Refus `FX_ACCOUNT_INVALID` du serveur, par champ (`details.field`). */
 		fieldErrors?: Partial<Record<FxAccountField, string>>;
+		/**
+		 * Le compte modifié (absent à la création) : il ne se propose pas comme
+		 * son propre compte de différence, il porte la devise (37-1-CR-P2-1).
+		 */
+		accountId?: number;
 	}
 
-	let { form = $bindable(), accounts, company, idPrefix, locked = false, fieldErrors = {} }: Props =
-		$props();
+	let {
+		form = $bindable(),
+		accounts,
+		company,
+		idPrefix,
+		locked = false,
+		fieldErrors = {},
+		accountId,
+	}: Props = $props();
 
 	/** La liste ISO, plus la devise en place si elle n'y figure plus (code retiré). */
 	let currencyOptions = $derived(
@@ -47,7 +59,9 @@
 			? [form.currency, ...FOREIGN_CURRENCIES]
 			: FOREIGN_CURRENCIES,
 	);
-	let differenceAccounts = $derived(fxDifferenceAccountOptions(accounts));
+	let differenceAccounts = $derived(
+		fxDifferenceAccountOptions(accounts).filter((a) => a.id !== accountId),
+	);
 	let gainOptions = $derived(
 		withCurrentAccount(differenceAccounts, form.fxGain === '' ? null : Number(form.fxGain), accounts),
 	);

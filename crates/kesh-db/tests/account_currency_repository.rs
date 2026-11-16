@@ -365,6 +365,113 @@ async fn creation_avec_comptes_propres(pool: MySqlPool) {
     );
 }
 
+/// Revue de code P2 (37-1-CR-P2-8) — un compte en devise créé sous un parent
+/// qu'il nomme compte propre : le parent deviendrait un compte de regroupement
+/// désigné, refusé en `notPostable` (état résultant), rien n'est créé et le
+/// parent reste imputable.
+#[sqlx::test(migrations = "./test-schema")]
+async fn creation_sous_son_propre_compte_de_difference_refusee(pool: MySqlPool) {
+    let s = seed_accounting_company(&pool).await.unwrap();
+    multi(&pool, &s).await;
+    let parent = compte(&pool, s.company_id, "6970", "Expense", None, None).await;
+    let ok = compte(&pool, s.company_id, "6971", "Expense", None, None).await;
+    for (paire, champ, numero) in [
+        (
+            OwnFxAccounts {
+                gain: parent,
+                loss: ok,
+            },
+            FxAccountField::Gain,
+            "69701",
+        ),
+        (
+            OwnFxAccounts {
+                gain: ok,
+                loss: parent,
+            },
+            FxAccountField::Loss,
+            "69702",
+        ),
+    ] {
+        let mut new = NewAccount::new(
+            s.company_id,
+            numero,
+            "Frais de change USD",
+            AccountType::Expense,
+            Some(parent),
+        );
+        new.currency = Some("USD".into());
+        new.own_fx_accounts = Some(paire);
+        let err = accounts::create(&pool, s.admin_user_id, new)
+            .await
+            .unwrap_err();
+        assert_eq!(fx_refus(err), (champ, FxAccountReason::NotPostable, None));
+        assert!(
+            lire(&pool, parent).await.postable,
+            "le parent reste imputable"
+        );
+    }
+    let enfants: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM accounts WHERE parent_id = ?")
+        .bind(parent)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(enfants, 0);
+}
+
+/// Revue de code P2 (37-1-CR-P2-7) — réactiver un sous-compte archivé d'un
+/// compte désigné (le parent, sans enfant actif, était repassé imputable puis
+/// désigné) lui rendrait un sous-compte : refusé, désignation nommée — de la
+/// société comme propre.
+#[sqlx::test(migrations = "./test-schema")]
+async fn reactivation_sous_un_compte_de_difference_refusee(pool: MySqlPool) {
+    let s = seed_accounting_company(&pool).await.unwrap();
+    let fx = multi(&pool, &s).await;
+    let propre = compte(&pool, s.company_id, "6970", "Expense", None, None).await;
+    let h = detenteur(&pool, &s, "1030", propre, propre).await;
+    for (parent, attendu, numero) in [
+        (fx.perte, (FxDesignation::Loss, None, None), "69601"),
+        (
+            propre,
+            (FxDesignation::Gain, Some(h), Some("1030".into())),
+            "69701",
+        ),
+    ] {
+        // L'état atteignable par l'archivage de l'enfant puis la désignation
+        // du parent, posé en SQL direct : enfant archivé, parent imputable.
+        let enfant = compte(&pool, s.company_id, numero, "Expense", None, None).await;
+        sqlx::query("UPDATE accounts SET parent_id = ?, active = FALSE WHERE id = ?")
+            .bind(parent)
+            .bind(enfant)
+            .execute(&pool)
+            .await
+            .unwrap();
+        let e = lire(&pool, enfant).await;
+        let err = accounts::reactivate(&pool, enfant, e.version, s.admin_user_id, false)
+            .await
+            .unwrap_err();
+        assert_eq!(designation(err), attendu, "parent {parent}");
+        assert!(!lire(&pool, enfant).await.active);
+    }
+
+    // Un parent non désigné : la réactivation passe.
+    let libre = compte(&pool, s.company_id, "6980", "Expense", None, None).await;
+    let enfant = compte(&pool, s.company_id, "69801", "Expense", None, None).await;
+    sqlx::query("UPDATE accounts SET parent_id = ?, active = FALSE WHERE id = ?")
+        .bind(libre)
+        .bind(enfant)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let e = lire(&pool, enfant).await;
+    assert!(
+        accounts::reactivate(&pool, enfant, e.version, s.admin_user_id, false)
+            .await
+            .unwrap()
+            .active
+    );
+}
+
 // ---------------------------------------------------------------------------
 // update — devise
 // ---------------------------------------------------------------------------
@@ -854,6 +961,38 @@ async fn comptes_propres_chaque_raison(pool: MySqlPool) {
     .await
     .unwrap();
     assert_eq!((a.currency.clone(), a.own_fx_accounts()), (None, None));
+}
+
+/// Revue de code P2 (37-1-CR-P2-1) — un compte CHF qui reçoit une devise dans
+/// le même `PUT` ne se nomme pas lui-même gain ou perte : lu avant l'`UPDATE`,
+/// il est encore CHF, et seul le contrôle de l'état résultant le refuse
+/// (`foreignCurrency`, champ visé). Rien n'est écrit.
+#[sqlx::test(migrations = "./test-schema")]
+async fn comptes_propres_un_compte_ne_se_designe_pas_lui_meme(pool: MySqlPool) {
+    let s = seed_accounting_company(&pool).await.unwrap();
+    multi(&pool, &s).await;
+    let c = s.company_id;
+    let ok = compte(&pool, c, "6971", "Expense", None, None).await;
+    // Un compte de charges CHF, imputable, sans rôle : il passerait toutes les
+    // gardes de l'AC-3 s'il n'était pas le compte qui reçoit la devise.
+    let id = compte(&pool, c, "6972", "Expense", None, None).await;
+    for (paire, champ) in [
+        (OwnFxAccounts { gain: id, loss: ok }, FxAccountField::Gain),
+        (OwnFxAccounts { gain: ok, loss: id }, FxAccountField::Loss),
+    ] {
+        let err = modifier(&pool, &s, id, |u| {
+            u.currency = usd();
+            u.own_fx_accounts = OwnFxAccountsChange::Own(paire);
+        })
+        .await
+        .unwrap_err();
+        assert_eq!(
+            fx_refus(err),
+            (champ, FxAccountReason::ForeignCurrency, Some(id))
+        );
+        let a = lire(&pool, id).await;
+        assert_eq!((a.currency.clone(), a.own_fx_accounts()), (None, None));
+    }
 }
 
 // ---------------------------------------------------------------------------

@@ -880,6 +880,39 @@ struct PremierExercice {
     fin: chrono::NaiveDate,
 }
 
+/// Refus des dates du premier exercice, gardé tel quel jusqu'à la lecture de
+/// l'étape sous verrou (revue de code P2 de la 37-1, 37-1-CR-P1-3) : une
+/// finalisation déjà faite ignore le corps (AC-11), de sorte que le refus ne
+/// s'oppose qu'à une finalisation à faire. Clonable — la fermeture rejouée de
+/// [`crate::retry::retry_app_on_deadlock`] le relit à chaque tentative —, à la
+/// différence d'[`AppError`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum RefusPremierExercice {
+    /// 400 `VALIDATION_ERROR`, message déjà résolu.
+    Validation(String),
+    /// 500 — inatteignable avec des dates bornées, gardé pour ne rien masquer.
+    Interne(String),
+}
+
+impl From<AppError> for RefusPremierExercice {
+    fn from(e: AppError) -> Self {
+        match e {
+            AppError::Validation(m) => Self::Validation(m),
+            AppError::Internal(m) => Self::Interne(m),
+            autre => Self::Interne(autre.to_string()),
+        }
+    }
+}
+
+impl From<&RefusPremierExercice> for AppError {
+    fn from(r: &RefusPremierExercice) -> Self {
+        match r {
+            RefusPremierExercice::Validation(m) => AppError::Validation(m.clone()),
+            RefusPremierExercice::Interne(m) => AppError::Internal(m.clone()),
+        }
+    }
+}
+
 /// Résout les dates du premier exercice depuis le corps de `finalize` et le
 /// jour du serveur. Refus en 400 (`VALIDATION_ERROR`) : une date hors de la
 /// plage de la base (`borner`, y compris la fin calculée d'un début en 9999) ;
@@ -930,9 +963,11 @@ fn premier_exercice(
 /// Pre-fills invoice settings with default accounts (1100, 3000) if they exist in the chart.
 ///
 /// Story 37-1 (AC-11) : corps facultatif [`FinalizeRequest`] — les dates du
-/// premier exercice, validées avant la transaction (400 sans rien créer, étape
-/// inchangée). Une finalisation déjà faite (`step_completed == 8`) ignore les
-/// dates et rend l'état, comme avant.
+/// premier exercice, résolues une fois avant la transaction ; leur refus (400
+/// sans rien créer, étape inchangée) n'est rendu qu'après la lecture de l'étape
+/// sous verrou : une finalisation déjà faite (`step_completed == 8`) ignore le
+/// corps, dates invalides comprises, et rend l'état, comme avant (revue de code
+/// P2, 37-1-CR-P1-3).
 ///
 /// F2 CRITICAL FIX: SELECT FOR UPDATE on onboarding_state serializes all finalize() calls.
 /// Prevents multiple concurrent requests from both passing the step check and duplicating work.
@@ -974,10 +1009,12 @@ pub async fn finalize(
     // Story 35-5a0 — la date du jour, lue une fois sur l'horloge de l'état.
     let aujourd_hui = state.horloge.aujourd_hui();
     // Story 37-1 (AC-11) — les dates du premier exercice, résolues et validées
-    // une fois, hors de la fermeture rejouée : un refus ne touche ni la base ni
+    // une fois, hors de la fermeture rejouée. Le refus éventuel est rendu par
+    // `finalize_inner` après la lecture de l'étape : une finalisation déjà faite
+    // ignore le corps (37-1-CR-P1-3) ; à faire, le refus ne touche ni la base ni
     // l'étape.
     let req = body.map(|Json(r)| r).unwrap_or_default();
-    let exercice = premier_exercice(&req, aujourd_hui)?;
+    let exercice = premier_exercice(&req, aujourd_hui).map_err(RefusPremierExercice::from);
     crate::retry::retry_app_on_deadlock("onboarding::finalize", || {
         finalize_inner(&state.pool, &current_user, &exercice)
     })
@@ -1006,11 +1043,12 @@ pub async fn finalize(
 ///
 /// `exercice` (Story 37-1, AC-11, après la 35-5a0) : le nom et les dates du
 /// premier exercice, résolus par l'appelant depuis le corps et la date du jour
-/// de l'horloge de l'état — identiques d'une tentative à l'autre.
+/// de l'horloge de l'état — identiques d'une tentative à l'autre —, ou leur
+/// refus, rendu seulement si la finalisation reste à faire (37-1-CR-P1-3).
 async fn finalize_inner(
     pool: &sqlx::MySqlPool,
     current_user: &CurrentUser,
-    exercice: &PremierExercice,
+    exercice: &Result<PremierExercice, RefusPremierExercice>,
 ) -> Result<OnboardingResponse, AppError> {
     // F2/F3/F4 CRITICAL FIX: Pessimistic locking strategy.
     // 1. Lock onboarding_state (serializes all finalize() calls on same session)
@@ -1055,6 +1093,17 @@ async fn finalize_inner(
         best_effort_rollback(tx).await;
         return response_with_stub(pool, onboarding).await;
     }
+
+    // Story 37-1 (AC-11, 37-1-CR-P1-3) — la finalisation reste à faire : les
+    // dates du corps s'appliquent, et leur refus se rend ici, avant toute
+    // écriture.
+    let exercice = match exercice {
+        Ok(e) => e,
+        Err(refus) => {
+            best_effort_rollback(tx).await;
+            return Err(AppError::from(refus));
+        }
+    };
 
     // F3 CRITICAL FIX: Lock company row before insert_with_defaults()
     // Prevents concurrent deletion between our check and INSERT INTO company_invoice_settings.

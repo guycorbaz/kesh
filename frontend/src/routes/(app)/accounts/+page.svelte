@@ -805,6 +805,7 @@
 					idPrefix="account-edit"
 					locked={editAccount?.currencyLocked === true}
 					fieldErrors={editFxErrors}
+					accountId={editAccount?.id}
 				/>
 			{/if}
 			{#if editError}

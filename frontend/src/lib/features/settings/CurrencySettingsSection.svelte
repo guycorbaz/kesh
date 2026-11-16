@@ -55,16 +55,38 @@
 	let fieldErrors = $state<Partial<Record<FxAccountField, string>>>({});
 	let confirmOpen = $state(false);
 
+	/** Le réglage tel que reçu au dernier `resetFrom` (mode et trois comptes). */
+	type Reglage = [boolean, number | null, number | null, number | null];
+	let synced = $state<Reglage | null>(null);
+
+	function reglageDe(c: CompanyJson): Reglage {
+		return [c.multiCurrencyEnabled, c.fxGainAccountId, c.fxLossAccountId, c.fxTransitAccountId];
+	}
+
+	function memeReglage(a: Reglage | null, b: Reglage): boolean {
+		return a !== null && a.every((v, i) => v === b[i]);
+	}
+
 	function resetFrom(c: CompanyJson) {
 		enabled = c.multiCurrencyEnabled;
 		gainId = c.fxGainAccountId;
 		lossId = c.fxLossAccountId;
 		transitId = c.fxTransitAccountId;
+		synced = reglageDe(c);
 		syncedVersion = c.version;
 	}
 
+	// Une société plus récente recharge les champs — sauf si seule une autre
+	// section a changé (même réglage) alors que l'utilisateur a modifié celle-ci :
+	// ses choix non enregistrés sont gardés (revue de code P2, 37-1-CR-P2-4).
 	$effect(() => {
-		if (!submitting && company.version !== syncedVersion) resetFrom(company);
+		if (submitting || company.version === syncedVersion) return;
+		const modifie = !memeReglage(synced, [enabled, gainId, lossId, transitId]);
+		if (modifie && memeReglage(synced, reglageDe(company))) {
+			syncedVersion = company.version;
+		} else {
+			resetFrom(company);
+		}
 	});
 
 	onMount(async () => {

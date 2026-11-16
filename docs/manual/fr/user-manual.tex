@@ -1093,7 +1093,7 @@ Chaque exercice est \emph{mono-devise} ou \emph{multi-devises}~; son mode se pos
 
 \subsection{La devise d'un compte}\label{sec:devise-compte}
 
-En multi-devises, \emph{Administration} → \emph{Plan comptable} affiche une colonne \emph{Devise} (vide pour un compte en CHF), et le formulaire de création et de modification d'un compte un champ \emph{Devise}~: \emph{CHF (devise principale)} ou un code de devise à trois lettres (\texttt{EUR}, \texttt{USD}, \texttt{GBP}\ldots). Choisir CHF revient à ne pas donner de devise. Un compte de regroupement peut porter une devise, à titre informatif~; ses sous-comptes n'en héritent pas. En mono-devise, le champ n'existe pas, et une devise envoyée par l'API est refusée (\texttt{409 MULTI\_\allowbreak CURRENCY\_\allowbreak DISABLED}).
+En multi-devises, \emph{Administration} → \emph{Plan comptable} affiche la devise d'un compte en devise à côté de son numéro (rien pour un compte en CHF), et le formulaire de création et de modification d'un compte un champ \emph{Devise}~: \emph{CHF (devise principale)} ou un code de devise à trois lettres (\texttt{EUR}, \texttt{USD}, \texttt{GBP}\ldots). Choisir CHF revient à ne pas donner de devise. Un compte de regroupement peut porter une devise, à titre informatif~; ses sous-comptes n'en héritent pas. En mono-devise, le champ n'existe pas, et une devise envoyée par l'API est refusée (\texttt{409 MULTI\_\allowbreak CURRENCY\_\allowbreak DISABLED}).
 
 \begin{keshwarning}
 \textbf{La devise d'un compte se verrouille à sa première écriture, et ce verrou est définitif.} La devise d'une ligne d'écriture est celle de son compte~: c'est donc le verrou qui fixe la devise de toutes les écritures passées sur ce compte --- la changer les réinterpréterait toutes. Dès qu'un compte porte une ligne d'écriture, sa devise ne change plus (le champ est grisé, avec l'explication~; l'API répond \texttt{409 ACCOUNT\_\allowbreak CURRENCY\_\allowbreak LOCKED}), sans confirmation possible et même archivé. Le seul retour est de \textbf{supprimer toutes ses écritures}. Choisissez donc la devise \textbf{avant} la première écriture.
@@ -1106,8 +1106,8 @@ En multi-devises, \emph{Administration} → \emph{Plan comptable} affiche une co
     \item le compte comptable lié à un \textbf{compte bancaire}, \textbf{même archivé}~: c'est une limite assumée --- un compte lié à un compte bancaire archivé ne reçoit plus de devise~;
     \item le compte de produit par défaut d'un \textbf{article}, même archivé~;
     \item la contrepartie d'une \textbf{règle d'affectation} (\S\ref{sec:regles-affectation}), même supprimée~;
-    \item un compte de différences de change ou de conversion désigné (ci-dessus).
 \end{itemize}
+Un compte de différences de change ou de conversion désigné (ci-dessus) ne reçoit pas de devise non plus, refusé sous son propre code (\texttt{409 ACCOUNT\_\allowbreak IS\_\allowbreak FX\_\allowbreak DIFFERENCE\_\allowbreak ACCOUNT}).
 \textbf{Inversement}, un compte \textbf{en devise} ne peut pas être lié à un compte bancaire, désigné dans \emph{Facturation}, choisi comme compte d'un article ou d'une règle d'affectation, ni recevoir un rôle (\texttt{400 ACCOUNT\_\allowbreak IN\_\allowbreak FOREIGN\_\allowbreak CURRENCY}). Retirer un rôle et poser une devise dans la même modification est admis, si rien d'autre ne retient le compte.
 
 \subsection{Les comptes de différence propres}

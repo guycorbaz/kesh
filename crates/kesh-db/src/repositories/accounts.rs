@@ -231,6 +231,24 @@ pub async fn create(pool: &MySqlPool, user_id: i64, new: NewAccount) -> Result<A
         });
     }
 
+    // Revue de code P2 (37-1-CR-P2-8) : le parent devient un compte de
+    // regroupement (non imputable) dans cette transaction ; lu encore imputable,
+    // il passerait le contrôle des comptes propres — refusé sur l'état résultant.
+    if let (Some(parent_id), Some(own)) = (new.parent_id, new.own_fx_accounts) {
+        for (field, id) in [
+            (FxAccountField::Gain, own.gain),
+            (FxAccountField::Loss, own.loss),
+        ] {
+            if id == parent_id {
+                return Err(DbError::FxAccountInvalid {
+                    field,
+                    reason: FxAccountReason::NotPostable,
+                    holder_account_id: None,
+                });
+            }
+        }
+    }
+
     check_own_fx_accounts_in_tx(
         &mut tx,
         new.company_id,
@@ -1340,6 +1358,15 @@ fn role_conflict(role: AccountRole, holder: Account) -> DbError {
 ///   pouvoir nommer le compte qui bloque.
 /// - **Compte déjà actif** → no-op idempotent : entité retournée telle quelle,
 ///   sans bump de version ni audit (cohérent avec le court-circuit KF-004 d'[`update`]).
+/// - **Parent désigné compte de gains, de pertes ou de conversion** (Story 37-1,
+///   revue de code P2, 37-1-CR-P2-7) → [`DbError::AccountIsFxDifferenceAccount`] :
+///   un compte désigné ne reçoit pas de sous-compte (AC-4), et réactiver un
+///   enfant archivé lui en rendrait un — l'enfant archivé laisse le parent
+///   repasser imputable, puis être désigné. La société est lue sur le pool
+///   (`company_id` immuable), puis `companies` en partage **en premier verrou**
+///   (ordre global ; une désignation tient `companies` en exclusif), le parent en
+///   partage, et ses désignations par les recherches verrouillantes de
+///   [`fx_designations_of_in_tx`].
 ///
 /// # `clear_role` — code review 14-3a, décision D4
 ///
@@ -1356,7 +1383,12 @@ pub async fn reactivate(
     user_id: i64,
     clear_role: bool,
 ) -> Result<Account, DbError> {
+    // Story 37-1 (37-1-CR-P2-7) — la société sur le pool, avant `begin()` : une
+    // lecture simple en tête de transaction figerait l'instantané avant
+    // l'attente du verrou de `companies`.
+    let company_id = company_of_account(pool, id).await?;
     let mut tx = pool.begin().await.map_err(map_db_error)?;
+    let state = lock_company_currency_in_tx(&mut tx, company_id, CompanyLock::Share).await?;
 
     let before = match sqlx::query_as::<_, Account>(FIND_BY_ID_SQL)
         .bind(id)
@@ -1368,7 +1400,11 @@ pub async fn reactivate(
             tx.rollback().await.map_err(map_db_error)?;
             return Err(DbError::NotFound);
         }
-        Some(a) => a,
+        Some(a) if a.company_id == company_id => a,
+        Some(_) => {
+            tx.rollback().await.map_err(map_db_error)?;
+            return Err(DbError::NotFound);
+        }
     };
 
     // Code review 14-3a : le contrôle de version passe AVANT le court-circuit
@@ -1390,7 +1426,7 @@ pub async fn reactivate(
     // Garde 1 : le parent doit être actif (sinon arborescence incohérente).
     if let Some(parent_id) = before.parent_id {
         let parent: Option<(bool, String)> =
-            sqlx::query_as("SELECT active, number FROM accounts WHERE id = ?")
+            sqlx::query_as("SELECT active, number FROM accounts WHERE id = ? LOCK IN SHARE MODE")
                 .bind(parent_id)
                 .fetch_optional(&mut *tx)
                 .await
@@ -1402,6 +1438,13 @@ pub async fn reactivate(
             // mappé sur un message générique côté API, si bien que l'explication
             // écrite ici n'atteignait jamais l'utilisateur (code review 14-3a).
             return Err(DbError::AccountParentArchived { parent_number });
+        }
+        // Story 37-1 (37-1-CR-P2-7) : un parent désigné ne retrouve pas de
+        // sous-compte actif.
+        let hits = fx_designations_of_in_tx(&mut tx, company_id, &state, parent_id).await?;
+        if let Err(e) = refuse_designated(hits, |_| true) {
+            tx.rollback().await.map_err(map_db_error)?;
+            return Err(e);
         }
     }
 
@@ -1789,8 +1832,10 @@ pub fn fx_account_rejection(
 /// **employés** (Story 37-1, AC-3, AC-4 bis), dans la transaction de
 /// l'appelant : `companies::update_currency_settings` (comptes de la société,
 /// [`FxAccountLock::ForUpdate`]), les comptes propres d'un compte en devise
-/// (`accounts::create`/`update`, même verrou) et la revalidation à l'usage
-/// ([`validate_fx_accounts_in_tx`], [`FxAccountLock::Share`]).
+/// (`accounts::create`/`update`, [`FxAccountLock::Share`] : la ligne
+/// `companies`, tenue `FOR UPDATE` par le geste, les sérialise) et la
+/// revalidation à l'usage ([`validate_fx_accounts_in_tx`],
+/// [`FxAccountLock::Share`]).
 ///
 /// Le premier compte de `checks` (dans l'ordre reçu) qui échoue rend
 /// [`DbError::FxAccountInvalid`] ; `checks` vide ne lit rien.
@@ -2251,6 +2296,12 @@ async fn currency_use_site_in_tx(
 /// (Story 37-1, AC-4 bis) : `unexpected` si le compte reste ou devient CHF,
 /// puis gain puis perte, comptes **changés** seulement (motif C4), lus
 /// `LOCK IN SHARE MODE` après le `FOR UPDATE` du compte en devise.
+///
+/// Revue de code P2 (37-1-CR-P2-1) : un compte ne se désigne pas lui-même.
+/// Lu avant l'`UPDATE`, il est encore CHF quand le même `PUT` lui donne une
+/// devise et le nomme gain ou perte, de sorte que le refus `foreignCurrency`
+/// de [`check_fx_accounts_in_tx`] ne le verrait pas : il est jugé ici sur
+/// l'état résultant (le compte porte une devise), même raison.
 async fn check_own_fx_accounts_in_tx(
     conn: &mut sqlx::MySqlConnection,
     company_id: i64,
@@ -2268,6 +2319,20 @@ async fn check_own_fx_accounts_in_tx(
             reason: FxAccountReason::Unexpected,
             holder_account_id,
         });
+    }
+    if let Some(holder) = holder_account_id {
+        for (field, id) in [
+            (FxAccountField::Gain, after.gain),
+            (FxAccountField::Loss, after.loss),
+        ] {
+            if id == holder {
+                return Err(DbError::FxAccountInvalid {
+                    field,
+                    reason: FxAccountReason::ForeignCurrency,
+                    holder_account_id,
+                });
+            }
+        }
     }
     let mut checks = Vec::with_capacity(2);
     if before.map(|b| b.gain) != Some(after.gain) {

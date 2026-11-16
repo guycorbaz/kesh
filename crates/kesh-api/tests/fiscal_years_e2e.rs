@@ -1366,8 +1366,10 @@ async fn path_b_finalize_debut_au_1er_mars_avant_une_annee_bissextile(pool: MySq
 }
 
 /// Story 37-1 (AC-11) — fin ≤ début, ou date hors de la plage de la base :
-/// 400 avant la transaction, rien de créé, étape inchangée (7) ; une
-/// finalisation valide passe ensuite.
+/// 400 avant toute écriture, rien de créé, étape inchangée (7) ; une
+/// finalisation valide passe ensuite, et une finalisation rejouée après elle
+/// avec ces mêmes dates invalides rend l'état (le corps est ignoré, revue de
+/// code P2, 37-1-CR-P1-3).
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn path_b_finalize_refuse_les_dates_invalides_sans_rien_creer(pool: MySqlPool) {
     let (app, token, company_id) = path_b_ready_to_finalize(&pool).await;
@@ -1415,6 +1417,21 @@ async fn path_b_finalize_refuse_les_dates_invalides_sans_rien_creer(pool: MySqlP
     let (status, body) = finalize_with(&app, &token, json!({})).await;
     assert_eq!(status, 200, "{body}");
     assert_eq!(step_completed(&pool).await, 8);
+    let exercice_cree = exercices(&pool, company_id).await;
+    assert_eq!(exercice_cree.len(), 1);
+
+    // 37-1-CR-P1-3 : déjà faite, la finalisation ignore le corps, même invalide.
+    let audit_apres = common::audit_sequence(&pool).await;
+    for corps in [
+        json!({ "fiscalYearStartDate": "2026-04-01", "fiscalYearEndDate": "2026-03-31" }),
+        json!({ "fiscalYearStartDate": "0999-04-01" }),
+    ] {
+        let (status, body) = finalize_with(&app, &token, corps.clone()).await;
+        assert_eq!(status, 200, "{corps} → {body}");
+        assert_eq!(body["stepCompleted"], 8, "{corps}");
+        assert_eq!(exercices(&pool, company_id).await, exercice_cree, "{corps}");
+    }
+    assert_eq!(common::audit_sequence(&pool).await, audit_apres);
 }
 
 /// Story 7.2 (KF-003) — vérifie que `finalize` Path B seed les 4 taux TVA

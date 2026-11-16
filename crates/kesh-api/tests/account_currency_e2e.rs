@@ -362,6 +362,9 @@ async fn compte_de_difference_garde_par_l_api(pool: MySqlPool) {
         "{e}"
     );
     assert_eq!(e["error"]["details"]["designation"], "transit");
+    // Revue de code P2 (37-1-CR-P2-5) : le message nomme le compte de conversion.
+    let msg = e["error"]["message"].as_str().unwrap_or("");
+    assert!(msg.contains("compte de conversion"), "{msg}");
 
     // Désignation propre : le détenteur est nommé.
     let propre = compte(&pool, ctx.s.company_id, "6970", "Expense", None).await;
@@ -458,6 +461,11 @@ async fn comptes_propres_forme_et_retour_au_defaut(pool: MySqlPool) {
     .await;
     assert_eq!((st, code(&e)), (400, "FX_ACCOUNT_INVALID"), "{e}");
     assert_eq!(e["error"]["details"]["reason"], "unexpected");
+    // Revue de code P2 (37-1-CR-P2-3) : la société est multi-devises, le
+    // message parle du compte en devise, non du mode.
+    let msg = e["error"]["message"].as_str().unwrap_or("");
+    assert!(msg.contains("compte en devise"), "{msg}");
+    assert!(!msg.contains("mode multi-devises"), "{msg}");
 }
 
 // ============================================================

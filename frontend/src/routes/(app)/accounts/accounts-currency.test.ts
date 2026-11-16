@@ -195,6 +195,23 @@ describe('multi-devises', () => {
 		expect(body).not.toHaveProperty('currency');
 	});
 
+	it('le compte modifié ne se propose pas comme son propre compte de différence (37-1-CR-P2-1)', async () => {
+		// 6500, compte de charges CHF : il passerait le filtre des comptes de différence.
+		fetchAccountsMock.mockResolvedValue([GAIN, OTHER, CHF]);
+		render(Page);
+		await openEdit('6500');
+		const currency = (await screen.findByTestId('account-edit-dialog-currency')) as HTMLSelectElement;
+		await fireEvent.change(currency, { target: { value: 'USD' } });
+		await fireEvent.click(await screen.findByTestId('account-edit-dialog-fx-own'));
+		const gain = (await screen.findByTestId('account-edit-dialog-fx-gain')) as HTMLSelectElement;
+		const loss = screen.getByTestId('account-edit-dialog-fx-loss') as HTMLSelectElement;
+		for (const select of [gain, loss]) {
+			const values = Array.from(select.options).map((o) => o.value);
+			expect(values).toContain('68');
+			expect(values).not.toContain('50');
+		}
+	});
+
 	it('« propres » sans les deux comptes : message, aucun envoi', async () => {
 		fetchAccountsMock.mockResolvedValue([GAIN, OTHER, account({ currency: 'USD' })]);
 		render(Page);

@@ -185,6 +185,36 @@ describe('CurrencySettingsSection (Story 37-1, AC-7)', () => {
 		expect(r.queryByTestId('settings-currency-confirm-activate')).toBeNull();
 	});
 
+	it('une autre section enregistrée (version plus récente, même réglage) garde les choix non enregistrés (37-1-CR-P2-4)', async () => {
+		updateMock.mockResolvedValue(company({ ...ACTIVE, fxLossAccountId: 68, version: 7 }));
+		const r = await monter(company({ ...ACTIVE, version: 5 }));
+		const loss = (await r.findByTestId('settings-currency-loss')) as HTMLSelectElement;
+		await waitFor(() => expect(loss.options.length).toBe(3));
+		await fireEvent.change(loss, { target: { value: '68' } });
+		// L'adresse est enregistrée ailleurs : la société revient en version 6.
+		await r.rerender({ company: company({ ...ACTIVE, version: 6 }), isAdmin: true, onSaved: vi.fn() });
+		expect((r.getByTestId('settings-currency-loss') as HTMLSelectElement).value).toBe('68');
+		await fireEvent.click(r.getByTestId('settings-currency-save'));
+		await waitFor(() => expect(updateMock).toHaveBeenCalledTimes(1));
+		expect(updateMock.mock.calls[0][0]).toMatchObject({ fxLossAccountId: 68, version: 6 });
+	});
+
+	it('un réglage changé ailleurs recharge les champs, même modifiés', async () => {
+		const r = await monter(company({ ...ACTIVE, version: 5 }));
+		const loss = (await r.findByTestId('settings-currency-loss')) as HTMLSelectElement;
+		await waitFor(() => expect(loss.options.length).toBe(3));
+		await fireEvent.change(loss, { target: { value: '68' } });
+		await r.rerender({
+			company: company({ ...ACTIVE, fxGainAccountId: 69, version: 6 }),
+			isAdmin: true,
+			onSaved: vi.fn(),
+		});
+		await waitFor(() =>
+			expect((r.getByTestId('settings-currency-gain') as HTMLSelectElement).value).toBe('69'),
+		);
+		expect((r.getByTestId('settings-currency-loss') as HTMLSelectElement).value).toBe('69');
+	});
+
 	it('activer sans les trois comptes : message, aucune confirmation ni PUT', async () => {
 		const r = await monter(company());
 		await fireEvent.click(r.getByTestId('settings-currency-enabled'));

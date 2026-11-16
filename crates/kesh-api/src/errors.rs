@@ -1539,6 +1539,15 @@ fn fx_account_invalid_response(
             "error-fx-account-missing",
             format!("{subject} est obligatoire en mode multi-devises."),
         ),
+        // Revue de code P2 (37-1-CR-P2-3) : comptes propres sur un compte qui
+        // reste ou devient CHF, dans une société multi-devises — « mode
+        // multi-devises » y serait faux.
+        FxAccountReason::Unexpected if holder_account_id.is_some() => (
+            "error-fx-account-unexpected-own",
+            format!(
+                "{subject} propre ne se désigne que sur un compte en devise : retirez la devise et les comptes propres ensemble."
+            ),
+        ),
         FxAccountReason::Unexpected => (
             "error-fx-account-unexpected",
             format!("{subject} ne se désigne qu’en mode multi-devises."),
@@ -4456,6 +4465,12 @@ impl IntoResponse for AppError {
                                 &args,
                             )
                         }
+                        // Revue de code P2 (37-1-CR-P2-5) : le compte de
+                        // conversion n'est pas un compte de différence.
+                        None if designation == kesh_db::errors::FxDesignation::Transit => t(
+                            "error-account-is-fx-transit-account",
+                            "Ce compte est le compte de conversion de la société : il ne peut être ni archivé, ni retypé hors du bilan, ni rendu non imputable, ni recevoir de devise ou de sous-compte.",
+                        ),
                         None => t(
                             "error-account-is-fx-difference-account",
                             "Ce compte est un compte de différence de change de la société : il ne peut être ni archivé, ni retypé, ni rendu non imputable, ni recevoir de devise, de sous-compte ou de rôle de produit.",
