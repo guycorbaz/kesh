@@ -137,6 +137,9 @@ champ_enum!(
     // Story 37-1 (AC-2, V10) : le genre d'un cours d'exercice, sans champ,
     // `Serialize` dérivé en minuscules (`day`/`month`, celles du HTTP).
     kesh_db::entities::RateKind,
+    // Story 37-3a (AC-8) : la provenance du cours d'une ligne en devise, sans
+    // champ, `Serialize` dérivé en minuscules (`afc`, `manual`, `revaluation`).
+    kesh_db::entities::RateProvenance,
     // Story 32-9b : les énumérations d'un contact, sans champ, `Serialize`
     // dérivé (`entities/contact.rs:53`, `:110` ; `company.rs:73-74`).
     kesh_db::entities::contact::ContactType,
@@ -213,8 +216,10 @@ impl ChampSur for Date {}
 /// (`rust_decimal` 1.43.0, doc de `rescale`). Inatteignable depuis la base :
 /// les colonnes décimales sont en `DECIMAL(19,4)`, `DECIMAL(18,2)`,
 /// `DECIMAL(7,2)` ou `DECIMAL(5,2)` (recompté dans `crates/kesh-db/migrations/`
-/// le 2026-10-29), seize chiffres entiers au plus ; une somme de telles valeurs
-/// en reste à des ordres de grandeur.
+/// le 2026-10-29), seize chiffres entiers au plus, et — Story 37-3a, le cours
+/// d'une ligne en devise — `DECIMAL(20,10)` (dix chiffres entiers, borné à
+/// 10⁶ par le dépôt) ; une somme de telles valeurs en reste à des ordres de
+/// grandeur.
 pub struct Montant(pub Decimal);
 
 impl Serialize for Montant {

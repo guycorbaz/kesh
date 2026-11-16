@@ -1801,12 +1801,14 @@ async fn lettering_pieces(pool: &MySqlPool, biz: &Business) -> LetteringPieces {
                     debit: dec!(20),
                     credit: dec!(0),
                     project_id: None,
+                    foreign: None,
                 },
                 NewJournalEntryLine {
                     account_id: payable,
                     debit: dec!(0),
                     credit: dec!(20),
                     project_id: None,
+                    foreign: None,
                 },
             ],
         },
@@ -5948,7 +5950,10 @@ async fn full_import_of_a_0_17_6_backup_takes_the_multi_currency_defaults(pool: 
             }
         }
     }
-    assert_eq!(retirees, 10, "les dix colonnes de la 37-1");
+    assert_eq!(
+        retirees, 13,
+        "les dix colonnes de la 37-1 et les trois de la 37-3a (lignes d'écriture)"
+    );
     let ancienne = rezip_tout(&manifest, &data, &fichiers);
 
     assert!(
@@ -5993,6 +5998,15 @@ async fn full_import_of_a_0_17_6_backup_takes_the_multi_currency_defaults(pool: 
             .await
             .unwrap();
     assert_eq!(devises, 0, "aucun compte en devise");
+    // Story 37-3a (AC-1) : les lignes d'écriture réimportées sont en CHF.
+    let lignes_en_devise: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM journal_entry_lines WHERE amount_currency IS NOT NULL \
+         OR exchange_rate IS NOT NULL OR rate_source IS NOT NULL",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(lignes_en_devise, 0, "lignes aux trois colonnes NULL");
     let modes = modes_des_exercices(&pool, c).await;
     assert!(!modes.is_empty());
     assert!(
@@ -6080,6 +6094,71 @@ async fn full_import_round_trip_keeps_the_multi_currency_setting(pool: MySqlPool
     assert_eq!(reglage_multi_devises(&pool, c).await, reglage);
     assert_eq!(devise_du_compte(&pool, compte_usd).await, devise);
     assert_eq!(modes_des_exercices(&pool, c).await, modes);
+}
+
+/// Story 37-3a (AC-8) — **aller-retour** d'une ligne d'écriture en devise :
+/// montant à 4 décimales et cours à 10 reviennent identiques (export générique
+/// par `information_schema`, restauration sous `chk_jel_fx_*`).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn full_import_round_trip_keeps_a_foreign_currency_line(pool: MySqlPool) {
+    let app = spawn_app(pool.clone()).await;
+    let biz = seed_business(&pool, "Aller-retour 37-3a").await;
+    let c = biz.ctx.company_id;
+    let compte_usd = poser_multi_devises(&pool, &biz).await;
+    let fy: i64 = sqlx::query_scalar("SELECT id FROM fiscal_years WHERE company_id = ? LIMIT 1")
+        .bind(c)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    let entry_id: i64 = sqlx::query_scalar(
+        "INSERT INTO journal_entries (company_id, fiscal_year_id, entry_number, entry_date, \
+         journal, description) VALUES (?, ?, 9001, \
+         (SELECT start_date FROM fiscal_years WHERE id = ?), 'OD', 'Ligne USD') RETURNING id",
+    )
+    .bind(c)
+    .bind(fy)
+    .bind(fy)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        "INSERT INTO journal_entry_lines (entry_id, account_id, line_order, debit, credit, \
+         amount_currency, exchange_rate, rate_source) VALUES \
+         (?, ?, 1, 12.34, 0, 1234.5678, 0.0099956789, 'manual'), \
+         (?, ?, 2, 0, 12.34, NULL, NULL, NULL)",
+    )
+    .bind(entry_id)
+    .bind(compte_usd)
+    .bind(entry_id)
+    .bind(biz.accounts["3000"])
+    .execute(&pool)
+    .await
+    .unwrap();
+    let lire = || async {
+        sqlx::query_scalar::<_, String>(
+            "SELECT CONCAT_WS('|', account_id, debit, credit, IFNULL(amount_currency, '-'), \
+             IFNULL(exchange_rate, '-'), IFNULL(rate_source, '-')) \
+             FROM journal_entry_lines WHERE entry_id = ? ORDER BY line_order",
+        )
+        .bind(entry_id)
+        .fetch_all(&pool)
+        .await
+        .unwrap()
+    };
+    let avant = lire().await;
+    assert!(
+        avant[0].contains("1234.5678|0.0099956789|manual"),
+        "{avant:?}"
+    );
+    let backup = export_backup(&app, &biz.ctx.jwt).await;
+    sqlx::query("DELETE FROM journal_entry_lines WHERE entry_id = ?")
+        .bind(entry_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let resp = post_import(&app, &biz.ctx.jwt, backup).await;
+    assert_eq!(resp.status(), 200, "{}", resp.text().await.unwrap());
+    assert_eq!(lire().await, avant, "ligne en devise identique");
 }
 
 /// Les lignes `exchange_rates` de la base, toutes colonnes, en texte, par id.
