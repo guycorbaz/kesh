@@ -1153,3 +1153,4 @@ chacune (R7), l'écart de change dans la seconde, afin que mes comptes en devise
   Non exercés : AC-1 à AC-3, AC-6, AC-8, AC-9 hors grep ; i18n ; MCP ; compilation. Inter-fiches : 37-1 (D-CR7-2 :
   refus et son test, limite retirée de la Révision CR-7 et de l'AC-10 — autre agent) ; 37-3b (AC-2 bis, montée S → X
   de la route de conversion, P2 de 37-3b).
+- 2026-11-16 — validation CR-7 P3 ciblée (Sonnet) : 0 finding. D-CR7-2 cité aux lignes d'en-tête, AC-4 2 et 2 bis, vrai au code et cohérent avec 37-1 (garde, code 400, préfixe mono-devise) ; phrase de la limite assumée retirée (grep : aucun résidu hors Change Logs datés ; « limite assumée » de NFR-3 = cours de la société lu sans verrou, sans rapport). Axes exercés : diff P2, AC-4 2/2 bis, résidus. Non exercés : reste de la fiche. Décompte : inchangé.

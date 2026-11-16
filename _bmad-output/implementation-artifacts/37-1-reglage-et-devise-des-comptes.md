@@ -365,7 +365,9 @@ bascule par exercice, de S3 l'avertissement, d'A4/A5 la bascule et `force`, A27)
      d'autres appelants, n'est pas touché) refuse la création → `DbError::LaterFiscalYearMonoCurrency { fiscal_year_id,
      fiscal_year_name }`, mappée dans `map_create_error` (`routes/fiscal_years.rs:146`) en **400
      `LATER_FISCAL_YEAR_MONO_CURRENCY`** — code voisin de `LATER_FISCAL_YEAR_CLOSED`, mêmes `details` `{ fiscalYearId,
-     fiscalYearName }`, réponse construite comme `later_fiscal_year_closed_response` (`errors.rs:1438`), clé
+     fiscalYearName }`, variante `AppError` voisine de `FiscalYearBeforeClosedYear` (`errors.rs:358`), réponse bâtie par le
+     gabarit `later_fiscal_year_closed_response` (`errors.rs:1438`) **généralisé d'un paramètre `code`** (DRY : un seul
+     gabarit, pas une copie dont les `details` divergeraient ; son doc-comment suit), clé
      `error-fiscal-year-create-later-mono-currency` dans les quatre locales (« L'exercice « {name} », postérieur, est
      mono-devise (clos avant l'activation du multi-devises) : aucun exercice ne peut être créé avant lui. »). Pas le même
      code : l'exercice visé peut être ouvert, et le remède de `LATER_FISCAL_YEAR_CLOSED` (rouvrir) n'y fait rien. Lecture
@@ -886,7 +888,8 @@ bascule par exercice, de S3 l'avertissement, d'A4/A5 la bascule et `force`, A27)
       retypage, à la devise et au sous-compte ; refus de l'activation sans l'un des trois comptes ; rejeu sur
       interblocage de `currency-settings` (AC-3).
 - [ ] CR-2 — `kesh-api` : code `MULTI_CURRENCY_IRREVERSIBLE` (409, quatre locales, CR-7), code
-      `LATER_FISCAL_YEAR_MONO_CURRENCY` (400, `map_create_error`, quatre locales, D-CR7-2) et ses tests (AC-3 bis),
+      `LATER_FISCAL_YEAR_MONO_CURRENCY` (400, `map_create_error`, variante `AppError`, gabarit de réponse généralisé d'un
+      `code`, quatre locales, D-CR7-2) et ses tests (AC-3 bis),
       `FiscalYearResponse` ;
       frontend : troisième sélecteur des paramètres et dialogue de confirmation de l'activation (AC-7, CR-7) ; test
       d'import d'une sauvegarde 0.17.6 (AC-6). *(CR-7 : route `currency-mode`, ses codes, son audit et l'écran
@@ -1303,3 +1306,4 @@ bascule par exercice, de S3 l'avertissement, d'A4/A5 la bascule et `force`, A27)
   nécessaire aux colonnes FX), renvois 37-2/37-3a/37-5 sur D-CR7-2. Non exercés : PDF et manuels, i18n, code au-delà
   des sites cités, registre des routes (inchangé par D-CR7-2 : aucune route). Décompte : 12 FR, 9 NFR (inchangé ;
   FR-4 complétée).
+- 2026-11-16 — validation CR-7 P3 ciblée (Sonnet) : 0 CRITICAL, 0 HIGH, 0 MEDIUM, 1 LOW ; remédié. LOW 37-1-CR7-P3-1 (AC-3 bis, D-CR7-2 et tâche CR-2) : « réponse construite comme `later_fiscal_year_closed_response` » laissait croire à une copie du gabarit, dont le code `LATER_FISCAL_YEAR_CLOSED` est écrit en dur (`errors.rs:1438-1450`) et dont le doc-comment dit « un seul gabarit » ; la variante `AppError` (comme `FiscalYearBeforeClosedYear`, `errors.rs:358`) manquait aux tâches — gabarit généralisé d'un paramètre `code`, variante nommée. Vérifié au code : `fiscal_years::create` :331-395 (garde de l'invariant I après les pré-contrôles, la garde D-CR7-2 s'y insère à sa suite), `map_create_error` :143-153, rejeu :286, `create_if_absent_in_tx` (aucun exercice), clé `error-fiscal-year-create-later-closed` (messages.ftl:1087, la nouvelle clé en suit le nommage). Raisonnement contrôlé : préfixe mono-devise (invariant I à l'activation, aucune bascule, refus de création avant un mono), ordre de verrouillage companies → exercices sans cycle avec l'activation, lecture simple de l'exercice postérieur sûre sous le partage de `companies`, ordre des deux refus testé, société mono-devise inchangée, limite assumée retirée (grep : ne restent que la liste « Retiré » et des Change Logs datés). Axes exercés : AC-3 bis, FR-4, AC-10, tâches, NFR-9, résidus. Non exercés : PDF, i18n, reste de la fiche. Décompte : 12 FR, 9 NFR (inchangé).
