@@ -918,3 +918,160 @@ describe('AC 6 — le mode « compléter »', () => {
 		expect(locked.textContent).toContain('ci-dessous');
 	});
 });
+
+// ---------------------------------------------------------------------------
+// Story 37-3b (AC-1) — soldes d'ouverture en devise
+// ---------------------------------------------------------------------------
+
+describe('37-3b — soldes en devise (AC-1)', () => {
+	const USD = acc({ id: 20, number: '1022', name: 'Banque USD', accountType: 'Asset', currency: 'USD' });
+	const lookupOk = (rate: string, source = 'afc') => (currency: string, date: string, kind: string) =>
+		Promise.resolve({
+			currency,
+			kind,
+			rateDate: date,
+			effectiveRate: rate,
+			source,
+			publishedRate: null,
+			publishedUnit: null,
+			sourceDate: null,
+		});
+	const val = (id: string) => (screen.getByTestId(id) as HTMLInputElement).value;
+
+	beforeEach(() => {
+		lookupRateMock.mockReset();
+		listFiscalYearsMock.mockReset();
+		listFiscalYearsMock.mockResolvedValue([{ id: 12, startDate: '2026-01-01', openingRateKind: 'day' }]);
+		fetchAccountsMock.mockResolvedValue([ASSET, RETAINED, LIABILITY, USD]);
+	});
+
+	it('genre day : cours journalier de la veille proposé, provenance affichée, corps manual avec la devise', async () => {
+		lookupRateMock.mockImplementation(lookupOk('0.8846'));
+		getStatusMock.mockResolvedValue(readyStatus());
+		generateMock.mockResolvedValue({});
+		render(Page);
+		await screen.findByTestId('opening-balances-grid');
+		await waitFor(() => expect(val('opening-balances-fx-rate-1022')).toBe('0.8846'));
+		expect(lookupRateMock).toHaveBeenCalledWith('USD', '2025-12-31', 'day');
+		expect(screen.getByTestId('opening-balances-fx-provenance-1022').textContent).toContain(
+			'proposé : cours journalier du 31.12.2025',
+		);
+		await type('opening-balances-fx-debit-1022', '100');
+		expect(val('opening-balances-fx-chf-1022')).toBe('88.46');
+		await type('opening-balances-credit-2000', '88.46');
+		await fireEvent.click(screen.getByTestId('opening-balances-generate'));
+		await waitFor(() => expect(generateMock).toHaveBeenCalled());
+		const lines = generateMock.mock.calls[0][0].lines;
+		expect(lines).toContainEqual({
+			accountId: 20,
+			debit: '88.46',
+			credit: '0',
+			foreign: { currency: 'USD', amount: '100', rate: '0.8846', rateSource: 'manual' },
+		});
+	});
+
+	it('genre month : cours mensuel du dernier mois de l’exercice précédent ; cours saisi (ecb) affiché tel', async () => {
+		listFiscalYearsMock.mockResolvedValue([{ id: 12, startDate: '2026-01-01', openingRateKind: 'month' }]);
+		lookupRateMock.mockImplementation(lookupOk('0.88', 'ecb'));
+		getStatusMock.mockResolvedValue(readyStatus());
+		render(Page);
+		await screen.findByTestId('opening-balances-grid');
+		await waitFor(() => expect(val('opening-balances-fx-rate-1022')).toBe('0.88'));
+		expect(lookupRateMock).toHaveBeenCalledWith('USD', '2025-12-01', 'month');
+		expect(screen.getByTestId('opening-balances-fx-provenance-1022').textContent).toContain('cours saisi (ecb)');
+	});
+
+	it('montant en devise sans cours : ligne jamais retirée, bouton désactivé, aucun appel', async () => {
+		lookupRateMock.mockRejectedValue({ code: 'X', status: 500, message: '' });
+		getStatusMock.mockResolvedValue(readyStatus());
+		render(Page);
+		await screen.findByTestId('opening-balances-grid');
+		await type('opening-balances-fx-debit-1022', '100');
+		await type('opening-balances-debit-1000', '10');
+		await type('opening-balances-credit-2000', '10');
+		expect((screen.getByTestId('opening-balances-generate') as HTMLButtonElement).disabled).toBe(true);
+		expect(screen.getByTestId('opening-balances-fx-incomplete')).toBeTruthy();
+		await fireEvent.click(screen.getByTestId('opening-balances-generate'));
+		expect(generateMock).not.toHaveBeenCalled();
+	});
+
+	it('exercices illisibles : aucun cours proposé, message', async () => {
+		listFiscalYearsMock.mockRejectedValue(new Error('réseau'));
+		getStatusMock.mockResolvedValue(readyStatus());
+		render(Page);
+		await screen.findByTestId('opening-balances-grid');
+		expect(screen.getByTestId('opening-balances-fx-no-proposal')).toBeTruthy();
+		expect(lookupRateMock).not.toHaveBeenCalled();
+	});
+
+	it('refus MULTI_CURRENCY_DISABLED affiché traduit sur la grille, saisie conservée', async () => {
+		lookupRateMock.mockImplementation(lookupOk('0.8846'));
+		getStatusMock.mockResolvedValue(readyStatus());
+		generateMock.mockRejectedValue({
+			code: 'MULTI_CURRENCY_DISABLED',
+			status: 409,
+			message: 'serveur',
+			details: { fiscalYearId: 12 },
+		});
+		render(Page);
+		await screen.findByTestId('opening-balances-grid');
+		await waitFor(() => expect(val('opening-balances-fx-rate-1022')).toBe('0.8846'));
+		await type('opening-balances-fx-debit-1022', '100');
+		await type('opening-balances-credit-2000', '88.46');
+		await fireEvent.click(screen.getByTestId('opening-balances-generate'));
+		const err = await screen.findByTestId('opening-balances-submit-error');
+		expect(err.textContent).toContain('mono-devise');
+		expect(val('opening-balances-fx-debit-1022')).toBe('100');
+	});
+
+	it('refus FX_CURRENCY_MISMATCH posé sur la ligne fautive (rang du corps envoyé)', async () => {
+		lookupRateMock.mockImplementation(lookupOk('0.8846'));
+		getStatusMock.mockResolvedValue(readyStatus());
+		generateMock.mockRejectedValue({
+			code: 'FX_CURRENCY_MISMATCH',
+			status: 400,
+			message: 'serveur',
+			details: { line: 2, expected: 'EUR', provided: 'USD' },
+		});
+		render(Page);
+		await screen.findByTestId('opening-balances-grid');
+		await waitFor(() => expect(val('opening-balances-fx-rate-1022')).toBe('0.8846'));
+		await type('opening-balances-credit-2000', '88.46');
+		await type('opening-balances-fx-debit-1022', '100');
+		await fireEvent.click(screen.getByTestId('opening-balances-generate'));
+		// Corps : 2000 puis 1022 (ordre de la grille) — rang 2 = la ligne USD.
+		const msg = await screen.findByTestId('opening-balances-row-refusal-1022');
+		expect(msg.textContent).toContain('Rechargez la page');
+	});
+
+	it('complément : corps avec la devise du compte ; refus MULTI_CURRENCY_DISABLED affiché', async () => {
+		lookupRateMock.mockImplementation(lookupOk('0.8846'));
+		getStatusMock.mockResolvedValue(
+			completableStatus({
+				completableAccounts: [{ id: 20, number: '1022', name: 'Banque USD', accountType: 'Asset', currency: 'USD' }],
+			}),
+		);
+		vi.spyOn(window, 'confirm').mockReturnValue(true);
+		completeMock.mockRejectedValueOnce({
+			code: 'MULTI_CURRENCY_DISABLED',
+			status: 409,
+			message: 'serveur',
+			details: { fiscalYearId: 12 },
+		});
+		render(Page);
+		await screen.findByTestId('opening-balances-complete');
+		await waitFor(() => expect(val('opening-balances-complete-fx-rate-1022')).toBe('0.8846'));
+		await type('opening-balances-complete-fx-credit-1022', '50');
+		await fireEvent.click(screen.getByTestId('opening-balances-complete-submit'));
+		await waitFor(() => expect(completeMock).toHaveBeenCalled());
+		expect(completeMock.mock.calls[0][0].lines[0]).toEqual({
+			accountId: 20,
+			debit: '0',
+			credit: '44.23',
+			foreign: { currency: 'USD', amount: '50', rate: '0.8846', rateSource: 'manual' },
+		});
+		const err = await screen.findByTestId('opening-balances-complete-error');
+		expect(err.textContent).toContain('mono-devise');
+		expect(val('opening-balances-complete-fx-credit-1022')).toBe('50');
+	});
+});
