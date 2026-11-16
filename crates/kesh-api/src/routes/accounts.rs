@@ -67,15 +67,23 @@ fn default_true() -> bool {
 /// Normalise une devise reçue (Story 37-1, AC-4) : `trim`, majuscules ASCII,
 /// `CHF` → `None` (devise principale), code hors liste ISO 4217 →
 /// `CURRENCY_UNKNOWN` (400). Avant tout autre contrôle de devise.
+///
+/// La valeur refusée est reprise dans le message et les `details` : elle est
+/// **tronquée** à [`CURRENCY_ECHO_MAX`] caractères, une saisie illimitée ne
+/// revenant pas deux fois dans la réponse (revue de code P1, 37-1-CR-P1-1).
 fn normalize_currency(raw: &str) -> Result<Option<String>, AppError> {
     kesh_core::currency::normalize_foreign_currency(raw)
         .map(|code| code.map(String::from))
         .map_err(|_| {
             AppError::Database(DbError::CurrencyUnknown {
-                value: raw.to_string(),
+                value: raw.chars().take(CURRENCY_ECHO_MAX).collect(),
             })
         })
 }
+
+/// Nombre maximal de caractères d'une devise refusée repris dans la réponse
+/// (`CURRENCY_UNKNOWN`) : un code ISO 4217 en compte trois.
+const CURRENCY_ECHO_MAX: usize = 32;
 
 /// Le refus de forme des comptes propres (Story 37-1, AC-4 bis) : l'un sans
 /// l'autre → `FX_ACCOUNT_INVALID` `missing` sur le champ manquant, avant la
@@ -563,4 +571,30 @@ pub async fn reactivate_account(
     )
     .await?;
     Ok(Json(response(&state, account).await?))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 37-1-CR-P1-1 : une devise démesurée est refusée, et sa reprise dans la
+    /// réponse est bornée ; une saisie courte est reprise telle quelle.
+    #[test]
+    fn unknown_currency_echo_is_bounded() {
+        let long = "é".repeat(5000);
+        match normalize_currency(&long) {
+            Err(AppError::Database(DbError::CurrencyUnknown { value })) => {
+                assert_eq!(value.chars().count(), CURRENCY_ECHO_MAX);
+            }
+            _ => panic!("devise démesurée non refusée en CURRENCY_UNKNOWN"),
+        }
+        match normalize_currency("usd1") {
+            Err(AppError::Database(DbError::CurrencyUnknown { value })) => {
+                assert_eq!(value, "usd1");
+            }
+            _ => panic!("« usd1 » non refusée en CURRENCY_UNKNOWN"),
+        }
+        assert!(matches!(normalize_currency(" chf "), Ok(None)));
+        assert_eq!(normalize_currency("usd").unwrap().as_deref(), Some("USD"));
+    }
 }
