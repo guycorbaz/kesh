@@ -1027,7 +1027,13 @@ const ATTENDU = {
 	// avant d'écrire ce nombre, et ventilé au code : 7 sites dans `routes/onboarding/+page.svelte`
 	// (section « Premier exercice » : titre, début, fin, résumé, phrase des dates définitives,
 	// deux motifs de refus). Que des littéraux.
-	sitesTotal: 3093,
+	// Story 37-2 (AC-6) : **3093 → 3184**, relevé par la garde (`expected 3184 to be 3093`)
+	// avant d'écrire ce nombre, et ventilé au code (`findCallSites` par fichier) : dans
+	// `features/exchange-rates/` (neuf), 39 sites dans `ExchangeRatesScreen.svelte`, 32 dans
+	// `exchange-rates-labels.ts`, 6 dans `RateCell.svelte`, 6 dans `CorrectionDialog.svelte`,
+	// 5 dans `ExchangeRateNoticesBanner.svelte` ; 3 dans `routes/(app)/settings/+page.svelte`
+	// (86 → 89 : la carte « Cours de change ») — 39 + 32 + 6 + 6 + 5 + 3 = 91. Que des littéraux.
+	sitesTotal: 3184,
 	sitesNonResolus: 31,
 	relais: 6,
 	// Story 26-1 (#620, AC3-bis) : **10 → 11** — `lib/features/bank-import/

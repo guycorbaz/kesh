@@ -1045,6 +1045,29 @@
 
 		<Separator />
 
+		{#if data.company.multiCurrencyEnabled}
+			<!-- Section Cours de change (Story 37-2, AC-6) — visible en multi-devises seulement -->
+			<section class="rounded-lg border border-border bg-white p-6 shadow-sm" data-testid="settings-exchange-rates">
+				<div class="flex items-center justify-between">
+					<h2 class="text-lg font-semibold">{msg('exchange-rates-title', 'Cours de change')}</h2>
+					<Button
+						variant="outline"
+						size="sm"
+						href="/settings/exchange-rates"
+						data-testid="settings-exchange-rates-manage-link"
+					>{msg('settings-manage', 'Gérer')}</Button>
+				</div>
+				<p class="mt-2 text-sm text-text-muted">
+					{msg(
+						'exchange-rates-settings-card',
+						'Cours mensuels AFC et cours journaliers de chaque exercice multi-devises : cours retenus par la société, récupération et corrections.',
+					)}
+				</p>
+			</section>
+
+			<Separator />
+		{/if}
+
 		<!-- Section Taux de TVA (Story 11-1, Administrateur) -->
 		<section class="rounded-lg border border-border bg-white p-6 shadow-sm">
 			<div class="flex items-center justify-between">
