@@ -104,6 +104,40 @@ async fn cours(
     .unwrap();
 }
 
+/// Une valeur **publiée** par la source (table système
+/// `_kesh_fetched_exchange_rates`), qui n'entre jamais dans le contrôle :
+/// insertion vérifiée (revue de code P1 — l'insertion d'origine visait des
+/// colonnes inexistantes et son erreur était avalée, ce qui rendait le cas (c)
+/// muet).
+async fn publier(pool: &MySqlPool, devise: &str, mois: NaiveDate, rate: Decimal) {
+    sqlx::query(
+        "INSERT INTO _kesh_fetched_exchange_rates (source, currency, kind, rate_date, \
+         rate_per_unit, published_unit, published_rate, source_date, first_fetched_at, \
+         fetched_at, value_changed_at) \
+         VALUES ('afc', ?, 'month', ?, ?, 1, ?, NULL, NOW(3), NOW(3), NOW(3)) \
+         ON DUPLICATE KEY UPDATE rate_per_unit = VALUES(rate_per_unit), \
+         published_rate = VALUES(published_rate), value_changed_at = NOW(3)",
+    )
+    .bind(devise)
+    .bind(mois)
+    .bind(rate)
+    .bind(rate)
+    .execute(pool)
+    .await
+    .unwrap();
+    let n: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM _kesh_fetched_exchange_rates \
+         WHERE currency = ? AND rate_date = ? AND rate_per_unit = ?",
+    )
+    .bind(devise)
+    .bind(mois)
+    .bind(rate)
+    .fetch_one(pool)
+    .await
+    .unwrap();
+    assert_eq!(n, 1, "valeur publiée posée");
+}
+
 fn fx(amount: Decimal, rate: Decimal, source: Option<RateProvenance>) -> Option<ForeignAmount> {
     Some(ForeignAmount {
         declared_currency: None,
@@ -434,13 +468,7 @@ async fn ac4_rang4_cours_afc(pool: MySqlPool) {
     let dec = decor(&pool).await;
     // (c) aucune ligne de la société pour le mois : `afc` → RATE_UNAVAILABLE ;
     // `manual` → passe. Une valeur publiée n'entre jamais dans le contrôle.
-    sqlx::query(
-        "INSERT INTO _kesh_fetched_exchange_rates (source, currency, kind, rate_date, rate, unit) \
-         VALUES ('afc', 'USD', 'month', '2026-03-01', 0.91193, 1)",
-    )
-    .execute(&pool)
-    .await
-    .ok();
+    publier(&pool, "USD", d(2026, 3, 1), dec!(0.91193)).await;
     let e = creer(
         &pool,
         &dec,
@@ -565,6 +593,51 @@ async fn ac4_rang4_cours_afc(pool: MySqlPool) {
                 ..
             }
         ),
+        "{e:?}"
+    );
+}
+
+/// (e) Correction de l'AFC **non reprise** : la valeur publiée change, la ligne
+/// `afc` de la société reste ; une ligne `afc` au cours retenu passe, à la
+/// valeur corrigée → `FX_RATE_NOT_AFC` (`expectedRate` = cours retenu).
+#[sqlx::test(migrations = "./test-schema")]
+async fn ac4_rang4_correction_afc_non_reprise(pool: MySqlPool) {
+    let dec = decor(&pool).await;
+    publier(&pool, "USD", d(2026, 3, 1), dec!(0.91193)).await;
+    cours(
+        &pool,
+        dec.s.company_id,
+        "USD",
+        d(2026, 3, 1),
+        dec!(0.91193),
+        "afc",
+    )
+    .await;
+    // La source republie une valeur corrigée ; la société ne la reprend pas.
+    publier(&pool, "USD", d(2026, 3, 1), dec!(0.91194)).await;
+    creer(
+        &pool,
+        &dec,
+        usd_afc(&dec, dec!(0.91193), Some(RateProvenance::Afc)),
+    )
+    .await
+    .expect("ligne afc au cours retenu");
+    // 1234.56 × 0.91194 = 1125.8446… → 1125.84.
+    let corrigee = ecriture(
+        &dec,
+        d(2026, 3, 15),
+        vec![
+            ligne_fx(
+                dec.usd,
+                dec!(1125.84),
+                fx(dec!(1234.56), dec!(0.91194), Some(RateProvenance::Afc)),
+            ),
+            chf_line(dec.ventes, Decimal::ZERO, dec!(1125.84)),
+        ],
+    );
+    let e = creer(&pool, &dec, corrigee).await.unwrap_err();
+    assert!(
+        matches!(e, DbError::FxRateNotAfc { line: 1, expected_rate: Some(r) } if r == dec!(0.91193)),
         "{e:?}"
     );
 }
@@ -1027,6 +1100,188 @@ async fn ac7_put_apres_reprise_d_un_cours(pool: MySqlPool) {
         .await
         .unwrap_err();
     assert!(matches!(e, DbError::FxRateNotAfc { .. }), "{e:?}");
+}
+
+/// (f), suite — revue de code P1 (cas exigés par la fiche, absents) : après la
+/// reprise d'un cours corrigé, le `PUT` qui ne change que les lignes CHF passe ;
+/// la ligne `afc` déplacée sur un autre compte, mise de l'autre côté, doublée
+/// d'une seconde ligne `afc` à l'ancien cours, ou dont l'écriture change de mois
+/// (vers un mois à ligne `afc`) est contrôlée et refusée au cours retenu.
+#[sqlx::test(migrations = "./test-schema")]
+async fn ac7_put_apres_reprise_chaque_modification_de_la_ligne_afc(pool: MySqlPool) {
+    let dec = decor(&pool).await;
+    let mars = d(2026, 3, 1);
+    cours(&pool, dec.s.company_id, "USD", mars, dec!(0.91193), "afc").await;
+    let je = creer(
+        &pool,
+        &dec,
+        usd_afc(&dec, dec!(0.91193), Some(RateProvenance::Afc)),
+    )
+    .await
+    .unwrap();
+    cours(&pool, dec.s.company_id, "USD", mars, dec!(0.91194), "afc").await;
+    cours(
+        &pool,
+        dec.s.company_id,
+        "USD",
+        d(2026, 4, 1),
+        dec!(0.92),
+        "afc",
+    )
+    .await;
+    let afc = || fx(dec!(1234.56), dec!(0.91193), Some(RateProvenance::Afc));
+    let refuse_au_cours = |e: DbError, attendu: Decimal| {
+        assert!(
+            matches!(e, DbError::FxRateNotAfc { expected_rate: Some(r), .. } if r == attendu),
+            "{e:?}"
+        );
+    };
+    // Lignes CHF seules modifiées (contrepartie scindée) → passe, `afc` gardé.
+    let chf_seules = ecriture(
+        &dec,
+        d(2026, 3, 15),
+        vec![
+            ligne_fx(dec.usd, dec!(1125.83), afc()),
+            chf_line(dec.ventes, Decimal::ZERO, dec!(1000)),
+            chf_line(dec.caisse, Decimal::ZERO, dec!(125.83)),
+        ],
+    );
+    let je = modifier(&pool, &dec, &je, chf_seules)
+        .await
+        .expect("lignes CHF seules");
+    assert_eq!(
+        je.lines[0].foreign().map(|f| (f.source, f.rate)),
+        Some((RateProvenance::Afc, dec!(0.91193)))
+    );
+    // Compte changé (USD → autre compte USD) → contrôlée, refusée.
+    let e = modifier(
+        &pool,
+        &dec,
+        &je,
+        ecriture(
+            &dec,
+            d(2026, 3, 15),
+            vec![
+                ligne_fx(dec.usd2, dec!(1125.83), afc()),
+                chf_line(dec.ventes, Decimal::ZERO, dec!(1125.83)),
+            ],
+        ),
+    )
+    .await
+    .unwrap_err();
+    refuse_au_cours(e, dec!(0.91194));
+    // Côté changé (crédit au lieu de débit) → contrôlée, refusée.
+    let e = modifier(
+        &pool,
+        &dec,
+        &je,
+        ecriture(
+            &dec,
+            d(2026, 3, 15),
+            vec![
+                NewJournalEntryLine {
+                    foreign: afc(),
+                    ..chf_line(dec.usd, Decimal::ZERO, dec!(1125.83))
+                },
+                chf_line(dec.ventes, dec!(1125.83), Decimal::ZERO),
+            ],
+        ),
+    )
+    .await
+    .unwrap_err();
+    refuse_au_cours(e, dec!(0.91194));
+    // Seconde ligne `afc` ajoutée à l'ancien cours → refusée (la première,
+    // identique à la ligne d'avant, garde sa provenance).
+    let e = modifier(
+        &pool,
+        &dec,
+        &je,
+        ecriture(
+            &dec,
+            d(2026, 3, 15),
+            vec![
+                ligne_fx(dec.usd, dec!(1125.83), afc()),
+                ligne_fx(dec.usd2, dec!(1125.83), afc()),
+                chf_line(dec.ventes, Decimal::ZERO, dec!(2251.66)),
+            ],
+        ),
+    )
+    .await
+    .unwrap_err();
+    assert!(
+        matches!(e, DbError::FxRateNotAfc { line: 2, expected_rate: Some(r) } if r == dec!(0.91194)),
+        "{e:?}"
+    );
+    // Date changée vers avril (ligne `afc` à 0.92) → toutes les lignes `afc`
+    // contrôlées au mois neuf.
+    let e = modifier(
+        &pool,
+        &dec,
+        &je,
+        ecriture(
+            &dec,
+            d(2026, 4, 15),
+            vec![
+                ligne_fx(dec.usd, dec!(1125.83), afc()),
+                chf_line(dec.ventes, Decimal::ZERO, dec!(1125.83)),
+            ],
+        ),
+    )
+    .await
+    .unwrap_err();
+    refuse_au_cours(e, dec!(0.92));
+}
+
+/// (i) Mois passé en `manual` (cours saisi par `PUT …/rates`) après une
+/// écriture `afc` : le `PUT` du seul libellé passe ; une ligne `afc` modifiée
+/// à ce mois → `FX_RATE_NOT_AFC`, `expectedRate` `null` (revue de code P1 :
+/// cas exigé par la fiche, absent).
+#[sqlx::test(migrations = "./test-schema")]
+async fn ac7_mois_passe_en_manual_apres_une_ecriture_afc(pool: MySqlPool) {
+    let dec = decor(&pool).await;
+    let mars = d(2026, 3, 1);
+    cours(&pool, dec.s.company_id, "USD", mars, dec!(0.91193), "afc").await;
+    let je = creer(
+        &pool,
+        &dec,
+        usd_afc(&dec, dec!(0.91193), Some(RateProvenance::Afc)),
+    )
+    .await
+    .unwrap();
+    cours(
+        &pool,
+        dec.s.company_id,
+        "USD",
+        mars,
+        dec!(0.91193),
+        "manual",
+    )
+    .await;
+    let mut libelle = usd_afc(&dec, dec!(0.91193), Some(RateProvenance::Afc));
+    libelle.description = "Libellé seul".into();
+    let je = modifier(&pool, &dec, &je, libelle)
+        .await
+        .expect("libellé seul");
+    assert_eq!(je.entry.description, "Libellé seul");
+    assert_eq!(
+        je.lines[0].foreign().map(|f| f.source),
+        Some(RateProvenance::Afc)
+    );
+    let mut modifiee = usd_afc(&dec, dec!(0.91193), Some(RateProvenance::Afc));
+    modifiee.lines[0].foreign.as_mut().unwrap().amount = dec!(100);
+    modifiee.lines[0].debit = dec!(91.19);
+    modifiee.lines[1].credit = dec!(91.19);
+    let e = modifier(&pool, &dec, &je, modifiee).await.unwrap_err();
+    assert!(
+        matches!(
+            e,
+            DbError::FxRateNotAfc {
+                line: 1,
+                expected_rate: None
+            }
+        ),
+        "{e:?}"
+    );
 }
 
 /// CR-6 — une ligne sans provenance renvoyée telle que lue garde sa
@@ -1565,10 +1820,11 @@ async fn ac7_contre_passation_d_une_ligne_en_devise(pool: MySqlPool) {
 // AC-5 — chemins automatiques
 // ---------------------------------------------------------------------------
 
-/// Un chemin automatique (règlement par compte interne) refuse un compte en
-/// devise dès la pièce (400 `ACCOUNT_IN_FOREIGN_CURRENCY`) ; une écriture
-/// automatique sur un compte en devise tombe sur le contrôle central
-/// (`ACCOUNT_REQUIRES_CURRENCY`).
+/// L'aide des colonnes de pièce rend le premier compte en devise par
+/// identifiant (400 `ACCOUNT_IN_FOREIGN_CURRENCY`) et laisse passer des comptes
+/// CHF. Les refus par site (factures, avoirs, factures fournisseur, règlements)
+/// sont testés dans les fichiers de chaque site ; leur liste close est tenue par
+/// `account_columns_inventory.rs` (revue de code P1).
 #[sqlx::test(migrations = "./test-schema")]
 async fn ac5_compte_de_piece_en_devise_refuse(pool: MySqlPool) {
     let dec = decor(&pool).await;

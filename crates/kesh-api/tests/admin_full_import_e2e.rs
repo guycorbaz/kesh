@@ -33,7 +33,7 @@ use kesh_db::entities::{Language, NewCompany, NewUser, OrgType, Role};
 use kesh_db::post_restore::ReplayedBackfill;
 use kesh_db::repositories::{companies, users};
 use reqwest::multipart;
-use serde_json::Value;
+use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use sqlx::MySqlPool;
 
@@ -6159,6 +6159,93 @@ async fn full_import_round_trip_keeps_a_foreign_currency_line(pool: MySqlPool) {
     let resp = post_import(&app, &biz.ctx.jwt, backup).await;
     assert_eq!(resp.status(), 200, "{}", resp.text().await.unwrap());
     assert_eq!(lire().await, avant, "ligne en devise identique");
+}
+
+/// Story 37-3a (AC-4, cas (h)) — **restauration** sur une installation sans
+/// valeur publiée (table système vide) : une ligne `afc` au cours restauré se
+/// crée sans aucune récupération, et le `PUT` du seul libellé d'une écriture
+/// `afc` restaurée passe (revue de code P1 : test exigé par la fiche, absent).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn full_import_then_afc_line_at_the_restored_rate(pool: MySqlPool) {
+    let app = spawn_app(pool.clone()).await;
+    let biz = seed_business(&pool, "Restauration afc 37-3a").await;
+    let c = biz.ctx.company_id;
+    let compte_usd = poser_multi_devises(&pool, &biz).await;
+    let debut: chrono::NaiveDate =
+        sqlx::query_scalar("SELECT start_date FROM fiscal_years WHERE company_id = ? LIMIT 1")
+            .bind(c)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    sqlx::query(
+        "INSERT INTO exchange_rates (company_id, currency, kind, rate_date, rate, source) \
+         VALUES (?, 'USD', 'month', DATE_FORMAT(?, '%Y-%m-01'), 0.91193, 'afc')",
+    )
+    .bind(c)
+    .bind(debut)
+    .execute(&pool)
+    .await
+    .unwrap();
+    let corps = |description: &str| {
+        json!({
+            "entryDate": debut.to_string(),
+            "journal": "OD",
+            "description": description,
+            "lines": [
+                { "accountId": compte_usd, "debit": "1125.83", "credit": "0",
+                  "foreign": { "amount": "1234.56", "rate": "0.91193", "rateSource": "afc" } },
+                { "accountId": biz.accounts["3000"], "debit": "0", "credit": "1125.83" },
+            ],
+        })
+    };
+    let poster = |body: Value| {
+        app.client
+            .post(app.url("/api/v1/journal-entries"))
+            .header("Authorization", format!("Bearer {}", biz.ctx.jwt))
+            .json(&body)
+            .send()
+    };
+    let r = poster(corps("Avant la sauvegarde")).await.unwrap();
+    assert_eq!(r.status(), 201, "{}", r.text().await.unwrap());
+    let avant: Value = r.json().await.unwrap();
+    let id = avant["id"].as_i64().unwrap();
+
+    let backup = export_backup(&app, &biz.ctx.jwt).await;
+    let resp = post_import(&app, &biz.ctx.jwt, backup).await;
+    assert_eq!(resp.status(), 200, "{}", resp.text().await.unwrap());
+    let publiees: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM _kesh_fetched_exchange_rates")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(
+        publiees, 0,
+        "aucune valeur publiée : installation sans récupération"
+    );
+
+    // Création d'une ligne `afc` au cours restauré.
+    let r = poster(corps("Après la restauration")).await.unwrap();
+    assert_eq!(r.status(), 201, "{}", r.text().await.unwrap());
+    let cree: Value = r.json().await.unwrap();
+    assert_eq!(cree["lines"][0]["foreign"]["rateSource"], "afc", "{cree}");
+
+    // `PUT` du seul libellé de l'écriture `afc` restaurée.
+    let mut body = corps("Libellé modifié");
+    body["version"] = avant["version"].clone();
+    let r = app
+        .client
+        .put(app.url(&format!("/api/v1/journal-entries/{id}")))
+        .header("Authorization", format!("Bearer {}", biz.ctx.jwt))
+        .json(&body)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), 200, "{}", r.text().await.unwrap());
+    let modifiee: Value = r.json().await.unwrap();
+    assert_eq!(modifiee["description"], "Libellé modifié", "{modifiee}");
+    assert_eq!(
+        modifiee["lines"][0]["foreign"]["rateSource"], "afc",
+        "{modifiee}"
+    );
 }
 
 /// Les lignes `exchange_rates` de la base, toutes colonnes, en texte, par id.

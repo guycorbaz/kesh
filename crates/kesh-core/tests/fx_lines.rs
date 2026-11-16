@@ -150,3 +150,20 @@ fn propriete_arrondi_exact() {
         }
     }
 }
+
+/// Revue de code P2 de la 37-3a — `debit + credit` ne panique pas au
+/// débordement de `Decimal` : refus `OutOfRange`.
+#[test]
+fn somme_debit_credit_qui_deborde_est_refusee_sans_panique() {
+    let foreign = ForeignAmount {
+        declared_currency: None,
+        amount: d("100"),
+        rate: d("0.9"),
+        rate_derived: false,
+        source: Some(RateProvenance::Manual),
+    };
+    assert_eq!(
+        check_foreign_line(&Decimal::MAX, &Decimal::MAX, &foreign),
+        Err(FxLineError::OutOfRange)
+    );
+}

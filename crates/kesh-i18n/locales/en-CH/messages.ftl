@@ -1119,7 +1119,7 @@ error-account-is-fx-difference-account = This account is an exchange difference 
 error-account-is-fx-difference-account-own = This account is an exchange difference account of the foreign-currency account { $number }: it cannot be archived, retyped, made non-postable, or receive a currency, a sub-account or a revenue role.
 error-account-is-fx-transit-account = This account is the company’s conversion account: it cannot be archived, retyped outside the balance sheet, made non-postable, or receive a currency or a sub-account.
 # Story 37-3a — foreign-currency entries.
-error-multi-currency-disabled-fiscal-year = This fiscal year is single-currency (it was closed before multi-currency was enabled): no foreign-currency account can be used in it.
+error-multi-currency-disabled-fiscal-year = This fiscal year is single-currency: this foreign-currency operation is not possible in it.
 error-fx-multiple-currencies = An entry carries a single foreign currency (here: { $currencies }). Book a conversion between currencies through the conversion account, in two entries.
 error-account-requires-currency = Line { $line }: the account is kept in a foreign currency, enter the foreign amount and the rate.
 error-fx-account-in-chf = Line { $line }: the account is kept in CHF, the line cannot carry a foreign amount.
@@ -3200,6 +3200,13 @@ reports-ledger-no-movement-closed = No movement in this period. The fiscal year 
 reports-ledger-empty = No account to display for this period.
 reports-ledger-open-from-balance = See the detail in the general ledger
 reports-ledger-truncated = Only the first { $shown } of { $total } lines are shown. The export contains them all.
+# Story 37-4 — foreign-currency amounts of the reports (the account's currency).
+reports-fx-movement = { $amount } × { $rate } · balance { $balance }
+reports-fx-revaluation-balance = Revaluation at rate { $rate } · balance { $balance }
+reports-fx-revaluation = Revaluation at rate { $rate }
+reports-fx-line = { $amount } × { $rate }
+reports-fx-totals = debit { $debit } · credit { $credit }
+reports-fx-trial-balance = opening { $opening } · debit { $debit } · credit { $credit } · closing { $closing }
 reports-ledger-include-zero = Include accounts with no movement
 reports-ledger-instruction = Pick a period, then click Generate. The account is optional.
 

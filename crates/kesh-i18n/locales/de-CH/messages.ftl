@@ -1119,7 +1119,7 @@ error-account-is-fx-difference-account = Dieses Konto ist ein Kursdifferenzkonto
 error-account-is-fx-difference-account-own = Dieses Konto ist ein Kursdifferenzkonto des Fremdwährungskontos { $number }: Es kann weder archiviert, umtypisiert oder nicht bebuchbar gemacht werden noch eine Währung, ein Unterkonto oder eine Ertragsrolle erhalten.
 error-account-is-fx-transit-account = Dieses Konto ist das Umrechnungskonto der Firma: Es kann weder archiviert, ausserhalb der Bilanz umtypisiert oder nicht bebuchbar gemacht werden noch eine Währung oder ein Unterkonto erhalten.
 # Story 37-3a — Buchungen in Fremdwährung.
-error-multi-currency-disabled-fiscal-year = Dieses Geschäftsjahr ist einwährungsbasiert (es wurde vor der Aktivierung der Mehrwährungsbuchhaltung abgeschlossen): Kein Fremdwährungskonto ist darin verwendbar.
+error-multi-currency-disabled-fiscal-year = Dieses Geschäftsjahr ist einwährungsbasiert: Dieser Vorgang in Fremdwährung ist darin nicht möglich.
 error-fx-multiple-currencies = Eine Buchung enthält nur eine Fremdwährung (hier: { $currencies }). Buchen Sie einen Währungswechsel über das Umrechnungskonto, in zwei Buchungen.
 error-account-requires-currency = Zeile { $line }: Das Konto wird in Fremdwährung geführt, erfassen Sie den Fremdwährungsbetrag und den Kurs.
 error-fx-account-in-chf = Zeile { $line }: Das Konto wird in CHF geführt, die Zeile kann keinen Fremdwährungsbetrag tragen.
@@ -3194,6 +3194,13 @@ reports-ledger-no-movement-closed = Keine Bewegung in dieser Periode. Das Gesch�
 reports-ledger-empty = Keine Konten für diese Periode.
 reports-ledger-open-from-balance = Details im Hauptbuch ansehen
 reports-ledger-truncated = Es werden nur die ersten { $shown } von { $total } Zeilen angezeigt. Der Export enthält alle.
+# Story 37-4 — Fremdwährungsbeträge der Berichte (Währung des Kontos).
+reports-fx-movement = { $amount } × { $rate } · Saldo { $balance }
+reports-fx-revaluation-balance = Neubewertung zum Kurs { $rate } · Saldo { $balance }
+reports-fx-revaluation = Neubewertung zum Kurs { $rate }
+reports-fx-line = { $amount } × { $rate }
+reports-fx-totals = Soll { $debit } · Haben { $credit }
+reports-fx-trial-balance = Eröffnung { $opening } · Soll { $debit } · Haben { $credit } · Abschluss { $closing }
 reports-ledger-include-zero = Konten ohne Bewegung einschliessen
 reports-ledger-instruction = Wählen Sie einen Zeitraum und klicken Sie auf Erstellen. Das Konto ist optional.
 

@@ -1182,7 +1182,7 @@ error-account-is-fx-difference-account = Ce compte est un compte de différence 
 error-account-is-fx-difference-account-own = Ce compte est un compte de différence de change du compte en devise { $number } : il ne peut être ni archivé, ni retypé, ni rendu non imputable, ni recevoir de devise, de sous-compte ou de rôle de produit.
 error-account-is-fx-transit-account = Ce compte est le compte de conversion de la société : il ne peut être ni archivé, ni retypé hors du bilan, ni rendu non imputable, ni recevoir de devise ou de sous-compte.
 # Story 37-3a — écritures en devise.
-error-multi-currency-disabled-fiscal-year = Cet exercice est mono-devise (il a été clos avant l’activation du multi-devises) : aucun compte en devise n’y est utilisable.
+error-multi-currency-disabled-fiscal-year = Cet exercice est mono-devise : cette opération en devise n’y est pas possible.
 error-fx-multiple-currencies = Une écriture ne porte qu’une devise étrangère (ici : { $currencies }). Passez une conversion entre devises par le compte de conversion, en deux écritures.
 error-account-requires-currency = Ligne { $line } : le compte est tenu en devise, saisissez le montant en devise et le cours.
 error-fx-account-in-chf = Ligne { $line } : le compte est tenu en CHF, la ligne ne peut pas porter de montant en devise.
@@ -3272,6 +3272,13 @@ reports-ledger-no-movement-closed = Aucun mouvement sur la période. L'exercice 
 reports-ledger-empty = Aucun compte à afficher sur cette période.
 reports-ledger-open-from-balance = Voir le détail dans le grand livre
 reports-ledger-truncated = Seules les { $shown } premières lignes sur { $total } sont affichées. L'export les contient toutes.
+# Story 37-4 — montants en devise des rapports (devise du compte).
+reports-fx-movement = { $amount } × { $rate } · solde { $balance }
+reports-fx-revaluation-balance = Réévaluation au cours { $rate } · solde { $balance }
+reports-fx-revaluation = Réévaluation au cours { $rate }
+reports-fx-line = { $amount } × { $rate }
+reports-fx-totals = débit { $debit } · crédit { $credit }
+reports-fx-trial-balance = ouverture { $opening } · débit { $debit } · crédit { $credit } · clôture { $closing }
 reports-ledger-include-zero = Inclure les comptes sans mouvement
 reports-ledger-instruction = Choisissez une période, puis cliquez sur Générer. Le compte est facultatif.
 

@@ -1048,7 +1048,19 @@ const ATTENDU = {
 	// +2 (`journal-entries-conversion-load-error`, `-retry`, l'état d'erreur de
 	// chargement) ; le message des problèmes d'une ligne en devise, déplacé du formulaire
 	// vers `fx-refusals.ts`, ne change pas le compte. Relevé par la garde.
-	sitesTotal: 3294,
+	// Fusion de `epic/37-multi-devises` (37-3a et 37-4 terminées) dans la 37-3b : **3294 → 3300**,
+	// relevé par la garde (`expected 3300 to be 3294`) : les 6 sites de la 37-4 (rapports), non additionnés
+	// à la main. Les commentaires ci-après sont ceux de la 37-4, repris tels quels.
+	sitesTotal: 3300,
+	// Story 37-4 (AC-6) : **3184 → 3190** sur sa branche (partie de 946aa86a), relevé par la garde
+	// (`expected 3190 to be 3184`) et ventilé au code : 3 sites dans
+	// `features/reports/GeneralLedgerView.svelte` (`reports-fx-revaluation-balance`,
+	// `reports-fx-movement`, `reports-fx-totals`), 1 dans `TrialBalanceView.svelte`
+	// (`reports-fx-trial-balance`), 2 dans `JournalReportView.svelte` (`reports-fx-revaluation`,
+	// `reports-fx-line`) — 6 littéraux. Fusion de `epic/37-multi-devises` (37-2 terminée,
+	// 65b3877f) dans la branche de la 37-4 : **3191**, relevé par la garde après la fusion
+	// (non additionné). Fusion de la 37-3a jusqu'à `e89291e6` : **3191**, relevé de nouveau par la
+	// garde (Dev Agent Record de la 37-4) ; à recompter à chaque reprise suivante.
 	sitesNonResolus: 31,
 	relais: 6,
 	// Story 26-1 (#620, AC3-bis) : **10 → 11** — `lib/features/bank-import/

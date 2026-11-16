@@ -4,6 +4,7 @@
 //! comme API standard. Les méthodes spécifiques (`find_by_username`,
 //! `list_by_company`, `close`) s'ajoutent là où c'est nécessaire.
 
+pub mod account_balances;
 pub mod accounts;
 pub mod api_keys;
 pub mod audit_log;

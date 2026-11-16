@@ -1660,6 +1660,9 @@ pub async fn validate_in_tx(
 
     // (2, suite) Passe des COMPTES de l'étape (2), après les réglages.
     let mut non_postable: Vec<NonPostableAccount> = Vec::new();
+    // Comptes de charge en devise, lus dans le `SELECT … FOR UPDATE` ci-dessous
+    // (revue de code P2 : la devise se lit sous verrou, pas sur l'instantané).
+    let mut foreign: Vec<(i64, String)> = Vec::new();
     // Le `line_total` de chaque ligne vient de la passe de forme : aucun second
     // produit (v017-3b, AC-3).
     for (line, &line_total) in lines.iter().zip(&line_totals) {
@@ -1678,8 +1681,8 @@ pub async fn validate_in_tx(
         // atteignable que par appel direct à l'API — comme pour le règlement
         // fournisseur, fermé au même titre : *une garde serveur ne se déduit pas
         // d'un filtre d'écran.*
-        let acct: Option<(bool, bool, String, String)> = sqlx::query_as(
-            "SELECT active, postable, account_type, number FROM accounts \
+        let acct: Option<(bool, bool, String, String, Option<String>)> = sqlx::query_as(
+            "SELECT active, postable, account_type, number, currency FROM accounts \
              WHERE id = ? AND company_id = ? FOR UPDATE",
         )
         .bind(line.expense_account_id)
@@ -1693,8 +1696,12 @@ pub async fn validate_in_tx(
         // sinon, non imputable → collecté, nommé après la passe si aucune
         // ligne n'est en (a).
         match acct {
-            Some((true, true, ref t, _)) if t == "Expense" => {}
-            Some((true, false, ref t, number)) if t == "Expense" => {
+            Some((true, true, ref t, _, ref currency)) if t == "Expense" => {
+                if let Some(currency) = currency {
+                    foreign.push((line.expense_account_id, currency.clone()));
+                }
+            }
+            Some((true, false, ref t, number, _)) if t == "Expense" => {
                 non_postable.push(NonPostableAccount {
                     account_id: line.expense_account_id,
                     account_number: number,
@@ -1706,6 +1713,20 @@ pub async fn validate_in_tx(
     }
     if !non_postable.is_empty() {
         return Err(DbError::accounts_not_postable(non_postable));
+    }
+    // Story 37-3a (AC-5, revue de code P1 et P2) — la devise des comptes de
+    // charge se rejuge à la validation, comme `validate_invoice` le fait pour les
+    // comptes de produit : un compte passé en devise depuis l'enregistrement du
+    // brouillon (37-1 ne le lui interdit pas) est refusé sous son nom (400
+    // `ACCOUNT_IN_FOREIGN_CURRENCY`), non par le rang 3 du contrôle central sur
+    // une ligne générée. La devise est lue dans le `SELECT … FOR UPDATE` des
+    // comptes, donc sur leur dernier état commité ; le premier refus est celui
+    // de l'identifiant le plus petit (déterministe).
+    if let Some((account_id, currency)) = foreign.into_iter().min_by_key(|(id, _)| *id) {
+        return Err(DbError::AccountInForeignCurrency {
+            account_id: Some(account_id),
+            currency,
+        });
     }
 
     // (2, désignés) Story 15-5d (#429) — les comptes DÉSIGNÉS que cette saisie

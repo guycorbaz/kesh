@@ -1512,9 +1512,18 @@ struct ErrorDetail {
     message: String,
 }
 
-/// Une `Response` JSON structurée **avec** `details` :
-/// `{ "error": { code, message, details } }` (Story 37-1, refus de la devise
-/// d'un compte).
+/// Un montant CHF d'un refus `FX_AMOUNT_MISMATCH`, **sans arrondi** : la valeur
+/// normalisée, portée à deux décimales si elle en a moins (revue de code P1 de
+/// la 37-3a — un `{:.2}` rendait « 9.12 » pour un CHF fourni de `9.1201` et le
+/// refus affichait deux valeurs égales).
+fn chf_text(d: rust_decimal::Decimal) -> String {
+    let mut n = d.normalize();
+    if n.scale() < 2 {
+        n.rescale(2);
+    }
+    n.to_string()
+}
+
 /// Story 37-3a (AC-4, AC-6, AC-7) — statut, code, message traduit et `details`
 /// d'un refus du contrôle central des lignes en devise. `None` pour toute autre
 /// variante. Partagée par la réponse HTTP et par les correspondances
@@ -1690,6 +1699,9 @@ pub(crate) fn conversion_validation_message(
     }
 }
 
+/// Une `Response` JSON structurée **avec** `details` :
+/// `{ "error": { code, message, details } }` (Story 37-1, refus de la devise
+/// d'un compte).
 fn coded_response(
     status: StatusCode,
     code: &'static str,
@@ -2937,13 +2949,14 @@ impl IntoResponse for AppError {
                     } => (
                         "error-fx-amount-mismatch",
                         format!(
-                            "le montant CHF ({:.2}) ne correspond pas au montant en devise multiplié par le cours ({:.2}).",
-                            provided, expected
+                            "le montant CHF ({}) ne correspond pas au montant en devise multiplié par le cours ({}).",
+                            chf_text(*provided),
+                            chf_text(*expected)
                         ),
                         serde_json::json!({
                             "line": line,
-                            "expected": format!("{expected:.2}"),
-                            "provided": format!("{provided:.2}"),
+                            "expected": chf_text(*expected),
+                            "provided": chf_text(*provided),
                         }),
                     ),
                     other => {
@@ -4788,14 +4801,16 @@ impl IntoResponse for AppError {
                 // donnée d'entrée est invalide.
                 DbError::MultiCurrencyDisabled { fiscal_year_id } => {
                     // Story 37-3a (AC-4 rang 2) : refusé sur un exercice, le
-                    // message le dit — un exercice clos avant l'activation,
-                    // puis rouvert, reste mono-devise.
+                    // message le dit — sans dire pourquoi l'exercice est
+                    // mono-devise : la même variante sort aussi des routes des
+                    // cours et des genres (37-1, 37-2), dans une société qui
+                    // n'a jamais activé le multi-devises (revue de code P1).
                     let (details, message) = match fiscal_year_id {
                         Some(id) => (
                             serde_json::json!({ "fiscalYearId": id }),
                             t(
                                 "error-multi-currency-disabled-fiscal-year",
-                                "Cet exercice est mono-devise (il a été clos avant l’activation du multi-devises) : aucun compte en devise n’y est utilisable.",
+                                "Cet exercice est mono-devise : cette opération en devise n’y est pas possible.",
                             ),
                         ),
                         None => (
@@ -6196,6 +6211,19 @@ fn archived_accounts_response(
 mod tests {
     use super::*;
     use http_body_util::BodyExt;
+
+    /// Revue de code P2 de la 37-3a — `chf_text` : jamais d'arrondi, au moins
+    /// deux décimales.
+    #[test]
+    fn chf_text_never_rounds_and_keeps_two_decimals() {
+        use rust_decimal::Decimal;
+        use std::str::FromStr;
+        let t = |s: &str| chf_text(Decimal::from_str(s).unwrap());
+        assert_eq!(t("9.1201"), "9.1201");
+        assert_eq!(t("100"), "100.00");
+        assert_eq!(t("0"), "0.00");
+        assert_eq!(t("12.500"), "12.50");
+    }
 
     async fn response_body(resp: Response) -> (StatusCode, serde_json::Value) {
         let (parts, body) = resp.into_parts();

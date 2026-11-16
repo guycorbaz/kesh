@@ -57,6 +57,7 @@
 use chrono::NaiveDate;
 use kesh_db::entities::{AccountRole, AccountType};
 use kesh_db::errors::map_db_error;
+use kesh_db::repositories::account_balances::{Cote, somme_en_devise};
 use kesh_db::repositories::fiscal_years;
 use rust_decimal::Decimal;
 use serde::Serialize;
@@ -64,6 +65,7 @@ use sqlx::MySqlPool;
 
 use crate::errors::ReportError;
 use crate::income_statement;
+use crate::opening::{is_bilan, is_debit_natured};
 use crate::period::ReportPeriod;
 
 /// Bilan complet.
@@ -160,6 +162,42 @@ pub struct AccountBalance {
     /// aucun. Story 14-3c : porte la partition fonds propres / dettes au bilan et
     /// le regroupement par rôle — **jamais** déduit du numéro de compte.
     pub role: Option<AccountRole>,
+    /// Devise du compte (`accounts.currency`, Story 37-4, AC-4) ; `None` pour
+    /// un compte en devise principale.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub currency: Option<String>,
+    /// Solde en devise, signé comme [`Self::balance`] ; `None` (jamais 0) pour
+    /// un compte sans devise. Les totaux du rapport restent en devise
+    /// principale.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub balance_currency: Option<Decimal>,
+}
+
+/// Expressions SQL du solde signé d'un type de compte, en devise principale et
+/// en devise, sur les lignes d'alias `jel` — **une seule** `match` pour les deux
+/// (Story 37-4, AC-1 : le signe est en SQL pour que `HAVING` le lise).
+///
+/// La seconde est enveloppée `CASE WHEN a.currency IS NULL THEN NULL …` : un
+/// compte sans devise rend `NULL`, jamais 0 (le JSON d'un rapport sans compte
+/// en devise reste identique).
+pub(crate) fn sign_exprs(account_type: AccountType) -> (String, String) {
+    let (d, c) = (
+        "COALESCE(SUM(jel.debit), 0)".to_string(),
+        "COALESCE(SUM(jel.credit), 0)".to_string(),
+    );
+    let (d_fx, c_fx) = (
+        somme_en_devise("jel", Cote::Debit, None),
+        somme_en_devise("jel", Cote::Credit, None),
+    );
+    let (chf, fx) = if is_debit_natured(account_type) {
+        (format!("{d} - {c}"), format!("{d_fx} - {c_fx}"))
+    } else {
+        (format!("{c} - {d}"), format!("{c_fx} - {d_fx}"))
+    };
+    (
+        chf,
+        format!("CASE WHEN a.currency IS NULL THEN NULL ELSE {fx} END"),
+    )
 }
 
 /// Génère le bilan pour la période donnée (modèle temps réel virtuel — Story 14-1).
@@ -285,15 +323,18 @@ async fn fetch_cumulative_section(
     account_type: AccountType,
 ) -> Result<Vec<AccountBalance>, ReportError> {
     // Sign convention : Asset = debit-credit ; Liability = credit-debit
-    let sign_expr = match account_type {
-        AccountType::Asset => "COALESCE(SUM(jel.debit), 0) - COALESCE(SUM(jel.credit), 0)",
-        AccountType::Liability => "COALESCE(SUM(jel.credit), 0) - COALESCE(SUM(jel.debit), 0)",
-        _ => unreachable!("balance_sheet ne traite que Asset/Liability"),
-    };
+    assert!(
+        is_bilan(account_type),
+        "balance_sheet ne traite que Asset/Liability"
+    );
+    let (sign_expr, sign_expr_fx) = sign_exprs(account_type);
 
+    // AC-1 ter (37-4) : un compte à solde nul en devise principale mais non nul
+    // en devise reste listé (`NULL != 0` est faux : un compte CHF n'y entre pas
+    // par la seconde condition).
     let sql = format!(
         "SELECT a.id AS account_id, a.number, a.name, a.account_type, a.active, a.role, \
-                {sign_expr} AS balance \
+                a.currency, {sign_expr} AS balance, {sign_expr_fx} AS balance_currency \
          FROM accounts a \
          INNER JOIN journal_entry_lines jel ON jel.account_id = a.id \
          INNER JOIN journal_entries je ON je.id = jel.entry_id \
@@ -301,8 +342,8 @@ async fn fetch_cumulative_section(
            AND a.account_type = ? \
            AND je.company_id = ? \
            AND je.entry_date <= ? \
-         GROUP BY a.id, a.number, a.name, a.account_type, a.active, a.role \
-         HAVING balance != 0 \
+         GROUP BY a.id, a.number, a.name, a.account_type, a.active, a.role, a.currency \
+         HAVING balance != 0 OR balance_currency != 0 \
          ORDER BY a.number ASC"
     );
 
@@ -381,6 +422,8 @@ mod tests {
             active: true,
             balance,
             role: Some(role),
+            currency: None,
+            balance_currency: None,
         }
     }
 
