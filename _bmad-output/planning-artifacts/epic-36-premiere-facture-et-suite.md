@@ -168,7 +168,11 @@ une release planifiée monte le chiffre mineur.*
   36-12b (grille, *Payable by*, largeurs mesurées, cascade ; peut glisser à la 0.19.0) ; **36-16** → 36-16a (facture
   client, le patron), 36-16b (facture fournisseur), 36-16c (écriture manuelle) ; **36-18** → 36-18a (écrans qui
   écrivent dans les livres) et 36-18b (réglages et filtres). Les sous-stories b et c partent de leur « a » fusionnée.
-  36-15, 36-16a et 36-18a attendent l'arbitrage de Guy sur les traductions de « compte analytique ».
+  36-15, 36-16a et 36-18a attendent l'arbitrage de Guy sur les traductions de « compte analytique » — **rendu le
+  2026-11-16 : option A** (*analytisches Konto*, *conto analitico*, *analytical account*).
+- **Périmètre de la 0.18.0 arrêté le 2026-11-16** (accord de Guy) : 36-7a, 36-9, 36-10, 36-12a, 36-15, 36-16a, 36-17,
+  36-18a, 36-19 ; 36-7b si elle tient. **36-12b, 36-16b, 36-16c et 36-18b passent à la 0.19.0** ; #944, #1167, #1173,
+  #1175, #1176 et #1177, qui se ferment avec leur dernière sous-story, passent au milestone v0.19.0.
 - **36-13 (#235) sort de l'Epic 36** et devient l'**Epic 41** (D3), lancée dès la fin de l'Epic 36, avant la clôture de
   l'exercice 2026 ; milestone « Plus tard ».
 - **Mandat** (M1) : autonomie jusqu'à l'image 0.18.0 publiée ; jalons notifiés (PR ouverte, tag, image) ; la fusion de la
