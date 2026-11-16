@@ -1,6 +1,6 @@
 # Story 36-18a : les montants « 1.250 » qui écrivent dans les livres — soldes de départ, facture fournisseur, règlement (#1050, #1159, #1172, #1174)
 
-Status: ready-for-dev
+Status: in-progress
 
 *Fiche issue du découpage de la 36-18 (`36-18-montants-ambigus-autres-ecrans.md`, `Status: split`), approuvé par
 l'orchestrateur le 2026-11-15 (sept modules de code, règle de Guy « stories courtes » ; C-36-18-10). Rédigée par l'agent de
@@ -9,7 +9,8 @@ Release **0.18.0**, phase 2, décision **D6** de Guy du 2026-11-15. **Aucune mig
 d'API. Voie **2**, bases `kesh_e3618a`, `kesh_e2e_e3618a`, `kesh_ci_e3618a` (voie 1). **Part de la 36-15 fusionnée**
 (`SupplierInvoiceForm.svelte`, que la fiche 36-15 touche). Registre : `e36-choix-autonomes-36-18.md` (C-36-18-1 à
 C-36-18-10) — **les décisions communes aux deux lots sont ici** ; la 36-18b y renvoie. Inventaires bruts :
-`/home/gcorbaz/devel/kesh-gate-logs/e36-18/fiche-inventaires.log`. Validation non lancée.*
+`/home/gcorbaz/devel/kesh-gate-logs/e36-18/fiche-inventaires.log`. Validation : P1 0/0/2/8 remédiée, P2 0/0/0/8 —
+terminée ; les LOW de la P2 traités à l'étape 0 du développement (Change Log).*
 
 ## Story
 
@@ -140,7 +141,10 @@ Aucun site hors des huit issues : aucune issue neuve.
   que D5 convertit) ; il est **retiré**, et le paramètre `read` de `computeBalance` et `classifyLine` devient obligatoire.
   Les appels de `balance.test.ts` qui comptaient sur le défaut (`:105`, `:116`, `:126`, `:132`, `:140`, `:149`, `:159-187`)
   passent `journalAmountReader` explicitement (mêmes attentes : aucun de ces montants n'est ambigu) ; les assertions qui ne
-  documentaient que l'ancien défaut (`:282-288`, `:318`) sont retirées, ce que le Dev Agent Record dit.
+  documentaient que l'ancien défaut (`:282-288`, `:318`) sont retirées, ce que le Dev Agent Record dit. *Validation P2,
+  V2-5 :* avec elles, le titre du test `:278` (« la lecture par défaut ne change pas », réduit à `isValidAmount`) est
+  reformulé, le commentaire `:317` (« Défaut inchangé. ») retiré, les doc-comments `balance.ts:152`, `:174-176`, `:234-235`
+  réécrits, et les valeurs par défaut `read: AmountReader = defaultAmountReader` (`:181`, `:245`) retirées (C-36-18-11).
 - **D6 — Prix unitaire fournisseur (#1159)** : `linesInvalid` juge le prix par `amountEntryPayload(l.unitPrice.trim()) ===
   null` ; `sumTtc` et `lineNotInCentimes` lisent la même charge (`null` → ligne ignorée / `null`) ; `linesForServer` envoie
   la charge ; la quantité garde `isValidAmount` / `decimalForServer`. Sous la ligne : `amountEntryProblem` (`$max` 4),
@@ -153,10 +157,18 @@ Aucun site hors des huit issues : aucune issue neuve.
   *Validation P1, V1-4 :* **contrat de `paymentFields`** — vide → `null` ; claire → la charge ; ambiguë ou illisible →
   `null` (jamais la saisie brute : une fonction exportée ne doit pas pouvoir envoyer « 1.250 » ; la garde du formulaire
   a arrêté l'envoi avant). **Ordre des gardes de l'envoi** : date de facture, échéance antérieure (`:371`), **montant
-  attendu** (sans QR), **prix des lignes** (D6), `linesInvalid` (`:372`), centime (`:382`).
+  attendu** (sans QR), **prix des lignes** (D6), `linesInvalid` (`:372`), centime (`:382`). *Validation P2, V2-7 :* le
+  commentaire `supplier-invoice-form.ts:280-281` (« une saisie illisible part telle quelle et le serveur la refuse ») est
+  réécrit ; le refus serveur `INVALID_PAYMENT_DETAILS` d'un montant attendu illisible n'est plus atteint depuis le
+  formulaire (il le reste par l'API), ce que le Dev Agent Record dit.
 - **D8 — Règlement (#1174)** : `clientError`, après les dates, lit `amount.trim()` : vide → `invoice-error-amount-positive` ;
   `ambiguous` / `unreadable` → message commun (`$max` 2) ; `clear` : ≤ 0 → `invoice-error-amount-positive` ;
-  `centimesDigits(payload) > 2` → `invoice-error-amount-scale` ; au-delà du reste dû → `invoice-error-amount-over-due`.
+  `centimesDigits(payload) > 2` → `invoice-error-amount-scale` ; au-delà du reste dû → `invoice-error-amount-over-due`,
+  comparé sur la valeur de la lecture (`value`, *validation P2, V2-2* : `new Big("1'250")` lèverait). *V2-3 :* « 10.01000 »
+  (cinq décimales écrites, deux significatives) reçoit « Montant illisible : … 2 décimales au plus » — la grammaire du
+  journal borne les décimales écrites à quatre ; écart gardé, cas rare, et le manuel le dit (AC9). *V2-1 :* le mock
+  d'`i18nMsg` de `SettleInvoiceDialog.test.ts:9-11` est aligné sur celui de `SupplierInvoiceForm.test.ts` (interpolation),
+  sans quoi `$max` serait invisible et M15 survivrait.
   `onConfirm` reçoit `amount: payload`. Les trois tests contraires (`:70-89`) sont réécrits : « 10.000 » et « 10.008 »
   ambigus, « 1e-3 » illisible, l'échelle prouvée sur « 10.0081 » (C-36-18-5). *Validation P1, V1-1 :* les décimales se
   comptent toujours sur la forme **canonique** de big.js (`centimesDigits`, `:67-76`, #476), appliquée à la charge —
@@ -233,7 +245,9 @@ Aucun site hors des huit issues : aucune issue neuve.
    *V1-7* : l'écouteur `page.on('request')`, armé avant le clic, compte les seules requêtes d'écriture de l'écran, par
    **méthode et route** — `POST /api/v1/opening-balances` et `POST /api/v1/opening-balances/complete`
    (`opening-balances.api.ts:27`, `:38`), `POST /api/v1/supplier-invoices` et `PUT /api/v1/supplier-invoices/{id}`
-   (`supplier-invoices.api.ts:57`, `:69`), `POST /api/v1/invoices/{id}/settlements` (`invoices.api.ts:150`) — et en
+   (`supplier-invoices.api.ts:57`, `:69`), `POST /api/v1/imported-supplier-invoices/{id}/complete`
+   (`imported-supplier-invoices.api.ts:63`, *validation P2, V2-4* ; le test mène la facture sans document,
+   `/supplier-invoices/new`), `POST /api/v1/invoices/{id}/settlements` (`invoices.api.ts:150`) — et en
    attend **zéro** ; le compteur n'est qu'un indice, la preuve est la relecture par `authedApiContext` de l'état d'avant
    (aucune écriture d'ouverture, aucune facture fournisseur neuve, reste dû inchangé). Puis « 1'250 » → le corps
    (`page.waitForRequest`, même filtre) porte `1250`, réponse 2xx, relecture comparée **en valeur**
@@ -247,7 +261,8 @@ Aucun site hors des huit issues : aucune issue neuve.
    (`:1004`) ; § *Les montants* de la facture fournisseur (`:1780-1784`), dont la phrase « Kesh les lit tels quels et les
    enregistre au point » (`:1781`), devenue fausse pour le prix et le montant attendu, est **corrigée** (*V1-8*) ;
    § *Enregistrer* du règlement (`:1443-1445`), avec l'exemple « \texttt{10.000} est refusé comme ambigu : écrivez
-   \texttt{10.00} ou \texttt{10'000} » (*V1-8*). *V1-2* — **contrôle de clôture de la story, sur le `.tex`** :
+   \texttt{10.00} ou \texttt{10'000} » (*V1-8*) et la limite « deux décimales au plus (les zéros de fin ne comptent pas :
+   \texttt{10.0100} passe) » (*V2-3*). *V1-2* — **contrôle de clôture de la story, sur le `.tex`** :
    `/usr/bin/grep -n 'refusé comme ambigu' docs/manual/fr/user-manual.tex` rend une ligne dans chacune des trois sections
    citées (en plus de `:1158`, la 36-3b), et `/usr/bin/grep -n 'tels quels' docs/manual/fr/user-manual.tex` ne rend plus
    la ligne du § *Les montants*. **Contrôle d'intégration seulement** (PDF régénéré après l'union des branches) :
@@ -258,7 +273,8 @@ Aucun site hors des huit issues : aucune issue neuve.
     `amount-ambiguity.ts`, `JournalEntryForm.svelte`, `VatPurchaseAssistant.svelte`, `TransactionSplitModal.svelte`,
     `InvoiceForm.svelte`, `bank-accounts/`, ni les fichiers de la 36-18b ; `amount-ambiguity.test.ts`, `unit-price.test.ts`,
     `InvoiceForm.test.ts`, `format.test.ts` verts sans modification ; `balance.ts` n'ajoute que les deux aides et des
-    doc-comments, et ne retire que `defaultAmountReader` (D5) ; `readJournalAmount` inchangé.
+    doc-comments, et ne retire que `defaultAmountReader` et les valeurs par défaut de `read` (D5, *V2-5*) ;
+    `readJournalAmount` inchangé.
 11. **AC11 — Captures** (thème clair, base jetable `kesh_e2e_e3618a`, `kesh-gate-logs/e36-18a/captures/`) : chaque écran à
     « 1.250 », à « 12'34 », et la valeur « 1'250 » enregistrée ; un brouillon fournisseur rouvert au prix `1.2340`.
 
@@ -407,3 +423,16 @@ Le défaut se voit dans le navigateur et à la frontière HTTP (chaque montant p
   comptées par méthode et route, relecture en valeur ; V1-8 `:1781` corrigée, « 10.000 » au manuel ; V1-9
   `defaultAmountReader` retiré (mort en production), décompte nuancé ; V1-10 note de version : relire les montants à
   trois décimales saisis avant la 0.18.0. Propagé à la 36-18b. Passe 2 à lancer.
+- 2026-11-15 — **Validation P2** (`kesh-gate-logs/e36-18/validation-36-18a-p2.md`, Opus 5.5) : 0/0/0/8. **Validation
+  terminée** : P1 (Opus) 0/0/2/8 → P2 (Opus) 0/0/0/8.
+- 2026-11-16 — **Étape 0 du développement** (Opus 5.5). Base : `origin/epic/36-0.18.0` puis la 36-15 telle qu'elle est
+  (C-36-18-12, écart à la fiche décidé par l'orchestrateur). Inventaires rejoués à `7d48aff2f`
+  (`kesh-gate-logs/e36-18/etape0-inventaires.log`) : mêmes sites que la fiche ; seul `SupplierInvoiceForm.svelte` a bougé
+  (une ligne, `:759` « Compte analytique (optionnel) », 36-15). Contrôle PDF d'AC9 à l'étape 0 : **1** ; `.tex` :
+  `refusé comme ambigu` à `:1171` (36-3b), `tels quels` à `:1805` (§ *Les montants*) et `:2841` ; `sitesTotal` **3082**
+  (`i18n-keys.test.ts:1032`). LOW de la P2 traités dans la fiche, ligne lue citée : V2-1 `SettleInvoiceDialog.test.ts:10`
+  `i18nMsg: (_k: string, fallback: string) => fallback,` (D8) ; V2-2 `SettleInvoiceDialog.svelte:184`
+  `new Big(amount.trim()).gt(dueToCentime(amountDue))` (D8) ; V2-3 `balance.ts:90` `(?:[.,](\d{1,4}))?$` (D8, AC9) ;
+  V2-4 `imported-supplier-invoices.api.ts:63` `` apiClient.post(`/api/v1/imported-supplier-invoices/${id}/complete`, req) ``
+  (AC7) ; V2-5 `balance.ts:181` `read: AmountReader = defaultAmountReader` (D5, AC10) ; V2-6 registre, C-36-18-11 ; V2-7
+  `supplier-invoice-form.ts:281` `// illisible part telle quelle et le serveur la refuse (400).` (D7) ; V2-8 en-tête.

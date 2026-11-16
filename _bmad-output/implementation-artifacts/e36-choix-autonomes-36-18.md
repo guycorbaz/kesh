@@ -113,3 +113,29 @@ réversible (règles de l'epic) ; aucun n'écrit de donnée ni ne touche le serv
   la 36-18a) en `backlog`, partie de la 36-18a fusionnée. La fiche d'origine passe à `split`. Bases `e3618a` et `e3618b`.
 - **Écartée** : une fiche par issue — huit stories pour une seule règle, et les aides partagées en dépendance de chacune.
 - **Réversible** : oui (fiches seules).
+
+## C-36-18-11 — `defaultAmountReader` retiré dans la 36-18a (validation P1, V1-9 ; tracé à la demande de la P2, V2-6)
+
+- **Contexte** : une fois les soldes de départ passés à `journalAmountReader` (D5), le lecteur par défaut de
+  `computeBalance` et `classifyLine` n'a plus d'appelant de production (`git grep -n "computeBalance(\|classifyLine("` hors
+  tests : `JournalEntryForm.svelte:179-180`, qui passent `journalAmountReader`, et la page des soldes, convertie). Le
+  laisser ferait d'un oubli de lecteur une lecture silencieuse de « 1.250 » à 1,25.
+- **Retenu** : retrait dans la 36-18a — `defaultAmountReader` supprimé, `read` obligatoire (plus de valeur par défaut),
+  tests et doc-comments ajustés (D5, V2-5).
+- **Écartées** : (a) une issue `technical-debt` — code mort qui garde la lecture fautive à portée de main ; (b) report à la
+  36-18b — rien de la 36-18b n'y touche.
+- **Réversible** : oui.
+
+## C-36-18-12 — Base du développement : la 36-15 en revue, non fusionnée (décision de l'orchestrateur du 2026-11-16)
+
+- **Contexte** : la fiche dit « partir de la 36-15 fusionnée » ; la 36-15 est en remédiation de sa revue P1 (rien au-dessus
+  de LOW), non fusionnée dans `epic/36-0.18.0`. Pour gagner un jour, l'orchestrateur a demandé de fusionner
+  `origin/epic/36-0.18.0` (`876fb9a85`) puis `story/36-15-compte-analytique` telle qu'elle est (`c01bb069c`).
+- **Retenu** : fusions `7ec5a5240` et `7c1be9aa4` ; lignes citées relues à cette tête (inventaires rejoués,
+  `kesh-gate-logs/e36-18/etape0-inventaires.log` : mêmes sites que la fiche) ; les ajouts aux `.ftl` restent groupés pour
+  la refusion de `origin/epic/36-0.18.0` après la fusion de la 36-15. ⚠️ La fusion `7ec5a5240` a été commitée avec les
+  marqueurs du conflit de `sprint-status.yaml` (un « ; » au lieu de « && » dans la commande) ; corrigée par `7d48aff2f`,
+  sans réécriture d'historique (`reset` et `rebase` interdits). Journaux : `kesh-gate-logs/e36-18/` (prompt d'appel),
+  non `e36-18a/` (fiche).
+- **Écartée** : attendre la fusion de la 36-15 — un jour de plus avant la coupure du 2026-11-19.
+- **Réversible** : oui (la refusion absorbe la 36-15 finale).
