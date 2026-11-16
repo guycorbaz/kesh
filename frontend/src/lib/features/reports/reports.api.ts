@@ -265,6 +265,15 @@ export function formatReportAmount(v: string): string {
 	}
 }
 
+/**
+ * Story 37-4 (AC-5) — un montant en devise : `USD 1'233.57`. La somme exacte
+ * (quatre décimales) est arrondie à deux, l'équidistant loin de zéro (`toFixed`
+ * de big.js), comme au PDF. Un montant absent se lit 0.
+ */
+export function formatCurrencyAmount(currency: string, v: string | undefined): string {
+	return `${currency} ${formatReportAmount(v ?? '0')}`;
+}
+
 // ============================================================================
 // Story 9-2a — Export PDF & CSV
 // ============================================================================

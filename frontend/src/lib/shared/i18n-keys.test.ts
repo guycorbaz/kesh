@@ -1033,7 +1033,14 @@ const ATTENDU = {
 	// `exchange-rates-labels.ts`, 6 dans `RateCell.svelte`, 6 dans `CorrectionDialog.svelte`,
 	// 5 dans `ExchangeRateNoticesBanner.svelte` ; 3 dans `routes/(app)/settings/+page.svelte`
 	// (86 → 89 : la carte « Cours de change ») — 39 + 32 + 6 + 6 + 5 + 3 = 91. Que des littéraux.
-	sitesTotal: 3184,
+	// Story 37-4 (AC-6) : **3184 → 3190**, relevé par la garde (`expected 3190 to be 3184`)
+	// avant d'écrire ce nombre, sur la branche partie de la 37-3a (946aa86a, 37-2 comprise), et
+	// ventilé au code : 3 sites dans `features/reports/GeneralLedgerView.svelte`
+	// (`reports-fx-revaluation-balance`, `reports-fx-movement`, `reports-fx-totals`), 1 dans
+	// `TrialBalanceView.svelte` (`reports-fx-trial-balance`), 2 dans `JournalReportView.svelte`
+	// (`reports-fx-revaluation`, `reports-fx-line`) — 3 + 1 + 2 = 6. Que des littéraux. À
+	// recompter après la fusion des branches amont (37-3a et la suite).
+	sitesTotal: 3190,
 	sitesNonResolus: 31,
 	relais: 6,
 	// Story 26-1 (#620, AC3-bis) : **10 → 11** — `lib/features/bank-import/

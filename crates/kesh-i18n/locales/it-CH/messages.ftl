@@ -3183,6 +3183,13 @@ reports-ledger-no-movement-closed = Nessun movimento nel periodo. L'esercizio de
 reports-ledger-empty = Nessun conto da visualizzare per questo periodo.
 reports-ledger-open-from-balance = Vedi il dettaglio nel libro mastro
 reports-ledger-truncated = Sono visualizzate solo le prime { $shown } righe su { $total }. L'esportazione le contiene tutte.
+# Story 37-4 — importi in valuta dei rapporti (valuta del conto).
+reports-fx-movement = { $amount } × { $rate } · saldo { $balance }
+reports-fx-revaluation-balance = Rivalutazione al corso { $rate } · saldo { $balance }
+reports-fx-revaluation = Rivalutazione al corso { $rate }
+reports-fx-line = { $amount } × { $rate }
+reports-fx-totals = dare { $debit } · avere { $credit }
+reports-fx-trial-balance = apertura { $opening } · dare { $debit } · avere { $credit } · chiusura { $closing }
 reports-ledger-include-zero = Includere i conti senza movimenti
 reports-ledger-instruction = Scegliete un periodo, poi cliccate su Genera. Il conto è facoltativo.
 

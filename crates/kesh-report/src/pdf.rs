@@ -44,6 +44,9 @@ const FONT_SIZE_PT: f32 = 10.0;
 const FONT_SIZE_HEADER_PT: f32 = 14.0;
 const FONT_SIZE_FOOTER_PT: f32 = 8.0;
 const LINE_HEIGHT_MM: f32 = 4.2; // ≈ 12pt at 10pt font
+/// Seconde ligne en petit des montants en devise (Story 37-4, AC-5).
+const FX_FONT_PT: f32 = 6.5;
+const FX_LINE_HEIGHT_MM: f32 = 3.0;
 
 // ============================================================================
 // PdfContext — libellés et métadonnées résolus côté handler (Pass 3 ECH3-C1 + BH3-M2)
@@ -146,6 +149,21 @@ pub struct SectionLabels {
     pub ledger_archived: String,
     pub ledger_unnatural: String,
     pub ledger_no_movement: String,
+    // Montants en devise (Story 37-4, AC-2 et AC-5) — seconde ligne en petit du
+    // grand livre et de la balance.
+    /// « Réévaluation au cours » — mention d'une ligne `revaluation`, suivie du
+    /// cours, sans montant en devise.
+    pub fx_revaluation_at_rate: String,
+    /// « solde » — le solde progressif en devise d'un mouvement.
+    pub fx_balance: String,
+    /// « ouverture » — l'ouverture en devise d'un compte de la balance.
+    pub fx_opening: String,
+    /// « débit » — les mouvements au débit en devise.
+    pub fx_debit: String,
+    /// « crédit » — les mouvements au crédit en devise.
+    pub fx_credit: String,
+    /// « clôture » — la clôture en devise d'un compte de la balance.
+    pub fx_closing: String,
 }
 
 impl SectionLabels {
@@ -201,6 +219,12 @@ impl SectionLabels {
             ledger_archived: "archivé".into(),
             ledger_unnatural: "Solde contre nature".into(),
             ledger_no_movement: "Aucun mouvement sur la période.".into(),
+            fx_revaluation_at_rate: "Réévaluation au cours".into(),
+            fx_balance: "solde".into(),
+            fx_opening: "ouverture".into(),
+            fx_debit: "débit".into(),
+            fx_credit: "crédit".into(),
+            fx_closing: "clôture".into(),
         }
     }
 
@@ -266,6 +290,36 @@ pub fn format_swiss_amount(amount: Decimal) -> String {
     let grouped: String = grouped.chars().rev().collect();
 
     format!("{sign}{grouped}{dec_part}")
+}
+
+/// Arrondi **explicite** d'un montant en devise avant tout formatage (Story
+/// 37-4, AC-5) : la somme reste exacte (4 décimales stockées), seul l'affichage
+/// passe à 2 décimales, l'équidistant loin de zéro — les formateurs ne font
+/// qu'un `{:.2}`, dont l'arrondi n'est pas celui qu'on écrit.
+pub(crate) fn round_for_display(amount: Decimal) -> Decimal {
+    amount.round_dp_with_strategy(2, rust_decimal::RoundingStrategy::MidpointAwayFromZero)
+}
+
+/// Montant en devise au format suisse : `USD 1'233.57` (Story 37-4).
+pub(crate) fn format_currency_amount(currency: &str, amount: Decimal) -> String {
+    format!(
+        "{currency} {}",
+        format_swiss_amount(round_for_display(amount))
+    )
+}
+
+/// Formate un **cours de change** par unité de devise (Story 37-4, AC-5) : sans
+/// `%`, zéros de queue retirés, au moins 4 décimales, au plus 10 (la précision
+/// stockée) — `0.8808`, `0.005751`, `1.5000`. Partagé par le PDF et le CSV.
+///
+/// ⚠️ Ne pas confondre avec [`format_rate`], qui rend un taux de TVA
+/// (`"8.10 %"`) : il rendrait `0.88 %`.
+pub(crate) fn format_exchange_rate(rate: Decimal) -> String {
+    let r = rate
+        .round_dp_with_strategy(10, rust_decimal::RoundingStrategy::MidpointAwayFromZero)
+        .normalize();
+    let scale = r.scale().max(4);
+    format!("{r:.prec$}", prec = scale as usize)
 }
 
 /// Formate une date au format suisse `dd.mm.yyyy` (T2.5).
@@ -497,6 +551,18 @@ fn draw_account_row(builder: &mut PdfBuilder, ab: &AccountBalance) {
         Mm(y),
         &builder.font,
     );
+    // Story 37-4, AC-5 : la devise et le solde en devise entre le nom et le
+    // solde — compte en devise seulement ; les totaux restent en devise
+    // principale.
+    if let (Some(cur), Some(fx)) = (&ab.currency, ab.balance_currency) {
+        layer.use_text(
+            format_currency_amount(cur, fx),
+            FONT_SIZE_PT,
+            Mm(PAGE_WIDTH_MM - 85.0),
+            Mm(y),
+            &builder.font,
+        );
+    }
     layer.use_text(
         format_swiss_amount(ab.balance),
         FONT_SIZE_PT,
@@ -774,7 +840,12 @@ pub fn render_trial_balance_pdf(
     builder.cursor_y -= LINE_HEIGHT_MM * 1.5;
 
     for row in &tb.rows {
-        builder.ensure_space_for_row();
+        // Un compte en devise garde sa seconde ligne sur la même page.
+        if row.currency.is_some() {
+            builder.ensure_space_for_rows(2.0);
+        } else {
+            builder.ensure_space_for_row();
+        }
         // Pass 1 code-review H4 (BH1-H4) : un intitulé trop long déborderait sur la
         // colonne suivante — tronqué avec ellipsis Unicode.
         let name = truncate_with_ellipsis(&row.account_name, TB_NAME_MAX_CHARS);
@@ -797,6 +868,27 @@ pub fn render_trial_balance_pdf(
             false,
         );
         builder.cursor_y -= LINE_HEIGHT_MM;
+
+        // Story 37-4, AC-5 : sous un compte en devise, une seconde ligne en
+        // petit — ouverture, débit, crédit et clôture en devise. Aucune ligne de
+        // total en devise (devises mêlées).
+        if let Some(cur) = &row.currency {
+            let m =
+                |v: Option<Decimal>| format_swiss_amount(round_for_display(v.unwrap_or_default()));
+            let texte = format!(
+                "{cur} {} {} · {} {} · {} {} · {} {}",
+                l.fx_opening,
+                m(row.opening_currency),
+                l.fx_debit,
+                m(row.total_debit_currency),
+                l.fx_credit,
+                m(row.total_credit_currency),
+                l.fx_closing,
+                m(row.closing_currency),
+            );
+            builder.write_inline(&texte, FX_FONT_PT, false, MARGIN_LEFT_MM + TB_COL_X[1]);
+            builder.cursor_y -= FX_LINE_HEIGHT_MM;
+        }
     }
 
     // Ligne calculée du résultat reporté : ouverture = clôture, sans mouvement.
@@ -1532,6 +1624,10 @@ fn draw_ledger_account_header(
     if section.unnatural_balance {
         title.push_str(&format!("  ⚠ {}", l.ledger_unnatural));
     }
+    // Story 37-4 : la devise d'un compte en devise, dès le bandeau.
+    if let Some(cur) = &section.currency {
+        title.push_str(&format!(" · {cur}"));
+    }
     if continued {
         title.push_str(&format!("  ({})", l.ledger_carried_over));
     }
@@ -1556,8 +1652,20 @@ fn draw_ledger_account_header(
 
 /// Une ligne « libellé à gauche, montant à droite » du grand livre — ouverture,
 /// clôture, report, rupture d'exercice.
-fn draw_ledger_marker(builder: &mut PdfBuilder, label: &str, amount: Decimal, bold: bool) {
+///
+/// `fx` : le même solde en devise d'un compte en devise (Story 37-4, AC-5),
+/// écrit dans la colonne des contreparties, vide sur ces lignes.
+fn draw_ledger_marker(
+    builder: &mut PdfBuilder,
+    label: &str,
+    amount: Decimal,
+    fx: Option<String>,
+    bold: bool,
+) {
     builder.write_inline(label, LEDGER_FONT_PT, bold, LEDGER_COL_DATE);
+    if let Some(fx) = fx {
+        builder.write_inline(&fx, LEDGER_FONT_PT, bold, LEDGER_COL_COUNTERPART);
+    }
     builder.write_inline(
         &format_swiss_amount(amount),
         LEDGER_FONT_PT,
@@ -1591,6 +1699,14 @@ pub fn render_general_ledger_pdf(
     }
 
     for section in &gl.sections {
+        // Story 37-4 : le solde en devise d'une ligne d'encadrement, `None`
+        // pour un compte en devise principale (rien ne change alors).
+        let fx = |v: Option<Decimal>| {
+            section
+                .currency
+                .as_deref()
+                .map(|cur| format_currency_amount(cur, v.unwrap_or_default()))
+        };
         // Un compte commence en tête de page s'il ne tient pas au moins son
         // bandeau, sa ligne d'ouverture et un mouvement.
         builder.ensure_space_for_rows(4.0);
@@ -1599,6 +1715,7 @@ pub fn render_general_ledger_pdf(
             &mut builder,
             &ctx.section_labels.ledger_opening,
             section.opening,
+            fx(section.opening_currency),
             false,
         );
 
@@ -1615,6 +1732,8 @@ pub fn render_general_ledger_pdf(
         // ligne écrite, l'ouverture tant qu'aucune ne l'a été, zéro juste après
         // une rupture d'exercice.
         let mut carry = section.opening;
+        // Le même report en devise (Story 37-4, AC-5), remis à zéro avec lui.
+        let mut carry_fx = section.opening_currency;
 
         // Rupture d'exercice — le solde d'un compte de résultat y repart de zéro.
         let draw_break = |builder: &mut PdfBuilder, brk: &FiscalYearBreak| {
@@ -1627,6 +1746,7 @@ pub fn render_general_ledger_pdf(
                     ctx.section_labels.ledger_fy_break
                 ),
                 brk.closing_balance,
+                fx(brk.closing_balance_currency),
                 false,
             );
         };
@@ -1637,14 +1757,22 @@ pub fn render_general_ledger_pdf(
             if let Some(brk) = section.break_before(idx) {
                 draw_break(&mut builder, brk);
                 carry = Decimal::ZERO;
+                carry_fx = carry_fx.map(|_| Decimal::ZERO);
             }
 
             // Saut de page : « À reporter » au pied, bandeau + « Report » en tête.
-            if builder.cursor_y - 2.0 * LINE_HEIGHT_MM < MARGIN_BOTTOM_MM {
+            // Un mouvement en devise garde sa seconde ligne sur la même page.
+            let seconde_ligne = if section.currency.is_some() {
+                FX_LINE_HEIGHT_MM
+            } else {
+                0.0
+            };
+            if builder.cursor_y - 2.0 * LINE_HEIGHT_MM - seconde_ligne < MARGIN_BOTTOM_MM {
                 draw_ledger_marker(
                     &mut builder,
                     &ctx.section_labels.ledger_carry_forward,
                     carry,
+                    fx(carry_fx),
                     true,
                 );
                 builder.new_page();
@@ -1653,6 +1781,7 @@ pub fn render_general_ledger_pdf(
                     &mut builder,
                     &ctx.section_labels.ledger_carried_over,
                     carry,
+                    fx(carry_fx),
                     false,
                 );
             }
@@ -1714,6 +1843,32 @@ pub fn render_general_ledger_pdf(
             );
             builder.cursor_y -= LINE_HEIGHT_MM;
             carry = line.running_balance;
+
+            // Story 37-4, AC-5 : sous un mouvement d'un compte en devise, une
+            // seconde ligne en petit — « USD 31.35 × 0.8808 · solde USD
+            // 1'233.57 », ou « Réévaluation au cours X · solde … », sans montant
+            // en devise (AC-2).
+            if let Some(cur) = &section.currency {
+                let cours = line
+                    .exchange_rate
+                    .map(format_exchange_rate)
+                    .unwrap_or_default();
+                let mouvement = if line.is_revaluation() {
+                    format!("{} {cours}", ctx.section_labels.fx_revaluation_at_rate)
+                } else {
+                    let montant = line.debit_currency.unwrap_or_default()
+                        + line.credit_currency.unwrap_or_default();
+                    format!("{} × {cours}", format_currency_amount(cur, montant))
+                };
+                let texte = format!(
+                    "{mouvement} · {} {}",
+                    ctx.section_labels.fx_balance,
+                    format_currency_amount(cur, line.running_balance_currency.unwrap_or_default())
+                );
+                builder.write_inline(&texte, FX_FONT_PT, false, LEDGER_COL_DESC);
+                builder.cursor_y -= FX_LINE_HEIGHT_MM;
+                carry_fx = line.running_balance_currency;
+            }
         }
 
         // Fin d'exercice franchie après la dernière ligne (#778).
@@ -1722,7 +1877,7 @@ pub fn render_general_ledger_pdf(
         }
 
         // Totaux de mouvements, puis solde de clôture.
-        builder.ensure_space_for_rows(2.0);
+        builder.ensure_space_for_rows(if section.currency.is_some() { 3.0 } else { 2.0 });
         builder.write_inline(
             &ctx.section_labels.ledger_movements_total,
             LEDGER_FONT_PT,
@@ -1742,11 +1897,26 @@ pub fn render_general_ledger_pdf(
             LEDGER_COL_CREDIT,
         );
         builder.cursor_y -= LINE_HEIGHT_MM;
+        // Les totaux de la section en devise — seuls totaux en devise d'un
+        // rapport (une section n'a qu'une devise).
+        if let Some(cur) = &section.currency {
+            let m = |v: Option<Decimal>| format_currency_amount(cur, v.unwrap_or_default());
+            let texte = format!(
+                "{} {} · {} {}",
+                ctx.section_labels.fx_debit,
+                m(section.total_debit_currency),
+                ctx.section_labels.fx_credit,
+                m(section.total_credit_currency),
+            );
+            builder.write_inline(&texte, FX_FONT_PT, false, LEDGER_COL_DESC);
+            builder.cursor_y -= FX_LINE_HEIGHT_MM;
+        }
 
         draw_ledger_marker(
             &mut builder,
             &ctx.section_labels.ledger_closing,
             section.closing,
+            fx(section.closing_currency),
             true,
         );
         builder.cursor_y -= LINE_HEIGHT_MM; // respiration entre deux comptes
@@ -1792,6 +1962,8 @@ mod tests {
                     active: true,
                     balance: dec!(1234.56),
                     role: None,
+                    currency: None,
+                    balance_currency: None,
                 }]
             },
             liabilities: if empty {
@@ -1805,6 +1977,8 @@ mod tests {
                     active: true,
                     balance: dec!(500.00),
                     role: None,
+                    currency: None,
+                    balance_currency: None,
                 }]
             },
             equity: vec![],
@@ -1831,6 +2005,8 @@ mod tests {
                     active: true,
                     balance: dec!(2000),
                     role: None,
+                    currency: None,
+                    balance_currency: None,
                 }]
             },
             expenses: if empty {
@@ -1844,6 +2020,8 @@ mod tests {
                     active: true,
                     balance: dec!(1265.44),
                     role: None,
+                    currency: None,
+                    balance_currency: None,
                 }]
             },
             total_revenues: if empty { Decimal::ZERO } else { dec!(2000) },
@@ -1869,6 +2047,12 @@ mod tests {
                     total_credit: dec!(1000),
                     balance: dec!(1000),
                     closing_balance: dec!(1500),
+                    currency: None,
+                    opening_currency: None,
+                    total_debit_currency: None,
+                    total_credit_currency: None,
+                    balance_currency: None,
+                    closing_currency: None,
                 }]
             },
             total_debit: if empty { Decimal::ZERO } else { dec!(2000) },
@@ -1906,6 +2090,10 @@ mod tests {
                         debit: dec!(100),
                         credit: dec!(0),
                         line_order: 0,
+                        currency: None,
+                        amount_currency: None,
+                        exchange_rate: None,
+                        rate_source: None,
                     }],
                 }]
             };
@@ -2005,6 +2193,8 @@ mod tests {
             active: true,
             balance: dec!(100),
             role: Some(role),
+            currency: None,
+            balance_currency: None,
         };
         // 120 comptes EquityOther + 1 EquityCapital → 2 groupes de rôle, > 1 page A4.
         let mut equity: Vec<AccountBalance> = vec![eq(0, AccountRole::EquityCapital)];
@@ -2303,6 +2493,8 @@ mod tests {
                 active: true,
                 balance: dec!(100),
                 role: None,
+                currency: None,
+                balance_currency: None,
             });
             liabilities.push(AccountBalance {
                 account_id: 500 + i as i64,
@@ -2312,6 +2504,8 @@ mod tests {
                 active: true,
                 balance: dec!(100),
                 role: None,
+                currency: None,
+                balance_currency: None,
             });
         }
         let bs = BalanceSheet {
@@ -2408,6 +2602,10 @@ mod tests {
                             debit: dec!(100),
                             credit: dec!(0),
                             line_order: 0,
+                            currency: None,
+                            amount_currency: None,
+                            exchange_rate: None,
+                            rate_source: None,
                         },
                         JournalEntryLineRow {
                             account_id: 2,
@@ -2416,6 +2614,10 @@ mod tests {
                             debit: dec!(0),
                             credit: dec!(100),
                             line_order: 1,
+                            currency: None,
+                            amount_currency: None,
+                            exchange_rate: None,
+                            rate_source: None,
                         },
                     ],
                 })
@@ -2462,6 +2664,11 @@ mod tests {
             credit: dec!(0),
             running_balance: Decimal::from(i) * dec!(120.00),
             lettering_code: None,
+            debit_currency: None,
+            credit_currency: None,
+            exchange_rate: None,
+            rate_source: None,
+            running_balance_currency: None,
         }
     }
 
@@ -2486,6 +2693,11 @@ mod tests {
                 unnatural_balance: false,
                 fiscal_year_breaks: vec![],
                 line_count: n,
+                currency: None,
+                opening_currency: None,
+                total_debit_currency: None,
+                total_credit_currency: None,
+                closing_currency: None,
             }],
         }
     }
@@ -2515,6 +2727,7 @@ mod tests {
             date: NaiveDate::from_ymd_opt(2025, 12, 31).unwrap(),
             closing_fiscal_year_id: 1,
             closing_balance: dec!(620.00),
+            closing_balance_currency: None,
         }];
         let bytes = render_general_ledger_pdf(&gl, &ctx).expect("pdf");
         assert!(!bytes.is_empty());
@@ -2533,11 +2746,13 @@ mod tests {
                 date: NaiveDate::from_ymd_opt(2026, 3, 4).unwrap(),
                 closing_fiscal_year_id: 9,
                 closing_balance: dec!(500.00),
+                closing_balance_currency: None,
             },
             crate::general_ledger::FiscalYearBreak {
                 date: NaiveDate::from_ymd_opt(2027, 1, 1).unwrap(),
                 closing_fiscal_year_id: 1,
                 closing_balance: dec!(240.00),
+                closing_balance_currency: None,
             },
         ];
         assert!(gl.sections[0].break_before(0).is_some(), "rupture en tête");
@@ -2562,5 +2777,117 @@ mod tests {
         gl.sections.clear();
         let bytes = render_general_ledger_pdf(&gl, &ctx).expect("pdf vide");
         assert!(!bytes.is_empty());
+    }
+
+    // ------------------------------------------------------------------
+    // Story 37-4 — montants en devise
+    // ------------------------------------------------------------------
+
+    /// Le texte d'un PDF non compressé (profil de test) : chaque `<hex> Tj`,
+    /// décodé en Latin-1 (approximation de WinAnsi suffisante ici).
+    fn pdf_text(bytes: &[u8]) -> Vec<String> {
+        let s = String::from_utf8_lossy(bytes);
+        let mut out = Vec::new();
+        let mut rest: &str = &s;
+        while let Some(end) = rest.find("> Tj") {
+            let before = &rest[..end];
+            if let Some(start) = before.rfind('<') {
+                let hex = &before[start + 1..];
+                out.push(
+                    (0..hex.len() / 2)
+                        .filter_map(|i| u8::from_str_radix(&hex[2 * i..2 * i + 2], 16).ok())
+                        .map(char::from)
+                        .collect(),
+                );
+            }
+            rest = &rest[end + 4..];
+        }
+        out
+    }
+
+    /// AC-5 — le cours se lit par unité, sans `%`, de 4 à 10 décimales, zéros
+    /// de queue retirés ; un cours JPY (< 0.01) garde ses chiffres.
+    #[test]
+    fn le_cours_de_change_se_formate_par_unite() {
+        assert_eq!(format_exchange_rate(dec!(0.8808)), "0.8808");
+        assert_eq!(format_exchange_rate(dec!(0.0057510000)), "0.005751");
+        assert_eq!(format_exchange_rate(dec!(1.5)), "1.5000");
+        assert_eq!(format_exchange_rate(dec!(0.95)), "0.9500");
+        assert_eq!(format_exchange_rate(dec!(0.1234567891)), "0.1234567891");
+        assert_eq!(format_exchange_rate(dec!(0.00575123456789)), "0.0057512346");
+        assert_eq!(format_exchange_rate(dec!(108)), "108.0000");
+        // `format_rate` (TVA) ne s'emploie pas : il rendrait « 0.88 % ».
+        assert_eq!(format_rate(dec!(0.8808)), "0.88 %");
+    }
+
+    /// AC-5 — arrondi explicite, l'équidistant loin de zéro, avant formatage.
+    #[test]
+    fn le_montant_en_devise_s_arrondit_avant_formatage() {
+        assert_eq!(round_for_display(dec!(1233.565)), dec!(1233.57));
+        assert_eq!(round_for_display(dec!(-1233.565)), dec!(-1233.57));
+        assert_eq!(round_for_display(dec!(0.0049)), dec!(0.00));
+        assert_eq!(
+            format_currency_amount("USD", dec!(1233.5650)),
+            "USD 1'233.57"
+        );
+    }
+
+    /// Un grand livre USD de 300 lignes, réparti sur plusieurs pages.
+    fn ledger_usd(n: i64) -> crate::general_ledger::GeneralLedger {
+        let mut gl = ledger_with(n);
+        let s = &mut gl.sections[0];
+        s.currency = Some("USD".into());
+        s.opening_currency = Some(dec!(1000));
+        s.total_debit_currency = Some(Decimal::from(n) * dec!(100));
+        s.total_credit_currency = Some(Decimal::ZERO);
+        s.closing_currency = Some(dec!(1000) + Decimal::from(n) * dec!(100));
+        for (i, l) in s.lines.iter_mut().enumerate() {
+            l.debit_currency = Some(dec!(100));
+            l.credit_currency = Some(Decimal::ZERO);
+            l.exchange_rate = Some(dec!(1.2));
+            l.rate_source = Some("manual".into());
+            l.running_balance_currency = Some(dec!(1000) + Decimal::from(i as i64 + 1) * dec!(100));
+        }
+        gl
+    }
+
+    /// AC-5 — PDF multi-pages : seconde ligne en petit sous chaque mouvement,
+    /// « À reporter » et « Report » portent le report en devise.
+    #[test]
+    fn general_ledger_pdf_multi_pages_reporte_la_devise() {
+        let ctx = PdfContext::fr_ch_default("Test SA");
+        let t = pdf_text(&render_general_ledger_pdf(&ledger_usd(300), &ctx).unwrap());
+        assert!(
+            t.iter()
+                .any(|l| l == "USD 100.00 × 1.2000 · solde USD 1'100.00")
+        );
+        assert!(t.iter().any(|l| l == "USD 31'000.00"), "clôture en devise");
+        let reports: Vec<usize> = t
+            .iter()
+            .enumerate()
+            .filter(|(_, l)| *l == "À reporter")
+            .map(|(i, _)| i)
+            .collect();
+        assert!(reports.len() >= 2, "plusieurs pages");
+        // Le report en devise suit immédiatement le libellé « À reporter ».
+        for i in reports {
+            assert!(
+                t[i + 1].starts_with("USD "),
+                "report en devise : {:?}",
+                &t[i..i + 3]
+            );
+        }
+        assert!(
+            t.iter()
+                .any(|l| l == "débit USD 30'000.00 · crédit USD 0.00")
+        );
+    }
+
+    /// Mono-devise : aucune mention en devise dans le PDF.
+    #[test]
+    fn general_ledger_pdf_sans_devise_ne_dit_rien_en_devise() {
+        let ctx = PdfContext::fr_ch_default("Test SA");
+        let t = pdf_text(&render_general_ledger_pdf(&ledger_with(300), &ctx).unwrap());
+        assert!(!t.iter().any(|l| l.contains(" × ") || l.contains("solde ")));
     }
 }

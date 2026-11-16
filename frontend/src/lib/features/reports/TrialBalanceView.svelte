@@ -76,6 +76,26 @@
 						<td class="px-2 py-1 text-right font-mono">{fmt(r.totalCredit)}</td>
 						<td class="px-2 py-1 text-right font-mono">{fmt(r.closingBalance)}</td>
 					</tr>
+					{#if r.currency}
+						<!-- Story 37-4 (AC-3) — seconde ligne, en devise du compte ; aucun total
+						     en devise (devises mêlées). -->
+						<tr class="text-xs text-gray-600" data-testid="tb-fx-row-{r.accountNumber}">
+							<td></td>
+							<td class="px-2 pb-1 font-mono" colspan="5"
+								>{r.currency}
+								{i18nMsg(
+									'reports-fx-trial-balance',
+									'ouverture { $opening } · débit { $debit } · crédit { $credit } · clôture { $closing }',
+									{
+										opening: fmt(r.openingCurrency ?? '0'),
+										debit: fmt(r.totalDebitCurrency ?? '0'),
+										credit: fmt(r.totalCreditCurrency ?? '0'),
+										closing: fmt(r.closingCurrency ?? '0'),
+									},
+								)}</td
+							>
+						</tr>
+					{/if}
 				{/each}
 				<tr class="italic" data-testid="tb-retained">
 					<td></td>

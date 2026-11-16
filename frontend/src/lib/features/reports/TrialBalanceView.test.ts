@@ -6,7 +6,15 @@ import { describe, it, expect, vi } from "vitest";
 import { render, screen } from "@testing-library/svelte";
 
 vi.mock("$lib/shared/utils/i18n.svelte", () => ({
-  i18nMsg: (_key: string, fallback: string) => fallback,
+  // Le repli, paramètres substitués (Story 37-4).
+  i18nMsg: (
+    _key: string,
+    fallback: string,
+    args?: Record<string, string | number>,
+  ) =>
+    fallback.replace(/\{ \$(\w+) \}/g, (_: string, k: string) =>
+      String(args?.[k] ?? ""),
+    ),
 }));
 
 import TrialBalanceView from "./TrialBalanceView.svelte";
@@ -97,5 +105,40 @@ describe("TrialBalanceView — Story 25-5-b", () => {
     expect(screen.getByTestId("tb-opening-check").textContent?.trim()).toBe(
       "✓",
     );
+  });
+});
+
+describe("TrialBalanceView — Story 37-4, compte en devise", () => {
+  it("met une seconde ligne en devise sous un compte en devise, sans total en devise", () => {
+    const base = makeDto();
+    const usd = {
+      ...base.rows[0],
+      accountId: 2,
+      accountNumber: "1020",
+      accountName: "Banque USD",
+      currency: "USD",
+      openingCurrency: "1300.0000",
+      totalDebitCurrency: "100.0000",
+      totalCreditCurrency: "91.0000",
+      balanceCurrency: "9.0000",
+      closingCurrency: "1309.0000",
+    };
+    const { container } = render(TrialBalanceView, {
+      dto: makeDto({ rows: [base.rows[0], usd] }),
+    });
+    expect(
+      screen.getByTestId("tb-fx-row-1020").textContent?.replace(/\s+/g, " ").trim(),
+    ).toBe(
+      "USD ouverture 1’300.00 · débit 100.00 · crédit 91.00 · clôture 1’309.00",
+    );
+    expect(screen.queryByTestId("tb-fx-row-1100")).toBeNull();
+    // Le pied reste en devise principale.
+    expect(container.querySelector("tfoot")?.textContent).not.toContain("USD");
+  });
+
+  it("mono-devise : aucune ligne en devise", () => {
+    const { container } = render(TrialBalanceView, { dto: makeDto() });
+    expect(container.innerHTML).not.toContain("tb-fx-row");
+    expect(screen.getAllByTestId("tb-row")).toHaveLength(1);
   });
 });

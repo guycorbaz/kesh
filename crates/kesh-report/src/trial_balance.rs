@@ -49,6 +49,7 @@
 //!   Sans mesure à ce jour ; à surveiller si l'historique grossit.
 
 use kesh_db::entities::AccountType;
+use kesh_db::repositories::account_balances::{Cote, somme_en_devise};
 use kesh_db::repositories::fiscal_years;
 use rust_decimal::Decimal;
 use serde::Serialize;
@@ -105,10 +106,27 @@ pub struct TrialBalanceRow {
     pub balance: Decimal,
     /// `opening_balance + balance` — pour un compte de bilan, son solde au bilan.
     pub closing_balance: Decimal,
+    /// Devise du compte (Story 37-4, AC-3) ; `None` pour un compte en devise
+    /// principale, qui n'a alors aucun des champs en devise ci-dessous. Ces
+    /// champs suivent les règles de leurs homologues en devise principale ;
+    /// **aucun total** du rapport ne se fait en devise (devises mêlées).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub currency: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub opening_currency: Option<Decimal>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub total_debit_currency: Option<Decimal>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub total_credit_currency: Option<Decimal>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub balance_currency: Option<Decimal>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub closing_currency: Option<Decimal>,
 }
 
 /// Ligne brute, telle que la lit SQL : trois paires de sommes, aucun choix de
-/// règle ni de signe (ils sont en Rust, dans [`crate::opening`]).
+/// règle ni de signe (ils sont en Rust, dans [`crate::opening`]) — et les trois
+/// mêmes paires en devise (Story 37-4).
 #[derive(Debug, sqlx::FromRow)]
 struct RawRow {
     account_id: i64,
@@ -116,6 +134,7 @@ struct RawRow {
     name: String,
     account_type: AccountType,
     active: bool,
+    currency: Option<String>,
     before_debit: Decimal,
     before_credit: Decimal,
     since_fy_debit: Decimal,
@@ -123,6 +142,67 @@ struct RawRow {
     period_debit: Decimal,
     period_credit: Decimal,
     period_lines: i64,
+    before_debit_fx: Decimal,
+    before_credit_fx: Decimal,
+    since_fy_debit_fx: Decimal,
+    since_fy_credit_fx: Decimal,
+    period_debit_fx: Decimal,
+    period_credit_fx: Decimal,
+}
+
+/// La requête de la balance — partagée par [`generate`] et par le test de
+/// l'ordre des `bind`.
+fn trial_balance_sql() -> String {
+    let avant = Some("x.entry_date < ?");
+    let depuis = Some("x.entry_date >= ? AND x.entry_date < ?");
+    let periode = Some("x.fiscal_year_id = ? AND x.entry_date BETWEEN ? AND ?");
+    format!(
+        "
+        SELECT
+            a.id AS account_id,
+            a.number,
+            a.name,
+            a.account_type,
+            a.active,
+            a.currency,
+            COALESCE(SUM(CASE WHEN x.entry_date < ? THEN x.debit END), 0) AS before_debit,
+            COALESCE(SUM(CASE WHEN x.entry_date < ? THEN x.credit END), 0) AS before_credit,
+            COALESCE(SUM(CASE WHEN x.entry_date >= ? AND x.entry_date < ? THEN x.debit END), 0)
+                AS since_fy_debit,
+            COALESCE(SUM(CASE WHEN x.entry_date >= ? AND x.entry_date < ? THEN x.credit END), 0)
+                AS since_fy_credit,
+            COALESCE(SUM(CASE WHEN x.fiscal_year_id = ? AND x.entry_date BETWEEN ? AND ?
+                THEN x.debit END), 0) AS period_debit,
+            COALESCE(SUM(CASE WHEN x.fiscal_year_id = ? AND x.entry_date BETWEEN ? AND ?
+                THEN x.credit END), 0) AS period_credit,
+            CAST(COALESCE(SUM(CASE WHEN x.fiscal_year_id = ? AND x.entry_date BETWEEN ? AND ?
+                THEN 1 ELSE 0 END), 0) AS SIGNED) AS period_lines,
+            {bd} AS before_debit_fx,
+            {bc} AS before_credit_fx,
+            {sd} AS since_fy_debit_fx,
+            {sc} AS since_fy_credit_fx,
+            {pd} AS period_debit_fx,
+            {pc} AS period_credit_fx
+        FROM accounts a
+        LEFT JOIN (
+            SELECT jel.account_id, jel.debit, jel.credit, jel.amount_currency,
+                   je.entry_date, je.fiscal_year_id
+            FROM journal_entry_lines jel
+            INNER JOIN journal_entries je ON je.id = jel.entry_id
+            WHERE je.company_id = ?
+              AND je.entry_date <= ?
+        ) AS x ON x.account_id = a.id
+        WHERE a.company_id = ?
+        GROUP BY a.id, a.number, a.name, a.account_type, a.active, a.currency
+        ORDER BY a.number ASC
+    ",
+        bd = somme_en_devise("x", Cote::Debit, avant),
+        bc = somme_en_devise("x", Cote::Credit, avant),
+        sd = somme_en_devise("x", Cote::Debit, depuis),
+        sc = somme_en_devise("x", Cote::Credit, depuis),
+        pd = somme_en_devise("x", Cote::Debit, periode),
+        pc = somme_en_devise("x", Cote::Credit, periode),
+    )
 }
 
 /// Génère la balance des comptes pour la période donnée.
@@ -141,40 +221,14 @@ pub async fn generate(
     // Une requête agrégée : par compte, les sommes avant le début, depuis le début
     // de l'exercice, et sur la période. Les mouvements gardent leur filtre
     // d'origine (exercice ET dates).
-    let sql = "
-        SELECT
-            a.id AS account_id,
-            a.number,
-            a.name,
-            a.account_type,
-            a.active,
-            COALESCE(SUM(CASE WHEN x.entry_date < ? THEN x.debit END), 0) AS before_debit,
-            COALESCE(SUM(CASE WHEN x.entry_date < ? THEN x.credit END), 0) AS before_credit,
-            COALESCE(SUM(CASE WHEN x.entry_date >= ? AND x.entry_date < ? THEN x.debit END), 0)
-                AS since_fy_debit,
-            COALESCE(SUM(CASE WHEN x.entry_date >= ? AND x.entry_date < ? THEN x.credit END), 0)
-                AS since_fy_credit,
-            COALESCE(SUM(CASE WHEN x.fiscal_year_id = ? AND x.entry_date BETWEEN ? AND ?
-                THEN x.debit END), 0) AS period_debit,
-            COALESCE(SUM(CASE WHEN x.fiscal_year_id = ? AND x.entry_date BETWEEN ? AND ?
-                THEN x.credit END), 0) AS period_credit,
-            CAST(COALESCE(SUM(CASE WHEN x.fiscal_year_id = ? AND x.entry_date BETWEEN ? AND ?
-                THEN 1 ELSE 0 END), 0) AS SIGNED) AS period_lines
-        FROM accounts a
-        LEFT JOIN (
-            SELECT jel.account_id, jel.debit, jel.credit, je.entry_date, je.fiscal_year_id
-            FROM journal_entry_lines jel
-            INNER JOIN journal_entries je ON je.id = jel.entry_id
-            WHERE je.company_id = ?
-              AND je.entry_date <= ?
-        ) AS x ON x.account_id = a.id
-        WHERE a.company_id = ?
-        GROUP BY a.id, a.number, a.name, a.account_type, a.active
-        ORDER BY a.number ASC
-    ";
+    let sql = trial_balance_sql();
 
+    // 15 paramètres pour les sommes en devise principale, puis 12 pour les
+    // mêmes sommes en devise (Story 37-4), puis les 3 de la jointure : l'ordre
+    // est celui des `?` de [`trial_balance_sql`], exercé par un test à valeurs
+    // distinctes avant, depuis le début de l'exercice et dans la période.
     let (start, end) = (period.start_date, period.end_date);
-    let raw = sqlx::query_as::<_, RawRow>(sql)
+    let raw = sqlx::query_as::<_, RawRow>(&sql)
         .bind(start) // before_debit
         .bind(start) // before_credit
         .bind(fy_start)
@@ -190,6 +244,18 @@ pub async fn generate(
         .bind(period.fiscal_year_id)
         .bind(start)
         .bind(end) // period_lines
+        .bind(start) // before_debit_fx
+        .bind(start) // before_credit_fx
+        .bind(fy_start)
+        .bind(start) // since_fy_debit_fx
+        .bind(fy_start)
+        .bind(start) // since_fy_credit_fx
+        .bind(period.fiscal_year_id)
+        .bind(start)
+        .bind(end) // period_debit_fx
+        .bind(period.fiscal_year_id)
+        .bind(start)
+        .bind(end) // period_credit_fx
         .bind(company_id) // x: je.company_id
         .bind(end) // x: borne haute
         .bind(company_id) // a.company_id
@@ -205,11 +271,27 @@ pub async fn generate(
                 (r.before_debit, r.before_credit),
                 (r.since_fy_debit, r.since_fy_credit),
             );
-            // Règle d'inclusion : actif, ou mouvementé, ou porteur d'un solde.
-            if !r.active && r.period_lines == 0 && opening.is_zero() {
+            // La devise du compte gouverne les champs en devise (AC-1, AC-3).
+            let en_devise = r.currency.is_some();
+            let opening_fx = en_devise.then(|| {
+                opening_from(
+                    r.account_type,
+                    (r.before_debit_fx, r.before_credit_fx),
+                    (r.since_fy_debit_fx, r.since_fy_credit_fx),
+                )
+            });
+            // Règle d'inclusion : actif, ou mouvementé, ou porteur d'un solde —
+            // en devise principale OU en devise (AC-1 ter).
+            if !r.active
+                && r.period_lines == 0
+                && opening.is_zero()
+                && opening_fx.is_none_or(|o| o.is_zero())
+            {
                 return None;
             }
             let balance = signed(r.account_type, r.period_debit, r.period_credit);
+            let balance_fx =
+                en_devise.then(|| signed(r.account_type, r.period_debit_fx, r.period_credit_fx));
             Some(TrialBalanceRow {
                 account_id: r.account_id,
                 account_number: r.number,
@@ -221,6 +303,12 @@ pub async fn generate(
                 total_credit: r.period_credit,
                 balance,
                 closing_balance: opening + balance,
+                currency: r.currency,
+                opening_currency: opening_fx,
+                total_debit_currency: en_devise.then_some(r.period_debit_fx),
+                total_credit_currency: en_devise.then_some(r.period_credit_fx),
+                balance_currency: balance_fx,
+                closing_currency: opening_fx.zip(balance_fx).map(|(o, b)| o + b),
             })
         })
         .collect();
@@ -292,7 +380,27 @@ mod tests {
             total_credit: Decimal::ZERO,
             balance: Decimal::ZERO,
             closing_balance: opening,
+            currency: None,
+            opening_currency: None,
+            total_debit_currency: None,
+            total_credit_currency: None,
+            balance_currency: None,
+            closing_currency: None,
         }
+    }
+
+    /// La requête porte 30 paramètres — les 18 d'avant la 37-4 (15 pour les
+    /// sommes en devise principale, 3 pour la jointure) et les 12 des sommes
+    /// en devise — que `generate` lie dans cet ordre. Un `?` ajouté ou retiré
+    /// sans son `bind` décalerait tous les suivants : ce test le signale, et
+    /// le test d'intégration à valeurs distinctes (avant, depuis l'exercice,
+    /// période) en vérifie l'ordre.
+    #[test]
+    fn la_requete_porte_trente_parametres() {
+        assert_eq!(trial_balance_sql().matches('?').count(), 30);
+        // Les sommes en devise ne posent aucune condition de devise sur la
+        // ligne (T3) : la colonne n'existe pas.
+        assert!(!trial_balance_sql().contains("x.currency"));
     }
 
     /// Ventes 1000 et charge 400 en exercice 1 (clients 1000, caisse −400, tous
