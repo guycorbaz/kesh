@@ -1035,7 +1035,15 @@ const ATTENDU = {
 	// (86 → 89 : la carte « Cours de change ») — 39 + 32 + 6 + 6 + 5 + 3 = 91. Que des littéraux.
 	// Revue de code P2 (37-2-CR-P2-4) : **3184 → 3185**, relevé par la garde : la légende du
 	// groupe de choix de `CorrectionDialog.svelte` (6 → 7 sites).
-	sitesTotal: 3185,
+	// Story 37-3b : **3185 → 3289**, relevé par la garde (`expected 3289 to be 3185`) avant
+	// d'écrire ce nombre, et ventilé au code (sites `i18nMsg(` par fichier, base de la branche
+	// → HEAD) : `ConversionAssistant.svelte` 35 (neuf), `JournalEntryForm.svelte` +34,
+	// `settings/opening-balances/+page.svelte` +9, `fx-refusals.ts` 6 (neuf),
+	// `VatPurchaseAssistant.svelte` +5, `opening-fx.ts` 5 (neuf), `journal-entries/conversion/
+	// +page.svelte` 4 (neuf), `fx-display.ts` 3 (neuf), `blocker-messages.ts` +1,
+	// `journal-entries/+page.svelte` +1, `settings/invoicing/+page.svelte` +1 — total 104. Que
+	// des littéraux.
+	sitesTotal: 3289,
 	sitesNonResolus: 31,
 	relais: 6,
 	// Story 26-1 (#620, AC3-bis) : **10 → 11** — `lib/features/bank-import/

@@ -65,7 +65,7 @@
 		type CompanyRate
 	} from './fx-lines';
 	import { fxRefusalMessage, isFxRefusalCode, refusalLine } from './fx-refusals';
-	import { RateLookupCache, type LookupResult } from './rate-lookup';
+	import { createRateLookupCache, type LookupResult, type RateLookupCache } from './rate-lookup';
 	import { debounce } from './debounce';
 
 	interface Props {
@@ -212,7 +212,7 @@
 	/* svelte-ignore state_referenced_locally */
 	const cache =
 		rateLookup ??
-		new RateLookupCache({
+		createRateLookupCache({
 			lookup: lookupRate,
 			fetch: fetchRates,
 			canFetch: () => canEditRates(authState.currentUser?.role),

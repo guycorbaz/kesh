@@ -159,9 +159,10 @@ export function readForeignAmount(raw: string): Big | null | 'empty' {
 
 /** Le jour précédent d'une date `AAAA-MM-JJ`. */
 function previousDay(iso: string): string {
-	const d = new Date(`${iso}T00:00:00Z`);
-	d.setUTCDate(d.getUTCDate() - 1);
-	return d.toISOString().slice(0, 10);
+	// Arithmétique de calendrier pure, en UTC (aucune date du jour, aucun fuseau).
+	const d = new Date(Date.UTC(Number(iso.slice(0, 4)), Number(iso.slice(5, 7)) - 1, Number(iso.slice(8, 10)) - 1));
+	const p = (n: number) => String(n).padStart(2, '0');
+	return `${d.getUTCFullYear()}-${p(d.getUTCMonth() + 1)}-${p(d.getUTCDate())}`;
 }
 
 /** Le 1er du mois d'une date `AAAA-MM-JJ`. */

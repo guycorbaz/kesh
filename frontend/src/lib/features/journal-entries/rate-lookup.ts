@@ -69,45 +69,35 @@ function fetchRequest(kind: RateKind, date: string): FetchRatesRequest {
 	return { year: Number(date.slice(0, 4)), month: Number(date.slice(5, 7)) };
 }
 
-/** Le cache d'un formulaire. */
-export class RateLookupCache {
-	private readonly memo = new Map<string, Promise<LookupResult>>();
-
-	constructor(private readonly deps: RateLookupDeps) {}
-
-	private key(currency: string, kind: RateKind, date: string): string {
-		return `${currency}|${kind}|${kind === 'month' ? firstOfMonth(date) : date}`;
-	}
-
+/** Le cache d'un formulaire (fabriqué par {@link createRateLookupCache}). */
+export interface RateLookupCache {
 	/**
 	 * Le cours retenu par la société pour `currency` à `date` (le mois de la date
 	 * pour le genre `month`). Mémoïsé ; le repli du `POST /fetch` n'est tenté
 	 * qu'une fois par entrée.
 	 */
-	get(currency: string, date: string, kind: RateKind = 'month'): Promise<LookupResult> {
-		const k = this.key(currency, kind, date);
-		const hit = this.memo.get(k);
-		if (hit) return hit;
-		const p = this.resolve(currency, date, kind, true);
-		this.memo.set(k, p);
-		return p;
-	}
-
+	get(currency: string, date: string, kind?: RateKind): Promise<LookupResult>;
 	/**
 	 * « Récupérer le mois » (refus `RATE_UNAVAILABLE` du serveur) : un `POST
 	 * /fetch` puis une relecture qui **remplace** l'entrée mémoïsée, négative
 	 * comprise.
 	 */
-	refresh(currency: string, date: string, kind: RateKind = 'month'): Promise<LookupResult> {
-		const k = this.key(currency, kind, date);
-		const p = this.fetchThenRead(currency, date, kind);
-		this.memo.set(k, p);
-		return p;
-	}
+	refresh(currency: string, date: string, kind?: RateKind): Promise<LookupResult>;
+}
 
-	private async read(currency: string, date: string, kind: RateKind): Promise<LookupOutcome | 'unavailable'> {
+/**
+ * Fabrique le cache d'un formulaire. Une fermeture et non une classe : les
+ * gardes de libellé du dépôt ne lisent pas les méthodes de classe
+ * (`i18n-libelle-en-dur.test.ts`).
+ */
+export function createRateLookupCache(deps: RateLookupDeps): RateLookupCache {
+	const memo = new Map<string, Promise<LookupResult>>();
+	const key = (currency: string, kind: RateKind, date: string) =>
+		`${currency}|${kind}|${kind === 'month' ? firstOfMonth(date) : date}`;
+
+	async function read(currency: string, date: string, kind: RateKind): Promise<LookupOutcome | 'unavailable'> {
 		try {
-			const r = await this.deps.lookup(currency, kind === 'month' ? firstOfMonth(date) : date, kind);
+			const r = await deps.lookup(currency, kind === 'month' ? firstOfMonth(date) : date, kind);
 			return {
 				kind: 'rate',
 				rate: { rate: r.effectiveRate, source: r.source, month: kind === 'month' ? firstOfMonth(r.rateDate) : r.rateDate },
@@ -118,27 +108,42 @@ export class RateLookupCache {
 		}
 	}
 
-	private async resolve(currency: string, date: string, kind: RateKind, mayFetch: boolean): Promise<LookupResult> {
-		const first = await this.read(currency, date, kind);
-		if (first !== 'unavailable') return { outcome: first, note: first.kind === 'none' ? 'manual-required' : null };
-		if (!mayFetch) return { outcome: { kind: 'none' }, note: 'manual-required' };
-		return this.fetchThenRead(currency, date, kind);
-	}
-
-	private async fetchThenRead(currency: string, date: string, kind: RateKind): Promise<LookupResult> {
-		if (!this.deps.canFetch() || !isFetchable(kind, date, this.deps.today())) {
+	async function fetchThenRead(currency: string, date: string, kind: RateKind): Promise<LookupResult> {
+		if (!deps.canFetch() || !isFetchable(kind, date, deps.today())) {
 			return { outcome: { kind: 'none' }, note: 'manual-required' };
 		}
 		try {
-			await this.deps.fetch(fetchRequest(kind, date));
+			await deps.fetch(fetchRequest(kind, date));
 		} catch {
 			// `RATE_NOT_PUBLISHED`, `503`, `400` : saisie manuelle.
 			return { outcome: { kind: 'none' }, note: 'manual-required' };
 		}
-		const second = await this.read(currency, date, kind);
+		const second = await read(currency, date, kind);
 		if (second === 'unavailable' || second.kind === 'none') {
 			return { outcome: { kind: 'none' }, note: 'manual-required' };
 		}
 		return { outcome: second, note: null };
 	}
+
+	async function resolve(currency: string, date: string, kind: RateKind): Promise<LookupResult> {
+		const first = await read(currency, date, kind);
+		if (first !== 'unavailable') return { outcome: first, note: first.kind === 'none' ? 'manual-required' : null };
+		return fetchThenRead(currency, date, kind);
+	}
+
+	return {
+		get(currency, date, kind = 'month') {
+			const k = key(currency, kind, date);
+			const hit = memo.get(k);
+			if (hit) return hit;
+			const p = resolve(currency, date, kind);
+			memo.set(k, p);
+			return p;
+		},
+		refresh(currency, date, kind = 'month') {
+			const p = fetchThenRead(currency, date, kind);
+			memo.set(key(currency, kind, date), p);
+			return p;
+		},
+	};
 }

@@ -13,7 +13,7 @@ vi.mock('$lib/shared/utils/i18n.svelte', () => ({
 }));
 
 import type { AccountResponse } from '$lib/features/accounts/accounts.types';
-import { RateLookupCache, isFetchable } from './rate-lookup';
+import { createRateLookupCache, isFetchable } from './rate-lookup';
 import { fxRefusalMessage, refusalEntry, refusalLine } from './fx-refusals';
 import { canDeleteEntry, editRefusalOutcome } from './form-helpers';
 import { foreignPurchaseVatEntry } from './vat-purchase';
@@ -44,7 +44,7 @@ describe('RateLookupCache', () => {
 	const lookupOk = { currency: 'USD', kind: 'month', rateDate: '2026-03-01', effectiveRate: '0.8846', source: 'afc', publishedRate: null, publishedUnit: null, sourceDate: null };
 	it('mémoïse par (devise, mois), résultats négatifs compris', async () => {
 		const lookup = vi.fn().mockRejectedValue({ code: 'MULTI_CURRENCY_DISABLED', status: 409, message: '' });
-		const cache = new RateLookupCache({ lookup, fetch: vi.fn(), canFetch: () => true, today: () => '2026-03-15' });
+		const cache = createRateLookupCache({ lookup, fetch: vi.fn(), canFetch: () => true, today: () => '2026-03-15' });
 		await cache.get('USD', '2026-03-02');
 		await cache.get('USD', '2026-03-28');
 		expect(lookup).toHaveBeenCalledTimes(1);
@@ -55,7 +55,7 @@ describe('RateLookupCache', () => {
 			.mockRejectedValueOnce({ code: 'RATE_UNAVAILABLE', status: 404, message: '' })
 			.mockResolvedValueOnce(lookupOk);
 		const fetch = vi.fn().mockResolvedValue({});
-		const cache = new RateLookupCache({ lookup, fetch, canFetch: () => true, today: () => '2026-03-15' });
+		const cache = createRateLookupCache({ lookup, fetch, canFetch: () => true, today: () => '2026-03-15' });
 		const r = await cache.get('USD', '2026-03-10');
 		expect(fetch).toHaveBeenCalledWith({ year: 2026, month: 3 });
 		expect(r.outcome).toEqual({ kind: 'rate', rate: { rate: '0.8846', source: 'afc', month: '2026-03-01' } });
@@ -63,13 +63,13 @@ describe('RateLookupCache', () => {
 	it('rôle Consultation, mois au-delà du mois suivant, échec du fetch → saisie manuelle', async () => {
 		const unavailable = () => vi.fn().mockRejectedValue({ code: 'RATE_UNAVAILABLE', status: 404, message: '' });
 		const fetch = vi.fn();
-		let r = await new RateLookupCache({ lookup: unavailable(), fetch, canFetch: () => false, today: () => '2026-03-15' }).get('USD', '2026-03-01');
+		let r = await createRateLookupCache({ lookup: unavailable(), fetch, canFetch: () => false, today: () => '2026-03-15' }).get('USD', '2026-03-01');
 		expect(r.note).toBe('manual-required');
-		r = await new RateLookupCache({ lookup: unavailable(), fetch, canFetch: () => true, today: () => '2026-03-15' }).get('USD', '2026-05-01');
+		r = await createRateLookupCache({ lookup: unavailable(), fetch, canFetch: () => true, today: () => '2026-03-15' }).get('USD', '2026-05-01');
 		expect(r.note).toBe('manual-required');
 		expect(fetch).not.toHaveBeenCalled();
 		const failing = vi.fn().mockRejectedValue({ code: 'RATE_NOT_PUBLISHED', status: 404, message: '' });
-		r = await new RateLookupCache({ lookup: unavailable(), fetch: failing, canFetch: () => true, today: () => '2026-03-15' }).get('USD', '2026-04-01');
+		r = await createRateLookupCache({ lookup: unavailable(), fetch: failing, canFetch: () => true, today: () => '2026-03-15' }).get('USD', '2026-04-01');
 		expect(failing).toHaveBeenCalledTimes(1);
 		expect(r.note).toBe('manual-required');
 	});
@@ -78,7 +78,7 @@ describe('RateLookupCache', () => {
 			.fn()
 			.mockRejectedValueOnce({ code: 'X', status: 500, message: '' })
 			.mockResolvedValueOnce(lookupOk);
-		const cache = new RateLookupCache({ lookup, fetch: vi.fn().mockResolvedValue({}), canFetch: () => true, today: () => '2026-03-15' });
+		const cache = createRateLookupCache({ lookup, fetch: vi.fn().mockResolvedValue({}), canFetch: () => true, today: () => '2026-03-15' });
 		expect((await cache.get('USD', '2026-03-01')).outcome.kind).toBe('none');
 		expect((await cache.refresh('USD', '2026-03-01')).outcome.kind).toBe('rate');
 		expect((await cache.get('USD', '2026-03-20')).outcome.kind).toBe('rate');

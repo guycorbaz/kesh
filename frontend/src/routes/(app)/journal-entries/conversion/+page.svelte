@@ -20,7 +20,7 @@
 	import { listFiscalYears } from '$lib/features/fiscal-years/fiscal-years.api';
 	import { canEditRates } from '$lib/features/exchange-rates/exchange-rates-access';
 	import { fetchRates, lookupRate } from '$lib/features/exchange-rates/exchange-rates.api';
-	import { RateLookupCache } from '$lib/features/journal-entries/rate-lookup';
+	import { createRateLookupCache } from '$lib/features/journal-entries/rate-lookup';
 	import ConversionAssistant from '$lib/features/journal-entries/ConversionAssistant.svelte';
 
 	let accounts = $state<AccountResponse[]>([]);
@@ -29,7 +29,7 @@
 	let openFiscalYears = $state<{ startDate: string; endDate: string }[]>([]);
 	let loading = $state(true);
 
-	const cache = new RateLookupCache({
+	const cache = createRateLookupCache({
 		lookup: lookupRate,
 		fetch: fetchRates,
 		canFetch: () => canEditRates(authState.currentUser?.role),

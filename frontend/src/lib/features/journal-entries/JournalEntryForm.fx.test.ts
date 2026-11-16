@@ -33,7 +33,7 @@ vi.mock('$lib/shared/utils/local-date', () => ({ todayLocal: () => '2026-03-15' 
 
 import JournalEntryForm from './JournalEntryForm.svelte';
 import type { AccountResponse } from '$lib/features/accounts/accounts.types';
-import { RateLookupCache } from './rate-lookup';
+import { createRateLookupCache } from './rate-lookup';
 
 function account(id: number, number: string, extra: Partial<AccountResponse> = {}): AccountResponse {
 	return {
@@ -73,7 +73,12 @@ function cache(rate = '0.8846', source = 'afc') {
 		publishedUnit: null,
 		sourceDate: null
 	}));
-	return new RateLookupCache({ lookup, fetch: vi.fn(), canFetch: () => true, today: () => '2026-03-15' });
+	return createRateLookupCache({
+		lookup: lookup as unknown as Parameters<typeof createRateLookupCache>[0]['lookup'],
+		fetch: vi.fn(),
+		canFetch: () => true,
+		today: () => '2026-03-15'
+	});
 }
 
 async function pick(index: number, number: string) {

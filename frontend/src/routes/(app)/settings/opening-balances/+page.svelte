@@ -39,7 +39,7 @@
 	import { fetchRates, lookupRate } from '$lib/features/exchange-rates/exchange-rates.api';
 	import { todayLocal } from '$lib/shared/utils/local-date';
 	import { newForeign, type LineForeign } from '$lib/features/journal-entries/fx-lines';
-	import { RateLookupCache } from '$lib/features/journal-entries/rate-lookup';
+	import { createRateLookupCache } from '$lib/features/journal-entries/rate-lookup';
 	import {
 		fxRefusalMessage,
 		isFxRefusalCode,
@@ -98,7 +98,7 @@
 	/** Genre d'ouverture du premier exercice (`GET /fiscal-years`) ; `null` inconnu. */
 	let firstYear = $state<{ startDate: string; openingRateKind: 'day' | 'month' } | null>(null);
 	let fiscalYearsError = $state(false);
-	const cache = new RateLookupCache({
+	const cache = createRateLookupCache({
 		lookup: lookupRate,
 		fetch: fetchRates,
 		canFetch: () => canEditRates(authState.currentUser?.role),
@@ -511,13 +511,17 @@
 					class="text-right tabular-nums"
 					value={row.foreign && row.foreign.side === side ? row.foreign.amount : ''}
 					oninput={(e) => setRowAmount(row, side, (e.currentTarget as HTMLInputElement).value)}
-					aria-label={i18nMsg(
-						side === 'debit' ? 'opening-balances-fx-debit-for' : 'opening-balances-fx-credit-for',
-						side === 'debit'
-							? 'Débit en { $currency } du compte { $number } « { $name } »'
-							: 'Crédit en { $currency } du compte { $number } « { $name } »',
-						{ currency: row.foreign?.currency ?? '', number, name }
-					)}
+					aria-label={side === 'debit'
+						? i18nMsg(
+								'opening-balances-fx-debit-for',
+								'Débit en { $currency } du compte { $number } « { $name } »',
+								{ currency: row.foreign?.currency ?? '', number, name }
+							)
+						: i18nMsg(
+								'opening-balances-fx-credit-for',
+								'Crédit en { $currency } du compte { $number } « { $name } »',
+								{ currency: row.foreign?.currency ?? '', number, name }
+							)}
 					data-testid="opening-balances-{prefix}fx-{side}-{number}"
 				/>
 			</div>

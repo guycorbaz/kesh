@@ -18,7 +18,7 @@ vi.mock('$lib/shared/utils/local-date', () => ({ todayLocal: () => '2026-03-05' 
 
 import ConversionAssistant from './ConversionAssistant.svelte';
 import type { AccountResponse } from '$lib/features/accounts/accounts.types';
-import { RateLookupCache } from './rate-lookup';
+import { createRateLookupCache } from './rate-lookup';
 
 function account(id: number, number: string, extra: Partial<AccountResponse> = {}): AccountResponse {
 	return {
@@ -49,7 +49,7 @@ const ACCOUNTS = [
 
 function cache() {
 	const rates: Record<string, string> = { EUR: '0.947', USD: '0.8846' };
-	return new RateLookupCache({
+	return createRateLookupCache({
 		lookup: async (currency, date, kind) => ({
 			currency,
 			kind,

@@ -162,7 +162,20 @@ describe('provenance envoyée (D9, U1)', () => {
 		expect(rateSourceToSend(f, '2026-03-15', false)).toBe('afc');
 		expect(f.rateProposed).toBe(true);
 		// Une ligne relue manual n'est pas proposée.
-		expect(foreignFromResponse({ ...({} as never), credit: '0', foreign: { currency: 'USD', amount: '1', rate: '1', rateSource: 'manual' } })!.rateProposed).toBe(false);
+		expect(
+			foreignFromResponse({
+				id: 2,
+				accountId: 10,
+				lineOrder: 2,
+				debit: '1.0000',
+				credit: '0',
+				projectId: null,
+				letteringKey: null,
+				letteringCode: null,
+				letteringOrigin: null,
+				foreign: { currency: 'USD', amount: '1', rate: '1', rateSource: 'manual' },
+			})!.rateProposed,
+		).toBe(false);
 		// Date changée : la provenance relue n'est plus gardée.
 		expect(rateSourceToSend(f, '2026-03-15', true)).toBe('manual');
 	});
