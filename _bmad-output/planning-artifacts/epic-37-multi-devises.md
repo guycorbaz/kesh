@@ -445,7 +445,7 @@ Pour voir d'avance les recoupements avec les epics de Guy (36 et suivants) ; rel
 | 37-3a | `kesh-core`, `kesh-db` (lignes d'écriture, migration), `kesh-api` (`journal-entries`, MCP, exports) | — | guide d'API (37-3b), audit des migrations |
 | 37-3b | `kesh-api` (soldes d'ouverture, registre des routes) | écritures, soldes d'ouverture, sélecteurs, i18n | manuel utilisateur (`.tex`), `docs/api-external.md` |
 | 37-4 | `kesh-report` (générateurs, CSV, PDF), `kesh-api` (rapports, MCP), `kesh-db` | rapports | manuel utilisateur (`.tex`) |
-| 37-5 | `kesh-db`, `kesh-api` (réévaluation, audit, registre des routes ; contrôle K9 et refus de la clôture, CR-8), `kesh-core` | écran des exercices | manuels utilisateur et d'administration (`.tex`) |
+| 37-5 | `kesh-db`, `kesh-api` (réévaluation, audit, registre des routes ; contrôle K9 et refus de la clôture, CR-8), `kesh-core` | écran des exercices | manuels utilisateur et d'administration, brochure (`.tex`), `README.md`, `docs/api-external.md` |
 
 Fichiers communs touchés par plusieurs fiches (recomptés depuis la source après chaque reprise de `main`) : `tests/audit_route_registry.rs` (`LIB_ROUTES`), `i18n-keys.test.ts` (`sitesTotal`), `docs/migrations-idempotence-audit.md`, catalogues i18n des quatre locales, `sprint-status.yaml`, `Cargo.lock`.
 

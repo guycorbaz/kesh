@@ -177,8 +177,10 @@ devise n'est pas réévalué (A37).
      écritures y ont été reprises à leur CHF (`chf` ou `debit`/`credit`, 37-3a AC-6, V1) : `round(solde en devise ×
      cours) − solde CHF`. Genre des cours reçus : la règle unique de l'AC-1 (*Genre d'un cours reçu dans `rates`*).
      Écrit au manuel (AC-8) et au guide d'API (37-3b AC-6). CR-8 : un cours de `rates` différent du cours retenu par
-     la société laisse K9 en attention et la clôture refusée (AC-9) — pour clôturer l'exercice importé, saisir d'abord
-     ces cours de clôture d'origine comme cours saisis (37-2) ; la recette V7 ne clôt pas et n'en dépend pas.
+     la société laisse K9 en attention et la clôture refusée (AC-9) — pour clôturer l'exercice importé, d'abord
+     **récupérer le cours du jour de clôture** s'il égale celui des livres d'origine (le cas de la recette de Beat : cours
+     journaliers OFDF), sinon saisir ces cours de clôture d'origine comme cours saisis (37-2) ; la recette V7 ne clôt
+     pas et n'en dépend pas.
    - **Fonction de dépôt unique** `fx_revaluation::post(pool, user_id, actor_api_key_id, company_id, fiscal_year_id,
      rates, account_ids)` (`actor_api_key_id: Option<i64>`, propagé depuis `CurrentUser` par le handler : c'est
      l'argument qu'exige `NewAuditLogEntry::for_actor`, `entities/audit_log.rs:195`, pour l'audit ci-dessous), qui ouvre **une transaction** ; c'est le **handler** qui l'appelle dans
@@ -420,7 +422,8 @@ devise n'est pas réévalué (A37).
    cochées), l'écriture prévue par compte (R9) avec son compte de contrepartie et son origine (« comptes propres » ou
    « réglage de la société », S2 ; libellés dans les quatre locales), total des gains et des pertes, **« Passer les écritures »** (R9), liens
    vers les écritures passées ; **par compte (A39, CR-8)** : numéro et nom du compte, **lien vers son grand livre**
-   (`/reports?tab=general-ledger&from=<début>&to=<fin>&accountId=<id>`, lien profond existant de l'écran des rapports),
+   (`/reports?tab=general-ledger&from=<début>&to=<fin>&accountId=<id>`, lien profond existant de l'écran des rapports,
+   construit par l'**existant** `ledgerHref(accountId, from, to)`, `reports.api.ts` — DRY),
    solde en devise, CHF actuel, cours, CHF cible, **réévaluations déjà passées** (valeur cumulée
    `previousRevaluationTotal`, chaque écriture de `previousEntryIds` en lien vers `/journal-entries/{id}`, affichage —
    le `PUT` d'une réévaluation étant refusé, 409 `ENTRY_IS_FX_REVALUATION`, elle se corrige par suppression, AC-3),
@@ -570,13 +573,14 @@ devise n'est pas réévalué (A37).
    par compte réévalué (R9), correction par suppression ou nouveau passage, la contre-passation ne corrigeant que dans un exercice en cours (AC-3), refus en
    exercice mono-devise (R3 ; CR-7 : un exercice clos avant l'activation puis rouvert), cours saisi par la société (D9), récupération du cours du jour, gains et pertes non réalisés
    comptabilisés (CO 960b, choix assumé ; la neutralisation par provision n'est pas offerte, C-37-8), postes non
-   monétaires à décocher (stocks, immobilisations, capital en devise), la source du cours (« AFC » ou « cours saisi ») conservée à l'audit et non
+   monétaires (stocks, immobilisations, capital en devise : à décocher à la passation, mais ils bloquent la clôture
+   tant que leur écart n'est pas nul — les tenir sur un compte en CHF, A37, AC-9), la source du cours (« AFC » ou « cours saisi ») conservée à l'audit et non
    sur la ligne, une correction de l'AFC non reprise (↑) ne changeant pas le cours proposé (U1), la reprise de livres
    tenus ailleurs dont la réévaluation se **repasse** par cette fonction avec les cours de clôture d'origine, non par
    des écritures importées (V8, AC-2) ; **CR-8** : l'aperçu enrichi (réévaluations déjà passées, ancienne et nouvelle
    valeur cumulée, liens, écritures toujours ajoutées), le contrôle K9 qui **bloque la clôture**, son avis qui montre
-   l'aperçu et son bouton « Réévaluer », et le cours d'une passation à un autre cours que celui de la société, à saisir
-   à l'écran *Cours de change* pour que K9 l'accepte (AC-9) ; i18n ; manuel en `.tex` seulement (PDF non commité,
+   l'aperçu et son bouton « Réévaluer », et le cours d'une passation à un autre cours que celui de la société, à
+   récupérer (cours du jour de clôture) ou à saisir à l'écran *Cours de change* pour que K9 l'accepte (AC-9) ; i18n ; manuel en `.tex` seulement (PDF non commité,
    régénéré à la release).
 9. **AC-9 — Contrôle de clôture K9 bloquant (A37, A38 ; CR-8, précision de Beat du 2026-11-16).**
    - **Le mécanisme lu au code.** Le panneau des contrôles ne bloque rien par lui-même (`closing_checks.rs:24` :
@@ -602,7 +606,8 @@ devise n'est pas réévalué (A37).
      cours retenu par la société, AC-1). Aucun second calcul du résidu.
    - **Sans lecture coûteuse (NFR-37-5-7).** Exercice mono-devise (`fiscal_years.multi_currency` faux, lu avec
      l'exercice par `FISCAL_YEAR_SQL`) → `ok`, aucune autre lecture ; exercice multi-devises sans compte de bilan en
-     devise (une requête `EXISTS` sur `accounts`, constante du module inscrite à `ALL_SQL`) → `ok`, sans résolution de
+     devise (une requête `EXISTS` sur `accounts`, constante du module inscrite à `ALL_SQL`, **même prédicat que l'aperçu** :
+     `Asset`/`Liability`, devise autre que CHF, imputable, archivés compris — 37-5-CR8-P1-7) → `ok`, sans résolution de
      cours ni soldes. Au panneau, tout se lit dans l'instantané `ReadSnapshot`, sans verrou ; les fonctions externes
      appelées (résolution des cours, lignes de l'aperçu, `balances_as_of`) s'ajoutent à la liste de l'angle mort de
      la garde T-a2 (doc du module), vérifiées sans verrou en revue.
@@ -611,28 +616,56 @@ devise n'est pas réévalué (A37).
      **saisir** à l'écran *Cours de change* (cours saisi, 37-2, D9) : il devient le cours par défaut, la passation
      suivante n'ajoute que le résidu, K9 passe `ok`. Écrit au manuel (AC-8) et à l'écran, sous le champ d'un cours
      modifié (« ce cours ne vaut que pour cette passation : la clôture vérifie au cours retenu par la société »).
-   - **Le refus à la clôture.** Handler `close_fiscal_year` (`routes/fiscal_years.rs:352`) : exercice multi-devises
-     (lu par le `find_by_id_in_company` existant) → cours par défaut résolus **avant** la transaction et hors de
-     l'enveloppe `retry_on_deadlock` (aucune lecture de cours sous verrou, NFR-37-5-5), passés à `close` ; mono-devise
-     → aucune lecture. Dans `close` : (a) et (b) lues sur le pool **avant** `begin`, comme `post` (AC-2, *Verrous et
-     instantané* ; fonction partagée des étapes (b')–(d), Notes), pour que la vue naisse à la lecture des soldes,
-     après les verrous ; puis, après (d), étape **(d-bis)** : genre de clôture relu sur la ligne verrouillée de Y,
+     **Premier remède, avant toute saisie** (37-5-CR8-P1-3) : quand le cours passé est le cours **publié** du jour
+     de clôture, *Récupérer le cours du JJ.MM.AAAA* (37-2) le copie dans `exchange_rates` (`afc`) et en fait le cours
+     par défaut, sans saisie. **Livres de Beat au 31.12.2024** (genre `day`, cours journaliers OFDF 0.91193 et
+     0.94947, D10) : K9 passe `ok` **sans saisie dès que ces deux cours journaliers sont dans `exchange_rates`** —
+     copiés à la récupération du jour de clôture, ou déjà récupérés quand l'exercice multi-devises s'est créé
+     (37-2 AC-3 bis : la copie suit une valeur publiée déjà connue) ; sinon la résolution
+     retombe sur le cours mensuel (0.8846 / 0.9470), K9 reste en attention après une passation à 0.91193
+     (`request`), et il faut récupérer le jour (ou le saisir). La recette V7/V8 ne clôt pas et n'en dépend pas.
+   - **Un compte en devise qu'on ne veut pas réévaluer bloque la clôture (A37, 37-5-CR8-P1-2).** K9 juge **tous** les
+     comptes de l'aperçu : décocher un compte (poste non monétaire — stock, immobilisation, capital en devise — que
+     l'écran de l'AC-6 permet de décocher à la passation) ne le sort pas de K9, et l'exercice ne se clôt pas tant que
+     son écart n'est pas nul. Conséquence **assumée** de la décision de Beat (A37, qui ne prévoit pas
+     d'exception) ; le manuel (AC-8) dit de tenir un tel poste sur un compte **en CHF**. À confirmer par Beat : une
+     exception (marque « non monétaire » du compte) serait une exigence neuve, hors CR-8.
+   - **Le refus à la clôture.** **Tout est dans `fiscal_years::close`** (37-5-CR8-P1-1) : sa signature **ne change pas**
+     (`close(pool, user_id, company_id, id)` compte une soixantaine d'appels de tests et deux de `journal_entries.rs`
+     qui n'auraient plus compilé, et un appelant qui oublierait de passer les cours contournerait K9 ; le handler
+     `close_fiscal_year`, `routes/fiscal_years.rs:352`, ne change que par le bras d'erreur). **Avant `begin`**, sur le
+     pool et donc hors de toute transaction (aucune lecture de cours sous verrou, NFR-37-5-5), `close` lit : (a)
+     **l'exercice entier** (la ligne `FiscalYear`, au lieu de la seule date de début : `multi_currency`,
+     `closing_rate_kind`, `end_date`), (b) les antérieurs, comme `post` (AC-2, *Verrous et instantané* ; fonction
+     partagée des étapes (b')–(d), Notes), pour que la vue naisse à la lecture des soldes, après les verrous ; puis,
+     seulement si l'exercice est multi-devises, la requête `EXISTS` de K9 (NFR-37-5-7) et, si elle trouve un compte,
+     les cours par défaut des devises de ces comptes (la lecture de devises et la résolution de l'aperçu) — mono-devise
+     ou sans compte en devise : aucune autre lecture, aucun cours. Les lectures de `close` se font à **chaque**
+     tentative de `retry_on_deadlock`, toujours avant `begin`. Dans `close`, après (d), étape **(d-bis)** : genre de clôture relu sur la ligne verrouillée de Y,
      changé → 409 `OPTIMISTIC_LOCK_CONFLICT` ; lignes de l'aperçu par la fonction partagée → attention → rollback,
      `DbError::ForeignAccountsNotRevalued` → **409 `FOREIGN_ACCOUNTS_NOT_REVALUED`**, `details` = ceux de K9 (même forme,
      même liste) ; une devise devenue sans cours résolu → même refus, `reason` `RATE_UNAVAILABLE`. Ordre : 404, déjà
      clos (`ILLEGAL_STATE_TRANSITION`), `EARLIER_FISCAL_YEAR_OPEN` (le cumul ne serait pas stable), genre changé, puis
      K9. Message `error-fiscal-year-close-fx-not-revalued` (quatre locales), bras dans `errors.rs` à côté
      d'`EarlierFiscalYearOpen` ; aucun audit d'un refus ; route inchangée au registre (déjà `Traced`, `Rejouee`). Limite
-     écrite : un cours retenu changé entre la résolution et la transaction est vu au cours lu par le handler (comme
-     37-5-CR5-P1-3).
+     écrite : un cours retenu changé entre la résolution et la transaction est vu au cours lu par `close` avant `begin`
+     (comme 37-5-CR5-P1-3). Un calcul hors bornes (`FX_VALUE_OUT_OF_RANGE`, > 10¹³) de la fonction partagée
+     (37-5-CR8-P1-9) : l'aperçu et `close` le rendent tel quel (400 `FX_VALUE_OUT_OF_RANGE`) ; au panneau, il ne doit pas
+     faire perdre les huit autres contrôles — K9 est alors `attention`, le compte dans `details.accounts`, `reason`
+     `NOT_REVALUED`, `delta` `null`.
    - **L'avis à l'écran (A38, précision de Beat).** Dans le panneau *Préparer la clôture*, K9 en attention montre
      **directement l'aperçu** (le tableau de l'AC-6, composant partagé : comptes, anciennes et nouvelles valeurs,
      écarts, liens), lu sans `accountIds` ni `rates` (cours par défaut, présélection), **avant** tout clic ; le bouton
      **« Réévaluer »** passe **les écritures montrées** (`{ rates: cours affichés des devises cochées, accountIds:
      présélection }`), sans écran intermédiaire, désactivé tant que `blockers[]` n'est pas vide ou que rien n'est
-     sélectionnable ; une devise sans cours y est signalée avec un lien vers *Cours de change* ; après succès, les
-     contrôles sont relus. Lien secondaire « Modifier les cours ou la sélection » vers l'écran complet de l'AC-6.
-     Consultation (aperçu en 403, AC-5) : la liste de `details`, sans aperçu ni bouton. **K9 `ok` : rien n'est
+     sélectionnable ; une devise sans cours y est signalée avec un lien vers *Cours de change* ; les `blockers[]` de l'aperçu s'affichent
+     sous le tableau avec le message du serveur (période verrouillée, exercice antérieur ouvert…), comme à l'écran de
+     l'AC-6 — le bouton désactivé dit pourquoi (37-5-CR8-P1-5) ; un compte **archivé** à écart non nul, non
+     sélectionnable, est signalé avec son remède (le réactiver : K9 le compte aussi, AC-9 *Le contrôle*) ; après
+     succès, les contrôles sont relus. **Pas de lien « Modifier les cours ou la sélection »** (KISS, A36,
+     37-5-CR8-P1-6) : changer un cours ou une sélection ne peut pas faire passer K9 (seule une passation au cours par
+     défaut de tous les comptes le fait) ; l'écran de l'AC-6 reste atteignable par l'action de la ligne de
+     l'exercice. Consultation (aperçu en 403, AC-5) : la liste de `details`, sans aperçu ni bouton. **K9 `ok` : rien n'est
      présenté** — ni avis, ni aperçu, ni bouton, et aucune requête d'aperçu n'est envoyée. Dialogue de clôture : K9 en
      attention → le point est listé et « Clôturer » est **désactivé** (« Réévaluez d'abord les comptes en devise »),
      le lien existant ouvre le panneau ; contrôles en chargement ou en échec → bouton actif, le serveur fait foi : un
@@ -642,27 +675,41 @@ devise n'est pas réévalué (A37).
      bloquent, K1 et K9. Libellés K9 (`fiscal-years-checks-k9-title`, `-k9-help`, motifs, bouton), quatre locales.
    - **Sites qui comptent huit contrôles → neuf** (inventaire du 2026-11-16, `grep -rnE "(huit|sept|eight)
      (contrôles|checks)"` et `toHaveCount(8)` / `toHaveLength(8)` / `len(), 8`) : `closing_checks.rs:4`, `:123`,
-     `:566` (doc ; plus la table du module, `Severity` « Seul `blocking` (K1) » → K1 et K9, et « Rien ne bloque »
-     `:24`) ; `routes/fiscal_years.rs:233` (doc, dit encore « sept ») ; `crates/kesh-db/tests/closing_checks.rs:1679` ;
+     `:566` (doc ; plus la table du module, `Severity` « Seul `blocking` (K1) » → K1 et K9, « Rien ne bloque »
+     `:24` et « rien ne bloque ici » `:170`) ; `routes/fiscal_years.rs:233` (doc, dit encore « sept ») ; `crates/kesh-db/tests/closing_checks.rs:1679` ;
      `crates/kesh-api/tests/closing_checks_e2e.rs:236-250` (liste des codes) ;
-     `frontend/src/lib/features/fiscal-years/closing-checks.test-fixtures.ts:24` ;
+     `frontend/src/lib/features/fiscal-years/closing-checks.test-fixtures.ts:24` ; **omis à l'inventaire d'origine**
+     (37-5-CR8-P1-8) : `FiscalYearChecks.svelte:2-6` (en-tête : « huit », « Il ne bloque rien non plus ») et `:135`
+     (texte de repli de `fiscal-years-checks-intro`), `fiscal-years.api.ts:49` (« Ils ne bloquent rien »),
+     `closing-checks-labels.ts` et `fiscal-years.types.ts` (code K9) ;
      `frontend/src/routes/(app)/settings/fiscal-years/fiscal-years-page.test.ts:461` ;
      `frontend/tests/e2e/fiscal-years.spec.ts:499-500`, `:545` ; `supplier-invoice-draft-cycle.spec.ts:630` ;
      `fiscal-year-closing-journey.spec.ts:165` ; manuel utilisateur `user-manual.tex:920` (« huit »), `:922` (« ne
      bloque rien », « son seul refus »), `:925` (« le seul contrôle qui bloque »), `:954` (« sans bloquer la
      clôture ») et une entrée K9 dans la liste `:924-933` ; manuel d'administration `admin-manual.tex:1866` ; brochure
      `marketing-brochure.tex:437` (« Huit contrôles … en lecture seule ») ; `README.md:48` (« huit contrôles en lecture
-     seule ») ; `docs/api-external.md:257` (« garde son seul refus, `409 EARLIER_FISCAL_YEAR_OPEN` »). `.tex`
+     seule ») ; `docs/api-external.md:257` (« la réponse ne bloque rien … garde son seul refus, `409 EARLIER_FISCAL_YEAR_OPEN` »),
+     **`:266`** (« porte **toujours huit** contrôles *(sept jusqu'à la v0.17.0)* » : neuf, K9 en dernier, et sa
+     description) et **`:1077`** (tableau des codes : une ligne `409 FOREIGN_ACCOUNTS_NOT_REVALUED` pour `POST
+     /fiscal-years/{id}/close`). `.tex`
      seulement, PDF à la release ; `README.md:233` (v0.13.4, « sept contrôles ») est historique et reste.
    - **Tests.** `kesh-db` (`closing_checks.rs`) : neuf contrôles, `checks[8]` K9 `blocking`, `checks[7]` reste K8 ;
      exercice mono-devise (clos avant l'activation puis rouvert, CR-7) avec un compte en devise → `ok` ; multi-devises
      sans compte en devise et sans aucun cours en base → `ok` ; écart non nul → `attention`, `details` ; devise sans
      cours → `RATE_UNAVAILABLE` ; passation au cours par défaut → `ok` ; passation à un cours `request` → `attention` ;
-     écriture tardive → `attention` ; compte archivé à écart non nul → `attention`. Clôture : 409
+     écriture tardive → `attention` ; compte archivé à écart non nul → `attention` ; devise sans cours mais compte à
+     solde nul (devise et CHF) → `ok` ; **recette de Beat** (37-5-CR8-P1-3) : livres importés, passation à 0.91193
+     avec le cours journalier du 31.12.2024 présent dans `exchange_rates` → `ok` sans saisie, et sans lui (repli
+     mensuel) → `attention` ; compte décoché à la passation, écart restant → `attention` (A37) ; calcul hors bornes →
+     `attention` sans perdre les huit autres. Clôture : 409
      `FOREIGN_ACCOUNTS_NOT_REVALUED` avec `details`, exercice resté ouvert ; antérieur ouvert **et** non réévalué →
      `EARLIER_FISCAL_YEAR_OPEN` ; déjà clos → `ILLEGAL_STATE_TRANSITION` ; genre changé → 409
-     `OPTIMISTIC_LOCK_CONFLICT` ; après passation → 200 ; exercice mono-devise → 200 sans cours en base ; les tests de
-     clôture existants (mono-devise) inchangés. `kesh-api` : `closing_checks_e2e.rs` (code K9), corps du 409 et message
+     `OPTIMISTIC_LOCK_CONFLICT` ; après passation → 200 ; exercice mono-devise → 200 sans cours en base ; **clôture et
+     passation concurrentes** (37-5-CR8-P1-4 : la seconde attend le verrou de l'exercice ; si la passation commite
+     d'abord, la clôture relit les soldes après les verrous et passe ; si la clôture commite d'abord, la passation
+     est refusée `FISCAL_YEAR_CLOSED`) ; **écriture tardive commitée entre le début de `close` et ses verrous** →
+     refus K9 (la vue naît après les verrous) ; les tests de clôture existants (mono-devise) **et leurs ~65 appels
+     de `fiscal_years::close`** inchangés (signature conservée). `kesh-api` : `closing_checks_e2e.rs` (code K9), corps du 409 et message
      dans les quatre locales. Vitest : fixtures à neuf contrôles ; K9 en attention → aperçu affiché avant tout clic
      (colonnes, liens), « Réévaluer » envoie les comptes et cours montrés, désactivé avec un `blockers[]` ; **K9 `ok` →
      aucun avis, aucun aperçu, aucune requête d'aperçu, aucun bouton** ; Consultation → liste sans bouton ; dialogue
@@ -689,7 +736,8 @@ l'Epic 38).
       locales), Vitest, E2E.
 - [ ] CR-8 : champs `previousRevaluationTotal`, `previousEntryIds`, `revaluationTotalAfter` (et numéro, nom) de
       l'aperçu ; fonction partagée des lignes de l'aperçu (aperçu, passation, K9, clôture) ; K9 dans `closing_checks`
-      et refus (d-bis) de `fiscal_years::close`, cours résolus par le handler de la clôture ; erreur
+      et refus (d-bis) de `fiscal_years::close`, qui lit l'exercice et résout les cours elle-même avant `begin`
+      (signature inchangée) ; erreur
       `FOREIGN_ACCOUNTS_NOT_REVALUED` (quatre locales) ; avis de K9 avec l'aperçu et « Réévaluer », rien quand K9 est
       `ok`, « Clôturer » désactivé ; inventaire « huit » → « neuf » de l'AC-9 ; tests de l'AC-9.
 - [ ] Manuel (`.tex` seulement), section *Note de version* de la fiche (pas d'écriture au `CHANGELOG.md`).
@@ -1005,3 +1053,10 @@ l'Epic 38).
   « Hors périmètre, tracé … K10 » retiré ; note « 38-10 passera de K9 à K10 ». Exigences : 6 → 8 FR (FR-7, FR-8
   ajoutées ; FR-1, FR-6 complétées), 6 → 7 NFR (NFR-7). AC touchés : en-tête, Story, AC-1, AC-2 (V8), AC-6, AC-7,
   AC-8, AC-9, Tâches, Note de version, Notes. Fiche à revalider (cycle CR-8).
+- 2026-11-16 — validation CR-8 P1 (Sonnet) : 0 CRITICAL, 0 HIGH, 4 MEDIUM, 5 LOW ; tous remédiés dans la fiche
+  (37-5-CR8-P1-1 à -9) ; la décision de fond de -2 (comptes non monétaires, A37) est à confirmer par Beat ; aucun
+  inter-fiche (38-10 passe à K10, déjà noté ; ligne de 37-5 du récapitulatif de l'epic complétée : brochure, README,
+  guide d'API). Axes exercés : prémisses au code (`closing_checks.rs`, `fiscal_years::close`, handler, page des
+  exercices, `ledgerHref`, tests appelants de `close`), blocage et ordre des refus, instantané et verrous, K9 sans
+  lecture coûteuse, comptabilité du résidu, cas de Beat, écran, inventaire (grep recompté), tests, KISS. Non exercés :
+  code de 37-1 à 37-4 (non écrit), E2E.
