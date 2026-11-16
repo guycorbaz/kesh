@@ -1020,6 +1020,25 @@ describe('Story 36-18a — les soldes de départ « 1.250 » (#1050)', () => {
 		);
 	});
 
+	// Revue P2 (R2) : un blanc seul, lu comme une cellule vide, n'efface pas l'autre côté.
+	it('un blanc seul au débit n’efface pas le crédit de la ligne (M26)', async () => {
+		await renderReadyGrid();
+		await type('opening-balances-credit-2970', '100');
+		await type('opening-balances-debit-2970', ' ');
+		expect((screen.getByTestId('opening-balances-credit-2970') as HTMLInputElement).value).toBe('100');
+		await type('opening-balances-debit-2970', '5');
+		expect((screen.getByTestId('opening-balances-credit-2970') as HTMLInputElement).value).toBe('');
+	});
+
+	it('mode Compléter : un blanc seul au crédit n’efface pas le débit (M27)', async () => {
+		getStatusMock.mockResolvedValue(completableStatus());
+		render(Page);
+		await screen.findByTestId('opening-balances-complete');
+		await type('opening-balances-complete-debit-1100', '250');
+		await type('opening-balances-complete-credit-1100', '  ');
+		expect((screen.getByTestId('opening-balances-complete-debit-1100') as HTMLInputElement).value).toBe('250');
+	});
+
 	it('une saisie de blancs seuls vaut une ligne vide, non envoyée', async () => {
 		generateMock.mockResolvedValue({ id: 1 });
 		await renderReadyGrid();

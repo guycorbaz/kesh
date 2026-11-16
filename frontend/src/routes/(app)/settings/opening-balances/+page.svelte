@@ -193,12 +193,16 @@
 		!completing && complementLines.length > 0 && !complementInvalid
 	);
 
-	/** Débit/Crédit mutuellement exclusifs par ligne : saisir l'un vide l'autre. */
-	function onDebitInput(row: GridRow) {
-		if (row.debit !== '') row.credit = '';
+	/**
+	 * Débit/Crédit mutuellement exclusifs par ligne : saisir l'un vide l'autre. Story 36-18a
+	 * (revue P2, R2) : sur la saisie rognée — un blanc seul, lu comme une cellule vide
+	 * (C-36-18-13), n'efface pas l'autre côté. Servent les deux grilles.
+	 */
+	function onDebitInput(row: { debit: string; credit: string }) {
+		if (row.debit.trim() !== '') row.credit = '';
 	}
-	function onCreditInput(row: GridRow) {
-		if (row.credit !== '') row.debit = '';
+	function onCreditInput(row: { debit: string; credit: string }) {
+		if (row.credit.trim() !== '') row.debit = '';
 	}
 
 	function roleLabel(account: AccountResponse): string {
@@ -507,9 +511,7 @@
 											placeholder="0.00"
 											class="text-right tabular-nums"
 											bind:value={row.debit}
-											oninput={() => {
-												if (row.debit !== '') row.credit = '';
-											}}
+											oninput={() => onDebitInput(row)}
 											aria-invalid={unread(row.debit)}
 											aria-describedby={problem ? problemId : undefined}
 											aria-label={i18nMsg('opening-balances-debit-for', 'Débit du compte { $number } « { $name } »', { number: row.account.number, name: row.account.name })}
@@ -523,9 +525,7 @@
 											placeholder="0.00"
 											class="text-right tabular-nums"
 											bind:value={row.credit}
-											oninput={() => {
-												if (row.credit !== '') row.debit = '';
-											}}
+											oninput={() => onCreditInput(row)}
 											aria-invalid={unread(row.credit)}
 											aria-describedby={problem ? problemId : undefined}
 											aria-label={i18nMsg('opening-balances-credit-for', 'Crédit du compte { $number } « { $name } »', { number: row.account.number, name: row.account.name })}

@@ -1121,6 +1121,38 @@ describe('SupplierInvoiceForm — le prix unitaire, revue P1 (E5, A1)', () => {
 		expect(queryByTestId('supplier-invoice-form-error')).toBeNull();
 		expect(getByTestId('supplier-invoice-line-unit-price-unreadable')).not.toBeNull();
 	});
+
+	// Revue P2 (R3) : la saisie n'efface que le refus d'un montant, jamais un refus sans rapport.
+	it('« Sélectionnez un fournisseur » survit à la saisie du prix et du montant attendu (R3, M28)', async () => {
+		const { container, getByTestId } = renderForm({ document: null });
+		await fillLine(container, '10.00');
+		await fireEvent.click(getByTestId('supplier-invoice-submit'));
+		await tick();
+		const refus = 'Sélectionnez un fournisseur.';
+		expect(getByTestId('supplier-invoice-form-error').textContent?.trim()).toBe(refus);
+		await fireEvent.input(getByTestId('supplier-invoice-line-unit-price'), { target: { value: '12.00' } });
+		expect(getByTestId('supplier-invoice-form-error').textContent?.trim()).toBe(refus);
+		await fireEvent.input(getByTestId('supplier-invoice-expected-amount'), { target: { value: '12.00' } });
+		expect(getByTestId('supplier-invoice-form-error').textContent?.trim()).toBe(refus);
+	});
+
+	it('un refus du serveur survit à la saisie du prix (R3, M28)', async () => {
+		const { container, getByTestId } = renderForm({
+			document: null,
+			onSubmit: async () => {
+				throw { code: 'FISCAL_YEAR_INVALID', status: 400, message: 'serveur' };
+			},
+		});
+		await selectSupplier(container, '1');
+		await fillLine(container, '10.00');
+		await fireEvent.click(getByTestId('supplier-invoice-submit'));
+		const refus = 'Aucun exercice ouvert ne couvre cette date.';
+		await waitFor(() =>
+			expect(getByTestId('supplier-invoice-form-error').textContent?.trim()).toBe(refus),
+		);
+		await fireEvent.input(getByTestId('supplier-invoice-line-unit-price'), { target: { value: '12.00' } });
+		expect(getByTestId('supplier-invoice-form-error').textContent?.trim()).toBe(refus);
+	});
 });
 
 describe('SupplierInvoiceForm — le montant attendu « 1.250 » (Story 36-18a, #1172)', () => {

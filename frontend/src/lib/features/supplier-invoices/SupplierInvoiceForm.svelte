@@ -268,6 +268,13 @@
 	let showNewSupplier = $state(false);
 	let saving = $state(false);
 	let formError = $state('');
+	/**
+	 * Story 36-18a (revue P1, A1 ; revue P2, R3) — le refus d'envoi d'un **montant** (montant
+	 * attendu ou prix d'une ligne, ambigu ou illisible), affiché dans le même bandeau que
+	 * `formError` mais tenu à part : la saisie du prix ou du montant attendu n'efface que lui,
+	 * jamais un refus sans rapport (fournisseur, lignes, centime, serveur).
+	 */
+	let amountError = $state('');
 	let ibanError = $state('');
 	let referenceError = $state('');
 	/** Story v017-3b (#687) — un refus serveur qui désigne une ligne (rang 0-based). */
@@ -323,6 +330,7 @@
 		}
 		scanning = true;
 		formError = '';
+		amountError = '';
 		try {
 			const spc = await decodeQrFromImageFile(file);
 			if (!spc) {
@@ -362,6 +370,7 @@
 
 	async function submit() {
 		formError = '';
+		amountError = '';
 		ibanError = '';
 		referenceError = '';
 		dateError = '';
@@ -389,14 +398,14 @@
 		// Story 36-18a (#1172, D7) — le montant attendu ambigu ou illisible (sans QR) :
 		// signalé sous son champ, il bloque l'envoi, avant les lignes.
 		if (expectedAmountProblem !== null) {
-			formError = amountEntryMessage(expectedAmountProblem, 4);
+			amountError = amountEntryMessage(expectedAmountProblem, 4);
 			return;
 		}
 		// Story 36-18a (#1159, D6) — la première ligne au prix ambigu ou illisible, nommée,
 		// AVANT `linesInvalid` : son message dit comment écrire le prix.
 		const priceProblem = firstLineUnitPriceProblem(fLines);
 		if (priceProblem !== null) {
-			formError =
+			amountError =
 				priceProblem.problem === 'ambiguous'
 					? i18nMsg(
 							'supplier-invoices-err-line-unit-price-ambiguous',
@@ -788,9 +797,10 @@
 					>
 				{/if}
 				<!-- Story 36-18a (#1172, D3, D7) — un montant ambigu ou illisible : bordure,
-				     `aria-invalid`, et le message sous le champ, qu'il nomme. Revue P1 (A1) : la
-				     saisie efface le refus de l'envoi précédent (ici et au prix des lignes), qui
-				     contredirait sinon le message sous le champ. -->
+				     `aria-invalid`, et le message sous le champ, qu'il nomme. Revue P1 (A1), P2 (R3) :
+				     la saisie efface le refus de MONTANT de l'envoi précédent (`amountError`, ici et au
+				     prix des lignes), qui contredirait sinon le message sous le champ — jamais un autre
+				     refus. -->
 				<input
 					class="mt-1 w-full rounded border px-2 py-1"
 					class:border-destructive={expectedAmountProblem !== null}
@@ -801,7 +811,7 @@
 						? `supplier-invoice-expected-amount-${expectedAmountProblem}`
 						: undefined}
 					bind:value={fExpectedAmount}
-					oninput={() => (formError = '')}
+					oninput={() => (amountError = '')}
 				/>
 				{#if expectedAmountProblem !== null}
 					<span
@@ -866,7 +876,7 @@
 						? `supplier-invoice-line-${idx}-unit-price-${priceProblem}`
 						: undefined}
 					bind:value={line.unitPrice}
-					oninput={() => (formError = '')}
+					oninput={() => (amountError = '')}
 				/>
 				<select
 					class="col-span-2 rounded border px-2 py-1 text-sm"
@@ -947,8 +957,10 @@
 		{/if}
 	</div>
 
-	{#if formError}
-		<p class="text-sm text-destructive" role="alert" data-testid="supplier-invoice-form-error">{formError}</p>
+	{#if formError || amountError}
+		<p class="text-sm text-destructive" role="alert" data-testid="supplier-invoice-form-error">
+			{formError || amountError}
+		</p>
 	{/if}
 
 	<button
