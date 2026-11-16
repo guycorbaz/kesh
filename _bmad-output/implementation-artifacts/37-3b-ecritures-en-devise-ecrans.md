@@ -205,7 +205,8 @@ devise au cours d'ouverture choisi pour l'exercice (R6), afin de tenir mes livre
      `foreign`. Vitest : montant en devise sans cours → bouton désactivé, aucun appel.
    - **Tests.** Dépôt : ouverture et complément avec ligne en devise, contrepartie sur le compte de report ; API :
      `FX_AMOUNT_MISMATCH`, devise annoncée ≠ devise du compte (`FX_CURRENCY_MISMATCH`), ligne sans `currency` → devise
-     du compte (T3), `foreign` sur un compte CHF → `FX_ACCOUNT_IN_CHF`, mono-devise → `MULTI_CURRENCY_DISABLED`,
+     du compte (T3), `foreign` sur un compte CHF → `FX_ACCOUNT_IN_CHF`, exercice mono-devise (clos avant l'activation puis rouvert ;
+     aucune route ne le fabrique : posé par `fiscal_years.multi_currency = FALSE` en SQL) → `MULTI_CURRENCY_DISABLED`,
      `revaluation` refusé ; Vitest (CR-4, T3) : le corps envoyé par chacune des deux grilles porte
      `foreign.currency` = la devise du compte de la ligne ; ouverture **et** complément à lignes EUR et USD acceptés **par leurs routes** (exemption de
      `FX_MULTIPLE_CURRENCIES`, 37-3a AC-4, 2 bis), puis `PUT` du libellé de l'écriture d'ouverture ainsi créée → 200 ;
@@ -342,7 +343,7 @@ devise au cours d'ouverture choisi pour l'exercice (R6), afin de tenir mes livre
      `nonEmptyLines[line − 1]`, jamais par `lines[line − 1]` ; même règle sur les grilles d'ouverture (`nonEmptyRows`,
      `complementLines`). Vitest de chacun, dont un refus sur une ligne précédée d'une ligne vide. `editRefusalOutcome`
      (`form-helpers.ts` :108) classe ces refus en édition : `ENTRY_IS_FX_REVALUATION` → `stale` (la fiche se recharge,
-     le motif s'affiche) ; `RATE_UNAVAILABLE`, `FX_*`, `ACCOUNT_REQUIRES_CURRENCY`, `MULTI_CURRENCY_DISABLED` (réglage retiré entre le chargement et l'envoi) → `stay` (le formulaire reste
+     le motif s'affiche) ; `RATE_UNAVAILABLE`, `FX_*`, `ACCOUNT_REQUIRES_CURRENCY`, `MULTI_CURRENCY_DISABLED` (exercice mono-devise, `details.fiscalYearId`) → `stay` (le formulaire reste
      ouvert) ; sinon ils tomberaient en `other`. Test par code. Un `FX_RATE_NOT_AFC` sur une ligne au cours saisi
      de la société ne devrait pas se produire (elle part `manual`) : s'il survient, même traitement. **Après une
      reprise** (cours AFC corrigé **repris par ↑** à l'écran *Cours de change*, pour cette société, 37-2 AC-5 et AC-6,
@@ -647,8 +648,8 @@ devise au cours d'ouverture choisi pour l'exercice (R6), afin de tenir mes livre
    `MAX_LINES_PER_ENTRY` du corps reçu, analyse V1/V2 (37-3a AC-6), contrôle FX par ligne (37-3a AC-3) ; puis, dans
    la transaction et **avant** le premier `create_in_tx` : la ligne `companies` (`fx_transit_account_id`) lue
    `LOCK IN SHARE MODE` (jamais `FOR SHARE`), puis le compte de conversion lu `LOCK IN SHARE MODE` — ordre `companies` →
-   réglages → `accounts` de 37-1 AC-3, comme la réévaluation (37-5 AC-2, étapes (0) et (3)) ; le `companies` en partage
-   que `create_in_tx_inner` reprend en tête de son étape 0 (37-3a AC-4) est alors déjà tenu, compatible → refus
+   réglages → `accounts` de 37-1 AC-3, comme la réévaluation (37-5 AC-2, étapes (0) et (3)) ; `create_in_tx_inner`
+   ne prend plus aucun verrou sur `companies` (37-3a AC-4, D-CR7-1) : rien à reprendre ni à tenir compatible → refus
    `FX_ACCOUNT_INVALID` ; → `FX_CONVERSION_TRANSIT_UNBALANCED` (calculé sur les corps, identifiant relu sous verrou) ;
    → équilibre de l'écriture qui n'est pas à compléter (`ENTRY_UNBALANCED`, `details.entry` — avec ou sans
    `completeDifference`, de sorte que deux écritures déséquilibrées rendent toujours le refus de celle-ci, jamais
@@ -673,7 +674,7 @@ devise au cours d'ouverture choisi pour l'exercice (R6), afin de tenir mes livre
    37-5-CR2-P2-IF2) ; phrase du manuel d'administration recomptée.
    **Tests** : dépôt et API — conversion sans frais (gain), avec frais aux deux écritures (perte), différence nulle
    (aucune ligne d'écart), compte de conversion à 0 après, refus de la seconde écriture **exécutée** (la plus tardive, placée en tête du corps pour exercer l'ordre chronologique) → rien de créé, `details.entry` = son rang dans le corps, compte de
-   conversion non désigné ou invalide, transit déséquilibré, date dans un exercice mono-devise, `details.entry`,
+   conversion non désigné ou invalide, transit déséquilibré, date dans un exercice mono-devise (colonne posée en SQL, comme à l'AC-1), `details.entry`,
    `entries` de longueur 0, 1 ou 3, rôle Consultation → 403, clé d'API en lecture seule refusée ; **V3 (CR-6)** :
    corps sans ligne de différence **avec `completeDifference: true`** → ligne ajoutée en dernière ligne de l'écriture à compléter (compte de conversion au crédit net), au crédit du compte de
    gains (gain) ou au débit du compte de pertes (perte), relue dans la réponse et à l'audit, compte de conversion à 0 ;
@@ -1269,3 +1270,4 @@ devise au cours d'ouverture choisi pour l'exercice (R6), afin de tenir mes livre
   ouvert » au lieu de « multi-devises ouvert » ; assistant TVA : règle par société ; cycle de la conversion avec la
   bascule `force` retiré ; scénario E2E R3 retiré ; manuel. FR-1, FR-2, FR-3, FR-5, FR-10, NFR-1 réécrites. Décompte :
   10 FR, 6 NFR (inchangé).
+- 2026-11-16 — validation CR-7 P1 (Sonnet) : 0 CRITICAL, 0 HIGH, 1 MEDIUM, 2 LOW ; remédiés (D-CR7-1 appliquée : `create_in_tx_inner` ne prend plus `companies`). MEDIUM : 37-3b-CR7-P1-1 (AC-2 bis, verrous : « le `companies` en partage que `create_in_tx_inner` reprend … est alors déjà tenu » prémisse périmée par D-CR7-1 — la route de conversion garde seule sa lecture de `companies`, sans rien à rendre compatible). LOW : -2 (AC-2, `editRefusalOutcome` : `MULTI_CURRENCY_DISABLED` « réglage retiré entre le chargement et l'envoi », résidu de la désactivation — réécrit sur l'exercice mono-devise) ; -3 (AC-1 et AC-2 bis, tests : l'exercice mono-devise d'une société multi-devises n'a aucune route qui le fabrique — fixture posée en SQL, écrite). Résidus CR-7 : aucun autre (`currency-mode`, `force`, `MULTI_CURRENCY_IN_USE`, `FISCAL_YEAR_*`, `laterFiscalYear`, `monoCurrencyFiscalYear`, `fiscalYears`) hors Change Logs datés. Aucun inter-fiches propre à 37-3b ; inter-fiches de la passe 37-3a signalés au rapport (37-1, 37-5, epic).

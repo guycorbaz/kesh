@@ -11,8 +11,8 @@ sur CR-2 ; puis pour sa revue 2 (CR-4 : **T1** — l'assistant de démarrage dem
 AC-11 rétablie avec ce contenu ; **T3** — la devise d'une ligne se lit sur le compte, le verrou de l'AC-4 en devient
 la garantie ; **T4** — sens du genre d'ouverture et son défaut à la création), qui primait sur tout ce qui
 précède ; puis pour sa revue 3 (CR-5), qui prime sur tout : **U1** — la table des cours de la société s'appelle
-`exchange_rates` (37-2), et la création d'un exercice multi-devises, la bascule vers multi-devises et une devise
-donnée à un compte (création, ou changement sur un compte sans ligne) y copient les cours déjà récupérés des devises des comptes (A24 ; AC-3, AC-3 bis, AC-4,
+`exchange_rates` (37-2), et la création d'un exercice multi-devises (la bascule vers multi-devises, retirée par CR-7)
+et une devise donnée à un compte (création, ou changement sur un compte sans ligne) y copient les cours déjà récupérés des devises des comptes (A24 ; AC-3, AC-3 bis, AC-4,
 AC-6) ; **U4** — changer le genre de clôture propose de l'appliquer à
 l'ouverture de l'exercice suivant (AC-3 bis, renvoi à 37-2 AC-5) ; **U5** — les arbitrages approuvés de cette fiche
 sont des AC (Décisions).*
@@ -21,7 +21,8 @@ sont des AC (Décisions).*
 
 **Modèle retenu (A34 : le multi-devises, une fois activé, reste activé).**
 
-- `companies.multi_currency_enabled` est **irréversible** : il passe de `FALSE` à `TRUE`, jamais l'inverse.
+- `companies.multi_currency_enabled` est **irréversible** : il passe de `FALSE` à `TRUE`, jamais l'inverse (seule la
+  réinitialisation de la société, AC-5, le remet à `FALSE`, en vidant du même coup comptes, exercices et écritures).
   L'écran demande une **confirmation** avant d'activer (dialogue : « irréversible », AC-7). Un `PUT
   …/currency-settings` qui porte `multiCurrencyEnabled: false` quand le mode est actif → 409
   **`MULTI_CURRENCY_IRREVERSIBLE`** (code neuf, `details: {}`, quatre locales ; il prend le rang de l'ancien
@@ -32,12 +33,18 @@ sont des AC (Décisions).*
   *Pourquoi la colonne plutôt qu'une règle de date* : elle est la seule trace des exercices déjà clos à l'activation
   (une règle « fin postérieure à l'activation » exigerait une date d'activation et un calcul à chaque contrôle), et elle
   garde fermé aux devises un exercice clos avant l'activation puis rouvert.
-- Conséquence (invariant I de `fiscal_years::close` : aucun exercice ouvert avant un exercice clos) : les exercices
-  clos à l'activation précèdent tous les autres, et tout exercice créé ensuite est multi-devises ; un exercice
-  mono-devise ne suit donc pas un exercice multi-devises. **Limite assumée** : un exercice créé après l'activation dans
-  un trou devant un exercice clos avant l'activation puis rouvert ; ses lignes en devise changent le solde d'ouverture
-  en devise de l'exercice rouvert, où aucune ligne en devise ne se passe (rien n'y est faux en CHF). La garde
-  `laterFiscalYear` de 37-3a n'a plus d'objet.
+- Conséquence (invariant I de `fiscal_years::close` : aucun exercice ouvert avant un exercice clos ; et
+  `fiscal_years::create` refuse un exercice qui précède un exercice **clos**, `LaterFiscalYearClosed`,
+  `repositories/fiscal_years.rs:363-380`) : à l'activation, les exercices clos précèdent tous les ouverts ; tout
+  exercice créé ensuite est multi-devises et ne se place jamais avant un exercice clos. **Limite assumée**, atteinte
+  **dans cet ordre seulement** : un exercice clos avant l'activation est **rouvert** (il reste mono-devise), puis un
+  exercice est créé dans un trou **avant** lui (admis, l'exercice rouvert n'étant plus clos). Un exercice
+  multi-devises précède alors un exercice mono-devise : les lignes en devise du premier y laissent un solde en devise
+  qu'aucune ligne ne touche et que la réévaluation de 37-5 ne vise pas (exercice mono-devise, refusée) ; ce solde
+  garde, au bilan CHF de l'exercice rouvert, la valeur de la dernière réévaluation, non celle de la fin de cet
+  exercice. Aucune écriture n'est fausse en CHF ; le manuel le dit (AC-10). Une garde qui refuserait la création
+  avant un exercice mono-devise lèverait la limite ; non retenue (A36). La garde `laterFiscalYear` de 37-3a n'a plus
+  d'objet.
 
 **Retiré** (le texte qui suit a été réécrit ; ce qui en subsiste dans les Change Logs est historique) :
 
@@ -66,25 +73,26 @@ passer ensuite des écritures en devise (37-3), sans rien changer pour qui reste
 D1, D2 (fichier d'epic) ; C-37-2 (réglage sur `companies`, sans FK, quatre gardes), C-37-5 (verrous), C-37-9 (409 partout,
 verrou des deux côtés, réglage réservé à l'Administrateur). **CR-2 (revue de Beat, prime)** : R1 (une sauvegarde
 antérieure à l'Epic 37 se réimporte : liste close des tables et colonnes de l'epic, AC-6) ; R3 (mode mono-devise ou
-multi-devises **par exercice**, le réglage de la société en est le défaut, AC-3 bis) ; R6 (colonnes
+multi-devises **par exercice**, posé à la création et à l'activation, jamais changé ensuite depuis CR-7, AC-3 bis) ; R6 (colonnes
 `opening_rate_kind`/`closing_rate_kind` seulement, AC-1 ; route et écran en 37-2) ; R7 (compte de conversion en
 CHF désigné à l'activation, AC-3). **CR-3 (revue de Beat, prime sur CR-2)** : S2 (comptes de différence de
 change **propres** à un compte en devise, le réglage de la société restant le défaut : AC-1, AC-4 bis, AC-6, AC-7) ;
-S3 (`FISCAL_YEAR_FOREIGN_ACCOUNTS_ACTIVE` liste les comptes, AC-3 bis) ; S4 (R10 et l'arbitrage A1 **retirés** :
+S3 (liste des comptes de l'avertissement d'archivage — *retiré par CR-7*) ; S4 (R10 et l'arbitrage A1 **retirés** :
 pas de constante). **CR-4 (revue 2 de Beat, prime sur tout)** : T1 (l'assistant demande les dates du premier
 exercice, AC-11) ; T3 (la ligne d'écriture ne stocke pas de devise : le verrou de la devise d'un compte, AC-4, porte
 celle de ses lignes) ; T4 (genre d'ouverture = clôture de l'exercice précédent, défaut repris à la création, AC-1,
 AC-3 bis). **CR-5 (revue 3 de Beat, prime sur tout)** : U1 (copie des cours récupérés dans `exchange_rates` de 37-2 à
-la création d'un exercice multi-devises, à la bascule vers multi-devises et quand un compte reçoit une devise — pas à
+la création d'un exercice multi-devises et quand un compte reçoit une devise (la bascule vers multi-devises est
+retirée, CR-7) — pas à
 l'activation, vide par construction : appels ajoutés par 37-2 AC-3 bis, AC-3 bis et AC-4 ci-dessous, l'AC-3 disant qu'il n'y en a aucun ; liste close de l'AC-6 sous le nom neuf) ; U4 (remplace A22 : AC-3 bis, la
-route vit en 37-2 AC-5). **U5 — arbitrages approuvés par Beat (CR-5), écrits comme AC de cette fiche** : A4 (ligne en
-devise datée avant un exercice mono-devise refusée : AC-3 bis, puce « dans un exercice mono-devise », garde de 37-3a
-AC-4) ; A5 (`force` n'archive que les comptes en devise sans ligne après la fin de l'exercice, pas de bascule sans
-archivage, l'activation passe tous les exercices ouverts en multi-devises : AC-3, AC-3 bis) ; A6 (compte de conversion
+route vit en 37-2 AC-5). **U5 — arbitrages approuvés par Beat (CR-5), écrits comme AC de cette fiche** : A4 (*retiré par CR-7* : la ligne en devise
+datée avant un exercice mono-devise n'a plus d'objet ; reste le refus sur un exercice mono-devise, AC-3 bis, puce « dans
+un exercice mono-devise », 37-3a AC-4 rang 2) ; A5 (*réduit par CR-7* à « l'activation passe tous les exercices
+ouverts en multi-devises » : AC-3, AC-3 bis ; `force` et la bascule sont retirés) ; A6 (compte de conversion
 de bilan, non archivé, à créer, p. ex. 1090 : AC-3, AC-10) ; A15 (les comptes propres couvrent gains et pertes, le
 compte de conversion reste un réglage de la société : AC-4 bis) ; A24 (copie limitée aux devises des comptes de la
-société, déclenchée aussi quand un compte reçoit une devise : AC-3, AC-3 bis, AC-4) ; A27 (la désactivation ne vide
-pas `exchange_rates` : AC-3) ; A18 et A19 (fin du premier exercice saisie dans
+société, déclenchée aussi quand un compte reçoit une devise : AC-3, AC-3 bis, AC-4) ; A27 (*retiré par CR-7* : plus de
+désactivation) ; A18 et A19 (fin du premier exercice saisie dans
 l'assistant, nom « Exercice AAAA » ou « Exercice AAAA/AAAA » : AC-11). A22 est remplacé par U4 ; A1 était déjà retiré
 (S4). **CR-7 (revue de Guy, prime sur tout)** : A34 (multi-devises sans retour, révision ci-dessus — retire de R3 la
 bascule par exercice, de S3 l'avertissement, d'A4/A5 la bascule et `force`, A27) ; A35 (aucun travail) ; A36 (KISS).
@@ -284,7 +292,8 @@ bascule par exercice, de S3 l'avertissement, d'A4/A5 la bascule et `force`, A27)
    - **réponse** : 200 avec le `CompanyJson` à jour (nouvelle `version`, comme les trois autres `PUT` de la société) ;
      tests : Comptable → 403, clé d'API → `API_KEY_ADMIN_FORBIDDEN`, Administrateur en session Bearer sans cookie →
      200 (V6) ; `multiCurrencyEnabled: false` après activation → 409 `MULTI_CURRENCY_IRREVERSIBLE`, réglage et
-     exercices inchangés (CR-7) ;
+     exercices inchangés (CR-7) ; le même `false` avec un identifiant non nul → 400 `FX_ACCOUNT_INVALID`
+     `unexpected` (la forme du corps passe avant) ;
    - **registre des routes** : le `PUT` entre dans `LIB_ROUTES` (`tests/audit_route_registry.rs`) avec le couple
      `Traced, SansEcritureAuJournal` (le quatrième champ du tuple est la partition de rejeu : il écrit au journal
      d'audit, non au journal comptable) ; **deux** tests comptent, et le second est à recompter aussi :
@@ -356,7 +365,9 @@ bascule par exercice, de S3 l'avertissement, d'A4/A5 la bascule et `force`, A27)
      réglage de la société reste la condition de tout ce qui est en devise (devise d'un compte, écrans, récupération
      des cours) : un exercice multi-devises n'existe que dans une société multi-devises ;
    - **tests** : activation → exercices ouverts multi-devises, clos inchangés (AC-3) ; exercice clos à l'activation
-     puis rouvert → reste mono-devise ; exercice créé après l'activation → multi-devises.
+     puis rouvert → reste mono-devise ; exercice créé après l'activation → multi-devises ; création d'un exercice
+     avant un exercice clos à l'activation → `LaterFiscalYearClosed`, et, une fois ce dernier rouvert, admise et
+     multi-devises (la limite de la Révision CR-7, écrite comme comportement assumé).
 4. **AC-4 — Devise d'un compte.** `CreateAccountRequest.currency` est facultatif (`null` ou absent = CHF).
    `UpdateAccountRequest.currency` est `Option<Option<String>>` désérialisé par `present_or_null` (`routes/accounts.rs:60`) :
    **absent = devise inchangée**, `null` = CHF, valeur = devise. L'absence se résout **dans le dépôt**, sous le
@@ -590,12 +601,13 @@ bascule par exercice, de S3 l'avertissement, d'A4/A5 la bascule et `force`, A27)
      désignation commitée d'abord fait refuser l'archivage en `ACCOUNT_IS_FX_DIFFERENCE_ACCOUNT`) ; **deux archivages
      concurrents de deux comptes différents aboutissent tous deux, sans 1213** (37-1-CR3-P1-1).
    - **Rejeu** (37-1-CR3-P1-2, précisé par 37-1-CR3-P2-2) : le `PUT` qui porte les champs prend `companies`
-     `FOR UPDATE` puis le compte visé `FOR UPDATE`. Le cycle se ferme avec une écriture **sans ligne en devise** — qui
-     ne prend pas `companies` avant les comptes (37-3a) —, qui tient ce compte en partage puis, à son `INSERT`, demande
-     `companies` en partage (`fk_journal_entries_company`) : cas d'un compte **encore CHF** auquel le même `PUT` donne
-     une devise et ses comptes propres. (Une écriture qui porte une ligne en devise prend `companies` en partage avant
-     les comptes et attend le `PUT` ; une ligne CHF sur un compte déjà en devise est refusée sans rien attendre : ni
-     l'une ni l'autre ne ferme de cycle.) Cycle couvert par l'enveloppe existante de `accounts::update_account`
+     `FOR UPDATE` puis le compte visé `FOR UPDATE`. Le cycle se ferme avec une écriture — aucune écriture ne prend
+     `companies` avant les comptes (37-3a, D-CR7-1 : plus de verrou de `companies` pour une ligne en devise) —, qui
+     tient ce compte en partage (lecture de sa devise) puis, à son `INSERT`, demande `companies` en partage
+     (`fk_journal_entries_company`) : cas d'un compte **encore CHF** auquel le même `PUT` donne une devise et ses
+     comptes propres, l'écriture portant une ligne CHF sur ce compte (avec ou sans ligne en devise sur un autre).
+     (Une ligne qui porte `foreign` sur un compte encore CHF, ou une ligne CHF sur un compte déjà en devise, est
+     refusée avant tout `INSERT` : ni l'une ni l'autre ne ferme de cycle.) Cycle couvert par l'enveloppe existante de `accounts::update_account`
      (`retry_app_on_deadlock("accounts::update", …)`, `routes/accounts.rs:337`), qui reste en place ; test de victime
      d'interblocage dans `rejeu_interblocage_e2e.rs`, monté sur ce cas.
      **`create_account`** (37-1-CR3-P2-1) : un `POST` qui porte les champs **et** un `parentId` tient `companies`
@@ -605,7 +617,7 @@ bascule par exercice, de S3 l'avertissement, d'A4/A5 la bascule et `force`, A27)
      aujourd'hui (`routes/accounts.rs:267`, `accounts::create(&state.pool, …)` appelé nu). Le handler passe donc sous
      `crate::retry::retry_app_on_deadlock("accounts::create", …)` (le dépôt ouvre sa propre transaction, `:156` ;
      `NewAccount` cloné à chaque tentative) ; registre : la route reste `Traced, SansEcritureAuJournal` (partition et
-     totaux inchangés), elle entre à la liste (vi) (AC-3 : « vingt-huit ») ; test de victime d'interblocage dans
+     totaux inchangés), elle entre à la liste (vi) (AC-3 : « vingt-sept ») ; test de victime d'interblocage dans
      `rejeu_interblocage_e2e.rs`.
    - **Audit et no-op** : `account_snapshot_json` et `is_no_op_change` incluent les deux colonnes (un `PUT` qui ne
      change que les comptes propres écrit et audite `account.updated`).
@@ -712,7 +724,8 @@ bascule par exercice, de S3 l'avertissement, d'A4/A5 la bascule et `force`, A27)
     (une écriture sur un compte en devise ne se défait que par sa suppression) et que **l'activation du multi-devises
     est définitive** (CR-7 : confirmation demandée, aucun retour en mono-devise) ; PDF régénéré et contrôlé
     (`pdftotext | tr`). Il dit aussi que les exercices **ouverts** à l'activation et tous ceux créés ensuite sont
-    multi-devises, et qu'un exercice clos avant l'activation reste mono-devise, même rouvert (CR-7), le **compte de conversion** (R7 : un compte de bilan en CHF à créer, p. ex.
+    multi-devises, et qu'un exercice clos avant l'activation reste mono-devise, même rouvert (CR-7 ; si un exercice est créé avant lui
+une fois rouvert, son bilan CHF ne porte pas la réévaluation de sa propre fin : limite de la Révision CR-7), le **compte de conversion** (R7 : un compte de bilan en CHF à créer, p. ex.
     1090, qui revient à 0 après une conversion), les **comptes de différence propres** d'un compte en devise (S2 :
     par défaut ou propres, p. ex. des sous-comptes de frais de change cachés pour PayPal et pour Stripe ; ce qu'ils
     changent à la ligne d'écart, à la conversion et à la réévaluation ; gardes inverses) et la réimportation des
@@ -1230,3 +1243,20 @@ bascule par exercice, de S3 l'avertissement, d'A4/A5 la bascule et `force`, A27)
   refus de désactivation (AC-3). Registre des routes : +1 route (au lieu de +2), point (vi) « vingt-sept » (+2). FR-3,
   FR-4, FR-9, FR-12, NFR-2, NFR-8, NFR-9 réécrites ; AC-3, AC-3 bis, AC-4, AC-4 bis, AC-7, AC-10, Tâches. Schéma, liste
   close des absences (AC-6) et fenêtre d'import inchangés. Décompte : 12 FR, 9 NFR (inchangé).
+- 2026-11-16 — validation CR-7 P1 (Sonnet) : 0 CRITICAL, 0 HIGH, 3 MEDIUM, 3 LOW. MEDIUM 37-1-CR7-P1-1 : la limite
+  assumée disait « créé… puis rouvert », ordre impossible au code (`fiscal_years::create` refuse un exercice avant un
+  exercice clos, `LaterFiscalYearClosed`, `fiscal_years.rs:363-380`) et taisait sa conséquence (solde en devise porté
+  dans un exercice mono-devise que 37-5 ne réévalue pas) — récrite, test et phrase du manuel (AC-10) ajoutés.
+  -P1-2 : AC-4 bis, *Rejeu*, s'appuyait sur le verrou partagé de `companies` des écritures en devise de 37-3a, retiré
+  par D-CR7-1 — récrit (aucune écriture ne prend `companies` avant les comptes ; le cycle des écritures à ligne CHF
+  sur le compte rendu en devise reste couvert par l'enveloppe de `accounts::update`). -P1-3 : AC-4 bis, *Rejeu*,
+  inscrivait `create_account` à la liste (vi) « vingt-huit » (reste de CR-3), contre « vingt-sept » de l'AC-3 — corrigé.
+  LOW -P1-4 : Décisions et en-tête (S3, A4, A5, A27, R3, U1) citaient encore `FISCAL_YEAR_FOREIGN_ACCOUNTS_ACTIVE`,
+  `force`, la désactivation et la bascule comme en vigueur — annotés « retiré par CR-7 ». -P1-5 : « jamais mono-devise »
+  sans la réinitialisation de la société (AC-5) — précisé. -P1-6 : test du `false` avec identifiant non nul (400
+  `unexpected` avant 409) ajouté à l'AC-3. KISS (signalé, non modifié) : la lecture de `multi_currency_enabled` sous
+  `companies` en partage (AC-4) n'est plus un filet nécessaire (réglage monotone) mais l'est pour les colonnes FX ;
+  le mécanisme `fiscal_years.multi_currency` ne protège plus qu'un seul cas (exercice clos avant l'activation, rouvert).
+  Axes exercés : résidus (grep des neuf termes), AC-3, AC-3 bis, AC-4, AC-4 bis, AC-6, AC-7, AC-10, registre des
+  routes, protection d'un exercice antérieur, D-CR7-1, code lu (`fiscal_years.rs` create/reopen). Non exercés : code
+  applicatif au-delà de `fiscal_years.rs`, PDF, i18n.

@@ -20,7 +20,10 @@ désactive plus et aucun exercice ne repasse en mono-devise ; un exercice mono-d
 l'activation, qui précède tous les exercices multi-devises. Retirés : la garde `laterFiscalYear` (création, `PUT`,
 suppression, réévaluation, contre-passation), le motif `monoCurrencyFiscalYear` (une ligne sur un compte en devise
 dans un exercice mono-devise est refusée au rang 2, avec ou sans `foreign`) et l'extension de la requête de bascule de
-37-1 (`FISCAL_YEAR_HAS_FOREIGN_BALANCES`).*
+37-1 (`FISCAL_YEAR_HAS_FOREIGN_BALANCES`). **Décision de l'orchestrateur D-CR7-1 (KISS, 2026-11-16, passe CR-7 P1)** : le verrou
+partagé de `companies` pris quand une ligne porte `foreign` est **retiré** — la société ne redevient jamais mono-devise,
+la devise du compte lue en partage suffit ; la branche « société » du refus `MULTI_CURRENCY_DISABLED` (rang 2) disparaît
+avec lui.*
 
 ## Story
 
@@ -38,7 +41,7 @@ chacune (R7), l'écart de change dans la seconde, afin que mes comptes en devise
 - FR-37-3a-1 — `journal_entry_lines` gagne `amount_currency`, `exchange_rate`, `rate_source` — aucune colonne de devise, la devise d'une ligne étant celle de son compte —, avec contraintes nommées `chk_jel_fx_*`, filet structurel (400 `CHECK_CONSTRAINT_VIOLATION`) derrière les refus précis (AC-1).
 - FR-37-3a-2 — `ForeignAmount` et `RateProvenance` portent le montant, le cours et la provenance (`None` pour une ligne de l'API sans `rateSource`, qualifiée par le dépôt) ; la devise se lit sur le compte ; la devise annoncée n'est jamais stockée (AC-2).
 - FR-37-3a-3 — `kesh-core` valide une ligne en devise, dans l'ordre fixé : échelle et bornes (4 et 10 décimales, montant ≤ 10¹³, cours ≤ 10⁶, CHF ≤ 10¹³, produit exact en entiers), signe, CHF arrondi au centime loin de zéro et non nul, égalité de `debit + credit` avec ce CHF (`FX_VALUE_OUT_OF_RANGE`, `FX_LINE_ROUNDS_TO_ZERO`, `FX_AMOUNT_MISMATCH`) ; une ligne `revaluation` (montant 0, CHF > 0) n'est exemptée que de l'égalité CHF = montant × cours et de `FX_LINE_ROUNDS_TO_ZERO` — elle exige encore montant 0, cours > 0, CHF > 0 et les bornes ; `rate_from_chf` déduit le cours d'un CHF ; fixtures `fx_rounding.json` et `fx_rate_from_chf.json` partagées avec l'écran (AC-3).
-- FR-37-3a-4 — Le dépôt (`create_in_tx_inner`, `update_in_tx`) contrôle toute écriture dans l'ordre des refus fixé : comptes ; ligne sur un compte en devise dans une société ou un exercice mono-devise (409 `MULTI_CURRENCY_DISABLED`) ; une seule devise étrangère par écriture (`FX_MULTIPLE_CURRENCIES`, ouverture, complément et contre-passation exemptés ; au `PUT`, refus seulement si l'ensemble des devises s'élargit) ; accord de chaque ligne avec la devise de son compte (`ACCOUNT_REQUIRES_CURRENCY`, `FX_ACCOUNT_IN_CHF`, `FX_CURRENCY_MISMATCH`) ; ligne `afc` au cours retenu par la société pour le mois de la date (`FX_RATE_NOT_AFC`, 404 `RATE_UNAVAILABLE`), au `PUT` sur les seules lignes `afc` nouvelles ou modifiées (A17) (AC-4).
+- FR-37-3a-4 — Le dépôt (`create_in_tx_inner`, `update_in_tx`) contrôle toute écriture dans l'ordre des refus fixé : comptes ; ligne sur un compte en devise dans un exercice mono-devise (409 `MULTI_CURRENCY_DISABLED`) ; une seule devise étrangère par écriture (`FX_MULTIPLE_CURRENCIES`, ouverture, complément et contre-passation exemptés ; au `PUT`, refus seulement si l'ensemble des devises s'élargit) ; accord de chaque ligne avec la devise de son compte (`ACCOUNT_REQUIRES_CURRENCY`, `FX_ACCOUNT_IN_CHF`, `FX_CURRENCY_MISMATCH`) ; ligne `afc` au cours retenu par la société pour le mois de la date (`FX_RATE_NOT_AFC`, 404 `RATE_UNAVAILABLE`), au `PUT` sur les seules lignes `afc` nouvelles ou modifiées (A17) (AC-4).
 - FR-37-3a-5 — Les chemins automatiques ne construisent aucune ligne en devise et refusent un compte en devise (`ACCOUNT_REQUIRES_CURRENCY`, `FX_MULTIPLE_CURRENCIES`) (AC-5).
 - FR-37-3a-6 — `POST`/`PUT /journal-entries` prennent `foreign { currency?, amount, rate?, chf?, rateSource?, side? }` ; l'API complète la ligne sans calcul du client (cours déduit du CHF, CHF posé selon `side`) ; `revaluation` y est refusé (400) ; les réponses portent `foreign` (devise lue sur le compte), omis pour une ligne CHF ; une ligne CHF sans `debit`/`credit` rend 400 et non plus 422 (changement écrit au CHANGELOG) ; un statut fixé par code, messages dans les quatre locales (AC-6).
 - FR-37-3a-7 — Le `PUT` et la contre-passation traitent les lignes en devise ; changer le compte d'une ligne la juge sur le nouveau compte ; un `PUT` qui ne change que les champs en devise écrit, change la `version` et audite (`is_no_op_change`) ; la contre-passation recopie les trois colonnes, exemptée de `FX_RATE_NOT_AFC` et de la règle d'une devise, non de `MULTI_CURRENCY_DISABLED` (AC-2, AC-7).
@@ -54,7 +57,7 @@ chacune (R7), l'écart de change dans la seconde, afin que mes comptes en devise
 
 - NFR-37-3a-1 — Une ligne CHF reste inchangée : les contraintes tolèrent les trois `NULL`, le JSON HTTP n'a pas de clé `foreign`, l'audit d'une écriture CHF est identique octet pour octet (AC-1, AC-6, AC-8).
 - NFR-37-3a-2 — Une erreur de validation d'une ligne est un refus clair, jamais un 500 (AC-3).
-- NFR-37-3a-3 — Concurrence : la devise des comptes se lit `LOCK IN SHARE MODE` dans toute écriture, `companies` en partagé seulement quand une ligne porte `foreign`, à la place fixée (après les projets, avant l'exercice) ; le cours de la société est lu sans verrou (limite assumée) ; la devise d'un compte ne se lit qu'après le contrôle d'appartenance, et les lignes relues prennent la devise contrôlée (AC-4).
+- NFR-37-3a-3 — Concurrence : la devise des comptes se lit `LOCK IN SHARE MODE` dans toute écriture, aucun verrou sur `companies` (D-CR7-1) ; le cours de la société est lu sans verrou (limite assumée) ; la devise d'un compte ne se lit qu'après le contrôle d'appartenance, et les lignes relues prennent la devise contrôlée (AC-4).
 - NFR-37-3a-4 — Audit avant/après porte `foreign` pour les seules lignes en devise (AC-7, AC-8).
 - NFR-37-3a-5 — Sauvegarde : colonnes inscrites à la liste close des absences admises, aller-retour `.keshbackup` fidèle (cours à 10 décimales, montant à 4) et réimport d'une sauvegarde 0.17.6 sans les trois colonnes (200, lignes CHF) ; CSV à 4 et 10 décimales (AC-1, AC-8).
 - NFR-37-3a-6 — Les lots (`accept_batch`) rendent le refus par proposition, non en erreur globale (AC-5).
@@ -246,14 +249,18 @@ chacune (R7), l'écart de change dans la seconde, afin que mes comptes en devise
    1. `InactiveOrInvalidAccounts` → `AccountsNotPostable` (existants, `validate_lines_accounts_in_tx` :135) ; la
       même lecture rend la **devise de chaque compte** (`currency` ajouté à son `SELECT`, verrouillant, ci-dessous) :
       c'est la **seule** source de la devise des lignes pour tous les rangs suivants (T3, CR-4) ;
-   2. ligne sur un **compte en devise** (lu au rang 1, avec ou sans `foreign`) et société **ou exercice de
-      l'écriture** en mono-devise → **409** `MULTI_CURRENCY_DISABLED` (variante de 37-1 ; le mode se juge sur
+   2. ligne sur un **compte en devise** (lu au rang 1, avec ou sans `foreign`) dans un **exercice de l'écriture**
+      mono-devise → **409** `MULTI_CURRENCY_DISABLED` (variante de 37-1 ; le mode se juge sur
       l'exercice de l'écriture, `fiscal_years.multi_currency` de 37-1, lu dans la ligne que l'étape 1 de
       `create_in_tx_inner` prend déjà `FOR UPDATE`, `journal_entries.rs:332-336` — colonne ajoutée à ce `SELECT` —, et
-      à l'étape 1-ter d'`update_in_tx` ; `details: { fiscalYearId }` quand c'est l'exercice, `{}` quand c'est la
-      société — branche jugée seulement quand `companies` est lue, c'est-à-dire quand une ligne porte `foreign`, ci-dessous
-      *Concurrence* ; une société mono-devise n'a aucun compte en devise). Depuis CR-7, un exercice mono-devise d'une société multi-devises est un exercice clos avant
-      l'activation puis rouvert : le message le dit (aucun compte en devise n'y est utilisable), sans rien proposer.
+      à l'étape 1-ter d'`update_in_tx` ; `details: { fiscalYearId }`). **Aucune branche « société »** (D-CR7-1) : un
+      compte ne porte une devise que dans une société multi-devises (37-1 AC-4), qui ne redevient jamais mono-devise ; la
+      société n'est pas lue. Un exercice mono-devise d'une société multi-devises est un exercice clos avant
+      l'activation puis rouvert : le message le dit (aucun compte en devise n'y est utilisable), sans rien proposer. La
+      **limite assumée** de 37-1 (Révision CR-7 : exercice créé après l'activation dans un trou devant un exercice clos
+      avant l'activation puis rouvert) n'est pas gardée ici : ses lignes en devise changent le solde d'ouverture en
+      devise de l'exercice rouvert, où aucune ligne en devise ne se passe, sans rien de faux en CHF ; à écrire au
+      Change Log de cette story.
       *(CR-7 : garde `laterFiscalYear` retirée — aucun exercice mono-devise ne suit un exercice multi-devises, 37-1
       Révision CR-7.)* Les lignes d'avant d'un `PUT` (`before_lines`, lues aujourd'hui à l'étape 8, `:1629`) se lisent
       plus tôt, sous le verrou de l'écriture, à l'étape 6 (après la garde des comptes), pour la règle d'une devise du
@@ -408,37 +415,22 @@ chacune (R7), l'écart de change dans la seconde, afin que mes comptes en devise
      requête de validation des comptes (`validate_lines_accounts_in_tx` :135, qui lit aujourd'hui sans verrou ; ajouter
      `currency` à son `SELECT`, et l'ordre des refus ci-dessus reste celui-là ; son doc-comment « Lecture **sans
      verrou** … choix C21 », :127-128, est récrit) ou une requête dédiée verrouillante.
-     `companies.multi_currency_enabled` se lit **sous `LOCK IN SHARE MODE` avant** les comptes (ordre global de 37-1 :
-     `companies` → réglages → `accounts`), **seulement si une ligne porte `foreign`** : une écriture sans ligne en
-     devise ne prend aucun verrou sur `companies` (`create_in_tx_inner` lit `books_locked_through` **sans** verrou,
-     `:316-324`, pour ne pas se bloquer derrière chaque écriture de la société) — les comptes en devise étant
-     verrouillés en lecture, et une société multi-devises ne redevenant jamais mono-devise (CR-7), une écriture sans
-     ligne en devise n'a rien à refuser au titre de la société.
-     **Place du verrou de `companies`** (« avant les comptes » ne suffit pas : l'exercice est pris `FOR UPDATE` avant
-     eux, `create_in_tx_inner` étape 1 `:332-336`, et les chemins Pattern 5 prennent `companies` `FOR UPDATE` **puis**
-     l'exercice — `invoices.rs:698`, sentinelle puis `create_in_tx` — d'où un cycle exercice → `companies` contre
-     `companies` → exercice) : dans `create_in_tx_inner`, **après l'étape 0** (projets) et avant l'exercice (étape 1) ;
-     dans `update_in_tx`, **après l'étape 1-bis** (projets ; le `FOR UPDATE` de l'écriture reste le premier acte,
-     `:1481-1487`) et avant l'exercice (étape 1-ter). ⛔ **Pas avant les projets** : la validation des projets
-     nouveaux prend la sentinelle `companies` **`FOR UPDATE`** (`projects::validate_taggable_in_tx`,
-     `projects.rs:101` → `acquire_company_sentinel_lock`, `bank_accounts.rs:1729`) ; un partagé pris avant elle
-     ferait monter la transaction de S à X sur la même ligne, et deux saisies concurrentes portant chacune une ligne en
-     devise et un projet s'interbloqueraient (chacune tient S et attend X). Après les projets, le partagé est soit
-     redondant (sentinelle déjà tenue en X), soit le premier verrou sur `companies` ; l'ordre `companies` → exercice,
-     celui de Pattern 5, est gardé. La contre-passation d'une écriture en devise prend l'exercice d'origine avant
-     `create_in_tx_inner` : cycle résiduel, défendu par son rejeu (`Rejouee`) — écrit au Change Log. 37-1 prend
-     `FOR UPDATE` sur le compte avant de compter ses lignes. Sans cela, un `PUT` de 37-1 validé entre la lecture et
-     l'`INSERT` laisserait une ligne CHF sur un compte en devise. **Portée, à écrire au Change Log** : le verrou
-     partagé des comptes est pris par **toute** écriture et tout chemin automatique (une ligne CHF sur un compte devenu
-     en devise est le cas à fermer), société mono-devise comprise — contrairement à `companies`, il n'est pas
-     conditionné par une ligne en devise : à déclarer. Deux cycles, défendus par le rejeu comme celui de la
-     contre-passation : le complément d'ouverture prend les comptes `FOR UPDATE` **avant** l'exercice
-     (`opening_complement.rs:445-448`), l'écriture ordinaire l'exercice **avant** les comptes — cycle **déjà présent**
-     par le partagé de clé étrangère que l'`INSERT` des lignes prend sur `accounts` (doc-comment `:445-447`), que le
-     verrou de lecture avance dans la transaction ; et, **nouveau**, un `PUT` (verrou de
-     l'écriture, puis `companies` en partagé) contre une dévalidation de facture (`companies` `FOR UPDATE`, puis
-     l'écriture, Pattern 5), qui n'existe que pour un corps portant une ligne en devise. Test de concurrence, ou
-     argument écrit au Change Log.
+     **Aucun verrou sur `companies`** (D-CR7-1, KISS) : le contrôle central ne lit pas la société — elle ne redevient
+     jamais mono-devise (CR-7) et un compte ne porte une devise que dans une société multi-devises (37-1 AC-4) : la devise
+     du compte, lue en partage, suffit, et seul le mode de l'exercice (ligne prise `FOR UPDATE` à l'étape 1,
+     sérialisée avec l'activation de 37-1 qui l'écrit) se juge au rang 2. Il n'y a donc plus de place à fixer pour ce
+     verrou : ni cycle exercice → `companies` contre `companies` → exercice avec les chemins Pattern 5
+     (`invoices.rs:698`), ni montée S → X contre la sentinelle `companies` `FOR UPDATE` des projets
+     (`projects.rs:101`), ni cycle `PUT` → dévalidation de facture ajouté par cette story, ni cycle résiduel de la
+     contre-passation. L'`INSERT` prend toujours `companies` en partage par `fk_journal_entries_company`, comme avant
+     cette story (inchangé). 37-1 prend `FOR UPDATE` sur le compte avant de compter ses lignes. Sans cela, un `PUT` de
+     37-1 validé entre la lecture et l'`INSERT` laisserait une ligne CHF sur un compte en devise. **Portée, à écrire au
+     Change Log** : le verrou partagé des comptes est pris par **toute** écriture et tout chemin automatique (une ligne
+     CHF sur un compte devenu en devise est le cas à fermer). Un cycle, **déjà présent**, défendu par le rejeu : le
+     complément d'ouverture prend les comptes `FOR UPDATE` **avant** l'exercice (`opening_complement.rs:445-448`),
+     l'écriture ordinaire l'exercice **avant** les comptes — par le partagé de clé étrangère que l'`INSERT` des lignes
+     prend sur `accounts` (doc-comment `:445-447`), que le verrou de lecture avance dans la transaction. Test de
+     concurrence, ou argument écrit au Change Log.
    - Chaque refus est une variante de `DbError` avec son `error_code()`, et a son bras dans la correspondance
      `DbError → AppError` de `errors.rs` — sauf `DbError::RateUnavailable {currency, month}`, créée par 37-2 avec son
      bras 404 : 37-3a la réutilise et ne la redéfinit pas.
@@ -446,7 +438,7 @@ chacune (R7), l'écart de change dans la seconde, afin que mes comptes en devise
    réconciliation (manuelle, éclatement, règles, propositions), — les soldes d'ouverture et leur complément exceptés
    (étendus par 37-3b ; d'ici là, ils refusent un compte en devise comme les autres) :
    - aucun ne construit de ligne en devise ; s'ils visent un compte en devise, le refus central de l'AC-4 s'applique
-     et remonte en erreur claire (`ACCOUNT_REQUIRES_CURRENCY`, traduite) — ou `FX_MULTIPLE_CURRENCIES` quand la pièce
+     et remonte en erreur claire (`ACCOUNT_REQUIRES_CURRENCY`, traduite ; 409 `MULTI_CURRENCY_DISABLED` quand l'exercice de la pièce est mono-devise, rang 2 avant rang 3) — ou `FX_MULTIPLE_CURRENCIES` quand la pièce
      vise deux comptes de devises étrangères différentes (précédence du rang 2 bis, T3 : la devise se lit sur les
      comptes, non sur des lignes) ; `FX_ACCOUNT_IN_CHF` et `FX_CURRENCY_MISMATCH` n'en sortent jamais (aucune ligne
      `foreign`) ;
@@ -653,8 +645,7 @@ chacune (R7), l'écart de change dans la seconde, afin que mes comptes en devise
       `kesh-db`**, `tests/` ne la voit pas ; le complément à deux devises par sa route : 37-3b (inter-fiche) ; même
       corps par `POST /journal-entries` → refusé ; contre-passation d'une ouverture à deux devises → passe ;
       contre-passation d'une écriture en devise vers un exercice du jour mono-devise → 409 ;
-      saisies concurrentes portant chacune une ligne en devise et un projet nouveau → aucune montée de verrou S → X
-      sur `companies` (place du partagé après les projets, AC-4) ; précédence `FX_MULTIPLE_CURRENCIES` (2 bis) avant `ACCOUNT_REQUIRES_CURRENCY` (3) ;
+      précédence `FX_MULTIPLE_CURRENCIES` (2 bis) avant `ACCOUNT_REQUIRES_CURRENCY` (3) ;
       ligne sur un compte en devise, avec ou sans `foreign`, dans un exercice mono-devise d'une société multi-devises
       (exercice clos avant l'activation puis rouvert) → 409 `MULTI_CURRENCY_DISABLED` `details.fiscalYearId` ; lot de
       réconciliation : la variante a son bras `FailedProposal`.
@@ -708,7 +699,7 @@ chacune (R7), l'écart de change dans la seconde, afin que mes comptes en devise
       (arrondi) et de chaque refus (`FX_VALUE_OUT_OF_RANGE`, `FX_LINE_ROUNDS_TO_ZERO`, `FX_AMOUNT_MISMATCH`,
       exemption `revaluation`).
 - [ ] `kesh-db` : entités, colonnes, sites SQL de l'AC-2, contrôle central dans l'ordre de l'AC-4 (`LOCK IN SHARE MODE`,
-      jamais `FOR SHARE` ; place du verrou de `companies` de l'AC-4),
+      jamais `FOR SHARE`),
       `FX_RATE_NOT_AFC`, contre-passation (AC-2, AC-4, AC-7) ; tests de chacun des codes de l'AC-4, de la concurrence
       (ou argument écrit), de la recopie à la contre-passation (réévaluation comprise), du 409
       `ENTRY_IS_FX_REVALUATION`.
@@ -1145,3 +1136,4 @@ chacune (R7), l'écart de change dans la seconde, afin que mes comptes en devise
   dans un exercice mono-devise, avec ou sans `foreign` ; extension de la requête de bascule (`FISCAL_YEAR_HAS_FOREIGN_BALANCES`)
   retirée ; lecture anticipée des lignes d'avant gardée pour la règle d'une devise (2 bis) ; tests correspondants
   retirés ou réduits. FR-10 et FR-12 retirées (numéros non réattribués), FR-4 réécrite. Décompte : 12 FR (−2), 6 NFR.
+- 2026-11-16 — validation CR-7 P1 (Sonnet) : 0 CRITICAL, 0 HIGH, 1 MEDIUM, 3 LOW ; remédiés. D-CR7-1 appliquée (KISS) : verrou partagé de `companies` retiré (AC-4, 2 et *Concurrence*, NFR-3, FR-4, tests de concurrence et tâche `kesh-db`) ; branche « société » du refus `MULTI_CURRENCY_DISABLED` retirée (rang 2 : seul l'exercice se juge, `details: { fiscalYearId }`) ; cycles propres à ce verrou retirés (exercice → `companies` avec Pattern 5, montée S → X contre la sentinelle des projets, `PUT` contre dévalidation de facture, contre-passation) ; reste le cycle du complément d'ouverture, déjà présent. Findings : 37-3a-CR7-P1-1 (MEDIUM, AC-4 2 : « société mono-devise » encore jugée au rang 2 alors qu'elle n'a aucun compte en devise et que `companies` n'était plus lue après D-CR7-1 — branche retirée) ; -2 (LOW, AC-4 2 : limite d'un exercice créé dans un trou non rappelée — renvoi à 37-1 écrit, Change Log) ; -3 (LOW, AC-5 : un chemin automatique dans un exercice mono-devise rend 409 `MULTI_CURRENCY_DISABLED`, non `ACCOUNT_REQUIRES_CURRENCY` — précisé) ; -4 (LOW, Tâches : test de concurrence sur `companies` sans objet — retiré). Inter-fiches signalés : 37-1 (argument du rejeu de l'AC-4 bis qui s'appuie sur « une écriture qui porte une ligne en devise prend `companies` en partage »), 37-5 (étape (0) : ordre `companies` → exercice « de 37-3a AC-4 »), 37-3b (« le `companies` en partage que `create_in_tx_inner` reprend », AC-2 bis), epic (« Points à faire valider » (2)).

@@ -188,11 +188,11 @@ clôture et que l'écart aille aux différences de change.
      `LOCK IN SHARE MODE` (jamais `FOR SHARE`, erreur de syntaxe sur MariaDB 10.11 ; ce partage bloque aussi toute
      désignation de comptes propres concurrente, qui prend `companies` en exclusif, 37-1 AC-4 bis : les désignations
      lues ensuite restent celles du calcul) **avant tout exercice** : c'est
-     l'ordre global `companies` → exercice des chemins Pattern 5 (`repositories/invoices.rs:698`, sentinelle puis `create_in_tx`) et
-     de 37-3a AC-4 (`companies` en tête de l'étape 0 de `create_in_tx_inner`) ; prise après l'exercice, elle formerait
-     le cycle exercice → `companies` contre `companies` → exercice que 37-3a écarte (aucun flux ne prend un exercice
-     puis `companies` **en exclusif** : ni `close`, ni `reopen`, ni `lock_books`, `repositories/companies.rs:1002-1020` ; la
-     contre-passation d'une écriture en devise de 37-3a prend l'exercice puis `companies` en partagé, compatible) ; (1) chaque antérieur
+     l'ordre global `companies` → exercice des chemins Pattern 5 (`repositories/invoices.rs:698`, sentinelle puis `create_in_tx`) ;
+     prise après l'exercice, elle formerait le cycle exercice → `companies` contre `companies` → exercice (aucun flux ne
+     prend un exercice puis `companies` **en exclusif** : ni `close`, ni `reopen`, ni `lock_books`,
+     `repositories/companies.rs:1002-1020` ; 37-3a ne prend plus de verrou sur `companies` pour une ligne en devise,
+     D-CR7-1 : `create_in_tx_inner`, appelée ensuite, n'en ajoute aucun) ; (1) chaque antérieur
      verrouillé par clé primaire (`LOCK_EARLIER_BY_ID_SQL`) dans l'ordre chronologique, puis
      l'exercice `FOR UPDATE` (`LOCK_IN_COMPANY_SQL`) ; (2) relecture **verrouillante** du plus ancien antérieur ouvert (`earlier_open_locking_sql`,
      même texte que `close`) → `EARLIER_FISCAL_YEAR_OPEN` ; (3) les désignations propres des comptes
@@ -449,7 +449,8 @@ clôture et que l'écart aille aux différences de change.
      datée du 31.12.2024 ; exercice qui finit un 14 (15.03.2024–14.03.2025) → cours journalier du 14.03.2025, repli
      mensuel de mars 2025 ;
    - **exercice mono-devise (R3)** : aperçu et passation → 409 `MULTI_CURRENCY_DISABLED` `details.fiscalYearId`, avant
-     la transaction et sous verrou (exercice clos avant l'activation puis rouvert, CR-7) ;
+     la transaction et sous verrou ; état posé par l'API (exercice clos avant l'activation, activation, réouverture ; CR-7 : le
+     seul exercice mono-devise possible sous une société multi-devises) ;
    - cours invalide (0, négatif, 11 décimales, > 10⁶, devise sans compte) ; au-delà des bornes ;
    - `PERIOD_LOCKED` exactement à la borne (inclusive) ; exercice postérieur clos (test de dépôt, comme
      `opening_complement_repository.rs:963`) ; exercice antérieur ouvert ; exercice clos ; mono-devise ;
@@ -531,7 +532,7 @@ clôture et que l'écart aille aux différences de change.
    compte réévalué s'il en a (S2), exercice de durée quelconque (S4), repli sur le cours mensuel AFC du mois de clôture (la méthode de
    calcul du cours mensuel ne se décrit qu'après confirmation, R4 amendé), choix du genre de clôture par exercice (R6), une écriture
    par compte réévalué (R9), correction par suppression ou nouveau passage, la contre-passation ne corrigeant que dans un exercice en cours (AC-3), refus en
-   exercice mono-devise (R3), cours saisi par la société (D9), récupération du cours du jour, gains et pertes non réalisés
+   exercice mono-devise (R3 ; CR-7 : un exercice clos avant l'activation puis rouvert), cours saisi par la société (D9), récupération du cours du jour, gains et pertes non réalisés
    comptabilisés (CO 960b, choix assumé ; la neutralisation par provision n'est pas offerte, C-37-8), postes non
    monétaires à décocher (stocks, immobilisations, capital en devise), la source du cours (« AFC » ou « cours saisi ») conservée à l'audit et non
    sur la ligne, une correction de l'AFC non reprise (↑) ne changeant pas le cours proposé (U1), la reprise de livres
@@ -835,3 +836,4 @@ clôture et que l'écart aille aux différences de change.
   exercice mono-devise gardé (exercice clos avant l'activation puis rouvert) ; recette par l'API : exercice
   multi-devises parce que créé après l'activation (route `currency-mode` retirée). FR-1 et FR-5 réécrites
   (`blockers[]` : quatre codes). Décompte : 6 FR, 6 NFR (inchangé).
+- 2026-11-16 — validation CR-7 P1 (Sonnet) : 0 CRITICAL, 0 HIGH, 1 MEDIUM, 3 LOW. MEDIUM 37-5-CR7-P1-1 : l'AC-2 (étape (0)) s'appuyait sur le verrou partagé de `companies` de 37-3a dans `create_in_tx_inner` et sur la contre-passation « prend `companies` en partagé », retirés par D-CR7-1 — texte réduit à l'ordre de Pattern 5. LOW -P1-2 : test « exercice mono-devise » sans moyen de poser l'état (CR-7 : clos avant l'activation, puis rouvert) — précisé. LOW -P1-3 : manuel (AC-8) « exercice mono-devise » sans le seul cas possible — précisé. LOW -P1-4 (KISS, non modifié, signalé) : le mode de la société et de l'exercice relu « sous verrou » (AC-2 étape (0)-(1), AC-4, FR-5, Tâches) est un filet sans course possible depuis CR-7 (réglage irréversible, `fiscal_years.multi_currency` ne change plus) ; gardé, la ligne `companies` étant de toute façon lue en partage pour les désignations. Axes exercés : résidus (grep des neuf termes : aucun hors Change Logs datés), blockers/ordre des refus, FR-1/FR-5, recette V7, tests, verrous, récapitulatif de l'epic. Non exercés : code.

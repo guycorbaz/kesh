@@ -219,7 +219,7 @@ cours sans saisie.
      0.17.5 restent tels quels) ; la phase 5 de `scripts/recette-montee.sh` (import du `.keshbackup` de l'image
      précédente, 200 exigé, `:651`) **se joue** à la release ; le test de 37-1 AC-6 (sauvegarde 0.17.6 réimportée)
      reste un test d'acceptation, et cette story y ajoute l'absence de la table (aucun cours retenu après l'import ;
-     ils se recopient des cours récupérés au passage en multi-devises, AC-3 bis). R1 vaut pour la table sous son nom
+     ils se recopient des cours récupérés quand un compte reçoit une devise ou qu'un exercice multi-devises se crée, AC-3 bis). R1 vaut pour la table sous son nom
      neuf : l'entrée de la liste close est `Absence::Table("exchange_rates")`, jamais l'ancien nom.
      Test ici : `registry_entries_are_within_import_window` (`post_restore.rs:939`) vert **avec** la table créée — c'est
      lui qui rougirait si la table manquait à la liste ;
@@ -453,8 +453,9 @@ cours sans saisie.
      le `SELECT` de l'`INSERT … SELECT` pose sous REPEATABLE READ des verrous **partagés** sur les lignes lues — celles
      de `_kesh_fetched_exchange_rates` et, par le filtre A24, celles d'`accounts` de la société : ce n'est **pas** une
      lecture sans verrou. Elle peut croiser une récupération, qui tient ses lignes `_kesh_fetched_exchange_rates`
-     `FOR UPDATE` puis lit `accounts` et prend `companies` en partage : cycle avec une route d'exercice qui tient
-     `companies` `FOR UPDATE`, ou avec une route de compte qui tient le compte `FOR UPDATE`. Les deux côtés sont
+     `FOR UPDATE` puis lit `accounts` et prend `companies` en partage : cycle avec une route d'exercice qui copie
+     elle aussi (création d'un exercice multi-devises, `PUT /rate-kinds` : mêmes clés uniques de `exchange_rates`),
+     ou avec une route de compte qui tient le compte `FOR UPDATE`. Les deux côtés sont
      rejoués : la récupération et les routes d'exercice sous `kesh_db::retry::retry_on_deadlock`, `accounts::create`
      et `accounts::update` sous `crate::retry::retry_app_on_deadlock` (37-1 AC-4 ; AC-5). Les
      routes de 37-1 sont développées avant cette table : **cette story ajoute l'appel** dans
@@ -464,7 +465,10 @@ cours sans saisie.
    - Rien d'autre n'écrit `exchange_rates` que cette copie, le `PUT` d'un cours saisi, le ↑ (AC-5), l'acquittement
      (colonnes `acknowledged_*` seulement), la restauration et la remise à zéro (AC-7).
    - **Tests** : récupération → lignes `afc` copiées pour la société A (exercice multi-devises ouvert qui couvre
-     l'unité), non pour B (mono-devise) ni pour C (exercice clos), sauf `POST /fetch` de C ; ligne `manual` présente →
+     l'unité), non pour B (société mono-devise), ni pour C (exercice clos), sauf `POST /fetch` de C, ni pour D (société
+     multi-devises dont un exercice clos avant l'activation a été rouvert : exercice mono-devise, CR-7 ; ni récupération
+     ni copie pour lui, `GET /fiscal-years/{id}/exchange-rates` et `PUT …/rate-kinds` → 409 `MULTI_CURRENCY_DISABLED`
+     `details.fiscalYearId`, absent du sélecteur de l'écran) ; ligne `manual` présente →
      inchangée ; devise publiée que **aucun compte** de la société ne porte (p. ex. SEK) → aucune ligne copiée ;
      un compte qui reçoit la devise SEK (création, puis modification d'un compte CHF) → les cours SEK déjà récupérés
      des unités utiles sont copiés, ceux d'une autre devise non ; devise changée d'USD à EUR sur un compte sans ligne →
@@ -762,8 +766,8 @@ cours sans saisie.
      **change**, que l'exercice suivant existe et que `applyToNextOpening` est vrai : son `opening_rate_kind` prend la
      valeur de `closingRateKind` (même genre : le cours d'ouverture reste le cours de clôture de l'exercice réglé, T4),
      **s'il est ouvert** — clos, il n'est pas touché et la réponse le dit (`nextFiscalYear: { id, applied: false, reason:
-     "closed" }`) ; son mode (mono- ou multi-devises) n'y fait rien (le genre n'est qu'un réglage, lu quand il passera en
-     multi-devises). `applyToNextOpening` vrai sans changement de `closingRateKind` ou sans exercice suivant : sans
+     "closed" }`) ; son mode (mono- ou multi-devises) n'y fait rien (le genre n'est qu'un réglage ; un exercice suivant
+     mono-devise ne se rencontre que dans la limite de 37-1, Révision CR-7, et ne le lit jamais). `applyToNextOpening` vrai sans changement de `closingRateKind` ou sans exercice suivant : sans
      effet, sans erreur. **Aucune écriture n'est modifiée, et il n'y a rien à modifier** : entre deux exercices Kesh, les
      soldes de bilan sont **cumulés** d'un exercice à l'autre, sans écriture de report (`opening.rs`, 37-4 AC-1) ; les
      soldes d'ouverture ne se saisissent que sur le **premier** exercice de la société
@@ -872,8 +876,10 @@ cours sans saisie.
      /exchange-rates/notices/acknowledge`, `PUT /fiscal-years/{id}/rate-kinds` — la 37-2 compte donc **+5 routes, +5
      tracées, total registre +6 (avec l'endpoint `_test`), `sans_ecriture` +6, `tout.len()` +6** (`rejouees` et
      `exemptees` inchangés). **Rejeu** : les cinq routes écrivent `exchange_rates` (ou, pour `PUT /rate-kinds`, y
-     copient) et prennent `companies` en partage par sa clé étrangère, en cycle possible avec
-     l'activation de 37-1 (`companies` `FOR UPDATE` puis exercices `FOR UPDATE`) : leur transaction passe sous
+     copient) et prennent `companies` en partage par sa clé étrangère, en cycle possible entre elles, avec la
+     récupération et la copie (mêmes clés uniques de `exchange_rates`) et, pour `PUT /rate-kinds` (exercice `FOR UPDATE`
+     puis `companies` en partage), avec l'activation de 37-1 (`companies` `FOR UPDATE` puis exercices `FOR UPDATE`) :
+     leur transaction passe sous
      `kesh_db::retry::retry_on_deadlock` ; elles entrent donc au décompte du point **(vi)** du module
      (`audit_route_registry.rs:155`, « vingt-cinq routes `SansEcritureAuJournal` sont rejouées », :302 ; 37-1 le porte à
      vingt-sept, CR-7) — **+5**, en deltas, recompté au code, avec un test de victime d'interblocage pour `PUT …/rates` (patron
@@ -1051,8 +1057,8 @@ cours sans saisie.
    les tables système hors `TABLES_TO_TRUNCATE`, gagne les deux tables neuves. La remise à zéro des données de
    démonstration (`kesh_seed::reset_demo`, `crates/kesh-seed/src/lib.rs:510`, audit `installation.reset`) ne vide
    que les tables applicatives : elle **laisse** les valeurs publiées, données officielles de l'installation, et
-   **vide** `exchange_rates`, cours retenus de la société (copies comprises : elles se refont au passage en
-   multi-devises, AC-3 bis) — voulu, à dire au manuel. Aucun outil du serveur MCP ne lit la table des cours (une ligne porte son cours, 37-3a) : hors périmètre.
+   **vide** `exchange_rates`, cours retenus de la société (copies comprises : elles se refont quand un compte
+   reçoit une devise, AC-3 bis ; la réinitialisation remet aussi la société en mono-devise, 37-1 AC-5) — voulu, à dire au manuel. Aucun outil du serveur MCP ne lit la table des cours (une ligne porte son cours, 37-3a) : hors périmètre.
 8. **AC-8 — i18n, manuels.** Quatre locales (écran, codes d'erreur dont `FX_RATE_INVALID`, libellés d'audit et de
    type d'entité) ; manuel utilisateur (tableau annuel, source, cours mensuel AFC — publié d'avance pour le mois ; la
    définition « moyenne du 25 au 24, publiée le 25 » de R4 n'est écrite qu'une fois confirmée par Beat (relevé
@@ -1630,3 +1636,15 @@ cours sans saisie.
   « désactivation puis réactivation » retirés ; cycles de rejeu réécrits contre l'activation de 37-1 (`companies` puis
   exercices) et les routes d'exercice qui copient ; point (vi) de 37-1 « vingt-sept ». Décompte : 12 FR, 8 NFR
   (inchangé).
+- 2026-11-16 — validation CR-7 P1 (Sonnet) : 0 CRITICAL, 0 HIGH, 1 MEDIUM, 3 LOW. MEDIUM 37-2-CR7-P1-1 : le rejeu de
+  l'AC-5 attribuait aux cinq routes un cycle avec l'activation de 37-1 ; seule `PUT /rate-kinds` (exercice `FOR UPDATE`
+  puis `companies` en partage) en ferme un avec elle, les quatre autres le font entre elles et avec la
+  récupération — récrit. LOW -P1-2 : AC-3 bis (copie), cycle « avec une route d'exercice qui tient `companies` `FOR
+  UPDATE` » : reste de la bascule, aucune route d'exercice ne la tient plus — remplacé par les routes qui copient.
+  LOW -P1-3 : trois renvois « au passage en multi-devises » (AC-1 réimport, AC-7 remise à zéro, U4 de l'AC-5, « lu quand
+  il passera en multi-devises ») — remplacés. LOW -P1-4 : aucun test de l'exercice mono-devise (clos avant l'activation,
+  rouvert) d'une société multi-devises (récupération, copie, grille, `PUT /rate-kinds`, sélecteur) — ajouté aux tests
+  de l'AC-3 bis (cas D). Récapitulatif de l'epic concordant, non modifié. Axes exercés : résidus (grep des neuf termes
+  : aucun hors Change Logs datés), AC-3 bis, AC-4 (unités utiles), AC-5 (ordre des refus, rejeu, registre « vingt-sept »),
+  AC-7, D-CR7-1 (aucune dépendance de 37-2 au verrou de `companies` des écritures). Non exercés : AC-6 au-delà du
+  sélecteur, code, i18n, manuels. Décompte : 12 FR, 8 NFR (inchangé).
