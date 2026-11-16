@@ -271,7 +271,16 @@ export function formatReportAmount(v: string): string {
  * de big.js), comme au PDF. Un montant absent se lit 0.
  */
 export function formatCurrencyAmount(currency: string, v: string | undefined): string {
-	return `${currency} ${formatReportAmount(v ?? '0')}`;
+	let amount = v ?? '0';
+	try {
+		// Revue de code P1 : un résidu négatif sous le demi-centime (« -0.0040 »)
+		// s'arrondit à un zéro sans signe, et ne s'affiche pas « -0.00 ».
+		const r = new Big(amount).round(2, Big.roundHalfUp);
+		amount = r.eq(0) ? '0' : r.toString();
+	} catch {
+		// valeur illisible : rendue telle quelle par formatReportAmount
+	}
+	return `${currency} ${formatReportAmount(amount)}`;
 }
 
 // ============================================================================

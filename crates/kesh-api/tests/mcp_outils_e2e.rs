@@ -2360,6 +2360,83 @@ async fn rapports_en_devise_par_le_mcp(pool: MySqlPool) {
     for l in bilan["actifs"].as_array().unwrap() {
         assert!(l.get("soldeDevise").is_some(), "clé présente : {l}");
     }
+
+    // `kesh_compte_de_resultat` (revue de code P1) : un compte de produits USD
+    // porte sa devise et son solde en devise ; les autres, les clés à `null`.
+    let ventes_usd: i64 = sqlx::query_scalar(
+        "INSERT INTO accounts (company_id, number, name, account_type, currency) \
+         VALUES (?, '3205', 'Ventes USD', 'Revenue', 'USD') RETURNING id",
+    )
+    .bind(a.c)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let usd_50 = || {
+        Some(kesh_db::entities::ForeignAmount {
+            declared_currency: None,
+            amount: Decimal::new(50, 0),
+            rate: Decimal::new(91, 2),
+            source: Some(kesh_db::entities::RateProvenance::Manual),
+            rate_derived: false,
+        })
+    };
+    journal_entries::create(
+        &pool,
+        p.exercice_id,
+        kesh_db::entities::audit_log::Acteur::utilisateur(a.u),
+        NewJournalEntry {
+            company_id: a.c,
+            entry_date: common::jour::aujourd_hui_test(),
+            journal: Journal::Ventes,
+            description: "Vente en USD".into(),
+            project_id: None,
+            lines: vec![
+                NewJournalEntryLine {
+                    account_id: usd,
+                    debit: Decimal::new(4550, 2),
+                    credit: Decimal::ZERO,
+                    project_id: None,
+                    foreign: usd_50(),
+                },
+                NewJournalEntryLine {
+                    account_id: ventes_usd,
+                    debit: Decimal::ZERO,
+                    credit: Decimal::new(4550, 2),
+                    project_id: None,
+                    foreign: usd_50(),
+                },
+            ],
+        },
+    )
+    .await
+    .expect("vente en USD");
+    let resultat = structure(
+        &b.appeler(
+            &jeton,
+            "kesh_compte_de_resultat",
+            json!({"fiscalYearId": p.exercice_id}),
+        )
+        .await,
+        "kesh_compte_de_resultat",
+    );
+    let produits = resultat["produits"].as_array().unwrap();
+    let v = produits
+        .iter()
+        .find(|l| l["compteId"] == json!(ventes_usd))
+        .expect("produits USD au compte de résultat");
+    assert_eq!(
+        (&v["devise"], &v["solde"], &v["soldeDevise"]),
+        (&json!("USD"), &json!("45.50"), &json!("50.00")),
+        "{v}"
+    );
+    for l in produits
+        .iter()
+        .chain(resultat["charges"].as_array().unwrap())
+        .filter(|l| l["compteId"] != json!(ventes_usd))
+    {
+        assert_eq!(l.get("devise"), Some(&Value::Null), "{l}");
+        assert_eq!(l.get("soldeDevise"), Some(&Value::Null), "{l}");
+    }
 }
 
 /// CR-6 (V13, AC-7) — `kesh_postes_ouverts` sur un compte de débiteurs USD
@@ -2400,8 +2477,8 @@ async fn postes_ouverts_d_un_compte_en_devise_en_chf(pool: MySqlPool) {
 
 /// Story 37-4 (AC-6) — les tailles **re-mesurées avec les champs en devise
 /// remplis** (le pire cas : chaque élément en devise) : grand livre d'un compte
-/// USD de 31 lignes, balance de 56 comptes USD mouvementés, bilan de 56 comptes
-/// USD à solde non nul. Mêmes largeurs que la fixture des tailles (nom de compte
+/// USD de 31 lignes, balance de 56 comptes USD mouvementés, bilan de 57 comptes
+/// USD à solde non nul (les 56, plus le 1105 de `compte_usd_mouvemente`). Mêmes largeurs que la fixture des tailles (nom de compte
 /// de 34 caractères, libellé de 55). Les bornes de `bornes_attendues` ne changent
 /// que si ces mesures dépassent les plafonds du test des tailles.
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
@@ -2553,7 +2630,7 @@ async fn tailles_mesurees_en_devise(pool: MySqlPool) {
     assert_eq!(
         r["result"]["isError"],
         json!(false),
-        "56 comptes en devise : servi"
+        "57 comptes en devise : servi"
     );
     eprintln!(
         "TAILLE EN DEVISE kesh_bilan (57 comptes en devise) : {} o",

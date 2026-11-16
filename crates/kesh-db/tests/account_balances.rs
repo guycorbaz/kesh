@@ -278,6 +278,28 @@ async fn some_ids_borne_a_la_societe_et_rend_chaque_compte(pool: MySqlPool) {
     );
 }
 
+/// Revue de code P1 — un identifiant répété n'est rendu qu'une fois, et la
+/// requête liée aux identifiants distincts (le décompte de l'appelant se fait
+/// sur eux).
+#[sqlx::test(migrations = "./test-schema")]
+async fn un_identifiant_repete_n_est_rendu_qu_une_fois(pool: MySqlPool) {
+    let dec = jeu(&pool).await;
+    let r = appel(
+        &pool,
+        dec.s.company_id,
+        d(2026, 12, 31),
+        Some(&[dec.usd, dec.usd_vide, dec.usd]),
+    )
+    .await;
+    assert_eq!(
+        r,
+        vec![
+            (dec.usd, dec!(725.00), Some(dec!(800))),
+            (dec.usd_vide, Decimal::ZERO, Some(Decimal::ZERO)),
+        ]
+    );
+}
+
 /// Dans une transaction : la lecture voit ce que la transaction a écrit et
 /// n'a pas encore validé — c'est la connexion fournie qui lit.
 #[sqlx::test(migrations = "./test-schema")]

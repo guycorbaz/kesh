@@ -1042,7 +1042,8 @@ const ATTENDU = {
 	// (`reports-fx-trial-balance`), 2 dans `JournalReportView.svelte` (`reports-fx-revaluation`,
 	// `reports-fx-line`) — 6 littéraux. Fusion de `epic/37-multi-devises` (37-2 terminée,
 	// 65b3877f) dans la branche de la 37-4 : **3191**, relevé par la garde après la fusion
-	// (non additionné). À recompter après la fusion de la suite de la 37-3a.
+	// (non additionné). Fusion de la 37-3a jusqu'à `e89291e6` : **3191**, relevé de nouveau par la
+	// garde (Dev Agent Record de la 37-4) ; à recompter à chaque reprise suivante.
 	sitesTotal: 3191,
 	sitesNonResolus: 31,
 	relais: 6,

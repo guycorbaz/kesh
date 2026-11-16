@@ -225,8 +225,11 @@ pub async fn generate(
 
     // 15 paramètres pour les sommes en devise principale, puis 12 pour les
     // mêmes sommes en devise (Story 37-4), puis les 3 de la jointure : l'ordre
-    // est celui des `?` de [`trial_balance_sql`], exercé par un test à valeurs
-    // distinctes avant, depuis le début de l'exercice et dans la période.
+    // est celui des `?` de [`trial_balance_sql`], exercé par un test sur une
+    // période qui commence en cours d'exercice, où les trois segments (avant,
+    // depuis le début de l'exercice, période) sont non vides et distincts
+    // (`balance_en_devise_sur_une_periode_en_cours_d_exercice`,
+    // `tests/rapports_en_devise.rs`).
     let (start, end) = (period.start_date, period.end_date);
     let raw = sqlx::query_as::<_, RawRow>(&sql)
         .bind(start) // before_debit
@@ -393,8 +396,9 @@ mod tests {
     /// sommes en devise principale, 3 pour la jointure) et les 12 des sommes
     /// en devise — que `generate` lie dans cet ordre. Un `?` ajouté ou retiré
     /// sans son `bind` décalerait tous les suivants : ce test le signale, et
-    /// le test d'intégration à valeurs distinctes (avant, depuis l'exercice,
-    /// période) en vérifie l'ordre.
+    /// le test d'intégration `balance_en_devise_sur_une_periode_en_cours_d_exercice`
+    /// (avant, depuis l'exercice, période : trois segments non vides) en vérifie
+    /// l'ordre.
     #[test]
     fn la_requete_porte_trente_parametres() {
         assert_eq!(trial_balance_sql().matches('?').count(), 30);

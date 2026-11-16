@@ -296,8 +296,12 @@ pub fn format_swiss_amount(amount: Decimal) -> String {
 /// 37-4, AC-5) : la somme reste exacte (4 décimales stockées), seul l'affichage
 /// passe à 2 décimales, l'équidistant loin de zéro — les formateurs ne font
 /// qu'un `{:.2}`, dont l'arrondi n'est pas celui qu'on écrit.
+///
+/// Un résidu négatif de moins d'un demi-centime (`-0.0040`) s'arrondit à un
+/// zéro **sans signe** : il ne s'affiche pas « -0.00 » (revue de code P1).
 pub(crate) fn round_for_display(amount: Decimal) -> Decimal {
-    amount.round_dp_with_strategy(2, rust_decimal::RoundingStrategy::MidpointAwayFromZero)
+    let r = amount.round_dp_with_strategy(2, rust_decimal::RoundingStrategy::MidpointAwayFromZero);
+    if r.is_zero() { Decimal::ZERO } else { r }
 }
 
 /// Montant en devise au format suisse : `USD 1'233.57` (Story 37-4).
@@ -532,6 +536,12 @@ fn draw_empty_message(builder: &mut PdfBuilder, ctx: &PdfContext) {
     );
 }
 
+/// Longueur maximale du nom d'un compte **en devise** au bilan et au compte de
+/// résultat : de `MARGIN_LEFT_MM + 25` (40 mm) au solde en devise
+/// (`PAGE_WIDTH_MM - 85`, 125 mm), 85 mm en corps 10 — environ 40 caractères,
+/// avec une marge (Story 37-4, revue de code P1).
+const ACCOUNT_NAME_MAX_CHARS_FX: usize = 38;
+
 /// Dessine une ligne de compte (N° | Nom | Solde) ou variante.
 fn draw_account_row(builder: &mut PdfBuilder, ab: &AccountBalance) {
     builder.ensure_space_for_row();
@@ -544,8 +554,16 @@ fn draw_account_row(builder: &mut PdfBuilder, ab: &AccountBalance) {
         Mm(y),
         &builder.font,
     );
+    // Story 37-4 (revue de code P1) : un compte en devise porte son solde en
+    // devise à `PAGE_WIDTH_MM - 85` ; son nom est tronqué pour ne pas le
+    // recouvrir. Un compte en devise principale garde son nom entier.
+    let name = if ab.currency.is_some() {
+        truncate_with_ellipsis(&ab.account_name, ACCOUNT_NAME_MAX_CHARS_FX)
+    } else {
+        ab.account_name.clone()
+    };
     layer.use_text(
-        &ab.account_name,
+        &name,
         FONT_SIZE_PT,
         Mm(MARGIN_LEFT_MM + 25.0),
         Mm(y),
@@ -1708,8 +1726,9 @@ pub fn render_general_ledger_pdf(
                 .map(|cur| format_currency_amount(cur, v.unwrap_or_default()))
         };
         // Un compte commence en tête de page s'il ne tient pas au moins son
-        // bandeau, sa ligne d'ouverture et un mouvement.
-        builder.ensure_space_for_rows(4.0);
+        // bandeau, sa ligne d'ouverture et un mouvement — et, en devise, la
+        // seconde ligne de ce mouvement (Story 37-4, revue de code P1).
+        builder.ensure_space_for_rows(if section.currency.is_some() { 5.0 } else { 4.0 });
         draw_ledger_account_header(&mut builder, ctx, section, false);
         draw_ledger_marker(
             &mut builder,
@@ -2826,6 +2845,12 @@ mod tests {
         assert_eq!(round_for_display(dec!(1233.565)), dec!(1233.57));
         assert_eq!(round_for_display(dec!(-1233.565)), dec!(-1233.57));
         assert_eq!(round_for_display(dec!(0.0049)), dec!(0.00));
+        // Un résidu négatif sous le demi-centime ne s'affiche pas « -0.00 ».
+        assert_eq!(
+            format_swiss_amount(round_for_display(dec!(-0.0040))),
+            "0.00"
+        );
+        assert_eq!(format_currency_amount("USD", dec!(-0.0049)), "USD 0.00");
         assert_eq!(
             format_currency_amount("USD", dec!(1233.5650)),
             "USD 1'233.57"
@@ -2881,6 +2906,41 @@ mod tests {
             t.iter()
                 .any(|l| l == "débit USD 30'000.00 · crédit USD 0.00")
         );
+    }
+
+    /// Revue de code P1 — au bilan, le nom d'un compte en devise est tronqué
+    /// pour ne pas recouvrir son solde en devise ; un compte CHF garde le sien.
+    #[test]
+    fn bilan_pdf_tronque_le_nom_d_un_compte_en_devise() {
+        let long = "Compte bancaire en dollars américains auprès de la banque cantonale";
+        let compte = |id: i64, cur: Option<&str>| AccountBalance {
+            account_id: id,
+            account_number: format!("10{id}"),
+            account_name: long.into(),
+            account_type: AccountType::Asset,
+            active: true,
+            balance: dec!(100),
+            role: None,
+            currency: cur.map(String::from),
+            balance_currency: cur.map(|_| dec!(110)),
+        };
+        let bs = BalanceSheet {
+            assets: vec![compte(20, Some("USD")), compte(21, None)],
+            ..fixture_bs(true)
+        };
+        let ctx = PdfContext::fr_ch_default("Test SA");
+        let t = pdf_text(&render_balance_sheet_pdf(&bs, &ctx).unwrap());
+        assert!(t.iter().any(|l| l == long), "compte CHF : nom entier");
+        let tronque = truncate_with_ellipsis(long, ACCOUNT_NAME_MAX_CHARS_FX);
+        assert!(tronque.chars().count() <= ACCOUNT_NAME_MAX_CHARS_FX);
+        // L'ellipse « … » se lit `\u{85}` une fois décodée de WinAnsi par
+        // `pdf_text` (approximation Latin-1).
+        let tronque = tronque.replace('…', "\u{85}");
+        assert!(
+            t.contains(&tronque),
+            "compte USD : nom tronqué ({tronque}) dans {t:?}"
+        );
+        assert!(t.iter().any(|l| l == "USD 110.00"));
     }
 
     /// Mono-devise : aucune mention en devise dans le PDF.

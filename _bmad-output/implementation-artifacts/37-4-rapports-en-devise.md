@@ -252,6 +252,27 @@ exports, afin de rapprocher mes comptes PayPal ou Wise de leurs relevés et de c
       (grand livre d'un compte USD).
 - [x] Manuel (`.tex` seulement), section *Note de version* de la fiche (pas d'écriture au `CHANGELOG.md`).
 
+### Review Findings
+
+*(Revue de code P1, 2026-11-16, Opus : Blind Hunter, Edge Case Hunter, Acceptance Auditor.)*
+
+- [x] [Review][Patch] 37-4-CR-P1-1 MEDIUM — ordre des `bind` de la balance non exercé sur le segment « depuis le début de l'exercice » (toutes les périodes testées commençaient au début de l'exercice) ; commentaire qui annonçait un test absent [`trial_balance.rs:228`, `:396`] — test `balance_en_devise_sur_une_periode_en_cours_d_exercice`, commentaires récrits.
+- [x] [Review][Patch] 37-4-CR-P1-2 MEDIUM — aucune capture du compte de résultat ni du journal en devise [`frontend/tests/e2e/reports-currency.spec.ts`] — vente USD sur un compte de produits USD, `37-4-resultat-usd.png` et `37-4-journal-usd.png`.
+- [x] [Review][Patch] 37-4-CR-P1-3 MEDIUM — `docs/api-external.md` ne disait rien des champs en devise des rapports [`docs/api-external.md`] — paragraphe « Les rapports en devise ».
+- [x] [Review][Patch] 37-4-CR-P1-4 MEDIUM — `balances_as_of(Some(ids))` : un identifiant répété faussait la comparaison du nombre de lignes rendues (KF-002) [`account_balances.rs`] — identifiants dédoublonnés, règle écrite, test `un_identifiant_repete_n_est_rendu_qu_une_fois`.
+- [x] [Review][Patch] 37-4-CR-P1-5 LOW — résidu négatif sous le demi-centime affiché « -0.00 » [`pdf.rs` `round_for_display`, `reports.api.ts` `formatCurrencyAmount`] — zéro sans signe, testé en Rust et en Vitest.
+- [x] [Review][Patch] 37-4-CR-P1-6 LOW — au PDF du bilan et du compte de résultat, un nom long recouvrait le solde en devise [`pdf.rs` `draw_account_row`] — nom d'un compte en devise tronqué (`ACCOUNT_NAME_MAX_CHARS_FX`), test.
+- [x] [Review][Patch] 37-4-CR-P1-7 LOW — PDF du grand livre : la place réservée en tête de section ignorait la seconde ligne en devise [`pdf.rs:1712`] — 5 lignes pour une section en devise.
+- [x] [Review][Patch] 37-4-CR-P1-8 LOW — test T3 vide pour le compte de résultat (ligne SQL posée sur un compte d'actif) [`tests/rapports_en_devise.rs`] — ligne en devise posée par SQL sur le compte de produits CHF 3000, compte de résultat 2025 contrôlé.
+- [x] [Review][Patch] 37-4-CR-P1-9 LOW — `kesh_compte_de_resultat` non testé en devise par le MCP [`tests/mcp_outils_e2e.rs`] — ajouté à `rapports_en_devise_par_le_mcp`.
+- [x] [Review][Patch] 37-4-CR-P1-10 LOW — décompte « 56 comptes » pour un bilan de 57 [`tests/mcp_outils_e2e.rs`] — corrigé.
+- [x] [Review][Patch] 37-4-CR-P1-11 LOW — commentaire « À recompter après la fusion de la suite de la 37-3a » périmé [`i18n-keys.test.ts`] — récrit (3191, relevé de la garde).
+- [x] [Review][Patch] 37-4-CR-P1-12 LOW — `somme_en_devise` recopie `alias` et `condition` dans le SQL sans le dire [`account_balances.rs`] — invariant écrit (littéraux du code seulement).
+- [x] [Review][Patch] 37-4-CR-P1-13 LOW — lignes de l'inventaire AC-7 périmées après la fusion de la 37-3a : sites d'équilibre `kesh-db/src/repositories/journal_entries.rs` aujourd'hui `:698`, `:1097`, `:1907` — relevé au Change Log (AC non réécrit).
+- [ ] [Review][Defer] 37-4-CR-P1-14 LOW — tests « CHF seulement » faibles (`rapports_chf_seulement.rs` : balance âgée sans facture, projets et accueil sur une ligne sans montant en devise, `contains("\"91.00")`) — non traité, à tracer.
+- [ ] [Review][Defer] 37-4-CR-P1-15 LOW — « CHF » écrit en dur dans les descriptions MCP (`grand_livre.rs`, `rapports.rs`) et le manuel d'administration, là où U6/A29 disent « devise principale » — vrai aujourd'hui ; non traité, à tracer.
+
+
 ## Note de version
 
 *(Texte prêt à assembler au `CHANGELOG.md` à la release ; la fiche n'écrit jamais au `CHANGELOG.md`.)*
@@ -370,6 +391,26 @@ exports, afin de rapprocher mes comptes PayPal ou Wise de leurs relevés et de c
   (champs présents à `null` en CHF et remplis en devise, `tailles_mesurees` et `tailles_mesurees_en_devise`) ; bilan de
   57 comptes en devise : 20 156 o, seuil « environ 60 » conservé. Choix au registre `e37-choix-autonomes-37-4.md`
   (C-37-4-1 à C-37-4-9).
+- 2026-11-16 — revue de code P1 (Opus ; Blind Hunter, Edge Case Hunter, Acceptance Auditor) : 0 CRITICAL, 0 HIGH,
+  4 MEDIUM, 11 LOW retenus (dont 2 LOW non traités, à tracer : CR-P1-14, CR-P1-15), 9 rejetés ; 13 corrigés (section
+  *Review Findings*). Rejetés : « cours MCP arrondi à 2 décimales » (HIGH du Blind Hunter, réfuté au code : `Montant`
+  normalise et garde l'échelle, `mcp/sortie.rs:225-233`) ; arrondi des montants MCP (donnée, non affichage) ; libellés
+  `fx_*` du PDF en français (AC-2 : `fr_ch_default`) ; réévaluation vide au CSV, 0 au JSON (AC-2) ; enregistrement des
+  fixtures par variable (fixtures inchangées depuis `88955a09`, vérifié) ; débordement de la seconde ligne de la balance
+  (largeur suffisante) ; `assert!` au lieu d'`unreachable!` (même effet, C-37-4-6) ; `formatRate(undefined)` (rend
+  `''`) ; `tailles_mesurees_en_devise` séparé de `fixture_tailles` (forme, non fond). Notés hors périmètre : une ligne
+  à `amount_currency` `NULL` sur un compte en devise se lit USD 0 au grand livre et CHF au journal — exclue par le
+  dépôt de la 37-3a (`ACCOUNT_REQUIRES_CURRENCY`), non par le schéma ; `balances_as_of(None)` rend aussi les comptes
+  de résultat en devise, cumul de tous les exercices (contrat de l'AC-1 quater) — à filtrer par la 37-5 si sa
+  réévaluation ne vise que le bilan. Inventaire AC-7 relu après la fusion de la 37-3a : aucun site neuf ; sites
+  d'équilibre à `journal_entries.rs:698`, `:1097`, `:1907`. Gates (journaux `kesh-gate-logs/s37-4/review-p1/`) : fmt,
+  clippy workspace verts ; gate ciblé `package(kesh-report) | binary(account_balances) |
+  test(rapports_en_devise_par_le_mcp) | binary(textes_coherents)` 239/239 ; **gate complet** (patch dans `kesh-db`)
+  `cargo nextest run --profile ci` sur `kesh_s37_4` remise à zéro (base recréée, migrée, seedée) : 5755 passés,
+  13 ignorés — `scripts/test-fast.sh --ci` lui-même arrêté par le garde des droits (`GRANT … kesh_s37_3a` posé hors
+  du fichier d'init, signalé à l'orchestrateur), nextest lancé seul avec le même profil ; `npm run check` 0 erreur,
+  `lint-i18n-ownership` vert, Vitest 3909/3909 (252 fichiers), `npm run build` vert ; E2E : `reports-currency.spec.ts`
+  seule, 1/1 (suite complète non rejouée).
 
 ## Dev Agent Record
 
@@ -430,6 +471,8 @@ Opus 5.5 (agent de développement), 2026-11-16.
   `reports-currency.spec.ts` passe aux deux exécutions.
 - Captures (thème clair) prises par la spec E2E : `captures/37-4-grand-livre-usd.png`, `37-4-balance-usd.png`,
   `37-4-bilan-usd.png`. Le compte de résultat et le journal en devise ne sont couverts que par Vitest (pas de capture).
+  *(Revue de code P1 : `review-p1/captures/37-4-resultat-usd.png` et `37-4-journal-usd.png` ajoutées, mêmes
+  captures que ci-dessus reprises dans ce dossier.)*
 
 ### File List
 

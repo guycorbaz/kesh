@@ -39,6 +39,10 @@ pub enum Cote {
 /// Fragment SQL de la somme **en devise** d'un côté, sur les lignes d'alias
 /// `alias` (qui doit projeter `debit`, `credit` et `amount_currency`).
 ///
+/// ⚠️ `alias` et `condition` sont recopiés **tels quels** dans le SQL : ce sont
+/// des littéraux du code appelant, jamais une donnée reçue (les valeurs passent
+/// par les `?` de `condition`, liés par l'appelant).
+///
 /// `condition`, si elle est donnée, est un prédicat SQL ajouté au `CASE`
 /// (avec ses éventuels `?`, à lier par l'appelant **à la place** où le
 /// fragment est écrit) : c'est ce qui permet aux rapports de borner chaque
@@ -93,7 +97,9 @@ pub type SoldeALaDate = (i64, Decimal, Option<Decimal>);
 ///   étranger à la société est **ignoré**, sans erreur (KF-002 ; l'appelant
 ///   compare le nombre de lignes rendues à celui demandé) —, chacun rendu même
 ///   sans ligne (`(id, 0, Some(0))`, ou `(id, 0, None)` pour un compte sans
-///   devise).
+///   devise). Un identifiant répété n'est rendu **qu'une fois** : l'appelant
+///   compare le nombre de lignes rendues au nombre d'identifiants **distincts**
+///   demandés (revue de code P1).
 /// - `Some(&[])` rend un vecteur vide **sans requête** (un `IN ()` serait une
 ///   erreur de syntaxe ; une liste vide ne vaut pas `None`).
 /// - Lecture ordinaire, **non verrouillante**, dans la connexion fournie :
@@ -109,6 +115,15 @@ pub async fn balances_as_of(
     if account_ids.is_some_and(|ids| ids.is_empty()) {
         return Ok(Vec::new());
     }
+    // Identifiants distincts : `IN (…)` dédoublonne de lui-même ; les lier une
+    // seule fois garde la requête et la règle de comptage de l'appelant alignées.
+    let account_ids: Option<Vec<i64>> = account_ids.map(|ids| {
+        let mut v = ids.to_vec();
+        v.sort_unstable();
+        v.dedup();
+        v
+    });
+    let account_ids = account_ids.as_deref();
     let filtre = match account_ids {
         Some(ids) => format!(
             "a.id IN ({})",

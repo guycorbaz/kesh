@@ -7,7 +7,9 @@
  * (USD 1234.56 au cours 0.91193 = CHF 1125.83, contre un compte CHF) passée par
  * l'API. Le grand livre du compte USD montre sa devise, la seconde ligne du
  * mouvement et les soldes en devise ; la balance et le bilan portent le solde en
- * devise. La valeur traverse ainsi la frontière HTTP (JSON omis hors devise,
+ * devise ; puis une vente USD sur un compte de produits USD, lue au compte de
+ * résultat et au journal (revue de code P1). La valeur traverse ainsi la
+ * frontière HTTP (JSON omis hors devise,
  * présent ici).
  *
  * L'activation est irréversible : la spec repart d'un `with-company` neuf et en
@@ -38,6 +40,7 @@ test.afterEach(async ({ page }) => {
 });
 
 const USD_NUMBER = '1026';
+const USD_REVENUE_NUMBER = '3206';
 
 async function login(page: Page): Promise<void> {
 	await page.goto('/login');
@@ -65,7 +68,7 @@ async function accountId(ctx: APIRequestContext, number: string): Promise<number
 	return found!.id;
 }
 
-test('grand livre, balance et bilan d’un compte USD', async ({ page }) => {
+test('grand livre, balance, bilan, compte de résultat et journal d’un compte USD', async ({ page }) => {
 	await login(page);
 	const today = todayInZurich();
 	const year = today.slice(0, 4);
@@ -168,6 +171,57 @@ test('grand livre, balance et bilan d’un compte USD', async ({ page }) => {
 	});
 	await page.screenshot({
 		path: `${process.env.KESH_CAPTURES_DIR ?? 'test-results'}/37-4-bilan-usd.png`,
+		fullPage: true,
+	});
+
+	// Revue de code P1 — compte de résultat et journal en devise : un compte de
+	// produits USD, une vente USD 100 au cours 0.9119 = CHF 91.19.
+	const ctx2 = await authedApiContext(page);
+	try {
+		const usd = await accountId(ctx2, USD_NUMBER);
+		const ventes = await createAccount(ctx2, {
+			number: USD_REVENUE_NUMBER,
+			name: 'Ventes USD',
+			accountType: 'Revenue',
+			currency: 'USD',
+		});
+		const foreign = { amount: '100', rate: '0.9119', rateSource: 'manual' };
+		const sale = await ctx2.post('/api/v1/journal-entries', {
+			data: {
+				entryDate: today,
+				journal: 'Ventes',
+				description: 'E2E 37-4 — vente en USD',
+				lines: [
+					{ accountId: usd, debit: '91.19', credit: '0', foreign },
+					{ accountId: ventes, debit: '0', credit: '91.19', foreign },
+				],
+			},
+		});
+		expect(sale.ok(), `vente : ${sale.status()} ${await sale.text()}`).toBeTruthy();
+	} finally {
+		await disposeContextSafe(ctx2);
+	}
+
+	await page.goto('/reports');
+	await page.waitForLoadState('networkidle');
+	await page.locator('#reports-tab-income-statement').click();
+	await page.getByRole('button', { name: /générer/i }).click();
+	await expect(page.getByTestId(`account-fx-${USD_REVENUE_NUMBER}`)).toHaveText('USD 100.00', {
+		timeout: 5000,
+	});
+	await page.screenshot({
+		path: `${process.env.KESH_CAPTURES_DIR ?? 'test-results'}/37-4-resultat-usd.png`,
+		fullPage: true,
+	});
+
+	await page.locator('#reports-tab-journals').click();
+	await page.getByRole('button', { name: /générer/i }).click();
+	await expect(page.getByTestId('journal-fx-line').first()).toBeVisible({ timeout: 5000 });
+	await expect(
+		page.getByTestId('journal-fx-line').filter({ hasText: 'USD 100.00 × 0.9119' }),
+	).toHaveCount(2);
+	await page.screenshot({
+		path: `${process.env.KESH_CAPTURES_DIR ?? 'test-results'}/37-4-journal-usd.png`,
 		fullPage: true,
 	});
 });

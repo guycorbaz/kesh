@@ -602,6 +602,73 @@ async fn balance_en_devise(pool: MySqlPool) {
     assert!(caisse.currency.is_none() && caisse.closing_currency.is_none());
 }
 
+/// AC-1 (ordre des `bind` de la balance, revue de code P1) — période qui
+/// commence **en cours d'exercice** (2025-07-01 → 2025-12-31) : les trois
+/// segments des sommes en devise sont non vides et distincts. Un `fy_start` et
+/// un `start` intervertis sur `since_fy_*` videraient l'ouverture du compte de
+/// résultat ; un segment `before` lié au mauvais paramètre changerait celle du
+/// compte de bilan.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn balance_en_devise_sur_une_periode_en_cours_d_exercice(pool: MySqlPool) {
+    let j = jeu(&pool).await;
+    let tb = generate_trial_balance(
+        &pool,
+        j.s.company_id,
+        &ReportPeriod {
+            fiscal_year_id: j.fy2025,
+            start_date: ymd(2025, 7, 1),
+            end_date: ymd(2025, 12, 31),
+        },
+    )
+    .await
+    .unwrap();
+    let row = |id: i64| tb.rows.iter().find(|r| r.account_id == id).unwrap();
+
+    // Ventes USD (résultat) : ouverture = depuis le début de l'exercice (E2,
+    // juin : USD 500 au crédit) ; aucun mouvement au second semestre.
+    let v = row(j.ventes_usd);
+    assert_eq!(
+        (
+            v.opening_balance,
+            v.opening_currency,
+            v.total_debit_currency,
+            v.total_credit_currency,
+            v.closing_currency
+        ),
+        (
+            dec!(470.00),
+            Some(dec!(500)),
+            Some(Decimal::ZERO),
+            Some(Decimal::ZERO),
+            Some(dec!(500))
+        )
+    );
+
+    // Banque USD (bilan) : ouverture = tout ce qui précède (E1, E2 : USD 1500) ;
+    // période : E3 au crédit (USD 200), E4 réévaluation (USD 0).
+    let b = row(j.banque_usd);
+    assert_eq!(
+        (
+            b.opening_balance,
+            b.opening_currency,
+            b.total_debit_currency,
+            b.total_credit_currency,
+            b.balance_currency,
+            b.closing_currency,
+            b.closing_balance
+        ),
+        (
+            dec!(1370.00),
+            Some(dec!(1500)),
+            Some(Decimal::ZERO),
+            Some(dec!(200)),
+            Some(dec!(-200)),
+            Some(dec!(1300)),
+            dec!(1195.00)
+        )
+    );
+}
+
 /// AC-1 ter (balance) : un compte **archivé**, sans mouvement sur la période,
 /// à CHF 0 et devise ≠ 0, est rendu par son seul solde en devise.
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
@@ -833,6 +900,48 @@ async fn t3_devise_du_compte_et_ligne_hors_depot(pool: MySqlPool) {
         assert_eq!(
             a.currency.is_some() || a.balance_currency.is_some(),
             en_devise.contains(&a.account_id),
+            "compte {}",
+            a.account_number
+        );
+    }
+
+    // Compte de résultat (revue de code P1) : une ligne en devise posée par
+    // SQL sur le compte de produits CHF 3000 (E4, 2025) n'y paraît pas en
+    // devise.
+    let ventes_chf = j.s.accounts["3000"];
+    let n = sqlx::query(
+        "UPDATE journal_entry_lines SET amount_currency = 15, exchange_rate = 1, \
+         rate_source = 'manual' WHERE account_id = ?",
+    )
+    .bind(ventes_chf)
+    .execute(&pool)
+    .await
+    .unwrap()
+    .rows_affected();
+    assert_eq!(n, 1, "la ligne de produits de E4");
+    let is_ = generate_income_statement(
+        &pool,
+        j.s.company_id,
+        &ReportPeriod {
+            fiscal_year_id: j.fy2025,
+            start_date: ymd(2025, 1, 1),
+            end_date: ymd(2025, 12, 31),
+        },
+    )
+    .await
+    .unwrap();
+    let produit = is_
+        .revenues
+        .iter()
+        .find(|a| a.account_id == ventes_chf)
+        .expect("produits CHF listés");
+    assert_eq!(produit.balance, dec!(15.00));
+    assert!(produit.currency.is_none() && produit.balance_currency.is_none());
+    // Seul le compte de produits USD porte une devise au compte de résultat.
+    for a in is_.revenues.iter().chain(&is_.expenses) {
+        assert_eq!(
+            a.currency.is_some(),
+            a.account_id == j.ventes_usd,
             "compte {}",
             a.account_number
         );
