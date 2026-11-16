@@ -8,7 +8,7 @@ Le contenu est rédigé en français à destination des **fiduciaires, PME, ind�
 
 ---
 
-## [0.18.0] — Non publié
+## [0.18.0] — 2026-11-16
 
 La 0.18.0 corrige la fin de l'assistant de configuration, les derniers jours UTC (journal d'audit, réconciliation), le solde du reste d'une facture et les lignes à découper de la QR-facture, et nomme « compte analytique » ce que Kesh appelait « projet analytique ». Elle ne porte **aucune migration** (`kesh_version_min_required` reste à 0.17.6) ; Kesh n'écrit aucune sauvegarde dans `backup/pre-upgrade/` à cette mise à jour. **Le retour à la 0.17.8 est possible sans restauration** (manuel d'administration, *Passer à la 0.18.0*). La sauvegarde complète d'avant la mise à jour (base, `.keshbackup`, dossier des documents) reste recommandée. Le `.env` et les compose ne changent pas. ⚠️ **Un changement de contrat de l'API** : `POST /api/v1/invoices/{id}/write-off` peut rendre `400 DESIGNATED_ACCOUNT_WRONG_TYPE` (quatrième point ci-dessous).
 
