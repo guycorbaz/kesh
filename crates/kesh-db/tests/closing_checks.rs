@@ -301,6 +301,8 @@ async fn t_a1_les_sept_controles_dans_l_ordre(pool: MySqlPool) {
             (CheckCode::InconsistentEntries, Severity::Anomaly),
             (CheckCode::NextFiscalYear, Severity::Info),
             (CheckCode::DraftSupplierInvoices, Severity::Info),
+            // Story 37-5 — K9 en dernier : les index de K1 à K8 ne bougent pas.
+            (CheckCode::ForeignAccountsNotRevalued, Severity::Blocking),
         ]
     );
     for k in &c.checks {
@@ -1676,7 +1678,11 @@ async fn t_k8_brouillons_fournisseur_dans_l_exercice(pool: MySqlPool) {
     .unwrap();
     let c0 = checks(&pool, seeded.company_id, seeded.fiscal_year_id).await;
     let j0 = serde_json::to_value(&c0).unwrap();
-    assert_eq!(j0["checks"].as_array().unwrap().len(), 8, "huit contrôles");
+    assert_eq!(
+        j0["checks"].as_array().unwrap().len(),
+        9,
+        "neuf contrôles (K9, 37-5)"
+    );
     assert_eq!(j0["checks"][7]["code"], "DRAFT_SUPPLIER_INVOICES");
     assert_eq!(j0["checks"][7]["severity"], "info");
     assert_eq!(j0["checks"][7]["status"], "ok");

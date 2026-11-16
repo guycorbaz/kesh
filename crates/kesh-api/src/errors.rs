@@ -556,6 +556,12 @@ pub enum AppError {
         currency: String,
     },
 
+    /// Story 37-5 (AC-4) — plus de 100 devises dans les cours d'une
+    /// réévaluation : HTTP 400 `FX_RATE_INVALID`, `details: { reason:
+    /// "tooMany" }`, sans devise fautive.
+    #[error("Trop de cours de change dans la requête")]
+    FxRateTooMany,
+
     /// Story 37-3a (AC-3, AC-6) — refus d'une ligne en devise par `kesh-core`
     /// ou par l'analyse de `foreign` : HTTP 400, code
     /// `FX_VALUE_OUT_OF_RANGE`, `FX_LINE_ROUNDS_TO_ZERO` ou
@@ -2808,6 +2814,17 @@ impl IntoResponse for AppError {
                 )
             }
 
+            // Story 37-5 (AC-4) — plus de 100 devises dans `rates`.
+            AppError::FxRateTooMany => coded_response(
+                StatusCode::BAD_REQUEST,
+                "FX_RATE_INVALID",
+                t(
+                    "error-fx-rate-too-many",
+                    "Une réévaluation porte au plus 100 cours de change.",
+                ),
+                serde_json::json!({ "reason": "tooMany" }),
+            ),
+
             // Story 37-3a (AC-3, AC-6) — refus d'une ligne en devise.
             AppError::FxLine(core) => {
                 use kesh_core::errors::CoreError;
@@ -4863,6 +4880,74 @@ impl IntoResponse for AppError {
                         }
                     });
                     (StatusCode::CONFLICT, Json(body)).into_response()
+                }
+                // Story 37-5 (AC-4) — `accountIds` d'une réévaluation refusé :
+                // 400, les identifiants tels que reçus.
+                DbError::FxRevaluationAccountInvalid {
+                    reason,
+                    account_ids,
+                } => {
+                    let message = match reason {
+                        kesh_db::repositories::fx_revaluation::RevaluationAccountReason::Empty => t(
+                            "error-fx-revaluation-account-empty",
+                            "Cochez au moins un compte à réévaluer.",
+                        ),
+                        kesh_db::repositories::fx_revaluation::RevaluationAccountReason::Duplicate => t(
+                            "error-fx-revaluation-account-duplicate",
+                            "Un compte figure deux fois dans la sélection de la réévaluation.",
+                        ),
+                        kesh_db::repositories::fx_revaluation::RevaluationAccountReason::TooMany => t(
+                            "error-fx-revaluation-account-too-many",
+                            "Une réévaluation porte au plus 498 comptes : passez-la en plusieurs fois.",
+                        ),
+                        kesh_db::repositories::fx_revaluation::RevaluationAccountReason::NotEligible => t(
+                            "error-fx-revaluation-account-not-eligible",
+                            "Un compte sélectionné ne se réévalue pas : seuls les comptes de bilan en devise, actifs et imputables, de la société se réévaluent.",
+                        ),
+                    };
+                    coded_response(
+                        StatusCode::BAD_REQUEST,
+                        "FX_REVALUATION_ACCOUNT_INVALID",
+                        message,
+                        serde_json::json!({ "reason": reason.as_str(), "accountIds": account_ids }),
+                    )
+                }
+                // Story 37-5 (AC-4) — calcul de la réévaluation hors bornes : le
+                // code de la ligne en devise de 37-3a, sans rang de ligne.
+                DbError::FxRevaluationValueOutOfRange {
+                    currency,
+                    account_id,
+                } => {
+                    let mut args = FluentArgs::new();
+                    args.set("currency", currency.clone());
+                    coded_response(
+                        StatusCode::BAD_REQUEST,
+                        "FX_VALUE_OUT_OF_RANGE",
+                        t_args(
+                            "error-fx-revaluation-value-out-of-range",
+                            &format!(
+                                "La réévaluation d’un compte en {currency} sort des limites : le montant en CHF dépasserait 10 000 000 000 000."
+                            ),
+                            &args,
+                        ),
+                        serde_json::json!({ "currency": currency, "accountId": account_id }),
+                    )
+                }
+                // Story 37-5 (AC-9) — la clôture refusée par K9 : 409, `details`
+                // de K9.
+                DbError::ForeignAccountsNotRevalued(found) => {
+                    let mut args = FluentArgs::new();
+                    args.set("count", found.count);
+                    coded_response(
+                        StatusCode::CONFLICT,
+                        "FOREIGN_ACCOUNTS_NOT_REVALUED",
+                        t_args(
+                            "error-fiscal-year-close-fx-not-revalued",
+                            "Réévaluez d’abord les comptes en devise au cours de clôture : un compte de bilan en devise n’est pas réévalué, ou sa devise n’a pas de cours de clôture.",
+                            &args,
+                        ),
+                        serde_json::to_value(&found).unwrap_or_else(|_| serde_json::json!({})),
+                    )
                 }
                 // Story 29-1b (#232) — la contre-passation au début de l'exercice
                 // suivant, refusée faute d'exercice suivant. 409, comme

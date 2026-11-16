@@ -1771,21 +1771,43 @@ pub async fn bulk_create_from_chart_in_tx(
 /// [`validate_fx_accounts_in_tx`] sous leurs verrous — la résolution ne juge pas
 /// la validité des comptes, la revalidation le fait.
 pub fn fx_accounts_for(company: &Company, account: &Account) -> Option<FxAccounts> {
-    account.currency.as_ref()?;
-    if let Some(own) = account.own_fx_accounts() {
+    fx_accounts_for_settings(
+        company.fx_gain_account_id,
+        company.fx_loss_account_id,
+        account.id,
+        account.currency.as_deref(),
+        account.fx_gain_account_id,
+        account.fx_loss_account_id,
+    )
+}
+
+/// [`fx_accounts_for`] sur les seules colonnes qu'elle lit — la **même** règle,
+/// pour un appelant qui tient les réglages de la société par
+/// [`lock_company_currency_in_tx`] et une projection du compte (Story 37-5,
+/// réévaluation) plutôt qu'un `Company` et un `Account` complets.
+pub fn fx_accounts_for_settings(
+    company_gain: Option<i64>,
+    company_loss: Option<i64>,
+    account_id: i64,
+    account_currency: Option<&str>,
+    own_gain: Option<i64>,
+    own_loss: Option<i64>,
+) -> Option<FxAccounts> {
+    account_currency?;
+    if let (Some(gain), Some(loss)) = (own_gain, own_loss) {
         return Some(FxAccounts {
-            gain: own.gain,
-            loss: own.loss,
+            gain,
+            loss,
             origin: FxAccountsOrigin::Own,
-            holder_account_id: account.id,
+            holder_account_id: account_id,
         });
     }
-    match (company.fx_gain_account_id, company.fx_loss_account_id) {
+    match (company_gain, company_loss) {
         (Some(gain), Some(loss)) => Some(FxAccounts {
             gain,
             loss,
             origin: FxAccountsOrigin::Company,
-            holder_account_id: account.id,
+            holder_account_id: account_id,
         }),
         _ => None,
     }

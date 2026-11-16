@@ -1111,6 +1111,14 @@ error-rate-not-published = Diese Kurse sind von der ESTV noch nicht veröffentli
 error-rate-source-unavailable = Die Quelle der Wechselkurse (ESTV) antwortet nicht oder hat eine unbrauchbare Antwort geliefert. Versuchen Sie es später erneut oder erfassen Sie den Kurs.
 error-rate-unavailable-day = Kein { $currency }-Wechselkurs für den { $date }: Rufen Sie die Kurse ab oder erfassen Sie einen.
 error-fx-rate-invalid = Ungültiger { $currency }-Kurs: Er muss strikt positiv sein, pro Einheit, mit höchstens 10 Dezimalstellen und höchstens 1 000 000.
+# Story 37-5 — Fremdwährungsbewertung zum Jahresende
+error-fx-rate-too-many = Eine Bewertung umfasst höchstens 100 Wechselkurse.
+error-fx-revaluation-account-empty = Kreuzen Sie mindestens ein zu bewertendes Konto an.
+error-fx-revaluation-account-duplicate = Ein Konto kommt in der Auswahl der Bewertung doppelt vor.
+error-fx-revaluation-account-too-many = Eine Bewertung umfasst höchstens 498 Konten: Buchen Sie sie in mehreren Schritten.
+error-fx-revaluation-account-not-eligible = Ein ausgewähltes Konto wird nicht bewertet: Nur aktive, bebuchbare Bilanzkonten in Fremdwährung der Firma werden bewertet.
+error-fx-revaluation-value-out-of-range = Die Bewertung eines Kontos in { $currency } überschreitet die Grenzen: Der CHF-Betrag läge über 10 000 000 000 000.
+error-fiscal-year-close-fx-not-revalued = Bewerten Sie zuerst die Fremdwährungskonten zum Abschlusskurs: Ein Bilanzkonto in Fremdwährung ist nicht bewertet, oder seine Währung hat keinen Abschlusskurs.
 error-exchange-rate-version-forbidden = Für dieses Feld ist noch kein Kurs festgelegt: Die Version darf nicht gesendet werden.
 error-account-currency-locked = Die Währung dieses Kontos kann nicht mehr geändert werden: Es enthält Buchungen, deren Währung sie ist.
 error-account-currency-in-use = Dieses Konto wird in CHF verwendet (Rolle, Rechnungseinstellungen, Bankkonto, Artikel oder Abgleichsregel): Es kann keine Währung erhalten.
@@ -3391,6 +3399,7 @@ audit-log-action-exchange-rate-created = Wechselkurs erfasst
 audit-log-action-exchange-rate-updated = Wechselkurs geändert
 audit-log-action-exchange-rate-reset = Publizierter Wechselkurs übernommen
 audit-log-action-exchange-rates-corrections-acknowledged = Korrekturen der Wechselkurse bestätigt
+audit-log-action-fx-revaluation-posted = Bewertung der Fremdwährungskonten gebucht
 audit-log-action-report-generated = Bericht erstellt
 audit-log-action-report-exported = Bericht exportiert
 #

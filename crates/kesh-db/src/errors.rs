@@ -1270,6 +1270,43 @@ pub enum DbError {
     #[error("Une écriture de réévaluation ne se modifie pas")]
     EntryIsFxRevaluation,
 
+    /// `accountIds` d'une réévaluation refusé (Story 37-5, AC-4) : liste vide,
+    /// doublons, plus de 498 identifiants (avant la transaction), ou comptes
+    /// hors de la liste admissible — autre société, inexistant, de groupe,
+    /// archivé, de résultat, sans devise — sans fuite d'existence (dans la
+    /// transaction). Mappé vers HTTP **400** `FX_REVALUATION_ACCOUNT_INVALID`,
+    /// `details: { reason, accountIds }`, les identifiants **tels que reçus**.
+    #[error("Comptes de la réévaluation refusés ({reason:?}) : {account_ids:?}")]
+    FxRevaluationAccountInvalid {
+        /// La raison.
+        reason: crate::repositories::fx_revaluation::RevaluationAccountReason,
+        /// Les identifiants fautifs, tels que reçus (vide pour `empty` et
+        /// `tooMany`).
+        account_ids: Vec<i64>,
+    },
+
+    /// Le calcul de la réévaluation d'un compte sort des bornes (Story 37-5,
+    /// AC-4) : produit devise × cours hors de l'`i128`, CHF réévalué ou écart au
+    /// delà de 10¹³. Même code et même statut que la ligne en devise de 37-3a,
+    /// sans rang de ligne : HTTP **400** `FX_VALUE_OUT_OF_RANGE`,
+    /// `details: { currency, accountId }`.
+    #[error("Réévaluation hors bornes : compte {account_id} ({currency})")]
+    FxRevaluationValueOutOfRange {
+        /// La devise du compte.
+        currency: String,
+        /// Le compte fautif.
+        account_id: i64,
+    },
+
+    /// La clôture est refusée : un compte de bilan en devise n'est pas réévalué
+    /// au cours de clôture retenu par la société, ou sa devise n'a pas de cours
+    /// (Story 37-5, AC-9, contrôle K9 bloquant). Rendue par
+    /// `fiscal_years::close`, étape (d-bis). Mappé vers HTTP **409**
+    /// `FOREIGN_ACCOUNTS_NOT_REVALUED`, `details` = ceux de K9
+    /// (`{ accounts: [{ accountId, number, name, currency, delta, reason }] }`).
+    #[error("Comptes en devise non réévalués : {}", .0.count)]
+    ForeignAccountsNotRevalued(crate::repositories::fx_revaluation::NotRevaluedAccounts),
+
     /// La clôture d'un exercice est refusée : un exercice **antérieur** de la
     /// même société est encore ouvert (Story 15-12a, #543).
     ///
@@ -2262,6 +2299,9 @@ impl DbError {
             Self::FxCurrencyMismatch { .. } => "FX_CURRENCY_MISMATCH",
             Self::FxRateNotAfc { .. } => "FX_RATE_NOT_AFC",
             Self::EntryIsFxRevaluation => "ENTRY_IS_FX_REVALUATION",
+            Self::FxRevaluationAccountInvalid { .. } => "FX_REVALUATION_ACCOUNT_INVALID",
+            Self::FxRevaluationValueOutOfRange { .. } => "FX_VALUE_OUT_OF_RANGE",
+            Self::ForeignAccountsNotRevalued(_) => "FOREIGN_ACCOUNTS_NOT_REVALUED",
             Self::EarlierFiscalYearOpen { .. } => "EARLIER_FISCAL_YEAR_OPEN",
             Self::NextFiscalYearMissing { .. } => "NEXT_FISCAL_YEAR_MISSING",
             Self::NextFiscalYearClosed { .. } => "NEXT_FISCAL_YEAR_CLOSED",

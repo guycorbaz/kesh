@@ -21,6 +21,7 @@ pub mod email_templates;
 pub mod exchange_rates;
 pub mod exports;
 pub mod fiscal_years;
+pub mod fx_revaluation;
 pub mod health;
 pub mod i18n;
 pub mod imported_supplier_invoices;

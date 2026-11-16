@@ -1111,6 +1111,14 @@ error-rate-not-published = Questi tassi non sono ancora pubblicati dall'AFC. Rip
 error-rate-source-unavailable = La fonte dei tassi di cambio (AFC) non risponde o ha fornito una risposta inutilizzabile. Riprovi più tardi o inserisca il tasso.
 error-rate-unavailable-day = Nessun tasso di cambio { $currency } per il { $date }: recuperi i tassi o ne inserisca uno.
 error-fx-rate-invalid = Tasso { $currency } non valido: deve essere strettamente positivo, per unità, con al massimo 10 decimali e al massimo 1 000 000.
+# Story 37-5 — rivalutazione di fine esercizio dei conti in valuta
+error-fx-rate-too-many = Una rivalutazione comprende al massimo 100 tassi di cambio.
+error-fx-revaluation-account-empty = Seleziona almeno un conto da rivalutare.
+error-fx-revaluation-account-duplicate = Un conto compare due volte nella selezione della rivalutazione.
+error-fx-revaluation-account-too-many = Una rivalutazione comprende al massimo 498 conti: registrala in più volte.
+error-fx-revaluation-account-not-eligible = Un conto selezionato non si rivaluta: si rivalutano solo i conti di bilancio in valuta della società, attivi e imputabili.
+error-fx-revaluation-value-out-of-range = La rivalutazione di un conto in { $currency } supera i limiti: l’importo in CHF supererebbe 10 000 000 000 000.
+error-fiscal-year-close-fx-not-revalued = Rivaluta prima i conti in valuta al tasso di chiusura: un conto di bilancio in valuta non è rivalutato, o la sua valuta non ha un tasso di chiusura.
 error-exchange-rate-version-forbidden = Nessun tasso è ancora fissato per questa casella: la versione non deve essere inviata.
 error-account-currency-locked = La valuta di questo conto non può più cambiare: porta delle registrazioni, di cui è la valuta.
 error-account-currency-in-use = Questo conto è usato in CHF (ruolo, impostazioni di fatturazione, conto bancario, articolo o regola di riconciliazione): non può ricevere una valuta.
@@ -3392,6 +3400,7 @@ audit-log-action-exchange-rate-created = Tasso di cambio inserito
 audit-log-action-exchange-rate-updated = Tasso di cambio modificato
 audit-log-action-exchange-rate-reset = Valore pubblicato del tasso di cambio ripreso
 audit-log-action-exchange-rates-corrections-acknowledged = Correzioni dei tassi di cambio confermate
+audit-log-action-fx-revaluation-posted = Rivalutazione dei conti in valuta registrata
 audit-log-action-report-generated = Rapporto generato
 audit-log-action-report-exported = Rapporto esportato
 #

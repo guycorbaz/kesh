@@ -1174,6 +1174,14 @@ error-rate-not-published = Ces cours ne sont pas encore publiés par l'AFC. Rée
 error-rate-source-unavailable = La source des cours de change (AFC) ne répond pas ou a rendu une réponse inutilisable. Réessayez plus tard, ou saisissez le cours.
 error-rate-unavailable-day = Aucun cours de change { $currency } pour le { $date } : récupérez les cours ou saisissez-en un.
 error-fx-rate-invalid = Cours { $currency } invalide : il doit être strictement positif, par unité, avec au plus 10 décimales et au plus 1 000 000.
+# Story 37-5 — réévaluation de fin d'exercice
+error-fx-rate-too-many = Une réévaluation porte au plus 100 cours de change.
+error-fx-revaluation-account-empty = Cochez au moins un compte à réévaluer.
+error-fx-revaluation-account-duplicate = Un compte figure deux fois dans la sélection de la réévaluation.
+error-fx-revaluation-account-too-many = Une réévaluation porte au plus 498 comptes : passez-la en plusieurs fois.
+error-fx-revaluation-account-not-eligible = Un compte sélectionné ne se réévalue pas : seuls les comptes de bilan en devise, actifs et imputables, de la société se réévaluent.
+error-fx-revaluation-value-out-of-range = La réévaluation d’un compte en { $currency } sort des limites : le montant en CHF dépasserait 10 000 000 000 000.
+error-fiscal-year-close-fx-not-revalued = Réévaluez d’abord les comptes en devise au cours de clôture : un compte de bilan en devise n’est pas réévalué, ou sa devise n’a pas de cours de clôture.
 error-exchange-rate-version-forbidden = Aucun cours n'est encore retenu pour cette case : la version ne doit pas être envoyée.
 error-account-currency-locked = La devise de ce compte ne peut plus changer : il porte des écritures, dont elle est la devise.
 error-account-currency-in-use = Ce compte est employé en CHF (rôle, paramètres de facturation, compte bancaire, article ou règle de rapprochement) : il ne peut pas recevoir de devise.
@@ -3470,6 +3478,7 @@ audit-log-action-exchange-rate-created = Cours de change saisi
 audit-log-action-exchange-rate-updated = Cours de change modifié
 audit-log-action-exchange-rate-reset = Valeur publiée du cours de change reprise
 audit-log-action-exchange-rates-corrections-acknowledged = Corrections des cours de change acquittées
+audit-log-action-fx-revaluation-posted = Réévaluation des comptes en devise passée
 audit-log-action-report-generated = Rapport généré
 audit-log-action-report-exported = Rapport exporté
 #

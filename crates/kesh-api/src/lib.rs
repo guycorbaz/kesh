@@ -899,6 +899,17 @@ pub fn build_router_avec_registre(
             "/api/v1/fiscal-years/{id}/rate-kinds",
             put(routes::fiscal_years::update_rate_kinds),
         )
+        // Story 37-5 (AC-1, AC-2, AC-5) — réévaluation de fin d'exercice :
+        // aperçu (POST, n'écrit rien — Consultation 403 comme tout POST) et
+        // passation. Clés d'API admises, comme la clôture.
+        .route(
+            "/api/v1/fiscal-years/{id}/fx-revaluation/preview",
+            post(routes::fx_revaluation::preview_revaluation),
+        )
+        .route(
+            "/api/v1/fiscal-years/{id}/fx-revaluation",
+            post(routes::fx_revaluation::post_revaluation),
+        )
         // Story 8-1b : import bancaire CAMT.053 (Comptable+ uniquement
         // pour les mutations — POST preview + POST create).
         // DefaultBodyLimit appliqué localement pour ces deux endpoints

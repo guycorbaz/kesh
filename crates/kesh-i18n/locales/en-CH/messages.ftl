@@ -1111,6 +1111,14 @@ error-rate-not-published = These rates have not yet been published by the FTA. T
 error-rate-source-unavailable = The exchange rate source (FTA) is not responding or returned an unusable answer. Try again later, or enter the rate.
 error-rate-unavailable-day = No { $currency } exchange rate for { $date }: fetch the rates or enter one.
 error-fx-rate-invalid = Invalid { $currency } rate: it must be strictly positive, per unit, with at most 10 decimals and at most 1,000,000.
+# Story 37-5 — year-end revaluation of foreign-currency accounts
+error-fx-rate-too-many = A revaluation carries at most 100 exchange rates.
+error-fx-revaluation-account-empty = Tick at least one account to revalue.
+error-fx-revaluation-account-duplicate = An account appears twice in the revaluation selection.
+error-fx-revaluation-account-too-many = A revaluation covers at most 498 accounts: post it in several runs.
+error-fx-revaluation-account-not-eligible = A selected account cannot be revalued: only the company's active, postable balance-sheet accounts in a foreign currency are revalued.
+error-fx-revaluation-value-out-of-range = The revaluation of an account in { $currency } is out of range: the CHF amount would exceed 10,000,000,000,000.
+error-fiscal-year-close-fx-not-revalued = First revalue the foreign-currency accounts at the closing rate: a balance-sheet account in a foreign currency is not revalued, or its currency has no closing rate.
 error-exchange-rate-version-forbidden = No rate is set for this cell yet: the version must not be sent.
 error-account-currency-locked = This account’s currency can no longer change: it carries entries, whose currency it is.
 error-account-currency-in-use = This account is used in CHF (role, invoicing settings, bank account, product or reconciliation rule): it cannot receive a currency.
@@ -3397,6 +3405,7 @@ audit-log-action-exchange-rate-created = Exchange rate entered
 audit-log-action-exchange-rate-updated = Exchange rate changed
 audit-log-action-exchange-rate-reset = Published exchange rate restored
 audit-log-action-exchange-rates-corrections-acknowledged = Exchange rate corrections acknowledged
+audit-log-action-fx-revaluation-posted = Foreign-currency accounts revaluation posted
 audit-log-action-report-generated = Report generated
 audit-log-action-report-exported = Report exported
 #

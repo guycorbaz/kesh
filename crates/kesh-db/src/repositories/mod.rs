@@ -26,6 +26,7 @@ pub mod dunning_levels;
 pub mod email_templates;
 pub mod exchange_rates;
 pub mod fiscal_years;
+pub mod fx_revaluation;
 pub mod imported_supplier_invoices;
 pub mod installation_settings;
 pub mod invoice_number_sequences;
