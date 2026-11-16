@@ -625,3 +625,20 @@ Revue 4 de Guy (page `epic-35-revue.html`, 35-N = 37-N) : tout approuvé, 37-5 s
   trou devant un exercice clos avant l'activation puis rouvert), son test et sa phrase au manuel disparaissent :
   les exercices mono-devise forment toujours un préfixe ; (3) **D-CR7-3** — 37-5 ne relit plus sous verrou le mode de
   la société et de l'exercice (plus de course possible) : lecture simple avant la transaction.
+
+## CR-8 — réévaluation exigée à la clôture (décision de Beat, 2026-11-16)
+
+- **A37 — Contrôle de clôture bloquant.** Comme un exercice déséquilibré en CHF ne se clôt pas, un exercice dont un
+  compte de bilan en devise n'est pas réévalué au cours de clôture (résidu ≠ 0, celui de l'aperçu de 37-5) **ne se clôt
+  pas**. Le contrôle est **bloquant**, non informatif ; il vit dans 37-5 (l'Epic 37 sort avant l'Epic 38 : il prend le
+  rang **K9** des contrôles de clôture, et le relevé joint de 38-10 passe à K10 — à reporter dans 38-10).
+- **A38 — Le contrôle mène à la réévaluation.** Son avis porte un bouton **« Réévaluer »** qui ouvre l'aperçu de 37-5.
+- **A39 — L'aperçu montre tout avant de passer.** Pour chaque compte : numéro et nom, solde en devise, solde CHF actuel,
+  cours, solde CHF cible ; la ou les **réévaluations déjà passées** dans l'exercice (ancienne valeur) et la **nouvelle
+  valeur** après passage, avec l'écart ; chaque compte et chaque écriture existante sont **des liens** vers les lignes du
+  grand livre et vers l'écriture (affichage ou modification). Les écritures restent ajoutées (résidu, piste d'audit
+  intacte) ; « mise à jour » s'affiche comme ancienne → nouvelle valeur cumulée. But : qu'une valeur excessive se voie
+  avant de passer.
+- **A40 — Epic 36 d'abord.** Guy fusionne l'Epic 36 avant l'Epic 37 : l'Epic 37 reprendra `main` à ce moment (migrations
+  ordonnées, compteurs recomptés). L'Epic 36 construit aussi #823 (36-6, une transaction rattachée à plusieurs
+  écritures) : la story 38-6c2 se revoit après sa fusion (réutiliser plutôt que doubler).
