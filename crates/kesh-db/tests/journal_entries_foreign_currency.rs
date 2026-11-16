@@ -331,11 +331,9 @@ async fn ac1_chaque_contrainte_refuse_son_cas(pool: MySqlPool) {
         ("montant 0 hors réévaluation", zero),
         ("montant < 0", negatif),
     ] {
-        let nom = r.unwrap_or_else(|| panic!("{libelle} : accepté"));
-        assert!(
-            nom == "chk_jel_fx_amount" || nom == "chk_jel_fx_chf",
-            "{libelle} : {nom}"
-        );
+        // Constaté (MariaDB 10.11) : la première contrainte violée dans l'ordre
+        // de déclaration, `chk_jel_fx_amount` (`chk_jel_fx_chf` est en dernier).
+        assert_eq!(r.as_deref(), Some("chk_jel_fx_amount"), "{libelle}");
     }
 }
 
@@ -1142,6 +1140,141 @@ async fn ac7_put_un_seul_appariement(pool: MySqlPool) {
             "afc",
         )
         .await;
+    }
+}
+
+/// CR6-P4-1 — une ligne `manual` renvoyée au cours déduit (`{ amount, chf,
+/// rateSource: "manual" }`), la ligne d'avant ayant un cours **explicite**
+/// différent de celui que `rate_from_chf` redonne du même CHF : cours stocké
+/// gardé, `PUT` sans effet.
+#[sqlx::test(migrations = "./test-schema")]
+async fn ac7_put_manual_au_cours_deduit_garde_le_cours_stocke(pool: MySqlPool) {
+    let dec = decor(&pool).await;
+    let corps = |rate: Decimal, derive: bool| {
+        let mut f = fx(dec!(100), rate, Some(RateProvenance::Manual));
+        f.as_mut().unwrap().rate_derived = derive;
+        ecriture(
+            &dec,
+            d(2026, 3, 15),
+            vec![
+                ligne_fx(dec.usd, dec!(91.19), f),
+                chf_line(dec.ventes, Decimal::ZERO, dec!(91.19)),
+            ],
+        )
+    };
+    let je = creer(&pool, &dec, corps(dec!(0.91194), false))
+        .await
+        .unwrap();
+    // Le cours que redonne `rate_from_chf(100, 91.19)` : 0.9119 ≠ 0.91194.
+    let deduit = kesh_core::accounting::rate_from_chf(&dec!(100), &dec!(91.19)).unwrap();
+    assert_ne!(deduit, dec!(0.91194));
+    let apres = modifier(&pool, &dec, &je, corps(deduit, true))
+        .await
+        .unwrap();
+    assert_eq!(apres.entry.version, je.entry.version, "sans effet");
+    assert_eq!(apres.lines[0].foreign().unwrap().rate, dec!(0.91194));
+}
+
+/// CR6-P4-2 — deux lignes d'avant `afc` de même compte, débit et montant, à
+/// 0.91193 et 0.91194 (même CHF) ; après la reprise d'un cours à 0.91195, un
+/// corps qui renvoie l'une au cours déduit et l'autre avec `rate: 0.91193`,
+/// toutes deux `afc`, est accepté sans recontrôle, quel que soit le rang.
+#[sqlx::test(migrations = "./test-schema")]
+async fn ac7_put_cours_deduit_apparie_apres_les_lignes_a_cours(pool: MySqlPool) {
+    let dec = decor(&pool).await;
+    let afc = |rate: Decimal, derive: bool| {
+        let mut f = fx(dec!(100), rate, Some(RateProvenance::Afc));
+        f.as_mut().unwrap().rate_derived = derive;
+        ligne_fx(dec.usd, dec!(91.19), f)
+    };
+    let contre = || chf_line(dec.ventes, Decimal::ZERO, dec!(182.38));
+    for inverse in [false, true] {
+        cours(
+            &pool,
+            dec.s.company_id,
+            "USD",
+            d(2026, 3, 1),
+            dec!(0.91193),
+            "afc",
+        )
+        .await;
+        let je = creer(
+            &pool,
+            &dec,
+            ecriture(
+                &dec,
+                d(2026, 3, 15),
+                vec![
+                    afc(dec!(0.91193), false),
+                    ligne_fx(
+                        dec.usd,
+                        dec!(91.19),
+                        fx(dec!(100), dec!(0.91193), Some(RateProvenance::Manual)),
+                    ),
+                    contre(),
+                ],
+            ),
+        )
+        .await
+        .unwrap();
+        // Reprise à 0.91194, puis la seconde ligne passée `afc` à ce cours.
+        cours(
+            &pool,
+            dec.s.company_id,
+            "USD",
+            d(2026, 3, 1),
+            dec!(0.91194),
+            "afc",
+        )
+        .await;
+        let deux = modifier(
+            &pool,
+            &dec,
+            &je,
+            ecriture(
+                &dec,
+                d(2026, 3, 15),
+                vec![
+                    afc(dec!(0.91193), false),
+                    afc(dec!(0.91194), false),
+                    contre(),
+                ],
+            ),
+        )
+        .await
+        .unwrap();
+        // Nouvelle reprise, puis le corps : une ligne au cours déduit, une à
+        // 0.91193.
+        cours(
+            &pool,
+            dec.s.company_id,
+            "USD",
+            d(2026, 3, 1),
+            dec!(0.91195),
+            "afc",
+        )
+        .await;
+        let deduit = kesh_core::accounting::rate_from_chf(&dec!(100), &dec!(91.19)).unwrap();
+        let mut lignes = vec![afc(deduit, true), afc(dec!(0.91193), false)];
+        if inverse {
+            lignes.reverse();
+        }
+        lignes.push(contre());
+        let apres = modifier(&pool, &dec, &deux, ecriture(&dec, d(2026, 3, 15), lignes))
+            .await
+            .expect("aucune ligne recontrôlée");
+        let mut cours_stockes: Vec<Decimal> = apres
+            .lines
+            .iter()
+            .filter_map(|l| l.foreign())
+            .map(|f| f.rate)
+            .collect();
+        cours_stockes.sort();
+        assert_eq!(
+            cours_stockes,
+            vec![dec!(0.91193), dec!(0.91194)],
+            "inverse={inverse}"
+        );
     }
 }
 
