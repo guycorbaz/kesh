@@ -2639,7 +2639,9 @@ fn g25_non_excuses(
                 if e.ligne_entiere {
                     entiere = true;
                 } else {
-                    reste = reste.replace(&extrait, " ");
+                    // Un seul exemplaire par ligne (revue P2, P2-1) : un second « nom du
+                    // projet » sur la même ligne reste un écart.
+                    reste = reste.replacen(&extrait, " ", 1);
                 }
             }
         }
@@ -2691,6 +2693,11 @@ fn g25_une_exception_n_excuse_que_son_extrait() {
     // Un autre fichier : l'exception ne vaut pas.
     let (ecarts, _) = g25_non_excuses("g.tex", "nom du projet\n", &ex);
     assert_eq!(ecarts.len(), 1);
+    // Revue P2 (P2-1) : l'extrait répété sur une même ligne n'excuse que son premier
+    // exemplaire.
+    let (ecarts, vues) = g25_non_excuses("f.tex", "nom du projet, puis nom du projet\n", &ex);
+    assert_eq!(ecarts.len(), 1, "{ecarts:?}");
+    assert_eq!(vues, vec![1, 0]);
 }
 
 /// **Fonction pure de G25** — les littéraux de chaîne d'un source Rust, avec la ligne
