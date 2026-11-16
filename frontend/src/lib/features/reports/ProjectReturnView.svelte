@@ -20,21 +20,21 @@
 
 <div data-testid="project-return-view">
 	<h2 class="text-lg font-semibold">
-		{i18nMsg('reports-project-return-title', 'Rendement par projet')} — {report.project.code}
+		{i18nMsg('reports-project-return-title', 'Rendement par compte analytique')} — {report.project.code}
 		{report.project.name}
 	</h2>
 	<p class="mb-3 text-sm text-text-muted" data-testid="project-return-period">{report.periodLabel}</p>
 
 	{#if report.sections.length === 0}
 		<p class="rounded border border-border bg-surface px-3 py-2 text-sm" data-testid="project-return-empty">
-			{i18nMsg('reports-project-return-empty', 'Aucun mouvement tagué sur ce projet pour la période.')}
+			{i18nMsg('reports-project-return-empty', 'Aucun mouvement tagué sur ce compte analytique pour la période.')}
 		</p>
 	{:else}
 		<div class="overflow-x-auto">
 			<table class="w-full text-sm" data-testid="project-return-table">
 				<thead>
 					<tr class="border-b border-border text-left text-xs text-text-muted">
-						<th class="py-1">{i18nMsg('reports-project-return-col-project', 'Projet')}</th>
+						<th class="py-1">{i18nMsg('reports-project-return-col-project', 'Compte analytique')}</th>
 						<th class="py-1 text-right">{i18nMsg('reports-project-return-col-cost', 'Coût investi')}</th>
 						<th class="py-1 text-right">{i18nMsg('reports-project-return-col-revenue', 'Revenus')}</th>
 						<th class="py-1 text-right">{i18nMsg('reports-project-return-col-net', 'Résultat net')}</th>
