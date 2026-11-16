@@ -1,9 +1,9 @@
 # Story 36-15 : « compte analytique » au lieu de « projet analytique » (#1161)
 
-Status: ready-for-dev
+Status: in-progress
 
-> ⛔ **Développement suspendu à l'arbitrage de Guy sur les traductions (D2)** : fr-CH « compte analytique » est acquis ;
-> de-CH, it-CH et en attendent la réponse à la page de décision de l'orchestrateur (option A recommandée).
+> **Traductions arbitrées par Guy le 2026-11-16 (D2, option A)** : de-CH « analytisches Konto », it-CH « conto
+> analitico », en « analytical account » ; fr-CH « compte analytique ».
 
 *Fiche rédigée le 2026-11-15 par l'agent de rédaction des fiches de l'Epic 36, phase 2 (Opus 5.5), worktree `kesh-36-15`,
 branche `story/36-15-compte-analytique`, par le workflow `bmad-create-story`. Release **0.18.0**. **Aucune migration**,
@@ -206,42 +206,30 @@ de données des E2E (« Projet E2E 19-4 »…) sont des données, inchangés.
   change pas (« projet » et « compte » sont masculins) : les accords (« archivé », « créé », « actuel ») restent.
   *Écartée* : « axe analytique » ou « centre de coûts » (le CR a tranché).
 
-- **D2 — Les traductions : fr-CH acquis, de-CH / it-CH / en en attente de l'arbitrage de Guy** (CR #1161,
-  recommandation 3 ; C-36-15-1). ⛔ **Le développement ne commence qu'après la réponse de Guy**, soumise par
-  l'orchestrateur sur une page de décision ; la fiche ne tranche pas.
+- **D2 — Les traductions : option A, arbitrée par Guy le 2026-11-16** (CR #1161, recommandation 3 ; C-36-15-1) :
+  de-CH **analytisches Konto** (n.), it-CH **conto analitico** (m.), en **analytical account**. *Motif* : suit le
+  français (règle du glossaire `:29`, « En cas de doute sur une langue cible, suivre le FRANÇAIS ») ; *analytical* est
+  l'adjectif que le catalogue anglais employait déjà (`en-CH/messages.ftl:1478`) ; l'option A **prolonge** l'arbitrage du
+  2026-08-19 contre *Kostenstelle* (glossaire `:172-189` : « on ne traduit pas « analytique » » devient « on suit le
+  français »), elle ne le défait pas. Le terme s'écrit **toujours en entier** : jamais « Konto », « conto » ni
+  « account » seul, qui désignent le compte du plan. *Écartées* (soumises à Guy, non retenues) : B `Kostenstelle` /
+  `centro di costo` / `cost centre` ; C `Kostenstelle` / `conto analitico` / `analytical account`.
 
-  **Acquis** : fr-CH « compte analytique » (D1), et tout ce qui ne dépend que du français — les 49 valeurs fr-CH, les 46
-  sites du frontend, les 15 chaînes Rust, les manuels, `api-external.md`, `README.md:47`.
+  Formes dérivées :
 
-  **En attente** — trois options, soumises à Guy :
-
-  | Option | de-CH | it-CH | en-CH | |
-  |---|---|---|---|---|
-  | **A** | **analytisches Konto** (n.) | **conto analitico** (m.) | **analytical account** | **recommandée par l'orchestrateur** : suit le français (règle du glossaire `:29`, « En cas de doute sur une langue cible, suivre le FRANÇAIS ») ; *analytical* est l'adjectif que le catalogue anglais emploie déjà (`en-CH/messages.ftl:1478`, « The analytical project is archived. ») |
-  | **B** | Kostenstelle (f.) | centro di costo (m.) | cost centre | le terme de gestion consacré dans les trois langues ; ne dit que les coûts, alors que le rendement compte des revenus |
-  | **C** | Kostenstelle (f.) | conto analitico (m.) | analytical account | le mélange de la première version de cette fiche (`54b513a71`) |
-
-  Formes dérivées par terme :
-
-  | fr-CH | analytisches Konto | Kostenstelle | conto analitico | centro di costo | analytical account | cost centre |
-  |---|---|---|---|---|---|---|
-  | pluriel | analytische Konten | Kostenstellen | conti analitici | centri di costo | analytical accounts | cost centres |
-  | … parent | übergeordnetes analytisches Konto | übergeordnete Kostenstelle | conto analitico superiore | centro di costo superiore | parent analytical account | parent cost centre |
-  | sous-… | analytisches Unterkonto | Unterkostenstelle | sottoconto analitico | sottocentro di costo | analytical sub-account | sub-cost centre |
-  | … racine | analytisches Hauptkonto | Hauptkostenstelle | conto analitico radice | centro di costo radice | root analytical account | root cost centre |
+  | fr-CH | de-CH | it-CH | en-CH |
+  |---|---|---|---|
+  | pluriel | analytische Konten | conti analitici | analytical accounts |
+  | … parent | übergeordnetes analytisches Konto | conto analitico superiore | parent analytical account |
+  | sous-… | analytisches Unterkonto | sottoconto analitico | analytical sub-account |
+  | … racine | analytisches Hauptkonto | conto analitico radice | root analytical account |
 
   *Source* : aucun précédent au catalogue (`git grep -n -iE "kostenst|kostentr|conto analitico|analytical account"` ne
-  rend que la note du glossaire, `docs/i18n-glossaire.md:176-186`) ; les termes sont ceux que propose le CR #1161. **Le
+  rendait que la note du glossaire, `docs/i18n-glossaire.md:176-186`) ; les termes sont ceux que propose le CR #1161. **Le
   fondement est le CR de Guy**, non un changement de l'objet : la table `projects` porte toujours code, nom, deux niveaux
-  et dates (`20260702000001_projects_analytics.sql`), ce qu'invoquait l'arbitrage du 2026-08-19 (glossaire `:172-189`).
-  L'option B ou C remplace cet arbitrage ; l'option A le prolonge (« on ne traduit pas » devient « on suit le français »).
-  *Écartées d'emblée* : `Kostenträger` et `commessa` (le « pour quoi ? » de 2026-08-19, trop étroit pour un immeuble ou un
-  centre de coûts) ; garder `Projekt` / `progetto` / *project* (le défaut même que le CR corrige).
+  et dates (`20260702000001_projects_analytics.sql`).
 
-  **Valeurs, clé par clé.** fr-CH, puis une colonne par terme : la réponse de Guy choisit une colonne par langue
-  (A = `analytisches Konto`, `conto analitico`, `analytical account` ; B = `Kostenstelle`, `centro di costo`,
-  `cost centre` ; C = `Kostenstelle`, `conto analitico`, `analytical account`). Les deux clés d'export ne changent qu'un mot
-  de leur liste (en gras).
+  **Valeurs, clé par clé.** Les deux clés d'export ne changent qu'un mot de leur liste (en gras).
 
   **fr-CH** (acquis) :
 
@@ -282,121 +270,121 @@ de données des E2E (« Projet E2E 19-4 »…) sont des données, inchangés.
   | `audit-log-action-project-updated` | Compte analytique modifié |
   | `audit-log-action-project-unarchived` | Compte analytique réactivé |
 
-  **de-CH** (en attente) :
+  **de-CH** (option A) :
 
-  | Clé | analytisches Konto (A) | Kostenstelle (B, C) |
-  |---|---|---|
-  | `journal-entry-form-col-project`, `reconciliation-split-th-project`, `reports-project-return-col-project`, `reports-project-selector-label`, `invoice-detail-project-label`, `supplier-invoices-detail-project`, `audit-log-entity-project` | Analytisches Konto | Kostenstelle |
-  | `journal-entry-project-archived`, `reconciliation-rules-default-project-archived`, `invoice-project-archived`, `audit-log-action-project-archived` | Analytisches Konto archiviert | Kostenstelle archiviert |
-  | `reconciliation-failed-project-archived` | Das analytische Konto ist archiviert. | Die Kostenstelle ist archiviert. |
-  | `reconciliation-failed-project-not-found` | Analytisches Konto nicht gefunden. | Kostenstelle nicht gefunden. |
-  | `reconciliation-manual-project-label`, `invoice-field-project`, `supplier-invoices-field-project` | Analytisches Konto (optional) | Kostenstelle (optional) |
-  | `reconciliation-rules-labels-default-project` | Analytisches Standardkonto | Standard-Kostenstelle |
-  | `reports-project-expenses`, `-expenses-title` | Ausgaben pro analytischem Konto | Ausgaben pro Kostenstelle |
-  | `reports-project-expenses-empty` | Für diesen Zeitraum sind diesem analytischen Konto keine Ausgaben zugeordnet. | Für diesen Zeitraum sind dieser Kostenstelle keine Ausgaben zugeordnet. |
-  | `reports-project-return`, `-return-title` | Rendite pro analytischem Konto | Rendite pro Kostenstelle |
-  | `reports-project-return-empty` | Für diesen Zeitraum sind diesem analytischen Konto keine Bewegungen zugeordnet. | Für diesen Zeitraum sind dieser Kostenstelle keine Bewegungen zugeordnet. |
-  | `reports-project-selector-placeholder` | — Analytisches Konto wählen | — Kostenstelle wählen |
-  | `reports-filename-project-expenses` | ausgaben-pro-analytischem-konto | ausgaben-pro-kostenstelle |
-  | `reports-filename-project-return` | rendite-pro-analytischem-konto | rendite-pro-kostenstelle |
-  | `export-global-description`, `export-global-content-includes` | … **analytische Konten** … | … **Kostenstellen** … |
-  | `invoice-project-current` | Aktuelles analytisches Konto | Aktuelle Kostenstelle |
-  | `nav-projects`, `projects-title` | Analytische Konten | Kostenstellen |
-  | `projects-archived` | Analytisches Konto archiviert. | Kostenstelle archiviert. |
-  | `projects-created`, `audit-log-action-project-created` | Analytisches Konto erstellt(.) | Kostenstelle erstellt(.) |
-  | `projects-empty` | Kein analytisches Konto. Erstellen Sie Ihr erstes analytisches Konto, um zu beginnen. | Keine Kostenstelle. Erstellen Sie Ihre erste Kostenstelle, um zu beginnen. |
-  | `projects-err-code` | Der Code des analytischen Kontos ist erforderlich. | Der Code der Kostenstelle ist erforderlich. |
-  | `projects-err-name` | Der Name des analytischen Kontos ist erforderlich. | Der Name der Kostenstelle ist erforderlich. |
-  | `projects-field-parent` | Übergeordnetes analytisches Konto (optional) | Übergeordnete Kostenstelle (optional) |
-  | `projects-form-create`, `projects-new` | Neues analytisches Konto | Neue Kostenstelle |
-  | `projects-form-edit` | Analytisches Konto bearbeiten | Kostenstelle bearbeiten |
-  | `projects-load-error` | Analytische Konten können nicht geladen werden. | Kostenstellen können nicht geladen werden. |
-  | `projects-parent-none` | — Keines (analytisches Hauptkonto) | — Keine (Hauptkostenstelle) |
-  | `projects-show-archived` | Archivierte analytische Konten anzeigen | Archivierte Kostenstellen anzeigen |
-  | `projects-subtitle` | Fassen Sie Ihre Ausgaben und Erträge nach analytischem Konto zusammen (eine Liegenschaft, ein Fahrzeug, eine Renovation, eine Tätigkeit), um sie separat auszuwerten. | Fassen Sie Ihre Ausgaben und Erträge nach Kostenstelle zusammen (eine Liegenschaft, ein Fahrzeug, eine Renovation, eine Tätigkeit), um sie separat auszuwerten. |
-  | `projects-unarchived` | Analytisches Konto dearchiviert. | Kostenstelle dearchiviert. |
-  | `projects-updated`, `audit-log-action-project-updated` | Analytisches Konto aktualisiert(.) | Kostenstelle aktualisiert(.) |
-  | `audit-log-action-project-unarchived` | Analytisches Konto reaktiviert | Kostenstelle reaktiviert |
+  | Clé | de-CH |
+  |---|---|
+  | `journal-entry-form-col-project`, `reconciliation-split-th-project`, `reports-project-return-col-project`, `reports-project-selector-label`, `invoice-detail-project-label`, `supplier-invoices-detail-project`, `audit-log-entity-project` | Analytisches Konto |
+  | `journal-entry-project-archived`, `reconciliation-rules-default-project-archived`, `invoice-project-archived`, `audit-log-action-project-archived` | Analytisches Konto archiviert |
+  | `reconciliation-failed-project-archived` | Das analytische Konto ist archiviert. |
+  | `reconciliation-failed-project-not-found` | Analytisches Konto nicht gefunden. |
+  | `reconciliation-manual-project-label`, `invoice-field-project`, `supplier-invoices-field-project` | Analytisches Konto (optional) |
+  | `reconciliation-rules-labels-default-project` | Analytisches Standardkonto |
+  | `reports-project-expenses`, `-expenses-title` | Ausgaben pro analytischem Konto |
+  | `reports-project-expenses-empty` | Für diesen Zeitraum sind diesem analytischen Konto keine Ausgaben zugeordnet. |
+  | `reports-project-return`, `-return-title` | Rendite pro analytischem Konto |
+  | `reports-project-return-empty` | Für diesen Zeitraum sind diesem analytischen Konto keine Bewegungen zugeordnet. |
+  | `reports-project-selector-placeholder` | — Analytisches Konto wählen |
+  | `reports-filename-project-expenses` | ausgaben-pro-analytischem-konto |
+  | `reports-filename-project-return` | rendite-pro-analytischem-konto |
+  | `export-global-description`, `export-global-content-includes` | … **analytische Konten** … |
+  | `invoice-project-current` | Aktuelles analytisches Konto |
+  | `nav-projects`, `projects-title` | Analytische Konten |
+  | `projects-archived` | Analytisches Konto archiviert. |
+  | `projects-created`, `audit-log-action-project-created` | Analytisches Konto erstellt(.) |
+  | `projects-empty` | Kein analytisches Konto. Erstellen Sie Ihr erstes analytisches Konto, um zu beginnen. |
+  | `projects-err-code` | Der Code des analytischen Kontos ist erforderlich. |
+  | `projects-err-name` | Der Name des analytischen Kontos ist erforderlich. |
+  | `projects-field-parent` | Übergeordnetes analytisches Konto (optional) |
+  | `projects-form-create`, `projects-new` | Neues analytisches Konto |
+  | `projects-form-edit` | Analytisches Konto bearbeiten |
+  | `projects-load-error` | Analytische Konten können nicht geladen werden. |
+  | `projects-parent-none` | — Keines (analytisches Hauptkonto) |
+  | `projects-show-archived` | Archivierte analytische Konten anzeigen |
+  | `projects-subtitle` | Fassen Sie Ihre Ausgaben und Erträge nach analytischem Konto zusammen (eine Liegenschaft, ein Fahrzeug, eine Renovation, eine Tätigkeit), um sie separat auszuwerten. |
+  | `projects-unarchived` | Analytisches Konto dearchiviert. |
+  | `projects-updated`, `audit-log-action-project-updated` | Analytisches Konto aktualisiert(.) |
+  | `audit-log-action-project-unarchived` | Analytisches Konto reaktiviert |
 
-  **it-CH** (en attente) :
+  **it-CH** (option A) :
 
-  | Clé | conto analitico (A, C) | centro di costo (B) |
-  |---|---|---|
-  | `journal-entry-form-col-project`, `reconciliation-split-th-project`, `reports-project-return-col-project`, `reports-project-selector-label`, `invoice-detail-project-label`, `supplier-invoices-detail-project`, `audit-log-entity-project` | Conto analitico | Centro di costo |
-  | `journal-entry-project-archived`, `reconciliation-rules-default-project-archived`, `invoice-project-archived`, `audit-log-action-project-archived` | Conto analitico archiviato | Centro di costo archiviato |
-  | `reconciliation-failed-project-archived` | Il conto analitico è archiviato. | Il centro di costo è archiviato. |
-  | `reconciliation-failed-project-not-found` | Conto analitico introvabile. | Centro di costo introvabile. |
-  | `reconciliation-manual-project-label`, `invoice-field-project`, `supplier-invoices-field-project` | Conto analitico (facoltativo) | Centro di costo (facoltativo) |
-  | `reconciliation-rules-labels-default-project` | Conto analitico predefinito | Centro di costo predefinito |
-  | `reports-project-expenses`, `-expenses-title` | Spese per conto analitico | Spese per centro di costo |
-  | `reports-project-expenses-empty` | Nessuna spesa associata a questo conto analitico per il periodo. | Nessuna spesa associata a questo centro di costo per il periodo. |
-  | `reports-project-return`, `-return-title` | Rendimento per conto analitico | Rendimento per centro di costo |
-  | `reports-project-return-empty` | Nessun movimento associato a questo conto analitico per il periodo. | Nessun movimento associato a questo centro di costo per il periodo. |
-  | `reports-project-selector-placeholder` | — Scegli un conto analitico | — Scegli un centro di costo |
-  | `reports-filename-project-expenses` | spese-per-conto-analitico | spese-per-centro-di-costo |
-  | `reports-filename-project-return` | rendimento-per-conto-analitico | rendimento-per-centro-di-costo |
-  | `export-global-description`, `export-global-content-includes` | … **conti analitici** … | … **centri di costo** … |
-  | `invoice-project-current` | Conto analitico attuale | Centro di costo attuale |
-  | `nav-projects`, `projects-title` | Conti analitici | Centri di costo |
-  | `projects-archived` | Conto analitico archiviato. | Centro di costo archiviato. |
-  | `projects-created`, `audit-log-action-project-created` | Conto analitico creato(.) | Centro di costo creato(.) |
-  | `projects-empty` | Nessun conto analitico. Crea il tuo primo conto analitico per iniziare. | Nessun centro di costo. Crea il tuo primo centro di costo per iniziare. |
-  | `projects-err-code` | Il codice del conto analitico è obbligatorio. | Il codice del centro di costo è obbligatorio. |
-  | `projects-err-name` | Il nome del conto analitico è obbligatorio. | Il nome del centro di costo è obbligatorio. |
-  | `projects-field-parent` | Conto analitico superiore (facoltativo) | Centro di costo superiore (facoltativo) |
-  | `projects-form-create`, `projects-new` | Nuovo conto analitico | Nuovo centro di costo |
-  | `projects-form-edit` | Modifica il conto analitico | Modifica il centro di costo |
-  | `projects-load-error` | Impossibile caricare i conti analitici. | Impossibile caricare i centri di costo. |
-  | `projects-parent-none` | — Nessuno (conto analitico radice) | — Nessuno (centro di costo radice) |
-  | `projects-show-archived` | Mostra i conti analitici archiviati | Mostra i centri di costo archiviati |
-  | `projects-subtitle` | Raggruppa le tue spese e i tuoi ricavi per conto analitico (un immobile, un veicolo, una ristrutturazione, un'attività) per analizzarli separatamente. | Raggruppa le tue spese e i tuoi ricavi per centro di costo (un immobile, un veicolo, una ristrutturazione, un'attività) per analizzarli separatamente. |
-  | `projects-unarchived` | Conto analitico ripristinato dall'archivio. | Centro di costo ripristinato dall'archivio. |
-  | `projects-updated`, `audit-log-action-project-updated` | Conto analitico aggiornato(.) | Centro di costo aggiornato(.) |
-  | `audit-log-action-project-unarchived` | Conto analitico riattivato | Centro di costo riattivato |
+  | Clé | it-CH |
+  |---|---|
+  | `journal-entry-form-col-project`, `reconciliation-split-th-project`, `reports-project-return-col-project`, `reports-project-selector-label`, `invoice-detail-project-label`, `supplier-invoices-detail-project`, `audit-log-entity-project` | Conto analitico |
+  | `journal-entry-project-archived`, `reconciliation-rules-default-project-archived`, `invoice-project-archived`, `audit-log-action-project-archived` | Conto analitico archiviato |
+  | `reconciliation-failed-project-archived` | Il conto analitico è archiviato. |
+  | `reconciliation-failed-project-not-found` | Conto analitico introvabile. |
+  | `reconciliation-manual-project-label`, `invoice-field-project`, `supplier-invoices-field-project` | Conto analitico (facoltativo) |
+  | `reconciliation-rules-labels-default-project` | Conto analitico predefinito |
+  | `reports-project-expenses`, `-expenses-title` | Spese per conto analitico |
+  | `reports-project-expenses-empty` | Nessuna spesa associata a questo conto analitico per il periodo. |
+  | `reports-project-return`, `-return-title` | Rendimento per conto analitico |
+  | `reports-project-return-empty` | Nessun movimento associato a questo conto analitico per il periodo. |
+  | `reports-project-selector-placeholder` | — Scegli un conto analitico |
+  | `reports-filename-project-expenses` | spese-per-conto-analitico |
+  | `reports-filename-project-return` | rendimento-per-conto-analitico |
+  | `export-global-description`, `export-global-content-includes` | … **conti analitici** … |
+  | `invoice-project-current` | Conto analitico attuale |
+  | `nav-projects`, `projects-title` | Conti analitici |
+  | `projects-archived` | Conto analitico archiviato. |
+  | `projects-created`, `audit-log-action-project-created` | Conto analitico creato(.) |
+  | `projects-empty` | Nessun conto analitico. Crea il tuo primo conto analitico per iniziare. |
+  | `projects-err-code` | Il codice del conto analitico è obbligatorio. |
+  | `projects-err-name` | Il nome del conto analitico è obbligatorio. |
+  | `projects-field-parent` | Conto analitico superiore (facoltativo) |
+  | `projects-form-create`, `projects-new` | Nuovo conto analitico |
+  | `projects-form-edit` | Modifica il conto analitico |
+  | `projects-load-error` | Impossibile caricare i conti analitici. |
+  | `projects-parent-none` | — Nessuno (conto analitico radice) |
+  | `projects-show-archived` | Mostra i conti analitici archiviati |
+  | `projects-subtitle` | Raggruppa le tue spese e i tuoi ricavi per conto analitico (un immobile, un veicolo, una ristrutturazione, un'attività) per analizzarli separatamente. |
+  | `projects-unarchived` | Conto analitico ripristinato dall'archivio. |
+  | `projects-updated`, `audit-log-action-project-updated` | Conto analitico aggiornato(.) |
+  | `audit-log-action-project-unarchived` | Conto analitico riattivato |
 
-  **en-CH** (en attente) :
+  **en-CH** (option A) :
 
-  | Clé | analytical account (A, C) | cost centre (B) |
-  |---|---|---|
-  | `journal-entry-form-col-project`, `reconciliation-split-th-project`, `reports-project-return-col-project`, `reports-project-selector-label`, `invoice-detail-project-label`, `supplier-invoices-detail-project`, `audit-log-entity-project` | Analytical account | Cost centre |
-  | `journal-entry-project-archived`, `reconciliation-rules-default-project-archived`, `invoice-project-archived`, `audit-log-action-project-archived` | Analytical account archived | Cost centre archived |
-  | `reconciliation-failed-project-archived` | The analytical account is archived. | The cost centre is archived. |
-  | `reconciliation-failed-project-not-found` | Analytical account not found. | Cost centre not found. |
-  | `reconciliation-manual-project-label`, `invoice-field-project`, `supplier-invoices-field-project` | Analytical account (optional) | Cost centre (optional) |
-  | `reconciliation-rules-labels-default-project` | Default analytical account | Default cost centre |
-  | `reports-project-expenses`, `-expenses-title` | Expenses by analytical account | Expenses by cost centre |
-  | `reports-project-expenses-empty` | No expenses tagged on this analytical account for the period. | No expenses tagged on this cost centre for the period. |
-  | `reports-project-return`, `-return-title` | Return by analytical account | Return by cost centre |
-  | `reports-project-return-empty` | No movements tagged on this analytical account for the period. | No movements tagged on this cost centre for the period. |
-  | `reports-project-selector-placeholder` | — Choose an analytical account | — Choose a cost centre |
-  | `reports-filename-project-expenses` | expenses-by-analytical-account | expenses-by-cost-centre |
-  | `reports-filename-project-return` | return-by-analytical-account | return-by-cost-centre |
-  | `export-global-description`, `export-global-content-includes` | … **analytical accounts** … | … **cost centres** … |
-  | `invoice-project-current` | Current analytical account | Current cost centre |
-  | `nav-projects`, `projects-title` | Analytical accounts | Cost centres |
-  | `projects-archived` | Analytical account archived. | Cost centre archived. |
-  | `projects-created`, `audit-log-action-project-created` | Analytical account created(.) | Cost centre created(.) |
-  | `projects-empty` | No analytical account. Create your first analytical account to get started. | No cost centre. Create your first cost centre to get started. |
-  | `projects-err-code` | The analytical account code is required. | The cost centre code is required. |
-  | `projects-err-name` | The analytical account name is required. | The cost centre name is required. |
-  | `projects-field-parent` | Parent analytical account (optional) | Parent cost centre (optional) |
-  | `projects-form-create`, `projects-new` | New analytical account | New cost centre |
-  | `projects-form-edit` | Edit analytical account | Edit cost centre |
-  | `projects-load-error` | Unable to load the analytical accounts. | Unable to load the cost centres. |
-  | `projects-parent-none` | — None (root analytical account) | — None (root cost centre) |
-  | `projects-show-archived` | Show archived analytical accounts | Show archived cost centres |
-  | `projects-subtitle` | Group your expenses and revenue by analytical account (a building, a vehicle, a renovation, an activity) to analyse them separately. | Group your expenses and revenue by cost centre (a building, a vehicle, a renovation, an activity) to analyse them separately. |
-  | `projects-unarchived` | Analytical account unarchived. | Cost centre unarchived. |
-  | `projects-updated`, `audit-log-action-project-updated` | Analytical account updated(.) | Cost centre updated(.) |
-  | `audit-log-action-project-unarchived` | Analytical account reactivated | Cost centre reactivated |
+  | Clé | en-CH |
+  |---|---|
+  | `journal-entry-form-col-project`, `reconciliation-split-th-project`, `reports-project-return-col-project`, `reports-project-selector-label`, `invoice-detail-project-label`, `supplier-invoices-detail-project`, `audit-log-entity-project` | Analytical account |
+  | `journal-entry-project-archived`, `reconciliation-rules-default-project-archived`, `invoice-project-archived`, `audit-log-action-project-archived` | Analytical account archived |
+  | `reconciliation-failed-project-archived` | The analytical account is archived. |
+  | `reconciliation-failed-project-not-found` | Analytical account not found. |
+  | `reconciliation-manual-project-label`, `invoice-field-project`, `supplier-invoices-field-project` | Analytical account (optional) |
+  | `reconciliation-rules-labels-default-project` | Default analytical account |
+  | `reports-project-expenses`, `-expenses-title` | Expenses by analytical account |
+  | `reports-project-expenses-empty` | No expenses tagged on this analytical account for the period. |
+  | `reports-project-return`, `-return-title` | Return by analytical account |
+  | `reports-project-return-empty` | No movements tagged on this analytical account for the period. |
+  | `reports-project-selector-placeholder` | — Choose an analytical account |
+  | `reports-filename-project-expenses` | expenses-by-analytical-account |
+  | `reports-filename-project-return` | return-by-analytical-account |
+  | `export-global-description`, `export-global-content-includes` | … **analytical accounts** … |
+  | `invoice-project-current` | Current analytical account |
+  | `nav-projects`, `projects-title` | Analytical accounts |
+  | `projects-archived` | Analytical account archived. |
+  | `projects-created`, `audit-log-action-project-created` | Analytical account created(.) |
+  | `projects-empty` | No analytical account. Create your first analytical account to get started. |
+  | `projects-err-code` | The analytical account code is required. |
+  | `projects-err-name` | The analytical account name is required. |
+  | `projects-field-parent` | Parent analytical account (optional) |
+  | `projects-form-create`, `projects-new` | New analytical account |
+  | `projects-form-edit` | Edit analytical account |
+  | `projects-load-error` | Unable to load the analytical accounts. |
+  | `projects-parent-none` | — None (root analytical account) |
+  | `projects-show-archived` | Show archived analytical accounts |
+  | `projects-subtitle` | Group your expenses and revenue by analytical account (a building, a vehicle, a renovation, an activity) to analyse them separately. |
+  | `projects-unarchived` | Analytical account unarchived. |
+  | `projects-updated`, `audit-log-action-project-updated` | Analytical account updated(.) |
+  | `audit-log-action-project-unarchived` | Analytical account reactivated |
 
   « (.) » : le point final ne figure que dans la clé `projects-*` (toast), non dans la clé `audit-log-action-*`, comme
-  aujourd'hui. Le commentaire `fr-CH/messages.ftl:3089` dit la convention retenue (`« compte analytique » = <terme de-CH> /
-  <terme it-CH> / <terme en>`). Une phrase qu'un accord rendrait bancale se corrige au développement, en gardant le terme,
-  et se déclare au Change Log. **Le glossaire** suit la réponse (D9) : `:105` (« projet parent ») et `:169` (« projet
+  aujourd'hui. Le commentaire `fr-CH/messages.ftl:3089` dit la convention retenue (`« compte analytique » = analytisches Konto /
+  conto analitico / analytical account`). Une phrase qu'un accord rendrait bancale se corrige au développement, en gardant le terme,
+  et se déclare au Change Log. **Le glossaire** suit l'arbitrage (D9) : `:105` (« projet parent ») et `:169` (« projet
   analytique ») passent aux termes arbitrés ; `:168` (« projet », attesté par `supplier-invoices-detail-project`) se
-  **supprime**, plus aucune clé ne l'attestant après l'AC-1 ; la note `:172-189` reste, annotée « remplacée le <date de la
-  réponse> par l'arbitrage de Guy sur le CR #1161 », suivie de la nouvelle note (date, terme, motif : le CR #1161) ; le
+  **supprime**, plus aucune clé ne l'attestant après l'AC-1 ; la note `:172-189` reste, annotée « prolongée le 2026-11-16 par
+  l'arbitrage de Guy sur le CR #1161 », suivie de la nouvelle note (date, terme, motif : le CR #1161) ; le
   compte de la partie A se recompte depuis le tableau et s'écrit avec son périmètre.
 
 - **D3 — Identifiants internes inchangés** (C-e360-15) : clés i18n (`*project*` gardées : les renommer changerait
@@ -454,7 +442,7 @@ de données des E2E (« Projet E2E 19-4 »…) sont des données, inchangés.
   ne changent pas. Le texte libre `failed[].details.message` d'un refus `PROJECT_ARCHIVED` du lot de réconciliation
   reprend le libellé interne de Kesh, en français et non revu : seul le code fait foi. » La phrase ne contient pas le mot
   « projet » : G25 n'a besoin d'aucune exception pour `api-external.md`. Ses cinq lignes analytiques (§ 6) disent « compte analytique ».
-  `docs/i18n-glossaire.md` : selon la réponse de Guy, comme écrit à la fin de D2 (`:105`, `:169` aux termes arbitrés,
+  `docs/i18n-glossaire.md` : selon l'arbitrage de Guy (option A), comme écrit à la fin de D2 (`:105`, `:169` aux termes arbitrés,
   `:168` supprimée, note `:172-189` annotée et suivie de la nouvelle, avec date et motif — le CR #1161 —, partie A
   recomptée). `README.md:47` (Fonctionnalités) dit
   « **Comptabilité analytique** — dimension « compte analytique » … **Dépenses par compte analytique** … **Rendement par
@@ -593,7 +581,7 @@ recopierait la valeur attendue ne prouverait rien de plus.
 
 ## Tâches
 
-0. ⛔ **Attendre l'arbitrage de Guy sur D2** (de-CH, it-CH, en) ; l'écrire au Change Log (date, option, terme par
+0. ~~Attendre l'arbitrage de Guy sur D2~~ — reçu le 2026-11-16 (option A) ; l'écrire au Change Log (date, option, terme par
    langue) et au registre (C-36-15-1), puis ne garder de D2 que les colonnes retenues.
 1. **Étape 0** : relire C-e360-15, ce que dit le CR, et `git log origin/epic/36-0.18.0..HEAD` ; vérifier que
    `crates/kesh-db/` reste hors du diff prévu. Base `kesh_e3615` et `kesh_e2e_e3615` créées à neuf (voie 1).
@@ -631,8 +619,8 @@ recopierait la valeur attendue ne prouverait rien de plus.
 *Modifié* — Kesh parle de **compte analytique** et non plus de projet analytique : le menu, l'écran *Comptes
 analytiques*, les champs des écritures, des factures et de la réconciliation, les rapports **Dépenses par compte
 analytique** et **Rendement par compte analytique** (titres à l'écran et dans le PDF, noms des fichiers exportés), le
-journal d'audit et les manuels, dans les quatre langues (allemand *<terme arbitré>*, italien *<terme arbitré>*,
-anglais *<terme arbitré>* — D2, à compléter selon la réponse de Guy). Rien ne change de ce qui est enregistré : routes,
+journal d'audit et les manuels, dans les quatre langues (allemand *analytisches Konto*, italien *conto analitico*,
+anglais *analytical account*). Rien ne change de ce qui est enregistré : routes,
 champs et codes de l'API gardent leur nom `project` ; les colonnes `Projet;SousProjet` des exports CSV restent.
 ⚠️ Les textes des refus de `/api/v1/projects` disent désormais « compte analytique » (codes inchangés) ; le texte libre
 `failed[].details.message` d'un refus `PROJECT_ARCHIVED` de la réconciliation dit encore « projet analytique » — seul le
@@ -754,3 +742,16 @@ dire « projet », et le CR n'exige le geste unique que de ce que l'utilisateur 
   - V2-7 (LOW, corrigé) : 31 clés neutres (`… | wc -l` rend 31 ; § 1 et Dev Notes), 19 lignes pour `:3767-3804`,
     en-tête « Validation non lancée » remplacé ; `\b32\b` et `\b20\b` grepés (restent les « 32 caractères » et « 150
     caractères » de D4, légitimes).
+- **2026-11-15 — validation terminée** en trois passes : P1 (Sonnet) 0 CRITICAL / 0 HIGH / 3 MEDIUM / 7 LOW → P2 (Opus)
+  0 / 0 / 2 / 5 → P3 ciblée (Sonnet, lentille unique sur la remédiation `ddd1aa3ec`,
+  `kesh-gate-logs/e36-15/validation-p3-ciblee.md`) 0 / 0 / 0 / 0. Close sur une passe sans finding au-dessus de LOW,
+  dont la remédiation ne touchait aucune ligne de production. Aucun LOW au dernier rapport : rien à traiter à l'étape 0.
+- **2026-11-16 — arbitrage de Guy sur D2 : option A** (transmis par l'orchestrateur dans le prompt de développement).
+  de-CH **analytisches Konto**, it-CH **conto analitico**, en **analytical account** (fr-CH « compte analytique »).
+  Motif : suit le français (règle du glossaire `docs/i18n-glossaire.md:29`), sans défaire l'arbitrage du 2026-08-19
+  contre *Kostenstelle* ; le terme s'écrit toujours en entier (« Konto », « conto », « account » seuls désignent le compte
+  du plan). D2 ne garde que les colonnes de l'option A ; les marques `<terme arbitré>` de la note de version et du
+  commentaire `:3089` sont remplacées ; bandeau d'en-tête et tâche 0 mis à jour ; registre C-36-15-1 annoté.
+  *Écart à la consigne Edit, déclaré* : sept remplacements de phrases de cette étape (bandeau, `:3089`, glossaire,
+  tâche 0, note de version) ont été faits par un court script Python sur la fiche (artefact `_bmad-output`, chaque motif
+  vérifié unique avant remplacement) ; la réduction des tables de D2, par l'outil Edit. La suite, par l'outil Edit.

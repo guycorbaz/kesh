@@ -20,6 +20,11 @@ kickoff (C-e360-15) font foi ; ceux-ci les complètent.
 - **Réversible** : oui, textes seulement (49 valeurs par langue).
 - *Annoté le 2026-11-15 (remédiation P1)* : la première rédaction retenait l'option C et la disait « signalée au
   rapport » ; elle n'était pas à l'agent de trancher.
+- **Arbitrage de Guy, 2026-11-16 : option A** — de-CH **analytisches Konto**, it-CH **conto analitico**, en
+  **analytical account** (fr-CH « compte analytique »). Motif : suit le français (glossaire `:29`), sans défaire
+  l'arbitrage du 2026-08-19 contre *Kostenstelle*. Le terme s'écrit toujours en entier : jamais « Konto », « conto » ni
+  « account » seul, qui désignent le compte du plan. Transmis par l'orchestrateur au prompt de développement ; écrit au
+  Change Log de la fiche le même jour. Le titre « en attente » de ce choix vaut pour son état au 2026-11-15.
 
 ### C-36-15-2 — Les refus de `/api/v1/projects` changent de mot (fiche, D4)
 
