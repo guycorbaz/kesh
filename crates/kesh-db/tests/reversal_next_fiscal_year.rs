@@ -552,7 +552,7 @@ async fn t_b5_i_la_contre_passation_d_abord_puis_la_cloture(pool: MySqlPool) {
 const LOCK_EARLIER_BY_ID_SQL: &str =
     "SELECT id FROM fiscal_years WHERE id = ? AND company_id = ? FOR UPDATE";
 /// Texte de `LOCK_IN_COMPANY_SQL` (`fiscal_years.rs`), recopié — même couplage.
-const LOCK_IN_COMPANY_SQL: &str = "SELECT id, company_id, name, start_date, end_date, status, created_at, updated_at \
+const LOCK_IN_COMPANY_SQL: &str = "SELECT id, company_id, name, start_date, end_date, status, multi_currency, opening_rate_kind, closing_rate_kind, created_at, updated_at \
      FROM fiscal_years WHERE id = ? AND company_id = ? FOR UPDATE";
 
 /// T-b5 (ii) — **la clôture d'abord** : B tient N puis N+1 et passe N+1 à

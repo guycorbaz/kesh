@@ -29,9 +29,9 @@ Après la connexion, l'onboarding vous guide, dans cet ordre :
 4. **Type d'organisation** (indépendant, association, PME) — il détermine le plan comptable que Kesh met en place.
 5. **Langue comptable** — langue des libellés du plan comptable, indépendante de celle de l'interface. C'est à cette étape que Kesh met en place le plan comptable de votre type d'organisation.
 6. **Coordonnées de l'organisation** (raison sociale ou prénom et nom, adresse, numéro IDE facultatif).
-7. **Compte bancaire principal** — nom de la banque et IBAN, QR-IBAN facultatif ; l'étape peut être passée (« Configurer plus tard »).
+7. **Premier exercice et compte bancaire principal** — en tête de la dernière page, les dates de début et de fin du premier exercice (proposées : du 1er janvier de l'année en cours à la veille du même jour un an plus tard, modifiables, sans borne de durée) ; puis nom de la banque et IBAN, QR-IBAN facultatif ; le compte bancaire peut être passé (« Configurer plus tard »).
 
-À la finalisation, qui suit la dernière étape, Kesh crée votre premier exercice comptable : l'année civile en cours (du 1er janvier au 31 décembre). Aucune étape ne le demande ; vous le renommez ou en créez d'autres ensuite depuis **Administration → Exercices comptables**.
+À la finalisation, qui suit la dernière étape, Kesh crée votre premier exercice comptable aux dates choisies, nommé « Exercice AAAA » (ou « Exercice AAAA/AAAA » s'il chevauche deux années). **Ses dates ne se modifient plus ensuite** ; vous le renommez ou créez les exercices suivants depuis **Administration → Exercices comptables**.
 
 À tout moment, vous pouvez quitter l'onboarding et y revenir.
 

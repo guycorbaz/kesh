@@ -197,6 +197,19 @@ const EXCEPTIONS: &[(&str, &str, &str, Motif)] = &[
         "entry_date",
         ClasseB,
     ),
+    // Story 37-1 (AC-11) : dates du premier exercice, `borner` avant la transaction.
+    (
+        "routes/onboarding.rs",
+        "FinalizeRequest",
+        "fiscal_year_start_date",
+        ClasseB,
+    ),
+    (
+        "routes/onboarding.rs",
+        "FinalizeRequest",
+        "fiscal_year_end_date",
+        ClasseB,
+    ),
     (
         "routes/payment_batches.rs",
         "ConfirmPaymentBatchRequest",
@@ -534,7 +547,8 @@ fn l_inventaire_n_est_pas_vide() {
     assert_eq!(bornes + EXCEPTIONS.len(), champs.len());
 }
 
-const COMPTE_CHAMPS: usize = 68;
+/// 70 depuis la Story 37-1 (AC-11 : `FinalizeRequest`, deux dates ; 68 avant).
+const COMPTE_CHAMPS: usize = 70;
 
 // ---------------------------------------------------------------------------
 // Les sondes : un contrôle vide se prouve par une sonde

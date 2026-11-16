@@ -1102,7 +1102,7 @@ development_status:
   # docs/developpement-a-plusieurs.md (41 et suivants : Project Lead). Blocs propres, conflits résolus en gardant les deux côtés.
   epic-37: in-progress  # renuméroté depuis 35 le 2026-11-14 (35 et 36 réservés ; 38 : comptes PayPal, 39 : comptes Wise, réservés par Beat)
   37-0-kickoff: done  # 2026-11-14 : epic-37-multi-devises.md ; demande de Beat (contributeur), une PR à la fin ; architecture par bmad-party-mode (consensus au tour 2)
-  37-1-reglage-et-devise-des-comptes: ready-for-dev  # validée ; revalidée après CR-1 à CR-7 (revues de Beat et de Guy), 2026-11-16
+  37-1-reglage-et-devise-des-comptes: done  # 2026-11-16 terminée (E2E 427 passés / 11 échecs dont 7 KF-029 et 4 préexistants, 05295bf4) ; 2026-11-16 développée (worktree kesh-s37-1, dernier commit de code e597054a ; nextest 5547/5547, Vitest 3790, E2E 426 passés / 12 échecs dont 7 KF-029) ; validée ; revalidée après CR-1 à CR-7 (revues de Beat et de Guy), 2026-11-16
   37-2-cours-mensuels-afc: ready-for-dev  # validée ; revalidée après CR-1 à CR-7 (revues de Beat et de Guy), 2026-11-16
   37-3-ecritures-en-devise: split  # 2026-11-14, à la rédaction : 37-3a (serveur) et 37-3b (écrans)
   37-3a-ecritures-en-devise-modele: ready-for-dev  # validée ; revalidée après CR-1 à CR-7 (revues de Beat et de Guy), 2026-11-16

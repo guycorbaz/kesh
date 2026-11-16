@@ -256,8 +256,12 @@ const PREFIXES = [
  *
  * Intégration de la release 0.17.6 (2026-11-12), recompté par la garde après chaque fusion
  * (non additionné) : 412 après la 34-8 (34-1, 34-8), **434** après la 34-9.
+ *
+ * ⚠️ **Story 37-1** (AC-11) : **434 → 441** (+7), relevé par la garde (`expected 441 to be
+ * 434`) : les sept `onboarding-fiscal-year-*` de la section « Premier exercice » (relais `msg`
+ * et `i18nMsg` de `routes/onboarding/+page.svelte`), un repli chacune. Aucune retirée.
  */
-const CLES_RELEVEES = 434;
+const CLES_RELEVEES = 441;
 
 
 /** Relève, pour chaque clé du domaine, l'ensemble de ses replis littéraux distincts. */

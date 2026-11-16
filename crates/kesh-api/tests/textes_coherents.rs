@@ -780,6 +780,9 @@ fn les_replis_rust_suivent_le_catalogue() {
                 ("error-lettering-is-document", 1, &[]),
                 ("error-fiscal-year-create-later-closed", 1, NOM),
                 ("error-later-fiscal-year-closed", 1, NOM),
+                // Story 37-1 (D-CR7-2) — un seul site,
+                // `later_fiscal_year_mono_currency_response`.
+                ("error-fiscal-year-create-later-mono-currency", 1, NOM),
                 // Story 29-1b (#232) — les deux refus de la contre-passation au
                 // début de l'exercice suivant.
                 ("error-next-fiscal-year-missing", 1, NOM),
@@ -1342,6 +1345,13 @@ const MULTI_SOCIETE_ASSUME: &[(&str, &str)] = &[
         "docs/manual/fr/admin-manual.tex",
         "PUT /api/v1/companies/current/address",
     ),
+    // Le chemin d'une route, Story 37-1 (AC-10, V6) : le réglage multi-devises
+    // activé par une session d'Administrateur ; `companies` n'y promet aucune
+    // multi-société.
+    (
+        "docs/manual/fr/user-manual.tex",
+        "PUT /api/v1/companies/current/currency-settings",
+    ),
     // Dit l'absence (deux occurrences : `super-admin`, `sélecteur de société`).
     (
         "docs/manual/fr/admin-manual.tex",
@@ -1440,10 +1450,12 @@ const MULTI_SOCIETE_ASSUME: &[(&str, &str)] = &[
 /// le nom de table du remède de moteur ; + 1 le 2026-10-26, Story 32-6c : le
 /// journal du filtre d'adresse ; + 3 le 2026-10-27, Story 32-7 : le second volet
 /// de P7-H3 et le 401 d'une origine admise par une autre société, § « Le serveur
-/// MCP » ; + 1 le 2026-11-07, Story 33-5 : le chemin de la route de l'adresse).
+/// MCP » ; + 1 le 2026-11-07, Story 33-5 : le chemin de la route de l'adresse ;
+/// puis + 1 le 2026-11-16, Story 37-1 : le chemin de la route du réglage multi-devises,
+/// au manuel utilisateur).
 /// Un motif qui cesserait de voir
 /// un site rougit (A-9, B10 : `>=` laissait passer une occurrence perdue).
-const MULTI_SOCIETE_TOTAL: usize = 22;
+const MULTI_SOCIETE_TOTAL: usize = 23;
 
 /// **G18** (#127) — une installation porte une société : la documentation
 /// utilisateur ne promet pas le contraire. Chaque occurrence de

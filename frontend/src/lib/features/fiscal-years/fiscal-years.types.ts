@@ -7,6 +7,13 @@
 
 export type FiscalYearStatus = 'Open' | 'Closed';
 
+/**
+ * Story 37-1 (AC-1, AC-2) — genre du cours d'ouverture ou de clôture d'un
+ * exercice : cours du jour ou cours mensuel. Miroir de l'énumération serveur
+ * (`day` / `month`, valeurs du HTTP).
+ */
+export type RateKind = 'day' | 'month';
+
 export interface FiscalYearResponse {
 	id: number;
 	companyId: number;
@@ -16,6 +23,16 @@ export interface FiscalYearResponse {
 	/** Format ISO `YYYY-MM-DD`. */
 	endDate: string;
 	status: FiscalYearStatus;
+	/**
+	 * Story 37-1 (AC-3 bis) — exercice multi-devises. Posé à la création (réglage
+	 * de la société) ou à l'activation du multi-devises (exercices ouverts),
+	 * jamais changé ensuite. Toujours présent, mono-devise compris (AC-2).
+	 */
+	multiCurrency: boolean;
+	/** Story 37-1 (AC-1) — genre du cours d'ouverture ; toujours présent. */
+	openingRateKind: RateKind;
+	/** Story 37-1 (AC-1) — genre du cours de clôture ; toujours présent. */
+	closingRateKind: RateKind;
 	createdAt: string;
 	updatedAt: string;
 }

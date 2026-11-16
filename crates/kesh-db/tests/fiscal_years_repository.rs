@@ -132,15 +132,23 @@ async fn find_by_id_returns_none_for_missing(pool: MySqlPool) {
 }
 
 #[sqlx::test(migrations = "./test-schema")]
-async fn fk_violation_on_missing_company(pool: MySqlPool) {
-    // user_id valide mais company_id invalide → FK violation à l'INSERT.
+async fn missing_company_is_not_found(pool: MySqlPool) {
+    // user_id valide mais company_id invalide. Depuis la Story 37-1, `create`
+    // lit d'abord le mode de la société (`LOCK IN SHARE MODE`) : une société
+    // inexistante rend `NotFound` avant tout `INSERT` (la clé étrangère
+    // `fk_fiscal_years_company` n'est plus atteinte), et rien n'est écrit.
     let company_id = create_company(&pool).await;
     let user_id = create_admin_user(&pool, company_id).await;
 
     let mut new = ny("Exercice fantôme", 2026);
     new.company_id = 999_999;
     let result = fiscal_years::create(&pool, user_id, new).await;
-    assert!(matches!(result, Err(DbError::ForeignKeyViolation(_))));
+    assert!(matches!(result, Err(DbError::NotFound)), "{result:?}");
+    let n: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM fiscal_years")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(n, 0);
 }
 
 // ---------------------------------------------------------------------------
@@ -944,6 +952,8 @@ async fn reopen_reactivates_entry_editability(pool: MySqlPool) {
             parent_id: None,
             role: None,
             postable: true,
+            currency: None,
+            own_fx_accounts: None,
         },
     )
     .await
@@ -960,6 +970,8 @@ async fn reopen_reactivates_entry_editability(pool: MySqlPool) {
             parent_id: None,
             role: None,
             postable: true,
+            currency: None,
+            own_fx_accounts: None,
         },
     )
     .await
@@ -1928,4 +1940,342 @@ async fn close_against_a_reversal_deadlocks_and_the_replay_resolves_it(pool: MyS
         w_victime || tentatives == 2,
         "un interblocage était attendu (tentatives de la clôture : {tentatives}, W victime : {w_victime})"
     );
+}
+
+// ---------------------------------------------------------------------------
+// Story 37-1 (AC-3 bis) — mode et genre d'ouverture d'un exercice créé ;
+// aucun exercice avant un exercice mono-devise (D-CR7-2).
+//
+// L'activation du multi-devises (route `PUT …/currency-settings`) vient en
+// phase suivante : elle est simulée ici en SQL direct
+// (`companies.multi_currency_enabled`, `fiscal_years.multi_currency`).
+// ---------------------------------------------------------------------------
+
+/// Passe la société en multi-devises, en SQL direct (simulation de
+/// l'activation, sans toucher aux exercices).
+async fn societe_multi_devises(pool: &MySqlPool, company_id: i64) {
+    sqlx::query("UPDATE companies SET multi_currency_enabled = TRUE WHERE id = ?")
+        .bind(company_id)
+        .execute(pool)
+        .await
+        .unwrap();
+}
+
+/// `(multi_currency, opening_rate_kind, closing_rate_kind)` d'un exercice, lus
+/// en SQL (indépendamment du décodage de l'entité).
+async fn mode_de(pool: &MySqlPool, id: i64) -> (bool, String, String) {
+    sqlx::query_as(
+        "SELECT multi_currency, opening_rate_kind, closing_rate_kind \
+         FROM fiscal_years WHERE id = ?",
+    )
+    .bind(id)
+    .fetch_one(pool)
+    .await
+    .unwrap()
+}
+
+/// Un `NewFiscalYear` aux bornes données (Story 37-1).
+fn nouvel_exercice(
+    company_id: i64,
+    name: &str,
+    debut: (i32, u32, u32),
+    fin: (i32, u32, u32),
+) -> NewFiscalYear {
+    NewFiscalYear {
+        company_id,
+        name: name.into(),
+        start_date: NaiveDate::from_ymd_opt(debut.0, debut.1, debut.2).unwrap(),
+        end_date: NaiveDate::from_ymd_opt(fin.0, fin.1, fin.2).unwrap(),
+    }
+}
+
+/// Les trois chemins de création (inventaire clos : `create`,
+/// `create_for_seed`, `create_if_absent_in_tx`) prennent le mode de la société,
+/// mono-devise comme multi-devises — chacun sur sa société, l'assistant
+/// n'insérant que sans aucun exercice.
+#[sqlx::test(migrations = "./test-schema")]
+async fn exercice_cree_prend_le_mode_de_la_societe_par_les_trois_chemins(pool: MySqlPool) {
+    use kesh_db::entities::RateKind;
+    for multi in [false, true] {
+        let mut ids = Vec::new();
+        for chemin in ["create", "create_for_seed", "create_if_absent_in_tx"] {
+            let company_id = create_other_company(&pool).await;
+            let user_id = create_admin_user(&pool, company_id).await;
+            if multi {
+                societe_multi_devises(&pool, company_id).await;
+            }
+            let new = nouvel_exercice(company_id, "Exercice 2027", (2027, 1, 1), (2027, 12, 31));
+            let fy = match chemin {
+                "create" => fiscal_years::create(&pool, user_id, new).await.unwrap(),
+                "create_for_seed" => fiscal_years::create_for_seed(&pool, new).await.unwrap(),
+                _ => {
+                    let mut tx = pool.begin().await.unwrap();
+                    let fy = fiscal_years::create_if_absent_in_tx(&mut tx, user_id, new)
+                        .await
+                        .unwrap()
+                        .expect("aucun exercice : créé");
+                    tx.commit().await.unwrap();
+                    fy
+                }
+            };
+            assert_eq!(
+                fy.multi_currency, multi,
+                "{chemin} (société multi : {multi})"
+            );
+            assert_eq!(
+                fy.opening_rate_kind,
+                RateKind::Day,
+                "{chemin} : premier exercice"
+            );
+            assert_eq!(fy.closing_rate_kind, RateKind::Day, "{chemin}");
+            ids.push(fy.id);
+        }
+        for id in ids {
+            assert_eq!(
+                mode_de(&pool, id).await,
+                (multi, "day".to_string(), "day".to_string())
+            );
+        }
+    }
+}
+
+/// T4 (CR-4) — le genre d'ouverture reprend le genre de clôture de l'exercice
+/// qui finit la veille (`create` et `create_for_seed`, même fragment SQL) ;
+/// `day` sinon (premier exercice, exercice précédé d'un trou) ; la clôture
+/// prend toujours `day`.
+#[sqlx::test(migrations = "./test-schema")]
+async fn genre_d_ouverture_suit_la_cloture_du_precedent(pool: MySqlPool) {
+    let company_id = create_company(&pool).await;
+    let user_id = create_admin_user(&pool, company_id).await;
+    let fixer_cloture = |id: i64, genre: &'static str| {
+        let pool = pool.clone();
+        async move {
+            sqlx::query("UPDATE fiscal_years SET closing_rate_kind = ? WHERE id = ?")
+                .bind(genre)
+                .bind(id)
+                .execute(&pool)
+                .await
+                .unwrap();
+        }
+    };
+
+    // Premier exercice → `day`.
+    let a = fiscal_years::create(
+        &pool,
+        user_id,
+        nouvel_exercice(company_id, "E2025", (2025, 1, 1), (2025, 12, 31)),
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        mode_de(&pool, a.id).await,
+        (false, "day".into(), "day".into())
+    );
+
+    // Précédent en clôture `month` → ouverture `month`, clôture `day`.
+    fixer_cloture(a.id, "month").await;
+    let b = fiscal_years::create(
+        &pool,
+        user_id,
+        nouvel_exercice(company_id, "E2026", (2026, 1, 1), (2026, 12, 31)),
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        mode_de(&pool, b.id).await,
+        (false, "month".into(), "day".into())
+    );
+
+    // Précédent en clôture `day` → `day` (par `create_for_seed`, même fragment).
+    let c = fiscal_years::create_for_seed(
+        &pool,
+        nouvel_exercice(company_id, "E2027", (2027, 1, 1), (2027, 12, 31)),
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        mode_de(&pool, c.id).await,
+        (false, "day".into(), "day".into())
+    );
+
+    // Précédent `month`, mais séparé par un trou (2028 manque) → `day`.
+    fixer_cloture(c.id, "month").await;
+    let d = fiscal_years::create(
+        &pool,
+        user_id,
+        nouvel_exercice(company_id, "E2029", (2029, 1, 1), (2029, 12, 31)),
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        mode_de(&pool, d.id).await,
+        (false, "day".into(), "day".into())
+    );
+
+    // `create_for_seed` suit lui aussi un précédent `month`.
+    fixer_cloture(d.id, "month").await;
+    let e = fiscal_years::create_for_seed(
+        &pool,
+        nouvel_exercice(company_id, "E2030", (2030, 1, 1), (2030, 12, 31)),
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        mode_de(&pool, e.id).await,
+        (false, "month".into(), "day".into())
+    );
+    assert_eq!(
+        e.opening_rate_kind,
+        kesh_db::entities::RateKind::Month,
+        "entité décodée"
+    );
+
+    // Un exercice d'une autre société qui finit la veille ne compte pas.
+    let autre = create_other_company(&pool).await;
+    let x = fiscal_years::create_for_seed(
+        &pool,
+        nouvel_exercice(autre, "X2030", (2030, 1, 1), (2030, 12, 31)),
+    )
+    .await
+    .unwrap();
+    fixer_cloture(x.id, "month").await;
+    let f = fiscal_years::create(
+        &pool,
+        user_id,
+        nouvel_exercice(company_id, "E2031", (2031, 1, 1), (2031, 12, 31)),
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        mode_de(&pool, f.id).await,
+        (false, "day".into(), "day".into())
+    );
+}
+
+/// Le nombre d'entrées `fiscal_year.created` du journal d'audit.
+async fn creations_auditees(pool: &MySqlPool) -> i64 {
+    sqlx::query_scalar("SELECT COUNT(*) FROM audit_log WHERE action = 'fiscal_year.created'")
+        .fetch_one(pool)
+        .await
+        .unwrap()
+}
+
+/// D-CR7-2 — un exercice clos à l'activation (mono-devise) : la création avant
+/// lui est refusée d'abord par `LaterFiscalYearClosed` (l'invariant I parle
+/// d'abord), puis, une fois rouvert, par `LaterFiscalYearMonoCurrency` qui le
+/// nomme ; rien de créé ni d'audité.
+#[sqlx::test(migrations = "./test-schema")]
+async fn creation_avant_un_exercice_mono_devise_refusee_en_multi_devises(pool: MySqlPool) {
+    let company_id = create_company(&pool).await;
+    let user_id = create_admin_user(&pool, company_id).await;
+    let n = fiscal_years::create(
+        &pool,
+        user_id,
+        nouvel_exercice(company_id, "E2026", (2026, 1, 1), (2026, 12, 31)),
+    )
+    .await
+    .unwrap();
+    assert!(
+        !n.multi_currency,
+        "société mono-devise : exercice mono-devise"
+    );
+    // Clos, puis la société passe en multi-devises : l'exercice clos reste
+    // mono-devise (activation simulée en SQL).
+    sqlx::query("UPDATE fiscal_years SET status = 'Closed' WHERE id = ?")
+        .bind(n.id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    societe_multi_devises(&pool, company_id).await;
+    let audits = creations_auditees(&pool).await;
+
+    let avant = nouvel_exercice(company_id, "E2025", (2025, 1, 1), (2025, 12, 31));
+    match fiscal_years::create(&pool, user_id, avant.clone()).await {
+        Err(DbError::LaterFiscalYearClosed { fiscal_year_id, .. }) => {
+            assert_eq!(fiscal_year_id, n.id)
+        }
+        other => panic!("attendu LaterFiscalYearClosed (ordre), obtenu {other:?}"),
+    }
+
+    fiscal_years::reopen(&pool, user_id, company_id, n.id, "correction".into())
+        .await
+        .unwrap();
+    assert!(
+        !mode_de(&pool, n.id).await.0,
+        "rouvert, il reste mono-devise"
+    );
+    match fiscal_years::create(&pool, user_id, avant).await {
+        Err(DbError::LaterFiscalYearMonoCurrency {
+            fiscal_year_id,
+            fiscal_year_name,
+        }) => {
+            assert_eq!(fiscal_year_id, n.id);
+            assert_eq!(fiscal_year_name, "E2026");
+        }
+        other => panic!("attendu LaterFiscalYearMonoCurrency, obtenu {other:?}"),
+    }
+    let total: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM fiscal_years WHERE company_id = ?")
+        .bind(company_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(total, 1, "rien de créé");
+    assert_eq!(creations_auditees(&pool).await, audits, "rien d'audité");
+
+    // Après lui, un exercice se crée, multi-devises.
+    let suivant = fiscal_years::create(
+        &pool,
+        user_id,
+        nouvel_exercice(company_id, "E2027", (2027, 1, 1), (2027, 12, 31)),
+    )
+    .await
+    .unwrap();
+    assert!(suivant.multi_currency);
+}
+
+/// D-CR7-2 — la garde ne vise que la société multi-devises et l'exercice
+/// postérieur mono-devise : société multi-devises, création avant un exercice
+/// multi-devises ouvert → admise ; société mono-devise, création avant un
+/// exercice ouvert → admise, mono-devise (comme avant l'Epic 37).
+#[sqlx::test(migrations = "./test-schema")]
+async fn creation_avant_un_exercice_ouvert_admise_hors_mono_devise(pool: MySqlPool) {
+    // Société multi-devises : 2026 multi-devises, puis 2025 avant lui.
+    let multi = create_company(&pool).await;
+    let user_multi = create_admin_user(&pool, multi).await;
+    societe_multi_devises(&pool, multi).await;
+    let n = fiscal_years::create(
+        &pool,
+        user_multi,
+        nouvel_exercice(multi, "M2026", (2026, 1, 1), (2026, 12, 31)),
+    )
+    .await
+    .unwrap();
+    assert!(n.multi_currency);
+    let avant = fiscal_years::create(
+        &pool,
+        user_multi,
+        nouvel_exercice(multi, "M2025", (2025, 1, 1), (2025, 12, 31)),
+    )
+    .await
+    .unwrap();
+    assert!(avant.multi_currency);
+
+    // Société mono-devise : 2026 ouvert, puis 2025 avant lui.
+    let mono = create_other_company(&pool).await;
+    let user_mono = create_admin_user(&pool, mono).await;
+    fiscal_years::create(
+        &pool,
+        user_mono,
+        nouvel_exercice(mono, "S2026", (2026, 1, 1), (2026, 12, 31)),
+    )
+    .await
+    .unwrap();
+    let avant = fiscal_years::create(
+        &pool,
+        user_mono,
+        nouvel_exercice(mono, "S2025", (2025, 1, 1), (2025, 12, 31)),
+    )
+    .await
+    .unwrap();
+    assert!(!avant.multi_currency);
 }

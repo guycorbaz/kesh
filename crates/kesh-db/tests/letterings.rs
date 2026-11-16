@@ -2543,6 +2543,8 @@ async fn group_detail_of_an_account_no_longer_letterable(pool: MySqlPool) {
             account_type: AccountType::Expense,
             role: None,
             postable: compte.postable,
+            currency: Default::default(),
+            own_fx_accounts: Default::default(),
         },
         true,
     )
