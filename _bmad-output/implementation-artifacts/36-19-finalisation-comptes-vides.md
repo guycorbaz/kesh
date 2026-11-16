@@ -1,6 +1,6 @@
 # Story 36-19 : la finalisation de l'assistant complète les comptes vides des réglages de facturation (#1200)
 
-Status: review
+Status: done
 
 *Fiche rédigée le 2026-11-15 par l'agent de rédaction des fiches de l'Epic 36 (Opus 5.5), worktree `kesh-36-19`, branche
 `story/36-19-finalisation-comptes-vides`, par le workflow `bmad-create-story`. Release **0.18.0**, **sans migration**.
@@ -667,6 +667,8 @@ Journaux hors dépôt, `/home/gcorbaz/devel/kesh-gate-logs/e36-19/` :
   `ls crates/kesh-db/migrations/*.sql | wc -l` = 91.
 - **Décomptes** (périmètre `6c4f2229e..92266e805`) : `#[sqlx::test]` de `company_invoice_settings_repository.rs` 31 → 41
   (+10) ; de `onboarding_path_b_e2e.rs` 9 → 14 (+5) ; un `#[tokio::test]` neuf (`errors.rs`) ; une spec E2E neuve.
+- **Clôture (2026-11-16, annotation)** : `gate-ci` et E2E complet ont tourné au dernier commit de code `0e1f5f681`
+  (Change Log, entrée de clôture) ; la phrase suivante vaut au passage en `review`.
 - **Ce qui n'a pas tourné** : l'E2E **complet** et le `gate-ci` de clôture (à la clôture, consignes de l'Epic 35) ; le PDF
   du manuel n'est pas régénéré (AC9 : à l'intégration). Aucune capture : aucun contrôle visible ne change.
 - **Issues à ouvrir** (à l'orchestrateur) : #1201 existe déjà pour l'ordre des verrous du document. Aucune neuve.
@@ -796,3 +798,25 @@ Journaux hors dépôt, `/home/gcorbaz/devel/kesh-gate-logs/e36-19/` :
     `kesh-api::mcp_transport_e2e abandon_au_delai_le_permis_reste_pris` (`FLAKY 2/2`), test d'un délai du serveur MCP
     sans rapport avec la story, station chargée (`test-fast-ci-e19dd034d-r1.log`, dont la première ligne porte le
     commit). Ni `gate-ci` ni E2E (consignes : à la clôture).
+- 2026-11-16 — **Revue P2 ciblée** (`kesh-gate-logs/e36-19/review-p2-ciblee.md`, une lentille sur la remédiation
+  `e19dd034d`) : 0 CRITICAL, 0 HIGH, 0 MEDIUM, 2 LOW ; **boucle de revue close** (dernière passe sans rien au-dessus de
+  LOW). Les deux LOW, texte seulement, corrigés au commit `0e1f5f681` (aucune ligne de code exécuté) : LOW-1, commentaire
+  du champ `invoice_settings_created` de `installation.demo_seeded` (`kesh-seed/src/lib.rs`, il vaut aussi pour une
+  ligne vierge complétée ; le nom de la clé, contrat d'audit, est gardé) ; LOW-2, `admin-manual.tex:3850` (6940 désigné
+  à la finalisation de l'assistant, sauf réglages modifiés et enregistrés avant).
+- 2026-11-16 — **Clôture**. Synthèse de la boucle :
+  - validation de la fiche : P1 Sonnet 0/0/2/5 → P2 Opus 0/0/2/4 → P3 ciblée Sonnet 0/0/0/4 (validation terminée) ;
+  - revue de code : P1 Opus, trois lentilles (B 0/0/1/5, E 0/0/0/7, A 0/0/0/8 ; 17 findings distincts, tous remédiés,
+    aucun réfuté) → P2 ciblée 0/0/0/2 (deux LOW de texte corrigés) ;
+  - développement, remédiations et clôture : Opus 5.5, outil Edit.
+  Gates au dernier commit de code `0e1f5f681`, voie 1 :
+  - `scripts/gate-ci.sh kesh_ci_e3619` vert, code 0, **5479 réussis, 0 échec, 17 ignorés**
+    (`gate-ci-0e1f5f681-cloture.log`, sortie `gate-ci-0e1f5f681-cloture.sortie`, dont la première ligne porte le
+    commit) ;
+  - **E2E complet** (`e2e-complet-0e1f5f681.log`, binaire `bin/kesh-api-0e1f5f681`, base `kesh_e2e_e3619` remise à neuf,
+    port 3619, montage de `docs/testing.md` ; `frontend/build` de `0723be024`, aucun fichier de `frontend/` touché
+    depuis) : **427 réussis, 7 échecs, 18 ignorés**. Les sept échecs sont exactement les sept de la KF-029 (#97) de
+    `docs/testing.md` § « Les échecs attendus » : `mode-expert.spec.ts:26`, `:41`, `onboarding-path-b.spec.ts:65`,
+    `:92`, `onboarding.spec.ts:57`, `:77`, `:150` ; aucun échec variable. La spec neuve
+    `onboarding-finalize-reglages.spec.ts:73` est verte. Port libre après le run.
+  Statut `done`.
