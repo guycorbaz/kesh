@@ -565,3 +565,20 @@ ferme pas la fenêtre d'import, une table applicative neuve la ferme.
   issue à ouvrir avec la PR.
 - **C-37-8 — Tracé pour plus tard** (issues à ouvrir avec la PR) : option de neutralisation des gains de change non
   réalisés par une provision (prudence, CO 960 al. 2) ; factures, factures fournisseur et imports bancaires en devise.
+
+## CR-7 — revue de Guy (2026-11-16), approuvée par Beat
+
+Revue 4 de Guy (page `epic-35-revue.html`, 35-N = 37-N) : tout approuvé, 37-5 sans avis. Décisions retenues :
+
+- **A34 — Multi-devises sans retour (37-1).** Proposé par Guy, approuvé par Beat : une fois activé, le multi-devises
+  reste activé (confirmation à l'activation) ; tout exercice ouvert ou créé ensuite est multi-devises. **Retirés** : la
+  désactivation de la société, la bascule d'un exercice vers le mono-devise, l'avertissement des comptes en devise
+  actifs et l'archivage forcé (`force`), et ce qui n'existait que pour eux. Remplace la décision de Beat d'un mode par
+  exercice (révisions CR-1/CR-2).
+- **A35 — Sous-comptes.** Beaucoup de comptes attendus (un par solde et par devise, sous-comptes de frais). Kesh gère
+  déjà comptes parents et sous-comptes ; la forme du numéro (point ou non) est laissée au plan de l'utilisateur, aucun
+  travail ici.
+- **A36 — KISS (Beat).** Toute révision de ce cycle retire plutôt qu'elle n'ajoute ; ce qui se simplifie par A34 se
+  simplifie.
+- Remarque de Guy (Bexio : devise et CHF par ligne, cours calculé) : déjà couverte par V1/A32 ; la devise reste celle
+  du compte (T3).
