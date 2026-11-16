@@ -311,11 +311,22 @@ describe("fiche facture — bouton « Changer le compte analytique » (36-16a)",
     }
   });
 
+  /**
+   * La fiche rendue ET la liste des comptes analytiques réglée (chargée ou en échec) : le bouton
+   * dépend de cette liste (revue P1, E-2), si bien qu'une absence constatée avant elle ne prouverait
+   * rien — c'est ainsi que la mutation F4 (bouton au rôle Lecture) a survécu une fois.
+   */
+  async function ficheReglee(r: ReturnType<typeof render>) {
+    await r.findByTestId("invoice-detail-date");
+    await waitFor(() => expect(listProjectsMock).toHaveBeenCalled());
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  }
+
   it("rôle Lecture : pas de bouton", async () => {
     auth.currentUser.role = "Consultation";
     getInvoiceMock.mockResolvedValue(invoice());
     const r = render(Page);
-    await r.findByTestId("invoice-detail-date");
+    await ficheReglee(r);
     expect(r.queryByTestId(bouton)).toBeNull();
   });
 
@@ -324,16 +335,14 @@ describe("fiche facture — bouton « Changer le compte analytique » (36-16a)",
     listProjectsMock.mockRejectedValueOnce(new Error("réseau"));
     getInvoiceMock.mockResolvedValue(invoice({ projectId: 3 }));
     const r = render(Page);
-    await r.findByTestId("invoice-detail-date");
-    await waitFor(() => expect(listProjectsMock).toHaveBeenCalled());
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await ficheReglee(r);
     expect(r.queryByTestId(bouton)).toBeNull();
   });
 
   it("brouillon : pas de bouton", async () => {
     getInvoiceMock.mockResolvedValue(invoice({ status: "draft", journalEntryId: null }));
     const r = render(Page);
-    await r.findByTestId("invoice-detail-date");
+    await ficheReglee(r);
     expect(r.queryByTestId(bouton)).toBeNull();
   });
 });
