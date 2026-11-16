@@ -3704,7 +3704,7 @@ error-project-reassignment-closed-period = { $entryCount ->
     [one] Changer le compte analytique modifierait une écriture d'un exercice clos ou d'une période verrouillée. Confirmez pour continuer.
    *[other] Changer le compte analytique modifierait { $entryCount } écritures d'un exercice clos ou d'une période verrouillée. Confirmez pour continuer.
 }
-error-project-reassignment-closed-period-admin-only = Seul un Administrateur connecté à l'interface web peut changer le compte analytique d'un exercice clos ou d'une période verrouillée. Utilisez l'interface web.
+error-project-reassignment-closed-period-admin-only = Seul un Administrateur connecté à l'interface web peut changer le compte analytique d'un exercice clos ou d'une période verrouillée : demandez-le à un Administrateur.
 projects-reassign-open = Changer le compte analytique
 projects-reassign-title = Changer le compte analytique
 projects-reassign-body = La pièce et toutes ses écritures passent au compte analytique choisi. Les montants, les comptes, les dates, les numéros, le lettrage et le rapprochement ne changent pas.

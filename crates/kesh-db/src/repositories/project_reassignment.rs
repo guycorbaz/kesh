@@ -28,9 +28,10 @@
 //!    court-circuit « rien à faire » (`200`, rien d'écrit) ;
 //! 5. le compte visé (`projects::validate_taggable_in_tx`), **seulement s'il
 //!    diffère** du compte actuel de la pièce ;
-//! 6. l'exercice de chaque écriture qui changerait, `FOR UPDATE` par
-//!    `start_date` croissant, son statut lu sous ce verrou ; puis l'exercice
-//!    postérieur clos, verrouillé ([`fiscal_years::find_later_closed_in_tx`]) ;
+//! 6. les exercices des écritures qui changeraient, **tous** `FOR UPDATE` par
+//!    `start_date` croissant, leur statut lu sous ce verrou ; **puis**, pour
+//!    chacun resté ouvert, l'exercice postérieur clos, verrouillé
+//!    ([`fiscal_years::find_later_closed_in_tx`]) ;
 //! 7. l'exposition → `403` (pas un Administrateur en session) ou `409` (sans
 //!    accusé) ;
 //! 8. les `UPDATE`, l'audit, le `COMMIT`.
@@ -218,11 +219,13 @@ pub fn entries_that_change(
 
 /// Étape 6 — l'exposition des écritures `changing` à une période close.
 ///
-/// L'exercice de chacune est verrouillé **par `start_date` croissant** (l'ordre
-/// de la clôture et du `PUT` d'une écriture), son statut lu **sous ce verrou** ;
-/// puis, pour chaque exercice resté ouvert, le plus proche exercice postérieur
-/// clos, lu en lecture verrouillante. Une clôture concurrente attend donc le
-/// geste, ou le geste attend la clôture et lit `Closed`.
+/// Les exercices de ces écritures sont **tous** verrouillés d'abord, **par
+/// `start_date` croissant** (l'ordre de la clôture et du `PUT` d'une écriture),
+/// leur statut lu **sous ce verrou** ; **puis**, pour chaque exercice resté
+/// ouvert, le plus proche exercice postérieur clos, lu en lecture verrouillante.
+/// Une clôture concurrente attend donc le geste, ou le geste attend la clôture et
+/// lit `Closed`. `fiscal_years` nomme les exercices **clos en cause** : celui de
+/// l'écriture s'il est clos, sinon l'exercice postérieur clos qui l'expose.
 ///
 /// `books_locked_through` est la borne lue sous la sentinelle (étape 1) ; le
 /// seuil est **inclusif**, comme partout ailleurs.
@@ -252,8 +255,11 @@ pub async fn period_exposure_in_tx(
         ordered.sort_by_key(|(id, start)| (*start, *id));
     }
 
-    // Exercices exposés par la clôture : le leur clos, ou un postérieur clos.
-    let mut closed_years: Vec<(i64, String)> = Vec::new();
+    // (a) Tous les exercices de l'ensemble, verrouillés par `start_date`
+    //     croissant, leur statut lu sous ce verrou — avant toute recherche
+    //     d'exercice postérieur, pour que l'ordre des verrous reste celui de la
+    //     clôture (revue P1, A-5).
+    let mut locked_years: Vec<(i64, String, NaiveDate, bool)> = Vec::new();
     for (fy_id, _) in &ordered {
         let (name, start_date, status): (String, NaiveDate, String) = sqlx::query_as(
             "SELECT name, start_date, status FROM fiscal_years \
@@ -265,19 +271,36 @@ pub async fn period_exposure_in_tx(
         .await
         .map_err(map_db_error)?
         .ok_or_else(|| DbError::Invariant(format!("exercice {fy_id} introuvable")))?;
-        let exposed = status == "Closed"
-            || fiscal_years::find_later_closed_in_tx(tx, company_id, start_date)
+        locked_years.push((*fy_id, name, start_date, status == "Closed"));
+    }
+
+    // (b) Pour chaque exercice resté ouvert, le plus proche exercice postérieur
+    //     clos (lecture verrouillante). L'exercice exposé est nommé par
+    //     l'exercice **clos en cause** — le sien, ou ce postérieur —, comme le
+    //     garde de la modification d'une écriture (`journal_entries.rs`,
+    //     `LaterFiscalYearClosed { fiscal_year_name: later.name }`).
+    let mut exposed_years: Vec<i64> = Vec::new();
+    let mut closed_names: Vec<String> = Vec::new();
+    for (fy_id, name, start_date, closed) in &locked_years {
+        let cause = if *closed {
+            Some(name.clone())
+        } else {
+            fiscal_years::find_later_closed_in_tx(tx, company_id, *start_date)
                 .await?
-                .is_some();
-        if exposed {
-            closed_years.push((*fy_id, name));
+                .map(|later| later.name)
+        };
+        if let Some(cause) = cause {
+            exposed_years.push(*fy_id);
+            if !closed_names.contains(&cause) {
+                closed_names.push(cause);
+            }
         }
     }
 
     let mut entry_count = 0usize;
     let mut by_lock = false;
     for e in changing {
-        let by_fy = closed_years.iter().any(|(id, _)| *id == e.fiscal_year_id);
+        let by_fy = exposed_years.contains(&e.fiscal_year_id);
         let locked = books_locked_through.is_some_and(|through| e.entry_date <= through);
         if by_fy || locked {
             entry_count += 1;
@@ -286,7 +309,7 @@ pub async fn period_exposure_in_tx(
     }
     Ok(ClosedPeriodExposure {
         entry_count,
-        fiscal_years: closed_years.into_iter().map(|(_, name)| name).collect(),
+        fiscal_years: closed_names,
         locked_through: if by_lock { books_locked_through } else { None },
     })
 }

@@ -1082,6 +1082,47 @@ async fn a_concurrent_closing_is_seen_by_the_gesture(pool: MySqlPool) {
     assert_eq!(ctx.version(id).await, version);
 }
 
+/// T7 (revue P1, A-1 = E-3 = B-1) — un exercice **ouvert suivi d'un exercice
+/// clos** expose ses écritures : Comptable `403`, Administrateur sans accusé
+/// `409`, et `fiscalYears` nomme l'exercice **clos en cause** (le postérieur),
+/// non l'exercice ouvert de l'écriture. L'exercice postérieur est posé `Closed`
+/// en SQL (C-36-16a-2) : la clôture par la route refuse un exercice antérieur
+/// ouvert, si bien que cet état n'existe que dans une base historique.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn an_open_year_followed_by_a_closed_one_is_exposed(pool: MySqlPool) {
+    let ctx = setup(&pool).await;
+    let id = ctx.validated(Some(ctx.p), sale_day()).await;
+    let comptable = ctx.user(&pool, "comptable", "Comptable").await;
+    sqlx::query(
+        "INSERT INTO fiscal_years (company_id, name, start_date, end_date, status) \
+         VALUES (?, 'Exercice postérieur clos', '2031-01-01', '2031-12-31', 'Closed')",
+    )
+    .bind(ctx.seeded.company_id)
+    .execute(&pool)
+    .await
+    .unwrap();
+    let version = ctx.version(id).await;
+
+    let (status, body) = ctx
+        .reassign(&comptable, id, Some(ctx.q), version, None)
+        .await;
+    assert_refused(
+        status,
+        &body,
+        403,
+        "PROJECT_REASSIGNMENT_CLOSED_PERIOD_ADMIN_ONLY",
+    );
+    let (status, body) = ctx
+        .reassign(&ctx.admin, id, Some(ctx.q), version, None)
+        .await;
+    assert_refused(status, &body, 409, "PROJECT_REASSIGNMENT_CLOSED_PERIOD");
+    assert_eq!(
+        body["error"]["details"],
+        json!({ "entryCount": 1, "fiscalYears": ["Exercice postérieur clos"], "lockedThrough": null })
+    );
+    assert_eq!(ctx.version(id).await, version, "un refus n'écrit rien");
+}
+
 // ---------------------------------------------------------------------------
 // T8 — l'audit
 // ---------------------------------------------------------------------------
@@ -1178,9 +1219,11 @@ async fn the_role_check_comes_first(pool: MySqlPool) {
         "read",
     )
     .await;
-    for token in [&lecteur, &read_key] {
+    // Revue P1, E-4 : les codes, non le seul statut — un `403 …_ADMIN_ONLY` sur
+    // une facture absente passerait sinon.
+    for (token, code) in [(&lecteur, "FORBIDDEN"), (&read_key, "API_KEY_READ_ONLY")] {
         let (status, body) = ctx.reassign(token, 999_999, Some(ctx.q), 1, None).await;
-        assert_eq!(status, 403, "{body}");
+        assert_refused(status, &body, 403, code);
     }
 }
 
@@ -1218,8 +1261,11 @@ async fn an_unknown_or_foreign_invoice_is_404_before_the_version(pool: MySqlPool
     .fetch_one(&pool)
     .await
     .unwrap();
+    // Revue P1, A-4 : une version qui n'est pas celle de la facture étrangère
+    // (1) — si la facture était lue sans le filtre de société, le refus serait
+    // le `409` de version, non le `404`.
     let (status, body) = ctx
-        .reassign(&ctx.admin, foreign, Some(ctx.q), 1, None)
+        .reassign(&ctx.admin, foreign, Some(ctx.q), 99, None)
         .await;
     assert_refused(status, &body, 404, "NOT_FOUND");
 }
@@ -1291,6 +1337,26 @@ async fn the_target_account_is_checked_before_the_closed_period(pool: MySqlPool)
 
     let (status, body) = ctx
         .reassign(&comptable, id, Some(999_999), version, None)
+        .await;
+    assert_refused(status, &body, 404, "NOT_FOUND");
+    // Revue P1, E-4 : un compte analytique d'une autre société → `404`.
+    let other_company: i64 = sqlx::query_scalar(
+        "INSERT INTO companies (name, address, org_type, accounting_language, instance_language) \
+         VALUES ('Autre', 'Rue 1\n1000 Lausanne', 'Independant', 'FR', 'FR') RETURNING id",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let foreign_project: i64 = sqlx::query_scalar(
+        "INSERT INTO projects (company_id, parent_id, code, name, archived) \
+         VALUES (?, NULL, 'AUTRE', 'Compte d''une autre société', FALSE) RETURNING id",
+    )
+    .bind(other_company)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let (status, body) = ctx
+        .reassign(&comptable, id, Some(foreign_project), version, None)
         .await;
     assert_refused(status, &body, 404, "NOT_FOUND");
     let (status, body) = ctx

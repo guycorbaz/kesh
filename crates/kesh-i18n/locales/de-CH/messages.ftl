@@ -3625,7 +3625,7 @@ error-project-reassignment-closed-period = { $entryCount ->
     [one] Das Ändern des analytischen Kontos würde eine Buchung eines abgeschlossenen Geschäftsjahres oder einer gesperrten Periode ändern. Bestätigen Sie, um fortzufahren.
    *[other] Das Ändern des analytischen Kontos würde { $entryCount } Buchungen eines abgeschlossenen Geschäftsjahres oder einer gesperrten Periode ändern. Bestätigen Sie, um fortzufahren.
 }
-error-project-reassignment-closed-period-admin-only = Nur ein in der Weboberfläche angemeldeter Administrator kann das analytische Konto eines abgeschlossenen Geschäftsjahres oder einer gesperrten Periode ändern. Verwenden Sie die Weboberfläche.
+error-project-reassignment-closed-period-admin-only = Nur ein in der Weboberfläche angemeldeter Administrator kann das analytische Konto eines abgeschlossenen Geschäftsjahres oder einer gesperrten Periode ändern: Bitten Sie einen Administrator darum.
 projects-reassign-open = Analytisches Konto ändern
 projects-reassign-title = Analytisches Konto ändern
 projects-reassign-body = Der Beleg und alle seine Buchungen gehen auf das gewählte analytische Konto über. Beträge, Konten, Daten, Nummern, Ausgleich und Abgleich bleiben unverändert.

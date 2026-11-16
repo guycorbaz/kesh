@@ -3631,7 +3631,7 @@ error-project-reassignment-closed-period = { $entryCount ->
     [one] Changing the analytical account would modify one entry of a closed fiscal year or a locked period. Confirm to continue.
    *[other] Changing the analytical account would modify { $entryCount } entries of a closed fiscal year or a locked period. Confirm to continue.
 }
-error-project-reassignment-closed-period-admin-only = Only an administrator signed in to the web interface can change the analytical account of a closed fiscal year or a locked period. Use the web interface.
+error-project-reassignment-closed-period-admin-only = Only an administrator signed in to the web interface can change the analytical account of a closed fiscal year or a locked period: ask an administrator.
 projects-reassign-open = Change the analytical account
 projects-reassign-title = Change the analytical account
 projects-reassign-body = The document and all its entries move to the chosen analytical account. Amounts, accounts, dates, numbers, lettering and reconciliation do not change.

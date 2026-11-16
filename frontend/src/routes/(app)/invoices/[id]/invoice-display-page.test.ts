@@ -83,8 +83,10 @@ vi.mock("$lib/features/reminders/reminders.api", () => ({
   pauseDunning: vi.fn(),
   resumeDunning: vi.fn(),
 }));
+// Story 36-16a (revue P1, E-2) — la liste des comptes analytiques peut échouer.
+const listProjectsMock = vi.hoisted(() => vi.fn(async () => [] as unknown[]));
 vi.mock("$lib/features/projects/projects.api", () => ({
-  listProjects: vi.fn(async () => []),
+  listProjects: () => listProjectsMock(),
 }));
 const createCreditNoteMock = vi.hoisted(() => vi.fn());
 vi.mock("$lib/features/credit-notes/credit-notes.api", () => ({
@@ -314,6 +316,17 @@ describe("fiche facture — bouton « Changer le compte analytique » (36-16a)",
     getInvoiceMock.mockResolvedValue(invoice());
     const r = render(Page);
     await r.findByTestId("invoice-detail-date");
+    expect(r.queryByTestId(bouton)).toBeNull();
+  });
+
+  // Revue P1, E-2 — mutation : bouton montré sans la liste (le sélecteur dirait « — Aucun »).
+  it("comptes analytiques non chargés : pas de bouton", async () => {
+    listProjectsMock.mockRejectedValueOnce(new Error("réseau"));
+    getInvoiceMock.mockResolvedValue(invoice({ projectId: 3 }));
+    const r = render(Page);
+    await r.findByTestId("invoice-detail-date");
+    await waitFor(() => expect(listProjectsMock).toHaveBeenCalled());
+    await new Promise((resolve) => setTimeout(resolve, 0));
     expect(r.queryByTestId(bouton)).toBeNull();
   });
 

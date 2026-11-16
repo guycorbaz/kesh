@@ -177,6 +177,48 @@ test('une facture payée change de compte analytique, toutes ses écritures avec
 	}
 });
 
+// Revue P1 (A-6) — la variante « Exercice clos : <nom> » de l'avertissement, pour la capture. ⚠️ La
+// réponse `409` est SIMULÉE dans le navigateur (`page.route`) : clore un exercice par la route
+// demande un exercice suivant et un bilan, sur une base partagée entre specs. Le `409` réel, ses
+// `details` et le nom de l'exercice clos en cause sont éprouvés par les tests Rust
+// (`a_closed_fiscal_year_is_for_the_admin_in_session_only`,
+// `an_open_year_followed_by_a_closed_one_is_exposed`) ; ici, seul le rendu.
+test('capture — avertissement d’exercice clos (409 simulé dans le navigateur)', async ({
+	page,
+}, testInfo) => {
+	await login(page);
+	const ctx = await authedApiContext(page);
+	let id = 0;
+	let q = { id: 0, code: '' };
+	try {
+		const p = await createProject(ctx, uniq('P'));
+		q = await createProject(ctx, uniq('Q'));
+		id = await paidInvoice(page, ctx, p.id, ajouterJoursIso(todayInZurich(), -10));
+	} finally {
+		await disposeContextSafe(ctx);
+	}
+	await page.route('**/api/v1/invoices/*/reassign-project', (route) =>
+		route.fulfill({
+			status: 409,
+			contentType: 'application/json',
+			body: JSON.stringify({
+				error: {
+					code: 'PROJECT_REASSIGNMENT_CLOSED_PERIOD',
+					message: 'Confirmez pour continuer.',
+					details: { entryCount: 1, fiscalYears: ['Exercice 2025'], lockedThrough: null },
+				},
+			}),
+		}),
+	);
+	await page.goto(`/invoices/${id}`);
+	await chooseAndSave(page, id, q.id);
+	await expect(page.getByTestId('project-reassign-warning-fiscal-years')).toContainText(
+		'Exercice 2025',
+	);
+	await expect(page.getByTestId('project-reassign-warning-entries')).toContainText('Une écriture');
+	await capture(page, testInfo, 'avertissement-exercice-clos');
+});
+
 test('rôle Lecture : la fiche d’une facture payée n’a pas le bouton', async ({ page }, testInfo) => {
 	await login(page);
 	const ctx = await authedApiContext(page);

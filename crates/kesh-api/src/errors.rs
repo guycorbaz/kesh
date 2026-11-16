@@ -1445,8 +1445,12 @@ fn closed_period_response(
             StatusCode::FORBIDDEN,
             "PROJECT_REASSIGNMENT_CLOSED_PERIOD_ADMIN_ONLY",
             "error-project-reassignment-closed-period-admin-only",
+            // Revue P1, B-3 : le même refus sert le Comptable en session et la
+            // clé d'API ; il dit qui peut agir, sans renvoyer le Comptable vers
+            // l'interface où il est déjà.
             "Seul un Administrateur connecté à l'interface web peut changer le compte \
-             analytique d'un exercice clos ou d'une période verrouillée. Utilisez l'interface web.",
+             analytique d'un exercice clos ou d'une période verrouillée : demandez-le à un \
+             Administrateur.",
         )
     } else {
         (

@@ -270,8 +270,11 @@
 		// doit rester lisible). Échec toléré : libellé fallback `#id`.
 		try {
 			projects = await listProjects(true);
+			projectsLoaded = true;
 		} catch {
-			// Fallback #id via projectLabel.
+			// Fallback #id via projectLabel. Story 36-16a (revue P1, E-2) : sans la
+			// liste, le bouton « Changer le compte analytique » reste masqué — le
+			// sélecteur afficherait « — Aucun » au lieu du compte actuel.
 		}
 		// Story 16-1b (T5-bis/AC6-bis) : référentiel comptes + réglages, pour
 		// afficher le compte de produit de chaque ligne.
@@ -327,6 +330,8 @@
 	// Story 36-16a (#1167) — changer le compte analytique d'une facture émise
 	// (validée, payée, annulée), par le dialogue partagé. Monté à l'ouverture.
 	let reassignOpen = $state(false);
+	/** Vrai une fois la liste des comptes analytiques chargée (revue P1, E-2). */
+	let projectsLoaded = $state(false);
 
 	/**
 	 * L'appel du dialogue : la facture REPREND l'objet rendu, version comprise,
@@ -1038,7 +1043,7 @@
 <!-- Story 36-16a (#1167) — hors brouillon (le brouillon a son formulaire), pour le
      Comptable et l'Administrateur ; le serveur refuse le reste. -->
 {#snippet reassignButton()}
-	{#if canManage && invoice && invoice.status !== 'draft'}
+	{#if canManage && projectsLoaded && invoice && invoice.status !== 'draft'}
 		<Button
 			variant="outline"
 			onclick={() => (reassignOpen = true)}
@@ -1049,7 +1054,7 @@
 	{/if}
 {/snippet}
 
-<div class="mb-6 flex items-center justify-between">
+<div class="mb-6 flex items-start justify-between gap-4">
 	<Button variant="ghost" onclick={() => goto('/invoices')}>
 		<ArrowLeft class="h-4 w-4" aria-hidden="true" />
 		Retour
@@ -1076,7 +1081,10 @@
 			{/if}
 		</div>
 	{:else if invoice?.status === 'validated'}
-		<div class="flex gap-2">
+		<!-- Story 36-16a (revue P1, A-2) : avec « Changer le compte analytique », la
+		     rangée dépasse 1280 px ; elle passe à la ligne au lieu de couper
+		     « Dévalider » au bord de la fenêtre. -->
+		<div class="flex min-w-0 flex-wrap justify-end gap-2">
 			<!-- Le bouton disparaît quand la facture est soldée. Annuler un
 			     règlement se fait depuis la liste des règlements (Story 25-3-a-1),
 			     par contre-passation — pas par un retrait de drapeau. -->
@@ -1212,7 +1220,7 @@
 			{/if}
 		</div>
 	{:else if invoice?.status === 'cancelled'}
-		<div class="flex gap-2">
+		<div class="flex min-w-0 flex-wrap justify-end gap-2">
 			<!-- Story 25-6-b (#387) : une facture annulée par un avoir garde son PDF
 			     émis, s'il a été figé ; jamais rendue, elle n'en a pas. -->
 			{@render pdfButtons()}

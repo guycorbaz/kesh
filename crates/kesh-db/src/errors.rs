@@ -871,8 +871,9 @@ impl NumberFormatCause {
 pub struct ClosedPeriodExposure {
     /// Nombre d'écritures exposées **qui changeraient**.
     pub entry_count: usize,
-    /// Les exercices de ces écritures exposés par la clôture (le leur, ou un
-    /// exercice postérieur clos), par date de début croissante, sans doublon.
+    /// Les exercices **clos en cause**, sans doublon : celui d'une écriture
+    /// exposée s'il est clos, sinon l'exercice postérieur clos qui l'expose ; dans
+    /// l'ordre des exercices des écritures (date de début croissante).
     pub fiscal_years: Vec<String>,
     /// La borne du verrou des livres, quand au moins une écriture qui changerait
     /// est datée au plus tard de cette borne ; `None` sinon.

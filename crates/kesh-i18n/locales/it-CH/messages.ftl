@@ -3626,7 +3626,7 @@ error-project-reassignment-closed-period = { $entryCount ->
     [one] Cambiare il conto analitico modificherebbe una registrazione di un esercizio chiuso o di un periodo bloccato. Confermare per continuare.
    *[other] Cambiare il conto analitico modificherebbe { $entryCount } registrazioni di un esercizio chiuso o di un periodo bloccato. Confermare per continuare.
 }
-error-project-reassignment-closed-period-admin-only = Solo un amministratore connesso all'interfaccia web può cambiare il conto analitico di un esercizio chiuso o di un periodo bloccato. Utilizzare l'interfaccia web.
+error-project-reassignment-closed-period-admin-only = Solo un amministratore connesso all'interfaccia web può cambiare il conto analitico di un esercizio chiuso o di un periodo bloccato: chiederlo a un amministratore.
 projects-reassign-open = Cambia il conto analitico
 projects-reassign-title = Cambia il conto analitico
 projects-reassign-body = Il documento e tutte le sue registrazioni passano al conto analitico scelto. Importi, conti, date, numeri, abbinamento e riconciliazione non cambiano.
