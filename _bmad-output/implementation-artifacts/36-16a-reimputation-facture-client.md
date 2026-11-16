@@ -272,9 +272,9 @@ pour que la suite complète ne reste pas verrouillée. Rouge d'abord (correctif 
 
 ## Tâches
 
-- [ ] **Étape 0** — LOW de la dernière validation ; relire `reconciliation.rs:2926-2975` sur la base de départ (le verrou optimiste
+- [x] **Étape 0** — LOW de la dernière validation ; relire `reconciliation.rs:2926-2975` sur la base de départ (le verrou optimiste
   y est toujours ; **n'y rien poser**) ; 36-15 fusionnée, ses termes relus (D11).
-- [ ] **T1 kesh-db** — module `repositories/project_reassignment.rs` :
+- [x] **T1 kesh-db** — module `repositories/project_reassignment.rs` :
   - `pub async fn reassign_invoice(pool, acteur: Acteur, may_acknowledge: bool, company_id: i64, invoice_id: i64, project_id:
     Option<i64>, version: i32, acknowledge: bool) -> Result<Reassigned, DbError>` — les étapes de D9, la trace
     `invoice.project_reassigned` par `NewAuditLogEntry::par(acteur, …)` **avant** le `COMMIT` ;
@@ -285,16 +285,16 @@ pour que la suite complète ne reste pas verrouillée. Rouge d'abord (correctif 
   - variantes `DbError::ProjectReassignmentClosedPeriod { … }` et `…ClosedPeriodAdminOnly { … }` : leur code dans
     `DbError::error_code` (`crates/kesh-db/src/errors.rs:1906`), leur réponse `409`/`403` et leurs `details` dans le mappage de
     `crates/kesh-api/src/errors.rs` (voisin : `DbError::OptimisticLockConflict`, `:3742`).
-- [ ] **T2 kesh-api** — `invoices::reassign_project_handler` : `may_acknowledge = current_user.role == Role::Admin &&
+- [x] **T2 kesh-api** — `invoices::reassign_project_handler` : `may_acknowledge = current_user.role == Role::Admin &&
   current_user.api_key_id.is_none()`, `Acteur::from(&current_user)`, `retry_on_deadlock`, mappage `409`/`403` et `details` ; route ;
   registre des routes ; `audit_labels.rs`. `reconciliation.rs` n'est **pas** modifié.
-- [ ] **T3 kesh-i18n** — libellé d'audit et textes du dialogue ×4, près des blocs `invoice-detail-*`.
-- [ ] **T4 frontend** — `ProjectReassignDialog.svelte` (contrat D12) ; `reassignInvoiceProject` dans
+- [x] **T3 kesh-i18n** — libellé d'audit et textes du dialogue ×4 *(en un bloc en fin de fichier, C-36-16a-1)*.
+- [x] **T4 frontend** — `ProjectReassignDialog.svelte` (contrat D12) ; `reassignInvoiceProject` dans
   `frontend/src/lib/features/projects/projects.api.ts` ; bouton et dialogue sur `invoices/[id]/+page.svelte`.
-- [ ] **T5** — tests T1a à T13, rouges puis mutations ; E2E.
+- [x] **T5** — tests T1a à T13, rouges puis mutations ; E2E *(spec écrite et jouée seule ; suite complète à la clôture)*.
 - [ ] **T6** — captures (dialogue, avertissement, succès sur facture payée ; rôle Lecture sans bouton), thème clair,
   `kesh-gate-logs/e36-16a/captures/`.
-- [ ] **T7** — manuel utilisateur et `docs/api-external.md`.
+- [x] **T7** — manuel utilisateur et `docs/api-external.md`.
 - [ ] **Gates** (`e35-dev-commun.md` § *Quels gates, quand*, voie 1, `flock /tmp/station-heavy.lock flock
   /home/gcorbaz/devel/kesh-gate-logs/.gate.lock scripts/mem-guard.sh …`, une commande par prise, `free -g` avant) : `kesh-db`
   touché → `scripts/test-fast.sh --ci` même entre les passes ; en `review`, `test-fast --ci`, `scripts/gate-ci.sh kesh_ci_e3616a`,
@@ -358,11 +358,73 @@ Fiche d'origine `36-16-reimputation-analytique.md` ; fichier d'epic (rang 15) ; 
 
 ### Agent Model Used
 
+Opus 5.5 (Claude Code), en autonomie, le 2026-11-16 ; worktree `kesh-36-16`, voie 1, port 3616.
+
 ### Debug Log References
+
+Journaux sous `/home/gcorbaz/devel/kesh-gate-logs/e36-16/` (C-36-16a-8) :
+
+- `rouges.log` — premier rouge, route retirée par `git stash` de `lib.rs` seul : T1a rend **`405`** (et non `404` comme
+  l'annonçait la fiche : le chemin `/api/v1/invoices/{id}/…` existe pour d'autres méthodes), au commit `8e228cda8` + code non
+  commité ; le montage de la facture payée (vente, règlement, rapprochement, solde) a passé.
+- `cible-1.log` (64/70, six rouges : quatre compteurs du registre des routes, deux archivages sans `version`) puis
+  `cible-2.log` — gate ciblé `binary(project_reassignment_e2e)`, `audit_route_registry`, `audit_label_registry`,
+  `audit_acteur_garde`, tests unitaires du module : **70/70**, code de `207389b77`.
+- `clippy-1.log` — `cargo clippy --workspace --all-targets -D warnings` vert (avant la refusion).
+- `mut/` — scripts `run_mut_rust.py`, `run_mut_front.py`, synthèses `synthese-rust.log`, `synthese-front.log`, un journal par
+  mutation.
+- `vitest-cible-{1,2,3}.log`, `vitest-i18n-1.log` (le relevé `expected 3098 to be 3082`), `front-check-{1,2}.log`,
+  `front-build-{1,2}.log`, `front-test-unit-1.log`, `front-lint-i18n-2.log`.
+- `e2e-spec-1.log` (spec de la story seule, pour les captures), `gates-review.log`, `test-fast-ci-1.log`, `gate-ci-1.log`.
 
 ### Completion Notes List
 
+- **Étape 0.** Fusions `c0411138d` (`origin/epic/36-0.18.0`) puis `8e228cda8` (`story/36-15-compte-analytique` à `c01bb069c`,
+  non fusionnée — C-36-16a-1) ; termes relus (option A). Puis, à la demande de l'orchestrateur, `1cdf902e4` (release après la
+  fusion de la 36-15, `e50586b84` ; C-36-16a-9). `reconciliation.rs` relu, non modifié (le verrou optimiste `version = ?` y est
+  toujours, `:2952-2955` à `fd7140176`). LOW de la validation P3 : V3-1 (cycles de D9, phrase ajoutée), V3-3 (citation `:1191`
+  pour l'étape (e), la fonction à `:1116`) traités dans la fiche ; V3-2 concerne la 36-16b (mutation probablement équivalente de
+  son T5) : à y déclarer à l'exécution, rien à faire ici.
+- **Aucune migration** (D0) : `git diff fd7140176..HEAD -- crates/kesh-db/migrations` vide.
+- **Backend** : `repositories/project_reassignment.rs` (neuf) — `reassign_invoice` et les génériques `lock_company_sentinel_in_tx`,
+  `entry_ids_in_tx(…, include_reversals)`, `lock_entries_and_lines_in_tx`, `entries_that_change`, `period_exposure_in_tx`,
+  `refuse_if_exposed`, `reassign_lines_in_tx` ; `DbError::ProjectReassignmentClosedPeriod` et `…AdminOnly` portant
+  `ClosedPeriodExposure` ; route `POST /api/v1/invoices/{id}/reassign-project` (`comptable_routes`, `Traced`, `Rejouee`),
+  mappage `409`/`403` par `closed_period_response` ; libellé d'audit. Écarts au plan : `fiscalYears` et l'exercice postérieur
+  clos lu par exercice (C-36-16a-5) ; `projectId` exigé (C-36-16a-6) ; `journalEntryIds` = écritures changées (C-36-16a-7).
+- **Frontend** : `ProjectReassignDialog.svelte` (contrat D12 ; monté à l'ouverture, C-36-16a-3), `reassignInvoiceProject`,
+  bouton sur la fiche (validée, payée, annulée ; `canManage`). `sitesTotal` 3082 → 3098 (seize littéraux, relevés par la garde).
+- **Tests** : 25 tests dans `project_reassignment_e2e.rs` (recompté : `grep -c '#\[sqlx::test' …` = 25 — T1a, T1b, T2, T3, T4,
+  T5, T6, AC6, quatre T7, deux T8, cinq T9, cinq T10 et `projectId` exigé), 5 tests unitaires du module, 5 Vitest du dialogue,
+  1 (T12) dans `invoice-settlements-page.test.ts`, 3 de visibilité dans `invoice-display-page.test.ts` (C-36-16a-4), spec E2E
+  `project-reassignment.spec.ts` (3 scénarios : payée, rôle Lecture, verrou des livres). T6 dans le fichier des routes
+  (C-36-16a-10). Registre des routes : 146 → 147 routes, 139 → 140 tracées, 27 → 28 rejouées, 149 → 150 au registre ; le manuel
+  d'administration suit (« 140 des 147 », « 140 + 4 + 3 = 147 »).
+- **Mutations** : **17 Rust, toutes tuées** (M1 à M17 : chacune rougit le seul test visé, `Summary … 1 failed`) — dont la sonde
+  T5 (M6) et la sonde T6 (M7) ; **5 frontend, toutes tuées** (F1 à F5). Aucune équivalente.
+- **Manuel** : sous-section *Changer le compte analytique après coup* (`\label{sec:reimputation-analytique}`) ; PDF à
+  l'intégration. `docs/api-external.md` : section de la route, ordre des refus, § 10 (deux codes), paragraphe « Interblocages ».
+- **Captures** : `kesh-gate-logs/e36-16/captures/36-16a-{dialogue,succes,avertissement,lecture-sans-bouton}.png`, prises par la
+  spec E2E (`KESH_E2E_CAPTURES_DIR`), thème clair.
+- **Limites** : après un `409 OPTIMISTIC_LOCK_CONFLICT` reçu dans le dialogue (geste concurrent), la fiche n'est pas relue — le
+  message de l'API s'affiche et l'utilisateur recharge ; les paires déliées restent à 36-16c.
+- **Pas encore tourné** : l'E2E complet et `gate-ci` de clôture (au dernier commit de code, à la clôture) ; le PDF du manuel.
+
 ### File List
+
+- `crates/kesh-db/src/repositories/project_reassignment.rs` (neuf), `crates/kesh-db/src/repositories/mod.rs`,
+  `crates/kesh-db/src/errors.rs`
+- `crates/kesh-api/src/routes/invoices.rs`, `crates/kesh-api/src/lib.rs`, `crates/kesh-api/src/errors.rs`,
+  `crates/kesh-api/src/audit_labels.rs`
+- `crates/kesh-api/tests/project_reassignment_e2e.rs` (neuf), `crates/kesh-api/tests/audit_route_registry.rs`
+- `crates/kesh-i18n/locales/{fr-CH,de-CH,it-CH,en-CH}/messages.ftl` (un bloc `# Story 36-16a` en fin de fichier)
+- `frontend/src/lib/features/projects/ProjectReassignDialog.svelte` et `.test.ts` (neufs),
+  `frontend/src/lib/features/projects/projects.api.ts`, `frontend/src/lib/shared/i18n-keys.test.ts`
+- `frontend/src/routes/(app)/invoices/[id]/+page.svelte`, `invoice-display-page.test.ts`, `invoice-settlements-page.test.ts`
+- `frontend/tests/e2e/project-reassignment.spec.ts` (neuf)
+- `docs/manual/fr/user-manual.tex`, `docs/manual/fr/admin-manual.tex`, `docs/api-external.md`
+- `_bmad-output/implementation-artifacts/36-16a-reimputation-facture-client.md`, `…-review-prompt-p1.md` (neuf),
+  `e36-choix-autonomes-36-16-reimputation-analytique.md`, `sprint-status.yaml`
 
 ## Change Log
 
