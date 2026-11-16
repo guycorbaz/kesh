@@ -223,6 +223,23 @@ impl QrBillI18n {
         Self { entries }
     }
 
+    /// Les libellés du PDF tirés du texte d'un `messages.ftl` de `kesh-i18n` : chaque ligne
+    /// `clé = valeur` dont la clé est dans [`I18N_KEYS`] ; les valeurs de ces clés tiennent
+    /// sur une ligne. Réservé aux tests et à l'exemple de capture (Story 36-12a, revue P1,
+    /// B-3) : la production passe par `kesh-i18n`.
+    #[doc(hidden)]
+    pub fn depuis_ftl(ftl: &str) -> Self {
+        let mut entries = HashMap::new();
+        for ligne in ftl.lines() {
+            if let Some((cle, valeur)) = ligne.split_once(" = ")
+                && let Some(cle) = I18N_KEYS.iter().find(|k| **k == cle.trim())
+            {
+                entries.insert(*cle, valeur.trim().to_string());
+            }
+        }
+        Self::new(entries)
+    }
+
     pub fn get(&self, key: &'static str) -> &str {
         if let Some(v) = self.entries.get(key) {
             return v.as_str();

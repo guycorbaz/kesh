@@ -15,6 +15,11 @@
 //! entre les deux fonctions avec un commentaire `MIRROR` de part et
 //! d'autre. Le fallback HRTB générique sur `Executor` est notoirement
 //! fragile avec SQLx 0.8 — duplication préférée (cf. spec pass 2 P13).
+//!
+//! ⚠️ La ligne créée à la volée n'a **aucun compte** : un `GET` des réglages fait
+//! avant la fin de l'assistant (journal, comptes bancaires, factures) la laisse
+//! vierge. Depuis la Story 36-19 (#1200), la finalisation la **complète**
+//! ([`complete_default_accounts_in_tx`]) au lieu de la refuser.
 
 use std::collections::BTreeSet;
 
@@ -26,8 +31,9 @@ use crate::entities::{
     AccountRole, AccountType, CompanyInvoiceSettings, CompanyInvoiceSettingsUpdate, Journal,
 };
 use crate::errors::{
-    ClaimSide, DbError, DesignatedSetting, NonPostableAccount, NonPostableAccounts,
-    RoundingContext, WrongTypeDesignatedAccount, WrongTypeDesignatedAccounts, map_db_error,
+    ClaimSide, DbError, DefaultInvoiceAccountCause, DefaultInvoiceSetting, DesignatedSetting,
+    NonPostableAccount, NonPostableAccounts, RoundingContext, UnavailableDefaultInvoiceAccount,
+    WrongTypeDesignatedAccount, WrongTypeDesignatedAccounts, map_db_error,
 };
 use crate::repositories::audit_log;
 
@@ -92,7 +98,11 @@ where
     Ok(codes)
 }
 
-fn settings_snapshot_json(s: &CompanyInvoiceSettings) -> serde_json::Value {
+/// L'instantané des réglages que portent les entrées d'audit
+/// `company_invoice_settings.updated` (`before`, `after`, clés en camelCase) —
+/// public depuis la Story 36-19 : la finalisation de l'assistant l'emploie pour
+/// le complément d'une ligne existante.
+pub fn settings_snapshot_json(s: &CompanyInvoiceSettings) -> serde_json::Value {
     serde_json::json!({
         "companyId": s.company_id,
         "invoiceNumberFormat": s.invoice_number_format,
@@ -387,8 +397,10 @@ pub async fn update(
     // ligne existante un verrou PARTAGÉ, et le `FOR UPDATE` est une promotion
     // S → X. Deux écrivains qui font tous deux `INSERT IGNORE` puis `FOR UPDATE`
     // — deux PUT, ou un PUT et `get_or_create_default_in_tx` (validation de
-    // facture, avoir, facture fournisseur) — peuvent s'interbloquer (1213).
-    // Préexistant (l'`UPDATE` promouvait déjà), non aggravé ; la route rejoue
+    // facture, avoir, facture fournisseur), ou, depuis la Story 36-19, un PUT et
+    // la finalisation de l'assistant (`complete_default_accounts_in_tx`) —
+    // peuvent s'interbloquer (1213). Préexistant pour les premiers (l'`UPDATE`
+    // promouvait déjà), neuf pour la finalisation, borné : la route rejoue
     // l'interblocage (`retry_on_deadlock`, Story 15-5e1), et la `version` est
     // rejugée à chaque tentative.
     if is_no_op_change(&before, &changes) {
@@ -486,7 +498,8 @@ struct ChartDesignatedAccounts {
 /// Résout les comptes **marqués** du plan de la société (cf.
 /// [`ChartDesignatedAccounts`]).
 ///
-/// Partagé par les deux `insert_with_defaults*` (DRY). Le plan est **relu** ici
+/// Lu par [`complete_default_accounts_in_tx`] (et donc par ses enveloppes
+/// `insert_with_defaults*`), avant la ligne des réglages. Le plan est **relu** ici
 /// parce que la finalisation de l'onboarding arrive dans une autre requête que
 /// l'étape qui a semé les comptes ; la forme juridique ne change plus après
 /// l'étape 3, donc c'est bien le plan qui les a semés.
@@ -662,10 +675,22 @@ pub async fn write_off_account_for_write(
 }
 
 /// Le compte de **TVA due** d'un solde qui corrige la TVA (Story 25-4-d2a),
-/// relu au moment d'écrire : actif, imputable, de la société, `FOR UPDATE` —
-/// comme le compte de la nature, sans contrainte de type (un compte de TVA due
-/// est un passif). Absent ou inutilisable → `ConfigurationRequired`, le même
-/// refus que l'avoir pour un réglage absent.
+/// relu au moment d'écrire, de la société, `FOR UPDATE`, et jugé dans cet ordre
+/// (Story 36-9, #1044, D2 — l'ordre de la validation, `check_written`) :
+///
+/// 1. réglage vide, compte absent, d'une autre société ou **archivé** →
+///    `ConfigurationRequired` (divergence assumée avec la validation, C28 : le
+///    même refus que l'avoir pour un réglage absent) ;
+/// 2. **type** autre que celui du réglage
+///    ([`DesignatedRole::VatPayable`]`.expected_type()`, un passif) →
+///    [`DbError::DesignatedAccountsWrongType`], le refus de la validation d'une
+///    facture (Story 35-3) : un compte retypé depuis sa désignation ;
+/// 3. **non imputable** → `ConfigurationRequired`.
+///
+/// Le type et l'imputabilité sont lus dans **la** requête verrouillante : une
+/// lecture séparée, non verrouillante, lirait l'instantané REPEATABLE READ de
+/// l'appelant, ouvert avant le verrou, et manquerait un retypage validé
+/// entre-temps (D5 de la 35-3).
 pub async fn vat_payable_account_for_write(
     conn: &mut sqlx::MySqlConnection,
     company_id: i64,
@@ -679,16 +704,34 @@ pub async fn vat_payable_account_for_write(
     .await
     .map_err(map_db_error)?;
     let account_id = designated.flatten().ok_or_else(missing)?;
-    sqlx::query_scalar::<_, i64>(
-        "SELECT id FROM accounts WHERE id = ? AND company_id = ? AND active = TRUE \
-         AND postable = TRUE FOR UPDATE",
-    )
-    .bind(account_id)
-    .bind(company_id)
-    .fetch_optional(&mut *conn)
-    .await
-    .map_err(map_db_error)?
-    .ok_or_else(missing)
+    let (id, number, postable, account_type) =
+        sqlx::query_as::<_, (i64, String, bool, AccountType)>(
+            "SELECT id, number, postable, account_type FROM accounts WHERE id = ? \
+             AND company_id = ? AND active = TRUE FOR UPDATE",
+        )
+        .bind(account_id)
+        .bind(company_id)
+        .fetch_optional(&mut *conn)
+        .await
+        .map_err(map_db_error)?
+        .ok_or_else(missing)?;
+    let role = DesignatedRole::VatPayable;
+    let expected = role.expected_type();
+    if account_type != expected {
+        return Err(DbError::DesignatedAccountsWrongType(
+            WrongTypeDesignatedAccounts::new([WrongTypeDesignatedAccount {
+                account_id: id,
+                account_number: number,
+                setting: role.setting(),
+                expected_type: expected,
+                actual_type: account_type,
+            }]),
+        ));
+    }
+    if !postable {
+        return Err(missing());
+    }
+    Ok(id)
 }
 
 /// Le cœur commun des relectures de compte désigné : lit le réglage par
@@ -950,8 +993,10 @@ pub struct DesignatedAccountsSnapshot(Vec<LockedDesignatedAccount>);
 ///   comptes de produit — et jamais `postable` : une contre-passation vise les
 ///   mêmes comptes que l'origine ;
 /// - le **solde du reste** garde son refus `ConfigurationRequired` pour une TVA
-///   due inutilisable ([`vat_payable_account_for_write`]) — divergence assumée
-///   (C28).
+///   due absente, archivée ou non imputable ([`vat_payable_account_for_write`])
+///   — divergence assumée (C28) ; son **type**, en revanche, y est contrôlé
+///   comme ici, par la même constante et le même refus
+///   `DesignatedAccountsWrongType`, avant l'imputabilité (Story 36-9, #1044).
 ///
 /// `journal_entries::create_in_tx` garde `enforce_postable = false` (D-A0) : la
 /// garde est en amont, sur les seuls comptes de réglage. Elle révise la limite
@@ -1122,8 +1167,10 @@ impl DesignatedAccountsSnapshot {
 /// variante `_in_tx` dans sa dernière transaction.
 ///
 /// **Transaction-level variant** (`insert_with_defaults_in_tx`): Works within caller's transaction.
-/// Used by finalize() (Path B), which holds locks on company and onboarding_state.
-/// Caller must pass open transaction to keep locks alive during account lookup and INSERT.
+/// Used by the demonstration and the trap sets. *(Story 36-19 : `finalize()` (Path B)
+/// appelle directement [`complete_default_accounts_in_tx`], qui porte le corps et
+/// rend le refus détaillé ; les deux `insert_with_defaults*` en sont les enveloppes
+/// et le ramènent à `InactiveOrInvalidAccounts`.)*
 ///
 /// **Délégation (Story 15-7a1)** : la variante pool n'a plus de corps propre —
 /// elle **appelle** [`insert_with_defaults_in_tx`] (`begin`, variante, `commit`) ;
@@ -1183,13 +1230,27 @@ pub async fn insert_with_defaults(
     }
 }
 
-/// Transaction-aware variant of insert_with_defaults for finalize() to use.
-/// Keeps account locks within the caller's transaction scope.
+/// Transaction-aware variant of insert_with_defaults — **l'enveloppe** de
+/// [`complete_default_accounts_in_tx`] (Story 36-19, #1200, D5), que la
+/// démonstration (`kesh-seed`) et les jeux de pièges appellent.
 ///
-/// Rend `(réglages, inséré)` (Story 15-7a1) : le booléen vaut `true` si
-/// l'`INSERT IGNORE` a réellement inséré la ligne (`rows_affected == 1`),
-/// `false` si elle existait déjà (réglages relus, comptes vivants vérifiés).
-/// **Ne commite ni n'annule jamais** : sur erreur, l'appelant annule.
+/// Rend `(réglages, posés)` (Story 15-7a1 ; Story 36-19, revue P1 B1/E5) : le
+/// booléen vaut `true` si **cet appel a posé les comptes d'une ligne qui n'en
+/// avait aucun** — la ligne créée par cet appel, **ou** une ligne **vierge**
+/// ([`is_blank`] : créée avant par `get_or_create_default`, le `GET` des
+/// réglages) qu'il vient de compléter — ; `false` si la ligne portait déjà des
+/// réglages (complétée ou non). C'est sur ce booléen que la démonstration et les
+/// jeux de pièges désignent les trois comptes de TVA
+/// (`designate_vat_accounts_in_tx`, `COALESCE`, dans la même transaction) : une
+/// démonstration précédée d'un `GET` reçoit donc ses comptes de TVA comme sur
+/// une base neuve. Avant la Story 36-19, une telle ligne vierge faisait refuser
+/// la démonstration (`InactiveOrInvalidAccounts`) ; désormais elle aboutit, la
+/// ligne en `version` 2 (complément d'une ligne existante).
+///
+/// Le refus détaillé [`DbError::DefaultInvoiceAccountsUnavailable`] est
+/// **ramené** à [`DbError::InactiveOrInvalidAccounts`] (boucle de rejeu de la
+/// démonstration et tests d'avant la Story 36-19). **Ne commite ni n'annule
+/// jamais** : sur erreur, l'appelant annule.
 ///
 /// F2/F3/F4 CRITICAL: Caller must hold SELECT FOR UPDATE lock on onboarding_state
 /// and company to prevent deletion races. This function's SELECT FOR UPDATE on accounts
@@ -1198,123 +1259,411 @@ pub async fn insert_with_defaults_in_tx(
     tx: &mut sqlx::Transaction<'_, sqlx::MySql>,
     company_id: i64,
 ) -> Result<(CompanyInvoiceSettings, bool), DbError> {
-    // F1 CRITICAL FIX: Lock accounts rows during lookup to prevent concurrent deletes.
-    // SELECT FOR UPDATE prevents other transactions from modifying these rows until commit.
-    // ORDER BY id LIMIT 1 ensures deterministic single-row lock (schema uniqueness guarantee).
+    match complete_default_accounts_in_tx(tx, company_id).await {
+        Ok(outcome) => {
+            let posed = outcome.posed_on_empty_row();
+            Ok((outcome.into_settings(), posed))
+        }
+        Err(DbError::DefaultInvoiceAccountsUnavailable(_)) => {
+            Err(DbError::InactiveOrInvalidAccounts)
+        }
+        Err(e) => Err(e),
+    }
+}
+
+/// Ce que [`complete_default_accounts_in_tx`] a fait de la ligne des réglages
+/// (Story 36-19, #1200).
+#[derive(Debug, Clone)]
+pub enum DefaultAccountsOutcome {
+    /// La ligne n'existait pas : elle est créée, comptes posés, `version` 1.
+    Inserted(CompanyInvoiceSettings),
+    /// La ligne existait : des comptes vides ont été complétés, `version` + 1.
+    Completed {
+        /// La ligne avant le complément, lue sous verrou (en boîte : deux
+        /// réglages dans une variante, `clippy::large_enum_variant`).
+        before: Box<CompanyInvoiceSettings>,
+        /// La ligne relue après le complément.
+        after: CompanyInvoiceSettings,
+    },
+    /// La ligne existait et rien n'était à compléter : aucune écriture.
+    Unchanged(CompanyInvoiceSettings),
+}
+
+impl DefaultAccountsOutcome {
+    /// Les réglages tels qu'ils sont après l'appel.
+    pub fn settings(&self) -> &CompanyInvoiceSettings {
+        match self {
+            Self::Inserted(s) | Self::Unchanged(s) => s,
+            Self::Completed { after, .. } => after,
+        }
+    }
+
+    /// `true` si la ligne a été créée par cet appel.
+    pub fn inserted(&self) -> bool {
+        matches!(self, Self::Inserted(_))
+    }
+
+    /// `true` si cet appel a posé les comptes d'une ligne qui n'en avait aucun :
+    /// ligne créée, ou ligne **vierge** complétée (revue P1, B1/E5) — ce que
+    /// l'enveloppe [`insert_with_defaults_in_tx`] rend à la démonstration.
+    pub fn posed_on_empty_row(&self) -> bool {
+        match self {
+            Self::Inserted(_) => true,
+            Self::Completed { before, .. } => is_blank(before),
+            Self::Unchanged(_) => false,
+        }
+    }
+
+    /// Les réglages tels qu'ils sont après l'appel, par valeur.
+    pub fn into_settings(self) -> CompanyInvoiceSettings {
+        match self {
+            Self::Inserted(s) | Self::Unchanged(s) => s,
+            Self::Completed { after, .. } => after,
+        }
+    }
+}
+
+/// Une ligne de réglages **vierge** (Story 36-19, D2) : `version` 1 et ses dix
+/// comptes vides — l'état exact que laisse `INSERT IGNORE … (company_id)` (le
+/// `GET` des réglages, `get_or_create_default`), et qu'un `PUT` qui change
+/// quelque chose quitte (`update` incrémente `version`). Une ligne de `version`
+/// 2 aux dix comptes vides est **enregistrée**, non vierge : l'utilisateur a
+/// enregistré l'écran avec ses comptes vides.
+fn is_blank(s: &CompanyInvoiceSettings) -> bool {
+    s.version == 1
+        && s.default_receivable_account_id.is_none()
+        && s.default_revenue_account_id.is_none()
+        && s.default_vat_payable_account_id.is_none()
+        && s.default_vat_recoverable_account_id.is_none()
+        && s.default_vat_decompte_account_id.is_none()
+        && s.default_payable_account_id.is_none()
+        && s.default_rounding_account_id.is_none()
+        && s.default_discount_account_id.is_none()
+        && s.default_bank_fees_account_id.is_none()
+        && s.default_bad_debt_account_id.is_none()
+}
+
+/// Pourquoi le compte qui porte un rôle ne peut pas être désigné d'office
+/// (Story 36-19, D6), `None` s'il le peut.
+///
+/// ⛔ **Lecture verrouillante** (validation P3, V3-1 ; C-36-19-9) : `number` et
+/// `postable` se relisent `FOR UPDATE` sur la ligne que
+/// [`super::accounts::find_singleton_role_in_tx`] a déjà verrouillée (aucun
+/// verrou neuf). Une lecture simple lirait, sous `REPEATABLE READ`, le cliché de
+/// la première lecture non verrouillante de la transaction : un sous-compte créé
+/// entre ce cliché et le verrou laisserait le candidat lu imputable.
+///
+/// `bank_guard` : le compte débiteurs et le compte créanciers ne peuvent pas être
+/// le compte du grand livre d'un compte bancaire non archivé (Story 15-6c ; refs
+/// #987) — lu par `bank_accounts::first_active_bank_account_linked_to`, verrou
+/// partagé, **après** la ligne des réglages (ordre réglages → `bank_accounts`).
+async fn role_candidate_rejection(
+    tx: &mut sqlx::Transaction<'_, sqlx::MySql>,
+    company_id: i64,
+    account_id: i64,
+    bank_guard: bool,
+) -> Result<Option<DefaultInvoiceAccountCause>, DbError> {
+    let (account_number, postable): (String, bool) = sqlx::query_as(
+        "SELECT number, postable FROM accounts WHERE id = ? AND company_id = ? FOR UPDATE",
+    )
+    .bind(account_id)
+    .bind(company_id)
+    .fetch_one(&mut **tx)
+    .await
+    .map_err(map_db_error)?;
+    if !postable {
+        return Ok(Some(DefaultInvoiceAccountCause::RoleAccountNotPostable {
+            account_number,
+        }));
+    }
+    if bank_guard
+        && let Some((_, bank_label)) =
+            super::bank_accounts::first_active_bank_account_linked_to(tx, company_id, account_id)
+                .await?
+    {
+        return Ok(Some(
+            DefaultInvoiceAccountCause::RoleAccountLinkedToBankAccount {
+                account_number,
+                bank_label,
+            },
+        ));
+    }
+    Ok(None)
+}
+
+/// Le compte à poser dans un réglage **obligatoire** (débiteurs, produit) —
+/// `None` s'il n'y a rien à poser (réglage déjà désigné, ou refus inscrit dans
+/// `unavailable`).
+///
+/// - Réglage **désigné** : gardé (D3 : le rôle n'est pas cherché), pourvu que le
+///   compte soit encore de la société et actif — relu `LOCK IN SHARE MODE`
+///   après la ligne des réglages (C-36-19-10) ; sinon cause « archivé », ou
+///   « pas un compte de la société » s'il n'est pas de la société. Il n'est pas
+///   recontrôlé autrement (le `PUT` l'a contrôlé ; la garde à l'usage reste le
+///   filet). ⛔ La lecture est **verrouillante** : dans la route, le cliché
+///   `REPEATABLE READ` de la transaction est pris avant (par la lecture simple
+///   de `companies.org_type`, `chart_designated_accounts`), et un archivage
+///   validé entre ce cliché et cette lecture serait invisible à une lecture
+///   simple (revue P1, E2 ; test T-D4a, mutation M15).
+/// - Réglage **vide** : le compte de rôle, s'il existe et n'est pas écarté par
+///   [`role_candidate_rejection`] ; sinon la cause.
+async fn mandatory_account(
+    tx: &mut sqlx::Transaction<'_, sqlx::MySql>,
+    company_id: i64,
+    setting: DefaultInvoiceSetting,
+    designated: Option<i64>,
+    role_account: Option<i64>,
+    unavailable: &mut Vec<UnavailableDefaultInvoiceAccount>,
+) -> Result<Option<i64>, DbError> {
+    let cause = match (designated, role_account) {
+        (Some(account_id), _) => {
+            let row: Option<(String, bool)> = sqlx::query_as(
+                "SELECT number, active FROM accounts WHERE id = ? AND company_id = ? \
+                 LOCK IN SHARE MODE",
+            )
+            .bind(account_id)
+            .bind(company_id)
+            .fetch_optional(&mut **tx)
+            .await
+            .map_err(map_db_error)?;
+            match row {
+                Some((_, true)) => return Ok(None),
+                Some((number, false)) => DefaultInvoiceAccountCause::DesignatedArchived {
+                    account_number: number,
+                },
+                None => DefaultInvoiceAccountCause::DesignatedOutsideCompany,
+            }
+        }
+        (None, None) => DefaultInvoiceAccountCause::NoRoleAccount,
+        (None, Some(account_id)) => {
+            let bank_guard = setting == DefaultInvoiceSetting::Receivable;
+            match role_candidate_rejection(tx, company_id, account_id, bank_guard).await? {
+                None => return Ok(Some(account_id)),
+                Some(cause) => cause,
+            }
+        }
+    };
+    unavailable.push(UnavailableDefaultInvoiceAccount { setting, cause });
+    Ok(None)
+}
+
+/// Crée ou **complète** la ligne des réglages de facturation de la finalisation
+/// de l'assistant (Story 36-19, #1200, D1 à D7 ; refs #987) — la seule fonction
+/// qui pose les comptes par défaut que le plan fournit.
+///
+/// Avant la Story 36-19, la finalisation (`insert_with_defaults_in_tx`) écrivait
+/// par `INSERT IGNORE` : sans effet sur une ligne déjà créée par un `GET` des
+/// réglages (journal, comptes bancaires, factures ouverts avant la fin de
+/// l'assistant), puis refusée faute de comptes. Elle **complète** désormais la
+/// ligne qu'elle trouve.
+///
+/// **Ce qui se complète** (D2, C-36-19-1) — une valeur non vide n'est **jamais**
+/// remplacée (`COALESCE`) :
+/// - débiteurs et produit (obligatoires) : par leur compte de rôle dès qu'ils
+///   sont vides ; désignés, ils sont gardés s'ils sont actifs (D3) ;
+/// - créanciers (rôle `Payable`), arrondi, escompte, frais bancaires, pertes
+///   (facultatifs) : seulement sur une ligne **vierge** ([`is_blank`]) ;
+/// - les trois comptes de TVA : jamais (Story 31-5).
+///
+/// **Un candidat invalide n'est jamais désigné** (D6) : compte de rôle non
+/// imputable, ou — débiteurs et créanciers — lié à un compte bancaire non
+/// archivé. Obligatoire → refus ; facultatif → réglage laissé vide, sans refus.
+/// Les comptes du plan sont déjà filtrés (`designated_account_id`).
+///
+/// **Refus** : [`DbError::DefaultInvoiceAccountsUnavailable`], un élément par
+/// réglage obligatoire en défaut, débiteurs d'abord, après l'examen des deux.
+/// Rien n'est écrit qui ne soit annulé par le `rollback` de l'appelant (la ligne
+/// neuve comprise).
+///
+/// **Un seul ordre, ligne neuve comme existante** (D4, C-36-19-7) :
+/// 1. les comptes candidats `FOR UPDATE` — les trois rôles, puis les comptes que
+///    le plan marque (`chart_designated_accounts`) : `accounts` avant
+///    `company_invoice_settings` ;
+/// 2. `INSERT IGNORE INTO company_invoice_settings (company_id)` nu — les
+///    colonnes de texte prennent leurs valeurs par défaut, celles qu'écrivait
+///    l'`INSERT` d'avant ; `rows_affected == 1` dit « ligne neuve » ;
+/// 3. la ligne `FOR UPDATE` ;
+/// 4. les contrôles : comptes déjà désignés (`LOCK IN SHARE MODE`), candidats
+///    (relus `FOR UPDATE`, déjà tenus), comptes bancaires (`LOCK IN SHARE MODE`)
+///    — réglages avant `bank_accounts`, l'ordre du geste bancaire
+///    (`claim_accounts_in_share_mode`) ;
+/// 5. **un seul** `UPDATE … SET col = COALESCE(col, ?)` si au moins une colonne
+///    change, avec `version + 1` **seulement si la ligne existait** (une ligne
+///    neuve n'a été lue par personne : elle garde `version` 1). Sinon aucune
+///    écriture : rejouée ou appelée deux fois, la fonction rend « inchangé ».
+///
+/// ⚠️ **Interblocages neufs, bornés** (revue P1, E1/B4), tous deux sur une ligne
+/// **existante** — l'ancien code ne la relisait qu'en lecture simple :
+/// - **comptes ↔ réglages** : la finalisation tient les comptes de rôle en
+///   exclusif et attend la ligne des réglages en exclusif, quand le `PATCH` de
+///   liaison d'un compte bancaire (ou la validation d'une facture) tient la
+///   ligne et attend un compte ;
+/// - **promotion S → X** : l'`INSERT IGNORE` (étape 2) pose sur la ligne
+///   existante un verrou **partagé**, que le `FOR UPDATE` (étape 3) promeut en
+///   exclusif — le motif que décrit [`update`] : face à un `PUT` des réglages ou
+///   à `get_or_create_default_in_tx` (validation d'une facture, avoir, facture
+///   fournisseur), qui font de même, deux promotions s'interbloquent (1213).
+///
+/// Chaque cycle est rejoué des deux côtés — la finalisation et le `PATCH` par
+/// `kesh_api::retry::retry_app_on_deadlock`, le `PUT` des réglages, la
+/// validation d'une facture, l'avoir et la facture fournisseur par
+/// `kesh_db::retry::retry_on_deadlock` —, et une tentative annulée n'écrit rien.
+///
+/// L'audit est écrit par l'appelant, selon l'issue ([`DefaultAccountsOutcome`]).
+/// **Ne commite ni n'annule jamais.**
+pub async fn complete_default_accounts_in_tx(
+    tx: &mut sqlx::Transaction<'_, sqlx::MySql>,
+    company_id: i64,
+) -> Result<DefaultAccountsOutcome, DbError> {
+    // 1. Les comptes candidats, verrouillés AVANT la ligne des réglages.
     //
     // Story 34-1 (#966) : les trois lectures passent par la source unique
     // `accounts::find_singleton_role_in_tx`, que l'étape bancaire de l'assistant
     // emploie aussi (sans verrou) ; même requête, même ordre, même `FOR UPDATE`.
     use super::accounts::{RoleLookupLock, find_singleton_role_in_tx};
-    let receivable = find_singleton_role_in_tx(
+    let receivable_role = find_singleton_role_in_tx(
         tx,
         company_id,
         AccountRole::Receivable,
         RoleLookupLock::ForUpdate,
     )
     .await?;
-
-    let revenue = find_singleton_role_in_tx(
+    let revenue_role = find_singleton_role_in_tx(
         tx,
         company_id,
         AccountRole::DefaultRevenue,
         RoleLookupLock::ForUpdate,
     )
     .await?;
-
-    // Story 12.2 : compte créanciers 2000 (contrepartie achat fournisseur).
-    // OPTIONNEL (non fail-fast) — présent dans les charts standards mais
-    // l'absence ne doit pas bloquer la finalisation d'onboarding.
-    let payable = find_singleton_role_in_tx(
+    // Story 12.2 : compte créanciers (contrepartie achat fournisseur), facultatif.
+    let payable_role = find_singleton_role_in_tx(
         tx,
         company_id,
         AccountRole::Payable,
         RoleLookupLock::ForUpdate,
     )
     .await?;
-
-    // P1-004 + P1-007: Early NULL validation before INSERT (fail-fast pattern).
-    // Si aucun compte actif ne porte les rôles Receivable/DefaultRevenue (Story 14-3b),
-    // rejeter immédiatement au lieu de créer des lignes NULL — prévient la corruption
-    // et fournit un message clair aux appelants.
-    if receivable.is_none() || revenue.is_none() {
-        return Err(DbError::InactiveOrInvalidAccounts);
-    }
-
     // Story 25-4-c3-a2 / 25-4-d1 : les comptes désignés par le plan — facultatifs.
-    let designated = chart_designated_accounts(tx, company_id).await?;
+    let chart = chart_designated_accounts(tx, company_id).await?;
 
-    // P1-C1: Check rows_affected to distinguish newly inserted vs pre-existing rows
-    // INSERT IGNORE suppresses errors but returns rows_affected=0 if DUPLICATE KEY
-    let rows = sqlx::query(
-        "INSERT IGNORE INTO company_invoice_settings \
-         (company_id, invoice_number_format, default_receivable_account_id, \
-          default_revenue_account_id, default_payable_account_id, \
-          default_rounding_account_id, default_discount_account_id, \
-          default_bank_fees_account_id, default_bad_debt_account_id, \
-          default_sales_journal, journal_entry_description_template) \
-         VALUES (?, 'F-{YEAR}-{SEQ:04}', ?, ?, ?, ?, ?, ?, ?, 'Ventes', '{YEAR}-{INVOICE_NUMBER}')",
-    )
-    .bind(company_id)
-    .bind(receivable)
-    .bind(revenue)
-    .bind(payable)
-    .bind(designated.rounding)
-    .bind(designated.discount)
-    .bind(designated.bank_fees)
-    .bind(designated.bad_debt)
-    .execute(&mut **tx)
-    .await
-    .map_err(map_db_error)?
-    .rows_affected();
-    // Story 15-7a1 : « inséré » = l'INSERT IGNORE a réellement écrit la ligne.
-    let inserted = rows == 1;
+    // 2. La ligne, créée nue si elle n'existe pas.
+    let inserted =
+        sqlx::query("INSERT IGNORE INTO company_invoice_settings (company_id) VALUES (?)")
+            .bind(company_id)
+            .execute(&mut **tx)
+            .await
+            .map_err(map_db_error)?
+            .rows_affected()
+            == 1;
 
-    // If rows==0, row already existed (DUPLICATE KEY).
-    // P16: validate that the referenced accounts are still alive (not soft-deleted).
-    // Pure NULL re-check on the row would be dead defense — the fail-fast path
-    // above can no longer insert NULLs. Joining on accounts.active=TRUE catches the
-    // case where a previously-good FK now points to a deactivated account.
-    // CI fix: explicit `cis.` prefix on the SELECT list — `accounts` also has a
-    // `company_id` column, so `{COLUMNS}` (unprefixed) yields "Column ambiguous".
-    if rows == 0 {
-        let existing = sqlx::query_as::<_, CompanyInvoiceSettings>(
-            "SELECT cis.company_id, cis.invoice_number_format, cis.default_receivable_account_id, \
-                    cis.default_revenue_account_id, cis.default_vat_payable_account_id, \
-                    cis.default_vat_recoverable_account_id, cis.default_vat_decompte_account_id, \
-                    cis.default_sales_journal, \
-                    cis.journal_entry_description_template, cis.credit_note_number_format, \
-                    cis.supplier_internal_number_format, \
-                    cis.default_payable_account_id, cis.default_rounding_account_id, \
-                    cis.round_to_5_centimes, cis.minimum_invoice_amount, \
-                    cis.default_discount_account_id, cis.default_bank_fees_account_id, \
-                    cis.default_bad_debt_account_id, \
-                    cis.version, cis.created_at, cis.updated_at \
-             FROM company_invoice_settings cis \
-             JOIN accounts ar ON ar.id = cis.default_receivable_account_id AND ar.active = TRUE \
-             JOIN accounts av ON av.id = cis.default_revenue_account_id AND av.active = TRUE \
-             WHERE cis.company_id = ?",
-        )
-        .bind(company_id)
-        .fetch_optional(&mut **tx)
-        .await
-        .map_err(map_db_error)?;
-
-        return match existing {
-            Some(row) => Ok((row, inserted)),
-            None => Err(DbError::InactiveOrInvalidAccounts),
-        };
-    }
-
-    let settings = sqlx::query_as::<_, CompanyInvoiceSettings>(&format!(
-        "SELECT {COLUMNS} FROM company_invoice_settings WHERE company_id = ?"
+    // 3. La ligne sous verrou.
+    let before = sqlx::query_as::<_, CompanyInvoiceSettings>(&format!(
+        "SELECT {COLUMNS} FROM company_invoice_settings WHERE company_id = ? FOR UPDATE"
     ))
     .bind(company_id)
     .fetch_one(&mut **tx)
     .await
     .map_err(map_db_error)?;
 
-    Ok((settings, inserted))
+    // 4. Les contrôles : les deux obligatoires d'abord, débiteurs avant produit.
+    let mut unavailable = Vec::new();
+    let receivable = mandatory_account(
+        tx,
+        company_id,
+        DefaultInvoiceSetting::Receivable,
+        before.default_receivable_account_id,
+        receivable_role,
+        &mut unavailable,
+    )
+    .await?;
+    let revenue = mandatory_account(
+        tx,
+        company_id,
+        DefaultInvoiceSetting::Revenue,
+        before.default_revenue_account_id,
+        revenue_role,
+        &mut unavailable,
+    )
+    .await?;
+    if !unavailable.is_empty() {
+        return Err(DbError::DefaultInvoiceAccountsUnavailable(unavailable));
+    }
+    // Les facultatifs : sur une ligne vierge seulement (D2) ; un candidat écarté
+    // laisse le réglage vide (D6).
+    let blank = is_blank(&before);
+    let payable = match payable_role {
+        Some(account_id)
+            if blank
+                && role_candidate_rejection(tx, company_id, account_id, true)
+                    .await?
+                    .is_none() =>
+        {
+            Some(account_id)
+        }
+        _ => None,
+    };
+    let (rounding, discount, bank_fees, bad_debt) = if blank {
+        (
+            chart.rounding,
+            chart.discount,
+            chart.bank_fees,
+            chart.bad_debt,
+        )
+    } else {
+        (None, None, None, None)
+    };
+
+    // 5. Un seul UPDATE, s'il y a quelque chose à poser.
+    let fills = [
+        receivable, revenue, payable, rounding, discount, bank_fees, bad_debt,
+    ];
+    if fills.iter().all(Option::is_none) {
+        return Ok(if inserted {
+            DefaultAccountsOutcome::Inserted(before)
+        } else {
+            DefaultAccountsOutcome::Unchanged(before)
+        });
+    }
+    sqlx::query(
+        "UPDATE company_invoice_settings SET \
+         default_receivable_account_id = COALESCE(default_receivable_account_id, ?), \
+         default_revenue_account_id = COALESCE(default_revenue_account_id, ?), \
+         default_payable_account_id = COALESCE(default_payable_account_id, ?), \
+         default_rounding_account_id = COALESCE(default_rounding_account_id, ?), \
+         default_discount_account_id = COALESCE(default_discount_account_id, ?), \
+         default_bank_fees_account_id = COALESCE(default_bank_fees_account_id, ?), \
+         default_bad_debt_account_id = COALESCE(default_bad_debt_account_id, ?), \
+         version = version + ? \
+         WHERE company_id = ?",
+    )
+    .bind(receivable)
+    .bind(revenue)
+    .bind(payable)
+    .bind(rounding)
+    .bind(discount)
+    .bind(bank_fees)
+    .bind(bad_debt)
+    .bind(if inserted { 0 } else { 1 })
+    .bind(company_id)
+    .execute(&mut **tx)
+    .await
+    .map_err(map_db_error)?;
+
+    let after = sqlx::query_as::<_, CompanyInvoiceSettings>(&format!(
+        "SELECT {COLUMNS} FROM company_invoice_settings WHERE company_id = ? FOR UPDATE"
+    ))
+    .bind(company_id)
+    .fetch_one(&mut **tx)
+    .await
+    .map_err(map_db_error)?;
+    Ok(if inserted {
+        DefaultAccountsOutcome::Inserted(after)
+    } else {
+        DefaultAccountsOutcome::Completed {
+            before: Box::new(before),
+            after,
+        }
+    })
 }
 
 /// Les comptes retenus pour les trois réglages de TVA (Story 31-5, #707), dans
@@ -1475,7 +1824,10 @@ async fn lock_usable_role_account(
 /// pris après la ligne de réglages (ordre `accounts → company_invoice_settings`).
 ///
 /// N'incrémente pas `version` : l'appelant (`seed_demo`) ne l'emploie que sur une
-/// ligne que la même transaction vient de créer, que personne n'a donc pu lire.
+/// ligne que la même transaction vient de créer, que personne n'a donc pu lire —
+/// ou, depuis la Story 36-19 (revue P1, B1/E5), sur une ligne **vierge** que la
+/// même transaction vient de compléter et tient en `FOR UPDATE` : sa `version` a
+/// déjà été incrémentée par le complément, et personne ne l'a lue depuis.
 /// Ne commite ni n'annule.
 pub async fn designate_vat_accounts_in_tx(
     tx: &mut sqlx::Transaction<'_, sqlx::MySql>,

@@ -156,7 +156,7 @@ onboarding-field-qr-iban = QR-IBAN
 onboarding-skip-bank = Später konfigurieren
 onboarding-next = Weiter
 onboarding-stub-name-notice = Ihr Unternehmen hat einen vorläufigen Namen — vervollständigen Sie Ihre Angaben
-incomplete-banner-text = Konfiguration unvollständig — Einrichtung abschliessen
+incomplete-banner-text = Konfiguration unvollständig: Schliessen Sie die Einrichtung ab, bevor Sie Kesh verwenden.
 incomplete-banner-cta = Einrichtung abschliessen
 
 # Startseite (Story 2.4)
@@ -331,6 +331,7 @@ journal-entry-modified = Geändert
 journal-entry-history = Verlauf
 error-fiscal-year-closed-generic = Das Geschäftsjahr ist abgeschlossen — keine Buchungen können hinzugefügt, geändert oder gelöscht werden (OR Art. 957-964).
 error-inactive-accounts = Ein oder mehrere Konten sind archiviert oder ungültig.
+error-default-invoice-accounts-unavailable = Die Standardkonten der Fakturierung sind nicht verwendbar: Legen Sie sie unter Administration → Fakturierung fest.
 error-account-not-postable = { $count ->
     [one] Das Konto { $numbers } ist nicht bebuchbar (Sammel-, Ergebnis- oder Abschlusskonto): Wählen Sie ein bebuchbares Konto.
    *[other] Die Konten { $numbers } sind nicht bebuchbar (Sammel-, Ergebnis- oder Abschlusskonten): Wählen Sie bebuchbare Konten.
@@ -341,7 +342,7 @@ error-designated-account-not-postable = { $count ->
 }
 # Story 35-3 (#537) — ein seit seiner Festlegung umtypisiertes Konto: ein Satz pro Konto, dann der Handlungssatz.
 error-designated-account-wrong-type = Das Konto { $account }, unter Administration → Fakturierung als { $setting } festgelegt, ist ein { $actual }; diese Einstellung verlangt ein { $expected }.
-error-designated-account-wrong-type-action = Es wurde nichts gespeichert. Eine Administratorin oder ein Administrator muss die betreffende Einstellung korrigieren – ein Konto des richtigen Typs festlegen oder dem Konto seinen ursprünglichen Typ zurückgeben –, danach kann die Validierung unverändert erneut ausgeführt werden.
+error-designated-account-wrong-type-action = Es wurde nichts gespeichert. Eine Administratorin oder ein Administrator muss die betreffende Einstellung korrigieren – ein Konto des richtigen Typs festlegen oder dem Konto seinen ursprünglichen Typ zurückgeben –, danach kann der Vorgang unverändert erneut ausgeführt werden.
 error-designated-account-setting-receivable = Konto Forderungen aus Lieferungen und Leistungen
 error-designated-account-setting-vat-payable = Konto geschuldete MWST
 error-designated-account-setting-payable = Konto Verbindlichkeiten aus Lieferungen und Leistungen
@@ -3038,9 +3039,7 @@ nav-email-templates = E-Mail-Vorlagen
 nav-projects = Projekte
 nav-supplier-invoices-import = Zu bearbeitende Dokumente
 onboarding-address-npa-city-required = PLZ und Ort sind erforderlich
-onboarding-already-finalized = Die Einrichtung ist bereits abgeschlossen. Bitte laden Sie die Seite neu.
 onboarding-field-name-hint = Unternehmen — sonst Vorname + Name ausfüllen
-onboarding-finalize-incomplete = Der Abschluss der Einrichtung wurde nicht bestätigt. Bitte laden Sie die Seite neu.
 onboarding-mode-error = Fehler bei der Moduswahl
 onboarding-language-error = Fehler bei der Sprachwahl
 onboarding-demo-load-error = Fehler beim Laden der Demodaten
@@ -3057,6 +3056,29 @@ onboarding-bank-skip-error = Fehler beim Überspringen des Bankkontos
 onboarding-bank-editable-later = Die Beschreibung und das verknüpfte Buchhaltungskonto lassen sich später unter Administration → Bankkonten ändern.
 onboarding-bank-ledger-load-error = Die Kontenliste konnte nicht geladen werden: Das Bankkonto kann später verknüpft werden.
 onboarding-save = Speichern
+# Story 36-17 (#1187) — la fin de l'assistant : un écran pour chaque état.
+onboarding-state-load-error = Der Stand der Einrichtung konnte nicht gelesen werden.
+onboarding-retry = Erneut versuchen
+onboarding-finalizing = Einrichtung läuft…
+onboarding-finalizing-desc = Kesh richtet die Fakturierungseinstellungen, die MWST-Sätze und das erste Geschäftsjahr ein. Lassen Sie diese Seite geöffnet.
+onboarding-done-title = Einrichtung abgeschlossen
+onboarding-done-created = Was eingerichtet wurde
+onboarding-done-company = Unternehmen
+onboarding-done-chart = Kontenplan
+onboarding-done-fiscal-year = Geschäftsjahr
+onboarding-done-bank-account = Bankkonto
+onboarding-done-credit-card = Kreditkarte
+onboarding-finalize-remedy-link = Administration → Fakturierung öffnen
+onboarding-done-summary-error = Die Übersicht konnte nicht gelesen werden.
+onboarding-done-todo = Was noch zu tun ist
+onboarding-done-todo-vat = Wenn Sie mehrwertsteuerpflichtig sind, legen Sie die MWST-Konten unter Administration → Fakturierung fest, bevor Sie Ihre erste Rechnung mit MWST erstellen.
+onboarding-done-todo-bank = Erfassen Sie Ihr Bankkonto unter Administration → Bankkonten.
+onboarding-start = Loslegen
+onboarding-demo-loading = Demodaten werden geladen…
+onboarding-demo-ready = Die Demodaten sind bereit.
+onboarding-demo-navigate-error = Kesh konnte nicht geöffnet werden: Klicken Sie auf Loslegen.
+onboarding-fallback = Unerwarteter Stand des Assistenten.
+onboarding-fallback-reload = Seite neu laden
 payment-batches-cancel = Stapel stornieren
 payment-batches-cancel-confirm = Diesen Stapel stornieren? Die Rechnungen werden wieder zahlbar.
 payment-batches-col-date = Ausführung
@@ -3355,8 +3377,8 @@ audit-log-query-error-code-too-long = { $field } überschreitet { $max } Zeichen
 nav-audit-log = Audit-Protokoll
 audit-log-title = Audit-Protokoll
 audit-log-subtitle = Die Spur jedes Vorgangs, der die Bücher Ihres Unternehmens verändert: wer, was, wann.
-audit-log-filter-date-from = Von (UTC-Tag)
-audit-log-filter-date-to = Bis (UTC-Tag)
+audit-log-filter-date-from = Von
+audit-log-filter-date-to = Bis
 audit-log-filter-entity-type = Entitätstyp
 audit-log-filter-entity-type-all = Alle
 audit-log-filter-entity-id = Entitäts-Nr.
