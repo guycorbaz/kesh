@@ -54,6 +54,9 @@ réversible (règles de l'epic) ; aucun n'écrit de donnée ni ne touche le serv
 - **Retenu** : la saisie rognée est lue partout où un blanc de tête ou de fin est admis aujourd'hui (frais de rappel
   compris) ; les soldes de départ restent sans rognage. Aucun montant accepté aujourd'hui n'est refusé pour un blanc.
 - **Réversible** : oui.
+- *Annoté le 2026-11-16 (revue P2 de la 36-18a, R1) : pour les soldes de départ, ce choix est **remplacé** par
+  C-36-18-13 — ils rognent désormais (`openingAmountReader`), comme les autres écrans ; le texte ci-dessus reste comme
+  relevé du choix d'origine.*
 
 ## C-36-18-5 — « 10.000 » au règlement devient ambigu, contre un test existant
 
