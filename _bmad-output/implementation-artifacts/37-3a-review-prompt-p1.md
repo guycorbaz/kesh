@@ -9,7 +9,7 @@ nulle part ailleurs, sauf journaux dans `/home/beat/claude/kesh-gate-logs/s37-3a
 
 - Diff : `git diff epic/37-multi-devises...HEAD (la branche contient 37-1 et 37-2 terminées, fusionnées en `e89291e6`)` (code, tests, manuels `.tex`, i18n, docs).
 - Spec : la fiche `_bmad-output/implementation-artifacts/37-3a-ecritures-en-devise-modele.md` (AC, FR/NFR, Dev Agent
-  Record et écarts C-37-2-1 à 3), l'epic `_bmad-output/planning-artifacts/epic-37-multi-devises.md`.
+  Record et écarts de la fiche), l'epic `_bmad-output/planning-artifacts/epic-37-multi-devises.md`.
 - Écarts du dev : voir le Dev Agent Record de la fiche (fixture sans pas d'ajustement, page MCP 18/10,
   `refuse_foreign_currency_accounts_in_tx` sans verrou, ordre des refus au `PUT`, message de `MULTI_CURRENCY_DISABLED`,
   tests de la fiche non écrits, concurrence argumentée sans test). Tous sont à juger.
