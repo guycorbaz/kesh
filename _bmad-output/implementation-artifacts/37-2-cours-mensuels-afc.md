@@ -1840,3 +1840,51 @@ lecture seule (Consultation) ; carte des paramètres ; largeur 390 px.
   registre des routes +5 routes / +6 au total / (vi) 27 → 32 ; migrations 93 (11 `yes`, 82 `tracked-by-sqlx`) ; choix
   C-37-2-1 à C-37-2-10 (collation `ascii_general_ci`, `RateKind` dans `kesh-core`, copie par `INSERT` ligne à ligne…) ;
   quatre défauts tracés à la liste de l'epic (n° 8 à 11) ; détail au Dev Agent Record. Statut → `review`.
+- 2026-11-16 — revue de code P1 (Opus) : **0 CRITICAL, 0 HIGH, 8 MEDIUM, 6 LOW corrigés ; 4 findings réfutés ; 33 LOW
+  non corrigés, à tracer**. Couches : Blind Hunter (deux, backend ; frontend, manuels et tests), Edge Case Hunter
+  (backend), Acceptance Auditor ; diff `epic/37-multi-devises...dd509194`. MEDIUM corrigés : **CR-P1-1** le ↑ dont la
+  valeur publiée montrée a disparu supprimait le cours saisi → 409 (`reset_rate`) ; **CR-P1-2** une écriture de cours
+  (récupération automatique, connexion, `POST /fetch`) pouvait écrire dans une restauration en cours, avec des sociétés
+  et devises lues avant l'import → `backup_lock` tenu le temps de chaque écriture (`recuperation.rs`,
+  `garde_hors_restauration`), après l'appel sortant ; **CR-P1-3** la copie (C-37-2-3) lisait sans verrou, contre
+  l'AC-3 bis : une récupération et une création d'exercice ou de compte concurrentes ne copiaient ni l'une ni l'autre,
+  et l'unité ne se redemandait plus → `LOCK IN SHARE MODE` sur la lecture des candidates (insertions ligne à ligne
+  gardées) ; **CR-P1-4** 36 unités anciennes en échec durable occupaient chaque tour et le mois courant n'était jamais
+  demandé → `choisir_demandees` garde toujours le mois courant et le mois suivant manquants dans le plafond, ordre
+  chronologique gardé (écart à « dans l'ordre chronologique » de l'AC-4 sur la seule sélection) ; **CR-P1-5** (écran)
+  après un refus autre que 409, la case ou le choix de genre montrait la valeur non enregistrée → les cases se
+  remontent ; **CR-P1-6** une lecture périmée du tableau pouvait écraser la bonne → numéro de lecture ; **CR-P1-7** un
+  échec de lecture de la société ou des exercices s'affichait « mono-devise » ou « aucun exercice » → état d'erreur ;
+  **CR-P1-8** manuels : « chaque passage revérifie le mois courant » (faux quand rien ne manque). LOW corrigés (manuels) :
+  « l'écran n'enregistre pas » un cours saisi égal à la valeur publiée (l'API le peut) ; mention « AFC : non publié » des
+  cases vides ; « aucun appel sans exercice ouvert » (le `POST /fetch` d'un exercice clos reste) ; date au survol d'une
+  copie de Kesh ; cases antérieures au 01.01.2000 ni récupérables ni saisissables. Réfutés : exercice clos en lecture
+  seule côté serveur (la fiche le veut « de l'écran » seulement, l. 928) ; `accounts::create`/`update` et
+  `fiscal_years::create` non rejoués (ils le sont, `routes/accounts.rs:415,509`, `routes/fiscal_years.rs:307`) ; date
+  de correction en UTC (`formatSwissDate` convertit à Zurich, `reports.api.ts:238-243`) ; option « toutes les sociétés »
+  (spécifiée, non livrée par la fiche, FR-37-2-10). **Interblocage 1213 de l'E2E (issue n° 11)** : une seule
+  occurrence (`s37-2/final/e2e-backend.log:94`), pendant l'AC20 de `backup-restore-new-install`, qui est passé — la
+  restauration a abouti (déconnexion qui suit), la victime est une requête concurrente, le battement
+  `POST /auth/activity` (préexistant) le seul écrivain plausible ; en mode test ni tâche ni tour de connexion, société
+  mono-devise, aucune écriture de cours ; les deux échecs du même fichier (bouton d'import désactivé) se reproduisent sur
+  la base `s37-1/final3/base.log` : **non imputable à l'Epic 37 sur les preuves disponibles**, reste à tracer (P2,
+  préexistant probable). Tests ajoutés (de `dd509194` à ce commit) : 2 Rust (`copie_concurrente_d_une_recuperation_non_validee`,
+  `fetch_attend_la_fin_d_une_restauration`), 1 cas étendu (`reprise_de_la_valeur_publiee`), 1 assertion changée
+  (`tour_plafond_trente_six_plus_un`), 3 Vitest. Gate complet (kesh-db touché), arbre de travail au-dessus de
+  `dd509194` : fmt 0, clippy workspace 0, nextest `--profile ci` **5673 passés, 13 ignorés**, base `kesh_s37_2` remise à
+  zéro ; `npm run check` 0 erreur, `lint-i18n-ownership` 0, Vitest ciblé `features/exchange-rates` 5 fichiers, 94 passés.
+  **Non exécutés** : Vitest complet, `npm run build`, E2E complet (frontend touché : à rejouer au dernier commit de
+  code), aucune mutation des tests ajoutés. LOW à tracer (non corrigés) : audit `copied` et `GET /status` à l'échelle de
+  l'installation ; pas de coupe-circuit sur source en panne (≈ 12 min) ; `POST /fetch` sans limite de fréquence ; deux
+  horloges (`maintenant_ms` réelle) ; état de récupération écrit hors verrou ; erreur de base en cours de tour perd le
+  statut ; double revérification tâche/connexion ; restauration sur la même installation sans recopie automatique ;
+  `update_rate_kinds` (no-op qui ignore `applyToNextOpening`, suivant mono-devise modifié) ; ↑ et acquittement sans
+  no-op ; reset sans `publishedRate` non contrôlé ; mémoire des échecs non bornée ; `with_base_url` public ; bandeau non
+  relu après un ↑ ou un acquittement en échec ; test `fetch_raccourci_apres_attente` lié à 300 ms ; bloc muet possible
+  de `fetch_memoire_des_echecs` ; `Utc::now()` dans des tests à horloge figée ; `isRed` en `rgb` seul ; assertion faible
+  (`trop de devises`) ; `copie_aux_societes_et_devises_utiles` ambigu ; `{#key}` qui perd le focus ; textes bruts
+  (`(ecb)`, `—`) ; 409 des genres au message des cours, sans `version` ; lien `?date=` non réactif ; `fieldset` sans
+  `legend` ; libellé d'ouverture d'un exercice en cours de mois ; colonnes jour « manquantes » en « toutes les
+  devises » ; `today` figé au montage ; duplication des montages d'`AppState` de test ; manuel muet sur l'audit de
+  l'acquittement ; aucun test de la remise à zéro de démonstration sur `exchange_rates`. Une passe P2 est due (MEDIUM
+  corrigés, production touchée).

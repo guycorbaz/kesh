@@ -885,8 +885,8 @@ pub async fn put_rate(
 /// la ligne prend la dernière valeur publiée, `source = 'afc'` (créée si
 /// absente) ; sans valeur publiée, un cours saisi (ou d'une autre source) est
 /// **supprimé**, une ligne `afc` → 404. `version` obligatoire si la ligne
-/// existe (409 sinon), interdite sans ligne (400) ; `publishedRate` périmé →
-/// 409. Audit `exchange_rate.reset` dans la transaction ; rend la `Cell` à
+/// existe (409 sinon), interdite sans ligne (400) ; `publishedRate` périmé
+/// (changé, ou disparu depuis) → 409. Audit `exchange_rate.reset` dans la transaction ; rend la `Cell` à
 /// jour (`effectiveRate` `null` après une suppression). Portée : la société
 /// de l'utilisateur seule.
 pub async fn reset_rate(

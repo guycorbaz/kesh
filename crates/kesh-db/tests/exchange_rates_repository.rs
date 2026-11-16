@@ -576,6 +576,53 @@ async fn deux_copies_concurrentes(pool: MySqlPool) {
     assert_eq!(lignes_de(&pool, a).await.len(), 4);
 }
 
+/// Revue de code P1 (37-2-CR-P1-3) — une récupération et une copie
+/// concurrentes (création d'un exercice ou d'un compte en devise) : la
+/// récupération écrit les valeurs publiées sans encore valider ; la copie
+/// concurrente, faite pendant ce temps, **attend** ces valeurs (lecture
+/// verrouillée) au lieu de les manquer dans son instantané ; la récupération,
+/// qui ne voit pas encore la société, valide ; la copie reprend et copie.
+/// Sans la lecture verrouillée, aucune des deux ne copiait, et l'unité, plus
+/// « manquante », ne se redemandait jamais.
+#[sqlx::test(migrations = "./test-schema")]
+async fn copie_concurrente_d_une_recuperation_non_validee(pool: MySqlPool) {
+    let a = societe(&pool, "A SA", true).await;
+    compte(&pool, a, "1020", Some("USD"), true).await;
+    let u = mois(2024, 11);
+
+    // La récupération : valeurs publiées écrites, transaction ouverte.
+    let mut recuperation = pool.begin().await.unwrap();
+    er::write_fetched_unit_in_tx(
+        &mut recuperation,
+        SOURCE_AFC,
+        u,
+        None,
+        &[publie("USD", 1, dec!(0.88))],
+        t(1),
+    )
+    .await
+    .unwrap();
+
+    // La copie concurrente, dans sa propre transaction.
+    let p = pool.clone();
+    let copie = tokio::spawn(async move {
+        let mut tx = p.begin().await.unwrap();
+        let n = er::copy_fetched_in_tx(&mut tx, a, &[u], None)
+            .await
+            .unwrap();
+        tx.commit().await.unwrap();
+        n
+    });
+    tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+    assert!(
+        !copie.is_finished(),
+        "la copie doit attendre la récupération non validée"
+    );
+    recuperation.commit().await.unwrap();
+    assert_eq!(copie.await.unwrap(), 1);
+    assert_eq!(retenu(&pool, a, "USD", u).await.unwrap().rate, dec!(0.88));
+}
+
 /// Les exercices multi-devises ouverts, par société ou de toutes.
 #[sqlx::test(migrations = "./test-schema")]
 async fn exercices_multi_devises_ouverts(pool: MySqlPool) {
@@ -903,6 +950,14 @@ async fn reprise_de_la_valeur_publiee(pool: MySqlPool) {
         reprendre(&pool, a, u, "CAD", oct, Some(2), None).await,
         Err(DbError::OptimisticLockConflict)
     ));
+    // Revue de code P1 (37-2-CR-P1-1) : l'écran a montré une valeur publiée
+    // qui a disparu depuis (tables système vidées) → conflit, et le cours
+    // saisi reste ; jamais « reprendre » transformé en suppression.
+    assert!(matches!(
+        reprendre(&pool, a, u, "CAD", oct, Some(1), Some(dec!(0.61))).await,
+        Err(DbError::OptimisticLockConflict)
+    ));
+    assert_eq!(retenu(&pool, a, "CAD", oct).await.unwrap().rate, dec!(0.6));
     let r = reprendre(&pool, a, u, "CAD", oct, Some(1), None)
         .await
         .unwrap();

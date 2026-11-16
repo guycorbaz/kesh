@@ -180,6 +180,34 @@ pub struct BilanTour {
 ///
 /// Appelée par la tâche et par la connexion ; exposée pour les tests
 /// d'intégration (`#[doc(hidden)]`).
+/// Les unités demandées par un tour : au plus [`MAX_UNITES_PAR_TOUR`] des
+/// `manquantes`, dans l'ordre chronologique — mais les unités `prioritaires`
+/// (mois courant et mois suivant) qui manquent y sont **toujours** : sans
+/// cela, 36 unités plus anciennes en échec durable (un jour d'ouverture que la
+/// source ne sert pas, par exemple) occupaient chaque tour, et le mois courant
+/// n'était jamais demandé (revue de code P1, 37-2-CR-P1-4). Le plafond et
+/// l'ordre chronologique de la liste rendue sont gardés.
+pub(crate) fn choisir_demandees(
+    manquantes: &[RateUnit],
+    prioritaires: &[RateUnit],
+) -> Vec<RateUnit> {
+    let avant: Vec<RateUnit> = manquantes
+        .iter()
+        .copied()
+        .filter(|u| prioritaires.contains(u))
+        .collect();
+    let place = MAX_UNITES_PAR_TOUR.saturating_sub(avant.len());
+    let mut demandees: Vec<RateUnit> = manquantes
+        .iter()
+        .copied()
+        .filter(|u| !prioritaires.contains(u))
+        .take(place)
+        .chain(avant)
+        .collect();
+    demandees.sort_by_key(|u| (u.date, u.kind));
+    demandees
+}
+
 #[doc(hidden)]
 pub async fn un_tour(state: &AppState, declencheur: Declencheur) -> Result<BilanTour, DbError> {
     let aujourdhui = state.horloge.aujourd_hui();
@@ -199,11 +227,7 @@ pub async fn un_tour(state: &AppState, declencheur: Declencheur) -> Result<Bilan
     }
     let suivant = RateUnit::month_of(next_month(aujourdhui));
     let courant = RateUnit::month_of(aujourdhui);
-    let demandees: Vec<RateUnit> = manquantes
-        .iter()
-        .copied()
-        .take(MAX_UNITES_PAR_TOUR)
-        .collect();
+    let demandees = choisir_demandees(&manquantes, &[courant, suivant]);
     let reverifiee =
         (utiles.contains(&courant) && !manquantes.contains(&courant)).then_some(courant);
 
