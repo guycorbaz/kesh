@@ -201,7 +201,7 @@ Si vous souhaitez \textbf{tester Kesh sans données réelles}, choisissez le mod
 
 Vous pouvez librement créer, modifier, supprimer des données dans ce mode. L'installation ne porte qu'une société~: pour passer en mode production, réinitialisez-la par le bouton \emph{Réinitialiser pour la production} de la bannière de démonstration, qui ramène l'assistant au début. \keshAttention\ \emph{Ce bouton n'agit que si l'administrateur de l'installation l'a autorisé au préalable} (variable \texttt{KESH\_PRODUCTION\_RESET}, voir le manuel d'administration)~: sans cette autorisation, la réinitialisation est refusée, \textbf{même à un administrateur}. Elle vide \textbf{toutes} les données de la société --- y compris ce que vous avez saisi pendant l'exploration --- et \textbf{conserve} les utilisateurs, les clés d'API et les clés du serveur MCP~; elle désactive le serveur MCP (manuel d'administration, § \emph{Le serveur MCP}).
 
-\subsection{Chemin B — Mode production}
+\subsection{Chemin B — Mode production}\label{sec:premier-exercice}
 
 Si vous souhaitez \textbf{tenir votre comptabilité réelle}, choisissez le mode production. L'assistant vous guide à travers une série d'écrans :
 
@@ -211,10 +211,11 @@ Si vous souhaitez \textbf{tenir votre comptabilité réelle}, choisissez le mode
     \item \textbf{Type d'organisation} : indépendant, association ou PME. Ce choix détermine le plan comptable que Kesh met en place (voir ci-dessous) ; il ne se modifie plus après l'onboarding.
     \item \textbf{Langue comptable} : langue des comptes et des rapports, indépendante de la langue de l'interface (utile si vous travaillez en français mais produisez des rapports en allemand, par exemple).
     \item \textbf{Coordonnées légales} : raison sociale (ou nom pour un indépendant), adresse (le pays en code ISO à deux lettres \textbf{connu} --- «~CH~», «~FR~», «~DE~»… ---, CH par défaut~; depuis la version~0.17.4, un code inconnu comme «~SU~» pour «~Suisse~» ou «~XX~» est refusé, avec un message qui le nomme~; l'adresse se corrige ensuite dans les paramètres, cf. \S\ref{sec:coordonnees-emetteur}), et IDE (CHE-XXX.XXX.XXX), facultatif quel que soit le type d'organisation --- une entité inscrite au registre du commerce a intérêt à le renseigner. Si Kesh refuse une saisie --- par exemple un pays écrit en toutes lettres au lieu de son code ---, l'assistant affiche le motif que le serveur donne, \textbf{qui peut être rédigé en français quelle que soit la langue de l'interface} (\#710)~; corrigez le champ et continuez.
+    \item \textbf{Premier exercice} (en tête de la dernière page, au-dessus du compte bancaire) : la \textbf{date de début} et la \textbf{date de fin} de votre premier exercice, en forme suisse (JJ.MM.AAAA). Le début proposé est le 1\textsuperscript{er} janvier de l'année en cours (selon la date de votre poste)~; la fin proposée est la \textbf{veille du même jour un an plus tard} --- 31.12 pour un début au 1\textsuperscript{er} janvier, 31.03.2027 pour un début au 01.04.2026 ---, recalculée quand vous changez le début, tant que vous ne l'avez pas retouchée vous-même. Les deux dates se modifient librement~: un exercice décalé, court (six mois) ou long (dix-huit mois) est admis, \textbf{sans borne de durée}~; seule une fin qui ne suit pas le début est refusée, et les boutons \emph{Enregistrer} et \emph{Configurer plus tard} restent alors désactivés, avec le motif. L'exercice se nomme «~Exercice 2026~» quand il tient dans une année, «~Exercice 2026/2027~» sinon. \textbf{Les dates d'un exercice ne se modifient plus une fois créé} (seul son nom se change ensuite)~: vérifiez-les avant de terminer --- le premier jour de l'exercice date aussi votre écriture d'ouverture (\S\ref{sec:soldes-depart}). Les deux boutons de la page, \emph{Enregistrer} comme \emph{Configurer plus tard}, créent l'exercice à ces dates.
     \item \textbf{Compte bancaire} : nom de la banque, IBAN et QR-IBAN éventuel, puis, facultatifs, la \textbf{description} du compte (60 caractères au plus) et le \textbf{compte comptable lié} --- celui que la réconciliation passe en écriture. La liste ne propose que les comptes actifs et imputables de type actif ou passif, sans le compte débiteurs ni le compte créanciers~; le compte \textbf{1020} y est \textbf{présélectionné s'il existe} --- une simple proposition de l'écran, que vous changez ou retirez (\emph{Non configuré}). La description et le compte lié \textbf{se modifient ensuite} dans \emph{Administration} → \emph{Comptes bancaires}, comme la page le rappelle. Cette étape peut aussi être passée et complétée plus tard (cf. \S\ref{sec:comptes-bancaires}). Un compte bancaire créé sans compte lié ne se réconcilie pas tant qu'on ne l'a pas lié.
 \end{enumerate}
 
-Dès que vous avez choisi la langue comptable, Kesh met en place le plan comptable de votre type d'organisation, libellé dans cette langue. À la finalisation, il crée votre premier exercice, l'année civile en cours. Vous êtes alors prêt à saisir vos premières écritures.
+Dès que vous avez choisi la langue comptable, Kesh met en place le plan comptable de votre type d'organisation, libellé dans cette langue. À la finalisation, il crée votre premier exercice aux dates choisies sur la dernière page (l'année civile en cours si vous gardez les dates proposées)~; un client de l'API qui finalise sans donner de dates obtient l'année civile en cours. L'exercice est créé \emph{mono-devise} (tout en francs suisses)~: la comptabilité multi-devises se règle ensuite, dans les paramètres (\S\ref{sec:multi-devises}). Vous êtes alors prêt à saisir vos premières écritures.
 
 Les comptes de TVA ne sont pas désignés d'office~: un assujetti les désigne dans \emph{Administration} → \emph{Facturation} (TVA due, impôt préalable, décompte) avant sa première facture avec TVA, sans quoi la validation est refusée («~Configuration incomplète : configurez les paramètres de facturation avant de valider.~»).
 
@@ -738,8 +739,8 @@ apparente}.
 \begin{keshnote}[title={La date du jour est celle de Zurich, même la nuit}]\label{sec:date-du-jour}
 Ce que Kesh date \textbf{du jour} --- la contre-passation et les annulations qui contre-passent
 (règlement, facture fournisseur, rapprochement), le solde d'ouverture d'un compte bancaire et
-la régularisation des soldes de départ, le premier exercice que l'assistant crée pour votre
-société --- et la borne du verrou de période, que Kesh refuse au jour même, prennent \textbf{la
+la régularisation des soldes de départ, l'année du premier exercice que l'assistant crée quand
+on ne lui donne pas de dates (son écran, lui, propose l'année de votre poste, \S\ref{sec:premier-exercice}) --- et la borne du verrou de période, que Kesh refuse au jour même, prennent \textbf{la
 date de Zurich}, même entre minuit et une heure du matin (deux heures en été)~: une correction
 faite le 1\textsuperscript{er} janvier à minuit et demi est datée du 1\textsuperscript{er}
 janvier, dans le nouvel exercice. Il en va de même de tout ce que Kesh juge \textbf{au jour}~:
@@ -915,6 +916,8 @@ Le nouvel exercice s'ouvre vide. Les comptes du bilan y sont automatiquement rep
 
 Un exercice \textbf{ne se crée pas avant un exercice clôturé} (depuis la v0.13.0)~: si un exercice dont la date de début est postérieure à celle demandée est déjà clôturé, Kesh refuse la création et nomme cet exercice --- son bilan, cumulatif, reprendrait tout ce que le nouvel exercice contiendrait. Pour créer malgré tout un exercice antérieur, un administrateur rouvre d'abord les exercices clôturés postérieurs, en commençant par le plus récent.
 
+Dans une société passée en \textbf{multi-devises}, un exercice ne se crée pas non plus avant un exercice resté \textbf{mono-devise} --- un exercice clos avant l'activation, même rouvert depuis~: Kesh refuse et nomme cet exercice, et le rouvrir n'y change rien (\S\ref{sec:multi-devises-exercices}). Tout exercice créé dans une société multi-devises est multi-devises.
+
 \subsection{Préparer la clôture}\label{sec:preparer-cloture}
 
 Avant de clôturer --- et à tout moment de l'année ---, le bouton \emph{Préparer la clôture} d'un exercice ouvert (\emph{Administration} → \emph{Exercices comptables}, colonne \emph{Actions}) ouvre un panneau qui passe l'exercice en revue~: huit \textbf{contrôles préalables}, chacun avec son état --- \emph{Rien à signaler}, ou ce qui reste à faire --- et un lien vers l'écran où l'on agit. Le panneau est offert à \textbf{tous les rôles}, Consultation comprise~: il ne fait que lire.
@@ -1031,8 +1034,99 @@ Une fois l'ouverture générée, l'écran passe en mode \emph{compléter}~: sous
 \end{keshnote}
 
 \begin{keshtip}
-Si votre premier exercice Kesh ne doit pas commencer au 1\textsuperscript{er} janvier de l'année courante (exercice décalé ou reprise antérieure), créez d'abord l'exercice voulu via \emph{Administration} → \emph{Exercices comptables} — l'écriture d'ouverture est datée au premier jour du \textbf{premier} exercice existant. Un exercice antérieur créé \emph{après} la génération devient à son tour le premier~: un complément serait alors daté de son premier jour, et non de celui de l'écriture d'ouverture. (Cette création est refusée si un exercice postérieur est déjà clôturé --- voir la création d'un nouvel exercice.)
+L'écriture d'ouverture est datée au premier jour du \textbf{premier} exercice existant. Ses dates se choisissent à l'assistant de démarrage (\S\ref{sec:premier-exercice}) et ne se modifient plus ensuite~: pour un exercice décalé, choisissez-les là. Pour une reprise antérieure à ce premier exercice, créez d'abord l'exercice voulu via \emph{Administration} → \emph{Exercices comptables}, avant de générer l'ouverture. Un exercice antérieur créé \emph{après} la génération devient à son tour le premier~: un complément serait alors daté de son premier jour, et non de celui de l'écriture d'ouverture. (Cette création est refusée si un exercice postérieur est déjà clôturé --- voir la création d'un nouvel exercice.)
 \end{keshtip}
+
+%%─────────────────────────────────────────────────────────────────────────────
+\section{Comptabilité multi-devises}\label{sec:multi-devises}
+
+Le franc suisse (CHF) reste la \textbf{devise principale} de Kesh~: les livres, les soldes et les rapports sont tenus en CHF. Le mode \emph{multi-devises} permet de donner \textbf{une autre devise à un compte} du plan comptable --- un compte en euros, en dollars, le solde d'un compte PayPal. Par défaut, une société est \emph{mono-devise}, et rien de ce qui suit n'y apparaît~: qui reste en mono-devise ne voit aucun changement.
+
+Cette section décrit le réglage, les comptes qu'il demande, le mode des exercices et la devise des comptes. La saisie d'écritures en devise, les cours de change et la réévaluation de fin d'exercice s'appuient sur ce réglage~; ce manuel les décrira avec la version qui les livre.
+
+\subsection{Activer le multi-devises}
+
+\emph{Administration} → \emph{Paramètres}, section \emph{Comptabilité}, case \emph{Comptabilité multi-devises}. Le réglage est réservé à l'\textbf{Administrateur}~; les autres rôles le voient en lecture seule.
+
+\begin{enumerate}
+    \item Cochez la case~: trois sélecteurs apparaissent --- \emph{Compte de gains de change}, \emph{Compte de pertes de change} et \emph{Compte de conversion (compte de bilan)}. Les \textbf{trois} sont obligatoires pour activer (le même compte peut servir aux gains et aux pertes)~; ils sont décrits ci-dessous (\S\ref{sec:multi-devises-comptes}).
+    \item \emph{Enregistrer} ouvre une \textbf{confirmation}~: «~Le multi-devises ne pourra plus être désactivé~; les exercices ouverts passent en multi-devises.~» Seul \emph{Activer} enregistre~; \emph{Annuler} ne change rien.
+\end{enumerate}
+
+\begin{keshwarning}
+\textbf{L'activation est définitive.} Une fois activé, le multi-devises \textbf{ne se désactive plus}~: la case reste cochée et grisée, et aucune voie --- écran ou API --- ne ramène la société en mono-devise (l'API répond \texttt{409 MULTI\_\allowbreak CURRENCY\_\allowbreak IRREVERSIBLE}). Seule la réinitialisation des données de démonstration, qui efface comptes, exercices et écritures, repart d'une société mono-devise. Les trois comptes restent \textbf{modifiables} --- on en choisit un autre ---, mais aucun ne peut être laissé vide.
+\end{keshwarning}
+
+\textbf{Ce que l'activation change aux exercices.} Tous les exercices \textbf{ouverts} de la société passent en multi-devises, l'exercice créé par l'assistant compris~; les exercices \textbf{clôturés} ne changent pas (\S\ref{sec:multi-devises-exercices}). L'activation est inscrite au journal d'audit, avec les exercices passés en multi-devises.
+
+\begin{sloppypar}
+\textbf{Par l'API.} Le réglage se fait par une \textbf{session d'Administrateur}~: l'écran, ou un client HTTP qui se connecte par \texttt{POST /api/v1/auth/login} (identifiant et mot de passe d'un Administrateur), reprend le jeton \texttt{accessToken} de la réponse et envoie \texttt{PUT /api/v1/companies/current/currency-settings} avec l'en-tête \texttt{Authorization: Bearer} suivi de ce jeton. Le corps porte \texttt{multiCurrencyEnabled}, \texttt{fxGainAccountId}, \texttt{fxLossAccountId}, \texttt{fxTransitAccountId} et la \texttt{version} de la société, que rend un \texttt{GET} sur le même chemin sans \texttt{/currency-settings}. \textbf{Jamais par une clé d'API}~: une clé, même créée par un Administrateur, reçoit \texttt{403 API\_\allowbreak KEY\_\allowbreak ADMIN\_\allowbreak FORBIDDEN}, comme toute route d'administration (manuel d'administration, clés d'API). Une telle session prend fin à la connexion plus la durée d'inactivité réglée, quelle que soit son activité.
+\end{sloppypar}
+
+\subsection{Comptes de différences de change et de conversion}\label{sec:multi-devises-comptes}
+
+\paragraph{Gains et pertes de change.} Ils recevront les écarts de change que Kesh passera~: l'écart d'une écriture en devise, celui d'une conversion, la réévaluation de fin d'exercice. Chacun doit être un compte de \textbf{charge ou de produit}, \textbf{imputable}, actif, tenu en \textbf{CHF} (sans devise), et \textbf{pas un compte de chiffre d'affaires}~: ni le rôle \emph{Produit par défaut}, ni le compte de produit par défaut des factures (\emph{Administration} → \emph{Facturation}) ou d'un article --- un gain de change n'est pas une vente. Les autres désignations restent admises (différences d'arrondi, frais bancaires).
+
+\textbf{Aucun plan livré n'a de compte «~Différences de change~»} (le plan PME a 6900 \emph{Charges financières}, 6940 \emph{Différences d'arrondi} et 6950 \emph{Produits financiers}). Deux possibilités~:
+\begin{itemize}
+    \item \textbf{Créer un compte dédié} (\S\ref{sec:ajout-compte}), de type \emph{Charge}, nommé par exemple «~Différences de change~», avec un numéro libre de la classe~6, \textbf{rattaché au groupe 6} \emph{Autres charges d'exploitation} --- et \textbf{non sous 6800} \emph{Amortissements}~: créer un sous-compte rend son parent non imputable, et 6800, imputable aujourd'hui, ne recevrait plus d'écriture. Un seul compte suffit pour les gains et les pertes.
+    \item \textbf{Prendre des comptes existants}, par exemple 6900 \emph{Charges financières} pour les pertes et 6950 \emph{Produits financiers} pour les gains.
+\end{itemize}
+
+\paragraph{Le compte de conversion.} Une conversion d'une devise dans une autre (des euros changés en dollars) passera par lui, en deux écritures, après lesquelles il \textbf{revient à zéro}. C'est un compte de \textbf{bilan} (actif ou passif), en CHF, imputable et actif~; il ne peut donc pas être le compte de gains ou de pertes. Aucun plan livré n'en a~: créez-le, par exemple un actif nommé «~Transferts de fonds~», rattaché au groupe 10 \emph{Actifs circulants}. Un solde qui y reste signale une conversion inachevée.
+
+\paragraph{Changer de compte.} Les contrôles ne portent que sur le compte que vous \textbf{changez}~: un compte resté en place, devenu invalide entre-temps, n'empêche pas d'enregistrer l'autre. Un refus nomme le compte et le motif --- introuvable, archivé, non imputable, mauvais type, tenu en devise, compte de chiffre d'affaires.
+
+\paragraph{Un compte désigné est protégé.} Tant qu'il est désigné --- par la société, ou comme compte propre d'un compte en devise (ci-dessous) ---, un compte de différences de change ou de conversion \textbf{ne peut pas}~: être archivé, changer de type (hors \emph{Charge}/\emph{Produit}, hors \emph{Actif}/\emph{Passif} pour le compte de conversion), recevoir une devise, recevoir un sous-compte, passer non imputable, recevoir le rôle \emph{Produit par défaut}, ni être désigné compte de produit par défaut des factures ou d'un article (refus \texttt{ACCOUNT\_\allowbreak IS\_\allowbreak FX\_\allowbreak DIFFERENCE\_\allowbreak ACCOUNT}, qui dit quelle désignation le retient et, pour un compte propre, quel compte en devise le désigne). À l'archivage, ce refus est \textbf{sans confirmation possible}~: désignez d'abord un autre compte.
+
+\subsection{Les exercices mono-devise et multi-devises}\label{sec:multi-devises-exercices}
+
+Chaque exercice est \emph{mono-devise} ou \emph{multi-devises}~; son mode se pose à sa création ou à l'activation, et ne change plus ensuite --- aucun écran ni aucune route ne le bascule.
+
+\begin{itemize}
+    \item Les exercices \textbf{ouverts à l'activation} passent en multi-devises~; \textbf{tout exercice créé ensuite} est multi-devises.
+    \item Un exercice \textbf{clôturé avant l'activation reste mono-devise pour toujours, même rouvert}. Dans un tel exercice, un compte en devise n'est pas utilisable~: toute ligne d'écriture sur un compte en devise y sera refusée.
+    \item \textbf{Aucun exercice ne se crée avant un exercice mono-devise}~: Kesh refuse et nomme l'exercice postérieur, mono-devise. Le rouvrir n'y change rien --- il reste mono-devise. Les exercices mono-devise restent ainsi les plus anciens.
+\end{itemize}
+
+\paragraph{Le genre des cours d'ouverture et de clôture.} Un exercice porte aussi le \textbf{genre} du cours de change retenu à son ouverture et à sa clôture --- cours journalier ou cours mensuel. À la création, le cours d'ouverture \textbf{reprend par défaut le genre du cours de clôture de l'exercice précédent} --- celui qui se termine la veille du début du nouvel exercice~; pour un premier exercice, ou un exercice précédé d'un trou, c'est le cours journalier. Le genre de clôture est d'abord le cours journalier. Les cours eux-mêmes, et le choix de ces genres, viennent avec les fonctions qui emploient les cours (saisie en devise, réévaluation)~; ce manuel les décrira avec elles.
+
+\subsection{La devise d'un compte}\label{sec:devise-compte}
+
+En multi-devises, \emph{Administration} → \emph{Plan comptable} affiche une colonne \emph{Devise} (vide pour un compte en CHF), et le formulaire de création et de modification d'un compte un champ \emph{Devise}~: \emph{CHF (devise principale)} ou un code de devise à trois lettres (\texttt{EUR}, \texttt{USD}, \texttt{GBP}\ldots). Choisir CHF revient à ne pas donner de devise. Un compte de regroupement peut porter une devise, à titre informatif~; ses sous-comptes n'en héritent pas. En mono-devise, le champ n'existe pas, et une devise envoyée par l'API est refusée (\texttt{409 MULTI\_\allowbreak CURRENCY\_\allowbreak DISABLED}).
+
+\begin{keshwarning}
+\textbf{La devise d'un compte se verrouille à sa première écriture, et ce verrou est définitif.} La devise d'une ligne d'écriture est celle de son compte~: c'est donc le verrou qui fixe la devise de toutes les écritures passées sur ce compte --- la changer les réinterpréterait toutes. Dès qu'un compte porte une ligne d'écriture, sa devise ne change plus (le champ est grisé, avec l'explication~; l'API répond \texttt{409 ACCOUNT\_\allowbreak CURRENCY\_\allowbreak LOCKED}), sans confirmation possible et même archivé. Le seul retour est de \textbf{supprimer toutes ses écritures}. Choisissez donc la devise \textbf{avant} la première écriture.
+\end{keshwarning}
+
+\paragraph{Les comptes qui ne prennent pas de devise.} Kesh débite et crédite en CHF certains comptes de lui-même~; ceux-là ne reçoivent pas de devise (\texttt{409 ACCOUNT\_\allowbreak CURRENCY\_\allowbreak IN\_\allowbreak USE}, qui nomme ce qui le retient)~:
+\begin{itemize}
+    \item un compte qui porte un \textbf{rôle} (section \emph{Rôles des comptes})~;
+    \item un compte désigné dans \emph{Administration} → \emph{Facturation} (créances, TVA, créanciers, produit par défaut, arrondi, frais bancaires\ldots)~;
+    \item le compte comptable lié à un \textbf{compte bancaire}, \textbf{même archivé}~: c'est une limite assumée --- un compte lié à un compte bancaire archivé ne reçoit plus de devise~;
+    \item le compte de produit par défaut d'un \textbf{article}, même archivé~;
+    \item la contrepartie d'une \textbf{règle d'affectation} (\S\ref{sec:regles-affectation}), même supprimée~;
+    \item un compte de différences de change ou de conversion désigné (ci-dessus).
+\end{itemize}
+\textbf{Inversement}, un compte \textbf{en devise} ne peut pas être lié à un compte bancaire, désigné dans \emph{Facturation}, choisi comme compte d'un article ou d'une règle d'affectation, ni recevoir un rôle (\texttt{400 ACCOUNT\_\allowbreak IN\_\allowbreak FOREIGN\_\allowbreak CURRENCY}). Retirer un rôle et poser une devise dans la même modification est admis, si rien d'autre ne retient le compte.
+
+\subsection{Les comptes de différence propres}
+
+Les comptes de gains et de pertes de la société sont le \textbf{défaut}. Pour un compte \textbf{en devise}, le formulaire du compte propose \emph{Comptes de différence de change}~:
+\begin{itemize}
+    \item \emph{Par défaut (ceux de la société)} --- le compte suit le réglage de la société, \textbf{y compris quand celui-ci change}~;
+    \item \emph{Propres à ce compte} --- deux sélecteurs, gains et pertes, mêmes conditions que ceux de la société (charge ou produit, en CHF, imputable, actif, pas un compte de chiffre d'affaires~; le même compte admis pour les deux).
+\end{itemize}
+
+Exemple~: pour isoler les frais de change cachés de PayPal et de Stripe, créez deux sous-comptes de charge, «~Frais de change PayPal~» et «~Frais de change Stripe~», sous un compte de regroupement de la classe~6, et désignez-les comme comptes propres du compte PayPal et du compte Stripe.
+
+\textbf{Ce qu'ils changent}~: toute différence de change que Kesh passera sur ce compte --- la ligne d'écart d'une écriture en devise, celle d'une conversion, la réévaluation de fin d'exercice --- ira sur ses comptes propres au lieu de ceux de la société. Le \textbf{compte de conversion}, lui, reste celui de la société. Un compte de la société invalide n'arrête rien tant qu'aucun compte qui l'emploie n'est touché.
+
+Repasser le champ \emph{Devise} à CHF remet le choix à \emph{Par défaut}~: un compte en CHF n'a pas de comptes de différence. Un compte désigné comme compte propre est protégé comme un compte désigné par la société (ci-dessus)~; le compte en devise qui le désigne, lui, peut être archivé --- ses désignations restent comptées, et de nouveau en vigueur s'il est réactivé.
+
+\subsection{Sauvegardes}
+
+Une sauvegarde \texttt{.keshbackup} écrite \textbf{par une version antérieure au multi-devises} se réimporte~: elle ne peut décrire qu'une comptabilité mono-devise, et la société restaurée l'est --- réglage désactivé, comptes sans devise, exercices mono-devise. Une sauvegarde écrite par cette version conserve le réglage, ses trois comptes, la devise et les comptes propres de chaque compte, et le mode et les genres de cours de chaque exercice~; les exports CSV des comptes, de la société et des exercices les portent aussi.
 
 %%─────────────────────────────────────────────────────────────────────────────
 \section{Carnet d'adresses}
