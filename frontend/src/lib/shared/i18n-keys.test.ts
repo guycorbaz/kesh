@@ -1017,7 +1017,15 @@ const ATTENDU = {
 	// de la 36-2, a été rejoué par `rerere` à la fusion de la 36-3 dans la branche de release
 	// (`0e562af37`) sans y être relevé ; dans cette branche, 3050 = 3036 + 1 (36-1) + 4 (36-3)
 	// + 4 (36-3b) + 5 (36-2), relevé par la garde à la fusion de la 36-2.
-	sitesTotal: 3050,
+	// Story 36-17 (#1187) : **3050 → 3081** sur sa branche, relevé par la garde
+	// (« expected 3081 to be 3050 », `kesh-gate-logs/e36-17/front-test-unit-1.log`) avant d'écrire
+	// ce nombre — les cinq écrans neufs de `features/onboarding/` et les textes neufs de
+	// `routes/onboarding/+page.svelte`, moins les deux clés mortes de D2. Que des littéraux. À
+	// relever de nouveau à l'union de la 0.18.0 (C-e350-18).
+	// Remédiation de la revue P1 de la 36-17 : **3081 → 3083**, relevé par la garde (« expected 3083
+	// to be 3081 », `kesh-gate-logs/e36-17/rem1-front-test-unit-releve.log`) —
+	// `onboarding-done-credit-card` (B7/E7) et `onboarding-finalize-remedy-link` (E10), deux littéraux.
+	sitesTotal: 3083,
 	sitesNonResolus: 31,
 	relais: 6,
 	// Story 26-1 (#620, AC3-bis) : **10 → 11** — `lib/features/bank-import/

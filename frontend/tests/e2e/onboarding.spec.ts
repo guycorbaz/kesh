@@ -172,7 +172,7 @@ test.describe('Onboarding — Story 2.6: Invoice Settings Pre-fill (AC 5-6)', ()
 		await page.click('button:has-text("Configurer plus tard")');
 
 		// Attendre la redirection vers /
-		await expect(page).toHaveURL('/');
+		await expect(page).toHaveURL('/'); // 36-17 (#1187) : attente périmée — la fin passe par la page « Configuration terminée » et *Commencer* ; rouge avant d'ici (KF-029, #97, `#coord-address`).
 
 		// Naviguer vers creation de facture
 		// Per AC 6: comptes de facturation pré-remplis → pas besoin de config supplémentaire

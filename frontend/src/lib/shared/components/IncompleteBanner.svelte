@@ -11,7 +11,10 @@
 	role="status"
 	data-testid="incomplete-config-banner"
 >
-	<span>{msg('incomplete-banner-text', 'Configuration incomplète — Terminer la configuration')}</span>
+	<!-- Story 36-17 (#1187, D5) : terminer AVANT d'utiliser Kesh — un écran ouvert avant la
+	     finalisation peut la faire refuser (limite connue, #1200). Même phrase que l'écran de
+	     reprise de l'assistant. -->
+	<span>{msg('incomplete-banner-text', "Configuration incomplète : terminez-la avant d'utiliser Kesh.")}</span>
 	<a
 		href="/onboarding"
 		class="rounded px-3 py-1 text-sm font-medium text-blue-700 underline hover:text-blue-900"
