@@ -130,3 +130,79 @@ réversibilité. Code lu à `fed34a9c7`. Fiche : `36-16-reimputation-analytique.
 - **Écartée** : lire exercice et verrou sans verrou, comme `modification_blocker` — une clôture concurrente commiterait entre le
   contrôle et l'écriture.
 - **Réversible** : oui.
+
+---
+
+## Développement de la 36-16a (2026-11-16, Opus 5.5)
+
+### C-36-16a-1 — Base : la 36-15 fusionnée telle qu'elle est, avant sa propre fusion (écart à la fiche)
+
+- **Contexte** : la fiche dit « partir de la 36-15 fusionnée » (D11, étape 0). La 36-15 est en remédiation de sa revue P1 (rien
+  au-dessus de LOW), pas encore fusionnée dans `epic/36-0.18.0`. **Décision de l'orchestrateur du 2026-11-16**, pour gagner un
+  jour.
+- **Retenu** : à l'étape 0, `origin/epic/36-0.18.0` fusionnée (`c0411138d`), puis `story/36-15-compte-analytique` à `c01bb069c`
+  (`8e228cda8`) ; termes relus : *compte analytique*, *analytisches Konto*, *conto analitico*, *analytical account* (option A).
+  Les ajouts aux `.ftl` forment **un seul bloc par locale, en fin de fichier** (commentaire `# Story 36-16a`), pour que la
+  refusion de la branche de release, une fois la 36-15 fusionnée, soit simple.
+- **Écartée** : attendre la fusion de la 36-15.
+- **Réversible** : oui ; à refusionner `origin/epic/36-0.18.0` quand l'orchestrateur le demandera (une correction de l'accusatif
+  de-CH dans la 36-15 ne touche pas ce bloc, qui n'emploie pas « pro … »).
+
+### C-36-16a-2 — États des tests : par les routes, trois exceptions écrites
+
+- **Contexte** : « tous les états se construisent par les routes » (fiche, critères).
+- **Retenu** : facture, validation, règlements, rapprochement (`POST /reconciliation/accept`), solde du reste, avoir, annulation
+  d'un règlement, verrou des livres, comptes analytiques et leur archivage passent par les routes ; le relevé par
+  `bank_imports::create_with_transactions` (le dépôt de l'import). Trois exceptions, en SQL : la **configuration** (contact,
+  compte bancaire relié à son compte du grand livre) ; la **clôture d'un exercice** (`status = 'Closed'`, comme les tests de
+  concurrence de la 15-8a : la route exige un exercice suivant et un bilan, sans rapport avec le geste) ; la **ligne divergente**
+  d'AC11, qu'aucune route ne produit (donnée historique, par définition).
+- **Réversible** : oui.
+
+### C-36-16a-3 — Le dialogue est monté à l'ouverture ; `onDone` le ferme
+
+- **Contexte** : D12 fixe un contrat fermé (`rows`, `projects`, `submit`, `onDone`), sans `open`.
+- **Retenu** : la page monte `ProjectReassignDialog` sous `{#if reassignOpen}` ; le dialogue est toujours ouvert, et `onDone`
+  (enregistré, *Annuler*, Échap, clic extérieur) le démonte. Les choix sont copiés des rangées au montage : une réouverture
+  repart du compte actuel. Le contrat reste celui de D12.
+- **Écartée** : ajouter `open`/`onOpenChange` au contrat (un champ de plus pour 36-16b et c).
+- **Réversible** : oui.
+
+### C-36-16a-4 — T12 dans `invoice-settlements-page.test.ts`
+
+- **Contexte** : la fiche place T12 (le règlement qui suit le geste part avec la version rendue) dans
+  `invoice-display-page.test.ts`, dont les mocks ne câblent pas le règlement (`settleInvoice: vi.fn()`).
+- **Retenu** : T12 dans `invoice-settlements-page.test.ts`, qui câble déjà le règlement et son patron de version (34-5) ; les
+  tests de visibilité du bouton (rôle Lecture, brouillon ; mutation « bouton au rôle Lecture ») dans
+  `invoice-display-page.test.ts`, dont le rôle est réglable.
+- **Réversible** : oui.
+
+### C-36-16a-5 — `fiscalYears` nomme l'exercice des écritures exposées ; l'exercice postérieur clos lu par exercice
+
+- **Contexte** : D9 (6) dit « `find_later_closed_in_tx` depuis le plus ancien » ; `details.fiscalYears` « noms ».
+- **Retenu** : pour chaque exercice des écritures qui changeraient, **par `start_date` croissant** : verrou et statut, puis, s'il
+  est ouvert, `find_later_closed_in_tx` depuis **sa** date de début (lecture verrouillante) — un seul appel depuis le plus ancien
+  ne dirait pas si un exercice plus récent est suivi d'un clos. `fiscalYears` porte le nom de l'exercice **de l'écriture** (celui
+  dont les rapports changent), clos ou suivi d'un clos, sans doublon, dans cet ordre.
+- **Écartée** : nommer l'exercice postérieur clos (il n'est pas touché par le geste).
+- **Réversible** : oui (contenu de `details`, non son nom).
+
+### C-36-16a-6 — `projectId` exigé dans le corps
+
+- **Retenu** : `#[serde(deserialize_with = "Option::deserialize")]` — un corps sans `projectId` est refusé (rejet du corps, 4xx)
+  au lieu de retirer le compte ; `null` explicite le retire.
+- **Écartée** : l'absence vaut `null` (un client qui l'oublie efface le compte de toute la facture).
+- **Réversible** : oui (élargir ne casse aucun client).
+
+### C-36-16a-7 — `journalEntryIds` = les écritures qui ont changé
+
+- **Retenu** : la réponse et l'audit listent les écritures **touchées** (dont une ligne au moins changeait de compte), non tout
+  l'ensemble : une écriture déjà au compte visé n'est ni versionnée ni listée ; « rien à faire » rend `[]`. Sur les états d'AC1
+  et AC2, les deux coïncident.
+- **Réversible** : oui.
+
+### C-36-16a-8 — Journaux sous `kesh-gate-logs/e36-16/`
+
+- **Contexte** : la fiche nomme `kesh-gate-logs/e36-16a/` ; le prompt d'appel, `kesh-gate-logs/e36-16/`.
+- **Retenu** : le prompt d'appel (`e36-16/`, mutations dans `e36-16/mut/`).
+- **Réversible** : oui.
