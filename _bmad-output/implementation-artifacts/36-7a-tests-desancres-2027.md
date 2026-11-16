@@ -1,6 +1,6 @@
 # Story 36-7a : les tests ne figent plus 2026 — verts au 1er janvier 2027 (#1125, KF-060)
 
-Status: review
+Status: done
 
 *Fiche issue du découpage de la fiche `36-7-tests-desancres-2026.md` (`Status: split`), approuvé par l'orchestrateur le
 2026-11-15 sur la règle de Guy du même jour (« éviter les stories trop longues ou trop complexes ») ; choix C-36-7-7.
@@ -660,6 +660,61 @@ Tous sous `/home/gcorbaz/devel/kesh-gate-logs/e36-7/`. Code de la story au commi
   identiques de `journal_entries_modification.rs` et `bank_statements_manual_e2e.rs`), `cargo fmt` ensuite. Les scripts
   de relevé et de mutation, sous `kesh-gate-logs/e36-7/`, ont été corrigés par un petit script Python (motifs à
   adapter après `cargo fmt`) — ce ne sont pas des fichiers du dépôt.
+- **Clôture (2026-11-15/16)**, au dernier commit de code `30ef36348` (tête `e1e69674b`, puis commit de documentation de
+  clôture ; `git diff --stat 30ef36348 HEAD -- crates frontend scripts` vide) :
+  - `scripts/gate-ci.sh kesh_ci_e367`, voie 1 : `gate-ci : 5459 passés, 0 échoués, 17 ignorés`, code 0
+    (`clo-gate-ci.log`).
+  - **E2E complet à l'heure réelle**, base `kesh_e2e_e367` recréée, port 3367 : `427 passed`, `18 skipped`, `7 failed`
+    — **exactement les sept de la KF-029** (`mode-expert.spec.ts:26`, `:41` ; `onboarding-path-b.spec.ts:65`, `:92` ;
+    `onboarding.spec.ts:57`, `:77`, `:150`), aucun de pollution, aucun autre (`clo-e2e-reel.log`).
+  - `binary(open_items_invariant)` sous `2026-12-26T10:00:00Z` : `1 passed` (`clo-S1b.log`).
+  - **AC4 — tenu, six rouges rattachés à l'écart d'horloge, preuve faite.** Première tentative (`cargo nextest run`
+    sous faketime) **figée** de 00:02 à 07:30 le 2026-11-16 : `rustc --print target-libdir` et `rustc --version`, lancés
+    par cargo, bloqués sur un futex sous libfaketime ; arrêtée par l'orchestrateur, elle tenait le verrou de la voie 2.
+    Une relance par mégarde de l'ancien script à 07:53 a reproduit le blocage en quelques secondes (`rustc --print
+    target-libdir`, 16 s), arrêtée par PID (≈ 20 s de verrou). **Commande retenue** : archive à l'heure réelle (`cargo
+    nextest archive --workspace --profile ci`), puis `cargo-nextest nextest run --archive-file … --extract-to
+    target/ac4-extract --extract-overwrite --workspace-remap …` appelé **sans `cargo`**, sous `env TZ=Europe/Zurich
+    NO_FAKE_STAT=1 FAKETIME_SKIP_CMDS=rustc,cargo faketime --exclude-monotonic -f '@2027-01-04 11:00:00'`, **borné par
+    `timeout 1800`**, sans `KESH_TEST_INSTANT`, variante simple. Le mode a été vérifié d'abord sur `kesh-report`
+    (`ac4-essai-archive.log`, 184 passés, `timeout 600`) : `strace -f -e execve` ne montre **aucun** `rustc` ni `cargo`
+    (`ac4-essai-execve.txt`). Une extraction dans `/tmp` (v2) a échoué, « Disk quota exceeded ». Résultat
+    (`ac4-faketime-v2.log`, v3 ; le journal de la v2 en échec a été écrasé, son résumé reste dans
+    `ac4-console-v2.log`) : `5452 tests run: 5446 passed (1 slow, 1 flaky), 6 failed, 13 skipped`, en 462 s. **Aucun des
+    treize** ; le flaky (`full_import_of_a_0_17_5_backup_keeps_the_numbers`) passe au second essai. Les six rouges :
+    - cinq tests d'expiration — `refresh_tokens_repository::find_active_by_token_returns_none_for_expired_token`,
+      `::revoke_all_for_user_counting_live_counts_only_live_sessions`,
+      `password_reset_tokens_repository::expired_token_is_not_valid`, `password_recovery_e2e::expired_token_returns_generic_400`,
+      `cles_mcp_e2e::cle_expiree_refusee` : l'échéance est calculée par l'horloge du processus (`Utc::now() - 1 h` ou
+      `- 1 min`, donc en 2027) et jugée par `NOW(3)` de MariaDB, restée en 2026 (`refresh_tokens.rs:61`, `:221` ;
+      `password_reset_tokens.rs:76` ; `mcp_keys.rs:260`) : le jeton « expiré » est encore valide pour la base ;
+    - `admin_auto_backup_e2e::partiels_residuels_supprimes` : le `.partial` « récent » porte la date réelle du noyau
+      (`NO_FAKE_STAT=1`), jugée contre l'heure décalée, donc vieux de 49 jours et supprimé (`admin_auto_backup_e2e.rs:760`).
+    **Preuve (D3), rejeu isolé** (`ac4-preuves-36-7a.sh`) : les six seuls sous faketime, `6 failed`
+    (`ac4-preuve-P1-faketime.log`) ; seuls sous `KESH_TEST_INSTANT=2027-01-04T10:00:00Z`, `6 passed`
+    (`ac4-preuve-P2-instant.log`) ; `partiels_residuels_supprimes` sous faketime **sans** `NO_FAKE_STAT`, `1 passed`
+    (`ac4-preuve-P3-stat-decale.log`). **Sonde AC4** : le témoin de `c_facture_echeance` remis à `"2027-01-01"`, archive
+    reconstruite à l'heure réelle, même commande : rouge, « L'échéance ne peut pas être antérieure à la date de la
+    facture » (`ac4-sonde-v2.log`) ; fichier restauré, arbre propre. Issues demandées à l'orchestrateur (une par
+    problème, ci-dessous).
+  - **AC5 — tenu.** Sonde d'abord, backend (binaire `target/debug/kesh-api`, construit à l'heure réelle) et runner sous
+    `timeout 900 env TZ=Europe/Zurich NO_FAKE_STAT=1 FAKETIME_SKIP_CMDS=rustc,cargo faketime --exclude-monotonic -f
+    '@2027-01-04 11:00:00'`, `KESH_SONDE_JOUR_ATTENDU=2027-01-04`, variante simple : `horloge-sonde : {"serveur":
+    "2027-01-04","runner":"2027-01-04","navigateur":"2027-01-04"}`, `1 passed` (`ac5-sonde.log`) — **le navigateur suit
+    libfaketime**, le repli de D3 n'a pas servi. Suite complète, même commande, `timeout 3600` (`ac5-e2e-2027.log`) :
+    `424 passed`, `18 skipped`, `10 failed` — les sept de la KF-029 ; **deux de pollution**, chacun rejoué seul sous la
+    même horloge et **vert** : `bank-accounts-credit-card.spec.ts:33` (`ac5-rejeu-bank-accounts-credit-card-spec-ts-33.log`,
+    `1 passed`) et `reconciliation-split.spec.ts:446` (`ac5-rejeu-reconciliation-split-spec-ts-446.log`, `1 passed`) ;
+    et `audit-log.spec.ts:61`, **rouge seul** (`ac5-rejeu-audit-log-spec-ts-61.log`), rattaché à l'angle mort MariaDB avec
+    preuve : `audit_log.created_at … DEFAULT CURRENT_TIMESTAMP(3)` (`20260413000001_audit_log.sql:20`), que l'`INSERT`
+    d'`audit_log.rs:94-95` ne pose pas, filtré par la spec au `todayUtc()` du runner (`audit-log.spec.ts:133-135`) ; rejoué
+    avec le **seul** runner à l'heure réelle (backend sous faketime) : `1 passed` (`ac5-preuve-audit-log-runner-reel.log`).
+    Issue demandée.
+  - Les trois lignes `Compiling` de `c1-A2027.log` (revue P2) : ce run était sous `KESH_TEST_INSTANT`, **non** sous
+    faketime, et c'était le premier `nextest` après la modification des sept fichiers de tests (`clippy` n'avait fait
+    qu'un `check`) ; aucune compilation n'a eu lieu sous horloge décalée.
+  - `docs/testing.md` porte la commande retenue (archive, `cargo-nextest` sans `cargo`, `FAKETIME_SKIP_CMDS`,
+    `timeout`, extraction hors `/tmp`) et les rouges attendus sous cette recette.
 
 ### File List
 
@@ -889,3 +944,20 @@ Tous sous `/home/gcorbaz/devel/kesh-gate-logs/e36-7/`. Code de la story au commi
     `5452 tests run: 5452 passed (1 slow), 13 skipped`, `rc=0` (`rem1-gate-reel.log`) ; frontend complet : `check`
     0 erreur (29 avertissements antérieurs), `lint-i18n-ownership` `rc=0`, `test:unit` 3709 passés, `build` `rc=0`
     (`rem1-front-*.log`). Ni `gate-ci` ni E2E (remédiation), comme le veut `e35-dev-commun.md`.
+- **2026-11-15 — Revue P2 ciblée** (`kesh-gate-logs/e36-7/review-p2-ciblee.md` : 0/0/0/3) : la remédiation dit vrai,
+  aucun défaut introduit ; **boucle de revue close**. Ses trois LOW, documentation et fiche seules (commit `e1e69674b`) :
+  « jour **suisse** de l'instant » pour `KESH_SONDE_JOUR_ATTENDU` (`docs/testing.md`) ; `reconciliation.rs:402-408`
+  qualifié par son crate (`kesh-db/src/repositories/…`) en M2b et dans la raison de `T4-1008` (la mention de D1, `:231`,
+  l'était déjà) ; « chacun **des échecs de pollution** » à l'AC5 et à la tâche 6. Remarque suivie : l'en-tête du script
+  hors dépôt `e2e-36-7a.sh` nomme `KESH_SONDE_JOUR_ATTENDU` et l'écrit en tête de journal.
+- **2026-11-16 — Clôture** (Opus 5.5), au dernier commit de code `30ef36348` : `gate-ci` (5459 passés), E2E complet à
+  l'heure réelle (les sept de la KF-029 seulement), `open_items_invariant` sous `2026-12-26` (vert), **AC4** et **AC5**
+  tenus — chiffres, rouges rattachés et preuves au Dev Agent Record (§ *Clôture*). La recette d'AC4 a dû changer : sous
+  libfaketime, `rustc` lancé par `cargo nextest run` se bloque (futex) ; retenue : archive nextest construite à l'heure
+  réelle, `cargo-nextest` sans `cargo` sous faketime, `FAKETIME_SKIP_CMDS=rustc,cargo`, `timeout` sur toute commande
+  sous horloge décalée, extraction hors `/tmp` ; `docs/testing.md` mis à jour (commit de clôture, documentation seule).
+  **Synthèse de la boucle** — validation : P1 (Sonnet, fiche d'origine) 0/1/4/3 → découpage → P2 (Opus) 0/0/5/5 → P3
+  (Sonnet) 0/0/2/6 → P4 à P7 ciblées 0/0/1/x → P8 ciblée (Opus) 0/0/0/2 ; revue de code : P1 à trois lentilles (B Opus
+  0/0/1/2, A 0/0/1/5, E 0/0/1/4 ; trois MEDIUM corrigés, onze LOW traités dont un en issue, #1205) → **P2 ciblée
+  0/0/0/3**, LOW corrigés sans code. **`Status: done`**. Issues demandées pour les rouges de l'horloge décalée (D3,
+  AC4, AC5), et `refs #1125` seulement à la PR : `closes #1125` attend la 36-7b.
