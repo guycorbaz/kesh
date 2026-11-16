@@ -406,7 +406,8 @@ Journaux sous `/home/gcorbaz/devel/kesh-gate-logs/e36-16/` (C-36-16a-8) :
 - **Frontend** : `ProjectReassignDialog.svelte` (contrat D12 ; monté à l'ouverture, C-36-16a-3), `reassignInvoiceProject`,
   bouton sur la fiche (validée, payée, annulée ; `canManage`). `sitesTotal` 3082 → 3098 (seize littéraux, relevés par la garde).
 - **Tests** : 25 tests dans `project_reassignment_e2e.rs` (recompté : `grep -c '#\[sqlx::test' …` = 25 — T1a, T1b, T2, T3, T4,
-  T5, T6, AC6, quatre T7, deux T8, cinq T9, cinq T10 et `projectId` exigé), 5 tests unitaires du module, 5 Vitest du dialogue,
+  T5, T6, AC6, quatre T7, deux T8, cinq T9, cinq T10 et `projectId` exigé), 5 tests unitaires du module, 5 Vitest du dialogue
+  *(annoté, revue P1, A-3 : 6 depuis `4e07344bc` ; 26 tests Rust et 4 de visibilité depuis la remédiation, voir son entrée)*,
   1 (T12) dans `invoice-settlements-page.test.ts`, 3 de visibilité dans `invoice-display-page.test.ts` (C-36-16a-4), spec E2E
   `project-reassignment.spec.ts` (3 scénarios : payée, rôle Lecture, verrou des livres). T6 dans le fichier des routes
   (C-36-16a-10). Registre des routes : 146 → 147 routes, 139 → 140 tracées, 27 → 28 rejouées, 149 → 150 au registre ; le manuel
@@ -439,7 +440,8 @@ Journaux sous `/home/gcorbaz/devel/kesh-gate-logs/e36-16/` (C-36-16a-8) :
   `crates/kesh-db/src/errors.rs`
 - `crates/kesh-api/src/routes/invoices.rs`, `crates/kesh-api/src/lib.rs`, `crates/kesh-api/src/errors.rs`,
   `crates/kesh-api/src/audit_labels.rs`
-- `crates/kesh-api/tests/project_reassignment_e2e.rs` (neuf), `crates/kesh-api/tests/audit_route_registry.rs`
+- `crates/kesh-api/tests/project_reassignment_e2e.rs` (neuf), `crates/kesh-api/tests/audit_route_registry.rs`,
+  `crates/kesh-api/tests/services_motif.rs` et `crates/kesh-i18n/src/loader.rs` (`4e07344bc` ; ajoutés à la revue P1, A-3)
 - `crates/kesh-i18n/locales/{fr-CH,de-CH,it-CH,en-CH}/messages.ftl` (un bloc `# Story 36-16a` en fin de fichier)
 - `frontend/src/lib/features/projects/ProjectReassignDialog.svelte` et `.test.ts` (neufs),
   `frontend/src/lib/features/projects/projects.api.ts`, `frontend/src/lib/shared/i18n-keys.test.ts`
@@ -485,3 +487,37 @@ Journaux sous `/home/gcorbaz/devel/kesh-gate-logs/e36-16/` (C-36-16a-8) :
   passage en `review` verts (Dev Agent Record) ; E2E complet et `gate-ci` de clôture à la clôture. Aucune migration. Aucun
   écart à la consigne Edit sur le code, les tests ou la fiche ; deux scripts de travail dans `kesh-gate-logs/e36-16/`
   (mutations, gates) écrits par l'outil Write, dont un renommage de journaux fait par un `python3` sur ce seul script.
+- 2026-11-16 — **Revue de code P1** (`kesh-gate-logs/e36-16/review-p1-{B,A,E}.md`) : B (Opus) 0/0/0/3, A (Sonnet) **0/0/2/4**,
+  E (Opus) 0/0/0/6 ; prémisses relues au code, aucune réfutée. **Remédiation** (Opus 5.5, arbitrages de l'orchestrateur,
+  C-36-16a-12), code `61f86ae3e`, tests `9af468c76`, `1ae14918f` :
+  - **A-1 = B-1 = E-3 (MEDIUM)** : `period_exposure_in_tx` nomme l'**exercice clos en cause** (le sien, sinon le postérieur
+    rendu par `find_later_closed_in_tx`, comme `journal_entries.rs:1286`) ; test `an_open_year_followed_by_a_closed_one_is_exposed`
+    (exercice 2031 posé `Closed` en SQL) ; mutations M18 (recherche retirée) et M19 (exercice ouvert nommé) tuées.
+    `api-external.md` (« les noms des exercices clos en cause ») dit vrai désormais ; doc-comments du module, de la fonction et
+    de `ClosedPeriodExposure::fiscal_years` alignés.
+  - **A-5** : tous les exercices de l'ensemble verrouillés d'abord par `start_date`, puis les postérieurs clos ; D9 (6) annoté
+    (`e037590cc`).
+  - **A-2 (MEDIUM)** : rangées d'actions de la facture validée et annulée en `flex min-w-0 flex-wrap justify-end`, conteneur
+    `items-start … gap-4` ; capture `36-16a-succes.png` reprise : « Dévalider » passe à la ligne, entier.
+  - **E-2** : bouton masqué tant que la liste des comptes analytiques n'est pas chargée (`projectsLoaded`) ; test « comptes
+    analytiques non chargés » (F9 tuée). Cette correction a rendu muet le test « rôle Lecture » (F4 **survivante** au premier
+    passage, `mut/synthese-front-rem1.log`) : les tests de visibilité attendent désormais la liste réglée (`ficheReglee`),
+    F4 tuée (`mut/synthese-front-rem1b.log`).
+  - **E-4** : compte visé d'une autre société → `404` (M21 tuée) ; codes `FORBIDDEN` et `API_KEY_READ_ONLY` assertés.
+  - **A-4** : facture étrangère envoyée à la version 99 (M20 tuée) ; mutations des titres du dialogue jouées, F7 (`id` perdu) et
+    F8 (archivés partout) tuées.
+  - **B-3** : message du `403 …_ADMIN_ONLY` ×4 et repli Rust : « … : demandez-le à un Administrateur. » (D12, qui citait le
+    patron « Utilisez l'interface web », est révisé sur ce point).
+  - **A-6** : captures reprises au code de la remédiation, plus la variante « Exercice clos : <nom> »
+    (`36-16a-avertissement-exercice-clos.png`, réponse `409` simulée dans le navigateur, déclarée).
+  - **A-3** : Dev Agent Record annoté (6 Vitest du dialogue depuis `4e07344bc` ; File List complétée).
+  - **Non corrigés** : E-1 (accusé non lié à l'exposition vue) et B-2 = E-5 (réalignement d'une ligne divergente depuis l'écran :
+    la page ne lit pas le compte des lignes) — issues demandées à l'orchestrateur ; E-6 est #1215.
+  - **Gates de remédiation**, journaux `kesh-gate-logs/e36-16/rem1-*` : base remise à neuf, `test-fast --ci` au commit
+    `9af468c76` **5543 passés, 0 échec, 13 ignorés** ; Vitest complet **3849 passés** (247 fichiers) ; `npm run check` 3 erreurs
+    de type dans l'aide de test neuve (`rem1-front-check.log`), corrigées par `1ae14918f`, puis **0 erreur**
+    (`rem1-front-check-2.log`) et le fichier de test rejoué, 15/15 (`rem1-vitest-display.log`) — Vitest complet non rejoué après
+    ce changement de type seul ; `lint-i18n-ownership` vert ; build vert ; spec E2E de la story **4 passés** (`rem1-e2e-spec.log`).
+    Mutations : M18 à M21 tuées (`mut/synthese-rust-rem1.log`), F1 à F9 tuées (`mut/synthese-front-rem1b.log`).
+  - Prompt de la passe P2 ciblée : `36-16a-reimputation-facture-client-review-prompt-p2.md`. `gate-ci` et E2E complet : à la
+    clôture.

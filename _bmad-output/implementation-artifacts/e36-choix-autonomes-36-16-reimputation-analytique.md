@@ -236,3 +236,21 @@ réversibilité. Code lu à `fed34a9c7`. Fiche : `36-16-reimputation-analytique.
   `SELECTEURS_RESOLUS_COTE_SERVEUR`.
 - **Écartée** : un texte unique « écriture(s) ».
 - **Réversible** : oui.
+
+### C-36-16a-12 — Remédiation de la revue P1 : ce qui change, ce qui ne change pas (arbitrages de l'orchestrateur)
+
+- **`fiscalYears` = l'exercice clos en cause** (A-1 = B-1 = E-3) : le sien s'il est clos, sinon le postérieur clos que rend
+  `find_later_closed_in_tx` — comme `LaterFiscalYearClosed { fiscal_year_name: later.name }` (`journal_entries.rs:1286`).
+  Révise C-36-16a-5 sur ce point. Test à deux exercices, le postérieur posé `Closed` en SQL (exception de C-36-16a-2 : la
+  clôture par la route refuse un exercice antérieur ouvert).
+- **Ordre des verrous** (A-5) : tous les exercices de l'ensemble verrouillés d'abord, puis les postérieurs clos.
+- **Bouton masqué tant que la liste des comptes analytiques n'est pas chargée** (E-2) : plutôt qu'un dialogue qui dit l'échec
+  — le libellé du compte actuel retombe déjà sur `#id`, et sans liste il n'y a rien à choisir.
+- **Message du `403 …_ADMIN_ONLY`** (B-3) : « … : demandez-le à un Administrateur. » — juste pour un Comptable en session comme
+  pour une clé ; la consigne « Utilisez l'interface web » (D12, patron d'`API_KEY_ADMIN_FORBIDDEN`) est retirée.
+- **Non corrigé, issue demandée** : le réalignement d'une ligne divergente depuis l'écran (B-2 = E-5) — la page ne lit que la
+  facture (`invoices/[id]/+page.svelte`, `getInvoice`), non le compte analytique des lignes de ses écritures ; elle ne peut pas
+  savoir qu'une ligne diverge. Et l'accusé non lié à l'exposition vue (E-1), sur décision de l'orchestrateur.
+- **Capture de la variante « Exercice clos : <nom> »** (A-6) : par une réponse `409` simulée dans le navigateur (`page.route`),
+  déclarée dans le titre et le commentaire du test ; le `409` réel est éprouvé par les tests Rust.
+- **Réversible** : oui.
