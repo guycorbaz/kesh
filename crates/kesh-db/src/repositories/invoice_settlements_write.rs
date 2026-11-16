@@ -523,8 +523,9 @@ pub struct WriteOffOutcome {
 ///   `DesignatedAccountsWrongType`, le refus de la validation d'une facture
 ///   (Story 35-3) —, après l'absent ou l'archivé et avant le non imputable
 ///   (tous deux `ConfigurationRequired`). Ce refus précède la comparaison de la
-///   TVA due à la créance : une TVA due désignée sur la créance restée un actif
-///   est nommée par son type.
+///   TVA due à la créance : une TVA due désignée sur la créance qui n'est pas un
+///   passif (restée un actif, ou retypée en charge ou en produit) est nommée par
+///   son type.
 #[allow(clippy::too_many_arguments)]
 pub async fn write_off_invoice(
     pool: &MySqlPool,
