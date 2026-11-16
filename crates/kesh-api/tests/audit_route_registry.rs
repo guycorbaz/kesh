@@ -30,9 +30,9 @@
 //!
 //! L'ensemble clos de l'INVENTAIRE est celui de `lib.rs` (142 routes à la
 //! release 0.17.0 — v017-3a, v016-2a et v017-4a réunies, mesuré le 2026-10-31 —,
-//! puis 144 à la 0.17.3, Story v0172-session, 145 à la 33-5 et 146 à la 34-2 ;
-//! dont `/mcp`, monté par `route_service` — Story 32-6a) ;
-//! celui du REGISTRE est plus large (149), car trois routes mutantes vivent dans
+//! puis 144 à la 0.17.3, Story v0172-session, 145 à la 33-5, 146 à la 34-2 et 147
+//! à la 36-16a ; dont `/mcp`, monté par `route_service` — Story 32-6a) ;
+//! celui du REGISTRE est plus large (150), car trois routes mutantes vivent dans
 //! `routes/test_endpoints.rs` et sont montées par un `nest()`. D'où :
 //!
 //! - volet « route absente du registre » → sur les **deux** fichiers, faute de
@@ -526,6 +526,9 @@ const LIB_ROUTES: &[(&str, &str, Status, Rejeu)] = &[
     ("post", "invoice_pdf::refreeze_invoice_pdf", Traced, SansEcritureAuJournal),
     ("post", "invoices::settle_invoice_handler", Traced, Rejouee),
     ("post", "invoices::write_off_invoice_handler", Traced, Rejouee),
+    // Story 36-16a (#1167) — `invoice.project_reassigned`, dans la transaction ;
+    // réécrit les lignes et les versions des écritures de la facture.
+    ("post", "invoices::reassign_project_handler", Traced, Rejouee),
     ("post", "invoices::cancel_invoice_settlement_handler", Traced, Rejouee),
     ("post", "supplier_invoices::cancel_supplier_invoice_settlement", Traced, Rejouee),
     ("put", "dunning_reminders::pause_dunning", Traced, SansEcritureAuJournal),
@@ -1007,8 +1010,8 @@ fn the_registry_partition_is_what_the_story_declares() {
 
     assert_eq!(
         LIB_ROUTES.len(),
-        146,
-        "l'inventaire porte sur 146 routes (+ 1 : le solde d'ouverture d'un compte bancaire existant, 34-2 ; + 1 : l'adresse de la société, 33-5 ; + 1 : `/mcp`, 32-6a ; + 1 : la décision d'un \
+        147,
+        "l'inventaire porte sur 147 routes (+ 1 : le changement de compte analytique d'une facture, 36-16a ; + 1 : le solde d'ouverture d'un compte bancaire existant, 34-2 ; + 1 : l'adresse de la société, 33-5 ; + 1 : `/mcp`, 32-6a ; + 1 : la décision d'un \
          envoi MCP, 32-8b ; + 5 : les routes mutantes des prompts du serveur MCP, 32-10a-iii ; \
          + 1 : le rattachement d'une transaction à une écriture, v017-3a ; + 2 : l'aperçu et \
          la création d'un relevé saisi à la main, v016-2a ; + 4 : le `PUT`, le `DELETE`, la \
@@ -1027,8 +1030,10 @@ fn the_registry_partition_is_what_the_story_declares() {
     // Fusion de la release 0.17.5 (2026-11-07) : les deux réunies, **138**.
     // Story 34-2 (#533) : 138 → 139 (le solde d'ouverture d'un compte bancaire
     // existant, tracé par `journal_entry.created`).
+    // Story 36-16a (#1167) : 139 → 140 (le changement de compte analytique d'une
+    // facture, tracé par `invoice.project_reassigned`).
     assert_eq!(
-        traced, 139,
+        traced, 140,
         "73 tracées avant la 25-1b, plus ses 14, plus la dévalidation (25-2-b-1, #440), \
          plus l'annulation d'un règlement client (25-3-a-1) et fournisseur (25-3-a-2, #414), \
          plus l'annulation d'un rapprochement (25-3-b, #418), plus le solde du reste \
@@ -1054,7 +1059,8 @@ fn the_registry_partition_is_what_the_story_declares() {
          (v017-4a, refs #849), plus le réglage de la durée d'inactivité de la session \
          (v0172-session, refs #891), plus la correction de l'adresse de la société \
          (33-5, refs #909), plus le changement de mot de passe (33-7, refs #435), plus le \
-         solde d'ouverture d'un compte bancaire existant (34-2, refs #533)"
+         solde d'ouverture d'un compte bancaire existant (34-2, refs #533), plus le \
+         changement de compte analytique d'une facture (36-16a, refs #1167)"
     );
     assert_eq!(
         exempt, 4,
@@ -1068,7 +1074,7 @@ fn the_registry_partition_is_what_the_story_declares() {
     );
     assert_eq!(
         LIB_ROUTES.len() + TEST_ENDPOINT_ROUTES.len(),
-        149,
+        150,
         "le registre est plus large que l'inventaire, et c'est voulu"
     );
 }
@@ -1322,8 +1328,8 @@ fn every_replayed_route_calls_an_envelope() {
         }
     }
     assert_eq!(
-        examinees, 27,
-        "les vingt-sept routes Rejouee ont été examinées"
+        examinees, 28,
+        "les vingt-huit routes Rejouee ont été examinées (36-16a : + le changement de compte analytique d'une facture)"
     );
 }
 
@@ -1460,7 +1466,7 @@ fn the_replay_partition_is_what_the_story_declares() {
         .count();
 
     assert_eq!(
-        rejouees, 27,
+        rejouees, 28,
         "5 rejouées avant la 15-5e1 (write_off, accept, cancel du rapprochement, \
          complément des soldes de départ, modification d'une écriture — 15-8a) + 4 par \
          elle (validation, règlement, annulation de règlement, saisie fournisseur) + la \
@@ -1473,7 +1479,7 @@ fn the_replay_partition_is_what_the_story_declares() {
          (brouillons, sans écriture au journal) + la validation et la dévalidation d'une \
          facture fournisseur — compte inchangé ; 34-2 : + la création d'un compte bancaire \
          (reclassée, elle porte un solde d'ouverture) + la saisie du solde d'ouverture d'un \
-         compte existant — 27"
+         compte existant ; 36-16a : + le changement de compte analytique d'une facture — 28"
     );
     assert_eq!(exemptees, 3, "full_import, /seed, /reset");
     assert_eq!(
@@ -1499,7 +1505,8 @@ fn the_replay_partition_is_what_the_story_declares() {
     // d'inactivité, le battement d'activité).
     // Story 33-5 (#909) : 147 → 148 (l'adresse de la société).
     // Story 34-2 (#533) : 148 → 149 (le solde d'ouverture d'un compte existant).
-    assert_eq!(tout.len(), 149);
+    // Story 36-16a (#1167) : 149 → 150 (le changement de compte analytique d'une facture).
+    assert_eq!(tout.len(), 150);
 }
 
 /// Visiteur `syn` d'un fichier de routes : relève chaque appel à la primitive

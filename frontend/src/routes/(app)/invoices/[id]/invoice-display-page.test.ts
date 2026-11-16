@@ -286,3 +286,41 @@ describe("fiche facture — la date du jour et les instants à l'heure suisse (#
     );
   });
 });
+
+// Story 36-16a (#1167, AC12, D13) — « Changer le compte analytique » : Comptable et
+// Administrateur, hors brouillon (validée, payée, annulée) ; ni le rôle Lecture, ni le
+// brouillon (qui a son formulaire). Mutation : bouton montré au rôle Lecture.
+describe("fiche facture — bouton « Changer le compte analytique » (36-16a)", () => {
+  const bouton = "invoice-reassign-project-button";
+
+  it("validée, payée, annulée : présent pour l'Administrateur et le Comptable", async () => {
+    for (const role of ["Admin", "Comptable"]) {
+      for (const partial of [
+        {},
+        { paidAt: "2026-03-10T00:00:00" },
+        { status: "cancelled" as const },
+      ]) {
+        auth.currentUser.role = role;
+        getInvoiceMock.mockResolvedValue(invoice(partial as Partial<InvoiceResponse>));
+        const r = render(Page);
+        expect(await r.findByTestId(bouton)).toBeTruthy();
+        cleanup();
+      }
+    }
+  });
+
+  it("rôle Lecture : pas de bouton", async () => {
+    auth.currentUser.role = "Consultation";
+    getInvoiceMock.mockResolvedValue(invoice());
+    const r = render(Page);
+    await r.findByTestId("invoice-detail-date");
+    expect(r.queryByTestId(bouton)).toBeNull();
+  });
+
+  it("brouillon : pas de bouton", async () => {
+    getInvoiceMock.mockResolvedValue(invoice({ status: "draft", journalEntryId: null }));
+    const r = render(Page);
+    await r.findByTestId("invoice-detail-date");
+    expect(r.queryByTestId(bouton)).toBeNull();
+  });
+});

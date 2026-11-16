@@ -43,6 +43,7 @@ pub mod opening_complement;
 pub mod password_reset_tokens;
 pub mod payment_batches;
 pub mod products;
+pub mod project_reassignment;
 pub mod projects;
 pub mod reconciliation;
 pub mod reconciliation_cancel;

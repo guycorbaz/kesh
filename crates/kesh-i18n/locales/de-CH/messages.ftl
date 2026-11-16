@@ -3618,3 +3618,27 @@ homepage-charts-th-amount = Betrag
 homepage-charts-th-share = Anteil
 homepage-charts-credit-balance-note-one = 1 Aufwandskonto mit Habensaldo ist in diesem Diagramm nicht enthalten.
 homepage-charts-credit-balance-note-other = { $count } Aufwandskonten mit Habensaldo sind in diesem Diagramm nicht enthalten.
+
+# Story 36-16a (#1167) — changer le compte analytique après coup
+audit-log-action-invoice-project-reassigned = Analytisches Konto der Rechnung geändert
+error-project-reassignment-closed-period = { $entryCount ->
+    [one] Das Ändern des analytischen Kontos würde eine Buchung eines abgeschlossenen Geschäftsjahres oder einer gesperrten Periode ändern. Bestätigen Sie, um fortzufahren.
+   *[other] Das Ändern des analytischen Kontos würde { $entryCount } Buchungen eines abgeschlossenen Geschäftsjahres oder einer gesperrten Periode ändern. Bestätigen Sie, um fortzufahren.
+}
+error-project-reassignment-closed-period-admin-only = Nur ein in der Weboberfläche angemeldeter Administrator kann das analytische Konto eines abgeschlossenen Geschäftsjahres oder einer gesperrten Periode ändern. Verwenden Sie die Weboberfläche.
+projects-reassign-open = Analytisches Konto ändern
+projects-reassign-title = Analytisches Konto ändern
+projects-reassign-body = Der Beleg und alle seine Buchungen gehen auf das gewählte analytische Konto über. Beträge, Konten, Daten, Nummern, Ausgleich und Abgleich bleiben unverändert.
+projects-reassign-none = — Keines
+projects-reassign-archived = { $name } (archiviert)
+projects-reassign-save = Speichern
+projects-reassign-warning-title = Abgeschlossenes Geschäftsjahr oder gesperrte Periode
+projects-reassign-warning-entries = { $entryCount ->
+    [one] Eine Buchung einer abgeschlossenen Periode erhält ein anderes analytisches Konto.
+   *[other] { $entryCount } Buchungen einer abgeschlossenen Periode erhalten ein anderes analytisches Konto.
+}
+projects-reassign-warning-fiscal-years = Abgeschlossenes Geschäftsjahr: { $names }.
+projects-reassign-warning-locked = Buchungen gesperrt bis zum { $date }.
+projects-reassign-warning-reports = Die analytischen Berichte dieser Periode ändern sich.
+projects-reassign-confirm = Bestätigen
+projects-reassign-done = Analytisches Konto geändert.

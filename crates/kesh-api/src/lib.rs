@@ -779,6 +779,13 @@ pub fn build_router_avec_registre(
             "/api/v1/invoices/{id}/write-off",
             post(routes::invoices::write_off_invoice_handler),
         )
+        // Story 36-16a (#1167) — changer le compte analytique d'une facture et
+        // de toutes ses écritures, quel que soit son statut (Comptable+, clés
+        // `read-write` ; période close : Administrateur en session seulement).
+        .route(
+            "/api/v1/invoices/{id}/reassign-project",
+            post(routes::invoices::reassign_project_handler),
+        )
         // Story 21-5a — rappels débiteurs (Comptable+) : liste à rappeler groupée
         // par contact, suspension/reprise par facture, enregistrement d'un rappel manuel.
         .route(

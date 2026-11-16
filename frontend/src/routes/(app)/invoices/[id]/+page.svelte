@@ -79,7 +79,10 @@
 	import { i18nMsg } from '$lib/shared/utils/i18n.svelte';
 	import { authState } from '$lib/app/stores/auth.svelte';
 	import { createCreditNote } from '$lib/features/credit-notes/credit-notes.api';
-	import { listProjects } from '$lib/features/projects/projects.api';
+	import { listProjects, reassignInvoiceProject } from '$lib/features/projects/projects.api';
+	import ProjectReassignDialog, {
+		type ReassignChoice,
+	} from '$lib/features/projects/ProjectReassignDialog.svelte';
 	import { todayLocal } from '$lib/shared/utils/local-date';
 	import type { ProjectResponse } from '$lib/features/projects/projects.types';
 	import { formatSwissDate } from '$lib/features/reports/reports.api';
@@ -320,6 +323,29 @@
 	}
 
 	let projects = $state<ProjectResponse[]>([]);
+
+	// Story 36-16a (#1167) — changer le compte analytique d'une facture émise
+	// (validée, payée, annulée), par le dialogue partagé. Monté à l'ouverture.
+	let reassignOpen = $state(false);
+
+	/**
+	 * L'appel du dialogue : la facture REPREND l'objet rendu, version comprise,
+	 * comme après un règlement — le geste suivant de la page part donc avec la
+	 * version d'après le changement. Rejette avec l'erreur de l'API (le dialogue
+	 * l'affiche).
+	 */
+	async function submitReassign(choices: ReassignChoice[], acknowledge: boolean) {
+		if (!invoice) return;
+		const res = await reassignInvoiceProject(
+			invoice.id,
+			choices[0]?.projectId ?? null,
+			invoice.version,
+			acknowledge,
+		);
+		invoice = res.invoice;
+		notifySuccess(i18nMsg('projects-reassign-done', 'Compte analytique changé.'));
+	}
+
 	const projectLabel = $derived.by(() => {
 		const pid = invoice?.projectId;
 		if (!pid) return null;
@@ -1009,6 +1035,20 @@
 	{/if}
 {/snippet}
 
+<!-- Story 36-16a (#1167) — hors brouillon (le brouillon a son formulaire), pour le
+     Comptable et l'Administrateur ; le serveur refuse le reste. -->
+{#snippet reassignButton()}
+	{#if canManage && invoice && invoice.status !== 'draft'}
+		<Button
+			variant="outline"
+			onclick={() => (reassignOpen = true)}
+			data-testid="invoice-reassign-project-button"
+		>
+			{i18nMsg('projects-reassign-open', 'Changer le compte analytique')}
+		</Button>
+	{/if}
+{/snippet}
+
 <div class="mb-6 flex items-center justify-between">
 	<Button variant="ghost" onclick={() => goto('/invoices')}>
 		<ArrowLeft class="h-4 w-4" aria-hidden="true" />
@@ -1127,6 +1167,7 @@
 					{i18nMsg('credit-notes-create-button', 'Créer un avoir')}
 				</Button>
 			{/if}
+			{@render reassignButton()}
 			{#if canManage && !invoice.paidAt}
 				<!-- Une facture payée est hors du périmètre dunning (jamais candidate
 				     à un rappel) : les boutons Suspendre/Reprendre sont masqués (review
@@ -1178,6 +1219,7 @@
 			<Button variant="outline" onclick={() => goto('/credit-notes')}>
 				{i18nMsg('credit-notes-view-list', 'Voir les avoirs')}
 			</Button>
+			{@render reassignButton()}
 		</div>
 	{/if}
 </div>
@@ -1704,6 +1746,21 @@
 		errorMsg={markError}
 		onConfirm={handleSettleConfirm}
 	/>
+
+	{#if reassignOpen}
+		<ProjectReassignDialog
+			rows={[
+				{
+					id: invoice.id,
+					label: i18nMsg('invoice-detail-project-label', 'Compte analytique'),
+					currentProjectId: invoice.projectId ?? null,
+				},
+			]}
+			{projects}
+			submit={submitReassign}
+			onDone={() => (reassignOpen = false)}
+		/>
+	{/if}
 
 	<!-- Toujours monté (revue P1, lentille A) : conditionné à `amountDue`, qui
 	     passe par `null` pendant un envoi d'e-mail, il se démontait puis se

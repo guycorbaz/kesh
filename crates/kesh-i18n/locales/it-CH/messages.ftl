@@ -3619,3 +3619,27 @@ homepage-charts-th-amount = Importo
 homepage-charts-th-share = Quota
 homepage-charts-credit-balance-note-one = 1 conto di costo con saldo avere non figura in questo grafico.
 homepage-charts-credit-balance-note-other = { $count } conti di costo con saldo avere non figurano in questo grafico.
+
+# Story 36-16a (#1167) — changer le compte analytique après coup
+audit-log-action-invoice-project-reassigned = Conto analitico della fattura cambiato
+error-project-reassignment-closed-period = { $entryCount ->
+    [one] Cambiare il conto analitico modificherebbe una registrazione di un esercizio chiuso o di un periodo bloccato. Confermare per continuare.
+   *[other] Cambiare il conto analitico modificherebbe { $entryCount } registrazioni di un esercizio chiuso o di un periodo bloccato. Confermare per continuare.
+}
+error-project-reassignment-closed-period-admin-only = Solo un amministratore connesso all'interfaccia web può cambiare il conto analitico di un esercizio chiuso o di un periodo bloccato. Utilizzare l'interfaccia web.
+projects-reassign-open = Cambia il conto analitico
+projects-reassign-title = Cambia il conto analitico
+projects-reassign-body = Il documento e tutte le sue registrazioni passano al conto analitico scelto. Importi, conti, date, numeri, abbinamento e riconciliazione non cambiano.
+projects-reassign-none = — Nessuno
+projects-reassign-archived = { $name } (archiviato)
+projects-reassign-save = Salva
+projects-reassign-warning-title = Esercizio chiuso o periodo bloccato
+projects-reassign-warning-entries = { $entryCount ->
+    [one] Una registrazione di un periodo chiuso cambierà conto analitico.
+   *[other] { $entryCount } registrazioni di un periodo chiuso cambieranno conto analitico.
+}
+projects-reassign-warning-fiscal-years = Esercizio chiuso: { $names }.
+projects-reassign-warning-locked = Registrazioni bloccate fino al { $date }.
+projects-reassign-warning-reports = I rapporti analitici di questo periodo cambieranno.
+projects-reassign-confirm = Conferma
+projects-reassign-done = Conto analitico cambiato.
