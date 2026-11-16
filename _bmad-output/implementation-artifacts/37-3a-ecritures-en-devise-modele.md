@@ -1168,6 +1168,13 @@ chacune (R7), l'écart de change dans la seconde, afin que mes comptes en devise
   commits `946aa86a` (kesh-core, kesh-db, réconciliation, seed, tests de rapports ; kesh-api se compile à partir du
   suivant) et `79b9a6a9` (kesh-api, i18n), puis les commits de tests et de fiche. Migration annoncée et écrite :
   `20261114000003_journal_lines_foreign_currency.sql` (nom de l'AC-1). Détail au Dev Agent Record ; statut `review`.
+- 2026-11-16 — fusion de `epic/37-multi-devises` (`65b3877f` : 37-2 terminée, corrections de sa revue `c691bd4b`,
+  `9a665075`) dans la branche, sur demande de l'orchestrateur : commit `e89291e6`, **sans conflit** (19 fichiers de
+  37-2 : récupération des cours, dépôt `exchange_rates` sans changement de signature, écran, manuels, fiche,
+  `sprint-status.yaml`). Compteurs recomptés depuis la source : audit des migrations inchangé (94 lignes, 94
+  fichiers ; la fusion n'apporte pas de migration) ; registre des routes inchangé (37-3a n'ajoute pas de route) ;
+  `sitesTotal` de `i18n-keys.test.ts` porté par 37-2 seule (la 37-3a ne touche aucun site frontend), vérifié par le
+  Vitest complet. Gates de clôture rejoués au commit de fusion, dernier commit de code (Dev Agent Record).
 
 ## Dev Agent Record
 
@@ -1301,14 +1308,21 @@ l'API aussi ; ouverture à deux devises par `create_opening_entry` (au dépôt),
 
 Journaux : `/home/beat/claude/kesh-gate-logs/s37-3a/`.
 
-- **Backend complet** au dernier commit de code `f9c5567b`, base `kesh_s37_3a` remise à zéro (recréée, migrée,
-  semée) : `scripts/test-fast.sh --ci` (fmt `--check`, clippy `--workspace --all-targets -D warnings`, nextest
-  profil `ci`) — **5721 passés, 13 ignorés, 0 échec** (`gate-final.log`). Même résultat au commit `79b9a6a9`
-  (5719 passés, `gate-complet-2.log`) avant l'ajout des deux tests CR6-P4.
-- **Frontend** (arbre identique au dernier commit pour `frontend/` et les catalogues) : `npm run check`,
-  `lint-i18n-ownership`, `test:unit` — **250 fichiers, 3890 tests passés** (`c-front-1.log`) ; `npm run build` vert
-  (`c-front-build.log`).
-- **E2E complet** : E2E_A_REMPLIR
+- **Backend complet** au dernier commit de code, la fusion `e89291e6`, bases remises à zéro (recréées, migrées,
+  semées) : `scripts/test-fast.sh --ci` (fmt `--check`, clippy `--workspace --all-targets -D warnings`, nextest
+  profil `ci`) — **5724 passés, 13 ignorés, 0 échec** (`gate-final-fusion.log`). Avant la fusion : 5721 passés au
+  commit `f9c5567b` (`gate-final.log`), 5719 au commit `79b9a6a9` (`gate-complet-2.log`).
+- **Frontend** au commit de fusion : `npm run check`, `lint-i18n-ownership`, `test:unit` — **250 fichiers, 3892
+  passés, 1 échec par délai** (`i18n-repli-divergent-actif.test.ts`, 5 s dépassées pendant le gate backend
+  concurrent), rejoué seul : **10/10 passés** ; `npm run build` vert (`c-front-fusion.log`, `c-front-fusion-2.log`).
+  Avant la fusion : 3890/3890 (`c-front-1.log`).
+- **E2E complet** au commit de fusion (`LANG=fr_CH.UTF-8`, port 3373, base `kesh_e2e_s37_3a`, recette de
+  `docs/testing.md`) : **431 passés, 10 échecs, 18 ignorés** (`e2e-run.log`) — les sept de la KF-029 (#97 :
+  `mode-expert` ×2, `onboarding-path-b` ×2, `onboarding` ×3) et trois préexistants hors liste, relevés au point 7 de
+  `issues-a-ouvrir-epic-37.md` : `backup-restore-new-install.spec.ts:262` et `:381` (délai de 120 s) et
+  `bank-import.spec.ts:102` (connexion refusée après les specs de restauration) — rejoué seul : **7/7 passés**
+  (`e2e-run-bank-import.log`). Aucun échec lié à la story. Un premier E2E lancé au commit `f9c5567b` a été arrêté
+  (par son processus) à la demande de fusion, avant sa fin.
 - Gates ciblés pendant l'itération (nextest `-p kesh-db` complet ×2, binaires `journal_entries_foreign_currency`,
   `supplier_invoices_internal_number`, `chf_line_lexical`, binaires MCP et `reconciliation_e2e`,
   `admin_full_import_e2e`, `journal_entry_reversal_e2e`) : journaux `a-*.log`, `b-cible-*.log`.
