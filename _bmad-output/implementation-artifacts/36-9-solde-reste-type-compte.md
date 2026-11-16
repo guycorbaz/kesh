@@ -8,7 +8,8 @@ d'epic, § *Phase 2 — après la 0.17.8*) : « même patron que la 35-3 (Q6) ; 
 **Aucune migration.** Code lu à la tête du worktree, **`0bf3c3b4b`** (`origin/epic/36-0.18.0`). Le registre du kickoff
 (`e36-choix-autonomes-e360.md`) n'a pas d'étape 0 pour la phase 2 ; seul C-e360-12 nomme la story. Registre de la story :
 `e36-choix-autonomes-36-9.md` (C-36-9-1 à C-36-9-4). Voie de base : **voie 1** ; bases `kesh_e369`, `kesh_e2e_e369`,
-`kesh_ci_e369`. Validation non lancée.*
+`kesh_ci_e369`. Validation non lancée.* *(Annoté le 2026-11-15, revue P1, A3 : le registre porte C-36-9-1 à -6 ; la
+validation est terminée (P1 Sonnet, 0/0/0/5), le développement aussi ; revue de code P1 remédiée, voir le Change Log.)*
 
 ## Story
 
@@ -265,9 +266,11 @@ départ** et y rougissent par leur attendu. Écrire d'abord, lancer sur `0bf3c3b
 `git restore --worktree -- <fichier>` puis `touch`) : **M1** le contrôle de type retiré de l'accesseur (AC1, AC2, AC7,
 AC9) ; **M2** `postable = TRUE` remis dans le `WHERE` (AC4, retypé et non imputable) ; **M3** le type lu par une requête
 séparée non verrouillante après la lecture verrouillante (AC5) ; **M4** *(reformulée à l'étape 0, V1-4 : la
-comparaison prend l'identifiant que rend l'accesseur et ne peut pas le précéder)* le contrôle de type sorti de
-l'accesseur et jugé **après** la comparaison à la créance, au site d'appel (AC4, créance non retypée : rouge par
-`SettlementCounterpartyIsClaimAccount`) ; **M5** le type attendu écrit en dur `AccountType::Asset` dans
+comparaison prend l'identifiant que rend l'accesseur et ne peut pas le précéder)* ~~le contrôle de type sorti de
+l'accesseur et jugé **après** la comparaison à la créance, au site d'appel~~ — *telle que jouée (revue P1, E4)* : une
+comparaison à la créance **ajoutée avant** l'appel de l'accesseur, sur l'identifiant du réglage relu sans verrou ;
+l'accesseur garde son contrôle de type, si bien que la comparaison précède le type (`mut/muter.py`, clé `M4`) — même
+effet observable sur l'ordre (AC4, créance non retypée : rouge par `SettlementCounterpartyIsClaimAccount`) ; **M5** le type attendu écrit en dur `AccountType::Asset` dans
 l'accesseur au lieu de `DesignatedRole::VatPayable.expected_type()` (AC1 et AC3 nominal rougissent ; rend visible qu'aucune
 seconde source n'est écrite) ; **M6** le repli Rust de la phrase d'action laissé à l'ancienne valeur (AC8, G9).
 
@@ -297,14 +300,15 @@ Rubrique **Corrigé** (section `## [0.18.0] — Non publié`, assemblée par l'o
 
 > - **Le solde du reste d'une facture refuse un compte de TVA due changé de type.** Solder le reste en escompte ou en perte
 >   sur débiteur corrige la TVA sur le compte de TVA due d'*Administration → Facturation* ; si ce compte a été changé de
->   type depuis sa désignation (passé en actif ou en charge), le solde est maintenant refusé, sans rien écrire, avec le
+>   type depuis sa désignation (il n'est plus un passif), le solde est maintenant refusé, sans rien écrire, avec le
 >   message de la validation d'une facture, qui nomme le compte et le réglage. Désignez un compte de passif, ou rendez au
 >   compte son type, puis soldez à nouveau. ⚠️ **Changement de contrat de l'API** : `POST /api/v1/invoices/{id}/write-off`
 >   rend `400 DESIGNATED_ACCOUNT_WRONG_TYPE` là où il réussissait (et là où il rendait `400 CONFIGURATION_REQUIRED` pour
 >   un compte à la fois retypé et non imputable, ou `400 SETTLEMENT_COUNTERPARTY_IS_CLAIM_ACCOUNT` pour un compte de TVA
->   due désigné sur la créance et resté un actif : le type est jugé avant) ; la dernière phrase du message de ce code dit désormais « l’opération »
+>   due désigné sur la créance qui n'est pas un passif : le type est jugé avant) ; la dernière phrase du message de ce code dit désormais « l’opération »
 >   au lieu de « la validation », sur les trois routes qui le rendent. Le solde en frais bancaires ou en reste d'arrondi
->   n'est pas concerné. L'avoir ne contrôle toujours pas ce compte ([#525](https://github.com/guycorbaz/kesh/issues/525)).
+>   n'est pas concerné, ni un reste de quelques centimes dont la part de TVA, au centime, est nulle : seul un solde qui
+>   corrige réellement de la TVA lit ce compte. L'avoir ne contrôle toujours pas ce compte ([#525](https://github.com/guycorbaz/kesh/issues/525)).
 >   ([#1044](https://github.com/guycorbaz/kesh/issues/1044))
 
 `refs #1044` ; la PR de release porte `closes #1044`.
@@ -318,7 +322,8 @@ Rubrique **Corrigé** (section `## [0.18.0] — Non publié`, assemblée par l'o
   annulable, et le compte qu'il devrait viser (celui de la vente) est l'objet même de #525.
 - **Le compte que vise la correction de TVA du solde** : elle est « débitée sur le compte de TVA due **courant** (comme
   l'avoir) » (`invoice_settlements_write.rs:503-504`), non sur celui de la vente. Même classe que #525, mais #525 ne nomme
-  que l'avoir : **issue demandée à l'orchestrateur** (rapport de la fiche), à trier dans le jalon de la TVA.
+  que l'avoir : **issue demandée à l'orchestrateur** (rapport de la fiche), à trier dans le jalon de la TVA —
+  ouverte : **#1198** (revue P1, A6).
 - **Un avertissement au retypage d'un compte désigné** : #1047.
 - **Le frontend** : aucun changement (le dialogue affiche déjà `err.message`), donc aucun Vitest neuf.
 
@@ -344,7 +349,8 @@ Le tableau du fichier d'epic ne couvre que la phase 1 ; recensés ici, à confir
 
 ### Ce qui doit rester vrai
 
-- Le refus de type ne s'atteint qu'en escompte ou en perte, sur une facture qui porte de la TVA ; rien n'est écrit, la
+- Le refus de type ne s'atteint qu'en escompte ou en perte, quand le solde corrige de la TVA (une part non nulle au
+  centime, `write_off_vat_shares` ; revue P1, E1) ; rien n'est écrit, la
   `version` ne bouge pas, le rejeu sur interblocage (`retry_on_deadlock`, `routes/invoices.rs:1262`) est inchangé.
 - L'ordre des verrous du flux (nature, arrondi, TVA due, exercice, `invoice_settlements_write.rs:641-654`) est inchangé :
   la requête neuve verrouille la même ligne par clé primaire, au même moment.
@@ -378,6 +384,10 @@ Journaux sous `/home/gcorbaz/devel/kesh-gate-logs/e36-9/` (hors dépôt) :
   `ACCOUNT_HAS_ENTRIES` du retypage, voir *Écarts*) ; rejoué après la correction du helper : `rouges-ac7-bis.log`, rouge
   pour la bonne raison (`left: 200, right: 400`, le solde passe). AC3 et AC4 « créance non retypée » : verts au départ pour
   le premier (garde de non-régression), le second n'a pas été atteint (le test s'arrête au cas non imputable).
+  *(Annoté à la revue P1, A2 : le rouge d'AC5 au code de départ l'est **par le motif**, la requête neuve n'existant pas
+  encore, non par le défaut ; la preuve que le test voit un type lu hors verrou est la mise à mort par **M1** et
+  **M3**, `mut/M1.log`, `mut/M3.log`. A1 : le rouge de l'AC9 (E2E) prescrit par la fiche n'avait **pas** été joué à
+  cette date, malgré la case cochée — joué à la remédiation, ci-dessous.)*
 - **Vert ciblé** : `cible-vert.log` (commit de travail, avant `dec591150`, contenu identique) — `invoice_write_off`,
   `designated_account_type_e2e`, `textes_coherents`, `kesh-i18n` : 102 tests, 102 passés.
 - **Clippy** : `clippy-dev.log`, workspace `--all-targets -D warnings`, vert.
@@ -391,6 +401,10 @@ Journaux sous `/home/gcorbaz/devel/kesh-gate-logs/e36-9/` (hors dépôt) :
   | M4 comparaison à la créance avant le type (V1-4) | `mut/M4.log` | AC4 (même test, cas « créance non retypée » : seule partie que M4 change) |
   | M5 type attendu écrit en dur `Asset` | `mut/M5.log` | 12 échecs : les soldes nominaux à TVA, AC1, AC2, AC4, AC5, AC7 |
   | M6 repli Rust à l'ancienne phrase | `mut/M6.log` | G9 `les_replis_rust_suivent_le_catalogue` |
+  *(Annoté à la revue P1 : A1 — la fiche nommait aussi l'AC9 (E2E) parmi les tueurs de M1, retiré ici sans le dire ;
+  E4 — M4 jouée est une comparaison à la créance **ajoutée avant** l'accesseur, non le type sorti de l'accesseur ;
+  A4 — ces journaux ne gardaient pas le message du rouge. Les journaux `mut/M*.log` ont été **réécrits** par le rejeu
+  de la remédiation, ci-dessous, qui remplace ce relevé.)*
 - **Gates du passage en `review`**, au dernier commit de code **backend** `dec591150` (le commit suivant, `84246f671`, ne
   touche qu'une spec E2E) :
   - bases `kesh_e369` remises à neuf (DROP/CREATE, migrations, seed) ; `scripts/test-fast.sh --ci` :
@@ -406,6 +420,37 @@ Journaux sous `/home/gcorbaz/devel/kesh-gate-logs/e36-9/` (hors dépôt) :
   - **E2E** : la suite complète **n'a pas tourné** (à la clôture). La seule spec `invoice-write-off.spec.ts` a été jouée
     pour la capture, sur `kesh_e2e_e369` recréée, backend port 3369 : `e2e-spec-write-off.log` (1 échec, le scénario neuf
     — voir *Écarts*), `e2e-spec-write-off-r3.log` au fichier de `84246f671` : **2 passés**.
+  *(Annoté à la revue P1, A4 : `gate-ci-dec591150*.log` ne portent pas de commit en tête ; leur rattachement à
+  `dec591150` tient aux horodatages (18:13 et 19:41, entre `dec591150` 16:10 et `84246f671` 20:09). `front-check-r2.log`
+  (20:09:23) est « au fichier de `84246f671` », non « après ». `e2e-spec-write-off-r2.log` (2 passés, avant la
+  restauration de Prettier) n'était pas cité.)*
+
+#### Remédiation de la revue P1 (2026-11-16)
+
+Commits `dd9bccfdf` (tests, spec, textes) et `34a2dbee1` (la capture attend la fin du fondu du bouton) ; tous les
+journaux ci-dessous portent en tête `# commit …`.
+
+- **Ciblé** : `rem1-cible.log`, `invoice_write_off` au fichier de `dd9bccfdf` : 31 passés.
+- **E2E, preuves de l'AC9** (A1), script versionné `mut/e2e-preuve.sh` (montage de `docs/testing.md`, `kesh_e2e_e369`
+  recréée à chaque run, port 3369, sous verrou ; restauration `git restore --worktree` puis `touch`) :
+  - `e2e-preuve-depart.log` (commit `dd9bccfdf`, production rétablie à `4c5019c5d`, spec de HEAD) : **rouge** —
+    `Expected: 400 / Received: 200`, `invoice-write-off.spec.ts:153` (le solde réussit) ; l'autre scénario passe ;
+  - `e2e-preuve-M1.log` (`dd9bccfdf`, M1) : **M1 tuée par la spec**, même message ;
+  - `e2e-preuve-vert.log` (commit `34a2dbee1`) : **2 passés** ; capture reprise :
+    `captures/write-off-tva-due-retypee.png` — bouton *Solder le reste* actif et opaque (E3 ; le premier rejeu à
+    `dd9bccfdf` l'avait encore pris pâle, `disabled:opacity-50` sous `transition-all`, d'où `34a2dbee1`).
+- **Mutations rejouées** à `34a2dbee1` (A4 : message du rouge gardé, commit en tête), `mut/M1.log` à `mut/M7.log` :
+  | Mutation | Tuée par (message au journal) |
+  |---|---|
+  | M1 contrôle de type retiré | 6 échecs sur 36 : AC1, AC2, AC2 produit, AC4, AC5, AC7 ; et l'E2E (`e2e-preuve-M1.log`) |
+  | M2 `postable = TRUE` au `WHERE` | AC4 — `obtenu ConfigurationRequired("default_vat_payable_account_id")` |
+  | M3 type relu hors verrou | AC5 |
+  | M4 comparaison à la créance ajoutée avant l'accesseur | AC4 — `obtenu SettlementCounterpartyIsClaimAccount { … role: VatPayable … }` |
+  | M5 type attendu `Asset` en dur | 13 échecs sur 36 |
+  | M6 repli Rust à l'ancienne phrase | G9 `les_replis_rust_suivent_le_catalogue` (31 tests) |
+  | M7 *(neuve, proposée par A et E)* refus du non imputable retiré | `an_archived_vat_payable_account_is_refused` — le solde réussit |
+- **Gate de remédiation** : `test-fast-ci-34a2dbee1.log` (voir le Change Log pour le chiffre). Vitest non rejoué : aucun
+  fichier de `frontend/src` ne change (seule la spec E2E). `gate-ci` et E2E complet : à la clôture.
 
 ### Completion Notes List
 
