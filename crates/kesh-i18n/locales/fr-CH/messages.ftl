@@ -3947,3 +3947,6 @@ opening-balances-fx-provenance-saisi-source = cours saisi ({ $source })
 opening-balances-fx-rate = Cours
 opening-balances-fx-rounds-to-zero = Le montant en CHF calculé s’arrondit à zéro.
 settings-invoicing-account-foreign = (en devise : à remplacer)
+reconciliation-failed-account-requires-currency = Le compte de contrepartie est tenu en devise : un rapprochement passe en CHF. Choisissez un compte en CHF, ou passez l’écriture en devise depuis le journal.
+reconciliation-failed-fx-multiple-currencies = L’écriture porterait deux devises étrangères : une écriture n’en porte qu’une.
+reconciliation-failed-fx-revaluation = L’écriture visée est une réévaluation des comptes en devise : elle ne se modifie pas.

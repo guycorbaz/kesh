@@ -1042,8 +1042,9 @@ const ATTENDU = {
 	// `VatPurchaseAssistant.svelte` +5, `opening-fx.ts` 5 (neuf), `journal-entries/conversion/
 	// +page.svelte` 4 (neuf), `fx-display.ts` 3 (neuf), `blocker-messages.ts` +1,
 	// `journal-entries/+page.svelte` +1, `settings/invoicing/+page.svelte` +1 — total 104. Que
-	// des littéraux.
-	sitesTotal: 3289,
+	// des littéraux. Puis **3289 → 3292** : `reconciliation/failed-proposal-label.ts` +3 (les
+	// codes de lot propres aux devises, reçus de la 37-3a), relevé par la garde.
+	sitesTotal: 3292,
 	sitesNonResolus: 31,
 	relais: 6,
 	// Story 26-1 (#620, AC3-bis) : **10 → 11** — `lib/features/bank-import/

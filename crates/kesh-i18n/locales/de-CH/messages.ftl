@@ -3868,3 +3868,6 @@ opening-balances-fx-provenance-saisi-source = erfasster Kurs ({ $source })
 opening-balances-fx-rate = Kurs
 opening-balances-fx-rounds-to-zero = Der berechnete CHF-Betrag rundet auf null.
 settings-invoicing-account-foreign = (in Fremdwährung: zu ersetzen)
+reconciliation-failed-account-requires-currency = Das Gegenkonto wird in Fremdwährung geführt: Ein Abgleich läuft in CHF. Wählen Sie ein CHF-Konto oder buchen Sie die Fremdwährungsbuchung im Journal.
+reconciliation-failed-fx-multiple-currencies = Die Buchung trüge zwei Fremdwährungen: Eine Buchung trägt nur eine.
+reconciliation-failed-fx-revaluation = Die betroffene Buchung ist eine Neubewertung der Fremdwährungskonten: Sie wird nicht geändert.

@@ -3869,3 +3869,6 @@ opening-balances-fx-provenance-saisi-source = tasso inserito ({ $source })
 opening-balances-fx-rate = Tasso
 opening-balances-fx-rounds-to-zero = L’importo in CHF calcolato si arrotonda a zero.
 settings-invoicing-account-foreign = (in valuta: da sostituire)
+reconciliation-failed-account-requires-currency = Il conto di contropartita è tenuto in valuta: una riconciliazione avviene in CHF. Scegliete un conto in CHF, oppure registrate la scrittura in valuta dal giornale.
+reconciliation-failed-fx-multiple-currencies = La registrazione porterebbe due valute estere: una registrazione ne porta una sola.
+reconciliation-failed-fx-revaluation = La registrazione interessata è una rivalutazione dei conti in valuta: non si modifica.

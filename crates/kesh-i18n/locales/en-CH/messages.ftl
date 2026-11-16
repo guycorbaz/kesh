@@ -3874,3 +3874,6 @@ opening-balances-fx-provenance-saisi-source = entered rate ({ $source })
 opening-balances-fx-rate = Rate
 opening-balances-fx-rounds-to-zero = The computed CHF amount rounds to zero.
 settings-invoicing-account-foreign = (in foreign currency: to be replaced)
+reconciliation-failed-account-requires-currency = The counterpart account is kept in a foreign currency: a reconciliation is posted in CHF. Choose a CHF account, or post the foreign-currency entry from the journal.
+reconciliation-failed-fx-multiple-currencies = The entry would carry two foreign currencies: an entry carries only one.
+reconciliation-failed-fx-revaluation = The targeted entry is a revaluation of the foreign-currency accounts: it is not modified.
