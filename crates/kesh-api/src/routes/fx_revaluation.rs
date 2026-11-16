@@ -43,13 +43,13 @@ use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 
 use kesh_db::entities::audit_log::Acteur;
-use kesh_db::entities::{AccountType, FiscalYear, FiscalYearStatus, FxAccountsOrigin};
-use kesh_db::errors::{DbError, FxAccountField, FxAccountReason, map_db_error};
+use kesh_db::entities::{AccountType, FiscalYear, FiscalYearStatus, FxAccounts, FxAccountsOrigin};
+use kesh_db::errors::{DbError, map_db_error};
 use kesh_db::repositories::fx_revaluation::{
     self as depot, DefaultRate, LineOutcome, MAX_ACCOUNTS, MAX_CURRENCIES, PostRequest,
     RetainedRate, RevaluationAccountReason, RevaluationLine,
 };
-use kesh_db::repositories::{accounts, companies, fiscal_years};
+use kesh_db::repositories::{companies, fiscal_years};
 
 use crate::AppState;
 use crate::errors::AppError;
@@ -593,22 +593,13 @@ pub async fn preview_revaluation(
             .await,
         );
     }
-    for line in lines.iter().filter(|l| selected.contains(&l.account.id)) {
-        let verdict = match line.fx_accounts {
-            None => Err(DbError::FxAccountInvalid {
-                field: FxAccountField::Gain,
-                reason: FxAccountReason::Missing,
-                holder_account_id: Some(line.account.id),
-            }),
-            Some(fx) => {
-                match accounts::validate_fx_accounts_in_tx(&mut conn, company_id, &fx).await {
-                    Err(e @ DbError::FxAccountInvalid { .. }) => Err(e),
-                    Err(e) => return Err(AppError::Database(e)),
-                    Ok(()) => Ok(()),
-                }
-            }
-        };
-        if let Err(e) = verdict {
+    let pairs: Vec<(i64, Option<FxAccounts>)> = lines
+        .iter()
+        .filter(|l| selected.contains(&l.account.id))
+        .map(|l| (l.account.id, l.fx_accounts))
+        .collect();
+    for (_, verdict) in depot::fx_account_verdicts(&mut conn, company_id, &pairs).await? {
+        if let Some(e) = verdict {
             blockers.push(blocker_de(AppError::Database(e)).await);
         }
     }

@@ -108,7 +108,13 @@ struct Ctx {
     eur: i64,
 }
 
-async fn compte(pool: &MySqlPool, company_id: i64, numero: &str, typ: &str, devise: Option<&str>) -> i64 {
+async fn compte(
+    pool: &MySqlPool,
+    company_id: i64,
+    numero: &str,
+    typ: &str,
+    devise: Option<&str>,
+) -> i64 {
     sqlx::query(
         "INSERT INTO accounts (company_id, number, name, account_type, currency) \
          VALUES (?, ?, ?, ?, ?)",
@@ -124,7 +130,15 @@ async fn compte(pool: &MySqlPool, company_id: i64, numero: &str, typ: &str, devi
     .last_insert_id() as i64
 }
 
-async fn cours(pool: &MySqlPool, company_id: i64, devise: &str, genre: &str, date: &str, taux: &str, source: &str) {
+async fn cours(
+    pool: &MySqlPool,
+    company_id: i64,
+    devise: &str,
+    genre: &str,
+    date: &str,
+    taux: &str,
+    source: &str,
+) {
     sqlx::query(
         "INSERT INTO exchange_rates (company_id, currency, kind, rate_date, rate, source) \
          VALUES (?, ?, ?, ?, ?, ?)",
@@ -213,7 +227,10 @@ async fn appel(ctx: &Ctx, jeton: &str, chemin: &str, body: &Value) -> (u16, Valu
     let r = ctx
         .app
         .client
-        .post(format!("{}/api/v1/fiscal-years/{}/{chemin}", ctx.app.base_url, ctx.fy))
+        .post(format!(
+            "{}/api/v1/fiscal-years/{}/{chemin}",
+            ctx.app.base_url, ctx.fy
+        ))
         .bearer_auth(jeton)
         .json(body)
         .send()
@@ -343,7 +360,16 @@ async fn apercu_forme_et_cours_par_defaut(pool: MySqlPool) {
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn apercu_surcharge_et_devise_sans_cours(pool: MySqlPool) {
     let ctx = monter(&pool).await;
-    cours(&pool, ctx.s.company_id, "USD", "day", "2024-12-31", "0.91193", "afc").await;
+    cours(
+        &pool,
+        ctx.s.company_id,
+        "USD",
+        "day",
+        "2024-12-31",
+        "0.91193",
+        "afc",
+    )
+    .await;
     let (st, v) = apercu(&ctx, &json!({ "rates": { "USD": "0.911930" } })).await;
     assert_eq!(st, 200, "{v}");
     assert_eq!(cours_de(&v, "USD")["rateKind"], "day");
@@ -401,7 +427,10 @@ async fn apercu_blockers_sur_la_selection(pool: MySqlPool) {
     assert_eq!(ligne(&v, ctx.usd)["selected"], false);
     // La passation : refusée avec, admise sans.
     let (st, e) = passer(&ctx, &json!({ "accountIds": [ctx.usd, ctx.eur] })).await;
-    assert_eq!((st, e["error"]["code"].as_str()), (400, Some("FX_ACCOUNT_INVALID")));
+    assert_eq!(
+        (st, e["error"]["code"].as_str()),
+        (400, Some("FX_ACCOUNT_INVALID"))
+    );
     let (st, _) = passer(&ctx, &json!({ "accountIds": [ctx.eur] })).await;
     assert_eq!(st, 200);
 
@@ -445,7 +474,12 @@ async fn preselection_tronquee_et_bornes_des_comptes(pool: MySqlPool) {
     let (st, v) = apercu(&ctx, &json!({})).await;
     assert_eq!(st, 200);
     assert_eq!(v["preselectionTruncated"], true);
-    let coches = v["lines"].as_array().unwrap().iter().filter(|l| l["selected"] == true).count();
+    let coches = v["lines"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|l| l["selected"] == true)
+        .count();
     assert_eq!(coches, 498);
     let (st, _) = passer(&ctx, &json!({ "accountIds": ids })).await;
     assert_eq!(st, 200, "498 comptes acceptés");
@@ -467,11 +501,19 @@ async fn refus_de_forme_et_d_etat(pool: MySqlPool) {
 
     // Cours invalides : 0, négatif, 11 décimales, > 10⁶, devise sans compte.
     for taux in ["0", "-1", "0.12345678901", "1000000.5"] {
-        let (st, v) = passer(&ctx, &json!({ "rates": { "USD": taux }, "accountIds": [ctx.usd] })).await;
+        let (st, v) = passer(
+            &ctx,
+            &json!({ "rates": { "USD": taux }, "accountIds": [ctx.usd] }),
+        )
+        .await;
         assert_eq!((st, code(&v).as_str()), (400, "FX_RATE_INVALID"), "{taux}");
         assert_eq!(v["error"]["details"]["currency"], "USD");
     }
-    let (st, v) = passer(&ctx, &json!({ "rates": { "GBP": "1.1" }, "accountIds": [ctx.usd] })).await;
+    let (st, v) = passer(
+        &ctx,
+        &json!({ "rates": { "GBP": "1.1" }, "accountIds": [ctx.usd] }),
+    )
+    .await;
     assert_eq!((st, code(&v).as_str()), (400, "FX_RATE_INVALID"));
     assert_eq!(v["error"]["details"]["currency"], "GBP");
     let cent_une: serde_json::Map<String, Value> =
@@ -482,9 +524,15 @@ async fn refus_de_forme_et_d_etat(pool: MySqlPool) {
 
     // accountIds : vide, en double ; étranger et inexistant → réponses identiques.
     let (st, v) = passer(&ctx, &json!({ "accountIds": [] })).await;
-    assert_eq!((st, v["error"]["details"]["reason"].as_str()), (400, Some("empty")));
+    assert_eq!(
+        (st, v["error"]["details"]["reason"].as_str()),
+        (400, Some("empty"))
+    );
     let (st, v) = passer(&ctx, &json!({ "accountIds": [ctx.usd, ctx.usd] })).await;
-    assert_eq!((st, v["error"]["details"]["reason"].as_str()), (400, Some("duplicate")));
+    assert_eq!(
+        (st, v["error"]["details"]["reason"].as_str()),
+        (400, Some("duplicate"))
+    );
     let autre = sqlx::query(
         "INSERT INTO companies (name, address, org_type, accounting_language, instance_language) \
          VALUES ('Autre société', 'Rue 1\n1000 Lausanne', 'Independant', 'FR', 'FR')",
@@ -502,7 +550,10 @@ async fn refus_de_forme_et_d_etat(pool: MySqlPool) {
     assert_eq!(v1["error"]["code"], v2["error"]["code"]);
     // Compte de résultat et compte CHF : notEligible.
     let (st, v) = passer(&ctx, &json!({ "accountIds": [ctx.gain] })).await;
-    assert_eq!((st, v["error"]["details"]["reason"].as_str()), (400, Some("notEligible")));
+    assert_eq!(
+        (st, v["error"]["details"]["reason"].as_str()),
+        (400, Some("notEligible"))
+    );
 
     // Cours par défaut manquant (EUR) : 404 RATE_UNAVAILABLE, même avec un
     // exercice antérieur ouvert (refus d'avant la transaction d'abord).
@@ -537,7 +588,11 @@ async fn refus_de_forme_et_d_etat(pool: MySqlPool) {
         .unwrap();
     for chemin in ["fx-revaluation/preview", "fx-revaluation"] {
         let (st, v) = appel(&ctx, &ctx.jwt, chemin, &json!({ "accountIds": [ctx.usd] })).await;
-        assert_eq!((st, code(&v).as_str()), (409, "MULTI_CURRENCY_DISABLED"), "{chemin}");
+        assert_eq!(
+            (st, code(&v).as_str()),
+            (409, "MULTI_CURRENCY_DISABLED"),
+            "{chemin}"
+        );
         assert_eq!(v["error"]["details"]["fiscalYearId"], ctx.fy);
     }
     assert_eq!(nb_reevaluations(&pool).await, 0);
@@ -549,7 +604,16 @@ async fn refus_de_forme_et_d_etat(pool: MySqlPool) {
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn rbac_et_cle_d_api(pool: MySqlPool) {
     let ctx = monter(&pool).await;
-    cours(&pool, ctx.s.company_id, "USD", "day", "2024-12-31", "0.92", "afc").await;
+    cours(
+        &pool,
+        ctx.s.company_id,
+        "USD",
+        "day",
+        "2024-12-31",
+        "0.92",
+        "afc",
+    )
+    .await;
     // Exercice d'une autre société.
     let autre = sqlx::query(
         "INSERT INTO companies (name, address, org_type, accounting_language, instance_language) \
@@ -571,7 +635,10 @@ async fn rbac_et_cle_d_api(pool: MySqlPool) {
     let r = ctx
         .app
         .client
-        .post(format!("{}/api/v1/fiscal-years/{fy_autre}/fx-revaluation/preview", ctx.app.base_url))
+        .post(format!(
+            "{}/api/v1/fiscal-years/{fy_autre}/fx-revaluation/preview",
+            ctx.app.base_url
+        ))
         .bearer_auth(&ctx.jwt)
         .json(&json!({}))
         .send()
@@ -620,7 +687,10 @@ async fn rbac_et_cle_d_api(pool: MySqlPool) {
                 .unwrap();
             assert_eq!(r.status().as_u16(), 201);
             let b: Value = r.json().await.unwrap();
-            (b["key"].as_str().unwrap().to_string(), b["id"].as_i64().unwrap())
+            (
+                b["key"].as_str().unwrap().to_string(),
+                b["id"].as_i64().unwrap(),
+            )
         }
     };
     let (lecture, _) = cle("read").await;
@@ -654,10 +724,11 @@ async fn rbac_et_cle_d_api(pool: MySqlPool) {
     // Rejeu : rien à passer, `{ entryIds: [] }`, aucune seconde trace.
     let (st, v) = passer(&ctx, &json!({ "accountIds": [ctx.usd] })).await;
     assert_eq!((st, v["entryIds"].clone()), (200, json!([])));
-    let n: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM audit_log WHERE action = 'fx_revaluation.posted'")
-        .fetch_one(&pool)
-        .await
-        .unwrap();
+    let n: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM audit_log WHERE action = 'fx_revaluation.posted'")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
     assert_eq!(n, 1);
 }
 
@@ -674,7 +745,10 @@ async fn cloture_refusee_par_k9(pool: MySqlPool) {
         let r = ctx
             .app
             .client
-            .post(format!("{}/api/v1/fiscal-years/{}/close", ctx.app.base_url, ctx.fy))
+            .post(format!(
+                "{}/api/v1/fiscal-years/{}/close",
+                ctx.app.base_url, ctx.fy
+            ))
             .bearer_auth(&ctx.jwt)
             .json(&json!({}))
             .send()
@@ -687,7 +761,10 @@ async fn cloture_refusee_par_k9(pool: MySqlPool) {
         let r = ctx
             .app
             .client
-            .get(format!("{}/api/v1/fiscal-years/{}/closing-checks", ctx.app.base_url, ctx.fy))
+            .get(format!(
+                "{}/api/v1/fiscal-years/{}/closing-checks",
+                ctx.app.base_url, ctx.fy
+            ))
             .bearer_auth(&ctx.jwt)
             .send()
             .await
@@ -701,10 +778,18 @@ async fn cloture_refusee_par_k9(pool: MySqlPool) {
     let (st, v) = fermer().await;
     assert_eq!(st, 409, "{v}");
     assert_eq!(v["error"]["code"], "FOREIGN_ACCOUNTS_NOT_REVALUED");
-    assert_eq!(v["error"]["details"], k["checks"][8]["details"], "mêmes détails que K9");
+    assert_eq!(
+        v["error"]["details"], k["checks"][8]["details"],
+        "mêmes détails que K9"
+    );
     assert_eq!(v["error"]["details"]["accounts"][0]["accountId"], ctx.usd);
     assert_eq!(v["error"]["details"]["accounts"][0]["delta"], "40.00");
-    assert!(v["error"]["message"].as_str().unwrap().contains("Réévaluez"));
+    assert!(
+        v["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("Réévaluez")
+    );
 
     let (st, _) = passer(&ctx, &json!({ "accountIds": [ctx.usd, ctx.eur] })).await;
     assert_eq!(st, 200);

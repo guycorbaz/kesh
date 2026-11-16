@@ -70,13 +70,16 @@ impl App {
         (st, r.json().await.unwrap_or(Value::Null))
     }
     async fn post(&self, jeton: &str, chemin: &str, corps: &Value) -> (u16, Value) {
-        self.envoyer(reqwest::Method::POST, jeton, chemin, Some(corps)).await
+        self.envoyer(reqwest::Method::POST, jeton, chemin, Some(corps))
+            .await
     }
     async fn put(&self, jeton: &str, chemin: &str, corps: &Value) -> (u16, Value) {
-        self.envoyer(reqwest::Method::PUT, jeton, chemin, Some(corps)).await
+        self.envoyer(reqwest::Method::PUT, jeton, chemin, Some(corps))
+            .await
     }
     async fn get(&self, jeton: &str, chemin: &str) -> (u16, Value) {
-        self.envoyer(reqwest::Method::GET, jeton, chemin, None).await
+        self.envoyer(reqwest::Method::GET, jeton, chemin, None)
+            .await
     }
     async fn login(&self, nom: &str, mot: &str) -> String {
         let r: Value = self
@@ -121,14 +124,18 @@ async fn spawn(pool: &MySqlPool) -> App {
         .expect("load test i18n"),
     );
     kesh_api::errors::init_error_i18n(i18n.clone(), config.locale);
-    let state = AppState::new_for_tests(pool.clone(), Arc::new(config), Arc::new(rate_limiter), i18n);
+    let state =
+        AppState::new_for_tests(pool.clone(), Arc::new(config), Arc::new(rate_limiter), i18n);
     let app = build_router(state, "nonexistent-static-dir".to_string());
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr: SocketAddr = listener.local_addr().unwrap();
     tokio::spawn(async move {
-        axum::serve(listener, app.into_make_service_with_connect_info::<SocketAddr>())
-            .await
-            .unwrap();
+        axum::serve(
+            listener,
+            app.into_make_service_with_connect_info::<SocketAddr>(),
+        )
+        .await
+        .unwrap();
     });
     App {
         base: format!("http://{addr}"),
@@ -137,7 +144,11 @@ async fn spawn(pool: &MySqlPool) -> App {
 }
 
 fn dec_de(v: &Value) -> Decimal {
-    Decimal::from_str(v.as_str().unwrap_or_else(|| panic!("décimal attendu : {v}"))).unwrap()
+    Decimal::from_str(
+        v.as_str()
+            .unwrap_or_else(|| panic!("décimal attendu : {v}")),
+    )
+    .unwrap()
 }
 
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
@@ -169,7 +180,8 @@ async fn recette_multi_devises_par_l_api(pool: MySqlPool) {
         let app = &app;
         let compta = compta.clone();
         async move {
-            let mut corps = json!({ "number": numero, "name": nom, "accountType": typ, "postable": true });
+            let mut corps =
+                json!({ "number": numero, "name": nom, "accountType": typ, "postable": true });
             for (k, v) in extra.as_object().unwrap() {
                 corps[k] = v.clone();
             }
@@ -225,8 +237,13 @@ async fn recette_multi_devises_par_l_api(pool: MySqlPool) {
     let fy = v["id"].as_i64().unwrap();
 
     // Récupération des cours (source factice) : mars 2024 et le 31.12.2024.
-    for corps in [json!({ "year": 2024, "month": 3 }), json!({ "date": "2024-12-31" })] {
-        let (st, v) = app.post(&compta, "/api/v1/exchange-rates/fetch", &corps).await;
+    for corps in [
+        json!({ "year": 2024, "month": 3 }),
+        json!({ "date": "2024-12-31" }),
+    ] {
+        let (st, v) = app
+            .post(&compta, "/api/v1/exchange-rates/fetch", &corps)
+            .await;
         assert_eq!(st, 200, "récupération {corps} : {v}");
     }
 
@@ -255,7 +272,7 @@ async fn recette_multi_devises_par_l_api(pool: MySqlPool) {
     // (1) Au cours retenu (0.88), sans `rateSource` : relue `afc`.
     let e1 = ecrire(
         json!({ "accountId": usd, "debit": "880.00", "foreign": { "amount": "1000", "rate": "0.88" } }),
-        json!({ "accountId": caisse, "credit": "880.00" }),
+        json!({ "accountId": caisse, "debit": "0", "credit": "880.00" }),
     )
     .await;
     assert_eq!(e1["lines"][0]["foreign"]["rateSource"], "afc", "{e1}");
@@ -263,7 +280,7 @@ async fn recette_multi_devises_par_l_api(pool: MySqlPool) {
     // cours retenu exact (A32).
     let e2 = ecrire(
         json!({ "accountId": eur, "debit": "186.00", "foreign": { "amount": "200", "chf": "186.00" } }),
-        json!({ "accountId": caisse, "credit": "186.00" }),
+        json!({ "accountId": caisse, "debit": "0", "credit": "186.00" }),
     )
     .await;
     assert_eq!(e2["lines"][0]["foreign"]["rateSource"], "afc", "{e2}");
@@ -272,7 +289,7 @@ async fn recette_multi_devises_par_l_api(pool: MySqlPool) {
     // `manual`, au cours déduit 0.9.
     let e3 = ecrire(
         json!({ "accountId": usd, "debit": "90.00", "foreign": { "amount": "100", "chf": "90.00" } }),
-        json!({ "accountId": caisse, "credit": "90.00" }),
+        json!({ "accountId": caisse, "debit": "0", "credit": "90.00" }),
     )
     .await;
     assert_eq!(e3["lines"][0]["foreign"]["rateSource"], "manual", "{e3}");
@@ -280,7 +297,7 @@ async fn recette_multi_devises_par_l_api(pool: MySqlPool) {
     // (4) Sans débit ni crédit, par `side` : 50 USD au crédit, 44.00 CHF.
     let e4 = ecrire(
         json!({ "accountId": usd, "foreign": { "amount": "50", "rate": "0.88", "side": "credit" } }),
-        json!({ "accountId": caisse, "debit": "44.00" }),
+        json!({ "accountId": caisse, "debit": "44.00", "credit": "0" }),
     )
     .await;
     assert_eq!(dec_de(&e4["lines"][0]["credit"]), dec!(44.00), "{e4}");
@@ -325,12 +342,11 @@ async fn recette_multi_devises_par_l_api(pool: MySqlPool) {
     assert_eq!(ids.len(), 2, "une écriture par compte (USD, EUR)");
     // Genre `request` et source `manual` pour chaque devise : les deux cours
     // diffèrent des cours journaliers factices (0.89120, 0.94450).
-    let (details,): (Value,) = sqlx::query_as(
-        "SELECT details_json FROM audit_log WHERE action = 'fx_revaluation.posted'",
-    )
-    .fetch_one(&pool)
-    .await
-    .unwrap();
+    let (details,): (Value,) =
+        sqlx::query_as("SELECT details_json FROM audit_log WHERE action = 'fx_revaluation.posted'")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
     for devise in ["USD", "EUR"] {
         assert_eq!(details["rateKinds"][devise], "request", "{details}");
         assert_eq!(details["sources"][devise], "manual", "{details}");
@@ -338,7 +354,10 @@ async fn recette_multi_devises_par_l_api(pool: MySqlPool) {
 
     // Rapports : solde CHF au 31.12.2024 = round(solde en devise × cours).
     let (st, balance) = app
-        .get(&compta, &format!("/api/v1/reports/trial-balance?fiscalYearId={fy}"))
+        .get(
+            &compta,
+            &format!("/api/v1/reports/trial-balance?fiscalYearId={fy}"),
+        )
         .await;
     assert_eq!(st, 200, "{balance}");
     let ligne = |id: i64| {
@@ -355,12 +374,26 @@ async fn recette_multi_devises_par_l_api(pool: MySqlPool) {
     // EUR : 200 × 0.94947 = 189.89.
     assert_eq!(dec_de(&ligne(eur)["closingBalance"]), dec!(189.89));
     assert_eq!(dec_de(&ligne(eur)["closingCurrency"]), dec!(200));
-    for rapport in ["balance-sheet", "general-ledger"] {
-        let (st, v) = app
-            .get(&compta, &format!("/api/v1/reports/{rapport}?fiscalYearId={fy}"))
-            .await;
-        assert_eq!(st, 200, "{rapport} : {v}");
-    }
+    let (st, v) = app
+        .get(
+            &compta,
+            &format!("/api/v1/reports/balance-sheet?fiscalYearId={fy}"),
+        )
+        .await;
+    assert_eq!(st, 200, "bilan : {v}");
+    let (st, v) = app
+        .get(
+            &compta,
+            &format!(
+                "/api/v1/reports/general-ledger?from=2024-01-01&to=2024-12-31&accountIds={usd}"
+            ),
+        )
+        .await;
+    assert_eq!(st, 200, "grand livre : {v}");
+    assert!(
+        v.to_string().contains("957.53"),
+        "grand livre du compte USD : {v}"
+    );
 
     // Lecture MCP (V12) : serveur activé par l'Administrateur, filtre
     // d'adresse admettant le pair du banc, clé `books:read` dispensée de
@@ -392,12 +425,17 @@ async fn recette_multi_devises_par_l_api(pool: MySqlPool) {
     let jeton = cle["key"].as_str().unwrap().to_string();
     let b = banc(&pool);
     let liste = structure(
-        &b.appeler(&jeton, "kesh_ecritures", json!({ "accountId": usd })).await,
+        &b.appeler(&jeton, "kesh_ecritures", json!({ "accountId": usd }))
+            .await,
         "kesh_ecritures",
     );
-    assert!(liste["ecritures"].as_array().is_some_and(|e| !e.is_empty()), "{liste}");
+    assert!(
+        liste["ecritures"].as_array().is_some_and(|e| !e.is_empty()),
+        "{liste}"
+    );
     let ecriture = structure(
-        &b.appeler(&jeton, "kesh_ecriture", json!({ "id": ids[0] })).await,
+        &b.appeler(&jeton, "kesh_ecriture", json!({ "id": ids[0] }))
+            .await,
         "kesh_ecriture",
     );
     let lignes = ecriture["ecriture"]["lignes"].as_array().unwrap();

@@ -251,7 +251,10 @@ async fn closing_checks_are_served_to_every_role(pool: MySqlPool) {
         );
         assert_eq!(body["checks"][8]["severity"], "blocking");
         assert_eq!(body["checks"][8]["status"], "ok");
-        assert_eq!(body["checks"][8]["details"]["accounts"], serde_json::json!([]));
+        assert_eq!(
+            body["checks"][8]["details"]["accounts"],
+            serde_json::json!([])
+        );
         let k3 = &body["checks"][2];
         assert_eq!(k3["status"], "attention");
         assert_eq!(k3["severity"], "warning");

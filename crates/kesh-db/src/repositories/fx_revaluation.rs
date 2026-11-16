@@ -604,6 +604,68 @@ pub fn revaluation_label(
 }
 
 // ---------------------------------------------------------------------------
+// Comptes de différence employés
+// ---------------------------------------------------------------------------
+
+/// Les verdicts des comptes de différence **employés** par des comptes (S2,
+/// AC-4) : pour chaque `(compte, comptes résolus)`, `None` si sa paire est
+/// valide, sinon le refus `FxAccountInvalid` — `reason: missing` (champ des
+/// gains, `holderAccountId` = le compte) quand rien n'est résolu. Les paires
+/// sont revalidées par [`accounts::validate_fx_accounts_in_tx`] (réglages,
+/// comptes, articles `LOCK IN SHARE MODE`) ; la paire **de la société**, la
+/// même pour tous les comptes qui la suivent, ne l'est qu'une fois. Une erreur
+/// de base se propage aussitôt. Partagé par l'aperçu (`blockers[]`) et la
+/// passation (dans l'ordre des comptes reçus, verdicts gardés sans être
+/// propagés).
+pub async fn fx_account_verdicts(
+    conn: &mut MySqlConnection,
+    company_id: i64,
+    accounts: &[(i64, Option<FxAccounts>)],
+) -> Result<Vec<(i64, Option<DbError>)>, DbError> {
+    let mut company_pair: Option<Option<(FxAccountField, FxAccountReason)>> = None;
+    let mut out = Vec::with_capacity(accounts.len());
+    for (account_id, fx) in accounts {
+        let verdict = match fx {
+            None => Some(DbError::FxAccountInvalid {
+                field: FxAccountField::Gain,
+                reason: FxAccountReason::Missing,
+                holder_account_id: Some(*account_id),
+            }),
+            Some(fx) if fx.origin == FxAccountsOrigin::Company => {
+                if company_pair.is_none() {
+                    company_pair = Some(
+                        match accounts::validate_fx_accounts_in_tx(&mut *conn, company_id, fx).await
+                        {
+                            Ok(()) => None,
+                            Err(DbError::FxAccountInvalid { field, reason, .. }) => {
+                                Some((field, reason))
+                            }
+                            Err(e) => return Err(e),
+                        },
+                    );
+                }
+                company_pair
+                    .flatten()
+                    .map(|(field, reason)| DbError::FxAccountInvalid {
+                        field,
+                        reason,
+                        holder_account_id: None,
+                    })
+            }
+            Some(fx) => {
+                match accounts::validate_fx_accounts_in_tx(&mut *conn, company_id, fx).await {
+                    Ok(()) => None,
+                    Err(e @ DbError::FxAccountInvalid { .. }) => Some(e),
+                    Err(e) => return Err(e),
+                }
+            }
+        };
+        out.push((*account_id, verdict));
+    }
+    Ok(out)
+}
+
+// ---------------------------------------------------------------------------
 // Passation
 // ---------------------------------------------------------------------------
 
@@ -740,23 +802,15 @@ async fn post_in_tx(
 
     // Comptes de différence de chaque compte sélectionné : résolus, puis
     // revalidés (verrous) ; le verdict gardé par compte, sans être propagé.
-    let mut fx_verdicts: HashMap<i64, Result<(), DbError>> = HashMap::new();
-    for account in &selected {
-        let verdict = match fx_for(company_fx, account) {
-            None => Err(DbError::FxAccountInvalid {
-                field: FxAccountField::Gain,
-                reason: FxAccountReason::Missing,
-                holder_account_id: Some(account.id),
-            }),
-            Some(fx) => match accounts::validate_fx_accounts_in_tx(&mut *tx, company_id, &fx).await
-            {
-                Ok(()) => Ok(()),
-                Err(e @ DbError::FxAccountInvalid { .. }) => Err(e),
-                Err(e) => return Err(e),
-            },
-        };
-        fx_verdicts.insert(account.id, verdict);
-    }
+    let pairs: Vec<(i64, Option<FxAccounts>)> = selected
+        .iter()
+        .map(|a| (a.id, fx_for(company_fx, a)))
+        .collect();
+    let mut fx_verdicts: HashMap<i64, Option<DbError>> =
+        fx_account_verdicts(&mut *tx, company_id, &pairs)
+            .await?
+            .into_iter()
+            .collect();
 
     // (4) Les soldes, après tous les verrous (la vue naît ici).
     let ids: Vec<i64> = selected.iter().map(|a| a.id).collect();
@@ -779,7 +833,7 @@ async fn post_in_tx(
     }
     let eligible: Vec<&RevaluationAccount> = selected.iter().filter(|a| a.is_eligible()).collect();
     for account in &eligible {
-        if let Some(Err(e)) = fx_verdicts.remove(&account.id) {
+        if let Some(Some(e)) = fx_verdicts.remove(&account.id) {
             return Err(e);
         }
     }
