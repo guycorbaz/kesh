@@ -27,6 +27,7 @@
 //! | G22 | #503 | la sauvegarde automatique : le manuel dit la reprise au bout d'une heure et le bandeau à partir d'au moins deux intervalles ; le rappel de l'écran dit le volume (nombre conservé plus une, une par import jamais purgée) dans les quatre langues |
 //! | G23 | #723 | le serveur MCP : le manuel liste exactement les plages admises par défaut et les cinq portées (dans l'ordre), nomme `100.64.0.0/10` hors des défauts ; l'écran le nomme, ainsi que Traefik et Docker, dans les quatre langues |
 //! | G24 | #816 | la table des libellés de `reason` de l'écran de saisie d'un relevé (`manual-statement-reason-label.ts`) a exactement les clés de `ManualStatementReason::ALL`, dans les deux sens |
+//! | G25 | #1161 | l'axe analytique s'appelle « compte analytique » : ni « projet » ni sa traduction dans la valeur des quatre catalogues, les manuels français, `api-external.md`, le README et les littéraux de `routes/projects.rs` et `kesh-report/src/pdf.rs` (hors liste fermée d'exceptions au sens courant) |
 
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -2426,4 +2427,373 @@ fn g24_la_table_des_reason_egale_l_ensemble_ferme_du_serveur() {
         "G24 — `reason` sans libellé : {sans_libelle:?} ; libellé sans `reason` : {sans_reason:?}"
     );
     assert_eq!(table.len(), ManualStatementReason::COUNT);
+}
+
+// ---------------------------------------------------------------------------
+// G25 — l'axe analytique s'appelle « compte analytique » (Story 36-15, CR #1161)
+// ---------------------------------------------------------------------------
+
+/// L'ancien mot, par catalogue, et le terme arbitré que la valeur de `projects-title`
+/// doit porter (arbitrage de Guy du 2026-11-16, option A). Le motif anglais est borné
+/// par `\b` : « Projected schedule » (`dunning-example-heading`) n'est pas atteint.
+const G25_CATALOGUES: [(&str, &str, &str); 4] = [
+    ("fr-CH", r"(?i)projet", "comptes analytiques"),
+    ("de-CH", r"(?i)projekt", "analytische konten"),
+    ("it-CH", r"(?i)progett", "conti analitici"),
+    ("en-CH", r"(?i)\bprojects?\b", "analytical accounts"),
+];
+
+/// Les textes français lus en entier (manuels sans leurs commentaires LaTeX).
+const G25_DOCUMENTS: [&str; 5] = [
+    "docs/manual/fr/user-manual.tex",
+    "docs/manual/fr/admin-manual.tex",
+    "docs/manual/fr/marketing-brochure.tex",
+    "docs/api-external.md",
+    "README.md",
+];
+
+/// Les sources Rust dont les seuls **littéraux de chaîne** sont lus (hors modules de
+/// test) : messages de refus de `/api/v1/projects`, libellés du PDF des rapports.
+const G25_SOURCES_RUST: [&str; 2] = [
+    "crates/kesh-api/src/routes/projects.rs",
+    "crates/kesh-report/src/pdf.rs",
+];
+
+/// Liste fermée des « projet » au sens courant, **par extrait de texte** (comparé sans
+/// égard à la casse) et attachée à son seul fichier. Une occurrence n'est excusée que si
+/// sa ligne, dans son fichier, contient un extrait de ce fichier ; un extrait qui
+/// n'excuse plus aucune occurrence fait rougir. Les numéros de ligne des motifs ne
+/// sont qu'indicatifs (relevés à `0bf3c3b4b`).
+const G25_EXCEPTIONS: [(&str, &str, &str); 14] = [
+    (
+        "docs/manual/fr/admin-manual.tex",
+        "Container Manager",
+        "projet Docker Compose du Synology (:602)",
+    ),
+    (
+        "docs/manual/fr/admin-manual.tex",
+        "onglet \\textbf{Projet}",
+        "onglet de Container Manager (:608)",
+    ),
+    (
+        "docs/manual/fr/admin-manual.tex",
+        "nom du projet",
+        "champ de Container Manager (:612)",
+    ),
+    (
+        "docs/manual/fr/admin-manual.tex",
+        "nom de projet",
+        "nom de projet Compose (:1676, :1766, :1975)",
+    ),
+    (
+        "docs/manual/fr/admin-manual.tex",
+        "Démarrer le projet",
+        "bouton de Container Manager (:617)",
+    ),
+    (
+        "docs/manual/fr/admin-manual.tex",
+        "<projet>",
+        "préfixe Compose des volumes et réseaux (:1535, :2087, :2509, :2921)",
+    ),
+    (
+        "docs/manual/fr/admin-manual.tex",
+        "configuration des projets",
+        "sauvegarde de Container Manager (:2001)",
+    ),
+    (
+        "docs/manual/fr/admin-manual.tex",
+        "projet compose",
+        "projet Compose quelconque (:2167)",
+    ),
+    (
+        "docs/manual/fr/admin-manual.tex",
+        "projets Docker",
+        "autres projets Docker du NAS (:2198)",
+    ),
+    (
+        "docs/manual/fr/admin-manual.tex",
+        "racine du projet",
+        "dépôt de Claude Code, `.mcp.json` (:3616)",
+    ),
+    (
+        "docs/manual/fr/marketing-brochure.tex",
+        "documentation projet",
+        "documentation du projet Kesh (:498)",
+    ),
+    ("README.md", "Structure du projet", "le dépôt (:19, :106)"),
+    ("README.md", "Le projet suit", "le dépôt (:201)"),
+    (
+        "README.md",
+        "E19 Comptabilité analytique par projet",
+        "ligne historique de la v0.4.0 au tableau des versions (:218)",
+    ),
+];
+
+/// **Fonction pure de G25** — les littéraux de chaîne d'un source Rust, avec la ligne
+/// (1-basée) où chacun s'ouvre. Lexème par lexème : les commentaires `//` (doc-comments
+/// compris) et `/* … */` sont sautés **avant** d'apparier les guillemets, si bien qu'un
+/// `/// renvoie "projet"` ne rend rien ; les caractères (`'"'`, `'\''`) sont sautés ; un
+/// littéral continué par `\` en fin de ligne est rendu entier, échappements compris (le
+/// texte brut du source, non sa valeur) ; les chaînes brutes `r"…"`, `r#"…"#` sont lues.
+/// Angle mort : les commentaires de bloc imbriqués (`/* /* */ */`), absents des deux
+/// fichiers lus.
+fn litteraux_de_chaine(source: &str) -> Vec<(usize, String)> {
+    let b = source.as_bytes();
+    let mut out = Vec::new();
+    let mut ligne = 1usize;
+    let mut i = 0;
+    let avance = |i: &mut usize, ligne: &mut usize| {
+        if b[*i] == b'\n' {
+            *ligne += 1;
+        }
+        *i += 1;
+    };
+    while i < b.len() {
+        match b[i] {
+            b'/' if b.get(i + 1) == Some(&b'/') => {
+                while i < b.len() && b[i] != b'\n' {
+                    i += 1;
+                }
+            }
+            b'/' if b.get(i + 1) == Some(&b'*') => {
+                i += 2;
+                while i < b.len() && !(b[i] == b'*' && b.get(i + 1) == Some(&b'/')) {
+                    avance(&mut i, &mut ligne);
+                }
+                i += 2;
+            }
+            b'r' if (b.get(i + 1) == Some(&b'"') || b.get(i + 1) == Some(&b'#'))
+                && (i == 0 || !(b[i - 1].is_ascii_alphanumeric() || b[i - 1] == b'_')) =>
+            {
+                let mut j = i + 1;
+                let mut dieses = 0;
+                while b.get(j) == Some(&b'#') {
+                    dieses += 1;
+                    j += 1;
+                }
+                if b.get(j) != Some(&b'"') {
+                    i += 1;
+                    continue;
+                }
+                let fermeture: Vec<u8> = std::iter::once(b'"')
+                    .chain(std::iter::repeat_n(b'#', dieses))
+                    .collect();
+                let debut_ligne = ligne;
+                i = j + 1;
+                let debut = i;
+                while i < b.len() && !b[i..].starts_with(&fermeture) {
+                    avance(&mut i, &mut ligne);
+                }
+                out.push((debut_ligne, source[debut..i.min(b.len())].to_string()));
+                i += fermeture.len();
+            }
+            b'"' => {
+                let debut_ligne = ligne;
+                i += 1;
+                let debut = i;
+                while i < b.len() && b[i] != b'"' {
+                    if b[i] == b'\\' {
+                        i += 1;
+                        if i >= b.len() {
+                            break;
+                        }
+                    }
+                    avance(&mut i, &mut ligne);
+                }
+                out.push((debut_ligne, source[debut..i.min(b.len())].to_string()));
+                i += 1;
+            }
+            b'\'' => {
+                // Un caractère (`'"'`, `'\''`, `'\u{2013}'`) ; sinon une durée de vie.
+                if b.get(i + 1) == Some(&b'\\') {
+                    i += 2;
+                    while i < b.len() && b[i] != b'\'' {
+                        i += 1;
+                    }
+                    i += 1;
+                } else if let Some(c) = source[i + 1..].chars().next()
+                    && source[i + 1 + c.len_utf8()..].starts_with('\'')
+                {
+                    i += c.len_utf8() + 2;
+                } else {
+                    i += 1;
+                }
+            }
+            _ => avance(&mut i, &mut ligne),
+        }
+    }
+    out
+}
+
+/// Anti-test-muet de [`litteraux_de_chaine`], sur des sources synthétiques qui
+/// reprennent les formes présentes dans `routes/projects.rs` et `kesh-report/src/pdf.rs`.
+#[test]
+fn g25_l_extracteur_de_litteraux_de_chaine() {
+    let projet = Regex::new(r"(?i)projet").unwrap();
+    let avec = |source: &str| -> Vec<(usize, String)> {
+        litteraux_de_chaine(source)
+            .into_iter()
+            .filter(|(_, t)| projet.is_match(t))
+            .collect()
+    };
+    // Sonde positive : le message d'un refus.
+    assert_eq!(
+        avec("fn f() {\n    AppError::Validation(\"Le code du projet est requis.\".into())\n}\n"),
+        vec![(2, "Le code du projet est requis.".to_string())]
+    );
+    // Sonde positive : un littéral continué par `\` (forme de `pdf.rs:603-604`), dont la
+    // seconde ligne seule dit « projet », est rendu entier, à sa ligne d'ouverture.
+    let continue_ =
+        "let x = 1;\nlet m = \"balance_sheet PDF : … section \\\n    du projet (…)\";\n";
+    let rendu = avec(continue_);
+    assert_eq!(rendu.len(), 1, "{rendu:?}");
+    assert_eq!(rendu[0].0, 2);
+    assert!(
+        rendu[0].1.starts_with("balance_sheet PDF") && rendu[0].1.ends_with("du projet (…)"),
+        "{rendu:?}"
+    );
+    // Sonde positive : un échappement `\"` ne ferme pas le littéral.
+    assert_eq!(
+        avec("let s = \"un \\\"projet\\\" cité\";\n").len(),
+        1,
+        "échappement"
+    );
+    // Sondes positives : chaînes brutes (`r"…"`, `r#"…"#`), lues elles aussi.
+    assert_eq!(avec("let s = r\"le projet\";\n").len(), 1, "r\"…\"");
+    assert_eq!(avec("let s = r#\"le \"projet\"\"#;\n").len(), 1, "r#\"…\"#");
+    // Sondes négatives : commentaires, doc-comments, doc-comment à guillemets (forme de
+    // `pdf.rs:61`, `:885`), commentaire de bloc, caractères `'"'` et `'\''`, durées de vie.
+    for neg in [
+        "// projet\nfn f() {}\n",
+        "/// projet\nfn f() {}\n",
+        "//! le projet\n",
+        "/// renvoie \"projet\"\nfn f() {}\n",
+        "// Section vide : on note \"—\" pour le projet\nlet s = \"ok\";\n",
+        "/* \"projet\" */ let s = \"ok\";\n",
+        "let c = '\"'; // \"projet\"\nlet s = \"ok\";\n",
+        "let c = '\\''; let s = \"ok\"; // projet\n",
+        "fn f<'a>(x: &'a str) -> &'a str { x } // \"projet\"\n",
+    ] {
+        assert!(avec(neg).is_empty(), "sonde négative rendue : {neg:?}");
+    }
+    // Les littéraux sans « projet » sont rendus aussi, à leur ligne.
+    let tous = litteraux_de_chaine("let a = \"x\";\n/* \n */\nlet b = \"y\";\n");
+    assert_eq!(tous, vec![(1, "x".to_string()), (4, "y".to_string())]);
+}
+
+/// Les lignes d'un texte où un motif se rencontre, avec leur numéro (1-basé).
+fn lignes_ou<'a>(texte: &'a str, motif: &Regex) -> Vec<(usize, &'a str)> {
+    texte
+        .lines()
+        .enumerate()
+        .filter(|(_, l)| motif.is_match(l))
+        .map(|(n, l)| (n + 1, l))
+        .collect()
+}
+
+/// **G25** (CR #1161, Story 36-15, AC-1, AC-7) — l'axe analytique s'appelle « compte
+/// analytique » partout où l'utilisateur le lit : aucune occurrence de l'ancien mot, sans
+/// égard à la casse,
+/// - dans la **valeur** des quatre catalogues (le texte après le premier ` = `, les
+///   lignes de continuation) et dans leurs commentaires `#` — les **clés**
+///   (`nav-projects`, `projects-title`…) ne sont pas lues, ce sont des identifiants (D3) ;
+///   aucune exception ;
+/// - dans les trois manuels français (sans leurs commentaires LaTeX), `api-external.md`
+///   et `README.md`, hors la liste fermée [`G25_EXCEPTIONS`] ;
+/// - dans les **seuls littéraux de chaîne** de `routes/projects.rs` et
+///   `kesh-report/src/pdf.rs`, hors modules de test ; les commentaires restent hors de la
+///   garde (D6). Aucune exception.
+///
+/// Les en-têtes CSV `Projet;SousProjet` (`kesh-report/src/csv.rs`) et les textes internes
+/// (`DbError`, `kesh-report/src/errors.rs`) ne sont pas lus (D5, D6).
+#[test]
+fn le_vocabulaire_analytique_est_compte_analytique() {
+    let tete = Regex::new(r"^[a-zA-Z][\w-]* = ?(.*)$").unwrap();
+    let mut ecarts: Vec<String> = Vec::new();
+
+    // 1. Catalogues : valeur et commentaires ; preuve de lecture par `projects-title`.
+    for (locale, motif, terme) in G25_CATALOGUES {
+        let motif = Regex::new(motif).unwrap();
+        let chemin = format!("crates/kesh-i18n/locales/{locale}/messages.ftl");
+        let texte = lire(&chemin);
+        for (n, ligne) in texte.lines().enumerate() {
+            let lu = match tete.captures(ligne) {
+                Some(c) => c.get(1).map_or("", |m| m.as_str()),
+                None => ligne,
+            };
+            if motif.is_match(lu) {
+                ecarts.push(format!("{chemin}:{} : {}", n + 1, ligne.trim()));
+            }
+        }
+        let titre = catalogue(locale)
+            .get("projects-title")
+            .cloned()
+            .unwrap_or_default();
+        if !titre.to_lowercase().contains(terme) {
+            ecarts.push(format!(
+                "{chemin} : `projects-title = {titre}` ne porte pas « {terme} » (preuve de lecture)"
+            ));
+        }
+    }
+
+    // 2. Documents français, exceptions par extrait attachées à leur fichier.
+    let projet = Regex::new(r"(?i)projet").unwrap();
+    let mut utilises = vec![false; G25_EXCEPTIONS.len()];
+    for chemin in G25_DOCUMENTS {
+        let brut = lire(chemin);
+        let texte = if chemin.ends_with(".tex") {
+            manuel::sans_commentaires(&brut)
+        } else {
+            brut
+        };
+        assert!(texte.lines().count() > 100, "G25 — {chemin} lu à vide");
+        for (n, ligne) in lignes_ou(&texte, &projet) {
+            let basse = ligne.to_lowercase();
+            let mut excusee = false;
+            for (k, (fichier, extrait, _)) in G25_EXCEPTIONS.iter().enumerate() {
+                if *fichier == chemin && basse.contains(&extrait.to_lowercase()) {
+                    utilises[k] = true;
+                    excusee = true;
+                }
+            }
+            if !excusee {
+                ecarts.push(format!("{chemin}:{n} : {}", ligne.trim()));
+            }
+        }
+    }
+    if !lire("docs/manual/fr/user-manual.tex").contains("Comptes analytiques") {
+        ecarts.push(
+            "docs/manual/fr/user-manual.tex ne nomme pas l'écran « Comptes analytiques » (preuve de lecture)"
+                .to_string(),
+        );
+    }
+    for (k, (fichier, extrait, motif)) in G25_EXCEPTIONS.iter().enumerate() {
+        if !utilises[k] {
+            ecarts.push(format!(
+                "exception périmée : {fichier} « {extrait} » ({motif}) n'excuse plus aucune occurrence"
+            ));
+        }
+    }
+
+    // 3. Littéraux de chaîne des deux sources Rust, hors modules de test.
+    for chemin in G25_SOURCES_RUST {
+        let source = sans_modules_de_test(&lire(chemin));
+        let litteraux = litteraux_de_chaine(&source);
+        assert!(
+            litteraux.len() > 10,
+            "G25 — {chemin} : littéraux lus à vide"
+        );
+        for (n, t) in litteraux {
+            if projet.is_match(&t) {
+                ecarts.push(format!("{chemin}:{n} (littéral, hors tests) : \"{t}\""));
+            }
+        }
+    }
+
+    assert!(
+        ecarts.is_empty(),
+        "G25 — {} occurrence(s) de l'ancien mot :\n  - {}",
+        ecarts.len(),
+        ecarts.join("\n  - ")
+    );
 }

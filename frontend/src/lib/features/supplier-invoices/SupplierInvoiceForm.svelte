@@ -756,7 +756,7 @@
 		{/if}
 		{#if projects.length > 0}
 			<label class="block text-sm">
-				{i18nMsg('supplier-invoices-field-project', 'Projet analytique (optionnel)')}
+				{i18nMsg('supplier-invoices-field-project', 'Compte analytique (optionnel)')}
 				<select
 					class="mt-1 w-full rounded border px-2 py-1"
 					data-testid="supplier-invoice-project"

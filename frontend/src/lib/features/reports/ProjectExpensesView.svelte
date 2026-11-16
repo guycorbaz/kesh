@@ -26,7 +26,7 @@
 
 <div data-testid="project-expenses-view">
 	<h2 class="text-lg font-semibold">
-		{i18nMsg('reports-project-expenses-title', 'Dépenses par projet')} — {report.project.code}
+		{i18nMsg('reports-project-expenses-title', 'Dépenses par compte analytique')} — {report.project.code}
 		{report.project.name}
 	</h2>
 	<p class="mb-3 text-sm text-text-muted" data-testid="project-expenses-period">
@@ -35,7 +35,7 @@
 
 	{#if report.sections.length === 0}
 		<p class="rounded border border-border bg-surface px-3 py-2 text-sm" data-testid="project-expenses-empty">
-			{i18nMsg('reports-project-expenses-empty', 'Aucune dépense taguée sur ce projet pour la période.')}
+			{i18nMsg('reports-project-expenses-empty', 'Aucune dépense taguée sur ce compte analytique pour la période.')}
 		</p>
 	{:else}
 		<table class="w-full text-sm" data-testid="project-expenses-table">

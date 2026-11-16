@@ -757,7 +757,7 @@ faite le 1\textsuperscript{er} janvier à minuit et demi est datée du 1\textsup
 janvier, dans le nouvel exercice. Il en va de même de tout ce que Kesh juge \textbf{au jour}~:
 l'exercice que montre l'accueil, une facture échue (fiche, liste, échéancier et son export), les
 jours de retard d'un rappel et les factures à rappeler, les postes ouverts et la balance âgée
-arrêtés à aujourd'hui, la fin d'un rapport de projet cumulé sans date de fin, la date de clôture
+arrêtés à aujourd'hui, la fin d'un rapport de compte analytique cumulé sans date de fin, la date de clôture
 d'un compte bancaire quand elle n'est pas donnée (par l'API), l'exercice de la société de
 démonstration, les réponses du serveur MCP, et la date du nom des fichiers exportés
 (sauvegarde, export comptable complet, journal d'audit, échéancier). L'écran propose la veille
@@ -1776,7 +1776,7 @@ rien à saisir). Renseigner le fournisseur (un contact marqué « fournisseur »
 fournisseur} (facultatif~: celui qu'il a écrit sur sa facture ; Kesh attribue le sien à la validation,
 \S\ref{sec:numero-interne-fournisseur}), la date,
 l'échéance éventuelle, les coordonnées de paiement (IBAN ou QR-IBAN du créancier,
-référence, montant attendu --- toutes facultatives), le projet analytique éventuel et les
+référence, montant attendu --- toutes facultatives), le compte analytique éventuel et les
 lignes (description, montant, compte de charge, taux de TVA applicable --- l'impôt
 préalable est comptabilisé automatiquement). Le bouton \emph{Scanner une QR-facture}
 pré-remplit IBAN, référence et montant depuis une image de la QR-facture.
@@ -1901,17 +1901,17 @@ fiche ne propose ni \emph{Payer} ni \emph{Annuler la facture}~; elle propose~:
 \begin{description}
     \item[Modifier] (comptable ou administrateur) ouvre la page d'édition, le formulaire de la
           saisie pré-rempli~; \emph{Enregistrer} remplace la facture --- fournisseur, numéro du fournisseur,
-          dates, coordonnées, projet, lignes ---, toujours sans rien passer au journal. Si la
+          dates, coordonnées, compte analytique, lignes ---, toujours sans rien passer au journal. Si la
           facture a été modifiée entre-temps dans une autre session, l'enregistrement est refusé
-          et vous invite à recharger la page. Un projet \textbf{archivé} déjà imputé au brouillon
-          reste affiché, marqué «~(archivé)~» --- même sous un projet parent archivé lui
+          et vous invite à recharger la page. Un compte analytique \textbf{archivé} déjà imputé au brouillon
+          reste affiché, marqué «~(archivé)~» --- même sous un compte analytique parent archivé lui
           aussi (depuis la version~0.17.4)~; la validation le refuse toujours (ci-dessous)~:
           choisissez-en un autre avant de valider.
     \item[Valider] (comptable ou administrateur), après confirmation, passe l'écriture d'achat,
           datée de la date de la facture~; la facture devient \emph{Validée}, et sa fiche mène à
           l'écriture (\emph{Voir l'écriture d'achat}). La validation vérifie ce qu'exige une
           écriture~: un exercice ouvert qui couvre la date de la facture, une date hors de la
-          période verrouillée, des comptes actifs et imputables, un projet non archivé, les
+          période verrouillée, des comptes actifs et imputables, un compte analytique non archivé, les
           comptes créanciers et de TVA récupérable des paramètres. Un refus s'affiche sous le
           bouton~; la facture reste un brouillon, rien n'est écrit.
     \item[Supprimer le brouillon] (administrateur seulement), après confirmation, le supprime~;
@@ -3191,7 +3191,7 @@ Pour passer en comptabilité une transaction qu'aucune facture ne règle --- int
 
 \begin{enumerate}
     \item Cliquer sur \emph{Écriture manuelle} sur la ligne de la transaction.
-    \item Choisir le \textbf{compte de contrepartie}~: le sélecteur propose \textbf{tout compte actif et imputable} de la société, de toute classe, \textbf{sauf celui de la banque} --- le compte du grand livre relié au compte bancaire (voir plus bas). Ouverte sans rien taper, la liste ne montre que les \textbf{premiers} comptes du plan (vingt au plus, dans l'ordre des numéros)~: tapez le numéro ou une partie du nom pour atteindre les autres. Compléter au besoin la description, la date de valeur et le projet analytique.
+    \item Choisir le \textbf{compte de contrepartie}~: le sélecteur propose \textbf{tout compte actif et imputable} de la société, de toute classe, \textbf{sauf celui de la banque} --- le compte du grand livre relié au compte bancaire (voir plus bas). Ouverte sans rien taper, la liste ne montre que les \textbf{premiers} comptes du plan (vingt au plus, dans l'ordre des numéros)~: tapez le numéro ou une partie du nom pour atteindre les autres. Compléter au besoin la description, la date de valeur et le compte analytique.
     \item Cliquer sur \emph{Passer l'écriture}.
 \end{enumerate}
 
@@ -3250,7 +3250,7 @@ Cas d'usage : un prélèvement de carte de crédit de CHF 480 couvre des frais d
 
 \begin{enumerate}
     \item Cliquer sur \emph{Éclater} sur la ligne de la transaction.
-    \item Saisir les lignes~: pour chacune, un \textbf{compte} --- choisi dans le même sélecteur que l'écriture manuelle (tout compte actif et imputable, sauf celui de la banque~; l'avis débiteurs ou créanciers s'affiche sous la ligne concernée) ---, un montant, une description et, au besoin, un projet analytique. Deux lignes au moins, cinquante au plus~; la somme doit égaler le montant de la transaction. Un montant s'écrit en chiffres, avec un point ou une virgule décimale, l'apostrophe des milliers (\texttt{1'200.50}) et deux décimales au plus --- la saisie en admet jusqu'à quatre, les zéros au-delà de deux étant admis (\texttt{60.0000} vaut \texttt{60.00}) ---, sans signe ni espace, pas même en tête ou en fin de saisie~; un montant ambigu (\texttt{1.234}, qui peut se lire mille deux cent trente-quatre), illisible ou plus fin que le centime est signalé.
+    \item Saisir les lignes~: pour chacune, un \textbf{compte} --- choisi dans le même sélecteur que l'écriture manuelle (tout compte actif et imputable, sauf celui de la banque~; l'avis débiteurs ou créanciers s'affiche sous la ligne concernée) ---, un montant, une description et, au besoin, un compte analytique. Deux lignes au moins, cinquante au plus~; la somme doit égaler le montant de la transaction. Un montant s'écrit en chiffres, avec un point ou une virgule décimale, l'apostrophe des milliers (\texttt{1'200.50}) et deux décimales au plus --- la saisie en admet jusqu'à quatre, les zéros au-delà de deux étant admis (\texttt{60.0000} vaut \texttt{60.00}) ---, sans signe ni espace, pas même en tête ou en fin de saisie~; un montant ambigu (\texttt{1.234}, qui peut se lire mille deux cent trente-quatre), illisible ou plus fin que le centime est signalé.
     \item Cliquer sur \emph{Éclater}. Le bouton reste grisé tant qu'une ligne est incomplète ou que la somme n'égale pas le montant~; le message sous les lignes dit alors ce qui manque~: le compte ou le montant de quelle ligne, ou, quand toutes les lignes sont lues, la somme que les montants doivent atteindre et l'écart actuel. L'indicateur au-dessus constate l'état («~Balance non équilibrée --- attendu \ldots, écart \ldots~», l'écart étant «~non calculable~» tant qu'une ligne n'a pas de montant lu), puis dit «~Balance équilibrée~» et le montant quand la somme est juste.
 \end{enumerate}
 
@@ -3274,7 +3274,7 @@ Exemple : le loyer est prélevé chaque mois par la régie. Une règle «~Loyer~
     \item Choisir le \textbf{type} de correspondance --- \emph{Contrepartie contient}, \emph{Contrepartie exacte}, \emph{Référence contient} ou \emph{IBAN exact} --- et saisir la \textbf{valeur} cherchée. Une règle porte \textbf{une seule} condition. Le type ne se choisit qu'à la création~: il ne se modifie plus ensuite. Une règle \emph{Contrepartie exacte} écrite sur un nom qu'une version antérieure à la~0.17.4 avait lu tronqué (un nom à «~\&~», par exemple «~Fils~» pour «~Dupont \& Fils~») ne reconnaît plus le nom désormais lu en entier~: corrigez sa valeur.
     \item Choisir le \textbf{compte de contrepartie}~: un compte de charge ou de produit, actif et imputable.
     \item Fixer la \textbf{priorité}, de 1 à 1000~: le \textbf{plus petit} nombre l'emporte.
-    \item Au besoin, choisir un \textbf{projet analytique par défaut}.
+    \item Au besoin, choisir un \textbf{compte analytique par défaut}.
     \item Cliquer sur \emph{Créer}.
 \end{enumerate}
 
@@ -3777,7 +3777,7 @@ Tous les rapports se \textbf{consultent à l'écran}. Pour les emporter :
 
 \begin{itemize}
     \item \textbf{PDF et CSV} — bilan, compte de résultat, balance des comptes, grand livre,
-          journal des écritures, décompte TVA, et les deux rapports par projet.
+          journal des écritures, décompte TVA, et les deux rapports par compte analytique.
     \item \textbf{CSV seulement} — la \textbf{balance âgée des créances}, dont l'export est de
           surcroît réservé aux rôles \emph{Comptable} et \emph{Administrateur}.
 \end{itemize}
@@ -3788,44 +3788,49 @@ un tableur. Aucun des deux n'est tronqué, même quand l'écran l'est.
 \end{keshnote}
 
 %%─────────────────────────────────────────────────────────────────────────────
-\section{Comptabilité analytique par projet}
+\section{Comptabilité analytique}
 
-Kesh permet de rattacher chaque opération comptable à un \textbf{projet} pour l'analyser
-isolément — typiquement pour capter \emph{toutes} les dépenses d'une rénovation
-déductible, ou pour suivre le \emph{rendement} d'un investissement.
+Kesh permet de rattacher chaque opération comptable à un \textbf{compte analytique} pour
+l'analyser isolément. Un compte analytique suit ce que vous voulez isoler~: un immeuble, un
+véhicule, une activité, un chantier --- typiquement pour capter \emph{toutes} les dépenses
+d'une rénovation déductible, ou pour suivre le \emph{rendement} d'un investissement. Il
+s'ajoute au compte du plan comptable, il ne le remplace pas~: une charge reste passée sur son
+compte de charges, et le compte analytique dit à quoi elle se rapporte.
 
-\subsection{Créer et organiser des projets}
+\subsection{Créer et organiser des comptes analytiques}
 
-Dans \emph{Administration} → \emph{Projets analytiques}, créez vos projets (code court + nom).
-Un projet peut avoir des \textbf{sous-projets} (deux niveaux au maximum : projet →
-sous-projet). Un projet dont des écritures dépendent ne se supprime pas mais
-s'\textbf{archive} (il disparaît des sélecteurs mais reste dans l'historique et les rapports).
+Dans \emph{Administration} → \emph{Comptes analytiques}, créez vos comptes analytiques (code
+court + nom). Un compte analytique peut avoir des \textbf{sous-comptes analytiques} (deux
+niveaux au maximum : compte analytique → sous-compte analytique). Un compte analytique dont des
+écritures dépendent ne se supprime pas mais s'\textbf{archive} (il disparaît des sélecteurs
+mais reste dans l'historique et les rapports).
 
-\subsection{Affecter un projet aux écritures}
+\subsection{Affecter un compte analytique aux écritures}
 
 L'affectation est \textbf{optionnelle} et disponible sur \textbf{tous les flux de saisie} :
 \begin{itemize}
-    \item \textbf{Écritures manuelles} — un sélecteur de projet \emph{par ligne} (une écriture
-          de régularisation peut ainsi ventiler ses charges sur plusieurs projets).
-    \item \textbf{Factures de vente et fournisseurs} — un projet au niveau du document,
-          propagé à toutes les lignes de l'écriture générée.
-    \item \textbf{Réconciliation bancaire} — projet lors d'une écriture manuelle,
-          projet \emph{par ligne} lors d'une ventilation, et \textbf{projet par défaut}
-          sur une règle d'affectation (chaque transaction réconciliée via la règle est
-          alors taguée automatiquement).
+    \item \textbf{Écritures manuelles} — un sélecteur de compte analytique \emph{par ligne}
+          (une écriture de régularisation peut ainsi ventiler ses charges sur plusieurs
+          comptes analytiques).
+    \item \textbf{Factures de vente et fournisseurs} — un compte analytique au niveau du
+          document, propagé à toutes les lignes de l'écriture générée.
+    \item \textbf{Réconciliation bancaire} — compte analytique lors d'une écriture manuelle,
+          compte analytique \emph{par ligne} lors d'une ventilation, et \textbf{compte
+          analytique par défaut} sur une règle d'affectation (chaque transaction réconciliée
+          via la règle est alors taguée automatiquement).
 \end{itemize}
 
-\subsection{Les deux rapports par projet}
+\subsection{Les deux rapports par compte analytique}
 
-Dans \emph{Rapports}, deux onglets exploitent la dimension projet (exportables PDF/CSV,
-en vue par \textbf{exercice} ou \textbf{cumulée depuis l'origine} du projet, avec
-\textbf{agrégation des sous-projets}) :
+Dans \emph{Rapports}, deux onglets exploitent la dimension analytique (exportables PDF/CSV,
+en vue par \textbf{exercice} ou \textbf{cumulée depuis l'origine} du compte analytique, avec
+\textbf{agrégation des sous-comptes analytiques}) :
 \begin{itemize}
-    \item \textbf{Dépenses par projet} — toutes les charges taguées, groupées par
-          sous-projet puis par compte, avec sous-totaux et total. Chaque compte se
+    \item \textbf{Dépenses par compte analytique} — toutes les charges taguées, groupées par
+          sous-compte analytique puis par compte, avec sous-totaux et total. Chaque compte se
           \textbf{déplie} pour afficher les écritures qui le composent (drill-down).
           Idéal pour préparer une déclaration fiscale sans rien oublier.
-    \item \textbf{Rendement par projet} — \textbf{coût investi} (charges + actifs immobilisés
+    \item \textbf{Rendement par compte analytique} — \textbf{coût investi} (charges + actifs immobilisés
           ; la trésorerie banque/caisse en est exclue pour ne pas gonfler le coût),
           \textbf{revenus}, \textbf{résultat net} et \textbf{rendement \%}
           (revenus / coût investi).
@@ -3847,7 +3852,7 @@ ouvert (CSV), accompagné d'un manifeste portant l'empreinte SHA-256 de chaque f
 
 \begin{keshwarning}[title={\faExclamationTriangle\ Ce que cet export couvre, et ce qu'il ne couvre pas}]
 Il porte \textbf{toute votre comptabilité}~: ventes, achats, avoirs, règlements, banque,
-grand livre, projets analytiques et journal d'audit --- la liste exacte suit. Ce qu'il ne
+grand livre, comptes analytiques et journal d'audit --- la liste exacte suit. Ce qu'il ne
 contient pas est dit plus bas, avec la raison~: des réglages techniques et des secrets, et,
 point à retenir, les \textbf{fichiers} des pièces justificatives, dont seul le chemin figure.
 

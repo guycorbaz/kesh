@@ -430,7 +430,9 @@
 						? 'reports-filename-project-expenses'
 						: 'reports-filename-project-return';
 				const slugFallback =
-					activeTab === 'project-expenses' ? 'depenses-par-projet' : 'rendement-par-projet';
+					activeTab === 'project-expenses'
+						? 'depenses-par-compte-analytique'
+						: 'rendement-par-compte-analytique';
 				const typeSlug = i18nMsg(slugKey, slugFallback);
 				const companySlug = data.companyName.replace(/[^a-zA-Z0-9]+/g, '-').slice(0, 20);
 				const filename = `kesh-${typeSlug}-${companySlug}.${format}`;
@@ -524,12 +526,12 @@
 		{
 			id: 'project-expenses',
 			labelKey: 'reports-project-expenses',
-			fallback: 'Dépenses par projet',
+			fallback: 'Dépenses par compte analytique',
 		},
 		{
 			id: 'project-return',
 			labelKey: 'reports-project-return',
-			fallback: 'Rendement par projet',
+			fallback: 'Rendement par compte analytique',
 		},
 		{ id: 'aged-receivables', labelKey: 'reports-aged-balance', fallback: 'Balance âgée' },
 		{ id: 'general-ledger', labelKey: 'reports-ledger-tab', fallback: 'Grand livre' },
@@ -711,13 +713,13 @@
 		<!-- Story 19-6a — contrôles dédiés du rapport « Dépenses par projet ». -->
 		<div class="flex flex-wrap items-end gap-3 rounded border border-border bg-surface p-3" data-testid="project-report-controls">
 			<label class="text-sm">
-				{i18nMsg('reports-project-selector-label', 'Projet')}
+				{i18nMsg('reports-project-selector-label', 'Compte analytique')}
 				<select
 					class="mt-1 block rounded border border-border px-2 py-1 text-sm"
 					bind:value={selectedProjectId}
 					data-testid="project-report-project"
 				>
-					<option value={null}>{i18nMsg('reports-project-selector-placeholder', '— Choisir un projet')}</option>
+					<option value={null}>{i18nMsg('reports-project-selector-placeholder', '— Choisir un compte analytique')}</option>
 					{#each projects.filter((p) => p.parentId === null) as root (root.id)}
 						<option value={root.id}>{root.code} — {root.name}</option>
 						{#each projects.filter((c) => c.parentId === root.id) as child (child.id)}
