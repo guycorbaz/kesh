@@ -26,7 +26,8 @@
  * dix caractères, sur tout récepteur. **Un seul relevé par ligne**, quel que soit le nombre
  * de motifs qu'elle porte. Le jour d'une spec vient de `todayInZurich()` ; l'arithmétique
  * sur un jour, d'`ajouterJoursIso` (`tests/e2e/helpers/dates.ts`). `ALLOWLIST_SPECS` est
- * close de trois entrées, dont le fragment est le texte exact de la ligne relevée.
+ * close de trois entrées (la troisième, la sonde d'horloge de la Story 36-7a, #1125), dont
+ * le fragment est le texte exact de la ligne relevée.
  * **Angle mort assumé** : un jour tiré de `Date.now()` sans construction de date
  * (`Intl.DateTimeFormat('sv-SE').format(Date.now())`) n'est pas relevé — aucun
  * aujourd'hui ; `Date.now()` seul sert aux suffixes d'unicité, par centaines.
@@ -260,7 +261,9 @@ const MOTIFS_SPECS: RegExp[] = [
 ];
 
 /**
- * Les trois sites admis (fiche 35-5c, D4). Le fragment est le texte exact de la ligne.
+ * Les trois sites admis (fiche 35-5c, D4 ; Story 36-10, D7 : `todayUtc` d'`audit-log.spec.ts`
+ * retiré, le filtre du journal d'audit lisant le jour de Zurich ; le troisième, fiche 36-7a,
+ * D6). Le fragment est le texte exact de la ligne.
  */
 const ALLOWLIST_SPECS: Entree[] = [
 	{
@@ -269,14 +272,15 @@ const ALLOWLIST_SPECS: Entree[] = [
 		motif: 'todayInZurich — le jour suisse, seule lecture de l’horloge des specs',
 	},
 	{
-		fichier: 'audit-log.spec.ts',
-		fragment: 'return new Date().toISOString().slice(0, 10);',
-		motif: 'todayUtc — le filtre du journal d’audit compare des horodatages UTC (#669)',
-	},
-	{
 		fichier: 'invoices.spec.ts',
 		fragment: 'const sentAt = new Date(Date.now() - 3_600_000).toISOString().slice(0, 19);',
 		motif: 'un instant (il y a une heure), non un jour',
+	},
+	{
+		fichier: 'horloge-sonde.spec.ts',
+		fragment: "new Date().toLocaleDateString('sv-SE', { timeZone: 'Europe/Zurich' }),",
+		motif:
+			'le jour du navigateur (page.evaluate), comparé à ceux du runner et du serveur — sonde d’horloge de l’E2E décalé (#1125, Story 36-7a, D6)',
 	},
 ];
 
@@ -343,30 +347,36 @@ describe('garde des dates du jour des specs E2E (#929, Story 35-5c)', () => {
 		expect(releves('const d = new Date(\n);')).toHaveLength(1);
 	});
 
+	// Story 36-10 (D7) : l'entrée d'`audit-log.spec.ts` qu'employaient ces deux sondes est
+	// retirée ; elles portent sur une entrée synthétique de même forme (deux motifs sur une ligne).
+	const entreeSynthetique: Entree = {
+		fichier: 'x.spec.ts',
+		fragment: 'return new Date().toISOString().slice(0, 10);',
+		motif: 'sonde',
+	};
+
 	it('sonde : une ligne à deux motifs ne donne qu’un relevé, que son entrée apparie', () => {
-		const s = new Map([['audit-log.spec.ts', '\treturn new Date().toISOString().slice(0, 10);']]);
+		const s = new Map([['x.spec.ts', '\treturn new Date().toISOString().slice(0, 10);']]);
 		const r = releverSpecs(s);
 		expect(r).toHaveLength(1);
-		expect(
-			auditer(
-				r,
-				ALLOWLIST_SPECS.filter((e) => e.fichier === 'audit-log.spec.ts'),
-				true,
-			),
-		).toEqual([]);
+		expect(auditer(r, [entreeSynthetique], true)).toEqual([]);
+		// Sans l'entrée, le même relevé rougit.
+		expect(auditer(r, [], true)).toEqual([
+			expect.stringContaining('relevé sans entrée : x.spec.ts:1'),
+		]);
 	});
 
 	it('sonde : une seconde lecture ajoutée à une ligne admise rougit (revue P1, E4)', () => {
 		const s = new Map([
 			[
-				'audit-log.spec.ts',
+				'x.spec.ts',
 				'\treturn new Date().toISOString().slice(0, 10); const u = new Date().getDate();',
 			],
 		]);
-		const une = ALLOWLIST_SPECS.filter((e) => e.fichier === 'audit-log.spec.ts');
+		const une = [entreeSynthetique];
 		expect(auditer(releverSpecs(s), une, true)).toEqual([
-			expect.stringContaining('relevé sans entrée : audit-log.spec.ts:1'),
-			expect.stringContaining('entrée orpheline : audit-log.spec.ts'),
+			expect.stringContaining('relevé sans entrée : x.spec.ts:1'),
+			expect.stringContaining('entrée orpheline : x.spec.ts'),
 		]);
 		// Par extrait (l'appariement de `src`), la seconde lecture passait sous l'entrée.
 		expect(auditer(releverSpecs(s), une)).toEqual([]);

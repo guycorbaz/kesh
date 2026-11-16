@@ -156,7 +156,7 @@ onboarding-field-qr-iban = QR-IBAN
 onboarding-skip-bank = Configurare più tardi
 onboarding-next = Continua
 onboarding-stub-name-notice = La tua azienda ha un nome provvisorio — completa i tuoi dati
-incomplete-banner-text = Configurazione incompleta — Completare la configurazione
+incomplete-banner-text = Configurazione incompleta: completatela prima di utilizzare Kesh.
 incomplete-banner-cta = Completare la configurazione
 
 # Pagina iniziale (Story 2.4)
@@ -331,6 +331,7 @@ journal-entry-modified = Modificata
 journal-entry-history = Cronologia
 error-fiscal-year-closed-generic = L'esercizio contabile è chiuso — nessuna scrittura può essere aggiunta, modificata o eliminata (CO art. 957-964).
 error-inactive-accounts = Uno o più conti sono archiviati o non validi.
+error-default-invoice-accounts-unavailable = I conti predefiniti della fatturazione non sono utilizzabili: completatene la designazione in Amministrazione → Fatturazione.
 error-account-not-postable = { $count ->
     [one] Il conto { $numbers } non è registrabile (conto di raggruppamento, di risultato o di chiusura): scegliere un conto registrabile.
    *[other] I conti { $numbers } non sono registrabili (conti di raggruppamento, di risultato o di chiusura): scegli conti registrabili.
@@ -341,7 +342,7 @@ error-designated-account-not-postable = { $count ->
 }
 # Story 35-3 (#537) — un conto designato e poi cambiato di tipo: una frase per conto, poi la frase d’azione.
 error-designated-account-wrong-type = Il conto { $account }, designato come { $setting } in Amministrazione → Fatturazione, è un { $actual }; questa impostazione richiede un { $expected }.
-error-designated-account-wrong-type-action = Nulla è stato registrato. Un amministratore deve correggere l’impostazione interessata — designare un conto del tipo giusto, oppure restituire al conto il suo tipo d’origine —, poi la convalida potrà essere rilanciata così com’è.
+error-designated-account-wrong-type-action = Nulla è stato registrato. Un amministratore deve correggere l’impostazione interessata — designare un conto del tipo giusto, oppure restituire al conto il suo tipo d’origine —, poi l’operazione potrà essere rilanciata così com’è.
 error-designated-account-setting-receivable = conto crediti verso clienti
 error-designated-account-setting-vat-payable = conto IVA dovuta
 error-designated-account-setting-payable = conto debiti verso fornitori
@@ -3039,9 +3040,7 @@ nav-email-templates = Modelli di e-mail
 nav-projects = Progetti
 nav-supplier-invoices-import = Documenti da trattare
 onboarding-address-npa-city-required = NPA e località sono obbligatori
-onboarding-already-finalized = La configurazione iniziale è già stata completata. Ricarica la pagina.
 onboarding-field-name-hint = azienda — altrimenti compila nome + cognome
-onboarding-finalize-incomplete = Il completamento non è stato confermato. Ricarica la pagina.
 onboarding-mode-error = Errore nella scelta della modalità
 onboarding-language-error = Errore nella scelta della lingua
 onboarding-demo-load-error = Errore durante il caricamento dei dati dimostrativi
@@ -3058,6 +3057,29 @@ onboarding-bank-skip-error = Errore durante l'omissione del conto bancario
 onboarding-bank-editable-later = La descrizione e il conto contabile collegato si modificano in seguito in Amministrazione → Conti bancari.
 onboarding-bank-ledger-load-error = Non è stato possibile caricare l'elenco dei conti: il conto bancario potrà essere collegato in seguito.
 onboarding-save = Salva
+# Story 36-17 (#1187) — la fin de l'assistant : un écran pour chaque état.
+onboarding-state-load-error = Non è stato possibile leggere lo stato della configurazione.
+onboarding-retry = Riprova
+onboarding-finalizing = Configurazione in corso…
+onboarding-finalizing-desc = Kesh imposta i parametri di fatturazione, le aliquote IVA e il primo esercizio. Non chiudete questa pagina.
+onboarding-done-title = Configurazione completata
+onboarding-done-created = Cosa è stato creato
+onboarding-done-company = Società
+onboarding-done-chart = Piano dei conti
+onboarding-done-fiscal-year = Esercizio
+onboarding-done-bank-account = Conto bancario
+onboarding-done-credit-card = Carta di credito
+onboarding-finalize-remedy-link = Apri Amministrazione → Fatturazione
+onboarding-done-summary-error = Non è stato possibile leggere il riepilogo.
+onboarding-done-todo = Cosa resta da fare
+onboarding-done-todo-vat = Se siete assoggettati all'IVA, designate i conti IVA in Amministrazione → Fatturazione prima della vostra prima fattura con IVA.
+onboarding-done-todo-bank = Aggiungete il vostro conto bancario in Amministrazione → Conti bancari.
+onboarding-start = Inizia
+onboarding-demo-loading = Caricamento dei dati dimostrativi…
+onboarding-demo-ready = I dati dimostrativi sono pronti.
+onboarding-demo-navigate-error = Non è stato possibile aprire Kesh: cliccate su Inizia.
+onboarding-fallback = Stato dell'assistente inatteso.
+onboarding-fallback-reload = Ricarica la pagina
 payment-batches-cancel = Annulla il lotto
 payment-batches-cancel-confirm = Annullare questo lotto? Le fatture tornano pagabili.
 payment-batches-col-date = Esecuzione
@@ -3356,8 +3378,8 @@ audit-log-query-error-code-too-long = { $field } supera { $max } caratteri
 nav-audit-log = Registro di audit
 audit-log-title = Registro di audit
 audit-log-subtitle = La traccia di ogni operazione che modifica i libri della tua società: chi, cosa, quando.
-audit-log-filter-date-from = Dal (giorno UTC)
-audit-log-filter-date-to = Al (giorno UTC)
+audit-log-filter-date-from = Dal
+audit-log-filter-date-to = Al
 audit-log-filter-entity-type = Tipo di entità
 audit-log-filter-entity-type-all = Tutti
 audit-log-filter-entity-id = N. entità

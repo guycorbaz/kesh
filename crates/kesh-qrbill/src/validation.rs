@@ -219,7 +219,7 @@ pub fn first_qr_refused_char(value: &str) -> Option<char> {
 ///
 /// ⚠️ `\n` et `\r` restent hors du jeu : ce sont les séparateurs du code, et les
 /// admettre dans un champ décalerait silencieusement tous les suivants.
-fn est_caractere_qr(c: char) -> bool {
+pub(crate) fn est_caractere_qr(c: char) -> bool {
     matches!(
         c as u32,
         0x0020..=0x007E        // Basic Latin

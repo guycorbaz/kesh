@@ -156,7 +156,7 @@ onboarding-field-qr-iban = QR-IBAN
 onboarding-skip-bank = Configure later
 onboarding-next = Continue
 onboarding-stub-name-notice = Your company has a provisional name — complete your details
-incomplete-banner-text = Configuration incomplete — Complete setup
+incomplete-banner-text = Configuration incomplete: complete it before using Kesh.
 incomplete-banner-cta = Complete setup
 
 # Homepage (Story 2.4)
@@ -331,6 +331,7 @@ journal-entry-modified = Modified
 journal-entry-history = History
 error-fiscal-year-closed-generic = The fiscal year is closed — no entries can be added, modified or deleted (Swiss CO art. 957-964).
 error-inactive-accounts = One or more accounts are archived or invalid.
+error-default-invoice-accounts-unavailable = The default invoicing accounts cannot be used: finish designating them in Administration → Invoicing.
 error-account-not-postable = { $count ->
     [one] Account { $numbers } is not postable (grouping, result or closing account): choose a postable account.
    *[other] Accounts { $numbers } are not postable (grouping, result or closing accounts): choose postable accounts.
@@ -341,7 +342,7 @@ error-designated-account-not-postable = { $count ->
 }
 # Story 35-3 (#537) — a designated account whose type changed after it was designated: one sentence per account, then the action sentence. The article lives in the type labels (a/an).
 error-designated-account-wrong-type = Account { $account }, designated as the { $setting } in Administration → Invoicing, is { $actual }; this setting requires { $expected }.
-error-designated-account-wrong-type-action = Nothing has been saved. An administrator must correct the setting concerned — designate an account of the right type, or give the account back its original type — and the validation can then be run again as it is.
+error-designated-account-wrong-type-action = Nothing has been saved. An administrator must correct the setting concerned — designate an account of the right type, or give the account back its original type — and the operation can then be run again as it is.
 error-designated-account-setting-receivable = trade receivables account
 error-designated-account-setting-vat-payable = VAT payable account
 error-designated-account-setting-payable = trade payables account
@@ -3044,9 +3045,7 @@ nav-email-templates = E-mail templates
 nav-projects = Projects
 nav-supplier-invoices-import = Documents to process
 onboarding-address-npa-city-required = Postal code and town are required
-onboarding-already-finalized = Onboarding is already complete. Please reload the page.
 onboarding-field-name-hint = company — otherwise fill in first name + surname
-onboarding-finalize-incomplete = Completion was not confirmed. Please reload the page.
 onboarding-mode-error = Error while choosing the mode
 onboarding-language-error = Error while choosing the language
 onboarding-demo-load-error = Error while loading the demo data
@@ -3063,6 +3062,29 @@ onboarding-bank-skip-error = Error while skipping the bank account
 onboarding-bank-editable-later = The description and the linked ledger account can be changed later in Administration → Bank accounts.
 onboarding-bank-ledger-load-error = The list of accounts could not be loaded: the bank account can be linked later.
 onboarding-save = Save
+# Story 36-17 (#1187) — la fin de l'assistant : un écran pour chaque état.
+onboarding-state-load-error = The setup status could not be read.
+onboarding-retry = Try again
+onboarding-finalizing = Setup in progress…
+onboarding-finalizing-desc = Kesh is setting up the invoicing settings, the VAT rates and the first financial year. Do not close this page.
+onboarding-done-title = Setup complete
+onboarding-done-created = What was created
+onboarding-done-company = Company
+onboarding-done-chart = Chart of accounts
+onboarding-done-fiscal-year = Financial year
+onboarding-done-bank-account = Bank account
+onboarding-done-credit-card = Credit card
+onboarding-finalize-remedy-link = Open Administration → Invoicing
+onboarding-done-summary-error = The summary could not be read.
+onboarding-done-todo = What remains to be done
+onboarding-done-todo-vat = If you are registered for VAT, designate the VAT accounts in Administration → Invoicing before your first invoice with VAT.
+onboarding-done-todo-bank = Add your bank account in Administration → Bank accounts.
+onboarding-start = Get started
+onboarding-demo-loading = Loading the demo data…
+onboarding-demo-ready = The demo data is ready.
+onboarding-demo-navigate-error = Kesh could not be opened: click Get started.
+onboarding-fallback = Unexpected setup wizard status.
+onboarding-fallback-reload = Reload the page
 payment-batches-cancel = Cancel batch
 payment-batches-cancel-confirm = Cancel this batch? The invoices become payable again.
 payment-batches-col-date = Execution
@@ -3361,8 +3383,8 @@ audit-log-query-error-code-too-long = { $field } exceeds { $max } characters
 nav-audit-log = Audit log
 audit-log-title = Audit log
 audit-log-subtitle = The trace of every operation that changes your company's books: who, what, when.
-audit-log-filter-date-from = From (UTC day)
-audit-log-filter-date-to = To (UTC day)
+audit-log-filter-date-from = From
+audit-log-filter-date-to = To
 audit-log-filter-entity-type = Entity type
 audit-log-filter-entity-type-all = All
 audit-log-filter-entity-id = Entity no.

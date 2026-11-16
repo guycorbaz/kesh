@@ -1005,10 +1005,11 @@ async fn seed_validated_invoice(c: &Ctx, pool: &MySqlPool, amount: Decimal) -> i
     let je_id = sqlx::query(
         "INSERT INTO journal_entries (company_id, fiscal_year_id, entry_number, entry_date, \
          journal, description, version, created_at, updated_at) \
-         VALUES (?, ?, 1, '2026-08-20', 'Ventes', 'Vente', 1, NOW(3), NOW(3))",
+         VALUES (?, ?, 1, ?, 'Ventes', 'Vente', 1, NOW(3), NOW(3))",
     )
     .bind(c.company_id)
     .bind(c.fiscal_year_id)
+    .bind(jour_n1(8, 20))
     .execute(pool)
     .await
     .unwrap()
@@ -1033,10 +1034,11 @@ async fn seed_validated_invoice(c: &Ctx, pool: &MySqlPool, amount: Decimal) -> i
     let invoice_id = sqlx::query(
         "INSERT INTO invoices (company_id, contact_id, invoice_number, status, date, \
          total_amount, journal_entry_id, paid_at, version, created_at, updated_at) \
-         VALUES (?, ?, 'F-2026-0042', 'validated', '2026-08-20', ?, ?, NULL, 1, NOW(3), NOW(3))",
+         VALUES (?, ?, 'F-2026-0042', 'validated', ?, ?, ?, NULL, 1, NOW(3), NOW(3))",
     )
     .bind(c.company_id)
     .bind(contact_id)
+    .bind(jour_n1(8, 20))
     .bind(amount)
     .bind(je_id)
     .execute(pool)
@@ -1056,12 +1058,50 @@ async fn seed_validated_invoice(c: &Ctx, pool: &MySqlPool, amount: Decimal) -> i
     invoice_id
 }
 
+/// Story 36-7a (#1125) — une date de l'année N-1 (N, l'année du jour du test).
+fn jour_n1(m: u32, j: u32) -> NaiveDate {
+    use chrono::Datelike;
+    NaiveDate::from_ymd_opt(crate::common::jour::aujourd_hui_test().year() - 1, m, j).unwrap()
+}
+
+/// Story 36-7a (#1125) — le relevé de septembre de [`body`], dérivé en N-1 : période,
+/// numéro et dates de lignes en septembre N-1 (même mois, même jour), le reste
+/// intact — `body()`, décor d'une trentaine de tests qui en assertent les valeurs,
+/// ne change pas.
+fn body_n1(bank_account_id: i64) -> Value {
+    use chrono::Datelike;
+    let a = crate::common::jour::aujourd_hui_test().year() - 1;
+    let mut v = body(bank_account_id);
+    v["periodFrom"] = json!(jour_n1(9, 1).to_string());
+    v["periodTo"] = json!(jour_n1(9, 30).to_string());
+    v["statementNumber"] = json!(format!("9/{a}"));
+    v["lines"][0]["bookingDate"] = json!(jour_n1(9, 3).to_string());
+    v["lines"][1]["bookingDate"] = json!(jour_n1(9, 15).to_string());
+    v["lines"][1]["valueDate"] = json!(jour_n1(9, 15).to_string());
+    v
+}
+
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn manual_statement_lines_reconcile_like_imported_ones(pool: MySqlPool) {
     let c = setup(&pool).await;
+    // Story 36-7a (#1125) : l'exercice de `setup()` (2026, décor de 21 tests, intouché)
+    // replacé ici seulement en N-1..N — l'annulation du rapprochement contre-passe le
+    // règlement au jour, qui doit y tomber.
+    {
+        use chrono::Datelike;
+        let n = crate::common::jour::aujourd_hui_test().year();
+        sqlx::query("UPDATE fiscal_years SET name = ?, start_date = ?, end_date = ? WHERE id = ?")
+            .bind(format!("Exercice {}-{n}", n - 1))
+            .bind(jour_n1(1, 1))
+            .bind(NaiveDate::from_ymd_opt(n, 12, 31).unwrap())
+            .bind(c.fiscal_year_id)
+            .execute(&pool)
+            .await
+            .unwrap();
+    }
     let invoice_id = seed_validated_invoice(&c, &pool, dec!(50.00)).await;
     let app = spawn_app(pool.clone()).await;
-    let (s, r) = create(&app, &c.jwt, &body(c.bank_account_id)).await;
+    let (s, r) = create(&app, &c.jwt, &body_n1(c.bank_account_id)).await;
     assert_eq!(s, 201, "{r}");
     let import_id = r["id"].as_i64().unwrap();
     let ids: Vec<(i64, Decimal)> =

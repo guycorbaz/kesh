@@ -256,8 +256,20 @@ const PREFIXES = [
  *
  * Intégration de la release 0.17.6 (2026-11-12), recompté par la garde après chaque fusion
  * (non additionné) : 412 après la 34-8 (34-1, 34-8), **434** après la 34-9.
+ *
+ * ⚠️ **Story 36-17** (#1187) : **434 → 453** (+19), relevé par la garde (`expected 453 to be
+ * 434`) : vingt et une clés `onboarding-` neuves de la fin de l'assistant (`-state-load-error`,
+ * `-retry`, `-finalizing`, `-finalizing-desc`, `-finalize-remedy`, dix `-done-*`, `-start`,
+ * `-demo-loading`, `-demo-ready`, `-demo-navigate-error`, `-fallback`, `-fallback-reload`), un
+ * repli chacune, et deux retirées (`-already-finalized`, `-finalize-incomplete`, mortes, D2).
+ * Remédiation de la revue P1 : **453 → 455** (+2, `expected 455 to be 453`),
+ * `onboarding-done-credit-card` et `onboarding-finalize-remedy-link`.
+ *
+ * Intégration de la 0.18.0 (2026-11-16) : **455 → 454** (−1, `expected 454 to be 455`,
+ * `kesh-gate-logs/rel0180/releve-compteurs-1.log`), `onboarding-finalize-remedy` retirée (la
+ * 36-19 corrige #1200).
  */
-const CLES_RELEVEES = 434;
+const CLES_RELEVEES = 454;
 
 
 /** Relève, pour chaque clé du domaine, l'ensemble de ses replis littéraux distincts. */
