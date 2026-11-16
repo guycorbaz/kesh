@@ -1,6 +1,6 @@
 # Prompt de développement — story 37-3a (dev-story)
 
-Tu développes la story **37-2** (`_bmad-output/implementation-artifacts/37-3a-ecritures-en-devise-modele.md`) selon le
+Tu développes la story **37-3a** (`_bmad-output/implementation-artifacts/37-3a-ecritures-en-devise-modele.md`) selon le
 skill `bmad-dev-story` (lis `.claude/skills/bmad-dev-story/SKILL.md` et suis-le), dans le worktree
 `/home/beat/claude/kesh/.claude/worktrees/kesh-s37-3a` (branche `story/37-3a-ecritures-en-devise-modele`, partie de
 `epic/37-multi-devises`). **N'écris jamais hors de ce worktree**, sauf les journaux dans
@@ -24,7 +24,7 @@ skill `bmad-dev-story` (lis `.claude/skills/bmad-dev-story/SKILL.md` et suis-le)
   (`closes`/`fixes`/`resolves`). Aucune mention d'IA ni de Claude dans les commits ou le code.
 - Manuels : `.tex` seulement, **aucun PDF commité**. Pas de `CHANGELOG.md` : la section « Note de version » de la fiche.
 - Migration : fichier horodaté neuf ; P5 (ligne d'audit + compteurs recomptés), P6 (grep positionnel), P7 (triage) ;
-  aucune migration breaking attendue en 37-2 (vérifie).
+  aucune migration breaking attendue en 37-3a (vérifie).
 - Gates : ciblés pendant l'itération ; **gate complet** (fmt, clippy `-D warnings`, nextest complet sur ta base,
   frontend `check`, `lint-i18n-ownership`, `test:unit`, `build`) et **E2E complet** au dernier commit de code, sous
   `scripts/mem-guard.sh` et le verrou ; journaux dans `kesh-gate-logs/s37-3a/`. Le Dev Agent Record n'affirme que ce qui
