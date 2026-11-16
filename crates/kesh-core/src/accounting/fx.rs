@@ -221,7 +221,7 @@ pub fn check_foreign_line(
     let revaluation = foreign.source == Some(RateProvenance::Revaluation);
     // Étape 1 — bornes (le signe du cours est jugé par `check_rate_bounds`).
     let chf = fx_chf(&foreign.amount, &foreign.rate)?;
-    let provided = *debit + *credit;
+    let provided = debit.checked_add(*credit).ok_or(FxLineError::OutOfRange)?;
     if revaluation {
         if !foreign.amount.is_zero() || provided <= Decimal::ZERO || provided > FX_CHF_MAX {
             return Err(FxLineError::OutOfRange);

@@ -763,7 +763,12 @@ pub(crate) fn parse_line_amounts(
         return Err(map_core_error(CoreError::EntryNegativeAmount));
     }
     let fournis = debit.is_some() || credit.is_some();
-    let somme = debit.unwrap_or_default() + credit.unwrap_or_default();
+    // Somme vérifiée : deux montants proches de la borne de `Decimal` ne
+    // doivent pas faire paniquer le handler (revue de code P2).
+    let somme = debit
+        .unwrap_or_default()
+        .checked_add(credit.unwrap_or_default())
+        .ok_or(AppError::FxLine(CoreError::FxValueOutOfRange { line }))?;
     let chf_ref = chf.or(fournis.then_some(somme));
     if let (Some(c), true) = (chf, fournis)
         && c != somme

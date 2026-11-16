@@ -1119,7 +1119,7 @@ error-account-is-fx-difference-account = Dieses Konto ist ein Kursdifferenzkonto
 error-account-is-fx-difference-account-own = Dieses Konto ist ein Kursdifferenzkonto des Fremdwährungskontos { $number }: Es kann weder archiviert, umtypisiert oder nicht bebuchbar gemacht werden noch eine Währung, ein Unterkonto oder eine Ertragsrolle erhalten.
 error-account-is-fx-transit-account = Dieses Konto ist das Umrechnungskonto der Firma: Es kann weder archiviert, ausserhalb der Bilanz umtypisiert oder nicht bebuchbar gemacht werden noch eine Währung oder ein Unterkonto erhalten.
 # Story 37-3a — Buchungen in Fremdwährung.
-error-multi-currency-disabled-fiscal-year = Dieses Geschäftsjahr ist einwährungsbasiert: Kein Fremdwährungskonto ist darin verwendbar.
+error-multi-currency-disabled-fiscal-year = Dieses Geschäftsjahr ist einwährungsbasiert: Dieser Vorgang in Fremdwährung ist darin nicht möglich.
 error-fx-multiple-currencies = Eine Buchung enthält nur eine Fremdwährung (hier: { $currencies }). Buchen Sie einen Währungswechsel über das Umrechnungskonto, in zwei Buchungen.
 error-account-requires-currency = Zeile { $line }: Das Konto wird in Fremdwährung geführt, erfassen Sie den Fremdwährungsbetrag und den Kurs.
 error-fx-account-in-chf = Zeile { $line }: Das Konto wird in CHF geführt, die Zeile kann keinen Fremdwährungsbetrag tragen.

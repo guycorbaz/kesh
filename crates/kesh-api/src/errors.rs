@@ -4690,7 +4690,7 @@ impl IntoResponse for AppError {
                             serde_json::json!({ "fiscalYearId": id }),
                             t(
                                 "error-multi-currency-disabled-fiscal-year",
-                                "Cet exercice est mono-devise : aucun compte en devise n’y est utilisable.",
+                                "Cet exercice est mono-devise : cette opération en devise n’y est pas possible.",
                             ),
                         ),
                         None => (
@@ -6091,6 +6091,19 @@ fn archived_accounts_response(
 mod tests {
     use super::*;
     use http_body_util::BodyExt;
+
+    /// Revue de code P2 de la 37-3a — `chf_text` : jamais d'arrondi, au moins
+    /// deux décimales.
+    #[test]
+    fn chf_text_never_rounds_and_keeps_two_decimals() {
+        use rust_decimal::Decimal;
+        use std::str::FromStr;
+        let t = |s: &str| chf_text(Decimal::from_str(s).unwrap());
+        assert_eq!(t("9.1201"), "9.1201");
+        assert_eq!(t("100"), "100.00");
+        assert_eq!(t("0"), "0.00");
+        assert_eq!(t("12.500"), "12.50");
+    }
 
     async fn response_body(resp: Response) -> (StatusCode, serde_json::Value) {
         let (parts, body) = resp.into_parts();

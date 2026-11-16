@@ -1119,7 +1119,7 @@ error-account-is-fx-difference-account = Questo conto è un conto di differenza 
 error-account-is-fx-difference-account-own = Questo conto è un conto di differenza di cambio del conto in valuta { $number }: non può essere né archiviato, né cambiato di tipo, né reso non imputabile, né ricevere una valuta, un sottoconto o un ruolo di ricavo.
 error-account-is-fx-transit-account = Questo conto è il conto di conversione della società: non può essere né archiviato, né cambiato di tipo fuori dal bilancio, né reso non imputabile, né ricevere una valuta o un sottoconto.
 # Story 37-3a — registrazioni in valuta.
-error-multi-currency-disabled-fiscal-year = Questo esercizio è monovaluta: nessun conto in valuta vi è utilizzabile.
+error-multi-currency-disabled-fiscal-year = Questo esercizio è monovaluta: questa operazione in valuta non vi è possibile.
 error-fx-multiple-currencies = Una registrazione porta una sola valuta estera (qui: { $currencies }). Registri un cambio tra valute tramite il conto di conversione, in due registrazioni.
 error-account-requires-currency = Riga { $line }: il conto è tenuto in valuta, inserisca l’importo in valuta e il tasso.
 error-fx-account-in-chf = Riga { $line }: il conto è tenuto in CHF, la riga non può portare un importo in valuta.
