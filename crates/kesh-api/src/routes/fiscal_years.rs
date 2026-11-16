@@ -9,6 +9,8 @@
 //! - `PUT    /api/v1/fiscal-years/{id}`   — renommage uniquement (Comptable+).
 //! - `POST   /api/v1/fiscal-years/{id}/close` — transition Open→Closed (Comptable+).
 //! - `POST   /api/v1/fiscal-years/{id}/reopen` — transition Closed→Open (Admin, motif, audit — Story 14-2).
+//! - `PUT    /api/v1/fiscal-years/{id}/rate-kinds` — genres des cours d'ouverture et
+//!   de clôture d'un exercice multi-devises (Comptable+, Story 37-2).
 //!
 //! Toutes les routes mutatrices forcent `company_id = current_user.company_id`
 //! ; tout `companyId` injecté dans le payload est ignoré (multi-tenant
@@ -355,6 +357,148 @@ pub async fn update_fiscal_year(
     .map_err(map_update_error)?;
 
     Ok(Json(FiscalYearResponse::from(fy)))
+}
+
+/// Story 37-2 (AC-5) — corps de `PUT /api/v1/fiscal-years/{id}/rate-kinds`.
+/// Les deux genres sont obligatoires (`"day"` | `"month"`) : un corps
+/// illisible, un champ absent ou une valeur hors liste est refusé par
+/// l'extracteur (400 `VALIDATION_ERROR`) avant le handler.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RateKindsRequest {
+    /// Genre du cours d'ouverture.
+    pub opening_rate_kind: RateKind,
+    /// Genre du cours de clôture.
+    pub closing_rate_kind: RateKind,
+    /// U4 : appliquer le genre de clôture changé à l'ouverture de l'exercice
+    /// suivant. Absent = `false`.
+    #[serde(default)]
+    pub apply_to_next_opening: bool,
+}
+
+crate::extractors::impl_validation_extractor!(
+    RateKindsRequestExtractor,
+    RateKindsRequest,
+    "`openingRateKind` et `closingRateKind` \"day\" | \"month\", `applyToNextOpening` booléen facultatif"
+);
+
+/// Ce que la réponse de `PUT …/rate-kinds` dit de l'exercice suivant (U4).
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NextFiscalYearRateKinds {
+    /// L'exercice suivant.
+    pub id: i64,
+    /// Son genre d'ouverture, après.
+    pub opening_rate_kind: RateKind,
+    /// Vrai s'il a pris le genre de clôture réglé.
+    pub applied: bool,
+    /// `"closed"` s'il n'a pas été touché parce que clos.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reason: Option<&'static str>,
+}
+
+/// Réponse de `PUT …/rate-kinds`.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RateKindsResponse {
+    /// L'exercice réglé.
+    pub fiscal_year: FiscalYearResponse,
+    /// L'exercice suivant, quand le genre de clôture change, qu'il existe et
+    /// que `applyToNextOpening` est vrai ; `null` sinon.
+    pub next_fiscal_year: Option<NextFiscalYearRateKinds>,
+}
+
+/// `PUT /api/v1/fiscal-years/{id}/rate-kinds` — règle les genres des cours
+/// d'ouverture et de clôture d'un exercice multi-devises ouvert (Story 37-2,
+/// AC-5, U4), Administrateur ou Comptable.
+///
+/// Refus, dans l'ordre : 400 de l'extracteur → 404 (exercice d'une autre
+/// société) → 409 `MULTI_CURRENCY_DISABLED` (`details {fiscalYearId}`) → 400
+/// `FISCAL_YEAR_CLOSED`, mode et statut relus sous le `FOR UPDATE` de
+/// l'exercice. No-op → 200 sans audit. Sinon une ligne d'audit
+/// `fiscal_year.rate_kinds_updated` sur l'exercice réglé, `{ before, after,
+/// nextFiscalYear: { id, before, after } | null, copied }`. Aucune écriture
+/// comptable n'est modifiée ; les unités neuves reçoivent la copie des cours
+/// déjà récupérés.
+///
+/// Rejouée sur interblocage, comme les autres routes d'exercice : elle tient
+/// l'exercice (et le suivant) `FOR UPDATE`, puis prend `companies` en partage
+/// par la clé étrangère de la copie — cycle possible avec une récupération ou
+/// une autre route qui copie. Transaction unique, audit compris.
+pub async fn update_rate_kinds(
+    State(state): State<AppState>,
+    Extension(current_user): Extension<CurrentUser>,
+    Path(id): Path<i64>,
+    RateKindsRequestExtractor(req): RateKindsRequestExtractor,
+) -> Result<Json<RateKindsResponse>, AppError> {
+    use crate::audit::AuditActor;
+    use kesh_db::entities::audit_log::NewAuditLogEntry;
+    use serde_json::json;
+
+    let user = &current_user;
+    let req = &req;
+    let maj = kesh_db::retry::retry_on_deadlock("fiscal_years::update_rate_kinds", || {
+        let pool = state.pool.clone();
+        async move {
+            let mut tx = pool.begin().await.map_err(kesh_db::errors::map_db_error)?;
+            let maj = fiscal_years::update_rate_kinds_in_tx(
+                &mut tx,
+                user.company_id,
+                id,
+                req.opening_rate_kind,
+                req.closing_rate_kind,
+                req.apply_to_next_opening,
+            )
+            .await?;
+            if !maj.changed() {
+                tx.rollback().await.map_err(kesh_db::errors::map_db_error)?;
+                return Ok(maj);
+            }
+            let genres = |fy: &FiscalYear| {
+                json!({
+                    "openingRateKind": fy.opening_rate_kind.as_str(),
+                    "closingRateKind": fy.closing_rate_kind.as_str(),
+                })
+            };
+            let suivant = maj.next.as_ref().filter(|n| n.applied).map(|n| {
+                json!({
+                    "id": n.after.id,
+                    "before": { "openingRateKind": n.before.opening_rate_kind.as_str() },
+                    "after": { "openingRateKind": n.after.opening_rate_kind.as_str() },
+                })
+            });
+            kesh_db::repositories::audit_log::insert_in_tx(
+                &mut tx,
+                NewAuditLogEntry::from_current_user(
+                    user,
+                    "fiscal_year.rate_kinds_updated",
+                    "fiscal_year",
+                    id,
+                    Some(json!({
+                        "before": genres(&maj.before),
+                        "after": genres(&maj.after),
+                        "nextFiscalYear": suivant,
+                        "copied": maj.copied,
+                    })),
+                ),
+            )
+            .await?;
+            tx.commit().await.map_err(kesh_db::errors::map_db_error)?;
+            Ok(maj)
+        }
+    })
+    .await?;
+
+    let next_fiscal_year = maj.next.map(|n| NextFiscalYearRateKinds {
+        id: n.after.id,
+        opening_rate_kind: n.after.opening_rate_kind,
+        applied: n.applied,
+        reason: (!n.applied).then_some("closed"),
+    });
+    Ok(Json(RateKindsResponse {
+        fiscal_year: FiscalYearResponse::from(maj.after),
+        next_fiscal_year,
+    }))
 }
 
 /// `POST /api/v1/fiscal-years/{id}/close` — transition Open → Closed (Comptable+).

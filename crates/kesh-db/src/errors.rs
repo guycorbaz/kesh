@@ -1141,6 +1141,20 @@ pub enum DbError {
         value: String,
     },
 
+    /// La société n'a **aucun** cours retenu (`exchange_rates`) pour une devise
+    /// et un mois (Story 37-2, AC-5 ; réutilisée par 37-3a et 37-5, sans être
+    /// redéfinie). Mappé vers HTTP **404** `RATE_UNAVAILABLE`,
+    /// `details: { currency, month: "AAAA-MM-01" }` — forme unique d'un cours
+    /// mensuel. La forme journalière (`details.date` en plus) n'est rendue que
+    /// par `GET /exchange-rates/lookup`, qui construit sa réponse directement.
+    #[error("Aucun cours de change pour {currency} en {month}")]
+    RateUnavailable {
+        /// Code ISO 4217 de la devise.
+        currency: String,
+        /// Le 1er du mois.
+        month: chrono::NaiveDate,
+    },
+
     /// Changer la devise d'un compte qui porte au moins une ligne d'écriture
     /// (Story 37-1, AC-4) : la devise de chaque ligne passée est celle de son
     /// compte. Sans exception ni confirmation. Mappé vers HTTP **409**
@@ -2170,6 +2184,7 @@ impl DbError {
             Self::MultiCurrencyIrreversible => "MULTI_CURRENCY_IRREVERSIBLE",
             Self::MultiCurrencyDisabled { .. } => "MULTI_CURRENCY_DISABLED",
             Self::CurrencyUnknown { .. } => "CURRENCY_UNKNOWN",
+            Self::RateUnavailable { .. } => "RATE_UNAVAILABLE",
             Self::AccountCurrencyLocked => "ACCOUNT_CURRENCY_LOCKED",
             Self::AccountCurrencyInUse { .. } => "ACCOUNT_CURRENCY_IN_USE",
             Self::AccountInForeignCurrency { .. } => "ACCOUNT_IN_FOREIGN_CURRENCY",

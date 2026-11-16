@@ -10,6 +10,7 @@
 	import IncompleteBanner from '$lib/shared/components/IncompleteBanner.svelte';
 	// Story 31-1c (#503, AC31) — échec ou retard de la sauvegarde automatique (Admin).
 	import BackupScheduleBanner from '$lib/features/admin-backup/BackupScheduleBanner.svelte';
+	import ExchangeRateNoticesBanner from '$lib/features/exchange-rates/ExchangeRateNoticesBanner.svelte';
 	import { Search, LogOut, User, Settings, ChevronDown } from '@lucide/svelte';
 	import { toast } from 'svelte-sonner';
 	import { i18nMsg } from '$lib/shared/utils/i18n.svelte';
@@ -371,6 +372,8 @@
 	{/if}
 	<!-- Story 31-1c — indépendant des précédentes ; s'affiche seul pour un Admin. -->
 	<BackupScheduleBanner />
+	<!-- Story 37-2 (AC-6) — corrections de l'AFC à acquitter (Administrateur, Comptable, multi-devises). -->
+	<ExchangeRateNoticesBanner />
 
 	<!-- Corps : sidebar + contenu -->
 	<div class="flex flex-1">

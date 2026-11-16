@@ -298,6 +298,34 @@ pub(crate) fn refus_qr_iban(e: kesh_core::errors::CoreError) -> AppError {
 }
 
 // ===========================================================================
+// Gardes lexicales (tests)
+// ===========================================================================
+
+/// Lignes de code d'un fichier, commentaires `//` écartés, tronqué au
+/// premier `#[cfg(test)]` — l'aide des gardes lexicales « lancé par
+/// `main.rs` seulement » (Story 31-1c, `auto_backup` ; Story 37-2,
+/// `exchange_rates`), extraite ici pour être partagée (refs #727).
+///
+/// ⚠️ **Limite assumée** (Story 32-1a, #711 E-9 (3), C-32-1-38) : la lecture
+/// est ligne à ligne, sans analyse lexicale. Seules les lignes **entières**
+/// qui commencent par `//` sont écartées ; un commentaire de fin de ligne, un
+/// commentaire `/* … */` et le **contenu des chaînes** restent lus comme du
+/// code. La troncature s'arrête à la première ligne dont le contenu est
+/// exactement `#[cfg(test)]`. Conséquence : un jeton **exigé** par une garde,
+/// écrit seulement dans un commentaire de bloc ou une chaîne, la satisferait à
+/// tort — muet ; un jeton **interdit** écrit au même endroit la fait rougir —
+/// bruyant. Correction suivie par #727 (extraction d'un balayeur commun).
+#[cfg(test)]
+pub(crate) fn code(source: &str) -> String {
+    source
+        .lines()
+        .take_while(|l| l.trim() != "#[cfg(test)]")
+        .filter(|l| !l.trim_start().starts_with("//"))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+// ===========================================================================
 // Tests
 // ===========================================================================
 

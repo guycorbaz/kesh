@@ -5951,10 +5951,33 @@ async fn full_import_of_a_0_17_6_backup_takes_the_multi_currency_defaults(pool: 
     assert_eq!(retirees, 10, "les dix colonnes de la 37-1");
     let ancienne = rezip_tout(&manifest, &data, &fichiers);
 
+    assert!(
+        manifest["tables"].get("exchange_rates").is_none(),
+        "Story 37-2 : la sauvegarde 0.17.6 ne porte pas la table des cours"
+    );
+
     // La base porte un réglage actif avant l'import : l'import le remplace.
     let compte_usd = poser_multi_devises(&pool, &biz).await;
+    // Story 37-2 (AC-7, R1) : un cours retenu avant l'import est effacé comme
+    // toute donnée de la société remplacée ; la table reste vide.
+    sqlx::query(
+        "INSERT INTO exchange_rates (company_id, currency, kind, rate_date, rate, source) \
+         VALUES (?, 'USD', 'month', '2026-01-01', 0.8800000000, 'manual')",
+    )
+    .bind(c)
+    .execute(&pool)
+    .await
+    .unwrap();
     let resp = post_import(&app, &biz.ctx.jwt, ancienne).await;
     assert_eq!(resp.status(), 200, "{}", resp.text().await.unwrap());
+    let cours: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM exchange_rates")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(
+        cours, 0,
+        "aucun cours retenu après l'import d'une sauvegarde 0.17.6"
+    );
 
     assert_eq!(
         reglage_multi_devises(&pool, c).await,
@@ -6057,6 +6080,81 @@ async fn full_import_round_trip_keeps_the_multi_currency_setting(pool: MySqlPool
     assert_eq!(reglage_multi_devises(&pool, c).await, reglage);
     assert_eq!(devise_du_compte(&pool, compte_usd).await, devise);
     assert_eq!(modes_des_exercices(&pool, c).await, modes);
+}
+
+/// Les lignes `exchange_rates` de la base, toutes colonnes, en texte, par id.
+async fn cours_retenus(pool: &MySqlPool) -> Vec<String> {
+    sqlx::query_scalar(
+        "SELECT CONCAT_WS('|', id, company_id, currency, kind, rate_date, rate, source, version, \
+             IFNULL(acknowledged_rate, '-'), IFNULL(acknowledged_at, '-'), \
+             IFNULL(updated_by, '-'), created_at, updated_at) \
+         FROM exchange_rates ORDER BY id",
+    )
+    .fetch_all(pool)
+    .await
+    .unwrap()
+}
+
+/// Story 37-2 (AC-7) — **aller-retour** des cours retenus : une ligne `afc`
+/// copiée par Kesh (`updated_by` `NULL`, acquittée) et une ligne `manual`
+/// (version 3), à 10 décimales, reviennent identiques, toutes colonnes ; après
+/// l'import, sur des tables système vides (aucune valeur publiée),
+/// `GET /exchange-rates/lookup` rend 200 sans aucun appel sortant — ni valeur
+/// publiée, ni état de récupération écrits.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn full_import_round_trip_keeps_the_company_exchange_rates(pool: MySqlPool) {
+    let app = spawn_app(pool.clone()).await;
+    let biz = seed_business(&pool, "Aller-retour 37-2").await;
+    let c = biz.ctx.company_id;
+    poser_multi_devises(&pool, &biz).await;
+    sqlx::query(
+        "INSERT INTO exchange_rates (company_id, currency, kind, rate_date, rate, source, \
+             version, acknowledged_rate, acknowledged_at, updated_by) VALUES \
+         (?, 'USD', 'month', '2026-01-01', 0.8812345678, 'afc', 1, 0.8900000000, \
+             '2026-02-01 10:00:00.123', NULL), \
+         (?, 'EUR', 'day', '2026-03-31', 0.9512345678, 'manual', 3, NULL, NULL, ?)",
+    )
+    .bind(c)
+    .bind(c)
+    .bind(biz.ctx.user_id)
+    .execute(&pool)
+    .await
+    .unwrap();
+    let avant = cours_retenus(&pool).await;
+    assert_eq!(avant.len(), 2, "montage : deux cours retenus");
+    let backup = export_backup(&app, &biz.ctx.jwt).await;
+
+    sqlx::query("DELETE FROM exchange_rates")
+        .execute(&pool)
+        .await
+        .unwrap();
+    let resp = post_import(&app, &biz.ctx.jwt, backup).await;
+    assert_eq!(resp.status(), 200, "{}", resp.text().await.unwrap());
+    assert_eq!(
+        cours_retenus(&pool).await,
+        avant,
+        "cours retenus identiques"
+    );
+
+    let r = app
+        .client
+        .get(app.url("/api/v1/exchange-rates/lookup?currency=USD&date=2026-01-15&kind=month"))
+        .header("Authorization", format!("Bearer {}", biz.ctx.jwt))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), 200);
+    let b: Value = r.json().await.unwrap();
+    assert_eq!(b["source"], "afc", "{b}");
+    assert_eq!(b["effectiveRate"], "0.8812345678", "{b}");
+    assert_eq!(b["publishedRate"], Value::Null, "{b}");
+    for table in ["_kesh_fetched_exchange_rates", "_kesh_exchange_rate_fetch"] {
+        let n: i64 = sqlx::query_scalar(&format!("SELECT COUNT(*) FROM {table}"))
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(n, 0, "{table} : aucun appel sortant, rien d'écrit");
+    }
 }
 
 /// Revue P2 (E2) — un `.keshbackup` retouché à la main, `account_kind = "BANK"`

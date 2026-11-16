@@ -356,8 +356,18 @@ const SUFFIXES = ['Label', 'Text', 'Display'];
  * rendu, `conforme` **79 → 80** ; `ecartee` ne bouge pas. Relevé par la garde (`expected 94 to
  * be 93`), non additionné ; seule déclaration neuve de la phase C à porter un suffixe `Label`,
  * `Text` ou `Display`.
+ *
+ * **94 → 106, et les douze déclarations sont NOMMÉES** (Story 37-2, AC-6, écran *Cours de
+ * change*) : dans `lib/features/exchange-rates/exchange-rates-labels.ts`, `mentionText`,
+ * `arrowLabel`, `notFetchableText`, `fetchFailureText`, `fetchErrorCodeText`, `kindText`,
+ * `unitLongText`, `statusText` (textes par `i18nMsg`, ou le message du serveur par
+ * `errorMessageOf`, ou une donnée : le code brut inconnu) ; dans `exchange-rates-grid.ts`,
+ * `monthLabel`, `monthLongLabel`, `unitLabel` (`Intl.DateTimeFormat` ou `formatSwissDate` :
+ * des données) ; dans `ExchangeRatesScreen.svelte`, `linkedLabel` (une donnée ou `null`).
+ * Aucun littéral rendu : `conforme` **80 → 92** ; `ecartee` ne bouge pas. Relevé par la garde
+ * (`expected 106 to be 94`), non additionné.
  */
-const CANDIDATES_ATTENDUES = 94;
+const CANDIDATES_ATTENDUES = 106;
 
 /** Les trois délimiteurs de littéral en JS/TS. */
 const QUOTES = ["'", '"', '`'];
@@ -874,7 +884,7 @@ describe('libellés en dur — l’angle mort #255', () => {
 			else if (c.retours.length > 0) classes.ecartee += 1;
 			else classes.conforme += 1;
 		}
-		expect(classes).toEqual({ nonAnalysee: 0, enViolation: 0, ecartee: 14, conforme: 80 });
+		expect(classes).toEqual({ nonAnalysee: 0, enViolation: 0, ecartee: 14, conforme: 92 });
 		// La somme est recalculée depuis les classes, jamais depuis le total qu'elle contrôle.
 		const somme = Object.values(classes).reduce((a, b) => a + b, 0);
 		expect(somme).toBe(CANDIDATES_ATTENDUES);

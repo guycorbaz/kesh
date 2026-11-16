@@ -22,6 +22,10 @@
   \end{figure}%
 }
 
+%% Coche de l'écran Cours de change (« AFC ✓ ») : la police du manuel n'a pas
+%% ce caractère, d'où un tracé TikZ (tikz est chargé par kesh-style.sty).
+\newcommand{\keshcoche}{\tikz[baseline=0ex,x=1ex,y=1ex,line width=0.13ex,line cap=round,line join=round]\draw (0,0.5)--(0.35,0.1)--(1,1.05);}
+
 \title{Manuel utilisateur Kesh}
 \author{\keshAuthor}
 \date{\keshReleaseDate}
@@ -1042,7 +1046,7 @@ L'écriture d'ouverture est datée au premier jour du \textbf{premier} exercice 
 
 Le franc suisse (CHF) reste la \textbf{devise principale} de Kesh~: les livres, les soldes et les rapports sont tenus en CHF. Le mode \emph{multi-devises} permet de donner \textbf{une autre devise à un compte} du plan comptable --- un compte en euros, en dollars, le solde d'un compte PayPal. Par défaut, une société est \emph{mono-devise}, et rien de ce qui suit n'y apparaît~: qui reste en mono-devise ne voit aucun changement.
 
-Cette section décrit le réglage, les comptes qu'il demande, le mode des exercices et la devise des comptes. La saisie d'écritures en devise, les cours de change et la réévaluation de fin d'exercice s'appuient sur ce réglage~; ce manuel les décrira avec la version qui les livre.
+Cette section décrit le réglage, les comptes qu'il demande, le mode des exercices, la devise des comptes et les cours de change (\S\ref{sec:cours-de-change}). La saisie d'écritures en devise et la réévaluation de fin d'exercice s'appuient sur ce réglage et sur ces cours~; ce manuel les décrira avec la version qui les livre.
 
 \subsection{Activer le multi-devises}
 
@@ -1089,7 +1093,7 @@ Chaque exercice est \emph{mono-devise} ou \emph{multi-devises}~; son mode se pos
     \item \textbf{Aucun exercice ne se crée avant un exercice mono-devise}~: Kesh refuse et nomme l'exercice postérieur, mono-devise. Le rouvrir n'y change rien --- il reste mono-devise. Les exercices mono-devise restent ainsi les plus anciens.
 \end{itemize}
 
-\paragraph{Le genre des cours d'ouverture et de clôture.} Un exercice porte aussi le \textbf{genre} du cours de change retenu à son ouverture et à sa clôture --- cours journalier ou cours mensuel. À la création, le cours d'ouverture \textbf{reprend par défaut le genre du cours de clôture de l'exercice précédent} --- celui qui se termine la veille du début du nouvel exercice~; pour un premier exercice, ou un exercice précédé d'un trou, c'est le cours journalier. Le genre de clôture est d'abord le cours journalier. Les cours eux-mêmes, et le choix de ces genres, viennent avec les fonctions qui emploient les cours (saisie en devise, réévaluation)~; ce manuel les décrira avec elles.
+\paragraph{Le genre des cours d'ouverture et de clôture.} Un exercice porte aussi le \textbf{genre} du cours de change retenu à son ouverture et à sa clôture --- cours journalier ou cours mensuel. À la création, le cours d'ouverture \textbf{reprend par défaut le genre du cours de clôture de l'exercice précédent} --- celui qui se termine la veille du début du nouvel exercice~; pour un premier exercice, ou un exercice précédé d'un trou, c'est le cours journalier. Le genre de clôture est d'abord le cours journalier. Les deux genres se choisissent à l'écran \emph{Cours de change} (\S\ref{sec:cours-genres}).
 
 \subsection{La devise d'un compte}\label{sec:devise-compte}
 
@@ -1124,9 +1128,94 @@ Exemple~: pour isoler les frais de change cachés de PayPal et de Stripe, créez
 
 Repasser le champ \emph{Devise} à CHF remet le choix à \emph{Par défaut}~: un compte en CHF n'a pas de comptes de différence. Un compte désigné comme compte propre est protégé comme un compte désigné par la société (ci-dessus)~; le compte en devise qui le désigne, lui, peut être archivé --- ses désignations restent comptées, et de nouveau en vigueur s'il est réactivé.
 
+\subsection{Les cours de change}\label{sec:cours-de-change}
+
+En multi-devises, \emph{Administration} → \emph{Paramètres} porte une carte \emph{Cours de change}~; son bouton \emph{Gérer} ouvre l'écran des cours. En mono-devise, la carte n'existe pas. Tous les rôles lisent l'écran~; l'\textbf{Administrateur} et le \textbf{Comptable} le modifient, le rôle \textbf{Consultation} le voit en lecture seule.
+
+\begin{sloppypar}
+\paragraph{La source.} Kesh récupère les cours officiels de l'\textbf{Administration fédérale des contributions (AFC)}, publiés par l'Office fédéral de la douane et de la sécurité des frontières (OFDF). Il en tient deux genres~:
+\end{sloppypar}
+\begin{itemize}
+    \item le \textbf{cours mensuel AFC}, publié \textbf{d'avance} pour le mois et valable pour tout ce mois~;
+    \item le \textbf{cours journalier}, publié les jours ouvrables~; pour un samedi, un dimanche ou un jour férié, Kesh retient la dernière publication qui précède, et l'écran dit sa date («~publié le 28.06.2024~»).
+\end{itemize}
+Ces cours sont \textbf{indicatifs et non contraignants}~: chaque cours peut être remplacé par le vôtre (ci-dessous). Un cours s'entend toujours \textbf{en CHF pour une unité} de la devise --- l'AFC publie certaines devises par 100 (le yen, par exemple)~: Kesh les ramène à une unité.
+
+\subsubsection{Le tableau d'un exercice}
+
+L'écran montre \textbf{un tableau par exercice}~; la liste en haut de l'écran propose les exercices \textbf{multi-devises} (par défaut celui qui couvre aujourd'hui, sinon le plus récent) --- un exercice mono-devise n'a pas de cours et n'y figure pas. Le tableau a \textbf{une ligne par devise} --- celles des comptes de la société~; \emph{Ajouter une devise} en ajoute une, et la case \emph{Toutes les devises publiées} montre aussi les devises qu'aucun compte ne porte --- et \textbf{une colonne par mois de l'exercice}, du premier au dernier, dans l'ordre de l'exercice~: «~juil. 2024~» à «~juin 2025~» pour un exercice au 1er juillet. Kesh n'impose aucune durée d'exercice~: un exercice raccourci ou allongé, lors d'un changement de date de clôture, a moins ou plus de douze colonnes (six pour un exercice de six mois, dix-huit pour dix-huit mois)~; un exercice qui commence en cours de mois (le 15.03.2024, par exemple) a pour premier mois ce mois-là, et treize colonnes s'il dure un an. Suivent les colonnes \textbf{Ouverture} et \textbf{Clôture} (ci-dessous). Seul le tableau défile horizontalement~; la colonne des devises reste en place.
+
+\subsubsection{Le cours retenu par la société}\label{sec:cours-retenu}
+
+Chaque case montre \textbf{une seule valeur}~: le \textbf{cours retenu par la société} pour cette devise et ce mois (ou ce jour). C'est lui que Kesh proposera aux écritures en devise --- jamais directement la valeur publiée par l'AFC. Il a deux origines~:
+\begin{itemize}
+    \item \textbf{la copie automatique}~: quand Kesh récupère un cours publié, il le copie dans les cases \textbf{vides} des exercices multi-devises ouverts de la société, pour les devises que portent ses comptes (archivés compris). Il le fait aussi à la création d'un exercice multi-devises, au changement d'un genre d'ouverture ou de clôture, et quand un compte reçoit une devise --- pour les cours déjà récupérés. La copie \textbf{ne remplace jamais} une case remplie~;
+    \item \textbf{le cours saisi}~: entrez une autre valeur dans la case et validez-la~; elle devient le cours retenu (au plus 10 décimales, strictement positif, au plus 1~000~000). Un champ vidé ne retire rien~: la valeur affichée revient.
+\end{itemize}
+Sous la valeur, une mention dit d'où elle vient et ce que l'AFC a publié~:
+\begin{itemize}
+    \item «~AFC~\keshcoche~»~: le cours retenu est la valeur publiée~;
+    \item «~AFC~: 0.8846~»~: vous avez saisi un autre cours~; la valeur publiée est indiquée~;
+    \item «~AFC~\keshcoche~· saisi~»~: un cours saisi égal à la valeur publiée~;
+    \item «~AFC~: non publié~»~: aucune valeur publiée de l'AFC n'est connue de Kesh pour cette case --- cours saisi, ou case vide (pas encore publiée, ou pas encore récupérée)~;
+    \item «~AFC (valeur publiée non relue)~»~: après une restauration, avant la récupération suivante (ci-dessous)~;
+    \item «~AFC corrigé~: 0.8850 (le 03.12.2024)~», \textbf{en rouge}~: l'AFC a corrigé ce cours après que la société l'a retenu (\S\ref{sec:cours-correction}).
+\end{itemize}
+La flèche $\uparrow$ à côté de la mention reprend la valeur publiée~: elle retire un cours saisi (la case revient à la valeur publiée, ou se vide si l'AFC n'a rien publié --- \emph{Retirer le cours saisi}), remplit une case vide (\emph{Reprendre la valeur publiée}) ou reprend une correction de l'AFC (\emph{Reprendre la valeur corrigée}). Entrer à la main la valeur publiée revient à cliquer sur $\uparrow$~: l'écran n'enregistre pas de cours «~saisi~» égal à la valeur publiée (un client de l'API, lui, le peut~: la case porte alors «~AFC~✓~· saisi~»). Au survol, une case dit si elle a été copiée par Kesh ou retenue par un utilisateur, et, dans ce second cas, quand. Si un autre utilisateur a changé la case entre-temps, Kesh recharge le tableau et vous demande de vérifier puis de réessayer. Le cours saisi, la reprise par $\uparrow$, l'acquittement des corrections et la récupération manuelle sont inscrits au journal d'audit~; la copie automatique ne l'est pas.
+
+\subsubsection{Les cours d'ouverture et de clôture}\label{sec:cours-genres}
+
+Au-dessus du tableau, deux choix règlent les colonnes \textbf{Ouverture} et \textbf{Clôture} de l'exercice~:
+\begin{itemize}
+    \item \emph{Cours d'ouverture}~: le «~cours journalier de la veille de l'ouverture~» (par défaut~: le 30.06.2024 pour un exercice au 1er juillet 2024) ou le «~cours mensuel du dernier mois de l'exercice précédent~» (juin 2024 pour ce même exercice). \textbf{Pourquoi le dernier mois de l'exercice précédent}~: le cours d'ouverture d'un exercice est le cours de clôture du précédent~; ainsi, les valeurs en CHF concordent d'un exercice à l'autre. À la création d'un exercice, le genre d'ouverture reprend celui de la clôture de l'exercice précédent (\S\ref{sec:multi-devises-exercices})~;
+    \item \emph{Cours de clôture}~: le «~cours journalier de la date de clôture~» (par défaut) ou le «~cours mensuel du dernier mois~».
+\end{itemize}
+En genre journalier, la colonne montre le cours de ce jour. En genre mensuel, la Clôture est \textbf{la même case} que la colonne du dernier mois (une seule valeur, modifiée à un seul endroit)~; l'Ouverture est une case propre quand l'exercice commence le 1er d'un mois --- la même que la colonne de ce mois dans l'exercice précédent, et que sa Clôture s'il finit la veille ---, et la même case que la première colonne quand l'exercice commence en cours de mois. De même, le jour de clôture d'un exercice est le jour d'ouverture de l'exercice suivant quand celui-ci commence le lendemain~: c'est une seule case, et la modifier depuis l'un change ce qu'affiche l'autre.
+
+\paragraph{Changer le cours de clôture.} Quand l'exercice \textbf{suivant} existe (il commence le lendemain de la clôture), changer le genre de clôture ouvre un dialogue~: la case «~Appliquer aussi au cours d'ouverture de l'exercice suivant~», cochée par défaut, applique le même genre à son ouverture. Le dialogue le dit~: entre deux exercices Kesh, \textbf{aucune écriture d'ouverture n'existe} --- les soldes de bilan sont reportés d'un exercice à l'autre~; ce choix \textbf{ne modifie donc aucune écriture}, il change le cours proposé et affiché à l'ouverture de l'exercice suivant. Si l'exercice suivant est clôturé, la case est désactivée~: son cours d'ouverture ne change plus. Sans exercice suivant, il n'y a pas de dialogue. Le changement de genre est inscrit au journal d'audit.
+
+\subsubsection{La récupération des cours}\label{sec:cours-recuperation}
+
+\paragraph{Automatique.} Kesh récupère seul les cours des \textbf{exercices multi-devises ouverts}~: leurs mois, jusqu'au mois suivant le mois courant, et les jours d'ouverture et de clôture que leurs genres demandent, une fois ces jours passés. Il le fait~:
+\begin{itemize}
+    \item au \textbf{démarrage} (une minute après)~;
+    \item \textbf{chaque jour}, à minuit (heure suisse), tant que le cours du mois courant ou du mois suivant manque --- c'est-à-dire jusqu'à ce qu'il obtienne le cours du mois suivant~;
+    \item puis il fait une \textbf{pause}, jusqu'au plus tôt de «~date d'obtention + 24 jours~» et du \textbf{25 du mois obtenu}, mais \textbf{jamais avant le 1er de ce mois}~: le cours de décembre obtenu le 14 novembre fait reprendre la vérification quotidienne le 8 décembre~; obtenu le 2 novembre, le 1er décembre~;
+    \item à la \textbf{connexion} d'un utilisateur, au plus une fois par quart d'heure, si un cours utile autre que le seul mois suivant manque.
+\end{itemize}
+Chaque passage qui a un cours à récupérer revérifie aussi le cours du \textbf{mois courant}, pour découvrir une correction de l'AFC~; quand rien ne manque, il n'y a pas de passage, donc pas de revérification. Le cours d'un mois non encore publié se redemande le lendemain. Sans exercice multi-devises ouvert, Kesh n'appelle pas la source de lui-même. La récupération automatique n'est pas inscrite au journal d'audit~; l'écran dit l'état de la dernière récupération --- automatique ou manuelle, date, statut, motif d'un échec.
+
+\keshAttention\ \emph{Limite connue~: un jour d'ouverture ou de clôture qui manque ne fait pas, à lui seul, reprendre la vérification quotidienne. Le cours journalier du 31 décembre, jour de clôture d'un exercice civil, attend ainsi la fin de la pause de janvier --- au plus tard le 25 janvier --- s'il n'y a ni connexion ni redémarrage entre-temps. «~Récupérer les cours manquants~» l'obtient tout de suite.}
+
+\paragraph{À la demande.} Deux boutons (Administrateur et Comptable)~:
+\begin{itemize}
+    \item \emph{Récupérer les cours manquants} demande, colonne par colonne, les cours qui manquent dans le tableau --- une case sans valeur publiée, ou sans cours retenu pour une devise d'un compte. Il reste offert sur un exercice clôturé, que la récupération automatique ignore. Un mois au-delà du mois suivant ou un jour qui n'est pas encore passé ne se récupèrent pas~: la raison s'affiche au survol, et la case reste saisissable. Kesh ne tient aucun cours antérieur au 1er janvier 2000~: une telle case ne se récupère ni ne se saisit. Un échec s'affiche sur les cases de sa colonne sans arrêter les suivantes~;
+    \item \emph{Revérifier les cours publiés} redemande les colonnes déjà présentes~: c'est par là qu'une correction de l'AFC sur un autre mois que le mois courant se découvre.
+\end{itemize}
+
+\subsubsection{Quand l'AFC corrige un cours}\label{sec:cours-correction}
+
+Il arrive que l'AFC publie de nouveau un cours, à une autre valeur. Kesh enregistre la nouvelle valeur publiée, mais \textbf{la société garde son cours retenu}~: une correction ne change le cours d'aucune société sans qu'elle le décide. L'écart ne passe pas inaperçu~:
+\begin{itemize}
+    \item la case affiche «~AFC corrigé~: \emph{valeur} (le \emph{date})~» \textbf{en rouge}, tant que la valeur corrigée n'est pas reprise~;
+    \item sa flèche $\uparrow$ \emph{Reprendre la valeur corrigée} la reprend \textbf{directement}, pour \textbf{cette société seule}~: le rouge disparaît~;
+    \item un \textbf{avertissement} s'affiche en tête de Kesh, pour l'Administrateur et le Comptable~: «~L'AFC a corrigé N cours que votre société a retenus~», avec la liste (devise, mois ou jour, cours retenu → valeur corrigée) et un lien vers l'écran des cours. Son bouton \emph{Acquitter} le fait disparaître pour la société et pour \textbf{cette valeur}~: une correction suivante avertit de nouveau. Acquitter ne reprend rien~: la case reste en rouge tant que la valeur n'est pas reprise.
+\end{itemize}
+\textbf{Ni la correction ni sa reprise ne modifient une écriture passée}~: une ligne d'écriture passée au cours AFC précédent garde son cours, et reste admise tant qu'on ne la modifie pas~; modifiée, elle prend le nouveau cours retenu ou devient un cours saisi.
+
+\subsubsection{Exercice clôturé et lecture seule}
+
+Sur un exercice \textbf{clôturé}, les cours et les flèches sont en lecture seule et les deux choix de genre sont désactivés~; \emph{Récupérer les cours manquants} reste offert. Pour le rôle \textbf{Consultation}, tout l'écran est en lecture seule.
+
+\subsubsection{Restauration et réinitialisation}
+
+Les cours retenus par la société \textbf{et leur origine} (copie de l'AFC ou cours saisi) font partie de la sauvegarde~: après une restauration, ils sont là et valent tout de suite. Les valeurs publiées, elles, sont des données de l'installation~: une installation neuve restaurée les récupère à son prochain passage, et ses cases copiées de l'AFC disent «~AFC (valeur publiée non relue)~» jusque-là --- la récupération suivante peut alors révéler une correction survenue entre-temps, annoncée comme ci-dessus. La \textbf{réinitialisation des données de démonstration} vide les cours retenus de la société (elle la remet aussi en mono-devise) et garde les valeurs publiées.
+
 \subsection{Sauvegardes}
 
-Une sauvegarde \texttt{.keshbackup} écrite \textbf{par une version antérieure au multi-devises} se réimporte~: elle ne peut décrire qu'une comptabilité mono-devise, et la société restaurée l'est --- réglage désactivé, comptes sans devise, exercices mono-devise. Une sauvegarde écrite par cette version conserve le réglage, ses trois comptes, la devise et les comptes propres de chaque compte, et le mode et les genres de cours de chaque exercice~; les exports CSV des comptes, de la société et des exercices les portent aussi.
+\begin{sloppypar}
+Une sauvegarde \texttt{.keshbackup} écrite \textbf{par une version antérieure au multi-devises} se réimporte~: elle ne peut décrire qu'une comptabilité mono-devise, et la société restaurée l'est --- réglage désactivé, comptes sans devise, exercices mono-devise, aucun cours retenu. Une sauvegarde écrite par cette version conserve le réglage, ses trois comptes, la devise et les comptes propres de chaque compte, le mode et les genres de cours de chaque exercice, et les cours retenus par la société avec leur origine~; les exports CSV des comptes, de la société, des exercices et des cours les portent aussi.
+\end{sloppypar}
 
 %%─────────────────────────────────────────────────────────────────────────────
 \section{Carnet d'adresses}

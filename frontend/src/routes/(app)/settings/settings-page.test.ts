@@ -1244,3 +1244,29 @@ describe('page Paramètres — Comptabilité multi-devises (Story 37-1)', () => 
 		authState.clearSession({ broadcast: false });
 	});
 });
+
+// Story 37-2 (AC-6) — la carte « Cours de change », visible en multi-devises seulement.
+describe('page Paramètres — carte Cours de change (Story 37-2)', () => {
+	beforeEach(() => {
+		vi.resetAllMocks();
+		fetchSessionSettingsMock.mockResolvedValue({ sessionIdleMinutes: 60, version: 0, min: 1, max: 1440 });
+	});
+
+	it('multi-devises : la carte mène à /settings/exchange-rates', async () => {
+		const r = reponse(null);
+		r.company = { ...r.company, multiCurrencyEnabled: true };
+		fetchCompanyCurrentMock.mockResolvedValue(r);
+		const { findByTestId } = render(Page);
+		expect(await findByTestId('settings-exchange-rates')).toBeTruthy();
+		expect((await findByTestId('settings-exchange-rates-manage-link')).getAttribute('href')).toBe(
+			'/settings/exchange-rates',
+		);
+	});
+
+	it('mono-devise : pas de carte', async () => {
+		fetchCompanyCurrentMock.mockResolvedValue(reponse(null));
+		const { findByTestId, queryByTestId } = render(Page);
+		await findByTestId('settings-currency-enabled');
+		expect(queryByTestId('settings-exchange-rates')).toBeNull();
+	});
+});

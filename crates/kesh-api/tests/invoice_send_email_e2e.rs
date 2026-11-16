@@ -118,6 +118,12 @@ async fn spawn_app(
         test_mock_mailer: None,
         backup_lock: Arc::new(tokio::sync::Mutex::new(())),
         horloge: kesh_api::horloge::horloge_de_test(),
+        // Story 37-2 — source factice, comme `new_for_tests`.
+        rate_source: Arc::new(kesh_api::exchange_rates::MockRateSource::new()),
+        rate_fetch_lock: Arc::new(tokio::sync::Mutex::new(())),
+        rate_fetch_memo: Arc::default(),
+        rate_login_trigger: Arc::new(std::sync::Mutex::new(Some(std::time::Instant::now()))),
+        test_rate_source: None,
     };
 
     let app = build_router(state, "nonexistent-static-dir".to_string());
@@ -1061,6 +1067,12 @@ async fn test_sent_emails_endpoint_captures_and_guards(pool: MySqlPool) {
         test_mock_mailer: Some(mock.clone()),
         backup_lock: Arc::new(tokio::sync::Mutex::new(())),
         horloge: kesh_api::horloge::horloge_de_test(),
+        // Story 37-2 — source factice, comme `new_for_tests`.
+        rate_source: Arc::new(kesh_api::exchange_rates::MockRateSource::new()),
+        rate_fetch_lock: Arc::new(tokio::sync::Mutex::new(())),
+        rate_fetch_memo: Arc::default(),
+        rate_login_trigger: Arc::new(std::sync::Mutex::new(Some(std::time::Instant::now()))),
+        test_rate_source: None,
     };
     let app = build_router(state, "nonexistent-static-dir".to_string());
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -1176,6 +1188,12 @@ async fn test_sent_emails_endpoint_400_without_capture(pool: MySqlPool) {
         test_mock_mailer: None,
         backup_lock: Arc::new(tokio::sync::Mutex::new(())),
         horloge: kesh_api::horloge::horloge_de_test(),
+        // Story 37-2 — source factice, comme `new_for_tests`.
+        rate_source: Arc::new(kesh_api::exchange_rates::MockRateSource::new()),
+        rate_fetch_lock: Arc::new(tokio::sync::Mutex::new(())),
+        rate_fetch_memo: Arc::default(),
+        rate_login_trigger: Arc::new(std::sync::Mutex::new(Some(std::time::Instant::now()))),
+        test_rate_source: None,
     };
     let app = build_router(state, "nonexistent-static-dir".to_string());
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();

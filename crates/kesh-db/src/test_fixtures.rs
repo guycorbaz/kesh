@@ -372,6 +372,10 @@ pub async fn seed_accounting_company_no_fy(pool: &MySqlPool) -> Result<(), Fixtu
 /// - `_kesh_installation_settings` : Story v0172-session (0.17.3) — singleton
 ///   des réglages de l'installation faits dans l'interface (durée
 ///   d'inactivité de la session) ; sans ligne, les défauts du code.
+/// - `_kesh_fetched_exchange_rates` et `_kesh_exchange_rate_fetch` : Story 37-2
+///   — valeurs publiées par la source des cours et état de la dernière
+///   récupération. Hors de ce vidage ; `POST /_test/seed` et `/_test/reset` les
+///   vident à part (`repositories::exchange_rates::clear_fetched_state`).
 // Story 17-3a — la liste canonique des tables a été promue vers
 // `crate::backup::TABLES_TO_TRUNCATE` (source de vérité unique, réutilisée par
 // l'export d'installation). On la ré-exporte ici pour `truncate_all`.

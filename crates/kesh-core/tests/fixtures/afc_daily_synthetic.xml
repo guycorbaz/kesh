@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Fixture SYNTHÉTIQUE (Story 37-2, AC-2) : forme du XML réel de xmldaily, valeurs INVENTÉES — aucun cours officiel n'est versionné. -->
+<wechselkurse xmlns="https://www.backend-rates.bazg.admin.ch/xmldaily" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="https://www.backend-rates.bazg.admin.ch/xmldaily https://www.backend-rates.bazg.admin.ch/xmldaily.xsd">
+  <datum>28.06.2024</datum>
+  <zeit>04:15:03</zeit>
+  <gueltigkeit>29.06.2024</gueltigkeit>
+  <devise code="usd">
+    <land_de>Vereinigte Staaten</land_de>
+    <land_fr>Etats-Unis</land_fr>
+    <land_it>Stati Uniti</land_it>
+    <land_en>United States</land_en>
+    <waehrung>1 USD</waehrung>
+    <kurs>0.89731</kurs>
+  </devise>
+  <devise code="eur">
+    <land_de>Euro-Raum</land_de>
+    <land_fr>Zone euro</land_fr>
+    <land_it>Zona euro</land_it>
+    <land_en/>
+    <waehrung>1 EUR</waehrung>
+    <kurs>0.96215</kurs>
+  </devise>
+  <devise code="jpy">
+    <land_de>Japan</land_de>
+    <land_fr>Japon</land_fr>
+    <land_it>Giappone</land_it>
+    <land_en/>
+    <waehrung>100 JPY</waehrung>
+    <kurs>0.55802</kurs>
+  </devise>
+  <devise code="clp">
+    <land_de>Chile</land_de>
+    <land_fr>Chili</land_fr>
+    <land_it>Cile</land_it>
+    <land_en>Chile</land_en>
+    <waehrung>1000 CLP</waehrung>
+    <kurs>0.95013</kurs>
+  </devise>
+  <devise code="vnd">
+    <land_de>Vietnam</land_de>
+    <land_fr>Viet Nam</land_fr>
+    <land_it>Vietnam</land_it>
+    <land_en>Viet Nam</land_en>
+    <waehrung>10000 VND</waehrung>
+    <kurs>0.35217</kurs>
+  </devise>
+  <devise code="ars">
+    <land_de>Argentinien</land_de>
+    <land_fr>Argentine</land_fr>
+    <land_it>Argentina</land_it>
+    <land_en>Argentina</land_en>
+    <waehrung>1 ARS</waehrung>
+    <kurs>0.0009</kurs>
+  </devise>
+</wechselkurse>

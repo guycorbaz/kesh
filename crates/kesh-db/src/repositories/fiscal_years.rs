@@ -137,10 +137,11 @@ use serde_json::json;
 use sqlx::mysql::MySqlPool;
 
 use crate::entities::audit_log::NewAuditLogEntry;
-use crate::entities::{FiscalYear, FiscalYearStatus, NewFiscalYear};
+use crate::entities::{FiscalYear, FiscalYearStatus, NewFiscalYear, RateKind};
 use crate::errors::{DbError, map_db_error};
 use crate::repositories::MAX_LIST_LIMIT;
 use crate::repositories::audit_log;
+use crate::repositories::exchange_rates;
 
 const FIND_BY_ID_SQL: &str = "SELECT id, company_id, name, start_date, end_date, status, multi_currency, opening_rate_kind, closing_rate_kind, created_at, updated_at \
      FROM fiscal_years WHERE id = ?";
@@ -434,10 +435,22 @@ pub async fn create(
 
     let fy = fetch_fiscal_year_in_tx(&mut tx, id).await?;
 
+    // Story 37-2 (AC-3 bis) : un exercice multi-devises reçoit la copie des
+    // cours déjà récupérés de ses unités utiles, pour les devises des comptes
+    // de la société, dans cette transaction (la société est déjà tenue en
+    // partage, en tête). Le nombre copié va au détail de l'audit (`copied`).
+    let mut details = snapshot_json(&fy);
+    if fy.multi_currency {
+        let units = kesh_core::exchange_rates::unites_utiles_exercice(&fy.exercice_devises());
+        let copied =
+            exchange_rates::copy_fetched_in_tx(&mut tx, fy.company_id, &units, None).await?;
+        details["copied"] = json!(copied);
+    }
+
     // Audit log : snapshot direct (1 état).
     audit_log::insert_in_tx(
         &mut tx,
-        build_audit_entry(user_id, "fiscal_year.created", fy.id, snapshot_json(&fy)),
+        build_audit_entry(user_id, "fiscal_year.created", fy.id, details),
     )
     .await?;
 
@@ -682,6 +695,190 @@ pub async fn update_name(
 
     tx.commit().await.map_err(map_db_error)?;
     Ok(after)
+}
+
+// --- Story 37-2 — genres d'ouverture et de clôture (AC-5, U4) ---
+
+/// L'exercice **suivant** d'un exercice — celui de la société qui commence le
+/// lendemain de sa fin (`start_date = end_date + 1 jour` : un exercice séparé
+/// par un trou n'est pas « suivant », comme en 37-1 AC-3 bis) —, lu
+/// `FOR UPDATE`. Modèle : [`NEXT_AFTER_SQL`], sans verrou.
+const NEXT_ADJACENT_LOCK_SQL: &str = "SELECT id, company_id, name, start_date, end_date, status, multi_currency, opening_rate_kind, closing_rate_kind, created_at, updated_at \
+     FROM fiscal_years WHERE company_id = ? AND start_date = ? FOR UPDATE";
+
+/// Ce que [`update_rate_kinds_in_tx`] a fait à l'exercice suivant (U4).
+#[derive(Debug, Clone)]
+pub struct NextOpeningUpdate {
+    /// L'exercice suivant avant.
+    pub before: FiscalYear,
+    /// L'exercice suivant après (identique à `before` s'il n'est pas touché).
+    pub after: FiscalYear,
+    /// Vrai si son genre d'ouverture a pris le genre de clôture réglé ; faux
+    /// s'il est clos (`reason: "closed"`).
+    pub applied: bool,
+}
+
+/// Résultat de [`update_rate_kinds_in_tx`], pour l'audit et la réponse de
+/// l'appelant.
+#[derive(Debug, Clone)]
+pub struct RateKindsUpdate {
+    /// L'exercice réglé avant.
+    pub before: FiscalYear,
+    /// L'exercice réglé après.
+    pub after: FiscalYear,
+    /// L'exercice suivant, quand le genre de clôture change, qu'il existe et
+    /// que l'appelant demande de l'y appliquer ; `None` sinon.
+    pub next: Option<NextOpeningUpdate>,
+    /// Lignes de cours copiées sur les unités neuves (AC-3 bis).
+    pub copied: u64,
+}
+
+impl RateKindsUpdate {
+    /// Faux pour un no-op (mêmes genres) : rien n'est écrit, aucun audit.
+    pub fn changed(&self) -> bool {
+        self.before.opening_rate_kind != self.after.opening_rate_kind
+            || self.before.closing_rate_kind != self.after.closing_rate_kind
+    }
+}
+
+/// Règle les genres d'ouverture et de clôture d'un exercice
+/// (`PUT /api/v1/fiscal-years/{id}/rate-kinds`, Story 37-2 AC-5), dans la
+/// transaction de l'appelant, qui écrit l'audit et la rejoue sur
+/// interblocage.
+///
+/// Verrous, dans l'ordre : l'exercice `FOR UPDATE` (portée société), puis —
+/// seulement si le genre de clôture change et que `apply_to_next_opening` est
+/// vrai — l'exercice suivant `FOR UPDATE` (ordre chronologique, celui des
+/// autres routes d'exercice), puis `companies` en partage par la clé
+/// étrangère de la copie. Refus, relus sous le verrou : exercice absent ou
+/// d'une autre société → [`DbError::NotFound`] ; exercice mono-devise →
+/// [`DbError::MultiCurrencyDisabled`] (`fiscal_year_id`) ; exercice clos →
+/// [`DbError::FiscalYearClosed`]. Mêmes genres → rien d'écrit
+/// ([`RateKindsUpdate::changed`] faux).
+///
+/// Exercice suivant (U4) : ouvert, son genre d'ouverture prend le genre de
+/// clôture réglé (son mode n'est pas relu) ; clos, il n'est pas touché
+/// (`applied` faux). Aucune écriture comptable n'est modifiée. Les unités
+/// **neuves** des deux exercices reçoivent la copie des cours déjà récupérés
+/// ([`exchange_rates::copy_fetched_in_tx`], insertion seule).
+pub async fn update_rate_kinds_in_tx(
+    conn: &mut sqlx::MySqlConnection,
+    company_id: i64,
+    id: i64,
+    opening: RateKind,
+    closing: RateKind,
+    apply_to_next_opening: bool,
+) -> Result<RateKindsUpdate, DbError> {
+    let before = sqlx::query_as::<_, FiscalYear>(LOCK_IN_COMPANY_SQL)
+        .bind(id)
+        .bind(company_id)
+        .fetch_optional(&mut *conn)
+        .await
+        .map_err(map_db_error)?
+        .ok_or(DbError::NotFound)?;
+    if !before.multi_currency {
+        return Err(DbError::MultiCurrencyDisabled {
+            fiscal_year_id: Some(id),
+        });
+    }
+    if before.status == FiscalYearStatus::Closed {
+        return Err(DbError::FiscalYearClosed);
+    }
+    if before.opening_rate_kind == opening && before.closing_rate_kind == closing {
+        return Ok(RateKindsUpdate {
+            after: before.clone(),
+            before,
+            next: None,
+            copied: 0,
+        });
+    }
+
+    let next_before = if closing != before.closing_rate_kind && apply_to_next_opening {
+        match before.end_date.succ_opt() {
+            Some(lendemain) => sqlx::query_as::<_, FiscalYear>(NEXT_ADJACENT_LOCK_SQL)
+                .bind(company_id)
+                .bind(lendemain)
+                .fetch_optional(&mut *conn)
+                .await
+                .map_err(map_db_error)?,
+            None => None,
+        }
+    } else {
+        None
+    };
+
+    sqlx::query(
+        "UPDATE fiscal_years SET opening_rate_kind = ?, closing_rate_kind = ? \
+         WHERE id = ? AND company_id = ?",
+    )
+    .bind(opening.as_str())
+    .bind(closing.as_str())
+    .bind(id)
+    .bind(company_id)
+    .execute(&mut *conn)
+    .await
+    .map_err(map_db_error)?;
+    let after = sqlx::query_as::<_, FiscalYear>(FIND_BY_ID_SQL)
+        .bind(id)
+        .fetch_one(&mut *conn)
+        .await
+        .map_err(map_db_error)?;
+
+    let mut neuves = unites_neuves(&before, &after);
+    let next = match next_before {
+        None => None,
+        Some(nb) if nb.status == FiscalYearStatus::Closed => Some(NextOpeningUpdate {
+            after: nb.clone(),
+            before: nb,
+            applied: false,
+        }),
+        Some(nb) => {
+            sqlx::query("UPDATE fiscal_years SET opening_rate_kind = ? WHERE id = ?")
+                .bind(closing.as_str())
+                .bind(nb.id)
+                .execute(&mut *conn)
+                .await
+                .map_err(map_db_error)?;
+            let na = sqlx::query_as::<_, FiscalYear>(FIND_BY_ID_SQL)
+                .bind(nb.id)
+                .fetch_one(&mut *conn)
+                .await
+                .map_err(map_db_error)?;
+            if na.multi_currency {
+                neuves.extend(unites_neuves(&nb, &na));
+            }
+            Some(NextOpeningUpdate {
+                before: nb,
+                after: na,
+                applied: true,
+            })
+        }
+    };
+
+    let units: Vec<_> = neuves.into_iter().collect();
+    let copied = exchange_rates::copy_fetched_in_tx(conn, company_id, &units, None).await?;
+    Ok(RateKindsUpdate {
+        before,
+        after,
+        next,
+        copied,
+    })
+}
+
+/// Les unités de cours utiles de `after` qui ne l'étaient pas de `before`
+/// (le même exercice, avant et après un changement de genre).
+fn unites_neuves(
+    before: &FiscalYear,
+    after: &FiscalYear,
+) -> std::collections::BTreeSet<kesh_core::exchange_rates::RateUnit> {
+    use kesh_core::exchange_rates::unites_utiles_exercice;
+    let avant: std::collections::BTreeSet<_> = unites_utiles_exercice(&before.exercice_devises())
+        .into_iter()
+        .collect();
+    unites_utiles_exercice(&after.exercice_devises())
+        .into_iter()
+        .filter(|u| !avant.contains(u))
+        .collect()
 }
 
 /// Retrouve un exercice par son id (sans scope multi-tenant).

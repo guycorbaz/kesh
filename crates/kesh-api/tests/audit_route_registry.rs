@@ -31,12 +31,16 @@
 //! L'ensemble clos de l'INVENTAIRE est celui de `lib.rs` (142 routes à la
 //! release 0.17.0 — v017-3a, v016-2a et v017-4a réunies, mesuré le 2026-10-31 —,
 //! puis 144 à la 0.17.3, Story v0172-session, 145 à la 33-5, 146 à la 34-2 et
-//! 147 à la 37-1 ; dont `/mcp`, monté par `route_service` — Story 32-6a) ;
-//! celui du REGISTRE est plus large (150), car trois routes mutantes vivent dans
-//! `routes/test_endpoints.rs` et sont montées par un `nest()`. D'où :
+//! 147 à la 37-1, 152 à la 37-2 — la récupération des cours, puis les quatre
+//! routes des cours retenus et des genres d'un exercice ; dont `/mcp`, monté
+//! par `route_service` — Story 32-6a) ; celui du REGISTRE est plus large
+//! (156), car quatre routes
+//! mutantes vivent dans `routes/test_endpoints.rs` (la quatrième, le pilotage
+//! de la source factice des cours, à la 37-2) et sont montées par un `nest()`.
+//! D'où :
 //!
 //! - volet « route absente du registre » → sur les **deux** fichiers, faute de
-//!   quoi une quatrième route de `test_endpoints.rs` n'alerterait personne ;
+//!   quoi une cinquième route de `test_endpoints.rs` n'alerterait personne ;
 //! - volet « entrée du registre absente du code » → sur les deux également,
 //!   chaque entrée nommant le fichier dont elle provient.
 //!
@@ -152,7 +156,7 @@
 //!   `post`, `put`, `delete` et `patch`. Aucune route `GET` n'écrit au journal
 //!   aujourd'hui (remontée de l'AC1 : des `POST` et un `DELETE`) ; l'angle mort
 //!   est du même ordre que celui de l'audit (`GET /invoices/{id}/pdf`, plus bas).
-//! - **(vi)** **vingt-sept routes `SansEcritureAuJournal` sont rejouées quand
+//! - **(vi)** **trente-deux routes `SansEcritureAuJournal` sont rejouées quand
 //!   même** : `fiscal_years::update_fiscal_year` (enveloppe `DbError`, opération
 //!   `fiscal_years::update_name`, Story 34-7, #945 : le renommage tient l'exercice
 //!   puis son homonyme par la lecture de doublon, alors que la clôture tient ses
@@ -319,12 +323,38 @@
 //!   (`rejeu_interblocage_e2e.rs`). Le même cycle, par le compte visé, vaut
 //!   pour `accounts::update_account` quand le `PUT` porte des comptes propres
 //!   (`account_update_is_replayed_when_it_is_the_deadlock_victim`, même
-//!   fichier — la première preuve dynamique de son rejeu).
+//!   fichier — la première preuve dynamique de son rejeu). Et — Story 37-2,
+//!   AC-3 — `exchange_rates::fetch_rates` (enveloppe `DbError`
+//!   `kesh_db::retry::retry_on_deadlock`, opérations `exchange_rates::fetch` et
+//!   `exchange_rates::copy_fetched`, appelée **dans
+//!   `exchange_rates::recuperation`**, hors de `src/routes/`, comme
+//!   `onboarding::seed_demo` l'est dans `kesh-seed`) : la récupération n'écrit
+//!   rien au journal, mais elle tient ses lignes `_kesh_fetched_exchange_rates`
+//!   `FOR UPDATE`, puis copie dans `exchange_rates` (`companies` en partage par
+//!   la clé étrangère, `accounts` lus en partage par le filtre des devises) —
+//!   cycle possible avec une route d'exercice ou de compte qui copie aussi ;
+//!   tenue par sa revue, **aucune preuve dynamique du rejeu**. Et — Story
+//!   37-2, AC-5 — les quatre routes des cours retenus et des genres :
+//!   `exchange_rates::put_rate`, `exchange_rates::reset_rate`,
+//!   `exchange_rates::acknowledge_notices` (enveloppe `DbError`
+//!   `kesh_db::retry::retry_on_deadlock`, opérations du même nom) et
+//!   `fiscal_years::update_rate_kinds` (opération
+//!   `fiscal_years::update_rate_kinds`) : elles écrivent `exchange_rates` (ou,
+//!   pour les genres, l'exercice `FOR UPDATE` puis y copient), `companies` en
+//!   partage par la clé étrangère — cycle possible entre elles, avec la
+//!   récupération et la copie (mêmes clés uniques), et, pour les genres, avec
+//!   l'activation de 37-1 ; `put_rate` est tenue par
+//!   `exchange_rate_put_is_replayed_when_it_is_the_deadlock_victim`
+//!   (`rejeu_interblocage_e2e.rs`), les trois autres par leur revue.
 //!
-//!   **Décompte : vingt-sept**, recompté le 2026-11-16 à la Story 37-1 depuis la
-//!   table et le corps de chaque route : vingt-cinq handlers
+//!   **Décompte : trente-deux**, recompté le 2026-11-16 à la Story 37-2 depuis
+//!   la table et le corps de chaque route : vingt-neuf handlers
 //!   `SansEcritureAuJournal` de `src/routes/` portent une enveloppe, plus
-//!   `onboarding::seed_demo` et `onboarding::reset`, rejouées dans `kesh-seed`.
+//!   `onboarding::seed_demo` et `onboarding::reset`, rejouées dans `kesh-seed`,
+//!   plus `exchange_rates::fetch_rates`, rejouée dans
+//!   `exchange_rates::recuperation`. *(Vingt-huit à la Story 37-2 avant les
+//!   routes des cours retenus ; vingt-sept le 2026-11-16 à la Story 37-1, avant
+//!   la récupération des cours.)*
 //!   *(Relevés antérieurs, datés : vingt-trois le 2026-11-05, revue de la
 //!   0.17.3, #899 S2-A1 ; vingt-cinq dans la branche de la 34-7 le 2026-11-10 ;
 //!   vingt-quatre à l'intégration de la 34-7 sur la 34-2, avant la 34-11a2 ;
@@ -562,6 +592,19 @@ const LIB_ROUTES: &[(&str, &str, Status, Rejeu)] = &[
     ("post", "fiscal_years::create_fiscal_year", Traced, SansEcritureAuJournal),
     ("put", "fiscal_years::update_fiscal_year", Traced, SansEcritureAuJournal),
     ("post", "fiscal_years::close_fiscal_year", Traced, SansEcritureAuJournal),
+    // Story 37-2 (AC-5) — récupérer les cours d'un mois ou d'un jour
+    // (`exchange_rates.fetched`, entité `installation`, dans la transaction des
+    // cours) ; rejouée dans `exchange_rates::recuperation` (point (vi)).
+    ("post", "exchange_rates::fetch_rates", Traced, SansEcritureAuJournal),
+    // Story 37-2 (AC-5) — cours retenus par la société : saisie
+    // (`exchange_rate.created` / `.updated`), ↑ (`exchange_rate.reset`),
+    // acquittement des corrections (`exchange_rates.corrections_acknowledged`) ;
+    // genres d'un exercice (`fiscal_year.rate_kinds_updated`). Aucune n'écrit
+    // au journal comptable ; toutes rejouées (point (vi)).
+    ("put", "exchange_rates::put_rate", Traced, SansEcritureAuJournal),
+    ("post", "exchange_rates::reset_rate", Traced, SansEcritureAuJournal),
+    ("post", "exchange_rates::acknowledge_notices", Traced, SansEcritureAuJournal),
+    ("put", "fiscal_years::update_rate_kinds", Traced, SansEcritureAuJournal),
     ("post", "bank_imports::preview", NoMatter("parse et valide sans persistance — aucune mutation"), SansEcritureAuJournal),
     ("post", "bank_imports::create", Traced, SansEcritureAuJournal),
     ("delete", "bank_imports::delete", Traced, SansEcritureAuJournal),
@@ -643,6 +686,9 @@ const TEST_ENDPOINT_ROUTES: &[(&str, &str, Status, Rejeu)] = &[
     ("post", "/seed", Exempt("chemin de test, jamais monté en production — efface delibérément la base"), Exemptee("mode test, jamais monté en production")),
     ("post", "/reset", Exempt("chemin de test, jamais monté en production"), Exemptee("mode test, jamais monté en production")),
     ("post", "/password-reset-token", Exempt("chemin de test, jamais monté en production"), SansEcritureAuJournal),
+    // Story 37-2 (AC-3) — pilotage de la source factice des cours : n'écrit
+    // ni au journal comptable ni au journal d'audit.
+    ("post", "/exchange-rates/source", Exempt("chemin de test, jamais monté en production"), SansEcritureAuJournal),
 ];
 
 /// Extrait les routes mutantes d'un source par leur identité, **avec le nombre
@@ -1032,8 +1078,8 @@ fn the_registry_partition_is_what_the_story_declares() {
 
     assert_eq!(
         LIB_ROUTES.len(),
-        147,
-        "l'inventaire porte sur 147 routes (+ 1 : le réglage multi-devises de la société, 37-1 ; + 1 : le solde d'ouverture d'un compte bancaire existant, 34-2 ; + 1 : l'adresse de la société, 33-5 ; + 1 : `/mcp`, 32-6a ; + 1 : la décision d'un \
+        152,
+        "l'inventaire porte sur 152 routes (+ 5 : la récupération des cours de change, la saisie et le ↑ d'un cours retenu, l'acquittement des corrections et les genres d'un exercice, 37-2 ; + 1 : le réglage multi-devises de la société, 37-1 ; + 1 : le solde d'ouverture d'un compte bancaire existant, 34-2 ; + 1 : l'adresse de la société, 33-5 ; + 1 : `/mcp`, 32-6a ; + 1 : la décision d'un \
          envoi MCP, 32-8b ; + 5 : les routes mutantes des prompts du serveur MCP, 32-10a-iii ; \
          + 1 : le rattachement d'une transaction à une écriture, v017-3a ; + 2 : l'aperçu et \
          la création d'un relevé saisi à la main, v016-2a ; + 4 : le `PUT`, le `DELETE`, la \
@@ -1054,8 +1100,11 @@ fn the_registry_partition_is_what_the_story_declares() {
     // existant, tracé par `journal_entry.created`).
     // Story 37-1 : 139 → 140 (le réglage multi-devises de la société, tracé par
     // `company.currency_settings_updated`).
+    // Story 37-2 : 140 → 145 (la récupération des cours de change, tracée par
+    // `exchange_rates.fetched` ; la saisie et le ↑ d'un cours retenu,
+    // l'acquittement des corrections et les genres d'un exercice).
     assert_eq!(
-        traced, 140,
+        traced, 145,
         "73 tracées avant la 25-1b, plus ses 14, plus la dévalidation (25-2-b-1, #440), \
          plus l'annulation d'un règlement client (25-3-a-1) et fournisseur (25-3-a-2, #414), \
          plus l'annulation d'un rapprochement (25-3-b, #418), plus le solde du reste \
@@ -1082,7 +1131,9 @@ fn the_registry_partition_is_what_the_story_declares() {
          (v0172-session, refs #891), plus la correction de l'adresse de la société \
          (33-5, refs #909), plus le changement de mot de passe (33-7, refs #435), plus le \
          solde d'ouverture d'un compte bancaire existant (34-2, refs #533), plus le réglage \
-         multi-devises de la société (37-1)"
+         multi-devises de la société (37-1), plus la récupération des cours de change, la \
+         saisie et le ↑ d'un cours retenu, l'acquittement des corrections et les genres d'un \
+         exercice (37-2)"
     );
     assert_eq!(
         exempt, 4,
@@ -1096,7 +1147,7 @@ fn the_registry_partition_is_what_the_story_declares() {
     );
     assert_eq!(
         LIB_ROUTES.len() + TEST_ENDPOINT_ROUTES.len(),
-        150,
+        156,
         "le registre est plus large que l'inventaire, et c'est voulu"
     );
 }
@@ -1505,8 +1556,8 @@ fn the_replay_partition_is_what_the_story_declares() {
     );
     assert_eq!(exemptees, 3, "full_import, /seed, /reset");
     assert_eq!(
-        sans_ecriture, 120,
-        "119 routes de lib.rs (37-1 : + 1 — le réglage multi-devises de la société) — 118 avant (34-2 : − 1 — la création d'un compte bancaire, reclassée \
+        sans_ecriture, 126,
+        "124 routes de lib.rs (37-2 : + 5 — la récupération des cours de change, la saisie et le ↑ d'un cours retenu, l'acquittement des corrections, les genres d'un exercice) — 119 avant (37-1 : + 1 — le réglage multi-devises de la société) — 118 avant (34-2 : − 1 — la création d'un compte bancaire, reclassée \
          `Rejouee`) — 119 avant (33-5 : + 1 — l'adresse de la société ; v0172-session : + 2 — le réglage de la durée d'inactivité \
          et le battement d'activité ; v017-4a : + 4 — la saisie fournisseur et la complétion \
          d'import reclassées, le `PUT` et le `DELETE` d'un brouillon) — 112 avant \
@@ -1519,7 +1570,7 @@ fn the_replay_partition_is_what_the_story_declares() {
          décision d'un envoi du serveur MCP, 32-8b ; les cinq routes mutantes des prompts \
          du serveur MCP, 32-10a-iii ; le rattachement d'une transaction à une écriture, \
          v017-3a ; l'aperçu et la création de la saisie manuelle d'un relevé, v016-2a), \
-         plus /password-reset-token de test_endpoints.rs"
+         plus /password-reset-token et /exchange-rates/source (37-2) de test_endpoints.rs"
     );
     assert_eq!(rejouees + exemptees + sans_ecriture, tout.len());
     // Story v017-4a (#849) : 141 → 145 (quatre routes de la facture fournisseur).
@@ -1528,7 +1579,10 @@ fn the_replay_partition_is_what_the_story_declares() {
     // Story 33-5 (#909) : 147 → 148 (l'adresse de la société).
     // Story 34-2 (#533) : 148 → 149 (le solde d'ouverture d'un compte existant).
     // Story 37-1 : 149 → 150 (le réglage multi-devises de la société).
-    assert_eq!(tout.len(), 150);
+    // Story 37-2 : 150 → 156 (la récupération des cours de change ; le
+    // pilotage de la source factice, endpoint de test ; la saisie et le ↑ d'un
+    // cours retenu, l'acquittement des corrections, les genres d'un exercice).
+    assert_eq!(tout.len(), 156);
 }
 
 /// Visiteur `syn` d'un fichier de routes : relève chaque appel à la primitive

@@ -46,9 +46,9 @@ async fn apply_migrations_up_to(
     assert!(
         n <= all.len(),
         "apply_migrations_up_to: n={} > total={} — vérifier que le calcul \
-         `total - 58` (fenêtre d'upgrade, FRONTIÈRE figée à 34) reste \
+         `total - 59` (fenêtre d'upgrade, FRONTIÈRE figée à 34) reste \
          cohérent avec l'ajout de migrations futures. Si une migration a été ajoutée à \
-         la branche, l'assertion `total == 92` du test upgrade_path_preserves_data \
+         la branche, l'assertion `total == 93` du test upgrade_path_preserves_data \
          doit également échouer, c'est son rôle : elle signale qu'il faut décider \
          explicitement si la fenêtre s'élargit (bumper `total` seul) ou si la \
          frontière doit rester à 34 (bumper `total` ET la fenêtre). Cf. garde-fou \
@@ -65,8 +65,8 @@ async fn apply_migrations_up_to(
     sub.run(pool).await
 }
 
-/// AC #15a — cas générique upgrade path : `total - 58` migrations appliquées
-/// (**34** à ce jour) + seed + `MIGRATOR.run()` final, qui applique les **58**
+/// AC #15a — cas générique upgrade path : `total - 59` migrations appliquées
+/// (**34** à ce jour) + seed + `MIGRATOR.run()` final, qui applique les **59**
 /// dernières. Assertion : seed préservé à travers la fenêtre d'upgrade.
 ///
 /// ⚠️ Les nombres ci-dessus se recomptent, ils ne se relisent pas — cf. le
@@ -130,13 +130,14 @@ async fn upgrade_path_preserves_data(pool: MySqlPool) {
     // + supplier_invoice_internal_number (Story 33-1a, refs #926) = 90.
     // + bank_accounts_without_iban (Story 34-11a1, refs #972) = 91.
     // + multi_currency_settings (Story 37-1) = 92.
+    // + exchange_rates (Story 37-2) = 93.
     let total = kesh_db::MIGRATOR.migrations.len();
     assert_eq!(
-        total, 92,
-        "92 migrations attendues (91 précédentes + Story 37-1 : multi_currency_settings)"
+        total, 93,
+        "93 migrations attendues (92 précédentes + Story 37-2 : exchange_rates)"
     );
 
-    // Étape 1 : applique toutes les migrations sauf les 58 dernières. La
+    // Étape 1 : applique toutes les migrations sauf les 59 dernières. La
     // fenêtre d'upgrade démarre donc à la 35ᵉ, `20260614000001_vat_accounts_config`
     // (Story 18-1a), et court jusqu'à la dernière du dépôt. Ne pas ré-énumérer
     // ici les migrations de la fenêtre : une liste nominative se périme à chaque
@@ -144,17 +145,17 @@ async fn upgrade_path_preserves_data(pool: MySqlPool) {
     // plus bas. Le seul nombre qui fait foi est celui du `total - N` ci-dessous.
     //
     // Note `total - N` : expression relative à la longueur totale, tandis que
-    // l'assertion `total == 92` ci-dessus est INTENTIONNELLEMENT codée en dur
+    // l'assertion `total == 93` ci-dessus est INTENTIONNELLEMENT codée en dur
     // pour fail-loud sur toute évolution non revue. À chaque migration ajoutée,
     // le mainteneur doit (1) bumper ce compte (2) incrémenter `N` du même pas,
     // de sorte que `total - N` — la frontière — reste **constant**.
     //
     // Frontière actuelle : **34**. Le test applique donc les 34 premières
     // migrations (jusqu'à `20260613000001_vat_rates_crud` incluse), seede des
-    // données, puis joue les 58 restantes comme « fenêtre d’upgrade ».
+    // données, puis joue les 59 restantes comme « fenêtre d’upgrade ».
     //
-    // ⚠️ `N` DOIT être incrémenté en même temps que `total`. Le laisser à 57
-    // avec `total = 92` porterait la frontière à 35 : le test continuerait de
+    // ⚠️ `N` DOIT être incrémenté en même temps que `total`. Le laisser à 58
+    // avec `total = 93` porterait la frontière à 35 : le test continuerait de
     // passer en testant une fenêtre plus étroite d'une migration.
     // Story 16-1a : 21 → 22, frontière inchangée (56 - 22 = 55 - 21 = 34).
     // Story 16-1a-bis : 22 → 23, frontière inchangée (57 - 23 = 34).
@@ -221,16 +222,17 @@ async fn upgrade_path_preserves_data(pool: MySqlPool) {
     // Story 33-1a : 55 → 56, frontière inchangée (90 - 56 = 34).
     // Story 34-11a1 : 56 → 57, frontière inchangée (91 - 57 = 34).
     // Story 37-1 : 57 → 58, frontière inchangée (92 - 58 = 34).
+    // Story 37-2 : 58 → 59, frontière inchangée (93 - 59 = 34).
     //
     // ⚠️ J'ai d'abord porté `total` à 69 SANS toucher à ce soustracteur : le socle
     // est alors passé de 34 à 35 migrations, la fenêtre a glissé d'un cran, et le
     // test a rougi non plus sur son compteur mais sur `COUNT(accounts) : expected
     // 4, got 2` — un échec qui ne ressemble en rien à sa cause. *Les deux nombres
     // se bougent du même pas, et le commentaire ci-dessus le disait.*
-    let n_before_upgrade_window = total - 58;
+    let n_before_upgrade_window = total - 59;
     apply_migrations_up_to(&pool, n_before_upgrade_window)
         .await
-        .expect("apply_migrations_up_to(total - 58) failed");
+        .expect("apply_migrations_up_to(total - 59) failed");
 
     // Étape 2 : seed 1 company + 1 user + 2 accounts + 1 invoice + 1 contact.
     let company_id: i64 = sqlx::query_scalar(
@@ -299,7 +301,7 @@ async fn upgrade_path_preserves_data(pool: MySqlPool) {
     .await
     .expect("INSERT invoice failed");
 
-    // Étape 3 : appliquer les 58 migrations restantes via MIGRATOR.run().
+    // Étape 3 : appliquer les 59 migrations restantes via MIGRATOR.run().
     kesh_db::MIGRATOR
         .run(&pool)
         .await
@@ -1843,7 +1845,16 @@ async fn installation_settings_adds_only_its_system_table(pool: MySqlPool) {
             .await
             .unwrap();
 
-    kesh_db::MIGRATOR.run(&pool).await.unwrap();
+    // Story 37-2 : la montée s'arrête à CETTE migration (`n + 1`) et non à la
+    // dernière du dépôt — une migration postérieure qui crée ses propres
+    // tables (`20261114000002_exchange_rates`) ferait sinon rougir
+    // l'assertion « une seule table neuve » sans rapport avec ce qu'elle garde.
+    apply_migrations_up_to(
+        &pool,
+        common::migrations_before(INSTALLATION_SETTINGS_VERSION, INSTALLATION_SETTINGS_LABEL) + 1,
+    )
+    .await
+    .unwrap();
 
     let mut expected = before.clone();
     expected.push("_kesh_installation_settings".to_string());
@@ -2935,4 +2946,94 @@ async fn multi_devises_la_migration_n_ajoute_aucune_table(pool: MySqlPool) {
     let before = application_tables(&pool).await;
     apply_migrations_up_to(&pool, n + 1).await.unwrap();
     assert_eq!(application_tables(&pool).await, before);
+}
+
+// ===========================================================================
+// Story 37-2 (AC-1) — `20261114000002_exchange_rates`
+// ===========================================================================
+
+const COURS_VERSION: i64 = 20261114000002;
+const COURS_LABEL: &str = "exchange_rates";
+
+/// AC-1 — la migration ajoute deux tables **système**, vides
+/// (`_kesh_fetched_exchange_rates`, `_kesh_exchange_rate_fetch`), et
+/// **exactement une** table applicative, `exchange_rates`, vide ; aucune ligne
+/// existante n'est modifiée. Montage **résolu par version** (P6), et assertion
+/// de montage : les trois tables sont absentes avant, la société semée est là.
+/// La base est montée jusqu'à la migration de 37-2 incluse (`n + 1`), non
+/// jusqu'à la dernière du dépôt : une migration future ne change pas ce que ce
+/// test regarde.
+#[sqlx::test(migrations = false)]
+async fn exchange_rates_adds_two_system_tables_and_one_application_table(pool: MySqlPool) {
+    let n = common::migrations_before(COURS_VERSION, COURS_LABEL);
+    apply_migrations_up_to(&pool, n).await.unwrap();
+    let company_id: i64 = sqlx::query_scalar(
+        "INSERT INTO companies (name, address, org_type, accounting_language, instance_language, \
+         multi_currency_enabled) VALUES ('Cours SA', 'Rue 1, 1000 Lausanne', 'Pme', 'FR', 'FR', TRUE) \
+         RETURNING id",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let before = application_tables(&pool).await;
+    for t in [
+        "exchange_rates",
+        "_kesh_fetched_exchange_rates",
+        "_kesh_exchange_rate_fetch",
+    ] {
+        assert!(
+            !before.contains(&t.to_string()),
+            "assertion de montage : {t} absente avant"
+        );
+    }
+    let company_before: (String, bool) =
+        sqlx::query_as("SELECT name, multi_currency_enabled FROM companies WHERE id = ?")
+            .bind(company_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+
+    apply_migrations_up_to(&pool, n + 1).await.unwrap();
+
+    let mut expected = before.clone();
+    expected.extend(
+        [
+            "_kesh_exchange_rate_fetch",
+            "_kesh_fetched_exchange_rates",
+            "exchange_rates",
+        ]
+        .map(String::from),
+    );
+    expected.sort();
+    let mut after = application_tables(&pool).await;
+    after.sort();
+    assert_eq!(after, expected, "deux tables système et une applicative");
+    let applicatives = kesh_db::backup::TABLES_TO_TRUNCATE;
+    assert!(applicatives.contains(&"exchange_rates"));
+    assert!(!applicatives.contains(&"_kesh_fetched_exchange_rates"));
+    assert!(!applicatives.contains(&"_kesh_exchange_rate_fetch"));
+    for t in [
+        "exchange_rates",
+        "_kesh_fetched_exchange_rates",
+        "_kesh_exchange_rate_fetch",
+    ] {
+        let rows: i64 = sqlx::query_scalar(&format!("SELECT COUNT(*) FROM {t}"))
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(rows, 0, "{t} vide : la migration n'écrit aucune donnée");
+    }
+    let company_after: (String, bool) =
+        sqlx::query_as("SELECT name, multi_currency_enabled FROM companies WHERE id = ?")
+            .bind(company_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(company_after, company_before, "ligne companies intacte");
+    let min_required: String =
+        sqlx::query_scalar("SELECT kesh_version_min_required FROM _kesh_version WHERE id = 1")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(min_required, "0.17.6", "migration non breaking");
 }
