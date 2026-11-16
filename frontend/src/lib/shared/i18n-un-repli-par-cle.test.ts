@@ -268,8 +268,12 @@ const PREFIXES = [
  * Intégration de la 0.18.0 (2026-11-16) : **455 → 454** (−1, `expected 454 to be 455`,
  * `kesh-gate-logs/rel0180/releve-compteurs-1.log`), `onboarding-finalize-remedy` retirée (la
  * 36-19 corrige #1200).
+ *
+ * Story 36-18a (#1159) : **454 → 456** (+2, `expected 456 to be 454`,
+ * `kesh-gate-logs/e36-18/review-front.log`), `supplier-invoices-err-line-unit-price-ambiguous` et
+ * `-unreadable`, un repli chacune (`SupplierInvoiceForm.svelte`).
  */
-const CLES_RELEVEES = 454;
+const CLES_RELEVEES = 456;
 
 
 /** Relève, pour chaque clé du domaine, l'ensemble de ses replis littéraux distincts. */
