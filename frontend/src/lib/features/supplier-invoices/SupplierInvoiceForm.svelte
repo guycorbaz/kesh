@@ -269,10 +269,11 @@
 	let saving = $state(false);
 	let formError = $state('');
 	/**
-	 * Story 36-18a (revue P1, A1 ; revue P2, R3) — le refus d'envoi d'un **montant** (montant
-	 * attendu ou prix d'une ligne, ambigu ou illisible), affiché dans le même bandeau que
-	 * `formError` mais tenu à part : la saisie du prix ou du montant attendu n'efface que lui,
-	 * jamais un refus sans rapport (fournisseur, lignes, centime, serveur).
+	 * Story 36-18a (revue P1, A1 ; revue P2, R3 ; revue P3, R1) — le refus d'envoi d'un
+	 * **montant** (montant attendu ou prix d'une ligne, ambigu ou illisible ; ligne qui n'est pas
+	 * au centime), affiché dans le même bandeau que `formError` mais tenu à part : la saisie du
+	 * prix ou du montant attendu n'efface que lui, jamais un refus sans rapport (fournisseur,
+	 * lignes incomplètes, serveur).
 	 */
 	let amountError = $state('');
 	let ibanError = $state('');
@@ -430,7 +431,9 @@
 		// incomplète et sous le centime reçoit le message générique. Le bouton n'est pas
 		// désactivé : le refus se dit au clic, avec sa cause.
 		if (firstLineNotInCentimes(fLines) !== null) {
-			formError = i18nMsg(
+			// Story 36-18a (revue P3, R1) — un refus de montant : la correction du prix le lève,
+			// comme le marqueur vivant de la ligne ; il s'efface donc à la saisie du prix.
+			amountError = i18nMsg(
 				'supplier-invoices-err-line-not-in-centimes',
 				'Une ligne n’est pas au centime : saisissez-la au montant facturé par le fournisseur, au centime.',
 			);

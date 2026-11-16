@@ -520,6 +520,20 @@ describe('SupplierInvoiceForm — une ligne au centime (Story v017-3b, #687, AC-
 		expect(onSubmit).not.toHaveBeenCalled();
 	});
 
+	// Story 36-18a (revue P3, R1) : corriger le prix lève le refus « pas au centime », comme le
+	// marqueur vivant de la ligne — le bandeau ne doit pas le contredire.
+	it('le refus « pas au centime » s’efface à la saisie du prix (M30)', async () => {
+		const { container, getByTestId, queryByTestId } = renderForm({});
+		await selectSupplier(container, '1');
+		await fillLine(container, '0.005');
+		await fireEvent.click(getByTestId('supplier-invoice-submit'));
+		await tick();
+		expect(getByTestId('supplier-invoice-form-error').textContent?.trim()).toBe(DEDIE);
+		await fireEvent.input(getByTestId('supplier-invoice-line-unit-price'), { target: { value: '10.00' } });
+		expect(queryByTestId('supplier-invoice-line-subcentime')).toBeNull();
+		expect(queryByTestId('supplier-invoice-form-error')).toBeNull();
+	});
+
 	it('un refus serveur désigne sa ligne, traduit, sans perdre la saisie', async () => {
 		const { container, getByTestId, getAllByTestId } = renderForm({
 			onSubmit: async () => {
