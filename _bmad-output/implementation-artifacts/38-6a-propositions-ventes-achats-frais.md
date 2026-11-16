@@ -437,6 +437,17 @@ afin que **mes comptes PayPal se tiennent sans saisie, sans qu'aucune écriture 
 - [ ] T8 — Gate complet (`scripts/test-fast.sh`, frontend, E2E au dernier commit de code : la suite existante, aucune spec
       neuve ici — 38-9b porte l'E2E).
 
+## Note de version
+
+*(Texte prêt à assembler au `CHANGELOG.md` à la release.)*
+
+- **Ajouté** : les propositions de rattachement des ventes, achats et frais des prestataires de paiement (PayPal) :
+  Kesh propose, l'utilisateur accepte ; rien n'est écrit d'office. Les cas avec frais se passent encore à la main
+  (écriture manuelle ou rattachement).
+
+**Compteurs** (`LIB_ROUTES`, codes d'erreur du doc-comment, registres, `Cargo.lock`) : recomptés depuis la source après
+chaque reprise de `main`.
+
 ## Dev Notes
 
 - **Pourquoi un module à part** : `reconciliation.rs` fait 7 439 lignes ; le patron des propositions par règle s'y lit
@@ -557,3 +568,5 @@ afin que **mes comptes PayPal se tiennent sans saisie, sans qu'aucune écriture 
   `PROVIDER_PROPOSAL_REQUIRED` ; alignée le même jour sur les fiches sœurs écrites en parallèle : 38-2
   (`find_by_bank_account_in_tx`), 38-4 (`rule_account_admits`, `eligible_accounts`), 38-5 (`default_vat_at`,
   `split_default_vat`, `VAT_KIND_UNKNOWN`, `VAT_RATE_UNAVAILABLE`), 38-8 (montants d'un frais seul, signe des frais).
+- 2026-11-16 — alignement sur les règles de travail à plusieurs (Sonnet) : section *Note de version* ajoutée ;
+  compteurs « recomptés après chaque reprise de `main` ». Aucun PDF ni CHANGELOG commité dans cette fiche.

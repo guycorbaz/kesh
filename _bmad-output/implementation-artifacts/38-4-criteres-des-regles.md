@@ -332,6 +332,17 @@ Reprises de la fiche d'epic (§ 38-4), complétées là où un AC l'exige.
       code (aucun E2E neuf : l'écran des règles ne change qu'en libellés ; les specs de règles existantes doivent
       rester vertes).
 
+## Note de version
+
+*(Texte prêt à assembler au `CHANGELOG.md` à la release.)*
+
+- **Ajouté** : les règles d'affectation gagnent de nouveaux critères (boutique, filtres, type et sens, compte en
+  devise) ; migration non breaking, mais le retour à la version précédente passe par la sauvegarde d'avant la mise à
+  jour.
+
+**Compteurs** (audit des migrations — total aux deux sites et partition —, schéma de test, sites d'énumération des
+`REFERENCES accounts`, clés i18n, `Cargo.lock`) : recomptés depuis la source après chaque reprise de `main`.
+
 ## Notes de développement
 
 - **Site de l'évaluation** : `rule_matches` est appelée par `first_matching_rule` (proposition) et par l'étape 7
@@ -407,3 +418,5 @@ Reprises de la fiche d'epic (§ 38-4), complétées là où un AC l'exige.
   19 FK `REFERENCES accounts`, notes de dépendance de 37-1 (`:428-433`), 38-6a C-38-6a-8, 38-9b AC-1/AC-2. Axes non
   exercés : exécution de la migration (FK sur colonne de base d'une colonne générée : le test de l'AC-1 tranchera) ;
   aucune exécution.
+- 2026-11-16 — alignement sur les règles de travail à plusieurs (Sonnet) : section *Note de version* ajoutée ;
+  compteurs « recomptés après chaque reprise de `main` ». Aucun PDF commité dans cette fiche.

@@ -213,14 +213,14 @@ mouvements en attendant les propositions de 38-6a.
      `PROVIDER_PROPOSAL_REQUIRED` (C-38-8, repris par 38-6a) ; raison `balance_seen` de `PROVIDER_ACCOUNT_IN_USE`.
    - **Manuel** : aucun écran ici ; les refus visibles (import ou relevé saisi refusé sur un compte prestataire,
      suppression d'un en-tête téléchargé refusée, connexion qui ne se supprime plus après une lecture de soldes) sont
-     écrits au manuel utilisateur et d'administration par **38-9a** avec les écrans, PDF contrôlé aplati ; 38-3a lui
+     écrits au manuel utilisateur et d'administration par **38-9a** avec les écrans (`.tex` seul, PDF non commité) ; 38-3a lui
      transmet la liste.
    - **Recette de montée** (`scripts/recette-montee.sh`, `docs/testing.md`) : la montée depuis l'image publiée
      précédente, le relèvement, le refus de l'image précédente et le retour par la sauvegarde sont ceux de **38-2**
      (O1) ; cette story **étend** le `--diff-attendu` à ses objets (`bank_transactions`, `bank_imports` : colonnes
      neuves ; `payment_provider_accounts.fetched_through` ; les trois tables neuves) et la rejoue au journal de la
      release.
-   - **CHANGELOG** : une ligne de la même entrée non datée que 38-2 (la date est posée par `prepare-release.sh`).
+   - **Note de version** : section de la fiche (assemblée au `CHANGELOG.md` à la release ; rien n'y est écrit en cours d'epic).
    - **MCP** : aucun outil neuf (E23) ; `kesh_ecritures` ne lit pas les transactions bancaires — rien à ajouter.
 
 ## Tâches / sous-tâches
@@ -235,10 +235,21 @@ mouvements en attendant les propositions de 38-6a.
       raison `balance_seen`.
 - [ ] **T5 — En-tête et gardes** (AC-5, AC-6) : suppression refusée, lecteurs relus, `providerConnection`, refus des
       imports de fichier, exclusion des propositions existantes.
-- [ ] **T6 — Registres, i18n, CHANGELOG** (AC-7) ; recette de montée étendue, journal sous `kesh-gate-logs/`.
+- [ ] **T6 — Registres, i18n, Note de version** (AC-7) ; recette de montée étendue, journal sous `kesh-gate-logs/`.
 - [ ] **T7 — Gates** : gate complet (migration, dépôts : ciblage interdit) sur base remise à zéro, **gate runtime**
       (`admin_backup_e2e`, `admin_full_import_e2e`, `migrations_fresh_install`), `scripts/gate-ci.sh`, E2E complet au
       dernier commit de code (démarrage réel sur `kesh_e2e` : P8).
+
+## Note de version
+
+*(Texte prêt à assembler au `CHANGELOG.md` à la release.)*
+
+- **Ajouté** : le schéma du téléchargement des mouvements d'un prestataire de paiement (en-têtes, passages, champs des
+  transactions et des relevés) ; migration non breaking, mais le retour à la version précédente passe par la
+  sauvegarde d'avant la mise à jour.
+
+**Compteurs** (audit des migrations — total aux deux sites et partition —, schéma de test, `data_count`,
+`EMPTY_BEFORE_RESET`, `LIB_ROUTES`, `Cargo.lock`) : recomptés depuis la source après chaque reprise de `main`.
 
 ## Notes de développement
 
@@ -307,3 +318,5 @@ mouvements en attendant les propositions de 38-6a.
   AC-8 » → C-38-6a-7, AC-1 (proposition) et AC-8 (acceptation). Lignes lues : `routes/reconciliation.rs:335-337,
   995-1003, 1096-1110` ; `38-6a-…md:80-90, 156-180, 210-236, 336-349` ; `38-3b-…md:305-336` ; `epic-38-paypal.md:
   488-494, 1180-1197`. Axes non exercés : le reste de la fiche (hors périmètre), aucune exécution.
+- 2026-11-16 — alignement sur les règles de travail à plusieurs (Sonnet) : CHANGELOG remplacé par une section *Note de
+  version* ; PDF du manuel non commité ; compteurs « recomptés après chaque reprise de `main` ».

@@ -40,7 +40,7 @@ doublon et sans qu'aucune écriture ne passe sans que je l'aie vue.
 - `NFR-38-9b-1` — E2E contre le transport factice (téléchargement → règle → proposition → acceptation, et rattachement
   en lot) → AC-11.
 - `NFR-38-9b-2` — Textes « proposer », jamais « comptabiliser automatiquement » ; quatre locales ; manuel utilisateur
-  et PDF à jour → AC-9, AC-10.
+  à jour, `.tex` seul → AC-9, AC-10.
 - `NFR-38-9b-3` — Captures d'écran de chaque état touché → AC-12.
 - `NFR-38-9b-4` *(ajoutée)* — Le code neuf vit dans des composants à part : `ReconciliationProposals.svelte`
   (836 lignes) et `RuleFormModal.svelte` (291 lignes) ne reçoivent que des appels → AC-3, AC-1.
@@ -351,8 +351,8 @@ doublon et sans qu'aucune écriture ne passe sans que je l'aie vue.
       et le contrôle « Selon PayPal / Aux livres / Non rapproché / Inexpliqué » (38-9a AC-8 b), renvoyant au manuel
       d'administration pour la connexion.
     - Captures référencées (`\keshscreenshot`, `docs/manual/fr/screenshots/`) pour la proposition multi-lignes, la file
-      et le rattachement en lot ; PDF régénéré (`make fr`), contrôle du **PDF aplati** (`pdftotext user-manual.pdf - | tr
-      '\n' ' ' | tr -s ' '`) : « une seule condition » et « qu'aux transactions en CHF » absents ou requalifiés,
+      et le rattachement en lot ; **le `.tex` seul est modifié, le PDF se régénère à la release** (jamais commité) ; contrôle
+      local du rendu **aplati** (`make fr`, `pdftotext user-manual.pdf - | tr '\n' ' ' | tr -s ' '`) : « une seule condition » et « qu'aux transactions en CHF » absents ou requalifiés,
       « préfixe du numéro de facture », « deux à cinq écritures » et « frais mensuelle » présents — résultat au Change Log. Manuels DE/IT/EN : « à traduire » noté.
 11. **AC-11 — Tests** (NFR-38-9b-1).
     - **Vitest** : formulaire des règles (types, aides, filtres envoyés au `POST` et au `PATCH`, règle inconnue non
@@ -445,8 +445,19 @@ doublon et sans qu'aucune écriture ne passe sans que je l'aie vue.
       `groupSumMatches`, `entryMovementOnAccount`) (AC-6) ; onglet « À examiner » (AC-7) ; dialogue d'annulation d'une
       paire et d'un groupe (AC-8).
 - [ ] i18n quatre locales et test des formules interdites (AC-9).
-- [ ] Manuel utilisateur, captures, PDF, contrôle du PDF aplati (AC-10).
+- [ ] Manuel utilisateur (`.tex` seul), captures, contrôle local du rendu aplati (AC-10).
 - [ ] Vitest, E2E, captures (AC-11, AC-12) ; gates complets au dernier commit de code.
+
+## Note de version
+
+*(Texte prêt à assembler au `CHANGELOG.md` à la release.)*
+
+- **Ajouté** : les écrans des règles d'affectation (nouveaux critères), des propositions des prestataires de paiement
+  (multi-lignes, file « à revoir »), du rattachement en lot et des groupes d'écritures ; au manuel utilisateur, la
+  section correspondante. Kesh propose, il ne comptabilise jamais d'office.
+
+**Compteurs** (clés i18n, `sitesTotal`, décompte des codes du doc-comment, `Cargo.lock`) : recomptés depuis la source
+après chaque reprise de `main`.
 
 ## Dev Notes
 
@@ -585,3 +596,5 @@ doublon et sans qu'aucune écriture ne passe sans que je l'aie vue.
   `ReconciliationProposals.svelte:600-603` (« Aucune correspondance ») — justes. Axes non exercés : code des stories
   amont (non écrit), PDF, reste de la fiche. Trend : P5 = 1 (1 MEDIUM) → P6 = 0 : boucle close (aucun finding
   au-dessus de LOW ; remédiation P5 hors code de production).
+- 2026-11-16 — alignement sur les règles de travail à plusieurs (Sonnet) : PDF du manuel non commité (`.tex` seul,
+  régénération à la release) ; section *Note de version* ajoutée ; compteurs « recomptés après chaque reprise de `main` ».

@@ -333,8 +333,8 @@ Reprises de la fiche d'epic (§ *38-1*), complétées là où un AC en ajoute (m
       `KESH_JWT_SECRET`, `:253`, `:577-579`, **et une ligne au tableau des variables**, `:732`) : rôle de la clé ; génération ; **perte ou changement de la clé = secrets à
       ressaisir** (rien d'autre n'est perdu) ; les secrets ne voyagent **ni** dans la sauvegarde **ni** dans la
       restauration, qui les efface : à ressaisir après toute restauration ; la clé ne se met **jamais** dans la
-      sauvegarde ni à côté d'elle. PDF régénéré (`make fr` dans `docs/manual/`) et contrôlé aplati (`pdftotext … | tr
-      '\n' ' '`). Les écrans (38-9a) complètent la section. **Recette E2E** : `docs/testing.md` § *Prérequis
+      sauvegarde ni à côté d'elle. **Le `.tex` seul est modifié ; le PDF se régénère à la release** (contrôle local du
+      rendu permis — `make fr` dans `docs/manual/`, `pdftotext … | tr '\n' ' '` —, PDF non commité). Les écrans (38-9a) complètent la section. **Recette E2E** : `docs/testing.md` § *Prérequis
       Playwright local* et le bloc du `CLAUDE.md` gagnent `KESH_SECRETS_KEY` (valeur factice de 32 octets base64,
       non gabarit) — sans elle, les E2E de 38-9 ne peuvent pas déposer de secret.
     - **MCP** : aucun outil neuf (E23, décidé) ; les connexions et le coffre ne sont exposés par aucun outil — rien à
@@ -365,10 +365,23 @@ Reprises de la fiche d'epic (§ *38-1*), complétées là où un AC en ajoute (m
       `reset_body`, détail d'audit, tests (identifiants réutilisés, autre installation, refus ultérieur qui annule).
 - [ ] **T7 — Recherche du secret partout** (AC-9).
 - [ ] **T8 — Configuration distribuée, manuel, recette E2E** (AC-10) : compose ×2 (+ dev si requis), `.env.example`,
-      garde `configuration_transmise`, manuel d'administration et PDF, `docs/testing.md`, bloc E2E du `CLAUDE.md`.
+      garde `configuration_transmise`, manuel d'administration (`.tex` seul), `docs/testing.md`, bloc E2E du `CLAUDE.md`.
 - [ ] **T9 — Gates** : gate complet (story qui touche `kesh-db/migrations` : ciblage interdit, CLAUDE.md), base de
       gate remise à zéro avant ; `cargo deny` si présent ; aucun E2E neuf (aucun écran), E2E complet au dernier
       commit de code (règle D7) pour vérifier que la variable neuve ne casse pas le montage.
+
+## Note de version
+
+*(Texte prêt à assembler au `CHANGELOG.md` à la release ; aucune ligne n'est écrite au `CHANGELOG.md` en cours d'epic.)*
+
+- **Ajouté** : un coffre pour les secrets des connexions aux prestataires de paiement (PayPal), chiffrés par la clé
+  `KESH_SECRETS_KEY`, et les connexions elles-mêmes ; les secrets ne voyagent ni dans la sauvegarde ni dans la
+  restauration. **À savoir** : perdre ou changer la clé oblige à ressaisir les secrets ; la migration est non breaking,
+  mais le retour à la version précédente passe par la sauvegarde d'avant la mise à jour.
+
+**Compteurs** (`LIB_ROUTES`, audit des migrations — total aux deux sites et partition —, `data_count`,
+`EMPTY_BEFORE_RESET`, `TABLES_TO_TRUNCATE`, `Cargo.lock`, nombre de crates) : recomptés depuis la source après chaque
+reprise de `main`.
 
 ## Notes de développement
 
@@ -445,3 +458,5 @@ Reprises de la fiche d'epic (§ *38-1*), complétées là où un AC en ajoute (m
   `test_fixtures.rs:395`, `onboarding_audit_e2e.rs:2046`, `docker-compose.dev.yml:6, 30`, `admin-manual.tex:728-732`.
   Renvois sœurs (38-2 : `payment_provider_accounts` avant la connexion ; 38-3a : suppression des passages, `DELETE`
   explicites) cohérents.
+- 2026-11-16 — alignement sur les règles de travail à plusieurs (Sonnet) : PDF du manuel non commité (`.tex` seul,
+  régénération à la release) ; section *Note de version* ajoutée ; compteurs « recomptés après chaque reprise de `main` ».

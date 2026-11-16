@@ -22,6 +22,47 @@ issues et PR s'ouvrent à la fin.
 
 **Cible** : la release qui suivra celle de l'Epic 37 (numéro, CHANGELOG daté, macros des manuels, tag : par Guy).
 
+**Release** : un epic = une release ; **16 stories**. Cet epic **dépasse la borne** de six stories des epics de
+correction ou d'amélioration (c'est une fonctionnalité nouvelle, ce que le kickoff déclare) ; **son découpage en
+plusieurs epics est à décider avec le Project Lead à la soumission** (décision de Beat, 2026-11-16).
+
+**Règles de travail à plusieurs** (alignement du 2026-11-16, `CLAUDE.md` § *Travailler à plusieurs développeurs*) :
+aucune ligne n'est écrite au `CHANGELOG.md` en cours d'epic (chaque fiche porte sa section *Note de version*, assemblée
+à la release) ; les PDF des manuels ne sont jamais commités dans la branche (le `.tex` seul change, les PDF se
+régénèrent à la release) ; les compteurs (`LIB_ROUTES`, audit des migrations, `sitesTotal`, `data_count`,
+`EMPTY_BEFORE_RESET`, `Cargo.lock`, nombre de crates, nombre de contrôles de clôture) se recomptent depuis la source
+après chaque reprise de `main`.
+
+## Modules touchés
+
+*(Liste tirée des fiches ; elle se relit à chaque reprise de `main`, pour voir tôt les recouvrements avec les autres
+epics en cours.)*
+
+| Fiche | Crates | Frontend | Manuels et docs |
+|---|---|---|---|
+| 38-1 | `kesh-db` (migration), `kesh-core`, `kesh-api` (config, secrets, routes) | — | manuel d'administration (`KESH_SECRETS_KEY`), `docs/testing.md`, `CLAUDE.md` (bloc E2E) |
+| 38-2 | `kesh-db` (migration breaking), `kesh-api`, `kesh-core` | — | manuel d'administration (une phrase) |
+| 38-3a | `kesh-db` (migration), `kesh-core`, `kesh-api`, `kesh-i18n` | — | — (faits transmis à 38-9a) |
+| 38-3b | `kesh-providers` (neuf), `kesh-api`, `kesh-db`, `kesh-i18n` | — | — (faits transmis à 38-9a) |
+| 38-4 | `kesh-db` (migration), `kesh-reconciliation`, `kesh-api`, `kesh-i18n` | libellés | manuel utilisateur (relu, 38-9b écrit) |
+| 38-5 | `kesh-db` (migration), `kesh-core`, `kesh-api` | accounts, réglages | manuel utilisateur |
+| 38-6a | `kesh-reconciliation`, `kesh-api`, `kesh-db`, `kesh-i18n` | — | `docs/api-external.md` |
+| 38-6b | `kesh-reconciliation`, `kesh-api`, `kesh-db`, `kesh-i18n` | — | — |
+| 38-6c1 | `kesh-db`, `kesh-api`, `kesh-i18n` | — | `docs/api-external.md` |
+| 38-6c2 | `kesh-db` (migration, sauvegarde), `kesh-api`, `kesh-i18n` | — | `docs/api-external.md` |
+| 38-7 | `kesh-providers` (paypal), `kesh-api` | — | — |
+| 38-8 | `kesh-providers` (paypal), `kesh-core` | — | — |
+| 38-9a | — | provider-connections (neuf), bank-accounts, i18n | manuel d'administration, manuel utilisateur |
+| 38-9b | — | reconciliation, règles, i18n, E2E | manuel utilisateur |
+| 38-10 | `kesh-db` (migration), `kesh-api` (routes, sauvegarde, closing-checks) | bank-accounts, fiscal-years | manuels FR, brochure, `README.md`, `docs/api-external.md` |
+
+**Dépendance à l'Epic 36 (38-6c2)** : à revoir après la fusion de l'Epic 36 — Guy construit #823 (36-6, une
+transaction rattachée à plusieurs écritures) ; réutiliser son mécanisme plutôt que doubler la table
+`bank_transaction_extra_entries`.
+
+**Contrôles de clôture** : l'Epic 37, qui sort avant, prend K9 (« comptes en devise non réévalués », bloquant) ; le
+relevé joint (38-10) est **K10**, et l'avant-clôture compte dix contrôles (décision du 2026-11-16).
+
 ## Intention
 
 Un compte PayPal *business* se tient dans Kesh **sans saisie** : Kesh télécharge chaque jour (ou à la demande) les
@@ -368,7 +409,8 @@ boutique PayPal = **préfixe du numéro de facture** (`invoice_id`) · B25 Q3 re
   devise** à `as_of` ≠ solde rapporté → écart affiché à l'écran du compte, ventilé en transactions non rapprochées et
   reste inexpliqué. Le **relevé joint** (38-10, PDF annuel ou mensuel) porte son solde de clôture par devise, saisi à
   la main ; il est comparé au solde comptable à sa date, et un écart s'ajoute aux contrôles préalables à la clôture
-  de l'exercice (`GET /fiscal-years/{id}/closing-checks`, avertissement non bloquant).
+  de l'exercice (`GET /fiscal-years/{id}/closing-checks`, avertissement non bloquant) — **K10** (K9 est celui de
+  l'Epic 37, décision du 2026-11-16).
 - **E21 — Rattachement en lot aux écritures existantes (B17).** Les livres 2024 de Beat sont déjà passés par l'API
   (recette de l'Epic 37) ; les transactions téléchargées de 2024 se **rattachent** à ces écritures, sans en créer.
   Socle : le rattachement à une écriture déjà passée (v017-3a, `get_entry_candidates` `reconciliation.rs:6548`,
@@ -1195,3 +1237,9 @@ Liste : `implementation-artifacts/38-p2-inter-fiches.md`.
   C-38-5 (`max_movements_per_page()`, `test()`), C-38-8, C-38-13, C-38-14, E11, E21, E22, O8 ; table des stories,
   dépendances, ordre, migrations (sept fichiers, 38-6c2 au lieu de 38-6c) ; § 38-9b (FR-38-9b-3 et -5 reprises des
   fiches) ; récapitulatif FR/NFR recompté aux fiches (91 FR, 59 NFR, 16 stories).
+
+## Alignement sur les règles de travail à plusieurs (2026-11-16, Sonnet)
+
+Sections « Release » et « Modules touchés » ajoutées ; ligne de l'Epic 36 (#823) en dépendance de 38-6c2 ; contrôle de
+clôture du relevé joint passé de K9 à K10 (l'Epic 37 prend K9) ; PDF des manuels et CHANGELOG reportés à la release
+(fiches : `.tex` seul, section *Note de version*) ; compteurs recomptés après chaque reprise de `main`.
