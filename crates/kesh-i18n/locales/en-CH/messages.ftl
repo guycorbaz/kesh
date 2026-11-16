@@ -3781,6 +3781,7 @@ error-conversion-fee-on-credit = A conversion fee is posted to the debit of an e
 error-conversion-difference-without-pair = The exchange difference line requires a single foreign-currency account in the entry (expense accounts aside): its difference accounts depend on it.
 error-conversion-difference-off-pair = The exchange difference goes to the accounts of the foreign-currency account { $account }: the gains account on the credit side, or the losses account on the debit side.
 error-conversion-too-many-lines = Too many lines in the entry: the exchange difference line cannot be added.
+error-conversion-same-currency = Both entries are in the same currency ({ $currency }): this is not a conversion, post two ordinary entries.
 error-fx-screen-account-in-chf = The account of this line is kept in CHF: it no longer has a foreign currency. Reload the page.
 error-fx-screen-currency-mismatch = The account of this line is kept in { $expected }: its currency has changed since loading. Reload the page.
 error-fx-screen-multi-currency-disabled = This financial year is single-currency (it was closed before multi-currency was activated): no foreign-currency account can be used in it.

@@ -98,6 +98,21 @@ describe('RateLookupCache', () => {
 		await cache.get('USD', '2026-03-04');
 		expect(lookup).toHaveBeenCalledTimes(3);
 	});
+	it('échec passager du POST /fetch : non mémoïsé (37-3b-CR-P2-3)', async () => {
+		const lookup = vi
+			.fn()
+			.mockRejectedValueOnce({ code: 'RATE_UNAVAILABLE', status: 404, message: '' })
+			.mockRejectedValueOnce({ code: 'RATE_UNAVAILABLE', status: 404, message: '' })
+			.mockResolvedValueOnce(lookupOk);
+		const fetch = vi
+			.fn()
+			.mockRejectedValueOnce(new TypeError('Failed to fetch'))
+			.mockResolvedValueOnce({});
+		const cache = createRateLookupCache({ lookup, fetch, canFetch: () => true, today: () => '2026-03-15' });
+		expect((await cache.get('USD', '2026-03-01')).outcome.kind).toBe('none');
+		expect((await cache.get('USD', '2026-03-02')).outcome.kind).toBe('rate');
+		expect(fetch).toHaveBeenCalledTimes(2);
+	});
 	it('isFetchable : 2000-01 au mois suivant ; un jour strictement passé', () => {
 		expect(isFetchable('month', '1999-12-01', '2026-03-15')).toBe(false);
 		expect(isFetchable('month', '2026-04-01', '2026-03-15')).toBe(true);

@@ -271,3 +271,27 @@ describe('JournalEntryForm — multi-devises', () => {
 		expect(val('journal-entry-line-fx-debit-0')).toBe('100');
 	});
 });
+
+describe('JournalEntryForm — société mono-devise (NFR-37-3b-1, revue de code P2)', () => {
+	it('aucun compte en devise offert, aucun champ de devise, aucun lookup', async () => {
+		const lk = cache();
+		render(JournalEntryForm, {
+			props: {
+				accounts: ACCOUNTS,
+				accountsLoadError: false,
+				multiCurrency: false,
+				companyFx: null,
+				rateLookup: lk,
+				onSuccess: vi.fn(),
+				onCancel: vi.fn()
+			}
+		});
+		const options = optionsOf(0);
+		expect(options.some((o) => o.includes('1000'))).toBe(true);
+		expect(options.some((o) => o.includes('1022') || o.includes('1021'))).toBe(false);
+		await pick(0, '1000');
+		expect(screen.queryByTestId('journal-entry-line-fx-rate-0')).toBeNull();
+		expect(screen.queryByTestId('journal-entry-line-fx-debit-0')).toBeNull();
+		expect(lookup).not.toHaveBeenCalled();
+	});
+});

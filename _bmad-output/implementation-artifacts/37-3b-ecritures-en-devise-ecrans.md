@@ -906,6 +906,8 @@ devise au cours d'ouverture choisi pour l'exercice (R6), afin de tenir mes livre
 
 - **Changed (contrat de l'API)** — routes d'ouverture : à la génération, une ligne CHF dont `debit` ou `credit` est absent rend 400 `Validation` au lieu de 422 ; `rateSource: "revaluation"` rend 400 sur les deux routes (guide d'API `docs/api-external.md` à jour).
 - **Added** — écrans de saisie en devise, assistant *Conversion*, ligne d'écart sur les comptes de différence de change.
+- **Added (API)** — `POST /journal-entries/conversions` : deux écritures en une transaction par le compte de conversion, `completeDifference` optionnel (ligne de différence calculée), rejouée sur interblocage ; nouveau code `FX_CONVERSION_TRANSIT_UNBALANCED` (400) ; deux écritures dans la même devise, CHF comprise, refusées en `VALIDATION_ERROR`.
+- **Added (API)** — `GET /opening-balances/status` : `currency` sur les comptes complétables ; `foreign` admis sur les lignes des deux routes d'ouverture.
 - **Compteurs** : recomptés depuis la source après chaque reprise de `main` (`LIB_ROUTES`, partitions, `sitesTotal`, catalogues i18n).
 
 ## Notes de développement
@@ -1532,3 +1534,4 @@ devise au cours d'ouverture choisi pour l'exercice (R6), afin de tenir mes livre
 
 **Artefacts**
 - `_bmad-output/implementation-artifacts/37-3b-ecritures-en-devise-ecrans.md`, `sprint-status.yaml`
+- 2026-11-16 — revue de code P2 (Sonnet 5.5, couches Blind Hunter, Edge Case Hunter, Acceptance Auditor en parallèle) : 0 CRITICAL, 0 HIGH, 5 MEDIUM (cache : échec passager du `POST /fetch` mémoïsé ; reprise du même compte qui remplaçait cours et CHF d'une ligne relue ; tests de non-régression mono-devise et de `openingProposal` manquants ; refus de conversion en même devise absent du serveur, ex CR-P1-20), une vingtaine de LOW. Corrigés avec tests : les cinq MEDIUM ; conversion en même devise refusée (400, frais exclus de la devise de l'écriture) ; différence calculée au-delà de `DECIMAL(19,4)` en 400 `FX_VALUE_OUT_OF_RANGE` ; sélecteur mono-devise sans compte en devise ; refus de frais vidés à l'ajout ou au retrait d'un frais ; sortie de champ CHF inchangée n'efface plus un refus ; 408 et 429 passagers ; `commitForeignChf` gardé ; guide d'API (route de conversion rejouée) et Note de version. Non corrigés, au registre `issues-a-ouvrir-p1.md` (19 points). Gates (au dernier commit de code) : `scripts/test-fast.sh --ci` 5750 passés, 13 ignorés (fmt, clippy, nextest) ; Vitest 4055 (258 fichiers) ; `npm run check` 0 erreur ; `npm run build` vert ; E2E complet non rejoué ici (clôture).

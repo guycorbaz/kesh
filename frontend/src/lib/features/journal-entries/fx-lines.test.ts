@@ -209,7 +209,8 @@ describe('CHF saisi à la main (A32)', () => {
 		// Aucun cours ne redonne un CHF à trois décimales (vecteur de la fixture).
 		expect(applyChfEntry(afc, '0.123', date).chfError).toBe('FX_AMOUNT_MISMATCH');
 		expect(applyChfEntry({ ...afc, amount: '' }, '10', date).chfError).toBe('FX_VALUE_OUT_OF_RANGE');
-	});	it('CHF refusé : le CHF de l’ancien cours n’est ni calculé ni envoyé (37-3b-CR-P1-1)', () => {
+	});
+	it('CHF refusé : le CHF de l’ancien cours n’est ni calculé ni envoyé (37-3b-CR-P1-1)', () => {
 		const withRate = { ...afc, rate: '0.9' };
 		const f = applyChfEntry(withRate, '0.123', date);
 		expect(f.rate).toBe('0.9');

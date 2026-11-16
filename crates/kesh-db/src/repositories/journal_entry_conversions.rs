@@ -98,6 +98,13 @@ pub enum ConversionValidation {
     /// L'écriture compte déjà le nombre maximal de lignes : la ligne calculée
     /// ne peut s'y ajouter.
     TooManyLines,
+    /// Les deux écritures sont dans la même devise (CHF comprise) : ce n'est
+    /// pas une conversion, mais deux écritures ordinaires (revue de code P2,
+    /// 37-3b-CR-P2-1, ex CR-P1-20).
+    SameCurrency {
+        /// Devise commune (`CHF` si aucune ligne n'est en devise).
+        currency: String,
+    },
 }
 
 /// Ce qui refuse une conversion.
@@ -284,6 +291,59 @@ async fn create_conversion_in_tx(
             ConversionErrorKind::TransitUnbalanced {
                 entry1: nets[0],
                 entry2: nets[1],
+            },
+        ));
+    }
+
+    // --- 2 bis. Deux devises différentes (CHF comprise). ------------------
+    let ids: Vec<i64> = entries
+        .iter()
+        .flat_map(|e| e.lines.iter().map(|l| l.account_id))
+        .filter(|id| *id != transit)
+        .collect();
+    let read = accounts::conversion_line_accounts_in_tx(tx, company_id, &ids)
+        .await
+        .map_err(conv)?;
+    let currency_of = |entry: &NewJournalEntry| -> BTreeSet<String> {
+        // (compte de charge ?, devise) de chaque ligne hors compte de conversion.
+        let lines: Vec<(bool, String)> = entry
+            .lines
+            .iter()
+            .filter(|l| l.account_id != transit)
+            .map(|l| {
+                let account = read.iter().find(|a| a.account.id == l.account_id);
+                (
+                    account.is_some_and(|a| a.account.account_type == AccountType::Expense),
+                    account
+                        .and_then(|a| a.account.currency.clone())
+                        .unwrap_or_else(|| "CHF".to_string()),
+                )
+            })
+            .collect();
+        // Les frais (comptes de charge) ne donnent pas sa devise à l'écriture,
+        // sauf s'il n'y a rien d'autre.
+        let main: BTreeSet<String> = lines
+            .iter()
+            .filter(|(expense, _)| !expense)
+            .map(|(_, c)| c.clone())
+            .collect();
+        if main.is_empty() {
+            lines.into_iter().map(|(_, c)| c).collect()
+        } else {
+            main
+        }
+    };
+    let (cur0, cur1) = (currency_of(&entries[0]), currency_of(&entries[1]));
+    // Un compte inconnu ou une écriture à deux devises : refusés plus loin
+    // (création, `FX_MULTIPLE_CURRENCIES`) ; ici seul le cas net d'une même
+    // devise unique de part et d'autre.
+    if cur0.len() == 1 && cur0 == cur1 {
+        return Err(ConversionError::conversion(
+            ConversionErrorKind::Validation {
+                reason: ConversionValidation::SameCurrency {
+                    currency: cur0.into_iter().next().unwrap_or_default(),
+                },
+                line: None,
             },
         ));
     }
@@ -518,6 +578,13 @@ async fn complete_entry(
     // compris), au crédit du compte de gains si les débits l'emportent, au
     // débit du compte de pertes sinon.
     let gap = total_debit - total_credit;
+    // Au-delà de DECIMAL(19,4) l'INSERT échouerait en 500 : refusé ici en 400
+    // (revue de code P2, 37-3b-CR-P2-2, ex CR-P1-21).
+    if gap.abs() >= accounting::fx::FX_CHF_MAX {
+        return Err(ConversionErrorKind::Core(CoreError::FxValueOutOfRange {
+            line: entry.lines.len() + 1,
+        }));
+    }
     let (account_id, debit, credit) = if gap > Decimal::ZERO {
         (fx.gain, Decimal::ZERO, gap)
     } else {

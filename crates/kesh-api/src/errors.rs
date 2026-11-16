@@ -1672,6 +1672,17 @@ pub(crate) fn conversion_validation_message(
                 &args,
             )
         }
+        V::SameCurrency { currency } => {
+            let mut args = FluentArgs::new();
+            args.set("currency", currency.clone());
+            t_args(
+                "error-conversion-same-currency",
+                &format!(
+                    "Les deux écritures sont dans la même devise ({currency}) : ce n’est pas une conversion, passez deux écritures ordinaires."
+                ),
+                &args,
+            )
+        }
         V::TooManyLines => t(
             "error-conversion-too-many-lines",
             "Trop de lignes dans l’écriture : la ligne de différence de change ne peut pas s’y ajouter.",

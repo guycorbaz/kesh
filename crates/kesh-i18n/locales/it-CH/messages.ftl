@@ -3776,6 +3776,7 @@ error-conversion-fee-on-credit = Una spesa di conversione si registra in dare su
 error-conversion-difference-without-pair = La riga di differenza di cambio richiede un solo conto in valuta nella registrazione (esclusi i conti di costo): i suoi conti di differenza ne dipendono.
 error-conversion-difference-off-pair = La differenza di cambio va sui conti del conto in valuta { $account }: il conto degli utili in avere, o il conto delle perdite in dare.
 error-conversion-too-many-lines = Troppe righe nella registrazione: la riga di differenza di cambio non può esservi aggiunta.
+error-conversion-same-currency = Le due registrazioni sono nella stessa valuta ({ $currency }): non è una conversione, registrate due scritture ordinarie.
 error-fx-screen-account-in-chf = Il conto di questa riga è tenuto in CHF: non porta più una valuta. Ricaricate la pagina.
 error-fx-screen-currency-mismatch = Il conto di questa riga è tenuto in { $expected }: la sua valuta è cambiata dal caricamento. Ricaricate la pagina.
 error-fx-screen-multi-currency-disabled = Questo esercizio è monovaluta (è stato chiuso prima dell’attivazione della multivaluta): nessun conto in valuta vi è utilizzabile.

@@ -3854,6 +3854,7 @@ error-conversion-fee-on-credit = Un frais de conversion se passe au débit d’u
 error-conversion-difference-without-pair = La ligne de différence de change exige un seul compte en devise dans l’écriture (hors comptes de charge) : ses comptes de différence en dépendent.
 error-conversion-difference-off-pair = La différence de change va sur les comptes du compte en devise { $account } : le compte de gains au crédit, ou le compte de pertes au débit.
 error-conversion-too-many-lines = Trop de lignes dans l’écriture : la ligne de différence de change ne peut pas s’y ajouter.
+error-conversion-same-currency = Les deux écritures sont dans la même devise ({ $currency }) : ce n’est pas une conversion, passez deux écritures ordinaires.
 error-fx-screen-account-in-chf = Le compte de cette ligne est tenu en CHF : il ne porte plus de devise. Rechargez la page.
 error-fx-screen-currency-mismatch = Le compte de cette ligne est tenu en { $expected } : sa devise a changé depuis le chargement. Rechargez la page.
 error-fx-screen-multi-currency-disabled = Cet exercice est mono-devise (il a été clos avant l’activation du multi-devises) : aucun compte en devise n’y est utilisable.

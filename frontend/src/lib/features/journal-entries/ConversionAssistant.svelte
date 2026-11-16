@@ -136,7 +136,10 @@
 	function updateForeign(side: 'debit' | 'credit', patch: (f: LineForeign) => LineForeign) {
 		const col = getCol(side);
 		if (!col.foreign) return;
-		setCol(side, { ...col, foreign: patch(col.foreign) });
+		const next = patch(col.foreign);
+		// Une sortie de champ qui ne change rien n'efface pas un refus affiché.
+		if (next === col.foreign) return;
+		setCol(side, { ...col, foreign: next });
 	}
 
 	function chfOf(side: 'debit' | 'credit'): string {
@@ -161,10 +164,12 @@
 	function addFee(side: 'debit' | 'credit') {
 		const col = getCol(side);
 		setCol(side, { ...col, fees: [...col.fees, { accountId: null, amount: '' }] });
+		feeErrors = { ...feeErrors, [side]: {} };
 	}
 	function removeFee(side: 'debit' | 'credit', k: number) {
 		const col = getCol(side);
 		setCol(side, { ...col, fees: col.fees.filter((_, i) => i !== k) });
+		feeErrors = { ...feeErrors, [side]: {} };
 	}
 	function setFee(side: 'debit' | 'credit', k: number, patch: Partial<{ accountId: number | null; amount: string }>) {
 		const col = getCol(side);

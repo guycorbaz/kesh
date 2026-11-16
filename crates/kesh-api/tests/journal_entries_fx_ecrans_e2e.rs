@@ -1355,3 +1355,121 @@ async fn conversion_dans_un_exercice_mono_devise(pool: MySqlPool) {
     );
     assert_eq!(nb_ecritures(&pool, ctx.s.company_id).await, 0);
 }
+
+/// Revue de code P2, 37-3b-CR-P2-1 : deux écritures dans la même devise (deux
+/// comptes USD, ou CHF de part et d'autre) ne sont pas une conversion — 400
+/// `VALIDATION_ERROR`, rien de créé ; EUR → USD passe toujours.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn conversion_meme_devise_refusee(pool: MySqlPool) {
+    let ctx = monter(&pool).await;
+    // USD de part et d'autre.
+    let e1 = ecriture(
+        "2026-03-05",
+        "USD (1/2)",
+        vec![
+            chf(ctx.transit, "900.00", "0"),
+            fx(ctx.usd, "credit", "900.00", "USD", "1000", "0.9"),
+        ],
+    );
+    let e2 = ecriture(
+        "2026-03-06",
+        "USD (2/2)",
+        vec![
+            fx(ctx.usd_bis, "debit", "900.00", "USD", "1000", "0.9"),
+            chf(ctx.transit, "0", "900.00"),
+        ],
+    );
+    let (st, body) = envoyer(&ctx, ROUTE, &conversion(e1, e2, Some(true))).await;
+    assert_eq!((st, code(&body)), (400, "VALIDATION_ERROR"), "{body}");
+    assert!(
+        body["error"]["message"].as_str().unwrap().contains("USD"),
+        "{body}"
+    );
+    // CHF de part et d'autre.
+    let e1 = ecriture(
+        "2026-03-05",
+        "CHF (1/2)",
+        vec![
+            chf(ctx.transit, "10.00", "0"),
+            chf(ctx.retained, "0", "10.00"),
+        ],
+    );
+    let e2 = ecriture(
+        "2026-03-06",
+        "CHF (2/2)",
+        vec![
+            chf(ctx.fee_chf, "10.00", "0"),
+            chf(ctx.transit, "0", "10.00"),
+        ],
+    );
+    let (st, body) = envoyer(&ctx, ROUTE, &conversion(e1, e2, None)).await;
+    assert_eq!((st, code(&body)), (400, "VALIDATION_ERROR"), "{body}");
+    assert!(
+        body["error"]["message"].as_str().unwrap().contains("CHF"),
+        "{body}"
+    );
+    // USD de part et d'autre, avec un frais CHF : toujours la même devise.
+    let e1 = ecriture(
+        "2026-03-05",
+        "USD (1/2)",
+        vec![
+            chf(ctx.transit, "900.00", "0"),
+            fx(ctx.usd, "credit", "900.00", "USD", "1000", "0.9"),
+        ],
+    );
+    let e2 = ecriture(
+        "2026-03-06",
+        "USD (2/2)",
+        vec![
+            fx(ctx.usd_bis, "debit", "898.00", "USD", "997.7778", "0.9"),
+            chf(ctx.fee_chf, "2.00", "0"),
+            chf(ctx.transit, "0", "900.00"),
+        ],
+    );
+    let (st, body) = envoyer(&ctx, ROUTE, &conversion(e1, e2, None)).await;
+    assert_eq!((st, code(&body)), (400, "VALIDATION_ERROR"), "{body}");
+    assert_eq!(nb_ecritures(&pool, ctx.s.company_id).await, 0);
+    // Deux devises différentes : accepté.
+    let (st, body) = envoyer(
+        &ctx,
+        ROUTE,
+        &conversion(ecriture_1(&ctx), ecriture_2(ctx.usd, &ctx), Some(true)),
+    )
+    .await;
+    assert_eq!(st, 201, "{body}");
+}
+
+/// Revue de code P2, 37-3b-CR-P2-2 : la ligne de différence calculée au-delà de
+/// `DECIMAL(19,4)` rend 400 `FX_VALUE_OUT_OF_RANGE`, non une erreur SQL en 500.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn conversion_difference_hors_bornes_rend_400(pool: MySqlPool) {
+    let ctx = monter(&pool).await;
+    let e1 = ecriture(
+        "2026-03-05",
+        "Gros (1/2)",
+        vec![
+            chf(ctx.transit, "0.01", "0"),
+            fx(ctx.eur, "credit", "0.01", "EUR", "0.01", "1"),
+        ],
+    );
+    let e2 = ecriture(
+        "2026-03-06",
+        "Gros (2/2)",
+        vec![
+            fx(
+                ctx.usd,
+                "debit",
+                "9999999999999.00",
+                "USD",
+                "9999999999999",
+                "1",
+            ),
+            chf(ctx.fee_chf, "9999999999999.00", "0"),
+            chf(ctx.transit, "0", "0.01"),
+        ],
+    );
+    let (st, body) = envoyer(&ctx, ROUTE, &conversion(e1, e2, Some(true))).await;
+    assert_eq!((st, code(&body)), (400, "FX_VALUE_OUT_OF_RANGE"), "{body}");
+    assert_eq!(body["error"]["details"]["entry"], 2, "{body}");
+    assert_eq!(nb_ecritures(&pool, ctx.s.company_id).await, 0);
+}

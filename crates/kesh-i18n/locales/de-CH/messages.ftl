@@ -3775,6 +3775,7 @@ error-conversion-fee-on-credit = Eine Umrechnungsgebühr wird im Soll eines Aufw
 error-conversion-difference-without-pair = Die Kursdifferenzzeile verlangt genau ein Fremdwährungskonto in der Buchung (ohne Aufwandkonten): Ihre Kursdifferenzkonten hängen davon ab.
 error-conversion-difference-off-pair = Die Kursdifferenz geht auf die Konten des Fremdwährungskontos { $account }: das Kursgewinnkonto im Haben oder das Kursverlustkonto im Soll.
 error-conversion-too-many-lines = Zu viele Zeilen in der Buchung: Die Kursdifferenzzeile kann nicht hinzugefügt werden.
+error-conversion-same-currency = Beide Buchungen sind in derselben Währung ({ $currency }): Das ist keine Umrechnung, erfassen Sie zwei gewöhnliche Buchungen.
 error-fx-screen-account-in-chf = Das Konto dieser Zeile wird in CHF geführt: Es hat keine Fremdwährung mehr. Laden Sie die Seite neu.
 error-fx-screen-currency-mismatch = Das Konto dieser Zeile wird in { $expected } geführt: Seine Währung hat sich seit dem Laden geändert. Laden Sie die Seite neu.
 error-fx-screen-multi-currency-disabled = Dieses Geschäftsjahr ist einwährig (es wurde vor der Aktivierung der Mehrwährung abgeschlossen): Darin ist kein Fremdwährungskonto verwendbar.

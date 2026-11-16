@@ -134,7 +134,8 @@
 		rateLookup = undefined
 	}: Props = $props();
 	// fx-filtre-comptes : exempté — le formulaire d'écriture saisit en devise : son
-	// sélecteur offre les comptes en devise (`excludeForeignCurrency={false}`), restreints
+	// sélecteur offre les comptes en devise si la société est multi-devises
+	// (`excludeForeignCurrency={!multiCurrency}`), restreints
 	// à une devise par écriture (R7, `allowedCurrencies`).
 
 	const isEdit = $derived(initialEntry !== null);
@@ -194,7 +195,7 @@
 		// Story 37-3b (AC-4) : un compte en devise n'est pas inutilisable ici.
 		return isAccountUnusable(
 			accounts.find((a) => a.id === accountId),
-			{ excludeForeignCurrency: false }
+			{ excludeForeignCurrency: !multiCurrency }
 		);
 	}
 
@@ -295,6 +296,9 @@
 
 	/** Le compte d'une ligne change (U2) : la devise suit le compte. */
 	function selectAccount(index: number, id: number | null) {
+		// Reprendre le même compte ne change rien (revue de code P2, 37-3b-CR-P2-4) :
+		// la ligne relue garde son cours, sa provenance et son CHF.
+		if (id === lines[index].accountId) return;
 		const account = id === null ? undefined : accounts.find((a) => a.id === id);
 		if (!multiCurrency) {
 			lines[index].accountId = id;
@@ -353,7 +357,7 @@
 
 	/** Le champ CHF quitte le focus : la saisie résolue cède la place au CHF dérivé. */
 	function commitForeignChf(index: number) {
-		const f = lines[index].foreign;
+		const f = lines[index]?.foreign;
 		if (!f) return;
 		lines[index] = syncDerivedChf({ ...lines[index], foreign: commitChfEntry(f) });
 	}
@@ -882,7 +886,7 @@
 							accounts={accountsForLine(i)}
 							value={line.accountId}
 							loadError={accountsLoadError}
-							excludeForeignCurrency={false}
+							excludeForeignCurrency={!multiCurrency}
 							onSelect={(id) => selectAccount(i, id)}
 						/>
 						{#if lineAccountUnusable(line.accountId)}

@@ -69,6 +69,11 @@ function fetchRequest(kind: RateKind, date: string): FetchRatesRequest {
 	return { year: Number(date.slice(0, 4)), month: Number(date.slice(5, 7)) };
 }
 
+/** Échec passager : réseau, délai (408), limite (429) ou réponse 5xx. */
+function isTransientFailure(err: unknown): boolean {
+	return !isApiError(err) || err.status >= 500 || err.status === 408 || err.status === 429;
+}
+
 /** Le cache d'un formulaire (fabriqué par {@link createRateLookupCache}). */
 export interface RateLookupCache {
 	/**
@@ -111,7 +116,7 @@ export function createRateLookupCache(deps: RateLookupDeps): RateLookupCache {
 			};
 		} catch (err) {
 			if (isApiError(err) && err.code === 'RATE_UNAVAILABLE') return 'unavailable';
-			if (trace && (!isApiError(err) || err.status >= 500)) trace.transient = true;
+			if (trace && isTransientFailure(err)) trace.transient = true;
 			return { kind: 'none' };
 		}
 	}
@@ -122,8 +127,10 @@ export function createRateLookupCache(deps: RateLookupDeps): RateLookupCache {
 		}
 		try {
 			await deps.fetch(fetchRequest(kind, date));
-		} catch {
-			// `RATE_NOT_PUBLISHED`, `503`, `400` : saisie manuelle.
+		} catch (err) {
+			// `RATE_NOT_PUBLISHED`, `400` : saisie manuelle, mémoïsée. Un échec
+			// passager (réseau, 5xx) ne l'est pas (revue de code P2, 37-3b-CR-P2-3).
+			if (trace && isTransientFailure(err)) trace.transient = true;
 			return { outcome: { kind: 'none' }, note: 'manual-required' };
 		}
 		const second = await read(currency, date, kind, trace);
@@ -154,8 +161,13 @@ export function createRateLookupCache(deps: RateLookupDeps): RateLookupCache {
 			return p;
 		},
 		refresh(currency, date, kind = 'month') {
-			const p = fetchThenRead(currency, date, kind);
-			memo.set(key(currency, kind, date), p);
+			const k = key(currency, kind, date);
+			const trace: Trace = { transient: false };
+			const p: Promise<LookupResult> = fetchThenRead(currency, date, kind, trace).then((r) => {
+				if (trace.transient && memo.get(k) === p) memo.delete(k);
+				return r;
+			});
+			memo.set(k, p);
 			return p;
 		},
 	};
