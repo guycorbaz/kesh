@@ -188,8 +188,15 @@ pub const TEMOINS: &[(&str, Jeux, Complet)] = &[
     ("kesh_exercices", |_| vec![json!({})], |_| json!({})),
     (
         "kesh_plan_comptable",
-        |_| vec![json!({"limit": 70})],
-        |_| json!({"inclureArchives": true, "limit": 70, "offset": 0}),
+        // Story 37-1 : le maximum de l'outil (68 depuis le champ `devise`).
+        |_| vec![json!({"limit": kesh_api::mcp::outils::plan_comptable::LIMITE_MAX_MCP})],
+        |_| {
+            json!({
+                "inclureArchives": true,
+                "limit": kesh_api::mcp::outils::plan_comptable::LIMITE_MAX_MCP,
+                "offset": 0
+            })
+        },
     ),
     (
         "kesh_ecritures",

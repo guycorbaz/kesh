@@ -189,6 +189,11 @@ pub fn serialize_company_csv<W: Write>(rows: &[Company], writer: W) -> Result<()
         // CSV n'a aucun importeur (cf. l'audit `books.restored`).
         "books_locked_through",
         "is_stub",
+        // Story 37-1 (AC-6) : le réglage multi-devises et ses trois comptes.
+        "multi_currency_enabled",
+        "fx_gain_account_id",
+        "fx_loss_account_id",
+        "fx_transit_account_id",
         "version",
         "created_at",
         "updated_at",
@@ -217,6 +222,10 @@ pub fn serialize_company_csv<W: Write>(rows: &[Company], writer: W) -> Result<()
                 .map(|d| d.to_string())
                 .unwrap_or_default(),
             fmt_bool(c.is_stub),
+            fmt_bool(c.multi_currency_enabled),
+            fmt_opt_i64(c.fx_gain_account_id),
+            fmt_opt_i64(c.fx_loss_account_id),
+            fmt_opt_i64(c.fx_transit_account_id),
             c.version.to_string(),
             fmt_dt(c.created_at),
             fmt_dt(c.updated_at),
@@ -241,6 +250,10 @@ pub fn serialize_fiscal_years_csv<W: Write>(
         "start_date",
         "end_date",
         "status",
+        // Story 37-1 (AC-6) : le mode et les genres de cours de l'exercice.
+        "multi_currency",
+        "opening_rate_kind",
+        "closing_rate_kind",
         "created_at",
         "updated_at",
     ])
@@ -253,6 +266,9 @@ pub fn serialize_fiscal_years_csv<W: Write>(
             fmt_date(fy.start_date),
             fmt_date(fy.end_date),
             fy.status.as_str().to_string(),
+            fmt_bool(fy.multi_currency),
+            fy.opening_rate_kind.as_str().to_string(),
+            fy.closing_rate_kind.as_str().to_string(),
             fmt_dt(fy.created_at),
             fmt_dt(fy.updated_at),
         ])
@@ -278,6 +294,11 @@ pub fn serialize_accounts_csv<W: Write>(rows: &[Account], writer: W) -> Result<(
         // `Account` doit être répercuté ici ET dans le write_record ci-dessous.
         "role",
         "postable",
+        // Story 37-1 (AC-6) : la devise (vide = CHF) et les comptes de
+        // différence propres (vides = réglage de la société).
+        "currency",
+        "fx_gain_account_id",
+        "fx_loss_account_id",
         "version",
         "created_at",
         "updated_at",
@@ -294,6 +315,9 @@ pub fn serialize_accounts_csv<W: Write>(rows: &[Account], writer: W) -> Result<(
             fmt_bool(a.active),
             a.role.map(|r| r.as_str().to_string()).unwrap_or_default(),
             fmt_bool(a.postable),
+            fmt_opt_str(&a.currency),
+            fmt_opt_i64(a.fx_gain_account_id),
+            fmt_opt_i64(a.fx_loss_account_id),
             a.version.to_string(),
             fmt_dt(a.created_at),
             fmt_dt(a.updated_at),
@@ -1721,6 +1745,9 @@ mod tests {
             active: true,
             role: Some(AccountRole::Receivable),
             postable: true,
+            currency: None,
+            fx_gain_account_id: None,
+            fx_loss_account_id: None,
             version: 1,
             created_at: naive_dt(2026, 1, 1, 0, 0, 0),
             updated_at: naive_dt(2026, 1, 2, 12, 30, 45),
@@ -1750,6 +1777,10 @@ mod tests {
             website: None,
             is_stub: false,
             books_locked_through: None,
+            multi_currency_enabled: false,
+            fx_gain_account_id: None,
+            fx_loss_account_id: None,
+            fx_transit_account_id: None,
             version: 1,
             created_at: naive_dt(2026, 1, 1, 0, 0, 0),
             updated_at: naive_dt(2026, 1, 1, 0, 0, 0),
@@ -2013,8 +2044,9 @@ mod tests {
 
         assert_eq!(
             lines.next().unwrap(),
-            "id;company_id;number;name;account_type;parent_id;active;role;postable;version;created_at;updated_at",
-            "en-tête CSV des comptes (12 colonnes depuis la Story 14-3a)"
+            "id;company_id;number;name;account_type;parent_id;active;role;postable;\
+             currency;fx_gain_account_id;fx_loss_account_id;version;created_at;updated_at",
+            "en-tête CSV des comptes (15 colonnes depuis la Story 37-1)"
         );
 
         let row = lines.next().unwrap();
@@ -2022,6 +2054,95 @@ mod tests {
             row.contains(";Receivable;true;"),
             "le rôle et la postabilité doivent figurer dans la ligne : {row}"
         );
+        // Story 37-1 : un compte CHF « par défaut » laisse les trois cellules vides.
+        assert!(
+            row.contains(";Receivable;true;;;;1;"),
+            "devise et comptes propres vides : {row}"
+        );
+    }
+
+    /// Story 37-1 (AC-6) — un compte en devise avec comptes de différence
+    /// propres : les trois cellules, à leur place (index tiré de l'en-tête).
+    #[test]
+    fn serialize_accounts_csv_carries_currency_and_own_fx_accounts() {
+        let mut compte = sample_account();
+        compte.role = None;
+        compte.currency = Some("USD".into());
+        compte.fx_gain_account_id = Some(7);
+        compte.fx_loss_account_id = Some(8);
+        let mut buf = Vec::new();
+        serialize_accounts_csv(&[compte], &mut buf).expect("serialize ok");
+        let text = std::str::from_utf8(&buf[3..]).unwrap();
+        let mut rdr = csv::ReaderBuilder::new()
+            .delimiter(b';')
+            .from_reader(text.as_bytes());
+        let en_tete: Vec<String> = rdr.headers().unwrap().iter().map(String::from).collect();
+        let ligne = rdr.records().next().unwrap().unwrap();
+        let cellule = |nom: &str| {
+            let i = en_tete.iter().position(|h| h == nom).expect(nom);
+            ligne[i].to_string()
+        };
+        assert_eq!(cellule("currency"), "USD");
+        assert_eq!(cellule("fx_gain_account_id"), "7");
+        assert_eq!(cellule("fx_loss_account_id"), "8");
+    }
+
+    /// Story 37-1 (AC-6) — le réglage multi-devises actif de la société, et le
+    /// mode et les genres d'un exercice, sortent à leur place.
+    #[test]
+    fn serialize_company_and_fiscal_years_csv_carry_the_multi_currency_setting() {
+        let mut societe = sample_company();
+        societe.multi_currency_enabled = true;
+        societe.fx_gain_account_id = Some(11);
+        societe.fx_loss_account_id = Some(12);
+        societe.fx_transit_account_id = Some(13);
+        let mut buf = Vec::new();
+        serialize_company_csv(&[societe], &mut buf).expect("serialize ok");
+        let text = std::str::from_utf8(&buf[3..]).unwrap();
+        let mut rdr = csv::ReaderBuilder::new()
+            .delimiter(b';')
+            .from_reader(text.as_bytes());
+        let en_tete: Vec<String> = rdr.headers().unwrap().iter().map(String::from).collect();
+        let ligne = rdr.records().next().unwrap().unwrap();
+        for (nom, attendu) in [
+            ("multi_currency_enabled", "true"),
+            ("fx_gain_account_id", "11"),
+            ("fx_loss_account_id", "12"),
+            ("fx_transit_account_id", "13"),
+        ] {
+            let i = en_tete.iter().position(|h| h == nom).expect(nom);
+            assert_eq!(&ligne[i], attendu, "{nom}");
+        }
+
+        let exercice = FiscalYear {
+            id: 3,
+            company_id: 1,
+            name: "Exercice 2027".into(),
+            start_date: NaiveDate::from_ymd_opt(2027, 1, 1).unwrap(),
+            end_date: NaiveDate::from_ymd_opt(2027, 12, 31).unwrap(),
+            status: kesh_db::entities::FiscalYearStatus::Open,
+            multi_currency: true,
+            opening_rate_kind: kesh_db::entities::RateKind::Month,
+            closing_rate_kind: kesh_db::entities::RateKind::Day,
+            created_at: naive_dt(2026, 1, 1, 0, 0, 0),
+            updated_at: naive_dt(2026, 1, 1, 0, 0, 0),
+        };
+        let mut buf = Vec::new();
+        serialize_fiscal_years_csv(&[exercice], &mut buf).expect("serialize ok");
+        let text = std::str::from_utf8(&buf[3..]).unwrap();
+        let mut rdr = csv::ReaderBuilder::new()
+            .delimiter(b';')
+            .from_reader(text.as_bytes());
+        let en_tete: Vec<String> = rdr.headers().unwrap().iter().map(String::from).collect();
+        let ligne = rdr.records().next().unwrap().unwrap();
+        for (nom, attendu) in [
+            ("multi_currency", "true"),
+            ("opening_rate_kind", "month"),
+            ("closing_rate_kind", "day"),
+        ] {
+            let i = en_tete.iter().position(|h| h == nom).expect(nom);
+            assert_eq!(&ligne[i], attendu, "{nom}");
+        }
     }
 
     /// Un compte sans rôle exporte une cellule **vide**, pas la chaîne "null".

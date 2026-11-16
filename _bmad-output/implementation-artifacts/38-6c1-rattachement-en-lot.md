@@ -350,6 +350,16 @@ Reprises de la fiche d'epic (§ 38-6c), complétées là où un AC l'exige ; ren
       Locally First*) ; E2E complet au dernier commit de code (les specs du rattachement existantes, `reconciliation*`,
       doivent rester vertes : la règle CHF ne change pas).
 
+## Note de version
+
+*(Texte prêt à assembler au `CHANGELOG.md` à la release.)*
+
+- **Ajouté** : le rattachement en lot de transactions de prestataires de paiement à des écritures déjà passées, par
+  l'API des scripts (aucune écriture créée ni doublée). Aucune migration.
+
+**Compteurs** (`LIB_ROUTES`, `docs/api-external.md`, registres, `Cargo.lock`) : recomptés depuis la source après chaque
+reprise de `main`.
+
 ## Notes de développement
 
 - **L'invariant le plus cher** est celui de la 34-4 / v017-3a : **une seule règle** (C-v017-3-7). Toute condition
@@ -395,3 +405,5 @@ Reprises de la fiche d'epic (§ 38-6c), complétées là où un AC l'exige ; ren
   remédiés dans la fiche (`lib.rs:925-933` au lieu de `:921-925` ; `body.bank_account_id` de `post_accept` lu
   `:1698-1700`, la fonction commençant `:1592`, et non `:1593-1600`) ; aucun finding inter-fiches. Renvois à 38-6c2
   (AC-2, AC-1…AC-4 ; `uniquePair`, `several_pairs`, `journalEntryIds`) contrôlés : numérotation à jour.
+- 2026-11-16 — alignement sur les règles de travail à plusieurs (Sonnet) : section *Note de version* ajoutée ;
+  compteurs « recomptés après chaque reprise de `main` ». Aucun PDF ni CHANGELOG commité dans cette fiche.

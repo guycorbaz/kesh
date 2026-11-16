@@ -3648,6 +3648,8 @@ async fn accept_with_explicit_split_type_runs_split_flow(pool: MySqlPool) {
             parent_id: None,
             role: None,
             postable: true,
+            currency: None,
+            own_fx_accounts: None,
         },
     )
     .await
@@ -3664,6 +3666,8 @@ async fn accept_with_explicit_split_type_runs_split_flow(pool: MySqlPool) {
             parent_id: None,
             role: None,
             postable: true,
+            currency: None,
+            own_fx_accounts: None,
         },
     )
     .await
@@ -3680,6 +3684,8 @@ async fn accept_with_explicit_split_type_runs_split_flow(pool: MySqlPool) {
             parent_id: None,
             role: None,
             postable: true,
+            currency: None,
+            own_fx_accounts: None,
         },
     )
     .await
@@ -6550,6 +6556,8 @@ async fn setup_accept_split_ctx(pool: &MySqlPool, label: &str, iban: &str) -> Ac
         parent_id: None,
         role: None,
         postable: true,
+        currency: None,
+        own_fx_accounts: None,
     };
     let ledger = accounts::create(pool, user_id, mk("1020", "Banque", AccountType::Asset))
         .await
@@ -6648,6 +6656,8 @@ async fn accept_split_with_non_postable_counterparty_fails_per_proposal(pool: My
             parent_id: None,
             role: None,
             postable: true,
+            currency: None,
+            own_fx_accounts: None,
         },
     )
     .await
@@ -7128,6 +7138,8 @@ async fn accept_split_under_a_closed_later_year_lands_in_failed(pool: MySqlPool)
             parent_id: None,
             role: None,
             postable: true,
+            currency: None,
+            own_fx_accounts: None,
         },
     )
     .await

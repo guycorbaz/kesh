@@ -89,12 +89,13 @@ compte de l'assistant.
      `migrations_upgrade_path.rs` ×27, `invoice_lines_revenue_account_backfill.rs` ×13, `lettering_documents_backfill.rs`
      ×6, `accounts_role_backfill.rs` ×5, `closing_accounts_backfill.rs` ×5, `pre_upgrade_backup/tests.rs` ×3, quatre
      autres ×2 ; chaque site inspecté, cité au Change Log.
-   - **CHANGELOG** (entrée non datée, datée par `prepare-release.sh`) : en tête, l'avertissement de la 0.17.6
+   - **Note de version** (section de la fiche, assemblée au `CHANGELOG.md` à la release ; aucune ligne n'y est écrite
+     en cours d'epic) : en tête, l'avertissement de la 0.17.6
      (`CHANGELOG.md:13`) repris — sauvegarde complète avant la mise à jour, **migration breaking**, version minimale
      relevée à `<X.Y.Z>`, la version précédente refuse de démarrer sur la base migrée et d'importer une sauvegarde
      `<X.Y.Z>` : **retour uniquement par la sauvegarde d'avant la mise à jour** ; puis le compte `bank` sans IBAN d'un
      prestataire. **Manuel d'administration** : sous-section *Passer à la `<X.Y.Z>`* écrite par 38-9a (AC-11 de
-     38-9a, patron de *Passer à la 0.17.6*) — 38-2 lui transmet le texte du CHANGELOG ; 38-2 n'écrit au manuel que la
+     38-9a, patron de *Passer à la 0.17.6*) — 38-2 lui transmet le texte de sa Note de version ; 38-2 n'écrit au manuel que la
      phrase de l'AC-10. **P2-bis** : les **dix** crates passent à `<X.Y.Z>` dans le même commit ; gate
    **runtime** complet (`admin_backup_e2e`, `admin_full_import_e2e`, `migrations_fresh_install`) avant `done` ;
    `<X.Y.Z>` est à Guy (Q1 de l'epic). **P3/P4** : pas de `breaking-skip-bump`. **P7** : l'`UPDATE _kesh_version`
@@ -394,6 +395,18 @@ compte de l'assistant.
       dernier commit de code (aucun écran neuf, mais les comptes bancaires sont lus par l'accueil, les paramètres et
       les lots : le JSON inchangé d'un compte ordinaire se vérifie là).
 
+## Note de version
+
+*(Texte prêt à assembler au `CHANGELOG.md` à la release.)*
+
+- **Migration breaking** : sauvegarde complète avant la mise à jour ; version minimale relevée à `<X.Y.Z>` ; la version
+  précédente refuse de démarrer sur la base migrée et d'importer une sauvegarde `<X.Y.Z>` : **retour uniquement par la
+  sauvegarde d'avant la mise à jour**.
+- **Ajouté** : le compte bancaire d'un prestataire de paiement (PayPal), sans IBAN, lié à un compte comptable.
+
+**Compteurs** (audit des migrations — total aux deux sites et partition —, `Cargo.lock`, nombre de crates, sites du
+grep P6, `data_count`, registres) : recomptés depuis la source après chaque reprise de `main`.
+
 ## Notes de développement
 
 - **D8 tient en une phrase** : *un compte bancaire porteur de réglages de prestataire peut être lié à un compte du
@@ -473,3 +486,5 @@ compte de l'assistant.
   `payment_batches.rs:150-166, 232-250` (lecture de `:165` non verrouillante, revérification `LOCK IN SHARE MODE` après
   l'`INSERT`), `repositories/bank_accounts.rs:570, 730, 806, 1544, 1670`, `routes/bank_accounts.rs:1656` (`archive_once`),
   `routes/reconciliation.rs:1096-1104`. D-P2-5 sans objet ici (propositions : 38-6a, 38-6b, 38-9b).
+- 2026-11-16 — alignement sur les règles de travail à plusieurs (Sonnet) : CHANGELOG remplacé par une section *Note de
+  version* ; compteurs « recomptés après chaque reprise de `main` ». Aucun PDF commité dans cette fiche.

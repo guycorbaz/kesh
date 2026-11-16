@@ -142,12 +142,12 @@ use crate::errors::{DbError, map_db_error};
 use crate::repositories::MAX_LIST_LIMIT;
 use crate::repositories::audit_log;
 
-const FIND_BY_ID_SQL: &str = "SELECT id, company_id, name, start_date, end_date, status, created_at, updated_at \
+const FIND_BY_ID_SQL: &str = "SELECT id, company_id, name, start_date, end_date, status, multi_currency, opening_rate_kind, closing_rate_kind, created_at, updated_at \
      FROM fiscal_years WHERE id = ?";
 
 // Story 3.7 P3-M3 : list_by_company trié `start_date DESC` (le plus récent en
 // tête), cohérent avec l'AC #1 de la page UI.
-const LIST_BY_COMPANY_SQL: &str = "SELECT id, company_id, name, start_date, end_date, status, created_at, updated_at \
+const LIST_BY_COMPANY_SQL: &str = "SELECT id, company_id, name, start_date, end_date, status, multi_currency, opening_rate_kind, closing_rate_kind, created_at, updated_at \
      FROM fiscal_years WHERE company_id = ? ORDER BY start_date DESC LIMIT ?";
 
 /// Verrou d'un exercice **par clé primaire, scopé à la société** — texte unique
@@ -159,7 +159,7 @@ const LIST_BY_COMPANY_SQL: &str = "SELECT id, company_id, name, start_date, end_
 /// `"SELECT id, company_id"`, `"WHERE id = "`, `"FOR UPDATE"`) : sa liste de
 /// colonnes l'oppose à [`LOCK_EARLIER_BY_ID_SQL`]. La changer, c'est changer
 /// leurs motifs.
-const LOCK_IN_COMPANY_SQL: &str = "SELECT id, company_id, name, start_date, end_date, status, created_at, updated_at \
+const LOCK_IN_COMPANY_SQL: &str = "SELECT id, company_id, name, start_date, end_date, status, multi_currency, opening_rate_kind, closing_rate_kind, created_at, updated_at \
      FROM fiscal_years WHERE id = ? AND company_id = ? FOR UPDATE";
 
 /// Étape (a) de [`close`] : date de début de l'exercice, **sans verrou**.
@@ -183,7 +183,7 @@ const LOCK_EARLIER_BY_ID_SQL: &str =
 /// [`earlier_open_locking_sql`]) et par [`find_earliest_earlier_open`] (lecture
 /// ordinaire du contrôle K1 de la préparation de clôture, Story 29-1a, #232) :
 /// un seul texte, jamais deux requêtes qui finiraient par diverger (C-29-1-18).
-const EARLIER_OPEN_SQL: &str = "SELECT id, company_id, name, start_date, end_date, status, created_at, updated_at \
+const EARLIER_OPEN_SQL: &str = "SELECT id, company_id, name, start_date, end_date, status, multi_currency, opening_rate_kind, closing_rate_kind, created_at, updated_at \
      FROM fiscal_years \
      WHERE company_id = ? AND start_date < ? AND status = 'Open' \
      ORDER BY start_date ASC LIMIT 1";
@@ -204,7 +204,7 @@ fn earlier_open_locking_sql() -> String {
 
 /// Le premier exercice de la société qui **commence après** une date — texte
 /// sans verrou de [`find_next_after`].
-const NEXT_AFTER_SQL: &str = "SELECT id, company_id, name, start_date, end_date, status, created_at, updated_at \
+const NEXT_AFTER_SQL: &str = "SELECT id, company_id, name, start_date, end_date, status, multi_currency, opening_rate_kind, closing_rate_kind, created_at, updated_at \
      FROM fiscal_years \
      WHERE company_id = ? AND start_date > ? \
      ORDER BY start_date ASC LIMIT 1";
@@ -284,6 +284,9 @@ fn snapshot_json(fy: &FiscalYear) -> serde_json::Value {
         "startDate": fy.start_date,
         "endDate": fy.end_date,
         "status": fy.status.as_str(),
+        "multiCurrency": fy.multi_currency,
+        "openingRateKind": fy.opening_rate_kind.as_str(),
+        "closingRateKind": fy.closing_rate_kind.as_str(),
         "createdAt": fy.created_at,
         "updatedAt": fy.updated_at,
     })
@@ -305,14 +308,20 @@ fn build_audit_entry(
 /// Crée un nouvel exercice comptable avec audit log.
 ///
 /// Algorithme (Story 3.7 Pass 1 H-5 + H-6) :
-/// 1. `tx = pool.begin()`
+/// 1. `tx = pool.begin()`, puis lecture de `companies.multi_currency_enabled`
+///    `LOCK IN SHARE MODE` (Story 37-1 : ordre « `companies` → exercices »)
+///    → `DbError::NotFound` si la société n'existe pas
 /// 2. `find_overlapping FOR UPDATE` → `Invariant(FY_OVERLAP_KEY)` si chevauchement
 /// 3. `find_by_name FOR UPDATE` → `Invariant(FY_NAME_DUPLICATE_KEY)` si nom déjà pris
 /// 4. **Garde de l'invariant I** (Story 15-12a, #543) : [`find_later_closed_in_tx`]
 ///    (lecture verrouillante) → `DbError::LaterFiscalYearClosed` nommant le plus
 ///    proche exercice **postérieur clos** — un exercice ne se crée pas avant un
 ///    exercice clôturé. Après les pré-contrôles : un chevauchement parle d'abord.
-/// 5. INSERT
+///    **Puis, dans une société multi-devises** (Story 37-1, D-CR7-2) : le plus
+///    proche exercice postérieur **mono-devise** refuse la création →
+///    `DbError::LaterFiscalYearMonoCurrency`.
+/// 5. INSERT … SELECT … FROM companies : l'exercice prend le mode de la société
+///    et le genre d'ouverture de son précédent ([`NEW_FY_DERIVED_COLUMNS`])
 /// 6. INSERT audit_log avec snapshot direct
 /// 7. COMMIT
 ///
@@ -341,6 +350,26 @@ pub async fn create(
     }
 
     let mut tx = pool.begin().await.map_err(map_db_error)?;
+
+    // Story 37-1 (AC-3 bis, D-CR7-2) : le mode de la société, lu en partage EN
+    // TÊTE de transaction, avant les verrous d'exercice des pré-contrôles
+    // (ordre « companies → exercices », celui de l'activation). L'`INSERT …
+    // SELECT … FROM companies` relit la même ligne, tenue jusqu'au COMMIT :
+    // même valeur. Société inexistante → `NotFound`.
+    let multi_currency: bool = match sqlx::query_scalar(
+        "SELECT multi_currency_enabled FROM companies WHERE id = ? LOCK IN SHARE MODE",
+    )
+    .bind(new.company_id)
+    .fetch_optional(&mut *tx)
+    .await
+    .map_err(map_db_error)?
+    {
+        Some(m) => m,
+        None => {
+            tx.rollback().await.map_err(map_db_error)?;
+            return Err(DbError::NotFound);
+        }
+    };
 
     // Pré-check 1 : overlap d'intervalles fermés.
     if find_overlapping(&mut tx, new.company_id, new.start_date, new.end_date)
@@ -377,6 +406,28 @@ pub async fn create(
             fiscal_year_id: later.id,
             fiscal_year_name: later.name,
         });
+    }
+
+    // Story 37-1 (D-CR7-2) : dans une société multi-devises, aucun exercice ne
+    // se crée avant un exercice mono-devise (clos à l'activation, peut-être
+    // rouvert). Après la garde de l'invariant I : un exercice clos parle
+    // d'abord. Lecture simple suffisante : sous le partage de `companies`, la
+    // société ne change pas de mode, et le mode d'un exercice existant ne
+    // change plus.
+    if multi_currency {
+        let later_mono: Option<(i64, String)> = sqlx::query_as(FIND_LATER_MONO_CURRENCY_SQL)
+            .bind(new.company_id)
+            .bind(new.start_date)
+            .fetch_optional(&mut *tx)
+            .await
+            .map_err(map_db_error)?;
+        if let Some((fiscal_year_id, fiscal_year_name)) = later_mono {
+            tx.rollback().await.map_err(map_db_error)?;
+            return Err(DbError::LaterFiscalYearMonoCurrency {
+                fiscal_year_id,
+                fiscal_year_name,
+            });
+        }
     }
 
     let id = insert_fiscal_year_in_tx(&mut tx, &new).await?;
@@ -466,18 +517,27 @@ pub async fn create_if_absent_in_tx(
     // alors `uq_fiscal_years_company_name` ou `uq_fiscal_years_company_start_date`
     // → on catch ces UniqueConstraintViolation pour rester idempotent
     // (`Ok(None)` au lieu de remonter une 500 au client).
-    let rows_affected = match sqlx::query(
-        "INSERT INTO fiscal_years (company_id, name, start_date, end_date, status) \
-         SELECT ?, ?, ?, ?, 'Open' FROM dual \
-         WHERE NOT EXISTS (SELECT 1 FROM fiscal_years WHERE company_id = ?)",
-    )
-    .bind(new.company_id)
-    .bind(&new.name)
-    .bind(new.start_date)
-    .bind(new.end_date)
-    .bind(new.company_id)
-    .execute(&mut **tx)
-    .await
+    //
+    // Story 37-1 (AC-3 bis) : `FROM companies c` au lieu de `FROM dual` — le
+    // mode de la société et le genre d'ouverture viennent du fragment partagé
+    // des trois chemins de création ([`NEW_FY_DERIVED_COLUMNS`] ; sans aucun
+    // exercice, le genre d'ouverture est toujours `day`). La transaction de
+    // l'assistant tient déjà `companies` `FOR UPDATE`.
+    let sql = format!(
+        "INSERT INTO fiscal_years (company_id, name, start_date, end_date, status, \
+             multi_currency, opening_rate_kind) \
+         SELECT c.id, ?, ?, ?, 'Open', {NEW_FY_DERIVED_COLUMNS} FROM companies c \
+         WHERE c.id = ? AND NOT EXISTS (SELECT 1 FROM fiscal_years WHERE company_id = ?)"
+    );
+    let rows_affected = match sqlx::query(&sql)
+        .bind(&new.name)
+        .bind(new.start_date)
+        .bind(new.end_date)
+        .bind(new.start_date)
+        .bind(new.company_id)
+        .bind(new.company_id)
+        .execute(&mut **tx)
+        .await
     {
         Ok(result) => result.rows_affected(),
         Err(err) => match map_db_error(err) {
@@ -650,7 +710,7 @@ pub async fn find_by_id_in_company(
     id: i64,
 ) -> Result<Option<FiscalYear>, DbError> {
     sqlx::query_as::<_, FiscalYear>(
-        "SELECT id, company_id, name, start_date, end_date, status, created_at, updated_at \
+        "SELECT id, company_id, name, start_date, end_date, status, multi_currency, opening_rate_kind, closing_rate_kind, created_at, updated_at \
          FROM fiscal_years WHERE id = ? AND company_id = ?",
     )
     .bind(id)
@@ -679,7 +739,7 @@ pub async fn find_covering_date(
     date: NaiveDate,
 ) -> Result<Option<FiscalYear>, DbError> {
     sqlx::query_as::<_, FiscalYear>(
-        "SELECT id, company_id, name, start_date, end_date, status, created_at, updated_at \
+        "SELECT id, company_id, name, start_date, end_date, status, multi_currency, opening_rate_kind, closing_rate_kind, created_at, updated_at \
          FROM fiscal_years \
          WHERE company_id = ? AND start_date <= ? AND end_date >= ? \
          ORDER BY status DESC, start_date DESC \
@@ -712,7 +772,7 @@ pub async fn find_covering_date_in_tx(
     date: NaiveDate,
 ) -> Result<Option<FiscalYear>, DbError> {
     sqlx::query_as::<_, FiscalYear>(
-        "SELECT id, company_id, name, start_date, end_date, status, created_at, updated_at \
+        "SELECT id, company_id, name, start_date, end_date, status, multi_currency, opening_rate_kind, closing_rate_kind, created_at, updated_at \
          FROM fiscal_years \
          WHERE company_id = ? AND start_date <= ? AND end_date >= ? \
          LIMIT 1",
@@ -728,7 +788,7 @@ pub async fn find_covering_date_in_tx(
 /// Exercice **ouvert** couvrant une date — requête partagée par
 /// [`find_open_covering_date`] (verrouillante) et [`has_open_covering_date`]
 /// (lecture seule), pour que les deux ne divergent jamais.
-const OPEN_COVERING_DATE_SQL: &str = "SELECT id, company_id, name, start_date, end_date, status, created_at, updated_at \
+const OPEN_COVERING_DATE_SQL: &str = "SELECT id, company_id, name, start_date, end_date, status, multi_currency, opening_rate_kind, closing_rate_kind, created_at, updated_at \
      FROM fiscal_years \
      WHERE company_id = ? AND start_date <= ? AND end_date >= ? AND status = 'Open' \
      LIMIT 1";
@@ -811,7 +871,7 @@ pub async fn find_overlapping(
     end_date: NaiveDate,
 ) -> Result<Option<FiscalYear>, DbError> {
     sqlx::query_as::<_, FiscalYear>(
-        "SELECT id, company_id, name, start_date, end_date, status, created_at, updated_at \
+        "SELECT id, company_id, name, start_date, end_date, status, multi_currency, opening_rate_kind, closing_rate_kind, created_at, updated_at \
          FROM fiscal_years \
          WHERE company_id = ? AND start_date <= ? AND end_date >= ? \
          LIMIT 1 FOR UPDATE",
@@ -887,10 +947,19 @@ pub async fn find_later_closed_in_tx(
 /// [`close`] ([`earlier_open_locking_sql`]) porte aussi ce texte ; les attentes de la 15-8a restent sans ambiguïté tant qu'aucune
 /// clôture ne tourne pendant elles (vérifié en T0 ; sinon, passer au motif
 /// `"start_date > "`).
-const FIND_LATER_CLOSED_SQL: &str = "SELECT id, company_id, name, start_date, end_date, status, created_at, updated_at \
+const FIND_LATER_CLOSED_SQL: &str = "SELECT id, company_id, name, start_date, end_date, status, multi_currency, opening_rate_kind, closing_rate_kind, created_at, updated_at \
      FROM fiscal_years \
      WHERE company_id = ? AND start_date > ? AND status = 'Closed' \
      ORDER BY start_date ASC LIMIT 1";
+
+/// Le plus proche exercice **postérieur mono-devise** d'une société (Story
+/// 37-1, D-CR7-2) : `(id, name)`. Requête propre, distincte de
+/// [`FIND_LATER_CLOSED_SQL`] (partagé par d'autres appelants, et reconnu à son
+/// texte par des tests de concurrence) ; lecture simple, sans `FOR UPDATE`
+/// (voir [`create`]).
+const FIND_LATER_MONO_CURRENCY_SQL: &str = "SELECT id, name FROM fiscal_years \
+     WHERE company_id = ? AND start_date > ? AND multi_currency = FALSE \
+     ORDER BY start_date LIMIT 1";
 
 /// Variante **non verrouillante** de [`find_later_closed_in_tx`]. Quatre
 /// appelants :
@@ -974,7 +1043,7 @@ pub async fn find_by_name(
     name: &str,
 ) -> Result<Option<FiscalYear>, DbError> {
     sqlx::query_as::<_, FiscalYear>(
-        "SELECT id, company_id, name, start_date, end_date, status, created_at, updated_at \
+        "SELECT id, company_id, name, start_date, end_date, status, multi_currency, opening_rate_kind, closing_rate_kind, created_at, updated_at \
          FROM fiscal_years \
          WHERE company_id = ? AND name = ? \
          LIMIT 1 FOR UPDATE",
@@ -1002,7 +1071,7 @@ pub async fn find_first_by_company(
     company_id: i64,
 ) -> Result<Option<FiscalYear>, DbError> {
     sqlx::query_as::<_, FiscalYear>(
-        "SELECT id, company_id, name, start_date, end_date, status, created_at, updated_at \
+        "SELECT id, company_id, name, start_date, end_date, status, multi_currency, opening_rate_kind, closing_rate_kind, created_at, updated_at \
          FROM fiscal_years WHERE company_id = ? \
          ORDER BY start_date ASC, id ASC LIMIT 1",
     )
@@ -1352,21 +1421,51 @@ pub async fn reopen(
 
 // --- Helpers privés ---
 
+/// Les deux colonnes **dérivées** d'un exercice créé (Story 37-1, AC-3 bis),
+/// fragment de liste de `SELECT` partagé par les trois chemins de création
+/// ([`create`] et [`create_for_seed`] par [`insert_fiscal_year_in_tx`],
+/// [`create_if_absent_in_tx`]) — à placer dans un `INSERT … SELECT … FROM
+/// companies c`, sous les colonnes `(multi_currency, opening_rate_kind)` :
+///
+/// - `multi_currency` ← `companies.multi_currency_enabled`, lu **dans la
+///   transaction qui insère** ;
+/// - `opening_rate_kind` ← le genre de **clôture** de l'exercice de la société
+///   qui finit la veille de `start_date`, `'day'` sinon (premier exercice, ou
+///   exercice précédé d'un trou). `closing_rate_kind` prend le défaut de la
+///   colonne (`'day'`).
+///
+/// ⚠️ Porte **un** paramètre : la `start_date` de l'exercice créé. Sous
+/// REPEATABLE READ, InnoDB pose des verrous **partagés** sur les lignes que lit
+/// l'`INSERT … SELECT` — la ligne `companies` et l'exercice précédent.
+const NEW_FY_DERIVED_COLUMNS: &str = "c.multi_currency_enabled, \
+     COALESCE((SELECT p.closing_rate_kind FROM fiscal_years p \
+               WHERE p.company_id = c.id AND p.end_date = ? - INTERVAL 1 DAY), 'day')";
+
+/// `INSERT … SELECT … FROM companies` d'un exercice (`create`,
+/// `create_for_seed`) : mode et genre d'ouverture par
+/// [`NEW_FY_DERIVED_COLUMNS`]. Une société inexistante n'insère rien →
+/// `DbError::NotFound`.
 async fn insert_fiscal_year_in_tx(
     tx: &mut sqlx::Transaction<'_, sqlx::MySql>,
     new: &NewFiscalYear,
 ) -> Result<i64, DbError> {
-    let result = sqlx::query(
-        "INSERT INTO fiscal_years (company_id, name, start_date, end_date) \
-         VALUES (?, ?, ?, ?)",
-    )
-    .bind(new.company_id)
-    .bind(&new.name)
-    .bind(new.start_date)
-    .bind(new.end_date)
-    .execute(&mut **tx)
-    .await
-    .map_err(map_db_error)?;
+    let sql = format!(
+        "INSERT INTO fiscal_years (company_id, name, start_date, end_date, \
+             multi_currency, opening_rate_kind) \
+         SELECT c.id, ?, ?, ?, {NEW_FY_DERIVED_COLUMNS} FROM companies c WHERE c.id = ?"
+    );
+    let result = sqlx::query(&sql)
+        .bind(&new.name)
+        .bind(new.start_date)
+        .bind(new.end_date)
+        .bind(new.start_date)
+        .bind(new.company_id)
+        .execute(&mut **tx)
+        .await
+        .map_err(map_db_error)?;
+    if result.rows_affected() == 0 {
+        return Err(DbError::NotFound);
+    }
 
     let last_id = result.last_insert_id();
     if last_id == 0 {
@@ -1404,7 +1503,7 @@ mod tests {
     #[test]
     fn le_texte_verrouillant_de_la_cloture_est_inchange() {
         // Le texte de l'ancienne constante de l'étape (d), retirée à la Story 29-1a.
-        const REFERENCE_FIGEE: &str = "SELECT id, company_id, name, start_date, end_date, status, created_at, updated_at \
+        const REFERENCE_FIGEE: &str = "SELECT id, company_id, name, start_date, end_date, status, multi_currency, opening_rate_kind, closing_rate_kind, created_at, updated_at \
      FROM fiscal_years \
      WHERE company_id = ? AND start_date < ? AND status = 'Open' \
      ORDER BY start_date ASC LIMIT 1 FOR UPDATE";

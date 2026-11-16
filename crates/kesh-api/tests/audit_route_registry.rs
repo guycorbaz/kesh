@@ -30,9 +30,9 @@
 //!
 //! L'ensemble clos de l'INVENTAIRE est celui de `lib.rs` (142 routes à la
 //! release 0.17.0 — v017-3a, v016-2a et v017-4a réunies, mesuré le 2026-10-31 —,
-//! puis 144 à la 0.17.3, Story v0172-session, 145 à la 33-5 et 146 à la 34-2 ;
-//! dont `/mcp`, monté par `route_service` — Story 32-6a) ;
-//! celui du REGISTRE est plus large (149), car trois routes mutantes vivent dans
+//! puis 144 à la 0.17.3, Story v0172-session, 145 à la 33-5, 146 à la 34-2 et
+//! 147 à la 37-1 ; dont `/mcp`, monté par `route_service` — Story 32-6a) ;
+//! celui du REGISTRE est plus large (150), car trois routes mutantes vivent dans
 //! `routes/test_endpoints.rs` et sont montées par un `nest()`. D'où :
 //!
 //! - volet « route absente du registre » → sur les **deux** fichiers, faute de
@@ -152,7 +152,7 @@
 //!   `post`, `put`, `delete` et `patch`. Aucune route `GET` n'écrit au journal
 //!   aujourd'hui (remontée de l'AC1 : des `POST` et un `DELETE`) ; l'angle mort
 //!   est du même ordre que celui de l'audit (`GET /invoices/{id}/pdf`, plus bas).
-//! - **(vi)** **vingt-cinq routes `SansEcritureAuJournal` sont rejouées quand
+//! - **(vi)** **vingt-sept routes `SansEcritureAuJournal` sont rejouées quand
 //!   même** : `fiscal_years::update_fiscal_year` (enveloppe `DbError`, opération
 //!   `fiscal_years::update_name`, Story 34-7, #945 : le renommage tient l'exercice
 //!   puis son homonyme par la lecture de doublon, alors que la clôture tient ses
@@ -297,16 +297,40 @@
 //!   compte lié sous verrou partagé ; tenue par
 //!   `retypage_croise_avec_la_creation_d_une_carte`
 //!   (`crates/kesh-db/tests/credit_card_repository.rs`, sérialisation, non
-//!   rejeu) — **aucune preuve dynamique du rejeu**.
+//!   rejeu) — **aucune preuve dynamique du rejeu**. Et — Story 37-1, AC-3
+//!   (37-1-CR2-P1-1) — `companies::update_currency_settings` (enveloppe
+//!   `DbError` `kesh_db::retry::retry_on_deadlock`, opération
+//!   `companies::update_currency_settings`) : le réglage multi-devises n'écrit
+//!   rien au journal, mais l'activation tient `companies` `FOR UPDATE` puis
+//!   demande les exercices de la société, alors qu'une saisie d'écriture tient
+//!   l'exercice puis prend `companies` en partage par sa clé étrangère ; et la
+//!   validation d'une facture, l'avoir et la saisie fournisseur prennent les
+//!   réglages de facturation `FOR UPDATE` avant l'exercice, que l'activation
+//!   lit en partage après lui ; tenue par
+//!   `currency_settings_activation_is_replayed_when_it_is_the_deadlock_victim`
+//!   (`rejeu_interblocage_e2e.rs`). Et — Story 37-1, AC-4 bis
+//!   (37-1-CR3-P2-1) — `accounts::create_account` (enveloppe `AppError`
+//!   `crate::retry::retry_app_on_deadlock`, opération `accounts::create`) : un
+//!   `POST` qui porte des comptes de différence propres tient `companies`
+//!   `FOR UPDATE`, puis passe le parent à non imputable (exclusif sur sa
+//!   ligne), alors qu'une écriture CHF sur ce parent le tient en partage puis
+//!   demande `companies` en partage à son `INSERT` ; tenue par
+//!   `account_creation_is_replayed_when_it_is_the_deadlock_victim`
+//!   (`rejeu_interblocage_e2e.rs`). Le même cycle, par le compte visé, vaut
+//!   pour `accounts::update_account` quand le `PUT` porte des comptes propres
+//!   (`account_update_is_replayed_when_it_is_the_deadlock_victim`, même
+//!   fichier — la première preuve dynamique de son rejeu).
 //!
-//!   **Décompte : vingt-cinq**, recompté le 2026-11-12 à l'intégration de la
-//!   0.17.6 (34-2, 34-7, 34-11a2 réunies) depuis la table et le corps de chaque
-//!   route : vingt-trois handlers `SansEcritureAuJournal` de `src/routes/`
-//!   portent une enveloppe, plus `onboarding::seed_demo` et `onboarding::reset`,
-//!   rejouées dans `kesh-seed`. *(Relevés antérieurs, datés : vingt-trois le
-//!   2026-11-05, revue de la 0.17.3, #899 S2-A1 ; vingt-cinq dans la branche
-//!   de la 34-7 le 2026-11-10 ; vingt-quatre à l'intégration de la 34-7 sur la
-//!   34-2, avant la 34-11a2.)*
+//!   **Décompte : vingt-sept**, recompté le 2026-11-16 à la Story 37-1 depuis la
+//!   table et le corps de chaque route : vingt-cinq handlers
+//!   `SansEcritureAuJournal` de `src/routes/` portent une enveloppe, plus
+//!   `onboarding::seed_demo` et `onboarding::reset`, rejouées dans `kesh-seed`.
+//!   *(Relevés antérieurs, datés : vingt-trois le 2026-11-05, revue de la
+//!   0.17.3, #899 S2-A1 ; vingt-cinq dans la branche de la 34-7 le 2026-11-10 ;
+//!   vingt-quatre à l'intégration de la 34-7 sur la 34-2, avant la 34-11a2 ;
+//!   vingt-cinq le 2026-11-12, à l'intégration de la 0.17.6 ; vingt-six le
+//!   2026-11-16, réglage multi-devises de la Story 37-1, avant
+//!   `accounts::create_account`.)*
 //! - **(vii)** — **angles morts assumés du volet (c bis)** (revue P1 de la
 //!   15-5e2, L-3 = B-4 = A5). Le volet reconnaît un appel au **dernier
 //!   segment** du chemin appelé (`retry_with`) dans un arbre `syn` ; il ne voit
@@ -438,6 +462,7 @@ const LIB_ROUTES: &[(&str, &str, Status, Rejeu)] = &[
     ("put", "companies::update_company_email", Traced, SansEcritureAuJournal),
     ("put", "companies::update_company_contact_details", Traced, SansEcritureAuJournal),
     ("put", "companies::update_company_address", Traced, SansEcritureAuJournal),
+    ("put", "companies::update_currency_settings", Traced, SansEcritureAuJournal),
     ("post", "fiscal_years::reopen_fiscal_year", Traced, SansEcritureAuJournal),
     ("post", "companies::unlock_company_books", Traced, SansEcritureAuJournal),
     ("post", "onboarding::reset", Traced, SansEcritureAuJournal),
@@ -1007,8 +1032,8 @@ fn the_registry_partition_is_what_the_story_declares() {
 
     assert_eq!(
         LIB_ROUTES.len(),
-        146,
-        "l'inventaire porte sur 146 routes (+ 1 : le solde d'ouverture d'un compte bancaire existant, 34-2 ; + 1 : l'adresse de la société, 33-5 ; + 1 : `/mcp`, 32-6a ; + 1 : la décision d'un \
+        147,
+        "l'inventaire porte sur 147 routes (+ 1 : le réglage multi-devises de la société, 37-1 ; + 1 : le solde d'ouverture d'un compte bancaire existant, 34-2 ; + 1 : l'adresse de la société, 33-5 ; + 1 : `/mcp`, 32-6a ; + 1 : la décision d'un \
          envoi MCP, 32-8b ; + 5 : les routes mutantes des prompts du serveur MCP, 32-10a-iii ; \
          + 1 : le rattachement d'une transaction à une écriture, v017-3a ; + 2 : l'aperçu et \
          la création d'un relevé saisi à la main, v016-2a ; + 4 : le `PUT`, le `DELETE`, la \
@@ -1027,8 +1052,10 @@ fn the_registry_partition_is_what_the_story_declares() {
     // Fusion de la release 0.17.5 (2026-11-07) : les deux réunies, **138**.
     // Story 34-2 (#533) : 138 → 139 (le solde d'ouverture d'un compte bancaire
     // existant, tracé par `journal_entry.created`).
+    // Story 37-1 : 139 → 140 (le réglage multi-devises de la société, tracé par
+    // `company.currency_settings_updated`).
     assert_eq!(
-        traced, 139,
+        traced, 140,
         "73 tracées avant la 25-1b, plus ses 14, plus la dévalidation (25-2-b-1, #440), \
          plus l'annulation d'un règlement client (25-3-a-1) et fournisseur (25-3-a-2, #414), \
          plus l'annulation d'un rapprochement (25-3-b, #418), plus le solde du reste \
@@ -1054,7 +1081,8 @@ fn the_registry_partition_is_what_the_story_declares() {
          (v017-4a, refs #849), plus le réglage de la durée d'inactivité de la session \
          (v0172-session, refs #891), plus la correction de l'adresse de la société \
          (33-5, refs #909), plus le changement de mot de passe (33-7, refs #435), plus le \
-         solde d'ouverture d'un compte bancaire existant (34-2, refs #533)"
+         solde d'ouverture d'un compte bancaire existant (34-2, refs #533), plus le réglage \
+         multi-devises de la société (37-1)"
     );
     assert_eq!(
         exempt, 4,
@@ -1068,7 +1096,7 @@ fn the_registry_partition_is_what_the_story_declares() {
     );
     assert_eq!(
         LIB_ROUTES.len() + TEST_ENDPOINT_ROUTES.len(),
-        149,
+        150,
         "le registre est plus large que l'inventaire, et c'est voulu"
     );
 }
@@ -1477,8 +1505,8 @@ fn the_replay_partition_is_what_the_story_declares() {
     );
     assert_eq!(exemptees, 3, "full_import, /seed, /reset");
     assert_eq!(
-        sans_ecriture, 119,
-        "118 routes de lib.rs (34-2 : − 1 — la création d'un compte bancaire, reclassée \
+        sans_ecriture, 120,
+        "119 routes de lib.rs (37-1 : + 1 — le réglage multi-devises de la société) — 118 avant (34-2 : − 1 — la création d'un compte bancaire, reclassée \
          `Rejouee`) — 119 avant (33-5 : + 1 — l'adresse de la société ; v0172-session : + 2 — le réglage de la durée d'inactivité \
          et le battement d'activité ; v017-4a : + 4 — la saisie fournisseur et la complétion \
          d'import reclassées, le `PUT` et le `DELETE` d'un brouillon) — 112 avant \
@@ -1499,7 +1527,8 @@ fn the_replay_partition_is_what_the_story_declares() {
     // d'inactivité, le battement d'activité).
     // Story 33-5 (#909) : 147 → 148 (l'adresse de la société).
     // Story 34-2 (#533) : 148 → 149 (le solde d'ouverture d'un compte existant).
-    assert_eq!(tout.len(), 149);
+    // Story 37-1 : 149 → 150 (le réglage multi-devises de la société).
+    assert_eq!(tout.len(), 150);
 }
 
 /// Visiteur `syn` d'un fichier de routes : relève chaque appel à la primitive

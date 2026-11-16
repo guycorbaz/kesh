@@ -13,6 +13,10 @@ et EUR 0.94947 au 31.12.2024, non par des écritures importées, V8).
 **Cible : la release qui suivra la v0.17.6** (numéro, CHANGELOG daté, macros des manuels et tag : à la préparation de
 la release, par Guy — hors de cette branche).
 
+**Release** : un epic = une release (Epic 37 → une release mineure, numéro au tag par le Project Lead) ; 6 stories (37-1, 37-2, 37-3a, 37-3b, 37-4, 37-5), dans la borne (`CLAUDE.md` § *Travailler à plusieurs développeurs*).
+
+**Règles des fichiers communs** (`CLAUDE.md` § *Travailler à plusieurs développeurs*, `docs/developpement-a-plusieurs.md` § 3 et § 6) : aucune fiche n'écrit au `CHANGELOG.md` — chacune porte une section *Note de version*, assemblée à la release ; aucun PDF de manuel commité dans la branche (`.tex` seulement, régénération à la release) ; catalogues i18n et `sprint-status.yaml` : un bloc propre à l'epic ; compteurs (`sitesTotal`, totaux de l'audit des migrations, `LIB_ROUTES` et partitions du registre, `data_count`, schéma de test) recomptés depuis la source après chaque reprise de `main` ; `Cargo.lock` régénéré après la fusion.
+
 ⚠️ **Pas d'issue GitHub à ce stade** : Beat n'a qu'un accès en lecture au dépôt de Guy. Le détail vit dans cet epic et
 dans les fiches ; l'issue et la PR s'ouvrent à la fin, une fois la recette faite (décision de Beat, 2026-11-14).
 
@@ -430,6 +434,21 @@ rédaction (règle de splitting préventif : plus de cinq modules). Une story qu
 avant de l'écrire. Toutes les migrations attendues sont **non breaking** (`CREATE TABLE`, `ADD COLUMN` nullable ou à
 défaut) : `kesh_version_min_required` reste à 0.17.6.
 
+## Modules touchés
+
+Pour voir d'avance les recoupements avec les epics de Guy (36 et suivants) ; relevé d'après les fiches, à tenir à jour.
+
+| Fiche | Crates | Frontend | Manuels et docs |
+|---|---|---|---|
+| 37-1 | `kesh-db` (migration `accounts`/`companies`, dépôts, squash de test), `kesh-api` (réglage, comptes, exercices, registre des routes, MCP `kesh_exercices`), `kesh-core` | `settings`, `accounts`, assistant de démarrage | manuels utilisateur et d'administration (`.tex`), audit des migrations |
+| 37-2 | `kesh-db` (table des cours, migration), `kesh-api` (routes de cours, tâche de récupération, sauvegarde), `kesh-core` | écran *Cours de change* | manuels utilisateur et d'administration (`.tex`), audit des migrations |
+| 37-3a | `kesh-core`, `kesh-db` (lignes d'écriture, migration), `kesh-api` (`journal-entries`, MCP, exports) | — | guide d'API (37-3b), audit des migrations |
+| 37-3b | `kesh-api` (soldes d'ouverture, registre des routes) | écritures, soldes d'ouverture, sélecteurs, i18n | manuel utilisateur (`.tex`), `docs/api-external.md` |
+| 37-4 | `kesh-report` (générateurs, CSV, PDF), `kesh-api` (rapports, MCP), `kesh-db` | rapports | manuel utilisateur (`.tex`) |
+| 37-5 | `kesh-db`, `kesh-api` (réévaluation, audit, registre des routes ; contrôle K9 et refus de la clôture, CR-8), `kesh-core` | écran des exercices | manuels utilisateur et d'administration, brochure (`.tex`), `README.md`, `docs/api-external.md` |
+
+Fichiers communs touchés par plusieurs fiches (recomptés depuis la source après chaque reprise de `main`) : `tests/audit_route_registry.rs` (`LIB_ROUTES`), `i18n-keys.test.ts` (`sitesTotal`), `docs/migrations-idempotence-audit.md`, catalogues i18n des quatre locales, `sprint-status.yaml`, `Cargo.lock`.
+
 ## Exigences (FR/NFR) par story
 
 *(B26, 2026-11-15 : chaque fiche liste ses exigences, tirées de ses critères d'acceptation ; le texte complet est dans la fiche. Guy dira s'il les veut en issues GitHub ou dans les fiches.)*
@@ -449,11 +468,11 @@ NFR-37-3b-1 pas de régression mono-devise (AC-1, AC-2, AC-5) ; -2 motifs de blo
 **37-4** — FR-37-4-1 règle du solde en devise, bornes d'exercice, inclusion, `balances_as_of` pour 37-5 (AC-1 à AC-1 quater) ; -2 grand livre (AC-1 bis, AC-2) ; -3 balance (AC-3) ; -4 bilan et compte de résultat (AC-4) ; -5 CSV et PDF des quatre rapports, disposition du PDF, affichage (AC-5) ; -6 JSON, vues, MCP (AC-6) ; -7 journal étendu au JSON et à l'écran seulement, autres rapports et sites hors rapports en CHF (AC-7).
 NFR-37-4-1 CSV identique octet pour octet sans compte en devise (AC-5) ; -2 JSON et écran inchangés en mono-devise (AC-6) ; -3 aucun total de rapport en devise étrangère (AC-2 à AC-5) ; -4 champs MCP à `null`, tailles (AC-6) ; -5 quatre locales (AC-6) ; -6 concordance des quatre rapports, `balances_as_of` en transaction, contrôle `grep` T3 (AC-8) ; -7 manuel et PDF (AC-9).
 
-**37-5** — FR-37-5-1 aperçu, sans écriture, `blockers[]` limités à quatre codes, refus de requête et d'état comme la passation (AC-1, AC-4) ; -2 cours retenu par la société selon le genre de clôture (`day` : jour puis mois ; `month` : mois seul), devise sans cours signalée à l'aperçu, réponse par devise (AC-1, AC-2, AC-7) ; -3 passation atomique, une écriture par compte, sens des lignes, serveur recalcule, verrous (AC-2) ; -4 rejouable compte par compte, correction (AC-3) ; -5 gardes en deux temps, ordre des refus, bornes (AC-4) ; -6 action pour un exercice ouvert multi-devises, Comptable et Administrateur, écriture prévue par compte, bouton désactivé tant que `blockers[]` (AC-1, AC-4, AC-5, AC-6).
-NFR-37-5-1 RBAC, Consultation 403 (AC-5) ; -2 pas d'outil MCP d'aperçu (AC-5) ; -3 audit `fx_revaluation.posted` et registres (AC-2) ; -4 exactitude CHF = round(devise × cours), cas de signe, recette par l'API seule (AC-1, AC-7) ; -5 aucune récupération de cours par le serveur, aucun réseau en test (AC-1, AC-7) ; -6 manuel (AC-8).
+**37-5** — FR-37-5-1 aperçu, sans écriture, `blockers[]` limités à quatre codes, refus de requête et d'état comme la passation (AC-1, AC-4) ; -2 cours retenu par la société selon le genre de clôture (`day` : jour puis mois ; `month` : mois seul), devise sans cours signalée à l'aperçu, réponse par devise (AC-1, AC-2, AC-7) ; -3 passation atomique, une écriture par compte, sens des lignes, serveur recalcule, verrous (AC-2) ; -4 rejouable compte par compte, correction (AC-3) ; -5 gardes en deux temps, ordre des refus, bornes (AC-4) ; -6 action pour un exercice ouvert multi-devises, Comptable et Administrateur, écriture prévue par compte, bouton désactivé tant que `blockers[]`, colonnes et liens de l'aperçu enrichi (AC-1, AC-4, AC-5, AC-6) ; -7 contrôle de clôture K9 bloquant, refus 409 de la clôture (AC-9) ; -8 avis de K9 montrant l'aperçu, « Réévaluer » passe les écritures montrées, rien quand K9 est OK (AC-9). (FR-1 porte aussi les champs de CR-8 A39.)
+NFR-37-5-1 RBAC, Consultation 403 (AC-5) ; -2 pas d'outil MCP d'aperçu (AC-5) ; -3 audit `fx_revaluation.posted` et registres (AC-2) ; -4 exactitude CHF = round(devise × cours), cas de signe, recette par l'API seule (AC-1, AC-7) ; -5 aucune récupération de cours par le serveur, aucun réseau en test (AC-1, AC-7) ; -6 manuel (AC-8) ; -7 K9 sans lecture coûteuse hors multi-devises (AC-9).
 
-**Total** : 59 FR et 42 NFR (recomptés aux fiches le 2026-11-16 après la révision CR-7 : 12 + 12 + 12 + 10 + 7 + 6 FR,
-9 + 8 + 6 + 6 + 7 + 6 NFR ; 37-3a −2 FR). *(Avant CR-7 : 61 FR et 42 NFR, recomptés aux fiches le 2026-11-15 après la validation ciblée P2 ; 60 et 42 après la P1 ; 47 et 37 à la rédaction.)*
+**Total** : 61 FR et 43 NFR (recomptés aux fiches le 2026-11-16 après la révision CR-8 de 37-5 : 12 + 12 + 12 + 10 + 7
++ 8 FR, 9 + 8 + 6 + 6 + 7 + 7 NFR ; 37-5 +2 FR, +1 NFR). *(Après CR-7 : 59 FR et 42 NFR, 37-3a −2 FR. Avant CR-7 : 61 FR et 42 NFR, recomptés aux fiches le 2026-11-15 après la validation ciblée P2 ; 60 et 42 après la P1 ; 47 et 37 à la rédaction.)*
 
 ## Règles de cet epic
 
@@ -551,7 +570,7 @@ ferme pas la fenêtre d'import, une table applicative neuve la ferme.
     (`find_effective_rate_in_tx`, seule fonction) ; une récupération ne touche jamais aux cours saisis.
     ⚠️ **La table applicative neuve referme la fenêtre d'import** : un `.keshbackup` 0.17.6 ou antérieur ne se
     réimporte plus dans la nouvelle version (registre de rejeu vidé : `20261106000001` passe « Hors fenêtre »). À
-    écrire au CHANGELOG et au manuel d'administration, et **à confirmer avec Guy** (production) ; soumis à Beat dans la
+    écrire à la Note de version (fiche 37-2) et au manuel d'administration, et **à confirmer avec Guy** (production) ; soumis à Beat dans la
     page de revue.
   - **C-37-7 amendé (D10)** : cours par défaut de la réévaluation = cours effectif journalier de la date de fin
     d'exercice (`xmldaily`, `POST /exchange-rates/fetch { date }`), sinon cours effectif mensuel du mois de fin
@@ -606,3 +625,49 @@ Revue 4 de Guy (page `epic-35-revue.html`, 35-N = 37-N) : tout approuvé, 37-5 s
   trou devant un exercice clos avant l'activation puis rouvert), son test et sa phrase au manuel disparaissent :
   les exercices mono-devise forment toujours un préfixe ; (3) **D-CR7-3** — 37-5 ne relit plus sous verrou le mode de
   la société et de l'exercice (plus de course possible) : lecture simple avant la transaction.
+
+## CR-8 — réévaluation exigée à la clôture (décision de Beat, 2026-11-16)
+
+- **A37 — Contrôle de clôture bloquant.** Comme un exercice déséquilibré en CHF ne se clôt pas, un exercice dont un
+  compte de bilan en devise n'est pas réévalué au cours de clôture (résidu ≠ 0, celui de l'aperçu de 37-5) **ne se clôt
+  pas**. Le contrôle est **bloquant**, non informatif ; il vit dans 37-5 (l'Epic 37 sort avant l'Epic 38 : il prend le
+  rang **K9** des contrôles de clôture, et le relevé joint de 38-10 passe à K10 — à reporter dans 38-10).
+- **A38 — Le contrôle mène à la réévaluation.** Son avis porte un bouton **« Réévaluer »** qui ouvre l'aperçu de 37-5.
+- **A39 — L'aperçu montre tout avant de passer.** Pour chaque compte : numéro et nom, solde en devise, solde CHF actuel,
+  cours, solde CHF cible ; la ou les **réévaluations déjà passées** dans l'exercice (ancienne valeur) et la **nouvelle
+  valeur** après passage, avec l'écart ; chaque compte et chaque écriture existante sont **des liens** vers les lignes du
+  grand livre et vers l'écriture (affichage ou modification). Les écritures restent ajoutées (résidu, piste d'audit
+  intacte) ; « mise à jour » s'affiche comme ancienne → nouvelle valeur cumulée. But : qu'une valeur excessive se voie
+  avant de passer.
+- **A40 — Epic 36 d'abord.** Guy fusionne l'Epic 36 avant l'Epic 37 : l'Epic 37 reprendra `main` à ce moment (migrations
+  ordonnées, compteurs recomptés). L'Epic 36 construit aussi #823 (36-6, une transaction rattachée à plusieurs
+  écritures) : la story 38-6c2 se revoit après sa fusion (réutiliser plutôt que doubler).
+- **A41 — Postes non monétaires (décision de Beat, 2026-11-16, option a).** Un poste non monétaire (charge payée
+  d'avance en devise, etc.) se tient sur un compte **en CHF** : tout compte de bilan en devise est réévalué, et un compte
+  décoché à la passation garde un résidu qui bloque la clôture (A37). Aucune marque « non monétaire » sur les comptes
+  (KISS). Le manuel le dit ; C-37-7 (« décochables ») est lu sous cette réserve.
+
+## Recoupements avec l'Epic 36, release 0.18.0 (relevé du 2026-11-16)
+
+Relevé sur `origin/epic/36-0.18.0` à `e50586b8`, **pas encore dans `main`**. Fusion d'essai dans `epic/37-multi-devises`
+à `6ad579f6`, sans commit, puis annulée. Dix fichiers sont en conflit de texte :
+- `routes/onboarding.rs` et `onboarding/+page.svelte` : les 36-17 (un écran pour chaque étape) et 36-19 (la
+  finalisation complète les comptes vides des réglages de facturation) contre le corps de `finalize` de la 37-1
+  (dates du premier exercice) ;
+- les quatre catalogues i18n ;
+- `user-manual.tex` ;
+- `i18n-keys.test.ts`, `i18n-libelle-en-dur.test.ts` et `i18n-un-repli-par-cle.test.ts` (compteurs à recompter).
+
+Le second arrivé résout, dans sa branche ; ici, la reprise de `main` après la fusion de la 0.18.0 par Guy (A40).
+**Interactions sans conflit de texte**, à contrôler à cette reprise :
+- **36-19** écrit les comptes des réglages de facturation à la finalisation. Elle ne doit pas désigner un compte de
+  différence ni de conversion, et ne doit pas contourner les gardes de la 37-1 (`company_invoice_settings`). Il faut
+  un test.
+- **36-9** contrôle le type du compte désigné au solde du reste. Elle touche `accounts.rs` et
+  `company_invoice_settings.rs`, comme la 37-1 : relire l'ordre des verrous.
+- **36-10** : les dernières dates en jours UTC passent à Zurich. La 37-2 se sert déjà de `kesh_core::horloge`.
+- **36-15** : le vocabulaire visible devient « compte analytique » au lieu de « projet analytique ». Les textes des
+  Epics 37 à 40 suivent ce vocabulaire. Les fiches de l'Epic 37 ne disent « projets » que dans des notes internes.
+- **36-6 (#823, une transaction et plusieurs écritures)** : aucun code dans les branches publiées au 2026-11-16, et la
+  story est encore `backlog`. Selon la règle de cadence de Guy (branche `chore/cadence-hebdomadaire`), l'Epic 36 se
+  clôt avec la 0.18.0, et #823 passe à un epic neuf. Elle concerne la 38-6c2 (A40), non l'Epic 37.

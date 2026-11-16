@@ -115,11 +115,14 @@ clôturer l'exercice.
   au centime, puis différence ; `null` si nul) — par la même fonction ou une fonction commune extraite, jamais une
   seconde règle. Compte sans grand livre lié, ou grand livre partagé (`bank_accounts::is_shared`) → `notComparable: true`,
   écart `null`.
-- **C-38-10-5 — Contrôle de clôture : K9 en dernier.** Un neuvième contrôle `ATTACHED_STATEMENT_GAP` (`warning`), ajouté
-  **après** K8 pour que K1–K8 gardent leur rang (précédent v017-4a) : pour chaque compte bancaire non archivé ayant au
+- **C-38-10-5 — Contrôle de clôture : K10 en dernier.** *(Décision du 2026-11-16 : l'Epic 37, qui sort avant celui-ci,
+  prend K9, « comptes en devise non réévalués », bloquant ; le relevé joint passe de K9 à K10 et le nombre de contrôles
+  de neuf à dix. Les nombres « huit » des sites existants décrivent l'état avant l'Epic 37 : relus après la reprise de
+  `main`, ils valent neuf, et cette story les passe à dix.)* Un dixième contrôle `ATTACHED_STATEMENT_GAP` (`warning`),
+  ajouté **après** K9 pour que K1–K9 gardent leur rang (précédent v017-4a) : pour chaque compte bancaire non archivé ayant au
   moins un document à solde dont `period_to` tombe dans Y, le **dernier** (plus grand `period_to`, puis plus grand `id`)
   est comparé (C-38-10-4) ; écart non nul → compte en `attention`. K3 est **inchangé** (un compte sans CAMT y reste
-  `NO_BALANCE_STATEMENT`) : écrire au manuel que K9 est le contrôle des comptes sans relevé importé.
+  `NO_BALANCE_STATEMENT`) : écrire au manuel que K10 est le contrôle des comptes sans relevé importé.
 - **C-38-10-5 bis — Exercice clos.** Joindre une pièce à un exercice clos est **admis** (la pièce justifie, elle n'écrit
   rien au journal) ; la **corriger** ou la **retirer** est refusé (`400 FISCAL_YEAR_CLOSED`, code existant,
   `errors.rs:1887`) — la pièce d'une clôture faite ne bouge plus (CO 958f).
@@ -195,18 +198,18 @@ clôturer l'exercice.
    `notComparable: true`, `gap: null` ; document sans solde → `ledgerBalanceAtPeriodTo` rendu, `gap: null`. Lectures sans
    verrou ; une lecture par page de documents (pas une par document : regroupées par compte et date, test du compteur
    ou justification au Change Log).
-6. **AC-6 — Contrôle de clôture K9 (FR-38-10-4).** `GET /api/v1/fiscal-years/{id}/closing-checks` rend **neuf**
-   contrôles ; le neuvième, en dernier, `ATTACHED_STATEMENT_GAP`, `severity: warning`, `status` `attention` si au moins un
+6. **AC-6 — Contrôle de clôture K10 (FR-38-10-4).** `GET /api/v1/fiscal-years/{id}/closing-checks` rend **dix**
+   contrôles (K9 est celui de l'Epic 37, repris de `main` : le nombre se relit à la source après chaque reprise) ; le dixième, en dernier, `ATTACHED_STATEMENT_GAP`, `severity: warning`, `status` `attention` si au moins un
    compte a un écart (C-38-10-5), `count` = nombre de comptes en écart, `details: { accounts: [{ bankAccountId, name,
    documentId, periodTo, currency, statementClosingBalance, ledgerBalanceAtStatement, gap }], notComparable: [{
    bankAccountId, name }] }` (comptes non comparables sans effet sur le statut, comme K3). La clôture **n'est pas
    bloquée** (`fiscal_years::close` inchangé). Requêtes : constantes ajoutées à `ALL_SQL`, sans verrou (garde T-a2
    verte), dans l'instantané de la route ; le solde comptable vient de `account_balances::balances_as_of` (C-38-10-4),
    appelée sur la connexion de l'instantané — fonction **externe**, donc ajoutée à la liste de l'angle mort de T-a2 au
-   doc du module (`closing_checks.rs:51-60`), son SQL relu sans verrou en revue. Mises à jour du nombre (prémisse, **tous** les sites) : doc du module (« neuf »,
-   table, `count`), `ClosingChecks::checks` (« toujours neuf »), `CheckCode`/`CheckDetails`/`Severity` (variant neuf),
+   doc du module (`closing_checks.rs:51-60`), son SQL relu sans verrou en revue. Mises à jour du nombre (prémisse, **tous** les sites) : doc du module (« dix »,
+   table, `count`), `ClosingChecks::checks` (« toujours dix »), `CheckCode`/`CheckDetails`/`Severity` (variant neuf),
    `crates/kesh-db/tests/closing_checks.rs:1679`, `crates/kesh-api/tests/closing_checks_e2e.rs`, `docs/api-external.md`
-   (« toujours neuf », contrôle décrit, changement de contrat annoncé comme la ligne `:267` l'exige), front
+   (« toujours dix », contrôle décrit, changement de contrat annoncé comme la ligne `:267` l'exige), front
    (`closing-checks-labels.ts`, `FiscalYearChecks.svelte` avec lien vers le dialogue des relevés du compte,
    `fiscal-years.types.ts`, `fiscal-years.api.ts`, `closing-checks.test-fixtures.ts`, `FiscalYearChecks.test.ts`,
    **`frontend/src/routes/(app)/settings/fiscal-years/+page.svelte` et `fiscal-years-page.test.ts:461`
@@ -215,12 +218,12 @@ clôturer l'exercice.
    `frontend/tests/e2e/fiscal-years.spec.ts:499-500` (même assertion, commentaire « huit contrôles, K8 en dernier »)**,
    `fiscal-years-page.test.ts:447` (titre « les huit lignes »), `FiscalYearChecks.test.ts:48`, doc-comments
    `closing_checks.rs:123` (« Toujours huit ») et `:566`, `docs/manual/fr/marketing-brochure.tex:437` (« Huit contrôles
-   préalables… », PDF de la brochure régénéré avec les autres),
+   préalables… » devenu « Neuf » par l'Epic 37, « Dix » ici ; `.tex` seul, PDF non commité),
    `user-manual.tex:890`, `admin-manual.tex:1866` ; grep du jeton `\bhuit\b` et `\b8\b` sur ces fichiers (liste relevée par `grep -rln
    "closing_checks\|closing-checks\|DRAFT_SUPPLIER_INVOICES" crates frontend/src frontend/tests docs`), résultat trié au
-   Change Log. **Nom** : K9 est ici `ATTACHED_STATEMENT_GAP` ; le contrôle informatif futur de 37-5 (« comptes en devise
-   à réévaluer », C-37-8) est désormais **K10** (`37-5-reevaluation-fin-exercice.md:543-544`, aligné après P1-2). Tests : écart → `attention` ; aucun document → `ok` ; document daté hors Y
-   ignoré ; deux documents dans Y → le dernier compte ; dialogue de clôture (Vitest) qui rappelle K9.
+   Change Log. **Nom** : K10 est ici `ATTACHED_STATEMENT_GAP` ; K9 est celui de l'Epic 37 (« comptes en devise non réévalués »,
+   bloquant, qui sort avant : `37-5-reevaluation-fin-exercice.md`, à relire après la reprise de `main`). Tests : écart → `attention` ; aucun document → `ok` ; document daté hors Y
+   ignoré ; deux documents dans Y → le dernier compte ; dialogue de clôture (Vitest) qui rappelle K10.
 7. **AC-7 — Sauvegarde et restauration (NFR-38-10-2, E18).** (a) `bank_account_documents` entre à `TABLES_TO_TRUNCATE`
    **avant** `bank_transactions` (enfant de `bank_accounts`, `fiscal_years`, `users`, `companies`), donc vidée à la remise
    à zéro de la société — `backup_inventory_matches_schema` vert, et **sites de dénombrement** (même grep que 38-1,
@@ -274,24 +277,24 @@ clôturer l'exercice.
    sept tables de 28-4a, dont `bank_account_documents` ne fait pas partie (rien à y inscrire, dit au Change Log).
    Vitest : liste, écart, formulaire (champs exigés, PDF seul côté écran),
    rôles, compte clos. **E2E Playwright** (`frontend/tests/e2e/bank-account-documents.spec.ts`) : joindre un PDF de
-   fixture avec un solde qui diffère des livres → écart affiché → panneau *Préparer la clôture* : K9 en attention →
-   corriger le solde → écart nul, K9 `ok` → télécharger (contenu identique) → retirer. **Recette visuelle** : captures
-   (thème clair) de la liste vide, de la liste avec écart, du formulaire, d'une erreur, du panneau de clôture avec K9,
+   fixture avec un solde qui diffère des livres → écart affiché → panneau *Préparer la clôture* : K10 en attention →
+   corriger le solde → écart nul, K10 `ok` → télécharger (contenu identique) → retirer. **Recette visuelle** : captures
+   (thème clair) de la liste vide, de la liste avec écart, du formulaire, d'une erreur, du panneau de clôture avec K10,
    jointes au Dev Agent Record et au prompt de revue (hors dépôt, `kesh-gate-logs/`).
 10. **AC-10 — Manuels et API (NFR-38-10-4).** `docs/manual/fr/user-manual.tex` : section *Joindre un relevé à un compte
     bancaire* (près de *Comptes bancaires* et de *Tenir une carte de crédit*) : pourquoi (le relevé annuel PayPal n'a pas
     d'API ; le solde de clôture est la somme de contrôle), comment (période, exercice choisi par la date de fin, un PDF
-    par compte et par devise), l'écart, le contrôle K9, exercice clos (on joint, on ne corrige plus) ; § *Préparer la
-    clôture* : « neuf contrôles », K9 décrit. `admin-manual.tex` : les relevés joints sont dans le dossier des documents
+    par compte et par devise), l'écart, le contrôle K10, exercice clos (on joint, on ne corrige plus) ; § *Préparer la
+    clôture* : « dix contrôles », K10 décrit. `admin-manual.tex` : les relevés joints sont dans le dossier des documents
     et dans la sauvegarde complète ; la sauvegarde d'avant mise à jour les emporte ; « les huit contrôles » (`:1866`,
-    répétition d'une clôture) devient « les neuf contrôles » ; `marketing-brochure.tex:437` (« Huit contrôles préalables à la clôture… ») devient
-    « Neuf », avec la mention de la livraison de K9 (numéro de version écrit seulement s'il est connu au développement
+    répétition d'une clôture ; « neuf » après l'Epic 37) devient « les dix contrôles » ; `marketing-brochure.tex:437` (« Huit contrôles préalables à la clôture… ») devient
+    « Dix », avec la mention de la livraison de K10 (numéro de version écrit seulement s'il est connu au développement
     — Q1 de l'epic —, jamais un gabarit `<…>` dans le `.tex`) ; **`README.md:48`** (§ *Fonctionnalités*, « huit contrôles
-    en lecture seule avant de clôturer un exercice ») devient « neuf contrôles » — le README est un support de la liste
+    en lecture seule avant de clôturer un exercice ») devient « dix contrôles » — le README est un support de la liste
     de contrôle pré-push de `CLAUDE.md`, hors du grep de la P3 (`crates`, `frontend`, `docs`) ; `CHANGELOG.md:486`
-    (entrée publiée) reste tel ; `website/` et manuels DE/IT/EN relus sans occurrence (P4). PDF régénérés (`make fr` dans
-    `docs/manual/`) et vérifiés aplatis (`pdftotext … | tr '\n' ' '`). `docs/api-external.md` : les cinq routes, leurs
-    codes, K9. **MCP** : aucun outil (E23) — `kesh_pieces` (`mcp/outils/pieces.rs`) liste les pièces fournisseur
+    (entrée publiée) reste tel ; `website/` et manuels DE/IT/EN relus sans occurrence (P4). **Les `.tex` seuls sont modifiés ; les PDF se régénèrent à la release** (contrôle
+    local du rendu aplati permis — `make fr`, `pdftotext … | tr '\n' ' '` —, PDF non commités). `docs/api-external.md` : les cinq routes, leurs
+    codes, K10. **MCP** : aucun outil (E23) — `kesh_pieces` (`mcp/outils/pieces.rs`) liste les pièces fournisseur
     importées et n'est pas étendu ; les relevés joints ne sont pas exposés au serveur MCP (décision de l'epic, aucune
     donnée de prestataire exposée).
 
@@ -302,20 +305,34 @@ clôturer l'exercice.
       comptables, lire, modifier avec `version`, retirer), calcul de l'écart par la règle de `statement_gap` (AC-2 à AC-5).
 - [ ] T3 — `kesh-api` : routes (`lib.rs`, bornes de corps), multipart, contrôle PDF, `store_document`, téléchargement
       (fonction `content_disposition` partagée), codes d'erreur, audit (AC-2 à AC-4, AC-8).
-- [ ] T4 — `closing_checks` : K9, tous les consommateurs du nombre (AC-6).
+- [ ] T4 — `closing_checks` : K10, tous les consommateurs du nombre (AC-6).
 - [ ] T5 — Sauvegarde : `TABLES_TO_TRUNCATE`, `read_referenced_files` **conditionnée à la présence de la table** et
       son test de sauvegarde avant mise à jour sur le schéma précédent, `ParsedBackup::referenced_files`, inventaire
       clos, absences admises (R1), export CSV et garde de colonnes (AC-7).
 - [ ] T6 — Frontend : dialogue, API, i18n, Vitest, E2E, captures (AC-9).
-- [ ] T7 — Manuels FR (PDF régénérés), brochure, `README.md:48` (« neuf contrôles »), `api-external.md` (AC-10).
+- [ ] T7 — Manuels FR (`.tex` seuls), brochure, `README.md:48` (« dix contrôles »), `api-external.md` (AC-10).
 - [ ] T8 — Gate complet **même en cours de boucle** (migration et dépôts touchés) ; runtime : `admin_backup_e2e`,
       `admin_full_import_e2e`, `migrations_fresh_install` ; E2E complet au dernier commit de code.
 
+## Note de version
+
+*(Texte prêt à assembler au `CHANGELOG.md` à la release.)*
+
+- **Ajouté** : on joint à un compte bancaire le relevé PDF d'un prestataire sans API (relevé annuel PayPal), avec son
+  solde de clôture par devise ; l'écart avec les livres s'affiche, et un dixième contrôle de clôture (K10, avertissement)
+  le signale. Le relevé joint voyage avec la sauvegarde complète. Migration non breaking, mais le retour à la version
+  précédente passe par la sauvegarde d'avant la mise à jour.
+- **Changé** : l'avant-clôture compte dix contrôles (K9 étant celui des comptes en devise non réévalués).
+
+**Compteurs** (audit des migrations — total aux deux sites et partition —, schéma de test, `LIB_ROUTES`, `data_count`,
+`EMPTY_BEFORE_RESET`, nombre de contrôles de clôture et ses assertions front et E2E, `Cargo.lock`) : recomptés depuis la
+source après chaque reprise de `main`.
+
 ## Dev Notes
 
-- **Pourquoi un K9 et non K3 étendu** : K3 compare au grand livre en CHF les relevés **importés** ; y mêler les relevés
+- **Pourquoi un K10 et non K3 étendu** : K3 compare au grand livre en CHF les relevés **importés** ; y mêler les relevés
   joints changerait son contrat (`NO_BALANCE_STATEMENT`) et sa règle de précédence, publiés (`api-external.md:266`).
-  K9, ajouté en dernier, ne déplace rien (précédent K8, v017-4a).
+  K10, ajouté en dernier, ne déplace rien (précédent K8, v017-4a).
 - **Solde en devise** : ne pas recoder la somme `amount_currency` ; employer le fragment de 37-4
   (`repositories/account_balances.rs`, AC-1 quater de 37-4). Avant la fusion de l'Epic 37, la story n'est pas
   développable (dépendance).
@@ -413,3 +430,8 @@ clôturer l'exercice.
   (`features/bank-accounts/`, `bank-accounts-` : règle à tiret, `:177-186`) et `closing-checks-labels.ts` /
   `FiscalYearChecks.svelte` (`features/fiscal-years/`, `fiscal-years-checks-`, déjà celui des clés existantes) relus ;
   `error-` global (`:16`). Aucun inter-fiches.
+- 2026-11-16 — alignement sur les règles de travail à plusieurs (Sonnet) : contrôle de clôture du relevé joint **K9 → K10**
+  (l'Epic 37, qui sort avant, prend K9 « comptes en devise non réévalués », bloquant), « neuf contrôles » → « dix
+  contrôles » à tous les sites actifs (AC-6, AC-10, tâches, Dev Notes) ; les entrées datées plus haut gardent K9, relevé
+  daté de leur passe. PDF des manuels non commités (`.tex` seuls, régénération à la release) ; section *Note de version*
+  ajoutée ; compteurs « recomptés après chaque reprise de `main` ».

@@ -11,8 +11,8 @@ use axum::Json;
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use kesh_db::errors::{
-    DbError, ModificationGuard, RejectedRevenueAccount, RevenueAccountRejection, ReversalBlocker,
-    SettlementCancelBlocker, UnvalidationBlocker,
+    DbError, FxAccountField, FxAccountReason, ModificationGuard, RejectedRevenueAccount,
+    RevenueAccountRejection, ReversalBlocker, SettlementCancelBlocker, UnvalidationBlocker,
 };
 use kesh_i18n::{FluentArgs, I18nBundle, Locale};
 use serde::Serialize;
@@ -356,6 +356,18 @@ pub enum AppError {
     /// `routes::fiscal_years::map_create_error`.
     #[error("Exercice postérieur {fiscal_year_name} clôturé — création refusée")]
     FiscalYearBeforeClosedYear {
+        fiscal_year_id: i64,
+        fiscal_year_name: String,
+    },
+
+    /// Story 37-1 (D-CR7-2) — la **création** d'un exercice est refusée, dans
+    /// une société multi-devises : un exercice postérieur est mono-devise
+    /// (clos à l'activation). `400 LATER_FISCAL_YEAR_MONO_CURRENCY`, mêmes
+    /// `details` que [`AppError::FiscalYearBeforeClosedYear`] (même gabarit de
+    /// réponse), message `error-fiscal-year-create-later-mono-currency`.
+    /// Produite par `routes::fiscal_years::map_create_error`.
+    #[error("Exercice postérieur {fiscal_year_name} mono-devise — création refusée")]
+    FiscalYearBeforeMonoCurrencyYear {
         fiscal_year_id: i64,
         fiscal_year_name: String,
     },
@@ -1416,6 +1428,21 @@ struct ErrorDetail {
     message: String,
 }
 
+/// Une `Response` JSON structurée **avec** `details` :
+/// `{ "error": { code, message, details } }` (Story 37-1, refus de la devise
+/// d'un compte).
+fn coded_response(
+    status: StatusCode,
+    code: &'static str,
+    message: String,
+    details: serde_json::Value,
+) -> Response {
+    let body = serde_json::json!({
+        "error": { "code": code, "message": message, "details": details }
+    });
+    (status, Json(body)).into_response()
+}
+
 /// Helper pour construire une `Response` JSON structurée.
 fn build_response(status: StatusCode, code: &'static str, message: &str) -> Response {
     (
@@ -1430,12 +1457,16 @@ fn build_response(status: StatusCode, code: &'static str, message: &str) -> Resp
         .into_response()
 }
 
-/// Corps `400 LATER_FISCAL_YEAR_CLOSED` (Stories 15-8a, 15-12a) : un seul
-/// gabarit pour les deux messages — celui des écritures
-/// (`error-later-fiscal-year-closed`) et celui de la création d'un exercice
-/// (`error-fiscal-year-create-later-closed`) —, pour que leurs `details` ne
-/// divergent jamais.
+/// Corps `400` d'un refus qui nomme un exercice **postérieur** (Stories 15-8a,
+/// 15-12a, 37-1) : un seul gabarit pour les trois messages — celui des
+/// écritures (`error-later-fiscal-year-closed`) et celui de la création d'un
+/// exercice (`error-fiscal-year-create-later-closed`), sous le code
+/// `LATER_FISCAL_YEAR_CLOSED`, et celui de la création avant un exercice
+/// mono-devise (`error-fiscal-year-create-later-mono-currency`, Story 37-1),
+/// sous le code `LATER_FISCAL_YEAR_MONO_CURRENCY` —, pour que leurs `details`
+/// (`fiscalYearId`, `fiscalYearName`) ne divergent jamais.
 fn later_fiscal_year_closed_response(
+    code: &str,
     fiscal_year_id: i64,
     fiscal_year_name: &str,
     key: &str,
@@ -1446,13 +1477,124 @@ fn later_fiscal_year_closed_response(
     let message = t_args(key, fallback, &args);
     let body = serde_json::json!({
         "error": {
-            "code": "LATER_FISCAL_YEAR_CLOSED",
+            "code": code,
             "message": message,
             "details": {
                 "fiscalYearId": fiscal_year_id,
                 "fiscalYearName": fiscal_year_name,
             },
         }
+    });
+    (StatusCode::BAD_REQUEST, Json(body)).into_response()
+}
+
+/// Corps `400 LATER_FISCAL_YEAR_MONO_CURRENCY` (Story 37-1, D-CR7-2) — un seul
+/// site pour le message et son repli, partagé par
+/// `AppError::FiscalYearBeforeMonoCurrencyYear` et
+/// `DbError::LaterFiscalYearMonoCurrency`.
+fn later_fiscal_year_mono_currency_response(
+    fiscal_year_id: i64,
+    fiscal_year_name: &str,
+) -> Response {
+    let fallback = format!(
+        "L’exercice « {fiscal_year_name} », postérieur, est mono-devise (clos avant l’activation du multi-devises) : aucun exercice ne peut être créé avant lui."
+    );
+    later_fiscal_year_closed_response(
+        "LATER_FISCAL_YEAR_MONO_CURRENCY",
+        fiscal_year_id,
+        fiscal_year_name,
+        "error-fiscal-year-create-later-mono-currency",
+        &fallback,
+    )
+}
+
+/// Corps `400 FX_ACCOUNT_INVALID` (Story 37-1, AC-3, AC-4 bis) : un compte de
+/// différence de change refusé. `details` : `field` (`fxGainAccountId` |
+/// `fxLossAccountId` | `fxTransitAccountId`), `reason` (liste close de
+/// [`FxAccountReason`]) et, pour les comptes propres d'un compte en devise,
+/// `holderAccountId`. Le message nomme le champ puis la raison ; l'écran
+/// l'affiche tel quel sous le sélecteur désigné par `details.field`.
+fn fx_account_invalid_response(
+    field: FxAccountField,
+    reason: FxAccountReason,
+    holder_account_id: Option<i64>,
+) -> Response {
+    let (subject_key, subject_fallback) = match field {
+        FxAccountField::Gain => (
+            "error-fx-account-subject-gain",
+            "Le compte des gains de change",
+        ),
+        FxAccountField::Loss => (
+            "error-fx-account-subject-loss",
+            "Le compte des pertes de change",
+        ),
+        FxAccountField::Transit => (
+            "error-fx-account-subject-transit",
+            "Le compte de conversion",
+        ),
+    };
+    let subject = t(subject_key, subject_fallback);
+    let (key, fallback) = match reason {
+        FxAccountReason::Missing => (
+            "error-fx-account-missing",
+            format!("{subject} est obligatoire en mode multi-devises."),
+        ),
+        // Revue de code P2 (37-1-CR-P2-3) : comptes propres sur un compte qui
+        // reste ou devient CHF, dans une société multi-devises — « mode
+        // multi-devises » y serait faux.
+        FxAccountReason::Unexpected if holder_account_id.is_some() => (
+            "error-fx-account-unexpected-own",
+            format!(
+                "{subject} propre ne se désigne que sur un compte en devise : retirez la devise et les comptes propres ensemble."
+            ),
+        ),
+        FxAccountReason::Unexpected => (
+            "error-fx-account-unexpected",
+            format!("{subject} ne se désigne qu’en mode multi-devises."),
+        ),
+        FxAccountReason::Unknown => (
+            "error-fx-account-unknown",
+            format!("{subject} est introuvable ou n’appartient pas à cette société."),
+        ),
+        FxAccountReason::Archived => (
+            "error-fx-account-archived",
+            format!("{subject} est archivé."),
+        ),
+        FxAccountReason::NotPostable => (
+            "error-fx-account-not-postable",
+            format!("{subject} n’est pas imputable."),
+        ),
+        FxAccountReason::AccountType if field == FxAccountField::Transit => (
+            "error-fx-account-account-type-transit",
+            format!("{subject} doit être un compte de bilan (actif ou passif)."),
+        ),
+        FxAccountReason::AccountType => (
+            "error-fx-account-account-type",
+            format!("{subject} doit être un compte de charges ou de produits."),
+        ),
+        FxAccountReason::ForeignCurrency => (
+            "error-fx-account-foreign-currency",
+            format!("{subject} doit être tenu en CHF, sans devise."),
+        ),
+        FxAccountReason::RevenueAccount => (
+            "error-fx-account-revenue-account",
+            format!(
+                "{subject} ne peut pas être un compte de chiffre d’affaires (compte de produit par défaut des factures ou d’un article)."
+            ),
+        ),
+    };
+    let mut args = FluentArgs::new();
+    args.set("subject", subject);
+    let message = t_args(key, &fallback, &args);
+    let mut details = serde_json::json!({
+        "field": field.as_api_field(),
+        "reason": reason.as_str(),
+    });
+    if let Some(holder) = holder_account_id {
+        details["holderAccountId"] = serde_json::json!(holder);
+    }
+    let body = serde_json::json!({
+        "error": { "code": "FX_ACCOUNT_INVALID", "message": message, "details": details }
     });
     (StatusCode::BAD_REQUEST, Json(body)).into_response()
 }
@@ -2079,12 +2221,18 @@ impl IntoResponse for AppError {
                     "L’exercice « {fiscal_year_name} », postérieur, est clôturé, et son bilan reprend tout ce qui le précède : aucun exercice ne peut être créé avant sa date de début tant qu’il l’est. Pour créer celui-ci, un administrateur rouvre d’abord les exercices postérieurs clôturés, en commençant par le plus récent."
                 );
                 later_fiscal_year_closed_response(
+                    "LATER_FISCAL_YEAR_CLOSED",
                     fiscal_year_id,
                     &fiscal_year_name,
                     "error-fiscal-year-create-later-closed",
                     &fallback,
                 )
             }
+
+            AppError::FiscalYearBeforeMonoCurrencyYear {
+                fiscal_year_id,
+                fiscal_year_name,
+            } => later_fiscal_year_mono_currency_response(fiscal_year_id, &fiscal_year_name),
 
             AppError::DateOutsideFiscalYear { date } => {
                 let fallback =
@@ -4186,10 +4334,153 @@ impl IntoResponse for AppError {
                         "L’exercice « {fiscal_year_name} », postérieur, est clôturé, et son bilan reprend tout ce qui le précède : aucune écriture datée avant sa date de début ne peut être enregistrée, modifiée ni supprimée tant qu’il l’est. Une écriture existante se corrige par une contre-passation ; sinon, un administrateur rouvre les exercices postérieurs clôturés, en commençant par le plus récent."
                     );
                     later_fiscal_year_closed_response(
+                        "LATER_FISCAL_YEAR_CLOSED",
                         fiscal_year_id,
                         &fiscal_year_name,
                         "error-later-fiscal-year-closed",
                         &fallback,
+                    )
+                }
+                // Story 37-1 (D-CR7-2) — normalement converti en
+                // `AppError::FiscalYearBeforeMonoCurrencyYear` par
+                // `routes::fiscal_years::map_create_error` ; le même corps si
+                // une autre route le laissait remonter.
+                DbError::LaterFiscalYearMonoCurrency {
+                    fiscal_year_id,
+                    fiscal_year_name,
+                } => later_fiscal_year_mono_currency_response(fiscal_year_id, &fiscal_year_name),
+                // Story 37-1 (AC-3, AC-4 bis) — un compte de différence de
+                // change refusé : 400, champ et raison en `details`.
+                DbError::FxAccountInvalid {
+                    field,
+                    reason,
+                    holder_account_id,
+                } => fx_account_invalid_response(field, reason, holder_account_id),
+                // Story 37-1 (CR-7, A34) — le mode multi-devises ne se
+                // désactive pas : 409, `details: {}`.
+                DbError::MultiCurrencyIrreversible => {
+                    let message = t(
+                        "error-multi-currency-irreversible",
+                        "Le mode multi-devises est activé et ne se désactive pas.",
+                    );
+                    let body = serde_json::json!({
+                        "error": {
+                            "code": "MULTI_CURRENCY_IRREVERSIBLE",
+                            "message": message,
+                            "details": {},
+                        }
+                    });
+                    (StatusCode::CONFLICT, Json(body)).into_response()
+                }
+                // Story 37-1 (AC-4) — devise d'un compte et sites de
+                // configuration : 409 quand l'état s'y oppose, 400 quand la
+                // donnée d'entrée est invalide.
+                DbError::MultiCurrencyDisabled { fiscal_year_id } => {
+                    let details = match fiscal_year_id {
+                        Some(id) => serde_json::json!({ "fiscalYearId": id }),
+                        None => serde_json::json!({}),
+                    };
+                    coded_response(
+                        StatusCode::CONFLICT,
+                        "MULTI_CURRENCY_DISABLED",
+                        t(
+                            "error-multi-currency-disabled",
+                            "Le mode multi-devises n’est pas activé : un compte ne peut pas recevoir de devise étrangère. Un administrateur l’active dans Paramètres.",
+                        ),
+                        details,
+                    )
+                }
+                DbError::CurrencyUnknown { value } => {
+                    let mut args = FluentArgs::new();
+                    args.set("value", value.clone());
+                    coded_response(
+                        StatusCode::BAD_REQUEST,
+                        "CURRENCY_UNKNOWN",
+                        t_args(
+                            "error-currency-unknown",
+                            &format!(
+                                "« {value} » n’est pas un code de devise connu (trois lettres, p. ex. USD ou EUR)."
+                            ),
+                            &args,
+                        ),
+                        serde_json::json!({ "value": value }),
+                    )
+                }
+                DbError::AccountCurrencyLocked => coded_response(
+                    StatusCode::CONFLICT,
+                    "ACCOUNT_CURRENCY_LOCKED",
+                    t(
+                        "error-account-currency-locked",
+                        "La devise de ce compte ne peut plus changer : il porte des écritures, dont elle est la devise.",
+                    ),
+                    serde_json::json!({}),
+                ),
+                DbError::AccountCurrencyInUse { site } => coded_response(
+                    StatusCode::CONFLICT,
+                    "ACCOUNT_CURRENCY_IN_USE",
+                    t(
+                        "error-account-currency-in-use",
+                        "Ce compte est employé en CHF (rôle, paramètres de facturation, compte bancaire, article ou règle de rapprochement) : il ne peut pas recevoir de devise.",
+                    ),
+                    site.details(),
+                ),
+                DbError::AccountInForeignCurrency {
+                    account_id,
+                    currency,
+                } => {
+                    let mut args = FluentArgs::new();
+                    args.set("currency", currency.clone());
+                    coded_response(
+                        StatusCode::BAD_REQUEST,
+                        "ACCOUNT_IN_FOREIGN_CURRENCY",
+                        t_args(
+                            "error-account-in-foreign-currency",
+                            &format!(
+                                "Ce compte est tenu en {currency} : il ne peut pas servir ici, où Kesh comptabilise en CHF."
+                            ),
+                            &args,
+                        ),
+                        serde_json::json!({ "accountId": account_id, "currency": currency }),
+                    )
+                }
+                DbError::AccountIsFxDifferenceAccount {
+                    designation,
+                    holder_account_id,
+                    holder_number,
+                } => {
+                    let mut details = serde_json::json!({ "designation": designation.as_str() });
+                    if let (Some(id), Some(number)) = (holder_account_id, &holder_number) {
+                        details["holderAccountId"] = serde_json::json!(id);
+                        details["holderNumber"] = serde_json::json!(number);
+                    }
+                    let message = match &holder_number {
+                        Some(number) => {
+                            let mut args = FluentArgs::new();
+                            args.set("number", number.clone());
+                            t_args(
+                                "error-account-is-fx-difference-account-own",
+                                &format!(
+                                    "Ce compte est un compte de différence de change du compte en devise {number} : il ne peut être ni archivé, ni retypé, ni rendu non imputable, ni recevoir de devise, de sous-compte ou de rôle de produit."
+                                ),
+                                &args,
+                            )
+                        }
+                        // Revue de code P2 (37-1-CR-P2-5) : le compte de
+                        // conversion n'est pas un compte de différence.
+                        None if designation == kesh_db::errors::FxDesignation::Transit => t(
+                            "error-account-is-fx-transit-account",
+                            "Ce compte est le compte de conversion de la société : il ne peut être ni archivé, ni retypé hors du bilan, ni rendu non imputable, ni recevoir de devise ou de sous-compte.",
+                        ),
+                        None => t(
+                            "error-account-is-fx-difference-account",
+                            "Ce compte est un compte de différence de change de la société : il ne peut être ni archivé, ni retypé, ni rendu non imputable, ni recevoir de devise, de sous-compte ou de rôle de produit.",
+                        ),
+                    };
+                    coded_response(
+                        StatusCode::CONFLICT,
+                        "ACCOUNT_IS_FX_DIFFERENCE_ACCOUNT",
+                        message,
+                        details,
                     )
                 }
                 // Story 15-12a (#543) — la clôture d'un exercice précédé d'un

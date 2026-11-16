@@ -13,6 +13,9 @@ function fy(annee: number, status: 'Open' | 'Closed'): FiscalYearResponse {
 		startDate: `${annee}-01-01`,
 		endDate: `${annee}-12-31`,
 		status,
+		multiCurrency: false,
+		openingRateKind: 'day',
+		closingRateKind: 'day',
 		createdAt: '2026-01-01T00:00:00',
 		updatedAt: '2026-01-01T00:00:00',
 	};

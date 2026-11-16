@@ -128,7 +128,7 @@ cours sans saisie.
 - NFR-37-2-3 — Appels sortants bornés : une récupération à la fois par unité (`rate_fetch_lock`), mémoire de 15 minutes des échecs et non-publications, au plus 36 unités par tour plus une revérification, au plus un tour de connexion par quart d'heure ; délais 5 s et 20 s, réponse ≤ 1 MiB (AC-3, AC-4, AC-5).
 - NFR-37-2-4 — Aucun appel réseau en test ni en CI : source factice par défaut, pilotée en mode test par `POST /_test/exchange-rates/source`, tâche automatique non lancée en mode test ; `lookup` après import répond sans appel sortant (AC-3, AC-4, AC-7).
 - NFR-37-2-5 — Audit : `exchange_rates.fetched` (entité `installation`, sur succès seulement), `exchange_rate.created`/`updated`/`reset`, `exchange_rates.corrections_acknowledged`, `fiscal_year.rate_kinds_updated` ; récupérations automatiques et copies non auditées ; routes mutantes au registre (`Traced, SansEcritureAuJournal`), rejouées sur interblocage (AC-4, AC-5, AC-9).
-- NFR-37-2-6 — Quatre locales (écran, erreurs dont `FX_RATE_INVALID`, libellés d'audit et de type d'entité) ; manuel utilisateur et manuel d'administration (accès sortant HTTPS, `HTTPS_PROXY`, réimport des sauvegardes antérieures, phrase du registre des routes), PDF régénérés (AC-8).
+- NFR-37-2-6 — Quatre locales (écran, erreurs dont `FX_RATE_INVALID`, libellés d'audit et de type d'entité) ; manuel utilisateur et manuel d'administration (accès sortant HTTPS, `HTTPS_PROXY`, réimport des sauvegardes antérieures, phrase du registre des routes), `.tex` seulement, PDF non commités, régénérés à la release (AC-8).
 - NFR-37-2-7 — RBAC : `POST /fetch`, `PUT …/rates`, `POST …/rates/reset`, `PUT /rate-kinds` et les deux routes de notices réservés à l'Administrateur et au Comptable (Consultation 403) ; `lookup` et le tableau annuel ouverts à tout rôle authentifié (AC-5).
 - NFR-37-2-8 — Source tenue pour hostile : URL de production constante, sans variable d'environnement, HTTPS seul, sans redirection ni cookies, `User-Agent` sans donnée personnelle ; XML filtré avant toute écriture (DOCTYPE et entités non prédéfinies refusés, tailles, profondeur, grammaire des nombres, codes ISO 4217 hors `CHF`) ; erreurs stockées en codes classés, jamais le texte d'une erreur `reqwest` (AC-1, AC-2, AC-3).
 
@@ -240,7 +240,7 @@ cours sans saisie.
    - les deux tables `_kesh_*` inscrites à `TABLES_SYSTEME` (`crates/kesh-db/src/backup.rs` :949, lue par
      `backup_inventory_matches_schema` et `convention_du_prefixe_des_tables_systeme`), absentes de l'inventaire
      `.keshbackup` ; `exchange_rates` à `TABLES_TO_TRUNCATE` (ci-dessus) ; `migrations.sha384`, ligne et
-     compteurs recomptés de `docs/migrations-idempotence-audit.md` (P5), squash régénéré, P6, P7 (DDL seul :
+     compteurs recomptés de `docs/migrations-idempotence-audit.md` (P5, depuis la source, après chaque reprise de `main`), squash régénéré, P6, P7 (DDL seul :
      `every_data_backfill_migration_is_triaged` n'a rien à trier pour ce fichier, et la fenêtre ne bouge pas, R1) ;
    - les colonnes `fiscal_years.opening_rate_kind` et `closing_rate_kind` (R6) sont créées par la migration de **37-1**
      (AC-1, décision CR-2) : cette story ne les ajoute pas, elle écrit la route et l'écran qui les règlent (AC-5, AC-6) ;
@@ -1079,7 +1079,7 @@ cours sans saisie.
    `www.backend-rates.bazg.admin.ch` requis pour un exercice multi-devises ouvert, aucun sinon, quand il a lieu
    (démarrage, une fois par jour tant que le mois courant ou le mois suivant manque, puis pause, S1 ; connexion ;
    chaque tour revérifie aussi le mois courant, un appel de plus, A10), mandataire par `HTTPS_PROXY` (lu par `reqwest`) ; un `.keshbackup` 0.17.6
-   ou antérieur **se réimporte** (mono-devise, R1) ; phrase du registre des routes (AC-5) ; PDF régénérés.
+   ou antérieur **se réimporte** (mono-devise, R1) ; phrase du registre des routes (AC-5, chiffres recomptés depuis la source après chaque reprise de `main`) ; `.tex` seulement, PDF non commités (régénérés à la release).
 9. **AC-9 — Cours de la société et cours d'une ligne** (amendé par D9, puis par U1, CR-5). Deux niveaux, sans
    recouvrement :
    - **cours retenu par la société** pour (devise, mois) ou (devise, jour) : table applicative `exchange_rates`, une
@@ -1198,7 +1198,15 @@ cours sans saisie.
       première colonne), libellé « cours mensuel du dernier mois de l'exercice précédent » et aide (AC-6, quatre
       locales) ; notices sur `openingDate` ; tests des exercices au 1er janvier, 1er avril, 1er juillet, 15.03, six et
       dix-huit mois (serveur et Vitest).
-- [ ] Manuels, CHANGELOG, `Cargo.lock`.
+- [ ] Manuels (`.tex` seulement), section *Note de version* de la fiche (pas d'écriture au `CHANGELOG.md`), `Cargo.lock` (régénéré après chaque reprise de `main`).
+
+## Note de version
+
+*(Texte prêt à assembler au `CHANGELOG.md` à la release ; la fiche n'écrit jamais au `CHANGELOG.md`.)*
+
+- **Added** — cours mensuels de l'AFC récupérés automatiquement pour les exercices multi-devises (accès sortant HTTPS, mandataire par `HTTPS_PROXY`) ; cours de la société et d'une ligne ; erreur `FX_RATE_INVALID`.
+- **Sauvegarde** — un `.keshbackup` 0.17.6 ou antérieur se réimporte (mono-devise) ; cours saisis vides.
+- **Compteurs** : recomptés depuis la source après chaque reprise de `main` (`LIB_ROUTES`, audit des migrations, `Cargo.lock`).
 
 ## Notes de développement
 
@@ -1665,3 +1673,4 @@ cours sans saisie.
   FR-11, `GET` du tableau, ordre des refus des routes de cours), KISS (aucun mécanisme propre à la réversibilité ;
   lecture du mode sous le `FOR UPDATE` de l'exercice gardée : verrou déjà pris). Non exercés : AC-4 au-delà des
   unités utiles, AC-6 au-delà du sélecteur, code, i18n, manuels. Décompte : 12 FR, 8 NFR (inchangé).
+- 2026-11-16 — alignement sur les règles de travail à plusieurs (Sonnet) : PDF des manuels non commités, `.tex` seulement (3 remplacements) ; CHANGELOG remplacé par la section *Note de version* (1 remplacement, section ajoutée) ; compteurs « recomptés depuis la source après chaque reprise de `main` » (3 ajouts). Fond des AC inchangé.

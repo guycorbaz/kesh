@@ -238,9 +238,125 @@ pub struct Account {
     /// normalisé à l'écriture par le repository (`create` et `update`), pas
     /// seulement au seed — cf. `effective_postable`.
     pub postable: bool,
+    /// Devise du compte (Story 37-1), code ISO 4217 ; `None` = devise
+    /// principale (CHF). Décodée en `String` **sans validation** : la liste
+    /// ISO 4217 ne contrôle qu'à l'écriture, de sorte qu'un code retiré plus
+    /// tard de la liste ne fasse jamais échouer la lecture d'un compte.
+    pub currency: Option<String>,
+    /// Compte de gains de change **propre** à ce compte en devise (Story 37-1,
+    /// AC-4 bis) ; `None` = suivre le réglage de la société. Pointeur logique
+    /// sans clé étrangère. Posé avec [`Self::fx_loss_account_id`], ou aucun.
+    pub fx_gain_account_id: Option<i64>,
+    /// Compte de pertes de change propre (Story 37-1), même régime que
+    /// [`Self::fx_gain_account_id`].
+    pub fx_loss_account_id: Option<i64>,
     pub version: i32,
     pub created_at: NaiveDateTime,
     pub updated_at: NaiveDateTime,
+}
+
+/// Paire de comptes de différence de change **propres** à un compte en devise
+/// (Story 37-1, AC-4 bis) : les deux ensemble, jamais un seul. Ils peuvent
+/// désigner le même compte.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OwnFxAccounts {
+    /// Compte des gains de change.
+    pub gain: i64,
+    /// Compte des pertes de change.
+    pub loss: i64,
+}
+
+/// Changement de la devise d'un compte à la mise à jour (Story 37-1, AC-4) —
+/// trois états, résolus **dans le dépôt**, sous le `FOR UPDATE` du compte.
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum CurrencyChange {
+    /// Champ absent de la requête : la devise ne change pas.
+    #[default]
+    Unchanged,
+    /// La devise principale (CHF) : `accounts.currency` passe à `NULL`.
+    Base,
+    /// Une devise étrangère, code ISO 4217 déjà normalisé (jamais `CHF`).
+    Foreign(String),
+}
+
+impl CurrencyChange {
+    /// La devise du compte après le changement, depuis la devise actuelle.
+    pub fn resolve(&self, current: Option<&str>) -> Option<String> {
+        match self {
+            Self::Unchanged => current.map(str::to_string),
+            Self::Base => None,
+            Self::Foreign(code) => Some(code.clone()),
+        }
+    }
+}
+
+/// Changement des comptes de différence de change propres d'un compte à la
+/// mise à jour (Story 37-1, AC-4 bis) — trois états, résolus dans le dépôt.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum OwnFxAccountsChange {
+    /// Champs absents de la requête : inchangés.
+    #[default]
+    Unchanged,
+    /// Par défaut : suivre le réglage de la société (les deux colonnes à `NULL`).
+    Company,
+    /// Comptes propres.
+    Own(OwnFxAccounts),
+}
+
+impl OwnFxAccountsChange {
+    /// Les comptes propres après le changement, depuis l'état actuel.
+    pub fn resolve(&self, current: Option<OwnFxAccounts>) -> Option<OwnFxAccounts> {
+        match self {
+            Self::Unchanged => current,
+            Self::Company => None,
+            Self::Own(own) => Some(*own),
+        }
+    }
+}
+
+/// D'où viennent les comptes de différence de change résolus pour un compte en
+/// devise (Story 37-1, AC-4 bis).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum FxAccountsOrigin {
+    /// Les comptes propres du compte (`accounts.fx_gain_account_id` et
+    /// `fx_loss_account_id`).
+    Own,
+    /// Le réglage de la société (`companies.fx_gain_account_id` et
+    /// `fx_loss_account_id`), défaut des comptes sans comptes propres.
+    Company,
+}
+
+/// Comptes de différence de change **résolus** pour un compte en devise
+/// (Story 37-1, AC-4 bis) — rendus par
+/// [`crate::repositories::accounts::fx_accounts_for`], seule fonction qui les
+/// choisit côté serveur.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FxAccounts {
+    /// Compte des gains de change.
+    pub gain: i64,
+    /// Compte des pertes de change.
+    pub loss: i64,
+    /// Comptes propres du compte, ou réglage de la société.
+    pub origin: FxAccountsOrigin,
+    /// Le compte en devise pour lequel la paire a été résolue — rendu par
+    /// `FX_ACCOUNT_INVALID` en `holderAccountId` quand `origin = Own`.
+    pub holder_account_id: i64,
+}
+
+impl Account {
+    /// Les comptes de différence propres du compte, s'il en porte (les deux
+    /// colonnes posées ; une seule ne se rencontre pas, `chk_accounts_fx_own_pair`).
+    pub fn own_fx_accounts(&self) -> Option<OwnFxAccounts> {
+        match (self.fx_gain_account_id, self.fx_loss_account_id) {
+            (Some(gain), Some(loss)) => Some(OwnFxAccounts { gain, loss }),
+            _ => None,
+        }
+    }
 }
 
 /// Données de création d'un compte.
@@ -256,6 +372,12 @@ pub struct NewAccount {
     pub role: Option<AccountRole>,
     /// Postabilité (Story 14-3a), `true` par défaut.
     pub postable: bool,
+    /// Devise du compte (Story 37-1), code ISO 4217 déjà normalisé (jamais
+    /// `CHF`) ; `None` = devise principale.
+    pub currency: Option<String>,
+    /// Comptes de différence de change propres (Story 37-1, AC-4 bis) ;
+    /// `None` = suivre le réglage de la société.
+    pub own_fx_accounts: Option<OwnFxAccounts>,
 }
 
 impl NewAccount {
@@ -278,6 +400,8 @@ impl NewAccount {
             parent_id,
             role: None,
             postable: true,
+            currency: None,
+            own_fx_accounts: None,
         }
     }
 
@@ -303,4 +427,10 @@ pub struct AccountUpdate {
     pub account_type: AccountType,
     pub role: Option<AccountRole>,
     pub postable: bool,
+    /// Devise (Story 37-1, AC-4) : **à la différence des champs ci-dessus**,
+    /// à trois états — absente côté API = inchangée (un client qui ne connaît
+    /// pas le champ n'efface rien).
+    pub currency: CurrencyChange,
+    /// Comptes de différence propres (Story 37-1, AC-4 bis), trois états.
+    pub own_fx_accounts: OwnFxAccountsChange,
 }

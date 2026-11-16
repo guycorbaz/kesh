@@ -16,7 +16,7 @@ use kesh_core::listing::SortDirection;
 use crate::entities::audit_log::NewAuditLogEntry;
 use crate::entities::product::{NewProduct, Product, ProductUpdate};
 use crate::errors::{DbError, map_db_error};
-use crate::repositories::audit_log;
+use crate::repositories::{accounts, audit_log};
 use crate::util::search::escape_boolean_ft;
 
 const COLUMNS: &str = "id, company_id, name, description, unit_price, vat_rate, \
@@ -145,9 +145,35 @@ fn push_where_clauses<'a>(
     }
 }
 
+/// Gardes de devise du compte de produit par défaut d'un article (Story 37-1,
+/// AC-4), dans la transaction d'écriture, **avant** tout verrou ou écriture de
+/// la ligne d'article : `companies` en partage, puis le compte lu
+/// `LOCK IN SHARE MODE` — en devise → `ACCOUNT_IN_FOREIGN_CURRENCY` ; compte de
+/// gains ou de pertes de change (société ou comptes propres) →
+/// `ACCOUNT_IS_FX_DIFFERENCE_ACCOUNT` (les gains de change ne vont pas au
+/// chiffre d'affaires). Le pré-vol de la route garde le reste (existence,
+/// type, actif).
+async fn guard_revenue_account_in_tx(
+    tx: &mut sqlx::Transaction<'_, sqlx::MySql>,
+    company_id: i64,
+    account_id: i64,
+) -> Result<(), DbError> {
+    let state =
+        accounts::lock_company_currency_in_tx(tx, company_id, accounts::CompanyLock::Share).await?;
+    accounts::refuse_foreign_currency_in_tx(tx, company_id, account_id).await?;
+    accounts::refuse_fx_account_as_revenue_in_tx(tx, company_id, &state, account_id).await
+}
+
 /// Crée un produit avec audit log atomique.
+///
+/// Story 37-1 (AC-4) : le compte de produit par défaut passe
+/// [`guard_revenue_account_in_tx`] avant l'`INSERT`.
 pub async fn create(pool: &MySqlPool, user_id: i64, new: NewProduct) -> Result<Product, DbError> {
     let mut tx = pool.begin().await.map_err(map_db_error)?;
+
+    if let Some(account_id) = new.default_revenue_account_id {
+        guard_revenue_account_in_tx(&mut tx, new.company_id, account_id).await?;
+    }
 
     let result = sqlx::query(
         "INSERT INTO products (company_id, name, description, unit_price, vat_rate, \
@@ -282,6 +308,23 @@ pub async fn update(
 ) -> Result<Product, DbError> {
     let mut tx = pool.begin().await.map_err(map_db_error)?;
 
+    // Story 37-1 (AC-4) — le compte demandé est lu sous verrou AVANT la ligne
+    // d'article ; son refus ne s'applique que si la valeur CHANGE (motif C4),
+    // jugé après le contrôle de version et le no-op.
+    let revenue_refusal = match changes.default_revenue_account_id {
+        Some(account_id) => {
+            match guard_revenue_account_in_tx(&mut tx, company_id, account_id).await {
+                Ok(()) => None,
+                Err(
+                    e @ (DbError::AccountInForeignCurrency { .. }
+                    | DbError::AccountIsFxDifferenceAccount { .. }),
+                ) => Some(e),
+                Err(e) => return Err(e),
+            }
+        }
+        None => None,
+    };
+
     let before_opt = sqlx::query_as::<_, Product>(FIND_BY_ID_SCOPED_SQL)
         .bind(id)
         .bind(company_id)
@@ -315,6 +358,13 @@ pub async fn update(
     if is_no_op_change(&before, &changes) {
         tx.rollback().await.map_err(map_db_error)?;
         return Ok(before);
+    }
+
+    if let Some(refusal) = revenue_refusal
+        && changes.default_revenue_account_id != before.default_revenue_account_id
+    {
+        tx.rollback().await.map_err(map_db_error)?;
+        return Err(refusal);
     }
 
     let rows = sqlx::query(

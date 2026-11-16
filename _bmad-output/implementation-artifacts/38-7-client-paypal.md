@@ -391,6 +391,16 @@ bornes par requête ; le passage lit `code()` ; `last_error` porte le code d'API
 - [ ] Gate : `cargo fmt`, `clippy -D warnings`, `cargo nextest` complet (le crate `kesh-providers` et `kesh-api`),
       `cargo test --workspace` en série avant `done` ; `Cargo.lock` commité si une dépendance change.
 
+## Note de version
+
+*(Texte prêt à assembler au `CHANGELOG.md` à la release.)*
+
+- **Ajouté** : le client de l'API PayPal (lecture de l'historique des transactions et des soldes), avec ses messages
+  d'erreur aux quatre locales ; Kesh ne fait que lire, il ne déclenche aucun paiement.
+
+**Compteurs** (`Cargo.lock`, nombre de crates, dépendances, registres) : recomptés depuis la source après chaque reprise
+de `main`.
+
 ## Dev Notes
 
 - **Forme du trait** : objet-safe sans `async_trait`, futur boxé comme `Mailer` (`crates/kesh-api/src/mail/mod.rs:33`
@@ -491,3 +501,5 @@ bornes par requête ; le passage lit `code()` ; `last_error` porte le code d'API
   tâche → ajouté. Vérifié conforme : renvois aux AC de 38-3b (AC-2 `MovementPage`, AC-3 variante et `"default"`, AC-4
   `Connector::history_start`), `chrono-tz` dans `kesh-providers`, `aujourdhui_zurich` hors de `kesh-providers`.
   Axes non exercés : documentation PayPal, reste de la fiche, aucune exécution.
+- 2026-11-16 — alignement sur les règles de travail à plusieurs (Sonnet) : section *Note de version* ajoutée ;
+  compteurs « recomptés après chaque reprise de `main` ». Aucun PDF ni CHANGELOG commité dans cette fiche.

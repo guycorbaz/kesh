@@ -278,6 +278,15 @@ plutôt qu'en vente, afin que les règles et les propositions des stories suivan
 - [ ] Gate : `cargo fmt`, `clippy -D warnings`, `cargo nextest` (crates `kesh-providers`, `kesh-core`), gate complet
       avant `done`.
 
+## Note de version
+
+*(Texte prêt à assembler au `CHANGELOG.md` à la release.)*
+
+- **Ajouté** : la lecture des codes d'événement PayPal (vente, frais, conversion, remboursement, litige…) et leur
+  classement en genres de mouvement, avec surcharges réglables.
+
+**Compteurs** (registres, `Cargo.lock`, tableaux de codes) : recomptés depuis la source après chaque reprise de `main`.
+
 ## Dev Notes
 
 - **Pourquoi `net = brut + frais` sans présumer le signe** : si PayPal rend les frais d'une vente négatifs (attendu,
@@ -349,3 +358,5 @@ plutôt qu'en vente, afin que les règles et les propositions des stories suivan
   à l'AC-2 de 38-3b) ; retrait de `chrono-tz` sans effet (38-8 n'écrit que l'instant UTC ; 38-3b AC-2 déclare la
   dépendance au crate) ; l'avertissement `ignore` est porté par 38-9a (lignes 94-97). Axes non exercés : manuel (écrit
   par 38-9a) ; page PayPal non relue (aucun réseau) ; aucune exécution.
+- 2026-11-16 — alignement sur les règles de travail à plusieurs (Sonnet) : section *Note de version* ajoutée ;
+  compteurs « recomptés après chaque reprise de `main` ». Aucun PDF ni CHANGELOG commité dans cette fiche.

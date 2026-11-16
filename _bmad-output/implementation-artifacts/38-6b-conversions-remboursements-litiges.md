@@ -390,6 +390,16 @@ afin que **tout mouvement qui change un solde finisse comptabilisé, sans qu'auc
       de ces écrans). Gate complet **même en cours de boucle** : `cancel_in_tx` et des dépôts sont touchés (règle
       `kesh-db` de `CLAUDE.md`).
 
+## Note de version
+
+*(Texte prêt à assembler au `CHANGELOG.md` à la release.)*
+
+- **Ajouté** : les propositions pour les conversions de devises, les remboursements et les litiges des prestataires de
+  paiement (PayPal), avec annulation d'une paire ; rien n'est écrit d'office.
+
+**Compteurs** (`LIB_ROUTES`, décomptes du manuel d'administration qui citent le nombre de routes, codes du doc-comment,
+`Cargo.lock`) : recomptés depuis la source après chaque reprise de `main`.
+
 ## Dev Notes
 
 - **Pourquoi la file ne s'écrit pas** : la moitié manquante ou l'origine arrive au passage suivant (recouvrement `overlapDays`,
@@ -506,3 +516,5 @@ afin que **tout mouvement qui change un solde finisse comptabilisé, sans qu'auc
   de la moitié créditée d'une conversion (Q-6b-1), file calculée ; alignée le même jour sur les fiches sœurs : 38-5
   (`default_vat_at`, traitements), 38-8 (liens mutuels des moitiés, `review_reason = 'other'` d'une paire ambiguë,
   `refund_origin_missing` calculé et non posé — écart signalé).
+- 2026-11-16 — alignement sur les règles de travail à plusieurs (Sonnet) : section *Note de version* ajoutée ;
+  compteurs « recomptés après chaque reprise de `main` ». Aucun PDF ni CHANGELOG commité dans cette fiche.

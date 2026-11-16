@@ -379,14 +379,14 @@ d'imputation (38-6) reposent sur un relevé complet et vérifiable.
      `AppError` (aucune ne sort en statut HTTP), libellées au catalogue `provider-error-*` que 38-7 AC-7 ouvre pour
      `lastError`/`errorCode` ; ceux de `app_code()` (`PROVIDER_AUTH_FAILED` … `PROVIDER_REQUEST_REJECTED`) reçoivent
      leurs messages en 38-7, qui les rend.
-   - **Manuel** : aucun écran ici ; **38-9a** (AC-11, manuel d'administration, PDF contrôlé aplati) reçoit de cette
+   - **Manuel** : aucun écran ici ; **38-9a** (AC-11, manuel d'administration, `.tex` seul, PDF non commité) reçoit de cette
      story les faits à écrire : passage quotidien vérifié **toutes les heures**, lancé 24 h après le **début** du
      dernier passage (un échec attend donc le lendemain, sauf « Télécharger maintenant ») et jamais en mode test ;
      passage **asynchrone** (bouton → suivi) ; un passage interrompu (redémarrage, panique) passe « interrompu » ; un
      passage `running` venu d'une **sauvegarde importée** bloque la connexion **6 h** au plus ; recouvrement de 3 jours
      (`overlapDays`) ; date de départ bornée par l'historique (`truncated_from`) ; devise d'un compte archivé ou clos
      ni téléchargée ni proposée ; contrôle de complétude et ses états. Liste au Change Log.
-   - **CHANGELOG** : une ligne de l'entrée non datée de l'epic. **MCP** : aucun outil neuf (E23).
+   - **Note de version** : section de la fiche (assemblée au `CHANGELOG.md` à la release). **MCP** : aucun outil neuf (E23).
 
 ## Tâches / sous-tâches
 
@@ -403,9 +403,20 @@ d'imputation (38-6) reposent sur un relevé complet et vérifiable.
       `truncated_from`, fenêtre vide), comptes élus, correspondance des colonnes, pages, en-têtes (compte par page,
       finalisation à l'échec), reprise, interblocage, échec (`code()`, `app_code()`), statut tardif, charge.
 - [ ] **T5 — Planification et route `fetch`** (AC-5) ; **lecture** (AC-6) ; **soldes et complétude** (AC-7).
-- [ ] **T6 — Registres, audit, i18n, CHANGELOG** (AC-8).
+- [ ] **T6 — Registres, audit, i18n, Note de version** (AC-8).
 - [ ] **T7 — Gates** : gate complet (dépôts : ciblage interdit) sur base remise à zéro, `scripts/gate-ci.sh` (la CI
       lance `cargo test` par binaire), E2E complet au dernier commit de code.
+
+## Note de version
+
+*(Texte prêt à assembler au `CHANGELOG.md` à la release.)*
+
+- **Ajouté** : le passage de téléchargement des mouvements d'un prestataire de paiement — quotidien (vérifié toutes les
+  heures), lançable à la main, asynchrone, avec recouvrement de trois jours, contrôle de complétude et reprise d'un
+  passage interrompu.
+
+**Compteurs** (`LIB_ROUTES`, nombre de crates, `Cargo.lock`, version des `Cargo.toml`, registres) : recomptés depuis la
+source après chaque reprise de `main`.
 
 ## Notes de développement
 
@@ -524,3 +535,5 @@ d'imputation (38-6) reposent sur un relevé complet et vérifiable.
   384-395`. Axes non exercés : documentation PayPal (`as_of_time`), reste de la fiche, aucune exécution. Inter-fiches
   signalés, non appliqués : 38-9a — motifs `opening_unavailable` (dont `span`) et jointure `; ` dans `errorDetail`,
   libellé et état « contrôle non disponible » aux quatre locales.
+- 2026-11-16 — alignement sur les règles de travail à plusieurs (Sonnet) : CHANGELOG remplacé par une section *Note de
+  version* ; PDF du manuel non commité ; compteurs « recomptés après chaque reprise de `main` ».
