@@ -4,7 +4,8 @@
 //! 1. Vérifie `current_user.company_id > 0` (AC #19 défensif).
 //! 2. Charge la `Company` (filename + manifest).
 //! 3. Résout `locale_bcp47` via `util::map_language_to_bcp47`.
-//! 4. Calcule le filename `kesh-export-{slug}-{YYYY-MM-DD}.zip` (UTC).
+//! 4. Calcule le filename `kesh-export-{slug}-{YYYY-MM-DD}.zip` (date du jour
+//!    de Zurich, Story 35-5b).
 //! 5. Crée le tracing span `global_export` (fields placeholder
 //!    `tracing::field::Empty` populés post-render).
 //! 6. Appelle `exports::global::build_global_export(pool, company, locale)`.
@@ -19,7 +20,7 @@ use axum::{
     http::{StatusCode, header},
     response::Response,
 };
-use chrono::{NaiveDate, Utc};
+use chrono::NaiveDate;
 use sqlx::MySqlPool;
 
 use kesh_db::entities::AUDIT_ENTITY_ID_NONE;
@@ -54,8 +55,9 @@ pub async fn export_global(
     // Decision §locale-source — mapping enum DB SCREAMING → BCP-47 régional Suisse.
     let locale_bcp47 = crate::util::map_language_to_bcp47(company.accounting_language.as_str());
 
-    // Decision §filename — `kesh-export-{slug}-{YYYY-MM-DD}.zip` (UTC, L13).
-    let export_date = Utc::now().date_naive();
+    // Decision §filename — `kesh-export-{slug}-{YYYY-MM-DD}.zip`, la date du
+    // jour de Zurich (Story 35-5b, #929 ; L13 la voulait en UTC).
+    let export_date = state.horloge.aujourd_hui();
     let filename = build_global_filename(&company.name, export_date);
 
     // Tracing span — fields populated post-render via `span.record(...)`
@@ -115,7 +117,8 @@ pub async fn export_global(
 ///
 /// Signature distincte de `build_filename` Story 9-2a (qui prend une
 /// `ReportPeriod`) : pour l'export global, le scope est `"all"` donc seule
-/// la date d'export figure dans le filename. La date est en **UTC** (L13).
+/// la date d'export figure dans le filename. La date est celle du jour **à
+/// Zurich**, lue par la route sur l'horloge de l'état (Story 35-5b, #929).
 ///
 /// `slugify(company_name, "company")` truncate à 20 chars (Story 9-2a)
 /// → filename composé ~47 chars max.

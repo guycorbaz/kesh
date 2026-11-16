@@ -16,6 +16,7 @@
 		JournalCode,
 	} from '$lib/features/invoices/invoices.types';
 	import {
+		formatBlocks,
 		previewInvoiceNumber,
 		validateDescriptionTemplate,
 		validateFormatTemplate,
@@ -47,6 +48,8 @@
 	let loadError = $state('');
 
 	let format = $state('');
+	// Story 35-1 (#932, D3) : le format des avoirs, lu et envoyé.
+	let creditNoteFormat = $state('');
 	let supplierFormat = $state('');
 	let descriptionTemplate = $state('');
 	let receivableId = $state<number | null>(null);
@@ -143,9 +146,31 @@
 		},
 	]);
 
+	// Story 35-1 (#932, D1, D2) — le compteur est obligatoire, mais n'est jugé que si le
+	// format CHANGE : `formatBlocks` est la seule valeur que lisent l'aperçu, le champ,
+	// `save()` et le bouton. Un format chargé sans compteur, laissé tel quel, n'empêche pas
+	// d'enregistrer autre chose ; il reçoit une aide non bloquante (`…NoSeqHint`).
 	let formatValidation = $derived(validateFormatTemplate(format));
+	let formatBlocked = $derived(
+		formatBlocks(formatValidation, format, settings?.invoiceNumberFormat ?? ''),
+	);
+	let formatNoSeqHint = $derived(!formatBlocked && formatValidation.code === 'NO_SEQ');
 	let formatPreview = $derived(
-		formatValidation.ok ? previewInvoiceNumber(format, 2026, '2026', 1) : '',
+		formatBlocked ? '' : previewInvoiceNumber(format, 2026, '2026', 1),
+	);
+	let creditNoteFormatValidation = $derived(validateFormatTemplate(creditNoteFormat));
+	let creditNoteFormatBlocked = $derived(
+		formatBlocks(
+			creditNoteFormatValidation,
+			creditNoteFormat,
+			settings?.creditNoteNumberFormat ?? '',
+		),
+	);
+	let creditNoteFormatNoSeqHint = $derived(
+		!creditNoteFormatBlocked && creditNoteFormatValidation.code === 'NO_SEQ',
+	);
+	let creditNoteFormatPreview = $derived(
+		creditNoteFormatBlocked ? '' : previewInvoiceNumber(creditNoteFormat, 2026, '2026', 1),
 	);
 	// Story 33-1b (#926) — le numéro interne a une forme fixe (`validate_numbering_template`).
 	let supplierFormatValidation = $derived(
@@ -174,6 +199,7 @@
 			settings = s;
 			accounts = a;
 			format = s.invoiceNumberFormat;
+			creditNoteFormat = s.creditNoteNumberFormat;
 			supplierFormat = s.supplierInternalNumberFormat;
 			descriptionTemplate = s.journalEntryDescriptionTemplate;
 			receivableId = s.defaultReceivableAccountId;
@@ -206,9 +232,16 @@
 	}
 
 	async function save() {
-		if (!formatValidation.ok) {
+		if (formatBlocked) {
 			notifyError(
 				formatValidation.error ?? i18nMsg('settings-invoicing-format-invalid', 'Format invalide'),
+			);
+			return;
+		}
+		if (creditNoteFormatBlocked) {
+			notifyError(
+				creditNoteFormatValidation.error ??
+					i18nMsg('settings-invoicing-format-invalid', 'Format invalide'),
 			);
 			return;
 		}
@@ -230,6 +263,7 @@
 		try {
 			const updated = await updateInvoiceSettings({
 				invoiceNumberFormat: format,
+				creditNoteNumberFormat: creditNoteFormat,
 				supplierInternalNumberFormat: supplierFormat,
 				defaultReceivableAccountId: receivableId,
 				defaultRevenueAccountId: revenueId,
@@ -259,6 +293,7 @@
 						const fresh = await getInvoiceSettings();
 						settings = fresh;
 						format = fresh.invoiceNumberFormat;
+						creditNoteFormat = fresh.creditNoteNumberFormat;
 						supplierFormat = fresh.supplierInternalNumberFormat;
 						descriptionTemplate = fresh.journalEntryDescriptionTemplate;
 						receivableId = fresh.defaultReceivableAccountId;
@@ -318,18 +353,69 @@
 				<label class="mb-1 block text-sm font-medium" for="format">
 					{i18nMsg('settings-invoicing-format-label', 'Format de numérotation')}
 				</label>
-				<Input id="format" bind:value={format} placeholder="F-{'{YEAR}'}-{'{SEQ:04}'}" />
+				<Input
+					id="format"
+					data-testid="settings-invoice-number-format"
+					bind:value={format}
+					placeholder="F-{'{YEAR}'}-{'{SEQ:04}'}"
+				/>
 				<p class="mt-1 text-xs text-text-muted">
-					{i18nMsg('settings-invoicing-format-help', 'Placeholders : {YEAR}, {FY}, {SEQ}, {SEQ:NN}')}
+					{i18nMsg(
+						'settings-invoicing-format-help',
+						'Placeholders : {YEAR}, {FY}, {SEQ}, {SEQ:NN} ; le compteur, {SEQ} ou {SEQ:NN}, est obligatoire',
+					)}
 					{i18nMsg('settings-invoicing-seq-range', '(NN entre 1 et 10)')}
 				</p>
-				{#if formatValidation.ok}
-					<p class="mt-1 text-sm">
+				{#if !formatBlocked}
+					<p class="mt-1 text-sm" data-testid="settings-format-preview">
 						{i18nMsg('settings-invoicing-format-preview', 'Aperçu')} :
 						<span class="font-mono">{formatPreview}</span>
 					</p>
+					{#if formatNoSeqHint}
+						<p class="mt-1 text-sm text-amber-800" data-testid="settings-format-noseq-hint">
+							{formatValidation.error}
+						</p>
+					{/if}
 				{:else}
-					<p class="mt-1 text-sm text-destructive">{formatValidation.error}</p>
+					<p class="mt-1 text-sm text-destructive" data-testid="settings-format-error">
+						{formatValidation.error}
+					</p>
+				{/if}
+			</div>
+
+			<div>
+				<label class="mb-1 block text-sm font-medium" for="credit-note-format">
+					{i18nMsg('settings-invoicing-credit-note-format-label', 'Format des avoirs')}
+				</label>
+				<Input
+					id="credit-note-format"
+					data-testid="settings-credit-note-number-format"
+					bind:value={creditNoteFormat}
+					placeholder="AV-{'{YEAR}'}-{'{SEQ:04}'}"
+				/>
+				<p class="mt-1 text-xs text-text-muted">
+					{i18nMsg(
+						'settings-invoicing-credit-note-format-help',
+						"Mêmes placeholders que le format de numérotation des factures ; le compteur est obligatoire. S'applique aux avoirs à venir : ceux déjà émis ne changent pas.",
+					)}
+				</p>
+				{#if !creditNoteFormatBlocked}
+					<p class="mt-1 text-sm" data-testid="settings-credit-note-format-preview">
+						{i18nMsg('settings-invoicing-format-preview', 'Aperçu')} :
+						<span class="font-mono">{creditNoteFormatPreview}</span>
+					</p>
+					{#if creditNoteFormatNoSeqHint}
+						<p
+							class="mt-1 text-sm text-amber-800"
+							data-testid="settings-credit-note-format-noseq-hint"
+						>
+							{creditNoteFormatValidation.error}
+						</p>
+					{/if}
+				{:else}
+					<p class="mt-1 text-sm text-destructive" data-testid="settings-credit-note-format-error">
+						{creditNoteFormatValidation.error}
+					</p>
 				{/if}
 			</div>
 
@@ -614,7 +700,8 @@
 				type="submit"
 				data-testid="settings-invoicing-save"
 				disabled={submitting ||
-					!formatValidation.ok ||
+					formatBlocked ||
+					creditNoteFormatBlocked ||
 					!supplierFormatValidation.ok ||
 					!descriptionValidation.ok}
 			>

@@ -203,7 +203,7 @@ pub async fn detail(
     let company =
         crate::helpers::company_for_ids(lecture.pool(), acces.company_id(), acces.user_id())
             .await?;
-    supplier_invoices::get_settlement_view(lecture.pool(), company.id, id)
+    supplier_invoices::get_settlement_view(lecture.pool(), company.id, id, lecture.aujourd_hui())
         .await?
         .ok_or(AppError::Database(DbError::NotFound))
 }

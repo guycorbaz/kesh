@@ -7,7 +7,7 @@
  * `login({userId, username, role, expiresIn})`.
  */
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { authState } from './auth.svelte';
 import { apiHealth } from '$lib/shared/utils/api-health.svelte';
 
@@ -406,5 +406,98 @@ describe('authState (Story 10-5)', () => {
 		await authState.hydrate(); // 2e appel — guard _hydrated empêche le re-fetch
 
 		expect(mockFetch).toHaveBeenCalledOnce();
+	});
+});
+
+// Story 36-5 (#931, KF-056) — le maintien de session pendant une restauration :
+// borné par son échéance, levé par `logout()` (avant sa requête) et
+// `clearSession()`, jamais par `login()`.
+describe('authState — maintien de restauration (Story 36-5)', () => {
+	afterEach(() => {
+		authState.releaseRestoreHold();
+		vi.useRealTimers();
+		vi.unstubAllGlobals();
+	});
+
+	it('AC5 bis (a) : holdForRestore(B) — vrai à pose + B − 1 ms, faux à pose + B', () => {
+		vi.useFakeTimers({ toFake: ['Date'] });
+		vi.setSystemTime(1_000_000);
+		expect(authState.restoreHold).toBe(false);
+		authState.holdForRestore(300_000);
+		vi.setSystemTime(1_299_999);
+		expect(authState.restoreHold).toBe(true);
+		vi.setSystemTime(1_300_000);
+		expect(authState.restoreHold).toBe(false);
+	});
+
+	it('AC5 bis (a) : une seconde pose plus courte remplace la première', () => {
+		vi.useFakeTimers({ toFake: ['Date'] });
+		vi.setSystemTime(0);
+		authState.holdForRestore(3_600_000);
+		authState.holdForRestore(60_000);
+		vi.setSystemTime(59_999);
+		expect(authState.restoreHold).toBe(true);
+		vi.setSystemTime(60_000);
+		expect(authState.restoreHold).toBe(false);
+	});
+
+	it('releaseRestoreHold() lève le maintien', () => {
+		authState.holdForRestore(60_000);
+		expect(authState.restoreHold).toBe(true);
+		authState.releaseRestoreHold();
+		expect(authState.restoreHold).toBe(false);
+	});
+
+	it('revue P1, E1-2 : shortenRestoreHold() ramène l’échéance à au plus maintenant + durée', () => {
+		vi.useFakeTimers({ toFake: ['Date'] });
+		vi.setSystemTime(0);
+		authState.holdForRestore(3_600_000);
+		vi.setSystemTime(10_000);
+		authState.shortenRestoreHold(60_000);
+		vi.setSystemTime(69_999);
+		expect(authState.restoreHold).toBe(true);
+		vi.setSystemTime(70_000);
+		expect(authState.restoreHold).toBe(false);
+	});
+
+	it('revue P1, E1-2 : shortenRestoreHold() n’allonge jamais, et ne pose rien sans maintien', () => {
+		vi.useFakeTimers({ toFake: ['Date'] });
+		vi.setSystemTime(0);
+		authState.holdForRestore(60_000);
+		vi.setSystemTime(30_000);
+		authState.shortenRestoreHold(3_600_000);
+		vi.setSystemTime(59_999);
+		expect(authState.restoreHold).toBe(true);
+		vi.setSystemTime(60_000);
+		expect(authState.restoreHold).toBe(false);
+		authState.releaseRestoreHold();
+		authState.shortenRestoreHold(60_000);
+		expect(authState.restoreHold).toBe(false);
+	});
+
+	it('AC6 : clearSession() remet le maintien à zéro', () => {
+		authState.holdForRestore(60_000);
+		authState.clearSession({ broadcast: false });
+		expect(authState.restoreHold).toBe(false);
+	});
+
+	it('AC6 : logout() le remet à zéro dès avant la fin de sa requête, et même si elle échoue', async () => {
+		let rejeter: (e: unknown) => void = () => {};
+		vi.stubGlobal(
+			'fetch',
+			vi.fn(() => new Promise((_resolve, reject) => (rejeter = reject))),
+		);
+		authState.holdForRestore(60_000);
+		const enCours = authState.logout();
+		expect(authState.restoreHold).toBe(false);
+		rejeter(new Error('réseau'));
+		await expect(enCours).resolves.toBeUndefined();
+		expect(authState.restoreHold).toBe(false);
+	});
+
+	it('AC6 : login() ne touche pas le maintien (le renouvellement passe par login())', () => {
+		authState.holdForRestore(60_000);
+		authState.login({ userId: '1', username: 'u', role: 'Admin', expiresIn: 900 }, { broadcast: false });
+		expect(authState.restoreHold).toBe(true);
 	});
 });

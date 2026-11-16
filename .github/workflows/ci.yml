@@ -3,8 +3,10 @@ name: CI
 on:
   push:
     branches: [main]
+  # `epic/**` : une PR de story vers la branche de son epic passe la même CI qu'une PR vers
+  # `main` (CLAUDE.md § « Travailler à plusieurs développeurs », 2026-11-15).
   pull_request:
-    branches: [main]
+    branches: [main, 'epic/**']
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -125,7 +127,14 @@ jobs:
       - name: Install mold linker
         run: sudo apt-get update && sudo apt-get install -y mold
 
+      # Cache lu par toutes les exécutions, écrit depuis `main` seulement : le cache du
+      # dépôt est plafonné à 10 Go (8,2 occupés le 2026-11-15), et chaque PR ou branche
+      # d'epic qui écrirait le sien en évincerait d'autres (CLAUDE.md § « Travailler à
+      # plusieurs développeurs »). Une PR lit le cache de sa base, puis celui de `main`.
       - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: kesh-backend
+          save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - name: Wait for MariaDB
         run: |

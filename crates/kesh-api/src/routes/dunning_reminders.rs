@@ -162,8 +162,13 @@ pub async fn list_reminders(
     State(state): State<AppState>,
     Extension(current_user): Extension<CurrentUser>,
 ) -> Result<Json<ReminderListResponse>, AppError> {
-    let candidates =
-        dunning_eligibility::list_reminder_candidates(&state.pool, current_user.company_id).await?;
+    // Story 35-5b (#929) — l'éligibilité se juge au jour de Zurich.
+    let candidates = dunning_eligibility::list_reminder_candidates(
+        &state.pool,
+        current_user.company_id,
+        state.horloge.aujourd_hui(),
+    )
+    .await?;
 
     // Groupage par contact (les candidates sont déjà ordonnées par nom de contact).
     let mut groups: Vec<ContactGroup> = Vec::new();

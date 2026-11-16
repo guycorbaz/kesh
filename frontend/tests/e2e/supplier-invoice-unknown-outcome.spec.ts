@@ -21,6 +21,7 @@ import {
 	disposeContextSafe,
 } from './helpers/test-state';
 import { PNG_SANS_QR, deposit, importViaApi, token, uniqueCopy } from './helpers/inbox';
+import { todayInZurich } from './helpers/api-fixtures';
 
 test.beforeAll(async () => {
 	await seedTestState('with-company');
@@ -85,7 +86,7 @@ async function validatedSupplierInvoice(page: Page): Promise<{ id: number; cashI
 			data: {
 				contactId: (await sup.json()).id,
 				supplierInvoiceNumber: `E348-${Date.now()}`,
-				invoiceDate: new Date().toISOString().slice(0, 10),
+				invoiceDate: todayInZurich(),
 				lines: [
 					{
 						description: 'Fourniture',

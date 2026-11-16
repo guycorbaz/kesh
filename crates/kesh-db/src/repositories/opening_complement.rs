@@ -19,7 +19,7 @@
 //! - **(a)** le premier jour du premier exercice, s'il est ouvert et que ce jour
 //!   est **après** `books_locked_through` — le compte oublié faisait partie de
 //!   l'ouverture ;
-//! - **(b)** sinon **aujourd'hui** (date UTC, passée en paramètre), dans
+//! - **(b)** sinon **aujourd'hui** (le jour de Zurich, passé en paramètre), dans
 //!   l'exercice ouvert qui la couvre — une régularisation ;
 //! - **(c)** sinon refus nommé.
 //!
@@ -716,7 +716,15 @@ pub async fn create_opening_complement_in_tx(
             })
             .collect(),
     };
-    journal_entries::create_in_tx(tx, date.fiscal_year_id, user_id, new, true).await
+    // Story 35-8a2 (#431) : au nom de l'utilisateur (`AConvertir`, Epic 36).
+    journal_entries::create_in_tx(
+        tx,
+        date.fiscal_year_id,
+        crate::entities::audit_log::Acteur::utilisateur(user_id),
+        new,
+        true,
+    )
+    .await
 }
 
 /// Refus par compte, **par catégorie** dans l'ordre de priorité, puis le plus

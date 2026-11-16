@@ -297,6 +297,9 @@ mod tests {
             smtp_ready: false,
             test_mock_mailer: None,
             backup_lock: std::sync::Arc::new(tokio::sync::Mutex::new(())),
+            // Story 35-5a0 — un `mod tests` de `src` ne lit pas la variable
+            // d'instant des tests : horloge arrêtée sur l'heure réelle.
+            horloge: std::sync::Arc::new(kesh_core::horloge::HorlogeFixe(chrono::Utc::now())),
         }
     }
 

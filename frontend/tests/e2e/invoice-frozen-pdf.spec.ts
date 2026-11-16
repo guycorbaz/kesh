@@ -9,6 +9,7 @@ import {
 	createContactWithAddressViaApi,
 	createAndValidateInvoiceViaApi,
 	ensurePrimaryBankAccountViaApi,
+	todayInZurich,
 } from './helpers/api-fixtures';
 
 /**
@@ -85,7 +86,7 @@ test.describe('PDF figé', () => {
 			const avant = await emis.body();
 
 			const cn = await ctx.post('/api/v1/credit-notes', {
-				data: { invoiceId, date: new Date().toISOString().slice(0, 10) },
+				data: { invoiceId, date: todayInZurich() },
 			});
 			expect(cn.ok(), `create credit note failed: ${cn.status()}`).toBeTruthy();
 			const inv = await ctx.get(`/api/v1/invoices/${invoiceId}`);

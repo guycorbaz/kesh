@@ -9,6 +9,7 @@
 //! Pré-requis : MariaDB démarré.
 
 use chrono::NaiveDate;
+use kesh_db::entities::audit_log::Acteur;
 use kesh_db::entities::journal_entry::{Journal, NewJournalEntry, NewJournalEntryLine};
 use kesh_db::repositories::journal_entries;
 use kesh_db::test_fixtures::{SeededCompany, seed_accounting_company};
@@ -39,7 +40,7 @@ async fn post(
     journal_entries::create(
         pool,
         fy,
-        seeded.admin_user_id,
+        Acteur::utilisateur(seeded.admin_user_id),
         NewJournalEntry {
             company_id: seeded.company_id,
             entry_date: date,

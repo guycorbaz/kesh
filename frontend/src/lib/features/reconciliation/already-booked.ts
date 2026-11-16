@@ -5,7 +5,8 @@
  * Le serveur compte, pour chaque transaction en attente, ce qui lui ressemble déjà aux livres
  * (`alreadyBooked`, `GET /reconciliation/proposals`) ; ce module en tire **le texte de
  * l'avertissement** de la ligne et **la condition** qui fait demander confirmation avant
- * *Accepter*, *Écriture manuelle* et *Éclater*. Une seule condition pour les deux : une ligne
+ * *Accepter*, *Écriture manuelle*, *Éclater* et — depuis la Story 35-4 (#1023) — *Rejeter*.
+ * Une seule condition pour les deux : une ligne
  * est signalée si et seulement si elle porte un avertissement.
  *
  * Rien n'est refusé, rattaché ni rejeté d'office (règle « un appariement automatique propose,

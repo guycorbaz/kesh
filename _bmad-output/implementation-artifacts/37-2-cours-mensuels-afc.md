@@ -111,7 +111,7 @@ cours sans saisie.
 - FR-37-2-1 — La migration crée deux tables système — `_kesh_fetched_exchange_rates` (dernière valeur publiée par source, devise, genre et date) et `_kesh_exchange_rate_fetch` (état de la dernière récupération, codes d'erreur classés) — et la table applicative `exchange_rates` (cours retenu par la société et sa `source`, au format seul ; une source autre que `afc` se lit sans erreur et se traite comme `manual`) (AC-1).
 - FR-37-2-2 — `parse_monthly_rates` et `parse_daily_rates` lisent le XML de l'AFC/OFDF par noms locaux, par une seule analyse des devises ; `rate_per_unit = published_rate / published_unit`, arrondi à 10 décimales ; une devise invalide ou hors bornes est écartée sans bloquer les autres ; une seule fonction publique des bornes d'un cours (> 0, ≤ 10 décimales, ≤ 10⁶) sert aussi le `PUT` d'un cours, 37-3a et 37-5 (AC-2).
 - FR-37-2-3 — Une source de cours (`RateSource`, `fetch_month`, `fetch_day`) est portée par `AppState` ; une récupération écrit la valeur publiée par la règle (a) insérée, (b) confirmée, (c) corrigée et remplacée (`first_fetched_at` jamais avancé), en une transaction par mois ou par jour, et **ne modifie jamais une ligne existante d'`exchange_rates`**, ni `manual` ni `afc` (AC-3).
-- FR-37-2-4 — Les cours publiés utiles d'un exercice multi-devises se copient dans `exchange_rates`, pour les seules devises des comptes de la société (archivés compris), par insertion seule (une ligne présente n'est jamais modifiée ; une course entre deux copies est rattrapée sur l'unicité, jamais en 500), sans audit propre : à chaque récupération, à la création ou au passage d'un exercice en multi-devises, au changement de genre et quand un compte reçoit une devise — jamais à l'activation ; la société ne lit que `exchange_rates` (AC-3 bis).
+- FR-37-2-4 — Les cours publiés utiles d'un exercice multi-devises se copient dans `exchange_rates`, pour les seules devises des comptes de la société (archivés compris), par insertion seule (une ligne présente n'est jamais modifiée ; une course entre deux copies est rattrapée sur l'unicité, jamais en 500), sans audit propre : à chaque récupération, à la création d'un exercice multi-devises, au changement de genre et quand un compte reçoit une devise — jamais à l'activation ; la société ne lit que `exchange_rates` (AC-3 bis).
 - FR-37-2-5 — La récupération automatique ne vise que les exercices multi-devises ouverts, mois et jours utiles seulement : quotidienne tant que le mois courant ou le mois suivant manque, puis en pause jusqu'au plus tôt de « date d'obtention + 24 jours » et du 25 du mois obtenu, sans reprendre avant le 1er de ce mois (la pause peut donc dépasser 24 jours, le réveil ne passe jamais le 25), et jusqu'au 1er du mois suivant si ce mois n'est couvert par aucun exercice multi-devises ouvert ; lancée aussi à la connexion (hors le seul mois suivant) ; chaque tour revérifie en plus le mois courant, hors plafond, sans jamais déclencher un tour ni changer le réveil ; ni tâche ni déclenchement en mode test ; dates en Europe/Zurich (AC-4).
 - FR-37-2-6 — Le cours effectif est unique : le cours retenu par la société, avec sa source, lu par une seule fonction de dépôt ; `GET /exchange-rates`, `GET /exchange-rates/status`, `GET /exchange-rates/lookup` (lecture seule, 404 `RATE_UNAVAILABLE` à forme unique) et le tableau annuel `GET /fiscal-years/{id}/exchange-rates` le rendent ; `POST /exchange-rates/fetch` récupère un mois (≤ mois suivant) ou un jour (strictement passé), 404 `RATE_NOT_PUBLISHED`, 503 `RATE_SOURCE_UNAVAILABLE` sans bandeau dégradé, jamais 500 ni 502 ; toutes ces routes rendent 409 `MULTI_CURRENCY_DISABLED` en mono-devise, dans l'ordre des refus de l'AC-5 (AC-5).
 - FR-37-2-7 — L'écran *Paramètres → Cours de change* montre un tableau annuel par exercice multi-devises, une colonne par mois quelle que soit la durée, plus Ouverture et Clôture : une valeur par case, modifiable, avec la mention de sa source et de la valeur publiée et le ↑ ; choix des deux genres et dialogue de l'exercice suivant ; « Récupérer les cours manquants » et « Revérifier les cours publiés » ; exercice clos et rôle Consultation en lecture seule (« Récupérer » reste offert sur un exercice clos) ; bandeau des corrections à acquitter (AC-6).
@@ -219,7 +219,7 @@ cours sans saisie.
      0.17.5 restent tels quels) ; la phase 5 de `scripts/recette-montee.sh` (import du `.keshbackup` de l'image
      précédente, 200 exigé, `:651`) **se joue** à la release ; le test de 37-1 AC-6 (sauvegarde 0.17.6 réimportée)
      reste un test d'acceptation, et cette story y ajoute l'absence de la table (aucun cours retenu après l'import ;
-     ils se recopient des cours récupérés au passage en multi-devises, AC-3 bis). R1 vaut pour la table sous son nom
+     ils se recopient des cours récupérés quand un compte reçoit une devise ou qu'un exercice multi-devises se crée, AC-3 bis). R1 vaut pour la table sous son nom
      neuf : l'entrée de la liste close est `Absence::Table("exchange_rates")`, jamais l'ancien nom.
      Test ici : `registry_entries_are_within_import_window` (`post_restore.rs:939`) vert **avec** la table créée — c'est
      lui qui rougirait si la table manquait à la liste ;
@@ -390,8 +390,8 @@ cours sans saisie.
      inconnue) ; écriture en **une transaction** par mois ou par jour récupéré : les valeurs publiées dans
      `_kesh_fetched_exchange_rates` (`source = 'afc'`), puis la **copie** dans `exchange_rates` (AC-3 bis) ; un échec
      n'écrit aucun cours. La transaction passe sous `kesh_db::retry::retry_on_deadlock` (la copie prend `companies` en
-     partage par sa clé étrangère et lit `accounts` en partage par le filtre A24 : cycle possible avec une bascule de
-     37-1, qui tient `companies` `FOR UPDATE` puis copie elle aussi dans `exchange_rates`, ou avec une route de compte
+     partage par sa clé étrangère et lit `accounts` en partage par le filtre A24 : cycle possible avec une route
+     d'exercice qui copie elle aussi dans `exchange_rates` (création d'un exercice multi-devises, `PUT /rate-kinds`), ou avec une route de compte
      qui tient le compte `FOR UPDATE` puis copie, AC-3 bis). **Règle d'écriture de la valeur publiée (U1, CR-5 —
      remplace la règle S6 de CR-3, qui gardait à part une valeur republiée)**, par devise valide, les lignes déjà
      présentes du mois ou du jour lues `FOR UPDATE` dans la transaction : (a) absente → insérée (`fetched_at` =
@@ -439,7 +439,6 @@ cours sans saisie.
      - à la **création** d'un exercice multi-devises (37-1 AC-3 bis, `fiscal_years::create` ; les deux autres chemins
        ne créent pas d'exercice multi-devises : l'assistant crée la société mono-devise, `create_for_seed` sert la
        démonstration) ;
-     - au **passage d'un exercice en multi-devises** (`PUT /fiscal-years/{id}/currency-mode`, 37-1 AC-3 bis) ;
      - au **changement de genre** d'ouverture ou de clôture (`PUT /fiscal-years/{id}/rate-kinds`, AC-5), pour les
        unités neuves de l'exercice et, si U4 s'applique, de l'exercice suivant ;
      - quand un **compte reçoit une devise** (A24 ; `accounts::create` avec une devise, `accounts::update` qui passe un
@@ -449,33 +448,38 @@ cours sans saisie.
      **Pas à l'activation** du mode multi-devises (37-1 AC-3, CR5-P1-2) : la copie y serait vide par construction —
      tant que la société est mono-devise, aucun compte, archivé compris, ne porte de devise ;
      `companies::update_currency_settings` n'appelle pas la copie.
-     Ces quatre derniers appels se font **dans la transaction** de la route de 37-1 ou de cette story, après ses
-     verrous (l'`INSERT` prend `companies` en partage par sa clé étrangère : la route tient déjà `companies`) ;
+     Ces trois derniers appels se font **dans la transaction** de la route de 37-1 ou de cette story, après ses
+     verrous (l'`INSERT` prend `companies` en partage par sa clé étrangère : `accounts::create`, `accounts::update` et
+     `fiscal_years::create` la tiennent déjà — en partage, ou en exclusif pour un geste de compte qui porte des comptes
+     propres —, 37-1 AC-4, AC-4 bis et AC-3 bis ; `PUT /rate-kinds` la prend là, après
+     l'exercice `FOR UPDATE`, AC-5 *Rejeu*) ;
      le `SELECT` de l'`INSERT … SELECT` pose sous REPEATABLE READ des verrous **partagés** sur les lignes lues — celles
      de `_kesh_fetched_exchange_rates` et, par le filtre A24, celles d'`accounts` de la société : ce n'est **pas** une
      lecture sans verrou. Elle peut croiser une récupération, qui tient ses lignes `_kesh_fetched_exchange_rates`
-     `FOR UPDATE` puis lit `accounts` et prend `companies` en partage : cycle avec une route d'exercice qui tient
-     `companies` `FOR UPDATE`, ou avec une route de compte qui tient le compte `FOR UPDATE`. Les deux côtés sont
+     `FOR UPDATE` puis lit `accounts` et prend `companies` en partage : cycle avec une route d'exercice qui copie
+     elle aussi (création d'un exercice multi-devises, `PUT /rate-kinds` : mêmes clés uniques de `exchange_rates`),
+     ou avec une route de compte qui tient le compte `FOR UPDATE`. Les deux côtés sont
      rejoués : la récupération et les routes d'exercice sous `kesh_db::retry::retry_on_deadlock`, `accounts::create`
      et `accounts::update` sous `crate::retry::retry_app_on_deadlock` (37-1 AC-4 ; AC-5). Les
      routes de 37-1 sont développées avant cette table : **cette story ajoute l'appel** dans
-     `fiscal_years::create`, `fiscal_years::set_currency_mode`, `accounts::create` et `accounts::update`, et le
-     détail `copied` à leur audit (renvoi écrit en 37-1 AC-3 bis et AC-4).
-   - **Désactivation du multi-devises (A27)** : elle ne vide pas `exchange_rates` (37-1 AC-3) ; les lignes restent,
-     inertes (aucune route de cours n'est ouverte en mono-devise, 409 `MULTI_CURRENCY_DISABLED`), et une réactivation
-     les retrouve telles quelles (elle ne copie rien ; les comptes qui recevront une devise copieront ce qui manque).
+     `fiscal_years::create`, `accounts::create` et `accounts::update`, et le
+     détail `copied` à leur audit (renvoi écrit en 37-1 AC-3 bis et AC-4). *(CR-7 : plus de passage d'un exercice
+     en multi-devises ni de désactivation — A27 retiré.)*
    - Rien d'autre n'écrit `exchange_rates` que cette copie, le `PUT` d'un cours saisi, le ↑ (AC-5), l'acquittement
      (colonnes `acknowledged_*` seulement), la restauration et la remise à zéro (AC-7).
    - **Tests** : récupération → lignes `afc` copiées pour la société A (exercice multi-devises ouvert qui couvre
-     l'unité), non pour B (mono-devise) ni pour C (exercice clos), sauf `POST /fetch` de C ; ligne `manual` présente →
+     l'unité), non pour B (société mono-devise), ni pour C (exercice clos), sauf `POST /fetch` de C, ni pour D (société
+     multi-devises dont un exercice clos avant l'activation a été rouvert : exercice mono-devise, CR-7 ; ni récupération
+     ni copie pour lui, `GET /fiscal-years/{id}/exchange-rates` et `PUT …/rate-kinds` → 409 `MULTI_CURRENCY_DISABLED`
+     `details.fiscalYearId`, absent du sélecteur de l'écran) ; ligne `manual` présente →
      inchangée ; devise publiée que **aucun compte** de la société ne porte (p. ex. SEK) → aucune ligne copiée ;
      un compte qui reçoit la devise SEK (création, puis modification d'un compte CHF) → les cours SEK déjà récupérés
      des unités utiles sont copiés, ceux d'une autre devise non ; devise changée d'USD à EUR sur un compte sans ligne →
      lignes EUR copiées ; `PUT` de compte no-op → aucune copie ; aucun exercice multi-devises ouvert → rien (tests
      délégués par 37-1 AC-4) ; compte archivé en JPY → JPY encore copié ;
      activation → aucune ligne copiée, `copied` absent de son audit ;
-     désactivation puis réactivation → lignes conservées, aucune doublée ; correction (AC-3 (c)) → ligne `afc` inchangée ; ligne `source = 'ecb'` posée par SQL (A30) → lue par `find_company_rate_in_tx` (`RateOrigin::Other("ecb")`), `lookup` et grille rendent `source: "ecb"`, aucune erreur interne (ni 500) ; son `PUT …/rates` → `manual`, son `reset` → `afc`, son `reset` sans valeur publiée → supprimée ; devise sans compte à ligne `ecb` dans l'exercice → ligne de la grille sans `all=true` ; création d'un exercice multi-devises,
-     passage en multi-devises, changement de genre → cours déjà récupérés copiés (un mois, l'Ouverture `month` du mois
+     correction (AC-3 (c)) → ligne `afc` inchangée ; ligne `source = 'ecb'` posée par SQL (A30) → lue par `find_company_rate_in_tx` (`RateOrigin::Other("ecb")`), `lookup` et grille rendent `source: "ecb"`, aucune erreur interne (ni 500) ; son `PUT …/rates` → `manual`, son `reset` → `afc`, son `reset` sans valeur publiée → supprimée ; devise sans compte à ligne `ecb` dans l'exercice → ligne de la grille sans `all=true` ; création d'un exercice multi-devises,
+     changement de genre → cours déjà récupérés copiés (un mois, l'Ouverture `month` du mois
      précédant l'exercice, un jour de Clôture) ; deux copies concurrentes → une ligne, aucune erreur ; `updated_by`
      `NULL`, aucune ligne d'audit propre.
 4. **AC-4 — Récupération automatique (R2, R4, S1 ; remplace la boucle permanente de 6 h).**
@@ -750,8 +754,8 @@ cours sans saisie.
      colonnes de 37-1 sous `FOR UPDATE` de l'exercice ; refus, dans l'ordre : 401, 403 → 400 `VALIDATION_ERROR`
      (corps illisible, champ absent ou valeur hors `day|month` : rejet de l'extracteur `impl_validation_extractor`,
      `extractors.rs:18`, **avant** le handler — un corps typé ne peut se juger après le 404) → 404 (exercice d'une autre
-     société) → 409 `MULTI_CURRENCY_DISABLED` (société ou exercice mono-devise, `details: { fiscalYearId }` pour
-     l'exercice) → 400 `FISCAL_YEAR_CLOSED` (exercice clos : ses genres sont figés), mode et statut relus sous le
+     société) → 409 `MULTI_CURRENCY_DISABLED` (exercice mono-devise — une société mono-devise n'a que des exercices
+     mono-devise, 37-1 AC-3 bis —, `details: { fiscalYearId }`) → 400 `FISCAL_YEAR_CLOSED` (exercice clos : ses genres sont figés), mode et statut relus sous le
      `FOR UPDATE` ; no-op → 200 sans audit ; audit `fiscal_year.rate_kinds_updated` (`{ before, after }`, `ACTIONS`
      triée, quatre locales). Le choix ne réécrit rien : il change le cours **proposé** à l'ouverture (37-3b) et à la
      réévaluation (37-5), et les jours que récupère la tâche automatique (AC-4) ; les unités neuves reçoivent la copie
@@ -765,8 +769,8 @@ cours sans saisie.
      **change**, que l'exercice suivant existe et que `applyToNextOpening` est vrai : son `opening_rate_kind` prend la
      valeur de `closingRateKind` (même genre : le cours d'ouverture reste le cours de clôture de l'exercice réglé, T4),
      **s'il est ouvert** — clos, il n'est pas touché et la réponse le dit (`nextFiscalYear: { id, applied: false, reason:
-     "closed" }`) ; son mode (mono- ou multi-devises) n'y fait rien (le genre n'est qu'un réglage, lu quand il passera en
-     multi-devises). `applyToNextOpening` vrai sans changement de `closingRateKind` ou sans exercice suivant : sans
+     "closed" }`) ; son mode n'est pas relu (le genre n'est qu'un réglage ; l'exercice suivant d'un exercice
+     multi-devises l'est aussi : aucun exercice ne se crée avant un exercice mono-devise, 37-1 AC-3 bis, D-CR7-2). `applyToNextOpening` vrai sans changement de `closingRateKind` ou sans exercice suivant : sans
      effet, sans erreur. **Aucune écriture n'est modifiée, et il n'y a rien à modifier** : entre deux exercices Kesh, les
      soldes de bilan sont **cumulés** d'un exercice à l'autre, sans écriture de report (`opening.rs`, 37-4 AC-1) ; les
      soldes d'ouverture ne se saisissent que sur le **premier** exercice de la société
@@ -875,11 +879,13 @@ cours sans saisie.
      /exchange-rates/notices/acknowledge`, `PUT /fiscal-years/{id}/rate-kinds` — la 37-2 compte donc **+5 routes, +5
      tracées, total registre +6 (avec l'endpoint `_test`), `sans_ecriture` +6, `tout.len()` +6** (`rejouees` et
      `exemptees` inchangés). **Rejeu** : les cinq routes écrivent `exchange_rates` (ou, pour `PUT /rate-kinds`, y
-     copient) et prennent `companies` en partage par sa clé étrangère, en cycle possible avec une
-     bascule de 37-1 (`companies` `FOR UPDATE` puis copie dans `exchange_rates`) : leur transaction passe sous
+     copient) et prennent `companies` en partage par sa clé étrangère, en cycle possible entre elles, avec la
+     récupération et la copie (mêmes clés uniques de `exchange_rates`) et, pour `PUT /rate-kinds` (exercice `FOR UPDATE`
+     puis `companies` en partage), avec l'activation de 37-1 (`companies` `FOR UPDATE` puis exercices `FOR UPDATE`) :
+     leur transaction passe sous
      `kesh_db::retry::retry_on_deadlock` ; elles entrent donc au décompte du point **(vi)** du module
      (`audit_route_registry.rs:155`, « vingt-cinq routes `SansEcritureAuJournal` sont rejouées », :302 ; 37-1 le porte à
-     vingt-huit) — **+5**, en deltas, recompté au code, avec un test de victime d'interblocage pour `PUT …/rates` (patron
+     vingt-sept, CR-7) — **+5**, en deltas, recompté au code, avec un test de victime d'interblocage pour `PUT …/rates` (patron
      `fiscal_year_reopen_is_replayed_when_it_is_the_deadlock_victim` de `rejeu_interblocage_e2e.rs`, comme 37-1). Total
      de l'epic à recompter à l'intégration, en deltas.
 6. **AC-6 — Écran** *Paramètres → Cours de change* (visible en multi-devises) — **tableau annuel par exercice (R6,
@@ -1054,8 +1060,8 @@ cours sans saisie.
    les tables système hors `TABLES_TO_TRUNCATE`, gagne les deux tables neuves. La remise à zéro des données de
    démonstration (`kesh_seed::reset_demo`, `crates/kesh-seed/src/lib.rs:510`, audit `installation.reset`) ne vide
    que les tables applicatives : elle **laisse** les valeurs publiées, données officielles de l'installation, et
-   **vide** `exchange_rates`, cours retenus de la société (copies comprises : elles se refont au passage en
-   multi-devises, AC-3 bis) — voulu, à dire au manuel. Aucun outil du serveur MCP ne lit la table des cours (une ligne porte son cours, 37-3a) : hors périmètre.
+   **vide** `exchange_rates`, cours retenus de la société (copies comprises : elles se refont quand un compte
+   reçoit une devise, AC-3 bis ; la réinitialisation remet aussi la société en mono-devise, 37-1 AC-5) — voulu, à dire au manuel. Aucun outil du serveur MCP ne lit la table des cours (une ligne porte son cours, 37-3a) : hors périmètre.
 8. **AC-8 — i18n, manuels.** Quatre locales (écran, codes d'erreur dont `FX_RATE_INVALID`, libellés d'audit et de
    type d'entité) ; manuel utilisateur (tableau annuel, source, cours mensuel AFC — publié d'avance pour le mois ; la
    définition « moyenne du 25 au 24, publiée le 25 » de R4 n'est écrite qu'une fois confirmée par Beat (relevé
@@ -1120,7 +1126,7 @@ cours sans saisie.
       (`audit_labels.rs` : six actions — `exchange_rates.fetched`, `exchange_rate.created`, `exchange_rate.updated`,
       `exchange_rate.reset`, `exchange_rates.corrections_acknowledged`, `fiscal_year.rate_kinds_updated` — et le type
       d'entité `exchange_rate`), registre des routes (AC-5 : +5 routes, total +6, point (vi) +5) et phrase du manuel ;
-      appel de la copie (AC-3 bis) dans `fiscal_years::create`, `fiscal_years::set_currency_mode`,
+      appel de la copie (AC-3 bis) dans `fiscal_years::create`,
       `accounts::create` et `accounts::update` de 37-1, avec `copied` à leur audit (aucun dans
       `companies::update_currency_settings`, vide par construction) ; copie limitée aux devises des comptes de la
       société (A24), paramètre `currencies`, `hasAccount` des lignes du tableau.
@@ -1628,3 +1634,34 @@ cours sans saisie.
   périmètre, non corrigé : l'alignement d'AC-8 (l. 1067-1068) laisse « jamais avant le 1er de ce mois jamais au-delà
   du 25 (S1) », redite de l'ancien texte sans ponctuation — à relire à la prochaine passe sur les AC. Récapitulatif de
   l'epic concordant. Décompte : 12 FR, 8 NFR (inchangé).
+- 2026-11-16 — révision CR-7 (A34 multi-devises sans retour, Opus) : copie des cours retirée au passage d'un exercice
+  en multi-devises (`set_currency_mode` n'existe plus ; AC-3 bis, FR-4, Tâches, tests) ; paragraphe A27 et test
+  « désactivation puis réactivation » retirés ; cycles de rejeu réécrits contre l'activation de 37-1 (`companies` puis
+  exercices) et les routes d'exercice qui copient ; point (vi) de 37-1 « vingt-sept ». Décompte : 12 FR, 8 NFR
+  (inchangé).
+- 2026-11-16 — validation CR-7 P1 (Sonnet) : 0 CRITICAL, 0 HIGH, 1 MEDIUM, 3 LOW. MEDIUM 37-2-CR7-P1-1 : le rejeu de
+  l'AC-5 attribuait aux cinq routes un cycle avec l'activation de 37-1 ; seule `PUT /rate-kinds` (exercice `FOR UPDATE`
+  puis `companies` en partage) en ferme un avec elle, les quatre autres le font entre elles et avec la
+  récupération — récrit. LOW -P1-2 : AC-3 bis (copie), cycle « avec une route d'exercice qui tient `companies` `FOR
+  UPDATE` » : reste de la bascule, aucune route d'exercice ne la tient plus — remplacé par les routes qui copient.
+  LOW -P1-3 : trois renvois « au passage en multi-devises » (AC-1 réimport, AC-7 remise à zéro, U4 de l'AC-5, « lu quand
+  il passera en multi-devises ») — remplacés. LOW -P1-4 : aucun test de l'exercice mono-devise (clos avant l'activation,
+  rouvert) d'une société multi-devises (récupération, copie, grille, `PUT /rate-kinds`, sélecteur) — ajouté aux tests
+  de l'AC-3 bis (cas D). Récapitulatif de l'epic concordant, non modifié. Axes exercés : résidus (grep des neuf termes
+  : aucun hors Change Logs datés), AC-3 bis, AC-4 (unités utiles), AC-5 (ordre des refus, rejeu, registre « vingt-sept »),
+  AC-7, D-CR7-1 (aucune dépendance de 37-2 au verrou de `companies` des écritures). Non exercés : AC-6 au-delà du
+  sélecteur, code, i18n, manuels. Décompte : 12 FR, 8 NFR (inchangé).
+- 2026-11-16 — validation CR-7 P2 (Opus) : 0 CRITICAL, 0 HIGH, 0 MEDIUM, 3 LOW ; remédiés. LOW 37-2-CR7-P2-1
+  (décision de l'orchestrateur) : le 409 `MULTI_CURRENCY_DISABLED` de `PUT /rate-kinds` (AC-5) jugeait « société ou
+  exercice mono-devise » — aligné sur l'exercice seul (une société mono-devise n'a que des exercices mono-devise).
+  LOW -P2-2 (D-CR7-2) : U4 de l'AC-5 renvoyait à « la limite de 37-1, Révision CR-7 », retirée — récrit : l'exercice
+  suivant d'un exercice multi-devises l'est aussi (aucun exercice ne se crée avant un exercice mono-devise, 37-1 AC-3
+  bis). LOW -P2-3 (résidu de la bascule) : AC-3 bis, « la route tient déjà `companies` » — faux pour `PUT /rate-kinds`
+  (exercice `FOR UPDATE` puis `companies` par la clé étrangère, AC-5 *Rejeu*) ; récrit (routes de compte et
+  `fiscal_years::create`, qui lit désormais `companies` en partage en tête, 37-1 AC-3 bis, la tiennent ; `PUT
+  /rate-kinds` la prend après l'exercice). Axes exercés : diff P1 (`882d865b..e99364d2`, AC-3 bis, AC-5 rejeu, AC-1,
+  AC-7), résidus du modèle réversible (grep : bascule, désactivation, réactivation, « au passage », limite, société
+  mono-devise — hors Change Logs, aucun reste), D-CR7-1 (aucune dépendance), D-CR7-2 (renvois), branche du 409 (AC-5,
+  FR-11, `GET` du tableau, ordre des refus des routes de cours), KISS (aucun mécanisme propre à la réversibilité ;
+  lecture du mode sous le `FOR UPDATE` de l'exercice gardée : verrou déjà pris). Non exercés : AC-4 au-delà des
+  unités utiles, AC-6 au-delà du sélecteur, code, i18n, manuels. Décompte : 12 FR, 8 NFR (inchangé).

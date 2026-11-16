@@ -5,7 +5,7 @@ import {
   authedApiContext,
   disposeContextSafe,
 } from "./helpers/test-state";
-import { invoiceVersionViaApi } from "./helpers/api-fixtures";
+import { invoiceVersionViaApi, todayInZurich } from "./helpers/api-fixtures";
 
 /**
  * Story 34-5 (#951) — un second envoi du même règlement sans relecture n'écrit pas un
@@ -33,10 +33,6 @@ async function login(page: import("@playwright/test").Page) {
   await expect(page).toHaveURL("/");
 }
 
-function today(): string {
-  return new Date().toISOString().slice(0, 10);
-}
-
 /** Une facture validée de 100.00 HT (108.10 TTC), sans règlement ; rend son id. */
 async function validatedInvoice(page: import("@playwright/test").Page): Promise<number> {
   const ctx = await authedApiContext(page);
@@ -53,8 +49,8 @@ async function validatedInvoice(page: import("@playwright/test").Page): Promise<
     const created = await ctx.post("/api/v1/invoices", {
       data: {
         contactId: (await contact.json()).id,
-        date: today(),
-        dueDate: today(),
+        date: todayInZurich(),
+        dueDate: todayInZurich(),
         paymentTerms: null,
         lines: [
           { description: "Prestation", quantity: "1", unitPrice: "100.00", vatRate: "8.10" },
@@ -94,7 +90,7 @@ async function settleByApi(
       settlementType: "internal_account",
       accountId: await caisse(ctx),
       amount,
-      settledOn: today(),
+      settledOn: todayInZurich(),
       version,
     },
   });

@@ -14,17 +14,30 @@
   Story 31-1b (#503) : rendu aussi par `/onboarding/restore` (restaurer une
   installation neuve depuis l'assistant, AC15) ; avis permanent sur le `.env`
   (AC17) ; issue inconnue d'un import long (AC18b).
+
+  Story 36-5 (#931, KF-056) : l'import invalide la session au serveur ; sans
+  précaution, le premier battement d'activité refusé menait à la connexion avant
+  que le compte rendu soit lu. Le panneau est le SEUL à poser le maintien de
+  session (`authState.holdForRestore`) : à la confirmation pour
+  `importHoldMs(B)` (B = la durée d'inactivité réglée, 60 min si inconnue) ; au
+  succès, réarmé pour B, suivi de session arrêté, puis fin de session au bout de B
+  si l'écran reste ouvert ; après un échec certain ou une issue inconnue, échéance
+  ramenée à au plus B (jamais allongée) et levé au premier geste qui suit le message ; au 401 de l'import, levé aussitôt et la
+  session terminée ; au démontage, levé (et la session terminée si le compte
+  rendu était affiché, sauf « Se reconnecter » en cours).
 -->
 <script lang="ts">
+	import { onDestroy } from 'svelte';
 	import { i18nMsg } from '$lib/shared/utils/i18n.svelte';
-	import { isApiError } from '$lib/shared/utils/api-client';
+	import { expireSession, isApiError } from '$lib/shared/utils/api-client';
 	import { isUnknownOutcome } from '$lib/shared/utils/unknown-outcome';
 	import { authState } from '$lib/app/stores/auth.svelte';
+	import { sessionIdle } from '$lib/app/stores/session-idle.svelte';
 	import { Button } from '$lib/components/ui/button';
 	import * as Dialog from '$lib/components/ui/dialog';
 	import { toast } from 'svelte-sonner';
 	import BackupEnvNotice from '$lib/features/admin-backup/BackupEnvNotice.svelte';
-	import { uploadFullImport, type FullImportResponse } from './admin-restore.api';
+	import { importHoldMs, uploadFullImport, type FullImportResponse } from './admin-restore.api';
 
 	let selectedFile = $state<File | null>(null);
 	let confirmOpen = $state(false);
@@ -38,6 +51,65 @@
 	let reconnecting = $state(false);
 	/** Story 31-1b (AC18b) — le dernier import a fini sans réponse : « Se reconnecter » est proposé. */
 	let unknownOutcome = $state(false);
+
+	/** Story 36-5 — le panneau a quitté l'écran : une réponse tardive n'arme plus rien. */
+	let destroyed = false;
+	/** Story 36-5 — minuterie de fin de lecture du compte rendu (B), armée au succès seul. */
+	let readingTimer: ReturnType<typeof setTimeout> | null = null;
+	/** Story 36-5 — retire l'écouteur de la levée au premier geste, s'il est posé. */
+	let disarmGesture: (() => void) | null = null;
+
+	/**
+	 * Story 36-5 — B : la durée d'inactivité réglée (ms), 60 min si l'écran ne la
+	 * connaît pas encore (revue P1, E1-4 : relue au succès et à l'échec, non figée à la
+	 * confirmation).
+	 */
+	function readingMs(): number {
+		return (sessionIdle.minutes ?? 60) * 60_000;
+	}
+
+	/** Story 36-5 — fin de session comme le chemin 401 ordinaire, maintien levé d'abord. */
+	function endSession(): void {
+		authState.releaseRestoreHold();
+		expireSession();
+	}
+
+	/**
+	 * Story 36-5 — après un échec certain ou une issue inconnue : le maintien est levé
+	 * au premier geste (`pointerdown` ou `keydown` sur la fenêtre), qui vaut lecture du
+	 * message. Écouteur posé une fois, en capture, retiré après usage, au démontage et
+	 * au départ d'un nouvel import (`confirmImport` ; revue P1, E1-1).
+	 */
+	function armReleaseOnNextGesture(): void {
+		if (destroyed || disarmGesture !== null) return;
+		const onGesture = () => {
+			disarmGesture?.();
+			authState.releaseRestoreHold();
+		};
+		const options = { capture: true };
+		window.addEventListener('pointerdown', onGesture, options);
+		window.addEventListener('keydown', onGesture, options);
+		disarmGesture = () => {
+			window.removeEventListener('pointerdown', onGesture, options);
+			window.removeEventListener('keydown', onGesture, options);
+			disarmGesture = null;
+		};
+	}
+
+	onDestroy(() => {
+		destroyed = true;
+		disarmGesture?.();
+		// Phase 2 (compte rendu affiché, minuterie armée) : la session est connue
+		// morte et le suivi arrêté — la quitter mène à la connexion, sauf si
+		// « Se reconnecter » y mène déjà.
+		const reading = readingTimer !== null;
+		if (readingTimer !== null) {
+			clearTimeout(readingTimer);
+			readingTimer = null;
+		}
+		authState.releaseRestoreHold();
+		if (reading && !reconnecting) expireSession();
+	});
 
 	/**
 	 * Story 31-1b (AC18b) — échecs après lesquels l'issue de l'import est inconnue :
@@ -146,21 +218,65 @@
 		// « Confirmer » sur cette opération destructrice (review P1).
 		if (!selectedFile || importing || imported) return;
 		importing = true;
+		// Story 36-5 (revue P1, E1-1) — l'écouteur laissé par un échec précédent est
+		// retiré : un nouvel import activé par un `click` seul (technologie d'assistance)
+		// le laisserait lever le maintien au premier geste de la phase 1 ou 2.
+		disarmGesture?.();
 		confirmOpen = false;
 		errorMsg = null;
 		unknownOutcome = false;
+		// Story 36-5 — le maintien AVANT l'envoi, avant tout `await`.
+		const b = readingMs();
+		authState.holdForRestore(importHoldMs(b));
+		/** Vrai quand le maintien ne doit pas être levé au premier geste (succès, 401). */
+		let keepHold = false;
 
 		try {
 			// Story 31-1b (AC19, C-31-1-39) : au succès, AUCUNE redirection ici — le
 			// panneau dit ce que la restauration a rendu, et attend « Se reconnecter ».
-			imported = await uploadFullImport(selectedFile);
+			const result = await uploadFullImport(selectedFile);
+			// Story 36-5 (V1-4) — l'écran est quitté : régime ordinaire, rien à armer.
+			if (destroyed) return;
+			imported = result;
+			keepHold = true;
+			// Story 36-5 — la session n'existe plus au serveur : lecture bornée par B,
+			// plus aucun battement, puis fin de session si l'écran reste ouvert. La
+			// minuterie est armée AVANT le maintien (revue P1, B1-3) : l'échéance du
+			// maintien ne la précède pas ; si le navigateur la retarde (onglet en arrière-
+			// plan), un 401 venu entre les deux mène à la même connexion par le chemin 401.
+			// Rien ici ne jette (une lecture, un `setTimeout`, une affectation, `stop()` qui
+			// retire des écouteurs) : aucun message d'échec sous le compte rendu (E1-3).
+			const reading = readingMs();
+			readingTimer = setTimeout(() => {
+				readingTimer = null;
+				endSession();
+			}, reading);
+			authState.holdForRestore(reading);
+			sessionIdle.stop();
 		} catch (err) {
+			if (destroyed) return;
+			// Story 36-5 (V2-5) — l'import lui-même refusé en 401 : la session était
+			// morte avant tout import ; fin de session, comme hors maintien.
+			if (isApiError(err) && err.code === 'UNAUTHENTICATED') {
+				keepHold = true;
+				endSession();
+				return;
+			}
 			unknownOutcome = issueInconnue(err);
 			const msg = importErrorMessage(err);
 			errorMsg = msg;
 			toast.error(msg);
 		} finally {
 			importing = false;
+			// Une instance démontée ne touche plus au maintien (revue P2, E2-1) : il est
+			// un état de module, et pourrait appartenir à un autre panneau monté depuis.
+			if (!keepHold && !destroyed) {
+				// Story 36-5 — échec certain ou issue inconnue (aussi si le `catch` a jeté) :
+				// l'échéance est ramenée à au plus B à partir de maintenant, jamais allongée
+				// (revue P1, E1-2), et le maintien est levé au premier geste.
+				authState.shortenRestoreHold(readingMs());
+				armReleaseOnNextGesture();
+			}
 		}
 	}
 

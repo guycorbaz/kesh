@@ -7,7 +7,12 @@
 
 import { describe, it, expect } from 'vitest';
 import type { AccountResponse } from '$lib/features/accounts/accounts.types';
-import { claimRoleOf, claimRoleOfId, counterpartyAccounts } from './reconciliation-counterparties';
+import {
+	claimRoleOf,
+	claimRoleOfId,
+	counterpartyAccounts,
+	keepOfferedCounterparty,
+} from './reconciliation-counterparties';
 
 function compte(
 	id: number,
@@ -116,5 +121,39 @@ describe('claimRoleOfId (Story 34-3, AC-4)', () => {
 	it('aucun compte choisi, ou compte hors de la liste : aucun rôle', () => {
 		expect(claimRoleOfId(plan, null)).toBeNull();
 		expect(claimRoleOfId(plan, 99)).toBeNull();
+	});
+});
+
+// Story 35-7 (#1000, AC2, D1, C-e350-36) — un compte que le dialogue ne propose plus est retiré
+// de la sélection ; un compte absent de la liste (pas encore chargée) n'est pas jugé.
+describe('keepOfferedCounterparty (Story 35-7)', () => {
+	const plan = planDeTest();
+
+	it('aucun compte choisi → null', () => {
+		expect(keepOfferedCounterparty(null, plan, 10)).toBeNull();
+	});
+
+	it('compte absent de la liste (non chargée) → l’identifiant, le serveur tranche', () => {
+		expect(keepOfferedCounterparty(99, plan, 10)).toBe(99);
+		expect(keepOfferedCounterparty(99, [], 10)).toBe(99);
+	});
+
+	it('compte de la banque → null', () => {
+		expect(keepOfferedCounterparty(10, plan, 10)).toBeNull();
+	});
+
+	it('compte archivé ou non imputable → null', () => {
+		expect(keepOfferedCounterparty(12, plan, 10)).toBeNull();
+		expect(keepOfferedCounterparty(11, plan, 10)).toBeNull();
+	});
+
+	it('compte proposé → l’identifiant', () => {
+		expect(keepOfferedCounterparty(1, plan, 10)).toBe(1);
+		expect(keepOfferedCounterparty(5, plan, 10)).toBe(5);
+	});
+
+	it('bankLedgerAccountId nul → l’identifiant d’un compte actif et imputable, même celui de la banque', () => {
+		expect(keepOfferedCounterparty(1, plan, null)).toBe(1);
+		expect(keepOfferedCounterparty(10, plan, null)).toBe(10);
 	});
 });

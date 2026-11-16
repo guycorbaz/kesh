@@ -5,7 +5,9 @@ import {
 	createContactWithAddressViaApi,
 	ensurePrimaryBankAccountViaApi,
 	createAndValidateInvoiceViaApi,
+	todayInZurich,
 } from './helpers/api-fixtures';
+import { ajouterJoursIso } from './helpers/dates';
 
 test.beforeAll(async () => {
 	await seedTestState('with-company');
@@ -496,6 +498,70 @@ test.describe('Factures — création brouillon', () => {
 		await expect(page.locator('tbody').getByText(contactName)).toBeVisible({ timeout: 5000 });
 	});
 
+	// Story 36-3b (#1171, AC6) — un prix unitaire « 1.250 » est refusé comme ambigu, sans
+	// qu'aucune requête parte ; « 1'250 » part `1250` et le serveur l'enregistre 1250.
+	test('refuse un prix unitaire ambigu « 1.250 » et envoie « 1\'250 » comme 1250 (#1171)', async ({
+		page
+	}) => {
+		await login(page);
+		const contactName = uniq('Client prix ambigu');
+		await createContactViaApi(page, contactName);
+
+		await page.goto('/invoices/new');
+		await expect(page.getByRole('heading', { name: 'Nouvelle facture' })).toBeVisible();
+		await page.getByRole('combobox', { name: /Rechercher un contact/ }).click();
+		await page.getByRole('combobox', { name: /Rechercher un contact/ }).fill(contactName);
+		await page.getByRole('option', { name: new RegExp(contactName) }).first().click();
+
+		const firstRow = page.locator('tbody tr').first();
+		await firstRow.locator('input[type="text"]').first().fill('Prix ambigu E2E');
+		const numericInputs = firstRow.locator('input[inputmode="decimal"]');
+		await numericInputs.nth(0).fill('1');
+		await numericInputs.nth(1).fill('1.250');
+
+		// Armé avant le clic : compte toute création qui partirait.
+		const posts: string[] = [];
+		const compter = (r: import('@playwright/test').Request) => {
+			if (r.method() === 'POST' && new URL(r.url()).pathname === '/api/v1/invoices') {
+				posts.push(r.postData() ?? '');
+			}
+		};
+		page.on('request', compter);
+		await page.getByRole('button', { name: 'Créer la facture' }).click();
+		// Laisser à une requête le temps de partir, puis constater qu'aucune n'est partie.
+		await page.waitForTimeout(1000);
+		expect(posts, `création partie : ${posts.join(' | ')}`).toEqual([]);
+		page.off('request', compter);
+		await expect(page.getByText(/Ligne 1 : prix unitaire ambigu/)).toBeVisible();
+		await expect(page.getByTestId('invoice-line-unit-price-ambiguous')).toBeVisible();
+		await expect(page).toHaveURL(/\/invoices\/new$/);
+
+		await numericInputs.nth(1).fill("1'250");
+		await expect(page.getByTestId('invoice-line-unit-price-ambiguous')).toHaveCount(0);
+		const requete = page.waitForRequest(
+			(r) => r.method() === 'POST' && new URL(r.url()).pathname === '/api/v1/invoices'
+		);
+		const reponse = page.waitForResponse(
+			(r) => r.request().method() === 'POST' && new URL(r.url()).pathname === '/api/v1/invoices'
+		);
+		await page.getByRole('button', { name: 'Créer la facture' }).click();
+		const corps = (await requete).postData() ?? '';
+		expect(corps).toContain('"unitPrice":"1250"');
+		expect((await reponse).status()).toBe(201);
+		await expect(page).toHaveURL(/\/invoices\/\d+$/);
+
+		const id = Number(new URL(page.url()).pathname.split('/').pop());
+		const ctx = await authedApiContext(page);
+		try {
+			const res = await ctx.get(`/api/v1/invoices/${id}`);
+			expect(res.ok(), `GET facture ${id} : ${res.status()}`).toBeTruthy();
+			const facture = await res.json();
+			expect(facture.lines[0].unitPrice).toBe('1250.0000');
+		} finally {
+			await disposeContextSafe(ctx);
+		}
+	});
+
 	// Story 21-1 (#245) — pré-remplissage échéance + libellé depuis le délai
 	// de paiement structuré du contact, à la sélection dans le formulaire.
 	test('pré-remplit échéance et conditions depuis le délai du contact (#245)', async ({
@@ -519,13 +585,10 @@ test.describe('Factures — création brouillon', () => {
 
 		// Échéance = date du jour + 30 (calcul UTC identique à addDaysIso). La date du jour
 		// est celle du POSTE, comme la propose le formulaire depuis la 0.17.4 (#889) — la date
-		// UTC rendait la veille entre minuit et 1 h (2 h en été) et ce test rougissait.
-		const now = new Date();
-		const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-		const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(today)!;
-		const expectedDue = new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]) + 30))
-			.toISOString()
-			.slice(0, 10);
+		// UTC rendait la veille entre minuit et 1 h (2 h en été) et ce test rougissait. Le
+		// navigateur des specs est à Zurich (`timezoneId`) : le jour du poste est le jour suisse
+		// (Story 35-5c, non plus le fuseau du processus Node).
+		const expectedDue = ajouterJoursIso(todayInZurich(), 30);
 		await expect(page.locator('#invoice-due-date')).toHaveValue(expectedDue);
 		// Libellé serveur (langue contact héritée = FR sur le seed E2E).
 		await expect(page.locator('#invoice-payment-terms')).toHaveValue('Payable à 30 jours net');
@@ -737,7 +800,7 @@ test.describe('Factures — téléchargement PDF (Story 5.3)', () => {
 				body: JSON.stringify({
 					error: {
 						code: 'INVOICE_NOT_PDF_READY',
-						message: "Aucun compte bancaire principal n'est configuré pour cette company.",
+						message: "Aucun compte bancaire principal n'est configuré pour cette entreprise.",
 					},
 				}),
 			});
@@ -748,9 +811,10 @@ test.describe('Factures — téléchargement PDF (Story 5.3)', () => {
 
 		// Toast d'erreur affichant le message INVOICE_NOT_PDF_READY.
 		await expect(
-			// La clé FTL invoice-pdf-error-invoice-not-pdf-ready traduit le code —
-			// le message backend intercepté n'est pas affiché tel quel.
-			page.getByText(/pas prête pour la génération PDF|compte bancaire principal|INVOICE_NOT_PDF_READY/i),
+			// Story 35-2a (#955, D1) — le message du serveur, localisé et qui dit
+			// quoi corriger, est affiché tel quel ; la clé FTL
+			// invoice-pdf-error-invoice-not-pdf-ready ne sert plus qu'au message vide.
+			page.getByText(/compte bancaire principal n'est configuré pour cette entreprise/i),
 		).toBeVisible({ timeout: 5000 });
 	});
 });

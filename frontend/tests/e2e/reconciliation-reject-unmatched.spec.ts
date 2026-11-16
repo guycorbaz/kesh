@@ -163,7 +163,13 @@ for (const [colorScheme, suffixe] of [
 				path: capturePath(testInfo, `29-6-ligne-cochee-${suffixe}`),
 			});
 
+			// Story 35-4 (#1023, AC7) : la ligne n'est pas signalée « déjà comptabilisée », si
+			// bien que *Rejeter* part sans confirmation.
+			await expect(
+				page.locator(`[data-testid="already-booked-warning"][data-tx-id="${r.txId}"]`),
+			).toHaveCount(0);
 			await page.getByTestId('reconciliation-reject-btn').click();
+			await expect(page.getByTestId('already-booked-confirm')).toHaveCount(0);
 			await expect(page.getByTestId('reconciliation-success')).toContainText('1');
 			await expect(ligne).toHaveCount(0);
 			await expect(indication).toHaveCount(0);

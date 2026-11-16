@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test';
 import { seedTestState, clearAuthStorage, authedApiContext, disposeContextSafe } from './helpers/test-state';
-import { invoiceVersionViaApi } from './helpers/api-fixtures';
+import { invoiceVersionViaApi, todayInZurich } from './helpers/api-fixtures';
+import { ajouterJoursIso } from './helpers/dates';
 
 test.beforeAll(async () => {
 	// Story 6.4 : preset `with-data` (= with-company + 1 contact + 1 product,
@@ -92,9 +93,7 @@ async function createAndValidateInvoice(
 }
 
 function daysFromToday(offset: number): string {
-	const d = new Date();
-	d.setDate(d.getDate() + offset);
-	return d.toISOString().slice(0, 10);
+	return ajouterJoursIso(todayInZurich(), offset);
 }
 
 test.describe('Échéancier factures — Story 5.4', () => {

@@ -529,7 +529,7 @@ async fn entree_appel_cinq_ou_six_cles(pool: MySqlPool) {
     use kesh_api::services::serveur_mcp::{IssueAppel, entree_appel};
     let l = livres_servis(&pool).await;
     let cle = kesh_api::services::cles_mcp::authentifier(
-        &Lecture::new(pool.clone()),
+        &Lecture::new(pool.clone(), kesh_api::horloge::horloge_de_test()),
         &Trace::new(pool.clone()),
         &l.requise.1,
     )

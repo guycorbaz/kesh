@@ -14,8 +14,15 @@ vi.mock('$lib/shared/utils/api-client', () => ({
 	},
 }));
 const clearSessionMock = vi.fn();
+/** Story 36-5 — le maintien de restauration, réglé par le test (seul membre lu par le module). */
+const restoreHoldState = { value: false };
 vi.mock('$lib/app/stores/auth.svelte', () => ({
-	authState: { clearSession: (...a: unknown[]) => clearSessionMock(...a) },
+	authState: {
+		clearSession: (...a: unknown[]) => clearSessionMock(...a),
+		get restoreHold() {
+			return restoreHoldState.value;
+		},
+	},
 }));
 
 import {
@@ -60,6 +67,7 @@ beforeEach(() => {
 	postMock.mockReset().mockResolvedValue({ idleTimeoutMinutes: N, idleExpiresIn: N * 60 });
 	getMock.mockReset();
 	clearSessionMock.mockReset();
+	restoreHoldState.value = false;
 	replaceMock = vi.fn();
 	Object.defineProperty(window, 'location', {
 		value: { ...originalLocation, replace: replaceMock },
@@ -878,5 +886,63 @@ describe('session-idle — sortir du document par le même point (#898, Rec-e1)'
 		out(document.createElement('div'));
 		move(7, 7);
 		expect(key(KEY_LAST_ACTIVITY)).toBe(T0 + 5_000);
+	});
+});
+
+// Story 36-5 (#931, KF-056) — sous maintien de restauration (`authState.restoreHold`), rien
+// ne change avant l'échéance ; au-delà, rien ne se ferme ni ne s'écrit localement, et la
+// fermeture a lieu au tic qui suit la levée (AC3 (b)).
+describe('session-idle — sous maintien de restauration (Story 36-5, AC3 (b))', () => {
+	it('avant l’échéance : battement, avertissement à w − 60 000 et « Rester connecté » comme aujourd’hui', async () => {
+		vi.setSystemTime(T0);
+		startAtLogin();
+		restoreHoldState.value = true;
+		await advance(20_000);
+		fire('keydown');
+		expect(key(KEY_LAST_ACTIVITY)).toBe(T0 + 20_000);
+		await advance(1_000);
+		expect(postMock).toHaveBeenCalledWith('/api/v1/auth/activity', { idleMs: 1_000 });
+		await advance(58_999);
+		expect(sessionIdle.warningRemainingMs).toBeNull();
+		await advance(1);
+		expect(sessionIdle.warningRemainingMs).toBe(60_000);
+		sessionIdle.stayActive();
+		expect(sessionIdle.warningRemainingMs).toBeNull();
+		expect(key(KEY_LAST_ACTIVITY)).toBe(T0 + 80_000);
+		expect(fetchMock).not.toHaveBeenCalled();
+		expect(replaceMock).not.toHaveBeenCalled();
+	});
+
+	it('à partir de l’échéance : ni fermeture, ni avertissement, ni écriture ; fermeture au tic qui suit la levée', async () => {
+		vi.setSystemTime(T0);
+		startAtLogin();
+		restoreHoldState.value = true;
+		await advance(W - 60_000);
+		expect(sessionIdle.warningRemainingMs).toBe(60_000);
+		await advance(60_000);
+		expect(sessionIdle.warningRemainingMs).toBeNull();
+		await advance(5_000);
+		expect(sessionIdle.warningRemainingMs).toBeNull();
+		expect(fetchMock).not.toHaveBeenCalled();
+		expect(clearSessionMock).not.toHaveBeenCalled();
+		expect(replaceMock).not.toHaveBeenCalled();
+
+		const avant = key(KEY_LAST_ACTIVITY);
+		fire('keydown');
+		await advance(0);
+		expect(key(KEY_LAST_ACTIVITY)).toBe(avant);
+		await advance(1_500);
+		sessionIdle.stayActive();
+		expect(key(KEY_LAST_ACTIVITY)).toBe(avant);
+		await advance(0);
+		expect(fetchMock).not.toHaveBeenCalled();
+		expect(replaceMock).not.toHaveBeenCalled();
+
+		restoreHoldState.value = false;
+		await advance(1_000);
+		expect(fetchMock).toHaveBeenCalledWith('/api/v1/auth/logout', expect.anything());
+		await advance(0);
+		expect(clearSessionMock).toHaveBeenCalledWith({ broadcast: false });
+		expect(replaceMock).toHaveBeenCalledWith('/login?reason=idle&minutes=2');
 	});
 });
