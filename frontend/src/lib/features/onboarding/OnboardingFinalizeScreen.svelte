@@ -9,9 +9,7 @@
 	 * - `finalizing` — « Configuration en cours… » sur toute la zone (`role="status"`) ;
 	 * - `finalize-error` — le motif de l'échec (`role="alert"`), et *Réessayer*. Sous un
 	 *   refus `VALIDATION_ERROR`, un lien vers *Administration → Facturation* suit le motif
-	 *   du serveur, qui nomme le réglage en défaut et son remède (36-19, #1200). *(Intégration
-	 *   de la 0.18.0 : la phrase de remède de la 36-17, qui imputait ce refus à un écran
-	 *   ouvert avant la fin de la configuration, est retirée — la 36-19 corrige #1200.)*
+	 *   du serveur, qui nomme le réglage en défaut et son remède (36-19, #1200) ;
 	 * - `resume` — après un rechargement, ni appel ni échec : la configuration n'est pas
 	 *   terminée, *Terminer la configuration*. **Aucune finalisation d'office.**
 	 *

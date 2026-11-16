@@ -245,9 +245,8 @@ describe('échec et Réessayer (AC4)', () => {
 		return r;
 	}
 
-	// Intégration de la 0.18.0 : la phrase de remède de la 36-17 est retirée (la 36-19
-	// corrige #1200, le motif du serveur nomme lui-même le réglage en défaut et son remède) ;
-	// le lien vers Administration → Facturation reste, après le motif.
+	// Le motif du serveur nomme le réglage en défaut et son remède (36-19, #1200) ; le lien
+	// vers Administration → Facturation le suit.
 	it('refus VALIDATION_ERROR : le motif, puis le lien vers Facturation, sans toast', async () => {
 		const { unmount } = await echouer({ code: 'VALIDATION_ERROR', message: 'MOTIF-FIN', status: 400 });
 		const ecran = screen.getByTestId('onboarding-screen-finalize-error');
