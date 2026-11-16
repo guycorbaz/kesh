@@ -356,8 +356,7 @@ afin de tenir les comptes Stripe sans saisie, en sachant ce qui est une créance
 
 - 2026-11-16 — alignement sur les règles de travail à plusieurs (Sonnet) : section Note de version ajoutée ; AC-8, T6,
   NFR-40-6-2 : `.tex` seulement, PDF non commité, régénéré à la release (rendu aplati contrôlé en local) ; compteurs
-  recomptés après chaque reprise de `main` (T7) ; K9 → K10 partout (l'Epic 37 prend K9), y compris dans les entrées
-  antérieures de ce journal.
+  recomptés après chaque reprise de `main` (T7) ; K9 → K10 partout hors entrées datées de ce journal (l'Epic 37 prend K9).
 
 - 2026-11-15 — validation P5 ciblée (Sonnet) : 0 CRITICAL, 0 HIGH, 0 MEDIUM, 1 LOW ; remédié dans la fiche. Périmètre :
   `git diff 98bca548 b5d23154` de la fiche (remédiation P4). Confirmés : AC-2, tout `sk_` → `secret_key` (40-1 AC-4,
