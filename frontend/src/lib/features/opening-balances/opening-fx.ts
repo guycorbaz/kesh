@@ -21,6 +21,7 @@ import { formatSwissDate } from '$lib/features/reports/reports.api';
 import { openingRateDate, readForeignAmount, readRate, type RateKind } from '$lib/features/journal-entries/fx';
 import {
 	applyChfEntry,
+	commitChfEntry,
 	foreignChf,
 	foreignLineProblem,
 	type LineForeign,
@@ -93,6 +94,13 @@ export function setRowChf<T extends FxGridRow>(row: T, value: string): T {
 	if (!row.foreign) return row;
 	// Les grilles envoient toujours `manual` : aucun cours `afc` n'est repris (A32 ne s'applique pas).
 	row.foreign = applyChfEntry({ ...row.foreign, afcRate: null, afcMonth: null }, value, '');
+	return syncRow(row);
+}
+
+/** Le champ CHF quitte le focus (`commitChfEntry`). */
+export function commitRowChf<T extends FxGridRow>(row: T): T {
+	if (!row.foreign) return row;
+	row.foreign = commitChfEntry(row.foreign);
 	return syncRow(row);
 }
 

@@ -1316,6 +1316,42 @@ devise au cours d'ouverture choisi pour l'exercice (R6), afin de tenir mes livre
   hors inventaire (exempté, ci-dessous) ; manuel utilisateur en français seul (`docs/manual/{de,en,it}/` ne portent qu'un
   `README.md`) ; `lookup` exige une société multi-devises (le formulaire ne l'appelle qu'en multi-devises).
 - 2026-11-16 — développement (Opus 5.5) : AC-1 à AC-6 livrés, détail au *Dev Agent Record* ; statut `review`.
+- 2026-11-16 — revue de code P1 (Opus 5.5, couches Blind Hunter backend et frontend, Edge Case Hunter backend et
+  frontend, Acceptance Auditor, en parallèle ; diff `story/37-3a-ecritures-en-devise-modele...6e0f39e3`) : **0 CRITICAL,
+  3 HIGH, 13 MEDIUM, 22 LOW** après dédoublonnage (5 écartés). Une passe de plus est due (HIGH et MEDIUM, `CLAUDE.md`).
+  - Corrigés, avec leurs tests : HIGH CR-P1-1 un CHF saisi refusé (`chfError`) laissait partir le CHF de l'ancien cours
+    (formulaire, assistant ; `foreignChf` rend `null`, ligne incomplète ; l'assistant affiche le refus) ; HIGH CR-P1-2 le
+    champ CHF se réécrivait au CHF dérivé à chaque frappe (« 9 » → « 9.00 », « 950 » impossible) : la saisie brute reste
+    jusqu'à la sortie du champ (`commitChfEntry`, formulaire, assistant, grilles) ; HIGH CR-P1-3 une écriture relue au
+    montant normalisé à trois décimales (« 1.234 ») était refusée comme ambiguë et ne s'enregistrait plus
+    (`foreignFromResponse`, quatre décimales). MEDIUM : CR-P1-4 frais resté sur un compte d'une autre devise que sa
+    colonne ; CR-P1-5 envoi dans les 300 ms d'un changement de date (`debounce.flush`) ; CR-P1-6 l'assistant attend ses
+    `lookup` ; CR-P1-7 échec passager du `lookup` non mémoïsé ; CR-P1-8 refus par ligne décalés à la suppression d'une
+    ligne ou à l'assistant TVA ; CR-P1-9 frais CHF arrondi en silence (« 12.345 », « 0.004 ») ; CR-P1-10 changement de
+    compte de même devise en édition (provenance jugée sur le cours `afc` lu) ; CR-P1-11 un `lookup` réécrivait le
+    cours des lignes relues non retouchées ; CR-P1-13 page *Conversion* sans état d'erreur de chargement (motifs faux ;
+    deux clés, quatre locales) ; CR-P1-14 refus des grilles d'ouverture indexés par position (par compte désormais) ;
+    CR-P1-17, -18, -19 tests qui ne prouvaient pas leur clause (complément mono-devise, refus de la seconde création,
+    trop de lignes : témoin et code). LOW : CR-P1-12 erreur d'un frais sur le mauvais frais ; CR-P1-15 champ réellement
+    manquant de la paire de la société (test neuf `conversion_paire_de_la_societe_manquante`) ; CR-P1-16 cycles de
+    verrous et `EXISTS` non verrouillé écrits ; CR-P1-36 `expectedRate` numérique ; CR-P1-37 Vitest qui acceptait deux
+    cours ; CR-P1-38 ligne morte d'un test. Message du motif « frais » précisé (quatre locales).
+  - Non traités, une issue chacun (CR-P1-20 à -35, liste au journal `kesh-gate-logs/s37-3b/review-p1/issues-a-ouvrir-p1.md`) :
+    conversion de même devise admise par le serveur, différence hors `DECIMAL(19,4)` en 500, `debit`/`credit` « 0 » sur
+    une ligne en devise, sélecteur mono-devise, actions `RATE_UNAVAILABLE`/`FX_RATE_NOT_AFC` dans l'assistant, motif
+    `FX_VALUE_OUT_OF_RANGE` de l'assistant TVA, envoi muet après un `lookup`, refus des grilles non vidés, noms
+    accessibles, lien vers l'assistant sans confirmation, garde de rôle de la page, `details.entry` de la paire (à
+    arbitrer), message d'une société mono-devise, tests manquants, duplications, message de longueur en dur.
+  - Écartés : `invalid` et `invalid_amount` du complément identiques ; `openingRateKind ?? 'day'` mort (type non
+    facultatif) ; idempotence (comme `POST /journal-entries`) ; A33 sans `completeDifference` (voulu, AC-2 bis) ; refus
+    de la ligne de différence au-dessus de l'aperçu (la ligne n'est pas un champ).
+  - Décompte du *File List* : 82 fichiers, 19 ajoutés (`git diff --name-status 6f66e775..01b3bf0c`), non 81 et 17.
+  - Écarts du Dev Agent Record jugés acceptables (Acceptance Auditor) ; défaut du code de la 37-3a : aucun relevé.
+  - Gates au commit de la revue : backend complet (`scripts/test-fast.sh --ci`, base `kesh_s37_3b` recréée, migrée,
+    seedée) **5748 exécutés, 5748 passés, 13 ignorés** ; `npm run check` 0 erreur (29 avertissements, comme avant),
+    `lint-i18n-ownership` PASS, `npm run build` vert ; Vitest complet **4049 passés (257 fichiers)** (`front-vitest-3.log` ; un passage lancé pendant le
+    gate backend, `front-vitest-2.log`, rendait cinq délais de 5 s dépassés dans des fichiers hors du diff, verts au passage
+    seul). E2E non rejoués.
 
 ## Dev Agent Record
 

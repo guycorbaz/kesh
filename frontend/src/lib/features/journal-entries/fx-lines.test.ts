@@ -18,7 +18,9 @@ import {
 	applyAccountChange,
 	applyChfEntry,
 	applyLookup,
+	commitChfEntry,
 	companyRateHint,
+	foreignChf,
 	foreignFromResponse,
 	foreignLineProblem,
 	formIndexOfServerLine,
@@ -32,6 +34,7 @@ import {
 	type LineForeign,
 } from './fx-lines';
 import { lineResponseToDraft } from './form-helpers';
+import type { JournalEntryLineResponse } from './journal-entries.types';
 import { computeBalance, classifyLine, journalAmountReader } from './balance';
 import { isDraftLineNonEmpty } from './vat-purchase';
 
@@ -206,6 +209,57 @@ describe('CHF saisi à la main (A32)', () => {
 		// Aucun cours ne redonne un CHF à trois décimales (vecteur de la fixture).
 		expect(applyChfEntry(afc, '0.123', date).chfError).toBe('FX_AMOUNT_MISMATCH');
 		expect(applyChfEntry({ ...afc, amount: '' }, '10', date).chfError).toBe('FX_VALUE_OUT_OF_RANGE');
+	});	it('CHF refusé : le CHF de l’ancien cours n’est ni calculé ni envoyé (37-3b-CR-P1-1)', () => {
+		const withRate = { ...afc, rate: '0.9' };
+		const f = applyChfEntry(withRate, '0.123', date);
+		expect(f.rate).toBe('0.9');
+		expect(foreignChf(f)).toBeNull();
+		const line = syncDerivedChf({ accountId: 10, debit: '90.00', credit: '', foreign: f });
+		expect([line.debit, line.credit]).toEqual(['', '']);
+	});
+	it('saisie du CHF touche après touche : la saisie brute reste affichée (37-3b-CR-P1-2)', () => {
+		const noAfc = { ...afc, afcRate: null };
+		// « 9 » puis « 95 » puis « 950 » : le cours se déduit à chaque frappe et
+		// la saisie brute reste, jamais réécrite en « 9.00 ».
+		let f = applyChfEntry(noAfc, '9', date);
+		expect(f.chfEntry).toBe('9');
+		expect(f.chfError).toBeNull();
+		f = applyChfEntry(f, '95', date);
+		f = applyChfEntry(f, '950', date);
+		expect(f.chfEntry).toBe('950');
+		expect(f.rate).toBe('9.5');
+		const line = syncDerivedChf({ accountId: 10, debit: '', credit: '', foreign: f });
+		expect(line.debit).toBe('950.00');
+		// Le focus quitte le champ : la saisie résolue cède la place au CHF dérivé.
+		expect(commitChfEntry(f).chfEntry).toBeNull();
+		// Une saisie refusée reste affichée avec son refus.
+		const bad = applyChfEntry(noAfc, '0.123', date);
+		expect(commitChfEntry(bad).chfEntry).toBe('0.123');
+	});
+});
+
+describe('écriture relue : montant normalisé par le serveur (37-3b-CR-P1-3)', () => {
+	const line = (amount: string): JournalEntryLineResponse => ({
+		id: 1,
+		accountId: 10,
+		lineOrder: 1,
+		debit: '1.0900',
+		credit: '0',
+		projectId: null,
+		letteringKey: null,
+		letteringCode: null,
+		letteringOrigin: null,
+		foreign: { currency: 'USD', amount, rate: '0.8846', rateSource: 'manual' },
+	});
+	it('« 1.234 » (trois décimales) relu à quatre décimales, jamais ambigu', () => {
+		const f = foreignFromResponse(line('1.234'))!;
+		expect(f.amount).toBe('1.2340');
+		expect(foreignLineProblem(f)).toBeNull();
+		expect(lineToPayload({ accountId: 10, debit: '1.09', credit: '', projectId: null, foreign: f }, '2026-03-15', false)).not.toBeNull();
+	});
+	it('les autres montants restent tels quels', () => {
+		expect(foreignFromResponse(line('100'))!.amount).toBe('100');
+		expect(foreignFromResponse(line('1234.5'))!.amount).toBe('1234.5');
 	});
 });
 

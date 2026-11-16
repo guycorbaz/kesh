@@ -28,6 +28,12 @@
 	let company = $state<CompanyJson | null>(null);
 	let openFiscalYears = $state<{ startDate: string; endDate: string }[]>([]);
 	let loading = $state(true);
+	/**
+	 * La société ou les exercices n'ont pas pu être chargés : l'assistant ne
+	 * s'affiche pas — il dirait sinon « aucun compte de conversion » ou « date
+	 * hors exercice ouvert », à tort (revue de code P1, 37-3b-CR-P1-13).
+	 */
+	let contextLoadError = $state(false);
 
 	const cache = createRateLookupCache({
 		lookup: lookupRate,
@@ -36,7 +42,10 @@
 		today: () => todayLocal()
 	});
 
-	onMount(async () => {
+	async function load() {
+		loading = true;
+		contextLoadError = false;
+		accountsLoadError = false;
 		const [a, c, y] = await Promise.allSettled([
 			fetchAccounts(false),
 			fetchCompanyCurrent(),
@@ -51,8 +60,11 @@
 						.filter((fy) => fy.status === 'Open')
 						.map((fy) => ({ startDate: fy.startDate, endDate: fy.endDate }))
 				: [];
+		contextLoadError = c.status === 'rejected' || y.status === 'rejected';
 		loading = false;
-	});
+	}
+
+	onMount(load);
 </script>
 
 <svelte:head>
@@ -77,6 +89,18 @@
 	</p>
 	{#if loading}
 		<p class="text-text-muted" role="status">…</p>
+	{:else if contextLoadError}
+		<div class="space-y-2" role="alert" data-testid="conversion-load-error">
+			<p class="text-sm text-destructive">
+				{i18nMsg(
+					'journal-entries-conversion-load-error',
+					'Le compte de conversion ou les exercices n’ont pas pu être chargés : l’assistant ne peut pas juger les dates ni le compte de conversion.'
+				)}
+			</p>
+			<Button variant="outline" onclick={load}>
+				{i18nMsg('journal-entries-conversion-retry', 'Réessayer')}
+			</Button>
+		</div>
 	{:else}
 		<ConversionAssistant
 			{accounts}

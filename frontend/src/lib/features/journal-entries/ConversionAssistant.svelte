@@ -22,6 +22,8 @@
 	import {
 		applyChfEntry,
 		applyLookup,
+		commitChfEntry,
+		foreignLineProblem,
 		monthOf,
 		newForeign,
 		rateIndicator,
@@ -29,7 +31,7 @@
 		type LineForeign
 	} from './fx-lines';
 	import { conversionField, planConversion, type ConversionBlocker, type ConversionColumn } from './conversion';
-	import { fxRefusalMessage, isFxRefusalCode, refusalEntry, refusalLine } from './fx-refusals';
+	import { foreignProblemMessage, fxRefusalMessage, isFxRefusalCode, refusalEntry, refusalLine } from './fx-refusals';
 	import type { RateLookupCache } from './rate-lookup';
 	import { formatForeignAmount, formatRate } from './fx-display';
 	import { formatSwissDate } from '$lib/features/reports/reports.api';
@@ -92,6 +94,9 @@
 		globalError = null;
 	}
 
+	/** `lookup` en cours, que l'envoi attend (revue de code P1, 37-3b-CR-P1-6). */
+	const inflight = new Set<Promise<void>>();
+
 	/** Le `lookup` (mémoïsé) du mois de la date de la colonne ; propose le cours. */
 	function refreshRate(side: 'debit' | 'credit') {
 		const col = getCol(side);
@@ -99,11 +104,15 @@
 		if (!f || !/^\d{4}-\d{2}-\d{2}$/.test(col.date)) return;
 		const date = col.date;
 		const currency = f.currency;
-		void cache.get(currency, date).then((r) => {
-			const now = getCol(side);
-			if (!now.foreign || now.foreign.currency !== currency || now.date !== date) return;
-			setCol(side, { ...now, foreign: applyLookup(now.foreign, monthOf(date), r.outcome) });
-		});
+		const done: Promise<void> = cache
+			.get(currency, date)
+			.then((r) => {
+				const now = getCol(side);
+				if (!now.foreign || now.foreign.currency !== currency || now.date !== date) return;
+				setCol(side, { ...now, foreign: applyLookup(now.foreign, monthOf(date), r.outcome) });
+			})
+			.finally(() => inflight.delete(done));
+		inflight.add(done);
 	}
 
 	function selectAccount(side: 'debit' | 'credit', id: number | null) {
@@ -227,15 +236,24 @@
 			case 'fee-invalid':
 				return i18nMsg(
 					'journal-entries-conversion-blocked-fee',
-					'Une ligne de frais est incomplète : choisissez son compte et un montant positif.'
+					'Une ligne de frais est incomplète ou invalide : choisissez un compte en CHF ou dans la devise de la colonne, et un montant positif (au centime pour un frais en CHF).'
 				);
 		}
 	}
 
 	async function submit() {
 		if (plan.kind !== 'ready' || submitting) return;
-		const sentPlan = plan;
 		submitting = true;
+		// L'envoi attend les `lookup` en cours (cours proposé du mois de la date,
+		// provenance), comme le formulaire ; le plan est relu ensuite.
+		if (inflight.size > 0) {
+			await Promise.all([...inflight]);
+			if (plan.kind !== 'ready') {
+				submitting = false;
+				return;
+			}
+		}
+		const sentPlan = plan;
 		columnError = { debit: null, credit: null };
 		feeErrors = { debit: {}, credit: {} };
 		globalError = null;
@@ -255,10 +273,17 @@
 				globalError = message;
 			} else {
 				const side = entry === 1 ? 'debit' : 'credit';
-				const feeCount = getCol(side).fees.filter((f) => f.accountId !== null).length;
-				const field = line === null ? null : conversionField(line, feeCount);
-				if (field?.kind === 'fee') feeErrors = { ...feeErrors, [side]: { [field.index]: message } };
-				else if (field?.kind === 'difference') globalError = message;
+				// Le corps ne porte que les frais dont le compte est choisi : le rang
+				// d'un frais refusé se ramène à son indice dans `col.fees`, lignes
+				// vides comprises (revue de code P1, 37-3b-CR-P1-12).
+				const sentFees = getCol(side)
+					.fees.map((f, k) => ({ f, k }))
+					.filter(({ f }) => f.accountId !== null)
+					.map(({ k }) => k);
+				const field = line === null ? null : conversionField(line, sentFees.length);
+				if (field?.kind === 'fee' && sentFees[field.index] !== undefined) {
+					feeErrors = { ...feeErrors, [side]: { [sentFees[field.index]]: message } };
+				} else if (field?.kind === 'difference') globalError = message;
 				else columnError = { ...columnError, [side]: message };
 			}
 			toast.error(message);
@@ -353,8 +378,13 @@
 					value={chfOf(side)}
 					oninput={(e) =>
 						updateForeign(side, (x) => applyChfEntry(x, (e.currentTarget as HTMLInputElement).value, col.date))}
+					onblur={() => updateForeign(side, commitChfEntry)}
 				/>
 			</label>
+			{@const problem = foreignLineProblem(f)}
+			{#if problem !== null && (f.amount.trim() !== '' || f.chfError !== null)}
+				<p class="text-xs text-destructive" data-testid="conversion-{side}-problem">{foreignProblemMessage(problem)}</p>
+			{/if}
 		{/if}
 		{#each col.fees as fee, k (k)}
 			<div class="flex items-start gap-2" data-testid="conversion-{side}-fee-{k}">

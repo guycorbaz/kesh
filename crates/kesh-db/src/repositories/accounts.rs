@@ -2047,7 +2047,11 @@ pub struct ConversionLineAccount {
 /// lui-même (type et devise, lus par la règle de forme, A33) et s'il est le
 /// compte de différence **propre** d'un compte de la société — une requête
 /// **bornée** à ces comptes (`EXISTS` par identifiant, jamais un balayage de
-/// tous les comptes), `LOCK IN SHARE MODE`, triée par `id`.
+/// tous les comptes), `LOCK IN SHARE MODE`, triée par `id`. Le verrou porte
+/// sur les comptes lus, **non** sur les lignes `o` de la sous-requête
+/// `EXISTS` : une désignation de compte propre posée en parallèle peut n'être
+/// pas vue (revue de code P1, 37-3b-CR-P1-16 ; la paire est revalidée sous
+/// verrou à l'usage).
 ///
 /// Appelée **après** le verrou de `companies` (ordre `companies` → `accounts`
 /// de 37-1 AC-3). Un identifiant inconnu ou d'une autre société est absent du

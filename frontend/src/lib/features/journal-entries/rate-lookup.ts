@@ -92,10 +92,17 @@ export interface RateLookupCache {
  */
 export function createRateLookupCache(deps: RateLookupDeps): RateLookupCache {
 	const memo = new Map<string, Promise<LookupResult>>();
+	/**
+	 * Suivi d'une résolution : une lecture qui échoue pour une raison
+	 * **passagère** (réseau, délai, réponse 5xx) le note, et son résultat
+	 * négatif n'est pas mémoïsé — la lecture suivante réessaie (revue de code
+	 * P1, 37-3b-CR-P1-7).
+	 */
+	type Trace = { transient: boolean };
 	const key = (currency: string, kind: RateKind, date: string) =>
 		`${currency}|${kind}|${kind === 'month' ? firstOfMonth(date) : date}`;
 
-	async function read(currency: string, date: string, kind: RateKind): Promise<LookupOutcome | 'unavailable'> {
+	async function read(currency: string, date: string, kind: RateKind, trace?: Trace): Promise<LookupOutcome | 'unavailable'> {
 		try {
 			const r = await deps.lookup(currency, kind === 'month' ? firstOfMonth(date) : date, kind);
 			return {
@@ -104,11 +111,12 @@ export function createRateLookupCache(deps: RateLookupDeps): RateLookupCache {
 			};
 		} catch (err) {
 			if (isApiError(err) && err.code === 'RATE_UNAVAILABLE') return 'unavailable';
+			if (trace && (!isApiError(err) || err.status >= 500)) trace.transient = true;
 			return { kind: 'none' };
 		}
 	}
 
-	async function fetchThenRead(currency: string, date: string, kind: RateKind): Promise<LookupResult> {
+	async function fetchThenRead(currency: string, date: string, kind: RateKind, trace?: Trace): Promise<LookupResult> {
 		if (!deps.canFetch() || !isFetchable(kind, date, deps.today())) {
 			return { outcome: { kind: 'none' }, note: 'manual-required' };
 		}
@@ -118,17 +126,17 @@ export function createRateLookupCache(deps: RateLookupDeps): RateLookupCache {
 			// `RATE_NOT_PUBLISHED`, `503`, `400` : saisie manuelle.
 			return { outcome: { kind: 'none' }, note: 'manual-required' };
 		}
-		const second = await read(currency, date, kind);
+		const second = await read(currency, date, kind, trace);
 		if (second === 'unavailable' || second.kind === 'none') {
 			return { outcome: { kind: 'none' }, note: 'manual-required' };
 		}
 		return { outcome: second, note: null };
 	}
 
-	async function resolve(currency: string, date: string, kind: RateKind): Promise<LookupResult> {
-		const first = await read(currency, date, kind);
+	async function resolve(currency: string, date: string, kind: RateKind, trace: Trace): Promise<LookupResult> {
+		const first = await read(currency, date, kind, trace);
 		if (first !== 'unavailable') return { outcome: first, note: first.kind === 'none' ? 'manual-required' : null };
-		return fetchThenRead(currency, date, kind);
+		return fetchThenRead(currency, date, kind, trace);
 	}
 
 	return {
@@ -136,7 +144,12 @@ export function createRateLookupCache(deps: RateLookupDeps): RateLookupCache {
 			const k = key(currency, kind, date);
 			const hit = memo.get(k);
 			if (hit) return hit;
-			const p = resolve(currency, date, kind);
+			const trace: Trace = { transient: false };
+			const p: Promise<LookupResult> = resolve(currency, date, kind, trace).then((r) => {
+				// Un échec passager ne se mémoïse pas : l'entrée est retirée.
+				if (trace.transient && memo.get(k) === p) memo.delete(k);
+				return r;
+			});
 			memo.set(k, p);
 			return p;
 		},

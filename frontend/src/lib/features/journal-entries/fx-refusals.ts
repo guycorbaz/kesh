@@ -90,3 +90,42 @@ export function refusalEntry(details: RefusalDetails): 1 | 2 | null {
 	const v = details?.entry;
 	return v === 1 || v === 2 ? v : null;
 }
+
+/**
+ * Le message traduit d'un problème de ligne en devise (`foreignLineProblem`),
+ * partagé par le formulaire d'écriture et l'assistant *Conversion*.
+ */
+export function foreignProblemMessage(problem: string): string {
+	switch (problem) {
+		case 'FX_VALUE_OUT_OF_RANGE':
+			return i18nMsg(
+				'journal-entries-fx-value-out-of-range',
+				'Montant en devise, cours ou montant CHF hors des limites : montant positif à quatre décimales au plus, cours positif à dix décimales et 1 000 000 au plus.'
+			);
+		case 'FX_LINE_ROUNDS_TO_ZERO':
+			return i18nMsg(
+				'journal-entries-fx-rounds-to-zero',
+				'Le montant en CHF calculé s’arrondit à zéro.'
+			);
+		case 'FX_AMOUNT_MISMATCH':
+			return i18nMsg(
+				'journal-entries-fx-chf-no-rate',
+				'Aucun cours à dix décimales ne redonne ce montant CHF : corrigez le CHF ou saisissez le cours.'
+			);
+		case 'amount-unreadable':
+			return i18nMsg(
+				'journal-entries-fx-amount-unreadable',
+				'Montant en devise illisible ou ambigu : chiffres, apostrophe des milliers (1\'234), point ou virgule décimale, quatre décimales au plus.'
+			);
+		case 'rate-unreadable':
+			return i18nMsg(
+				'journal-entries-fx-rate-invalid',
+				'Cours invalide : strictement positif, dix décimales et 1 000 000 au plus.'
+			);
+		default:
+			return i18nMsg(
+				'journal-entries-fx-incomplete',
+				'Saisissez le montant en devise et le cours (ou le montant CHF).'
+			);
+	}
+}

@@ -24,6 +24,8 @@ import { fxAccountsFor, type FxAccountsOrigin } from '$lib/features/accounts/fx-
 import type { CompanyJson } from '$lib/features/settings/settings.types';
 import { computeChf, readForeignAmount, readRate } from './fx';
 import { foreignChf, rateSourceToSend, type LineForeign } from './fx-lines';
+import { journalAmountReader } from './balance';
+import type { CreateJournalEntryLineRequest, CreateJournalEntryRequest } from './journal-entries.types';
 
 /** Montant en devise lu, `null` vide ou illisible. */
 function amountOrNull(raw: string): Big | null {
@@ -41,8 +43,6 @@ function normalized(f: LineForeign): { currency: string; amount: string; rate: s
 		rate: r !== null && r !== 'empty' ? r.toFixed() : f.rate,
 	};
 }
-import { journalAmountReader } from './balance';
-import type { CreateJournalEntryLineRequest, CreateJournalEntryRequest } from './journal-entries.types';
 
 /** Une ligne de frais d'une colonne (toujours au débit). */
 export interface FeeLine {
@@ -136,9 +136,16 @@ export function feeLine(
 	if (!account) return null;
 	const currency = accountCurrency(account);
 	if (currency === null) {
+		// Un frais en CHF : au centime, sans arrondi silencieux (« 12.345 » est
+		// refusé, non envoyé 12.35), positif (revue de code P1, 37-3b-CR-P1-9).
 		const v = journalAmountReader(fee.amount);
-		return v === null || v.lte(0) ? null : { chf: v.round(2, Big.roundHalfUp), foreign: null };
+		return v === null || v.lte(0) || v.round(2, Big.roundDown).cmp(v) !== 0 ? null : { chf: v, foreign: null };
 	}
+	// Un frais en devise est dans la devise de la colonne, et nulle autre : un
+	// compte resté d'une devise précédente de la colonne ne se convertit pas au
+	// cours de la nouvelle (revue de code P1, 37-3b-CR-P1-4).
+	const columnAccount = accountOf(ctx, column.accountId);
+	if (!columnAccount || accountCurrency(columnAccount) !== currency) return null;
 	const amount = amountOrNull(fee.amount);
 	const rate = column.foreign ? readRate(column.foreign.rate) : null;
 	if (amount === null || rate === null || rate === 'empty') return null;

@@ -83,6 +83,21 @@ describe('RateLookupCache', () => {
 		expect((await cache.refresh('USD', '2026-03-01')).outcome.kind).toBe('rate');
 		expect((await cache.get('USD', '2026-03-20')).outcome.kind).toBe('rate');
 	});
+	it('échec passager (réseau, 5xx) : non mémoïsé, la lecture suivante réessaie (37-3b-CR-P1-7)', async () => {
+		const lookup = vi
+			.fn()
+			.mockRejectedValueOnce(new TypeError('Failed to fetch'))
+			.mockRejectedValueOnce({ code: 'INTERNAL', status: 503, message: '' })
+			.mockResolvedValueOnce(lookupOk);
+		const cache = createRateLookupCache({ lookup, fetch: vi.fn(), canFetch: () => true, today: () => '2026-03-15' });
+		expect((await cache.get('USD', '2026-03-01')).outcome.kind).toBe('none');
+		expect((await cache.get('USD', '2026-03-02')).outcome.kind).toBe('none');
+		expect((await cache.get('USD', '2026-03-03')).outcome.kind).toBe('rate');
+		expect(lookup).toHaveBeenCalledTimes(3);
+		// Le résultat obtenu, lui, est mémoïsé.
+		await cache.get('USD', '2026-03-04');
+		expect(lookup).toHaveBeenCalledTimes(3);
+	});
 	it('isFetchable : 2000-01 au mois suivant ; un jour strictement passé', () => {
 		expect(isFetchable('month', '1999-12-01', '2026-03-15')).toBe(false);
 		expect(isFetchable('month', '2026-04-01', '2026-03-15')).toBe(true);
@@ -251,6 +266,29 @@ describe('assistant Conversion (AC-2 bis)', () => {
 		const archived = { ...ctx, accounts: ctx.accounts.map((a) => (a.id === 31 ? { ...a, active: false } : a)) };
 		const pair = planConversion(archived, col(21, 'EUR', '1000', '0.947', '2026-03-05'), col(22, 'USD', '1000', '0.947', '2026-03-06'), labels);
 		expect(pair).toMatchObject({ kind: 'blocked', blockers: ['pair-invalid'], pairOrigin: 'company' });
+	});
+	it('frais resté sur un compte d’une autre devise que la colonne → frais invalide (37-3b-CR-P1-4)', () => {
+		const FEE_EUR = acc({ id: 26, number: '6912', accountType: 'Expense', currency: 'EUR' });
+		const ctx2 = { ...ctx, accounts: [...ctx.accounts, FEE_EUR] };
+		// Le frais EUR est resté dans la colonne Crédit, passée à un compte USD.
+		const c2 = { ...col(22, 'USD', '1000', '0.9', '2026-03-06'), fees: [{ accountId: 26, amount: '10' }] };
+		const p = planConversion(ctx2, col(21, 'EUR', '1000', '0.9470', '2026-03-05'), c2, labels);
+		expect(p).toMatchObject({ kind: 'blocked', blockers: ['fee-invalid'] });
+		// De même dans la colonne Débit (aucun équivalent de la garde du second compte).
+		const c1 = { ...col(21, 'EUR', '1000', '0.9470', '2026-03-05'), fees: [{ accountId: 25, amount: '10' }] };
+		expect(planConversion(ctx2, c1, col(22, 'USD', '1000', '0.9', '2026-03-06'), labels)).toMatchObject({
+			kind: 'blocked',
+			blockers: ['fee-invalid'],
+		});
+	});
+	it('frais en CHF : au centime, positif, sans arrondi silencieux (37-3b-CR-P1-9)', () => {
+		const run = (amount: string) =>
+			planConversion(ctx, { ...col(21, 'EUR', '1000', '0.9470', '2026-03-05'), fees: [{ accountId: 30, amount }] }, col(22, 'USD', '1000', '0.9', '2026-03-06'), labels);
+		expect(run('12.345')).toMatchObject({ kind: 'blocked', blockers: ['fee-invalid'] });
+		expect(run('0.004')).toMatchObject({ kind: 'blocked', blockers: ['fee-invalid'] });
+		const ok = run('12.35');
+		if (ok.kind !== 'ready') throw new Error('prêt attendu');
+		expect(ok.entries[0].lines[1]).toMatchObject({ accountId: 30, debit: '12.35' });
 	});
 	it('différence nulle : aucune ligne de différence', () => {
 		const p = planConversion(ctx, col(21, 'EUR', '1000', '0.947', '2026-03-05'), col(22, 'USD', '1000', '0.947', '2026-03-06'), labels);

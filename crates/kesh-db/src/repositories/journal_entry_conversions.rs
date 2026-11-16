@@ -31,11 +31,26 @@
 //! et ses comptes de différence sont lus en partage **avant** l'exercice, alors
 //! que l'écriture ordinaire prend l'exercice puis les comptes en partage ;
 //! aucun chemin ne prend un exercice puis un compte **en exclusif** depuis le
-//! retrait de la bascule `force` de 37-1 (CR-7) : pas de cycle connu. Seule
-//! promotion : quand une ligne porte un projet, l'étape 0 de `create_in_tx`
-//! prend la sentinelle `companies` `FOR UPDATE` alors que cette transaction la
-//! tient en partage (S → X) — deux conversions concurrentes de la même société
-//! portant chacune un projet s'interbloquent, et le rejeu en défend.
+//! retrait de la bascule `force` de 37-1 (CR-7). Mais la sentinelle `companies`
+//! fait des cycles, tous défendus par le rejeu (revue de code P1,
+//! 37-3b-CR-P1-16) :
+//! - quand une ligne porte un projet, l'étape 0 de `create_in_tx` prend
+//!   `companies` `FOR UPDATE` alors que cette transaction la tient en partage
+//!   (S → X) : deux conversions concurrentes portant chacune un projet
+//!   s'interbloquent, et une conversion à projet s'interbloque aussi avec une
+//!   écriture à projet déjà en attente du X (InnoDB fait attendre derrière les
+//!   demandes en file) ;
+//! - une conversion, même sans projet, prend `companies` en partage **puis**
+//!   l'exercice `FOR UPDATE`, quand un flux qui tient déjà l'exercice prend
+//!   ensuite `companies` `FOR UPDATE` (rapprochement ventilé ou lot avec
+//!   projet, `create_in_tx` étape 0) : cycle exercice ↔ `companies`.
+//!
+//! La reconnaissance des comptes des lignes
+//! ([`accounts::conversion_line_accounts_in_tx`]) verrouille les comptes lus,
+//! non les lignes de la sous-requête `EXISTS` qui dit si un compte est désigné
+//! comme compte propre par un autre : une désignation posée en parallèle peut
+//! n'être pas vue (une ligne classée ou non comme ligne de différence), la
+//! paire étant de toute façon revalidée sous verrou à l'usage.
 
 use std::collections::{BTreeSet, HashMap};
 
@@ -462,7 +477,14 @@ async fn complete_entry(
         holder_account,
     )
     .ok_or(DbError::FxAccountInvalid {
-        field: FxAccountField::Gain,
+        // Le champ réellement manquant de la société (le compte en devise n'a
+        // pas de paire propre) : gains d'abord, pertes sinon (revue de code P1,
+        // 37-3b-CR-P1-15).
+        field: if state.fx_gain_account_id.is_none() {
+            FxAccountField::Gain
+        } else {
+            FxAccountField::Loss
+        },
         reason: FxAccountReason::Missing,
         holder_account_id: None,
     })?;

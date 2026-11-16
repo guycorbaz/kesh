@@ -62,7 +62,10 @@ const LOSS = account(32, '6940', { accountType: 'Expense' });
 const ACCOUNTS = [CHF, USD, EUR, GAIN, LOSS];
 
 let lookup: ReturnType<typeof vi.fn>;
+/** Le cours que rend le `lookup` du dernier cache créé (attendu au champ). */
+let proposedRate = '0.8846';
 function cache(rate = '0.8846', source = 'afc') {
+	proposedRate = rate;
 	lookup = vi.fn(async (currency: string, date: string) => ({
 		currency,
 		kind: 'month',
@@ -114,13 +117,13 @@ const tick = () => new Promise((r) => setTimeout(r, 0));
 /** La valeur d'un champ désigné par son `data-testid`. */
 const val = (id: string) => (screen.getByTestId(id) as HTMLInputElement).value;
 
-/** Ligne 0 : USD 100 au débit (cours proposé 0.8846) ; ligne 1 : CHF au crédit. */
+/** Ligne 0 : USD 100 au débit (cours proposé par le cache, `proposedRate`) ; ligne 1 : CHF au crédit. */
 async function usdLine(credit: string) {
 	await fireEvent.input(document.getElementById('entry-description')!, {
 		target: { value: 'Écriture USD' }
 	});
 	await pick(0, '1022');
-	await waitFor(() => expect(['0.8846', '0.88']).toContain(val('journal-entry-line-fx-rate-0')));
+	await waitFor(() => expect(val('journal-entry-line-fx-rate-0')).toBe(proposedRate));
 	await fireEvent.input(screen.getByTestId('journal-entry-line-fx-debit-0'), { target: { value: '100' } });
 	await pick(1, '1000');
 	const montants = screen.getAllByPlaceholderText('0.00');

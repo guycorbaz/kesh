@@ -108,8 +108,14 @@ export interface FxLineLike {
 /**
  * Le CHF d'une ligne en devise, ou `null` tant que montant ou cours manquent.
  * Un refus (`FX_VALUE_OUT_OF_RANGE`, `FX_LINE_ROUNDS_TO_ZERO`) est rendu tel quel.
+ *
+ * Un CHF saisi dont le cours n'a pas pu être déduit (`chfError` non nul) rend
+ * `null` : le CHF de l'ancien cours n'est ni calculé ni envoyé — la ligne
+ * reste incomplète tant que l'utilisateur n'a pas corrigé (revue de code P1,
+ * 37-3b-CR-P1-1).
  */
 export function foreignChf(f: LineForeign): { ok: true; value: Big } | { ok: false; error: FxErrorCode } | null {
+	if (f.chfError !== null) return null;
 	const amount = readForeignAmount(f.amount);
 	const rate = readRate(f.rate);
 	if (amount === 'empty' || rate === 'empty') return null;
@@ -214,6 +220,12 @@ export function lineToPayload(
  * mois de la date redonne ce CHF, le cours devient ce cours `afc` ; sinon le
  * cours de {@link rateFromChf}. Rend la partie en devise mise à jour (cours
  * retouché, plus proposé), ou avec `chfError` si aucun cours ne convient.
+ *
+ * La saisie brute reste dans `chfEntry` (affichée telle quelle) tant que le
+ * champ a le focus, même quand le cours en a été déduit : sans quoi le champ
+ * se réécrirait au CHF dérivé (« 9 » → « 9.00 ») à chaque frappe et l'on ne
+ * pourrait pas taper « 950 » (revue de code P1, 37-3b-CR-P1-2). Le champ la
+ * rend au CHF dérivé en quittant le focus ({@link commitChfEntry}).
  */
 export function applyChfEntry(f: LineForeign, rawChf: string, entryDate: string): LineForeign {
 	const next: LineForeign = { ...f, chfEntry: rawChf, chfError: null };
@@ -227,12 +239,20 @@ export function applyChfEntry(f: LineForeign, rawChf: string, entryDate: string)
 	if (f.afcRate !== null && f.afcMonth === monthOf(entryDate)) {
 		const viaAfc = computeChf(amount, f.afcRate);
 		if (viaAfc.ok && viaAfc.value.eq(chf)) {
-			return { ...next, rate: new Big(f.afcRate).toFixed(), chfEntry: null, rateProposed: false, touched: true };
+			return { ...next, rate: new Big(f.afcRate).toFixed(), rateProposed: false, touched: true };
 		}
 	}
 	const r = rateFromChf(amount, chf);
 	if (!r.ok) return { ...next, chfError: r.error };
-	return { ...next, rate: r.value.toFixed(), chfEntry: null, rateProposed: false, touched: true };
+	return { ...next, rate: r.value.toFixed(), rateProposed: false, touched: true };
+}
+
+/**
+ * Le champ CHF quitte le focus : une saisie dont le cours a été déduit cède la
+ * place au CHF dérivé ; une saisie refusée reste affichée avec son refus.
+ */
+export function commitChfEntry(f: LineForeign): LineForeign {
+	return f.chfEntry !== null && f.chfError === null ? { ...f, chfEntry: null } : f;
 }
 
 /**
@@ -346,7 +366,10 @@ export function foreignFromResponse(line: JournalEntryLineResponse): LineForeign
 	const side: 'debit' | 'credit' = new Big(line.credit).gt(0) ? 'credit' : 'debit';
 	return {
 		...newForeign(f.currency, side),
-		amount: f.amount,
+		// Le serveur rend le montant normalisé (« 1.234 ») : à trois décimales, la
+		// lecture du journal le dirait ambigu et refuserait la ligne relue ; il
+		// est relu à quatre décimales (revue de code P1, 37-3b-CR-P1-3).
+		amount: readJournalAmount(f.amount).kind === 'ambiguous' ? new Big(f.amount).toFixed(4) : f.amount,
 		rate: f.rate,
 		rateProposed: f.rateSource === 'afc',
 		loadedRateSource: f.rateSource,

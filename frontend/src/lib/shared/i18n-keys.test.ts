@@ -1043,8 +1043,12 @@ const ATTENDU = {
 	// +page.svelte` 4 (neuf), `fx-display.ts` 3 (neuf), `blocker-messages.ts` +1,
 	// `journal-entries/+page.svelte` +1, `settings/invoicing/+page.svelte` +1 — total 104. Que
 	// des littéraux. Puis **3289 → 3292** : `reconciliation/failed-proposal-label.ts` +3 (les
-	// codes de lot propres aux devises, reçus de la 37-3a), relevé par la garde.
-	sitesTotal: 3292,
+	// codes de lot propres aux devises, reçus de la 37-3a), relevé par la garde. Puis
+	// **3292 → 3294** (revue de code P1 de la 37-3b) : la page de l'assistant *Conversion*
+	// +2 (`journal-entries-conversion-load-error`, `-retry`, l'état d'erreur de
+	// chargement) ; le message des problèmes d'une ligne en devise, déplacé du formulaire
+	// vers `fx-refusals.ts`, ne change pas le compte. Relevé par la garde.
+	sitesTotal: 3294,
 	sitesNonResolus: 31,
 	relais: 6,
 	// Story 26-1 (#620, AC3-bis) : **10 → 11** — `lib/features/bank-import/

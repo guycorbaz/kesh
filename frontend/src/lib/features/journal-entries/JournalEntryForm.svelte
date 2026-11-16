@@ -52,6 +52,7 @@
 		allowedCurrencies,
 		applyAccountChange,
 		applyChfEntry,
+		commitChfEntry,
 		applyLookup,
 		companyRateHint,
 		foreignLineProblem,
@@ -62,9 +63,10 @@
 		planDifferenceLine,
 		rateIndicator,
 		syncDerivedChf,
-		type CompanyRate
+		type CompanyRate,
+		type LineForeign
 	} from './fx-lines';
-	import { fxRefusalMessage, isFxRefusalCode, refusalLine } from './fx-refusals';
+	import { foreignProblemMessage, fxRefusalMessage, isFxRefusalCode, refusalLine } from './fx-refusals';
 	import { createRateLookupCache, type LookupResult, type RateLookupCache } from './rate-lookup';
 	import { debounce } from './debounce';
 
@@ -242,7 +244,7 @@
 				if (monthOf(entryDate) !== month) return;
 				lines = lines.map((l) =>
 					l.foreign && l.foreign.currency === currency
-						? syncDerivedChf({ ...l, foreign: applyLookup(l.foreign, month, r.outcome) })
+						? syncDerivedChf({ ...l, foreign: lookupForLine(l.foreign, month, r.outcome) })
 						: l
 				);
 				if (r.note === 'manual-required') manualRequired.add(key);
@@ -253,6 +255,18 @@
 				inflight.delete(done);
 			});
 		inflight.add(done);
+	}
+
+	/**
+	 * Le `lookup` appliqué à une ligne. En édition, une ligne relue ni retouchée,
+	 * à la date inchangée, garde son cours (et donc son CHF) : le `lookup` lancé
+	 * pour une autre ligne ne le remplace pas par le cours actuel de la société
+	 * (revue de code P1, 37-3b-CR-P1-11) ; il n'en retient que le cours `afc`.
+	 */
+	function lookupForLine(f: LineForeign, month: string, outcome: LookupResult['outcome']): LineForeign {
+		const keep = f.loadedRateSource !== null && !f.touched && !dateChanged;
+		if (!keep) return applyLookup(f, month, outcome);
+		return { ...applyLookup({ ...f, rateProposed: false }, month, outcome), rateProposed: f.rateProposed };
 	}
 
 	/** Lance (mémoïsé) le `lookup` du mois de la date pour les devises des lignes (ou une seule). */
@@ -286,11 +300,13 @@
 			lines[index].accountId = id;
 			return;
 		}
-		const before = lines[index].foreign?.currency ?? null;
 		const next = applyAccountChange({ ...lines[index] }, account);
 		lines[index] = next;
 		clearLineRefusal(index);
-		if (next.foreign && next.foreign.currency !== before) refreshRates(next.foreign.currency);
+		// Même devise comprise : la ligne est retouchée, et sa provenance (`afc`
+		// ou `manual`) se juge sur le cours `afc` du mois, qu'il faut avoir lu
+		// (revue de code P1, 37-3b-CR-P1-10).
+		if (next.foreign) refreshRates(next.foreign.currency);
 	}
 
 	/** Le montant en devise saisi dans la colonne `side`. */
@@ -335,6 +351,13 @@
 		refreshRates(f.currency);
 	}
 
+	/** Le champ CHF quitte le focus : la saisie résolue cède la place au CHF dérivé. */
+	function commitForeignChf(index: number) {
+		const f = lines[index].foreign;
+		if (!f) return;
+		lines[index] = syncDerivedChf({ ...lines[index], foreign: commitChfEntry(f) });
+	}
+
 	/** Le ↑ : la ligne reprend le cours de la société (la table des cours n'est pas touchée). */
 	function adoptRate(index: number, company: CompanyRate) {
 		const f = lines[index].foreign;
@@ -350,42 +373,6 @@
 		if (!f) return '';
 		if (f.chfEntry !== null) return f.chfEntry;
 		return f.side === 'debit' ? l.debit : l.credit;
-	}
-
-	/** Le message traduit d'un problème de ligne en devise. */
-	function foreignProblemMessage(problem: string): string {
-		switch (problem) {
-			case 'FX_VALUE_OUT_OF_RANGE':
-				return i18nMsg(
-					'journal-entries-fx-value-out-of-range',
-					'Montant en devise, cours ou montant CHF hors des limites : montant positif à quatre décimales au plus, cours positif à dix décimales et 1 000 000 au plus.'
-				);
-			case 'FX_LINE_ROUNDS_TO_ZERO':
-				return i18nMsg(
-					'journal-entries-fx-rounds-to-zero',
-					'Le montant en CHF calculé s’arrondit à zéro.'
-				);
-			case 'FX_AMOUNT_MISMATCH':
-				return i18nMsg(
-					'journal-entries-fx-chf-no-rate',
-					'Aucun cours à dix décimales ne redonne ce montant CHF : corrigez le CHF ou saisissez le cours.'
-				);
-			case 'amount-unreadable':
-				return i18nMsg(
-					'journal-entries-fx-amount-unreadable',
-					'Montant en devise illisible ou ambigu : chiffres, apostrophe des milliers (1\'234), point ou virgule décimale, quatre décimales au plus.'
-				);
-			case 'rate-unreadable':
-				return i18nMsg(
-					'journal-entries-fx-rate-invalid',
-					'Cours invalide : strictement positif, dix décimales et 1 000 000 au plus.'
-				);
-			default:
-				return i18nMsg(
-					'journal-entries-fx-incomplete',
-					'Saisissez le montant en devise et le cours (ou le montant CHF).'
-				);
-		}
 	}
 
 	/** Le libellé de l'indicateur du cours d'une ligne. */
@@ -545,6 +532,9 @@
 	/** Applique les lignes générées par l'assistant : remplace le brouillon. */
 	function applyAssistant(result: { lines: LineDraft[]; description: string }) {
 		lines = result.lines;
+		// Les lignes sont remplacées : les refus par ligne ne visent plus rien.
+		lineRefusals = {};
+		rateNotAfc = {};
 		journal = 'Achats';
 		if (description.trim() === '') {
 			description = result.description;
@@ -604,9 +594,25 @@
 		lines = [...lines, { accountId: null, debit: '', credit: '', projectId: null }];
 	}
 
+	/**
+	 * Décale les refus par ligne quand la ligne `index` est retirée : un refus
+	 * reste sur sa ligne, jamais sur la suivante (revue de code P1, 37-3b-CR-P1-8).
+	 */
+	function shiftAfterRemoval<V>(table: Record<number, V>, index: number): Record<number, V> {
+		const out: Record<number, V> = {};
+		for (const [k, v] of Object.entries(table)) {
+			const i = Number(k);
+			if (i < index) out[i] = v;
+			else if (i > index) out[i - 1] = v;
+		}
+		return out;
+	}
+
 	function removeLine(index: number) {
 		if (lines.length <= 2) return;
 		lines = lines.filter((_, i) => i !== index);
+		lineRefusals = shiftAfterRemoval(lineRefusals, index);
+		rateNotAfc = shiftAfterRemoval(rateNotAfc, index);
 	}
 
 	// P9 : formatage string-based via formatSwissAmount (zéro perte de précision).
@@ -614,7 +620,10 @@
 
 	async function handleSubmit() {
 		if (!canSubmit) return;
-		// Story 37-3b (AC-2) : l'envoi attend les `lookup` en cours (provenance).
+		// Story 37-3b (AC-2) : l'envoi attend les `lookup` en cours (provenance) —
+		// y compris celui d'un changement de date encore différé (revue de code
+		// P1, 37-3b-CR-P1-5 : sans quoi la ligne partirait au cours de l'ancien mois).
+		refreshOnDate.flush();
 		if (inflight.size > 0) {
 			submitting = true;
 			await Promise.all([...inflight]);
@@ -696,7 +705,12 @@
 							const expected = err.details?.expectedRate;
 							rateNotAfc = {
 								...rateNotAfc,
-								[index]: typeof expected === 'string' && expected !== '' ? expected : null
+								[index]:
+									typeof expected === 'string' && expected !== ''
+										? expected
+										: typeof expected === 'number'
+											? String(expected)
+											: null
 							};
 						}
 					} else {
@@ -1005,6 +1019,7 @@
 										aria-label={i18nMsg('journal-entries-fx-chf-label', 'Montant CHF')}
 										value={chfFieldValue(i)}
 										oninput={(e) => setForeignChf(i, (e.currentTarget as HTMLInputElement).value)}
+										onblur={() => commitForeignChf(i)}
 										placeholder="0.00"
 									/>
 								</label>

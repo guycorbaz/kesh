@@ -524,6 +524,49 @@ async fn exercice_mono_devise_refuse_l_ouverture_en_devise(pool: MySqlPool) {
         "{body}"
     );
     assert_eq!(body["error"]["details"]["fiscalYearId"], clos, "{body}");
+
+    // Au complément (revue de code P1, 37-3b-CR-P1-17) : l'ouverture CHF du
+    // même exercice mono-devise passe, puis un complément en devise est refusé
+    // du même 409, rien de créé de plus.
+    let _report = compte(
+        &pool,
+        c,
+        "2970",
+        "Liability",
+        None,
+        Some("RetainedEarnings"),
+    )
+    .await;
+    let r = app
+        .client
+        .post(format!("{}/api/v1/opening-balances", app.base_url))
+        .bearer_auth(&jwt)
+        .json(&json!({ "lines": [
+            chf(s.accounts["1000"], "100", "0"),
+            chf(s.accounts["2000"], "0", "100"),
+        ]}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status().as_u16(), 201, "ouverture CHF");
+    let avant = nb_ecritures(&pool, c).await;
+    let r = app
+        .client
+        .post(format!("{}/api/v1/opening-balances/complete", app.base_url))
+        .bearer_auth(&jwt)
+        .json(&json!({ "lines": [fx(usd, "debit", "88.46", "USD", "100", "0.8846")] }))
+        .send()
+        .await
+        .unwrap();
+    let st = r.status().as_u16();
+    let body: Value = r.json().await.unwrap();
+    assert_eq!(
+        (st, code(&body)),
+        (409, "MULTI_CURRENCY_DISABLED"),
+        "complément : {body}"
+    );
+    assert_eq!(body["error"]["details"]["fiscalYearId"], clos, "{body}");
+    assert_eq!(nb_ecritures(&pool, c).await, avant);
 }
 
 async fn generer_ouverture_chf(ctx: &Ctx) {
@@ -989,6 +1032,33 @@ async fn conversion_paire_lue_a_l_usage_seulement(pool: MySqlPool) {
     assert_eq!(st, 201, "{body}");
 }
 
+/// Comptes de différence de la société non désignés (le compte USD n'a pas de
+/// paire propre) : `FX_ACCOUNT_INVALID`, `reason: missing`, sur le champ
+/// réellement manquant (revue de code P1, 37-3b-CR-P1-15), rien de créé.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn conversion_paire_de_la_societe_manquante(pool: MySqlPool) {
+    let ctx = monter(&pool).await;
+    let corps = conversion(ecriture_1(&ctx), ecriture_2(ctx.usd, &ctx), Some(true));
+    for (colonne, champ) in [
+        ("fx_loss_account_id", "fxLossAccountId"),
+        ("fx_gain_account_id", "fxGainAccountId"),
+    ] {
+        sqlx::query(&format!(
+            "UPDATE companies SET {colonne} = NULL WHERE id = ?"
+        ))
+        .bind(ctx.s.company_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+        let (st, body) = envoyer(&ctx, ROUTE, &corps).await;
+        assert_eq!((st, code(&body)), (400, "FX_ACCOUNT_INVALID"), "{body}");
+        assert_eq!(body["error"]["details"]["field"], champ, "{body}");
+        assert_eq!(body["error"]["details"]["reason"], "missing", "{body}");
+        assert_eq!(body["error"]["details"]["entry"], 2, "{body}");
+    }
+    assert_eq!(nb_ecritures(&pool, ctx.s.company_id).await, 0);
+}
+
 /// Formes non complétées : l'écriture à compléter sans compte en devise, au
 /// crédit net, ou à deux comptes de la même devise → `ENTRY_UNBALANCED` ;
 /// deux comptes de même devise avec une ligne de différence portée → 400.
@@ -1146,11 +1216,10 @@ async fn conversion_frais_a33(pool: MySqlPool) {
     assert_eq!(nb_ecritures(&pool, ctx.s.company_id).await, 0);
 
     // Frais CHF + frais 6911 : 900 + 9 + 2 = 911 < 947 → perte 36.00.
-    let mut corps2 = e2(
+    let corps2 = e2(
         fx(ctx.fee_usd, "debit", "9.00", "USD", "10", "0.9"),
         Some(chf(ctx.fee_chf, "2.00", "0")),
     );
-    let _ = &mut corps2;
     let (st, body) = envoyer(
         &ctx,
         ROUTE,
@@ -1190,7 +1259,15 @@ async fn conversion_refus_de_la_seconde_creation(pool: MySqlPool) {
         &conversion(e1, ecriture_2(ctx.usd, &ctx), Some(true)),
     )
     .await;
-    assert_eq!(st, 400, "{body}");
+    // Le refus vient de la **création** (`create_in_tx`, compte inactif) : la
+    // seule étape qui lit l'état du compte EUR — l'écriture 1 n'est que validée
+    // (`accounting::validate`) avant les créations (revue de code P1,
+    // 37-3b-CR-P1-18 : un refus plus précoce ne passerait plus ce test).
+    assert_eq!(
+        (st, code(&body)),
+        (400, "INACTIVE_OR_INVALID_ACCOUNTS"),
+        "{body}"
+    );
     assert_eq!(body["error"]["details"]["entry"], 1, "{body}");
     assert_eq!(nb_ecritures(&pool, ctx.s.company_id).await, 0);
 }
@@ -1220,9 +1297,21 @@ async fn conversion_forme_et_roles(pool: MySqlPool) {
         lignes.push(chf(ctx.fee_chf, "0.01", "0"));
     }
     let e2 = ecriture("2026-03-06", "Conversion (2/2)", lignes);
+    // Témoin : les 500 lignes passent la borne de la route (sans la demande de
+    // calcul, l'écriture déséquilibrée rend `ENTRY_UNBALANCED`) — le refus
+    // ci-dessous est donc bien celui du corps complété (revue de code P1,
+    // 37-3b-CR-P1-19).
+    let (st, body) = envoyer(
+        &ctx,
+        ROUTE,
+        &conversion(ecriture_1(&ctx), e2.clone(), Some(false)),
+    )
+    .await;
+    assert_eq!((st, code(&body)), (400, "ENTRY_UNBALANCED"), "{body}");
     let (st, body) = envoyer(&ctx, ROUTE, &conversion(ecriture_1(&ctx), e2, Some(true))).await;
     assert_eq!((st, code(&body)), (400, "VALIDATION_ERROR"), "{body}");
     assert_eq!(body["error"]["details"]["entry"], 2, "{body}");
+    assert!(body["error"]["details"].get("line").is_none(), "{body}");
 
     let consult = forge_jwt(ctx.s.admin_user_id, "Consultation", ctx.s.company_id);
     let corps = conversion(ecriture_1(&ctx), ecriture_2(ctx.usd, &ctx), Some(true));

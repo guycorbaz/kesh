@@ -51,6 +51,7 @@
 		isIncompleteForeignRow,
 		openingProposal,
 		openingProvenanceLabel,
+		commitRowChf,
 		rowChfValue,
 		rowForeignPayload,
 		rowProblem,
@@ -111,7 +112,7 @@
 			date: status?.complementDate ?? null
 		})
 	);
-	/** Refus du serveur par ligne de grille (rang du corps envoyé). */
+	/** Refus du serveur par ligne de grille, par identifiant du compte de la ligne. */
 	let gridRefusals = $state<Record<number, string>>({});
 	let complementRefusals = $state<Record<number, string>>({});
 
@@ -173,7 +174,12 @@
 		};
 	}
 
-	/** Classe un refus du serveur sur la ligne fautive ; rend le message global sinon. */
+	/**
+	 * Classe un refus du serveur sur la ligne fautive ; rend le message global
+	 * sinon. `sent` : l'**identifiant du compte** de chaque ligne envoyée — non
+	 * sa position, que le rechargement du statut après un refus décale (revue
+	 * de code P1, 37-3b-CR-P1-14).
+	 */
 	function placeRefusal(
 		err: { code: string; message: string; details?: Record<string, unknown> },
 		sent: number[],
@@ -183,10 +189,10 @@
 			? fxRefusalMessage(err.code, err.details, err.message)
 			: err.message;
 		const line = refusalLine(err.details);
-		const index = line === null ? undefined : sent[line - 1];
-		if (index !== undefined) {
-			if (grid === 'grid') gridRefusals = { [index]: message };
-			else complementRefusals = { [index]: message };
+		const accountId = line === null ? undefined : sent[line - 1];
+		if (accountId !== undefined) {
+			if (grid === 'grid') gridRefusals = { [accountId]: message };
+			else complementRefusals = { [accountId]: message };
 		}
 		return message;
 	}
@@ -366,7 +372,7 @@
 		submitting = true;
 		submitError = null;
 		gridRefusals = {};
-		const sent = nonEmptyRows.map((r) => rows.indexOf(r));
+		const sent = nonEmptyRows.map((r) => r.account.id);
 		try {
 			await generateOpeningBalances({ lines: nonEmptyRows.map(linePayload) });
 			notifySuccess(i18nMsg('opening-balances-success', 'Écriture d’ouverture générée.'));
@@ -410,7 +416,7 @@
 		completing = true;
 		completeError = null;
 		complementRefusals = {};
-		const sent = complementLines.map((r) => complementRows.indexOf(r));
+		const sent = complementLines.map((r) => r.account.id);
 		try {
 			await completeOpeningBalances({ lines: complementLines.map(linePayload) });
 			notifySuccess(i18nMsg('opening-balances-complete-success', 'Complément enregistré.'));
@@ -563,6 +569,7 @@
 						class="w-32 text-right tabular-nums"
 						value={rowChfValue(row)}
 						oninput={(e) => setRowChf(row, (e.currentTarget as HTMLInputElement).value)}
+						onblur={() => commitRowChf(row)}
 						data-testid="opening-balances-{prefix}fx-chf-{number}"
 						placeholder="0.00"
 					/>
@@ -762,10 +769,10 @@
 								{#if row.foreign}
 									{@render fxRateRow(row, row.account.number, complementProposal, 'complete-')}
 								{/if}
-								{#if complementRefusals[i] !== undefined}
+								{#if complementRefusals[row.account.id] !== undefined}
 									<tr>
 										<td colspan="3" class="pb-2 text-xs text-destructive" data-testid="opening-balances-complete-row-refusal-{row.account.number}">
-											{complementRefusals[i]}
+											{complementRefusals[row.account.id]}
 										</td>
 									</tr>
 								{/if}
@@ -905,10 +912,10 @@
 					{#if row.foreign}
 						{@render fxRateRow(row, row.account.number, gridProposal)}
 					{/if}
-					{#if gridRefusals[i] !== undefined}
+					{#if gridRefusals[row.account.id] !== undefined}
 						<tr>
 							<td colspan="3" class="pb-2 text-xs text-destructive" data-testid="opening-balances-row-refusal-{row.account.number}">
-								{gridRefusals[i]}
+								{gridRefusals[row.account.id]}
 							</td>
 						</tr>
 					{/if}
