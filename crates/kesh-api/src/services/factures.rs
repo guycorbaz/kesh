@@ -152,6 +152,9 @@ pub struct FicheFacture {
     /// Le réglage `round_to_5_centimes`, lu pour un **brouillon** seulement ;
     /// `None` : facture émise, réglage non lu (son arrondi est figé).
     pub arrondi_5_centimes: Option<bool>,
+    /// La date du jour lue par le service (Story 35-5b, #929) : une route qui
+    /// calcule « échue » sur la fiche la réemploie, sans relire l'horloge.
+    pub aujourd_hui: NaiveDate,
 }
 
 /// L'échéancier : une page de factures validées, et le résumé des impayées et
@@ -162,6 +165,22 @@ pub struct Echeancier {
     pub page: InvoiceListResult,
     /// Le résumé.
     pub resume: DueDatesSummary,
+    /// La date du jour employée pour le filtre « échues » et pour le résumé
+    /// (Story 35-5b, #929) : une route qui convertit la page la réemploie, sans
+    /// relire l'horloge — si bien que la page, son drapeau « échue » et le
+    /// résumé portent le même jour, même à minuit.
+    pub aujourd_hui: NaiveDate,
+}
+
+/// La page de factures de [`lister`], avec la date du jour lue par le service
+/// (Story 35-5b, #929) : une route qui calcule « échue » sur la page la
+/// réemploie, sans relire l'horloge.
+#[derive(Debug)]
+pub struct ListeFactures {
+    /// La page.
+    pub page: InvoiceListResult,
+    /// La date du jour employée par la lecture.
+    pub aujourd_hui: NaiveDate,
 }
 
 /// Un règlement d'une facture, et ce qui empêche de l'annuler.
@@ -233,7 +252,7 @@ pub async fn lister(
     acces: &ContexteAcces,
     lecture: &Lecture,
     demande: DemandeListeFactures,
-) -> Result<InvoiceListResult, AppError> {
+) -> Result<ListeFactures, AppError> {
     acces.exiger(EXIGENCE_LISTER)?;
     // Validate company exists (defensive: company_id staleness window)
     crate::helpers::company_for_ids(lecture.pool(), acces.company_id(), acces.user_id()).await?;
@@ -264,7 +283,11 @@ pub async fn lister(
         limit,
         offset,
     };
-    Ok(invoices::list_by_company_paginated(lecture.pool(), acces.company_id(), query).await?)
+    let aujourd_hui = lecture.aujourd_hui();
+    let page =
+        invoices::list_by_company_paginated(lecture.pool(), acces.company_id(), query, aujourd_hui)
+            .await?;
+    Ok(ListeFactures { page, aujourd_hui })
 }
 
 /// La fiche de la facture `id` de la société du contexte.
@@ -308,6 +331,7 @@ pub async fn detail(
         montant_regle,
         reste_du,
         arrondi_5_centimes,
+        aujourd_hui: lecture.aujourd_hui(),
     })
 }
 
@@ -509,14 +533,22 @@ pub async fn echeances(
         payment_status: None,
         ..query.clone()
     };
+    // Une lecture de l'horloge pour la page et le résumé (Story 35-5b).
+    let aujourd_hui = lecture.aujourd_hui();
     // List + summary en parallèle (read-only, pas de tx commune).
     let (page, resume) = tokio::join!(
-        invoices::list_by_company_paginated(lecture.pool(), acces.company_id(), query),
-        invoices::due_dates_summary(lecture.pool(), acces.company_id(), &summary_query),
+        invoices::list_by_company_paginated(lecture.pool(), acces.company_id(), query, aujourd_hui),
+        invoices::due_dates_summary(
+            lecture.pool(),
+            acces.company_id(),
+            &summary_query,
+            aujourd_hui
+        ),
     );
     Ok(Echeancier {
         page: page?,
         resume: resume?,
+        aujourd_hui,
     })
 }
 
@@ -546,11 +578,17 @@ pub async fn reglements(
     // ⛔ Une transaction de lecture, pour un seul instantané.
     let mut tx = lecture.pool().begin().await.map_err(map_db_error)?;
     let liste = invoice_settlements::list_for_invoice(&mut *tx, company.id, id).await?;
+    // Story 35-5a0 — la date du jour, lue une fois sur l'horloge de la poignée.
+    let aujourd_hui = lecture.aujourd_hui();
     let mut out = Vec::with_capacity(liste.len());
     for reglement in liste {
-        let motif =
-            invoice_settlements_write::settlement_cancel_blocker(&mut tx, company.id, reglement.id)
-                .await?;
+        let motif = invoice_settlements_write::settlement_cancel_blocker(
+            &mut tx,
+            company.id,
+            reglement.id,
+            aujourd_hui,
+        )
+        .await?;
         out.push(ReglementFacture { reglement, motif });
     }
     tx.commit().await.map_err(map_db_error)?;

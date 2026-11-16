@@ -754,7 +754,7 @@ async fn t7_un_reglement_par_compte_interne_est_refuse(pool: MySqlPool) {
 async fn t8_une_ecriture_deja_rapprochee_n_est_pas_rattachable(pool: MySqlPool) {
     let ctx = monter(&pool).await;
     let bank = ctx.compte(IBAN_A).await;
-    let jour = Utc::now().date_naive().to_string();
+    let jour = common::jour::aujourd_hui_test().to_string();
 
     // (a) — un règlement né d'une acceptation.
     let fa = ctx.facture(&jour).await;

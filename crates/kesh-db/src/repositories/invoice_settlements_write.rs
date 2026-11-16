@@ -17,6 +17,7 @@ use rust_decimal::Decimal;
 use sqlx::{MySql, MySqlPool, Transaction};
 
 use crate::entities::NewAuditLogEntry;
+use crate::entities::audit_log::Acteur;
 use crate::entities::invoice::{Invoice, InvoiceLine};
 use crate::entities::{
     BankAccountKind, Journal, NewInvoiceSettlement, NewJournalEntry, SettlementChoice,
@@ -337,7 +338,8 @@ pub async fn settle_invoice(
     let je = journal_entries::create_in_tx(
         &mut tx,
         fy.id,
-        user_id,
+        // Story 35-8a2 (#431) : au nom de l'utilisateur (`AConvertir`, Epic 36).
+        Acteur::utilisateur(user_id),
         NewJournalEntry {
             company_id,
             entry_date: settled_on,
@@ -700,7 +702,8 @@ pub async fn write_off_invoice(
     let je = journal_entries::create_in_tx(
         &mut tx,
         fy.id,
-        user_id,
+        // Story 35-8a2 (#431) : au nom de l'utilisateur (`AConvertir`, Epic 36).
+        Acteur::utilisateur(user_id),
         NewJournalEntry {
             company_id,
             entry_date: settled_on,
@@ -827,8 +830,9 @@ pub async fn settlement_cancel_blocker(
     conn: &mut sqlx::MySqlConnection,
     company_id: i64,
     settlement_id: i64,
+    aujourd_hui: NaiveDate,
 ) -> Result<Option<SettlementCancelHit>, DbError> {
-    settlement_cancel_blocker_unlinking(conn, company_id, settlement_id, None).await
+    settlement_cancel_blocker_unlinking(conn, company_id, settlement_id, None, aujourd_hui).await
 }
 
 /// [`settlement_cancel_blocker`], avec l'**exemption étroite** du rang 3 pour
@@ -840,6 +844,7 @@ pub async fn settlement_cancel_blocker_unlinking(
     company_id: i64,
     settlement_id: i64,
     unlinking: Option<i64>,
+    aujourd_hui: NaiveDate,
 ) -> Result<Option<SettlementCancelHit>, DbError> {
     // Story 25-4-d2a : un solde existe-t-il sur la facture, et ce règlement
     // en est-il un ?
@@ -875,7 +880,7 @@ pub async fn settlement_cancel_blocker_unlinking(
     if write_off_exists && settlement_type != "write_off" {
         return Ok(Some((SettlementCancelBlocker::WriteOffExists, None, None)));
     }
-    settlement_entry_cancel_blocker(conn, company_id, entry_id, unlinking).await
+    settlement_entry_cancel_blocker(conn, company_id, entry_id, unlinking, aujourd_hui).await
 }
 
 /// Ce que rend une annulation de règlement.
@@ -907,6 +912,10 @@ pub struct SettlementCancellation {
 /// motif : deux gardes du même motif masqueraient chacune la mutation de
 /// l'autre.
 ///
+/// `acteur` est l'auteur du geste, clé d'API comprise (Story 36-4, #1131) : le
+/// délettrage de la pièce, la contre-passation (son lettrage compris) et
+/// l'entrée `invoice.settlement_cancelled` le portent tous trois.
+///
 /// N'exécute **pas** de rollback : l'appelant, propriétaire de la transaction,
 /// en est responsable.
 pub async fn cancel_settlement_in_tx(
@@ -914,7 +923,8 @@ pub async fn cancel_settlement_in_tx(
     company_id: i64,
     invoice_id: i64,
     settlement_id: i64,
-    user_id: i64,
+    acteur: Acteur,
+    aujourd_hui: NaiveDate,
 ) -> Result<SettlementCancellation, DbError> {
     // (1) Verrou facture — même ordre que `settle_invoice`.
     let locked: Option<i64> =
@@ -994,7 +1004,7 @@ pub async fn cancel_settlement_in_tx(
         | SettlementCancelBlocker::DocumentLetteringInClosedPeriods),
         _,
         _,
-    )) = settlement_cancel_blocker(tx, company_id, settlement_id).await?
+    )) = settlement_cancel_blocker(tx, company_id, settlement_id, aujourd_hui).await?
     {
         return Err(DbError::SettlementNotCancellable { blocker });
     }
@@ -1012,10 +1022,8 @@ pub async fn cancel_settlement_in_tx(
         company_id,
         invoice_id,
         settlement_fiscal_year_id,
-        Actor {
-            user_id,
-            api_key_id: None,
-        },
+        // Story 36-4 (#1131) : l'acteur du geste, clé comprise.
+        acteur,
     )
     .await?;
 
@@ -1024,8 +1032,10 @@ pub async fn cancel_settlement_in_tx(
         tx,
         company_id,
         entry_id,
-        user_id,
+        // Story 36-4 (#1131) : l'acteur du geste, clé comprise.
+        acteur,
         ReversalAuthority::ClientSettlement { settlement_id },
+        aujourd_hui,
     )
     .await?;
 
@@ -1089,8 +1099,8 @@ pub async fn cancel_settlement_in_tx(
     //     l'une dit le fait comptable, l'autre le geste métier.
     audit_log::insert_in_tx(
         tx,
-        NewAuditLogEntry::user(
-            user_id,
+        NewAuditLogEntry::par(
+            acteur,
             "invoice.settlement_cancelled",
             "invoice",
             invoice_id,
@@ -1131,17 +1141,27 @@ pub struct CancelledSettlement {
 ///
 /// La lecture vit ici, non dans la forme `_in_tx` : le dé-rapprochement réemploie
 /// celle-ci et n'a pas besoin de la facture (C-e334-9).
+///
+/// `acteur` : l'auteur du geste, clé d'API comprise (Story 36-4, #1131).
 pub async fn cancel_settlement(
     pool: &MySqlPool,
-    user_id: i64,
+    acteur: Acteur,
     company_id: i64,
     invoice_id: i64,
     settlement_id: i64,
+    aujourd_hui: NaiveDate,
 ) -> Result<CancelledSettlement, DbError> {
     let mut tx = pool.begin().await.map_err(map_db_error)?;
     let done = async {
-        let done = cancel_settlement_in_tx(&mut tx, company_id, invoice_id, settlement_id, user_id)
-            .await?;
+        let done = cancel_settlement_in_tx(
+            &mut tx,
+            company_id,
+            invoice_id,
+            settlement_id,
+            acteur,
+            aujourd_hui,
+        )
+        .await?;
         let (invoice, lines, amount_settled) =
             read_after_write_in_tx(&mut tx, company_id, invoice_id).await?;
         Ok::<_, DbError>(CancelledSettlement {

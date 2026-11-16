@@ -446,10 +446,19 @@
 				// Story 15-12b (#543) : `LATER_FISCAL_YEAR_CLOSED` — l'exercice de la facture
 				// est suivi d'un exercice clos ; rien dans ce dialogue ne le rend corrigeable
 				// (le message du serveur dit la marche à suivre, sur l'écran des exercices).
+				// Story 35-3 (#537) : `DESIGNATED_ACCOUNT_WRONG_TYPE` — un compte désigné
+				// dans les réglages a été retypé depuis ; comme `ACCOUNT_NOT_POSTABLE`, son
+				// message nomme le compte et dit qui agit et où, et il est affiché tel quel.
+				// Story 35-1 (#948) : `NUMBER_FORMAT_UNRENDERABLE` — le format de numérotation
+				// des réglages ne peut pas produire le numéro (trop long, accolade dans le nom
+				// de l'exercice, numéro déjà attribué) ; réessayer rend le même refus, dont le
+				// message dit quoi corriger et où.
 				if (
 					err.code === 'FISCAL_YEAR_INVALID' ||
 					err.code === 'CONFIGURATION_REQUIRED' ||
 					err.code === 'ACCOUNT_NOT_POSTABLE' ||
+					err.code === 'DESIGNATED_ACCOUNT_WRONG_TYPE' ||
+					err.code === 'NUMBER_FORMAT_UNRENDERABLE' ||
 					err.code === 'LATER_FISCAL_YEAR_CLOSED'
 				) {
 					validateOpen = false;

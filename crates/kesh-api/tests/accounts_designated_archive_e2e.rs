@@ -377,6 +377,7 @@ async fn validate_new_supplier_invoice(
         draft.invoice.id,
         draft.invoice.version,
         seeded.admin_user_id,
+        crate::common::jour::aujourd_hui_test(),
     )
     .await
     .map(|_| draft.invoice.id)
@@ -567,7 +568,7 @@ async fn archived_vat_decompte_refuses_a_manual_entry_but_no_automatic_flow(pool
         journal_entries::create(
             &pool,
             seeded.fiscal_year_id,
-            seeded.admin_user_id,
+            kesh_db::entities::audit_log::Acteur::utilisateur(seeded.admin_user_id),
             NewJournalEntry {
                 company_id: seeded.company_id,
                 entry_date: NaiveDate::from_ymd_opt(2026, 4, 3).unwrap(),
@@ -825,6 +826,7 @@ async fn archived_payable_refuses_the_payment_of_a_validated_supplier_invoice_un
             },
             NaiveDate::from_ymd_opt(2026, 4, 2).unwrap(),
             seeded.admin_user_id,
+            crate::common::jour::aujourd_hui_test(),
         )
     };
     pay(witness).await.expect("témoin");

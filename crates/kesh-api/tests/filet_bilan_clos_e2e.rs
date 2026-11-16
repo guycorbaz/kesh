@@ -17,7 +17,7 @@ mod common;
 
 use std::sync::Arc;
 
-use chrono::{NaiveDate, TimeDelta, Utc};
+use chrono::{NaiveDate, TimeDelta};
 use common::create_test_company;
 use kesh_api::auth::bootstrap::ensure_admin_user;
 use kesh_api::config::Config;
@@ -129,7 +129,8 @@ async fn setup(pool: &MySqlPool) -> (TestApp, String, i64, i64) {
         .await
         .unwrap();
 
-    let today = Utc::now().date_naive();
+    // Story 35-5a — le jour du serveur (horloge de test, jour suisse).
+    let today = crate::common::jour::aujourd_hui_test();
     let fy = fiscal_years::create(
         pool,
         1,
@@ -176,8 +177,7 @@ async fn make_account(pool: &MySqlPool, company_id: i64, number: &str, ty: Accou
 }
 
 fn annee_courante() -> i32 {
-    Utc::now()
-        .date_naive()
+    crate::common::jour::aujourd_hui_test()
         .format("%Y")
         .to_string()
         .parse()
@@ -258,7 +258,7 @@ async fn la_saisie_manuelle_sous_un_posterieur_clos_rend_400(pool: MySqlPool) {
         .post(app.url("/api/v1/journal-entries"))
         .header("Authorization", auth(&token))
         .json(&json!({
-            "entryDate": Utc::now().date_naive(),
+            "entryDate": crate::common::jour::aujourd_hui_test(),
             "journal": "OD",
             "description": "Saisie sous un bilan clos",
             "lines": [
@@ -292,10 +292,10 @@ async fn la_contre_passation_par_la_route_sous_un_posterieur_clos_rend_400(pool:
     let origine = journal_entries::create(
         &pool,
         fy_id,
-        1,
+        kesh_db::entities::audit_log::Acteur::utilisateur(1),
         NewJournalEntry {
             company_id,
-            entry_date: Utc::now().date_naive(),
+            entry_date: crate::common::jour::aujourd_hui_test(),
             journal: Journal::OD,
             description: "Écriture à corriger".into(),
             project_id: None,

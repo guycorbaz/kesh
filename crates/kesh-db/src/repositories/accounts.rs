@@ -1550,7 +1550,7 @@ mod tests {
         journal_entries::create(
             pool,
             fiscal_year_id,
-            admin_user_id,
+            crate::entities::audit_log::Acteur::utilisateur(admin_user_id),
             NewJournalEntry {
                 company_id,
                 entry_date: chrono::NaiveDate::from_ymd_opt(2026, 6, 15).unwrap(),
@@ -1599,7 +1599,7 @@ mod tests {
         journal_entries::create(
             pool,
             fiscal_year_id,
-            admin_user_id,
+            crate::entities::audit_log::Acteur::utilisateur(admin_user_id),
             NewJournalEntry {
                 company_id,
                 entry_date: chrono::NaiveDate::from_ymd_opt(2026, 6, 15).unwrap(),

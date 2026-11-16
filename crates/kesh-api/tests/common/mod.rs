@@ -119,6 +119,35 @@ pub async fn audit_actor(
     .expect("lecture de l'attribution d'audit")
 }
 
+/// L'acteur de l'**unique** entrée `action` sur `entity_type`/`entity_id` :
+/// `(actor_type, actor_api_key_id, user_id)`. Échoue s'il n'y en a pas
+/// exactement une — une trace doublée (l'une à la clé, l'autre à
+/// l'utilisateur) ne passe pas, à la différence d'un `fetch_one`, qui prend la
+/// première ligne sans rien dire (Story 35-8a2, revue P1, B6 = A6 = E5).
+pub async fn audit_actor_unique(
+    pool: &MySqlPool,
+    action: &str,
+    entity_type: &str,
+    entity_id: i64,
+) -> (String, Option<i64>, i64) {
+    let rows: Vec<(String, Option<i64>, i64)> = sqlx::query_as(
+        "SELECT actor_type, actor_api_key_id, user_id FROM audit_log \
+         WHERE action = ? AND entity_type = ? AND entity_id = ?",
+    )
+    .bind(action)
+    .bind(entity_type)
+    .bind(entity_id)
+    .fetch_all(pool)
+    .await
+    .unwrap_or_else(|e| panic!("trace {action} de {entity_type} {entity_id} : {e}"));
+    assert_eq!(
+        rows.len(),
+        1,
+        "une seule trace {action} de {entity_type} {entity_id} : {rows:?}"
+    );
+    rows.into_iter().next().unwrap()
+}
+
 /// Le `details_json` de la dernière entrée écrite pour une action donnée.
 ///
 /// Rend `None` si la colonne est `NULL` — ce qui est un cas LÉGITIME et non un
@@ -164,35 +193,16 @@ pub async fn audit_sequence(pool: &MySqlPool) -> Vec<String> {
         .expect("lecture de la séquence d'audit")
 }
 
-/// Crée un jeton d'API par l'endpoint HTTP, **sous un JWT** (la route est
-/// interdite aux jetons), et rend `(id, secret clair kesh_pat_…)` — Story
-/// 15-7b1 (R2-1/F2-7 de sa validation), remonté de `api_keys_e2e.rs` pour être
-/// partagé avec `onboarding_audit_e2e.rs`.
-///
-/// Paramétré par le client et l'URL de base, chaque fichier de test ayant son
-/// propre `TestApp`. `scope` vaut `"read"` ou `"read-write"` — un jeton en
-/// lecture seule prend 403 sur toute route mutante.
-pub async fn create_key_via_http(
-    client: &reqwest::Client,
-    base_url: &str,
-    jwt: &str,
-    name: &str,
-    scope: &str,
-) -> (i64, String) {
-    let resp = client
-        .post(format!("{base_url}/api/v1/settings/api-keys"))
-        .header("Authorization", format!("Bearer {jwt}"))
-        .json(&serde_json::json!({ "name": name, "scope": scope }))
-        .send()
-        .await
-        .unwrap();
-    assert_eq!(resp.status(), 201, "création de clé doit réussir");
-    let body: serde_json::Value = resp.json().await.unwrap();
-    let id = body["id"].as_i64().unwrap();
-    let key = body["key"].as_str().unwrap().to_string();
-    assert!(key.starts_with("kesh_pat_"), "secret au format attendu");
-    (id, key)
-}
+/// Le relevé « toutes traces » d'un geste par clé et la création d'une clé par
+/// HTTP (Story 36-4, C-36-4-5).
+pub mod audit_traces;
+
+/// Créer une clé d'API par HTTP — définie dans [`audit_traces`] depuis la Story
+/// 36-4, réexportée ici pour ses appelants d'avant. `unused_imports` autorisé
+/// pour la même raison que `dead_code` en tête de ce module : chaque binaire de
+/// test compile `common` à part, et la plupart n'appellent pas cette fonction.
+#[allow(unused_imports)]
+pub use audit_traces::create_key_via_http;
 
 /// Le nom du verrou des gestes de rapprochement (`kesh_reconciliation::mutex`,
 /// `reconcile:<base>:<société>:<compte>`), tenu par une connexion de test.
@@ -261,6 +271,12 @@ pub mod capture_rejeu;
 
 /// La `Lecture` de test en lecture seule (Story 32-4a, C-32-4a-9).
 pub mod lecture_seule;
+
+/// La date du jour de l'horloge de test (Story 35-5a0).
+pub mod jour;
+
+/// Fixer l'horloge d'un état de test (Story 35-5a).
+pub mod horloge;
 
 /// La capture générique de `tracing`, tous niveaux et toutes cibles (Story
 /// 32-6a, AC-a14).

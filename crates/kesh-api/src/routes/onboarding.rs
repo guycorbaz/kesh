@@ -14,7 +14,7 @@
 
 use axum::extract::State;
 use axum::{Extension, Json};
-use chrono::{Datelike, Utc};
+use chrono::Datelike;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
@@ -255,10 +255,13 @@ pub async fn seed_demo(
 
     // P11: surface actionable validation errors (chart de comptes mal configuré)
     // as 422 instead of 500 so the client can show a concrete remediation message.
+    // Story 35-5b (#929) — l'exercice de démonstration est celui de l'année du
+    // jour de Zurich.
     kesh_seed::seed_demo(
         &state.pool,
         &state.config.locale,
         (current_user.user_id, current_user.api_key_id),
+        state.horloge.aujourd_hui(),
     )
     .await
     .map_err(|e| match e {
@@ -886,8 +889,10 @@ pub async fn finalize(
     // garde rien — chaque retry refait `pool.begin()`. La fermeture ne prête
     // que des références (`&state.pool`, `&current_user`) : elle est `Fn` et
     // non `FnOnce`, sans clone par tentative (revue P1 de la 15-5e2, B-5).
+    // Story 35-5a0 — la date du jour, lue une fois sur l'horloge de l'état.
+    let aujourd_hui = state.horloge.aujourd_hui();
     crate::retry::retry_app_on_deadlock("onboarding::finalize", || {
-        finalize_inner(&state.pool, &current_user)
+        finalize_inner(&state.pool, &current_user, aujourd_hui)
     })
     .await
     .map(Json)
@@ -911,9 +916,13 @@ pub async fn finalize(
 /// des taux insérés sont ceux de la tentative qui commite — l'audit d'un essai
 /// annulé disparaît avec lui. Ordre : `company_invoice_settings.created`,
 /// `vat_rate.created` (ordre du seed), `fiscal_year.created`, l'étape.
+///
+/// `aujourd_hui` (Story 35-5a0) : la date du jour, lue par l'appelant sur
+/// l'horloge de l'état — elle donne l'année du premier exercice.
 async fn finalize_inner(
     pool: &sqlx::MySqlPool,
     current_user: &CurrentUser,
+    aujourd_hui: chrono::NaiveDate,
 ) -> Result<OnboardingResponse, AppError> {
     // F2/F3/F4 CRITICAL FIX: Pessimistic locking strategy.
     // 1. Lock onboarding_state (serializes all finalize() calls on same session)
@@ -1040,7 +1049,7 @@ async fn finalize_inner(
     // Audit log inséré uniquement si la création a effectivement eu lieu — par
     // le dépôt lui-même : `finalize` n'écrit PAS sa propre entrée d'exercice
     // (Story 15-7a2, AC 7 ; son attribution par `::user` est la dette #431).
-    let year = Utc::now().naive_utc().date().year();
+    let year = aujourd_hui.year();
     let fy_name = format!("Exercice {year}");
     let fy_start = chrono::NaiveDate::from_ymd_opt(year, 1, 1).expect("valid date");
     let fy_end = chrono::NaiveDate::from_ymd_opt(year, 12, 31).expect("valid date");

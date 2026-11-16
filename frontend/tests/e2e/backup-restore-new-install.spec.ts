@@ -343,3 +343,116 @@ test.describe('Restaurer une installation neuve depuis l’assistant (Story 31-1
 		await capture(page, 'i-import-issue-inconnue');
 	});
 });
+
+/**
+ * Story 36-5 (#931, KF-056) — la course qui faisait perdre le compte rendu, rejouée à coup
+ * sûr. L'import invalide la session au serveur ; un battement d'activité parti avant que
+ * la réponse n'arrive rendait 401, le renouvellement échouait, et le client effaçait la
+ * session et menait à `/login?reason=session_expired` : le compte rendu n'était jamais lu.
+ *
+ * La réponse de l'import est RETENUE dans la page (le serveur a déjà restauré et invalidé la
+ * session) jusqu'à ce qu'un battement forcé ait reçu sa réponse ; puis, compte rendu
+ * affiché, une activité de plus ne doit envoyer aucun battement (le suivi de session est
+ * arrêté).
+ *
+ * ⚠️ La retenue se fait en enveloppant `window.fetch`, et NON par `page.route` +
+ * `route.fetch()` : rejouée par Playwright, la requête multipart arrivait au serveur
+ * illisible (400 « Could not find EOCD »), même avec `postData` repassé en octets — relevé
+ * au développement (Story 36-5, C-36-5-13). La requête part ici du navigateur, intacte.
+ */
+test.describe('Le compte rendu de la restauration reste affiché (Story 36-5, #931)', () => {
+	const ACTIVITY = '**/api/v1/auth/activity';
+	const KEY_HEARTBEAT_AT = 'kesh:session:heartbeatAt';
+
+	/**
+	 * Une activité qui compte, puis un battement permis au tic suivant. L'attente d'1,1 s
+	 * est OBLIGATOIRE : `recordActivity` ignore toute activité à moins d'une seconde de la
+	 * précédente (`ACTIVITY_WRITE_THROTTLE_MS`, `session-idle.svelte.ts`), et le clic qui
+	 * précède vient d'en écrire une ; sans elle, les mouvements resteraient sans effet et
+	 * aucun battement ne partirait.
+	 */
+	async function forceActivity(page: Page, x: number): Promise<void> {
+		await page.waitForTimeout(1_100);
+		await page.evaluate((key) => localStorage.removeItem(key), KEY_HEARTBEAT_AT);
+		await page.mouse.move(x, 120);
+		await page.mouse.move(x + 37, 160);
+	}
+
+	test('KF-056 — un battement refusé pendant l’import ne fait pas quitter l’écran', async ({
+		page,
+	}, testInfo) => {
+		test.setTimeout(120_000);
+		await seedTestState('with-company');
+		await login(page);
+		const backup = await exportByScreen(page, testInfo);
+
+		await page.goto('/admin/restore');
+		await expect(page.getByTestId('backup-env-notice')).toBeVisible();
+
+		// La réponse de l'import, arrivée du serveur, attend dans la page qu'on la libère.
+		await page.evaluate(() => {
+			type Gate = { status: number | null; release: () => void };
+			const original = window.fetch.bind(window);
+			let release: () => void = () => {};
+			const gate = new Promise<void>((resolve) => (release = resolve));
+			const state: Gate = { status: null, release };
+			(window as unknown as { __kf056: Gate }).__kf056 = state;
+			window.fetch = async (input, init) => {
+				const url =
+					typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+				const res = await original(input, init);
+				if (url.includes('/api/v1/admin/full-import')) {
+					state.status = res.status;
+					await gate;
+				}
+				return res;
+			};
+		});
+		await importByScreen(page, backup);
+		await page.waitForFunction(
+			() => (window as unknown as { __kf056: { status: number | null } }).__kf056.status !== null,
+			null,
+			{ timeout: 60_000 },
+		);
+		const importStatus = await page.evaluate(
+			() => (window as unknown as { __kf056: { status: number | null } }).__kf056.status,
+		);
+		const heartbeat = page.waitForResponse((r) => r.url().includes('/api/v1/auth/activity'));
+		await forceActivity(page, 40);
+		const heartbeatStatus = (await heartbeat).status();
+		// Avant le correctif, la page part pour `/login` : il n'y a plus rien à libérer.
+		await page
+			.evaluate(() => (window as unknown as { __kf056?: { release: () => void } }).__kf056?.release())
+			.catch(() => {});
+
+		// (1) L'import a abouti au serveur, le battement a reçu son 401, et l'écran est resté.
+		expect(importStatus, 'l’import retenu doit avoir abouti au serveur').toBe(200);
+		expect(heartbeatStatus, 'le battement forcé pendant l’import doit avoir été refusé').toBe(401);
+		// Revue P1 (A1-3) : un rouge nomme la page où l'on est — la KF-056 mène à
+		// `/login?reason=session_expired`. (Un contrôle d'URL placé avant passerait, la
+		// redirection pouvant ne pas être encore faite.)
+		try {
+			await expect(page.getByTestId('admin-restore-files-restored')).toBeVisible({ timeout: 15_000 });
+		} catch (e) {
+			throw new Error(
+				`compte rendu jamais affiché — page sur ${page.url()}\n${e instanceof Error ? e.message : String(e)}`,
+			);
+		}
+		await expect(page).toHaveURL(/\/admin\/restore$/);
+
+		// (2) Compte rendu affiché : une activité de plus n'envoie plus aucun battement.
+		let activityRequests = 0;
+		await page.route(ACTIVITY, async (route) => {
+			activityRequests += 1;
+			await route.continue();
+		});
+		await forceActivity(page, 300);
+		// On prouve une ABSENCE : trois tics de la minuterie d'une seconde.
+		await page.waitForTimeout(3_000);
+		expect(activityRequests, 'aucun battement après le compte rendu').toBe(0);
+		await expect(page).toHaveURL(/\/admin\/restore$/);
+		await expect(page.getByTestId('admin-restore-files-restored')).toBeVisible();
+		await expect(page.getByTestId('admin-restore-relogin')).toBeVisible();
+		await capture(page, 'j-compte-rendu-apres-battement-refuse');
+	});
+});

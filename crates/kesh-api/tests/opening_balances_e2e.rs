@@ -278,7 +278,7 @@ async fn post_normal_entry(pool: &MySqlPool, seed: &Seed, fy_id: i64, date: Naiv
     journal_entries::create(
         pool,
         fy_id,
-        seed.user_id,
+        kesh_db::entities::audit_log::Acteur::utilisateur(seed.user_id),
         NewJournalEntry {
             company_id: seed.company_id,
             entry_date: date,
@@ -1469,7 +1469,9 @@ async fn complete_each_refusal_has_its_code(pool: MySqlPool) {
     // F-1) : un exercice couvre TOUJOURS le jour réel — sans lui, à partir du
     // 2027-01-01, l'exercice 2026 du montage ne couvrirait plus `today` et la
     // route rendrait `NO_OPEN_FISCAL_YEAR` avant `DATE_LOCKED`.
-    let today = chrono::Utc::now().date_naive();
+    // Story 35-5a — le jour du serveur (horloge de test, jour suisse), que la
+    // route juge : au jour UTC, la nuit, la borne tombait la veille.
+    let today = crate::common::jour::aujourd_hui_test();
     if today.year() != 2026 {
         create_fy(&pool, seed.user_id, seed.company_id, today.year()).await;
     }

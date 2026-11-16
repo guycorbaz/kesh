@@ -3068,6 +3068,46 @@ async fn s34_11b_ac4_annuler_un_cote_puis_l_autre(pool: MySqlPool) {
     assert_eq!(trace["unlinkOnly"], false, "{trace}");
 }
 
+/// Story 36-4 (#1131, revue P1 B2 = E1) — le **simple détachement** d'un côté
+/// d'un virement, par une clé d'API : la seule trace qu'il écrit,
+/// `reconciliation.cancelled`, porte la clé ; aucune autre (ni contre-passation
+/// ni lettrage).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn an_api_key_unlinks_one_side_and_is_named(pool: MySqlPool) {
+    let ctx = monter(&pool).await;
+    let (banque, _carte, passif, debit, credit) = prelevement(&ctx, "2026-05-31").await;
+    let e = ctx.ecriture_manuelle(banque, debit, passif).await;
+    assert_eq!(ctx.rattacher(credit, e).await.0, 200);
+    assert_eq!(ctx.vue(credit).await["unlinkOnly"], true, "montage");
+    let (cle, secret) = common::create_key_via_http(
+        &ctx.app.client,
+        &ctx.app.base_url,
+        &ctx.jwt,
+        "rw",
+        "read-write",
+    )
+    .await;
+    let avant = common::audit_traces::max_audit_id(&pool).await;
+
+    let (s, b) = ctx
+        .req_as(
+            &secret,
+            reqwest::Method::POST,
+            &format!("/api/v1/reconciliation/transactions/{credit}/cancel"),
+            Some(json!({})),
+        )
+        .await;
+    assert_eq!(s, 200, "{b}");
+    assert!(b["reversalJournalEntryId"].is_null(), "retrait seul : {b}");
+
+    common::audit_traces::assert_toutes_a_la_cle(
+        &common::audit_traces::audit_depuis(&pool, avant).await,
+        cle,
+        common::audit_traces::createur_de_la_cle(&pool, cle).await,
+        &["reconciliation.cancelled"],
+    );
+}
+
 /// AC-4 — l'ordre inverse : la banque d'abord (retrait seul), puis la carte
 /// (contre-passation).
 #[sqlx::test(migrations = "../kesh-db/test-schema")]

@@ -458,6 +458,9 @@ async fn main() {
         test_mock_mailer,
         // Story 31-1c — une seule sauvegarde à la fois (AC27).
         backup_lock: Arc::new(tokio::sync::Mutex::new(())),
+        // Story 35-5a0 — l'horloge réelle ; le binaire servi ne lit jamais
+        // la variable d'instant des tests.
+        horloge: Arc::new(kesh_api::horloge::HorlogeSysteme),
     };
 
     // Story 31-1c (#503, AC26) — la sauvegarde automatique faite par Kesh :

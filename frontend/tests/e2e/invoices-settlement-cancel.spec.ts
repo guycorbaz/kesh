@@ -5,7 +5,7 @@ import {
   authedApiContext,
   disposeContextSafe,
 } from "./helpers/test-state";
-import { invoiceVersionViaApi } from "./helpers/api-fixtures";
+import { invoiceVersionViaApi, todayInZurich } from "./helpers/api-fixtures";
 
 /**
  * Tests E2E — Annuler un règlement client, Story 25-3-a-1 (#414).
@@ -36,10 +36,6 @@ async function login(page: import("@playwright/test").Page) {
   await expect(page).toHaveURL("/");
 }
 
-function today(): string {
-  return new Date().toISOString().slice(0, 10);
-}
-
 /** Facture validée de 100.00 HT (108.10 TTC), réglée en entier ; rend son id. */
 async function settledInvoice(
   page: import("@playwright/test").Page,
@@ -60,8 +56,8 @@ async function settledInvoice(
     const created = await ctx.post("/api/v1/invoices", {
       data: {
         contactId,
-        date: today(),
-        dueDate: today(),
+        date: todayInZurich(),
+        dueDate: todayInZurich(),
         paymentTerms: null,
         lines: [
           {
@@ -104,7 +100,7 @@ async function settledInvoice(
         settlementType: "internal_account",
         accountId: cash!.id,
         amount: "108.10",
-        settledOn: today(),
+        settledOn: todayInZurich(),
         version: await invoiceVersionViaApi(ctx, id),
       },
     });

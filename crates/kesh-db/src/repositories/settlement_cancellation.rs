@@ -14,7 +14,7 @@
 //! rangs. ⚠️ Le nom du module et de la fonction disent « règlement » par
 //! histoire : la queue ne lit rien de la pièce.
 
-use chrono::Utc;
+use chrono::NaiveDate;
 use sqlx::MySqlConnection;
 
 use crate::errors::{DbError, ReversalBlocker, SettlementCancelBlocker, map_db_error};
@@ -83,12 +83,17 @@ pub type SettlementCancelHit = (SettlementCancelBlocker, Option<i64>, Option<Str
 /// d'autre. Les annulations de règlement passent `None` : leur comportement
 /// est inchangé.
 ///
+/// `aujourd_hui` (Story 35-5a0, #929, #1022, #907) : la date du jour, lue une
+/// fois sur l'horloge de la requête et passée **aussi** à la contre-passation —
+/// le rang 5 juge l'exercice du jour même où elle serait datée.
+///
 /// Écriture introuvable (ou d'une autre société) → [`DbError::NotFound`].
 pub async fn settlement_entry_cancel_blocker(
     conn: &mut MySqlConnection,
     company_id: i64,
     entry_id: i64,
     unlinking: Option<i64>,
+    aujourd_hui: NaiveDate,
 ) -> Result<Option<SettlementCancelHit>, DbError> {
     // Rang 2 — l'exercice de l'écriture EXAMINÉE (règlement, rapprochement ou
     // achat), non celui du jour.
@@ -168,9 +173,8 @@ pub async fn settlement_entry_cancel_blocker(
     }
 
     // Rang 5 — l'exercice où la contre-passation serait DATÉE : le jour, comme
-    // dans le socle.
-    let today = Utc::now().date_naive();
-    if !fiscal_years::has_open_covering_date(&mut *conn, company_id, today).await? {
+    // dans le socle (la date reçue, Story 35-5a0).
+    if !fiscal_years::has_open_covering_date(&mut *conn, company_id, aujourd_hui).await? {
         return Ok(Some((
             SettlementCancelBlocker::NoOpenFiscalYearToday,
             None,

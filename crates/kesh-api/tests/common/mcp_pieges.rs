@@ -17,8 +17,10 @@ use regex::Regex;
 use serde_json::{Value, json};
 use sqlx::MySqlPool;
 
+use super::jour::aujourd_hui_test;
 use super::mcp::{
-    Rendu, activer, administrateur, appel, cle, config, envoyer, post_mcp, routeur, static_dir,
+    Rendu, activer, administrateur, appel, cle, config, envoyer, post_mcp, routeur,
+    routeur_avec_horloge, static_dir,
 };
 
 /// Les quatre portées de lecture.
@@ -45,12 +47,16 @@ pub struct Societe {
 }
 
 /// Une société complète, servie (réglages MCP activés), son administrateur et
-/// ses pièges de marque `marque`.
+/// ses pièges de marque `marque`. L'exercice et les pièces sont datés du jour de
+/// l'horloge de test (`aujourd_hui_test`, Story 35-5b), celui du banc.
 pub async fn societe_piegee(pool: &MySqlPool, nom: &str, marque: char) -> Societe {
-    let c = pieges::societe_complete(pool, nom).await.expect("société");
+    let jour = aujourd_hui_test();
+    let c = pieges::societe_complete(pool, nom, jour)
+        .await
+        .expect("société");
     let u = administrateur(pool, c, &format!("admin-329-{marque}")).await;
     activer(pool, c).await;
-    let p = pieges::semer(pool, (u, None), c, marque)
+    let p = pieges::semer(pool, (u, None), c, marque, jour)
         .await
         .expect("pièges semés");
     Societe { c, u, p }
@@ -75,6 +81,23 @@ pub struct Banc {
 /// Le banc du registre standard.
 pub fn banc(pool: &MySqlPool) -> Banc {
     banc_avec(pool, Registre::standard())
+}
+
+/// Le banc du registre standard, l'horloge de l'état arrêtée sur `instant`
+/// (Story 35-5b, D8) : les outils lisent la date du jour de cet instant.
+pub fn banc_avec_horloge(pool: &MySqlPool, instant: chrono::DateTime<chrono::Utc>) -> Banc {
+    let statique = static_dir();
+    Banc {
+        app: routeur_avec_horloge(
+            pool.clone(),
+            config(),
+            statique.path(),
+            Registre::standard(),
+            "127.0.0.1",
+            instant,
+        ),
+        _statique: statique,
+    }
 }
 
 /// Le banc d'un registre donné.

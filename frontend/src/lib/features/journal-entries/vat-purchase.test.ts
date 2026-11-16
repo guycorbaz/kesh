@@ -2,8 +2,11 @@ import { describe, expect, it } from 'vitest';
 import Big from 'big.js';
 import {
 	buildPurchaseVatLines,
+	htAmountProblem,
 	isDraftLineNonEmpty,
 	lineVatAmount,
+	purchaseVatEntry,
+	readHtAmount,
 	type PurchaseVatParams
 } from './vat-purchase';
 
@@ -108,6 +111,76 @@ describe('buildPurchaseVatLines', () => {
 		expect(lines[1].debit).toBe('81.04');
 		expect(lines[2].credit).toBe('1081.54');
 		expect(sum(lines, 'debit')).toBe(sum(lines, 'credit'));
+	});
+});
+
+// Story 36-3 (#1051, AC5) — le HT de l'assistant lu comme un montant du journal.
+describe('readHtAmount (Story 36-3, AC5)', () => {
+	it('« 1.234 » → ambiguous, inutilisable', () => {
+		expect(readHtAmount('1.234')).toEqual({ kind: 'ambiguous', payload: null, usable: false });
+	});
+
+	it('« 1’234.50 » → charge 1234.50, utilisable', () => {
+		expect(readHtAmount("1'234.50")).toEqual({ kind: 'clear', payload: '1234.50', usable: true });
+		expect(readHtAmount('1’234,50')).toEqual({ kind: 'clear', payload: '1234.50', usable: true });
+	});
+
+	it('« 0.004 » → clear, inutilisable (règle du centime inchangée)', () => {
+		expect(readHtAmount('0.004')).toEqual({ kind: 'clear', payload: '0.004', usable: false });
+		expect(readHtAmount('0.005').usable).toBe(true);
+	});
+
+	it('vide et illisible', () => {
+		expect(readHtAmount('')).toEqual({ kind: 'empty', payload: null, usable: false });
+		expect(readHtAmount("12'34")).toEqual({ kind: 'unreadable', payload: null, usable: false });
+	});
+
+	it('buildPurchaseVatLines sur la charge de « 1’234.50 » à 8.10 : 1234.50, 99.99, 1334.49', () => {
+		const lines = buildPurchaseVatLines(base({ htAmount: readHtAmount("1'234.50").payload! }));
+		expect(lines[0].debit).toBe('1234.50');
+		// 1234.50 × 8.10 ÷ 100 = 99.9945 → 99.99.
+		expect(lines[1].debit).toBe('99.99');
+		expect(lines[2].credit).toBe('1334.49');
+	});
+});
+
+// Story 36-3, revue P1 (B3, E3) — chaque refus du HT a son message.
+describe('htAmountProblem (Story 36-3)', () => {
+	it.each([
+		['1.234', 'ambiguous'],
+		["12'34", 'unreadable'],
+		['1.23450', 'unreadable'],
+		['0.004', 'below-centime'],
+		['0', 'below-centime'],
+		['', null],
+		["1'234.50", null],
+		['0.005', null]
+	])('%s → %s', (raw, attendu) => {
+		expect(htAmountProblem(readHtAmount(raw))).toBe(attendu);
+	});
+});
+
+// Story 36-3 (V1-7 de la validation) — l'écriture insérée par l'assistant se tire de
+// la saisie brute par une seule fonction pure, que `insert()` appelle.
+describe('purchaseVatEntry (Story 36-3)', () => {
+	it('saisie « 1’234.50 » : lignes sur la charge normalisée', () => {
+		const entry = purchaseVatEntry(base({ htAmount: "1'234.50" }));
+		expect(entry).not.toBeNull();
+		expect(entry!.lines[0].debit).toBe('1234.50');
+		expect(entry!.lines[2].credit).toBe('1334.49');
+		expect(entry!.isExempt).toBe(false);
+	});
+
+	it('saisie ambiguë ou inutilisable : aucune écriture', () => {
+		expect(purchaseVatEntry(base({ htAmount: '1.234' }))).toBeNull();
+		expect(purchaseVatEntry(base({ htAmount: '0.004' }))).toBeNull();
+		expect(purchaseVatEntry(base({ htAmount: '' }))).toBeNull();
+	});
+
+	it('taux exempt : deux lignes, isExempt', () => {
+		const entry = purchaseVatEntry(base({ htAmount: "1'000", ratePercent: '0' }));
+		expect(entry!.lines).toHaveLength(2);
+		expect(entry!.isExempt).toBe(true);
 	});
 });
 

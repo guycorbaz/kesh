@@ -18,7 +18,7 @@ import {
 	authedApiContext,
 	disposeContextSafe,
 } from './helpers/test-state';
-import { createContactWithAddressViaApi } from './helpers/api-fixtures';
+import { createContactWithAddressViaApi, todayInZurich } from './helpers/api-fixtures';
 
 test.beforeAll(async () => {
 	await seedTestState('with-company');
@@ -67,7 +67,7 @@ test('la case d’arrondi se règle, et la facture validée porte la ligne « Ar
 		const ctx = await authedApiContext(page);
 		let invoiceId = 0;
 		try {
-			const today = new Date().toISOString().slice(0, 10);
+			const today = todayInZurich();
 			const created = await ctx.post('/api/v1/invoices', {
 				data: {
 					contactId,

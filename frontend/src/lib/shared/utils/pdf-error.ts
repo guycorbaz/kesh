@@ -41,6 +41,11 @@ export function pdfErrorMessage(err: unknown): string {
 		return i18nMsg('invoice-pdf-error-generic', 'Erreur lors du téléchargement du PDF');
 	}
 	if (SERVER_RESOLVED_CODES.has(err.code)) return err.message;
+	// Story 35-2a (#955, D1) — le refus « pas prête » est résolu par le serveur,
+	// dans la langue de l'installation : il nomme le champ et le caractère à
+	// corriger, ce que la phrase fixe taisait. Un message vide ou blanc (que
+	// `parseErrorResponse` ne remplace pas) retombe sur la clé fixe.
+	if (err.code === 'INVOICE_NOT_PDF_READY' && err.message.trim() !== '') return err.message;
 	const key = PDF_ERROR_KEYS[err.code] ?? 'invoice-pdf-error-generic';
 	return i18nMsg(key, err.message);
 }

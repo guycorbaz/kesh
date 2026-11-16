@@ -5,6 +5,7 @@ import {
 	authedApiContext,
 	disposeContextSafe,
 } from './helpers/test-state';
+import { todayInZurich } from './helpers/api-fixtures';
 
 test.beforeAll(async () => {
 	await seedTestState('with-company');
@@ -98,7 +99,7 @@ async function createSupplierWithInvoice(
 			data: { contactType: 'Entreprise', name: uniq('Fourn'), isClient: false, isSupplier: true },
 		});
 		const supplierId = (await supRes.json()).id as number;
-		const today = new Date().toISOString().slice(0, 10);
+		const today = todayInZurich();
 		const invRes = await ctx.post('/api/v1/supplier-invoices', {
 			data: {
 				contactId: supplierId,
@@ -135,7 +136,7 @@ test.describe('Lots de paiement pain.001', () => {
 		const ctx = await authedApiContext(page);
 		let batchId: number;
 		try {
-			const today = new Date().toISOString().slice(0, 10);
+			const today = todayInZurich();
 			const res = await ctx.post('/api/v1/payment-batches', {
 				data: {
 					bankAccountId,

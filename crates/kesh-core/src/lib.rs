@@ -11,6 +11,7 @@ pub mod chart_of_accounts;
 pub mod dates;
 pub mod email_template_engine;
 pub mod errors;
+pub mod horloge;
 pub mod invoice_format;
 pub mod lettering;
 pub mod listing;
