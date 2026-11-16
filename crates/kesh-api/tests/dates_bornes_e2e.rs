@@ -60,6 +60,14 @@ fn aujourd_hui() -> String {
     crate::common::jour::aujourd_hui_test().to_string()
 }
 
+/// Story 36-7a (#1125) — l'échéance témoin des cas `dueDate` : trente jours après le jour
+/// du serveur, donc jamais antérieure à la facture du jour (`"date": aujourd_hui()`). Le
+/// littéral `"2027-01-01"` d'avant la précédait dès le 2027-01-02 (400 « L'échéance ne peut
+/// pas être antérieure à la date de la facture »).
+fn echeance_temoin() -> String {
+    (crate::common::jour::aujourd_hui_test() + chrono::Days::new(30)).to_string()
+}
+
 /// La forme d'une valeur dans une chaîne de requête.
 fn en_requete(v: &str) -> String {
     v.replace('+', "%2B")
@@ -1007,7 +1015,7 @@ champ_corps!(
     c_facture_echeance,
     "POST invoices dueDate",
     B,
-    "2027-01-01",
+    &echeance_temoin(),
     facultatif,
     |m, v| {
         let client = m.contact(false, None).await;
@@ -1047,7 +1055,7 @@ champ_corps!(
     c_facture_maj_echeance,
     "PUT invoices dueDate",
     B,
-    "2027-01-01",
+    &echeance_temoin(),
     facultatif,
     |m, v| {
         let client = m.contact(false, None).await;
@@ -1507,7 +1515,7 @@ champ_corps!(
     c_fournisseur_echeance,
     "POST supplier-invoices dueDate",
     B,
-    "2027-01-01",
+    &echeance_temoin(),
     facultatif,
     |m, v| {
         let f = m.contact(true, None).await;
@@ -1553,7 +1561,7 @@ champ_corps!(
     c_fournisseur_maj_echeance,
     "PUT supplier-invoices dueDate",
     B,
-    "2027-01-01",
+    &echeance_temoin(),
     facultatif,
     |m, v| {
         let f = m.contact(true, None).await;

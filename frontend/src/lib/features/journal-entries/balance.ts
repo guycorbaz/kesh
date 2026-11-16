@@ -149,16 +149,41 @@ export function journalAmountPayload(raw: string): string | null {
 /** Story 36-3 (D3) — un lecteur de montant : `null` hors format, `Big(0)` pour le vide. */
 export type AmountReader = (raw: string) => Big | null;
 
-/** Story 36-3 (D3) — la lecture d'avant la story, que gardent les soldes de départ (#1050). */
-export const defaultAmountReader: AmountReader = (raw) =>
-	isValidAmount(raw) ? parseAmount(raw) : null;
-
-/** Story 36-3 (D3) — la lecture du journal (`readJournalAmount`). */
+/**
+ * Story 36-3 (D3) — la lecture du journal (`readJournalAmount`). Story 36-18a (#1050,
+ * C-36-18-11) : seul lecteur depuis que les soldes de départ l'emploient ; l'ancien
+ * lecteur par défaut (`isValidAmount` / `parseAmount`, qui lisait « 1.250 » 1,25) est
+ * retiré, et `computeBalance` / `classifyLine` exigent leur lecteur.
+ */
 export const journalAmountReader: AmountReader = (raw) => {
 	const r = readJournalAmount(raw);
 	if (r.kind === 'empty') return new Big(0);
 	return r.kind === 'clear' ? r.value : null;
 };
+
+/**
+ * Story 36-18a (#1050, #1159, #1172, #1174 ; D1, C-36-18-1) — la charge à envoyer pour
+ * un montant saisi hors du journal (solde de départ, prix ou montant attendu d'une
+ * facture fournisseur, règlement ; prix unitaire de la 36-3b, ré-exporté par
+ * `unit-price.ts`) : le `payload` d'une lecture claire (« 1'250 » → `1250`, « 1,25 » →
+ * `1.25`) ; `null` pour une saisie ambiguë, illisible **ou vide** — contrairement à
+ * `journalAmountPayload`, qui rend `'0'` pour le vide. L'appelant rogne s'il rognait
+ * avant la story (C-36-18-4).
+ */
+export function amountEntryPayload(raw: string): string | null {
+	const r = readJournalAmount(raw);
+	return r.kind === 'clear' ? r.payload : null;
+}
+
+/**
+ * Story 36-18a (D1) — le refus à afficher sous un champ de montant : `ambiguous`,
+ * `unreadable`, ou `null` (saisie claire ou vide : le vide a, s'il le faut, son propre
+ * message à l'écran qui l'emploie).
+ */
+export function amountEntryProblem(raw: string): 'ambiguous' | 'unreadable' | null {
+	const kind = readJournalAmount(raw).kind;
+	return kind === 'ambiguous' || kind === 'unreadable' ? kind : null;
+}
 
 export interface BalanceResult {
 	totalDebit: Big;
@@ -171,14 +196,14 @@ export interface BalanceResult {
 }
 
 /**
- * Totaux et équilibre des lignes, chaque montant lu par `read` (Story 36-3, D3) :
- * par défaut `defaultAmountReader`, la lecture d'avant la story (soldes de départ,
- * #1050) ; l'écriture manuelle passe `journalAmountReader`. Un montant que le
- * lecteur rend `null` compte pour zéro et rend `hasInvalidAmount` vrai.
+ * Totaux et équilibre des lignes, chaque montant lu par `read` (Story 36-3, D3 ;
+ * l'écriture manuelle et, depuis la Story 36-18a, les soldes de départ passent
+ * `journalAmountReader`). Un montant que le lecteur rend `null` compte pour zéro et
+ * rend `hasInvalidAmount` vrai.
  */
 export function computeBalance(
 	lines: { debit: string; credit: string }[],
-	read: AmountReader = defaultAmountReader
+	read: AmountReader
 ): BalanceResult {
 	const read0 = (raw: string) => read(raw) ?? new Big(0);
 	const hasInvalidAmount = lines.some((l) => read(l.debit) === null || read(l.credit) === null);
@@ -231,10 +256,9 @@ export function formatSwissAmount(big: Big, decimals = 2): string {
 }
 
 /**
- * Classe une ligne, ses montants lus par `read` (Story 36-3, D3 ; défaut :
- * `defaultAmountReader`). ⚠️ Ne pas passer cette fonction telle quelle à
- * `Array.prototype.map` : `map` donnerait l'indice pour lecteur. Écrire
- * `lines.map((l) => classifyLine(l, journalAmountReader))`.
+ * Classe une ligne, ses montants lus par `read` (Story 36-3, D3 ; obligatoire depuis la
+ * Story 36-18a). Écrire `lines.map((l) => classifyLine(l, journalAmountReader))` :
+ * `lines.map(classifyLine)` donnerait l'indice pour lecteur, ce que le typage refuse.
  */
 export function classifyLine(
 	line: {
@@ -242,7 +266,7 @@ export function classifyLine(
 		debit: string;
 		credit: string;
 	},
-	read: AmountReader = defaultAmountReader
+	read: AmountReader
 ): LineStatus {
 	const emptyDebit = line.debit === '';
 	const emptyCredit = line.credit === '';

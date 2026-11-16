@@ -465,29 +465,192 @@ async fn une_date_hors_plage_est_refusee_pour_la_plage_et_non_le_format(pool: My
     );
 }
 
+/// AC4 (Story 36-10, D3) — `dateTo=9999-12-31` borne au dernier instant du
+/// 31 décembre 9999 **à Zurich**, `9999-12-31T22:59:59.999Z` : l'entrée de cet
+/// instant est rendue, celle de `23:00:00.000` UTC — le `10000-01-01` à
+/// Zurich — ne l'est plus (perte assumée, écrite au dépôt). Jusqu'à la 36-10,
+/// la borne était le dernier instant du jour UTC et rendait les deux.
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn la_borne_haute_9999_est_acceptee_et_rend_bien_l_entree(pool: MySqlPool) {
     let _verrou = verrou_i18n().await;
     let ctx = seed_role(&pool, "borne", Role::Comptable).await;
-    ecrire_entree(&pool, ctx.user_id, "contact.created", "contact", 1).await;
-    let id = dernier_id(&pool).await;
-    sqlx::query("UPDATE audit_log SET created_at = '9999-12-31 23:59:59.999' WHERE id = ?")
+    let rendue = entree_a(&pool, ctx.user_id, "9999-12-31 22:59:59.999").await;
+    let _hors_du_jour = entree_a(&pool, ctx.user_id, "9999-12-31 23:00:00.000").await;
+    let app = spawn_app_de(pool).await;
+
+    // ⛔ Un 200 à liste vide masquerait exactement le défaut que la borne
+    // inclusive supprime : la liste attendue est écrite entière.
+    let (ids, total) = ids_filtres(&app, &ctx.jeton, "dateTo=9999-12-31").await;
+    assert_eq!(
+        ids,
+        vec![rendue],
+        "seule l'entrée du 31 décembre 9999 à Zurich"
+    );
+    assert_eq!(total, 1);
+}
+
+/// AC4 (Story 36-10, D3) — `dateFrom=1000-01-01` répond 200 et rend une entrée
+/// posée à `1000-01-01 00:00:00.000` : la borne basse liée a pour plancher le
+/// premier instant de `DATETIME` (le début du jour à Zurich, en heure locale
+/// moyenne, tomberait au `0999-12-31`). Le plancher lui-même se constate sur la
+/// valeur calculée, `bornes_du_filtre_jours_de_zurich_et_plafond` (`kesh-db`).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn la_borne_basse_1000_est_acceptee_et_rend_bien_l_entree(pool: MySqlPool) {
+    let _verrou = verrou_i18n().await;
+    let ctx = seed_role(&pool, "borne_basse", Role::Comptable).await;
+    let premiere = entree_a(&pool, ctx.user_id, "1000-01-01 00:00:00.000").await;
+    let app = spawn_app_de(pool).await;
+
+    let (ids, total) = ids_filtres(&app, &ctx.jeton, "dateFrom=1000-01-01&dateTo=1000-01-01").await;
+    assert_eq!(ids, vec![premiere]);
+    assert_eq!(total, 1);
+}
+
+// ===========================================================================
+// Story 36-10 (#1147) — les filtres de date en jours de Zurich
+// ===========================================================================
+
+/// Pose une entrée d'audit à l'instant UTC donné (`AAAA-MM-JJ HH:MM:SS.mmm`,
+/// la forme de la colonne `DATETIME(3)`) et rend son identifiant.
+async fn entree_a(pool: &MySqlPool, user_id: i64, instant_utc: &str) -> i64 {
+    ecrire_entree(pool, user_id, "contact.created", "contact", 1).await;
+    let id = dernier_id(pool).await;
+    sqlx::query("UPDATE audit_log SET created_at = ? WHERE id = ?")
+        .bind(instant_utc)
         .bind(id)
-        .execute(&pool)
+        .execute(pool)
         .await
         .unwrap();
+    id
+}
+
+/// `GET /api/v1/audit-log?<filtres>` : les identifiants rendus, **triés**
+/// croissants, et le `total` de la réponse.
+async fn ids_filtres(app: &TestApp, jeton: &str, filtres: &str) -> (Vec<i64>, i64) {
+    let resp = app
+        .get(&format!("/api/v1/audit-log?{filtres}"), jeton)
+        .await;
+    assert_eq!(resp.status(), 200, "{filtres}");
+    let corps: Value = resp.json().await.unwrap();
+    let mut ids: Vec<i64> = corps["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|e| e["id"].as_i64().unwrap())
+        .collect();
+    ids.sort_unstable();
+    (ids, corps["total"].as_i64().unwrap())
+}
+
+/// Les cinq instants d'AC2 autour d'un jour de Zurich `j` : (instant UTC, le
+/// jour à Zurich est-il `j` ?). `bascule` est l'heure UTC de minuit à Zurich
+/// (`22` en été, `23` en hiver), `veille` et `jour` les deux jours UTC.
+fn instants_de_nuit(veille: &str, jour: &str, bascule: u32) -> [(String, bool); 5] {
+    let avant = bascule - 1;
+    [
+        (format!("{veille} {avant}:59:59.999"), false),
+        (format!("{veille} {bascule}:00:00.000"), true),
+        (format!("{veille} {bascule}:30:00.000"), true),
+        (format!("{jour} {avant}:59:59.999"), true),
+        (format!("{jour} {bascule}:00:00.000"), false),
+    ]
+}
+
+/// AC2 (Story 36-10, #1147) — le filtre d'un jour rend les entrées dont le jour
+/// **à Zurich** est ce jour : celles de `22:00` et `22:30` UTC la veille (minuit
+/// et 0 h 30 à Zurich, en été), et non celle de `22:00` UTC le jour même. En
+/// été (`2026-09-15`, CEST) puis en hiver (`2026-01-15`, CET). `dateFrom` seul
+/// et `dateTo` seul bornent chacun leur côté ; le `total` suit les lignes.
+/// Rouge sur le code d'avant : il rendait les deux entrées du jour UTC.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn le_filtre_d_un_jour_lit_le_jour_de_zurich_la_nuit(pool: MySqlPool) {
+    let _verrou = verrou_i18n().await;
+    let ctx = seed_role(&pool, "nuit", Role::Comptable).await;
+    let saisons = [
+        ("2026-09-14", "2026-09-15", 22, "été"),
+        ("2026-01-14", "2026-01-15", 23, "hiver"),
+    ];
+    // (entrées posées : identifiant et « du jour à Zurich ? », jour, saison).
+    type Saison<'a> = (Vec<(i64, bool)>, &'a str, &'a str);
+    let mut poses: Vec<Saison> = Vec::new();
+    for (veille, jour, bascule, saison) in saisons {
+        let mut entrees = Vec::new();
+        for (instant, du_jour) in instants_de_nuit(veille, jour, bascule) {
+            entrees.push((entree_a(&pool, ctx.user_id, &instant).await, du_jour));
+        }
+        poses.push((entrees, jour, saison));
+    }
+    let app = spawn_app_de(pool).await;
+
+    for (entrees, jour, saison) in &poses {
+        let du_jour: Vec<i64> = entrees.iter().filter(|e| e.1).map(|e| e.0).collect();
+        let (ids, total) =
+            ids_filtres(&app, &ctx.jeton, &format!("dateFrom={jour}&dateTo={jour}")).await;
+        assert_eq!(ids, du_jour, "{saison} : dateFrom=dateTo={jour}");
+        assert_eq!(total, 3, "{saison} : total");
+
+        // `dateFrom` seul : tout ce qui suit le début du jour à Zurich, dans
+        // cette saison et la suivante (les entrées d'hiver précèdent l'été).
+        let (ids_depuis, _) = ids_filtres(&app, &ctx.jeton, &format!("dateFrom={jour}")).await;
+        for (id, du) in entrees {
+            let premier = *id == entrees[0].0;
+            assert_eq!(
+                ids_depuis.contains(id),
+                !premier,
+                "{saison} : dateFrom={jour} seul, entrée {id} (du jour : {du})"
+            );
+        }
+        // `dateTo` seul : tout ce qui précède la fin du jour à Zurich.
+        let (ids_jusqu, _) = ids_filtres(&app, &ctx.jeton, &format!("dateTo={jour}")).await;
+        for (id, du) in entrees {
+            let dernier = *id == entrees[4].0;
+            assert_eq!(
+                ids_jusqu.contains(id),
+                !dernier,
+                "{saison} : dateTo={jour} seul, entrée {id} (du jour : {du})"
+            );
+        }
+    }
+}
+
+/// AC3 (Story 36-10, #1147) — l'export suit le même filtre : les trois lignes du
+/// 15 septembre à Zurich, chacune avec son instant UTC **au format inchangé**
+/// (`AAAA-MM-JJ HH:MM:SS.mmm`, sans `T` ni `Z`), et l'en-tête de date inchangé
+/// (`Datum (UTC)`, l'application étant montée en allemand).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn l_export_d_un_jour_suit_le_filtre_de_zurich(pool: MySqlPool) {
+    let _verrou = verrou_i18n().await;
+    let ctx = seed_role(&pool, "nuit_csv", Role::Comptable).await;
+    for (instant, _) in instants_de_nuit("2026-09-14", "2026-09-15", 22) {
+        entree_a(&pool, ctx.user_id, &instant).await;
+    }
     let app = spawn_app_de(pool).await;
 
     let resp = app
-        .get("/api/v1/audit-log?dateTo=9999-12-31", &ctx.jeton)
+        .get(
+            "/api/v1/audit-log/export.csv?dateFrom=2026-09-15&dateTo=2026-09-15",
+            &ctx.jeton,
+        )
         .await;
     assert_eq!(resp.status(), 200);
-    let corps: Value = resp.json().await.unwrap();
-    // ⛔ Un 200 à liste vide masquerait exactement le défaut que la borne
-    // inclusive supprime.
-    assert!(
-        !corps["items"].as_array().unwrap().is_empty(),
-        "l'entrée du 9999-12-31 doit être rendue, reçu : {corps}"
+    let octets = resp.bytes().await.unwrap();
+    let texte = String::from_utf8(octets[3..].to_vec()).unwrap();
+    let mut lignes = texte.lines();
+    let entete = lignes.next().unwrap();
+    assert_eq!(
+        entete.split(';').nth(1),
+        Some("Datum (UTC)"),
+        "en-tête de date inchangé, reçu : {entete}"
+    );
+    let mut instants: Vec<&str> = lignes.map(|l| l.split(';').nth(1).unwrap()).collect();
+    instants.sort_unstable();
+    assert_eq!(
+        instants,
+        vec![
+            "2026-09-14 22:00:00.000",
+            "2026-09-14 22:30:00.000",
+            "2026-09-15 21:59:59.999",
+        ]
     );
 }
 

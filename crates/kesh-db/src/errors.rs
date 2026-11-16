@@ -694,8 +694,8 @@ impl DesignatedSetting {
 ///
 /// Comme [`NonPostableAccount`], il n'est construit que pour un compte **de la
 /// société et actif** (un compte absent, étranger ou archivé reste
-/// [`DbError::InactiveOrInvalidAccounts`] et prime) : son numéro est toujours
-/// connu.
+/// [`DbError::InactiveOrInvalidAccounts`] et prime — au solde du reste,
+/// `ConfigurationRequired`, Story 36-9) : son numéro est toujours connu.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WrongTypeDesignatedAccount {
     pub account_id: i64,
@@ -706,7 +706,8 @@ pub struct WrongTypeDesignatedAccount {
     /// Le type que ce réglage exige (`VAT_SETTING_ACCOUNT_TYPES` et
     /// `CLAIM_SETTING_ACCOUNT_TYPES` de `company_invoice_settings`).
     pub expected_type: AccountType,
-    /// Le type que le compte porte au moment de la validation.
+    /// Le type que le compte porte au moment d'écrire (validation d'une
+    /// facture ou d'une facture fournisseur, solde du reste).
     pub actual_type: AccountType,
 }
 
@@ -984,6 +985,20 @@ pub enum DbError {
     #[error("Un ou plusieurs comptes sont archivés ou invalides")]
     InactiveOrInvalidAccounts,
 
+    /// La finalisation de l'assistant ne peut pas remplir le **compte débiteurs**
+    /// ou le **compte de produit par défaut** des réglages de facturation (Story
+    /// 36-19, #1200, refs #987) : chaque élément nomme le réglage en défaut et sa
+    /// cause, le compte débiteurs d'abord.
+    ///
+    /// Levée par `company_invoice_settings::complete_default_accounts_in_tx`, que
+    /// seule la finalisation appelle, et qui rend le motif en français (la route
+    /// convertit elle-même ce refus) ; l'enveloppe `insert_with_defaults_in_tx`
+    /// (démonstration, jeux de pièges) la ramène à
+    /// [`DbError::InactiveOrInvalidAccounts`]. `error_code()` =
+    /// `VALIDATION_ERROR`, le code du rendu, que la Story 36-17 reconnaît.
+    #[error("Comptes par défaut de facturation inutilisables : {0:?}")]
+    DefaultInvoiceAccountsUnavailable(Vec<UnavailableDefaultInvoiceAccount>),
+
     /// Un ou plusieurs comptes **de la société, actifs**, ne sont pas
     /// imputables : compte de regroupement (`postable = FALSE`), de résultat
     /// (rôle `CurrentYearResult`) ou de clôture (Story 15-5a, #429).
@@ -1032,7 +1047,12 @@ pub enum DbError {
     /// n'ont plus le **type** que leur réglage exige au moment où la validation
     /// d'une facture ou d'une facture fournisseur veut y écrire (Story 35-3,
     /// #537) : un compte retypé après sa désignation (la page des réglages ne
-    /// contrôle le type qu'à l'enregistrement).
+    /// contrôle le type qu'à l'enregistrement). Depuis la Story 36-9 (#1044),
+    /// le **solde du reste** en escompte ou en perte le rend aussi, pour le seul
+    /// compte de TVA due (`vat_payable_account_for_write`) : une liste d'une
+    /// entrée, après l'absent ou l'archivé (`ConfigurationRequired`, et non
+    /// `InactiveOrInvalidAccounts`) et avant le non imputable
+    /// (`ConfigurationRequired`).
     ///
     /// Mappé vers HTTP **400 `DESIGNATED_ACCOUNT_WRONG_TYPE`**, détail
     /// [`WrongTypeDesignatedAccounts::details`]. Le message nomme chaque compte,
@@ -1770,6 +1790,49 @@ pub enum RoundingContext {
     Issuance,
 }
 
+/// Un réglage **obligatoire** de facturation que la finalisation de l'assistant
+/// doit remplir (Story 36-19, #1200) — ordre du refus : débiteurs, puis produit.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum DefaultInvoiceSetting {
+    /// `default_receivable_account_id` — le compte débiteurs (rôle `Receivable`).
+    Receivable,
+    /// `default_revenue_account_id` — le compte de produit par défaut (rôle
+    /// `DefaultRevenue`).
+    Revenue,
+}
+
+/// Pourquoi un réglage obligatoire ne peut pas être rempli (Story 36-19, D5).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum DefaultInvoiceAccountCause {
+    /// Le réglage est vide et aucun compte actif ne porte le rôle.
+    NoRoleAccount,
+    /// Le réglage désigne un compte de la société **archivé**.
+    DesignatedArchived { account_number: String },
+    /// Le réglage désigne un compte qui n'est pas de la société (revue P1,
+    /// B6/E3) : la clé étrangère ne porte que sur `accounts.id`. Inatteignable
+    /// par l'API d'une installation mono-société (le `PUT` contrôle la société),
+    /// nommé pour ne pas dire « archivé » d'un compte qui ne l'est pas.
+    DesignatedOutsideCompany,
+    /// Le réglage est vide et le compte qui porte le rôle n'est pas imputable
+    /// (un sous-compte a été créé sous lui).
+    RoleAccountNotPostable { account_number: String },
+    /// Le réglage est vide et le compte qui porte le rôle est le compte du grand
+    /// livre d'un compte bancaire non archivé (Story 15-6c ; refs #987) — compte
+    /// débiteurs seulement.
+    RoleAccountLinkedToBankAccount {
+        account_number: String,
+        /// Nom d'affichage du premier compte bancaire lié, par `id`.
+        bank_label: String,
+    },
+}
+
+/// Un élément de [`DbError::DefaultInvoiceAccountsUnavailable`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UnavailableDefaultInvoiceAccount {
+    pub setting: DefaultInvoiceSetting,
+    pub cause: DefaultInvoiceAccountCause,
+}
+
 /// Le côté que solde un règlement (Story 15-6b, #474) : la **créance** d'une
 /// facture client, ou la **dette** d'une facture fournisseur.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1917,6 +1980,8 @@ impl DbError {
             Self::NextFiscalYearMissing { .. } => "NEXT_FISCAL_YEAR_MISSING",
             Self::NextFiscalYearClosed { .. } => "NEXT_FISCAL_YEAR_CLOSED",
             Self::InactiveOrInvalidAccounts => "INACTIVE_OR_INVALID_ACCOUNTS",
+            // Story 36-19 : le code du rendu, que la Story 36-17 reconnaît.
+            Self::DefaultInvoiceAccountsUnavailable(_) => "VALIDATION_ERROR",
             Self::AccountsNotPostable(_) => "ACCOUNT_NOT_POSTABLE",
             Self::DesignatedAccountsNotPostable(_) => "ACCOUNT_NOT_POSTABLE",
             Self::DesignatedAccountsWrongType(_) => "DESIGNATED_ACCOUNT_WRONG_TYPE",

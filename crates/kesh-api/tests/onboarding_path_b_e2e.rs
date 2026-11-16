@@ -712,3 +712,362 @@ async fn fresh_install_stub_exposed_then_cleared_by_coordinates(pool: MySqlPool)
     let body: serde_json::Value = resp.json().await.unwrap();
     assert_eq!(body["isStub"], false);
 }
+
+// ─── Story 36-19 (#1200, refs #987) : la finalisation complète les comptes vides ───
+
+/// Le message du refus de la finalisation, au gabarit de la fiche (D5).
+fn finalize_refusal(phrases: &[&str]) -> String {
+    format!(
+        "La configuration ne peut pas se terminer. {} Réessayez ensuite.",
+        phrases.join(" ")
+    )
+}
+
+/// Étapes 2 à 7, sans compte bancaire à l'étape 6 (`skip-bank`), plan
+/// `Independant` ; rend l'identifiant de la société.
+async fn advance_to_step_7_without_bank(app: &TestApp, token: &str, pool: &MySqlPool) -> i64 {
+    advance_to_step_2(app, token).await;
+    for (path, body) in [
+        ("/api/v1/onboarding/start-production", json!(null)),
+        (
+            "/api/v1/onboarding/org-type",
+            json!({ "orgType": "Independant" }),
+        ),
+        (
+            "/api/v1/onboarding/accounting-language",
+            json!({ "language": "FR" }),
+        ),
+        (
+            "/api/v1/onboarding/coordinates",
+            json!({ "name": "Vierge SA", "address": {"street":"Rue Test","building":"1","postalCode":"1000","city":"Lausanne","country":"CH"}, "ideNumber": null }),
+        ),
+        ("/api/v1/onboarding/skip-bank", json!(null)),
+    ] {
+        let mut req = app
+            .client
+            .post(app.url(path))
+            .header("Authorization", auth(token));
+        if !body.is_null() {
+            req = req.json(&body);
+        }
+        let resp = req.send().await.unwrap();
+        assert_eq!(resp.status(), 200, "montage : {path}");
+    }
+    sqlx::query_scalar("SELECT id FROM companies ORDER BY id LIMIT 1")
+        .fetch_one(pool)
+        .await
+        .unwrap()
+}
+
+/// `GET /api/v1/company/invoice-settings` — ce qu'appellent le journal, les
+/// comptes bancaires et les factures avant la fin de l'assistant.
+async fn get_invoice_settings(app: &TestApp, token: &str) -> serde_json::Value {
+    let resp = app
+        .client
+        .get(app.url("/api/v1/company/invoice-settings"))
+        .header("Authorization", auth(token))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+    resp.json().await.unwrap()
+}
+
+async fn post_finalize(app: &TestApp, token: &str) -> reqwest::Response {
+    app.client
+        .post(app.url("/api/v1/onboarding/finalize"))
+        .header("Authorization", auth(token))
+        .send()
+        .await
+        .unwrap()
+}
+
+async fn role_account(pool: &MySqlPool, company_id: i64, role: &str) -> i64 {
+    sqlx::query_scalar("SELECT id FROM accounts WHERE company_id = ? AND singleton_role = ?")
+        .bind(company_id)
+        .bind(role)
+        .fetch_one(pool)
+        .await
+        .unwrap()
+}
+
+/// `POST /api/v1/bank-accounts` lié au compte `account_id`.
+async fn post_linked_bank_account(app: &TestApp, token: &str, account_id: i64) {
+    let resp = app
+        .client
+        .post(app.url("/api/v1/bank-accounts"))
+        .header("Authorization", auth(token))
+        .json(&json!({
+            "bankName": "PostFinance",
+            "iban": "CH3908704016075473007",
+            "journalAccountId": account_id,
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 201, "montage : compte bancaire lié créé");
+}
+
+/// L'état observable que la finalisation ne doit pas toucher quand elle refuse.
+async fn unwritten_state(pool: &MySqlPool) -> (Vec<String>, i64, Option<i32>) {
+    let step: i64 = sqlx::query_scalar("SELECT step_completed FROM onboarding_state LIMIT 1")
+        .fetch_one(pool)
+        .await
+        .unwrap();
+    let version: Option<i32> =
+        sqlx::query_scalar("SELECT version FROM company_invoice_settings LIMIT 1")
+            .fetch_optional(pool)
+            .await
+            .unwrap();
+    (common::audit_sequence(pool).await, step, version)
+}
+
+/// T-H1 (AC1, AC5) — un `GET` des réglages à l'étape 7 crée la ligne vierge ; la
+/// finalisation la complète au lieu de refuser : `200`, étape 8, comptes de rôle
+/// posés, `version` 2, et l'audit porte `company_invoice_settings.updated`
+/// (`trigger` = `onboarding`) à la place de `…created`. Puis T-H4 (AC6).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn finalize_completes_settings_created_by_an_earlier_get(pool: MySqlPool) {
+    let app = spawn_app(pool.clone()).await;
+    create_test_company(&pool).await;
+    ensure_admin_user(&pool, &test_config()).await.unwrap();
+    let token = login(&app).await;
+    let company_id = advance_to_step_7_without_bank(&app, &token, &pool).await;
+    let vierge = get_invoice_settings(&app, &token).await;
+    assert!(vierge["defaultReceivableAccountId"].is_null(), "montage");
+    assert_eq!(vierge["version"], 1, "montage");
+
+    let resp = post_finalize(&app, &token).await;
+    assert_eq!(resp.status(), 200);
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(body["stepCompleted"], 8);
+
+    let s = get_invoice_settings(&app, &token).await;
+    assert_eq!(
+        s["defaultReceivableAccountId"],
+        role_account(&pool, company_id, "Receivable").await
+    );
+    assert_eq!(
+        s["defaultRevenueAccountId"],
+        role_account(&pool, company_id, "DefaultRevenue").await
+    );
+    assert_eq!(
+        s["defaultPayableAccountId"],
+        role_account(&pool, company_id, "Payable").await
+    );
+    assert!(s["defaultVatPayableAccountId"].is_null());
+    assert_eq!(s["version"], 2);
+
+    let actions = common::audit_sequence(&pool).await;
+    assert_eq!(
+        &actions[actions.len() - 7..],
+        [
+            "company_invoice_settings.updated",
+            "vat_rate.created",
+            "vat_rate.created",
+            "vat_rate.created",
+            "vat_rate.created",
+            "fiscal_year.created",
+            "installation.step_completed",
+        ],
+        "séquence de la finalisation"
+    );
+    assert!(
+        !actions
+            .iter()
+            .any(|a| a == "company_invoice_settings.created"),
+        "pas de `…created` pour une ligne qui existait"
+    );
+    let details: serde_json::Value = sqlx::query_scalar(
+        "SELECT details_json FROM audit_log WHERE action = 'company_invoice_settings.updated'",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(details["trigger"], "onboarding");
+    assert!(details["before"]["defaultReceivableAccountId"].is_null());
+    assert_eq!(
+        details["after"]["defaultReceivableAccountId"],
+        s["defaultReceivableAccountId"]
+    );
+    assert_eq!(details["after"]["version"], 2);
+
+    // T-H4 (AC6) — l'écran ouvert avant la finalisation renvoie `version` 1 : 409,
+    // et les comptes complétés restent.
+    let mut stale = vierge.clone();
+    stale.as_object_mut().unwrap().remove("companyId");
+    let resp = app
+        .client
+        .put(app.url("/api/v1/company/invoice-settings"))
+        .header("Authorization", auth(&token))
+        .json(&stale)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(
+        resp.status(),
+        409,
+        "écran périmé : conflit, pas d'effacement"
+    );
+    let apres = get_invoice_settings(&app, &token).await;
+    assert_eq!(
+        apres["defaultReceivableAccountId"],
+        s["defaultReceivableAccountId"]
+    );
+    assert_eq!(apres["version"], 2);
+}
+
+/// T-H2 (AC4 a) et T-H2e (AC4 e) — le refus dit ce qui manque : un rôle absent,
+/// puis les deux, débiteurs d'abord ; rien n'est écrit.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn finalize_refusal_names_each_missing_role(pool: MySqlPool) {
+    const DEBITEURS: &str = "Compte débiteurs : le réglage est vide et aucun compte actif du plan comptable ne porte le rôle « Créances clients » — désignez-le dans Administration → Facturation, ou attribuez ce rôle à un compte dans le plan comptable.";
+    const PRODUIT: &str = "Compte de produit par défaut : le réglage est vide et aucun compte actif du plan comptable ne porte le rôle « Produit par défaut » — désignez-le dans Administration → Facturation, ou attribuez ce rôle à un compte dans le plan comptable.";
+
+    let app = spawn_app(pool.clone()).await;
+    create_test_company(&pool).await;
+    ensure_admin_user(&pool, &test_config()).await.unwrap();
+    let token = login(&app).await;
+    let company_id = advance_to_step_7_without_bank(&app, &token, &pool).await;
+    get_invoice_settings(&app, &token).await;
+
+    for (roles, phrases) in [
+        (vec!["Receivable"], vec![DEBITEURS]),
+        (
+            vec!["Receivable", "DefaultRevenue"],
+            vec![DEBITEURS, PRODUIT],
+        ),
+    ] {
+        for role in &roles {
+            sqlx::query("UPDATE accounts SET role = NULL WHERE company_id = ? AND role = ?")
+                .bind(company_id)
+                .bind(role)
+                .execute(&pool)
+                .await
+                .unwrap();
+        }
+        let avant = unwritten_state(&pool).await;
+        let resp = post_finalize(&app, &token).await;
+        assert_eq!(resp.status(), 400, "{roles:?}");
+        let body: serde_json::Value = resp.json().await.unwrap();
+        assert_eq!(body["error"]["code"], "VALIDATION_ERROR", "{roles:?}");
+        assert_eq!(
+            body["error"]["message"],
+            finalize_refusal(&phrases),
+            "{roles:?}"
+        );
+        assert_eq!(
+            unwritten_state(&pool).await,
+            avant,
+            "{roles:?} : rien d'écrit"
+        );
+    }
+}
+
+/// T-H3 (AC4 c) — un compte bancaire lié au compte de rôle débiteurs à l'étape
+/// 7 : la finalisation refuse et dit comment faire ; avec un correctif sans la
+/// garde (M6a), elle rendrait 200 et désignerait un compte lié.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn finalize_refuses_a_receivable_role_account_linked_to_a_bank_account(pool: MySqlPool) {
+    let app = spawn_app(pool.clone()).await;
+    create_test_company(&pool).await;
+    ensure_admin_user(&pool, &test_config()).await.unwrap();
+    let token = login(&app).await;
+    let company_id = advance_to_step_7_without_bank(&app, &token, &pool).await;
+    get_invoice_settings(&app, &token).await;
+    let receivable = role_account(&pool, company_id, "Receivable").await;
+    post_linked_bank_account(&app, &token, receivable).await;
+
+    let avant = unwritten_state(&pool).await;
+    let resp = post_finalize(&app, &token).await;
+    assert_eq!(resp.status(), 400);
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(body["error"]["code"], "VALIDATION_ERROR");
+    assert_eq!(
+        body["error"]["message"],
+        finalize_refusal(&[
+            "Compte débiteurs : le compte 1100, qui porte le rôle « Créances clients », est le compte du compte bancaire « PostFinance » — déliez ce compte bancaire dans Administration → Comptes bancaires (s'il est clos, rouvrez-le d'abord), ou désignez un autre compte débiteurs dans Administration → Facturation."
+        ])
+    );
+    assert_eq!(unwritten_state(&pool).await, avant, "rien d'écrit");
+}
+
+/// T-H3d (AC4 bis d) — un compte bancaire lié au compte de rôle **créanciers** :
+/// la finalisation aboutit, créanciers vide.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn finalize_leaves_payable_empty_when_linked_to_a_bank_account(pool: MySqlPool) {
+    let app = spawn_app(pool.clone()).await;
+    create_test_company(&pool).await;
+    ensure_admin_user(&pool, &test_config()).await.unwrap();
+    let token = login(&app).await;
+    let company_id = advance_to_step_7_without_bank(&app, &token, &pool).await;
+    get_invoice_settings(&app, &token).await;
+    let payable = role_account(&pool, company_id, "Payable").await;
+    post_linked_bank_account(&app, &token, payable).await;
+
+    let resp = post_finalize(&app, &token).await;
+    assert_eq!(resp.status(), 200);
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(body["stepCompleted"], 8);
+    let s = get_invoice_settings(&app, &token).await;
+    assert!(
+        s["defaultPayableAccountId"].is_null(),
+        "créanciers lié jamais désigné"
+    );
+    assert_eq!(
+        s["defaultReceivableAccountId"],
+        role_account(&pool, company_id, "Receivable").await
+    );
+}
+
+/// AC11 (mutation M12) — le bras de `DefaultInvoiceAccountsUnavailable` lit
+/// **sa** clé du catalogue chargé : le test unitaire du bras (`errors.rs`) ne
+/// voit que le repli, égal au texte de la clé, et ne distingue donc pas une
+/// autre clé. Ici le catalogue est chargé (`spawn_app` → `init_error_i18n`, la
+/// locale de la configuration, `fr-CH`) : le message est le texte de
+/// `error-default-invoice-accounts-unavailable`, non celui
+/// d'`error-inactive-accounts`.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn default_invoice_accounts_unavailable_reads_its_catalogue_key(pool: MySqlPool) {
+    use axum::response::IntoResponse;
+    use http_body_util::BodyExt;
+    use kesh_db::errors::{
+        DbError, DefaultInvoiceAccountCause, DefaultInvoiceSetting,
+        UnavailableDefaultInvoiceAccount,
+    };
+
+    let _app = spawn_app(pool).await;
+    let catalogue = std::fs::read_to_string(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../kesh-i18n/locales/fr-CH/messages.ftl"
+    ))
+    .unwrap();
+    let texte = |cle: &str| -> String {
+        catalogue
+            .lines()
+            .find_map(|l| l.strip_prefix(&format!("{cle} = ")))
+            .unwrap_or_else(|| panic!("clé {cle} absente"))
+            .to_string()
+    };
+    let resp =
+        kesh_api::errors::AppError::Database(DbError::DefaultInvoiceAccountsUnavailable(vec![
+            UnavailableDefaultInvoiceAccount {
+                setting: DefaultInvoiceSetting::Revenue,
+                cause: DefaultInvoiceAccountCause::NoRoleAccount,
+            },
+        ]))
+        .into_response();
+    assert_eq!(resp.status(), 400);
+    let bytes = resp.into_body().collect().await.unwrap().to_bytes();
+    let body: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+    assert_eq!(body["error"]["code"], "VALIDATION_ERROR");
+    assert_eq!(
+        body["error"]["message"],
+        texte("error-default-invoice-accounts-unavailable")
+    );
+    assert_ne!(
+        body["error"]["message"],
+        texte("error-inactive-accounts"),
+        "montage : les deux textes diffèrent"
+    );
+}

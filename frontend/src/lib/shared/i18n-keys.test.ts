@@ -1017,7 +1017,27 @@ const ATTENDU = {
 	// de la 36-2, a été rejoué par `rerere` à la fusion de la 36-3 dans la branche de release
 	// (`0e562af37`) sans y être relevé ; dans cette branche, 3050 = 3036 + 1 (36-1) + 4 (36-3)
 	// + 4 (36-3b) + 5 (36-2), relevé par la garde à la fusion de la 36-2.
-	sitesTotal: 3050,
+	// Story 36-17 (#1187) : **3050 → 3081** sur sa branche, relevé par la garde
+	// (« expected 3081 to be 3050 », `kesh-gate-logs/e36-17/front-test-unit-1.log`) avant d'écrire
+	// ce nombre — les cinq écrans neufs de `features/onboarding/` et les textes neufs de
+	// `routes/onboarding/+page.svelte`, moins les deux clés mortes de D2. Que des littéraux. À
+	// relever de nouveau à l'union de la 0.18.0 (C-e350-18).
+	// Remédiation de la revue P1 de la 36-17 : **3081 → 3083**, relevé par la garde (« expected 3083
+	// to be 3081 », `kesh-gate-logs/e36-17/rem1-front-test-unit-releve.log`) —
+	// `onboarding-done-credit-card` (B7/E7) et `onboarding-finalize-remedy-link` (E10), deux littéraux.
+	// Intégration de la 0.18.0 (2026-11-16), après les fusions des 36-10, 36-19, 36-17, 36-9 et
+	// 36-12a : **3083 → 3082**, relevé par la garde (« expected 3082 to be 3083 »,
+	// `kesh-gate-logs/rel0180/releve-compteurs-1.log`) — `onboarding-finalize-remedy` retirée (la
+	// 36-19 corrige #1200) ; les quatre autres stories n'ajoutent aucun site.
+	// Story 36-18a (#1050, #1159, #1172, #1174 ; AC8) : **3082 → 3086**, relevé par la garde
+	// (« expected 3087 to be 3082 », `kesh-gate-logs/e36-18/vitest-cible-dev.log` ; puis 3086,
+	// valeur posée et constatée verte une fois fusionné un doublon d'`invoice-error-amount-positive`
+	// du règlement — ce second relevé n'est pas au journal)
+	// — `common-amount-ambiguous` et
+	// `common-amount-unreadable` (`journal-entries/amount-entry-message.ts`),
+	// `supplier-invoices-err-line-unit-price-ambiguous` et `-unreadable`
+	// (`SupplierInvoiceForm.svelte`) : quatre littéraux.
+	sitesTotal: 3086,
 	sitesNonResolus: 31,
 	relais: 6,
 	// Story 26-1 (#620, AC3-bis) : **10 → 11** — `lib/features/bank-import/

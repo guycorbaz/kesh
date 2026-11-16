@@ -386,7 +386,7 @@
 							</th>
 							{#if projects.length > 0}
 								<th class="sm:w-[15%] py-1">
-									{i18nMsg('reconciliation-split-th-project', 'Projet')}
+									{i18nMsg('reconciliation-split-th-project', 'Compte analytique')}
 								</th>
 							{/if}
 							<!-- Revue P1 (E1, B2) : sans largeur, la colonne du bouton « - » reçoit le reste ;

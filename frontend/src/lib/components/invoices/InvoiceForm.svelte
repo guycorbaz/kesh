@@ -811,7 +811,7 @@
 		{#if showProjectField}
 			<div>
 				<label class="mb-1 block text-sm font-medium" for="invoice-project">
-					{i18nMsg('invoice-field-project', 'Projet analytique (optionnel)')}
+					{i18nMsg('invoice-field-project', 'Compte analytique (optionnel)')}
 				</label>
 				<!-- Arbre 2 niveaux (racines + sous-projets indentés), pattern 19-3. -->
 				<select
@@ -827,8 +827,8 @@
 						     Valeur préservée au round-trip (grandfathering backend). -->
 						<option value={projectId}>
 							{projectsLoaded
-								? i18nMsg('invoice-project-archived', 'Projet archivé')
-								: i18nMsg('invoice-project-current', 'Projet actuel')}
+								? i18nMsg('invoice-project-archived', 'Compte analytique archivé')
+								: i18nMsg('invoice-project-current', 'Compte analytique actuel')}
 						</option>
 					{/if}
 					{#each projects.filter((p) => p.parentId === null) as root (root.id)}

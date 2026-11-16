@@ -238,7 +238,7 @@
 	{#if projects.length > 0 || defaultProjectId !== null}
 		<div>
 			<label for="rule-default-project" class="block text-sm font-medium">
-				{i18nMsg('reconciliation-rules-labels-default-project', 'Projet analytique par défaut')}
+				{i18nMsg('reconciliation-rules-labels-default-project', 'Compte analytique par défaut')}
 			</label>
 			<select
 				id="rule-default-project"
@@ -256,7 +256,7 @@
 				{#if defaultProjectId !== null && !projects.some((p) => p.id === defaultProjectId)}
 					<!-- Tag historique dont le projet est archivé/absent de la liste (leçon 19-2 BH-L2). -->
 					<option value={defaultProjectId}>
-						{i18nMsg('reconciliation-rules-default-project-archived', 'Projet archivé')}
+						{i18nMsg('reconciliation-rules-default-project-archived', 'Compte analytique archivé')}
 					</option>
 				{/if}
 			</select>

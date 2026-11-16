@@ -25,8 +25,9 @@ const TEST_JWT_SECRET: &[u8] = b"test-secret-32-bytes-minimum-test-secret-paddin
 const ADMIN_PASSWORD: &str = "admin123";
 const SETTINGS: &str = "/api/v1/company/invoice-settings";
 
-/// La phrase d'action, dernière du message (D2).
-const ACTION: &str = "Rien n’a été enregistré. Un administrateur doit corriger le réglage concerné — désigner un compte du bon type, ou rendre au compte son type d’origine —, puis la validation pourra être relancée telle quelle.";
+/// La phrase d'action, dernière du message (D2) — neutre depuis la Story 36-9
+/// (#1044, D4) : le même refus vient aussi du solde du reste, « l'opération ».
+const ACTION: &str = "Rien n’a été enregistré. Un administrateur doit corriger le réglage concerné — désigner un compte du bon type, ou rendre au compte son type d’origine —, puis l’opération pourra être relancée telle quelle.";
 
 struct TestApp {
     base_url: String,
@@ -89,7 +90,11 @@ impl TestApp {
                     "role": null,
                     "postable": a["postable"],
                     "version": a["version"],
-                    "confirmRetype": true,
+                    // Story 36-9 : le champ est `confirmAccountRetype`
+                    // (`routes/accounts.rs:109`) ; `confirmRetype`, écrit ici par
+                    // la 35-3, était ignoré — sans effet tant que les comptes
+                    // retypés ne portaient aucune écriture.
+                    "confirmAccountRetype": true,
                 }),
             )
             .await;
@@ -373,6 +378,80 @@ async fn ac7_purchase_validation_orders_the_accounts_by_number(pool: MySqlPool) 
             "Le compte 1171, désigné comme compte TVA récupérable dans Administration → Facturation, est un compte de passif ; ce réglage demande un compte d’actif. Le compte 2000, désigné comme compte créanciers dans Administration → Facturation, est un compte d’actif ; ce réglage demande un compte de passif. {ACTION}"
         )
     );
+}
+
+/// Story 36-9 (#1044, AC7) — le **solde du reste** en escompte d'une facture à
+/// TVA dont le compte de TVA due a été retypé en actif depuis sa désignation :
+/// 400 `DESIGNATED_ACCOUNT_WRONG_TYPE`, les `details`, le message fr-CH entier ;
+/// la facture reste soldable. Le compte rendu à son type, **la même requête,
+/// même `version`**, réussit : « telle quelle » est vrai.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn ac7_write_off_names_the_retyped_vat_payable(pool: MySqlPool) {
+    let (app, seeded, contact) = setup(&pool).await;
+    sqlx::query(
+        "UPDATE company_invoice_settings SET default_discount_account_id = ? WHERE company_id = ?",
+    )
+    .bind(seeded.accounts["4000"])
+    .bind(seeded.company_id)
+    .execute(&pool)
+    .await
+    .unwrap();
+    let id = draft_invoice(&app, contact).await;
+    let (status, validated) = app
+        .send(
+            reqwest::Method::POST,
+            &format!("/api/v1/invoices/{id}/validate"),
+            json!({}),
+        )
+        .await;
+    assert_eq!(status, 200, "validation : {validated}");
+    app.retype(seeded.accounts["2000"], AccountType::Asset)
+        .await;
+    let before = app.get(&format!("/api/v1/invoices/{id}")).await;
+    let request = json!({
+        "nature": "discount",
+        "settledOn": "2026-06-15",
+        "version": before["version"],
+    });
+
+    let (status, body) = app
+        .send(
+            reqwest::Method::POST,
+            &format!("/api/v1/invoices/{id}/write-off"),
+            request.clone(),
+        )
+        .await;
+    assert_eq!(status, 400, "{body}");
+    assert_eq!(body["error"]["code"], "DESIGNATED_ACCOUNT_WRONG_TYPE");
+    assert_eq!(
+        rejected(&body),
+        vec![r("2000", "vatPayable", "Liability", "Asset")]
+    );
+    assert_eq!(
+        body["error"]["details"]["rejected"][0]["accountId"],
+        seeded.accounts["2000"]
+    );
+    assert_eq!(
+        body["error"]["message"],
+        format!(
+            "Le compte 2000, désigné comme compte TVA due dans Administration → Facturation, est un compte d’actif ; ce réglage demande un compte de passif. {ACTION}"
+        )
+    );
+    let after = app.get(&format!("/api/v1/invoices/{id}")).await;
+    assert_eq!(after["status"], "validated", "la facture reste validée");
+    assert_eq!(after["version"], before["version"], "version inchangée");
+    assert_eq!(after["amountDue"], before["amountDue"], "reste dû inchangé");
+
+    app.retype(seeded.accounts["2000"], AccountType::Liability)
+        .await;
+    let (status, body) = app
+        .send(
+            reqwest::Method::POST,
+            &format!("/api/v1/invoices/{id}/write-off"),
+            request,
+        )
+        .await;
+    assert_eq!(status, 200, "la même requête passe, telle quelle : {body}");
 }
 
 /// AC9 (D4) — la page des réglages juge les quatre champs par la constante que

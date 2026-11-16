@@ -7,7 +7,7 @@
 //! sans erreur (relevé T1 de la story). Tout ce qui reçoit une date du client la
 //! compare donc à cette plage **avant** de s'en servir.
 
-use chrono::{DateTime, Datelike, NaiveDate, Utc};
+use chrono::{DateTime, Datelike, NaiveDate, NaiveDateTime, NaiveTime, Utc};
 
 /// Première année qu'une colonne de date de MariaDB sait tenir.
 pub const ANNEE_MIN: i32 = 1000;
@@ -31,6 +31,25 @@ pub fn annee_stockable(date: NaiveDate) -> bool {
 #[must_use]
 pub fn expiration_stockable(instant: DateTime<Utc>) -> bool {
     dans_la_plage(instant.year())
+}
+
+/// Le premier instant que la plage documentée de `DATETIME` contient,
+/// `1000-01-01 00:00:00.000` (Story 36-10).
+pub const PREMIER_INSTANT_STOCKABLE: NaiveDateTime = match NaiveDate::from_ymd_opt(ANNEE_MIN, 1, 1)
+{
+    Some(jour) => jour.and_time(NaiveTime::MIN),
+    None => panic!("1000-01-01 est une date valide"),
+};
+
+/// Une borne **basse** d'instant, ramenée au **plancher** de la plage de la
+/// base (Story 36-10) : le début d'un jour de Zurich de l'an 1000, en heure
+/// locale moyenne (`+00:34:08`), tombe au `0999-12-31` UTC, hors de la plage
+/// documentée de `DATETIME`. Ramenée à [`PREMIER_INSTANT_STOCKABLE`], elle ne
+/// change aucun résultat (aucune ligne ne peut la précéder) et ne laisse rien
+/// dépendre de la tolérance du MariaDB de chaque installation.
+#[must_use]
+pub fn borne_basse_stockable(instant: NaiveDateTime) -> NaiveDateTime {
+    instant.max(PREMIER_INSTANT_STOCKABLE)
 }
 
 #[cfg(test)]

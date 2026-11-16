@@ -43,7 +43,9 @@
 //! d'une écriture, etc.). Si la transaction ROLLBACK, l'entrée d'audit
 //! disparaît avec le reste — garantie de cohérence.
 
-use chrono::NaiveDate;
+use chrono::{NaiveDate, NaiveDateTime};
+use kesh_core::dates::borne_basse_stockable;
+use kesh_core::horloge::{debut_du_jour_suisse, fin_du_jour_suisse};
 use sqlx::mysql::MySqlPool;
 use sqlx::{MySql, QueryBuilder, Transaction};
 
@@ -169,7 +171,9 @@ pub const MAX_LIMIT: i64 = 200;
 
 /// Filtres de consultation du journal d'audit (Story 25-1c-a).
 ///
-/// ⚠️ **Les dates s'entendent en JOURS UTC.** Ce n'est pas le réglage du
+/// ⚠️ **Les dates s'entendent en JOURS DE ZURICH** (Story 36-10, #1147 ; jours
+/// UTC jusque-là) : [`bornes_du_filtre`] en tire les instants UTC qui les
+/// bornent. `created_at` est un instant **UTC** — ce n'est pas le réglage du
 /// serveur qui le garantit (`@@time_zone` vaut `SYSTEM`) mais **sqlx**, qui
 /// impose `time_zone='+00:00'` à chaque session
 /// (`sqlx-mysql-0.8.6/src/options/mod.rs:112`).
@@ -193,6 +197,37 @@ pub struct AuditLogListResult {
     pub limit: i64,
 }
 
+/// Les instants UTC qui bornent le filtre de dates du journal d'audit — **jours
+/// de Zurich** (Story 36-10, #1147) : `date_from` donne le premier instant du
+/// jour à Zurich ([`debut_du_jour_suisse`]), `date_to` le dernier
+/// ([`fin_du_jour_suisse`]), en `NaiveDateTime` UTC, la forme de `created_at`.
+/// `None` donne `None`. Fonction pure, appelée par [`push_where_clauses`] seul.
+///
+/// ⛔ **La borne basse a un plancher**, `1000-01-01 00:00:00.000` (D3,
+/// [`borne_basse_stockable`]) : le début du `1000-01-01` à Zurich, en heure
+/// locale moyenne (`+00:34:08`), tombe au `0999-12-31 23:25:52` UTC, hors de la
+/// plage documentée de `DATETIME`. Le plancher ne change aucun résultat (aucune
+/// ligne ne peut le précéder) ; il évite de dépendre de la tolérance du MariaDB
+/// de chaque installation. (Le test `bornes_du_filtre_jours_de_zurich_et_plafond`
+/// garde son nom de la fiche, où « plafond » désignait ce plancher.)
+///
+/// ⚠️ **L'an 9999 perd sa dernière heure** : `date_to = 9999-12-31` borne à
+/// `9999-12-31 22:59:59.999` UTC ; une entrée posée après est, à Zurich, du
+/// `10000-01-01`, et aucun filtre de date ne la rend. Une date de l'an 9999
+/// n'est pas une date réelle : perte assumée.
+///
+/// Précondition : celle de [`push_where_clauses`] (jours dans
+/// `[1000-01-01, 9999-12-31]`, garantis par la route).
+pub(crate) fn bornes_du_filtre(
+    date_from: Option<NaiveDate>,
+    date_to: Option<NaiveDate>,
+) -> (Option<NaiveDateTime>, Option<NaiveDateTime>) {
+    let depuis =
+        date_from.map(|jour| borne_basse_stockable(debut_du_jour_suisse(jour).naive_utc()));
+    let jusqu_a = date_to.map(|jour| fin_du_jour_suisse(jour).naive_utc());
+    (depuis, jusqu_a)
+}
+
 /// Pousse les clauses WHERE dans un `QueryBuilder`.
 ///
 /// **CRITIQUE** : à appeler sur DEUX `QueryBuilder` **distincts** (count et
@@ -200,19 +235,22 @@ pub struct AuditLogListResult {
 /// après un `build_*` (cf. `journal_entries.rs:745-747`).
 ///
 /// ⛔ **Précondition** : `date_from` et `date_to` sont dans
-/// `[1000-01-01, 9999-12-31]`. Hors de cette plage, `push_bind` **panique**
-/// (`sqlx-core-0.8.6/src/query_builder.rs:158`), et aucun `CatchPanic`
-/// n'existe dans `kesh-api` : c'est la route qui valide et répond 400.
+/// `[1000-01-01, 9999-12-31]`. Hors de cette plage, le résultat n'est pas
+/// défini (une année hors de `u16` ferait paniquer `push_bind`,
+/// `sqlx-core-0.8.6/src/query_builder.rs:158` ; une année comme 999 s'encode
+/// sans erreur), et aucun `CatchPanic` n'existe dans `kesh-api` : c'est la route
+/// qui valide et répond 400.
 ///
 /// ⛔ **Filtre strict par société** : `company_id = ?`, sans `OR company_id IS
 /// NULL` (arbitrage du 2026-09-15). Une entrée sans société n'apparaît dans
 /// aucune consultation.
 ///
-/// ⛔ **Bornes de date INCLUSIVES à la milliseconde, sans arithmétique** :
-/// `created_at` est un `DATETIME(3)` ; aucune valeur ne tient entre
-/// `23:59:59.999` et le lendemain. La forme « `< date_to + 1 jour` », essayée
-/// d'abord, paniquait au dernier jour représentable et rendait zéro ligne à
-/// l'an 10000.
+/// ⛔ **Bornes de date INCLUSIVES à la milliseconde** : `created_at` est un
+/// `DATETIME(3)` ; aucune valeur ne tient entre la fin d'un jour de Zurich
+/// ([`fin_du_jour_suisse`], `…:59:59.999`) et le début du suivant. La forme
+/// « `< date_to + 1 jour` », essayée d'abord, paniquait au dernier jour
+/// représentable et rendait zéro ligne à l'an 10000. Les bornes viennent de
+/// [`bornes_du_filtre`], la seule écriture du calcul.
 fn push_where_clauses<'a>(
     qb: &mut QueryBuilder<'a, sqlx::MySql>,
     company_id: i64,
@@ -221,20 +259,12 @@ fn push_where_clauses<'a>(
     qb.push(" WHERE company_id = ");
     qb.push_bind(company_id);
 
-    if let Some(date_from) = query.date_from {
-        // `and_hms_milli_opt(0, 0, 0, 0)` ne rend `None` que pour des valeurs
-        // hors plage horaire — impossible avec des constantes littérales.
-        let borne = date_from
-            .and_hms_milli_opt(0, 0, 0, 0)
-            .expect("00:00:00.000 est une heure valide");
+    let (depuis, jusqu_a) = bornes_du_filtre(query.date_from, query.date_to);
+    if let Some(borne) = depuis {
         qb.push(" AND created_at >= ");
         qb.push_bind(borne);
     }
-
-    if let Some(date_to) = query.date_to {
-        let borne = date_to
-            .and_hms_milli_opt(23, 59, 59, 999)
-            .expect("23:59:59.999 est une heure valide");
+    if let Some(borne) = jusqu_a {
         qb.push(" AND created_at <= ");
         qb.push_bind(borne);
     }
@@ -635,6 +665,50 @@ mod tests {
         NaiveDate::parse_from_str(s, "%Y-%m-%d").expect("date de test valide")
     }
 
+    fn instant(s: &str) -> NaiveDateTime {
+        NaiveDateTime::parse_from_str(s, "%Y-%m-%d %H:%M:%S%.3f").expect("instant de test valide")
+    }
+
+    /// Story 36-10 (#1147), AC2 et AC4 — les bornes liées par le filtre, sur la
+    /// valeur calculée, sans base : jours de Zurich (été, hiver, 9999) et
+    /// plancher de la borne basse au `1000-01-01` (le nom du test, venu de la
+    /// fiche, dit « plafond »). Attendus écrits en clair. C'est le seul test du
+    /// journal qui voie le plancher (M7) : l'entrée du `1000-01-01` est rendue
+    /// avec ou sans lui.
+    #[test]
+    fn bornes_du_filtre_jours_de_zurich_et_plafond() {
+        let cas = [
+            (
+                "2026-09-15",
+                "2026-09-14 22:00:00.000",
+                "2026-09-15 21:59:59.999",
+            ),
+            (
+                "2026-01-15",
+                "2026-01-14 23:00:00.000",
+                "2026-01-15 22:59:59.999",
+            ),
+        ];
+        for (j, debut, fin) in cas {
+            assert_eq!(
+                bornes_du_filtre(Some(jour(j)), Some(jour(j))),
+                (Some(instant(debut)), Some(instant(fin))),
+                "{j}"
+            );
+        }
+        assert_eq!(
+            bornes_du_filtre(Some(jour("1000-01-01")), None),
+            (Some(instant("1000-01-01 00:00:00.000")), None),
+            "plancher de la borne basse"
+        );
+        assert_eq!(
+            bornes_du_filtre(None, Some(jour("9999-12-31"))),
+            (None, Some(instant("9999-12-31 22:59:59.999"))),
+            "fin du 31 décembre 9999 à Zurich"
+        );
+        assert_eq!(bornes_du_filtre(None, None), (None, None));
+    }
+
     #[sqlx::test(migrations = "./test-schema")]
     async fn list_scopes_strictly_by_company(pool: MySqlPool) {
         let (company_40, user_501) = seed_actor(&pool).await;
@@ -728,11 +802,16 @@ mod tests {
             }
         };
 
-        let veille_fin = pose(1, "2026-09-14 23:59:59.999").await;
-        let debut = pose(2, "2026-09-15 00:00:00.000").await;
-        let fin = pose(3, "2026-09-15 23:59:59.999").await;
-        let lendemain = pose(4, "2026-09-16 00:00:00.000").await;
-        let dernier_jour = pose(5, "9999-12-31 23:59:59.999").await;
+        // Story 36-10 (#1147) : les bornes d'un jour sont celles du jour **de
+        // Zurich** (CEST en septembre, `+02:00`) — le 15 septembre commence à
+        // `2026-09-14 22:00:00.000` UTC et finit à `2026-09-15 21:59:59.999` UTC.
+        let veille_fin = pose(1, "2026-09-14 21:59:59.999").await;
+        let debut = pose(2, "2026-09-14 22:00:00.000").await;
+        let fin = pose(3, "2026-09-15 21:59:59.999").await;
+        let lendemain = pose(4, "2026-09-15 22:00:00.000").await;
+        // Le 31 décembre 9999 à Zurich (CET) finit à `22:59:59.999` UTC.
+        let dernier_jour = pose(5, "9999-12-31 22:59:59.999").await;
+        let _dix_mille = pose(6, "9999-12-31 23:00:00.000").await;
 
         let query = AuditLogListQuery {
             date_from: Some(jour("2026-09-15")),
@@ -747,22 +826,23 @@ mod tests {
 
         assert!(
             ids.contains(&debut),
-            "00:00:00.000 du jour `date_from` est INCLUS"
+            "minuit à Zurich du jour `date_from` est INCLUS"
         );
         assert!(
             ids.contains(&fin),
-            "23:59:59.999 du jour `date_to` est INCLUS"
+            "23:59:59.999 à Zurich du jour `date_to` est INCLUS"
         );
         assert!(
             !ids.contains(&veille_fin),
-            "la veille à 23:59:59.999 est EXCLUE"
+            "la veille à 23:59:59.999 à Zurich est EXCLUE"
         );
         assert!(
             !ids.contains(&lendemain),
-            "le lendemain à 00:00:00.000 est EXCLU"
+            "le lendemain à minuit à Zurich est EXCLU"
         );
 
-        // Dernier jour représentable : la borne ne calcule rien, donc ne déborde pas.
+        // Dernier jour représentable : aucune panique ; la dernière heure UTC de
+        // l'an 9999 est le `10000-01-01` à Zurich, hors de tout filtre (D3).
         let query_max = AuditLogListQuery {
             date_from: Some(jour("9999-12-31")),
             date_to: Some(jour("9999-12-31")),
@@ -775,7 +855,7 @@ mod tests {
         assert_eq!(
             page_max.items.iter().map(|e| e.id).collect::<Vec<_>>(),
             vec![dernier_jour],
-            "au 9999-12-31, l'entrée de 23:59:59.999 est rendue"
+            "au 9999-12-31, l'entrée de 22:59:59.999 UTC est rendue, celle de 23:00 UTC non"
         );
     }
 

@@ -6,6 +6,7 @@
 	import { modeState, toggleMode } from '$lib/app/stores/mode.svelte';
 	import { authState } from '$lib/app/stores/auth.svelte';
 	import { onboardingState } from '$lib/features/onboarding/onboarding.svelte';
+	import { showIncompleteBanner } from '$lib/features/onboarding/onboarding-screens';
 	import DemoBanner from '$lib/shared/components/DemoBanner.svelte';
 	import IncompleteBanner from '$lib/shared/components/IncompleteBanner.svelte';
 	// Story 31-1c (#503, AC31) — échec ou retard de la sauvegarde automatique (Admin).
@@ -127,7 +128,7 @@
 				{ i18nKey: 'nav-bank-accounts', fallback: 'Comptes bancaires', href: '/bank-accounts' },
 				{ i18nKey: 'nav-bank-profiles', fallback: 'Profils bancaires', href: '/bank-import/profiles' },
 				{ i18nKey: 'nav-reconciliation-rules', fallback: "Règles d'affectation", href: '/reconciliation/rules' },
-				{ i18nKey: 'nav-projects', fallback: 'Projets analytiques', href: '/settings/projects' },
+				{ i18nKey: 'nav-projects', fallback: 'Comptes analytiques', href: '/settings/projects' },
 				{ i18nKey: 'nav-export-global', fallback: 'Export global', href: '/export' },
 				{ i18nKey: 'nav-settings', fallback: 'Paramètres', href: '/settings' },
 			],
@@ -366,7 +367,8 @@
 	<!-- Bannières contextuelles (mutuellement exclusives) -->
 	{#if onboardingState.isDemo}
 		<DemoBanner />
-	{:else if !onboardingState.isDemo && onboardingState.loaded && onboardingState.stepCompleted >= 6 && onboardingState.stepCompleted < 7}
+	{:else if showIncompleteBanner(onboardingState)}
+		<!-- Story 36-17 (#1187, D5) : étapes 6 ET 7 (finalisation non faite). -->
 		<IncompleteBanner />
 	{/if}
 	<!-- Story 31-1c — indépendant des précédentes ; s'affiche seul pour un Admin. -->
