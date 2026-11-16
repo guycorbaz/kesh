@@ -1107,5 +1107,5 @@ development_status:
   37-3-ecritures-en-devise: split  # 2026-11-14, à la rédaction : 37-3a (serveur) et 37-3b (écrans)
   37-3a-ecritures-en-devise-modele: ready-for-dev  # validée ; revalidée après CR-1 à CR-7 (revues de Beat et de Guy), 2026-11-16
   37-3b-ecritures-en-devise-ecrans: ready-for-dev  # validée ; revalidée après CR-1 à CR-7 (revues de Beat et de Guy), 2026-11-16
-  37-4-rapports-en-devise: ready-for-dev  # validée ; revalidée après CR-1 à CR-7 (revues de Beat et de Guy), 2026-11-16
+  37-4-rapports-en-devise: in-progress  # 2026-11-16 en développement (worktree kesh-s37-4, parti de 946aa86a) ; validée ; revalidée après CR-1 à CR-7 (revues de Beat et de Guy), 2026-11-16
   37-5-reevaluation-fin-exercice: ready-for-dev  # validée ; revalidée après CR-1 à CR-7 (revues de Beat et de Guy), 2026-11-16

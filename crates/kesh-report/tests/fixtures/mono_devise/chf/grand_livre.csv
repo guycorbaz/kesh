@@ -1,0 +1,31 @@
+﻿NumeroCompte;NomCompte;Date;Piece;Exercice;Journal;Libelle;Contrepartie;Debit;Credit;SoldeProgressif
+1000;Caisse CI;2025-07-01;;;;Solde d'ouverture;;;;-50.00
+1000;Caisse CI;2025-08-03;2;FY 2025;Ventes;Vente août;3000;1234.55;0.00;1184.55
+1000;Caisse CI;2026-02-14;1;FY 2026;Ventes;Vente février;3000;990.00;0.00;2174.55
+1000;Caisse CI;2026-03-01;2;FY 2026;Banque;Versement;1100;0.00;1500.00;674.55
+1000;Caisse CI;2026-05-31;3;FY 2026;Achats;Fournitures;4000;0.00;77.35;597.20
+1000;Caisse CI;;;;;Total des mouvements;;2224.55;1577.35;
+1000;Caisse CI;2026-06-30;;;;Solde de clôture;;;;597.20
+1010;Ancienne caisse;2025-07-01;;;;Solde d'ouverture;;;;50.00
+1010;Ancienne caisse;;;;;Total des mouvements;;0.00;0.00;
+1010;Ancienne caisse;2026-06-30;;;;Solde de clôture;;;;50.00
+1100;Banque CI;2025-07-01;;;;Solde d'ouverture;;;;10000.00
+1100;Banque CI;2025-11-20;3;FY 2025;Achats;Loyer;4000;0.00;420.10;9579.90
+1100;Banque CI;2026-03-01;2;FY 2026;Banque;Versement;1000;1500.00;0.00;11079.90
+1100;Banque CI;;;;;Total des mouvements;;1500.00;420.10;
+1100;Banque CI;2026-06-30;;;;Solde de clôture;;;;11079.90
+2000;Capital CI;2025-07-01;;;;Solde d'ouverture;;;;10000.00
+2000;Capital CI;;;;;Total des mouvements;;0.00;0.00;
+2000;Capital CI;2026-06-30;;;;Solde de clôture;;;;10000.00
+3000;Ventes CI;2025-07-01;;;;Solde d'ouverture;;;;0.00
+3000;Ventes CI;2025-08-03;2;FY 2025;Ventes;Vente août;1000;0.00;1234.55;1234.55
+3000;Ventes CI;2026-02-14;;;;Clôture de l'exercice — le solde repart de zéro;;;;1234.55
+3000;Ventes CI;2026-02-14;1;FY 2026;Ventes;Vente février;1000;0.00;990.00;990.00
+3000;Ventes CI;;;;;Total des mouvements;;0.00;2224.55;
+3000;Ventes CI;2026-06-30;;;;Solde de clôture;;;;990.00
+4000;Charges CI;2025-07-01;;;;Solde d'ouverture;;;;0.00
+4000;Charges CI;2025-11-20;3;FY 2025;Achats;Loyer;1100;420.10;0.00;420.10
+4000;Charges CI;2026-05-31;;;;Clôture de l'exercice — le solde repart de zéro;;;;420.10
+4000;Charges CI;2026-05-31;3;FY 2026;Achats;Fournitures;1000;77.35;0.00;77.35
+4000;Charges CI;;;;;Total des mouvements;;497.45;0.00;
+4000;Charges CI;2026-06-30;;;;Solde de clôture;;;;77.35

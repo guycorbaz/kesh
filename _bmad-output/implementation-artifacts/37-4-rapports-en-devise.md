@@ -1,6 +1,6 @@
 # Story 37-4 : rapports dans les deux devises
 
-Status: ready-for-dev
+Status: in-progress
 
 *Fiche rédigée le 2026-11-14 (Opus 5.5), branche `epic/37-multi-devises`. Epic 37, D2, C-37-3. Suit 37-3a.
 **Aucune migration attendue** (colonnes de 37-1 et 37-3a ; aucun index nécessaire : les sommes passent par
