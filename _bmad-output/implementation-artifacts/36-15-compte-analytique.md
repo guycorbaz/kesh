@@ -1,6 +1,6 @@
 # Story 36-15 : « compte analytique » au lieu de « projet analytique » (#1161)
 
-Status: review
+Status: done
 
 > **Traductions arbitrées par Guy le 2026-11-16 (D2, option A)** : de-CH « analytisches Konto », it-CH « conto
 > analitico », en « analytical account » ; fr-CH « compte analytique ».
@@ -919,3 +919,28 @@ Journaux sous `/home/gcorbaz/devel/kesh-gate-logs/e36-15/` :
     **3714/3714** (239 fichiers) ; `front-check-rem1.log` 0 erreur (29 avertissements, inchangés). Ni `gate-ci` ni E2E
     (consigne de remédiation). `reports.spec.ts` non rejoué : les noms fr-CH ne changent pas. Prompt de la passe P2 ciblée :
     `36-15-compte-analytique-review-prompt-p2.md`.
+- **2026-11-16 — revue P2 ciblée** (Sonnet, une lentille sur `62a0b8083` ; rapport
+  `kesh-gate-logs/e36-15/review-p2-ciblee.md`) : 0/0/0/2, deux LOW de code de test, corrigés dans la story (commit
+  **`a9778aea3`**, dernier commit de code) :
+  - **P2-1** (confirmé : `replace` retirait tous les exemplaires de l'extrait d'une ligne) : `g25_non_excuses` ne retire
+    plus qu'un exemplaire (`replacen(…, 1)`) ; sonde « nom du projet, puis nom du projet » → un écart.
+  - **P2-2** (confirmé) : mutations de code jouées, journaux `mut/rem-fin-du-bloc.log` (`fin_du_bloc` `i += 3` → `i += 2` :
+    `sans_modules_de_test_apparie_les_accolades` rouge), `mut/rem-retrait.log` (retrait de l'extrait supprimé :
+    `g25_une_exception_n_excuse_que_son_extrait` et `le_vocabulaire_analytique_est_compte_analytique` rouges),
+    `mut/rem-replacen.log` (`replacen` → `replace` : `g25_une_exception_n_excuse_que_son_extrait` rouge) ; fichier
+    restauré à chaque fois (script `mut/rem-p2-mutations.sh`). Gate ciblé `cible-rem-p2.log` 30/30, `clippy-rem2.log`
+    vert. Boucle de revue close (passe sans finding au-dessus de LOW, remédiation hors production).
+- **2026-11-16 — synthèse des boucles.** Validation : P1 Sonnet 0/0/3/7 → P2 Opus 0/0/2/5 → P3 ciblée Sonnet 0/0/0/0.
+  Revue de code : P1 — A Sonnet 0/0/0/3, B Opus 0/0/0/5, E Opus 0/0/0/6 (14 LOW, tous corrigés sauf E1-5, préexistant,
+  tracé en issue avec E1-3) → P2 ciblée Sonnet 0/0/0/2 (corrigés). Arbitrages de Guy : D2 option A ; B1-4 ; B1-5.
+- **2026-11-16 — clôture**, au dernier commit de code `a9778aea3` :
+  - `scripts/gate-ci.sh kesh_ci_e3615` (voie 1, sous ses verrous) : **5465 passés, 0 échoué, 17 ignorés**, `rc=0`
+    (`kesh-gate-logs/e36-15/gate-ci-cloture.log`).
+  - `npm run build` (`front-build-cloture.log`) vert, puis **E2E complet** sur `kesh_e2e_e3615` recréée vide, port 3615,
+    montage de `docs/testing.md` (`e2e-cloture.log`, script `e2e-spec-36-15.sh`) : **426 passés, 7 échecs, 18 ignorés**
+    (18,8 min). Les sept échecs, jugés un à un contre `docs/testing.md` § « Les échecs attendus » : les sept de la
+    **KF-029 (#97)** — `mode-expert.spec.ts:26`, `:41`, `onboarding-path-b.spec.ts:65`, `:92`, `onboarding.spec.ts:57`,
+    `:77`, `:150`. Aucun autre échec, aucune pollution ; `reports.spec.ts` vert (onglets et titres « compte analytique »).
+  - Backend arrêté par son PID, port 3615 libéré. Bases `kesh_e3615`, `kesh_e2e_e3615`, `kesh_ci_e3615` gardées (consigne
+    de l'orchestrateur).
+  - Story **`done`**.
