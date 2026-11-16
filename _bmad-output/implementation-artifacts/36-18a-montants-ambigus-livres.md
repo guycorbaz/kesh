@@ -527,6 +527,33 @@ prémisse relue au code avant correction ; aucune réfutée sur le fond.
   `npm run build` vert ; spec `montants-ambigus.spec.ts` **4/4** (run r4, `rem1-e2e-spec.log`), quatorze captures reprises.
   **Non lancés** (consigne) : `gate-ci` et E2E complet, à la clôture ; PDF à l'intégration.
 
+### Remédiation de la revue P2 (2026-11-16)
+
+Passe P2 ciblée (Sonnet, `kesh-gate-logs/e36-18/review-p2-R.md`) : 0/0/0/4. Prémisses relues au code, toutes confirmées.
+
+- **R2** — `+page.svelte:198` `if (row.debit !== '') row.credit = '';`, `:201`, et les deux gestionnaires en ligne du
+  complément : un blanc seul effaçait l'autre côté. `onDebitInput` / `onCreditInput` lisent `.trim()` et servent les deux
+  grilles (les gestionnaires en ligne du complément les appellent, DRY). Tests : génération et complément (M26, M27).
+- **R3** — le bandeau d'envoi portait tous les refus (`formError`) ; la saisie du prix ou du montant attendu les effaçait
+  tous. Le refus de **montant** est tenu à part (`amountError`), affiché dans le même bandeau (`formError || amountError`),
+  remis à vide par `submit` et par le scan ; la saisie n'efface que lui. Tests : « Sélectionnez un fournisseur » et un refus
+  serveur (`FISCAL_YEAR_INVALID`) survivent à la saisie (M28) ; l'effacement du refus de montant reste testé (M29, qui
+  remplace M21, dont le motif visait l'état d'avant `56cc62386`).
+- **R1** — C-36-18-4 annoté au registre (remplacé pour les soldes par C-36-18-13), texte d'origine gardé.
+- **R4** — les deux fichiers non commités du run r4 (`rem1-e2e-spec.log`) étaient la fiche et le registre
+  (`_bmad-output/…/36-18a-montants-ambigus-livres.md`, `e36-choix-autonomes-36-18.md`, édités entre `c3b26815b` et le run) ;
+  la spec, elle, est inchangée depuis `c3b26815b` (`git log -1 -- frontend/tests/e2e/montants-ambigus.spec.ts` →
+  `c3b26815b`) : le run r4 a joué la spec commitée. Le run r5 tourne sur arbre propre.
+- **Mutations M26 à M29** (`mut/resume.log`) : **quatre tuées**, chacune par le test qu'elle vise, aucune erreur de
+  compilation.
+- **Commits** : `56cc62386` (R2, R3) — **dernier commit de code** ; `4f58e2c0f` (registre, prompt P3) ; puis ce compte rendu.
+- **Gates** : `scripts/test-fast.sh --ci`, voie 2, bases remises à neuf, à `56cc62386`, arbre propre : **5510 exécutés,
+  5510 passés, 13 ignorés** (`rem2-test-fast.log`) ; à `4f58e2c0f` (docs seuls depuis `56cc62386`), arbre propre :
+  `npm run check` **0 erreur, 29 avertissements** (sortie entière), Vitest complet **246 fichiers, 3947 tests, tous verts**,
+  `npm run build` vert (`rem2-front.log`) ; spec `montants-ambigus.spec.ts` **4/4** (run r5, `rem2-e2e-spec.log`, arbre
+  propre). **Non lancés** : `gate-ci` et E2E complet, à la clôture ; PDF à l'intégration.
+- Prompt de la passe P3 ciblée, sur le seul `56cc62386` : `36-18a-montants-ambigus-livres-review-prompt-p3.md`.
+
 ### File List
 
 - `frontend/src/lib/features/journal-entries/balance.ts` — D1, D5 (aides, retrait du lecteur par défaut)
@@ -576,6 +603,10 @@ prémisse relue au code avant correction ; aucune réfutée sur le fond.
   V2-4 `imported-supplier-invoices.api.ts:63` `` apiClient.post(`/api/v1/imported-supplier-invoices/${id}/complete`, req) ``
   (AC7) ; V2-5 `balance.ts:181` `read: AmountReader = defaultAmountReader` (D5, AC10) ; V2-6 registre, C-36-18-11 ; V2-7
   `supplier-invoice-form.ts:281` `// illisible part telle quelle et le serveur la refuse (400).` (D7) ; V2-8 en-tête.
+- 2026-11-16 — **Remédiation de la passe P2 ciblée** (Opus 5.5) : P2 (Sonnet) 0/0/0/4 ; R2 et R3 corrigés dans la story
+  (règle « tarir la source »), R1 annoté, R4 établi ; M26 à M29 tuées ; `test-fast --ci` 5510/5510, Vitest 3947/3947,
+  `check`, `build`, spec E2E 4/4. Statut inchangé : `review`. Prompt de la passe P3 ciblée :
+  `36-18a-montants-ambigus-livres-review-prompt-p3.md`. Détail : Dev Agent Record, § *Remédiation de la revue P2*.
 - 2026-11-16 — **Remédiation de la revue P1** (Opus 5.5) : A 0/0/0/7 (Sonnet), B 0/0/0/6 (Opus), E 0/0/1/5 (Opus) ; dix-neuf
   findings, seize distincts (E1 = B1, E2 = B3, E4 = B2), tous confirmés au code ; quatorze corrigés, B6 laissé à #1202
   (C-36-18-14), A7 observation sans correction ; décision C-36-18-13
