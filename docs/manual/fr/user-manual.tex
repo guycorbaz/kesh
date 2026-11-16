@@ -1046,7 +1046,7 @@ L'écriture d'ouverture est datée au premier jour du \textbf{premier} exercice 
 
 Le franc suisse (CHF) reste la \textbf{devise principale} de Kesh~: les livres, les soldes et les rapports sont tenus en CHF. Le mode \emph{multi-devises} permet de donner \textbf{une autre devise à un compte} du plan comptable --- un compte en euros, en dollars, le solde d'un compte PayPal. Par défaut, une société est \emph{mono-devise}, et rien de ce qui suit n'y apparaît~: qui reste en mono-devise ne voit aucun changement.
 
-Cette section décrit le réglage, les comptes qu'il demande, le mode des exercices, la devise des comptes et les cours de change (\S\ref{sec:cours-de-change}). La saisie d'écritures en devise et la réévaluation de fin d'exercice s'appuient sur ce réglage et sur ces cours~; ce manuel les décrira avec la version qui les livre.
+Cette section décrit le réglage, les comptes qu'il demande, le mode des exercices, la devise des comptes, les cours de change (\S\ref{sec:cours-de-change}) et la saisie d'écritures en devise (\S\ref{sec:ecritures-devise}). La réévaluation de fin d'exercice s'appuie sur ce réglage et sur ces cours~; ce manuel la décrira avec la version qui la livre.
 
 \subsection{Activer le multi-devises}
 
@@ -1210,6 +1210,49 @@ Sur un exercice \textbf{clôturé}, les cours et les flèches sont en lecture se
 \subsubsection{Restauration et réinitialisation}
 
 Les cours retenus par la société \textbf{et leur origine} (copie de l'AFC ou cours saisi) font partie de la sauvegarde~: après une restauration, ils sont là et valent tout de suite. Les valeurs publiées, elles, sont des données de l'installation~: une installation neuve restaurée les récupère à son prochain passage, et ses cases copiées de l'AFC disent «~AFC (valeur publiée non relue)~» jusque-là --- la récupération suivante peut alors révéler une correction survenue entre-temps, annoncée comme ci-dessus. La \textbf{réinitialisation des données de démonstration} vide les cours retenus de la société (elle la remet aussi en mono-devise) et garde les valeurs publiées.
+
+\subsection{Les écritures en devise}\label{sec:ecritures-devise}
+
+Une ligne d'écriture sur un compte en devise se saisit \textbf{en devise}~: son montant dans la devise du compte, un cours, et Kesh en tire le montant en CHF, qui seul entre dans les débits, les crédits et les soldes. La devise d'une ligne est \textbf{toujours celle de son compte}~: elle ne se choisit pas.
+
+\subsubsection{Saisir une ligne en devise}
+
+Dans \emph{Écritures} → \emph{Nouvelle écriture}, choisissez un compte en devise~: la ligne prend deux champs de plus, sous elle.
+\begin{itemize}
+    \item \textbf{Le montant en devise} se saisit dans la colonne \emph{Débit} ou \emph{Crédit}, précédé du code de la devise~: la colonne donne le sens de la ligne.
+    \item \textbf{Le cours} est proposé~: c'est le \textbf{cours retenu par la société} pour le \textbf{mois de la date} de l'écriture (\S\ref{sec:cours-retenu}) --- le cours mensuel AFC, \textbf{fixé d'avance} pour le mois, ou le cours que votre société a saisi. Un indicateur dit lequel~: «~AFC~», «~cours saisi~» (avec la source entre parenthèses si le cours vient d'ailleurs, par exemple «~cours saisi (ecb)~»), ou «~manuel~» une fois que vous l'avez retouché. Si la société n'a encore aucun cours pour ce mois, Kesh le récupère auprès de l'AFC (Administrateur et Comptable)~; sinon, saisissez-le.
+    \item \textbf{Le montant CHF} est calculé (montant × cours, arrondi au centime). Vous pouvez saisir \textbf{soit le cours, soit le montant CHF}~: un CHF saisi --- celui de votre relevé, par exemple --- donne le cours qui le redonne exactement.
+\end{itemize}
+Changer la date repropose le cours des lignes dont vous n'avez pas retouché le cours. Quand le cours de la société pour le mois diffère de celui de la ligne, il s'affiche sous le champ («~AFC~: 0.8846~» ou «~Cours saisi~: 0.8846~») avec une flèche $\uparrow$, qui remet \textbf{la ligne} à ce cours~; la flèche ne touche jamais la table des cours (\S\ref{sec:cours-de-change}). La provenance enregistrée sur la ligne est «~AFC~» quand le cours est exactement le cours AFC retenu pour le mois, «~manuel~» sinon~; la fiche d'une écriture et la liste montrent, à côté du CHF, le montant en devise avec son code, le cours et cette provenance.
+
+\paragraph{Changer le compte d'une ligne.} La devise suit le compte~: vers un compte d'une autre devise, le montant et le cours repartent à vide et le cours de la nouvelle devise est proposé~; vers un compte CHF, la ligne redevient une ligne CHF~; vers un autre compte de la même devise, montant et cours sont gardés.
+
+\paragraph{Une seule devise par écriture.} Dès qu'une ligne porte une devise, les autres lignes ne proposent plus que les comptes CHF et ceux de cette devise. Pour passer d'une devise à une autre, un lien ouvre l'assistant \emph{Conversion} (ci-dessous). L'écriture d'ouverture et son complément, qui reprennent les soldes de plusieurs comptes en devise, font exception et restent modifiables.
+
+\paragraph{La différence de change.} Les montants CHF de l'écriture, arrondis chacun au centime, ou le CHF réel d'un relevé, peuvent laisser un écart. Le bouton \emph{Ajouter la différence de change} \textbf{ajoute une ligne} à l'écriture en cours --- il n'enregistre rien ---~: au crédit du compte de gains de change si les débits l'emportent, au débit du compte de pertes sinon. Ces comptes sont ceux du compte en devise de l'écriture, \textbf{ses comptes propres} s'il en a (\S\ref{sec:devise-compte}), sinon ceux de la société~; avec plusieurs comptes en devise de paires différentes, Kesh prend le premier compte de bilan et le dit. Un texte sous le bouton dit si l'écart est un arrondi ou non~; vérifiez les montants avant d'ajouter une ligne qui n'en est pas un. La ligne reste modifiable et se retire comme toute autre.
+
+\paragraph{Achat avec TVA en devise.} L'\emph{Assistant TVA achat} passe en devise quand la charge ou la contrepartie est un compte en devise~: le montant HT se saisit dans la devise, la TVA est calculée \textbf{en devise}, et la ligne d'impôt préalable, toujours en CHF, reçoit le CHF de la TVA \textbf{au même cours}. Les trois arrondis au centime peuvent laisser un écart d'un centime~: le bouton de la différence de change le solde. La charge et la contrepartie ne peuvent pas être de deux devises différentes. Si vous changez la date après l'insertion, réinsérez l'assistant~: un avis le rappelle.
+
+\paragraph{Un cours AFC corrigé et une écriture ancienne.} Après que la société a repris un cours AFC corrigé (\S\ref{sec:cours-correction}), une écriture ancienne au cours remplacé reste admise tant qu'on ne touche pas ses lignes au cours AFC~: modifier son libellé passe. Si vous corrigez une telle ligne (son montant, par exemple), Kesh refuse et propose \emph{Reprendre le cours attendu} (la ligne prend le nouveau cours AFC, son CHF change) ou \emph{Garder mon cours} (la ligne garde son cours, enregistré «~manuel~», son CHF ne change pas), sans toucher au reste de l'écriture. Si la société a entre-temps fixé son propre cours pour ce mois, seule \emph{Garder mon cours} est offerte.
+
+\paragraph{Un exercice clos avant l'activation.} Un exercice clôturé avant l'activation du multi-devises reste \textbf{mono-devise}, même rouvert~: aucun compte en devise n'y est utilisable, et Kesh refuse une ligne en devise datée dans cet exercice.
+
+\paragraph{La réévaluation.} Une écriture de réévaluation des comptes en devise ne se modifie pas~: sa fiche le dit, et elle se supprime (hors période verrouillée et lettrage) pour être refaite.
+
+\subsubsection{Convertir d'une devise à une autre}\label{sec:conversion-devises}
+
+Une conversion entre deux devises --- des euros changés en dollars --- ne tient pas dans une écriture, qui ne porte qu'une devise. Elle passe par \textbf{votre compte de conversion} (\S\ref{sec:multi-devises-comptes}), en \textbf{deux écritures}, chacune rapprochable du relevé de son compte~:
+\begin{enumerate}
+    \item à la date du débit sur le compte en euros~: le compte en euros est crédité (montant en euros × cours), le compte de conversion débité du même CHF, moins les frais~;
+    \item à la date du crédit sur le compte en dollars~: le compte en dollars est débité (montant en dollars × cours), le compte de conversion crédité du même CHF qu'à la première écriture --- il revient à zéro --- et la \textbf{différence de change} équilibre l'écriture, sur les comptes de différence du compte en dollars.
+\end{enumerate}
+\emph{Écritures} → \emph{Conversion de devises} (sociétés multi-devises, Administrateur et Comptable) ouvre l'assistant~: deux colonnes, \emph{Débit} (le compte débité sur son relevé) et \emph{Crédit} (le compte crédité sur son relevé), chacune avec sa date, son compte, son montant, son cours proposé (cours OU montant CHF, comme au formulaire) et ses frais. Un frais se passe au débit, en CHF ou dans la devise de sa colonne~; dans la colonne \emph{Crédit}, un frais sur un compte de charge de la devise (vos frais PayPal en dollars, par exemple) est admis et reste sur son compte, hors de la différence de change. L'aperçu montre les deux écritures, la différence calculée et le compte de conversion à zéro~; \emph{Passer les écritures} les enregistre ensemble, ou aucune. Le bouton reste désactivé, avec le motif, quand une date n'est pas dans un exercice ouvert, que les deux comptes ont la même devise, ou que les comptes de différence manquent ou sont invalides.
+
+\keshAttention\ \emph{Limite~: le lien entre les deux écritures n'est pas gardé~; chacune se modifie ensuite comme une écriture ordinaire.}
+
+\subsubsection{Soldes d'ouverture en devise}
+
+Dans \emph{Soldes de départ} (\S\ref{sec:soldes-depart}), un compte en devise se saisit \textbf{en devise}~: son solde dans la colonne \emph{Débit} ou \emph{Crédit}, un cours, et le CHF, qui entre dans les totaux et l'équilibre. Le cours proposé est le \textbf{cours de clôture de l'exercice précédent} --- le solde est repris au cours de clôture, si bien que les valeurs en CHF concordent d'un exercice à l'autre~: selon le choix de l'exercice (\S\ref{sec:cours-genres}), le cours journalier de la \textbf{veille de l'ouverture} («~proposé~: cours journalier du 31.12.2025~») ou le cours mensuel du \textbf{dernier mois de l'exercice précédent} («~proposé~: AFC 12.2025~»). Saisissez plutôt le \textbf{montant CHF} de votre ancien bilan~: Kesh en déduit le cours, et le CHF repris est exact. Un complément daté du jour propose le cours mensuel du mois de sa date. Un solde en devise saisi sans CHF calculable désactive l'enregistrement, avec un message sur la ligne.
 
 \subsection{Sauvegardes}
 
