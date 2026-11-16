@@ -71,7 +71,9 @@ ne passe au millième du montant voulu sans que je le voie.
 `expected === '' ? null : isValidAmount(expected) ? decimalForServer(expected) : expected,` ; champ
 `SupplierInvoiceForm.svelte:749-754` ; rouvert `:184-185` `readableAmount(init.expectedPaymentAmount, 2)` (colonne
 `DECIMAL(19,4)`, `crates/kesh-db/migrations/20260628000001_supplier_invoices.sql:40`) ; scan QR `:323`
-`fExpectedAmount = p.expectedAmount;` (deux décimales au plus : jamais ambigu) ; envoyé sans QR seulement (`:399-404`,
+`fExpectedAmount = p.expectedAmount;` (deux décimales au plus pour un QR conforme à SIX ; *revue P1, B3 = E2 :* le parseur,
+`crates/kesh-qrbill/src/parser.rs:145` `Decimal::from_str(lines[L_AMOUNT])`, ne borne pas l'échelle — un QR hors norme
+« 1.250 » serait pré-rempli ambigu ; la remédiation le pré-remplit par `readableUnambiguousAmount`) ; envoyé sans QR seulement (`:399-404`,
 `const req = qrLocked`).
 
 **4. Règlement d'une facture client (#1174)** — `frontend/src/lib/features/invoices/SettleInvoiceDialog.svelte` (327 lignes) :
@@ -128,7 +130,9 @@ Aucun site hors des huit issues : aucune issue neuve.
   les soldes, le prix et le montant attendu fournisseur ; **2** pour le règlement). Les autres refus de chaque écran restent.
   *Écartées* : réemployer `journal-entry-form-amount-*` (texte faux au centime, entrées `KNOWN_VIOLATIONS`) ; une paire par écran.
 - **D4 — Chaque écran rogne là où il rogne aujourd'hui** (C-36-18-4) : saisie rognée au règlement, au prix et au montant
-  attendu fournisseur ; les soldes de départ lisent la saisie brute, comme aujourd'hui.
+  attendu fournisseur ; les soldes de départ lisent la saisie brute, comme aujourd'hui. *Revue P1, B4 (C-36-18-13) :
+  remplacé — les soldes de départ rognent aussi (`openingAmountReader`), un solde collé depuis un tableur n'étant plus
+  refusé pour son blanc par un message qui ne le dit pas.*
 - **D5 — Soldes de départ (#1050)** : `computeBalance(rows, journalAmountReader)` ; les filtres `:147-152`, `:163-169`,
   `complementInvalid` et les quatre `aria-invalid` lisent par `journalAmountReader` ; la charge `:199-200`, `:245-246`
   devient `journalAmountPayload(…)` (jamais `null` : `canGenerate` exige `isBalanced`, `canSubmitComplement`
@@ -234,9 +238,10 @@ Aucun site hors des huit issues : aucune issue neuve.
    *V1-6* : sur « 1.250 », le champ porte `aria-invalid="true"` et `aria-describedby` vers le bandeau.
 6. **AC6 — Rien de juste n'est refusé** : pour chacun des quatre sites, un test par forme — « 1.25 », « 1250 », « 1'250.50 »,
    « 1’250 », « 1,25 », « 0.50 » — sans message, envoyée normalisée ; *V1-5* : une saisie bordée de blancs («  1250  »)
-   au règlement, au prix et au montant attendu fournisseur → sans message, envoyée `1250` (les soldes de départ, qui ne
-   rognent pas, la refusent comme aujourd'hui, D4) ; les formes rouvertes de D2 sans message. Seules deviennent refusées la
-   forme de la règle et ce que la grammaire du journal ne lit pas — `1e3`, `.5`, `5.`, signe, blanc intérieur, **plus de
+   au règlement, au prix et au montant attendu fournisseur → sans message, envoyée `1250` (les soldes de départ aussi depuis
+   la revue P1, B4 ; avant, ils la refusaient, D4) ; les formes rouvertes de D2 sans message. Seules deviennent refusées la
+   forme de la règle et, **au règlement seulement** (*revue P1, A2* : les trois autres écrans, par `isValidAmount`, les
+   refusaient déjà), ce que la grammaire du journal ne lit pas — `1e3`, `.5`, `5.`, signe, blanc intérieur, **plus de
    quatre décimales, même nulles** (« 10.01000 », accepté au règlement avant la story : un test constate le refus
    illisible) —, dit à la note de version.
 7. **AC7 — E2E** (fichier neuf `frontend/tests/e2e/montants-ambigus.spec.ts`, un `test` par écran : soldes de départ, facture
@@ -346,8 +351,9 @@ Une mutation équivalente se dit au Dev Agent Record.
   lisent désormais un montant comme une écriture : un montant comme « 1.250 » — un point ou une virgule suivis de trois
   chiffres, sans séparateur de milliers avant — n'est plus lu 1,25 franc en silence ; il est refusé comme ambigu, rien ne
   s'enregistre, et le message dit comment l'écrire (`1'250` ou `1.25`). L'apostrophe des milliers et la virgule décimale
-  sont acceptées (`1'250`, `1,25`) ; la saisie à exposant (`1e3`), sans chiffre avant ou après le point (`.5`, `5.`) ou
-  à plus de quatre décimales, même nulles (`10.01000`), n'est plus lue. Un règlement de « 10.000 » est refusé comme ambigu :
+  sont acceptées (`1'250`, `1,25`), et un espace avant ou après le montant est ignoré. Au règlement, la saisie à exposant
+  (`1e3`), sans chiffre avant ou après le point (`.5`, `5.`) ou à plus de quatre décimales, même nulles (`10.01000`),
+  n'est plus lue (les autres écrans la refusaient déjà). Un règlement de « 10.000 » est refusé comme ambigu :
   écrivez `10.00` ou `10'000`. Un prix ou un montant attendu enregistré au millième se rouvre sur quatre décimales
   (`1.2340`) et n'est pas refusé. **Avant la 0.18.0**, un montant tapé avec trois chiffres après le point ou la virgule
   (« 1.250 ») a été lu sans avertissement comme un franc vingt-cinq : relisez vos soldes de départ, les prix et montants
@@ -455,11 +461,16 @@ d'appel prime, C-36-18-12) : `etape0-inventaires.log` ; `rouges.log` (49 rouges 
   `:1813` (fournisseur) ; `tels quels` ne rend plus la ligne du § *Les montants* (`:1307`, `:2853` restent, hors sujet). Le PDF
   se régénère à l'intégration ; valeur de départ du contrôle PDF : **1** (`etape0-inventaires.log`).
 - **AC10** : `amount-ambiguity.test.ts`, `unit-price.test.ts`, `InvoiceForm.test.ts`, `format.test.ts` verts sans modification
-  (`vitest-cible-dev.log`, 36 fichiers, 943 tests).
+  (`vitest-cible-dev.log`, 36 fichiers, 943 tests). *Annoté le 2026-11-16 (revue P1, A5) : ce journal ne porte que le
+  résumé, pas la liste des fichiers ; la preuve est « non modifiés » par `git diff --stat 668556766 ac953dea2` et « verts » par
+  le Vitest complet (`review-front.log`, puis `rem1-front.log` : 246 fichiers, 3943 tests).*
 - **AC11** : treize captures, thème clair, base jetable `kesh_e2e_e3618a`, prises par la spec E2E (`KESH_E2E_CAPTURES_DIR`) :
   chaque écran à « 1.250 », à « 12'34 » et enregistré à « 1'250 » ; le brouillon rouvert au prix `1.2340`. Sur les captures
   pleine page du formulaire fournisseur, l'en-tête collant de l'application apparaît au milieu : artefact de `fullPage`, non un
-  défaut de l'écran.
+  défaut de l'écran. *Annoté le 2026-11-16 (revue P1, A4, A1) : la capture `soldes-1250-enregistre` ne montrait que l'écran
+  verrouillé ; la remédiation ajoute `soldes-1250-ecriture` (l'écriture d'ouverture, 1'250.00 au débit et au crédit) ; les
+  captures « illisible » du fournisseur montraient le bandeau de l'envoi précédent, désormais effacé à la saisie : toutes
+  reprises au run r4.*
 - **Gates du passage en revue** (bases `kesh_e3618a` et `kesh_e2e_e3618a` remises à neuf en voie 2, `bases.log`) :
   - `scripts/test-fast.sh --ci`, voie 2, à `454a63942` : **5510 exécutés, 5510 passés, 13 ignorés** (`review-test-fast.log`) ;
   - `scripts/gate-ci.sh kesh_ci_e3618a`, voie 1, à `454a63942` : **5517 passés, 0 échoué, 17 ignorés** (`review-gate-ci.log`) ;
@@ -471,6 +482,50 @@ d'appel prime, C-36-18-12) : `etape0-inventaires.log` ; `rouges.log` (49 rouges 
     `build` n'ont pas été relancés à cette tête.
   - **Non lancés** : E2E complet et `gate-ci` de clôture (à la clôture), PDF (à l'intégration). La spec
     `montants-ambigus.spec.ts` seule a tourné (4/4, run r3).
+  - *Annoté le 2026-11-16 (revue P1, A3) : « tous hors des fichiers de la story » n'était pas établi par ce journal, qui ne
+    gardait que sept lignes d'avertissement ; la sortie entière est au journal de la remédiation (`rem1-front.log`) : 29
+    avertissements dans cinq fichiers, aucun de la story.*
+
+### Remédiation de la revue P1 (2026-11-16)
+
+Revue P1 : A (Sonnet) 0/0/0/7, B (Opus) 0/0/0/6, E (Opus) 0/0/1/5 (`kesh-gate-logs/e36-18/review-p1-{A,B,E}.md`). Chaque
+prémisse relue au code avant correction ; aucune réfutée sur le fond.
+
+- **E1 (MEDIUM) = B1** — confirmé : `SupplierInvoiceForm.svelte:143` `const qrLocked = $derived(document !== null &&
+  document.creditorIban !== null);` masque le champ ; le test du mode QR ne pouvait pas rougir. Renommé pour ce qu'il prouve ;
+  deux tests neufs mènent **réellement** `onScanFile` (fichier déposé sur `supplier-invoice-scan-file`, `decodeQrFromImageFile`,
+  `scanQrSupplierInvoice` et `scanToPrefill` simulés) : QR à `1250.00` → champ `1250.00`, aucun message, envoyé `1250.00`
+  (M19) ; QR hors norme à `1.250` → `1.25` (M20).
+- **B3 = E2** — confirmé (`crates/kesh-qrbill/src/parser.rs:145` `Decimal::from_str(lines[L_AMOUNT])`, sans borne
+  d'échelle) : le montant du scan est pré-rempli par `readableUnambiguousAmount(p.expectedAmount, 2)` ; phrase de la fiche
+  (§ *Les quatre sites*, site 3) corrigée.
+- **A1** — confirmé (`formError = '';` seulement en tête de `submit`) : la saisie du prix et du montant attendu efface le refus
+  de l'envoi précédent (`oninput`) ; deux tests (M21) ; captures reprises.
+- **E3** — confirmé (`{:else if complementLines.length > 0}` → « Les lignes s'équilibrent ») : aucune contrepartie annoncée
+  tant que `complementInvalid` (`data-side="invalid"`) ; test (M25).
+- **B4** — confirmé ; **rognage retenu** (C-36-18-13) : `openingAmountReader` (`opening-balances-totals.ts`), seul lecteur de
+  l'écran ; l'écriture manuelle, elle, ne rogne pas et ne le dit pas — s'y aligner reconduirait le défaut : issue demandée.
+  Tests : saisie bordée de blancs acceptée et envoyée `1250`, blancs seuls = ligne vide, totaux (M24). Manuel : « un espace
+  avant ou après le montant … est ignoré ».
+- **B2 = E4** (date antérieure + montant ambigu : `aria-describedby` absent, puis présent la date corrigée, M23), **E5**
+  (« Ligne 2 », M22), **E6** (titre aligné sur la saisie U+0027 ; le cas U+2019 reste couvert par l'`it.each` d'AC6) : tests
+  ajoutés.
+- **A2** — note de version et AC6 : le refus de `1e3`, `.5`, `5.`, cinq décimales ne change qu'au règlement. **A6** — la règle
+  du montant du règlement a son paragraphe (*Le montant saisi*), après *Enregistrer*. **B6** — non réécrit (C-36-18-14) : `:1171`
+  recopie le message que l'écran de la facture client affiche encore (`1.2500`) ; la convergence relève de #1202.
+- **A3, A4, A5** — annotations datées ci-dessus. **B5** — les commentaires des compteurs (`i18n-keys.test.ts`,
+  `i18n-un-repli-par-cle.test.ts`) disent quelle valeur est au journal et laquelle ne l'est pas. **A7** — observation : le run
+  r3 jouait la spec non commitée, identique à `454a63942` ; le run r4 de la remédiation tourne sur l'arbre commité
+  (`24c812dca`, les deux fichiers non commités sont la fiche et le registre).
+- **Mutations M19 à M25** (`mut/resume.log`, `mut/M19.log` à `M25.log`, même script) : **sept tuées**, chacune par le test
+  qu'elle vise, aucune erreur de compilation.
+- **Commits** : `c3b26815b` (remédiation), `24c812dca` (titre du test E5, qui annonçait « une ligne vide » pour une ligne
+  complète) — **dernier commit de code** ; puis ce compte rendu.
+- **Gates de remédiation**, au dernier commit de code `24c812dca` : `scripts/test-fast.sh --ci`, voie 2, bases remises à
+  neuf : **5510 exécutés, 5510 passés, 13 ignorés** (`rem1-test-fast.log`) ; `npm run check` **0 erreur, 29 avertissements,
+  cinq fichiers hors de la story** (sortie entière, `rem1-front.log`) ; Vitest complet **246 fichiers, 3943 tests, tous verts** ;
+  `npm run build` vert ; spec `montants-ambigus.spec.ts` **4/4** (run r4, `rem1-e2e-spec.log`), quatorze captures reprises.
+  **Non lancés** (consigne) : `gate-ci` et E2E complet, à la clôture ; PDF à l'intégration.
 
 ### File List
 
@@ -521,6 +576,12 @@ d'appel prime, C-36-18-12) : `etape0-inventaires.log` ; `rouges.log` (49 rouges 
   V2-4 `imported-supplier-invoices.api.ts:63` `` apiClient.post(`/api/v1/imported-supplier-invoices/${id}/complete`, req) ``
   (AC7) ; V2-5 `balance.ts:181` `read: AmountReader = defaultAmountReader` (D5, AC10) ; V2-6 registre, C-36-18-11 ; V2-7
   `supplier-invoice-form.ts:281` `// illisible part telle quelle et le serveur la refuse (400).` (D7) ; V2-8 en-tête.
+- 2026-11-16 — **Remédiation de la revue P1** (Opus 5.5) : A 0/0/0/7 (Sonnet), B 0/0/0/6 (Opus), E 0/0/1/5 (Opus) ; dix-neuf
+  findings, seize distincts (E1 = B1, E2 = B3, E4 = B2), tous confirmés au code ; quatorze corrigés, B6 laissé à #1202
+  (C-36-18-14), A7 observation sans correction ; décision C-36-18-13
+  (soldes rognés) ; M19 à M25 tuées ; `test-fast --ci` 5510/5510, Vitest 3943/3943, `check`, `build`, spec E2E 4/4, à
+  `24c812dca`. Statut inchangé : `review`. Prompt de la passe P2 ciblée :
+  `36-18a-montants-ambigus-livres-review-prompt-p2.md`. Détail : Dev Agent Record, § *Remédiation de la revue P1*.
 - 2026-11-16 — **Développement terminé** (Opus 5.5), `Status: review`. Rouges 49 (Vitest) et 4 (E2E, requêtes parties avec
   `1.250`) ; M1 à M18 tuées ; spec E2E 4/4 ; `test-fast --ci` 5510/5510 (voie 2), `gate-ci` 5517 passés (voie 1), frontend
   complet vert après correction du compteur `i18n-un-repli-par-cle` (454 → 456) ; E2E complet et `gate-ci` de clôture à la

@@ -139,3 +139,29 @@ réversible (règles de l'epic) ; aucun n'écrit de donnée ni ne touche le serv
   non `e36-18a/` (fiche).
 - **Écartée** : attendre la fusion de la 36-15 — un jour de plus avant la coupure du 2026-11-19.
 - **Réversible** : oui (la refusion absorbe la 36-15 finale).
+
+## C-36-18-13 — Les soldes de départ rognent la saisie (revue P1, B4 ; remplace C-36-18-4 pour cet écran)
+
+- **Contexte** : C-36-18-4 gardait les soldes sans rognage. Avec le message neuf, « 1250␣ » collé depuis un tableur — le
+  cas d'usage de l'écran — reçoit « Montant illisible : chiffres, apostrophe…, 4 décimales au plus », qui ne nomme pas la
+  seule cause. L'orchestrateur demandait de tolérer le blanc ou de le dire, en s'alignant sur l'écriture manuelle ; or
+  l'écriture manuelle ne rogne pas et ne le dit pas non plus (`JournalEntryForm.svelte`, `readJournalAmount` sans rognage,
+  message `journal-entry-form-amount-unreadable`) : s'y aligner reconduirait le défaut relevé.
+- **Retenu** : rogner, comme les trois autres écrans de la story — `openingAmountReader` (`opening-balances-totals.ts`),
+  seul lecteur de l'écran (totaux, équilibre, messages, charge). Aucun montant accepté avant n'est refusé.
+- **Écartées** : (a) un message propre au blanc — une clé de plus, pour un refus sans utilité ; (b) garder le refus et
+  ajouter « sans espace » au message commun — il vaut pour quatre écrans dont trois rognent.
+- **Limite** : l'écriture manuelle (36-3) refuse toujours un blanc de tête ou de fin, sans le dire : hors du périmètre ;
+  issue demandée.
+- **Réversible** : oui.
+
+## C-36-18-14 — Le manuel de la 36-3b (`:1171`, « 1.2500 ») n'est pas réécrit ici (revue P1, B6)
+
+- **Contexte** : `user-manual.tex:1171` (facture client, 36-3b) conseille `1.2500` pour un franc vingt-cinq ; cette story
+  conseille `1.25`. Les deux formes sont lues ; rien n'est faux.
+- **Retenu** : ne pas changer `:1171`, qui recopie le message que l'écran de la facture client affiche encore
+  (`invoice-line-unit-price-ambiguous-error`, « … ou 1.2500 pour un franc vingt-cinq ») : le manuel contredirait l'écran.
+  La convergence des messages des 36-3, 36-3b et 36-2 vers les clés communes est l'issue #1202 ; le manuel suit avec elle
+  (commentaire demandé sur #1202).
+- **Écartée** : réécrire `:1171` seul — un manuel qui dit autre chose que l'écran.
+- **Réversible** : oui (une ligne).
