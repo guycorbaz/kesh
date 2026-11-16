@@ -13,7 +13,11 @@
  *   mois suivant le mois courant, à toute date ; un jour : ≥ 2000-01-01 et
  *   strictement passé) ; sinon la saisie manuelle est exigée (`note`) ;
  * - un `404 RATE_NOT_PUBLISHED`, un `503`, un `400` du `POST /fetch` se
- *   traitent comme « non publié » : saisie manuelle.
+ *   traitent comme « non publié » : saisie manuelle ;
+ * - un échec **passager** (réseau, 408, 429, 5xx — dont le `503
+ *   RATE_SOURCE_UNAVAILABLE` du `POST /fetch`) reste mémoïsé
+ *   {@link TRANSIENT_RETRY_MS} seulement : la lecture suivante réessaie
+ *   passé ce délai, jamais à chaque frappe (revue de code P3, 37-3b-CR-P3-1).
  *
  * Aucune dépendance au composant : les appels sont injectés (tests sans réseau).
  */
@@ -31,7 +35,17 @@ export interface RateLookupDeps {
 	canFetch: () => boolean;
 	/** La date du jour du poste (`AAAA-MM-JJ`). */
 	today: () => string;
+	/** L'horloge en millisecondes (`Date.now` par défaut ; injectée par les tests). */
+	now?: () => number;
 }
+
+/**
+ * Délai pendant lequel un échec passager reste mémoïsé : assez long pour qu'une
+ * frappe dans le champ du cours (chaque frappe relance un `get`) ne refasse ni
+ * `lookup` ni `POST /fetch` — ce dernier interroge l'AFC —, assez court pour
+ * qu'un incident bref ne fige pas le formulaire.
+ */
+export const TRANSIENT_RETRY_MS = 15_000;
 
 /** Pourquoi aucun cours n'est proposé : la saisie manuelle est exigée. */
 export type LookupNote = 'manual-required' | null;
@@ -97,11 +111,15 @@ export interface RateLookupCache {
  */
 export function createRateLookupCache(deps: RateLookupDeps): RateLookupCache {
 	const memo = new Map<string, Promise<LookupResult>>();
+	/** Échéance (ms) d'une entrée née d'un échec passager, par clé. */
+	const retryAt = new Map<string, number>();
+	const now = deps.now ?? (() => Date.now());
 	/**
 	 * Suivi d'une résolution : une lecture qui échoue pour une raison
 	 * **passagère** (réseau, délai, réponse 5xx) le note, et son résultat
-	 * négatif n'est pas mémoïsé — la lecture suivante réessaie (revue de code
-	 * P1, 37-3b-CR-P1-7).
+	 * négatif n'est mémoïsé que {@link TRANSIENT_RETRY_MS} — la lecture
+	 * suivante réessaie passé ce délai (revue de code P1, 37-3b-CR-P1-7 ; P3,
+	 * 37-3b-CR-P3-1).
 	 */
 	type Trace = { transient: boolean };
 	const key = (currency: string, kind: RateKind, date: string) =>
@@ -146,29 +164,29 @@ export function createRateLookupCache(deps: RateLookupDeps): RateLookupCache {
 		return fetchThenRead(currency, date, kind, trace);
 	}
 
+	/** Mémoïse `p` sous `k` ; un échec passager n'y reste que jusqu'à son échéance. */
+	function remember(k: string, p: Promise<LookupResult>, trace: Trace): Promise<LookupResult> {
+		memo.set(k, p);
+		retryAt.delete(k);
+		void p.then(() => {
+			if (trace.transient && memo.get(k) === p) retryAt.set(k, now() + TRANSIENT_RETRY_MS);
+		});
+		return p;
+	}
+
 	return {
 		get(currency, date, kind = 'month') {
 			const k = key(currency, kind, date);
 			const hit = memo.get(k);
-			if (hit) return hit;
+			const due = retryAt.get(k);
+			if (hit && (due === undefined || now() < due)) return hit;
 			const trace: Trace = { transient: false };
-			const p: Promise<LookupResult> = resolve(currency, date, kind, trace).then((r) => {
-				// Un échec passager ne se mémoïse pas : l'entrée est retirée.
-				if (trace.transient && memo.get(k) === p) memo.delete(k);
-				return r;
-			});
-			memo.set(k, p);
-			return p;
+			return remember(k, resolve(currency, date, kind, trace), trace);
 		},
 		refresh(currency, date, kind = 'month') {
 			const k = key(currency, kind, date);
 			const trace: Trace = { transient: false };
-			const p: Promise<LookupResult> = fetchThenRead(currency, date, kind, trace).then((r) => {
-				if (trace.transient && memo.get(k) === p) memo.delete(k);
-				return r;
-			});
-			memo.set(k, p);
-			return p;
+			return remember(k, fetchThenRead(currency, date, kind, trace), trace);
 		},
 	};
 }

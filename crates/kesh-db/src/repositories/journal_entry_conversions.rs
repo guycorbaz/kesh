@@ -17,6 +17,11 @@
 //!    `FX_ACCOUNT_INVALID` (`field: fxTransitAccountId`) ;
 //! 2. `FX_CONVERSION_TRANSIT_UNBALANCED` : le solde net du compte de conversion
 //!    est un débit dans l'une, le même CHF au crédit dans l'autre ;
+//!    Puis (étape « 2 bis ») les deux écritures ne sont pas dans une même
+//!    devise (CHF comprise ; les comptes de charge, frais, ne donnent pas sa
+//!    devise à une écriture qui porte autre chose ; un compte non reconnu
+//!    laisse le refus à la création) : 400 `Validation` (`SameCurrency`),
+//!    sans `details.entry` ;
 //! 3. l'écriture **à compléter** est celle où ce solde est un crédit ; l'autre
 //!    est validée (`accounting::validate`, `ENTRY_UNBALANCED` …) ;
 //! 4. forme et paire de l'écriture à compléter (A31, A33), ajout éventuel de la
@@ -304,22 +309,27 @@ async fn create_conversion_in_tx(
     let read = accounts::conversion_line_accounts_in_tx(tx, company_id, &ids)
         .await
         .map_err(conv)?;
-    let currency_of = |entry: &NewJournalEntry| -> BTreeSet<String> {
+    // `None` dès qu'un compte n'est pas reconnu (inexistant, d'une autre
+    // société) : sa devise est inconnue, le refus revient à la création
+    // (revue de code P3, 37-3b-CR-P3-2 — il était lu comme un compte CHF).
+    let currency_of = |entry: &NewJournalEntry| -> Option<BTreeSet<String>> {
         // (compte de charge ?, devise) de chaque ligne hors compte de conversion.
         let lines: Vec<(bool, String)> = entry
             .lines
             .iter()
             .filter(|l| l.account_id != transit)
             .map(|l| {
-                let account = read.iter().find(|a| a.account.id == l.account_id);
-                (
-                    account.is_some_and(|a| a.account.account_type == AccountType::Expense),
+                let account = read.iter().find(|a| a.account.id == l.account_id)?;
+                Some((
+                    account.account.account_type == AccountType::Expense,
                     account
-                        .and_then(|a| a.account.currency.clone())
+                        .account
+                        .currency
+                        .clone()
                         .unwrap_or_else(|| "CHF".to_string()),
-                )
+                ))
             })
-            .collect();
+            .collect::<Option<_>>()?;
         // Les frais (comptes de charge) ne donnent pas sa devise à l'écriture,
         // sauf s'il n'y a rien d'autre.
         let main: BTreeSet<String> = lines
@@ -327,17 +337,19 @@ async fn create_conversion_in_tx(
             .filter(|(expense, _)| !expense)
             .map(|(_, c)| c.clone())
             .collect();
-        if main.is_empty() {
+        Some(if main.is_empty() {
             lines.into_iter().map(|(_, c)| c).collect()
         } else {
             main
-        }
+        })
     };
-    let (cur0, cur1) = (currency_of(&entries[0]), currency_of(&entries[1]));
     // Un compte inconnu ou une écriture à deux devises : refusés plus loin
     // (création, `FX_MULTIPLE_CURRENCIES`) ; ici seul le cas net d'une même
     // devise unique de part et d'autre.
-    if cur0.len() == 1 && cur0 == cur1 {
+    if let (Some(cur0), Some(cur1)) = (currency_of(&entries[0]), currency_of(&entries[1]))
+        && cur0.len() == 1
+        && cur0 == cur1
+    {
         return Err(ConversionError::conversion(
             ConversionErrorKind::Validation {
                 reason: ConversionValidation::SameCurrency {
@@ -580,7 +592,8 @@ async fn complete_entry(
     let gap = total_debit - total_credit;
     // Au-delà de DECIMAL(19,4) l'INSERT échouerait en 500 : refusé ici en 400
     // (revue de code P2, 37-3b-CR-P2-2, ex CR-P1-21).
-    if gap.abs() >= accounting::fx::FX_CHF_MAX {
+    // Même borne que le CHF d'une ligne en devise (`> FX_CHF_MAX`, 37-3a).
+    if gap.abs() > accounting::fx::FX_CHF_MAX {
         return Err(ConversionErrorKind::Core(CoreError::FxValueOutOfRange {
             line: entry.lines.len() + 1,
         }));

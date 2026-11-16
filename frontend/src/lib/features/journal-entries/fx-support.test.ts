@@ -13,7 +13,7 @@ vi.mock('$lib/shared/utils/i18n.svelte', () => ({
 }));
 
 import type { AccountResponse } from '$lib/features/accounts/accounts.types';
-import { createRateLookupCache, isFetchable } from './rate-lookup';
+import { createRateLookupCache, isFetchable, TRANSIENT_RETRY_MS } from './rate-lookup';
 import { fxRefusalMessage, refusalEntry, refusalLine } from './fx-refusals';
 import { canDeleteEntry, editRefusalOutcome } from './form-helpers';
 import { foreignPurchaseVatEntry } from './vat-purchase';
@@ -83,15 +83,22 @@ describe('RateLookupCache', () => {
 		expect((await cache.refresh('USD', '2026-03-01')).outcome.kind).toBe('rate');
 		expect((await cache.get('USD', '2026-03-20')).outcome.kind).toBe('rate');
 	});
-	it('échec passager (réseau, 5xx) : non mémoïsé, la lecture suivante réessaie (37-3b-CR-P1-7)', async () => {
+	it('échec passager (réseau, 5xx) : réessayé passé le délai, non à chaque appel (37-3b-CR-P1-7, CR-P3-1)', async () => {
 		const lookup = vi
 			.fn()
 			.mockRejectedValueOnce(new TypeError('Failed to fetch'))
 			.mockRejectedValueOnce({ code: 'INTERNAL', status: 503, message: '' })
 			.mockResolvedValueOnce(lookupOk);
-		const cache = createRateLookupCache({ lookup, fetch: vi.fn(), canFetch: () => true, today: () => '2026-03-15' });
+		let t = 0;
+		const cache = createRateLookupCache({ lookup, fetch: vi.fn(), canFetch: () => true, today: () => '2026-03-15', now: () => t });
 		expect((await cache.get('USD', '2026-03-01')).outcome.kind).toBe('none');
+		// Dans le délai : l'échec est rendu tel quel, sans nouvelle requête.
+		t = TRANSIENT_RETRY_MS - 1;
+		expect((await cache.get('USD', '2026-03-05')).outcome.kind).toBe('none');
+		expect(lookup).toHaveBeenCalledTimes(1);
+		t = TRANSIENT_RETRY_MS;
 		expect((await cache.get('USD', '2026-03-02')).outcome.kind).toBe('none');
+		t = 3 * TRANSIENT_RETRY_MS;
 		expect((await cache.get('USD', '2026-03-03')).outcome.kind).toBe('rate');
 		expect(lookup).toHaveBeenCalledTimes(3);
 		// Le résultat obtenu, lui, est mémoïsé.
@@ -108,9 +115,28 @@ describe('RateLookupCache', () => {
 			.fn()
 			.mockRejectedValueOnce(new TypeError('Failed to fetch'))
 			.mockResolvedValueOnce({});
-		const cache = createRateLookupCache({ lookup, fetch, canFetch: () => true, today: () => '2026-03-15' });
+		let t = 0;
+		const cache = createRateLookupCache({ lookup, fetch, canFetch: () => true, today: () => '2026-03-15', now: () => t });
 		expect((await cache.get('USD', '2026-03-01')).outcome.kind).toBe('none');
+		t = TRANSIENT_RETRY_MS;
 		expect((await cache.get('USD', '2026-03-02')).outcome.kind).toBe('rate');
+		expect(fetch).toHaveBeenCalledTimes(2);
+	});
+	it('503 RATE_SOURCE_UNAVAILABLE durable : une frappe par appel ne refait pas le POST /fetch (37-3b-CR-P3-1)', async () => {
+		const lookup = vi.fn().mockRejectedValue({ code: 'RATE_UNAVAILABLE', status: 404, message: '' });
+		const fetch = vi.fn().mockRejectedValue({ code: 'RATE_SOURCE_UNAVAILABLE', status: 503, message: '' });
+		let t = 0;
+		const cache = createRateLookupCache({ lookup, fetch, canFetch: () => true, today: () => '2026-03-15', now: () => t });
+		for (let i = 0; i < 6; i++) {
+			t = i * 100;
+			expect((await cache.get('USD', '2026-03-10')).note).toBe('manual-required');
+		}
+		expect(fetch).toHaveBeenCalledTimes(1);
+		expect(lookup).toHaveBeenCalledTimes(1);
+		// « Récupérer le mois » réessaie toujours, délai ou non.
+		await cache.refresh('USD', '2026-03-10');
+		expect(fetch).toHaveBeenCalledTimes(2);
+		expect((await cache.get('USD', '2026-03-10')).note).toBe('manual-required');
 		expect(fetch).toHaveBeenCalledTimes(2);
 	});
 	it('isFetchable : 2000-01 au mois suivant ; un jour strictement passé', () => {

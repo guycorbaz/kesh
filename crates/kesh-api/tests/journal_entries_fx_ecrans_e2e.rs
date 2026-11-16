@@ -1473,3 +1473,38 @@ async fn conversion_difference_hors_bornes_rend_400(pool: MySqlPool) {
     assert_eq!(body["error"]["details"]["entry"], 2, "{body}");
     assert_eq!(nb_ecritures(&pool, ctx.s.company_id).await, 0);
 }
+
+/// Revue de code P3, 37-3b-CR-P3-2 : un compte inconnu n'est pas lu comme un
+/// compte CHF — le refus « même devise » ne masque pas celui de la création.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn conversion_compte_inconnu_pas_lu_comme_chf(pool: MySqlPool) {
+    let ctx = monter(&pool).await;
+    let e1 = ecriture(
+        "2026-03-05",
+        "CHF (1/2)",
+        vec![
+            chf(ctx.transit, "10.00", "0"),
+            chf(ctx.retained, "0", "10.00"),
+        ],
+    );
+    let e2 = ecriture(
+        "2026-03-06",
+        "Inconnu (2/2)",
+        vec![chf(999_999, "10.00", "0"), chf(ctx.transit, "0", "10.00")],
+    );
+    let (st, body) = envoyer(&ctx, ROUTE, &conversion(e1, e2, None)).await;
+    assert_eq!(
+        (st, code(&body)),
+        (400, "INACTIVE_OR_INVALID_ACCOUNTS"),
+        "{body}"
+    );
+    assert!(
+        !body["error"]["message"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("même devise"),
+        "{body}"
+    );
+    assert_eq!(body["error"]["details"]["entry"], 2, "{body}");
+    assert_eq!(nb_ecritures(&pool, ctx.s.company_id).await, 0);
+}

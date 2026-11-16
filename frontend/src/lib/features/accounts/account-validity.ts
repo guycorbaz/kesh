@@ -43,8 +43,9 @@ export interface AccountValidityOptions {
 	/**
 	 * Story 37-3b (AC-4) — un compte en devise est inutilisable (défaut `true`) :
 	 * les pièces, lots et réglages ne l'acceptent pas (le serveur le refuserait).
-	 * Le formulaire d'écriture et son sélecteur passent `false` — sans quoi
-	 * chaque compte en devise y serait marqué inutilisable.
+	 * Le formulaire d'écriture d'une société multi-devises et son sélecteur
+	 * passent `false` — sans quoi chaque compte en devise y serait marqué
+	 * inutilisable ; d'une société mono-devise, `true` (`!multiCurrency`).
 	 */
 	excludeForeignCurrency?: boolean;
 }

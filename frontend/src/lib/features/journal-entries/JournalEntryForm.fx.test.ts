@@ -6,8 +6,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, fireEvent, screen, waitFor } from '@testing-library/svelte';
 
-const { createMock, toastError } = vi.hoisted(() => ({
+const { createMock, updateMock, toastError } = vi.hoisted(() => ({
 	createMock: vi.fn(),
+	updateMock: vi.fn(),
 	toastError: vi.fn()
 }));
 
@@ -21,7 +22,7 @@ vi.mock('$lib/features/onboarding/onboarding.svelte', () => ({
 }));
 vi.mock('./journal-entries.api', () => ({
 	createJournalEntry: createMock,
-	updateJournalEntry: vi.fn()
+	updateJournalEntry: updateMock
 }));
 vi.mock('svelte-sonner', () => ({
 	toast: { error: toastError, success: vi.fn() }
@@ -293,5 +294,83 @@ describe('JournalEntryForm — société mono-devise (NFR-37-3b-1, revue de code
 		expect(screen.queryByTestId('journal-entry-line-fx-rate-0')).toBeNull();
 		expect(screen.queryByTestId('journal-entry-line-fx-debit-0')).toBeNull();
 		expect(lookup).not.toHaveBeenCalled();
+	});
+});
+
+describe('JournalEntryForm — édition, même compte repris (37-3b-CR-P2-4)', () => {
+	it('reprendre le compte d’une ligne relue ne change ni cours, ni CHF, ni provenance, sans lookup', async () => {
+		updateMock.mockReset();
+		const lk = cache('0.8846', 'afc');
+		render(JournalEntryForm, {
+			props: {
+				accounts: ACCOUNTS,
+				accountsLoadError: false,
+				multiCurrency: true,
+				companyFx: { fxGainAccountId: 31, fxLossAccountId: 32 },
+				rateLookup: lk,
+				initialEntry: {
+					id: 42,
+					companyId: 1,
+					fiscalYearId: 7,
+					entryNumber: 3,
+					entryDate: '2026-03-10',
+					journal: 'OD',
+					description: 'Écriture USD relue',
+					version: 1,
+					reversesEntryId: null,
+					lines: [
+						{
+							id: 1,
+							accountId: 10,
+							lineOrder: 1,
+							debit: '95.0000',
+							credit: '0.0000',
+							projectId: null,
+							letteringKey: null,
+							letteringCode: null,
+							letteringOrigin: null,
+							foreign: { currency: 'USD', amount: '100', rate: '0.95', rateSource: 'afc' }
+						},
+						{
+							id: 2,
+							accountId: 1,
+							lineOrder: 2,
+							debit: '0.0000',
+							credit: '95.0000',
+							projectId: null,
+							letteringKey: null,
+							letteringCode: null,
+							letteringOrigin: null
+						}
+					],
+					createdAt: '2026-03-10T10:00:00',
+					updatedAt: '2026-03-10T10:00:00'
+				} as never,
+				entryFiscalYear: { startDate: '2026-01-01', endDate: '2026-12-31' },
+				onSuccess: vi.fn(),
+				onCancel: vi.fn()
+			}
+		});
+		expect(val('journal-entry-line-fx-rate-0')).toBe('0.95');
+		// Le même compte repris dans la liste (frappe, puis choix).
+		const input = screen.getAllByRole('textbox', { name: 'Compte' })[0];
+		await fireEvent.focus(input);
+		await fireEvent.input(input, { target: { value: '1022' } });
+		const option = screen.getAllByRole('option').find((o) => (o.textContent ?? '').includes('1022'));
+		expect(option).toBeTruthy();
+		await fireEvent.mouseDown(option!);
+		await fireEvent.blur(input);
+		await tick();
+		expect(val('journal-entry-line-fx-rate-0')).toBe('0.95');
+		expect(Number(val('journal-entry-line-fx-chf-0'))).toBe(95);
+		expect(lookup).not.toHaveBeenCalled();
+		updateMock.mockResolvedValueOnce({});
+		await fireEvent.click(screen.getByRole('button', { name: 'Valider' }));
+		await tick();
+		expect(updateMock).toHaveBeenCalledTimes(1);
+		const body = updateMock.mock.calls[0][1];
+		// La provenance relue (`afc`, cours 0.95 ≠ cours actuel 0.8846) est gardée.
+		expect(body.lines[0].foreign).toEqual({ currency: 'USD', amount: '100', rate: '0.95', rateSource: 'afc' });
+		expect(Number(body.lines[0].debit)).toBe(95);
 	});
 });
