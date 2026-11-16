@@ -3862,6 +3862,51 @@ exports, eux, ne sont jamais tronqués} : c'est le fichier produit qui vaut pré
 livres.
 \end{keshnote}
 
+\subsection{Les rapports d'une société multi-devises}\label{sec:rapports-devise}
+
+Dans une société passée en multi-devises (\S\ref{sec:multi-devises}), un compte \textbf{en devise}
+(\S\ref{sec:devise-compte}) se lit aux rapports \textbf{dans les deux devises}~: son montant en CHF,
+comme tout compte, et, à côté, le même montant \textbf{dans sa devise} --- de quoi rapprocher un
+compte PayPal ou Wise de son relevé, et contrôler la réévaluation de fin d'exercice. Un compte en CHF
+ne change pas, et une société sans compte en devise voit ses rapports \textbf{exactement comme
+avant}, exports compris.
+
+\begin{itemize}
+    \item \textbf{La devise est celle du compte.} Le solde en devise d'un compte est la somme des
+          montants en devise de ses lignes au débit, moins celle de ses lignes au crédit --- le côté
+          d'une ligne est celui de son montant en CHF ---, signée comme le CHF selon la nature du
+          compte. Il suit les \textbf{mêmes règles} que le CHF~: ouverture cumulée pour un compte de
+          bilan, depuis le début de l'exercice pour un compte de produits ou de charges, remise à
+          zéro à chaque rupture d'exercice.
+    \item \textbf{Grand livre.} L'en-tête d'un compte en devise porte sa devise~; sous chaque
+          écriture, une seconde ligne en petit donne son montant en devise, son \textbf{cours par
+          unité} et le solde progressif en devise --- «~USD 31.35 × 0.8808 · solde USD 1'233.57~».
+          L'ouverture, la clôture, les ruptures et le total des mouvements portent aussi leur montant
+          en devise. Une \textbf{réévaluation} se lit «~Réévaluation au cours 0.9312~», sans montant
+          en devise~: elle ne change que le montant en CHF. Le signal «~Solde contre nature~» reste
+          lu sur le solde en CHF.
+    \item \textbf{Balance.} Sous la ligne d'un compte en devise, une seconde ligne donne
+          l'ouverture, les mouvements débit et crédit et la clôture dans sa devise.
+    \item \textbf{Bilan et compte de résultat.} La devise et le solde en devise («~USD 1'233.57~»)
+          s'affichent à côté du nom du compte. Un compte dont le solde en CHF est nul mais dont le
+          solde en devise ne l'est pas --- après une conversion, par exemple --- \textbf{reste
+          listé}, aux quatre rapports.
+    \item \textbf{Aucun total en devise.} Les comptes d'un rapport peuvent être dans plusieurs
+          devises~: les totaux de la balance, du bilan et du compte de résultat restent en CHF. Seul
+          un compte du grand livre, qui n'a qu'une devise, a ses totaux en devise.
+    \item \textbf{Exports.} Le PDF reprend les secondes lignes et les mentions de l'écran~; au grand
+          livre, «~À reporter~» et «~Report~» portent aussi le report en devise. Le CSV ajoute, seulement
+          si le rapport contient un compte en devise, des colonnes en devise (\texttt{Devise},
+          \texttt{SoldeDevise}, \texttt{DebitDevise}, \texttt{Cours}\ldots), vides pour un compte en
+          CHF~; sinon, le fichier est identique à celui d'avant. Les montants en devise sont arrondis
+          au centime, le cours est écrit par unité (de quatre à dix décimales).
+    \item \textbf{Journal.} À l'écran, une ligne en devise porte sous elle son montant et son cours~;
+          le PDF et le CSV du journal ne changent pas.
+    \item \textbf{Restent en CHF}~: l'accueil, les rapports par projet, le rapport TVA et la balance
+          âgée --- une écriture en devise y compte pour son montant en CHF ---, ainsi que les postes
+          ouverts et le lettrage.
+\end{itemize}
+
 \subsection{Balance âgée des créances}\label{sec:balance-agee}
 
 Depuis la version \textbf{0.7}, l'onglet \emph{Rapports → Balance âgée} répartit l'\textbf{encours débiteur} --- le \textbf{reste dû} de chaque facture, TVA comprise, après ses règlements partiels et son avoir éventuel --- par \textbf{client} et par \textbf{tranche d'ancienneté}, arrêté à ce jour. C'est l'outil de pilotage du recouvrement : il montre d'un coup d'œil quelles créances vieillissent et lesquelles prioriser.

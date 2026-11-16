@@ -4,7 +4,13 @@
 	// résultat reporté : la clôture d'un compte de bilan est son solde au bilan.
 	import Big from 'big.js';
 	import { i18nMsg } from '$lib/shared/utils/i18n.svelte';
-	import { formatReportAmount, formatSwissDate, isReportEmpty, ledgerHref } from './reports.api';
+	import {
+		formatCurrencyFigure,
+		formatReportAmount,
+		formatSwissDate,
+		isReportEmpty,
+		ledgerHref,
+	} from './reports.api';
 	import type { TrialBalanceDto } from './reports.types';
 
 	interface Props {
@@ -76,6 +82,26 @@
 						<td class="px-2 py-1 text-right font-mono">{fmt(r.totalCredit)}</td>
 						<td class="px-2 py-1 text-right font-mono">{fmt(r.closingBalance)}</td>
 					</tr>
+					{#if r.currency}
+						<!-- Story 37-4 (AC-3) — seconde ligne, en devise du compte ; aucun total
+						     en devise (devises mêlées). -->
+						<tr class="text-xs text-gray-600" data-testid="tb-fx-row-{r.accountNumber}">
+							<td></td>
+							<td class="px-2 pb-1 font-mono" colspan="5"
+								>{r.currency}
+								{i18nMsg(
+									'reports-fx-trial-balance',
+									'ouverture { $opening } · débit { $debit } · crédit { $credit } · clôture { $closing }',
+									{
+										opening: formatCurrencyFigure(r.openingCurrency),
+										debit: formatCurrencyFigure(r.totalDebitCurrency),
+										credit: formatCurrencyFigure(r.totalCreditCurrency),
+										closing: formatCurrencyFigure(r.closingCurrency),
+									},
+								)}</td
+							>
+						</tr>
+					{/if}
 				{/each}
 				<tr class="italic" data-testid="tb-retained">
 					<td></td>

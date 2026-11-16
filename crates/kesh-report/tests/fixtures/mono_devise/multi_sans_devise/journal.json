@@ -1,0 +1,116 @@
+{
+  "grandTotalCredit": "2567.3500",
+  "grandTotalDebit": "2567.3500",
+  "journals": [
+    {
+      "entries": [
+        {
+          "description": "Fournitures",
+          "entryDate": "2026-05-31",
+          "entryId": 6,
+          "entryNumber": 3,
+          "lines": [
+            {
+              "accountId": 5,
+              "accountName": "Charges CI",
+              "accountNumber": "4000",
+              "credit": "0.0000",
+              "debit": "77.3500",
+              "lineOrder": 1
+            },
+            {
+              "accountId": 1,
+              "accountName": "Caisse CI",
+              "accountNumber": "1000",
+              "credit": "77.3500",
+              "debit": "0.0000",
+              "lineOrder": 2
+            }
+          ]
+        }
+      ],
+      "journal": "Achats",
+      "sectionTotalCredit": "77.3500",
+      "sectionTotalDebit": "77.3500"
+    },
+    {
+      "entries": [
+        {
+          "description": "Vente février",
+          "entryDate": "2026-02-14",
+          "entryId": 4,
+          "entryNumber": 1,
+          "lines": [
+            {
+              "accountId": 1,
+              "accountName": "Caisse CI",
+              "accountNumber": "1000",
+              "credit": "0.0000",
+              "debit": "990.0000",
+              "lineOrder": 1
+            },
+            {
+              "accountId": 4,
+              "accountName": "Ventes CI",
+              "accountNumber": "3000",
+              "credit": "990.0000",
+              "debit": "0.0000",
+              "lineOrder": 2
+            }
+          ]
+        }
+      ],
+      "journal": "Ventes",
+      "sectionTotalCredit": "990.0000",
+      "sectionTotalDebit": "990.0000"
+    },
+    {
+      "entries": [
+        {
+          "description": "Versement",
+          "entryDate": "2026-03-01",
+          "entryId": 5,
+          "entryNumber": 2,
+          "lines": [
+            {
+              "accountId": 2,
+              "accountName": "Banque CI",
+              "accountNumber": "1100",
+              "credit": "0.0000",
+              "debit": "1500.0000",
+              "lineOrder": 1
+            },
+            {
+              "accountId": 1,
+              "accountName": "Caisse CI",
+              "accountNumber": "1000",
+              "credit": "1500.0000",
+              "debit": "0.0000",
+              "lineOrder": 2
+            }
+          ]
+        }
+      ],
+      "journal": "Banque",
+      "sectionTotalCredit": "1500.0000",
+      "sectionTotalDebit": "1500.0000"
+    },
+    {
+      "entries": [],
+      "journal": "Caisse",
+      "sectionTotalCredit": "0",
+      "sectionTotalDebit": "0"
+    },
+    {
+      "entries": [],
+      "journal": "OD",
+      "sectionTotalCredit": "0",
+      "sectionTotalDebit": "0"
+    }
+  ],
+  "period": {
+    "endDate": "2026-12-31",
+    "fiscalYearId": 2,
+    "startDate": "2026-01-01"
+  }
+}

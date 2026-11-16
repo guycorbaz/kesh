@@ -265,6 +265,33 @@ export function formatReportAmount(v: string): string {
 	}
 }
 
+/**
+ * Story 37-4 (AC-5) — un montant en devise : `USD 1'233.57`. La somme exacte
+ * (quatre décimales) est arrondie à deux, l'équidistant loin de zéro (`toFixed`
+ * de big.js), comme au PDF. Un montant absent se lit 0.
+ */
+export function formatCurrencyAmount(currency: string, v: string | undefined): string {
+	return `${currency} ${formatCurrencyFigure(v)}`;
+}
+
+/**
+ * Le chiffre d'un montant en devise, sans la devise (balance, où elle est dite
+ * une fois en tête de la seconde ligne) : arrondi à deux décimales, sans
+ * « -0.00 » (revue de code P2 : la balance le contournait).
+ */
+export function formatCurrencyFigure(v: string | undefined): string {
+	let amount = v ?? '0';
+	try {
+		// Revue de code P1 : un résidu négatif sous le demi-centime (« -0.0040 »)
+		// s'arrondit à un zéro sans signe, et ne s'affiche pas « -0.00 ».
+		const r = new Big(amount).round(2, Big.roundHalfUp);
+		amount = r.eq(0) ? '0' : r.toString();
+	} catch {
+		// valeur illisible : rendue telle quelle par formatReportAmount
+	}
+	return formatReportAmount(amount);
+}
+
 // ============================================================================
 // Story 9-2a — Export PDF & CSV
 // ============================================================================

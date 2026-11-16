@@ -3194,6 +3194,13 @@ reports-ledger-no-movement-closed = Keine Bewegung in dieser Periode. Das Gesch�
 reports-ledger-empty = Keine Konten für diese Periode.
 reports-ledger-open-from-balance = Details im Hauptbuch ansehen
 reports-ledger-truncated = Es werden nur die ersten { $shown } von { $total } Zeilen angezeigt. Der Export enthält alle.
+# Story 37-4 — Fremdwährungsbeträge der Berichte (Währung des Kontos).
+reports-fx-movement = { $amount } × { $rate } · Saldo { $balance }
+reports-fx-revaluation-balance = Neubewertung zum Kurs { $rate } · Saldo { $balance }
+reports-fx-revaluation = Neubewertung zum Kurs { $rate }
+reports-fx-line = { $amount } × { $rate }
+reports-fx-totals = Soll { $debit } · Haben { $credit }
+reports-fx-trial-balance = Eröffnung { $opening } · Soll { $debit } · Haben { $credit } · Abschluss { $closing }
 reports-ledger-include-zero = Konten ohne Bewegung einschliessen
 reports-ledger-instruction = Wählen Sie einen Zeitraum und klicken Sie auf Erstellen. Das Konto ist optional.
 

@@ -124,3 +124,28 @@ describe('BalanceSheetView — fonds propres par rôle (Story 14-3c)', () => {
 		expect(container.textContent).toContain('Capital social');
 	});
 });
+
+describe('BalanceSheetView — Story 37-4, compte en devise', () => {
+	it('montre « USD 1’309.00 » à côté du nom d’un compte en devise, rien pour un compte CHF', () => {
+		const base = makeDto();
+		const usd = {
+			...base.assets[0],
+			accountId: 9,
+			accountNumber: '1020',
+			accountName: 'Banque USD',
+			balance: '1195.00',
+			currency: 'USD',
+			balanceCurrency: '1309.0000',
+		};
+		const { getByTestId, queryByTestId } = render(BalanceSheetView, {
+			dto: makeDto({ assets: [base.assets[0], usd] }),
+		});
+		expect(getByTestId('account-fx-1020').textContent).toBe('USD 1’309.00');
+		expect(queryByTestId('account-fx-1000')).toBeNull();
+	});
+
+	it('mono-devise : aucune mention en devise', () => {
+		const { container } = render(BalanceSheetView, { dto: makeDto() });
+		expect(container.innerHTML).not.toContain('account-fx-');
+	});
+});

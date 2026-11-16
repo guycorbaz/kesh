@@ -3200,6 +3200,13 @@ reports-ledger-no-movement-closed = No movement in this period. The fiscal year 
 reports-ledger-empty = No account to display for this period.
 reports-ledger-open-from-balance = See the detail in the general ledger
 reports-ledger-truncated = Only the first { $shown } of { $total } lines are shown. The export contains them all.
+# Story 37-4 — foreign-currency amounts of the reports (the account's currency).
+reports-fx-movement = { $amount } × { $rate } · balance { $balance }
+reports-fx-revaluation-balance = Revaluation at rate { $rate } · balance { $balance }
+reports-fx-revaluation = Revaluation at rate { $rate }
+reports-fx-line = { $amount } × { $rate }
+reports-fx-totals = debit { $debit } · credit { $credit }
+reports-fx-trial-balance = opening { $opening } · debit { $debit } · credit { $credit } · closing { $closing }
 reports-ledger-include-zero = Include accounts with no movement
 reports-ledger-instruction = Pick a period, then click Generate. The account is optional.
 

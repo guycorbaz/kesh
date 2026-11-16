@@ -1035,7 +1035,16 @@ const ATTENDU = {
 	// (86 → 89 : la carte « Cours de change ») — 39 + 32 + 6 + 6 + 5 + 3 = 91. Que des littéraux.
 	// Revue de code P2 (37-2-CR-P2-4) : **3184 → 3185**, relevé par la garde : la légende du
 	// groupe de choix de `CorrectionDialog.svelte` (6 → 7 sites).
-	sitesTotal: 3185,
+	// Story 37-4 (AC-6) : **3184 → 3190** sur sa branche (partie de 946aa86a), relevé par la garde
+	// (`expected 3190 to be 3184`) et ventilé au code : 3 sites dans
+	// `features/reports/GeneralLedgerView.svelte` (`reports-fx-revaluation-balance`,
+	// `reports-fx-movement`, `reports-fx-totals`), 1 dans `TrialBalanceView.svelte`
+	// (`reports-fx-trial-balance`), 2 dans `JournalReportView.svelte` (`reports-fx-revaluation`,
+	// `reports-fx-line`) — 6 littéraux. Fusion de `epic/37-multi-devises` (37-2 terminée,
+	// 65b3877f) dans la branche de la 37-4 : **3191**, relevé par la garde après la fusion
+	// (non additionné). Fusion de la 37-3a jusqu'à `e89291e6` : **3191**, relevé de nouveau par la
+	// garde (Dev Agent Record de la 37-4) ; à recompter à chaque reprise suivante.
+	sitesTotal: 3191,
 	sitesNonResolus: 31,
 	relais: 6,
 	// Story 26-1 (#620, AC3-bis) : **10 → 11** — `lib/features/bank-import/
