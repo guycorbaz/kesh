@@ -93,7 +93,8 @@ export interface RateLookupCache {
 	/**
 	 * Le cours retenu par la société pour `currency` à `date` (le mois de la date
 	 * pour le genre `month`). Mémoïsé ; le repli du `POST /fetch` n'est tenté
-	 * qu'une fois par entrée.
+	 * qu'une fois par entrée. Un échec passager (réseau, 408, 429, 5xx) n'est
+	 * mémoïsé que {@link TRANSIENT_RETRY_MS} : la lecture suivante le réessaie.
 	 */
 	get(currency: string, date: string, kind?: RateKind): Promise<LookupResult>;
 	/**
