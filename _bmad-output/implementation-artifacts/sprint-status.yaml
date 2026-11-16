@@ -1107,5 +1107,5 @@ development_status:
   37-3-ecritures-en-devise: split  # 2026-11-14, à la rédaction : 37-3a (serveur) et 37-3b (écrans)
   37-3a-ecritures-en-devise-modele: review  # 2026-11-16 développée (worktree kesh-s37-3a, branche partie de story/37-2-cours-mensuels-afc ; dernier commit de code f9c5567b) ; validée ; revalidée après CR-1 à CR-7 (revues de Beat et de Guy), 2026-11-16
   37-3b-ecritures-en-devise-ecrans: ready-for-dev  # validée ; revalidée après CR-1 à CR-7 (revues de Beat et de Guy), 2026-11-16
-  37-4-rapports-en-devise: in-progress  # 2026-11-16 en développement (worktree kesh-s37-4, parti de 946aa86a) ; validée ; revalidée après CR-1 à CR-7 (revues de Beat et de Guy), 2026-11-16
+  37-4-rapports-en-devise: review  # 2026-11-16 développée (worktree kesh-s37-4, parti de 946aa86a, fusions de epic/37 et de la 37-3a ; dernier commit de code 5680f714 ; nextest 5752/5752, Vitest 3907, E2E 432 passés / 10 échecs dont 7 KF-029) ; validée ; revalidée après CR-1 à CR-7 (revues de Beat et de Guy), 2026-11-16
   37-5-reevaluation-fin-exercice: ready-for-dev  # validée ; revalidée après CR-1 à CR-7 (revues de Beat et de Guy), 2026-11-16

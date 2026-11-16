@@ -1,6 +1,6 @@
 # Story 37-4 : rapports dans les deux devises
 
-Status: in-progress
+Status: review
 
 *Fiche rédigée le 2026-11-14 (Opus 5.5), branche `epic/37-multi-devises`. Epic 37, D2, C-37-3. Suit 37-3a.
 **Aucune migration attendue** (colonnes de 37-1 et 37-3a ; aucun index nécessaire : les sommes passent par
@@ -227,10 +227,10 @@ exports, afin de rapprocher mes comptes PayPal ou Wise de leurs relevés et de c
 
 ## Tâches
 
-- [ ] `kesh-report` : paire en devise, `Cumul`, quatre générateurs + journal ; PDF, CSV, `format_exchange_rate`.
-- [ ] `kesh-db` : `repositories/account_balances.rs`, `balances_as_of` (AC-1 quater) et ses tests (borne inclusive,
+- [x] `kesh-report` : paire en devise, `Cumul`, quatre générateurs + journal ; PDF, CSV, `format_exchange_rate`.
+- [x] `kesh-db` : `repositories/account_balances.rs`, `balances_as_of` (AC-1 quater) et ses tests (borne inclusive,
       compte sans ligne, `None`/`Some`, dans une transaction).
-- [ ] Sites de construction à revoir (échec de compilation), relevés le 2026-11-14 : `AccountBalance` —
+- [x] Sites de construction à revoir (échec de compilation), relevés le 2026-11-14 : `AccountBalance` —
       `balance_sheet.rs:376` (test), `csv.rs` (7 : :846, :928, :937, :946, :1054, :1065, :1074), `pdf.rs` (7 : :1787,
       :1800, :1826, :1839, :2000, :2298, :2307), `benches/export.rs:45` ; `TrialBalanceRow` — `trial_balance.rs:213`,
       `:284`, `csv.rs:1213`, `pdf.rs:1861`, `benches/export.rs:102` ; `LedgerLine`/`LedgerSection` — AC-2 ; `FiscalYearBreak` (gagne `closingBalanceCurrency`, AC-1 bis) —
@@ -242,15 +242,15 @@ exports, afin de rapprocher mes comptes PayPal ou Wise de leurs relevés et de c
       à étendre (sans échec de compilation) : `mcp/outils/rapports.rs:142` (`fn ligne`, `LigneDeSolde`), la
       construction de `LigneBalance` (`mcp/outils/rapports.rs:219`) et la correspondance du grand livre de
       `mcp/outils/grand_livre.rs` (`fn section`, :148) ; **aucune** extension de `sortie!` (champs en devise présents à `null`, AC-6, C-37-9) : les champs neufs des sorties MCP sont des `Option<…>` de types admis.
-- [ ] `services/rapports.rs`, routes, MCP (limites).
-- [ ] CR-6 (V13, AC-7) : test `mcp_outils_e2e.rs` — `kesh_postes_ouverts` sur un compte de débiteurs USD lettrable
+- [x] `services/rapports.rs`, routes, MCP (limites).
+- [x] CR-6 (V13, AC-7) : test `mcp_outils_e2e.rs` — `kesh_postes_ouverts` sur un compte de débiteurs USD lettrable
       (lignes en devise) rend `solde`, `total_ouvert` et les `debit`/`credit` des postes au CHF des lignes, sans champ
       en devise (`reste_du` à `null` : aucune facture en devise) ; site inscrit à l'inventaire « CHF seulement » du
       Change Log du développement.
-- [ ] Frontend : cinq vues, types ; Vitest — `IncomeStatementView.test.ts` et `JournalReportView.test.ts` **n'existent
+- [x] Frontend : cinq vues, types ; Vitest — `IncomeStatementView.test.ts` et `JournalReportView.test.ts` **n'existent
       pas** (relevé du 2026-11-14) : à créer, avec le cas « mono-devise : rien de visible ne change » (AC-6) ; E2E
       (grand livre d'un compte USD).
-- [ ] Manuel (`.tex` seulement), section *Note de version* de la fiche (pas d'écriture au `CHANGELOG.md`).
+- [x] Manuel (`.tex` seulement), section *Note de version* de la fiche (pas d'écriture au `CHANGELOG.md`).
 
 ## Note de version
 
@@ -342,3 +342,109 @@ exports, afin de rapprocher mes comptes PayPal ou Wise de leurs relevés et de c
 - 2026-11-15 — validation ciblée P2 des exigences (Sonnet) : 0 CRITICAL, 0 HIGH, 0 MEDIUM, 2 LOW, remédiés dans la section Exigences, sans exigence ajoutée (7 FR, 7 NFR). LOW 37-4-B26-P2-1 : FR-37-4-5 sans la disposition du PDF de l'AC-5 (seconde ligne en petit du grand livre et de la balance, report en devise, devise entre nom et solde au bilan et au compte de résultat, aucune ligne de total) — ajoutée. LOW -B26-P2-2 : NFR-37-4-6 sans `balances_as_of` dans une transaction ni contrôle `grep` de T3 (AC-8) — ajoutés. Les 14 exigences relues contre l'AC entier cité : justes, aucune ne contredit un AC ni n'invente. Axes exercés : vérité de chaque exigence (AC-1 à AC-9 lus en entier), points majeurs sans exigence (contrat d'API, gardes, MCP, bornes), non-reprise de l'erreur MEDIUM de P1 (journal PDF/CSV inchangés, totaux de section), récapitulatif de l'epic. Non exercés : les AC eux-mêmes, le code.
 - 2026-11-16 — validation CR-7 P1 (Sonnet) : 0 CRITICAL, 0 HIGH, 0 MEDIUM, 0 LOW ; fiche non modifiée. Grep des résidus du mode par exercice (`currency-mode`, `force`, `MULTI_CURRENCY_IN_USE`, `FISCAL_YEAR_HAS_FOREIGN_BALANCES`, `FISCAL_YEAR_FOREIGN_ACCOUNTS_ACTIVE`, `laterFiscalYear`, `monoCurrencyFiscalYear`, désactivation, archivage forcé) : aucun. Les « mono-devise » de la fiche (NFR-2, AC-5, AC-6, non-régression) visent une société sans compte en devise, juste sous CR-7 ; la devise gouvernée par `a.currency` et le verrou de 37-1 AC-4 restent exacts ; aucun verrou de `companies` n'y est invoqué (D-CR7-1 sans effet). Axes exercés : résidus, contradiction avec 37-1 (A34, `multiCurrency` des exercices), 37-3a et 37-5, tests. Non exercés : code.
 - 2026-11-16 — alignement sur les règles de travail à plusieurs (Sonnet) : PDF du manuel non commité, `.tex` seulement (2 remplacements) ; CHANGELOG remplacé par la section *Note de version* (1 remplacement, section ajoutée) ; compteurs « recomptés depuis la source après chaque reprise de `main` » (1 ajout, plus la Note de version). Fond des AC inchangé.
+- 2026-11-16 — **étape 0 du développement** (orchestrateur, relevé `/home/beat/claude/kesh-gate-logs/etape0/37-4.md`,
+  contre `6e0638e6`, 37-1 + 37-2) reportée ici : ≈ 95 prémisses relues, les lignes de `kesh-report` citées par la fiche
+  presque toutes exactes. Écarts qui changeaient le travail : colonnes de ligne en devise absentes à 37-2 (« attend
+  37-3a ») ; `accounts.currency` lu par aucune requête à étendre (`RawAccount` `general_ledger.rs:250`, `select_accounts`
+  `:359`, `SELECT` du journal) ; lignes qui ont bougé — `sortie.rs:463` → `:493`, table `mesurees` `:181-200`,
+  `Montant` `:218`, `Code<E>` `:269`, `homepage_summary.rs` sommes `:261-263`/`:304`, `require_viewable_account`
+  `open_items.rs:295`, sites d'équilibre `kesh-db/.../journal_entries.rs:529`/`:930`/`:1689`, solde bancaire
+  `kesh-db/src/repositories/bank_accounts.rs:1871-1905` (non `routes/`), commentaires `routes/bank_accounts.rs:245`/`:899`.
+  Prémisses « attend 37-3a » recontrôlées au développement contre `946aa86a` : `journal_entry_lines.amount_currency`,
+  `exchange_rate`, `rate_source` et `chk_jel_fx_*` présents (migration `20261114000003`), aucune colonne de devise sur
+  la ligne ; `NewJournalEntryLine.foreign` (`entities/journal_entry.rs`), source `revaluation` posée par le dépôt
+  (`journal_entry_fx.rs:169`, `:219`) ; `chk_jel_fx_amount` admet `revaluation` à 0 ; `JournalEntryLine::foreign()`
+  rend `None` sur un compte sans devise. Exact ; aucun écart à la fiche.
+- 2026-11-16 — **développement** (worktree `kesh-s37-4`, branche partie de `946aa86a`). Fixtures mono-devise enregistrées
+  au commit de base avant toute modification (`88955a09`) ; implémentation `5f469154`, `38d2d3ed`, `494a6e9d`, `5680f714`.
+  **Fusions** (sur instruction de l'orchestrateur) : `epic/37-multi-devises` (37-2 terminée, `65b3877f`) → `3d5b185d`,
+  conflit unique sur `sitesTotal` de `i18n-keys.test.ts`, les deux intentions gardées, **3191 relevé par la garde**
+  après la fusion (3185 de la revue de 37-2 + 6 de la 37-4), non additionné ; gate ciblé `-p kesh-db -p kesh-report`
+  1908/1908, Vitest `reports`, `exchange-rates`, `shared` 602/602. Puis `story/37-3a-ecritures-en-devise-modele`
+  jusqu'à `e89291e6` → merge sans conflit ; `sitesTotal` relevé de nouveau par la garde : 3191 ; migrations 94 = lignes
+  du tableau d'audit 94 (aucune migration de la 37-4). Contrôle T3 (AC-8) :
+  `grep -rnE "\b(jel|l)\.currency\b" crates/ --include=*.rs --include=*.sql` → **vide** (des variables Rust `l`
+  nommées comme l'alias de ligne ont été renommées pour que le contrôle reste littéral). Inventaire AC-7 « CHF
+  seulement » : aucun site neuf ; l'outil MCP `kesh_postes_ouverts` testé en CHF sur un compte de débiteurs USD (CR-6).
+  Bornes MCP re-mesurées (AC-6) : `kesh_grand_livre` 30 / 15 → **26 / 14**, `kesh_balance` 55 / 30 → **42 / 23**
+  (champs présents à `null` en CHF et remplis en devise, `tailles_mesurees` et `tailles_mesurees_en_devise`) ; bilan de
+  57 comptes en devise : 20 156 o, seuil « environ 60 » conservé. Choix au registre `e37-choix-autonomes-37-4.md`
+  (C-37-4-1 à C-37-4-9).
+
+## Dev Agent Record
+
+### Agent Model Used
+
+Opus 5.5 (agent de développement), 2026-11-16.
+
+### Completion Notes
+
+- **AC-1 à AC-1 quater** : `kesh_db::repositories::account_balances` — `somme_en_devise(alias, côté, condition)`
+  (fragment unique, sans condition de devise sur la ligne, `COALESCE`) et `balances_as_of` (borne inclusive, tous
+  exercices, `None` = comptes en devise de la société, `Some(ids)` bornés à la société, `Some(&[])` sans requête,
+  lecture dans la connexion fournie, sens débit brut). Ouvertures par `opening_from` sur la paire en devise ;
+  solde progressif en devise dans le même `Cumul` (ruptures, lignes sautées par `offset`) ; clôture en devise d'un
+  compte de résultat = exercice final (#778) ; inclusion CHF **ou** devise (grand livre, balance, bilan, résultat).
+  Signe en SQL au bilan et au résultat par `sign_exprs` partagée, `NULL` pour un compte CHF.
+- **AC-2 à AC-4** : champs en devise des structs (`skip_serializing_if`), devise lue sur le compte ; réévaluation à 0
+  des deux côtés au JSON, « Réévaluation au cours X » à l'écran, au PDF et au CSV ; `unnatural_balance` en CHF ; aucun
+  total en devise hors section du grand livre.
+- **AC-5** : CSV à colonnes en devise seulement si le rapport contient un compte en devise (C-37-4-1), montants
+  arrondis explicitement (`round_for_display`), cours par `format_exchange_rate` ; PDF : seconde ligne en petit (grand
+  livre, balance), report en devise sur « À reporter » / « Report », devise et solde au bilan et au résultat.
+- **AC-6** : JSON identique hors compte en devise (fixtures du commit de base, octet pour octet) ; cinq vues,
+  composant `AccountCurrencyBalance` partagé, six clés i18n `reports-fx-*` dans les quatre locales ; MCP : champs
+  présents à `null`, bornes re-mesurées.
+- **AC-7** : journal étendu au JSON et à l'écran seulement (fixtures PDF et CSV du journal inchangées) ; accueil,
+  projets, TVA (impôt préalable) et balance âgée testés en CHF ; `kesh_postes_ouverts` en CHF (CR-6).
+- **AC-8** : jeu à deux exercices calculé à la main (bilan, résultat, passif, archivé, réévaluation, conversion),
+  concordance des quatre rapports en devise, `offset > 0`, T3 (paire `afc` + `manual`, ligne SQL sur un compte CHF
+  invisible des cinq rapports), contenus CSV et PDF, PDF multi-pages.
+- **AC-9** : manuel utilisateur (§ *Les rapports d'une société multi-devises*) et tableau des outils MCP du manuel
+  d'administration ; `.tex` seulement.
+- **Écart de procédure** : la base `946aa86a` ne compilait pas `kesh-api` ; le MCP a été écrit puis compilé après la
+  fusion de la 37-3a demandée par l'orchestrateur.
+
+### Tests ajoutés (recomptés depuis la source, de `946aa86a` à la tête)
+
+- Rust : `kesh-db/tests/account_balances.rs` 5 (+1 doctest de `somme_en_devise`) ; `kesh-report/tests/
+  rapports_mono_devise.rs` 2, `rapports_en_devise.rs` 9, `rapports_chf_seulement.rs` 4 ; `kesh-report/src/pdf.rs`
+  35 → 39 ; `trial_balance.rs` 3 → 4 ; `kesh-api/tests/mcp_outils_e2e.rs` 30 (pointe de la 37-3a) → 33. Total 28.
+- Vitest : `GeneralLedgerView` 18 → 21, `TrialBalanceView` 6 → 8, `BalanceSheetView` 4 → 6, `IncomeStatementView` 4
+  (neuf), `JournalReportView` 3 (neuf). Total 14.
+- E2E : `reports-currency.spec.ts`, 1 (neuf).
+
+### Gates réellement exécutés (journaux `/home/beat/claude/kesh-gate-logs/s37-4/`)
+
+- Au dernier commit de code `5680f714` : `scripts/test-fast.sh --ci` (fmt, clippy `-D warnings`, nextest profil `ci`
+  sur `kesh_s37_4`) — **5752 passés, 13 ignorés** (`gate-backend-1.log`) ; frontend `npm run check` 0 erreur (29
+  avertissements, aucun dans un fichier touché), `lint-i18n-ownership` PASS, `npm run test:unit` **3907 / 252
+  fichiers** (`front-test-unit.log`), `npm run build` vert (`front-build.log`).
+- E2E complet au même commit (`LANG=fr_CH.UTF-8`, port 3374, base `kesh_e2e_s37_4`, recette de `docs/testing.md`) :
+  **432 passés, 10 échecs, 18 ignorés** (`e2e-1.log`, 44,7 min). Les dix, fichier par fichier : les sept de la KF-029
+  (`mode-expert.spec.ts:26`, `:41` ; `onboarding-path-b.spec.ts:65`, `:92` ; `onboarding.spec.ts:57`, `:77`, `:150`) ;
+  `backup-restore-new-install.spec.ts:262` et `:381`, rouges aussi aux E2E finals de la 37-2 (`s37-2/final2/e2e.log`)
+  et de la 37-3a (`s37-3a/e2e-run.log`) sans rapport avec les rapports ; `opening-balances.spec.ts:156`, rejouée seule
+  (`e2e-rejeu.log`, avec `reports.spec.ts` et `reports-currency.spec.ts` : 17 passés, elle seule rouge, délai du clic),
+  déjà relevée par la 37-1 (toast d'ouverture qui recouvre le bouton, `issues-a-ouvrir-epic-37.md` n° 4). La spec neuve
+  `reports-currency.spec.ts` passe aux deux exécutions.
+- Captures (thème clair) prises par la spec E2E : `captures/37-4-grand-livre-usd.png`, `37-4-balance-usd.png`,
+  `37-4-bilan-usd.png`. Le compte de résultat et le journal en devise ne sont couverts que par Vitest (pas de capture).
+
+### File List
+
+- `crates/kesh-db/src/repositories/account_balances.rs` (neuf), `crates/kesh-db/src/repositories/mod.rs`,
+  `crates/kesh-db/tests/account_balances.rs` (neuf)
+- `crates/kesh-report/src/{general_ledger,trial_balance,balance_sheet,income_statement,journal_report,csv,pdf}.rs`,
+  `crates/kesh-report/benches/export.rs`
+- `crates/kesh-report/tests/{rapports_mono_devise,rapports_en_devise,rapports_chf_seulement}.rs` (neufs),
+  `crates/kesh-report/tests/fixtures/mono_devise/{chf,multi_sans_devise}/*` (30 fichiers, neufs)
+- `crates/kesh-api/src/mcp/outils/{grand_livre,rapports}.rs`, `crates/kesh-api/tests/mcp_outils_e2e.rs`,
+  `crates/kesh-api/tests/common/mcp_pieges.rs`
+- `crates/kesh-i18n/locales/{fr-CH,de-CH,it-CH,en-CH}/messages.ftl`
+- `frontend/src/lib/features/reports/{GeneralLedgerView,TrialBalanceView,BalanceSheetView,IncomeStatementView,
+  JournalReportView}.svelte`, `AccountCurrencyBalance.svelte` (neuf), `reports.api.ts`, `reports.types.ts`, tests
+  `*.test.ts` (dont deux neufs), `frontend/src/lib/shared/i18n-keys.test.ts`,
+  `frontend/tests/e2e/reports-currency.spec.ts` (neuf)
+- `docs/manual/fr/user-manual.tex`, `docs/manual/fr/admin-manual.tex`
+- `_bmad-output/implementation-artifacts/e37-choix-autonomes-37-4.md` (neuf), `sprint-status.yaml`, cette fiche
