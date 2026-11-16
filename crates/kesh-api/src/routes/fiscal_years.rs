@@ -251,8 +251,9 @@ pub async fn get_fiscal_year(
 }
 
 /// `GET /api/v1/fiscal-years/{id}/closing-checks` — les contrôles préalables à
-/// la clôture de l'exercice (Story 29-1a, #232) : sept contrôles en lecture
-/// seule, dans l'ordre de `closing_checks` — tout rôle, clés d'API comprises.
+/// la clôture de l'exercice (Story 29-1a, #232) : neuf contrôles en lecture
+/// seule (K8, Story v017-4a ; K9, Story 37-5), dans l'ordre de
+/// `closing_checks` — tout rôle, clés d'API comprises.
 ///
 /// Toutes les lectures passent par **un** instantané
 /// ([`kesh_db::snapshot::ReadSnapshot`]) : elles voient la base au même

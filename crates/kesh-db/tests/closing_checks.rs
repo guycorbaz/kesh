@@ -280,7 +280,8 @@ async fn t0_un_verrou_dans_l_instantane_est_refuse_par_le_serveur(pool: MySqlPoo
 /// T-a1 (AC1) — sept codes, dans l'ordre de la fiche, sévérités comprises ;
 /// sur une société vierge, tout est `ok` sauf K7 (aucun exercice suivant).
 /// *Story v017-4a (#849, AC-16) : huit codes — K8 en dernier, les sept premiers
-/// à leur rang ; le nom du test est gardé.*
+/// à leur rang ; le nom du test est gardé. Story 37-5 : neuf codes — K9 en
+/// dernier, bloquant.*
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn t_a1_les_sept_controles_dans_l_ordre(pool: MySqlPool) {
     let seeded = company(&pool).await;

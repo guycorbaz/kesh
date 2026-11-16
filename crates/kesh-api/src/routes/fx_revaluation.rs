@@ -247,6 +247,9 @@ pub struct PreviewRate {
     pub rate_kind: Option<RevaluationRateKind>,
     /// Date du cours par défaut (jour, ou 1er du mois) ; `null` sans défaut.
     pub rate_date: Option<NaiveDate>,
+    /// Genre du cours par défaut (`day` ou `month`) — d'après lequel l'écran
+    /// distingue un repli d'un choix ; `null` sans défaut.
+    pub default_kind: Option<RateKind>,
     /// Le cours retenu par la société de la résolution par défaut.
     pub default_rate: Option<Decimal>,
     /// Sa source, valeur brute (`afc`, `manual` ou autre).
@@ -461,6 +464,7 @@ pub async fn preview_revaluation(
                 rate: retained.as_ref().map(|r| r.rate),
                 rate_kind: retained.as_ref().map(|r| r.kind),
                 rate_date: default.map(|d| d.rate_date),
+                default_kind: default.map(|d| d.kind),
                 default_rate: default.map(|d| d.rate),
                 default_source: default.map(|d| d.source.as_str().to_string()),
                 overridden: retained

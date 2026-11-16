@@ -24,8 +24,10 @@ const CODES = [
 	'IMPORTED_SUPPLIER_INVOICES_TO_COMPLETE',
 	'INCONSISTENT_ENTRIES',
 	'NEXT_FISCAL_YEAR',
-	// Story v017-4b (AC-26) — K8, en dernier.
-	'DRAFT_SUPPLIER_INVOICES'
+	// Story v017-4b (AC-26) — K8.
+	'DRAFT_SUPPLIER_INVOICES',
+	// Story 37-5 (AC-9) — K9, en dernier.
+	'FOREIGN_ACCOUNTS_NOT_REVALUED'
 ];
 
 describe('FiscalYearChecks — les trois états', () => {
@@ -45,7 +47,7 @@ describe('FiscalYearChecks — les trois états', () => {
 		expect(screen.queryByTestId('fiscal-year-checks-list')).toBeNull();
 	});
 
-	it('une réponse : huit lignes, dans l’ordre du serveur', () => {
+	it('une réponse : neuf lignes, dans l’ordre du serveur', () => {
 		render(FiscalYearChecks, { loadState: 'ready', checks: closingChecks() });
 		const rows = screen
 			.getByTestId('fiscal-year-checks-list')
@@ -53,7 +55,8 @@ describe('FiscalYearChecks — les trois états', () => {
 		expect([...rows].map((r) => r.getAttribute('data-testid')?.replace('fiscal-year-checks-row-', ''))).toEqual(
 			CODES
 		);
-		expect(screen.getAllByText('Rien à signaler')).toHaveLength(7);
+		// K9 `ok` compris (37-5-CR8-P2-4) : la ligne reste, « Rien à signaler ».
+		expect(screen.getAllByText('Rien à signaler')).toHaveLength(8);
 		expect(screen.getByTestId('fiscal-year-checks-status-NEXT_FISCAL_YEAR').textContent).toMatch(
 			/« Exercice 2027 » suit cet exercice/
 		);
