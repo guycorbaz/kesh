@@ -22,7 +22,7 @@ use serde::{Deserialize, Serialize};
 
 use kesh_core::accounting::{
     self, ForeignAmount, Journal as CoreJournal, JournalEntryDraft, JournalEntryLineDraft,
-    RateFromChfError, RateProvenance, fx_chf, rate_from_chf,
+    RateFromChfError, RateProvenance, check_foreign_line, fx_chf, fx_line_error, rate_from_chf,
 };
 use kesh_core::errors::CoreError;
 use kesh_core::listing::{SortBy, SortDirection};
@@ -602,6 +602,27 @@ fn prepare_new_journal_entry(
     description: &str,
     lines: &[CreateJournalEntryLineRequest],
 ) -> Result<NewJournalEntry, AppError> {
+    let draft = parse_entry_body(entry_date, journal, description, lines)?;
+    // Garde-fou #1 : validation métier pure (kesh-core).
+    // P4 : on récupère le BalancedEntry validé et on l'utilise pour
+    // construire le NewJournalEntry, éliminant la duplication fragile
+    // entre line_drafts et line_decimals (ex-security theater).
+    let balanced = accounting::validate(draft).map_err(map_core_error)?;
+    Ok(draft_to_new_entry(company_id, balanced.into_draft()))
+}
+
+/// Partie de [`prepare_new_journal_entry`] **sans** `accounting::validate`
+/// (Story 37-3b, AC-2 bis — extraite, partagée par la route de conversion, qui
+/// ne valide l'équilibre qu'une fois l'écriture à compléter identifiée sous
+/// verrou) : trim et longueur du libellé, borne de lignes du corps reçu, parse
+/// des montants et analyse de `foreign` (37-3a AC-6), dans cet ordre. Ne lit
+/// pas la base.
+fn parse_entry_body(
+    entry_date: NaiveDate,
+    journal: CoreJournal,
+    description: &str,
+    lines: &[CreateJournalEntryLineRequest],
+) -> Result<JournalEntryDraft, AppError> {
     // P5 : trim du libellé dès l'entrée — unique source de vérité.
     let trimmed_description = description.trim().to_string();
 
@@ -638,22 +659,19 @@ fn prepare_new_journal_entry(
         });
     }
 
-    // Garde-fou #1 : validation métier pure (kesh-core).
-    let draft = JournalEntryDraft {
+    Ok(JournalEntryDraft {
         date: entry_date,
         journal,
         description: trimmed_description,
         lines: line_drafts,
-    };
-    // P4 : on récupère le BalancedEntry validé et on l'utilise pour
-    // construire le NewJournalEntry, éliminant la duplication fragile
-    // entre line_drafts et line_decimals (ex-security theater).
-    let balanced = accounting::validate(draft).map_err(map_core_error)?;
-    let validated = balanced.into_draft();
+    })
+}
 
-    // Construction du NewJournalEntry pour kesh-db depuis les données
-    // garanties équilibrées par `validate()`.
-    Ok(NewJournalEntry {
+/// Le `NewJournalEntry` de `kesh-db` d'un brouillon analysé (validé par
+/// `accounting::validate` au `POST`/`PUT` ; à valider sous verrou par la
+/// conversion).
+fn draft_to_new_entry(company_id: i64, validated: JournalEntryDraft) -> NewJournalEntry {
+    NewJournalEntry {
         company_id,
         entry_date: validated.date,
         journal: DbJournal::from(validated.journal),
@@ -674,7 +692,7 @@ fn prepare_new_journal_entry(
                 foreign: l.foreign,
             })
             .collect(),
-    })
+    }
 }
 
 /// Analyse un décimal du corps d'une ligne (refus 400 `Validation`).
@@ -900,6 +918,195 @@ pub async fn create_journal_entry(
         StatusCode::CREATED,
         Json(JournalEntryResponse::from(result)),
     ))
+}
+
+/// Corps de `POST /api/v1/journal-entries/conversions` (Story 37-3b, AC-2 bis).
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CreateConversionRequest {
+    /// Les deux écritures de la conversion, chacune au format de
+    /// `POST /journal-entries` ; une autre longueur rend 400.
+    pub entries: Vec<CreateJournalEntryRequest>,
+    /// Demande au serveur de calculer la ligne de différence de change de
+    /// l'écriture à compléter (A31) ; absent = `false`. Un champ non booléen
+    /// rend 400 (extracteur).
+    #[serde(default)]
+    pub complete_difference: bool,
+}
+
+crate::extractors::impl_validation_extractor!(
+    ConversionBody,
+    CreateConversionRequest,
+    "entries (deux écritures), completeDifference (booléen)"
+);
+
+/// Réponse 201 de la conversion : les deux écritures créées, dans l'ordre du
+/// corps.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ConversionResponse {
+    pub entries: Vec<JournalEntryResponse>,
+}
+
+/// Le refus d'une conversion en `AppError`, l'écriture visée en
+/// [`AppError::ConversionEntry`]. Un interblocage reste un
+/// `AppError::Database` nu : l'enveloppe de rejeu doit le reconnaître.
+fn conversion_error(
+    e: kesh_db::repositories::journal_entry_conversions::ConversionError,
+) -> AppError {
+    use kesh_db::repositories::journal_entry_conversions::ConversionErrorKind as K;
+    let err = match e.kind {
+        K::Db(d) if kesh_db::retry::is_deadlock_error(&d) => return AppError::Database(d),
+        K::Db(d) => AppError::from(d),
+        K::Core(c) => map_core_error(c),
+        K::TransitUnbalanced { entry1, entry2 } => AppError::FxConversionTransitUnbalanced {
+            entry1: entry1.to_string(),
+            entry2: entry2.to_string(),
+        },
+        K::Validation { reason, line } => AppError::ValidationAtLine {
+            message: crate::errors::conversion_validation_message(&reason),
+            line,
+        },
+        K::NoFiscalYear(date) => AppError::NoFiscalYear {
+            date: date.to_string(),
+        },
+        K::FiscalYearClosed(date) => AppError::FiscalYearClosed {
+            date: date.to_string(),
+        },
+    };
+    match e.entry {
+        Some(entry) => AppError::ConversionEntry {
+            entry,
+            error: Box::new(err),
+        },
+        None => err,
+    }
+}
+
+/// La réponse d'un refus de la conversion : celle de l'erreur, à laquelle un
+/// refus qui vise une écriture ajoute `details.entry` (1 ou 2, rang dans le
+/// corps) — **mécanisme commun** à tous les refus d'une écriture : un refus
+/// sans `details` en reçoit (`{ "entry": n }`), un refus qui en porte les garde
+/// et y ajoute `entry`. Le corps produit par l'erreur est relu, complété et
+/// réécrit ; statut et en-têtes sont gardés (hors `Content-Length`).
+async fn conversion_refusal(err: AppError) -> axum::response::Response {
+    use axum::response::IntoResponse;
+    let AppError::ConversionEntry { entry, error } = err else {
+        return err.into_response();
+    };
+    let (mut parts, body) = error.into_response().into_parts();
+    let bytes = match axum::body::to_bytes(body, 1 << 20).await {
+        Ok(b) => b,
+        Err(_) => {
+            return AppError::Internal("corps d'un refus de conversion illisible".into())
+                .into_response();
+        }
+    };
+    let mut value: serde_json::Value = match serde_json::from_slice(&bytes) {
+        Ok(v) => v,
+        Err(_) => {
+            return axum::response::Response::from_parts(parts, axum::body::Body::from(bytes));
+        }
+    };
+    if let Some(error) = value.get_mut("error").and_then(|e| e.as_object_mut()) {
+        let details = error
+            .entry("details")
+            .or_insert_with(|| serde_json::json!({}));
+        if !details.is_object() {
+            *details = serde_json::json!({});
+        }
+        if let Some(map) = details.as_object_mut() {
+            map.insert("entry".into(), serde_json::json!(entry));
+        }
+    }
+    parts.headers.remove(axum::http::header::CONTENT_LENGTH);
+    let body = serde_json::to_vec(&value).unwrap_or_else(|_| bytes.to_vec());
+    axum::response::Response::from_parts(parts, axum::body::Body::from(body))
+}
+
+/// POST /api/v1/journal-entries/conversions — passe une conversion entre deux
+/// devises par le compte de conversion (Story 37-3b, AC-2 bis, R7) : **deux
+/// écritures dans une transaction**, tout ou rien, chacune soumise à tous les
+/// contrôles de `POST /journal-entries`.
+///
+/// Refus, une seule raison, dans l'ordre : `entries` de longueur ≠ 2 (400) ;
+/// puis, **avant la transaction**, écriture par écriture dans l'ordre du corps
+/// (`details.entry`) : date, libellé, nombre de lignes, analyse de `foreign`
+/// (37-3a AC-6) et contrôle FX par ligne (37-3a AC-3) — sans
+/// `accounting::validate`, qui attend l'identification de l'écriture à
+/// compléter ; puis, sous verrou, l'ordre de
+/// [`kesh_db::repositories::journal_entry_conversions::create_conversion`].
+/// La ligne de différence n'est calculée que sur `completeDifference: true`
+/// (A31). Réponse 201 `{ entries }` dans l'ordre du corps ; audit
+/// `journal_entry.created` ×2.
+///
+/// ⚠️ **Rejouée sur interblocage** (enveloppe `retry_app_on_deadlock`) : la
+/// transaction est rejouée entière ; voir l'en-tête du module du dépôt pour
+/// les cycles de verrous.
+pub async fn create_conversion(
+    State(state): State<AppState>,
+    Extension(current_user): Extension<CurrentUser>,
+    ConversionBody(req): ConversionBody,
+) -> axum::response::Response {
+    use axum::response::IntoResponse;
+    let result: Result<ConversionResponse, AppError> = async {
+        if req.entries.len() != 2 {
+            return Err(AppError::Validation(
+                "une conversion porte exactement deux écritures (entries)".into(),
+            ));
+        }
+        let company = get_company_for(&current_user, &state.pool).await?;
+        let mut news: Vec<NewJournalEntry> = Vec::with_capacity(2);
+        for (idx, e) in req.entries.iter().enumerate() {
+            let tag = |error: AppError| AppError::ConversionEntry {
+                entry: idx + 1,
+                error: Box::new(error),
+            };
+            borner(e.entry_date, "entryDate").map_err(tag)?;
+            let draft =
+                parse_entry_body(e.entry_date, e.journal, &e.description, &e.lines).map_err(tag)?;
+            for (k, l) in draft.lines.iter().enumerate() {
+                if let Some(f) = &l.foreign {
+                    check_foreign_line(&l.debit.amount(), &l.credit.amount(), f)
+                        .map_err(|x| tag(map_core_error(fx_line_error(k + 1, x))))?;
+                }
+            }
+            news.push(draft_to_new_entry(company.id, draft));
+        }
+        let entries: [NewJournalEntry; 2] = news
+            .try_into()
+            .map_err(|_| AppError::Internal("conversion : deux écritures attendues".into()))?;
+        let acteur = Acteur::from(&current_user);
+        let complete_difference = req.complete_difference;
+        let created = crate::retry::retry_app_on_deadlock("journal_entries::conversion", || {
+            let pool = &state.pool;
+            let entries = entries.clone();
+            async move {
+                kesh_db::repositories::journal_entry_conversions::create_conversion(
+                    pool,
+                    company.id,
+                    acteur,
+                    entries,
+                    complete_difference,
+                    MAX_LINES_PER_ENTRY,
+                )
+                .await
+                .map_err(conversion_error)
+            }
+        })
+        .await?;
+        Ok(ConversionResponse {
+            entries: created
+                .into_iter()
+                .map(JournalEntryResponse::from)
+                .collect(),
+        })
+    }
+    .await;
+    match result {
+        Ok(body) => (StatusCode::CREATED, Json(body)).into_response(),
+        Err(err) => conversion_refusal(err).await,
+    }
 }
 
 /// PUT /api/v1/journal-entries/{id} — modifie une écriture tant que son

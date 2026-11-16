@@ -3846,3 +3846,11 @@ exchange-rates-banner-item = { $currency }, { $unit } : { $retained } → { $cor
 exchange-rates-banner-link = Voir les cours de change
 exchange-rates-banner-acknowledge = Acquitter
 exchange-rates-banner-acknowledge-failed = L’acquittement a échoué : réessayez.
+
+# --- Story 37-3b : écritures en devise à l'écran, soldes d'ouverture et conversion entre devises ---
+error-fx-conversion-transit-unbalanced = Le compte de conversion ne revient pas à zéro : il doit être débité dans une écriture et crédité du même montant dans l’autre (soldes : { $entry1 } et { $entry2 }).
+error-conversion-difference-line-and-complete = L’écriture porte déjà une ligne de différence de change : retirez-la, ou ne demandez pas au serveur de la calculer (completeDifference).
+error-conversion-fee-on-credit = Un frais de conversion se passe au débit d’un compte de charge de la devise { $currency }.
+error-conversion-difference-without-pair = La ligne de différence de change exige un seul compte en devise dans l’écriture (hors comptes de charge) : ses comptes de différence en dépendent.
+error-conversion-difference-off-pair = La différence de change va sur les comptes du compte en devise { $account } : le compte de gains au crédit, ou le compte de pertes au débit.
+error-conversion-too-many-lines = Trop de lignes dans l’écriture : la ligne de différence de change ne peut pas s’y ajouter.

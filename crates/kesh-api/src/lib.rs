@@ -613,6 +613,13 @@ pub fn build_router_avec_registre(
             "/api/v1/journal-entries",
             post(routes::journal_entries::create_journal_entry),
         )
+        // Story 37-3b (AC-2 bis) — conversion entre deux devises : deux
+        // écritures par le compte de conversion. Mêmes rôles que la création
+        // d'une écriture (Admin + Comptable ; clé d'API `read-write`).
+        .route(
+            "/api/v1/journal-entries/conversions",
+            post(routes::journal_entries::create_conversion),
+        )
         .route(
             "/api/v1/journal-entries/{id}",
             put(routes::journal_entries::update_journal_entry)

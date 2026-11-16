@@ -3773,3 +3773,11 @@ exchange-rates-banner-item = { $currency }, { $unit }: { $retained } → { $corr
 exchange-rates-banner-link = View exchange rates
 exchange-rates-banner-acknowledge = Acknowledge
 exchange-rates-banner-acknowledge-failed = Acknowledgement failed: try again.
+
+# --- Story 37-3b : écritures en devise à l'écran, soldes d'ouverture et conversion entre devises ---
+error-fx-conversion-transit-unbalanced = The conversion account does not return to zero: it must be debited in one entry and credited with the same amount in the other (balances: { $entry1 } and { $entry2 }).
+error-conversion-difference-line-and-complete = The entry already carries an exchange difference line: remove it, or do not ask the server to compute it (completeDifference).
+error-conversion-fee-on-credit = A conversion fee is posted to the debit of an expense account in { $currency }.
+error-conversion-difference-without-pair = The exchange difference line requires a single foreign-currency account in the entry (expense accounts aside): its difference accounts depend on it.
+error-conversion-difference-off-pair = The exchange difference goes to the accounts of the foreign-currency account { $account }: the gains account on the credit side, or the losses account on the debit side.
+error-conversion-too-many-lines = Too many lines in the entry: the exchange difference line cannot be added.

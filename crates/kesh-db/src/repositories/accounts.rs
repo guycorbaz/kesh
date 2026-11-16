@@ -1771,6 +1771,22 @@ pub async fn bulk_create_from_chart_in_tx(
 /// [`validate_fx_accounts_in_tx`] sous leurs verrous — la résolution ne juge pas
 /// la validité des comptes, la revalidation le fait.
 pub fn fx_accounts_for(company: &Company, account: &Account) -> Option<FxAccounts> {
+    fx_accounts_for_settings(
+        company.fx_gain_account_id,
+        company.fx_loss_account_id,
+        account,
+    )
+}
+
+/// [`fx_accounts_for`] sur les seuls comptes de la société, quand l'appelant
+/// tient le réglage lu **sous verrou** ([`lock_company_currency_in_tx`], route
+/// de conversion de la Story 37-3b) et non une [`Company`] entière. Même règle —
+/// `fx_accounts_for` n'en est que l'enveloppe, aucun choix n'est écrit à côté.
+pub fn fx_accounts_for_settings(
+    company_fx_gain: Option<i64>,
+    company_fx_loss: Option<i64>,
+    account: &Account,
+) -> Option<FxAccounts> {
     account.currency.as_ref()?;
     if let Some(own) = account.own_fx_accounts() {
         return Some(FxAccounts {
@@ -1780,7 +1796,7 @@ pub fn fx_accounts_for(company: &Company, account: &Account) -> Option<FxAccount
             holder_account_id: account.id,
         });
     }
-    match (company.fx_gain_account_id, company.fx_loss_account_id) {
+    match (company_fx_gain, company_fx_loss) {
         (Some(gain), Some(loss)) => Some(FxAccounts {
             gain,
             loss,
@@ -2010,6 +2026,59 @@ pub async fn validate_fx_accounts_in_tx(
         },
     ];
     check_fx_accounts_in_tx(conn, company_id, &checks, FxAccountLock::Share).await
+}
+
+/// Un compte d'une ligne de l'écriture à compléter d'une conversion (Story
+/// 37-3b, AC-2 bis), lu par [`conversion_line_accounts_in_tx`].
+#[derive(Debug, Clone, sqlx::FromRow)]
+pub struct ConversionLineAccount {
+    /// Le compte (type, devise, comptes de différence propres).
+    #[sqlx(flatten)]
+    pub account: Account,
+    /// Non nul si un compte de la société désigne celui-ci comme compte
+    /// **propre** de gains ou de pertes de change (`accounts.fx_*`, 37-1 AC-4
+    /// bis). La désignation par la société (`companies.fx_*`) se lit sur le
+    /// réglage verrouillé de l'appelant.
+    pub designated_by_account: i64,
+}
+
+/// Reconnaissance des comptes des lignes de l'écriture à compléter d'une
+/// conversion (Story 37-3b, AC-2 bis) : pour chaque compte de `ids`, le compte
+/// lui-même (type et devise, lus par la règle de forme, A33) et s'il est le
+/// compte de différence **propre** d'un compte de la société — une requête
+/// **bornée** à ces comptes (`EXISTS` par identifiant, jamais un balayage de
+/// tous les comptes), `LOCK IN SHARE MODE`, triée par `id`.
+///
+/// Appelée **après** le verrou de `companies` (ordre `companies` → `accounts`
+/// de 37-1 AC-3). Un identifiant inconnu ou d'une autre société est absent du
+/// résultat ; la création le refusera (`INACTIVE_OR_INVALID_ACCOUNTS`).
+pub async fn conversion_line_accounts_in_tx(
+    conn: &mut sqlx::MySqlConnection,
+    company_id: i64,
+    ids: &[i64],
+) -> Result<Vec<ConversionLineAccount>, DbError> {
+    if ids.is_empty() {
+        return Ok(Vec::new());
+    }
+    let mut ids: Vec<i64> = ids.to_vec();
+    ids.sort_unstable();
+    ids.dedup();
+    let placeholders = std::iter::repeat_n("?", ids.len())
+        .collect::<Vec<_>>()
+        .join(",");
+    let sql = format!(
+        "SELECT {COLUMNS}, \
+         EXISTS (SELECT 1 FROM accounts o WHERE o.company_id = accounts.company_id \
+                 AND (o.fx_gain_account_id = accounts.id OR o.fx_loss_account_id = accounts.id)) \
+           AS designated_by_account \
+         FROM accounts WHERE company_id = ? AND id IN ({placeholders}) \
+         ORDER BY id LOCK IN SHARE MODE"
+    );
+    let mut query = sqlx::query_as::<_, ConversionLineAccount>(&sql).bind(company_id);
+    for id in &ids {
+        query = query.bind(id);
+    }
+    query.fetch_all(&mut *conn).await.map_err(map_db_error)
 }
 
 // ---------------------------------------------------------------------------

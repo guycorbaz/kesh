@@ -3767,3 +3767,11 @@ exchange-rates-banner-item = { $currency }, { $unit }: { $retained } → { $corr
 exchange-rates-banner-link = Wechselkurse anzeigen
 exchange-rates-banner-acknowledge = Quittieren
 exchange-rates-banner-acknowledge-failed = Die Quittierung ist fehlgeschlagen: Versuchen Sie es erneut.
+
+# --- Story 37-3b : écritures en devise à l'écran, soldes d'ouverture et conversion entre devises ---
+error-fx-conversion-transit-unbalanced = Das Umrechnungskonto kehrt nicht auf null zurück: Es muss in einer Buchung belastet und in der anderen mit demselben Betrag gutgeschrieben werden (Salden: { $entry1 } und { $entry2 }).
+error-conversion-difference-line-and-complete = Die Buchung enthält bereits eine Kursdifferenzzeile: Entfernen Sie sie, oder lassen Sie sie nicht vom Server berechnen (completeDifference).
+error-conversion-fee-on-credit = Eine Umrechnungsgebühr wird im Soll eines Aufwandkontos der Währung { $currency } gebucht.
+error-conversion-difference-without-pair = Die Kursdifferenzzeile verlangt genau ein Fremdwährungskonto in der Buchung (ohne Aufwandkonten): Ihre Kursdifferenzkonten hängen davon ab.
+error-conversion-difference-off-pair = Die Kursdifferenz geht auf die Konten des Fremdwährungskontos { $account }: das Kursgewinnkonto im Haben oder das Kursverlustkonto im Soll.
+error-conversion-too-many-lines = Zu viele Zeilen in der Buchung: Die Kursdifferenzzeile kann nicht hinzugefügt werden.

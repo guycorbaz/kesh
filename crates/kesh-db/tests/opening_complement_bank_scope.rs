@@ -122,6 +122,7 @@ async fn single_bank_ledger_passe_sur_une_societe_sans_ecriture(pool: MySqlPool)
             account_id: bank,
             debit: dec!(1234.50),
             credit: Decimal::ZERO,
+            foreign: None,
         },
         ComplementScope::SingleBankLedger,
     )
@@ -162,6 +163,7 @@ async fn single_bank_ledger_credit_contrepartie_au_debit(pool: MySqlPool) {
             account_id: bank,
             debit: Decimal::ZERO,
             credit: dec!(80),
+            foreign: None,
         },
         ComplementScope::SingleBankLedger,
     )
@@ -186,6 +188,7 @@ async fn screen_garde_no_entries(pool: MySqlPool) {
             account_id: bank,
             debit: dec!(5),
             credit: Decimal::ZERO,
+            foreign: None,
         },
         ComplementScope::Screen,
     )
@@ -211,6 +214,7 @@ async fn single_bank_ledger_sans_exercice_refuse_no_open_fiscal_year(pool: MySql
             account_id: bank,
             debit: dec!(5),
             credit: Decimal::ZERO,
+            foreign: None,
         },
         ComplementScope::SingleBankLedger,
     )
@@ -231,6 +235,7 @@ async fn single_bank_ledger_refuse_un_compte_mouvemente(pool: MySqlPool) {
             account_id: bank,
             debit: dec!(5),
             credit: Decimal::ZERO,
+            foreign: None,
         },
         ComplementScope::SingleBankLedger,
     )
@@ -243,6 +248,7 @@ async fn single_bank_ledger_refuse_un_compte_mouvemente(pool: MySqlPool) {
             account_id: bank,
             debit: dec!(7),
             credit: Decimal::ZERO,
+            foreign: None,
         },
         ComplementScope::SingleBankLedger,
     )

@@ -33,6 +33,7 @@ pub mod invoice_settlements;
 pub mod invoice_settlements_write;
 pub mod invoices;
 pub mod journal_entries;
+pub mod journal_entry_conversions;
 pub(crate) mod journal_entry_fx;
 pub mod journal_entry_number_sequences;
 pub mod letterings;

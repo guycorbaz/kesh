@@ -3768,3 +3768,11 @@ exchange-rates-banner-item = { $currency }, { $unit }: { $retained } → { $corr
 exchange-rates-banner-link = Vedere i tassi di cambio
 exchange-rates-banner-acknowledge = Prendere atto
 exchange-rates-banner-acknowledge-failed = La presa d'atto non è riuscita: riprovate.
+
+# --- Story 37-3b : écritures en devise à l'écran, soldes d'ouverture et conversion entre devises ---
+error-fx-conversion-transit-unbalanced = Il conto di conversione non torna a zero: deve essere addebitato in una registrazione e accreditato dello stesso importo nell’altra (saldi: { $entry1 } e { $entry2 }).
+error-conversion-difference-line-and-complete = La registrazione porta già una riga di differenza di cambio: rimuovetela, oppure non chiedete al server di calcolarla (completeDifference).
+error-conversion-fee-on-credit = Una spesa di conversione si registra in dare su un conto di costo della valuta { $currency }.
+error-conversion-difference-without-pair = La riga di differenza di cambio richiede un solo conto in valuta nella registrazione (esclusi i conti di costo): i suoi conti di differenza ne dipendono.
+error-conversion-difference-off-pair = La differenza di cambio va sui conti del conto in valuta { $account }: il conto degli utili in avere, o il conto delle perdite in dare.
+error-conversion-too-many-lines = Troppe righe nella registrazione: la riga di differenza di cambio non può esservi aggiunta.
