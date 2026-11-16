@@ -3633,10 +3633,8 @@ projects-reassign-none = — Keines
 projects-reassign-archived = { $name } (archiviert)
 projects-reassign-save = Speichern
 projects-reassign-warning-title = Abgeschlossenes Geschäftsjahr oder gesperrte Periode
-projects-reassign-warning-entries = { $entryCount ->
-    [one] Eine Buchung einer abgeschlossenen Periode erhält ein anderes analytisches Konto.
-   *[other] { $entryCount } Buchungen einer abgeschlossenen Periode erhalten ein anderes analytisches Konto.
-}
+projects-reassign-warning-entries-one = Eine Buchung einer abgeschlossenen Periode erhält ein anderes analytisches Konto.
+projects-reassign-warning-entries-other = { $entryCount } Buchungen einer abgeschlossenen Periode erhalten ein anderes analytisches Konto.
 projects-reassign-warning-fiscal-years = Abgeschlossenes Geschäftsjahr: { $names }.
 projects-reassign-warning-locked = Buchungen gesperrt bis zum { $date }.
 projects-reassign-warning-reports = Die analytischen Berichte dieser Periode ändern sich.

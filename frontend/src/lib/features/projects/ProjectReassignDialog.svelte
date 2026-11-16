@@ -159,12 +159,19 @@
 				<p class="font-medium">
 					{i18nMsg('projects-reassign-warning-title', 'Exercice clos ou période verrouillée')}
 				</p>
-				<p>
-					{i18nMsg(
-						'projects-reassign-warning-entries',
-						`${warning.entryCount} écriture(s) d'une période close changeront de compte analytique.`,
-						{ entryCount: warning.entryCount },
-					)}
+				<!-- Deux clés plates : le dictionnaire du frontend résout sans arguments,
+				     un sélecteur Fluent y tomberait toujours sur sa branche `other`. -->
+				<p data-testid="project-reassign-warning-entries">
+					{warning.entryCount === 1
+						? i18nMsg(
+								'projects-reassign-warning-entries-one',
+								"Une écriture d'une période close changera de compte analytique.",
+							)
+						: i18nMsg(
+								'projects-reassign-warning-entries-other',
+								`${warning.entryCount} écritures d'une période close changeront de compte analytique.`,
+								{ entryCount: warning.entryCount },
+							)}
 				</p>
 				{#if warning.fiscalYears.length > 0}
 					<p data-testid="project-reassign-warning-fiscal-years">

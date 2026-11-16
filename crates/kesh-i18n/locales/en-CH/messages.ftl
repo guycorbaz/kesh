@@ -3639,10 +3639,8 @@ projects-reassign-none = — None
 projects-reassign-archived = { $name } (archived)
 projects-reassign-save = Save
 projects-reassign-warning-title = Closed fiscal year or locked period
-projects-reassign-warning-entries = { $entryCount ->
-    [one] One entry of a closed period will change analytical account.
-   *[other] { $entryCount } entries of a closed period will change analytical account.
-}
+projects-reassign-warning-entries-one = One entry of a closed period will change analytical account.
+projects-reassign-warning-entries-other = { $entryCount } entries of a closed period will change analytical account.
 projects-reassign-warning-fiscal-years = Closed fiscal year: { $names }.
 projects-reassign-warning-locked = Entries locked through { $date }.
 projects-reassign-warning-reports = The analytical reports for this period will change.

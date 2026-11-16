@@ -3634,10 +3634,8 @@ projects-reassign-none = — Nessuno
 projects-reassign-archived = { $name } (archiviato)
 projects-reassign-save = Salva
 projects-reassign-warning-title = Esercizio chiuso o periodo bloccato
-projects-reassign-warning-entries = { $entryCount ->
-    [one] Una registrazione di un periodo chiuso cambierà conto analitico.
-   *[other] { $entryCount } registrazioni di un periodo chiuso cambieranno conto analitico.
-}
+projects-reassign-warning-entries-one = Una registrazione di un periodo chiuso cambierà conto analitico.
+projects-reassign-warning-entries-other = { $entryCount } registrazioni di un periodo chiuso cambieranno conto analitico.
 projects-reassign-warning-fiscal-years = Esercizio chiuso: { $names }.
 projects-reassign-warning-locked = Registrazioni bloccate fino al { $date }.
 projects-reassign-warning-reports = I rapporti analitici di questo periodo cambieranno.

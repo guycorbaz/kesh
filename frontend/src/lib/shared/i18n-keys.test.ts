@@ -1035,7 +1035,10 @@ const ATTENDU = {
 	// trois sur la fiche facture (`projects-reassign-open`, `projects-reassign-done`,
 	// `invoice-detail-project-label` comme libellé de la rangée). Sur une base qui porte la 36-15
 	// non fusionnée (C-36-16a-1) : à relever de nouveau à l'union de la 0.18.0 (C-e350-18).
-	sitesTotal: 3098,
+	// Puis **3098 → 3099** (« expected 3099 to be 3098 », `kesh-gate-logs/e36-16/vitest-cible-4.log`) :
+	// le sélecteur `projects-reassign-warning-entries`, que le dictionnaire du frontend résout
+	// sans arguments, scindé en deux clés plates `-one` et `-other` (deux littéraux pour un).
+	sitesTotal: 3099,
 	sitesNonResolus: 31,
 	relais: 6,
 	// Story 26-1 (#620, AC3-bis) : **10 → 11** — `lib/features/bank-import/

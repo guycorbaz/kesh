@@ -109,6 +109,23 @@ describe('ProjectReassignDialog', () => {
 		expect(submit.mock.calls[1][1]).toBe(true);
 	});
 
+	it('409 sur une seule écriture : la clé plate du singulier (mutation : toujours le pluriel)', async () => {
+		const submit = vi.fn().mockRejectedValueOnce({
+			code: 'PROJECT_REASSIGNMENT_CLOSED_PERIOD',
+			status: 409,
+			message: 'Confirmez.',
+			details: { entryCount: 1, fiscalYears: ['Exercice 2025'], lockedThrough: null },
+		});
+		const { r } = open(submit);
+		await fireEvent.change(r.getByTestId('project-reassign-select-7'), {
+			target: { value: '12' },
+		});
+		await fireEvent.click(r.getByTestId('project-reassign-save'));
+		const entries = await r.findByTestId('project-reassign-warning-entries');
+		expect(entries.textContent).toContain('Une écriture');
+		expect(r.queryByTestId('project-reassign-warning-locked')).toBeNull();
+	});
+
 	it('403 : le message de l’API, sans Confirmer (mutation : Confirmer montré sur 403)', async () => {
 		const submit = vi.fn().mockRejectedValueOnce({
 			code: 'PROJECT_REASSIGNMENT_CLOSED_PERIOD_ADMIN_ONLY',

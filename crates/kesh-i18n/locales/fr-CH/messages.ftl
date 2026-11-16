@@ -3712,10 +3712,8 @@ projects-reassign-none = — Aucun
 projects-reassign-archived = { $name } (archivé)
 projects-reassign-save = Enregistrer
 projects-reassign-warning-title = Exercice clos ou période verrouillée
-projects-reassign-warning-entries = { $entryCount ->
-    [one] Une écriture d'une période close changera de compte analytique.
-   *[other] { $entryCount } écritures d'une période close changeront de compte analytique.
-}
+projects-reassign-warning-entries-one = Une écriture d'une période close changera de compte analytique.
+projects-reassign-warning-entries-other = { $entryCount } écritures d'une période close changeront de compte analytique.
 projects-reassign-warning-fiscal-years = Exercice clos : { $names }.
 projects-reassign-warning-locked = Écritures verrouillées jusqu'au { $date }.
 projects-reassign-warning-reports = Les rapports analytiques de cette période changeront.
