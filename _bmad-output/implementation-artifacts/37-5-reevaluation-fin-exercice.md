@@ -541,7 +541,7 @@ clôture et que l'écart aille aux différences de change.
    monétaires à décocher (stocks, immobilisations, capital en devise), la source du cours (« AFC » ou « cours saisi ») conservée à l'audit et non
    sur la ligne, une correction de l'AFC non reprise (↑) ne changeant pas le cours proposé (U1), la reprise de livres
    tenus ailleurs dont la réévaluation se **repasse** par cette fonction avec les cours de clôture d'origine, non par
-   des écritures importées (V8, AC-2) ; i18n ; PDF.
+   des écritures importées (V8, AC-2) ; i18n ; manuel en `.tex` seulement (PDF non commité, régénéré à la release).
 
 **Hors périmètre, tracé** : un contrôle de clôture informatif « comptes en devise à réévaluer » (K10 de
 `closing_checks.rs`, dont l'ensemble K1–K8 est clos ; K9 `ATTACHED_STATEMENT_GAP` est livré par l'Epic 38, 38-10) — à ouvrir en issue avec la PR (C-37-8).
@@ -557,14 +557,21 @@ clôture et que l'écart aille aux différences de change.
 - [ ] `kesh-api` : routes (aperçu, passation) dans `comptable_routes`, gardes, résolution des cours avant la
       transaction (selon le genre de clôture : cours effectif journalier puis mensuel, ou mensuel seul ; 37-2), i18n des erreurs neuves (`FX_REVALUATION_ACCOUNT_INVALID` ;
       `FX_ACCOUNT_INVALID`, `RATE_UNAVAILABLE` et `FX_RATE_INVALID` viennent de 37-1 et 37-2, réemployés) et du libellé d'audit
-      (quatre locales) ; registres de l'AC-2 (`ACTIONS`, `LIB_ROUTES`, décomptes, phrase du manuel d'administration).
+      (quatre locales) ; registres de l'AC-2 (`ACTIONS`, `LIB_ROUTES`, décomptes, phrase du manuel d'administration) — tous recomptés depuis la source après chaque reprise de `main`.
 - [ ] Frontend : écran depuis les exercices (contrepartie et origine par compte, clés i18n neuves dans les quatre
       locales), Vitest, E2E.
-- [ ] Manuel, CHANGELOG.
+- [ ] Manuel (`.tex` seulement), section *Note de version* de la fiche (pas d'écriture au `CHANGELOG.md`).
 - [ ] CR-6 : **V7** — test d'intégration HTTP de bout en bout de la recette par l'API (AC-7, sessions Bearer, source
       factice, de l'activation aux rapports) ; **V8** — réévaluation de livres importés par cette route avec `rates`
       (AC-2), manuel (AC-8), guide d'API (37-3b AC-6) ; **V12** — test `kesh_ecriture` d'une écriture de réévaluation
       (AC-5), « aucun outil pour l'aperçu » écrit au Change Log du développement.
+
+## Note de version
+
+*(Texte prêt à assembler au `CHANGELOG.md` à la release ; la fiche n'écrit jamais au `CHANGELOG.md`.)*
+
+- **Added** — réévaluation de fin d'exercice : aperçu puis passation des écritures de différence de change (action d'audit `fx_revaluation.posted`, erreur `FX_REVALUATION_ACCOUNT_INVALID`), depuis l'écran des exercices et par l'API.
+- **Compteurs** : recomptés depuis la source après chaque reprise de `main` (`ACTIONS`, `LIB_ROUTES`, partitions du registre, phrase du manuel d'administration, catalogues i18n).
 
 ## Notes de développement
 
@@ -843,3 +850,4 @@ clôture et que l'écart aille aux différences de change.
 - 2026-11-16 — validation CR-7 P1 (Sonnet) : 0 CRITICAL, 0 HIGH, 1 MEDIUM, 3 LOW. MEDIUM 37-5-CR7-P1-1 : l'AC-2 (étape (0)) s'appuyait sur le verrou partagé de `companies` de 37-3a dans `create_in_tx_inner` et sur la contre-passation « prend `companies` en partagé », retirés par D-CR7-1 — texte réduit à l'ordre de Pattern 5. LOW -P1-2 : test « exercice mono-devise » sans moyen de poser l'état (CR-7 : clos avant l'activation, puis rouvert) — précisé. LOW -P1-3 : manuel (AC-8) « exercice mono-devise » sans le seul cas possible — précisé. LOW -P1-4 (KISS, non modifié, signalé) : le mode de la société et de l'exercice relu « sous verrou » (AC-2 étape (0)-(1), AC-4, FR-5, Tâches) est un filet sans course possible depuis CR-7 (réglage irréversible, `fiscal_years.multi_currency` ne change plus) ; gardé, la ligne `companies` étant de toute façon lue en partage pour les désignations. Axes exercés : résidus (grep des neuf termes : aucun hors Change Logs datés), blockers/ordre des refus, FR-1/FR-5, recette V7, tests, verrous, récapitulatif de l'epic. Non exercés : code.
 - 2026-11-16 — validation CR-7 P2 (Opus) : 0 CRITICAL, 0 HIGH, 1 MEDIUM, 3 LOW ; remédiés dans la fiche (D-CR7-2, D-CR7-3 appliquées). MEDIUM 37-5-CR7-P2-1 (D-CR7-3, KISS ; reprend P1-4) : le mode de la société et de l'exercice relu sous verrou (AC-2 étape (0) `multi_currency_enabled`, AC-4 « dans la transaction », FR-37-5-5, Tâches, test « avant la transaction et sous verrou ») n'existait que pour une bascule retirée par CR-7 — retiré ; le 409 `MULTI_CURRENCY_DISABLED` reste une lecture simple avant la transaction ; l'étape (0) garde `companies` en partage pour les seuls comptes de différence. LOW -P2-2 (D-CR7-2) : « aucun exercice mono-devise ne suit un exercice multi-devises » (AC-1, `blockers[]`) était faux sous la limite assumée de 37-1 (exercice créé dans un trou devant un exercice rouvert) ; il tient par le refus de D-CR7-2, renvoi écrit ; 37-5 ne portait ni la limite, ni son test, ni sa phrase au manuel. LOW -P2-3 (KISS) : branche « société mono-devise » du 409 redondante (une société mono-devise n'a que des exercices mono-devise) — jugé sur l'exercice seul, `details: { fiscalYearId }`, comme 37-3a (D-CR7-1). LOW -P2-4 : étape (0), la parenthèse « aucun flux ne prend un exercice puis `companies` en exclusif » justifiait l'ordre choisi et non le cycle qu'elle suivait, et le partage omettait le `PUT currency-settings` (37-1 AC-3, `companies` `FOR UPDATE`) — reformulé. Vérifié : 37-1 AC-3 (l. 261, `companies` `FOR UPDATE`), AC-4 bis (l. 592-596, désignation propre `FOR UPDATE`, « contre la réévaluation (37-5, `companies` en partage en tête) ») ; 37-3a D-CR7-1 (l. 23, 256, 418) ; `repositories/invoices.rs:698` (sentinelle Pattern 5) ; `fiscal_years.rs:376` (`LaterFiscalYearClosed`) ; récapitulatif de l'epic (l. 451) sans « sous verrou » du mode. Axes exercés : remédiation P1 (diff `882d865b..e99364d2`), D-CR7-2, D-CR7-3, résidus (grep `multi_currency_enabled`, « société ou exercice », « trou », « limite assumée », mode relu), verrous de l'AC-2, ordre des refus de l'AC-4, FR-37-5-1/-5, tests de l'AC-7, manuel AC-8. Non exercés : code (non écrit), AC-3, AC-5, AC-6 hors mode, recette V7 en détail. Décompte : 6 FR, 6 NFR (inchangé). Un MEDIUM : passe suivante requise.
 - 2026-11-16 — validation CR-7 P3 ciblée (Sonnet) : 0 CRITICAL, 0 HIGH, 0 MEDIUM, 1 LOW ; remédié. LOW 37-5-CR7-P3-1 (AC-2, étape (0)) : « `create_in_tx_inner`, appelée ensuite, n'en ajoute aucun » était vrai pour les lignes de réévaluation (aucun projet) mais contredisait 37-3b AC-2 bis (étape 0 : sentinelle `companies` `FOR UPDATE` pour une ligne à projet, `journal_entries.rs:308` → `projects.rs:101`) — précisé. Vérifié au code : D-CR7-3 (409 jugé sur l'exercice, lecture simple avant la transaction ; aucun résidu « société ou exercice », « sous verrou » du mode, `multi_currency_enabled` hors étape (0) niée, FR-5, AC-4, AC-7, Tâches) ; renvoi D-CR7-2 (AC-1) ; `PUT currency-settings` `companies` `FOR UPDATE` (37-1 AC-3). Non exercés : code, AC-3, AC-5, AC-6, manuel.
+- 2026-11-16 — alignement sur les règles de travail à plusieurs (Sonnet) : PDF du manuel non commité, `.tex` seulement (1 remplacement) ; CHANGELOG remplacé par la section *Note de version* (1 remplacement, section ajoutée) ; compteurs « recomptés depuis la source après chaque reprise de `main` » (1 ajout, plus la Note de version). Fond des AC inchangé.

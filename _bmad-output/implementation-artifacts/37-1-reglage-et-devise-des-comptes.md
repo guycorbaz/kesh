@@ -122,7 +122,7 @@ bascule par exercice, de S3 l'avertissement, d'A4/A5 la bascule et `force`, A27)
 - NFR-37-1-4 — Sauvegarde et restauration : l'aller-retour d'une sauvegarde 37-1 ne perd ni le réglage, ni les devises, ni les comptes propres, ni le mode des exercices ; une colonne de l'epic ne peut devenir obligatoire sans faire rougir un test (AC-5, AC-6).
 - NFR-37-1-5 — Sorties MCP : `kesh_plan_comptable` re-mesurée avec le champ `devise` ; `kesh_exercices`, non paginé, mesuré par un test dédié, le nombre d'exercices qui tient sous `MCP_ENVOI_OCTETS_MAX` écrit au Change Log ; jamais de `String` dans `sortie!` (AC-2, AC-8).
 - NFR-37-1-6 — Chaînes neuves dans les quatre locales, `lint-i18n-ownership` vert (AC-9).
-- NFR-37-1-7 — Manuel utilisateur et manuel d'administration (activation par session, jamais par clé d'API ; matrice MCP de `kesh_exercices`) à jour, PDF régénérés et contrôlés ; CHANGELOG (AC-10).
+- NFR-37-1-7 — Manuel utilisateur et manuel d'administration (activation par session, jamais par clé d'API ; matrice MCP de `kesh_exercices`) à jour (`.tex` seulement ; PDF non commités, régénérés à la release, contrôle du rendu possible en local) ; Note de version (AC-10).
 - NFR-37-1-8 — Audit : `company.currency_settings_updated` (avant/après, exercices changés), comptes propres dans l'instantané d'un compte ; action à `ACTIONS`, libellés dans les quatre locales, route au registre (`Traced, SansEcritureAuJournal`) (AC-3, AC-4 bis).
 - NFR-37-1-9 — Concurrence : verrous dans l'ordre global du dépôt (`companies` → exercices → réglages → `accounts`), lectures verrouillantes sans lecture simple avant ; `currency-settings` et `accounts::create` rejoués sur interblocage, un test de victime par route, et un pour `accounts::update` (enveloppe existante conservée, cas d'un compte CHF rendu en devise avec comptes propres) (AC-3, AC-3 bis, AC-4, AC-4 bis).
 
@@ -165,7 +165,8 @@ bascule par exercice, de S3 l'avertissement, d'A4/A5 la bascule et `force`, A27)
      fx_loss_account_id)` (37-1-CR3-P1-1 : sans eux, la recherche du compte qui désigne, AC-4, balaie et verrouille
      toutes les lignes `accounts` de la société). Test : un `INSERT` qui viole chacune est refusé par **sa** contrainte ; les comptes existants prennent `NULL`.
    - Les colonnes des lignes d'écriture **ne sont pas** dans cette migration (37-3).
-   - Inscrite à `migrations.sha384`, au tableau de `docs/migrations-idempotence-audit.md` (compteurs recomptés, P5),
+   - Inscrite à `migrations.sha384`, au tableau de `docs/migrations-idempotence-audit.md` (compteurs recomptés depuis la source, P5, et
+     recomptés après chaque reprise de `main`),
      squash régénéré (`scripts/regen-test-schema.sh`), P6 inspecté, P7 : aucune donnée écrite (le test de triage passe
      sans entrée).
    - `kesh_version_min_required` inchangé (0.17.6).
@@ -300,9 +301,10 @@ bascule par exercice, de S3 l'avertissement, d'A4/A5 la bascule et `force`, A27)
      (:1450) : `sans_ecriture` **+1** (:1480), `tout.len()` **+1** (:1502 ; `rejouees` et `exemptees` inchangés) ;
      messages d'assertion et commentaires recomptés, dont l'en-tête du module (`//!`, :33-35). **Chiffres en deltas**
      (état au 2026-11-14 : 146 routes, 139 tracées, total 149, `sans_ecriture` 119) : les 37-2 et 37-5 ajoutent aussi
-     leurs routes, l'ordre d'intégration décide du chiffre absolu, **recompté au code**. La phrase du manuel
-     d'administration (`admin-manual.tex:3217`, « N des M routes… », « N + 4 + 3 = M ») suit le chiffre recompté, PDF
-     régénéré, garde `le_manuel_dit_le_compte_du_registre`. *(Alignement de l'orchestrateur sur 37-2-P4-IF3.)*
+     leurs routes, l'ordre d'intégration décide du chiffre absolu, **recompté au code, depuis la source, après chaque reprise de `main`**
+     (`LIB_ROUTES`, partitions, phrase du manuel). La phrase du manuel
+     d'administration (`admin-manual.tex:3217`, « N des M routes… », « N + 4 + 3 = M ») suit le chiffre recompté (`.tex`
+     seulement, PDF non commité), garde `le_manuel_dit_le_compte_du_registre`. *(Alignement de l'orchestrateur sur 37-2-P4-IF3.)*
      **CR-7** : la route de bascule que CR-2 ajoutait est retirée — la 37-1 compte donc **+1 route, +1 tracée,
      total +1, `sans_ecriture` +1, `tout.len()` +1**, toujours en deltas.
 3. **AC-3 bis — Mode d'un exercice (R3, révisé CR-7).** Chaque exercice est **mono-devise** ou **multi-devises**
@@ -740,8 +742,8 @@ bascule par exercice, de S3 l'avertissement, d'A4/A5 la bascule et `force`, A27)
 10. **AC-10 — Manuel utilisateur** (`docs/manual/fr/user-manual.tex`) : section « Comptabilité multi-devises » —
     activer, comptes de différences de change, devise d'un compte et son verrou — **dit que le verrou est définitif**
     (une écriture sur un compte en devise ne se défait que par sa suppression) et que **l'activation du multi-devises
-    est définitive** (CR-7 : confirmation demandée, aucun retour en mono-devise) ; PDF régénéré et contrôlé
-    (`pdftotext | tr`). Il dit aussi que les exercices **ouverts** à l'activation et tous ceux créés ensuite sont
+    est définitive** (CR-7 : confirmation demandée, aucun retour en mono-devise) ; `.tex` seulement, PDF non commité
+    (régénéré à la release ; rendu contrôlable en local par `pdftotext | tr`). Il dit aussi que les exercices **ouverts** à l'activation et tous ceux créés ensuite sont
     multi-devises, et qu'un exercice clos avant l'activation reste mono-devise, même rouvert (CR-7), et qu'aucun exercice ne
     peut être créé avant lui (D-CR7-2, AC-3 bis), le **compte de conversion** (R7 : un compte de bilan en CHF à créer, p. ex.
     1090, qui revient à 0 après une conversion), les **comptes de différence propres** d'un compte en devise (S2 :
@@ -760,10 +762,10 @@ bascule par exercice, de S3 l'avertissement, d'A4/A5 la bascule et `force`, A27)
     décompte du journal d'audit) : le réglage multi-devises s'ajoute à son énumération des routes réservées, et sa
     phrase « Ces opérations se font dans l'interface web », que V6 rend fausse, devient « par une session
     d'Administrateur — l'interface web, ou un client HTTP en `Authorization: Bearer` —, jamais par une clé » (37-1-CR6-P2-2)
-    — et au CHANGELOG. **Matrice MCP du manuel d'administration** (`admin-manual.tex:3447`, V10) : la ligne
+    — et à la Note de version. **Matrice MCP du manuel d'administration** (`admin-manual.tex:3447`, V10) : la ligne
     `kesh\_exercices` énumère ce que l'outil lit, « (identifiant, nom, dates, statut) » ; elle gagne le mode
     multi-devises et les genres de cours d'ouverture et de clôture — `mcp_matrice_manuel.rs` ne lit que les colonnes
-    outil et portée, aucun test ne verrait l'énumération périmée (37-1-CR6-P2-1). PDF régénérés.
+    outil et portée, aucun test ne verrait l'énumération périmée (37-1-CR6-P2-1). `.tex` seulement, PDF régénérés à la release.
 11. **AC-11 — Dates du premier exercice dans l'assistant de démarrage (T1, CR-4 ; remplace la version « retirée »
     de CR-3 et l'ancien arbitrage A1).** Aujourd'hui, `finalize` (`routes/onboarding.rs:879`, sans corps) crée
     l'exercice initial du 1er janvier au 31 décembre de l'année courante (`:1043-1046`, `Utc::now()`), par
@@ -862,7 +864,7 @@ bascule par exercice, de S3 l'avertissement, d'A4/A5 la bascule et `force`, A27)
 - [ ] `kesh-api` : routes, DTO, codes d'erreur (`errors.rs` + i18n), audit (`audit_labels.rs`), MCP (AC-2 à AC-8).
 - [ ] Frontend : `settings` (section Comptabilité), `accounts` (champ, colonne), types, API, Vitest (AC-7).
 - [ ] `kesh-api` : registre des routes d'audit et phrase du manuel d'administration (AC-3).
-- [ ] Manuel (AC-10), CHANGELOG `[Unreleased]` (nouveau champ `currency` du compte, absent = inchangé ; réglage
+- [ ] Manuel (AC-10, `.tex` seulement), section *Note de version* de la fiche — pas d'écriture au `CHANGELOG.md` (nouveau champ `currency` du compte, absent = inchangé ; réglage
       réservé à l'Administrateur, par une session — écran ou client HTTP en Bearer —, hors clé d'API, V6).
 - [ ] Tests : dépôt (gardes, verrou, reset), API (codes), sauvegarde (AC-6), E2E Playwright (créer d'abord un compte de
       bilan pour la conversion — aucun plan livré n'en a, AC-3 —, activer le mode avec les trois comptes, créer un
@@ -907,7 +909,7 @@ bascule par exercice, de S3 l'avertissement, d'A4/A5 la bascule et `force`, A27)
       détail d'audit extensible).
 - [ ] CR-6 — **V6** : test d'API de l'activation en session Bearer (`POST /auth/login`, `PUT
       /companies/current/currency-settings` avec `Authorization: Bearer`, sans cookie → 200) à côté du refus par clé
-      d'API ; manuel d'administration et CHANGELOG : « s'active par une session, jamais par une clé d'API » (non « à
+      d'API ; manuel d'administration et Note de version : « s'active par une session, jamais par une clé d'API » (non « à
       l'écran »), point **Administration** du manuel d'administration (`:3183`) amendé (AC-10) ; **V10** :
       `kesh_exercices` — `multi_devises`, `genre_ouverture`, `genre_cloture` (type scellé),
       description, ligne de la matrice MCP du manuel d'administration (`:3447`, AC-10), test `mcp_outils_e2e.rs`, mesure de taille d'un exercice écrite au Change Log, `mcp_contrat` et
@@ -921,6 +923,13 @@ bascule par exercice, de S3 l'avertissement, d'A4/A5 la bascule et `force`, A27)
       compte désignant par `FORCE INDEX` ; DTO, `AccountResponse`, CSV des comptes, liste close des absences admises
       (`accounts` × 3) ; frontend : `fxAccountsFor`, choix « par défaut / propres » du formulaire de compte ; tests de
       l'AC-4 bis.
+
+## Note de version
+
+*(Texte prêt à assembler au `CHANGELOG.md` à la release ; la fiche n'écrit jamais au `CHANGELOG.md` — `CLAUDE.md` § *Travailler à plusieurs développeurs*.)*
+
+- **Added** — nouveau champ `currency` du compte (absent = inchangé) ; réglage multi-devises réservé à l'Administrateur, activé par une session (écran ou client HTTP en `Authorization: Bearer`), jamais par une clé d'API ; l'activation est définitive ; `kesh_exercices` (MCP) gagne `multi_devises`, `genre_ouverture` et `genre_cloture`.
+- **Compteurs** : recomptés depuis la source après chaque reprise de `main` (`LIB_ROUTES`, totaux de l'audit des migrations, phrase du manuel d'administration).
 
 ## Notes de développement
 
@@ -1307,3 +1316,4 @@ bascule par exercice, de S3 l'avertissement, d'A4/A5 la bascule et `force`, A27)
   des sites cités, registre des routes (inchangé par D-CR7-2 : aucune route). Décompte : 12 FR, 9 NFR (inchangé ;
   FR-4 complétée).
 - 2026-11-16 — validation CR-7 P3 ciblée (Sonnet) : 0 CRITICAL, 0 HIGH, 0 MEDIUM, 1 LOW ; remédié. LOW 37-1-CR7-P3-1 (AC-3 bis, D-CR7-2 et tâche CR-2) : « réponse construite comme `later_fiscal_year_closed_response` » laissait croire à une copie du gabarit, dont le code `LATER_FISCAL_YEAR_CLOSED` est écrit en dur (`errors.rs:1438-1450`) et dont le doc-comment dit « un seul gabarit » ; la variante `AppError` (comme `FiscalYearBeforeClosedYear`, `errors.rs:358`) manquait aux tâches — gabarit généralisé d'un paramètre `code`, variante nommée. Vérifié au code : `fiscal_years::create` :331-395 (garde de l'invariant I après les pré-contrôles, la garde D-CR7-2 s'y insère à sa suite), `map_create_error` :143-153, rejeu :286, `create_if_absent_in_tx` (aucun exercice), clé `error-fiscal-year-create-later-closed` (messages.ftl:1087, la nouvelle clé en suit le nommage). Raisonnement contrôlé : préfixe mono-devise (invariant I à l'activation, aucune bascule, refus de création avant un mono), ordre de verrouillage companies → exercices sans cycle avec l'activation, lecture simple de l'exercice postérieur sûre sous le partage de `companies`, ordre des deux refus testé, société mono-devise inchangée, limite assumée retirée (grep : ne restent que la liste « Retiré » et des Change Logs datés). Axes exercés : AC-3 bis, FR-4, AC-10, tâches, NFR-9, résidus. Non exercés : PDF, i18n, reste de la fiche. Décompte : 12 FR, 9 NFR (inchangé).
+- 2026-11-16 — alignement sur les règles de travail à plusieurs (Sonnet) : PDF des manuels non commités (`.tex` seulement, régénération à la release ; 4 remplacements) ; CHANGELOG remplacé par la section *Note de version* (4 remplacements, section ajoutée) ; compteurs « recomptés depuis la source après chaque reprise de `main` » (2 ajouts). Fond des AC inchangé.

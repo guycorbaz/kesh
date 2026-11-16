@@ -13,6 +13,10 @@ et EUR 0.94947 au 31.12.2024, non par des écritures importées, V8).
 **Cible : la release qui suivra la v0.17.6** (numéro, CHANGELOG daté, macros des manuels et tag : à la préparation de
 la release, par Guy — hors de cette branche).
 
+**Release** : un epic = une release (Epic 37 → une release mineure, numéro au tag par le Project Lead) ; 6 stories (37-1, 37-2, 37-3a, 37-3b, 37-4, 37-5), dans la borne (`CLAUDE.md` § *Travailler à plusieurs développeurs*).
+
+**Règles des fichiers communs** (`CLAUDE.md` § *Travailler à plusieurs développeurs*, `docs/developpement-a-plusieurs.md` § 3 et § 6) : aucune fiche n'écrit au `CHANGELOG.md` — chacune porte une section *Note de version*, assemblée à la release ; aucun PDF de manuel commité dans la branche (`.tex` seulement, régénération à la release) ; catalogues i18n et `sprint-status.yaml` : un bloc propre à l'epic ; compteurs (`sitesTotal`, totaux de l'audit des migrations, `LIB_ROUTES` et partitions du registre, `data_count`, schéma de test) recomptés depuis la source après chaque reprise de `main` ; `Cargo.lock` régénéré après la fusion.
+
 ⚠️ **Pas d'issue GitHub à ce stade** : Beat n'a qu'un accès en lecture au dépôt de Guy. Le détail vit dans cet epic et
 dans les fiches ; l'issue et la PR s'ouvrent à la fin, une fois la recette faite (décision de Beat, 2026-11-14).
 
@@ -430,6 +434,21 @@ rédaction (règle de splitting préventif : plus de cinq modules). Une story qu
 avant de l'écrire. Toutes les migrations attendues sont **non breaking** (`CREATE TABLE`, `ADD COLUMN` nullable ou à
 défaut) : `kesh_version_min_required` reste à 0.17.6.
 
+## Modules touchés
+
+Pour voir d'avance les recoupements avec les epics de Guy (36 et suivants) ; relevé d'après les fiches, à tenir à jour.
+
+| Fiche | Crates | Frontend | Manuels et docs |
+|---|---|---|---|
+| 37-1 | `kesh-db` (migration `accounts`/`companies`, dépôts, squash de test), `kesh-api` (réglage, comptes, exercices, registre des routes, MCP `kesh_exercices`), `kesh-core` | `settings`, `accounts`, assistant de démarrage | manuels utilisateur et d'administration (`.tex`), audit des migrations |
+| 37-2 | `kesh-db` (table des cours, migration), `kesh-api` (routes de cours, tâche de récupération, sauvegarde), `kesh-core` | écran *Cours de change* | manuels utilisateur et d'administration (`.tex`), audit des migrations |
+| 37-3a | `kesh-core`, `kesh-db` (lignes d'écriture, migration), `kesh-api` (`journal-entries`, MCP, exports) | — | guide d'API (37-3b), audit des migrations |
+| 37-3b | `kesh-api` (soldes d'ouverture, registre des routes) | écritures, soldes d'ouverture, sélecteurs, i18n | manuel utilisateur (`.tex`), `docs/api-external.md` |
+| 37-4 | `kesh-report` (générateurs, CSV, PDF), `kesh-api` (rapports, MCP), `kesh-db` | rapports | manuel utilisateur (`.tex`) |
+| 37-5 | `kesh-db`, `kesh-api` (réévaluation, audit, registre des routes), `kesh-core` | écran des exercices | manuels utilisateur et d'administration (`.tex`) |
+
+Fichiers communs touchés par plusieurs fiches (recomptés depuis la source après chaque reprise de `main`) : `tests/audit_route_registry.rs` (`LIB_ROUTES`), `i18n-keys.test.ts` (`sitesTotal`), `docs/migrations-idempotence-audit.md`, catalogues i18n des quatre locales, `sprint-status.yaml`, `Cargo.lock`.
+
 ## Exigences (FR/NFR) par story
 
 *(B26, 2026-11-15 : chaque fiche liste ses exigences, tirées de ses critères d'acceptation ; le texte complet est dans la fiche. Guy dira s'il les veut en issues GitHub ou dans les fiches.)*
@@ -551,7 +570,7 @@ ferme pas la fenêtre d'import, une table applicative neuve la ferme.
     (`find_effective_rate_in_tx`, seule fonction) ; une récupération ne touche jamais aux cours saisis.
     ⚠️ **La table applicative neuve referme la fenêtre d'import** : un `.keshbackup` 0.17.6 ou antérieur ne se
     réimporte plus dans la nouvelle version (registre de rejeu vidé : `20261106000001` passe « Hors fenêtre »). À
-    écrire au CHANGELOG et au manuel d'administration, et **à confirmer avec Guy** (production) ; soumis à Beat dans la
+    écrire à la Note de version (fiche 37-2) et au manuel d'administration, et **à confirmer avec Guy** (production) ; soumis à Beat dans la
     page de revue.
   - **C-37-7 amendé (D10)** : cours par défaut de la réévaluation = cours effectif journalier de la date de fin
     d'exercice (`xmldaily`, `POST /exchange-rates/fetch { date }`), sinon cours effectif mensuel du mois de fin
