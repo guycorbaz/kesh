@@ -1,6 +1,6 @@
 # Story 36-16a : changer le compte analytique d'une facture client, même payée — le patron du geste (#1167)
 
-Status: ready-for-dev
+Status: review
 
 *Fiche rédigée le 2026-11-15 par l'agent de rédaction des fiches de l'Epic 36 (Opus 5.5), worktree `kesh-36-16`, branche
 `story/36-16-reimputation-analytique` partie de `epic/36-0.18.0`, par le workflow `bmad-create-story`. **Première des trois
@@ -375,7 +375,16 @@ Journaux sous `/home/gcorbaz/devel/kesh-gate-logs/e36-16/` (C-36-16a-8) :
   mutation.
 - `vitest-cible-{1,2,3}.log`, `vitest-i18n-1.log` (le relevé `expected 3098 to be 3082`), `front-check-{1,2}.log`,
   `front-build-{1,2}.log`, `front-test-unit-1.log`, `front-lint-i18n-2.log`.
-- `e2e-spec-1.log` (spec de la story seule, pour les captures), `gates-review.log`, `test-fast-ci-1.log`, `gate-ci-1.log`.
+- `e2e-spec-1.log` (spec de la story seule, pour les captures) : **3 passés**, au code de `1cdf902e4`.
+- `gates-review.log`, `test-fast-ci-1.log` — premier passage, au code de `1cdf902e4` : **5540 passés, 2 échecs, 13 ignorés**,
+  deux rouges réels de la story (C-36-16a-11) : `kesh-i18n` `no_new_select_expression_reaches_the_frontend_dictionary` (le
+  sélecteur `projects-reassign-warning-entries` serait résolu sans arguments par le dictionnaire du frontend, donc toujours au
+  pluriel) et `kesh-api` `services_motif::ac12_iii_inventaire_des_sites_non_resolus` (inventaire des handlers de
+  `routes/invoices.rs`). Le `gate-ci` enchaîné a été **arrêté après 41 s** (`kill` de mes PID), le code changeant : aucun
+  chiffre n'en est tiré.
+- `gates-review-2.log`, `test-fast-ci-2.log` — second passage, bases remises à neuf, au commit `86998ef55` (code de
+  `4e07344bc`) : **5542 passés, 0 échec, 13 ignorés** ; `gate-ci-2.log` : voir *Completion Notes*.
+- `mut/synthese-front-2.log` — mutations frontend rejouées au code de `4e07344bc`, F1 à F6.
 
 ### Completion Notes List
 
@@ -401,13 +410,25 @@ Journaux sous `/home/gcorbaz/devel/kesh-gate-logs/e36-16/` (C-36-16a-8) :
   (C-36-16a-10). Registre des routes : 146 → 147 routes, 139 → 140 tracées, 27 → 28 rejouées, 149 → 150 au registre ; le manuel
   d'administration suit (« 140 des 147 », « 140 + 4 + 3 = 147 »).
 - **Mutations** : **17 Rust, toutes tuées** (M1 à M17 : chacune rougit le seul test visé, `Summary … 1 failed`) — dont la sonde
-  T5 (M6) et la sonde T6 (M7) ; **5 frontend, toutes tuées** (F1 à F5). Aucune équivalente.
+  T5 (M6) et la sonde T6 (M7), jouées au code de `207389b77` ; **6 frontend, toutes tuées** (F1 à F6, rejouées au code de
+  `4e07344bc` ; F6 : la clé singulière). Aucune équivalente.
+- **Rouges de `test-fast --ci`, corrigés** (`4e07344bc`, C-36-16a-11) : `projects-reassign-warning-entries` scindée en
+  `-one` et `-other` (le dictionnaire du frontend résout sans arguments ; `sitesTotal` 3098 → 3099) ;
+  `error-project-reassignment-closed-period`, résolue côté serveur par `t_args`, inscrite à `SELECTEURS_RESOLUS_COTE_SERVEUR`
+  (`kesh-i18n/src/loader.rs`) ; `services_motif` : `routes/invoices.rs` 14 `pub async fn`, 16 `async fn`,
+  `reassign_project_handler` parmi les handlers sur `state.pool`.
 - **Manuel** : sous-section *Changer le compte analytique après coup* (`\label{sec:reimputation-analytique}`) ; PDF à
   l'intégration. `docs/api-external.md` : section de la route, ordre des refus, § 10 (deux codes), paragraphe « Interblocages ».
 - **Captures** : `kesh-gate-logs/e36-16/captures/36-16a-{dialogue,succes,avertissement,lecture-sans-bouton}.png`, prises par la
   spec E2E (`KESH_E2E_CAPTURES_DIR`), thème clair.
 - **Limites** : après un `409 OPTIMISTIC_LOCK_CONFLICT` reçu dans le dialogue (geste concurrent), la fiche n'est pas relue — le
   message de l'API s'affiche et l'utilisateur recharge ; les paires déliées restent à 36-16c.
+- **Gates du passage en `review`**, au code de `4e07344bc` (commit `86998ef55`), bases remises à neuf : `test-fast --ci`
+  **5542 passés, 0 échec, 13 ignorés** (`test-fast-ci-2.log`) ; `scripts/gate-ci.sh kesh_ci_e3616a` **code 0, 5549 passés,
+  0 échec, 17 ignorés** sur 229 binaires (`gate-ci-2.log`, somme des lignes `test result:`) ; frontend complet —
+  `npm run check` 0 erreur (29 avertissements, aucun sur les fichiers de la story), `lint-i18n-ownership` vert, Vitest **3848
+  passés** (247 fichiers), `npm run build` vert (`front-gate-3.log`, `front-check-3.log`, `front-test-unit-2.log`,
+  `front-build-3.log`) ; `cargo fmt --check` et `clippy -D warnings` verts (`clippy-2.log`).
 - **Pas encore tourné** : l'E2E complet et `gate-ci` de clôture (au dernier commit de code, à la clôture) ; le PDF du manuel.
 
 ### File List
@@ -449,3 +470,16 @@ Journaux sous `/home/gcorbaz/devel/kesh-gate-logs/e36-16/` (C-36-16a-8) :
   `res.invoice` (D12, AC12, T12). V2-5 : T4 par `LOCK TABLES contacts WRITE`, par la route. V2-6 : cycles connus et leur rejeu
   (D9), renvoi à T7. V2-7 : `DbError::error_code` (`:1906`) et le mappage de `kesh-api`. V2-8 : message du `403` (interface web).
   V2-9 : en-tête. V2-10 : brouillon et `closedPeriodsAcknowledged` (D6, D10, AC11, T10). Aucun finding réfuté.
+- 2026-11-16 — **Validation terminée** sur la passe P3 ciblée (Sonnet 5.5, `kesh-gate-logs/e36-16/validation-36-16a-p3-ciblee.md`,
+  0/0/0/3) ; trend P1 0/2/7/7 (Sonnet) → P2 0/0/4/6 (Opus) → P3 0/0/0/3 (Sonnet, ciblée sur `fd7140176`). Ses trois LOW, à l'étape 0
+  du développement : V3-1 traité (D9, cycles : « toute route qui insère une écriture ou prend la sentinelle », lu au registre
+  `audit_route_registry.rs`, `journal_entries::create/update/reverse` et `reconciliation::post_manual/post_split` `Rejouee`) ;
+  V3-3 traité (T7 : « l'étape (e) … `:1191`, la fonction à `:1116` », lu `fiscal_years.rs:1191` « // (e) La transition. ») ;
+  V3-2 relève de la 36-16b (mutation probablement équivalente de son T5), rien à écrire ici.
+- 2026-11-16 — **Développement** (Opus 5.5), `Status: review`. Étape 0 : fusions de la release et de la 36-15 non fusionnée
+  (écart à la fiche, décision de l'orchestrateur, C-36-16a-1), puis refusion de la release après la fusion de la 36-15
+  (C-36-16a-9). Rouge d'abord (`405`, route absente). Code : `207389b77` ; corrections après le premier `test-fast --ci` :
+  `4e07344bc` (C-36-16a-11). 17 mutations Rust et 6 frontend, toutes tuées. Écarts consignés : C-36-16a-1 à 11. Gates du
+  passage en `review` verts (Dev Agent Record) ; E2E complet et `gate-ci` de clôture à la clôture. Aucune migration. Aucun
+  écart à la consigne Edit sur le code, les tests ou la fiche ; deux scripts de travail dans `kesh-gate-logs/e36-16/`
+  (mutations, gates) écrits par l'outil Write, dont un renommage de journaux fait par un `python3` sur ce seul script.

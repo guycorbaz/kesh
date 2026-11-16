@@ -220,7 +220,19 @@ réversibilité. Code lu à `fed34a9c7`. Fiche : `36-16-reimputation-analytique.
 ### C-36-16a-10 — T6 dans `project_reassignment_e2e.rs`, non dans un test `kesh-db`
 
 - **Contexte** : la fiche place T6 (invariant D3 sur les créations automatiques) dans `crates/kesh-db/tests/project_reassignment.rs`.
-- **Retenu** : `automatic_entries_carry_the_invoice_account_on_every_line`, dans le fichier des routes : les états de la facture
+- **Retenu** : `automatic_entries_carry_the_invoice_account_on_every_line` (C-36-16a-11 suit), dans le fichier des routes : les états de la facture
   payée et de la facture annulée s'y construisent déjà par les routes (C-36-16a-2), que le test `kesh-db` aurait dû refaire par
   les dépôts. Sonde de la fiche jouée et tuée (M7 : `project_id: None` à la création de l'avoir).
+- **Réversible** : oui.
+
+### C-36-16a-11 — Le nombre d'écritures de l'avertissement : deux clés plates, non un sélecteur
+
+- **Contexte** : `test-fast --ci` (`kesh-gate-logs/e36-16/test-fast-ci-1.log`) — le dictionnaire servi au frontend résout ses
+  clés **sans arguments** : un sélecteur Fluent y tombe toujours sur `*[other]` (garde
+  `no_new_select_expression_reaches_the_frontend_dictionary`).
+- **Retenu** : `projects-reassign-warning-entries-one` et `-other`, choisies par le dialogue selon `entryCount` (patron
+  `homepage-charts-credit-balance-note-one|-other`) ; le message d'erreur `error-project-reassignment-closed-period`, résolu par
+  le serveur avec `entryCount` (`closed_period_response`, `t_args`), garde son sélecteur et entre à
+  `SELECTEURS_RESOLUS_COTE_SERVEUR`.
+- **Écartée** : un texte unique « écriture(s) ».
 - **Réversible** : oui.
