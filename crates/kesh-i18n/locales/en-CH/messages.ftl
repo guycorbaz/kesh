@@ -1106,6 +1106,7 @@ error-fx-account-revenue-account = { $subject } cannot be a sales revenue accoun
 # Story 37-1 (AC-4) — currency of an account.
 error-multi-currency-disabled = Multi-currency mode is not enabled: an account cannot receive a foreign currency. An administrator enables it in Settings.
 error-currency-unknown = “{ $value }” is not a known currency code (three letters, e.g. USD or EUR).
+error-rate-unavailable = No { $currency } exchange rate for { $month }: fetch the rates or enter one.
 error-account-currency-locked = This account’s currency can no longer change: it carries entries, whose currency it is.
 error-account-currency-in-use = This account is used in CHF (role, invoicing settings, bank account, product or reconciliation rule): it cannot receive a currency.
 error-account-in-foreign-currency = This account is kept in { $currency }: it cannot be used here, where Kesh books in CHF.

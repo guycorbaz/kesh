@@ -1169,6 +1169,7 @@ error-fx-account-revenue-account = { $subject } ne peut pas être un compte de c
 # Story 37-1 (AC-4) — devise d’un compte.
 error-multi-currency-disabled = Le mode multi-devises n’est pas activé : un compte ne peut pas recevoir de devise étrangère. Un administrateur l’active dans Paramètres.
 error-currency-unknown = « { $value } » n’est pas un code de devise connu (trois lettres, p. ex. USD ou EUR).
+error-rate-unavailable = Aucun cours de change { $currency } pour { $month } : récupérez les cours ou saisissez-en un.
 error-account-currency-locked = La devise de ce compte ne peut plus changer : il porte des écritures, dont elle est la devise.
 error-account-currency-in-use = Ce compte est employé en CHF (rôle, paramètres de facturation, compte bancaire, article ou règle de rapprochement) : il ne peut pas recevoir de devise.
 error-account-in-foreign-currency = Ce compte est tenu en { $currency } : il ne peut pas servir ici, où Kesh comptabilise en CHF.

@@ -1106,6 +1106,7 @@ error-fx-account-revenue-account = { $subject } non può essere un conto della c
 # Story 37-1 (AC-4) — valuta di un conto.
 error-multi-currency-disabled = La modalità multivaluta non è attivata: un conto non può ricevere una valuta estera. Un amministratore la attiva in Impostazioni.
 error-currency-unknown = «{ $value }» non è un codice valuta conosciuto (tre lettere, p. es. USD o EUR).
+error-rate-unavailable = Nessun tasso di cambio { $currency } per { $month }: recuperi i tassi o ne inserisca uno.
 error-account-currency-locked = La valuta di questo conto non può più cambiare: porta delle registrazioni, di cui è la valuta.
 error-account-currency-in-use = Questo conto è usato in CHF (ruolo, impostazioni di fatturazione, conto bancario, articolo o regola di riconciliazione): non può ricevere una valuta.
 error-account-in-foreign-currency = Questo conto è tenuto in { $currency }: non può essere usato qui, dove Kesh contabilizza in CHF.

@@ -12,6 +12,7 @@ pub mod currency;
 pub mod dates;
 pub mod email_template_engine;
 pub mod errors;
+pub mod exchange_rates;
 pub mod horloge;
 pub mod invoice_format;
 pub mod lettering;

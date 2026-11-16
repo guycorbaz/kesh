@@ -1,6 +1,6 @@
 -- SQUASH DU SCHÉMA DE TEST — Story 22-5 (#251). GÉNÉRÉ, NE PAS ÉDITER.
 -- Régénérer : scripts/regen-test-schema.sh
--- Équivalent des 92 migrations de crates/kesh-db/migrations/,
+-- Équivalent des 93 migrations de crates/kesh-db/migrations/,
 -- rejouées en UN batch DDL par base éphémère de test.
 --
 -- Le garde-fou crates/kesh-db/tests/test_schema_guard.rs compare ce schéma
@@ -40,6 +40,49 @@ CREATE TABLE `_kesh_backup_schedule` (
   CONSTRAINT `chk_kesh_backup_schedule_interval` CHECK (`interval_hours` in (6,12,24,168)),
   CONSTRAINT `chk_kesh_backup_schedule_retention` CHECK (`retention_count` between 1 and 60),
   CONSTRAINT `chk_kesh_backup_schedule_status` CHECK (`last_status` in ('ok','partial','failed','insufficient_space','disk_full'))
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+DROP TABLE IF EXISTS `_kesh_exchange_rate_fetch`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8mb4 */;
+CREATE TABLE `_kesh_exchange_rate_fetch` (
+  `id` tinyint(3) unsigned NOT NULL DEFAULT 1,
+  `triggered_by` enum('auto','manual') NOT NULL COMMENT 'auto = tâche ou connexion, manual = POST /exchange-rates/fetch',
+  `last_run_at` datetime(3) NOT NULL COMMENT 'Fin de la dernière récupération (UTC)',
+  `last_status` varchar(16) CHARACTER SET ascii COLLATE ascii_general_ci NOT NULL COMMENT 'ok, error ou not_published (le pire d''un tour)',
+  `last_error` varchar(64) CHARACTER SET ascii COLLATE ascii_general_ci DEFAULT NULL COMMENT 'Code classé (timeout, connect, http_status:<n>, malformed…), jamais un texte libre',
+  `last_kind` varchar(5) CHARACTER SET ascii COLLATE ascii_general_ci NOT NULL COMMENT 'Genre de l''unité en cause',
+  `last_rate_date` date NOT NULL COMMENT 'Date de l''unité en cause (1er du mois ou jour demandé)',
+  PRIMARY KEY (`id`),
+  CONSTRAINT `chk_kesh_exchange_rate_fetch_single_row` CHECK (`id` = 1),
+  CONSTRAINT `chk_kesh_exchange_rate_fetch_status` CHECK (cast(`last_status` as char charset binary) in ('ok','error','not_published')),
+  CONSTRAINT `chk_kesh_exchange_rate_fetch_kind` CHECK (cast(`last_kind` as char charset binary) in ('month','day'))
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+DROP TABLE IF EXISTS `_kesh_fetched_exchange_rates`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8mb4 */;
+CREATE TABLE `_kesh_fetched_exchange_rates` (
+  `source` varchar(12) CHARACTER SET ascii COLLATE ascii_general_ci NOT NULL COMMENT 'Source des cours (afc aujourd''hui ; format seul au schéma)',
+  `currency` char(3) CHARACTER SET ascii COLLATE ascii_general_ci NOT NULL COMMENT 'Code ISO 4217, majuscules',
+  `kind` varchar(5) CHARACTER SET ascii COLLATE ascii_general_ci NOT NULL COMMENT 'month = cours mensuel, day = cours journalier',
+  `rate_date` date NOT NULL COMMENT '1er du mois (month) ou date demandée (day)',
+  `rate_per_unit` decimal(20,10) NOT NULL COMMENT 'published_rate / published_unit, arrondi à 10 décimales',
+  `published_unit` int(11) NOT NULL COMMENT 'Unité publiée (1, 100, 1000, 10000…)',
+  `published_rate` decimal(19,6) NOT NULL COMMENT 'Cours publié pour l''unité',
+  `source_date` date DEFAULT NULL COMMENT 'Date de publication lue (day), NULL pour month',
+  `first_fetched_at` datetime(3) NOT NULL COMMENT 'Première obtention (UTC), jamais mise à jour',
+  `fetched_at` datetime(3) NOT NULL COMMENT 'Dernière récupération qui a confirmé la ligne (UTC)',
+  `value_changed_at` datetime(3) NOT NULL COMMENT 'Récupération qui a apporté la valeur actuelle (UTC)',
+  PRIMARY KEY (`source`,`currency`,`kind`,`rate_date`),
+  KEY `idx_kesh_fetched_exchange_rates_unit` (`source`,`kind`,`rate_date`),
+  CONSTRAINT `chk_kesh_fetched_exchange_rates_source` CHECK (cast(`source` as char charset binary) regexp '^[a-z]{2,12}$'),
+  CONSTRAINT `chk_kesh_fetched_exchange_rates_kind` CHECK (cast(`kind` as char charset binary) in ('month','day')),
+  CONSTRAINT `chk_kesh_fetched_exchange_rates_month_day` CHECK (cast(`kind` as char charset binary) <> 'month' or dayofmonth(`rate_date`) = 1),
+  CONSTRAINT `chk_kesh_fetched_exchange_rates_source_date` CHECK (cast(`kind` as char charset binary) = 'day' = (`source_date` is not null)),
+  CONSTRAINT `chk_kesh_fetched_exchange_rates_rate` CHECK (`rate_per_unit` > 0),
+  CONSTRAINT `chk_kesh_fetched_exchange_rates_unit` CHECK (`published_unit` > 0),
+  CONSTRAINT `chk_kesh_fetched_exchange_rates_currency` CHECK (cast(`currency` as char charset binary) regexp '^[A-Z]{3}$')
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 DROP TABLE IF EXISTS `_kesh_installation_settings`;
@@ -594,6 +637,38 @@ CREATE TABLE `email_templates` (
   CONSTRAINT `chk_email_templates_language` CHECK (cast(`language` as char charset binary) in (cast('FR' as char charset binary),cast('DE' as char charset binary),cast('IT' as char charset binary),cast('EN' as char charset binary))),
   CONSTRAINT `chk_email_templates_subject_body_nonempty` CHECK (char_length(trim(`subject`)) > 0 and char_length(trim(`body`)) > 0),
   CONSTRAINT `chk_email_templates_template_type` CHECK (`template_type` in ('invoice_send','invoice_reminder'))
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+DROP TABLE IF EXISTS `exchange_rates`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8mb4 */;
+CREATE TABLE `exchange_rates` (
+  `id` bigint(20) NOT NULL AUTO_INCREMENT,
+  `company_id` bigint(20) NOT NULL,
+  `currency` char(3) CHARACTER SET ascii COLLATE ascii_general_ci NOT NULL COMMENT 'Code ISO 4217, majuscules, jamais CHF',
+  `kind` varchar(5) CHARACTER SET ascii COLLATE ascii_general_ci NOT NULL COMMENT 'month = cours mensuel, day = cours journalier',
+  `rate_date` date NOT NULL COMMENT '1er du mois (month) ou jour (day)',
+  `rate` decimal(20,10) NOT NULL COMMENT 'Cours retenu par la société, par unité de devise',
+  `source` varchar(12) CHARACTER SET ascii COLLATE ascii_general_ci NOT NULL COMMENT 'afc (copie ou reprise d''une valeur publiée) ou manual (cours saisi) ; format seul au schéma',
+  `acknowledged_rate` decimal(20,10) DEFAULT NULL COMMENT 'Valeur publiée (par unité) dont la correction a été acquittée par la société',
+  `acknowledged_at` datetime(3) DEFAULT NULL COMMENT 'Acquittement (UTC)',
+  `version` int(11) NOT NULL DEFAULT 1,
+  `updated_by` bigint(20) DEFAULT NULL COMMENT 'Auteur de la dernière écriture ; NULL = ligne écrite par Kesh (copie)',
+  `created_at` datetime(3) NOT NULL DEFAULT current_timestamp(3),
+  `updated_at` datetime(3) NOT NULL DEFAULT current_timestamp(3) ON UPDATE current_timestamp(3),
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_exchange_rates_key` (`company_id`,`currency`,`kind`,`rate_date`),
+  KEY `fk_exchange_rates_updated_by` (`updated_by`),
+  KEY `idx_exchange_rates_company_kind_date` (`company_id`,`kind`,`rate_date`),
+  CONSTRAINT `fk_exchange_rates_company` FOREIGN KEY (`company_id`) REFERENCES `companies` (`id`),
+  CONSTRAINT `fk_exchange_rates_updated_by` FOREIGN KEY (`updated_by`) REFERENCES `users` (`id`),
+  CONSTRAINT `chk_exchange_rates_currency` CHECK (cast(`currency` as char charset binary) regexp '^[A-Z]{3}$' and cast(`currency` as char charset binary) <> cast('CHF' as char charset binary)),
+  CONSTRAINT `chk_exchange_rates_kind` CHECK (cast(`kind` as char charset binary) in ('month','day')),
+  CONSTRAINT `chk_exchange_rates_month_day` CHECK (cast(`kind` as char charset binary) <> 'month' or dayofmonth(`rate_date`) = 1),
+  CONSTRAINT `chk_exchange_rates_rate` CHECK (`rate` > 0),
+  CONSTRAINT `chk_exchange_rates_source` CHECK (cast(`source` as char charset binary) regexp '^[a-z]{2,12}$'),
+  CONSTRAINT `chk_exchange_rates_ack_pair` CHECK (`acknowledged_rate` is null = (`acknowledged_at` is null)),
+  CONSTRAINT `chk_exchange_rates_ack_afc` CHECK (`acknowledged_rate` is null or cast(`source` as char charset binary) = 'afc')
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 DROP TABLE IF EXISTS `fiscal_years`;

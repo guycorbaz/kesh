@@ -23,6 +23,7 @@ pub mod credit_notes;
 pub mod dunning_eligibility;
 pub mod dunning_levels;
 pub mod email_templates;
+pub mod exchange_rates;
 pub mod fiscal_years;
 pub mod imported_supplier_invoices;
 pub mod installation_settings;

@@ -4406,6 +4406,29 @@ impl IntoResponse for AppError {
                         serde_json::json!({ "value": value }),
                     )
                 }
+                // Story 37-2 (AC-5) — aucun cours retenu par la société pour
+                // une devise et un mois : 404, forme unique d'un cours mensuel
+                // (`month` au 1er, `AAAA-MM-01`), d'où l'écran tire le
+                // `POST /exchange-rates/fetch`.
+                DbError::RateUnavailable { currency, month } => {
+                    let mois = month.format("%Y-%m-01").to_string();
+                    let mut args = FluentArgs::new();
+                    args.set("currency", currency.clone());
+                    args.set("month", month.format("%m.%Y").to_string());
+                    coded_response(
+                        StatusCode::NOT_FOUND,
+                        "RATE_UNAVAILABLE",
+                        t_args(
+                            "error-rate-unavailable",
+                            &format!(
+                                "Aucun cours de change {currency} pour {} : récupérez les cours ou saisissez-en un.",
+                                month.format("%m.%Y")
+                            ),
+                            &args,
+                        ),
+                        serde_json::json!({ "currency": currency, "month": mois }),
+                    )
+                }
                 DbError::AccountCurrencyLocked => coded_response(
                     StatusCode::CONFLICT,
                     "ACCOUNT_CURRENCY_LOCKED",

@@ -1106,6 +1106,7 @@ error-fx-account-revenue-account = { $subject } darf kein Umsatzkonto sein (Stan
 # Story 37-1 (AC-4) — Währung eines Kontos.
 error-multi-currency-disabled = Die Mehrwährungsbuchhaltung ist nicht aktiviert: Ein Konto kann keine Fremdwährung erhalten. Ein Administrator aktiviert sie unter Einstellungen.
 error-currency-unknown = «{ $value }» ist kein bekannter Währungscode (drei Buchstaben, z. B. USD oder EUR).
+error-rate-unavailable = Kein Wechselkurs { $currency } für { $month }: Rufen Sie die Kurse ab oder erfassen Sie einen.
 error-account-currency-locked = Die Währung dieses Kontos kann nicht mehr geändert werden: Es enthält Buchungen, deren Währung sie ist.
 error-account-currency-in-use = Dieses Konto wird in CHF verwendet (Rolle, Rechnungseinstellungen, Bankkonto, Artikel oder Abgleichsregel): Es kann keine Währung erhalten.
 error-account-in-foreign-currency = Dieses Konto wird in { $currency } geführt: Es kann hier nicht verwendet werden, da Kesh hier in CHF bucht.
