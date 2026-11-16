@@ -194,7 +194,9 @@ test('K9 : avis avec l’aperçu, « Réévaluer », contrôle levé, clôture p
 	await expect(apercu.getByTestId(`revaluation-after-${usdId}`)).toContainText('50.32');
 	const premiere = apercu.locator('[data-testid^="revaluation-previous-entry-"]').first();
 	await expect(premiere).toHaveAttribute('href', /^\/journal-entries\/\d+$/);
-	await dialog.screenshot({ path: capturePath(testInfo, '37-5-k9-avis-apercu') });
+	// La ligne K9 seule : le panneau défile, sa capture n'en montrerait que le haut.
+	await k9.scrollIntoViewIfNeeded();
+	await k9.screenshot({ path: capturePath(testInfo, '37-5-k9-avis-apercu') });
 
 	await apercu.getByTestId('revaluation-submit').click();
 	await expect(
@@ -204,7 +206,9 @@ test('K9 : avis avec l’aperçu, « Réévaluer », contrôle levé, clôture p
 		dialog.getByTestId('fiscal-year-checks-status-FOREIGN_ACCOUNTS_NOT_REVALUED'),
 	).toHaveText('Rien à signaler');
 	await expect(dialog.getByTestId('fiscal-year-checks-k9-preview')).toHaveCount(0);
-	await dialog.screenshot({ path: capturePath(testInfo, '37-5-k9-leve') });
+	const k9Leve = dialog.getByTestId('fiscal-year-checks-row-FOREIGN_ACCOUNTS_NOT_REVALUED');
+	await k9Leve.scrollIntoViewIfNeeded();
+	await k9Leve.screenshot({ path: capturePath(testInfo, '37-5-k9-leve') });
 	await dialog.getByTestId('fiscal-year-checks-close').click();
 
 	// La clôture est permise.

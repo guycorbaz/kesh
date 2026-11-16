@@ -1,6 +1,6 @@
 # Story 37-5 : réévaluation des comptes en devise à la fin de l'exercice
 
-Status: ready-for-dev
+Status: review
 
 *Fiche rédigée le 2026-11-14 (Opus 5.5), branche `epic/37-multi-devises`. Epic 37, D5 corrigé par D10, D9, C-37-7
 (amendé, CR-1). Suit 37-4.
@@ -752,26 +752,27 @@ l'Epic 38).
 
 ## Tâches
 
-- [ ] `kesh-core` : calcul pur de la réévaluation en débit net (entrées : soldes, cours ; sortie : lignes) et tests.
-- [ ] `kesh-db` : `fx_revaluation::post` (transaction, verrou d'exercice, soldes lus dans la transaction, **une écriture
+- [x] `kesh-core` : calcul pur de la réévaluation en débit net (entrées : soldes, cours ; sortie : lignes) et tests.
+- [x] `kesh-db` : `fx_revaluation::post` (transaction, verrou d'exercice, soldes lus dans la transaction, **une écriture
       par compte** dans la même transaction — R9 —, audit `fx_revaluation.posted` qui les liste, état clos et genre de
       clôture de l'exercice relus sous verrou — R6 ; le mode, R3, se juge avant la transaction seulement, D-CR7-3). Soldes lus par `kesh_db::repositories::account_balances::balances_as_of(&mut conn,
       company_id, fin_d_exercice, Some(ids))` (37-4 AC-1 quater : dans `kesh-db`, car `kesh-db` ne peut pas dépendre de
       `kesh-report` ; borne `<=` incluse ; débit net brut ; aucune conversion de signe).
-- [ ] `kesh-api` : routes (aperçu, passation) dans `comptable_routes`, gardes, appel de la résolution des cours avant la
+- [x] `kesh-api` : routes (aperçu, passation) dans `comptable_routes`, gardes, appel de la résolution des cours avant la
       transaction (fonction de `kesh-db`, AC-9 *Une seule fonction* : cours effectif journalier puis mensuel, ou mensuel seul ; 37-2), i18n des erreurs neuves (`FX_REVALUATION_ACCOUNT_INVALID` ;
       `FX_ACCOUNT_INVALID`, `RATE_UNAVAILABLE` et `FX_RATE_INVALID` viennent de 37-1 et 37-2, réemployés) et du libellé d'audit
       (quatre locales) ; registres de l'AC-2 (`ACTIONS`, `LIB_ROUTES`, décomptes, phrase du manuel d'administration) — tous recomptés depuis la source après chaque reprise de `main`.
-- [ ] Frontend : écran depuis les exercices (contrepartie et origine par compte, clés i18n neuves dans les quatre
+- [x] Frontend : écran depuis les exercices (contrepartie et origine par compte, clés i18n neuves dans les quatre
       locales), Vitest, E2E.
-- [ ] CR-8 : champs `previousRevaluationTotal`, `previousEntryIds`, `revaluationTotalAfter` (et numéro, nom) de
+- [x] CR-8 : champs `previousRevaluationTotal`, `previousEntryIds`, `revaluationTotalAfter` (et numéro, nom) de
       l'aperçu ; fonction partagée des lignes de l'aperçu (aperçu, passation, K9, clôture) ; K9 dans `closing_checks`
       et refus (d-bis) de `fiscal_years::close`, qui lit l'exercice et résout les cours elle-même avant `begin`
       (signature inchangée) ; erreur
       `FOREIGN_ACCOUNTS_NOT_REVALUED` (quatre locales) ; avis de K9 avec l'aperçu et « Réévaluer », rien quand K9 est
       `ok`, « Clôturer » désactivé ; inventaire « huit » → « neuf » de l'AC-9 ; tests de l'AC-9.
-- [ ] Manuel (`.tex` seulement), section *Note de version* de la fiche (pas d'écriture au `CHANGELOG.md`).
-- [ ] CR-6 : **V7** — test d'intégration HTTP de bout en bout de la recette par l'API (AC-7, sessions Bearer, source
+- [x] Manuel (`.tex` seulement), section *Note de version* de la fiche (pas d'écriture au `CHANGELOG.md`).
+- [x] CR-6 : **V7** *(sans les étapes d'ouverture et de conversion, routes de la 37-3b absentes de la base : écart
+      écrit au Dev Agent Record)* — test d'intégration HTTP de bout en bout de la recette par l'API (AC-7, sessions Bearer, source
       factice, de l'activation aux rapports) ; **V8** — réévaluation de livres importés par cette route avec `rates`
       (AC-2), manuel (AC-8), guide d'API (37-3b AC-6) ; **V12** — test `kesh_ecriture` d'une écriture de réévaluation
       (AC-5), « aucun outil pour l'aperçu » écrit au Change Log du développement.
