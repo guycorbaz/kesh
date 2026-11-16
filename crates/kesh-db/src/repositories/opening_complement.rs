@@ -671,6 +671,10 @@ pub async fn create_opening_complement_in_tx(
             debit: Money::new(l.debit),
             credit: Money::new(l.credit),
             project_id: None,
+            // Story 37-3a (AC-5) : le complément ne prend pas encore de ligne en
+            // devise (37-3b) ; un compte en devise y est refusé par le contrôle
+            // central (`ACCOUNT_REQUIRES_CURRENCY`).
+            foreign: None,
         })
         .collect();
     if gap != Decimal::ZERO {
@@ -684,6 +688,8 @@ pub async fn create_opening_complement_in_tx(
             debit: Money::new(debit),
             credit: Money::new(credit),
             project_id: None,
+            // Contrepartie sur le report à nouveau : toujours en CHF.
+            foreign: None,
         });
     }
 
@@ -713,11 +719,13 @@ pub async fn create_opening_complement_in_tx(
                 debit: l.debit.amount(),
                 credit: l.credit.amount(),
                 project_id: None,
+                foreign: l.foreign,
             })
             .collect(),
     };
     // Story 35-8a2 (#431) : au nom de l'utilisateur (`AConvertir`, Epic 36).
-    journal_entries::create_in_tx(
+    // Story 37-3a (AC-4 rang 2 bis) : exempté de la règle d'une devise.
+    journal_entries::create_opening_in_tx(
         tx,
         date.fiscal_year_id,
         crate::entities::audit_log::Acteur::utilisateur(user_id),

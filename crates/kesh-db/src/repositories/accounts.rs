@@ -2260,6 +2260,48 @@ pub async fn refuse_foreign_currency_in_tx(
     }
 }
 
+/// Refuse, parmi les comptes d'une **pièce** (lignes de facture, d'avoir, de
+/// facture fournisseur ; compte de règlement), le premier compte **en devise**,
+/// par identifiant croissant (Story 37-3a, AC-5) → 400
+/// `ACCOUNT_IN_FOREIGN_CURRENCY`. Une pièce se comptabilise en CHF : la
+/// refuser à l'enregistrement dit pourquoi plus tôt que le contrôle central de
+/// l'écriture, qui reste le filet. Lecture **sans verrou**, délibérément :
+/// l'enregistrement d'un brouillon ne prend aucun verrou de compte
+/// (C-v017-4-28) — un verrou partagé ici ferait attendre la création d'un
+/// brouillon derrière toute validation qui tient les comptes ; la devise se
+/// rejuge sous verrou au contrôle central de l'écriture (`LOCK IN SHARE MODE`).
+/// Un compte absent ou d'une autre société n'est pas refusé ici (les contrôles
+/// d'appartenance de l'appelant le font).
+pub async fn refuse_foreign_currency_accounts_in_tx(
+    conn: &mut sqlx::MySqlConnection,
+    company_id: i64,
+    account_ids: &[i64],
+) -> Result<(), DbError> {
+    if account_ids.is_empty() {
+        return Ok(());
+    }
+    let mut ids = account_ids.to_vec();
+    ids.sort_unstable();
+    ids.dedup();
+    let placeholders = ids.iter().map(|_| "?").collect::<Vec<_>>().join(",");
+    let sql = format!(
+        "SELECT id, currency FROM accounts \
+         WHERE company_id = ? AND id IN ({placeholders}) AND currency IS NOT NULL \
+         ORDER BY id LIMIT 1"
+    );
+    let mut q = sqlx::query_as::<_, (i64, String)>(&sql).bind(company_id);
+    for id in &ids {
+        q = q.bind(id);
+    }
+    match q.fetch_optional(conn).await.map_err(map_db_error)? {
+        Some((account_id, currency)) => Err(DbError::AccountInForeignCurrency {
+            account_id: Some(account_id),
+            currency,
+        }),
+        None => Ok(()),
+    }
+}
+
 /// `true` si le compte porte au moins une ligne d'écriture — lecture
 /// **verrouillante** (`LOCK IN SHARE MODE`, par l'index `idx_jel_account`),
 /// après le `FOR UPDATE` du compte (Story 37-1, AC-4) : une ligne commitée
@@ -2626,18 +2668,21 @@ mod tests {
                         debit: Decimal::from(100),
                         credit: Decimal::ZERO,
                         project_id: None,
+                        foreign: None,
                     },
                     NewJournalEntryLine {
                         account_id: debit_account,
                         debit: Decimal::from(50),
                         credit: Decimal::ZERO,
                         project_id: None,
+                        foreign: None,
                     },
                     NewJournalEntryLine {
                         account_id: credit_account,
                         debit: Decimal::ZERO,
                         credit: Decimal::from(150),
                         project_id: None,
+                        foreign: None,
                     },
                 ],
             },
@@ -2675,12 +2720,14 @@ mod tests {
                         debit: Decimal::from(100),
                         credit: Decimal::ZERO,
                         project_id: None,
+                        foreign: None,
                     },
                     NewJournalEntryLine {
                         account_id: credit_account,
                         debit: Decimal::ZERO,
                         credit: Decimal::from(100),
                         project_id: None,
+                        foreign: None,
                     },
                 ],
             },

@@ -154,6 +154,8 @@ fn generate_purchase_journal_lines(
             debit: *line_total,
             credit: Decimal::ZERO,
             project_id: None,
+            // Story 37-3a (AC-5) : les chemins automatiques n'écrivent qu'en CHF.
+            foreign: None,
         });
     }
 
@@ -168,6 +170,7 @@ fn generate_purchase_journal_lines(
             debit: total_vat,
             credit: Decimal::ZERO,
             project_id: None,
+            foreign: None,
         });
     }
 
@@ -177,6 +180,7 @@ fn generate_purchase_journal_lines(
         debit: Decimal::ZERO,
         credit: total_ttc,
         project_id: None,
+        foreign: None,
     });
 
     Ok((
@@ -547,6 +551,10 @@ async fn check_draft_input_in_tx(
     if !non_postable.is_empty() {
         return Err(DbError::accounts_not_postable(non_postable));
     }
+    // Story 37-3a (AC-5) — un compte de charge en devise est refusé (400
+    // `ACCOUNT_IN_FOREIGN_CURRENCY`) : la facture fournisseur s'écrit en CHF.
+    let ids: Vec<i64> = new.lines.iter().map(|l| l.expense_account_id).collect();
+    super::accounts::refuse_foreign_currency_accounts_in_tx(tx, new.company_id, &ids).await?;
     Ok(line_totals)
 }
 
@@ -2114,6 +2122,12 @@ pub async fn pay_in_tx_as(
         ClaimSubject::Counterparty(ClaimSide::Payable),
     )
     .await?;
+    // (3 ter) Story 37-3a (AC-5) — un compte de règlement interne en devise est
+    // refusé (400 `ACCOUNT_IN_FOREIGN_CURRENCY`) : le règlement s'écrit en CHF.
+    if let Some(account_id) = internal_account_id {
+        super::accounts::refuse_foreign_currency_accounts_in_tx(tx, company_id, &[account_id])
+            .await?;
+    }
 
     // (4) Exercice ouvert couvrant la date de règlement.
     let fy = fiscal_years::find_open_covering_date(tx, company_id, payment_date)
@@ -2140,12 +2154,14 @@ pub async fn pay_in_tx_as(
             debit: ttc,
             credit: Decimal::ZERO,
             project_id: None,
+            foreign: None,
         },
         NewJournalEntryLine {
             account_id: counterparty_account_id,
             debit: Decimal::ZERO,
             credit: ttc,
             project_id: None,
+            foreign: None,
         },
     ];
     let je = journal_entries::create_in_tx(

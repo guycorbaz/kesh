@@ -124,6 +124,7 @@ fn entry(co: &Co, date: NaiveDate, lines: &[(&str, Decimal, Decimal)]) -> NewJou
                 debit: *debit,
                 credit: *credit,
                 project_id: None,
+                foreign: None,
             })
             .collect(),
     }

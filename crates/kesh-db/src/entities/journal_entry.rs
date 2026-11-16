@@ -19,6 +19,7 @@
 //! Pattern identique à `OrgType` et `AccountType`.
 
 use chrono::{NaiveDate, NaiveDateTime};
+pub use kesh_core::accounting::fx::{ForeignAmount, RateProvenance};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use sqlx::{Decode, Encode, MySql, Type, encode::IsNull, error::BoxDynError, mysql::MySqlTypeInfo};
@@ -170,6 +171,53 @@ pub struct JournalEntryLine {
     /// Origine du groupe : `document`, `reversal` ou `manual` ; `None` si et
     /// seulement si `lettering_key` est `None` (contrainte `chk_jel_lettering_pair`).
     pub lettering_origin: Option<String>,
+    /// Montant en devise (Story 37-3a, AC-1) ; `None` pour une ligne CHF. Les
+    /// trois colonnes en devise sont `NULL` ensemble (`chk_jel_fx_all_or_none`).
+    pub amount_currency: Option<Decimal>,
+    /// Cours par unité de devise (10 décimales en base) ; `None` pour une
+    /// ligne CHF.
+    pub exchange_rate: Option<Decimal>,
+    /// Provenance du cours (`afc`, `manual`, `revaluation`) ; `None` pour une
+    /// ligne CHF.
+    pub rate_source: Option<String>,
+    /// Devise **du compte** (`accounts.currency`, lue par jointure — la ligne ne
+    /// stocke aucune devise, CR-4) ; `None` = devise principale. Dans une
+    /// transaction d'écriture, elle est reprise de la lecture verrouillante des
+    /// comptes qui a servi aux contrôles (AC-4).
+    pub account_currency: Option<String>,
+}
+
+/// Vue « devise » d'une ligne persistée (Story 37-3a, AC-2) : ce que rendent
+/// l'API (`foreign`), l'audit et le MCP. La devise est celle du compte.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LineForeign {
+    /// Devise du compte (ISO 4217).
+    pub currency: String,
+    /// Montant en devise.
+    pub amount: Decimal,
+    /// Cours par unité.
+    pub rate: Decimal,
+    /// Provenance du cours.
+    pub source: RateProvenance,
+}
+
+impl JournalEntryLine {
+    /// La partie en devise de la ligne, `None` pour une ligne CHF — et aussi
+    /// quand `amount_currency` est posé sur un compte **sans** devise (état
+    /// que le dépôt refuse, atteignable seulement par SQL brut ou sauvegarde
+    /// retouchée : la ligne se lit alors comme une ligne CHF, limite de l'AC-1).
+    pub fn foreign(&self) -> Option<LineForeign> {
+        let currency = self.account_currency.clone()?;
+        let amount = self.amount_currency?;
+        let rate = self.exchange_rate?;
+        let source = self.rate_source.as_deref()?.parse().ok()?;
+        Some(LineForeign {
+            currency,
+            amount,
+            rate,
+            source,
+        })
+    }
 }
 
 /// En-tête + lignes, retourné par le repository pour les lectures.
@@ -208,6 +256,10 @@ pub struct NewJournalEntryLine {
     /// Prime sur `NewJournalEntry::project_id` (fallback document-level 19-3)
     /// à l'insertion : `line.project_id.or(new.project_id)`.
     pub project_id: Option<i64>,
+    /// Partie en devise (Story 37-3a, AC-2) ; `None` pour une ligne CHF —
+    /// la seule forme qu'emploient les chemins automatiques. **Sans
+    /// `Default`** : chaque site de construction dit ce qu'il pose.
+    pub foreign: Option<ForeignAmount>,
 }
 
 #[cfg(test)]

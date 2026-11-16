@@ -1,6 +1,6 @@
 -- SQUASH DU SCHÉMA DE TEST — Story 22-5 (#251). GÉNÉRÉ, NE PAS ÉDITER.
 -- Régénérer : scripts/regen-test-schema.sh
--- Équivalent des 93 migrations de crates/kesh-db/migrations/,
+-- Équivalent des 94 migrations de crates/kesh-db/migrations/,
 -- rejouées en UN batch DDL par base éphémère de test.
 --
 -- Le garde-fou crates/kesh-db/tests/test_schema_guard.rs compare ce schéma
@@ -942,6 +942,9 @@ CREATE TABLE `journal_entry_lines` (
   `project_id` bigint(20) DEFAULT NULL,
   `lettering_key` bigint(20) DEFAULT NULL COMMENT 'Clé du groupe de lettrage = plus petit id de ligne du groupe ; NULL = ligne ouverte',
   `lettering_origin` varchar(10) DEFAULT NULL COMMENT 'Origine du groupe : document, reversal, manual',
+  `amount_currency` decimal(19,4) DEFAULT NULL COMMENT 'Montant en devise du compte, NULL = ligne en devise principale',
+  `exchange_rate` decimal(20,10) DEFAULT NULL COMMENT 'Cours par unité de devise, NULL = ligne en devise principale',
+  `rate_source` varchar(12) DEFAULT NULL COMMENT 'Provenance du cours (afc, manual, revaluation), NULL = ligne en devise principale',
   PRIMARY KEY (`id`),
   UNIQUE KEY `uq_jel_entry_order` (`entry_id`,`line_order`),
   KEY `idx_jel_entry` (`entry_id`),
@@ -956,7 +959,12 @@ CREATE TABLE `journal_entry_lines` (
   CONSTRAINT `chk_jel_debit_nonneg` CHECK (`debit` >= 0),
   CONSTRAINT `chk_jel_credit_nonneg` CHECK (`credit` >= 0),
   CONSTRAINT `chk_jel_lettering_origin` CHECK (`lettering_origin` is null or `lettering_origin` in ('document','reversal','manual')),
-  CONSTRAINT `chk_jel_lettering_pair` CHECK (`lettering_key` is null = (`lettering_origin` is null))
+  CONSTRAINT `chk_jel_lettering_pair` CHECK (`lettering_key` is null = (`lettering_origin` is null)),
+  CONSTRAINT `chk_jel_fx_all_or_none` CHECK (`amount_currency` is null and `exchange_rate` is null and `rate_source` is null or `amount_currency` is not null and `exchange_rate` is not null and `rate_source` is not null),
+  CONSTRAINT `chk_jel_fx_rate_source` CHECK (`rate_source` is null or cast(`rate_source` as char charset binary) in ('afc','manual','revaluation')),
+  CONSTRAINT `chk_jel_fx_amount` CHECK (`amount_currency` is null or cast(`rate_source` as char charset binary) = 'revaluation' and `amount_currency` = 0 or `rate_source` is not null and cast(`rate_source` as char charset binary) <> 'revaluation' and `amount_currency` > 0),
+  CONSTRAINT `chk_jel_fx_rate` CHECK (`exchange_rate` is null or `exchange_rate` > 0),
+  CONSTRAINT `chk_jel_fx_chf` CHECK (`amount_currency` is null or cast(`rate_source` as char charset binary) = 'revaluation' or `debit` + `credit` = round(`amount_currency` * `exchange_rate`,2))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 DROP TABLE IF EXISTS `journal_entry_number_sequences`;

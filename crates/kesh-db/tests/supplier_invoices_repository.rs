@@ -802,6 +802,7 @@ async fn cancel_paid_invoice_detaches_its_settlement(pool: MySqlPool) {
                     debit: l.debit,
                     credit: l.credit,
                     project_id: l.project_id,
+                    foreign: None,
                 })
                 .collect(),
         };

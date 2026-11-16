@@ -9,8 +9,24 @@
 use chrono::NaiveDate;
 use serde::{Deserialize, Serialize};
 
+use super::fx::{ForeignAmount, FxLineError, check_foreign_line};
 use crate::errors::CoreError;
 use crate::types::Money;
+
+/// Traduit le refus neutre d'une ligne en devise en [`CoreError`], avec le
+/// rang 1-based de la ligne (Story 37-3a, AC-3). Partagée par [`validate`] et
+/// par les appelants qui contrôlent une ligne seule (complément d'ouverture).
+pub fn fx_line_error(line: usize, e: FxLineError) -> CoreError {
+    match e {
+        FxLineError::OutOfRange => CoreError::FxValueOutOfRange { line },
+        FxLineError::RoundsToZero => CoreError::FxLineRoundsToZero { line },
+        FxLineError::Mismatch { expected, provided } => CoreError::FxAmountMismatch {
+            line,
+            expected,
+            provided,
+        },
+    }
+}
 
 /// Journal comptable dans lequel l'écriture est saisie.
 ///
@@ -84,6 +100,11 @@ pub struct JournalEntryLineDraft {
     /// validation métier (projet existant, même company, non archivé)
     /// est faite côté persistance (kesh-db), pas ici (ARCH-1 : pas d'I/O).
     pub project_id: Option<i64>,
+    /// Partie en devise (Story 37-3a, AC-2) : `None` pour une ligne CHF.
+    /// [`validate`] contrôle la ligne par
+    /// [`check_foreign_line`](super::fx::check_foreign_line) ; la devise, qui
+    /// est celle du compte, se contrôle côté persistance.
+    pub foreign: Option<ForeignAmount>,
 }
 
 /// Brouillon d'écriture avant validation.
@@ -143,7 +164,9 @@ impl BalancedEntry {
 ///
 /// 1. Libellé non vide (après trim)
 /// 2. Au moins 2 lignes
-/// 3. Pas de montant négatif
+/// 3. Pas de montant négatif ; puis, pour une ligne en devise (Story 37-3a,
+///    AC-3) : bornes, signe, CHF arrondi non nul, CHF fourni égal au calcul
+///    ([`check_foreign_line`])
 /// 4. Exclusivité débit/crédit par ligne
 /// 5. Total des débits = total des crédits
 /// 6. Total strictement positif
@@ -158,9 +181,14 @@ pub fn validate(draft: JournalEntryDraft) -> Result<BalancedEntry, CoreError> {
 
     let zero = Money::zero();
 
-    for line in &draft.lines {
+    for (idx, line) in draft.lines.iter().enumerate() {
         if line.debit.is_negative() || line.credit.is_negative() {
             return Err(CoreError::EntryNegativeAmount);
+        }
+
+        if let Some(foreign) = &line.foreign {
+            check_foreign_line(&line.debit.amount(), &line.credit.amount(), foreign)
+                .map_err(|e| fx_line_error(idx + 1, e))?;
         }
 
         let debit_positive = line.debit > zero;
@@ -217,7 +245,80 @@ mod tests {
             debit,
             credit,
             project_id: None,
+            foreign: None,
         }
+    }
+
+    fn fx_line(
+        debit: Money,
+        credit: Money,
+        amount: rust_decimal::Decimal,
+    ) -> JournalEntryLineDraft {
+        JournalEntryLineDraft {
+            account_id: 9,
+            debit,
+            credit,
+            project_id: None,
+            foreign: Some(ForeignAmount {
+                declared_currency: None,
+                amount,
+                rate: dec!(0.91193),
+                source: Some(super::super::fx::RateProvenance::Afc),
+                rate_derived: false,
+            }),
+        }
+    }
+
+    #[test]
+    fn ligne_en_devise_valide_et_equilibree() {
+        let d = draft(vec![
+            fx_line(Money::new(dec!(1125.83)), Money::zero(), dec!(1234.56)),
+            line(2, Money::zero(), Money::new(dec!(1125.83))),
+        ]);
+        assert!(validate(d).is_ok());
+    }
+
+    #[test]
+    fn ligne_en_devise_ecart_rend_le_rang() {
+        let d = draft(vec![
+            line(2, Money::zero(), Money::new(dec!(1125.84))),
+            fx_line(Money::new(dec!(1125.84)), Money::zero(), dec!(1234.56)),
+        ]);
+        assert_eq!(
+            validate(d),
+            Err(CoreError::FxAmountMismatch {
+                line: 2,
+                expected: dec!(1125.83),
+                provided: dec!(1125.84)
+            })
+        );
+    }
+
+    #[test]
+    fn negatif_precede_les_controles_fx_et_fx_precede_l_exclusivite() {
+        // Débit négatif sur une ligne en devise : EntryNegativeAmount d'abord.
+        let d = draft(vec![
+            fx_line(Money::new(dec!(-1)), Money::zero(), dec!(1)),
+            line(2, Money::zero(), Money::new(dec!(1))),
+        ]);
+        assert_eq!(validate(d), Err(CoreError::EntryNegativeAmount));
+        // Deux côtés non nuls mais somme cohérente : passe le FX, refusée par
+        // l'exclusivité.
+        let d = draft(vec![
+            fx_line(
+                Money::new(dec!(1000)),
+                Money::new(dec!(125.83)),
+                dec!(1234.56),
+            ),
+            line(2, Money::zero(), Money::new(dec!(874.17))),
+        ]);
+        assert_eq!(validate(d), Err(CoreError::EntryLineDebitCreditExclusive));
+        // Arrondi nul, rang 1.
+        let d = draft(vec![
+            fx_line(Money::zero(), Money::zero(), dec!(0.001)),
+            line(2, Money::zero(), Money::new(dec!(1))),
+        ]);
+        assert_eq!(validate(d), Err(CoreError::FxLineRoundsToZero { line: 1 }));
     }
 
     fn draft(lines: Vec<JournalEntryLineDraft>) -> JournalEntryDraft {

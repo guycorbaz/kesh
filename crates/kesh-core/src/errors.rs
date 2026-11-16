@@ -104,6 +104,36 @@ pub enum CoreError {
     /// avec le parseur Kesh courant (limité à `001.04` et `001.08`).
     #[error("version CAMT.053 inattendue : {0}")]
     BankImportUnknownVersion(String),
+
+    /// Ligne en devise (Story 37-3a, AC-3) : montant, cours ou CHF hors de
+    /// ses bornes (échelle, valeur, signe). `line` est le rang **1-based** de
+    /// la ligne dans le corps. Mappé vers HTTP 400 `FX_VALUE_OUT_OF_RANGE`.
+    #[error("Ligne {line} : montant en devise, cours ou CHF hors bornes")]
+    FxValueOutOfRange {
+        /// Rang 1-based de la ligne.
+        line: usize,
+    },
+
+    /// Ligne en devise dont le CHF calculé s'arrondit à 0 (Story 37-3a,
+    /// AC-3). Mappé vers HTTP 400 `FX_LINE_ROUNDS_TO_ZERO`.
+    #[error("Ligne {line} : le montant CHF calculé s'arrondit à zéro")]
+    FxLineRoundsToZero {
+        /// Rang 1-based de la ligne.
+        line: usize,
+    },
+
+    /// Ligne en devise dont le CHF fourni (`debit + credit`) diffère de
+    /// `round(montant × cours, 2)` (Story 37-3a, AC-3). Mappé vers HTTP 400
+    /// `FX_AMOUNT_MISMATCH`, `details: { line, expected, provided }`.
+    #[error("Ligne {line} : CHF attendu {expected}, fourni {provided}")]
+    FxAmountMismatch {
+        /// Rang 1-based de la ligne.
+        line: usize,
+        /// CHF calculé, à deux décimales.
+        expected: rust_decimal::Decimal,
+        /// CHF fourni.
+        provided: rust_decimal::Decimal,
+    },
 }
 
 impl CoreError {
@@ -127,6 +157,9 @@ impl CoreError {
             Self::BankImportBalanceMismatch { .. } => "BANK_IMPORT_BALANCE_MISMATCH",
             Self::BankImportUnsupportedCurrency(_) => "BANK_IMPORT_UNSUPPORTED_CURRENCY",
             Self::BankImportUnknownVersion(_) => "BANK_IMPORT_UNKNOWN_VERSION",
+            Self::FxValueOutOfRange { .. } => "FX_VALUE_OUT_OF_RANGE",
+            Self::FxLineRoundsToZero { .. } => "FX_LINE_ROUNDS_TO_ZERO",
+            Self::FxAmountMismatch { .. } => "FX_AMOUNT_MISMATCH",
         }
     }
 }
