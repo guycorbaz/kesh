@@ -1,6 +1,6 @@
 # Story 36-12a : QR-facture — les deux lignes de séparation, leurs ciseaux, et le point de dépôt aligné à droite (SIX § 3.7, #944)
 
-Status: review
+Status: done
 
 *Fiche rédigée le 2026-11-15 (Opus 5.5) par le découpage de la fiche `36-12-qr-facture-separation.md` (`split`), décidé
 par l'orchestrateur à la remédiation de la passe 1 de validation (V1-7, `kesh-gate-logs/e36-12/validation-p1.md`), puis
@@ -492,6 +492,22 @@ B 0/0/0/4, E 0/0/0/3, A 0/0/1/4). Les relevés ci-dessus restent tels qu'écrits
   positive (`W` à 900) rendue en code 1 ; base `kesh_e3612` recréée, `test-fast --ci` voie 2 **5464 passés, 13 ignorés,
   0 échec**, code 0 (`test-fast-ci-remediation-p1.log`). Ni `gate-ci` ni E2E (à la clôture).
 
+**Revue P2 ciblée et clôture** (2026-11-15/16, Opus 5.5). La passe ciblée sur la remédiation `b78b097ca`
+(`kesh-gate-logs/e36-12/review-p2-ciblee.md`) rend 0/0/0/2 : LOW-1 (le doc-comment de `largeur_mm` exige la chaîne passée
+à `use_text`, après `texte_imprime`) et LOW-2 (la règle « sans entrée = sans octet » tient de `lopdf` 0.31.0 ; `--verifier`
+à rejouer à chaque montée) traités en doc-comments seuls, commit `241cb583f` ; puis `4c329c64c`, le doc-comment du module
+`pdf` sans lien vers le module privé `largeurs` (avertissement de `cargo doc --document-private-items` relevé à la
+vérification). Aucune ligne de code exécutée ne change après `b78b097ca`. **Dernier commit de code : `4c329c64c`.**
+Gates de clôture, à ce commit :
+- `scripts/gate-ci.sh kesh_ci_e3612`, voie 1 : **5471 passés, 0 échec, 17 ignorés**, 228 binaires, code 0
+  (`gate-ci-cloture.log`, commit et code en tête et en fin). 5471 = 5470 de la revue + le test neuf de B-2.
+- `npm run build` (pour l'E2E) : code 0 (`front-build-cloture.log`) ; frontend non modifié par la story.
+- **E2E complet**, voie 2, base `kesh_e2e_e3612` recréée vide, port 3612 (`kesh-gate-logs/e36-12/e2e-cloture.sh`,
+  `e2e-cloture.log`, backend `e2e-cloture-backend.log`) : **426 passés, 7 échecs, 18 ignorés** (451). Les sept échecs
+  sont, un à un, ceux de la KF-029 (#97) de `docs/testing.md` § *Les échecs attendus* : `mode-expert.spec.ts:26`, `:41` ;
+  `onboarding-path-b.spec.ts:65`, `:92` ; `onboarding.spec.ts:57`, `:77`, `:150`. Aucun échec variable. Backend arrêté
+  par son PID, port libéré.
+
 ### File List
 
 - `crates/kesh-qrbill/src/pdf.rs` (modifié)
@@ -559,3 +575,14 @@ B 0/0/0/4, E 0/0/0/3, A 0/0/1/4). Les relevés ci-dessus restent tels qu'écrits
   `c797e5761` (manuel). Rouges, mutations M1 à M9 (toutes tuées), `t4_pdfium` vert, `test-fast --ci` 5463/0/13 et
   `gate-ci` 5470/0/17 au commit `c797e5761` : Dev Agent Record. E2E complet : à la clôture. Choix C-36-12a-1, -2.
   `Status: review` ; prompt de la revue P1 : `36-12a-qr-facture-lignes-ciseaux-review-prompt-p1.md`.
+- 2026-11-16 — **Boucle de revue terminée et clôture** (Opus 5.5). Synthèse de la boucle :
+  - **Validation** : P1 complète (Sonnet, sur la fiche 36-12 d'origine) 0/0/4/9, qui a fait **découper** la story en
+    36-12a et 36-12b (V1-7, C-36-12-8) → P2 complète (Opus) 0/0/1/6, remédiée (point de dépôt aligné, table des
+    largeurs avancée à la 36-12a) → P3 ciblée (Sonnet) 0/0/0/8, LOW traités à l'étape 0.
+  - **Revue de code** : P1 complète, trois lentilles — B 0/0/0/4 (modèle non indiqué au rapport), E 0/0/0/3 (Opus ; le
+    prompt prévoyait Sonnet), A 0/0/1/4 (Opus) ; A-1 MEDIUM (générateur hors dépôt) et les onze LOW corrigés ou annotés,
+    aucun réfuté, mutations M10 à M13 jouées et tuées → **P2 ciblée** (chasseur de régressions sur `b78b097ca`, modèle
+    non indiqué au rapport) **0/0/0/2**, LOW traités en doc-comments. La boucle se clôt sur une passe sans rien au-dessus
+    de LOW.
+  - Gates de clôture au dernier commit de code `4c329c64c` : `gate-ci` 5471/0/17, E2E 426 passés, 7 échecs (KF-029),
+    18 ignorés (Dev Agent Record). `Status: done`.
