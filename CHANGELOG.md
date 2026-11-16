@@ -22,6 +22,10 @@ La 0.18.0 corrige la fin de l'assistant de configuration, les derniers jours UTC
 - **La fenêtre de 30 jours de la réconciliation part du jour de Zurich du dernier rappel** (refs [#1053](https://github.com/guycorbaz/kesh/issues/1053)) : comme le délai du rappel suivant, un paiement reçu le trentième jour après un rappel envoyé peu après minuit est de nouveau proposé et accepté. La règle de l'API (`payment_date_outside_window`) ne change ni de code ni de champ ; elle admet ce jour de plus.
 - **QR-facture : deux lignes à découper, chacune avec ses ciseaux** (refs [#944](https://github.com/guycorbaz/kesh/issues/944), refs [#12](https://github.com/guycorbaz/kesh/issues/12)) : le récépissé et la partie paiement sont délimités par deux lignes pointillées portant chacune des ciseaux, comme la directive SIX l'exige pour une QR-facture en PDF ; la ligne verticale entre le récépissé et la partie paiement manquait. L'intitulé du point de dépôt, au bas du récépissé, est désormais aligné à droite, comme la directive le demande, et finit à 5 mm de cette ligne, quelle que soit la langue du client, là où il débordait jusqu'au bord de la partie paiement en allemand, en anglais et en italien. Le code QR et le reste du bulletin ne changent pas. **Les PDF déjà émis et figés ne changent pas** ; une facture validée jamais ouverte, un rappel et un PDF refigé par un administrateur prennent le nouveau rendu.
 
+### Modifié
+
+- **Les tests de Kesh ne figent plus l'année 2026** (refs [#1125](https://github.com/guycorbaz/kesh/issues/1125)) : la suite reste verte à partir du 1er janvier 2027. Aucun changement pour l'utilisateur.
+
 ---
 
 ## [0.17.8] — 2026-11-15
