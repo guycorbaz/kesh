@@ -1922,3 +1922,4 @@ lecture seule (Consultation) ; carte des paramètres ; largeur 390 px.
   couverts), E2E complet (à la clôture). Gate ciblé (kesh-db non touché), base `kesh_s37_2` remise à zéro : fmt 0, clippy
   workspace 0, nextest `-p kesh-api --profile ci` **3069 passés, 10 ignorés**, `npm run check` 0, `lint-i18n-ownership` 0,
   Vitest complet **3893 passés (250 fichiers)**, `npm run build` 0 ; journaux `kesh-gate-logs/s37-2/review-p2/`.
+- 2026-11-16 — revue de code P3 ciblée (Haiku ; entrée écrite par l'orchestrateur, la passe n'ayant rien remédié) : 0 CRITICAL, 0 HIGH, 0 MEDIUM, 2 LOW tracés (légende `sr-only` qui répète le titre du dialogue ; assertion de la légende qui ne vérifie pas le libellé) ; le test de P2 rougit sans le correctif (par lecture). **Boucle de revue close** : P1 (Opus) 8 MEDIUM, 6 LOW corrigés → P2 (Sonnet) 4 LOW corrigés → P3 ciblée (Haiku) 0 au-dessus de LOW.
