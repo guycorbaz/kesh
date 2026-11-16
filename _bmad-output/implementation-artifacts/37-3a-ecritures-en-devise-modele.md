@@ -778,7 +778,9 @@ chacune (R7), l'écart de change dans la seconde, afin que mes comptes en devise
 *(Texte prêt à assembler au `CHANGELOG.md` à la release ; la fiche n'écrit jamais au `CHANGELOG.md`.)*
 
 - **Added** — `POST`/`PUT /journal-entries` prennent `foreign { currency?, amount, rate?, chf?, rateSource?, side? }` : l'API complète la ligne en devise sans calcul du client.
-- **Changed (contrat de l'API)** — `rate`, `chf`, `side`, `rateSource`, `debit`/`credit` facultatifs ; une ligne CHF sans `debit` rend 400 au lieu de 422 ; changement de statut de `Validation` (voir AC-5, guide d'API en 37-3b).
+- **Changed (contrat de l'API)** — `rate`, `chf`, `side`, `rateSource`, `debit`/`credit` facultatifs ; une ligne CHF sans `debit` rend 400 au lieu de 422 ; changement de statut de `Validation` (voir AC-6, guide d'API en 37-3b).
+- **Changed (contrat du serveur MCP)** — `kesh_ecritures` : la page passe de 12 à **10** écritures par défaut et de 22 à **18** au plus (les lignes en devise portent quatre champs de plus) ; un `limit` de 19 à 22 est désormais refusé par le schéma de l'outil (revue de code P1).
+- **Changed (exports)** — le CSV des lignes d'écriture gagne trois colonnes en fin de ligne, `amount_currency` (4 décimales), `exchange_rate` (10 décimales) et `rate_source`, vides sur une ligne CHF (revue de code P1).
 - **Limite connue** — le lettrage manuel d'un compte en devise ne raisonne qu'en CHF : un débiteur USD soldé en USD avec un écart de change ne se lettre pas (issue ouverte à la PR, C-37-8).
 - **Compteurs** : recomptés depuis la source après chaque reprise de `main` (`LIB_ROUTES`, partitions du registre, `sitesTotal`, catalogues i18n).
 
@@ -1175,6 +1177,40 @@ chacune (R7), l'écart de change dans la seconde, afin que mes comptes en devise
   fichiers ; la fusion n'apporte pas de migration) ; registre des routes inchangé (37-3a n'ajoute pas de route) ;
   `sitesTotal` de `i18n-keys.test.ts` porté par 37-2 seule (la 37-3a ne touche aucun site frontend), vérifié par le
   Vitest complet. Gates de clôture rejoués au commit de fusion, dernier commit de code (Dev Agent Record).
+- 2026-11-16 — revue de code P1 (Opus ; couches Blind Hunter, Edge Case Hunter, Acceptance Auditor en parallèle,
+  plus lecture de l'orchestrateur ; prompt `37-3a-review-prompt-p1.md`) : **1 HIGH, 7 MEDIUM, 12 LOW** (13 corrigés,
+  7 LOW renvoyés au registre `issues-a-ouvrir-epic-37.md`, points 14 à 20), 3 rejetés. HIGH : 37-3a-CR-P1-1 (AC-5,
+  FR-14) aucun test ne passait par les sites du refus `ACCOUNT_IN_FOREIGN_CURRENCY` — sept tests par site (facture :
+  création et validation après passage en devise ; avoir ; brouillon fournisseur, création et mise à jour ;
+  validation fournisseur ; paiement fournisseur par compte interne ; règlement client par compte interne) et test
+  d'inventaire `account_columns_inventory.rs` (liste close des 28 colonnes `*_account_id` du schéma, cinq vers
+  `bank_accounts` classées à part, chaque colonne avec son test ou sa justification, sondes positives). MEDIUM :
+  CR-P1-2 la validation d'une facture fournisseur ne rejugeait pas la devise de ses comptes de charge
+  (`supplier_invoices::validate_in_tx`, refus ajouté sous les `FOR UPDATE` existants) ; CR-P1-3 `FX_AMOUNT_MISMATCH`
+  arrondissait `provided` à deux décimales (« 9.12 » pour `9.1201`, deux valeurs égales affichées) — `chf_text`, sans
+  arrondi ; CR-P1-4 le message de `MULTI_CURRENCY_DISABLED` sur un exercice (« clos avant l'activation ») était faux
+  sur les routes des cours et des genres de 37-1/37-2 dans une société mono-devise — message vrai partout, quatre
+  locales, `details` inchangés ; CR-P1-5 le cas (c) de `ac4_rang4_cours_afc` était **muet** (INSERT dans
+  `_kesh_fetched_exchange_rates` sur des colonnes inexistantes, erreur avalée par `.ok()`) — aide `publier` vérifiée ;
+  CR-P1-6 tests exigés absents : (e) au dépôt, (h) à l'API après import d'installation, (i), et (f) complété (lignes
+  CHF seules, compte, côté, seconde ligne `afc`, date vers un mois `afc`) ; CR-P1-7 tests HTTP absents :
+  `ENTRY_IS_FX_REVALUATION` (409, suppression permise), conversion EUR → USD en deux écritures (compte de conversion
+  soldé, une écriture à deux devises refusée), cours déduit au travers du `PUT` (CR-6 : sans effet, copie double) ;
+  CR-P1-8 Note de version sans le changement de contrat MCP (page 22/12 → 18/10) ni les colonnes CSV — ajoutés, renvoi
+  AC-5 → AC-6 corrigé. LOW corrigés : doc-comment de `coded_response` détaché par l'insertion de `fx_db_refusal` ;
+  `details` de `MULTI_CURRENCY_DISABLED` en lot alignés sur la réponse HTTP (test unitaire) ; « quatre sites » → trois
+  (`fx_failed_proposal`) ; commentaire sur la devise des lignes d'avant du `PUT` (jointure, devise verrouillée par
+  37-1) ; doc-comment trompeur de `ac5_compte_de_piece_en_devise_refuse`. Rejetés : `AccountInForeignCurrency` dans les
+  lots (inatteignable : le rapprochement règle par `BankTransfer`, `internal_account_id` est `None`) ; recopie de
+  `afc` par la contre-passation (FR-7, voulue) ; écarts acceptés du Dev Agent Record (lecture sans verrou des comptes
+  de pièce, place du contrôle au `PUT`, concurrence argumentée, fixture sans pas d'ajustement — renvoyée au point 15).
+  Axes exercés : AC-1 à AC-9, comptabilité (`fx_chf`, `rate_from_chf`, rangs 2 à 4, A17, A32, CR-6, contre-passation,
+  réévaluation), verrous et ordre, migration P1–P8, sauvegarde et restauration 0.17.6, CSV, MCP, i18n, sites non
+  résolus (inventaire des `INSERT` : `insert_lines` seul, plus la restauration générique), tests muets. Non exercés :
+  RBAC (aucune route neuve), manuels (renvoyés à la 37-3b, aucun `.tex` touché), E2E Playwright (aucun écran touché),
+  test de course réel. Gates : base `kesh_s37_3a` recréée, migrée, semée ; `scripts/test-fast.sh --ci` (fmt, clippy
+  `-D warnings`, nextest `ci`) **5743 passés, 13 ignorés** (`kesh-gate-logs/s37-3a/review-p1/gate-complet.log`),
+  19 tests de plus qu'au commit de fusion (5724). Frontend non touché.
 
 ## Dev Agent Record
 

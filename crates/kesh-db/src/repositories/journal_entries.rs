@@ -1817,7 +1817,10 @@ async fn update_in_tx(
     // Étape 6-bis (Story 37-3a, AC-4) — les lignes d'avant, lues ici (et non
     // plus à l'étape 8), sous le verrou de l'écriture : la règle d'une devise
     // (rang 2 bis) et la provenance gardée d'une ligne identique (rang 4) les
-    // lisent. Puis le contrôle central des lignes en devise.
+    // lisent. Puis le contrôle central des lignes en devise. La devise de ces
+    // lignes vient de la jointure, non de la lecture verrouillante : un compte
+    // qui porte des lignes a sa devise verrouillée (37-1, AC-4), la jointure
+    // ne peut donc pas en lire une autre (revue de code P1).
     let before_lines: Vec<JournalEntryLine> =
         sqlx::query_as::<_, JournalEntryLine>(&lines_of_entry_sql())
             .bind(id)

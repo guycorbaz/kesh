@@ -1707,6 +1707,14 @@ pub async fn validate_in_tx(
     if !non_postable.is_empty() {
         return Err(DbError::accounts_not_postable(non_postable));
     }
+    // Story 37-3a (AC-5, revue de code P1) — la devise des comptes de charge se
+    // rejuge à la validation, comme `validate_invoice` le fait pour les comptes
+    // de produit : un compte passé en devise depuis l'enregistrement du
+    // brouillon (37-1 ne le lui interdit pas) est refusé sous son nom (400
+    // `ACCOUNT_IN_FOREIGN_CURRENCY`), non par le rang 3 du contrôle central sur
+    // une ligne générée. Les comptes sont déjà tenus `FOR UPDATE` ci-dessus.
+    let expense_ids: Vec<i64> = pairs.iter().map(|(_, _, a)| *a).collect();
+    super::accounts::refuse_foreign_currency_accounts_in_tx(tx, company_id, &expense_ids).await?;
 
     // (2, désignés) Story 15-5d (#429) — les comptes DÉSIGNÉS que cette saisie
     // peut écrire (créanciers, TVA récupérable), lus dans les réglages de (2 bis),

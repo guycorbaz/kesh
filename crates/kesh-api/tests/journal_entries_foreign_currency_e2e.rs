@@ -429,6 +429,12 @@ async fn exercice_mono_devise_rend_409(pool: MySqlPool) {
         b["error"]["details"]["fiscalYearId"],
         json!(ctx.s.fiscal_year_id)
     );
+    // Revue de code P1 : le message ne dit pas pourquoi l'exercice est
+    // mono-devise — la même variante sort de la route des genres de cours
+    // dans une société jamais passée en multi-devises.
+    let message = b["error"]["message"].as_str().unwrap_or("");
+    assert!(message.contains("mono-devise"), "{b}");
+    assert!(!message.contains("clos"), "{b}");
 }
 
 // ============================================================
@@ -646,4 +652,199 @@ async fn put_d_une_ecriture_en_devise(pool: MySqlPool) {
     assert_eq!(s, 200, "{b}");
     assert_eq!(b["lines"][0]["foreign"]["currency"], "EUR");
     assert_eq!(b["version"].as_i64(), Some(version + 1));
+}
+
+/// Revue de code P1 — `FX_AMOUNT_MISMATCH` rend les montants **sans arrondi** :
+/// un CHF fourni à quatre décimales (`9.1201`) ne s'affiche pas « 9.12 », égal
+/// au CHF calculé.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn ecart_chf_rendu_sans_arrondi(pool: MySqlPool) {
+    let ctx = monter(&pool).await;
+    let (s, b) = post(
+        &ctx,
+        &corps(
+            &ctx,
+            ctx.usd,
+            json!({ "debit": "9.1201", "credit": "0", "foreign": { "amount": "10", "rate": "0.912", "rateSource": "manual" } }),
+            "9.1201",
+        ),
+    )
+    .await;
+    assert_eq!(s, 400, "{b}");
+    assert_eq!(code(&b), "FX_AMOUNT_MISMATCH", "{b}");
+    assert_eq!(b["error"]["details"]["expected"], "9.12", "{b}");
+    assert_eq!(b["error"]["details"]["provided"], "9.1201", "{b}");
+    assert!(
+        b["error"]["message"]
+            .as_str()
+            .unwrap_or("")
+            .contains("9.1201"),
+        "{b}"
+    );
+}
+
+/// Revue de code P1 — CR-6 au travers de HTTP : le marqueur « cours déduit »,
+/// posé par l'analyse de la route, traverse le `PUT`. Une ligne `{ amount, chf,
+/// side }` créée au cours AFC retenu (A32) puis renvoyée telle quelle après la
+/// reprise d'un cours corrigé reste `afc` au cours stocké, sans effet ; copiée
+/// deux fois, une seule copie s'apparie, l'autre est qualifiée au cours neuf
+/// (`manual`, le cours AFC neuf ne redonnant pas son CHF).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn put_cours_deduit_au_travers_de_http(pool: MySqlPool) {
+    let ctx = monter(&pool).await;
+    cours(&pool, &ctx, "USD", "0.91193", "afc").await;
+    let ligne = json!({ "foreign": { "amount": "1234.56", "chf": "1125.83", "side": "debit" } });
+    let (s, b) = post(&ctx, &corps(&ctx, ctx.usd, ligne.clone(), "1125.83")).await;
+    assert_eq!(s, 201, "{b}");
+    assert_eq!(b["lines"][0]["foreign"]["rateSource"], "afc", "{b}");
+    assert_eq!(b["lines"][0]["foreign"]["rate"], "0.91193", "{b}");
+    let id = b["id"].as_i64().unwrap();
+    let version = b["version"].as_i64().unwrap();
+    cours(&pool, &ctx, "USD", "0.91194", "afc").await;
+    let mut meme = corps(&ctx, ctx.usd, ligne.clone(), "1125.83");
+    meme["version"] = json!(version);
+    let (s, b) = put(&ctx, id, &meme).await;
+    assert_eq!(s, 200, "{b}");
+    assert_eq!(b["version"].as_i64(), Some(version), "sans effet : {b}");
+    assert_eq!(b["lines"][0]["foreign"]["rateSource"], "afc", "{b}");
+    assert_eq!(b["lines"][0]["foreign"]["rate"], "0.91193", "{b}");
+    // Copie double : une seule s'apparie.
+    let mut l2 = ligne.clone();
+    l2["accountId"] = json!(ctx.usd);
+    let mut double = corps(&ctx, ctx.usd, ligne, "2251.66");
+    double["lines"].as_array_mut().unwrap().insert(1, l2);
+    double["version"] = json!(version);
+    let (s, b) = put(&ctx, id, &double).await;
+    assert_eq!(s, 200, "{b}");
+    let mut sources: Vec<(String, String)> = b["lines"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|l| {
+            let f = l.get("foreign")?;
+            Some((
+                f["rateSource"].as_str()?.to_string(),
+                f["rate"].as_str()?.to_string(),
+            ))
+        })
+        .collect();
+    sources.sort();
+    assert_eq!(
+        sources,
+        vec![
+            ("afc".to_string(), "0.91193".to_string()),
+            ("manual".to_string(), "0.9119281363".to_string()),
+        ],
+        "{b}"
+    );
+}
+
+/// Revue de code P1 — 409 `ENTRY_IS_FX_REVALUATION` au `PUT` d'une écriture
+/// qui porte une ligne de réévaluation (posée en SQL : aucune route de cette
+/// story n'en crée) ; sa suppression reste permise.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn reevaluation_non_modifiable_par_http(pool: MySqlPool) {
+    let ctx = monter(&pool).await;
+    let (s, b) = post(
+        &ctx,
+        &corps(
+            &ctx,
+            ctx.usd,
+            json!({ "debit": "9.12", "credit": "0", "foreign": { "amount": "10", "rate": "0.912", "rateSource": "manual" } }),
+            "9.12",
+        ),
+    )
+    .await;
+    assert_eq!(s, 201, "{b}");
+    let id = b["id"].as_i64().unwrap();
+    let version = b["version"].as_i64().unwrap();
+    sqlx::query(
+        "UPDATE journal_entry_lines SET amount_currency = 0, rate_source = 'revaluation' \
+         WHERE entry_id = ? AND line_order = 1",
+    )
+    .bind(id)
+    .execute(&pool)
+    .await
+    .unwrap();
+    let mut body = corps(
+        &ctx,
+        ctx.usd,
+        json!({ "debit": "9.12", "credit": "0", "foreign": { "amount": "10", "rate": "0.912", "rateSource": "manual" } }),
+        "9.12",
+    );
+    body["description"] = json!("Modifiée");
+    body["version"] = json!(version);
+    let (s, b) = put(&ctx, id, &body).await;
+    assert_eq!((s, code(&b)), (409, "ENTRY_IS_FX_REVALUATION"), "{b}");
+    let r = ctx
+        .app
+        .client
+        .delete(format!("{}/api/v1/journal-entries/{id}", ctx.app.base_url))
+        .bearer_auth(&ctx.jwt)
+        .send()
+        .await
+        .unwrap();
+    assert!(r.status().is_success(), "suppression : {}", r.status());
+}
+
+/// Revue de code P1 — conversion EUR → USD en deux écritures d'une seule
+/// devise chacune, par un compte de conversion en CHF (R7) : la seconde porte
+/// la ligne d'écart ; le compte de conversion revient à 0.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn conversion_eur_usd_en_deux_ecritures(pool: MySqlPool) {
+    let ctx = monter(&pool).await;
+    let conversion = compte(&pool, ctx.s.company_id, "1090", None).await;
+    let ecart = ctx.s.accounts["4000"];
+    // 1) EUR → conversion : 1000 EUR à 0.95 = 950 CHF.
+    let (s, b) = post(
+        &ctx,
+        &json!({
+            "entryDate": "2026-03-15", "journal": "OD", "description": "Conversion 1/2",
+            "lines": [
+                { "accountId": conversion, "debit": "950", "credit": "0" },
+                { "accountId": ctx.eur, "debit": "0", "credit": "950",
+                  "foreign": { "amount": "1000", "rate": "0.95", "rateSource": "manual" } },
+            ],
+        }),
+    )
+    .await;
+    assert_eq!(s, 201, "{b}");
+    // 2) conversion → USD : 1050 USD à 0.9 = 945 CHF, écart 5 CHF en charge.
+    let (s, b) = post(
+        &ctx,
+        &json!({
+            "entryDate": "2026-03-15", "journal": "OD", "description": "Conversion 2/2",
+            "lines": [
+                { "accountId": ctx.usd, "debit": "945", "credit": "0",
+                  "foreign": { "amount": "1050", "rate": "0.9", "rateSource": "manual" } },
+                { "accountId": ecart, "debit": "5", "credit": "0" },
+                { "accountId": conversion, "debit": "0", "credit": "950" },
+            ],
+        }),
+    )
+    .await;
+    assert_eq!(s, 201, "{b}");
+    let solde: rust_decimal::Decimal = sqlx::query_scalar(
+        "SELECT COALESCE(SUM(debit - credit), 0) FROM journal_entry_lines WHERE account_id = ?",
+    )
+    .bind(conversion)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert!(solde.is_zero(), "compte de conversion soldé : {solde}");
+    // Les deux devises dans une seule écriture restent refusées.
+    let (s, b) = post(
+        &ctx,
+        &json!({
+            "entryDate": "2026-03-15", "journal": "OD", "description": "Conversion directe",
+            "lines": [
+                { "accountId": ctx.usd, "debit": "945", "credit": "0",
+                  "foreign": { "amount": "1050", "rate": "0.9", "rateSource": "manual" } },
+                { "accountId": ctx.eur, "debit": "0", "credit": "945",
+                  "foreign": { "amount": "994.7368", "rate": "0.95", "rateSource": "manual" } },
+            ],
+        }),
+    )
+    .await;
+    assert_eq!(code(&b), "FX_MULTIPLE_CURRENCIES", "{s} {b}");
 }

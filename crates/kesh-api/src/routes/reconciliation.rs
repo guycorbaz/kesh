@@ -749,13 +749,18 @@ fn counterparty_is_bank_ledger_error(field: &str) -> AppError {
 /// — les seuls qu'un rapprochement, qui n'écrit qu'en CHF, puisse rencontrer —
 /// et, par prudence, les autres refus du contrôle central.
 ///
-/// ⛔ **Un seul constructeur pour les quatre sites** (patron de
+/// ⛔ **Un seul constructeur pour les trois sites** (patron de
 /// [`period_locked_failed_proposal`]). `None` pour toute autre variante.
 fn fx_failed_proposal(bank_transaction_id: i64, err: &DbError) -> Option<FailedProposal> {
     let (error_code, details) = match err {
+        // Même forme de `details` que la réponse HTTP (`errors.rs`) : la clé
+        // `fiscalYearId` n'est posée que pour un exercice (revue de code P1).
         DbError::MultiCurrencyDisabled { fiscal_year_id } => (
             err.error_code(),
-            serde_json::json!({ "fiscalYearId": fiscal_year_id }),
+            match fiscal_year_id {
+                Some(id) => serde_json::json!({ "fiscalYearId": id }),
+                None => serde_json::json!({}),
+            },
         ),
         DbError::RateUnavailable { currency, month } => (
             err.error_code(),
@@ -7543,5 +7548,33 @@ mod debit_settlement_tests {
     fn a_debit_is_not_refused() {
         assert!(refused(dec!(-0.01)).is_none());
         assert!(refused(dec!(-1500.00)).is_none());
+    }
+}
+
+/// Revue de code P1 de la 37-3a — `fx_failed_proposal` rend la **même forme**
+/// de `details` que la réponse HTTP (`errors.rs`) pour `MULTI_CURRENCY_DISABLED`.
+#[cfg(test)]
+mod fx_failed_proposal_tests {
+    use super::*;
+
+    #[test]
+    fn multi_currency_disabled_details_match_the_http_response() {
+        let avec = fx_failed_proposal(
+            7,
+            &DbError::MultiCurrencyDisabled {
+                fiscal_year_id: Some(3),
+            },
+        )
+        .expect("refus FX");
+        assert_eq!(avec.error_code, "MULTI_CURRENCY_DISABLED");
+        assert_eq!(avec.details, Some(serde_json::json!({ "fiscalYearId": 3 })));
+        let sans = fx_failed_proposal(
+            7,
+            &DbError::MultiCurrencyDisabled {
+                fiscal_year_id: None,
+            },
+        )
+        .expect("refus FX");
+        assert_eq!(sans.details, Some(serde_json::json!({})));
     }
 }
