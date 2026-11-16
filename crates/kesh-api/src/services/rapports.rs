@@ -19,7 +19,7 @@
 //! une session par rien de plus — un détail sans `channel` se lit « écran, ou ligne
 //! antérieure à la 0.17.5 ».
 
-use chrono::{NaiveDate, Utc};
+use chrono::NaiveDate;
 use kesh_db::entities::AUDIT_ENTITY_ID_NONE;
 use kesh_db::entities::Role;
 use kesh_db::entities::audit_log::NewAuditLogEntry;
@@ -721,15 +721,16 @@ pub async fn grand_livre<U: Usage>(
     Ok(Rapport::nouveau(contenu, details, acces, usage))
 }
 
-/// La balance âgée des débiteurs, arrêtée à aujourd'hui (UTC) — date calculée
-/// **une fois**, ici : le contenu, la trace et le nom de fichier portent la même.
+/// La balance âgée des débiteurs, arrêtée à la date du jour de Zurich (l'horloge
+/// de la `Lecture`, Story 35-5b, #929) — date lue **une fois**, ici : le
+/// contenu, la trace et le nom de fichier portent la même.
 pub async fn balance_agee<U: Usage>(
     acces: &ContexteAcces,
     lecture: &Lecture,
     usage: U,
 ) -> Result<Rapport<AgedReceivables, U>, AppError> {
     acces.exiger(EXIGENCES_BALANCE_AGEE.pour(&usage))?;
-    let as_of = Utc::now().naive_utc().date();
+    let as_of = lecture.aujourd_hui();
     let contenu = generate_aged_receivables(lecture.pool(), acces.company_id(), as_of).await?;
     let details = DetailsTrace::BalanceAgee { as_of };
     Ok(Rapport::nouveau(contenu, details, acces, usage))
@@ -768,8 +769,8 @@ async fn resoudre_projet(
             ProjectPeriodMode::FiscalYear { period }
         }
         ModeProjet::Cumule => {
-            // Borne haute = date de fin du projet si définie, sinon aujourd'hui
-            // (résolu ici — pas de Date::now() en lib).
+            // Borne haute = date de fin du projet si définie, sinon la date du
+            // jour de Zurich, lue sur l'horloge de la `Lecture` (Story 35-5b).
             //
             // Note (Pass 3 Opus, DC4) : les bornes proviennent du projet **ciblé**
             // (racine du scope). Pour un rapport racine agrégeant des sous-projets,
@@ -777,7 +778,7 @@ async fn resoudre_projet(
             // sont donc exclues — comportement voulu (« borné par les dates du
             // projet »). Une racine sans start_date (cas courant) ⇒ pas de borne
             // basse (`entry_date <= end`), donc tous les enfants sont inclus.
-            let today = chrono::Utc::now().date_naive();
+            let today = lecture.aujourd_hui();
             let end = scope.root.end_date.unwrap_or(today);
             ProjectPeriodMode::Cumulative {
                 start: scope.root.start_date,
@@ -859,15 +860,15 @@ pub const EXIGENCE_SYNTHESE_ACCUEIL: Exigence = Exigence {
 ///
 /// Une lecture **sans trace**, qui rend directement (règle R5) : l'accueil se
 /// charge à chaque visite, une trace par visite noierait le journal, et les trois
-/// tuiles n'en écrivent aucune (C-e332-11). ⚠️ La date est celle de l'horloge en
-/// UTC, comme à la contre-passation : dans la première ou les deux premières heures
-/// du 1er janvier à Zurich, l'accueil lit encore l'exercice précédent.
+/// tuiles n'en écrivent aucune (C-e332-11). La date est celle du jour à Zurich,
+/// lue sur l'horloge de la `Lecture` (Story 35-5b, #929) : à 00 h 30 le 1er
+/// janvier, l'accueil lit le nouvel exercice.
 pub async fn synthese_accueil(
     acces: &ContexteAcces,
     lecture: &Lecture,
 ) -> Result<HomepageSummary, AppError> {
     acces.exiger(EXIGENCE_SYNTHESE_ACCUEIL)?;
-    let today = Utc::now().date_naive();
+    let today = lecture.aujourd_hui();
     Ok(generate_homepage_summary(lecture.pool(), acces.company_id(), today).await?)
 }
 

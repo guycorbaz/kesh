@@ -23,6 +23,7 @@ import { constants, promises as fs } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { authedApiContext, disposeContextSafe } from './test-state';
+import { todayInZurich } from './api-fixtures';
 
 /** Dossier d'import lu par le backend (défaut : celui de la recette). */
 export const INBOX_DIR = process.env.KESH_INBOX_DIR ?? '/tmp/kesh-e2e/inbox';
@@ -265,7 +266,7 @@ export async function fillFirstInvoiceLine(
 ): Promise<void> {
 	const date = page.getByTestId('supplier-invoice-date');
 	if ((await date.inputValue()) === '') {
-		await date.fill(new Date().toISOString().slice(0, 10));
+		await date.fill(todayInZurich());
 	}
 	const line = page.getByTestId('supplier-invoice-line').first();
 	await line.getByTestId('supplier-invoice-line-desc').fill(description);

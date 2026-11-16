@@ -142,9 +142,10 @@ pub fn is_deadlock_error(err: &DbError) -> bool {
 /// # Examples
 ///
 /// ```ignore
+/// let acteur = Acteur::from(&current_user); // `Copy` : même acteur à chaque rejeu
 /// let entry = retry_on_deadlock("journal_entries::create", || {
 ///     let new = new.clone();
-///     async move { journal_entries::create(&pool, fy_id, user_id, new).await }
+///     async move { journal_entries::create(&pool, fy_id, acteur, new).await }
 /// })
 /// .await?;
 /// ```

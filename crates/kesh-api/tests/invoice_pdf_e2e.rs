@@ -19,9 +19,10 @@ use kesh_api::config::Config;
 use kesh_api::{AppState, build_router};
 use kesh_db::entities::bank_account::NewBankAccount;
 use kesh_db::entities::contact::{ContactType, NewContact};
+use kesh_db::entities::credit_note::NewCreditNote;
 use kesh_db::entities::invoice::{NewInvoice, NewInvoiceLine};
 use kesh_db::entities::user::{NewUser, Role};
-use kesh_db::repositories::{bank_accounts, contacts, invoices, users};
+use kesh_db::repositories::{bank_accounts, contacts, credit_notes, invoices, users};
 use kesh_db::test_fixtures::seed_accounting_company;
 use rust_decimal_macros::dec;
 use serde_json::json;
@@ -546,4 +547,365 @@ async fn pdf_header_overflow_returns_400_with_its_own_code(pool: MySqlPool) {
          liste blanche du frontend traduit ; un code générique rendrait les \
          quatre traductions mortes sans qu'aucun test ne le voie"
     );
+}
+
+// --- Story 35-2a (#955, #964) — le refus nomme le champ et le caractère ------
+
+/// La valeur fr-CH d'une clé sans variable, lue au catalogue réel : un message
+/// sans argument se compare entier, ce qui prouve qu'il ne porte aucun texte de
+/// `kesh-qrbill`.
+fn fr(cle: &str) -> String {
+    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .unwrap()
+        .join("kesh-i18n/locales");
+    let bundle = kesh_i18n::I18nBundle::load(&dir).expect("catalogue");
+    let valeur = bundle.format(&kesh_i18n::Locale::FrCh, cle, None);
+    assert_ne!(valeur, cle, "{cle} absente du catalogue fr-CH");
+    valeur
+}
+
+/// Le montage commun : une facture validée, jamais figée (le téléchargement la
+/// rend), un client à l'adresse complète et un compte principal sans QR-IBAN.
+async fn montage_refus(pool: &MySqlPool) -> (i64, i64, i64) {
+    let (admin_id, company_id) = seed_base(pool).await;
+    let contact_id = seed_contact(pool, company_id, admin_id, true).await;
+    seed_primary_bank(pool, company_id, false).await;
+    let invoice_id = seed_validated_invoice(pool, company_id, contact_id, admin_id, 1).await;
+    (company_id, contact_id, invoice_id)
+}
+
+/// Télécharge le PDF, exige le 400 `INVOICE_NOT_PDF_READY` sans `details`, et
+/// rend le message ; il ne porte ni variable Fluent, ni marque d'isolation, ni
+/// nom technique de `kesh-qrbill`.
+async fn message_du_refus(pool: &MySqlPool, invoice_id: i64) -> String {
+    let app = spawn_app(pool.clone()).await;
+    let token = login(&app).await;
+    let resp = app
+        .client
+        .get(app.url(&format!("/api/v1/invoices/{invoice_id}/pdf")))
+        .header("Authorization", format!("Bearer {token}"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 400);
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(body["error"]["code"], "INVOICE_NOT_PDF_READY", "{body}");
+    assert!(body["error"]["details"].is_null(), "aucun details : {body}");
+    let message = body["error"]["message"].as_str().unwrap().to_string();
+    message_propre(&message);
+    message
+}
+
+/// AC1 : ni `{`, ni `$`, ni « Champ », ni nom technique, ni marque d'isolation.
+fn message_propre(message: &str) {
+    for interdit in [
+        "{",
+        "$",
+        "Champ",
+        "creditor.",
+        "debtor.",
+        "address.",
+        "unstructured_message",
+        "billing_information",
+        "\u{2068}",
+        "\u{2069}",
+    ] {
+        assert!(
+            !message.contains(interdit),
+            "« {interdit} » dans le message : {message:?}"
+        );
+    }
+    assert!(!message.trim().is_empty());
+}
+
+async fn sql(pool: &MySqlPool, requete: &str, valeur: &str, id: i64) {
+    sqlx::query(requete)
+        .bind(valeur)
+        .bind(id)
+        .execute(pool)
+        .await
+        .unwrap();
+}
+
+/// AC1 — la localité du client porte un tiret demi-cadratin : le message nomme
+/// le champ, montre le caractère et son point de code.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn refus_nomme_la_localite_du_client_et_le_caractere(pool: MySqlPool) {
+    let (_, contact_id, invoice_id) = montage_refus(&pool).await;
+    sql(
+        &pool,
+        "UPDATE contacts SET address_city = ? WHERE id = ?",
+        "Ve\u{2013}vey",
+        contact_id,
+    )
+    .await;
+    let m = message_du_refus(&pool, invoice_id).await;
+    assert!(m.contains("localité du client"), "{m}");
+    assert!(m.contains('\u{2013}'), "{m}");
+    assert!(m.contains("U+2013"), "{m}");
+}
+
+/// AC1 — un saut de ligne s'écrit `\n` (deux caractères), jamais tel quel.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn refus_ecrit_un_saut_de_ligne_echappe(pool: MySqlPool) {
+    let (_, contact_id, invoice_id) = montage_refus(&pool).await;
+    sql(
+        &pool,
+        "UPDATE contacts SET address_building = ? WHERE id = ?",
+        "1\n2",
+        contact_id,
+    )
+    .await;
+    let m = message_du_refus(&pool, invoice_id).await;
+    assert!(m.contains("numéro"), "{m}");
+    assert!(m.contains("client"), "{m}");
+    assert!(m.contains("\\n"), "{m}");
+    assert!(!m.contains('\n'), "{m:?}");
+    assert!(m.contains("U+000A"), "{m}");
+}
+
+/// AC1 — un nom de 71 caractères : le champ et la limite de 70.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn refus_nomme_le_nom_trop_long_et_sa_limite(pool: MySqlPool) {
+    let (_, contact_id, invoice_id) = montage_refus(&pool).await;
+    sql(
+        &pool,
+        "UPDATE contacts SET name = ? WHERE id = ?",
+        &"A".repeat(71),
+        contact_id,
+    )
+    .await;
+    let m = message_du_refus(&pool, invoice_id).await;
+    assert!(m.contains("nom du client"), "{m}");
+    assert!(m.contains("70"), "{m}");
+}
+
+/// AC1 — un nom d'entreprise qui ne porte qu'un trait d'union conditionnel est vide.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn refus_nomme_le_nom_vide_de_l_entreprise(pool: MySqlPool) {
+    let (company_id, _, invoice_id) = montage_refus(&pool).await;
+    sql(
+        &pool,
+        "UPDATE companies SET name = ? WHERE id = ?",
+        "\u{AD}",
+        company_id,
+    )
+    .await;
+    let m = message_du_refus(&pool, invoice_id).await.to_lowercase();
+    assert!(m.contains("nom de l'entreprise"), "{m}");
+    assert!(m.contains("vide"), "{m}");
+    // Revue de code P1 (B1) — le nom ne se modifie pas dans Paramètres →
+    // Organisation : la phrase ne doit pas y renvoyer.
+    assert!(!m.contains("organisation"), "{m}");
+}
+
+/// AC1, D9 — un caractère refusé dans la communication vient du numéro de
+/// facture, qu'une facture validée ne corrige pas : le message renvoie au format.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn refus_du_numero_de_facture_renvoie_au_format(pool: MySqlPool) {
+    let (_, _, invoice_id) = montage_refus(&pool).await;
+    sql(
+        &pool,
+        "UPDATE invoices SET invoice_number = ? WHERE id = ?",
+        "F\u{2013}1",
+        invoice_id,
+    )
+    .await;
+    let m = message_du_refus(&pool, invoice_id).await;
+    assert!(m.contains("numéro de facture"), "{m}");
+    assert!(m.contains("U+2013"), "{m}");
+    assert!(m.contains("Administration → Facturation"), "{m}");
+}
+
+/// AC4 (#964) — un NPA de l'entreprise qui ne porte qu'U+00AD : l'adresse est
+/// dite incomplète, le champ est nommé.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn refus_nomme_le_npa_vide_de_l_entreprise(pool: MySqlPool) {
+    let (company_id, _, invoice_id) = montage_refus(&pool).await;
+    sql(
+        &pool,
+        "UPDATE companies SET address_postal_code = ? WHERE id = ?",
+        "\u{AD}",
+        company_id,
+    )
+    .await;
+    let m = message_du_refus(&pool, invoice_id).await.to_lowercase();
+    assert!(m.contains("adresse de l'entreprise incomplète"), "{m}");
+    // Revue de code P1 (B2) — la proposition qui nomme le champ, et non l'autre :
+    // la parenthèse « NPA et localité » porte les deux mots.
+    assert!(m.contains("le npa est vide"), "{m}");
+    assert!(!m.contains("la localité est vide"), "{m}");
+}
+
+/// AC4 (#964) — une localité du client qui ne porte qu'U+200B.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn refus_nomme_la_localite_vide_du_client(pool: MySqlPool) {
+    let (_, contact_id, invoice_id) = montage_refus(&pool).await;
+    sql(
+        &pool,
+        "UPDATE contacts SET address_city = ? WHERE id = ?",
+        "\u{200B}",
+        contact_id,
+    )
+    .await;
+    let m = message_du_refus(&pool, invoice_id).await.to_lowercase();
+    assert!(m.contains("adresse du client incomplète"), "{m}");
+    // Revue de code P1 (B2) — la proposition qui nomme le champ, et non l'autre.
+    assert!(m.contains("la localité est vide"), "{m}");
+    assert!(!m.contains("le npa est vide"), "{m}");
+}
+
+/// AC4 — un client sans aucune adresse garde la phrase de l'adresse requise.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn refus_d_un_client_sans_adresse(pool: MySqlPool) {
+    let (admin_id, company_id) = seed_base(&pool).await;
+    let contact_id = seed_contact(&pool, company_id, admin_id, false).await;
+    seed_primary_bank(&pool, company_id, false).await;
+    let invoice_id = seed_validated_invoice(&pool, company_id, contact_id, admin_id, 1).await;
+    let m = message_du_refus(&pool, invoice_id).await;
+    assert_eq!(m, fr("invoice-pdf-error-client-address-required"));
+}
+
+/// AC5 (D7) — le pays de l'entreprise hors de la liste ISO : la partie et le code.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn refus_nomme_le_pays_de_l_entreprise(pool: MySqlPool) {
+    let (company_id, _, invoice_id) = montage_refus(&pool).await;
+    sql(
+        &pool,
+        "UPDATE companies SET address_country = ? WHERE id = ?",
+        "SU",
+        company_id,
+    )
+    .await;
+    let m = message_du_refus(&pool, invoice_id).await;
+    assert!(m.contains("pays de l'entreprise"), "{m}");
+    assert!(m.contains("SU"), "{m}");
+}
+
+/// AC5 (D7) — le pays du client hors de la liste (posé en SQL : la saisie le
+/// refuse depuis la 0.17.4).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn refus_nomme_le_pays_du_client(pool: MySqlPool) {
+    let (_, contact_id, invoice_id) = montage_refus(&pool).await;
+    sql(
+        &pool,
+        "UPDATE contacts SET address_country = ? WHERE id = ?",
+        "SU",
+        contact_id,
+    )
+    .await;
+    let m = message_du_refus(&pool, invoice_id).await;
+    assert!(m.contains("pays du client"), "{m}");
+    assert!(m.contains("SU"), "{m}");
+}
+
+/// AC6 — le compte principal absent : la phrase du catalogue, entière.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn refus_sans_compte_principal(pool: MySqlPool) {
+    let (admin_id, company_id) = seed_base(&pool).await;
+    let contact_id = seed_contact(&pool, company_id, admin_id, true).await;
+    let invoice_id = seed_validated_invoice(&pool, company_id, contact_id, admin_id, 1).await;
+    let m = message_du_refus(&pool, invoice_id).await;
+    assert_eq!(m, fr("invoice-pdf-error-no-primary-bank"));
+}
+
+/// AC6 — un IBAN à la clé de contrôle fausse : la phrase du catalogue, sans le
+/// texte de `kesh-qrbill`.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn refus_d_un_iban_invalide(pool: MySqlPool) {
+    let (company_id, _, invoice_id) = montage_refus(&pool).await;
+    sql(
+        &pool,
+        "UPDATE bank_accounts SET iban = ? WHERE company_id = ? AND is_primary",
+        "CH9300762011623852958",
+        company_id,
+    )
+    .await;
+    let m = message_du_refus(&pool, invoice_id).await;
+    assert_eq!(m, fr("invoice-pdf-error-iban-invalid"));
+}
+
+/// AC6 — un « QR-IBAN » qui n'en est pas un (IID hors de 30000-31999).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn refus_d_un_qr_iban_invalide(pool: MySqlPool) {
+    let (company_id, _, invoice_id) = montage_refus(&pool).await;
+    sql(
+        &pool,
+        "UPDATE bank_accounts SET qr_iban = ? WHERE company_id = ? AND is_primary",
+        "CH9300762011623852957",
+        company_id,
+    )
+    .await;
+    let m = message_du_refus(&pool, invoice_id).await;
+    assert_eq!(m, fr("invoice-pdf-error-qr-iban-invalid"));
+}
+
+/// Retire un contact malgré les clés étrangères, sur une seule connexion : le
+/// seul moyen d'atteindre « contact introuvable », qu'aucune route ne produit.
+async fn retirer_le_contact(pool: &MySqlPool, contact_id: i64) {
+    let mut conn = pool.acquire().await.unwrap();
+    sqlx::query("SET FOREIGN_KEY_CHECKS = 0")
+        .execute(&mut *conn)
+        .await
+        .unwrap();
+    sqlx::query("DELETE FROM contacts WHERE id = ?")
+        .bind(contact_id)
+        .execute(&mut *conn)
+        .await
+        .unwrap();
+    sqlx::query("SET FOREIGN_KEY_CHECKS = 1")
+        .execute(&mut *conn)
+        .await
+        .unwrap();
+}
+
+/// AC6 — le contact de la facture introuvable.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn refus_d_un_contact_introuvable(pool: MySqlPool) {
+    let (_, contact_id, invoice_id) = montage_refus(&pool).await;
+    retirer_le_contact(&pool, contact_id).await;
+    let m = message_du_refus(&pool, invoice_id).await;
+    assert_eq!(m, fr("invoice-pdf-error-contact-missing"));
+}
+
+/// AC11, D8 — le PDF d'un avoir dont le contact est introuvable : la phrase de
+/// l'avoir, et non celle de la facture.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn refus_du_pdf_d_un_avoir_sans_contact(pool: MySqlPool) {
+    let (admin_id, company_id) = seed_base(&pool).await;
+    let contact_id = seed_contact(&pool, company_id, admin_id, true).await;
+    seed_primary_bank(&pool, company_id, false).await;
+    let invoice_id = seed_validated_invoice(&pool, company_id, contact_id, admin_id, 1).await;
+    let avoir = credit_notes::create_credit_note(
+        &pool,
+        NewCreditNote {
+            company_id,
+            invoice_id,
+            date: NaiveDate::from_ymd_opt(2026, 4, 20).unwrap(),
+        },
+        admin_id,
+    )
+    .await
+    .unwrap();
+    retirer_le_contact(&pool, contact_id).await;
+
+    let app = spawn_app(pool.clone()).await;
+    let token = login(&app).await;
+    let resp = app
+        .client
+        .get(app.url(&format!(
+            "/api/v1/credit-notes/{}/pdf",
+            avoir.credit_note.id
+        )))
+        .header("Authorization", format!("Bearer {token}"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 400);
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(body["error"]["code"], "INVOICE_NOT_PDF_READY", "{body}");
+    let m = body["error"]["message"].as_str().unwrap();
+    assert_eq!(m, fr("credit-note-pdf-error-contact-missing"));
+    assert_ne!(m, fr("invoice-pdf-error-contact-missing"));
 }

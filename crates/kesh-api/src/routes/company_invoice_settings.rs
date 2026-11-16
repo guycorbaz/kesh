@@ -102,13 +102,16 @@ pub struct UpdateInvoiceSettingsRequest {
     pub default_vat_decompte_account_id: Option<i64>,
     pub default_sales_journal: String,
     pub journal_entry_description_template: String,
-    /// #216 — optionnel + **préservé** si absent : le formulaire frontend ne le
-    /// gère pas encore ; sans ça, tout enregistrement des réglages échouait en 422.
+    /// #216 — optionnel + **préservé** si absent : un client qui ne l'envoie pas
+    /// (onglet ouvert avant la mise à jour ; la route est fermée aux clés d'API)
+    /// ne l'efface pas ; sans ça,
+    /// son enregistrement des réglages échouait en 422. L'écran l'envoie depuis la
+    /// Story 35-1 (D3).
     #[serde(default)]
     pub credit_note_number_format: Option<String>,
     /// Story 33-1a (#926) — format du numéro interne. **Absent du corps : préservé**
     /// (patron #216) : le formulaire ne l'envoie qu'à partir de la Story 33-1b, et
-    /// une clé d'API ou un onglet ouvert avant la mise à jour ne l'efface pas.
+    /// un onglet ouvert avant la mise à jour ne l'efface pas.
     #[serde(default)]
     pub supplier_internal_number_format: Option<String>,
     /// Story 12.2 — compte créanciers. **Absent du corps : préservé** (Story
@@ -120,8 +123,8 @@ pub struct UpdateInvoiceSettingsRequest {
     pub default_payable_account_id: Option<Option<i64>>,
     /// Story 25-4-c3-a1 (#476) — compte de différences d'arrondi. **Absent du
     /// corps : préservé** (comme `credit_note_number_format`, #216), pour qu'un
-    /// client qui ignore encore le champ — clé d'API, onglet ouvert avant la mise
-    /// à jour — ne l'efface pas en silence. **Présent à `null` : effacé.**
+    /// client qui ignore encore le champ — un onglet ouvert avant la mise à jour —
+    /// ne l'efface pas en silence. **Présent à `null` : effacé.**
     #[serde(default, deserialize_with = "crate::helpers::double_option")]
     pub default_rounding_account_id: Option<Option<i64>>,
     /// Story 25-4-c4-b (#494) — arrondir à 5 centimes. **Absent du corps :
@@ -185,6 +188,18 @@ async fn validate_account(
     .await
 }
 
+/// Un type de compte en mots, pour les refus de cette route (Story 35-3, #537,
+/// D6) : « actif », « passif », « produit », « charge ». En français en dur,
+/// comme les autres refus de la route (#710).
+fn account_type_in_words(account_type: AccountType) -> &'static str {
+    match account_type {
+        AccountType::Asset => "actif",
+        AccountType::Liability => "passif",
+        AccountType::Revenue => "produit",
+        AccountType::Expense => "charge",
+    }
+}
+
 /// Forme générale de [`validate_account`] (Story 25-4-c3-a1) : plusieurs types
 /// acceptés, et `changed` qui dit si la valeur change.
 ///
@@ -222,9 +237,12 @@ async fn validate_account_of(
         )));
     }
     if !accepted.contains(&account.account_type) {
-        let attendus: Vec<&str> = accepted.iter().map(|t| t.as_str()).collect();
+        // Story 35-3 (#537, D6) : le type attendu EN MOTS — c'est ici que
+        // l'administrateur corrige un compte retypé que la validation refuse.
+        // Le début de phrase reste (`accounts_designated_archive_e2e` l'asserte).
+        let attendus: Vec<&str> = accepted.iter().map(|t| account_type_in_words(*t)).collect();
         return Err(AppError::Validation(format!(
-            "{field_label} : type de compte incompatible (attendu {})",
+            "{field_label} : type de compte incompatible (attendu : {})",
             attendus.join(" ou ")
         )));
     }
@@ -312,23 +330,34 @@ pub async fn update_invoice_settings(
     let company = get_company_for(&current_user, &state.pool).await?;
 
     // #216 — `credit_note_number_format` optionnel : si le client ne l'envoie pas
-    // (cas du formulaire frontend actuel), on **préserve** la valeur existante au
-    // lieu de rejeter la requête en 422.
+    // (un onglet ouvert avant la mise à jour — l'écran l'envoie depuis
+    // la Story 35-1), on **préserve** la valeur existante au lieu de rejeter la
+    // requête en 422.
     let current = company_invoice_settings::get_or_create_default(&state.pool, company.id).await?;
     let credit_note_number_format = req
         .credit_note_number_format
         .clone()
-        .unwrap_or(current.credit_note_number_format);
+        .unwrap_or_else(|| current.credit_note_number_format.clone());
     let supplier_internal_number_format = req
         .supplier_internal_number_format
         .clone()
         .unwrap_or(current.supplier_internal_number_format);
 
     // 1. Valider le format (facture + avoir — même grammaire {YEAR}/{FY}/{SEQ:NN}).
-    invoice_format::validate_template(&req.invoice_number_format)
-        .map_err(|e| AppError::Validation(e.to_string()))?;
-    invoice_format::validate_template(&credit_note_number_format)
-        .map_err(|e| AppError::Validation(e.to_string()))?;
+    // Story 35-1 (#932, D1, D2) : le compteur est obligatoire, mais n'est jugé que
+    // si le format **change** — un format enregistré sans compteur (avant la
+    // 0.17.7, ou par SQL) ne bloque pas l'enregistrement d'autre chose ; tout autre
+    // refus reste inconditionnel.
+    invoice_format::validate_template_change(
+        &req.invoice_number_format,
+        &current.invoice_number_format,
+    )
+    .map_err(|e| AppError::Validation(e.to_string()))?;
+    invoice_format::validate_template_change(
+        &credit_note_number_format,
+        &current.credit_note_number_format,
+    )
+    .map_err(|e| AppError::Validation(e.to_string()))?;
     // Le numéro interne, lui, a une forme fixe (C-e331-16).
     invoice_format::validate_numbering_template(&supplier_internal_number_format)
         .map_err(|e| AppError::Validation(e.to_string()))?;
@@ -342,12 +371,16 @@ pub async fn update_invoice_settings(
 
     // 4. Valider les comptes (existence, scope company, type, actif ; imputable
     //    si la valeur change — Story 15-5b, AC10).
+    // Story 35-3 (#537, D4) : les types de la créance et des créanciers sont lus
+    // dans `CLAIM_SETTING_ACCOUNT_TYPES`, la constante que lit aussi la garde à
+    // l'usage de la validation — la désignation et l'usage ne peuvent diverger.
+    let claim_types = company_invoice_settings::CLAIM_SETTING_ACCOUNT_TYPES;
     validate_account(
         &state,
         company.id,
         req.default_receivable_account_id,
         current.default_receivable_account_id,
-        AccountType::Asset,
+        claim_types.receivable,
         "Compte créance",
     )
     .await?;
@@ -404,7 +437,7 @@ pub async fn update_invoice_settings(
                 company.id,
                 requested,
                 current.default_payable_account_id,
-                AccountType::Liability,
+                claim_types.payable,
                 "Compte créanciers",
             )
             .await?;

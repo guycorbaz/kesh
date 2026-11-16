@@ -16,7 +16,7 @@ use std::collections::BTreeSet;
 use std::net::SocketAddr;
 use std::sync::Arc;
 
-use chrono::{NaiveDate, TimeDelta, Utc};
+use chrono::{NaiveDate, TimeDelta};
 use common::create_test_company;
 use kesh_api::auth::bootstrap::ensure_admin_user;
 use kesh_api::config::Config;
@@ -108,8 +108,9 @@ struct Monde {
     produit: i64,
 }
 
+/// Le jour de l'horloge de test, celui de l'`asOf` par défaut (Story 35-5b).
 fn aujourdhui() -> NaiveDate {
-    Utc::now().date_naive()
+    common::jour::aujourd_hui_test()
 }
 
 /// Insère un compte (montage) et rend son id.

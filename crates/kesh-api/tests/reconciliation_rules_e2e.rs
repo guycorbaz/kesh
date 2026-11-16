@@ -6,6 +6,11 @@
 //! directement + spawn_app éphémère).
 #![allow(clippy::too_many_arguments)]
 
+// Story 35-5a — le jour de l'horloge de test, celui du serveur (le fichier
+// n'inclut pas `common/` en entier).
+#[path = "common/jour.rs"]
+mod jour;
+
 use std::net::SocketAddr;
 use std::path::Path;
 use std::sync::Arc;
@@ -1923,7 +1928,8 @@ async fn patch_default_project_null_clears_the_column(pool: MySqlPool) {
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn cancelling_a_rule_reconciliation_reverses_its_entry(pool: MySqlPool) {
     let ctx = setup_ctx(&pool, "Acme", "CH4431999123000889012", Role::Comptable).await;
-    let today = chrono::Utc::now().date_naive();
+    // Story 35-5a — le jour du serveur, qui date la contre-passation.
+    let today = crate::jour::aujourd_hui_test();
     if chrono::Datelike::year(&today) != 2026 {
         use kesh_db::entities::NewFiscalYear;
         let year = chrono::Datelike::year(&today);

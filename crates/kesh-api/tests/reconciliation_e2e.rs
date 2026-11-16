@@ -4282,7 +4282,9 @@ async fn ensure_fiscal_year_today(pool: &MySqlPool, company_id: i64) {
     // 2026 d'abord, par l'outil commun — sans quoi ses appels suivants
     // entreraient en collision (`uq_fiscal_years_company_start_date`).
     let _ = insert_fake_fiscal_year(pool, company_id).await;
-    let today = Utc::now().date_naive();
+    // Story 35-5a0 (D4, revue P2) : le jour de l'horloge de test, celle du serveur
+    // (`new_for_tests`) qui date la contre-passation.
+    let today = crate::common::jour::aujourd_hui_test();
     let covered: Option<i64> = sqlx::query_scalar(
         "SELECT id FROM fiscal_years WHERE company_id = ? AND start_date <= ? AND end_date >= ?",
     )
@@ -4487,9 +4489,17 @@ async fn cancelling_an_invoice_reconciliation_undoes_everything(pool: MySqlPool)
     assert_eq!(view["supplierInvoiceNumber"], Value::Null, "got {view:?}");
     assert_eq!(view["matchedEntryId"], entry_id);
     assert_eq!(view["cancellable"], true, "got {view:?}");
+    let avant = common::audit_traces::max_audit_id(&pool).await;
 
     let (st, done) = cancel_reco(&app, &ctx.jwt, tx_id).await;
     assert_eq!(st, 200, "got {done:?}");
+    // Story 36-4 (#1131, AC4) — par session, rien ne change : toutes les traces
+    // du dé-rapprochement sont à l'utilisateur, sans clé.
+    common::audit_traces::assert_toutes_a_l_utilisateur(
+        &common::audit_traces::audit_depuis(&pool, avant).await,
+        ctx.user_id,
+        INVOICE_UNRECONCILE_ACTIONS,
+    );
     assert_eq!(done["invoiceId"], inv_id);
     assert_eq!(done["supplierInvoiceId"], Value::Null, "got {done:?}");
     assert_eq!(done["bankTransaction"]["status"], "pending");
@@ -4749,9 +4759,17 @@ async fn cancelling_a_supplier_reconciliation_by_the_route(pool: MySqlPool) {
     assert_eq!(view["matchedEntryId"], r.settlement_entry_id);
     assert_eq!(view["cancellable"], true, "got {view:?}");
     assert_eq!(view["cancelBlockedBy"], Value::Null, "got {view:?}");
+    let avant = common::audit_traces::max_audit_id(&pool).await;
 
     let (st, done) = cancel_reco(&app, &jwt, r.bank_transaction_id).await;
     assert_eq!(st, 200, "got {done:?}");
+    // Story 36-4 (#1131, AC4, revue P1 E3 = A1) — par session, rien ne change :
+    // toutes les traces du dé-rapprochement sont à l'utilisateur, sans clé.
+    common::audit_traces::assert_toutes_a_l_utilisateur(
+        &common::audit_traces::audit_depuis(&pool, avant).await,
+        seeded.admin_user_id,
+        SUPPLIER_UNRECONCILE_ACTIONS,
+    );
     assert_eq!(done["supplierInvoiceId"], r.supplier_invoice_id);
     assert_eq!(done["invoiceId"], Value::Null);
     assert_eq!(done["bankTransaction"]["status"], "pending");
@@ -5345,9 +5363,13 @@ async fn a_previously_rejected_transaction_comes_back_to_the_proposals(pool: MyS
 }
 
 /// ⛔ **Clés API d'écriture admises, et portées à l'audit** : la ligne
-/// `reconciliation.cancelled` nomme la clé (`for_actor`). ⚠️ Les lignes écrites
-/// par le socle et par le geste du règlement ne la portent pas — défaut
-/// antérieur suivi par #431.
+/// `reconciliation.cancelled` nomme la clé ; depuis la Story 35-8a2 (#431), la
+/// contre-passation d'une écriture rapprochée seule (genre `Entry`, le cas de ce
+/// montage) aussi : `journal_entry.reversed` et le `journal_entry.created` de
+/// l'inverse. Depuis la Story 36-4 (#1131), l'annulation d'un **règlement** de
+/// facture, client ou fournisseur, par un dé-rapprochement porte la clé de même
+/// — `an_api_key_unreconciles_an_invoice_settlement_and_is_named_everywhere`,
+/// `an_api_key_unreconciles_a_supplier_settlement_and_is_named_everywhere`.
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn an_api_key_cancels_and_is_named_in_the_audit(pool: MySqlPool) {
     let ctx = setup_company(&pool, "Acme", "CH4431999123000889012", Role::Comptable).await;
@@ -5379,6 +5401,14 @@ async fn an_api_key_cancels_and_is_named_in_the_audit(pool: MySqlPool) {
         body["key"].as_str().unwrap().to_string(),
     );
 
+    let rapprochee: Option<i64> =
+        sqlx::query_scalar("SELECT matched_entry_id FROM bank_transactions WHERE id = ?")
+            .bind(tx_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    let rapprochee = rapprochee.expect("écriture rapprochée");
+
     let (st, done) = cancel_reco(&app, &key, tx_id).await;
     assert_eq!(st, 200, "got {done:?}");
     let (actor_type, actor_key): (String, Option<i64>) = sqlx::query_as(
@@ -5390,6 +5420,129 @@ async fn an_api_key_cancels_and_is_named_in_the_audit(pool: MySqlPool) {
     .await
     .unwrap();
     assert_eq!((actor_type.as_str(), actor_key), ("api_key", Some(key_id)));
+
+    // Story 35-8a2 (#431, revue P1 E3) : la contre-passation porte la clé.
+    let inverse = done["reversalJournalEntryId"]
+        .as_i64()
+        .expect("reversalJournalEntryId");
+    let attendu = ("api_key".to_string(), Some(key_id), ctx.user_id);
+    assert_eq!(
+        common::audit_actor_unique(&pool, "journal_entry.reversed", "journal_entry", rapprochee)
+            .await,
+        attendu,
+        "journal_entry.reversed"
+    );
+    assert_eq!(
+        common::audit_actor_unique(&pool, "journal_entry.created", "journal_entry", inverse).await,
+        attendu,
+        "journal_entry.created de l'inverse"
+    );
+}
+
+/// Ce qu'écrit au journal d'audit le dé-rapprochement d'un règlement client qui
+/// avait soldé la facture — relevé sur le montage `reconciled_invoice` (Story
+/// 36-4, #1131) : le délettrage de la pièce, la contre-passation (l'inverse, le
+/// marquage de l'écriture, un lettrage `reversal` — la créance seule, le compte
+/// bancaire du règlement n'étant pas lettrable), le geste appelé, le
+/// dé-rapprochement.
+const INVOICE_UNRECONCILE_ACTIONS: &[&str] = &[
+    "lettering.removed",
+    "journal_entry.created",
+    "journal_entry.reversed",
+    "lettering.created",
+    "invoice.settlement_cancelled",
+    "reconciliation.cancelled",
+];
+
+/// Ce qu'écrit au journal d'audit le dé-rapprochement d'un paiement fournisseur
+/// — relevé sur le montage `fournisseur_rapproche::reglement_rapproche` (Story
+/// 36-4, #1131), mêmes étapes que [`INVOICE_UNRECONCILE_ACTIONS`].
+const SUPPLIER_UNRECONCILE_ACTIONS: &[&str] = &[
+    "lettering.removed",
+    "journal_entry.created",
+    "journal_entry.reversed",
+    "lettering.created",
+    "supplier_invoice.settlement_cancelled",
+    "reconciliation.cancelled",
+];
+
+/// ⛔ Story 36-4 (#1131, AC3 a) — **le dé-rapprochement, par une clé d'API, d'un
+/// règlement de facture client est attribué à la clé**, toutes traces
+/// comprises : le règlement annulé, sa contre-passation, le délettrage de la
+/// pièce, et la ligne `reconciliation.cancelled`. Avant la story, seule cette
+/// dernière portait la clé.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn an_api_key_unreconciles_an_invoice_settlement_and_is_named_everywhere(pool: MySqlPool) {
+    let ctx = setup_company(&pool, "Acme", "CH4431999123000889012", Role::Comptable).await;
+    ensure_fiscal_year_today(&pool, ctx.company_id).await;
+    let app = spawn_app(pool.clone()).await;
+    let day = NaiveDate::from_ymd_opt(2026, 5, 15).unwrap();
+    let (_, tx_id) = reconciled_invoice(
+        &pool,
+        &app,
+        &ctx,
+        "INV-2026-KEY",
+        NaiveDate::from_ymd_opt(2026, 4, 20).unwrap(),
+        day,
+        dec!(1234.56),
+    )
+    .await;
+    assert!(
+        common::audit_traces::lignes_lettrees_document(&pool).await > 0,
+        "montage : le lettrage de la pièce est posé, le délettrage sera exercé"
+    );
+    let (cle, secret) =
+        common::create_key_via_http(&app.client, &app.base_url, &ctx.jwt, "rw", "read-write").await;
+    let avant = common::audit_traces::max_audit_id(&pool).await;
+
+    let (st, done) = cancel_reco(&app, &secret, tx_id).await;
+    assert_eq!(st, 200, "got {done:?}");
+
+    common::audit_traces::assert_toutes_a_la_cle(
+        &common::audit_traces::audit_depuis(&pool, avant).await,
+        cle,
+        common::audit_traces::createur_de_la_cle(&pool, cle).await,
+        INVOICE_UNRECONCILE_ACTIONS,
+    );
+}
+
+/// ⛔ Story 36-4 (#1131, AC3 b) — **le dé-rapprochement, par une clé d'API, d'un
+/// paiement de facture fournisseur est attribué à la clé**, toutes traces
+/// comprises.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn an_api_key_unreconciles_a_supplier_settlement_and_is_named_everywhere(pool: MySqlPool) {
+    let seeded = kesh_db::test_fixtures::seed_accounting_company(&pool)
+        .await
+        .expect("seed");
+    let f = fournisseur_rapproche::preparer(&pool, &seeded).await;
+    let r = fournisseur_rapproche::reglement_rapproche(
+        &pool,
+        &seeded,
+        f,
+        "FF-KEY-1",
+        NaiveDate::from_ymd_opt(2026, 6, 15).unwrap(),
+        dec!(240.00),
+    )
+    .await;
+    let app = spawn_app(pool.clone()).await;
+    let jwt = forge_jwt(seeded.admin_user_id, "Admin", seeded.company_id);
+    assert!(
+        common::audit_traces::lignes_lettrees_document(&pool).await > 0,
+        "montage : le lettrage de la pièce est posé, le délettrage sera exercé"
+    );
+    let (cle, secret) =
+        common::create_key_via_http(&app.client, &app.base_url, &jwt, "rw", "read-write").await;
+    let avant = common::audit_traces::max_audit_id(&pool).await;
+
+    let (st, done) = cancel_reco(&app, &secret, r.bank_transaction_id).await;
+    assert_eq!(st, 200, "got {done:?}");
+
+    common::audit_traces::assert_toutes_a_la_cle(
+        &common::audit_traces::audit_depuis(&pool, avant).await,
+        cle,
+        common::audit_traces::createur_de_la_cle(&pool, cle).await,
+        SUPPLIER_UNRECONCILE_ACTIONS,
+    );
 }
 
 // ============================================================
@@ -7150,9 +7303,15 @@ async fn unreconcile_of_a_closed_lettering_is_refused_in_its_family(pool: MySqlP
         &[vente, encaissement],
     )
     .await;
-    kesh_db::repositories::companies::lock_books(&pool, ctx.user_id, ctx.company_id, paid_on)
-        .await
-        .expect("verrou");
+    kesh_db::repositories::companies::lock_books(
+        &pool,
+        ctx.user_id,
+        ctx.company_id,
+        paid_on,
+        crate::common::jour::aujourd_hui_test(),
+    )
+    .await
+    .expect("verrou");
 
     let (st, view) = get_reco(&app, &ctx.jwt, tx_id).await;
     assert_eq!(st, 200, "got {view:?}");
@@ -7217,8 +7376,9 @@ async fn groupes_document(pool: &MySqlPool, inv_id: i64) -> Vec<(i64, i64)> {
 }
 
 /// AC15 (a) — une proposition qui solde la facture la lettre `document`, par
-/// l'API et SOUS UNE CLÉ D'API : l'entrée `lettering.created` porte la clé —
-/// le seul geste qui la porte (AC10).
+/// l'API et SOUS UNE CLÉ D'API : l'entrée `lettering.created` porte la clé
+/// (AC10) et, depuis la Story 35-8a2 (#431), `journal_entry.created` de
+/// l'écriture d'encaissement aussi (`accept_one_invoice`).
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn accept_letters_a_fully_settled_invoice(pool: MySqlPool) {
     let ctx = setup_company(&pool, "Lettre", "CH4431999123000889012", Role::Comptable).await;
@@ -7307,6 +7467,24 @@ async fn accept_letters_a_fully_settled_invoice(pool: MySqlPool) {
     assert_eq!(details["documentType"], "invoice");
     assert_eq!(details["documentId"], inv_id);
     assert_eq!(details["documentNumber"], "INV-LETTRE-1");
+
+    // Story 35-8a2 (#431, revue P1 A1 = E1) : l'écriture d'encaissement que
+    // passe le rapprochement porte la clé ; `user_id` reste son créateur.
+    let je_reglement = body["accepted"][0]["journalEntryId"]
+        .as_i64()
+        .expect("journalEntryId");
+    assert_ne!(je_reglement, je_id, "l'encaissement, non la vente");
+    assert_eq!(
+        common::audit_actor_unique(
+            &pool,
+            "journal_entry.created",
+            "journal_entry",
+            je_reglement
+        )
+        .await,
+        ("api_key".to_string(), Some(key_id), ctx.user_id),
+        "écriture d'encaissement"
+    );
 }
 
 /// AC15 (b) — une modification concurrente de la facture entre l'instantané et
@@ -10840,6 +11018,7 @@ async fn each_supplier_refusal_lands_in_failed(pool: MySqlPool) {
         },
         day_301b(6, 2),
         c.seeded.admin_user_id,
+        crate::common::jour::aujourd_hui_test(),
     )
     .await
     .unwrap();
@@ -11044,6 +11223,117 @@ async fn an_api_key_accepts_a_supplier_invoice_and_is_named_everywhere(pool: MyS
             (actor_type.as_str(), actor_key),
             ("api_key", Some(key_id)),
             "{action}"
+        );
+    }
+    // Story 35-8a2 (#431, C-e358a2-4 ; revue P1 A1 = E1) : l'écriture de
+    // règlement passée par `pay_in_tx_as` porte la clé du rapprochement.
+    let je_reglement = body["accepted"][0]["journalEntryId"]
+        .as_i64()
+        .expect("journalEntryId");
+    assert_eq!(
+        common::audit_actor_unique(
+            &pool,
+            "journal_entry.created",
+            "journal_entry",
+            je_reglement
+        )
+        .await,
+        ("api_key".to_string(), Some(key_id), c.seeded.admin_user_id),
+        "écriture de règlement fournisseur"
+    );
+}
+
+/// Story 35-8a2 (#431, revue P1 A1 = E1) — **une clé d'API `read-write`**
+/// rapproche par une règle et par une ventilation proposées
+/// (`POST /reconciliation/accept`, bras `rule` et `split` d'`accept_one`),
+/// puis par la ventilation directe (`POST /reconciliation/split`,
+/// `post_split_once`) : chacune des trois écritures porte la clé dans
+/// `journal_entry.created`, une seule trace chacune ; `user_id` reste le
+/// créateur de la clé. Tue M10 (aiguillage d'`accept_one` qui jette la clé)
+/// et M11 (`post_split_once` sans clé), que la garde des acteurs ne voit pas.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn an_api_key_rule_and_split_entries_are_attributed_to_the_key(pool: MySqlPool) {
+    let c = setup_301b(&pool).await;
+    let rule = rule_301b(&c, "Abonnement").await;
+    let ruled = tx_301b(&pool, &c, dec!(-12.00), None, Some("Abonnement mensuel")).await;
+    let split = tx_301b(&pool, &c, dec!(-21.00), None, None).await;
+    let direct = tx_301b(&pool, &c, dec!(-34.00), None, None).await;
+    let resp = c
+        .app
+        .client
+        .post(c.app.url("/api/v1/settings/api-keys"))
+        .bearer_auth(&c.jwt)
+        .json(&serde_json::json!({ "name": "rw", "scope": "read-write" }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 201);
+    let key: Value = resp.json().await.unwrap();
+    let (key_id, secret) = (
+        key["id"].as_i64().unwrap(),
+        key["key"].as_str().unwrap().to_string(),
+    );
+    let charges = c.seeded.accounts["4000"];
+
+    let body = accept_301b(
+        &c,
+        &secret,
+        c.f.bank_account_id,
+        serde_json::json!([
+            { "type": "rule", "bankTransactionId": ruled, "ruleId": rule["id"],
+              "counterpartyAccountId": charges },
+            { "type": "split", "bankTransactionId": split, "splits": [
+                { "counterpartyAccountId": charges, "amount": "13.00", "description": "Ligne A" },
+                { "counterpartyAccountId": charges, "amount": "8.00", "description": "Ligne B" },
+            ] },
+        ]),
+    )
+    .await;
+    assert_eq!(body["failed"], serde_json::json!([]), "{body}");
+    let mut ecritures: Vec<(&str, i64)> = body["accepted"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|a| {
+            let tx = a["bankTransactionId"].as_i64().unwrap();
+            let genre = if tx == ruled { "rule" } else { "split" };
+            (genre, a["journalEntryId"].as_i64().unwrap())
+        })
+        .collect();
+    assert_eq!(ecritures.len(), 2, "{body}");
+
+    let resp = c
+        .app
+        .client
+        .post(c.app.url("/api/v1/reconciliation/split"))
+        .bearer_auth(&secret)
+        .json(&serde_json::json!({
+            "bankAccountId": c.f.bank_account_id,
+            "bankTransactionId": direct,
+            "splits": [
+                { "counterpartyAccountId": charges, "amount": "20.00", "description": "Ligne A" },
+                { "counterpartyAccountId": charges, "amount": "14.00", "description": "Ligne B" },
+            ],
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200, "POST /reconciliation/split par clé");
+    let direct_body: Value = resp.json().await.unwrap();
+    ecritures.push((
+        "/reconciliation/split",
+        direct_body["journalEntryId"]
+            .as_i64()
+            .expect("journalEntryId"),
+    ));
+
+    let attendu = ("api_key".to_string(), Some(key_id), c.seeded.admin_user_id);
+    for (genre, je_id) in ecritures {
+        assert_eq!(
+            common::audit_actor_unique(&pool, "journal_entry.created", "journal_entry", je_id)
+                .await,
+            attendu,
+            "écriture du rapprochement {genre}"
         );
     }
 }

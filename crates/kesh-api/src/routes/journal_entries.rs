@@ -26,6 +26,7 @@ use kesh_core::accounting::{
 use kesh_core::errors::CoreError;
 use kesh_core::listing::{SortBy, SortDirection};
 use kesh_core::types::Money;
+use kesh_db::entities::audit_log::Acteur;
 use kesh_db::entities::{
     Journal as DbJournal, JournalEntry, JournalEntryLine, JournalEntryWithLines, NewJournalEntry,
     NewJournalEntryLine,
@@ -451,9 +452,17 @@ pub async fn reverse_journal_entry(
     Path(id): Path<i64>,
 ) -> Result<(StatusCode, Json<JournalEntryResponse>), AppError> {
     let company = get_company_for(&current_user, &state.pool).await?;
+    // Story 35-5a0 — la date du jour, lue une fois sur l'horloge de l'état.
+    let aujourd_hui = state.horloge.aujourd_hui();
 
     let created = kesh_db::retry::retry_on_deadlock("journal_entries::reverse", || {
-        journal_entries::reverse(&state.pool, company.id, id, current_user.user_id)
+        journal_entries::reverse(
+            &state.pool,
+            company.id,
+            id,
+            Acteur::from(&current_user),
+            aujourd_hui,
+        )
     })
     .await?;
 
@@ -490,7 +499,7 @@ pub async fn reverse_journal_entry_at_next_fiscal_year_start(
                 &state.pool,
                 company.id,
                 id,
-                current_user.user_id,
+                Acteur::from(&current_user),
             )
         },
     )
@@ -638,7 +647,7 @@ pub async fn create_journal_entry(
         journal_entries::create(
             &state.pool,
             fiscal_year.id,
-            current_user.user_id,
+            Acteur::from(&current_user),
             new.clone(),
         )
     })
@@ -693,21 +702,11 @@ pub async fn update_journal_entry(
         &req.lines,
     )?;
 
+    let acteur = Acteur::from(&current_user);
     let updated = kesh_db::retry::retry_on_deadlock("journal_entries::update", || {
         let pool = &state.pool;
         let new = new.clone();
-        async move {
-            journal_entries::update(
-                pool,
-                company.id,
-                id,
-                req.version,
-                current_user.user_id,
-                current_user.api_key_id,
-                new,
-            )
-            .await
-        }
+        async move { journal_entries::update(pool, company.id, id, req.version, acteur, new).await }
     })
     .await?;
 
@@ -743,18 +742,10 @@ pub async fn delete_journal_entry(
 ) -> Result<StatusCode, AppError> {
     let company = get_company_for(&current_user, &state.pool).await?;
 
+    let acteur = Acteur::from(&current_user);
     kesh_db::retry::retry_on_deadlock("journal_entries::delete", || {
         let pool = &state.pool;
-        async move {
-            journal_entries::delete_by_id(
-                pool,
-                company.id,
-                id,
-                current_user.user_id,
-                current_user.api_key_id,
-            )
-            .await
-        }
+        async move { journal_entries::delete_by_id(pool, company.id, id, acteur).await }
     })
     .await?;
 

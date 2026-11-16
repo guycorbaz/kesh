@@ -56,9 +56,10 @@
 		formatChfBalance,
 		formatChfExact,
 		linkableLedgerAccounts,
-		openingAmountAmbiguous,
+		openingAmountKind,
 		openingAmountPayload,
 		openingAmountPreview,
+		type OpeningAmountKind,
 	} from '$lib/features/bank-accounts/format';
 
 	let bankAccounts = $state<BankAccountSummary[]>([]);
@@ -249,12 +250,30 @@
 	}
 
 
-	/** Story 34-2 (revue P1, B-1) — le refus d'un montant ambigu (« 1,234 »). */
-	function ambiguousAmountMessage(): string {
-		return i18nMsg(
-			'bank-accounts-opening-error-amount-ambiguous',
-			"Montant ambigu : une virgule suivie de trois chiffres peut être un séparateur de milliers. Écrivez 1'234 pour mille deux cent trente-quatre, 1.234 pour un franc et vingt-trois centimes et quatre dixièmes de centime.",
-		);
+	/**
+	 * Story 35-6 (#1026, D6) — le refus, à l'écran, d'une saisie qui ne part pas au
+	 * serveur ; `null` pour une saisie claire. Ambiguë (« 1.234 », « 1,234 » : mille ou
+	 * un franc ?), illisible (« 1. 234 », « 1e3 »), négative ou vide (montant positif
+	 * demandé). Clés et replis littéraux, lus par les gardes i18n.
+	 */
+	function openingAmountRefusal(kind: OpeningAmountKind): string | null {
+		switch (kind) {
+			case 'ambiguous':
+				return i18nMsg(
+					'bank-accounts-opening-error-amount-ambiguous',
+					"Montant ambigu : un point ou une virgule suivis de trois chiffres peuvent séparer les milliers. Écrivez 1'234 pour mille deux cent trente-quatre, ou 1.2340 pour un franc vingt-trois et quatre dixièmes de centime.",
+				);
+			case 'unreadable':
+				return i18nMsg(
+					'bank-accounts-opening-error-amount-unreadable',
+					"Montant illisible : écrivez un nombre positif, par exemple 1'234.50.",
+				);
+			case 'negative':
+			case 'empty':
+				return i18nMsg('bank-accounts-opening-error-amount-required', 'Saisissez un montant positif.');
+			case 'clear':
+				return null;
+		}
 	}
 
 	/**
@@ -275,15 +294,14 @@
 	 */
 	async function confirmOpeningBalance(id: number) {
 		openingError = null;
-		const amount = openingAmountPayload(formOpeningAmount);
-		if (amount === null) {
-			openingError = i18nMsg('bank-accounts-opening-error-amount-required', 'Saisissez un montant positif.');
+		// Story 35-6 — la saisie est classée avant tout envoi ; seule une saisie claire part.
+		const reading = openingAmountKind(formOpeningAmount);
+		const refusal = openingAmountRefusal(reading.kind);
+		if (refusal !== null || reading.payload === undefined) {
+			openingError = refusal;
 			return;
 		}
-		if (openingAmountAmbiguous(formOpeningAmount)) {
-			openingError = ambiguousAmountMessage();
-			return;
-		}
+		const amount = reading.payload;
 		submitting = true;
 		try {
 			const entry = await enterOpeningBalance(id, { amount, side: formOpeningSide });
@@ -452,10 +470,16 @@
 		formError = null;
 		if (!isCard && !validateQrIbanField()) return;
 		if (!validateCardFields()) return;
-		// Story 34-2 (revue P1, B-1) — « 1,234 » ne part pas : mille ou un franc ?
-		if (formJournalAccountId !== null && openingAmountAmbiguous(formOpeningAmount)) {
-			formError = ambiguousAmountMessage();
-			return;
+		// Story 34-2 (revue P1, B-1), Story 35-6 — avec un compte lié, la saisie est
+		// classée avant tout envoi : « 1.234 » ou « 1,234 » (mille ou un franc ?), une
+		// saisie illisible ou négative ne partent pas ; une saisie vide n'envoie aucun solde.
+		const opening = formJournalAccountId === null ? null : openingAmountKind(formOpeningAmount);
+		if (opening !== null && opening.kind !== 'empty') {
+			const refusal = openingAmountRefusal(opening.kind);
+			if (refusal !== null) {
+				formError = refusal;
+				return;
+			}
 		}
 		submitting = true;
 		try {
@@ -478,10 +502,10 @@
 						journalAccountId: formJournalAccountId,
 					};
 			// Story 34-2 (#533, AC-7) — sans compte lié, les champs du solde sont
-			// masqués et rien n'est envoyé ; un montant vide n'envoie rien non plus.
-			const openingAmount = openingAmountPayload(formOpeningAmount);
-			if (formJournalAccountId !== null && openingAmount !== null) {
-				payload.openingBalance = { amount: openingAmount, side: formOpeningSide };
+			// masqués et rien n'est envoyé ; un montant vide n'envoie rien non plus. La
+			// charge est celle du classement (Story 35-6), que l'aperçu a montrée.
+			if (opening?.kind === 'clear' && opening.payload !== undefined) {
+				payload.openingBalance = { amount: opening.payload, side: formOpeningSide };
 			}
 			const created = await createBankAccount(payload);
 			const openingEntry = created?.openingEntry ?? null;

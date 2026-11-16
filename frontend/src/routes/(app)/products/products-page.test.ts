@@ -20,8 +20,9 @@
 // `@testing-library/svelte` (Svelte 5).
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render } from '@testing-library/svelte';
+import { render, fireEvent } from '@testing-library/svelte';
 import type { AccountResponse } from '$lib/features/accounts/accounts.types';
+import type { ProductResponse } from '$lib/features/products/products.types';
 
 vi.mock('$app/environment', () => ({ browser: true }));
 vi.mock('$app/navigation', () => ({ goto: vi.fn() }));
@@ -38,10 +39,13 @@ vi.mock('$lib/shared/utils/notify', () => ({
 }));
 
 const listProductsMock = vi.fn();
+// Story 36-1 (AC4) : nommés, pour constater qu'aucun envoi ne part.
+const createProductMock = vi.fn();
+const updateProductMock = vi.fn();
 vi.mock('$lib/features/products/products.api', () => ({
 	listProducts: (q?: unknown) => listProductsMock(q),
-	createProduct: vi.fn(),
-	updateProduct: vi.fn(),
+	createProduct: (...a: unknown[]) => createProductMock(...a),
+	updateProduct: (...a: unknown[]) => updateProductMock(...a),
 	archiveProduct: vi.fn(),
 }));
 
@@ -117,5 +121,49 @@ describe('fiche produit — chargement du plan comptable (Story 16-2b, AC-B2)', 
 		// Contre-épreuve : sans elle, une notification posée inconditionnellement
 		// ferait passer le test précédent sans rien mesurer.
 		expect(notifyErrorMock).not.toHaveBeenCalled();
+	});
+});
+
+// Story 36-1 (#1095, AC4) — Entrée dans le compte de produit du dialogue
+// d'article. jsdom n'implémente pas la soumission implicite : elle est rejouée
+// comme le navigateur (soumission si l'événement n'a pas été empêché).
+describe('fiche produit — Entrée dans le compte de produit (Story 36-1)', () => {
+	const ARTICLE: ProductResponse = {
+		id: 41,
+		companyId: 1,
+		name: 'Conseil',
+		description: null,
+		unitPrice: '150.0000',
+		vatRate: '8.10',
+		defaultRevenueAccountId: SALES.id,
+		active: true,
+		version: 1,
+		createdAt: '',
+		updatedAt: '',
+	};
+
+	it('texte sans correspondance, Entrée : rien ne part, le dialogue reste ouvert sur la saisie', async () => {
+		listProductsMock.mockResolvedValue({ items: [ARTICLE], total: 1, limit: 20, offset: 0 });
+		updateProductMock.mockResolvedValue(ARTICLE);
+		const { getByLabelText } = render(Page);
+		await settle();
+
+		await fireEvent.click(getByLabelText('Modifier'));
+		await settle();
+		const champ = document.querySelector<HTMLInputElement>('#form-revenue-account');
+		if (!champ) throw new Error('champ #form-revenue-account introuvable : dialogue non monté');
+		expect(champ.value).toBe('3000 — Ventes');
+
+		await fireEvent.input(champ, { target: { value: 'zzz' } });
+		const nonEmpechee = await fireEvent.keyDown(champ, { key: 'Enter' });
+		if (nonEmpechee) champ.form!.requestSubmit();
+		await settle();
+
+		// L'envoi d'abord : c'est lui, le défaut (#1095) — l'ancien compte partait.
+		expect(updateProductMock).not.toHaveBeenCalled();
+		expect(createProductMock).not.toHaveBeenCalled();
+		expect(nonEmpechee).toBe(false);
+		expect(document.querySelector('#form-revenue-account')).not.toBeNull();
+		expect(champ.value).toBe('zzz');
 	});
 });

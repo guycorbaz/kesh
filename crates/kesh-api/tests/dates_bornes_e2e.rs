@@ -56,7 +56,8 @@ fn seq() -> i64 {
 }
 
 fn aujourd_hui() -> String {
-    Utc::now().date_naive().to_string()
+    // Story 35-5a — le jour du serveur (horloge de test, jour suisse).
+    crate::common::jour::aujourd_hui_test().to_string()
 }
 
 /// La forme d'une valeur dans une chaîne de requête.
@@ -325,7 +326,7 @@ impl Monde {
                 company_id: self.company_id(),
                 contact_id: fournisseur,
                 supplier_invoice_number: Some(format!("FF-{}", seq())),
-                invoice_date: Utc::now().date_naive(),
+                invoice_date: crate::common::jour::aujourd_hui_test(),
                 due_date: None,
                 creditor_iban: Some("CH5604835012345678009".into()),
                 creditor_qr_iban: None,
@@ -429,8 +430,12 @@ impl Monde {
 
     /// Une transaction du jour, débit de 100.
     async fn transaction_du_jour(&self, compte: i64) -> i64 {
-        self.transaction(compte, Utc::now().date_naive(), dec!(-100.00))
-            .await
+        self.transaction(
+            compte,
+            crate::common::jour::aujourd_hui_test(),
+            dec!(-100.00),
+        )
+        .await
     }
 
     fn lignes_eclatement(&self) -> Value {

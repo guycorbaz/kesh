@@ -691,7 +691,7 @@ async fn lire_pour_cle_en_lecture_seule(pool: MySqlPool) {
     let n = b.deposer(&l.requise.1, "piege").await;
     assert_eq!(b.valider(&l.jwt, n, None).await.statut, StatusCode::OK);
     let cle = kesh_api::services::cles_mcp::authentifier(
-        &Lecture::new(pool.clone()),
+        &Lecture::new(pool.clone(), kesh_api::horloge::horloge_de_test()),
         &Trace::new(pool.clone()),
         &l.requise.1,
     )

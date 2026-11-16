@@ -28,6 +28,8 @@ import {
 	authedApiContext,
 	disposeContextSafe,
 } from './helpers/test-state';
+import { todayInZurich } from './helpers/api-fixtures';
+import { ajouterJoursIso } from './helpers/dates';
 
 test.beforeAll(async () => {
 	await seedTestState('with-company');
@@ -187,7 +189,7 @@ test('reports page has zero axe a11y violations (populated state)', async ({ pag
 async function createValidatedInvoiceWithVatViaApi(page: Page): Promise<void> {
 	const ctx = await authedApiContext(page);
 	try {
-		const today = new Date().toISOString().slice(0, 10);
+		const today = todayInZurich();
 		const contactRes = await ctx.post('/api/v1/contacts', {
 			data: { contactType: 'Entreprise', name: `Client TVA ${today}`, isClient: true, isSupplier: false },
 		});
@@ -257,9 +259,7 @@ async function createOverdueInvoiceViaApi(page: Page, label: string): Promise<st
 		expect(contactRes.ok(), `create contact: ${contactRes.status()}`).toBeTruthy();
 		const contactId = (await contactRes.json()).id as number;
 		// Échéance 40 j dans le passe → bucket 31-60 ; poste ouvert (validée, impayée).
-		const due = new Date();
-		due.setDate(due.getDate() - 40);
-		const dueStr = due.toISOString().slice(0, 10);
+		const dueStr = ajouterJoursIso(todayInZurich(), -40);
 		const invRes = await ctx.post('/api/v1/invoices', {
 			data: {
 				contactId,
@@ -351,7 +351,7 @@ test('grand livre : une écriture postée réapparaît dans l’extrait de son c
 		const credit = accounts.find((a) => /^3[0-9]{3}$/.test(a.number)) ?? accounts[1];
 		debitNumber = debit.number;
 
-		const today = new Date().toISOString().slice(0, 10);
+		const today = todayInZurich();
 		const libelle = `Grand livre E2E ${Date.now()}`;
 		const entryRes = await api.post('/api/v1/journal-entries', {
 			data: {
