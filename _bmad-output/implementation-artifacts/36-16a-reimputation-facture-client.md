@@ -1,6 +1,6 @@
 # Story 36-16a : changer le compte analytique d'une facture client, même payée — le patron du geste (#1167)
 
-Status: review
+Status: done
 
 *Fiche rédigée le 2026-11-15 par l'agent de rédaction des fiches de l'Epic 36 (Opus 5.5), worktree `kesh-36-16`, branche
 `story/36-16-reimputation-analytique` partie de `epic/36-0.18.0`, par le workflow `bmad-create-story`. **Première des trois
@@ -526,3 +526,28 @@ Journaux sous `/home/gcorbaz/devel/kesh-gate-logs/e36-16/` (C-36-16a-8) :
     Mutations : M18 à M21 tuées (`mut/synthese-rust-rem1.log`), F1 à F9 tuées (`mut/synthese-front-rem1b.log`).
   - Prompt de la passe P2 ciblée : `36-16a-reimputation-facture-client-review-prompt-p2.md`. `gate-ci` et E2E complet : à la
     clôture.
+- 2026-11-16 — **Revue P2 ciblée** (Sonnet, `kesh-gate-logs/e36-16/review-p2-ciblee.md`) : **0/0/0/5** — la boucle se clôt.
+  Sans changement de code de production (décision de l'orchestrateur), `473bba7fe` et `d95ace381` :
+  - P2-1 (#1218) : la réserve de l'ordre des verrous (exercice ouvert intermédiaire, verrouillé seulement par le balayage de
+    `find_later_closed_in_tx` ; cycle possible avec un `PUT` d'écriture, rattrapé par `retry_on_deadlock`) écrite en commentaire
+    (`project_reassignment.rs`, étape (a)) et dans l'annotation de D9 (6) — commentaire seul (`git diff 6858af815 473bba7fe --
+    crates/kesh-db` : neuf lignes `//`, aucune autre) ;
+  - P2-2 : citation corrigée, `journal_entries.rs:1287` (motif d'écran), gardes verrouillantes `:1569` et `:1908`, au Change Log
+    et au registre (C-36-16a-12) ;
+  - P2-3 : test `fiscal_years_are_named_once_and_in_order` (vente et règlement dans deux exercices ouverts exposés par un même
+    exercice clos → un seul nom ; l'exercice semé clos à son tour → son nom puis celui du postérieur) ; mutations M22
+    (dédoublonnage retiré) et M23 (ordre inversé) tuées (`mut/synthese-rust-rem2.log`) ;
+  - P2-4 (#1219) et P2-5 (#1220) : issues ouvertes par l'orchestrateur, non corrigés ici.
+- 2026-11-16 — **Clôture**, au dernier commit de code `473bba7fe` (commit `d95ace381`) :
+  - `scripts/gate-ci.sh kesh_ci_e3616a` : **code 0, 5551 passés, 0 échec, 17 ignorés** sur 229 binaires
+    (`kesh-gate-logs/e36-16/cloture-gate-ci.log`, somme des lignes `test result:`) ;
+  - E2E complet sur `kesh_e2e_e3616a` recréée, port 3616 : **438 passés, 7 échecs, 17 ignorés**
+    (`kesh-gate-logs/e36-16/cloture-e2e.log`, 19,8 min) ; les sept échecs, nommés un à un, sont exactement les sept lignes de
+    la KF-029 (#97) de `docs/testing.md` § « Les échecs attendus » — `mode-expert.spec.ts:26`, `:41`,
+    `onboarding-path-b.spec.ts:65`, `:92`, `onboarding.spec.ts:57`, `:77`, `:150` ; aucun autre. Les quatre tests de
+    `project-reassignment.spec.ts` passent.
+  - **Synthèse de la boucle.** Validation : P1 0/2/7/7 (Sonnet) → P2 0/0/4/6 (Opus) → P3 ciblée 0/0/0/3 (Sonnet). Revue de
+    code : P1 — B (Opus) 0/0/0/3, A (Sonnet) **0/0/2/4**, E (Opus) 0/0/0/6 → P2 ciblée (Sonnet) 0/0/0/5. Mutations : 23 Rust
+    (M1 à M23) et 9 frontend (F1 à F9), toutes tuées ; une survivante au premier passage de la remédiation (F4, test devenu
+    muet par la correction E-2), rendue au rouge par `9af468c76`. Issues ouvertes pendant la story : #1215 (E-6), #1216 (E-1),
+    #1217 (B-2 = E-5), #1218 (P2-1), #1219 (P2-4), #1220 (P2-5). `Status: done`.
