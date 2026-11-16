@@ -248,7 +248,7 @@ async fn passer(ctx: &Ctx, body: &Value) -> (u16, Value) {
     appel(ctx, &ctx.jwt, "fx-revaluation", body).await
 }
 
-fn ligne<'a>(v: &'a Value, compte: i64) -> &'a Value {
+fn ligne(v: &Value, compte: i64) -> &Value {
     v["lines"]
         .as_array()
         .unwrap()
