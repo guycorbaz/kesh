@@ -12,8 +12,8 @@ seulement ; aucun changement du serveur ; aucune migration.**
 Worktree `/home/gcorbaz/devel/kesh-36-18`, branche `story/36-18-montants-ambigus-autres-ecrans`. ⚠️ La branche porte deux fusions
 faites à l'étape 0 (`origin/epic/36-0.18.0`, puis la 36-15 **en revue, non fusionnée** — écart décidé par l'orchestrateur,
 C-36-18-12) : ne relis pas leur contenu. Le diff à relire, **aplati** :
-`git -C /home/gcorbaz/devel/kesh-36-18 diff 668556766 454a63942` (`668556766` = étape 0, après les fusions ; `454a63942` = dernier
-commit de code). Les commits suivants ne portent que la fiche, le registre et le `sprint-status.yaml`. Langue du rapport :
+`git -C /home/gcorbaz/devel/kesh-36-18 diff 668556766 ac953dea2` (`668556766` = étape 0, après les fusions ; `ac953dea2` = dernier
+commit de code, qui ne change qu'un compteur de test ; `test-fast` et `gate-ci` ont tourné à `454a63942`, son parent). Les commits suivants ne portent que la fiche, le registre et le `sprint-status.yaml`. Langue du rapport :
 français. Modèle : **Opus ou Sonnet** (première passe : jamais Haiku). Contexte frais.
 
 Lis d'abord (lentilles E et A ; la lentille B lit le diff avant) : la fiche
@@ -90,7 +90,7 @@ si ton outil lit les images, et compare chacune à l'état que son nom annonce.
    valeur, `expect.soft` sur le message — un test qui passerait **à vide** ?). Les rouges (`rouges.log` : 49 ; `e2e-rouges.log` : les
    quatre requêtes parties avec `1.250`) ; les mutations M1 à M18 (`mut/resume.log`, `mut/M*.log`) : chacune tuée par le test
    qu'elle vise ? Propose des mutations plausibles non jouées.
-8. **Le périmètre** (AC10) : `git diff --stat 668556766 454a63942` ne nomme ni `crates/` hors `kesh-i18n/locales/`, ni
+8. **Le périmètre** (AC10) : `git diff --stat 668556766 ac953dea2` ne nomme ni `crates/` hors `kesh-i18n/locales/`, ni
    `amount-ambiguity.ts`, `JournalEntryForm.svelte`, `VatPurchaseAssistant.svelte`, `TransactionSplitModal.svelte`,
    `InvoiceForm.svelte`, `bank-accounts/` ; aucun `CHANGELOG.md` ; la note de version de la fiche.
 
