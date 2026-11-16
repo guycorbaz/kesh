@@ -1,6 +1,6 @@
 # Story 36-15 : « compte analytique » au lieu de « projet analytique » (#1161)
 
-Status: in-progress
+Status: review
 
 > **Traductions arbitrées par Guy le 2026-11-16 (D2, option A)** : de-CH « analytisches Konto », it-CH « conto
 > analitico », en « analytical account » ; fr-CH « compte analytique ».
@@ -621,7 +621,9 @@ analytiques*, les champs des écritures, des factures et de la réconciliation, 
 analytique** et **Rendement par compte analytique** (titres à l'écran et dans le PDF, noms des fichiers exportés), le
 journal d'audit et les manuels, dans les quatre langues (allemand *analytisches Konto*, italien *conto analitico*,
 anglais *analytical account*). Rien ne change de ce qui est enregistré : routes,
-champs et codes de l'API gardent leur nom `project` ; les colonnes `Projet;SousProjet` des exports CSV restent.
+champs et codes de l'API gardent leur nom `project` ; les colonnes `Projet;SousProjet` des exports CSV restent. Le nom
+d'un fichier exporté de ces deux rapports change donc (`kesh-depenses-par-compte-analytique-…` au lieu de
+`kesh-depenses-par-projet-…`), et il n'est plus coupé à vingt caractères.
 ⚠️ Les textes des refus de `/api/v1/projects` disent désormais « compte analytique » (codes inchangés) ; le texte libre
 `failed[].details.message` d'un refus `PROJECT_ARCHIVED` de la réconciliation dit encore « projet analytique » — seul le
 code fait foi. (refs #1161)
@@ -675,11 +677,102 @@ dire « projet », et le CR n'exige le geste unique que de ce que l'utilisateur 
 
 ### Agent Model Used
 
+Opus 5.5 (agent de développement de l'Epic 36, phase 2), 2026-11-16, en autonomie, worktree `kesh-36-15`, voie 1.
+
 ### Debug Log References
+
+Journaux sous `/home/gcorbaz/devel/kesh-gate-logs/e36-15/` :
+- `rouges.log` — G25 et `export_filenames_say_compte_analytique` rouges au commit des gardes `f5f6ff88b` (catalogues
+  d'avant) : G25 **256 occurrences** = 197 lignes de catalogue (196 valeurs + le commentaire fr-CH `:3089`) + 5 preuves
+  de lecture (`projects-title` ×4, « Comptes analytiques » du manuel) + 39 lignes de documents (30 du manuel utilisateur,
+  2 de l'admin, 1 de la brochure, 5 d'`api-external.md`, 1 du README) + 15 littéraux Rust (11 + 4) ; puis Vitest
+  `vocabulaire-analytique` rouge, **46 sites** (1 test rouge sur 5 : l'égalité repli = catalogue était encore vraie sur
+  les deux côtés d'avant).
+- `rouges-e2e.log` — `reports.spec.ts` sur les catalogues d'avant (`f5f6ff88b`, backend voie 1 port 3615) : les deux
+  tests modifiés rouges (onglet `/dépenses par compte analytique/i`, `/rendement par compte analytique/i` introuvable),
+  12 autres verts.
+- `cible-1.log` (arbre sur `f5f6ff88b`, correctif non commité) : 318/319, `export_filenames_say_compte_analytique` rouge
+  — le nom rendu était `kesh-depenses-par-compte-…` : la coupe à 20 caractères de `slugify` (C-36-15-7).
+- `cible-2.log` (même arbre, C-36-15-7 appliqué) : gate ciblé `binary(textes_coherents) | binary(project_reports_e2e) |
+  package(kesh-i18n) | package(kesh-report) | binary(projects_e2e) | binary(reconciliation_rules_e2e) | (package(kesh-api)
+  & kind(lib))` **1000/1000**, 6 ignorés ; `clippy-dev-2.log` vert ; `cargo fmt --check` vert.
+- `vitest-cible-1.log` : `src/lib/shared/` **389/389** (30 fichiers).
+- `mut/` — mutations au commit `894267d82` (code commité avant, E5) : `g25-commentaire` (commentaire `// projet` ajouté à
+  `projects.rs`) **reste vert** ; `g25-catalogue` (de-CH `projects-title = Projekte`) rouge nommant
+  `de-CH/messages.ftl:3115` ; `g25-casse` (en-CH `PROJECTS`) rouge nommant `en-CH/messages.ftl:3121` ; `g25-exception`
+  (extrait « Container Manager » retiré) rouge nommant `admin-manual.tex:602` ; `g25-perimee` (extrait « projet fictif »
+  ajouté à l'admin) rouge « exception périmée » ; `g25-portee` (« nom du projet » dans une ligne du manuel utilisateur)
+  rouge nommant `user-manual.tex:3253` ; `vitest-repli` (`'Projet archivé'` remis dans `InvoiceForm.svelte`) rouge sur le
+  site **et** sur l'écart repli ≠ catalogue. Restauration par `git restore --worktree` + `touch`, constatée dans chaque
+  journal. Scripts : `mut/g25-mutations.sh`, `mut/vitest-repli.sh`.
+- `make-fr.log`, `pdf-local.log` — `make fr` au commit `894267d82`, PDF **non commités** (D8, rendus par `git restore`) :
+  `user-manual.pdf` `grep -oi 'projet' | wc -l` **0** (40 avant), `grep -c 'compte analytique'` **1** (ligne unique
+  aplatie ; 30 occurrences), `grep -c 'Comptes analytiques'` 1 ; admin `projet compris` 0, `des projets, les règlements` 0,
+  `compte analytique compris` 1 ; brochure `projets analytiques y seront` 0, `comptes analytiques y seront` 1.
+- `test-fast-ci-review.log` — `scripts/test-fast.sh --ci`, base `kesh_e3615` remise à neuf, au commit `894267d82` :
+  **5456 passés, 13 ignorés**, 1 lent (`recette_montee_script`, 100 s).
+- `gate-ci-review.log` — premier `scripts/gate-ci.sh kesh_ci_e3615` au commit `894267d82`, **interrompu** (panne du
+  classificateur de sécurité de la session, arrêt de l'agent ; aucun échec au moment de l'arrêt) ; relancé sous les mêmes
+  verrous : `gate-ci-review-2.log` — **5463 passés, 0 échoué, 17 ignorés**, `rc=0`, commit `894267d82`.
+- `front-{check,lint-i18n-ownership,test-unit,build}-review.log` — frontend complet au commit `894267d82` : `npm run
+  check` 0 erreur (29 avertissements, 5 fichiers) ; `lint-i18n-ownership` PASS ; `test:unit` **3714/3714** (239
+  fichiers) ; `build` vert.
+- `captures.log`, `captures/` — captures (base jetable `kesh_e2e_e3615`, preset `with-data`, thème clair).
 
 ### Completion Notes List
 
+- **Option A appliquée** (arbitrage de Guy du 2026-11-16) : 49 valeurs × 4 catalogues + le commentaire `fr-CH:3089`
+  (197 lignes de valeur, aucune clé ajoutée, retirée ni renommée ; `git diff` : 197 insertions, 197 suppressions) ; 46
+  sites du frontend ; 11 refus de `/api/v1/projects` ; 4 libellés du PDF ; documentation (trois `.tex`,
+  `api-external.md` avec la phrase de D9, glossaire, `README.md:47`).
+- **C-36-15-7, hors fiche** : le type du nom de fichier exporté n'est plus coupé à 20 caractères
+  (`slugify_max`, `LONGUEUR_MAX_SLUG_DE_TYPE = 40`, `crates/kesh-api/src/util.rs` ; deux sites de `routes/reports.rs`).
+  Coupé, il disait `depenses-par-compte` — « compte » seul. Aucun autre type ne dépasse 20 caractères dans les quatre
+  langues : aucun autre nom de fichier ne change. Le fichier `routes/reports.rs` n'est pas dans la liste d'exclusion de
+  l'AC-4.
+- **G25 côté Rust plus large que la fiche** : l'extracteur `litteraux_de_chaine` lit aussi les chaînes brutes, saute les
+  commentaires `/* */` et les caractères `'"'` ; les trois angles morts de l'AC-7 sont donc couverts (sondes dans
+  `g25_l_extracteur_de_litteraux_de_chaine`) ; reste l'angle mort des commentaires de bloc imbriqués (doc-comment de la
+  fonction). Les trois commandes de l'AC-7 (`\br#*"`, `'"'`, `/*`) rejouées sur les deux fichiers au commit `894267d82` :
+  vides.
+- **Exceptions de G25** : 14 extraits (10 admin, 1 brochure, 3 README), chacun attaché à son fichier ; les 15 lignes
+  courantes de l'admin, la ligne de la brochure et les 4 du README sont toutes couvertes (le test le prouve : aucune
+  occurrence non excusée, aucune exception périmée).
+- **Glossaire** : partie A **82** lignes de tableau (83 avant ; ligne « projet » retirée), recomptées par la commande
+  écrite dans la note du glossaire ; le « 76 » de la note de la 23-4 est laissé (relevé daté).
+- **Manuels** : les PDF ne sont pas commités (D8) ; l'AC-11 reste à l'intégration.
+- **Captures** (`/home/gcorbaz/devel/kesh-gate-logs/e36-15/captures/`) : `00-menu-lateral-{fr,de}`,
+  `01-comptes-analytiques-liste-{fr,de}` (allemand : `KESH_LANG=de-CH`), `02-…-formulaire-fr`,
+  `03-…-refus-sous-comptes-actifs-fr` (toast du refus d'archiver une racine qui a des sous-comptes actifs),
+  `04-ecriture-formulaire-colonne-fr`, `05-ecriture-detail-colonne-fr` (`<th>` en dur, D7), `06-facture-client-champ-fr`,
+  `07-facture-fournisseur-champ-fr`, `08-reconciliation-regle-compte-par-defaut-fr`, `09-rapport-depenses-fr`,
+  `10-rapport-rendement-fr`, les deux PDF exportés et leur page 1 (`09-…-export.pdf`, `10-…-export.pdf`,
+  `*-export-page-1.png`), `11-journal-audit-fr`. **Non capturés** : les dialogues de réconciliation *écriture manuelle* et
+  *ventilation* (ils demandent un relevé importé ; leurs textes sont tenus par G25 et la garde Vitest) ; le refus
+  « parent archivé » (l'écran n'offre pas un parent archivé ; le refus capturé est celui de l'archivage, du même fichier).
+  Remarque : les onglets des rapports passent sur deux lignes (« Dépenses par compte / analytique »), lisibles.
+- **Pas d'E2E complet** au passage en `review` (consigne) : il tourne à la clôture, avec `gate-ci`. Seule la spec
+  `reports.spec.ts` a tourné, pour la preuve du rouge.
+
 ### File List
+
+- `crates/kesh-i18n/locales/{fr-CH,de-CH,it-CH,en-CH}/messages.ftl`
+- `crates/kesh-api/src/routes/projects.rs`, `crates/kesh-api/src/routes/reports.rs`, `crates/kesh-api/src/util.rs`
+- `crates/kesh-report/src/pdf.rs`
+- `crates/kesh-api/tests/textes_coherents.rs` (G25), `crates/kesh-api/tests/project_reports_e2e.rs`
+- `frontend/src/lib/shared/vocabulaire-analytique.test.ts` (neuf)
+- `frontend/src/lib/components/invoices/InvoiceForm.svelte`,
+  `frontend/src/lib/features/journal-entries/JournalEntryForm.svelte`,
+  `frontend/src/lib/features/reconciliation/{ManualMatchModal.svelte,TransactionSplitModal.svelte,failed-proposal-label.ts}`,
+  `frontend/src/lib/features/reconciliation/rules/RuleFormModal.svelte`,
+  `frontend/src/lib/features/reports/{ProjectExpensesView.svelte,ProjectReturnView.svelte}`,
+  `frontend/src/lib/features/supplier-invoices/SupplierInvoiceForm.svelte`,
+  `frontend/src/routes/(app)/{+layout.svelte,export/+page.svelte,invoices/[id]/+page.svelte,journal-entries/[id]/+page.svelte,reports/+page.svelte,settings/projects/+page.svelte,supplier-invoices/[id]/+page.svelte}`
+- `frontend/tests/e2e/reports.spec.ts`
+- `docs/manual/fr/{user-manual,admin-manual,marketing-brochure}.tex`, `docs/api-external.md`, `docs/i18n-glossaire.md`,
+  `README.md`
+- `_bmad-output/implementation-artifacts/36-15-compte-analytique.md`, `…-review-prompt-p1.md` (neuf),
+  `e36-choix-autonomes-36-15-compte-analytique.md` (C-36-15-7), `sprint-status.yaml`
 
 ## Change Log
 
@@ -755,3 +848,19 @@ dire « projet », et le CR n'exige le geste unique que de ce que l'utilisateur 
   *Écart à la consigne Edit, déclaré* : sept remplacements de phrases de cette étape (bandeau, `:3089`, glossaire,
   tâche 0, note de version) ont été faits par un court script Python sur la fiche (artefact `_bmad-output`, chaque motif
   vérifié unique avant remplacement) ; la réduction des tables de D2, par l'outil Edit. La suite, par l'outil Edit.
+- **2026-11-16 — développement** (Opus 5.5). Commits : `e5352ee82` (étape 0), `f5f6ff88b` (gardes d'abord, rouges
+  journalisés), `894267d82` (correctif : catalogues, frontend, backend, documentation ; dernier commit de code), puis la
+  fiche à `review`. Tout le code, les catalogues et la documentation par l'outil Edit, les catalogues par blocs contigus.
+  Décision neuve **C-36-15-7** (type du nom de fichier non coupé à 20 caractères), née du rouge du test
+  neuf de l'AC-3 après le correctif. Détail et journaux au Dev Agent Record.
+  - Recontrôles de la fiche : trois commandes d'angle mort de l'AC-7 rejouées au commit `894267d82` (vides) ; AC-4 :
+    `git diff --name-only $(git merge-base origin/epic/36-0.18.0 HEAD)..HEAD | /usr/bin/grep -E
+    "kesh-db|reconciliation.rs|csv.rs|i18n-keys.test|CHANGELOG|migrations"` vide ; AC-10 : contrôle des mots-clés de
+    fermeture vide.
+  - *Écarts aux consignes, déclarés* : (1) l'en-tête du journal `rouges-e2e.log` a été ajouté par `sed -i` (journal hors
+    du dépôt, non du code) ; (2) les mutations et les captures s'appliquent par de courts scripts Python sur des copies de
+    travail restaurées par `git restore --worktree` (forme permise pour les mutations) ; (3) le commentaire
+    `fr-CH/messages.ftl:3089` reste sur une ligne, comme la fiche l'exige (aucune ligne ajoutée au catalogue).
+  - Gates au passage en `review`, tous au commit `894267d82` : `test-fast --ci` **5456/5456** (13 ignorés) ; `gate-ci`
+    **5463 passés, 17 ignorés** (relancé après une interruption) ; frontend complet vert (Vitest 3714/3714). **Pas d'E2E
+    complet** : il tourne à la clôture, avec `gate-ci`.
