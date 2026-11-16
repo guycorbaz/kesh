@@ -26,7 +26,8 @@
  * dix caractères, sur tout récepteur. **Un seul relevé par ligne**, quel que soit le nombre
  * de motifs qu'elle porte. Le jour d'une spec vient de `todayInZurich()` ; l'arithmétique
  * sur un jour, d'`ajouterJoursIso` (`tests/e2e/helpers/dates.ts`). `ALLOWLIST_SPECS` est
- * close de deux entrées, dont le fragment est le texte exact de la ligne relevée.
+ * close de trois entrées (la troisième, la sonde d'horloge de la Story 36-7a, #1125), dont
+ * le fragment est le texte exact de la ligne relevée.
  * **Angle mort assumé** : un jour tiré de `Date.now()` sans construction de date
  * (`Intl.DateTimeFormat('sv-SE').format(Date.now())`) n'est pas relevé — aucun
  * aujourd'hui ; `Date.now()` seul sert aux suffixes d'unicité, par centaines.
@@ -260,9 +261,9 @@ const MOTIFS_SPECS: RegExp[] = [
 ];
 
 /**
- * Les deux sites admis (fiche 35-5c, D4 ; Story 36-10, D7 : `todayUtc` d'`audit-log.spec.ts`
- * retiré, le filtre du journal d'audit lisant le jour de Zurich). Le fragment est le texte
- * exact de la ligne.
+ * Les trois sites admis (fiche 35-5c, D4 ; Story 36-10, D7 : `todayUtc` d'`audit-log.spec.ts`
+ * retiré, le filtre du journal d'audit lisant le jour de Zurich ; le troisième, fiche 36-7a,
+ * D6). Le fragment est le texte exact de la ligne.
  */
 const ALLOWLIST_SPECS: Entree[] = [
 	{
@@ -274,6 +275,12 @@ const ALLOWLIST_SPECS: Entree[] = [
 		fichier: 'invoices.spec.ts',
 		fragment: 'const sentAt = new Date(Date.now() - 3_600_000).toISOString().slice(0, 19);',
 		motif: 'un instant (il y a une heure), non un jour',
+	},
+	{
+		fichier: 'horloge-sonde.spec.ts',
+		fragment: "new Date().toLocaleDateString('sv-SE', { timeZone: 'Europe/Zurich' }),",
+		motif:
+			'le jour du navigateur (page.evaluate), comparé à ceux du runner et du serveur — sonde d’horloge de l’E2E décalé (#1125, Story 36-7a, D6)',
 	},
 ];
 
@@ -312,7 +319,7 @@ function lireSpecs(): Map<string, string> {
 }
 
 describe('garde des dates du jour des specs E2E (#929, Story 35-5c)', () => {
-	it('les specs ne portent que les deux sites de l’allowlist', () => {
+	it('les specs ne portent que les trois sites de l’allowlist', () => {
 		const sources = lireSpecs();
 		expect(sources.size).toBeGreaterThan(100);
 		expect(sources.has('helpers/api-fixtures.ts')).toBe(true);
