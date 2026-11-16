@@ -528,6 +528,23 @@ pub enum AppError {
     #[error("Une sauvegarde est déjà en cours")]
     BackupInProgress,
 
+    /// Story 37-2 (AC-5) — `POST /exchange-rates/fetch` d'un mois ou d'un
+    /// jour que la source n'a pas encore publié (racine vide, ou 404 de
+    /// `xmldaily`). HTTP 404, code `RATE_NOT_PUBLISHED`, clé
+    /// `error-rate-not-published`.
+    #[error("Cours pas encore publiés")]
+    RateNotPublished,
+
+    /// Story 37-2 (AC-5) — la source des cours est injoignable ou a répondu
+    /// inutilisablement (`timeout`, `connect`, `http_status:<n>`, `too_large`,
+    /// `malformed`, `month_mismatch`, `date_mismatch`, `no_valid_rate`). HTTP
+    /// **503** (jamais 500 ni 502 : le frontend lit 502 et 504 comme une issue
+    /// inconnue), code `RATE_SOURCE_UNAVAILABLE`, clé
+    /// `error-rate-source-unavailable`. Le code classé est journalisé et écrit
+    /// dans `_kesh_exchange_rate_fetch`, jamais rendu (ni URL ni trace).
+    #[error("Source des cours indisponible : {0}")]
+    RateSourceUnavailable(String),
+
     /// Story 17-4b — échec d'envoi d'un email transactionnel via SMTP
     /// (connexion SMTP, auth, build du message, panne réseau). HTTP 500, i18n
     /// key `error-smtp-send-failed`. Détail loggé `tracing::error!`, jamais
@@ -2583,6 +2600,31 @@ impl IntoResponse for AppError {
                      instants.",
                 ),
             ),
+
+            // Story 37-2 (AC-5) — cours pas encore publiés.
+            AppError::RateNotPublished => build_response(
+                StatusCode::NOT_FOUND,
+                "RATE_NOT_PUBLISHED",
+                &t(
+                    "error-rate-not-published",
+                    "Ces cours ne sont pas encore publiés par l'AFC. Réessayez plus tard.",
+                ),
+            ),
+
+            // Story 37-2 (AC-5) — source des cours indisponible : 503, le code
+            // classé au journal seulement.
+            AppError::RateSourceUnavailable(code) => {
+                tracing::warn!(code = %code, "source des cours indisponible");
+                build_response(
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    "RATE_SOURCE_UNAVAILABLE",
+                    &t(
+                        "error-rate-source-unavailable",
+                        "La source des cours de change (AFC) ne répond pas ou a rendu une réponse \
+                         inutilisable. Réessayez plus tard, ou saisissez le cours.",
+                    ),
+                )
+            }
 
             // Story 17-4b — échec envoi email SMTP (recovery). Détail loggé,
             // jamais exposé. (17-4c : fire-and-forget, n'atteint pas le client.)

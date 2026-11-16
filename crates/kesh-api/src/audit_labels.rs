@@ -120,6 +120,7 @@ pub const ACTIONS: &[&str] = &[
     "dunning_level.updated",
     "email_template.restored_default",
     "email_template.updated",
+    "exchange_rates.fetched",
     "exports.global",
     "fiscal_year.closed",
     "fiscal_year.created",

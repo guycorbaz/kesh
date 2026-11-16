@@ -18,6 +18,7 @@ pub mod credit_notes;
 pub mod dunning_levels;
 pub mod dunning_reminders;
 pub mod email_templates;
+pub mod exchange_rates;
 pub mod exports;
 pub mod fiscal_years;
 pub mod health;

@@ -1170,6 +1170,8 @@ error-fx-account-revenue-account = { $subject } ne peut pas être un compte de c
 error-multi-currency-disabled = Le mode multi-devises n’est pas activé : un compte ne peut pas recevoir de devise étrangère. Un administrateur l’active dans Paramètres.
 error-currency-unknown = « { $value } » n’est pas un code de devise connu (trois lettres, p. ex. USD ou EUR).
 error-rate-unavailable = Aucun cours de change { $currency } pour { $month } : récupérez les cours ou saisissez-en un.
+error-rate-not-published = Ces cours ne sont pas encore publiés par l'AFC. Réessayez plus tard.
+error-rate-source-unavailable = La source des cours de change (AFC) ne répond pas ou a rendu une réponse inutilisable. Réessayez plus tard, ou saisissez le cours.
 error-account-currency-locked = La devise de ce compte ne peut plus changer : il porte des écritures, dont elle est la devise.
 error-account-currency-in-use = Ce compte est employé en CHF (rôle, paramètres de facturation, compte bancaire, article ou règle de rapprochement) : il ne peut pas recevoir de devise.
 error-account-in-foreign-currency = Ce compte est tenu en { $currency } : il ne peut pas servir ici, où Kesh comptabilise en CHF.
@@ -3439,6 +3441,7 @@ audit-log-action-admin-session-settings-updated = Durée d'inactivité de la ses
 audit-log-action-admin-full-export = Sauvegarde complète exportée
 audit-log-action-admin-full-import = Sauvegarde importée
 audit-log-action-exports-global = Export global effectué
+audit-log-action-exchange-rates-fetched = Cours de change récupérés
 audit-log-action-report-generated = Rapport généré
 audit-log-action-report-exported = Rapport exporté
 #

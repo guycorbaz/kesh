@@ -1247,6 +1247,24 @@ async fn etat_unites_manquantes_et_vidage(pool: MySqlPool) {
         vec![mois(2024, 11), RateUnit::day(d(2024, 12, 1))]
     );
     assert!(er::missing_units(&mut conn, &[]).await.unwrap().is_empty());
+    // Résumé d'une unité (raccourci du `POST /fetch`, phase B1) : deux devises,
+    // le plus grand `fetched_at` ; `None` pour une unité absente.
+    assert_eq!(
+        er::fetched_unit_summary(&mut conn, SOURCE_AFC, mois(2024, 12))
+            .await
+            .unwrap(),
+        Some(er::FetchedUnitSummary {
+            count: 2,
+            last_fetched_at: t(6),
+            source_date: None,
+        })
+    );
+    assert_eq!(
+        er::fetched_unit_summary(&mut conn, SOURCE_AFC, mois(2024, 11))
+            .await
+            .unwrap(),
+        None
+    );
     assert_eq!(
         er::month_first_fetched_at(&mut conn, d(2024, 12, 1))
             .await

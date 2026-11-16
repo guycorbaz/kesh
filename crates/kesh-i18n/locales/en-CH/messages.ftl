@@ -1107,6 +1107,8 @@ error-fx-account-revenue-account = { $subject } cannot be a sales revenue accoun
 error-multi-currency-disabled = Multi-currency mode is not enabled: an account cannot receive a foreign currency. An administrator enables it in Settings.
 error-currency-unknown = “{ $value }” is not a known currency code (three letters, e.g. USD or EUR).
 error-rate-unavailable = No { $currency } exchange rate for { $month }: fetch the rates or enter one.
+error-rate-not-published = These rates have not yet been published by the FTA. Try again later.
+error-rate-source-unavailable = The exchange rate source (FTA) is not responding or returned an unusable answer. Try again later, or enter the rate.
 error-account-currency-locked = This account’s currency can no longer change: it carries entries, whose currency it is.
 error-account-currency-in-use = This account is used in CHF (role, invoicing settings, bank account, product or reconciliation rule): it cannot receive a currency.
 error-account-in-foreign-currency = This account is kept in { $currency }: it cannot be used here, where Kesh books in CHF.
@@ -3366,6 +3368,7 @@ audit-log-action-admin-session-settings-updated = Session inactivity duration ch
 audit-log-action-admin-full-export = Full backup exported
 audit-log-action-admin-full-import = Backup imported
 audit-log-action-exports-global = Global export completed
+audit-log-action-exchange-rates-fetched = Exchange rates fetched
 audit-log-action-report-generated = Report generated
 audit-log-action-report-exported = Report exported
 #

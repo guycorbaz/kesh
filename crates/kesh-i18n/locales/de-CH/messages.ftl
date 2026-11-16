@@ -1107,6 +1107,8 @@ error-fx-account-revenue-account = { $subject } darf kein Umsatzkonto sein (Stan
 error-multi-currency-disabled = Die Mehrwährungsbuchhaltung ist nicht aktiviert: Ein Konto kann keine Fremdwährung erhalten. Ein Administrator aktiviert sie unter Einstellungen.
 error-currency-unknown = «{ $value }» ist kein bekannter Währungscode (drei Buchstaben, z. B. USD oder EUR).
 error-rate-unavailable = Kein Wechselkurs { $currency } für { $month }: Rufen Sie die Kurse ab oder erfassen Sie einen.
+error-rate-not-published = Diese Kurse sind von der ESTV noch nicht veröffentlicht. Versuchen Sie es später erneut.
+error-rate-source-unavailable = Die Quelle der Wechselkurse (ESTV) antwortet nicht oder hat eine unbrauchbare Antwort geliefert. Versuchen Sie es später erneut oder erfassen Sie den Kurs.
 error-account-currency-locked = Die Währung dieses Kontos kann nicht mehr geändert werden: Es enthält Buchungen, deren Währung sie ist.
 error-account-currency-in-use = Dieses Konto wird in CHF verwendet (Rolle, Rechnungseinstellungen, Bankkonto, Artikel oder Abgleichsregel): Es kann keine Währung erhalten.
 error-account-in-foreign-currency = Dieses Konto wird in { $currency } geführt: Es kann hier nicht verwendet werden, da Kesh hier in CHF bucht.
@@ -3360,6 +3362,7 @@ audit-log-action-admin-session-settings-updated = Inaktivitätsdauer der Sitzung
 audit-log-action-admin-full-export = Vollständige Sicherung exportiert
 audit-log-action-admin-full-import = Sicherung importiert
 audit-log-action-exports-global = Globaler Export durchgeführt
+audit-log-action-exchange-rates-fetched = Wechselkurse abgerufen
 audit-log-action-report-generated = Bericht erstellt
 audit-log-action-report-exported = Bericht exportiert
 #

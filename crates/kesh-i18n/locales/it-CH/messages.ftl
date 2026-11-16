@@ -1107,6 +1107,8 @@ error-fx-account-revenue-account = { $subject } non può essere un conto della c
 error-multi-currency-disabled = La modalità multivaluta non è attivata: un conto non può ricevere una valuta estera. Un amministratore la attiva in Impostazioni.
 error-currency-unknown = «{ $value }» non è un codice valuta conosciuto (tre lettere, p. es. USD o EUR).
 error-rate-unavailable = Nessun tasso di cambio { $currency } per { $month }: recuperi i tassi o ne inserisca uno.
+error-rate-not-published = Questi tassi non sono ancora pubblicati dall'AFC. Riprovi più tardi.
+error-rate-source-unavailable = La fonte dei tassi di cambio (AFC) non risponde o ha fornito una risposta inutilizzabile. Riprovi più tardi o inserisca il tasso.
 error-account-currency-locked = La valuta di questo conto non può più cambiare: porta delle registrazioni, di cui è la valuta.
 error-account-currency-in-use = Questo conto è usato in CHF (ruolo, impostazioni di fatturazione, conto bancario, articolo o regola di riconciliazione): non può ricevere una valuta.
 error-account-in-foreign-currency = Questo conto è tenuto in { $currency }: non può essere usato qui, dove Kesh contabilizza in CHF.
@@ -3361,6 +3363,7 @@ audit-log-action-admin-session-settings-updated = Durata di inattività della se
 audit-log-action-admin-full-export = Backup completo esportato
 audit-log-action-admin-full-import = Backup importato
 audit-log-action-exports-global = Esportazione globale effettuata
+audit-log-action-exchange-rates-fetched = Tassi di cambio recuperati
 audit-log-action-report-generated = Rapporto generato
 audit-log-action-report-exported = Rapporto esportato
 #

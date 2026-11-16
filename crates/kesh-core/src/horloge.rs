@@ -61,6 +61,31 @@ pub fn jour_suisse(instant: DateTime<Utc>) -> NaiveDate {
         .date_naive()
 }
 
+/// L'instant UTC du **début d'un jour suisse** : minuit, heure de Zurich, du jour `jour`
+/// (Story 37-2, AC-4 — réveils de la récupération automatique des cours).
+///
+/// Le sens heure locale → instant peut être ambigu ou inexistant à un changement d'heure ;
+/// en Suisse, il a lieu à 02 h (heure d'été) et à 03 h (heure d'hiver), jamais à minuit :
+/// minuit existe toujours et n'existe qu'une fois. La branche de repli (`earliest`, puis
+/// minuit UTC) n'est donc jamais prise pour Zurich ; elle évite une panique.
+///
+/// ```
+/// use chrono::{DateTime, NaiveDate, Utc};
+/// use kesh_core::horloge::debut_jour_suisse;
+/// let jour = NaiveDate::from_ymd_opt(2026, 3, 30).unwrap();
+/// let attendu: DateTime<Utc> = "2026-03-29T22:00:00Z".parse().unwrap();
+/// assert_eq!(debut_jour_suisse(jour), attendu); // heure d'été : UTC+2
+/// ```
+pub fn debut_jour_suisse(jour: NaiveDate) -> DateTime<Utc> {
+    use chrono::TimeZone;
+    let minuit = jour.and_time(chrono::NaiveTime::MIN);
+    chrono_tz::Europe::Zurich
+        .from_local_datetime(&minuit)
+        .earliest()
+        .map(|t| t.with_timezone(&Utc))
+        .unwrap_or_else(|| minuit.and_utc())
+}
+
 /// Interprète la valeur de la variable [`NOM_VARIABLE_INSTANT`].
 ///
 /// La valeur est rognée de ses blancs, comme le fait `config::env_nonempty` côté serveur : `None`,
@@ -172,6 +197,46 @@ mod tests {
         for (i, (a, m, j), motif) in AC1 {
             let attendu = NaiveDate::from_ymd_opt(*a, *m, *j).unwrap();
             assert_eq!(jour_suisse(instant(i)), attendu, "{i} — {motif}");
+        }
+    }
+
+    /// Story 37-2 (AC-4) — minuit de Zurich en UTC, aux deux changements d'heure, au passage
+    /// d'année et en plein été ; et l'aller-retour avec [`jour_suisse`].
+    #[test]
+    fn debut_du_jour_suisse_aux_changements_d_heure() {
+        let cas = [
+            (
+                (2026, 3, 29),
+                "2026-03-28T23:00:00Z",
+                "nuit du passage à l'heure d'été",
+            ),
+            (
+                (2026, 3, 30),
+                "2026-03-29T22:00:00Z",
+                "premier minuit d'été",
+            ),
+            (
+                (2026, 10, 25),
+                "2026-10-24T22:00:00Z",
+                "nuit du passage à l'heure d'hiver",
+            ),
+            (
+                (2026, 10, 26),
+                "2026-10-25T23:00:00Z",
+                "premier minuit d'hiver",
+            ),
+            ((2027, 1, 1), "2026-12-31T23:00:00Z", "31 → 1er, hiver"),
+            ((2026, 7, 1), "2026-06-30T22:00:00Z", "30 → 1er, été"),
+        ];
+        for ((a, m, j), attendu, motif) in cas {
+            let jour = NaiveDate::from_ymd_opt(a, m, j).unwrap();
+            assert_eq!(debut_jour_suisse(jour), instant(attendu), "{motif}");
+            assert_eq!(jour_suisse(debut_jour_suisse(jour)), jour, "{motif}");
+            assert_eq!(
+                jour_suisse(debut_jour_suisse(jour) - chrono::TimeDelta::seconds(1)),
+                jour.pred_opt().unwrap(),
+                "{motif} : la seconde d'avant est la veille"
+            );
         }
     }
 

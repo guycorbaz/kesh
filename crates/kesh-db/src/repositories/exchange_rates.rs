@@ -608,6 +608,45 @@ pub async fn month_first_fetched_at(
     .map_err(map_db_error)
 }
 
+/// Résumé des valeurs publiées d'une unité ([`fetched_unit_summary`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FetchedUnitSummary {
+    /// Nombre de devises publiées.
+    pub count: i64,
+    /// Plus grand `fetched_at` (UTC) : l'instant pris avant l'appel sortant de
+    /// la dernière récupération réussie.
+    pub last_fetched_at: NaiveDateTime,
+    /// Plus grande `source_date` (date de publication lue, `None` pour un mois).
+    pub source_date: Option<NaiveDate>,
+}
+
+/// Résumé des valeurs publiées d'**une** unité pour une source ; `None` si
+/// l'unité manque. Sert au raccourci du `POST /exchange-rates/fetch` qui a
+/// attendu le verrou (AC-3 : l'unité vient d'être écrite par une récupération
+/// commencée après son arrivée).
+pub async fn fetched_unit_summary(
+    conn: &mut MySqlConnection,
+    source: &str,
+    unit: RateUnit,
+) -> Result<Option<FetchedUnitSummary>, DbError> {
+    let (count, last, source_date): (i64, Option<NaiveDateTime>, Option<NaiveDate>) =
+        sqlx::query_as(
+            "SELECT COUNT(*), MAX(fetched_at), MAX(source_date) FROM _kesh_fetched_exchange_rates \
+             WHERE source = ? AND kind = ? AND rate_date = ?",
+        )
+        .bind(source)
+        .bind(unit.kind.as_str())
+        .bind(unit.date)
+        .fetch_one(conn)
+        .await
+        .map_err(map_db_error)?;
+    Ok(last.map(|last_fetched_at| FetchedUnitSummary {
+        count,
+        last_fetched_at,
+        source_date,
+    }))
+}
+
 /// Les corrections de la source à annoncer à la société : ses lignes `afc`
 /// dont la valeur publiée (même source, devise, genre et date) **diffère** du
 /// cours retenu et n'est **pas acquittée** à cette valeur, triées par date

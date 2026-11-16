@@ -53,6 +53,9 @@ pub fn router() -> Router<AppState> {
         .route("/password-reset-token", post(password_reset_token_handler))
         // Story 20-4 — capture des e-mails métier (round-trip Playwright).
         .route("/sent-emails", get(sent_emails_handler))
+        // Story 37-2 (AC-3) — pilotage de la source factice des cours. Sur une
+        // ligne : le registre des routes lit `.route("…", post(…))` ligne à ligne.
+        .route("/exchange-rates/source", post(rate_source_handler))
 }
 
 /// Mutex global sérialisant tous les appels seed/reset (code review P2).
@@ -189,6 +192,7 @@ async fn seed_handler(
     truncate_all(&state.pool)
         .await
         .map_err(|e| AppError::Internal(format!("test_fixtures truncate_all: {e}")))?;
+    clear_exchange_rate_tables(&state).await?;
 
     let preset_label: &'static str = match req.preset {
         Preset::Fresh => {
@@ -325,6 +329,7 @@ async fn reset_handler(State(state): State<AppState>) -> Result<Json<SeedRespons
     truncate_all(&state.pool)
         .await
         .map_err(|e| AppError::Internal(format!("test_fixtures truncate_all: {e}")))?;
+    clear_exchange_rate_tables(&state).await?;
     seed_changeme_user_only(&state.pool)
         .await
         .map_err(|e| AppError::Internal(format!("seed_changeme_user_only: {e}")))?;
@@ -353,6 +358,120 @@ fn clear_transient_test_state(state: &AppState) {
     if let Some(mock) = &state.test_mock_mailer {
         mock.clear();
     }
+    // Story 37-2 (AC-7) — mémoire des 15 minutes, déclenchement de connexion,
+    // source factice remise à son défaut.
+    state
+        .rate_fetch_memo
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .clear();
+    *state
+        .rate_login_trigger
+        .lock()
+        .unwrap_or_else(|e| e.into_inner()) = None;
+    if let Some(source) = &state.test_rate_source {
+        source.reset();
+    }
+}
+
+/// Story 37-2 (AC-7) — vide les deux tables système des cours
+/// (`_kesh_fetched_exchange_rates`, `_kesh_exchange_rate_fetch`), qui
+/// échappent à `truncate_all` : une valeur publiée posée par une spec ne
+/// survit pas à la suivante. Partagé `seed_handler`/`reset_handler`.
+async fn clear_exchange_rate_tables(state: &AppState) -> Result<(), AppError> {
+    let mut conn = state
+        .pool
+        .acquire()
+        .await
+        .map_err(|e| AppError::Internal(format!("vidage des cours : {e}")))?;
+    kesh_db::repositories::exchange_rates::clear_fetched_state(&mut conn)
+        .await
+        .map_err(|e| AppError::Internal(format!("vidage des cours : {e}")))
+}
+
+/// Corps de `POST /api/v1/_test/exchange-rates/source` (Story 37-2, AC-3).
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ExchangeRatesSourceRequest {
+    /// `month` ou `day`.
+    pub kind: kesh_core::exchange_rates::RateKind,
+    /// `default` (XML synthétique généré pour l'unité demandée), `xml` (le
+    /// champ `xml`, servi tel quel), `empty` (racine vide : pas encore
+    /// publié) ou `error` (le code classé du champ `error`).
+    pub reply: String,
+    /// XML servi tel quel (`reply: "xml"`).
+    pub xml: Option<String>,
+    /// Code classé (`reply: "error"`) : `timeout`, `connect`,
+    /// `http_status:<n>`, `too_large`, `malformed`, `not_published`.
+    pub error: Option<String>,
+    /// Attente avant la réponse, en millisecondes (au plus 120 000).
+    pub delay_ms: Option<u64>,
+    /// Ne piloter que cette unité (`AAAA-MM-JJ`, 1er du mois pour `month`) ;
+    /// absent : toutes les unités du genre.
+    pub date: Option<chrono::NaiveDate>,
+}
+
+/// Réponse de `POST /api/v1/_test/exchange-rates/source`.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExchangeRatesSourceResponse {
+    /// Nombre d'appels reçus par la source factice depuis sa remise à zéro.
+    pub calls: usize,
+}
+
+/// `POST /api/v1/_test/exchange-rates/source` — Story 37-2 (AC-3) : pilote la
+/// réponse de la source factice par genre (ou par unité). 400 hors du mode
+/// capture (source réelle) ou pour une réponse mal décrite. Rend le compteur
+/// d'appels. Une remise à zéro (`_test/seed`, `_test/reset`) ramène la source
+/// à son défaut.
+async fn rate_source_handler(
+    State(state): State<AppState>,
+    Json(req): Json<ExchangeRatesSourceRequest>,
+) -> Result<Json<ExchangeRatesSourceResponse>, AppError> {
+    use crate::exchange_rates::{MockBehavior, MockReply, SourceError};
+    use kesh_core::exchange_rates::RateUnit;
+
+    let Some(source) = &state.test_rate_source else {
+        return Err(AppError::Validation(
+            "source des cours factice indisponible (backend hors KESH_TEST_MODE)".to_string(),
+        ));
+    };
+    let reply = match (req.reply.as_str(), req.xml, req.error.as_deref()) {
+        ("default", None, None) => MockReply::Default,
+        ("empty", None, None) => MockReply::Empty,
+        ("xml", Some(x), None) => MockReply::Xml(x),
+        ("error", None, Some(code)) => MockReply::Error(
+            SourceError::from_code(code)
+                .ok_or_else(|| AppError::Validation(format!("code d'erreur inconnu : {code}")))?,
+        ),
+        _ => {
+            return Err(AppError::Validation(
+                "réponse mal décrite : `reply` default | empty | xml (+ `xml`) | error (+ `error`)"
+                    .to_string(),
+            ));
+        }
+    };
+    let delay = match req.delay_ms {
+        Some(ms) if ms > 120_000 => {
+            return Err(AppError::Validation("`delayMs` au plus 120000".to_string()));
+        }
+        Some(ms) => Some(std::time::Duration::from_millis(ms)),
+        None => None,
+    };
+    let behavior = MockBehavior { reply, delay };
+    match req.date {
+        Some(date) => source.set_for(
+            match req.kind {
+                kesh_core::exchange_rates::RateKind::Month => RateUnit::month_of(date),
+                kesh_core::exchange_rates::RateKind::Day => RateUnit::day(date),
+            },
+            behavior,
+        ),
+        None => source.set(req.kind, behavior),
+    }
+    Ok(Json(ExchangeRatesSourceResponse {
+        calls: source.call_count(),
+    }))
 }
 
 /// Un e-mail métier capturé, shape camelCase pour les specs Playwright
