@@ -608,7 +608,7 @@
 			<tr class="border-b border-border text-left">
 				<th class="py-2 pr-2">Compte</th>
 				{#if hasProjects}
-					<th class="py-2 pr-2">Projet</th>
+					<th class="py-2 pr-2">Compte analytique</th>
 				{/if}
 				<th class="py-2 pr-2 w-36 text-right">Débit</th>
 				<th class="py-2 pr-2 w-36 text-right">Crédit</th>

@@ -37,6 +37,20 @@ use crate::errors::AppError;
 /// 6. Strip trailing `-`.
 /// 7. Si le résultat est vide → `fallback`.
 pub(crate) fn slugify(input: &str, fallback: &str) -> String {
+    slugify_max(input, fallback, 20)
+}
+
+/// Longueur maximale du **type** d'un rapport dans le nom du fichier exporté
+/// (`reports-filename-*`). Story 36-15 (CR #1161) : « dépenses par compte
+/// analytique » fait 30 caractères (`rendimento-per-conto-analitico`, 30 ;
+/// `ausgaben-pro-analytischem-konto`, 31) ; coupé à 20, le nom disait
+/// « depenses-par-compte » — « compte » seul, qui désigne le compte du plan. Le
+/// nom de la société reste coupé à 20 ([`slugify`]).
+pub(crate) const LONGUEUR_MAX_SLUG_DE_TYPE: usize = 40;
+
+/// [`slugify`] avec une longueur maximale donnée (en caractères ASCII, après
+/// nettoyage) au lieu de 20.
+pub(crate) fn slugify_max(input: &str, fallback: &str, max: usize) -> String {
     let lowered: String = input
         .to_lowercase()
         .chars()
@@ -66,8 +80,8 @@ pub(crate) fn slugify(input: &str, fallback: &str) -> String {
             prev_dash = false;
         }
     }
-    // Truncate à 20 chars (bytes-safe car ASCII)
-    let truncated: String = collapsed.chars().take(20).collect();
+    // Truncate à `max` chars (bytes-safe car ASCII)
+    let truncated: String = collapsed.chars().take(max).collect();
     // Strip trailing `-`
     let stripped = truncated.trim_end_matches('-');
     if stripped.is_empty() {
@@ -372,6 +386,33 @@ mod tests {
     fn slugify_empty_falls_back() {
         assert_eq!(slugify("", "company"), "company");
         assert_eq!(slugify("北京公司", "company"), "company");
+    }
+
+    /// Story 36-15 (CR #1161) — le type d'un rapport garde « compte analytique » en
+    /// entier dans les quatre langues ; coupé à 20, il disait « compte » seul.
+    #[test]
+    fn slugify_max_keeps_the_analytical_report_types_whole() {
+        for type_slug in [
+            "depenses-par-compte-analytique",
+            "rendement-par-compte-analytique",
+            "ausgaben-pro-analytischem-konto",
+            "rendite-pro-analytischem-konto",
+            "spese-per-conto-analitico",
+            "rendimento-per-conto-analitico",
+            "expenses-by-analytical-account",
+            "return-by-analytical-account",
+        ] {
+            assert_eq!(
+                slugify_max(type_slug, "report", LONGUEUR_MAX_SLUG_DE_TYPE),
+                type_slug
+            );
+        }
+        assert_eq!(
+            slugify("depenses-par-compte-analytique", "report"),
+            "depenses-par-compte",
+            "témoin : la coupe à 20 de `slugify` perdait « analytique »"
+        );
+        assert_eq!(slugify_max("abc-def", "x", 4), "abc");
     }
 
     // ----- Content-Disposition -----

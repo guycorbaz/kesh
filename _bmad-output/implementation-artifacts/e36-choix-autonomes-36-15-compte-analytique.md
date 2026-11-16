@@ -70,3 +70,22 @@ kickoff (C-e360-15) font foi ; ceux-ci les complètent.
 - *Annoté le 2026-11-15 (remédiation P1, V1-1, V1-2, V1-4, V1-5)* : côté Rust, G25 ne lit que les littéraux de chaîne
   (extracteur testé) ; côté catalogues, la valeur seule, casse ignorée ; exceptions par extrait de texte, non par numéro
   de ligne ; la garde Vitest lit aussi les replis en objet et celui du nom de fichier.
+
+### C-36-15-7 — Le type d'un rapport n'est plus coupé à 20 caractères dans le nom du fichier exporté (développement)
+
+- **Contexte** : le test neuf `export_filenames_say_compte_analytique` (AC-3) a rougi **après** le correctif des
+  catalogues : le serveur rendait `kesh-depenses-par-compte-…`. `crate::util::slugify` coupe à 20 caractères
+  (`crates/kesh-api/src/util.rs`, « Truncate à 20 chars »), et les huit nouveaux noms de type en font de 25 à 31
+  (`depenses-par-compte-analytique`, 30 ; `ausgaben-pro-analytischem-konto`, 31). Coupé, le nom dit « compte » seul — le
+  compte du plan, l'ambiguïté que l'arbitrage interdit. La fiche ne l'avait pas vu (les anciens types tenaient en 20 :
+  `depenses-par-projet`, 19 ; `ausgaben-pro-projekt`, 20).
+- **Retenu** : `slugify_max(input, fallback, max)` ; `slugify` = `slugify_max(…, 20)` inchangé pour le nom de la
+  société ; le **type** passe par `slugify_max(…, LONGUEUR_MAX_SLUG_DE_TYPE = 40)` aux deux sites (`build_filename` et
+  `build_project_export_response`, `routes/reports.rs`). Aucun autre type ne dépasse 20 caractères dans les quatre
+  langues (`awk -F' = ' 'length($2)>20'` sur les `reports-filename-*` ne rend que les huit analytiques) : aucun autre
+  nom de fichier ne change. Test unitaire `slugify_max_keeps_the_analytical_report_types_whole` (huit types + témoin de
+  la coupe à 20).
+- **Écartées** : (a) des types plus courts (`depenses-analytiques`, 20) : s'écarte des valeurs validées de D2 et du repli
+  frontend, et resterait à la merci d'une traduction plus longue ; (b) laisser couper : le nom de fichier dirait
+  « compte » seul.
+- **Réversible** : oui (une constante).
