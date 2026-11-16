@@ -3080,6 +3080,14 @@ onboarding-bank-skip-error = Fehler beim Überspringen des Bankkontos
 onboarding-bank-editable-later = Die Beschreibung und das verknüpfte Buchhaltungskonto lassen sich später unter Administration → Bankkonten ändern.
 onboarding-bank-ledger-load-error = Die Kontenliste konnte nicht geladen werden: Das Bankkonto kann später verknüpft werden.
 onboarding-save = Speichern
+# Story 37-1 (AC-11) — das erste Geschäftsjahr, auf der letzten Seite des Assistenten.
+onboarding-fiscal-year-title = Erstes Geschäftsjahr
+onboarding-fiscal-year-start = Beginn
+onboarding-fiscal-year-end = Ende
+onboarding-fiscal-year-summary = Vom { $start } bis { $end }
+onboarding-fiscal-year-immutable = Die Daten eines Geschäftsjahres lassen sich nach der Erstellung nicht mehr ändern.
+onboarding-fiscal-year-end-not-after-start = Das Enddatum muss nach dem Anfangsdatum liegen.
+onboarding-fiscal-year-invalid-date = Geben Sie ein gültiges Anfangs- und Enddatum ein.
 payment-batches-cancel = Stapel stornieren
 payment-batches-cancel-confirm = Diesen Stapel stornieren? Die Rechnungen werden wieder zahlbar.
 payment-batches-col-date = Ausführung

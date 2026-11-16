@@ -150,7 +150,8 @@ export const onboardingState = {
 		}
 	},
 
-	async finalize() {
+	/** Story 37-1 (AC-11) : `body` porte les dates du premier exercice. */
+	async finalize(body?: api.FinalizePayload) {
 		// P6-M3: re-entrant guard. The submit button is disabled while `_loading`
 		// is true, but a fast double-click (or bot) can fire two calls in the same
 		// tick before reactive bindings update. The guard short-circuits the second.
@@ -159,7 +160,7 @@ export const onboardingState = {
 		if (_loading) return;
 		_loading = true;
 		try {
-			_state = await api.finalize();
+			_state = await api.finalize(body);
 			_loading = false;
 		} catch (err) {
 			// Defer re-enabling so the error toast paints before the button accepts a new click.

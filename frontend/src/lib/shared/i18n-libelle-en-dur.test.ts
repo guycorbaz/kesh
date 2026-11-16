@@ -349,8 +349,15 @@ const SUFFIXES = ['Label', 'Text', 'Display'];
  * `conforme` **78 → 79** ; `ecartee` ne bouge pas. Relevé par la garde (`expected 93 to be
  * 92`), non additionné ; seule déclaration neuve du diff de la phase écrans de la story à
  * porter un suffixe `Label`, `Text` ou `Display`.
+ *
+ * **93 → 94, et la déclaration est NOMMÉE** (Story 37-1, AC-11) : `fyProblemText`
+ * (`routes/onboarding/+page.svelte`), le motif qui désactive les boutons de la dernière page
+ * de l'assistant — ses deux branches passent par `msg` (relais d'`i18nMsg`) : aucun littéral
+ * rendu, `conforme` **79 → 80** ; `ecartee` ne bouge pas. Relevé par la garde (`expected 94 to
+ * be 93`), non additionné ; seule déclaration neuve de la phase C à porter un suffixe `Label`,
+ * `Text` ou `Display`.
  */
-const CANDIDATES_ATTENDUES = 93;
+const CANDIDATES_ATTENDUES = 94;
 
 /** Les trois délimiteurs de littéral en JS/TS. */
 const QUOTES = ["'", '"', '`'];
@@ -867,7 +874,7 @@ describe('libellés en dur — l’angle mort #255', () => {
 			else if (c.retours.length > 0) classes.ecartee += 1;
 			else classes.conforme += 1;
 		}
-		expect(classes).toEqual({ nonAnalysee: 0, enViolation: 0, ecartee: 14, conforme: 79 });
+		expect(classes).toEqual({ nonAnalysee: 0, enViolation: 0, ecartee: 14, conforme: 80 });
 		// La somme est recalculée depuis les classes, jamais depuis le total qu'elle contrôle.
 		const somme = Object.values(classes).reduce((a, b) => a + b, 0);
 		expect(somme).toBe(CANDIDATES_ATTENDUES);

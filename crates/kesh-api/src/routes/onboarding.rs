@@ -30,7 +30,8 @@ use kesh_db::repositories::{audit_log, companies, onboarding};
 
 use crate::AppState;
 use crate::audit::AuditActor;
-use crate::errors::AppError;
+use crate::dates_recues::borner;
+use crate::errors::{AppError, t};
 use crate::middleware::auth::CurrentUser;
 
 /// P1-H1: Helper for graceful transaction rollback
@@ -850,8 +851,88 @@ pub async fn skip_bank(
     conclude_step(&state.pool, tx, result).await
 }
 
+/// Corps facultatif de `POST /api/v1/onboarding/finalize` (Story 37-1, AC-11) :
+/// les dates du premier exercice choisies dans l'assistant.
+///
+/// Corps absent ou champs absents : début au 1er janvier de l'année du jour du
+/// serveur, fin à la veille du même jour un an plus tard
+/// ([`kesh_core::accounting::exercice::fin_par_defaut`]) — sans début fourni,
+/// le 31 décembre, comme avant l'AC-11. Les dates d'un exercice ne se modifient
+/// plus une fois créé : c'est ici qu'elles se choisissent.
+#[derive(Debug, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FinalizeRequest {
+    /// Premier jour du premier exercice (`AAAA-MM-JJ`).
+    #[serde(default)]
+    pub fiscal_year_start_date: Option<chrono::NaiveDate>,
+    /// Dernier jour du premier exercice (`AAAA-MM-JJ`).
+    #[serde(default)]
+    pub fiscal_year_end_date: Option<chrono::NaiveDate>,
+}
+
+/// Les dates et le nom du premier exercice, calculés **une fois**, avant la
+/// transaction (Story 37-1, AC-11) : la fermeture rejouée de
+/// [`crate::retry::retry_app_on_deadlock`] les reçoit par référence.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct PremierExercice {
+    nom: String,
+    debut: chrono::NaiveDate,
+    fin: chrono::NaiveDate,
+}
+
+/// Résout les dates du premier exercice depuis le corps de `finalize` et le
+/// jour du serveur. Refus en 400 (`VALIDATION_ERROR`) : une date hors de la
+/// plage de la base (`borner`, y compris la fin calculée d'un début en 9999) ;
+/// une fin qui ne suit pas strictement le début (`error-fiscal-year-dates-invalid`,
+/// le message de la création d'un exercice). Aucune borne de durée : six ou
+/// dix-huit mois sont admis.
+fn premier_exercice(
+    req: &FinalizeRequest,
+    aujourd_hui: chrono::NaiveDate,
+) -> Result<PremierExercice, AppError> {
+    if let Some(d) = req.fiscal_year_start_date {
+        borner(d, "fiscalYearStartDate")?;
+    }
+    if let Some(f) = req.fiscal_year_end_date {
+        borner(f, "fiscalYearEndDate")?;
+    }
+    let debut = match req.fiscal_year_start_date {
+        Some(d) => d,
+        None => chrono::NaiveDate::from_ymd_opt(aujourd_hui.year(), 1, 1).ok_or_else(|| {
+            AppError::Internal("1er janvier de l'année du jour non représentable".into())
+        })?,
+    };
+    let fin = match req.fiscal_year_end_date {
+        Some(f) => f,
+        None => {
+            // Début borné à 1000..=9999 : l'année suivante est toujours représentable.
+            let f = kesh_core::accounting::exercice::fin_par_defaut(debut).ok_or_else(|| {
+                AppError::Internal("fin par défaut du premier exercice non représentable".into())
+            })?;
+            borner(f, "fiscalYearEndDate")?;
+            f
+        }
+    };
+    if fin <= debut {
+        return Err(AppError::Validation(t(
+            "error-fiscal-year-dates-invalid",
+            "Les dates de l'exercice sont invalides (la date de fin doit être strictement postérieure à la date de début)",
+        )));
+    }
+    Ok(PremierExercice {
+        nom: kesh_core::accounting::exercice::nom_par_defaut(debut, fin),
+        debut,
+        fin,
+    })
+}
+
 /// POST /api/v1/onboarding/finalize — step 7→complete (Path B only)
 /// Pre-fills invoice settings with default accounts (1100, 3000) if they exist in the chart.
+///
+/// Story 37-1 (AC-11) : corps facultatif [`FinalizeRequest`] — les dates du
+/// premier exercice, validées avant la transaction (400 sans rien créer, étape
+/// inchangée). Une finalisation déjà faite (`step_completed == 8`) ignore les
+/// dates et rend l'état, comme avant.
 ///
 /// F2 CRITICAL FIX: SELECT FOR UPDATE on onboarding_state serializes all finalize() calls.
 /// Prevents multiple concurrent requests from both passing the step check and duplicating work.
@@ -882,6 +963,7 @@ pub async fn skip_bank(
 pub async fn finalize(
     State(state): State<AppState>,
     Extension(current_user): Extension<CurrentUser>,
+    body: Option<Json<FinalizeRequest>>,
 ) -> Result<Json<OnboardingResponse>, AppError> {
     // KF-002-H-002 (#43) : la closure ci-dessous est rappelée intégralement
     // si MariaDB rollback la tx pour deadlock (cycle de locks détecté avec
@@ -891,8 +973,13 @@ pub async fn finalize(
     // non `FnOnce`, sans clone par tentative (revue P1 de la 15-5e2, B-5).
     // Story 35-5a0 — la date du jour, lue une fois sur l'horloge de l'état.
     let aujourd_hui = state.horloge.aujourd_hui();
+    // Story 37-1 (AC-11) — les dates du premier exercice, résolues et validées
+    // une fois, hors de la fermeture rejouée : un refus ne touche ni la base ni
+    // l'étape.
+    let req = body.map(|Json(r)| r).unwrap_or_default();
+    let exercice = premier_exercice(&req, aujourd_hui)?;
     crate::retry::retry_app_on_deadlock("onboarding::finalize", || {
-        finalize_inner(&state.pool, &current_user, aujourd_hui)
+        finalize_inner(&state.pool, &current_user, &exercice)
     })
     .await
     .map(Json)
@@ -917,12 +1004,13 @@ pub async fn finalize(
 /// annulé disparaît avec lui. Ordre : `company_invoice_settings.created`,
 /// `vat_rate.created` (ordre du seed), `fiscal_year.created`, l'étape.
 ///
-/// `aujourd_hui` (Story 35-5a0) : la date du jour, lue par l'appelant sur
-/// l'horloge de l'état — elle donne l'année du premier exercice.
+/// `exercice` (Story 37-1, AC-11, après la 35-5a0) : le nom et les dates du
+/// premier exercice, résolus par l'appelant depuis le corps et la date du jour
+/// de l'horloge de l'état — identiques d'une tentative à l'autre.
 async fn finalize_inner(
     pool: &sqlx::MySqlPool,
     current_user: &CurrentUser,
-    aujourd_hui: chrono::NaiveDate,
+    exercice: &PremierExercice,
 ) -> Result<OnboardingResponse, AppError> {
     // F2/F3/F4 CRITICAL FIX: Pessimistic locking strategy.
     // 1. Lock onboarding_state (serializes all finalize() calls on same session)
@@ -1043,21 +1131,18 @@ async fn finalize_inner(
         return Err(e);
     }
 
-    // Story 3.7 AC #13 — auto-create fiscal_year for current calendar year if
-    // none exists (Path B). L'INSERT atomique anti-TOCTOU
+    // Story 3.7 AC #13 — auto-create the first fiscal_year if none exists
+    // (Path B), aux dates choisies dans l'assistant (Story 37-1, AC-11 ; par
+    // défaut l'année civile du jour). L'INSERT atomique anti-TOCTOU
     // (`create_if_absent_in_tx`) garantit l'idempotence sous finalize concurrent.
     // Audit log inséré uniquement si la création a effectivement eu lieu — par
     // le dépôt lui-même : `finalize` n'écrit PAS sa propre entrée d'exercice
     // (Story 15-7a2, AC 7 ; son attribution par `::user` est la dette #431).
-    let year = aujourd_hui.year();
-    let fy_name = format!("Exercice {year}");
-    let fy_start = chrono::NaiveDate::from_ymd_opt(year, 1, 1).expect("valid date");
-    let fy_end = chrono::NaiveDate::from_ymd_opt(year, 12, 31).expect("valid date");
     let new_fy = NewFiscalYear {
         company_id: company.id,
-        name: fy_name,
-        start_date: fy_start,
-        end_date: fy_end,
+        name: exercice.nom.clone(),
+        start_date: exercice.debut,
+        end_date: exercice.fin,
     };
     if let Err(e) = kesh_db::repositories::fiscal_years::create_if_absent_in_tx(
         &mut tx,
@@ -1509,7 +1594,93 @@ async fn update_company_coordinates_in_tx(
 
 #[cfg(test)]
 mod tests {
-    use super::BankAccountRequest;
+    use super::{BankAccountRequest, FinalizeRequest, PremierExercice, premier_exercice};
+    use crate::errors::AppError;
+    use chrono::NaiveDate;
+
+    fn jour(a: i32, m: u32, j: u32) -> NaiveDate {
+        NaiveDate::from_ymd_opt(a, m, j).unwrap()
+    }
+
+    fn corps(debut: Option<NaiveDate>, fin: Option<NaiveDate>) -> FinalizeRequest {
+        FinalizeRequest {
+            fiscal_year_start_date: debut,
+            fiscal_year_end_date: fin,
+        }
+    }
+
+    /// Story 37-1 (AC-11) — sans corps : l'année civile du jour, comme avant.
+    #[test]
+    fn premier_exercice_sans_dates_est_l_annee_civile_du_jour() {
+        assert_eq!(
+            premier_exercice(&FinalizeRequest::default(), jour(2026, 11, 16)).unwrap(),
+            PremierExercice {
+                nom: "Exercice 2026".into(),
+                debut: jour(2026, 1, 1),
+                fin: jour(2026, 12, 31),
+            }
+        );
+    }
+
+    /// Story 37-1 (AC-11) — un début seul : fin à la veille du même jour un an
+    /// plus tard, nom à deux années ; cas limites du 29 février.
+    #[test]
+    fn premier_exercice_debut_seul_calcule_la_fin() {
+        let cas = [
+            (jour(2026, 4, 1), jour(2027, 3, 31), "Exercice 2026/2027"),
+            (jour(2028, 2, 29), jour(2029, 2, 28), "Exercice 2028/2029"),
+            (jour(2027, 3, 1), jour(2028, 2, 29), "Exercice 2027/2028"),
+            (jour(2027, 1, 1), jour(2027, 12, 31), "Exercice 2027"),
+        ];
+        for (debut, fin, nom) in cas {
+            let e = premier_exercice(&corps(Some(debut), None), jour(2026, 11, 16)).unwrap();
+            assert_eq!(
+                (e.debut, e.fin, e.nom.as_str()),
+                (debut, fin, nom),
+                "{debut}"
+            );
+        }
+    }
+
+    /// Story 37-1 (AC-11) — fin fournie : aucune borne de durée ; une fin
+    /// seule garde le 1er janvier de l'année du jour.
+    #[test]
+    fn premier_exercice_fin_fournie_sans_borne_de_duree() {
+        let e = premier_exercice(
+            &corps(Some(jour(2026, 7, 1)), Some(jour(2027, 12, 31))),
+            jour(2026, 11, 16),
+        )
+        .unwrap();
+        assert_eq!((e.debut, e.fin), (jour(2026, 7, 1), jour(2027, 12, 31)));
+        let e =
+            premier_exercice(&corps(None, Some(jour(2026, 6, 30))), jour(2026, 11, 16)).unwrap();
+        assert_eq!(
+            (e.debut, e.fin, e.nom.as_str()),
+            (jour(2026, 1, 1), jour(2026, 6, 30), "Exercice 2026")
+        );
+    }
+
+    /// Story 37-1 (AC-11) — refus : fin ≤ début, dates hors de la plage de la
+    /// base, fin calculée hors plage (début en 9999).
+    #[test]
+    fn premier_exercice_refuse_les_dates_invalides() {
+        let aujourd_hui = jour(2026, 11, 16);
+        for c in [
+            corps(Some(jour(2026, 4, 1)), Some(jour(2026, 4, 1))),
+            corps(Some(jour(2026, 4, 1)), Some(jour(2026, 3, 31))),
+            corps(Some(jour(999, 1, 1)), None),
+            corps(Some(jour(2026, 1, 1)), Some(jour(10000, 1, 1))),
+            corps(Some(jour(9999, 2, 1)), None),
+        ] {
+            assert!(
+                matches!(
+                    premier_exercice(&c, aujourd_hui),
+                    Err(AppError::Validation(_))
+                ),
+                "{c:?}"
+            );
+        }
+    }
 
     /// Story 34-1 (#966, AC-1, C-e341-34) — la double option du corps de
     /// l'étape bancaire : **absent** → `None` (inchangé), **`null`** →

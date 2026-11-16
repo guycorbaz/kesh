@@ -3086,6 +3086,14 @@ onboarding-bank-skip-error = Error while skipping the bank account
 onboarding-bank-editable-later = The description and the linked ledger account can be changed later in Administration → Bank accounts.
 onboarding-bank-ledger-load-error = The list of accounts could not be loaded: the bank account can be linked later.
 onboarding-save = Save
+# Story 37-1 (AC-11) — the first fiscal year, on the last page of the wizard.
+onboarding-fiscal-year-title = First fiscal year
+onboarding-fiscal-year-start = Start
+onboarding-fiscal-year-end = End
+onboarding-fiscal-year-summary = From { $start } to { $end }
+onboarding-fiscal-year-immutable = The dates of a fiscal year can no longer be changed once it is created.
+onboarding-fiscal-year-end-not-after-start = The end date must come after the start date.
+onboarding-fiscal-year-invalid-date = Enter a valid start date and end date.
 payment-batches-cancel = Cancel batch
 payment-batches-cancel-confirm = Cancel this batch? The invoices become payable again.
 payment-batches-col-date = Execution

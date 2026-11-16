@@ -3081,6 +3081,14 @@ onboarding-bank-skip-error = Errore durante l'omissione del conto bancario
 onboarding-bank-editable-later = La descrizione e il conto contabile collegato si modificano in seguito in Amministrazione → Conti bancari.
 onboarding-bank-ledger-load-error = Non è stato possibile caricare l'elenco dei conti: il conto bancario potrà essere collegato in seguito.
 onboarding-save = Salva
+# Story 37-1 (AC-11) — il primo esercizio, sull'ultima pagina dell'assistente.
+onboarding-fiscal-year-title = Primo esercizio
+onboarding-fiscal-year-start = Inizio
+onboarding-fiscal-year-end = Fine
+onboarding-fiscal-year-summary = Dal { $start } al { $end }
+onboarding-fiscal-year-immutable = Le date di un esercizio non si modificano più una volta creato.
+onboarding-fiscal-year-end-not-after-start = La data di fine deve seguire la data di inizio.
+onboarding-fiscal-year-invalid-date = Inserire una data di inizio e una data di fine valide.
 payment-batches-cancel = Annulla il lotto
 payment-batches-cancel-confirm = Annullare questo lotto? Le fatture tornano pagabili.
 payment-batches-col-date = Esecuzione

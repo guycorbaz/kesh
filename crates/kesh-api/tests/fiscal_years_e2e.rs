@@ -1077,6 +1077,20 @@ async fn path_b_finalize_creates_fiscal_year(pool: MySqlPool) {
     // Story 35-5a — l'année du jour du serveur (horloge de test), non du jour UTC.
     let year = crate::common::jour::aujourd_hui_test().year();
     assert_eq!(list[0].name, format!("Exercice {year}"));
+    // Story 37-1 (AC-11) — sans corps : l'année civile du jour, comme avant ;
+    // AC-3 bis : mono-devise, genres d'ouverture et de clôture `day`.
+    assert_eq!(
+        (list[0].start_date.to_string(), list[0].end_date.to_string()),
+        (format!("{year}-01-01"), format!("{year}-12-31"))
+    );
+    assert!(!list[0].multi_currency);
+    assert_eq!(
+        (
+            list[0].opening_rate_kind.as_str(),
+            list[0].closing_rate_kind.as_str()
+        ),
+        ("day", "day")
+    );
 
     // AC #18 — audit log présent avec user_id = admin.
     let entries = audit_log::find_by_entity(&pool, "fiscal_year", list[0].id, 10)
@@ -1183,6 +1197,224 @@ async fn demo_a_minuit_le_1er_janvier_cree_l_exercice_suisse(pool: MySqlPool) {
             "2026-12-31".to_string()
         )
     );
+}
+
+// --- Story 37-1 (AC-11) — dates du premier exercice dans l'assistant ---
+
+/// Chemin B mené jusqu'à l'étape 7 (plan minimal semé) : rend l'application,
+/// le jeton et l'id de la société.
+async fn path_b_ready_to_finalize(pool: &MySqlPool) -> (TestApp, String, i64) {
+    let (app, token) = bootstrap_admin(pool).await;
+    let company_id: i64 = sqlx::query_scalar("SELECT id FROM companies ORDER BY id LIMIT 1")
+        .fetch_one(pool)
+        .await
+        .unwrap();
+    seed_minimal_chart(pool, company_id).await;
+    run_path_b_until_finalize(&app, &token).await;
+    (app, token, company_id)
+}
+
+/// `POST /api/v1/onboarding/finalize` avec un corps JSON : statut et corps rendu.
+async fn finalize_with(
+    app: &TestApp,
+    token: &str,
+    body: serde_json::Value,
+) -> (u16, serde_json::Value) {
+    let resp = app
+        .client
+        .post(app.url("/api/v1/onboarding/finalize"))
+        .header("Authorization", auth(token))
+        .json(&body)
+        .send()
+        .await
+        .unwrap();
+    let status = resp.status().as_u16();
+    (status, resp.json().await.unwrap_or(serde_json::Value::Null))
+}
+
+/// (nom, début, fin) des exercices de la société, par date de début.
+async fn exercices(pool: &MySqlPool, company_id: i64) -> Vec<(String, String, String)> {
+    kesh_db::repositories::fiscal_years::list_by_company(pool, company_id)
+        .await
+        .unwrap()
+        .into_iter()
+        .map(|fy| (fy.name, fy.start_date.to_string(), fy.end_date.to_string()))
+        .collect()
+}
+
+async fn step_completed(pool: &MySqlPool) -> i32 {
+    sqlx::query_scalar("SELECT step_completed FROM onboarding_state WHERE singleton = TRUE")
+        .fetch_one(pool)
+        .await
+        .unwrap()
+}
+
+/// Story 37-1 (AC-11) — un début au 1er avril 2026 seul : fin au 31 mars 2027,
+/// « Exercice 2026/2027 », mono-devise ; l'audit `fiscal_year.created` porte
+/// les dates choisies ; une finalisation rejouée avec d'autres dates rend
+/// l'état sans toucher l'exercice ni l'audit.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn path_b_finalize_debut_au_1er_avril_calcule_la_fin(pool: MySqlPool) {
+    let (app, token, company_id) = path_b_ready_to_finalize(&pool).await;
+
+    let (status, body) =
+        finalize_with(&app, &token, json!({ "fiscalYearStartDate": "2026-04-01" })).await;
+    assert_eq!(status, 200, "{body}");
+    assert_eq!(body["stepCompleted"], 8);
+    assert_eq!(
+        exercices(&pool, company_id).await,
+        [(
+            "Exercice 2026/2027".to_string(),
+            "2026-04-01".to_string(),
+            "2027-03-31".to_string()
+        )]
+    );
+    let fy = &kesh_db::repositories::fiscal_years::list_by_company(&pool, company_id)
+        .await
+        .unwrap()[0];
+    assert!(!fy.multi_currency, "l'exercice initial est mono-devise");
+
+    let audit = audit_log::find_by_entity(&pool, "fiscal_year", fy.id, 10)
+        .await
+        .unwrap();
+    let created: Vec<_> = audit
+        .iter()
+        .filter(|e| e.action == "fiscal_year.created")
+        .collect();
+    assert_eq!(created.len(), 1);
+    let details = created[0].details_json.as_ref().expect("détails d'audit");
+    assert_eq!(details["startDate"], "2026-04-01");
+    assert_eq!(details["endDate"], "2027-03-31");
+    assert_eq!(details["name"], "Exercice 2026/2027");
+
+    // Rejouée après succès, avec d'autres dates : état rendu, rien ne change.
+    let audit_avant = common::audit_sequence(&pool).await;
+    let (status, body) = finalize_with(
+        &app,
+        &token,
+        json!({ "fiscalYearStartDate": "2027-01-01", "fiscalYearEndDate": "2027-12-31" }),
+    )
+    .await;
+    assert_eq!(status, 200, "{body}");
+    assert_eq!(body["stepCompleted"], 8);
+    assert_eq!(
+        exercices(&pool, company_id).await,
+        [(
+            "Exercice 2026/2027".to_string(),
+            "2026-04-01".to_string(),
+            "2027-03-31".to_string()
+        )]
+    );
+    assert_eq!(common::audit_sequence(&pool).await, audit_avant);
+}
+
+/// Story 37-1 (AC-11) — début et fin fournis à dix-huit mois : admis, aucune
+/// borne de durée.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn path_b_finalize_dix_huit_mois_admis(pool: MySqlPool) {
+    let (app, token, company_id) = path_b_ready_to_finalize(&pool).await;
+    let (status, body) = finalize_with(
+        &app,
+        &token,
+        json!({ "fiscalYearStartDate": "2026-07-01", "fiscalYearEndDate": "2027-12-31" }),
+    )
+    .await;
+    assert_eq!(status, 200, "{body}");
+    assert_eq!(
+        exercices(&pool, company_id).await,
+        [(
+            "Exercice 2026/2027".to_string(),
+            "2026-07-01".to_string(),
+            "2027-12-31".to_string()
+        )]
+    );
+}
+
+/// Story 37-1 (AC-11) — cas limites du 29 février, partagés avec le miroir de
+/// l'écran : début 29.02.2028 → fin 28.02.2029 ; début 01.03.2027 → fin
+/// 29.02.2028.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn path_b_finalize_debut_au_29_fevrier(pool: MySqlPool) {
+    let (app, token, company_id) = path_b_ready_to_finalize(&pool).await;
+    let (status, body) =
+        finalize_with(&app, &token, json!({ "fiscalYearStartDate": "2028-02-29" })).await;
+    assert_eq!(status, 200, "{body}");
+    assert_eq!(
+        exercices(&pool, company_id).await,
+        [(
+            "Exercice 2028/2029".to_string(),
+            "2028-02-29".to_string(),
+            "2029-02-28".to_string()
+        )]
+    );
+}
+
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn path_b_finalize_debut_au_1er_mars_avant_une_annee_bissextile(pool: MySqlPool) {
+    let (app, token, company_id) = path_b_ready_to_finalize(&pool).await;
+    let (status, body) =
+        finalize_with(&app, &token, json!({ "fiscalYearStartDate": "2027-03-01" })).await;
+    assert_eq!(status, 200, "{body}");
+    assert_eq!(
+        exercices(&pool, company_id).await,
+        [(
+            "Exercice 2027/2028".to_string(),
+            "2027-03-01".to_string(),
+            "2028-02-29".to_string()
+        )]
+    );
+}
+
+/// Story 37-1 (AC-11) — fin ≤ début, ou date hors de la plage de la base :
+/// 400 avant la transaction, rien de créé, étape inchangée (7) ; une
+/// finalisation valide passe ensuite.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn path_b_finalize_refuse_les_dates_invalides_sans_rien_creer(pool: MySqlPool) {
+    let (app, token, company_id) = path_b_ready_to_finalize(&pool).await;
+    let audit_avant = common::audit_sequence(&pool).await;
+
+    for (corps, attendu) in [
+        (
+            json!({ "fiscalYearStartDate": "2026-04-01", "fiscalYearEndDate": "2026-04-01" }),
+            "postérieure",
+        ),
+        (
+            json!({ "fiscalYearStartDate": "2026-04-01", "fiscalYearEndDate": "2026-03-31" }),
+            "postérieure",
+        ),
+        (
+            json!({ "fiscalYearStartDate": "0999-04-01" }),
+            "fiscalYearStartDate",
+        ),
+        (
+            json!({ "fiscalYearStartDate": "2026-01-01", "fiscalYearEndDate": "+10000-01-01" }),
+            "fiscalYearEndDate",
+        ),
+    ] {
+        let (status, body) = finalize_with(&app, &token, corps.clone()).await;
+        assert_eq!(status, 400, "{corps} → {body}");
+        assert_eq!(body["error"]["code"], "VALIDATION_ERROR", "{corps}");
+        let msg = body["error"]["message"].as_str().unwrap_or("");
+        assert!(msg.contains(attendu), "{corps} → {msg}");
+        assert!(exercices(&pool, company_id).await.is_empty(), "{corps}");
+        assert_eq!(step_completed(&pool).await, 7, "{corps}");
+    }
+    assert_eq!(
+        common::audit_sequence(&pool).await,
+        audit_avant,
+        "aucune trace d'un refus"
+    );
+    let settings: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM company_invoice_settings WHERE company_id = ?")
+            .bind(company_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(settings, 0, "rien de la finalisation n'a été écrit");
+
+    let (status, body) = finalize_with(&app, &token, json!({})).await;
+    assert_eq!(status, 200, "{body}");
+    assert_eq!(step_completed(&pool).await, 8);
 }
 
 /// Story 7.2 (KF-003) — vérifie que `finalize` Path B seed les 4 taux TVA

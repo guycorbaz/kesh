@@ -1023,7 +1023,11 @@ const ATTENDU = {
 	// `features/accounts/AccountCurrencyFields.svelte` (neuf), 2 dans
 	// `routes/(app)/accounts/+page.svelte` (92 → 94 : la colonne « Devise » et le message
 	// des comptes propres incomplets) — 23 + 11 + 2 = 36. Que des littéraux.
-	sitesTotal: 3086,
+	// Story 37-1 (AC-11) : **3086 → 3093**, relevé par la garde (`expected 3093 to be 3086`)
+	// avant d'écrire ce nombre, et ventilé au code : 7 sites dans `routes/onboarding/+page.svelte`
+	// (section « Premier exercice » : titre, début, fin, résumé, phrase des dates définitives,
+	// deux motifs de refus). Que des littéraux.
+	sitesTotal: 3093,
 	sitesNonResolus: 31,
 	relais: 6,
 	// Story 26-1 (#620, AC3-bis) : **10 → 11** — `lib/features/bank-import/
