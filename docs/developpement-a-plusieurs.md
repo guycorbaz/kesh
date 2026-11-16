@@ -179,6 +179,8 @@ s'ajuste, comme en Scrum.
   développeurs.
 - **Une migration s'annonce d'avance**, au plan du projet GitHub : elle oblige à une sauvegarde avant la mise à jour.
   Une story sortie de son epic emporte sa migration, et la release qui la portera se réannonce.
+- **Chaque release corrige au moins un ou deux bugs**, en plus de ses epics, choisis par impact. Le dosage s'adapte :
+  certaines semaines portent surtout des corrections et seulement une petite fonctionnalité.
 - **Un correctif urgent** (0.18.1) part quand il le faut, sans attendre le vendredi, et ne remplace pas la release de la
   semaine.
 - **Une semaine d'absence du Project Lead est une semaine sans release** : il annonce ses dates d'avance, et le travail
