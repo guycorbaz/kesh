@@ -1,6 +1,6 @@
 # Story 36-18a : les montants « 1.250 » qui écrivent dans les livres — soldes de départ, facture fournisseur, règlement (#1050, #1159, #1172, #1174)
 
-Status: in-progress
+Status: review
 
 *Fiche issue du découpage de la 36-18 (`36-18-montants-ambigus-autres-ecrans.md`, `Status: split`), approuvé par
 l'orchestrateur le 2026-11-15 (sept modules de code, règle de Guy « stories courtes » ; C-36-18-10). Rédigée par l'agent de
@@ -321,21 +321,21 @@ Une mutation équivalente se dit au Dev Agent Record.
 
 ## Tâches
 
-- [ ] **Étape 0** : partir de `epic/36-0.18.0` **avec la 36-15 fusionnée** ; relire les lignes citées à la tête du
+- [x] **Étape 0** : partir de `epic/36-0.18.0` **avec la 36-15 fusionnée** (en revue, non fusionnée : C-36-18-12) ; relire les lignes citées à la tête du
       worktree ; rejouer les motifs d'inventaire (`kesh-gate-logs/e36-18a/etape0-inventaires.log`) ; valeur de départ du
       contrôle PDF (AC9) ; relire les LOW du dernier rapport de validation.
-- [ ] Tests d'abord (AC1 à AC6), rouges consignés ; `balance.ts` et `unit-price.ts` (D1) ; `supplier-invoice-form.ts`
+- [x] Tests d'abord (AC1 à AC6), rouges consignés ; `balance.ts` et `unit-price.ts` (D1) ; `supplier-invoice-form.ts`
       (D2, D6, D7) ; `opening-balances-totals.ts` et la page (D5) ; `SupplierInvoiceForm.svelte` (D6, D7) ;
       `SettleInvoiceDialog.svelte` (D8) ; quatre `messages.ftl` (D9) ; `i18n-keys.test.ts` recompté (AC8).
-- [ ] E2E (AC7), rouge d'abord ; manuel (AC9), `.tex` seul, son contrôle `.tex` à la clôture ; captures (AC11) ;
+- [x] E2E (AC7), rouge d'abord ; manuel (AC9), `.tex` seul, son contrôle `.tex` à la clôture ; captures (AC11) ;
       mutations M1 à M18.
-- [ ] Gates (voie 2, `e35-dev-commun.md` § *Quels gates, quand*) : en cours, Vitest ciblé par `.gate-front.lock`,
+- [ ] Gates (passage en revue fait ; clôture à venir) (voie 2, `e35-dev-commun.md` § *Quels gates, quand*) : en cours, Vitest ciblé par `.gate-front.lock`,
       `npm run check`, `lint-i18n-ownership` ; **passage en `review`** : bases `kesh_e3618a` remises à neuf (voie 2),
       `scripts/test-fast.sh --ci`, `scripts/gate-ci.sh kesh_ci_e3618a` (voie 1, son verrou), frontend complet, pas d'E2E ;
       **remédiations** : `test-fast.sh --ci` et frontend complet ; **clôture** : `gate-ci` et E2E complet sur
       `kesh_e2e_e3618a` recréée, au dernier commit de code, échecs nommés contre `docs/testing.md` § « Les échecs attendus ».
       Une commande lourde à la fois ; journaux dans `/home/gcorbaz/devel/kesh-gate-logs/e36-18a/`, commit en tête de chacun.
-- [ ] Fin du développement : `Status: review`, clé `review` au `sprint-status.yaml`, prompt de revue P1
+- [x] Fin du développement : `Status: review`, clé `review` au `sprint-status.yaml`, prompt de revue P1
       (`36-18a-montants-ambigus-livres-review-prompt-p1.md`) qui nomme le manuel, le PDF (à l'intégration) et les captures.
 
 ## Note de version
@@ -400,11 +400,96 @@ Le défaut se voit dans le navigateur et à la frontière HTTP (chaque montant p
 
 ### Agent Model Used
 
+Claude Opus 5.5 (agent de développement de l'Epic 36), 2026-11-16, en autonomie.
+
 ### Debug Log References
+
+Journaux hors dépôt, `/home/gcorbaz/devel/kesh-gate-logs/e36-18/` (et non `e36-18a/`, que la fiche nommait : le prompt
+d'appel prime, C-36-18-12) : `etape0-inventaires.log` ; `rouges.log` (49 rouges ; le premier lancement n'a exécuté aucun test,
+`.svelte-kit` absent du worktree — dit au journal, relancé après `svelte-kit sync`) ; `vitest-cible-dev.log` ; `check-dev.log` ;
+`e2e-rouges.log` (runs r1, r2) et `e2e-spec-vert.log` (run r3) ; `mut/resume.log`, `mut/M1.log` à `mut/M18.log` ;
+`review-test-fast.log`, `review-gate-ci.log`, `review-front.log` ; `bases.log`. Scripts : `vitest-cible.sh`, `bases-voie2.sh`,
+`e2e-3618a.sh`, `mut/mutations.py`. Captures : `captures/e3618a-*.png` (treize).
 
 ### Completion Notes List
 
+- **Commits** : `7ec5a5240` et `7c1be9aa4` (fusions de l'étape 0, C-36-18-12) ; `7d48aff2f` (marqueurs de conflit laissés par
+  `7ec5a5240` dans `sprint-status.yaml`, retirés) ; `668556766` (étape 0) ; `1e5ab78e6` (tests d'abord, aides provisoires) ;
+  `5d9ee2b48` (correctif) ; `e0ee5ef90` (E2E et manuel) ; `454a63942` (E2E : `expect.soft`, corps des requêtes) ;
+  `ac953dea2` (compteur de la garde `i18n-un-repli-par-cle.test.ts`, 454 → 456 : les deux clés du prix fournisseur, relevé
+  par le Vitest complet) — **dernier commit de code** ; puis le commit de passage en revue (fiche, registre,
+  `sprint-status.yaml`, prompt P1).
+- **Rouges** (`rouges.log`, à `1e5ab78e6` + tests) : **49 rouges, 324 verts** sur 373 tests de sept fichiers — tous sur le
+  comportement attendu (« 1.250 » lu, « 1'250 » refusé, `1.234` rouvert, messages absents). Verts au départ, comme la fiche le
+  prévoyait : « 1.25 », « 1250 » partout, « 1,25 » aux soldes et au fournisseur, le pré-rempli du règlement.
+- **E2E rouge** (`e2e-rouges.log`) : sources frontend remises à `668556766` par `git restore --source`, frontend construit,
+  spec jouée. Run r1 : 4 échecs, sur le message absent seulement ; la spec a alors reçu `expect.soft` sur le message et un
+  compteur qui rend les corps (`454a63942`) ; run r2 : 4 échecs, **chaque requête d'écriture partie avec `1.250`** (soldes
+  `"debit":"1.250"`, fournisseur `"unitPrice":"1.250"` et `"expectedPaymentAmount":"1.250"`, règlement `"amount":"1.250"`).
+  Sources restaurées (`git restore --worktree` + `touch`), frontend reconstruit, run r3 : **4 passés** (`e2e-spec-vert.log`),
+  captures prises par ce run. ⚠️ C'est la spec seule, non l'**E2E complet**, qui tourne à la clôture (`e35-dev-commun.md`).
+- **Mutations** (`mut/resume.log`) : **M1 à M18, dix-huit tuées**, chacune par une assertion (aucune erreur de compilation :
+  contrôle par `grep` des journaux) ; aucune équivalente. M3 et M6 reproduisent l'ancienne lecture de « 1.250 » par une
+  réécriture de la saisie (la fonction `defaultAmountReader` n'existant plus) ; M13 réintroduit le contrôle `Number(amount)` avant
+  la lecture ; M13 est tuée d'abord par le test de M14 (« 1'250 » → `1250`) et par ceux du message ambigu.
+- **Retrait de `defaultAmountReader`** (D5, C-36-18-11) : `balance.test.ts` passe `journalAmountReader` à `computeBalance` (six
+  appels) et à `classifyLine` (huit, par une aide `classify`) — **attentes inchangées** ; le test « la lecture par défaut ne change
+  pas » est réduit à la non-régression d'`isValidAmount` et renommé ; l'assertion « Défaut inchangé » et les trois de
+  `defaultAmountReader` sont retirées (elles fixaient le défaut #1050) ; doc-comments de `computeBalance` et `classifyLine`
+  réécrits.
+- **Écarts à la fiche, mineurs et déclarés** : (a) un module neuf `journal-entries/amount-entry-message.ts`
+  (`amountEntryMessage(problem, max)`) porte les deux textes communs de D3 — une définition pour quatre écrans, à côté du lecteur,
+  sans que `balance.ts` importe l'i18n (ses tests n'ont pas à la simuler) ; (b) une aide `firstLineUnitPriceProblem` dans
+  `supplier-invoice-form.ts` (D6 : « la première ligne fautive arrête l'envoi »), testable hors du composant ; (c)
+  `linesForServer`, appelée hors de la garde, envoie un prix **vide** (refusé par le serveur), jamais la saisie ambiguë ; (d) la
+  fixture d'AC3 « rouvert au prix `1.2340` » prend la quantité 10 (10 × 1.234 = 12.34) : à la quantité 1, #687 refuse la ligne
+  (1.234 n'est pas au centime) avant tout envoi ; (e) au règlement, le refus « supérieur à zéro » du vide et de « 0 » n'a plus
+  qu'un site (un doublon créé puis fusionné) ; (f) `aria-describedby` du champ du règlement ne nomme le bandeau que lorsqu'il dit
+  le refus du montant (une date fautive passe avant, D8).
+- **V2-7** : le refus serveur `INVALID_PAYMENT_DETAILS` d'un montant attendu illisible n'est plus atteint depuis le formulaire
+  (`paymentFields` rend `null`, la garde arrête l'envoi avant) ; il le reste par l'API.
+- **AC8** : `sitesTotal` **3082 → 3086**, relevé par la garde (`expected 3087 to be 3082`, puis 3086 une fois le doublon (e)
+  fusionné) — quatre littéraux : `common-amount-ambiguous`, `common-amount-unreadable`,
+  `supplier-invoices-err-line-unit-price-ambiguous`, `-unreadable`. `lint-i18n-ownership` vert sans entrée neuve.
+- **AC9** : `.tex` seul ; contrôle `.tex` : `refusé comme ambigu` à `:1017` (soldes), `:1171` (36-3b), `:1463` (règlement),
+  `:1813` (fournisseur) ; `tels quels` ne rend plus la ligne du § *Les montants* (`:1307`, `:2853` restent, hors sujet). Le PDF
+  se régénère à l'intégration ; valeur de départ du contrôle PDF : **1** (`etape0-inventaires.log`).
+- **AC10** : `amount-ambiguity.test.ts`, `unit-price.test.ts`, `InvoiceForm.test.ts`, `format.test.ts` verts sans modification
+  (`vitest-cible-dev.log`, 36 fichiers, 943 tests).
+- **AC11** : treize captures, thème clair, base jetable `kesh_e2e_e3618a`, prises par la spec E2E (`KESH_E2E_CAPTURES_DIR`) :
+  chaque écran à « 1.250 », à « 12'34 » et enregistré à « 1'250 » ; le brouillon rouvert au prix `1.2340`. Sur les captures
+  pleine page du formulaire fournisseur, l'en-tête collant de l'application apparaît au milieu : artefact de `fullPage`, non un
+  défaut de l'écran.
+- **Gates du passage en revue** (bases `kesh_e3618a` et `kesh_e2e_e3618a` remises à neuf en voie 2, `bases.log`) :
+  - `scripts/test-fast.sh --ci`, voie 2, à `454a63942` : **5510 exécutés, 5510 passés, 13 ignorés** (`review-test-fast.log`) ;
+  - `scripts/gate-ci.sh kesh_ci_e3618a`, voie 1, à `454a63942` : **5517 passés, 0 échoué, 17 ignorés** (`review-gate-ci.log`) ;
+  - frontend complet (`review-front.log`) : à `454a63942`, `npm run check` 0 erreur (29 avertissements, tous hors des
+    fichiers de la story), `lint-i18n-ownership` vert, `npm run build` vert, `npm run test:unit` **1 échec** sur 3934 — la garde
+    `i18n-un-repli-par-cle.test.ts` (`expected 456 to be 454`, les deux clés neuves du domaine) ; compteur corrigé
+    (`ac953dea2`), `test:unit` relancé : **246 fichiers, 3934 tests, tous verts**.
+  - `ac953dea2` ne change qu'une constante et un commentaire d'un fichier de test frontend : `test-fast`, `gate-ci`, `check` et
+    `build` n'ont pas été relancés à cette tête.
+  - **Non lancés** : E2E complet et `gate-ci` de clôture (à la clôture), PDF (à l'intégration). La spec
+    `montants-ambigus.spec.ts` seule a tourné (4/4, run r3).
+
 ### File List
+
+- `frontend/src/lib/features/journal-entries/balance.ts` — D1, D5 (aides, retrait du lecteur par défaut)
+- `frontend/src/lib/features/journal-entries/amount-entry-message.ts` — **neuf**, D3
+- `frontend/src/lib/features/invoices/unit-price.ts` — D1 (ré-export), D2 (délégation)
+- `frontend/src/lib/features/invoices/SettleInvoiceDialog.svelte` — D8
+- `frontend/src/lib/features/supplier-invoices/supplier-invoice-form.ts` — D2, D6, D7
+- `frontend/src/lib/features/supplier-invoices/SupplierInvoiceForm.svelte` — D3, D6, D7
+- `frontend/src/lib/features/opening-balances/opening-balances-totals.ts` — D5
+- `frontend/src/routes/(app)/settings/opening-balances/+page.svelte` — D3, D5
+- `crates/kesh-i18n/locales/{fr-CH,de-CH,it-CH,en-CH}/messages.ftl` — D9
+- Tests : `journal-entries/balance.test.ts`, `supplier-invoices/supplier-invoice-form.test.ts`,
+  `supplier-invoices/SupplierInvoiceForm.test.ts`, `invoices/SettleInvoiceDialog.test.ts`,
+  `routes/(app)/settings/opening-balances/opening-balances-page.test.ts`, `opening-balances/opening-balances-totals.test.ts`,
+  `shared/i18n-keys.test.ts`, `shared/i18n-un-repli-par-cle.test.ts` ; E2E **neuf** `frontend/tests/e2e/montants-ambigus.spec.ts`
+- `docs/manual/fr/user-manual.tex` — AC9
+- Fiche, registre `e36-choix-autonomes-36-18.md` (C-36-18-11, 12), `sprint-status.yaml`, prompt
+  `36-18a-montants-ambigus-livres-review-prompt-p1.md`
 
 ## Change Log
 
@@ -436,3 +521,8 @@ Le défaut se voit dans le navigateur et à la frontière HTTP (chaque montant p
   V2-4 `imported-supplier-invoices.api.ts:63` `` apiClient.post(`/api/v1/imported-supplier-invoices/${id}/complete`, req) ``
   (AC7) ; V2-5 `balance.ts:181` `read: AmountReader = defaultAmountReader` (D5, AC10) ; V2-6 registre, C-36-18-11 ; V2-7
   `supplier-invoice-form.ts:281` `// illisible part telle quelle et le serveur la refuse (400).` (D7) ; V2-8 en-tête.
+- 2026-11-16 — **Développement terminé** (Opus 5.5), `Status: review`. Rouges 49 (Vitest) et 4 (E2E, requêtes parties avec
+  `1.250`) ; M1 à M18 tuées ; spec E2E 4/4 ; `test-fast --ci` 5510/5510 (voie 2), `gate-ci` 5517 passés (voie 1), frontend
+  complet vert après correction du compteur `i18n-un-repli-par-cle` (454 → 456) ; E2E complet et `gate-ci` de clôture à la
+  clôture ; PDF à l'intégration. Détail : Dev Agent Record. Prompt de la revue P1 :
+  `36-18a-montants-ambigus-livres-review-prompt-p1.md`.
