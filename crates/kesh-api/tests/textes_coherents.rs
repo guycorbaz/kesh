@@ -778,6 +778,9 @@ fn les_replis_rust_suivent_le_catalogue() {
                 ("reconciliation-cancel-blocked-lettering-closed", 1, &[]),
                 ("supplier-invoices-cancel-blocked-lettering-closed", 1, &[]),
                 ("error-lettering-is-document", 1, &[]),
+                // Story 36-19 (#1200, AC11) — le bras de
+                // `DefaultInvoiceAccountsUnavailable`, qu'aucune route n'atteint.
+                ("error-default-invoice-accounts-unavailable", 1, &[]),
                 ("error-fiscal-year-create-later-closed", 1, NOM),
                 ("error-later-fiscal-year-closed", 1, NOM),
                 // Story 29-1b (#232) — les deux refus de la contre-passation au
