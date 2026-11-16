@@ -7,7 +7,7 @@ use serde::Deserialize;
 
 use crate::mcp::outil::{ContexteMcp, FuturOutil, McpTool, arguments};
 use crate::mcp::outils::commun::{SENS, Sens, decalage, limite};
-use crate::mcp::sortie::{Code, Date, Montant, Resume, TexteNonFiable, donnees, sortie};
+use crate::mcp::sortie::{Code, Date, Devise, Montant, Resume, TexteNonFiable, donnees, sortie};
 use crate::mcp::textes::depuis_app_error;
 use crate::services::acces::Portee;
 use crate::services::rapports::{self, Affichage, DemandeGrandLivre};
@@ -48,12 +48,25 @@ sortie! {
         credit: Montant,
         solde_courant: Montant,
         code_lettrage: Option<TexteNonFiable>,
+        // Story 37-4 (AC-6) : la partie en devise, compte en devise seulement —
+        // présents à `null` ailleurs (la macro n'omet aucun champ, C-37-9).
+        debit_devise: Option<Montant>,
+        credit_devise: Option<Montant>,
+        cours: Option<Montant>,
+        source_cours: Option<Code<kesh_db::entities::RateProvenance>>,
+        solde_courant_devise: Option<Montant>,
     }
 }
 
 sortie! {
     /// Une rupture d'exercice dans la section.
-    struct Rupture { date: Date, exercice_clos_id: i64, solde_de_cloture: Montant }
+    struct Rupture {
+        date: Date,
+        exercice_clos_id: i64,
+        solde_de_cloture: Montant,
+        // Story 37-4 : le même solde en devise, `null` hors compte en devise.
+        solde_de_cloture_devise: Option<Montant>,
+    }
 }
 
 sortie! {
@@ -73,6 +86,13 @@ sortie! {
         solde_inhabituel: bool,
         ruptures: Vec<Rupture>,
         nombre_lignes: i64,
+        // Story 37-4 (AC-6) : la devise du compte et les soldes et totaux en
+        // devise, `null` pour un compte en devise principale.
+        devise: Option<Code<Devise>>,
+        ouverture_devise: Option<Montant>,
+        total_debit_devise: Option<Montant>,
+        total_credit_devise: Option<Montant>,
+        cloture_devise: Option<Montant>,
     }
 }
 
@@ -95,7 +115,11 @@ impl McpTool for KeshGrandLivre {
          date, exercice clos, son solde), et cloture est le solde de l'exercice en cours à \
          la fin de la période : il vaut l'ouverture plus les totaux, sauf quand la période \
          franchit une fin d'exercice (le cumul reste alors dans les totaux). Sur un compte \
-         d'actif ou de passif, cloture vaut toujours l'ouverture plus les totaux."
+         d'actif ou de passif, cloture vaut toujours l'ouverture plus les totaux. Sur un \
+         compte en devise (devise, code ISO 4217), les champs suffixés « devise » donnent \
+         les mêmes montants dans la devise du compte, avec le cours et sa provenance \
+         (sourceCours) de chaque ligne ; une ligne de réévaluation (sourceCours \
+         revaluation) a un montant en devise nul. Ils valent null sur un compte en CHF."
     }
 
     fn schema_entree(&self) -> &'static str {
@@ -171,6 +195,11 @@ fn section(s: kesh_report::general_ledger::LedgerSection) -> Section {
                 credit: Montant(l.credit),
                 solde_courant: Montant(l.running_balance),
                 code_lettrage: l.lettering_code.map(TexteNonFiable::de),
+                debit_devise: l.debit_currency.map(Montant),
+                credit_devise: l.credit_currency.map(Montant),
+                cours: l.exchange_rate.map(Montant),
+                source_cours: l.rate_source.map(Code::depuis_str),
+                solde_courant_devise: l.running_balance_currency.map(Montant),
             })
             .collect(),
         total_debit: Montant(s.total_debit),
@@ -184,9 +213,15 @@ fn section(s: kesh_report::general_ledger::LedgerSection) -> Section {
                 date: Date(r.date),
                 exercice_clos_id: r.closing_fiscal_year_id,
                 solde_de_cloture: Montant(r.closing_balance),
+                solde_de_cloture_devise: r.closing_balance_currency.map(Montant),
             })
             .collect(),
         nombre_lignes: s.line_count,
+        devise: s.currency.map(Code::depuis_str),
+        ouverture_devise: s.opening_currency.map(Montant),
+        total_debit_devise: s.total_debit_currency.map(Montant),
+        total_credit_devise: s.total_credit_currency.map(Montant),
+        cloture_devise: s.closing_currency.map(Montant),
     }
 }
 

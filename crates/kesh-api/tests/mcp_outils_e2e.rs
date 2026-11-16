@@ -2044,3 +2044,171 @@ async fn kesh_plan_comptable_rend_la_devise(pool: MySqlPool) {
     assert_eq!(vus[&usd], json!("USD"));
     assert_eq!(vus[&chf], Value::Null);
 }
+
+// ---------------------------------------------------------------------------
+// Story 37-4 (AC-6, AC-7, CR-6) — les rapports en devise par le MCP
+// ---------------------------------------------------------------------------
+
+/// La société A passée multi-devises (société et exercices, en SQL), un compte
+/// d'actif USD lettrable et une écriture : USD 100 au cours 0.91 = CHF 91.00,
+/// contre K2. Rend l'identifiant du compte USD.
+async fn compte_usd_mouvemente(pool: &MySqlPool, a: &Societe) -> i64 {
+    sqlx::query("UPDATE companies SET multi_currency_enabled = TRUE WHERE id = ?")
+        .bind(a.c)
+        .execute(pool)
+        .await
+        .unwrap();
+    sqlx::query("UPDATE fiscal_years SET multi_currency = TRUE WHERE company_id = ?")
+        .bind(a.c)
+        .execute(pool)
+        .await
+        .unwrap();
+    let usd: i64 = sqlx::query_scalar(
+        "INSERT INTO accounts (company_id, number, name, account_type, currency) \
+         VALUES (?, '1105', 'Débiteurs USD', 'Asset', 'USD') RETURNING id",
+    )
+    .bind(a.c)
+    .fetch_one(pool)
+    .await
+    .unwrap();
+    journal_entries::create(
+        pool,
+        a.p.exercice_id,
+        kesh_db::entities::audit_log::Acteur::utilisateur(a.u),
+        NewJournalEntry {
+            company_id: a.c,
+            entry_date: common::jour::aujourd_hui_test(),
+            journal: Journal::OD,
+            description: "Créance en USD".into(),
+            project_id: None,
+            lines: vec![
+                NewJournalEntryLine {
+                    account_id: usd,
+                    debit: Decimal::new(9100, 2),
+                    credit: Decimal::ZERO,
+                    project_id: None,
+                    foreign: Some(kesh_db::entities::ForeignAmount {
+                        declared_currency: None,
+                        amount: Decimal::new(100, 0),
+                        rate: Decimal::new(91, 2),
+                        source: Some(kesh_db::entities::RateProvenance::Manual),
+                        rate_derived: false,
+                    }),
+                },
+                NewJournalEntryLine {
+                    account_id: a.p.compte_k2,
+                    debit: Decimal::ZERO,
+                    credit: Decimal::new(9100, 2),
+                    project_id: None,
+                    foreign: None,
+                },
+            ],
+        },
+    )
+    .await
+    .expect("écriture en USD");
+    usd
+}
+
+/// AC-6 — `kesh_grand_livre`, `kesh_balance` et `kesh_bilan` portent les champs en
+/// devise d'un compte USD, et les mêmes clés à `null` sur un compte CHF (la macro
+/// `sortie!` n'omet aucun champ, C-37-9).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn rapports_en_devise_par_le_mcp(pool: MySqlPool) {
+    let a = societe_piegee(&pool, "Société A 374", 'A').await;
+    let usd = compte_usd_mouvemente(&pool, &a).await;
+    let jeton = cle_de(&pool, &a, &LECTURE, SendValidation::Exempt).await;
+    let b = banc(&pool);
+    let p = &a.p;
+    let periode = |id: i64| {
+        json!({"accountId": id, "from": p.exercice_debut.to_string(), "to": p.exercice_fin.to_string()})
+    };
+
+    let gl = structure(
+        &b.appeler(&jeton, "kesh_grand_livre", periode(usd)).await,
+        "kesh_grand_livre",
+    );
+    let s = &gl["sections"][0];
+    assert_eq!(s["devise"], json!("USD"), "{s}");
+    assert_eq!(s["ouvertureDevise"], json!("0.00"), "{s}");
+    assert_eq!(s["clotureDevise"], json!("100.00"), "{s}");
+    assert_eq!(s["totalDebitDevise"], json!("100.00"), "{s}");
+    let l = &s["lignes"][0];
+    assert_eq!(
+        (&l["debitDevise"], &l["creditDevise"], &l["cours"], &l["sourceCours"], &l["soldeCourantDevise"]),
+        (&json!("100.00"), &json!("0.00"), &json!("0.91"), &json!("manual"), &json!("100.00")),
+        "{l}"
+    );
+    let chf = structure(
+        &b.appeler(&jeton, "kesh_grand_livre", periode(p.compte_k2)).await,
+        "kesh_grand_livre",
+    );
+    let s = &chf["sections"][0];
+    for k in ["devise", "ouvertureDevise", "totalDebitDevise", "totalCreditDevise", "clotureDevise"] {
+        assert_eq!(s.get(k), Some(&Value::Null), "{k} présent à null : {s}");
+    }
+    for k in ["debitDevise", "creditDevise", "cours", "sourceCours", "soldeCourantDevise"] {
+        assert_eq!(s["lignes"][0].get(k), Some(&Value::Null), "{k} : {s}");
+    }
+
+    let balance = structure(
+        &b.appeler(
+            &jeton,
+            "kesh_balance",
+            json!({"fiscalYearId": p.exercice_id, "limit": 55}),
+        )
+        .await,
+        "kesh_balance",
+    );
+    let lignes = balance["lignes"].as_array().unwrap();
+    let u = lignes.iter().find(|l| l["compteId"] == json!(usd)).expect("ligne USD");
+    assert_eq!(
+        (&u["devise"], &u["debitDevise"], &u["clotureDevise"]),
+        (&json!("USD"), &json!("100.00"), &json!("100.00")),
+        "{u}"
+    );
+    let k2 = lignes.iter().find(|l| l["compteId"] == json!(p.compte_k2)).expect("ligne K2");
+    assert_eq!(k2.get("devise"), Some(&Value::Null), "{k2}");
+    assert_eq!(k2.get("clotureDevise"), Some(&Value::Null), "{k2}");
+
+    let bilan = structure(
+        &b.appeler(&jeton, "kesh_bilan", json!({"fiscalYearId": p.exercice_id})).await,
+        "kesh_bilan",
+    );
+    let actif = bilan["actifs"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|l| l["compteId"] == json!(usd))
+        .expect("compte USD au bilan");
+    assert_eq!((&actif["devise"], &actif["soldeDevise"]), (&json!("USD"), &json!("100.00")));
+    for l in bilan["actifs"].as_array().unwrap() {
+        assert!(l.get("soldeDevise").is_some(), "clé présente : {l}");
+    }
+}
+
+/// CR-6 (V13, AC-7) — `kesh_postes_ouverts` sur un compte de débiteurs USD
+/// lettrable rend `solde`, `totalOuvert` et les débits et crédits des postes au
+/// CHF de leurs lignes, sans champ en devise ; `resteDu` à `null` (aucune
+/// facture en devise).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn postes_ouverts_d_un_compte_en_devise_en_chf(pool: MySqlPool) {
+    let a = societe_piegee(&pool, "Société A 374b", 'A').await;
+    let usd = compte_usd_mouvemente(&pool, &a).await;
+    let jeton = cle_de(&pool, &a, &LECTURE, SendValidation::Exempt).await;
+    let s = structure(
+        &banc(&pool)
+            .appeler(&jeton, "kesh_postes_ouverts", json!({"accountId": usd}))
+            .await,
+        "kesh_postes_ouverts",
+    );
+    assert_eq!((&s["solde"], &s["totalOuvert"]), (&json!("91.00"), &json!("91.00")), "{s}");
+    let postes = elements("kesh_postes_ouverts", &s);
+    assert_eq!(postes.len(), 1, "{s}");
+    assert_eq!((&postes[0]["debit"], &postes[0]["credit"]), (&json!("91.00"), &json!("0.00")));
+    assert_eq!(postes[0]["resteDu"], Value::Null);
+    let cles = |v: &Value| v.as_object().unwrap().keys().cloned().collect::<Vec<_>>();
+    for k in cles(&s).into_iter().chain(cles(&postes[0])) {
+        assert!(!k.contains("evise") && k != "cours", "aucun champ en devise : {k}");
+    }
+}

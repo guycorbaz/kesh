@@ -12,7 +12,7 @@ use serde::Deserialize;
 
 use crate::mcp::outil::{ContexteMcp, FuturOutil, McpTool, arguments};
 use crate::mcp::outils::commun::{decalage, limite, nombre, tranche};
-use crate::mcp::sortie::{Date, Montant, Resume, TexteNonFiable, donnees, sortie};
+use crate::mcp::sortie::{Code, Date, Devise, Montant, Resume, TexteNonFiable, donnees, sortie};
 use crate::mcp::textes::depuis_app_error;
 use crate::services::acces::Portee;
 use crate::services::rapports::{self, Affichage, DemandePeriode};
@@ -68,6 +68,11 @@ sortie! {
         actif: bool,
         solde: Montant,
         role: Option<kesh_db::entities::AccountRole>,
+        // Story 37-4 (AC-6) : la devise du compte et son solde en devise,
+        // présents à `null` pour un compte en devise principale (C-37-9). Les
+        // totaux restent en devise principale.
+        devise: Option<Code<Devise>>,
+        solde_devise: Option<Montant>,
     }
 }
 
@@ -112,6 +117,14 @@ sortie! {
         credit: Montant,
         solde: Montant,
         cloture: Montant,
+        // Story 37-4 (AC-6) : les mêmes colonnes en devise du compte, `null`
+        // pour un compte en devise principale ; aucun total en devise.
+        devise: Option<Code<Devise>>,
+        ouverture_devise: Option<Montant>,
+        debit_devise: Option<Montant>,
+        credit_devise: Option<Montant>,
+        solde_devise: Option<Montant>,
+        cloture_devise: Option<Montant>,
     }
 }
 
@@ -148,6 +161,8 @@ fn ligne(a: kesh_report::AccountBalance) -> LigneDeSolde {
         actif: a.active,
         solde: Montant(a.balance),
         role: a.role,
+        devise: a.currency.map(Code::depuis_str),
+        solde_devise: a.balance_currency.map(Montant),
     }
 }
 
@@ -179,7 +194,9 @@ impl McpTool for KeshBalance {
         "Lit la balance des comptes d'un exercice (fiscalYearId, requis ; kesh_exercices), \
          sur une période facultative (periodStart, periodEnd) : soldes d'ouverture, \
          mouvements et soldes par compte, par tranches (limit, offset), avec les totaux du \
-         rapport entier. Si la réponse est trop grosse, réduisez limit."
+         rapport entier. Si la réponse est trop grosse, réduisez limit. Un compte en devise \
+         (devise, code ISO 4217) porte aussi ses colonnes dans sa devise (champs suffixés \
+         « devise », null sur un compte en CHF) ; les totaux restent en CHF."
     }
 
     fn schema_entree(&self) -> &'static str {
@@ -216,17 +233,23 @@ impl McpTool for KeshBalance {
                 periode: periode(r.period),
                 lignes: tranche(r.rows, offset, limit)
                     .into_iter()
-                    .map(|l| LigneBalance {
-                        compte_id: l.account_id,
-                        numero: TexteNonFiable::de(l.account_number),
-                        nom: TexteNonFiable::de(l.account_name),
-                        type_de_compte: l.account_type,
-                        actif: l.active,
-                        ouverture: Montant(l.opening_balance),
-                        debit: Montant(l.total_debit),
-                        credit: Montant(l.total_credit),
-                        solde: Montant(l.balance),
-                        cloture: Montant(l.closing_balance),
+                    .map(|row| LigneBalance {
+                        compte_id: row.account_id,
+                        numero: TexteNonFiable::de(row.account_number),
+                        nom: TexteNonFiable::de(row.account_name),
+                        type_de_compte: row.account_type,
+                        actif: row.active,
+                        ouverture: Montant(row.opening_balance),
+                        debit: Montant(row.total_debit),
+                        credit: Montant(row.total_credit),
+                        solde: Montant(row.balance),
+                        cloture: Montant(row.closing_balance),
+                        devise: row.currency.map(Code::depuis_str),
+                        ouverture_devise: row.opening_currency.map(Montant),
+                        debit_devise: row.total_debit_currency.map(Montant),
+                        credit_devise: row.total_credit_currency.map(Montant),
+                        solde_devise: row.balance_currency.map(Montant),
+                        cloture_devise: row.closing_currency.map(Montant),
                     })
                     .collect(),
                 total,
@@ -251,8 +274,10 @@ impl McpTool for KeshBilan {
     fn description(&self) -> &'static str {
         "Lit le bilan d'un exercice (fiscalYearId, requis ; kesh_exercices) à la fin d'une \
          période facultative : actifs, passifs, fonds propres et leurs totaux, comptes à \
-         solde non nul. Non paginé : au-delà d'environ 60 comptes à solde non nul, la \
-         réponse est refusée."
+         solde non nul (en CHF ou dans leur devise). Un compte en devise porte sa devise \
+         (code ISO 4217) et son solde dans cette devise (soldeDevise), null sur un compte en \
+         CHF ; les totaux restent en CHF. Non paginé : au-delà d'environ 60 comptes à solde \
+         non nul, la réponse est refusée."
     }
 
     fn schema_entree(&self) -> &'static str {
@@ -299,9 +324,11 @@ impl McpTool for KeshCompteDeResultat {
 
     fn description(&self) -> &'static str {
         "Lit le compte de résultat d'un exercice (fiscalYearId, requis ; kesh_exercices) sur \
-         une période facultative : produits, charges, leurs totaux et le résultat. Non \
-         paginé : au-delà d'environ 60 comptes à solde non nul, la réponse est refusée ; \
-         choisissez une période plus courte."
+         une période facultative : produits, charges, leurs totaux et le résultat. Un \
+         compte en devise porte sa devise (code ISO 4217) et son solde dans cette devise \
+         (soldeDevise), null sur un compte en CHF ; les totaux restent en CHF. Non paginé : \
+         au-delà d'environ 60 comptes à solde non nul, la réponse est refusée ; choisissez \
+         une période plus courte."
     }
 
     fn schema_entree(&self) -> &'static str {
