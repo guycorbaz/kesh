@@ -25,6 +25,7 @@
 	} from '$lib/features/settings/company-conflict';
 	import CompanyConflictNotice from '$lib/features/settings/CompanyConflictNotice.svelte';
 	import SessionIdleSection from '$lib/features/settings/SessionIdleSection.svelte';
+	import CurrencySettingsSection from '$lib/features/settings/CurrencySettingsSection.svelte';
 	import { bankAccountFullId, bankAccountName } from '$lib/features/bank-accounts/format';
 	import { authState } from '$lib/app/stores/auth.svelte';
 	import { isApiError } from '$lib/shared/utils/api-client';
@@ -885,6 +886,12 @@
 				<dt class="font-medium text-text-muted">{msg('settings-field-accounting-language', 'Langue comptable')}</dt>
 				<dd>{data.company.accountingLanguage}</dd>
 			</dl>
+			<!-- Story 37-1 (AC-7) : comptabilité multi-devises, éditable par l'Administrateur seul. -->
+			<CurrencySettingsSection
+				company={data.company}
+				{isAdmin}
+				onSaved={(company) => adoptCompany(company, nextSeq())}
+			/>
 		</section>
 
 		<Separator />

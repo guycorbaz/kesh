@@ -1,5 +1,9 @@
 # Epic 39 — Compte Wise : téléchargement, imputation et relevés automatiques
 
+⏸ **Les fiches de l'Epic 39 attendent le test de Beat sur l'API des relevés Wise (Q-39-1, recette de 39-0)** : aucune
+fiche ne s'écrit ni ne se développe avant ce constat ; les règles de travail à plusieurs (§ *Alignement*, plus bas)
+s'appliqueront alors à chaque fiche.
+
 **Cadrage : 2026-11-15** (branche `epic/39-wise`). Demande de Beat (contributeur), décisions B1–B28 de
 `epics-38-40-cadrage.md`, qui **priment** sur ce fichier ; pour Wise : B1, B3, B4, B9, **B10** (relevé PDF par l'API,
 SCA), B12, B14. Socle : l'**Epic 38** (`epic-38-paypal.md`, validé, seize fiches `ready-for-dev`), dont les décisions
@@ -14,6 +18,14 @@ story (F15) ; une fiche qui découvre un besoin de DDL s'arrête et le dit (C-39
 **Numéro : 39** (35 et 36 réservés ailleurs ; 40 Stripe, provisoire, B25). Une branche par story, fusionnée
 localement dans `epic/39-wise`, puis **une PR** vers le dépôt de Guy (remote `beat`), **après celles des Epics 37 et
 38**. Pas d'issue GitHub à ce stade (Beat n'a qu'un accès en lecture) ; issues et PR à la fin.
+
+**Release : un epic = une release ; 7 stories** (39-0 à 39-6, kickoff et story de solde comprises). ⚠️ **Cela dépasse la
+borne de six** des epics de correction ou d'amélioration ; l'Epic 39 ajoute une **fonctionnalité nouvelle** (un
+prestataire), ce qui permet de dépasser **à condition de le dire au kickoff** — c'est dit ici, à confirmer par Guy à
+39-0. Repli si Guy préfère la borne : fusionner 39-3 et 39-4 (relevé JSON et classement, tous deux dans
+`kesh-providers`), au prix d'une story plus longue, contraire à « pas de story trop longue » ; ou 39-1 et 39-2
+(client et SCA), au prix d'une dépendance cryptographique neuve dans la même fiche. Aucune des deux n'est proposée
+d'office.
 
 **Cible** : la release qui suit celle de l'Epic 38, ou la même (aucune migration, aucun relèvement de
 `kesh_version_min_required`) — à Guy (Q-39-9).
@@ -242,7 +254,8 @@ l'Epic 38 a promis (§ *Ce que réutiliseront les Epics 39 et 40*).
   (forme de 38-10 AC-3) ; `409 BANK_DOCUMENT_ALREADY_FETCHED` (F14) ; exercice absent → `400
   BANK_DOCUMENT_NO_FISCAL_YEAR` (code de 38-10).
 - **C-39-6 — Registres** : `LIB_ROUTES` +2 (`sca-key`, `statements`), `TEST_ENDPOINT_ROUTES` inchangé (variante de la
-  même route) ; audit : `payment_provider_connection.sca_key_generated` ; dépôt de la clé par
+  même route) ; ces compteurs (`LIB_ROUTES`, `sitesTotal`, `Cargo.lock`) **se recomptent depuis la source après chaque
+  reprise de `main`**, sans se fusionner ; audit : `payment_provider_connection.sca_key_generated` ; dépôt de la clé par
   `payment_provider_connection.secrets_updated` (`names`) ; pièce rangée par `bank_account_document.attached`
   (38-10), détail `{ source: "provider_api", trigger }`.
 - **C-39-7 — Tracé pour plus tard** (issues avec la PR) : migration des jetons personnels vers OAuth 2.0 + mTLS si
@@ -335,7 +348,8 @@ l'Epic 38 a promis (§ *Ce que réutiliseront les Epics 39 et 40*).
      vecteur vérifié par la clé publique.
   2. `NFR-39-2-2` — Dépendance cryptographique déclarée avec sa licence et ses avis de sécurité, jugés à la fiche.
   3. `NFR-39-2-3` — Au plus une signature et un rejeu par défi ; aucun texte de Wise en clair.
-  4. `NFR-39-2-4` — Route réservée à une session d'Administrateur (`require_not_pat`), auditée, `LIB_ROUTES` +1.
+  4. `NFR-39-2-4` — Route réservée à une session d'Administrateur (`require_not_pat`), auditée, `LIB_ROUTES` +1 (recompté depuis la source après chaque reprise de `main`) ; `Cargo.lock` régénéré après la
+     fusion, non fusionné.
 
 ### 39-3 — Relevé JSON : mouvements et soldes
 
@@ -398,7 +412,7 @@ l'Epic 38 a promis (§ *Ce que réutiliseront les Epics 39 et 40*).
 - **NFR**
   1. `NFR-39-5-1` — Fichier contrôlé (`%PDF-`, borne de taille de 38-10) avant rangement.
   2. `NFR-39-5-2` — Pièce auditée (`bank_account_document.attached`, `source`, déclencheur), sauvegardée par 38-10.
-  3. `NFR-39-5-3` — Aucune migration ; `LIB_ROUTES` +1 ; clés d'API refusées.
+  3. `NFR-39-5-3` — Aucune migration ; `LIB_ROUTES` +1 (recompté depuis la source après chaque reprise de `main`) ; clés d'API refusées.
   4. `NFR-39-5-4` — Aucun appel réseau en CI : PDF factice servi par `wiseResponses`.
 
 ### 39-6 — Écrans et manuels
@@ -420,7 +434,8 @@ l'Epic 38 a promis (§ *Ce que réutiliseront les Epics 39 et 40*).
   5. `FR-39-6-5` — Les codes courts Wise s'affichent en aide du critère « code d'événement ».
 - **NFR**
   1. `NFR-39-6-1` — Aucun secret (jeton, clé privée) au DOM ni dans les réponses lues.
-  2. `NFR-39-6-2` — Quatre locales ; manuels d'administration et utilisateur à jour, PDF régénérés et contrôlés aplatis.
+  2. `NFR-39-6-2` — Quatre locales ; manuels d'administration et utilisateur à jour : modifier le `.tex` seulement, le PDF se régénère à la release
+     (contrôle local du rendu permis, aplati, PDF non commité) ; chaque fiche porte sa *Note de version*.
   3. `NFR-39-6-3` — E2E contre le transport factice (`wiseResponses: "default"`) : connexion → test → téléchargement →
      proposition → acceptation ; relevé PDF rangé.
   4. `NFR-39-6-4` — Captures d'écran de chaque état touché (*Recette visuelle*).
@@ -441,6 +456,26 @@ wc -l`, de même pour `NFR`). Les fiches feront foi. Forme définitive — issue
 | 39-6 | 5 — 1 connexion et profil · 2 clé SCA · 3 erreurs · 4 relevés PDF · 5 codes courts | 4 — 1 aucun secret au DOM · 2 i18n, manuels · 3 E2E · 4 captures |
 
 **Total : 35 FR et 24 NFR** sur 7 stories (39-0 comprise).
+
+## Modules touchés (fichiers communs, règles de travail à plusieurs)
+
+Liste **tirée des fiches** (ici, de leur tableau en attendant qu'elles existent) ; à refaire à partir des fiches
+quand elles seront écrites. Aucune migration : ni `crates/kesh-db/migrations/`, ni audit des migrations.
+
+| Fiche | Crates | Frontend | Manuels |
+|---|---|---|---|
+| 39-1 | `kesh-providers` (wise), `kesh-core` (réglages), `kesh-api` (secrets, fabrique, test, transport), `kesh-i18n` | — | — |
+| 39-2 | `kesh-providers` (wise::sca), `kesh-api` (route `sca-key`, secrets), `kesh-core`, `kesh-i18n` ; **Cargo.lock** (dépendance RSA) | — | — |
+| 39-3 | `kesh-providers` (wise::statement) | — | — |
+| 39-4 | `kesh-providers` (wise::classify), `kesh-core` (surcharges), `kesh-api` (`own_ibans`) | — | — |
+| 39-5 | `kesh-providers` (wise::pdf), `kesh-api` (route, tâche, rangement), `kesh-db` (pièce par période), `kesh-i18n` | — | — |
+| 39-6 | `kesh-i18n` | écrans connexion, clé SCA, *Relevés joints* ; E2E | `docs/manual` (`.tex` seulement, PDF à la release) |
+
+**Partagés avec l'Epic 38** (socle : `kesh-providers`, secrets, fabrique, `ConnectorContext`, route `_test`,
+38-10) : amendements additifs de C-39-2 — à voir avec l'Epic 38 avant la première ligne. **Fichiers communs** :
+catalogues i18n des quatre locales (bloc propre à l'epic), `sprint-status.yaml` (bloc propre), `LIB_ROUTES`,
+`sitesTotal`, `Cargo.lock` (compteurs recomptés après chaque reprise de `main`) ; `CHANGELOG.md` non écrit (notes de
+version des fiches).
 
 ## Questions ouvertes
 
@@ -477,3 +512,23 @@ wc -l`, de même pour `NFR`). Les fiches feront foi. Forme définitive — issue
 - Aucun appel réseau en CI ni par un agent ; aucune réponse réelle non anonymisée, aucun jeton, aucune clé privée
   réelle dans le dépôt.
 - On trace toujours : un défaut voisin non traité se note au registre (C-39-7), pour devenir une issue avec la PR.
+- Travail à plusieurs (`CLAUDE.md` § *Travailler à plusieurs développeurs*) : chaque fiche porte une section **Note de
+  version** (texte prêt à assembler à la release, juste avant les notes de développement), aucune ligne au
+  `CHANGELOG.md` ; manuels : `.tex` seulement ; compteurs recomptés depuis la source après chaque reprise de `main`.
+
+## Change Log
+
+### Alignement 2026-11-16
+
+Alignement sur les règles de travail à plusieurs (Sonnet), fichier d'epic seul — les fiches n'existent pas encore et
+attendent le test de Beat sur l'API des relevés Wise (Q-39-1) :
+
+- **PDF des manuels** : NFR-39-6-2 passe à « `.tex` seulement, PDF régénéré à la release » (1 remplacement).
+- **CHANGELOG** : aucune ligne n'y était prévue ; règle « Note de version » des fiches ajoutée (§ *Règles de cet epic*,
+  NFR-39-6-2).
+- **Compteurs** : « recompté depuis la source après chaque reprise de `main` » ajouté à C-39-6, NFR-39-2-4, NFR-39-5-3
+  (`LIB_ROUTES`, `sitesTotal`, `Cargo.lock`).
+- **Fichier d'epic** : section « Modules touchés » ajoutée (tirée du tableau des stories, à refaire depuis les
+  fiches) ; ligne « Release : un epic = une release ; 7 stories » ajoutée, qui **dépasse la borne de six** — admis
+  pour une fonctionnalité nouvelle si on le dit au kickoff, repli de fusion décrit.
+- Rappel en tête : les fiches attendent la recette de 39-0 (Q-39-1).

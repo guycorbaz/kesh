@@ -68,7 +68,85 @@ impl<'r> Decode<'r, MySql> for FiscalYearStatus {
     }
 }
 
+/// Genre d'un cours de change d'exercice (Story 37-1) : cours **journalier**
+/// ou cours **mensuel**. Colonne `ENUM('day','month')`, écrite en minuscules
+/// au HTTP comme en base.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum RateKind {
+    /// Cours journalier.
+    Day,
+    /// Cours mensuel.
+    Month,
+}
+
+impl RateKind {
+    /// Valeur en base et au HTTP : `day` ou `month`.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Day => "day",
+            Self::Month => "month",
+        }
+    }
+}
+
+impl std::str::FromStr for RateKind {
+    type Err = String;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "day" => Ok(Self::Day),
+            "month" => Ok(Self::Month),
+            other => Err(format!("RateKind inconnu : {other}")),
+        }
+    }
+}
+
+impl Type<MySql> for RateKind {
+    fn type_info() -> MySqlTypeInfo {
+        <String as Type<MySql>>::type_info()
+    }
+    fn compatible(ty: &MySqlTypeInfo) -> bool {
+        <String as Type<MySql>>::compatible(ty) || <str as Type<MySql>>::compatible(ty)
+    }
+}
+
+impl<'q> Encode<'q, MySql> for RateKind {
+    fn encode_by_ref(
+        &self,
+        buf: &mut <MySql as sqlx::Database>::ArgumentBuffer<'q>,
+    ) -> Result<IsNull, BoxDynError> {
+        <&str as Encode<MySql>>::encode_by_ref(&self.as_str(), buf)
+    }
+}
+
+impl<'r> Decode<'r, MySql> for RateKind {
+    fn decode(value: <MySql as sqlx::Database>::ValueRef<'r>) -> Result<Self, BoxDynError> {
+        let s = <String as Decode<MySql>>::decode(value)?;
+        s.parse().map_err(Into::into)
+    }
+}
+
 /// Exercice comptable persisté en base.
+///
+/// **Mode et genres de cours (Story 37-1).** `multi_currency` dit si
+/// l'exercice admet des lignes sur des comptes en devise : il prend le réglage
+/// de la société à sa création, passe à `true` à l'activation du multi-devises
+/// s'il est ouvert, et ne change plus ensuite (un exercice clos à
+/// l'activation reste mono-devise, même rouvert).
+///
+/// Sens des genres — le cours d'ouverture est le cours de clôture de
+/// l'exercice précédent, pour que les valeurs CHF concordent d'un exercice à
+/// l'autre :
+/// - ouverture [`RateKind::Day`] : cours journalier de la **veille** de
+///   `start_date` (jour de clôture de l'exercice précédent) ;
+/// - ouverture [`RateKind::Month`] : cours mensuel du **mois de la veille** de
+///   `start_date` (dernier mois de l'exercice précédent) ;
+/// - clôture [`RateKind::Day`] : cours journalier de `end_date` ;
+/// - clôture [`RateKind::Month`] : cours mensuel du mois de `end_date`.
+///
+/// À la création, l'ouverture reprend le genre de clôture de l'exercice de la
+/// société qui finit la veille de `start_date` (`day` sinon), et la clôture
+/// prend `day`.
 #[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
 pub struct FiscalYear {
     pub id: i64,
@@ -78,6 +156,12 @@ pub struct FiscalYear {
     pub start_date: NaiveDate,
     pub end_date: NaiveDate,
     pub status: FiscalYearStatus,
+    /// Exercice multi-devises (voir la doc du type).
+    pub multi_currency: bool,
+    /// Genre du cours d'ouverture (voir la doc du type).
+    pub opening_rate_kind: RateKind,
+    /// Genre du cours de clôture (voir la doc du type).
+    pub closing_rate_kind: RateKind,
     pub created_at: NaiveDateTime,
     pub updated_at: NaiveDateTime,
 }

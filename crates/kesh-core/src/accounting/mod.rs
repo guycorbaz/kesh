@@ -16,6 +16,7 @@
 //! métier passent.
 
 pub mod balance;
+pub mod exercice;
 pub mod purchase;
 pub mod vat;
 

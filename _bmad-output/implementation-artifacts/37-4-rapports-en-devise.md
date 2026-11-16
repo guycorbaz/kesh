@@ -34,7 +34,7 @@ exports, afin de rapprocher mes comptes PayPal ou Wise de leurs relevés et de c
 - NFR-37-4-4 — Champs MCP présents à `null` hors compte en devise, dans les limites de taille re-mesurées ; code de devise typé, `mcp_gardes_lexicales` et `mcp_contrat` verts (AC-6).
 - NFR-37-4-5 — Quatre locales, `i18n-keys` et `i18n-libelle-en-dur` verts (AC-6).
 - NFR-37-4-6 — Concordance grand livre, balance, bilan et compte de résultat en devise sur un jeu à deux exercices, `offset > 0` compris ; une ligne en devise posée par SQL sur un compte CHF n'apparaît dans aucun champ en devise ; CSV mono-devise comparés à des fixtures du commit de base ; `balances_as_of` testée dans une transaction ; `grep -rnE "\b(jel|l)\.currency\b"` sur `crates/` ne rend rien, contrôle consigné au Change Log du développement (AC-8).
-- NFR-37-4-7 — Manuel et PDF à jour (AC-9).
+- NFR-37-4-7 — Manuel à jour (AC-9) : `.tex` seulement, PDF du manuel non commité (régénéré à la release, rendu contrôlable en local).
 
 ## Critères d'acceptation
 
@@ -223,7 +223,7 @@ exports, afin de rapprocher mes comptes PayPal ou Wise de leurs relevés et de c
      nu rendrait des faux positifs sur `total_currency` et consorts).
    - Non-régression mono-devise : quatre CSV **octet pour octet** contre fixtures enregistrées **depuis le commit de
      base avant toute modification** (cas multi-devises sans compte en devise compris) ; JSON identique (AC-6).
-9. **AC-9 — Manuel** : lecture des rapports en devise ; i18n ; PDF.
+9. **AC-9 — Manuel** : lecture des rapports en devise ; i18n (compteurs `sitesTotal` recomptés depuis la source après chaque reprise de `main`) ; `.tex` seulement, PDF du manuel non commité (régénéré à la release).
 
 ## Tâches
 
@@ -250,7 +250,15 @@ exports, afin de rapprocher mes comptes PayPal ou Wise de leurs relevés et de c
 - [ ] Frontend : cinq vues, types ; Vitest — `IncomeStatementView.test.ts` et `JournalReportView.test.ts` **n'existent
       pas** (relevé du 2026-11-14) : à créer, avec le cas « mono-devise : rien de visible ne change » (AC-6) ; E2E
       (grand livre d'un compte USD).
-- [ ] Manuel, CHANGELOG.
+- [ ] Manuel (`.tex` seulement), section *Note de version* de la fiche (pas d'écriture au `CHANGELOG.md`).
+
+## Note de version
+
+*(Texte prêt à assembler au `CHANGELOG.md` à la release ; la fiche n'écrit jamais au `CHANGELOG.md`.)*
+
+- **Added** — grand livre, balance, bilan et compte de résultat en devise (JSON, écran, exports CSV et PDF) ; le journal gagne les champs en devise au JSON et à l'écran seulement ; champs MCP en devise.
+- **Inchangé** — CSV identique octet pour octet et PDF aux mêmes lignes de texte s'il n'y a aucun compte en devise ; accueil, projets, TVA et balance âgée restent en CHF.
+- **Compteurs** : recomptés depuis la source après chaque reprise de `main` (`sitesTotal`, catalogues i18n).
 
 ## Notes de développement
 
@@ -333,3 +341,4 @@ exports, afin de rapprocher mes comptes PayPal ou Wise de leurs relevés et de c
 - 2026-11-15 — validation ciblée des exigences (Opus) : 0 CRITICAL, 0 HIGH, 3 MEDIUM, 4 LOW ; tous remédiés dans la section Exigences, sans exigence ajoutée (7 FR, 7 NFR, total de l'epic inchangé). MEDIUM 37-4-B26-1 : FR-37-4-1 omettait AC-1 bis (bornes d'exercice d'un compte de résultat, rupture) et AC-1 ter (compte listé à CHF 0 et devise ≠ 0) — ajoutés, avec la neutralisation d'une ligne en devise sur un compte CHF. MEDIUM -B26-2 : AC-1 quater (`balances_as_of`, contrat de 37-5 : borne inclusive, KF-002, `Some(&[])`, sans signe) sans aucune exigence — porté par FR-37-4-1. MEDIUM -B26-3 : FR-37-4-7 « le journal est étendu », lu avec FR-37-4-5, étendait le PDF et le CSV du journal, que l'AC-7 garde inchangés ; inventaire hors rapports (dont l'outil MCP `kesh_postes_ouverts`, V13) absent — précisé. LOW -B26-4 : FR-37-4-5 sans les quatre rapports visés ni les règles d'affichage (arrondi, formateurs, `format_exchange_rate`). LOW -B26-5 : FR-37-4-2 sans ouverture/clôture en devise, ligne `revaluation`, `unnatural_balance` en CHF. LOW -B26-6 : NFR-37-4-3 « aucun total en devise » contredisait à la lettre les totaux de section du grand livre (AC-2) — borné aux totaux de rapport. LOW -B26-7 : NFR-37-4-4 et -6 sans `mcp_gardes_lexicales`/`mcp_contrat`, test T3 (ligne SQL sur compte CHF), fixtures du commit de base. Axes exercés : chaque exigence contre l'AC entier cité (AC-1 à AC-9) ; points majeurs non couverts (contrat d'API, gardes, MCP ; l'AC ne porte ni audit, ni RBAC, ni sauvegarde) ; récapitulatif de l'epic. Non exercés : les AC eux-mêmes (hors périmètre), le code.
 - 2026-11-15 — validation ciblée P2 des exigences (Sonnet) : 0 CRITICAL, 0 HIGH, 0 MEDIUM, 2 LOW, remédiés dans la section Exigences, sans exigence ajoutée (7 FR, 7 NFR). LOW 37-4-B26-P2-1 : FR-37-4-5 sans la disposition du PDF de l'AC-5 (seconde ligne en petit du grand livre et de la balance, report en devise, devise entre nom et solde au bilan et au compte de résultat, aucune ligne de total) — ajoutée. LOW -B26-P2-2 : NFR-37-4-6 sans `balances_as_of` dans une transaction ni contrôle `grep` de T3 (AC-8) — ajoutés. Les 14 exigences relues contre l'AC entier cité : justes, aucune ne contredit un AC ni n'invente. Axes exercés : vérité de chaque exigence (AC-1 à AC-9 lus en entier), points majeurs sans exigence (contrat d'API, gardes, MCP, bornes), non-reprise de l'erreur MEDIUM de P1 (journal PDF/CSV inchangés, totaux de section), récapitulatif de l'epic. Non exercés : les AC eux-mêmes, le code.
 - 2026-11-16 — validation CR-7 P1 (Sonnet) : 0 CRITICAL, 0 HIGH, 0 MEDIUM, 0 LOW ; fiche non modifiée. Grep des résidus du mode par exercice (`currency-mode`, `force`, `MULTI_CURRENCY_IN_USE`, `FISCAL_YEAR_HAS_FOREIGN_BALANCES`, `FISCAL_YEAR_FOREIGN_ACCOUNTS_ACTIVE`, `laterFiscalYear`, `monoCurrencyFiscalYear`, désactivation, archivage forcé) : aucun. Les « mono-devise » de la fiche (NFR-2, AC-5, AC-6, non-régression) visent une société sans compte en devise, juste sous CR-7 ; la devise gouvernée par `a.currency` et le verrou de 37-1 AC-4 restent exacts ; aucun verrou de `companies` n'y est invoqué (D-CR7-1 sans effet). Axes exercés : résidus, contradiction avec 37-1 (A34, `multiCurrency` des exercices), 37-3a et 37-5, tests. Non exercés : code.
+- 2026-11-16 — alignement sur les règles de travail à plusieurs (Sonnet) : PDF du manuel non commité, `.tex` seulement (2 remplacements) ; CHANGELOG remplacé par la section *Note de version* (1 remplacement, section ajoutée) ; compteurs « recomptés depuis la source après chaque reprise de `main` » (1 ajout, plus la Note de version). Fond des AC inchangé.

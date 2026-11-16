@@ -286,9 +286,9 @@ Reprises de la fiche d'epic (§ 38-5), complétées là où un AC l'exige.
       contrôlés à l'usage, `:491` — y ajouter le compte d'acquisitions, que 38-6a contrôle à l'usage ; `:219` est le
       texte de l'assistant d'installation, à compléter d'un mot seulement) : le compte d'impôt sur les acquisitions, distinct, et ⚠️ **ce que le rapport TVA ne fait pas** — il tire la TVA
       due des seules factures (`kesh-report/src/vat_report.rs:1-25`, manuel `:3655`) : la TVA séparée par les
-      propositions et l'impôt sur les acquisitions **n'y figurent pas** (C-38-13, *Point TVA pour Guy*). PDF régénéré
-      (`make fr` dans `docs/manual/`) et contrôlé aplati (`pdftotext … | tr '\n' ' ' | tr -s ' '`), les deux phrases
-      grepées.
+      propositions et l'impôt sur les acquisitions **n'y figurent pas** (C-38-13, *Point TVA pour Guy*). **Le `.tex`
+      seul est modifié ; le PDF se régénère à la release** (contrôle local du rendu permis — `make fr`,
+      `pdftotext … | tr '\n' ' ' | tr -s ' '`, les deux phrases grepées —, PDF non commité).
 
 ## Tâches
 
@@ -301,11 +301,23 @@ Reprises de la fiche d'epic (§ 38-5), complétées là où un AC l'exige.
 - [ ] `kesh-api` : DTO et validation des comptes, `DEFAULT_VAT_INVALID` dans `errors.rs` (AC-4) ; réglages de
       facturation (AC-6) ; export CSV (AC-9).
 - [ ] Frontend : miroir TS et Vitest sur la fixture (AC-2) ; écrans (AC-8) ; i18n (AC-10) ; captures.
-- [ ] Manuel utilisateur et PDF (AC-10).
+- [ ] Manuel utilisateur, `.tex` seul (AC-10).
 - [ ] Gate complet (base remise à zéro avant), `scripts/gate-ci.sh` au dernier commit de code, frontend complet,
       E2E complet au dernier commit de code (les specs du plan comptable et des réglages de facturation doivent rester
       vertes ; une spec neuve du champ « TVA par défaut » — créer un compte de produit à `sale` 8.1 %, relire —, la
       valeur traversant la frontière HTTP).
+
+## Note de version
+
+*(Texte prêt à assembler au `CHANGELOG.md` à la release.)*
+
+- **Ajouté** : un taux de TVA par défaut sur le compte, repris par les propositions des prestataires de paiement ;
+  le compte d'impôt sur les acquisitions, distinct. **À savoir** : le rapport TVA ne tire la TVA due que des
+  factures ; la TVA séparée par les propositions et l'impôt sur les acquisitions n'y figurent pas. Migration non
+  breaking, mais le retour à la version précédente passe par la sauvegarde d'avant la mise à jour.
+
+**Compteurs** (audit des migrations — total aux deux sites et partition —, schéma de test, sites `NewAccount {`,
+clés i18n, `Cargo.lock`) : recomptés depuis la source après chaque reprise de `main`.
 
 ## Notes de développement
 
@@ -357,3 +369,5 @@ Reprises de la fiche d'epic (§ 38-5), complétées là où un AC l'exige.
   38-5-I18N-1 AC-10 : les écrans de l'AC-8 sont des pages de `routes/(app)/`, hors du balayage du linter ; l'AC
   présentait `accounts-` comme imposé — précisé : préfixe d'usage (39 et 36 clés au catalogue), contraignant seulement
   sous `features/`. `:16` et `:177-186` relus, justes. Aucun inter-fiches.
+- 2026-11-16 — alignement sur les règles de travail à plusieurs (Sonnet) : PDF du manuel non commité (`.tex` seul,
+  régénération à la release) ; section *Note de version* ajoutée ; compteurs « recomptés après chaque reprise de `main` ».

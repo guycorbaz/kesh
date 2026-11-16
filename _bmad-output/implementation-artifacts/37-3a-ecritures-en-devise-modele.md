@@ -47,7 +47,7 @@ chacune (R7), l'écart de change dans la seconde, afin que mes comptes en devise
 - FR-37-3a-6 — `POST`/`PUT /journal-entries` prennent `foreign { currency?, amount, rate?, chf?, rateSource?, side? }` ; l'API complète la ligne sans calcul du client (cours déduit du CHF, CHF posé selon `side`) ; `revaluation` y est refusé (400) ; les réponses portent `foreign` (devise lue sur le compte), omis pour une ligne CHF ; une ligne CHF sans `debit`/`credit` rend 400 et non plus 422 (changement écrit au CHANGELOG) ; un statut fixé par code, messages dans les quatre locales (AC-6).
 - FR-37-3a-7 — Le `PUT` et la contre-passation traitent les lignes en devise ; changer le compte d'une ligne la juge sur le nouveau compte ; un `PUT` qui ne change que les champs en devise écrit, change la `version` et audite (`is_no_op_change`) ; la contre-passation recopie les trois colonnes, exemptée de `FX_RATE_NOT_AFC` et de la règle d'une devise, non de `MULTI_CURRENCY_DISABLED` (AC-2, AC-7).
 - FR-37-3a-8 — CSV des trois colonnes (aucune colonne de devise), audit (`foreign`) et MCP (`kesh_ecritures`, `kesh_ecriture` : champs présents à `null` sur une ligne CHF, page recalculée sous `MCP_ENVOI_OCTETS_MAX`) portent les champs en devise (AC-8).
-- FR-37-3a-9 — La limite du lettrage en devise est écrite au CHANGELOG et renvoyée au registre (C-37-8) pour une issue à l'ouverture de la PR (AC-9).
+- FR-37-3a-9 — La limite du lettrage en devise est écrite à la Note de version de la fiche et renvoyée au registre (C-37-8) pour une issue à l'ouverture de la PR (AC-9).
 - FR-37-3a-11 — Une ligne sans `rateSource` est qualifiée `afc` ou `manual` par le dépôt (jamais `RATE_UNAVAILABLE`) ; une ligne au cours déduit prend le cours `afc` retenu s'il redonne son CHF (A32), que la ligne ne porte pas de `rateSource` ou porte `afc` (sinon `FX_RATE_NOT_AFC` ou `RATE_UNAVAILABLE`, comme toute ligne `afc`) ; au `PUT`, date inchangée, une ligne identique à une ligne d'avant garde sa provenance, avant `is_no_op_change` (AC-2, AC-4, 4).
 - FR-37-3a-13 — Une écriture portant une ligne `revaluation` n'est pas modifiable : `PUT` → 409 `ENTRY_IS_FX_REVALUATION`, motif `modificationBlockedBy` du détail ; sa suppression reste permise (AC-7).
 - *(FR-37-3a-10 — garde de l'exercice antérieur — et FR-37-3a-12 — bascule refusée sur solde en devise — retirées par
@@ -515,7 +515,7 @@ chacune (R7), l'écart de change dans la seconde, afin que mes comptes en devise
      `FX_VALUE_OUT_OF_RANGE`) — et le contrôle actuel s'applique (`FX_AMOUNT_MISMATCH`). Une ligne **CHF** (sans `foreign`)
      exige toujours `debit` et `credit` (400 `Validation` sinon) ; ⚠️ les deux champs deviennent `Option<String>`
      (`#[serde(default)]`) : un corps sans `debit` rendait 422 (champ manquant d'axum), il rend désormais 400
-     `Validation` — changement de statut écrit au CHANGELOG et au guide d'API (37-3b AC-6), tests existants adaptés
+     `Validation` — changement de statut écrit à la Note de version et au guide d'API (37-3b AC-6), tests existants adaptés
      (inventaire au Change Log) ;
    - **`rateSource` absent (V1)** : `source` à `None` (AC-2), qualifié `afc` ou `manual` par le dépôt (AC-4, 4,
      A30 compris) ; la réponse porte la provenance retenue ;
@@ -624,7 +624,7 @@ chacune (R7), l'écart de change dans la seconde, afin que mes comptes en devise
      4 identiques après l'aller-retour. Le CSV de `csv_tables.rs` ci-dessus est l'**export utilisateur**, pas la
      sauvegarde.
 9. **AC-9 — Limite écrite : le lettrage.** Le lettrage manuel sur un compte en devise ne raisonne qu'en CHF : un
-   débiteur USD soldé en USD avec un écart de change ne se lettre pas. Limite assumée, écrite au CHANGELOG, renvoyée au
+   débiteur USD soldé en USD avec un écart de change ne se lettre pas. Limite assumée, écrite à la Note de version, renvoyée au
    registre (C-37-8) pour une issue à l'ouverture de la PR.
 ## Tâches
 
@@ -769,9 +769,18 @@ chacune (R7), l'écart de change dans la seconde, afin que mes comptes en devise
       `AccountResponse` puis `CompanyJson`) et réévaluation des livres importés par la route de 37-5 ; test d'API : une
       ligne `rateSource: "revaluation"` reste refusée 400 (déjà listé) et le corps d'une réévaluation des livres
       d'origine en `manual` (montant en devise 0, CHF non nul) → 400 `FX_VALUE_OUT_OF_RANGE` (AC-3, étape 2).
-- [ ] CHANGELOG, avec la limite du lettrage (AC-9) et les changements de contrat de l'API de CR-6 (`rate`, `chf`,
+- [ ] Section *Note de version* de la fiche (pas d'écriture au `CHANGELOG.md`), avec la limite du lettrage (AC-9) et les changements de contrat de l'API de CR-6 (`rate`, `chf`,
       `side`, `rateSource`, `debit`/`credit` facultatifs ; ligne CHF sans `debit` : 422 → 400) (le manuel et l'E2E vont à
       37-3b).
+
+## Note de version
+
+*(Texte prêt à assembler au `CHANGELOG.md` à la release ; la fiche n'écrit jamais au `CHANGELOG.md`.)*
+
+- **Added** — `POST`/`PUT /journal-entries` prennent `foreign { currency?, amount, rate?, chf?, rateSource?, side? }` : l'API complète la ligne en devise sans calcul du client.
+- **Changed (contrat de l'API)** — `rate`, `chf`, `side`, `rateSource`, `debit`/`credit` facultatifs ; une ligne CHF sans `debit` rend 400 au lieu de 422 ; changement de statut de `Validation` (voir AC-5, guide d'API en 37-3b).
+- **Limite connue** — le lettrage manuel d'un compte en devise ne raisonne qu'en CHF : un débiteur USD soldé en USD avec un écart de change ne se lettre pas (issue ouverte à la PR, C-37-8).
+- **Compteurs** : recomptés depuis la source après chaque reprise de `main` (`LIB_ROUTES`, partitions du registre, `sitesTotal`, catalogues i18n).
 
 ## Notes de développement
 
@@ -1154,3 +1163,4 @@ chacune (R7), l'écart de change dans la seconde, afin que mes comptes en devise
   refus et son test, limite retirée de la Révision CR-7 et de l'AC-10 — autre agent) ; 37-3b (AC-2 bis, montée S → X
   de la route de conversion, P2 de 37-3b).
 - 2026-11-16 — validation CR-7 P3 ciblée (Sonnet) : 0 finding. D-CR7-2 cité aux lignes d'en-tête, AC-4 2 et 2 bis, vrai au code et cohérent avec 37-1 (garde, code 400, préfixe mono-devise) ; phrase de la limite assumée retirée (grep : aucun résidu hors Change Logs datés ; « limite assumée » de NFR-3 = cours de la société lu sans verrou, sans rapport). Axes exercés : diff P2, AC-4 2/2 bis, résidus. Non exercés : reste de la fiche. Décompte : inchangé.
+- 2026-11-16 — alignement sur les règles de travail à plusieurs (Sonnet) : CHANGELOG remplacé par la section *Note de version* (4 remplacements, section ajoutée) ; aucun PDF cité ; compteurs « recomptés depuis la source après chaque reprise de `main` » (1 ajout, dans la Note de version). Fond des AC inchangé.

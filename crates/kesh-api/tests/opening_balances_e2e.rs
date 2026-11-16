@@ -211,6 +211,8 @@ async fn create_acc(
             parent_id: None,
             role,
             postable: true,
+            currency: None,
+            own_fx_accounts: None,
         },
     )
     .await
@@ -788,6 +790,8 @@ async fn create_non_postable_acc(
             parent_id: None,
             role: None,
             postable: false,
+            currency: None,
+            own_fx_accounts: None,
         },
     )
     .await

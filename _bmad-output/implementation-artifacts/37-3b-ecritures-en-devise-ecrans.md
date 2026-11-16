@@ -47,7 +47,7 @@ devise au cours d'ouverture choisi pour l'exercice (R6), afin de tenir mes livre
 - FR-37-3b-6 — Cours proposé et provenance : le formulaire préremplit le cours retenu par la société pour le mois de la date (`lookup`, repli unique `POST /exchange-rates/fetch` sur `404 RATE_UNAVAILABLE`, pour les rôles Comptable et Administrateur et un mois à la portée du `fetch` ; sinon saisie manuelle), le repropose au changement de date pour les seules lignes proposées, envoie `afc` seulement si le cours égale le cours `afc` du mois, `manual` sinon, conserve la provenance relue d'une ligne non retouchée ; le cours d'ouverture proposé est le cours de clôture de l'exercice précédent (veille de l'ouverture, ou dernier mois de l'exercice précédent selon le genre) ; un complément daté `TODAY` propose le cours mensuel du mois de sa date, et la date recalculée par le serveur d'un autre mois ne fait pas refuser le `POST` (cours saisi, `manual`) ; quand le cours retenu par la société pour le mois de la date diffère de celui de la ligne, il s'affiche sous le champ avec ↑, qui remet la ligne à ce cours sans jamais toucher la table des cours ; les refus `FX_RATE_NOT_AFC` offrent « Reprendre le cours attendu » / « Garder mon cours », cette seule seconde action quand `expectedRate` est `null` (AC-1, AC-2).
 - FR-37-3b-7 — L'assistant TVA achat passe en devise quand la charge ou la contrepartie est un compte en devise : TVA calculée en devise, ligne d'impôt préalable en CHF au même cours, écart d'arrondi éventuel soldé par le bouton d'écart ; charge et contrepartie dans deux devises différentes, ou ligne CHF dérivée arrondie à 0.00, désactivent l'insertion avec le motif ; règle d'arrondi écrite au guide d'API pour un client (AC-2).
 - FR-37-3b-8 — Route `POST /api/v1/journal-entries/conversions` : deux écritures dans une transaction, tout ou rien, chacune soumise à tous les contrôles de `POST /journal-entries` ; compte de conversion revalidé (`FX_ACCOUNT_INVALID`) et soldé (`FX_CONVERSION_TRANSIT_UNBALANCED`) ; ligne de différence calculée par le serveur **sur demande seulement** (`completeDifference`, A31) sur l'écriture qui rend le compte de conversion à 0 (compte de conversion au crédit net, un seul compte en devise hors comptes de charge, au débit net, plus d'éventuels frais au débit de comptes de charge de la même devise, comptés avant la différence — A33 ; frais au crédit → 400 `Validation`, compte d'une autre devise → `FX_MULTIPLE_CURRENCIES` ; déséquilibrée sous une autre forme, elle rend `ENTRY_UNBALANCED`, jamais complétée), sur la paire `fxAccountsFor` revalidée sous verrou à l'usage seulement (`FX_ACCOUNT_INVALID`) ; une ligne de différence portée par le corps est contrôlée sur la paire résolue, avec ou sans le champ ; 400 `Validation` pour `entries` de longueur ≠ 2, une ligne portée hors de la paire ou sans compte en devise unique hors comptes de charge, `completeDifference` avec une ligne déjà portée, « trop de lignes » ; refus d'une écriture portant `details.entry` (1 ou 2 ; `FX_ACCOUNT_INVALID` et `FX_CONVERSION_TRANSIT_UNBALANCED`, qui visent la conversion entière, n'en portent pas), une seule raison dans l'ordre écrit (contrôles par écriture avant la transaction, puis sous les verrous `companies` → compte de conversion : `FX_ACCOUNT_INVALID` du compte de conversion, transit, équilibre de l'autre écriture, forme et paire de l'écriture à compléter, puis les deux créations dans l'ordre chronologique), rien de créé ; réponse 201 `{ entries }` dans l'ordre du corps ; mêmes rôles que `POST /journal-entries`, audit `journal_entry.created` ×2, route inscrite `Traced, Rejouee` (AC-2 bis).
-- FR-37-3b-9 — Contrat des routes d'ouverture : à la génération, une ligne CHF dont `debit` ou `credit` est absent rend 400 et non plus 422 (au complément, une colonne absente vaut toujours 0) (CHANGELOG, guide d'API) ; `rateSource: "revaluation"` rend 400, non le 422 d'axum, sur les deux routes ; chaque refus FX du complément rend son code en 400, contrôlé avant la transaction, jamais un 500 (AC-1).
+- FR-37-3b-9 — Contrat des routes d'ouverture : à la génération, une ligne CHF dont `debit` ou `credit` est absent rend 400 et non plus 422 (au complément, une colonne absente vaut toujours 0) (Note de version, guide d'API) ; `rateSource: "revaluation"` rend 400, non le 422 d'axum, sur les deux routes ; chaque refus FX du complément rend son code en 400, contrôlé avant la transaction, jamais un 500 (AC-1).
 - FR-37-3b-10 — Les refus du serveur propres aux devises (`RATE_UNAVAILABLE`, `FX_RATE_NOT_AFC`, `FX_AMOUNT_MISMATCH`, `FX_CURRENCY_MISMATCH`, `FX_ACCOUNT_IN_CHF`, `ACCOUNT_REQUIRES_CURRENCY`, `MULTI_CURRENCY_DISABLED` (exercice mono-devise, `details.fiscalYearId`), `FX_MULTIPLE_CURRENCIES`, et, pour l'assistant, `FX_ACCOUNT_INVALID` et le code neuf `FX_CONVERSION_TRANSIT_UNBALANCED`) s'affichent traduits (quatre locales), saisie conservée, au formulaire, aux deux grilles d'ouverture et dans l'assistant *Conversion* — ceux qui portent `details.line` (de même `FX_VALUE_OUT_OF_RANGE`, `FX_LINE_ROUNDS_TO_ZERO`) sur la ligne fautive, retrouvée par le rang 1-based dans le corps envoyé, qui omet les lignes vides ; dans l'assistant, sur la colonne de `details.entry` par la table qui a construit le corps, et au-dessus de l'aperçu sans `details.entry` ; en édition, ils laissent le formulaire ouvert (`stay`), `ENTRY_IS_FX_REVALUATION` recharge la fiche (`stale`) ; `RATE_UNAVAILABLE` propose « Récupérer le mois » puis le renvoi, ou le passage en `manual` (AC-1, AC-2, AC-2 bis).
 
 **Non fonctionnelles**
@@ -56,7 +56,7 @@ devise au cours d'ouverture choisi pour l'exercice (R6), afin de tenir mes livre
 - NFR-37-3b-2 — Motifs de blocage dans les quatre locales, test des codes à jour (AC-3).
 - NFR-37-3b-3 — Inventaire clos des sélecteurs au Change Log, tenu par une garde Vitest qui lit le source (AC-4).
 - NFR-37-3b-4 — E2E sans réseau : cours servis par la source factice du mode test ; refus d'une écriture à deux devises vérifié par l'API (AC-5).
-- NFR-37-3b-5 — Manuel utilisateur (quatre locales, PDF contrôlé, garde G4-bis des numéros de compte) et guide d'API (`docs/api-external.md`) à jour (AC-6).
+- NFR-37-3b-5 — Manuel utilisateur (quatre locales, `.tex` seulement — PDF non commité, régénéré à la release, rendu contrôlable en local —, garde G4-bis des numéros de compte) et guide d'API (`docs/api-external.md`) à jour (AC-6).
 - NFR-37-3b-6 — Calculs de l'écran jumeaux de ceux du serveur : `computeChf` et `rateFromChf` (`big.js`, arrondi loin de zéro explicite) tenus égaux par les fixtures partagées de 37-3a, mêmes bornes et mêmes codes d'erreur ; la date du cours d'ouverture par une fonction pure TS, dont le Vitest lit la fixture `fx_opening_dates.json` de 37-2 (aucune copie), et `lineVatAmount` jumeau de `line_vat_amount` (AC-1, AC-2).
 
 ## Critères d'acceptation
@@ -79,7 +79,7 @@ devise au cours d'ouverture choisi pour l'exercice (R6), afin de tenir mes livre
      `foreign.side` (`OpeningBalanceLineRequest.debit`/`credit` passent en `Option<String>`, comme ceux du complément,
      `routes/opening_balances.rs:75-76` contre `:173`, `:175`). **Ligne CHF (sans `foreign`)** : à la génération, une colonne
      absente rend 400 `Validation` (« débit invalide » / « crédit invalide », le refus d'une chaîne vide aujourd'hui, `:362-368`) — jamais
-     un 422 d'axum, qui était le statut d'un champ manquant (changement écrit au CHANGELOG et au guide d'API, tests
+     un 422 d'axum, qui était le statut d'un champ manquant (changement écrit à la Note de version et au guide d'API, tests
      existants de la route adaptés, inventaire au Change Log) ; au complément, une colonne absente vaut 0, comme aujourd'hui
      (`parse_complement_amount(None)`), sans changement ; la route ne calcule rien d'autre. `rateSource`
      `revaluation` refusé ; l'écran envoie toujours `manual` (cf. *Cours proposé*) ; l'API admet `afc`, alors contrôlé
@@ -674,7 +674,7 @@ devise au cours d'ouverture choisi pour l'exercice (R6), afin de tenir mes livre
    est celui des deux créations (`journal_entry.created` ×2), les libellés se renvoient (« (1/2) », « (2/2) »).
    Registre des routes : `LIB_ROUTES` +1, `Traced, Rejouee` (elle écrit au journal comptable ; enveloppe exigée par
    `every_replayed_route_calls_an_envelope`) — **+1 route, +1 tracée, total +1, `rejouees` +1, `tout.len()` +1**, en
-   deltas cumulés avec 37-1, 37-2 et 37-5 ; l'assertion `examinees` de `every_replayed_route_calls_an_envelope`
+   deltas cumulés avec 37-1, 37-2 et 37-5 (recomptés depuis la source après chaque reprise de `main`) ; l'assertion `examinees` de `every_replayed_route_calls_an_envelope`
    (`audit_route_registry.rs:1325`, 27) prend +1, chiffre et toutes lettres (alignement de l'orchestrateur sur
    37-5-CR2-P2-IF2) ; phrase du manuel d'administration recomptée.
    **Tests** : dépôt et API — conversion sans frais (gain), avec frais aux deux écritures (perte), différence nulle
@@ -824,7 +824,7 @@ devise au cours d'ouverture choisi pour l'exercice (R6), afin de tenir mes livre
    exercice clos avant l'activation : aucun compte en devise n'y est utilisable, même rouvert (CR-7), soldes d'ouverture en devise (« solde repris au cours de clôture » : cours journalier de
    la veille de l'ouverture, ou cours mensuel du dernier mois de l'exercice précédent, selon le choix de l'exercice,
    R6 et T4 : le cours d'ouverture est le cours de clôture précédent) ; i18n quatre
-   locales ; PDF contrôlé. ⚠️ **Garde G4-bis**
+   locales (catalogues : bloc propre à l'epic, compteurs `sitesTotal` recomptés depuis la source après chaque reprise de `main`) ; `.tex` seulement, PDF non commité (régénéré à la release). ⚠️ **Garde G4-bis**
    (`crates/kesh-api/tests/textes_coherents.rs`) : tout numéro de compte cité dans le manuel, le guide de démarrage ou
    un catalogue i18n doit exister dans l'un des trois plans livrés, sous son nom — or ni 1090, ni 1021, ni 1022, ni
    6840 n'y figurent (la maquette de l'AC-2 bis est une illustration de la fiche, pas un texte à recopier) : les exemples du
@@ -861,7 +861,7 @@ devise au cours d'ouverture choisi pour l'exercice (R6), afin de tenir mes livre
 - [ ] `fx.ts` (calcul CHF, cours depuis CHF), formulaire, `balance.ts`, `form-helpers.ts`, détail, liste, Vitest sur la
       fixture partagée (AC-2, AC-3).
 - [ ] Sélecteurs, prédicat commun, garde d'inventaire (AC-4).
-- [ ] E2E, captures, manuel, i18n, CHANGELOG (AC-5, AC-6).
+- [ ] E2E, captures, manuel (`.tex` seulement), i18n, section *Note de version* de la fiche (AC-5, AC-6).
 - [ ] CR-3 : ligne d'écart et assistant *Conversion* sur les comptes de différence du compte en devise (S2,
       `fxAccountsFor`) ; assistant TVA achat en devise (S5 : `vat-purchase.ts`, `chfFromForeign`, ligne CHF à zéro,
       changement de date) ; `FX_RATE_NOT_AFC` après la reprise par ↑ d'un cours corrigé (ex-« adoption », U1), pour
@@ -899,6 +899,14 @@ devise au cours d'ouverture choisi pour l'exercice (R6), afin de tenir mes livre
       exercice mono-devise affiché à l'ouverture et au formulaire (AC-1, AC-2, CR-7) ; bouton d'écart qui ajoute une ligne (R8) ; une devise par écriture au formulaire
       (R7) ; assistant *Conversion* — route `POST /journal-entries/conversions`, code `FX_CONVERSION_TRANSIT_UNBALANCED`,
       registre des routes (+1), écran et maquette (AC-2 bis).
+
+## Note de version
+
+*(Texte prêt à assembler au `CHANGELOG.md` à la release ; la fiche n'écrit jamais au `CHANGELOG.md`.)*
+
+- **Changed (contrat de l'API)** — routes d'ouverture : à la génération, une ligne CHF dont `debit` ou `credit` est absent rend 400 `Validation` au lieu de 422 ; `rateSource: "revaluation"` rend 400 sur les deux routes (guide d'API `docs/api-external.md` à jour).
+- **Added** — écrans de saisie en devise, assistant *Conversion*, ligne d'écart sur les comptes de différence de change.
+- **Compteurs** : recomptés depuis la source après chaque reprise de `main` (`LIB_ROUTES`, partitions, `sitesTotal`, catalogues i18n).
 
 ## Notes de développement
 
@@ -1293,3 +1301,4 @@ devise au cours d'ouverture choisi pour l'exercice (R6), afin de tenir mes livre
   restant propre à la réversibilité trouvé). Non exercés : AC-3 à AC-6 hors grep, calculs de l'assistant TVA et de la
   conversion, i18n, E2E, compilation. Inter-fiches : 37-3a (CR7-P2, D-CR7-2 cité) ; aucun autre.
 - 2026-11-16 — validation CR-7 P3 ciblée (Sonnet) : 0 CRITICAL, 0 HIGH, 0 MEDIUM, 0 LOW ; aucune modification. Vérifié au code : `journal_entries.rs:308` (`validate_taggable_in_tx` sous `enforce_project_taggable`) → `projects.rs:101` (`acquire_company_sentinel_lock`) → `bank_accounts.rs:1729` (`companies` `FOR UPDATE`) : cycle S → X de la conversion avec projet exact, défendu par le rejeu (`Rejouee`) ; fixtures par les routes (création, clôture, activation, réouverture) cohérentes avec 37-1 (exercice clos à l'activation, mono-devise même rouvert). Résidus du modèle réversible : aucun hors Change Logs datés. Non exercés : reste de la fiche hors diff, compilation, rendu. Inter-fiches : 37-5 (CR7-P3-1, renvoi au cas de l'AC-2 bis).
+- 2026-11-16 — alignement sur les règles de travail à plusieurs (Sonnet) : PDF du manuel non commité, `.tex` seulement (2 remplacements) ; CHANGELOG remplacé par la section *Note de version* (4 remplacements, section ajoutée) ; compteurs « recomptés depuis la source après chaque reprise de `main` » (3 ajouts). Fond des AC inchangé.

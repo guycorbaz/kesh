@@ -202,6 +202,8 @@ async fn seed_fiscal_year_and_accounts(
             parent_id: None,
             role: None,
             postable: true,
+            currency: None,
+            own_fx_accounts: None,
         },
     )
     .await
@@ -219,6 +221,8 @@ async fn seed_fiscal_year_and_accounts(
             parent_id: None,
             role: None,
             postable: true,
+            currency: None,
+            own_fx_accounts: None,
         },
     )
     .await

@@ -39,7 +39,7 @@ rapproché.
   import « téléchargé de … » se lit comme tel et ne se supprime pas, un compte prestataire n'est offert ni à l'import
   de fichier ni au lot de paiement → AC-15.
 - `NFR-38-9a-1` — Aucun secret dans le DOM ni les réponses lues par l'écran → AC-3, AC-12.
-- `NFR-38-9a-2` — Textes aux quatre locales ; manuel d'administration et PDF à jour (sauvegarde d'avant la mise à
+- `NFR-38-9a-2` — Textes aux quatre locales ; manuel d'administration à jour, `.tex` seul (sauvegarde d'avant la mise à
   jour, `KESH_SECRETS_KEY`) → AC-10, AC-11.
 - `NFR-38-9a-3` — Captures d'écran de chaque état touché → AC-13.
 - `NFR-38-9a-4` *(ajoutée)* — Textes qui disent « télécharger », « proposer », jamais « comptabiliser
@@ -366,7 +366,7 @@ rapproché.
       (`BANK_IMPORT_PROVIDER_ACCOUNT`), n'est pas offert au lot de paiement (`PAYMENT_BATCH_ACCOUNT_IS_PROVIDER`) ;
       un import « téléchargé de … » ne se supprime pas (`PROVIDER_IMPORT_NOT_DELETABLE`) ; les champs interdits du
       formulaire du compte (AC-9). Les sections de réconciliation des comptes prestataires sont à 38-9b (AC-10), qui
-      renvoie à celle-ci ; PDF du manuel utilisateur régénéré et contrôlé aplati avec celui de l'administration.
+      renvoie à celle-ci ; manuel utilisateur : `.tex` seul, comme celui de l'administration (PDF non commité).
     - **Mise à jour** (E19, NFR-38-2-3 et 38-2 AC-1 — la migration breaking, O1) : sous-section `\subsubsection{Passer à la <X.Y.Z>}` dans
       `\section{Mise à jour de Kesh}` (patron de `\subsubsection{Passer à la 0.17.6}`, ligne 2538), **numéro de Q1**
       (Guy) : **sauvegarde manuelle complète obligatoire avant la mise à jour** (base, `.keshbackup`, dossier des
@@ -378,9 +378,10 @@ rapproché.
       variable neuve `KESH_SECRETS_KEY` (renvoi). Le texte **ne contient pas** de numéro de version tant que Q1 n'est pas
       tranchée : la sous-section s'écrit au développement si le numéro est connu, sinon la story attend (aucun
       gabarit `<…>` dans le `.tex`).
-    - PDF régénéré (`make fr` dans `docs/manual/`) et commité ; contrôle du **PDF aplati** (`pdftotext admin-manual.pdf -
-      | tr '\n' ' ' | tr -s ' '`) pour les phrases clés (« Transaction Search », « ressaisir », « seul chemin de
-      retour »), résultat au Change Log. Manuels DE/IT/EN : « à traduire » noté si l'écart existe.
+    - **Le `.tex` seul est modifié ; le PDF se régénère à la release** (jamais commité dans la branche). Contrôle local
+      permis du rendu (`make fr` dans `docs/manual/`, PDF **aplati** : `pdftotext admin-manual.pdf - | tr '\n' ' ' |
+      tr -s ' '`) pour les phrases clés (« Transaction Search », « ressaisir », « seul chemin de retour »), résultat
+      au Change Log. Manuels DE/IT/EN : « à traduire » noté si l'écart existe.
 12. **AC-12 — Tests** (Vitest, `npm run test:unit` ; E2E Playwright).
     - Vitest : formulaire de connexion (validation, `earliest`, surcharges, `overlapDays` et son refus `out_of_range`,
       refus `details`, `providerSettingsBody` sans `payerId` et avec les trois champs, version adoptée après le test),
@@ -484,8 +485,22 @@ rapproché.
 - [ ] Écrans existants : imports « Téléchargé de », suppression masquée, sélecteurs d'import et de lot de paiement
       (AC-15).
 - [ ] i18n quatre locales (AC-10).
-- [ ] Manuel d'administration, PDF, contrôle du PDF aplati (AC-11).
+- [ ] Manuel d'administration (`.tex` seul), contrôle local du rendu aplati (AC-11).
 - [ ] Vitest, test Rust, E2E (AC-12) ; captures (AC-13).
+
+## Note de version
+
+*(Texte prêt à assembler au `CHANGELOG.md` à la release ; **le texte de mise à jour porte l'avertissement de la
+release** : sauvegarde complète avant la mise à jour — base, `.keshbackup`, dossier des documents —, migration
+breaking de 38-2, version minimale relevée, refus de la version précédente sur la base migrée, **retour uniquement par
+la sauvegarde d'avant la mise à jour**.)*
+
+- **Ajouté** : les écrans des connexions aux prestataires de paiement (PayPal) et de leurs comptes, le bouton
+  *Télécharger maintenant*, le contrôle de complétude des soldes ; au manuel d'administration, la sous-section de
+  mise à jour et la variable `KESH_SECRETS_KEY`.
+
+**Compteurs** (clés i18n, `sitesTotal`, registres des routes et des écrans, `Cargo.lock`) : recomptés depuis la source
+après chaque reprise de `main`.
 
 ## Dev Notes
 
@@ -653,3 +668,5 @@ rapproché.
   `nav-administration` (liste `adminOnly`, `+layout.svelte:147`) — corrigé. `nav-admin-providers` suit `nav-admin-backup`,
   `nav-admin-mcp` (liste `adminOnly`). Inter-fiches : 40-6 (lecture seule) cite encore `nav-providers` (Questions
   ouvertes, « Inter-fiches 38-9a (P2-3) », et `:185-187`) ; 38-9b, 38-6a, 38-6b : aucun renvoi faux.
+- 2026-11-16 — alignement sur les règles de travail à plusieurs (Sonnet) : PDF des manuels non commité (`.tex` seul,
+  régénération à la release) ; section *Note de version* ajoutée ; compteurs « recomptés après chaque reprise de `main` ».

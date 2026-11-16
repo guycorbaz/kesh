@@ -2,6 +2,9 @@
 
 Status: ready-for-dev
 
+> **À revoir après la fusion de l'Epic 36** : Guy construit #823 (36-6, une transaction rattachée à plusieurs
+> écritures) ; réutiliser son mécanisme plutôt que doubler la table `bank_transaction_extra_entries`.
+
 *Fiche née le 2026-11-15 du découpage de 38-6c (D-P2-3, `38-p2-inter-fiches.md`) : elle en porte les AC-12 à AC-15,
 renumérotés **AC-1 à AC-4** (AC-12 → AC-1, AC-13 → AC-2, AC-14 → AC-3, AC-15 → AC-4), et la migration de l'ancien
 AC-9 (dans l'AC-1). Historique, rédaction, validations P1 et P2 : `38-6c-rattachement-en-lot-et-api.md` (`split`).
@@ -272,6 +275,18 @@ Reprises de 38-6c (B28), renumérotées au découpage (`FR-38-6c-8..10` → `FR-
       `scripts/gate-ci.sh` au dernier commit de code ; frontend non touché (gate frontend au push) ; E2E complet au
       dernier commit de code ; recette de montée (`scripts/recette-montee.sh`) avec la table neuve.
 
+## Note de version
+
+*(Texte prêt à assembler au `CHANGELOG.md` à la release.)*
+
+- **Ajouté** : une transaction d'un prestataire de paiement se rattache à plusieurs écritures (vente au brut et frais
+  passés à part), Kesh suggère la paire, et l'annulation défait le groupe entier ; aucune écriture n'est créée ni
+  doublée. Migration non breaking, mais le retour à la version précédente passe par la sauvegarde d'avant la mise à
+  jour.
+
+**Compteurs** (audit des migrations — total aux deux sites et partition —, schéma de test, `LIB_ROUTES`, sites
+`matched_entry_id`, `data_count`, `Cargo.lock`) : recomptés depuis la source après chaque reprise de `main`.
+
 ## Notes de développement
 
 - **L'invariant le plus cher** reste celui de 38-6c1 : **une seule règle** (C-v017-3-7). Le groupe et la paire se
@@ -321,3 +336,6 @@ Reprises de 38-6c (B28), renumérotées au découpage (`FR-38-6c-8..10` → `FR-
   le préfixe « chemins sous `kesh-db/src/repositories/` » rendait (g) faux → `crates/kesh-api/src/exports/csv_tables.rs`.
   P4-2 (LOW, hors remédiation) l'inventaire disait 38-6a et 38-6b « développées avant » 38-6c2, contre D-P2-3 → corrigé.
   Aucun finding inter-fiches.
+- 2026-11-16 — alignement sur les règles de travail à plusieurs (Sonnet) : en tête, renvoi à revoir après la fusion de
+  l'Epic 36 (#823, 36-6) ; section *Note de version* ajoutée ; compteurs « recomptés après chaque reprise de `main` ».
+  Aucun PDF ni CHANGELOG commité dans cette fiche.
