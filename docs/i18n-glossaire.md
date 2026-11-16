@@ -102,7 +102,7 @@ passage des rollouts qui touchent ces domaines, pas ici.
 | **émis(e)** | **ausgestellt** | **emesso / emessa** | **issued** | `credit-note-revenue-account-archived` (story 23-3b) — ⚠️ **relevé pour l'ALLEMAND SEUL** : la clé porte bien `ausgestellt` en participe (tournure passive), mais l'italien et l'anglais y sont à l'**infinitif** (`emettere`, `issue`), de même que le français (`émettre`). **`emesso`/`emessa`/`issued`/`Émis` sont donc DÉRIVÉS.** ⚠️ **Ne pas confondre avec *validé***, qui désigne l'acte d'immuabilité d'une facture : émettre un avoir et valider une facture sont deux actes distincts, dont un seul est irréversible |
 | **lot (de paiement)** | **Stapel** | **lotto** | **batch** | `reminders-batch-cap` (story 23-4). ⚠️ **Employé et FIGÉ au catalogue par la 23-3b sans être promu** — `Bereits in einem erstellten Stapel` : exactement le défaut que ce glossaire documente sur lui-même, resté ouvert une story entière |
 | **NPA** | **PLZ** | **NPA** | **Postal code** | `field-postal-code` (story 23-4). ⚠️ Terme suisse ; l'italien de Suisse garde `NPA`, l'allemand dit `PLZ` |
-| **projet parent** | **übergeordnetes Projekt** | **progetto superiore** | **parent project** | `account-field-parent` — « Compte parent / Übergeordnetes Konto / Conto superiore ». ⚠️ **L'idiome n'est PAS un calque** : jamais *Eltern-Konto*. ⚠️ **Le catalogue porte DEUX formes en italien** (`conto superiore` et `conto padre`) ; `superiore` est retenu, la divergence est relevée. ⚠️ **`projet racine` (`Stammprojekt` / `progetto radice`) n'est attesté NULLE PART** — il relève de la partie B, pas d'ici |
+| **compte analytique parent** | **übergeordnetes analytisches Konto** | **conto analitico superiore** | **parent analytical account** | `projects-field-parent` (Story 36-15, arbitrage de Guy du 2026-11-16, CR #1161 — la ligne disait « projet parent / übergeordnetes Projekt / progetto superiore / parent project » jusque-là) ; l'idiome suit `account-field-parent` — « Compte parent / Übergeordnetes Konto / Conto superiore ». ⚠️ **L'idiome n'est PAS un calque** : jamais *Eltern-Konto*. ⚠️ **Le catalogue porte DEUX formes en italien** (`conto superiore` et `conto padre`) ; `superiore` est retenu, la divergence est relevée. **Racine** : `projects-parent-none` porte depuis la 36-15 « compte analytique racine / analytisches Hauptkonto / conto analitico radice / root analytical account » |
 | **clôture (d'exercice)** | **Abschluss** | **chiusura** | **closing** | ⚠️ **POSÉ par la 23-4, sans antécédent au catalogue** — la première rédaction citait `closing`, c'est-à-dire la clé qu'elle écrivait elle-même. ⚠️⚠️ **NE PAS confondre avec « fermer »** (`Schliessen` / `Chiudi` / `Close`), verbe générique réservé à la fermeture d'un panneau. La confusion (**[KF-041 (#323)](https://github.com/guycorbaz/kesh/issues/323)**) est **corrigée** : l'action de clôture s'écrit **Abschliessen** / **Chiudi l’esercizio** / **Close fiscal year** (`fiscal-year-close-button`, `fiscal-year-close-confirmation-action`), et l'état atteint se dit **abgeschlossen** en allemand |
 | **clore / clos (un compte bancaire)** | **auflösen / aufgelöst** | **chiudere il conto / chiuso** | **close the account / closed** | `bank-accounts-errors-closed`, `bank-accounts-errors-cannot-close-primary` (story 28-4a), `bank-accounts-actions-close`, `bank-accounts-labels-closed-badge` (story 28-4b). ⚠️ **POSÉ par la 28-4 (#642), sans antécédent** : un compte **en lecture seule**, historique conservé, réversible — **ni l'archivage** (`archivieren` / `archiviare` / `archive`), **ni la clôture d'exercice** ci-dessus. ⚠️⚠️ **Le verbe NU du panneau est exclu ici aussi** (KF-041) : l'action s'écrit **Clore** / **Auflösen** / **Chiudi il conto** / **Close account**, jamais `Schliessen` / `Chiudi` / `Close` seuls ; l'allemand prend le vocabulaire bancaire d'un compte soldé (C-28-4-32), car `geschlossen` est réservé aux panneaux (garde G11). L'adjectif (`Clos le …`, `Chiuso il …`, `Closed on …`) n'est pas un verbe de panneau et reste nu. Garde : `la_cloture_d_un_compte_bancaire_ne_parle_pas_comme_un_panneau` (`kesh-i18n/src/loader.rs`) |
 | **rouvrir (un compte bancaire)** | **wieder eröffnen** | **riaprire** (`Riapri`) | **reopen** | `bank-accounts-actions-reopen`, `audit-log-action-bank-account-reopened` (story 28-4a/28-4b). ⚠️ **Autre objet que la réouverture d'un exercice** : ni ordre ni borne à prescrire (exemptions de G8 / G8-bis, C-28-4-32, C-28-4-39) |
@@ -165,8 +165,7 @@ passage des rollouts qui touchent ces domaines, pas ici.
 | rapport | Bericht | rapporto | report | `Rapports comptables` |
 | banque | Bank | banca | bank | `Banque` |
 | devise | Währung | valuta | currency | `Devise non supportée : seul le franc suisse (CHF) est pris en charge. Devise du relevé :` |
-| projet | Projekt | progetto | project | `supplier-invoices-detail-project` |
-| **projet analytique** | **Projekt** | **progetto** | **project** | arbitrage de Guy, 2026-08-19 — cf. la note ci-dessous |
+| **compte analytique** | **analytisches Konto** (n.) | **conto analitico** (m.) | **analytical account** | arbitrage de Guy du 2026-11-16 (CR #1161, Story 36-15), qui prolonge celui du 2026-08-19 — cf. les notes ci-dessous ; `projects-title` (« Comptes analytiques / Analytische Konten / Conti analitici / Analytical accounts »). ⚠️ **Toujours en entier** : « Konto », « conto », « account » seuls désignent le compte du plan. Sous-compte : `analytisches Unterkonto` / `sottoconto analitico` / `analytical sub-account` |
 | dépenses | Ausgaben | spese | expenses | `reports-filename-project-expenses` ⚠️ *slug de nom de fichier, pas un libellé* |
 
 ⚠️ **« Projet analytique » se rend simplement par `Projekt` / `progetto` / `project`** — arbitrage
@@ -187,6 +186,26 @@ comptable. `Kostenträger` et `commessa` ont leur place dans le **manuel**, pas 
 
 Concerne quatre libellés, tous portés par les rollouts 23-3 et 23-5 : « Projet analytique »,
 « Projet analytique (optionnel) », « Projet analytique par défaut », « Projets analytiques ».
+
+*(Annoté le 2026-11-16 : note **prolongée le 2026-11-16 par l'arbitrage de Guy sur le CR #1161**,
+ci-dessous. Elle reste comme historique ; ce qu'elle établit contre `Kostenstelle` tient toujours.)*
+
+⚠️ **« Compte analytique » se rend par `analytisches Konto` / `conto analitico` / `analytical
+account`** — arbitrage de Guy du 2026-11-16 (option A), sur le CR #1161 qui renomme l'axe
+analytique en français : « projet » ne disait que le cas du projet, alors qu'on suit aussi un
+immeuble, un véhicule, une activité. **Motif** : en cas de doute, **suivre le français** (règle de
+la tête de ce glossaire) — le français dit « compte analytique », les trois cibles le calquent ;
+*analytical* était déjà l'adjectif du catalogue anglais. L'arbitrage du 2026-08-19 n'est **pas
+défait** : `Kostenstelle` / `centro di costo` / *cost centre* restent écartés (ils répondent à
+« où le coût est-il né ? », et le rendement compte aussi des revenus), de même que `Kostenträger` /
+`commessa` (trop étroits pour un immeuble). « On ne traduit pas « analytique » » devient « on suit
+le français ». ⚠️ Le terme s'écrit **toujours en entier** : `Konto`, `conto`, `account` seuls
+désignent le compte du plan comptable (`reports-project-expenses-col-account`). Les identifiants
+(`projects-*`, `project`, `projectId`) ne changent pas. *(Partie A : la ligne « projet » —
+attestée par `supplier-invoices-detail-project`, qui ne la porte plus — est retirée ; la partie A
+compte **82** lignes de tableau, 83 avant cette story, recomptées le 2026-11-16 par
+`awk '/^## A\./{a=1;next} /^## B\./{a=0} a && /^\| / && !/^\| fr-CH/ && !/^\|---/' docs/i18n-glossaire.md | wc -l` ; le « 76 » écrit
+plus bas vaut pour la story 23-4.)*
 | **journal d'audit** | **Audit-Protokoll** | **registro di audit** | **audit log** | `export-global-content-excludes` (story 25-5-a, **conforme dans les quatre langues**) ; `fiscal-year-reopen-confirmation-body` en allemand. Arbitrage du Project Lead du 2026-09-15 (story 25-1c-b2, #378) ; l'italien n'avait **aucun** précédent. ⚠️ Ne PAS employer « piste d'audit », « audit-trail », « pista di audit », « audit trail » : alignés par la 25-1c-b2. ⚠️ `nav-audit-log` et les clés de l'écran naissent dans la même PR : **pas** des précédents |
 
 ---

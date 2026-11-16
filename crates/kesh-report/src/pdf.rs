@@ -1185,11 +1185,11 @@ impl ProjectExpensesPdfLabels {
     /// Libellés par défaut FR-CH.
     pub fn fr_ch_defaults() -> Self {
         Self {
-            title: "Dépenses par projet".into(),
+            title: "Dépenses par compte analytique".into(),
             col_account: "Compte".into(),
             subtotal: "Sous-total".into(),
             grand_total: "Total dépenses".into(),
-            empty_message: "Aucune dépense taguée sur ce projet pour la période.".into(),
+            empty_message: "Aucune dépense taguée sur ce compte analytique pour la période.".into(),
         }
     }
 }
@@ -1306,13 +1306,13 @@ pub struct ProjectReturnPdfLabels {
 impl ProjectReturnPdfLabels {
     pub fn fr_ch_defaults() -> Self {
         Self {
-            title: "Rendement par projet".into(),
+            title: "Rendement par compte analytique".into(),
             col_cout: "Coût investi".into(),
             col_revenus: "Revenus".into(),
             col_resultat: "Résultat net".into(),
             col_rendement: "Rendement".into(),
             total: "Total".into(),
-            empty_message: "Aucun mouvement tagué sur ce projet pour la période.".into(),
+            empty_message: "Aucun mouvement tagué sur ce compte analytique pour la période.".into(),
         }
     }
 }

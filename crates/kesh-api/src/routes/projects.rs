@@ -104,19 +104,23 @@ fn validate_fields(code: &str, name: &str) -> Result<(String, String), AppError>
     let code = code.trim().to_string();
     let name = name.trim().to_string();
     if code.is_empty() {
-        return Err(AppError::Validation("Le code du projet est requis.".into()));
+        return Err(AppError::Validation(
+            "Le code du compte analytique est requis.".into(),
+        ));
     }
     if code.chars().count() > 32 {
         return Err(AppError::Validation(
-            "Le code du projet dépasse 32 caractères.".into(),
+            "Le code du compte analytique dépasse 32 caractères.".into(),
         ));
     }
     if name.is_empty() {
-        return Err(AppError::Validation("Le nom du projet est requis.".into()));
+        return Err(AppError::Validation(
+            "Le nom du compte analytique est requis.".into(),
+        ));
     }
     if name.chars().count() > 150 {
         return Err(AppError::Validation(
-            "Le nom du projet dépasse 150 caractères.".into(),
+            "Le nom du compte analytique dépasse 150 caractères.".into(),
         ));
     }
     Ok((code, name))
@@ -151,29 +155,33 @@ async fn validate_hierarchy(
     };
     if Some(pid) == self_id {
         return Err(AppError::Validation(
-            "Un projet ne peut pas être son propre parent.".into(),
+            "Un compte analytique ne peut pas être son propre parent.".into(),
         ));
     }
     let parent = projects::find_by_id_in_tx(tx, company_id, pid)
         .await?
-        .ok_or_else(|| AppError::Validation("Le projet parent est introuvable.".into()))?;
+        .ok_or_else(|| {
+            AppError::Validation("Le compte analytique parent est introuvable.".into())
+        })?;
     if parent.parent_id.is_some() {
         return Err(AppError::Validation(
-            "Un sous-projet ne peut pas être parent (hiérarchie limitée à 2 niveaux).".into(),
+            "Un sous-compte analytique ne peut pas être parent (hiérarchie limitée à 2 niveaux)."
+                .into(),
         ));
     }
     // Un parent archivé rendrait le nouveau sous-projet actif « orphelin » dans la
     // vue par défaut (sa racine n'y figure plus). On l'interdit (M2).
     if parent.archived {
         return Err(AppError::Validation(
-            "Le projet parent est archivé — désarchivez-le d'abord.".into(),
+            "Le compte analytique parent est archivé — désarchivez-le d'abord.".into(),
         ));
     }
     if let Some(id) = self_id
         && projects::has_children(tx, company_id, id).await?
     {
         return Err(AppError::Validation(
-            "Ce projet a des sous-projets : il ne peut pas devenir lui-même sous-projet.".into(),
+            "Ce compte analytique a des sous-comptes analytiques : il ne peut pas devenir lui-même sous-compte analytique."
+                .into(),
         ));
     }
     Ok(())
@@ -332,7 +340,8 @@ async fn set_archived(
     if archived {
         if projects::has_active_children(&mut tx, current_user.company_id, id).await? {
             return Err(AppError::Validation(
-                "Ce projet a des sous-projets actifs — archivez-les d'abord.".into(),
+                "Ce compte analytique a des sous-comptes analytiques actifs — archivez-les d'abord."
+                    .into(),
             ));
         }
     } else if let Some(parent_id) = current.parent_id {
@@ -341,7 +350,7 @@ async fn set_archived(
             .ok_or(AppError::Database(kesh_db::errors::DbError::NotFound))?;
         if parent.archived {
             return Err(AppError::Validation(
-                "Le projet parent est archivé — désarchivez-le d'abord.".into(),
+                "Le compte analytique parent est archivé — désarchivez-le d'abord.".into(),
             ));
         }
     }

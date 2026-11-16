@@ -1279,7 +1279,7 @@
 			{#if projectLabel}
 				<div>
 					<div class="text-text-muted">
-						{i18nMsg('invoice-detail-project-label', 'Projet analytique')}
+						{i18nMsg('invoice-detail-project-label', 'Compte analytique')}
 					</div>
 					<div data-testid="invoice-project">{projectLabel}</div>
 				</div>

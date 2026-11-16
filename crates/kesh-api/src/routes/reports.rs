@@ -667,7 +667,9 @@ fn build_project_export_response(
     end: NaiveDate,
     locale_bcp47: &str,
 ) -> Result<Response, AppError> {
-    let slug_type = crate::util::slugify(type_slug, "report");
+    // Story 36-15 : le type garde « compte analytique » en entier (30 caractères).
+    let slug_type =
+        crate::util::slugify_max(type_slug, "report", crate::util::LONGUEUR_MAX_SLUG_DE_TYPE);
     let slug_company = crate::util::slugify(company_name, "company");
     let filename = format!(
         "kesh-{slug_type}-{slug_company}-{}_{}.{}",
@@ -1013,7 +1015,10 @@ fn build_export_response_with_locale(
 /// Story 9-2b §util : `slugify` factorisé dans `crate::util` (réutilisé par
 /// `routes::exports::build_global_filename`).
 fn build_filename(type_slug: &str, company_name: &str, period: &ReportPeriod, ext: &str) -> String {
-    let slug_type = crate::util::slugify(type_slug, "report");
+    // Même borne du type que les rapports analytiques (Story 36-15) : aucun type de ces
+    // rapports ne dépasse 20 caractères, le nom ne change donc pas pour eux.
+    let slug_type =
+        crate::util::slugify_max(type_slug, "report", crate::util::LONGUEUR_MAX_SLUG_DE_TYPE);
     let slug_company = crate::util::slugify(company_name, "company");
     let period_start = period.start_date.format("%Y-%m-%d").to_string();
     let period_end = period.end_date.format("%Y-%m-%d").to_string();
