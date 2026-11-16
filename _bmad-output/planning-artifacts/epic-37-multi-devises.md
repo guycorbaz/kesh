@@ -642,3 +642,7 @@ Revue 4 de Guy (page `epic-35-revue.html`, 35-N = 37-N) : tout approuvé, 37-5 s
 - **A40 — Epic 36 d'abord.** Guy fusionne l'Epic 36 avant l'Epic 37 : l'Epic 37 reprendra `main` à ce moment (migrations
   ordonnées, compteurs recomptés). L'Epic 36 construit aussi #823 (36-6, une transaction rattachée à plusieurs
   écritures) : la story 38-6c2 se revoit après sa fusion (réutiliser plutôt que doubler).
+- **A41 — Postes non monétaires (décision de Beat, 2026-11-16, option a).** Un poste non monétaire (charge payée
+  d'avance en devise, etc.) se tient sur un compte **en CHF** : tout compte de bilan en devise est réévalué, et un compte
+  décoché à la passation garde un résidu qui bloque la clôture (A37). Aucune marque « non monétaire » sur les comptes
+  (KISS). Le manuel le dit ; C-37-7 (« décochables ») est lu sous cette réserve.
