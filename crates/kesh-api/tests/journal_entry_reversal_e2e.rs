@@ -220,12 +220,14 @@ async fn make_entry(
                     debit: dec!(100.00),
                     credit: dec!(0),
                     project_id: projects.0,
+                    foreign: None,
                 },
                 NewJournalEntryLine {
                     account_id: c,
                     debit: dec!(0),
                     credit: dec!(100.00),
                     project_id: projects.1,
+                    foreign: None,
                 },
             ],
         },
@@ -1376,12 +1378,14 @@ async fn make_entry_on(
                     debit: dec!(100.00),
                     credit: dec!(0),
                     project_id: None,
+                    foreign: None,
                 },
                 NewJournalEntryLine {
                     account_id: c,
                     debit: dec!(0),
                     credit: dec!(100.00),
                     project_id: None,
+                    foreign: None,
                 },
             ],
         },
@@ -1716,7 +1720,8 @@ async fn the_put_replays_a_deadlock_it_lost(pool: MySqlPool) {
         kesh_db::test_fixtures::attendre_une_requete_en_cours(
             &pool,
             &[
-                "SELECT status, start_date, end_date FROM fiscal_years",
+                // Story 37-3a : la requête lit aussi le mode de l'exercice.
+                "SELECT status, start_date, end_date, multi_currency FROM fiscal_years",
                 "FOR UPDATE"
             ],
             || a.is_finished()
@@ -2886,12 +2891,14 @@ async fn the_opening_entry_is_modifiable_reversable_and_deletable(pool: MySqlPoo
                     debit: dec!(5000.00),
                     credit: dec!(0),
                     project_id: None,
+                    foreign: None,
                 },
                 NewJournalEntryLine {
                     account_id: c,
                     debit: dec!(0),
                     credit: dec!(5000.00),
                     project_id: None,
+                    foreign: None,
                 },
             ],
         },
@@ -2976,12 +2983,14 @@ async fn an_entry_of_a_closed_year_stays_correctable(pool: MySqlPool) {
                     debit: dec!(100.00),
                     credit: dec!(0),
                     project_id: None,
+                    foreign: None,
                 },
                 NewJournalEntryLine {
                     account_id: c,
                     debit: dec!(0),
                     credit: dec!(100.00),
                     project_id: None,
+                    foreign: None,
                 },
             ],
         },

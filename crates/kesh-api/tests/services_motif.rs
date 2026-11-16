@@ -284,12 +284,14 @@ async fn poser_ecriture(
                     debit: montant,
                     credit: Decimal::ZERO,
                     project_id: projet,
+                    foreign: None,
                 },
                 NewJournalEntryLine {
                     account_id: seeded.accounts[credit],
                     debit: Decimal::ZERO,
                     credit: montant,
                     project_id: projet,
+                    foreign: None,
                 },
             ],
         },
@@ -1931,6 +1933,7 @@ async fn grand_livre_les_deux_regimes(pool: MySqlPool) {
             debit: dec!(1),
             credit: Decimal::ZERO,
             project_id: None,
+            foreign: None,
         })
         .collect();
     lines.push(NewJournalEntryLine {
@@ -1938,6 +1941,7 @@ async fn grand_livre_les_deux_regimes(pool: MySqlPool) {
         debit: Decimal::ZERO,
         credit: Decimal::from(attendu),
         project_id: None,
+        foreign: None,
     });
     journal_entries::create(
         &pool,

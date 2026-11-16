@@ -353,7 +353,9 @@ impl ModificationGuard {
 /// corps : exercice clos, exercice postérieur clos, garde d'écriture, verrou de
 /// période (ancienne date), puis la marque de lettrage — rendue en
 /// `Guard(ModificationGuard::Lettered)`, elle parle **après** le verrou de
-/// période (Story 15-1a-ii, C126).
+/// période (Story 15-1a-ii, C126). L'écriture de réévaluation (Story 37-3a,
+/// `FxRevaluation`) parle juste après la garde d'écriture et **avant** le
+/// verrou de période et la marque de lettrage.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ModificationBlocker {
     /// L'exercice de l'écriture est clôturé.
@@ -364,17 +366,22 @@ pub enum ModificationBlocker {
     /// Garde d'écriture (pièce, contre-passation, paiement détaché) ou marque
     /// de lettrage, qui parle en dernier.
     Guard(ModificationGuard),
+    /// L'écriture porte une ligne de réévaluation (Story 37-3a, AC-7) : elle ne
+    /// se modifie pas ; elle se supprime. **Hors** [`ModificationGuard`], que
+    /// la suppression partage.
+    FxRevaluation,
     /// La date de l'écriture est dans une période verrouillée.
     PeriodLocked { locked_through: chrono::NaiveDate },
 }
 
 impl ModificationBlocker {
-    /// Code d'écran — l'une des douze valeurs de `modificationBlockedBy`.
+    /// Code d'écran — l'une des treize valeurs de `modificationBlockedBy`.
     pub fn code(&self) -> &'static str {
         match self {
             Self::FiscalYearClosed => "FISCAL_YEAR_CLOSED",
             Self::LaterFiscalYearClosed { .. } => "LATER_FISCAL_YEAR_CLOSED",
             Self::Guard(guard) => guard.code(),
+            Self::FxRevaluation => "ENTRY_IS_FX_REVALUATION",
             Self::PeriodLocked { .. } => "PERIOD_LOCKED",
         }
     }
@@ -386,6 +393,7 @@ impl ModificationBlocker {
             Self::FiscalYearClosed => None,
             Self::LaterFiscalYearClosed { fiscal_year_name } => Some(fiscal_year_name.clone()),
             Self::Guard(guard) => guard.label(),
+            Self::FxRevaluation => None,
             Self::PeriodLocked { locked_through } => Some(locked_through.to_string()),
         }
     }
@@ -1202,6 +1210,65 @@ pub enum DbError {
         /// Le numéro de ce compte.
         holder_number: Option<String>,
     },
+
+    /// Une écriture porte des comptes de **deux devises étrangères
+    /// différentes** (Story 37-3a, AC-4 rang 2 bis, R7). Mappé vers HTTP **400**
+    /// `FX_MULTIPLE_CURRENCIES`, `details: { currencies }` (triées).
+    #[error("Une écriture ne porte qu'une devise étrangère : {currencies:?}")]
+    FxMultipleCurrencies {
+        /// Les devises étrangères du corps, triées.
+        currencies: Vec<String>,
+    },
+
+    /// Une ligne **sans** partie en devise vise un compte en devise (Story
+    /// 37-3a, AC-4 rang 3, AC-5). Mappé vers HTTP **400**
+    /// `ACCOUNT_REQUIRES_CURRENCY`, `details: { line }` (rang 1-based).
+    #[error("Ligne {line} : le compte est tenu en devise, la ligne doit l'être aussi")]
+    AccountRequiresCurrency {
+        /// Rang 1-based de la ligne.
+        line: usize,
+    },
+
+    /// Une ligne **avec** partie en devise vise un compte en devise principale
+    /// (Story 37-3a, AC-4 rang 3). Mappé vers HTTP **400** `FX_ACCOUNT_IN_CHF`,
+    /// `details: { line }`.
+    #[error("Ligne {line} : le compte est en CHF, la ligne ne peut pas être en devise")]
+    FxAccountInChf {
+        /// Rang 1-based de la ligne.
+        line: usize,
+    },
+
+    /// La devise **annoncée** d'une ligne diffère de celle de son compte
+    /// (Story 37-3a, AC-4 rang 3). Mappé vers HTTP **400** `FX_CURRENCY_MISMATCH`,
+    /// `details: { line, expected, provided }`.
+    #[error("Ligne {line} : devise annoncée {provided}, compte en {expected}")]
+    FxCurrencyMismatch {
+        /// Rang 1-based de la ligne.
+        line: usize,
+        /// Devise du compte.
+        expected: String,
+        /// Devise annoncée.
+        provided: String,
+    },
+
+    /// Une ligne `afc` ne porte pas le cours `afc` retenu par la société pour
+    /// le mois de la date (Story 37-3a, AC-4 rang 4). Mappé vers HTTP **400**
+    /// `FX_RATE_NOT_AFC`, `details: { line, expectedRate }` — `expectedRate`
+    /// `null` quand la ligne de la société n'est pas `afc`.
+    #[error("Ligne {line} : le cours n'est pas le cours AFC retenu")]
+    FxRateNotAfc {
+        /// Rang 1-based de la ligne.
+        line: usize,
+        /// Le cours `afc` retenu, `None` si la ligne de la société est d'une
+        /// autre source.
+        expected_rate: Option<rust_decimal::Decimal>,
+    },
+
+    /// L'écriture porte une ligne de réévaluation (Story 37-3a, AC-7) : elle ne
+    /// se modifie pas (elle se supprime). Mappé vers HTTP **409**
+    /// `ENTRY_IS_FX_REVALUATION`, `details: {}`.
+    #[error("Une écriture de réévaluation ne se modifie pas")]
+    EntryIsFxRevaluation,
 
     /// La clôture d'un exercice est refusée : un exercice **antérieur** de la
     /// même société est encore ouvert (Story 15-12a, #543).
@@ -2189,6 +2256,12 @@ impl DbError {
             Self::AccountCurrencyInUse { .. } => "ACCOUNT_CURRENCY_IN_USE",
             Self::AccountInForeignCurrency { .. } => "ACCOUNT_IN_FOREIGN_CURRENCY",
             Self::AccountIsFxDifferenceAccount { .. } => "ACCOUNT_IS_FX_DIFFERENCE_ACCOUNT",
+            Self::FxMultipleCurrencies { .. } => "FX_MULTIPLE_CURRENCIES",
+            Self::AccountRequiresCurrency { .. } => "ACCOUNT_REQUIRES_CURRENCY",
+            Self::FxAccountInChf { .. } => "FX_ACCOUNT_IN_CHF",
+            Self::FxCurrencyMismatch { .. } => "FX_CURRENCY_MISMATCH",
+            Self::FxRateNotAfc { .. } => "FX_RATE_NOT_AFC",
+            Self::EntryIsFxRevaluation => "ENTRY_IS_FX_REVALUATION",
             Self::EarlierFiscalYearOpen { .. } => "EARLIER_FISCAL_YEAR_OPEN",
             Self::NextFiscalYearMissing { .. } => "NEXT_FISCAL_YEAR_MISSING",
             Self::NextFiscalYearClosed { .. } => "NEXT_FISCAL_YEAR_CLOSED",

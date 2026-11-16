@@ -7213,6 +7213,121 @@ async fn accept_split_under_a_closed_later_year_lands_in_failed(pool: MySqlPool)
     assert_eq!(ecritures_de(&pool, ctx.company_id).await, avant + 1);
 }
 
+/// Story 37-3a (AC-5, *Pattern batch*) — un lot dont une proposition ventilée
+/// vise un compte **en devise** rend 200 : `failed[]` en
+/// `ACCOUNT_REQUIRES_CURRENCY` (la réconciliation n'écrit qu'en CHF, le refus
+/// central de l'AC-4 remonte par proposition), une autre visant deux comptes
+/// de devises différentes en `FX_MULTIPLE_CURRENCIES` (précédence du rang
+/// 2 bis), la proposition CHF acceptée.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn accept_split_on_a_foreign_currency_account_fails_per_proposal(pool: MySqlPool) {
+    let ctx = setup_company(&pool, "Devises", "CH4431999123000889077", Role::Comptable).await;
+    sqlx::query("UPDATE companies SET multi_currency_enabled = TRUE WHERE id = ?")
+        .bind(ctx.company_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    sqlx::query(
+        "INSERT INTO fiscal_years (company_id, name, start_date, end_date, status, multi_currency) \
+         VALUES (?, 'Exercice 2026', '2026-01-01', '2026-12-31', 'Open', TRUE)",
+    )
+    .bind(ctx.company_id)
+    .execute(&pool)
+    .await
+    .unwrap();
+    let mut comptes = Vec::new();
+    for (numero, devise) in [("5000", None), ("5010", Some("USD")), ("5020", Some("EUR"))] {
+        let id = sqlx::query(
+            "INSERT INTO accounts (company_id, number, name, account_type, currency) \
+             VALUES (?, ?, ?, 'Expense', ?)",
+        )
+        .bind(ctx.company_id)
+        .bind(numero)
+        .bind(format!("Charge {numero}"))
+        .bind(devise)
+        .execute(&pool)
+        .await
+        .unwrap()
+        .last_insert_id() as i64;
+        comptes.push(id);
+    }
+    let (chf, usd, eur) = (comptes[0], comptes[1], comptes[2]);
+    let jour = NaiveDate::from_ymd_opt(2026, 5, 31).unwrap();
+    let tx = |r: &str| {
+        make_new_tx(
+            ctx.company_id,
+            ctx.bank_account_id,
+            jour,
+            Some(jour),
+            dec!(-100.00),
+            "CHF",
+            r,
+            None,
+        )
+    };
+    let tx_ids = seed_bank_transactions(
+        &pool,
+        ctx.company_id,
+        ctx.bank_account_id,
+        ctx.user_id,
+        &unique_hash("lot_devises"),
+        jour,
+        jour,
+        vec![tx("DEV-A"), tx("DEV-B"), tx("DEV-C")],
+    )
+    .await;
+    let ventilation = |a: i64, b: i64| {
+        serde_json::json!([
+            { "counterpartyAccountId": a, "amount": "60.00", "description": "Charge" },
+            { "counterpartyAccountId": b, "amount": "40.00", "description": "Charge bis" },
+        ])
+    };
+    let app = spawn_app(pool.clone()).await;
+    let resp = app
+        .client
+        .post(app.url("/api/v1/reconciliation/accept"))
+        .bearer_auth(&ctx.jwt)
+        .json(&serde_json::json!({
+            "bankAccountId": ctx.bank_account_id,
+            "proposals": [
+                { "type": "split", "bankTransactionId": tx_ids[0], "splits": ventilation(chf, usd) },
+                { "type": "split", "bankTransactionId": tx_ids[1], "splits": ventilation(usd, eur) },
+                { "type": "split", "bankTransactionId": tx_ids[2], "splits": ventilation(chf, chf) },
+            ],
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+    let body: Value = resp.json().await.unwrap();
+    let failed = body["failed"].as_array().unwrap();
+    assert_eq!(failed.len(), 2, "{body}");
+    let de = |id: i64| {
+        failed
+            .iter()
+            .find(|f| f["bankTransactionId"].as_i64() == Some(id))
+            .unwrap_or_else(|| panic!("{id} absent de failed : {body}"))
+    };
+    assert_eq!(
+        de(tx_ids[0])["errorCode"],
+        "ACCOUNT_REQUIRES_CURRENCY",
+        "{body}"
+    );
+    assert!(de(tx_ids[0])["details"]["line"].is_u64(), "{body}");
+    assert_eq!(
+        de(tx_ids[1])["errorCode"],
+        "FX_MULTIPLE_CURRENCIES",
+        "{body}"
+    );
+    assert_eq!(
+        de(tx_ids[1])["details"]["currencies"],
+        serde_json::json!(["EUR", "USD"])
+    );
+    let accepted = body["accepted"].as_array().unwrap();
+    assert_eq!(accepted.len(), 1, "{body}");
+    assert_eq!(accepted[0]["bankTransactionId"].as_i64(), Some(tx_ids[2]));
+}
+
 /// Story 15-6d (test 9, #524) — **témoin** de la garde existante
 /// d'`accept_one_split` : une proposition ventilée dont une ligne vise le
 /// compte de banque **rendu non imputable** → `failed[]` `VALIDATION_ERROR` /

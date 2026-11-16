@@ -211,7 +211,8 @@ pub const TEMOINS: &[(&str, Jeux, Complet)] = &[
                 "description": "P", "accountId": p.compte_k1, "amountMin": "0",
                 "amountMax": "100000", "dateFrom": d(p.exercice_debut),
                 "dateTo": d(p.exercice_fin), "journal": "OD", "sortBy": "entryDate",
-                "sortDir": "asc", "limit": 22, "offset": 0,
+                // Story 37-3a : maximum re-mesuré, 22 → 18.
+                "sortDir": "asc", "limit": 18, "offset": 0,
             })
         },
     ),

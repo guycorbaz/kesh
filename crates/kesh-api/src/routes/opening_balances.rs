@@ -371,6 +371,10 @@ pub async fn generate_opening_balances(
             debit: Money::new(debit),
             credit: Money::new(credit),
             project_id: None,
+            // Story 37-3a (AC-5) : l'ouverture ne prend pas encore de ligne en
+            // devise (37-3b) ; un compte en devise y est refusé par le contrôle
+            // central (`ACCOUNT_REQUIRES_CURRENCY`).
+            foreign: None,
         });
     }
 
@@ -463,6 +467,7 @@ pub async fn generate_opening_balances(
                 debit: l.debit.amount(),
                 credit: l.credit.amount(),
                 project_id: None,
+                foreign: l.foreign,
             })
             .collect(),
     };

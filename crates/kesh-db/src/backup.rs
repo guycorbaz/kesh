@@ -208,6 +208,21 @@ pub const ABSENCES_ADMISES_EPIC_37: &[AbsenceAdmise] = &[
         absence: Absence::Table("exchange_rates"),
         migration: 20261114000002,
     },
+    // Story 37-3a — `20261114000003_journal_lines_foreign_currency` : la partie
+    // en devise d'une ligne d'écriture. Une sauvegarde antérieure est
+    // mono-devise : ses lignes restent en CHF (trois colonnes `NULL`).
+    AbsenceAdmise {
+        absence: Absence::Colonne("journal_entry_lines", "amount_currency"),
+        migration: 20261114000003,
+    },
+    AbsenceAdmise {
+        absence: Absence::Colonne("journal_entry_lines", "exchange_rate"),
+        migration: 20261114000003,
+    },
+    AbsenceAdmise {
+        absence: Absence::Colonne("journal_entry_lines", "rate_source"),
+        migration: 20261114000003,
+    },
 ];
 
 /// Première migration de l'Epic 37 : toute entrée de

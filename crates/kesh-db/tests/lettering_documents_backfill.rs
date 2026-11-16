@@ -113,6 +113,7 @@ async fn ecriture(
                     debit: *debit,
                     credit: *credit,
                     project_id: None,
+                    foreign: None,
                 })
                 .collect(),
         },

@@ -1113,3 +1113,45 @@ async fn credit_note_refused_when_the_sale_entry_has_no_debit_line(pool: MySqlPo
     }
     assert_nothing_written(&pool, invoice_id, entries_before).await;
 }
+
+/// Story 37-3a (AC-5) — le compte de produit d'une facture validée, **passé en
+/// devise** depuis (SQL : société multi-devises, compte en `USD`), est refusé à
+/// l'émission de l'avoir sous son nom (`AccountInForeignCurrency`, compte et
+/// devise) — l'avoir s'écrit en CHF. Rien n'est écrit : ni avoir, ni écriture,
+/// ni numéro tiré, facture toujours validée. Sans l'appel de
+/// `refuse_foreign_currency_accounts_in_tx` dans `create_credit_note`, le refus
+/// viendrait du contrôle central de l'écriture (`AccountRequiresCurrency`) ;
+/// revue de code P1.
+#[sqlx::test(migrations = "./test-schema")]
+async fn credit_note_refused_when_revenue_account_in_foreign_currency(pool: MySqlPool) {
+    let seeded = seed_accounting_company(&pool).await.unwrap();
+    let contact = make_contact(&pool, seeded.company_id, seeded.admin_user_id).await;
+    let invoice_id = create_and_validate(&pool, &seeded, contact, &[(dec!(0), dec!(100.00))]).await;
+    let revenue = seeded.accounts["3000"];
+    sqlx::query("UPDATE companies SET multi_currency_enabled = TRUE WHERE id = ?")
+        .bind(seeded.company_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    sqlx::query("UPDATE accounts SET currency = 'USD' WHERE id = ?")
+        .bind(revenue)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let entries_before = count_entries(&pool).await;
+
+    let err = emit(&pool, &seeded, invoice_id, d(2026, 7, 1))
+        .await
+        .expect_err("doit être refusé");
+    match err {
+        DbError::AccountInForeignCurrency {
+            account_id: Some(id),
+            ref currency,
+        } => {
+            assert_eq!(id, revenue);
+            assert_eq!(currency, "USD");
+        }
+        other => panic!("attendu AccountInForeignCurrency, reçu {other:?}"),
+    }
+    assert_nothing_written(&pool, invoice_id, entries_before).await;
+}
