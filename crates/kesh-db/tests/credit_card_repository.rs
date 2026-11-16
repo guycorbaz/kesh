@@ -357,7 +357,7 @@ async fn retypage_croise_avec_la_creation_d_une_carte(pool: MySqlPool) {
     let lu = accounts::type_in_share_mode(&mut tx, company_id, passif)
         .await
         .unwrap();
-    assert_eq!(lu, Some((AccountType::Liability, true)));
+    assert_eq!(lu, Some((AccountType::Liability, true, None)));
 
     let pool_b = pool.clone();
     let retypage =

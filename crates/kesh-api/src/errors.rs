@@ -1428,6 +1428,21 @@ struct ErrorDetail {
     message: String,
 }
 
+/// Une `Response` JSON structurée **avec** `details` :
+/// `{ "error": { code, message, details } }` (Story 37-1, refus de la devise
+/// d'un compte).
+fn coded_response(
+    status: StatusCode,
+    code: &'static str,
+    message: String,
+    details: serde_json::Value,
+) -> Response {
+    let body = serde_json::json!({
+        "error": { "code": code, "message": message, "details": details }
+    });
+    (status, Json(body)).into_response()
+}
+
 /// Helper pour construire une `Response` JSON structurée.
 fn build_response(status: StatusCode, code: &'static str, message: &str) -> Response {
     (
@@ -4347,6 +4362,111 @@ impl IntoResponse for AppError {
                         }
                     });
                     (StatusCode::CONFLICT, Json(body)).into_response()
+                }
+                // Story 37-1 (AC-4) — devise d'un compte et sites de
+                // configuration : 409 quand l'état s'y oppose, 400 quand la
+                // donnée d'entrée est invalide.
+                DbError::MultiCurrencyDisabled { fiscal_year_id } => {
+                    let details = match fiscal_year_id {
+                        Some(id) => serde_json::json!({ "fiscalYearId": id }),
+                        None => serde_json::json!({}),
+                    };
+                    coded_response(
+                        StatusCode::CONFLICT,
+                        "MULTI_CURRENCY_DISABLED",
+                        t(
+                            "error-multi-currency-disabled",
+                            "Le mode multi-devises n’est pas activé : un compte ne peut pas recevoir de devise étrangère. Un administrateur l’active dans Paramètres.",
+                        ),
+                        details,
+                    )
+                }
+                DbError::CurrencyUnknown { value } => {
+                    let mut args = FluentArgs::new();
+                    args.set("value", value.clone());
+                    coded_response(
+                        StatusCode::BAD_REQUEST,
+                        "CURRENCY_UNKNOWN",
+                        t_args(
+                            "error-currency-unknown",
+                            &format!(
+                                "« {value} » n’est pas un code de devise connu (trois lettres, p. ex. USD ou EUR)."
+                            ),
+                            &args,
+                        ),
+                        serde_json::json!({ "value": value }),
+                    )
+                }
+                DbError::AccountCurrencyLocked => coded_response(
+                    StatusCode::CONFLICT,
+                    "ACCOUNT_CURRENCY_LOCKED",
+                    t(
+                        "error-account-currency-locked",
+                        "La devise de ce compte ne peut plus changer : il porte des écritures, dont elle est la devise.",
+                    ),
+                    serde_json::json!({}),
+                ),
+                DbError::AccountCurrencyInUse { site } => coded_response(
+                    StatusCode::CONFLICT,
+                    "ACCOUNT_CURRENCY_IN_USE",
+                    t(
+                        "error-account-currency-in-use",
+                        "Ce compte est employé en CHF (rôle, paramètres de facturation, compte bancaire, article ou règle de rapprochement) : il ne peut pas recevoir de devise.",
+                    ),
+                    site.details(),
+                ),
+                DbError::AccountInForeignCurrency {
+                    account_id,
+                    currency,
+                } => {
+                    let mut args = FluentArgs::new();
+                    args.set("currency", currency.clone());
+                    coded_response(
+                        StatusCode::BAD_REQUEST,
+                        "ACCOUNT_IN_FOREIGN_CURRENCY",
+                        t_args(
+                            "error-account-in-foreign-currency",
+                            &format!(
+                                "Ce compte est tenu en {currency} : il ne peut pas servir ici, où Kesh comptabilise en CHF."
+                            ),
+                            &args,
+                        ),
+                        serde_json::json!({ "accountId": account_id, "currency": currency }),
+                    )
+                }
+                DbError::AccountIsFxDifferenceAccount {
+                    designation,
+                    holder_account_id,
+                    holder_number,
+                } => {
+                    let mut details = serde_json::json!({ "designation": designation.as_str() });
+                    if let (Some(id), Some(number)) = (holder_account_id, &holder_number) {
+                        details["holderAccountId"] = serde_json::json!(id);
+                        details["holderNumber"] = serde_json::json!(number);
+                    }
+                    let message = match &holder_number {
+                        Some(number) => {
+                            let mut args = FluentArgs::new();
+                            args.set("number", number.clone());
+                            t_args(
+                                "error-account-is-fx-difference-account-own",
+                                &format!(
+                                    "Ce compte est un compte de différence de change du compte en devise {number} : il ne peut être ni archivé, ni retypé, ni rendu non imputable, ni recevoir de devise, de sous-compte ou de rôle de produit."
+                                ),
+                                &args,
+                            )
+                        }
+                        None => t(
+                            "error-account-is-fx-difference-account",
+                            "Ce compte est un compte de différence de change de la société : il ne peut être ni archivé, ni retypé, ni rendu non imputable, ni recevoir de devise, de sous-compte ou de rôle de produit.",
+                        ),
+                    };
+                    coded_response(
+                        StatusCode::CONFLICT,
+                        "ACCOUNT_IS_FX_DIFFERENCE_ACCOUNT",
+                        message,
+                        details,
+                    )
                 }
                 // Story 15-12a (#543) — la clôture d'un exercice précédé d'un
                 // exercice ouvert. 409, comme les autres refus de transition de

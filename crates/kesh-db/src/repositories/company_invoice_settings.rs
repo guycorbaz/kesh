@@ -29,7 +29,7 @@ use crate::errors::{
     ClaimSide, DbError, DesignatedSetting, NonPostableAccount, NonPostableAccounts,
     RoundingContext, WrongTypeDesignatedAccount, WrongTypeDesignatedAccounts, map_db_error,
 };
-use crate::repositories::audit_log;
+use crate::repositories::{accounts, audit_log};
 
 const COLUMNS: &str = "company_id, invoice_number_format, default_receivable_account_id, \
     default_revenue_account_id, default_vat_payable_account_id, \
@@ -68,13 +68,40 @@ pub async fn designations_of_account<'e, E>(
 where
     E: sqlx::Executor<'e, Database = MySql>,
 {
+    designations_of_account_with(executor, company_id, account_id, "").await
+}
+
+/// [`designations_of_account`] en lecture **verrouillante** (`LOCK IN SHARE
+/// MODE`) — Story 37-1 (AC-4) : la garde « compte désigné dans les réglages »
+/// d'un changement de devise, après le `FOR UPDATE` du compte (la ligne des
+/// réglages est déjà tenue en partage par l'appelant, avant le compte).
+pub async fn designations_of_account_in_share_mode<'e, E>(
+    executor: E,
+    company_id: i64,
+    account_id: i64,
+) -> Result<Vec<&'static str>, DbError>
+where
+    E: sqlx::Executor<'e, Database = MySql>,
+{
+    designations_of_account_with(executor, company_id, account_id, " LOCK IN SHARE MODE").await
+}
+
+async fn designations_of_account_with<'e, E>(
+    executor: E,
+    company_id: i64,
+    account_id: i64,
+    lock_clause: &str,
+) -> Result<Vec<&'static str>, DbError>
+where
+    E: sqlx::Executor<'e, Database = MySql>,
+{
     let columns = DESIGNATED_ACCOUNT_COLUMNS
         .iter()
         .map(|(column, _)| *column)
         .collect::<Vec<_>>()
         .join(", ");
     let rows = sqlx::query(&format!(
-        "SELECT {columns} FROM company_invoice_settings WHERE company_id = ?"
+        "SELECT {columns} FROM company_invoice_settings WHERE company_id = ?{lock_clause}"
     ))
     .bind(company_id)
     .fetch_all(executor)
@@ -309,6 +336,67 @@ fn is_no_op_change(
         && before.default_bad_debt_account_id == changes.default_bad_debt_account_id
 }
 
+/// Les dix comptes désignés, `(code, demandé, en place)`, dans l'ordre de
+/// [`DESIGNATED_ACCOUNT_COLUMNS`] (Story 37-1, AC-4) — un test tient les deux
+/// listes égales.
+fn designated_changes(
+    before: &CompanyInvoiceSettings,
+    changes: &CompanyInvoiceSettingsUpdate,
+) -> [(&'static str, Option<i64>, Option<i64>); 10] {
+    [
+        (
+            "receivable",
+            changes.default_receivable_account_id,
+            before.default_receivable_account_id,
+        ),
+        (
+            "revenue",
+            changes.default_revenue_account_id,
+            before.default_revenue_account_id,
+        ),
+        (
+            "vatPayable",
+            changes.default_vat_payable_account_id,
+            before.default_vat_payable_account_id,
+        ),
+        (
+            "vatRecoverable",
+            changes.default_vat_recoverable_account_id,
+            before.default_vat_recoverable_account_id,
+        ),
+        (
+            "vatDecompte",
+            changes.default_vat_decompte_account_id,
+            before.default_vat_decompte_account_id,
+        ),
+        (
+            "payable",
+            changes.default_payable_account_id,
+            before.default_payable_account_id,
+        ),
+        (
+            "rounding",
+            changes.default_rounding_account_id,
+            before.default_rounding_account_id,
+        ),
+        (
+            "discount",
+            changes.default_discount_account_id,
+            before.default_discount_account_id,
+        ),
+        (
+            "bankFees",
+            changes.default_bank_fees_account_id,
+            before.default_bank_fees_account_id,
+        ),
+        (
+            "badDebt",
+            changes.default_bad_debt_account_id,
+            before.default_bad_debt_account_id,
+        ),
+    ]
+}
+
 /// Met à jour la config (tous les champs) avec verrou optimiste et audit.
 ///
 /// Le caller doit avoir validé les données en amont (format, comptes,
@@ -328,6 +416,14 @@ pub async fn update(
     changes: CompanyInvoiceSettingsUpdate,
 ) -> Result<CompanyInvoiceSettings, DbError> {
     let mut tx = pool.begin().await.map_err(map_db_error)?;
+
+    // Story 37-1 (AC-4) — `companies` en partage AVANT les réglages (ordre
+    // global `companies` → réglages → `accounts`) : le réglage multi-devises
+    // et les comptes de différence de la société, lus sous ce verrou, servent
+    // la garde « compte de différence désigné compte de produit par défaut ».
+    let currency_state =
+        accounts::lock_company_currency_in_tx(&mut tx, company_id, accounts::CompanyLock::Share)
+            .await?;
 
     // S'assurer que la row existe (création lazy si absente).
     sqlx::query("INSERT IGNORE INTO company_invoice_settings (company_id) VALUES (?)")
@@ -374,6 +470,30 @@ pub async fn update(
         {
             tx.rollback().await.map_err(map_db_error)?;
             return Err(e);
+        }
+    }
+
+    // Story 37-1 (AC-4) — un compte **changé** (motif C4), dans l'ordre de
+    // `DESIGNATED_ACCOUNT_COLUMNS`, lu `LOCK IN SHARE MODE` après le
+    // `FOR UPDATE` des réglages : en devise → `ACCOUNT_IN_FOREIGN_CURRENCY` ;
+    // le compte de produit par défaut, compte de gains ou de pertes de change
+    // (société ou comptes propres) → `ACCOUNT_IS_FX_DIFFERENCE_ACCOUNT`.
+    for (code, requested, current) in designated_changes(&before, &changes) {
+        let Some(account_id) = requested else {
+            continue;
+        };
+        if requested == current {
+            continue;
+        }
+        accounts::refuse_foreign_currency_in_tx(&mut tx, company_id, account_id).await?;
+        if code == "revenue" {
+            accounts::refuse_fx_account_as_revenue_in_tx(
+                &mut tx,
+                company_id,
+                &currency_state,
+                account_id,
+            )
+            .await?;
         }
     }
 
@@ -1503,3 +1623,62 @@ pub async fn designate_vat_accounts_in_tx(
 // elsewhere in this file (needed for the SQL bind).
 #[allow(dead_code)]
 const _JOURNAL_TYPE_MARKER: Option<Journal> = None;
+
+#[cfg(test)]
+mod designated_changes_tests {
+    use super::*;
+
+    /// `default_revenue_account_id` → `defaultRevenueAccountId`.
+    fn camel(column: &str) -> String {
+        let mut out = String::new();
+        let mut upper = false;
+        for c in column.chars() {
+            if c == '_' {
+                upper = true;
+            } else if upper {
+                out.push(c.to_ascii_uppercase());
+                upper = false;
+            } else {
+                out.push(c);
+            }
+        }
+        out
+    }
+
+    /// Story 37-1 (AC-4) : [`designated_changes`] rend les dix colonnes de
+    /// [`DESIGNATED_ACCOUNT_COLUMNS`], dans leur ordre, chacune avec SA valeur
+    /// demandée et SA valeur en place — un onzième réglage, ou deux colonnes
+    /// croisées, rougissent ici.
+    #[test]
+    fn designated_changes_follows_designated_account_columns() {
+        let mut before = serde_json::json!({
+            "companyId": 1, "invoiceNumberFormat": "F", "defaultSalesJournal": "Ventes",
+            "journalEntryDescriptionTemplate": "T", "creditNoteNumberFormat": "A",
+            "supplierInternalNumberFormat": "FF", "roundTo5Centimes": false,
+            "minimumInvoiceAmount": null, "version": 1,
+            "createdAt": "2026-01-01T00:00:00", "updatedAt": "2026-01-01T00:00:00",
+        });
+        let mut changes = serde_json::json!({
+            "invoiceNumberFormat": "F", "defaultSalesJournal": "Ventes",
+            "journalEntryDescriptionTemplate": "T", "creditNoteNumberFormat": "A",
+            "supplierInternalNumberFormat": "FF", "roundTo5Centimes": false,
+            "minimumInvoiceAmount": null,
+        });
+        for (i, (column, _)) in DESIGNATED_ACCOUNT_COLUMNS.iter().enumerate() {
+            before[camel(column)] = serde_json::json!(i as i64 + 1);
+            changes[camel(column)] = serde_json::json!(i as i64 + 101);
+        }
+        let before: CompanyInvoiceSettings = serde_json::from_value(before).unwrap();
+        let changes: CompanyInvoiceSettingsUpdate = serde_json::from_value(changes).unwrap();
+        let rendered = designated_changes(&before, &changes);
+        for (i, ((_, code), (got_code, requested, current))) in DESIGNATED_ACCOUNT_COLUMNS
+            .iter()
+            .zip(rendered.iter())
+            .enumerate()
+        {
+            assert_eq!(code, got_code, "rang {i}");
+            assert_eq!(*requested, Some(i as i64 + 101), "demandé de {code}");
+            assert_eq!(*current, Some(i as i64 + 1), "en place de {code}");
+        }
+    }
+}

@@ -84,6 +84,72 @@ impl FxAccountReason {
     ];
 }
 
+/// La désignation qui fait d'un compte un compte de différence de change
+/// (Story 37-1, AC-4, AC-4 bis) — `details.designation` de
+/// `ACCOUNT_IS_FX_DIFFERENCE_ACCOUNT`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum FxDesignation {
+    /// Compte des gains de change (de la société ou propre à un compte en devise).
+    Gain,
+    /// Compte des pertes de change (de la société ou propre à un compte en devise).
+    Loss,
+    /// Compte de conversion entre devises (réglage de la société seul).
+    Transit,
+}
+
+impl FxDesignation {
+    /// Le code côté API (`details.designation`).
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Gain => "gain",
+            Self::Loss => "loss",
+            Self::Transit => "transit",
+        }
+    }
+}
+
+/// Le site de configuration qui débite un compte en CHF et lui interdit une
+/// devise (Story 37-1, AC-4) — `details` de `ACCOUNT_CURRENCY_IN_USE`.
+///
+/// Inventaire **clos** des sites de configuration : les dix rôles, les dix
+/// colonnes désignées des réglages de facturation, le lien d'un compte
+/// bancaire, le compte de produit par défaut d'un article et la contrepartie
+/// d'une règle de réconciliation. Un lien compte **quel que soit l'état** de
+/// l'objet qui désigne (archivé, supprimé logiquement).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CurrencyUseSite {
+    /// Le compte porte un rôle (`AccountRole::as_str`).
+    Role(&'static str),
+    /// Désigné dans les réglages de facturation (code de
+    /// `DESIGNATED_ACCOUNT_COLUMNS`).
+    InvoiceSettings(&'static str),
+    /// Lié à un compte bancaire (`bank_accounts.journal_account_id`).
+    BankAccount(i64),
+    /// Compte de produit par défaut d'un article.
+    Product(i64),
+    /// Contrepartie d'une règle de réconciliation.
+    ReconciliationRule(i64),
+}
+
+impl CurrencyUseSite {
+    /// `details` de la réponse : `{ site, … }`.
+    pub fn details(&self) -> serde_json::Value {
+        match self {
+            Self::Role(role) => serde_json::json!({ "site": "role", "role": role }),
+            Self::InvoiceSettings(setting) => {
+                serde_json::json!({ "site": "invoiceSettings", "setting": setting })
+            }
+            Self::BankAccount(id) => {
+                serde_json::json!({ "site": "bankAccount", "bankAccountId": id })
+            }
+            Self::Product(id) => serde_json::json!({ "site": "product", "productId": id }),
+            Self::ReconciliationRule(id) => {
+                serde_json::json!({ "site": "reconciliationRule", "ruleId": id })
+            }
+        }
+    }
+}
+
 /// Raison du refus d'un compte de produit référencé par une ligne de facture
 /// (Story 16-1a, #152 — décision D3).
 ///
@@ -1056,6 +1122,72 @@ pub enum DbError {
     /// `MULTI_CURRENCY_IRREVERSIBLE`, `details: {}`.
     #[error("Le mode multi-devises est irréversible")]
     MultiCurrencyIrreversible,
+
+    /// Une devise étrangère est donnée alors que la société (ou l'exercice)
+    /// est mono-devise (Story 37-1, AC-4 ; 37-3a pour l'exercice). Mappé vers
+    /// HTTP **409** `MULTI_CURRENCY_DISABLED`, `details: {}` — ou
+    /// `{ fiscalYearId }` quand le refus porte sur un exercice.
+    #[error("Le mode multi-devises n'est pas activé")]
+    MultiCurrencyDisabled {
+        /// L'exercice mono-devise visé, quand le refus porte sur lui.
+        fiscal_year_id: Option<i64>,
+    },
+
+    /// Un code de devise hors de la liste ISO 4217 embarquée (Story 37-1,
+    /// AC-4). Mappé vers HTTP **400** `CURRENCY_UNKNOWN`, `details: { value }`.
+    #[error("Devise inconnue : {value:?}")]
+    CurrencyUnknown {
+        /// La valeur reçue, telle quelle.
+        value: String,
+    },
+
+    /// Changer la devise d'un compte qui porte au moins une ligne d'écriture
+    /// (Story 37-1, AC-4) : la devise de chaque ligne passée est celle de son
+    /// compte. Sans exception ni confirmation. Mappé vers HTTP **409**
+    /// `ACCOUNT_CURRENCY_LOCKED`, `details: {}`.
+    #[error("La devise du compte est verrouillée : il porte des écritures")]
+    AccountCurrencyLocked,
+
+    /// Une devise posée sur un compte que les chemins automatiques débitent en
+    /// CHF (Story 37-1, AC-4) — le site en `details`. Mappé vers HTTP **409**
+    /// `ACCOUNT_CURRENCY_IN_USE`.
+    #[error("Le compte est employé en CHF : {site:?}")]
+    AccountCurrencyInUse {
+        /// Le premier site trouvé, dans l'ordre : rôle, réglages de
+        /// facturation, compte bancaire, article, règle de réconciliation.
+        site: CurrencyUseSite,
+    },
+
+    /// Un compte **en devise** choisi à un site de configuration qui débite en
+    /// CHF (rôle, réglages de facturation, compte bancaire, article, règle de
+    /// réconciliation) — Story 37-1, AC-4. Mappé vers HTTP **400**
+    /// `ACCOUNT_IN_FOREIGN_CURRENCY`, `details: { accountId, currency }`.
+    #[error("Le compte {account_id:?} est tenu en {currency}")]
+    AccountInForeignCurrency {
+        /// Le compte refusé ; `None` pour un compte en cours de création (rôle
+        /// posé en même temps que la devise).
+        account_id: Option<i64>,
+        /// Sa devise.
+        currency: String,
+    },
+
+    /// Le geste viderait de son sens un compte de différence de change désigné
+    /// — par la société (gains, pertes, conversion) ou par un compte en devise
+    /// (comptes propres) : devise posée, archivage, retypage hors de son type,
+    /// `postable = false`, sous-compte, rôle `DefaultRevenue`, désignation
+    /// « compte de produit par défaut » (Story 37-1, AC-4, AC-4 bis). Sans
+    /// recours. Mappé vers HTTP **409** `ACCOUNT_IS_FX_DIFFERENCE_ACCOUNT`,
+    /// `details: { designation[, holderAccountId, holderNumber] }`.
+    #[error("Le compte est un compte de différence de change ({designation:?})")]
+    AccountIsFxDifferenceAccount {
+        /// La désignation.
+        designation: FxDesignation,
+        /// Le compte en devise qui le désigne (désignation propre), le premier
+        /// par identifiant ; `None` pour une désignation de la société.
+        holder_account_id: Option<i64>,
+        /// Le numéro de ce compte.
+        holder_number: Option<String>,
+    },
 
     /// La clôture d'un exercice est refusée : un exercice **antérieur** de la
     /// même société est encore ouvert (Story 15-12a, #543).
@@ -2036,6 +2168,12 @@ impl DbError {
             Self::LaterFiscalYearMonoCurrency { .. } => "LATER_FISCAL_YEAR_MONO_CURRENCY",
             Self::FxAccountInvalid { .. } => "FX_ACCOUNT_INVALID",
             Self::MultiCurrencyIrreversible => "MULTI_CURRENCY_IRREVERSIBLE",
+            Self::MultiCurrencyDisabled { .. } => "MULTI_CURRENCY_DISABLED",
+            Self::CurrencyUnknown { .. } => "CURRENCY_UNKNOWN",
+            Self::AccountCurrencyLocked => "ACCOUNT_CURRENCY_LOCKED",
+            Self::AccountCurrencyInUse { .. } => "ACCOUNT_CURRENCY_IN_USE",
+            Self::AccountInForeignCurrency { .. } => "ACCOUNT_IN_FOREIGN_CURRENCY",
+            Self::AccountIsFxDifferenceAccount { .. } => "ACCOUNT_IS_FX_DIFFERENCE_ACCOUNT",
             Self::EarlierFiscalYearOpen { .. } => "EARLIER_FISCAL_YEAR_OPEN",
             Self::NextFiscalYearMissing { .. } => "NEXT_FISCAL_YEAR_MISSING",
             Self::NextFiscalYearClosed { .. } => "NEXT_FISCAL_YEAR_CLOSED",

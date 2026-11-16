@@ -152,7 +152,7 @@
 //!   `post`, `put`, `delete` et `patch`. Aucune route `GET` n'écrit au journal
 //!   aujourd'hui (remontée de l'AC1 : des `POST` et un `DELETE`) ; l'angle mort
 //!   est du même ordre que celui de l'audit (`GET /invoices/{id}/pdf`, plus bas).
-//! - **(vi)** **vingt-six routes `SansEcritureAuJournal` sont rejouées quand
+//! - **(vi)** **vingt-sept routes `SansEcritureAuJournal` sont rejouées quand
 //!   même** : `fiscal_years::update_fiscal_year` (enveloppe `DbError`, opération
 //!   `fiscal_years::update_name`, Story 34-7, #945 : le renommage tient l'exercice
 //!   puis son homonyme par la lecture de doublon, alors que la clôture tient ses
@@ -308,16 +308,29 @@
 //!   réglages de facturation `FOR UPDATE` avant l'exercice, que l'activation
 //!   lit en partage après lui ; tenue par
 //!   `currency_settings_activation_is_replayed_when_it_is_the_deadlock_victim`
-//!   (`rejeu_interblocage_e2e.rs`).
+//!   (`rejeu_interblocage_e2e.rs`). Et — Story 37-1, AC-4 bis
+//!   (37-1-CR3-P2-1) — `accounts::create_account` (enveloppe `AppError`
+//!   `crate::retry::retry_app_on_deadlock`, opération `accounts::create`) : un
+//!   `POST` qui porte des comptes de différence propres tient `companies`
+//!   `FOR UPDATE`, puis passe le parent à non imputable (exclusif sur sa
+//!   ligne), alors qu'une écriture CHF sur ce parent le tient en partage puis
+//!   demande `companies` en partage à son `INSERT` ; tenue par
+//!   `account_creation_is_replayed_when_it_is_the_deadlock_victim`
+//!   (`rejeu_interblocage_e2e.rs`). Le même cycle, par le compte visé, vaut
+//!   pour `accounts::update_account` quand le `PUT` porte des comptes propres
+//!   (`account_update_is_replayed_when_it_is_the_deadlock_victim`, même
+//!   fichier — la première preuve dynamique de son rejeu).
 //!
-//!   **Décompte : vingt-six**, recompté le 2026-11-16 à la Story 37-1 depuis la
-//!   table et le corps de chaque route : vingt-quatre handlers
+//!   **Décompte : vingt-sept**, recompté le 2026-11-16 à la Story 37-1 depuis la
+//!   table et le corps de chaque route : vingt-cinq handlers
 //!   `SansEcritureAuJournal` de `src/routes/` portent une enveloppe, plus
 //!   `onboarding::seed_demo` et `onboarding::reset`, rejouées dans `kesh-seed`.
 //!   *(Relevés antérieurs, datés : vingt-trois le 2026-11-05, revue de la
 //!   0.17.3, #899 S2-A1 ; vingt-cinq dans la branche de la 34-7 le 2026-11-10 ;
 //!   vingt-quatre à l'intégration de la 34-7 sur la 34-2, avant la 34-11a2 ;
-//!   vingt-cinq le 2026-11-12, à l'intégration de la 0.17.6.)*
+//!   vingt-cinq le 2026-11-12, à l'intégration de la 0.17.6 ; vingt-six le
+//!   2026-11-16, réglage multi-devises de la Story 37-1, avant
+//!   `accounts::create_account`.)*
 //! - **(vii)** — **angles morts assumés du volet (c bis)** (revue P1 de la
 //!   15-5e2, L-3 = B-4 = A5). Le volet reconnaît un appel au **dernier
 //!   segment** du chemin appelé (`retry_with`) dans un arbre `syn` ; il ne voit

@@ -1165,6 +1165,14 @@ error-fx-account-account-type = { $subject } doit être un compte de charges ou 
 error-fx-account-account-type-transit = { $subject } doit être un compte de bilan (actif ou passif).
 error-fx-account-foreign-currency = { $subject } doit être tenu en CHF, sans devise.
 error-fx-account-revenue-account = { $subject } ne peut pas être un compte de chiffre d’affaires (compte de produit par défaut des factures ou d’un article).
+# Story 37-1 (AC-4) — devise d’un compte.
+error-multi-currency-disabled = Le mode multi-devises n’est pas activé : un compte ne peut pas recevoir de devise étrangère. Un administrateur l’active dans Paramètres.
+error-currency-unknown = « { $value } » n’est pas un code de devise connu (trois lettres, p. ex. USD ou EUR).
+error-account-currency-locked = La devise de ce compte ne peut plus changer : il porte des écritures, dont elle est la devise.
+error-account-currency-in-use = Ce compte est employé en CHF (rôle, paramètres de facturation, compte bancaire, article ou règle de rapprochement) : il ne peut pas recevoir de devise.
+error-account-in-foreign-currency = Ce compte est tenu en { $currency } : il ne peut pas servir ici, où Kesh comptabilise en CHF.
+error-account-is-fx-difference-account = Ce compte est un compte de différence de change de la société : il ne peut être ni archivé, ni retypé, ni rendu non imputable, ni recevoir de devise, de sous-compte ou de rôle de produit.
+error-account-is-fx-difference-account-own = Ce compte est un compte de différence de change du compte en devise { $number } : il ne peut être ni archivé, ni retypé, ni rendu non imputable, ni recevoir de devise, de sous-compte ou de rôle de produit.
 error-fiscal-year-overlap = Cet exercice chevauche un exercice existant.
 error-fiscal-year-name-duplicate = Un exercice avec ce nom existe déjà.
 error-fiscal-year-name-empty = Le nom de l’exercice est obligatoire.

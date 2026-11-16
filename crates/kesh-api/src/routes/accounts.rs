@@ -10,10 +10,10 @@ use chrono::NaiveDateTime;
 use serde::{Deserialize, Serialize};
 
 use kesh_db::entities::account::{
-    Account, AccountRole, AccountType, AccountUpdate, CurrencyChange, NewAccount,
+    Account, AccountRole, AccountType, AccountUpdate, CurrencyChange, NewAccount, OwnFxAccounts,
     OwnFxAccountsChange,
 };
-use kesh_db::errors::{DbError, map_db_error};
+use kesh_db::errors::{DbError, FxAccountField, FxAccountReason, map_db_error};
 use kesh_db::repositories::{accounts, letterings};
 
 use crate::AppState;
@@ -47,10 +47,86 @@ pub struct CreateAccountRequest {
     /// Postabilité (Story 14-3a) — optionnel, `true` par défaut.
     #[serde(default = "default_true")]
     pub postable: bool,
+    /// Devise (Story 37-1, AC-4), code ISO 4217 ; absente ou `null` = CHF.
+    /// `"CHF"` (toute casse) est normalisé en CHF avant tout contrôle.
+    #[serde(default)]
+    pub currency: Option<String>,
+    /// Compte de gains de change propre (Story 37-1, AC-4 bis) ; absent = par
+    /// défaut. Va avec [`Self::fx_loss_account_id`].
+    #[serde(default)]
+    pub fx_gain_account_id: Option<i64>,
+    /// Compte de pertes de change propre (Story 37-1, AC-4 bis).
+    #[serde(default)]
+    pub fx_loss_account_id: Option<i64>,
 }
 
 fn default_true() -> bool {
     true
+}
+
+/// Normalise une devise reçue (Story 37-1, AC-4) : `trim`, majuscules ASCII,
+/// `CHF` → `None` (devise principale), code hors liste ISO 4217 →
+/// `CURRENCY_UNKNOWN` (400). Avant tout autre contrôle de devise.
+fn normalize_currency(raw: &str) -> Result<Option<String>, AppError> {
+    kesh_core::currency::normalize_foreign_currency(raw)
+        .map(|code| code.map(String::from))
+        .map_err(|_| {
+            AppError::Database(DbError::CurrencyUnknown {
+                value: raw.to_string(),
+            })
+        })
+}
+
+/// Le refus de forme des comptes propres (Story 37-1, AC-4 bis) : l'un sans
+/// l'autre → `FX_ACCOUNT_INVALID` `missing` sur le champ manquant, avant la
+/// transaction.
+fn own_fx_missing(missing_gain: bool, holder_account_id: Option<i64>) -> AppError {
+    AppError::Database(DbError::FxAccountInvalid {
+        field: if missing_gain {
+            FxAccountField::Gain
+        } else {
+            FxAccountField::Loss
+        },
+        reason: FxAccountReason::Missing,
+        holder_account_id,
+    })
+}
+
+/// Comptes propres d'une création : les deux, ou aucun.
+fn own_fx_for_create(
+    gain: Option<i64>,
+    loss: Option<i64>,
+) -> Result<Option<OwnFxAccounts>, AppError> {
+    match (gain, loss) {
+        (None, None) => Ok(None),
+        (Some(gain), Some(loss)) => Ok(Some(OwnFxAccounts { gain, loss })),
+        (None, Some(_)) => Err(own_fx_missing(true, None)),
+        (Some(_), None) => Err(own_fx_missing(false, None)),
+    }
+}
+
+/// Comptes propres d'une modification (trois états, Story 37-1, AC-4 bis) :
+/// les deux absents = inchangés ; les deux `null` = par défaut ; les deux
+/// posés = comptes propres ; toute autre forme → `missing`.
+fn own_fx_for_update(
+    gain: Option<Option<i64>>,
+    loss: Option<Option<i64>>,
+    holder_account_id: i64,
+) -> Result<OwnFxAccountsChange, AppError> {
+    match (gain, loss) {
+        (None, None) => Ok(OwnFxAccountsChange::Unchanged),
+        (Some(None), Some(None)) => Ok(OwnFxAccountsChange::Company),
+        (Some(Some(gain)), Some(Some(loss))) => {
+            Ok(OwnFxAccountsChange::Own(OwnFxAccounts { gain, loss }))
+        }
+        // Le gain posé (perte absente ou `null`), ou le gain `null` et la perte
+        // absente : c'est la perte qui manque.
+        (Some(Some(_)), _) | (Some(None), None) => {
+            Err(own_fx_missing(false, Some(holder_account_id)))
+        }
+        // Le gain absent, ou `null` face à une perte posée.
+        _ => Err(own_fx_missing(true, Some(holder_account_id))),
+    }
 }
 
 /// Désérialise un champ en distinguant **absent** de **`null`**.
@@ -110,6 +186,24 @@ pub struct UpdateAccountRequest {
     /// confirmation explicite du dépôt, qu'il ne faut pas doubler d'un second.
     #[serde(default)]
     pub confirm_account_retype: bool,
+    /// Devise (Story 37-1, AC-4) : `None` = champ **absent** → devise
+    /// **inchangée** ; `Some(None)` = `null` → CHF ; `Some(Some(code))` = devise.
+    ///
+    /// ⚠️ **Pas de 400 sur l'absence, à la différence de `role`** : le motif du
+    /// full-replace est d'éviter l'effacement silencieux d'une donnée ; ici
+    /// « absent = inchangé » n'efface rien, et un 400 casserait tout client
+    /// mono-devise qui ne connaît pas le champ. L'absence se résout dans le
+    /// dépôt, sous le `FOR UPDATE` du compte.
+    #[serde(default, deserialize_with = "present_or_null")]
+    pub currency: Option<Option<String>>,
+    /// Compte de gains de change propre (Story 37-1, AC-4 bis), mêmes trois
+    /// états que `currency` (absent = inchangé, `null` = par défaut) ; va avec
+    /// [`Self::fx_loss_account_id`].
+    #[serde(default, deserialize_with = "present_or_null")]
+    pub fx_gain_account_id: Option<Option<i64>>,
+    /// Compte de pertes de change propre (Story 37-1, AC-4 bis).
+    #[serde(default, deserialize_with = "present_or_null")]
+    pub fx_loss_account_id: Option<Option<i64>>,
     pub version: i32,
 }
 
@@ -267,6 +361,15 @@ pub async fn create_account(
         ));
     }
 
+    // Story 37-1 (AC-4, AC-4 bis) — forme, avant la transaction : devise
+    // normalisée (`CHF` → CHF, code inconnu → `CURRENCY_UNKNOWN`), puis la
+    // paire des comptes propres (`missing`).
+    let currency = match req.currency.as_deref() {
+        Some(raw) => normalize_currency(raw)?,
+        None => None,
+    };
+    let own_fx_accounts = own_fx_for_create(req.fx_gain_account_id, req.fx_loss_account_id)?;
+
     // Valider que le parent existe, appartient à la société courante et est actif.
     // Le scope société n'était pas vérifié : un `parentId` d'une autre société
     // était accepté (code review 14-3a — d'autant plus sensible maintenant que
@@ -290,13 +393,27 @@ pub async fn create_account(
         parent_id: req.parent_id,
         role: req.role,
         postable: req.postable,
-        // Story 37-1 : la devise et les comptes propres arrivent par la route
-        // en phase suivante (DTO et gardes) ; un compte créé ici est en CHF.
-        currency: None,
-        own_fx_accounts: None,
+        currency,
+        own_fx_accounts,
     };
 
-    let account = accounts::create(&state.pool, current_user.user_id, new).await?;
+    // ⚠️ **Rejouée sur interblocage** (Story 37-1, AC-4 bis, 37-1-CR3-P2-1 ;
+    // opération `accounts::create`) : un `POST` qui porte des comptes propres
+    // tient `companies` `FOR UPDATE`, puis passe le parent à non imputable
+    // (verrou exclusif sur sa ligne) ; une écriture CHF sur ce parent le tient
+    // en partage puis demande `companies` en partage à son `INSERT` — cycle.
+    // Le dépôt ouvre et conclut sa propre transaction à chaque tentative.
+    let user_id = current_user.user_id;
+    let account = crate::retry::retry_app_on_deadlock("accounts::create", || {
+        let new = new.clone();
+        let pool = state.pool.clone();
+        async move {
+            accounts::create(&pool, user_id, new)
+                .await
+                .map_err(AppError::from)
+        }
+    })
+    .await?;
     Ok((
         axum::http::StatusCode::CREATED,
         Json(response(&state, account).await?),
@@ -344,14 +461,26 @@ pub async fn update_account(
         AppError::Validation("postable is required — full-replace semantics".into())
     })?;
 
+    // Story 37-1 (AC-4, AC-4 bis) — après le pré-vol existant, avant la
+    // transaction : devise normalisée (`CURRENCY_UNKNOWN`), puis la forme des
+    // comptes propres (`missing`). Absents = inchangés, résolus par le dépôt.
+    let currency = match req.currency {
+        None => CurrencyChange::Unchanged,
+        Some(None) => CurrencyChange::Base,
+        Some(Some(raw)) => match normalize_currency(&raw)? {
+            None => CurrencyChange::Base,
+            Some(code) => CurrencyChange::Foreign(code),
+        },
+    };
+    let own_fx_accounts = own_fx_for_update(req.fx_gain_account_id, req.fx_loss_account_id, id)?;
+
     let changes = AccountUpdate {
         name: trimmed_name,
         account_type: req.account_type,
         role,
         postable,
-        // Story 37-1 : absents de la requête = inchangés (DTO en phase suivante).
-        currency: CurrencyChange::Unchanged,
-        own_fx_accounts: OwnFxAccountsChange::Unchanged,
+        currency,
+        own_fx_accounts,
     };
 
     // Story 25-2-a : le dépôt refuse en 409 `ACCOUNT_HAS_ENTRIES` si le compte

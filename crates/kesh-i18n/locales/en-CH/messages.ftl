@@ -1102,6 +1102,14 @@ error-fx-account-account-type = { $subject } must be an expense or revenue accou
 error-fx-account-account-type-transit = { $subject } must be a balance sheet account (asset or liability).
 error-fx-account-foreign-currency = { $subject } must be kept in CHF, without a foreign currency.
 error-fx-account-revenue-account = { $subject } cannot be a sales revenue account (default revenue account of invoices or of a product).
+# Story 37-1 (AC-4) — currency of an account.
+error-multi-currency-disabled = Multi-currency mode is not enabled: an account cannot receive a foreign currency. An administrator enables it in Settings.
+error-currency-unknown = “{ $value }” is not a known currency code (three letters, e.g. USD or EUR).
+error-account-currency-locked = This account’s currency can no longer change: it carries entries, whose currency it is.
+error-account-currency-in-use = This account is used in CHF (role, invoicing settings, bank account, product or reconciliation rule): it cannot receive a currency.
+error-account-in-foreign-currency = This account is kept in { $currency }: it cannot be used here, where Kesh books in CHF.
+error-account-is-fx-difference-account = This account is an exchange difference account of the company: it cannot be archived, retyped, made non-postable, or receive a currency, a sub-account or a revenue role.
+error-account-is-fx-difference-account-own = This account is an exchange difference account of the foreign-currency account { $number }: it cannot be archived, retyped, made non-postable, or receive a currency, a sub-account or a revenue role.
 error-fiscal-year-overlap = This fiscal year overlaps with an existing one.
 error-fiscal-year-name-duplicate = A fiscal year with this name already exists.
 error-fiscal-year-name-empty = The fiscal year name is required.

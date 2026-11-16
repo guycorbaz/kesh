@@ -1102,6 +1102,14 @@ error-fx-account-account-type = { $subject } muss ein Aufwands- oder Ertragskont
 error-fx-account-account-type-transit = { $subject } muss ein Bilanzkonto sein (Aktiv- oder Passivkonto).
 error-fx-account-foreign-currency = { $subject } muss in CHF geführt werden, ohne Fremdwährung.
 error-fx-account-revenue-account = { $subject } darf kein Umsatzkonto sein (Standard-Ertragskonto der Rechnungen oder eines Artikels).
+# Story 37-1 (AC-4) — Währung eines Kontos.
+error-multi-currency-disabled = Die Mehrwährungsbuchhaltung ist nicht aktiviert: Ein Konto kann keine Fremdwährung erhalten. Ein Administrator aktiviert sie unter Einstellungen.
+error-currency-unknown = «{ $value }» ist kein bekannter Währungscode (drei Buchstaben, z. B. USD oder EUR).
+error-account-currency-locked = Die Währung dieses Kontos kann nicht mehr geändert werden: Es enthält Buchungen, deren Währung sie ist.
+error-account-currency-in-use = Dieses Konto wird in CHF verwendet (Rolle, Rechnungseinstellungen, Bankkonto, Artikel oder Abgleichsregel): Es kann keine Währung erhalten.
+error-account-in-foreign-currency = Dieses Konto wird in { $currency } geführt: Es kann hier nicht verwendet werden, da Kesh hier in CHF bucht.
+error-account-is-fx-difference-account = Dieses Konto ist ein Kursdifferenzkonto der Firma: Es kann weder archiviert, umtypisiert oder nicht bebuchbar gemacht werden noch eine Währung, ein Unterkonto oder eine Ertragsrolle erhalten.
+error-account-is-fx-difference-account-own = Dieses Konto ist ein Kursdifferenzkonto des Fremdwährungskontos { $number }: Es kann weder archiviert, umtypisiert oder nicht bebuchbar gemacht werden noch eine Währung, ein Unterkonto oder eine Ertragsrolle erhalten.
 error-fiscal-year-overlap = Dieses Geschäftsjahr überschneidet sich mit einem bestehenden Jahr.
 error-fiscal-year-name-duplicate = Ein Geschäftsjahr mit diesem Namen existiert bereits.
 error-fiscal-year-name-empty = Der Name des Geschäftsjahres ist erforderlich.

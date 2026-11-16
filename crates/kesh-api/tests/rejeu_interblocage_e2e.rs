@@ -2627,6 +2627,186 @@ async fn currency_settings_activation_is_replayed_when_it_is_the_deadlock_victim
 }
 
 // ============================================================
+// Tests 37-1 — comptes de différence propres, victimes (AC-4 bis)
+// ============================================================
+
+/// Active le multi-devises de la société par SQL et rend un compte de charge
+/// valide pour les comptes propres.
+async fn societe_multi_devises(pool: &MySqlPool, company_id: i64) -> i64 {
+    let mut ids = Vec::new();
+    for (numero, genre) in [("6950", "Expense"), ("1090", "Asset"), ("6970", "Expense")] {
+        ids.push(
+            sqlx::query(
+                "INSERT INTO accounts (company_id, number, name, account_type) VALUES (?, ?, ?, ?)",
+            )
+            .bind(company_id)
+            .bind(numero)
+            .bind(format!("Compte {numero}"))
+            .bind(genre)
+            .execute(pool)
+            .await
+            .unwrap()
+            .last_insert_id() as i64,
+        );
+    }
+    sqlx::query(
+        "UPDATE companies SET multi_currency_enabled = TRUE, fx_gain_account_id = ?, \
+         fx_loss_account_id = ?, fx_transit_account_id = ? WHERE id = ?",
+    )
+    .bind(ids[0])
+    .bind(ids[0])
+    .bind(ids[1])
+    .bind(company_id)
+    .execute(pool)
+    .await
+    .unwrap();
+    ids[2]
+}
+
+/// `PUT /accounts/{id}` qui rend un compte **encore CHF** en devise **avec** ses
+/// comptes propres, victime, est **rejouée** (Story 37-1, AC-4 bis,
+/// 37-1-CR3-P1-2).
+///
+/// Montage : la transaction lourde tient le compte en partage (comme une
+/// écriture CHF qui a lu son compte) ; le `PUT`, lancé en tâche, tient
+/// `companies` `FOR UPDATE` (il porte les comptes propres) puis est vu en
+/// attente sur le `FOR UPDATE` du compte. La transaction demande `companies` en
+/// partage (l'`INSERT` d'une écriture, par `fk_journal_entries_company`) :
+/// cycle ; InnoDB annule le `PUT`, plus léger ; la route rejoue et rend 200.
+///
+/// ⛔ Tue la mutation « appel hors de `retry_app_on_deadlock` » : 500.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn account_update_is_replayed_when_it_is_the_deadlock_victim(pool: MySqlPool) {
+    let ctx = monter(&pool).await;
+    let capture = CaptureRejeu::installer();
+    let company_id = ctx.company_id();
+    let propre = societe_multi_devises(&pool, company_id).await;
+    let compte = sqlx::query(
+        "INSERT INTO accounts (company_id, number, name, account_type) VALUES (?, '1020', 'PayPal', 'Asset')",
+    )
+    .bind(company_id)
+    .execute(&pool)
+    .await
+    .unwrap()
+    .last_insert_id() as i64;
+
+    let mut lourde = transaction_lourde(&pool).await;
+    sqlx::query("SELECT id FROM accounts WHERE id = ? LOCK IN SHARE MODE")
+        .bind(compte)
+        .fetch_one(&mut *lourde)
+        .await
+        .unwrap();
+
+    let route = requete_en_tache(
+        &ctx,
+        reqwest::Method::PUT,
+        &format!("/api/v1/accounts/{compte}"),
+        Some(json!({
+            "name": "PayPal", "accountType": "Asset", "role": null, "postable": true,
+            "version": 1, "currency": "USD",
+            "fxGainAccountId": propre, "fxLossAccountId": propre,
+        })),
+    );
+    let (status, corps) = victime(
+        &pool,
+        lourde,
+        route,
+        &["FROM accounts WHERE id = ? FOR UPDATE"],
+        "SELECT id FROM companies WHERE id = ? LOCK IN SHARE MODE",
+        company_id,
+    )
+    .await;
+
+    assert_eq!(status, 200, "⛔ l'interblocage doit être rejoué : {corps}");
+    assert_eq!(corps["currency"], "USD");
+    assert_eq!(corps["fxGainAccountId"], propre);
+    assert_eq!(
+        compter(
+            &pool,
+            "SELECT COUNT(*) FROM audit_log WHERE action = 'account.updated' AND entity_id = ?",
+            compte,
+        )
+        .await,
+        1,
+        "une seule entrée d'audit"
+    );
+    capture.exiger_un_rejeu("accounts::update");
+}
+
+/// `POST /accounts` qui porte des comptes propres **et** un `parentId`, victime,
+/// est **rejouée** (Story 37-1, AC-4 bis, 37-1-CR3-P2-1).
+///
+/// Montage : la transaction lourde tient le parent en partage (une écriture CHF
+/// sur ce parent, imputable jusque-là) ; la création tient `companies`
+/// `FOR UPDATE` puis attend le `FOR UPDATE` du parent (qu'elle passera non
+/// imputable). La transaction demande `companies` en partage : cycle ; la
+/// création, plus légère, est annulée puis rejouée : 201, parent non imputable.
+///
+/// ⛔ Tue la mutation « appel hors de `retry_app_on_deadlock` » : 500.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn account_creation_is_replayed_when_it_is_the_deadlock_victim(pool: MySqlPool) {
+    let ctx = monter(&pool).await;
+    let capture = CaptureRejeu::installer();
+    let company_id = ctx.company_id();
+    let propre = societe_multi_devises(&pool, company_id).await;
+    let parent = sqlx::query(
+        "INSERT INTO accounts (company_id, number, name, account_type) VALUES (?, '1020', 'Comptes de paiement', 'Asset')",
+    )
+    .bind(company_id)
+    .execute(&pool)
+    .await
+    .unwrap()
+    .last_insert_id() as i64;
+
+    let mut lourde = transaction_lourde(&pool).await;
+    sqlx::query("SELECT id FROM accounts WHERE id = ? LOCK IN SHARE MODE")
+        .bind(parent)
+        .fetch_one(&mut *lourde)
+        .await
+        .unwrap();
+
+    let route = requete_en_tache(
+        &ctx,
+        reqwest::Method::POST,
+        "/api/v1/accounts",
+        Some(json!({
+            "number": "1021", "name": "PayPal USD", "accountType": "Asset",
+            "parentId": parent, "currency": "USD",
+            "fxGainAccountId": propre, "fxLossAccountId": propre,
+        })),
+    );
+    let (status, corps) = victime(
+        &pool,
+        lourde,
+        route,
+        &["FROM accounts WHERE id = ? AND company_id = ? FOR UPDATE"],
+        "SELECT id FROM companies WHERE id = ? LOCK IN SHARE MODE",
+        company_id,
+    )
+    .await;
+
+    assert_eq!(status, 201, "⛔ l'interblocage doit être rejoué : {corps}");
+    assert_eq!(corps["currency"], "USD");
+    let postable: bool = sqlx::query_scalar("SELECT postable FROM accounts WHERE id = ?")
+        .bind(parent)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert!(!postable, "le parent est devenu un compte de regroupement");
+    assert_eq!(
+        compter(
+            &pool,
+            "SELECT COUNT(*) FROM accounts WHERE parent_id = ?",
+            parent,
+        )
+        .await,
+        1,
+        "un seul compte créé"
+    );
+    capture.exiger_un_rejeu("accounts::create");
+}
+
+// ============================================================
 // Test 34-7 — renommage d'un exercice victime (Story 34-7, #945)
 // ============================================================
 

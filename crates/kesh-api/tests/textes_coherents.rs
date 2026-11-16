@@ -1451,7 +1451,7 @@ const MULTI_SOCIETE_ASSUME: &[(&str, &str)] = &[
 /// journal du filtre d'adresse ; + 3 le 2026-10-27, Story 32-7 : le second volet
 /// de P7-H3 et le 401 d'une origine admise par une autre société, § « Le serveur
 /// MCP » ; + 1 le 2026-11-07, Story 33-5 : le chemin de la route de l'adresse ;
-/// + 1 le 2026-11-16, Story 37-1 : le chemin de la route du réglage multi-devises,
+/// puis + 1 le 2026-11-16, Story 37-1 : le chemin de la route du réglage multi-devises,
 /// au manuel utilisateur).
 /// Un motif qui cesserait de voir
 /// un site rougit (A-9, B10 : `>=` laissait passer une occurrence perdue).

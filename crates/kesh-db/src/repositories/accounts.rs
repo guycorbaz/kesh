@@ -15,9 +15,12 @@ use sqlx::mysql::MySqlPool;
 use crate::entities::Company;
 use crate::entities::account::{
     Account, AccountRole, AccountType, AccountUpdate, FxAccounts, FxAccountsOrigin, NewAccount,
+    OwnFxAccounts, OwnFxAccountsChange,
 };
 use crate::entities::audit_log::NewAuditLogEntry;
-use crate::errors::{DbError, FxAccountField, FxAccountReason, map_db_error};
+use crate::errors::{
+    CurrencyUseSite, DbError, FxAccountField, FxAccountReason, FxDesignation, map_db_error,
+};
 use crate::repositories::{audit_log, company_invoice_settings};
 
 /// Colonnes de `accounts` sélectionnées pour hydrater [`Account`], sous forme de
@@ -166,10 +169,77 @@ fn effective_postable(role: Option<AccountRole>, requested: bool, has_children: 
 /// Sans elles, un `POST` heurtait directement `uq_accounts_company_singleton_role`
 /// et remontait un 1062 générique que le formulaire traduisait en « ce numéro
 /// existe déjà » — alors que le numéro était libre.
+///
+/// # Devise et comptes de différence propres (Story 37-1, AC-4, AC-4 bis)
+///
+/// `new.currency` est déjà normalisée par l'appelant (`CHF` → `None`, code
+/// inconnu refusé en `CURRENCY_UNKNOWN` avant la transaction), et la paire de
+/// comptes propres est entière (forme `missing` jugée avant). Ordre des refus
+/// dans la transaction : `MULTI_CURRENCY_DISABLED` (devise donnée, société
+/// mono-devise) → `ACCOUNT_IS_FX_DIFFERENCE_ACCOUNT` (le parent est un compte
+/// de différence de change : il ne reçoit pas de sous-compte) →
+/// `ACCOUNT_IN_FOREIGN_CURRENCY` (rôle posé avec une devise) →
+/// `FX_ACCOUNT_INVALID` des comptes propres (`unexpected` sans devise, puis
+/// gain, puis perte) → refus existants (rôle singleton).
+///
+/// **Verrous** : `companies` en partage — en `FOR UPDATE`, **premier** verrou,
+/// quand le geste porte des comptes propres —, les réglages de facturation en
+/// partage, puis le parent `FOR UPDATE` (il passera non imputable), puis les
+/// désignations propres et les comptes propres en lecture verrouillante.
 pub async fn create(pool: &MySqlPool, user_id: i64, new: NewAccount) -> Result<Account, DbError> {
     check_role_account_type(new.role, new.account_type)?;
 
     let mut tx = pool.begin().await.map_err(map_db_error)?;
+
+    let company_lock = if new.own_fx_accounts.is_some() {
+        CompanyLock::ForUpdate
+    } else {
+        CompanyLock::Share
+    };
+    let state = lock_company_currency_in_tx(&mut tx, new.company_id, company_lock).await?;
+    lock_invoice_settings_share_in_tx(&mut tx, new.company_id).await?;
+
+    if new.currency.is_some() && !state.multi_currency_enabled {
+        return Err(DbError::MultiCurrencyDisabled {
+            fiscal_year_id: None,
+        });
+    }
+
+    // Le parent, verrouillé avant d'être passé non imputable plus bas : un
+    // compte de différence de change ne reçoit pas de sous-compte.
+    if let Some(parent_id) = new.parent_id {
+        let parent: Option<i64> = sqlx::query_scalar(
+            "SELECT id FROM accounts WHERE id = ? AND company_id = ? FOR UPDATE",
+        )
+        .bind(parent_id)
+        .bind(new.company_id)
+        .fetch_optional(&mut *tx)
+        .await
+        .map_err(map_db_error)?;
+        if parent.is_some() {
+            let hits = fx_designations_of_in_tx(&mut tx, new.company_id, &state, parent_id).await?;
+            refuse_designated(hits, |_| true)?;
+        }
+    }
+
+    if let Some(currency) = &new.currency
+        && new.role.is_some()
+    {
+        return Err(DbError::AccountInForeignCurrency {
+            account_id: None,
+            currency: currency.clone(),
+        });
+    }
+
+    check_own_fx_accounts_in_tx(
+        &mut tx,
+        new.company_id,
+        None,
+        new.currency.as_deref(),
+        None,
+        new.own_fx_accounts,
+    )
+    .await?;
 
     // Un compte neuf n'a pas encore d'enfants : seule la règle « résultat de
     // l'exercice » peut s'appliquer ici.
@@ -513,19 +583,28 @@ pub async fn find_singleton_role_in_tx(
 /// laisse une carte liée à un compte qui n'est plus un passif.
 ///
 /// ⚠️ `LOCK IN SHARE MODE`, pas `FOR SHARE` (erreur de syntaxe sur MariaDB 10.11).
+///
+/// Story 37-1 (AC-4) : rend aussi la **devise** du compte (troisième membre,
+/// `None` pour le CHF) — un compte en devise ne se lie pas à un compte
+/// bancaire (`ACCOUNT_IN_FOREIGN_CURRENCY`), jugé sous le même verrou ;
+/// `accounts::update` prend la même ligne `FOR UPDATE` avant de poser une
+/// devise et relit les liens bancaires en lecture verrouillante.
 pub async fn type_in_share_mode(
     conn: &mut sqlx::MySqlConnection,
     company_id: i64,
     account_id: i64,
-) -> Result<Option<(AccountType, bool)>, DbError> {
-    sqlx::query_as(
-        "SELECT account_type, active FROM accounts WHERE id = ? AND company_id = ? LOCK IN SHARE MODE",
+) -> Result<Option<(AccountType, bool, Option<String>)>, DbError> {
+    // ⚠️ `currency` en tête : les sondes de course des routes bancaires
+    // reconnaissent cette lecture au motif `account_type, active FROM accounts`.
+    let row: Option<(Option<String>, AccountType, bool)> = sqlx::query_as(
+        "SELECT currency, account_type, active FROM accounts WHERE id = ? AND company_id = ? LOCK IN SHARE MODE",
     )
     .bind(account_id)
     .bind(company_id)
     .fetch_optional(conn)
     .await
-    .map_err(map_db_error)
+    .map_err(map_db_error)?;
+    Ok(row.map(|(currency, account_type, active)| (account_type, active, currency)))
 }
 
 /// Le premier compte bancaire **non archivé** lié au compte `account_id` dont le
@@ -602,6 +681,105 @@ fn is_no_op_change(before: &Account, changes: &AccountUpdate) -> bool {
         // place, n'est pas un changement.
         && changes.currency.resolve(before.currency.as_deref()) == before.currency
         && changes.own_fx_accounts.resolve(before.own_fx_accounts()) == before.own_fx_accounts()
+}
+
+/// La société d'un compte, lue **sur le pool, hors transaction** (Story 37-1,
+/// AC-4) : `company_id` est immuable, et une lecture hors transaction ne fige
+/// pas l'instantané REPEATABLE READ de la transaction qui suit. ⛔ Jamais
+/// `LOCK IN SHARE MODE` sur la ligne du compte : le `FOR UPDATE` qui suit en
+/// serait une promotion S → X, et deux gestes concurrents sur le même compte
+/// s'interbloqueraient. Compte absent → `NotFound`.
+async fn company_of_account(pool: &MySqlPool, id: i64) -> Result<i64, DbError> {
+    sqlx::query_scalar::<_, i64>("SELECT company_id FROM accounts WHERE id = ?")
+        .bind(id)
+        .fetch_optional(pool)
+        .await
+        .map_err(map_db_error)?
+        .ok_or(DbError::NotFound)
+}
+
+/// Les gardes de devise et de désignation d'[`update`] (Story 37-1, AC-4,
+/// AC-4 bis), dans leur ordre, sur l'état résultant — après le no-op, avant
+/// les refus existants. `changes.postable` est déjà normalisé.
+async fn guard_currency_update(
+    conn: &mut sqlx::MySqlConnection,
+    state: &CompanyCurrencyState,
+    before: &Account,
+    changes: &AccountUpdate,
+    currency: Option<&str>,
+    own_fx: Option<OwnFxAccounts>,
+) -> Result<(), DbError> {
+    let company_id = before.company_id;
+    let currency_changed = currency != before.currency.as_deref();
+    let currency_posed = currency_changed && currency.is_some();
+
+    // 1. MULTI_CURRENCY_DISABLED.
+    if currency_posed && !state.multi_currency_enabled {
+        return Err(DbError::MultiCurrencyDisabled {
+            fiscal_year_id: None,
+        });
+    }
+
+    // 2. ACCOUNT_IS_FX_DIFFERENCE_ACCOUNT — un compte désigné (société ou
+    //    comptes propres) ne reçoit pas de devise, ne sort pas de son type, ne
+    //    passe pas non imputable, ne reçoit pas le rôle `DefaultRevenue`.
+    let retyped = before.account_type != changes.account_type;
+    let postable_off = before.postable && !changes.postable;
+    let default_revenue_posed = changes.role == Some(AccountRole::DefaultRevenue)
+        && before.role != Some(AccountRole::DefaultRevenue);
+    if currency_posed || retyped || postable_off || default_revenue_posed {
+        let hits = fx_designations_of_in_tx(conn, company_id, state, before.id).await?;
+        refuse_designated(hits, |d| {
+            currency_posed
+                || postable_off
+                || (retyped && !designation_admits_type(d, changes.account_type))
+                || (default_revenue_posed && d != FxDesignation::Transit)
+        })?;
+    }
+
+    // 3. ACCOUNT_CURRENCY_LOCKED — la devise d'un compte qui porte une ligne
+    //    ne change plus (elle est celle de toutes ses lignes passées).
+    if currency_changed && has_journal_line_locked(conn, before.id).await? {
+        return Err(DbError::AccountCurrencyLocked);
+    }
+
+    // 4. ACCOUNT_CURRENCY_IN_USE — un compte débité en CHF par un chemin
+    //    automatique ne reçoit pas de devise : rôle gardé, puis les sites de
+    //    configuration.
+    if currency_posed {
+        if let Some(role) = changes.role
+            && before.role == Some(role)
+        {
+            return Err(DbError::AccountCurrencyInUse {
+                site: CurrencyUseSite::Role(role.as_str()),
+            });
+        }
+        if let Some(site) = currency_use_site_in_tx(conn, company_id, before.id).await? {
+            return Err(DbError::AccountCurrencyInUse { site });
+        }
+    }
+
+    // 5. ACCOUNT_IN_FOREIGN_CURRENCY — un rôle posé sur un compte en devise.
+    if let Some(code) = currency
+        && changes.role.is_some()
+        && changes.role != before.role
+    {
+        return Err(DbError::AccountInForeignCurrency {
+            account_id: Some(before.id),
+            currency: code.to_string(),
+        });
+    }
+
+    // 6. FX_ACCOUNT_INVALID des comptes propres.
+    check_own_fx_accounts_in_tx(
+        conn,
+        company_id,
+        Some(before.id),
+        currency,
+        before.own_fx_accounts(),
+        own_fx,
+    )
+    .await
 }
 
 /// Recense ce qu'un changement d'`account_type` infligerait à l'historique d'un
@@ -686,6 +864,30 @@ where
 /// rende la main (la lecture des comptes bancaires est elle-même verrouillante,
 /// donc la dernière version commitée). Ordre des verrous : `accounts` puis
 /// `bank_accounts`, celui des routes bancaires.
+///
+/// # Devise et comptes de différence propres (Story 37-1, AC-4, AC-4 bis)
+///
+/// `changes.currency` et `changes.own_fx_accounts` sont à trois états
+/// (inchangé / CHF ou par défaut / valeur), **résolus ici**, sous le
+/// `FOR UPDATE` du compte. Ordre des refus, jugés sur l'**état résultant** :
+/// compte introuvable ou archivé → version → no-op → `MULTI_CURRENCY_DISABLED`
+/// → `ACCOUNT_IS_FX_DIFFERENCE_ACCOUNT` (devise posée, retypage hors du type de
+/// la désignation, `postable = false`, rôle `DefaultRevenue`) →
+/// `ACCOUNT_CURRENCY_LOCKED` (devise changée sur un compte qui porte une ligne)
+/// → `ACCOUNT_CURRENCY_IN_USE` (devise posée sur un compte qui garde son rôle,
+/// ou désigné par un site de configuration) → `ACCOUNT_IN_FOREIGN_CURRENCY`
+/// (rôle posé sur un compte qui sera en devise) → `FX_ACCOUNT_INVALID` des
+/// comptes propres → refus existants (rôle singleton, compte bancaire lié,
+/// écritures).
+///
+/// **Verrous** : `company_id` (immuable) lu **sur le pool**, avant `begin()` —
+/// jamais `LOCK IN SHARE MODE` sur la ligne du compte, qui se promouvrait en
+/// exclusif ; puis `companies` en partage (en `FOR UPDATE`, **premier**
+/// verrou, quand le geste porte des comptes propres), les réglages de
+/// facturation en partage, le compte `FOR UPDATE` (son `company_id` relu est
+/// comparé à la lecture hors transaction : écart → `NotFound`), puis, sous ce
+/// verrou, les désignations, la ligne d'écriture et les liens en lecture
+/// verrouillante.
 pub async fn update(
     pool: &MySqlPool,
     id: i64,
@@ -696,7 +898,17 @@ pub async fn update(
 ) -> Result<Account, DbError> {
     check_role_account_type(changes.role, changes.account_type)?;
 
+    let company_id = company_of_account(pool, id).await?;
+
     let mut tx = pool.begin().await.map_err(map_db_error)?;
+
+    let company_lock = if matches!(changes.own_fx_accounts, OwnFxAccountsChange::Unchanged) {
+        CompanyLock::Share
+    } else {
+        CompanyLock::ForUpdate
+    };
+    let state = lock_company_currency_in_tx(&mut tx, company_id, company_lock).await?;
+    lock_invoice_settings_share_in_tx(&mut tx, company_id).await?;
 
     // Snapshot "before" AVANT l'UPDATE, dans la même transaction — sous
     // `FOR UPDATE` depuis la Story 34-11a2 (C-e341-40).
@@ -708,6 +920,10 @@ pub async fn update(
 
     let before = match before_opt {
         None => {
+            tx.rollback().await.map_err(map_db_error)?;
+            return Err(DbError::NotFound);
+        }
+        Some(a) if a.company_id != company_id => {
             tx.rollback().await.map_err(map_db_error)?;
             return Err(DbError::NotFound);
         }
@@ -745,6 +961,21 @@ pub async fn update(
         tx.rollback().await.map_err(map_db_error)?;
         return Ok(before);
     }
+
+    // Story 37-1 : devise et comptes propres résolus ICI, sous le `FOR UPDATE`
+    // du compte (« absent = inchangé » ne se résout jamais par une lecture de
+    // la route), puis les gardes de l'AC-4 dans leur ordre.
+    let currency = changes.currency.resolve(before.currency.as_deref());
+    let own_fx = changes.own_fx_accounts.resolve(before.own_fx_accounts());
+    guard_currency_update(
+        &mut tx,
+        &state,
+        &before,
+        &changes,
+        currency.as_deref(),
+        own_fx,
+    )
+    .await?;
 
     // Story 14-3a : si le payload attribue un rôle singleton déjà porté par un
     // autre compte actif, échouer AVANT l'UPDATE pour pouvoir nommer ce compte.
@@ -804,11 +1035,6 @@ pub async fn update(
         }
     }
 
-    // Story 37-1 : devise et comptes propres résolus ICI, sous le `FOR UPDATE`
-    // du compte (« absent = inchangé » ne se résout jamais par une lecture de
-    // la route).
-    let currency = changes.currency.resolve(before.currency.as_deref());
-    let own_fx = changes.own_fx_accounts.resolve(before.own_fx_accounts());
     let rows = sqlx::query(
         "UPDATE accounts SET name = ?, account_type = ?, role = ?, postable = ?, \
          currency = ?, fx_gain_account_id = ?, fx_loss_account_id = ?, \
@@ -932,6 +1158,20 @@ pub async fn archive(
 /// verrouiller ne suffirait pas : il faudrait aussi que le `PUT` verrouille le compte
 /// qu'il valide. Le compte reste alors archivé et désigné, et l'écriture qui l'emploie
 /// est refusée : l'écart se voit à l'usage, il n'écrit rien de faux.
+///
+/// # Compte de différence de change (Story 37-1, AC-4, AC-4 bis)
+///
+/// Un compte désigné gains, pertes ou conversion — par la société, ou comme
+/// compte propre d'un compte en devise, archivé compris — ne s'archive pas :
+/// `ACCOUNT_IS_FX_DIFFERENCE_ACCOUNT`, **sans recours** (`confirm_designated`
+/// ne le lève pas). Ordre des refus : sous-comptes actifs → gain / perte /
+/// conversion → désignation de facturation → version.
+///
+/// **Verrous** : `company_id` lu sur le pool avant `begin()` (immuable ; voir
+/// [`update`]), puis `companies` en partage, les réglages de facturation en
+/// partage, le compte `FOR UPDATE` (`company_id` relu comparé), puis les
+/// désignations propres en lecture verrouillante par index : deux archivages
+/// concurrents de comptes différents ne se verrouillent pas mutuellement.
 pub async fn archive_guarded(
     pool: &MySqlPool,
     id: i64,
@@ -939,18 +1179,23 @@ pub async fn archive_guarded(
     user_id: i64,
     confirm_designated: bool,
 ) -> Result<Account, DbError> {
+    let company_id = company_of_account(pool, id).await?;
+
     let mut tx = pool.begin().await.map_err(map_db_error)?;
 
-    let company_id: Option<i64> =
-        sqlx::query_scalar("SELECT company_id FROM accounts WHERE id = ?")
+    let state = lock_company_currency_in_tx(&mut tx, company_id, CompanyLock::Share).await?;
+    lock_invoice_settings_share_in_tx(&mut tx, company_id).await?;
+
+    let locked_company: Option<i64> =
+        sqlx::query_scalar("SELECT company_id FROM accounts WHERE id = ? FOR UPDATE")
             .bind(id)
             .fetch_optional(&mut *tx)
             .await
             .map_err(map_db_error)?;
-    let Some(company_id) = company_id else {
+    if locked_company != Some(company_id) {
         tx.rollback().await.map_err(map_db_error)?;
         return Err(DbError::NotFound);
-    };
+    }
 
     // Vérifier que le compte n'a pas d'enfants actifs
     let children: (i64,) =
@@ -965,6 +1210,11 @@ pub async fn archive_guarded(
             "impossible d'archiver un compte avec des sous-comptes actifs".into(),
         ));
     }
+
+    // Story 37-1 — un compte de différence de change ne s'archive pas, et
+    // aucune confirmation n'y change rien.
+    let hits = fx_designations_of_in_tx(&mut tx, company_id, &state, id).await?;
+    refuse_designated(hits, |_| true)?;
 
     let designated =
         company_invoice_settings::designations_of_account(&mut *tx, company_id, id).await?;
@@ -1671,6 +1921,369 @@ pub async fn validate_fx_accounts_in_tx(
             holder_account_id,
         },
     ];
+    check_fx_accounts_in_tx(conn, company_id, &checks, FxAccountLock::Share).await
+}
+
+// ---------------------------------------------------------------------------
+// Story 37-1 (AC-4, AC-4 bis) — verrous et gardes de la devise d'un compte
+// ---------------------------------------------------------------------------
+
+/// Le réglage multi-devises d'une société, lu **sous verrou** dans la
+/// transaction de l'appelant ([`lock_company_currency_in_tx`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, sqlx::FromRow)]
+pub struct CompanyCurrencyState {
+    /// Le mode multi-devises est actif (irréversible, CR-7).
+    pub multi_currency_enabled: bool,
+    /// Compte des gains de change de la société.
+    pub fx_gain_account_id: Option<i64>,
+    /// Compte des pertes de change de la société.
+    pub fx_loss_account_id: Option<i64>,
+    /// Compte de conversion de la société.
+    pub fx_transit_account_id: Option<i64>,
+}
+
+/// Verrou de la ligne `companies` d'un geste sur un compte (Story 37-1, AC-4).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CompanyLock {
+    /// `LOCK IN SHARE MODE` : toute garde de devise ou de désignation (création,
+    /// modification et archivage d'un compte, sites de configuration).
+    Share,
+    /// `FOR UPDATE`, **premier** verrou du geste : un `POST` ou un `PUT` de
+    /// compte qui porte des comptes de différence propres (AC-4 bis) — il se
+    /// sérialise ainsi contre toutes les gardes inverses, qui prennent
+    /// `companies` en partage avant le compte visé. Jamais un partage suivi
+    /// d'un exclusif (promotion S → X).
+    ForUpdate,
+}
+
+/// Lit le réglage multi-devises de la société **sous verrou** — premier verrou
+/// d'un geste sur un compte, dans l'ordre global du dépôt (`companies` →
+/// réglages → `accounts` → `bank_accounts`). Société absente → `NotFound`.
+pub async fn lock_company_currency_in_tx(
+    conn: &mut sqlx::MySqlConnection,
+    company_id: i64,
+    lock: CompanyLock,
+) -> Result<CompanyCurrencyState, DbError> {
+    let sql = match lock {
+        CompanyLock::Share => {
+            "SELECT multi_currency_enabled, fx_gain_account_id, fx_loss_account_id, \
+             fx_transit_account_id FROM companies WHERE id = ? LOCK IN SHARE MODE"
+        }
+        CompanyLock::ForUpdate => {
+            "SELECT multi_currency_enabled, fx_gain_account_id, fx_loss_account_id, \
+             fx_transit_account_id FROM companies WHERE id = ? FOR UPDATE"
+        }
+    };
+    sqlx::query_as::<_, CompanyCurrencyState>(sql)
+        .bind(company_id)
+        .fetch_optional(conn)
+        .await
+        .map_err(map_db_error)?
+        .ok_or(DbError::NotFound)
+}
+
+/// La ligne des réglages de facturation de la société, prise **en partage**
+/// (Story 37-1, AC-4) — après `companies`, **avant** le `FOR UPDATE` du compte :
+/// la lire après formerait un cycle avec `company_invoice_settings::update`,
+/// qui tient les réglages en `FOR UPDATE` puis lit le compte. Une société sans
+/// ligne de réglages verrouille l'intervalle où elle serait.
+async fn lock_invoice_settings_share_in_tx(
+    conn: &mut sqlx::MySqlConnection,
+    company_id: i64,
+) -> Result<(), DbError> {
+    let _: Option<i64> = sqlx::query_scalar(
+        "SELECT company_id FROM company_invoice_settings WHERE company_id = ? LOCK IN SHARE MODE",
+    )
+    .bind(company_id)
+    .fetch_optional(conn)
+    .await
+    .map_err(map_db_error)?;
+    Ok(())
+}
+
+/// Une désignation de compte de différence de change trouvée par
+/// [`fx_designations_of_in_tx`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FxDesignationHit {
+    /// Gains, pertes ou conversion.
+    pub designation: FxDesignation,
+    /// `(id, numéro)` du compte en devise qui le désigne (désignation propre) ;
+    /// `None` pour une désignation de la société.
+    pub holder: Option<(i64, String)>,
+}
+
+impl FxDesignationHit {
+    /// Le refus `ACCOUNT_IS_FX_DIFFERENCE_ACCOUNT` qui nomme cette désignation.
+    pub fn into_error(self) -> DbError {
+        let (holder_account_id, holder_number) = match self.holder {
+            Some((id, number)) => (Some(id), Some(number)),
+            None => (None, None),
+        };
+        DbError::AccountIsFxDifferenceAccount {
+            designation: self.designation,
+            holder_account_id,
+            holder_number,
+        }
+    }
+}
+
+/// `true` si un compte qui porte la désignation `designation` peut prendre le
+/// type `account_type` : charges ou produits pour les gains et pertes, actif ou
+/// passif pour la conversion (Story 37-1, AC-3, AC-4).
+pub fn designation_admits_type(designation: FxDesignation, account_type: AccountType) -> bool {
+    match designation {
+        FxDesignation::Gain | FxDesignation::Loss => {
+            matches!(account_type, AccountType::Expense | AccountType::Revenue)
+        }
+        FxDesignation::Transit => {
+            matches!(account_type, AccountType::Asset | AccountType::Liability)
+        }
+    }
+}
+
+/// Les désignations de `account_id` comme compte de différence de change
+/// (Story 37-1, AC-4, AC-4 bis) : celles de la **société** d'abord (gains,
+/// pertes, conversion, lues sur `state`, déjà sous verrou), puis **une**
+/// désignation propre — le compte en devise de plus petit identifiant qui le
+/// désigne, archivé compris.
+///
+/// La désignation propre se cherche par **deux** lectures verrouillantes, chacune
+/// par son index nommé (`FORCE INDEX (idx_accounts_fx_gain)`, puis
+/// `idx_accounts_fx_loss` ; jamais un `OR` sur les deux colonnes, qui
+/// balaierait — et verrouillerait en partage — toutes les lignes de la
+/// société) ; le plus petit identifiant des deux est gardé, les gains à
+/// égalité. ⚠️ À appeler **après** le `FOR UPDATE` du compte visé : deux
+/// archivages concurrents de comptes différents ne verrouillent ainsi que les
+/// entrées d'index de leur propre compte.
+pub async fn fx_designations_of_in_tx(
+    conn: &mut sqlx::MySqlConnection,
+    company_id: i64,
+    state: &CompanyCurrencyState,
+    account_id: i64,
+) -> Result<Vec<FxDesignationHit>, DbError> {
+    let mut hits: Vec<FxDesignationHit> = [
+        (state.fx_gain_account_id, FxDesignation::Gain),
+        (state.fx_loss_account_id, FxDesignation::Loss),
+        (state.fx_transit_account_id, FxDesignation::Transit),
+    ]
+    .into_iter()
+    .filter(|(designated, _)| *designated == Some(account_id))
+    .map(|(_, designation)| FxDesignationHit {
+        designation,
+        holder: None,
+    })
+    .collect();
+
+    let gain: Option<(i64, String)> = sqlx::query_as(
+        "SELECT id, number FROM accounts FORCE INDEX (idx_accounts_fx_gain) \
+         WHERE company_id = ? AND fx_gain_account_id = ? ORDER BY id LIMIT 1 LOCK IN SHARE MODE",
+    )
+    .bind(company_id)
+    .bind(account_id)
+    .fetch_optional(&mut *conn)
+    .await
+    .map_err(map_db_error)?;
+    let loss: Option<(i64, String)> = sqlx::query_as(
+        "SELECT id, number FROM accounts FORCE INDEX (idx_accounts_fx_loss) \
+         WHERE company_id = ? AND fx_loss_account_id = ? ORDER BY id LIMIT 1 LOCK IN SHARE MODE",
+    )
+    .bind(company_id)
+    .bind(account_id)
+    .fetch_optional(&mut *conn)
+    .await
+    .map_err(map_db_error)?;
+    let own = match (gain, loss) {
+        (Some(g), Some(l)) if l.0 < g.0 => Some((FxDesignation::Loss, l)),
+        (Some(g), _) => Some((FxDesignation::Gain, g)),
+        (None, Some(l)) => Some((FxDesignation::Loss, l)),
+        (None, None) => None,
+    };
+    if let Some((designation, holder)) = own {
+        hits.push(FxDesignationHit {
+            designation,
+            holder: Some(holder),
+        });
+    }
+    Ok(hits)
+}
+
+/// Le premier refus parmi `hits` dont la désignation interdit le geste
+/// (`forbidden`), ou `Ok(())`.
+fn refuse_designated(
+    hits: Vec<FxDesignationHit>,
+    forbidden: impl Fn(FxDesignation) -> bool,
+) -> Result<(), DbError> {
+    match hits.into_iter().find(|h| forbidden(h.designation)) {
+        Some(hit) => Err(hit.into_error()),
+        None => Ok(()),
+    }
+}
+
+/// Refuse de **désigner compte de produit par défaut** (réglages de
+/// facturation, article) un compte de gains ou de pertes de change, de la
+/// société ou propre (Story 37-1, AC-4, symétrique de l'AC-3 : les gains de
+/// change ne vont pas au chiffre d'affaires) → `ACCOUNT_IS_FX_DIFFERENCE_ACCOUNT`.
+/// Le compte de conversion n'est pas visé. `state` est lu sous le verrou de
+/// `companies` de l'appelant ; les recherches propres sont verrouillantes.
+pub async fn refuse_fx_account_as_revenue_in_tx(
+    conn: &mut sqlx::MySqlConnection,
+    company_id: i64,
+    state: &CompanyCurrencyState,
+    account_id: i64,
+) -> Result<(), DbError> {
+    let hits = fx_designations_of_in_tx(conn, company_id, state, account_id).await?;
+    refuse_designated(hits, |d| d != FxDesignation::Transit)
+}
+
+/// La devise d'un compte de la société, lue **`LOCK IN SHARE MODE`** —
+/// `None` si la ligne est absente, `Some(None)` pour un compte en CHF.
+pub async fn currency_in_share_mode(
+    conn: &mut sqlx::MySqlConnection,
+    company_id: i64,
+    account_id: i64,
+) -> Result<Option<Option<String>>, DbError> {
+    sqlx::query_scalar::<_, Option<String>>(
+        "SELECT currency FROM accounts WHERE id = ? AND company_id = ? LOCK IN SHARE MODE",
+    )
+    .bind(account_id)
+    .bind(company_id)
+    .fetch_optional(conn)
+    .await
+    .map_err(map_db_error)
+}
+
+/// Refuse un compte **en devise** choisi à un site de configuration qui débite
+/// en CHF (Story 37-1, AC-4) → `ACCOUNT_IN_FOREIGN_CURRENCY`. Lecture
+/// verrouillante ([`currency_in_share_mode`]), dans la transaction d'écriture
+/// de l'appelant, **avant** tout verrou ou écriture de la ligne qui désigne.
+/// Un compte absent ou d'une autre société n'est pas refusé ici (le pré-vol de
+/// la route l'a rendu en 404 ou en 400).
+pub async fn refuse_foreign_currency_in_tx(
+    conn: &mut sqlx::MySqlConnection,
+    company_id: i64,
+    account_id: i64,
+) -> Result<(), DbError> {
+    match currency_in_share_mode(conn, company_id, account_id).await? {
+        Some(Some(currency)) => Err(DbError::AccountInForeignCurrency {
+            account_id: Some(account_id),
+            currency,
+        }),
+        _ => Ok(()),
+    }
+}
+
+/// `true` si le compte porte au moins une ligne d'écriture — lecture
+/// **verrouillante** (`LOCK IN SHARE MODE`, par l'index `idx_jel_account`),
+/// après le `FOR UPDATE` du compte (Story 37-1, AC-4) : une ligne commitée
+/// pendant l'attente des verrous est vue, et une ligne en cours d'insertion
+/// attend la fin du geste.
+async fn has_journal_line_locked(
+    conn: &mut sqlx::MySqlConnection,
+    account_id: i64,
+) -> Result<bool, DbError> {
+    let line: Option<i32> = sqlx::query_scalar(
+        "SELECT 1 FROM journal_entry_lines WHERE account_id = ? LIMIT 1 LOCK IN SHARE MODE",
+    )
+    .bind(account_id)
+    .fetch_optional(conn)
+    .await
+    .map_err(map_db_error)?;
+    Ok(line.is_some())
+}
+
+/// Le premier **site de configuration** (hors rôle, que l'appelant juge sur
+/// l'état résultant) qui débite le compte en CHF (Story 37-1, AC-4) : réglages
+/// de facturation, compte bancaire, article, règle de réconciliation — chacun
+/// compté **quel que soit l'état** de l'objet qui désigne. Lectures
+/// verrouillantes, après le `FOR UPDATE` du compte (les réglages sont déjà
+/// tenus en partage par l'appelant).
+async fn currency_use_site_in_tx(
+    conn: &mut sqlx::MySqlConnection,
+    company_id: i64,
+    account_id: i64,
+) -> Result<Option<CurrencyUseSite>, DbError> {
+    if let Some(code) = company_invoice_settings::designations_of_account_in_share_mode(
+        &mut *conn, company_id, account_id,
+    )
+    .await?
+    .into_iter()
+    .next()
+    {
+        return Ok(Some(CurrencyUseSite::InvoiceSettings(code)));
+    }
+    let bank: Option<i64> = sqlx::query_scalar(
+        "SELECT id FROM bank_accounts WHERE journal_account_id = ? AND company_id = ? \
+         ORDER BY id LIMIT 1 LOCK IN SHARE MODE",
+    )
+    .bind(account_id)
+    .bind(company_id)
+    .fetch_optional(&mut *conn)
+    .await
+    .map_err(map_db_error)?;
+    if let Some(id) = bank {
+        return Ok(Some(CurrencyUseSite::BankAccount(id)));
+    }
+    let product: Option<i64> = sqlx::query_scalar(
+        "SELECT id FROM products WHERE default_revenue_account_id = ? AND company_id = ? \
+         ORDER BY id LIMIT 1 LOCK IN SHARE MODE",
+    )
+    .bind(account_id)
+    .bind(company_id)
+    .fetch_optional(&mut *conn)
+    .await
+    .map_err(map_db_error)?;
+    if let Some(id) = product {
+        return Ok(Some(CurrencyUseSite::Product(id)));
+    }
+    let rule: Option<i64> = sqlx::query_scalar(
+        "SELECT id FROM reconciliation_rules WHERE counterparty_account_id = ? AND company_id = ? \
+         ORDER BY id LIMIT 1 LOCK IN SHARE MODE",
+    )
+    .bind(account_id)
+    .bind(company_id)
+    .fetch_optional(&mut *conn)
+    .await
+    .map_err(map_db_error)?;
+    Ok(rule.map(CurrencyUseSite::ReconciliationRule))
+}
+
+/// Les comptes de différence propres à contrôler pour un geste qui les pose
+/// (Story 37-1, AC-4 bis) : `unexpected` si le compte reste ou devient CHF,
+/// puis gain puis perte, comptes **changés** seulement (motif C4), lus
+/// `LOCK IN SHARE MODE` après le `FOR UPDATE` du compte en devise.
+async fn check_own_fx_accounts_in_tx(
+    conn: &mut sqlx::MySqlConnection,
+    company_id: i64,
+    holder_account_id: Option<i64>,
+    resulting_currency: Option<&str>,
+    before: Option<OwnFxAccounts>,
+    after: Option<OwnFxAccounts>,
+) -> Result<(), DbError> {
+    let Some(after) = after else {
+        return Ok(());
+    };
+    if resulting_currency.is_none() {
+        return Err(DbError::FxAccountInvalid {
+            field: FxAccountField::Gain,
+            reason: FxAccountReason::Unexpected,
+            holder_account_id,
+        });
+    }
+    let mut checks = Vec::with_capacity(2);
+    if before.map(|b| b.gain) != Some(after.gain) {
+        checks.push(FxAccountCheck {
+            field: FxAccountField::Gain,
+            account_id: after.gain,
+            holder_account_id,
+        });
+    }
+    if before.map(|b| b.loss) != Some(after.loss) {
+        checks.push(FxAccountCheck {
+            field: FxAccountField::Loss,
+            account_id: after.loss,
+            holder_account_id,
+        });
+    }
     check_fx_accounts_in_tx(conn, company_id, &checks, FxAccountLock::Share).await
 }
 
