@@ -40,11 +40,16 @@ export function isTestFile(path: string): boolean {
 	return /\.test\.(ts|svelte)$|\.spec\.ts$|test-helper|\.test-fixtures\.ts$/.test(path);
 }
 
-/** Le fichier relève-t-il de la garde ? (`.svelte` ou `.ts`, import ou prop.) */
+/**
+ * Le fichier relève-t-il de la garde ? Un `.svelte` ou un `.ts` qui importe l'un des
+ * trois symboles ; un `.svelte` qui déclare une prop `AccountResponse[]`. Un `.ts` qui
+ * ne fait que **prendre** une liste de comptes (paramètre, champ d'un type d'entrée)
+ * ne déclare pas de prop : hors garde, sauf import.
+ */
 export function isCandidate(path: string, source: string): boolean {
 	if (isTestFile(path)) return false;
 	if (!/\.(svelte|ts)$/.test(path)) return false;
-	return IMPORT_RE.test(source) || PROP_RE.test(source);
+	return IMPORT_RE.test(source) || (path.endsWith('.svelte') && PROP_RE.test(source));
 }
 
 /** Le verdict de la garde pour un fichier candidat : `null` s'il est en règle. */
@@ -102,6 +107,8 @@ describe('garde des sélecteurs de comptes en devise (AC-4)', () => {
 		expect(isCandidate('src/x/a.test.ts', "import { fetchAccounts } from './api';")).toBe(false);
 		// Une aide `.ts` qui PREND un `AccountResponse[]` en paramètre ne déclare pas de prop.
 		expect(isCandidate('src/x/helper.ts', 'export function f(accounts: AccountResponse[]): void {}')).toBe(false);
+		// … ni en champ d'un type d'entrée (`conversion.ts`, `ConversionContext`).
+		expect(isCandidate('src/x/ctx.ts', 'interface C {\n\taccounts: AccountResponse[];\n}')).toBe(false);
 		for (const aide of [
 			'src/lib/features/accounts/account-label.ts',
 			'src/lib/features/accounts/account-options.ts',

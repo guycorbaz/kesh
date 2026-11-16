@@ -1244,7 +1244,7 @@
 		<Button type="button" variant="outline" onclick={onCancel} disabled={submitting}>
 			{i18nMsg('journal-entry-form-cancel', 'Annuler')}
 		</Button>
-		<Button type="button" onclick={handleSubmit} disabled={!canSubmit}>
+		<Button type="button" onclick={handleSubmit} disabled={!canSubmit} data-testid="journal-entry-submit">
 			{i18nMsg('journal-entry-form-submit', 'Valider')}
 		</Button>
 	</div>

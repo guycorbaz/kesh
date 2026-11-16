@@ -336,7 +336,7 @@
 						value={ratePercent ?? ''}
 						onValueChange={(v) => (ratePercent = v)}
 					>
-						<Select.Trigger id="{uid}-rate">
+						<Select.Trigger id="{uid}-rate" data-testid="vat-purchase-rate">
 							{selectedRate
 								? rateLabel(selectedRate)
 								: i18nMsg('vat-purchase-rate-placeholder', 'Choisir un taux')}
@@ -432,7 +432,7 @@
 			{/if}
 
 			<div class="flex justify-end">
-				<Button type="button" size="sm" onclick={insert} disabled={!canInsert}>
+				<Button type="button" size="sm" onclick={insert} disabled={!canInsert} data-testid="vat-purchase-insert">
 					{i18nMsg('vat-purchase-insert', 'Insérer les lignes')}
 				</Button>
 			</div>

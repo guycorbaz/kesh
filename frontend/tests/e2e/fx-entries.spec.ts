@@ -143,7 +143,7 @@ async function submitEntry(page: Page): Promise<number> {
 	const created = page.waitForResponse(
 		(r) => r.url().endsWith('/api/v1/journal-entries') && r.request().method() === 'POST',
 	);
-	await page.getByRole('button', { name: 'Valider' }).click();
+	await page.getByTestId('journal-entry-submit').click();
 	const res = await created;
 	expect(res.status(), await res.text()).toBe(201);
 	return ((await res.json()) as { id: number }).id;
@@ -307,10 +307,10 @@ test('5 — achat USD avec TVA 8,1 % par l’assistant, centime soldé par le bo
 	await expect(panel.getByTestId('vat-purchase-fx-rate')).toHaveValue('0.88');
 	await panel.getByTestId('vat-purchase-fx-rate').fill('0.8850');
 	await panel.getByPlaceholder('0.00', { exact: true }).fill('12.29');
-	await panel.getByText('Choisir un taux').click();
+	await panel.getByTestId('vat-purchase-rate').click();
 	await page.getByRole('option', { name: /8\.10/ }).click();
 	await capture(page, '06-assistant-tva-usd');
-	await panel.getByRole('button', { name: 'Insérer les lignes' }).click();
+	await panel.getByTestId('vat-purchase-insert').click();
 	// TVA CHF 0.89, charge 10.88, contrepartie USD 13.29 → 11.76 : un centime d'écart.
 	await expect(page.getByTestId('journal-entry-fx-difference-note')).toContainText('arrondi');
 	await page.getByTestId('journal-entry-add-fx-difference').click();
@@ -483,14 +483,14 @@ test('9 — cours manual apparu après l’écriture : FX_RATE_NOT_AFC sans cour
 	await page.getByTestId('journal-entry-line-fx-debit-0').fill('200');
 	await page.getByTestId('journal-entry-line-credit-1').fill('176.00');
 	const refused = page.waitForResponse((r) => r.url().includes(`/api/v1/journal-entries/${id}`) && r.request().method() === 'PUT');
-	await page.getByRole('button', { name: 'Valider' }).click();
+	await page.getByTestId('journal-entry-submit').click();
 	expect((await refused).status()).toBe(400);
 	await expect(page.getByTestId('journal-entry-line-refusal-0')).toContainText('propre cours');
 	await expect(page.getByTestId('journal-entry-line-take-expected-0')).toHaveCount(0);
 	await capture(page, '10-rate-not-afc-garder');
 	await page.getByTestId('journal-entry-line-keep-rate-0').click();
 	const saved = page.waitForResponse((r) => r.url().includes(`/api/v1/journal-entries/${id}`) && r.request().method() === 'PUT');
-	await page.getByRole('button', { name: 'Valider' }).click();
+	await page.getByTestId('journal-entry-submit').click();
 	expect((await saved).status()).toBe(200);
 	const entry = await getEntry(page, id);
 	expect(entry.lines[0].foreign).toMatchObject({ amount: '200', rate: '0.88', rateSource: 'manual' });

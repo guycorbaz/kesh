@@ -1302,3 +1302,119 @@ devise au cours d'ouverture choisi pour l'exercice (R6), afin de tenir mes livre
   conversion, i18n, E2E, compilation. Inter-fiches : 37-3a (CR7-P2, D-CR7-2 cité) ; aucun autre.
 - 2026-11-16 — validation CR-7 P3 ciblée (Sonnet) : 0 CRITICAL, 0 HIGH, 0 MEDIUM, 0 LOW ; aucune modification. Vérifié au code : `journal_entries.rs:308` (`validate_taggable_in_tx` sous `enforce_project_taggable`) → `projects.rs:101` (`acquire_company_sentinel_lock`) → `bank_accounts.rs:1729` (`companies` `FOR UPDATE`) : cycle S → X de la conversion avec projet exact, défendu par le rejeu (`Rejouee`) ; fixtures par les routes (création, clôture, activation, réouverture) cohérentes avec 37-1 (exercice clos à l'activation, mono-devise même rouvert). Résidus du modèle réversible : aucun hors Change Logs datés. Non exercés : reste de la fiche hors diff, compilation, rendu. Inter-fiches : 37-5 (CR7-P3-1, renvoi au cas de l'AC-2 bis).
 - 2026-11-16 — alignement sur les règles de travail à plusieurs (Sonnet) : PDF du manuel non commité, `.tex` seulement (2 remplacements) ; CHANGELOG remplacé par la section *Note de version* (4 remplacements, section ajoutée) ; compteurs « recomptés depuis la source après chaque reprise de `main` » (3 ajouts). Fond des AC inchangé.
+- 2026-11-16 — étape 0 (développement, Opus 5.5), base `6f66e775` (pointe de `story/37-3a-ecritures-en-devise-modele`,
+  37-1 + 37-2 + 37-3a) : relevé contre 37-2 (`kesh-gate-logs/etape0/37-3b.md`) repris, et les prémisses « attend
+  37-3a » relues à cette base, toutes tenues : `ForeignAmount`, `check_foreign_line` (`kesh-core/src/accounting/fx.rs:216`,
+  publique), `rate_from_chf` (`:266`), `fx_chf` (`:176`), `fx_line_error` (`balance.rs:19`) ; la fonction d'analyse
+  partagée s'appelle `parse_line_amounts` (`routes/journal_entries.rs:704`, `pub(crate)`) ; `prepare_new_journal_entry`
+  `:598`, `map_core_error` `:335` ; `create_opening_in_tx` (`repositories/journal_entries.rs:408`, gardée lexicalement
+  par `chf_line_lexical.rs`) ; `ModificationBlocker::FxRevaluation` → `ENTRY_IS_FX_REVALUATION` (`kesh-db/src/errors.rs:372`,
+  `:384`), rendu juste après la garde d'écriture, avant `PERIOD_LOCKED` (`modification_blocker` `:1441`) ;
+  `fx_failed_proposal` (`routes/reconciliation.rs:754` : `MULTI_CURRENCY_DISABLED`, `RATE_UNAVAILABLE` et la table de
+  `fx_db_refusal`) ; fixtures `fx_rounding.json`, `fx_rate_from_chf.json`, `fx_opening_dates.json`. Écarts de l'étape 0
+  repris au développement : `ModificationBlocker` à `errors.rs:358` (non `:134,210`) ; `CurrencySettingsSection.svelte`
+  hors inventaire (exempté, ci-dessous) ; manuel utilisateur en français seul (`docs/manual/{de,en,it}/` ne portent qu'un
+  `README.md`) ; `lookup` exige une société multi-devises (le formulaire ne l'appelle qu'en multi-devises).
+- 2026-11-16 — développement (Opus 5.5) : AC-1 à AC-6 livrés, détail au *Dev Agent Record* ; statut `review`.
+
+## Dev Agent Record
+
+### Choix (C-37-3b-*)
+
+- **C-37-3b-1 — `details.entry` de la conversion** : mécanisme commun dans le handler (`conversion_refusal`,
+  `routes/journal_entries.rs`) : le refus d'une écriture est porté par `AppError::ConversionEntry { entry, error }` ; la
+  réponse de `error` est relue, `details` complété de `entry` (créé `{}` s'il manque ou n'est pas un objet), réécrite
+  (statut et en-têtes gardés, `Content-Length` retiré). Un interblocage n'est jamais étiqueté (`AppError::Database` nu)
+  pour que `retry_app_on_deadlock` le reconnaisse. Inventaire : toutes les variantes de `ConversionErrorKind` qui visent
+  une écriture (`Db`, `Core`, `Validation`, `NoFiscalYear`, `FiscalYearClosed`) reçoivent `entry` ; `TransitUnbalanced`
+  et le `FX_ACCOUNT_INVALID` du compte de conversion n'en reçoivent pas.
+- **C-37-3b-2 — cœur de la conversion au dépôt** : `repositories/journal_entry_conversions.rs` (`create_conversion`),
+  erreur typée `ConversionError { entry, kind }`, la route ne faisant que la forme avant la transaction (libellé, nombre
+  de lignes, `parse_line_amounts`, `check_foreign_line`) par `parse_entry_body`, partie de `prepare_new_journal_entry`
+  sans `accounting::validate`, extraite et partagée (DRY ; `prepare_new_journal_entry` = `parse_entry_body` + `validate`
+  + `draft_to_new_entry`).
+- **C-37-3b-3 — paire résolue sur le réglage verrouillé** : `accounts::fx_accounts_for_settings(gain, loss, &Account)` ;
+  `fx_accounts_for(&Company, &Account)` n'en est plus que l'enveloppe (aucun choix écrit à côté). Reconnaissance des
+  lignes de différence : `accounts::conversion_line_accounts_in_tx` (comptes des lignes de l'écriture à compléter,
+  `EXISTS` sur `accounts.fx_gain/loss_account_id` par identifiant, `LOCK IN SHARE MODE`, triés par `id`), la
+  désignation par la société se lisant sur `lock_company_currency_in_tx`.
+- **C-37-3b-4 — société mono-devise à la conversion** : `409 MULTI_CURRENCY_DISABLED` (sans `fiscalYearId`) avant le
+  compte de conversion ; non écrit à la fiche (l'écran n'offre pas l'assistant en mono-devise).
+- **C-37-3b-5 — exercice de chaque écriture de la conversion** : lu dans la transaction par `find_covering_date_in_tx`
+  au moment de chaque création (ordre chronologique), `NO_FISCAL_YEAR` / `FISCAL_YEAR_CLOSED` étiquetés `details.entry` ;
+  la création reverrouille l'exercice `FOR UPDATE`.
+- **C-37-3b-6 — journal des deux écritures de l'assistant** : `Banque` (deux mouvements de comptes de trésorerie) ;
+  libellés « Conversion EUR → USD (1/2) » / « (2/2) » ; l'assistant porte la ligne de différence qu'il montre et
+  n'envoie jamais `completeDifference`.
+- **C-37-3b-7 — complément : une colonne vide d'une ligne en devise vaut absente** (`parse_complement_foreign_line`) ;
+  bornes de forme de `parse_complement_amount` appliquées au CHF complété (`check_complement_bounds`, extraite).
+- **C-37-3b-8 — cache des cours en fermeture** (`createRateLookupCache`) et non en classe : la garde des libellés
+  (`i18n-libelle-en-dur.test.ts`) refuse les classes hors liste admise.
+- **C-37-3b-9 — provenance affichée à l'ouverture** : « proposé : … » quand la ligne porte le cours de la société
+  (source `afc`), « cours saisi » / « cours saisi (ecb) » selon `source`, « manuel » dès que le cours diffère ; l'envoi
+  est toujours `manual`.
+- **C-37-3b-10 — libellés des codes de lot** (reçu de la 37-3a) : `failedProposalLabel` couvre les huit codes de
+  `fx_failed_proposal` (trois clés `reconciliation-failed-*` neuves, cinq messages partagés de `fx-refusals.ts`).
+
+### Inventaires
+
+- **`ComplementLine`** (sans `Default`) : `routes/bank_accounts.rs` `opening_line` (`foreign: None`, motivé : un compte lié
+  ne porte pas de devise) ; parseur de la route `parse_complement_lines` (la partie analysée) ; aide de test `line()`
+  (`OpeningComplementLineRequest.foreign: None`) ; `tests/opening_complement_repository.rs` 5 sites et
+  `tests/opening_complement_bank_scope.rs` 6 sites (`foreign: None`). Propagation : génération — `JournalEntryLineDraft`
+  du handler (`foreign` analysé), `NewJournalEntryLine` (recopie du brouillon validé) ; complément —
+  `JournalEntryLineDraft` depuis `ComplementLine` (`l.foreign.clone()`), contrepartie sur le report (`None`, CHF),
+  `NewJournalEntryLine` (recopie).
+- **Tests existants des routes d'ouverture adaptés au 400** : aucun ne testait le 422 d'un champ manquant
+  (`grep 422|UNPROCESSABLE` sur `opening_balances_e2e.rs`, `bank_account_opening_balance_e2e.rs` : rien).
+- **Sélecteurs (AC-4), inventaire clos tenu par `fx-account-filter-inventory.test.ts`** (fichiers qui importent
+  `fetchAccounts`, `AccountAutocomplete` ou `linkableLedgerAccounts`, ou déclarent une prop `AccountResponse[]`) —
+  *filtrés* : `AccountAutocomplete` (`excludeForeignCurrency`, défaut `true`) et donc `InvoiceForm`, `products/+page`,
+  `ManualMatchModal`, `TransactionSplitModal` (aussi `counterpartyAccounts`) ; `linkableLedgerAccounts` (filtre posé une
+  fois, `bank-accounts/format.ts`) et donc `bank-accounts/+page`, `BankAccountJournalLinkForm`, `onboarding/+page` ;
+  `counterpartyAccounts` (`reconciliation-counterparties.ts`) ; à l'entrée du composant : `SettleInvoiceDialog`,
+  `SupplierInvoiceForm`, `RuleFormModal` ; dans la page : `supplier-invoices/[id]` (compte interne du paiement),
+  `settings/invoicing` (`designatable`, valeur en place gardée par `withCurrentAccount` avec la mention « en devise : à
+  remplacer ») ; `isAccountUnusable` prend `excludeForeignCurrency` (défaut `true`). *Exemptés, avec leur raison écrite
+  dans le fichier* (`fx-filtre-comptes : exempté —`) : `JournalEntryForm`, `VatPurchaseAssistant`, `ConversionAssistant`,
+  `journal-entries/conversion/+page`, `journal-entries/+page`, `journal-entries/[id]/+page`,
+  `settings/opening-balances/+page` (C-37-5), `CurrencySettingsSection` et `AccountCurrencyFields` (comptes de
+  différence et de conversion déjà en CHF par `fxDifferenceAccountOptions` / `fxTransitAccountOptions`), `accounts/+page`,
+  `reports/+page`, `OpenItemsScreen`, `RulesList`, `CounterpartyClaimNotice`, `credit-notes/[id]`, `invoices/[id]` et
+  `invoices/due-dates` (le règlement filtre dans `SettleInvoiceDialog`), `supplier-invoices/new` et `[id]/edit`
+  (`SupplierInvoiceForm` filtre), `reconciliation/rules/+page` (`RuleFormModal` filtre), `ReconciliationProposals`
+  (modales filtrées par `counterpartyAccounts`). Aides `.ts` à paramètre `AccountResponse[]` hors garde (vérifié par le test).
+- **Cycles de verrous de la conversion (argument écrit, CR-7)** : `companies` puis compte de conversion en partage,
+  puis comptes de l'écriture à compléter et sa paire en partage, avant les exercices (`FOR UPDATE` dans
+  `create_in_tx`) ; aucun chemin ne prend un exercice puis un compte en exclusif depuis le retrait de la bascule `force`
+  de 37-1 : pas de cycle connu. Seule promotion : une ligne à projet fait prendre à `create_in_tx` la sentinelle
+  `companies` `FOR UPDATE` alors que la transaction la tient en partage (S → X) ; deux conversions concurrentes à projet
+  s'interbloquent, défendues par le rejeu (route `Rejouee`, `retry_app_on_deadlock`). Aucun test de course ajouté.
+
+### Écarts et limites
+
+- **Manuel utilisateur en français seul** (étape 0) ; catalogues i18n dans les quatre locales.
+- **Assistant TVA en devise, Vitest du composant** : le `Select` de bits-ui ne s'ouvre pas sous jsdom ; le test du
+  composant vérifie le passage en devise (libellé, cours proposé, sélecteur restreint, cours invalide), les lignes
+  insérées sont tenues par le Vitest de `foreignPurchaseVatEntry` (vecteurs de la fiche) et par l'E2E (scénario 5).
+- **Aller-retour `.keshbackup` d'une ligne d'ouverture en devise** : non écrit ici ; une ligne d'ouverture est une ligne
+  d'écriture ordinaire, dont l'aller-retour est couvert par 37-3a (`admin_full_import_e2e.rs`).
+- **Mono-devise inchangé** : couvert par les Vitest existants du formulaire (`JournalEntryForm.create/edit.test.ts`) et
+  la suite E2E existante, sans test neuf.
+- **E2E** : le scénario « exercice mono-devise » est retiré par CR-7 (Vitest et API) ; « Supprimer » d'une réévaluation
+  n'a pas d'E2E (la réévaluation est 37-5), Vitest de `canDeleteEntry`.
+
+### Debug Log
+
+- Clippy `explicit_auto_deref` sur `&mut **tx` (conversion) corrigé ; un cas de test « ni cours ni CHF » corrigé (le
+  CHF de référence vient aussi de `debit`/`credit`, règle de 37-3a).
+- Gardes i18n recomptées depuis la source : `sitesTotal` 3185 → 3292, `CANDIDATES_ATTENDUES` 106 → 112 (ventilation
+  écrite aux deux tests) ; garde des dates : `previousDay` de `fx.ts` sans `toISOString`.
+
+### Completion Notes
+
+GATES_A_COMPLETER
+
+### File List
+
+FILELIST_A_COMPLETER
