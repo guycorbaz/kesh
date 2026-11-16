@@ -1243,3 +1243,24 @@ Liste : `implementation-artifacts/38-p2-inter-fiches.md`.
 Sections « Release » et « Modules touchés » ajoutées ; ligne de l'Epic 36 (#823) en dépendance de 38-6c2 ; contrôle de
 clôture du relevé joint passé de K9 à K10 (l'Epic 37 prend K9) ; PDF des manuels et CHANGELOG reportés à la release
 (fiches : `.tex` seul, section *Note de version*) ; compteurs recomptés après chaque reprise de `main`.
+
+## Point du 2026-11-16 — Epic 36 et règles de Guy
+
+- **Nombre de stories** : Guy accepte que l'Epic 38 garde plus de stories que la borne de six (accord transmis par Beat
+  le 2026-11-16). Le découpage reste celui des fiches, et l'epic sort en **une seule release** (« un epic = une
+  release »).
+- **38-6c2 et #823 (36-6)** : Guy annonce que la base de données et l'API de « une transaction, plusieurs écritures »
+  sont faites. Au 2026-11-16, ce code n'est dans aucune branche publiée de `origin` (36-6 est encore `backlog` dans
+  `epic/36-0.18.0`). Dès que la table et les routes sont visibles :
+  - la 38-6c2 se récrit **sur ce modèle** et abandonne `bank_transaction_extra_entries` (B28), si Guy couvre les quatre
+    besoins écrits dans le message à Guy : 2 à 5 écritures de somme exacte, rattachement en lot, API, annulation du
+    groupe entier ;
+  - elle se revalide ensuite (passes complètes, CLAUDE.md § *Review Iteration Rule*).
+
+  Jusque-là, la 38-6c2 n'entre pas en développement.
+- **Recoupements de la 0.18.0** : ils sont relevés au fichier de l'Epic 37 (§ *Recoupements avec l'Epic 36*).
+  Ceux qui concernent l'Epic 38 :
+  - 36-15 : le vocabulaire visible devient « compte analytique ». Il s'applique aux textes des écrans 38-9a et 38-9b, et
+    à `default_project_id`, présenté comme le compte analytique d'une règle.
+  - 36-10 : les dates sont celles de Zurich. Le téléchargement et ses fenêtres datées s'en servent déjà, par
+    `kesh_core::horloge`.
