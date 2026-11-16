@@ -316,7 +316,7 @@ describe("fiche facture — bouton « Changer le compte analytique » (36-16a)",
    * dépend de cette liste (revue P1, E-2), si bien qu'une absence constatée avant elle ne prouverait
    * rien — c'est ainsi que la mutation F4 (bouton au rôle Lecture) a survécu une fois.
    */
-  async function ficheReglee(r: ReturnType<typeof render>) {
+  async function ficheReglee(r: { findByTestId: (id: string) => Promise<HTMLElement> }) {
     await r.findByTestId("invoice-detail-date");
     await waitFor(() => expect(listProjectsMock).toHaveBeenCalled());
     await new Promise((resolve) => setTimeout(resolve, 0));
