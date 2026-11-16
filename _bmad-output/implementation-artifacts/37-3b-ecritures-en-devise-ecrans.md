@@ -206,7 +206,7 @@ devise au cours d'ouverture choisi pour l'exercice (R6), afin de tenir mes livre
    - **Tests.** Dépôt : ouverture et complément avec ligne en devise, contrepartie sur le compte de report ; API :
      `FX_AMOUNT_MISMATCH`, devise annoncée ≠ devise du compte (`FX_CURRENCY_MISMATCH`), ligne sans `currency` → devise
      du compte (T3), `foreign` sur un compte CHF → `FX_ACCOUNT_IN_CHF`, exercice mono-devise (clos avant l'activation puis rouvert ;
-     aucune route ne le fabrique : posé par `fiscal_years.multi_currency = FALSE` en SQL) → `MULTI_CURRENCY_DISABLED`,
+     fabriqué par les routes : exercice créé puis clos, activation, `POST /fiscal-years/{id}/reopen`) → `MULTI_CURRENCY_DISABLED`,
      `revaluation` refusé ; Vitest (CR-4, T3) : le corps envoyé par chacune des deux grilles porte
      `foreign.currency` = la devise du compte de la ligne ; ouverture **et** complément à lignes EUR et USD acceptés **par leurs routes** (exemption de
      `FX_MULTIPLE_CURRENCIES`, 37-3a AC-4, 2 bis), puis `PUT` du libellé de l'écriture d'ouverture ainsi créée → 200 ;
@@ -649,7 +649,12 @@ devise au cours d'ouverture choisi pour l'exercice (R6), afin de tenir mes livre
    la transaction et **avant** le premier `create_in_tx` : la ligne `companies` (`fx_transit_account_id`) lue
    `LOCK IN SHARE MODE` (jamais `FOR SHARE`), puis le compte de conversion lu `LOCK IN SHARE MODE` — ordre `companies` →
    réglages → `accounts` de 37-1 AC-3, comme la réévaluation (37-5 AC-2, étapes (0) et (3)) ; `create_in_tx_inner`
-   ne prend plus aucun verrou sur `companies` (37-3a AC-4, D-CR7-1) : rien à reprendre ni à tenir compatible → refus
+   ne prend plus de verrou de devise sur `companies` (37-3a AC-4, D-CR7-1), mais son étape 0 prend toujours la
+   sentinelle `companies` **`FOR UPDATE`** quand une ligne porte un projet (`projects::validate_taggable_in_tx`,
+   `projects.rs:101`, `journal_entries.rs:308`) : la transaction de l'assistant, qui tient déjà le partagé, monte alors
+   de S à X sur la même ligne, et deux conversions concurrentes de la même société portant chacune un projet
+   s'interbloquent — cycle défendu par le rejeu (`retry_on_deadlock`, route `Rejouee`), argument écrit au Change Log
+   avec celui des comptes ci-dessous → refus
    `FX_ACCOUNT_INVALID` ; → `FX_CONVERSION_TRANSIT_UNBALANCED` (calculé sur les corps, identifiant relu sous verrou) ;
    → équilibre de l'écriture qui n'est pas à compléter (`ENTRY_UNBALANCED`, `details.entry` — avec ou sans
    `completeDifference`, de sorte que deux écritures déséquilibrées rendent toujours le refus de celle-ci, jamais
@@ -674,7 +679,7 @@ devise au cours d'ouverture choisi pour l'exercice (R6), afin de tenir mes livre
    37-5-CR2-P2-IF2) ; phrase du manuel d'administration recomptée.
    **Tests** : dépôt et API — conversion sans frais (gain), avec frais aux deux écritures (perte), différence nulle
    (aucune ligne d'écart), compte de conversion à 0 après, refus de la seconde écriture **exécutée** (la plus tardive, placée en tête du corps pour exercer l'ordre chronologique) → rien de créé, `details.entry` = son rang dans le corps, compte de
-   conversion non désigné ou invalide, transit déséquilibré, date dans un exercice mono-devise (colonne posée en SQL, comme à l'AC-1), `details.entry`,
+   conversion non désigné ou invalide, transit déséquilibré, date dans un exercice mono-devise (fabriqué comme à l'AC-1 : clos, activation, réouverture), `details.entry`,
    `entries` de longueur 0, 1 ou 3, rôle Consultation → 403, clé d'API en lecture seule refusée ; **V3 (CR-6)** :
    corps sans ligne de différence **avec `completeDifference: true`** → ligne ajoutée en dernière ligne de l'écriture à compléter (compte de conversion au crédit net), au crédit du compte de
    gains (gain) ou au débit du compte de pertes (perte), relue dans la réponse et à l'audit, compte de conversion à 0 ;
@@ -1271,3 +1276,19 @@ devise au cours d'ouverture choisi pour l'exercice (R6), afin de tenir mes livre
   bascule `force` retiré ; scénario E2E R3 retiré ; manuel. FR-1, FR-2, FR-3, FR-5, FR-10, NFR-1 réécrites. Décompte :
   10 FR, 6 NFR (inchangé).
 - 2026-11-16 — validation CR-7 P1 (Sonnet) : 0 CRITICAL, 0 HIGH, 1 MEDIUM, 2 LOW ; remédiés (D-CR7-1 appliquée : `create_in_tx_inner` ne prend plus `companies`). MEDIUM : 37-3b-CR7-P1-1 (AC-2 bis, verrous : « le `companies` en partage que `create_in_tx_inner` reprend … est alors déjà tenu » prémisse périmée par D-CR7-1 — la route de conversion garde seule sa lecture de `companies`, sans rien à rendre compatible). LOW : -2 (AC-2, `editRefusalOutcome` : `MULTI_CURRENCY_DISABLED` « réglage retiré entre le chargement et l'envoi », résidu de la désactivation — réécrit sur l'exercice mono-devise) ; -3 (AC-1 et AC-2 bis, tests : l'exercice mono-devise d'une société multi-devises n'a aucune route qui le fabrique — fixture posée en SQL, écrite). Résidus CR-7 : aucun autre (`currency-mode`, `force`, `MULTI_CURRENCY_IN_USE`, `FISCAL_YEAR_*`, `laterFiscalYear`, `monoCurrencyFiscalYear`, `fiscalYears`) hors Change Logs datés. Aucun inter-fiches propre à 37-3b ; inter-fiches de la passe 37-3a signalés au rapport (37-1, 37-5, epic).
+- 2026-11-16 — validation CR-7 P2 (Opus) : 0 CRITICAL, 0 HIGH, 2 MEDIUM, 0 LOW ; remédiés. MEDIUM : 37-3b-CR7-P2-1
+  (AC-1 et AC-2 bis, tests : « aucune route ne le fabrique : posé … en SQL », écrit par la remédiation P1 (-3), est
+  faux au code — `POST /fiscal-years/{id}/close`, l'activation de 37-1 et `POST /fiscal-years/{id}/reopen`
+  (`routes/fiscal_years.rs:10-11`) fabriquent un exercice mono-devise d'une société multi-devises ; la fixture passe
+  par les routes) ; 37-3b-CR7-P2-2 (AC-2 bis, verrous : « `create_in_tx_inner` ne prend plus aucun verrou sur
+  `companies` : rien à reprendre ni à tenir compatible », écrit par la remédiation P1 (-1), est faux — son étape 0
+  prend la sentinelle `companies` `FOR UPDATE` dès qu'une ligne porte un projet (`journal_entries.rs:308` →
+  `projects.rs:101` → `bank_accounts.rs:1729`) ; la route, qui tient déjà le partagé, monte de S à X : deux
+  conversions concurrentes portant chacune un projet s'interbloquent ; écrit, défendu par le rejeu de la route
+  `Rejouee`, argument au Change Log du développement ; lecture partagée gardée, comme la réévaluation). D-CR7-2 : sans
+  effet propre sur 37-3b (aucune mention de la limite). Axes exercés : diff P1 (882d865b..e99364d2) phrase par phrase
+  contre le code (`fiscal_years` routes et dépôt, `validate_taggable_in_tx`, `acquire_company_sentinel_lock`) ;
+  résidus du modèle réversible (`currency-mode`, `force`, bascule, désactivation, `laterFiscalYear`,
+  `monoCurrencyFiscalYear`, masquage par exercice, limite du trou) hors Change Logs datés ; KISS (aucun mécanisme
+  restant propre à la réversibilité trouvé). Non exercés : AC-3 à AC-6 hors grep, calculs de l'assistant TVA et de la
+  conversion, i18n, E2E, compilation. Inter-fiches : 37-3a (CR7-P2, D-CR7-2 cité) ; aucun autre.

@@ -34,7 +34,7 @@ clôture et que l'écart aille aux différences de change.
 - FR-37-5-2 — Le cours par défaut, par devise, est le cours **retenu par la société** (jamais la dernière valeur publiée non reprise, U1), selon le genre de clôture de l'exercice : genre `day`, le cours journalier de la date de fin, à défaut le cours mensuel du mois de fin signalé comme repli ; genre `month`, le cours mensuel du dernier mois seul ; sinon `RATE_UNAVAILABLE` — à l'aperçu, la devise est signalée et ses comptes exclus jusqu'à saisie ou récupération (ni refus ni `blockers[]`), à la passation, 404. Il est surchargeable par devise (`rates`) ; le genre d'un cours reçu (`day`, `month`, `request`) suit une règle unique à l'aperçu, à la passation et à l'audit ; l'aperçu porte, par devise, le cours, son genre et sa date, le cours et la source de la résolution par défaut (source brute, une autre que `afc` traitée comme `manual`, A30), `overridden` et `sourceDate` (cours `afc` seulement), et `closingRateKind` (AC-1, AC-2, AC-7).
 - FR-37-5-3 — `POST …/fx-revaluation` recalcule sans se fier à l'aperçu et passe, dans **une seule transaction** (toutes ou aucune), une écriture `OD` de deux lignes par compte à écart non nul, datée du dernier jour de l'exercice (ligne `revaluation` à montant en devise 0 et CHF = |D|, exemptée de l'égalité CHF = montant × cours et de `FX_LINE_ROUNDS_TO_ZERO` ; D > 0 : débit du compte réévalué, crédit du compte de gains ; D < 0 : crédit du compte réévalué, débit du compte de pertes — gains et pertes du compte réévalué, quel que soit le signe du solde ; aucune compensation entre comptes), libellé français partagé avec l'aperçu ; verrous pris avant toute lecture des soldes, si bien que deux passations concurrentes n'en passent qu'une ; aucun écart → 200 `{ entryIds: [] }`, sinon les identifiants dans l'ordre des numéros de compte. Les livres importés repassent leur réévaluation par cette route (V8) (AC-2).
 - FR-37-5-4 — La passation est rejouable compte par compte : un second passage sans mouvement ne passe rien, après un mouvement tardif seul le résidu du compte touché ; une réévaluation se corrige par suppression ou nouveau passage (le `PUT` la refuse, la contre-passation ne corrige que dans un exercice en cours) ; aucune écriture de report (AC-3).
-- FR-37-5-5 — Les gardes refusent en deux temps, une seule raison, la plus bloquante d'abord. Avant la transaction : exercice inconnu ou d'une autre société (404), société ou exercice mono-devise (409 `MULTI_CURRENCY_DISABLED`), exercice clos (400 `FISCAL_YEAR_CLOSED`), forme (400 `FX_RATE_INVALID`, `FX_REVALUATION_ACCOUNT_INVALID` `empty`/`duplicate`/`tooMany`), cours par défaut manquant (404 `RATE_UNAVAILABLE`). Sous verrou : mono-devise, clos, `EARLIER_FISCAL_YEAR_OPEN`, `FX_ACCOUNT_INVALID` des comptes employés par les comptes admissibles, `notEligible` (sans fuite d'existence), genre de clôture changé (409 `OPTIMISTIC_LOCK_CONFLICT`), `RATE_UNAVAILABLE` d'une devise changée, puis `LATER_FISCAL_YEAR_CLOSED`, `DATE_OUTSIDE_FISCAL_YEAR`, `PERIOD_LOCKED`. Bornes : cours > 0, ≤ 10 décimales, ≤ 10⁶, par unité, clé = devise d'au moins un compte sélectionné (sinon 400 `FX_RATE_INVALID`) ; au plus 100 devises et 498 comptes ; produit en `i128` contrôlé, CHF réévalué ou |D| > 10¹³ → 400 `FX_VALUE_OUT_OF_RANGE` (AC-4).
+- FR-37-5-5 — Les gardes refusent en deux temps, une seule raison, la plus bloquante d'abord. Avant la transaction : exercice inconnu ou d'une autre société (404), exercice mono-devise (409 `MULTI_CURRENCY_DISABLED`, lecture simple, jamais relue sous verrou : le mode ne change plus, CR-7), exercice clos (400 `FISCAL_YEAR_CLOSED`), forme (400 `FX_RATE_INVALID`, `FX_REVALUATION_ACCOUNT_INVALID` `empty`/`duplicate`/`tooMany`), cours par défaut manquant (404 `RATE_UNAVAILABLE`). Sous verrou : clos, `EARLIER_FISCAL_YEAR_OPEN`, `FX_ACCOUNT_INVALID` des comptes employés par les comptes admissibles, `notEligible` (sans fuite d'existence), genre de clôture changé (409 `OPTIMISTIC_LOCK_CONFLICT`), `RATE_UNAVAILABLE` d'une devise changée, puis `LATER_FISCAL_YEAR_CLOSED`, `DATE_OUTSIDE_FISCAL_YEAR`, `PERIOD_LOCKED`. Bornes : cours > 0, ≤ 10 décimales, ≤ 10⁶, par unité, clé = devise d'au moins un compte sélectionné (sinon 400 `FX_RATE_INVALID`) ; au plus 100 devises et 498 comptes ; produit en `i128` contrôlé, CHF réévalué ou |D| > 10¹³ → 400 `FX_VALUE_OUT_OF_RANGE` (AC-4).
 - FR-37-5-6 — L'action « Réévaluer les devises » n'apparaît que pour un exercice ouvert et multi-devises, aux rôles Comptable et Administrateur ; l'écran montre cours, source et genre, montre l'écriture prévue par compte avec sa contrepartie et son origine, les totaux des gains et des pertes, propose la récupération du cours (jour ou mois selon le genre et la date ; aucun bouton du jour tant que la date de fin n'est pas passée), affiche sous le champ le cours retenu par la société quand il en diffère, sans ↑, ne relit l'aperçu qu'avec la sélection et les cours modifiés (aucune relecture à sélection vide), envoie à la passation les cours affichés des seules devises d'au moins un compte coché et désactive « Passer les écritures » tant que `blockers[]` n'est pas vide ; un cours modifié à l'écran ne vaut que pour la passation, il n'écrit aucun cours saisi (AC-1, AC-4, AC-5, AC-6).
 
 **Non fonctionnelles**
@@ -141,7 +141,8 @@ clôture et que l'écart aille aux différences de change.
    - **Avertissements de l'aperçu** (sans refus) : l'aperçu signale, sans écrire, ce que la passation refuserait —
      `EARLIER_FISCAL_YEAR_OPEN`, `LATER_FISCAL_YEAR_CLOSED`, `PERIOD_LOCKED`, `FX_ACCOUNT_INVALID` — dans un champ
      `blockers[]` (code et détails) (CR-7 : `laterFiscalYear` retiré, aucun exercice mono-devise ne suit un exercice
-     multi-devises) ; l'écran désactive « Passer les écritures » tant qu'il n'est pas vide
+     multi-devises — les exercices clos à l'activation précèdent les ouverts, et la création d'un exercice avant un
+     exercice mono-devise est refusée, D-CR7-2, 37-1) ; l'écran désactive « Passer les écritures » tant qu'il n'est pas vide
      (`FX_ACCOUNT_INVALID` : sur les comptes sélectionnés seulement, l'aperçu relu à chaque case, AC-4).
    - **Une ligne d'aperçu par compte = une écriture (R9)** : l'aperçu présente, par compte retenu, l'écriture qui sera
      passée (compte réévalué, contrepartie, montant, libellé de l'AC-2) ; les totaux des gains et des pertes restent
@@ -184,13 +185,15 @@ clôture et que l'écart aille aux différences de change.
      verrou (`close` le dit de sa propre étape (d) : « la vue fixée à l'étape (a) » ; elle n'y perd rien, n'ayant aucun
      solde à lire). `post` lit donc la date de début de l'exercice et la liste des antérieurs **avant `begin`**, sur le
      pool (une date de début ne change pas : seul le nom d'un exercice se modifie), puis, dans la transaction :
-     (0) la ligne `companies` (`multi_currency_enabled`, `fx_gain_account_id`, `fx_loss_account_id`) lue
-     `LOCK IN SHARE MODE` (jamais `FOR SHARE`, erreur de syntaxe sur MariaDB 10.11 ; ce partage bloque aussi toute
-     désignation de comptes propres concurrente, qui prend `companies` en exclusif, 37-1 AC-4 bis : les désignations
-     lues ensuite restent celles du calcul) **avant tout exercice** : c'est
+     (0) la ligne `companies` (`fx_gain_account_id`, `fx_loss_account_id` — **pas** `multi_currency_enabled` : le mode
+     ne se relit pas sous verrou, D-CR7-3) lue
+     `LOCK IN SHARE MODE` (jamais `FOR SHARE`, erreur de syntaxe sur MariaDB 10.11 ; ce partage fige les comptes de
+     différence de la société contre un `PUT /companies/current/currency-settings` concurrent et bloque toute
+     désignation de comptes propres concurrente, qui prennent `companies` en exclusif, 37-1 AC-3 et AC-4 bis : les
+     désignations lues ensuite restent celles du calcul) **avant tout exercice** : c'est
      l'ordre global `companies` → exercice des chemins Pattern 5 (`repositories/invoices.rs:698`, sentinelle puis `create_in_tx`) ;
-     prise après l'exercice, elle formerait le cycle exercice → `companies` contre `companies` → exercice (aucun flux ne
-     prend un exercice puis `companies` **en exclusif** : ni `close`, ni `reopen`, ni `lock_books`,
+     prise après l'exercice, elle formerait un cycle avec ces chemins ; prise en tête, elle n'en forme aucun, car aucun
+     flux ne prend un exercice puis `companies` **en exclusif** (ni `close`, ni `reopen`, ni `lock_books`,
      `repositories/companies.rs:1002-1020` ; 37-3a ne prend plus de verrou sur `companies` pour une ligne en devise,
      D-CR7-1 : `create_in_tx_inner`, appelée ensuite, n'en ajoute aucun) ; (1) chaque antérieur
      verrouillé par clé primaire (`LOCK_EARLIER_BY_ID_SQL`) dans l'ordre chronologique, puis
@@ -297,20 +300,21 @@ clôture et que l'écart aille aux différences de change.
    **clos** de l'exercice parle avant les comptes et les cours ; les refus de forme (400) et le cours par défaut manquant (AC-1),
    **avant la transaction**, précèdent `EARLIER_FISCAL_YEAR_OPEN`, qui ne se lit que sous verrou).
    **Avant la transaction** (handler) : exercice inexistant ou d'une autre société → 404 (le handler appelle d'abord
-   `fiscal_years::find_by_id_in_company`) ; société **ou exercice** mono-devise → **409** `MULTI_CURRENCY_DISABLED`
-   (409 partout, décision d'epic ; R3 : `fiscal_years.multi_currency` de 37-1, `details: { fiscalYearId }` pour
-   l'exercice) ; exercice clos (lecture non verrouillante, refaite dans la transaction) → **400** `FISCAL_YEAR_CLOSED`
+   `fiscal_years::find_by_id_in_company`) ; exercice mono-devise → **409** `MULTI_CURRENCY_DISABLED`
+   (409 partout, décision d'epic ; R3 : `fiscal_years.multi_currency` de 37-1, `details: { fiscalYearId }` ; une
+   société mono-devise n'a que des exercices mono-devise, si bien qu'aucune branche « société » n'est jugée, comme en
+   37-3a, D-CR7-1) — **lecture simple**, faite ici seulement : le réglage est irréversible et
+   `fiscal_years.multi_currency` ne change plus après la création ou l'activation (CR-7), aucune course n'est possible
+   et le mode n'est pas relu sous verrou (D-CR7-3) ; exercice clos (lecture non verrouillante, refaite dans la transaction) → **400** `FISCAL_YEAR_CLOSED`
    (`DbError::FiscalYearClosed`, `errors.rs:4516` — le code et le statut d'une écriture dans un exercice clos, non le 409
    `ILLEGAL_STATE_TRANSITION` de `close`) ; forme de
    la requête (bornes ci-dessous) → 400 `FX_RATE_INVALID`, ou 400 `FX_REVALUATION_ACCOUNT_INVALID` sur `accountIds` ; aucun cours par
    défaut (AC-1, selon le genre de clôture : ni journalier ni mensuel au genre `day`, pas de mensuel au genre
    `month`) pour une devise sélectionnée sans surcharge → 404 `RATE_UNAVAILABLE`.
    **Dans la transaction**, après tous les verrous de l'AC-2 et **dans le même ordre qu'avant la transaction** (sauf le
-   genre de clôture changé et le `RATE_UNAVAILABLE` d'une devise changée entre-temps, qui ne peuvent naître qu'ici et
-   viennent après les comptes, ci-dessous) :
-   réglage relu sous verrou (étape (0)) et mode de l'exercice relu dans sa ligne `FOR UPDATE` (étape (1)) : société ou
-   exercice mono-devise → 409 `MULTI_CURRENCY_DISABLED` ; exercice clos →
-   `FISCAL_YEAR_CLOSED` ; **exercice antérieur encore ouvert → `EARLIER_FISCAL_YEAR_OPEN`** (comme K1 : le cumul lu ne
+   mode, jugé avant la transaction seulement, et le genre de clôture changé et le `RATE_UNAVAILABLE` d'une devise
+   changée entre-temps, qui ne peuvent naître qu'ici et viennent après les comptes, ci-dessous) :
+   exercice clos, relu dans sa ligne `FOR UPDATE` (étape (1)) → `FISCAL_YEAR_CLOSED` ; **exercice antérieur encore ouvert → `EARLIER_FISCAL_YEAR_OPEN`** (comme K1 : le cumul lu ne
    serait plus stable) ; comptes de différences de change **employés** (résolus par `fx_accounts_for` pour chaque compte sélectionné
    **admissible**, S2 : un compte sélectionné non admissible, CHF ou archivé par exemple, n'emploie rien et n'est
    refusé que par `FX_REVALUATION_ACCOUNT_INVALID` plus bas ; l'admissibilité se lit à l'étape (4), avant cette
@@ -449,7 +453,7 @@ clôture et que l'écart aille aux différences de change.
      datée du 31.12.2024 ; exercice qui finit un 14 (15.03.2024–14.03.2025) → cours journalier du 14.03.2025, repli
      mensuel de mars 2025 ;
    - **exercice mono-devise (R3)** : aperçu et passation → 409 `MULTI_CURRENCY_DISABLED` `details.fiscalYearId`, avant
-     la transaction et sous verrou ; état posé par l'API (exercice clos avant l'activation, activation, réouverture ; CR-7 : le
+     la transaction (aucune relecture sous verrou, D-CR7-3) ; état posé par l'API (exercice clos avant l'activation, activation, réouverture ; CR-7 : le
      seul exercice mono-devise possible sous une société multi-devises) ;
    - cours invalide (0, négatif, 11 décimales, > 10⁶, devise sans compte) ; au-delà des bornes ;
    - `PERIOD_LOCKED` exactement à la borne (inclusive) ; exercice postérieur clos (test de dépôt, comme
@@ -546,8 +550,8 @@ clôture et que l'écart aille aux différences de change.
 
 - [ ] `kesh-core` : calcul pur de la réévaluation en débit net (entrées : soldes, cours ; sortie : lignes) et tests.
 - [ ] `kesh-db` : `fx_revaluation::post` (transaction, verrou d'exercice, soldes lus dans la transaction, **une écriture
-      par compte** dans la même transaction — R9 —, audit `fx_revaluation.posted` qui les liste, mode et genre de
-      clôture de l'exercice relus sous verrou — R3, R6). Soldes lus par `kesh_db::repositories::account_balances::balances_as_of(&mut conn,
+      par compte** dans la même transaction — R9 —, audit `fx_revaluation.posted` qui les liste, état clos et genre de
+      clôture de l'exercice relus sous verrou — R6 ; le mode, R3, se juge avant la transaction seulement, D-CR7-3). Soldes lus par `kesh_db::repositories::account_balances::balances_as_of(&mut conn,
       company_id, fin_d_exercice, Some(ids))` (37-4 AC-1 quater : dans `kesh-db`, car `kesh-db` ne peut pas dépendre de
       `kesh-report` ; borne `<=` incluse ; débit net brut ; aucune conversion de signe).
 - [ ] `kesh-api` : routes (aperçu, passation) dans `comptable_routes`, gardes, résolution des cours avant la
@@ -837,3 +841,4 @@ clôture et que l'écart aille aux différences de change.
   multi-devises parce que créé après l'activation (route `currency-mode` retirée). FR-1 et FR-5 réécrites
   (`blockers[]` : quatre codes). Décompte : 6 FR, 6 NFR (inchangé).
 - 2026-11-16 — validation CR-7 P1 (Sonnet) : 0 CRITICAL, 0 HIGH, 1 MEDIUM, 3 LOW. MEDIUM 37-5-CR7-P1-1 : l'AC-2 (étape (0)) s'appuyait sur le verrou partagé de `companies` de 37-3a dans `create_in_tx_inner` et sur la contre-passation « prend `companies` en partagé », retirés par D-CR7-1 — texte réduit à l'ordre de Pattern 5. LOW -P1-2 : test « exercice mono-devise » sans moyen de poser l'état (CR-7 : clos avant l'activation, puis rouvert) — précisé. LOW -P1-3 : manuel (AC-8) « exercice mono-devise » sans le seul cas possible — précisé. LOW -P1-4 (KISS, non modifié, signalé) : le mode de la société et de l'exercice relu « sous verrou » (AC-2 étape (0)-(1), AC-4, FR-5, Tâches) est un filet sans course possible depuis CR-7 (réglage irréversible, `fiscal_years.multi_currency` ne change plus) ; gardé, la ligne `companies` étant de toute façon lue en partage pour les désignations. Axes exercés : résidus (grep des neuf termes : aucun hors Change Logs datés), blockers/ordre des refus, FR-1/FR-5, recette V7, tests, verrous, récapitulatif de l'epic. Non exercés : code.
+- 2026-11-16 — validation CR-7 P2 (Opus) : 0 CRITICAL, 0 HIGH, 1 MEDIUM, 3 LOW ; remédiés dans la fiche (D-CR7-2, D-CR7-3 appliquées). MEDIUM 37-5-CR7-P2-1 (D-CR7-3, KISS ; reprend P1-4) : le mode de la société et de l'exercice relu sous verrou (AC-2 étape (0) `multi_currency_enabled`, AC-4 « dans la transaction », FR-37-5-5, Tâches, test « avant la transaction et sous verrou ») n'existait que pour une bascule retirée par CR-7 — retiré ; le 409 `MULTI_CURRENCY_DISABLED` reste une lecture simple avant la transaction ; l'étape (0) garde `companies` en partage pour les seuls comptes de différence. LOW -P2-2 (D-CR7-2) : « aucun exercice mono-devise ne suit un exercice multi-devises » (AC-1, `blockers[]`) était faux sous la limite assumée de 37-1 (exercice créé dans un trou devant un exercice rouvert) ; il tient par le refus de D-CR7-2, renvoi écrit ; 37-5 ne portait ni la limite, ni son test, ni sa phrase au manuel. LOW -P2-3 (KISS) : branche « société mono-devise » du 409 redondante (une société mono-devise n'a que des exercices mono-devise) — jugé sur l'exercice seul, `details: { fiscalYearId }`, comme 37-3a (D-CR7-1). LOW -P2-4 : étape (0), la parenthèse « aucun flux ne prend un exercice puis `companies` en exclusif » justifiait l'ordre choisi et non le cycle qu'elle suivait, et le partage omettait le `PUT currency-settings` (37-1 AC-3, `companies` `FOR UPDATE`) — reformulé. Vérifié : 37-1 AC-3 (l. 261, `companies` `FOR UPDATE`), AC-4 bis (l. 592-596, désignation propre `FOR UPDATE`, « contre la réévaluation (37-5, `companies` en partage en tête) ») ; 37-3a D-CR7-1 (l. 23, 256, 418) ; `repositories/invoices.rs:698` (sentinelle Pattern 5) ; `fiscal_years.rs:376` (`LaterFiscalYearClosed`) ; récapitulatif de l'epic (l. 451) sans « sous verrou » du mode. Axes exercés : remédiation P1 (diff `882d865b..e99364d2`), D-CR7-2, D-CR7-3, résidus (grep `multi_currency_enabled`, « société ou exercice », « trou », « limite assumée », mode relu), verrous de l'AC-2, ordre des refus de l'AC-4, FR-37-5-1/-5, tests de l'AC-7, manuel AC-8. Non exercés : code (non écrit), AC-3, AC-5, AC-6 hors mode, recette V7 en détail. Décompte : 6 FR, 6 NFR (inchangé). Un MEDIUM : passe suivante requise.

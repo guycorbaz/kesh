@@ -23,7 +23,8 @@ dans un exercice mono-devise est refusée au rang 2, avec ou sans `foreign`) et 
 37-1 (`FISCAL_YEAR_HAS_FOREIGN_BALANCES`). **Décision de l'orchestrateur D-CR7-1 (KISS, 2026-11-16, passe CR-7 P1)** : le verrou
 partagé de `companies` pris quand une ligne porte `foreign` est **retiré** — la société ne redevient jamais mono-devise,
 la devise du compte lue en partage suffit ; la branche « société » du refus `MULTI_CURRENCY_DISABLED` (rang 2) disparaît
-avec lui.*
+avec lui. **D-CR7-2 (KISS, passe CR-7 P2)** : la création d'un exercice avant un exercice mono-devise est refusée
+(37-1) ; la limite assumée d'un exercice créé dans un trou devant un exercice rouvert disparaît.*
 
 ## Story
 
@@ -256,13 +257,10 @@ chacune (R7), l'écart de change dans la seconde, afin que mes comptes en devise
       à l'étape 1-ter d'`update_in_tx` ; `details: { fiscalYearId }`). **Aucune branche « société »** (D-CR7-1) : un
       compte ne porte une devise que dans une société multi-devises (37-1 AC-4), qui ne redevient jamais mono-devise ; la
       société n'est pas lue. Un exercice mono-devise d'une société multi-devises est un exercice clos avant
-      l'activation puis rouvert : le message le dit (aucun compte en devise n'y est utilisable), sans rien proposer. La
-      **limite assumée** de 37-1 (Révision CR-7 : exercice créé après l'activation dans un trou devant un exercice clos
-      avant l'activation puis rouvert) n'est pas gardée ici : ses lignes en devise changent le solde d'ouverture en
-      devise de l'exercice rouvert, où aucune ligne en devise ne se passe, sans rien de faux en CHF ; à écrire au
-      Change Log de cette story.
-      *(CR-7 : garde `laterFiscalYear` retirée — aucun exercice mono-devise ne suit un exercice multi-devises, 37-1
-      Révision CR-7.)* Les lignes d'avant d'un `PUT` (`before_lines`, lues aujourd'hui à l'étape 8, `:1629`) se lisent
+      l'activation puis rouvert : le message le dit (aucun compte en devise n'y est utilisable), sans rien proposer.
+      *(CR-7 : garde `laterFiscalYear` retirée — aucun exercice mono-devise ne suit un exercice multi-devises : la
+      création d'un exercice avant un exercice mono-devise est refusée par `fiscal_years::create`, comme avant un
+      exercice clos, D-CR7-2, 37-1 Révision CR-7 ; aucune limite à écrire ici.)* Les lignes d'avant d'un `PUT` (`before_lines`, lues aujourd'hui à l'étape 8, `:1629`) se lisent
       plus tôt, sous le verrou de l'écriture, à l'étape 6 (après la garde des comptes), pour la règle d'une devise du
       rang 2 bis ;
    2 bis. **une seule devise étrangère par écriture (R7)**, jugée sur les **devises des comptes** des lignes (T3,
@@ -297,7 +295,7 @@ chacune (R7), l'écart de change dans la seconde, afin que mes comptes en devise
       `reverses_entry_id.is_some()`, comme pour `FX_RATE_NOT_AFC`) : elle recopie une écriture qui a passé ce contrôle,
       ou une ouverture. Exemption de l'ouverture : arbitrage A3, approuvé par Beat (CR-5). ⚠️ **La contre-passation n'est pas exemptée de
       `MULTI_CURRENCY_DISABLED`** : elle est datée du jour ou du premier jour de l'exercice suivant (`ReversalDating`,
-      `reverse_in_tx_inner`) ; l'exercice suivant d'un exercice multi-devises l'est aussi (CR-7), seul un exercice du
+      `reverse_in_tx_inner`) ; l'exercice suivant d'un exercice multi-devises l'est aussi (CR-7, D-CR7-2), seul un exercice du
       jour mono-devise (clos avant l'activation, rouvert) la refuse en 409 ; comportement assumé, testé (origine en
       devise, exercice du jour mono-devise) ;
    3. accord de chaque ligne avec la devise de **son compte** (T3, CR-4), première ligne fautive, son rang en
@@ -1137,3 +1135,21 @@ chacune (R7), l'écart de change dans la seconde, afin que mes comptes en devise
   retirée ; lecture anticipée des lignes d'avant gardée pour la règle d'une devise (2 bis) ; tests correspondants
   retirés ou réduits. FR-10 et FR-12 retirées (numéros non réattribués), FR-4 réécrite. Décompte : 12 FR (−2), 6 NFR.
 - 2026-11-16 — validation CR-7 P1 (Sonnet) : 0 CRITICAL, 0 HIGH, 1 MEDIUM, 3 LOW ; remédiés. D-CR7-1 appliquée (KISS) : verrou partagé de `companies` retiré (AC-4, 2 et *Concurrence*, NFR-3, FR-4, tests de concurrence et tâche `kesh-db`) ; branche « société » du refus `MULTI_CURRENCY_DISABLED` retirée (rang 2 : seul l'exercice se juge, `details: { fiscalYearId }`) ; cycles propres à ce verrou retirés (exercice → `companies` avec Pattern 5, montée S → X contre la sentinelle des projets, `PUT` contre dévalidation de facture, contre-passation) ; reste le cycle du complément d'ouverture, déjà présent. Findings : 37-3a-CR7-P1-1 (MEDIUM, AC-4 2 : « société mono-devise » encore jugée au rang 2 alors qu'elle n'a aucun compte en devise et que `companies` n'était plus lue après D-CR7-1 — branche retirée) ; -2 (LOW, AC-4 2 : limite d'un exercice créé dans un trou non rappelée — renvoi à 37-1 écrit, Change Log) ; -3 (LOW, AC-5 : un chemin automatique dans un exercice mono-devise rend 409 `MULTI_CURRENCY_DISABLED`, non `ACCOUNT_REQUIRES_CURRENCY` — précisé) ; -4 (LOW, Tâches : test de concurrence sur `companies` sans objet — retiré). Inter-fiches signalés : 37-1 (argument du rejeu de l'AC-4 bis qui s'appuie sur « une écriture qui porte une ligne en devise prend `companies` en partage »), 37-5 (étape (0) : ordre `companies` → exercice « de 37-3a AC-4 »), 37-3b (« le `companies` en partage que `create_in_tx_inner` reprend », AC-2 bis), epic (« Points à faire valider » (2)).
+- 2026-11-16 — validation CR-7 P2 (Opus) : 0 CRITICAL, 0 HIGH, 1 MEDIUM, 1 LOW ; remédiés. MEDIUM : 37-3a-CR7-P2-1
+  (AC-4, 2 : la phrase de la « limite assumée » de 37-1 — exercice créé dans un trou devant un exercice rouvert, à
+  écrire au Change Log —, ajoutée par la remédiation P1 (-2), est retirée par D-CR7-2 : `fiscal_years::create` refuse
+  la création avant un exercice mono-devise, comme avant un exercice clos (`LaterFiscalYearClosed`,
+  `repositories/fiscal_years.rs:363-380`) ; la parenthèse « aucun exercice mono-devise ne suit un exercice
+  multi-devises », fausse dans le cas de la limite, est désormais fondée et renvoie à D-CR7-2). LOW : 37-3a-CR7-P2-2
+  (AC-4, 2 bis : « l'exercice suivant d'un exercice multi-devises l'est aussi » — même fondement, D-CR7-2 cité ;
+  en-tête de la Révision CR-7 complété de D-CR7-2). Vérifié au code : le cas testé « contre-passation vers un exercice
+  du jour mono-devise » reste atteignable (`close` n'exige pas une fin passée : exercice du jour clos avant
+  l'activation, rouvert, origine dans un exercice postérieur créé après) ; le rang 2 et le texte *Concurrence* après
+  D-CR7-1 sont justes (`journal_entries.rs:308` : sentinelle des projets prise par `create_in_tx_inner` seule, sans
+  partagé avant elle). Axes exercés : diff P1 (882d865b..e99364d2) phrase par phrase contre le code
+  (`fiscal_years::create`, `close`, `reopen`, `validate_taggable_in_tx`, `acquire_company_sentinel_lock`) ; résidus
+  du modèle réversible (`laterFiscalYear`, `monoCurrencyFiscalYear`, `force`, bascule, désactivation, `companies`)
+  hors Change Logs datés ; mécanismes KISS (lecture anticipée des lignes d'avant : gardée, sert au rang 2 bis).
+  Non exercés : AC-1 à AC-3, AC-6, AC-8, AC-9 hors grep ; i18n ; MCP ; compilation. Inter-fiches : 37-1 (D-CR7-2 :
+  refus et son test, limite retirée de la Révision CR-7 et de l'AC-10 — autre agent) ; 37-3b (AC-2 bis, montée S → X
+  de la route de conversion, P2 de 37-3b).

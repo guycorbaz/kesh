@@ -449,7 +449,10 @@ cours sans saisie.
      tant que la société est mono-devise, aucun compte, archivé compris, ne porte de devise ;
      `companies::update_currency_settings` n'appelle pas la copie.
      Ces trois derniers appels se font **dans la transaction** de la route de 37-1 ou de cette story, après ses
-     verrous (l'`INSERT` prend `companies` en partage par sa clé étrangère : la route tient déjà `companies`) ;
+     verrous (l'`INSERT` prend `companies` en partage par sa clé étrangère : `accounts::create`, `accounts::update` et
+     `fiscal_years::create` la tiennent déjà — en partage, ou en exclusif pour un geste de compte qui porte des comptes
+     propres —, 37-1 AC-4, AC-4 bis et AC-3 bis ; `PUT /rate-kinds` la prend là, après
+     l'exercice `FOR UPDATE`, AC-5 *Rejeu*) ;
      le `SELECT` de l'`INSERT … SELECT` pose sous REPEATABLE READ des verrous **partagés** sur les lignes lues — celles
      de `_kesh_fetched_exchange_rates` et, par le filtre A24, celles d'`accounts` de la société : ce n'est **pas** une
      lecture sans verrou. Elle peut croiser une récupération, qui tient ses lignes `_kesh_fetched_exchange_rates`
@@ -751,8 +754,8 @@ cours sans saisie.
      colonnes de 37-1 sous `FOR UPDATE` de l'exercice ; refus, dans l'ordre : 401, 403 → 400 `VALIDATION_ERROR`
      (corps illisible, champ absent ou valeur hors `day|month` : rejet de l'extracteur `impl_validation_extractor`,
      `extractors.rs:18`, **avant** le handler — un corps typé ne peut se juger après le 404) → 404 (exercice d'une autre
-     société) → 409 `MULTI_CURRENCY_DISABLED` (société ou exercice mono-devise, `details: { fiscalYearId }` pour
-     l'exercice) → 400 `FISCAL_YEAR_CLOSED` (exercice clos : ses genres sont figés), mode et statut relus sous le
+     société) → 409 `MULTI_CURRENCY_DISABLED` (exercice mono-devise — une société mono-devise n'a que des exercices
+     mono-devise, 37-1 AC-3 bis —, `details: { fiscalYearId }`) → 400 `FISCAL_YEAR_CLOSED` (exercice clos : ses genres sont figés), mode et statut relus sous le
      `FOR UPDATE` ; no-op → 200 sans audit ; audit `fiscal_year.rate_kinds_updated` (`{ before, after }`, `ACTIONS`
      triée, quatre locales). Le choix ne réécrit rien : il change le cours **proposé** à l'ouverture (37-3b) et à la
      réévaluation (37-5), et les jours que récupère la tâche automatique (AC-4) ; les unités neuves reçoivent la copie
@@ -766,8 +769,8 @@ cours sans saisie.
      **change**, que l'exercice suivant existe et que `applyToNextOpening` est vrai : son `opening_rate_kind` prend la
      valeur de `closingRateKind` (même genre : le cours d'ouverture reste le cours de clôture de l'exercice réglé, T4),
      **s'il est ouvert** — clos, il n'est pas touché et la réponse le dit (`nextFiscalYear: { id, applied: false, reason:
-     "closed" }`) ; son mode (mono- ou multi-devises) n'y fait rien (le genre n'est qu'un réglage ; un exercice suivant
-     mono-devise ne se rencontre que dans la limite de 37-1, Révision CR-7, et ne le lit jamais). `applyToNextOpening` vrai sans changement de `closingRateKind` ou sans exercice suivant : sans
+     "closed" }`) ; son mode n'est pas relu (le genre n'est qu'un réglage ; l'exercice suivant d'un exercice
+     multi-devises l'est aussi : aucun exercice ne se crée avant un exercice mono-devise, 37-1 AC-3 bis, D-CR7-2). `applyToNextOpening` vrai sans changement de `closingRateKind` ou sans exercice suivant : sans
      effet, sans erreur. **Aucune écriture n'est modifiée, et il n'y a rien à modifier** : entre deux exercices Kesh, les
      soldes de bilan sont **cumulés** d'un exercice à l'autre, sans écriture de report (`opening.rs`, 37-4 AC-1) ; les
      soldes d'ouverture ne se saisissent que sur le **premier** exercice de la société
@@ -1648,3 +1651,17 @@ cours sans saisie.
   : aucun hors Change Logs datés), AC-3 bis, AC-4 (unités utiles), AC-5 (ordre des refus, rejeu, registre « vingt-sept »),
   AC-7, D-CR7-1 (aucune dépendance de 37-2 au verrou de `companies` des écritures). Non exercés : AC-6 au-delà du
   sélecteur, code, i18n, manuels. Décompte : 12 FR, 8 NFR (inchangé).
+- 2026-11-16 — validation CR-7 P2 (Opus) : 0 CRITICAL, 0 HIGH, 0 MEDIUM, 3 LOW ; remédiés. LOW 37-2-CR7-P2-1
+  (décision de l'orchestrateur) : le 409 `MULTI_CURRENCY_DISABLED` de `PUT /rate-kinds` (AC-5) jugeait « société ou
+  exercice mono-devise » — aligné sur l'exercice seul (une société mono-devise n'a que des exercices mono-devise).
+  LOW -P2-2 (D-CR7-2) : U4 de l'AC-5 renvoyait à « la limite de 37-1, Révision CR-7 », retirée — récrit : l'exercice
+  suivant d'un exercice multi-devises l'est aussi (aucun exercice ne se crée avant un exercice mono-devise, 37-1 AC-3
+  bis). LOW -P2-3 (résidu de la bascule) : AC-3 bis, « la route tient déjà `companies` » — faux pour `PUT /rate-kinds`
+  (exercice `FOR UPDATE` puis `companies` par la clé étrangère, AC-5 *Rejeu*) ; récrit (routes de compte et
+  `fiscal_years::create`, qui lit désormais `companies` en partage en tête, 37-1 AC-3 bis, la tiennent ; `PUT
+  /rate-kinds` la prend après l'exercice). Axes exercés : diff P1 (`882d865b..e99364d2`, AC-3 bis, AC-5 rejeu, AC-1,
+  AC-7), résidus du modèle réversible (grep : bascule, désactivation, réactivation, « au passage », limite, société
+  mono-devise — hors Change Logs, aucun reste), D-CR7-1 (aucune dépendance), D-CR7-2 (renvois), branche du 409 (AC-5,
+  FR-11, `GET` du tableau, ordre des refus des routes de cours), KISS (aucun mécanisme propre à la réversibilité ;
+  lecture du mode sous le `FOR UPDATE` de l'exercice gardée : verrou déjà pris). Non exercés : AC-4 au-delà des
+  unités utiles, AC-6 au-delà du sélecteur, code, i18n, manuels. Décompte : 12 FR, 8 NFR (inchangé).
