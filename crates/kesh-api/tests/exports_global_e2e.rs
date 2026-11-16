@@ -276,7 +276,7 @@ async fn post_entry(
     journal_entries::create(
         pool,
         fiscal_year_id,
-        user_id,
+        kesh_db::entities::audit_log::Acteur::utilisateur(user_id),
         NewJournalEntry {
             company_id,
             entry_date: date,
@@ -2091,7 +2091,7 @@ async fn export_global_zip_carries_a_modified_entry_and_its_trace(pool: MySqlPoo
     let created = journal_entries::create(
         &pool,
         ctx.fy_id,
-        ctx.user_id,
+        kesh_db::entities::audit_log::Acteur::utilisateur(ctx.user_id),
         NewJournalEntry {
             company_id: ctx.company_id,
             entry_date: NaiveDate::from_ymd_opt(2026, 3, 1).unwrap(),
@@ -2121,8 +2121,7 @@ async fn export_global_zip_carries_a_modified_entry_and_its_trace(pool: MySqlPoo
         ctx.company_id,
         created.entry.id,
         created.entry.version,
-        ctx.user_id,
-        None,
+        kesh_db::entities::audit_log::Acteur::utilisateur(ctx.user_id),
         NewJournalEntry {
             company_id: ctx.company_id,
             entry_date: NaiveDate::from_ymd_opt(2026, 3, 2).unwrap(),

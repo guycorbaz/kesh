@@ -7,10 +7,8 @@
 	import type { AccountResponse } from '$lib/features/accounts/accounts.types';
 	import { getVatRates } from '$lib/features/vat-rates/vat-rates.store.svelte';
 	import type { VatRateResponse } from '$lib/features/vat-rates/vat-rates.types';
-	import Big from 'big.js';
-	import { isValidAmount, parseAmount } from './balance';
 	import type { LineDraft } from './form-helpers';
-	import { buildPurchaseVatLines, lineVatAmount } from './vat-purchase';
+	import { htAmountProblem, purchaseVatEntry, readHtAmount } from './vat-purchase';
 	import AccountAutocomplete from './AccountAutocomplete.svelte';
 
 	interface Props {
@@ -66,14 +64,13 @@
 
 	const selectedRate = $derived(rates.find((r) => r.rate === ratePercent) ?? null);
 
-	// HT valide ssi format OK ET arrondi au centime strictement > 0 : un HT
-	// sub-centime (ex. 0.001) arrondirait la ligne de charge à 0.00 → écriture
-	// rejetée (`debit > 0`). Big.js (jamais Number/parseFloat sur un montant).
-	const htValid = $derived(
-		isValidAmount(htAmount) &&
-			htAmount.trim() !== '' &&
-			parseAmount(htAmount).round(2, Big.roundHalfUp).gt(0)
-	);
+	// HT valide ssi clair à la lecture du journal ET arrondi au centime strictement
+	// > 0 : un HT sub-centime (ex. 0.001) arrondirait la ligne de charge à 0.00 →
+	// écriture rejetée (`debit > 0`). Story 36-3 (#1051, D5) : « 1'234.50 » admis,
+	// « 1.234 » refusé comme ambigu (`readHtAmount`).
+	const htReading = $derived(readHtAmount(htAmount));
+	const htValid = $derived(htReading.usable);
+	const htProblem = $derived(htAmountProblem(htReading));
 
 	// AC8 : garde de validation des entrées.
 	const sameChargeCounterparty = $derived(
@@ -100,14 +97,17 @@
 
 	function insert() {
 		if (!canInsert || recoverableAccountId === null || ratePercent === null) return;
-		const lines = buildPurchaseVatLines({
+		// Story 36-3 (D5) : lignes tirées de la charge normalisée (« 1'234.50 » →
+		// 1234.50), jamais du HT brut ; `null` si le HT n'est pas utilisable.
+		const entry = purchaseVatEntry({
 			chargeAccountId: chargeAccountId!,
 			htAmount,
 			ratePercent,
 			counterpartyAccountId: counterpartyAccountId!,
 			recoverableAccountId
 		});
-		const isExempt = lineVatAmount(htAmount, ratePercent) === '0.00';
+		if (entry === null) return;
+		const { lines, isExempt } = entry;
 		const description = isExempt
 			? i18nMsg('vat-purchase-description-exempt', 'Achat — sans TVA')
 			: i18nMsg('vat-purchase-description', 'Achat — TVA {$rate} % récupérable', {
@@ -175,6 +175,29 @@
 						class={htAmount !== '' && !htValid ? 'border-destructive' : 'tabular-nums text-right'}
 						placeholder="0.00"
 					/>
+					<!-- Story 36-3, revue P1 (B3, E3) : chaque refus du HT dit pourquoi. -->
+					{#if htProblem === 'ambiguous'}
+						<p class="mt-1 text-xs text-destructive" data-testid="vat-purchase-ht-ambiguous">
+							{i18nMsg(
+								'journal-entry-form-amount-ambiguous',
+								'Montant ambigu : un point ou une virgule suivis de trois chiffres peuvent séparer les milliers. Écrivez 1\'234 pour mille deux cent trente-quatre, ou 1.2340 pour un franc vingt-trois et quatre dixièmes de centime.'
+							)}
+						</p>
+					{:else if htProblem === 'unreadable'}
+						<p class="mt-1 text-xs text-destructive" data-testid="vat-purchase-ht-unreadable">
+							{i18nMsg(
+								'journal-entry-form-amount-unreadable',
+								'Montant illisible : chiffres, apostrophe des milliers (1\'234), point ou virgule décimale, quatre décimales au plus.'
+							)}
+						</p>
+					{:else if htProblem === 'below-centime'}
+						<p class="mt-1 text-xs text-destructive" data-testid="vat-purchase-ht-below-centime">
+							{i18nMsg(
+								'vat-purchase-ht-below-centime',
+								'Le montant HT s\'arrondit à 0.00 au centime : la ligne de charge serait nulle.'
+							)}
+						</p>
+					{/if}
 				</div>
 				<div>
 					<label for="{uid}-rate" class="mb-1 block text-sm font-medium">

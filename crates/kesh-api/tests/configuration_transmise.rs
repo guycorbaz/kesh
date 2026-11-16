@@ -215,6 +215,16 @@ const HOTE: &[&str] = &[
     "KESH_LOG_HOST_DIR",
 ];
 
+/// Variables **de tests** que le code de production nomme sans que le binaire
+/// servi les lise (Story 35-5a0, #929) : `KESH_TEST_INSTANT`, l'instant de
+/// l'horloge des tests (`kesh_core::horloge::NOM_VARIABLE_INSTANT`, lue par
+/// `horloge_de_test`, que `main.rs` n'appelle jamais). Connues de (F) ;
+/// contrôle de la raison (`variables_de_test_hors_distribution`) : absentes des
+/// deux compose et de `.env.example`.
+/// Le nom est lu sur la constante, non recopié : la garde de la date du jour
+/// n'admet le littéral que dans `kesh-core/src/horloge.rs`.
+const VARIABLES_DE_TEST: &[&str] = &[kesh_core::horloge::NOM_VARIABLE_INSTANT];
+
 /// Variables de `.env.example` que le code ne lit pas, utilisées par le
 /// service MariaDB de `docker-compose.yml` (et sa `DATABASE_URL`). Contrôle :
 /// `${NOM` apparaît dans `docker-compose.yml`.
@@ -1042,7 +1052,12 @@ fn jetons_kesh(texte: &str) -> Vec<(String, bool)> {
 }
 
 fn controle_fantomes(corpus: &[(String, String)], lues: &BTreeSet<&str>) -> Vec<String> {
-    let connues: BTreeSet<&str> = lues.iter().copied().chain(HOTE.iter().copied()).collect();
+    let connues: BTreeSet<&str> = lues
+        .iter()
+        .copied()
+        .chain(HOTE.iter().copied())
+        .chain(VARIABLES_DE_TEST.iter().copied())
+        .collect();
     let mut erreurs = BTreeSet::new();
     for (fichier, texte) in corpus {
         for (jeton, prefixe) in jetons_kesh(texte) {
@@ -1311,6 +1326,17 @@ const EMPLACEMENTS_AUTORISES: &[Autorisation] = &[
         1,
     ),
     autorise(ONBOARDING, "reset", "env_flag_enabled", Forme::Litteral, 1),
+    // Story 35-5a0 (#929) — l'horloge des TESTS lit l'instant fixé
+    // (`KESH_TEST_INSTANT`, [`VARIABLES_DE_TEST`]) ; `main.rs` ne l'appelle pas
+    // (garde `date_du_jour_garde.rs`). Nom porté par une constante : il n'entre
+    // pas dans l'ensemble lu, que (T) et (E) exigeraient transmis et documenté.
+    autorise(
+        "kesh-api/src/horloge.rs",
+        "horloge_de_test",
+        "env_nonempty",
+        Forme::Exacte("env_nonempty ( NOM_VARIABLE_INSTANT )"),
+        1,
+    ),
     // `EnvFilter` sans lecture : import et construction depuis une chaîne.
     autorise(
         LOGGING,
@@ -2010,6 +2036,23 @@ fn fantomes() {
     let mut corpus = corpus_texte();
     corpus.extend(corpus_code());
     echouer_si(controle_fantomes(&corpus, &lues()), "(F) fantômes");
+}
+
+/// Story 35-5a0 — une variable de tests n'est ni transmise par un compose
+/// distribué, ni proposée par `.env.example` : le binaire servi ne la lit pas.
+#[test]
+fn variables_de_test_hors_distribution() {
+    for fichier in [".env.example", Compose::Y.fichier(), Compose::P.fichier()] {
+        let texte = lire(fichier);
+        for nom in VARIABLES_DE_TEST {
+            assert!(
+                !texte.contains(nom),
+                "{fichier} nomme la variable de tests `{nom}`"
+            );
+        }
+    }
+    // Témoin : la variable est bien une variable `KESH_…`, que (F) relève.
+    assert!(VARIABLES_DE_TEST.iter().all(|n| n.starts_with("KESH_")));
 }
 
 #[test]

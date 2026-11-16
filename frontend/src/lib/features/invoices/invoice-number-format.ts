@@ -17,7 +17,16 @@ const KNOWN_PLACEHOLDERS = new Set(['YEAR', 'FY', 'SEQ']);
 export interface FormatValidationResult {
 	ok: boolean;
 	error?: string;
+	/**
+	 * `NO_SEQ` : le seul refus est l'absence de compteur (miroir de `FormatError::NoSeq`,
+	 * Story 35-1, #932) — toutes les autres règles sont tenues. L'écran le tolère sur un
+	 * format inchangé (D2) ; aucun autre refus ne porte de code.
+	 */
+	code?: 'NO_SEQ';
 }
+
+/** Un compteur, `{SEQ}` ou `{SEQ:NN}` — cherché après les autres règles, qui en valident la forme. */
+const SEQ_RE = /\{SEQ(:\d+)?\}/;
 
 /**
  * Rend un template avec des valeurs concrètes (pour preview UI).
@@ -123,24 +132,55 @@ const NUMBERING_SHAPE_RE = /^(?![ \t])[^{}\t]*\{YEAR\}([^{}0-9\t]+)\{SEQ(:\d+)?\
 
 /**
  * Valide un template de format (règles identiques au backend). `numbering` : le format du
- * numéro interne des factures fournisseur, qui a une forme fixe ; les formats client et
- * avoir n'y sont pas soumis.
+ * numéro interne des factures fournisseur, qui a une forme fixe (miroir de
+ * `validate_numbering_template`) ; les formats client et avoir n'y sont pas soumis, mais
+ * exigent un **compteur** (Story 35-1, #932, D1 — miroir de `validate_template`), testé en
+ * dernier : un refus `code: 'NO_SEQ'` dit que toutes les autres règles sont tenues.
  */
 export function validateFormatTemplate(
 	template: string,
 	options: { numbering?: boolean } = {},
 ): FormatValidationResult {
 	const base = validateTemplateRules(template);
-	if (base.ok && options.numbering && !NUMBERING_SHAPE_RE.test(template)) {
+	if (!base.ok) return base;
+	if (options.numbering) {
+		if (!NUMBERING_SHAPE_RE.test(template)) {
+			return {
+				ok: false,
+				error: i18nMsg(
+					'invoices-format-error-numbering',
+					"Le format doit s'écrire : un préfixe libre, {YEAR}, un séparateur sans chiffre, puis {SEQ} ou {SEQ:NN}, rien après (exemple : FF-{YEAR}-{SEQ:03})",
+				),
+			};
+		}
+		return base;
+	}
+	if (!SEQ_RE.test(template)) {
 		return {
 			ok: false,
+			code: 'NO_SEQ',
 			error: i18nMsg(
-				'invoices-format-error-numbering',
-				"Le format doit s'écrire : un préfixe libre, {YEAR}, un séparateur sans chiffre, puis {SEQ} ou {SEQ:NN}, rien après (exemple : FF-{YEAR}-{SEQ:03})",
+				'invoices-format-error-no-seq',
+				"Le format doit contenir un compteur ({SEQ} ou {SEQ:NN}) : sans lui, toutes les pièces d'un exercice auraient le même numéro",
 			),
 		};
 	}
 	return base;
+}
+
+/**
+ * Ce format bloque-t-il l'enregistrement ? (Story 35-1, #932, D2) Tout refus de
+ * `validateFormatTemplate` bloque, sauf l'absence de compteur sur un format **inchangé**
+ * (`loaded`, la valeur lue du serveur) : un format enregistré avant la 0.17.7 ne bloque pas
+ * l'enregistrement d'autre chose — miroir de `validate_template_change`.
+ */
+export function formatBlocks(
+	result: FormatValidationResult,
+	value: string,
+	loaded: string,
+): boolean {
+	if (result.ok) return false;
+	return !(result.code === 'NO_SEQ' && value === loaded);
 }
 
 function validateTemplateRules(template: string): FormatValidationResult {
@@ -170,12 +210,23 @@ function validateTemplateRules(template: string): FormatValidationResult {
 		};
 	}
 
-	// Parse les placeholders.
+	// Parse les placeholders. Story 35-1, revue P1 (E2) : le découpage couvre TOUT le gabarit,
+	// comme `parse` (Rust) — une accolade isolée (`}` seule, `{` sans fermante) est refusée
+	// (`UnmatchedBrace`), au lieu d'être sautée.
 	let hasPlaceholder = false;
 	let worstCaseLen = 0;
-	const re = /\{([^}]*)\}|([^{}]+)/g;
+	const re = /\{([^}]*)\}|([^{}]+)|([{}])/g;
 	let match: RegExpExecArray | null;
 	while ((match = re.exec(template)) !== null) {
+		if (match[3] !== undefined) {
+			return {
+				ok: false,
+				error: i18nMsg(
+					'invoices-format-error-unmatched-brace',
+					'Accolade non appariée dans le format',
+				),
+			};
+		}
 		if (match[2] !== undefined) {
 			worstCaseLen += match[2].length;
 			continue;
@@ -192,7 +243,10 @@ function validateTemplateRules(template: string): FormatValidationResult {
 			// i64::MAX = 19 chiffres (review P2 parité Rust).
 			worstCaseLen += 19;
 		} else if (inner.startsWith('SEQ:')) {
-			const n = parseInt(inner.slice(4), 10);
+			// Strictement décimal, comme `str::parse::<u32>` (revue P1, E2) : `parseInt`
+			// accepterait « 4a » et « 4 » précédé d'un blanc.
+			const digits = inner.slice(4);
+			const n = /^\d+$/.test(digits) ? parseInt(digits, 10) : NaN;
 			if (!Number.isFinite(n) || n < 1 || n > MAX_SEQ_PADDING) {
 				return {
 					ok: false,

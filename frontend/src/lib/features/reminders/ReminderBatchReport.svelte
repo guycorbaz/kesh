@@ -7,7 +7,7 @@
 -->
 <script lang="ts">
 	import { i18nMsg } from '$lib/shared/utils/i18n.svelte';
-	import { reminderErrorLabel } from './reminder-error-label';
+	import { reminderFailureText } from './reminder-error-label';
 	import type { SendReminderBatchResponse } from './reminders.types';
 
 	let { report }: { report: SendReminderBatchResponse } = $props();
@@ -27,7 +27,7 @@
 			<ul class="mt-1 space-y-1 text-sm">
 				{#each report.failed as f (f.invoiceId)}
 					<li class="text-destructive" data-testid="reminder-batch-failed-row">
-						<span class="font-mono">#{f.invoiceId}</span> — {reminderErrorLabel(f.errorCode)}
+						<span class="font-mono">#{f.invoiceId}</span> — {reminderFailureText(f)}
 					</li>
 				{/each}
 			</ul>

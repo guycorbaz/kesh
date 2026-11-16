@@ -102,6 +102,85 @@ describe('JournalEntryForm — mode édition', () => {
 		notifyMock.mockClear();
 	});
 
+	it('Story 35-7 (#1000, AC4) — une ligne dont on vide le compte puis qu’on quitte réaffiche son compte, celui qui part', async () => {
+		updateMock.mockResolvedValueOnce(ENTRY);
+		render(JournalEntryForm, {
+			props: {
+				accounts: [account(1, '1000'), account(2, '2000')],
+				accountsLoadError: false,
+				initialEntry: ENTRY,
+				onSuccess: vi.fn(),
+				onCancel: vi.fn()
+			}
+		});
+		const champ = document.querySelectorAll<HTMLInputElement>('input[aria-autocomplete="list"]')[0];
+		expect(champ.value).toBe('1000 — Compte 1000');
+		await fireEvent.input(champ, { target: { value: '' } });
+		await fireEvent.blur(champ);
+		expect(champ.value).toBe('1000 — Compte 1000');
+
+		await fireEvent.click(screen.getByRole('button', { name: 'Valider' }));
+		await new Promise((r) => setTimeout(r, 0));
+		const payload = updateMock.mock.calls[0][1] as { lines: Array<{ accountId: number }> };
+		expect(payload.lines[0].accountId).toBe(1);
+	});
+
+	it('Story 35-7, revue P1 (E1) — Ctrl+S sans quitter le champ : le brouillon est jeté avant l’envoi, le champ montre le compte qui part', async () => {
+		updateMock.mockResolvedValueOnce(ENTRY);
+		render(JournalEntryForm, {
+			props: {
+				accounts: [account(1, '1000'), account(2, '2000')],
+				accountsLoadError: false,
+				initialEntry: ENTRY,
+				onSuccess: vi.fn(),
+				onCancel: vi.fn()
+			}
+		});
+		const champ = document.querySelectorAll<HTMLInputElement>('input[aria-autocomplete="list"]')[0];
+		champ.focus();
+		await fireEvent.input(champ, { target: { value: '2000' } });
+		expect(champ.value).toBe('2000');
+
+		// Le focus reste dans le champ : aucun `blur` de l'utilisateur.
+		await fireEvent.keyDown(window, { key: 's', ctrlKey: true });
+		await new Promise((r) => setTimeout(r, 0));
+
+		const payload = updateMock.mock.calls[0][1] as { lines: Array<{ accountId: number }> };
+		expect(payload.lines[0].accountId).toBe(1);
+		expect(champ.value).toBe('1000 — Compte 1000');
+	});
+
+	// Story 36-3 (#1051, AC4) — le serveur rend quatre décimales (`DECIMAL(19,4)`) :
+	// « 1.2340 » n'est jamais refusé comme ambigu, et repart tel quel.
+	it('Story 36-3 — une écriture à 1.2340 (forme du serveur) s’affiche sans message et repart en 1.2340', async () => {
+		updateMock.mockResolvedValueOnce(ENTRY);
+		const entry: JournalEntryResponse = {
+			...ENTRY,
+			lines: [
+				{ ...ENTRY.lines[0], debit: '1.2340', credit: '0.0000' },
+				{ ...ENTRY.lines[1], debit: '0.0000', credit: '1.2340' }
+			]
+		};
+		render(JournalEntryForm, {
+			props: {
+				accounts: [account(1, '1000'), account(2, '2000')],
+				accountsLoadError: false,
+				initialEntry: entry,
+				onSuccess: vi.fn(),
+				onCancel: vi.fn()
+			}
+		});
+		expect(screen.queryByText(/Montant ambigu/)).toBeNull();
+		expect(screen.queryByText(/Montant illisible/)).toBeNull();
+		await fireEvent.click(screen.getByRole('button', { name: 'Valider' }));
+		await new Promise((r) => setTimeout(r, 0));
+		const payload = updateMock.mock.calls[0][1] as {
+			lines: Array<{ debit: string; credit: string }>;
+		};
+		expect(payload.lines[0].debit).toBe('1.2340');
+		expect(payload.lines[1].credit).toBe('1.2340');
+	});
+
 	it('envoie le PUT avec la version lue', async () => {
 		updateMock.mockResolvedValueOnce(ENTRY);
 		const onSuccess = vi.fn();

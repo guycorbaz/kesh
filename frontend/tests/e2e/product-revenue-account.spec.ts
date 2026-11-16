@@ -400,3 +400,60 @@ test('éditer un article avec compte puis « Nouveau produit » : le sélecteur 
 		await disposeContextSafe(ctx);
 	}
 });
+
+// Story 36-1 (#1095, AC5 b) — Entrée dans le compte de produit de la fiche. La
+// soumission implicite d'un `<form>` n'existe que dans un vrai navigateur.
+test('(#1095) Entrée sur un texte sans correspondance n’enregistre pas l’ancien compte de l’article', async ({
+	page,
+}) => {
+	await login(page);
+	const suffix = uniqSuffix();
+	const ctx = await authedApiContext(page);
+	let productId: number;
+	let account: { id: number; number: string; name: string };
+
+	try {
+		account = await mkRevenueAccount(ctx, suffix, 5);
+		const prodRes = await ctx.post('/api/v1/products', {
+			data: {
+				name: `Article Entrée ${suffix}`,
+				unitPrice: '250.00',
+				vatRate: '8.10',
+				defaultRevenueAccountId: account.id,
+			},
+		});
+		expect(prodRes.ok()).toBeTruthy();
+		productId = (await prodRes.json()).id as number;
+	} finally {
+		await disposeContextSafe(ctx);
+	}
+
+	let puts = 0;
+	page.on('request', (r) => {
+		if (r.method() === 'PUT' && r.url().endsWith(`/api/v1/products/${productId}`)) puts += 1;
+	});
+
+	await page.goto('/products');
+	await openEditDialog(page, `Article Entrée ${suffix}`);
+	const field = page.locator('#form-revenue-account');
+	await expect(field).toHaveValue(new RegExp(account!.number));
+
+	await field.fill('zzz');
+	await field.press('Enter');
+	// L'une des deux issues — le message (correctif) ou le dialogue refermé (le
+	// défaut : le formulaire est parti) —, puis l'assertion qui les distingue.
+	const message = page.getByTestId('account-no-match');
+	await expect(message.or(page.locator('body:not(:has([role="dialog"]))'))).toBeVisible();
+	await expect(page.getByRole('dialog')).toBeVisible();
+	await expect(message).toBeVisible();
+	await expect(field).toHaveValue('zzz');
+	expect(puts).toBe(0);
+
+	const ctx2 = await authedApiContext(page);
+	try {
+		const relu = await (await ctx2.get(`/api/v1/products/${productId!}`)).json();
+		expect(relu.defaultRevenueAccountId).toBe(account!.id);
+	} finally {
+		await disposeContextSafe(ctx2);
+	}
+});

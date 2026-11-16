@@ -15,7 +15,11 @@
 //!
 //! Pré-requis : MariaDB démarré (`sqlx::test` crée une DB éphémère par test).
 
+#[path = "support/jour.rs"]
+mod jour;
+
 use chrono::NaiveDate;
+use jour::aujourd_hui_test;
 use kesh_core::accounting::vat::{invoice_total_ttc, invoice_total_ttc_rounded};
 use kesh_db::entities::contact::{ContactType, NewContact};
 use kesh_db::entities::{NewInvoice, NewInvoiceLine};
@@ -151,9 +155,14 @@ async fn ttc_four_way_parity_mixed_rates_and_rounding_edges(pool: MySqlPool) {
 
     // Voie 3 — forme SQL agrégat (table dérivée) via due_dates_summary.
     // La facture validée impayée est la seule de la company → unpaid_total = son TTC.
-    let summary = due_dates_summary(&pool, seeded.company_id, &InvoiceListQuery::default())
-        .await
-        .expect("summary");
+    let summary = due_dates_summary(
+        &pool,
+        seeded.company_id,
+        &InvoiceListQuery::default(),
+        aujourd_hui_test(),
+    )
+    .await
+    .expect("summary");
     assert_eq!(summary.unpaid_count, 1);
     assert_eq!(
         summary.unpaid_total, rust_ttc_rounded,
@@ -238,6 +247,7 @@ async fn list_items_total_ttc_matches_helper(pool: MySqlPool) {
                 limit: 50,
                 ..Default::default()
             },
+            aujourd_hui_test(),
         )
         .await
         .expect("list");

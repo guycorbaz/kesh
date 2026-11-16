@@ -109,4 +109,36 @@ test.describe('Assistant TVA achat', () => {
 		await page.getByRole('button', { name: 'Valider' }).click();
 		await expect(page.getByText(/Achat exempt E2E/).first()).toBeVisible({ timeout: 5000 });
 	});
+
+	// Story 36-3 (#1051, AC8) — le HT lu comme un montant du journal : « 1.234 » refusé
+	// comme ambigu ; « 1'234.50 » inséré en 1234.50, jamais en 1.23.
+	test('HT ambigu « 1.234 » refusé, « 1’234.50 » inséré en 1234.50 (Story 36-3)', async ({
+		page
+	}) => {
+		await goToCreateForm(page);
+
+		const panel = page.getByTestId('vat-purchase-assistant');
+		await panel.getByRole('button', { name: /Assistant TVA achat/ }).click();
+
+		const accountInputs = panel.locator('input[aria-autocomplete="list"]');
+		await accountInputs.nth(0).fill('4000');
+		await panel.getByRole('option').first().click();
+		await panel.locator('[data-slot="select-trigger"]').click();
+		await page.getByRole('option', { name: /8\.10/ }).click();
+		await accountInputs.nth(1).fill('1100');
+		await panel.getByRole('option').first().click();
+
+		const ht = panel.locator('input[inputmode="decimal"]').first();
+		await ht.fill('1.234');
+		await expect(panel.getByText(/Montant ambigu/)).toBeVisible();
+		await expect(panel.getByRole('button', { name: /Insérer les lignes/ })).toBeDisabled();
+
+		await ht.fill("1'234.50");
+		await expect(panel.getByText(/Montant ambigu/)).toHaveCount(0);
+		await panel.getByRole('button', { name: /Insérer les lignes/ }).click();
+
+		// Première ligne du formulaire : la charge, 1234.50 au débit.
+		await expect(page.locator('table input[inputmode="decimal"]').nth(0)).toHaveValue('1234.50');
+		await expect(page.getByText(/✓ Équilibré/)).toBeVisible();
+	});
 });

@@ -25,41 +25,27 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { buttonVariants } from './button.svelte';
 import { blend, contrastRatio } from '../../../../../tests/e2e/helpers/contrast';
+// Lecture du `@theme` : module partagé avec la garde de la Story 36-1
+// (`account-autocomplete-classes.test.ts`) — extraite d'ici, sans changement.
+import {
+	blocTheme,
+	declareDans,
+	jetonDans,
+	motEntier,
+} from '../../../../../tests/e2e/helpers/theme';
 
 const VARIANTE: string = (buttonVariants as unknown as { variants: { variant: Record<string, string> } })
 	.variants.variant.destructive;
 const CSS = readFileSync('src/app.css', 'utf8');
 
-/**
- * Bloc `@theme { … }` d'`app.css` (le premier, le seul du fichier), **commentaires
- * retirés** : un jeton écrit en commentaire (`/* --color-card: #fff; *\/`) n'est
- * pas défini, et les gardes (2) et (3) ne doivent pas le lire (revue de code P1, E6).
- */
-function blocTheme(css: string): string {
-	const sansCommentaires = css.replace(/\/\*[\s\S]*?\*\//g, '');
-	const debut = sansCommentaires.indexOf('@theme');
-	if (debut < 0) throw new Error('app.css : bloc @theme introuvable');
-	const ouverture = sansCommentaires.indexOf('{', debut);
-	const fermeture = sansCommentaires.indexOf('\n}', ouverture);
-	return sansCommentaires.slice(ouverture + 1, fermeture);
-}
+/** Bloc `@theme` d'`app.css`, sans commentaires (revue de code P1, E6). */
 const THEME = blocTheme(CSS);
 
 /** Valeur `#rrggbb` d'un jeton `--color-<nom>` du `@theme`, ou `undefined`. */
-function jeton(nom: string, theme: string = THEME): string | undefined {
-	const m = new RegExp(`--color-${nom}:\\s*(#[0-9a-f]{6})\\s*;`, 'i').exec(theme);
-	return m?.[1];
-}
+const jeton = (nom: string, theme: string = THEME) => jetonDans(nom, theme);
 
 /** Le jeton `--color-<nom>` est-il déclaré dans le bloc `theme` (toute valeur) ? */
-function declare(nom: string, theme: string = THEME): boolean {
-	return new RegExp(`--color-${nom}\\s*:`).test(theme);
-}
-
-function motEntier(classes: string, mot: string): boolean {
-	const echappe = mot.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&');
-	return new RegExp(`(^|\\s)${echappe}(\\s|$)`).test(classes);
-}
+const declare = (nom: string, theme: string = THEME) => declareDans(nom, theme);
 
 describe('AC7 (1) — la variante destructive a un fond plein, sans dark:', () => {
 	it('est lue sur la variante seule (tailwind-variants expose .variants)', () => {

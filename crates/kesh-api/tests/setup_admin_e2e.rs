@@ -94,6 +94,7 @@ async fn spawn_app_with_config(
         smtp_ready: false,
         test_mock_mailer: None,
         backup_lock: Arc::new(tokio::sync::Mutex::new(())),
+        horloge: kesh_api::horloge::horloge_de_test(),
     };
 
     let app = build_router(state, "nonexistent-static-dir".to_string());

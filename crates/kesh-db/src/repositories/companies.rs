@@ -8,7 +8,7 @@
 //! Utilise les variantes non-macro `sqlx::query_as::<_, T>("...")` pour
 //! éviter la dépendance à une DB live au moment du build.
 
-use chrono::{NaiveDate, NaiveDateTime, Utc};
+use chrono::{NaiveDate, NaiveDateTime};
 use serde::Serialize;
 use serde_json::json;
 use sqlx::mysql::MySqlPool;
@@ -985,7 +985,8 @@ pub const BOOKS_UNLOCK_MOTIF_REQUIRED: &str = "booksUnlockMotifRequired";
 /// posée à la date du jour refuserait toute contre-passation faite le même jour
 /// — celle-ci étant datée du jour et le seuil de la garde étant inclusif —,
 /// c'est-à-dire rendrait les livres incorrigibles le jour même. ⚠️ « Aujourd'hui »
-/// est `Utc::now().date_naive()`, la **même horloge** que la contre-passation :
+/// est la date reçue (`aujourd_hui`), lue une fois sur l'horloge de la requête
+/// et passée aussi à la contre-passation (Story 35-5a0) — la **même horloge** :
 /// mélanger les deux réintroduirait l'écart d'un jour sous une autre forme.
 /// ⚠️ La garde ne vaut que pour la contre-passation **du jour** : celle au
 /// début de l'exercice suivant (Story 29-1b, #232) est datée du premier jour de
@@ -1004,13 +1005,14 @@ pub async fn lock_books(
     user_id: i64,
     company_id: i64,
     through: NaiveDate,
+    aujourd_hui: NaiveDate,
 ) -> Result<Company, DbError> {
     // ⚠️ `InvalidInput` transporte un **CODE**, jamais une phrase : `AppError`
     // le confronte à une liste blanche stricte (`errors.rs`, whitelist B13) et
     // retombe sur « Entrée invalide » pour tout code inconnu. Une phrase
     // française y arriverait donc **sans date, sans raison et sans quoi faire**
     // — sur le geste même que cette garde existe pour rattraper.
-    if through >= Utc::now().date_naive() {
+    if through >= aujourd_hui {
         return Err(DbError::InvalidInput(BOOKS_LOCK_BOUND_NOT_PAST.into()));
     }
 
@@ -1082,6 +1084,7 @@ pub async fn unlock_books(
     company_id: i64,
     through: Option<NaiveDate>,
     motif: String,
+    aujourd_hui: NaiveDate,
 ) -> Result<Company, DbError> {
     if motif.trim().is_empty() {
         return Err(DbError::InvalidInput(BOOKS_UNLOCK_MOTIF_REQUIRED.into()));
@@ -1097,7 +1100,7 @@ pub async fn unlock_books(
     // toute la vague 24-4a → 24-4c existe pour tenir. Le déni est récupérable
     // (un second appel avec une date passée), mais total pendant la fenêtre.
     if let Some(d) = through
-        && d >= Utc::now().date_naive()
+        && d >= aujourd_hui
     {
         return Err(DbError::InvalidInput(BOOKS_LOCK_BOUND_NOT_PAST.into()));
     }

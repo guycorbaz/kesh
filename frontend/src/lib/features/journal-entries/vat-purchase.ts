@@ -18,11 +18,13 @@
  * arrondis à 2 décimales (`débit charge = round₂(HT)`, PAS le HT brut). Comme
  * `vat` a exactement 2 décimales, `round₂(HT) + vat == round₂(HT + vat)` —
  * l'équilibre tient par construction même pour un HT saisi à 3-4 décimales
- * (autorisé par `isValidAmount`).
+ * (admis par la lecture du journal, `readHtAmount` ; depuis la Story 36-3, un HT à
+ * trois décimales après une partie entière de un à trois chiffres, « 100.005 », est
+ * refusé comme ambigu à l'écran — `buildPurchaseVatLines` le calcule toujours).
  */
 
 import Big from 'big.js';
-import { parseAmount } from './balance';
+import { parseAmount, readJournalAmount, type JournalAmountKind } from './balance';
 import type { LineDraft } from './form-helpers';
 
 /**
@@ -96,6 +98,62 @@ export function buildPurchaseVatLines(params: PurchaseVatParams): LineDraft[] {
 	lines.push({ accountId: counterpartyAccountId, debit: '', credit: ttc, projectId: null });
 
 	return lines;
+}
+
+/** Story 36-3 (D5) — la lecture du montant HT de l'assistant. */
+export interface HtAmountReading {
+	kind: JournalAmountKind;
+	/** Charge normalisée (point décimal, sans apostrophe) d'une saisie claire ; `null` sinon. */
+	payload: string | null;
+	/** Claire et `> 0` une fois arrondie au centime : l'assistant peut insérer. */
+	usable: boolean;
+}
+
+/**
+ * Story 36-3 (#1051, D5) — lit le montant HT saisi dans l'assistant par la lecture
+ * du journal (`readJournalAmount`) : apostrophe des milliers admise, « 1.234 »
+ * `ambiguous`. `usable` garde la règle d'avant : un HT qui s'arrondit à 0.00 au
+ * centime (« 0.004 ») produirait une ligne de charge nulle, refusée par le serveur.
+ */
+export function readHtAmount(raw: string): HtAmountReading {
+	const r = readJournalAmount(raw);
+	if (r.kind !== 'clear') return { kind: r.kind, payload: null, usable: false };
+	return {
+		kind: 'clear',
+		payload: r.payload,
+		usable: r.value.round(2, Big.roundHalfUp).gt(0)
+	};
+}
+
+/**
+ * Story 36-3, revue P1 (B3, E3) — le message à afficher sous le HT : `ambiguous`,
+ * `unreadable`, `below-centime` (clair, mais arrondi à 0.00 au centime), ou `null`
+ * (vide ou utilisable).
+ */
+export function htAmountProblem(
+	ht: HtAmountReading
+): 'ambiguous' | 'unreadable' | 'below-centime' | null {
+	if (ht.kind === 'ambiguous' || ht.kind === 'unreadable') return ht.kind;
+	if (ht.kind === 'clear' && !ht.usable) return 'below-centime';
+	return null;
+}
+
+/**
+ * Story 36-3 (V1-7 de la validation) — l'écriture que l'assistant insère, tirée de la
+ * saisie **brute** (`params.htAmount`) : `null` si le HT n'est pas `usable` ; sinon les
+ * lignes de `buildPurchaseVatLines` sur la charge **normalisée** (sans apostrophe,
+ * point décimal), et `isExempt` si la TVA vaut 0.00. Seul point d'entrée de
+ * `VatPurchaseAssistant.insert()` : la normalisation se teste ici, sans composant.
+ */
+export function purchaseVatEntry(
+	params: PurchaseVatParams
+): { lines: LineDraft[]; isExempt: boolean } | null {
+	const ht = readHtAmount(params.htAmount);
+	if (!ht.usable || ht.payload === null) return null;
+	return {
+		lines: buildPurchaseVatLines({ ...params, htAmount: ht.payload }),
+		isExempt: lineVatAmount(ht.payload, params.ratePercent) === '0.00'
+	};
 }
 
 /**

@@ -19,9 +19,15 @@
 //! `TABLE_SCHEMA = DATABASE()` : les bases éphémères voisines vivent sur le même
 //! serveur.
 
+/// Story 35-5a0 — la date du jour de l'horloge de test.
+#[allow(dead_code)]
+#[path = "support/jour.rs"]
+mod jour;
+
 use std::collections::BTreeSet;
 
 use chrono::NaiveDate;
+use kesh_db::entities::audit_log::Acteur;
 use kesh_db::entities::journal_entry::Journal;
 use kesh_db::entities::{JournalEntryWithLines, NewJournalEntry, NewJournalEntryLine};
 use kesh_db::errors::{DbError, map_db_error};
@@ -309,9 +315,14 @@ async fn ecriture(
     fy: i64,
     date: NaiveDate,
 ) -> JournalEntryWithLines {
-    journal_entries::create(pool, fy, s.admin_user_id, corps(s, date, "origine", None))
-        .await
-        .expect("écriture")
+    journal_entries::create(
+        pool,
+        fy,
+        Acteur::utilisateur(s.admin_user_id),
+        corps(s, date, "origine", None),
+    )
+    .await
+    .expect("écriture")
 }
 
 async fn description_de(pool: &MySqlPool, id: i64) -> (String, i32) {
@@ -362,17 +373,23 @@ async fn update_waits_for_a_concurrent_reversal_then_refuses(pool: MySqlPool) {
     let e = ecriture(&pool, &s, s.fiscal_year_id, d(2026, 3, 1)).await;
 
     let mut b = pool.begin().await.unwrap();
-    journal_entries::reverse_in_tx(&mut b, s.company_id, e.entry.id, s.admin_user_id)
-        .await
-        .expect("contre-passation de B");
+    journal_entries::reverse_in_tx(
+        &mut b,
+        s.company_id,
+        e.entry.id,
+        Acteur::utilisateur(s.admin_user_id),
+        crate::jour::aujourd_hui_test(),
+    )
+    .await
+    .expect("contre-passation de B");
 
     let a = {
         let pool = pool.clone();
         let body = corps(&s, d(2026, 3, 2), "réécrite", None);
         let (cid, uid, id, v) = (s.company_id, s.admin_user_id, e.entry.id, e.entry.version);
-        tokio::spawn(
-            async move { journal_entries::update(&pool, cid, id, v, uid, None, body).await },
-        )
+        tokio::spawn(async move {
+            journal_entries::update(&pool, cid, id, v, Acteur::utilisateur(uid), body).await
+        })
     };
     assert!(
         attendre_une_requete_en_cours(&pool, &["je.version", "FOR UPDATE"], || a.is_finished())
@@ -419,9 +436,9 @@ async fn update_waits_for_a_concurrent_close_of_a_later_year_then_refuses(pool: 
         let pool = pool.clone();
         let body = corps(&s, d(2026, 3, 2), "réécrite", None);
         let (cid, uid, id, v) = (s.company_id, s.admin_user_id, e.entry.id, e.entry.version);
-        tokio::spawn(
-            async move { journal_entries::update(&pool, cid, id, v, uid, None, body).await },
-        )
+        tokio::spawn(async move {
+            journal_entries::update(&pool, cid, id, v, Acteur::utilisateur(uid), body).await
+        })
     };
     assert!(
         attendre_une_requete_en_cours(&pool, &["ORDER BY start_date ASC", "FOR UPDATE"], || a
@@ -470,14 +487,22 @@ async fn delete_waits_for_a_concurrent_reversal_then_refuses(pool: MySqlPool) {
     let e = ecriture(&pool, &s, s.fiscal_year_id, d(2026, 3, 1)).await;
 
     let mut b = pool.begin().await.unwrap();
-    journal_entries::reverse_in_tx(&mut b, s.company_id, e.entry.id, s.admin_user_id)
-        .await
-        .expect("contre-passation de B");
+    journal_entries::reverse_in_tx(
+        &mut b,
+        s.company_id,
+        e.entry.id,
+        Acteur::utilisateur(s.admin_user_id),
+        crate::jour::aujourd_hui_test(),
+    )
+    .await
+    .expect("contre-passation de B");
 
     let a = {
         let pool = pool.clone();
         let (cid, uid, id) = (s.company_id, s.admin_user_id, e.entry.id);
-        tokio::spawn(async move { journal_entries::delete_by_id(&pool, cid, id, uid, None).await })
+        tokio::spawn(async move {
+            journal_entries::delete_by_id(&pool, cid, id, Acteur::utilisateur(uid)).await
+        })
     };
     assert!(
         attendre_une_requete_en_cours(&pool, &["je.fiscal_year_id", "FOR UPDATE"], || a
@@ -524,7 +549,9 @@ async fn delete_waits_for_a_concurrent_close_of_a_later_year_then_refuses(pool: 
     let a = {
         let pool = pool.clone();
         let (cid, uid, id) = (s.company_id, s.admin_user_id, e.entry.id);
-        tokio::spawn(async move { journal_entries::delete_by_id(&pool, cid, id, uid, None).await })
+        tokio::spawn(async move {
+            journal_entries::delete_by_id(&pool, cid, id, Acteur::utilisateur(uid)).await
+        })
     };
     assert!(
         attendre_une_requete_en_cours(&pool, &["ORDER BY start_date ASC", "FOR UPDATE"], || a
@@ -584,9 +611,9 @@ async fn update_and_a_reversal_of_the_same_year_can_deadlock(pool: MySqlPool) {
         let pool = pool.clone();
         let body = corps(&s, d(2026, 3, 1), "projet posé", Some(p));
         let (cid, uid, id, v) = (s.company_id, s.admin_user_id, e1.entry.id, e1.entry.version);
-        tokio::spawn(
-            async move { journal_entries::update(&pool, cid, id, v, uid, None, body).await },
-        )
+        tokio::spawn(async move {
+            journal_entries::update(&pool, cid, id, v, Acteur::utilisateur(uid), body).await
+        })
     };
     assert!(
         attendre_une_requete_en_cours(

@@ -5,8 +5,9 @@
  * à alpha est pris **non arrondi** (`blend`), puis le ratio est comparé tel quel
  * — l'arrondi au centième n'intervient que pour l'écrire.
  *
- * Ce module ne sert que la garde Vitest `button-destructive.test.ts` : l'E2E ne
- * recalcule aucun contraste (C-28-1-31), elle asserte des valeurs.
+ * Ce module ne sert que des gardes Vitest — `button-destructive.test.ts`, et
+ * `account-autocomplete-classes.test.ts` (Story 36-1, AC8) : l'E2E ne recalcule
+ * aucun contraste (C-28-1-31), elle asserte des valeurs.
  */
 
 /** Couleur sRGB, composantes 0-255, éventuellement non entières (mélange). */

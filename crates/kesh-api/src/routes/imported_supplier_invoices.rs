@@ -135,8 +135,17 @@ pub async fn complete_import(
     Json(req): Json<CreateSupplierInvoiceRequest>,
 ) -> Result<Json<SupplierInvoiceResponse>, AppError> {
     let company = get_company_for(&current_user, &state.pool).await?;
+    // Story 35-5a0 — la date du jour, lue une fois pour toute la requête.
+    let aujourd_hui = state.horloge.aujourd_hui();
     let view = crate::retry::retry_app_on_deadlock("imported_supplier_invoices::complete", || {
-        complete_import_once(&state.pool, &current_user, company.id, id, &req)
+        complete_import_once(
+            &state.pool,
+            &current_user,
+            company.id,
+            id,
+            &req,
+            aujourd_hui,
+        )
     })
     .await?;
     Ok(Json(SupplierInvoiceResponse::from_view(view)))
@@ -161,6 +170,7 @@ async fn complete_import_once(
     company_id: i64,
     id: i64,
     req: &CreateSupplierInvoiceRequest,
+    aujourd_hui: chrono::NaiveDate,
 ) -> Result<supplier_invoices::SupplierInvoiceSettlementView, AppError> {
     let user_id = current_user.user_id;
 
@@ -227,7 +237,8 @@ async fn complete_import_once(
     .await;
 
     let (view, _) =
-        supplier_invoices::commit_with_view(tx, company_id, result, |c| c.invoice.id).await?;
+        supplier_invoices::commit_with_view(tx, company_id, result, |c| c.invoice.id, aujourd_hui)
+            .await?;
     Ok(view)
 }
 
@@ -573,6 +584,8 @@ pub async fn attach_source_document(
     Json(req): Json<AttachSourceDocumentRequest>,
 ) -> Result<Json<SupplierInvoiceResponse>, AppError> {
     let company = get_company_for(&current_user, &state.pool).await?;
+    // Story 35-5a0 — la date du jour, lue une fois pour toute la requête.
+    let aujourd_hui = state.horloge.aujourd_hui();
     let view = crate::retry::retry_app_on_deadlock("imported_supplier_invoices::attach", || {
         attach_source_document_once(
             &state.pool,
@@ -580,6 +593,7 @@ pub async fn attach_source_document(
             company.id,
             supplier_invoice_id,
             req.imported_supplier_invoice_id,
+            aujourd_hui,
         )
     })
     .await?;
@@ -597,6 +611,7 @@ async fn attach_source_document_once(
     company_id: i64,
     supplier_invoice_id: i64,
     imported_id: i64,
+    aujourd_hui: chrono::NaiveDate,
 ) -> Result<supplier_invoices::SupplierInvoiceSettlementView, AppError> {
     use kesh_db::repositories::imported_supplier_invoices::AttachRefusal;
 
@@ -642,9 +657,14 @@ async fn attach_source_document_once(
         Ok(())
     }
     .await;
-    let (view, ()) =
-        supplier_invoices::commit_with_view(tx, company_id, result, |_| supplier_invoice_id)
-            .await?;
+    let (view, ()) = supplier_invoices::commit_with_view(
+        tx,
+        company_id,
+        result,
+        |_| supplier_invoice_id,
+        aujourd_hui,
+    )
+    .await?;
     Ok(view)
 }
 
@@ -675,8 +695,16 @@ pub async fn detach_source_document(
     Path(supplier_invoice_id): Path<i64>,
 ) -> Result<Json<SupplierInvoiceResponse>, AppError> {
     let company = get_company_for(&current_user, &state.pool).await?;
+    // Story 35-5a0 — la date du jour, lue une fois pour toute la requête.
+    let aujourd_hui = state.horloge.aujourd_hui();
     let view = crate::retry::retry_app_on_deadlock("imported_supplier_invoices::detach", || {
-        detach_source_document_once(&state.pool, &current_user, company.id, supplier_invoice_id)
+        detach_source_document_once(
+            &state.pool,
+            &current_user,
+            company.id,
+            supplier_invoice_id,
+            aujourd_hui,
+        )
     })
     .await?;
     Ok(Json(SupplierInvoiceResponse::from_view(view)))
@@ -692,6 +720,7 @@ async fn detach_source_document_once(
     current_user: &CurrentUser,
     company_id: i64,
     supplier_invoice_id: i64,
+    aujourd_hui: chrono::NaiveDate,
 ) -> Result<supplier_invoices::SupplierInvoiceSettlementView, AppError> {
     let mut tx = pool
         .begin()
@@ -719,9 +748,14 @@ async fn detach_source_document_once(
         Ok::<(), AppError>(())
     }
     .await;
-    let (view, ()) =
-        supplier_invoices::commit_with_view(tx, company_id, result, |_| supplier_invoice_id)
-            .await?;
+    let (view, ()) = supplier_invoices::commit_with_view(
+        tx,
+        company_id,
+        result,
+        |_| supplier_invoice_id,
+        aujourd_hui,
+    )
+    .await?;
     Ok(view)
 }
 

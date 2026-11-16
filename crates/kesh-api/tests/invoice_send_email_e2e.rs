@@ -117,6 +117,7 @@ async fn spawn_app(
         smtp_ready,
         test_mock_mailer: None,
         backup_lock: Arc::new(tokio::sync::Mutex::new(())),
+        horloge: kesh_api::horloge::horloge_de_test(),
     };
 
     let app = build_router(state, "nonexistent-static-dir".to_string());
@@ -222,19 +223,33 @@ async fn seed_validated_invoice(
     contact_id: i64,
     user_id: i64,
 ) -> i64 {
+    seed_validated_invoice_lines(pool, company_id, contact_id, user_id, 1).await
+}
+
+/// Une facture validée de `n` lignes identiques (Story 35-2b : au-delà de
+/// `MAX_LINES_PER_PDF`, le PDF est refusé avant tout rendu).
+async fn seed_validated_invoice_lines(
+    pool: &MySqlPool,
+    company_id: i64,
+    contact_id: i64,
+    user_id: i64,
+    n: usize,
+) -> i64 {
     let new = NewInvoice {
         company_id,
         contact_id,
         date: NaiveDate::from_ymd_opt(2026, 4, 14).unwrap(),
         due_date: Some(NaiveDate::from_ymd_opt(2026, 5, 14).unwrap()),
         payment_terms: Some("30 jours net".into()),
-        lines: vec![NewInvoiceLine {
-            revenue_account_id: None,
-            description: "Prestation".into(),
-            quantity: dec!(1),
-            unit_price: dec!(100.00),
-            vat_rate: dec!(8.10),
-        }],
+        lines: (0..n)
+            .map(|_| NewInvoiceLine {
+                revenue_account_id: None,
+                description: "Prestation".into(),
+                quantity: dec!(1),
+                unit_price: dec!(100.00),
+                vat_rate: dec!(8.10),
+            })
+            .collect(),
         project_id: None,
     };
     let (invoice, _lines) = invoices::create(pool, user_id, new).await.unwrap();
@@ -1045,6 +1060,7 @@ async fn test_sent_emails_endpoint_captures_and_guards(pool: MySqlPool) {
         smtp_ready: true,
         test_mock_mailer: Some(mock.clone()),
         backup_lock: Arc::new(tokio::sync::Mutex::new(())),
+        horloge: kesh_api::horloge::horloge_de_test(),
     };
     let app = build_router(state, "nonexistent-static-dir".to_string());
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -1159,6 +1175,7 @@ async fn test_sent_emails_endpoint_400_without_capture(pool: MySqlPool) {
         smtp_ready: false,
         test_mock_mailer: None,
         backup_lock: Arc::new(tokio::sync::Mutex::new(())),
+        horloge: kesh_api::horloge::horloge_de_test(),
     };
     let app = build_router(state, "nonexistent-static-dir".to_string());
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -2339,4 +2356,297 @@ async fn send_reminder_refuses_amounts_changed_since_preview(pool: MySqlPool) {
     assert!(apres["body"].as_str().unwrap().contains("68.10"), "{apres}");
     assert_eq!(send(apres).await.unwrap().status(), 201);
     assert_eq!(mock.sent_emails().len(), 1);
+}
+
+// ─── Story 35-2a (#955, AC11) — le refus du PDF nomme le champ ───────────
+
+/// Une facture prête à l'envoi dont le client habite `Ve–vey` (tiret
+/// demi-cadratin, refusé par la QR-facture) ; la facture n'est jamais figée.
+/// Rend `(admin_id, company_id, invoice_id)`, comme `seed_sendable` (Story
+/// 35-2b : le lot a besoin d'`admin_id` pour semer une seconde facture).
+async fn seed_sendable_ve_vey(pool: &MySqlPool) -> (i64, i64, i64) {
+    let (admin_id, company_id, invoice_id) = seed_sendable(pool).await;
+    sqlx::query(
+        "UPDATE contacts SET address_city = ? \
+         WHERE id = (SELECT contact_id FROM invoices WHERE id = ?)",
+    )
+    .bind("Ve\u{2013}vey")
+    .bind(invoice_id)
+    .execute(pool)
+    .await
+    .unwrap();
+    (admin_id, company_id, invoice_id)
+}
+
+/// Le 400 `INVOICE_NOT_PDF_READY`, dont le message nomme la localité du client
+/// et le point de code ; rien n'est parti.
+async fn assert_refus_nomme_la_localite(resp: reqwest::Response, mock: &MockMailer) {
+    assert_eq!(resp.status(), 400);
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(body["error"]["code"], "INVOICE_NOT_PDF_READY", "{body}");
+    let m = body["error"]["message"].as_str().unwrap();
+    assert!(m.contains("localité du client"), "{m}");
+    assert!(m.contains("U+2013"), "{m}");
+    assert_eq!(mock.sent_emails().len(), 0, "rien n'est parti");
+}
+
+/// L'envoi de la facture par e-mail.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn send_email_refus_pdf_nomme_le_champ(pool: MySqlPool) {
+    let mock = MockMailer::new();
+    let (_, _, invoice_id) = seed_sendable_ve_vey(&pool).await;
+    let app = spawn_app(pool.clone(), mock.clone(), true, 20).await;
+    let token = login(&app, "admin", TEST_ADMIN_PASSWORD).await;
+    let resp = app
+        .client
+        .post(app.url(&format!("/api/v1/invoices/{invoice_id}/send-email")))
+        .bearer_auth(&token)
+        .json(&json!({ "subject": "Facture", "body": "Corps." }))
+        .send()
+        .await
+        .unwrap();
+    assert_refus_nomme_la_localite(resp, &mock).await;
+}
+
+/// Le rappel seul.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn send_reminder_refus_pdf_nomme_le_champ(pool: MySqlPool) {
+    let mock = MockMailer::new();
+    let (_, company_id, invoice_id) = seed_sendable_ve_vey(&pool).await;
+    seed_dunning(&pool, company_id).await;
+    let app = spawn_app(pool.clone(), mock.clone(), true, 20).await;
+    let token = login(&app, "admin", TEST_ADMIN_PASSWORD).await;
+    let resp = app
+        .client
+        .post(app.url(&format!("/api/v1/invoices/{invoice_id}/reminders/send")))
+        .bearer_auth(&token)
+        .json(&json!({ "levelNumber": 1, "subject": "Rappel", "body": "Corps du rappel." }))
+        .send()
+        .await
+        .unwrap();
+    assert_refus_nomme_la_localite(resp, &mock).await;
+    assert_eq!(reminder_count(&pool, invoice_id).await, 0);
+}
+
+// ─── Story 35-2b (#955, AC1) — le lot de rappels dit pourquoi le PDF est refusé ───
+
+/// La valeur fr-CH d'une clé, lue au catalogue réel (celui que `spawn_app`
+/// charge), variables Fluent données par `args`, marques d'isolation retirées —
+/// non un littéral recopié.
+fn phrase_fr(cle: &str, args: Option<&kesh_i18n::FluentArgs<'_>>) -> String {
+    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .unwrap()
+        .join("kesh-i18n/locales");
+    let bundle = kesh_i18n::I18nBundle::load(&dir).expect("catalogue");
+    let valeur = bundle
+        .format(&kesh_i18n::Locale::FrCh, cle, args)
+        .replace(['\u{2068}', '\u{2069}'], "");
+    assert_ne!(valeur, cle, "{cle} absente du catalogue fr-CH");
+    valeur
+}
+
+/// Un lot de deux factures dont le PDF est refusé pour deux causes : la localité
+/// `Ve–vey` du premier client, l'adresse absente du second. Chaque échec porte
+/// `details = { message }`, la phrase de la route unitaire ; rien n'est parti.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn send_reminder_batch_refus_pdf_porte_le_message(pool: MySqlPool) {
+    let mock = MockMailer::new();
+    let (admin_id, company_id, ve_vey_invoice) = seed_sendable_ve_vey(&pool).await;
+    // Second contact, distinct, avec e-mail (sinon CONTACT_EMAIL_MISSING passe
+    // avant le rendu), puis sans aucune des quatre colonnes de l'adresse.
+    let sans_adresse = seed_contact(
+        &pool,
+        company_id,
+        admin_id,
+        Some("sans-adresse@example.ch"),
+        None,
+        Salutation::Monsieur,
+        Some("Sansadresse"),
+    )
+    .await;
+    let sans_adresse_invoice =
+        seed_validated_invoice(&pool, company_id, sans_adresse, admin_id).await;
+    sqlx::query(
+        "UPDATE contacts SET address_street = NULL, address_building = NULL, \
+         address_postal_code = NULL, address_city = NULL WHERE id = ?",
+    )
+    .bind(sans_adresse)
+    .execute(&pool)
+    .await
+    .unwrap();
+    seed_dunning(&pool, company_id).await;
+    let app = spawn_app(pool.clone(), mock.clone(), true, 20).await;
+    let token = login(&app, "admin", TEST_ADMIN_PASSWORD).await;
+
+    let resp = app
+        .client
+        .post(app.url("/api/v1/dunning/reminders/send-batch"))
+        .bearer_auth(&token)
+        .json(&json!({ "invoiceIds": [ve_vey_invoice, sans_adresse_invoice] }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200, "succès partiel = succès HTTP");
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(body["accepted"].as_array().unwrap().len(), 0, "{body}");
+    let failed = body["failed"].as_array().unwrap();
+    assert_eq!(failed.len(), 2, "{body}");
+    let message_de = |id: i64| -> String {
+        let f = failed
+            .iter()
+            .find(|f| f["invoiceId"] == id)
+            .unwrap_or_else(|| panic!("facture {id} absente de failed[] : {body}"));
+        assert_eq!(f["errorCode"], "INVOICE_NOT_PDF_READY", "{f}");
+        let details = &f["details"];
+        assert_eq!(
+            details
+                .as_object()
+                .unwrap_or_else(|| panic!("details n'est pas un objet : {f}"))
+                .keys()
+                .collect::<Vec<_>>(),
+            ["message"],
+            "message est le seul champ de details : {f}"
+        );
+        details["message"].as_str().unwrap().to_string()
+    };
+
+    let m = message_de(ve_vey_invoice);
+    assert!(m.contains("localité du client"), "{m}");
+    assert!(m.contains("U+2013"), "{m}");
+
+    assert_eq!(
+        message_de(sans_adresse_invoice),
+        phrase_fr("invoice-pdf-error-client-address-required", None)
+    );
+
+    assert_eq!(mock.sent_emails().len(), 0, "rien n'est parti");
+    assert_eq!(reminder_count(&pool, ve_vey_invoice).await, 0);
+    assert_eq!(reminder_count(&pool, sans_adresse_invoice).await, 0);
+}
+
+/// Story 35-2b (angle mort de la fiche) — l'en-tête qui déborde, sous catalogue
+/// réel : au lot, le refus porte la phrase de la route unitaire
+/// `INVOICE_PDF_HEADER_OVERFLOW`, sous le code du lot. Montage repris de
+/// `invoice_pdf_e2e::pdf_header_overflow_returns_400_with_its_own_code`.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn send_reminder_batch_entete_qui_deborde_porte_le_message(pool: MySqlPool) {
+    let mock = MockMailer::new();
+    let (_, company_id, invoice_id) = seed_sendable(&pool).await;
+    sqlx::query(
+        "UPDATE companies SET address = ?, phone = ?, email = ?, website = ? WHERE id = ?",
+    )
+    .bind("Ligne 1\nLigne 2\nLigne 3\nLigne 4\nLigne 5\nLigne 6\nLigne 7\nLigne 8\nLigne 9\nLigne 10")
+    .bind("+41 21 123 45 67")
+    .bind("contact@demo.ch")
+    .bind("https://demo.ch")
+    .bind(company_id)
+    .execute(&pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        "UPDATE contacts SET address = ? \
+         WHERE id = (SELECT contact_id FROM invoices WHERE id = ?)",
+    )
+    .bind("Dest 1\nDest 2\nDest 3\nDest 4\nDest 5\nDest 6\nDest 7\nDest 8\nDest 9\nDest 10")
+    .bind(invoice_id)
+    .execute(&pool)
+    .await
+    .unwrap();
+    seed_dunning(&pool, company_id).await;
+    let app = spawn_app(pool.clone(), mock.clone(), true, 20).await;
+    let token = login(&app, "admin", TEST_ADMIN_PASSWORD).await;
+
+    let resp = app
+        .client
+        .post(app.url("/api/v1/dunning/reminders/send-batch"))
+        .bearer_auth(&token)
+        .json(&json!({ "invoiceIds": [invoice_id] }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+    let body: serde_json::Value = resp.json().await.unwrap();
+    let failed = body["failed"].as_array().unwrap();
+    assert_eq!(failed.len(), 1, "{body}");
+    assert_eq!(failed[0]["errorCode"], "INVOICE_NOT_PDF_READY", "{body}");
+
+    let attendu = phrase_fr("error-invoice-pdf-header-overflow", None);
+    assert_eq!(
+        failed[0]["details"],
+        json!({ "message": attendu }),
+        "{body}"
+    );
+    assert_eq!(mock.sent_emails().len(), 0, "rien n'est parti");
+}
+
+/// Story 35-2b (revue P1 E2, E3) — un lot **mixte**, sous catalogue réel : une
+/// facture de dix lignes (au-delà de `MAX_LINES_PER_PDF`, refusée avant tout rendu,
+/// pour le rappel comme pour la facture), une facture envoyable et une facture
+/// payée. Le refus porte la phrase de `error-invoice-too-many-lines-for-pdf` avec
+/// `count` = 10, sans marque d'isolation ; l'envoi réussi reste dans `accepted` ;
+/// l'autre échec garde `details` nul.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn send_reminder_batch_mixte_trop_de_lignes_porte_le_message(pool: MySqlPool) {
+    let mock = MockMailer::new();
+    let (admin_id, company_id, ok_invoice) = seed_sendable(&pool).await;
+    let contact_id: i64 = sqlx::query_scalar("SELECT contact_id FROM invoices WHERE id = ?")
+        .bind(ok_invoice)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    let longue = seed_validated_invoice_lines(&pool, company_id, contact_id, admin_id, 10).await;
+    let payee = seed_validated_invoice(&pool, company_id, contact_id, admin_id).await;
+    sqlx::query("UPDATE invoices SET paid_at = UTC_TIMESTAMP(6) WHERE id = ?")
+        .bind(payee)
+        .execute(&pool)
+        .await
+        .unwrap();
+    seed_dunning(&pool, company_id).await;
+    let app = spawn_app(pool.clone(), mock.clone(), true, 20).await;
+    let token = login(&app, "admin", TEST_ADMIN_PASSWORD).await;
+
+    let resp = app
+        .client
+        .post(app.url("/api/v1/dunning/reminders/send-batch"))
+        .bearer_auth(&token)
+        .json(&json!({ "invoiceIds": [longue, ok_invoice, payee] }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200, "succès partiel = succès HTTP");
+    let body: serde_json::Value = resp.json().await.unwrap();
+    let accepted = body["accepted"].as_array().unwrap();
+    assert_eq!(accepted.len(), 1, "{body}");
+    assert_eq!(accepted[0]["invoiceId"], ok_invoice, "{body}");
+    let failed = body["failed"].as_array().unwrap();
+    assert_eq!(failed.len(), 2, "{body}");
+    let echec = |id: i64| {
+        failed
+            .iter()
+            .find(|f| f["invoiceId"] == id)
+            .unwrap_or_else(|| panic!("facture {id} absente de failed[] : {body}"))
+    };
+
+    let mut args = kesh_i18n::FluentArgs::new();
+    args.set("count", 10_i64);
+    let attendu = phrase_fr("error-invoice-too-many-lines-for-pdf", Some(&args));
+    assert!(attendu.contains("10"), "{attendu}");
+    let refus = echec(longue);
+    assert_eq!(refus["errorCode"], "INVOICE_NOT_PDF_READY", "{refus}");
+    assert_eq!(refus["details"], json!({ "message": attendu }), "{refus}");
+    let message = refus["details"]["message"].as_str().unwrap();
+    assert!(
+        !message.contains(['\u{2068}', '\u{2069}']),
+        "marques d'isolation dans le message : {message:?}"
+    );
+
+    let paye = echec(payee);
+    assert_eq!(paye["errorCode"], "INVOICE_ALREADY_PAID", "{paye}");
+    assert!(paye["details"].is_null(), "{paye}");
+    assert_eq!(
+        mock.sent_emails().len(),
+        1,
+        "seul l'envoi accepté est parti"
+    );
 }

@@ -20,10 +20,18 @@
 //!
 //! Pré-requis : MariaDB démarré.
 
+/// Story 35-5a0 — de `tests/common/`, la seule date du jour de l'horloge de test ;
+/// Story 36-4 (#1131) — le relevé « toutes traces » d'un geste et la clé par HTTP.
+mod common {
+    pub mod audit_traces;
+    pub mod jour;
+}
+
 use std::net::SocketAddr;
 use std::sync::Arc;
 
 use chrono::{NaiveDate, TimeDelta};
+use common::audit_traces::{self, assert_toutes_a_l_utilisateur, assert_toutes_a_la_cle};
 use kesh_api::config::Config;
 use kesh_api::{AppState, build_router};
 use kesh_db::entities::contact::{ContactType, NewContact};
@@ -258,6 +266,11 @@ async fn pay_then_cancel_the_settlement(pool: MySqlPool) {
         "la réponse de `pay` porte les champs : l'écran remplace son état par elle"
     );
     assert!(v["lastConfirmedBatch"].is_null());
+    assert!(
+        audit_traces::lignes_lettrees_document(&pool).await > 0,
+        "montage : le lettrage de la pièce est posé"
+    );
+    let avant = audit_traces::max_audit_id(&pool).await;
 
     let resp = post(
         &app,
@@ -275,6 +288,77 @@ async fn pay_then_cancel_the_settlement(pool: MySqlPool) {
     assert_eq!(
         v["invoice"]["settlementCancelBlockedBy"],
         "SUPPLIER_INVOICE_NOT_PAID"
+    );
+
+    // Story 36-4 (#1131, AC4) — par session, rien ne change : toutes les traces
+    // du geste sont à l'utilisateur, sans clé.
+    assert_toutes_a_l_utilisateur(
+        &audit_traces::audit_depuis(&pool, avant).await,
+        audit_traces::user_id_de(&pool, "admin").await,
+        SUPPLIER_SETTLEMENT_CANCEL_ACTIONS,
+    );
+}
+
+/// Ce qu'écrit au journal d'audit l'annulation du paiement d'une facture
+/// fournisseur dont la pièce est lettrée — relevé sur ce montage (Story 36-4,
+/// #1131) : le délettrage de la pièce, la contre-passation (l'inverse, le
+/// marquage de l'écriture, et un lettrage `reversal` par ligne libre d'un compte
+/// lettrable — ici deux : la caisse `1000` et la dette, dont le lettrage de la
+/// pièce vient d'être défait), le geste.
+const SUPPLIER_SETTLEMENT_CANCEL_ACTIONS: &[&str] = &[
+    "lettering.removed",
+    "journal_entry.created",
+    "journal_entry.reversed",
+    "lettering.created",
+    "lettering.created",
+    "supplier_invoice.settlement_cancelled",
+];
+
+/// ⛔ Story 36-4 (#1131, AC2) — **l'annulation du paiement par une clé d'API est
+/// attribuée à la clé**, toutes traces comprises : le geste, la
+/// contre-passation et le délettrage de la pièce. Avant la story, chacune était
+/// au nom du créateur de la clé (`actor_type = 'user'`).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn an_api_key_cancels_a_supplier_settlement_and_is_named_everywhere(pool: MySqlPool) {
+    let seeded = seed_accounting_company(&pool).await.unwrap();
+    let id = open_invoice(&pool, &seeded).await;
+    let app = spawn_app(pool.clone()).await;
+    let token = login(&app, "admin", TEST_ADMIN_PASSWORD).await;
+    let resp = post(
+        &app,
+        &token,
+        &format!("/api/v1/supplier-invoices/{id}/pay"),
+        json!({
+            "settlementType": "internal_account",
+            "accountId": seeded.accounts["1000"],
+            "paymentDate": "2026-06-20"
+        }),
+    )
+    .await;
+    assert_eq!(resp.status(), 200);
+    assert!(
+        audit_traces::lignes_lettrees_document(&pool).await > 0,
+        "montage : le lettrage de la pièce est posé, le délettrage sera exercé"
+    );
+    let (cle, secret) =
+        audit_traces::create_key_via_http(&app.client, &app.base_url, &token, "rw", "read-write")
+            .await;
+    let avant = audit_traces::max_audit_id(&pool).await;
+
+    let resp = post(
+        &app,
+        &secret,
+        &format!("/api/v1/supplier-invoices/{id}/settlement/cancel"),
+        json!({}),
+    )
+    .await;
+    assert_eq!(resp.status(), 200);
+
+    assert_toutes_a_la_cle(
+        &audit_traces::audit_depuis(&pool, avant).await,
+        cle,
+        audit_traces::createur_de_la_cle(&pool, cle).await,
+        SUPPLIER_SETTLEMENT_CANCEL_ACTIONS,
     );
 }
 
@@ -319,6 +403,7 @@ async fn cancel_settlement_roles_and_refusals(pool: MySqlPool) {
         },
         NaiveDate::from_ymd_opt(2026, 6, 20).unwrap(),
         seeded.admin_user_id,
+        crate::common::jour::aujourd_hui_test(),
     )
     .await
     .unwrap();
@@ -369,6 +454,7 @@ async fn pay_then_cancel_the_invoice(pool: MySqlPool) {
         },
         NaiveDate::from_ymd_opt(2026, 6, 20).unwrap(),
         seeded.admin_user_id,
+        crate::common::jour::aujourd_hui_test(),
     )
     .await
     .unwrap();
@@ -730,6 +816,7 @@ async fn cancel_blocked_by_closed_lettering(pool: MySqlPool) {
         },
         paid_on,
         seeded.admin_user_id,
+        crate::common::jour::aujourd_hui_test(),
     )
     .await
     .unwrap();
@@ -751,6 +838,7 @@ async fn cancel_blocked_by_closed_lettering(pool: MySqlPool) {
         seeded.admin_user_id,
         seeded.company_id,
         paid_on,
+        crate::common::jour::aujourd_hui_test(),
     )
     .await
     .expect("verrou");

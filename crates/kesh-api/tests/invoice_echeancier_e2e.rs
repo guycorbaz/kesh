@@ -2016,6 +2016,7 @@ async fn settlement_cancel_blocked_by_closed_lettering(pool: MySqlPool) {
         admin_id,
         company_id,
         NaiveDate::from_ymd_opt(2026, 4, 15).unwrap(),
+        crate::common::jour::aujourd_hui_test(),
     )
     .await
     .expect("verrou");

@@ -21,6 +21,11 @@
 #[path = "support/fournisseur_rapproche.rs"]
 mod fournisseur_rapproche;
 
+/// Story 35-5a0 — la date du jour de l'horloge de test.
+#[allow(dead_code)]
+#[path = "support/jour.rs"]
+mod jour;
+
 use chrono::NaiveDate;
 use kesh_db::entities::imported_supplier_invoice::{
     ImportedSupplierInvoice, NewImportedSupplierInvoice,
@@ -841,9 +846,15 @@ async fn cancelled_invoices_take_a_document_and_the_detached_settlement_loses_it
 
     // Ouverte puis annulée : rattacher, puis détacher.
     let (annulee, _) = facture_ouverte(&pool, &seeded, f, "FF-A", dec!(20)).await;
-    supplier_invoices::cancel(&pool, c, annulee, seeded.admin_user_id)
-        .await
-        .expect("annulée");
+    supplier_invoices::cancel(
+        &pool,
+        c,
+        annulee,
+        seeded.admin_user_id,
+        crate::jour::aujourd_hui_test(),
+    )
+    .await
+    .expect("annulée");
     let avant = etat_facture(&pool, annulee).await;
     assert_eq!(avant.0, "cancelled");
     let doc = document(&pool, c, "a1").await;
@@ -872,9 +883,15 @@ async fn cancelled_invoices_take_a_document_and_the_detached_settlement_loses_it
     rattacher(&pool, c, doc_p.id, payee)
         .await
         .expect("rattaché");
-    supplier_invoices::cancel(&pool, c, payee, seeded.admin_user_id)
-        .await
-        .expect("payée puis annulée");
+    supplier_invoices::cancel(
+        &pool,
+        c,
+        payee,
+        seeded.admin_user_id,
+        crate::jour::aujourd_hui_test(),
+    )
+    .await
+    .expect("payée puis annulée");
     assert_eq!(
         repo::find_source_document_of_entry(&pool, c, achat)
             .await

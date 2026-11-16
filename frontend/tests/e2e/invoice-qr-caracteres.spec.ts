@@ -80,3 +80,36 @@ test('un débiteur au nom portant « & » reçoit sa QR-facture', async ({ page 
 		await disposeContextSafe(ctx);
 	}
 });
+
+/**
+ * Story 35-2a (#955, AC12) — un caractère que la QR-facture refuse : l'écran
+ * montre le message du serveur, qui nomme le champ et le caractère, et non plus
+ * la phrase fixe « La facture n'est pas prête… ». Seul un E2E voit le message
+ * traverser la route jusqu'à l'écran.
+ */
+test('un caractère refusé : le message nomme le champ et le caractère', async ({ page }) => {
+	await page.goto('/login');
+	await page.fill('#username', 'admin');
+	await page.fill('#password', 'admin123');
+	await page.click('button[type="submit"]');
+	await expect(page).toHaveURL('/');
+
+	await ensurePrimaryBankAccountViaApi(page);
+	const nom = `Ve-vey ${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
+	const contactId = await createContactWithAddressViaApi(
+		page,
+		nom,
+		undefined,
+		undefined,
+		undefined,
+		'Ve–vey',
+	);
+	const invoiceId = await createAndValidateInvoiceViaApi(page, contactId);
+
+	await page.goto(`/invoices/${invoiceId}`);
+	await page.getByRole('button', { name: /Télécharger.*PDF/i }).click();
+	const message = page.getByText(/localité du client/);
+	await expect(message.first()).toBeVisible({ timeout: 5000 });
+	await expect(message.first()).toContainText('U+2013');
+	await expect(page.getByText(/pas prête pour la génération PDF/)).toHaveCount(0);
+});

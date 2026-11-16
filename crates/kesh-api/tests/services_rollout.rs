@@ -40,6 +40,7 @@ use kesh_api::services::poignees::Lecture;
 use kesh_api::services::postes_ouverts::{self, DemandePostesOuverts};
 use kesh_api::{AppState, build_router};
 use kesh_db::entities::address::StructuredAddress;
+use kesh_db::entities::audit_log::Acteur;
 use kesh_db::entities::invoice::{NewInvoice, NewInvoiceLine};
 use kesh_db::entities::journal_entry::Journal;
 use kesh_db::entities::{
@@ -200,7 +201,7 @@ async fn poser_livres(pool: &MySqlPool) -> Livres {
     let ecriture = journal_entries::create(
         pool,
         s.fiscal_year_id,
-        s.admin_user_id,
+        Acteur::utilisateur(s.admin_user_id),
         NewJournalEntry {
             company_id: s.company_id,
             entry_date: NaiveDate::from_ymd_opt(2026, 6, 1).unwrap(),
@@ -704,7 +705,7 @@ fn est_validation(r: &Result<(), AppError>) -> bool {
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn ac9_a_b_e_refus_et_controle_positif(pool: MySqlPool) {
     let livres = poser_livres(&pool).await;
-    let lecture = Lecture::new(pool.clone());
+    let lecture = Lecture::new(pool.clone(), kesh_api::horloge::horloge_de_test());
     let (c, u) = (livres.s.company_id, livres.s.admin_user_id);
     let mut echecs = Vec::new();
     for svc in SERVICES {
@@ -788,7 +789,7 @@ async fn ac9_a_b_e_refus_et_controle_positif(pool: MySqlPool) {
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn ac9_c_le_refus_precede_validation_et_lecture(pool: MySqlPool) {
     let livres = poser_livres(&pool).await;
-    let lecture = Lecture::new(pool.clone());
+    let lecture = Lecture::new(pool.clone(), kesh_api::horloge::horloge_de_test());
     let (c, u) = (livres.s.company_id, livres.s.admin_user_id);
     type Attendu = fn(&Result<(), AppError>) -> bool;
     // (nom, service, société du contexte, cas, erreur attendue avec la portée)
@@ -944,7 +945,7 @@ async fn ac9_c_le_refus_precede_validation_et_lecture(pool: MySqlPool) {
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn ac9_carnet_detail_lit_le_contact_avant_la_societe(pool: MySqlPool) {
     let livres = poser_livres(&pool).await;
-    let lecture = Lecture::new(pool.clone());
+    let lecture = Lecture::new(pool.clone(), kesh_api::horloge::horloge_de_test());
     let acces = mcp_societe(INEXISTANT, livres.s.admin_user_id, &[Portee::ContactsRead]);
     let detail = jouer(
         Svc::CarnetDetail,
@@ -988,7 +989,7 @@ fn message_de_validation<T: std::fmt::Debug>(r: &Result<T, AppError>) -> Result<
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn ac10_a_les_neuf_refus_de_la_liste_des_ecritures(pool: MySqlPool) {
     let livres = poser_livres(&pool).await;
-    let lecture = Lecture::new(pool.clone());
+    let lecture = Lecture::new(pool.clone(), kesh_api::horloge::horloge_de_test());
     let acces = api_societe(
         livres.s.company_id,
         livres.s.admin_user_id,
@@ -1168,7 +1169,7 @@ fn table_des_bornes(defaut: i64, plafond: i64) -> [LigneDeBornes; 3] {
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn ac10_b_les_bornes_des_trois_listes(pool: MySqlPool) {
     let livres = poser_livres(&pool).await;
-    let lecture = Lecture::new(pool.clone());
+    let lecture = Lecture::new(pool.clone(), kesh_api::horloge::horloge_de_test());
     let acces = api_societe(
         livres.s.company_id,
         livres.s.admin_user_id,
@@ -1296,7 +1297,10 @@ async fn ac11_a_les_services_lisent_en_lecture_seule(pool: MySqlPool) {
         )),
     }
     // Story 32-4b (AC12 (a)) — les six services des factures.
-    match factures::lister(&acces, &lecture, DemandeListeFactures::default()).await {
+    match factures::lister(&acces, &lecture, DemandeListeFactures::default())
+        .await
+        .map(|l| l.page)
+    {
         Ok(p) if p.total >= 2 => {}
         autre => echecs.push(format!(
             "AC12 (a) factures::lister : {:?}",
@@ -1349,7 +1353,7 @@ async fn ac11_a_les_services_lisent_en_lecture_seule(pool: MySqlPool) {
 async fn ac11_b_aucune_lecture_d_une_autre_societe(pool: MySqlPool) {
     let livres = poser_livres(&pool).await;
     let seconde = seconde_societe(&pool).await;
-    let lecture = Lecture::new(pool.clone());
+    let lecture = Lecture::new(pool.clone(), kesh_api::horloge::horloge_de_test());
     let acces = mcp_societe(seconde, livres.s.admin_user_id, &TOUTES);
     let mut echecs = Vec::new();
     let r = ecritures::detail(&acces, &lecture, livres.ecriture_id)
@@ -1411,7 +1415,10 @@ async fn ac11_b_aucune_lecture_d_une_autre_societe(pool: MySqlPool) {
             resume(&r)
         ));
     }
-    match factures::lister(&acces, &lecture, DemandeListeFactures::default()).await {
+    match factures::lister(&acces, &lecture, DemandeListeFactures::default())
+        .await
+        .map(|l| l.page)
+    {
         Ok(p) if p.total == 0 && p.items.is_empty() => {}
         autre => echecs.push(format!(
             "AC12 (b) factures::lister : {:?}",
@@ -1451,7 +1458,7 @@ async fn ac11_b_aucune_lecture_d_une_autre_societe(pool: MySqlPool) {
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn ac11_b_la_liste_des_ecritures_ne_lit_pas_la_societe(pool: MySqlPool) {
     let livres = poser_livres(&pool).await;
-    let lecture = Lecture::new(pool.clone());
+    let lecture = Lecture::new(pool.clone(), kesh_api::horloge::horloge_de_test());
     let acces = mcp_societe(INEXISTANT, livres.s.admin_user_id, &TOUTES);
     match ecritures::lister(&acces, &lecture, DemandeListeEcritures::default()).await {
         Ok(p) if p.total == 0 && p.items.is_empty() => {}
@@ -1483,7 +1490,7 @@ async fn poser_ecriture(
     journal_entries::create(
         pool,
         s.fiscal_year_id,
-        s.admin_user_id,
+        Acteur::utilisateur(s.admin_user_id),
         NewJournalEntry {
             company_id: s.company_id,
             entry_date: NaiveDate::from_ymd_opt(date.0, date.1, date.2).unwrap(),
@@ -1638,7 +1645,7 @@ async fn filtres_des_ecritures_par_la_route(pool: MySqlPool) {
 
     // Au service, demande vide : le tri par défaut que reçoit l'outil MCP de
     // la 32-9a.
-    let lecture = Lecture::new(pool.clone());
+    let lecture = Lecture::new(pool.clone(), kesh_api::horloge::horloge_de_test());
     let acces = mcp_societe(s.company_id, s.admin_user_id, &[Portee::BooksRead]);
     match ecritures::lister(&acces, &lecture, DemandeListeEcritures::default()).await {
         Ok(p) => {
@@ -1772,7 +1779,7 @@ async fn tri_par_defaut_et_filtres_du_carnet(pool: MySqlPool) {
     let mut echecs = Vec::new();
 
     // Au service, demande vide : ce que reçoit l'outil MCP de la 32-9b.
-    let lecture = Lecture::new(pool.clone());
+    let lecture = Lecture::new(pool.clone(), kesh_api::horloge::horloge_de_test());
     let acces = mcp_societe(c, s.admin_user_id, &[Portee::ContactsRead]);
     match carnet::lister(&acces, &lecture, DemandeListeContacts::default()).await {
         Ok(p) => {
@@ -2096,9 +2103,12 @@ async fn ac324b_d_e_f_la_liste_des_factures_par_la_route(pool: MySqlPool) {
     }
     // T1 (ii) — au service, demande vide, sous le contexte MCP `InvoicesRead`
     // (le chemin de l'outil de la 32-9a) : le tri par défaut (`Date`, `Desc`).
-    let lecture = Lecture::new(pool.clone());
+    let lecture = Lecture::new(pool.clone(), kesh_api::horloge::horloge_de_test());
     let acces = mcp_societe(f.s.company_id, f.s.admin_user_id, &[Portee::InvoicesRead]);
-    match factures::lister(&acces, &lecture, DemandeListeFactures::default()).await {
+    match factures::lister(&acces, &lecture, DemandeListeFactures::default())
+        .await
+        .map(|l| l.page)
+    {
         Ok(p) => {
             let rendu: Vec<String> = p.items.iter().map(|i| f.libelle(i.id)).collect();
             if rendu != ["F5", "F4", "F3", "F2", "F1"] {
@@ -2182,7 +2192,7 @@ async fn ac324b_d_e_f_l_echeancier_par_la_route(pool: MySqlPool) {
     }
     // T1 (ii) — au service, demande vide, contexte MCP `InvoicesRead` : le tri
     // par défaut (`DueDate`, `Asc`) sur les impayées.
-    let lecture = Lecture::new(pool.clone());
+    let lecture = Lecture::new(pool.clone(), kesh_api::horloge::horloge_de_test());
     let acces = mcp_societe(f.s.company_id, f.s.admin_user_id, &[Portee::InvoicesRead]);
     match factures::echeances(&acces, &lecture, DemandeEcheances::default()).await {
         Ok(e) => {
@@ -2251,7 +2261,7 @@ async fn ac324b_d_f_la_liste_fournisseur_par_la_route(pool: MySqlPool) {
         }
     }
     // T1 (ii) — au service, demande vide, contexte MCP `InvoicesRead`.
-    let lecture = Lecture::new(pool.clone());
+    let lecture = Lecture::new(pool.clone(), kesh_api::horloge::horloge_de_test());
     let acces = mcp_societe(s.company_id, s.admin_user_id, &[Portee::InvoicesRead]);
     match factures_fournisseur::lister(&acces, &lecture, DemandeListeFacturesFournisseur::default())
         .await
@@ -2315,7 +2325,7 @@ async fn ac324b_g_le_detail_d_une_facture_par_la_route(pool: MySqlPool) {
     }
     // T1 (ii) — au service : le réglage n'est lu que pour un brouillon ; les
     // deux montants de F1.
-    let lecture = Lecture::new(pool.clone());
+    let lecture = Lecture::new(pool.clone(), kesh_api::horloge::horloge_de_test());
     let acces = mcp_societe(f.s.company_id, f.s.admin_user_id, &[Portee::InvoicesRead]);
     for (i, attendu) in [(0, None), (1, None), (4, Some(true))] {
         match factures::detail(&acces, &lecture, f.ids[i]).await {
@@ -2358,7 +2368,7 @@ fn a_fois(n: usize) -> Option<String> {
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn ac324b_a_les_refus_de_la_liste_et_de_l_echeancier(pool: MySqlPool) {
     let livres = poser_livres(&pool).await;
-    let lecture = Lecture::new(pool.clone());
+    let lecture = Lecture::new(pool.clone(), kesh_api::horloge::horloge_de_test());
     let acces = mcp_societe(
         livres.s.company_id,
         livres.s.admin_user_id,
@@ -2742,7 +2752,11 @@ async fn ac324b_a_les_refus_de_la_liste_et_de_l_echeancier(pool: MySqlPool) {
     let encadree = Some(format!(" {} ", "a".repeat(100)));
     let liste_total = |d: DemandeListeFactures| {
         let (acces, lecture) = (&acces, &lecture);
-        async move { factures::lister(acces, lecture, d).await.map(|p| p.total) }
+        async move {
+            factures::lister(acces, lecture, d)
+                .await
+                .map(|l| l.page.total)
+        }
     };
     let (nu, encadre, blanc, sans) = (
         liste_total(DemandeListeFactures {
@@ -2815,7 +2829,7 @@ async fn ac324b_a_les_refus_de_la_liste_et_de_l_echeancier(pool: MySqlPool) {
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn ac324b_b_les_bornes_des_listes_de_factures(pool: MySqlPool) {
     let livres = poser_livres(&pool).await;
-    let lecture = Lecture::new(pool.clone());
+    let lecture = Lecture::new(pool.clone(), kesh_api::horloge::horloge_de_test());
     let acces = api_societe(
         livres.s.company_id,
         livres.s.admin_user_id,
@@ -2842,7 +2856,7 @@ async fn ac324b_b_les_bornes_des_listes_de_factures(pool: MySqlPool) {
     }
     let r = factures::lister(&acces, &lecture, DemandeListeFactures::default())
         .await
-        .map(|p| (p.limit, p.offset));
+        .map(|l| (l.page.limit, l.page.offset));
     if r.as_ref().ok() != Some(&(20, 0)) {
         echecs.push(format!("factures::lister défauts : {r:?}"));
     }
@@ -2862,7 +2876,7 @@ async fn ac324b_b_les_bornes_des_listes_de_factures(pool: MySqlPool) {
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn ac324b_c_la_societe_est_lue_d_abord(pool: MySqlPool) {
     let livres = poser_livres(&pool).await;
-    let lecture = Lecture::new(pool.clone());
+    let lecture = Lecture::new(pool.clone(), kesh_api::horloge::horloge_de_test());
     let acces = mcp_societe(INEXISTANT, livres.s.admin_user_id, &[Portee::InvoicesRead]);
     let mut echecs = Vec::new();
     let r = factures::lister(
@@ -2900,7 +2914,7 @@ async fn ac324b_c_la_societe_est_lue_d_abord(pool: MySqlPool) {
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn ac324b_d_detail_et_echeances_ne_lisent_pas_la_societe(pool: MySqlPool) {
     let livres = poser_livres(&pool).await;
-    let lecture = Lecture::new(pool.clone());
+    let lecture = Lecture::new(pool.clone(), kesh_api::horloge::horloge_de_test());
     let acces = mcp_societe(INEXISTANT, livres.s.admin_user_id, &[Portee::InvoicesRead]);
     let mut echecs = Vec::new();
     let r = factures::detail(&acces, &lecture, livres.brouillon_id)
@@ -2943,6 +2957,7 @@ async fn ac_a12_exercices_refus_controle_positif_lecture_seule(pool: MySqlPool) 
             .acquire_timeout(std::time::Duration::from_millis(200))
             .connect_lazy("mysql://x:y@127.0.0.1:1/z")
             .unwrap(),
+        kesh_api::horloge::horloge_de_test(),
     );
     let autres: Vec<Portee> = TOUTES
         .into_iter()
@@ -2960,7 +2975,7 @@ async fn ac_a12_exercices_refus_controle_positif_lecture_seule(pool: MySqlPool) 
     let r = exercices::lister(&acces, &injoignable).await.map(drop);
     assert!(!est_interdit(&r) && r.is_err(), "témoin : {}", resume(&r));
 
-    let lecture = Lecture::new(pool.clone());
+    let lecture = Lecture::new(pool.clone(), kesh_api::horloge::horloge_de_test());
     let liste = exercices::lister(&acces, &lecture)
         .await
         .expect("BooksRead");
@@ -3038,6 +3053,7 @@ async fn ac_b1_pieces_refus_controle_positif_lecture_seule(pool: MySqlPool) {
             .acquire_timeout(std::time::Duration::from_millis(200))
             .connect_lazy("mysql://x:y@127.0.0.1:1/z")
             .unwrap(),
+        kesh_api::horloge::horloge_de_test(),
     );
     let autres: Vec<Portee> = TOUTES
         .into_iter()
@@ -3071,7 +3087,7 @@ async fn ac_b1_pieces_refus_controle_positif_lecture_seule(pool: MySqlPool) {
         .map(drop);
     assert!(!est_interdit(&r) && r.is_err(), "témoin : {}", resume(&r));
 
-    let lecture = Lecture::new(pool.clone());
+    let lecture = Lecture::new(pool.clone(), kesh_api::horloge::horloge_de_test());
     let demande = || DemandeListePieces {
         statut: Some("to_complete".into()),
         ..Default::default()
@@ -3115,7 +3131,7 @@ async fn ac_b1_pieces_validation_et_tranche(pool: MySqlPool) {
     let s = societe(&pool).await;
     poser_pieces(&pool, &s, 5).await;
     let acces = mcp_societe(s.company_id, s.admin_user_id, &[Portee::DocumentsRead]);
-    let lecture = Lecture::new(pool.clone());
+    let lecture = Lecture::new(pool.clone(), kesh_api::horloge::horloge_de_test());
     for (statut, recu) in [(None, ""), (Some("PIEGE"), "PIEGE"), (Some(""), "")] {
         let r = pieces::lister_tout(&acces, &lecture, statut.map(str::to_string)).await;
         assert_eq!(
@@ -3187,7 +3203,7 @@ async fn ac_b1_pieces_la_societe_est_lue_d_abord(pool: MySqlPool) {
     use kesh_api::services::pieces::{self, DemandeListePieces};
     let s = societe(&pool).await;
     poser_pieces(&pool, &s, 1).await;
-    let lecture = Lecture::new(pool.clone());
+    let lecture = Lecture::new(pool.clone(), kesh_api::horloge::horloge_de_test());
     let acces = mcp_societe(INEXISTANT, s.admin_user_id, &[Portee::DocumentsRead]);
     for statut in [Some("to_complete".to_string()), Some("PIEGE".into()), None] {
         let r = pieces::lister_tout(&acces, &lecture, statut.clone())
@@ -3232,7 +3248,7 @@ async fn ac_b1_piece_publique_lit_chaque_champ(pool: MySqlPool) {
     .await
     .unwrap();
     let acces = mcp_societe(s.company_id, s.admin_user_id, &[Portee::DocumentsRead]);
-    let lecture = Lecture::new(pool.clone());
+    let lecture = Lecture::new(pool.clone(), kesh_api::horloge::horloge_de_test());
     let mut vus = 0;
     for statut in ["to_complete", "completed"] {
         let entieres = pieces::lister_tout(&acces, &lecture, Some(statut.into()))
@@ -3307,7 +3323,7 @@ async fn detail_sans_fichier_lit_chaque_champ(pool: MySqlPool) {
     .await
     .unwrap();
     let acces = mcp_societe(s.company_id, s.admin_user_id, &[Portee::InvoicesRead]);
-    let lecture = Lecture::new(pool.clone());
+    let lecture = Lecture::new(pool.clone(), kesh_api::horloge::horloge_de_test());
     let entiere = factures::detail(&acces, &lecture, livres.facture_reglee_id)
         .await
         .unwrap();

@@ -348,7 +348,8 @@ impl McpTool for KeshFactures {
             };
             let page = factures::lister(ctx.acces(), ctx.lecture(), demande)
                 .await
-                .map_err(depuis_app_error)?;
+                .map_err(depuis_app_error)?
+                .page;
             let sortie = Factures {
                 factures: page.items.into_iter().map(facture_liste).collect(),
                 total: page.total,
