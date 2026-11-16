@@ -1,6 +1,6 @@
 # Story 36-9 : le solde du reste d'un règlement refuse un compte de TVA due retypé, comme la validation d'une facture (#1044)
 
-Status: review
+Status: done
 
 *Fiche rédigée le 2026-11-15 par l'agent de rédaction des fiches de l'Epic 36 (Opus 5.5), worktree `kesh-36-9`, branche
 `story/36-9-solde-reste-type-compte`, par le workflow `bmad-create-story`. Release **0.18.0**, phase 2, rang 9 (fichier
@@ -452,6 +452,20 @@ journaux ci-dessous portent en tête `# commit …`.
 - **Gate de remédiation** : `test-fast-ci-34a2dbee1.log` (voir le Change Log pour le chiffre). Vitest non rejoué : aucun
   fichier de `frontend/src` ne change (seule la spec E2E). `gate-ci` et E2E complet : à la clôture.
 
+#### Clôture (2026-11-16), au dernier commit de code `e30ce0952`
+
+`e30ce0952` ne change qu'un doc-comment de `invoice_settlements_write.rs` (revue P2 ciblée, LOW-1).
+
+- `scripts/gate-ci.sh kesh_ci_e369` (voie 1, sous verrous) : `gate-ci-cloture-e30ce0952.log` (en-tête de commit dans
+  `gate-ci-cloture-e30ce0952.log.entete`, le script réécrivant son journal) — **5467 passés, 0 échec, 17 ignorés**.
+- **E2E complet** (montage de `docs/testing.md`, `kesh_e2e_e369` remise à neuf, port 3369, script
+  `e2e-complet.sh`) : `e2e-complet-e30ce0952.log` — **427 passés, 7 échecs, 18 ignorés** (19,2 min). Les sept échecs,
+  nommés un par un contre `docs/testing.md` § *Les échecs attendus* : `mode-expert.spec.ts:26`, `:41`,
+  `onboarding-path-b.spec.ts:65`, `:92`, `onboarding.spec.ts:57`, `:77`, `:150` — **les sept de la KF-029 (#97)**,
+  aucun huitième variable. Les deux scénarios de `invoice-write-off.spec.ts` passent (`[189/452]`, `[190/452]`) ;
+  LOW-2 de la revue P2 (la facture soldée laissée en base) : aucun effet observé sur les autres specs.
+- Backend arrêté par son PID ; aucun port 3369 à l'écoute après le run.
+
 ### Completion Notes List
 
 - **D1 à D5 appliquées sans écart.** `vat_payable_account_for_write` lit `id, number, postable, account_type` sous
@@ -581,3 +595,16 @@ journaux ci-dessous portent en tête `# commit …`.
   Commits `dd9bccfdf`, `34a2dbee1`, `d0cbc7b54`. Gate de remédiation : `test-fast-ci-34a2dbee1.log` — **5460 passés sur
   5460, 13 ignorés** (bases remises à neuf). Vitest non rejoué (aucun fichier de `frontend/src` touché). **Non lancés** :
   `gate-ci` et E2E complet (à la clôture).
+- **2026-11-16 — Revue de code terminée, clôture, `done`** (Opus 5.5).
+  - **Synthèse de la boucle.** Validation : une passe, P1 Sonnet (complète) — 0/0/0/5, LOW traités à l'étape 0.
+    Revue de code : P1 complète à trois lentilles, B, E et A (Opus 5.5 ; le rapport B ne nomme que « Opus ») — B
+    0/0/0/3, E 0/0/0/4, A 0/0/1/6 ; remédiation (`dd9bccfdf`, `34a2dbee1`, `d0cbc7b54`, `dfdf0039d`) ; **P2 ciblée**
+    (chasseur de régressions, sur la seule remédiation ; modèle non déclaré dans son rapport,
+    `review-p2-ciblee.md`) — **0/0/0/3** : la boucle se clôt sur une passe sans finding au-dessus de LOW (`CLAUDE.md`,
+    § *Review Iteration Rule*). Trend : P1 1 MEDIUM → P2 0 au-dessus de LOW.
+  - LOW de la P2 : **LOW-1** corrigé (`e30ce0952`, doc-comment « qui n'est pas un passif » ; symptôme greppé sur
+    `crates`, `docs`, `frontend` : `restée un actif` n'y figure plus qu'en exemple, dans `invoice_settlements_write.rs:527`
+    et `api-external.md:598`) ; **LOW-2** surveillé à l'E2E complet, sans effet ; **LOW-3** (PDF) : à l'intégration.
+  - **Clôture** au dernier commit de code `e30ce0952` : `gate-ci` 5467 passés, 17 ignorés ; E2E complet 427 passés,
+    7 échecs — les sept de la KF-029 (#97) —, 18 ignorés (détail : *Dev Agent Record*, *Clôture*).
+  - PR : `closes #1044` ; #1198 (compte de TVA due courant du solde) reste ouverte, hors périmètre.
