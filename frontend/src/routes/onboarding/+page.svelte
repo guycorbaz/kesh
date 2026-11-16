@@ -303,8 +303,10 @@
 	//
 	// Story 36-17 (#1187, D2, D5) : l'échec s'affiche À L'ÉCRAN de l'étape 7, avec
 	// *Réessayer* — plus de toast passager sur une page vide. Sous `VALIDATION_ERROR` (le
-	// seul refus de validation de la finalisation, reconnu au code et non au texte), la
-	// phrase de remède précède le motif (limite connue, #1200). « Déjà finalisé » relit
+	// seul refus de validation de la finalisation, reconnu au code et non au texte), un
+	// lien vers *Administration → Facturation* suit le motif, qui nomme le réglage en
+	// défaut et son remède (36-19, #1200 ; la phrase de remède de la 36-17 est retirée à
+	// l'intégration de la 0.18.0). « Déjà finalisé » relit
 	// l'état et montre son écran ; une relecture en échec s'affiche de même.
 	async function reportFinalizeError(err: unknown) {
 		if (isApiError(err) && err.code === 'ONBOARDING_STEP_ALREADY_COMPLETED') {

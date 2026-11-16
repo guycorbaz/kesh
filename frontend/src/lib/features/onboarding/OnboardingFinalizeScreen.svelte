@@ -8,9 +8,10 @@
 	 *
 	 * - `finalizing` — « Configuration en cours… » sur toute la zone (`role="status"`) ;
 	 * - `finalize-error` — le motif de l'échec (`role="alert"`), et *Réessayer*. Sous un
-	 *   refus `VALIDATION_ERROR`, une phrase de remède **conditionnelle** précède le motif
-	 *   du serveur : la ligne de réglages de facturation a pu être créée sans comptes par un
-	 *   écran ouvert avant la fin de la configuration (limite connue, #1200) ;
+	 *   refus `VALIDATION_ERROR`, un lien vers *Administration → Facturation* suit le motif
+	 *   du serveur, qui nomme le réglage en défaut et son remède (36-19, #1200). *(Intégration
+	 *   de la 0.18.0 : la phrase de remède de la 36-17, qui imputait ce refus à un écran
+	 *   ouvert avant la fin de la configuration, est retirée — la 36-19 corrige #1200.)*
 	 * - `resume` — après un rechargement, ni appel ni échec : la configuration n'est pas
 	 *   terminée, *Terminer la configuration*. **Aucune finalisation d'office.**
 	 *
@@ -39,7 +40,7 @@
 		mode: 'finalizing' | 'finalize-error' | 'resume';
 		/** Le motif de l'échec (écran `finalize-error`). */
 		motif?: string | null;
-		/** Le refus est un `VALIDATION_ERROR` : la phrase de remède précède le motif. */
+		/** Le refus est un `VALIDATION_ERROR` : le lien vers *Facturation* suit le motif. */
 		remedy?: boolean;
 		/** Un appel est en cours, ou le verrou d'un tour du store : le bouton ne répond pas. */
 		disabled: boolean;
@@ -66,15 +67,10 @@
 {:else if mode === 'finalize-error'}
 	<div class="flex flex-col gap-4" data-testid="onboarding-screen-finalize-error">
 		<div role="alert" class="rounded-md border border-border bg-white p-4 text-sm">
+			<p class="font-medium" data-testid="onboarding-finalize-motif">{motif}</p>
 			{#if remedy}
-				<p class="mb-2" data-testid="onboarding-finalize-remedy">
-					{i18nMsg(
-						'onboarding-finalize-remedy',
-						"Si les comptes 1100 et 3000 figurent dans votre plan comptable, ce refus vient d'un écran de Kesh ouvert avant la fin de la configuration. Dans Administration → Facturation, désignez le compte débiteurs et le compte de produit par défaut, vérifiez aussi les autres comptes par défaut (créanciers, arrondi, escompte, frais bancaires, pertes), enregistrez, puis réessayez."
-					)}
-				</p>
-				<!-- Revue P1 (E10) : le chemin du remède, d'un clic. -->
-				<p class="mb-2">
+				<!-- Revue P1 (E10) : le chemin du remède que le motif nomme, d'un clic. -->
+				<p class="mt-2">
 					<a
 						href="/settings/invoicing"
 						class="font-medium text-primary underline hover:no-underline"
@@ -84,7 +80,6 @@
 					</a>
 				</p>
 			{/if}
-			<p class="font-medium" data-testid="onboarding-finalize-motif">{motif}</p>
 		</div>
 		<Button type="button" onclick={onFinalize} {disabled} data-testid="onboarding-finalize-retry">
 			{i18nMsg('onboarding-retry', 'Réessayer')}

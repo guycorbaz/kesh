@@ -3139,7 +3139,6 @@ onboarding-state-load-error = L'état de la configuration n'a pas pu être lu.
 onboarding-retry = Réessayer
 onboarding-finalizing = Configuration en cours…
 onboarding-finalizing-desc = Kesh met en place les réglages de facturation, les taux de TVA et le premier exercice. Ne fermez pas cette page.
-onboarding-finalize-remedy = Si les comptes 1100 et 3000 figurent dans votre plan comptable, ce refus vient d'un écran de Kesh ouvert avant la fin de la configuration. Dans Administration → Facturation, désignez le compte débiteurs et le compte de produit par défaut, vérifiez aussi les autres comptes par défaut (créanciers, arrondi, escompte, frais bancaires, pertes), enregistrez, puis réessayez.
 onboarding-done-title = Configuration terminée
 onboarding-done-created = Ce qui a été créé
 onboarding-done-company = Société

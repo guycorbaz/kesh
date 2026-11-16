@@ -5,7 +5,8 @@
  * avant la story, la bannière ne s'affichait qu'à l'étape 6, si bien qu'une installation
  * restée à l'étape 7 (finalisation interrompue) entrait dans Kesh sans rien qui le
  * signale. La condition est extraite en fonction pure, lue par `(app)/+layout.svelte` ;
- * le texte dit désormais de terminer avant d'utiliser Kesh (limite connue, #1200).
+ * le texte dit désormais de terminer avant d'utiliser Kesh (la limite #1200 qui le
+ * motivait est corrigée par la 36-19, même release ; la consigne reste juste).
  */
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen } from '@testing-library/svelte';

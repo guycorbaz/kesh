@@ -117,7 +117,7 @@ test.describe('Assistant — la fin de la configuration (#1187)', () => {
 		liberer();
 		await expect(page.getByTestId('onboarding-screen-finalize-error')).toBeVisible();
 		await expect(page.getByTestId('onboarding-finalize-motif')).not.toBeEmpty();
-		await expect(page.getByTestId('onboarding-finalize-remedy')).toHaveCount(0);
+		await expect(page.getByTestId('onboarding-finalize-remedy-link')).toHaveCount(0);
 		expect(await etapeServeur(page)).toBe(7);
 
 		await page.unroute(FINALIZE);

@@ -1025,7 +1025,11 @@ const ATTENDU = {
 	// Remédiation de la revue P1 de la 36-17 : **3081 → 3083**, relevé par la garde (« expected 3083
 	// to be 3081 », `kesh-gate-logs/e36-17/rem1-front-test-unit-releve.log`) —
 	// `onboarding-done-credit-card` (B7/E7) et `onboarding-finalize-remedy-link` (E10), deux littéraux.
-	sitesTotal: 3083,
+	// Intégration de la 0.18.0 (2026-11-16), après les fusions des 36-10, 36-19, 36-17, 36-9 et
+	// 36-12a : **3083 → 3082**, relevé par la garde (« expected 3082 to be 3083 »,
+	// `kesh-gate-logs/rel0180/releve-compteurs-1.log`) — `onboarding-finalize-remedy` retirée (la
+	// 36-19 corrige #1200) ; les quatre autres stories n'ajoutent aucun site.
+	sitesTotal: 3082,
 	sitesNonResolus: 31,
 	relais: 6,
 	// Story 26-1 (#620, AC3-bis) : **10 → 11** — `lib/features/bank-import/

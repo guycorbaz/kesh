@@ -3067,7 +3067,6 @@ onboarding-state-load-error = The setup status could not be read.
 onboarding-retry = Try again
 onboarding-finalizing = Setup in progress…
 onboarding-finalizing-desc = Kesh is setting up the invoicing settings, the VAT rates and the first financial year. Do not close this page.
-onboarding-finalize-remedy = If accounts 1100 and 3000 are in your chart of accounts, this refusal comes from a Kesh page opened before the end of the setup. In Administration → Invoicing, designate the default receivables account and the default revenue account, also check the other default accounts (payables, rounding, discount, bank charges, losses), save, then try again.
 onboarding-done-title = Setup complete
 onboarding-done-created = What was created
 onboarding-done-company = Company

@@ -3062,7 +3062,6 @@ onboarding-state-load-error = Non è stato possibile leggere lo stato della conf
 onboarding-retry = Riprova
 onboarding-finalizing = Configurazione in corso…
 onboarding-finalizing-desc = Kesh imposta i parametri di fatturazione, le aliquote IVA e il primo esercizio. Non chiudete questa pagina.
-onboarding-finalize-remedy = Se i conti 1100 e 3000 figurano nel vostro piano dei conti, questo rifiuto è dovuto a una pagina di Kesh aperta prima della fine della configurazione. In Amministrazione → Fatturazione, designate il conto debitori e il conto di ricavo predefinito, verificate anche gli altri conti predefiniti (creditori, arrotondamento, sconto, spese bancarie, perdite), salvate e poi riprovate.
 onboarding-done-title = Configurazione completata
 onboarding-done-created = Cosa è stato creato
 onboarding-done-company = Società

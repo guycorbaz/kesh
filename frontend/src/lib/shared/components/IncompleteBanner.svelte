@@ -11,9 +11,10 @@
 	role="status"
 	data-testid="incomplete-config-banner"
 >
-	<!-- Story 36-17 (#1187, D5) : terminer AVANT d'utiliser Kesh — un écran ouvert avant la
-	     finalisation peut la faire refuser (limite connue, #1200). Même phrase que l'écran de
-	     reprise de l'assistant. -->
+	<!-- Story 36-17 (#1187, D5) : terminer AVANT d'utiliser Kesh — sans exercice ni réglages
+	     de facturation, Kesh n'est pas prêt. (La limite #1200, un écran ouvert avant la
+	     finalisation qui la faisait refuser, est corrigée par la 36-19 dans la même release.)
+	     Même phrase que l'écran de reprise de l'assistant. -->
 	<span>{msg('incomplete-banner-text', "Configuration incomplète : terminez-la avant d'utiliser Kesh.")}</span>
 	<a
 		href="/onboarding"

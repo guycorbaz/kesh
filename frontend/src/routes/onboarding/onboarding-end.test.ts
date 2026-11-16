@@ -64,7 +64,6 @@ import { onboardingState } from '$lib/features/onboarding/onboarding.svelte';
 import Page from './+page.svelte';
 
 const IBAN_DEMO = 'CH93 0076 2011 6238 5295 7';
-const REMEDE_DEBUT = 'Si les comptes 1100 et 3000 figurent dans votre plan comptable';
 
 const etat = (stepCompleted: number, isDemo = false): OnboardingState => ({
 	stepCompleted,
@@ -246,34 +245,36 @@ describe('échec et Réessayer (AC4)', () => {
 		return r;
 	}
 
-	it('refus VALIDATION_ERROR : la phrase de remède AVANT le motif, sans toast', async () => {
+	// Intégration de la 0.18.0 : la phrase de remède de la 36-17 est retirée (la 36-19
+	// corrige #1200, le motif du serveur nomme lui-même le réglage en défaut et son remède) ;
+	// le lien vers Administration → Facturation reste, après le motif.
+	it('refus VALIDATION_ERROR : le motif, puis le lien vers Facturation, sans toast', async () => {
 		const { unmount } = await echouer({ code: 'VALIDATION_ERROR', message: 'MOTIF-FIN', status: 400 });
 		const ecran = screen.getByTestId('onboarding-screen-finalize-error');
 		expect(ecran.querySelector('[role="alert"]')).not.toBeNull();
-		const remede = screen.getByTestId('onboarding-finalize-remedy');
 		const motif = screen.getByTestId('onboarding-finalize-motif');
-		expect(remede.textContent).toContain(REMEDE_DEBUT);
+		const lien = screen.getByTestId('onboarding-finalize-remedy-link');
 		expect(motif.textContent).toContain('MOTIF-FIN');
-		// Ordre des nœuds : le remède précède le motif.
-		expect(remede.compareDocumentPosition(motif) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-		// Revue P1 (E10) : le chemin du remède, d'un clic.
-		expect(screen.getByTestId('onboarding-finalize-remedy-link').getAttribute('href')).toBe('/settings/invoicing');
+		expect(screen.queryByTestId('onboarding-finalize-remedy')).toBeNull();
+		// Revue P1 (E10) : le chemin du remède, d'un clic — après le motif.
+		expect(lien.getAttribute('href')).toBe('/settings/invoicing');
+		expect(motif.compareDocumentPosition(lien) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
 		expect(toastError).not.toHaveBeenCalled();
 		unmount();
 	});
 
-	it('TypeError : « Finalisation échouée — réessayez. », sans phrase de remède', async () => {
+	it('TypeError : « Finalisation échouée — réessayez. », sans lien vers Facturation', async () => {
 		const { unmount } = await echouer(new TypeError('Failed to fetch'));
 		expect(screen.getByTestId('onboarding-finalize-motif').textContent).toContain('Finalisation échouée — réessayez.');
-		expect(screen.queryByTestId('onboarding-finalize-remedy')).toBeNull();
+		expect(screen.queryByTestId('onboarding-finalize-remedy-link')).toBeNull();
 		expect(toastError).not.toHaveBeenCalled();
 		unmount();
 	});
 
-	it('autre code : le motif, sans phrase de remède', async () => {
+	it('autre code : le motif, sans lien vers Facturation', async () => {
 		const { unmount } = await echouer({ code: 'INTERNAL_ERROR', message: 'MOTIF-500', status: 500 });
 		expect(screen.getByTestId('onboarding-finalize-motif').textContent).toContain('MOTIF-500');
-		expect(screen.queryByTestId('onboarding-finalize-remedy')).toBeNull();
+		expect(screen.queryByTestId('onboarding-finalize-remedy-link')).toBeNull();
 		unmount();
 	});
 

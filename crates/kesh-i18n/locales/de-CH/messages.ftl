@@ -3061,7 +3061,6 @@ onboarding-state-load-error = Der Stand der Einrichtung konnte nicht gelesen wer
 onboarding-retry = Erneut versuchen
 onboarding-finalizing = Einrichtung läuft…
 onboarding-finalizing-desc = Kesh richtet die Fakturierungseinstellungen, die MWST-Sätze und das erste Geschäftsjahr ein. Lassen Sie diese Seite geöffnet.
-onboarding-finalize-remedy = Wenn die Konten 1100 und 3000 in Ihrem Kontenplan vorhanden sind, stammt diese Ablehnung von einer Seite von Kesh, die vor dem Ende der Einrichtung geöffnet wurde. Legen Sie unter Administration → Fakturierung das Debitorenkonto und das Standard-Ertragskonto fest, prüfen Sie auch die übrigen Standardkonten (Kreditoren, Rundung, Skonto, Bankspesen, Verluste), speichern Sie und versuchen Sie es dann erneut.
 onboarding-done-title = Einrichtung abgeschlossen
 onboarding-done-created = Was eingerichtet wurde
 onboarding-done-company = Unternehmen

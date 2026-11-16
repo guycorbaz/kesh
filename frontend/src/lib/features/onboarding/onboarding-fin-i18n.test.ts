@@ -28,7 +28,7 @@ const CLES = [
 	'onboarding-retry',
 	'onboarding-finalizing',
 	'onboarding-finalizing-desc',
-	'onboarding-finalize-remedy',
+	// `onboarding-finalize-remedy` retirée à l'intégration de la 0.18.0 (la 36-19 corrige #1200).
 	'onboarding-finalize-error',
 	'onboarding-done-title',
 	'onboarding-done-created',

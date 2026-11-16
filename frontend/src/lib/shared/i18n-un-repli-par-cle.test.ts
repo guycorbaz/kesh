@@ -264,8 +264,12 @@ const PREFIXES = [
  * repli chacune, et deux retirées (`-already-finalized`, `-finalize-incomplete`, mortes, D2).
  * Remédiation de la revue P1 : **453 → 455** (+2, `expected 455 to be 453`),
  * `onboarding-done-credit-card` et `onboarding-finalize-remedy-link`.
+ *
+ * Intégration de la 0.18.0 (2026-11-16) : **455 → 454** (−1, `expected 454 to be 455`,
+ * `kesh-gate-logs/rel0180/releve-compteurs-1.log`), `onboarding-finalize-remedy` retirée (la
+ * 36-19 corrige #1200).
  */
-const CLES_RELEVEES = 455;
+const CLES_RELEVEES = 454;
 
 
 /** Relève, pour chaque clé du domaine, l'ensemble de ses replis littéraux distincts. */
