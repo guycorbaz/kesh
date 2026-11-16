@@ -1,6 +1,6 @@
 # Story 36-18a : les montants « 1.250 » qui écrivent dans les livres — soldes de départ, facture fournisseur, règlement (#1050, #1159, #1172, #1174)
 
-Status: review
+Status: done
 
 *Fiche issue du découpage de la 36-18 (`36-18-montants-ambigus-autres-ecrans.md`, `Status: split`), approuvé par
 l'orchestrateur le 2026-11-15 (sept modules de code, règle de Guy « stories courtes » ; C-36-18-10). Rédigée par l'agent de
@@ -334,7 +334,7 @@ Une mutation équivalente se dit au Dev Agent Record.
       `SettleInvoiceDialog.svelte` (D8) ; quatre `messages.ftl` (D9) ; `i18n-keys.test.ts` recompté (AC8).
 - [x] E2E (AC7), rouge d'abord ; manuel (AC9), `.tex` seul, son contrôle `.tex` à la clôture ; captures (AC11) ;
       mutations M1 à M18.
-- [ ] Gates (passage en revue fait ; clôture à venir) (voie 2, `e35-dev-commun.md` § *Quels gates, quand*) : en cours, Vitest ciblé par `.gate-front.lock`,
+- [x] Gates (passage en revue, remédiations et clôture faits ; PDF à l'intégration) (voie 2, `e35-dev-commun.md` § *Quels gates, quand*) : en cours, Vitest ciblé par `.gate-front.lock`,
       `npm run check`, `lint-i18n-ownership` ; **passage en `review`** : bases `kesh_e3618a` remises à neuf (voie 2),
       `scripts/test-fast.sh --ci`, `scripts/gate-ci.sh kesh_ci_e3618a` (voie 1, son verrou), frontend complet, pas d'E2E ;
       **remédiations** : `test-fast.sh --ci` et frontend complet ; **clôture** : `gate-ci` et E2E complet sur
@@ -622,6 +622,21 @@ Passe P3 ciblée (Haiku, `kesh-gate-logs/e36-18/review-p3-R.md`) : 0/0/0/2. Pré
   V2-4 `imported-supplier-invoices.api.ts:63` `` apiClient.post(`/api/v1/imported-supplier-invoices/${id}/complete`, req) ``
   (AC7) ; V2-5 `balance.ts:181` `read: AmountReader = defaultAmountReader` (D5, AC10) ; V2-6 registre, C-36-18-11 ; V2-7
   `supplier-invoice-form.ts:281` `// illisible part telle quelle et le serveur la refuse (400).` (D7) ; V2-8 en-tête.
+- 2026-11-16 — **Clôture** (Opus 5.5), `Status: done`, au dernier commit de code `c123e0f66` (tête `58e15d1c6`, docs seuls
+  depuis, arbre propre) : `scripts/gate-ci.sh kesh_ci_e3618a`, voie 1, **5517 passés, 0 échoué, 17 ignorés**
+  (`kesh-gate-logs/e36-18/cloture-gate-ci.log`) ; **E2E complet**, voie 2, `kesh_e2e_e3618a` recréée, port 3618 (run r7,
+  `cloture-e2e.log`) : **437 passés, 7 échecs, 18 ignorés** — les sept échecs sont, un par un, les sept de la KF-029 (#97) de
+  `docs/testing.md` § *Les échecs attendus* : `mode-expert.spec.ts:26`, `:41`, `onboarding-path-b.spec.ts:65`, `:92`,
+  `onboarding.spec.ts:57`, `:77`, `:150` ; aucun autre échec. PDF du manuel : à l'intégration.
+- 2026-11-16 — **Revue de code terminée** — synthèse de la boucle (`CLAUDE.md`, § *Review Iteration Rule*) : validation
+  P1 (Opus) 0/0/2/8 → P2 (Opus) 0/0/0/8 ; revue P1 complète, trois lentilles — A (Sonnet) 0/0/0/7, B (Opus) 0/0/0/6, E (Opus)
+  0/0/1/5 → P2 ciblée (Sonnet) 0/0/0/4 → P3 ciblée (Haiku) 0/0/0/2 → **P4 ciblée (Sonnet) 0/0/0/0**, close sur une passe sans
+  finding au-dessus de LOW. Le seul MEDIUM (E1 : test du scan QR à vide) corrigé à la remédiation P1 ; les LOW de production
+  corrigés dans la story (règle « tarir la source »), chacun suivi d'une passe ciblée ; la P3 a relevé une régression de la
+  remédiation P2 (refus de centime), corrigée en `c123e0f66`. Issues ouvertes par l'orchestrateur : **#1213** (l'écriture
+  manuelle refuse un montant bordé d'espaces sans le dire), **#1214** (un seul `amountError` pour plusieurs champs de montant) ;
+  commentaire posté sur **#1202** (le manuel de la 36-3b conseille `1.2500`). Mutations M1 à M30 tuées (M21 remplacée par
+  M29). Gates de clôture : voir l'entrée « Clôture », au-dessus.
 - 2026-11-16 — **Remédiation de la passe P3 ciblée** (Opus 5.5) : P3 (Haiku) 0/0/0/2 ; R1 (régression de `56cc62386`)
   corrigé dans la story, R2 en issue ; M30 tuée ; `test-fast --ci` 5510/5510, Vitest 3948/3948, `check`, `build`, spec E2E
   4/4, à `c123e0f66`. Statut inchangé : `review`. Prompt P4 ciblée : `36-18a-montants-ambigus-livres-review-prompt-p4.md`.
