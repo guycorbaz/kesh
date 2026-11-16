@@ -31,6 +31,34 @@
 	} from '$lib/features/journal-entries/balance';
 	import { formatSwissDate } from '$lib/features/reports/reports.api';
 	import type Big from 'big.js';
+	// Story 37-3b (AC-1) — soldes d'ouverture en devise.
+	import { accountCurrency } from '$lib/features/accounts/accounts.types';
+	import { listFiscalYears } from '$lib/features/fiscal-years/fiscal-years.api';
+	import { authState } from '$lib/app/stores/auth.svelte';
+	import { canEditRates } from '$lib/features/exchange-rates/exchange-rates-access';
+	import { fetchRates, lookupRate } from '$lib/features/exchange-rates/exchange-rates.api';
+	import { todayLocal } from '$lib/shared/utils/local-date';
+	import { newForeign, type LineForeign } from '$lib/features/journal-entries/fx-lines';
+	import { RateLookupCache } from '$lib/features/journal-entries/rate-lookup';
+	import {
+		fxRefusalMessage,
+		isFxRefusalCode,
+		refusalLine
+	} from '$lib/features/journal-entries/fx-refusals';
+	import {
+		applyOpeningLookup,
+		isFilledForeignRow,
+		isIncompleteForeignRow,
+		openingProposal,
+		openingProvenanceLabel,
+		rowChfValue,
+		rowForeignPayload,
+		rowProblem,
+		setRowAmount,
+		setRowChf,
+		setRowRate,
+		type OpeningProposal
+	} from '$lib/features/opening-balances/opening-fx';
 
 	// ------------------------------------------------------------------
 	// État de chargement (P3-BH3-2) : le statut pilote grille-vs-verrou,
@@ -43,10 +71,14 @@
 	let accounts = $state<AccountResponse[]>([]);
 
 	// Grille : une ligne par compte de bilan, montants en string décimale.
+	// Story 37-3b (AC-1) : `foreign` pour un compte en devise (contrat du
+	// `LineDraft` du formulaire : montant et sens dans `foreign`, `debit`/`credit`
+	// = CHF dérivé seul).
 	interface GridRow {
 		account: AccountResponse;
 		debit: string;
 		credit: string;
+		foreign?: LineForeign;
 	}
 	let rows = $state<GridRow[]>([]);
 
@@ -59,6 +91,104 @@
 		account: CompletableAccount;
 		debit: string;
 		credit: string;
+		foreign?: LineForeign;
+	}
+
+	// --- Story 37-3b (AC-1) : cours proposés --------------------------------
+	/** Genre d'ouverture du premier exercice (`GET /fiscal-years`) ; `null` inconnu. */
+	let firstYear = $state<{ startDate: string; openingRateKind: 'day' | 'month' } | null>(null);
+	let fiscalYearsError = $state(false);
+	const cache = new RateLookupCache({
+		lookup: lookupRate,
+		fetch: fetchRates,
+		canFetch: () => canEditRates(authState.currentUser?.role),
+		today: () => todayLocal()
+	});
+	const gridProposal = $derived<OpeningProposal | null>(openingProposal(firstYear));
+	const complementProposal = $derived<OpeningProposal | null>(
+		openingProposal(firstYear, {
+			dateKind: status?.complementDateKind ?? null,
+			date: status?.complementDate ?? null
+		})
+	);
+	/** Refus du serveur par ligne de grille (rang du corps envoyé). */
+	let gridRefusals = $state<Record<number, string>>({});
+	let complementRefusals = $state<Record<number, string>>({});
+
+	/** Propose (mémoïsé) le cours de la société aux lignes en devise d'une grille. */
+	function proposeRates(grid: 'grid' | 'complement') {
+		const proposal = grid === 'grid' ? gridProposal : complementProposal;
+		if (proposal === null) return;
+		const source = grid === 'grid' ? rows : complementRows;
+		const currencies = new Set(source.flatMap((r) => (r.foreign ? [r.foreign.currency] : [])));
+		for (const currency of currencies) {
+			void cache.get(currency, proposal.date, proposal.kind).then((res) => {
+				const apply = <T extends GridRow | ComplementRow>(r: T): T =>
+					r.foreign && r.foreign.currency === currency
+						? applyOpeningLookup({ ...r }, proposal, res.outcome)
+						: r;
+				if (grid === 'grid') rows = rows.map(apply);
+				else complementRows = complementRows.map(apply);
+			});
+		}
+	}
+
+	function foreignOf(currency: string | null | undefined): LineForeign | undefined {
+		return currency ? newForeign(currency) : undefined;
+	}
+
+	/** Le message d'un problème de ligne en devise. */
+	function fxProblemMessage(problem: string): string {
+		switch (problem) {
+			case 'FX_LINE_ROUNDS_TO_ZERO':
+				return i18nMsg('opening-balances-fx-rounds-to-zero', 'Le montant en CHF calculé s’arrondit à zéro.');
+			case 'FX_AMOUNT_MISMATCH':
+				return i18nMsg(
+					'opening-balances-fx-chf-no-rate',
+					'Aucun cours à dix décimales ne redonne ce montant CHF : corrigez le CHF ou saisissez le cours.'
+				);
+			case 'FX_VALUE_OUT_OF_RANGE':
+			case 'amount-unreadable':
+			case 'rate-unreadable':
+				return i18nMsg(
+					'opening-balances-fx-out-of-range',
+					'Montant en devise, cours ou montant CHF invalide : montant positif à quatre décimales au plus, cours positif à dix décimales et 1 000 000 au plus.'
+				);
+			default:
+				return i18nMsg(
+					'opening-balances-fx-incomplete',
+					'Saisissez le cours ou le montant CHF de ce solde en devise.'
+				);
+		}
+	}
+
+	/** Le corps d'une ligne de grille (`foreign` pour un compte en devise). */
+	function linePayload(r: GridRow | ComplementRow) {
+		const foreign = rowForeignPayload(r);
+		return {
+			accountId: r.account.id,
+			debit: r.debit === '' ? '0' : r.debit.replace(',', '.'),
+			credit: r.credit === '' ? '0' : r.credit.replace(',', '.'),
+			...(foreign ? { foreign } : {})
+		};
+	}
+
+	/** Classe un refus du serveur sur la ligne fautive ; rend le message global sinon. */
+	function placeRefusal(
+		err: { code: string; message: string; details?: Record<string, unknown> },
+		sent: number[],
+		grid: 'grid' | 'complement'
+	): string {
+		const message = isFxRefusalCode(err.code)
+			? fxRefusalMessage(err.code, err.details, err.message)
+			: err.message;
+		const line = refusalLine(err.details);
+		const index = line === null ? undefined : sent[line - 1];
+		if (index !== undefined) {
+			if (grid === 'grid') gridRefusals = { [index]: message };
+			else complementRefusals = { [index]: message };
+		}
+		return message;
 	}
 	let complementRows = $state<ComplementRow[]>([]);
 	let completing = $state(false);
@@ -74,9 +204,12 @@
 		const gen = ++loadGen;
 		loading = true;
 		statusError = false;
-		const [statusResult, accountsResult] = await Promise.allSettled([
+		const [statusResult, accountsResult, yearsResult] = await Promise.allSettled([
 			getOpeningBalancesStatus(),
-			fetchAccounts(false)
+			fetchAccounts(false),
+			// Story 37-3b (AC-1) : le genre d'ouverture du premier exercice. Un échec
+			// ne propose aucun cours (saisie manuelle), il n'arrête pas la page.
+			Promise.resolve().then(() => listFiscalYears())
 		]);
 		// Réponse périmée : un load() plus récent a pris la main — aucune
 		// écriture d'état.
@@ -111,22 +244,53 @@
 					a.postable &&
 					(a.accountType === 'Asset' || a.accountType === 'Liability')
 			)
-			.map((account) => ({ account, debit: '', credit: '' }));
+			.map((account) => {
+				const row: GridRow = { account, debit: '', credit: '' };
+				const foreign = foreignOf(accountCurrency(account));
+				if (foreign) row.foreign = foreign;
+				return row;
+			});
 		// Au rechargement (après un refus métier), la saisie des comptes ENCORE
 		// proposés est conservée : seul le compte fautif disparaît (revue de code
-		// P3, F-1 — reconstruire à vide faisait tout ressaisir).
+		// P3, F-1 — reconstruire à vide faisait tout ressaisir). Story 37-3b : la
+		// partie en devise (montant, cours, provenance) l'est aussi.
 		const previous = new Map(complementRows.map((r) => [r.account.id, r]));
 		// Un rechargement du status qui ÉCHOUE ne touche pas à la saisie : elle
 		// survit à « Réessayer » (revue de code P4, R4-4).
 		if (statusResult.status === 'fulfilled') {
-			complementRows = (status?.completableAccounts ?? []).map((account) => ({
-				account,
-				debit: previous.get(account.id)?.debit ?? '',
-				credit: previous.get(account.id)?.credit ?? ''
-			}));
+			complementRows = (status?.completableAccounts ?? []).map((account) => {
+				const before = previous.get(account.id);
+				const row: ComplementRow = {
+					account,
+					debit: before?.debit ?? '',
+					credit: before?.credit ?? ''
+				};
+				const foreign =
+					before?.foreign && before.foreign.currency === account.currency
+						? before.foreign
+						: foreignOf(account.currency);
+				if (foreign) row.foreign = foreign;
+				return row;
+			});
+		}
+
+		// Story 37-3b (AC-1) : genre d'ouverture du premier exercice (le plus ancien).
+		if (yearsResult.status === 'fulfilled' && Array.isArray(yearsResult.value)) {
+			const first = [...yearsResult.value].sort((a, b) =>
+				a.startDate.localeCompare(b.startDate)
+			)[0];
+			firstYear = first
+				? { startDate: first.startDate, openingRateKind: first.openingRateKind ?? 'day' }
+				: null;
+			fiscalYearsError = false;
+		} else {
+			firstYear = null;
+			fiscalYearsError = true;
 		}
 
 		loading = false;
+		proposeRates('grid');
+		proposeRates('complement');
 	}
 
 	onMount(() => {
@@ -146,15 +310,19 @@
 	// sans risque (elle n'apporte rien à l'écriture). Les montants invalides
 	// restent inclus par prudence — `balance.hasInvalidAmount` fait retomber
 	// `isBalanced` (balance.ts:65) et désactive le bouton en amont.
+	// Story 37-3b (AC-1) : une ligne en devise saisie n'est jamais retirée en
+	// silence, même sans CHF calculable (elle désactive alors l'envoi).
 	const nonEmptyRows = $derived(
 		rows.filter((r) => {
+			if (isFilledForeignRow(r)) return true;
 			if (r.debit === '' && r.credit === '') return false;
 			if (!isValidAmount(r.debit) || !isValidAmount(r.credit)) return true;
 			return parseAmount(r.debit).gt(0) || parseAmount(r.credit).gt(0);
 		})
 	);
+	const gridIncomplete = $derived(rows.some(isIncompleteForeignRow));
 
-	const canGenerate = $derived(!submitting && balance.isBalanced);
+	const canGenerate = $derived(!submitting && balance.isBalanced && !gridIncomplete);
 
 	// Totaux actif / passif et montant à porter (AC 2), avertissement du report
 	// à-nouveau (AC 1) — il signale, il ne bloque pas : `canGenerate` l'ignore.
@@ -164,13 +332,16 @@
 	// Complément : lignes saisies, contrepartie en direct (arbitrage 3).
 	const complementLines = $derived(
 		complementRows.filter((r) => {
+			if (isFilledForeignRow(r)) return true;
 			if (r.debit === '' && r.credit === '') return false;
 			if (!isValidAmount(r.debit) || !isValidAmount(r.credit)) return true;
 			return parseAmount(r.debit).gt(0) || parseAmount(r.credit).gt(0);
 		})
 	);
 	const complementInvalid = $derived(
-		complementRows.some((r) => !isValidAmount(r.debit) || !isValidAmount(r.credit))
+		complementRows.some(
+			(r) => !isValidAmount(r.debit) || !isValidAmount(r.credit) || isIncompleteForeignRow(r)
+		)
 	);
 	const counterpart = $derived(complementCounterpart(complementLines));
 	const canSubmitComplement = $derived(
@@ -194,14 +365,10 @@
 		if (!canGenerate) return;
 		submitting = true;
 		submitError = null;
+		gridRefusals = {};
+		const sent = nonEmptyRows.map((r) => rows.indexOf(r));
 		try {
-			await generateOpeningBalances({
-				lines: nonEmptyRows.map((r) => ({
-					accountId: r.account.id,
-					debit: r.debit === '' ? '0' : r.debit.replace(',', '.'),
-					credit: r.credit === '' ? '0' : r.credit.replace(',', '.')
-				}))
-			});
+			await generateOpeningBalances({ lines: nonEmptyRows.map(linePayload) });
 			notifySuccess(i18nMsg('opening-balances-success', 'Écriture d’ouverture générée.'));
 			// Comportement déterministe post-génération (P1-M2-BH) : recharger
 			// le statut → l'écran repasse en état verrouillé ALREADY_HAS_ENTRIES
@@ -210,8 +377,10 @@
 		} catch (err) {
 			// Le serveur localise déjà tous les messages : afficher tel quel
 			// (AC-E — aucun err.code n'est reformulé côté client).
+			// Story 37-3b (AC-1) : un refus propre aux devises est traduit et posé sur
+			// la ligne fautive (`details.line`, rang du corps envoyé).
 			submitError = isApiError(err)
-				? err.message
+				? placeRefusal(err, sent, 'grid')
 				: i18nMsg('opening-balances-status-error', 'Impossible de charger l’état des soldes de départ.');
 			// Course perdue (409 : un concurrent a rendu la company non-vierge) :
 			// recharger le statut pour verrouiller l'écran in-place, comme le
@@ -240,21 +409,17 @@
 		if (!ok) return;
 		completing = true;
 		completeError = null;
+		complementRefusals = {};
+		const sent = complementLines.map((r) => complementRows.indexOf(r));
 		try {
-			await completeOpeningBalances({
-				lines: complementLines.map((r) => ({
-					accountId: r.account.id,
-					debit: r.debit === '' ? '0' : r.debit.replace(',', '.'),
-					credit: r.credit === '' ? '0' : r.credit.replace(',', '.')
-				}))
-			});
+			await completeOpeningBalances({ lines: complementLines.map(linePayload) });
 			notifySuccess(i18nMsg('opening-balances-complete-success', 'Complément enregistré.'));
 			// Le compte complété disparaît de la liste : c'est le status qui le dit.
 			await load();
 		} catch (err) {
 			// Le serveur localise ses refus (codes OPENING_COMPLEMENT_*) : tel quel.
 			completeError = isApiError(err)
-				? err.message
+				? placeRefusal(err, sent, 'complement')
 				: i18nMsg('opening-balances-complete-error', 'Le complément n’a pas pu être enregistré. Réessayez.');
 			// Un refus métier (compte mouvementé entre-temps, date, report…) rend
 			// la liste périmée : recharger le status, sinon chaque nouvel essai
@@ -331,6 +496,82 @@
 <svelte:head>
 	<title>{i18nMsg('opening-balances-title', 'Soldes de départ')} — Kesh</title>
 </svelte:head>
+
+<!-- Story 37-3b (AC-1) : un solde en devise — montant en devise dans la colonne
+     du sens, puis cours OU CHF et provenance du cours. -->
+{#snippet fxAmountCells(row: GridRow | ComplementRow, number: string, name: string, prefix = '')}
+	{#each ['debit', 'credit'] as const as side (side)}
+		<td class="py-1.5 {side === 'debit' ? 'pr-2' : ''}">
+			<div class="flex items-center gap-1">
+				<span class="text-xs text-text-muted">{row.foreign?.currency}</span>
+				<Input
+					type="text"
+					inputmode="decimal"
+					placeholder="0.00"
+					class="text-right tabular-nums"
+					value={row.foreign && row.foreign.side === side ? row.foreign.amount : ''}
+					oninput={(e) => setRowAmount(row, side, (e.currentTarget as HTMLInputElement).value)}
+					aria-label={i18nMsg(
+						side === 'debit' ? 'opening-balances-fx-debit-for' : 'opening-balances-fx-credit-for',
+						side === 'debit'
+							? 'Débit en { $currency } du compte { $number } « { $name } »'
+							: 'Crédit en { $currency } du compte { $number } « { $name } »',
+						{ currency: row.foreign?.currency ?? '', number, name }
+					)}
+					data-testid="opening-balances-{prefix}fx-{side}-{number}"
+				/>
+			</div>
+		</td>
+	{/each}
+{/snippet}
+
+{#snippet fxRateRow(
+	row: GridRow | ComplementRow,
+	number: string,
+	proposal: OpeningProposal | null,
+	prefix = ''
+)}
+	{@const f = row.foreign!}
+	{@const problem = rowProblem(row)}
+	<tr data-testid="opening-balances-{prefix}fx-row-{number}">
+		<td colspan="3" class="pb-2">
+			<div class="flex flex-wrap items-center gap-2 text-sm">
+				<label class="flex items-center gap-1">
+					<span class="text-xs text-text-muted">{i18nMsg('opening-balances-fx-rate', 'Cours')}</span>
+					<Input
+						type="text"
+						inputmode="decimal"
+						class="w-32 text-right tabular-nums"
+						value={f.rate}
+						oninput={(e) => setRowRate(row, (e.currentTarget as HTMLInputElement).value)}
+						data-testid="opening-balances-{prefix}fx-rate-{number}"
+						placeholder="0.0000"
+					/>
+				</label>
+				<span class="text-xs text-text-muted" data-testid="opening-balances-{prefix}fx-provenance-{number}">
+					{openingProvenanceLabel(f, proposal)}
+				</span>
+				<label class="flex items-center gap-1">
+					<span class="text-xs text-text-muted">CHF</span>
+					<Input
+						type="text"
+						inputmode="decimal"
+						class="w-32 text-right tabular-nums"
+						value={rowChfValue(row)}
+						oninput={(e) => setRowChf(row, (e.currentTarget as HTMLInputElement).value)}
+						data-testid="opening-balances-{prefix}fx-chf-{number}"
+						placeholder="0.00"
+					/>
+				</label>
+			</div>
+			{#if problem !== null && (f.amount.trim() !== '' || f.chfEntry !== null)}
+				<p class="mt-1 text-xs text-destructive" data-testid="opening-balances-{prefix}fx-problem-{number}">
+					{fxProblemMessage(problem)}
+				</p>
+			{/if}
+		</td>
+	</tr>
+{/snippet}
 
 <div class="mx-auto max-w-4xl space-y-6">
 	<h1 class="text-2xl font-semibold">
@@ -473,12 +714,15 @@
 							</tr>
 						</thead>
 						<tbody>
-							{#each complementRows as row (row.account.id)}
+							{#each complementRows as row, i (row.account.id)}
 								<tr class="border-b border-border/50" data-testid="opening-balances-complete-row-{row.account.number}">
 									<td class="py-1.5 pr-2">
 										<span class="tabular-nums font-medium">{row.account.number}</span>
 										<span class="ml-2">{row.account.name}</span>
 									</td>
+									{#if row.foreign}
+										{@render fxAmountCells(row, row.account.number, row.account.name, 'complete-')}
+									{:else}
 									<td class="py-1.5 pr-2">
 										<Input
 											type="text"
@@ -509,7 +753,18 @@
 											data-testid="opening-balances-complete-credit-{row.account.number}"
 										/>
 									</td>
+									{/if}
 								</tr>
+								{#if row.foreign}
+									{@render fxRateRow(row, row.account.number, complementProposal, 'complete-')}
+								{/if}
+								{#if complementRefusals[i] !== undefined}
+									<tr>
+										<td colspan="3" class="pb-2 text-xs text-destructive" data-testid="opening-balances-complete-row-refusal-{row.account.number}">
+											{complementRefusals[i]}
+										</td>
+									</tr>
+								{/if}
 							{/each}
 						</tbody>
 					</table>
@@ -595,7 +850,7 @@
 				</tr>
 			</thead>
 			<tbody>
-				{#each rows as row (row.account.id)}
+				{#each rows as row, i (row.account.id)}
 					<tr
 						class="border-b border-border/50"
 						data-testid="opening-balances-row-{row.account.number}"
@@ -612,6 +867,9 @@
 								</span>
 							{/if}
 						</td>
+						{#if row.foreign}
+							{@render fxAmountCells(row, row.account.number, row.account.name)}
+						{:else}
 						<td class="py-1.5 pr-2">
 							<Input
 								type="text"
@@ -638,7 +896,18 @@
 								data-testid="opening-balances-credit-{row.account.number}"
 							/>
 						</td>
+						{/if}
 					</tr>
+					{#if row.foreign}
+						{@render fxRateRow(row, row.account.number, gridProposal)}
+					{/if}
+					{#if gridRefusals[i] !== undefined}
+						<tr>
+							<td colspan="3" class="pb-2 text-xs text-destructive" data-testid="opening-balances-row-refusal-{row.account.number}">
+								{gridRefusals[i]}
+							</td>
+						</tr>
+					{/if}
 				{/each}
 			</tbody>
 		</table>
@@ -739,6 +1008,22 @@
 			</div>
 		{/if}
 
+		{#if fiscalYearsError && rows.some((r) => r.foreign)}
+			<p class="text-sm text-text-muted" data-testid="opening-balances-fx-no-proposal">
+				{i18nMsg(
+					'opening-balances-fx-no-proposal',
+					'La liste des exercices n’a pas pu être lue : aucun cours n’est proposé. Saisissez le cours ou le montant CHF de chaque solde en devise.'
+				)}
+			</p>
+		{/if}
+		{#if gridIncomplete}
+			<p class="text-sm text-destructive" data-testid="opening-balances-fx-incomplete">
+				{i18nMsg(
+					'opening-balances-fx-incomplete-grid',
+					'Un solde en devise n’a pas de montant CHF calculable : complétez son cours ou son montant CHF avant de générer.'
+				)}
+			</p>
+		{/if}
 		{#if submitError}
 			<p class="text-sm text-destructive" data-testid="opening-balances-submit-error" role="alert">
 				{submitError}

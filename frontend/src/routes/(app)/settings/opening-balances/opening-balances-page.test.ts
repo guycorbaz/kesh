@@ -51,6 +51,20 @@ vi.mock('$lib/features/accounts/accounts.api', () => ({
 	fetchAccounts: () => fetchAccountsMock(),
 }));
 
+// Story 37-3b (AC-1) — exercices (genre d'ouverture) et cours de la société.
+const listFiscalYearsMock = vi.fn<() => Promise<unknown[]>>(() =>
+	Promise.resolve([{ id: 12, startDate: '2026-01-01', openingRateKind: 'day' }]),
+);
+vi.mock('$lib/features/fiscal-years/fiscal-years.api', () => ({
+	listFiscalYears: () => listFiscalYearsMock(),
+}));
+const lookupRateMock = vi.fn();
+const fetchRatesMock = vi.fn();
+vi.mock('$lib/features/exchange-rates/exchange-rates.api', () => ({
+	lookupRate: (...a: unknown[]) => lookupRateMock(...a),
+	fetchRates: (...a: unknown[]) => fetchRatesMock(...a),
+}));
+
 import Page from './+page.svelte';
 
 // `window.confirm` est espionné par certains tests : le restaurer après chacun,
