@@ -147,7 +147,9 @@ code*) et au journal `kesh-gate-logs/e36-16/inventaire-fiche.log` (sonde positiv
   6. l'exercice de **chaque écriture qui changerait** (D8), qu'il soit ouvert ou non, `FOR UPDATE`, **par `start_date`
      croissant** (l'ordre de la clôture, `fiscal_years.rs:1116`, et du `PUT`, `journal_entries.rs:1395-1397`), son statut lu
      **sous ce verrou** ; puis `find_later_closed_in_tx` (`fiscal_years.rs:865`, `FOR UPDATE`) depuis le plus ancien. Une
-     clôture concurrente attend donc le geste, ou le geste attend la clôture et lit `Closed` ;
+     clôture concurrente attend donc le geste, ou le geste attend la clôture et lit `Closed`. *(Annoté le 2026-11-16, revue
+     P1, A-5 : au code, **tous** les exercices de l'ensemble sont verrouillés d'abord, puis l'exercice postérieur clos est
+     cherché pour chacun resté ouvert ; `fiscalYears` nomme l'exercice **clos en cause** — A-1, B-1, E-3.)* ;
   7. exposition, calculée sur ces lectures verrouillées et sur `books_locked_through` lu à l'étape 1 → `403`
      (non-Administrateur) ou `409` (sans accusé) ;
   8. `UPDATE` des lignes, des versions, de la facture ; audit ; `COMMIT`.
