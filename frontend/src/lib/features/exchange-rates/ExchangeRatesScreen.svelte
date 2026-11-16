@@ -380,7 +380,7 @@
 	<p class="text-sm text-text-muted" data-testid="exchange-rates-source">
 		{i18nMsg(
 			'exchange-rates-source-note',
-			'Source : cours officiels de l’AFC, publiés par l’Office fédéral de la douane et de la sécurité des frontières (OFDF). Le cours mensuel AFC est publié d’avance et vaut pour tout le mois ; le cours journalier est publié les jours ouvrables. Kesh les récupère une fois par jour jusqu’au cours du mois suivant, puis fait une pause jusqu’au mois d’après. Ces cours sont indicatifs et non contraignants : chaque cours retenu peut être remplacé par le vôtre. Les cours s’entendent en CHF pour une unité de devise.',
+			'Source : cours officiels de l’AFC, publiés par l’Office fédéral de la douane et de la sécurité des frontières (OFDF). Le cours mensuel AFC est publié d’avance et vaut pour tout le mois ; le cours journalier est publié les jours ouvrables. Kesh les récupère une fois par jour jusqu’au cours du mois suivant, puis fait une pause jusqu’au plus tôt de « obtention + 24 jours » et du 25 du mois obtenu, jamais avant le 1er de ce mois. Ces cours sont indicatifs et non contraignants : chaque cours retenu peut être remplacé par le vôtre. Les cours s’entendent en CHF pour une unité de devise.',
 		)}
 	</p>
 

@@ -3682,7 +3682,7 @@ accounts-fx-own-incomplete = Choose both exchange difference accounts, or go bac
 # --- Story 37-2 (AC-6, AC-8) : écran Cours de change et bandeau des corrections de l'AFC ---
 exchange-rates-title = Exchange rates
 exchange-rates-settings-card = FTA monthly rates and daily rates of each multi-currency fiscal year: rates retained by the company, fetching and corrections.
-exchange-rates-source-note = Source: official FTA rates, published by the Federal Office for Customs and Border Security (FOCBS). The FTA monthly rate is published in advance and applies to the whole month; the daily rate is published on working days. Kesh fetches them once a day until the following month's rate is available, then pauses until the month after. These rates are indicative and not binding: each retained rate can be replaced by your own. Rates are in CHF for one unit of currency.
+exchange-rates-source-note = Source: official FTA rates, published by the Federal Office for Customs and Border Security (FOCBS). The FTA monthly rate is published in advance and applies to the whole month; the daily rate is published on working days. Kesh fetches them once a day until the following month's rate is available, then pauses until the earlier of "retrieval + 24 days" and the 25th of the month retrieved, never before the 1st of that month. These rates are indicative and not binding: each retained rate can be replaced by your own. Rates are in CHF for one unit of currency.
 exchange-rates-mono = Multi-currency mode is not enabled: no exchange rate is kept.
 exchange-rates-no-fiscal-year = No multi-currency fiscal year.
 exchange-rates-fiscal-year = Fiscal year

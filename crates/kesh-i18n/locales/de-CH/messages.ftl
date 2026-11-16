@@ -3676,7 +3676,7 @@ accounts-fx-own-incomplete = Wählen Sie beide Kursdifferenzkonten oder kehren S
 # --- Story 37-2 (AC-6, AC-8) : écran Cours de change et bandeau des corrections de l'AFC ---
 exchange-rates-title = Wechselkurse
 exchange-rates-settings-card = Monatskurse der ESTV und Tageskurse jedes Mehrwährungs-Geschäftsjahres: von der Firma übernommene Kurse, Abruf und Korrekturen.
-exchange-rates-source-note = Quelle: amtliche Kurse der ESTV, veröffentlicht vom Bundesamt für Zoll und Grenzsicherheit (BAZG). Der Monatskurs der ESTV wird im Voraus veröffentlicht und gilt für den ganzen Monat; der Tageskurs wird an Werktagen veröffentlicht. Kesh ruft sie einmal täglich ab, bis der Kurs des Folgemonats vorliegt, und pausiert dann bis zum nächsten Monat. Diese Kurse sind unverbindlich: Jeder übernommene Kurs kann durch Ihren eigenen ersetzt werden. Die Kurse verstehen sich in CHF für eine Währungseinheit.
+exchange-rates-source-note = Quelle: amtliche Kurse der ESTV, veröffentlicht vom Bundesamt für Zoll und Grenzsicherheit (BAZG). Der Monatskurs der ESTV wird im Voraus veröffentlicht und gilt für den ganzen Monat; der Tageskurs wird an Werktagen veröffentlicht. Kesh ruft sie einmal täglich ab, bis der Kurs des Folgemonats vorliegt, und pausiert dann bis zum früheren der beiden Termine «Abruf + 24 Tage» und 25. des abgerufenen Monats, nie vor dem 1. dieses Monats. Diese Kurse sind unverbindlich: Jeder übernommene Kurs kann durch Ihren eigenen ersetzt werden. Die Kurse verstehen sich in CHF für eine Währungseinheit.
 exchange-rates-mono = Der Mehrwährungsmodus ist nicht aktiviert: Es werden keine Wechselkurse geführt.
 exchange-rates-no-fiscal-year = Kein Mehrwährungs-Geschäftsjahr.
 exchange-rates-fiscal-year = Geschäftsjahr

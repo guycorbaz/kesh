@@ -3677,7 +3677,7 @@ accounts-fx-own-incomplete = Scegliete i due conti delle differenze di cambio, o
 # --- Story 37-2 (AC-6, AC-8) : écran Cours de change et bandeau des corrections de l'AFC ---
 exchange-rates-title = Tassi di cambio
 exchange-rates-settings-card = Tassi mensili AFC e tassi giornalieri di ogni esercizio multivaluta: tassi adottati dalla società, recupero e correzioni.
-exchange-rates-source-note = Fonte: tassi ufficiali dell'AFC, pubblicati dall'Ufficio federale dell'imposizione delle dogane e della sicurezza dei confini (UDSC). Il tasso mensile AFC è pubblicato in anticipo e vale per tutto il mese; il tasso giornaliero è pubblicato nei giorni lavorativi. Kesh li recupera una volta al giorno fino al tasso del mese successivo, poi fa una pausa fino al mese seguente. Questi tassi sono indicativi e non vincolanti: ogni tasso adottato può essere sostituito dal vostro. I tassi si intendono in CHF per un'unità di valuta.
+exchange-rates-source-note = Fonte: tassi ufficiali dell'AFC, pubblicati dall'Ufficio federale dell'imposizione delle dogane e della sicurezza dei confini (UDSC). Il tasso mensile AFC è pubblicato in anticipo e vale per tutto il mese; il tasso giornaliero è pubblicato nei giorni lavorativi. Kesh li recupera una volta al giorno fino al tasso del mese successivo, poi fa una pausa fino alla prima delle due date «ottenimento + 24 giorni» e 25 del mese ottenuto, mai prima del 1° di quel mese. Questi tassi sono indicativi e non vincolanti: ogni tasso adottato può essere sostituito dal vostro. I tassi si intendono in CHF per un'unità di valuta.
 exchange-rates-mono = La modalità multivaluta non è attivata: non è tenuto alcun tasso di cambio.
 exchange-rates-no-fiscal-year = Nessun esercizio multivaluta.
 exchange-rates-fiscal-year = Esercizio

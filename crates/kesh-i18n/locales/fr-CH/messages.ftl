@@ -3755,7 +3755,7 @@ accounts-fx-own-incomplete = Choisissez les deux comptes de différence de chang
 # --- Story 37-2 (AC-6, AC-8) : écran Cours de change et bandeau des corrections de l'AFC ---
 exchange-rates-title = Cours de change
 exchange-rates-settings-card = Cours mensuels AFC et cours journaliers de chaque exercice multi-devises : cours retenus par la société, récupération et corrections.
-exchange-rates-source-note = Source : cours officiels de l’AFC, publiés par l’Office fédéral de la douane et de la sécurité des frontières (OFDF). Le cours mensuel AFC est publié d’avance et vaut pour tout le mois ; le cours journalier est publié les jours ouvrables. Kesh les récupère une fois par jour jusqu’au cours du mois suivant, puis fait une pause jusqu’au mois d’après. Ces cours sont indicatifs et non contraignants : chaque cours retenu peut être remplacé par le vôtre. Les cours s’entendent en CHF pour une unité de devise.
+exchange-rates-source-note = Source : cours officiels de l’AFC, publiés par l’Office fédéral de la douane et de la sécurité des frontières (OFDF). Le cours mensuel AFC est publié d’avance et vaut pour tout le mois ; le cours journalier est publié les jours ouvrables. Kesh les récupère une fois par jour jusqu’au cours du mois suivant, puis fait une pause jusqu’au plus tôt de « obtention + 24 jours » et du 25 du mois obtenu, jamais avant le 1er de ce mois. Ces cours sont indicatifs et non contraignants : chaque cours retenu peut être remplacé par le vôtre. Les cours s’entendent en CHF pour une unité de devise.
 exchange-rates-mono = Le mode multi-devises n’est pas activé : aucun cours de change n’est tenu.
 exchange-rates-no-fiscal-year = Aucun exercice multi-devises.
 exchange-rates-fiscal-year = Exercice
