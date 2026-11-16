@@ -1123,6 +1123,81 @@ async fn an_open_year_followed_by_a_closed_one_is_exposed(pool: MySqlPool) {
     assert_eq!(ctx.version(id).await, version, "un refus n'écrit rien");
 }
 
+/// T7 (revue P2, P2-3) — `fiscalYears` **sans doublon** et **dans l'ordre des
+/// exercices** : la vente dans l'exercice semé, le règlement dans un second
+/// exercice ouvert (l'exercice semé raccourci et le second posés en SQL,
+/// C-36-16a-2), puis un exercice 2031 clos. (1) Deux exercices ouverts exposés
+/// par le même clos → un seul nom. (2) L'exercice semé clos à son tour → son nom,
+/// puis celui du clos qui expose le second.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn fiscal_years_are_named_once_and_in_order(pool: MySqlPool) {
+    let ctx = setup(&pool).await;
+    let d = sale_day();
+    let id = ctx.validated(Some(ctx.p), d).await;
+    sqlx::query("UPDATE fiscal_years SET end_date = ? WHERE id = ?")
+        .bind(d + Duration::days(2))
+        .bind(ctx.seeded.fiscal_year_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    sqlx::query(
+        "INSERT INTO fiscal_years (company_id, name, start_date, end_date, status) \
+         VALUES (?, 'Second exercice', ?, '2030-12-31', 'Open')",
+    )
+    .bind(ctx.seeded.company_id)
+    .bind(d + Duration::days(3))
+    .execute(&pool)
+    .await
+    .unwrap();
+    ctx.settle(id, "40.00", d + Duration::days(5)).await;
+    let years: Vec<i64> = sqlx::query_scalar(
+        "SELECT DISTINCT e.fiscal_year_id FROM journal_entries e \
+         WHERE e.id IN (SELECT journal_entry_id FROM invoices WHERE id = ? \
+                        UNION SELECT journal_entry_id FROM invoice_settlements WHERE invoice_id = ?)",
+    )
+    .bind(id)
+    .bind(id)
+    .fetch_all(&pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        years.len(),
+        2,
+        "montage : vente et règlement dans deux exercices"
+    );
+    sqlx::query(
+        "INSERT INTO fiscal_years (company_id, name, start_date, end_date, status) \
+         VALUES (?, 'Exercice 2031 clos', '2031-01-01', '2031-12-31', 'Closed')",
+    )
+    .bind(ctx.seeded.company_id)
+    .execute(&pool)
+    .await
+    .unwrap();
+    let version = ctx.version(id).await;
+
+    let (status, body) = ctx
+        .reassign(&ctx.admin, id, Some(ctx.q), version, None)
+        .await;
+    assert_refused(status, &body, 409, "PROJECT_REASSIGNMENT_CLOSED_PERIOD");
+    assert_eq!(body["error"]["details"]["entryCount"], 2, "{body}");
+    assert_eq!(
+        body["error"]["details"]["fiscalYears"],
+        json!(["Exercice 2031 clos"]),
+        "un seul nom pour deux exercices exposés par le même clos"
+    );
+
+    close_fiscal_year(&pool, &ctx).await;
+    let (status, body) = ctx
+        .reassign(&ctx.admin, id, Some(ctx.q), version, None)
+        .await;
+    assert_refused(status, &body, 409, "PROJECT_REASSIGNMENT_CLOSED_PERIOD");
+    assert_eq!(
+        body["error"]["details"]["fiscalYears"],
+        json!(["Exercice CI 2020-2030", "Exercice 2031 clos"]),
+        "dans l'ordre des exercices des écritures"
+    );
+}
+
 // ---------------------------------------------------------------------------
 // T8 — l'audit
 // ---------------------------------------------------------------------------

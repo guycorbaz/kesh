@@ -259,6 +259,15 @@ pub async fn period_exposure_in_tx(
     //     croissant, leur statut lu sous ce verrou — avant toute recherche
     //     d'exercice postérieur, pour que l'ordre des verrous reste celui de la
     //     clôture (revue P1, A-5).
+    //     ⚠️ Réserve (revue P2, P2-1, #1218) : l'ordre est croissant sur les
+    //     exercices de l'ENSEMBLE, non sur les exercices intermédiaires. Un
+    //     exercice ouvert situé entre deux exercices de l'ensemble, sans écriture
+    //     de la pièce, n'est verrouillé qu'en (b), par le balayage de
+    //     `find_later_closed_in_tx` — après l'exercice suivant de l'ensemble. Un
+    //     `PUT` d'écriture dans cet exercice intermédiaire peut alors former un
+    //     cycle avec le geste ; InnoDB le détecte, et la route le rejoue
+    //     (`retry_on_deadlock`, `Rejouee`) : un rejeu, jamais une écriture
+    //     fausse.
     let mut locked_years: Vec<(i64, String, NaiveDate, bool)> = Vec::new();
     for (fy_id, _) in &ordered {
         let (name, start_date, status): (String, NaiveDate, String) = sqlx::query_as(
