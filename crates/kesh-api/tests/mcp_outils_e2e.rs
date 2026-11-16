@@ -183,8 +183,11 @@ fn bornes_des_schemas() {
         ("kesh_plan_comptable", (68, 38)),
         // Story 37-3a (AC-8) : lignes en devise re-mesurées, 22 / 12 → 18 / 10.
         ("kesh_ecritures", (18, 10)),
-        ("kesh_grand_livre", (30, 15)),
-        ("kesh_balance", (55, 30)),
+        ("kesh_grand_livre", (26, 14)),
+        // Story 37-4 (AC-6) : champs en devise re-mesurés (`tailles_mesurees_en_devise`),
+        // grand livre 30 / 15 → 26 / 14 (27 donnait 23 614 o dans la fixture des tailles),
+        // balance 55 / 30 → 42 / 23.
+        ("kesh_balance", (42, 23)),
         ("kesh_postes_ouverts", (24, 12)),
         ("kesh_factures", (40, 20)),
         ("kesh_echeancier", (40, 20)),
@@ -1331,8 +1334,17 @@ async fn grand_livre_pagine_egal_a_la_lecture_entiere(pool: MySqlPool) {
     }
     for (compte, ruptures_attendues) in [(p.compte_k1, 0), (p.compte_k2, 1)] {
         let entiere = structure(
-            &b.appeler(&jeton, "kesh_grand_livre", lire(compte, 0, 30))
-                .await,
+            // Story 37-4 : le maximum de l'outil (30 → re-mesuré), non une valeur en dur.
+            &b.appeler(
+                &jeton,
+                "kesh_grand_livre",
+                lire(
+                    compte,
+                    0,
+                    usize::try_from(outils::grand_livre::LIMITE_MAX_MCP).unwrap(),
+                ),
+            )
+            .await,
             "entière",
         );
         let section = &entiere["sections"][0];
@@ -2250,9 +2262,7 @@ async fn rapports_en_devise_par_le_mcp(pool: MySqlPool) {
     let jeton = cle_de(&pool, &a, &LECTURE, SendValidation::Exempt).await;
     let b = banc(&pool);
     let p = &a.p;
-    let periode = |id: i64| {
-        json!({"accountId": id, "from": p.exercice_debut.to_string(), "to": p.exercice_fin.to_string()})
-    };
+    let periode = |id: i64| json!({"accountId": id, "from": p.exercice_debut.to_string(), "to": p.exercice_fin.to_string()});
 
     let gl = structure(
         &b.appeler(&jeton, "kesh_grand_livre", periode(usd)).await,
@@ -2265,19 +2275,44 @@ async fn rapports_en_devise_par_le_mcp(pool: MySqlPool) {
     assert_eq!(s["totalDebitDevise"], json!("100.00"), "{s}");
     let l = &s["lignes"][0];
     assert_eq!(
-        (&l["debitDevise"], &l["creditDevise"], &l["cours"], &l["sourceCours"], &l["soldeCourantDevise"]),
-        (&json!("100.00"), &json!("0.00"), &json!("0.91"), &json!("manual"), &json!("100.00")),
+        (
+            &l["debitDevise"],
+            &l["creditDevise"],
+            &l["cours"],
+            &l["sourceCours"],
+            &l["soldeCourantDevise"]
+        ),
+        (
+            &json!("100.00"),
+            &json!("0.00"),
+            &json!("0.91"),
+            &json!("manual"),
+            &json!("100.00")
+        ),
         "{l}"
     );
     let chf = structure(
-        &b.appeler(&jeton, "kesh_grand_livre", periode(p.compte_k2)).await,
+        &b.appeler(&jeton, "kesh_grand_livre", periode(p.compte_k2))
+            .await,
         "kesh_grand_livre",
     );
     let s = &chf["sections"][0];
-    for k in ["devise", "ouvertureDevise", "totalDebitDevise", "totalCreditDevise", "clotureDevise"] {
+    for k in [
+        "devise",
+        "ouvertureDevise",
+        "totalDebitDevise",
+        "totalCreditDevise",
+        "clotureDevise",
+    ] {
         assert_eq!(s.get(k), Some(&Value::Null), "{k} présent à null : {s}");
     }
-    for k in ["debitDevise", "creditDevise", "cours", "sourceCours", "soldeCourantDevise"] {
+    for k in [
+        "debitDevise",
+        "creditDevise",
+        "cours",
+        "sourceCours",
+        "soldeCourantDevise",
+    ] {
         assert_eq!(s["lignes"][0].get(k), Some(&Value::Null), "{k} : {s}");
     }
 
@@ -2285,24 +2320,31 @@ async fn rapports_en_devise_par_le_mcp(pool: MySqlPool) {
         &b.appeler(
             &jeton,
             "kesh_balance",
-            json!({"fiscalYearId": p.exercice_id, "limit": 55}),
+            json!({"fiscalYearId": p.exercice_id, "limit": 42}),
         )
         .await,
         "kesh_balance",
     );
     let lignes = balance["lignes"].as_array().unwrap();
-    let u = lignes.iter().find(|l| l["compteId"] == json!(usd)).expect("ligne USD");
+    let u = lignes
+        .iter()
+        .find(|l| l["compteId"] == json!(usd))
+        .expect("ligne USD");
     assert_eq!(
         (&u["devise"], &u["debitDevise"], &u["clotureDevise"]),
         (&json!("USD"), &json!("100.00"), &json!("100.00")),
         "{u}"
     );
-    let k2 = lignes.iter().find(|l| l["compteId"] == json!(p.compte_k2)).expect("ligne K2");
+    let k2 = lignes
+        .iter()
+        .find(|l| l["compteId"] == json!(p.compte_k2))
+        .expect("ligne K2");
     assert_eq!(k2.get("devise"), Some(&Value::Null), "{k2}");
     assert_eq!(k2.get("clotureDevise"), Some(&Value::Null), "{k2}");
 
     let bilan = structure(
-        &b.appeler(&jeton, "kesh_bilan", json!({"fiscalYearId": p.exercice_id})).await,
+        &b.appeler(&jeton, "kesh_bilan", json!({"fiscalYearId": p.exercice_id}))
+            .await,
         "kesh_bilan",
     );
     let actif = bilan["actifs"]
@@ -2311,7 +2353,10 @@ async fn rapports_en_devise_par_le_mcp(pool: MySqlPool) {
         .iter()
         .find(|l| l["compteId"] == json!(usd))
         .expect("compte USD au bilan");
-    assert_eq!((&actif["devise"], &actif["soldeDevise"]), (&json!("USD"), &json!("100.00")));
+    assert_eq!(
+        (&actif["devise"], &actif["soldeDevise"]),
+        (&json!("USD"), &json!("100.00"))
+    );
     for l in bilan["actifs"].as_array().unwrap() {
         assert!(l.get("soldeDevise").is_some(), "clé présente : {l}");
     }
@@ -2332,13 +2377,186 @@ async fn postes_ouverts_d_un_compte_en_devise_en_chf(pool: MySqlPool) {
             .await,
         "kesh_postes_ouverts",
     );
-    assert_eq!((&s["solde"], &s["totalOuvert"]), (&json!("91.00"), &json!("91.00")), "{s}");
+    assert_eq!(
+        (&s["solde"], &s["totalOuvert"]),
+        (&json!("91.00"), &json!("91.00")),
+        "{s}"
+    );
     let postes = elements("kesh_postes_ouverts", &s);
     assert_eq!(postes.len(), 1, "{s}");
-    assert_eq!((&postes[0]["debit"], &postes[0]["credit"]), (&json!("91.00"), &json!("0.00")));
+    assert_eq!(
+        (&postes[0]["debit"], &postes[0]["credit"]),
+        (&json!("91.00"), &json!("0.00"))
+    );
     assert_eq!(postes[0]["resteDu"], Value::Null);
     let cles = |v: &Value| v.as_object().unwrap().keys().cloned().collect::<Vec<_>>();
     for k in cles(&s).into_iter().chain(cles(&postes[0])) {
-        assert!(!k.contains("evise") && k != "cours", "aucun champ en devise : {k}");
+        assert!(
+            !k.contains("evise") && k != "cours",
+            "aucun champ en devise : {k}"
+        );
     }
+}
+
+/// Story 37-4 (AC-6) — les tailles **re-mesurées avec les champs en devise
+/// remplis** (le pire cas : chaque élément en devise) : grand livre d'un compte
+/// USD de 31 lignes, balance de 56 comptes USD mouvementés, bilan de 56 comptes
+/// USD à solde non nul. Mêmes largeurs que la fixture des tailles (nom de compte
+/// de 34 caractères, libellé de 55). Les bornes de `bornes_attendues` ne changent
+/// que si ces mesures dépassent les plafonds du test des tailles.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn tailles_mesurees_en_devise(pool: MySqlPool) {
+    let a = societe_piegee(&pool, "Société A 374t", 'A').await;
+    compte_usd_mouvemente(&pool, &a).await;
+    let jour = common::jour::aujourd_hui_test();
+    let p = &a.p;
+    let ligne_usd = |account_id: i64| NewJournalEntryLine {
+        account_id,
+        debit: Decimal::new(123_455, 2),
+        credit: Decimal::ZERO,
+        project_id: None,
+        foreign: Some(kesh_db::entities::ForeignAmount {
+            declared_currency: None,
+            amount: Decimal::new(1_355_789, 3),
+            rate: Decimal::new(9_105_786_123, 10),
+            source: Some(kesh_db::entities::RateProvenance::Manual),
+            rate_derived: false,
+        }),
+    };
+    let ecrire = |account_id: i64, i: usize| {
+        let pool = pool.clone();
+        let lines = vec![
+            ligne_usd(account_id),
+            NewJournalEntryLine {
+                account_id: p.compte_k2,
+                debit: Decimal::ZERO,
+                credit: Decimal::new(123_455, 2),
+                project_id: None,
+                foreign: None,
+            },
+        ];
+        async move {
+            journal_entries::create(
+                &pool,
+                p.exercice_id,
+                kesh_db::entities::audit_log::Acteur::utilisateur(a.u),
+                NewJournalEntry {
+                    company_id: a.c,
+                    entry_date: jour,
+                    journal: Journal::OD,
+                    description: texte_de(55, &format!("Écriture en devise {i}")),
+                    project_id: None,
+                    lines,
+                },
+            )
+            .await
+            .expect("écriture en devise");
+        }
+    };
+    // 56 comptes USD en tête de la balance et du bilan (numéros en `00`).
+    for i in 0..56 {
+        let id: i64 = sqlx::query_scalar(
+            "INSERT INTO accounts (company_id, number, name, account_type, currency) \
+             VALUES (?, ?, ?, 'Asset', 'USD') RETURNING id",
+        )
+        .bind(a.c)
+        .bind(format!("00{i:03}"))
+        .bind(texte_de(34, &format!("Compte en devise {i}")))
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        ecrire(id, i).await;
+        if i == 0 {
+            // Le compte du grand livre : 31 lignes en devise.
+            for k in 1..31 {
+                ecrire(id, 100 + k).await;
+            }
+        }
+    }
+    let gl_compte: i64 =
+        sqlx::query_scalar("SELECT id FROM accounts WHERE company_id = ? AND number = '00000'")
+            .bind(a.c)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    let jeton = cle_de(&pool, &a, &LECTURE, SendValidation::Exempt).await;
+    let b = banc(&pool);
+    let args = |outil: &str, limit: i64| match outil {
+        "kesh_grand_livre" => json!({"accountId": gl_compte,
+            "from": p.exercice_debut.to_string(), "to": p.exercice_fin.to_string(),
+            "limit": limit}),
+        _ => json!({"fiscalYearId": p.exercice_id, "limit": limit}),
+    };
+    let outils_pagines = [
+        (
+            "kesh_grand_livre",
+            outils::grand_livre::LIMITE_MAX_MCP,
+            outils::grand_livre::LIMITE_DEFAUT,
+        ),
+        (
+            "kesh_balance",
+            outils::rapports::LIMITE_MAX_MCP_BALANCE,
+            outils::rapports::LIMITE_DEFAUT_BALANCE,
+        ),
+    ];
+    // La mesure d'abord, pour chaque outil (page d'un et de deux éléments),
+    // avant toute assertion : elle fixe les bornes.
+    for (outil, _, _) in outils_pagines {
+        let mesure: Vec<usize> = {
+            let mut m = Vec::new();
+            for n in [1, 2] {
+                m.push(texte(&b.appeler(&jeton, outil, args(outil, n)).await).len());
+            }
+            m
+        };
+        let element = mesure[1] - mesure[0];
+        let socle = mesure[0] - element;
+        eprintln!(
+            "MESURE EN DEVISE {outil} : élément {element} o, socle {socle} o ; bornes \
+             possibles : défaut {} / maximum {}",
+            (13_312 - socle) / element,
+            (23_552 - socle) / element
+        );
+    }
+    for (outil, max, defaut) in outils_pagines {
+        let mut tailles = Vec::new();
+        for n in [1, 2, defaut, max] {
+            let r = b.appeler(&jeton, outil, args(outil, n)).await;
+            let s = structure(&r, outil);
+            assert_eq!(
+                elements(outil, &s).len(),
+                usize::try_from(n).unwrap(),
+                "{outil}"
+            );
+            assert!(
+                elements(outil, &s)[0]
+                    .as_object()
+                    .unwrap()
+                    .iter()
+                    .any(|(k, v)| k.ends_with("Devise") && !v.is_null()),
+                "{outil} : éléments en devise remplis"
+            );
+            tailles.push(texte(&r).len());
+        }
+        eprintln!(
+            "TAILLE EN DEVISE {outil} : élément {} o ; défaut {defaut} → {} o ; maximum {max} → {} o",
+            tailles[1] - tailles[0],
+            tailles[2],
+            tailles[3]
+        );
+        assert!(tailles[2] <= 13_312, "{outil} : défaut {} o", tailles[2]);
+        assert!(tailles[3] <= 23_552, "{outil} : maximum {} o", tailles[3]);
+    }
+    let r = b
+        .appeler(&jeton, "kesh_bilan", json!({"fiscalYearId": p.exercice_id}))
+        .await;
+    assert_eq!(
+        r["result"]["isError"],
+        json!(false),
+        "56 comptes en devise : servi"
+    );
+    eprintln!(
+        "TAILLE EN DEVISE kesh_bilan (57 comptes en devise) : {} o",
+        texte(&r).len()
+    );
 }

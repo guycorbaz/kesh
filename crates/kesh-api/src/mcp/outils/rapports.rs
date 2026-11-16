@@ -2,10 +2,15 @@
 //! période d'un exercice (Story 32-9a, AC-a10) ; chaque consultation s'inscrit
 //! au journal d'audit (`ContexteMcp::afficher`). Portée `books:read`.
 //!
-//! La balance rend tout compte actif : l'outil la **tranche** (défaut 30,
-//! maximum 55 lignes) et rend les totaux du rapport entier. Le bilan et le
+//! La balance rend tout compte actif : l'outil la **tranche** (défaut 23,
+//! maximum 42 lignes, re-mesurés avec les colonnes en devise à la Story 37-4)
+//! et rend les totaux du rapport entier. Le bilan et le
 //! compte de résultat ne sont pas paginés : au-delà d'environ 60 comptes à
-//! solde non nul, la réponse est refusée pour sa taille (C-32-9-8).
+//! solde non nul, la réponse est refusée pour sa taille (C-32-9-8). Re-mesuré
+//! avec les champs en devise (Story 37-4, `tailles_mesurees_en_devise`) : un
+//! bilan de 57 comptes en devise et des comptes de la société d'essai tient en
+//! 20 156 o (plafond 24 576) — le seuil d'« environ 60 » reste vrai, en
+//! borne basse, et n'est pas relevé.
 
 use chrono::NaiveDate;
 use serde::Deserialize;
@@ -17,10 +22,11 @@ use crate::mcp::textes::depuis_app_error;
 use crate::services::acces::Portee;
 use crate::services::rapports::{self, Affichage, DemandePeriode};
 
-/// Lignes de balance par défaut.
-pub const LIMITE_DEFAUT_BALANCE: i64 = 30;
-/// Lignes de balance au plus (aucun plafond de service).
-pub const LIMITE_MAX_MCP_BALANCE: i64 = 55;
+/// Lignes de balance par défaut. Story 37-4 : re-mesurée avec les colonnes en
+/// devise remplies (élément de 542 o, `tailles_mesurees_en_devise`), 30 → 23.
+pub const LIMITE_DEFAUT_BALANCE: i64 = 23;
+/// Lignes de balance au plus (aucun plafond de service). Story 37-4 : 55 → 42.
+pub const LIMITE_MAX_MCP_BALANCE: i64 = 42;
 
 /// La balance.
 pub struct KeshBalance;
@@ -200,7 +206,7 @@ impl McpTool for KeshBalance {
     }
 
     fn schema_entree(&self) -> &'static str {
-        r#"{"type":"object","properties":{"fiscalYearId":{"type":"integer","minimum":1},"periodStart":{"type":"string","format":"date"},"periodEnd":{"type":"string","format":"date"},"limit":{"type":"integer","minimum":1,"maximum":55,"default":30},"offset":{"type":"integer","minimum":0}},"required":["fiscalYearId"],"additionalProperties":false}"#
+        r#"{"type":"object","properties":{"fiscalYearId":{"type":"integer","minimum":1},"periodStart":{"type":"string","format":"date"},"periodEnd":{"type":"string","format":"date"},"limit":{"type":"integer","minimum":1,"maximum":42,"default":23},"offset":{"type":"integer","minimum":0}},"required":["fiscalYearId"],"additionalProperties":false}"#
     }
 
     fn portee(&self) -> Portee {

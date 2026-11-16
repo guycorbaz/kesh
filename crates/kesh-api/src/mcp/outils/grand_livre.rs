@@ -12,10 +12,13 @@ use crate::mcp::textes::depuis_app_error;
 use crate::services::acces::Portee;
 use crate::services::rapports::{self, Affichage, DemandeGrandLivre};
 
-/// Lignes par défaut (§ *Les tailles mesurées*).
-pub const LIMITE_DEFAUT: i64 = 15;
+/// Lignes par défaut (§ *Les tailles mesurées*). Story 37-4 : re-mesurées avec
+/// les champs en devise (présents à `null` en CHF : élément de 835 o dans la
+/// fixture des tailles ; 807 o remplis en devise), 15 → 14.
+pub const LIMITE_DEFAUT: i64 = 14;
 /// Lignes au plus, pour l'outil (le service en admet `MAX_LEDGER_LIMIT`).
-pub const LIMITE_MAX_MCP: i64 = 30;
+/// Story 37-4 : 30 → 26 (27 rendait 23 614 o, au-dessus de 23 552).
+pub const LIMITE_MAX_MCP: i64 = 26;
 
 /// L'outil.
 pub struct KeshGrandLivre;
@@ -123,7 +126,7 @@ impl McpTool for KeshGrandLivre {
     }
 
     fn schema_entree(&self) -> &'static str {
-        r#"{"type":"object","properties":{"accountId":{"type":"integer","minimum":1},"from":{"type":"string","format":"date"},"to":{"type":"string","format":"date"},"limit":{"type":"integer","minimum":1,"maximum":30,"default":15},"offset":{"type":"integer","minimum":0}},"required":["accountId","from","to"],"additionalProperties":false}"#
+        r#"{"type":"object","properties":{"accountId":{"type":"integer","minimum":1},"from":{"type":"string","format":"date"},"to":{"type":"string","format":"date"},"limit":{"type":"integer","minimum":1,"maximum":26,"default":14},"offset":{"type":"integer","minimum":0}},"required":["accountId","from","to"],"additionalProperties":false}"#
     }
 
     fn portee(&self) -> Portee {
