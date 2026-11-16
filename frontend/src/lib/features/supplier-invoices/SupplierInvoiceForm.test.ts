@@ -1093,7 +1093,7 @@ describe('SupplierInvoiceForm — le prix unitaire « 1.250 » (Story 36-18a, #1
 });
 
 describe('SupplierInvoiceForm — le prix unitaire, revue P1 (E5, A1)', () => {
-	it('une ligne vide puis une ligne à « 1.250 » : le message nomme la ligne 2 (E5, M22)', async () => {
+	it('une ligne complète puis une ligne à « 1.250 » : le message nomme la ligne 2 (E5, M22)', async () => {
 		const { container, getByTestId, getAllByTestId, onSubmit } = renderForm({ document: null });
 		await selectSupplier(container, '1');
 		await fillLine(container, '10.00');
