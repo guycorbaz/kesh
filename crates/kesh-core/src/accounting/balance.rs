@@ -157,6 +157,15 @@ impl BalancedEntry {
     }
 }
 
+/// Somme de montants refusée au débordement de `Decimal` : [`CoreError::EntryTotalOutOfRange`].
+fn somme_bornee(mut montants: impl Iterator<Item = Money>) -> Result<Money, CoreError> {
+    montants
+        .try_fold(Money::zero(), |acc, m| {
+            acc.amount().checked_add(m.amount()).map(Money::new)
+        })
+        .ok_or(CoreError::EntryTotalOutOfRange)
+}
+
 /// Valide un brouillon d'écriture et retourne une [`BalancedEntry`] si
 /// toutes les règles métier passent.
 ///
@@ -200,8 +209,11 @@ pub fn validate(draft: JournalEntryDraft) -> Result<BalancedEntry, CoreError> {
         }
     }
 
-    let total_debit: Money = draft.lines.iter().map(|l| l.debit).sum();
-    let total_credit: Money = draft.lines.iter().map(|l| l.credit).sum();
+    // Sommes bornées (revue de code P3 de la 37-3a) : `Money::sum` passe par
+    // l'addition de `Decimal`, qui panique au débordement ; un total hors de
+    // l'intervalle représentable est refusé, non paniqué.
+    let total_debit = somme_bornee(draft.lines.iter().map(|l| l.debit))?;
+    let total_credit = somme_bornee(draft.lines.iter().map(|l| l.credit))?;
 
     if total_debit != total_credit {
         return Err(CoreError::EntryUnbalanced {
@@ -443,6 +455,37 @@ mod tests {
         ]);
         d.description = "   ".to_string();
         assert!(matches!(validate(d), Err(CoreError::EntryDescriptionEmpty)));
+    }
+
+    /// Revue de code P3 de la 37-3a — la somme des débits de l'écriture ne
+    /// panique pas au débordement de `Decimal` : refus `EntryTotalOutOfRange`.
+    #[test]
+    fn somme_des_debits_qui_deborde_est_refusee_sans_panique() {
+        let grand = dec!(50000000000000000000000000000);
+        let lines = vec![
+            line(1, Money::new(grand), Money::zero()),
+            line(2, Money::new(grand), Money::zero()),
+            line(3, Money::zero(), Money::new(dec!(1))),
+        ];
+        assert_eq!(
+            validate(draft(lines)).unwrap_err(),
+            CoreError::EntryTotalOutOfRange
+        );
+    }
+
+    /// Revue de code P4 de la 37-3a — même refus côté crédits.
+    #[test]
+    fn somme_des_credits_qui_deborde_est_refusee_sans_panique() {
+        let grand = dec!(50000000000000000000000000000);
+        let lines = vec![
+            line(1, Money::zero(), Money::new(grand)),
+            line(2, Money::zero(), Money::new(grand)),
+            line(3, Money::new(dec!(1)), Money::zero()),
+        ];
+        assert_eq!(
+            validate(draft(lines)).unwrap_err(),
+            CoreError::EntryTotalOutOfRange
+        );
     }
 
     #[test]

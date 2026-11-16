@@ -1,6 +1,6 @@
 # Story 37-3a : écritures en devise — modèle, validation, API et garde des chemins automatiques
 
-Status: review
+Status: done
 
 *Fiche rédigée le 2026-11-14 (Opus 5.5), branche `epic/37-multi-devises`. Epic 37, C-37-3, C-37-4, C-37-5. Suit 37-1
 et 37-2. **Migration non breaking** (colonnes `NULL` ajoutées). **Découpée** à la rédaction (règle de splitting
@@ -778,7 +778,11 @@ chacune (R7), l'écart de change dans la seconde, afin que mes comptes en devise
 *(Texte prêt à assembler au `CHANGELOG.md` à la release ; la fiche n'écrit jamais au `CHANGELOG.md`.)*
 
 - **Added** — `POST`/`PUT /journal-entries` prennent `foreign { currency?, amount, rate?, chf?, rateSource?, side? }` : l'API complète la ligne en devise sans calcul du client.
-- **Changed (contrat de l'API)** — `rate`, `chf`, `side`, `rateSource`, `debit`/`credit` facultatifs ; une ligne CHF sans `debit` rend 400 au lieu de 422 ; changement de statut de `Validation` (voir AC-5, guide d'API en 37-3b).
+- **Changed (contrat de l'API)** — `rate`, `chf`, `side`, `rateSource`, `debit`/`credit` facultatifs ; une ligne CHF sans `debit` rend 400 au lieu de 422 ; changement de statut de `Validation` (voir AC-6, guide d'API en 37-3b).
+- **Changed (contrat du serveur MCP)** — `kesh_ecritures` : la page passe de 12 à **10** écritures par défaut et de 22 à **18** au plus (les lignes en devise portent quatre champs de plus) ; un `limit` de 19 à 22 est désormais refusé par le schéma de l'outil (revue de code P1).
+- **Changed (exports)** — le CSV des lignes d'écriture gagne trois colonnes en fin de ligne, `amount_currency` (4 décimales), `exchange_rate` (10 décimales) et `rate_source`, vides sur une ligne CHF (revue de code P1).
+- **Changed (contrat du serveur MCP, suite)** — `kesh_ecritures` et `kesh_ecriture` : chaque ligne porte `devise`, `montantDevise`, `cours` et `sourceCours`, à `null` sur une ligne CHF (revue de code P2).
+- **Added (contrat de l'API)** — `modificationBlockedBy` peut valoir `ENTRY_IS_FX_REVALUATION` (409 au `PUT` d'une écriture de réévaluation) ; les lots de rapprochement rendent les refus `FX_*` et `ACCOUNT_REQUIRES_CURRENCY` dans `failed[]` ; l'enregistrement d'une pièce (facture, avoir, facture fournisseur, règlement) sur un compte en devise rend 400 `ACCOUNT_IN_FOREIGN_CURRENCY` (revue de code P2).
 - **Limite connue** — le lettrage manuel d'un compte en devise ne raisonne qu'en CHF : un débiteur USD soldé en USD avec un écart de change ne se lettre pas (issue ouverte à la PR, C-37-8).
 - **Compteurs** : recomptés depuis la source après chaque reprise de `main` (`LIB_ROUTES`, partitions du registre, `sitesTotal`, catalogues i18n).
 
@@ -1168,6 +1172,49 @@ chacune (R7), l'écart de change dans la seconde, afin que mes comptes en devise
   commits `946aa86a` (kesh-core, kesh-db, réconciliation, seed, tests de rapports ; kesh-api se compile à partir du
   suivant) et `79b9a6a9` (kesh-api, i18n), puis les commits de tests et de fiche. Migration annoncée et écrite :
   `20261114000003_journal_lines_foreign_currency.sql` (nom de l'AC-1). Détail au Dev Agent Record ; statut `review`.
+- 2026-11-16 — fusion de `epic/37-multi-devises` (`65b3877f` : 37-2 terminée, corrections de sa revue `c691bd4b`,
+  `9a665075`) dans la branche, sur demande de l'orchestrateur : commit `e89291e6`, **sans conflit** (19 fichiers de
+  37-2 : récupération des cours, dépôt `exchange_rates` sans changement de signature, écran, manuels, fiche,
+  `sprint-status.yaml`). Compteurs recomptés depuis la source : audit des migrations inchangé (94 lignes, 94
+  fichiers ; la fusion n'apporte pas de migration) ; registre des routes inchangé (37-3a n'ajoute pas de route) ;
+  `sitesTotal` de `i18n-keys.test.ts` porté par 37-2 seule (la 37-3a ne touche aucun site frontend), vérifié par le
+  Vitest complet. Gates de clôture rejoués au commit de fusion, dernier commit de code (Dev Agent Record).
+- 2026-11-16 — revue de code P1 (Opus ; couches Blind Hunter, Edge Case Hunter, Acceptance Auditor en parallèle,
+  plus lecture de l'orchestrateur ; prompt `37-3a-review-prompt-p1.md`) : **1 HIGH, 7 MEDIUM, 12 LOW** (13 corrigés,
+  7 LOW renvoyés au registre `issues-a-ouvrir-epic-37.md`, points 14 à 20), 3 rejetés. HIGH : 37-3a-CR-P1-1 (AC-5,
+  FR-14) aucun test ne passait par les sites du refus `ACCOUNT_IN_FOREIGN_CURRENCY` — sept tests par site (facture :
+  création et validation après passage en devise ; avoir ; brouillon fournisseur, création et mise à jour ;
+  validation fournisseur ; paiement fournisseur par compte interne ; règlement client par compte interne) et test
+  d'inventaire `account_columns_inventory.rs` (liste close des 28 colonnes `*_account_id` du schéma, cinq vers
+  `bank_accounts` classées à part, chaque colonne avec son test ou sa justification, sondes positives). MEDIUM :
+  CR-P1-2 la validation d'une facture fournisseur ne rejugeait pas la devise de ses comptes de charge
+  (`supplier_invoices::validate_in_tx`, refus ajouté sous les `FOR UPDATE` existants) ; CR-P1-3 `FX_AMOUNT_MISMATCH`
+  arrondissait `provided` à deux décimales (« 9.12 » pour `9.1201`, deux valeurs égales affichées) — `chf_text`, sans
+  arrondi ; CR-P1-4 le message de `MULTI_CURRENCY_DISABLED` sur un exercice (« clos avant l'activation ») était faux
+  sur les routes des cours et des genres de 37-1/37-2 dans une société mono-devise — message vrai partout, quatre
+  locales, `details` inchangés ; CR-P1-5 le cas (c) de `ac4_rang4_cours_afc` était **muet** (INSERT dans
+  `_kesh_fetched_exchange_rates` sur des colonnes inexistantes, erreur avalée par `.ok()`) — aide `publier` vérifiée ;
+  CR-P1-6 tests exigés absents : (e) au dépôt, (h) à l'API après import d'installation, (i), et (f) complété (lignes
+  CHF seules, compte, côté, seconde ligne `afc`, date vers un mois `afc`) ; CR-P1-7 tests HTTP absents :
+  `ENTRY_IS_FX_REVALUATION` (409, suppression permise), conversion EUR → USD en deux écritures (compte de conversion
+  soldé, une écriture à deux devises refusée), cours déduit au travers du `PUT` (CR-6 : sans effet, copie double) ;
+  CR-P1-8 Note de version sans le changement de contrat MCP (page 22/12 → 18/10) ni les colonnes CSV — ajoutés, renvoi
+  AC-5 → AC-6 corrigé. LOW corrigés : doc-comment de `coded_response` détaché par l'insertion de `fx_db_refusal` ;
+  `details` de `MULTI_CURRENCY_DISABLED` en lot alignés sur la réponse HTTP (test unitaire) ; « quatre sites » → trois
+  (`fx_failed_proposal`) ; commentaire sur la devise des lignes d'avant du `PUT` (jointure, devise verrouillée par
+  37-1) ; doc-comment trompeur de `ac5_compte_de_piece_en_devise_refuse`. Rejetés : `AccountInForeignCurrency` dans les
+  lots (inatteignable : le rapprochement règle par `BankTransfer`, `internal_account_id` est `None`) ; recopie de
+  `afc` par la contre-passation (FR-7, voulue) ; écarts acceptés du Dev Agent Record (lecture sans verrou des comptes
+  de pièce, place du contrôle au `PUT`, concurrence argumentée, fixture sans pas d'ajustement — renvoyée au point 15).
+  Axes exercés : AC-1 à AC-9, comptabilité (`fx_chf`, `rate_from_chf`, rangs 2 à 4, A17, A32, CR-6, contre-passation,
+  réévaluation), verrous et ordre, migration P1–P8, sauvegarde et restauration 0.17.6, CSV, MCP, i18n, sites non
+  résolus (inventaire des `INSERT` : `insert_lines` seul, plus la restauration générique), tests muets. Non exercés :
+  RBAC (aucune route neuve), manuels (renvoyés à la 37-3b, aucun `.tex` touché), E2E Playwright (aucun écran touché),
+  test de course réel. Gates : base `kesh_s37_3a` recréée, migrée, semée ; `scripts/test-fast.sh --ci` (fmt, clippy
+  `-D warnings`, nextest `ci`) **5743 passés, 13 ignorés** (`kesh-gate-logs/s37-3a/review-p1/gate-complet.log`),
+  19 tests de plus qu'au commit de fusion (5724). Frontend non touché.
+- 2026-11-16 — revue de code P2 (Sonnet ; couches Blind Hunter, Edge Case Hunter, Acceptance Auditor en parallèle, une seule lecture du diff par couche) : 0 CRITICAL, 0 HIGH, 0 MEDIUM, 11 LOW bruts (convergés : devise lue hors verrou à la validation fournisseur ×3, `+` de `Decimal` sans borne ×1, message FX d'exercice ×1, tests/notes ×6). Corrigés : `supplier_invoices::validate_in_tx` lit la devise du compte de charge dans son `SELECT … FOR UPDATE` (plus de relecture sans verrou ; le commentaire de P1 était faux) ; `debit + credit` en `checked_add` dans `parse_line_amounts` (400 `FX_VALUE_OUT_OF_RANGE`) et `check_foreign_line` (`OutOfRange`) ; message `error-multi-currency-disabled-fiscal-year` (4 locales et repli) rendu pertinent pour les routes des cours et des genres ; test de `chf_text` ; test du débordement de la somme ; Note de version complétée (MCP, `ENTRY_IS_FX_REVALUATION`, lots, 400 de pièce). Annotations datées (l'entrée P1 reste telle quelle) : AC-3 « deux décimales » vaut pour `expected`, `provided` n'est plus arrondi depuis P1 ; AC-5 compte trois sites `FailedProposal` et non quatre ; « 50 tests ajoutés » valait avant P1 (recompté par différence d'attributs de test de `c42702f7` à `HEAD` : 69 hors fusion de 37-2) ; File List : 98 fichiers (`git diff --stat epic/37-multi-devises...HEAD`). Laissés (non corrigés, à tracer à la PR) : les cinq autres sites de refus de devise de pièce lisent sans verrou (code `ACCOUNT_REQUIRES_CURRENCY` au lieu de `ACCOUNT_IN_FOREIGN_CURRENCY` en cas de course, refus correct) ; bras FX de deux correspondances `FailedProposal` (`reconciliation.rs` 3218, 4380) sans test propre ; assertions de verrou levé et d'audit CHF octet pour octet plus faibles que la fiche ; forme décimale `foreign.amount` HTTP (`normalize`) ≠ MCP (deux décimales) ; frontend sans le motif `ENTRY_IS_FX_REVALUATION` (37-3b). Constat de la revue de la 37-4, jugé ici : ligne à `amount_currency` NULL sur un compte en devise (USD 0 au grand livre, CHF au journal) = LOW, aucune voie de Kesh ne la produit (dépôt, rang 3 et `ACCOUNT_CURRENCY_IN_USE` la refusent ; le schéma ne peut lier la ligne au compte), seule une sauvegarde 0.18 retouchée la pose ; versé au point 16 du registre (contrôle de cohérence après restauration, deux sens), non corrigé ici. Observation de l'interblocage `LOCK IN SHARE MODE` / `FOR UPDATE` : défendu par le rejeu, registre de rejeu des routes non relu. Axes exercés : AC-1 à AC-9, comptabilité, verrous et snapshot, migration P1–P8 et compteurs, sauvegarde, CSV, MCP, i18n, manuels (aucun `.tex` touché), tests muets, sites non résolus. Non exercés : RBAC (aucune route neuve), E2E (fait à la clôture), course réelle. Gates : base `kesh_s37_3a` recréée, migrée, semée ; `scripts/test-fast.sh --ci` (fmt, clippy `-D warnings`, nextest `ci`) **5745 passés, 13 ignorés** (`kesh-gate-logs/s37-3a/review-p2/gate-complet.log`), 2 tests de plus qu'à la P1 (5743) ; frontend non touché ; la recette d'un `GRANT` posé par erreur sur la base de la story a été révoquée avant le gate (les droits `kesh%` couvrent la base).
+- 2026-11-16 — revue de code P3 ciblée (Haiku ; une lentille, braquée sur le diff de la P2, contexte frais) : 1 finding au-dessus de LOW, corrigé ; 0 CRITICAL, 0 HIGH, 1 MEDIUM, 0 LOW retenu. **37-3a-CR-P3-1 (MEDIUM, pré-existant à la 37-3a, hors diff P2, même classe que la P2)** : `balance::validate` additionnait les débits et les crédits de l'écriture par `Money::sum`, dont l'addition de `Decimal` panique au débordement ; une écriture de lignes CHF ordinaires (sans `foreign`, donc non bornées) de deux débits de 5·10²⁸ et d'un crédit l'atteignait — reproduit par un test rouge avant correction (`Addition overflowed`, `rust_decimal` `arithmetic_impls.rs:161`). Corrigé : somme bornée `somme_bornee` (`checked_add`), refus par le nouveau variant `CoreError::EntryTotalOutOfRange` (code `ENTRY_TOTAL_OUT_OF_RANGE`), rendu 400 `VALIDATION_ERROR` avec un message français par la route, comme `EntryZeroTotal` ; test `somme_des_debits_qui_deborde_est_refusee_sans_panique` (`balance.rs`). Test de non-régression de la somme route ajouté (`parse_line_amounts_somme_qui_deborde_rend_fx_value_out_of_range`, `journal_entries.rs`) : rouge quand le `checked_add` de la P2 est remplacé par `+` (panique relevée), vert avec le correctif. Vérifié sans finding : `fx_chf` (produit en `i128` à `checked_mul`, `rem.abs() * 2` et `q + signum` bornés), `rate_from_chf` (`base ± delta` après `check_rate_bounds`), `check_foreign_line` (`checked_add` de la P2, test `somme_debit_credit_qui_deborde_est_refusee_sans_panique` vérifié par son contenu, non rejoué rouge), `parse_line_amounts` sans `foreign` (ne somme pas), `opening_balances` (`Σ débit − Σ crédit`, lignes bornées à `DECIMAL(19,4)` avant la somme). Ordre des verrous de `validate_in_tx` : la P2 n'ajoute aucun verrou ; la devise se lit dans le `FOR UPDATE` existant, dans l'ordre des lignes, comme avant ; le refus est le plus petit identifiant, comme le `ORDER BY id LIMIT 1` de l'ancien helper — même compte, même code. Message `error-multi-currency-disabled-fiscal-year` : les quatre locales et le repli sont la même phrase ; aucun test ni manuel ne cite l'ancienne. **Relevé, non corrigé, hors FX** (à tracer en issue, non traité ici) : `purchase::purchase_invoice_totals` (`Σ` des totaux de ligne d'une facture fournisseur, sans borne haute sur les lignes) et `credit_notes.rs:327`, `invoice_pdf_service.rs:408` (`Σ` des `line_total` de factures) — même classe de débordement, non reproduits. Axes exercés : diff P2 (10 fichiers), ordre des verrous et rejeu, refus déterministe, débordement de toute somme `Decimal` du chemin FX et de l'écriture, message FX (routes qui le rendent), tests rouges sans correctif (balance, route). Non exercés : rejeu réel de la route sous interblocage (base), RBAC, E2E, les sommes hors FX ci-dessus. Gates ciblés (base non touchée : `kesh-db` non modifié, gate complet non requis) : `cargo fmt --all -- --check` vert ; `cargo clippy --workspace --all-targets -- -D warnings` vert (après déplacement de `somme_bornee` avant la doc de `validate`, ligne lazy-continuation) ; `cargo nextest run --profile ci -p kesh-core -p kesh-api --lib` **1100 passés, 5 ignorés** (`kesh-gate-logs/s37-3a/review-p3/nextest-core-api-lib.log`). Décompte : 2 tests ajoutés (balance, route) ; 1 variant `CoreError`, 1 bras de route, 1 fonction privée ; compteurs i18n et migrations inchangés.
 
 ## Dev Agent Record
 
@@ -1301,14 +1348,21 @@ l'API aussi ; ouverture à deux devises par `create_opening_entry` (au dépôt),
 
 Journaux : `/home/beat/claude/kesh-gate-logs/s37-3a/`.
 
-- **Backend complet** au dernier commit de code `f9c5567b`, base `kesh_s37_3a` remise à zéro (recréée, migrée,
-  semée) : `scripts/test-fast.sh --ci` (fmt `--check`, clippy `--workspace --all-targets -D warnings`, nextest
-  profil `ci`) — **5721 passés, 13 ignorés, 0 échec** (`gate-final.log`). Même résultat au commit `79b9a6a9`
-  (5719 passés, `gate-complet-2.log`) avant l'ajout des deux tests CR6-P4.
-- **Frontend** (arbre identique au dernier commit pour `frontend/` et les catalogues) : `npm run check`,
-  `lint-i18n-ownership`, `test:unit` — **250 fichiers, 3890 tests passés** (`c-front-1.log`) ; `npm run build` vert
-  (`c-front-build.log`).
-- **E2E complet** : E2E_A_REMPLIR
+- **Backend complet** au dernier commit de code, la fusion `e89291e6`, bases remises à zéro (recréées, migrées,
+  semées) : `scripts/test-fast.sh --ci` (fmt `--check`, clippy `--workspace --all-targets -D warnings`, nextest
+  profil `ci`) — **5724 passés, 13 ignorés, 0 échec** (`gate-final-fusion.log`). Avant la fusion : 5721 passés au
+  commit `f9c5567b` (`gate-final.log`), 5719 au commit `79b9a6a9` (`gate-complet-2.log`).
+- **Frontend** au commit de fusion : `npm run check`, `lint-i18n-ownership`, `test:unit` — **250 fichiers, 3892
+  passés, 1 échec par délai** (`i18n-repli-divergent-actif.test.ts`, 5 s dépassées pendant le gate backend
+  concurrent), rejoué seul : **10/10 passés** ; `npm run build` vert (`c-front-fusion.log`, `c-front-fusion-2.log`).
+  Avant la fusion : 3890/3890 (`c-front-1.log`).
+- **E2E complet** au commit de fusion (`LANG=fr_CH.UTF-8`, port 3373, base `kesh_e2e_s37_3a`, recette de
+  `docs/testing.md`) : **431 passés, 10 échecs, 18 ignorés** (`e2e-run.log`) — les sept de la KF-029 (#97 :
+  `mode-expert` ×2, `onboarding-path-b` ×2, `onboarding` ×3) et trois préexistants hors liste, relevés au point 7 de
+  `issues-a-ouvrir-epic-37.md` : `backup-restore-new-install.spec.ts:262` et `:381` (délai de 120 s) et
+  `bank-import.spec.ts:102` (connexion refusée après les specs de restauration) — rejoué seul : **7/7 passés**
+  (`e2e-run-bank-import.log`). Aucun échec lié à la story. Un premier E2E lancé au commit `f9c5567b` a été arrêté
+  (par son processus) à la demande de fusion, avant sa fin.
 - Gates ciblés pendant l'itération (nextest `-p kesh-db` complet ×2, binaires `journal_entries_foreign_currency`,
   `supplier_invoices_internal_number`, `chf_line_lexical`, binaires MCP et `reconciliation_e2e`,
   `admin_full_import_e2e`, `journal_entry_reversal_e2e`) : journaux `a-*.log`, `b-cible-*.log`.
@@ -1328,3 +1382,6 @@ Voir `git diff c42702f7 --stat` : 89 fichiers sous `crates/` et `docs/` — nota
 `crates/kesh-i18n/locales/{fr-CH,de-CH,it-CH,en-CH}/messages.ftl`, `crates/kesh-reconciliation/src/{manual.rs,split.rs}`,
 `crates/kesh-seed/src/pieges.rs`, `docs/migrations-idempotence-audit.md` (94 migrations, `tracked-by-sqlx` 83,
 `yes` 11, recomptés depuis le tableau).
+- 2026-11-16 — revue de code P4 ciblée (Sonnet ; une lentille, braquée sur le commit `f5ab5716`, contexte frais) : 1 finding LOW, corrigé ; 0 CRITICAL, 0 HIGH, 0 MEDIUM. **37-3a-CR-P4-1 (LOW, tests)** : le bras `EntryTotalOutOfRange` de `map_core_error` (`journal_entries.rs`) n'était exercé par aucun test (le test de route de la P3 vise `parse_line_amounts`), et la somme des crédits n'avait pas de test de débordement. Ajoutés : `map_core_error_total_hors_intervalle_rend_validation_error` (400 `VALIDATION_ERROR`, message) et `somme_des_credits_qui_deborde_est_refusee_sans_panique` (`balance.rs`). Vérifié sans finding : appelants de `accounting::validate` (grep) — `journal_entries.rs:655` et `opening_balances.rs:452` passent par `map_core_error` (bras dédié, non le repli) ; `opening_complement.rs:705` mappe en `DbError::Invariant` (équilibré par construction, lignes bornées `DECIMAL(19,4)`, débordement inatteignable) ; aucun autre `match` sur `CoreError` ; lots (`FailedProposal`), MCP et restauration n'appellent pas `validate` ; le message de la route est en français en dur, comme les bras voisins (aucune clé i18n à ajouter) ; `code()` couvre la variante ; le test de balance est rouge sans correctif (panique de `Money::sum`). Axes exercés : tous les appelants et `match`, message, rougissement des tests. Non exercés : base, E2E, manuel. Gates ciblés (`kesh-db` non touché) : fmt vert ; clippy workspace vert ; nextest `-p kesh-core -p kesh-api --lib` 1102 passés, 5 ignorés (`kesh-gate-logs/s37-3a/review-p4/`). Décompte : 2 tests ajoutés ; aucun code de production touché.
+- 2026-11-16 — **boucle de revue close** (orchestrateur) : P1 (Opus) 1 HIGH, 7 MEDIUM → P2 (Sonnet) 4 LOW → P3 ciblée (Haiku) 1 MEDIUM préexistant (débordement de `validate`) → P4 ciblée (Sonnet) 1 LOW, tests seuls, aucune ligne de production. Clôture : gate complet et E2E complet au dernier commit.
+- 2026-11-16 — **clôture** (dernier commit de code `5ca6e24c`, port 3373, base de la story sur le second MariaDB de dev, 3307 ; journaux `kesh-gate-logs/s37-3a/final2/`). Quatre gates rendus invalides par le tmpfs plein du MariaDB partagé (ENOSPC) ou par un `timeout` posé par erreur, journaux conservés (`gate-backend-*.log`), puis : `scripts/test-fast.sh --ci` (fmt, clippy `-D warnings`, nextest `ci`) **5749 passés, 13 ignorés** (`gate-backend.log`) ; Vitest **250 fichiers, 3893 passés** et `npm run build` vert (`front.log`) ; **E2E complet** (`LANG=fr_CH.UTF-8`) : **431 passés, 10 échecs, 18 ignorés** (`../../../kesh-gate-logs/s37-3a/e2e-run-final2.log`, 40,2 min). Les dix échecs : les sept de la KF-029 (#97 : `mode-expert.spec.ts:26` et `:41`, `onboarding-path-b.spec.ts:65` et `:92`, `onboarding.spec.ts:57`, `:77`, `:150`) et trois hors liste, établis préexistants à `19bf12fb` (point 7 de `issues-a-ouvrir-epic-37.md`, non rejoués sur la base comme le prévoyait le prompt) : `backup-restore-new-install.spec.ts:262` et `:381`, `opening-balances.spec.ts:156`. `bank-import.spec.ts:130`, l'autre préexistant connu, est passé cette fois. Aucun échec causé par la story ; aucun correctif de code à cette clôture.

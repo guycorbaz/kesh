@@ -354,6 +354,10 @@ pub(crate) fn map_core_error(err: CoreError) -> AppError {
         CoreError::EntryZeroTotal => {
             AppError::Validation("Écriture invalide : le total ne peut pas être nul".into())
         }
+        CoreError::EntryTotalOutOfRange => AppError::Validation(
+            "Écriture invalide : le total des débits ou des crédits dépasse la valeur admise"
+                .into(),
+        ),
         // Story 37-3a (AC-3) — un bras par variante : sans lui, le code et les
         // `details` n'atteindraient jamais le client (repli ci-dessous).
         e @ (CoreError::FxValueOutOfRange { .. }
@@ -763,7 +767,12 @@ pub(crate) fn parse_line_amounts(
         return Err(map_core_error(CoreError::EntryNegativeAmount));
     }
     let fournis = debit.is_some() || credit.is_some();
-    let somme = debit.unwrap_or_default() + credit.unwrap_or_default();
+    // Somme vérifiée : deux montants proches de la borne de `Decimal` ne
+    // doivent pas faire paniquer le handler (revue de code P2).
+    let somme = debit
+        .unwrap_or_default()
+        .checked_add(credit.unwrap_or_default())
+        .ok_or(AppError::FxLine(CoreError::FxValueOutOfRange { line }))?;
     let chf_ref = chf.or(fournis.then_some(somme));
     if let (Some(c), true) = (chf, fournis)
         && c != somme
@@ -1181,5 +1190,41 @@ mod tests {
         let (status, body) = body_json(resp).await;
         assert_eq!(status, StatusCode::CONFLICT);
         assert_eq!(body["error"]["code"], "ILLEGAL_STATE_TRANSITION");
+    }
+
+    /// Revue de code P4 de la 37-3a — le bras `EntryTotalOutOfRange` de
+    /// `map_core_error` rend 400 `VALIDATION_ERROR`, non le repli générique.
+    #[tokio::test]
+    async fn map_core_error_total_hors_intervalle_rend_validation_error() {
+        let resp = map_core_error(CoreError::EntryTotalOutOfRange).into_response();
+        let (status, body) = body_json(resp).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        assert_eq!(body["error"]["code"], "VALIDATION_ERROR");
+        let msg = body["error"]["message"].as_str().unwrap_or_default();
+        assert!(msg.contains("dépasse la valeur admise"), "message : {msg}");
+    }
+
+    /// Revue de code P3 de la 37-3a — la somme `debit + credit` d'une ligne en
+    /// devise, au débordement de `Decimal`, rend 400 `FX_VALUE_OUT_OF_RANGE`
+    /// et ne panique pas (la route, non le noyau, fait cette somme).
+    #[test]
+    fn parse_line_amounts_somme_qui_deborde_rend_fx_value_out_of_range() {
+        let max = "79228162514264337593543950335";
+        let f = ForeignLineRequest {
+            currency: Some("USD".into()),
+            amount: Some("100".into()),
+            rate: Some("0.9".into()),
+            chf: None,
+            rate_source: None,
+            side: None,
+        };
+        let err = parse_line_amounts(3, Some(max), Some(max), Some(&f)).unwrap_err();
+        assert!(
+            matches!(
+                err,
+                AppError::FxLine(CoreError::FxValueOutOfRange { line: 3 })
+            ),
+            "attendu FxValueOutOfRange ligne 3, reçu {err:?}"
+        );
     }
 }

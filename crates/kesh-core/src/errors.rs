@@ -74,6 +74,11 @@ pub enum CoreError {
     #[error("Écriture invalide : le total ne peut pas être nul")]
     EntryZeroTotal,
 
+    /// Le total des débits ou des crédits d'une écriture dépasse la valeur
+    /// représentable (revue de code P3 de la 37-3a) : refusé, jamais paniqué.
+    #[error("Écriture invalide : le total des débits ou des crédits dépasse la valeur admise")]
+    EntryTotalOutOfRange,
+
     /// Le solde de clôture annoncé d'un relevé bancaire ne correspond pas
     /// à la somme `opening + Σ transactions` à la tolérance d'un centime
     /// près. Indique un fichier tronqué ou des transactions filtrées en
@@ -154,6 +159,7 @@ impl CoreError {
             Self::EntryLineDebitCreditExclusive => "ENTRY_LINE_DEBIT_CREDIT_EXCLUSIVE",
             Self::EntryUnbalanced { .. } => "ENTRY_UNBALANCED",
             Self::EntryZeroTotal => "ENTRY_ZERO_TOTAL",
+            Self::EntryTotalOutOfRange => "ENTRY_TOTAL_OUT_OF_RANGE",
             Self::BankImportBalanceMismatch { .. } => "BANK_IMPORT_BALANCE_MISMATCH",
             Self::BankImportUnsupportedCurrency(_) => "BANK_IMPORT_UNSUPPORTED_CURRENCY",
             Self::BankImportUnknownVersion(_) => "BANK_IMPORT_UNKNOWN_VERSION",

@@ -1305,3 +1305,122 @@ async fn null_line_credit_note_falls_back_to_current_default_known_limitation(po
          d'où l'invisibilité du défaut"
     );
 }
+
+// ---------------------------------------------------------------------------
+// Story 37-3a (AC-5) — compte de produit en devise refusé sur la pièce
+// ---------------------------------------------------------------------------
+
+/// Passe la société en multi-devises et le compte en `USD`, par SQL : contourne
+/// délibérément les gardes de la Story 37-1, pour exercer le seul refus de la
+/// pièce.
+async fn set_account_usd(pool: &MySqlPool, company_id: i64, account_id: i64) {
+    sqlx::query("UPDATE companies SET multi_currency_enabled = TRUE WHERE id = ?")
+        .bind(company_id)
+        .execute(pool)
+        .await
+        .expect("multi-devises");
+    sqlx::query("UPDATE accounts SET currency = 'USD' WHERE id = ?")
+        .bind(account_id)
+        .execute(pool)
+        .await
+        .expect("compte en USD");
+}
+
+async fn count_rows(pool: &MySqlPool, table: &str, company_id: i64) -> i64 {
+    sqlx::query_scalar(&format!(
+        "SELECT COUNT(*) FROM {table} WHERE company_id = ?"
+    ))
+    .bind(company_id)
+    .fetch_one(pool)
+    .await
+    .expect("count")
+}
+
+/// Story 37-3a (AC-5) — un compte de produit **en devise** sur une ligne de
+/// facture est refusé à la **création** du brouillon, sous son nom
+/// (`AccountInForeignCurrency`, compte et devise), et aucune facture n'est
+/// écrite. Le compte est par ailleurs valide (actif, imputable, `Revenue`) :
+/// seul l'appel de `refuse_foreign_currency_accounts_in_tx` dans
+/// `validate_line_revenue_accounts_in_tx` le refuse — la création ne passe
+/// aucune écriture, le contrôle central n'y est donc pas atteint ; revue de
+/// code P1.
+#[sqlx::test(migrations = "./test-schema")]
+async fn create_rejects_foreign_currency_revenue_account(pool: MySqlPool) {
+    let seeded = seed_accounting_company(&pool).await.unwrap();
+    let contact = make_contact(&pool, seeded.company_id, seeded.admin_user_id).await;
+    let usd = add_account(&pool, seeded.company_id, "3210", "Ventes USD", "Revenue").await;
+    set_account_usd(&pool, seeded.company_id, usd).await;
+
+    let err = create_draft(
+        &pool,
+        &seeded,
+        contact,
+        &[
+            (dec!(50.00), dec!(0), None),
+            (dec!(100.00), dec!(0), Some(usd)),
+        ],
+    )
+    .await
+    .expect_err("doit être refusé");
+    match err {
+        DbError::AccountInForeignCurrency {
+            account_id: Some(id),
+            ref currency,
+        } => {
+            assert_eq!(id, usd);
+            assert_eq!(currency, "USD");
+        }
+        other => panic!("attendu AccountInForeignCurrency, reçu {other:?}"),
+    }
+    assert_eq!(count_rows(&pool, "invoices", seeded.company_id).await, 0);
+}
+
+/// Story 37-3a (AC-5) — le compte de produit d'un brouillon **passé en devise
+/// après l'enregistrement** est refusé à la **validation**, sous son nom
+/// (`AccountInForeignCurrency`) et non par le contrôle central de l'écriture
+/// (`AccountRequiresCurrency` sur une ligne générée) ; aucune écriture n'est
+/// passée et la facture reste en brouillon. Retirer l'appel du site dans
+/// `validate_line_revenue_accounts_in_tx` ferait sortir l'autre variante ;
+/// revue de code P1.
+#[sqlx::test(migrations = "./test-schema")]
+async fn validate_rejects_revenue_account_made_foreign_currency_after_draft(pool: MySqlPool) {
+    let seeded = seed_accounting_company(&pool).await.unwrap();
+    let contact = make_contact(&pool, seeded.company_id, seeded.admin_user_id).await;
+    let services = add_account(&pool, seeded.company_id, "3200", "Prestations", "Revenue").await;
+
+    let invoice_id = create_draft(
+        &pool,
+        &seeded,
+        contact,
+        &[(dec!(100.00), dec!(0), Some(services))],
+    )
+    .await
+    .expect("create draft");
+    set_account_usd(&pool, seeded.company_id, services).await;
+    let entries_before = count_rows(&pool, "journal_entries", seeded.company_id).await;
+
+    let err =
+        invoices::validate_invoice(&pool, seeded.company_id, invoice_id, seeded.admin_user_id)
+            .await
+            .expect_err("doit être refusé");
+    match err {
+        DbError::AccountInForeignCurrency {
+            account_id: Some(id),
+            ref currency,
+        } => {
+            assert_eq!(id, services);
+            assert_eq!(currency, "USD");
+        }
+        other => panic!("attendu AccountInForeignCurrency, reçu {other:?}"),
+    }
+    assert_eq!(
+        count_rows(&pool, "journal_entries", seeded.company_id).await,
+        entries_before
+    );
+    let status: String = sqlx::query_scalar("SELECT status FROM invoices WHERE id = ?")
+        .bind(invoice_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(status, "draft");
+}
