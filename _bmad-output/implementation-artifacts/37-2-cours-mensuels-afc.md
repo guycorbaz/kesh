@@ -1,6 +1,6 @@
 # Story 37-2 : table des cours (mensuels AFC et journaliers), cours saisis par la société, récupération des cours officiels (AFC / OFDF)
 
-Status: ready-for-dev
+Status: review
 
 *Fiche rédigée le 2026-11-14 (Opus 5.5), branche `epic/37-multi-devises`. Epic 37, C-37-1 (amendé par D9/D10, CR-1),
 C-37-6, D9, D10. Suit 37-1. **Migration non breaking** : deux tables système `_kesh_*` et **une table applicative**
@@ -1096,11 +1096,11 @@ cours sans saisie.
 
 ## Tâches
 
-- [ ] Migration + inscriptions (AC-1), dont `exchange_rates` dans `TABLES_TO_TRUNCATE`, `TABLES_EXPORTEES`
+- [x] Migration + inscriptions (AC-1), dont `exchange_rates` dans `TABLES_TO_TRUNCATE`, `TABLES_EXPORTEES`
       (ou exclusion motivée) ; table inscrite à la liste close des absences admises de 37-1 (R1 : fenêtre d'import
       inchangée, registre de rejeu et `admin_full_import_e2e.rs` non touchés, test de 37-1 AC-6 étendu à la table) ;
       `_kesh_fetched_exchange_rates` et `_kesh_exchange_rate_fetch` à `TABLES_SYSTEME`.
-- [ ] `kesh-core::exchange_rates` (AC-2 : deux analyses, une seule analyse des `<devise>`, bornes d'un cours seul) ;
+- [x] `kesh-core::exchange_rates` (AC-2 : deux analyses, une seule analyse des `<devise>`, bornes d'un cours seul) ;
       `kesh-db::repositories::exchange_rates` (écriture des valeurs publiées en transaction, copie, lecture, état,
       cours retenus). **Noms fixés ici, repris tels quels par 37-3a et 37-5** (U1, CR-5) : la lecture du **cours
       retenu par la société** — `find_company_rate_in_tx(conn: &mut MySqlConnection, company_id: i64, currency: &str,
@@ -1119,7 +1119,7 @@ cours sans saisie.
       lignes d'écriture `afc` déjà passées gardent leur cours ; inchangées, leur `PUT` passe, mais une ligne `afc`
       nouvelle ou modifiée à un autre cours que le cours retenu est refusée `FX_RATE_NOT_AFC` (37-3a, A17) : l'écart
       n'est jamais muet (rouge, avertissement par société, audit du ↑).
-- [ ] `kesh-api` : trait `RateSource`, `HttpRateSource`, source factice et endpoint `_test` (AC-3), boucle (AC-4,
+- [x] `kesh-api` : trait `RateSource`, `HttpRateSource`, source factice et endpoint `_test` (AC-3), boucle (AC-4,
       `main.rs`), routes (AC-5, `lib.rs` : `GET` dans `authenticated_routes` ; `POST /fetch`, `PUT /exchange-rates/rates`,
       `POST /exchange-rates/rates/reset`, `GET /exchange-rates/notices`, `POST /exchange-rates/notices/acknowledge`,
       `PUT /fiscal-years/{id}/rate-kinds` dans `comptable_routes`), variantes `AppError` (dont `FX_RATE_INVALID`), audit
@@ -1130,12 +1130,12 @@ cours sans saisie.
       `accounts::create` et `accounts::update` de 37-1, avec `copied` à leur audit (aucun dans
       `companies::update_currency_settings`, vide par construction) ; copie limitée aux devises des comptes de la
       société (A24), paramètre `currencies`, `hasAccount` des lignes du tableau.
-- [ ] CR-2, CR-3 : tâche automatique au calendrier (AC-4 : `unites_utiles` — exercices de durée quelconque, S4 —,
+- [x] CR-2, CR-3 : tâche automatique au calendrier (AC-4 : `unites_utiles` — exercices de durée quelconque, S4 —,
       `prochain_reveil` — quotidien, puis pause jusqu'au plus tôt de « obtention + 24 jours » et du 25 du mois obtenu, jamais avant le 1er de ce mois, S1 —, démarrage, connexion,
       revérification du mois courant à chaque tour, A10), filtrage strict et tests hostiles (AC-2, R5), routes `GET /fiscal-years/{id}/exchange-rates` et
       `PUT /fiscal-years/{id}/rate-kinds` (AC-5 ; `GET` dans `authenticated_routes`, `PUT` dans `comptable_routes`),
       audit `fiscal_year.rate_kinds_updated`, registre des routes (+1 de plus).
-- [ ] CR-3 (S6), **récrite par CR-5 (U1, U3, U4)** : colonne `first_fetched_at` (et `value_changed_at`) de
+- [x] CR-3 (S6), **récrite par CR-5 (U1, U3, U4)** : colonne `first_fetched_at` (et `value_changed_at`) de
       `_kesh_fetched_exchange_rates` (AC-1) ; règle d'écriture de la valeur publiée (AC-3) ; copie (AC-3 bis) ; colonnes
       `source`, `acknowledged_rate`, `acknowledged_at` d'`exchange_rates` et leurs `CHECK` (AC-1) ; routes `GET
       /exchange-rates/notices`, `POST /exchange-rates/notices/acknowledge` (par société) et `POST
@@ -1145,10 +1145,10 @@ cours sans saisie.
       connexion et son acquittement (AC-6) ; tests (dépôt, API, Vitest, E2E). Les colonnes `republished_*`,
       `notice_acknowledged_at`, la route `…/republications/adopt` et l'action `exchange_rates.republication_adopted` de
       CR-3 ne se font **pas**.
-- [ ] Frontend : page `settings/exchange-rates` (tableau annuel par exercice, choix des genres, champs éditables, « AFC ✓ » / « AFC : … » et ↑), carte
+- [x] Frontend : page `settings/exchange-rates` (tableau annuel par exercice, choix des genres, champs éditables, « AFC ✓ » / « AFC : … » et ↑), carte
       des paramètres, types, API (fonctions `lookup`, `fetch`, `putRate`, `resetRate`, `notices`, `acknowledge` ; la
       forme de `lookup` et de `Cell` est celle de l'AC-5), codes d'erreur, Vitest (AC-6).
-- [ ] Tests : parseur (fixture : unités 1/100/1000/10000, devise écartée, mois refusé) ; client contre un serveur HTTP
+- [x] Tests : parseur (fixture : unités 1/100/1000/10000, devise écartée, mois refusé) ; client contre un serveur HTTP
       local (délai, 500, redirection non suivie, XML tronqué, corps trop gros, mois différent → rien d'écrit) ;
       `un_tour` sans exercice multi-devises ouvert : aucun appel sortant (R2) ; `un_tour` contre une source injoignable rend sans paniquer, écrit `error` et
       `triggered_by = 'auto'`, ne touche aucun cours ; `lookup` n'écrit rien et ne sort pas ; `POST /fetch` refusé au rôle
@@ -1162,7 +1162,7 @@ cours sans saisie.
       compté (`corrected`) ; un `POST /fetch` qui a attendu le verrou derrière une récupération réussie du même mois ne rappelle pas
       la source ; un succès efface l'échec mémorisé du mois ; Vitest : un 503 de `POST /fetch` n'allume pas le bandeau dégradé ; E2E (écran, récupération servie par
       la source factice du mode test).
-- [ ] Tests CR-1 (D9, D10) : parseur journalier (fixture, cinq décimales, `land_en` ignoré, racine vide) ; `fetch_day`
+- [x] Tests CR-1 (D9, D10) : parseur journalier (fixture, cinq décimales, `land_en` ignoré, racine vide) ; `fetch_day`
       contre le serveur local : `<datum>` antérieur de deux jours (dimanche) accepté et stocké sous la date demandée
       avec `source_date`, `<datum>` postérieur ou antérieur de plus de 7 jours → `date_mismatch`, rien d'écrit ;
       `POST /fetch { date }` : aujourd'hui et demain → 400, audité avec le genre ; la tâche automatique ne demande que
@@ -1188,23 +1188,26 @@ cours sans saisie.
       cours saisi égal à la valeur publiée conservé (`source: "manual"`) ; deux `PUT` de création simultanés → un 200 et
       un 409 ; `reset` sur une ligne existante sans `version` → 409, avec `version` sur une case vide → 400 ;
       `registry_entries_are_within_import_window` vert avec la table créée (R1).
-- [ ] CR-5 (U4) : `applyToNextOpening` de `PUT /fiscal-years/{id}/rate-kinds` (AC-5 : exercice suivant lu sous
+- [x] CR-5 (U4) : `applyToNextOpening` de `PUT /fiscal-years/{id}/rate-kinds` (AC-5 : exercice suivant lu sous
       `FOR UPDATE` après l'exercice réglé, ouvert seulement, audit unique, aucune écriture modifiée) ; dialogue de
       l'écran (AC-6) ; tests.
-- [ ] CR-4 (T4, T2) : fonction pure unique `openingDate`/`closingDate` dans `kesh-core` (genres `day` et `month`,
+- [x] CR-4 (T4, T2) : fonction pure unique `openingDate`/`closingDate` dans `kesh-core` (genres `day` et `month`,
       début en cours de mois, bornes de l'AC-5), partagée par le `GET` du tableau et `unites_utiles` (AC-4, AC-5), et
       son jumeau TypeScript de 37-3b, gardés par la fixture commune `fx_opening_dates.json` (créée ici, lue par le
       test Rust et par le test Vitest de 37-3b) ; case d'Ouverture en genre `month` (propre, ou liée à la
       première colonne), libellé « cours mensuel du dernier mois de l'exercice précédent » et aide (AC-6, quatre
       locales) ; notices sur `openingDate` ; tests des exercices au 1er janvier, 1er avril, 1er juillet, 15.03, six et
       dix-huit mois (serveur et Vitest).
-- [ ] Manuels (`.tex` seulement), section *Note de version* de la fiche (pas d'écriture au `CHANGELOG.md`), `Cargo.lock` (régénéré après chaque reprise de `main`).
+- [x] Manuels (`.tex` seulement), section *Note de version* de la fiche (pas d'écriture au `CHANGELOG.md`), `Cargo.lock` (régénéré après chaque reprise de `main`).
 
 ## Note de version
 
 *(Texte prêt à assembler au `CHANGELOG.md` à la release ; la fiche n'écrit jamais au `CHANGELOG.md`.)*
 
 - **Added** — cours mensuels de l'AFC récupérés automatiquement pour les exercices multi-devises (accès sortant HTTPS, mandataire par `HTTPS_PROXY`) ; cours de la société et d'une ligne ; erreur `FX_RATE_INVALID`.
+- **Added** — écran *Paramètres → Cours de change* : tableau annuel par exercice multi-devises (une colonne par mois, Ouverture, Clôture), cours retenu par la société éditable et reprise de la valeur publiée (↑), genres d'ouverture et de clôture avec report à l'exercice suivant, « Récupérer les cours manquants », « Revérifier les cours publiés » ; bandeau des corrections de l'AFC à acquitter, par société.
+- **Added** — API : `GET /api/v1/exchange-rates`, `/exchange-rates/status`, `/exchange-rates/lookup`, `/exchange-rates/notices`, `GET /api/v1/fiscal-years/{id}/exchange-rates` ; `POST /api/v1/exchange-rates/fetch`, `PUT /api/v1/exchange-rates/rates`, `POST /api/v1/exchange-rates/rates/reset`, `POST /api/v1/exchange-rates/notices/acknowledge`, `PUT /api/v1/fiscal-years/{id}/rate-kinds` ; codes `RATE_NOT_PUBLISHED` (404), `RATE_SOURCE_UNAVAILABLE` (503), `RATE_UNAVAILABLE` (404), `FX_RATE_INVALID` (400). Export CSV : table `exchange_rates` (cours à 10 décimales).
+- **Migration** — `20261114000002_exchange_rates`, non breaking (DDL seul : deux tables système, une table applicative) ; `kesh_version_min_required` inchangé. Comme toute migration, le retour à la version précédente passe par la sauvegarde d'avant la mise à jour.
 - **Sauvegarde** — un `.keshbackup` 0.17.6 ou antérieur se réimporte (mono-devise) ; cours saisis vides.
 - **Compteurs** : recomptés depuis la source après chaque reprise de `main` (`LIB_ROUTES`, audit des migrations, `Cargo.lock`).
 
@@ -1228,6 +1231,151 @@ cours sans saisie.
   `POST_RESTORE_BACKFILLS`, `post_restore.rs:211-217`). Depuis CR-2 (R1), la liste close des absences admises de 37-1
   évite cette fermeture pour les tables de l'Epic 37.
 - Pas d'audit automatique : `audit_log.user_id` est `NOT NULL` (C-37-6).
+
+## Dev Agent Record
+
+*(Développement du 2026-11-16, Opus 5.5, par phases confiées à des sous-agents — A (migration, kesh-core, kesh-db),
+B1 (source, récupération, tâche), B2 (routes des cours de la société, tableau, genres, copie), C (frontend), D (manuels,
+E2E, captures) — chacune remise à l'orchestrateur de la story, qui a commité. Journaux, rapports de phase, captures et
+scripts dans `kesh-gate-logs/s37-2/` (hors dépôt).)*
+
+### Commits
+
+`0025739f` (phase A) · `77334572` (phase B1) · `0c218a71` (phase B2) · `6a0b663c` (phase C) · `6e0638e6` (phase D,
+manuels et E2E, plus la note de source de l'écran alignée sur S1 — **dernier commit de code**).
+
+### Gates réellement exécutés au dernier commit de code (`6e0638e6`)
+
+- Base `kesh_s37_2` remise à zéro avant (DROP/CREATE, migrations, seed).
+- `cargo fmt --all -- --check` vert ; `cargo build --workspace --all-targets` vert ; `cargo clippy --workspace
+  --all-targets -- -D warnings` vert.
+- `cargo nextest run --workspace --profile ci` : **5671 exécutés, 5671 passés, 13 ignorés** (`final/nextest.log`).
+- Frontend : `npm run check` 0 erreur, 29 avertissements (fichiers non touchés) ; `lint-i18n-ownership` PASS ;
+  `test:unit` **250 fichiers, 3890 tests** ; `npm run build` vert.
+- **E2E complet** (base `kesh_e2e_s37_2` reconstruite, recette de `docs/testing.md`, port 3372, dossiers
+  `/tmp/kesh-e2e-s372/…` passés au backend et au runner, `LANG=fr_CH.UTF-8`) : **431 passés, 10 échecs, 18 ignorés**,
+  40,1 min (`final/e2e.log`). Les trois tests de `exchange-rates.spec.ts` passent. Échecs :
+  - **7 KF-029 (#97)**, attendus : `mode-expert.spec.ts:26`, `:41` ; `onboarding-path-b.spec.ts:65`, `:92` ;
+    `onboarding.spec.ts:57`, `:77`, `:150` ;
+  - **3 hors liste, préexistants**, déjà constatés sur la base `19bf12fb` avant l'Epic 37 (point 7 de la liste des
+    issues à ouvrir de l'epic) : `backup-restore-new-install.spec.ts:262` et `:381` (délai de 120 s sur un clic),
+    `opening-balances.spec.ts:156` (toast sur le bouton *Compléter*). Aucun ne touche une route ni un écran de la story.
+  - Le journal du backend porte une erreur 1213 (interblocage) pendant l'import de `backup-restore-new-install` ; vue
+    aussi aux E2E de 37-1, jamais à celui de la base `19bf12fb` : tracée (point 11 de la liste de l'epic), non
+    diagnostiquée ici.
+
+### Tests ajoutés (recomptés au diff `28439396..6e0638e6`)
+
+- Rust : **119** attributs de test ajoutés, 0 retiré — `kesh-core` 41 (`exchange_rates/parse/tests.rs` 26,
+  `exchange_rates/mod.rs` 12, `tests/fx_opening_dates.rs` 2, `horloge.rs` 1), `kesh-db` 17
+  (`tests/exchange_rates_repository.rs` 13, dépôt 3, `migrations_upgrade_path` 1), `kesh-api` 61
+  (`exchange_rates_fetch_e2e` 22, `exchange_rates_api_e2e` 15, `exchange_rates_source_http` 10, module
+  `exchange_rates` 10, `rejeu_interblocage_e2e` 1, `admin_full_import_e2e` 1, `csv_tables` 1, `routes/exchange_rates` 1) ;
+  assertions ajoutées à des tests existants (`onboarding_audit_e2e`, test 0.17.6 de 37-1 AC-6, gardes de backup).
+- Frontend : **84** appels `it(`/`test(` ajoutés aux tests unitaires (97 tests exécutés de plus : 3793 → 3890, des
+  tableaux de cas) et **3** E2E (`exchange-rates.spec.ts`).
+
+### Fichiers
+
+88 fichiers (diff `28439396..6e0638e6`). Neufs : migration `20261114000002_exchange_rates.sql` ;
+`kesh-core/src/exchange_rates/{mod,parse}.rs`, `parse/tests.rs`, `kesh-core/tests/fx_opening_dates.rs` et ses
+fixtures synthétiques (`afc_monthly_synthetic.xml`, `afc_daily_synthetic.xml`, `fx_opening_dates.json`) ;
+`kesh-db/src/repositories/exchange_rates.rs`, `kesh-db/tests/exchange_rates_repository.rs` ;
+`kesh-api/src/exchange_rates/{mod,source,recuperation}.rs`, `kesh-api/src/routes/exchange_rates.rs`, tests
+`exchange_rates_{api_e2e,fetch_e2e,source_http}.rs` ; frontend `lib/features/exchange-rates/` (types, API, règles de
+la grille, libellés, accès, `RateCell`, `CorrectionDialog`, `ExchangeRatesScreen`, `ExchangeRateNoticesBanner` et
+leurs tests), page `routes/(app)/settings/exchange-rates/+page.svelte`, `api-client-degraded-503.test.ts`,
+`tests/e2e/exchange-rates.spec.ts`. Modifiés notables : `backup.rs` (inscriptions, `Absence::Table`), `fiscal_year.rs`
+(`RateKind` réexporté), `repositories/{fiscal_years,accounts}.rs` (copie, genres), `lib.rs`, `main.rs`,
+`routes/{auth,fiscal_years,test_endpoints}.rs`, `errors.rs` (deux crates), `audit_labels.rs`, `exports/`,
+`util.rs` (aide `code()` partagée avec `auto_backup`), `kesh-core/horloge.rs` (`debut_jour_suisse`), quatre `.ftl`,
+`api-client.ts` (`degradedOn503`), `settings/+page.svelte`, `(app)/+layout.svelte`, `user-manual.tex`,
+`admin-manual.tex`, `docs/migrations-idempotence-audit.md`, `migrations.sha384`, squash `test-schema`, `Cargo.lock`.
+
+### Étape 0 — prémisses vérifiées au code, écarts à la fiche
+
+Relevé complet : `kesh-gate-logs/s37-2/etape0.md` (HEAD `28439396`). Écarts qui ont changé le code :
+- la liste close des absences admises vit dans `crates/kesh-db/src/backup.rs` (`ABSENCES_ADMISES_EPIC_37`, :154 ;
+  `table_absente_admise`, :206), et non dans `admin_backup/import.rs` (qui l'appelle, :252-256) ;
+- l'horloge et le jour de Zurich existent déjà (Epic 35 : `kesh_core::horloge::{Horloge, jour_suisse}`,
+  `AppState.horloge`, lib.rs:116) : **pas** de `chrono-tz` dans `kesh-api` ni d'aide `aujourdhui_zurich` neuve —
+  `state.horloge.aujourd_hui()` partout, une aide pure `debut_jour_suisse` ajoutée à `kesh_core::horloge` pour le
+  réveil de la tâche ; la garde `date_du_jour_garde.rs` reste verte ;
+- `RateKind { Day, Month }` existait (`kesh-db/src/entities/fiscal_year.rs:76`) : déplacé dans `kesh-core`, réexporté ;
+- `AppError` n'a pas `MultiCurrencyDisabled`, `CurrencyUnknown` ni `OptimisticLockConflict` : ce sont des `DbError`
+  (kesh-db `errors.rs:1016`), traduits au bras `AppError::Database` (kesh-api `errors.rs:3852`) ;
+- aucun point d'appel préparé par 37-1 pour la copie (aucun « 37-2 » au code) ; `put()` d'`api-client.ts` n'accepte
+  pas `CallOptions` ; aucun format décimal à 10 décimales (créé : `fmt_rate`) ; `migrations.sha384` est à la racine de
+  `kesh-db` ; nombreux numéros de ligne déplacés (`RESET_PRESERVED_TABLES` :228, `TABLES_SYSTEME` :1040,
+  `restore_body` :844, `AppState` :62, `new_for_tests` :128, `TEST_ENDPOINT_ROUTES` :642, manuel d'administration :3247).
+- GET réel unique de contrôle (`xmlavgmonth?j=2026&m=11`, 2026-11-16 09:36 UTC, `etape0-get.md`) : forme conforme
+  au § *Source* (72 devises, unités 1/100/1000/10000) ; **la réponse n'a pas d'en-tête `Content-Length`** — la lecture
+  bornée par morceaux est donc le seul garde de taille effectif.
+
+### Choix tranchés
+
+- **C-37-2-1 — collation** : `currency`, `source`, `kind` en `ascii_general_ci` (et non `ascii_bin`), `CHECK` en
+  `BINARY`, comme C-37-1-1 (sqlx-mysql refuse de décoder une colonne en collation binaire).
+- **C-37-2-2 — `RateKind` dans `kesh-core`**, réexporté par `kesh_db::entities` (`FiscalYear` en
+  `#[sqlx(try_from = "String")]`) : un seul type ; l'orphan rule interdit l'encodage sqlx d'un type de `kesh-core`.
+- **C-37-2-3 — copie AC-3 bis par lecture puis `INSERT` ligne à ligne** (ordre de la clé, doublon 1062 sauté) et non
+  `INSERT … SELECT` : deux `INSERT … SELECT` concurrents rendaient 1467 (verrou AUTO-INC), une 500 non rejouée. Écart à
+  la lettre de l'AC-3 bis, motivé dans la doc de `copy_fetched_in_tx`.
+- **C-37-2-4** — le mois d'ouverture `month` est lui aussi borné par le mois suivant dans `unites_utiles` ; une PI ou un
+  CDATA ne sont refusés que dans un élément lu, une entité inconnue partout ; un `<monat>` sans devise rend
+  `NoValidRate`, une racine sans enfant `NotPublished`.
+- **C-37-2-5** — audit `exchange_rates.fetched` écrit **dans** la transaction des cours (atomique) ; un tour sans
+  appel effectif n'écrit pas l'état ; `new_for_tests` pose `rate_login_trigger` (aucun tour détaché dans les tests
+  existants).
+- **C-37-2-6 — ordre des refus** : `rate` non décimal → 400 `VALIDATION_ERROR` au stade des paramètres, ses bornes →
+  `FX_RATE_INVALID` après la devise ; bornes 2000-01-01..2099-12-31 aussi aux `GET` et à l'acquittement ;
+  `versionForbidden` → 400 `VALIDATION_ERROR` (clé `error-exchange-rate-version-forbidden`).
+- **C-37-2-7 — tableau annuel et `PUT /rate-kinds`** jugent le mode de l'**exercice** (404 puis 409 `fiscalYearId`) ;
+  lignes : comptes actifs, compte archivé s'il a une ligne dans l'exercice ; exercice suivant verrouillé seulement si la
+  clôture change et que `applyToNextOpening` est vrai ; copie sur les unités neuves seulement ; `copied` au détail.
+- **C-37-2-8 — `pre_upgrade_backup`** : `exchange_rates` ajoutée à `TABLES_EN_ATTENTE` (créée après la base partielle
+  du test), assertions inchangées.
+- **C-37-2-9 — écran** : une valeur égale à la valeur publiée sur une ligne `afc` corrigée envoie `reset` ; toute
+  écriture relit le tableau ; exercice suivant clos → case U4 désactivée et décochée ; « Revérifier » ne relance que
+  les colonnes où une valeur publiée existe ; le bandeau lit d'abord la société (mono-devise : aucun appel) ; rouge par
+  le jeton `text-error` ; option U3 « toutes les sociétés » rendue désactivée dans le dialogue gouverné par
+  `CAN_MANAGE_SEVERAL_COMPANIES = false` (fragment assumé de `textes_coherents` G18-ter).
+- **C-37-2-10 — manuel** : coche « ✓ » tracée en TikZ (`\keshcoche`), la police n'ayant pas le glyphe.
+
+### Registre et compteurs (recomptés depuis la source)
+
+- Routes : `LIB_ROUTES` 147 → **152** (+5), tracées 140 → **145**, registre 150 → **156** (+6, avec
+  `POST /_test/exchange-rates/source`), `sans_ecriture` 120 → **126**, point (vi) 27 → **32** ; manuel
+  d'administration « 145 des 152 », « 145 + 4 + 3 = 152 ».
+- Migrations : **93** fichiers, 93 lignes au tableau d'audit ; `yes` 11, `tracked-by-sqlx` 82, `no` 0.
+- Gardes i18n frontend : `sitesTotal` 3093 → 3184 ; `i18n-libelle-en-dur` candidates 94 → 106, `conforme` 80 → 92.
+- 81 clés `exchange-rates-*` par locale (écran), plus les clés d'erreur et d'audit (quatre locales, parité).
+
+### Hors périmètre et limites
+
+- Les PDF des manuels ne sont pas régénérés (release). Manuels de/it/en non tenus en parallèle (comme 37-1).
+- La définition « moyenne du 25 au 24, publiée le 25 » n'est écrite nulle part (non confirmée, AC-8).
+
+### Demandes à l'orchestrateur (issues, non ouvertes ici)
+
+Ajoutées à `kesh-gate-logs/issues-a-ouvrir-epic-37.md` : n° 8 (portée « toutes les sociétés » du ↑, C-37-8), n° 9
+(mention « AFC corrigé » sur trois lignes, P4), n° 10 (aucune mise en page téléphone, préexistant), n° 11 (interblocage
+1213 à l'import pendant l'E2E, à diagnostiquer, P2).
+
+### Écarts aux consignes de travail
+
+- Phase A : quelques éditions par script (Python sur `backup.rs`, la ligne et les compteurs de l'audit, la fixture JSON
+  générée par un oracle indépendant ; `echo >>` sur `migrations.sha384`) au lieu de l'outil d'édition ; un `git
+  checkout --` du squash avant sa régénération. Contenu relu par les gates complets.
+- Phase B1 : rendue avec quatre rouges hors de son rapport (`mcp_gardes_lexicales`, `dates_recues_garde` ×2,
+  `onboarding_audit_e2e`), corrigés en phase B2.
+
+### Captures (recette visuelle, thème clair)
+
+`kesh-gate-logs/s37-2/captures/` (15 fichiers, regardés un à un) : exercice au 1er juillet avec un cours saisi et
+son ↑ ; « AFC corrigé » en rouge, son ↑ direct et le bandeau ; bandeau seul puis état après ↑ ; Ouverture et Clôture
+en genre `day` ; dialogue U4 ; genres `month` (Ouverture liée) et exercice suivant passé en ouverture mensuelle ;
+lecture seule (Consultation) ; carte des paramètres ; largeur 390 px.
 
 ## Change Log
 
@@ -1674,3 +1822,21 @@ cours sans saisie.
   lecture du mode sous le `FOR UPDATE` de l'exercice gardée : verrou déjà pris). Non exercés : AC-4 au-delà des
   unités utiles, AC-6 au-delà du sélecteur, code, i18n, manuels. Décompte : 12 FR, 8 NFR (inchangé).
 - 2026-11-16 — alignement sur les règles de travail à plusieurs (Sonnet) : PDF des manuels non commités, `.tex` seulement (3 remplacements) ; CHANGELOG remplacé par la section *Note de version* (1 remplacement, section ajoutée) ; compteurs « recomptés depuis la source après chaque reprise de `main` » (3 ajouts). Fond des AC inchangé.
+- 2026-11-16 — étape 0 du développement (Opus 5.5) : prémisses de la fiche relues au code (HEAD `28439396`, relevé
+  `kesh-gate-logs/s37-2/etape0.md`). Écarts : la liste close des absences admises est dans `kesh-db/src/backup.rs`
+  (`ABSENCES_ADMISES_EPIC_37` :154, `table_absente_admise` :206), non dans `admin_backup/import.rs` (:252-256 l'appelle) ;
+  l'horloge de Zurich existe déjà (`kesh_core::horloge`, `AppState.horloge` lib.rs:116) — pas de `chrono-tz` dans
+  `kesh-api`, `state.horloge.aujourd_hui()` remplace `aujourdhui_zurich` ; `RateKind` existait
+  (`entities/fiscal_year.rs:76`) ; `MultiCurrencyDisabled`, `CurrencyUnknown`, `OptimisticLockConflict` sont des
+  `DbError` (kesh-db `errors.rs:1016`), non des `AppError` ; aucun point d'appel de la copie préparé par 37-1 ; `put()`
+  d'`api-client.ts` sans `CallOptions` ; aucun format à 10 décimales ; lignes déplacées (`RESET_PRESERVED_TABLES` :228,
+  `TABLES_SYSTEME` :1040, `restore_body` :844, `new_for_tests` :128, `TEST_ENDPOINT_ROUTES` :642, `admin-manual.tex`
+  :3247). GET réel unique de contrôle (`xmlavgmonth?j=2026&m=11`) : forme conforme, **sans `Content-Length`**.
+- 2026-11-16 — développement (dev-story, Opus 5.5, par phases A, B1, B2, C, D) : AC-1 à AC-9 livrés ; gate complet au
+  dernier commit de code `6e0638e6` — fmt, build, clippy `-D warnings` verts, nextest **5671/5671** (13 ignorés),
+  frontend `check` 0 erreur, `lint-i18n-ownership` PASS, Vitest **3890** (250 fichiers), `build` vert ; E2E complet
+  (`LANG=fr_CH.UTF-8`) **431 passés, 10 échecs (7 KF-029 + 3 préexistants hors liste, constatés sur `19bf12fb`),
+  18 ignorés**, `exchange-rates.spec.ts` 3/3 ; tests ajoutés : 119 Rust, 84 appels Vitest (+97 exécutés), 3 E2E ;
+  registre des routes +5 routes / +6 au total / (vi) 27 → 32 ; migrations 93 (11 `yes`, 82 `tracked-by-sqlx`) ; choix
+  C-37-2-1 à C-37-2-10 (collation `ascii_general_ci`, `RateKind` dans `kesh-core`, copie par `INSERT` ligne à ligne…) ;
+  quatre défauts tracés à la liste de l'epic (n° 8 à 11) ; détail au Dev Agent Record. Statut → `review`.
