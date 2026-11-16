@@ -121,6 +121,19 @@ pub struct FiscalYear {
     pub updated_at: NaiveDateTime,
 }
 
+impl FiscalYear {
+    /// Ses dates et ses deux genres, pour le calcul des unités de cours utiles
+    /// (Story 37-2, AC-3 bis, AC-4, AC-5).
+    pub fn exercice_devises(&self) -> kesh_core::exchange_rates::ExerciceDevises {
+        kesh_core::exchange_rates::ExerciceDevises {
+            start: self.start_date,
+            end: self.end_date,
+            opening_kind: self.opening_rate_kind,
+            closing_kind: self.closing_rate_kind,
+        }
+    }
+}
+
 /// Données de création d'un exercice comptable.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NewFiscalYear {

@@ -857,6 +857,67 @@ pub fn serialize_vat_rates_csv<W: Write>(rows: &[VatRate], writer: W) -> Result<
     csv.flush().map_err(|e| map_flush_err("vat_rates", e))
 }
 
+/// Format d'un **cours de change** (Story 37-2) : toujours 10 décimales, la
+/// précision de `exchange_rates.rate` (`DECIMAL(20,10)`). ⚠️ Jamais
+/// [`fmt_decimal`], qui arrondirait le cours à 2 décimales — un cours de
+/// 0.9123456789 exporté 0.91 serait faux dans l'autre logiciel.
+fn fmt_rate(d: Decimal) -> String {
+    format!("{d:.10}")
+}
+
+/// Format `Option<Decimal>` d'un cours → 10 décimales ou chaîne vide.
+fn fmt_opt_rate(d: Option<Decimal>) -> String {
+    d.map(fmt_rate).unwrap_or_default()
+}
+
+/// Sérialise les cours de change **retenus par la société** (Story 37-2,
+/// `exchange_rates`) : cours à 10 décimales, source (`afc`, `manual`, ou la
+/// valeur lue telle quelle), acquittement et auteur (`updated_by` vide = ligne
+/// écrite par Kesh).
+pub fn serialize_exchange_rates_csv<W: Write>(
+    rows: &[kesh_db::repositories::exchange_rates::CompanyRate],
+    writer: W,
+) -> Result<(), AppError> {
+    let mut w = writer;
+    write_csv_bom(&mut w)?;
+    let mut csv = make_csv_writer(w);
+    csv.write_record([
+        "id",
+        "company_id",
+        "currency",
+        "kind",
+        "rate_date",
+        "rate",
+        "source",
+        "version",
+        "acknowledged_rate",
+        "acknowledged_at",
+        "updated_by",
+        "created_at",
+        "updated_at",
+    ])
+    .map_err(|e| map_csv_err("exchange_rates", e))?;
+    for r in rows {
+        csv.write_record([
+            r.id.to_string(),
+            r.company_id.to_string(),
+            txt(r.currency.clone()),
+            r.kind.as_str().to_string(),
+            fmt_date(r.rate_date),
+            fmt_rate(r.rate),
+            txt(r.source.as_str().to_string()),
+            r.version.to_string(),
+            fmt_opt_rate(r.acknowledged_rate),
+            fmt_opt_dt(r.acknowledged_at),
+            fmt_opt_i64(r.updated_by),
+            fmt_dt(r.created_at),
+            fmt_dt(r.updated_at),
+        ])
+        .map_err(|e| map_csv_err("exchange_rates", e))?;
+    }
+    csv.flush().map_err(|e| map_flush_err("exchange_rates", e))
+}
+
 /// Sérialise les `DunningLevel` (Story 21-3, #231) — niveaux de rappel configurés.
 pub fn serialize_dunning_levels_csv<W: Write>(
     rows: &[DunningLevel],
@@ -1687,6 +1748,54 @@ mod tests {
     use chrono::NaiveTime;
     use kesh_db::entities::{AccountRole, AccountType, Journal as JournalEnum};
     use rust_decimal_macros::dec;
+
+    /// Story 37-2 : un cours retenu s'exporte à **10 décimales** (jamais
+    /// arrondi à 2 par `fmt_decimal`), sa source et son auteur tels quels
+    /// (`updated_by` vide = copie de Kesh).
+    #[test]
+    fn exchange_rates_csv_exports_ten_decimals() {
+        use kesh_db::repositories::exchange_rates::{CompanyRate, RateOrigin};
+        let ts = NaiveDate::from_ymd_opt(2026, 1, 2)
+            .unwrap()
+            .and_hms_opt(8, 0, 0)
+            .unwrap();
+        let ligne = |source, rate, updated_by| CompanyRate {
+            id: 7,
+            company_id: 3,
+            currency: "JPY".into(),
+            kind: kesh_core::exchange_rates::RateKind::Month,
+            rate_date: NaiveDate::from_ymd_opt(2026, 1, 1).unwrap(),
+            rate,
+            source,
+            version: 2,
+            acknowledged_rate: None,
+            acknowledged_at: None,
+            updated_by,
+            created_at: ts,
+            updated_at: ts,
+        };
+        let mut buf = Vec::new();
+        serialize_exchange_rates_csv(
+            &[
+                ligne(RateOrigin::Afc, dec!(0.0058123456), None),
+                ligne(RateOrigin::Manual, dec!(0.91), Some(5)),
+            ],
+            &mut buf,
+        )
+        .unwrap();
+        let texte = String::from_utf8(buf[3..].to_vec()).unwrap();
+        let lignes: Vec<&str> = texte.split("\r\n").collect();
+        assert!(lignes[0].starts_with("id;company_id;currency;kind;rate_date;rate;source"));
+        assert_eq!(
+            lignes[1],
+            "7;3;JPY;month;2026-01-01;0.0058123456;afc;2;;;;2026-01-02T08:00:00Z;2026-01-02T08:00:00Z"
+        );
+        assert!(
+            lignes[2].contains(";0.9100000000;manual;2;;;5;"),
+            "{}",
+            lignes[2]
+        );
+    }
 
     /// Story 26-1, AC11 (M11) : `debit_sign` est exporté, en-tête et
     /// valeur, juste après `header_row_count`.
@@ -2617,6 +2726,10 @@ mod tests {
             (
                 "imported_supplier_invoices",
                 entete(|w| serialize_imported_supplier_invoices_csv(&[], w)),
+            ),
+            (
+                "exchange_rates",
+                entete(|w| serialize_exchange_rates_csv(&[], w)),
             ),
         ];
         // ⛔ Contre le REGISTRE, pas contre un nombre (revue P3) : une table

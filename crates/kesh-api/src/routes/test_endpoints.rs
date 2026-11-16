@@ -407,8 +407,10 @@ pub struct ExchangeRatesSourceRequest {
     /// Attente avant la réponse, en millisecondes (au plus 120 000).
     pub delay_ms: Option<u64>,
     /// Ne piloter que cette unité (`AAAA-MM-JJ`, 1er du mois pour `month`) ;
-    /// absent : toutes les unités du genre.
-    pub date: Option<chrono::NaiveDate>,
+    /// absent : toutes les unités du genre. Lue en chaîne puis analysée (une
+    /// date de pilotage n'est pas une date comptable reçue : hors de la garde
+    /// `dates_recues_garde`).
+    pub date: Option<String>,
 }
 
 /// Réponse de `POST /api/v1/_test/exchange-rates/source`.
@@ -459,7 +461,15 @@ async fn rate_source_handler(
         None => None,
     };
     let behavior = MockBehavior { reply, delay };
-    match req.date {
+    let date = req
+        .date
+        .as_deref()
+        .map(|t| {
+            chrono::NaiveDate::parse_from_str(t, "%Y-%m-%d")
+                .map_err(|_| AppError::Validation(format!("`date` illisible : {t}")))
+        })
+        .transpose()?;
+    match date {
         Some(date) => source.set_for(
             match req.kind {
                 kesh_core::exchange_rates::RateKind::Month => RateUnit::month_of(date),

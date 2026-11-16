@@ -545,6 +545,30 @@ pub enum AppError {
     #[error("Source des cours indisponible : {0}")]
     RateSourceUnavailable(String),
 
+    /// Story 37-2 (AC-5) — un cours saisi (par unité) hors des bornes d'un
+    /// cours seul (`kesh_core::exchange_rates::check_rate_bounds` : nul ou
+    /// négatif, plus de 10 décimales, au-delà de 10⁶). HTTP 400, code
+    /// `FX_RATE_INVALID`, `details: { currency }`, clé `error-fx-rate-invalid`.
+    /// Réutilisé par 37-5 pour les cours de sa requête.
+    #[error("Cours de change invalide pour {currency}")]
+    FxRateInvalid {
+        /// La devise du cours refusé.
+        currency: String,
+    },
+
+    /// Story 37-2 (AC-5) — `GET /exchange-rates/lookup?kind=day` sans cours
+    /// retenu par la société pour ce jour : HTTP 404 `RATE_UNAVAILABLE`, la
+    /// forme du cours mensuel (`DbError::RateUnavailable`, `details {currency,
+    /// month}`) **plus** `date`. Construite par le handler, la variante de
+    /// `DbError` restant à deux champs.
+    #[error("Aucun cours journalier {currency} au {date}")]
+    RateUnavailableDay {
+        /// Code ISO 4217.
+        currency: String,
+        /// Le jour demandé.
+        date: chrono::NaiveDate,
+    },
+
     /// Story 17-4b — échec d'envoi d'un email transactionnel via SMTP
     /// (connexion SMTP, auth, build du message, panne réseau). HTTP 500, i18n
     /// key `error-smtp-send-failed`. Détail loggé `tracing::error!`, jamais
@@ -2623,6 +2647,50 @@ impl IntoResponse for AppError {
                         "La source des cours de change (AFC) ne répond pas ou a rendu une réponse \
                          inutilisable. Réessayez plus tard, ou saisissez le cours.",
                     ),
+                )
+            }
+
+            // Story 37-2 (AC-5) — cours saisi hors bornes.
+            AppError::FxRateInvalid { currency } => {
+                let mut args = FluentArgs::new();
+                args.set("currency", currency.clone());
+                coded_response(
+                    StatusCode::BAD_REQUEST,
+                    "FX_RATE_INVALID",
+                    t_args(
+                        "error-fx-rate-invalid",
+                        &format!(
+                            "Cours {currency} invalide : il doit être strictement positif, \
+                             par unité, avec au plus 10 décimales et au plus 1 000 000."
+                        ),
+                        &args,
+                    ),
+                    serde_json::json!({ "currency": currency }),
+                )
+            }
+
+            // Story 37-2 (AC-5) — aucun cours journalier retenu : la forme du
+            // cours mensuel, plus `date`.
+            AppError::RateUnavailableDay { currency, date } => {
+                let mut args = FluentArgs::new();
+                args.set("currency", currency.clone());
+                args.set("date", date.format("%d.%m.%Y").to_string());
+                coded_response(
+                    StatusCode::NOT_FOUND,
+                    "RATE_UNAVAILABLE",
+                    t_args(
+                        "error-rate-unavailable-day",
+                        &format!(
+                            "Aucun cours de change {currency} pour le {} : récupérez les cours ou saisissez-en un.",
+                            date.format("%d.%m.%Y")
+                        ),
+                        &args,
+                    ),
+                    serde_json::json!({
+                        "currency": currency,
+                        "month": date.format("%Y-%m-01").to_string(),
+                        "date": date.format("%Y-%m-%d").to_string(),
+                    }),
                 )
             }
 

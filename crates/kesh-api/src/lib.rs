@@ -591,6 +591,24 @@ pub fn build_router_avec_registre(
             "/api/v1/exchange-rates/fetch",
             post(routes::exchange_rates::fetch_rates),
         )
+        // Story 37-2 (AC-5) — cours retenus par la société : saisie, ↑,
+        // corrections de l'AFC à annoncer et leur acquittement.
+        .route(
+            "/api/v1/exchange-rates/rates",
+            put(routes::exchange_rates::put_rate),
+        )
+        .route(
+            "/api/v1/exchange-rates/rates/reset",
+            post(routes::exchange_rates::reset_rate),
+        )
+        .route(
+            "/api/v1/exchange-rates/notices",
+            get(routes::exchange_rates::list_notices),
+        )
+        .route(
+            "/api/v1/exchange-rates/notices/acknowledge",
+            post(routes::exchange_rates::acknowledge_notices),
+        )
         .route(
             "/api/v1/journal-entries",
             post(routes::journal_entries::create_journal_entry),
@@ -876,6 +894,11 @@ pub fn build_router_avec_registre(
             "/api/v1/fiscal-years/{id}/close",
             post(routes::fiscal_years::close_fiscal_year),
         )
+        // Story 37-2 (AC-5, U4) — genres des cours d'ouverture et de clôture.
+        .route(
+            "/api/v1/fiscal-years/{id}/rate-kinds",
+            put(routes::fiscal_years::update_rate_kinds),
+        )
         // Story 8-1b : import bancaire CAMT.053 (Comptable+ uniquement
         // pour les mutations — POST preview + POST create).
         // DefaultBodyLimit appliqué localement pour ces deux endpoints
@@ -1076,6 +1099,20 @@ pub fn build_router_avec_registre(
         .route(
             "/api/v1/exchange-rates/status",
             get(routes::exchange_rates::get_fetch_status),
+        )
+        // Story 37-2 (AC-5) — cases d'un mois ou d'un jour, cours effectif et
+        // tableau annuel d'un exercice (lecture seule, tout rôle).
+        .route(
+            "/api/v1/exchange-rates",
+            get(routes::exchange_rates::list_rates),
+        )
+        .route(
+            "/api/v1/exchange-rates/lookup",
+            get(routes::exchange_rates::lookup_rate),
+        )
+        .route(
+            "/api/v1/fiscal-years/{id}/exchange-rates",
+            get(routes::exchange_rates::fiscal_year_rates),
         )
         .route(
             "/api/v1/journal-entries",

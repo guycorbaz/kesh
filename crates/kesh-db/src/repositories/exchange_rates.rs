@@ -502,6 +502,63 @@ pub async fn list_account_currencies(
     .map_err(map_db_error)
 }
 
+/// Toutes les lignes `exchange_rates` de la société (cours retenus), triées
+/// par date, genre puis devise — non bornée, pour l'export de souveraineté
+/// (`exports::global`), comme les autres `list_all_by_company`.
+pub async fn list_all_by_company(
+    conn: &mut MySqlConnection,
+    company_id: i64,
+) -> Result<Vec<CompanyRate>, DbError> {
+    let sql = format!(
+        "SELECT {COMPANY_RATE_COLUMNS} FROM exchange_rates x WHERE x.company_id = ? \
+         ORDER BY x.rate_date, x.kind, x.currency"
+    );
+    sqlx::query_as::<_, CompanyRate>(&sql)
+        .bind(company_id)
+        .fetch_all(conn)
+        .await
+        .map_err(map_db_error)
+}
+
+/// Les devises des comptes de la société, triées, chacune avec un drapeau :
+/// vrai si au moins un compte **actif** la porte (faux : seuls des comptes
+/// archivés). Sert les lignes du tableau annuel (un compte archivé n'y amène
+/// sa devise que s'il a une ligne dans l'exercice).
+pub async fn list_account_currency_states(
+    conn: &mut MySqlConnection,
+    company_id: i64,
+) -> Result<Vec<(String, bool)>, DbError> {
+    let rows = sqlx::query_as::<_, (String, i64)>(
+        "SELECT currency, CAST(MAX(active) AS SIGNED) FROM accounts \
+         WHERE company_id = ? AND currency IS NOT NULL GROUP BY currency ORDER BY currency",
+    )
+    .bind(company_id)
+    .fetch_all(conn)
+    .await
+    .map_err(map_db_error)?;
+    Ok(rows.into_iter().map(|(c, a)| (c, a != 0)).collect())
+}
+
+/// La copie (AC-3 bis) quand un **compte reçoit une devise**
+/// (`accounts::create`, `accounts::update`) : pour chaque exercice
+/// **multi-devises ouvert** de la société, les cours déjà récupérés de cette
+/// seule devise, sur les unités utiles de l'exercice. Exercices lus sans
+/// verrou dans la transaction de l'appelant, qui tient déjà `companies`.
+/// Rend le nombre de lignes copiées (0 sans exercice multi-devises ouvert).
+pub async fn copy_currency_to_open_years_in_tx(
+    conn: &mut MySqlConnection,
+    company_id: i64,
+    currency: &str,
+) -> Result<u64, DbError> {
+    let exercices = list_open_multi_currency_fiscal_years(conn, Some(company_id)).await?;
+    let units: BTreeSet<RateUnit> = exercices
+        .iter()
+        .flat_map(|fy| kesh_core::exchange_rates::unites_utiles_exercice(&fy.exercice))
+        .collect();
+    let units: Vec<RateUnit> = units.into_iter().collect();
+    copy_fetched_in_tx(conn, company_id, &units, Some(currency)).await
+}
+
 /// Les exercices **multi-devises ouverts** (`multi_currency = TRUE`,
 /// `status = 'Open'`), de toutes les sociétés (`company_id` à `None`) ou d'une
 /// seule, triés par société puis début. Sans verrou.

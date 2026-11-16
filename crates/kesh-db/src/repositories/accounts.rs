@@ -328,6 +328,21 @@ pub async fn create(pool: &MySqlPool, user_id: i64, new: NewAccount) -> Result<A
         .map_err(map_db_error)?
         .ok_or_else(|| DbError::Invariant(format!("account {id} introuvable après INSERT")))?;
 
+    // Story 37-2 (AC-3 bis) : un compte créé avec une devise reçoit la copie
+    // des cours déjà récupérés de cette devise, pour chaque exercice
+    // multi-devises ouvert de la société, dans cette transaction (après les
+    // verrous de la société). Le nombre copié va au détail de l'audit.
+    let mut details = account_snapshot_json(&account);
+    if let Some(currency) = &account.currency {
+        let copied = crate::repositories::exchange_rates::copy_currency_to_open_years_in_tx(
+            &mut tx,
+            account.company_id,
+            currency,
+        )
+        .await?;
+        details["copied"] = serde_json::json!(copied);
+    }
+
     // Story 3.5 : audit log AVANT commit (snapshot direct, cohérent
     // avec la convention projet documentée en spec 3.5).
     // Rollback explicite pour cohérence avec les autres branches d'erreur.
@@ -338,7 +353,7 @@ pub async fn create(pool: &MySqlPool, user_id: i64, new: NewAccount) -> Result<A
             "account.created".to_string(),
             "account".to_string(),
             account.id,
-            Some(account_snapshot_json(&account)),
+            Some(details),
         ),
     )
     .await
@@ -1106,6 +1121,22 @@ pub async fn update(
         "before": account_snapshot_json(&before),
         "after": account_snapshot_json(&after),
     });
+
+    // Story 37-2 (AC-3 bis) : un compte qui reçoit une devise (de CHF ou d'une
+    // autre devise) reçoit la copie des cours déjà récupérés de cette devise,
+    // pour chaque exercice multi-devises ouvert de la société, dans cette
+    // transaction ; le nombre copié va au détail de l'audit (`copied`).
+    if after.currency != before.currency
+        && let Some(currency) = &after.currency
+    {
+        let copied = crate::repositories::exchange_rates::copy_currency_to_open_years_in_tx(
+            &mut tx,
+            after.company_id,
+            currency,
+        )
+        .await?;
+        audit_details["copied"] = serde_json::json!(copied);
+    }
 
     // Story 25-2-a ([#382], [#274]) — un retypage de compte MOUVEMENTÉ porte son
     // propre code d'action.

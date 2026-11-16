@@ -2410,11 +2410,12 @@ const SITES_NON_RESOLUS: &[SiteNonResolu] = &[
     ),
     // Story 32-9a (AC-a12) : la liste des exercices passe par
     // `exercices::lister` ; les six autres gestionnaires — qu'aucun outil ne
-    // sert — restent sur `state.pool`.
+    // sert — restent sur `state.pool`. Story 37-2 : + `update_rate_kinds`
+    // (genres des cours d'un exercice), qu'aucun outil ne sert non plus.
     (
         "routes/fiscal_years.rs",
-        7,
-        7,
+        8,
+        8,
         &[
             "close_fiscal_year",
             "create_fiscal_year",
@@ -2422,6 +2423,7 @@ const SITES_NON_RESOLUS: &[SiteNonResolu] = &[
             "get_fiscal_year",
             "reopen_fiscal_year",
             "update_fiscal_year",
+            "update_rate_kinds",
         ],
         &[],
     ),
