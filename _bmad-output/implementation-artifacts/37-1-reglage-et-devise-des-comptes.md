@@ -1,6 +1,6 @@
 # Story 37-1 : réglage multi-devises de la société et devise des comptes
 
-Status: ready-for-dev
+Status: in-progress
 
 *Fiche rédigée le 2026-11-14 (Opus 5.5), branche `epic/37-multi-devises`, numéros de ligne de `67efc51f`. Epic 37
 (`_bmad-output/planning-artifacts/epic-37-multi-devises.md`), registre C-37-1 à C-37-8. **Migration non breaking**.
