@@ -60,9 +60,33 @@ export interface AccountResponse {
 	 * lettrabilité n'est recopiée côté client (Story 15-1c-i, AC1).
 	 */
 	letterable: boolean;
+	/**
+	 * Story 37-1 (AC-4) — devise du compte (code ISO 4217) ; **absente** pour un
+	 * compte en CHF (le serveur omet la clé, C-37-9). Toujours lire
+	 * `account.currency ?? null` ({@link accountCurrency}).
+	 */
+	currency?: string;
+	/**
+	 * Story 37-1 (AC-4) — le compte porte au moins une ligne d'écriture : sa
+	 * devise ne peut plus changer (409 `ACCOUNT_CURRENCY_LOCKED`). Absente =
+	 * `false`.
+	 */
+	currencyLocked?: boolean;
+	/**
+	 * Story 37-1 (AC-4 bis) — comptes de différence de change **propres** à un
+	 * compte en devise ; absents = le compte suit ceux de la société (« par
+	 * défaut »). Les deux vont ensemble. Résolus par `fxAccountsFor`.
+	 */
+	fxGainAccountId?: number;
+	fxLossAccountId?: number;
 	version: number;
 	createdAt: string;
 	updatedAt: string;
+}
+
+/** Story 37-1 (AC-4) — la devise d'un compte, `null` pour le CHF. */
+export function accountCurrency(account: Pick<AccountResponse, 'currency'>): string | null {
+	return account.currency ?? null;
 }
 
 export interface CreateAccountRequest {
@@ -72,6 +96,18 @@ export interface CreateAccountRequest {
 	parentId?: number | null;
 	role?: AccountRole | null;
 	postable?: boolean;
+	/**
+	 * Story 37-1 (AC-4) — devise ISO 4217 ; absente ou `null` = CHF. Refusée en
+	 * mono-devise (409 `MULTI_CURRENCY_DISABLED`).
+	 */
+	currency?: string | null;
+	/**
+	 * Story 37-1 (AC-4 bis) — comptes propres ; absents = par défaut. Envoyés
+	 * **ensemble** et seulement s'ils sont posés (le `POST` qui les porte
+	 * sérialise sur la société).
+	 */
+	fxGainAccountId?: number | null;
+	fxLossAccountId?: number | null;
 }
 
 /**
@@ -95,6 +131,20 @@ export interface UpdateAccountRequest {
 	 * les omet, tandis que le défaut de celui-ci est le défaut **sûr**.
 	 */
 	confirmAccountRetype?: boolean;
+	/**
+	 * Story 37-1 (AC-4) — **absente = devise inchangée**, `null` = CHF, valeur =
+	 * devise. Optionnelle, à la différence de `role` : son absence n'efface rien.
+	 * Le formulaire ne l'envoie que si elle change.
+	 */
+	currency?: string | null;
+	/**
+	 * Story 37-1 (AC-4 bis) — absents = inchangés, `null` = par défaut, valeur =
+	 * compte propre. Les deux vont **ensemble** (l'un sans l'autre → 400
+	 * `FX_ACCOUNT_INVALID`, `reason: "missing"`), et ne s'envoient que s'ils
+	 * changent : le `PUT` qui les porte prend la société `FOR UPDATE`.
+	 */
+	fxGainAccountId?: number | null;
+	fxLossAccountId?: number | null;
 }
 
 /**

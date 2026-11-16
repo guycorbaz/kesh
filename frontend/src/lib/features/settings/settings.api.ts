@@ -6,8 +6,21 @@ import type {
 	UpdateCompanyAddressRequest,
 	UpdateCompanyContactDetailsRequest,
 	UpdateCompanyEmailRequest,
+	UpdateCurrencySettingsRequest,
 	UpdateSessionSettingsRequest
 } from './settings.types';
+
+/**
+ * Story 37-1 (AC-3) — règle la comptabilité multi-devises et ses trois comptes
+ * (gains, pertes, conversion). Administrateur seul, verrou optimiste (409
+ * `OPTIMISTIC_LOCK_CONFLICT`). L'activation est **irréversible** et passe les
+ * exercices ouverts en multi-devises. Rend la société à jour.
+ */
+export async function updateCurrencySettings(
+	req: UpdateCurrencySettingsRequest
+): Promise<CompanyJson> {
+	return apiClient.put<CompanyJson>('/api/v1/companies/current/currency-settings', req);
+}
 
 export async function fetchCompanyCurrent(): Promise<CompanyCurrentResponse> {
 	return apiClient.get<CompanyCurrentResponse>('/api/v1/companies/current');
