@@ -1192,6 +1192,18 @@ mod tests {
         assert_eq!(body["error"]["code"], "ILLEGAL_STATE_TRANSITION");
     }
 
+    /// Revue de code P4 de la 37-3a — le bras `EntryTotalOutOfRange` de
+    /// `map_core_error` rend 400 `VALIDATION_ERROR`, non le repli générique.
+    #[tokio::test]
+    async fn map_core_error_total_hors_intervalle_rend_validation_error() {
+        let resp = map_core_error(CoreError::EntryTotalOutOfRange).into_response();
+        let (status, body) = body_json(resp).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        assert_eq!(body["error"]["code"], "VALIDATION_ERROR");
+        let msg = body["error"]["message"].as_str().unwrap_or_default();
+        assert!(msg.contains("dépasse la valeur admise"), "message : {msg}");
+    }
+
     /// Revue de code P3 de la 37-3a — la somme `debit + credit` d'une ligne en
     /// devise, au débordement de `Decimal`, rend 400 `FX_VALUE_OUT_OF_RANGE`
     /// et ne panique pas (la route, non le noyau, fait cette somme).

@@ -473,6 +473,21 @@ mod tests {
         );
     }
 
+    /// Revue de code P4 de la 37-3a — même refus côté crédits.
+    #[test]
+    fn somme_des_credits_qui_deborde_est_refusee_sans_panique() {
+        let grand = dec!(50000000000000000000000000000);
+        let lines = vec![
+            line(1, Money::zero(), Money::new(grand)),
+            line(2, Money::zero(), Money::new(grand)),
+            line(3, Money::new(dec!(1)), Money::zero()),
+        ];
+        assert_eq!(
+            validate(draft(lines)).unwrap_err(),
+            CoreError::EntryTotalOutOfRange
+        );
+    }
+
     #[test]
     fn rejects_zero_total() {
         // Impossible par construction de lignes valides (chaque ligne
