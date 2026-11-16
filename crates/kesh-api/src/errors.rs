@@ -1653,7 +1653,7 @@ fn designated_account_wrong_type_response(
         .collect();
     phrases.push(t(
         "error-designated-account-wrong-type-action",
-        "Rien n’a été enregistré. Un administrateur doit corriger le réglage concerné — désigner un compte du bon type, ou rendre au compte son type d’origine —, puis la validation pourra être relancée telle quelle.",
+        "Rien n’a été enregistré. Un administrateur doit corriger le réglage concerné — désigner un compte du bon type, ou rendre au compte son type d’origine —, puis l’opération pourra être relancée telle quelle.",
     ));
     let body = serde_json::json!({
         "error": {
@@ -4768,10 +4768,13 @@ impl IntoResponse for AppError {
                 }
                 // Story 35-3 (#537) — un compte DÉSIGNÉ dans les réglages de
                 // facturation n'a plus le TYPE que son réglage exige (retypé après
-                // sa désignation) et la validation veut y écrire. Code propre, et
-                // non `INACTIVE_OR_INVALID_ACCOUNTS`, anonyme : le compte vient des
-                // réglages, non de la requête, et le Comptable qui valide doit
-                // savoir lequel et où le faire corriger.
+                // sa désignation) et une écriture veut y passer : la validation
+                // d'une facture ou d'une facture fournisseur, et, depuis la Story
+                // 36-9 (#1044), le solde du reste (TVA due). Code propre, et non
+                // `INACTIVE_OR_INVALID_ACCOUNTS`, anonyme : le compte vient des
+                // réglages, non de la requête, et le Comptable qui agit doit
+                // savoir lequel et où le faire corriger. Bras générique, quelle
+                // que soit la route : la phrase d'action est neutre (D4).
                 DbError::DesignatedAccountsWrongType(accounts) => {
                     designated_account_wrong_type_response(&accounts)
                 }

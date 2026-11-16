@@ -342,7 +342,7 @@ error-designated-account-not-postable = { $count ->
 }
 # Story 35-3 (#537) — a designated account whose type changed after it was designated: one sentence per account, then the action sentence. The article lives in the type labels (a/an).
 error-designated-account-wrong-type = Account { $account }, designated as the { $setting } in Administration → Invoicing, is { $actual }; this setting requires { $expected }.
-error-designated-account-wrong-type-action = Nothing has been saved. An administrator must correct the setting concerned — designate an account of the right type, or give the account back its original type — and the validation can then be run again as it is.
+error-designated-account-wrong-type-action = Nothing has been saved. An administrator must correct the setting concerned — designate an account of the right type, or give the account back its original type — and the operation can then be run again as it is.
 error-designated-account-setting-receivable = trade receivables account
 error-designated-account-setting-vat-payable = VAT payable account
 error-designated-account-setting-payable = trade payables account

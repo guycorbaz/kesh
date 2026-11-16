@@ -342,7 +342,7 @@ error-designated-account-not-postable = { $count ->
 }
 # Story 35-3 (#537) — ein seit seiner Festlegung umtypisiertes Konto: ein Satz pro Konto, dann der Handlungssatz.
 error-designated-account-wrong-type = Das Konto { $account }, unter Administration → Fakturierung als { $setting } festgelegt, ist ein { $actual }; diese Einstellung verlangt ein { $expected }.
-error-designated-account-wrong-type-action = Es wurde nichts gespeichert. Eine Administratorin oder ein Administrator muss die betreffende Einstellung korrigieren – ein Konto des richtigen Typs festlegen oder dem Konto seinen ursprünglichen Typ zurückgeben –, danach kann die Validierung unverändert erneut ausgeführt werden.
+error-designated-account-wrong-type-action = Es wurde nichts gespeichert. Eine Administratorin oder ein Administrator muss die betreffende Einstellung korrigieren – ein Konto des richtigen Typs festlegen oder dem Konto seinen ursprünglichen Typ zurückgeben –, danach kann der Vorgang unverändert erneut ausgeführt werden.
 error-designated-account-setting-receivable = Konto Forderungen aus Lieferungen und Leistungen
 error-designated-account-setting-vat-payable = Konto geschuldete MWST
 error-designated-account-setting-payable = Konto Verbindlichkeiten aus Lieferungen und Leistungen
