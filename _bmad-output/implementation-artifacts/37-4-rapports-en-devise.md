@@ -1,6 +1,6 @@
 # Story 37-4 : rapports dans les deux devises
 
-Status: review
+Status: done
 
 *Fiche rédigée le 2026-11-14 (Opus 5.5), branche `epic/37-multi-devises`. Epic 37, D2, C-37-3. Suit 37-3a.
 **Aucune migration attendue** (colonnes de 37-1 et 37-3a ; aucun index nécessaire : les sommes passent par
@@ -429,6 +429,21 @@ exports, afin de rapprocher mes comptes PayPal ou Wise de leurs relevés et de c
   `kesh-db` touché) : `cargo fmt`, `cargo clippy --workspace --all-targets -D warnings` vert, `cargo nextest run -p
   kesh-report` 207 passés, 1 ignoré ; `npm run check` 0 erreur, `lint-i18n-ownership` vert ; Vitest 3910/3910 (252 fichiers), `npm run build` vert. Décomptes périmés du Dev Agent Record (« 5752 », « 28 tests Rust ») : relevés à
   `5680f714`, non réécrits ; E2E complet et gate complet à la clôture.
+- 2026-11-16 — clôture (agent de fin de story, base `kesh-mariadb-dev2` port 3307, bases `kesh_s37_4` / `kesh_e2e_s37_4`
+  recréées ; journaux `kesh-gate-logs/s37-4/final3/`). Fusion de `epic/37-multi-devises` (37-3a terminée, `8c44bc6b`),
+  faite sans conflit de texte : recomptée depuis la source — migrations **94** (`ls crates/kesh-db/migrations/*.sql`),
+  égales à l'en-tête, à la ligne `Total` et aux lignes du tableau de `docs/migrations-idempotence-audit.md` ;
+  `sitesTotal` de `i18n-keys.test.ts` = **3191**, tenu par la garde, Vitest vert ; registre des routes (garde du gate)
+  vert ; bornes MCP des rapports : `fixture_tailles` pose la société et l'exercice multi-devises et un compte USD de la
+  37-3a, `pagination_transmise` et `tailles_mesurees` verts dans le gate. Gate backend complet `scripts/test-fast.sh
+  --ci` : **5781 passés, 13 ignorés** (833 s) ; Vitest **3910 / 252 fichiers** ; `npm run build` vert. E2E complet au
+  dernier commit de code (`8c44bc6b`), `LANG=fr_CH.UTF-8` : **429 passés, 13 échecs, 18 ignorés** (47,6 min).
+  Verdict : sept de la KF-029 ; `backup-restore-new-install.spec.ts:262` et `:381` et `opening-balances.spec.ts:156`,
+  préexistants à `19bf12fb` (établis, non rejoués) ; `invoices-settle-unknown-outcome.spec.ts:117`,
+  `invoices.spec.ts:338`, `journal-entries.spec.ts:486` rejoués seuls sur le même montage : **3/3 passés**
+  (`e2e-rejeu.log`), donc échecs d'état partagé de la suite complète, sans rapport avec les rapports. Trois échecs qui
+  changent d'identité, un de plus que les « zéro à deux » de `docs/testing.md` : relevé, non traité.
+
 ## Dev Agent Record
 
 ### Agent Model Used
@@ -486,6 +501,9 @@ Opus 5.5 (agent de développement), 2026-11-16.
   (`e2e-rejeu.log`, avec `reports.spec.ts` et `reports-currency.spec.ts` : 17 passés, elle seule rouge, délai du clic),
   déjà relevée par la 37-1 (toast d'ouverture qui recouvre le bouton, `issues-a-ouvrir-epic-37.md` n° 4). La spec neuve
   `reports-currency.spec.ts` passe aux deux exécutions.
+- Clôture, au dernier commit de code `8c44bc6b` : voir l'entrée « clôture » du Change Log — gate backend 5781 passés
+  (13 ignorés), Vitest 3910, build vert, E2E **429 passés, 13 échecs, 18 ignorés** (`final3/e2e.log`), dont trois
+  rejoués seuls et passés (`final3/e2e-rejeu.log`).
 - Captures (thème clair) prises par la spec E2E : `captures/37-4-grand-livre-usd.png`, `37-4-balance-usd.png`,
   `37-4-bilan-usd.png`. Le compte de résultat et le journal en devise ne sont couverts que par Vitest (pas de capture).
   *(Revue de code P1 : `review-p1/captures/37-4-resultat-usd.png` et `37-4-journal-usd.png` ajoutées, mêmes
