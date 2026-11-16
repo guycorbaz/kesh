@@ -788,7 +788,19 @@ async fn guard_currency_update(
         });
     }
 
-    // 6. FX_ACCOUNT_INVALID des comptes propres.
+    // 6. FX_ACCOUNT_INVALID des comptes propres. Société mono-devise : `unexpected`
+    //    sans détenteur — le message dit alors le mode (37-1-CR-P3-1) ; celui
+    //    du compte en devise ne vaut que dans une société multi-devises.
+    if own_fx.is_some()
+        && !matches!(changes.own_fx_accounts, OwnFxAccountsChange::Unchanged)
+        && !state.multi_currency_enabled
+    {
+        return Err(DbError::FxAccountInvalid {
+            field: FxAccountField::Gain,
+            reason: FxAccountReason::Unexpected,
+            holder_account_id: None,
+        });
+    }
     check_own_fx_accounts_in_tx(
         conn,
         company_id,

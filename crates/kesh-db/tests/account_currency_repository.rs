@@ -995,6 +995,27 @@ async fn comptes_propres_un_compte_ne_se_designe_pas_lui_meme(pool: MySqlPool) {
     }
 }
 
+/// Revue de code P3 (37-1-CR-P3-1) — comptes propres dans une société encore
+/// mono-devise : `unexpected` **sans détenteur**, de sorte que le message dise le
+/// mode (celui du compte en devise ne vaut qu'en multi-devises). Rien n'est écrit.
+#[sqlx::test(migrations = "./test-schema")]
+async fn comptes_propres_en_mono_devise_sans_detenteur(pool: MySqlPool) {
+    let s = seed_accounting_company(&pool).await.unwrap();
+    let c = s.company_id;
+    let ok = compte(&pool, c, "6971", "Expense", None, None).await;
+    let id = compte(&pool, c, "6972", "Expense", None, None).await;
+    let err = modifier(&pool, &s, id, |u| {
+        u.own_fx_accounts = OwnFxAccountsChange::Own(OwnFxAccounts { gain: ok, loss: ok })
+    })
+    .await
+    .unwrap_err();
+    assert_eq!(
+        fx_refus(err),
+        (FxAccountField::Gain, FxAccountReason::Unexpected, None)
+    );
+    assert_eq!(lire(&pool, id).await.own_fx_accounts(), None);
+}
+
 // ---------------------------------------------------------------------------
 // archive_guarded
 // ---------------------------------------------------------------------------
