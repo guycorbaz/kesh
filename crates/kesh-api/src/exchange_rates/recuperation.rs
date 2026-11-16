@@ -247,9 +247,23 @@ async fn appeler(state: &AppState, unit: RateUnit) -> Result<Analyse, Echec> {
     }
 }
 
+/// Le verrou des sauvegardes (`AppState::backup_lock`), tenu le temps d'une
+/// **écriture** de cours (valeurs publiées et copies) : une restauration
+/// (`full_import`, qui le tient jusqu'à son commit) et une écriture de cours ne
+/// se chevauchent jamais. Sans lui, une copie qui a lu ses sociétés et ses
+/// devises **avant** l'import insérait, après son commit, des lignes `afc`
+/// absentes de la sauvegarde dans la base restaurée (revue de code P1,
+/// 37-2-CR-P1-2). Pris **après** `rate_fetch_lock` et **après** l'appel
+/// sortant (jamais pendant), relâché au commit : un export attend au plus une
+/// transaction ; l'import ne prend jamais `rate_fetch_lock`, d'où aucun cycle.
+async fn garde_hors_restauration(state: &AppState) -> tokio::sync::OwnedMutexGuard<()> {
+    state.backup_lock.clone().lock_owned().await
+}
+
 /// Copie l'unité pour une société, dans sa propre transaction rejouée
 /// (raccourci du `POST /fetch`).
 async fn copier_pour(state: &AppState, unit: RateUnit, company_id: i64) -> Result<u64, DbError> {
+    let _garde = garde_hors_restauration(state).await;
     kesh_db::retry::retry_on_deadlock("exchange_rates::copy_fetched", || {
         let pool = state.pool.clone();
         async move {
@@ -272,6 +286,7 @@ async fn ecrire(
     fetched_at: NaiveDateTime,
     manuelle: Option<&Manuelle>,
 ) -> Result<(depot::FetchWriteOutcome, u64), DbError> {
+    let _garde = garde_hors_restauration(state).await;
     kesh_db::retry::retry_on_deadlock("exchange_rates::fetch", || {
         let pool = state.pool.clone();
         async move {
@@ -291,8 +306,16 @@ async fn ecrire(
                 .collect();
             societes.extend(manuelle.map(|m| m.utilisateur.company_id));
             let mut copied = 0;
+            // L'audit ne dit que les copies de la société de l'utilisateur :
+            // celles des autres sociétés ne sont pas les siennes (revue de
+            // code P2, 37-2-CR-P2-3).
+            let mut copied_utilisateur = 0;
             for company_id in societes {
-                copied += depot::copy_fetched_in_tx(&mut tx, company_id, &[unit], None).await?;
+                let n = depot::copy_fetched_in_tx(&mut tx, company_id, &[unit], None).await?;
+                copied += n;
+                if manuelle.is_some_and(|m| m.utilisateur.company_id == company_id) {
+                    copied_utilisateur += n;
+                }
             }
             if let Some(m) = manuelle {
                 audit_log::insert_in_tx(
@@ -311,7 +334,7 @@ async fn ecrire(
                             "count": outcome.written(),
                             "rejected": analyse.rejected.len(),
                             "corrected": outcome.corrected.len(),
-                            "copied": copied,
+                            "copied": copied_utilisateur,
                         })),
                     ),
                 )

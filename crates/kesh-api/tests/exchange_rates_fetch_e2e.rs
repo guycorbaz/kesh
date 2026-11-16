@@ -740,6 +740,80 @@ async fn fetch_raccourci_apres_attente(pool: MySqlPool) {
     assert_eq!(audits_fetched(&pool).await, 1);
 }
 
+/// Revue de code P1 (37-2-CR-P1-2) — une écriture de cours attend la fin
+/// d'une restauration (`backup_lock` tenu par `full_import` jusqu'à son
+/// commit) : rien n'est écrit pendant qu'elle le tient, et la récupération
+/// aboutit une fois le verrou rendu. L'appel sortant, lui, n'attend pas.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn fetch_attend_la_fin_d_une_restauration(pool: MySqlPool) {
+    let ctx = Arc::new(monter(&pool, false).await);
+    let restauration = ctx.state.backup_lock.clone().lock_owned().await;
+    let c = ctx.clone();
+    let post = tokio::spawn(async move { c.fetch(json!({"year": 2026, "month": 11})).await });
+    let limite = Instant::now() + Duration::from_secs(10);
+    while ctx.source.call_count() == 0 && Instant::now() < limite {
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    assert_eq!(ctx.source.call_count(), 1, "l'appel sortant n'attend pas");
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    assert!(!post.is_finished(), "l'écriture attend la restauration");
+    assert_eq!(
+        retenu(&pool, ctx.s.company_id, "USD", mois(2026, 11)).await,
+        None
+    );
+    assert_eq!(audits_fetched(&pool).await, 0);
+    drop(restauration);
+    let (st, b) = post.await.unwrap();
+    assert_eq!(st, 200, "{b}");
+    assert_eq!(
+        retenu(&pool, ctx.s.company_id, "USD", mois(2026, 11)).await,
+        Some(dec!(0.88))
+    );
+}
+
+/// Revue de code P2 (37-2-CR-P2-3) — l'audit du `POST /fetch` ne compte que
+/// les copies de la société de l'utilisateur : une seconde société multi-devises
+/// reçoit sa copie, sans entrer dans le `copied` de l'audit de la première.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn fetch_audit_ne_compte_que_la_societe_de_l_utilisateur(pool: MySqlPool) {
+    let ctx = monter(&pool, false).await;
+    let b = sqlx::query(
+        "INSERT INTO companies (name, address, org_type, accounting_language, \
+             instance_language, multi_currency_enabled) \
+         VALUES ('Société B', 'Rue B 1\n1000 Lausanne', 'Independant', 'FR', 'FR', TRUE)",
+    )
+    .execute(&pool)
+    .await
+    .unwrap()
+    .last_insert_id() as i64;
+    sqlx::query(
+        "INSERT INTO fiscal_years (company_id, name, start_date, end_date, status, \
+             multi_currency, opening_rate_kind) \
+         VALUES (?, 'B 2026', '2026-01-01', '2026-12-31', 'Open', TRUE, 'month')",
+    )
+    .bind(b)
+    .execute(&pool)
+    .await
+    .unwrap();
+    compte_en_devise(&pool, b, "1020", "USD").await;
+    let (st, body) = ctx.fetch(json!({"year": 2026, "month": 11})).await;
+    assert_eq!(st, 200, "{body}");
+    assert_eq!(
+        retenu(&pool, b, "USD", mois(2026, 11)).await,
+        Some(dec!(0.88)),
+        "la seconde société reçoit sa copie"
+    );
+    let details = common::audit_details(
+        &pool,
+        "installation",
+        AUDIT_ENTITY_ID_NONE,
+        "exchange_rates.fetched",
+    )
+    .await
+    .unwrap();
+    assert_eq!(details["copied"], 1, "{details}");
+}
+
 /// Exercice clos : `POST /fetch` copie pour la société de l'utilisateur
 /// (A7), la tâche, elle, ne vise que les exercices ouverts.
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
@@ -1030,7 +1104,11 @@ async fn tour_plafond_trente_six_plus_un(pool: MySqlPool) {
         mois(2022, 12),
         "le mois d'ouverture d'abord"
     );
-    assert_eq!(bilan.demandees[35], mois(2025, 11));
+    // Revue de code P1 (37-2-CR-P1-4) : le mois suivant, qui manque, est
+    // toujours demandé — il prend la place de 2025-11, ordre chronologique
+    // gardé.
+    assert_eq!(bilan.demandees[34], mois(2025, 10));
+    assert_eq!(bilan.demandees[35], mois(2026, 12));
     assert_eq!(bilan.reverifiee, Some(mois(2026, 11)));
     assert_eq!(ctx.source.call_count(), 37);
 }
