@@ -319,7 +319,9 @@ describe('ExchangeRatesScreen — dialogue U3 (condition unique)', () => {
 		await monter(gridVarie(), { canManageSeveralCompanies: true });
 		api.resetRate.mockResolvedValue({});
 		await fireEvent.click(arrow('USD-month-2024-08-01')!);
-		expect(await screen.findByTestId('exchange-rates-correction-dialog')).toBeTruthy();
+		const dialogue = await screen.findByTestId('exchange-rates-correction-dialog');
+		// Revue de code P2 (37-2-CR-P2-4) : le groupe de choix porte une légende.
+		expect(dialogue.querySelector('fieldset > legend')?.textContent?.trim()).toBeTruthy();
 		expect(api.resetRate).not.toHaveBeenCalled();
 		await fireEvent.click(screen.getByTestId('exchange-rates-correction-confirm'));
 		await waitFor(() =>

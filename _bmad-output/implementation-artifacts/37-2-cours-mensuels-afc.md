@@ -1888,3 +1888,37 @@ lecture seule (Consultation) ; carte des paramètres ; largeur 390 px.
   devises » ; `today` figé au montage ; duplication des montages d'`AppState` de test ; manuel muet sur l'audit de
   l'acquittement ; aucun test de la remise à zéro de démonstration sur `exchange_rates`. Une passe P2 est due (MEDIUM
   corrigés, production touchée).
+
+- 2026-11-16 — revue de code P2 (Sonnet) : **0 CRITICAL, 0 HIGH, 0 MEDIUM, 4 LOW corrigés** ; remédiations de la P1
+  (`c691bd4b`) relues : aucun défaut introduit au-dessus de LOW. Lus au code : ordre des verrous `rate_fetch_lock` →
+  `backup_lock` → tables (`full_import` et l'export ne prennent jamais `rate_fetch_lock`, la sauvegarde automatique
+  `try_lock_owned` : aucun cycle) ; `LOCK IN SHARE MODE` de la copie (la récupération lit les exercices sans verrou, pas de
+  cycle, interblocage rejoué) ; `reset_rate` (`(Some, None)` → conflit) ; `choisir_demandees` (plafond 36 tenu, deux
+  prioritaires au plus) ; la copie concurrente et `fetch_attend_la_fin_d_une_restauration` rougiraient sans leur
+  correctif (par lecture : sans verrou la copie finit au lieu d'attendre ; sans garde l'écriture aboutit) — **mutation
+  non exécutée**. **37-2-CR-P2-1** (LOW, `exchange_rates/mod.rs`) : la P1 avait inséré `choisir_demandees` entre la
+  documentation de `un_tour` et sa fonction ; la documentation de `un_tour` est rendue et `BilanTour::demandees` précisé.
+  **CR-P2-3** (LOW, `recuperation.rs` `ecrire`) : le `copied` de l'audit de `POST /fetch` additionnait les copies de
+  toutes les sociétés ; il ne compte que celles de la société de l'utilisateur (test
+  `fetch_audit_ne_compte_que_la_societe_de_l_utilisateur`, deux sociétés, qui rougirait avec l'ancien total). **CR-P2-4**
+  (LOW, `CorrectionDialog.svelte`) : `fieldset` sans `legend` (légende `sr-only`, clé existante ; `sitesTotal` 3184 → 3185
+  relevé par la garde ; assertion ajoutée). **CR-P2-5** (LOW, manuel utilisateur FR) : l'acquittement des corrections
+  inscrit à l'audit est nommé. Réfuté : « aucun test de la remise à zéro de démonstration sur `exchange_rates` » (il
+  existe, `onboarding_audit_e2e.rs`, vidage de la table et valeurs publiées gardées). Écart C-37-2-2 (`RateKind` dans
+  kesh-core) et C-37-2-3 (copie ligne à ligne, verrouillée depuis la P1) : acceptés. **LOW non corrigés, à tracer
+  (restants de la P1, hors périmètre ou conception)** : coupe-circuit sur source en panne ; limite de fréquence du
+  `POST /fetch` ; `GET /status` à l'échelle de l'installation ; deux horloges (`maintenant_ms`) ; état de récupération
+  écrit hors verrou ; erreur de base en cours de tour qui perd le statut ; double revérification tâche/connexion ;
+  restauration sur la même installation sans recopie ; `update_rate_kinds` (no-op qui ignore `applyToNextOpening`, suivant
+  mono-devise modifié) ; ↑ et acquittement sans no-op ; reset sans `publishedRate` non contrôlé ; mémoire des échecs
+  non bornée ; `with_base_url` public ; bandeau non relu après ↑ ou acquittement en échec ; test `fetch_raccourci_apres_attente`
+  et les deux tests d'attente liés à 300 ms ; bloc muet possible de `fetch_memoire_des_echecs` ; `Utc::now()` dans des
+  tests à horloge figée ; `isRed` en `rgb` seul ; assertion faible (`trop de devises`) ; `copie_aux_societes_et_devises_utiles`
+  ambigu ; `{#key}` qui perd le focus ; textes bruts `(ecb)` (voulu, A30) et `—` ; 409 des genres au message des cours ;
+  lien `?date=` non réactif ; libellé d'ouverture en cours de mois ; colonnes jour « manquantes » en « toutes les
+  devises » ; `today` figé au montage ; montages d'`AppState` de test dupliqués. Axes exercés : remédiations P1,
+  verrous, comptabilité (copies), RBAC (inchangé), audit, manuels (`.tex`, PDF non commité), tests (lecture), DRY, i18n
+  (garde). **Non exercés** : mutation exécutée des tests, relecture complète du CSV et de la migration (P1 les a
+  couverts), E2E complet (à la clôture). Gate ciblé (kesh-db non touché), base `kesh_s37_2` remise à zéro : fmt 0, clippy
+  workspace 0, nextest `-p kesh-api --profile ci` **3069 passés, 10 ignorés**, `npm run check` 0, `lint-i18n-ownership` 0,
+  Vitest complet **3893 passés (250 fichiers)**, `npm run build` 0 ; journaux `kesh-gate-logs/s37-2/review-p2/`.

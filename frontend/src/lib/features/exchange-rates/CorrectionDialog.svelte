@@ -49,6 +49,7 @@
 			</Dialog.Description>
 		</Dialog.Header>
 		<fieldset class="mt-2 flex flex-col gap-1 text-sm">
+			<legend class="sr-only">{i18nMsg('exchange-rates-correction-title', 'Reprendre la valeur corrigée')}</legend>
 			<label class="flex items-center gap-2">
 				<input type="radio" name="exchange-rates-correction-scope" checked />
 				{i18nMsg('exchange-rates-correction-scope-company', 'Corriger pour { $company }', {

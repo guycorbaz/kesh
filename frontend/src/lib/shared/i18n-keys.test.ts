@@ -1033,7 +1033,9 @@ const ATTENDU = {
 	// `exchange-rates-labels.ts`, 6 dans `RateCell.svelte`, 6 dans `CorrectionDialog.svelte`,
 	// 5 dans `ExchangeRateNoticesBanner.svelte` ; 3 dans `routes/(app)/settings/+page.svelte`
 	// (86 → 89 : la carte « Cours de change ») — 39 + 32 + 6 + 6 + 5 + 3 = 91. Que des littéraux.
-	sitesTotal: 3184,
+	// Revue de code P2 (37-2-CR-P2-4) : **3184 → 3185**, relevé par la garde : la légende du
+	// groupe de choix de `CorrectionDialog.svelte` (6 → 7 sites).
+	sitesTotal: 3185,
 	sitesNonResolus: 31,
 	relais: 6,
 	// Story 26-1 (#620, AC3-bis) : **10 → 11** — `lib/features/bank-import/

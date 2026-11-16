@@ -163,7 +163,7 @@ pub enum Declencheur {
 /// Le bilan d'un tour, pour le journal et les tests.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct BilanTour {
-    /// Les unités demandées (manquantes, au plus [`MAX_UNITES_PAR_TOUR`]).
+    /// Les unités demandées (manquantes ; au plus [`MAX_UNITES_PAR_TOUR`], mois courant et mois suivant manquants compris).
     pub demandees: Vec<RateUnit>,
     /// La revérification du mois courant, si elle a été demandée.
     pub reverifiee: Option<RateUnit>,
@@ -171,15 +171,6 @@ pub struct BilanTour {
     pub statut: Option<FetchOutcomeStatus>,
 }
 
-/// Un tour de récupération automatique (AC-4) : unités utiles manquantes des
-/// exercices multi-devises ouverts (toutes sociétés), au plus
-/// [`MAX_UNITES_PAR_TOUR`], dans l'ordre chronologique, chacune jugée
-/// manquante **sous le verrou** ; puis revérification du mois courant s'il
-/// était présent et couvert. Rien ne manque → aucun appel, revérification
-/// comprise. Écrit le pire statut (`triggered_by = 'auto'`), non audité.
-///
-/// Appelée par la tâche et par la connexion ; exposée pour les tests
-/// d'intégration (`#[doc(hidden)]`).
 /// Les unités demandées par un tour : au plus [`MAX_UNITES_PAR_TOUR`] des
 /// `manquantes`, dans l'ordre chronologique — mais les unités `prioritaires`
 /// (mois courant et mois suivant) qui manquent y sont **toujours** : sans
@@ -208,6 +199,15 @@ pub(crate) fn choisir_demandees(
     demandees
 }
 
+/// Un tour de récupération automatique (AC-4) : unités utiles manquantes des
+/// exercices multi-devises ouverts (toutes sociétés), choisies par
+/// [`choisir_demandees`] (au plus [`MAX_UNITES_PAR_TOUR`], dans l'ordre chronologique), chacune jugée
+/// manquante **sous le verrou** ; puis revérification du mois courant s'il
+/// était présent et couvert. Rien ne manque → aucun appel, revérification
+/// comprise. Écrit le pire statut (`triggered_by = 'auto'`), non audité.
+///
+/// Appelée par la tâche et par la connexion ; exposée pour les tests
+/// d'intégration (`#[doc(hidden)]`).
 #[doc(hidden)]
 pub async fn un_tour(state: &AppState, declencheur: Declencheur) -> Result<BilanTour, DbError> {
     let aujourdhui = state.horloge.aujourd_hui();

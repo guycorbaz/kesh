@@ -306,8 +306,16 @@ async fn ecrire(
                 .collect();
             societes.extend(manuelle.map(|m| m.utilisateur.company_id));
             let mut copied = 0;
+            // L'audit ne dit que les copies de la société de l'utilisateur :
+            // celles des autres sociétés ne sont pas les siennes (revue de
+            // code P2, 37-2-CR-P2-3).
+            let mut copied_utilisateur = 0;
             for company_id in societes {
-                copied += depot::copy_fetched_in_tx(&mut tx, company_id, &[unit], None).await?;
+                let n = depot::copy_fetched_in_tx(&mut tx, company_id, &[unit], None).await?;
+                copied += n;
+                if manuelle.is_some_and(|m| m.utilisateur.company_id == company_id) {
+                    copied_utilisateur += n;
+                }
             }
             if let Some(m) = manuelle {
                 audit_log::insert_in_tx(
@@ -326,7 +334,7 @@ async fn ecrire(
                             "count": outcome.written(),
                             "rejected": analyse.rejected.len(),
                             "corrected": outcome.corrected.len(),
-                            "copied": copied,
+                            "copied": copied_utilisateur,
                         })),
                     ),
                 )

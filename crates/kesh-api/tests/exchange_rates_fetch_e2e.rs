@@ -771,6 +771,49 @@ async fn fetch_attend_la_fin_d_une_restauration(pool: MySqlPool) {
     );
 }
 
+/// Revue de code P2 (37-2-CR-P2-3) — l'audit du `POST /fetch` ne compte que
+/// les copies de la société de l'utilisateur : une seconde société multi-devises
+/// reçoit sa copie, sans entrer dans le `copied` de l'audit de la première.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn fetch_audit_ne_compte_que_la_societe_de_l_utilisateur(pool: MySqlPool) {
+    let ctx = monter(&pool, false).await;
+    let b = sqlx::query(
+        "INSERT INTO companies (name, address, org_type, accounting_language, \
+             instance_language, multi_currency_enabled) \
+         VALUES ('Société B', 'Rue B 1\n1000 Lausanne', 'Independant', 'FR', 'FR', TRUE)",
+    )
+    .execute(&pool)
+    .await
+    .unwrap()
+    .last_insert_id() as i64;
+    sqlx::query(
+        "INSERT INTO fiscal_years (company_id, name, start_date, end_date, status, \
+             multi_currency, opening_rate_kind) \
+         VALUES (?, 'B 2026', '2026-01-01', '2026-12-31', 'Open', TRUE, 'month')",
+    )
+    .bind(b)
+    .execute(&pool)
+    .await
+    .unwrap();
+    compte_en_devise(&pool, b, "1020", "USD").await;
+    let (st, body) = ctx.fetch(json!({"year": 2026, "month": 11})).await;
+    assert_eq!(st, 200, "{body}");
+    assert_eq!(
+        retenu(&pool, b, "USD", mois(2026, 11)).await,
+        Some(dec!(0.88)),
+        "la seconde société reçoit sa copie"
+    );
+    let details = common::audit_details(
+        &pool,
+        "installation",
+        AUDIT_ENTITY_ID_NONE,
+        "exchange_rates.fetched",
+    )
+    .await
+    .unwrap();
+    assert_eq!(details["copied"], 1, "{details}");
+}
+
 /// Exercice clos : `POST /fetch` copie pour la société de l'utilisateur
 /// (A7), la tâche, elle, ne vise que les exercices ouverts.
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
