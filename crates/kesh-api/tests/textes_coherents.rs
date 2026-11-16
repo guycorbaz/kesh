@@ -1143,8 +1143,11 @@ fn fin_du_bloc(corps: &str) -> Option<usize> {
             }
             b'\'' => {
                 // Un caractère (`'{'`, `'\''`, `'\u{2013}'`) ; sinon une durée de vie.
+                // Caractère échappé : sauter `'`, `\` et l'octet échappé avant de chercher la
+                // quote fermante (Story 36-15, revue P1, B1-1 : `'\''` s'arrêtait sur la quote
+                // échappée).
                 if b.get(i + 1) == Some(&b'\\') {
-                    i += 2;
+                    i += 3;
                     while i < b.len() && b[i] != b'\'' {
                         i += 1;
                     }
@@ -1179,6 +1182,11 @@ fn sans_modules_de_test_apparie_les_accolades() {
     let reste = sans_modules_de_test(source);
     assert!(reste.contains("X(1)") && reste.contains("X(3)"), "{reste}");
     assert!(!reste.contains("X(2)"), "{reste}");
+    // Story 36-15, revue P1 (B1-1) : un `'\''` suivi d'un caractère `'{'` ne doit pas
+    // faire compter l'accolade du second.
+    let echappe = "#[cfg(test)]\nmod tests {\n    fn t() { let _ = ['\\'','{']; X(2); }\n}\nfn b() { X(3) }\n";
+    let reste = sans_modules_de_test(echappe);
+    assert!(reste.contains("X(3)") && !reste.contains("X(2)"), "{reste}");
 }
 
 /// **Story 35-2a, AC13** (D10) — l'état i18n global des messages d'erreur ne
@@ -2432,13 +2440,32 @@ fn g24_la_table_des_reason_egale_l_ensemble_ferme_du_serveur() {
 
 /// L'ancien mot, par catalogue, et le terme arbitré que la valeur de `projects-title`
 /// doit porter (arbitrage de Guy du 2026-11-16, option A). Le motif anglais est borné
-/// par `\b` : « Projected schedule » (`dunning-example-heading`) n'est pas atteint.
+/// par `\b` à droite seulement : « Projected schedule » (`dunning-example-heading`) n'est
+/// pas atteint, un composé (« subproject », « Subprojects ») l'est (revue P1, E1-2).
 const G25_CATALOGUES: [(&str, &str, &str); 4] = [
     ("fr-CH", r"(?i)projet", "comptes analytiques"),
     ("de-CH", r"(?i)projekt", "analytische konten"),
     ("it-CH", r"(?i)progett", "conti analitici"),
-    ("en-CH", r"(?i)\bprojects?\b", "analytical accounts"),
+    ("en-CH", r"(?i)project(s|'s)?\b", "analytical accounts"),
 ];
+
+/// Anti-test-muet du motif anglais de G25 (revue P1, E1-2).
+#[test]
+fn g25_le_motif_anglais_voit_les_composes_et_epargne_projected() {
+    let en = Regex::new(G25_CATALOGUES[3].1).unwrap();
+    for oui in [
+        "Project",
+        "projects",
+        "Subproject",
+        "subprojects",
+        "the project's code",
+    ] {
+        assert!(en.is_match(oui), "{oui}");
+    }
+    for non in ["Projected schedule", "projection", "Analytical accounts"] {
+        assert!(!en.is_match(non), "{non}");
+    }
+}
 
 /// Les textes français lus en entier (manuels sans leurs commentaires LaTeX).
 const G25_DOCUMENTS: [&str; 5] = [
@@ -2456,75 +2483,215 @@ const G25_SOURCES_RUST: [&str; 2] = [
     "crates/kesh-report/src/pdf.rs",
 ];
 
-/// Liste fermée des « projet » au sens courant, **par extrait de texte** (comparé sans
-/// égard à la casse) et attachée à son seul fichier. Une occurrence n'est excusée que si
-/// sa ligne, dans son fichier, contient un extrait de ce fichier ; un extrait qui
-/// n'excuse plus aucune occurrence fait rougir. Les numéros de ligne des motifs ne
-/// sont qu'indicatifs (relevés à `0bf3c3b4b`).
-const G25_EXCEPTIONS: [(&str, &str, &str); 14] = [
-    (
-        "docs/manual/fr/admin-manual.tex",
-        "Container Manager",
-        "projet Docker Compose du Synology (:602)",
-    ),
-    (
-        "docs/manual/fr/admin-manual.tex",
-        "onglet \\textbf{Projet}",
-        "onglet de Container Manager (:608)",
-    ),
-    (
-        "docs/manual/fr/admin-manual.tex",
-        "nom du projet",
-        "champ de Container Manager (:612)",
-    ),
-    (
-        "docs/manual/fr/admin-manual.tex",
-        "nom de projet",
-        "nom de projet Compose (:1676, :1766, :1975)",
-    ),
-    (
-        "docs/manual/fr/admin-manual.tex",
-        "Démarrer le projet",
-        "bouton de Container Manager (:617)",
-    ),
-    (
-        "docs/manual/fr/admin-manual.tex",
-        "<projet>",
-        "préfixe Compose des volumes et réseaux (:1535, :2087, :2509, :2921)",
-    ),
-    (
-        "docs/manual/fr/admin-manual.tex",
-        "configuration des projets",
-        "sauvegarde de Container Manager (:2001)",
-    ),
-    (
-        "docs/manual/fr/admin-manual.tex",
-        "projet compose",
-        "projet Compose quelconque (:2167)",
-    ),
-    (
-        "docs/manual/fr/admin-manual.tex",
-        "projets Docker",
-        "autres projets Docker du NAS (:2198)",
-    ),
-    (
-        "docs/manual/fr/admin-manual.tex",
-        "racine du projet",
-        "dépôt de Claude Code, `.mcp.json` (:3616)",
-    ),
-    (
-        "docs/manual/fr/marketing-brochure.tex",
-        "documentation projet",
-        "documentation du projet Kesh (:498)",
-    ),
-    ("README.md", "Structure du projet", "le dépôt (:19, :106)"),
-    ("README.md", "Le projet suit", "le dépôt (:201)"),
-    (
-        "README.md",
-        "E19 Comptabilité analytique par projet",
-        "ligne historique de la v0.4.0 au tableau des versions (:218)",
-    ),
+/// Une exception de G25 : un « projet » au sens courant, **par extrait de texte** (comparé
+/// sans égard à la casse), attaché à son seul fichier.
+struct ExceptionG25 {
+    fichier: &'static str,
+    /// L'extrait, qui contient lui-même le « projet » qu'il excuse.
+    extrait: &'static str,
+    /// Le nombre **exact** de lignes du fichier qui portent l'extrait : une ligne de plus
+    /// (une phrase analytique qui reprendrait l'extrait) ou de moins (extrait périmé) rougit.
+    lignes: usize,
+    /// `false` (cas général) : seul l'extrait est retiré de la ligne, et un autre
+    /// « projet » de la même ligne reste un écart. `true` : la ligne entière est excusée —
+    /// réservé à une ligne historique, qui cite d'anciens noms à dessein.
+    ligne_entiere: bool,
+    motif: &'static str,
+}
+
+/// Liste fermée des « projet » au sens courant (revue P1, B1-3 = E1-4 : l'exception
+/// n'excuse plus que son extrait, sur un nombre de lignes fixé). Les numéros de ligne des
+/// motifs ne sont qu'indicatifs (relevés au 2026-11-16).
+const G25_EXCEPTIONS: [ExceptionG25; 16] = [
+    ExceptionG25 {
+        fichier: "docs/manual/fr/admin-manual.tex",
+        extrait: "préfixe du projet",
+        lignes: 1,
+        ligne_entiere: false,
+        motif: "préfixe Compose d'un réseau (:2087)",
+    },
+    ExceptionG25 {
+        fichier: "docs/manual/fr/admin-manual.tex",
+        extrait: "le projet dans Container Manager",
+        lignes: 1,
+        ligne_entiere: false,
+        motif: "projet Docker Compose du Synology (:602)",
+    },
+    ExceptionG25 {
+        fichier: "docs/manual/fr/admin-manual.tex",
+        extrait: "onglet \\textbf{Projet}",
+        lignes: 1,
+        ligne_entiere: false,
+        motif: "onglet de Container Manager (:608)",
+    },
+    ExceptionG25 {
+        fichier: "docs/manual/fr/admin-manual.tex",
+        extrait: "nom du projet",
+        lignes: 2,
+        ligne_entiere: false,
+        motif: "champ de Container Manager (:612), préfixe Compose (:1535)",
+    },
+    ExceptionG25 {
+        fichier: "docs/manual/fr/admin-manual.tex",
+        extrait: "nom de projet",
+        lignes: 3,
+        ligne_entiere: false,
+        motif: "nom de projet Compose (:1676, :1766, :1975)",
+    },
+    ExceptionG25 {
+        fichier: "docs/manual/fr/admin-manual.tex",
+        extrait: "Démarrer le projet",
+        lignes: 1,
+        ligne_entiere: false,
+        motif: "bouton de Container Manager (:617)",
+    },
+    ExceptionG25 {
+        fichier: "docs/manual/fr/admin-manual.tex",
+        extrait: "<projet>",
+        lignes: 4,
+        ligne_entiere: false,
+        motif: "préfixe Compose des volumes et réseaux (:1535, :2087, :2509, :2921)",
+    },
+    ExceptionG25 {
+        fichier: "docs/manual/fr/admin-manual.tex",
+        extrait: "configuration des projets",
+        lignes: 1,
+        ligne_entiere: false,
+        motif: "sauvegarde de Container Manager (:2001)",
+    },
+    ExceptionG25 {
+        fichier: "docs/manual/fr/admin-manual.tex",
+        extrait: "projet compose",
+        lignes: 1,
+        ligne_entiere: false,
+        motif: "projet Compose quelconque (:2167)",
+    },
+    ExceptionG25 {
+        fichier: "docs/manual/fr/admin-manual.tex",
+        extrait: "projets Docker",
+        lignes: 1,
+        ligne_entiere: false,
+        motif: "autres projets Docker du NAS (:2198)",
+    },
+    ExceptionG25 {
+        fichier: "docs/manual/fr/admin-manual.tex",
+        extrait: "racine du projet",
+        lignes: 1,
+        ligne_entiere: false,
+        motif: "dépôt de Claude Code, `.mcp.json` (:3616)",
+    },
+    ExceptionG25 {
+        fichier: "docs/manual/fr/marketing-brochure.tex",
+        extrait: "documentation projet",
+        lignes: 1,
+        ligne_entiere: false,
+        motif: "documentation du projet Kesh (:498)",
+    },
+    ExceptionG25 {
+        fichier: "README.md",
+        extrait: "Structure du projet",
+        lignes: 2,
+        ligne_entiere: false,
+        motif: "le dépôt (:19, :106)",
+    },
+    ExceptionG25 {
+        fichier: "README.md",
+        extrait: "structure-du-projet",
+        lignes: 1,
+        ligne_entiere: false,
+        motif: "ancre de la table des matières (:19)",
+    },
+    ExceptionG25 {
+        fichier: "README.md",
+        extrait: "Le projet suit",
+        lignes: 1,
+        ligne_entiere: false,
+        motif: "le dépôt (:201)",
+    },
+    ExceptionG25 {
+        fichier: "README.md",
+        extrait: "E19 Comptabilité analytique par projet",
+        lignes: 1,
+        ligne_entiere: true,
+        motif: "ligne historique de la v0.4.0 au tableau des versions (:218)",
+    },
 ];
+
+/// **Fonction pure de G25** — les « projet » non excusés d'un document, et le nombre de
+/// lignes que chaque exception a reconnues (même ordre que `exceptions`). Une ligne qui
+/// porte l'extrait d'une exception de ce fichier compte pour elle ; si l'exception n'est
+/// pas `ligne_entiere`, l'extrait est retiré de la ligne et le reste est relu.
+fn g25_non_excuses(
+    chemin: &str,
+    texte: &str,
+    exceptions: &[ExceptionG25],
+) -> (Vec<String>, Vec<usize>) {
+    let projet = Regex::new(r"(?i)projet").unwrap();
+    let mut ecarts = Vec::new();
+    let mut lignes_vues = vec![0usize; exceptions.len()];
+    for (n, ligne) in lignes_ou(texte, &projet) {
+        let mut reste = ligne.to_lowercase();
+        let mut entiere = false;
+        for (k, e) in exceptions.iter().enumerate() {
+            let extrait = e.extrait.to_lowercase();
+            if e.fichier == chemin && ligne.to_lowercase().contains(&extrait) {
+                lignes_vues[k] += 1;
+                if e.ligne_entiere {
+                    entiere = true;
+                } else {
+                    reste = reste.replace(&extrait, " ");
+                }
+            }
+        }
+        if !entiere && projet.is_match(&reste) {
+            ecarts.push(format!("{chemin}:{n} : {}", ligne.trim()));
+        }
+    }
+    (ecarts, lignes_vues)
+}
+
+/// Anti-test-muet de [`g25_non_excuses`] (revue P1, B1-3 = E1-4) : l'extrait excuse son
+/// seul « projet », non un autre de la même ligne ; une ligne entière n'est excusée que
+/// pour une exception qui le dit ; le compte de lignes est rendu.
+#[test]
+fn g25_une_exception_n_excuse_que_son_extrait() {
+    let ex = [
+        ExceptionG25 {
+            fichier: "f.tex",
+            extrait: "nom du projet",
+            lignes: 1,
+            ligne_entiere: false,
+            motif: "t",
+        },
+        ExceptionG25 {
+            fichier: "f.tex",
+            extrait: "historique par projet",
+            lignes: 1,
+            ligne_entiere: true,
+            motif: "t",
+        },
+    ];
+    let (ecarts, vues) = g25_non_excuses("f.tex", "Le Nom du projet Compose.\n", &ex);
+    assert!(ecarts.is_empty(), "{ecarts:?}");
+    assert_eq!(vues, vec![1, 0]);
+    // Un second « projet », analytique, sur la ligne excusée : rouge.
+    let (ecarts, _) = g25_non_excuses("f.tex", "Le nom du projet, et un projet analytique.\n", &ex);
+    assert_eq!(ecarts.len(), 1, "{ecarts:?}");
+    // La ligne entière : excusée, autres « projet » compris.
+    let (ecarts, vues) = g25_non_excuses(
+        "f.tex",
+        "Ligne historique par projet : projet, sous-projet.\n",
+        &ex,
+    );
+    assert!(ecarts.is_empty(), "{ecarts:?}");
+    assert_eq!(vues, vec![0, 1]);
+    // Deux lignes portent l'extrait : le compte le dit (le test G25 rougit au-delà de 1).
+    let (_, vues) = g25_non_excuses("f.tex", "nom du projet\nnom du projet analytique\n", &ex);
+    assert_eq!(vues, vec![2, 0]);
+    // Un autre fichier : l'exception ne vaut pas.
+    let (ecarts, _) = g25_non_excuses("g.tex", "nom du projet\n", &ex);
+    assert_eq!(ecarts.len(), 1);
+}
 
 /// **Fonction pure de G25** — les littéraux de chaîne d'un source Rust, avec la ligne
 /// (1-basée) où chacun s'ouvre. Lexème par lexème : les commentaires `//` (doc-comments
@@ -2601,9 +2768,12 @@ fn litteraux_de_chaine(source: &str) -> Vec<(usize, String)> {
                 i += 1;
             }
             b'\'' => {
-                // Un caractère (`'"'`, `'\''`, `'\u{2013}'`) ; sinon une durée de vie.
+                // Un caractère (`'"'`, `'\''`, `'\\'`, `'\u{2013}'`) ; sinon une durée de vie.
+                // Caractère échappé : sauter `'`, `\` ET l'octet échappé avant de chercher la
+                // quote fermante — sinon `'\''` s'arrêtait sur la quote échappée (revue P1,
+                // B1-1 = E1-1).
                 if b.get(i + 1) == Some(&b'\\') {
-                    i += 2;
+                    i += 3;
                     while i < b.len() && b[i] != b'\'' {
                         i += 1;
                     }
@@ -2658,6 +2828,17 @@ fn g25_l_extracteur_de_litteraux_de_chaine() {
     // Sondes positives : chaînes brutes (`r"…"`, `r#"…"#`), lues elles aussi.
     assert_eq!(avec("let s = r\"le projet\";\n").len(), 1, "r\"…\"");
     assert_eq!(avec("let s = r#\"le \"projet\"\"#;\n").len(), 1, "r#\"…\"#");
+    // Sonde positive (revue P1, B1-1 = E1-1) : un `'\''` suivi d'un caractère `'"'` ne
+    // décale pas l'appariement ; le « projet » qui suit est rendu, et lui seul.
+    assert_eq!(
+        avec("let v = ['\\'','\"']; let s = \"projet\";\n"),
+        vec![(1, "projet".to_string())],
+        "'\\'' suivi de '\"'"
+    );
+    assert_eq!(
+        litteraux_de_chaine("let v = ['\\'','\"', '\\\\']; let s = \"projet\";\n"),
+        vec![(1, "projet".to_string())]
+    );
     // Sondes négatives : commentaires, doc-comments, doc-comment à guillemets (forme de
     // `pdf.rs:61`, `:885`), commentaire de bloc, caractères `'"'` et `'\''`, durées de vie.
     for neg in [
@@ -2735,7 +2916,7 @@ fn le_vocabulaire_analytique_est_compte_analytique() {
 
     // 2. Documents français, exceptions par extrait attachées à leur fichier.
     let projet = Regex::new(r"(?i)projet").unwrap();
-    let mut utilises = vec![false; G25_EXCEPTIONS.len()];
+    let mut vues = vec![0usize; G25_EXCEPTIONS.len()];
     for chemin in G25_DOCUMENTS {
         let brut = lire(chemin);
         let texte = if chemin.ends_with(".tex") {
@@ -2744,18 +2925,10 @@ fn le_vocabulaire_analytique_est_compte_analytique() {
             brut
         };
         assert!(texte.lines().count() > 100, "G25 — {chemin} lu à vide");
-        for (n, ligne) in lignes_ou(&texte, &projet) {
-            let basse = ligne.to_lowercase();
-            let mut excusee = false;
-            for (k, (fichier, extrait, _)) in G25_EXCEPTIONS.iter().enumerate() {
-                if *fichier == chemin && basse.contains(&extrait.to_lowercase()) {
-                    utilises[k] = true;
-                    excusee = true;
-                }
-            }
-            if !excusee {
-                ecarts.push(format!("{chemin}:{n} : {}", ligne.trim()));
-            }
+        let (non_excuses, vues_ici) = g25_non_excuses(chemin, &texte, &G25_EXCEPTIONS);
+        ecarts.extend(non_excuses);
+        for (v, ici) in vues.iter_mut().zip(vues_ici) {
+            *v += ici;
         }
     }
     if !lire("docs/manual/fr/user-manual.tex").contains("Comptes analytiques") {
@@ -2764,10 +2937,16 @@ fn le_vocabulaire_analytique_est_compte_analytique() {
                 .to_string(),
         );
     }
-    for (k, (fichier, extrait, motif)) in G25_EXCEPTIONS.iter().enumerate() {
-        if !utilises[k] {
+    for (e, vu) in G25_EXCEPTIONS.iter().zip(&vues) {
+        if *vu == 0 {
             ecarts.push(format!(
-                "exception périmée : {fichier} « {extrait} » ({motif}) n'excuse plus aucune occurrence"
+                "exception périmée : {} « {} » ({}) n'excuse plus aucune occurrence",
+                e.fichier, e.extrait, e.motif
+            ));
+        } else if *vu != e.lignes {
+            ecarts.push(format!(
+                "exception {} « {} » ({}) : {vu} ligne(s) la portent, {} attendue(s)",
+                e.fichier, e.extrait, e.motif, e.lignes
             ));
         }
     }

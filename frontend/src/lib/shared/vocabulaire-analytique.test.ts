@@ -172,9 +172,23 @@ describe('vocabulaire analytique — « compte analytique » (CR #1161)', () => 
 	it('le repli de chaque appel i18nMsg des 49 clés égale sa valeur fr-CH', () => {
 		const parCle = releveDesReplis(sources);
 		const relevees = CLES.filter((c) => parCle.has(c));
-		// 36 clés relevées en appel littéral au 2026-11-16 ; les autres se résolvent
-		// en objet, en nom de fichier ou par l'audit (clé assemblée).
-		expect(relevees.length).toBeGreaterThanOrEqual(30);
+		// Revue P1 (B1-2 = V-A1) : liste FERMÉE des clés hors appel littéral — les sites en
+		// objet et les deux noms de fichier (contrôlés au test suivant), et les cinq clés de
+		// l'audit, assemblées à l'exécution. Toute autre clé doit être relevée : un appel
+		// réécrit sous une forme que le relevé ne lit pas rougit ici (39 relevées).
+		expect(CLES.filter((c) => !parCle.has(c))).toEqual([
+			'reports-project-expenses',
+			'reports-project-return',
+			'reports-filename-project-expenses',
+			'reports-filename-project-return',
+			'nav-projects',
+			'audit-log-entity-project',
+			'audit-log-action-project-created',
+			'audit-log-action-project-updated',
+			'audit-log-action-project-archived',
+			'audit-log-action-project-unarchived',
+		]);
+		expect(relevees).toHaveLength(39);
 		const ecarts = relevees.flatMap((cle) => {
 			const replis = [...parCle.get(cle)!];
 			const attendu = fr.get(cle);

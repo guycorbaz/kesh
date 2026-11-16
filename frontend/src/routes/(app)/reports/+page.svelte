@@ -422,9 +422,11 @@
 			exporting = true;
 			errorMsg = null;
 			try {
-				// i18n slug (cohérent buildExportFilename des rapports classiques) —
-				// le backend pose déjà le Content-Disposition localisé ; ce filename
-				// est le fallback suggéré au navigateur.
+				// i18n slug, valeur entière du catalogue (non coupée). ⚠️ C'est le SEUL nom
+				// que reçoit le navigateur : `triggerDownload` nomme le blob lui-même et le
+				// `Content-Disposition` du serveur (`kesh-{type}-{société}-{début}_{fin}`)
+				// n'est pas lu ; les deux noms diffèrent (période, forme de la société).
+				// Story 36-15, revue P1 E1-3 — l'alignement est tracé à part.
 				const slugKey =
 					activeTab === 'project-expenses'
 						? 'reports-filename-project-expenses'

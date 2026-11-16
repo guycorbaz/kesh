@@ -165,7 +165,9 @@ passage des rollouts qui touchent ces domaines, pas ici.
 | rapport | Bericht | rapporto | report | `Rapports comptables` |
 | banque | Bank | banca | bank | `Banque` |
 | devise | Währung | valuta | currency | `Devise non supportée : seul le franc suisse (CHF) est pris en charge. Devise du relevé :` |
-| **compte analytique** | **analytisches Konto** (n.) | **conto analitico** (m.) | **analytical account** | arbitrage de Guy du 2026-11-16 (CR #1161, Story 36-15), qui prolonge celui du 2026-08-19 — cf. les notes ci-dessous ; `projects-title` (« Comptes analytiques / Analytische Konten / Conti analitici / Analytical accounts »). ⚠️ **Toujours en entier** : « Konto », « conto », « account » seuls désignent le compte du plan. Sous-compte : `analytisches Unterkonto` / `sottoconto analitico` / `analytical sub-account` |
+| **compte analytique** | **analytisches Konto** (n.) | **conto analitico** (m.) | **analytical account** | arbitrage de Guy du 2026-11-16 (CR #1161, Story 36-15), qui prolonge celui du 2026-08-19 — cf. les notes ci-dessous ; `projects-title` (« Comptes analytiques / Analytische Konten / Conti analitici / Analytical accounts »). ⚠️ **Toujours en entier** : « Konto », « conto », « account » seuls désignent le compte du plan. Sous-compte : `analytisches Unterkonto` / `sottoconto analitico` / `analytical sub-account`. ⚠️ Après *pro*, l'**accusatif** : « Ausgaben **pro analytisches Konto** », jamais *pro analytischem Konto* (arbitrage de Guy du 2026-11-16, revue P1 de la 36-15, B1-4) |
+| **compte analytique par défaut** | **Analytisches Standardkonto** | **conto analitico predefinito** | **default analytical account** | `reconciliation-rules-labels-default-project` (Story 36-15 ; composé gardé par arbitrage de Guy du 2026-11-16, revue P1 B1-5). ⚠️ C'est le **compte analytique** qu'une règle d'affectation pose par défaut, **pas un compte du plan** : *Standardkonto* ne s'emploie ici qu'avec l'adjectif |
+| **compte analytique racine** | **analytisches Hauptkonto** | **conto analitico radice** | **root analytical account** | `projects-parent-none` (Story 36-15 ; composé gardé par arbitrage de Guy du 2026-11-16, revue P1 B1-5). ⚠️ Le compte analytique **sans parent** (premier des deux niveaux), **pas un compte principal ni collectif du plan** : *Hauptkonto* ne s'emploie ici qu'avec l'adjectif |
 | dépenses | Ausgaben | spese | expenses | `reports-filename-project-expenses` ⚠️ *slug de nom de fichier, pas un libellé* |
 
 ⚠️ **« Projet analytique » se rend simplement par `Projekt` / `progetto` / `project`** — arbitrage
@@ -205,7 +207,8 @@ désignent le compte du plan comptable (`reports-project-expenses-col-account`).
 attestée par `supplier-invoices-detail-project`, qui ne la porte plus — est retirée ; la partie A
 compte **82** lignes de tableau, 83 avant cette story, recomptées le 2026-11-16 par
 `awk '/^## A\./{a=1;next} /^## B\./{a=0} a && /^\| / && !/^\| fr-CH/ && !/^\|---/' docs/i18n-glossaire.md | wc -l` ; le « 76 » écrit
-plus bas vaut pour la story 23-4.)*
+plus bas vaut pour la story 23-4. *Annoté le 2026-11-16, remédiation de la revue P1* : **84** lignes, par la même
+commande, après l'ajout de « compte analytique par défaut » et « compte analytique racine » (arbitrage B1-5).)*
 | **journal d'audit** | **Audit-Protokoll** | **registro di audit** | **audit log** | `export-global-content-excludes` (story 25-5-a, **conforme dans les quatre langues**) ; `fiscal-year-reopen-confirmation-body` en allemand. Arbitrage du Project Lead du 2026-09-15 (story 25-1c-b2, #378) ; l'italien n'avait **aucun** précédent. ⚠️ Ne PAS employer « piste d'audit », « audit-trail », « pista di audit », « audit trail » : alignés par la 25-1c-b2. ⚠️ `nav-audit-log` et les clés de l'écran naissent dans la même PR : **pas** des précédents |
 
 ---
