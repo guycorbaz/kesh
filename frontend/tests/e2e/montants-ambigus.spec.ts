@@ -59,17 +59,20 @@ async function login(page: Page): Promise<void> {
 /** Une route d'écriture : méthode et chemin (sans requête). */
 type WriteRoute = { method: string; path: RegExp };
 
-/** Compte les requêtes d'écriture de l'écran, armé AVANT le clic (AC7, V1-7). */
-function countWrites(page: Page, routes: WriteRoute[]): () => number {
-	let n = 0;
+/**
+ * Relève les requêtes d'écriture de l'écran, armé AVANT le clic (AC7, V1-7) : rend leurs
+ * corps, pour qu'un échec montre ce qui serait parti (« 1.250 », avant la story).
+ */
+function countWrites(page: Page, routes: WriteRoute[]): () => string[] {
+	const bodies: string[] = [];
 	const matches = (req: Request) => {
 		const p = new URL(req.url()).pathname;
 		return routes.some((r) => r.method === req.method() && r.path.test(p));
 	};
 	page.on('request', (req) => {
-		if (matches(req)) n += 1;
+		if (matches(req)) bodies.push(`${req.method()} ${new URL(req.url()).pathname} ${req.postData()}`);
 	});
-	return () => n;
+	return () => bodies;
 }
 
 /** Attend la requête d'écriture de l'écran (même filtre). */
@@ -130,12 +133,13 @@ test('soldes de départ : « 1.250 » refusé comme ambigu, rien n’est écrit 
 		// « 1.250 » à l'actif, « 1.25 » au report : équilibré sous l'ancienne lecture.
 		await page.getByTestId(`opening-balances-debit-${asset!.number}`).fill('1.250');
 		await page.getByTestId(`opening-balances-credit-${equity!.number}`).fill('1.25');
-		await expect(page.getByTestId('opening-balances-amount-ambiguous')).toBeVisible();
-		await expect(page.getByTestId('opening-balances-generate')).toBeDisabled();
+		// `expect.soft` : sans le correctif, le test va jusqu'au clic et montre la requête partie.
+		await expect.soft(page.getByTestId('opening-balances-amount-ambiguous')).toBeVisible();
+		await expect.soft(page.getByTestId('opening-balances-generate')).toBeDisabled();
 		await capture(page, testInfo, 'soldes-ambigu');
 		await page.getByTestId('opening-balances-generate').click({ force: true });
 		await page.waitForTimeout(300);
-		expect(writes(), 'aucune requête d’écriture des soldes').toBe(0);
+		expect(writes(), 'aucune requête d’écriture des soldes').toEqual([]);
 		const status = await (await ctx.get('/api/v1/opening-balances/status')).json();
 		expect(status.reason, 'aucune écriture d’ouverture').toBe('READY');
 
@@ -231,14 +235,14 @@ test('facture fournisseur, prix unitaire : « 1.250 » refusé, rien n’est éc
 		const writes = countWrites(page, SUPPLIER_WRITES);
 
 		await fillSupplierForm(page, d, '1.250');
-		await expect(page.getByTestId('supplier-invoice-line-unit-price-ambiguous')).toBeVisible();
+		await expect.soft(page.getByTestId('supplier-invoice-line-unit-price-ambiguous')).toBeVisible();
 		await page.getByTestId('supplier-invoice-submit').click();
+		await page.waitForTimeout(300);
+		expect(writes(), 'aucune requête d’écriture de facture fournisseur').toEqual([]);
 		await expect(page.getByTestId('supplier-invoice-form-error')).toContainText(
 			'Ligne 1 : prix unitaire ambigu',
 		);
 		await capture(page, testInfo, 'fournisseur-prix-ambigu');
-		await page.waitForTimeout(300);
-		expect(writes(), 'aucune requête d’écriture de facture fournisseur').toBe(0);
 		expect(await supplierInvoiceTotal(ctx), 'aucune facture fournisseur neuve').toBe(before);
 
 		const line = page.getByTestId('supplier-invoice-line').first();
@@ -303,12 +307,12 @@ test('facture fournisseur, montant attendu : « 1.250 » refusé, rien n’est �
 
 		await fillSupplierForm(page, d, '1250.00');
 		await page.getByTestId('supplier-invoice-expected-amount').fill('1.250');
-		await expect(page.getByTestId('supplier-invoice-expected-amount-ambiguous')).toBeVisible();
+		await expect.soft(page.getByTestId('supplier-invoice-expected-amount-ambiguous')).toBeVisible();
 		await page.getByTestId('supplier-invoice-submit').click();
+		await page.waitForTimeout(300);
+		expect(writes(), 'aucune requête d’écriture de facture fournisseur').toEqual([]);
 		await expect(page.getByTestId('supplier-invoice-form-error')).toContainText('Montant ambigu');
 		await capture(page, testInfo, 'fournisseur-attendu-ambigu');
-		await page.waitForTimeout(300);
-		expect(writes(), 'aucune requête d’écriture de facture fournisseur').toBe(0);
 		expect(await supplierInvoiceTotal(ctx), 'aucune facture fournisseur neuve').toBe(before);
 
 		await page.getByTestId('supplier-invoice-expected-amount').fill("12'34");
@@ -393,13 +397,13 @@ test('règlement : « 1.250 » refusé comme ambigu, rien n’est écrit ; « 1�
 		await page.getByTestId('settle-account').selectOption({ index: 1 });
 
 		await page.locator('#settle-amount').fill('1.250');
-		await expect(page.locator('#settle-client-error')).toContainText('Montant ambigu');
-		await expect(page.locator('#settle-amount')).toHaveAttribute('aria-invalid', 'true');
-		await expect(page.getByTestId('settle-confirm')).toBeDisabled();
+		await expect.soft(page.locator('#settle-client-error')).toContainText('Montant ambigu');
+		await expect.soft(page.locator('#settle-amount')).toHaveAttribute('aria-invalid', 'true');
+		await expect.soft(page.getByTestId('settle-confirm')).toBeDisabled();
 		await capture(page, testInfo, 'reglement-ambigu');
 		await page.getByTestId('settle-confirm').click({ force: true });
 		await page.waitForTimeout(300);
-		expect(writes(), 'aucune requête de règlement').toBe(0);
+		expect(writes(), 'aucune requête de règlement').toEqual([]);
 		expect(new Big(await amountDue(ctx, id)).eq(new Big(dueBefore)), 'reste dû inchangé').toBe(true);
 		expect(await invoiceVersionViaApi(ctx, id)).toBe(versionBefore);
 
