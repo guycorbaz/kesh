@@ -206,3 +206,21 @@ réversibilité. Code lu à `fed34a9c7`. Fiche : `36-16-reimputation-analytique.
 - **Contexte** : la fiche nomme `kesh-gate-logs/e36-16a/` ; le prompt d'appel, `kesh-gate-logs/e36-16/`.
 - **Retenu** : le prompt d'appel (`e36-16/`, mutations dans `e36-16/mut/`).
 - **Réversible** : oui.
+
+### C-36-16a-9 — Refusion de la branche de release après la fusion de la 36-15 (demande de l'orchestrateur)
+
+- **Contexte** : la 36-15 close et fusionnée dans `epic/36-0.18.0` à `e50586b84` (raccords CHANGELOG et manuel
+  d'administration) ; l'orchestrateur demande de la refusionner au prochain point d'arrêt commode.
+- **Retenu** : `git fetch`, fusion de `origin/epic/36-0.18.0` (`1cdf902e4`), avant le lancement de la spec E2E des captures
+  (encore en attente du verrou). Un seul conflit, `sprint-status.yaml` : la ligne `36-15-compte-analytique` prise de la release
+  (`done`), les lignes `36-16*` de la branche (`split`, 36-16a/b/c). Les `.ftl` et le manuel d'administration fusionnés sans
+  conflit : le bloc `# Story 36-16a` (16 clés par locale) et « 140 des 147 routes » relus après la fusion.
+- **Réversible** : oui.
+
+### C-36-16a-10 — T6 dans `project_reassignment_e2e.rs`, non dans un test `kesh-db`
+
+- **Contexte** : la fiche place T6 (invariant D3 sur les créations automatiques) dans `crates/kesh-db/tests/project_reassignment.rs`.
+- **Retenu** : `automatic_entries_carry_the_invoice_account_on_every_line`, dans le fichier des routes : les états de la facture
+  payée et de la facture annulée s'y construisent déjà par les routes (C-36-16a-2), que le test `kesh-db` aurait dû refaire par
+  les dépôts. Sonde de la fiche jouée et tuée (M7 : `project_id: None` à la création de l'avoir).
+- **Réversible** : oui.
