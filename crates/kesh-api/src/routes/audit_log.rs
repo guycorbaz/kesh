@@ -417,8 +417,9 @@ pub async fn export_audit_log_csv(
             .map_err(|e| AppError::Internal(format!("vidage CSV : {e}")))?;
     }
 
-    // Le nom porte la date du jour de Zurich (Story 35-5b, #929) ; les lignes et
-    // les filtres restent en UTC (#669).
+    // Le nom porte la date du jour de Zurich (Story 35-5b, #929) ; les lignes
+    // restent des instants UTC (#669) ; les filtres choisissent des jours de
+    // Zurich depuis la Story 36-10 (#1147, `audit_log::bornes_du_filtre`).
     let aujourd_hui = state.horloge.aujourd_hui();
     let nom = format!(
         "kesh-journal-audit-{}-{}.csv",
