@@ -1125,3 +1125,113 @@ l'Epic 38).
   du résidu, écran, inventaire, tests, KISS, A41. Non exercés : code de 37-1 à 37-4 (non écrit), E2E, manuels `.tex`
   (contrôlés à la passe précédente). Aucun finding au-dessus de LOW, remédiation sans code de production : boucle CR-8
   de 37-5 clôturable.
+- 2026-11-16 — **étape 0 du développement** (Opus 5.5), table de `kesh-gate-logs/etape0/37-5.md` revérifiée contre la
+  base de la branche (`31910288`, partie de `story/37-4-rapports-en-devise`) : tient, lignes relues — `fiscal_years::close`
+  `repositories/fiscal_years.rs:1382`, `LOCK_IN_COMPANY_SQL` :163, `START_DATE_IN_COMPANY_SQL` :167, `LIST_EARLIER_SQL`
+  :172, `LOCK_EARLIER_BY_ID_SQL` :179, `earlier_open_locking_sql` :202 ; `closing_checks.rs` « Rien ne bloque » :24,
+  « Toujours huit » :123, `CheckCode` :150, `MAX_LISTED` :435, `FISCAL_YEAR_SQL` :439, `ALL_SQL` :550 ;
+  `close_fiscal_year` `routes/fiscal_years.rs:515`, « sept contrôles » :254 ; `comptable_routes` `lib.rs:573`, `/close`
+  :894 ; `fx_accounts_for` `accounts.rs:1773`, `validate_fx_accounts_in_tx` :1994 ; `find_company_rate_in_tx`
+  `exchange_rates.rs:365`, `find_fetched_rate_in_tx` :402 ; `balances_as_of` `account_balances.rs:109` (37-4) ;
+  `for_actor` `audit_log.rs:238`, `par` :263 ; registre : partitions :1063 et :1529, enveloppes :1369, `examinees, 27`
+  :1404. Un écart : le bras `EarlierFiscalYearOpen` de `kesh-api/src/errors.rs` est à :4845 (37-3a et 37-4 l'ont
+  déplacé depuis l'étape 0, :4625). Prémisses de 37-3a (ligne `revaluation`, exemption, `ENTRY_IS_FX_REVALUATION`) et de
+  37-4 (`balances_as_of`) : présentes.
+- 2026-11-16 — **développement** (Opus 5.5, worktree `kesh-s37-5`). Détail au Dev Agent Record. Fusion de
+  `epic/37-multi-devises` à `dd01a3df` (37-4 terminée) par `git merge --no-ff`, sur consigne de l'orchestrateur : sans
+  conflit, deux fichiers d'artefacts seulement (fiche 37-4, `sprint-status.yaml`) ; `sitesTotal`, registre des routes et
+  audit des migrations recomptés après la fusion (aucun changement venu d'elle). Aucun outil MCP pour l'aperçu (V12) :
+  un calcul à la demande, hors du périmètre en lecture des livres du serveur MCP ; les écritures passées se lisent par
+  `kesh_ecritures` et `kesh_ecriture` (test `une_ecriture_de_reevaluation_dans_kesh_ecriture`, et recette V7).
+
+## Dev Agent Record
+
+### Agent Model Used
+
+Opus 5.5 (`claude-opus-5-5`).
+
+### Completion Notes List
+
+- **Calcul pur** (`kesh-core/src/accounting/fx_revaluation.rs`) : écart en débit net par produit `i128` contrôlé,
+  arrondi au centime loin de zéro, bornes 10¹³ ; règle unique du genre d'un cours reçu (`received_rate_kind`) ; côté
+  (gain, perte) ; totaux. 13 tests (dont les cinq cas de signe).
+- **Dépôt** (`kesh-db/src/repositories/fx_revaluation.rs`) : `resolve_default_rates` (une seule fonction : aperçu,
+  passation, K9, clôture) ; `lines_for_fiscal_year` et `build_lines` (une seule fonction des lignes : aperçu, K9,
+  clôture ; la passation emploie `build_lines` sur ses comptes verrouillés) ; `not_revalued` (K9 et refus de la
+  clôture, mêmes `details`) ; `previous_revaluations` (A39) ; `revaluation_label` (libellé partagé par l'aperçu et la
+  passation) ; `fx_account_verdicts` (comptes de différence employés, la paire de la société revalidée une fois) ;
+  `post` (verrous `companies` → antérieurs → exercice → comptes en partage → comptes de différence, puis soldes ;
+  évaluation dans l'ordre de l'AC-4 ; une écriture `OD` de deux lignes par compte ; audit `fx_revaluation.posted` par
+  `NewAuditLogEntry::par`, aucun sans écriture).
+- **Clôture** : `fiscal_years::close` lit (a) l'exercice entier et (b) les antérieurs **avant `begin`**, puis, en
+  multi-devises, la requête `EXISTS` de K9 et les cours par défaut ; étapes (b')–(d) extraites en
+  `lock_with_earlier_in_tx`, partagée avec `post` ; étape (d-bis) : genre changé → 409 `OPTIMISTIC_LOCK_CONFLICT`, K9
+  sur la ligne verrouillée → 409 `FOREIGN_ACCOUNTS_NOT_REVALUED`. Signature inchangée ; les 105 tests de clôture et de
+  course existants (13 b1 à b3 compris) passent tels quels.
+- **K9** (`closing_checks.rs`) : neuvième contrôle, `blocking`, `FX_CANDIDATES_EXIST_SQL` dans `ALL_SQL` (garde T-a2
+  verte ; test qui lie son prédicat à `CANDIDATE_PREDICATE`), mono-devise sans lecture, fonctions externes inscrites à
+  l'angle mort de T-a2.
+- **API** : `routes/fx_revaluation.rs` (aperçu, passation, `retry_on_deadlock("fx_revaluation::post")`), erreurs
+  `FX_REVALUATION_ACCOUNT_INVALID`, `FX_VALUE_OUT_OF_RANGE` (variante propre sans rang de ligne),
+  `FOREIGN_ACCOUNTS_NOT_REVALUED`, `FX_RATE_INVALID {reason: tooMany}` ; libellés et action d'audit dans les quatre
+  locales ; registre des routes : 152 → 154 routes, tracées 145 → 146, `no_matter` 3 → 4, rejouées 27 → 28,
+  `sans_ecriture` 126 → 127, total 156 → 158 ; phrase du manuel d'administration « 146 des 154 » et
+  « 146 + 4 + 4 = 154 », « quatre autres routes ».
+- **Écran** : un seul composant `RevaluationPanel.svelte` (mode `full` pour l'action « Réévaluer les devises », mode
+  `notice` pour l'avis de K9) et sa logique pure `revaluation.helpers.ts` ; avis de K9 dans `FiscalYearChecks.svelte`
+  (aperçu avant tout clic pour Comptable et Administrateur, liste seule pour Consultation, rien quand K9 est `ok`) ;
+  « Clôturer » désactivé sous K9, 409 traité comme `EARLIER_FISCAL_YEAR_OPEN`.
+- **Inventaire « huit » → « neuf »** : `closing_checks.rs`, `routes/fiscal_years.rs` (disait « sept »), tests Rust,
+  `closing-checks.test-fixtures.ts`, `FiscalYearChecks.svelte` (en-tête, texte de repli), `fiscal-years.api.ts`,
+  `fiscal-years.types.ts`, Vitest (`FiscalYearChecks.test.ts`, `fiscal-years-page.test.ts`), trois specs E2E, manuel
+  utilisateur (préparation de la clôture, entrée K9, clôture), manuel d'administration (:1876), brochure, `README.md:48`,
+  `docs/api-external.md` (note ¹⁰, codes, note ¹⁰ᵇ des routes neuves, V8) ; `fiscal-years-checks-intro` dans les quatre
+  locales. `README.md:233` (v0.13.4) est historique et reste.
+- **Manuel** : section « La réévaluation de fin d'exercice » (`sec:reevaluation-devises`, AC-8), `.tex` seulement.
+- **Choix du développement** (pas de registre `epic-37-choix-autonomes.md` dans la branche ; écrits ici) :
+  C-37-5-1 — champ additif `defaultKind` dans `rates[]` de l'aperçu : sans lui, l'écran ne distinguait un repli mensuel
+  d'un cours du jour qu'en comparant des dates, faux pour un exercice qui finit un 1er du mois ;
+  C-37-5-2 — sans `accountIds`, les clés de `rates` admises à l'aperçu sont les devises des comptes **admissibles** (et
+  non de la seule présélection, qui exclut les devises sans cours) : sinon un cours saisi pour une devise sans cours
+  serait refusé à la première lecture ; la présélection se calcule ensuite, cours reçus compris ;
+  C-37-5-3 — `blockers[]` porte un `FX_ACCOUNT_INVALID` **par compte sélectionné fautif** (la passation, elle, rend le
+  premier), et chaque blocker porte le message traduit du serveur, construit par le rendu de l'erreur (DRY) ;
+  C-37-5-4 — mécanisme de l'atomicité (AC-7) : un déclencheur `BEFORE INSERT` posé dans la base éphémère du test refuse
+  la ligne `revaluation` du troisième compte (`SIGNAL`) ; aucune des trois écritures ne subsiste ;
+  C-37-5-5 — l'E2E de l'avis de K9 se joue sur le **même** exercice que l'écran (écriture tardive après la passation),
+  non « sur un autre exercice » : il montre la valeur cumulée passée et le lien vers sa première écriture, puis lève K9
+  et clôt ;
+  C-37-5-6 — à `D = 0`, la contrepartie affichée est le compte de gains.
+- **Écart à la fiche** : la recette V7 (`fx_recette_api_e2e.rs`) ne joue **ni l'ouverture** en devise par
+  `POST /opening-balances` (`{ amount, chf, side }`) **ni la conversion** `POST /journal-entries/conversions`
+  (`completeDifference`) : ces deux routes sont de la 37-3b, absente de la base. Le reste de la recette passe
+  (activation, comptes à comptes propres, exercice créé après l'activation, cours factices, quatre formes d'écriture,
+  réévaluation V8 à 0.91193 / 0.94947 en `request`/`manual`, balance et grand livre au CHF exact, lecture MCP). Les
+  deux étapes s'ajoutent à la fusion de la 37-3b.
+- **Captures** (thème clair) : `kesh-gate-logs/s37-5/captures/` (prises par la spec E2E).
+
+### File List
+
+- `crates/kesh-core/src/accounting/fx_revaluation.rs` (neuf), `crates/kesh-core/src/accounting/mod.rs`
+- `crates/kesh-db/src/repositories/fx_revaluation.rs` (neuf), `repositories/mod.rs`, `repositories/fiscal_years.rs`,
+  `repositories/closing_checks.rs`, `repositories/accounts.rs` (`fx_accounts_for_settings`), `src/errors.rs`
+- `crates/kesh-db/tests/fx_revaluation.rs` (neuf), `crates/kesh-db/tests/closing_checks.rs`
+- `crates/kesh-api/src/routes/fx_revaluation.rs` (neuf), `routes/mod.rs`, `routes/fiscal_years.rs`, `src/lib.rs`,
+  `src/errors.rs`, `src/audit_labels.rs`
+- `crates/kesh-api/tests/fx_revaluation_e2e.rs` (neuf), `fx_recette_api_e2e.rs` (neuf), `closing_checks_e2e.rs`,
+  `mcp_outils_e2e.rs`, `audit_route_registry.rs`
+- `crates/kesh-i18n/locales/{fr-CH,de-CH,en-CH,it-CH}/messages.ftl`
+- `frontend/src/lib/features/fiscal-years/` : `RevaluationPanel.svelte` (neuf), `revaluation.helpers.ts` (neuf),
+  `revaluation.test-fixtures.ts` (neuf), `RevaluationPanel.test.ts` (neuf), `revaluation.helpers.test.ts` (neuf),
+  `FiscalYearChecks.k9.test.ts` (neuf), `FiscalYearChecks.svelte`, `FiscalYearChecks.test.ts`,
+  `closing-checks-labels.ts`, `closing-checks.test-fixtures.ts`, `fiscal-years.api.ts`, `fiscal-years.types.ts`
+- `frontend/src/routes/(app)/settings/fiscal-years/+page.svelte`, `fiscal-years-page.test.ts`
+- `frontend/src/lib/shared/i18n-keys.test.ts`, `i18n-libelle-en-dur.test.ts`
+- `frontend/tests/e2e/fx-revaluation.spec.ts` (neuf), `fiscal-years.spec.ts`, `fiscal-year-closing-journey.spec.ts`,
+  `supplier-invoice-draft-cycle.spec.ts`
+- `docs/manual/fr/user-manual.tex`, `admin-manual.tex`, `marketing-brochure.tex`, `docs/api-external.md`, `README.md`
+- `_bmad-output/implementation-artifacts/37-5-reevaluation-fin-exercice.md`, `sprint-status.yaml`
+
+### Tests ajoutés et gates
+
+(Rempli au dernier commit de code, ci-dessous.)

@@ -1044,7 +1044,12 @@ const ATTENDU = {
 	// 65b3877f) dans la branche de la 37-4 : **3191**, relevé par la garde après la fusion
 	// (non additionné). Fusion de la 37-3a jusqu'à `e89291e6` : **3191**, relevé de nouveau par la
 	// garde (Dev Agent Record de la 37-4) ; à recompter à chaque reprise suivante.
-	sitesTotal: 3191,
+	// Story 37-5 : **3191 → 3241** sur sa branche (fusion de `epic/37-multi-devises` à
+	// `dd01a3df` comprise, qui n'apporte aucun site), relevé par la garde (`expected 3241 to be
+	// 3191`), non additionné : les littéraux de `RevaluationPanel.svelte`, de
+	// `revaluation.helpers.ts`, de l'avis de K9 (`FiscalYearChecks.svelte`,
+	// `closing-checks-labels.ts`) et de la page des exercices.
+	sitesTotal: 3241,
 	sitesNonResolus: 31,
 	relais: 6,
 	// Story 26-1 (#620, AC3-bis) : **10 → 11** — `lib/features/bank-import/

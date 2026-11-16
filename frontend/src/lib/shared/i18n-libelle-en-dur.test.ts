@@ -366,8 +366,15 @@ const SUFFIXES = ['Label', 'Text', 'Display'];
  * des données) ; dans `ExchangeRatesScreen.svelte`, `linkedLabel` (une donnée ou `null`).
  * Aucun littéral rendu : `conforme` **80 → 92** ; `ecartee` ne bouge pas. Relevé par la garde
  * (`expected 106 to be 94`), non additionné.
+ *
+ * **106 → 110, et les quatre déclarations sont NOMMÉES** (Story 37-5, réévaluation de fin
+ * d'exercice) : dans `lib/features/fiscal-years/revaluation.helpers.ts`, `sourceLabel`,
+ * `kindLabel` et `originLabel` (textes par `i18nMsg`, et la chaîne vide neutre quand il n'y a
+ * rien à dire : `ecartee` **14 → 17**) ; dans `closing-checks-labels.ts`, `notRevaluedText`
+ * (textes par `i18nMsg` seulement : `conforme` **92 → 93**). Relevé par la garde (`expected
+ * 110 to be 106`), non additionné.
  */
-const CANDIDATES_ATTENDUES = 106;
+const CANDIDATES_ATTENDUES = 110;
 
 /** Les trois délimiteurs de littéral en JS/TS. */
 const QUOTES = ["'", '"', '`'];
@@ -884,7 +891,7 @@ describe('libellés en dur — l’angle mort #255', () => {
 			else if (c.retours.length > 0) classes.ecartee += 1;
 			else classes.conforme += 1;
 		}
-		expect(classes).toEqual({ nonAnalysee: 0, enViolation: 0, ecartee: 14, conforme: 92 });
+		expect(classes).toEqual({ nonAnalysee: 0, enViolation: 0, ecartee: 17, conforme: 93 });
 		// La somme est recalculée depuis les classes, jamais depuis le total qu'elle contrôle.
 		const somme = Object.values(classes).reduce((a, b) => a + b, 0);
 		expect(somme).toBe(CANDIDATES_ATTENDUES);
