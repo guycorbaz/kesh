@@ -147,13 +147,28 @@ describe('SettleInvoiceDialog — le montant « 1.250 » (Story 36-18a, #1174)',
 		expect(onConfirm).not.toHaveBeenCalled();
 	});
 
-	it('« 1’250 » sur un reste dû de 2000 → amount 1250 (M14)', async () => {
+	it("« 1'250 » sur un reste dû de 2000 → amount 1250 (M14)", async () => {
 		const { input, getByTestId, queryByText, onConfirm } = ouvrir('2000');
 		await saisir(input(), "1'250");
 		expect(queryByText(POSITIVE)).toBeNull();
 		expect(input().getAttribute('aria-invalid')).not.toBe('true');
 		await fireEvent.click(getByTestId('settle-confirm'));
 		expect(onConfirm).toHaveBeenCalledWith(expect.objectContaining({ amount: '1250' }));
+	});
+
+	// Revue P1 (E4 = B2) : une date antérieure à la facture passe avant le montant ; le bandeau
+	// dit la date, et le champ du montant, marqué, ne le nomme pas pour description.
+	it('date antérieure + « 1.250 » : bandeau de date, montant marqué sans aria-describedby ; date corrigée, il le nomme (M23)', async () => {
+		const { input, findByText } = ouvrir('2000');
+		await saisir(input(), '1.250');
+		const date = document.getElementById('settle-date') as HTMLInputElement;
+		await fireEvent.input(date, { target: { value: '2025-12-31' } });
+		await findByText('La date de règlement ne peut être antérieure à la date de facture');
+		expect(input().getAttribute('aria-invalid')).toBe('true');
+		expect(input().getAttribute('aria-describedby')).toBeNull();
+		await fireEvent.input(date, { target: { value: '2026-01-02' } });
+		const bandeau = await findByText(AMBIGU);
+		expect(input().getAttribute('aria-describedby')).toBe(bandeau.id);
 	});
 
 	it('« 1,25 » → amount 1.25', async () => {

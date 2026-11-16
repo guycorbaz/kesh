@@ -998,12 +998,59 @@ describe('Story 36-18a — les soldes de départ « 1.250 » (#1050)', () => {
 		);
 	});
 
-	it('une saisie bordée de blancs reste refusée, comme aujourd’hui (D4 : les soldes ne rognent pas)', async () => {
+	// Revue P1 (B4, C-36-18-13) : les soldes rognent désormais, comme le prix, le montant
+	// attendu et le règlement — un solde collé depuis un tableur n'est plus refusé pour son blanc.
+	it('une saisie bordée de blancs est lue rognée : aucun message, envoyée 1250 (M24)', async () => {
+		generateMock.mockResolvedValue({ id: 1 });
 		await renderReadyGrid();
 		await type('opening-balances-debit-1000', ' 1250 ');
-		await type('opening-balances-credit-2970', '1250');
-		expect(await screen.findByTestId('opening-balances-amount-unreadable')).toBeTruthy();
-		expect(generate().disabled).toBe(true);
+		await type('opening-balances-credit-2970', "1'250\t");
+		await waitFor(() => expect(generate().disabled).toBe(false));
+		expect(screen.queryByTestId('opening-balances-amount-unreadable')).toBeNull();
+		expect(screen.getByTestId('opening-balances-debit-1000').getAttribute('aria-invalid')).not.toBe('true');
+		expect(screen.getByTestId('opening-balances-total-debit').textContent).toBe('1’250.00');
+		await fireEvent.click(generate());
+		await waitFor(() =>
+			expect(generateMock).toHaveBeenCalledWith({
+				lines: [
+					{ accountId: 1, debit: '1250', credit: '0' },
+					{ accountId: 2, debit: '0', credit: '1250' },
+				],
+			})
+		);
+	});
+
+	it('une saisie de blancs seuls vaut une ligne vide, non envoyée', async () => {
+		generateMock.mockResolvedValue({ id: 1 });
+		await renderReadyGrid();
+		await type('opening-balances-debit-1000', '100');
+		await type('opening-balances-credit-2970', '100');
+		await type('opening-balances-debit-2000', '   ');
+		await waitFor(() => expect(generate().disabled).toBe(false));
+		await fireEvent.click(generate());
+		await waitFor(() =>
+			expect(generateMock).toHaveBeenCalledWith({
+				lines: [
+					{ accountId: 1, debit: '100', credit: '0' },
+					{ accountId: 2, debit: '0', credit: '100' },
+				],
+			})
+		);
+	});
+
+	it('mode Compléter : « 1.250 » seul → aucune contrepartie annoncée (E3, M25)', async () => {
+		getStatusMock.mockResolvedValue(completableStatus());
+		render(Page);
+		await screen.findByTestId('opening-balances-complete');
+		await type('opening-balances-complete-debit-1100', '1.250');
+		await screen.findByTestId('opening-balances-amount-ambiguous');
+		const cp = screen.getByTestId('opening-balances-complete-counterpart');
+		expect(cp.getAttribute('data-side')).toBe('invalid');
+		expect(cp.textContent?.trim()).toBe('');
+		// Corrigé, la contrepartie revient.
+		await type('opening-balances-complete-debit-1100', "1'250");
+		await waitFor(() => expect(cp.getAttribute('data-side')).toBe('credit'));
+		expect(cp.textContent).toContain('1’250.00');
 	});
 
 	it('mode Compléter : « 1.250 » au débit d’un actif → message, aucun appel', async () => {

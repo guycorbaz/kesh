@@ -19,13 +19,13 @@
 	import {
 		complementCounterpart,
 		computeOpeningTotals,
+		openingAmountReader,
 		retainedEarningsWarning
 	} from '$lib/features/opening-balances/opening-balances-totals';
 	import {
 		computeBalance,
 		formatSwissAmount,
 		journalAmountPayload,
-		journalAmountReader,
 		lineAmountProblem
 	} from '$lib/features/journal-entries/balance';
 	import { amountEntryMessage } from '$lib/features/journal-entries/amount-entry-message';
@@ -136,11 +136,22 @@
 	// Bandeau de total en direct (D3) — big.js via balance.ts, jamais parseFloat.
 	// Story 36-18a (#1050, D5) : chaque solde se lit comme le montant d'une écriture —
 	// « 1.250 » (ambigu) n'est plus lu 1,25 franc, il rend la saisie invalide.
-	const balance = $derived(computeBalance(rows, journalAmountReader));
+	// Revue P1 (B4, C-36-18-13) : sur la saisie rognée (`openingAmountReader`).
+	const balance = $derived(computeBalance(rows, openingAmountReader));
 
 	/** Story 36-18a (D5) — un montant que la lecture du journal ne rend pas (ambigu ou illisible). */
 	function unread(raw: string): boolean {
-		return journalAmountReader(raw) === null;
+		return openingAmountReader(raw) === null;
+	}
+
+	/** Story 36-18a (D3, B4) — le refus à afficher sous une ligne, sur la saisie rognée. */
+	function rowProblem(r: { debit: string; credit: string }): 'ambiguous' | 'unreadable' | null {
+		return lineAmountProblem(r.debit.trim(), r.credit.trim());
+	}
+
+	/** Story 36-18a (D5, B4) — la charge d'un solde : celle de la saisie rognée, `'0'` si vide. */
+	function payloadOf(raw: string): string {
+		return journalAmountPayload(raw.trim()) ?? '0';
 	}
 
 	/**
@@ -148,9 +159,9 @@
 	 * par prudence, le bouton étant désactivé en amont), soit à un montant > 0.
 	 */
 	function isEnteredLine(r: { debit: string; credit: string }): boolean {
-		if (r.debit === '' && r.credit === '') return false;
-		const debit = journalAmountReader(r.debit);
-		const credit = journalAmountReader(r.credit);
+		if (r.debit.trim() === '' && r.credit.trim() === '') return false;
+		const debit = openingAmountReader(r.debit);
+		const credit = openingAmountReader(r.credit);
 		if (debit === null || credit === null) return true;
 		return debit.gt(0) || credit.gt(0);
 	}
@@ -205,8 +216,8 @@
 				// vide → `0`) ; jamais `null` ici, `canGenerate` exigeant `isBalanced`.
 				lines: nonEmptyRows.map((r) => ({
 					accountId: r.account.id,
-					debit: journalAmountPayload(r.debit) ?? '0',
-					credit: journalAmountPayload(r.credit) ?? '0'
+					debit: payloadOf(r.debit),
+					credit: payloadOf(r.credit)
 				}))
 			});
 			notifySuccess(i18nMsg('opening-balances-success', 'Écriture d’ouverture générée.'));
@@ -252,8 +263,8 @@
 				// Story 36-18a (D5) : idem ; `canSubmitComplement` exige `!complementInvalid`.
 				lines: complementLines.map((r) => ({
 					accountId: r.account.id,
-					debit: journalAmountPayload(r.debit) ?? '0',
-					credit: journalAmountPayload(r.credit) ?? '0'
+					debit: payloadOf(r.debit),
+					credit: payloadOf(r.credit)
 				}))
 			});
 			notifySuccess(i18nMsg('opening-balances-complete-success', 'Complément enregistré.'));
@@ -482,7 +493,7 @@
 						</thead>
 						<tbody>
 							{#each complementRows as row (row.account.id)}
-								{@const problem = lineAmountProblem(row.debit, row.credit)}
+								{@const problem = rowProblem(row)}
 								{@const problemId = `opening-balances-complete-amount-problem-${row.account.number}`}
 								<tr class="border-b border-border/50" data-testid="opening-balances-complete-row-{row.account.number}">
 									<td class="py-1.5 pr-2">
@@ -538,8 +549,17 @@
 							{/each}
 						</tbody>
 					</table>
-					<p class="text-sm" data-testid="opening-balances-complete-counterpart" data-side={counterpart.side}>
-						{#if counterpart.side === 'credit'}
+					<!-- Story 36-18a (revue P1, E3) : tant qu'une ligne porte un montant ambigu ou
+					     illisible, aucune contrepartie n'est annoncée — elle serait calculée sans
+					     cette ligne (« 1.250 » seul donnait « Les lignes s'équilibrent »). -->
+					<p
+						class="text-sm"
+						data-testid="opening-balances-complete-counterpart"
+						data-side={complementInvalid ? 'invalid' : counterpart.side}
+					>
+						{#if complementInvalid}
+							<!-- Rien : le message sous la ligne fautive dit quoi corriger. -->
+						{:else if counterpart.side === 'credit'}
 							{i18nMsg(
 								'opening-balances-complete-counterpart-credit',
 								'Contrepartie : { $amount } au crédit du compte { $number }.',
@@ -621,7 +641,7 @@
 			</thead>
 			<tbody>
 				{#each rows as row (row.account.id)}
-					{@const problem = lineAmountProblem(row.debit, row.credit)}
+					{@const problem = rowProblem(row)}
 					{@const problemId = `opening-balances-amount-problem-${row.account.number}`}
 					<tr
 						class="border-b border-border/50"

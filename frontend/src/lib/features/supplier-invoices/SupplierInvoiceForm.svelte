@@ -333,7 +333,11 @@
 			scannedQrIban = p.creditorQrIban !== '';
 			fIban = p.creditorQrIban || p.creditorIban;
 			fReference = p.paymentReference;
-			fExpectedAmount = p.expectedAmount;
+			// Story 36-18a (revue P1, B3 = E2) — le montant lu du QR par le serveur, jamais
+			// pré-rempli sous une forme ambiguë : un QR hors norme à trois décimales (« 1.250 »,
+			// que le parseur accepte) se montre `1.25`, non refusé comme ambigu.
+			fExpectedAmount =
+				p.expectedAmount === '' ? '' : readableUnambiguousAmount(p.expectedAmount, 2);
 			scannedCurrency = p.currency;
 			scannedCreditorName = p.creditorName;
 			notifySuccess(i18nMsg('supplier-invoices-scan-ok', 'QR-facture lue — coordonnées pré-remplies.'));
@@ -784,7 +788,9 @@
 					>
 				{/if}
 				<!-- Story 36-18a (#1172, D3, D7) — un montant ambigu ou illisible : bordure,
-				     `aria-invalid`, et le message sous le champ, qu'il nomme. -->
+				     `aria-invalid`, et le message sous le champ, qu'il nomme. Revue P1 (A1) : la
+				     saisie efface le refus de l'envoi précédent (ici et au prix des lignes), qui
+				     contredirait sinon le message sous le champ. -->
 				<input
 					class="mt-1 w-full rounded border px-2 py-1"
 					class:border-destructive={expectedAmountProblem !== null}
@@ -795,6 +801,7 @@
 						? `supplier-invoice-expected-amount-${expectedAmountProblem}`
 						: undefined}
 					bind:value={fExpectedAmount}
+					oninput={() => (formError = '')}
 				/>
 				{#if expectedAmountProblem !== null}
 					<span
@@ -859,6 +866,7 @@
 						? `supplier-invoice-line-${idx}-unit-price-${priceProblem}`
 						: undefined}
 					bind:value={line.unitPrice}
+					oninput={() => (formError = '')}
 				/>
 				<select
 					class="col-span-2 rounded border px-2 py-1 text-sm"

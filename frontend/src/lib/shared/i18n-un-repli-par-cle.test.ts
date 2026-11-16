@@ -269,9 +269,11 @@ const PREFIXES = [
  * `kesh-gate-logs/rel0180/releve-compteurs-1.log`), `onboarding-finalize-remedy` retirée (la
  * 36-19 corrige #1200).
  *
- * Story 36-18a (#1159) : **454 → 456** (+2, `expected 456 to be 454`,
- * `kesh-gate-logs/e36-18/review-front.log`), `supplier-invoices-err-line-unit-price-ambiguous` et
- * `-unreadable`, un repli chacune (`SupplierInvoiceForm.svelte`).
+ * Story 36-18a (#1159) : **454 → 456** (+2), relevé par la garde au Vitest complet
+ * (`expected 456 to be 454`, ligne affichée à la console, non conservée au journal
+ * `kesh-gate-logs/e36-18/review-front.log`, qui ne porte que « 1 failed ») —
+ * `supplier-invoices-err-line-unit-price-ambiguous` et `-unreadable`, un repli chacune
+ * (`SupplierInvoiceForm.svelte`).
  */
 const CLES_RELEVEES = 456;
 

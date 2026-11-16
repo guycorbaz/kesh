@@ -1014,7 +1014,7 @@ Si vous migrez vers Kesh depuis un autre logiciel comptable, l'écran \emph{Admi
 \begin{enumerate}
     \item \textbf{Préparez le bilan de clôture} de votre ancien logiciel (actifs, passifs, capitaux propres, report à-nouveau accumulé).
     \item \textbf{Ouvrez l'écran} : la grille liste vos comptes de bilan actifs et postables (actifs et passifs — jamais les comptes de produits ou de charges, qui fausseraient le résultat de l'exercice).
-    \item \textbf{Saisissez les soldes} colonne Débit ou Crédit, ligne par ligne. Le total débit, le total crédit et la différence s'affichent en direct. Un solde se lit comme le montant d'une écriture (cf. \emph{Saisie d'une écriture en partie double})~: point ou virgule décimale, quatre décimales au plus, apostrophe des milliers (\texttt{1'250}), sans espace avant ni après. \textbf{\texttt{1.250} est refusé comme ambigu}~: écrivez \texttt{1'250} pour mille deux cent cinquante francs, ou \texttt{1.25} pour un franc vingt-cinq~; le message s'affiche sous la ligne, et l'écriture ne se génère pas tant qu'une ligne porte un montant ambigu ou illisible. Depuis la version~0.18.0~; avant, \texttt{1.250} était lu un franc vingt-cinq sans avertissement.
+    \item \textbf{Saisissez les soldes} colonne Débit ou Crédit, ligne par ligne. Le total débit, le total crédit et la différence s'affichent en direct. Un solde se lit comme le montant d'une écriture (cf. \emph{Saisie d'une écriture en partie double})~: point ou virgule décimale, quatre décimales au plus, apostrophe des milliers (\texttt{1'250})~; un espace avant ou après le montant, collé depuis un tableur, est ignoré. \textbf{\texttt{1.250} est refusé comme ambigu}~: écrivez \texttt{1'250} pour mille deux cent cinquante francs, ou \texttt{1.25} pour un franc vingt-cinq~; le message s'affiche sous la ligne, et l'écriture ne se génère pas tant qu'une ligne porte un montant ambigu ou illisible. Depuis la version~0.18.0~; avant, \texttt{1.250} était lu un franc vingt-cinq sans avertissement.
     \item \textbf{Équilibrez via le report à-nouveau} : posez votre report accumulé sur le compte de rôle \emph{Bénéfice/perte reporté} (2970 dans les plans standards) — au crédit pour un bénéfice cumulé, au \textbf{débit} pour une perte reportée.
     \item \textbf{Générez} : le bouton \emph{Générer l'écriture d'ouverture} (actif seulement une fois la saisie équilibrée) crée \textbf{une écriture OD équilibrée datée au 1\textsuperscript{er} jour de votre premier exercice}. Votre bilan est juste dès le premier jour.
 \end{enumerate}
@@ -1457,12 +1457,7 @@ jusqu'à quand~: laissez-lui du temps, relisez, et vérifiez la liste des règle
 
 \textbf{Enregistrer.} Sur la fiche d'une facture validée, \emph{Enregistrer un règlement}~: le
 mode (virement sur un compte bancaire, ou espèces et un autre compte de contrepartie), le montant
-et la date. Depuis la version~0.18.0, le montant se lit comme celui d'une écriture (cf.
-\emph{Saisie d'une écriture en partie double})~: point ou virgule décimale, apostrophe des milliers
-(\texttt{1'250}), deux décimales au plus (les zéros de fin ne comptent pas~: \texttt{10.0100}
-passe). \textbf{\texttt{10.000} est refusé comme ambigu}~: écrivez \texttt{10.00} ou
-\texttt{10'000}~; de même \texttt{1.250}, \texttt{1'250} pour mille deux cent cinquante francs. Une
-saisie à exposant (\texttt{1e3}) ou à plus de quatre décimales écrites n'est pas lue. Kesh passe l'écriture \emph{Débit contrepartie / Crédit débiteurs} et calcule ce qui
+et la date. Kesh passe l'écriture \emph{Débit contrepartie / Crédit débiteurs} et calcule ce qui
 reste dû. Un compte bancaire \textbf{archivé} n'est plus proposé, et l'API refuse d'y enregistrer
 un règlement~; un règlement passé sur ce compte avant son archivage s'annule toujours. Un compte
 \textbf{clos} n'est pas proposé non plus, et ses règlements ne s'annulent qu'une fois le compte
@@ -1479,6 +1474,14 @@ un autre dans \emph{Administration} → \emph{Facturation}.
 Un règlement \textbf{partiel} est permis~: la facture reste validée, avec son reste dû, et
 redevient «~payée~» quand le solde atteint zéro. Un montant supérieur au reste dû est
 \textbf{refusé}, de même qu'un montant à plus de deux décimales.
+
+\textbf{Le montant saisi.} Depuis la version~0.18.0, le montant d'un règlement se lit comme
+celui d'une écriture (cf. \emph{Saisie d'une écriture en partie double})~: point ou virgule
+décimale, apostrophe des milliers (\texttt{1'250}), deux décimales au plus (les zéros de fin ne
+comptent pas~: \texttt{10.0100} passe). \textbf{\texttt{10.000} est refusé comme ambigu}~:
+écrivez \texttt{10.00} ou \texttt{10'000}~; de même \texttt{1.250}~: \texttt{1'250} pour mille
+deux cent cinquante francs. Une saisie à exposant (\texttt{1e3}), ou à plus de quatre décimales
+écrites, n'est plus lue~; avant la 0.18.0, ce champ l'acceptait.
 
 \textbf{Au centime.} Une facture dont le total porte plus de deux décimales (quantité ou prix
 fractionnaire) se règle au \textbf{reste dû arrondi au centime}~: c'est le montant que le

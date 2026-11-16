@@ -1030,8 +1030,9 @@ const ATTENDU = {
 	// `kesh-gate-logs/rel0180/releve-compteurs-1.log`) — `onboarding-finalize-remedy` retirée (la
 	// 36-19 corrige #1200) ; les quatre autres stories n'ajoutent aucun site.
 	// Story 36-18a (#1050, #1159, #1172, #1174 ; AC8) : **3082 → 3086**, relevé par la garde
-	// (« expected 3087 to be 3082 », puis 3086 une fois fusionné un doublon
-	// d'`invoice-error-amount-positive` du règlement ; `kesh-gate-logs/e36-18/vitest-cible-dev.log`)
+	// (« expected 3087 to be 3082 », `kesh-gate-logs/e36-18/vitest-cible-dev.log` ; puis 3086,
+	// valeur posée et constatée verte une fois fusionné un doublon d'`invoice-error-amount-positive`
+	// du règlement — ce second relevé n'est pas au journal)
 	// — `common-amount-ambiguous` et
 	// `common-amount-unreadable` (`journal-entries/amount-entry-message.ts`),
 	// `supplier-invoices-err-line-unit-price-ambiguous` et `-unreadable`

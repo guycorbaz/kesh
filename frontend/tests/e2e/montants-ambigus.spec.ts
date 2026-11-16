@@ -171,6 +171,10 @@ test('soldes de départ : « 1.250 » refusé comme ambigu, rien n’est écrit 
 			(l) => l.accountId === asset!.id,
 		);
 		expect(new Big(debit!.debit).eq(1250), `débit relu : ${debit?.debit}`).toBe(true);
+		// Revue P1 (A4) : la capture de l'écriture générée montre la valeur enregistrée.
+		await page.goto(`/journal-entries/${entryId}`);
+		await expect(page.getByText(/1.250\.00/).first()).toBeVisible();
+		await capture(page, testInfo, 'soldes-1250-ecriture');
 	} finally {
 		await disposeContextSafe(ctx);
 	}

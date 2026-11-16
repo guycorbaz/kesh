@@ -4,6 +4,7 @@ import { describe, it, expect } from 'vitest';
 import {
 	complementCounterpart,
 	computeOpeningTotals,
+	openingAmountReader,
 	retainedEarningsWarning,
 } from './opening-balances-totals';
 import type { AccountResponse } from '$lib/features/accounts/accounts.types';
@@ -68,6 +69,16 @@ describe('computeOpeningTotals', () => {
 		expect(computeOpeningTotals([{ account: LIAB, debit: '', credit: '1,25' }]).liabilities.toString()).toBe(
 			'1.25',
 		);
+	});
+
+	// Revue P1 (B4, C-36-18-13, mutation M24) — la saisie est rognée.
+	it('« ␣1250␣ » vaut 1250 ; openingAmountReader rogne, blancs seuls → 0', () => {
+		expect(computeOpeningTotals([{ account: ASSET, debit: ' 1250 ', credit: '' }]).assets.toString()).toBe(
+			'1250',
+		);
+		expect(openingAmountReader('\t1,25 ')?.toString()).toBe('1.25');
+		expect(openingAmountReader('   ')?.toString()).toBe('0');
+		expect(openingAmountReader(' 1.250 ')).toBeNull();
 	});
 });
 
