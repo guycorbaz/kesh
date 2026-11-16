@@ -558,3 +558,26 @@ journaux ci-dessous portent en tête `# commit …`.
   17 ignorés, au second run (le premier rouge sur KF-061, #1126) ; frontend complet vert (Vitest 3709). **Non lancés** :
   l'E2E complet et le `gate-ci` de clôture (à la clôture) ; la seule spec `invoice-write-off.spec.ts` a tourné (2 passés).
   Prompt de la revue P1 : `36-9-solde-reste-type-compte-review-prompt-p1.md`.
+- **2026-11-16 — Revue de code P1 et sa remédiation** (Opus 5.5). P1 : B (Opus) 0/0/0/3, E 0/0/0/4, A 0/0/1/6 — un
+  MEDIUM, douze LOW (E1 = A5, E2 = B3, qui recoupent B2). Prémisse de chaque finding lue au code ; **aucun réfuté**.
+  - **A1 (MEDIUM)** corrigé : rouge de l'AC9 joué sur le code de départ et M1 tuée par la spec (`e2e-preuve-depart.log`,
+    `e2e-preuve-M1.log`, `Expected: 400 / Received: 200`) ; Dev Agent Record annoté (ligne M1, rouges).
+  - **B1** : AC3 exige la ligne de créance avant d'affirmer l'absence de ligne sur la TVA due.
+  - **E1 = A5, B2** : lu `vat.rs:197` (`if vat_amount.is_zero() { return None; }`) et `invoice_settlements_write.rs:686`
+    (`if shares.is_empty()`) — un reste dont la part de TVA s'arrondit à zéro passe ; testé (AC3, reste de 0.06 à 8.1 %),
+    et « qui corrige de la TVA » dans `api-external.md` (`:596`, `:597`, § 10), les deux manuels et la note de version.
+  - **E2 = B3** : lu `if account_type != expected {` — tout type hors passif ; test
+    `a_vat_payable_retyped_as_a_revenue_is_refused` ajouté ; « n'est plus un passif (actif, charge ou produit) » partout ;
+    `api-external.md:598` « qui n'est pas un passif ».
+  - **E3** : lu `WriteOffDialog.svelte:236` (`disabled={submitting || …}`) — l'E2E attend `toBeEnabled` puis l'opacité 1
+    (`disabled:opacity-50` sous `transition-all`), rend le compte et **reconfirme le même dialogue** (200, reste 0.00) ;
+    capture reprise.
+  - **E4** : M4 décrite telle que jouée (fiche, *Mutations* ; Dev Agent Record). **A2** : la preuve d'AC5 est M1/M3,
+    écrite au Dev Agent Record. **A3** : en-tête annoté. **A6** : #1198 cité (*Hors périmètre*). **A7** : « Pour les
+    intégrations » nomme les trois réponses que le refus remplace. **A4** : mutations rejouées avec le message du rouge et
+    le commit en tête ; les relevés passés sont annotés, non réécrits (sauf les `mut/M*.log`, réécrits par le rejeu, ce
+    que l'annotation dit).
+  - Mutation **M7** neuve (refus du non imputable retiré), tuée.
+  Commits `dd9bccfdf`, `34a2dbee1`, `d0cbc7b54`. Gate de remédiation : `test-fast-ci-34a2dbee1.log` — **5460 passés sur
+  5460, 13 ignorés** (bases remises à neuf). Vitest non rejoué (aucun fichier de `frontend/src` touché). **Non lancés** :
+  `gate-ci` et E2E complet (à la clôture).
