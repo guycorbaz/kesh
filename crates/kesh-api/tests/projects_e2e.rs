@@ -101,6 +101,16 @@ async fn create_project(app: &TestApp, token: &str, body: serde_json::Value) -> 
         .unwrap()
 }
 
+/// Story 36-15 (CR #1161, revue P1 E1-6) — le texte d'un refus 400, `error.message`, tel
+/// que l'écran « Comptes analytiques » l'affiche.
+async fn message_du_refus(resp: reqwest::Response) -> String {
+    let body: serde_json::Value = resp.json().await.unwrap();
+    body["error"]["message"]
+        .as_str()
+        .unwrap_or_else(|| panic!("refus sans error.message : {body}"))
+        .to_string()
+}
+
 async fn login_as(app: &TestApp, username: &str, password: &str) -> String {
     let resp = app
         .client
@@ -182,6 +192,11 @@ async fn crud_tree_2_levels_and_hierarchy_guard(pool: MySqlPool) {
     )
     .await;
     assert_eq!(resp.status(), 400);
+    // Famille « hiérarchie » (Story 36-15).
+    assert_eq!(
+        message_du_refus(resp).await,
+        "Un sous-compte analytique ne peut pas être parent (hiérarchie limitée à 2 niveaux)."
+    );
 
     // Liste : racine avant sous-projet (tri arbre).
     let list: serde_json::Value = app
@@ -410,6 +425,11 @@ async fn too_long_code_returns_400_not_500(pool: MySqlPool) {
     let long_code = "A".repeat(33); // > VARCHAR(32)
     let resp = create_project(&app, &token, json!({ "code": long_code, "name": "X" })).await;
     assert_eq!(resp.status(), 400, "attendu 400, eu {}", resp.status());
+    // Famille « champs » (Story 36-15).
+    assert_eq!(
+        message_du_refus(resp).await,
+        "Le code du compte analytique dépasse 32 caractères."
+    );
 }
 
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
@@ -441,6 +461,11 @@ async fn cannot_archive_root_with_active_children(pool: MySqlPool) {
         .await
         .unwrap();
     assert_eq!(arch.status(), 400);
+    // Famille « archivage » (Story 36-15).
+    assert_eq!(
+        message_du_refus(arch).await,
+        "Ce compte analytique a des sous-comptes analytiques actifs — archivez-les d'abord."
+    );
 }
 
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
@@ -475,6 +500,11 @@ async fn cannot_parent_under_archived_root(pool: MySqlPool) {
     )
     .await;
     assert_eq!(sub.status(), 400);
+    // Famille « parent archivé » (Story 36-15).
+    assert_eq!(
+        message_du_refus(sub).await,
+        "Le compte analytique parent est archivé — désarchivez-le d'abord."
+    );
 }
 
 #[sqlx::test(migrations = "../kesh-db/test-schema")]

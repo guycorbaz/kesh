@@ -43,7 +43,7 @@ pub(crate) fn slugify(input: &str, fallback: &str) -> String {
 /// Longueur maximale du **type** d'un rapport dans le nom du fichier exporté
 /// (`reports-filename-*`). Story 36-15 (CR #1161) : « dépenses par compte
 /// analytique » fait 30 caractères (`rendimento-per-conto-analitico`, 30 ;
-/// `ausgaben-pro-analytischem-konto`, 31) ; coupé à 20, le nom disait
+/// `ausgaben-pro-analytisches-konto`, 31) ; coupé à 20, le nom disait
 /// « depenses-par-compte » — « compte » seul, qui désigne le compte du plan. Le
 /// nom de la société reste coupé à 20 ([`slugify`]).
 pub(crate) const LONGUEUR_MAX_SLUG_DE_TYPE: usize = 40;
@@ -395,8 +395,8 @@ mod tests {
         for type_slug in [
             "depenses-par-compte-analytique",
             "rendement-par-compte-analytique",
-            "ausgaben-pro-analytischem-konto",
-            "rendite-pro-analytischem-konto",
+            "ausgaben-pro-analytisches-konto",
+            "rendite-pro-analytisches-konto",
             "spese-per-conto-analitico",
             "rendimento-per-conto-analitico",
             "expenses-by-analytical-account",

@@ -1,6 +1,6 @@
 # Story 36-15 : « compte analytique » au lieu de « projet analytique » (#1161)
 
-Status: review
+Status: done
 
 > **Traductions arbitrées par Guy le 2026-11-16 (D2, option A)** : de-CH « analytisches Konto », it-CH « conto
 > analitico », en « analytical account » ; fr-CH « compte analytique ».
@@ -9,7 +9,8 @@ Status: review
 branche `story/36-15-compte-analytique`, par le workflow `bmad-create-story`. Release **0.18.0**. **Aucune migration**,
 aucune route, aucun champ JSON, aucun code d'erreur ne change. Code lu à **`0bf3c3b4b`** (`origin/epic/36-0.18.0`, le
 kickoff de la 0.18.0). Registres : `e36-choix-autonomes-e360.md` (C-e360-15, qui fait foi) ;
-`e36-choix-autonomes-36-15-compte-analytique.md` pour la story (C-36-15-1 à 6). Voie **1**. Validation : passes P1 et P2 remédiées (Change Log).*
+`e36-choix-autonomes-36-15-compte-analytique.md` pour la story (C-36-15-1 à 6 à la rédaction ; C-36-15-7 ajouté au développement, C-36-15-8 et 9 à la remédiation de
+la revue P1 — annoté le 2026-11-16). Voie **1**. Validation : terminée en trois passes (Change Log).*
 
 ## Story
 
@@ -151,6 +152,9 @@ de données des E2E (« Projet E2E 19-4 »…) sont des données, inchangés.
   périmètre** : c'est le titre du rapport imprimé.
 - **Le nom du fichier exporté** se résout par la clé `reports-filename-{report_type}` (`reports.rs:955` :
   `let key = format!("reports-filename-{report_type}");`) : il suit le catalogue, rien à toucher dans le code.
+  *(Annoté le 2026-11-16 : faux au développement — `slugify` coupait le type à 20 caractères, d'où C-36-15-7,
+  `util.rs` et deux sites de `reports.rs`. Le navigateur, lui, ne lit pas ce nom : il nomme le fichier depuis
+  `reports/+page.svelte`, type entier — revue P1, E1-3.)*
 
 **4. Le backend — textes non visibles, hors périmètre (D6)** :
 - `crates/kesh-report/src/csv.rs:547-548` et `:616-617` : en-têtes CSV `"Projet"`, `"SousProjet"` (à côté de
@@ -280,13 +284,13 @@ de données des E2E (« Projet E2E 19-4 »…) sont des données, inchangés.
   | `reconciliation-failed-project-not-found` | Analytisches Konto nicht gefunden. |
   | `reconciliation-manual-project-label`, `invoice-field-project`, `supplier-invoices-field-project` | Analytisches Konto (optional) |
   | `reconciliation-rules-labels-default-project` | Analytisches Standardkonto |
-  | `reports-project-expenses`, `-expenses-title` | Ausgaben pro analytischem Konto |
+  | `reports-project-expenses`, `-expenses-title` | Ausgaben pro analytisches Konto *(accusatif après* pro *: arbitrage de Guy du 2026-11-16, revue P1 B1-4 ; « analytischem » jusque-là)* |
   | `reports-project-expenses-empty` | Für diesen Zeitraum sind diesem analytischen Konto keine Ausgaben zugeordnet. |
-  | `reports-project-return`, `-return-title` | Rendite pro analytischem Konto |
+  | `reports-project-return`, `-return-title` | Rendite pro analytisches Konto *(idem, B1-4)* |
   | `reports-project-return-empty` | Für diesen Zeitraum sind diesem analytischen Konto keine Bewegungen zugeordnet. |
   | `reports-project-selector-placeholder` | — Analytisches Konto wählen |
-  | `reports-filename-project-expenses` | ausgaben-pro-analytischem-konto |
-  | `reports-filename-project-return` | rendite-pro-analytischem-konto |
+  | `reports-filename-project-expenses` | ausgaben-pro-analytisches-konto *(B1-4)* |
+  | `reports-filename-project-return` | rendite-pro-analytisches-konto *(B1-4)* |
   | `export-global-description`, `export-global-content-includes` | … **analytische Konten** … |
   | `invoice-project-current` | Aktuelles analytisches Konto |
   | `nav-projects`, `projects-title` | Analytische Konten |
@@ -591,7 +595,9 @@ recopierait la valeur attendue ne prouverait rien de plus.
    :1944-1964, `audit-log-action-project-*` :3362-3365, `invoice-*` :2659-2662…) pour borner le nombre d'éditions ; fr-CH,
    puis de-CH, it-CH, en-CH, clé par clé contre la table de D2.
 4. **Frontend** (AC-2) : 46 sites.
-5. **Backend** (AC-3) : `routes/projects.rs` (11), `kesh-report/src/pdf.rs` (4) ; `cargo fmt`.
+5. **Backend** (AC-3) : `routes/projects.rs` (11), `kesh-report/src/pdf.rs` (4) ; `cargo fmt`. *(Annoté le
+   2026-11-16 : s'y sont ajoutés au développement `crates/kesh-api/src/util.rs` (`slugify_max`) et deux sites de
+   `crates/kesh-api/src/routes/reports.rs` — C-36-15-7.)*
 6. **Documentation** (AC-6, AC-9) : trois `.tex`, `api-external.md`, glossaire, `README.md:47` ; `make fr` local, comptes
    de l'AC-6, PDF rendus (D8).
 7. **Gates** (voie 1, verrous `flock /tmp/station-heavy.lock flock /home/gcorbaz/devel/kesh-gate-logs/.gate.lock
@@ -623,7 +629,9 @@ journal d'audit et les manuels, dans les quatre langues (allemand *analytisches 
 anglais *analytical account*). Rien ne change de ce qui est enregistré : routes,
 champs et codes de l'API gardent leur nom `project` ; les colonnes `Projet;SousProjet` des exports CSV restent. Le nom
 d'un fichier exporté de ces deux rapports change donc (`kesh-depenses-par-compte-analytique-…` au lieu de
-`kesh-depenses-par-projet-…`), et il n'est plus coupé à vingt caractères.
+`kesh-depenses-par-projet-…`). Pour un client de l'API seulement, le nom que donne l'en-tête `Content-Disposition`
+d'un export de rapport ne coupe plus le type du rapport à vingt caractères, mais à quarante (le nom de la société reste
+coupé à vingt) ; le fichier téléchargé depuis l'écran portait déjà le type entier.
 ⚠️ Les textes des refus de `/api/v1/projects` disent désormais « compte analytique » (codes inchangés) ; le texte libre
 `failed[].details.message` d'un refus `PROJECT_ARCHIVED` de la réconciliation dit encore « projet analytique » — seul le
 code fait foi. (refs #1161)
@@ -864,3 +872,75 @@ Journaux sous `/home/gcorbaz/devel/kesh-gate-logs/e36-15/` :
   - Gates au passage en `review`, tous au commit `894267d82` : `test-fast --ci` **5456/5456** (13 ignorés) ; `gate-ci`
     **5463 passés, 17 ignorés** (relancé après une interruption) ; frontend complet vert (Vitest 3714/3714). **Pas d'E2E
     complet** : il tourne à la clôture, avec `gate-ci`.
+- **2026-11-16 — revue de code P1** (trois lentilles, Opus 5.5 ; rapports `kesh-gate-logs/e36-15/review-p1-{A,B,E}.md`) :
+  A 0/0/0/3, B 0/0/0/5, E 0/0/0/6 — rien au-dessus de LOW. Règle « tarir la source » : les LOW qui touchent la
+  production se corrigent dans la story, puis une passe ciblée.
+- **2026-11-16 — remédiation de la revue P1** (Opus 5.5). Commit de code **`62a0b8083`**, puis ce compte rendu. Chaque
+  prémisse lue au code avant correction. **Arbitrages de Guy du 2026-11-16**, transmis par l'orchestrateur :
+  **B1-4** de-CH « pro **analytisches** Konto » (accusatif) partout — quatre libellés, deux noms de fichier, test
+  `slugify_max_keeps_the_analytical_report_types_whole`, doc-comment `util.rs:46`, D2 et glossaire (C-36-15-8) ;
+  **B1-5** « Analytisches Standardkonto » et « analytisches Hauptkonto » gardés, inscrits en partie A du glossaire avec
+  leur sens (compte analytique par défaut, compte analytique racine — pas un compte du plan) ; partie A **84** lignes
+  (C-36-15-9).
+  - **B1-1 = E1-1** (confirmé : `i += 2` posait l'indice sur la quote échappée de `'\''`) : `litteraux_de_chaine` saute
+    `'`, `\` et l'octet échappé (`i += 3`) ; doc-comment juste ; sondes positives `['\'','"']` puis « projet » et
+    `'\\'`. `fin_du_bloc` portait le même défaut (antérieur), trivial : corrigé de même, sonde `['\'','{']` dans
+    `sans_modules_de_test_apparie_les_accolades`. Mutation `mut/rem-extracteur.log` (`i += 3` → `i += 2`) : rouge sur la
+    sonde (`left: []`, `right: [(1, "projet")]`).
+  - **B1-2 = V-A1** (confirmé ; recompte à la source : **39** clés relevées en appel littéral, non 36 comme le disait le
+    commentaire) : liste **fermée** des dix clés hors relevé (trois sites en objet, deux noms de fichier, cinq clés
+    d'audit assemblées) et `toHaveLength(39)`.
+  - **B1-3 = E1-4** (confirmé) : `ExceptionG25 { fichier, extrait, lignes, ligne_entiere, motif }` et la fonction pure
+    `g25_non_excuses` : l'extrait (qui contient désormais son « projet » — « le projet dans Container Manager » au lieu
+    de « Container Manager ») est retiré de la ligne et le reste relu ; chaque extrait porte le nombre **exact** de lignes
+    attendu ; la ligne entière n'est excusée que pour `README.md:218` (ligne historique). Le nouveau régime a fait
+    apparaître `admin-manual.tex:2087` (« préfixe du projet », sens Compose, jusque-là excusé par « <projet> » sur la même
+    ligne) : seizième extrait ajouté, et « structure-du-projet » (ancre `README.md:19`). Test
+    `g25_une_exception_n_excuse_que_son_extrait` (cinq cas). Mutations : `mut/rem-borne.log` (une troisième ligne porte
+    « nom du projet » : « 3 ligne(s) la portent, 2 attendue(s) ») et `mut/rem-extrait.log` (« projet analytique » ajouté
+    sur une ligne excusée : `admin-manual.tex:608` rouge). Les trois mutations : restauration constatée.
+  - **E1-2** (confirmé, latent) : motif anglais `(?i)project(s|'s)?\b`, `\b` à droite seulement ; test
+    `g25_le_motif_anglais_voit_les_composes_et_epargne_projected`.
+  - **E1-6** (confirmé) : `projects_e2e.rs` affirme le texte de quatre refus, une par famille (champs, hiérarchie,
+    archivage, parent archivé), par l'aide `message_du_refus` (`error.message`).
+  - **E1-3** (confirmé) : `triggerDownload` (`reports.api.ts:413`) nomme le blob ; le nom vient de
+    `reports/+page.svelte` (`kesh-${typeSlug}-${companySlug}.${format}`) avec le type **entier** du catalogue, valeur
+    arbitrée : rien à corriger dans le nom. Corrigés : le commentaire `+page.svelte:425-430` (ce nom est le seul employé)
+    et la note de version (« quarante », client de l'API seulement). L'écart nom navigateur ≠ `Content-Disposition`
+    (préexistant) est donné à l'orchestrateur pour une issue.
+  - **E1-5** (confirmé, préexistant, non corrigé) : compte analytique de 150 caractères, rendement exporté en PDF — le
+    titre déborde de la page et est coupé au bord (`captures/e15-project-return-page-1.png`, journal
+    `e15-titre-long.log`) ; issue donnée à l'orchestrateur.
+  - **V-A2, V-A3** (confirmés) : en-tête (C-36-15-1 à 9), § 3 et tâche 5 annotés ; note de version précisée ;
+    commentaire de `sprint-status.yaml` récrit dans l'ordre.
+  - Gates de la remédiation, au commit de code `62a0b8083` : gate ciblé `cible-rem2.log` 55/55 (le premier,
+    `cible-rem1.log`, rouge sur `admin-manual.tex:2087` avant le seizième extrait) ; `clippy-rem1.log` vert ;
+    `test-fast-ci-rem1.log` (base remise à neuf) **5458 passés, 13 ignorés** ; `front-test-unit-rem1.log` Vitest
+    **3714/3714** (239 fichiers) ; `front-check-rem1.log` 0 erreur (29 avertissements, inchangés). Ni `gate-ci` ni E2E
+    (consigne de remédiation). `reports.spec.ts` non rejoué : les noms fr-CH ne changent pas. Prompt de la passe P2 ciblée :
+    `36-15-compte-analytique-review-prompt-p2.md`.
+- **2026-11-16 — revue P2 ciblée** (Sonnet, une lentille sur `62a0b8083` ; rapport
+  `kesh-gate-logs/e36-15/review-p2-ciblee.md`) : 0/0/0/2, deux LOW de code de test, corrigés dans la story (commit
+  **`a9778aea3`**, dernier commit de code) :
+  - **P2-1** (confirmé : `replace` retirait tous les exemplaires de l'extrait d'une ligne) : `g25_non_excuses` ne retire
+    plus qu'un exemplaire (`replacen(…, 1)`) ; sonde « nom du projet, puis nom du projet » → un écart.
+  - **P2-2** (confirmé) : mutations de code jouées, journaux `mut/rem-fin-du-bloc.log` (`fin_du_bloc` `i += 3` → `i += 2` :
+    `sans_modules_de_test_apparie_les_accolades` rouge), `mut/rem-retrait.log` (retrait de l'extrait supprimé :
+    `g25_une_exception_n_excuse_que_son_extrait` et `le_vocabulaire_analytique_est_compte_analytique` rouges),
+    `mut/rem-replacen.log` (`replacen` → `replace` : `g25_une_exception_n_excuse_que_son_extrait` rouge) ; fichier
+    restauré à chaque fois (script `mut/rem-p2-mutations.sh`). Gate ciblé `cible-rem-p2.log` 30/30, `clippy-rem2.log`
+    vert. Boucle de revue close (passe sans finding au-dessus de LOW, remédiation hors production).
+- **2026-11-16 — synthèse des boucles.** Validation : P1 Sonnet 0/0/3/7 → P2 Opus 0/0/2/5 → P3 ciblée Sonnet 0/0/0/0.
+  Revue de code : P1 — A Sonnet 0/0/0/3, B Opus 0/0/0/5, E Opus 0/0/0/6 (14 LOW, tous corrigés sauf E1-5, préexistant,
+  tracé en issue avec E1-3) → P2 ciblée Sonnet 0/0/0/2 (corrigés). Arbitrages de Guy : D2 option A ; B1-4 ; B1-5.
+- **2026-11-16 — clôture**, au dernier commit de code `a9778aea3` :
+  - `scripts/gate-ci.sh kesh_ci_e3615` (voie 1, sous ses verrous) : **5465 passés, 0 échoué, 17 ignorés**, `rc=0`
+    (`kesh-gate-logs/e36-15/gate-ci-cloture.log`).
+  - `npm run build` (`front-build-cloture.log`) vert, puis **E2E complet** sur `kesh_e2e_e3615` recréée vide, port 3615,
+    montage de `docs/testing.md` (`e2e-cloture.log`, script `e2e-spec-36-15.sh`) : **426 passés, 7 échecs, 18 ignorés**
+    (18,8 min). Les sept échecs, jugés un à un contre `docs/testing.md` § « Les échecs attendus » : les sept de la
+    **KF-029 (#97)** — `mode-expert.spec.ts:26`, `:41`, `onboarding-path-b.spec.ts:65`, `:92`, `onboarding.spec.ts:57`,
+    `:77`, `:150`. Aucun autre échec, aucune pollution ; `reports.spec.ts` vert (onglets et titres « compte analytique »).
+  - Backend arrêté par son PID, port 3615 libéré. Bases `kesh_e3615`, `kesh_e2e_e3615`, `kesh_ci_e3615` gardées (consigne
+    de l'orchestrateur).
+  - Story **`done`**.
