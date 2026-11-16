@@ -4,7 +4,13 @@
 	// résultat reporté : la clôture d'un compte de bilan est son solde au bilan.
 	import Big from 'big.js';
 	import { i18nMsg } from '$lib/shared/utils/i18n.svelte';
-	import { formatReportAmount, formatSwissDate, isReportEmpty, ledgerHref } from './reports.api';
+	import {
+		formatCurrencyFigure,
+		formatReportAmount,
+		formatSwissDate,
+		isReportEmpty,
+		ledgerHref,
+	} from './reports.api';
 	import type { TrialBalanceDto } from './reports.types';
 
 	interface Props {
@@ -87,10 +93,10 @@
 									'reports-fx-trial-balance',
 									'ouverture { $opening } · débit { $debit } · crédit { $credit } · clôture { $closing }',
 									{
-										opening: fmt(r.openingCurrency ?? '0'),
-										debit: fmt(r.totalDebitCurrency ?? '0'),
-										credit: fmt(r.totalCreditCurrency ?? '0'),
-										closing: fmt(r.closingCurrency ?? '0'),
+										opening: formatCurrencyFigure(r.openingCurrency),
+										debit: formatCurrencyFigure(r.totalDebitCurrency),
+										credit: formatCurrencyFigure(r.totalCreditCurrency),
+										closing: formatCurrencyFigure(r.closingCurrency),
 									},
 								)}</td
 							>

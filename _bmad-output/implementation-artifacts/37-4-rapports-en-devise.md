@@ -271,6 +271,14 @@ exports, afin de rapprocher mes comptes PayPal ou Wise de leurs relevés et de c
 - [x] [Review][Patch] 37-4-CR-P1-13 LOW — lignes de l'inventaire AC-7 périmées après la fusion de la 37-3a : sites d'équilibre `kesh-db/src/repositories/journal_entries.rs` aujourd'hui `:698`, `:1097`, `:1907` — relevé au Change Log (AC non réécrit).
 - [ ] [Review][Defer] 37-4-CR-P1-14 LOW — tests « CHF seulement » faibles (`rapports_chf_seulement.rs` : balance âgée sans facture, projets et accueil sur une ligne sans montant en devise, `contains("\"91.00")`) — non traité, à tracer.
 - [ ] [Review][Defer] 37-4-CR-P1-15 LOW — « CHF » écrit en dur dans les descriptions MCP (`grand_livre.rs`, `rapports.rs`) et le manuel d'administration, là où U6/A29 disent « devise principale » — vrai aujourd'hui ; non traité, à tracer.
+- [x] [Review][Patch] 37-4-CR-P2-1 MEDIUM — PDF du grand livre et de la balance : la seconde ligne en devise était à 4,2 mm sous sa ligne et 3,0 mm au-dessus de la suivante, collée à la suivante (relevé au rendu, balance et grand livre d'un compte USD) [`pdf.rs`] — `write_fx_line`, remontée `FX_RAISE_MM` (avance totale inchangée) ; test `la_seconde_ligne_en_devise_est_plus_pres_de_son_mouvement_que_du_suivant` (rouge à remontée 0).
+- [x] [Review][Patch] 37-4-CR-P2-2 MEDIUM — balance à l'écran : les montants en devise passaient par `formatReportAmount` (pas d'arrondi, « -0.00 » possible, Blind Hunter M2 et Edge F3) [`TrialBalanceView.svelte`] — `formatCurrencyFigure` (partagé avec `formatCurrencyAmount`), test Vitest.
+- [x] [Review][Patch] 37-4-CR-P2-3 LOW — nom tronqué à 38 caractères : trop large en capitales (85 mm à 2,5 mm = 34) [`pdf.rs`] — 34.
+- [x] [Review][Patch] 37-4-CR-P2-4 LOW — `projets_en_chf` cherchait « "91.00 » dans le texte [`rapports_chf_seulement.rs`] — montants lus en nombre, 91 présent, 100 absent.
+- [ ] [Review][Defer] 37-4-CR-P2-5 LOW — `balance_agee_inchangee` sans facture (vide), TVA sur l'impôt préalable seul (AC-7), croisement `sign_exprs` ↔ `signed` sans type `Expense` en devise (AC-1) — non traités, à tracer (avec CR-P1-14).
+- [ ] [Review][Defer] 37-4-CR-P2-6 LOW — « CHF » en dur pour « devise principale » : descriptions MCP (tailles mesurées), manuels, `docs/api-external.md` — vrai aujourd'hui, non traité, à tracer (avec CR-P1-15).
+- [ ] [Review][Defer] 37-4-CR-P2-7 LOW — `somme_en_devise` en `&str` public ; 4 SUM de plus par compte CHF ; colonnes CSV variables selon le rapport (choix de contrat) ; `colspan` du grand livre si « description » masquée ; `balances_as_of(None)` rend les comptes en devise archivés (non écrit) ; plus de 65 532 identifiants ; ligne sans cours sur compte en devise (« USD 0.00 × ») — non traités, à tracer.
+
 
 
 ## Note de version
@@ -412,6 +420,15 @@ exports, afin de rapprocher mes comptes PayPal ou Wise de leurs relevés et de c
   `lint-i18n-ownership` vert, Vitest 3909/3909 (252 fichiers), `npm run build` vert ; E2E : `reports-currency.spec.ts`
   seule, 1/1 (suite complète non rejouée).
 
+- 2026-11-16 — revue de code P2 (Sonnet ; Blind Hunter, Edge Case Hunter, Acceptance Auditor) : 0 CRITICAL, 0 HIGH,
+  2 MEDIUM, 5 LOW retenus (3 non traités, à tracer : CR-P2-5 à CR-P2-7), 15 rejetés ou déjà connus ; 4 corrigés.
+  Rejetés : libellés `fx_*` du PDF en français (AC-2, i18n du PDF déférée) ; bornes MCP 26/14 et 42/23 (re-mesurées,
+  AC-6, écrites au Dev Agent Record) ; chevauchement de la rupture d'exercice avec le solde en devise (réfuté au rendu :
+  libellé à ~80 mm, solde à 111 mm) ; E2E complet non rejoué (dû à la clôture, § D7). Rendu PDF relu : grand livre,
+  balance, bilan et compte de résultat d'un jeu USD/EUR (grand livre et balance corrigés). Gate ciblé (aucun fichier de
+  `kesh-db` touché) : `cargo fmt`, `cargo clippy --workspace --all-targets -D warnings` vert, `cargo nextest run -p
+  kesh-report` 207 passés, 1 ignoré ; `npm run check` 0 erreur, `lint-i18n-ownership` vert ; Vitest 3910/3910 (252 fichiers), `npm run build` vert. Décomptes périmés du Dev Agent Record (« 5752 », « 28 tests Rust ») : relevés à
+  `5680f714`, non réécrits ; E2E complet et gate complet à la clôture.
 ## Dev Agent Record
 
 ### Agent Model Used

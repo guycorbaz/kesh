@@ -271,6 +271,15 @@ export function formatReportAmount(v: string): string {
  * de big.js), comme au PDF. Un montant absent se lit 0.
  */
 export function formatCurrencyAmount(currency: string, v: string | undefined): string {
+	return `${currency} ${formatCurrencyFigure(v)}`;
+}
+
+/**
+ * Le chiffre d'un montant en devise, sans la devise (balance, où elle est dite
+ * une fois en tête de la seconde ligne) : arrondi à deux décimales, sans
+ * « -0.00 » (revue de code P2 : la balance le contournait).
+ */
+export function formatCurrencyFigure(v: string | undefined): string {
 	let amount = v ?? '0';
 	try {
 		// Revue de code P1 : un résidu négatif sous le demi-centime (« -0.0040 »)
@@ -280,7 +289,7 @@ export function formatCurrencyAmount(currency: string, v: string | undefined): s
 	} catch {
 		// valeur illisible : rendue telle quelle par formatReportAmount
 	}
-	return `${currency} ${formatReportAmount(amount)}`;
+	return formatReportAmount(amount);
 }
 
 // ============================================================================

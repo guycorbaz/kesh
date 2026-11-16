@@ -47,6 +47,11 @@ const LINE_HEIGHT_MM: f32 = 4.2; // ≈ 12pt at 10pt font
 /// Seconde ligne en petit des montants en devise (Story 37-4, AC-5).
 const FX_FONT_PT: f32 = 6.5;
 const FX_LINE_HEIGHT_MM: f32 = 3.0;
+/// Remontée de la seconde ligne vers la ligne qu'elle complète : elle se lit
+/// collée à son compte ou à son mouvement, non à la ligne suivante (revue de
+/// code P2). L'avance totale (`LINE_HEIGHT_MM + FX_LINE_HEIGHT_MM`) ne change
+/// pas, donc les réservations de place non plus.
+const FX_RAISE_MM: f32 = 1.2;
 
 // ============================================================================
 // PdfContext — libellés et métadonnées résolus côté handler (Pass 3 ECH3-C1 + BH3-M2)
@@ -447,6 +452,16 @@ impl PdfBuilder {
         layer.use_text(text, font_size, Mm(x_mm), Mm(self.cursor_y), font);
     }
 
+    /// Dessine la seconde ligne en petit d'un montant en devise, **sous la ligne
+    /// qui vient d'être écrite** (le curseur a déjà avancé d'une ligne) : elle
+    /// est posée à `FX_RAISE_MM` au-dessus du curseur, puis le curseur avance de
+    /// `FX_LINE_HEIGHT_MM`.
+    fn write_fx_line(&mut self, text: &str, x_mm: f32) {
+        self.cursor_y += FX_RAISE_MM;
+        self.write_inline(text, FX_FONT_PT, false, x_mm);
+        self.cursor_y -= FX_RAISE_MM + FX_LINE_HEIGHT_MM;
+    }
+
     /// Dessine le footer `page X/Y` sur toutes les pages après finalisation.
     ///
     /// Pass 1 code-review M17 (BH1-M4) : position Y passe de 10mm à 15mm
@@ -538,9 +553,9 @@ fn draw_empty_message(builder: &mut PdfBuilder, ctx: &PdfContext) {
 
 /// Longueur maximale du nom d'un compte **en devise** au bilan et au compte de
 /// résultat : de `MARGIN_LEFT_MM + 25` (40 mm) au solde en devise
-/// (`PAGE_WIDTH_MM - 85`, 125 mm), 85 mm en corps 10 — environ 40 caractères,
+/// (`PAGE_WIDTH_MM - 85`, 125 mm), 85 mm en corps 10 — 34 caractères à 2,5 mm la capitale (comme `TB_NAME_MAX_CHARS`),
 /// avec une marge (Story 37-4, revue de code P1).
-const ACCOUNT_NAME_MAX_CHARS_FX: usize = 38;
+const ACCOUNT_NAME_MAX_CHARS_FX: usize = 34;
 
 /// Dessine une ligne de compte (N° | Nom | Solde) ou variante.
 fn draw_account_row(builder: &mut PdfBuilder, ab: &AccountBalance) {
@@ -904,8 +919,7 @@ pub fn render_trial_balance_pdf(
                 l.fx_closing,
                 m(row.closing_currency),
             );
-            builder.write_inline(&texte, FX_FONT_PT, false, MARGIN_LEFT_MM + TB_COL_X[1]);
-            builder.cursor_y -= FX_LINE_HEIGHT_MM;
+            builder.write_fx_line(&texte, MARGIN_LEFT_MM + TB_COL_X[1]);
         }
     }
 
@@ -1884,8 +1898,7 @@ pub fn render_general_ledger_pdf(
                     ctx.section_labels.fx_balance,
                     format_currency_amount(cur, line.running_balance_currency.unwrap_or_default())
                 );
-                builder.write_inline(&texte, FX_FONT_PT, false, LEDGER_COL_DESC);
-                builder.cursor_y -= FX_LINE_HEIGHT_MM;
+                builder.write_fx_line(&texte, LEDGER_COL_DESC);
                 carry_fx = line.running_balance_currency;
             }
         }
@@ -1927,8 +1940,7 @@ pub fn render_general_ledger_pdf(
                 ctx.section_labels.fx_credit,
                 m(section.total_credit_currency),
             );
-            builder.write_inline(&texte, FX_FONT_PT, false, LEDGER_COL_DESC);
-            builder.cursor_y -= FX_LINE_HEIGHT_MM;
+            builder.write_fx_line(&texte, LEDGER_COL_DESC);
         }
 
         draw_ledger_marker(
@@ -2905,6 +2917,51 @@ mod tests {
         assert!(
             t.iter()
                 .any(|l| l == "débit USD 30'000.00 · crédit USD 0.00")
+        );
+    }
+
+    /// Les ordonnées (`y`, en points) des textes d'un PDF non compressé, dans
+    /// l'ordre d'écriture : chaque `x y Td … <hex> Tj`.
+    fn pdf_text_y(bytes: &[u8]) -> Vec<(f32, String)> {
+        let s = String::from_utf8_lossy(bytes);
+        let mut out = Vec::new();
+        for bloc in s.split("BT").skip(1) {
+            let Some(td) = bloc.find(" Td") else { continue };
+            let y = bloc[..td]
+                .split_whitespace()
+                .last()
+                .and_then(|v| v.parse::<f32>().ok());
+            let Some(y) = y else { continue };
+            let Some(a) = bloc.find('<') else { continue };
+            let Some(b) = bloc[a..].find("> Tj") else {
+                continue;
+            };
+            let hex = &bloc[a + 1..a + b];
+            let txt: String = (0..hex.len() / 2)
+                .filter_map(|i| u8::from_str_radix(&hex[2 * i..2 * i + 2], 16).ok())
+                .map(char::from)
+                .collect();
+            out.push((y, txt));
+        }
+        out
+    }
+
+    /// Revue de code P2 — la seconde ligne en devise se lit collée à son
+    /// mouvement : plus près de la ligne qu'elle complète que de la suivante.
+    #[test]
+    fn la_seconde_ligne_en_devise_est_plus_pres_de_son_mouvement_que_du_suivant() {
+        let ctx = PdfContext::fr_ch_default("Test SA");
+        let t = pdf_text_y(&render_general_ledger_pdf(&ledger_usd(3), &ctx).unwrap());
+        // Le texte écrit juste avant la seconde ligne est le dernier de son
+        // mouvement (le solde progressif), sur la ligne du mouvement.
+        let pos = |txt: &str| t.iter().position(|(_, l)| l == txt).unwrap();
+        let i1 = pos("USD 100.00 × 1.2000 · solde USD 1'100.00");
+        let i2 = pos("USD 100.00 × 1.2000 · solde USD 1'200.00");
+        let (mouvement1, fx1) = (t[i1 - 1].0, t[i1].0);
+        let mouvement2 = t[i2 - 1].0;
+        assert!(
+            mouvement1 - fx1 < fx1 - mouvement2,
+            "la seconde ligne ({fx1}) est plus près de son mouvement ({mouvement1}) que du suivant ({mouvement2})"
         );
     }
 

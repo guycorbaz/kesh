@@ -136,6 +136,30 @@ describe("TrialBalanceView — Story 37-4, compte en devise", () => {
     expect(container.querySelector("tfoot")?.textContent).not.toContain("USD");
   });
 
+  it("revue P2 : un résidu en devise sous le demi-centime ne s'affiche pas « -0.00 », et s'arrondit", () => {
+    const base = makeDto();
+    const usd = {
+      ...base.rows[0],
+      accountId: 2,
+      accountNumber: "1020",
+      accountName: "Banque USD",
+      currency: "USD",
+      openingCurrency: "-0.0040",
+      totalDebitCurrency: "100.0050",
+      totalCreditCurrency: "91.0000",
+      balanceCurrency: "9.0000",
+      closingCurrency: "1309.0000",
+    };
+    render(TrialBalanceView, { dto: makeDto({ rows: [base.rows[0], usd] }) });
+    const t = screen
+      .getByTestId("tb-fx-row-1020")
+      .textContent?.replace(/\s+/g, " ")
+      .trim();
+    expect(t).toContain("ouverture 0.00");
+    expect(t).not.toContain("-0.00");
+    expect(t).toContain("débit 100.01");
+  });
+
   it("mono-devise : aucune ligne en devise", () => {
     const { container } = render(TrialBalanceView, { dto: makeDto() });
     expect(container.innerHTML).not.toContain("tb-fx-row");

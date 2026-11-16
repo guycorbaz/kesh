@@ -160,6 +160,21 @@ fn periode(s: &SeededCompany) -> ReportPeriod {
     }
 }
 
+/// Tous les montants décimaux écrits en chaîne dans un JSON (les montants
+/// sérialisent en chaîne), à n'importe quelle profondeur.
+fn montants_decimaux(v: &serde_json::Value, out: &mut Vec<Decimal>) {
+    match v {
+        serde_json::Value::String(t) => {
+            if let Ok(d) = t.parse::<Decimal>() {
+                out.push(d);
+            }
+        }
+        serde_json::Value::Array(a) => a.iter().for_each(|x| montants_decimaux(x, out)),
+        serde_json::Value::Object(o) => o.values().for_each(|x| montants_decimaux(x, out)),
+        _ => {}
+    }
+}
+
 /// Accueil : les produits de l'exercice sont les CHF de la ligne (91.00, non
 /// USD 100).
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
@@ -191,11 +206,14 @@ async fn projets_en_chf(pool: MySqlPool) {
     let ren = generate_project_return(&pool, j.s.company_id, &scope, &mode)
         .await
         .unwrap();
-    let json = serde_json::to_value(&ren).unwrap().to_string();
-    assert!(
-        json.contains("\"91.00") || json.contains("\"91.0000"),
-        "{json}"
-    );
+    let valeur = serde_json::to_value(&ren).unwrap();
+    let json = valeur.to_string();
+    // Un montant égal au CHF de la ligne (91), jamais au montant en devise
+    // (100) : comparé en nombre, non cherché dans le texte (revue de code P2).
+    let mut montants = Vec::new();
+    montants_decimaux(&valeur, &mut montants);
+    assert!(montants.contains(&dec!(91)), "{json}");
+    assert!(!montants.contains(&dec!(100)), "{json}");
     assert!(!json.contains("urrency"), "{json}");
 }
 
