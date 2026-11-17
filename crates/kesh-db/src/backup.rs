@@ -53,12 +53,20 @@ pub const TABLES_TO_TRUNCATE: &[&str] = &[
     // journal_entries (RESTRICT) → doit passer AVANT les trois. En particulier
     // avant `journal_entry_lines`/`journal_entries` : la FK y est RESTRICT
     // (une écriture référencée ne se supprime pas, elle se contre-passe).
+    // Story 43-1a (#823) — `invoice_settlements.journal_entry_line_id` référence
+    // aussi une LIGNE (RESTRICT) : déjà avant `journal_entry_lines`.
     "invoice_settlements",
+    // Story 43-1a (#823) — `supplier_invoices.settlement_journal_entry_line_id`
+    // référence une LIGNE (RESTRICT) : les deux tables fournisseur passent
+    // AVANT `journal_entry_lines`, ensemble (`imported_supplier_invoices`
+    // référence `supplier_invoices`, SET NULL). Sans effet à l'exécution (le
+    // vidage tourne sous `FOREIGN_KEY_CHECKS = 0`) : c'est l'ordre FK-safe
+    // annoncé en tête de la liste qui est tenu.
+    "imported_supplier_invoices", // Story 12.5b — enfant de companies (RESTRICT) + supplier_invoices (SET NULL) → avant eux.
+    "supplier_invoices", // Story 12.2 — enfant de journal_entries/journal_entry_lines/contacts/bank_accounts/accounts/projects (RESTRICT) → avant eux.
     "journal_entry_lines",
     "projects", // Story 19-1 (Epic 19) — enfant de companies + self-ref parent_id (RESTRICT) ; référencé par journal_entry_lines.project_id → APRÈS journal_entry_lines, AVANT companies.
     "credit_notes", // Story 12.1 — enfant de invoices/journal_entries/contacts (RESTRICT) → avant eux.
-    "imported_supplier_invoices", // Story 12.5b — enfant de companies (RESTRICT) + supplier_invoices (SET NULL) → avant eux.
-    "supplier_invoices", // Story 12.2 — enfant de journal_entries/contacts/bank_accounts/accounts (RESTRICT) → avant eux.
     "payment_batches",   // Story 12.3 — enfant de companies + bank_accounts (RESTRICT) → avant eux.
     "invoices",
     "invoice_number_sequences",

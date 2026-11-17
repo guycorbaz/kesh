@@ -1,6 +1,6 @@
 -- SQUASH DU SCHÉMA DE TEST — Story 22-5 (#251). GÉNÉRÉ, NE PAS ÉDITER.
 -- Régénérer : scripts/regen-test-schema.sh
--- Équivalent des 91 migrations de crates/kesh-db/migrations/,
+-- Équivalent des 92 migrations de crates/kesh-db/migrations/,
 -- rejouées en UN batch DDL par base éphémère de test.
 --
 -- Le garde-fou crates/kesh-db/tests/test_schema_guard.rs compare ce schéma
@@ -358,6 +358,7 @@ CREATE TABLE `company_invoice_settings` (
   `default_bank_fees_account_id` bigint(20) DEFAULT NULL,
   `default_bad_debt_account_id` bigint(20) DEFAULT NULL,
   `supplier_internal_number_format` varchar(64) NOT NULL DEFAULT 'FF-{YEAR}-{SEQ:03}',
+  `group_settlement_max_difference` decimal(19,4) NOT NULL DEFAULT 5.0000 COMMENT 'Plafond des frais bancaires admis dans un règlement groupé (0 à 100)',
   PRIMARY KEY (`company_id`),
   KEY `fk_cis_receivable` (`default_receivable_account_id`),
   KEY `fk_cis_revenue` (`default_revenue_account_id`),
@@ -385,7 +386,8 @@ CREATE TABLE `company_invoice_settings` (
   CONSTRAINT `chk_cis_format_nonempty` CHECK (char_length(trim(`invoice_number_format`)) > 0),
   CONSTRAINT `chk_cis_je_template_nonempty` CHECK (char_length(trim(`journal_entry_description_template`)) > 0),
   CONSTRAINT `chk_cis_cn_format_nonempty` CHECK (char_length(trim(`credit_note_number_format`)) > 0),
-  CONSTRAINT `chk_cis_supplier_format_nonempty` CHECK (char_length(trim(`supplier_internal_number_format`)) > 0)
+  CONSTRAINT `chk_cis_supplier_format_nonempty` CHECK (char_length(trim(`supplier_internal_number_format`)) > 0),
+  CONSTRAINT `chk_company_invoice_settings_group_max` CHECK (`group_settlement_max_difference` >= 0 and `group_settlement_max_difference` <= 100)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 DROP TABLE IF EXISTS `contact_persons`;
@@ -741,14 +743,17 @@ CREATE TABLE `invoice_settlements` (
   `settlement_account_id` bigint(20) DEFAULT NULL,
   `write_off_nature` varchar(20) DEFAULT NULL,
   `write_off_vat` longtext CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL CHECK (json_valid(`write_off_vat`)),
+  `journal_entry_line_id` bigint(20) DEFAULT NULL COMMENT 'Ligne de créance de ce règlement dans une écriture groupée ; NULL = règlement unitaire',
   PRIMARY KEY (`id`),
-  UNIQUE KEY `uq_invoice_settlements_entry` (`journal_entry_id`),
+  UNIQUE KEY `uq_invoice_settlements_entry_invoice` (`journal_entry_id`,`invoice_id`),
+  UNIQUE KEY `uq_invoice_settlements_entry_line` (`journal_entry_line_id`),
   KEY `idx_invoice_settlements_company_invoice` (`company_id`,`invoice_id`),
   KEY `idx_invoice_settlements_invoice` (`invoice_id`),
   KEY `fk_invoice_settlements_settlement_bank` (`settlement_bank_account_id`),
   KEY `fk_invoice_settlements_settlement_account` (`settlement_account_id`),
   CONSTRAINT `fk_invoice_settlements_company` FOREIGN KEY (`company_id`) REFERENCES `companies` (`id`),
   CONSTRAINT `fk_invoice_settlements_entry` FOREIGN KEY (`journal_entry_id`) REFERENCES `journal_entries` (`id`),
+  CONSTRAINT `fk_invoice_settlements_entry_line` FOREIGN KEY (`journal_entry_line_id`) REFERENCES `journal_entry_lines` (`id`),
   CONSTRAINT `fk_invoice_settlements_invoice` FOREIGN KEY (`invoice_id`) REFERENCES `invoices` (`id`) ON DELETE CASCADE,
   CONSTRAINT `fk_invoice_settlements_settlement_account` FOREIGN KEY (`settlement_account_id`) REFERENCES `accounts` (`id`),
   CONSTRAINT `fk_invoice_settlements_settlement_bank` FOREIGN KEY (`settlement_bank_account_id`) REFERENCES `bank_accounts` (`id`),
@@ -1264,8 +1269,10 @@ CREATE TABLE `supplier_invoices` (
   `created_at` datetime(3) NOT NULL DEFAULT current_timestamp(3),
   `updated_at` datetime(3) NOT NULL DEFAULT current_timestamp(3) ON UPDATE current_timestamp(3),
   `project_id` bigint(20) DEFAULT NULL,
+  `settlement_journal_entry_line_id` bigint(20) DEFAULT NULL COMMENT 'Ligne de dette de ce règlement dans une écriture groupée ; NULL = règlement unitaire',
   PRIMARY KEY (`id`),
   UNIQUE KEY `uq_supplier_invoices_internal_number` (`company_id`,`internal_number`),
+  UNIQUE KEY `uq_supplier_invoices_settlement_line` (`settlement_journal_entry_line_id`),
   KEY `fk_supplier_invoices_purchase_je` (`purchase_journal_entry_id`),
   KEY `fk_supplier_invoices_settlement_bank` (`settlement_bank_account_id`),
   KEY `fk_supplier_invoices_settlement_account` (`settlement_account_id`),
@@ -1281,12 +1288,14 @@ CREATE TABLE `supplier_invoices` (
   CONSTRAINT `fk_supplier_invoices_settlement_account` FOREIGN KEY (`settlement_account_id`) REFERENCES `accounts` (`id`),
   CONSTRAINT `fk_supplier_invoices_settlement_bank` FOREIGN KEY (`settlement_bank_account_id`) REFERENCES `bank_accounts` (`id`),
   CONSTRAINT `fk_supplier_invoices_settlement_je` FOREIGN KEY (`settlement_journal_entry_id`) REFERENCES `journal_entries` (`id`),
+  CONSTRAINT `fk_supplier_invoices_settlement_line` FOREIGN KEY (`settlement_journal_entry_line_id`) REFERENCES `journal_entry_lines` (`id`),
   CONSTRAINT `chk_supplier_invoices_settlement_type` CHECK (`settlement_type` is null or `settlement_type` in ('bank_transfer','internal_account')),
   CONSTRAINT `chk_supplier_invoices_total_non_negative` CHECK (`total_amount` >= 0),
   CONSTRAINT `chk_supplier_invoices_paid_has_settlement` CHECK (`status` <> 'paid' or `settlement_journal_entry_id` is not null and `paid_at` is not null and `settlement_type` is not null),
   CONSTRAINT `chk_supplier_invoices_status_v2` CHECK (`status` in ('draft','open','paid','cancelled')),
   CONSTRAINT `chk_supplier_invoices_entry_iff_not_draft` CHECK (`status` = 'draft' = (`purchase_journal_entry_id` is null)),
-  CONSTRAINT `chk_supplier_invoices_draft_without_settlement` CHECK (`status` <> 'draft' or `settlement_type` is null and `settlement_bank_account_id` is null and `settlement_account_id` is null and `settlement_journal_entry_id` is null and `paid_at` is null)
+  CONSTRAINT `chk_supplier_invoices_draft_without_settlement` CHECK (`status` <> 'draft' or `settlement_type` is null and `settlement_bank_account_id` is null and `settlement_account_id` is null and `settlement_journal_entry_id` is null and `paid_at` is null),
+  CONSTRAINT `chk_supplier_invoices_settlement_line` CHECK (`settlement_journal_entry_line_id` is null or `settlement_journal_entry_id` is not null)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 DROP TABLE IF EXISTS `users`;

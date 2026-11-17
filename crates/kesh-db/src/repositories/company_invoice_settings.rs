@@ -26,6 +26,8 @@ use std::collections::BTreeSet;
 use sqlx::mysql::MySqlPool;
 use sqlx::{MySql, QueryBuilder, Row};
 
+use rust_decimal::Decimal;
+
 use crate::entities::audit_log::NewAuditLogEntry;
 use crate::entities::{
     AccountRole, AccountType, CompanyInvoiceSettings, CompanyInvoiceSettingsUpdate, Journal,
@@ -44,7 +46,40 @@ const COLUMNS: &str = "company_id, invoice_number_format, default_receivable_acc
     credit_note_number_format, supplier_internal_number_format, default_payable_account_id, \
     default_rounding_account_id, round_to_5_centimes, minimum_invoice_amount, \
     default_discount_account_id, default_bank_fees_account_id, default_bad_debt_account_id, \
-    version, created_at, updated_at";
+    group_settlement_max_difference, version, created_at, updated_at";
+
+/// Le plafond par défaut des frais bancaires d'un règlement groupé (Story 43-1a,
+/// C-43-24) : 5.00. **Seule** occurrence de la valeur dans le code Rust — elle ne
+/// sert que lorsque la société n'a pas de ligne de réglages ; sinon la colonne
+/// fait foi. Le test `group_max_default_matches_the_column_default` la compare
+/// au `DEFAULT` de la colonne (`information_schema`), pour que les deux sources
+/// ne dérivent pas.
+pub const DEFAULT_GROUP_DIFFERENCE_MAX: Decimal = Decimal::from_parts(50000, 0, 0, false, 4);
+
+/// Le plafond des frais bancaires d'un règlement groupé de la société, **au
+/// moment du geste** (Story 43-1a, AC3 bis, C-43-24) : la colonne
+/// `group_settlement_max_difference`, ou [`DEFAULT_GROUP_DIFFERENCE_MAX`] si la
+/// société n'a pas de ligne de réglages.
+///
+/// Lecture pure, sans verrou ni création de ligne (patron de
+/// [`round_to_5_centimes`]) : un réglage modifié pendant le geste est lu tel que
+/// l'instantané de la transaction le voit.
+pub async fn group_settlement_max_difference<'e, E>(
+    executor: E,
+    company_id: i64,
+) -> Result<Decimal, DbError>
+where
+    E: sqlx::Executor<'e, Database = sqlx::MySql>,
+{
+    Ok(sqlx::query_scalar::<_, Decimal>(
+        "SELECT group_settlement_max_difference FROM company_invoice_settings WHERE company_id = ?",
+    )
+    .bind(company_id)
+    .fetch_optional(executor)
+    .await
+    .map_err(map_db_error)?
+    .unwrap_or(DEFAULT_GROUP_DIFFERENCE_MAX))
+}
 
 /// Les dix comptes que les paramètres de facturation désignent : la colonne, et le
 /// code stable que l'API rend pour elle (Story 33-8, #486). Un test compare cette
