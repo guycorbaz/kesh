@@ -705,7 +705,9 @@ async fn the_gap_is_admitted_both_ways_up_to_the_ceiling(pool: MySqlPool) {
         regler(&pool, &m, bt, &[a, b], Some(m.s.accounts["2000"])).await,
         Err(GroupRefusal::DifferenceAccountNotPostable { .. })
     ));
-    // Moins reçu de 5.00 : accepté au plafond par défaut.
+    // Moins reçu de 0.40 (299.60 pour 300.00) : accepté au plafond par défaut,
+    // une fois le compte choisi imputable (le −5.00 exact est
+    // `three_invoices_one_partly_settled_and_a_five_franc_gap`).
     let done = regler(&pool, &m, bt, &[a, b], Some(ecart))
         .await
         .expect("0.40");
@@ -1581,4 +1583,695 @@ async fn a_concurrent_close_waits_for_the_group_unreconciliation(pool: MySqlPool
             .await
             .unwrap();
     assert_eq!(reversals, 0, "rien n'a été contre-passé");
+}
+
+// ---------------------------------------------------------------------------
+// Revue P1 (A-1, E-2) — chaque refus du dé-rapprochement d'un groupe (AC7.1)
+// ---------------------------------------------------------------------------
+
+/// Un groupe réglé : deux factures (100 et 200) payées 300 le 15 juin.
+async fn groupe_regle(pool: &MySqlPool, m: &Montage, prefixe: &str) -> (i64, i64, i64, i64) {
+    let a = facture(
+        pool,
+        m,
+        &format!("{prefixe}-1"),
+        dec!(100.00),
+        jour(6, 1),
+        None,
+    )
+    .await;
+    let b = facture(
+        pool,
+        m,
+        &format!("{prefixe}-2"),
+        dec!(200.00),
+        jour(6, 1),
+        None,
+    )
+    .await;
+    let bt = transaction(pool, m, dec!(300.00), jour(6, 15)).await;
+    let done = regler(pool, m, bt, &[a, b], None).await.expect("réglé");
+    (a, b, bt, done.journal_entry_id)
+}
+
+/// Le dé-rapprochement refusé par `attendu`, rien d'écrit, et la vue qui nomme
+/// le motif et une facture du groupe (`cancelBlockedInvoice`, 43-2).
+async fn refus_du_derapprochement(
+    pool: &MySqlPool,
+    m: &Montage,
+    bt: i64,
+    aujourd_hui: NaiveDate,
+    attendu: kesh_db::errors::SettlementCancelBlocker,
+) -> Option<GroupedDocument> {
+    let avant = empreinte(pool).await;
+    let res = reconciliation_cancel::cancel(pool, m.s.company_id, bt, acteur(m), aujourd_hui).await;
+    match res {
+        Err(DbError::ReconciliationNotCancellable { blocker }) => {
+            assert_eq!(blocker, attendu, "motif du refus")
+        }
+        autre => panic!("refus {attendu:?} attendu, reçu {autre:?}"),
+    }
+    assert_eq!(
+        empreinte(pool).await,
+        avant,
+        "rien d'écrit après {attendu:?}"
+    );
+    let view = reconciliation_cancel::get_view(pool, m.s.company_id, bt, aujourd_hui)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(view.cancel_blocker.map(|h| h.0), Some(attendu), "la vue");
+    let bloquee = view
+        .cancel_blocked_invoice
+        .expect("la vue nomme la facture du motif");
+    Some(bloquee.document)
+}
+
+#[sqlx::test(migrations = "./test-schema")]
+async fn group_unreconciliation_refuses_a_closed_year(pool: MySqlPool) {
+    use kesh_db::errors::SettlementCancelBlocker as B;
+    let m = monter(&pool).await;
+    let fy = exercice_2019(&pool, m.s.company_id).await;
+    let a = facture(&pool, &m, "Y-1", dec!(100.00), en_2019(6, 1), None).await;
+    let b = facture(&pool, &m, "Y-2", dec!(200.00), en_2019(6, 1), None).await;
+    let bt = transaction(&pool, &m, dec!(300.00), en_2019(6, 15)).await;
+    regler(&pool, &m, bt, &[a, b], None).await.expect("réglé");
+    sqlx::query("UPDATE fiscal_years SET status = 'Closed' WHERE id = ?")
+        .bind(fy)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let nommee = refus_du_derapprochement(&pool, &m, bt, jour(11, 17), B::FiscalYearClosed).await;
+    assert_eq!(
+        nommee,
+        Some(GroupedDocument::Invoice(a)),
+        "la première facture"
+    );
+}
+
+#[sqlx::test(migrations = "./test-schema")]
+async fn group_unreconciliation_refuses_a_lettering_frozen_by_the_period(pool: MySqlPool) {
+    use kesh_db::errors::SettlementCancelBlocker as B;
+    let m = monter(&pool).await;
+    let (_, _, bt, _) = groupe_regle(&pool, &m, "L").await;
+    sqlx::query("UPDATE companies SET books_locked_through = ? WHERE id = ?")
+        .bind(jour(6, 30))
+        .bind(m.s.company_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    refus_du_derapprochement(
+        &pool,
+        &m,
+        bt,
+        jour(11, 17),
+        B::DocumentLetteringInClosedPeriods,
+    )
+    .await;
+}
+
+#[sqlx::test(migrations = "./test-schema")]
+async fn group_unreconciliation_refuses_another_linked_transaction(pool: MySqlPool) {
+    use kesh_db::errors::SettlementCancelBlocker as B;
+    let m = monter(&pool).await;
+    let (_, _, bt, entry) = groupe_regle(&pool, &m, "T").await;
+    let autre = transaction(&pool, &m, dec!(300.00), jour(6, 16)).await;
+    sqlx::query(
+        "UPDATE bank_transactions SET status = 'reconciled', matched_entry_id = ? WHERE id = ?",
+    )
+    .bind(entry)
+    .bind(autre)
+    .execute(&pool)
+    .await
+    .unwrap();
+    refus_du_derapprochement(&pool, &m, bt, jour(11, 17), B::MatchedBankTransaction).await;
+}
+
+#[sqlx::test(migrations = "./test-schema")]
+async fn group_unreconciliation_refuses_an_archived_account(pool: MySqlPool) {
+    use kesh_db::errors::SettlementCancelBlocker as B;
+    let m = monter(&pool).await;
+    let (_, _, bt, _) = groupe_regle(&pool, &m, "A").await;
+    sqlx::query("UPDATE accounts SET active = FALSE WHERE id = ?")
+        .bind(m.s.accounts["1100"])
+        .execute(&pool)
+        .await
+        .unwrap();
+    refus_du_derapprochement(&pool, &m, bt, jour(11, 17), B::AccountArchived).await;
+}
+
+#[sqlx::test(migrations = "./test-schema")]
+async fn group_unreconciliation_refuses_without_an_open_year_today(pool: MySqlPool) {
+    use kesh_db::errors::SettlementCancelBlocker as B;
+    let m = monter(&pool).await;
+    let (_, _, bt, _) = groupe_regle(&pool, &m, "J").await;
+    // Le seed couvre 2020-2030 : le 15 janvier 2031 n'a pas d'exercice ouvert.
+    let hors = NaiveDate::from_ymd_opt(2031, 1, 15).unwrap();
+    refus_du_derapprochement(&pool, &m, bt, hors, B::NoOpenFiscalYearToday).await;
+}
+
+#[sqlx::test(migrations = "./test-schema")]
+async fn group_unreconciliation_refuses_a_credited_invoice_and_names_it(pool: MySqlPool) {
+    use kesh_db::errors::SettlementCancelBlocker as B;
+    let m = monter(&pool).await;
+    let (_, b, bt, _) = groupe_regle(&pool, &m, "C").await;
+    // L'état hérité qu'une facture réglée créditée représente (rang 1).
+    sqlx::query("UPDATE invoices SET status = 'cancelled' WHERE id = ?")
+        .bind(b)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let nommee = refus_du_derapprochement(&pool, &m, bt, jour(11, 17), B::InvoiceCredited).await;
+    assert_eq!(
+        nommee,
+        Some(GroupedDocument::Invoice(b)),
+        "la facture créditée"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Revue P1 (A-2) — AC8, AC9 : l'avoir et le délettrage manuel, avec leur motif
+// ---------------------------------------------------------------------------
+
+#[sqlx::test(migrations = "./test-schema")]
+async fn a_grouped_invoice_refuses_a_credit_note_and_a_manual_unlettering(pool: MySqlPool) {
+    use kesh_db::repositories::{credit_notes, letterings};
+    let m = monter(&pool).await;
+    let (a, _, _, _) = groupe_regle(&pool, &m, "K").await;
+    // AC8 — l'avoir : la facture est réglée.
+    let avoir = credit_notes::create_credit_note(
+        &pool,
+        kesh_db::entities::NewCreditNote {
+            company_id: m.s.company_id,
+            invoice_id: a,
+            date: jour(11, 17),
+        },
+        m.s.admin_user_id,
+    )
+    .await;
+    assert!(
+        matches!(avoir, Err(DbError::CreditNoteBlockedBySettlement { invoice_id, .. }) if invoice_id == a),
+        "{avoir:?}"
+    );
+    // AC9 — le délettrage manuel du groupe de la facture : un groupe `document`.
+    let key: i64 = sqlx::query_scalar(
+        "SELECT jel.lettering_key FROM journal_entry_lines jel \
+         JOIN invoices i ON i.journal_entry_id = jel.entry_id \
+         WHERE i.id = ? AND jel.lettering_key IS NOT NULL LIMIT 1",
+    )
+    .bind(a)
+    .fetch_one(&pool)
+    .await
+    .expect("la vente est lettrée");
+    let mut tx = pool.begin().await.unwrap();
+    let delettre = letterings::dissolve_group_in_tx(
+        &mut tx,
+        m.s.company_id,
+        key,
+        letterings::Mode::Manual,
+        acteur(&m),
+    )
+    .await;
+    drop(tx);
+    assert!(
+        matches!(delettre, Err(DbError::LetteringIsDocument)),
+        "{delettre:?}"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Revue P1 (A-3, E-2) — un test par variante de `GroupRefusal`, empreinte
+// comparée après une transaction VALIDÉE (preuve de D6)
+// ---------------------------------------------------------------------------
+
+/// Le règlement du groupe `ids` par `bt` est refusé, rien d'écrit.
+async fn refus_du_groupe(
+    pool: &MySqlPool,
+    m: &Montage,
+    bt: i64,
+    ids: &[i64],
+    difference_account_id: Option<i64>,
+) -> GroupRefusal {
+    let avant = empreinte(pool).await;
+    let refus = regler(pool, m, bt, ids, difference_account_id)
+        .await
+        .expect_err("refusé");
+    assert_eq!(empreinte(pool).await, avant, "rien d'écrit après {refus:?}");
+    refus
+}
+
+#[sqlx::test(migrations = "./test-schema")]
+async fn refusals_after_the_first_write_leave_nothing(pool: MySqlPool) {
+    let m = monter(&pool).await;
+    // PeriodLocked — l'écriture est refusée par la borne de période.
+    let a = facture(&pool, &m, "W-1", dec!(100.00), jour(6, 1), None).await;
+    let b = facture(&pool, &m, "W-2", dec!(200.00), jour(6, 1), None).await;
+    let bt = transaction(&pool, &m, dec!(300.00), jour(6, 15)).await;
+    sqlx::query("UPDATE companies SET books_locked_through = ? WHERE id = ?")
+        .bind(jour(6, 30))
+        .bind(m.s.company_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    assert!(matches!(
+        refus_du_groupe(&pool, &m, bt, &[a, b], None).await,
+        GroupRefusal::PeriodLocked { .. }
+    ));
+    sqlx::query("UPDATE companies SET books_locked_through = NULL WHERE id = ?")
+        .bind(m.s.company_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    // FiscalYearInvalid — aucun exercice ne couvre la date de valeur.
+    let tard = transaction(
+        &pool,
+        &m,
+        dec!(300.00),
+        NaiveDate::from_ymd_opt(2031, 2, 1).unwrap(),
+    )
+    .await;
+    assert!(matches!(
+        refus_du_groupe(&pool, &m, tard, &[a, b], None).await,
+        GroupRefusal::FiscalYearInvalid { .. }
+    ));
+    // TransactionNotPending — à l'étape 10, après l'écriture, les règlements et
+    // les factures : la transaction a changé depuis l'instantané du geste.
+    let mut tx = pool.begin().await.unwrap();
+    kesh_db::repositories::invoice_settlements::amount_due(&mut *tx, a)
+        .await
+        .unwrap();
+    sqlx::query("UPDATE bank_transactions SET version = version + 1 WHERE id = ?")
+        .bind(bt)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let avant = empreinte(&pool).await;
+    let out = grouped_settlements::settle_invoices_in_tx(
+        &mut tx,
+        m.s.company_id,
+        m.bank_account_id,
+        bt,
+        &[a, b],
+        None,
+        1,
+        acteur(&m),
+        jour(11, 17),
+    )
+    .await
+    .expect("aucune erreur de base");
+    assert_eq!(out, Err(GroupRefusal::TransactionNotPending));
+    tx.commit().await.unwrap();
+    assert_eq!(
+        empreinte(&pool).await,
+        avant,
+        "rien d'écrit après TransactionNotPending"
+    );
+}
+
+#[sqlx::test(migrations = "./test-schema")]
+async fn a_later_closed_year_refuses_the_group(pool: MySqlPool) {
+    let m = monter(&pool).await;
+    exercice_2019(&pool, m.s.company_id).await;
+    let a = facture(&pool, &m, "Z-1", dec!(100.00), en_2019(6, 1), None).await;
+    let b = facture(&pool, &m, "Z-2", dec!(200.00), en_2019(6, 1), None).await;
+    let bt = transaction(&pool, &m, dec!(300.00), en_2019(6, 15)).await;
+    sqlx::query("UPDATE fiscal_years SET status = 'Closed' WHERE id = ?")
+        .bind(m.s.fiscal_year_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    assert!(matches!(
+        refus_du_groupe(&pool, &m, bt, &[a, b], None).await,
+        GroupRefusal::LaterFiscalYearClosed { .. }
+    ));
+}
+
+#[sqlx::test(migrations = "./test-schema")]
+async fn each_invoice_and_bank_account_refusal_writes_nothing(pool: MySqlPool) {
+    use kesh_db::errors::SettlementAccountRole as R;
+    let m = monter(&pool).await;
+    let bt = transaction(&pool, &m, dec!(300.00), jour(6, 15)).await;
+    let a = facture(&pool, &m, "V-1", dec!(100.00), jour(6, 1), None).await;
+    let refus_facture = |r: GroupRefusal| match r {
+        GroupRefusal::InvoiceNotEligible { reason, .. } => Some(reason),
+        _ => None,
+    };
+
+    // AlreadyPaid.
+    let b = facture(&pool, &m, "V-2", dec!(200.00), jour(6, 1), None).await;
+    sqlx::query("UPDATE invoices SET paid_at = NOW() WHERE id = ?")
+        .bind(b)
+        .execute(&pool)
+        .await
+        .unwrap();
+    assert_eq!(
+        refus_facture(refus_du_groupe(&pool, &m, bt, &[a, b], None).await),
+        Some(IneligibleReason::AlreadyPaid)
+    );
+    // NothingDue : soldée par un règlement, `paid_at` effacé ensuite (l'état
+    // que le rang « déjà payée » ne voit pas).
+    let c = facture(&pool, &m, "V-3", dec!(200.00), jour(6, 1), None).await;
+    let version_c: i32 = sqlx::query_scalar("SELECT version FROM invoices WHERE id = ?")
+        .bind(c)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    kesh_db::repositories::invoice_settlements_write::settle_invoice(
+        &pool,
+        m.s.admin_user_id,
+        m.s.company_id,
+        c,
+        kesh_db::entities::SettlementChoice::InternalAccount {
+            account_id: m.s.accounts["1000"],
+        },
+        dec!(200.00),
+        jour(6, 2),
+        version_c,
+    )
+    .await
+    .expect("soldée");
+    sqlx::query("UPDATE invoices SET paid_at = NULL WHERE id = ?")
+        .bind(c)
+        .execute(&pool)
+        .await
+        .unwrap();
+    assert_eq!(
+        refus_facture(refus_du_groupe(&pool, &m, bt, &[a, c], None).await),
+        Some(IneligibleReason::NothingDue)
+    );
+    // JournalEntryNotSet : INATTEIGNABLE en base — la CHECK
+    // `chk_invoices_validated_has_je` refuse une facture `validated` sans
+    // écriture de vente (4025, constaté au premier passage de ce test,
+    // `p1-vert-entrelacement.log`), et une facture non validée est refusée
+    // avant (`NotValidated`). La garde reste, défensive.
+    let d = facture(&pool, &m, "V-4", dec!(200.00), jour(6, 1), None).await;
+    let refus_check = sqlx::query("UPDATE invoices SET journal_entry_id = NULL WHERE id = ?")
+        .bind(d)
+        .execute(&pool)
+        .await;
+    assert!(refus_check.is_err(), "la CHECK protège l'invariant");
+    // SaleEntryMalformed : l'écriture de vente n'est pas une écriture de la
+    // société (identifiant inexistant, clés étrangères suspendues le temps du
+    // montage).
+    let e = facture(&pool, &m, "V-5", dec!(200.00), jour(6, 1), None).await;
+    {
+        let mut conn = pool.acquire().await.unwrap();
+        sqlx::query("SET FOREIGN_KEY_CHECKS = 0")
+            .execute(&mut *conn)
+            .await
+            .unwrap();
+        sqlx::query("UPDATE invoices SET journal_entry_id = 999999 WHERE id = ?")
+            .bind(e)
+            .execute(&mut *conn)
+            .await
+            .unwrap();
+        sqlx::query("SET FOREIGN_KEY_CHECKS = 1")
+            .execute(&mut *conn)
+            .await
+            .unwrap();
+    }
+    assert!(matches!(
+        refus_du_groupe(&pool, &m, bt, &[a, e], None).await,
+        GroupRefusal::SaleEntryMalformed {
+            sale_entry_id: 999999,
+            ..
+        }
+    ));
+
+    let f = facture(&pool, &m, "V-6", dec!(200.00), jour(6, 1), None).await;
+    let poser = |sql: &'static str| {
+        let pool = pool.clone();
+        async move { sqlx::query(sql).execute(&pool).await.unwrap() }
+    };
+    // ClaimAccount { Counterparty, bank_account_id: Some } : la banque est la créance.
+    sqlx::query("UPDATE bank_accounts SET journal_account_id = ? WHERE id = ?")
+        .bind(m.s.accounts["1100"])
+        .bind(m.bank_account_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    match refus_du_groupe(&pool, &m, bt, &[a, f], None).await {
+        GroupRefusal::ClaimAccount {
+            role: R::Counterparty,
+            bank_account_id,
+            account_id,
+            piece,
+            ..
+        } => {
+            assert_eq!(bank_account_id, Some(m.bank_account_id));
+            assert_eq!(account_id, m.s.accounts["1100"]);
+            assert!(piece.is_some());
+        }
+        autre => panic!("{autre:?}"),
+    }
+    // BankAccountNotConfigured.
+    poser("UPDATE bank_accounts SET journal_account_id = NULL").await;
+    assert_eq!(
+        refus_du_groupe(&pool, &m, bt, &[a, f], None).await,
+        GroupRefusal::BankAccountNotConfigured
+    );
+    sqlx::query("UPDATE bank_accounts SET journal_account_id = ? WHERE id = ?")
+        .bind(m.bank_ledger)
+        .bind(m.bank_account_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    // BankAccountClosed.
+    poser("UPDATE bank_accounts SET closed_on = '2026-11-01'").await;
+    assert_eq!(
+        refus_du_groupe(&pool, &m, bt, &[a, f], None).await,
+        GroupRefusal::BankAccountClosed
+    );
+    poser("UPDATE bank_accounts SET closed_on = NULL").await;
+    // BankAccountNotFound (archivé).
+    poser("UPDATE bank_accounts SET archived = TRUE").await;
+    assert_eq!(
+        refus_du_groupe(&pool, &m, bt, &[a, f], None).await,
+        GroupRefusal::BankAccountNotFound
+    );
+}
+
+#[sqlx::test(migrations = "./test-schema")]
+async fn rounding_refusals_write_nothing(pool: MySqlPool) {
+    use kesh_db::errors::SettlementAccountRole as R;
+    let m = monter(&pool).await;
+    // `r = −0.0049` : 10.0049 + 10.00 payés 20.00 — compte d'arrondi requis.
+    let a = facture(&pool, &m, "R-1", dec!(10.0049), jour(6, 1), None).await;
+    let b = facture(&pool, &m, "R-2", dec!(10.00), jour(6, 1), None).await;
+    let bt = transaction(&pool, &m, dec!(20.00), jour(6, 15)).await;
+    assert_eq!(
+        refus_du_groupe(&pool, &m, bt, &[a, b], None).await,
+        GroupRefusal::RoundingAccountNotConfigured
+    );
+    // ClaimAccount { Rounding } : le compte d'arrondi désigné est le compte de
+    // créance d'une facture — la vente de `c` le débite.
+    let arrondi = designate_rounding_account(&pool, m.s.company_id)
+        .await
+        .expect("compte d'arrondi");
+    let c = facture(&pool, &m, "R-3", dec!(10.0049), jour(6, 1), None).await;
+    sqlx::query(
+        "UPDATE journal_entry_lines SET account_id = ? \
+         WHERE account_id = ? AND entry_id = (SELECT journal_entry_id FROM invoices WHERE id = ?)",
+    )
+    .bind(arrondi)
+    .bind(m.s.accounts["1100"])
+    .bind(c)
+    .execute(&pool)
+    .await
+    .unwrap();
+    assert!(matches!(
+        refus_du_groupe(&pool, &m, bt, &[b, c], None).await,
+        GroupRefusal::ClaimAccount {
+            role: R::Rounding,
+            bank_account_id: None,
+            ..
+        }
+    ));
+}
+
+/// D6 — le refus `RaceDuringUpdate` (après l'écriture et les règlements) ne
+/// laisse rien : empreinte comparée après une transaction validée.
+#[sqlx::test(migrations = "./test-schema")]
+async fn a_race_during_update_leaves_nothing(pool: MySqlPool) {
+    let m = monter(&pool).await;
+    let a = facture(&pool, &m, "N-1", dec!(100.00), jour(6, 1), None).await;
+    let b = facture(&pool, &m, "N-2", dec!(200.00), jour(6, 1), None).await;
+    let bt = transaction(&pool, &m, dec!(300.00), jour(6, 15)).await;
+    let mut tx = pool.begin().await.unwrap();
+    kesh_db::repositories::invoice_settlements::amount_due(&mut *tx, b)
+        .await
+        .unwrap();
+    // Une autre connexion relève la version de `b` (sans en changer le reste).
+    sqlx::query("UPDATE invoices SET version = version + 1 WHERE id = ?")
+        .bind(b)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let avant = empreinte(&pool).await;
+    let out = grouped_settlements::settle_invoices_in_tx(
+        &mut tx,
+        m.s.company_id,
+        m.bank_account_id,
+        bt,
+        &[a, b],
+        None,
+        1,
+        acteur(&m),
+        jour(11, 17),
+    )
+    .await
+    .expect("aucune erreur de base");
+    assert!(
+        matches!(
+            &out,
+            Err(GroupRefusal::InvoiceNotEligible {
+                piece,
+                reason: IneligibleReason::RaceDuringUpdate
+            }) if piece.document == GroupedDocument::Invoice(b)
+        ),
+        "{out:?}"
+    );
+    tx.commit().await.unwrap();
+    assert_eq!(
+        empreinte(&pool).await,
+        avant,
+        "rien d'écrit après RaceDuringUpdate"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Revue P1 (A-3, E-2) — en écritures réelles
+// ---------------------------------------------------------------------------
+
+/// Trois factures, dont une déjà réglée en partie ; écart de −5.00 accepté au
+/// plafond par défaut ; clés d'audit relues en base.
+#[sqlx::test(migrations = "./test-schema")]
+async fn three_invoices_one_partly_settled_and_a_five_franc_gap(pool: MySqlPool) {
+    let m = monter(&pool).await;
+    let ecart = m.s.accounts["4000"];
+    let a = facture(&pool, &m, "P3-1", dec!(100.00), jour(6, 1), None).await;
+    let b = facture(&pool, &m, "P3-2", dec!(200.00), jour(6, 1), None).await;
+    let c = facture(&pool, &m, "P3-3", dec!(50.00), jour(6, 1), None).await;
+    // `a` est déjà réglée de 30.00 par un règlement unitaire.
+    let version: i32 = sqlx::query_scalar("SELECT version FROM invoices WHERE id = ?")
+        .bind(a)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    kesh_db::repositories::invoice_settlements_write::settle_invoice(
+        &pool,
+        m.s.admin_user_id,
+        m.s.company_id,
+        a,
+        kesh_db::entities::SettlementChoice::InternalAccount {
+            account_id: m.s.accounts["1000"],
+        },
+        dec!(30.00),
+        jour(6, 5),
+        version,
+    )
+    .await
+    .expect("règlement partiel");
+    // Restes : 70 + 200 + 50 = 320 ; payé 315 : écart de −5.00.
+    let bt = transaction(&pool, &m, dec!(315.00), jour(6, 15)).await;
+    let done = regler(&pool, &m, bt, &[a, b, c], Some(ecart))
+        .await
+        .expect("réglé");
+    assert_eq!(done.invoices.len(), 3);
+    assert_eq!(
+        done.invoices[0].amount,
+        dec!(70.0000),
+        "le reste de la facture partielle"
+    );
+    assert_eq!(done.decomposition.gap, dec!(-5.00));
+    for id in [a, b, c] {
+        assert_eq!(reste(&pool, id).await, Decimal::ZERO);
+    }
+    // La facture partielle : sa vente, son règlement unitaire et sa ligne du
+    // groupe forment un seul groupe de lettrage.
+    let key: Option<i64> =
+        sqlx::query_scalar("SELECT lettering_key FROM journal_entry_lines WHERE id = ?")
+            .bind(done.invoices[0].line_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    let membres: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM journal_entry_lines WHERE lettering_key = ?")
+            .bind(key.expect("lettrée"))
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(membres, 3, "vente, règlement unitaire, ligne du groupe");
+    // L'écart de 5.00 au débit du compte choisi.
+    let debit: Decimal = sqlx::query_scalar(
+        "SELECT debit FROM journal_entry_lines WHERE entry_id = ? AND account_id = ?",
+    )
+    .bind(done.journal_entry_id)
+    .bind(ecart)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(debit, dec!(5.00));
+    // Les clés d'audit, relues en base.
+    let details: serde_json::Value = sqlx::query_scalar(
+        "SELECT details_json FROM audit_log WHERE action = 'reconciliation.accepted' \
+         AND entity_id = ?",
+    )
+    .bind(bt)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        details["gap"]
+            .as_str()
+            .map(|s| s.parse::<Decimal>().unwrap()),
+        Some(dec!(-5.00))
+    );
+    assert_eq!(details["difference_account_id"], ecart);
+    assert_eq!(
+        details["rounding_difference"]
+            .as_str()
+            .map(|s| s.parse::<Decimal>().unwrap()),
+        Some(Decimal::ZERO)
+    );
+    assert_eq!(details["invoices"].as_array().map(Vec::len), Some(3));
+}
+
+/// Cinquante factures réglées en base ; le libellé de l'écriture coupé à 500
+/// caractères.
+#[sqlx::test(migrations = "./test-schema")]
+async fn fifty_invoices_settle_and_the_label_is_cut_at_500(pool: MySqlPool) {
+    let m = monter(&pool).await;
+    let mut ids = Vec::new();
+    for k in 0..50 {
+        ids.push(
+            facture(
+                &pool,
+                &m,
+                &format!("FACTURE-NUMERO-LONG-{k:04}"),
+                dec!(10.00),
+                jour(6, 1),
+                None,
+            )
+            .await,
+        );
+    }
+    let bt = transaction(&pool, &m, dec!(500.00), jour(6, 15)).await;
+    let done = regler(&pool, &m, bt, &ids, None).await.expect("cinquante");
+    assert_eq!(done.invoices.len(), 50);
+    let description: String =
+        sqlx::query_scalar("SELECT description FROM journal_entries WHERE id = ?")
+            .bind(done.journal_entry_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(description.chars().count(), 500, "{description}");
+    assert!(description.ends_with("..."));
+    let lignes: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM journal_entry_lines WHERE entry_id = ?")
+            .bind(done.journal_entry_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(lignes, 51, "la banque et une créance par facture");
 }

@@ -2,7 +2,8 @@
 //!
 //! Une transaction bancaire règle **plusieurs factures** d'un seul geste : **une**
 //! écriture — une ligne de banque, une ligne de tiers **par facture** (le projet
-//! de sa facture), au plus une ligne d'arrondi et une de frais bancaires —, que la
+//! de sa facture), au plus une ligne d'arrondi et une ligne d'écart au compte
+//! choisi par l'utilisateur —, que la
 //! transaction pointe (`bank_transactions.matched_entry_id`, C-43-1). Chaque
 //! facture sait quelle ligne est la sienne (`invoice_settlements.journal_entry_line_id`,
 //! `supplier_invoices.settlement_journal_entry_line_id`, C-43-2) : c'est ce qui
@@ -479,6 +480,14 @@ struct ClientMember {
 /// ignoré sinon (décision de Guy du 2026-11-17). L'audit
 /// (`reconciliation.accepted` puis `invoice.paid` par facture) est écrit ici,
 /// avec l'acteur (D5) ; la route n'écrit rien.
+///
+/// `aujourd_hui` n'est **pas lu** (revue P1, B-4) : l'écriture est datée de la
+/// date de valeur de la transaction, comme l'unitaire. Il reste dans la
+/// signature figée à T3 (contrat de la 43-2) pour la symétrie avec
+/// [`cancel_in_tx`] et la 43-1b, sans effet.
+///
+/// Au succès, le point de sauvegarde est **relâché** (`RELEASE SAVEPOINT`,
+/// revue P1, B-3) : il ne survit pas dans la transaction de l'appelant.
 #[allow(clippy::too_many_arguments)]
 pub async fn settle_invoices_in_tx(
     tx: &mut sqlx::Transaction<'_, sqlx::MySql>,
@@ -510,7 +519,13 @@ pub async fn settle_invoices_in_tx(
     )
     .await?
     {
-        Ok(done) => Ok(Ok(done)),
+        Ok(done) => {
+            sqlx::query(&format!("RELEASE SAVEPOINT {SAVEPOINT}"))
+                .execute(&mut **tx)
+                .await
+                .map_err(DbError::Sqlx)?;
+            Ok(Ok(done))
+        }
         Err(r) => refuse(tx, r).await,
     }
 }
@@ -584,8 +599,23 @@ async fn settle_client_inner(
         if invoice.paid_at.is_some() {
             return not_eligible(IneligibleReason::AlreadyPaid);
         }
+        // L'ordre d'AC5.4 (revue P1, A LOW-4) : reste dû nul, sans écriture de
+        // vente, écriture de vente sans débit, puis la date.
+        let raw_due = super::invoice_settlements::amount_due(&mut **tx, *id).await?;
+        if raw_due <= Decimal::ZERO {
+            return not_eligible(IneligibleReason::NothingDue);
+        }
         let Some(sale_entry_id) = invoice.journal_entry_id else {
             return not_eligible(IneligibleReason::JournalEntryNotSet);
+        };
+        let Some(receivable_account_id) =
+            super::invoice_settlements::sale_receivable_account(tx, company_id, sale_entry_id)
+                .await?
+        else {
+            return Ok(Err(GroupRefusal::SaleEntryMalformed {
+                piece,
+                sale_entry_id,
+            }));
         };
         // La borne basse seule : l'ancre n'est pas lue (`check` rend
         // `PaymentBeforeInvoice` avant `PaymentTooLate`, borne haute ignorée).
@@ -597,19 +627,6 @@ async fn settle_client_inner(
                 tolerance_days: window.tolerance_days,
             }));
         }
-        let raw_due = super::invoice_settlements::amount_due(&mut **tx, *id).await?;
-        if raw_due <= Decimal::ZERO {
-            return not_eligible(IneligibleReason::NothingDue);
-        }
-        let Some(receivable_account_id) =
-            super::invoice_settlements::sale_receivable_account(tx, company_id, sale_entry_id)
-                .await?
-        else {
-            return Ok(Err(GroupRefusal::SaleEntryMalformed {
-                piece,
-                sale_entry_id,
-            }));
-        };
         members.push(ClientMember {
             invoice,
             raw_due,
@@ -735,7 +752,7 @@ async fn settle_client_inner(
     };
 
     // (7) L'écriture : banque, une créance par facture (identifiant croissant),
-    //     arrondi, frais (D2). Exercice ouvert couvrant la date de valeur.
+    //     arrondi, écart (D2). Exercice ouvert couvrant la date de valeur.
     let Some(fiscal_year) =
         super::fiscal_years::find_open_covering_date(tx, company_id, value_date).await?
     else {
@@ -1041,8 +1058,14 @@ pub struct GroupedViewInvoice {
     pub amount: Decimal,
 }
 
-/// Les factures clients d'une écriture groupée, par identifiant croissant —
-/// lecture **ordinaire** (vue) ou **verrouillante** (geste).
+/// Les factures clients d'une écriture groupée, par identifiant croissant, avec
+/// leur numéro — lecture **ordinaire** (jointure sur `invoices`, sans verrou).
+///
+/// ⛔ **Dans le geste, jamais avant le verrou de l'écriture et de son
+/// exercice** (revue P1, B-1 / E-1) : sous `REPEATABLE READ`, la première
+/// lecture ordinaire fige l'instantané ; faite plus tôt, elle ferait juger le
+/// rang 2 (« exercice clos ») et le rang 2 bis sur l'état d'avant une clôture
+/// concurrente. Le geste prend d'abord ses membres par [`locked_members`].
 pub(crate) async fn client_members(
     conn: &mut sqlx::MySqlConnection,
     company_id: i64,
@@ -1057,6 +1080,28 @@ pub(crate) async fn client_members(
     .bind(company_id)
     .bind(entry_id)
     .fetch_all(&mut *conn)
+    .await
+    .map_err(map_db_error)
+}
+
+/// `(règlement, facture)` d'une écriture groupée, par une lecture
+/// **verrouillante** de `invoice_settlements` seule, dans l'ordre de la clé
+/// `(journal_entry_id, invoice_id)` — la forme du geste (revue P1, B-1) : elle
+/// ne fige pas l'instantané, et ne prend aucun verrou que le classement
+/// verrouillant (`reconciliation_cancel::classify`) ne tienne déjà.
+async fn locked_members(
+    tx: &mut sqlx::Transaction<'_, sqlx::MySql>,
+    company_id: i64,
+    entry_id: i64,
+) -> Result<Vec<(i64, i64)>, DbError> {
+    sqlx::query_as(
+        "SELECT id, invoice_id FROM invoice_settlements \
+         WHERE company_id = ? AND journal_entry_id = ? \
+         ORDER BY journal_entry_id, invoice_id FOR UPDATE",
+    )
+    .bind(company_id)
+    .bind(entry_id)
+    .fetch_all(&mut **tx)
     .await
     .map_err(map_db_error)
 }
@@ -1112,17 +1157,33 @@ pub(crate) async fn difference_account_of(
     .fetch_all(&mut *conn)
     .await
     .map_err(map_db_error)?;
-    let Some((_, paid)) = lines.first() else {
-        return Ok(None);
+    // Revue P1 (B-2, E-3, E-4) : une écriture qui n'a pas la forme d'un groupe
+    // client — aucune ligne, aucun règlement client (groupe fournisseur, Story
+    // 43-1b), ligne d'écart absente — rend `Invariant`, jamais une valeur
+    // fausse ni un « sans écart » silencieux.
+    let malformee = |quoi: &str| {
+        DbError::Invariant(format!(
+            "écriture groupée {entry_id} : {quoi} (relecture du compte d'écart)"
+        ))
     };
-    let d = group_difference(*paid, &amounts, Decimal::MAX).map_err(|r| {
-        DbError::Invariant(format!("écriture groupée {entry_id} : décomposition {r:?}"))
-    })?;
+    if amounts.is_empty() {
+        return Err(malformee(
+            "aucun règlement client (groupe fournisseur : Story 43-1b)",
+        ));
+    }
+    let Some((_, paid)) = lines.first() else {
+        return Err(malformee("aucune ligne"));
+    };
+    let d = group_difference(*paid, &amounts, Decimal::MAX)
+        .map_err(|r| malformee(&format!("décomposition {r:?}")))?;
     if d.gap.is_zero() {
         return Ok(None);
     }
     let skip = 1 + amounts.len() + usize::from(!d.rounding_difference.is_zero());
-    Ok(lines.get(skip).map(|(account, _)| *account))
+    lines
+        .get(skip)
+        .map(|(account, _)| Some(*account))
+        .ok_or_else(|| malformee("ligne d'écart absente"))
 }
 
 /// Le point de sauvegarde du lot a-t-il disparu — la transaction annulée sous
@@ -1140,9 +1201,18 @@ pub fn is_savepoint_lost(err: &DbError) -> bool {
 }
 
 /// Le premier motif qui empêche de défaire le groupe `entry_id`, et la facture
-/// qui le porte (la première par identifiant croissant) — pour la vue et pour
-/// le geste. `unlinking` : la transaction que l'on défait (exemption étroite
-/// du rang 3).
+/// qui le porte — pour la vue et pour le geste (AC7.1). `unlinking` : la
+/// transaction que l'on défait (exemption étroite du rang 3).
+///
+/// Dans cet ordre : la **tête** de chaque facture, par identifiant croissant
+/// (rang 1, facture créditée ; rang 1 bis, solde existant —
+/// `invoice_settlements_write::settlement_cancel_head`), puis la **queue de
+/// l'écriture commune, une seule fois** (rangs 2 à 5 —
+/// `settlement_entry_cancel_blocker` ; revue P1, B-5 / E-5 : elle était
+/// réévaluée par facture). Un motif de l'écriture nomme la première facture.
+///
+/// Un groupe sans règlement client (groupe fournisseur, Story 43-1b) →
+/// [`DbError::Invariant`] : aucune réponse fausse (revue P1, B-2, E-3).
 pub(crate) async fn group_cancel_blocker(
     conn: &mut sqlx::MySqlConnection,
     company_id: i64,
@@ -1156,17 +1226,21 @@ pub(crate) async fn group_cancel_blocker(
     )>,
     DbError,
 > {
-    for (settlement_id, invoice_id, number, _) in client_members(conn, company_id, entry_id).await?
-    {
-        if let Some(hit) = super::invoice_settlements_write::settlement_cancel_blocker_unlinking(
+    let members = client_members(conn, company_id, entry_id).await?;
+    let Some((_, first_invoice, first_number, _)) = members.first().cloned() else {
+        return Err(DbError::Invariant(format!(
+            "règlement groupé : l'écriture {entry_id} n'a aucun règlement client \
+             (groupe fournisseur : Story 43-1b)"
+        )));
+    };
+    for (settlement_id, invoice_id, number, _) in members {
+        let (_, head) = super::invoice_settlements_write::settlement_cancel_head(
             conn,
             company_id,
             settlement_id,
-            Some(unlinking),
-            aujourd_hui,
         )
-        .await?
-        {
+        .await?;
+        if let Some(hit) = head {
             return Ok(Some((
                 hit,
                 GroupedPiece {
@@ -1176,7 +1250,25 @@ pub(crate) async fn group_cancel_blocker(
             )));
         }
     }
-    Ok(None)
+    Ok(
+        super::settlement_cancellation::settlement_entry_cancel_blocker(
+            conn,
+            company_id,
+            entry_id,
+            Some(unlinking),
+            aujourd_hui,
+        )
+        .await?
+        .map(|hit| {
+            (
+                hit,
+                GroupedPiece {
+                    document: GroupedDocument::Invoice(first_invoice),
+                    number: first_number,
+                },
+            )
+        }),
+    )
 }
 
 /// Ce que rend le dé-rapprochement d'un groupe.
@@ -1221,16 +1313,21 @@ pub async fn cancel_in_tx(
     expect_unlink_only: Option<bool>,
     aujourd_hui: NaiveDate,
 ) -> Result<GroupedCancellation, DbError> {
-    // Les membres (déjà verrouillés par le classement ; relus ici).
-    let members = client_members(tx, company_id, entry_id).await?;
-    if members.is_empty() {
+    // ⛔ L'ordre de l'unitaire (`reconciliation_cancel::cancel_in_tx`, étape 2) :
+    // **aucune lecture non verrouillante avant le verrou de l'exercice** (revue
+    // P1, B-1 / E-1). Les membres d'abord, par une lecture VERROUILLANTE de
+    // `invoice_settlements` seule — lignes déjà tenues par le classement —, puis
+    // les factures, puis l'écriture et son exercice ; les numéros (jointure
+    // ordinaire) seulement après.
+    let tenus = locked_members(tx, company_id, entry_id).await?;
+    if tenus.is_empty() {
         return Err(DbError::Invariant(format!(
             "règlement groupé : l'écriture {entry_id} n'a aucun règlement client \
              (groupe fournisseur : Story 43-1b)"
         )));
     }
     // Les factures, par identifiant croissant.
-    for (_, invoice_id, _, _) in &members {
+    for (_, invoice_id) in &tenus {
         sqlx::query("SELECT id FROM invoices WHERE id = ? AND company_id = ? FOR UPDATE")
             .bind(invoice_id)
             .bind(company_id)
@@ -1251,7 +1348,18 @@ pub async fn cancel_in_tx(
     .await
     .map_err(map_db_error)?
     .ok_or(DbError::NotFound)?;
+    // Lecture non verrouillante APRÈS le verrou de l'exercice (règle de
+    // placement de `bank_accounts::ensure_open_in_tx`, comme l'unitaire).
     super::bank_accounts::ensure_open_in_tx(tx, company_id, bt.bank_account_id).await?;
+    // Les numéros, maintenant que l'instantané naît après le verrou.
+    let members = client_members(tx, company_id, entry_id).await?;
+    let lus: Vec<(i64, i64)> = members.iter().map(|(s, i, _, _)| (*s, *i)).collect();
+    if lus != tenus {
+        return Err(DbError::Invariant(format!(
+            "dé-rapprochement groupé : les règlements lus ({lus:?}) ne sont pas ceux \
+             tenus ({tenus:?})"
+        )));
+    }
 
     // (1) Les refus, avant toute écriture.
     if expect_unlink_only == Some(true) {

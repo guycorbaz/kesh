@@ -437,7 +437,11 @@ async fn entry_cancel_chain(
     }
     let unlinking = Some(unlinking);
     match kind {
-        ReconciliationKind::GroupedSettlement { .. } => Ok(None),
+        // Inatteignable (retour anticipé ci-dessus) ; revue P1, B-6 : un bras
+        // silencieux masquerait une régression, comme à l'étape (6) du geste.
+        ReconciliationKind::GroupedSettlement { .. } => Err(DbError::Invariant(
+            "dé-rapprochement : un règlement groupé n'atteint pas la queue unitaire".into(),
+        )),
         ReconciliationKind::InvoiceSettlement { settlement_id, .. } => {
             invoice_settlements_write::settlement_cancel_blocker_unlinking(
                 conn,
