@@ -1037,7 +1037,18 @@ const ATTENDU = {
 	// `common-amount-unreadable` (`journal-entries/amount-entry-message.ts`),
 	// `supplier-invoices-err-line-unit-price-ambiguous` et `-unreadable`
 	// (`SupplierInvoiceForm.svelte`) : quatre littéraux.
-	sitesTotal: 3086,
+	// Story 36-16a (#1167) : **3082 → 3098**, relevé par la garde (« expected 3098 to be 3082 »,
+	// `kesh-gate-logs/e36-16/vitest-i18n-1.log`) — seize littéraux : treize dans
+	// `features/projects/ProjectReassignDialog.svelte` (dont `common-cancel` et `error-unexpected`),
+	// trois sur la fiche facture (`projects-reassign-open`, `projects-reassign-done`,
+	// `invoice-detail-project-label` comme libellé de la rangée). Sur une base qui porte la 36-15
+	// non fusionnée (C-36-16a-1) : à relever de nouveau à l'union de la 0.18.0 (C-e350-18).
+	// Puis **3098 → 3099** (« expected 3099 to be 3098 », `kesh-gate-logs/e36-16/vitest-cible-4.log`) :
+	// le sélecteur `projects-reassign-warning-entries`, que le dictionnaire du frontend résout
+	// sans arguments, scindé en deux clés plates `-one` et `-other` (deux littéraux pour un).
+	// Epic 42-1 (ex-36-16a), portée sur `main` après la v0.18.0 : **3086 → 3103**, union des
+	// deux relevés ci-dessus (+17 littéraux de la 36-16a), à confirmer par la garde.
+	sitesTotal: 3103,
 	sitesNonResolus: 31,
 	relais: 6,
 	// Story 26-1 (#620, AC3-bis) : **10 → 11** — `lib/features/bank-import/

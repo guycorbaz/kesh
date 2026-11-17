@@ -79,7 +79,10 @@
 	import { i18nMsg } from '$lib/shared/utils/i18n.svelte';
 	import { authState } from '$lib/app/stores/auth.svelte';
 	import { createCreditNote } from '$lib/features/credit-notes/credit-notes.api';
-	import { listProjects } from '$lib/features/projects/projects.api';
+	import { listProjects, reassignInvoiceProject } from '$lib/features/projects/projects.api';
+	import ProjectReassignDialog, {
+		type ReassignChoice,
+	} from '$lib/features/projects/ProjectReassignDialog.svelte';
 	import { todayLocal } from '$lib/shared/utils/local-date';
 	import type { ProjectResponse } from '$lib/features/projects/projects.types';
 	import { formatSwissDate } from '$lib/features/reports/reports.api';
@@ -267,8 +270,11 @@
 		// doit rester lisible). Échec toléré : libellé fallback `#id`.
 		try {
 			projects = await listProjects(true);
+			projectsLoaded = true;
 		} catch {
-			// Fallback #id via projectLabel.
+			// Fallback #id via projectLabel. Story 36-16a (revue P1, E-2) : sans la
+			// liste, le bouton « Changer le compte analytique » reste masqué — le
+			// sélecteur afficherait « — Aucun » au lieu du compte actuel.
 		}
 		// Story 16-1b (T5-bis/AC6-bis) : référentiel comptes + réglages, pour
 		// afficher le compte de produit de chaque ligne.
@@ -320,6 +326,31 @@
 	}
 
 	let projects = $state<ProjectResponse[]>([]);
+
+	// Story 36-16a (#1167) — changer le compte analytique d'une facture émise
+	// (validée, payée, annulée), par le dialogue partagé. Monté à l'ouverture.
+	let reassignOpen = $state(false);
+	/** Vrai une fois la liste des comptes analytiques chargée (revue P1, E-2). */
+	let projectsLoaded = $state(false);
+
+	/**
+	 * L'appel du dialogue : la facture REPREND l'objet rendu, version comprise,
+	 * comme après un règlement — le geste suivant de la page part donc avec la
+	 * version d'après le changement. Rejette avec l'erreur de l'API (le dialogue
+	 * l'affiche).
+	 */
+	async function submitReassign(choices: ReassignChoice[], acknowledge: boolean) {
+		if (!invoice) return;
+		const res = await reassignInvoiceProject(
+			invoice.id,
+			choices[0]?.projectId ?? null,
+			invoice.version,
+			acknowledge,
+		);
+		invoice = res.invoice;
+		notifySuccess(i18nMsg('projects-reassign-done', 'Compte analytique changé.'));
+	}
+
 	const projectLabel = $derived.by(() => {
 		const pid = invoice?.projectId;
 		if (!pid) return null;
@@ -1009,7 +1040,21 @@
 	{/if}
 {/snippet}
 
-<div class="mb-6 flex items-center justify-between">
+<!-- Story 36-16a (#1167) — hors brouillon (le brouillon a son formulaire), pour le
+     Comptable et l'Administrateur ; le serveur refuse le reste. -->
+{#snippet reassignButton()}
+	{#if canManage && projectsLoaded && invoice && invoice.status !== 'draft'}
+		<Button
+			variant="outline"
+			onclick={() => (reassignOpen = true)}
+			data-testid="invoice-reassign-project-button"
+		>
+			{i18nMsg('projects-reassign-open', 'Changer le compte analytique')}
+		</Button>
+	{/if}
+{/snippet}
+
+<div class="mb-6 flex items-start justify-between gap-4">
 	<Button variant="ghost" onclick={() => goto('/invoices')}>
 		<ArrowLeft class="h-4 w-4" aria-hidden="true" />
 		Retour
@@ -1036,7 +1081,10 @@
 			{/if}
 		</div>
 	{:else if invoice?.status === 'validated'}
-		<div class="flex gap-2">
+		<!-- Story 36-16a (revue P1, A-2) : avec « Changer le compte analytique », la
+		     rangée dépasse 1280 px ; elle passe à la ligne au lieu de couper
+		     « Dévalider » au bord de la fenêtre. -->
+		<div class="flex min-w-0 flex-wrap justify-end gap-2">
 			<!-- Le bouton disparaît quand la facture est soldée. Annuler un
 			     règlement se fait depuis la liste des règlements (Story 25-3-a-1),
 			     par contre-passation — pas par un retrait de drapeau. -->
@@ -1127,6 +1175,7 @@
 					{i18nMsg('credit-notes-create-button', 'Créer un avoir')}
 				</Button>
 			{/if}
+			{@render reassignButton()}
 			{#if canManage && !invoice.paidAt}
 				<!-- Une facture payée est hors du périmètre dunning (jamais candidate
 				     à un rappel) : les boutons Suspendre/Reprendre sont masqués (review
@@ -1171,13 +1220,14 @@
 			{/if}
 		</div>
 	{:else if invoice?.status === 'cancelled'}
-		<div class="flex gap-2">
+		<div class="flex min-w-0 flex-wrap justify-end gap-2">
 			<!-- Story 25-6-b (#387) : une facture annulée par un avoir garde son PDF
 			     émis, s'il a été figé ; jamais rendue, elle n'en a pas. -->
 			{@render pdfButtons()}
 			<Button variant="outline" onclick={() => goto('/credit-notes')}>
 				{i18nMsg('credit-notes-view-list', 'Voir les avoirs')}
 			</Button>
+			{@render reassignButton()}
 		</div>
 	{/if}
 </div>
@@ -1704,6 +1754,21 @@
 		errorMsg={markError}
 		onConfirm={handleSettleConfirm}
 	/>
+
+	{#if reassignOpen}
+		<ProjectReassignDialog
+			rows={[
+				{
+					id: invoice.id,
+					label: i18nMsg('invoice-detail-project-label', 'Compte analytique'),
+					currentProjectId: invoice.projectId ?? null,
+				},
+			]}
+			{projects}
+			submit={submitReassign}
+			onDone={() => (reassignOpen = false)}
+		/>
+	{/if}
 
 	<!-- Toujours monté (revue P1, lentille A) : conditionné à `amountDue`, qui
 	     passe par `null` pendant un envoi d'e-mail, il se démontait puis se

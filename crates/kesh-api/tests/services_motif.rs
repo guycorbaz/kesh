@@ -2457,15 +2457,18 @@ const SITES_NON_RESOLUS: &[SiteNonResolu] = &[
         &["archive_contact", "create_contact", "update_contact"],
         &[],
     ),
+    // Story 36-16a (#1167) : 13 → 14 `pub async fn`, 15 → 16 `async fn` — le
+    // changement de compte analytique d'une facture, mutant qu'aucun outil ne sert.
     (
         "routes/invoices.rs",
-        13,
-        15,
+        14,
+        16,
         &[
             "cancel_invoice_settlement_handler",
             "create_invoice",
             "delete_invoice",
             "export_due_dates_csv_handler",
+            "reassign_project_handler",
             "settle_invoice_handler",
             "unvalidate_invoice_handler",
             "update_invoice",
