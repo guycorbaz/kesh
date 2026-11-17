@@ -65,7 +65,7 @@ refus par proposition du *Pattern batch*.
 - **D5 — Montants bruts de bout en bout (H2, C-43-21).** Un reste dû peut porter quatre décimales (10.0050) ; le serveur
   calcule l'écart sur le brut. Le contrat rend donc le **brut** (`amountDueRaw`, `difference`, `settledInvoices[].amount`,
   chaînes à quatre décimales) **et** le centime pour l'affichage (`amountDue`). L'écran calcule en entiers de 1/10 000 sur le
-  brut (43-3). La différence `d = montant − Σ apports bruts` se décompose (D8) en fractions de centime (compte d'arrondi,
+  brut (43-3). La différence `d = |montant| − Σ apports bruts` (valeur absolue du montant de la transaction, comme aux lignes de `group_difference` plus bas et à D4 bis de la 43-1a) se décompose (D8) en fractions de centime (compte d'arrondi,
   au brut, comme la troisième ligne de l'unitaire, `settlement_journal_lines`) et en frais au centime ; seuls les frais se
   comparent au plafond.
 - **D6 — Garde CHF (M6, C-43-22).** Une transaction dont la devise n'est pas `CHF`, ou de montant nul, est refusée par
