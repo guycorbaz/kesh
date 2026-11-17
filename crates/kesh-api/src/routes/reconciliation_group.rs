@@ -887,6 +887,41 @@ mod tests {
         assert!(sql.details.unwrap()["message"].is_string());
     }
 
+    /// D2 (mutation a) — la conclusion d'un geste groupé rend une `DbError`
+    /// dans `failed[]`, jamais une panique ni une erreur du lot ; un refus
+    /// aussi, avec le sens de la famille.
+    #[test]
+    fn the_conclusion_keeps_errors_in_the_proposal() {
+        let g = GroupGesture {
+            company_id: 1,
+            bank_account_id: 2,
+            bank_transaction_id: 41,
+            difference_account_id: None,
+            batch_size: 1,
+            acteur: Acteur {
+                user_id: 1,
+                api_key_id: None,
+            },
+            aujourd_hui: NaiveDate::from_ymd_opt(2026, 11, 17).unwrap(),
+        };
+        let failed = conclude(
+            g,
+            SettlementDirection::Credit,
+            Err(DbError::Sqlx(sqlx::Error::PoolTimedOut)),
+        )
+        .expect_err("une erreur de base est un refus de la proposition");
+        assert_eq!(failed.bank_transaction_id, 41);
+        assert_eq!(failed.error_code, "DATABASE_ERROR");
+        let refused = conclude(
+            g,
+            SettlementDirection::Credit,
+            Ok(Err(GroupRefusal::WrongDirection { amount: dec!(-5) })),
+        )
+        .expect_err("refus");
+        assert_eq!(refused.error_code, "RECONCILIATION_TRANSACTION_NOT_CREDIT");
+        assert_eq!(refused.details.unwrap()["reason"], "debit_transaction");
+    }
+
     /// D2, M8 — quelques lignes de la table : le code, et la pièce nommée.
     #[test]
     fn refusals_carry_their_code_and_piece() {
