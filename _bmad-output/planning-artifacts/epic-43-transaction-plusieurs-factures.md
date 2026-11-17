@@ -120,7 +120,9 @@ le justifie par la possession, comme la 43-1a pour les clés vers une ligne.
 **43-3** (l'API seule reste utile à la clé d'API de Guy) ; **43-2**. La **43-6 ne sort jamais** si la 42-1 et la 43-1a sont
 publiées ensemble. La **43-1a** n'est publiée qu'avec la 43-2 et la 43-6 ; sans elles, l'epic entier sort.
 
-**C-43-19 — Verrous et versions** *(récrit, H-A)* : **la méthode de l'unitaire, à la lettre**
+**C-43-19 — Verrous et versions** *(récrit, H-A ; précisé à la P3 de la 43-1a)* : **la méthode de l'unitaire, à deux
+écarts près** — l'ordre des deux `UPDATE` (factures avant transaction, sans effet) et l'absence de score et de fenêtre haute
+(C-43-7) —
 (`routes/reconciliation.rs:2932-2950`) : aucun `FOR UPDATE` sur les factures client en amont ; chaque facture et son reste
 dû lus sur l'**instantané** ; puis `UPDATE invoices … AND version = <version lue> AND status = 'validated'` par
 identifiant croissant, `rows_affected() == 1` sinon refus `race_during_update` ; la transaction `UPDATE … AND version = ?`
@@ -156,7 +158,7 @@ constante `DEFAULT_GROUP_DIFFERENCE_MAX`, valeur par défaut seulement, citée u
 
 | Réf. | Proposition | Écrite dans | Si Guy la change |
 |---|---|---|---|
-| M-A (C-43-16) | moins reçu (client) ou plus payé (fournisseur) → compte de frais bancaires, dans la limite du plafond ; l'inverse refusé, comme le trop-perçu de l'unitaire ; fractions de centime au compte d'arrondi | 43-1a AC5, 43-1b AC2, 43-2, 43-3 | fiches remédiées ; `GroupRefusal` et libellés suivent |
+| M-A (C-43-16) | moins reçu (client) ou plus payé (fournisseur) → compte de frais bancaires, dans la limite du plafond ; l'inverse refusé, comme le trop-perçu de l'unitaire ; fractions de centime au compte d'arrondi. **Sans réponse de Guy mercredi 18 à 8 h, cette proposition s'applique** (P3 de la 43-1a, L10) | 43-1a D4 bis et AC5, 43-1b AC2, 43-2, 43-3 | seule la fonction pure `group_difference`, ses tests, les variantes de refus et les libellés changent |
 | Q1 | fermeture de #823 | — | — |
 
 *Tranchée* : Q5 = (a), décision de Guy du 2026-11-17 (C-43-17). Q4 = plafond réglable (C-43-24) ; sa suite, le compte de
