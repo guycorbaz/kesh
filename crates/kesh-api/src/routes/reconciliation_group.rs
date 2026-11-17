@@ -220,6 +220,7 @@ fn conclude(
         Ok(Ok(done)) => Ok(accepted_group(g.bank_transaction_id, done)),
         Ok(Err(refusal)) => Err(group_refusal_to_failed_proposal(
             g.bank_transaction_id,
+            g.bank_account_id,
             direction,
             refusal,
         )),
@@ -268,9 +269,13 @@ fn with_piece(mut details: serde_json::Value, piece: &GroupedPiece) -> serde_jso
 /// construction (`error_code: "…"`), pour le décompte de
 /// `failed-proposal-label.ts`.
 ///
+/// `bank_account_id` : le compte bancaire du lot, rendu en
+/// `details.bankAccountId` de `BANK_ACCOUNT_CLOSED` et
+/// `BANK_ACCOUNT_NOT_CONFIGURED`, comme l'unitaire (revue P1, B6) ;
 /// `direction` : le sens que la famille attend (refus `WrongDirection`).
 pub(super) fn group_refusal_to_failed_proposal(
     bank_transaction_id: i64,
+    bank_account_id: i64,
     direction: SettlementDirection,
     refusal: GroupRefusal,
 ) -> FailedProposal {
@@ -394,9 +399,15 @@ pub(super) fn group_refusal_to_failed_proposal(
                 &piece,
             )),
         ),
-        GroupRefusal::BankAccountNotConfigured => fail("BANK_ACCOUNT_NOT_CONFIGURED", None),
+        GroupRefusal::BankAccountNotConfigured => fail(
+            "BANK_ACCOUNT_NOT_CONFIGURED",
+            Some(serde_json::json!({ "bankAccountId": bank_account_id })),
+        ),
         GroupRefusal::BankAccountNotFound => fail("BANK_ACCOUNT_NOT_FOUND", None),
-        GroupRefusal::BankAccountClosed => fail("BANK_ACCOUNT_CLOSED", None),
+        GroupRefusal::BankAccountClosed => fail(
+            "BANK_ACCOUNT_CLOSED",
+            Some(serde_json::json!({ "bankAccountId": bank_account_id })),
+        ),
         GroupRefusal::ClaimAccount {
             claim,
             role,
@@ -712,6 +723,16 @@ pub struct GroupCandidatesResponse {
     pub has_more: bool,
 }
 
+/// Le nombre de candidates rendues pour `limit` : absent ou `≤ 0` → 50,
+/// au-delà de 100 → 100 (patron de `get_proposals`).
+fn effective_limit(limit: Option<i64>) -> usize {
+    limit
+        .filter(|&l| l > 0)
+        .map(|l| usize::try_from(l).unwrap_or(usize::MAX))
+        .map(|l| l.min(MAX_GROUP_CANDIDATES_LIMIT))
+        .unwrap_or(DEFAULT_GROUP_CANDIDATES_LIMIT)
+}
+
 /// `exclude=12,15` → les identifiants ; vide ou absent → aucun.
 fn parse_exclude(raw: Option<&str>) -> Result<Vec<i64>, AppError> {
     let Some(raw) = raw.map(str::trim).filter(|s| !s.is_empty()) else {
@@ -790,12 +811,7 @@ pub async fn get_group_candidates(
     Query(params): Query<GroupCandidatesParams>,
 ) -> Result<Json<GroupCandidatesResponse>, AppError> {
     let exclude = parse_exclude(params.exclude.as_deref())?;
-    let limit = params
-        .limit
-        .filter(|&l| l > 0)
-        .map(|l| usize::try_from(l).unwrap_or(usize::MAX))
-        .map(|l| l.min(MAX_GROUP_CANDIDATES_LIMIT))
-        .unwrap_or(DEFAULT_GROUP_CANDIDATES_LIMIT);
+    let limit = effective_limit(params.limit);
     let company_id = current_user.company_id;
     let bank_account_id = bank_account_of_transaction(&state.pool, company_id, id).await?;
     link_preflight(&state.pool, company_id, bank_account_id).await?;
@@ -922,65 +938,281 @@ mod tests {
         assert_eq!(refused.details.unwrap()["reason"], "debit_transaction");
     }
 
-    /// D2, M8 — quelques lignes de la table : le code, et la pièce nommée.
+    /// D2, M8 (revue P1, A2/B4) — **chaque** variante de [`GroupRefusal`] :
+    /// son code et ses `details` exacts. La table est en `match` sans joker :
+    /// une variante neuve sans ligne ici fait échouer `toutes_couvertes`.
     #[test]
-    fn refusals_carry_their_code_and_piece() {
-        let piece = GroupedPiece {
+    fn every_refusal_has_its_code_and_details() {
+        use grouped_settlements::IneligibleReason;
+        use kesh_db::errors::{ClaimSide, SettlementAccountRole};
+        use serde_json::{Value, json};
+        let date = |d: u32| NaiveDate::from_ymd_opt(2026, 11, d).unwrap();
+        let client = GroupedPiece {
             document: GroupedDocument::Invoice(12),
             number: Some("F-12".into()),
         };
-        let f = group_refusal_to_failed_proposal(
-            1,
-            SettlementDirection::Credit,
-            GroupRefusal::InvoiceNotEligible {
-                piece: piece.clone(),
-                reason: grouped_settlements::IneligibleReason::AlreadyPaid,
-            },
-        );
-        assert_eq!(f.error_code, "RECONCILIATION_INVOICE_NOT_ELIGIBLE");
-        let d = f.details.unwrap();
-        assert_eq!(d["reason"], "invoice_already_paid");
-        assert_eq!(d["invoiceId"], 12);
-        assert_eq!(d["invoiceNumber"], "F-12");
+        let fournisseur = GroupedPiece {
+            document: GroupedDocument::SupplierInvoice(9),
+            number: None,
+        };
+        let cas: Vec<(GroupRefusal, &str, Option<Value>)> = vec![
+            (
+                GroupRefusal::TooFew { count: 1 },
+                "RECONCILIATION_GROUP_INVALID",
+                Some(json!({ "reason": "too_few", "count": 1 })),
+            ),
+            (
+                GroupRefusal::TooMany { count: 51 },
+                "RECONCILIATION_GROUP_INVALID",
+                Some(json!({ "reason": "too_many", "count": 51 })),
+            ),
+            (
+                GroupRefusal::Duplicate {
+                    document: GroupedDocument::SupplierInvoice(9),
+                },
+                "RECONCILIATION_GROUP_INVALID",
+                Some(json!({ "reason": "duplicate", "supplierInvoiceId": 9 })),
+            ),
+            (
+                GroupRefusal::TransactionNotFound,
+                "BANK_TRANSACTION_NOT_FOUND",
+                None,
+            ),
+            (
+                GroupRefusal::TransactionNotPending,
+                "RECONCILIATION_ALREADY_RECONCILED",
+                None,
+            ),
+            (
+                GroupRefusal::WrongDirection { amount: dec!(-5) },
+                "RECONCILIATION_TRANSACTION_NOT_CREDIT",
+                Some(json!({ "reason": "debit_transaction", "transactionAmount": dec!(-5) })),
+            ),
+            (
+                GroupRefusal::CurrencyMismatch {
+                    currency: "EUR".into(),
+                },
+                "RECONCILIATION_CURRENCY_MISMATCH",
+                Some(json!({ "transactionCurrency": "EUR", "expected": "CHF" })),
+            ),
+            (
+                GroupRefusal::InvoiceNotFound {
+                    document: GroupedDocument::Invoice(12),
+                },
+                "INVOICE_NOT_FOUND",
+                Some(json!({ "invoiceId": 12 })),
+            ),
+            (
+                GroupRefusal::InvoiceNotFound {
+                    document: GroupedDocument::SupplierInvoice(9),
+                },
+                "SUPPLIER_INVOICE_NOT_FOUND",
+                Some(json!({ "supplierInvoiceId": 9 })),
+            ),
+            (
+                GroupRefusal::InvoiceNotEligible {
+                    piece: client.clone(),
+                    reason: IneligibleReason::NotValidated,
+                },
+                "RECONCILIATION_INVOICE_NOT_ELIGIBLE",
+                Some(json!({ "reason": "invoice_not_validated", "invoiceId": 12,
+                             "invoiceNumber": "F-12" })),
+            ),
+            (
+                GroupRefusal::InvoiceNotEligible {
+                    piece: client.clone(),
+                    reason: IneligibleReason::JournalEntryNotSet,
+                },
+                "RECONCILIATION_INVOICE_NOT_ELIGIBLE",
+                Some(
+                    json!({ "reason": "invoice_journal_entry_not_set", "invoiceId": 12,
+                             "invoiceNumber": "F-12" }),
+                ),
+            ),
+            (
+                GroupRefusal::InvoiceNotEligible {
+                    piece: fournisseur.clone(),
+                    reason: IneligibleReason::SupplierInPaymentBatch,
+                },
+                "RECONCILIATION_INVOICE_NOT_ELIGIBLE",
+                Some(json!({ "reason": "supplier_invoice_in_payment_batch",
+                             "supplierInvoiceId": 9, "invoiceNumber": null })),
+            ),
+            (
+                GroupRefusal::HeldByPaymentBatch {
+                    piece: fournisseur.clone(),
+                    payment_batch_id: Some(4),
+                },
+                "RECONCILIATION_SUPPLIER_PAYMENT_HOLD",
+                Some(
+                    json!({ "reason": "other_invoice_in_payment_batch", "paymentBatchId": 4,
+                             "supplierInvoiceId": 9, "invoiceNumber": null }),
+                ),
+            ),
+            (
+                GroupRefusal::SaleEntryMalformed {
+                    piece: client.clone(),
+                    sale_entry_id: 77,
+                },
+                "INVOICE_SALE_ENTRY_MALFORMED",
+                Some(
+                    json!({ "reason": "no_debit_line_on_sale_entry", "saleEntryId": 77,
+                             "invoiceId": 12, "invoiceNumber": "F-12" }),
+                ),
+            ),
+            (
+                GroupRefusal::BankAccountNotConfigured,
+                "BANK_ACCOUNT_NOT_CONFIGURED",
+                Some(json!({ "bankAccountId": 2 })),
+            ),
+            (
+                GroupRefusal::BankAccountNotFound,
+                "BANK_ACCOUNT_NOT_FOUND",
+                None,
+            ),
+            (
+                GroupRefusal::BankAccountClosed,
+                "BANK_ACCOUNT_CLOSED",
+                Some(json!({ "bankAccountId": 2 })),
+            ),
+            (
+                GroupRefusal::ClaimAccount {
+                    claim: ClaimSide::Receivable,
+                    role: SettlementAccountRole::Rounding,
+                    account_id: 31,
+                    account_number: Some("1100".into()),
+                    bank_account_id: None,
+                    piece: None,
+                },
+                "SETTLEMENT_COUNTERPARTY_IS_CLAIM_ACCOUNT",
+                Some(json!({ "accountId": 31, "accountNumber": "1100",
+                             "claim": ClaimSide::Receivable.as_str(),
+                             "role": SettlementAccountRole::Rounding.as_str() })),
+            ),
+            (
+                GroupRefusal::ClaimAccount {
+                    claim: ClaimSide::Receivable,
+                    role: SettlementAccountRole::Counterparty,
+                    account_id: 31,
+                    account_number: Some("1100".into()),
+                    bank_account_id: Some(2),
+                    piece: Some(client.clone()),
+                },
+                "SETTLEMENT_COUNTERPARTY_IS_CLAIM_ACCOUNT",
+                Some(json!({ "accountId": 31, "accountNumber": "1100",
+                             "claim": ClaimSide::Receivable.as_str(),
+                             "role": SettlementAccountRole::Counterparty.as_str(),
+                             "bankAccountId": 2, "invoiceId": 12, "invoiceNumber": "F-12" })),
+            ),
+            (
+                GroupRefusal::PaymentBeforeInvoiceDate {
+                    piece: client.clone(),
+                    tolerance_days: 1,
+                },
+                "RECONCILIATION_INVOICE_NOT_ELIGIBLE",
+                Some(
+                    json!({ "reason": "payment_date_before_invoice_date", "tolerance_days": 1,
+                             "invoiceId": 12, "invoiceNumber": "F-12" }),
+                ),
+            ),
+            (
+                GroupRefusal::DifferenceTooLarge {
+                    transaction_amount: dec!(801.01),
+                    sum_applied: dec!(800.0000),
+                    gap: dec!(1.01),
+                    max_difference: dec!(1.0000),
+                },
+                "RECONCILIATION_GROUP_DIFFERENCE_TOO_LARGE",
+                Some(
+                    json!({ "transactionAmount": "801.01", "sumApplied": "800.0000",
+                             "gap": "1.01", "maxDifference": "1.00" }),
+                ),
+            ),
+            (
+                GroupRefusal::DifferenceAccountRequired { gap: dec!(-0.4) },
+                "RECONCILIATION_GROUP_INVALID",
+                Some(json!({ "reason": "difference_account_required", "gap": "-0.40" })),
+            ),
+            (
+                GroupRefusal::DifferenceAccountIsBankLedger { account_id: 5 },
+                "VALIDATION_ERROR",
+                Some(json!({ "reason": "counterparty_equals_bank_ledger" })),
+            ),
+            (
+                GroupRefusal::DifferenceAccountInvalid { account_id: 5 },
+                "ACCOUNT_NOT_FOUND",
+                Some(json!({ "missingAccountIds": [5] })),
+            ),
+            (
+                GroupRefusal::DifferenceAccountNotPostable {
+                    account_id: 5,
+                    account_number: "69".into(),
+                },
+                "ACCOUNT_NOT_POSTABLE",
+                Some(json!({ "rejected": [{ "accountId": 5, "accountNumber": "69" }] })),
+            ),
+            (
+                GroupRefusal::RoundingAccountNotConfigured,
+                "ROUNDING_ACCOUNT_NOT_CONFIGURED",
+                None,
+            ),
+            (
+                GroupRefusal::PeriodLocked {
+                    locked_through: date(10),
+                    attempted: date(5),
+                },
+                "PERIOD_LOCKED",
+                Some(json!({ "lockedThrough": "2026-11-10", "attempted": "2026-11-05" })),
+            ),
+            (
+                GroupRefusal::LaterFiscalYearClosed {
+                    fiscal_year_id: 3,
+                    fiscal_year_name: "2027".into(),
+                },
+                "LATER_FISCAL_YEAR_CLOSED",
+                Some(json!({ "fiscalYearId": 3, "fiscalYearName": "2027" })),
+            ),
+            (
+                GroupRefusal::FiscalYearInvalid {
+                    value_date: date(5),
+                },
+                "FISCAL_YEAR_INVALID",
+                Some(json!({ "valueDate": "2026-11-05" })),
+            ),
+        ];
+        let mut couvertes = std::collections::HashSet::new();
+        for (refusal, code, details) in cas {
+            couvertes.insert(std::mem::discriminant(&refusal));
+            let label = format!("{refusal:?}");
+            let f = group_refusal_to_failed_proposal(41, 2, SettlementDirection::Credit, refusal);
+            assert_eq!(f.bank_transaction_id, 41, "{label}");
+            assert_eq!(f.error_code, code, "{label}");
+            assert_eq!(f.details, details, "{label}");
+        }
+        // Les vingt-cinq variantes de la liste finale de `t3.md`.
+        assert_eq!(couvertes.len(), 25, "toutes_couvertes");
 
+        // Le sens d'un débit (famille fournisseur).
         let f = group_refusal_to_failed_proposal(
             1,
-            SettlementDirection::Credit,
-            GroupRefusal::Duplicate {
-                document: GroupedDocument::SupplierInvoice(9),
-            },
-        );
-        assert_eq!(f.error_code, "RECONCILIATION_GROUP_INVALID");
-        assert_eq!(f.details.unwrap()["supplierInvoiceId"], 9);
-
-        let f = group_refusal_to_failed_proposal(
-            1,
-            SettlementDirection::Credit,
-            GroupRefusal::DifferenceTooLarge {
-                transaction_amount: dec!(801.01),
-                sum_applied: dec!(800.0000),
-                gap: dec!(1.01),
-                max_difference: dec!(1.0000),
-            },
-        );
-        assert_eq!(f.error_code, "RECONCILIATION_GROUP_DIFFERENCE_TOO_LARGE");
-        assert_eq!(
-            f.details.unwrap(),
-            serde_json::json!({
-                "transactionAmount": "801.01",
-                "sumApplied": "800.0000",
-                "gap": "1.01",
-                "maxDifference": "1.00",
-            })
-        );
-
-        let f = group_refusal_to_failed_proposal(
-            1,
+            2,
             SettlementDirection::Debit,
             GroupRefusal::WrongDirection { amount: dec!(5) },
         );
         assert_eq!(f.error_code, "RECONCILIATION_TRANSACTION_NOT_DEBIT");
         assert_eq!(f.details.unwrap()["reason"], "credit_transaction");
+    }
+
+    /// E4, B9 — `limit` : absent, nul ou négatif → 50 ; au-delà de 100 → 100.
+    #[test]
+    fn limit_is_defaulted_and_capped() {
+        assert_eq!(effective_limit(None), 50);
+        assert_eq!(effective_limit(Some(0)), 50);
+        assert_eq!(effective_limit(Some(-1)), 50);
+        assert_eq!(effective_limit(Some(1)), 1);
+        assert_eq!(effective_limit(Some(100)), 100);
+        assert_eq!(effective_limit(Some(101)), 100);
+        assert_eq!(effective_limit(Some(i64::MAX)), 100);
     }
 
     #[test]

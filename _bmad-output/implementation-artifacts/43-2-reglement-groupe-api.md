@@ -222,7 +222,7 @@ fournisseur) pour que l'écran la nomme (43-3).
 | `InvoiceNotEligible { reason }` | `RECONCILIATION_INVOICE_NOT_ELIGIBLE` | `reason` : `invoice_not_validated`, `invoice_already_paid`, `invoice_journal_entry_not_set`, `nothing_due`, `supplier_invoice_not_open`, `supplier_invoice_in_payment_batch`, `race_during_update` (version) |
 | `HeldByPaymentBatch` | `RECONCILIATION_SUPPLIER_PAYMENT_HOLD` | `reason: "other_invoice_in_payment_batch"`, ids |
 | `SaleEntryMalformed` | `INVOICE_SALE_ENTRY_MALFORMED` | `reason: "no_debit_line_on_sale_entry"` |
-| `BankAccountNotConfigured` / `NotFound` / `Closed` | `BANK_ACCOUNT_NOT_CONFIGURED` / `BANK_ACCOUNT_NOT_FOUND` / `BANK_ACCOUNT_CLOSED` | — |
+| `BankAccountNotConfigured` / `NotFound` / `Closed` | `BANK_ACCOUNT_NOT_CONFIGURED` / `BANK_ACCOUNT_NOT_FOUND` / `BANK_ACCOUNT_CLOSED` | `bankAccountId` pour `NOT_CONFIGURED` et `CLOSED`, comme l'unitaire (revue P1, B6) ; — pour `NOT_FOUND` |
 | `ClaimAccount { claim, role }` (compte de tiers égal à la banque, ou compte d'arrondi ou de différence égal à un compte de tiers des factures du groupe) | `SETTLEMENT_COUNTERPARTY_IS_CLAIM_ACCOUNT` | comme `claim_account_failed_proposal` : `accountId`, `accountNumber`, `claim`, `role` ∈ rôles **réels** — `counterparty` (créance ou dette = banque, **avec `bankAccountId`** ; **compte de différence choisi**, **sans `bankAccountId`**, `accountId` = `differenceAccountId` envoyé — D9), `rounding` (compte d'arrondi) |
 | `DifferenceAccountIsBankLedger` (contrôle 1) | `VALIDATION_ERROR` | `reason: "counterparty_equals_bank_ledger"` (D9) |
 | compte de différence manquant, archivé ou d'une autre société (contrôle 2) | `ACCOUNT_NOT_FOUND` | `missingAccountIds: [id]` |
@@ -452,7 +452,7 @@ dépôt de `find_group_candidates` dans `crates/kesh-db/tests/reconciliation_gro
   accès (AC10).
 - [x] **T6** — **Commit D4** : `supplier_invoice_group` et sa famille partout, message à six types (AC3). Tests qui
   règlent un groupe fournisseur marqués `#[ignore]` (exigent la 43-1b).
-- [ ] **T7** — Gates ; Dev Agent Record ; prompt de revue P1 (lentilles B, E, A ; `docs/api-external.md` nommé).
+- [x] **T7** — Gates ; Dev Agent Record ; prompt de revue P1 (lentilles B, E, A ; `docs/api-external.md` nommé).
 
 ## Note de version
 
@@ -476,8 +476,17 @@ différence interdit réemploie des codes existants (D9). `RECONCILIATION_UNDERP
 
 ### Ordre de retrait (si le temps manque)
 
-Le commit fournisseur (D4 : `70f74f964`, `git revert` sans conflit attendu ; retirer aussi, à la main, « un débit, les
-factures fournisseur … » de la recherche dans `docs/api-external.md`, écrit au premier commit) ; puis les champs de vue et d'annulation `cancelBlockedInvoice` et `cancelledInvoices` (la 43-3
+⛔ **Barrière de release (décision de l'orchestrateur, revue P1, B1/E1/A4)** : le commit D4 ne sort **qu'avec la 43-1b**
+(`pay_supplier_invoices_in_tx` implémenté, les trois tests fournisseur sans `#[ignore]`). Sinon, `git revert 70f74f964`
+avant la PR de release. Le corps provisoire du dépôt rend `Err(DbError::Invariant)` (→ `INTERNAL_ERROR` dans `failed[]`)
+au lieu de paniquer : défense en profondeur, non une permission de publier D4 seul.
+
+Le commit fournisseur (D4 : `70f74f964`, `git revert` sans conflit attendu). Le revert rend à `family_of` sa forme
+d'avant D4 : un débit ne propose plus de factures fournisseur (`direction: null`, liste vide). Retirer aussi, à la main,
+dans `docs/api-external.md`, ce que le premier commit a écrit de la recherche fournisseur : « un débit, les factures
+fournisseur … » (l. 741), le numéro interne, le numéro du fournisseur et la référence de paiement d'une facture
+fournisseur dans `q` (l. 743), la forme d'une candidate fournisseur et « `"-1250.00"` pour un débit » (l. 756 ; numéros
+au commit `7994a7a34`). Puis les champs de vue et d'annulation `cancelBlockedInvoice` et `cancelledInvoices` (la 43-3
 écrit alors la limite) ; jamais la recherche, l'acceptation client ni les refus de la différence.
 
 ### LOW à l'étape 0

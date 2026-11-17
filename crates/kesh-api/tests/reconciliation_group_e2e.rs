@@ -908,6 +908,23 @@ async fn une_cle_d_api_est_l_acteur_du_groupe(pool: MySqlPool) {
     .unwrap();
     assert_eq!((actor.as_str(), key), ("api_key", Some(key_id)));
     assert_eq!(details["batch_size"], 2, "taille du lot reçu");
+    // A12 — chaque `invoice.paid` porte aussi la clé.
+    let paid: Vec<(String, Option<i64>)> = sqlx::query_as(
+        "SELECT actor_type, actor_api_key_id FROM audit_log \
+         WHERE action = 'invoice.paid' AND entity_id IN (?, ?)",
+    )
+    .bind(a)
+    .bind(b)
+    .fetch_all(&pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        paid,
+        vec![
+            ("api_key".to_string(), Some(key_id)),
+            ("api_key".to_string(), Some(key_id))
+        ]
+    );
 }
 
 // ============================================================
@@ -1782,4 +1799,256 @@ async fn la_vue_et_l_annulation_d_un_groupe_fournisseur(pool: MySqlPool) {
             { "kind": "supplier_invoice", "id": b, "number": "FF-2" }
         ])
     );
+}
+
+// ============================================================
+// Revue P1 — sondes et bords
+// ============================================================
+
+/// B1/E1, B2 — le type fournisseur : une proposition bien formée sur une
+/// transaction inexistante passe l'extracteur et le pré-vol (`200`,
+/// `BANK_TRANSACTION_NOT_FOUND`), ce qu'un type inconnu ne fait pas (`400`) ;
+/// sur un vrai débit, avant la 43-1b, le lot rend `200` et un refus de la
+/// proposition — jamais une panique.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn le_type_fournisseur_se_desserialise_et_ne_panique_pas(pool: MySqlPool) {
+    let ctx = monter(&pool).await;
+    let (s, b) = ctx
+        .accepter(
+            json!([{ "type": "supplier_invoice_group", "bankTransactionId": i64::MAX,
+                           "supplierInvoiceIds": [3, 4] }]),
+        )
+        .await;
+    assert_eq!(s, 200, "{b}");
+    assert_eq!(b["failed"][0]["errorCode"], "BANK_TRANSACTION_NOT_FOUND");
+    let (s, b) = ctx
+        .accepter(
+            json!([{ "type": "supplier_invoice_groupe", "bankTransactionId": i64::MAX,
+                           "supplierInvoiceIds": [3, 4] }]),
+        )
+        .await;
+    assert_refus(s, &b, 400, "VALIDATION_ERROR");
+
+    let tx = ctx.transaction("-30.00", "2026-06-20").await;
+    let a = ctx.facture_achat("FF-1", "10.00", "2026-06-01").await;
+    let c = ctx.facture_achat("FF-2", "20.00", "2026-06-01").await;
+    let (s, b) = ctx
+        .accepter(
+            json!([{ "type": "supplier_invoice_group", "bankTransactionId": tx,
+                           "supplierInvoiceIds": [a, c] }]),
+        )
+        .await;
+    assert_eq!(s, 200, "{b}");
+    let accepted = b["accepted"].as_array().unwrap().len();
+    let failed = b["failed"].as_array().unwrap().len();
+    assert_eq!(accepted + failed, 1, "{b}");
+    if failed == 1 {
+        // Avant la 43-1b : le corps provisoire du dépôt.
+        assert_eq!(b["failed"][0]["errorCode"], "INTERNAL_ERROR", "{b}");
+    }
+}
+
+/// A3 — la route trie par l'ordre d'imputation **puis** tronque : une facture
+/// plus récente mais échue plus tôt passe devant, et c'est elle que garde
+/// `limit=1`.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn l_ordre_d_imputation_puis_la_troncature(pool: MySqlPool) {
+    let ctx = monter(&pool).await;
+    let ancienne = ctx.facture("I-1", "10.00", "2026-06-01").await;
+    let recente = ctx.facture("I-2", "10.00", "2026-06-05").await;
+    // L'ancienne est à 30 jours, la récente à vue : l'ordre SQL (date, id)
+    // donne [ancienne, récente], l'ordre d'imputation [récente, ancienne].
+    sqlx::query("UPDATE invoices SET due_date = '2026-07-01' WHERE id = ?")
+        .bind(ancienne)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let tx = ctx.transaction("20.00", "2026-06-20").await;
+    assert_eq!(ctx.ids_candidats(tx, "").await, vec![recente, ancienne]);
+    let (s, body) = ctx.candidats(tx, "?limit=1").await;
+    assert_eq!(s, 200, "{body}");
+    assert_eq!(body["candidates"][0]["id"], recente);
+    assert_eq!(body["candidates"].as_array().unwrap().len(), 1);
+    assert_eq!(body["hasMore"], true);
+}
+
+/// E3 — cinquante factures exactement : admis.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn cinquante_factures_sont_admises(pool: MySqlPool) {
+    let ctx = monter(&pool).await;
+    let mut ids = Vec::new();
+    for n in 0..50 {
+        ids.push(ctx.facture(&format!("C-{n}"), "1.00", "2026-06-01").await);
+    }
+    let tx = ctx.transaction("50.00", "2026-06-20").await;
+    let (ok, ko) = ctx.grouper(tx, &ids, None).await;
+    assert!(ko.is_null(), "{ko}");
+    assert_eq!(ok["settledInvoices"].as_array().unwrap().len(), 50);
+}
+
+/// E2, A13 — `differenceAccountId` envoyé alors que `e = 0` : ignoré, même
+/// s'il est interdit (la banque) ; aucune ligne, `differenceAccountId: null`.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn le_compte_choisi_est_ignore_sans_ecart(pool: MySqlPool) {
+    let ctx = monter(&pool).await;
+    let a = ctx.facture("Z-1", "10.00", "2026-06-01").await;
+    let b = ctx.facture("Z-2", "10.01", "2026-06-01").await;
+    let tx = ctx.transaction("20.01", "2026-06-20").await;
+    let (ok, ko) = ctx.grouper(tx, &[a, b], Some(ctx.ledger)).await;
+    assert!(ko.is_null(), "{ko}");
+    assert_eq!(ok["gap"], "0.00");
+    assert_eq!(ok["differenceAccountId"], Value::Null);
+    let entry = ok["journalEntryId"].as_i64().unwrap();
+    assert_eq!(
+        ctx.solde_ligne(entry, ctx.ledger).await,
+        Some(dec("-20.01")),
+        "la seule ligne de banque"
+    );
+    let lignes = ctx
+        .scalaire(
+            "SELECT COUNT(*) FROM journal_entry_lines WHERE entry_id = ?",
+            entry,
+        )
+        .await;
+    assert_eq!(lignes, 3, "banque et deux créances");
+}
+
+/// Une autre société, sa facture validée et une transaction sur son compte
+/// bancaire (posées en SQL).
+async fn autre_societe(ctx: &Ctx) -> (i64, i64) {
+    let pool = &ctx.pool;
+    let company: i64 = sqlx::query(
+        "INSERT INTO companies (name, address, org_type, accounting_language, instance_language) \
+         VALUES ('Autre SA', 'Rue 1', 'Independant', 'FR', 'FR')",
+    )
+    .execute(pool)
+    .await
+    .unwrap()
+    .last_insert_id() as i64;
+    let contact: i64 = sqlx::query_scalar(
+        "INSERT INTO contacts (company_id, contact_type, name, is_client) \
+         VALUES (?, 'Entreprise', 'Client étranger', TRUE) RETURNING id",
+    )
+    .bind(company)
+    .fetch_one(pool)
+    .await
+    .unwrap();
+    let entry: i64 = sqlx::query_scalar("SELECT MIN(id) FROM journal_entries")
+        .fetch_one(pool)
+        .await
+        .unwrap();
+    let invoice = sqlx::query(
+        "INSERT INTO invoices (company_id, contact_id, invoice_number, status, date, \
+         total_amount, journal_entry_id) VALUES (?, ?, 'X-1', 'validated', '2026-06-01', 10, ?)",
+    )
+    .bind(company)
+    .bind(contact)
+    .bind(entry)
+    .execute(pool)
+    .await
+    .unwrap()
+    .last_insert_id() as i64;
+    let ledger = compte(pool, company, "1020", "Banque", "Asset").await;
+    let bank = sqlx::query(
+        "INSERT INTO bank_accounts (company_id, bank_name, iban, journal_account_id) \
+         VALUES (?, 'Autre banque', 'CH5604835012345678009', ?)",
+    )
+    .bind(company)
+    .bind(ledger)
+    .execute(pool)
+    .await
+    .unwrap()
+    .last_insert_id() as i64;
+    let import = sqlx::query(
+        "INSERT INTO bank_imports (company_id, bank_account_id, filename, file_hash, \
+         source_format, period_from, period_to, imported_by_user_id) \
+         VALUES (?, ?, 'x.xml', SHA2(UUID(), 256), 'camt053', '2026-06-20', '2026-06-20', ?)",
+    )
+    .bind(company)
+    .bind(bank)
+    .bind(ctx.seeded.admin_user_id)
+    .execute(pool)
+    .await
+    .unwrap()
+    .last_insert_id() as i64;
+    let tx = sqlx::query(
+        "INSERT INTO bank_transactions (company_id, import_id, bank_account_id, booking_date, \
+         amount, currency, details) VALUES (?, ?, ?, '2026-06-20', 10, 'CHF', 'virement')",
+    )
+    .bind(company)
+    .bind(import)
+    .bind(bank)
+    .execute(pool)
+    .await
+    .unwrap()
+    .last_insert_id() as i64;
+    (invoice, tx)
+}
+
+/// E6 (KF-002) — la facture d'une autre société dans un groupe est
+/// introuvable, rien d'écrit ; sa transaction est introuvable pour la
+/// recherche.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn une_autre_societe_reste_invisible(pool: MySqlPool) {
+    let ctx = monter(&pool).await;
+    let a = ctx.facture("S-1", "10.00", "2026-06-01").await;
+    let (etrangere, sa_transaction) = autre_societe(&ctx).await;
+    let tx = ctx.transaction("20.00", "2026-06-20").await;
+    let empreinte = ctx.empreinte().await;
+    let (_, ko) = ctx.grouper(tx, &[a, etrangere], None).await;
+    assert_eq!(ko["errorCode"], "INVOICE_NOT_FOUND", "{ko}");
+    assert_eq!(ko["details"]["invoiceId"], etrangere);
+    assert_eq!(ctx.empreinte().await, empreinte, "rien d'écrit");
+    let (s, b) = ctx.candidats(sa_transaction, "").await;
+    assert_refus(s, &b, 404, "NOT_FOUND");
+}
+
+/// A6 — le `kind` de l'annulation pour un règlement fournisseur unitaire et
+/// pour une écriture (ventilation), `cancelledInvoices` vide.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn le_genre_de_l_annulation_hors_groupe(pool: MySqlPool) {
+    let ctx = monter(&pool).await;
+    let si = ctx.facture_achat("FF-U", "120.00", "2026-06-01").await;
+    let debit = ctx.transaction("-120.00", "2026-06-20").await;
+    let (s, b) = ctx
+        .accepter(
+            json!([{ "type": "supplier_invoice", "bankTransactionId": debit,
+                           "supplierInvoiceId": si }]),
+        )
+        .await;
+    assert_eq!(s, 200, "{b}");
+    assert_eq!(b["accepted"].as_array().unwrap().len(), 1, "{b}");
+    let (s, body) = ctx
+        .post(
+            &format!("/api/v1/reconciliation/transactions/{debit}/cancel"),
+            json!({}),
+        )
+        .await;
+    assert_eq!(s, 200, "{body}");
+    assert_eq!(body["kind"], "supplier_settlement");
+    assert_eq!(body["supplierInvoiceId"], si);
+    assert_eq!(body["cancelledInvoices"], json!([]));
+
+    let credit = ctx.transaction("30.00", "2026-06-20").await;
+    let (s, b) = ctx
+        .accepter(
+            json!([{ "type": "split", "bankTransactionId": credit, "splits": [
+            { "counterpartyAccountId": ctx.frais, "amount": "10.00", "description": "Part A" },
+            { "counterpartyAccountId": ctx.seeded.accounts["3000"], "amount": "20.00",
+              "description": "Part B" }
+        ] }]),
+        )
+        .await;
+    assert_eq!(s, 200, "{b}");
+    assert_eq!(b["accepted"].as_array().unwrap().len(), 1, "{b}");
+    let (s, body) = ctx
+        .post(
+            &format!("/api/v1/reconciliation/transactions/{credit}/cancel"),
+            json!({}),
+        )
+        .await;
+    assert_eq!(s, 200, "{body}");
+    assert_eq!(body["kind"], "entry");
+    assert_eq!(body["invoiceId"], Value::Null);
+    assert_eq!(body["cancelledInvoices"], json!([]));
 }

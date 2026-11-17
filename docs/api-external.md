@@ -745,11 +745,14 @@ Aucune garde de score : le score est recalculé pour la réponse (≥ `0.5`, le 
 - Au plus 500 factures sont lues (les plus anciennes, par date puis identifiant), triées dans l'**ordre d'imputation** (échues d'abord, puis la plus proche de son échéance), puis tronquées à `limit`. `hasMore` vaut `true` si la troncature a coupé ou si plus de 500 factures répondaient.
 
 ```json
-{ "direction": "client", "transactionAmount": "1250.00", "maxDifference": "5.00",
+{ "direction": "client", "transactionAmount": "799.60", "maxDifference": "5.00",
   "candidates": [
     { "kind": "invoice", "id": 12, "number": "F-2026-0012", "contactName": "Exemple SA",
-      "date": "2026-10-03", "dueDate": "2026-11-02", "totalTtc": "500.01",
-      "amountDue": "500.01", "amountDueRaw": "500.0050" } ],
+      "date": "2026-10-03", "dueDate": "2026-11-02", "totalTtc": "800.00",
+      "amountDue": "500.00", "amountDueRaw": "500.0000" },
+    { "kind": "invoice", "id": 15, "number": "F-2026-0015", "contactName": "Autre Sàrl",
+      "date": "2026-10-10", "dueDate": "2026-11-09", "totalTtc": "300.00",
+      "amountDue": "300.00", "amountDueRaw": "300.0000" } ],
   "hasMore": false }
 ```
 
@@ -761,7 +764,7 @@ Refus, dans l'ordre de `GET …/link-candidates` : transaction introuvable ou d'
 
 ```json
 { "bankAccountId": 3, "proposals": [
-  { "type": "invoice_group", "bankTransactionId": 41, "invoiceIds": [12, 15, 19], "differenceAccountId": 6940 }
+  { "type": "invoice_group", "bankTransactionId": 41, "invoiceIds": [12, 15], "differenceAccountId": 6940 }
 ] }
 ```
 
@@ -769,7 +772,7 @@ Refus, dans l'ordre de `GET …/link-candidates` : transaction introuvable ou d'
 
 **Ordre des refus** : (1) le pré-vol du lot — transaction introuvable (`BANK_TRANSACTION_NOT_FOUND`), déjà rapprochée (`RECONCILIATION_ALREADY_RECONCILED`) ou rejetée (`RECONCILIATION_ALREADY_REJECTED`) ; (2) sous le verrou du compte, pour le groupe : moins de 2, plus de 50, doublon (`RECONCILIATION_GROUP_INVALID`) ; (3) la transaction relue : le **sens** (un débit ou un montant nul, `RECONCILIATION_TRANSACTION_NOT_CREDIT`, `details.reason` = `debit_transaction` ou `zero_amount_transaction`), puis la **devise** (autre que CHF, `RECONCILIATION_CURRENCY_MISMATCH`, `details { transactionCurrency, expected: "CHF" }`) ; (4) chaque facture, par identifiant croissant ; (5) l'écart et ses comptes. Une transaction inexistante proposée avec une seule facture rend donc `BANK_TRANSACTION_NOT_FOUND`, non `too_few`.
 
-**Factures fournisseur** — le type `supplier_invoice_group` (`supplierInvoiceIds`, mêmes bornes, même `differenceAccountId`) règle **plusieurs factures fournisseur** validées (`open`) par une transaction au **débit**, chacune de son total ; le refus de sens est alors `RECONCILIATION_TRANSACTION_NOT_DEBIT` (`credit_transaction`, `zero_amount_transaction`), `details` nomme `supplierInvoiceId` et `invoiceNumber` (le numéro interne, à défaut celui du fournisseur), `settledInvoices[]` porte `supplierInvoiceId`, et la vue `kind: "supplier_invoice"`. S'y ajoutent `SUPPLIER_INVOICE_NOT_FOUND`, `RECONCILIATION_INVOICE_NOT_ELIGIBLE` (`supplier_invoice_not_open`, `supplier_invoice_in_payment_batch`, `payment_date_before_invoice_date` avec `tolerance_days` = 7) et `RECONCILIATION_SUPPLIER_PAYMENT_HOLD` (une autre facture du même montant est dans un lot `generated` de ce compte). Un débit supérieur aux factures est un écart positif, un débit inférieur un écart négatif.
+**Factures fournisseur** — le type `supplier_invoice_group` (`supplierInvoiceIds`, mêmes bornes, même `differenceAccountId`) règle **plusieurs factures fournisseur** validées (`open`) par une transaction au **débit**, chacune de son total ; le refus de sens est alors `RECONCILIATION_TRANSACTION_NOT_DEBIT` (`credit_transaction`, `zero_amount_transaction`), `details` nomme `supplierInvoiceId` et `invoiceNumber` (le numéro interne, à défaut celui du fournisseur), `settledInvoices[]` porte `supplierInvoiceId`, et les `groupedInvoices[].kind` de la vue valent `supplier_invoice` (la vue reste `kind: "grouped_settlement"`). S'y ajoutent `SUPPLIER_INVOICE_NOT_FOUND`, `RECONCILIATION_INVOICE_NOT_ELIGIBLE` (`supplier_invoice_not_open`, `supplier_invoice_in_payment_batch`, `payment_date_before_invoice_date` avec `tolerance_days` = 7) et `RECONCILIATION_SUPPLIER_PAYMENT_HOLD` (une autre facture du même montant est dans un lot `generated` de ce compte). Un débit supérieur aux factures est un écart positif, un débit inférieur un écart négatif.
 
 **L'écart** — `d = |montant| − Σ restes dus bruts` se décompose en **`e`**, `d` arrondi au centime (le demi-centime s'éloigne de zéro), et **`r = d − e`**, la fraction sous le centime (`|r| ≤ 0.005`) :
 
@@ -792,7 +795,7 @@ Contrôles, dans cet ordre : (1) `|e|` au-delà du plafond → `RECONCILIATION_G
 
 `difference` (`d`) et `roundingDifference` (`r`) sont bruts, signés, à quatre décimales ; `gap` (`e`) est au centime, signé (`"0.00"` dans l'arrondi automatique) ; `difference = roundingDifference + gap`. `differenceAccountId` est `null` quand `gap` est nul. `settledInvoices[].amount` : le montant soldé, brut.
 
-Refus propres à une facture — `details` nomme la facture (`invoiceId`, et `invoiceNumber` quand elle en a un) :
+Refus propres à une facture — `details` nomme la facture (`invoiceId`, et `invoiceNumber`, `null` si elle n'a pas de numéro) :
 
 | `errorCode` | Cause | `details` |
 |---|---|---|
@@ -801,7 +804,7 @@ Refus propres à une facture — `details` nomme la facture (`invoiceId`, et `in
 | `INVOICE_NOT_FOUND` | facture absente ou d'une autre société | `invoiceId` |
 | `RECONCILIATION_INVOICE_NOT_ELIGIBLE` | facture non validée, déjà payée, sans écriture de vente, sans reste dû ; changée pendant l'acceptation ; datée de plus d'un jour après le paiement | `reason` = `invoice_not_validated`, `invoice_already_paid`, `invoice_journal_entry_not_set`, `nothing_due`, `race_during_update`, `payment_date_before_invoice_date` (+ `tolerance_days`) ; `invoiceId`, `invoiceNumber` |
 | `INVOICE_SALE_ENTRY_MALFORMED` | l'écriture de vente n'a pas de ligne au débit | `reason`, `saleEntryId`, `invoiceId`, `invoiceNumber` |
-| `BANK_ACCOUNT_NOT_CONFIGURED`, `BANK_ACCOUNT_NOT_FOUND`, `BANK_ACCOUNT_CLOSED` | le compte bancaire de la transaction | — |
+| `BANK_ACCOUNT_NOT_CONFIGURED`, `BANK_ACCOUNT_NOT_FOUND`, `BANK_ACCOUNT_CLOSED` | le compte bancaire de la transaction | `bankAccountId` (sauf `BANK_ACCOUNT_NOT_FOUND`) |
 | `FISCAL_YEAR_INVALID`, `PERIOD_LOCKED`, `LATER_FISCAL_YEAR_CLOSED` | comme pour une facture seule | comme pour une facture seule |
 
 Un compte analytique archivé après coup ne refuse rien. Il n'y a ni score ni borne basse de dates (la fenêtre de 30 jours après l'échéance de l'acceptation d'une facture seule) : l'utilisateur choisit les factures. Un interblocage est rejoué par le lot ; une erreur de base est rendue dans `failed[]` (`DATABASE_ERROR`, à rejouer ; `INTERNAL_ERROR`, défaut à signaler), jamais en `500` du lot.

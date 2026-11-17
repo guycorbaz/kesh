@@ -50,6 +50,9 @@ le paramétrer toucherait les trois appelants de l'unitaire pour un journal inte
 `…_CLOSED`, `ROUNDING_ACCOUNT_NOT_CONFIGURED`, `BANK_TRANSACTION_NOT_FOUND`, `RECONCILIATION_ALREADY_RECONCILED` :
 `details: null` pour un groupe (la variante de `GroupRefusal` ne porte rien ; la fiche dit « — »). L'unitaire porte
 `bankAccountId`, ou `amountDue` et `transactionAmount` pour l'arrondi : différence écrite ici, non dans le contrat public.
+*Révisé le 2026-11-18 (revue P1, B6, décision de l'orchestrateur)* : `BANK_ACCOUNT_NOT_CONFIGURED` et
+`BANK_ACCOUNT_CLOSED` portent désormais `details.bankAccountId` (le compte du lot, passé à
+`group_refusal_to_failed_proposal`), comme l'unitaire et `docs/api-external.md:255` ; les autres restent sans détails.
 
 **C-e432-11 — `gap` de la vue, en cas d'erreur de `group_difference`.** Avec `Decimal::MAX` pour plafond, la fonction ne
 peut refuser ; si elle le faisait, `gap` vaudrait `null` plutôt qu'une erreur de la vue.
@@ -62,4 +65,27 @@ verts). Le `test-fast --ci` au commit `6e656ad88` (base `241839568`, commit T3 j
 43-1a après la base (`69e75f5fc`, `130b0e60b`, `bc02e360f`, `69eb2e1ee`). Fusion de `story/43-1a-reglement-groupe-modele` à
 sa tête `5602c0d21` (remédiation P2 de sa revue, signatures de `t3.md` inchangées), sans conflit : commit `420bd6317`. La
 43-1a reste en revue : une remédiation ultérieure se reprend de même. Autre option : attendre sa clôture (pas de gate vert
-avant).
+avant). *Fusion acceptée par l'orchestrateur le 2026-11-18.*
+
+**C-e432-13 — Corps provisoire de `pay_supplier_invoices_in_tx`** (décision de l'orchestrateur, revue P1, B1/E1). Dans la
+branche de la 43-2, le corps rend `Err(DbError::Invariant("règlement groupé fournisseur : Story 43-1b non livrée"))` au
+lieu de `unimplemented!` : la route le traduit par la délégation D2 en `INTERNAL_ERROR` dans `failed[]` (code constant),
+jamais une panique du lot. Fichier de la 43-1a : à la fusion de la 43-1b, c'est son implémentation qui l'emporte. La
+barrière de release (D4 seulement avec la 43-1b) est écrite à la fiche et au fichier d'épique.
+
+**C-e432-14 — Le test de concurrence ne prouve pas l'entrelacement** (revue P1, E8, décision de l'orchestrateur : écrit,
+non traité). `deux_lots_concurrents_ne_reglent_pas_deux_fois` lance deux lots par `tokio::join!` sans barrière : si les
+requêtes se sérialisent, le second voit `invoice_already_paid`. Il établit « jamais deux règlements, jamais un `500` »,
+non le chemin interblocage → `ROLLBACK TO SAVEPOINT` (1305) → rejeu, que seul l'unitaire exerce (`accept_batch` partagé).
+
+**C-e432-15 — L'affichage de `maxDifference` relève de la 43-7** (revue P1, E9). La 43-2 rend le réglage à deux
+décimales, demi arrondi en s'éloignant de zéro (`fixed`) ; un réglage sous le centime (`0.0050`, posé par SQL) s'affiche
+`0.01` alors que `group_difference` compare à `0.0050`. Aucune route n'écrit ce réglage avant la 43-7 : c'est elle qui
+décide (n'admettre que des centimes, ou arrondir l'affichage vers zéro), avec la même limite écrite.
+
+**C-e432-16 — Le repli `LIKE` ne découpe que sur les blancs** (revue P1, E10, vérifié au code). `has_fulltext_token`
+découpe le terme échappé par `split_whitespace` ; l'index découpe aussi sur la ponctuation (`docs/search-patterns.md`
+§ 2), si bien que « A.G. » prend la branche `MATCH` et ne trouve pas « A.G. Muster ». Les autres recherches de Kesh
+(`contacts.rs`, `invoices.rs`) n'ont **aucun** repli de jetons courts : elles ne prennent le `LIKE` que si le terme
+échappé est vide. Le repli de la 43-2 est donc plus large qu'elles, et cohérent avec leur découpage ; non corrigé ici,
+issue proposée au rapport (découper sur `!c.is_alphanumeric()` dans les recherches qui ont un repli).

@@ -132,6 +132,13 @@ C-43-17) : **43-7**
 **43-3** (l'API seule reste utile à la clé d'API de Guy) ; **43-2**. La **43-6 ne sort jamais** si la 42-1 et la 43-1a sont
 publiées ensemble. La **43-1a** n'est publiée qu'avec la 43-2 et la 43-6 ; sans elles, l'epic entier sort.
 
+⛔ **Barrière de release du commit fournisseur de la 43-2** (décision de l'orchestrateur du 2026-11-18, revue P1 de la 43-2,
+B1/E1/A4) : le commit D4 (`70f74f964`, type `supplier_invoice_group` et recherche d'un débit) ne sort **qu'avec la
+43-1b** ; sinon `git revert 70f74f964` avant la PR de release, et le guide d'API corrigé à la main (l. 741, 743 et 756,
+liste de la fiche 43-2, § *Ordre de retrait*). Contrôle à l'intégration : `pay_supplier_invoices_in_tx` n'est plus le corps
+provisoire (`Err(DbError::Invariant)`) et les trois tests fournisseur de `reconciliation_group_e2e.rs` ont perdu leur
+`#[ignore]`.
+
 **C-43-19 — Verrous et versions** *(récrit, H-A ; précisé à la P3 de la 43-1a)* : **la méthode de l'unitaire, à deux
 écarts près** — l'ordre des deux `UPDATE` (factures avant transaction, sans effet) et l'absence de score et de fenêtre haute
 (C-43-7) —

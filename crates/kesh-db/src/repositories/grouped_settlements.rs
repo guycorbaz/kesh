@@ -1520,6 +1520,13 @@ pub async fn cancel_in_tx(
 /// `difference_account_id`, `settlement_journal_entry_line_id` posée par
 /// facture). Côté fournisseur, la banque est au crédit : un écart `e > 0` (plus
 /// payé) va au **débit** du compte choisi, `e < 0` au crédit.
+///
+/// ⚠️ **Corps provisoire** (Story 43-2, revue P1, B1/E1) : jusqu'à la 43-1b,
+/// la fonction rend `Err(DbError::Invariant)` au lieu de paniquer, pour qu'une
+/// requête `supplier_invoice_group` reçue avant la 43-1b sorte en
+/// `INTERNAL_ERROR` dans `failed[]` (la route délègue à
+/// `lettering_error_to_failed_proposal`), jamais en panique du lot. À la fusion
+/// avec la 43-1b, son implémentation remplace ce corps.
 #[allow(clippy::too_many_arguments)]
 pub async fn pay_supplier_invoices_in_tx(
     tx: &mut sqlx::Transaction<'_, sqlx::MySql>,
@@ -1543,7 +1550,9 @@ pub async fn pay_supplier_invoices_in_tx(
         acteur,
         aujourd_hui,
     );
-    unimplemented!("Story 43-1b : règlement groupé fournisseur")
+    Err(DbError::Invariant(
+        "règlement groupé fournisseur : Story 43-1b non livrée".into(),
+    ))
 }
 
 #[cfg(test)]

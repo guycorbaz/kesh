@@ -90,7 +90,9 @@ async fn facture(
     date: NaiveDate,
     status: &str,
 ) -> i64 {
-    let entry = (status == "validated").then_some(m.entry_id);
+    // Une écriture pour toute facture émise (validée ou annulée) : le
+    // brouillon seul n'en a pas, et le filtre de statut reste discriminant.
+    let entry = (status != "draft").then_some(m.entry_id);
     let id = sqlx::query(
         "INSERT INTO invoices (company_id, contact_id, invoice_number, status, date, due_date, \
          total_amount, journal_entry_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
@@ -209,6 +211,38 @@ async fn client_candidates_follow_the_settlement_rules(pool: MySqlPool) {
         .execute(&pool)
         .await
         .unwrap();
+    // Annulée, avec son écriture et sans `paid_at` : seul le statut l'écarte
+    // (revue P1, B10).
+    let _annulee = facture(&pool, &m, a, "F-7", dec!(40), jour(6, 3), "cancelled").await;
+    // Réglée en partie : rendue avec son reste dû brut, distinct du TTC (B3).
+    let partielle = facture(&pool, &m, b, "F-8", dec!(100), jour(6, 5), "validated").await;
+    sqlx::query(
+        "INSERT INTO invoice_settlements (company_id, invoice_id, journal_entry_id, amount, \
+         settled_on, settlement_type, settlement_account_id) \
+         VALUES (?, ?, ?, 30.0050, '2026-06-06', 'internal_account', ?)",
+    )
+    .bind(m.s.company_id)
+    .bind(partielle)
+    .bind(m.entry_id)
+    .bind(m.s.accounts["1000"])
+    .execute(&pool)
+    .await
+    .expect("règlement partiel");
+    // Créditée en entier par un avoir émis : validée, non payée, reste dû nul —
+    // écartée par `HAVING amount_due > 0` (B3).
+    let creditee = facture(&pool, &m, b, "F-9", dec!(50), jour(6, 6), "validated").await;
+    sqlx::query(
+        "INSERT INTO credit_notes (company_id, contact_id, invoice_id, status, date, \
+         credit_note_number, journal_entry_id, rounding_amount) \
+         VALUES (?, ?, ?, 'issued', '2026-06-07', 'AV-1', ?, 50)",
+    )
+    .bind(m.s.company_id)
+    .bind(b)
+    .bind(creditee)
+    .bind(m.entry_id)
+    .execute(&pool)
+    .await
+    .expect("avoir");
     let found = find_group_candidates(
         &pool,
         GroupCandidatesQuery {
@@ -222,7 +256,11 @@ async fn client_candidates_follow_the_settlement_rules(pool: MySqlPool) {
     .await
     .unwrap();
     let ids: Vec<i64> = found.candidates.iter().map(|c| c.id).collect();
-    assert_eq!(ids, vec![f1, f2, limite], "date puis identifiant");
+    assert_eq!(
+        ids,
+        vec![f1, f2, partielle, limite],
+        "date puis identifiant"
+    );
     assert!(!found.scan_limit_reached);
     let first = &found.candidates[0];
     assert_eq!(first.amount_due, dec!(10.0050), "reste dû brut");
@@ -230,6 +268,9 @@ async fn client_candidates_follow_the_settlement_rules(pool: MySqlPool) {
     assert_eq!(first.contact_name, "Alpha Conseil");
     assert_eq!(first.invoice_number.as_deref(), Some("F-1"));
     assert_eq!(first.internal_number, None);
+    let part = &found.candidates[2];
+    assert_eq!(part.total_ttc, dec!(100));
+    assert_eq!(part.amount_due, dec!(69.9950), "reste dû, non le TTC");
 }
 
 /// AC5 — un crédit : une facture validée de l'autre société n'est jamais
@@ -387,6 +428,34 @@ async fn supplier_candidates_follow_the_settlement_rules(pool: MySqlPool) {
         .await
         .unwrap();
     }
+    // TTC nul (B11) et payée (B11) : écartées ; à la date limite (A14) : rendue.
+    let _zero =
+        facture_fournisseur(&pool, &m, a, "FF-Z", "Z", "R", dec!(0), jour(6, 7), "open").await;
+    let payee =
+        facture_fournisseur(&pool, &m, a, "FF-P", "P", "R", dec!(9), jour(6, 8), "open").await;
+    sqlx::query(
+        "UPDATE supplier_invoices SET status = 'paid', settlement_type = 'bank_transfer', \
+         settlement_bank_account_id = ?, settlement_journal_entry_id = ?, paid_at = NOW() \
+         WHERE id = ?",
+    )
+    .bind(bank_account_id)
+    .bind(m.entry_id)
+    .bind(payee)
+    .execute(&pool)
+    .await
+    .expect("facture payée");
+    let a_la_limite = facture_fournisseur(
+        &pool,
+        &m,
+        b,
+        "FF-2026-010",
+        "L",
+        "R",
+        dec!(12),
+        borne(),
+        "open",
+    )
+    .await;
 
     let found = find_group_candidates(
         &pool,
@@ -401,7 +470,7 @@ async fn supplier_candidates_follow_the_settlement_rules(pool: MySqlPool) {
     .await
     .unwrap();
     let ids: Vec<i64> = found.candidates.iter().map(|c| c.id).collect();
-    assert_eq!(ids, vec![s1, s2, confirme]);
+    assert_eq!(ids, vec![s1, s2, confirme, a_la_limite]);
     let first = &found.candidates[0];
     assert_eq!(first.internal_number.as_deref(), Some("FF-2026-001"));
     assert_eq!(first.supplier_invoice_number.as_deref(), Some("G-77"));
@@ -413,7 +482,7 @@ async fn supplier_candidates_follow_the_settlement_rules(pool: MySqlPool) {
     let _a_client = facture(&pool, &m, a, "F-1", dec!(10), jour(6, 1), "validated").await;
     assert_eq!(
         chercher(&pool, &m, CandidateFamily::Supplier, None, &[]).await,
-        vec![s1, s2, confirme]
+        vec![s1, s2, confirme, a_la_limite]
     );
 }
 
