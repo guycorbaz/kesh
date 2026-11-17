@@ -2378,6 +2378,10 @@ settings-company-email-invalid = Indirizzo e-mail non valido.
 settings-company-email-saved = E-mail della società salvata
 settings-company-email-conflict = Conflitto di versione — i dati sono stati ricaricati, riprovare.
 settings-company-email-conflict-reload-failed = Conflitto di versione e ricaricamento impossibile — ricaricare la pagina.
+settings-company-name-saved = Nome della società salvato
+settings-company-name-required = Il nome della società è obbligatorio.
+settings-company-name-conflict = Conflitto di versione — i dati sono stati ricaricati, riprovare.
+settings-company-name-conflict-reload-failed = Conflitto di versione e ricaricamento impossibile — ricaricare la pagina.
 
 # Story v0172-session (0.17.3, CR #891) — section « Session » des paramètres et page de connexion.
 settings-session-title = Sessione

@@ -1039,7 +1039,11 @@ const ATTENDU = {
 	// (`SupplierInvoiceForm.svelte`) : quatre littéraux.
 	// 3086 → 3087 (v0190-correction, #1162, D4) : `invoice-contact-unresolved-error`
 	// (`InvoiceForm.svelte`), un littéral — recompté par la garde, non estimé.
-	sitesTotal: 3087,
+	// 3087 → 3095 (v0190-nom-societe, #1097) : le bloc nom de `settings/+page.svelte`, huit
+	// littéraux — `settings-company-name-required`, `-saved`, `-conflict`,
+	// `-conflict-reload-failed`, `common-save`, `common-cancel`, `common-edit`, `common-error`
+	// (« expected 3095 to be 3087 », `kesh-gate-logs/v0190n/vitest-i18n-1.log`).
+	sitesTotal: 3095,
 	sitesNonResolus: 31,
 	relais: 6,
 	// Story 26-1 (#620, AC3-bis) : **10 → 11** — `lib/features/bank-import/

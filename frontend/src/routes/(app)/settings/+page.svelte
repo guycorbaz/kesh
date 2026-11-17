@@ -9,7 +9,8 @@
 		fetchCompanyCurrent,
 		updateCompanyAddress,
 		updateCompanyContactDetails,
-		updateCompanyEmail
+		updateCompanyEmail,
+		updateCompanyName
 	} from '$lib/features/settings/settings.api';
 	import type { CompanyCurrentResponse, CompanyJson } from '$lib/features/settings/settings.types';
 	import {
@@ -57,6 +58,15 @@
 	// valeur relue, ceux modifiés des deux côtés sont montrés, et la copie prend les valeurs
 	// relues, si bien qu'un second conflit se compare à elles. Avant, la saisie restait et
 	// le second clic remplaçait, sans l'avoir montrée, l'écriture concurrente.
+
+	/**
+	 * Valeurs du bloc nom (Story v0190-nom-societe, #1097). La comparaison rogne par la
+	 * règle commune (`normalizeCompanyValue`) : aucun normaliseur n'est déclaré.
+	 */
+	const NAME_FIELDS = ['name'] as const;
+	function nameValuesOf(c: CompanyJson): Record<(typeof NAME_FIELDS)[number], string> {
+		return { name: c.name ?? '' };
+	}
 
 	/** Valeurs du bloc e-mail, telles que le formulaire les porte. */
 	const EMAIL_FIELDS = ['email'] as const;
@@ -162,6 +172,10 @@
 	function syncOpenBlocks(company: CompanyJson) {
 		// Revue P2 (C-e346-10) : une version ne recule jamais.
 		const v = company.version;
+		// Story v0190-nom-societe (#1097, C-v0190c-14) : le bloc nom suit la même règle.
+		if (nameEditing && v > nameVersion && sameBlockValues(nameBase, nameValuesOf(company), NAME_FIELDS)) {
+			nameVersion = v;
+		}
 		if (emailEditing && v > emailVersion && sameBlockValues(emailBase, emailValuesOf(company), EMAIL_FIELDS)) {
 			emailVersion = v;
 		}
@@ -320,6 +334,96 @@
 			}
 		} finally {
 			emailSubmitting = false;
+		}
+	}
+
+	// Story v0190-nom-societe (#1097) — le nom de la société, que la QR-facture peut refuser
+	// après l'assistant. Édition inline sur le patron de l'e-mail ci-dessus (C-v0190c-8) :
+	// vide refusé ici ; longueur et jeu de caractères jugés par le serveur, dont le message
+	// s'affiche tel quel (le jeu de caractères n'est pas recopié dans le frontend).
+	let nameEditing = $state(false);
+	let nameValue = $state('');
+	let nameSubmitting = $state(false);
+	let nameError = $state('');
+	let nameBase = $state<Record<(typeof NAME_FIELDS)[number], string>>({ name: '' });
+	let nameVersion = $state(0);
+	let nameConflict = $state<CompanyConflictNoticeState | null>(null);
+
+	function startNameEdit() {
+		if (data) {
+			nameBase = nameValuesOf(data.company);
+			nameVersion = data.company.version;
+		}
+		// Le nom stocké tel quel, même trop long ou hors jeu : `maxlength` n'agit que sur la
+		// saisie, et l'enregistrer sans le changer rend le refus du serveur (V2-N3).
+		nameValue = nameBase.name;
+		nameError = '';
+		nameConflict = null;
+		nameEditing = true;
+	}
+
+	function closeNameEdit() {
+		nameEditing = false;
+		nameError = '';
+		nameConflict = null;
+	}
+
+	async function saveName() {
+		if (!data) return;
+		const trimmed = nameValue.trim();
+		if (!trimmed) {
+			nameError = msg('settings-company-name-required', 'Le nom de la société est obligatoire.');
+			return;
+		}
+		nameSubmitting = true;
+		nameError = '';
+		nameConflict = null;
+		const seq = nextSeq();
+		try {
+			const updated = await updateCompanyName({ name: trimmed, version: nameVersion });
+			closeNameEdit();
+			adoptCompany(updated, seq);
+			notifySuccess(msg('settings-company-name-saved', 'Nom de la société enregistré'));
+		} catch (err) {
+			if (isApiError(err)) {
+				if (err.code === 'OPTIMISTIC_LOCK_CONFLICT') {
+					const r = await reloadAfterConflict(
+						nameBase,
+						{ name: nameValue },
+						NAME_FIELDS,
+						nameValuesOf,
+					);
+					if (r.status === 'reload-failed') {
+						nameConflict = null;
+						nameError = msg(
+							'settings-company-name-conflict-reload-failed',
+							'Conflit de version et rechargement impossible — rechargez la page.',
+						);
+					} else if (r.conflict.kind === 'already-saved') {
+						nameBase = r.base;
+						closeNameEdit();
+						notifySuccess(alreadySavedMessage());
+					} else {
+						nameBase = r.base;
+						nameVersion = r.version;
+						nameValue = r.conflict.input.name;
+						nameConflict = r.notice;
+						if (!r.notice) {
+							nameError = msg(
+								'settings-company-name-conflict',
+								'Conflit de version — les données ont été rechargées, réessayez.',
+							);
+						}
+					}
+				} else {
+					// 400 : le message du serveur (longueur, caractère refusé), saisie conservée.
+					nameError = err.message;
+				}
+			} else {
+				nameError = msg('common-error', 'Erreur inattendue');
+			}
+		} finally {
+			nameSubmitting = false;
 		}
 	}
 
@@ -636,9 +740,46 @@
 		<section class="rounded-lg border border-border bg-white p-6 shadow-sm">
 			<h2 class="mb-4 text-lg font-semibold">{msg('settings-org-title', 'Organisation')}</h2>
 			<dl class="grid grid-cols-2 gap-x-6 gap-y-3 text-sm">
-				<div>
+				<!-- Story v0190-nom-societe (#1097) : le nom se corrige ici (administrateurs). -->
+				<div class={nameEditing ? 'col-span-2' : ''}>
 					<dt class="font-medium text-text-muted">{msg('settings-field-name', 'Nom')}</dt>
-					<dd>{data.company.name}</dd>
+					{#if nameEditing}
+						<dd class="mt-1 flex max-w-md items-start gap-2">
+							<div class="flex-1">
+								<Input
+									bind:value={nameValue}
+									readonly={nameSubmitting}
+									class={PENDING_FIELD}
+									maxlength={70}
+									data-testid="settings-company-name-input"
+								/>
+								<CompanyConflictNotice notice={nameConflict} testid="settings-company-name-conflict" field="name" />
+								{#if nameError}
+									<p class="mt-1 text-xs text-destructive" data-testid="settings-company-name-error">
+										{nameError}
+									</p>
+								{/if}
+							</div>
+							<Button size="sm" onclick={saveName} disabled={nameSubmitting} data-testid="settings-company-name-save">
+								{msg('common-save', 'Enregistrer')}
+							</Button>
+							<Button size="sm" variant="outline" onclick={closeNameEdit} disabled={nameSubmitting}>
+								{msg('common-cancel', 'Annuler')}
+							</Button>
+						</dd>
+						<dd class="max-w-md">
+							<CompanyConflictNotice notice={nameConflict} testid="settings-company-name-conflict" />
+						</dd>
+					{:else}
+						<dd class="flex items-center gap-3">
+							<span data-testid="settings-company-name">{data.company.name}</span>
+							{#if isAdmin}
+								<Button size="sm" variant="outline" onclick={startNameEdit} data-testid="settings-company-name-edit">
+									{msg('common-edit', 'Modifier')}
+								</Button>
+							{/if}
+						</dd>
+					{/if}
 				</div>
 				<div>
 					<dt class="font-medium text-text-muted">{msg('settings-field-org-type', 'Type')}</dt>

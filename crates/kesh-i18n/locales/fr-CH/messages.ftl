@@ -2504,6 +2504,10 @@ settings-company-email-invalid = Adresse e-mail invalide.
 settings-company-email-saved = E-mail de la société enregistré
 settings-company-email-conflict = Conflit de version — les données ont été rechargées, réessayez.
 settings-company-email-conflict-reload-failed = Conflit de version et rechargement impossible — rechargez la page.
+settings-company-name-saved = Nom de la société enregistré
+settings-company-name-required = Le nom de la société est obligatoire.
+settings-company-name-conflict = Conflit de version — les données ont été rechargées, réessayez.
+settings-company-name-conflict-reload-failed = Conflit de version et rechargement impossible — rechargez la page.
 
 # Story v0172-session (0.17.3, CR #891) — section « Session » des paramètres et page de connexion.
 settings-session-title = Session
