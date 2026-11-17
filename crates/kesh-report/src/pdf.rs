@@ -3040,4 +3040,399 @@ mod tests {
         let t = pdf_text(&render_general_ledger_pdf(&ledger_with(300), &ctx).unwrap());
         assert!(!t.iter().any(|l| l.contains(" × ") || l.contains("solde ")));
     }
+
+    // ------------------------------------------------------------------
+    // Correctif fix-pdf-montants-alignes — montants alignés à droite
+    // ------------------------------------------------------------------
+
+    /// Un texte posé dans un PDF non compressé : abscisse de départ (mm), corps
+    /// (pt), gras ou non, chaîne (décodée en Latin-1, comme [`pdf_text`]).
+    struct Pose {
+        x_mm: f32,
+        size: f32,
+        bold: bool,
+        text: String,
+    }
+
+    /// Les textes d'un PDF non compressé, dans l'ordre d'écriture : chaque bloc
+    /// `BT /<police> <corps> Tf <x> <y> Td <hex> Tj ET` de printpdf.
+    fn pdf_poses(bytes: &[u8]) -> Vec<Pose> {
+        let s = String::from_utf8_lossy(bytes);
+        let mut out = Vec::new();
+        for bloc in s.split("BT").skip(1) {
+            let (Some(tf), Some(td)) = (bloc.find(" Tf"), bloc.find(" Td")) else {
+                continue;
+            };
+            let mut police = bloc[..tf].split_whitespace().rev();
+            let (Some(size), Some(font)) = (police.next(), police.next()) else {
+                continue;
+            };
+            let Some(x) = bloc[tf + 3..td].split_whitespace().next() else {
+                continue;
+            };
+            let (Some(a), Some(b)) = (bloc.find('<'), bloc.find("> Tj")) else {
+                continue;
+            };
+            let hex = &bloc[a + 1..b];
+            out.push(Pose {
+                x_mm: x.parse::<f32>().unwrap() * 25.4 / 72.0,
+                size: size.parse().unwrap(),
+                bold: font == "/Helvetica-Bold",
+                text: (0..hex.len() / 2)
+                    .filter_map(|i| u8::from_str_radix(&hex[2 * i..2 * i + 2], 16).ok())
+                    .map(char::from)
+                    .collect(),
+            });
+        }
+        out
+    }
+
+    /// Un montant tel que l'écrivent les rapports : `-1'234.56`, précédé ou non
+    /// d'un code de devise (`USD 1'233.57`). Un taux (`8.10 %`, `21.50%`) ou une
+    /// date (`01.03.2026`) n'en est pas un.
+    fn est_montant(t: &str) -> bool {
+        let t = match t.split_once(' ') {
+            Some((code, m)) if code.len() == 3 && code.chars().all(|c| c.is_ascii_uppercase()) => m,
+            Some(_) => return false,
+            None => t,
+        };
+        let t = t.strip_prefix('-').unwrap_or(t);
+        let Some((int, dec)) = t.split_once('.') else {
+            return false;
+        };
+        dec.len() == 2
+            && dec.chars().all(|c| c.is_ascii_digit())
+            && int.starts_with(|c: char| c.is_ascii_digit())
+            && int.chars().all(|c| c.is_ascii_digit() || c == '\'')
+    }
+
+    /// Bout en bout : chaque montant du PDF rendu (hors seconde ligne en petit
+    /// d'un montant en devise, qui est une phrase) finit sur l'un des bords
+    /// `attendus` — son abscisse de départ lue dans le flux du PDF, plus sa
+    /// largeur imprimée — et chacun de ces bords porte au moins un montant.
+    fn assert_montants_alignes(nom: &str, bytes: &[u8], attendus: &[f32]) {
+        let poses: Vec<Pose> = pdf_poses(bytes)
+            .into_iter()
+            .filter(|p| p.size > FX_FONT_PT && est_montant(&p.text))
+            .collect();
+        assert!(poses.len() >= attendus.len(), "{nom} : montants lus");
+        let mut vus = vec![false; attendus.len()];
+        for p in &poses {
+            let bord = p.x_mm + largeur_mm(&p.text, p.size, p.bold);
+            let i = attendus.iter().position(|a| (a - bord).abs() < 0.01);
+            assert!(
+                i.is_some(),
+                "{nom} : « {} » finit à {bord:.3} mm, hors des bords {attendus:?}",
+                p.text
+            );
+            vus[i.unwrap()] = true;
+        }
+        assert!(
+            vus.iter().all(|v| *v),
+            "{nom} : un bord sans montant ({vus:?})"
+        );
+    }
+
+    /// Le point décimal d'un montant aligné à droite sur `bord` : la largeur des
+    /// trois derniers caractères (`.dd`) avant le bord.
+    fn abscisse_du_point(t: &str, bold: bool, bord: f32) -> f32 {
+        right_aligned_x(t, FONT_SIZE_PT, bold, bord)
+            + largeur_mm(&t[..t.len() - 3], FONT_SIZE_PT, bold)
+    }
+
+    /// Unitaire — des montants de longueurs différentes, négatifs, en gras, en
+    /// devise, finissent tous au même bord, et leurs points décimaux tombent à
+    /// la même abscisse.
+    #[test]
+    fn right_aligned_x_fait_finir_chaque_montant_au_meme_bord() {
+        for (t, bold) in [
+            ("0.00", false),
+            ("4.56", false),
+            ("1'234.56", false),
+            ("-89.67", false),
+            ("-12'345'678.90", true),
+            ("USD 1'233.57", false),
+            ("EUR -4.92", true),
+        ] {
+            let x = right_aligned_x(t, FONT_SIZE_PT, bold, AMOUNT_RIGHT_MM);
+            assert!(
+                (x + largeur_mm(t, FONT_SIZE_PT, bold) - AMOUNT_RIGHT_MM).abs() < 1e-4,
+                "{t}"
+            );
+            assert!(x < AMOUNT_RIGHT_MM, "{t} commence avant son bord");
+        }
+        // Plus long, il commence plus à gauche.
+        assert!(
+            right_aligned_x("1'234.56", FONT_SIZE_PT, false, AMOUNT_RIGHT_MM)
+                < right_aligned_x("4.56", FONT_SIZE_PT, false, AMOUNT_RIGHT_MM)
+        );
+        // Le point décimal à la même abscisse, maigre et gras, CHF et devise.
+        for bold in [false, true] {
+            let p0 = abscisse_du_point("0.00", bold, AMOUNT_RIGHT_MM);
+            for t in ["1'234.56", "-89.67", "-12'345'678.90", "USD 1'233.57"] {
+                assert!(
+                    (abscisse_du_point(t, bold, AMOUNT_RIGHT_MM) - p0).abs() < 1e-4,
+                    "{t} (gras : {bold})"
+                );
+            }
+        }
+    }
+
+    /// La prémisse de l'alignement des décimales : les dix chiffres
+    /// d'Helvetica, maigre et gras, ont la même chasse (556 millièmes d'em).
+    #[test]
+    fn les_chiffres_d_helvetica_ont_une_meme_chasse() {
+        for bold in [false, true] {
+            let zero = largeur_mm("0", FONT_SIZE_PT, bold);
+            assert!((zero - 556.0 / 1000.0 * FONT_SIZE_PT * 25.4 / 72.0).abs() < 1e-4);
+            for c in '1'..='9' {
+                assert_eq!(largeur_mm(&c.to_string(), FONT_SIZE_PT, bold), zero, "{c}");
+            }
+        }
+    }
+
+    /// Les colonnes ne se chevauchent pas, même pour le plus long montant
+    /// plausible : chaque colonne de montant commence après la fin de ce qui la
+    /// précède.
+    #[test]
+    fn les_colonnes_de_montant_ne_se_chevauchent_pas() {
+        let long = "-12'345'678.90";
+        let debut = |t: &str, size: f32, bord: f32| right_aligned_x(t, size, true, bord);
+        // Balance : l'intitulé (55 mm depuis 35 mm), puis quatre colonnes.
+        let mut fin = MARGIN_LEFT_MM + TB_COL_X[1] + 55.0;
+        for bord in TB_AMOUNT_RIGHT_MM {
+            assert!(
+                debut(long, FONT_SIZE_PT, bord) > fin,
+                "balance, bord {bord}"
+            );
+            fin = bord;
+        }
+        // Grand livre (8 pt) : contreparties (10 caractères), débit, crédit, solde.
+        let mut fin = LEDGER_COL_COUNTERPART + largeur_mm("6000,6001…", LEDGER_FONT_PT, false);
+        for bord in [
+            LEDGER_DEBIT_RIGHT_MM,
+            LEDGER_CREDIT_RIGHT_MM,
+            LEDGER_RUNNING_RIGHT_MM,
+        ] {
+            assert!(
+                debut(long, LEDGER_FONT_PT, bord) > fin,
+                "grand livre, bord {bord}"
+            );
+            fin = bord;
+        }
+        // Le solde en devise des lignes d'encadrement, avant le débit.
+        assert!(LEDGER_FX_RIGHT_MM < debut(long, LEDGER_FONT_PT, LEDGER_DEBIT_RIGHT_MM));
+        // Journaux, TVA, rendement : deux colonnes voisines.
+        for (a, b) in [
+            (JR_DEBIT_RIGHT_MM, JR_CREDIT_RIGHT_MM),
+            (VAT_BASE_RIGHT_MM, VAT_DUE_RIGHT_MM),
+            (RET_COUT_RIGHT_MM, RET_REV_RIGHT_MM),
+            (RET_REV_RIGHT_MM, RET_RES_RIGHT_MM),
+        ] {
+            assert!(debut(long, FONT_SIZE_PT, b) > a, "bords {a} et {b}");
+        }
+        // Bilan : nom tronqué d'un compte en devise (34 caractères à 2,5 mm,
+        // l'estimation de `ACCOUNT_NAME_MAX_CHARS_FX`), solde en devise, solde CHF.
+        let fin_nom = MARGIN_LEFT_MM + 25.0 + ACCOUNT_NAME_MAX_CHARS_FX as f32 * 2.5;
+        let fx = "USD -1'234'567.89";
+        assert!(right_aligned_x(fx, FONT_SIZE_PT, false, FX_AMOUNT_RIGHT_MM) > fin_nom);
+        assert!(debut(long, FONT_SIZE_PT, AMOUNT_RIGHT_MM) > FX_AMOUNT_RIGHT_MM);
+    }
+
+    /// Un bilan à deux comptes en devise, de longueurs et de signes différents.
+    fn fixture_bs_multi() -> BalanceSheet {
+        let mut bs = fixture_bs(false);
+        let compte = |n: &str, bal, cur: &str, fx| AccountBalance {
+            account_id: 9,
+            account_number: n.into(),
+            account_name: "Compte en devise".into(),
+            account_type: AccountType::Asset,
+            active: true,
+            balance: bal,
+            role: None,
+            currency: Some(cur.into()),
+            balance_currency: Some(fx),
+        };
+        bs.assets
+            .push(compte("1030", dec!(4.67), "EUR", dec!(4.92)));
+        bs.assets
+            .push(compte("1102", dec!(16077.51), "EUR", dec!(17072.20)));
+        bs.liabilities
+            .push(compte("2010", dec!(-1012.25), "USD", dec!(-1133.60)));
+        bs
+    }
+
+    /// Bout en bout — bilan et compte de résultat : solde CHF sur la marge
+    /// droite (totaux en gras compris), solde en devise sur son propre bord.
+    #[test]
+    fn bilan_et_resultat_pdf_alignent_les_montants_a_droite() {
+        let ctx = PdfContext::fr_ch_default("Test SA");
+        assert_montants_alignes(
+            "bilan",
+            &render_balance_sheet_pdf(&fixture_bs_multi(), &ctx).unwrap(),
+            &[FX_AMOUNT_RIGHT_MM, AMOUNT_RIGHT_MM],
+        );
+        let mut is_ = fixture_is(false);
+        is_.revenues[0].balance = dec!(152340.80);
+        is_.expenses[0].balance = dec!(-3.15);
+        assert_montants_alignes(
+            "compte de résultat",
+            &render_income_statement_pdf(&is_, &ctx).unwrap(),
+            &[AMOUNT_RIGHT_MM],
+        );
+    }
+
+    /// Bout en bout — balance : quatre colonnes, en-têtes compris (ils finissent
+    /// au même bord), seconde ligne en devise laissée telle quelle.
+    #[test]
+    fn balance_pdf_aligne_les_quatre_colonnes_a_droite() {
+        let mut tb = fixture_tb(false);
+        let mut usd = tb.rows[0].clone();
+        usd.account_number = "1032".into();
+        usd.opening_balance = dec!(-12500.00);
+        usd.total_debit = dec!(1250300.10);
+        usd.total_credit = dec!(5.00);
+        usd.currency = Some("USD".into());
+        usd.opening_currency = Some(dec!(-13750));
+        usd.total_debit_currency = Some(dec!(1));
+        usd.total_credit_currency = Some(dec!(1));
+        usd.closing_currency = Some(dec!(1));
+        tb.rows.push(usd);
+        let ctx = PdfContext::fr_ch_default("Test SA");
+        let bytes = render_trial_balance_pdf(&tb, &ctx).unwrap();
+        assert_montants_alignes("balance", &bytes, &TB_AMOUNT_RIGHT_MM);
+        let l = &ctx.section_labels;
+        let poses = pdf_poses(&bytes);
+        for (entete, bord) in [&l.col_opening, &l.col_debit, &l.col_credit, &l.col_closing]
+            .into_iter()
+            .zip(TB_AMOUNT_RIGHT_MM)
+        {
+            let p = poses.iter().find(|p| &p.text == entete).unwrap();
+            assert!(
+                (p.x_mm + largeur_mm(entete, p.size, p.bold) - bord).abs() < 0.01,
+                "{entete}"
+            );
+        }
+    }
+
+    /// Bout en bout — journaux : débit et crédit, lignes et totaux.
+    #[test]
+    fn journaux_pdf_alignent_debit_et_credit_a_droite() {
+        let mut jr = fixture_jr(false);
+        jr.journals[0].entries[0].lines[0].debit = dec!(12345.60);
+        jr.journals[0].section_total_debit = dec!(12345.60);
+        jr.grand_total_debit = dec!(12345.60);
+        let ctx = PdfContext::fr_ch_default("Test SA");
+        assert_montants_alignes(
+            "journaux",
+            &render_journal_report_pdf(&jr, &ctx).unwrap(),
+            &[JR_DEBIT_RIGHT_MM, JR_CREDIT_RIGHT_MM],
+        );
+    }
+
+    /// Bout en bout — TVA (avec soldes) : base HT et TVA ; les totaux finissent
+    /// sur le bord de la TVA.
+    #[test]
+    fn tva_pdf_aligne_base_et_tva_a_droite() {
+        let mut vat = with_write_off(fixture_vat(false));
+        vat.rows[0].base_ht = dec!(152340.80);
+        let ctx = PdfContext::fr_ch_default("Test SA");
+        assert_montants_alignes(
+            "TVA",
+            &render_vat_report_pdf(&vat, &ctx, &VatPdfLabels::fr_ch_defaults()).unwrap(),
+            &[VAT_BASE_RIGHT_MM, VAT_DUE_RIGHT_MM],
+        );
+    }
+
+    /// Bout en bout — grand livre en USD : débit, crédit, solde progressif, et
+    /// le solde en devise des lignes d'encadrement sur son propre bord.
+    #[test]
+    fn grand_livre_pdf_aligne_les_montants_a_droite() {
+        let ctx = PdfContext::fr_ch_default("Test SA");
+        let mut gl = ledger_usd(3);
+        gl.sections[0].lines[1].debit = Decimal::ZERO;
+        gl.sections[0].lines[1].credit = dec!(9.12);
+        gl.sections[0].total_credit = dec!(9.12);
+        assert_montants_alignes(
+            "grand livre",
+            &render_general_ledger_pdf(&gl, &ctx).unwrap(),
+            &[
+                LEDGER_FX_RIGHT_MM,
+                LEDGER_DEBIT_RIGHT_MM,
+                LEDGER_CREDIT_RIGHT_MM,
+                LEDGER_RUNNING_RIGHT_MM,
+            ],
+        );
+    }
+
+    /// Bout en bout — dépenses et rendement par compte analytique.
+    #[test]
+    fn rapports_de_projet_pdf_alignent_les_montants_a_droite() {
+        use crate::project_report::{
+            ExpenseAccountRow, ProjectExpenseSection, ProjectExpensesReport, ProjectInfo,
+            ProjectReturnReport, ProjectReturnSection, ProjectReturnTotals,
+        };
+        let projet = || ProjectInfo {
+            id: 1,
+            code: "P1".into(),
+            name: "Projet".into(),
+        };
+        let ligne = |a| ExpenseAccountRow {
+            account_id: 1,
+            account_number: "6000".into(),
+            account_name: "Charges".into(),
+            amount: a,
+            entries: vec![],
+        };
+        let ctx = PdfContext::fr_ch_default("Test SA");
+        let depenses = ProjectExpensesReport {
+            report_type: "expenses".into(),
+            project: projet(),
+            mode: "consolidated".into(),
+            period_label: "2026".into(),
+            sections: vec![ProjectExpenseSection {
+                project: projet(),
+                is_root: true,
+                rows: vec![ligne(dec!(12345.60)), ligne(dec!(-3.15))],
+                subtotal: dec!(12342.45),
+            }],
+            grand_total: dec!(12342.45),
+        };
+        assert_montants_alignes(
+            "dépenses par projet",
+            &render_project_expenses_pdf(&depenses, &ctx, &ProjectExpensesPdfLabels::default())
+                .unwrap(),
+            &[AMOUNT_RIGHT_MM],
+        );
+        let section = |c, r| ProjectReturnSection {
+            project: projet(),
+            is_root: true,
+            cout_investi: c,
+            revenus: r,
+            resultat_net: r - c,
+            rendement_pct: None,
+        };
+        let rendement = ProjectReturnReport {
+            report_type: "return".into(),
+            project: projet(),
+            mode: "consolidated".into(),
+            period_label: "2026".into(),
+            sections: vec![
+                section(dec!(12345.60), dec!(15000)),
+                section(dec!(3.15), dec!(0)),
+            ],
+            totals: ProjectReturnTotals {
+                cout_investi: dec!(12348.75),
+                revenus: dec!(15000),
+                resultat_net: dec!(2651.25),
+                rendement_pct: Some(dec!(21.47)),
+            },
+        };
+        assert_montants_alignes(
+            "rendement par projet",
+            &render_project_return_pdf(&rendement, &ctx, &ProjectReturnPdfLabels::default())
+                .unwrap(),
+            &[RET_COUT_RIGHT_MM, RET_REV_RIGHT_MM, RET_RES_RIGHT_MM],
+        );
+    }
 }
