@@ -1109,4 +1109,5 @@ development_status:
   # numéro 40. Détail : `_bmad-output/planning-artifacts/epics-37-39-reserves.md`.
 
   # 2026-11-17 — Release 0.19.0 (publiée le 2026-11-20, coupure le 2026-11-19 au soir) : correction de la semaine, hors epic.
-  v0190-correction: ready-for-dev  # #1162, #1097 ; release 0.19.0 ; sans migration ; fiche rédigée le 2026-11-17 (Sonnet 5.5), à valider ; deux parties indépendantes (A : ContactPicker, B : nom de la société modifiable), peut glisser à la 0.20.0 (décision de Guy du 2026-11-17) ; six modules : découpage de repli proposé (A seule, B seule)
+  v0190-correction: ready-for-dev  # #1162 ; release 0.19.0 ; sans migration, frontend seul (ContactPicker) ; fiche rédigée le 2026-11-17 (Sonnet 5.5), à valider ; peut glisser à la 0.20.0 (décision de Guy du 2026-11-17) ; scindée le 2026-11-17 : #1097 passe à v0190-nom-societe ; issue liée #1228
+  v0190-nom-societe: ready-for-dev  # #1097 ; release 0.19.0 si close jeudi 2026-11-19 au soir, sinon 0.20.0 (accord de Guy du 2026-11-17) ; sans migration ; fiche rédigée le 2026-11-17 (Sonnet 5.5), à valider ; nom de la société modifiable (route PUT companies/current/name, contrôles QR, audit) ; issues liées #1226, #1227
