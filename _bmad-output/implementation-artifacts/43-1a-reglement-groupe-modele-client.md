@@ -1,6 +1,6 @@
 # Story 43-1a : un règlement pour plusieurs factures — migration, lettrage par ligne, factures clients (#823)
 
-Status: ready-for-dev
+Status: review
 
 *Fiche rédigée le 2026-11-17 au soir par l'agent de rédaction de l'Epic 43 (Opus 5.5), par le workflow
 `bmad-create-story`, en découpant la 43-1 (`43-1-reglement-groupe-modele.md`, `split`) après sa validation P1 ; **remédiée
@@ -378,14 +378,14 @@ Cette story pose **la migration de la release** (colonnes de la 43-1b et réglag
 
 ## Tâches
 
-- [ ] **T0** — Étape 0 : LOW de la passe 3 ; D2 (ordre des lignes de `create_in_tx`) ; appui de la clé étrangère après
+- [x] **T0** — Étape 0 : LOW de la passe 3 ; D2 (ordre des lignes de `create_in_tx`) ; appui de la clé étrangère après
   `DROP INDEX` et `CHECK` sur colonne neuve, sur MariaDB 10.11 ; décision écrite levant l'invariant (1 bis) de
   `journal_entries_modification.rs` (AC2), ligne lue citée ; réponse de Guy sur M-A relue (registre de l'épique).
-- [ ] **T1** — Migration, audit d'idempotence, P6, squash, `journal_entries_modification.rs`, `TABLES_TO_TRUNCATE` (AC1,
+- [x] **T1** — Migration, audit d'idempotence, P6, squash, `journal_entries_modification.rs`, `TABLES_TO_TRUNCATE` (AC1,
   AC2), **et le plafond** : champ de l'entité des réglages de facturation, ses listes de colonnes, lecteur
   `group_settlement_max_difference` et `DEFAULT_GROUP_DIFFERENCE_MAX` (AC3 bis, M5). Commit — la 43-7 peut partir.
-- [ ] **T2** — Entités et listes de colonnes des règlements, fragment `CLEAR_SETTLEMENT_SQL` (AC1.3), export (AC3). Commit.
-- [ ] **T3** — **Signatures publiques** documentées : `GroupedSettlement`, `GroupedInvoiceRef`, `GroupedDocument`,
+- [x] **T2** — Entités et listes de colonnes des règlements, fragment `CLEAR_SETTLEMENT_SQL` (AC1.3), export (AC3). Commit.
+- [x] **T3** — **Signatures publiques** documentées : `GroupedSettlement`, `GroupedInvoiceRef`, `GroupedDocument`,
   `GroupRefusal` (toutes ses variantes, celles de la 43-1b comprises), `Decomposition` (champs publics),
   `GroupFamily`, **`group_difference` en `pub`** (pure, sans base : la 43-2 peut l'employer pour ses tests de contrat ;
   P4 LOW-4), `DEFAULT_GROUP_DIFFERENCE_MAX`,
@@ -394,10 +394,10 @@ Cette story pose **la migration de la release** (colonnes de la 43-1b et réglag
   `cancel_in_tx`, la structure de la vue (factures, facture qui bloque). **Commit transmis à l'orchestrateur mercredi avant
   midi** : la 43-1b et la 43-2 en partent. Au passage en `review`, seul le `unimplemented!` de
   `pay_supplier_invoices_in_tx`, propriété de la 43-1b, peut rester.
-- [ ] **T4** — Lettrage par ligne (AC4). — [ ] **T5** — Règlement groupé client, D6, D7 (AC5, AC6).
-- [ ] **T6** — Dé-rapprochement, gestes unitaires, inventaire (AC7 à AC9).
-- [ ] **T7** — Sauvegarde, test d'accord, montée (AC10 à AC12). — [ ] **T8** — Manuel d'administration (AC13).
-- [ ] **T9** — Gates (`kesh-db` : complet en boucle) ; passage en `review` **mercredi 18 h** ; Dev Agent Record ; prompt de
+- [x] **T4** — Lettrage par ligne (AC4). — [x] **T5** — Règlement groupé client, D6, D7 (AC5, AC6).
+- [x] **T6** — Dé-rapprochement, gestes unitaires, inventaire (AC7 à AC9).
+- [x] **T7** — Sauvegarde, test d'accord, montée (AC10 à AC12). — [x] **T8** — Manuel d'administration (AC13).
+- [x] **T9** — Gates (`kesh-db` : complet en boucle) ; passage en `review` **mercredi 18 h** ; Dev Agent Record ; prompt de
   revue P1.
 
 ## Note de version
@@ -518,7 +518,28 @@ Claude Opus 5.5 (agent de développement de la 43-1a, clé `e431a`, voie 1), le 
 
 ### Gates
 
-*(rempli après exécution — voir ci-dessous.)*
+Journaux sous `/home/gcorbaz/devel/kesh-gate-logs/e431a/`, chacun avec son commit. Bases remises à neuf avant chaque
+gate complet (`reset-base.sh`).
+
+| Gate | Commit | Résultat | Journal |
+|---|---|---|---|
+| ciblé T1 | `3ac36d922` | 97/97 | `t1-cible.log` |
+| ciblé T5/T6, premier passage | `c31159276` | 222 : 217 passés, 5 rouges (défauts des tests) | `t5-cible-1.log` |
+| ciblé, rayon d'impact | `69e75f5fc` | 29/29 | `t5-cible-2.log` |
+| mutations (4) | `69e75f5fc` | 4 tuées | `mut/campagne.log` |
+| `test-fast --ci`, 1ᵉʳ | `69e75f5fc` | 5534 : 5522 passés, 12 rouges (registres et montages de tests) | `test-fast-review.log` |
+| `test-fast --ci`, 2ᵉ | `130b0e60b` | 5534 : 5530 passés, 4 rouges (inventaires lexicaux, montée rc1/0.16) | `test-fast-review-2.log` |
+| `test-fast --ci`, 3ᵉ | `bc02e360f` | 5534 : 5533 passés, 1 rouge (registre du compte clos) | `test-fast-review-3.log` |
+| **`test-fast --ci`** (fmt, clippy, nextest) | **`69eb2e1ee`** | **5534 passés, 13 ignorés** | `test-fast-review-4.log` |
+| **`gate-ci.sh kesh_ci_e431a`** | **`69eb2e1ee`** | **5541 passés, 0 échec, 17 ignorés** (recompté : somme des `test result:` du journal) | `gate-ci-review.log` |
+| frontend | — | non touché, non lancé | — |
+| E2E | — | **non lancé** : à la clôture (consigne de la release) | — |
+
+Les rouges intermédiaires ne venaient d'aucun défaut du code de production : registres et décomptes des inventaires
+(`bank_account_closed_inventory.rs`, `letterings_lexical.rs`), montages de tests qui exercent le code courant sur un
+schéma d'avant (`lettering_documents_backfill.rs`, `migrations_upgrade_path.rs`, `company_invoice_settings_repository.rs`)
+— sauf un : le `DELETE` des règlements d'un groupe vivait hors de son module (inventaire des écrivains, AC8 de la
+15-1a2-i), déplacé dans `invoice_settlements_write::delete_grouped_settlements_in_tx` (`bc02e360f`).
 
 ### File List
 
