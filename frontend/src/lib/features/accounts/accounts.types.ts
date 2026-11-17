@@ -89,6 +89,23 @@ export function accountCurrency(account: Pick<AccountResponse, 'currency'>): str
 	return account.currency ?? null;
 }
 
+/**
+ * Story 37-3b (AC-4) — **le** prédicat d'un compte en devise : les sélecteurs
+ * des pièces (factures, avoirs, règlements, factures fournisseur), lots,
+ * réconciliation, comptes bancaires liés, comptes par défaut et produits ne les
+ * offrent pas (le serveur les refuserait, 37-3a).
+ */
+export function isForeignCurrencyAccount(account: Pick<AccountResponse, 'currency'>): boolean {
+	return accountCurrency(account) !== null;
+}
+
+/** Story 37-3b (AC-4) — la liste sans les comptes en devise (`<select>` natifs, props). */
+export function withoutForeignCurrency<T extends Pick<AccountResponse, 'currency'>>(
+	accounts: readonly T[],
+): T[] {
+	return accounts.filter((a) => !isForeignCurrencyAccount(a));
+}
+
 export interface CreateAccountRequest {
 	number: string;
 	name: string;

@@ -1035,6 +1035,23 @@ const ATTENDU = {
 	// (86 → 89 : la carte « Cours de change ») — 39 + 32 + 6 + 6 + 5 + 3 = 91. Que des littéraux.
 	// Revue de code P2 (37-2-CR-P2-4) : **3184 → 3185**, relevé par la garde : la légende du
 	// groupe de choix de `CorrectionDialog.svelte` (6 → 7 sites).
+	// Story 37-3b : **3185 → 3289**, relevé par la garde (`expected 3289 to be 3185`) avant
+	// d'écrire ce nombre, et ventilé au code (sites `i18nMsg(` par fichier, base de la branche
+	// → HEAD) : `ConversionAssistant.svelte` 35 (neuf), `JournalEntryForm.svelte` +34,
+	// `settings/opening-balances/+page.svelte` +9, `fx-refusals.ts` 6 (neuf),
+	// `VatPurchaseAssistant.svelte` +5, `opening-fx.ts` 5 (neuf), `journal-entries/conversion/
+	// +page.svelte` 4 (neuf), `fx-display.ts` 3 (neuf), `blocker-messages.ts` +1,
+	// `journal-entries/+page.svelte` +1, `settings/invoicing/+page.svelte` +1 — total 104. Que
+	// des littéraux. Puis **3289 → 3292** : `reconciliation/failed-proposal-label.ts` +3 (les
+	// codes de lot propres aux devises, reçus de la 37-3a), relevé par la garde. Puis
+	// **3292 → 3294** (revue de code P1 de la 37-3b) : la page de l'assistant *Conversion*
+	// +2 (`journal-entries-conversion-load-error`, `-retry`, l'état d'erreur de
+	// chargement) ; le message des problèmes d'une ligne en devise, déplacé du formulaire
+	// vers `fx-refusals.ts`, ne change pas le compte. Relevé par la garde.
+	// Fusion de `epic/37-multi-devises` (37-3a et 37-4 terminées) dans la 37-3b : **3294 → 3300**,
+	// relevé par la garde (`expected 3300 to be 3294`) : les 6 sites de la 37-4 (rapports), non additionnés
+	// à la main. Les commentaires ci-après sont ceux de la 37-4, repris tels quels.
+	sitesTotal: 3300,
 	// Story 37-4 (AC-6) : **3184 → 3190** sur sa branche (partie de 946aa86a), relevé par la garde
 	// (`expected 3190 to be 3184`) et ventilé au code : 3 sites dans
 	// `features/reports/GeneralLedgerView.svelte` (`reports-fx-revaluation-balance`,
@@ -1044,7 +1061,6 @@ const ATTENDU = {
 	// 65b3877f) dans la branche de la 37-4 : **3191**, relevé par la garde après la fusion
 	// (non additionné). Fusion de la 37-3a jusqu'à `e89291e6` : **3191**, relevé de nouveau par la
 	// garde (Dev Agent Record de la 37-4) ; à recompter à chaque reprise suivante.
-	sitesTotal: 3191,
 	sitesNonResolus: 31,
 	relais: 6,
 	// Story 26-1 (#620, AC3-bis) : **10 → 11** — `lib/features/bank-import/

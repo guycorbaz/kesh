@@ -38,7 +38,8 @@ use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 
 use kesh_core::accounting::{
-    self, Journal as CoreJournal, JournalEntryDraft, JournalEntryLineDraft,
+    self, ForeignAmount, Journal as CoreJournal, JournalEntryDraft, JournalEntryLineDraft,
+    check_foreign_line, fx_line_error,
 };
 use kesh_core::types::Money;
 use kesh_db::entities::{
@@ -56,7 +57,10 @@ use crate::AppState;
 use crate::errors::{AppError, t};
 use crate::helpers::get_company_for;
 use crate::middleware::auth::CurrentUser;
-use crate::routes::journal_entries::{JournalEntryResponse, MAX_LINES_PER_ENTRY, map_core_error};
+use crate::routes::journal_entries::{
+    ForeignLineRequest, JournalEntryResponse, MAX_LINES_PER_ENTRY, map_core_error,
+    parse_line_amounts,
+};
 
 // ---------------------------------------------------------------------------
 // DTOs
@@ -68,12 +72,24 @@ use crate::routes::journal_entries::{JournalEntryResponse, MAX_LINES_PER_ENTRY, 
 /// ligne d'écriture n'a ni l'un ni l'autre) ; aucun `project_id` (une écriture
 /// d'ouverture n'est pas analytique — et son absence garantit que
 /// `create_in_tx` ne verrouille QUE `fiscal_years`, cf. note atomicité D5).
+///
+/// Story 37-3b (AC-1, V2) : `debit`/`credit` facultatifs. Une ligne CHF exige
+/// les deux (400 `Validation` sinon — non plus le 422 d'axum d'un champ
+/// manquant) ; une ligne en devise porte `foreign` (forme de
+/// `POST /journal-entries`, analysée par la même fonction
+/// [`parse_line_amounts`]) et peut omettre `debit`/`credit` (CHF posé du côté
+/// `foreign.side`).
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct OpeningBalanceLineRequest {
     pub account_id: i64,
-    pub debit: String,
-    pub credit: String,
+    #[serde(default)]
+    pub debit: Option<String>,
+    #[serde(default)]
+    pub credit: Option<String>,
+    /// Partie en devise (Story 37-3b, AC-1), absente pour une ligne CHF.
+    #[serde(default)]
+    pub foreign: Option<ForeignLineRequest>,
 }
 
 /// Body de `POST /api/v1/opening-balances`. `journal` et `entry_date` sont
@@ -136,6 +152,10 @@ pub struct CompletableAccountDto {
     pub number: String,
     pub name: String,
     pub account_type: String,
+    /// Devise du compte (Story 37-3b, AC-1) — **omise** pour un compte CHF,
+    /// comme sur `AccountResponse` (registre C-37-9).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub currency: Option<String>,
 }
 
 /// Exercice qui porterait le complément.
@@ -165,6 +185,10 @@ pub struct OpeningComplementRequest {
 
 /// Ligne de complément : une seule colonne non nulle ; l'autre vaut `"0"`, est
 /// vide ou absente.
+///
+/// Story 37-3b (AC-1) : `foreign` pour un compte en devise, même forme et même
+/// analyse que [`OpeningBalanceLineRequest`] ; une colonne CHF absente vaut
+/// toujours 0.
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct OpeningComplementLineRequest {
@@ -173,6 +197,9 @@ pub struct OpeningComplementLineRequest {
     pub debit: Option<String>,
     #[serde(default)]
     pub credit: Option<String>,
+    /// Partie en devise (Story 37-3b, AC-1), absente pour une ligne CHF.
+    #[serde(default)]
+    pub foreign: Option<ForeignLineRequest>,
 }
 
 // ---------------------------------------------------------------------------
@@ -296,6 +323,7 @@ fn status_response(
                 number: a.number.clone(),
                 name: a.name.clone(),
                 account_type: a.account_type.clone(),
+                currency: a.currency.clone(),
             })
             .collect(),
         complement_date: complement.date.as_ref().map(|d| d.date),
@@ -357,24 +385,25 @@ pub async fn generate_opening_balances(
         )));
     }
 
-    // Parse des montants (string → Decimal), miroir `create_journal_entry`.
+    // Parse des montants et analyse de `foreign` (Story 37-3b, AC-1, V1/V2) :
+    // la fonction de `POST /journal-entries`, sans lecture de la base. Une
+    // ligne CHF sans `debit` ou `credit` rend 400 (non plus 422).
     let mut line_drafts: Vec<JournalEntryLineDraft> = Vec::with_capacity(req.lines.len());
     for (idx, line) in req.lines.iter().enumerate() {
-        let debit = Decimal::from_str(&line.debit).map_err(|e| {
-            AppError::Validation(format!("ligne {}: débit invalide ({e})", idx + 1))
-        })?;
-        let credit = Decimal::from_str(&line.credit).map_err(|e| {
-            AppError::Validation(format!("ligne {}: crédit invalide ({e})", idx + 1))
-        })?;
+        let (debit, credit, foreign) = parse_line_amounts(
+            idx + 1,
+            line.debit.as_deref(),
+            line.credit.as_deref(),
+            line.foreign.as_ref(),
+        )?;
         line_drafts.push(JournalEntryLineDraft {
             account_id: line.account_id,
             debit: Money::new(debit),
             credit: Money::new(credit),
             project_id: None,
-            // Story 37-3a (AC-5) : l'ouverture ne prend pas encore de ligne en
-            // devise (37-3b) ; un compte en devise y est refusé par le contrôle
-            // central (`ACCOUNT_REQUIRES_CURRENCY`).
-            foreign: None,
+            // Bornes, signe, arrondi et égalité au CHF : `accounting::validate`
+            // ci-dessous ; devise, mode et provenance : contrôle central.
+            foreign,
         });
     }
 
@@ -524,14 +553,53 @@ pub(crate) fn parse_complement_amount(raw: Option<&str>) -> Result<Decimal, AppE
         return Ok(Decimal::ZERO);
     }
     let value = Decimal::from_str(raw).map_err(|_| invalid())?;
+    check_complement_bounds(value)?;
+    Ok(value)
+}
+
+/// Bornes de forme d'un montant du complément, une fois lu : positif ou nul,
+/// au plus quatre décimales, au plus quinze chiffres entiers. Partagée par
+/// [`parse_complement_amount`] et par le CHF complété d'une ligne en devise
+/// (Story 37-3b, AC-1 : « mêmes bornes de forme sur le CHF résultant »).
+fn check_complement_bounds(value: Decimal) -> Result<(), AppError> {
     // Borne de `DECIMAL(19,4)` : quinze chiffres entiers. Au-delà, l'insertion
     // échouerait — et la somme des lignes pourrait dépasser la capacité de
     // `Decimal` avant même d'y arriver (revue de code P1, B-F3).
     let max = Decimal::from_str("999999999999999.9999").expect("borne constante");
     if value.is_sign_negative() || value.normalize().scale() > 4 || value > max {
-        return Err(invalid());
+        return Err(invalid_amount());
     }
-    Ok(value)
+    Ok(())
+}
+
+/// Lit une ligne **en devise** du complément (Story 37-3b, AC-1), sans lecture
+/// de la base : la fonction d'analyse partagée de `POST /journal-entries`
+/// (cours déduit du CHF, CHF posé selon `side` ; une colonne vide vaut
+/// absente), puis le contrôle FX pur de `kesh-core` (bornes, signe, arrondi
+/// nul, égalité au CHF) — **avant** la règle « exactement une colonne non
+/// nulle », pour qu'un CHF arrondi à 0 rende `FX_LINE_ROUNDS_TO_ZERO` et non le
+/// refus de montant générique. `rank` : rang 1-based dans `req.lines`.
+fn parse_complement_foreign_line(
+    rank: usize,
+    line: &OpeningComplementLineRequest,
+    foreign: &ForeignLineRequest,
+) -> Result<(Decimal, Decimal, ForeignAmount), AppError> {
+    let present = |s: Option<&String>| s.map(|v| v.trim().to_string()).filter(|v| !v.is_empty());
+    let (debit_raw, credit_raw) = (present(line.debit.as_ref()), present(line.credit.as_ref()));
+    let (debit, credit, parsed) = parse_line_amounts(
+        rank,
+        debit_raw.as_deref(),
+        credit_raw.as_deref(),
+        Some(foreign),
+    )?;
+    let parsed = parsed.ok_or_else(|| {
+        AppError::Internal("analyse d'une ligne en devise sans partie en devise".into())
+    })?;
+    check_foreign_line(&debit, &credit, &parsed)
+        .map_err(|e| map_core_error(fx_line_error(rank, e)))?;
+    check_complement_bounds(debit)?;
+    check_complement_bounds(credit)?;
+    Ok((debit, credit, parsed))
 }
 
 /// Contrôles de forme du complément, **sans lecture de la base** (AC 4) :
@@ -554,9 +622,18 @@ fn parse_complement_lines(req: &OpeningComplementRequest) -> Result<Vec<Compleme
     }
     let mut lines = Vec::with_capacity(req.lines.len());
     let mut seen = std::collections::HashSet::new();
-    for line in &req.lines {
-        let debit = parse_complement_amount(line.debit.as_deref())?;
-        let credit = parse_complement_amount(line.credit.as_deref())?;
+    for (idx, line) in req.lines.iter().enumerate() {
+        let (debit, credit, foreign) = match line.foreign.as_ref() {
+            Some(f) => {
+                let (d, c, fa) = parse_complement_foreign_line(idx + 1, line, f)?;
+                (d, c, Some(fa))
+            }
+            None => (
+                parse_complement_amount(line.debit.as_deref())?,
+                parse_complement_amount(line.credit.as_deref())?,
+                None,
+            ),
+        };
         // Exactement une colonne non nulle.
         if (debit > Decimal::ZERO) == (credit > Decimal::ZERO) {
             return Err(invalid_amount());
@@ -572,6 +649,7 @@ fn parse_complement_lines(req: &OpeningComplementRequest) -> Result<Vec<Compleme
             account_id: line.account_id,
             debit,
             credit,
+            foreign,
         });
     }
     // La contrepartie (Σ débit − Σ crédit) doit tenir elle aussi dans
@@ -645,6 +723,7 @@ mod tests {
             account_id,
             debit: debit.map(Into::into),
             credit: credit.map(Into::into),
+            foreign: None,
         }
     }
 

@@ -15,6 +15,7 @@
 	import { i18nMsg } from '$lib/shared/utils/i18n.svelte';
 	import { pdfErrorMessage } from '$lib/shared/utils/pdf-error';
 	import { fetchAccounts } from '$lib/features/accounts/accounts.api';
+	// fx-filtre-comptes : exempté — les comptes n'y servent qu'aux libellés des lignes.
 	import type { AccountResponse } from '$lib/features/accounts/accounts.types';
 	import { creditNoteRevenueAccountLabel } from '$lib/features/accounts/account-label';
 	import { formatSwissDate } from '$lib/features/reports/reports.api';

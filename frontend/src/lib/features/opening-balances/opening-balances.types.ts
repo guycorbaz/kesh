@@ -6,11 +6,19 @@
  * (`OD` + `startDate` du premier exercice, D5).
  */
 
+import type { ForeignLineRequest } from '$lib/features/journal-entries/journal-entries.types';
+
 /** Ligne de soldes de départ envoyée au POST. */
 export interface OpeningBalanceLineRequest {
 	accountId: number;
+	/** Montant en devise principale (CHF) ; pour une ligne en devise, le CHF. */
 	debit: string;
 	credit: string;
+	/**
+	 * Story 37-3b (AC-1) — partie en devise d'un compte en devise ; l'écran
+	 * envoie toujours la devise, le cours, `rateSource: "manual"` et le CHF.
+	 */
+	foreign?: ForeignLineRequest;
 }
 
 /** Body de `POST /api/v1/opening-balances`. */
@@ -52,6 +60,8 @@ export interface CompletableAccount {
 	number: string;
 	name: string;
 	accountType: 'Asset' | 'Liability';
+	/** Story 37-3b (AC-1) — devise du compte ; **absente** pour un compte CHF. */
+	currency?: string;
 }
 
 /** Compte de report (rôle `RetainedEarnings`). */
@@ -85,6 +95,8 @@ export interface OpeningComplementLineRequest {
 	accountId: number;
 	debit: string;
 	credit: string;
+	/** Story 37-3b (AC-1) — partie en devise, comme à la génération. */
+	foreign?: ForeignLineRequest;
 }
 
 /** Body de `POST /api/v1/opening-balances/complete` — sans la contrepartie. */

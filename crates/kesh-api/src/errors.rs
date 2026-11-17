@@ -576,6 +576,42 @@ pub enum AppError {
         date: chrono::NaiveDate,
     },
 
+    /// Story 37-3b (AC-2 bis) — le compte de conversion ne revient pas à zéro
+    /// entre les deux écritures d'une conversion : HTTP 400
+    /// `FX_CONVERSION_TRANSIT_UNBALANCED`, `details: { entry1, entry2 }` (solde
+    /// net, débit − crédit, du compte de conversion dans chaque écriture).
+    #[error("Compte de conversion déséquilibré ({entry1} / {entry2})")]
+    FxConversionTransitUnbalanced {
+        /// Solde net dans l'écriture 1 du corps.
+        entry1: String,
+        /// Solde net dans l'écriture 2 du corps.
+        entry2: String,
+    },
+
+    /// Story 37-3b (AC-2 bis) — refus de forme d'une conversion qui vise une
+    /// ligne : HTTP 400 `VALIDATION_ERROR`, comme [`AppError::Validation`],
+    /// avec `details: { line }` quand une ligne est visée.
+    #[error("Requête invalide : {message}")]
+    ValidationAtLine {
+        /// Message traduit.
+        message: String,
+        /// Rang 1-based de la ligne dans le corps de l'écriture.
+        line: Option<usize>,
+    },
+
+    /// Story 37-3b (AC-2 bis) — un refus qui vise l'une des deux écritures
+    /// d'une conversion (`entry`, 1 ou 2, rang dans le corps). La réponse est
+    /// celle de `error`, à laquelle le handler de la route ajoute
+    /// `details.entry` (`routes::journal_entries::conversion_refusal`, qui lit
+    /// le corps produit) ; rendue seule, elle est celle de `error`, inchangée.
+    #[error("Écriture {entry} de la conversion : {error}")]
+    ConversionEntry {
+        /// Rang de l'écriture visée dans le corps.
+        entry: usize,
+        /// Le refus de cette écriture.
+        error: Box<AppError>,
+    },
+
     /// Story 17-4b — échec d'envoi d'un email transactionnel via SMTP
     /// (connexion SMTP, auth, build du message, panne réseau). HTTP 500, i18n
     /// key `error-smtp-send-failed`. Détail loggé `tracing::error!`, jamais
@@ -1608,6 +1644,61 @@ fn line_message(key: &str, line: usize, suite: &str) -> String {
     t_args(key, &format!("Ligne {line} : {suite}"), &args)
 }
 
+/// Message traduit d'un refus de forme d'une conversion entre devises (Story
+/// 37-3b, AC-2 bis), rendu en `VALIDATION_ERROR` avec `details.line`.
+pub(crate) fn conversion_validation_message(
+    reason: &kesh_db::repositories::journal_entry_conversions::ConversionValidation,
+) -> String {
+    use kesh_db::repositories::journal_entry_conversions::ConversionValidation as V;
+    match reason {
+        V::DifferenceLineAndComplete => t(
+            "error-conversion-difference-line-and-complete",
+            "L’écriture porte déjà une ligne de différence de change : retirez-la, ou ne demandez pas au serveur de la calculer (completeDifference).",
+        ),
+        V::FeeOnCredit { currency } => {
+            let mut args = FluentArgs::new();
+            args.set("currency", currency.clone());
+            t_args(
+                "error-conversion-fee-on-credit",
+                &format!(
+                    "Un frais de conversion se passe au débit d’un compte de charge de la devise {currency}."
+                ),
+                &args,
+            )
+        }
+        V::DifferenceLineWithoutPair => t(
+            "error-conversion-difference-without-pair",
+            "La ligne de différence de change exige un seul compte en devise dans l’écriture (hors comptes de charge) : ses comptes de différence en dépendent.",
+        ),
+        V::DifferenceLineOffPair { account_number } => {
+            let mut args = FluentArgs::new();
+            args.set("account", account_number.clone());
+            t_args(
+                "error-conversion-difference-off-pair",
+                &format!(
+                    "La différence de change va sur les comptes du compte en devise {account_number} : le compte de gains au crédit, ou le compte de pertes au débit."
+                ),
+                &args,
+            )
+        }
+        V::SameCurrency { currency } => {
+            let mut args = FluentArgs::new();
+            args.set("currency", currency.clone());
+            t_args(
+                "error-conversion-same-currency",
+                &format!(
+                    "Les deux écritures sont dans la même devise ({currency}) : ce n’est pas une conversion, passez deux écritures ordinaires."
+                ),
+                &args,
+            )
+        }
+        V::TooManyLines => t(
+            "error-conversion-too-many-lines",
+            "Trop de lignes dans l’écriture : la ligne de différence de change ne peut pas s’y ajouter.",
+        ),
+    }
+}
+
 /// Une `Response` JSON structurée **avec** `details` :
 /// `{ "error": { code, message, details } }` (Story 37-1, refus de la devise
 /// d'un compte).
@@ -2169,6 +2260,35 @@ impl IntoResponse for AppError {
             AppError::Validation(msg) => {
                 build_response(StatusCode::BAD_REQUEST, "VALIDATION_ERROR", &msg)
             }
+
+            // Story 37-3b (AC-2 bis) — conversion entre devises.
+            AppError::ValidationAtLine { message, line } => coded_response(
+                StatusCode::BAD_REQUEST,
+                "VALIDATION_ERROR",
+                message,
+                match line {
+                    Some(line) => serde_json::json!({ "line": line }),
+                    None => serde_json::json!({}),
+                },
+            ),
+            AppError::FxConversionTransitUnbalanced { entry1, entry2 } => {
+                let mut args = FluentArgs::new();
+                args.set("entry1", entry1.clone());
+                args.set("entry2", entry2.clone());
+                coded_response(
+                    StatusCode::BAD_REQUEST,
+                    "FX_CONVERSION_TRANSIT_UNBALANCED",
+                    t_args(
+                        "error-fx-conversion-transit-unbalanced",
+                        &format!(
+                            "Le compte de conversion ne revient pas à zéro : il doit être débité dans une écriture et crédité du même montant dans l’autre (soldes : {entry1} et {entry2})."
+                        ),
+                        &args,
+                    ),
+                    serde_json::json!({ "entry1": entry1, "entry2": entry2 }),
+                )
+            }
+            AppError::ConversionEntry { error, .. } => error.into_response(),
 
             // Story 16-2a (#144) — D10. Le sujet désigne **l'article**, jamais
             // le réglage société : réutiliser le formateur de 16-1a ferait lire,

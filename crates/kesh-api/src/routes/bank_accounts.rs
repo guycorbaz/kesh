@@ -791,6 +791,9 @@ fn opening_line(journal_account_id: i64, opening: OpeningAmount) -> ComplementLi
         account_id: journal_account_id,
         debit,
         credit,
+        // Story 37-3b (AC-1) : jamais de devise ici — un compte lié à un
+        // compte bancaire ne peut porter de devise (37-1).
+        foreign: None,
     }
 }
 

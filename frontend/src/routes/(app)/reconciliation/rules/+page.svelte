@@ -6,6 +6,8 @@
 	import { onMount } from 'svelte';
 	import { i18nMsg } from '$lib/shared/utils/i18n.svelte';
 	import { fetchAccounts } from '$lib/features/accounts/accounts.api';
+	// fx-filtre-comptes : exempté — passe les comptes à `RuleFormModal`, qui filtre à
+	// son entrée, et à `RulesList` (libellés).
 	import type { AccountResponse } from '$lib/features/accounts/accounts.types';
 	import RulesList from '$lib/features/reconciliation/rules/RulesList.svelte';
 	import RuleFormModal from '$lib/features/reconciliation/rules/RuleFormModal.svelte';

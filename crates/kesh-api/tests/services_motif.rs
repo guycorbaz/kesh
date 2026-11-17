@@ -2432,10 +2432,13 @@ const SITES_NON_RESOLUS: &[SiteNonResolu] = &[
         &[],
     ),
     (
+        // Story 37-3b (AC-2 bis) : + `create_conversion` (handler, pool) et
+        // `conversion_refusal` (aide privée, réécrit la réponse d'un refus) — 8 / 9.
         "routes/journal_entries.rs",
-        7,
-        7,
+        8,
+        9,
         &[
+            "create_conversion",
             "create_journal_entry",
             "delete_journal_entry",
             "reverse_journal_entry",
