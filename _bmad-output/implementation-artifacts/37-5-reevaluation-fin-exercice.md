@@ -1219,6 +1219,15 @@ restauré, aucun appel sortant) n'a pas de test propre ; la table `exchange_rate
   +2, `RevaluationPanel.test.ts` +3 (un test existant complété). Mutations : sans le blocker `RATE_UNAVAILABLE`, le
   test e2e rougit (`left: 0, right: 1`) ; sans les gardes de l'écran (champ, relecture, relecture de l'avis), trois
   Vitest rougissent. Gates : voir *Tests ajoutés et gates*, entrée P1. Boucle à poursuivre (MEDIUM rendus).
+- 2026-11-17 — échappement commun des cellules texte des CSV de rapports (décision de Beat, ajoutée à la phase 2
+  de la revue de code P1) : la fonction d'échappement des cellules CSV quitte `kesh-api` (`util`) pour
+  `kesh_core::csv::csv_sanitize`, comportement identique, ses tests avec elle ; `kesh-api` la réexporte (sites
+  d'appel inchangés), `kesh-report` l'applique à chaque cellule texte de ses CSV (libellés d'écriture, numéros et
+  noms de compte, contreparties, nom d'exercice, noms de contact et de projet) — jamais aux montants. Tests : deux
+  tests de `kesh-report` (journal ; bilan, balance et grand livre : `=`, `+`, `-`, `@`, tabulation et retour chariot
+  en tête, montants négatifs restés des nombres) ; l'assertion d'un nom de compte à saut de ligne passe de la cellule
+  sur deux lignes à une espace. Mutation : sans l'échappement dans `kesh-report`, les deux tests rougissent. Gate
+  complet : l'entrée « Revue de code P1 » de *Tests ajoutés et gates* (5872 passés).
 
 ## Dev Agent Record
 

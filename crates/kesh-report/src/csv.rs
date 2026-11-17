@@ -13,6 +13,7 @@
 
 use std::io::Write;
 
+use kesh_core::csv::csv_sanitize;
 use rust_decimal::Decimal;
 
 use crate::aged_receivables::AgedReceivables;
@@ -27,6 +28,14 @@ use crate::vat_report::VatReport;
 
 /// Octets UTF-8 du BOM (`\u{FEFF}`).
 const UTF8_BOM: &[u8] = &[0xEF, 0xBB, 0xBF];
+
+/// Une cellule **texte** passée par l'échappement commun des CSV
+/// ([`kesh_core::csv::csv_sanitize`], Story 37-5) : libellés d'écriture, noms
+/// et numéros de compte, noms de contact et de projet, nom d'exercice. Jamais
+/// un montant : `-12.50` doit rester un nombre pour le tableur.
+fn txt(s: &str) -> String {
+    csv_sanitize(s.to_owned())
+}
 
 /// Helper interne — construit un `csv::Writer` configuré (séparateur `;`, terminator CRLF).
 fn make_writer<W: Write>(writer: W) -> csv::Writer<W> {
@@ -99,8 +108,8 @@ fn write_account_balance<W: Write>(
         wtr,
         &[
             section,
-            &ab.account_number,
-            &ab.account_name,
+            &txt(&ab.account_number),
+            &txt(&ab.account_name),
             &format_amount_iso(ab.balance),
         ],
         balance_row_extra(Some(ab), fx),
@@ -398,8 +407,8 @@ pub fn render_trial_balance_csv<W: Write>(
         write_fx_record(
             &mut wtr,
             &[
-                &row.account_number,
-                &row.account_name,
+                &txt(&row.account_number),
+                &txt(&row.account_name),
                 &format_amount_iso(row.opening_balance),
                 &format_amount_iso(row.total_debit),
                 &format_amount_iso(row.total_credit),
@@ -479,9 +488,9 @@ pub fn render_journal_report_csv<W: Write>(
                     section.journal.as_str(),
                     &entry.entry_date.format("%Y-%m-%d").to_string(),
                     &entry.entry_number.to_string(),
-                    &entry.description,
-                    &line.account_number,
-                    &line.account_name,
+                    &txt(&entry.description),
+                    &txt(&line.account_number),
+                    &txt(&line.account_name),
                     &format_amount_iso(line.debit),
                     &format_amount_iso(line.credit),
                 ])
@@ -631,7 +640,7 @@ pub fn render_aged_receivables_csv<W: Write>(
 
     for row in &report.rows {
         wtr.write_record([
-            &row.contact_name,
+            &txt(&row.contact_name),
             &format_amount_iso(row.buckets.not_due),
             &format_amount_iso(row.buckets.days_1_to_30),
             &format_amount_iso(row.buckets.days_31_to_60),
@@ -679,20 +688,26 @@ pub fn render_project_expenses_csv<W: Write>(
     ])
     .map_err(map_csv_err)?;
 
-    let root_label = format!("{} — {}", report.project.code, report.project.name);
+    let root_label = txt(&format!(
+        "{} — {}",
+        report.project.code, report.project.name
+    ));
 
     for section in &report.sections {
         let sub_label = if section.is_root {
             String::new()
         } else {
-            format!("{} — {}", section.project.code, section.project.name)
+            txt(&format!(
+                "{} — {}",
+                section.project.code, section.project.name
+            ))
         };
         for row in &section.rows {
             wtr.write_record([
                 &root_label,
                 &sub_label,
-                &row.account_number,
-                &row.account_name,
+                &txt(&row.account_number),
+                &txt(&row.account_name),
                 &format_amount_iso(row.amount),
             ])
             .map_err(map_csv_err)?;
@@ -749,12 +764,18 @@ pub fn render_project_return_csv<W: Write>(
     ])
     .map_err(map_csv_err)?;
 
-    let root_label = format!("{} — {}", report.project.code, report.project.name);
+    let root_label = txt(&format!(
+        "{} — {}",
+        report.project.code, report.project.name
+    ));
     for section in &report.sections {
         let sub_label = if section.is_root {
             String::new()
         } else {
-            format!("{} — {}", section.project.code, section.project.name)
+            txt(&format!(
+                "{} — {}",
+                section.project.code, section.project.name
+            ))
         };
         wtr.write_record([
             &root_label,
@@ -858,8 +879,8 @@ pub fn render_general_ledger_csv<W: Write>(
         write_fx_record(
             &mut wtr,
             &[
-                &section.account_number,
-                &section.account_name,
+                &txt(&section.account_number),
+                &txt(&section.account_name),
                 &ledger.period.from.format("%Y-%m-%d").to_string(),
                 "",
                 "",
@@ -887,8 +908,8 @@ pub fn render_general_ledger_csv<W: Write>(
             write_fx_record(
                 wtr,
                 &[
-                    &section.account_number,
-                    &section.account_name,
+                    &txt(&section.account_number),
+                    &txt(&section.account_name),
                     &brk.date.format("%Y-%m-%d").to_string(),
                     "",
                     "",
@@ -935,14 +956,14 @@ pub fn render_general_ledger_csv<W: Write>(
             write_fx_record(
                 &mut wtr,
                 &[
-                    &section.account_number,
-                    &section.account_name,
+                    &txt(&section.account_number),
+                    &txt(&section.account_name),
                     &line.entry_date.format("%Y-%m-%d").to_string(),
                     &line.entry_number.to_string(),
-                    &line.fiscal_year_name,
+                    &txt(&line.fiscal_year_name),
                     &line.journal,
-                    &line.description,
-                    &line.counterpart.join(" "),
+                    &txt(&line.description),
+                    &txt(&line.counterpart.join(" ")),
                     &format_amount_iso(line.debit),
                     &format_amount_iso(line.credit),
                     &format_amount_iso(line.running_balance),
@@ -964,8 +985,8 @@ pub fn render_general_ledger_csv<W: Write>(
         write_fx_record(
             &mut wtr,
             &[
-                &section.account_number,
-                &section.account_name,
+                &txt(&section.account_number),
+                &txt(&section.account_name),
                 "",
                 "",
                 "",
@@ -988,8 +1009,8 @@ pub fn render_general_ledger_csv<W: Write>(
         write_fx_record(
             &mut wtr,
             &[
-                &section.account_number,
-                &section.account_name,
+                &txt(&section.account_number),
+                &txt(&section.account_name),
                 &ledger.period.to.format("%Y-%m-%d").to_string(),
                 "",
                 "",
@@ -1203,10 +1224,12 @@ mod tests {
             body.contains(r#""Nom avec ""guillemets""""#),
             "name containing `\"` must double-escape, body:\n{body}"
         );
-        // (c) \n → quoté
+        // (c) \n → une espace : l'échappement commun des cellules texte
+        // (`kesh_core::csv::csv_sanitize`, Story 37-5) remplace CR, LF et TAB,
+        // comme dans les autres exports CSV du produit.
         assert!(
-            body.contains("\"Ligne 1\nLigne 2\""),
-            "name containing newline must be quoted, body:\n{body}"
+            body.contains(";Ligne 1 Ligne 2;"),
+            "name containing newline must come out on one line, body:\n{body}"
         );
     }
 
@@ -1766,5 +1789,150 @@ mod tests {
         // mais un solde → pas le seul en-tête.
         let csv = csv_of(&vat_report(false, true));
         assert!(csv.contains("Total TVA des soldes;;1.62"), "{csv}");
+    }
+
+    // ------------------------------------------------------------------
+    // Story 37-5 — échappement commun des cellules texte
+    // ------------------------------------------------------------------
+
+    /// Les cellules texte du journal (libellé, numéro et nom de compte)
+    /// sortent échappées ; les montants, même négatifs, restent des nombres.
+    #[test]
+    fn journal_csv_echappe_les_cellules_texte_pas_les_montants() {
+        let ligne = |id: i64, num: &str, nom: &str, debit, credit| JournalEntryLineRow {
+            account_id: id,
+            account_number: num.into(),
+            account_name: nom.into(),
+            debit,
+            credit,
+            line_order: 0,
+            currency: None,
+            amount_currency: None,
+            exchange_rate: None,
+            rate_source: None,
+        };
+        let jr = JournalReport {
+            period: period(),
+            journals: vec![JournalSection {
+                journal: Journal::OD,
+                entries: vec![JournalEntryRow {
+                    entry_id: 1,
+                    entry_number: 7,
+                    entry_date: NaiveDate::from_ymd_opt(2026, 5, 15).unwrap(),
+                    description: "=HYPERLINK(\"x\")".into(),
+                    lines: vec![
+                        ligne(1, "1000", "+Caisse", dec!(-12.50), Decimal::ZERO),
+                        ligne(2, "2000", "@Fournisseur", Decimal::ZERO, dec!(-12.50)),
+                        ligne(3, "3000", "\tTab", Decimal::ZERO, Decimal::ZERO),
+                        ligne(4, "4000", "\rRetour", Decimal::ZERO, Decimal::ZERO),
+                        ligne(5, "5000", "-Moins", Decimal::ZERO, Decimal::ZERO),
+                    ],
+                }],
+                section_total_debit: dec!(-12.50),
+                section_total_credit: dec!(-12.50),
+            }],
+            grand_total_debit: dec!(-12.50),
+            grand_total_credit: dec!(-12.50),
+        };
+        let mut buf = Vec::new();
+        render_journal_report_csv(&jr, &mut buf).unwrap();
+        let body = String::from_utf8(buf[3..].to_vec()).unwrap();
+        let lignes: Vec<Vec<&str>> = body
+            .split("\r\n")
+            .filter(|l| !l.is_empty())
+            .skip(1)
+            .map(|l| l.split(';').collect())
+            .collect();
+        assert_eq!(lignes.len(), 5, "{body}");
+        assert_eq!(lignes[0][3], "\"'=HYPERLINK(\"\"x\"\")\"", "{body}");
+        assert_eq!(lignes[0][5], "'+Caisse");
+        assert_eq!(lignes[1][5], "'@Fournisseur");
+        assert_eq!(lignes[2][5], " Tab", "la tabulation de tête tombe");
+        assert_eq!(lignes[3][5], " Retour", "le retour chariot de tête tombe");
+        assert_eq!(lignes[4][5], "'-Moins");
+        // Montants négatifs : des nombres, sans apostrophe.
+        assert_eq!(lignes[0][6], "-12.50");
+        assert_eq!(lignes[1][7], "-12.50");
+    }
+
+    /// Bilan, balance et grand livre : noms de compte, libellé, exercice et
+    /// contrepartie échappés ; soldes négatifs intacts.
+    #[test]
+    fn bilan_balance_et_grand_livre_echappent_les_cellules_texte() {
+        let bs = BalanceSheet {
+            period: period(),
+            assets: vec![AccountBalance {
+                account_id: 1,
+                account_number: "1000".into(),
+                account_name: "=Caisse".into(),
+                account_type: AccountType::Asset,
+                active: true,
+                balance: dec!(-5.00),
+                role: None,
+                currency: None,
+                balance_currency: None,
+            }],
+            liabilities: vec![],
+            equity: vec![],
+            total_assets: dec!(-5.00),
+            total_liabilities: Decimal::ZERO,
+            total_equity: Decimal::ZERO,
+            retained_earnings: Decimal::ZERO,
+            equity_result: dec!(-5.00),
+            equation_holds: true,
+        };
+        let mut buf = Vec::new();
+        render_balance_sheet_csv(&bs, &mut buf).unwrap();
+        let body = String::from_utf8(buf[3..].to_vec()).unwrap();
+        assert!(body.contains(";1000;'=Caisse;-5.00"), "{body}");
+
+        let tb = TrialBalance {
+            period: period(),
+            rows: vec![TrialBalanceRow {
+                account_id: 1,
+                account_number: "1000".into(),
+                account_name: "-Caisse".into(),
+                account_type: AccountType::Asset,
+                active: true,
+                opening_balance: dec!(-10),
+                total_debit: dec!(0),
+                total_credit: dec!(0),
+                balance: dec!(0),
+                closing_balance: dec!(-10),
+                currency: None,
+                opening_currency: None,
+                total_debit_currency: None,
+                total_credit_currency: None,
+                balance_currency: None,
+                closing_currency: None,
+            }],
+            total_debit: dec!(0),
+            total_credit: dec!(0),
+            balanced: true,
+            retained_earnings: Decimal::ZERO,
+            opening_balanced: true,
+        };
+        let mut buf = Vec::new();
+        render_trial_balance_csv(&tb, &mut buf).unwrap();
+        let body = String::from_utf8(buf[3..].to_vec()).unwrap();
+        assert!(
+            body.contains("1000;'-Caisse;-10.00;0.00;0.00;-10.00"),
+            "{body}"
+        );
+
+        let mut gl = ledger_fixture();
+        gl.sections[0].account_name = "+Banque".into();
+        gl.sections[0].lines[0].description = "@Loyer".into();
+        gl.sections[0].lines[0].fiscal_year_name = "-2026".into();
+        gl.sections[0].lines[0].counterpart = vec!["=6000".into()];
+        gl.sections[0].lines[0].running_balance = dec!(-1.00);
+        let mut buf = Vec::new();
+        render_general_ledger_csv(&gl, &mut buf).unwrap();
+        let out = String::from_utf8(buf).unwrap().replace('\u{feff}', "");
+        let l: Vec<&str> = out.lines().collect();
+        assert!(l[2].starts_with("1020;'+Banque;"), "{}", l[2]);
+        assert!(l[2].contains(";'-2026;"), "{}", l[2]);
+        assert!(l[2].contains(";'@Loyer;'=6000;"), "{}", l[2]);
+        assert!(l[2].ends_with(";-1.00"), "{}", l[2]);
     }
 }
