@@ -1,6 +1,12 @@
 # Story 43-1 : un règlement pour plusieurs factures — le modèle, la migration et le dépôt (#823)
 
-Status: ready-for-dev
+Status: split
+
+> **2026-11-17 au soir — découpée** (validation P1 `kesh-gate-logs/e43/validation-43-1-p1.md`, H3 ; décisions de Guy du
+> même jour) en **43-1a** (`43-1a-reglement-groupe-modele-client.md`), **43-1b** (`43-1b-reglement-groupe-fournisseur.md`)
+> et **43-6** (`43-6-raccord-reimputation.md`, ex-T-R). Cette fiche reste lisible ; en cas d'écart, les fiches nées du
+> découpage et le fichier d'épique révisé (C-43-1 à C-43-20) font foi. Les findings H1, H2, M1 à M7 et L1 à L8 y sont
+> appliqués.
 
 *Fiche rédigée le 2026-11-17 par l'agent de rédaction de l'Epic 43 (Opus 5.5), worktree `kesh-43`, branche
 `story/43-transaction-plusieurs-factures` partie de `epic/43-transaction-plusieurs-factures` (= `main` = v0.18.0,
