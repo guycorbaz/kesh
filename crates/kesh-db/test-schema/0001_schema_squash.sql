@@ -358,7 +358,7 @@ CREATE TABLE `company_invoice_settings` (
   `default_bank_fees_account_id` bigint(20) DEFAULT NULL,
   `default_bad_debt_account_id` bigint(20) DEFAULT NULL,
   `supplier_internal_number_format` varchar(64) NOT NULL DEFAULT 'FF-{YEAR}-{SEQ:03}',
-  `group_settlement_max_difference` decimal(19,4) NOT NULL DEFAULT 5.0000 COMMENT 'Plafond des frais bancaires admis dans un règlement groupé (0 à 100)',
+  `group_settlement_max_difference` decimal(19,4) NOT NULL DEFAULT 5.0000 COMMENT 'Plafond de l''écart admis dans un règlement groupé (0 à 100)',
   PRIMARY KEY (`company_id`),
   KEY `fk_cis_receivable` (`default_receivable_account_id`),
   KEY `fk_cis_revenue` (`default_revenue_account_id`),

@@ -2283,11 +2283,17 @@ const DOCUMENT_OWNERS_BATCH: usize = 500;
 ///   vecteur vide ; une écriture d'une autre société, ou inexistante, l'est
 ///   aussi.
 /// - **Au plus un propriétaire par type et par écriture : le plus petit
-///   `id`.** Sur des données saines (une pièce par type — invariant
-///   applicatif, non une contrainte : seul `invoice_settlements.journal_entry_id`
-///   est `UNIQUE`), c'est la seule ; sur des données qui le violent, le choix
-///   est déterministe, et `id` et `number` sortent **de la même ligne**
-///   (table dérivée `GROUP BY` + `MIN(id)` jointe en retour sur `id`).
+///   `id`.** Hors règlement groupé, une pièce par type (invariant applicatif,
+///   non une contrainte) ; sur des données qui le violent, le choix est
+///   déterministe, et `id` et `number` sortent **de la même ligne** (table
+///   dérivée `GROUP BY` + `MIN(id)` jointe en retour sur `id`). ⚠️ Depuis la
+///   Story 43-1a (#823), une écriture de **règlement groupé** porte plusieurs
+///   règlements clients (unicité `(journal_entry_id, invoice_id)`) ou paie
+///   plusieurs factures fournisseur : le motif `OwnedBySettlement` (ou
+///   `OwnedBySupplierInvoice`) nomme alors **le plus petit** d'entre eux. Le
+///   gel est juste — l'écriture est possédée —, le message ne nomme qu'une
+///   pièce (limite assumée de la fiche) ; le groupe se défait par le
+///   dé-rapprochement de sa transaction.
 /// - **Forme** : une instruction par tranche de 500 écritures, `UNION ALL` de
 ///   cinq blocs bornés par la liste et par `je.company_id`. Le bloc
 ///   fournisseur lit ses **deux** colonnes par un `UNION ALL` dans sa dérivée

@@ -2537,6 +2537,24 @@ La session ouverte doit être \textbf{rouverte} --- reconnexion, ou au plus la d
 
 \textbf{Limite} : les données de démonstration laissées par une réinitialisation antérieure (taux de TVA, réglages de facturation, contacts, articles, factures, avoirs) qui désignent la société effacée restent en base, invisibles et inertes (\#546).
 
+\subsubsection{Passer à la 0.19.0}\label{sec:maj-0-19-0}
+% Story 43-1a (#823, AC13) : section ouverte par la story pour sa migration ; le
+% paragraphe « Ce qu'il faut savoir » des autres stories de la 0.19.0 s'écrit à
+% l'intégration de la release.
+\sloppy
+
+\textbf{Prenez avant la mise à jour une sauvegarde manuelle complète} --- la base, un \keshcommand{.keshbackup} et le dossier des documents. \textbf{Le retour à la 0.18.0 passe uniquement par la sauvegarde d'avant la mise à jour.}
+
+La 0.19.0 se pose sur la 0.18.0 : elle n'exige ni nouveau compose ni nouvelle variable de \keshpath{.env} ; on tire l'image et on redémarre (\S\ref{sec:mise-a-jour}). Depuis une version antérieure à la 0.18.0, appliquez d'abord les sections suivantes (\S\ref{sec:maj-0-18-0}).
+
+\paragraph{Une migration.} La 0.19.0 porte \textbf{une migration}, \texttt{20261118000001\_grouped\allowbreak\_settlements}, celle du règlement de plusieurs factures par une seule transaction : chaque règlement de facture client et chaque facture fournisseur peuvent désormais désigner la ligne de l'écriture qui les règle, et les paramètres de facturation reçoivent le plafond de l'écart d'un règlement groupé (5.00 par défaut). Elle n'ajoute aucune table et ne modifie aucune ligne : les règlements existants n'ont pas de ligne désignée et restent lus comme avant. Elle \textbf{ne relève pas} \texttt{kesh\_version\_min\_required}, qui reste à \texttt{0.17.6}. Au démarrage, avant de migrer, Kesh écrit une sauvegarde complète dans \keshpath{backup/pre-upgrade/}, sous un nom qui finit par \keshcommand{-0.18.0-to-0.19.0.keshbackup}, et refuse de migrer si elle échoue (\S\ref{sec:sauvegarde-avant-maj}). Pour migrer quand même, en connaissance de cause, posez \keshcommand{KESH\_SKIP\_PRE\_UPGRADE\_BACKUP=0.19.0} dans le \keshpath{.env} et retirez-la après la mise à jour. Cette sauvegarde ne dispense pas de la vôtre : elle est sur le même disque que Kesh.
+
+\paragraph{Le retour à la 0.18.0.} La 0.18.0 \textbf{ne démarre plus} sur la base migrée --- le journal porte « \emph{migration 20261118000001 was previously applied but is missing in the resolved migrations} » --- et elle \textbf{refuse} toute sauvegarde prise en 0.19.0, dont elle ne connaît pas les colonnes neuves (\texttt{IMPORT\_SCHEMA\_MISMATCH}). Le retour se fait donc sur une base neuve, par la sauvegarde d'avant la mise à jour --- celle de \keshpath{backup/pre-upgrade/}, ou la vôtre --- que la 0.18.0 importe : vidage de sécurité de la base actuelle, puis installation 0.18.0 neuve (\texttt{image: gcorbaz/kesh:0.18.0}) sur une base vide, et import du fichier depuis l'assistant, lien \emph{Restaurer une sauvegarde}, comme au \S\ref{sec:revenir-version-precedente}. \textbf{Tout ce qui a été saisi depuis la mise à jour est perdu.} Une sauvegarde de la 0.18.0 s'importe, elle, dans la 0.19.0 : ses règlements n'ont pas de ligne désignée, et le plafond de l'écart y prend sa valeur par défaut, 5.00, quel que soit le réglage de l'installation qui l'importe.
+
+\paragraph{Si la migration échoue au milieu.} Une migration MariaDB n'est pas transactionnelle : si Kesh s'arrête pendant la migration (coupure, disque plein), une partie des modifications du schéma peut être posée sans que la migration soit inscrite, et Kesh ne redémarre plus (erreur \texttt{1060}, colonne déjà présente, au nouvel essai). \textbf{Ne reprenez pas le schéma à la main} : sur une base vide, installez la 0.19.0 et importez-y la sauvegarde de \keshpath{backup/pre-upgrade/} depuis l'assistant, lien \emph{Restaurer une sauvegarde} --- une sauvegarde 0.18.0 s'importe dans la 0.19.0 ---, ou revenez à la 0.18.0 comme ci-dessus.
+
+\fussy
+
 \subsubsection{Passer à la 0.18.0}\label{sec:maj-0-18-0}
 % Story 36-9 (#1044, C-36-9-5) : section ouverte par la story pour son seul
 % paragraphe « Pour les intégrations » ; l'introduction (sauvegarde, aucune

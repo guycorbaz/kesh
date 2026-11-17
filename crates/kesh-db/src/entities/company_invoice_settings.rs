@@ -64,8 +64,9 @@ pub struct CompanyInvoiceSettings {
     pub default_discount_account_id: Option<i64>,
     pub default_bank_fees_account_id: Option<i64>,
     pub default_bad_debt_account_id: Option<i64>,
-    /// Plafond des **frais bancaires** admis dans un règlement groupé (Story
-    /// 43-1a, C-43-24, #823) : `|e| ≤` ce montant, au-delà le geste est refusé.
+    /// Plafond de l'**écart** (moins-payé ou trop-perçu, au compte choisi)
+    /// admis dans un règlement groupé (Story 43-1a, C-43-24, #823) : `|e| ≤` ce
+    /// montant, au-delà le geste est refusé.
     /// Entre 0 et 100 (`chk_company_invoice_settings_group_max`), 5.00 par
     /// défaut. Lu **au moment du geste** par
     /// [`crate::repositories::company_invoice_settings::group_settlement_max_difference`] ;

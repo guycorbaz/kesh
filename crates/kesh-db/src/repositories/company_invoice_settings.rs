@@ -48,7 +48,7 @@ const COLUMNS: &str = "company_id, invoice_number_format, default_receivable_acc
     default_discount_account_id, default_bank_fees_account_id, default_bad_debt_account_id, \
     group_settlement_max_difference, version, created_at, updated_at";
 
-/// Le plafond par défaut des frais bancaires d'un règlement groupé (Story 43-1a,
+/// Le plafond par défaut de l'écart d'un règlement groupé (Story 43-1a,
 /// C-43-24) : 5.00. **Seule** occurrence de la valeur dans le code Rust — elle ne
 /// sert que lorsque la société n'a pas de ligne de réglages ; sinon la colonne
 /// fait foi. Le test `group_max_default_matches_the_column_default` la compare
@@ -56,7 +56,7 @@ const COLUMNS: &str = "company_id, invoice_number_format, default_receivable_acc
 /// ne dérivent pas.
 pub const DEFAULT_GROUP_DIFFERENCE_MAX: Decimal = Decimal::from_parts(50000, 0, 0, false, 4);
 
-/// Le plafond des frais bancaires d'un règlement groupé de la société, **au
+/// Le plafond de l'écart d'un règlement groupé de la société, **au
 /// moment du geste** (Story 43-1a, AC3 bis, C-43-24) : la colonne
 /// `group_settlement_max_difference`, ou [`DEFAULT_GROUP_DIFFERENCE_MAX`] si la
 /// société n'a pas de ligne de réglages.

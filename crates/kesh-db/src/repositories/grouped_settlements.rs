@@ -195,11 +195,21 @@ pub enum GroupRefusal {
     /// banque, ou le compte choisi pour l'écart, égal à une créance ou à une
     /// dette), `Rounding` (le compte de différences d'arrondi). `claim` : le
     /// côté soldé.
+    ///
+    /// Deux causes pour `Counterparty`, que les champs distinguent :
+    /// le compte de créance d'une facture (`piece`) égal au compte de banque
+    /// (`bank_account_id` renseigné, `account_id` = ce compte) ; le compte
+    /// choisi pour l'écart égal à une créance (`bank_account_id` vide,
+    /// `account_id` = le compte choisi).
     ClaimAccount {
         claim: ClaimSide,
         role: SettlementAccountRole,
+        /// Le compte en cause.
         account_id: i64,
         account_number: Option<String>,
+        /// Le compte bancaire de la transaction, quand c'est son compte du
+        /// grand livre qui coïncide avec une créance.
+        bank_account_id: Option<i64>,
         piece: Option<GroupedPiece>,
     },
     /// Le paiement précède la facture au-delà de la tolérance (C-43-7, la borne
@@ -225,13 +235,18 @@ pub enum GroupRefusal {
         gap: Decimal,
     },
     /// Le compte choisi pour l'écart est le compte du grand livre de la
-    /// banque de la transaction.
+    /// banque de la transaction. Contrôle **1** du compte choisi (convention de
+    /// la contrepartie choisie : banque, manquant, non imputable, tiers).
     DifferenceAccountIsBankLedger { account_id: i64 },
-    /// Le compte choisi pour l'écart n'est pas imputable.
-    DifferenceAccountNotPostable { account_id: i64 },
-    /// Le compte choisi pour l'écart est introuvable, d'une autre société, ou
-    /// archivé.
+    /// Contrôle **2** : le compte choisi est introuvable, d'une autre société,
+    /// ou archivé (route : `ACCOUNT_NOT_FOUND`, `missingAccountIds`).
     DifferenceAccountInvalid { account_id: i64 },
+    /// Contrôle **3** : le compte choisi n'est pas imputable (route :
+    /// `non_postable_failed_proposal`, qui nomme le numéro).
+    DifferenceAccountNotPostable {
+        account_id: i64,
+        account_number: String,
+    },
     /// Une fraction de centime à passer sans compte de différences d'arrondi.
     RoundingAccountNotConfigured,
     /// La date de l'écriture est dans une période verrouillée.
@@ -295,6 +310,19 @@ pub fn group_difference(
         .map(|c| amount_due_to_centime(*c))
         .sum();
     let e = paid - centimes;
+    // L'arrondi automatique (décision de l'orchestrateur, passe 4 des fiches
+    // 43-2 et 43-3) : un écart qui ne dépasse pas l'arrondi au centime de
+    // `n × 0.005` (n factures) n'est que la somme des arrondis des factures —
+    // il va au compte d'arrondi avec les fractions de centime, sans compte
+    // choisi ni plafond. Exemple : deux restes de 10.0050 (affichés 10.01)
+    // payés 20.01.
+    if e.abs() <= auto_rounding_tolerance(gross_contributions.len()) {
+        return Ok(Decomposition {
+            difference: paid - gross,
+            rounding_difference: paid - gross,
+            gap: Decimal::ZERO,
+        });
+    }
     if e.abs() > max_difference {
         return Err(GroupRefusal::DifferenceTooLarge {
             transaction_amount: amount,
@@ -310,6 +338,12 @@ pub fn group_difference(
     })
 }
 
+/// La tolérance de l'arrondi automatique d'un groupe de `n` factures :
+/// `centime(n × 0.005)`.
+pub fn auto_rounding_tolerance(n: usize) -> Decimal {
+    amount_due_to_centime(Decimal::from(n) * Decimal::new(5, 3))
+}
+
 /// Le compte choisi pour l'écart, **contrôlé** (décision de Guy du
 /// 2026-11-17) : de la société et actif (sinon
 /// [`GroupRefusal::DifferenceAccountInvalid`]), imputable (sinon
@@ -323,8 +357,8 @@ pub(crate) async fn difference_account_refusal(
     company_id: i64,
     account_id: i64,
 ) -> Result<Option<GroupRefusal>, DbError> {
-    let row: Option<(bool, bool)> = sqlx::query_as(
-        "SELECT active, postable FROM accounts WHERE id = ? AND company_id = ? FOR UPDATE",
+    let row: Option<(bool, bool, String)> = sqlx::query_as(
+        "SELECT active, postable, number FROM accounts WHERE id = ? AND company_id = ? FOR UPDATE",
     )
     .bind(account_id)
     .bind(company_id)
@@ -332,9 +366,12 @@ pub(crate) async fn difference_account_refusal(
     .await
     .map_err(map_db_error)?;
     Ok(match row {
-        None | Some((false, _)) => Some(GroupRefusal::DifferenceAccountInvalid { account_id }),
-        Some((true, false)) => Some(GroupRefusal::DifferenceAccountNotPostable { account_id }),
-        Some((true, true)) => None,
+        None | Some((false, _, _)) => Some(GroupRefusal::DifferenceAccountInvalid { account_id }),
+        Some((true, false, account_number)) => Some(GroupRefusal::DifferenceAccountNotPostable {
+            account_id,
+            account_number,
+        }),
+        Some((true, true, _)) => None,
     })
 }
 
@@ -629,6 +666,7 @@ async fn settle_client_inner(
             company_id,
             SettlementAccountRole::Counterparty,
             bank_ledger_account_id,
+            Some(bank_account_id),
             Some(GroupedPiece {
                 document: GroupedDocument::Invoice(m.invoice.id),
                 number: m.invoice.invoice_number.clone(),
@@ -667,6 +705,7 @@ async fn settle_client_inner(
                         SettlementAccountRole::Rounding,
                         id,
                         None,
+                        None,
                     )
                     .await?));
                 }
@@ -687,13 +726,15 @@ async fn settle_client_inner(
         let Some(id) = difference_account_id else {
             return Ok(Err(GroupRefusal::DifferenceAccountRequired { gap: e }));
         };
-        if let Some(refusal) = difference_account_refusal(tx, company_id, id).await? {
-            return Ok(Err(refusal));
-        }
+        // L'ordre de la contrepartie choisie : banque, manquant, non
+        // imputable, compte de tiers.
         if id == bank_ledger_account_id {
             return Ok(Err(GroupRefusal::DifferenceAccountIsBankLedger {
                 account_id: id,
             }));
+        }
+        if let Some(refusal) = difference_account_refusal(tx, company_id, id).await? {
+            return Ok(Err(refusal));
         }
         if receivables.contains(&id) {
             return Ok(Err(claim_refusal(
@@ -701,6 +742,7 @@ async fn settle_client_inner(
                 company_id,
                 SettlementAccountRole::Counterparty,
                 id,
+                None,
                 None,
             )
             .await?));
@@ -986,6 +1028,7 @@ async fn claim_refusal(
     company_id: i64,
     role: SettlementAccountRole,
     account_id: i64,
+    bank_account_id: Option<i64>,
     piece: Option<GroupedPiece>,
 ) -> Result<GroupRefusal, DbError> {
     let account_number = super::accounts::number_in_company(tx, company_id, account_id).await?;
@@ -994,6 +1037,7 @@ async fn claim_refusal(
         role,
         account_id,
         account_number,
+        bank_account_id,
         piece,
     })
 }
@@ -1055,10 +1099,12 @@ pub(crate) async fn view_members(
 /// (pour la vue, 43-2) ; `None` sans écart.
 ///
 /// L'écriture porte, dans l'ordre d'insertion (`line_order`, D2) : la banque,
-/// une ligne de tiers par facture, la ligne d'arrondi si `r ≠ 0`, puis la ligne
-/// d'écart. `r` se recalcule depuis les montants bruts des règlements (`Σ
-/// (centime(montant) − montant)`) : c'est ce qui sépare les deux lignes même
-/// quand l'utilisateur a choisi pour l'écart le compte d'arrondi.
+/// une ligne de tiers par facture, la ligne d'arrondi si l'arrondi est non nul,
+/// puis la ligne d'écart si l'écart est non nul. Les deux se **recalculent**
+/// par [`group_difference`] — déterministe — depuis le montant de la ligne de
+/// banque et les montants bruts des règlements (plafond sans objet ici) : c'est
+/// ce qui sépare les deux lignes même quand l'utilisateur a choisi pour l'écart
+/// le compte d'arrondi, et même sous l'arrondi automatique.
 pub(crate) async fn difference_account_of(
     conn: &mut sqlx::MySqlConnection,
     company_id: i64,
@@ -1072,9 +1118,8 @@ pub(crate) async fn difference_account_of(
     .fetch_all(&mut *conn)
     .await
     .map_err(map_db_error)?;
-    let r: Decimal = amounts.iter().map(|a| amount_due_to_centime(*a) - *a).sum();
-    let accounts: Vec<i64> = sqlx::query_scalar(
-        "SELECT jel.account_id FROM journal_entry_lines jel \
+    let lines: Vec<(i64, Decimal)> = sqlx::query_as(
+        "SELECT jel.account_id, jel.debit + jel.credit FROM journal_entry_lines jel \
          JOIN journal_entries je ON je.id = jel.entry_id \
          WHERE jel.entry_id = ? AND je.company_id = ? ORDER BY jel.line_order",
     )
@@ -1083,8 +1128,17 @@ pub(crate) async fn difference_account_of(
     .fetch_all(&mut *conn)
     .await
     .map_err(map_db_error)?;
-    let skip = 1 + amounts.len() + usize::from(!r.is_zero());
-    Ok(accounts.get(skip).copied())
+    let Some((_, paid)) = lines.first() else {
+        return Ok(None);
+    };
+    let d = group_difference(*paid, &amounts, Decimal::MAX).map_err(|r| {
+        DbError::Invariant(format!("écriture groupée {entry_id} : décomposition {r:?}"))
+    })?;
+    if d.gap.is_zero() {
+        return Ok(None);
+    }
+    let skip = 1 + amounts.len() + usize::from(!d.rounding_difference.is_zero());
+    Ok(lines.get(skip).map(|(account, _)| *account))
 }
 
 /// Le point de sauvegarde du lot a-t-il disparu — la transaction annulée sous
@@ -1412,8 +1466,10 @@ mod tests {
     }
 
     /// La fiche : deux restes de 10.0050 (affichés 10.01) — contre 20.02,
-    /// arrondi de +0.0100, aucun écart ; contre 20.01, arrondi de +0.0100 et
-    /// écart de −0.01 (moins reçu).
+    /// arrondi de +0.0100, aucun écart ; contre 20.01, l'écart d'un centime
+    /// est dans l'arrondi automatique (`centime(2 × 0.005) = 0.01`) : il part
+    /// au compte d'arrondi avec les fractions, qui s'annulent — aucune ligne
+    /// d'arrondi ni d'écart.
     #[test]
     fn sub_centime_remainders_split_rounding_and_gap() {
         let restes = [dec!(10.0050), dec!(10.0050)];
@@ -1422,11 +1478,39 @@ mod tests {
         assert_eq!(d.gap, dec!(0.00));
         assert_eq!(d.difference, dec!(0.0100));
         let d = group_difference(dec!(20.01), &restes, dec!(5)).unwrap();
-        assert_eq!(d.rounding_difference, dec!(0.0100));
-        assert_eq!(d.gap, dec!(-0.01));
+        assert_eq!(d.rounding_difference, dec!(0.0000));
+        assert_eq!(d.gap, Decimal::ZERO);
         assert_eq!(d.difference, dec!(0.0000));
         // L'identité `difference = e + r`.
         assert_eq!(d.difference, d.gap + d.rounding_difference);
+    }
+
+    /// L'arrondi automatique : `|e| ≤ centime(n × 0.005)` va au compte
+    /// d'arrondi, sans compte choisi ni plafond ; au-delà, la règle de Guy.
+    #[test]
+    fn small_gaps_within_n_half_centimes_are_rounding() {
+        assert_eq!(auto_rounding_tolerance(1), dec!(0.01));
+        assert_eq!(auto_rounding_tolerance(2), dec!(0.01));
+        assert_eq!(auto_rounding_tolerance(3), dec!(0.02));
+        assert_eq!(auto_rounding_tolerance(50), dec!(0.25));
+        let f = [dec!(100.00), dec!(200.00)];
+        // −0.01 sur deux factures, plafond à zéro : arrondi, accepté.
+        let d = group_difference(dec!(299.99), &f, dec!(0)).unwrap();
+        assert_eq!(d.gap, Decimal::ZERO);
+        assert_eq!(d.rounding_difference, dec!(-0.01));
+        // +0.01 de même.
+        let d = group_difference(dec!(300.01), &f, dec!(0)).unwrap();
+        assert_eq!(d.rounding_difference, dec!(0.01));
+        // −0.02 sur deux factures : au-delà, écart au compte choisi.
+        let d = group_difference(dec!(299.98), &f, dec!(5)).unwrap();
+        assert_eq!(d.gap, dec!(-0.02));
+        assert_eq!(d.rounding_difference, Decimal::ZERO);
+        // −0.02 sur trois factures : dans la tolérance.
+        let g = [dec!(100.00), dec!(100.00), dec!(100.00)];
+        assert_eq!(
+            group_difference(dec!(299.98), &g, dec!(0)).unwrap().gap,
+            Decimal::ZERO
+        );
     }
 
     /// Décision de Guy du 2026-11-17 : moins reçu ET trop-perçu admis, dans la
@@ -1443,8 +1527,8 @@ mod tests {
             dec!(-5.00)
         );
         // Trop-perçu.
-        let d = group_difference(dec!(300.01), &f, dec!(5)).unwrap();
-        assert_eq!(d.gap, dec!(0.01));
+        let d = group_difference(dec!(300.05), &f, dec!(5)).unwrap();
+        assert_eq!(d.gap, dec!(0.05));
         assert_eq!(
             group_difference(dec!(305.00), &f, dec!(5)).unwrap().gap,
             dec!(5.00)
@@ -1463,8 +1547,8 @@ mod tests {
             group_difference(dec!(305.01), &f, dec!(5)),
             Err(GroupRefusal::DifferenceTooLarge { .. })
         ));
-        // Plafond à zéro : seules les fractions de centime passent.
-        assert!(group_difference(dec!(299.99), &f, dec!(0)).is_err());
+        // Plafond à zéro : seuls les arrondis passent.
+        assert!(group_difference(dec!(299.98), &f, dec!(0)).is_err());
         let restes = [dec!(10.0050), dec!(10.0050)];
         assert!(group_difference(dec!(20.02), &restes, dec!(0)).is_ok());
     }

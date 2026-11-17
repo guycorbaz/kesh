@@ -33,6 +33,24 @@ du registre de l'épique). Source : `kesh-gate-logs/e43/decision-difference.md`,
 8. `GroupedSettlement.difference_account_id` ; la vue le relit sur la ligne d'écart
    (`ReconciliationView::grouped_difference_account_id`).
 
+**C-e431a-12 — Ajustements de la passe 4 des fiches 43-2 et 43-3** (orchestrateur, quatrième message) :
+1. Ordre des contrôles du compte d'écart, celui de la contrepartie choisie : banque (`DifferenceAccountIsBankLedger`),
+   manquant — inexistant, archivé ou d'une autre société — (`DifferenceAccountInvalid`, route `ACCOUNT_NOT_FOUND` avec
+   `missingAccountIds`), non imputable (`DifferenceAccountNotPostable { account_id, account_number }`), compte de tiers
+   (`ClaimAccount { role: Counterparty }`). La variante `DifferenceAccountNotUsable` des étapes intermédiaires n'existe
+   plus.
+2. `ClaimAccount` porte `bank_account_id: Option<i64>` : renseigné quand le compte de créance d'une facture (`piece`)
+   est le compte de banque (`account_id` = ce compte) ; vide quand le compte choisi pour l'écart est une créance
+   (`account_id` = le compte choisi).
+3. **Arrondi automatique** dans `group_difference` : `|e| ≤ centime(n × 0.005)` (n factures, `auto_rounding_tolerance`)
+   → l'écart part au compte d'arrondi avec les fractions (`rounding_difference = difference`, `gap = 0`), sans compte
+   choisi ni plafond. Exemple : deux restes de 10.0050 payés 20.01 → ni arrondi ni écart (les deux s'annulent).
+4. Commentaire SQL de la colonne de plafond corrigé dans la migration (non publiée, P8 délibéré) : checksum mis à jour
+   dans `migrations.sha384`, squash régénéré, bases `kesh_e431a`, `kesh_e2e_e431a`, `kesh_ci_e431a` reconstruites.
+- Conséquence propre à la vue (C-e431a-8 amendé) : le compte d'écart se relit en recalculant la décomposition par
+  `group_difference` (montant de la ligne de banque, montants bruts des règlements, plafond sans objet), puisque
+  l'arrondi automatique peut poser une ligne d'arrondi sans fraction de centime.
+
 ## Choix de l'agent
 
 **C-e431a-3 — `TABLES_TO_TRUNCATE`** : `imported_supplier_invoices` et `supplier_invoices` déplacées ensemble avant

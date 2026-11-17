@@ -21,8 +21,9 @@
 -- 3. supplier_invoices.settlement_journal_entry_line_id : le symétrique
 --    fournisseur (Story 43-1b), avec une CHECK « ligne ⇒ écriture ». Les
 --    colonnes restent même si la 43-1b sort de la release : vides, sans effet.
--- 4. company_invoice_settings.group_settlement_max_difference : le plafond des
---    frais admis dans un règlement groupé, réglage de la société (C-43-24),
+-- 4. company_invoice_settings.group_settlement_max_difference : le plafond de
+--    l'écart (moins-payé ou trop-perçu) admis dans un règlement groupé, au
+--    compte que l'utilisateur choisit, réglage de la société (C-43-24),
 --    5.00 par défaut, entre 0 et 100. Une sauvegarde 0.18.0 n'a pas la
 --    colonne : à son import, la valeur par défaut s'applique — voulu (P7).
 --
@@ -58,6 +59,6 @@ ALTER TABLE supplier_invoices
 
 ALTER TABLE company_invoice_settings
     ADD COLUMN group_settlement_max_difference DECIMAL(19,4) NOT NULL DEFAULT 5.0000
-        COMMENT 'Plafond des frais bancaires admis dans un règlement groupé (0 à 100)',
+        COMMENT 'Plafond de l''écart admis dans un règlement groupé (0 à 100)',
     ADD CONSTRAINT chk_company_invoice_settings_group_max
         CHECK (group_settlement_max_difference >= 0 AND group_settlement_max_difference <= 100);
