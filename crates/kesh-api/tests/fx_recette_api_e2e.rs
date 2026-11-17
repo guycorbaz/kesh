@@ -9,16 +9,15 @@
 //! 6940) et de conversion (1090) ; activation ; comptes USD (à comptes de
 //! différence propres 6841/6842) et EUR ; exercice 2024 multi-devises (créé
 //! après l'activation) ; récupération des cours de mars 2024 et du 31.12.2024 ;
-//! écritures en devise (au cours retenu sans `rateSource` → `afc` ; par `chf`
-//! égal au produit → `afc` ; par `chf` différent → `manual`, cours déduit ;
-//! par `side`) ; réévaluation au 31.12.2024 avec les cours des livres
-//! d'origine (V8) ; rapports ; lecture MCP de l'écriture de réévaluation (V12).
-//!
-//! ⚠️ **Écart écrit** : l'ouverture d'un compte en devise par
-//! `POST /opening-balances` (`{ amount, chf, side }`) et la conversion
-//! `POST /journal-entries/conversions` (`completeDifference`) sont livrées par
-//! la 37-3b, absente de la base de la 37-5 : leurs deux étapes s'ajouteront à
-//! ce test à la fusion de la 37-3b.
+//! ouverture du compte USD par `POST /opening-balances` (`{ amount, chf, side }`,
+//! sans `rate` ni `debit`/`credit`) ; écritures en devise (au cours retenu sans
+//! `rateSource` → `afc` ; par `chf` égal au produit → `afc` ; par `chf`
+//! différent → `manual`, cours déduit ; par `side`) ; conversion EUR → USD
+//! (`POST /journal-entries/conversions`, refusée sans `completeDifference`,
+//! puis complétée par le serveur) ; réévaluation au 31.12.2024 avec les cours
+//! des livres d'origine (V8) ; rapports ; lecture MCP de l'écriture de
+//! réévaluation (V12). *(L'ouverture et la conversion, routes de la 37-3b, ont
+//! été ajoutées à la fusion de la 37-3b dans la 37-5.)*
 //!
 //! Tous les montants CHF envoyés et attendus sont des **littéraux** (données
 //! des livres d'origine, ou fixés d'après les cours que la source factice rend
@@ -247,8 +246,24 @@ async fn recette_multi_devises_par_l_api(pool: MySqlPool) {
         assert_eq!(st, 200, "récupération {corps} : {v}");
     }
 
-    // Écritures du 15.03.2024, contre la caisse (1000).
     let caisse = s.accounts["1000"];
+    let capital = s.accounts["2000"];
+
+    // Ouverture (V1, V2) : USD 200 tenus 170.00 CHF (livres d'origine), par
+    // `{ amount, chf, side }`, sans `rate` ni `debit`/`credit`.
+    let (st, v) = app
+        .post(
+            &compta,
+            "/api/v1/opening-balances",
+            &json!({ "lines": [
+                { "accountId": usd, "foreign": { "amount": "200", "chf": "170.00", "side": "debit" } },
+                { "accountId": capital, "debit": "0", "credit": "170.00" },
+            ] }),
+        )
+        .await;
+    assert_eq!(st, 201, "ouverture : {v}");
+
+    // Écritures du 15.03.2024, contre la caisse (1000).
     let ecrire = |ligne: Value, contre: Value| {
         let app = &app;
         let compta = compta.clone();
@@ -302,6 +317,53 @@ async fn recette_multi_devises_par_l_api(pool: MySqlPool) {
     .await;
     assert_eq!(dec_de(&e4["lines"][0]["credit"]), dec!(44.00), "{e4}");
 
+    // Conversion EUR → USD par le compte de conversion : écriture 1 (EUR 50 au
+    // crédit, 46.50), écriture 2 (USD 60 au débit, 52.80, et le compte de
+    // conversion au crédit du même 46.50) — différence de change non nulle,
+    // aucune ligne de différence envoyée.
+    let conversion_corps = |complete: bool| {
+        json!({
+            "entries": [
+                { "entryDate": "2024-03-20", "journal": "OD", "description": "Conversion EUR",
+                  "lines": [
+                    { "accountId": eur, "debit": "0", "credit": "46.50",
+                      "foreign": { "amount": "50", "rate": "0.93", "rateSource": "manual" } },
+                    { "accountId": conversion, "debit": "46.50", "credit": "0" },
+                  ] },
+                { "entryDate": "2024-03-21", "journal": "OD", "description": "Conversion USD",
+                  "lines": [
+                    { "accountId": usd, "debit": "52.80", "credit": "0",
+                      "foreign": { "amount": "60", "rate": "0.88", "rateSource": "manual" } },
+                    { "accountId": conversion, "debit": "0", "credit": "46.50" },
+                  ] },
+            ],
+            "completeDifference": complete,
+        })
+    };
+    let (st, v) = app
+        .post(
+            &compta,
+            "/api/v1/journal-entries/conversions",
+            &conversion_corps(false),
+        )
+        .await;
+    assert_eq!(st, 400, "sans completeDifference : {v}");
+    assert_eq!(v["error"]["code"], "ENTRY_UNBALANCED", "{v}");
+    assert_eq!(v["error"]["details"]["entry"], 2, "{v}");
+    let (st, v) = app
+        .post(
+            &compta,
+            "/api/v1/journal-entries/conversions",
+            &conversion_corps(true),
+        )
+        .await;
+    assert_eq!(st, 201, "avec completeDifference : {v}");
+    assert_eq!(
+        v["entries"][1]["lines"].as_array().map(Vec::len),
+        Some(3),
+        "ligne de différence ajoutée par le serveur : {v}"
+    );
+
     // Réévaluation au 31.12.2024 (V8) : les cours des livres d'origine.
     let rates = json!({ "USD": "0.91193", "EUR": "0.94947" });
     let (st, apercu) = app
@@ -318,11 +380,11 @@ async fn recette_multi_devises_par_l_api(pool: MySqlPool) {
         .iter()
         .find(|l| l["accountId"] == usd)
         .unwrap();
-    // USD : 1000 + 100 − 50 = 1050 ; CHF 880 + 90 − 44 = 926.00 ;
-    // 1050 × 0.91193 = 957.53 → écart +31.53, sur le compte propre 6841.
-    assert_eq!(dec_de(&ligne_usd["deviseNet"]), dec!(1050));
-    assert_eq!(dec_de(&ligne_usd["chfNet"]), dec!(926.00));
-    assert_eq!(ligne_usd["delta"], "31.53");
+    // USD : 200 + 1000 + 100 − 50 + 60 = 1310 ; CHF 170 + 880 + 90 − 44 + 52.80
+    // = 1148.80 ; 1310 × 0.91193 = 1194.63 → écart +45.83, sur le compte propre 6841.
+    assert_eq!(dec_de(&ligne_usd["deviseNet"]), dec!(1310));
+    assert_eq!(dec_de(&ligne_usd["chfNet"]), dec!(1148.80));
+    assert_eq!(ligne_usd["delta"], "45.83");
     assert_eq!(ligne_usd["counterpartAccountId"], gain_pp);
     assert_eq!(ligne_usd["fxAccountsOrigin"], "own");
     let (st, passe) = app
@@ -369,11 +431,13 @@ async fn recette_multi_devises_par_l_api(pool: MySqlPool) {
             .unwrap_or_else(|| panic!("compte {id} absent de la balance : {balance}"))
             .clone()
     };
-    assert_eq!(dec_de(&ligne(usd)["closingBalance"]), dec!(957.53));
-    assert_eq!(dec_de(&ligne(usd)["closingCurrency"]), dec!(1050));
-    // EUR : 200 × 0.94947 = 189.89.
-    assert_eq!(dec_de(&ligne(eur)["closingBalance"]), dec!(189.89));
-    assert_eq!(dec_de(&ligne(eur)["closingCurrency"]), dec!(200));
+    assert_eq!(dec_de(&ligne(usd)["closingBalance"]), dec!(1194.63));
+    assert_eq!(dec_de(&ligne(usd)["closingCurrency"]), dec!(1310));
+    // EUR : 200 − 50 = 150 ; 150 × 0.94947 = 142.42.
+    assert_eq!(dec_de(&ligne(eur)["closingBalance"]), dec!(142.42));
+    assert_eq!(dec_de(&ligne(eur)["closingCurrency"]), dec!(150));
+    // Le compte de conversion revient à zéro.
+    assert_eq!(dec_de(&ligne(conversion)["closingBalance"]), dec!(0));
     let (st, v) = app
         .get(
             &compta,
@@ -391,7 +455,7 @@ async fn recette_multi_devises_par_l_api(pool: MySqlPool) {
         .await;
     assert_eq!(st, 200, "grand livre : {v}");
     assert!(
-        v.to_string().contains("957.53"),
+        v.to_string().contains("1194.63"),
         "grand livre du compte USD : {v}"
     );
 

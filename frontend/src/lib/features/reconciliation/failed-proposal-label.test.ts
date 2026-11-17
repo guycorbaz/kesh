@@ -85,6 +85,15 @@ const EXPECTED_KEYS: Record<string, string> = {
 	SETTLEMENT_COUNTERPARTY_IS_CLAIM_ACCOUNT: 'reconciliation-failed-counterparty-is-claim-account',
 	SUPPLIER_INVOICE_NOT_FOUND: 'reconciliation-failed-invoice-not-found',
 	VALIDATION_ERROR: 'error-validation',
+	// Story 37-3b — les huit codes de `fx_failed_proposal` (37-3a, AC-5).
+	ACCOUNT_REQUIRES_CURRENCY: 'reconciliation-failed-account-requires-currency',
+	FX_MULTIPLE_CURRENCIES: 'reconciliation-failed-fx-multiple-currencies',
+	ENTRY_IS_FX_REVALUATION: 'reconciliation-failed-fx-revaluation',
+	MULTI_CURRENCY_DISABLED: 'error-fx-screen-multi-currency-disabled',
+	RATE_UNAVAILABLE: 'error-fx-screen-rate-unavailable',
+	FX_ACCOUNT_IN_CHF: 'error-fx-screen-account-in-chf',
+	FX_CURRENCY_MISMATCH: 'error-fx-screen-currency-mismatch',
+	FX_RATE_NOT_AFC: 'error-fx-screen-rate-not-afc-manual',
 };
 
 describe('failedProposalLabel', () => {
@@ -92,8 +101,8 @@ describe('failedProposalLabel', () => {
 		calls.length = 0;
 	});
 
-	it('couvre les 37 codes relevés', () => {
-		expect(Object.keys(EXPECTED_KEYS)).toHaveLength(37);
+	it('couvre les 45 codes relevés (37 + les huit de `fx_failed_proposal`, Story 37-3b)', () => {
+		expect(Object.keys(EXPECTED_KEYS)).toHaveLength(45);
 	});
 
 	// Story 28-4b (#642, AC13) — le refus d'un compte clos (compte clos dans un autre

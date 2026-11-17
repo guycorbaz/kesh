@@ -261,6 +261,11 @@ const ATTENDU: Record<string, { jetons: string[]; motif: string }> = {
 		jetons: ['hover:text-destructive'],
 		motif: 'E — icône X de retrait d\'une ligne, rouge au survol seulement',
 	},
+	// Story 37-3b (AC-2 bis) — même forme que le retrait d'une ligne du formulaire.
+	'lib/features/journal-entries/ConversionAssistant.svelte@button:1': {
+		jetons: ['hover:text-destructive'],
+		motif: 'E — icône X de retrait d\'une ligne de frais, rouge au survol seulement',
+	},
 };
 
 describe('relevé — auto-tests sur source synthétique', () => {
@@ -326,8 +331,9 @@ describe('AC6 — inventaire clos des boutons rouges posés à la main', () => {
 		expect(releve).toEqual(attendu);
 	});
 
-	it('la table compte quatorze entrées, chacune avec son motif', () => {
-		expect(Object.keys(ATTENDU)).toHaveLength(14);
+	// Story 37-3b : quatorze → quinze (le retrait d'un frais de l'assistant Conversion).
+	it('la table compte quinze entrées, chacune avec son motif', () => {
+		expect(Object.keys(ATTENDU)).toHaveLength(15);
 		for (const [cle, { motif }] of Object.entries(ATTENDU)) {
 			expect(motif.trim().length, cle).toBeGreaterThan(0);
 		}

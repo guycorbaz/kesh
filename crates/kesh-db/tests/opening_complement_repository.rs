@@ -152,6 +152,7 @@ fn debit(co: &Co, n: &str, amount: Decimal) -> ComplementLine {
         account_id: co.acc[n],
         debit: amount,
         credit: Decimal::ZERO,
+        foreign: None,
     }
 }
 
@@ -160,6 +161,7 @@ fn credit(co: &Co, n: &str, amount: Decimal) -> ComplementLine {
         account_id: co.acc[n],
         debit: Decimal::ZERO,
         credit: amount,
+        foreign: None,
     }
 }
 
@@ -418,6 +420,7 @@ async fn refus_compte_d_une_autre_societe(pool: MySqlPool) {
         account_id: foreign,
         debit: dec!(5),
         credit: Decimal::ZERO,
+        foreign: None,
     };
     let (reason, account_id) = refusal(complete(&pool, &co, &[line], d(2026, 6, 1)).await);
     assert_eq!((reason, account_id), (R::AccountInvalid, Some(foreign)));
@@ -436,6 +439,7 @@ async fn refus_compte_d_une_autre_societe(pool: MySqlPool) {
         account_id: foreign,
         debit: dec!(5),
         credit: Decimal::ZERO,
+        foreign: None,
     };
     let r = tokio::time::timeout(
         std::time::Duration::from_secs(5),
@@ -482,6 +486,7 @@ async fn refus_societe_sans_ecriture(pool: MySqlPool) {
             account_id: seeded.accounts["1100"],
             debit: dec!(5),
             credit: Decimal::ZERO,
+            foreign: None,
         }],
         "x".into(),
         d(2026, 6, 1),

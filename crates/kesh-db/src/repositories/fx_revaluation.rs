@@ -39,7 +39,7 @@
 //!    2. la relecture verrouillante du plus ancien antérieur ouvert
 //!    ([`fiscal_years::lock_with_earlier_in_tx`], partagée avec la clôture) ;
 //! 3. les comptes sélectionnés `LOCK IN SHARE MODE`, puis, pour chacun, ses
-//!    comptes de différence résolus ([`accounts::fx_accounts_for_settings`]) et
+//!    comptes de différence résolus ([`accounts::fx_accounts_for_columns`]) et
 //!    revalidés ([`accounts::validate_fx_accounts_in_tx`], réglages, comptes et
 //!    articles en partage) ;
 //! 4. seulement ensuite, les soldes.
@@ -333,12 +333,12 @@ impl RevaluationLine {
 }
 
 /// Les comptes de différence d'un compte, d'après les réglages de la société
-/// (`company_gain`, `company_loss`) — [`accounts::fx_accounts_for_settings`].
+/// (`company_gain`, `company_loss`) — [`accounts::fx_accounts_for_columns`].
 fn fx_for(
     company_fx: (Option<i64>, Option<i64>),
     account: &RevaluationAccount,
 ) -> Option<FxAccounts> {
-    accounts::fx_accounts_for_settings(
+    accounts::fx_accounts_for_columns(
         company_fx.0,
         company_fx.1,
         account.id,

@@ -771,8 +771,7 @@ l'Epic 38).
       `FOREIGN_ACCOUNTS_NOT_REVALUED` (quatre locales) ; avis de K9 avec l'aperçu et « Réévaluer », rien quand K9 est
       `ok`, « Clôturer » désactivé ; inventaire « huit » → « neuf » de l'AC-9 ; tests de l'AC-9.
 - [x] Manuel (`.tex` seulement), section *Note de version* de la fiche (pas d'écriture au `CHANGELOG.md`).
-- [x] CR-6 : **V7** *(sans les étapes d'ouverture et de conversion, routes de la 37-3b absentes de la base : écart
-      écrit au Dev Agent Record)* — test d'intégration HTTP de bout en bout de la recette par l'API (AC-7, sessions Bearer, source
+- [x] CR-6 : **V7** *(ouverture et conversion ajoutées à la fusion de la 37-3b)* — test d'intégration HTTP de bout en bout de la recette par l'API (AC-7, sessions Bearer, source
       factice, de l'activation aux rapports) ; **V8** — réévaluation de livres importés par cette route avec `rates`
       (AC-2), manuel (AC-8), guide d'API (37-3b AC-6) ; **V12** — test `kesh_ecriture` d'une écriture de réévaluation
       (AC-5), « aucun outil pour l'aperçu » écrit au Change Log du développement.
@@ -1144,6 +1143,16 @@ l'Epic 38).
   audit des migrations recomptés après la fusion (aucun changement venu d'elle). Aucun outil MCP pour l'aperçu (V12) :
   un calcul à la demande, hors du périmètre en lecture des livres du serveur MCP ; les écritures passées se lisent par
   `kesh_ecritures` et `kesh_ecriture` (test `une_ecriture_de_reevaluation_dans_kesh_ecriture`, et recette V7).
+- 2026-11-17 — **fusion de `epic/37-multi-devises` à `03f4599d`** (37-3b terminée), sur consigne de l'orchestrateur.
+  Conflits résolus en gardant les deux intentions : `accounts.rs` — les deux stories avaient chacune ajouté un
+  `fx_accounts_for_settings` de signature différente ; gardé celui de la 37-3b (`&Account`, route de conversion), qui
+  délègue désormais à `fx_accounts_for_columns` (la règle seule, sur colonnes, celle de la 37-5) : une seule règle,
+  trois enveloppes ; registre des routes — 37-3b +1 (conversion), 37-5 +2 : 155 routes, tracées 147, rejouées 29,
+  enveloppes examinées 29, total 159, `sans_ecriture` 127, `no_matter` 4 ; phrase du manuel d'administration « 147 des
+  155 », « 147 + 4 + 4 = 155 » ; `sitesTotal` **3350** relevé par la garde (3300 de la 37-3b + 50) ; candidates des
+  libellés en dur **116** (`ecartee` 18, `conforme` 98) ; manuel utilisateur : les deux sous-sections gardées
+  (réévaluation, puis écritures en devise). Audit des migrations : aucune migration dans l'une ou l'autre (91). La
+  recette V7 gagne l'ouverture et la conversion (routes de la 37-3b).
 
 ## Dev Agent Record
 
@@ -1203,12 +1212,12 @@ Opus 5.5 (`claude-opus-5-5`).
   non « sur un autre exercice » : il montre la valeur cumulée passée et le lien vers sa première écriture, puis lève K9
   et clôt ;
   C-37-5-6 — à `D = 0`, la contrepartie affichée est le compte de gains.
-- **Écart à la fiche** : la recette V7 (`fx_recette_api_e2e.rs`) ne joue **ni l'ouverture** en devise par
-  `POST /opening-balances` (`{ amount, chf, side }`) **ni la conversion** `POST /journal-entries/conversions`
-  (`completeDifference`) : ces deux routes sont de la 37-3b, absente de la base. Le reste de la recette passe
-  (activation, comptes à comptes propres, exercice créé après l'activation, cours factices, quatre formes d'écriture,
-  réévaluation V8 à 0.91193 / 0.94947 en `request`/`manual`, balance et grand livre au CHF exact, lecture MCP). Les
-  deux étapes s'ajoutent à la fusion de la 37-3b.
+- **Recette V7** (`fx_recette_api_e2e.rs`) : complète depuis la fusion de la 37-3b — activation, comptes à comptes
+  propres, exercice créé après l'activation, cours factices, ouverture par `{ amount, chf, side }`, quatre formes
+  d'écriture, conversion EUR → USD refusée sans `completeDifference` (400 `ENTRY_UNBALANCED`, `details.entry` = 2)
+  puis complétée par le serveur, réévaluation V8 à 0.91193 / 0.94947 en `request`/`manual`, balance et grand livre au
+  CHF exact, compte de conversion à 0, lecture MCP. Avant la fusion, l'ouverture et la conversion manquaient (routes de
+  la 37-3b).
 - **Captures** (thème clair) : `kesh-gate-logs/s37-5/captures/` (prises par la spec E2E).
 
 ### File List
