@@ -797,3 +797,148 @@ async fn cloture_refusee_par_k9(pool: MySqlPool) {
     let (st, v) = fermer().await;
     assert_eq!(st, 200, "{v}");
 }
+
+/// 37-5-CR-P1-5 : un compte sélectionné par `accountIds` dont la devise n'a
+/// pas de cours est signalé dans `blockers[]` (`RATE_UNAVAILABLE`, forme
+/// `month`), comme la passation le refuserait ; un compte non admissible sans
+/// cours reste `notEligible` à la passation, non `RATE_UNAVAILABLE` ; une clé
+/// de cours hors de la sélection se refuse avant `notEligible`, aux deux
+/// routes.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn compte_sans_cours_et_ordre_des_refus_aux_deux_routes(pool: MySqlPool) {
+    let ctx = monter(&pool).await;
+    let c = ctx.s.company_id;
+    cours(&pool, c, "USD", "day", "2024-12-31", "0.92", "afc").await;
+    let code = |v: &Value| v["error"]["code"].as_str().unwrap_or_default().to_string();
+
+    let corps = json!({ "accountIds": [ctx.usd, ctx.eur] });
+    let (st, v) = apercu(&ctx, &corps).await;
+    assert_eq!(st, 200, "{v}");
+    let e = ligne(&v, ctx.eur);
+    assert_eq!(
+        (e["selected"].clone(), e["selectable"].clone()),
+        (json!(true), json!(false))
+    );
+    let b: Vec<&Value> = v["blockers"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|b| b["code"] == "RATE_UNAVAILABLE")
+        .collect();
+    assert_eq!(b.len(), 1, "{v}");
+    assert_eq!(b[0]["details"]["currency"], "EUR");
+    assert_eq!(b[0]["details"]["month"], "2024-12-01");
+    assert!(!b[0]["message"].as_str().unwrap().is_empty());
+    let (st, v) = passer(&ctx, &corps).await;
+    assert_eq!((st, code(&v).as_str()), (404, "RATE_UNAVAILABLE"));
+    // Sans le compte EUR : aucun blocker de cours.
+    let (_, v) = apercu(&ctx, &json!({ "accountIds": [ctx.usd] })).await;
+    assert!(
+        v["blockers"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|b| b["code"] != "RATE_UNAVAILABLE"),
+        "{v}"
+    );
+
+    // Clé hors sélection ET compte non admissible : FX_RATE_INVALID aux deux.
+    let corps = json!({ "rates": { "GBP": "1.1" }, "accountIds": [ctx.gain] });
+    for chemin in ["fx-revaluation/preview", "fx-revaluation"] {
+        let (st, v) = appel(&ctx, &ctx.jwt, chemin, &corps).await;
+        assert_eq!(
+            (st, code(&v).as_str()),
+            (400, "FX_RATE_INVALID"),
+            "{chemin} : {v}"
+        );
+    }
+
+    // Compte EUR archivé, sans cours EUR : notEligible, non RATE_UNAVAILABLE.
+    sqlx::query("UPDATE accounts SET active = FALSE WHERE id = ?")
+        .bind(ctx.eur)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let (st, v) = passer(&ctx, &json!({ "accountIds": [ctx.eur] })).await;
+    assert_eq!(
+        (st, v["error"]["details"]["reason"].as_str()),
+        (400, Some("notEligible")),
+        "{v}"
+    );
+    assert_eq!(nb_reevaluations(&pool).await, 0);
+}
+
+/// AC-7 (R3) : l'exercice mono-devise sous une société multi-devises, état
+/// posé **par l'API** — exercice clos avant l'activation, activation,
+/// réouverture : aperçu et passation → 409 `MULTI_CURRENCY_DISABLED`.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn mono_devise_pose_par_l_api(pool: MySqlPool) {
+    let s = seed_accounting_company(&pool).await.unwrap();
+    let app = spawn_app(pool.clone()).await;
+    let jwt = forge_jwt(s.admin_user_id, "Admin", s.company_id);
+    let envoyer = |methode: reqwest::Method, chemin: String, body: Value| {
+        let (app, jwt) = (&app, &jwt);
+        async move {
+            let r = app
+                .client
+                .request(methode, format!("{}{chemin}", app.base_url))
+                .bearer_auth(jwt)
+                .json(&body)
+                .send()
+                .await
+                .unwrap();
+            let st = r.status().as_u16();
+            (st, r.json::<Value>().await.unwrap_or(Value::Null))
+        }
+    };
+    let fy = s.fiscal_year_id;
+    let (st, v) = envoyer(
+        reqwest::Method::POST,
+        format!("/api/v1/fiscal-years/{fy}/close"),
+        json!({}),
+    )
+    .await;
+    assert_eq!(st, 200, "clôture avant l'activation : {v}");
+    assert_eq!(v["multiCurrency"], false);
+    let gain = compte(&pool, s.company_id, "6950", "Revenue", None).await;
+    let perte = compte(&pool, s.company_id, "6940", "Expense", None).await;
+    let transit = compte(&pool, s.company_id, "1090", "Asset", None).await;
+    let version: i64 = sqlx::query_scalar("SELECT version FROM companies WHERE id = ?")
+        .bind(s.company_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    let (st, v) = envoyer(
+        reqwest::Method::PUT,
+        "/api/v1/companies/current/currency-settings".into(),
+        json!({
+            "multiCurrencyEnabled": true,
+            "fxGainAccountId": gain,
+            "fxLossAccountId": perte,
+            "fxTransitAccountId": transit,
+            "version": version,
+        }),
+    )
+    .await;
+    assert_eq!(st, 200, "activation : {v}");
+    let (st, v) = envoyer(
+        reqwest::Method::POST,
+        format!("/api/v1/fiscal-years/{fy}/reopen"),
+        json!({ "motif": "Correction" }),
+    )
+    .await;
+    assert_eq!(st, 200, "réouverture : {v}");
+    assert_eq!(v["multiCurrency"], false, "rouvert, il reste mono-devise");
+    let usd = compte(&pool, s.company_id, "1020", "Asset", Some("USD")).await;
+    for chemin in ["fx-revaluation/preview", "fx-revaluation"] {
+        let (st, v) = envoyer(
+            reqwest::Method::POST,
+            format!("/api/v1/fiscal-years/{fy}/{chemin}"),
+            json!({ "accountIds": [usd] }),
+        )
+        .await;
+        assert_eq!(st, 409, "{chemin} : {v}");
+        assert_eq!(v["error"]["code"], "MULTI_CURRENCY_DISABLED");
+        assert_eq!(v["error"]["details"]["fiscalYearId"], fy);
+    }
+}

@@ -68,6 +68,8 @@
 	let posting = $state(false);
 	let postError = $state('');
 	let posted = $state<number[]>([]);
+	/** Relectures en cours : « Passer les écritures » attend la dernière. */
+	let rereading = $state(0);
 	let request = 0;
 
 	const editable = $derived(mode === 'full');
@@ -106,6 +108,7 @@
 	async function reread(): Promise<void> {
 		if (!preview || selected.size === 0) return;
 		const token = ++request;
+		rereading += 1;
 		try {
 			const p = await previewRevaluation(fiscalYearId, previewRequest(preview, inputs, selected));
 			if (token !== request) return;
@@ -113,6 +116,8 @@
 		} catch (err) {
 			if (token !== request) return;
 			postError = errorMessageOf(err);
+		} finally {
+			rereading -= 1;
 		}
 	}
 
@@ -158,17 +163,17 @@
 	}
 
 	async function submit(): Promise<void> {
-		if (!preview) return;
+		if (!preview || rereading > 0) return;
 		posting = true;
 		postError = '';
 		try {
 			const r = await postRevaluation(fiscalYearId, postRequest(preview, inputs, selected));
 			posted = r.entryIds;
 			onPosted?.(r.entryIds);
-			if (mode === 'full') {
-				modified = {};
-				await load();
-			}
+			// Les deux modes relisent : l'avis de K9 resté monté (un compte archivé
+			// ou sans cours le garde en attention) ne montre pas les écarts passés.
+			modified = {};
+			await load();
 		} catch (err) {
 			postError = errorMessageOf(err);
 		} finally {
@@ -193,6 +198,10 @@
 	<p class="text-sm text-error" role="alert" data-testid="revaluation-error">{loadError}</p>
 {:else if preview}
 	<div class="flex flex-col gap-3 text-sm" data-testid="revaluation-panel" data-mode={mode}>
+		{#if loadState === 'error'}
+			<!-- Une relecture échouée après une passation : l'aperçu montré est périmé. -->
+			<p class="text-error" role="alert" data-testid="revaluation-error">{loadError}</p>
+		{/if}
 		<p class="text-text-muted" data-testid="revaluation-closing-kind">
 			{closingKindReminder(preview, locale)} —
 			<a class="text-primary underline" href="/settings/exchange-rates">
@@ -206,7 +215,10 @@
 				<li class="rounded-md border border-border p-2" data-testid="revaluation-rate-{rate.currency}">
 					<div class="flex flex-wrap items-center gap-2">
 						<span class="w-12 font-medium">{rate.currency}</span>
-						{#if editable}
+						{#if editable && rate.defaultRate !== null}
+							<!-- Sans cours retenu par la société, pas de champ : ses comptes ne se
+							     cochent pas, un cours tapé ici ne partirait jamais. Le cours se
+							     récupère ou se saisit à l'écran Cours de change (AC-1). -->
 							<Input
 								class="w-36"
 								aria-label={i18nMsg('fiscal-years-revaluation-rate-input', 'Cours { $currency }', {
@@ -441,7 +453,7 @@
 			<Button
 				type="button"
 				data-testid="revaluation-submit"
-				disabled={posting || !canPost(preview, selected)}
+				disabled={posting || rereading > 0 || !canPost(preview, selected)}
 				onclick={submit}
 			>
 				{mode === 'full'

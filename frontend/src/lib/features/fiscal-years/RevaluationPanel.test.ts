@@ -200,6 +200,51 @@ describe('RevaluationPanel — écran complet', () => {
 		expect(screen.getByTestId('revaluation-rate-missing-USD')).toBeTruthy();
 	});
 
+	it('devise sans cours retenu : aucun champ de cours (le cours tapé ne partirait jamais) (37-5-CR-P1-1)', async () => {
+		const sans = rate({ currency: 'EUR', rate: null, rateKind: null, rateDate: null, defaultKind: null, defaultRate: null, defaultSource: null, sourceDate: null });
+		previewMock.mockResolvedValueOnce(
+			preview({
+				rates: [rate(), sans],
+				lines: [
+					line(),
+					line({ accountId: 11, accountNumber: '1030', currency: 'EUR', reason: 'RATE_UNAVAILABLE', selectable: false, selected: false, delta: null, rate: null, targetChf: null })
+				]
+			})
+		);
+		render(RevaluationPanel, { fiscalYearId: 1, mode: 'full', today: '2025-01-15' });
+		expect(await screen.findByTestId('revaluation-rate-input-USD')).toBeTruthy();
+		expect(screen.queryByTestId('revaluation-rate-input-EUR')).toBeNull();
+		expect(screen.getByTestId('revaluation-rate-value-EUR').textContent).toMatch(/—/);
+		expect(screen.getByTestId('revaluation-rate-missing-EUR')).toBeTruthy();
+	});
+
+	it('« Passer les écritures » attend la relecture en cours (37-5-CR-P1-2)', async () => {
+		previewMock.mockResolvedValueOnce(deux());
+		postMock.mockResolvedValue({ entryIds: [1] });
+		render(RevaluationPanel, { fiscalYearId: 1, mode: 'full', today: '2025-01-15' });
+		const champ = (await screen.findByTestId('revaluation-rate-input-USD')) as HTMLInputElement;
+		let relire: (p: unknown) => void = () => {};
+		previewMock.mockImplementationOnce(() => new Promise((r) => (relire = r)));
+		await fireEvent.change(champ, { target: { value: '0.95' } });
+		const bouton = screen.getByTestId('revaluation-submit') as HTMLButtonElement;
+		await waitFor(() => expect(bouton.disabled).toBe(true));
+		await fireEvent.click(bouton);
+		expect(postMock).not.toHaveBeenCalled();
+		previewMock.mockResolvedValue(deux());
+		relire(deux());
+		await waitFor(() => expect(bouton.disabled).toBe(false));
+	});
+
+	it('une relecture échouée après la passation se dit, l’aperçu restant affiché (37-5-CR-P1-4)', async () => {
+		previewMock.mockResolvedValueOnce(deux());
+		postMock.mockResolvedValue({ entryIds: [7] });
+		render(RevaluationPanel, { fiscalYearId: 1, mode: 'full', today: '2025-01-15' });
+		previewMock.mockRejectedValueOnce(new Error('réseau'));
+		await fireEvent.click(await screen.findByTestId('revaluation-submit'));
+		expect((await screen.findByTestId('revaluation-error')).textContent?.trim()).not.toBe('');
+		expect(screen.getByTestId('revaluation-panel')).toBeTruthy();
+	});
+
 	it('source brute d’une autre valeur (A30) : « cours saisi (ecb) »', async () => {
 		previewMock.mockResolvedValueOnce(preview({ rates: [rate({ defaultSource: 'ecb', sourceDate: null })] }));
 		render(RevaluationPanel, { fiscalYearId: 1, mode: 'full', today: '2025-01-15' });
@@ -228,6 +273,9 @@ describe('RevaluationPanel — avis de K9', () => {
 			})
 		);
 		expect(onPosted).toHaveBeenCalledWith([5]);
+		// L'avis resté monté relit l'aperçu, sans sélection ni cours (37-5-CR-P1-3).
+		await waitFor(() => expect(previewMock).toHaveBeenCalledTimes(2));
+		expect(previewMock).toHaveBeenLastCalledWith(1, {});
 	});
 
 	it('repli mensuel dans l’avis : signalé et récupérable, puis aperçu et contrôles relus', async () => {

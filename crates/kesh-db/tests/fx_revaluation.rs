@@ -1239,8 +1239,10 @@ async fn k9_sans_compte_en_devise(pool: MySqlPool) {
     assert_eq!(c.checks[8].status, CheckStatus::Ok);
 }
 
-/// Mono-devise avec un compte en devise à solde (exercice clos avant
-/// l'activation puis rouvert) : ok sans autre lecture.
+/// Mono-devise avec un compte en devise à solde : ok sans autre lecture.
+/// L'état — celui d'un exercice clos avant l'activation puis rouvert — est
+/// posé ici par SQL ; le chemin réel par l'API est éprouvé par
+/// `fx_revaluation_e2e.rs::mono_devise_pose_par_l_api`.
 #[sqlx::test(migrations = "./test-schema")]
 async fn k9_mono_devise(pool: MySqlPool) {
     let dec = jeu(&pool).await;
@@ -1769,4 +1771,321 @@ async fn lignes_de_l_apercu(pool: MySqlPool) {
         lignes[1].outcome,
         fx_revaluation::LineOutcome::RateUnavailable
     );
+}
+
+// ---------------------------------------------------------------------------
+// Revue de code P1 (37-5-CR-P1-6) : cas de l'AC-7 qui manquaient
+// ---------------------------------------------------------------------------
+
+/// AC-7 : deux exercices — achat EUR en N-1, réévaluation N-1, clôture N-1,
+/// mouvements en N, réévaluation N : solde CHF au 31.12.N = round(solde EUR ×
+/// cours) exactement ; la réévaluation de N-1 n'entre pas dans les
+/// réévaluations déjà passées de N (A39, second exercice réel).
+#[sqlx::test(migrations = "./test-schema")]
+async fn deux_exercices_cumul_exact(pool: MySqlPool) {
+    let dec = decor(&pool).await;
+    let c = dec.s.company_id;
+    let fy23: i64 = sqlx::query(
+        "INSERT INTO fiscal_years (company_id, name, start_date, end_date, status, multi_currency) \
+         VALUES (?, 'Exercice 2023', '2023-01-01', '2023-12-31', 'Open', TRUE)",
+    )
+    .bind(c)
+    .execute(&pool)
+    .await
+    .unwrap()
+    .last_insert_id() as i64;
+    // N-1 : EUR 200 achetés 196.00 ; réévalués au 31.12.2023 à 0.93 → 186.00.
+    poser(
+        &pool,
+        &dec,
+        fy23,
+        d(2023, 6, 1),
+        dec.eur,
+        true,
+        dec!(196.00),
+        dec!(200),
+        dec!(0.98),
+    )
+    .await;
+    cours(&pool, c, "EUR", "day", d(2023, 12, 31), dec!(0.93), "afc").await;
+    let p23 = passer(
+        &pool,
+        &dec,
+        &demande(fy23, &[("EUR", dec!(0.93))], &[dec.eur]),
+    )
+    .await
+    .unwrap();
+    assert_eq!(p23.len(), 1);
+    assert_eq!(p23[0].delta, dec!(-10.00));
+    assert_eq!(p23[0].counterpart_account_id, dec.perte);
+    // K9 de N-1 levé par la passation au cours par défaut : la clôture passe.
+    fiscal_years::close(&pool, dec.s.admin_user_id, c, fy23)
+        .await
+        .expect("N-1 réévalué au cours retenu : clôture permise");
+
+    // N : EUR 100 achetés 95.00, EUR 50 vendus 48.00.
+    poser(
+        &pool,
+        &dec,
+        dec.fy,
+        d(2024, 5, 1),
+        dec.eur,
+        true,
+        dec!(95.00),
+        dec!(100),
+        dec!(0.95),
+    )
+    .await;
+    poser(
+        &pool,
+        &dec,
+        dec.fy,
+        d(2024, 8, 1),
+        dec.eur,
+        false,
+        dec!(48.00),
+        dec!(50),
+        dec!(0.96),
+    )
+    .await;
+    // Cumul depuis l'origine : EUR 250, CHF 186 + 95 − 48 = 233.00.
+    assert_eq!(
+        solde(&pool, &dec, dec.eur, d(2024, 12, 31)).await,
+        (dec!(233.00), dec!(250))
+    );
+    let p24 = passer(
+        &pool,
+        &dec,
+        &demande(dec.fy, &[("EUR", dec!(0.94947))], &[dec.eur]),
+    )
+    .await
+    .unwrap();
+    // 250 × 0.94947 = 237.3675 → 237.37 ; 237.37 − 233.00 = +4.37.
+    assert_eq!(p24.len(), 1);
+    assert_eq!(p24[0].delta, dec!(4.37));
+    assert_eq!(
+        solde(&pool, &dec, dec.eur, d(2024, 12, 31)).await,
+        (dec!(237.37), dec!(250)),
+        "solde CHF = round(solde EUR × cours), exactement"
+    );
+    let fy = exercice(&pool, dec.fy).await;
+    let mut conn = pool.acquire().await.unwrap();
+    let prev = fx_revaluation::previous_revaluations(&mut conn, c, &fy, &[dec.eur])
+        .await
+        .unwrap();
+    assert_eq!(prev[&dec.eur].total, dec!(4.37), "N-1 n'y entre pas");
+    assert_eq!(prev[&dec.eur].entry_ids, vec![p24[0].entry_id]);
+}
+
+/// AC-7 (T3) : un compte EUR dont le cumul contient une écriture EUR–EUR
+/// (chaque ligne a son cours) est réévalué sur le `devise_net` de toutes ses
+/// lignes ; aucun `FX_CURRENCY_MISMATCH` ni `FX_ACCOUNT_IN_CHF`.
+#[sqlx::test(migrations = "./test-schema")]
+async fn cumul_avec_une_ecriture_eur_eur(pool: MySqlPool) {
+    let dec = jeu(&pool).await;
+    let eur2 = compte(&pool, dec.s.company_id, "1031", "Asset", Some("EUR")).await;
+    let ligne = |compte: i64, debit: Decimal, credit: Decimal, taux: Decimal| NewJournalEntryLine {
+        foreign: Some(ForeignAmount {
+            declared_currency: None,
+            amount: dec!(100),
+            rate: taux,
+            source: Some(RateProvenance::Manual),
+            rate_derived: false,
+        }),
+        ..chf_line(compte, debit, credit)
+    };
+    // EUR 100 virés de 1031 à 1030 : 1030 au débit à 0.95 (95.00), 1031 au
+    // crédit à 0.95 (95.00).
+    journal_entries::create(
+        &pool,
+        dec.fy,
+        Acteur::utilisateur(dec.s.admin_user_id),
+        NewJournalEntry {
+            company_id: dec.s.company_id,
+            entry_date: d(2024, 9, 1),
+            journal: Journal::OD,
+            description: "Virement EUR–EUR".into(),
+            project_id: None,
+            lines: vec![
+                ligne(dec.eur, dec!(95.00), Decimal::ZERO, dec!(0.95)),
+                ligne(eur2, Decimal::ZERO, dec!(95.00), dec!(0.95)),
+            ],
+        },
+    )
+    .await
+    .expect("écriture EUR–EUR");
+    // 1030 : EUR 200 + 100 = 300, CHF 190 + 95 = 285 ; à 0.96 → 288.00 : +3.00.
+    let p = passer(
+        &pool,
+        &dec,
+        &demande(dec.fy, &[("EUR", dec!(0.96))], &[dec.eur]),
+    )
+    .await
+    .unwrap();
+    assert_eq!(p.len(), 1);
+    assert_eq!(p[0].delta, dec!(3.00));
+    assert_eq!(
+        solde(&pool, &dec, dec.eur, d(2024, 12, 31)).await,
+        (dec!(288.00), dec!(300))
+    );
+}
+
+/// AC-7 (audit) : le `journal_entry.created` d'une écriture de réévaluation
+/// porte `foreign` au snapshot — devise lue sur le compte, montant 0, cours,
+/// `rateSource` `revaluation` — pour la seule ligne du compte réévalué.
+#[sqlx::test(migrations = "./test-schema")]
+async fn audit_de_creation_porte_foreign(pool: MySqlPool) {
+    let dec = jeu(&pool).await;
+    let p = passer(
+        &pool,
+        &dec,
+        &demande(dec.fy, &[("EUR", dec!(0.94947))], &[dec.eur]),
+    )
+    .await
+    .unwrap();
+    assert_eq!(p.len(), 1);
+    let details: serde_json::Value = sqlx::query_scalar(
+        "SELECT details_json FROM audit_log WHERE action = 'journal_entry.created' AND entity_id = ?",
+    )
+    .bind(p[0].entry_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let lignes = details["lines"].as_array().unwrap();
+    let reev = lignes
+        .iter()
+        .find(|l| l["accountId"] == dec.eur)
+        .unwrap_or_else(|| panic!("{details}"));
+    let f = &reev["foreign"];
+    assert_eq!(f["currency"], "EUR", "{details}");
+    assert_eq!(f["rateSource"], "revaluation", "{details}");
+    let lu = |v: &serde_json::Value| v.as_str().unwrap().parse::<Decimal>().unwrap();
+    assert_eq!(lu(&f["amount"]), Decimal::ZERO);
+    assert_eq!(lu(&f["rate"]).normalize(), dec!(0.94947));
+    let cp = lignes
+        .iter()
+        .find(|l| l["accountId"] == dec.perte)
+        .unwrap_or_else(|| panic!("{details}"));
+    assert!(cp.get("foreign").is_none(), "{details}");
+}
+
+/// AC-7 (U1) : une correction de l'AFC non reprise laisse proposer l'ancien
+/// cours retenu (source `afc`) ; après ↑ (`reset_rate`, 37-2), la valeur
+/// corrigée.
+#[sqlx::test(migrations = "./test-schema")]
+async fn correction_afc_non_reprise_puis_reprise(pool: MySqlPool) {
+    let dec = decor(&pool).await;
+    let c = dec.s.company_id;
+    cours(&pool, c, "USD", "day", d(2024, 12, 31), dec!(0.91), "afc").await;
+    // La source a corrigé sa publication du 31.12 : 0.91193.
+    publie(
+        &pool,
+        "USD",
+        d(2024, 12, 31),
+        dec!(0.91193),
+        d(2024, 12, 31),
+    )
+    .await;
+    let fy = exercice(&pool, dec.fy).await;
+    let devises = ["USD".to_string()].into_iter().collect();
+    let mut conn = pool.acquire().await.unwrap();
+    let r = fx_revaluation::resolve_default_rates(&mut conn, c, &fy, &devises)
+        .await
+        .unwrap();
+    let usd = r["USD"].clone().unwrap();
+    assert_eq!(
+        (usd.rate, usd.kind, usd.source.clone()),
+        (dec!(0.91), RateKind::Day, RateOrigin::Afc),
+        "la valeur publiée non reprise n'est jamais proposée"
+    );
+    let version: i32 = sqlx::query_scalar(
+        "SELECT version FROM exchange_rates WHERE company_id = ? AND currency = 'USD'",
+    )
+    .bind(c)
+    .fetch_one(&mut *conn)
+    .await
+    .unwrap();
+    kesh_db::repositories::exchange_rates::reset_rate(
+        &mut conn,
+        c,
+        dec.s.admin_user_id,
+        "USD",
+        RateKind::Day,
+        d(2024, 12, 31),
+        Some(version),
+        Some(dec!(0.91193)),
+    )
+    .await
+    .expect("↑ : la valeur corrigée reprise");
+    let r = fx_revaluation::resolve_default_rates(&mut conn, c, &fy, &devises)
+        .await
+        .unwrap();
+    let usd = r["USD"].clone().unwrap();
+    assert_eq!(
+        (usd.rate.normalize(), usd.source.clone()),
+        (dec!(0.91193), RateOrigin::Afc)
+    );
+}
+
+/// Clôture et passation concurrentes, la **clôture** d'abord : la passation,
+/// arrivée derrière elle sur le verrou de l'exercice, relit l'exercice clos
+/// sous verrou et refuse `FISCAL_YEAR_CLOSED`, sans rien écrire.
+#[sqlx::test(migrations = "./test-schema")]
+async fn passation_apres_cloture_concurrente(pool: MySqlPool) {
+    let dec = jeu(&pool).await;
+    let c = dec.s.company_id;
+    cours(&pool, c, "USD", "day", d(2024, 12, 31), dec!(0.92), "afc").await;
+    cours(&pool, c, "EUR", "day", d(2024, 12, 31), dec!(0.95), "afc").await;
+    // Réévalué au cours retenu : K9 levé, la clôture passera.
+    passer(
+        &pool,
+        &dec,
+        &demande(dec.fy, &[("USD", dec!(0.92))], &[dec.usd, dec.usd_passif]),
+    )
+    .await
+    .unwrap();
+    let avant: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM journal_entry_lines WHERE rate_source = 'revaluation'",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let req = demande(dec.fy, &[("USD", dec!(0.93))], &[dec.usd]);
+    let (pool2, u) = (pool.clone(), dec.s.admin_user_id);
+    let passation = std::sync::Arc::new(tokio::sync::Mutex::new(None));
+    let tenue = passation.clone();
+    let r = cloture_pendant(&pool, &dec, |tiers| async move {
+        // La passation se met en file derrière la clôture, sur l'exercice.
+        let p = pool2.clone();
+        let tache =
+            tokio::spawn(
+                async move { fx_revaluation::post(&p, Acteur::utilisateur(u), c, &req).await },
+            );
+        assert!(
+            kesh_db::test_fixtures::attendre_des_requetes_en_cours(
+                &pool2,
+                &["SELECT id, company_id, name", "FOR UPDATE"],
+                2,
+                || tache.is_finished()
+            )
+            .await,
+            "clôture et passation attendent l'exercice"
+        );
+        tiers.commit().await.unwrap();
+        *tenue.lock().await = Some(tache.await.unwrap());
+    })
+    .await;
+    assert!(r.is_ok(), "la clôture, première en file, passe : {r:?}");
+    let resultat = passation.lock().await.take().unwrap();
+    assert!(
+        matches!(resultat, Err(DbError::FiscalYearClosed)),
+        "{resultat:?}"
+    );
+    let apres: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM journal_entry_lines WHERE rate_source = 'revaluation'",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(apres, avant, "rien d'écrit après la clôture");
 }

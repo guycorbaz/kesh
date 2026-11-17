@@ -195,8 +195,17 @@ pub async fn post_revaluation(
     // sélectionnés, puis cours par défaut.
     let mut conn = state.pool.acquire().await.map_err(map_db_error)?;
     let selected = depot::find_accounts(&mut conn, company_id, &account_ids).await?;
-    let currencies: BTreeSet<String> = selected.iter().filter_map(|a| a.currency.clone()).collect();
-    cles_dans(&recus, &currencies)?;
+    let scope: BTreeSet<String> = selected.iter().filter_map(|a| a.currency.clone()).collect();
+    cles_dans(&recus, &scope)?;
+    // Seules les devises des comptes admissibles exigent un cours : un compte
+    // non admissible (archivé, de résultat) sans cours tombe sous verrou en
+    // `notEligible`, non en `RATE_UNAVAILABLE`. Un cours reçu pour sa devise
+    // reste admis (`scope`) et passe à l'audit.
+    let currencies: BTreeSet<String> = selected
+        .iter()
+        .filter(|a| a.is_eligible())
+        .filter_map(|a| a.currency.clone())
+        .collect();
     let defaults = depot::resolve_default_rates(&mut conn, company_id, &fy, &currencies).await?;
     drop(conn);
 
@@ -360,10 +369,17 @@ pub struct RevaluationPreviewResponse {
 /// les `blockers[]`, avec le message traduit du refus (DRY).
 async fn blocker_de(err: AppError) -> PreviewBlocker {
     let response = err.into_response();
-    let bytes = axum::body::to_bytes(response.into_body(), 64 * 1024)
-        .await
-        .unwrap_or_default();
-    let value: serde_json::Value = serde_json::from_slice(&bytes).unwrap_or_default();
+    let bytes = match axum::body::to_bytes(response.into_body(), 64 * 1024).await {
+        Ok(b) => b,
+        Err(e) => {
+            tracing::error!(error = %e, "fx_revaluation : corps d'erreur illisible pour blockers[]");
+            Default::default()
+        }
+    };
+    let value: serde_json::Value = serde_json::from_slice(&bytes).unwrap_or_else(|e| {
+        tracing::error!(error = %e, "fx_revaluation : corps d'erreur non JSON pour blockers[]");
+        serde_json::Value::Null
+    });
     let e = &value["error"];
     PreviewBlocker {
         code: e["code"].as_str().unwrap_or_default().to_string(),
@@ -373,7 +389,9 @@ async fn blocker_de(err: AppError) -> PreviewBlocker {
 }
 
 /// `POST /api/v1/fiscal-years/{id}/fx-revaluation/preview` — l'aperçu (AC-1) :
-/// lectures ordinaires sur le pool, aucune écriture.
+/// lectures sur le pool, hors transaction, aucune écriture (la revalidation des
+/// comptes de différence, partagée avec la passation, lit `LOCK IN SHARE MODE`,
+/// en autocommit : le verrou tombe avec la requête).
 pub async fn preview_revaluation(
     State(state): State<AppState>,
     Extension(current_user): Extension<CurrentUser>,
@@ -399,8 +417,26 @@ pub async fn preview_revaluation(
     }
     let lines = depot::lines_for_fiscal_year(&mut conn, company_id, &fy, &effective).await?;
 
-    // La sélection : `accountIds`, chacun admissible ; sinon la présélection.
+    // Les clés de `rates` d'abord (même ordre que la passation, qui les juge
+    // avant la transaction, `notEligible` ensuite sous verrou) : avec
+    // `accountIds`, les devises des comptes reçus de la société (la règle de la
+    // passation, `find_accounts`) ; sans, celles des comptes admissibles
+    // (C-37-5-2).
     let eligible: Vec<&RevaluationLine> = lines.iter().filter(|l| l.account.active).collect();
+    let scope: BTreeSet<String> = match &body.account_ids {
+        Some(ids) => depot::find_accounts(&mut conn, company_id, ids)
+            .await?
+            .into_iter()
+            .filter_map(|a| a.currency)
+            .collect(),
+        None => eligible
+            .iter()
+            .filter_map(|l| l.account.currency.clone())
+            .collect(),
+    };
+    cles_dans(&recus, &scope)?;
+
+    // La sélection : `accountIds`, chacun admissible ; sinon la présélection.
     let (selected, truncated): (BTreeSet<i64>, bool) = match &body.account_ids {
         Some(ids) => {
             let admissibles: BTreeSet<i64> = eligible.iter().map(|l| l.account.id).collect();
@@ -429,18 +465,6 @@ pub async fn preview_revaluation(
             )
         }
     };
-    let scope: BTreeSet<String> = match &body.account_ids {
-        Some(_) => lines
-            .iter()
-            .filter(|l| selected.contains(&l.account.id))
-            .filter_map(|l| l.account.currency.clone())
-            .collect(),
-        None => eligible
-            .iter()
-            .filter_map(|l| l.account.currency.clone())
-            .collect(),
-    };
-    cles_dans(&recus, &scope)?;
     if let Some(e) = lines
         .iter()
         .filter(|l| selected.contains(&l.account.id))
@@ -589,6 +613,24 @@ pub async fn preview_revaluation(
             blocker_de(AppError::Database(DbError::PeriodLocked {
                 locked_through,
                 attempted: fy.end_date,
+            }))
+            .await,
+        );
+    }
+    // Un compte sélectionné (par `accountIds`) dont la devise n'a pas de
+    // cours : la passation rendrait 404 `RATE_UNAVAILABLE` — une fois par
+    // devise, dans l'ordre des devises.
+    let sans_cours: BTreeSet<String> = lines
+        .iter()
+        .filter(|l| selected.contains(&l.account.id))
+        .filter(|l| l.outcome == LineOutcome::RateUnavailable)
+        .filter_map(|l| l.account.currency.clone())
+        .collect();
+    for currency in sans_cours {
+        blockers.push(
+            blocker_de(AppError::Database(DbError::RateUnavailable {
+                currency,
+                month: first_of_month(fy.end_date),
             }))
             .await,
         );
