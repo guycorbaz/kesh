@@ -70,6 +70,7 @@
 
 use chrono::NaiveDate;
 use kesh_db::entities::AccountType;
+use kesh_db::repositories::account_balances::{Cote, somme_en_devise};
 use rust_decimal::Decimal;
 use serde::Serialize;
 use sqlx::MySqlPool;
@@ -139,6 +140,25 @@ pub struct LedgerSection {
     pub fiscal_year_breaks: Vec<FiscalYearBreak>,
     /// Nombre total de lignes sur la période, **avant pagination**.
     pub line_count: i64,
+    /// Devise du compte (`accounts.currency`, Story 37-4) ; `None` pour un
+    /// compte en devise principale, qui n'a alors **aucun** champ en devise —
+    /// ni dans la section, ni dans ses lignes, ni dans ses ruptures (AC-1).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub currency: Option<String>,
+    /// Solde d'ouverture en devise, signé comme [`Self::opening`].
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub opening_currency: Option<Decimal>,
+    /// Total des mouvements au débit, en devise, sur toute la période.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub total_debit_currency: Option<Decimal>,
+    /// Total des mouvements au crédit, en devise, sur toute la période.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub total_credit_currency: Option<Decimal>,
+    /// Solde de clôture en devise, selon la règle de [`Self::closing`] (solde
+    /// de l'exercice final pour un compte de résultat qui franchit un
+    /// exercice).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub closing_currency: Option<Decimal>,
 }
 
 /// Fin d'exercice traversée par la période, sur un compte de résultat : le solde
@@ -152,6 +172,9 @@ pub struct FiscalYearBreak {
     pub date: NaiveDate,
     pub closing_fiscal_year_id: i64,
     pub closing_balance: Decimal,
+    /// Solde en devise de l'exercice clos (compte en devise seulement).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub closing_balance_currency: Option<Decimal>,
 }
 
 impl LedgerSection {
@@ -228,6 +251,34 @@ pub struct LedgerLine {
     /// le porte : l'export CSV et le PDF écrivent leurs colonnes une à une, et
     /// restent tels quels (C-15-1b-6).
     pub lettering_code: Option<String>,
+    /// Montant en devise au débit (Story 37-4) — `Some` sur toute ligne d'une
+    /// section en devise (0 du côté opposé, comme le CHF), `None` ailleurs.
+    /// Une ligne `revaluation` porte 0 des deux côtés : elle ne change que le
+    /// montant en devise principale.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub debit_currency: Option<Decimal>,
+    /// Montant en devise au crédit (même règle).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub credit_currency: Option<Decimal>,
+    /// Cours par unité de devise de la ligne (10 décimales stockées).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub exchange_rate: Option<Decimal>,
+    /// Provenance du cours : `afc`, `manual` ou `revaluation` — la dernière se
+    /// lit « Réévaluation au cours X », sans montant en devise.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub rate_source: Option<String>,
+    /// Solde progressif en devise, mêmes remises à zéro que le CHF.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub running_balance_currency: Option<Decimal>,
+}
+
+impl LedgerLine {
+    /// Vrai pour une ligne de réévaluation de change (`rate_source =
+    /// revaluation`) : elle s'affiche « Réévaluation au cours X », sans montant
+    /// en devise (AC-2).
+    pub fn is_revaluation(&self) -> bool {
+        self.rate_source.as_deref() == Some("revaluation")
+    }
 }
 
 /// Ligne brute, telle que la lit SQL.
@@ -244,6 +295,26 @@ struct RawLine {
     debit: Decimal,
     credit: Decimal,
     lettering_key: Option<i64>,
+    /// `NULL` pour une ligne en devise principale.
+    amount_currency: Option<Decimal>,
+    exchange_rate: Option<Decimal>,
+    rate_source: Option<String>,
+}
+
+impl RawLine {
+    /// La paire brute `(débit, crédit)` en devise de la ligne : côté lu sur son
+    /// montant en devise principale (AC-1), `(0, 0)` pour une ligne sans montant
+    /// en devise.
+    fn paire_devise(&self) -> (Decimal, Decimal) {
+        let m = self.amount_currency.unwrap_or_default();
+        if self.debit > Decimal::ZERO {
+            (m, Decimal::ZERO)
+        } else if self.credit > Decimal::ZERO {
+            (Decimal::ZERO, m)
+        } else {
+            (Decimal::ZERO, Decimal::ZERO)
+        }
+    }
 }
 
 #[derive(Debug, sqlx::FromRow)]
@@ -253,6 +324,8 @@ struct RawAccount {
     name: String,
     account_type: AccountType,
     active: bool,
+    /// Devise du compte — elle gouverne l'affichage en devise de la section.
+    currency: Option<String>,
 }
 
 /// Un exercice, réduit à ce dont le grand livre a besoin : son identifiant — la
@@ -324,6 +397,11 @@ async fn fiscal_year_current_at(
 /// début de l'exercice contenant `from` (`exercice_initial`). Quand aucun
 /// exercice ne couvre `from`, la borne basse vaut `from` lui-même : la seconde
 /// paire est nulle, et l'ouverture d'un compte de résultat aussi.
+///
+/// Rend `(ouverture, ouverture en devise)` : la seconde par la **même** règle
+/// ([`opening_from`]) appliquée à la paire en devise (Story 37-4, AC-1) ; elle
+/// vaut 0 pour un compte sans ligne en devise, et l'appelant ne la lit que pour
+/// une section en devise.
 async fn opening_balance(
     pool: &MySqlPool,
     company_id: i64,
@@ -331,27 +409,49 @@ async fn opening_balance(
     account_type: AccountType,
     from: NaiveDate,
     exercice_initial: Option<Exercice>,
-) -> Result<Decimal, ReportError> {
+) -> Result<(Decimal, Decimal), ReportError> {
     let fy_start = exercice_initial.map_or(from, |e| e.start);
+    let depuis = Some("je.entry_date >= ?");
 
-    let (bd, bc, sd, sc) = sqlx::query_as::<_, (Decimal, Decimal, Decimal, Decimal)>(
+    let sql = format!(
         "SELECT COALESCE(SUM(jel.debit), 0), COALESCE(SUM(jel.credit), 0), \
                 COALESCE(SUM(CASE WHEN je.entry_date >= ? THEN jel.debit ELSE 0 END), 0), \
-                COALESCE(SUM(CASE WHEN je.entry_date >= ? THEN jel.credit ELSE 0 END), 0) \
+                COALESCE(SUM(CASE WHEN je.entry_date >= ? THEN jel.credit ELSE 0 END), 0), \
+                {bd_fx}, {bc_fx}, {sd_fx}, {sc_fx} \
          FROM journal_entry_lines jel \
          INNER JOIN journal_entries je ON je.id = jel.entry_id \
          WHERE jel.account_id = ? AND je.company_id = ? AND je.entry_date < ?",
-    )
-    .bind(fy_start)
-    .bind(fy_start)
-    .bind(account_id)
-    .bind(company_id)
-    .bind(from)
-    .fetch_one(pool)
-    .await
-    .map_err(kesh_db::errors::map_db_error)?;
+        bd_fx = somme_en_devise("jel", Cote::Debit, None),
+        bc_fx = somme_en_devise("jel", Cote::Credit, None),
+        sd_fx = somme_en_devise("jel", Cote::Debit, depuis),
+        sc_fx = somme_en_devise("jel", Cote::Credit, depuis),
+    );
+    let row: (
+        Decimal,
+        Decimal,
+        Decimal,
+        Decimal,
+        Decimal,
+        Decimal,
+        Decimal,
+        Decimal,
+    ) = sqlx::query_as(&sql)
+        .bind(fy_start)
+        .bind(fy_start)
+        .bind(fy_start) // sd_fx
+        .bind(fy_start) // sc_fx
+        .bind(account_id)
+        .bind(company_id)
+        .bind(from)
+        .fetch_one(pool)
+        .await
+        .map_err(kesh_db::errors::map_db_error)?;
+    let (bd, bc, sd, sc, bd_fx, bc_fx, sd_fx, sc_fx) = row;
 
-    Ok(opening_from(account_type, (bd, bc), (sd, sc)))
+    Ok((
+        opening_from(account_type, (bd, bc), (sd, sc)),
+        opening_from(account_type, (bd_fx, bc_fx), (sd_fx, sc_fx)),
+    ))
 }
 
 /// Comptes à rendre : ceux qui ont un mouvement sur la période **ou** un solde
@@ -361,7 +461,8 @@ async fn select_accounts(
     company_id: i64,
     account_ids: Option<&[i64]>,
 ) -> Result<Vec<RawAccount>, ReportError> {
-    let base = "SELECT a.id AS account_id, a.number, a.name, a.account_type, a.active \
+    let base = "SELECT a.id AS account_id, a.number, a.name, a.account_type, a.active, \
+                a.currency \
                 FROM accounts a WHERE a.company_id = ?";
 
     let rows = match account_ids {
@@ -407,7 +508,7 @@ async fn fetch_lines(
         SELECT jel.id AS line_id, je.id AS entry_id, je.entry_date, je.fiscal_year_id,
                fy.name AS fiscal_year_name,
                je.entry_number, je.journal, je.description, jel.debit, jel.credit,
-               jel.lettering_key
+               jel.lettering_key, jel.amount_currency, jel.exchange_rate, jel.rate_source
         FROM journal_entry_lines jel
         INNER JOIN journal_entries je ON je.id = jel.entry_id
         INNER JOIN fiscal_years fy ON fy.id = je.fiscal_year_id
@@ -441,6 +542,12 @@ struct Totaux {
     /// une fin d'exercice (#778).
     debit_exercice_final: Decimal,
     credit_exercice_final: Decimal,
+    /// Les mêmes quatre sommes en devise (règle de l'AC-1 de la 37-4) ; nulles
+    /// pour un compte sans ligne en devise.
+    debit_fx: Decimal,
+    credit_fx: Decimal,
+    debit_fx_exercice_final: Decimal,
+    credit_fx_exercice_final: Decimal,
 }
 
 /// Totaux et compte de lignes sur **toute la période**.
@@ -461,27 +568,57 @@ async fn fetch_totals(
 ) -> Result<Totaux, ReportError> {
     // `exercice_final` à NULL : la comparaison n'est jamais vraie, les deux
     // sommes valent zéro — et ne sont pas lues (cf. `closing`).
-    let sql = "
-        SELECT COALESCE(SUM(jel.debit), 0) AS d, COALESCE(SUM(jel.credit), 0) AS c,
+    let final_ = Some("je.fiscal_year_id = ?");
+    let sql = format!(
+        "SELECT COALESCE(SUM(jel.debit), 0) AS d, COALESCE(SUM(jel.credit), 0) AS c,
                COUNT(*) AS n,
                COALESCE(SUM(CASE WHEN je.fiscal_year_id = ? THEN jel.debit ELSE 0 END), 0),
-               COALESCE(SUM(CASE WHEN je.fiscal_year_id = ? THEN jel.credit ELSE 0 END), 0)
+               COALESCE(SUM(CASE WHEN je.fiscal_year_id = ? THEN jel.credit ELSE 0 END), 0),
+               {d_fx}, {c_fx}, {df_fx}, {cf_fx}
         FROM journal_entry_lines jel
         INNER JOIN journal_entries je ON je.id = jel.entry_id
         WHERE jel.account_id = ? AND je.company_id = ?
-          AND je.entry_date >= ? AND je.entry_date <= ?";
+          AND je.entry_date >= ? AND je.entry_date <= ?",
+        d_fx = somme_en_devise("jel", Cote::Debit, None),
+        c_fx = somme_en_devise("jel", Cote::Credit, None),
+        df_fx = somme_en_devise("jel", Cote::Debit, final_),
+        cf_fx = somme_en_devise("jel", Cote::Credit, final_),
+    );
 
-    let (debit, credit, count, debit_exercice_final, credit_exercice_final) =
-        sqlx::query_as::<_, (Decimal, Decimal, i64, Decimal, Decimal)>(sql)
-            .bind(exercice_final)
-            .bind(exercice_final)
-            .bind(account_id)
-            .bind(company_id)
-            .bind(period.from)
-            .bind(period.to)
-            .fetch_one(pool)
-            .await
-            .map_err(|e| ReportError::Db(kesh_db::errors::map_db_error(e)))?;
+    type Ligne = (
+        Decimal,
+        Decimal,
+        i64,
+        Decimal,
+        Decimal,
+        Decimal,
+        Decimal,
+        Decimal,
+        Decimal,
+    );
+    let row: Ligne = sqlx::query_as(&sql)
+        .bind(exercice_final)
+        .bind(exercice_final)
+        .bind(exercice_final) // df_fx
+        .bind(exercice_final) // cf_fx
+        .bind(account_id)
+        .bind(company_id)
+        .bind(period.from)
+        .bind(period.to)
+        .fetch_one(pool)
+        .await
+        .map_err(|e| ReportError::Db(kesh_db::errors::map_db_error(e)))?;
+    let (
+        debit,
+        credit,
+        count,
+        debit_exercice_final,
+        credit_exercice_final,
+        debit_fx,
+        credit_fx,
+        debit_fx_exercice_final,
+        credit_fx_exercice_final,
+    ) = row;
 
     Ok(Totaux {
         debit,
@@ -489,6 +626,10 @@ async fn fetch_totals(
         count,
         debit_exercice_final,
         credit_exercice_final,
+        debit_fx,
+        credit_fx,
+        debit_fx_exercice_final,
+        credit_fx_exercice_final,
     })
 }
 
@@ -554,6 +695,11 @@ struct Cumul {
     /// Compte de BILAN : la chaîne est continue.
     resets: bool,
     running: Decimal,
+    /// Solde progressif en devise (Story 37-4, AC-1 bis) — **dans le même
+    /// cumul** que le CHF, pour qu'il ne puisse pas diverger de lui sur une
+    /// remise à zéro ni sur les lignes sautées par `offset`. `None` pour un
+    /// compte sans devise.
+    running_fx: Option<Decimal>,
     /// Exercice de la **dernière ligne lue**, sautée ou rendue ; avant la
     /// première, l'**exercice qui contient `from`** — celui dont l'ouverture
     /// porte le solde.
@@ -568,13 +714,33 @@ struct Cumul {
 }
 
 impl Cumul {
-    fn new(account_type: AccountType, opening: Decimal, exercice_initial: Option<i64>) -> Self {
+    fn new(
+        account_type: AccountType,
+        opening: Decimal,
+        opening_fx: Option<Decimal>,
+        exercice_initial: Option<i64>,
+    ) -> Self {
         Self {
             account_type,
             resets: !is_bilan(account_type),
             running: opening,
+            running_fx: opening_fx,
             current_fy: exercice_initial,
         }
+    }
+
+    /// La rupture qui clôt l'exercice en cours, datée de `date` ; remet les
+    /// deux soldes à zéro.
+    fn rompt(&mut self, date: NaiveDate, fy: i64) -> FiscalYearBreak {
+        let rupture = FiscalYearBreak {
+            date,
+            closing_fiscal_year_id: fy,
+            closing_balance: self.running,
+            closing_balance_currency: self.running_fx,
+        };
+        self.running = Decimal::ZERO;
+        self.running_fx = self.running_fx.map(|_| Decimal::ZERO);
+        rupture
     }
 
     /// Clôt le cumul à la fin de la période : si l'exercice en cours à `to` n'est
@@ -588,12 +754,7 @@ impl Cumul {
         if !self.resets || fy == fin.id {
             return None;
         }
-        let rupture = FiscalYearBreak {
-            date: fin.start,
-            closing_fiscal_year_id: fy,
-            closing_balance: self.running,
-        };
-        self.running = Decimal::ZERO;
+        let rupture = self.rompt(fin.start, fy);
         self.current_fy = Some(fin.id);
         Some(rupture)
     }
@@ -606,15 +767,14 @@ impl Cumul {
             && let Some(fy) = self.current_fy
             && r.fiscal_year_id != fy
         {
-            rupture = Some(FiscalYearBreak {
-                date: r.entry_date,
-                closing_fiscal_year_id: fy,
-                closing_balance: self.running,
-            });
-            self.running = Decimal::ZERO;
+            rupture = Some(self.rompt(r.entry_date, fy));
         }
         self.current_fy = Some(r.fiscal_year_id);
         self.running += signed(self.account_type, r.debit, r.credit);
+        if let Some(fx) = self.running_fx.as_mut() {
+            let (d, c) = r.paire_devise();
+            *fx += signed(self.account_type, d, c);
+        }
         rupture
     }
 }
@@ -663,7 +823,11 @@ pub async fn generate(
     let mut sections = Vec::new();
 
     for acc in accounts {
-        let opening = opening_balance(
+        // La devise du COMPTE gouverne tout l'affichage en devise (AC-1, T3) :
+        // une ligne en devise posée hors du dépôt sur un compte CHF n'y
+        // apparaît pas.
+        let en_devise = acc.currency.is_some();
+        let (opening, opening_fx) = opening_balance(
             pool,
             company_id,
             acc.account_id,
@@ -684,7 +848,11 @@ pub async fn generate(
 
         // Un compte sans mouvement NI solde n'a rien à montrer — sauf s'il a été
         // explicitement demandé, ou si l'appelant veut tout voir.
-        if !explicit && !options.include_zero && line_count == 0 && opening.is_zero() {
+        // AC-1 ter : une ouverture en devise non nulle suffit (conversion qui
+        // laisse un compte à CHF 0 et USD ≠ 0).
+        let opening_fx = en_devise.then_some(opening_fx);
+        let ouverture_nulle = opening.is_zero() && opening_fx.is_none_or(|o| o.is_zero());
+        if !explicit && !options.include_zero && line_count == 0 && ouverture_nulle {
             continue;
         }
 
@@ -697,7 +865,12 @@ pub async fn generate(
         // Sur un compte de RÉSULTAT, franchir une fin d'exercice remet le solde à
         // zéro : sinon le progressif affiché sur deux ans ne veut rien dire. Sur
         // un compte de BILAN, la chaîne est continue.
-        let mut cumul = Cumul::new(acc.account_type, opening, exercice_initial.map(|e| e.id));
+        let mut cumul = Cumul::new(
+            acc.account_type,
+            opening,
+            opening_fx,
+            exercice_initial.map(|e| e.id),
+        );
 
         // ⚠️ #775 — au-delà de la première page, le solde de départ n'est PAS
         // l'ouverture : c'est l'ouverture plus les lignes sautées par `offset`.
@@ -722,8 +895,15 @@ pub async fn generate(
         for r in raw {
             breaks.extend(cumul.avance(&r));
             let running = cumul.running;
+            let (debit_fx, credit_fx) = r.paire_devise();
+            let devise = |v: Decimal| en_devise.then_some(v);
 
             lines.push(LedgerLine {
+                debit_currency: devise(debit_fx),
+                credit_currency: devise(credit_fx),
+                exchange_rate: r.exchange_rate.filter(|_| en_devise),
+                rate_source: r.rate_source.clone().filter(|_| en_devise),
+                running_balance_currency: cumul.running_fx,
                 line_id: r.line_id,
                 entry_id: r.entry_id,
                 entry_date: r.entry_date,
@@ -768,7 +948,8 @@ pub async fn generate(
             (None, Some(_)) => true,
             (_, None) => false,
         };
-        let closing = if !is_bilan(acc.account_type) && franchit_un_exercice {
+        let borne_par_exercice = !is_bilan(acc.account_type) && franchit_un_exercice;
+        let closing = if borne_par_exercice {
             signed(
                 acc.account_type,
                 totaux.debit_exercice_final,
@@ -777,6 +958,18 @@ pub async fn generate(
         } else {
             opening + signed(acc.account_type, total_debit, total_credit)
         };
+        // La même règle en devise (AC-1 bis, #778).
+        let closing_fx = opening_fx.map(|o| {
+            if borne_par_exercice {
+                signed(
+                    acc.account_type,
+                    totaux.debit_fx_exercice_final,
+                    totaux.credit_fx_exercice_final,
+                )
+            } else {
+                o + signed(acc.account_type, totaux.debit_fx, totaux.credit_fx)
+            }
+        });
 
         sections.push(LedgerSection {
             account_id: acc.account_id,
@@ -797,6 +990,11 @@ pub async fn generate(
             unnatural_balance: closing.is_sign_negative() && !closing.is_zero(),
             fiscal_year_breaks: breaks,
             line_count,
+            currency: acc.currency,
+            opening_currency: opening_fx,
+            total_debit_currency: en_devise.then_some(totaux.debit_fx),
+            total_credit_currency: en_devise.then_some(totaux.credit_fx),
+            closing_currency: closing_fx,
         });
     }
 
@@ -835,6 +1033,11 @@ mod tests {
             credit: Decimal::ONE,
             running_balance: Decimal::ONE,
             lettering_code: None,
+            debit_currency: None,
+            credit_currency: None,
+            exchange_rate: None,
+            rate_source: None,
+            running_balance_currency: None,
         }
     }
 
@@ -843,6 +1046,7 @@ mod tests {
             date,
             closing_fiscal_year_id: clos,
             closing_balance: Decimal::TEN,
+            closing_balance_currency: None,
         }
     }
 
@@ -862,6 +1066,11 @@ mod tests {
             unnatural_balance: false,
             fiscal_year_breaks: breaks,
             line_count: 0,
+            currency: None,
+            opening_currency: None,
+            total_debit_currency: None,
+            total_credit_currency: None,
+            closing_currency: None,
         }
     }
 

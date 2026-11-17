@@ -28,6 +28,7 @@ vi.mock('$lib/shared/utils/i18n.svelte', () => ({
 		args
 			? fallback.replace(/\{\s*\$(\w+)\s*\}/g, (_, n) => String(args[n] ?? ''))
 			: fallback,
+	i18nLocale: () => 'fr-CH',
 }));
 
 vi.mock('$lib/shared/utils/notify', () => ({
@@ -49,7 +50,11 @@ vi.mock('$lib/features/fiscal-years/fiscal-years.api', () => ({
 	createFiscalYear: (req: unknown) => createFiscalYearMock(req),
 	updateFiscalYear: vi.fn(),
 	getClosingChecks: (id: number) => getClosingChecksMock(id),
+	// Story 37-5 — l'écran et l'avis de la réévaluation.
+	previewRevaluation: (id: number, req: unknown) => previewRevaluationMock(id, req),
+	postRevaluation: vi.fn(),
 }));
+const previewRevaluationMock = vi.fn();
 
 import Page from './+page.svelte';
 import { notifyError } from '$lib/shared/utils/notify';
@@ -447,7 +452,7 @@ describe('Préparer la clôture — bouton et colonne d’actions (AC5)', () => 
 });
 
 describe('Préparer la clôture — le panneau (AC5)', () => {
-	it('chargement : l’état d’attente seul ; puis les huit lignes', async () => {
+	it('chargement : l’état d’attente seul ; puis les neuf lignes', async () => {
 		authState.login({ userId: '3', username: 'lecture', role: 'Consultation', expiresIn: 3600 });
 		listFiscalYearsMock.mockResolvedValue([fy({ id: 1, status: 'Open' })]);
 		const d = deferred<ClosingChecksResponse>();
@@ -460,8 +465,9 @@ describe('Préparer la clôture — le panneau (AC5)', () => {
 		expect(getClosingChecksMock).toHaveBeenCalledWith(1);
 		d.resolve(closingChecks());
 		const list = await screen.findByTestId('fiscal-year-checks-list');
-		// Story v017-4b (#849, AC-26) — K8 en huitième ligne (7 → 8).
-		expect(list.querySelectorAll('[data-testid^="fiscal-year-checks-row-"]')).toHaveLength(8);
+		// Story v017-4b (#849, AC-26) — K8 en huitième ligne (7 → 8) ; Story 37-5 — K9
+		// en neuvième (8 → 9).
+		expect(list.querySelectorAll('[data-testid^="fiscal-year-checks-row-"]')).toHaveLength(9);
 	});
 
 	it('échec : « indisponible », jamais « Rien à signaler »', async () => {
@@ -666,5 +672,70 @@ describe('exercices — dates en forme suisse (v0172, #880)', () => {
 		await waitFor(() => expect(document.body.textContent).toMatch(/Début\s*01\.01\.2026/));
 		expect(document.body.textContent).toMatch(/Fin\s*31\.12\.2026/);
 		expect(document.body.textContent).not.toContain('2026-12-31');
+	});
+});
+
+// Story 37-5 (AC-6, AC-9) — l'action « Réévaluer les devises » et le dialogue de
+// clôture sous K9.
+describe('réévaluation des devises (37-5)', () => {
+	const k9 = () =>
+		closingChecks({
+			FOREIGN_ACCOUNTS_NOT_REVALUED: {
+				status: 'attention',
+				count: 1,
+				details: {
+					accounts: [
+						{ accountId: 10, number: '1020', name: 'PayPal USD', currency: 'USD', delta: '31.93', reason: 'NOT_REVALUED' },
+					],
+				},
+			},
+		});
+
+	it('l’action n’apparaît que pour un exercice ouvert, multi-devises, au Comptable et à l’Administrateur', async () => {
+		authState.login({ userId: '2', username: 'compta', role: 'Comptable', expiresIn: 3600 });
+		listFiscalYearsMock.mockResolvedValue([
+			fy({ id: 1, status: 'Open', multiCurrency: true }),
+			fy({ id: 2, name: 'Mono', startDate: '2025-01-01', endDate: '2025-12-31', status: 'Open', multiCurrency: false }),
+			fy({ id: 3, name: 'Clos', startDate: '2024-01-01', endDate: '2024-12-31', status: 'Closed', multiCurrency: true }),
+		]);
+		render(Page);
+		expect(await screen.findByTestId('fiscal-year-revaluation-1')).toBeTruthy();
+		expect(screen.queryByTestId('fiscal-year-revaluation-2')).toBeNull();
+		expect(screen.queryByTestId('fiscal-year-revaluation-3')).toBeNull();
+	});
+
+	it('Consultation : aucune action de réévaluation', async () => {
+		authState.login({ userId: '3', username: 'lecture', role: 'Consultation', expiresIn: 3600 });
+		listFiscalYearsMock.mockResolvedValue([fy({ id: 1, status: 'Open', multiCurrency: true })]);
+		render(Page);
+		await screen.findByTestId('fiscal-year-row-1');
+		expect(screen.queryByTestId('fiscal-year-revaluation-1')).toBeNull();
+	});
+
+	it('dialogue de clôture : « Clôturer » désactivé sous K9 en attention', async () => {
+		authState.login({ userId: '1', username: 'admin', role: 'Admin', expiresIn: 3600 });
+		listFiscalYearsMock.mockResolvedValue([fy({ id: 1, status: 'Open', multiCurrency: true })]);
+		getClosingChecksMock.mockResolvedValue(k9());
+		render(Page);
+		await fireEvent.click(await screen.findByTestId('fiscal-year-close-1'));
+		expect(await screen.findByTestId('fiscal-year-close-blocked-k9')).toBeTruthy();
+		expect((screen.getByTestId('fiscal-year-close-confirm') as HTMLButtonElement).disabled).toBe(true);
+		expect(screen.getByTestId('fiscal-year-close-checks-point-FOREIGN_ACCOUNTS_NOT_REVALUED')).toBeTruthy();
+	});
+
+	it('contrôles en échec : « Clôturer » actif, et le 409 FOREIGN_ACCOUNTS_NOT_REVALUED s’affiche', async () => {
+		authState.login({ userId: '1', username: 'admin', role: 'Admin', expiresIn: 3600 });
+		listFiscalYearsMock.mockResolvedValue([fy({ id: 1, status: 'Open', multiCurrency: true })]);
+		getClosingChecksMock.mockRejectedValue({ code: 'INTERNAL', status: 500, message: 'boom' });
+		const serveur = 'Réévaluez d’abord les comptes en devise au cours de clôture.';
+		closeFiscalYearMock.mockRejectedValue({ code: 'FOREIGN_ACCOUNTS_NOT_REVALUED', status: 409, message: serveur });
+		render(Page);
+		await fireEvent.click(await screen.findByTestId('fiscal-year-close-1'));
+		await screen.findByTestId('fiscal-year-close-checks-error');
+		const bouton = screen.getByTestId('fiscal-year-close-confirm') as HTMLButtonElement;
+		expect(bouton.disabled).toBe(false);
+		await fireEvent.click(bouton);
+		await waitFor(() => expect(vi.mocked(notifyError)).toHaveBeenCalledWith(serveur));
+		expect(vi.mocked(notifyError)).not.toHaveBeenCalledWith('Cet exercice est déjà clôturé');
 	});
 });

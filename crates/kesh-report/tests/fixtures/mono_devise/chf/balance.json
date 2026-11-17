@@ -1,0 +1,86 @@
+{
+  "balanced": true,
+  "openingBalanced": true,
+  "period": {
+    "endDate": "2026-12-31",
+    "fiscalYearId": 2,
+    "startDate": "2026-01-01"
+  },
+  "retainedEarnings": "814.4500",
+  "rows": [
+    {
+      "accountId": 1,
+      "accountName": "Caisse CI",
+      "accountNumber": "1000",
+      "accountType": "Asset",
+      "active": true,
+      "balance": "-587.3500",
+      "closingBalance": "597.2000",
+      "openingBalance": "1184.5500",
+      "totalCredit": "1577.3500",
+      "totalDebit": "990.0000"
+    },
+    {
+      "accountId": 6,
+      "accountName": "Ancienne caisse",
+      "accountNumber": "1010",
+      "accountType": "Asset",
+      "active": false,
+      "balance": "0.0000",
+      "closingBalance": "50.0000",
+      "openingBalance": "50.0000",
+      "totalCredit": "0.0000",
+      "totalDebit": "0.0000"
+    },
+    {
+      "accountId": 2,
+      "accountName": "Banque CI",
+      "accountNumber": "1100",
+      "accountType": "Asset",
+      "active": true,
+      "balance": "1500.0000",
+      "closingBalance": "11079.9000",
+      "openingBalance": "9579.9000",
+      "totalCredit": "0.0000",
+      "totalDebit": "1500.0000"
+    },
+    {
+      "accountId": 3,
+      "accountName": "Capital CI",
+      "accountNumber": "2000",
+      "accountType": "Liability",
+      "active": true,
+      "balance": "0.0000",
+      "closingBalance": "10000.0000",
+      "openingBalance": "10000.0000",
+      "totalCredit": "0.0000",
+      "totalDebit": "0.0000"
+    },
+    {
+      "accountId": 4,
+      "accountName": "Ventes CI",
+      "accountNumber": "3000",
+      "accountType": "Revenue",
+      "active": true,
+      "balance": "990.0000",
+      "closingBalance": "990.0000",
+      "openingBalance": "0.0000",
+      "totalCredit": "990.0000",
+      "totalDebit": "0.0000"
+    },
+    {
+      "accountId": 5,
+      "accountName": "Charges CI",
+      "accountNumber": "4000",
+      "accountType": "Expense",
+      "active": true,
+      "balance": "77.3500",
+      "closingBalance": "77.3500",
+      "openingBalance": "0.0000",
+      "totalCredit": "0.0000",
+      "totalDebit": "77.3500"
+    }
+  ],
+  "totalCredit": "2567.3500",
+  "totalDebit": "2567.3500"
+}

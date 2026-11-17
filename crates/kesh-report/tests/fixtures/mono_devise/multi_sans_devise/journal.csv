@@ -1,0 +1,7 @@
+﻿Journal;DateEcriture;NumeroEcriture;Description;NumeroCompte;NomCompte;Debit;Credit
+Achats;2026-05-31;3;Fournitures;4000;Charges CI;77.35;0.00
+Achats;2026-05-31;3;Fournitures;1000;Caisse CI;0.00;77.35
+Ventes;2026-02-14;1;Vente février;1000;Caisse CI;990.00;0.00
+Ventes;2026-02-14;1;Vente février;3000;Ventes CI;0.00;990.00
+Banque;2026-03-01;2;Versement;1100;Banque CI;1500.00;0.00
+Banque;2026-03-01;2;Versement;1000;Caisse CI;0.00;1500.00

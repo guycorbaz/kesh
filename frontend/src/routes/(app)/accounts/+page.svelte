@@ -81,6 +81,8 @@
 	const NO_ROLE = '';
 
 	// --- State ---
+	// fx-filtre-comptes : exempté — le plan comptable : tous les comptes, en devise
+	// compris.
 	let accounts = $state<AccountResponse[]>([]);
 	let loading = $state(false);
 	let showArchived = $state(false);

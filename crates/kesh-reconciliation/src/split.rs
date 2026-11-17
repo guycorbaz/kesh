@@ -125,6 +125,9 @@ pub fn build_split_journal_entry(
         debit: bank_debit,
         credit: bank_credit,
         project_id: None,
+        // Story 37-3a (AC-5) : la réconciliation n'écrit qu'en CHF ; un compte
+        // en devise est refusé par le contrôle central du dépôt.
+        foreign: None,
     });
 
     // Lignes 2..N+1 — N contreparties, sign opposé à la banque.
@@ -140,6 +143,7 @@ pub fn build_split_journal_entry(
             credit: cp_credit,
             // Story 19-5 — projet par ligne de ventilation (multi-usage).
             project_id: split.project_id,
+            foreign: None,
         });
     }
 

@@ -41,6 +41,8 @@
 	import { getContact, listContacts } from '$lib/features/contacts/contacts.api';
 	import type { ContactResponse } from '$lib/features/contacts/contacts.types';
 	import { fetchAccounts } from '$lib/features/accounts/accounts.api';
+	// fx-filtre-comptes : exempté — passe les comptes à `SupplierInvoiceForm`, qui
+	// filtre à son entrée.
 	import type { AccountResponse } from '$lib/features/accounts/accounts.types';
 	import { listVatRates } from '$lib/features/vat-rates/vat-rates.api';
 	import type { VatRateResponse } from '$lib/features/vat-rates/vat-rates.types';

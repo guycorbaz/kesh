@@ -1175,26 +1175,10 @@ mod tests {
 
     // --- gardes lexicales ----------------------------------------------------
 
-    /// Lignes de code d'un fichier, commentaires `//` écartés, tronqué au
-    /// premier `#[cfg(test)]`.
-    ///
-    /// ⚠️ **Limite assumée** (Story 32-1a, #711 E-9 (3), C-32-1-38) : la lecture
-    /// est ligne à ligne, sans analyse lexicale. Seules les lignes **entières**
-    /// qui commencent par `//` sont écartées ; un commentaire de fin de ligne, un
-    /// commentaire `/* … */` et le **contenu des chaînes** restent lus comme du
-    /// code. La troncature s'arrête à la première ligne dont le contenu est
-    /// exactement `#[cfg(test)]`. Conséquence : un jeton **exigé** par une garde,
-    /// écrit seulement dans un commentaire de bloc ou une chaîne, la satisferait à
-    /// tort — muet ; un jeton **interdit** écrit au même endroit la fait rougir —
-    /// bruyant. Correction suivie par #727 (extraction d'un balayeur commun).
-    fn code(source: &str) -> String {
-        source
-            .lines()
-            .take_while(|l| l.trim() != "#[cfg(test)]")
-            .filter(|l| !l.trim_start().starts_with("//"))
-            .collect::<Vec<_>>()
-            .join("\n")
-    }
+    // L'aide `code()` des gardes lexicales vit dans `crate::util` depuis la
+    // Story 37-2 (partagée avec `exchange_rates::tests`) ; ses limites y sont
+    // écrites.
+    use crate::util::code;
 
     /// AC26 (M-c21) — `auto_backup::spawn(` apparaît exactement une fois dans
     /// `main.rs` (lignes `//` écartées : un appel mis en commentaire ne compte

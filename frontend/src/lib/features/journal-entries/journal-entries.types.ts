@@ -26,6 +26,37 @@ export interface JournalEntryLineResponse {
 	letteringKey: number | null;
 	letteringCode: string | null;
 	letteringOrigin: 'document' | 'reversal' | 'manual' | null;
+	/**
+	 * Story 37-3a/37-3b — partie en devise ; **omise** pour une ligne CHF (C-37-9).
+	 * `currency` est la devise **du compte**, lue par le serveur (T3).
+	 */
+	foreign?: ForeignLineResponse;
+}
+
+/** Story 37-3b (AC-3) — `foreign` d'une ligne rendue par le serveur. */
+export interface ForeignLineResponse {
+	/** Devise du compte de la ligne (toujours présente, T3). */
+	currency: string;
+	/** Montant en devise, chaîne décimale sans zéros terminaux. */
+	amount: string;
+	/** Cours par unité, chaîne décimale sans zéros terminaux. */
+	rate: string;
+	rateSource: 'afc' | 'manual' | 'revaluation';
+}
+
+/**
+ * Story 37-3b (AC-2) — `foreign` d'une ligne envoyée. `currency` est facultatif
+ * pour l'API (37-3a AC-6) ; l'écran l'envoie **toujours** (la devise affichée) :
+ * c'est la garde contre un compte dont la devise a changé depuis le chargement
+ * (`FX_CURRENCY_MISMATCH`).
+ */
+export interface ForeignLineRequest {
+	currency?: string;
+	amount: string;
+	rate?: string;
+	chf?: string;
+	rateSource?: 'afc' | 'manual';
+	side?: 'debit' | 'credit';
 }
 
 export interface JournalEntryResponse {
@@ -106,9 +137,10 @@ export interface JournalEntrySourceDocument {
 
 /**
  * Motif pour lequel une écriture ne peut pas être **modifiée** (Story 15-8a,
- * D8) — les douze codes d'écran, dans l'ordre de précédence du serveur
- * (`ENTRY_LETTERED`, Story 15-1a-ii, en dernier : il parle après le verrou de
- * période).
+ * D8) — les treize codes d'écran, dans l'ordre de précédence du serveur
+ * (`ENTRY_IS_FX_REVALUATION`, Story 37-3a, juste après la garde d'écriture,
+ * avant `PERIOD_LOCKED` ; `ENTRY_LETTERED`, Story 15-1a-ii, en dernier : il
+ * parle après le verrou de période).
  *
  * ⚠️ `ALREADY_REVERSED` est le code d'**écran** (vocabulaire de
  * `ReversalBlocker`) ; le `PUT` rend `ENTRY_IS_REVERSED`. Pas d'`ACCOUNT_ARCHIVED` :
@@ -119,16 +151,34 @@ export type ModificationBlocker =
 	| 'LATER_FISCAL_YEAR_CLOSED'
 	| Exclude<ReversalBlocker, 'ACCOUNT_ARCHIVED'>
 	| 'DETACHED_SUPPLIER_SETTLEMENT'
+	| 'ENTRY_IS_FX_REVALUATION'
 	| 'PERIOD_LOCKED'
 	| 'ENTRY_LETTERED';
 
 export interface CreateJournalEntryLineRequest {
 	accountId: number;
-	/** Montant décimal stringifié, point décimal (ex: "100.00"). */
+	/** Montant décimal stringifié, point décimal (ex: "100.00"). En devise : le CHF. */
 	debit: string;
 	credit: string;
 	/** Projet analytique optionnel de la ligne (Epic 19, Story 19-2). */
 	projectId?: number | null;
+	/** Story 37-3b — partie en devise (absente pour une ligne CHF). */
+	foreign?: ForeignLineRequest;
+}
+
+/**
+ * Story 37-3b (AC-2 bis) — corps de `POST /journal-entries/conversions` : deux
+ * écritures ; `completeDifference` demande au serveur de calculer la ligne de
+ * différence (A31) — l'écran ne l'envoie pas, il porte la ligne qu'il montre.
+ */
+export interface CreateConversionRequest {
+	entries: [CreateJournalEntryRequest, CreateJournalEntryRequest];
+	completeDifference?: boolean;
+}
+
+/** Réponse 201 de la conversion : les deux écritures, dans l'ordre du corps. */
+export interface ConversionResponse {
+	entries: [JournalEntryResponse, JournalEntryResponse];
 }
 
 export interface CreateJournalEntryRequest {

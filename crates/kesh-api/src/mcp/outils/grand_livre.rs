@@ -7,15 +7,18 @@ use serde::Deserialize;
 
 use crate::mcp::outil::{ContexteMcp, FuturOutil, McpTool, arguments};
 use crate::mcp::outils::commun::{SENS, Sens, decalage, limite};
-use crate::mcp::sortie::{Code, Date, Montant, Resume, TexteNonFiable, donnees, sortie};
+use crate::mcp::sortie::{Code, Date, Devise, Montant, Resume, TexteNonFiable, donnees, sortie};
 use crate::mcp::textes::depuis_app_error;
 use crate::services::acces::Portee;
 use crate::services::rapports::{self, Affichage, DemandeGrandLivre};
 
-/// Lignes par défaut (§ *Les tailles mesurées*).
-pub const LIMITE_DEFAUT: i64 = 15;
+/// Lignes par défaut (§ *Les tailles mesurées*). Story 37-4 : re-mesurées avec
+/// les champs en devise (présents à `null` en CHF : élément de 835 o dans la
+/// fixture des tailles ; 807 o remplis en devise), 15 → 14.
+pub const LIMITE_DEFAUT: i64 = 14;
 /// Lignes au plus, pour l'outil (le service en admet `MAX_LEDGER_LIMIT`).
-pub const LIMITE_MAX_MCP: i64 = 30;
+/// Story 37-4 : 30 → 26 (27 rendait 23 614 o, au-dessus de 23 552).
+pub const LIMITE_MAX_MCP: i64 = 26;
 
 /// L'outil.
 pub struct KeshGrandLivre;
@@ -48,12 +51,25 @@ sortie! {
         credit: Montant,
         solde_courant: Montant,
         code_lettrage: Option<TexteNonFiable>,
+        // Story 37-4 (AC-6) : la partie en devise, compte en devise seulement —
+        // présents à `null` ailleurs (la macro n'omet aucun champ, C-37-9).
+        debit_devise: Option<Montant>,
+        credit_devise: Option<Montant>,
+        cours: Option<Montant>,
+        source_cours: Option<Code<kesh_db::entities::RateProvenance>>,
+        solde_courant_devise: Option<Montant>,
     }
 }
 
 sortie! {
     /// Une rupture d'exercice dans la section.
-    struct Rupture { date: Date, exercice_clos_id: i64, solde_de_cloture: Montant }
+    struct Rupture {
+        date: Date,
+        exercice_clos_id: i64,
+        solde_de_cloture: Montant,
+        // Story 37-4 : le même solde en devise, `null` hors compte en devise.
+        solde_de_cloture_devise: Option<Montant>,
+    }
 }
 
 sortie! {
@@ -73,6 +89,13 @@ sortie! {
         solde_inhabituel: bool,
         ruptures: Vec<Rupture>,
         nombre_lignes: i64,
+        // Story 37-4 (AC-6) : la devise du compte et les soldes et totaux en
+        // devise, `null` pour un compte en devise principale.
+        devise: Option<Code<Devise>>,
+        ouverture_devise: Option<Montant>,
+        total_debit_devise: Option<Montant>,
+        total_credit_devise: Option<Montant>,
+        cloture_devise: Option<Montant>,
     }
 }
 
@@ -95,11 +118,15 @@ impl McpTool for KeshGrandLivre {
          date, exercice clos, son solde), et cloture est le solde de l'exercice en cours à \
          la fin de la période : il vaut l'ouverture plus les totaux, sauf quand la période \
          franchit une fin d'exercice (le cumul reste alors dans les totaux). Sur un compte \
-         d'actif ou de passif, cloture vaut toujours l'ouverture plus les totaux."
+         d'actif ou de passif, cloture vaut toujours l'ouverture plus les totaux. Sur un \
+         compte en devise (devise, code ISO 4217), les champs suffixés « devise » donnent \
+         les mêmes montants dans la devise du compte, avec le cours et sa provenance \
+         (sourceCours) de chaque ligne ; une ligne de réévaluation (sourceCours \
+         revaluation) a un montant en devise nul. Ils valent null sur un compte en CHF."
     }
 
     fn schema_entree(&self) -> &'static str {
-        r#"{"type":"object","properties":{"accountId":{"type":"integer","minimum":1},"from":{"type":"string","format":"date"},"to":{"type":"string","format":"date"},"limit":{"type":"integer","minimum":1,"maximum":30,"default":15},"offset":{"type":"integer","minimum":0}},"required":["accountId","from","to"],"additionalProperties":false}"#
+        r#"{"type":"object","properties":{"accountId":{"type":"integer","minimum":1},"from":{"type":"string","format":"date"},"to":{"type":"string","format":"date"},"limit":{"type":"integer","minimum":1,"maximum":26,"default":14},"offset":{"type":"integer","minimum":0}},"required":["accountId","from","to"],"additionalProperties":false}"#
     }
 
     fn portee(&self) -> Portee {
@@ -171,6 +198,11 @@ fn section(s: kesh_report::general_ledger::LedgerSection) -> Section {
                 credit: Montant(l.credit),
                 solde_courant: Montant(l.running_balance),
                 code_lettrage: l.lettering_code.map(TexteNonFiable::de),
+                debit_devise: l.debit_currency.map(Montant),
+                credit_devise: l.credit_currency.map(Montant),
+                cours: l.exchange_rate.map(Montant),
+                source_cours: l.rate_source.map(Code::depuis_str),
+                solde_courant_devise: l.running_balance_currency.map(Montant),
             })
             .collect(),
         total_debit: Montant(s.total_debit),
@@ -184,9 +216,15 @@ fn section(s: kesh_report::general_ledger::LedgerSection) -> Section {
                 date: Date(r.date),
                 exercice_clos_id: r.closing_fiscal_year_id,
                 solde_de_cloture: Montant(r.closing_balance),
+                solde_de_cloture_devise: r.closing_balance_currency.map(Montant),
             })
             .collect(),
         nombre_lignes: s.line_count,
+        devise: s.currency.map(Code::depuis_str),
+        ouverture_devise: s.opening_currency.map(Montant),
+        total_debit_devise: s.total_debit_currency.map(Montant),
+        total_credit_devise: s.total_credit_currency.map(Montant),
+        cloture_devise: s.closing_currency.map(Montant),
     }
 }
 

@@ -114,12 +114,16 @@ pub fn build_journal_entry_for_counterparty(
                 debit: bank_debit,
                 credit: bank_credit,
                 project_id: None,
+                // Story 37-3a (AC-5) : la réconciliation n'écrit qu'en CHF ; un
+                // compte en devise est refusé par le contrôle central du dépôt.
+                foreign: None,
             },
             NewJournalEntryLine {
                 account_id: counterparty_account_id,
                 debit: counterparty_debit,
                 credit: counterparty_credit,
                 project_id: None,
+                foreign: None,
             },
         ],
     }

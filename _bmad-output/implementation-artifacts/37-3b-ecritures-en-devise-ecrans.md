@@ -1,6 +1,6 @@
 # Story 37-3b : écritures en devise — soldes d'ouverture, formulaire et écrans
 
-Status: ready-for-dev
+Status: done
 
 *Fiche rédigée le 2026-11-14 (Opus 5.5), branche `epic/37-multi-devises`. Epic 37, C-37-4, C-37-5. Suit **37-3a**
 (découpe de l'ancienne 37-3 à la rédaction). **Aucune migration.** Révisée le 2026-11-14 pour la revue de Beat
@@ -857,27 +857,27 @@ devise au cours d'ouverture choisi pour l'exercice (R6), afin de tenir mes livre
 
 ## Tâches
 
-- [ ] Soldes d'ouverture : serveur (DTO, `ComplementLine`, statut), écran, totaux, tests (AC-1).
-- [ ] `fx.ts` (calcul CHF, cours depuis CHF), formulaire, `balance.ts`, `form-helpers.ts`, détail, liste, Vitest sur la
+- [x] Soldes d'ouverture : serveur (DTO, `ComplementLine`, statut), écran, totaux, tests (AC-1).
+- [x] `fx.ts` (calcul CHF, cours depuis CHF), formulaire, `balance.ts`, `form-helpers.ts`, détail, liste, Vitest sur la
       fixture partagée (AC-2, AC-3).
-- [ ] Sélecteurs, prédicat commun, garde d'inventaire (AC-4).
-- [ ] E2E, captures, manuel (`.tex` seulement), i18n, section *Note de version* de la fiche (AC-5, AC-6).
-- [ ] CR-3 : ligne d'écart et assistant *Conversion* sur les comptes de différence du compte en devise (S2,
+- [x] Sélecteurs, prédicat commun, garde d'inventaire (AC-4).
+- [x] E2E, captures, manuel (`.tex` seulement), i18n, section *Note de version* de la fiche (AC-5, AC-6).
+- [x] CR-3 : ligne d'écart et assistant *Conversion* sur les comptes de différence du compte en devise (S2,
       `fxAccountsFor`) ; assistant TVA achat en devise (S5 : `vat-purchase.ts`, `chfFromForeign`, ligne CHF à zéro,
       changement de date) ; `FX_RATE_NOT_AFC` après la reprise par ↑ d'un cours corrigé (ex-« adoption », U1), pour
       les seules lignes nouvelles ou modifiées (A17, « Garder mon cours ») ; E2E et manuel complétés.
-- [ ] CR-5 : U1 — `lookup` à `effectiveRate` + `source` (+ `publishedRate` non affiché) : type TS, `afcRate` dérivé
+- [x] CR-5 : U1 — `lookup` à `effectiveRate` + `source` (+ `publishedRate` non affiché) : type TS, `afcRate` dérivé
       (`source === 'afc' ? effectiveRate : null`), indicateurs « AFC » / « cours saisi » sur `source`, ↑ sous le champ
       vers le cours de la société, soldes d'ouverture (provenance affichée) ; U2 — changement de compte d'une ligne
       (USD → EUR : montant et cours réinitialisés ; vers CHF : `foreign` retiré ; CHF → devise ; même devise) au
       formulaire, Vitest et E2E ; manuel (AC-6).
-- [ ] CR5-P1 : `FX_RATE_NOT_AFC` à `expectedRate` `null` (action « Reprendre » absente, Vitest) ; manuel sans « moyenne » ;
+- [x] CR5-P1 : `FX_RATE_NOT_AFC` à `expectedRate` `null` (action « Reprendre » absente, Vitest) ; manuel sans « moyenne » ;
       préalables E2E du cours saisi et du ↑ (`version`, valeur publiée) ; genre `month` par `PUT /rate-kinds` complet.
-- [ ] CR-4 : T3 — `currency` facultatif des DTO d'ouverture, types TS (réponse `currency: string`, requête
+- [x] CR-4 : T3 — `currency` facultatif des DTO d'ouverture, types TS (réponse `currency: string`, requête
       `currency?`), devise du compte dans `LineDraft`, envoi systématique par formulaire, grilles et assistants,
       messages `FX_CURRENCY_MISMATCH` / `FX_ACCOUNT_IN_CHF`, guide d'API ; T4 — cours d'ouverture de genre `month` au
       mois de la veille de l'ouverture (fonction pure TS, vecteurs dont le 15.03), tests Vitest et E2E, manuel.
-- [ ] CR-6 : **V1** — `rateFromChf` dans `fx.ts`, jumeau de `rate_from_chf` (37-3a AC-3), seul calcul « cours OU
+- [x] CR-6 : **V1** — `rateFromChf` dans `fx.ts`, jumeau de `rate_from_chf` (37-3a AC-3), seul calcul « cours OU
       CHF » de l'écran (formulaire, deux grilles d'ouverture, assistant *Conversion*) ; Vitest sur la fixture partagée
       `crates/kesh-core/tests/fixtures/fx_rate_from_chf.json` (accepts et `error`, aucune copie) ; DTO d'ouverture
       (`OpeningBalanceLineRequest.debit`/`credit` en `Option<String>`) et complément passés par la fonction d'analyse
@@ -895,7 +895,7 @@ devise au cours d'ouverture choisi pour l'exercice (R6), afin de tenir mes livre
       d'API, routes de génération et de complément : ligne `{ amount, chf, side }` sans `rateSource` dans un mois retenu
       `afc` dont le cours redonne le CHF → provenance `afc`, cours retenu (37-3a AC-4, 4, *Cours déduit*) ; sinon
       `manual` ; `None` jamais écrit ; Vitest du CHF saisi à la main (AC-2).
-- [ ] CR-2 : cours d'ouverture selon le genre de l'exercice (AC-1, R6) ; refus `MULTI_CURRENCY_DISABLED` d'un
+- [x] CR-2 : cours d'ouverture selon le genre de l'exercice (AC-1, R6) ; refus `MULTI_CURRENCY_DISABLED` d'un
       exercice mono-devise affiché à l'ouverture et au formulaire (AC-1, AC-2, CR-7) ; bouton d'écart qui ajoute une ligne (R8) ; une devise par écriture au formulaire
       (R7) ; assistant *Conversion* — route `POST /journal-entries/conversions`, code `FX_CONVERSION_TRANSIT_UNBALANCED`,
       registre des routes (+1), écran et maquette (AC-2 bis).
@@ -906,6 +906,8 @@ devise au cours d'ouverture choisi pour l'exercice (R6), afin de tenir mes livre
 
 - **Changed (contrat de l'API)** — routes d'ouverture : à la génération, une ligne CHF dont `debit` ou `credit` est absent rend 400 `Validation` au lieu de 422 ; `rateSource: "revaluation"` rend 400 sur les deux routes (guide d'API `docs/api-external.md` à jour).
 - **Added** — écrans de saisie en devise, assistant *Conversion*, ligne d'écart sur les comptes de différence de change.
+- **Added (API)** — `POST /journal-entries/conversions` : deux écritures en une transaction par le compte de conversion, `completeDifference` optionnel (ligne de différence calculée), rejouée sur interblocage ; nouveau code `FX_CONVERSION_TRANSIT_UNBALANCED` (400) ; deux écritures dans la même devise, CHF comprise, refusées en `VALIDATION_ERROR`.
+- **Added (API)** — `GET /opening-balances/status` : `currency` sur les comptes complétables ; `foreign` admis sur les lignes des deux routes d'ouverture.
 - **Compteurs** : recomptés depuis la source après chaque reprise de `main` (`LIB_ROUTES`, partitions, `sitesTotal`, catalogues i18n).
 
 ## Notes de développement
@@ -1302,3 +1304,257 @@ devise au cours d'ouverture choisi pour l'exercice (R6), afin de tenir mes livre
   conversion, i18n, E2E, compilation. Inter-fiches : 37-3a (CR7-P2, D-CR7-2 cité) ; aucun autre.
 - 2026-11-16 — validation CR-7 P3 ciblée (Sonnet) : 0 CRITICAL, 0 HIGH, 0 MEDIUM, 0 LOW ; aucune modification. Vérifié au code : `journal_entries.rs:308` (`validate_taggable_in_tx` sous `enforce_project_taggable`) → `projects.rs:101` (`acquire_company_sentinel_lock`) → `bank_accounts.rs:1729` (`companies` `FOR UPDATE`) : cycle S → X de la conversion avec projet exact, défendu par le rejeu (`Rejouee`) ; fixtures par les routes (création, clôture, activation, réouverture) cohérentes avec 37-1 (exercice clos à l'activation, mono-devise même rouvert). Résidus du modèle réversible : aucun hors Change Logs datés. Non exercés : reste de la fiche hors diff, compilation, rendu. Inter-fiches : 37-5 (CR7-P3-1, renvoi au cas de l'AC-2 bis).
 - 2026-11-16 — alignement sur les règles de travail à plusieurs (Sonnet) : PDF du manuel non commité, `.tex` seulement (2 remplacements) ; CHANGELOG remplacé par la section *Note de version* (4 remplacements, section ajoutée) ; compteurs « recomptés depuis la source après chaque reprise de `main` » (3 ajouts). Fond des AC inchangé.
+- 2026-11-16 — étape 0 (développement, Opus 5.5), base `6f66e775` (pointe de `story/37-3a-ecritures-en-devise-modele`,
+  37-1 + 37-2 + 37-3a) : relevé contre 37-2 (`kesh-gate-logs/etape0/37-3b.md`) repris, et les prémisses « attend
+  37-3a » relues à cette base, toutes tenues : `ForeignAmount`, `check_foreign_line` (`kesh-core/src/accounting/fx.rs:216`,
+  publique), `rate_from_chf` (`:266`), `fx_chf` (`:176`), `fx_line_error` (`balance.rs:19`) ; la fonction d'analyse
+  partagée s'appelle `parse_line_amounts` (`routes/journal_entries.rs:704`, `pub(crate)`) ; `prepare_new_journal_entry`
+  `:598`, `map_core_error` `:335` ; `create_opening_in_tx` (`repositories/journal_entries.rs:408`, gardée lexicalement
+  par `chf_line_lexical.rs`) ; `ModificationBlocker::FxRevaluation` → `ENTRY_IS_FX_REVALUATION` (`kesh-db/src/errors.rs:372`,
+  `:384`), rendu juste après la garde d'écriture, avant `PERIOD_LOCKED` (`modification_blocker` `:1441`) ;
+  `fx_failed_proposal` (`routes/reconciliation.rs:754` : `MULTI_CURRENCY_DISABLED`, `RATE_UNAVAILABLE` et la table de
+  `fx_db_refusal`) ; fixtures `fx_rounding.json`, `fx_rate_from_chf.json`, `fx_opening_dates.json`. Écarts de l'étape 0
+  repris au développement : `ModificationBlocker` à `errors.rs:358` (non `:134,210`) ; `CurrencySettingsSection.svelte`
+  hors inventaire (exempté, ci-dessous) ; manuel utilisateur en français seul (`docs/manual/{de,en,it}/` ne portent qu'un
+  `README.md`) ; `lookup` exige une société multi-devises (le formulaire ne l'appelle qu'en multi-devises).
+- 2026-11-16 — développement (Opus 5.5) : AC-1 à AC-6 livrés, détail au *Dev Agent Record* ; statut `review`.
+- 2026-11-16 — revue de code P1 (Opus 5.5, couches Blind Hunter backend et frontend, Edge Case Hunter backend et
+  frontend, Acceptance Auditor, en parallèle ; diff `story/37-3a-ecritures-en-devise-modele...6e0f39e3`) : **0 CRITICAL,
+  3 HIGH, 13 MEDIUM, 22 LOW** après dédoublonnage (5 écartés). Une passe de plus est due (HIGH et MEDIUM, `CLAUDE.md`).
+  - Corrigés, avec leurs tests : HIGH CR-P1-1 un CHF saisi refusé (`chfError`) laissait partir le CHF de l'ancien cours
+    (formulaire, assistant ; `foreignChf` rend `null`, ligne incomplète ; l'assistant affiche le refus) ; HIGH CR-P1-2 le
+    champ CHF se réécrivait au CHF dérivé à chaque frappe (« 9 » → « 9.00 », « 950 » impossible) : la saisie brute reste
+    jusqu'à la sortie du champ (`commitChfEntry`, formulaire, assistant, grilles) ; HIGH CR-P1-3 une écriture relue au
+    montant normalisé à trois décimales (« 1.234 ») était refusée comme ambiguë et ne s'enregistrait plus
+    (`foreignFromResponse`, quatre décimales). MEDIUM : CR-P1-4 frais resté sur un compte d'une autre devise que sa
+    colonne ; CR-P1-5 envoi dans les 300 ms d'un changement de date (`debounce.flush`) ; CR-P1-6 l'assistant attend ses
+    `lookup` ; CR-P1-7 échec passager du `lookup` non mémoïsé ; CR-P1-8 refus par ligne décalés à la suppression d'une
+    ligne ou à l'assistant TVA ; CR-P1-9 frais CHF arrondi en silence (« 12.345 », « 0.004 ») ; CR-P1-10 changement de
+    compte de même devise en édition (provenance jugée sur le cours `afc` lu) ; CR-P1-11 un `lookup` réécrivait le
+    cours des lignes relues non retouchées ; CR-P1-13 page *Conversion* sans état d'erreur de chargement (motifs faux ;
+    deux clés, quatre locales) ; CR-P1-14 refus des grilles d'ouverture indexés par position (par compte désormais) ;
+    CR-P1-17, -18, -19 tests qui ne prouvaient pas leur clause (complément mono-devise, refus de la seconde création,
+    trop de lignes : témoin et code). LOW : CR-P1-12 erreur d'un frais sur le mauvais frais ; CR-P1-15 champ réellement
+    manquant de la paire de la société (test neuf `conversion_paire_de_la_societe_manquante`) ; CR-P1-16 cycles de
+    verrous et `EXISTS` non verrouillé écrits ; CR-P1-36 `expectedRate` numérique ; CR-P1-37 Vitest qui acceptait deux
+    cours ; CR-P1-38 ligne morte d'un test. Message du motif « frais » précisé (quatre locales).
+  - Non traités, une issue chacun (CR-P1-20 à -35, liste au journal `kesh-gate-logs/s37-3b/review-p1/issues-a-ouvrir-p1.md`) :
+    conversion de même devise admise par le serveur, différence hors `DECIMAL(19,4)` en 500, `debit`/`credit` « 0 » sur
+    une ligne en devise, sélecteur mono-devise, actions `RATE_UNAVAILABLE`/`FX_RATE_NOT_AFC` dans l'assistant, motif
+    `FX_VALUE_OUT_OF_RANGE` de l'assistant TVA, envoi muet après un `lookup`, refus des grilles non vidés, noms
+    accessibles, lien vers l'assistant sans confirmation, garde de rôle de la page, `details.entry` de la paire (à
+    arbitrer), message d'une société mono-devise, tests manquants, duplications, message de longueur en dur.
+  - Écartés : `invalid` et `invalid_amount` du complément identiques ; `openingRateKind ?? 'day'` mort (type non
+    facultatif) ; idempotence (comme `POST /journal-entries`) ; A33 sans `completeDifference` (voulu, AC-2 bis) ; refus
+    de la ligne de différence au-dessus de l'aperçu (la ligne n'est pas un champ).
+  - Décompte du *File List* : 82 fichiers, 19 ajoutés (`git diff --name-status 6f66e775..01b3bf0c`), non 81 et 17.
+  - Écarts du Dev Agent Record jugés acceptables (Acceptance Auditor) ; défaut du code de la 37-3a : aucun relevé.
+  - Gates au commit de la revue : backend complet (`scripts/test-fast.sh --ci`, base `kesh_s37_3b` recréée, migrée,
+    seedée) **5748 exécutés, 5748 passés, 13 ignorés** ; `npm run check` 0 erreur (29 avertissements, comme avant),
+    `lint-i18n-ownership` PASS, `npm run build` vert ; Vitest complet **4049 passés (257 fichiers)** (`front-vitest-3.log` ; un passage lancé pendant le
+    gate backend, `front-vitest-2.log`, rendait cinq délais de 5 s dépassés dans des fichiers hors du diff, verts au passage
+    seul). E2E non rejoués.
+
+- **Fin de story (2026-11-17)** : fusion de `epic/37-multi-devises` (37-3a, 37-4 terminées), gates backend 5808/5808 et
+  Vitest 4074 verts, E2E complet 441 passés / 10 échecs connus (sept KF-029 et trois préexistants) ; statut `done`.
+
+## Dev Agent Record
+
+### Choix (C-37-3b-*)
+
+- **C-37-3b-1 — `details.entry` de la conversion** : mécanisme commun dans le handler (`conversion_refusal`,
+  `routes/journal_entries.rs`) : le refus d'une écriture est porté par `AppError::ConversionEntry { entry, error }` ; la
+  réponse de `error` est relue, `details` complété de `entry` (créé `{}` s'il manque ou n'est pas un objet), réécrite
+  (statut et en-têtes gardés, `Content-Length` retiré). Un interblocage n'est jamais étiqueté (`AppError::Database` nu)
+  pour que `retry_app_on_deadlock` le reconnaisse. Inventaire : toutes les variantes de `ConversionErrorKind` qui visent
+  une écriture (`Db`, `Core`, `Validation`, `NoFiscalYear`, `FiscalYearClosed`) reçoivent `entry` ; `TransitUnbalanced`
+  et le `FX_ACCOUNT_INVALID` du compte de conversion n'en reçoivent pas.
+- **C-37-3b-2 — cœur de la conversion au dépôt** : `repositories/journal_entry_conversions.rs` (`create_conversion`),
+  erreur typée `ConversionError { entry, kind }`, la route ne faisant que la forme avant la transaction (libellé, nombre
+  de lignes, `parse_line_amounts`, `check_foreign_line`) par `parse_entry_body`, partie de `prepare_new_journal_entry`
+  sans `accounting::validate`, extraite et partagée (DRY ; `prepare_new_journal_entry` = `parse_entry_body` + `validate`
+  + `draft_to_new_entry`).
+- **C-37-3b-3 — paire résolue sur le réglage verrouillé** : `accounts::fx_accounts_for_settings(gain, loss, &Account)` ;
+  `fx_accounts_for(&Company, &Account)` n'en est plus que l'enveloppe (aucun choix écrit à côté). Reconnaissance des
+  lignes de différence : `accounts::conversion_line_accounts_in_tx` (comptes des lignes de l'écriture à compléter,
+  `EXISTS` sur `accounts.fx_gain/loss_account_id` par identifiant, `LOCK IN SHARE MODE`, triés par `id`), la
+  désignation par la société se lisant sur `lock_company_currency_in_tx`.
+- **C-37-3b-4 — société mono-devise à la conversion** : `409 MULTI_CURRENCY_DISABLED` (sans `fiscalYearId`) avant le
+  compte de conversion ; non écrit à la fiche (l'écran n'offre pas l'assistant en mono-devise).
+- **C-37-3b-5 — exercice de chaque écriture de la conversion** : lu dans la transaction par `find_covering_date_in_tx`
+  au moment de chaque création (ordre chronologique), `NO_FISCAL_YEAR` / `FISCAL_YEAR_CLOSED` étiquetés `details.entry` ;
+  la création reverrouille l'exercice `FOR UPDATE`.
+- **C-37-3b-6 — journal des deux écritures de l'assistant** : `Banque` (deux mouvements de comptes de trésorerie) ;
+  libellés « Conversion EUR → USD (1/2) » / « (2/2) » ; l'assistant porte la ligne de différence qu'il montre et
+  n'envoie jamais `completeDifference`.
+- **C-37-3b-7 — complément : une colonne vide d'une ligne en devise vaut absente** (`parse_complement_foreign_line`) ;
+  bornes de forme de `parse_complement_amount` appliquées au CHF complété (`check_complement_bounds`, extraite).
+- **C-37-3b-8 — cache des cours en fermeture** (`createRateLookupCache`) et non en classe : la garde des libellés
+  (`i18n-libelle-en-dur.test.ts`) refuse les classes hors liste admise.
+- **C-37-3b-9 — provenance affichée à l'ouverture** : « proposé : … » quand la ligne porte le cours de la société
+  (source `afc`), « cours saisi » / « cours saisi (ecb) » selon `source`, « manuel » dès que le cours diffère ; l'envoi
+  est toujours `manual`.
+- **C-37-3b-10 — libellés des codes de lot** (reçu de la 37-3a) : `failedProposalLabel` couvre les huit codes de
+  `fx_failed_proposal` (trois clés `reconciliation-failed-*` neuves, cinq messages partagés de `fx-refusals.ts`).
+
+### Inventaires
+
+- **`ComplementLine`** (sans `Default`) : `routes/bank_accounts.rs` `opening_line` (`foreign: None`, motivé : un compte lié
+  ne porte pas de devise) ; parseur de la route `parse_complement_lines` (la partie analysée) ; aide de test `line()`
+  (`OpeningComplementLineRequest.foreign: None`) ; `tests/opening_complement_repository.rs` 5 sites et
+  `tests/opening_complement_bank_scope.rs` 6 sites (`foreign: None`). Propagation : génération — `JournalEntryLineDraft`
+  du handler (`foreign` analysé), `NewJournalEntryLine` (recopie du brouillon validé) ; complément —
+  `JournalEntryLineDraft` depuis `ComplementLine` (`l.foreign.clone()`), contrepartie sur le report (`None`, CHF),
+  `NewJournalEntryLine` (recopie).
+- **Tests existants des routes d'ouverture adaptés au 400** : aucun ne testait le 422 d'un champ manquant
+  (`grep 422|UNPROCESSABLE` sur `opening_balances_e2e.rs`, `bank_account_opening_balance_e2e.rs` : rien).
+- **Sélecteurs (AC-4), inventaire clos tenu par `fx-account-filter-inventory.test.ts`** (fichiers qui importent
+  `fetchAccounts`, `AccountAutocomplete` ou `linkableLedgerAccounts`, ou déclarent une prop `AccountResponse[]`) —
+  *filtrés* : `AccountAutocomplete` (`excludeForeignCurrency`, défaut `true`) et donc `InvoiceForm`, `products/+page`,
+  `ManualMatchModal`, `TransactionSplitModal` (aussi `counterpartyAccounts`) ; `linkableLedgerAccounts` (filtre posé une
+  fois, `bank-accounts/format.ts`) et donc `bank-accounts/+page`, `BankAccountJournalLinkForm`, `onboarding/+page` ;
+  `counterpartyAccounts` (`reconciliation-counterparties.ts`) ; à l'entrée du composant : `SettleInvoiceDialog`,
+  `SupplierInvoiceForm`, `RuleFormModal` ; dans la page : `supplier-invoices/[id]` (compte interne du paiement),
+  `settings/invoicing` (`designatable`, valeur en place gardée par `withCurrentAccount` avec la mention « en devise : à
+  remplacer ») ; `isAccountUnusable` prend `excludeForeignCurrency` (défaut `true`). *Exemptés, avec leur raison écrite
+  dans le fichier* (`fx-filtre-comptes : exempté —`) : `JournalEntryForm`, `VatPurchaseAssistant`, `ConversionAssistant`,
+  `journal-entries/conversion/+page`, `journal-entries/+page`, `journal-entries/[id]/+page`,
+  `settings/opening-balances/+page` (C-37-5), `CurrencySettingsSection` et `AccountCurrencyFields` (comptes de
+  différence et de conversion déjà en CHF par `fxDifferenceAccountOptions` / `fxTransitAccountOptions`), `accounts/+page`,
+  `reports/+page`, `OpenItemsScreen`, `RulesList`, `CounterpartyClaimNotice`, `credit-notes/[id]`, `invoices/[id]` et
+  `invoices/due-dates` (le règlement filtre dans `SettleInvoiceDialog`), `supplier-invoices/new` et `[id]/edit`
+  (`SupplierInvoiceForm` filtre), `reconciliation/rules/+page` (`RuleFormModal` filtre), `ReconciliationProposals`
+  (modales filtrées par `counterpartyAccounts`). Aides `.ts` à paramètre `AccountResponse[]` hors garde (vérifié par le test).
+- **Cycles de verrous de la conversion (argument écrit, CR-7)** : `companies` puis compte de conversion en partage,
+  puis comptes de l'écriture à compléter et sa paire en partage, avant les exercices (`FOR UPDATE` dans
+  `create_in_tx`) ; aucun chemin ne prend un exercice puis un compte en exclusif depuis le retrait de la bascule `force`
+  de 37-1 : pas de cycle connu. Seule promotion : une ligne à projet fait prendre à `create_in_tx` la sentinelle
+  `companies` `FOR UPDATE` alors que la transaction la tient en partage (S → X) ; deux conversions concurrentes à projet
+  s'interbloquent, défendues par le rejeu (route `Rejouee`, `retry_app_on_deadlock`). Aucun test de course ajouté.
+
+### Écarts et limites
+
+- **Manuel utilisateur en français seul** (étape 0) ; catalogues i18n dans les quatre locales.
+- **Assistant TVA en devise, Vitest du composant** : le `Select` de bits-ui ne s'ouvre pas sous jsdom ; le test du
+  composant vérifie le passage en devise (libellé, cours proposé, sélecteur restreint, cours invalide), les lignes
+  insérées sont tenues par le Vitest de `foreignPurchaseVatEntry` (vecteurs de la fiche) et par l'E2E (scénario 5).
+- **Aller-retour `.keshbackup` d'une ligne d'ouverture en devise** : non écrit ici ; une ligne d'ouverture est une ligne
+  d'écriture ordinaire, dont l'aller-retour est couvert par 37-3a (`admin_full_import_e2e.rs`).
+- **Mono-devise inchangé** : couvert par les Vitest existants du formulaire (`JournalEntryForm.create/edit.test.ts`) et
+  la suite E2E existante, sans test neuf.
+- **E2E** : le scénario « exercice mono-devise » est retiré par CR-7 (Vitest et API) ; « Supprimer » d'une réévaluation
+  n'a pas d'E2E (la réévaluation est 37-5), Vitest de `canDeleteEntry`.
+
+### Debug Log
+
+- Clippy `explicit_auto_deref` sur `&mut **tx` (conversion) corrigé ; un cas de test « ni cours ni CHF » corrigé (le
+  CHF de référence vient aussi de `debit`/`credit`, règle de 37-3a).
+- Gardes i18n recomptées depuis la source : `sitesTotal` 3185 → 3292, `CANDIDATES_ATTENDUES` 106 → 112 (ventilation
+  écrite aux deux tests) ; garde des dates : `previousDay` de `fx.ts` sans `toISOString`.
+
+### Completion Notes
+
+**Gates, au dernier commit de code `bcf2461e`** (journaux `kesh-gate-logs/s37-3b/`) :
+
+- **Backend complet** (`scripts/test-fast.sh --ci` : fmt, clippy `-D warnings`, nextest profil `ci`, base
+  `kesh_s37_3b` remise à zéro, migrée et seedée avant) : **5747 exécutés, 5747 passés, 13 ignorés** (1307 s,
+  `gate-final-2.log`). Le premier passage complet (`gate-complet-1.log`, commit précédent) rendait 5746/5747 : seul
+  `services_motif::ac12_iii_inventaire_des_sites_non_resolus` (inventaire des handlers de `routes/journal_entries.rs`,
+  + `create_conversion` et l'aide `conversion_refusal`), corrigé par `bcf2461e`. Un passage intermédiaire
+  (`gate-final.log`, 3186 échecs « No more room in record file ») est **nul** : tmpfs du MariaDB partagé plein, sans
+  rapport avec la story ; conteneur redémarré par l'orchestrateur, bases recréées, gate rejoué.
+- **Frontend complet** (`npm run check`, `lint-i18n-ownership`, `test:unit`, `build`) : check 0 erreur, lint PASS,
+  **Vitest 4041 passés (257 fichiers)**, build vert (`front-final.log`). Le premier passage (`front-complet-1.log`)
+  rendait trois gardes rouges, corrigées par `cdf9926a` : sélecteurs E2E figés sur un libellé traduit (passés en
+  `data-testid` : `journal-entry-submit`, `vat-purchase-rate`, `vat-purchase-insert`), bouton rouge de l'assistant
+  *Conversion* inscrit à la table fermée (14 → 15), et la garde des sélecteurs de comptes resserrée (une prop
+  `AccountResponse[]` ne se déclare que dans un `.svelte` : `conversion.ts` n'en déclare pas).
+- **E2E** : `fx-entries.spec.ts` seule, **9/9 passés** (run `-fx2`, avant les sélecteurs en `data-testid`).
+  **E2E complet** au commit `bcf2461e` (`LANG=fr_CH.UTF-8`, base `kesh_e2e_s37_3b` recréée, backend et frontend
+  construits à ce commit ; `e2e-run-final2.log`, 41,5 min) : **440 passés, 10 échecs, 18 ignorés** ; les neuf de
+  `fx-entries.spec.ts` passés (sélecteurs en `data-testid`). Les dix échecs, fichier par fichier, sont tous connus et
+  hors story : les **sept de la KF-029 (#97)** (`mode-expert.spec.ts:26`, `:41` ; `onboarding-path-b.spec.ts:65`,
+  `:92` ; `onboarding.spec.ts:57`, `:77`, `:150`) ; `backup-restore-new-install.spec.ts:262` et `:381` (délai dépassé
+  sur un clic, déjà relevés au registre `issues-a-ouvrir-epic-37.md`) ; `opening-balances.spec.ts:156` (un toast
+  recouvre le bouton *Compléter* : le clic échoue sur « element intercepts », relevé depuis la 37-1 au même registre,
+  « à confirmer sur `main` »). Un premier E2E complet (`e2e-run-final.log`) a été **arrêté** en cours : tmpfs du
+  MariaDB partagé de nouveau plein ; rejoué sur le conteneur redémarré, réservé à cette story.
+
+**Fin de story — fusion de l'epic, gates et E2E au commit de fusion** (journaux `kesh-gate-logs/s37-3b/final2/` et
+`e2e-run-final3.log`) :
+
+- **Fusion** de `epic/37-multi-devises` (37-3a et 37-4 terminées) : conflits dans `sprint-status.yaml` (37-3a et 37-4
+  prises de l'epic, 37-3b gardée), `kesh-api/src/errors.rs` (les deux fonctions voisines gardées :
+  `conversion_validation_message` et `coded_response` avec son commentaire) et `i18n-keys.test.ts` (`sitesTotal`).
+  Recomptés depuis la source : `sitesTotal` **3300** (relevé par la garde, `expected 3300 to be 3294`, non additionné ; les
+  6 sites de la 37-4 en plus) ; migrations **94** fichiers = **94** lignes de l'audit, total de l'audit à 94, aucune
+  migration en conflit ; registre des routes et bornes MCP : aucun conflit de texte, gardes vertes au gate backend.
+- **Backend complet** (`scripts/test-fast.sh --ci`, base `kesh_s37_3b` recréée, migrée, seedée) : **5808 exécutés,
+  5808 passés, 13 ignorés** (838 s, `gate.log`). **Vitest complet : 4074 passés (260 fichiers)**, `npm run build` vert.
+- **E2E complet** au commit de fusion (`LANG=fr_CH.UTF-8`, base `kesh_e2e_s37_3b` recréée, backend et frontend
+  reconstruits à ce commit, 42,1 min) : **441 passés, 10 échecs, 18 ignorés**. Les dix échecs, tous connus : les **sept de
+  la KF-029 (#97)** (`mode-expert.spec.ts:26`, `:41` ; `onboarding-path-b.spec.ts:65`, `:92` ; `onboarding.spec.ts:57`,
+  `:77`, `:150`) ; `backup-restore-new-install.spec.ts:262` et `:381` et `opening-balances.spec.ts:156`, établis comme
+  préexistants à `19bf12fb` (prompt de fin de story, non rejoués sur la base). `bank-import.spec.ts:130` passe ce
+  coup-ci. Aucun échec causé par la story ; les neuf de `fx-entries.spec.ts` passent.
+
+**Tests ajoutés** (périmètre `6f66e775..HEAD`) : Rust **23** `#[sqlx::test]`
+(`journal_entries_fx_ecrans_e2e.rs`) ; Vitest **90** déclarations `it(` ajoutées ; E2E **9** tests.
+
+**Captures** (thème clair, base de démonstration) : onze, `kesh-gate-logs/s37-3b/captures/01…11*.png`.
+
+**PDF** : manuel utilisateur compilé hors dépôt (`kesh-gate-logs/s37-3b/pdf/user-manual.pdf`), section
+« Convertir d'une devise à une autre » contrôlée par `pdftotext` ; aucun PDF commité.
+
+### File List
+
+*(Relevé par `git diff --name-status 6f66e775..HEAD` : 81 fichiers, 17 ajoutés, 64 modifiés, la fiche comprise.)*
+
+**Serveur**
+- `crates/kesh-api/src/errors.rs`, `crates/kesh-api/src/lib.rs` (route `POST /journal-entries/conversions`)
+- `crates/kesh-api/src/routes/journal_entries.rs`, `routes/opening_balances.rs`, `routes/bank_accounts.rs`
+- `crates/kesh-db/src/repositories/journal_entry_conversions.rs` *(neuf)*, `repositories/accounts.rs`,
+  `repositories/opening_complement.rs`, `repositories/mod.rs`
+- `crates/kesh-i18n/locales/{fr-CH,de-CH,it-CH,en-CH}/messages.ftl`
+
+**Tests serveur**
+- `crates/kesh-api/tests/journal_entries_fx_ecrans_e2e.rs` *(neuf, 23 tests)*, `tests/audit_route_registry.rs`,
+  `tests/services_motif.rs`
+- `crates/kesh-db/tests/opening_complement_repository.rs`, `tests/opening_complement_bank_scope.rs`
+
+**Frontend — neufs**
+- `frontend/src/lib/features/journal-entries/` : `fx.ts`, `fx-lines.ts`, `rate-lookup.ts`, `fx-refusals.ts`,
+  `fx-display.ts`, `conversion.ts`, `ConversionAssistant.svelte`
+- `frontend/src/lib/features/opening-balances/opening-fx.ts`
+- `frontend/src/routes/(app)/journal-entries/conversion/+page.svelte`
+
+**Frontend — modifiés**
+- `journal-entries/` : `JournalEntryForm.svelte`, `VatPurchaseAssistant.svelte`, `AccountAutocomplete.svelte`,
+  `form-helpers.ts`, `vat-purchase.ts`, `blocker-messages.ts`, `journal-entries.api.ts`, `journal-entries.types.ts`
+- `accounts/` : `accounts.types.ts`, `account-validity.ts`, `AccountCurrencyFields.svelte`
+- `bank-accounts/format.ts`, `invoices/SettleInvoiceDialog.svelte`, `supplier-invoices/SupplierInvoiceForm.svelte`,
+  `open-items/OpenItemsScreen.svelte`, `opening-balances/opening-balances.types.ts`,
+  `settings/CurrencySettingsSection.svelte`
+- `reconciliation/` : `reconciliation-counterparties.ts`, `failed-proposal-label.ts`, `CounterpartyClaimNotice.svelte`,
+  `ReconciliationProposals.svelte`, `rules/RuleFormModal.svelte`, `rules/RulesList.svelte`
+- routes `(app)/` : `journal-entries/+page`, `journal-entries/[id]/+page`, `settings/opening-balances/+page`,
+  `settings/invoicing/+page`, `accounts/+page`, `reports/+page`, `credit-notes/[id]/+page`, `invoices/[id]/+page`,
+  `invoices/due-dates/+page`, `reconciliation/rules/+page`, `supplier-invoices/[id]/+page`,
+  `supplier-invoices/[id]/edit/+page`, `supplier-invoices/new/+page`
+
+**Tests frontend**
+- neufs : `fx.test.ts`, `fx-lines.test.ts`, `fx-support.test.ts`, `JournalEntryForm.fx.test.ts`,
+  `ConversionAssistant.test.ts`, `VatPurchaseAssistant.fx.test.ts`, `accounts/fx-account-filter-inventory.test.ts`,
+  `frontend/tests/e2e/fx-entries.spec.ts` (9 tests)
+- modifiés : `blocker-messages.test.ts`, `failed-proposal-label.test.ts`, `opening-balances-page.test.ts`,
+  `shared/i18n-keys.test.ts`, `shared/i18n-libelle-en-dur.test.ts`,
+  `components/ui/button/boutons-rouges-inventory.test.ts`
+
+**Documentation** (`.tex` seulement, aucun PDF)
+- `docs/manual/fr/user-manual.tex`, `docs/manual/fr/admin-manual.tex`, `docs/api-external.md`
+
+**Artefacts**
+- `_bmad-output/implementation-artifacts/37-3b-ecritures-en-devise-ecrans.md`, `sprint-status.yaml`
+- 2026-11-16 — revue de code P2 (Sonnet 5.5, couches Blind Hunter, Edge Case Hunter, Acceptance Auditor en parallèle) : 0 CRITICAL, 0 HIGH, 5 MEDIUM (cache : échec passager du `POST /fetch` mémoïsé ; reprise du même compte qui remplaçait cours et CHF d'une ligne relue ; tests de non-régression mono-devise et de `openingProposal` manquants ; refus de conversion en même devise absent du serveur, ex CR-P1-20), une vingtaine de LOW. Corrigés avec tests : les cinq MEDIUM ; conversion en même devise refusée (400, frais exclus de la devise de l'écriture) ; différence calculée au-delà de `DECIMAL(19,4)` en 400 `FX_VALUE_OUT_OF_RANGE` ; sélecteur mono-devise sans compte en devise ; refus de frais vidés à l'ajout ou au retrait d'un frais ; sortie de champ CHF inchangée n'efface plus un refus ; 408 et 429 passagers ; `commitForeignChf` gardé ; guide d'API (route de conversion rejouée) et Note de version. Non corrigés, au registre `issues-a-ouvrir-p1.md` (19 points). Gates (au dernier commit de code) : `scripts/test-fast.sh --ci` 5750 passés, 13 ignorés (fmt, clippy, nextest) ; Vitest 4055 (258 fichiers) ; `npm run check` 0 erreur ; `npm run build` vert ; E2E complet non rejoué ici (clôture).
+- 2026-11-16 — revue de code P3 ciblée (Opus 5.5, une lentille, prompt `37-3b-review-prompt-p3-ciblee.md`, sur `9e2e7df6`) : **0 CRITICAL, 0 HIGH, 2 MEDIUM, 5 LOW**. Une passe de plus est due (MEDIUM, et CR-P3-1 touche la production). MEDIUM : CR-P3-1 un échec passager n'étant plus mémoïsé, un `503 RATE_SOURCE_UNAVAILABLE` durable du `POST /fetch` (AFC injoignable) refaisait `lookup` puis `POST /fetch` à chaque frappe du cours ou du CHF (`setForeignRate`, `setForeignChf` → `refreshRates`), dans le formulaire, l'assistant et les grilles : l'échec passager reste mémoïsé `TRANSIENT_RETRY_MS` (15 s), « Récupérer le mois » (`refresh`) réessaie toujours (`rate-lookup.ts` ; tests du délai et du 503 durable, rouges sur `9e2e7df6` ; ferme le point 16 du registre P1) ; CR-P3-4 CR-P2-4 sans test : test de composant écrit (ligne relue `afc` à 0.95, compte repris, cours, CHF et provenance gardés, aucun `lookup` ; rouge sans la garde : cours remplacé par 0.8846). LOW : CR-P3-2 un compte inconnu était lu comme un compte CHF par le refus « même devise », qui masquait `INACTIVE_OR_INVALID_ACCOUNTS` (test `conversion_compte_inconnu_pas_lu_comme_chf`) ; CR-P3-3 borne de la ligne calculée `>=` alignée sur `> FX_CHF_MAX` ; CR-P3-5 guide d'API : refus en même devise et `FX_VALUE_OUT_OF_RANGE` de la ligne calculée (`details.line` = dernière + 1) ; CR-P3-6 en-tête du module (ordre des refus) et commentaire d'`account-validity.ts` périmés ; CR-P3-7 (non corrigé, registre `review-p3/issues-a-ouvrir-p3.md`) : l'assistant efface son refus quand on reprend le même compte. Axes exercés : `SameCurrency` (frais seuls, lignes CHF de transit, ligne de différence portée gains/pertes, compte inconnu), borne de la différence et rang rendu à l'assistant (`conversionField` → `difference`), cache (`get`, `refresh`, appelants par frappe), `selectAccount` inchangé (le rafraîchissement de date passe par `refreshOnDate`, non touché), filtre mono-devise (compte choisi résolu sur la liste complète, aucun compte en devise possible sans le multi-devises), `opening-fx.test.ts`, `ConversionAssistant` (refus gardés, frais), i18n quatre locales (`error-conversion-same-currency` présent), grep des résidus (`excludeForeignCurrency={false}`, `memo.delete`). Non exercés : E2E Playwright, PDF du manuel (aucun `.tex` touché), concurrence. Gates (au commit de la passe) : `scripts/test-fast.sh --ci` 5751 passés, 13 ignorés (fmt, clippy, nextest) ; Vitest 4057 (258 fichiers) ; `npm run check` 0 erreur ; `npm run build` vert ; E2E complet non rejoué.
+- 2026-11-16 — revue de code P4 ciblée (Haiku ; entrée écrite par l'orchestrateur, la passe n'ayant rien remédié) : 0 CRITICAL, 0 HIGH, 0 MEDIUM, 1 LOW (doc de `RateLookupCache.get` périmée depuis la P3, corrigée à la clôture). **Boucle de revue close** : P1 (Opus) 3 HIGH, 13 MEDIUM → P2 (Sonnet) 5 MEDIUM → P3 ciblée (Opus) 2 MEDIUM → P4 ciblée (Haiku) 0 au-dessus de LOW.

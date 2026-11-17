@@ -326,6 +326,10 @@ pub async fn login(
 
     tracing::info!(user_id = user.id, "login success");
 
+    // Story 37-2 (AC-4) — tâche détachée, jamais attendue : la connexion ne
+    // dépend jamais de la source des cours (rien en KESH_TEST_MODE).
+    let _ = crate::exchange_rates::declencher_a_la_connexion(&state, user.company_id);
+
     // Story 10-5 — émettre les 2 cookies HttpOnly (access + refresh).
     let (access_cookie, refresh_cookie) = build_auth_cookies(&state, &access_token, &refresh_token);
     let jar = jar.add(access_cookie).add(refresh_cookie);

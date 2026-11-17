@@ -990,12 +990,14 @@ async fn reopen_reactivates_entry_editability(pool: MySqlPool) {
                 debit: Decimal::new(100, 0),
                 credit: Decimal::ZERO,
                 project_id: None,
+                foreign: None,
             },
             NewJournalEntryLine {
                 account_id: sales,
                 debit: Decimal::ZERO,
                 credit: Decimal::new(100, 0),
                 project_id: None,
+                foreign: None,
             },
         ],
     };

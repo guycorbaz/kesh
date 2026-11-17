@@ -4,6 +4,8 @@
 
 import { apiClient } from '$lib/shared/utils/api-client';
 import type {
+	ConversionResponse,
+	CreateConversionRequest,
 	CreateJournalEntryRequest,
 	JournalEntryDetailResponse,
 	JournalEntryListQuery,
@@ -72,6 +74,15 @@ export async function createJournalEntry(
 	req: CreateJournalEntryRequest
 ): Promise<JournalEntryResponse> {
 	return apiClient.post<JournalEntryResponse>('/api/v1/journal-entries', req);
+}
+
+/**
+ * Story 37-3b (AC-2 bis) — passe une conversion entre devises : deux écritures
+ * par le compte de conversion, dans une transaction (tout ou rien). Un refus
+ * d'une écriture porte `details.entry` (1 ou 2).
+ */
+export async function createConversion(req: CreateConversionRequest): Promise<ConversionResponse> {
+	return apiClient.post<ConversionResponse>('/api/v1/journal-entries/conversions', req);
 }
 
 /**

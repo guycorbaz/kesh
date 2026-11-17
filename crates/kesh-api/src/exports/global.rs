@@ -50,6 +50,8 @@ use crate::exports::csv_tables::{
     serialize_payment_batches_csv, serialize_projects_csv, serialize_supplier_invoice_lines_csv,
     serialize_supplier_invoices_csv,
 };
+// Story 37-2 — les cours de change retenus par la société.
+use crate::exports::csv_tables::serialize_exchange_rates_csv;
 use crate::exports::metadata::{TableMeta, build_metadata_json, sha256_hex};
 
 use kesh_db::entities::Company;
@@ -151,6 +153,9 @@ pub const TABLES_EXPORTEES: &[&str] = &[
     "contact_persons",
     "imported_supplier_invoices",
     "audit_log",
+    // Story 37-2 : les cours de change retenus par la société (données
+    // comptables : le cours qu'elle applique, et sa source).
+    "exchange_rates",
 ];
 
 /// Les tables **délibérément absentes** de l'export, et pourquoi.
@@ -164,9 +169,9 @@ pub const TABLES_EXPORTEES: &[&str] = &[
 /// vers une autre application n'a besoin que des données comptables ; seuls les
 /// backups de Kesh pour restaurer dans Kesh ont besoin de toutes les
 /// informations »*. Les quatorze ci-dessous sont **dans la sauvegarde**, qui porte
-/// les 44 tables (Story 32-5a : + `mcp_keys`, `mcp_server_settings` ; Story
+/// les 45 tables (Story 32-5a : + `mcp_keys`, `mcp_server_settings` ; Story
 /// 32-8a : + `mcp_sends` ; Story 32-10a-i : + `mcp_prompts`,
-/// `mcp_prompt_versions`).
+/// `mcp_prompt_versions` ; Story 37-2 : + `exchange_rates`, exportée aussi).
 pub const TABLES_HORS_EXPORT: &[(&str, &str)] = &[
     (
         "invoice_number_sequences",
@@ -395,6 +400,16 @@ pub async fn build_global_export(
     let audit_log_rows = audit_log::list_all_by_company(pool, company_id)
         .await
         .map_err(map_db)?;
+    // Story 37-2 — cours retenus (le dépôt des cours prend une connexion).
+    let exchange_rates_rows = {
+        let mut conn = pool
+            .acquire()
+            .await
+            .map_err(|e| map_db(kesh_db::errors::map_db_error(e)))?;
+        kesh_db::repositories::exchange_rates::list_all_by_company(&mut conn, company_id)
+            .await
+            .map_err(map_db)?
+    };
 
     // -------- 2 & 3 & 4. Serialize + SHA-256 + assemblage ordonné --------
     //
@@ -538,6 +553,11 @@ pub async fn build_global_export(
         serialize_imported_supplier_invoices_csv
     );
     push_csv!("audit_log.csv", audit_log_rows, serialize_audit_log_csv);
+    push_csv!(
+        "exchange_rates.csv",
+        exchange_rates_rows,
+        serialize_exchange_rates_csv
+    );
 
     // ⛔ **Le nombre est DÉRIVÉ, il ne s'écrit plus.** Il était codé en dur à
     // sept endroits — dont deux `debug_assert_eq!` qui **paniquaient en test**

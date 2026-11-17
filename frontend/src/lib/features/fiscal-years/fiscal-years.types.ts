@@ -62,8 +62,9 @@ export interface ReopenFiscalYearRequest {
 // ---------------------------------------------------------------------------
 
 /**
- * Les huit codes, dans l'ordre que rend le serveur. Story v017-4b (#849, AC-26) : K8
- * `DRAFT_SUPPLIER_INVOICES`, rendu en dernier (AC-16 de la 4a).
+ * Les neuf codes, dans l'ordre que rend le serveur. Story v017-4b (#849, AC-26) : K8
+ * `DRAFT_SUPPLIER_INVOICES` (AC-16 de la 4a) ; Story 37-5 (AC-9) : K9
+ * `FOREIGN_ACCOUNTS_NOT_REVALUED`, bloquant, rendu en dernier.
  */
 export type ClosingCheckCode =
 	| 'EARLIER_FISCAL_YEAR_OPEN'
@@ -73,7 +74,19 @@ export type ClosingCheckCode =
 	| 'IMPORTED_SUPPLIER_INVOICES_TO_COMPLETE'
 	| 'INCONSISTENT_ENTRIES'
 	| 'NEXT_FISCAL_YEAR'
-	| 'DRAFT_SUPPLIER_INVOICES';
+	| 'DRAFT_SUPPLIER_INVOICES'
+	| 'FOREIGN_ACCOUNTS_NOT_REVALUED';
+
+/** K9 (Story 37-5) — un compte en devise non réévalué au cours de clôture. */
+export interface NotRevaluedAccount {
+	accountId: number;
+	number: string;
+	name: string;
+	currency: string;
+	/** Écart en débit net (chaîne décimale) ; `null` sans cours ou hors bornes. */
+	delta: string | null;
+	reason: 'NOT_REVALUED' | 'RATE_UNAVAILABLE' | 'NOT_POSTABLE';
+}
 
 export type ClosingCheckSeverity = 'blocking' | 'warning' | 'info' | 'anomaly';
 export type ClosingCheckStatus = 'ok' | 'attention';
@@ -140,8 +153,8 @@ export interface NextFiscalYearRef {
 export interface ClosingCheckDetails {
 	/** K1 (antérieur ouvert) et K7 (exercice suivant). */
 	fiscalYear?: ClosingFiscalYearRef | NextFiscalYearRef | null;
-	/** K2 (par compte) et K3 (comptes en défaut). */
-	accounts?: PendingByAccount[] | StatementIssue[];
+	/** K2 (par compte), K3 (comptes en défaut) et K9 (comptes non réévalués). */
+	accounts?: PendingByAccount[] | StatementIssue[] | NotRevaluedAccount[];
 	/** K3 — comptes examinés mais non vérifiables (sans effet sur le statut). */
 	notCheckable?: NotCheckable[];
 	/** K4, et K8 (même forme : brouillons fournisseur). */
@@ -166,4 +179,91 @@ export interface ClosingChecksResponse {
 	startDate: string;
 	endDate: string;
 	checks: ClosingCheck[];
+}
+
+// ---------------------------------------------------------------------------
+// Story 37-5 — réévaluation de fin d'exercice des comptes en devise
+// (`POST /api/v1/fiscal-years/{id}/fx-revaluation[/preview]`, miroir de
+// `crates/kesh-api/src/routes/fx_revaluation.rs`). Montants et cours en chaînes
+// décimales, jamais convertis en `Number`.
+// ---------------------------------------------------------------------------
+
+/** Genre d'un cours retenu : défaut journalier, défaut mensuel, ou reçu différent. */
+export type RevaluationRateKind = 'day' | 'month' | 'request';
+
+/** Corps des deux routes : seuls les cours modifiés à l'aperçu, tous les cours affichés à la passation. */
+export interface RevaluationRequest {
+	rates?: Record<string, string>;
+	accountIds?: number[];
+}
+
+/** Le cours d'une devise dans l'aperçu (AC-1, U1). */
+export interface RevaluationRate {
+	currency: string;
+	rate: string | null;
+	rateKind: RevaluationRateKind | null;
+	/** Date du cours par défaut (jour, ou 1er du mois). */
+	rateDate: string | null;
+	/** Genre du cours par défaut (`day` ou `month`) ; `null` sans défaut. */
+	defaultKind: RateKind | null;
+	/** Cours retenu par la société de la résolution par défaut. */
+	defaultRate: string | null;
+	/** Sa source, valeur brute : `afc`, `manual` ou autre (A30). */
+	defaultSource: string | null;
+	overridden: boolean;
+	/** Date de publication d'un cours journalier `afc`. */
+	sourceDate: string | null;
+}
+
+/** Une ligne de l'aperçu : un compte et l'écriture prévue (R9, A39). */
+export interface RevaluationLine {
+	accountId: number;
+	accountNumber: string;
+	accountName: string;
+	accountType: 'Asset' | 'Liability';
+	currency: string;
+	archived: boolean;
+	selectable: boolean;
+	selected: boolean;
+	reason: 'ACCOUNT_ARCHIVED' | 'ACCOUNT_NOT_POSTABLE' | 'RATE_UNAVAILABLE' | null;
+	/** Débit net en devise (sens brut). */
+	deviseNet: string;
+	/** Débit net en CHF (« CHF actuel »). */
+	chfNet: string;
+	rate: string | null;
+	/** CHF réévalué (« CHF cible »). */
+	targetChf: string | null;
+	/** Écart en débit net. */
+	delta: string | null;
+	counterpartAccountId: number | null;
+	counterpartAccountNumber: string | null;
+	counterpartAccountName: string | null;
+	fxAccountsOrigin: 'own' | 'company' | null;
+	label: string | null;
+	previousRevaluationTotal: string;
+	previousEntryIds: number[];
+	revaluationTotalAfter: string | null;
+}
+
+/** Ce que la passation refuserait (code, message du serveur, détails). */
+export interface RevaluationBlocker {
+	code: string;
+	message: string;
+	details: Record<string, unknown>;
+}
+
+export interface RevaluationPreview {
+	fiscalYearId: number;
+	startDate: string;
+	endDate: string;
+	closingRateKind: RateKind;
+	rates: RevaluationRate[];
+	lines: RevaluationLine[];
+	totals: { gains: string; losses: string };
+	preselectionTruncated: boolean;
+	blockers: RevaluationBlocker[];
+}
+
+export interface RevaluationPostResponse {
+	entryIds: number[];
 }

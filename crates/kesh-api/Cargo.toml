@@ -103,6 +103,14 @@ rustix = { version = "1.1", features = ["fs"] }
 # Déjà au Cargo.lock (2.12.0, dépendance transitive) : aucun paquet neuf.
 ipnet = "2.12"
 
+# Story 37-2 (AC-3) — client HTTP de la source des cours de change (AFC /
+# OFDF). rustls (PAS native-tls : `default-features = false`), comme sqlx et
+# lettre ; `.use_rustls_tls()` explicite au constructeur. Les fonctionnalités
+# de la dev-dependency ci-dessous (défaut, `json`, `multipart`, `cookies`)
+# s'unifient dans les builds de test ; `cookies` n'active aucun magasin sans
+# `.cookie_store(true)`.
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
+
 [dev-dependencies]
 # `tower` (avec `util`) et `http-body-util` sont des dépendances normales depuis
 # la Story 32-6a : les tests les reçoivent de là (revue P1, A6).
