@@ -1107,3 +1107,6 @@ development_status:
   # (décision de Guy). Aucune clé `epic-37` à `epic-39` n'est créée ici tant que leurs kickoffs n'ont pas eu lieu :
   # les décomptes de clés `epic-<entier>` restent ceux des epics réels. Le prochain epic de l'orchestrateur porte le
   # numéro 40. Détail : `_bmad-output/planning-artifacts/epics-37-39-reserves.md`.
+
+  # 2026-11-17 — Release 0.19.0 (publiée le 2026-11-20, coupure le 2026-11-19 au soir) : correction de la semaine, hors epic.
+  v0190-correction: ready-for-dev  # #1162, #1097 ; release 0.19.0 ; sans migration ; fiche rédigée le 2026-11-17 (Sonnet 5.5), à valider ; deux parties indépendantes (A : ContactPicker, B : nom de la société modifiable), peut glisser à la 0.20.0 (décision de Guy du 2026-11-17) ; six modules : découpage de repli proposé (A seule, B seule)
