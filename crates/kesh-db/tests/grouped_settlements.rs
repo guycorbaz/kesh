@@ -1204,3 +1204,164 @@ async fn a_grouped_entry_refuses_modification_and_keeps_its_line_keys(pool: MySq
             .collect::<Vec<_>>()
     );
 }
+
+// ---------------------------------------------------------------------------
+// AC12 — la montée depuis le schéma d'avant (résolution par version, P6)
+// ---------------------------------------------------------------------------
+
+#[path = "common/mod.rs"]
+mod common;
+
+/// Version de la migration de la Story 43-1a.
+const GROUPED_VERSION: i64 = 20261118000001;
+
+/// AC12 — une base au schéma d'avant la 43-1a, **peuplée** (règlement client
+/// unitaire, facture fournisseur payée, réglages de facturation), monte sans
+/// écart : données intactes, colonnes neuves à `NULL`, plafond à 5.0000 ; puis
+/// un groupe se crée. Montage résolu par version, assertion de montage sur la
+/// colonne absente.
+#[sqlx::test(migrations = false)]
+async fn the_upgrade_keeps_unit_settlements_and_allows_a_group(pool: MySqlPool) {
+    common::apply_migrations_up_to(
+        &pool,
+        common::migrations_before(GROUPED_VERSION, "grouped_settlements"),
+    )
+    .await
+    .expect("migrations avant grouped_settlements");
+    let colonne: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() \
+         AND TABLE_NAME = 'invoice_settlements' AND COLUMN_NAME = 'journal_entry_line_id'",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        colonne, 0,
+        "assertion de montage : la migration n'a pas tourné"
+    );
+
+    // Le peuplement, au schéma d'avant : une facture réglée par une écriture
+    // unitaire, une facture fournisseur payée.
+    let m = monter(&pool).await;
+    let reglee = facture(&pool, &m, "AV-1", dec!(80.00), jour(5, 1), None).await;
+    let reglement = journal_entries::create(
+        &pool,
+        m.s.fiscal_year_id,
+        acteur(&m),
+        NewJournalEntry {
+            company_id: m.s.company_id,
+            entry_date: jour(5, 10),
+            journal: Journal::Banque,
+            description: "Encaissement d'avant".into(),
+            project_id: None,
+            lines: vec![
+                NewJournalEntryLine {
+                    account_id: m.bank_ledger,
+                    debit: dec!(80.00),
+                    credit: Decimal::ZERO,
+                    project_id: None,
+                },
+                NewJournalEntryLine {
+                    account_id: m.s.accounts["1100"],
+                    debit: Decimal::ZERO,
+                    credit: dec!(80.00),
+                    project_id: None,
+                },
+            ],
+        },
+    )
+    .await
+    .expect("écriture de règlement");
+    sqlx::query(
+        "INSERT INTO invoice_settlements (company_id, invoice_id, journal_entry_id, amount, \
+         settled_on, settlement_type, settlement_bank_account_id) \
+         VALUES (?, ?, ?, 80.00, ?, 'bank_transfer', ?)",
+    )
+    .bind(m.s.company_id)
+    .bind(reglee)
+    .bind(reglement.entry.id)
+    .bind(jour(5, 10))
+    .bind(m.bank_account_id)
+    .execute(&pool)
+    .await
+    .expect("règlement d'avant");
+    let contact: i64 = sqlx::query_scalar(
+        "INSERT INTO contacts (company_id, contact_type, name, is_supplier) \
+         VALUES (?, 'Entreprise', 'Fournisseur d''avant', TRUE) RETURNING id",
+    )
+    .bind(m.s.company_id)
+    .fetch_one(&pool)
+    .await
+    .expect("fournisseur");
+    let fournisseur = sqlx::query(
+        "INSERT INTO supplier_invoices (company_id, contact_id, invoice_date, status, \
+         total_amount, purchase_journal_entry_id, settlement_type, settlement_bank_account_id, \
+         settlement_journal_entry_id, paid_at) \
+         VALUES (?, ?, ?, 'paid', 80.00, ?, 'bank_transfer', ?, ?, NOW())",
+    )
+    .bind(m.s.company_id)
+    .bind(contact)
+    .bind(jour(5, 1))
+    .bind(reglement.entry.id)
+    .bind(m.bank_account_id)
+    .bind(reglement.entry.id)
+    .execute(&pool)
+    .await
+    .expect("facture fournisseur payée")
+    .last_insert_id() as i64;
+    let empreinte_avant = (
+        empreinte(&pool).await,
+        sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM company_invoice_settings")
+            .fetch_one(&pool)
+            .await
+            .unwrap(),
+    );
+
+    // La montée.
+    kesh_db::MIGRATOR.run(&pool).await.expect("montée");
+
+    assert_eq!(
+        (
+            empreinte(&pool).await,
+            sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM company_invoice_settings")
+                .fetch_one(&pool)
+                .await
+                .unwrap(),
+        ),
+        empreinte_avant,
+        "données intactes"
+    );
+    let ligne: Option<i64> = sqlx::query_scalar(
+        "SELECT journal_entry_line_id FROM invoice_settlements WHERE invoice_id = ?",
+    )
+    .bind(reglee)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(ligne, None);
+    let ligne: Option<i64> = sqlx::query_scalar(
+        "SELECT settlement_journal_entry_line_id FROM supplier_invoices WHERE id = ?",
+    )
+    .bind(fournisseur)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(ligne, None);
+    let plafond: Decimal = sqlx::query_scalar(
+        "SELECT group_settlement_max_difference FROM company_invoice_settings \
+         WHERE company_id = ?",
+    )
+    .bind(m.s.company_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(plafond, dec!(5.0000));
+
+    // Après la montée, un groupe se crée.
+    let a = facture(&pool, &m, "AP-1", dec!(100.00), jour(6, 1), None).await;
+    let b = facture(&pool, &m, "AP-2", dec!(200.00), jour(6, 1), None).await;
+    let bt = transaction(&pool, &m, dec!(300.00), jour(6, 15)).await;
+    regler(&pool, &m, bt, &[a, b], None)
+        .await
+        .expect("un groupe après la montée");
+}
