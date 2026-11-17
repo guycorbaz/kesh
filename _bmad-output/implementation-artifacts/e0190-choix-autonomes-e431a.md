@@ -51,6 +51,16 @@ du registre de l'épique). Source : `kesh-gate-logs/e43/decision-difference.md`,
   `group_difference` (montant de la ligne de banque, montants bruts des règlements, plafond sans objet), puisque
   l'arrondi automatique peut poser une ligne d'arrondi sans fraction de centime.
 
+**C-e431a-13 — L'arrondi automatique corrigé** (orchestrateur, validation P5 de la 43-2, L2 ; **remplace le point 3 de
+C-e431a-12**). La tolérance `centime(n × 0.005)` absorbait de vrais écarts d'un centime (500.00 + 300.00 payés 799.99)
+et passait avant le plafond. Règle : avec `d = |montant| − Σ restes bruts` (quatre décimales), si `|d| < 0.005`
+(strictement), `d` part tout entier au compte d'arrondi (`rounding_difference = d`, `gap = 0`), sans compte choisi ni
+plafond ; sinon la décomposition ordinaire (`r` au compte d'arrondi, `e` au compte choisi, plafond sur `|e|`). Un `e`
+d'un centime ou plus n'est jamais absorbé, quel que soit `n`. `auto_rounding_tolerance` est supprimée. Invariant :
+`difference = rounding_difference + gap`. Ordre (L3 de la P5) : quand seul l'arrondi est en jeu, le contrôle du compte
+d'arrondi (`RoundingAccountNotConfigured`) passe avant `DifferenceAccountRequired` — c'était déjà l'ordre du code
+(étape 6 : compte d'arrondi, puis compte d'écart).
+
 ## Choix de l'agent
 
 **C-e431a-3 — `TABLES_TO_TRUNCATE`** : `imported_supplier_invoices` et `supplier_invoices` déplacées ensemble avant

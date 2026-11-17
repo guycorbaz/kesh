@@ -310,16 +310,20 @@ pub fn group_difference(
         .map(|c| amount_due_to_centime(*c))
         .sum();
     let e = paid - centimes;
-    // L'arrondi automatique (décision de l'orchestrateur, passe 4 des fiches
-    // 43-2 et 43-3) : un écart qui ne dépasse pas l'arrondi au centime de
-    // `n × 0.005` (n factures) n'est que la somme des arrondis des factures —
-    // il va au compte d'arrondi avec les fractions de centime, sans compte
-    // choisi ni plafond. Exemple : deux restes de 10.0050 (affichés 10.01)
-    // payés 20.01.
-    if e.abs() <= auto_rounding_tolerance(gross_contributions.len()) {
+    let d = paid - gross;
+    // L'arrondi automatique (décision de l'orchestrateur, validation P5 de la
+    // 43-2, L2 — remplace la tolérance `centime(n × 0.005)`, qui absorbait de
+    // vrais écarts d'un centime) : une différence BRUTE `d = |montant| − Σ
+    // restes bruts` strictement sous le demi-centime n'est qu'un arrondi — elle
+    // va tout entière au compte d'arrondi, sans compte choisi ni plafond.
+    // Exemple : deux restes de 10.0050 (affichés 10.01) payés 20.01 → `d = 0`.
+    // Au-delà, la décomposition ordinaire : `r` au compte d'arrondi, `e` au
+    // compte choisi, le plafond sur `|e|`. Un `e` d'un centime ou plus n'est
+    // donc jamais absorbé, quel que soit le nombre de factures.
+    if d.abs() < Decimal::new(5, 3) {
         return Ok(Decomposition {
-            difference: paid - gross,
-            rounding_difference: paid - gross,
+            difference: d,
+            rounding_difference: d,
             gap: Decimal::ZERO,
         });
     }
@@ -332,16 +336,10 @@ pub fn group_difference(
         });
     }
     Ok(Decomposition {
-        difference: paid - gross,
+        difference: d,
         rounding_difference: centimes - gross,
         gap: e,
     })
-}
-
-/// La tolérance de l'arrondi automatique d'un groupe de `n` factures :
-/// `centime(n × 0.005)`.
-pub fn auto_rounding_tolerance(n: usize) -> Decimal {
-    amount_due_to_centime(Decimal::from(n) * Decimal::new(5, 3))
 }
 
 /// Le compte choisi pour l'écart, **contrôlé** (décision de Guy du
@@ -1466,10 +1464,9 @@ mod tests {
     }
 
     /// La fiche : deux restes de 10.0050 (affichés 10.01) — contre 20.02,
-    /// arrondi de +0.0100, aucun écart ; contre 20.01, l'écart d'un centime
-    /// est dans l'arrondi automatique (`centime(2 × 0.005) = 0.01`) : il part
-    /// au compte d'arrondi avec les fractions, qui s'annulent — aucune ligne
-    /// d'arrondi ni d'écart.
+    /// `d = 0.0100` hors de la zone d'arrondi : `r = +0.0100` au compte
+    /// d'arrondi, aucun écart ; contre 20.01, `d = 0` : ni ligne d'arrondi ni
+    /// ligne d'écart.
     #[test]
     fn sub_centime_remainders_split_rounding_and_gap() {
         let restes = [dec!(10.0050), dec!(10.0050)];
@@ -1485,32 +1482,45 @@ mod tests {
         assert_eq!(d.difference, d.gap + d.rounding_difference);
     }
 
-    /// L'arrondi automatique : `|e| ≤ centime(n × 0.005)` va au compte
-    /// d'arrondi, sans compte choisi ni plafond ; au-delà, la règle de Guy.
+    /// L'arrondi automatique (validation P5 de la 43-2, L2) : seule une
+    /// différence brute `|d| < 0.005` part au compte d'arrondi sans compte
+    /// choisi ; un écart `e` d'un centime ou plus n'est jamais absorbé, quel que
+    /// soit le nombre de factures.
     #[test]
-    fn small_gaps_within_n_half_centimes_are_rounding() {
-        assert_eq!(auto_rounding_tolerance(1), dec!(0.01));
-        assert_eq!(auto_rounding_tolerance(2), dec!(0.01));
-        assert_eq!(auto_rounding_tolerance(3), dec!(0.02));
-        assert_eq!(auto_rounding_tolerance(50), dec!(0.25));
-        let f = [dec!(100.00), dec!(200.00)];
-        // −0.01 sur deux factures, plafond à zéro : arrondi, accepté.
-        let d = group_difference(dec!(299.99), &f, dec!(0)).unwrap();
+    fn only_a_raw_difference_below_half_a_centime_is_rounding() {
+        // `d = 0.0049` : arrondi, plafond à zéro accepté.
+        let d = group_difference(dec!(100.00), &[dec!(99.9951)], dec!(0)).unwrap();
+        assert_eq!(d.rounding_difference, dec!(0.0049));
         assert_eq!(d.gap, Decimal::ZERO);
-        assert_eq!(d.rounding_difference, dec!(-0.01));
-        // +0.01 de même.
-        let d = group_difference(dec!(300.01), &f, dec!(0)).unwrap();
-        assert_eq!(d.rounding_difference, dec!(0.01));
-        // −0.02 sur deux factures : au-delà, écart au compte choisi.
-        let d = group_difference(dec!(299.98), &f, dec!(5)).unwrap();
-        assert_eq!(d.gap, dec!(-0.02));
+        assert_eq!(d.difference, dec!(0.0049));
+        // `d = 0.0050` : hors de la zone ; la décomposition ordinaire n'y trouve
+        // qu'une fraction (`r = 0.0050`, `e = 0`) — aucun compte exigé.
+        let d = group_difference(dec!(100.00), &[dec!(99.9950)], dec!(0)).unwrap();
+        assert_eq!(d.rounding_difference, dec!(0.0050));
+        assert_eq!(d.gap, Decimal::ZERO);
+        // Le cas de la P5 : 500.00 + 300.00 payés 799.99 — un vrai écart d'un
+        // centime, au compte choisi, refusé sous un plafond nul.
+        let f = [dec!(500.00), dec!(300.00)];
+        let d = group_difference(dec!(799.99), &f, dec!(5)).unwrap();
+        assert_eq!(d.gap, dec!(-0.01));
         assert_eq!(d.rounding_difference, Decimal::ZERO);
-        // −0.02 sur trois factures : dans la tolérance.
-        let g = [dec!(100.00), dec!(100.00), dec!(100.00)];
-        assert_eq!(
-            group_difference(dec!(299.98), &g, dec!(0)).unwrap().gap,
-            Decimal::ZERO
-        );
+        assert!(group_difference(dec!(799.99), &f, dec!(0)).is_err());
+        // Un centime n'est jamais absorbé, même à cinquante factures.
+        let cinquante = vec![dec!(10.00); 50];
+        let d = group_difference(dec!(499.99), &cinquante, dec!(5)).unwrap();
+        assert_eq!(d.gap, dec!(-0.01));
+        let d = group_difference(dec!(500.01), &cinquante, dec!(5)).unwrap();
+        assert_eq!(d.gap, dec!(0.01));
+        // L'invariant `difference = rounding + gap`, dans chaque branche.
+        for (paye, f) in [
+            (dec!(20.02), vec![dec!(10.0050), dec!(10.0050)]),
+            (dec!(20.00), vec![dec!(10.0050), dec!(10.0050)]),
+            (dec!(799.99), vec![dec!(500.00), dec!(300.00)]),
+            (dec!(100.00), vec![dec!(99.9951)]),
+        ] {
+            let d = group_difference(paye, &f, dec!(5)).unwrap();
+            assert_eq!(d.difference, d.rounding_difference + d.gap, "{paye}");
+        }
     }
 
     /// Décision de Guy du 2026-11-17 : moins reçu ET trop-perçu admis, dans la
