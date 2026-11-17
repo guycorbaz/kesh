@@ -2398,11 +2398,6 @@ pub async fn refuse_foreign_currency_accounts_in_tx(
     }
 }
 
-/// `true` si le compte porte au moins une ligne d'écriture — lecture
-/// **verrouillante** (`LOCK IN SHARE MODE`, par l'index `idx_jel_account`),
-/// après le `FOR UPDATE` du compte (Story 37-1, AC-4) : une ligne commitée
-/// pendant l'attente des verrous est vue, et une ligne en cours d'insertion
-/// attend la fin du geste.
 /// Refuse un sous-compte sous un compte **candidat à la réévaluation**
 /// ([`super::fx_revaluation::CANDIDATE_PREDICATE`] : de bilan, en devise) qui
 /// porte au moins une ligne d'écriture — `AccountForeignParentHasEntries`
@@ -2438,6 +2433,11 @@ async fn refuse_foreign_parent_with_entries_in_tx(
     Ok(())
 }
 
+/// `true` si le compte porte au moins une ligne d'écriture — lecture
+/// **verrouillante** (`LOCK IN SHARE MODE`, par l'index `idx_jel_account`),
+/// après le `FOR UPDATE` du compte (Story 37-1, AC-4) : une ligne commitée
+/// pendant l'attente des verrous est vue, et une ligne en cours d'insertion
+/// attend la fin du geste.
 async fn has_journal_line_locked(
     conn: &mut sqlx::MySqlConnection,
     account_id: i64,
