@@ -408,12 +408,12 @@ async fn supplier_candidates_follow_the_settlement_rules(pool: MySqlPool) {
     assert_eq!(first.payment_reference.as_deref(), Some("RF18539007547034"));
     assert_eq!(first.amount_due, dec!(120));
     assert_eq!(first.invoice_number, None);
-    // Les factures clients ne sortent jamais pour un débit.
-    let a_client = facture(&pool, &m, a, "F-1", dec!(10), jour(6, 1), "validated").await;
-    assert!(
-        !chercher(&pool, &m, CandidateFamily::Supplier, None, &[])
-            .await
-            .contains(&a_client)
+    // Les factures clients ne sortent jamais pour un débit (les identifiants
+    // des deux tables se recouvrent : la liste se compare, non l'identifiant).
+    let _a_client = facture(&pool, &m, a, "F-1", dec!(10), jour(6, 1), "validated").await;
+    assert_eq!(
+        chercher(&pool, &m, CandidateFamily::Supplier, None, &[]).await,
+        vec![s1, s2, confirme]
     );
 }
 
@@ -519,7 +519,8 @@ async fn special_characters_neither_leak_nor_fail(pool: MySqlPool) {
     let a = contact(&pool, m.s.company_id, "Alpha Conseil").await;
     let f = facture(&pool, &m, a, "F-1", dec!(10), jour(6, 1), "validated").await;
     let pct = facture(&pool, &m, a, "F-100%", dec!(10), jour(6, 2), "validated").await;
-    for q in ["%", "_", "\\", "*", "+", "\"", "-", "%_%", "a%b", "~@<>()"] {
+    // (`-` n'y est pas : il est littéral dans un numéro, `F-1` le contient.)
+    for q in ["%", "_", "\\", "*", "+", "\"", "%_%", "a%b", "~@<>()"] {
         let found = chercher(&pool, &m, CandidateFamily::Client, Some(q), &[]).await;
         let expected: Vec<i64> = if q == "%" { vec![pct] } else { vec![] };
         assert_eq!(found, expected, "terme {q:?}");

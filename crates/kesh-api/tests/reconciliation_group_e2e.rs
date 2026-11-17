@@ -512,7 +512,7 @@ impl Ctx {
             "SELECT COUNT(*) FROM journal_entry_lines",
             "SELECT COUNT(*) FROM invoice_settlements",
             "SELECT COUNT(*) FROM audit_log",
-            "SELECT COALESCE(SUM(version), 0) FROM invoices",
+            "SELECT CAST(COALESCE(SUM(version), 0) AS SIGNED) FROM invoices",
             "SELECT COUNT(*) FROM bank_transactions WHERE status = 'reconciled'",
         ] {
             out.push(sqlx::query_scalar(sql).fetch_one(&self.pool).await.unwrap());

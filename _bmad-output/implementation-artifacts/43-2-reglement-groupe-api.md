@@ -563,3 +563,25 @@ résolu en gardant les deux).
   `t3.md` existant, `DifferenceAccountNotUsable` inexistante, chemin `decomposition` du contrat final, `maxDifference` à
   deux décimales ; LOW-7 : sonde « un groupe n'est jamais un retrait seul » à l'AC7 ; dépendance de l'AC7 envers l'AC6 bis
   et l'AC6 de la 43-1b (HIGH-1).
+- 2026-11-17 (développement, étape 0) — **Clôture de la validation** : P1 Sonnet 0/2/7/8 → P2 Opus 0/0/6/6 → P3 Sonnet
+  0/0/3/6 → P4 Opus 0/0/2/6 → P5 Sonnet 0/0/0/5 → P6 ciblée (43-2, 43-3, épique) 1/1/0/4 → passe contre `t3.md`
+  (quatre fiches et l'épique) 0/2/4/9 → passe ciblée 2 0/0/0/4 (rapports `kesh-gate-logs/e43/validation-43-23-p6-ciblee.md`,
+  `validation-fiches-contre-t3.md`, `validation-fiches-p-ciblee-2.md`, totaux relus) ; la dernière passe ne rend rien
+  au-dessus de LOW. LOW traités :
+  - **L-3 (ciblée 2)** : l. 11, chemin local `/home/gcorbaz/devel/kesh-43-1a` remplacé par la branche
+    `story/43-1a-reglement-groupe-modele` (ligne lue : « commit `241839568` ; code dans `/home/gcorbaz/devel/kesh-43-1a` »).
+    L-1, L-2, L-4 de la même passe portent sur la 43-7 et l'épique : hors de cette fiche.
+  - **L-5 (MCP)** : `git grep -n -i 'reconciliation\|ReconciliationKind' -- crates/kesh-api/src/mcp*` ne rend rien ; aucun
+    outil MCP ne lit la réconciliation, rien à faire.
+  - **L6 (P3, message du lettrage)** : laissé tel quel (C-e432-8) ; ligne lue :
+    `tracing::error!("encaissement : lettrage de la facture impossible : {err}");` (`routes/reconciliation.rs`).
+  - **L4 (P5, compte d'arrondi égal à la banque)** : l'unitaire ne le compare qu'à la créance (`refuse_if_claim_account(…,
+    receivable_account_id, ClaimSubject::Designated(GapAccountRole::Rounding))`, `routes/reconciliation.rs`, (c-bis)), le
+    dépôt de la 43-1a aussi (`if receivables.contains(&id)`, `grouped_settlements.rs`) : la mention reste retirée.
+  - **Échelle des `Decimal`** : formatage explicite par `fixed(montant, décimales)` (`reconciliation_group.rs`), test
+    `fixed_writes_the_requested_scale`.
+  - **Contrat `t3.md` relu contre la table des refus** : les vingt-cinq variantes de la liste finale ont leur bras dans
+    `group_refusal_to_failed_proposal` (`match` sans joker : la compilation le garantit) ; `DifferenceAccountInvalid` →
+    `ACCOUNT_NOT_FOUND`, `DifferenceAccountNotPostable` → `ACCOUNT_NOT_POSTABLE`. Écart : `ReconciliationCancellation` ne
+    portait pas le genre du rapprochement, exigé par la réponse de `POST …/cancel` → champ `kind` ajouté au dépôt
+    (C-e432-4), à signaler à la 43-1a.
