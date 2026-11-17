@@ -188,8 +188,12 @@ se testent) ; dernière valeur → intitulé suivant 6,0 (comme `dessiner_refere
    deux lignes des deux côtés, rue de deux lignes d'un côté, QR-IBAN avec référence QRR) **déclenche R1 et seulement lui** :
    la rue et le numéro manquent des deux adresses au récépissé, les noms, intacts, restent complets, la colonne d'information
    reste en P0 ; **une fixture déclenche R4 sans P3** (noms de quatre lignes des deux côtés au récépissé : 8 lignes de nom +
-   2 de localité = 10 > 8 même rue omise ; la colonne, à 87 mm, reste en P0) ; **une fixture déclenche P3 et R4** (le pire cas : noms de 70 W, rue de 86 caractères, localité de 51 : à 87 mm
-   3 + 3 + 3 lignes par adresse, à 52 mm après R1 4 + 3 = 7 par adresse, soit 14 > 8) ; **une autre déclenche P3 et R1 sans R4**
+   2 de localité = 10 > 8 même rue omise ; la colonne, à 87 mm, reste en P0) ; **une fixture déclenche P3 et R4** (le pire cas : **QR-IBAN avec référence QRR**, **message de 8 lignes**, noms de 70 W,
+   rue de 86 caractères, localité de 51 : à 87 mm 3 + 3 + 3 lignes par adresse, N = 18, N + m = 26 > 19 → P3 — sans message,
+   N + m = 18 ≤ 19 et P3 ne se déclencherait pas ; à 52 mm après R1, nom 4 lignes (70 W à 2,66 mm le W, 19 W par ligne) plus
+   NPA-localité, au moins 3 lignes, soit au moins 7 par adresse et N' ≥ 14 > 8 → R4 ; les nombres exacts se relèvent à l'étape 0
+   avec `couper_ligne`) ; **une autre déclenche P3 et R1 sans R4**, **avec référence QRR** (sans référence, son N + m = 22 ≤ 22 et
+   P3 ne se déclenche pas)
    (colonne : n₁ + n₂ + m > 19 avec référence, > 22 sans, m ≤ 8 lignes de message ; P3 exige donc n₁ + n₂ ≥ 12 à 87 mm, ≥ 15
    sans référence). **Il n'est pas vrai que P3 entraîne R4** : R4 se décide après R1, rue retirée du compte, P3 la compte ;
    le contre-exemple, **recalculé à l'étape 0** (couper_ligne sur les largeurs AFM, relu à `15b362e19`) : noms de 5 `A` (une
@@ -305,8 +309,10 @@ contre l'ancienne mise en page ; journal `/home/gcorbaz/devel/kesh-gate-logs/e44
 - **M10** pas de ligne de R4 porté à 5 mm → `les_derniers_paliers_tiennent_par_construction` (le bas passe de 57,9 à 51,9, encore
   ≥ 41,52 : le test **affirme aussi le bas égal à 57,9 et 49,4 à 0,05 mm près**, non la seule borne, sans quoi la mutation
   survit) ;
-- **M13** R1 qui n'omet que la rue du débiteur (R4 de même, par une mutation jumelle) → `la_cascade_par_palier` (la fixture
-  où seul le débiteur déborde : le créancier doit perdre aussi sa rue) ;
+- **M13** R1 qui n'omet que la rue du débiteur → `la_cascade_par_palier` (la fixture où seul le débiteur déborde : le
+  créancier doit perdre aussi sa rue) ;
+- **M13b** R4 qui ne traite que le débiteur → `la_cascade_par_palier` (la fixture « R4 sans P3 » : les deux adresses passent
+  à R4 ensemble) ;
 - **M14** P3 qui force R4 (la cascade du récépissé décidée sans R1 dès que P3 se déclenche) → `la_cascade_par_palier` (la
   fixture « P3 et R1 sans R4 » du contre-exemple de l'AC5 passerait alors à R4 et perdrait ses lignes de nom en trop) ;
 - **M11** montant du récépissé qui suit le contenu (D6 défait) → `la_grille_six_est_tenue`, `sans_reference_aucune_rubrique`.
