@@ -24,7 +24,7 @@ retenus, arrondis de clients, etc.).
   `company_invoice_settings.group_settlement_max_difference DECIMAL(19,4) NOT NULL DEFAULT 5.0000`, `CHECK` 0 à 100
   (`migrations/20261118000001_grouped_settlements.sql`, commentaire « Plafond de l'écart admis dans un règlement groupé ») ;
   le champ d'entité (`entities/company_invoice_settings.rs:74`), la liste `COLUMNS` (`repositories/company_invoice_settings.rs:49`),
-  le lecteur `group_settlement_max_difference` (:67) et la constante `DEFAULT_GROUP_DIFFERENCE_MAX` = 5.0000 (:62-63).
+  le lecteur `group_settlement_max_difference` (:67) et la constante `DEFAULT_GROUP_DIFFERENCE_MAX` = 5.0000 (:57 ; les lignes 61-63 sont la doc-comment du lecteur — L-1).
 - **Pas encore** livré — le **chemin d'écriture** : `CompanyInvoiceSettingsUpdate`, la requête `UPDATE … SET …` (:448-457)
   et **`is_no_op_change`** (:334-354, court-circuit « aucun changement » de la KF-004, pour ne pas incrémenter la version
   inutilement) ignorent la colonne ; `routes/company_invoice_settings.rs` aussi (`git grep group_settlement_max
@@ -46,6 +46,11 @@ retenus, arrondis de clients, etc.).
      `200`, rien d'écrit, version inchangée.
 
   Et dans la sérialisation `{before, after}` de l'audit.
+
+  **Limite écrite (L-4)** : le plafond comparé par le geste (`group_difference`) garde les quatre décimales de la colonne,
+  alors que `GET` l'affiche au centime. Le `PUT` ne peut produire que des centimes, donc seule une valeur posée par SQL
+  direct les sépare : stocké `5.0060`, affiché `5.01`, un écart de 5.01 est pourtant refusé (`5.01 > 5.0060`). Limite
+  assumée, non corrigée (le plafond reste la valeur stockée), dite au manuel d'administration et au Dev Agent Record.
 - **AC2** — Contrôles du `PUT` : ≥ 0, au **centime** (deux décimales au plus), ≤ **100.00** ; montant ambigu (« 1.250 »)
   refusé par la règle des montants des réglages si elle est déjà posée, sinon la saisie de l'écran l'impose ; refus `400
   VALIDATION_ERROR` qui nomme le champ.
