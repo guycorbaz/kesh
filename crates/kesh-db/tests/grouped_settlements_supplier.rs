@@ -638,8 +638,10 @@ async fn forbidden_accounts_are_refused(pool: MySqlPool) {
 }
 
 /// AC1 — les refus des pièces et de la transaction, chacun sans rien écrire :
-/// bornes, sens, devise, facture introuvable, déjà payée (non `open`), dans un
-/// lot `generated`, datée après le paiement au-delà de la tolérance.
+/// borne basse et doublon, sens, facture introuvable, déjà payée (non `open`),
+/// dans un lot `generated`, datée après le paiement au-delà de la tolérance. (La
+/// devise, la borne haute et les autres refus :
+/// `the_other_refusals_write_nothing`.)
 #[sqlx::test(migrations = "./test-schema")]
 async fn each_invoice_and_transaction_refusal_writes_nothing(pool: MySqlPool) {
     let m = monter(&pool).await;
@@ -1297,4 +1299,489 @@ async fn unit_gestures_on_a_grouped_invoice_are_refused(pool: MySqlPool) {
         annulation.err()
     );
     assert_eq!(empreinte(&pool).await, avant);
+}
+
+// ---------------------------------------------------------------------------
+// Revue P1 de la 43-1b — vue après détachement, ordre des verrous, refus
+// ---------------------------------------------------------------------------
+
+/// Désigne `account` comme compte créanciers : les factures validées ensuite
+/// portent leur dette sur ce compte (`generate_purchase_journal_lines`).
+async fn dette_par_defaut(pool: &MySqlPool, m: &Montage, account: i64) {
+    sqlx::query(
+        "UPDATE company_invoice_settings SET default_payable_account_id = ? WHERE company_id = ?",
+    )
+    .bind(account)
+    .bind(m.s.company_id)
+    .execute(pool)
+    .await
+    .unwrap();
+}
+
+async fn vue(pool: &MySqlPool, m: &Montage, bt: i64) -> reconciliation_cancel::ReconciliationView {
+    reconciliation_cancel::get_view(pool, m.s.company_id, bt, aujourd_hui())
+        .await
+        .expect("vue")
+        .expect("transaction")
+}
+
+fn ids_de(view: &reconciliation_cancel::ReconciliationView) -> Vec<i64> {
+    view.grouped_invoices.iter().map(|i| i.id).collect()
+}
+
+/// Revue P1 (A MEDIUM-1, B-2, E1) — la dernière facture du groupe, sur un
+/// **autre** compte de dette, est détachée : sans écart d'origine, la vue ne
+/// présente aucun compte d'écart (et non la dette de la facture détachée) ;
+/// avec un écart, elle relit le compte choisi (et non un `Invariant`). Le
+/// dé-rapprochement reste possible.
+#[sqlx::test(migrations = "./test-schema")]
+async fn a_detached_invoice_on_another_payable_account_leaves_no_false_gap(pool: MySqlPool) {
+    let m = monter(&pool).await;
+    let autre_dette = compte(&pool, m.s.company_id, "2011", "Liability").await;
+
+    // Sans écart.
+    let a = facture(&pool, &m, "W-1", dec!(100.00), jour(6, 1), None).await;
+    dette_par_defaut(&pool, &m, autre_dette).await;
+    let b = facture(&pool, &m, "W-2", dec!(50.00), jour(6, 1), None).await;
+    let bt = transaction(&pool, &m, dec!(-150.00), jour(6, 15)).await;
+    payer(&pool, &m, bt, &[a, b], None).await.expect("payé");
+    supplier_invoices::cancel(&pool, m.s.company_id, b, m.s.admin_user_id, aujourd_hui())
+        .await
+        .expect("détachée");
+    let v = vue(&pool, &m, bt).await;
+    assert_eq!(ids_de(&v), vec![a]);
+    assert_eq!(
+        v.grouped_difference_account_id, None,
+        "la dette de la facture détachée n'est pas un compte d'écart"
+    );
+
+    // Avec un écart.
+    dette_par_defaut(&pool, &m, m.payable).await;
+    let c = facture(&pool, &m, "W-3", dec!(100.00), jour(6, 1), None).await;
+    dette_par_defaut(&pool, &m, autre_dette).await;
+    let d = facture(&pool, &m, "W-4", dec!(50.00), jour(6, 1), None).await;
+    let bt2 = transaction(&pool, &m, dec!(-150.30), jour(6, 15)).await;
+    payer(&pool, &m, bt2, &[c, d], Some(m.ecart))
+        .await
+        .expect("payé");
+    supplier_invoices::cancel(&pool, m.s.company_id, d, m.s.admin_user_id, aujourd_hui())
+        .await
+        .expect("détachée");
+    let v = vue(&pool, &m, bt2).await;
+    assert_eq!(ids_de(&v), vec![c]);
+    assert_eq!(v.grouped_difference_account_id, Some(m.ecart));
+    reconciliation_cancel::cancel(&pool, m.s.company_id, bt2, acteur(&m), aujourd_hui())
+        .await
+        .expect("dé-rapproché");
+}
+
+/// Revue P1 (E5) — le détachement de la **première** facture, puis d'une
+/// facture **du milieu** : la vue liste les autres et relit le compte d'écart ;
+/// le dé-rapprochement contre-passe l'écriture entière.
+#[sqlx::test(migrations = "./test-schema")]
+async fn detaching_the_first_or_a_middle_invoice_keeps_the_view_right(pool: MySqlPool) {
+    let m = monter(&pool).await;
+    for detachee in [0usize, 1] {
+        let mut ids = Vec::new();
+        for (n, montant) in [dec!(100.00), dec!(50.00), dec!(25.00)]
+            .into_iter()
+            .enumerate()
+        {
+            ids.push(
+                facture(
+                    &pool,
+                    &m,
+                    &format!("M{detachee}-{n}"),
+                    montant,
+                    jour(6, 1),
+                    None,
+                )
+                .await,
+            );
+        }
+        let bt = transaction(&pool, &m, dec!(-175.30), jour(6, 15)).await;
+        let done = payer(&pool, &m, bt, &ids, Some(m.ecart))
+            .await
+            .expect("payé");
+        supplier_invoices::cancel(
+            &pool,
+            m.s.company_id,
+            ids[detachee],
+            m.s.admin_user_id,
+            aujourd_hui(),
+        )
+        .await
+        .expect("détachée");
+        let restantes: Vec<i64> = ids
+            .iter()
+            .enumerate()
+            .filter(|(k, _)| *k != detachee)
+            .map(|(_, id)| *id)
+            .collect();
+        let v = vue(&pool, &m, bt).await;
+        assert_eq!(ids_de(&v), restantes, "détachée : {detachee}");
+        assert_eq!(v.grouped_difference_account_id, Some(m.ecart));
+        let undone =
+            reconciliation_cancel::cancel(&pool, m.s.company_id, bt, acteur(&m), aujourd_hui())
+                .await
+                .expect("dé-rapproché");
+        assert_eq!(
+            undone
+                .grouped_invoices
+                .iter()
+                .map(|i| i.id)
+                .collect::<Vec<_>>(),
+            restantes
+        );
+        let lignes_inverses: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM journal_entry_lines jel JOIN journal_entries je \
+             ON je.id = jel.entry_id WHERE je.reverses_entry_id = ?",
+        )
+        .bind(done.journal_entry_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(lignes_inverses, 5, "banque, trois dettes, écart");
+    }
+}
+
+/// Revue P1 (A LOW-2, LOW-3 ; E4) — les autres refus, chacun sans rien écrire :
+/// borne haute (51), devise, facture d'un lot `generated` du compte au montant
+/// du débit (la pièce nommée est **l'autre** facture, C-e431b-3), brouillon,
+/// annulée, compte d'arrondi absent, compte bancaire clos, exercice clos.
+#[sqlx::test(migrations = "./test-schema")]
+async fn the_other_refusals_write_nothing(pool: MySqlPool) {
+    let m = monter(&pool).await;
+    let a = facture(&pool, &m, "O-1", dec!(100.00), jour(6, 1), None).await;
+    let b = facture(&pool, &m, "O-2", dec!(50.00), jour(6, 1), None).await;
+    let bt = transaction(&pool, &m, dec!(-150.00), jour(6, 15)).await;
+    let euros = sqlx::query(
+        "INSERT INTO bank_transactions \
+         (company_id, import_id, bank_account_id, booking_date, amount, currency, details) \
+         SELECT company_id, import_id, bank_account_id, booking_date, amount, 'EUR', details \
+         FROM bank_transactions WHERE id = ?",
+    )
+    .bind(bt)
+    .execute(&pool)
+    .await
+    .unwrap()
+    .last_insert_id() as i64;
+    let brouillon = supplier_invoices::create_draft(
+        &pool,
+        NewSupplierInvoice {
+            company_id: m.s.company_id,
+            contact_id: sqlx::query_scalar("SELECT contact_id FROM supplier_invoices WHERE id = ?")
+                .bind(a)
+                .fetch_one(&pool)
+                .await
+                .unwrap(),
+            supplier_invoice_number: Some("O-3".into()),
+            invoice_date: jour(6, 1),
+            due_date: None,
+            creditor_iban: None,
+            creditor_qr_iban: None,
+            payment_reference: None,
+            expected_payment_amount: None,
+            project_id: None,
+            lines: vec![NewSupplierInvoiceLine {
+                description: "Brouillon".into(),
+                quantity: dec!(1),
+                unit_price: dec!(50.00),
+                vat_rate: dec!(0),
+                expense_account_id: m.s.accounts["4000"],
+            }],
+        },
+        m.s.admin_user_id,
+    )
+    .await
+    .expect("brouillon")
+    .invoice
+    .id;
+    let annulee = facture(&pool, &m, "O-4", dec!(50.00), jour(6, 1), None).await;
+    supplier_invoices::cancel(
+        &pool,
+        m.s.company_id,
+        annulee,
+        m.s.admin_user_id,
+        aujourd_hui(),
+    )
+    .await
+    .expect("annulée");
+    let fraction = facture(&pool, &m, "O-5", dec!(50.00), jour(6, 1), None).await;
+    fixer_total(&pool, fraction, dec!(49.9960)).await;
+    // Une AUTRE facture de 150.00, dans un lot `generated` du compte.
+    let tenue = facture(&pool, &m, "O-6", dec!(150.00), jour(6, 1), None).await;
+    let lot = sqlx::query(
+        "INSERT INTO payment_batches (company_id, bank_account_id, status, \
+         requested_execution_date, total_amount, msg_id, payment_info_id) \
+         VALUES (?, ?, 'generated', '2026-06-30', 150, 'MSG-43-1B-O', 'PMT-43-1B-O')",
+    )
+    .bind(m.s.company_id)
+    .bind(m.bank_account_id)
+    .execute(&pool)
+    .await
+    .unwrap()
+    .last_insert_id() as i64;
+    let avant = empreinte(&pool).await;
+
+    let trop: Vec<i64> = (1..=51).collect();
+    assert_eq!(
+        payer(&pool, &m, bt, &trop, None).await,
+        Err(GroupRefusal::TooMany { count: 51 })
+    );
+    assert_eq!(
+        payer(&pool, &m, euros, &[a, b], None).await,
+        Err(GroupRefusal::CurrencyMismatch {
+            currency: "EUR".into()
+        })
+    );
+    for (pas_ouverte, nom) in [(brouillon, "brouillon"), (annulee, "annulée")] {
+        match payer(&pool, &m, bt, &[a, pas_ouverte], None).await {
+            Err(GroupRefusal::InvoiceNotEligible {
+                piece,
+                reason: IneligibleReason::SupplierNotOpen,
+            }) => assert_eq!(
+                piece.document,
+                GroupedDocument::SupplierInvoice(pas_ouverte)
+            ),
+            other => panic!("{nom} : refus attendu, {other:?}"),
+        }
+    }
+    // Sans compte d'arrondi : 100.00 + 49.9960 payés 150.00 → r = +0.0040.
+    assert_eq!(
+        payer(&pool, &m, bt, &[a, fraction], None).await,
+        Err(GroupRefusal::RoundingAccountNotConfigured)
+    );
+    assert_eq!(empreinte(&pool).await, avant);
+
+    // La garde du lot du compte : l'autre facture, au montant du débit.
+    sqlx::query(
+        "INSERT INTO payment_batch_items (payment_batch_id, supplier_invoice_id, position, \
+         end_to_end_id, amount) VALUES (?, ?, 1, 'E2E-43-1B-O', 150)",
+    )
+    .bind(lot)
+    .bind(tenue)
+    .execute(&pool)
+    .await
+    .unwrap();
+    let avant = empreinte(&pool).await;
+    match payer(&pool, &m, bt, &[a, b], None).await {
+        Err(GroupRefusal::HeldByPaymentBatch {
+            piece,
+            payment_batch_id,
+        }) => {
+            assert_eq!(piece.document, GroupedDocument::SupplierInvoice(tenue));
+            assert_eq!(piece.number, numero(&pool, tenue).await);
+            assert_eq!(payment_batch_id, Some(lot));
+        }
+        other => panic!("refus attendu : {other:?}"),
+    }
+    assert_eq!(empreinte(&pool).await, avant);
+    sqlx::query("UPDATE payment_batches SET status = 'cancelled' WHERE id = ?")
+        .bind(lot)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    // Le compte bancaire clos.
+    sqlx::query("UPDATE bank_accounts SET closed_on = '2026-07-01' WHERE id = ?")
+        .bind(m.bank_account_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    assert_eq!(
+        payer(&pool, &m, bt, &[a, b], None).await,
+        Err(GroupRefusal::BankAccountClosed)
+    );
+    sqlx::query("UPDATE bank_accounts SET closed_on = NULL WHERE id = ?")
+        .bind(m.bank_account_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    // L'exercice clos.
+    sqlx::query("UPDATE fiscal_years SET status = 'Closed' WHERE id = ?")
+        .bind(m.s.fiscal_year_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    assert_eq!(
+        payer(&pool, &m, bt, &[a, b], None).await,
+        Err(GroupRefusal::FiscalYearInvalid {
+            value_date: jour(6, 15)
+        })
+    );
+    assert_eq!(empreinte(&pool).await, avant);
+}
+
+/// Prend le verrou de la facture `id` dans une transaction qui le garde.
+async fn tenir_facture(pool: &MySqlPool, id: i64) -> sqlx::Transaction<'static, sqlx::MySql> {
+    let mut tx = pool.begin().await.unwrap();
+    sqlx::query("SELECT id FROM supplier_invoices WHERE id = ? FOR UPDATE")
+        .bind(id)
+        .fetch_one(&mut *tx)
+        .await
+        .unwrap();
+    tx
+}
+
+/// Lance le paiement groupé dans une tâche, sur sa propre transaction validée.
+fn payer_en_tache(
+    pool: &MySqlPool,
+    m: &Montage,
+    bt: i64,
+    ids: Vec<i64>,
+) -> tokio::task::JoinHandle<Result<Result<GroupedSettlement, GroupRefusal>, DbError>> {
+    let pool = pool.clone();
+    let (company_id, bank_account_id, par) = (m.s.company_id, m.bank_account_id, acteur(m));
+    tokio::spawn(async move {
+        let mut tx = pool.begin().await.map_err(DbError::Sqlx)?;
+        let out = grouped_settlements::pay_supplier_invoices_in_tx(
+            &mut tx,
+            company_id,
+            bank_account_id,
+            bt,
+            &ids,
+            None,
+            1,
+            par,
+            aujourd_hui(),
+        )
+        .await?;
+        tx.commit().await.map_err(DbError::Sqlx)?;
+        Ok(out)
+    })
+}
+
+/// Revue P1 (B-1, E2) — un paiement depuis la fiche de la **deuxième**
+/// facture, lancé pendant que le groupe attend cette facture : l'ordre facture,
+/// compte, lot tient (le groupe verrouille toutes ses factures avant le
+/// compte), la fiche paie sans interblocage, et le groupe refuse ensuite la
+/// facture devenue payée.
+#[sqlx::test(migrations = "./test-schema")]
+async fn a_fiche_payment_between_two_invoices_does_not_deadlock(pool: MySqlPool) {
+    use kesh_db::test_fixtures::attendre_une_requete_en_cours;
+
+    let m = monter(&pool).await;
+    let a = facture(&pool, &m, "L-1", dec!(100.00), jour(6, 1), None).await;
+    let b = facture(&pool, &m, "L-2", dec!(50.00), jour(6, 1), None).await;
+    let bt = transaction(&pool, &m, dec!(-150.00), jour(6, 15)).await;
+
+    let mut fiche = tenir_facture(&pool, b).await;
+    let groupe = payer_en_tache(&pool, &m, bt, vec![a, b]);
+    assert!(
+        attendre_une_requete_en_cours(&pool, &["supplier_invoices", "FOR UPDATE"], || {
+            groupe.is_finished()
+        })
+        .await,
+        "le groupe n'attend pas la deuxième facture"
+    );
+    // La fiche paie `b` dans la transaction qui la tient : facture, puis compte.
+    let paye = supplier_invoices::pay_in_tx(
+        &mut fiche,
+        m.s.company_id,
+        b,
+        SettlementChoice::BankTransfer {
+            bank_account_id: m.bank_account_id,
+        },
+        jour(6, 16),
+        m.s.admin_user_id,
+    )
+    .await;
+    assert!(paye.is_ok(), "paiement depuis la fiche : {:?}", paye.err());
+    fiche.commit().await.unwrap();
+
+    match groupe.await.unwrap() {
+        Ok(Err(GroupRefusal::InvoiceNotEligible {
+            piece,
+            reason: IneligibleReason::SupplierNotOpen,
+        })) => assert_eq!(piece.document, GroupedDocument::SupplierInvoice(b)),
+        other => panic!("refus attendu après la fiche : {other:?}"),
+    }
+}
+
+/// Revue P1 (A LOW-1, LOW-5) — la transaction change (rejetée) pendant que le
+/// groupe attend une facture : son `UPDATE … AND version = ?` la refuse
+/// **après** l'écriture et les factures, et le point de sauvegarde défait
+/// tout.
+#[sqlx::test(migrations = "./test-schema")]
+async fn a_transaction_changed_meanwhile_is_refused_after_the_entry(pool: MySqlPool) {
+    use kesh_db::test_fixtures::attendre_une_requete_en_cours;
+
+    let m = monter(&pool).await;
+    let a = facture(&pool, &m, "T-1", dec!(100.00), jour(6, 1), None).await;
+    let b = facture(&pool, &m, "T-2", dec!(50.00), jour(6, 1), None).await;
+    let bt = transaction(&pool, &m, dec!(-150.00), jour(6, 15)).await;
+
+    let mut autre = tenir_facture(&pool, b).await;
+    let groupe = payer_en_tache(&pool, &m, bt, vec![a, b]);
+    assert!(
+        attendre_une_requete_en_cours(&pool, &["supplier_invoices", "FOR UPDATE"], || {
+            groupe.is_finished()
+        })
+        .await,
+        "le groupe n'attend pas la deuxième facture"
+    );
+    sqlx::query(
+        "UPDATE bank_transactions SET auto_match_rejected_at = NOW(3), version = version + 1 \
+         WHERE id = ?",
+    )
+    .bind(bt)
+    .execute(&mut *autre)
+    .await
+    .unwrap();
+    autre.commit().await.unwrap();
+    let avant = empreinte(&pool).await;
+
+    assert_eq!(
+        groupe.await.unwrap().expect("aucune erreur de base"),
+        Err(GroupRefusal::TransactionNotPending)
+    );
+    assert_eq!(empreinte(&pool).await, avant, "rien d'écrit");
+}
+
+/// Revue P1 (A LOW-4) — le dé-rapprochement défait le lettrage de chaque
+/// facture : la ligne de dette de son achat n'est plus lettrée avec le
+/// paiement.
+#[sqlx::test(migrations = "./test-schema")]
+async fn unreconciling_unletters_each_purchase(pool: MySqlPool) {
+    let m = monter(&pool).await;
+    let a = facture(&pool, &m, "Y-1", dec!(100.00), jour(6, 1), None).await;
+    let b = facture(&pool, &m, "Y-2", dec!(50.00), jour(6, 1), None).await;
+    let bt = transaction(&pool, &m, dec!(-150.00), jour(6, 15)).await;
+    let done = payer(&pool, &m, bt, &[a, b], None).await.expect("payé");
+    let cle_achat = |id: i64| {
+        let pool = pool.clone();
+        async move {
+            sqlx::query_scalar::<_, Option<i64>>(
+                "SELECT jel.lettering_key FROM journal_entry_lines jel \
+                 JOIN supplier_invoices si ON si.purchase_journal_entry_id = jel.entry_id \
+                 WHERE si.id = ? AND jel.credit > 0",
+            )
+            .bind(id)
+            .fetch_one(&pool)
+            .await
+            .unwrap()
+        }
+    };
+    for (id, r) in [a, b].into_iter().zip(&done.invoices) {
+        let cle = cle_achat(id).await.expect("achat lettré");
+        let ligne: Option<i64> =
+            sqlx::query_scalar("SELECT lettering_key FROM journal_entry_lines WHERE id = ?")
+                .bind(r.line_id)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(ligne, Some(cle));
+    }
+    reconciliation_cancel::cancel(&pool, m.s.company_id, bt, acteur(&m), aujourd_hui())
+        .await
+        .expect("dé-rapproché");
+    for id in [a, b] {
+        assert_eq!(
+            cle_achat(id).await,
+            None,
+            "l'achat de {id} n'est plus lettré"
+        );
+    }
 }

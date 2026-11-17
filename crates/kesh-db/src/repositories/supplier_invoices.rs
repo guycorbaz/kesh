@@ -2257,6 +2257,10 @@ pub async fn pay_in_tx_as(
 pub struct LockedForSettlement {
     /// La facture, lue sous `FOR UPDATE` (statut `open`).
     pub invoice: SupplierInvoice,
+    /// Le compte du grand livre du compte bancaire, lu **sous le verrou** du
+    /// compte, étape (b) (Story 43-1b, revue P1 E3 : le paiement groupé
+    /// l'emploie au lieu de le relire sur l'instantané).
+    pub bank_ledger_account_id: i64,
 }
 
 /// Pourquoi une facture fournisseur ne peut pas être réglée par une
@@ -2386,7 +2390,7 @@ pub async fn lock_for_bank_settlement_in_tx(
             .fetch_optional(&mut **tx)
             .await
             .map_err(map_db_error)?;
-    match account {
+    let bank_ledger_account_id = match account {
         None | Some((_, _, true)) => {
             return Ok(Err(SupplierSettlementRefusal::BankAccountNotFound));
         }
@@ -2394,8 +2398,8 @@ pub async fn lock_for_bank_settlement_in_tx(
         Some((None, None, false)) => {
             return Ok(Err(SupplierSettlementRefusal::BankAccountNotConfigured));
         }
-        Some((Some(_), None, false)) => {}
-    }
+        Some((Some(ledger), None, false)) => ledger,
+    };
 
     // (c) L'appartenance à un lot `generated`, en lecture verrouillante.
     let in_batch: Option<i64> = sqlx::query_scalar(
@@ -2429,7 +2433,10 @@ pub async fn lock_for_bank_settlement_in_tx(
         }));
     }
 
-    Ok(Ok(LockedForSettlement { invoice }))
+    Ok(Ok(LockedForSettlement {
+        invoice,
+        bank_ledger_account_id,
+    }))
 }
 
 // ---------------------------------------------------------------------------

@@ -2401,6 +2401,12 @@ async fn a_missing_gap_line_is_an_invariant_for_the_view(pool: MySqlPool) {
 /// (`group_cancel_blocker`, `difference_account_of`), jamais « annulable ».
 /// Le bras groupé d'`entry_cancel_chain` reste inatteignable (retour anticipé,
 /// commentaire au code).
+///
+/// Story 43-1b : la vue d'un groupe fournisseur a désormais son bras ; la
+/// facture fournisseur fabriquée ici pointe la ligne de **banque**, forme
+/// qu'aucun paiement ne produit — le bras fournisseur la refuse lui aussi en
+/// `Invariant` (« les lignes de dette nommées n'occupent pas les positions 1 à
+/// n »), jamais une réponse.
 #[sqlx::test(migrations = "./test-schema")]
 async fn a_group_without_client_settlements_is_an_invariant(pool: MySqlPool) {
     let m = monter(&pool).await;
@@ -2443,7 +2449,7 @@ async fn a_group_without_client_settlements_is_an_invariant(pool: MySqlPool) {
         .unwrap();
     let res = reconciliation_cancel::get_view(&pool, m.s.company_id, bt, jour(11, 17)).await;
     assert!(
-        matches!(&res, Err(DbError::Invariant(msg)) if msg.contains("aucun règlement client")),
+        matches!(&res, Err(DbError::Invariant(msg)) if msg.contains("positions 1 à n")),
         "{res:?}"
     );
 }

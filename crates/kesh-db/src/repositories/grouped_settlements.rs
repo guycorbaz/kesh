@@ -681,88 +681,28 @@ async fn settle_client_inner(
         .await?));
     }
 
-    // (6) La différence (C-43-16, D4 bis), puis les comptes qu'elle exige.
-    let max =
-        super::company_invoice_settings::group_settlement_max_difference(&mut **tx, company_id)
-            .await?;
+    // (6) La différence (C-43-16, D4 bis), puis les comptes qu'elle exige — la
+    //     règle commune aux deux familles (`difference_accounts`), côté créance.
     let gross: Vec<Decimal> = members.iter().map(|m| m.raw_due).collect();
-    let decomposition = match group_difference(bt.amount, &gross, max) {
-        Ok(d) => d,
+    let accounts = match difference_accounts(
+        tx,
+        company_id,
+        bt.amount,
+        &gross,
+        &receivables,
+        ClaimSide::Receivable,
+        bank_ledger_account_id,
+        difference_account_id,
+    )
+    .await?
+    {
+        Ok(a) => a,
         Err(r) => return Ok(Err(r)),
     };
-    let r = decomposition.rounding_difference;
-    let rounding_account_id = if r.is_zero() {
-        None
-    } else {
-        match super::company_invoice_settings::rounding_account_for_write(
-            tx,
-            company_id,
-            crate::errors::RoundingContext::Payment,
-        )
-        .await
-        {
-            Ok(id) => {
-                // Comme l'unitaire (c-bis) : le compte d'arrondi n'est pas la
-                // créance.
-                if receivables.contains(&id) {
-                    return Ok(Err(claim_refusal(
-                        tx,
-                        company_id,
-                        SettlementAccountRole::Rounding,
-                        id,
-                        None,
-                        None,
-                    )
-                    .await?));
-                }
-                Some(id)
-            }
-            Err(DbError::RoundingAccountNotConfigured { .. }) => {
-                return Ok(Err(GroupRefusal::RoundingAccountNotConfigured));
-            }
-            Err(e) => return Err(e),
-        }
-    };
-    // L'écart `e` (moins-payé ou trop-perçu) : au compte que l'utilisateur
-    // choisit — imputable, actif, de la société, ni compte de tiers ni banque.
-    let e = decomposition.gap;
-    let difference_line_account_id = if e.is_zero() {
-        None
-    } else {
-        let Some(id) = difference_account_id else {
-            return Ok(Err(GroupRefusal::DifferenceAccountRequired { gap: e }));
-        };
-        // L'ordre de la contrepartie choisie : banque, manquant, non
-        // imputable, compte de tiers.
-        if id == bank_ledger_account_id {
-            return Ok(Err(GroupRefusal::DifferenceAccountIsBankLedger {
-                account_id: id,
-            }));
-        }
-        if let Some(refusal) = difference_account_refusal(tx, company_id, id).await? {
-            return Ok(Err(refusal));
-        }
-        if receivables.contains(&id) {
-            return Ok(Err(claim_refusal(
-                tx,
-                company_id,
-                SettlementAccountRole::Counterparty,
-                id,
-                None,
-                None,
-            )
-            .await?));
-        }
-        Some(id)
-    };
 
-    // (7) L'écriture : banque, une créance par facture (identifiant croissant),
-    //     arrondi, écart (D2). Exercice ouvert couvrant la date de valeur.
-    let Some(fiscal_year) =
-        super::fiscal_years::find_open_covering_date(tx, company_id, value_date).await?
-    else {
-        return Ok(Err(GroupRefusal::FiscalYearInvalid { value_date }));
-    };
+    // (7) L'écriture : banque (au débit), une créance par facture (identifiant
+    //     croissant), arrondi, écart (D2) ; exercice ouvert couvrant la date de
+    //     valeur.
     let mut lines = vec![NewJournalEntryLine {
         account_id: bank_ledger_account_id,
         debit: bt.amount,
@@ -778,65 +718,26 @@ async fn settle_client_inner(
             project_id: m.invoice.project_id,
         });
     }
-    if let Some(account_id) = rounding_account_id {
-        lines.push(NewJournalEntryLine {
-            account_id,
-            debit: if r < Decimal::ZERO { -r } else { Decimal::ZERO },
-            credit: if r > Decimal::ZERO { r } else { Decimal::ZERO },
-            project_id: None,
-        });
-    }
-    // Client : moins reçu (`e < 0`) au débit du compte choisi, trop-perçu
-    // (`e > 0`) au crédit — le côté qui équilibre l'écriture.
-    if let Some(account_id) = difference_line_account_id {
-        lines.push(NewJournalEntryLine {
-            account_id,
-            debit: if e < Decimal::ZERO { -e } else { Decimal::ZERO },
-            credit: if e > Decimal::ZERO { e } else { Decimal::ZERO },
-            project_id: None,
-        });
-    }
-    let new_entry = NewJournalEntry {
-        company_id,
-        entry_date: value_date,
-        journal: crate::entities::journal_entry::Journal::Banque,
-        description: entry_description(&members),
-        project_id: None,
-        lines,
-    };
-    let entry = match super::journal_entries::create_copying_projects_in_tx(
+    // Client : moins reçu (`r`, `e` < 0) au débit, trop-perçu au crédit.
+    push_difference_lines(&mut lines, &accounts, true);
+    let (entry, fiscal_year_id) = match create_group_entry(
         tx,
-        fiscal_year.id,
+        company_id,
         acteur,
-        new_entry,
-        false,
+        value_date,
+        entry_description(&members),
+        lines,
     )
-    .await
+    .await?
     {
-        Ok(e) => e,
-        Err(DbError::PeriodLocked {
-            locked_through,
-            attempted,
-        }) => {
-            return Ok(Err(GroupRefusal::PeriodLocked {
-                locked_through,
-                attempted,
-            }));
-        }
-        Err(DbError::LaterFiscalYearClosed {
-            fiscal_year_id,
-            fiscal_year_name,
-        }) => {
-            return Ok(Err(GroupRefusal::LaterFiscalYearClosed {
-                fiscal_year_id,
-                fiscal_year_name,
-            }));
-        }
-        Err(DbError::FiscalYearClosed | DbError::DateOutsideFiscalYear) => {
-            return Ok(Err(GroupRefusal::FiscalYearInvalid { value_date }));
-        }
-        Err(e) => return Err(e),
+        Ok(done) => done,
+        Err(r) => return Ok(Err(r)),
     };
+    let DifferenceAccounts {
+        decomposition,
+        difference_account_id: difference_line_account_id,
+        ..
+    } = accounts;
     let journal_entry_id = entry.entry.id;
     // Attribution ligne → facture par la position d'insertion (D2) : la ligne
     // `k + 1` (0 = banque) est celle de la facture `k`. `create_in_tx` rend les
@@ -934,7 +835,7 @@ async fn settle_client_inner(
 
     // (11) Le lettrage de chaque facture, la revérification du compte, l'audit.
     for m in &members {
-        super::letterings::sync_invoice_in_tx(tx, company_id, m.invoice.id, fiscal_year.id, acteur)
+        super::letterings::sync_invoice_in_tx(tx, company_id, m.invoice.id, fiscal_year_id, acteur)
             .await?;
     }
     super::bank_accounts::recheck_open_locked_in_tx(tx, company_id, bank_account_id).await?;
@@ -1075,6 +976,202 @@ async fn claim_refusal_on(
         bank_account_id,
         piece,
     })
+}
+
+// ---------------------------------------------------------------------------
+// La règle commune aux deux familles : la différence, ses comptes, l'écriture
+// (Story 43-1b, revue P1 B-3 — extraite du bras client de la 43-1a, à
+// comportement égal)
+// ---------------------------------------------------------------------------
+
+/// La différence d'un groupe et les comptes qu'elle exige, contrôlés.
+struct DifferenceAccounts {
+    decomposition: Decomposition,
+    /// Le compte d'arrondi, si `r ≠ 0`.
+    rounding_account_id: Option<i64>,
+    /// Le compte choisi pour l'écart, si `e ≠ 0`.
+    difference_account_id: Option<i64>,
+}
+
+/// **La règle de la différence au geste, écrite une seule fois pour les deux
+/// familles** (C-43-16, C-43-25) : [`group_difference`] — **le plafond
+/// d'abord** — puis, si `r ≠ 0`, le compte d'arrondi (requis, et jamais un
+/// compte de tiers du groupe, C-e431a-7) ; puis, si `e ≠ 0`, le compte choisi,
+/// dans l'ordre : requis (`DifferenceAccountRequired`), pas la banque, existant
+/// et actif, imputable ([`difference_account_refusal`]), pas un compte de tiers
+/// du groupe.
+///
+/// `claims` : les comptes de tiers des factures (créances ou dettes) ; `claim` :
+/// leur côté, porté par le refus `ClaimAccount`.
+#[allow(clippy::too_many_arguments)]
+async fn difference_accounts(
+    tx: &mut sqlx::Transaction<'_, sqlx::MySql>,
+    company_id: i64,
+    amount: Decimal,
+    gross: &[Decimal],
+    claims: &BTreeSet<i64>,
+    claim: ClaimSide,
+    bank_ledger_account_id: i64,
+    difference_account_id: Option<i64>,
+) -> Result<Result<DifferenceAccounts, GroupRefusal>, DbError> {
+    let max =
+        super::company_invoice_settings::group_settlement_max_difference(&mut **tx, company_id)
+            .await?;
+    let decomposition = match group_difference(amount, gross, max) {
+        Ok(d) => d,
+        Err(r) => return Ok(Err(r)),
+    };
+    let rounding_account_id = if decomposition.rounding_difference.is_zero() {
+        None
+    } else {
+        match super::company_invoice_settings::rounding_account_for_write(
+            tx,
+            company_id,
+            crate::errors::RoundingContext::Payment,
+        )
+        .await
+        {
+            Ok(id) => {
+                if claims.contains(&id) {
+                    return Ok(Err(claim_refusal_on(
+                        tx,
+                        company_id,
+                        claim,
+                        SettlementAccountRole::Rounding,
+                        id,
+                        None,
+                        None,
+                    )
+                    .await?));
+                }
+                Some(id)
+            }
+            Err(DbError::RoundingAccountNotConfigured { .. }) => {
+                return Ok(Err(GroupRefusal::RoundingAccountNotConfigured));
+            }
+            Err(e) => return Err(e),
+        }
+    };
+    let e = decomposition.gap;
+    let difference_line_account_id = if e.is_zero() {
+        None
+    } else {
+        let Some(id) = difference_account_id else {
+            return Ok(Err(GroupRefusal::DifferenceAccountRequired { gap: e }));
+        };
+        if id == bank_ledger_account_id {
+            return Ok(Err(GroupRefusal::DifferenceAccountIsBankLedger {
+                account_id: id,
+            }));
+        }
+        if let Some(refusal) = difference_account_refusal(tx, company_id, id).await? {
+            return Ok(Err(refusal));
+        }
+        if claims.contains(&id) {
+            return Ok(Err(claim_refusal_on(
+                tx,
+                company_id,
+                claim,
+                SettlementAccountRole::Counterparty,
+                id,
+                None,
+                None,
+            )
+            .await?));
+        }
+        Some(id)
+    };
+    Ok(Ok(DifferenceAccounts {
+        decomposition,
+        rounding_account_id,
+        difference_account_id: difference_line_account_id,
+    }))
+}
+
+/// Ajoute à l'écriture la ligne d'arrondi puis la ligne d'écart, du côté qui
+/// l'équilibre : la banque au **débit** (client) met `r > 0` et `e > 0` au
+/// **crédit** ; la banque au crédit (fournisseur), au débit.
+fn push_difference_lines(
+    lines: &mut Vec<NewJournalEntryLine>,
+    accounts: &DifferenceAccounts,
+    bank_on_debit: bool,
+) {
+    let mut push = |account_id: i64, value: Decimal| {
+        let (positive, negative) = (value.max(Decimal::ZERO), (-value).max(Decimal::ZERO));
+        let (debit, credit) = if bank_on_debit {
+            (negative, positive)
+        } else {
+            (positive, negative)
+        };
+        lines.push(NewJournalEntryLine {
+            account_id,
+            debit,
+            credit,
+            project_id: None,
+        });
+    };
+    if let Some(id) = accounts.rounding_account_id {
+        push(id, accounts.decomposition.rounding_difference);
+    }
+    if let Some(id) = accounts.difference_account_id {
+        push(id, accounts.decomposition.gap);
+    }
+}
+
+/// L'écriture d'un groupe : l'exercice ouvert qui couvre la date de valeur,
+/// puis la création (`enforce_postable = false`, les comptes étant ceux des
+/// pièces et des réglages, le compte choisi contrôlé à part), les erreurs de
+/// période et d'exercice traduites en refus. Rend l'écriture et son exercice.
+async fn create_group_entry(
+    tx: &mut sqlx::Transaction<'_, sqlx::MySql>,
+    company_id: i64,
+    acteur: Acteur,
+    value_date: NaiveDate,
+    description: String,
+    lines: Vec<NewJournalEntryLine>,
+) -> Result<Result<(crate::entities::JournalEntryWithLines, i64), GroupRefusal>, DbError> {
+    let Some(fiscal_year) =
+        super::fiscal_years::find_open_covering_date(tx, company_id, value_date).await?
+    else {
+        return Ok(Err(GroupRefusal::FiscalYearInvalid { value_date }));
+    };
+    let new_entry = NewJournalEntry {
+        company_id,
+        entry_date: value_date,
+        journal: crate::entities::journal_entry::Journal::Banque,
+        description,
+        project_id: None,
+        lines,
+    };
+    match super::journal_entries::create_copying_projects_in_tx(
+        tx,
+        fiscal_year.id,
+        acteur,
+        new_entry,
+        false,
+    )
+    .await
+    {
+        Ok(e) => Ok(Ok((e, fiscal_year.id))),
+        Err(DbError::PeriodLocked {
+            locked_through,
+            attempted,
+        }) => Ok(Err(GroupRefusal::PeriodLocked {
+            locked_through,
+            attempted,
+        })),
+        Err(DbError::LaterFiscalYearClosed {
+            fiscal_year_id,
+            fiscal_year_name,
+        }) => Ok(Err(GroupRefusal::LaterFiscalYearClosed {
+            fiscal_year_id,
+            fiscal_year_name,
+        })),
+        Err(DbError::FiscalYearClosed | DbError::DateOutsideFiscalYear) => {
+            Ok(Err(GroupRefusal::FiscalYearInvalid { value_date }))
+        }
+        Err(e) => Err(e),
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -1308,16 +1405,21 @@ pub(crate) async fn difference_account_of(
 /// AC6 bis) : même ordre des lignes (banque, une dette par facture, arrondi si
 /// `r ≠ 0`, écart si `e ≠ 0`), même [`group_difference`] (plafond sans objet).
 ///
-/// ⚠️ **Le bloc des dettes se lit sur l'écriture, non sur les membres** : une
-/// facture du groupe peut avoir été **détachée** (annulée après coup, AC7) —
-/// elle n'est plus membre, mais sa ligne de dette reste dans l'écriture. Le
-/// bloc va donc de la ligne 1 à la dernière ligne d'un membre, puis s'étend
-/// aux lignes suivantes dont le compte est celui d'une ligne du bloc : une
-/// ligne d'arrondi ou d'écart ne porte jamais un compte de dette du groupe
-/// (refus `ClaimAccount` au paiement, C-e431a-7). Les apports sont les
-/// montants de ces lignes — le `total_amount` de chaque facture, contrôlé
-/// égal au paiement. Une écriture qui ne retombe pas sur cette forme rend
-/// `Invariant`.
+/// ⚠️ **Les lignes de dette se lisent nommément, jamais devinées** (revue P1,
+/// A MEDIUM-1, B-2, E1 ; C-e431b-4) : une facture du groupe peut avoir été
+/// **détachée** (annulée après coup, AC7) — elle n'est plus membre, mais sa
+/// ligne de dette reste dans l'écriture, et sa colonne
+/// `settlement_journal_entry_line_id` est vidée. Les lignes de dette sont donc
+/// celles des membres (leur colonne) **et** celles des factures détachées,
+/// nommées par la trace de leur détachement (`supplier_invoice.cancelled`,
+/// `details.settlementJournalEntryLineId`, écrite par la 43-1b — la seule
+/// trace qui en reste, comme le gel « paiement détaché » lit déjà
+/// `settlementJournalEntryId` dans la même trace). Ensemble, elles doivent
+/// occuper exactement les positions 1 à `n` ; les apports sont leurs montants
+/// (le `total_amount` de chaque facture, contrôlé égal au paiement), la queue
+/// (arrondi, écart) se contrôle en nombre. Toute autre forme — une ligne de
+/// dette sans facture qui la nomme — rend `Invariant`, jamais une valeur
+/// fausse.
 async fn supplier_difference_account_of(
     conn: &mut sqlx::MySqlConnection,
     company_id: i64,
@@ -1345,38 +1447,64 @@ async fn supplier_difference_account_of(
     let Some((_, _, paid)) = lines.first() else {
         return Err(malformee("aucune ligne"));
     };
-    // La dernière ligne d'un membre.
-    let mut last = 0usize;
+    // Les lignes de dette : celles des membres, puis celles des détachées.
+    let mut debt_lines: BTreeSet<i64> = BTreeSet::new();
     for m in &members {
-        let line_id = m
-            .line_id
-            .ok_or_else(|| malformee("un membre sans ligne de règlement"))?;
-        let position = lines
+        debt_lines.insert(
+            m.line_id
+                .ok_or_else(|| malformee("un membre sans ligne de règlement"))?,
+        );
+    }
+    debt_lines.extend(detached_debt_lines(conn, company_id, entry_id).await?);
+    // Elles occupent exactement les positions 1 à n (D2 : une par facture,
+    // juste après la banque).
+    let n = debt_lines.len();
+    let block_ok = lines.len() > n
+        && lines[1..=n]
             .iter()
-            .position(|(id, _, _)| *id == line_id)
-            .filter(|p| *p > 0)
-            .ok_or_else(|| malformee("la ligne d'un membre n'est pas une ligne de dette"))?;
-        last = last.max(position);
+            .all(|(id, _, _)| debt_lines.contains(id));
+    if !block_ok {
+        return Err(malformee(
+            "les lignes de dette nommées n'occupent pas les positions 1 à n",
+        ));
     }
-    let payables: BTreeSet<i64> = lines[1..=last].iter().map(|(_, a, _)| *a).collect();
-    let mut block_end = last;
-    while lines
-        .get(block_end + 1)
-        .is_some_and(|(_, account, _)| payables.contains(account))
-    {
-        block_end += 1;
-    }
-    let contributions: Vec<Decimal> = lines[1..=block_end].iter().map(|(_, _, a)| *a).collect();
+    let contributions: Vec<Decimal> = lines[1..=n].iter().map(|(_, _, a)| *a).collect();
     let d = group_difference(*paid, &contributions, Decimal::MAX)
         .map_err(|r| malformee(&format!("décomposition {r:?}")))?;
     let tail = usize::from(!d.rounding_difference.is_zero()) + usize::from(!d.gap.is_zero());
-    if lines.len() != block_end + 1 + tail {
+    if lines.len() != n + 1 + tail {
         return Err(malformee("lignes d'arrondi et d'écart inattendues"));
     }
     if d.gap.is_zero() {
         return Ok(None);
     }
     Ok(lines.last().map(|(_, account, _)| *account))
+}
+
+/// Les lignes de dette des factures **détachées** de l'écriture groupée
+/// `entry_id` (AC7) : celles que nomment les traces `supplier_invoice.cancelled`
+/// de la société dont `settlementJournalEntryId` est l'écriture
+/// ([`super::journal_entries::DETACHED_SETTLEMENT_TRACES`], la lecture du gel
+/// « paiement détaché »). Sans filtre de statut : une trace est un fait, et une
+/// facture repassée en brouillon depuis garde la sienne (ce repassage exige
+/// l'écriture contre-passée, donc une transaction qui n'est plus rapprochée).
+async fn detached_debt_lines(
+    conn: &mut sqlx::MySqlConnection,
+    company_id: i64,
+    entry_id: i64,
+) -> Result<Vec<i64>, DbError> {
+    use super::journal_entries::{DETACHED_SETTLEMENT_ENTRY, DETACHED_SETTLEMENT_TRACES};
+    let lines: Vec<Option<i64>> = sqlx::query_scalar(&format!(
+        "SELECT DISTINCT CAST(JSON_VALUE(al.details_json, '$.settlementJournalEntryLineId') \
+         AS SIGNED) FROM {DETACHED_SETTLEMENT_TRACES} AND {DETACHED_SETTLEMENT_ENTRY} = ?"
+    ))
+    .bind(company_id)
+    .bind(company_id)
+    .bind(entry_id.to_string())
+    .fetch_all(&mut *conn)
+    .await
+    .map_err(map_db_error)?;
+    Ok(lines.into_iter().flatten().collect())
 }
 
 /// Le point de sauvegarde du lot a-t-il disparu — la transaction annulée sous
@@ -2086,12 +2214,30 @@ async fn pay_supplier_inner(
     let value_date = payment_date(&bt);
     let window = InvoiceDateWindow::for_supplier_transaction(&bt);
 
-    // (4) Chaque facture, par identifiant croissant, verrouillée et admise par
-    //     la méthode de l'unitaire ; puis la borne basse de date ; puis sa
-    //     ligne de dette.
+    // (4) L'ordre des verrous de l'unitaire et de `create_batch` — **facture,
+    //     compte, lot** (revue P1, B-1, E2) : toutes les factures d'abord, par
+    //     identifiant croissant (la lecture de tête de `create_batch`, étape
+    //     −1, réemployée) ; `lock_for_bank_settlement_in_tx` les redemande
+    //     ensuite, déjà tenues, avant le compte. Sans cela, le groupe tiendrait
+    //     le compte (pris avec la facture 1) en attendant la facture 2, et un
+    //     paiement depuis la fiche de la facture 2 formerait un cycle (1213).
     let mut ids: Vec<i64> = supplier_invoice_ids.to_vec();
     ids.sort_unstable();
+    {
+        let sql = super::payment_batches::lock_invoices_sql(ids.len());
+        let mut q = sqlx::query(&sql);
+        for id in &ids {
+            q = q.bind(id);
+        }
+        q.bind(company_id)
+            .fetch_all(&mut **tx)
+            .await
+            .map_err(map_db_error)?;
+    }
+    //     Puis chaque facture, admise par la méthode de l'unitaire ; la borne
+    //     basse de date ; sa ligne de dette.
     let mut members: Vec<SupplierMember> = Vec::with_capacity(ids.len());
+    let mut bank_ledger_account_id = None;
     for id in &ids {
         let locked = super::supplier_invoices::lock_for_bank_settlement_in_tx(
             tx,
@@ -2102,7 +2248,10 @@ async fn pay_supplier_inner(
         )
         .await?;
         let invoice = match locked {
-            Ok(l) => l.invoice,
+            Ok(l) => {
+                bank_ledger_account_id = Some(l.bank_ledger_account_id);
+                l.invoice
+            }
             Err(refusal) => {
                 return Ok(Err(
                     supplier_lock_refusal(tx, company_id, *id, refusal).await?
@@ -2151,10 +2300,16 @@ async fn pay_supplier_inner(
         });
     }
 
-    // (5) Le compte bancaire, verrouillé et contrôlé par
-    //     `lock_for_bank_settlement_in_tx` ; la garde du compte clos de la
-    //     famille, comme le client (étape 5), revérifiée en dernier — puis le
-    //     compte de banque, qui n'est la dette d'aucune facture.
+    // (5) Le compte bancaire a été verrouillé et contrôlé (archivé, clos, sans
+    //     compte du grand livre) par `lock_for_bank_settlement_in_tx` : son
+    //     compte du grand livre est celui **lu sous ce verrou** (revue P1, E3).
+    //     `ensure_open_in_tx` (lecture ordinaire) ne refuse rien de plus que
+    //     cette lecture verrouillante — sauf, à tort, un compte rouvert après la
+    //     naissance de l'instantané (fenêtre étroite) ; il reste parce que
+    //     l'inventaire du compte clos n'admet la revérification de l'AC3
+    //     (`recheck_open_locked_in_tx`, en dernier) que derrière une garde non
+    //     verrouillante (C-e431b-6). Puis la banque n'est la dette d'aucune
+    //     facture.
     match super::bank_accounts::ensure_open_in_tx(tx, company_id, bank_account_id).await {
         Ok(()) => {}
         Err(DbError::BankAccountClosed { .. }) => {
@@ -2163,17 +2318,10 @@ async fn pay_supplier_inner(
         Err(DbError::NotFound) => return Ok(Err(GroupRefusal::BankAccountNotFound)),
         Err(e) => return Err(e),
     }
-    let bank_ledger_account_id: Option<i64> = sqlx::query_scalar(
-        "SELECT journal_account_id FROM bank_accounts WHERE company_id = ? AND id = ?",
-    )
-    .bind(company_id)
-    .bind(bank_account_id)
-    .fetch_optional(&mut **tx)
-    .await
-    .map_err(map_db_error)?
-    .flatten();
     let Some(bank_ledger_account_id) = bank_ledger_account_id else {
-        return Ok(Err(GroupRefusal::BankAccountNotConfigured));
+        return Err(DbError::Invariant(
+            "règlement groupé fournisseur : aucune facture verrouillée".into(),
+        ));
     };
     let payables: BTreeSet<i64> = members.iter().map(|m| m.payable_account_id).collect();
     if let Some(m) = members
@@ -2192,89 +2340,28 @@ async fn pay_supplier_inner(
         .await?));
     }
 
-    // (6) La différence (C-43-16, C-43-25) — la même fonction que le client,
-    //     le plafond d'abord — puis les comptes qu'elle exige.
-    let max =
-        super::company_invoice_settings::group_settlement_max_difference(&mut **tx, company_id)
-            .await?;
+    // (6) La différence et ses comptes — la règle commune aux deux familles
+    //     (`difference_accounts` : le plafond d'abord), côté dette.
     let gross: Vec<Decimal> = members.iter().map(|m| m.invoice.total_amount).collect();
-    let decomposition = match group_difference(bt.amount, &gross, max) {
-        Ok(d) => d,
+    let accounts = match difference_accounts(
+        tx,
+        company_id,
+        bt.amount,
+        &gross,
+        &payables,
+        ClaimSide::Payable,
+        bank_ledger_account_id,
+        difference_account_id,
+    )
+    .await?
+    {
+        Ok(a) => a,
         Err(r) => return Ok(Err(r)),
     };
-    let r = decomposition.rounding_difference;
-    let rounding_account_id = if r.is_zero() {
-        None
-    } else {
-        match super::company_invoice_settings::rounding_account_for_write(
-            tx,
-            company_id,
-            crate::errors::RoundingContext::Payment,
-        )
-        .await
-        {
-            Ok(id) => {
-                // Comme le client (C-e431a-7) : le compte d'arrondi n'est pas une
-                // dette du groupe.
-                if payables.contains(&id) {
-                    return Ok(Err(claim_refusal_on(
-                        tx,
-                        company_id,
-                        ClaimSide::Payable,
-                        SettlementAccountRole::Rounding,
-                        id,
-                        None,
-                        None,
-                    )
-                    .await?));
-                }
-                Some(id)
-            }
-            Err(DbError::RoundingAccountNotConfigured { .. }) => {
-                return Ok(Err(GroupRefusal::RoundingAccountNotConfigured));
-            }
-            Err(e) => return Err(e),
-        }
-    };
-    // L'écart `e` : au compte que l'utilisateur choisit — banque, manquant,
-    // non imputable, dette du groupe, dans cet ordre.
-    let e = decomposition.gap;
-    let difference_line_account_id = if e.is_zero() {
-        None
-    } else {
-        let Some(id) = difference_account_id else {
-            return Ok(Err(GroupRefusal::DifferenceAccountRequired { gap: e }));
-        };
-        if id == bank_ledger_account_id {
-            return Ok(Err(GroupRefusal::DifferenceAccountIsBankLedger {
-                account_id: id,
-            }));
-        }
-        if let Some(refusal) = difference_account_refusal(tx, company_id, id).await? {
-            return Ok(Err(refusal));
-        }
-        if payables.contains(&id) {
-            return Ok(Err(claim_refusal_on(
-                tx,
-                company_id,
-                ClaimSide::Payable,
-                SettlementAccountRole::Counterparty,
-                id,
-                None,
-                None,
-            )
-            .await?));
-        }
-        Some(id)
-    };
 
-    // (7) L'écriture : banque, une dette par facture (identifiant croissant),
-    //     arrondi, écart. Exercice ouvert couvrant la date de valeur.
-    let Some(fiscal_year) =
-        super::fiscal_years::find_open_covering_date(tx, company_id, value_date).await?
-    else {
-        return Ok(Err(GroupRefusal::FiscalYearInvalid { value_date }));
-    };
+    // (7) L'écriture : banque (au crédit), une dette par facture (identifiant
+    //     croissant), arrondi, écart ; exercice ouvert couvrant la date de
+    //     valeur.
     let mut lines = vec![NewJournalEntryLine {
         account_id: bank_ledger_account_id,
         debit: Decimal::ZERO,
@@ -2292,71 +2379,26 @@ async fn pay_supplier_inner(
     }
     // Fournisseur : la banque est au crédit ; `r > 0` et `e > 0` (plus payé
     // que les factures) au débit, négatifs au crédit — le côté qui équilibre.
-    if let Some(account_id) = rounding_account_id {
-        lines.push(NewJournalEntryLine {
-            account_id,
-            debit: if r > Decimal::ZERO { r } else { Decimal::ZERO },
-            credit: if r < Decimal::ZERO { -r } else { Decimal::ZERO },
-            project_id: None,
-        });
-    }
-    if let Some(account_id) = difference_line_account_id {
-        lines.push(NewJournalEntryLine {
-            account_id,
-            debit: if e > Decimal::ZERO { e } else { Decimal::ZERO },
-            credit: if e < Decimal::ZERO { -e } else { Decimal::ZERO },
-            project_id: None,
-        });
-    }
+    push_difference_lines(&mut lines, &accounts, false);
     let numbers: Vec<String> = members
         .iter()
         .map(|m| m.number.clone().unwrap_or_else(|| m.invoice.id.to_string()))
         .collect();
-    let new_entry = NewJournalEntry {
-        company_id,
-        entry_date: value_date,
-        journal: crate::entities::journal_entry::Journal::Banque,
-        description: bounded_description(format!(
-            "Paiement groupé de {} factures fournisseur : {}",
-            members.len(),
-            numbers.join(", ")
-        )),
-        project_id: None,
-        lines,
-    };
-    let entry = match super::journal_entries::create_copying_projects_in_tx(
-        tx,
-        fiscal_year.id,
-        acteur,
-        new_entry,
-        false,
-    )
-    .await
-    {
-        Ok(e) => e,
-        Err(DbError::PeriodLocked {
-            locked_through,
-            attempted,
-        }) => {
-            return Ok(Err(GroupRefusal::PeriodLocked {
-                locked_through,
-                attempted,
-            }));
-        }
-        Err(DbError::LaterFiscalYearClosed {
-            fiscal_year_id,
-            fiscal_year_name,
-        }) => {
-            return Ok(Err(GroupRefusal::LaterFiscalYearClosed {
-                fiscal_year_id,
-                fiscal_year_name,
-            }));
-        }
-        Err(DbError::FiscalYearClosed | DbError::DateOutsideFiscalYear) => {
-            return Ok(Err(GroupRefusal::FiscalYearInvalid { value_date }));
-        }
-        Err(e) => return Err(e),
-    };
+    let description = bounded_description(format!(
+        "Paiement groupé de {} factures fournisseur : {}",
+        members.len(),
+        numbers.join(", ")
+    ));
+    let (entry, fiscal_year_id) =
+        match create_group_entry(tx, company_id, acteur, value_date, description, lines).await? {
+            Ok(done) => done,
+            Err(r) => return Ok(Err(r)),
+        };
+    let DifferenceAccounts {
+        decomposition,
+        difference_account_id: difference_line_account_id,
+        ..
+    } = accounts;
     let journal_entry_id = entry.entry.id;
     // Attribution ligne → facture par la position d'insertion (D2) : la ligne
     // `k + 1` (0 = banque) est celle de la facture `k`.
@@ -2435,7 +2477,7 @@ async fn pay_supplier_inner(
             tx,
             company_id,
             m.invoice.id,
-            fiscal_year.id,
+            fiscal_year_id,
             acteur,
         )
         .await?;
