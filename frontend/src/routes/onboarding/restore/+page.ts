@@ -9,9 +9,11 @@
 // déjà des données ; sa restauration passe par `Administration → Restaurer /
 // Importer` une fois l'assistant terminé. La page renvoie donc à l'assistant.
 //
-// La garde d'authentification et la garde inverse « assistant terminé → / » sont
+// La garde d'authentification et la garde inverse de la démo (étape ≥ 3 → `/`) sont
 // celles de `routes/onboarding/+layout.ts`, qui couvre cette page comme
 // `/onboarding` ; `await parent()` attend qu'elle ait chargé l'état d'onboarding.
+// Depuis la Story 36-17 (#1187, D4), le chemin production n'est plus renvoyé à `/` :
+// `/onboarding` rend l'écran de son état (reprise à 7, page terminée à ≥ 8).
 import { browser } from '$app/environment';
 import { redirect } from '@sveltejs/kit';
 import { authState } from '$lib/app/stores/auth.svelte';

@@ -3146,3 +3146,91 @@ async fn reset_replays_a_deadlocked_attempt(pool: MySqlPool) {
     assert_eq!(table_counts(&pool).await["accounts"], 0);
     assert_eq!(state_row(&pool).await.0, 0);
 }
+
+// ===========================================================================
+// Story 36-19 (#1200) — revue de code P1
+// ===========================================================================
+
+/// `GET /api/v1/company/invoice-settings` — crée la ligne vierge des réglages.
+async fn get_invoice_settings(app: &TestApp, token: &str) -> Value {
+    let resp = app
+        .client
+        .get(app.url("/api/v1/company/invoice-settings"))
+        .header("Authorization", format!("Bearer {token}"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200, "GET des réglages");
+    resp.json().await.unwrap()
+}
+
+/// Revue P1, B1/E5 (mutation M18) — un `GET` des réglages fait avant la
+/// démonstration crée la ligne vierge ; la démonstration aboutit **avec** ses
+/// trois comptes de TVA, comme sur une base neuve, et sa synthèse dit
+/// `invoice_settings_created = true`. Avant la correction de la revue, la ligne
+/// vierge était complétée mais l'enveloppe rendait « non posée », et la TVA
+/// n'était pas désignée.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn seed_demo_after_a_settings_get_designates_the_vat_accounts(pool: MySqlPool) {
+    let (app, token, company_id) = bootstrap(&pool).await;
+    to_demo_step(&app, &token).await;
+    let vierge = get_invoice_settings(&app, &token).await;
+    assert!(vierge["defaultReceivableAccountId"].is_null(), "montage");
+    assert_eq!(vierge["version"], 1, "montage : ligne vierge");
+
+    let (status, body) = post(&app, &token, "seed-demo", None).await;
+    assert_eq!(status, 200, "{body}");
+
+    let (payable, recoverable, decompte): (Option<i64>, Option<i64>, Option<i64>) = sqlx::query_as(
+        "SELECT default_vat_payable_account_id, default_vat_recoverable_account_id, \
+                    default_vat_decompte_account_id \
+             FROM company_invoice_settings WHERE company_id = ?",
+    )
+    .bind(company_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert!(
+        payable.is_some() && recoverable.is_some() && decompte.is_some(),
+        "les trois comptes de TVA de la démonstration : {payable:?} {recoverable:?} {decompte:?}"
+    );
+    let all = entries(&pool).await;
+    assert_eq!(
+        details_of(&all, "installation.demo_seeded")[0]["invoice_settings_created"],
+        true
+    );
+}
+
+/// Revue P1, E7 (mutation M17) — une finalisation faite par une clé d'API, sur une
+/// ligne vierge, attribue `company_invoice_settings.updated` à la clé.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn finalize_completion_by_an_api_key_is_attributed_to_the_key(pool: MySqlPool) {
+    let (app, jwt, _) = bootstrap(&pool).await;
+    let (key_id, key) =
+        create_key_via_http(&app.client, &app.base_url, &jwt, "onboarding", "read-write").await;
+    for (route, body) in [
+        ("language", Some(json!({ "language": "FR" }))),
+        ("mode", Some(json!({ "mode": "guided" }))),
+        ("start-production", None),
+        ("org-type", Some(json!({ "orgType": "Pme" }))),
+        ("accounting-language", Some(json!({ "language": "FR" }))),
+        ("coordinates", Some(coordinates_body("Clé SA"))),
+        ("skip-bank", None),
+    ] {
+        let (status, body) = post(&app, &key, route, body).await;
+        assert_eq!(status, 200, "{route} : {body}");
+    }
+    get_invoice_settings(&app, &key).await;
+
+    let (status, body) = post(&app, &key, "finalize", None).await;
+    assert_eq!(status, 200, "finalize : {body}");
+    let (actor_type, actor_key): (String, Option<i64>) = sqlx::query_as(
+        "SELECT actor_type, actor_api_key_id FROM audit_log \
+         WHERE action = 'company_invoice_settings.updated'",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(actor_type, "api_key");
+    assert_eq!(actor_key, Some(key_id));
+}

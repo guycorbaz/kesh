@@ -248,9 +248,9 @@ export function failedProposalLabel(code: string, details?: unknown): string {
 				'La date de cette transaction tombe dans la période verrouillée : aucune écriture ne peut y être datée (voir le verrou de période).'
 			);
 		case 'PROJECT_ARCHIVED':
-			return i18nMsg('reconciliation-failed-project-archived', 'Le projet analytique est archivé.');
+			return i18nMsg('reconciliation-failed-project-archived', 'Le compte analytique est archivé.');
 		case 'PROJECT_NOT_FOUND':
-			return i18nMsg('reconciliation-failed-project-not-found', 'Projet analytique introuvable.');
+			return i18nMsg('reconciliation-failed-project-not-found', 'Compte analytique introuvable.');
 		case 'RECONCILIATION_ALREADY_RECONCILED':
 			// Story 27-4 (C-27-4-8) — `race_during_update` : changée pendant le traitement, peut-être
 			// supprimée ; « déjà réconciliée » serait faux.

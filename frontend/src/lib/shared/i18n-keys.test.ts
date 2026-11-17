@@ -1055,7 +1055,6 @@ const ATTENDU = {
 	// be 3300`) — les 50 sites de la 37-5 (voir plus bas).
 	// Revue de code P2 (37-5) : **3350 → 3352**, relevé par la garde (`expected 3352 to be 3350`) — les
 	// deux sites de l'avis « compte non imputable » (aperçu, K9).
-	sitesTotal: 3352,
 	// Story 37-4 (AC-6) : **3184 → 3190** sur sa branche (partie de 946aa86a), relevé par la garde
 	// (`expected 3190 to be 3184`) et ventilé au code : 3 sites dans
 	// `features/reports/GeneralLedgerView.svelte` (`reports-fx-revaluation-balance`,
@@ -1072,6 +1071,30 @@ const ATTENDU = {
 	// `closing-checks-labels.ts`) et de la page des exercices. Fusion de `epic/37-multi-devises`
 	// à `03f4599d` (37-3b terminée) dans la 37-5 : **3350**, la valeur ci-dessus, relevée par la
 	// garde après cette fusion (non additionnée).
+	// Story 36-17 (#1187) : **3050 → 3081** sur sa branche, relevé par la garde
+	// (« expected 3081 to be 3050 », `kesh-gate-logs/e36-17/front-test-unit-1.log`) avant d'écrire
+	// ce nombre — les cinq écrans neufs de `features/onboarding/` et les textes neufs de
+	// `routes/onboarding/+page.svelte`, moins les deux clés mortes de D2. Que des littéraux. À
+	// relever de nouveau à l'union de la 0.18.0 (C-e350-18).
+	// Remédiation de la revue P1 de la 36-17 : **3081 → 3083**, relevé par la garde (« expected 3083
+	// to be 3081 », `kesh-gate-logs/e36-17/rem1-front-test-unit-releve.log`) —
+	// `onboarding-done-credit-card` (B7/E7) et `onboarding-finalize-remedy-link` (E10), deux littéraux.
+	// Intégration de la 0.18.0 (2026-11-16), après les fusions des 36-10, 36-19, 36-17, 36-9 et
+	// 36-12a : **3083 → 3082**, relevé par la garde (« expected 3082 to be 3083 »,
+	// `kesh-gate-logs/rel0180/releve-compteurs-1.log`) — `onboarding-finalize-remedy` retirée (la
+	// 36-19 corrige #1200) ; les quatre autres stories n'ajoutent aucun site.
+	// Story 36-18a (#1050, #1159, #1172, #1174 ; AC8) : **3082 → 3086**, relevé par la garde
+	// (« expected 3087 to be 3082 », `kesh-gate-logs/e36-18/vitest-cible-dev.log` ; puis 3086,
+	// valeur posée et constatée verte une fois fusionné un doublon d'`invoice-error-amount-positive`
+	// du règlement — ce second relevé n'est pas au journal)
+	// — `common-amount-ambiguous` et
+	// `common-amount-unreadable` (`journal-entries/amount-entry-message.ts`),
+	// `supplier-invoices-err-line-unit-price-ambiguous` et `-unreadable`
+	// (`SupplierInvoiceForm.svelte`) : quatre littéraux.
+	// Intégration de main (v0.18.0) dans l'Epic 37 (2026-11-17) : **3388**, relevé par la garde après la
+	// fusion (`expected 3388 to be 0`, `kesh-gate-logs/integration-main-37/vitest-1.log`), non
+	// additionné — il égale 3050 + 302 (Epic 37) + 36 (Epic 36), les deux côtés gardés.
+	sitesTotal: 3388,
 	sitesNonResolus: 31,
 	relais: 6,
 	// Story 26-1 (#620, AC3-bis) : **10 → 11** — `lib/features/bank-import/

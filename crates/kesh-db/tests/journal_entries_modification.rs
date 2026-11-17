@@ -270,19 +270,42 @@ fn d(y: i32, m: u32, day: u32) -> NaiveDate {
     NaiveDate::from_ymd_opt(y, m, day).unwrap()
 }
 
+/// Story 36-7a (#1125) — N, l'année du jour du test : le montage en tire ses années,
+/// au lieu de figer 2026 (D1 de la fiche).
+fn annee() -> i32 {
+    use chrono::Datelike;
+    crate::jour::aujourd_hui_test().year()
+}
+
+/// Une date de pièce : l'année N-1, dans l'exercice de [`societe`], avant le jour.
+fn passe(m: u32, day: u32) -> NaiveDate {
+    d(annee() - 1, m, day)
+}
+
+/// Le nom de l'exercice postérieur des tests de clôture concurrente : N+1, qui suit
+/// N-1..N sans chevauchement (jusqu'en 2030 sous l'instant 2029 de la fiche).
+fn suivant_nom() -> String {
+    format!("Exercice {}", annee() + 1)
+}
+
 /// Société seedée et ses comptes (1000, 1100, 2000, 3000, 4000) ; son exercice
-/// (2020-2030 au seed) ramené à l'année 2026, pour qu'un exercice 2027 puisse
-/// le suivre sans chevauchement.
+/// (2020-2030 au seed) ramené à un exercice **unique** N-1..N (Story 36-7a), pour
+/// qu'un exercice N+1 puisse le suivre sans chevauchement, et que l'écriture (en
+/// N-1) et sa contre-passation (au jour) tombent dans le même exercice — comme
+/// dans le montage d'origine, où l'un et l'autre étaient en 2026 : deux exercices
+/// feraient verrouiller à `reverse` un second exercice, et changeraient ce que ces
+/// tests d'ordre de verrous exercent.
 async fn societe(pool: &MySqlPool) -> SeededCompany {
     let s = seed_accounting_company(pool).await.expect("seed");
-    sqlx::query(
-        "UPDATE fiscal_years SET name = 'Exercice 2026', start_date = '2026-01-01', \
-         end_date = '2026-12-31' WHERE id = ?",
-    )
-    .bind(s.fiscal_year_id)
-    .execute(pool)
-    .await
-    .unwrap();
+    let n = annee();
+    sqlx::query("UPDATE fiscal_years SET name = ?, start_date = ?, end_date = ? WHERE id = ?")
+        .bind(format!("Exercice {}-{n}", n - 1))
+        .bind(d(n - 1, 1, 1))
+        .bind(d(n, 12, 31))
+        .bind(s.fiscal_year_id)
+        .execute(pool)
+        .await
+        .unwrap();
     s
 }
 
@@ -378,7 +401,7 @@ async fn exercice(
 #[sqlx::test(migrations = "./test-schema")]
 async fn update_waits_for_a_concurrent_reversal_then_refuses(pool: MySqlPool) {
     let s = societe(&pool).await;
-    let e = ecriture(&pool, &s, s.fiscal_year_id, d(2026, 3, 1)).await;
+    let e = ecriture(&pool, &s, s.fiscal_year_id, passe(3, 1)).await;
 
     let mut b = pool.begin().await.unwrap();
     journal_entries::reverse_in_tx(
@@ -393,7 +416,7 @@ async fn update_waits_for_a_concurrent_reversal_then_refuses(pool: MySqlPool) {
 
     let a = {
         let pool = pool.clone();
-        let body = corps(&s, d(2026, 3, 2), "réécrite", None);
+        let body = corps(&s, passe(3, 2), "réécrite", None);
         let (cid, uid, id, v) = (s.company_id, s.admin_user_id, e.entry.id, e.entry.version);
         tokio::spawn(async move {
             journal_entries::update(&pool, cid, id, v, Acteur::utilisateur(uid), body).await
@@ -430,8 +453,8 @@ async fn update_waits_for_a_concurrent_reversal_then_refuses(pool: MySqlPool) {
 #[sqlx::test(migrations = "./test-schema")]
 async fn update_waits_for_a_concurrent_close_of_a_later_year_then_refuses(pool: MySqlPool) {
     let s = societe(&pool).await;
-    let suivant = exercice(&pool, &s, "Exercice 2027", 2027, "Open").await;
-    let e = ecriture(&pool, &s, s.fiscal_year_id, d(2026, 3, 1)).await;
+    let suivant = exercice(&pool, &s, &suivant_nom(), annee() + 1, "Open").await;
+    let e = ecriture(&pool, &s, s.fiscal_year_id, passe(3, 1)).await;
 
     let mut b = pool.begin().await.unwrap();
     sqlx::query("UPDATE fiscal_years SET status = 'Closed' WHERE id = ?")
@@ -442,7 +465,7 @@ async fn update_waits_for_a_concurrent_close_of_a_later_year_then_refuses(pool: 
 
     let a = {
         let pool = pool.clone();
-        let body = corps(&s, d(2026, 3, 2), "réécrite", None);
+        let body = corps(&s, passe(3, 2), "réécrite", None);
         let (cid, uid, id, v) = (s.company_id, s.admin_user_id, e.entry.id, e.entry.version);
         tokio::spawn(async move {
             journal_entries::update(&pool, cid, id, v, Acteur::utilisateur(uid), body).await
@@ -463,7 +486,7 @@ async fn update_waits_for_a_concurrent_close_of_a_later_year_then_refuses(pool: 
             fiscal_year_name,
         }) => {
             assert_eq!(fiscal_year_id, suivant);
-            assert_eq!(fiscal_year_name, "Exercice 2027");
+            assert_eq!(fiscal_year_name, suivant_nom());
         }
         other => panic!("attendu LaterFiscalYearClosed, obtenu {other:?}"),
     }
@@ -492,7 +515,7 @@ async fn update_waits_for_a_concurrent_close_of_a_later_year_then_refuses(pool: 
 #[sqlx::test(migrations = "./test-schema")]
 async fn delete_waits_for_a_concurrent_reversal_then_refuses(pool: MySqlPool) {
     let s = societe(&pool).await;
-    let e = ecriture(&pool, &s, s.fiscal_year_id, d(2026, 3, 1)).await;
+    let e = ecriture(&pool, &s, s.fiscal_year_id, passe(3, 1)).await;
 
     let mut b = pool.begin().await.unwrap();
     journal_entries::reverse_in_tx(
@@ -544,8 +567,8 @@ async fn delete_waits_for_a_concurrent_reversal_then_refuses(pool: MySqlPool) {
 #[sqlx::test(migrations = "./test-schema")]
 async fn delete_waits_for_a_concurrent_close_of_a_later_year_then_refuses(pool: MySqlPool) {
     let s = societe(&pool).await;
-    let suivant = exercice(&pool, &s, "Exercice 2027", 2027, "Open").await;
-    let e = ecriture(&pool, &s, s.fiscal_year_id, d(2026, 3, 1)).await;
+    let suivant = exercice(&pool, &s, &suivant_nom(), annee() + 1, "Open").await;
+    let e = ecriture(&pool, &s, s.fiscal_year_id, passe(3, 1)).await;
 
     let mut b = pool.begin().await.unwrap();
     sqlx::query("UPDATE fiscal_years SET status = 'Closed' WHERE id = ?")
@@ -576,7 +599,7 @@ async fn delete_waits_for_a_concurrent_close_of_a_later_year_then_refuses(pool: 
             fiscal_year_name,
         }) => {
             assert_eq!(fiscal_year_id, suivant);
-            assert_eq!(fiscal_year_name, "Exercice 2027");
+            assert_eq!(fiscal_year_name, suivant_nom());
         }
         other => panic!("attendu LaterFiscalYearClosed, obtenu {other:?}"),
     }
@@ -598,7 +621,7 @@ async fn delete_waits_for_a_concurrent_close_of_a_later_year_then_refuses(pool: 
 #[sqlx::test(migrations = "./test-schema")]
 async fn update_and_a_reversal_of_the_same_year_can_deadlock(pool: MySqlPool) {
     let s = societe(&pool).await;
-    let e1 = ecriture(&pool, &s, s.fiscal_year_id, d(2026, 3, 1)).await;
+    let e1 = ecriture(&pool, &s, s.fiscal_year_id, passe(3, 1)).await;
     let p = sqlx::query(
         "INSERT INTO projects (company_id, code, name, archived, version) VALUES (?, 'P-CYCLE', 'P', FALSE, 0)",
     )
@@ -617,7 +640,7 @@ async fn update_and_a_reversal_of_the_same_year_can_deadlock(pool: MySqlPool) {
 
     let a = {
         let pool = pool.clone();
-        let body = corps(&s, d(2026, 3, 1), "projet posé", Some(p));
+        let body = corps(&s, passe(3, 1), "projet posé", Some(p));
         let (cid, uid, id, v) = (s.company_id, s.admin_user_id, e1.entry.id, e1.entry.version);
         tokio::spawn(async move {
             journal_entries::update(&pool, cid, id, v, Acteur::utilisateur(uid), body).await

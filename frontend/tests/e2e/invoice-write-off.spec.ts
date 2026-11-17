@@ -8,6 +8,9 @@
  * l'écran : solder le reste en escompte, vérifier la liste et le motif qui
  * bloque l'annulation du règlement antérieur, annuler le solde.
  *
+ * Story 36-9 (#1044) : un second scénario retype le compte de TVA due par l'API
+ * et vérifie le refus du solde dans le dialogue ; le compte est rendu à son type.
+ *
  * Nettoyage : le compte d'escompte remis à vide — la base est partagée entre
  * specs (patron `invoice-settings-write-off-accounts.spec.ts`).
  *
@@ -65,6 +68,144 @@ async function setDiscountAccount(page: Page, number: string | null): Promise<vo
 	await page.getByTestId('settings-invoicing-save').click();
 	expect((await saved).status()).toBe(200);
 }
+
+/** Un compte tel que le rend `GET /api/v1/accounts`. */
+type Account = {
+	id: number;
+	number: string;
+	name: string;
+	accountType: string;
+	role: string | null;
+	postable: boolean;
+	version: number;
+};
+
+/**
+ * Change le type d'un compte par `PUT /api/v1/accounts/{id}` (le chemin réel),
+ * rôle et imputabilité gardés, confirmation du retypage donnée (il porte des
+ * écritures). Rend le compte tel qu'il était avant.
+ */
+async function retypeAccount(
+	ctx: Awaited<ReturnType<typeof authedApiContext>>,
+	accountId: number,
+	accountType: string,
+): Promise<Account> {
+	const accounts = (await (await ctx.get('/api/v1/accounts')).json()) as Account[];
+	const before = accounts.find((a) => a.id === accountId);
+	expect(before, `compte ${accountId} de la société`).toBeTruthy();
+	const res = await ctx.put(`/api/v1/accounts/${accountId}`, {
+		data: {
+			name: before!.name,
+			accountType,
+			role: before!.role,
+			postable: before!.postable,
+			version: before!.version,
+			confirmAccountRetype: true,
+		},
+	});
+	expect(res.ok(), `retypage du compte ${before!.number} : ${res.status()}`).toBeTruthy();
+	return before!;
+}
+
+/**
+ * Story 36-9 (#1044, AC9) — le compte de TVA due des paramètres, retypé en
+ * actif depuis sa désignation, fait refuser le solde du reste en escompte : le
+ * dialogue reste ouvert et montre le message du serveur, qui nomme le compte et
+ * *Administration → Facturation* ; la facture reste validée, son reste dû
+ * inchangé. Le compte rendu à son type, le même dialogue se reconfirme tel quel
+ * et solde la facture ; en cas d'échec, le `finally` rend le compte à son type
+ * (base partagée).
+ */
+test('un compte de TVA due changé de type fait refuser le solde en escompte', async ({ page }) => {
+	await login(page);
+	let vatAccountId: number | null = null;
+	let originalType: string | null = null;
+	try {
+		await setDiscountAccount(page, '4000');
+		const contactId = await createContactWithAddressViaApi(page, 'Client TVA retypée');
+		const invoiceId = await createAndValidateInvoiceViaApi(page, contactId);
+
+		const ctx = await authedApiContext(page);
+		let vatNumber = '';
+		try {
+			const settings = await (await ctx.get('/api/v1/company/invoice-settings')).json();
+			vatAccountId = settings.defaultVatPayableAccountId as number;
+			expect(vatAccountId, 'compte de TVA due désigné au seed').toBeTruthy();
+			const before = await retypeAccount(ctx, vatAccountId, 'Asset');
+			originalType = before.accountType;
+			vatNumber = before.number;
+			expect(originalType, 'la TVA due du seed est un passif').toBe('Liability');
+		} finally {
+			await disposeContextSafe(ctx);
+		}
+
+		// La ligne « Reste dû » de la fiche n'apparaît qu'après un premier
+		// règlement (`+page.svelte`, `amountSettled > 0`) : sur cette facture non
+		// réglée, le reste se lit dans le dialogue, puis par l'API.
+		await page.goto(`/invoices/${invoiceId}`);
+		await page.getByTestId('write-off-open').click();
+		await expect(page.getByTestId('write-off-amount')).toContainText('972.90');
+		await page.getByTestId('write-off-nature-discount').check();
+		const refused = page.waitForResponse((r) =>
+			r.url().includes(`/api/v1/invoices/${invoiceId}/write-off`),
+		);
+		await page.getByTestId('write-off-confirm').click();
+		expect((await refused).status()).toBe(400);
+
+		// Le dialogue reste ouvert, avec le message du serveur.
+		const error = page.getByTestId('write-off-error');
+		await expect(error).toBeVisible();
+		await expect(error).toContainText(`Le compte ${vatNumber}`);
+		await expect(error).toContainText('Administration → Facturation');
+		// Revue P1 (E3) : la relecture finie, le bouton redevient actionnable — la
+		// capture montre l'état où l'on peut reconfirmer.
+		await expect(page.getByTestId('write-off-confirm')).toBeEnabled();
+		// `disabled:opacity-50` sous `transition-all` : attendre la fin du fondu,
+		// sans quoi la capture montre encore le bouton pâle.
+		await expect(page.getByTestId('write-off-confirm')).toHaveCSS('opacity', '1');
+		// Capture (thème clair) si `KESH_E2E_CAPTURES_DIR` est posé ; sinon, rien.
+		const captures = process.env.KESH_E2E_CAPTURES_DIR;
+		if (captures) {
+			await page.screenshot({ path: `${captures}/write-off-tva-due-retypee.png` });
+		}
+
+		// Rien n'a été écrit : la facture reste validée, son reste dû inchangé.
+		await expect(page.getByTestId('write-off-amount')).toContainText('972.90');
+		const check = await authedApiContext(page);
+		try {
+			const invoice = await (await check.get(`/api/v1/invoices/${invoiceId}`)).json();
+			expect(invoice.status).toBe('validated');
+			expect(invoice.paidAt).toBeNull();
+			expect(Number(invoice.amountDue)).toBe(972.9);
+			const settlements = await (
+				await check.get(`/api/v1/invoices/${invoiceId}/settlements`)
+			).json();
+			expect(settlements, 'aucun règlement ni solde').toHaveLength(0);
+			// Le compte rendu à son type, le même dialogue se reconfirme tel quel.
+			await retypeAccount(check, vatAccountId!, originalType!);
+			originalType = null;
+		} finally {
+			await disposeContextSafe(check);
+		}
+		const accepted = page.waitForResponse((r) =>
+			r.url().includes(`/api/v1/invoices/${invoiceId}/write-off`),
+		);
+		await page.getByTestId('write-off-confirm').click();
+		expect((await accepted).status()).toBe(200);
+		await expect(page.getByTestId('write-off-error')).toHaveCount(0);
+		await expect(page.getByTestId('invoice-amount-due')).toContainText('0.00');
+	} finally {
+		if (vatAccountId !== null && originalType !== null) {
+			const ctx = await authedApiContext(page);
+			try {
+				await retypeAccount(ctx, vatAccountId, originalType);
+			} finally {
+				await disposeContextSafe(ctx);
+			}
+		}
+		await setDiscountAccount(page, null);
+	}
+});
 
 test('solder le reste en escompte depuis la fiche, puis annuler le solde', async ({ page }) => {
 	await login(page);

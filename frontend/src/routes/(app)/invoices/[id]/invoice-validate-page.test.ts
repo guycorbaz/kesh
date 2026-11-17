@@ -185,7 +185,7 @@ describe("fiche facture — validation refusée par le filet sous un bilan clos"
 // compte, le réglage, les deux types et dit qui agit et où ; réessayer rend le même refus.
 describe("fiche facture — validation refusée pour un compte désigné de mauvais type", () => {
   const TYPE =
-    "Le compte 1100, désigné comme compte créance client dans Administration → Facturation, est un compte de passif ; ce réglage demande un compte d’actif. Rien n’a été enregistré. Un administrateur doit corriger le réglage concerné — désigner un compte du bon type, ou rendre au compte son type d’origine —, puis la validation pourra être relancée telle quelle.";
+    "Le compte 1100, désigné comme compte créance client dans Administration → Facturation, est un compte de passif ; ce réglage demande un compte d’actif. Rien n’a été enregistré. Un administrateur doit corriger le réglage concerné — désigner un compte du bon type, ou rendre au compte son type d’origine —, puis l’opération pourra être relancée telle quelle.";
   for (const role of ["Comptable", "Admin"] as const) {
     it(`${role} : le message du serveur est affiché tel quel et le dialogue se ferme (mutation M6 : code retiré de la liste de fermeture)`, async () => {
       auth.currentUser = { role, username: "u", userId: "1" };

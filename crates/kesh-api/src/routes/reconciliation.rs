@@ -1199,7 +1199,10 @@ pub async fn get_proposals(
         // même date (valeur, à défaut comptabilisation) : une facture
         // proposée est une facture que `accept_one_invoice` admet. Story 29-2
         // (#529) : sa borne basse porte sur la date d'ancrage (date, échéance,
-        // dernier rappel non annulé), même expression des deux côtés.
+        // jour de Zurich du dernier rappel non annulé, Story 36-10) — même règle
+        // des deux côtés, en deux écritures (prédicat SQL ici, Rust à
+        // l'acceptation) tenues d'accord par le test
+        // `proposal_and_acceptance_agree_on_the_zurich_day_of_the_last_reminder`.
         let candidates = reconciliation_repo::find_unpaid_invoices_for_window(
             &state.pool,
             current_user.company_id,
@@ -2521,8 +2524,11 @@ async fn accept_one_invoice(
     // Date du règlement écrit : date de valeur, à défaut de comptabilisation.
     let paid_at_candidate = payment_date(&bank_transaction);
     // Story 29-2 (#529) — la date d'ancrage de la facture (la plus tardive
-    // de sa date, de son échéance et de son dernier rappel non annulé), lue
-    // par la même expression SQL que la proposition. `SELECT` ordinaire, sans
+    // de sa date, de son échéance et du jour de Zurich de son dernier rappel
+    // non annulé, Story 36-10), selon la même règle que la proposition, en
+    // seconde écriture (Rust) tenue d'accord avec son prédicat SQL par le test
+    // `proposal_and_acceptance_agree_on_the_zurich_day_of_the_last_reminder`.
+    // `SELECT` ordinaire, sans
     // verrou, après la lecture ordinaire de la facture (étape 5) : la vue de
     // la transaction est déjà née. Course admise : un rappel annulé ou envoyé
     // entre l'affichage des propositions et l'acceptation déplace l'ancre ;

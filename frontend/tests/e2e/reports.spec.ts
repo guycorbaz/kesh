@@ -77,8 +77,8 @@ test('reports project-expenses tab generates end-to-end (Story 19-6a)', async ({
 	await page.goto('/reports');
 	await page.waitForLoadState('networkidle');
 
-	// Bascule sur l'onglet « Dépenses par projet ».
-	await page.getByRole('tab', { name: /dépenses par projet/i }).click();
+	// Bascule sur l'onglet « Dépenses par compte analytique » (Story 36-15, CR #1161).
+	await page.getByRole('tab', { name: /dépenses par compte analytique/i }).click();
 	await expect(page.getByTestId('project-report-controls')).toBeVisible();
 
 	// Sélectionne le projet créé + mode Exercice (défaut) puis génère.
@@ -88,6 +88,10 @@ test('reports project-expenses tab generates end-to-end (Story 19-6a)', async ({
 	// La vue rend (empty-state attendu — le preset with-company n'a pas d'écritures
 	// taguées) sans erreur backend. La vue englobe l'état vide.
 	await expect(page.getByTestId('project-expenses-view')).toBeVisible({ timeout: 5000 });
+	// Le titre de la vue porte le nouveau nom (Story 36-15, AC-5).
+	await expect(page.getByTestId('project-expenses-view').getByRole('heading', { level: 2 })).toHaveText(
+		/^Dépenses par compte analytique/i,
+	);
 	await expect(page.getByTestId('project-expenses-empty')).toBeVisible();
 	await expect(page.getByRole('alert')).not.toBeVisible({ timeout: 1500 }).catch(() => {});
 
@@ -107,8 +111,8 @@ test('reports project-return tab generates end-to-end (Story 19-6b)', async ({ p
 	await page.goto('/reports');
 	await page.waitForLoadState('networkidle');
 
-	// Bascule sur l'onglet « Rendement par projet ».
-	await page.getByRole('tab', { name: /rendement par projet/i }).click();
+	// Bascule sur l'onglet « Rendement par compte analytique » (Story 36-15, CR #1161).
+	await page.getByRole('tab', { name: /rendement par compte analytique/i }).click();
 	await expect(page.getByTestId('project-report-controls')).toBeVisible();
 
 	await page.getByTestId('project-report-project').selectOption({ label: `${code} — Projet rendement E2E` });
@@ -116,6 +120,10 @@ test('reports project-return tab generates end-to-end (Story 19-6b)', async ({ p
 
 	// La vue rend (empty-state attendu — pas d'écritures taguées) sans erreur.
 	await expect(page.getByTestId('project-return-view')).toBeVisible({ timeout: 5000 });
+	// Le titre de la vue porte le nouveau nom (Story 36-15, AC-5).
+	await expect(page.getByTestId('project-return-view').getByRole('heading', { level: 2 })).toHaveText(
+		/^Rendement par compte analytique/i,
+	);
 	await expect(page.getByTestId('project-return-empty')).toBeVisible();
 	await expect(page.getByRole('alert')).not.toBeVisible({ timeout: 1500 }).catch(() => {});
 

@@ -81,6 +81,10 @@ test.describe('Assistant — compte bancaire lié dès l’installation (#966)',
 		await page.fill('#bank-iban', 'CH93 0076 2011 6238 5295 7');
 		await page.fill('#bank-description', 'Compte courant');
 		await page.locator('form button[type="submit"]').click();
+		// Story 36-17 (#1187) : la fin de l'assistant passe par la page « Configuration
+		// terminée », sans navigation d'office ; *Commencer* ouvre l'application.
+		await expect(page.getByTestId('onboarding-screen-done')).toBeVisible();
+		await page.getByTestId('onboarding-done-start').click();
 		await expect(page).toHaveURL(/\/$/);
 
 		const ctx = await authedApiContext(page);

@@ -3202,6 +3202,19 @@ async fn insert_reminder_292(
     cancelled: bool,
 ) {
     let sent_at = sent_on.and_hms_opt(12, 30, 0).unwrap();
+    insert_reminder_at_3610(pool, company_id, invoice_id, sent_at, cancelled).await;
+}
+
+/// Insère en SQL brut un rappel envoyé à l'**instant UTC** `sent_at` (Story
+/// 36-10, #1053) — les cas de nuit, où le jour de Zurich est le lendemain du
+/// jour UTC.
+async fn insert_reminder_at_3610(
+    pool: &MySqlPool,
+    company_id: i64,
+    invoice_id: i64,
+    sent_at: NaiveDateTime,
+    cancelled: bool,
+) {
     sqlx::query(
         "INSERT INTO invoice_reminders (company_id, invoice_id, level_number, fee_amount, \
          sent_at, channel, subject, body, cancelled_at) \
@@ -3330,6 +3343,104 @@ async fn proposal_and_acceptance_share_the_anchor_of_due_date_and_reminders(pool
         );
     }
     assert_eq!(failed.len(), 5, "cinq refus exactement : {failed:?}");
+}
+
+/// Story 36-10 (#1053), AC5 — la fenêtre de 30 jours part du jour **de
+/// Zurich** du dernier rappel, par HTTP (proposition et acceptation).
+///
+/// | cas | `D`        | `F`, `E`      | rappel (UTC)            | Zurich        | attendu |
+/// |-----|------------|---------------|-------------------------|---------------|---------|
+/// | m   | 2026-06-15 | D−90, D−60    | 2026-05-15 22:30:00     | 16 mai, 0 h 30 | proposée et acceptée |
+/// | n   | 2026-06-15 | D−90, D−60    | 2026-05-15 21:59:59     | 15 mai, 23 h 59 | refus `payment_date_outside_window` |
+/// | o   | 2026-06-15 | D−90, D−60    | 2026-05-15 22:00:00     | 16 mai, minuit | proposée et acceptée |
+/// | p   | 2026-02-15 | D−45, D−31    | 2026-01-15 22:59:59     | 15 janv., 23 h 59 | refus `payment_date_outside_window` |
+/// | q   | 2026-02-15 | D−45, D−31    | 2026-01-15 23:00:00     | 16 janv., minuit | proposée et acceptée |
+/// | r   | 2026-02-15 | D−45, D−31    | 2026-01-15 23:30:00     | 16 janv., 0 h 30 | proposée et acceptée |
+///
+/// `e = D − 30` : 2026-05-16 en été, 2026-01-16 en hiver. En hiver, `F = D −
+/// 45 = 2026-01-01` et `E = D − 31` gardent la facture dans l'exercice 2026 de
+/// la fixture ; l'exigibilité (`2026-01-15`) précède `e` : l'ancre ne tient
+/// qu'au rappel. Rouge sur le code d'avant : m, o, q et r refusés (jour UTC).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn the_window_starts_on_the_zurich_day_of_the_last_reminder(pool: MySqlPool) {
+    let ctx = setup_company(&pool, "Acme", "CH4431999123000889012", Role::Comptable).await;
+    let ete = NaiveDate::from_ymd_opt(2026, 6, 15).unwrap();
+    let hiver = NaiveDate::from_ymd_opt(2026, 2, 15).unwrap();
+    let instant = |s: &str| NaiveDateTime::parse_from_str(s, "%Y-%m-%d %H:%M:%S").unwrap();
+    // (nom, D, décalage de F, décalage de E, rappel, proposée et acceptée).
+    let cases = [
+        ("m", ete, -90, -60, "2026-05-15 22:30:00", true),
+        ("n", ete, -90, -60, "2026-05-15 21:59:59", false),
+        ("o", ete, -90, -60, "2026-05-15 22:00:00", true),
+        ("p", hiver, -45, -31, "2026-01-15 22:59:59", false),
+        ("q", hiver, -45, -31, "2026-01-15 23:00:00", true),
+        ("r", hiver, -45, -31, "2026-01-15 23:30:00", true),
+    ];
+
+    let mut inv_ids = Vec::new();
+    let mut new_txs = Vec::new();
+    for (i, (_, d, invoice, due, reminder, _)) in cases.iter().enumerate() {
+        let amount = Decimal::new(60_000 + 1_000 * i as i64, 2);
+        let reference = format!("INV-N{i}");
+        let (inv_id, _) = seed_validated_invoice(
+            &pool,
+            ctx.company_id,
+            ctx.contact_id,
+            &reference,
+            *d + TimeDelta::days(*invoice),
+            amount,
+        )
+        .await;
+        set_due_date_292(&pool, inv_id, Some(*d + TimeDelta::days(*due))).await;
+        insert_reminder_at_3610(&pool, ctx.company_id, inv_id, instant(reminder), false).await;
+        inv_ids.push(inv_id);
+        new_txs.push(make_new_tx(
+            ctx.company_id,
+            ctx.bank_account_id,
+            *d,
+            Some(*d),
+            amount,
+            "CHF",
+            &reference,
+            Some("Acme Client"),
+        ));
+    }
+    let tx_ids = seed_bank_transactions(
+        &pool,
+        ctx.company_id,
+        ctx.bank_account_id,
+        ctx.user_id,
+        &unique_hash("anchor_night_3610"),
+        hiver,
+        ete,
+        new_txs,
+    )
+    .await;
+    let couple = |name: &str| {
+        let i = cases.iter().position(|c| c.0 == name).unwrap();
+        (tx_ids[i], inv_ids[i])
+    };
+
+    let app = spawn_app(pool).await;
+    let proposed = proposed_couples_287(&app, &ctx).await;
+    let all: Vec<(i64, i64)> = cases.iter().map(|c| couple(c.0)).collect();
+    let (accepted, failed) = accept_couples_287(&app, &ctx, &all).await;
+
+    assert_eq!(
+        proposed, accepted,
+        "ce qui est proposé doit être exactement ce que l'acceptation admet"
+    );
+    let expected: std::collections::BTreeSet<(i64, i64)> =
+        cases.iter().filter(|c| c.5).map(|c| couple(c.0)).collect();
+    assert_eq!(proposed, expected, "cas proposés : m, o, q, r");
+    for name in ["n", "p"] {
+        assert_eq!(
+            failed.get(&couple(name).0).map(String::as_str),
+            Some("payment_date_outside_window"),
+            "cas {name} : raison du refus"
+        );
+    }
+    assert_eq!(failed.len(), 2, "deux refus exactement : {failed:?}");
 }
 
 /// Story 29-2 (#529), AC6 — le cas de l'issue, bout à bout : une facture à

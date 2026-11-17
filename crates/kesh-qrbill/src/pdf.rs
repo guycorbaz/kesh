@@ -3,12 +3,16 @@
 //! Layout:
 //! - Top: invoice header + lines table + total.
 //! - Separator line at y = 105 mm (SIX §5: payment section occupies bottom 105 mm).
-//! - Receipt column (62 mm wide) + Payment Part column (remaining width).
+//! - Receipt column (62 mm wide) + Payment Part column (remaining width), separated by a
+//!   vertical line at x = 62 mm ; each of the two dotted lines bears a scissors symbol
+//!   drawn in strokes (SIX § 3.7, Story 36-12a). The "Acceptance point" heading is
+//!   right-aligned at x = 57 mm (§ 3.6.4), measured by the private module `largeurs`.
 //! - QR Code 46×46 mm with 7×7 mm white square + Swiss cross in the center.
 //!
 //! Uses `BuiltinFont::Helvetica` (PDF standard 14) — no external font embedding.
 
 use crate::generator::{build_payload, render_qr_image};
+use crate::largeurs::largeur_mm;
 use crate::texte::texte_imprime;
 use crate::types::{
     Address, AddressType, InvoicePdfData, QrBillData, QrBillError, QrBillI18n, Reference,
@@ -28,6 +32,8 @@ const PAGE_H: f32 = 297.0;
 const PAYMENT_H: f32 = 105.0;
 const RECEIPT_W: f32 = 62.0;
 const SEP_Y: f32 = PAYMENT_H; // separator between invoice & payment section
+/// Bord droit du texte du récépissé, en mm : sa largeur moins la marge de 5 mm (§ 3.3).
+const RECU_BORD_DROIT: f32 = RECEIPT_W - 5.0;
 
 /// Public entry point — generates the PDF using `OffsetDateTime::now_utc()` as the creation date.
 pub fn generate_qr_bill_pdf(
@@ -723,25 +729,181 @@ fn draw_invoice_section(
     Ok(())
 }
 
-// ----- Separator line at y = 105 mm -----
+// ----- Lignes de séparation et ciseaux (SIX § 3.7) -----
+//
+// La directive (`docs/six-references/ig-qr-bill-v2.4-en.pdf`, § 3.7) : une QR-facture en
+// PDF indique par des lignes le format A6 de la partie paiement et le récépissé à sa
+// gauche, et chacune de ces lignes porte le symbole des ciseaux. Story 36-12a (#944).
 
+/// Épaisseur du trait des lignes et des ciseaux, en points (celle d'avant la 36-12a).
+const SEP_EPAISSEUR: f32 = 0.3;
+
+/// Longueur d'un trait du pointillé, en mm (motif d'avant la 36-12a).
+const SEP_TRAIT: f32 = 2.0;
+
+/// Pas du pointillé, en mm : un trait de 2 mm tous les 4 mm.
+const SEP_PAS: f32 = 4.0;
+
+/// Écart entre le pointillé et la boîte d'un ciseau, de chaque côté, en mm (C-36-12a-1).
+const SEP_ECART_CISEAUX: f32 = 0.25;
+
+/// Abscisse de l'origine du repère du ciseau de la ligne horizontale, en mm (les lames se
+/// croisent 0,34 mm plus loin, vers leurs pointes) : sa boîte va de 46,15 à
+/// 50, à droite des titres du récépissé (bord droit ≤ 36,05 dans les quatre langues),
+/// à gauche de la ligne verticale (fiche 36-12a, D2 : centre x ∈ [45, 52]).
+const CISEAU_H_X: f32 = 48.0;
+
+/// Ordonnée de l'origine du repère du ciseau de la ligne verticale, en mm : sa boîte va de y = 99,5 à
+/// 103,35, au-dessus de la zone de 5 mm du QR (qui monte à 98, § 3.5.2) et sous la ligne
+/// horizontale (D2, AC3 : centre y ∈ [101 ; 102]).
+const CISEAU_V_Y: f32 = 101.5;
+
+// Le symbole, dans son repère propre : `u` le long de la ligne, lames vers les `u`
+// positifs ; `v` en travers. Origine en (0, 0) ; les lames se croisent sur l'axe en
+// u ≈ 0,34 (revue P1, B-1). Grande dimension 3,85 mm (u de −1,85 à 2),
+// petite 2,7 mm (v de −1,35 à 1,35) : la fiche borne la grande de 3 à 5 mm, la petite à
+// 3,5 mm (AC3).
+
+/// Centre des deux anneaux, le long de la ligne, en mm.
+const ANNEAU_U: f32 = -1.25;
+/// Écart des centres des anneaux à la ligne, de part et d'autre, en mm.
+const ANNEAU_V: f32 = 0.75;
+/// Rayon des anneaux, en mm.
+const ANNEAU_R: f32 = 0.6;
+/// Pointe des lames, le long de la ligne, en mm.
+const LAME_POINTE_U: f32 = 2.0;
+/// Écart de la pointe d'une lame à la ligne, du côté opposé à son anneau, en mm.
+const LAME_POINTE_V: f32 = 0.42;
+/// Les deux sommets du talon d'une lame, près de son anneau, `(u, v)` en mm, côté `v` > 0.
+const LAME_TALON: [(f32, f32); 2] = [(-0.85, 0.30), (-0.70, 0.55)];
+/// Facteur des points de contrôle d'un quart de cercle en Bézier cubique, rapporté au rayon.
+const BEZIER_CERCLE: f32 = 0.552_284_7;
+
+/// L'étendue d'un ciseau le long de sa ligne, dans son repère : de l'anneau à la pointe.
+const CISEAU_U: (f32, f32) = (ANNEAU_U - ANNEAU_R, LAME_POINTE_U);
+
+/// Les deux lignes de séparation et leurs ciseaux : l'horizontale à y = 105 sur la largeur
+/// de la page, la verticale à x = 62 du bas de la page à l'horizontale (§ 3.3 : partie
+/// paiement de 148 × 105 mm, récépissé de 62 × 105 à sa gauche).
+///
+/// Chaque ligne s'interrompt sous son ciseau : le pointillé s'arrête à
+/// [`SEP_ECART_CISEAUX`] de la boîte du symbole et repart à la même distance de l'autre
+/// côté, ses traits partant de ces deux points vers l'extérieur (C-36-12a-1).
+///
+/// Tout est au trait, en noir (`RG`) : aucun remplissage, qui poserait une couleur de
+/// remplissage (`rg`) avant celles de la croix suisse.
 fn draw_separator(layer: &PdfLayerReference) {
-    // Dotted line across the page width.
     layer.set_outline_color(Color::Rgb(Rgb::new(0.0, 0.0, 0.0, None)));
-    layer.set_outline_thickness(0.3);
-    let mut x = 0.0_f32;
-    while x < PAGE_W {
-        let line = Line {
-            points: vec![
-                (Point::new(Mm(x), Mm(SEP_Y)), false),
-                (Point::new(Mm((x + 2.0).min(PAGE_W)), Mm(SEP_Y)), false),
-            ],
-            is_closed: false,
-        };
-        layer.add_line(line);
-        x += 4.0;
+    layer.set_outline_thickness(SEP_EPAISSEUR);
+
+    // Horizontale : pointillé de part et d'autre du ciseau, de x = 0 à la largeur de page.
+    let (avant, apres) = (
+        CISEAU_H_X + CISEAU_U.0 - SEP_ECART_CISEAUX,
+        CISEAU_H_X + CISEAU_U.1 + SEP_ECART_CISEAUX,
+    );
+    for (a, b) in traits_du_pointille(0.0, avant, true)
+        .into_iter()
+        .chain(traits_du_pointille(apres, PAGE_W, false))
+    {
+        layer.add_line(trait_droit((a, SEP_Y), (b, SEP_Y)));
     }
-    // Scissors glyph is outside Helvetica's WinAnsi encoding; omitted in v0.1.
+    dessiner_ciseaux(layer, CISEAU_H_X, SEP_Y, false);
+
+    // Verticale : le ciseau tourné, lames vers le bas, donc l'anneau en haut.
+    let (dessous, dessus) = (
+        CISEAU_V_Y - CISEAU_U.1 - SEP_ECART_CISEAUX,
+        CISEAU_V_Y - CISEAU_U.0 + SEP_ECART_CISEAUX,
+    );
+    for (a, b) in traits_du_pointille(0.0, dessous, true)
+        .into_iter()
+        .chain(traits_du_pointille(dessus, SEP_Y, false))
+    {
+        layer.add_line(trait_droit((RECEIPT_W, a), (RECEIPT_W, b)));
+    }
+    dessiner_ciseaux(layer, RECEIPT_W, CISEAU_V_Y, true);
+}
+
+/// Les traits d'un pointillé sur l'intervalle `[debut, fin]` : un trait de [`SEP_TRAIT`]
+/// tous les [`SEP_PAS`], partant de `fin` vers `debut` si `depuis_la_fin`, de `debut` vers
+/// `fin` sinon ; le dernier est écourté au bord de l'intervalle.
+fn traits_du_pointille(debut: f32, fin: f32, depuis_la_fin: bool) -> Vec<(f32, f32)> {
+    let mut traits = Vec::new();
+    let mut decalage = 0.0_f32;
+    while decalage < fin - debut {
+        let (a, b) = if depuis_la_fin {
+            (fin - decalage - SEP_TRAIT, fin - decalage)
+        } else {
+            (debut + decalage, debut + decalage + SEP_TRAIT)
+        };
+        let (a, b) = (a.max(debut), b.min(fin));
+        if b > a {
+            traits.push((a, b));
+        }
+        decalage += SEP_PAS;
+    }
+    traits
+}
+
+/// Un trait droit ouvert, de `de` à `a`, en mm.
+fn trait_droit(de: (f32, f32), a: (f32, f32)) -> Line {
+    Line {
+        points: vec![
+            (Point::new(Mm(de.0), Mm(de.1)), false),
+            (Point::new(Mm(a.0), Mm(a.1)), false),
+        ],
+        is_closed: false,
+    }
+}
+
+/// Le symbole des ciseaux, dessiné au trait (§ 3.7 : « scissors symbol » ; Helvetica en
+/// WinAnsi ne porte pas ✂, C-36-12-2) : deux anneaux en Bézier et deux lames en triangles
+/// fermés qui se croisent sur la ligne, 0,34 mm après l'origine `(cx, cy)` du repère du
+/// symbole, du côté des pointes. Couché, lames vers la droite, sur la ligne
+/// horizontale ; tourné d'un quart de tour, lames vers le bas, si `vertical`.
+fn dessiner_ciseaux(layer: &PdfLayerReference, cx: f32, cy: f32, vertical: bool) {
+    let point = |u: f32, v: f32| -> Point {
+        if vertical {
+            Point::new(Mm(cx + v), Mm(cy - u))
+        } else {
+            Point::new(Mm(cx + u), Mm(cy + v))
+        }
+    };
+    for cote in [1.0_f32, -1.0] {
+        // L'anneau, quatre quarts de cercle : chaque point est marqué comme appartenant à
+        // une courbe, que printpdf écrit en `c`.
+        let (au, av, r) = (ANNEAU_U, cote * ANNEAU_V, ANNEAU_R);
+        let k = BEZIER_CERCLE * r;
+        let anneau = [
+            (au + r, av),
+            (au + r, av + k),
+            (au + k, av + r),
+            (au, av + r),
+            (au - k, av + r),
+            (au - r, av + k),
+            (au - r, av),
+            (au - r, av - k),
+            (au - k, av - r),
+            (au, av - r),
+            (au + k, av - r),
+            (au + r, av - k),
+            (au + r, av),
+        ];
+        layer.add_line(Line {
+            points: anneau.iter().map(|&(u, v)| (point(u, v), true)).collect(),
+            is_closed: true,
+        });
+        // La lame partie de cet anneau, qui croise l'autre sur la ligne et finit de l'autre
+        // côté de celle-ci.
+        let [t1, t2] = LAME_TALON;
+        layer.add_line(Line {
+            points: vec![
+                (point(t1.0, cote * t1.1), false),
+                (point(LAME_POINTE_U, -cote * LAME_POINTE_V), false),
+                (point(t2.0, cote * t2.1), false),
+            ],
+            is_closed: true,
+        });
+    }
 }
 
 // ----- Adresses de la section de paiement -----
@@ -959,11 +1121,15 @@ fn draw_receipt(
         dessiner_adresse(layer, debtor, x, &mut y, MAX_CARACTERES_RECU, helv);
     }
 
-    // "Acceptance point" at bottom-right of the receipt column.
+    // Le point de dépôt, en bas à droite du récépissé, « printed right-aligned » (§ 3.6.4) :
+    // son intitulé finit au bord droit du récépissé, 5 mm avant la ligne verticale, dans
+    // toutes les langues (Story 36-12a, D3 ; il était ancré à gauche à x = 47, et la ligne le
+    // traversait en anglais et en italien).
+    let point_de_depot = i18n.get("invoice-pdf-qr-acceptance-point");
     layer.use_text(
-        i18n.get("invoice-pdf-qr-acceptance-point"),
+        point_de_depot,
         6.0,
-        Mm(RECEIPT_W - 15.0),
+        Mm(RECU_BORD_DROIT - largeur_mm(point_de_depot, 6.0, true)),
         Mm(5.0),
         helv_bold,
     );
@@ -3014,5 +3180,677 @@ mod tests {
             empty.get("invoice-pdf-origin-reference"),
             "Original invoice"
         );
+    }
+
+    // ----- Story 36-12a (#944) : lignes de séparation, ciseaux, point de dépôt -----
+    //
+    // Définitions de la fiche (`36-12a-qr-facture-lignes-ciseaux.md`, « Définitions des
+    // tests ») : un *segment de pointillé* est un chemin d'un `m` et d'un seul `l`, d'au
+    // plus 2,05 mm, couché sur y = 105 ou x = 62 ; un *symbole de ciseaux* est l'union des
+    // boîtes des autres chemins tracés de la section de paiement (boîte dans y ≤ 108), hors
+    // `re`, réparti par le centre de boîte (x < 57 : horizontal ; x ∈ [57, 67] : vertical) ;
+    // la *boîte d'un texte* va de `Td.x` à `Td.x + largeur + 0,5`, et de la ligne de base
+    // − 0,228 em à + 0,962 em (`FontBBox` de `phvb8a.afm`).
+
+    /// Millimètres par point : le contenu du PDF s'écrit en points.
+    const MM_PAR_PT: f32 = 25.4 / 72.0;
+
+    /// Une boîte fermée, en mm.
+    #[derive(Debug, Clone, Copy, PartialEq)]
+    struct Boite {
+        x0: f32,
+        y0: f32,
+        x1: f32,
+        y1: f32,
+    }
+
+    impl Boite {
+        /// Deux boîtes fermées d'intersection vide (inégalités strictes).
+        fn disjointe(&self, autre: &Boite) -> bool {
+            self.x1 < autre.x0 || autre.x1 < self.x0 || self.y1 < autre.y0 || autre.y1 < self.y0
+        }
+        fn union(&self, autre: &Boite) -> Boite {
+            Boite {
+                x0: self.x0.min(autre.x0),
+                y0: self.y0.min(autre.y0),
+                x1: self.x1.max(autre.x1),
+                y1: self.y1.max(autre.y1),
+            }
+        }
+        fn elargie(&self, d: f32) -> Boite {
+            Boite {
+                x0: self.x0 - d,
+                y0: self.y0 - d,
+                x1: self.x1 + d,
+                y1: self.y1 + d,
+            }
+        }
+        fn centre(&self) -> (f32, f32) {
+            ((self.x0 + self.x1) / 2.0, (self.y0 + self.y1) / 2.0)
+        }
+        fn largeur(&self) -> f32 {
+            self.x1 - self.x0
+        }
+        fn hauteur(&self) -> f32 {
+            self.y1 - self.y0
+        }
+    }
+
+    /// Un chemin tracé du contenu : ses opérateurs de construction (`m`, `l`, `c`, `v`,
+    /// `y`), tous ses points en mm (points de contrôle compris, qui bornent une courbe de
+    /// Bézier), l'opérateur qui le peint, et la couleur de trait (`RG`) en vigueur.
+    #[derive(Debug, Clone)]
+    struct Chemin {
+        operateurs: Vec<String>,
+        points: Vec<(f32, f32)>,
+        peinture: String,
+        trait_rg: Vec<f32>,
+    }
+
+    impl Chemin {
+        fn boite(&self) -> Boite {
+            let (x, y) = self.points[0];
+            self.points.iter().fold(
+                Boite {
+                    x0: x,
+                    y0: y,
+                    x1: x,
+                    y1: y,
+                },
+                |b, &(x, y)| {
+                    b.union(&Boite {
+                        x0: x,
+                        y0: y,
+                        x1: x,
+                        y1: y,
+                    })
+                },
+            )
+        }
+    }
+
+    /// Les chemins tracés d'un PDF, hors rectangles (`re` : modules du QR, croix suisse).
+    /// Un chemin va d'un `m` à son opérateur de peinture (`S`, `s`, ou tout remplissage).
+    fn chemins_du_pdf(bytes: &[u8]) -> Vec<Chemin> {
+        let mut chemins = Vec::new();
+        let mut trait_rg = vec![0.0, 0.0, 0.0];
+        let mut operateurs: Vec<String> = Vec::new();
+        let mut points: Vec<(f32, f32)> = Vec::new();
+        let mut rectangle = false;
+        for op in operations_du_pdf(bytes) {
+            match op.operator.as_str() {
+                "RG" => trait_rg = op.operands.iter().map(nombre).collect(),
+                o @ ("m" | "l" | "c" | "v" | "y") => {
+                    operateurs.push(o.to_string());
+                    for paire in op.operands.chunks(2) {
+                        points.push((nombre(&paire[0]) * MM_PAR_PT, nombre(&paire[1]) * MM_PAR_PT));
+                    }
+                }
+                "re" => rectangle = true,
+                o @ ("S" | "s" | "f" | "F" | "f*" | "B" | "B*" | "b" | "b*" | "n") => {
+                    if !operateurs.is_empty() && !rectangle {
+                        chemins.push(Chemin {
+                            operateurs: std::mem::take(&mut operateurs),
+                            points: std::mem::take(&mut points),
+                            peinture: o.to_string(),
+                            trait_rg: trait_rg.clone(),
+                        });
+                    }
+                    operateurs.clear();
+                    points.clear();
+                    rectangle = false;
+                }
+                _ => {}
+            }
+        }
+        chemins
+    }
+
+    /// Les chemins de la section de paiement : boîte dans y ≤ 108 (les filets du corps de
+    /// la facture, `hline`, en sont exclus).
+    fn chemins_de_la_section(bytes: &[u8]) -> Vec<Chemin> {
+        chemins_du_pdf(bytes)
+            .into_iter()
+            .filter(|c| c.boite().y1 <= 108.0)
+            .collect()
+    }
+
+    /// L'étendue d'un segment de pointillé le long de sa ligne : x sur l'horizontale
+    /// (`horizontale`), y sur la verticale ; `None` si le chemin n'en est pas un.
+    fn segment(c: &Chemin, horizontale: bool) -> Option<(f32, f32)> {
+        if c.operateurs != ["m", "l"] {
+            return None;
+        }
+        let ((x0, y0), (x1, y1)) = (c.points[0], c.points[1]);
+        if ((x1 - x0).powi(2) + (y1 - y0).powi(2)).sqrt() > 2.05 {
+            return None;
+        }
+        let pres = |a: f32, b: f32| (a - b).abs() < 0.01;
+        if horizontale && pres(y0, SEP_Y) && pres(y1, SEP_Y) {
+            Some((x0.min(x1), x0.max(x1)))
+        } else if !horizontale && pres(x0, RECEIPT_W) && pres(x1, RECEIPT_W) {
+            Some((y0.min(y1), y0.max(y1)))
+        } else {
+            None
+        }
+    }
+
+    /// Ce que la section de paiement d'un PDF porte de lignes et de ciseaux.
+    #[derive(Debug)]
+    struct Releve {
+        horizontaux: Vec<(f32, f32)>,
+        verticaux: Vec<(f32, f32)>,
+        ciseau_h: Option<Boite>,
+        ciseau_v: Option<Boite>,
+    }
+
+    fn relever(bytes: &[u8]) -> Releve {
+        let mut r = Releve {
+            horizontaux: Vec::new(),
+            verticaux: Vec::new(),
+            ciseau_h: None,
+            ciseau_v: None,
+        };
+        let joindre_boite = |acc: &mut Option<Boite>, b: Boite| {
+            *acc = Some(acc.map_or(b, |a| a.union(&b)));
+        };
+        for c in chemins_de_la_section(bytes) {
+            if let Some(s) = segment(&c, true) {
+                r.horizontaux.push(s);
+            } else if let Some(s) = segment(&c, false) {
+                r.verticaux.push(s);
+            } else {
+                let b = c.boite();
+                let (cx, _) = b.centre();
+                if cx < 57.0 {
+                    joindre_boite(&mut r.ciseau_h, b);
+                } else if cx <= 67.0 {
+                    joindre_boite(&mut r.ciseau_v, b);
+                }
+            }
+        }
+        r
+    }
+
+    /// Les trous d'une ligne de pointillé couvrant [0, `fin`] : de 0 au premier segment,
+    /// entre deux segments, et du dernier à `fin`.
+    fn trous(segments: &[(f32, f32)], fin: f32) -> Vec<(f32, f32)> {
+        let mut tries = segments.to_vec();
+        tries.sort_by(|a, b| a.0.total_cmp(&b.0));
+        let mut trous = Vec::new();
+        let mut atteint = 0.0_f32;
+        for (a, b) in tries {
+            if a > atteint {
+                trous.push((atteint, a));
+            }
+            atteint = atteint.max(b);
+        }
+        if fin > atteint {
+            trous.push((atteint, fin));
+        }
+        trous
+    }
+
+    /// Un texte dessiné, avec sa taille et sa graisse (lue au `BaseFont` de la police).
+    #[derive(Debug)]
+    struct TexteMesure {
+        x: f32,
+        y: f32,
+        texte: String,
+        taille: f32,
+        gras: bool,
+    }
+
+    impl TexteMesure {
+        /// La boîte du texte, selon la définition de la fiche.
+        fn boite(&self) -> Boite {
+            Boite {
+                x0: self.x,
+                y0: self.y - 0.228 * self.taille * MM_PAR_PT,
+                x1: self.x + crate::largeurs::largeur_mm(&self.texte, self.taille, self.gras) + 0.5,
+                y1: self.y + 0.962 * self.taille * MM_PAR_PT,
+            }
+        }
+    }
+
+    fn textes_mesures(bytes: &[u8]) -> Vec<TexteMesure> {
+        use printpdf::lopdf::Document;
+        let doc = Document::load_mem(bytes).expect("PDF relisible");
+        // printpdf écrit `/Resources` et son `/Font` en objets indirects, que
+        // `Document::get_page_fonts` ne suit pas : on les déréférence ici.
+        let dictionnaire = |o: &printpdf::lopdf::Object| {
+            doc.dereference(o)
+                .and_then(|(_, o)| o.as_dict())
+                .expect("dictionnaire")
+                .clone()
+        };
+        let mut gras_par_police = std::collections::HashMap::new();
+        for page in doc.get_pages().values() {
+            let page = doc.get_dictionary(*page).expect("page");
+            let ressources = dictionnaire(page.get(b"Resources").expect("Resources"));
+            let polices = dictionnaire(ressources.get(b"Font").expect("Font"));
+            for (nom, police) in polices.iter() {
+                let police = dictionnaire(police);
+                let base = police
+                    .get(b"BaseFont")
+                    .and_then(|o| o.as_name_str())
+                    .expect("BaseFont")
+                    .to_string();
+                gras_par_police.insert(nom.clone(), base.ends_with("-Bold"));
+            }
+        }
+        assert_eq!(gras_par_police.len(), 2, "montage : Helvetica et sa grasse");
+        let mut textes = Vec::new();
+        let (mut police, mut taille, mut position) = (Vec::new(), 0.0, (0.0, 0.0));
+        for op in operations_du_pdf(bytes) {
+            match op.operator.as_str() {
+                "Tf" => {
+                    police = op.operands[0].as_name().expect("nom de police").to_vec();
+                    taille = nombre(&op.operands[1]);
+                }
+                "Td" => {
+                    position = (
+                        nombre(&op.operands[0]) * MM_PAR_PT,
+                        nombre(&op.operands[1]) * MM_PAR_PT,
+                    );
+                }
+                "Tj" => textes.push(TexteMesure {
+                    x: position.0,
+                    y: position.1,
+                    texte: texte_du_tj(&op),
+                    taille,
+                    gras: gras_par_police[&police],
+                }),
+                _ => {}
+            }
+        }
+        textes
+    }
+
+    /// Les traductions des quatre langues de Kesh, lues aux `messages.ftl` de `kesh-i18n` :
+    /// ce que la production pose dans [`QrBillI18n`].
+    const LANGUES: [(&str, &str); 4] = [
+        (
+            "fr",
+            include_str!("../../kesh-i18n/locales/fr-CH/messages.ftl"),
+        ),
+        (
+            "de",
+            include_str!("../../kesh-i18n/locales/de-CH/messages.ftl"),
+        ),
+        (
+            "en",
+            include_str!("../../kesh-i18n/locales/en-CH/messages.ftl"),
+        ),
+        (
+            "it",
+            include_str!("../../kesh-i18n/locales/it-CH/messages.ftl"),
+        ),
+    ];
+
+    /// Le [`QrBillI18n`] d'une langue de [`LANGUES`], par [`QrBillI18n::depuis_ftl`].
+    fn i18n_de(langue: &str) -> QrBillI18n {
+        let (_, ftl) = LANGUES
+            .iter()
+            .find(|(l, _)| *l == langue)
+            .expect("langue connue");
+        QrBillI18n::depuis_ftl(ftl)
+    }
+
+    /// Le PDF de la fixture, adresses ordinaires de type S, dans une langue.
+    fn pdf_ordinaire(i18n: &QrBillI18n) -> Vec<u8> {
+        let (mut data, invoice, _) = invoice_fixture();
+        data.creditor = creancier_ordinaire();
+        data.ultimate_debtor = Some(debiteur_ordinaire());
+        generate_qr_bill_pdf_with_date(&data, &invoice, i18n, fixed_date()).unwrap()
+    }
+
+    /// Les PDF ordinaires en français et en anglais, nommés.
+    fn pdfs_fr_en() -> Vec<(&'static str, Vec<u8>)> {
+        ["fr", "en"]
+            .into_iter()
+            .map(|l| (l, pdf_ordinaire(&i18n_de(l))))
+            .collect()
+    }
+
+    /// **AC1** (Story 36-12a) — la ligne horizontale : des traits sur y = 105 de 0 à 210 ;
+    /// le seul trou de plus de 2,5 mm est sous le ciseau horizontal (boîte élargie de
+    /// 0,5 mm) ; aucun trait ne rencontre la boîte d'un ciseau.
+    #[test]
+    fn la_ligne_horizontale_couvre_la_largeur() {
+        for (langue, pdf) in pdfs_fr_en() {
+            let r = relever(&pdf);
+            let ciseau = r.ciseau_h.unwrap_or_else(|| {
+                panic!("{langue} : la ligne s'interrompt sous un ciseau : {r:?}")
+            });
+            let grands: Vec<_> = trous(&r.horizontaux, PAGE_W)
+                .into_iter()
+                .filter(|(a, b)| b - a > 2.5)
+                .collect();
+            let e = ciseau.elargie(0.5);
+            assert_eq!(
+                grands.len(),
+                1,
+                "{langue} : un seul trou, sous le ciseau : {grands:?}"
+            );
+            for (a, b) in &grands {
+                assert!(
+                    *a >= e.x0 && *b <= e.x1,
+                    "{langue} : trou {a}..{b} hors de {e:?}"
+                );
+            }
+            for &(a, b) in &r.horizontaux {
+                // Dans la page (revue P1, A-5), à l'arrondi des points près.
+                assert!(
+                    a >= -0.01 && b <= PAGE_W + 0.01,
+                    "{langue} : trait {a}..{b} hors de [0, 210]"
+                );
+                let trait_ = Boite {
+                    x0: a,
+                    y0: SEP_Y,
+                    x1: b,
+                    y1: SEP_Y,
+                };
+                // À plus de 0,2 mm d'un ciseau : l'écart de 0,25 mm de C-36-12a-1, que
+                // l'arrondi des points ne fait pas passer sous 0,2 (revue P1, B-4).
+                for c in [r.ciseau_h, r.ciseau_v].into_iter().flatten() {
+                    assert!(
+                        trait_.elargie(0.2).disjointe(&c),
+                        "{langue} : trait {a}..{b} à moins de 0,2 mm de {c:?}"
+                    );
+                }
+            }
+        }
+    }
+
+    /// **AC2** (Story 36-12a) — la ligne verticale : des traits sur x = 62 de 0 à 105, même
+    /// règle avec le ciseau vertical.
+    #[test]
+    fn une_ligne_verticale_separe_le_recepisse() {
+        for (langue, pdf) in pdfs_fr_en() {
+            let r = relever(&pdf);
+            assert!(!r.verticaux.is_empty(), "{langue} : aucun trait sur x = 62");
+            let ciseau = r.ciseau_v.unwrap_or_else(|| {
+                panic!("{langue} : la ligne s'interrompt sous un ciseau : {r:?}")
+            });
+            let grands: Vec<_> = trous(&r.verticaux, SEP_Y)
+                .into_iter()
+                .filter(|(a, b)| b - a > 2.5)
+                .collect();
+            let e = ciseau.elargie(0.5);
+            assert_eq!(
+                grands.len(),
+                1,
+                "{langue} : un seul trou, sous le ciseau : {grands:?}"
+            );
+            for (a, b) in &grands {
+                assert!(
+                    *a >= e.y0 && *b <= e.y1,
+                    "{langue} : trou {a}..{b} hors de {e:?}"
+                );
+            }
+            for &(a, b) in &r.verticaux {
+                // Du bas de la page à l'horizontale, pas au-delà (revue P1, A-5).
+                assert!(
+                    a >= -0.01 && b <= SEP_Y + 0.01,
+                    "{langue} : trait {a}..{b} hors de [0, 105]"
+                );
+                let trait_ = Boite {
+                    x0: RECEIPT_W,
+                    y0: a,
+                    x1: RECEIPT_W,
+                    y1: b,
+                };
+                for c in [r.ciseau_h, r.ciseau_v].into_iter().flatten() {
+                    assert!(
+                        trait_.elargie(0.2).disjointe(&c),
+                        "{langue} : trait {a}..{b} à moins de 0,2 mm de {c:?}"
+                    );
+                }
+            }
+        }
+    }
+
+    /// **Revue P1, B-2** — un libellé qui porte une espace insécable : `lopdf` la retire (pas
+    /// d'octet WinAnsi), et l'intitulé imprimé, « Acceptancepoint », finit toujours à x = 57.
+    /// Largeur calculée à la main : 8335 − 278 (l'espace) = 8057 millièmes d'em à 6 pt gras,
+    /// 17,054 mm, d'où `Td.x` = 39,946.
+    #[test]
+    fn le_point_de_depot_ignore_ce_qui_ne_s_imprime_pas() {
+        let mut entries = std::collections::HashMap::new();
+        entries.insert(
+            "invoice-pdf-qr-acceptance-point",
+            "Acceptance\u{A0}point".to_string(),
+        );
+        let textes = textes_du_pdf(&pdf_ordinaire(&QrBillI18n::new(entries)));
+        let trouves: Vec<_> = textes
+            .iter()
+            .filter(|(_, _, t)| t == "Acceptancepoint")
+            .collect();
+        assert_eq!(
+            trouves.len(),
+            1,
+            "montage : l'espace insécable retirée : {trouves:?}"
+        );
+        let (x, y, _) = trouves[0];
+        assert!((x - 39.946).abs() <= 0.05, "Td.x = {x}, attendu 39,946");
+        assert!((y - 5.0).abs() < 0.01);
+    }
+
+    /// **AC3** (Story 36-12a) — un symbole sur chaque ligne, de 3 à 5 mm de long et 3,5 mm
+    /// de large au plus : l'horizontal centré sur y = 105, centre x ∈ [45, 52] ; le vertical
+    /// tourné d'un quart de tour, centré sur x = 62, centre y ∈ [101, 102].
+    #[test]
+    fn des_ciseaux_sur_chaque_ligne() {
+        for (langue, pdf) in pdfs_fr_en() {
+            let r = relever(&pdf);
+            let h = r
+                .ciseau_h
+                .unwrap_or_else(|| panic!("{langue} : pas de ciseau horizontal"));
+            let v = r
+                .ciseau_v
+                .unwrap_or_else(|| panic!("{langue} : pas de ciseau vertical"));
+            for (nom, b) in [("horizontal", h), ("vertical", v)] {
+                let grande = b.largeur().max(b.hauteur());
+                let petite = b.largeur().min(b.hauteur());
+                assert!(
+                    (3.0..=5.0).contains(&grande) && petite <= 3.5,
+                    "{langue} : ciseau {nom} de {grande} × {petite} mm"
+                );
+            }
+            assert!(
+                h.largeur() > h.hauteur(),
+                "{langue} : horizontal couché : {h:?}"
+            );
+            assert!(
+                v.hauteur() > v.largeur(),
+                "{langue} : vertical debout : {v:?}"
+            );
+            let (cx, cy) = h.centre();
+            assert!(
+                (cy - SEP_Y).abs() <= 0.5 && (45.0..=52.0).contains(&cx),
+                "{langue} : ciseau horizontal centré à ({cx}, {cy})"
+            );
+            let (cx, cy) = v.centre();
+            assert!(
+                (cx - RECEIPT_W).abs() <= 0.5 && (101.0..=102.0).contains(&cy),
+                "{langue} : ciseau vertical centré à ({cx}, {cy})"
+            );
+        }
+    }
+
+    /// **AC4** (Story 36-12a) — les ciseaux ne touchent ni un texte ni le QR élargi de sa
+    /// zone de 5 mm (§ 3.5.2).
+    #[test]
+    fn les_ciseaux_ne_touchent_rien() {
+        let qr = Boite {
+            x0: 62.0,
+            y0: 42.0,
+            x1: 118.0,
+            y1: 98.0,
+        };
+        for (langue, pdf) in pdfs_fr_en() {
+            let r = relever(&pdf);
+            let ciseaux = [
+                r.ciseau_h
+                    .unwrap_or_else(|| panic!("{langue} : pas de ciseau horizontal")),
+                r.ciseau_v
+                    .unwrap_or_else(|| panic!("{langue} : pas de ciseau vertical")),
+            ];
+            let textes = textes_mesures(&pdf);
+            assert!(textes.len() > 30, "montage : les textes sont lus");
+            for c in ciseaux {
+                assert!(c.disjointe(&qr), "{langue} : {c:?} sur le QR");
+                for t in &textes {
+                    assert!(
+                        c.disjointe(&t.boite()),
+                        "{langue} : {c:?} sur {:?} ({:?})",
+                        t.texte,
+                        t.boite()
+                    );
+                }
+            }
+        }
+    }
+
+    /// **AC5** (Story 36-12a) — le point de dépôt aligné à droite au bord x = 57 (§ 3.6.4),
+    /// dans les quatre langues et au repli anglais ; ligne de base 5. Les abscisses
+    /// attendues et les largeurs sont calculées à la main depuis `phvb8a.afm` (somme des
+    /// `WX`, 6 pt), indépendamment de la table : fr 6945, de 7113, en 8335, it 10280.
+    #[test]
+    fn le_point_de_depot_est_aligne_a_droite() {
+        let mut cas: Vec<(&str, QrBillI18n, &str, f32, f32)> = [
+            ("fr", "Point de dépôt", 42.30, 14.70),
+            ("de", "Annahmestelle", 41.94, 15.06),
+            ("en", "Acceptance point", 39.36, 17.64),
+            ("it", "Punto di accettazione", 35.24, 21.76),
+        ]
+        .into_iter()
+        .map(|(l, libelle, x, largeur)| (l, i18n_de(l), libelle, x, largeur))
+        .collect();
+        cas.push((
+            "repli",
+            QrBillI18n::default(),
+            "Acceptance point",
+            39.36,
+            17.64,
+        ));
+        // Les écarts de toutes les langues, réunis : un rouge les nomme toutes.
+        let mut ecarts = Vec::new();
+        for (langue, i18n, libelle, x_attendu, largeur) in cas {
+            assert_eq!(
+                i18n.get("invoice-pdf-qr-acceptance-point"),
+                libelle,
+                "montage : le libellé de {langue}"
+            );
+            let textes = textes_du_pdf(&pdf_ordinaire(&i18n));
+            let trouves: Vec<_> = textes.iter().filter(|(_, _, t)| t == libelle).collect();
+            assert_eq!(trouves.len(), 1, "{langue} : {trouves:?}");
+            let (x, y, _) = trouves[0];
+            if (x - x_attendu).abs() > 0.05 {
+                ecarts.push(format!("{langue} : Td.x = {x}, attendu {x_attendu}"));
+            }
+            if (y - 5.0).abs() >= 0.01 {
+                ecarts.push(format!("{langue} : ligne de base {y}"));
+            }
+            let marge = RECEIPT_W - (x + largeur);
+            if marge < 4.5 {
+                ecarts.push(format!("{langue} : marge de {marge} mm à la ligne"));
+            }
+        }
+        assert!(ecarts.is_empty(), "{ecarts:#?}");
+    }
+
+    /// **AC6** (Story 36-12a) — la ligne verticale ne traverse aucun texte du récépissé, pour
+    /// les adresses ordinaires de type S, une rue longue, et sans référence, en français et
+    /// en anglais. Une adresse de capitales très larges en est exclue (limite connue,
+    /// jusqu'à la 36-12b).
+    #[test]
+    fn la_ligne_verticale_ne_traverse_aucun_texte() {
+        let rue = "Chemin des Trois-Fontaines de la Vieille Tour du Haut-Plateau";
+        // Les textes traversés de toutes les langues et fixtures, réunis.
+        let mut traverses = Vec::new();
+        for langue in ["fr", "en"] {
+            let i18n = i18n_de(langue);
+            for (nom, creancier, debiteur, sans_reference) in [
+                (
+                    "ordinaire",
+                    creancier_ordinaire(),
+                    debiteur_ordinaire(),
+                    false,
+                ),
+                (
+                    "rue longue",
+                    adresse_s("Robert Schneider SA", rue, "12", "2501", "Biel"),
+                    adresse_s("Pia Rutschmann", rue, "12", "9400", "Rorschach"),
+                    false,
+                ),
+                (
+                    "sans référence",
+                    creancier_ordinaire(),
+                    debiteur_ordinaire(),
+                    true,
+                ),
+            ] {
+                let (mut data, invoice, _) = invoice_fixture();
+                data.creditor = creancier;
+                data.ultimate_debtor = Some(debiteur);
+                if sans_reference {
+                    data.creditor_iban = "CH9300762011623852957".into();
+                    data.reference = Reference::None;
+                }
+                let pdf =
+                    generate_qr_bill_pdf_with_date(&data, &invoice, &i18n, fixed_date()).unwrap();
+                let r = relever(&pdf);
+                assert!(
+                    !r.verticaux.is_empty(),
+                    "{langue}, {nom} : aucun trait sur x = 62"
+                );
+                let recu: Vec<_> = textes_mesures(&pdf)
+                    .into_iter()
+                    .filter(|t| t.y < SEP_Y && t.x < RECEIPT_W)
+                    .collect();
+                assert!(recu.len() > 10, "montage : les textes du récépissé");
+                for t in &recu {
+                    for &(a, b) in &r.verticaux {
+                        let trait_ = Boite {
+                            x0: RECEIPT_W,
+                            y0: a,
+                            x1: RECEIPT_W,
+                            y1: b,
+                        };
+                        if !t.boite().disjointe(&trait_) {
+                            traverses.push(format!(
+                                "{langue}, {nom} : {:?} ({:?}) traversé par {a}..{b}",
+                                t.texte,
+                                t.boite()
+                            ));
+                        }
+                    }
+                }
+            }
+        }
+        assert!(traverses.is_empty(), "{traverses:#?}");
+    }
+
+    /// **AC7** (Story 36-12a) — lignes et ciseaux au trait seul (`S` ou `s`), en noir (`RG`
+    /// 0 0 0) : aucun remplissage, qui poserait un `rg` (cf. `chaque_texte_s_imprime_en_noir`).
+    #[test]
+    fn lignes_et_ciseaux_au_trait_noir() {
+        for (langue, pdf) in pdfs_fr_en() {
+            let r = relever(&pdf);
+            assert!(
+                r.ciseau_h.is_some() && r.ciseau_v.is_some(),
+                "{langue} : deux ciseaux : {r:?}"
+            );
+            for c in chemins_de_la_section(&pdf) {
+                assert!(
+                    c.peinture == "S" || c.peinture == "s",
+                    "{langue} : chemin peint par {} : {c:?}",
+                    c.peinture
+                );
+                assert_eq!(c.trait_rg, [0.0, 0.0, 0.0], "{langue} : {c:?}");
+            }
+        }
     }
 }

@@ -5,7 +5,7 @@ import {
 	authedApiContext,
 	disposeContextSafe,
 } from './helpers/test-state';
-import { createUser, USER_PASSWORD } from './helpers/api-fixtures';
+import { createUser, todayInZurich, USER_PASSWORD } from './helpers/api-fixtures';
 
 /**
  * Tests E2E — l'écran du journal d'audit (Story 25-1c-b1, #378).
@@ -52,11 +52,6 @@ function uniqSuffix(): string {
 // `createUser` (création d'un utilisateur d'un rôle, en Admin) est extraite vers
 // `helpers/api-fixtures.ts` (Story v016-2b, #816 : `bank-manual-statement.spec.ts` l'emploie
 // aussi). Son mot de passe est `USER_PASSWORD`.
-
-/** Le jour UTC courant, `AAAA-MM-JJ` — la route filtre sur des jours UTC. */
-function todayUtc(): string {
-	return new Date().toISOString().slice(0, 10);
-}
 
 test('un Comptable ouvre le journal par le menu, filtre, déplie et exporte', async ({ page }) => {
 	const comptable = await createUser(page, 'Comptable');
@@ -127,10 +122,13 @@ test('un Comptable ouvre le journal par le menu, filtre, déplie et exporte', as
 	await expect(page.getByTestId('audit-log-empty')).toBeVisible();
 	await expect(row).toHaveCount(0);
 
-	// 6. ⛔ La période qui la GARDE se calcule en jour UTC, non en jour local :
-	// entre 00:00 et 02:00 à Zurich, le jour local précède le jour UTC.
-	await page.getByTestId('audit-log-filter-date-from').fill(todayUtc());
-	await page.getByTestId('audit-log-filter-date-to').fill(todayUtc());
+	// 6. ⛔ La période qui la GARDE se calcule en jour de Zurich, comme le filtre de la route
+	// depuis la Story 36-10 (#1147) : entre 22 h ou 23 h et minuit UTC, le jour de Zurich est le
+	// LENDEMAIN du jour UTC, et un jour UTC ne garderait pas l'entrée. La spec ne joue cette
+	// nuit-là que lancée à cette heure : le filtre de nuit se teste, déterministe, par HTTP
+	// (`crates/kesh-api/tests/audit_log_e2e.rs`).
+	await page.getByTestId('audit-log-filter-date-from').fill(todayInZurich());
+	await page.getByTestId('audit-log-filter-date-to').fill(todayInZurich());
 	await page.getByTestId('audit-log-filter-date-to').blur();
 	await expect(row).toHaveCount(1);
 });

@@ -1262,6 +1262,20 @@ struct DecorMontee {
     attached_doc: i64,
 }
 
+/// Story 36-7a (#1125) — N, l'année du jour du test : la base peuplée en tire ses
+/// années au lieu de figer 2026 (D1 de la fiche). Son exercice couvre N-1..N, ses
+/// pièces se datent en N-1, et l'annulation du semis comme les gestes d'après la
+/// montée, datés au jour (`aujourd_hui_test()`), y tombent.
+fn annee_montee() -> i32 {
+    use chrono::Datelike;
+    crate::jour::aujourd_hui_test().year()
+}
+
+/// Une date de pièce de la base peuplée, en N-1.
+fn piece_montee(m: u32, j: u32) -> chrono::NaiveDate {
+    chrono::NaiveDate::from_ymd_opt(annee_montee() - 1, m, j).unwrap()
+}
+
 /// Une facture **ouverte** telle que la créait la rc1 : son écriture d'achat
 /// (journal Achats), puis la ligne `open`, en une transaction.
 #[allow(clippy::too_many_arguments)]
@@ -1309,7 +1323,7 @@ async fn facture_ouverte_rc1(
         kesh_db::entities::Acteur::utilisateur(d.user_id),
         NewJournalEntry {
             company_id: d.company_id,
-            entry_date: chrono::NaiveDate::from_ymd_opt(2026, 6, 15).unwrap(),
+            entry_date: piece_montee(6, 15),
             journal: Journal::Achats,
             description: format!("Facture fournisseur {numero} - Fournisseur montée SA"),
             project_id: None,
@@ -1322,12 +1336,14 @@ async fn facture_ouverte_rc1(
     let id: i64 = sqlx::query_scalar(
         "INSERT INTO supplier_invoices (company_id, contact_id, supplier_invoice_number, status, \
          invoice_date, due_date, total_amount, creditor_iban, purchase_journal_entry_id) \
-         VALUES (?, ?, ?, 'open', '2026-06-15', '2026-07-15', ?, 'CH5604835012345678009', ?) \
+         VALUES (?, ?, ?, 'open', ?, ?, ?, 'CH5604835012345678009', ?) \
          RETURNING id",
     )
     .bind(d.company_id)
     .bind(contact)
     .bind(numero)
+    .bind(piece_montee(6, 15))
+    .bind(piece_montee(7, 15))
     .bind(ttc)
     .bind(je.entry.id)
     .fetch_one(&mut *tx)
@@ -1407,9 +1423,16 @@ async fn draft_migration_preserves_a_populated_base(pool: MySqlPool, frontiere: 
     .unwrap();
     let fy_id: i64 = sqlx::query_scalar(
         "INSERT INTO fiscal_years (company_id, name, start_date, end_date) \
-         VALUES (?, 'Exercice 2026', '2026-01-01', '2026-12-31') RETURNING id",
+         VALUES (?, ?, ?, ?) RETURNING id",
     )
     .bind(company_id)
+    .bind(format!(
+        "Exercice {}-{}",
+        annee_montee() - 1,
+        annee_montee()
+    ))
+    .bind(piece_montee(1, 1))
+    .bind(chrono::NaiveDate::from_ymd_opt(annee_montee(), 12, 31).unwrap())
     .fetch_one(&pool)
     .await
     .unwrap();
@@ -1490,7 +1513,7 @@ async fn draft_migration_preserves_a_populated_base(pool: MySqlPool, frontiere: 
         facture_ouverte_rc1(&pool, &d, contact, p, v, "FF-C", dec!(150), dec!(0)).await;
     d.attached_id = facture_ouverte_rc1(&pool, &d, contact, p, v, "FF-J", dec!(250), dec!(0)).await;
     let batched = facture_ouverte_rc1(&pool, &d, contact, p, v, "FF-L", dec!(500), dec!(0)).await;
-    let day = chrono::NaiveDate::from_ymd_opt(2026, 6, 20).unwrap();
+    let day = piece_montee(6, 20);
     let virement = SettlementChoice::BankTransfer {
         bank_account_id: bank_id,
     };
@@ -1709,7 +1732,7 @@ async fn draft_migration_preserves_a_populated_base(pool: MySqlPool, frontiere: 
                 company_id,
                 contact_id: contact,
                 supplier_invoice_number: Some(numero.into()),
-                invoice_date: chrono::NaiveDate::from_ymd_opt(2026, 6, 15).unwrap(),
+                invoice_date: piece_montee(6, 15),
                 due_date: None,
                 creditor_iban: Some("CH9300762011623852957".into()),
                 creditor_qr_iban: None,

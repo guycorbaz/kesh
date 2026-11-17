@@ -1,63 +1,34 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+Règles et décisions en vigueur pour travailler sur Kesh. Ce fichier ne porte ni historique ni précédent : ceux-ci sont dans les rétrospectives (`_bmad-output/implementation-artifacts/`), le `CHANGELOG.md` et `git log -p CLAUDE.md`. Une règle peut tenir une ligne de motif ; une décision nomme qui l'a prise et quand. **Quand une règle change, on la réécrit ; on n'y ajoute pas d'annotation.**
 
-## Project Overview
+## Le projet
 
-**Kesh** is a Swiss personal and small business accounting software, **built, released and deployed** — not a design-phase project. It is developed using the BMAD (Breakthrough Method of Agile AI-driven Development) framework, whose assets live alongside the application code.
+**Kesh** est un logiciel de comptabilité suisse pour particuliers et petites entreprises, développé avec le cadre BMAD. Backend Rust (Axum), frontend SvelteKit, MariaDB ; application web seulement ; configuration par variables d'environnement ; déploiement par docker-compose. PRD : `_bmad-output/planning-artifacts/prd.md` (QR-facture 2.2, pain.001.001.03, CAMT.053.001.04, FR/DE/IT/EN).
 
-**Current release: v0.17.8** (2026-11-15) — la **phase 1 de l'Epic 36, « Avant la première facture, puis la suite par impact »**, **version corrective, sans migration** (`kesh_version_min_required` reste à 0.17.6, les dix crates à 0.17.8) : ce qui se trouvait sur le chemin de la première facture client de Guy et de sa saisie du mois — la touche **Entrée** du champ « Compte de produit » d'une facture ou d'un article qui n'enregistre plus l'ancien compte, et ne choisit plus d'office le premier compte d'un champ vide (#1095, #1165, 36-1) ; le montant **« 1.234 »** refusé comme ambigu dans l'écriture manuelle et l'assistant d'achat, l'apostrophe des milliers admise (#1051, 36-3), et le prix unitaire « 1.250 » d'une facture client de même (#1171, 36-3b) ; *Éclater* une transaction depuis l'écran, qui dit ce qui manque, dans une fenêtre plus large (#1150, #1151, 36-2) ; l'**audit qui attribue à la clé d'API l'annulation d'un règlement** qu'elle fait, par sa route ou par le dé-rapprochement (#1131, 36-4 ; #431 en partie, les lots 36-11a à 36-11d en phase 2) ; le **compte rendu d'une restauration** qui reste affiché (#931, KF-056, 36-5). Aucun changement de contrat de l'API. **Le retour à la 0.17.7 se fait sans restauration**, éprouvé à la préparation. Intégration en une étape : le kickoff (PR #1160, non fusionnée) puis six fusions, aucun raccord ; `sitesTotal` de la garde i18n relevé par la garde après chaque fusion (3045, puis 3050). *(Recompté à la source le 2026-11-15, à la préparation du tag : `ls crates/kesh-db/migrations/*.sql | wc -l` **91** ; nextest **5452** exécutés, 13 ignorés (voie 2) ; `scripts/gate-ci.sh` **5459** passés, 17 ignorés ; Vitest **3709** (238 fichiers) ; E2E **426** passés, 7 échecs, les sept de la KF-029 (#97), 18 ignorés — au commit `90c1c87d5` (dernier commit de code `cd3c69b24`, le bump), journal `kesh-gate-logs/rel0178/` ; recette de montée depuis l'image publiée 0.17.7 verte (`recette-montee.log` : aucune migration, aucun écart d'empreinte, retour par le dump et import du `.keshbackup` 0.17.7 à empreintes identiques ; aucun fichier `pre-upgrade/` : le journal ne l'écrit pas, mais le script échoue s'il en trouve un sans migration, `recette-montee.sh:579`) et recette complémentaire (`recette-complement-2.log`, rejouée à la revue P1 du code d'intégration : relevé rapproché, écriture passée et règlement annulé par une clé d'API en 0.17.7 ; montée sans migration, « fichiers pre-upgrade : 0 », sans écart ; la même annulation, rejouée en 0.17.8, porte `actor_type = 'api_key'` sur ses six entrées d'audit, contre `user` en 0.17.7 ; retour de l'image 0.17.7 sur la même base, sans restauration ; 21 fichiers d'empreinte comparés — 20 tables, `api_keys` comprise, et les réponses de l'API —, identiques à chaque passage. Le premier passage, `recette-complement.log`, comparait une empreinte `api_keys` vide — colonne mal nommée, erreur avalée —, défaut repris du script de la 0.17.7, `rel0177/recette-complement-rel0177.sh:103`, dont la recette n'a donc pas comparé `api_keys` non plus) ; stories `done` **380** par la règle ci-dessous (373 + les sept de l'Epic 36 : 36-0, 36-1, 36-2, 36-3, 36-3b, 36-4, 36-5 ; la 35-8b, `backlog` au tag v0.17.7, passée `superseded` après le tag, à la rétrospective de l'Epic 35, `42d5f368c`) ; 36 clés `epic-<entier>`, trois epics ouverts (13, 15, 36 — la phase 2) ; **448 issues ouvertes** à la préparation (`gh issue list --state open --limit 600 --json number --jq length`), dont **243 bugs** (commande de § *Priorités des défauts*) et 13 P1, pour **403 au tag v0.17.7**, dont 212 bugs, recomptés depuis les dates de création et de fermeture (et non les 401 attendues à sa préparation : #1144 et #1145 ont été ouvertes entre la préparation et le tag, le 2026-11-14 à 11:44 UTC, tag à 12:23) — 403 + 45 ouvertes depuis et encore ouvertes (#1146 à #1148, #1150 à #1159, #1161 à #1187, #1189 à #1193 ; #1149, #1160 et #1188 sont des PR) − 0 fermée = 448 ; huit se ferment à la fusion de la PR de release si elle les porte en `closes` (#1095, #1165, #1150, #1151, #1051, #1171, #1131, #931) : **440 attendues au tag v0.17.8**, dont **236 bugs** (sept des huit sont des bugs) — objectifs (moins de 403 issues, moins de 212 bugs) **non atteints**, écarts de 37 issues et de 24 bugs, venus des constats tracés pendant la phase 1 et à ses revues (« on trace toujours », une issue par problème), et des notes de Guy versées en issues le 2026-11-14 (#1150 à #1158).)* *(Historique — le paragraphe de la v0.17.7, ci-après, est laissé tel quel ; ses décomptes valaient à la préparation du tag v0.17.7. Annoté le 2026-11-15.)* **Previous release: v0.17.7** (2026-11-14) — l'**Epic 35, « Corrections par impact »**, **version corrective, sans migration** (`kesh_version_min_required` reste à 0.17.6, les dix crates à 0.17.7) : les défauts traités dans l'ordre de leur effet sur les livres — la **date du jour de Zurich**, même la nuit, par une horloge injectable (35-5a0, 35-5a, 35-5b, 35-5c ; #1022, #907, #929 ; restent en jours UTC les filtres du journal d'audit, ainsi que la fenêtre de la réconciliation (#1053)) ; un **compte désigné retypé** refusé à la validation d'une facture ou d'une facture fournisseur, `400 DESIGNATED_ACCOUNT_WRONG_TYPE` (#537, 35-3 ; l'avoir, #525, et le solde du reste, #1044, ne le contrôlent pas encore) ; le **refus du PDF qui nomme le champ** (#955, #964, #1109 ; 35-2a, 35-2b) ; la **numérotation** sans compteur refusée et l'erreur 500 devenue `400 NUMBER_FORMAT_UNRENDERABLE` (#932, #948, 35-1) ; *Rejeter* une ligne « déjà comptabilisée » confirmé (#1023, #1024, 35-4) ; le **solde d'ouverture** qui ne lit plus « 1.234 » comme un franc (#1025, #1026, #1028, 35-6) ; le champ de compte qui ne paraît plus vide (#1000, 35-7) ; l'**audit qui attribue à la clé d'API** le retour en brouillon d'une facture fournisseur et les écritures (35-8a1, 35-8a2 ; #431 en partie, la 35-8b reportée à l'Epic 36) ; ⚠️ **quatre changements de contrat de l'API** : `400 NUMBER_FORMAT_UNRENDERABLE` au lieu de 500 ou 409 à la validation d'une facture et à la création d'un avoir, `400 DESIGNATED_ACCOUNT_WRONG_TYPE` sur une validation qui réussissait, le message d'`INVOICE_NOT_PDF_READY` devenu une phrase pour l'utilisateur, et `failed[].details` de ce code au lot de rappels passé de `null` à `{ "message": … }` ; les dates par défaut (`asOf`, `closedOn`) sont celles de Zurich. **Le retour à la 0.17.6 se fait sans restauration**, éprouvé à la préparation. Intégration en une étape : quatre fusions, un raccord (le relevé synthétique partagé de la 35-4 converti à `ajouterJoursIso` de la 35-5c). *(Recompté à la source le 2026-11-14, à la préparation du tag : `ls crates/kesh-db/migrations/*.sql | wc -l` **91** ; nextest **5445** exécutés, 13 ignorés (voie 2), et de même sous `KESH_TEST_INSTANT` de nuit et à J−3, sonde positive rouge sous un instant invalide ; `scripts/gate-ci.sh` **5452** passés, 17 ignorés ; Vitest **3431** (234 fichiers) ; E2E **408** passés, 7 échecs, les sept de la KF-029 (#97), 18 ignorés — au commit `ea4adceff` (Vitest et `npm run build` à `e4320d8ef`, dont il ne diffère que par le `.tex` et le PDF du manuel d'administration ; dernier commit de code `56ed6f36b`, le bump), journal `kesh-gate-logs/rel0177/` ; recette de montée depuis l'image publiée 0.17.6 verte (`recette-montee.log` : aucune migration, aucun fichier `pre-upgrade/`, aucun écart d'empreinte, retour par le dump et import du `.keshbackup` 0.17.6 à empreintes identiques) et recette complémentaire (`recette-complement.log` : relevé rapproché par une clé d'API, montée puis retour de l'image 0.17.6 sur la même base, sans restauration, empreintes identiques) ; stories `done` **373** par la règle ci-dessous (359 + les quatorze de l'Epic 35 : 35-0, 35-1, 35-2a, 35-2b, 35-3, 35-4, 35-5a0, 35-5a, 35-5b, 35-5c, 35-6, 35-7, 35-8a1, 35-8a2 ; 35-2, 35-5, 35-8, 35-8a `split`, 35-8b `backlog`) ; 35 clés `epic-<entier>`, trois epics ouverts (13, 15, 35 — la 35-8b, reportée à l'Epic 36) ; **416 issues ouvertes** à la préparation (`gh issue list --state open --limit 500 --json number --jq length`), dont **227 bugs** (commande de § *Priorités des défauts*) et 13 P1, pour **330 au tag v0.17.6**, dont 163 bugs, recomptés depuis les dates de création et de fermeture (et non les 325 et 160 attendus à sa préparation : les seize de la PR #1054 se sont bien fermées, mais cinq issues ont été ouvertes entre la préparation et le tag, #1050 à #1053 et #1055) — 330 + 86 ouvertes depuis et encore ouvertes (#1057 à #1142) − 0 fermée = 416 ; quatorze se ferment à la fusion de la PR de release si elle les porte en `closes`, et #1024 à la main : **401 attendues au tag v0.17.7**, dont **212 bugs** (les quinze sont des bugs) — objectifs (moins de 330 issues, moins de 163 bugs) **non atteints**, écarts de 71 issues et de 49 bugs, venus des constats tracés pendant l'epic et à ses revues (« on trace toujours », une issue par problème).)* *(Historique — le paragraphe de la v0.17.6, ci-après, est laissé tel quel ; ses décomptes valaient à la préparation du tag v0.17.6. Annoté le 2026-11-14.)* **Previous release: v0.17.6** (2026-11-12) — l'**Epic 34, « Réconciliation et comptes bancaires »**, et **une migration breaking** (`20261110000001_bank_accounts_without_iban` : l'IBAN devient facultatif, chaque compte reçoit un type et, pour une carte, la place de ses quatre derniers chiffres ; aucune ligne réécrite ; **`kesh_version_min_required` relevé à 0.17.6**, les dix crates à 0.17.6) : la **carte de crédit tenue comme un compte** — un compte sans IBAN (34-11a1), créé et modifié à l'écran, quatre derniers chiffres seulement, lié à un passif, numéro complet refusé partout (34-11a2), son relevé saisi à la main ou importé en CSV et le prélèvement mensuel passé une seule fois, rattaché des deux côtés comme tout virement entre vos comptes (34-11b) (#972, #823 en partie) ; le **solde d'ouverture saisi avec le compte bancaire** (#533, 34-2) et la **description et le compte comptable posés dès l'assistant** (#966, 34-1) ; la réconciliation qui passe une **écriture manuelle** sur tout compte imputable (#967, 34-3) et **signale une transaction déjà comptabilisée** (#828, 34-4) ; ⚠️ **un changement de contrat de l'API** : le règlement d'une facture client exige la `version` de la facture (#951, P1, 34-5) ; les correctifs — société après un 409 (#953), renommage d'exercice rejoué (#945), facture fournisseur relue avant le commit (#938), rapport d'import du dossier par fichier (#969), graphiques en couleurs unies (#970) — et une **passe de textes** (#1037, #1040, #1029, #1030, #1027). **Le retour à la 0.17.5 passe uniquement par la sauvegarde d'avant la mise à jour** ; la recette de montée depuis l'image publiée 0.17.5 est au journal de la release (`kesh-gate-logs/rel0176/`). Intégration en trois étapes (fusions, raccords de la 34-11a2 avec les 34-1 et 34-2, fusion de la 34-11b), revues du code d'intégration P1 (1 MEDIUM, une ligne soudée du CHANGELOG), P2 ciblée et 2b ciblée closes sans rien au-dessus de LOW. *(Recompté à la source le 2026-11-12, à la préparation du tag : `ls crates/kesh-db/migrations/*.sql | wc -l` **91** ; nextest **5307** exécutés, 13 ignorés ; `scripts/gate-ci.sh` **5314** passés, 17 ignorés ; Vitest **3186** (232 fichiers) ; E2E **403** passés, 7 échecs, les sept de la KF-029 (#97), 18 ignorés — gate final au commit `5e2a5818` (dernier commit de code `4e1c768a` ; mêmes chiffres qu'à l'étape 2b), journal `kesh-gate-logs/rel0176/*-final*` ; recette de montée depuis l'image publiée 0.17.5 verte, `recette-montee-final.log` : sauvegarde `pre-upgrade/` écrite avant la migration, écarts d'empreinte limités à `bank_accounts`, `migrations` et `min_required`, refus de la 0.17.5 sur la base migrée (version minimale relevée), retour par le dump et import du `.keshbackup` 0.17.5 à empreintes identiques ; stories `done` **359** par la règle ci-dessous (345 + les quatorze de l'Epic 34 : 34-0 à 34-10, 34-11a1, 34-11a2, 34-11b ; 34-11a `split`) ; 34 clés `epic-<entier>`, deux epics ouverts (13, 15) ; **341 issues ouvertes** à la préparation (`gh issue list --state open --limit 500 --json number --jq length`), dont **170 bugs** (commande de § *Priorités des défauts*) et 14 P1, pour **261 au tag v0.17.5** — 261 − 2 fermées depuis le tag hors PR de release (17 antérieures fermées depuis, dont les quinze de la PR #965) + 82 ouvertes depuis et encore ouvertes (#966 à #1049, 83 ouvertes dont #1010 refermée) = 341 ; seize se ferment à la fusion de la PR de release si elle les porte en `closes` (#533, #828, #938, #945, #951, #953, #966, #967, #969, #970, #972, #1027, #1029, #1030, #1037, #1040) : **325 attendues au tag v0.17.6**, dont **160 bugs** (dix des seize sont des bugs) — objectifs (moins de 261 issues, moins de 109 bugs) **non atteints**, écarts de 64 issues et de 51 bugs, venus des constats tracés pendant l'epic et à ses revues (« on trace toujours », une issue par problème sans regroupement des LOW, décision de Guy du 2026-11-10).)* *(Historique — le paragraphe de la v0.17.5, ci-après, est laissé tel quel ; ses décomptes valaient à la préparation du tag v0.17.5. Annoté le 2026-11-12.)* **Previous release: v0.17.5** (2026-11-07) — l'**Epic 33**, **une migration non breaking** (`20261106000001_supplier_invoice_internal_number`, colonnes ajoutées ; `kesh_version_min_required` reste à 0.17.0), **la première mise à jour à passer par la sauvegarde que Kesh écrit seul avant de migrer** (#847) : le **numéro interne des factures fournisseur** — unique, `FF-{YEAR}-{SEQ:03}` par défaut, réglable, attribué à la validation, et **posé par la migration sur les factures déjà validées, payées ou annulées**, par année de début d'exercice (#926, 33-1a, 33-1b) ; les **graphiques de l'accueil** (#918, 33-3a, 33-3b) ; la **QR-facture** au jeu de caractères de SIX et imprimée entière (#941, 33-12a, 33-12b) ; l'adresse de la société corrigeable (#909) ; les **correctifs** — import CAMT qui refuse le relevé qu'il ne sait pas relire (#922, #915), règlement non annoncé en échec (#450), traces d'audit (#435, #729, #776), compte désigné archivé sans avertissement (#486), bornes d'années (#606, #755), E2E du menu latéral (#424) — ; l'**outillage de release** (`scripts/gate-ci.sh`, `scripts/recette-montee.sh`, #925) et le **filtre de CI** (#928, 33-11 : relevés de l'AC-6 sur la PR #965 — il échoue fermé ; le saut sur une PR d'artefacts seuls reste à relever sur la PR de la rétrospective). **Le retour à la 0.17.4 passe uniquement par la sauvegarde d'avant la mise à jour**, procédure éprouvée à la préparation (image publiée 0.17.4, factures fournisseur validées, payées, annulées sur deux exercices et un brouillon : fichier `pre-upgrade/` écrit avant la migration, numéros posés sans trou ni doublon, brouillon sans numéro, numéro suivant à la validation d'après, empreintes identiques hors colonnes neuves ; refus de la 0.17.4 sur la base migrée et sur un `.keshbackup` 0.17.5 ; fichier `pre-upgrade/` importé dans une 0.17.4 neuve, empreintes identiques à l'avant ; `.keshbackup` 0.17.4 importé dans une 0.17.5 neuve, numéros posés par le rejeu ; sauvegarde impossible : migration refusée, puis échappatoire). *(Recompté à la source le 2026-11-07, à la préparation du tag : `ls crates/kesh-db/migrations/*.sql | wc -l` 90 ; nextest 5138 exécutés, 12 ignorés ; `scripts/gate-ci.sh` 5145 passés, 16 ignorés, au dernier commit de code `11b0315e` ; Vitest 2881 (222 fichiers) ; E2E 385 passés, 7 échecs, les sept de la KF-029 (#97), 18 ignorés ; au journal `kesh-gate-logs/rel0175/` ; stories `done` 345 par la règle ci-dessous (329 + les seize de l'Epic 33 : 33-0, 33-1a, 33-1b, 33-2, 33-3a, 33-3b, 33-4 à 33-11, 33-12a, 33-12b) ; 33 clés `epic-<entier>`, trois epics ouverts (13, 15, 33) ; **276 issues ouvertes** à la préparation, dont 121 bugs et 17 P1, pour **246 au tag v0.17.4** — 246 − 8 fermées depuis (#44, #165, #166, #227, #287, #578, #742, #772) + 38 ouvertes depuis = 276 ; quinze se ferment à la fusion de la PR de release si elle les porte en `closes` : **261 attendues au tag v0.17.5**, dont 109 bugs, pour 91 au tag v0.17.4 — objectifs (moins de 246, moins de 91) **non atteints**, écarts de 15 et de 18, venus des constats tracés pendant l'epic (« on trace toujours » : #929 à #963), et de #964, ouverte à la revue du code écrit à l'intégration.)* *(Historique — le paragraphe de la v0.17.4, ci-après, est laissé tel quel ; ses décomptes valaient à la préparation du tag v0.17.4. Annoté le 2026-11-07.)* **Previous release: v0.17.4** (2026-11-06) — **version corrective, sans migration** (`kesh_version_min_required` reste à 0.17.0), trois stories hors epic : la **session plus sûre** — jetons de renouvellement stockés en **empreinte**, ceux d'avant effacés au premier démarrage et à l'import d'une sauvegarde antérieure, d'où **une reconnexion** (#890, P1 sécurité), un **avertissement** une minute avant la fermeture pour inactivité, avec *Rester connecté* (#895), le paramètre ignoré de `from_fields_for_test` retiré (#896), les LOW de la 0.17.3 triés (#898, #899) (`v0174-session`) ; la **sauvegarde complète écrite par Kesh avant toute migration future**, dans `backup/pre-upgrade/`, et le refus de migrer si elle échoue, échappatoire `KESH_SKIP_PRE_UPGRADE_BACKUP` (#847, `v0174-mise-a-jour`) — la 0.17.4 n'ayant pas de migration, la mise à jour depuis la 0.17.3 n'en écrit pas ; les **bugs de l'usage réel** : l'import CAMT.053 des noms à « & » ou à lettre codée, avec un alias de la clé de doublon de la 0.17.3 (#819 ; limites #915, #922), toutes les factures validées proposées au lot de paiement (#888), la date du jour locale et non UTC (#889), le pays contrôlé sur la liste ISO (#817), `PERIOD_LOCKED` qui dit jusqu'à quand (#869), le projet archivé d'un brouillon fournisseur (#872), la connexion remise à zéro au retour au pool (#842, #540), la date de la 0.17.1 (#901) (`v0174-correctifs`). **Le retour à la 0.17.3 se fait sans restauration, après avoir vidé `refresh_tokens`**, procédure éprouvée à la préparation (base 0.17.3 peuplée par l'image publiée — factures, relevé CAMT à entités, session —, binaire 0.17.4 : aucune migration appliquée, aucun fichier `pre-upgrade/`, empreintes identiques, aucun jeton en clair, ancien cookie refusé, relevé réimporté refusé en doublon, lignes reprises reconnues par l'alias ; `.keshbackup` 0.17.3 importé dans une 0.17.4 neuve, empreintes identiques ; `DELETE FROM refresh_tokens` puis image 0.17.3 : démarre, empreintes identiques). *(Recompté à la source le 2026-11-06, à la préparation du tag : `ls crates/kesh-db/migrations/*.sql | wc -l` 89 ; nextest 4813 exécutés, 12 ignorés, Vitest 2696 (218 fichiers), au journal `kesh-gate-logs/rel0174/` ; stories `done` 329 par la règle ci-dessous (322 + les sept de la 0.17.4 : `v0174-session-1`, `-2`, `v0174-mise-a-jour-1`, `v0174-correctifs`, `-1`, `-2`, `-3`) ; **260 issues ouvertes** à la préparation, dont 101 bugs (§ *Priorités des défauts*) et 14 P1, pour **239 au tag v0.17.3** — 239 + 21 ouvertes depuis (#903 à #923) = 260 ; quinze se ferment à la fusion de la PR de release si elle les porte en `closes` : **245 attendues au tag v0.17.4**, dont 91 bugs — objectif (moins de 239) **non atteint**, écart de six, venu des constats tracés pendant les trois stories (« on trace toujours »).)* *(Historique — le paragraphe de la v0.17.3, ci-après, est laissé tel quel ; ses décomptes valaient à la préparation du tag v0.17.3. Annoté le 2026-11-06.)* **Previous release: v0.17.3** (2026-11-05) — **la session**, une story hors epic (`v0172-session`, #876, CR #891) : la session ne se ferme plus en pleine saisie — elle prend fin après la **durée d'inactivité** réglée dans *Administration → Paramètres*, section *Session* (1 à 1440 minutes, **60 par défaut**, tracée à l'audit), appliquée exactement, et toute activité dans Kesh la remet à zéro dans tous les onglets ; `KESH_REFRESH_INACTIVITY_MINUTES` n'est plus lue ; une restauration complète révoque les jetons de renouvellement restaurés ; la lecture d'un PDF dans l'aperçu ne compte pas comme activité (avertissement avant fermeture : #895). **Une migration, non breaking** (`20261104000001_installation_settings`, table système `_kesh_installation_settings`, DDL seul) : `kesh_version_min_required` reste à 0.17.0, mais la 0.17.2 refuse de démarrer sur une base migrée — **le retour à la 0.17.2 passe uniquement par la sauvegarde d'avant la mise à jour**, procédure éprouvée à la préparation (base 0.17.2 peuplée par l'image publiée, migrée par le binaire 0.17.3, refus constaté de l'image 0.17.2, dump restauré, redémarrage, empreintes identiques). **322 stories** delivered ; **89 migrations**, **4739 backend tests** et **2623 frontend tests** ; **241 issues ouvertes** à la préparation du tag, dont 88 bugs, pour **238 au tag v0.17.2** — #876 et #891 se fermant à la fusion de la PR de release, **239 attendues au tag v0.17.3** : objectif (moins de 238) **non atteint**, écart d'une issue, venu des trois ouvertes depuis (#897, et #898, #899 qui tracent les LOW des revues de la story — « on trace toujours »). *(Historique — le paragraphe de la v0.17.2, ci-après, est laissé tel quel ; ses décomptes valaient à la préparation du tag v0.17.2. Annoté le 2026-11-05.)* **Previous release: v0.17.2** (2026-11-04) — **version corrective, sans migration** (`kesh_version_min_required` reste à 0.17.0 ; le retour à la 0.17.1 se fait sans restauration, éprouvé sur une base 0.17.1 peuplée par l'image publiée) : deux stories hors epic — une **facture fournisseur annulée repasse en brouillon**, *Repasser en brouillon* (l'ancien *Dévalider*) sur validée, payée ou annulée, refus qui disent quoi défaire d'abord (#868, `v0172-annulees`) ; le **verrou du compte sur les imports bancaires** (#840), la **liste des factures fournisseur paginée** et filtrée par statut (#870), le **menu latéral qui défile** (#851), le brouillon au taux de TVA désactivé (#882), la **date proposée « à vérifier »** d'une facture créée depuis un document (#885), les **dates suisses des écrans comptables** (#880) et les LOW de la revue de la 0.17.1 (#883) (`v0172-correctifs`). ⚠️ **La fin de session après quinze minutes (#876) n'y est pas** : sortie de la 0.17.2 par décision de Guy, prévue pour la 0.17.3 (fiche `v0172-session`, `ready-for-dev`) ; contournement d'ici là, au manuel d'administration : `KESH_JWT_EXPIRY_MINUTES=480`. **321 stories** delivered ; **88 migrations**, **4714 backend tests** et **2527 frontend tests** ; **244 issues ouvertes** à la préparation du tag, dont 94 bugs, pour 236 au tag v0.17.1 (reconstitué) — objectif (moins de 236) non atteint, sans barrière (§ *Priorités des défauts*) ; huit issues se ferment à la fusion de la PR de release (#868, #840, #870, #851, #882, #880, #883, #885). *(Historique — le paragraphe de la v0.17.1, ci-après, est laissé tel quel ; ses décomptes valaient à la préparation du tag v0.17.1. Annoté le 2026-11-04.)* **Previous release: v0.17.1** (2026-11-03) — **version corrective, sans migration** (`kesh_version_min_required` reste à 0.17.0 ; le retour à la 0.17.0 se fait sans restauration, éprouvé sur une base 0.17.0 peuplée) : cinq défauts — la QR-facture aux lignes séparées par CR+LF lue à l'import (#854 ; les pièces déjà importées ne sont pas relues d'office), la quantité affichée `1` et non `1.0000` (#866, #878), les dates en forme suisse aux écrans fournisseur, des lots de paiement et des écrans clients (#871, #879). **319 stories** delivered ; **88 migrations**, **4683 backend tests** et **2433 frontend tests** ; **240 issues ouvertes** à la préparation du tag, dont 94 bugs, pour 233 au tag v0.17.0 (reconstitué) — objectif (moins de 233) non atteint, sans barrière (§ *Priorités des défauts*) ; quatre issues se ferment à la fusion de la PR de release (#866, #871, #878, #879), #854 après le constat de Guy sur ses pièces. *(Historique — le paragraphe de la v0.17.0, ci-après, est laissé tel quel ; ses décomptes valaient à la préparation du tag v0.17.0. Annoté le 2026-11-03.)* **Previous release: v0.17.0** (2026-11-03) — le correctif de l'Epic 32 et trois chantiers hors epic : le serveur MCP ne rend plus que du texte (#811, #812), le relevé bancaire saisi à la main (#816), le rattachement d'une transaction à une écriture déjà passée (#671), les **factures fournisseur en brouillon** — brouillon, validée, payée, dévalidation (#849, avec #853, #830, #835, #831) —, le refus d'une ligne qui n'est pas au centime (#687), la QR-facture d'un document scanné (#854, #863), l'assistant qui dit le motif d'un refus (#809), deux corrections de textes (#832, #824) et `quick-xml` 0.42 (#789) ; **deux migrations breaking** : la première (`20261030000001`) relève `kesh_version_min_required` à **0.17.0**, la seconde (`20261031000001`, l'écriture d'achat devenue facultative) le laisse à 0.17.0 ; aucune ne réécrit de ligne existante. Précédée de deux candidates : `0.16.1-rc1` (non poursuivie) et `0.17.0-rc1` (2026-10-31), **sur laquelle Guy tient ses livres réels depuis le 2026-10-31** — d'où le paragraphe « Kesh est en production » ci-dessous. **318 stories** delivered ; **88 migrations**, **4673 backend tests** et **2398 frontend tests** ; **248 issues ouvertes** à la préparation du tag, dont 101 bugs, pour 185 au tag v0.16.0 — objectif (moins de 185) non atteint, sans barrière (§ *Priorités des défauts*) ; seize issues se ferment à la fusion de la PR de release. *(Historique — le paragraphe de la v0.16.0, ci-après, est laissé tel quel ; ses décomptes valaient au tag v0.16.0. Annoté le 2026-11-03.)* **Previous release: v0.16.0** (2026-10-28) — l'Epic 32, **le serveur MCP de Kesh** (#723) : serveur MCP intégré, désactivé par défaut, clés à portées fines, aucune écriture dans les livres, envois montrés à l'Administrateur avant de partir, prompts en base avec leur historique, test de contrat du protocole en CI ; trois migrations non breaking (`kesh_version_min_required` inchangé) ; dépendances mises à jour (#792). ⚠️ Publiée **sans la recette du branchement avec Claude Code** (décision de Guy du 2026-10-28 : « j'aimerais que tu publies maintenant ») : le manuel marque « non éprouvé » ce qui en dépend. **186 issues ouvertes au tag**, dont 67 bugs, pour 140 au tag v0.15.0 — l'écart vient surtout des LOW de revue tracés (« on trace toujours »). *(Annoté le 2026-10-28, rétrospective de l'Epic 32 : recompté, **le tag en porte 185, dont 66 bugs** — #792 s'est fermée au merge de la PR de release, quinze secondes avant le tag ; 186 et 67 valent à la rétrospective, #809 ouverte après le tag.)* La v0.16.0 est **installée sur le NAS depuis le 2026-10-28, sur une base neuve** (#809, un refus de l'assistant masqué, ouverte ce jour-là) ; savoir si des livres réels y seront tenus est posé à Guy (rétrospective, § 10, Q1). **L'Epic 32 est clos** (rétrospective du 2026-10-28, `epic-32-retro-2026-10-28.md`, tenue en autonomie ; ses questions à Guy au § 10) : bugs 51 → 66 au tag, troisième epic sans baisse ; objectif d'issues (moins de 140) dépassé. **307 stories** delivered ; **30 epics** have no open story, **two remain open** (13, 15) ; **86 migrations**, **4456 backend tests** and **2150 frontend tests** ; **185 issues ouvertes** au tag v0.16.0, dont 66 bugs — **186** et 67 à la rétrospective. *(Historique — le paragraphe de la v0.15.0, ci-après, est laissé tel quel ; ses décomptes et la phrase « L'Epic 32 … est ouvert » valaient au kickoff de l'Epic 32. Annoté le 2026-10-28.)* **Previous release: v0.15.0** (2026-10-24), publiée sur Docker Hub le 2026-10-24 par le tag `v0.15.0` (`gcorbaz/kesh:0.15.0` = `:latest`, `sha256:77cfb96d…`, smoke `/health` vert) — publiée au-dessus de l'objectif de la règle de release, sur décision de Guy (« on publie maintenant ») ; jusqu'à la mise à jour du NAS, la **v0.14.0** reste celle **en fonction sur le NAS** (depuis le 2026-10-20), où Guy a commencé le 2026-10-23 une saisie réelle qu'il a peu poursuivie — *aucun livre réel n'est tenu dans Kesh* (précision de Guy du 2026-10-25, paragraphe ci-dessous) ; la production se fera par une installation neuve en 0.16.0 ou plus tard. **Epic 31, « Tenir les livres »** : la sauvegarde qui restaure tout (#503, fermée par la 31-1c) — le `.keshbackup` passe au format 2 et emporte les documents fournisseur et les PDF figés (31-1a), une installation neuve se restaure depuis l'assistant (31-1b), Kesh fait seul sa sauvegarde complète à intervalle régulier, réglée dans l'interface, et les sauvegardes du serveur se téléchargent depuis l'écran (31-1c) ; l'outillage dit vrai — droits du MariaDB de dev, smoke E2E en CI (#577), tirages Docker authentifiés, `.svelte-kit/` retirés (31-2) ; Rust 1.97.1 (31-3, #697) ; la répétition à blanc d'une clôture au manuel d'administration, jouée sur une sauvegarde de démonstration (31-4) ; quatre défauts courts (31-5 : #707, #589, #504, #469). Elle porte une migration **non breaking** (`20261024000001_backup_schedule`) : `kesh_version_min_required` reste à 0.14.0, mais, comme toute migration (§ *Migration breaking policy*, P1), elle empêche la 0.14.0 de démarrer sur une base passée par la 0.15.0, et **le retour à la 0.14.0 passe uniquement par la sauvegarde d'avant la mise à jour** — base, `.keshbackup` **et dossier des documents**. **L'Epic 31 est clos** (rétrospective du 2026-10-24, `epic-31-retro-2026-10-24.md`, tenue en autonomie ; ses questions à Guy au § 10). ⚠️ **Règle de release** (§ *Priorités des défauts*, **reformulée par Guy le 2026-10-24 : un objectif à terme, non une barrière**) : **140 issues ouvertes au tag v0.15.0** pour un objectif de **moins de 136** (le compte au tag v0.14.0) ; Guy a publié (« on publie maintenant ») pour mettre la sauvegarde complète au service de sa comptabilité réelle. L'écart vient surtout des constats tracés en cours d'epic (« on trace toujours » : #711, #714, #716 regroupent les LOW de revue ; #712) ; aucune issue n'a été fermée pour le chiffre. L'objectif du tag suivant, à la lettre de la règle, est **moins de 140** — le choix entre 140 et 136 est posé à Guy (rétrospective, § 10, Q3). **L'Epic 32, le serveur MCP de Kesh en lecture seule (v0.16.0)**, est ouvert depuis son kickoff du 2026-10-24 (`planning-artifacts/epic-32-serveur-mcp.md`). **280 stories** delivered ; **29 epics** have no open story, **three remain open** (13, 15, 32) ; **83 migrations**, **3971 backend tests** and **1910 frontend tests** ; **140 issues ouvertes** au tag v0.15.0, dont 51 bugs — **141** à la rétrospective du même jour (#720 ouverte après le tag), **142** au kickoff de l'Epic 32 (#722).
-*(Recomptés depuis la source le 2026-10-24, à la préparation de la v0.15.0. Commandes : `ls crates/kesh-db/migrations/*.sql | wc -l` (83) ; le total de `scripts/test-fast.sh --ci` (nextest : 3971 exécutés, 7 ignorés) et de `npm run test:unit` (1910 tests, 162 fichiers) ; pour les stories, les clés de la section `development_status:` de `sprint-status.yaml` au statut `done`, **hors** clés `epic-N` et `*-retrospective`, lues par un parseur YAML (`yaml.safe_load`) — s'y ajoutent 46 `split`, 5 `superseded`, 4 `archived-split*` et 4 `backlog`, qui ne sont pas des livraisons ; les issues par `gh issue list --state open --limit 500 --json number --jq length`, les bugs par la commande de § *Priorités des défauts*. ⚠️ **Les « 214 stories » écrites ici à la v0.12.0 ne se retrouvent par aucune méthode** : la même commande appliquée au registre du tag `v0.12.0` en rend **166**. ⚠️ **Les « 194 » écrites à la v0.12.1 étaient fausses aussi** : la même commande sur le registre du tag `v0.12.1` en rend **199** — 194 est ce que donne un `grep` des seules clés commençant par un chiffre, qui manque les cinq `v011-*`/`v014-*` des hotfix ; la rétrospective de l'Epic 15 a obtenu **201** sur ce même registre, écart de deux non élucidé ici (les deux clés `epic-hotfix-v0.1.1` et `epic-hotfix-v0.1.1-retrospective`, si l'exclusion ne visait que `epic-<chiffre>`, en rendraient compte). 199 + 35 stories de l'Epic 15 = 234, + 4 de l'Epic 26 (26-1, 26-2a, 26-2b, 26-3) = 238, + 4 de l'Epic 27 (27-1 à 27-4) = 242, + 11 de l'Epic 28 (28-0, 28-1, 28-2, 28-3, 28-4a, 28-4b, 28-5a, 28-5b, 28-6, 28-7, 28-8) = 253, + 10 de l'Epic 29 (29-0, 29-1a, 29-2, 29-3, 29-4a, 29-4b, 29-5, 29-6, 29-8, 29-9) = 263, + la 29-1b = 264, + 7 de l'Epic 30 (30-0, 30-1a, 30-1b, 30-2a, 30-2b, 30-2c, 30-3) = 271. Les epics se comptent sur les seules clés `epic-<entier>` (1 à 30 depuis le kickoff de l'Epic 30, hors `epic-9-5` et `epic-hotfix-v0.1.1`) — la règle qui redonne les 23 de la v0.13.0 ; l'Epic 26 est clos (rétrospective du 2026-10-12) ; l'Epic 27 est clos (rétrospective du 2026-10-13) ; l'Epic 28 est clos (rétrospective du 2026-10-14) ; l'Epic 29 est ouvert (29-1b `ready-for-dev`, 29-7 `backlog`) — recompté le 2026-10-15 par la même règle : 29 epics, 26 sans story ouverte, trois ouverts (13, 15, 29). Recompté le 2026-10-20 par la même règle : 30 epics, 27 sans story ouverte — l'Epic 30 compris, sa rétrospective restant à tenir —, trois ouverts (13, 15, 29 : la 29-7 `backlog`). Recompté le 2026-10-23, au kickoff de l'Epic 31, par la même règle : 31 epics, 28 sans story ouverte — les Epics 29 et 30 clos, la 29-7 passée à `superseded` —, trois ouverts (13, 15, 31) ; stories `done` : 272 (la 31-0, kickoff, comptée comme les 28-0 à 30-0) ; issues 135 (#618, #621 fermées, #695 ouverte). Recompté le 2026-10-24, à la préparation de la v0.15.0, par la même règle : 31 epics, 29 sans story ouverte — l'Epic 31 compris, sa rétrospective restant à tenir —, deux ouverts (13, 15) ; stories `done` : 279 (272 + les 31-1a, 31-1b, 31-1c, 31-2, 31-3, 31-4, 31-5 ; la 31-1 `split`) ; issues 140, dont 51 bugs — 135 − 9 + 14 = 140 : neuf fermées depuis le kickoff (#503, #577, #589, #504, #469, et #697, #698, #706, #707, ouvertes puis fermées pendant l'epic), quatorze ouvertes (ces quatre-là, et dix qui le restent : #699, #700, #705, #708 à #712, #714, #716). Recompté le 2026-10-24, à la rétrospective de l'Epic 31, par la même règle : inchangé — 279 stories `done`, 29 epics sans story ouverte, deux ouverts (13, 15) ; issues 141, dont 51 bugs (+#720, ouverte après le tag). Recompté le 2026-10-24, au kickoff de l'Epic 32, par la même règle : 32 epics, 29 sans story ouverte, trois ouverts (13, 15, 32) ; stories `done` : 280 (279 + la 32-0, kickoff) ; issues 142, dont 51 bugs (+#722). Recompté le 2026-10-28, à la rétrospective de l'Epic 32, par la même règle : 32 epics, 30 sans story ouverte, deux ouverts (13, 15) ; stories `done` : 307 (280 + les 27 de l'Epic 32 : 32-1a à 32-1d, 32-2, 32-3, 32-4a, 32-4b, 32-5a à 32-5d, 32-6a à 32-6c, 32-7, 32-8a, 32-8b0, 32-8b, 32-8c, 32-9a, 32-9b, 32-10a-i à 32-10a-iii, 32-10b, 32-11) ; s'y ajoutent 50 `split`, 6 `superseded` (la 32-12 comprise), 4 `archived-split*` et 4 `backlog` ; migrations 86 ; tests au journal de la release (`kesh-gate-logs/rel016/`) : nextest 4456 exécutés, 7 ignorés, Vitest 2150 (181 fichiers) ; issues 185 au tag v0.16.0, dont 66 bugs — 142 − 7 + 50 : sept fermées (#711, #714, #716, #775, #777, #778, #792), cinquante ouvertes (#723 et quarante-neuf numéros de #725 à #806) ; 186 et 67 à la rétrospective (+#809, ouverte après le tag). Recompté le 2026-11-03, à la préparation de la v0.17.0, par la même règle : stories `done` : 318 (307 + les onze de la release : v016-1, v016-2a, v016-2b, v017-1, v017-2, v017-3a, v017-3b, v017-4a, v017-4b, v017-5, v017-6) ; s'y ajoutent 53 `split` (+ v016-2, v017-3, v017-4), 6 `superseded`, 4 `archived-split*` et 5 `backlog` (+ v017-3c, hors epic) ; les 32 clés `epic-<entier>` sont inchangées, et les stories de la release n'appartiennent à aucune : deux epics restent ouverts (13, 15) ; migrations 88 ; tests au journal de la release (`kesh-gate-logs/rel017/final-*-f1.log`) : nextest 4673 exécutés, 12 ignorés, Vitest 2398 (195 fichiers) ; issues 248, dont 101 bugs, comptées le 2026-11-03 avant le tag (`gh issue list …`), seize devant se fermer à la fusion de la PR #846. Recompté le 2026-11-03, à la préparation de la v0.17.1, par la même règle : stories `done` : 319 (318 + `v0171-correctifs`, hors epic) ; 53 `split`, 6 `superseded`, 4 `archived-split*` et 5 `backlog`, inchangés ; 32 clés `epic-<entier>`, deux epics ouverts (13, 15) ; migrations 88 (aucune ajoutée) ; tests au journal de la release (`kesh-gate-logs/rel0171/gate-backend.log`, `gate-frontend.log`) : nextest 4683 exécutés, 12 ignorés, Vitest 2433 (204 fichiers) ; issues 240, dont 94 bugs, comptées le 2026-11-03 avant le tag (`gh issue list …`) ; au tag v0.17.0 (2026-11-03 14:58:50 +01:00), 233 issues ouvertes, **reconstituées** depuis les dates de création et de fermeture (`gh issue list --state all --json number,createdAt,closedAt`), et non mesurées à l'heure du tag (les labels sont ceux d'aujourd'hui : 88 bugs, à prendre comme ordre de grandeur). Recompté le 2026-11-04, à la préparation de la v0.17.2, par la même règle : stories `done` : 321 (319 + `v0172-annulees` et `v0172-correctifs`, hors epic) ; 53 `split`, 6 `superseded`, 4 `archived-split*` et 5 `backlog`, inchangés, et une `ready-for-dev` (`v0172-session`) ; 32 clés `epic-<entier>`, deux epics ouverts (13, 15) ; migrations 88 (aucune ajoutée) ; tests au journal de la release (`kesh-gate-logs/rel0172/gate-backend.log`, `gate-frontend.log`) : nextest 4714 exécutés, 12 ignorés, Vitest 2527 (206 fichiers) ; issues 244, dont 94 bugs, comptées le 2026-11-04 avant le tag ; au tag v0.17.1 (2026-11-04 10:35:30 +01:00), 236 issues ouvertes, **reconstituées** depuis les dates de création et de fermeture (90 bugs aux labels d'aujourd'hui) — 236 + 9 ouvertes depuis (#885 à #893) − 1 fermée (#854) = 244. Recompté le 2026-11-05, à la préparation de la v0.17.3, par la même règle : stories `done` : 322 (321 + `v0172-session`, hors epic) ; 53 `split`, 6 `superseded`, 4 `archived-split*` et 5 `backlog`, inchangés, aucune `ready-for-dev` ; 32 clés `epic-<entier>`, deux epics ouverts (13, 15) ; migrations 89 (+ `20261104000001_installation_settings`) ; tests au journal de la release (`kesh-gate-logs/rel0173/gate-backend.log`, `front-test-unit.log`) : nextest 4739 exécutés, 12 ignorés, Vitest 2623 (211 fichiers) ; issues 241, dont 88 bugs, comptées le 2026-11-05 avant le tag ; au tag v0.17.2 (tag daté 2026-11-04 17:47:46 +01:00), **238** issues ouvertes, recomptées depuis les dates de création et de fermeture : les huit fermées par la fusion de la PR de release (#840, #851, #868, #870, #880, #882, #883, #885, entre 17:47:45 et 17:47:48) comptent comme fermées au tag, comme #792 à la v0.16.0 — 238 + 3 ouvertes depuis (#897 à #899) = 241. *(« 246 au tag v0.17.2, reconstitué », écrit à la préparation de la v0.17.3 par l'agent d'intégration, était faux : corrigé par l'orchestrateur le même jour, avant le push.)* Epic « ouvert » = epic portant au moins une story `backlog`, `ready-for-dev`, `in-progress` ou `review` ; le registre ne porte pas de statut d'epic fiable à lui seul.)*
+- **Dernière release : v0.18.0** (2026-11-16), sans migration ; `kesh_version_min_required` = 0.17.6.
+- **Kesh est en production** : Guy tient ses livres réels sur le NAS depuis le 2026-10-31. Version en fonction : **0.18.0**, depuis le 2026-11-16. Ces deux lignes se mettent à jour à chaque release et à chaque mise à jour du NAS.
+- **Jalon ouvert** : « Première clôture d'exercice tenue dans Kesh » (J9 de la fiche de projet). Le jour où il est atteint, cette section se réécrit.
+- **Les décomptes** (migrations, tests, stories, issues) ne s'écrivent pas ici : ils vont à la PR de release, au journal `kesh-gate-logs/rel<version>/` et à la rétrospective. Ils se recomptent depuis la source :
+  - migrations : `ls crates/kesh-db/migrations/*.sql | wc -l` ;
+  - stories livrées : clés de `development_status:` de `sprint-status.yaml` au statut `done`, hors `epic-N` et `*-retrospective`, lues par un parseur YAML ; epics : clés `epic-<entier>` ; un epic est ouvert s'il porte une story `backlog`, `ready-for-dev`, `in-progress` ou `review` ;
+  - issues ouvertes : `gh issue list --state open --limit 600 --json number --jq length` ; bugs : commande de § *Priorités des défauts* ; au tag passé, reconstituer depuis `createdAt`/`closedAt`.
 
-⚠️ **La v0.12.1 achève la « vague 1 »** — jalon GitHub à zéro issue ouverte, fermé le 2026-10-07 —, après que la v0.12.0 a corrigé le défaut fondateur du produit (l'encaissement d'une facture ne produisait aucune écriture comptable). Elle porte l'export de sauvegarde complet ([#386]), la dévalidation au lieu de la suppression, l'annulation par contre-passation, le reste dû juste partout et les soldes de départ complétables. ⛔ **Et elle n'est toujours pas destinée à tenir une comptabilité réelle**, ce que son CHANGELOG et le message de son tag disent en toutes lettres : plusieurs fonctions d'un exercice complet manquent encore. *Publiée n'est pas utilisable, et c'est la distinction suivante.* *(Historique, annoté le 2026-10-24 : cet avertissement a valu de la v0.12.1 à la v0.14.0, dont chaque CHANGELOG le répétait. Le 2026-10-23, une saisie réelle a commencé dans Kesh, et le CHANGELOG de la v0.15.0 a cessé de le dire ; le 2026-10-25, Guy a précisé qu'elle n'avait guère avancé et qu'aucun livre réel n'est tenu — cf. le paragraphe « Aucun livre réel » ci-dessous.)*
+### Ce qu'impose la production
 
-⚠️ **Le CHANGELOG ne contenait RIEN de l'Epic 24 jusqu'au 2026-09-21** — sept stories, dont la correction du défaut fondateur —, ni trois stories de l'Epic 25. Neuf livraisons mergées pendant un mois sans jamais entrer dans les notes de version, et **aucun gate ne le signalait**. Écrit à la préparation de la release. *Un epic clos n'est pas un epic publié.*
-
-⚠️ **Kesh est en production : des livres réels sont tenus sur le NAS depuis le 2026-10-31.** Guy l'a déclaré ce jour-là : « j'ai commencé à saisir des données réelles : Kesh doit être considéré comme en production maintenant ». L’installation du NAS tourne en `0.17.7` depuis le 2026-11-14, mise à jour faite après une sauvegarde complète, déclaré par Guy en séance le 2026-11-14 (annoté le 2026-11-15 à la préparation de la 0.17.8 — ce paragraphe disait `0.17.6` depuis le 2026-11-13, déclaré par Guy ce jour-là ; annoté le 2026-11-14 à la préparation de la 0.17.7, date et source ajoutées le même jour à la revue P1 du code d'intégration — ce paragraphe disait `0.17.5`, réinstallée à neuf le 2026-11-10 après une mise à jour du 2026-11-08 faite avec sa sauvegarde ; annoté le 2026-11-12 à la préparation de la 0.17.6 — ce paragraphe disait `0.17.4`, constaté sur `/health` le 2026-11-06 ; annoté le 2026-11-07 à la préparation de la 0.17.5 — ce paragraphe disait `0.17.1` depuis le 2026-11-04, `0.17.0` depuis le 2026-11-03, et `0.17.0-rc1` à sa rédaction) ; elle était passée à la `0.17.0-rc1` **depuis la `0.16.1-rc1`, sans sauvegarde préalable** — ce qui a fait ouvrir #847 (Kesh fait lui-même une sauvegarde complète avant d'appliquer des migrations). Ce que cela change, et ce que cela ne change pas :
-
-- **Les défauts qui perdent ou altèrent des données sont des P1, maintenant et pour de bon** : ceux du `.keshbackup`, de l'import d'installation, de la sauvegarde automatique et des migrations. Un défaut qui a écrit faux ne se corrige plus en recréant la base : il se corrige dans des livres tenus, par une écriture.
-- **Toute release qui porte une migration exige la sauvegarde d'avant la mise à jour** — la base, le `.keshbackup` **et** le dossier des documents —, écrite en tête de ses notes et au manuel d'administration : toute migration rend le retour à la version précédente dépendant de cette sauvegarde (§ *Migration breaking policy*, P1). Depuis la 0.17.4 (#847), Kesh écrit lui-même une sauvegarde complète dans `backup/pre-upgrade/` avant d'appliquer une migration, et refuse de migrer si elle échoue — constaté pour la première fois à la préparation de la 0.17.5, sur la montée 0.17.4 → 0.17.5 ; base et pièces, au format 2 ; elle ne dispense pas de celle d'avant la mise à jour, que les notes et le manuel continuent d'exiger. *(Annoté le 2026-11-07 : cette phrase disait « tant que #847 est ouverte, Kesh ne la prend pas de lui-même ».)*
-- **Rien de jetable sur la base du NAS** : aucune recette, écriture de démonstration ni clé d'essai ne s'y joue ; elles se jouent sur une installation jetable. Une montée de version se répète d'abord sur une base peuplée par la version d'où l'on part.
-- **Le jalon reste à venir** : « Première clôture d'exercice tenue dans Kesh » (J9 de la fiche de projet) est ouvert, et la TVA n'est pas opposable (les dix P1 du jalon « Vague 2 », § *Priorités des défauts*) — sans effet tant que Guy, personne physique, n'est pas assujetti. **Le jour de la première clôture, ce paragraphe change de nouveau**, avec ce qui s'appuie sur lui.
-
-*(Récrit le 2026-11-03, à la préparation de la v0.17.0, sur la déclaration de Guy du 2026-10-31 citée ci-dessus. Le paragraphe qu'il remplace — « Aucun livre réel n'est tenu dans Kesh » —, juste du 2026-10-25 au 2026-10-31, reste ci-dessous comme historique.)*
-
-> *Historique (2026-10-25 → 2026-10-31)* — ⚠️ **Aucun livre réel n'est tenu dans Kesh — et l'installation de production se fera à neuf.** Guy a commencé, le 2026-10-23, à saisir sa comptabilité réelle sur le NAS (v0.14.0) ; devant les manques de Kesh, il a peu avancé, et il le dit lui-même le 2026-10-25 : « pour l'instant, aucun livre réel n'est tenu dans Kesh et une installation à neuf ne pose aucun problème ». Il installera une instance neuve quand la 0.16.0, ou une version ultérieure, sera terminée (réponse à la Q4 de l'Epic 32, 2026-10-24). Ce que cela règle, et ce que cela ne change pas :
->
-> - **Il n'y a pas de données de production à protéger aujourd'hui.** Aucune sauvegarde antérieure n'est à restaurer : c'est ce qui a fait retirer la Story 32-12 (import tolérant des sauvegardes 0.15.0) et réduire la limite à une phrase du manuel — une sauvegarde ne se réimporte que dans une version qui porte les mêmes tables.
-> - **La discipline des migrations et de la sauvegarde ne se relâche pas pour autant.** Toute migration rend le retour à la version précédente dépendant de la sauvegarde d'avant la mise à jour (§ *Migration breaking policy*, P1), et un défaut du `.keshbackup`, de l'import ou de la sauvegarde automatique qui perd ou altère des données reste un P1 : ce sont les règles qui protégeront les livres dès l'installation neuve, et c'est maintenant qu'elles coûtent le moins.
-> - **Le jalon reste à venir** : « Première clôture d'exercice tenue dans Kesh » (J9 de la fiche de projet) est ouvert, et la TVA n'est pas opposable (les dix P1 du jalon « Vague 2 », § *Priorités des défauts*). **Le jour où l'installation neuve tiendra des livres réels, ce paragraphe change de nouveau**, avec ce qui s'appuie sur lui.
->
-> *(Récrit le 2026-10-25, sur la précision de Guy citée ci-dessus. Le paragraphe qu'il remplace — « Des livres réels sont tenus dans Kesh depuis le 2026-10-23 » —, écrit le 2026-10-24 à la préparation de la v0.15.0, prenait le début d'une saisie pour une comptabilité tenue ; il reste ci-dessous comme historique. Le CHANGELOG de la v0.15.0, publié, n'est pas réécrit.)* *(Annoté le 2026-11-03 : faux depuis le 2026-10-31 — l'installation de production n'a pas été faite à neuf ; la saisie réelle a commencé sur l'installation du NAS, en `0.17.0-rc1`.)*
-
-> *Historique (2026-10-24 → 2026-10-25)* — ⚠️ **Des livres réels sont tenus dans Kesh depuis le 2026-10-23 — et cela change ce qui coûte cher.** Guy y tient sa comptabilité réelle (personne physique, non assujettie à la TVA) : relevés bancaires importés, saisie manuelle du début de l'exercice, factures fournisseur. Trois conséquences, qui remplacent le raisonnement d'avant :
->
-> - **Il y a désormais des données de production à protéger.** Une migration n'est plus « moins risquée qu'elle ne le sera jamais » : elle s'applique à des livres qu'on ne refait pas, et **toute** migration, breaking ou non, rend le retour à la version précédente dépendant de la sauvegarde d'avant la mise à jour (§ *Migration breaking policy*, P1). Une migration ratée se paie désormais en saisies perdues, non en base de dev reconstruite.
-> - **La sauvegarde et la restauration deviennent critiques**, et non plus des fonctions parmi d'autres : un défaut du `.keshbackup`, de l'import d'installation ou de la sauvegarde automatique qui perd ou altère des données relève du P1 (§ *Priorités des défauts*), et une sauvegarde ne se juge vraiment qu'à une restauration réelle.
-> - **La prévention reste moins chère que la réparation, mais la réparation n'est plus gratuite** : un défaut qui a écrit faux ne se corrige plus en recréant la base ; il se corrige dans des livres tenus, par une écriture.
->
-> Ce que cela n'établit pas : **le jalon « Première clôture d'exercice tenue dans Kesh » reste ouvert** (J9 de la fiche de projet) — aucun exercice réel n'a été clôturé dans Kesh, et la répétition d'une clôture du manuel d'administration (Story 31-4) n'a été jouée que sur une sauvegarde de démonstration ; la TVA n'est pas opposable (les dix P1 du jalon « Vague 2 », § *Priorités des défauts*), si bien que Kesh ne tient pas les livres d'un assujetti. **Quand ce jalon sera atteint, ce paragraphe change de nouveau**, avec ce qui s'appuie sur lui.
->
-> *(Récrit le 2026-10-24, à la préparation de la v0.15.0 — R13 de la revue de projet du 2026-10-23, sur décision de Guy : « à la release suivante » (rétrospective de l'Epic 30, § 10). Le paragraphe qu'il remplace, ci-dessous, a été juste du 2026-08-12 au 2026-10-23 ; il reste comme historique.)*
-
-> *Historique (2026-08-12 → 2026-10-23)* — ⚠️ **Deployed is not the same as keeping the books, and the distinction drives real decisions.** The instance runs and is exercised, but **the real accounts are not yet kept in Kesh** — the project's own milestone for that, *« Première clôture d'exercice tenue dans Kesh »*, is still open, and the fiche states it as the *expected* result, not the current one. Two consequences worth holding: there is **no legacy production data to protect**, which makes prevention cheaper than repair and migrations less risky than they will ever be again; and **when that milestone is reached, this paragraph must change** — along with the reasoning that rests on it. *(Annoté le 2026-10-24 : la prémisse « no legacy production data » est tombée le 2026-10-23, avant le jalon qu'attendait ce paragraphe — c'est la tenue des livres, non la clôture, qui l'a rendue fausse.)*
-
-*(Écrit le 2026-08-12 en remplacement d'un paragraphe qui affirmait qu'aucun code applicatif n'avait été écrit. La première rectification est allée trop loin dans l'autre sens en parlant de « real bookkeeping » : corrigée le jour même, sur remarque de Guy. Une correction n'est pas exempte du défaut qu'elle corrige.)*
-
-> ⚠️ **Ce paragraphe a menti pendant des mois**, en affirmant que le projet était « in the design/planning phase » et qu'« aucun code applicatif n'avait été écrit » — alors que le logiciel tenait déjà une comptabilité réelle. C'est le fichier qui instruit chaque séance de travail : le laisser faux oriente tout ce qui s'appuie dessus. Corrigé le 2026-08-12, à la revue de projet qui a suivi la clôture de l'Epic 16. **Quand l'état du projet change, ce paragraphe change avec lui.**
-
-**Target stack**: Rust backend (Axum), Svelte frontend, MariaDB, web app only (no Tauri). Configuration via environment variables. Deployment via docker-compose.
-
-**PRD**: `_bmad-output/planning-artifacts/prd.md` — Swiss accounting focus: QR Bill 2.2, pain.001.001.03, CAMT.053.001.04, multilingual (FR/DE/IT/EN).
+- **Un défaut qui perd ou altère des données est un P1** : `.keshbackup`, import d'installation, sauvegarde automatique, migrations. Un défaut qui a écrit faux se corrige dans les livres, par une écriture.
+- **Toute release qui porte une migration exige la sauvegarde d'avant la mise à jour** — base, `.keshbackup` et dossier des documents —, écrite en tête de ses notes et au manuel d'administration. La sauvegarde que Kesh écrit seul dans `backup/pre-upgrade/` (#847) n'en dispense pas.
+- **Rien de jetable sur la base du NAS** : recettes, écritures de démonstration et clés d'essai se jouent sur une installation jetable. Une montée de version se répète d'abord sur une base peuplée par la version d'où l'on part (`scripts/recette-montee.sh`).
+- **`~/kesh/` est en lecture seule** : ce sont les pièces de production de Guy.
 
 ## Communication
 
-The user (Guy) works in **French**. All conversation and document output should be in French unless otherwise specified.
+Guy travaille en **français** : conversation et documents en français, sauf indication contraire.
 
-## Repository Structure
+## Structure du dépôt
 
 ```
-crates/                 # Le backend Rust — workspace de 10 crates
+crates/                 # Backend Rust — workspace de 10 crates
   kesh-core/            # Logique métier pure, ZÉRO I/O
   kesh-db/              # Persistance MariaDB via SQLx + les migrations
   kesh-api/             # Serveur HTTP Axum — routes, auth, middleware
@@ -70,106 +41,59 @@ crates/                 # Le backend Rust — workspace de 10 crates
   kesh-seed/            # Données de démonstration
 frontend/               # SvelteKit — src/lib/features/ par domaine, tests/e2e/ Playwright
 scripts/                # Outillage : test-fast.sh, mem-guard.sh, prepare-release.sh, hooks
-docs/                   # Documentation, dont manual/{fr,de,en,it}/ (LaTeX + PDF versionnés)
+docs/                   # Documentation, dont manual/{fr,de,en,it}/ (LaTeX + PDF)
 website/                # Site GitHub Pages (HTML statique)
 _bmad/                  # Cadre BMAD (agents, workflows, skills, config)
-_bmad-output/           # Artefacts BMAD engendrés
-  planning-artifacts/   # PRD, architecture, epics
-  implementation-artifacts/  # Fichiers de story, sprint-status.yaml, rétrospectives
+_bmad-output/           # Artefacts BMAD : planning-artifacts/, implementation-artifacts/
 .claude/skills/         # Skills BMAD installées pour Claude Code
 ```
 
-⚠️ **Les chemins ci-dessus se vérifient, ils ne se supposent pas.** La version précédente
-de ce bloc documentait un répertoire `design-artifacts/` **qui n'a jamais été versionné**,
-et omettait `crates/` et `frontend/` — c'est-à-dire la totalité du code. Elle décrivait
-une intention, non un dépôt. Les nombres de skills et de workflows ont été retirés pour
-la même raison : ils étaient faux de moitié et se périment à chaque installation.
+Les chemins se vérifient, ils ne se supposent pas. Ne pas écrire ici de nombres que rien ne contrôle (skills, workflows) : `wc -l` sur les manifestes de `_bmad/_config/` dit la vérité.
 
-## BMAD Architecture
+## BMAD
 
-**Agents** are named personas (PM, Developer, Architect, QA, etc.) defined in `.md` files with menus that invoke skills or workflows. **Skills** are self-contained capabilities. **Workflows** are multi-step stateful processes using step-file architecture — each step in a separate file, loaded just-in-time. Progress is tracked in document frontmatter.
+- Les workflows exécutent leurs étapes dans l'ordre, sans en sauter ; leur état vit dans le frontmatter (`stepsCompleted`).
+- Les skills s'invoquent par `/nom-du-skill`.
+- Toute sortie engendrée va dans `_bmad-output/`, jamais mêlée aux fichiers du cadre.
+- Configuration : `_bmad/bmm/config.yaml` ; manifestes : `_bmad/_config/`.
 
-*(Les décomptes de skills et de workflows ont été retirés le 2026-08-12 : ils annonçaient 52 et 51 pour 79 et 50 réels. Un nombre qu'aucun test ne contrôle et qu'aucune installation ne met à jour se périme en silence — `wc -l` sur les manifestes de `_bmad/_config/` dit la vérité.)*
+## Qualité du code
 
-Key manifests in `_bmad/_config/`: `agent-manifest.csv`, `skill-manifest.csv`, `workflow-manifest.csv`.
-
-BMAD module config: `_bmad/bmm/config.yaml` — defines project name, user name, language preferences, and output paths.
-
-## Key Patterns
-
-- Workflows execute steps sequentially — never skip steps
-- State is stored in document frontmatter (`stepsCompleted` array)
-- Design artifacts follow the A→G phase progression
-- Skills are invoked via `/skill-name` slash commands in Claude Code
-- All generated output goes to `_bmad-output/` (not mixed with framework files)
-
-## Code Quality Rules
-
-- **DRY (Don't Repeat Yourself)** — No duplicated code. Extract shared logic into reusable functions/modules.
-- **Documentation** — Source code must be documented following best practices: public APIs, complex logic, module-level docs. Rust: use `///` doc comments. Svelte: use JSDoc where appropriate.
-- **Testing** — Test everything that can be tested. Unit tests for all business logic (especially the accounting engine, VAT calculations, and financial computations). Integration tests for parsers (CAMT.053, QR Bill, pain.001).
-- **E2E Testing** — Use Playwright for all end-to-end tests. Each user journey from the PRD maps to a Playwright test scenario.
-- **Batch API conventions** — Pour les endpoints batch (style `accept_batch` qui retournent `{ accepted, failed }`), cf. §"Pattern batch — FailedProposal per-proposal" sous §"Review Iteration Rule".
+- **DRY** : pas de code dupliqué ; extraire la logique partagée.
+- **Documentation** : API publiques, logique complexe et modules documentés (`///` en Rust, JSDoc en Svelte).
+- **Tests** : tout ce qui se teste se teste — unitaires pour la logique métier (moteur comptable, TVA, calculs financiers), intégration pour les parseurs (CAMT.053, QR-facture, pain.001), Playwright pour chaque parcours du PRD.
+- **Endpoints batch** : § *Pattern batch — FailedProposal per-proposal*.
+- **Un appariement automatique propose, il ne crée jamais.** Quand Kesh rapproche une donnée entrante d'une entité existante (fournisseur, débiteur, article), il propose un rattachement ; il ne crée jamais l'entité d'office et ne tranche jamais seul un cas douteux, qui va dans une file « à rattacher ». La prévention se place à la saisie : signaler un contact proche, jamais bloquer. *Motif : le faux rattachement est muet, le doublon ne l'est pas.*
 
 ## Test Locally First
 
-**Règle « Test Locally First »** : avant chaque `git push` qui ouvre ou met à jour une PR, exécuter localement la même série de checks que la CI. La CI rouge sur un détail rattrapable localement (ex. `cargo fmt --check`) coûte un cycle de revue + re-run + cache invalidé. Le coût local est de l'ordre de la minute si le workspace est chaud.
-
-**Carry-forward Epic 6 retro** (2026-04-20) — codifié 2026-05-03 dans le prep sprint Epic 8, après la PR #66 retombée rouge sur `cargo fmt --check` (long-line dans `bank_imports.rs`, fix trivial mais coûte un cycle CI complet).
+**Avant chaque `git push` qui ouvre ou met à jour une PR, lancer localement les mêmes contrôles que la CI.** Ne s'applique pas aux commits qui ne touchent aucun code exécutable (Markdown, YAML de planning, README, CLAUDE.md).
 
 ### Backend (Rust)
 
-À lancer depuis la racine du repo. Ces 4 checks sont **exactement** ceux de `Backend (Rust)` dans `.github/workflows/ci.yml`.
+Depuis la racine — exactement le job `Backend (Rust)` de `.github/workflows/ci.yml` :
 
 ```sh
 cargo fmt --all -- --check
 cargo build --workspace --all-targets
 cargo clippy --workspace --all-targets -- -D warnings
-cargo test --workspace
+cargo test --workspace            # la CI : -j1 -- --test-threads=1
 ```
 
-`scripts/test-fast.sh` lance `cargo nextest`, un processus par test ; la CI lance `cargo test`, un processus par binaire : ce qu'un test laisse dans l'état du processus ne se voit qu'en CI (17 tests rouges à la seule CI de la 0.17.4). `scripts/gate-ci.sh <base>` rejoue la commande de la CI dans un environnement fermé (`docs/ci.md`).
-
-Note : la CI utilise `cargo test --workspace -j1 -- --test-threads=1` pour serializer les tests d'intégration DB. En local sans MariaDB démarré, `cargo test --workspace` (parallèle) suffit pour couvrir les tests unitaires sans I/O ; lancer le mode serial uniquement si la modif touche `kesh-db` ou les tests d'intégration.
-
-#### Gate rapide — `cargo-nextest` (recommandé si MariaDB démarré)
-
-Alternative au `cargo test -j1 --test-threads=1`. Un script enveloppe fmt + clippy + nextest :
+#### Gate rapide — `cargo-nextest`
 
 ```sh
-scripts/test-fast.sh            # fmt + clippy + nextest (défaut)
-scripts/test-fast.sh --no-lint  # nextest seul (itération rapide)
-scripts/test-fast.sh --ci       # profil ci (retries=1, fail-fast off)
+scripts/test-fast.sh            # fmt + clippy + nextest (MariaDB de dev démarré)
+scripts/test-fast.sh --no-lint  # nextest seul
+scripts/test-fast.sh --ci       # profil ci
+scripts/gate-ci.sh <base>       # la commande de la CI, en environnement fermé (docs/ci.md)
 ```
 
-Pré-requis : `cargo install cargo-nextest` (ou binaire prébuilt `https://get.nexte.st`) + MariaDB dev démarré. Config dans `.config/nextest.toml`.
-
-**Le goulot n'a jamais été le CPU, mais MariaDB** — et il a été levé. Chaque test `#[sqlx::test]` créait une base éphémère et y **rejouait les migrations une par une** (DDL sérialisé par les metadata-locks) ; c'est cette contention qui a figé le plafond à **6 threads** (32 threads → 3 flakes `reconciliation_*_e2e` KF-038 #228 + tests « slow », run cassé), et qui limitait nextest à un gain modeste de 1,40× (mesuré 2026-07-13 : 54 min → 38 min, 1802 tests).
-
-**Depuis la Story 22-5 (issue #251), 1102 des 1145 attributs `#[sqlx::test]` montent le squash `crates/kesh-db/test-schema/`** — un batch DDL unique au lieu des 61 migrations. Mesuré le 2026-08-16, même machine, profil `ci`, 2209 tests, deux runs par état :
-
-| | run 1 | run 2 | moyenne |
-|---|---|---|---|
-| avant le squash | 3677 s | 4051 s | **64,4 min** |
-| après le squash | 1266 s | 1111 s | **19,8 min** |
-| + tmpfs de dev (T6) | 91 s | 89 s | **1,5 min** |
-
-Soit **3,25×** pour le squash, puis **13,2× de plus** pour le tmpfs — **42,8× au total**, l'heure devenue la minute et demie. Le tmpfs pèse donc plus lourd que le squash lui-même : la création d'une base éphémère était dominée par les `fsync`, et le squash réduisait le *nombre* d'opérations DDL sans toucher à leur coût unitaire. ⚠️ **La troisième ligne ne vaut que pour le poste de dev** — la CI n'a pas de tmpfs (`services:` de GitHub Actions ne permet pas de passer de `command:` à mariadbd).
-
-⚠️ Les 38 min du tableau de 2026-07-13 et les 64,4 min ci-dessus ne se contredisent pas : entre les deux, la suite a gagné 22,6 % de tests (1802 → 2209) et chaque test 19,6 % de migrations (51 → 61) — le produit vaut ×1,47 et explique l'essentiel de l'écart. Les 43 attributs restés sur le vrai `MIGRATOR` sont ceux qui testent **ce chemin lui-même** ; la liste est tenue en dur par `crates/kesh-db/tests/test_schema_guard.rs`, qui rougit dès qu'un test s'en écarte ou que le squash dérive du schéma réel.
-
-**Le plafond est passé de 6 à 8 threads le 2026-08-16** (décision de Guy), et cette fois **sur mesure** — sa justification d'origine ayant disparu avec le squash, et la vérification étant devenue assez bon marché pour être faite : trois runs de la suite complète, chacun précédé d'une remise à zéro de la base, coûtent dix minutes contre trois heures et demie auparavant.
-
-| threads | runs | moyenne | flakes |
-|---|---|---|---|
-| 6 | 91,1 s · 89,4 s | 90,2 s | KF-038 sur 1 run des 3 observés |
-| **8** | 76,8 s · 83,6 s · 81,2 s | **80,5 s** | 0 sur 3 runs |
-
-⚠️ **Ce que ces trois runs n'établissent PAS.** Zéro flake sur trois runs ne prouve pas l'absence de flake : à 6 threads, KF-038 ne s'était montrée que sur **un run des trois**. Trois runs propres à 8 sont donc compatibles avec un défaut de même fréquence resté silencieux — l'échantillon est du même ordre que le phénomène qu'il devrait détecter. **Le gain (≈ 12 %) est établi ; l'innocuité ne l'est pas.** Si un `reconciliation_*_e2e` rougit, commencer par le plafond de threads et traiter 8 comme la première hypothèse.
+- nextest lance un processus par test, la CI un par binaire : ce qu'un test laisse dans l'état du processus ne se voit qu'avec `gate-ci.sh`.
+- Les tests `#[sqlx::test]` montent le squash `crates/kesh-db/test-schema/`, sauf ceux qui testent le chemin des migrations ; la liste est tenue par `crates/kesh-db/tests/test_schema_guard.rs`.
+- `test-threads = 8` (`.config/nextest.toml`, décision de Guy du 2026-08-16). Son innocuité n'est pas établie : si un `reconciliation_*_e2e` rougit, soupçonner d'abord ce plafond.
 
 ### Frontend (Svelte)
-
-À lancer depuis `frontend/`. Mêmes étapes que `Frontend (Svelte)` dans la CI.
 
 ```sh
 cd frontend
@@ -181,464 +105,135 @@ npm run build
 
 ### E2E (Playwright)
 
-**La suite complète tourne EN LOCAL, avant tout `git push`** — au même titre que les gates backend et frontend. Elle n'est pas exécutée pendant l'itération : la doctrine reste le gate ciblé entre les passes, le gate complet au push.
+- **La suite complète tourne en local avant tout `git push`**, et au **dernier commit de code** de la story ; « rejouée au push » est interdit. Un commit qui ne touche que des comptes rendus ou de la documentation après l'E2E ne l'oblige pas à repasser.
+- **Montage** : `docs/testing.md` § *Prérequis Playwright local* fait foi. `KESH_COOKIE_SECURE=false` y est obligatoire (Playwright ne joint pas un cookie `Secure` sur `http://127.0.0.1`), ses valeurs factices ne se remplacent pas par des gabarits `<…>` (refusés au démarrage), et `KESH_TEST_MODE=true` se pose des deux côtés.
+- **« Vert » veut dire : seulement les échecs attendus** (sept de la KF-029, #97, plus zéro à deux échecs de pollution). Un rouge se juge fichier par fichier contre `docs/testing.md` § *Les échecs attendus*, jamais au nombre.
+- **La CI ne lance qu'un smoke** (`e2e-smoke`, `frontend/tests/e2e/smoke.spec.ts`, contre l'image Docker de la PR), requis pour la fusion (décision de Guy du 2026-10-24). Il vérifie que le harnais est vivant, pas les fonctionnalités.
+- **Avant de diagnostiquer, lire la doc du dépôt** ; ne jamais déclarer une hypothèse écartée sans l'avoir exécutée.
 
-```sh
-cd frontend
-npm run test:e2e
-```
+#### Recette visuelle
 
-Pré-requis : MariaDB démarré + seed CI appliqué + Playwright browsers installés (cf. `PLAYWRIGHT_HOST_PLATFORM_OVERRIDE=ubuntu24.04-x64` sur Ubuntu 26.04+ — limitation upstream Playwright ≤ 1.49).
-
-⚠️ **« Vert » ne veut pas dire 0 échec, et sans cette précision la règle ci-dessus est
-invérifiable.** La suite rend **7 à 9 échecs attendus** — sept de la KF-029 (#97), ouverte depuis
-avril, et **zéro à deux échecs qui changent d'identité d'un run
-à l'autre** — pollution d'état entre specs, et non défaut de la spec qui rougit. *(« 8 échecs » jusqu'au
-2026-10-14 : `docs/testing.md` est passé à « 7 à 10 » à la Story 28-8, ce paragraphe n'avait pas suivi ; « 7 à 10 », avec la KF-052, jusqu'au 2026-11-07, Story 33-9.)* La liste nominative, le motif de chacun et **la marche à suivre pour distinguer un échec
-connu d'une régression** sont dans `docs/testing.md` § *« Les échecs attendus »*. Un rouge ne se
-juge pas au nombre : il se juge fichier par fichier contre cette liste.
-
-#### ⚠️ `KESH_COOKIE_SECURE=false` est OBLIGATOIRE en local HTTP — sans lui, TOUTE la suite échoue en 401
-
-**Le montage qui marche**, vérifié le 2026-08-04 — recopié de `docs/testing.md` § *Prérequis Playwright local*, qui fait foi :
-
-```sh
-# terminal 1 — backend, servant aussi le frontend buildé
-mkdir -p /tmp/kesh-e2e/inbox /tmp/kesh-e2e/documents /tmp/kesh-e2e/backup
-KESH_TEST_MODE=true KESH_HOST=127.0.0.1 KESH_COOKIE_SECURE=false \
-  KESH_PORT=3000 KESH_STATIC_DIR=frontend/build \
-  KESH_INBOX_DIR=/tmp/kesh-e2e/inbox KESH_DOCUMENTS_DIR=/tmp/kesh-e2e/documents \
-  KESH_ADMIN_BACKUP_DIR=/tmp/kesh-e2e/backup \
-  KESH_ADMIN_USERNAME=admin KESH_ADMIN_PASSWORD=e2e-admin-password-12chars \
-  KESH_SMTP_HOST=smtp.invalid KESH_SMTP_USER=e2e \
-  KESH_SMTP_PASSWORD=e2e KESH_SMTP_FROM=kesh@example.invalid \
-  DATABASE_URL='mysql://kesh:kesh_dev@127.0.0.1:3306/kesh_e2e' \
-  KESH_JWT_SECRET='dev-secret-at-least-32-bytes-long-for-testing' \
-  cargo run -p kesh-api
-
-# terminal 2 — KESH_TEST_MODE aussi côté runner (xss-token-protection.spec.ts le lit)
-cd frontend
-KESH_TEST_MODE=true PLAYWRIGHT_HOST_PLATFORM_OVERRIDE=ubuntu24.04-x64 \
-  KESH_BACKEND_URL=http://127.0.0.1:3000 npm run test:e2e
-```
-
-⚠️ **Ces valeurs sont factices et c'est voulu — ne pas les remplacer par des gabarits.** Ce bloc portait `KESH_JWT_SECRET='<32+ octets>'` et `KESH_ADMIN_PASSWORD='<12+ caractères>'` : depuis la Story 15-11a, **toute valeur de la forme `<…>` est refusée au démarrage** (`is_template_placeholder`, `crates/kesh-api/src/config.rs`), si bien que la recette recopiée telle quelle ne démarrait plus. Il omettait aussi `KESH_INBOX_DIR`, `KESH_DOCUMENTS_DIR` et les quatre `KESH_SMTP_*`, sans lesquels cinq specs sans rapport avec la branche rougissent (`email-templates`, `reminders`, `dunning-roundtrip`, `invoice-send-email`, `inbox-import`). *(Corrigé le 2026-10-13, Story 28-0 — A-C6 de la rétrospective de l'Epic 15, B7 de celle de l'Epic 26.)*
-
-**Pourquoi**, à la ligne près — pour que personne ne re-diagnostique ce symptôme :
-
-```js
-// node_modules/playwright-core/lib/server/cookieStore.js:36
-matches(url) {
-  if (this._raw.secure && (url.protocol !== "https:" && !isLocalHostname(url.hostname)))
-    return false;                       // ← le cookie n'est PAS joint
-// node_modules/playwright-core/lib/server/network.js:62
-function isLocalHostname(hostname) {
-  return hostname === "localhost" || hostname.endsWith(".localhost");
-}
-```
-
-**`127.0.0.1` n'est PAS un « local hostname » pour Playwright.** Un cookie `Secure` sur `http://127.0.0.1` est donc rejeté par le `APIRequestContext` que crée `authedApiContext()` — alors que Chromium, lui, le tolère sur loopback. Résultat : le navigateur est authentifié, le contexte API ne l'est jamais, et **toute la suite** échoue en `401` avec `unauth: missing or malformed authorization` côté backend.
-
-⚠️ **`SameSite` n'y est pour rien** — `matches()` ne consulte que `secure`, `domain` et `path`. L'attribut `sameSite` est parsé mais jamais relu au filtrage. *(Diagnostic erroné produit puis réfuté le 2026-08-04, cf. plus bas.)*
-
-**La règle de méthode qui a manqué, et qui coûte cher :**
-
-1. **Chercher la doc du dépôt AVANT de diagnostiquer.** `docs/testing.md` § « Prérequis Playwright local » documentait ce piège **depuis juillet**, et `playwright.config.ts:20` y renvoie. Un montage a été reconstitué par tâtonnement à côté d'une recette existante et correcte.
-2. **Ne JAMAIS déclarer une hypothèse « écartée » sans l'avoir exécutée.** L'hypothèse « cookie `Secure` sur du HTTP » a été notée écartée alors que la suite n'avait **jamais** été relancée avec `KESH_COOKIE_SECURE=false` — seule la forme de l'en-tête avait été vérifiée au `curl`. Une issue, une story et un amendement de ce fichier ont été construits sur cette conclusion fausse ; c'est une revue adversariale, lisant le code source de Playwright, qui l'a réfutée.
-3. C'est la même faute que « ne déclarer que ce qui a tourné », appliquée au **diagnostic** au lieu du gate : *une hypothèse éliminée par raisonnement n'est pas une hypothèse testée.*
-
-**La CI n'exécute PAS la suite complète** (coût récurrent : MariaDB, seed, navigateurs, durée) — **mais elle exécute un SMOKE** : le job **`e2e-smoke`** de `.github/workflows/ci.yml` (Story 31-2) lance une seule spec, **`frontend/tests/e2e/smoke.spec.ts`** — connexion par l'interface, `GET /api/v1/auth/me` par `authedApiContext` (200), et la même route **sans** cookie (401 : la sonde négative, sans laquelle le 200 pourrait venir d'une route ouverte). Il tourne contre l'**image Docker de la PR** (binaire de production, frontend tel que servi, migrations au démarrage), base en utilisateur `kesh`, après le job `docker-build`. **Durée mesurée au premier run** (PR #702, 2026-10-23) : **16 min 29 s**, dont ≈ 10 min d'installation de Playwright et de ses dépendances système, ≈ 5 min de construction de l'image depuis le cache `gha`, et **≈ 4 s** pour la spec elle-même — le coût est l'outillage, non le test ; mettre les navigateurs en cache le réduirait (`docs/ci.md`). Il est **requis pour la fusion** depuis le 2026-10-24 (décision de Guy, rétrospective de l'Epic 31, Q6 : « il est garant, plus ou moins, qu'il n'y a pas de régression »), vert sur quatorze exécutions ; la protection de `main` exige désormais ses quatre jobs. Détail : `docs/ci.md`.
-
-*(Historique : du 2026-10-10 à la Story 31-2, ce paragraphe décrivait un smoke qui n'existait pas — `ci.yml` n'avait aucun job Playwright, issue #577. Le gate E2E local avant push était alors le seul filet ; il reste la seule couverture des fonctionnalités.)*
-
-⚠️ **Le smoke ne teste aucune fonctionnalité, et c'est délibéré : il vérifie que le HARNAIS EST VIVANT.** Les fonctionnalités restent couvertes par le gate local avant push.
-
-**Pourquoi les deux niveaux, et pas seulement le local.** Une règle qui repose sur la seule discipline de qui pousse a la même faiblesse que celle qui impose de « ne déclarer que ce qui a tourné » : on peut l'affirmer sans l'avoir fait. Et une story qui ne touche pas le frontend fait **légitimement** sauter les E2E — si le harnais casse à ce moment-là, personne ne le saura.
-
-**Précédent qui a motivé la règle (issue #285, 2026-08-04)** : `authedApiContext()` rendait un contexte **non authentifié** — le login pose des cookies `SameSite=Strict` qu'un contexte API, sans site initiateur, ne joint pas. **Toute la suite** était inopérante, et la panne n'a été découverte qu'à l'occasion d'une story sans rapport, parce que trois circonstances se cumulaient : la CI ne lançait pas les E2E, les tests manuels de Guy passent par un navigateur, et **rien ne signale une suite qui cesse de tourner**. Un test jamais lancé ne rougit pas — **il se tait**. C'est le mode d'échec du test muet, déjà payé sur `backfill_skips_archived_accounts` (16-1a) et reproduit sur les mutations de 16-2a, où quatre tests supprimés par mégarde ont rendu un impeccable « 16 passed, 0 failed ».
-
-⚠️ **Un E2E n'est pas un test comme un autre.** C'est le **seul** qui vérifie qu'une valeur traverse réellement la frontière HTTP : Vitest teste la construction du payload, les tests Rust la validation, et **ni l'un ni l'autre ne voit une clé qui disparaît entre les deux**. Le sauter n'a pas le même coût que sauter un test unitaire.
-
-#### Recette visuelle — les captures d'écran accompagnent tout contrôle visible
-
-**Règle** : toute story qui ajoute ou modifie un **contrôle visible** (bouton, avis, dialogue, colonne, état d'un écran) livre des **captures d'écran** de chaque état touché, prises sur une base de démonstration, et les joint à son Dev Agent Record et au prompt de la revue de code. **Thème clair seulement** : Kesh n'a pas de thème sombre (`frontend/src/lib/components/ui/sonner/sonner.svelte` : « mode-watcher supprimé — Kesh n'a pas de dark mode ») — les captures « sombres » exigées jusqu'à l'Epic 30 ne montraient que le thème clair. Les captures vivent hors du dépôt (`kesh-gate-logs/`), comme les rapports de passe.
-
-*Pourquoi* : un test vérifie qu'un élément existe, non qu'on le voit. Le bouton *Supprimer l'import* existait, testé, et Guy ne l'a pas vu (#640, Story 28-1) : le jeton de couleur des actions destructives n'était défini nulle part. *(Action B2 de la rétrospective de l'Epic 27, appliquée par les prompts depuis l'Epic 28, versée ici le 2026-10-23 sur décision de Guy — thème sombre retiré.)*
+Toute story qui ajoute ou modifie un **contrôle visible** (bouton, avis, dialogue, colonne, état d'un écran) livre des captures de chaque état touché, prises sur une base de démonstration, jointes à son Dev Agent Record et au prompt de la revue de code. Thème clair seulement : Kesh n'a pas de thème sombre. Les captures vivent hors du dépôt (`kesh-gate-logs/`). *Motif : un test vérifie qu'un élément existe, non qu'on le voit.*
 
 ### Pendant une boucle de revue — gate ciblé, gate complet au push
 
-**Le déclencheur du gate complet est le `push`, pas le commit.** Une boucle `bmad-code-review` produit 2 à 4 commits de patches, chacun local et invisible de l'extérieur ; y attacher un gate complet coûte **~1 h par passe** (mesuré : 59 min, 2102 tests) pour des patches qui touchent souvent un seul fichier. Entre les passes, lancer un **gate ciblé** :
+- **Entre deux passes**, un gate ciblé suffit :
+  ```sh
+  cargo fmt --all -- --check
+  cargo clippy --workspace --all-targets -- -D warnings
+  cargo nextest run -E 'binary(<le binaire de test touché>)'
+  ```
+- **Le gate complet est obligatoire** avant tout `git push`, avant de déclarer une story `done`, et au dernier commit d'une boucle de revue.
+- **Exception `kesh-db`** : dès qu'un patch touche `crates/kesh-db/migrations/`, `post_restore.rs` ou un repository, gate complet même en cours de boucle.
+- **Le story file n'affirme que ce qui a tourné** : écrire « gate ciblé `binary(x)` vert, gate complet au push » quand seul le binaire ciblé a tourné.
 
-```sh
-cargo fmt --all -- --check
-cargo clippy --workspace --all-targets -- -D warnings
-cargo nextest run -E 'binary(<le binaire de test touché>)'   # le rayon d'impact
-```
+### Base de gate
 
-`fmt` et `clippy` restent sur le **workspace entier** — ils coûtent ~1 min et c'est précisément ce qui, sur la Story 16-1d, a fait échouer un gate complet en `exit 101` (`clippy::cmp_owned`) **au bout des 59 minutes**. Les passer en pré-vol est le geste le moins cher du dépôt.
+- **Remettre la base à zéro avant tout gate complet**, sans condition, et avant de diagnostiquer tout rouge sur des tests que la branche ne touche pas (un gate, même terminé en vert, peut laisser des résidus) :
+  ```sh
+  docker compose -f docker-compose.dev.yml restart mariadb   # depuis le dépôt principal ; tmpfs : efface tout
+  sqlx migrate run --source crates/kesh-db/migrations
+  docker exec -i kesh-mariadb-dev mariadb -uroot -pkesh_dev_root kesh < scripts/seed-dev-db.sql
+  ```
+- **`docker compose` sur ce conteneur se lance depuis le dépôt principal, jamais depuis un worktree** (le montage des droits est relatif). En travail parallèle, un agent ne redémarre ni ne recrée le conteneur : il travaille sur ses bases `kesh_<clé>` (`docs/agents-orchestration.md`, `docs/testing.md` § *Base de dev jetable*).
 
-Le gate **complet** reste obligatoire : avant tout `git push`, avant de déclarer une story `done`, et au dernier commit d'une boucle de revue.
+### CI et commits de documentation
 
-⛔ **L'E2E complet tourne au DERNIER COMMIT DE CODE de la story — « rejouée au push » est interdit.** Sur l'Epic 25, trois stories (25-4-c4-a, c4-b, e) ont déclaré leur E2E « rejouée au push » : leur dernier commit de code n'avait pas d'E2E complet, et une quatrième (d2c) l'avait tourné avant d'ajouter des tests. Un commit qui ne porte que des comptes rendus ou de la documentation après l'E2E ne l'oblige pas à repasser ; un commit qui touche du code, si. *(Décision D7 de Guy, rétrospective de l'Epic 25, 2026-10-06.)*
+- Les quatre jobs (`backend`, `frontend`, `docker-build`, `e2e-smoke`) tournent sur les PR vers `main` et `epic/**` et sur `push` vers `main`, quel que soit le fichier touché — sauf une PR dont le diff ne nomme **que** `_bmad-output/` (filtre `scripts/ci-seuls-artefacts.sh`, qui échoue fermé ; `docs/ci.md`).
+- Un commit de documentation est donc gratuit en local mais coûte un cycle de CI : les regrouper, ou les faire voyager avec la PR qui les motive.
 
-**Deux réserves, sans lesquelles la règle se retourne contre nous** :
+## Plafonds mémoire
 
-- **Le story file ne doit affirmer que ce qui a tourné.** Pas de « gate vert, N/N » dans un Dev Agent Record ou un Change Log si seul le binaire ciblé a été exécuté — écrire alors « gate ciblé `binary(x)` vert, gate complet au push ». C'est la contrepartie non négociable : les passes de revue suivantes **lisent ce record et le prennent pour argent comptant**, et une passe adversariale menée sur une base faussement déclarée verte ne mesure plus rien.
-- **Exception `kesh-db` : gate complet même en cours de boucle.** Dès qu'un patch touche `crates/kesh-db/migrations/`, `post_restore.rs` ou un repository, le ciblage est interdit. C'est exactement ce que codifient les garde-fous **P6** et **P7** de la § « Migration breaking policy » : ces modes d'échec ne naissent ni du code écrit ni de la spec, mais de l'**interaction** avec des tests que la PR ne touche pas, et **seul le gate réellement exécuté les révèle**. Précédent Story 16-1a : `backfill_skips_archived_accounts` s'est mis à **passer à vide** — un test muet ne signale rien, et aucun gate ciblé ne l'aurait vu.
+- **Tout travail lourd sur la station passe par `scripts/mem-guard.sh`** (cgroup borné) ; `scripts/test-fast.sh` le fait déjà. Il délègue à l'outil global `mem-guard` (`~/.local/bin`) : 10G + 1G de swap par exécution, deux exécutions à la fois sur toute la station.
+  ```sh
+  scripts/mem-guard.sh --protect-shell        # une fois par nouvelle fenêtre
+  scripts/mem-guard.sh cargo build --workspace --all-targets
+  scripts/mem-guard.sh npm --prefix frontend run test:unit
+  scripts/mem-guard.sh --status               # état, politique oomd, derniers OOM
+  ```
+  *Motif : sans plafond, oomd tue l'onglet entier, session de travail comprise.*
+- **Tout gate lourd prend aussi le verrou** `flock <kesh-gate-logs>/.gate.lock`.
+- **Avant d'incriminer le gate en cours d'un OOM**, lire `scripts/mem-guard.sh --status` et `ps -eo pid,rss,args --sort=-rss | head` : la pression vient souvent d'une autre fenêtre.
+- **Ne pas activer `MemoryHigh`** sans refaire la mesure : il étrangle sans tuer.
+- **Réglages de parallélisme** : `[build] jobs = 4` et mold `--thread-count=4` (`.cargo/config.toml`, qui écrase celui de la station : toute modification de la station s'y répercute), `[profile.dev] debug = "line-tables-only"` (pour un débogage pas à pas : `CARGO_PROFILE_DEV_DEBUG=full`), vitest `maxWorkers: 4`, nextest `test-threads = 8` (borné par MariaDB, pas par la mémoire).
+- Lire `memory.stat/anon`, pas `memory.peak` (qui compte le cache de pages), pour juger d'un besoin en mémoire.
 
-*(codifié 2026-08-03, arbitrage de Guy pendant la boucle de revue de la Story 16-1d.)*
+### Worktrees et agents
 
-### Quand sauter
-
-Cette règle ne s'applique pas aux **commits doc-only** (markdown, yaml de planning, README, CLAUDE.md lui-même) qui ne touchent pas de code exécutable : il n'y a rien à y casser localement.
-
-⚠️ **En revanche, la CI n'est PAS no-op sur un commit doc-only, et cette phrase disait le contraire.** `.github/workflows/ci.yml` n'a **aucun filtre `paths:`** — vérifié : ses déclencheurs sont `push: branches: [main]` et `pull_request: branches: [main]`, sans restriction de chemin. Les **quatre** jobs (`backend`, `frontend`, `docker-build`, `e2e-smoke` — trois jusqu'à la Story 31-2) s'exécutent donc à chaque push, quel que soit le fichier touché, et `Backend (Rust)` y enchaîne `cargo fmt`, `cargo build --workspace --all-targets`, `cargo clippy --workspace --all-targets`, `cargo publish --dry-run -p kesh-import` puis la suite complète en `-j1 --test-threads=1`.
-
-⛔ **Le cache `Swatinem/rust-cache` réduit la compilation, il ne supprime rien** — et il rate dès que `main` a bougé. Mesuré le 2026-08-30 sur la PR #423, dont le diff ne portait que deux fichiers Markdown et un YAML de planning : `Backend (Rust)` a dépassé **dix minutes**, les deux autres jobs étant verts en quelques-unes. *(Relevé du 2026-08-30, laissé tel quel ; depuis la Story 31-2 un quatrième job, `e2e-smoke`, s'y ajoute — annotation du 2026-10-23.)*
-
-⚠️ **Annoté le 2026-11-07, Story 33-11 (#928)** : ce qui précède vaut pour la documentation, non pour `_bmad-output/` : une PR dont le diff ne nomme **que** `_bmad-output/` **doit** sauter les quatre jobs (`scripts/ci-seuls-artefacts.sh`, lancé par le job `changes`, dont les conditions des quatre jobs lisent la sortie ; `docs/ci.md`) — le cas nominal reste à relever, sur la PR de la rétrospective de l'Epic 33 (relevé (c) de l'AC-6) ; ce qui est relevé, sur la PR #965 de la 0.17.5, c'est que le filtre échoue fermé : en échec, annulé ou au délai dépassé, il ne fait sauter aucun des quatre jobs (runs 42402136024, 42406580735, 42406684036). Manuels, `docs/`, `README.md`, `CHANGELOG.md`, `CLAUDE.md` et `website/` en restent exclus, parce que des tests les lisent ; un `push` sur `main` lance toujours tout. La PR #423 citée ci-dessus, qui portait du Markdown hors de ce dossier, n'aurait pas été entièrement filtrée.
-
-**Ce que cela change en pratique** : un commit doc-only reste **gratuit en gate local** — c'est le sens de cette section, et il ne bouge pas — mais il **coûte un cycle de CI complet**. En conséquence, éviter d'en multiplier sur une même branche : les regrouper, ou les faire voyager avec la PR qui les motive.
-
-*(Corrigé le 2026-08-30, sur remarque de Guy. La formulation d'origine — « généralement no-op, cache hit instantané » — laissait croire qu'un commit de documentation ne déclenchait rien ; il déclenche tout.)*
-
-## Plafonds mémoire — pourquoi une session de travail meurt en plein gate
-
-**Règle** : sur la station de dev, lancer tout travail lourd (gate backend, build workspace, suite vitest, E2E) via `scripts/mem-guard.sh`, qui l'exécute dans un cgroup à mémoire bornée. `scripts/test-fast.sh` le fait déjà tout seul.
-
-**Plusieurs worktrees en parallèle** : le plafond borne un gate, pas la somme de plusieurs — tout gate lourd passe en plus par le **verrou** `flock <kesh-gate-logs>/.gate.lock`, et les agents suivent les consignes communes de `docs/agents-orchestration.md` (base, port et cible cargo par worktree, interdits, registre des choix par union). ⛔ **Un agent n'écrit jamais hors de son worktree** (et de `kesh-gate-logs/`), toujours en chemin absolu : le dépôt principal est en lecture seule pour lui, et ses fichiers non versionnés n'ont pas de copie — le 2026-10-24, un `cd` échoué suivi d'écritures relatives a écrasé le `.env` du dépôt principal, perdu (`docs/agents-orchestration.md` § 2). **Un worktree se retire à la clôture de sa story ; sa branche reste** (`git worktree remove`, après un `git status --porcelain` vide) : chacun garde 20 à 50 Go de cible cargo, et dix worktrees oubliés ont saturé le disque de la station (149 Mo libres) en plein gate de la 31-3. *(Rétrospective de l'Epic 31, § 4.2 et § 4.3.)* *(Amendé le 2026-11-14, décision de Guy, rétrospective de l'Epic 35, Q9 : la règle disait « dès que sa PR est fusionnée » ; sur l'Epic 35, toutes les stories ont été réunies dans la seule branche de release, aucune PR intermédiaire ne l'a déclenchée, et dix-neuf worktrees ont porté le disque à 98 %.)*
-
-**Plusieurs projets en parallèle** : depuis le 2026-10-27, `scripts/mem-guard.sh` délègue à l'outil **global** de la station, `mem-guard` (`~/.local/bin`, `mem-guard --help`), partagé par tous les projets. Il plafonne chaque exécution à **10G + 1G de swap** et n'en laisse tourner que **deux à la fois sur toute la station** ; la suivante attend une place. Le verrou `.gate.lock` sérialise les gates de kesh, et les places de `mem-guard` bornent la somme des projets. Ce jour-là, deux sessions d'un autre projet (mybibli) ont été tuées par oomd pendant qu'un gate kesh tournait sous plafond : chaque projet bornait ses propres gates, mais rien ne bornait leur total. Sans l'outil global, le script retombe sur son plafond local (12G + 2G), sans limite de simultanéité.
-
-```sh
-scripts/mem-guard.sh --protect-shell        # une fois par nouvelle fenêtre/onglet
-scripts/mem-guard.sh cargo build --workspace --all-targets
-scripts/mem-guard.sh npm --prefix frontend run test:unit
-scripts/test-fast.sh                        # déjà sous plafond, rien à faire
-scripts/mem-guard.sh --status               # état, politique oomd, derniers OOM
-```
-
-### Le mode d'échec, qui n'est pas celui qu'on croit
-
-Ce n'est pas « le build consomme trop ». C'est **qui meurt**.
-
-`systemd-oomd` surveille la tranche `user@1000.service` et, dès que sa *pression mémoire* dépasse 50 % pendant 20 s, il tue **le cgroup descendant qui recycle le plus de pages**. Or un onglet de terminal est **un seul cgroup**, qui contient l'agent de travail **et** tous ses enfants : `cargo`, `rustc`, `mold`, `node`, `chromium`. Le gate et la session qui l'a lancé sont donc dans la même boîte : quand oomd frappe, il emporte les deux, et tout le contexte de travail avec.
-
-Trois conséquences qui se déduisent mal :
-
-- **La victime n'est pas forcément la fautive.** Plusieurs fenêtres travaillant en parallèle sur des projets différents additionnent leur pression sur la même tranche utilisateur. Le 2026-08-11, deux OOM en six minutes (12:57, scope à 18,3 Go ; 13:03, scope à 9 Go) : la cause réelle était un `lualatex` emballé — 7 Go puis 16,7 Go en cent secondes — lancé depuis une **autre** fenêtre, sur un **autre** projet. Avant d'incriminer le gate en cours, lire `scripts/mem-guard.sh --status` et `ps -eo pid,rss,args --sort=-rss | head`.
-- **Baisser `jobs` ne borne rien.** C'est une réduction de probabilité, pas une garantie : 4 `rustc` peuvent tenir 12 Go à eux seuls, et un seul processus emballé suffit. Seul un plafond de cgroup est une borne.
-- **Un plafond ne sert pas à faire échouer le build, mais à choisir le mort.** Sous `mem-guard`, le pic tue le gate (code 137) et laisse vivre le terminal. Un gate qu'on relance coûte des minutes ; une session perdue coûte tout son contexte.
-
-### `MemoryHigh` est un piège — mesuré, pas supposé
-
-L'étranglement doux (`MemoryHigh`) semble le réglage souhaitable : recycler dans le scope plutôt que tuer. **Il est nuisible ici.** Mesures du 2026-08-11, allocation de 4 Go sous plafond de 512 Mo :
-
-| Réglage | Résultat |
-|---|---|
-| `MemoryHigh=384M` `MemoryMax=512M` `swap=0` | aucune progression en 120 s — étranglé, jamais tué |
-| `MemoryHigh=448M` `MemoryMax=512M` `swap=256M` | idem (timeout) |
-| `MemoryHigh=infinity` `MemoryMax=512M` `swap=0` | **137 en 2 s**, net |
-| `MemoryHigh=infinity` `MemoryMax=512M` `swap=256M` | **137 à ~768 Mo**, net |
-
-Le noyau pénalise chaque allocation d'un sommeil proportionnel au retard du recyclage : un build qui franchit le seuil ne tombe pas, il **rampe**, en gardant sa mémoire et en continuant d'alimenter la pression qu'oomd mesure. On obtient un gate qui paraît figé **et** une station toujours sous tension. `mem-guard.sh` laisse donc `MemoryHigh` à `infinity` par défaut ; ne pas le réactiver sans refaire la mesure.
-
-### Réglages de parallélisme, et le piège de précédence
-
-| Site | Valeur | Ce qu'elle borne |
-|---|---|---|
-| `.cargo/config.toml` → `[build] jobs` | 4 | processus `rustc` simultanés (~2 Go pièce sur les gros crates) |
-| `.cargo/config.toml` → `--thread-count=4` (mold) | 4 | threads internes de l'éditeur de liens |
-| `Cargo.toml` → `[profile.dev] debug` | `line-tables-only` | volume de DWARF construit puis recopié dans chaque binaire de test |
-| `frontend/vite.config.ts` → `maxWorkers` | 4 | processus Node+jsdom de vitest (défaut : **31** ici) |
-| `.config/nextest.toml` → `test-threads` | 8 | binaires de test simultanés — plafond fixé par la contention MariaDB, pas par la RAM ; ne pas le changer pour des raisons de mémoire (porté de 6 à 8 le 2026-08-16, sur mesure — cf. § *Gate rapide* et sa réserve sur l'innocuité) |
-
-⚠️ **Le `.cargo/config.toml` du projet ÉCRASE celui de la station** (`~/.cargo/config.toml`). Cargo ne fusionne pas les valeurs scalaires : le fichier le plus proche du projet gagne. Le `jobs = 4` global posé sur la station après le diagnostic du 2026-07-23 était donc **sans effet dans ce dépôt** — seul de tous les projets Rust de la machine, il compilait à 8. C'est un mode d'échec silencieux : le réglage existe, il est correct, et il ne s'applique pas. Toute modification du `jobs` de la station doit être répercutée ici.
-
-⚠️ **`[profile.dev] debug = "line-tables-only"`** conserve fichier et ligne dans les backtraces de panic et d'échec de test — l'usage réel. Ce qu'on perd, c'est l'inspection des variables sous gdb/lldb. Pour une session de débogage pas-à-pas, surcharger ponctuellement sans toucher au fichier : `CARGO_PROFILE_DEV_DEBUG=full cargo test -p kesh-core <test>`.
-
-### Ce qui a été mesuré, et ce qui ne l'a pas été
-
-Sur la station (32 cœurs, 30 Go), après application des réglages ci-dessus :
-
-| Gate | Résultat |
-|---|---|
-| `cargo build --workspace --all-targets` **à froid** sous plafond 8 Go | vert — 414 crates, 129 binaires de test, 0 erreur |
-| `cargo fmt --check` + `cargo clippy --workspace --all-targets -D warnings` | vert, 0 warning — **pic de mémoire anonyme : 1,9 Go** |
-| `npm run test:unit` sous plafond 4 Go | vert — 63 fichiers, 512 tests, 23 s |
-
-⚠️ **Ne pas lire `memory.peak` comme une consommation.** Le relevé brut du cgroup de build affichait 8 Go, soit exactement le plafond — mais `memory.peak` compte **le cache de pages**, et ce build écrit 12 Go dans `target/`. Le cache est recyclable : le noyau l'a simplement rendu, sans jamais tuer. La grandeur qui décrit le besoin réel est `memory.stat/anon`, d'où les 1,9 Go ci-dessus. Confondre les deux fait conclure à une saturation là où il n'y en a pas.
-
-**Non mesuré** : `cargo nextest run` complet et la suite Playwright n'ont pas été rejoués sous plafond (ils exigent MariaDB et le seed). Les plafonds les couvrent par construction, mais aucun chiffre n'est déclaré pour eux.
-
-### En CI, rien de tout ceci ne s'applique
-
-`mem-guard.sh` détecte l'absence de systemd utilisateur et exécute la commande telle quelle, avec un avertissement — il n'échoue jamais pour la seule raison qu'il ne peut pas poser de plafond. Les plafonds de parallélisme (`jobs = 4`, `maxWorkers: 4`), eux, sont versionnés et donc actifs en CI, où ils sont de toute façon adaptés aux runners `ubuntu-latest` à 4 cœurs.
-
-*(codifié 2026-08-11, après deux OOM ayant emporté des sessions Claude Code en cours de story 16-3b.)*
+- **Un agent n'écrit jamais hors de son worktree** (et de `kesh-gate-logs/`), toujours en chemin absolu ; le dépôt principal est en lecture seule pour lui. Consignes communes : `docs/agents-orchestration.md`.
+- **Un worktree se retire à la clôture de sa story** (`git worktree remove`, après un `git status --porcelain` vide) ; sa branche reste (décision de Guy du 2026-11-14). Chacun garde 20 à 50 Go de cible cargo.
 
 ## Review Iteration Rule
 
-**Règle de remédiation des revues (code review et spec validate)** :
+S'applique à `bmad-create-story validate`, à `bmad-code-review` et à toute revue adversariale du même genre.
 
-Tant qu'une passe de revue remonte **au moins un finding de sévérité supérieure à LOW** (c'est-à-dire `CRITICAL`, `HIGH`, ou `MEDIUM`), on **relance une nouvelle passe de revue** après application des patches. Le critère d'arrêt est :
+- **On relance une passe tant qu'une passe rend un finding au-dessus de LOW** (CRITICAL, HIGH, MEDIUM), patches appliqués avant la passe suivante. Arrêt : une passe qui ne rend **aucun** finding au-dessus de LOW — même un MEDIUM corrigé hors production appelle une passe de plus (décision de Guy du 2026-10-23) — ou **8 passes**.
+- **Contexte frais à chaque passe, et modèle différent** de la passe précédente : Sonnet ↔ Opus pour les passes complètes ; **Haiku seulement pour une passe ciblée** ; **une première passe n'est jamais ciblée** et ne va jamais à Haiku (décisions de Guy des 2026-10-06 et 2026-10-24).
+- **Change Log final** (une entrée, pas une par passe) : tendance des findings par passe, modèles employés, reclassements.
+- **Exception** : un finding MEDIUM+ reclassé en dette documentée (section `Security debt`, `Performance debt` ou équivalente), avec propriétaire et story de remédiation planifiée, compte comme résolu.
 
-- **Uniquement des findings de sévérité `LOW`** (nits cosmétiques, améliorations de lisibilité, documentation mineure), OU
-- **Maximum 8 passes atteint** (limite de budget LLM)
+### La passe ciblée
 
-Pour chaque nouvelle passe de revue sur la même story :
-- **Utiliser un LLM différent** de la passe précédente si possible (cycle Sonnet → Haiku → Opus → Sonnet, validé empiriquement Epic 9 retrospective Insight I1 sur 3 cycles complets), afin de contourner le biais d'auteur sur les patches qu'on vient d'appliquer. Les régressions introduites par la remédiation ne sont souvent détectables que par un modèle orthogonal.
-  ⛔ **Haiku est réservé aux PASSES CIBLÉES** (une lentille, braquée sur la dernière remédiation) : plus de passe de validation ni de revue de code **complète** confiée à Haiku. Sur l'Epic 25, ses passes larges ont rendu **au moins 17 « 0 » non étayés** ou axes faussement déclarés exercés — chaque fois repris par l'orchestrateur, qui y a trouvé des défauts réels, dont un HIGH — et plusieurs « erreurs de catégorie » ; ses passes ciblées, elles, ont été justes. La rotation devient donc Sonnet ↔ Opus pour les passes complètes, Haiku pour la passe ciblée de fin de boucle. *(Décision D6 de Guy, rétrospective de l'Epic 25, 2026-10-06.)* **Une première passe n'est jamais ciblée** : la P1 d'une fiche neuve ou d'une revue de code va à Sonnet ou à Opus, jamais à Haiku. *(Décision de Guy du 2026-10-24, rétrospective de l'Epic 31, Q8 — précédent : la 31-3.)*
-- **Fenêtre de contexte fraîche** — ne pas réutiliser le contexte de la passe précédente.
-- **Patches appliqués avant passe N+1** : chaque finding trouvé en passe N est remédié avant relancer la passe N+1.
-- **Documenter dans le Change Log final** (pas une entrée par passe) : résumé du trend numérique (passe 1: X findings → passe 2: Y → ... → passe N: 0 > LOW), modèles LLM utilisés, décisions de reclassement.
+- Quand une boucle converge, la passe suivante peut être une **passe ciblée** : une seule lentille, en contexte frais, sur **le seul commit de la dernière remédiation**. *Motif : la sévérité se déplace vers ce qu'on vient d'écrire.*
+- **À employer** quand la sévérité est retombée, ou ne vient plus que du patch précédent, et que la remédiation touche du code. **Ne suffit pas** si le patch touche plusieurs modules ou change une règle métier : reprendre le protocole complet.
+- **Une boucle ne se clôt pas tant que la dernière remédiation touche du code de production** ; et elle ne se clôt que sur une passe sans finding au-dessus de LOW.
+- **Le prompt de la lentille se versionne** à côté du story file.
+- **Les remédiations de l'orchestrateur suivent la même boucle** que celles d'un agent : il lit au code la prémisse du finding (source d'une dépendance comprise, même pour un LOW), puis sa remédiation passe sous une passe ciblée.
+- **À l'approche du plafond**, retirer ou renvoyer au développement plutôt que corriger : une remédiation écrite après la dernière passe n'est relue par personne. **Dès la sixième passe, l'orchestrateur ne remédie plus lui-même.** Une validation peut se clore au plafond sur des MEDIUM corrigés sans passe de plus si leur recontrôle se fait à l'étape 0 du développement et se déclare au Change Log, ligne lue citée (décision de Guy du 2026-10-24).
 
-**Boucle automatique** :
-- `bmad-create-story validate` : relancer automatiquement en boucle après chaque passe (LLM différent, patches appliqués, contexte frais) jusqu'à atteindre 0 CRITICAL/HIGH/MEDIUM OU 8 passes.
-- `bmad-code-review` : appliqué après implémentation (`dev-story` complétée), même boucle.
+### Le prompt d'une passe doit NOMMER le manuel
 
-Cette règle s'applique à :
-- `bmad-create-story validate` (revue de spec multi-passes)
-- `bmad-code-review` (revue de code adversariale)
-- Toute revue adversariale similaire où le budget LLM le permet
+Tout prompt de passe portant sur du code visible de l'utilisateur inscrit parmi ses axes la vérification du manuel (`docs/manual/`) contre le code, **PDF compris**, aplati avant de greper : `pdftotext f.pdf - | tr '\n' ' ' | tr -s ' '`. *Motif : aucune passe ne lit le manuel si on ne le lui demande pas, et c'est là que se voient les écarts.*
 
-**Exception** : si un finding `MEDIUM+` est explicitement reclassé en **dette technique documentée** (dans une section `Security debt` / `Performance debt` / équivalente du story file ou des Dev Notes) avec un propriétaire et une story de remédiation planifiée, il compte comme « résolu » pour cette itération.
+### Une passe déclare ses axes exercés
 
-### La passe ciblée — une seule lentille, braquée sur la dernière remédiation
+- Tout prompt de passe exige la liste des axes **exercés et non exercés**. Un « 0 finding » sans cette liste ne compte pas comme passe.
+- L'orchestrateur vérifie un « 0 finding » comme un finding : il reprend lui-même les axes déclarés non exercés.
+- Les interdits d'un prompt nomment les **commandes** qui écrivent (`scripts/prepare-release.sh` et tout script mutant), pas seulement « n'écris aucun fichier ».
 
-**Règle** : quand une boucle de revue converge, la passe suivante peut être une **passe
-ciblée** — **une seule lentille**, en contexte frais, braquée sur **le seul commit de la
-remédiation précédente**, avec son prompt versionné à côté du story file. Elle remplace
-alors le protocole à trois lentilles sur le périmètre complet.
+### Inventorier les sites NON RÉSOLUS
 
-**Le motif qui la justifie, et il est mesuré** : *la sévérité ne stagne pas, elle se
-déplace vers ce qu'on vient d'écrire.* Sur l'Epic 22, **deux CRITICAL de la 22-2 ont été
-INTRODUITS par une remédiation**, aucun ne venait de la spec ; la passe 3 a trouvé un
-défaut créé par la passe 2, la passe 4 un défaut créé par la passe 3, et la passe 5 une
-garde posée par la passe 4 que rien n'exerçait. Sur l'Epic 23, le motif s'est aggravé :
-**sur les huit passes cumulées de la 23-1a et de la 23-1b, SEPT ont trouvé une régression
-du patch précédent et AUCUNE un défaut de la conception d'origine.**
+Pour prouver qu'une classe de défauts est fermée, inventorier **l'ensemble clos des sites qui ne résolvent pas**, chacun résolu ou écrit comme angle mort assumé — et non énumérer les formes traitées. Une assertion dont les deux côtés sortent du même extracteur est vraie par construction et ne prouve rien.
 
-**Donc : quand une boucle converge, ce qu'il reste à relire n'est plus la story — c'est la
-dernière remédiation.** Y braquer une lentille coûte environ le tiers d'une passe complète
-et vise l'endroit exact que personne n'a relu.
+### Propagation post-patch — grep du symptôme
 
-**Quand l'employer** :
+- Après un patch de remédiation et avant la passe suivante, **greper le symptôme corrigé sur tout le dépôt** (code, fiches, doc-comments, tests, i18n des quatre locales, fallbacks Svelte, manuels) et traiter tous les sites dans le même patch.
+- **Greper la valeur, pas la formulation** : pour un nombre, une version ou un identifiant, le jeton (`\b25\b`, `\b0\.8\.0\b`). Un grep vide sur un symptôme qu'on vient de corriger éveille le soupçon.
 
-- la sévérité est retombée à 0 au-dessus de LOW, ou n'a plus rien trouvé qui ne vienne du
-  patch précédent ;
-- **et** la remédiation à relire touche du code, non seulement des comptes rendus.
+### Recompter
 
-**Quand elle ne suffit PAS** : si le patch précédent touche plusieurs modules ou change une
-règle métier, reprendre le protocole complet. La passe ciblée est un instrument de fin de
-boucle, pas une économie de passes.
+- Tout **décompte** écrit dans un Change Log, un Dev Agent Record ou un rapport de passe se **recompte depuis la source**, avec son **périmètre** (de quelle borne à quelle borne). Un total est cohérent avec sa ventilation.
+- **Recompter n'est pas réécrire l'historique** : une nouvelle valeur va dans l'entrée vivante, jamais dans l'entrée d'une passe passée ; celle-ci ne se corrige que si elle était fausse à sa date, par une annotation datée.
 
-⚠️ **Ce qui permet de CLORE la boucle après elle** : que la remédiation qu'elle produit ne
-touche **aucune ligne de code de production**. C'est ce qui s'est vérifié en passe 5 de la
-22-2b — la fonction litigieuse vivait dans `mod tests`, les trois autres fichiers étaient
-deux `.test.ts` et un banc. Le motif « la remédiation introduit le défaut suivant » n'avait
-plus de prise. **Tant que le correctif touche la production, la boucle n'est pas close.**
+### Haiku-specific guardrails — grep ground-truth
 
-⛔ **Et, depuis le 2026-10-23, une boucle ne se clôt que sur une passe qui ne rend AUCUN finding au-dessus de LOW.** Une passe — ciblée ou complète, de validation ou de revue de code — qui rend un MEDIUM appelle une passe de plus, **même si ce MEDIUM est remédié sans toucher la production**, et même s'il ne porte que sur la rédaction d'une fiche. La condition ci-dessus (remédiation hors production) reste nécessaire ; elle n'est plus suffisante. *Décision Q3 (c) de Guy, rétrospectives des Epics 29 et 30 : sept validations sur huit de l'Epic 29, et la revue de la 30-3, s'étaient closes sur une passe qui rendait encore un MEDIUM, ce que la clause précédente permettait toujours pour une fiche.* Le plafond de 8 passes reste le garde-fou de budget.
+Pour tout finding CRITICAL ou HIGH qui affirme l'absence d'un code attendu ou la présence d'un anti-pattern, **vérifier avant de le traiter comme réel** — pour tous les modèles, Haiku étant le cas connu (indexation des diffs multi-commits) :
 
-⛔ **Une remédiation de l'orchestrateur suit la même boucle que celle d'un agent — il n'a aucun privilège de justesse.** Il lit au code la prémisse du finding qu'il applique (la source d'une dépendance comprise, même pour un LOW), puis sa remédiation passe sous une passe ciblée comme une autre. *Précédent, Epic 31 : quatre défauts introduits par ses remédiations directes — 31-1 validation P5 (une entrée `files/` retirée sur la foi d'un LOW, sans lire `zip-2.4.2` → HIGH), P6 (`pub(crate)` invisible des tests d'intégration → HIGH), P7 (un type inexistant → MEDIUM), 31-4 P6 (un critère inatteignable → MEDIUM) —, plus un commit retiré en revue (`9c59dec4`) ; les passes P6 à P8 de ces deux validations n'ont trouvé que ses propres défauts.* ⚠️ **Une remédiation écrite après la dernière passe permise n'est relue par personne** : à l'approche du plafond, retirer ou renvoyer au développement vaut mieux que corriger une fois de plus ; ce qui reste se recontrôle à l'étape 0 du développement, ligne lue citée au Change Log. *(Rétrospective de l'Epic 31, § 4.1 et § 4.6.)* **Une validation peut se clore au plafond de huit passes sur des MEDIUM corrigés sans passe de plus, à deux conditions écrites** : le recontrôle se fait à l'étape 0 du développement et se déclare au Change Log, ligne lue citée ; et, **dès la sixième passe, l'orchestrateur ne remédie plus lui-même** — il retire, ou renvoie au développement. *(Décision de Guy du 2026-10-24, rétrospective de l'Epic 31, Q2.)*
+- motif sur une ligne : `grep -nF "<chaîne>" <fichier>` (`-F` obligatoire) ; motif sur plusieurs lignes : une ligne discriminante, ou `grep -nFA <N>` ;
+- flux sur plusieurs fonctions ou fichiers : lecture directe, extrait cité au Change Log ;
+- finding réfuté : écarté comme faux positif, consigné au Change Log.
 
-⚠️ **Le prompt de la lentille se VERSIONNE**, à côté du story file
-(`22-2b-review-prompt-regression-hunter-p5.md` est le précédent). Une passe qui ne suit pas
-le protocole standard doit laisser de quoi la rejouer et la contester — sans quoi son
-verdict n'est plus vérifiable, et une passe non vérifiable ne vaut pas mieux qu'une passe
-non faite.
-
-*(Inventée en passe 5 de la 22-2b sur arbitrage de Guy ; employée depuis en passe 4 de la
-23-1a. Codifiée le 2026-08-25 — action A9 de la rétrospective de l'Epic 22, signalée à
-trois revues de projet consécutives avant de l'être. ⚠️ Elle s'était transmise par le
-contexte de travail et non par ce fichier : un geste qui ne vit que dans une session se
-perd avec elle.)*
-
-### Le prompt d'une passe doit NOMMER le manuel — sinon personne ne l'ouvre
-
-**Règle** : tout prompt de passe de revue portant sur du code visible de l'utilisateur doit inscrire, parmi ses axes, la vérification du **manuel** (`docs/manual/`) contre le code — et exiger que le **PDF** soit contrôlé, pas seulement le `.tex`.
-
-**Pourquoi, et le motif n'est pas celui qu'on croit.** La leçon écrite à la Story 24-4a était : *aucun gate ne lit le manuel*. Elle a une jumelle plus coûteuse : **aucune passe ne le lit non plus, sauf si son prompt le lui demande.** Sur l'Epic 24, le manuel a été pris en défaut à **six tours sous six formes** — il promettait une protection absente, puis annonçait un trou absent, puis bornait trop étroitement un trou réel, puis omettait un flux, puis ignorait une exemption.
-
-⛔ **Mais le rendement de cet axe n'est pas de corriger le manuel : c'est ce qu'il RÉVÈLE.** C'est en vérifiant si le manuel disait vrai qu'une lentille a trouvé un **quatrième chemin d'écriture** — atteignable d'un clic — que quatre passes de spec et deux passes de code n'avaient pas énuméré ; puis un cinquième, puis un sixième. *Le seul endroit où l'on écrit ce que le code est censé garantir est aussi le seul où l'écart se voit.*
-
-⚠️ **Contrôler le PDF, et l'aplatir avant de greper** : `pdftotext` coupe les lignes, un `grep` naïf sur une phrase rend un faux négatif. `pdftotext f.pdf - | tr '\n' ' ' | tr -s ' '`.
-
-*(codifié 2026-09-10, rétrospective Epic 24 — action A6, insight I1/I2.)*
-
-### Une passe qui ne déclare pas ses axes exercés ne compte pas comme passe
-
-**Règle** : tout prompt de passe exige, dans le rapport, **la liste des axes réellement exercés et de ceux qui ne l'ont pas été**. Un « 0 finding » non adossé à cette liste ne clôt rien et ne compte pas dans le décompte de la boucle.
-
-**Précédent, et il est net.** La passe 4 de la Story 24-5 (Haiku 4.5) a rendu **0 finding**. Elle a déclaré elle-même n'avoir pas couvert l'axe le plus cher — « examen rapide » de l'énumération des chemins d'écriture, celui-là même qui avait produit le CRITICAL de la passe précédente —, qualifié de « robuste » un point qu'elle **n'avait pas exécuté** — et il était faux —, et **écrit dans le dépôt** malgré une interdiction explicite, en lançant `scripts/prepare-release.sh` qui a bumpé les dix crates du workspace. **Deux défauts réels attendaient derrière**, trouvés en refaisant le travail annoncé.
-
-⚠️ **Corollaire pour l'orchestrateur** : un « 0 finding » se vérifie comme un finding. Reprendre soi-même les axes que la passe déclare n'avoir pas exercés coûte une fraction d'une passe, et c'est exactement là que se trouve ce qu'elle a manqué.
-
-⛔ **Et interdire l'écriture ne suffit pas : il faut interdire les COMMANDES qui écrivent.** Le prompt disait « n'écris aucun fichier » ; la lentille a exécuté un script qui écrit. Nommer explicitement `scripts/prepare-release.sh` — et tout script mutant — dans les interdits.
-
-*(codifié 2026-09-10, rétrospective Epic 24 — action A7, insight I3.)*
-
-### Inventorier les sites NON RÉSOLUS, plutôt qu'énumérer les formes qui marchent
-
-**Règle** : quand un critère doit prouver qu'une classe de défauts est fermée, ne pas énumérer les formes traitées — **inventorier l'ensemble clos des sites qui ne résolvent pas**, et exiger que chacun soit soit résolu, soit écrit comme angle mort assumé.
-
-**Pourquoi** : une énumération de formes est ouverte par nature — une forme imprévue la contourne sans que rien ne rougisse. Pire, le critère censé fermer la faille peut la **certifier** : sur l'Epic 23, l'`AC7` comparait la liste des sites à la table de référence, **les deux côtés sortant du même extracteur**. L'assertion était verte *par construction*. L'inventaire des non-résolus — 36 sur 1496 — est en revanche comptable et décidable, et c'est la seule assertion qu'une forme imprévue ne puisse pas contourner.
-
-*(D4-ter, acquis méthodologique de l'Epic 23 — codifié 2026-09-10, action A9 de la rétrospective Epic 24, après **deux reports**.)*
-
-### Propagation post-patch — grep du symptôme avant la passe suivante
-
-**Règle** : après avoir appliqué un patch de remédiation (revue de spec ou de code), et **avant** de relancer la passe suivante, `grep` le **symptôme corrigé** — pas seulement le site corrigé — sur **tout le dépôt** : code, spec/story file, doc-comments, tests, i18n (les 4 locales), fallbacks Svelte, manuels LaTeX. Lister les sites atteints et les traiter dans le **même** patch.
-
-Concrètement, la question n'est pas *« ai-je corrigé la ligne signalée ? »* mais *« où ailleurs cette même formulation / ce même calcul / cette même priorité est-il écrit ? »*.
-
-Pourquoi : c'est le mode d'échec le plus récurrent du processus. Il est signalé à chaque rétrospective depuis l'Epic 21 et **la codification « un patch vient AVEC son test » n'a pas suffi** — un test couvre le site corrigé, pas les copies du symptôme ailleurs. Récidives mesurées sur l'Epic 14 (5 findings de passe `N+1` qui sont tous des résidus d'un patch de passe `N`) :
-
-| Occurrence | Résidu laissé par le patch |
-|---|---|
-| 14-2 validate P3→P4 | le patch corrige le fallback svelte `+page.svelte:405`, oublie `:428` → 2 MED en P4 |
-| 14-4 validate P3→P4 | le fix `count_by_company` laisse 3 reformulations contradictoires dans la spec → 1 MED en P4 |
-| 14-4 review P3→P4 | l'amendement de priorité n'est propagé qu'au `GET /status`, ni au `POST` ni au repo → 1 MED (convergé BlindHunter + EdgeCaseHunter) en P4 |
-
-Les 5 occurrences auraient été attrapées par ce seul geste. Un patch dont le symptôme n'a **pas** été grepé sur le dépôt n'est pas terminé.
-
-**Greper la VALEUR, pas la formulation.** Quand le symptôme est un **nombre**, une version ou un identifiant, greper le **jeton** — `\b25\b`, `\b0\.8\.0\b` — et **jamais** la phrase qui l'entoure. Une valeur périmée se réécrit à volonté ; sa graphie, non.
-
-Précédent, et il est net : passe 1 de `bmad-code-review` de la Story 16-3b. Le compteur de fenêtre d'upgrade venait de passer de 25 à 26. Le grep a cherché `25 dernières` — la formulation du site corrigé — et a rendu zéro résultat, d'où un Change Log déclarant « symptôme grepé sur tout le dépôt, **aucun résidu** ». Il en restait **trois**, écrits `25 restantes` (deux fois) et `24 → 25`. Ils ont été trouvés par la passe 3, dans **le fichier même** qui documente que cette dérive y avait déjà été corrigée une fois.
-
-Le geste correct tient en une ligne, et il se relit :
-
-```sh
-grep -rnE "\b(25|59)\b" crates/kesh-db/tests/migrations_upgrade_path.rs
-```
-
-Il rend des occurrences **légitimes** (généalogies historiques, exemples pédagogiques) qu'il faut trier à la main — c'est le prix, et il est bas. Un grep qui rend zéro résultat sur un symptôme qu'on vient de corriger doit éveiller le soupçon, pas la satisfaction.
-
-*(codifié 2026-07-26, rétrospective Epic 14 action A8 — complète, ne remplace pas, `feedback_review_patch_needs_test`. Amendé 2026-08-11, rétrospective Epic 16 : greper la valeur et non la formulation.)*
-
-### Recompter ses propres comptes rendus
-
-**Règle** : tout **décompte** écrit dans un Change Log, un Dev Agent Record ou un rapport de passe — nombre de findings, de tests ajoutés, de fichiers touchés, de clés i18n — se **recompte depuis la source** avant d'être écrit, exactement comme les compteurs de migrations de la § *Migration breaking policy*. Un total doit être cohérent avec sa propre ventilation.
-
-Commandes de contrôle typiques, à exécuter et non à estimer :
-
-```sh
-git show <ref>:<fichier> | grep -c '#\[test\]'     # tests, aux DEUX bornes
-grep -c '^contact-' crates/kesh-i18n/locales/*/messages.ftl
-```
-
-⚠️ **Déclarer le PÉRIMÈTRE de mesure avec le nombre.** « 11 tests neufs » ne veut rien dire seul : de `main` au commit de dev, ou de `main` à `HEAD` revue comprise ? Les passes de revue ajoutent des tests, donc le second chiffre grossit après coup. Un décompte sans périmètre sera relu plus tard contre le mauvais intervalle — c'est arrivé en passe 2 de la 16-3b, où une lentille a rapporté un écart réel comme une erreur.
-
-Pourquoi cette règle existe : sur l'Epic 16, **le compte rendu est devenu le lieu du défaut**, pas le code. La Story **16-2** a vu **8 de ses 13 findings de passe 4** porter sur les décomptes de ses propres Change Logs, ce qui a fini par la faire découper ; la **16-1a-bis** a produit deux artefacts de passe 1 eux-mêmes faux, dont une règle de recompte qui cassait l'invariant qu'elle prétendait tenir ; et les **trois MEDIUM de la passe 3 de la 16-3b** portaient tous sur des déclarations, aucun sur le code livré.
-
-*(codifié 2026-08-11, rétrospective Epic 16)*
-
-⛔ **Recompter n'est pas réécrire l'historique.** Quand un décompte change, la nouvelle valeur va dans l'entrée **vivante** (la passe en cours, la note de synthèse) — **jamais** dans l'entrée d'une passe passée. Un compte rendu de passe est un relevé daté : il se corrige s'il était faux **à sa date**, par une annotation datée, et ne se « met pas à jour ». *Précédent (Story 27-3) : une propagation de décompte a réécrit l'entrée P3 d'un Change Log, qui disait juste, en oubliant la note vivante qu'elle devait toucher — trop large et trop étroite à la fois. Greper la valeur est juste ; la remplacer partout ne l'est pas.* *(B4 de la rétrospective de l'Epic 27, versé le 2026-10-13.)*
-
-### Un gate laisse la base piégée — et pas seulement quand il est interrompu
-
-**Règle** : remettre la base de gate à zéro **avant tout gate complet**, sans se demander comment le run précédent s'est terminé. Ne jamais diagnostiquer un rouge de gate sans avoir d'abord reconstruit la base.
-
-Le mode d'échec : un test qui modifie l'état partagé confie sa restauration à son appelant, ou crée des lignes qu'il ne supprime pas. Le résidu reste en base et fait rougir le gate **suivant**, de façon **déterministe** et **sans aucun rapport** avec la story en cours.
-
-**Il se produit dans DEUX circonstances, et la seconde est la plus traître :**
-
-**(a) Le gate tué en vol** (Ctrl-C, timeout, session perdue, OOM) — l'appelant n'a jamais repris la main. Deux occurrences dans le seul Epic 16 :
-
-- **16-1a** — un `nextest` tué laisse `kesh_gate` avec `postable=0` sur le compte 1000 → **26 faux échecs** `journal_entries` au run suivant, **indiscernables** du cas « base non seedée » ;
-- **16-3a** — même famille : `1000 Caisse CI` resté `postable=FALSE` par le helper `set_postable`, faisant échouer `test_check_constraint_rejects_debit_and_credit_same_line`, déterministe et hors sujet.
-
-**(b) Le gate TERMINÉ, et terminé EN VERT.** Un run qui va au bout laisse lui aussi de quoi casser le suivant : les tests de dépôt sur base partagée créent des factures liées à des écritures comptables et les y laissent, si bien que le `delete_all_by_company` du montage de `journal_entries::tests` échoue au run d'après sur `fk_invoices_journal_entry` — **34 faux échecs**, en 7 ms chacun, sur un module que la branche ne touche pas. *(Rencontré le 2026-08-16 en passe 3 de revue de la Story 22-5 ; **KF-039, issue #310**.)*
-
-⚠️ **C'est ce cas (b) qui a fait amender cette règle.** Sa première rédaction ne visait que le gate interrompu — un lecteur constatant que son run précédent s'était bien terminé en concluait, à tort, que la base était saine et allait chercher ailleurs. La question « le run précédent a-t-il été interrompu ? » n'est donc **pas** le bon filtre : **la remise à zéro est inconditionnelle**.
-
-**Le geste, et pourquoi il est devenu bon marché** :
-
-```sh
-docker compose -f docker-compose.dev.yml restart mariadb   # depuis le dépôt principal ; tmpfs : efface tout
-sqlx migrate run --source crates/kesh-db/migrations
-docker exec -i kesh-mariadb-dev mariadb -uroot -pkesh_dev_root kesh < scripts/seed-dev-db.sql
-```
-
-⚠️ **Toute commande `docker compose` sur ce conteneur se lance depuis le dépôt principal, jamais depuis un worktree** : son montage des droits (`./scripts/mariadb-init`) est relatif au répertoire de lancement, et un worktree supprimé laisse un montage vide — `kesh` perd alors les droits dont `#[sqlx::test]` a besoin (du 2026-10-11 au 2026-10-23, masqué par des `GRANT` posés à la main). En travail parallèle, **ni redémarrage ni recréation par un agent** (`docs/agents-orchestration.md` § 2) : chacun travaille sur ses bases `kesh_<clé>`. Le garde `scripts/check-dev-grants.sh`, lancé par `test-fast.sh`, signale un conteneur dont les droits ne sont plus ceux du fichier ; ses angles morts sont dans `docs/testing.md` § « Base de dev jetable ».
-
-Depuis que le datadir de dev est en tmpfs (Story 22-5, #251), ce cycle coûte **une quinzaine de secondes** — contre un vidage de tables à la main auparavant. C'est ce qui rend praticable une règle inconditionnelle là où l'ancienne devait se contenter d'un déclencheur. Détail et modes d'échec : `docs/testing.md` § « Base de dev jetable ».
-
-Le coût du diagnostic est chaque fois bien supérieur à celui de la remise à zéro. En cas de rouge inexpliqué sur des tests que la branche ne touche pas, **reconstruire la base avant de chercher plus loin**.
-
-*(codifié 2026-08-11, rétrospective Epic 16 — **étendu au gate terminé le 2026-08-16**, passe 3 de revue de la Story 22-5, KF-039 #310.)*
-
-### Haiku-specific guardrails — grep ground-truth obligatoire
-
-**Symptôme observé** : les reviewers Haiku 4.5 (`BlindHunter` / `EdgeCaseHunter` typiquement) peuvent affirmer **CRITICAL** ou **HIGH** « REGRESSION-P1 — patch X n'a pas été appliqué » sur un diff combiné multi-commit, alors que le patch **est** présent dans le fichier.
-
-**Cause racine** : Haiku traite mal l'indexation des line numbers d'un diff `git show A B` quand le 2e commit `B` re-touche des hunks du 1er commit `A`. Les line numbers du 2e hunk correspondent au file post-A (pas au file final post-B), et Haiku peut chercher la ligne X et y voir le contenu de A, ratant le patch de B.
-
-**Règle d'application** — pour tout finding `CRITICAL` ou `HIGH` affirmant **soit l'absence d'un code attendu** (« patch X n'a pas été appliqué »), **soit la présence d'un anti-pattern non-corrigé** (« ligne Y contient encore un `unwrap()` non-sécurisé »), l'orchestrateur **DOIT** vérifier ground-truth avant de traiter le finding comme réel :
-
-- **Pattern textuel grepable sur une ligne précise** : exécuter `grep -nF "<chaîne issue du patch>" <file>` — le flag `-F` (fixed-string) est **obligatoire** pour éviter les faux-positifs sur les métacaractères regex (`.`, `*`, `[`, `(`, `\`, etc.) qui apparaissent fréquemment dans du code Rust/TS (e.g. `Vec<i64>`, `amount * rate`, `unwrap_or(0.0)`).
-- **Pattern multi-ligne** (struct sur 4 lignes, bloc `if let` indenté, chaîne de méthodes) : `grep -n` opère ligne par ligne. Choisir une **ligne unique représentative** discriminante (ouverture de la struct + 1 mot unique), ou utiliser `grep -nFA <N>` pour récupérer les N lignes suivantes et vérifier le bloc complet (N typiquement 3-5 ; ajuster selon la longueur estimée du bloc patché).
-- **Finding architectural ou comportement runtime** (e.g. « la fonction ne retourne pas d'erreur en cas d'overflow », « le flux d'erreur descend silencieusement à travers 3 niveaux d'`?` ») où aucun pattern textuel précis ne suffit : **vérification manuelle par `Read` direct** du fichier concerné + inspection ciblée du flux. Documenter la vérification dans le Change Log de la story (section `### Pass N review`) avec extrait du code lu. **Note** : un ordre de `app.use(...)` middleware ou la séquence d'appels dans une fonction reste textuel grepable (`grep -nF "app.use"` retourne l'ordre exact) — réserver « architectural » aux flux cross-fonction ou cross-fichier sans pattern unique discriminant.
-- **Résultat** :
-  - Vérification confirme l'observation (pattern absent OU anti-pattern présent OU comportement architectural confirmé) → finding réel, appliquer le patch.
-  - Vérification réfute l'observation → **dismiss** comme faux-positif Haiku. Documenter dans le Change Log (e.g. « BH2-1 CRITICAL réfuté par `grep -nF` ligne X — faux-positif Haiku indexing diff multi-commit »).
-
-**Mitigation préférée** : à partir de la Pass 2 d'un cycle review, donner à Haiku un **diff unique** (le commit final `HEAD vs main` aplati) plutôt que la séquence de commits intermédiaires. Évite la confusion d'indexation à la source.
-
-**Scope du bug** : spécifique Haiku 4.5. Sonnet 4.6 et Opus 4.7 ne reproduisent pas l'erreur d'indexation diff multi-commit (validé empiriquement Epic 9 et antérieur). Pour autant, la discipline grep ground-truth s'applique à **tous** les modèles par hygiène — Haiku reste le cas pathologique connu, les autres modèles l'appliquent par défense en profondeur.
-
-*(cf. memory `feedback_haiku_review_diff_combined`, validé empiriquement Stories 8-5a-bis Pass 2 Haiku 2026-05-12 [BH2-1 missing scale() validation ligne 2120 + BH2-2 missing != bank_ledger guard ligne 2172] et 9-2b Pass 2 Haiku 2026-05-15 [route.continue() sans await ligne 66 + resolveDownload! sans validation ligne 201] — 4 hallucinations CRITICAL/HIGH réfutées par grep ground-truth)*
+À partir de la deuxième passe, donner à Haiku un diff unique aplati (`HEAD` contre `main`).
 
 ### Pattern batch — FailedProposal per-proposal
 
-**Règle** : pour tout endpoint type `accept_batch` (qui traite N proposals/operations en une seule requête HTTP et retourne un body `{ accepted: [...], failed: [...] }`), **aucune erreur per-proposal ne doit escalader en `AppError` global** retournée comme HTTP error code (4xx/5xx). Chaque erreur d'une proposal individuelle est encapsulée en `FailedProposal` dans le `failed[]` du response body, avec **HTTP 200 OK** au niveau de la requête (un succès partiel reste un succès HTTP).
+Pour tout endpoint qui traite N propositions et rend `{ accepted, failed }` :
 
-**Exceptions explicites** — les `AppError` global restent autorisées **uniquement** pour les erreurs qui invalident la requête entière en amont du traitement per-proposal :
-
-- `401 Unauthorized` — auth middleware (token absent / expiré)
-- `403 Forbidden` — RBAC global (rôle insuffisant pour l'endpoint)
-- `400 Bad Request` — body parse fail / schéma JSON invalide
-- `500 Internal Server Error` — DB pool fermé, panic, IO catastrophique
-
-Toute erreur **qui dépend de la proposal individuelle** (validation `amount > 0`, FK manquant, race condition optimistic lock, currency mismatch, business rule violation) → `FailedProposal` per-proposal.
-
-**Champs obligatoires de `FailedProposal`** (signature canonique Epic 8) :
-
-- **identifiant business de la proposition** (e.g. `bank_transaction_id: i64` pour la réconciliation Epic 8 ; pour pain.001 paiements batch Epic 11 ce sera probablement `payment_id` ou équivalent, à adapter selon le type de proposition). **Anti-pattern** : NE PAS utiliser un index positionnel `proposal_index: usize` — fragile à toute réorganisation du batch par le client.
-- `error_code: String` — constante canonique recommandée (e.g. `"BANK_ACCOUNT_NOT_CONFIGURED"`, `"RECONCILIATION_RULE_NO_LONGER_MATCHES"`). **JAMAIS** interpolation `format!("error: {}", e)` ; pour contexte dynamique utiliser le champ `details`.
-- `details: Option<serde_json::Value>` — JSON object additionnel pour contexte spécifique au code (e.g. `{ "bankAccountId": 17 }`).
-
-**Garde-fou défensif** — dans un `match` exhaustif sur les variants d'un type sum (`Rule`, `ProposalType`, etc.), **NE PAS** utiliser `unreachable!()` aux sites variants (un `unreachable!()` crashe la Tokio task sans log si un futur refactor introduit un variant manquant). Préférer `tracing::error!(...) + retour d'AppError::Internal(...)`. **Important** : cette `AppError::Internal` tombe sous l'exception globale ligne « 500 Internal Server Error » ci-dessus — un variant manquant est un **bug structurel détecté à l'exécution** (refactor incomplet : variant `Rule::NewType` ajouté au code mais oublié dans le match correspondant ; signature de fonction modifiée mais call site non-mis-à-jour ; ajout d'un type intentionnellement non-Send qui passe Send par erreur). À l'inverse, une « validation métier non-anticipée » du type *« amount peut être négatif dans certaines factures »* ou *« currency manquante sur une transaction legacy »* reste une erreur business per-proposal → `FailedProposal`. Le critère décidable : **est-ce que le code compile** ? Si oui mais le `match` est incomplet à cause d'un refactor → bug structurel → `AppError::Internal`. Si la donnée d'entrée est inattendue mais le code compile et le `match` est exhaustif → erreur métier → `FailedProposal`.
-
-**Référence canonique** : `accept_one_invoice` (Story 8-4), `accept_one_split` (Story 8-5a-bis), `accept_one_rule` (Story 8-5b). Le pattern est inviolable sur ces 3 implémentations Epic 8.
-
-**Réutilisation prévue** : Epic 11 (pain.001 paiements batch — un fichier XML contient N transactions, chaque transaction peut échouer indépendamment) + tout endpoint futur retournant `{ accepted, failed }`. **Note** : CAMT.053 (Epic 12) est de l'**import** raw (parser → INSERT bank_transactions sans décision utilisateur per-transaction), donc ne suit PAS ce pattern — sa réconciliation post-import utilise déjà l'API Epic 8 `accept_batch` qui implémente ce pattern.
-
-*(pattern hérité Epic 8 — cf. rétrospective Epic 8 Insight I2 + Story 8-5b Pass 4 ECH4-1 correction `BANK_ACCOUNT_NOT_CONFIGURED` `200 + failed[]` au lieu de `412` AppError global)*
+- **Aucune erreur propre à une proposition ne devient une `AppError` globale** : elle va dans `failed[]`, et la requête rend **200**. Seules restent globales les erreurs qui invalident toute la requête : 401, 403, 400 (corps illisible), 500 (pool fermé, panique, I/O).
+- **`FailedProposal`** porte : l'identifiant métier de la proposition (jamais un index positionnel), `error_code` (constante, jamais une chaîne interpolée), `details: Option<serde_json::Value>` pour le contexte.
+- **Pas de `unreachable!()`** dans un `match` sur les variantes : `tracing::error!` puis `AppError::Internal`. Critère : un `match` incomplet après refactor est un bug structurel (500) ; une donnée inattendue sur un code qui compile est une erreur métier (`FailedProposal`).
+- Références : `accept_one_invoice`, `accept_one_split`, `accept_one_rule`. Un import brut (CAMT.053) ne suit pas ce pattern.
 
 ### Règle de splitting préventif
 
-**Si une story qui n'est pas encore en spec validate satisfait l'un de ces deux critères, la splitter en sous-stories avant de lancer `bmad-create-story`** :
+**Découper une story avant `bmad-create-story`** si elle touche **plus de cinq modules** distincts, ou si sa validation **recycle** ses défauts — une passe N+1 de sévérité égale ou supérieure dont les défauts reviennent sous une autre forme ou naissent du correctif précédent. Des défauts d'origine neufs et distincts ne découpent pas. Le signal se déclare toujours au Project Lead, avec le constat au Change Log.
 
-- **Scope cross-cutting** : la story touche **plus de 5 modules** distincts (crates Rust, packages npm, ou modules métier de premier niveau type `kesh-core/accounting`, `kesh-api/routes/invoices`, `frontend/src/features/invoices`).
-- **Non-convergence réelle** : une passe `N+1` de `bmad-create-story validate` remonte une sévérité **égale ou supérieure** à la passe `N` (e.g. `MED → MED`, ou pire `MED → HIGH`). C'est le signal que la remédiation n'entame pas le problème.
+- **Comment** : une story zéro qui pose le motif sur un ou deux modules pilotes, puis des stories de déploiement mécaniques, revues fichier par fichier.
+- **Dérogation** : si le découpage crée des cycles de dépendances ou des fusions intermédiaires intestables, garder la story unique et l'écrire dans une section `Dérogation règle de splitting`.
 
-Pourquoi : dans les deux cas, la story est trop large pour être tenue dans un seul mental-model adversarial fiable. Les régressions introduites par les patches d'une passe N deviennent invisibles aux passes N+1 (saturation contextuelle) et finissent par être détectées seulement post-merge en code review ou pire, en prod.
+## Priorités des défauts
 
-**Amendement 2026-07-26 (rétro Epic 14, décision D-C)** — le second critère était auparavant un **compteur de passes** (« validate boucle au-delà de 4 passes »). Il a été remplacé par un critère de **sévérité** parce qu'il produisait des faux positifs : les stories **14-2** (5 passes) et **14-4** (5 passes) ont franchi le seuil de 4 sans être splittées, et les deux ont **convergé proprement** (14-2 : `1 CRIT/2 HIGH/5 MED → 0 → 1 MED → 2 MED → 0` ; 14-4 : `1 CRIT/2 HIGH/6 MED → 0 → 3 MED → 1 MED → 0`). Une convergence **lente mais monotone** (`CRIT → MED → MED → 0`) est le signe d'une revue qui travaille, pas d'une story trop large — les passes tardives y trouvent des défauts *réels et décroissants* (c'est Opus en P3 de 14-4 qui a attrapé le doublon d'écriture d'ouverture). Ce qui doit déclencher le split, c'est la **stagnation ou la régression de sévérité**, pas la durée. Le plafond de 8 passes de la §"Review Iteration Rule" reste le garde-fou de budget.
-
-**Amendement 2026-10-06 (rétro Epic 25, décision D5)** — le signal « sévérité égale ou supérieure » **ne déclenche pas** le découpage quand les défauts de la passe `N+1` sont **distincts** de ceux de la passe `N` **et ne viennent pas d'une remédiation** : la revue trouve alors des défauts d'origine neufs, elle ne tourne pas en rond. Ce qui découpe, c'est le **recyclage** — un défaut qui revient sous une autre forme, ou qui naît du correctif précédent — et la dispersion dans plus de cinq modules. Le signal reste **toujours déclaré au Project Lead**, avec ce constat écrit au Change Log. *Mesuré : sur la 25-4, le signal a été levé six fois et suivi une seule ; les cinq autres, les défauts étaient distincts et Guy a dit « continue ». Une règle contournée à chaque fois n'est plus une règle.*
-
-**Précédent : Story 7-1** (KF-002 audit + multi-tenant scoping refactor) — 4 passes spec validate Opus/Sonnet/Haiku/Opus avant convergence, scope étalé sur 7+ modules (`kesh-core`, `kesh-db`, `kesh-api/routes/{invoices,journal_entries,companies,...}`). Lesson rétro Epic 7 : avec un split en 7-1a (audit/baseline) + 7-1b (scoping pattern) + 7-1c (rollout par module), chaque sous-story aurait pu converger en ≤ 2 passes.
-
-**Comment splitter** : dégager d'abord un story-zero qui pose le **pattern** (helper, type, helper test) sur 1-2 modules pilotes, puis enchaîner des sous-stories de **rollout** strictement mécaniques (apply pattern aux N-2 modules restants). La sous-story rollout est revue au file-by-file plutôt qu'en passes adversariales globales.
-
-**Exception** : si un *split forcé* introduit des cycles de dépendance Cargo ou des merges intermédiaires impossibles à tester en isolation, garder la story unique et documenter explicitement la dérogation dans le story file (section `Dérogation règle de splitting` avec justification + accepted risk).
-
-## Priorités des défauts — la règle qui gouverne le choix des epics
-
-**Règle** : chaque défaut ouvert porte un label de priorité, et c'est lui qui ordonne le travail.
+Chaque défaut ouvert porte sa priorité dès sa création, et c'est elle qui ordonne le travail.
 
 | Label | Niveau | Critère |
 |---|---|---|
@@ -647,365 +242,134 @@ Pourquoi : dans les deux cas, la story est trop large pour être tenue dans un s
 | `P3` | moyenne | manuel qui décrit autre chose que le code, test défaillant, dette de code |
 | `P4` | basse | orthographe, traduction, cosmétique |
 
-Trois engagements par epic, dans cet ordre :
+**Trois engagements par epic**, dans cet ordre (décision de Guy du 2026-10-08) :
 
-1. **Le nombre de bugs baisse.** Bug = issue ouverte portant `bug` ou `known-failure`. Il se compte au kickoff et à la rétrospective, et les deux nombres s'écrivent dans la rétrospective :
+1. **Le nombre de bugs baisse.** Bug = issue ouverte portant `bug` ou `known-failure`, comptée au kickoff et à la rétrospective :
    ```sh
-   gh issue list --state open --limit 500 --json labels \
+   gh issue list --state open --limit 600 --json labels \
      --jq '[.[]|select([.labels[].name]|any(.=="bug" or .=="known-failure"))]|length'
    ```
-2. **Aucun P1 ne passe d'un epic à l'autre, dans la mesure du possible.** Ce ne sera pas toujours tenable — un P1 qui reste doit alors être nommé à la rétrospective, avec la raison.
-3. **L'epic livre une fonctionnalité nouvelle si c'est possible** — la baisse des défauts restant prioritaire.
+2. **Aucun P1 ne passe d'un epic à l'autre**, autant que possible ; celui qui reste est nommé à la rétrospective, avec sa raison.
+3. **L'epic livre une fonctionnalité nouvelle si c'est possible**, la baisse des défauts restant prioritaire.
 
-⚠️ **Report assumé : les dix P1 de la TVA** (jalon « Vague 2 » : #390 à #397, #401, #525 — recompté le 2026-10-13 par `gh issue list --milestone "Vague 2 — La TVA opposable : rattacher le décompte aux livres" --state open --label P1`, qui en rend dix ; ce paragraphe en annonçait neuf jusqu'à cette date, #525 ayant rejoint le jalon après sa rédaction). Ce sont des erreurs comptables du produit, et ils restent P1. Mais le seul utilisateur réel de Kesh **n'est pas assujetti à la TVA** (personne physique), si bien qu'ils ne font obstacle à aucune comptabilité tenue. Ils sont donc reportés d'epic en epic, **nommés à chaque rétrospective** comme l'exige l'engagement 2 — et ce report tombe dès que Kesh tient, ou est proposé pour tenir, les livres d'un assujetti. *(Décision de Guy, 2026-10-08 ; elle prolonge celle de la rétrospective de l'Epic 24 — « vague 1, puis comptabilité personnelle, puis TVA ».)*
+Et :
 
-**La règle de release de Guy (reformulée le 2026-10-24)** : **moins d'issues ouvertes au tag qu'au tag précédent est un objectif à atteindre à terme, pas une barrière.** Le dépasser **n'est pas critique** et n'empêche pas de publier ; **corriger un bug dans un epic n'est pas interdit**. Le décompte, lui, **continue de se mesurer et de s'écrire** — toutes les issues, pas seulement les bugs, mesurées **au tag** : celui du tag précédent et l'objectif au fichier d'epic dès le kickoff, celui du tag à la PR de release et à la rétrospective, avec l'écart et sa cause.
+- **Report assumé des dix P1 de la TVA** (jalon « Vague 2 » : #390 à #397, #401, #525) : Guy, seul utilisateur réel, n'est pas assujetti. Ils sont nommés à chaque rétrospective ; le report tombe dès que Kesh tient, ou est proposé pour tenir, les livres d'un assujetti (décision de Guy du 2026-10-08).
+- **Moins d'issues ouvertes au tag qu'au tag précédent est un objectif, pas une barrière** : le dépasser n'empêche pas de publier. Le décompte (toutes les issues) s'écrit : celui du tag précédent et l'objectif au fichier d'epic dès le kickoff, celui du tag à la PR de release et à la rétrospective, avec l'écart et sa cause (décision de Guy du 2026-10-24).
+- **On trace toujours** : un point qu'on décide de ne pas traiter s'ouvre en issue, même s'il fait remonter le compte ; on ne ferme jamais un défaut réel pour tenir le chiffre ; **une issue par problème**, sans regroupement (décisions de Guy des 2026-10-23 et 2026-11-10).
+- **Un LOW de revue qui touche la production peut se corriger dans la story**, suivi d'une passe ciblée de ce seul correctif ; l'issue reste le choix par défaut quand le correctif sort du périmètre (décision de Guy du 2026-11-14).
+- **Une story de solde à la fin de chaque epic**, avant le tag : seulement la dette des stories de l'epic, plafonnée par un nombre d'issues fixé au kickoff (décision de Guy du 2026-11-14).
+- **L'étiquette `bug` décrit un comportement faux visible** : un test manquant, un commentaire, une phrase de fiche prennent `technical-debt` ou `documentation`. Les anciennes issues ne se réétiquettent que sur demande de Guy, et un tel réétiquetage s'écrit à côté du décompte des bugs (décision de Guy du 2026-11-14).
 
-*(Historique — formulation du 2026-10-13, en vigueur jusqu'au 2026-10-24 : « **moins d'issues ouvertes au tag qu'au tag précédent** — toutes les issues, pas seulement les bugs, mesurées au tag. Le décompte du tag précédent et le plafond s'écrivent au fichier d'epic dès le kickoff. » Lue comme une barrière, elle a été tenue au tag v0.14.0 (136 pour moins de 137) et dépassée au tag v0.15.0 (140 pour moins de 136) ; Guy a publié quand même (« on publie maintenant »), puis l'a précisée le 2026-10-24 dans le sens ci-dessus. Annoté à la rétrospective de l'Epic 31, `epic-31-retro-2026-10-24.md` § 2.3.)*
+Les anciennes rétrospectives classent la dette en **A** (vraie dette), **B** (limitation documentée, remédiation planifiée) et **C** (choix de conception, pas une dette).
 
-⛔ **On trace toujours.** Le budget d'issues est un motif **accepté** pour intégrer un défaut voisin à la story en cours plutôt que de l'ouvrir — mais **un point qu'on décide de ne pas traiter s'ouvre en issue, même s'il fait remonter le compte** ; et on ne ferme jamais un défaut réel pour tenir le chiffre. *(Décision de Guy du 2026-10-23, rétrospectives des Epics 29 et 30 : « si c'est nécessaire, on ouvre tout de même une issue : je veux les tracker ». Sur ces deux epics, quatre intégrations avaient été motivées par écrit par le budget, et une limite — la réconciliation au-delà de 500 transactions — était restée sans issue : ouverte depuis, #695.)*
+## Clôture d'epic
 
-**Tarir la source, puis solder** *(décisions de Guy du 2026-11-14, rétrospective de l'Epic 35, Q7 — reprise des Q2 et Q3 de la rétrospective de l'Epic 34)* : le compte monte surtout par la dette de nos propres stories (69 des 88 issues ouvertes pendant l'Epic 35). Deux règles :
-
-- **Un LOW de revue qui touche la production peut se corriger dans la story** au lieu de s'ouvrir en issue ; la boucle se rouvre alors sur une **passe ciblée** de ce seul correctif (§ *Review Iteration Rule*, qui reste la règle de clôture). L'issue reste le choix par défaut quand le correctif sort du périmètre de la story.
-- **Une story de solde à la fin de chaque epic**, avant le tag : elle ne prend que la dette des stories de l'epic, plafonnée par un **nombre d'issues fixé au kickoff** dans le fichier d'epic, non par le temps.
-
-**L'étiquette `bug` décrit un comportement faux visible** *(décision de Guy du 2026-11-14, rétrospective de l'Epic 35, Q8)* : un LOW qui ne décrit aucun comportement faux — test manquant, commentaire, phrase de fiche — prend `technical-debt` ou `documentation`, non `bug`. Règle appliquée aux issues **nouvelles** ; les anciennes ne se réétiquettent que sur demande de Guy, et un tel réétiquetage s'écrit comme tel à côté du décompte des bugs, qu'il ferait baisser sans fermer aucun défaut.
-
-Toute nouvelle issue de défaut reçoit sa priorité à la création. Point de départ, au triage du 2026-10-08 : **49 bugs**, dont 14 P1 (9 dans le jalon de la TVA), 11 P2, 16 P3 et 8 P4 — plus trois issues de documentation ou de dette pure, classées P3 mais hors décompte faute de label `bug` (#291, #458, #438).
-
-*(Décidé par Guy le 2026-10-08, au triage de dette D4 de la rétrospective de l'Epic 25. Remplace la politique « zero carry-forward » ci-dessous, qui exigeait de solder toute la dette de catégorie A avant chaque kickoff et avait été contournée plusieurs fois : une règle contournée à chaque fois n'est plus une règle. La section suivante reste pour l'historique et pour le vocabulaire A/B/C qu'emploient les rétrospectives passées.)*
-
-## Tech debt management — zero carry-forward policy (remplacée le 2026-10-08)
-
-⚠️ **Remplacée par § « Priorités des défauts »** ci-dessus. Conservée pour l'historique.
-
-**Règle projet** : pas de cumul de dette technique inter-epic. À chaque rétrospective d'epic, **toutes les vraies dettes (catégorie A ci-dessous) doivent être adressées (fix appliqué OU explicitement reclassées en catégorie B avec justification + story de remédiation planifiée)** avant le kickoff de l'Epic N+1.
-
-### Triage obligatoire — 3 catégories à chaque rétrospective
-
-- **Catégorie A — vraie dette** : bug latent, incohérence non-documentée, action retrospective non-complétée d'un Epic antérieur, KF dormante GitHub ouverte (sans label `v0.2-milestone`). **DOIT être fixée** avant kickoff Epic suivant.
-- **Catégorie B — limitation v0.2 légitime** : feature ou limitation documentée avec scope explicite (style `L1` / `L2` / ... dans story file ou Dev Notes) **et** mécanisme de planification de la remédiation (au choix : story dédiée créée pour un Epic futur, OU label `v0.2-milestone` sur l'issue GitHub qui tient lieu de planification implicite — la story de remédiation sera créée au plus tard au kickoff de l'Epic qui consommera le backlog v0.2). Acceptable indéfiniment tant que tracée. **Exception au reclassement automatique** : si une KF labellée `v0.2-milestone` est **également** marquée gate bloquant v0.1 (e.g. dans le PRD, une story spec, ou une décision de release explicite), le gate v0.1 prime → la KF reste catégorie **A** jusqu'à fix ou levée explicite du gate.
-- **Catégorie C — décision design intentionnelle** : pattern volontaire (e.g. tables exclues d'un export pour raison de sécurité, INNER JOIN avec FK garante, audit-trail-only acceptée v0.1). **Pas une dette.**
-
-### Critical path
-
-Les items catégorie **A** passent du « cleanup parallèle optionnel » au **bloquant kickoff Epic suivant** dans la section Action Items de chaque rétrospective. Cette transition est non-négociable : si un item A traîne au moment du kickoff, soit on le fixe immédiatement, soit on le reclasse formellement en B (avec justification écrite + story remédiation planifiée).
-
-**Triage hors fenêtre rétrospective** — si une dette catégorie A est découverte **en cours d'Epic N+1** (e.g. semaine 2 d'un Epic feature, pas pendant une rétrospective), triage immédiat selon sévérité :
-
-- **Critique pour l'Epic en cours** (bloque une story active OU introduit une régression imminente sur des baselines vertes) → créer une story de fix **dans l'Epic N+1 en cours**, traiter immédiatement.
-- **Non-critique pour l'Epic en cours** → ajouter à la liste des items A bloquant le **kickoff de l'Epic N+2** (équivalent du carry-forward d'un Epic à l'autre, c'est l'exception au zero carry-forward pour les découvertes hors-rétrospective). Documenter dans la rétrospective courante quand elle viendra.
-
-L'arbitrage de sévérité est fait par le Project Lead au moment de la découverte, pas par l'orchestrateur LLM.
-
-**Soupape — item A résistant** : si un item A résiste à **3+ tentatives de fix successives** (1 tentative = 1 cycle complet `bmad-dev-story` → `bmad-code-review` où le fix échoue à résoudre l'item OU introduit une régression sur d'autres baselines), il peut être **exceptionnellement** reclassé en catégorie B avec :
-
-- Justification écrite « résistance constatée après N tentatives » dans la rétrospective, avec liste des cycles et raisons d'échec.
-- Story de remédiation planifiée **Epic N+2** (pas Epic N+1 — laisser le temps d'investigation hors charge feature).
-- Issue GitHub labellée `technical-debt` + `v0.2-milestone` + commentaire détaillé des tentatives de fix et de leurs échecs.
-- Suivi spécifique (revue à chaque rétrospective Epic N+1, Epic N+2) pour éviter que la résistance ne devienne un `wontfix` de facto.
-
-Cette soupape est l'**exception explicitement codifiée** à la règle zero carry-forward du paragraphe initial — pas une contradiction. L'item reclassé en B reste tracé (story de remédiation Epic N+2 + label GitHub + suivi rétro), ce qui le distingue d'un report silencieux. Si l'Epic N+1 est lui-même un Epic « Technical Debt Closure » dédié, la soupape Epic N+2 reste applicable (la résistance documentée justifie de laisser le fix mûrir un cycle de plus).
-
-### Pattern Epic dédié cleanup
-
-Si le volume d'items catégorie A est élevé (seuil indicatif : **> 8 items** OU couvre **> 2 axes distincts** — e.g. KFs + code consistency + process codification), créer un **Epic dédié de type « Technical Debt Closure »** plutôt qu'un méga-Epic suivant mélangeant feature + dette. Précédents projet :
-
-- **Epic 7 historique « Technical Debt Closure »** — KF-001..007 fermées pré-Epic 8. Pattern de référence.
-- **Epic 9.5 « Technical Debt Closure »** — ~13 items A post-Epic 9, 4 stories. Applique cette politique de manière systématique.
-
-### Distinction au triage
-
-Les limitations documentées (style `L1-L18` dans story files) qualifient en catégorie **B** si **et seulement si** scope explicite **+** story de remédiation planifiée. Sinon → catégorie **A** (dette implicite). KFs ouvertes GitHub Issues = candidates catégorie A par défaut sauf labelling explicite `v0.2-milestone` (cohérent §"Issue Tracking Rule").
-
-*(politique formalisée 2026-05-17 rétrospective Epic 9 — cf. memory `feedback_zero_tech_debt_carryforward` + pattern Epic 7 historique « Technical Debt Closure »)*
-
-## Clôture d'epic — la revue de projet suit la rétrospective
-
-**Règle** : à la fin de chaque `bmad-retrospective`, enchaîner sur la **revue de projet** dans `/home/gcorbaz/travail/Projets actuels/kesh`. La rétrospective ne clôt pas l'epic à elle seule.
-
-Les deux exercices ne regardent pas la même chose, et c'est pourquoi l'un ne remplace pas l'autre :
-
-- La **rétrospective** regarde *vers l'intérieur du dépôt* — ce que l'epic a produit, ce que les passes de revue ont appris, quelle dette il laisse. Son horizon est le code et le processus.
-- La **revue de projet** regarde *le projet comme dossier* — échéances, dépendances avec d'autres dossiers, ressources, engagements pris ailleurs que dans le dépôt. Rien de tout cela n'est visible depuis `git log`, et rien ne le rappelle si on ne va pas le chercher.
-
-Un epic peut donc se clore proprement côté code tout en laissant dériver le dossier de projet : c'est exactement le trou que cette règle ferme.
-
-**Ordre imposé** : `bmad-retrospective` → revue de projet. La rétrospective d'abord, parce que ses conclusions (dette reportée, story de remédiation planifiée, changement de scope) sont des **entrées** de la revue de projet — l'inverse ferait travailler la revue sur un état périmé.
+À la fin de chaque `bmad-retrospective`, enchaîner sur la **revue de projet** dans `/home/gcorbaz/travail/Projets actuels/kesh` : la rétrospective regarde le dépôt, la revue de projet le dossier (échéances, dépendances, engagements hors dépôt). La rétrospective d'abord, ses conclusions étant des entrées de la revue.
 
 ## Issue Tracking Rule
 
-**Règle de traçage des CR, KF et bug reports** :
+- **GitHub Issues est l'unique source de vérité** pour les CR, KF et bugs ([guycorbaz/kesh/issues](https://github.com/guycorbaz/kesh/issues)), avec les modèles de `.github/ISSUE_TEMPLATE/`. Aucun fichier du dépôt ne tient sa propre liste. `docs/change_request.md` et `docs/known-failures.md` sont archivés : on n'y écrit plus.
 
-**GitHub Issues est l'unique source de vérité.** Toute nouvelle découverte d'un **CR (Change Request)**, d'une **KF (Known Failure)** ou d'un **bug report** DOIT être créée comme GitHub Issue sur [guycorbaz/kesh/issues](https://github.com/guycorbaz/kesh/issues) en utilisant le template approprié dans `.github/ISSUE_TEMPLATE/`.
+| Type | Modèle | Labels |
+|------|--------|--------|
+| Bug | `bug_report.yml` | `bug`, `triage` |
+| KF | `known_failure.yml` | `known-failure`, `triage` (+ `technical-debt` si dette persistante) |
+| CR | `feature_request.yml` | `enhancement`, `triage` |
 
-**Pas de tracking local en parallèle** — aucun fichier dans le repo (Markdown, YAML, tableau de story) ne doit maintenir sa propre liste de KF/CR/bugs. Pas de double-tracking, pas de sync bidirectionnelle, pas de dérive de source de vérité.
-
-| Type | Template | Labels appliqués par le template |
-|------|----------|----------------------------------|
-| Bug report | `bug_report.yml` | `bug`, `triage` |
-| KF | `known_failure.yml` | `known-failure`, `triage` (+ `technical-debt` à ajouter manuellement si dette persistante) |
-| CR / feature request | `feature_request.yml` | `enhancement`, `triage` |
-
-Titre homogène pour les KF : `[KF-NNN] description` — facilite la recherche visuelle dans la liste d'issues.
-
-⛔ **Le numéro se lit DEPUIS GITHUB avant d'être attribué — jamais depuis un fichier, une mémoire ou une rétrospective.** Rien ne contrôle l'unicité, et un numéro relu depuis un état périmé produit une collision **silencieuse** : la recherche par numéro rend alors deux résultats sans le signaler.
-
-```sh
-gh issue list --state all --limit 300 --json title --jq '.[].title' \
-  | grep -oE '^\[KF-[0-9]{3}\]' | grep -oE '[0-9]{3}' | sort -n | tail -1
-```
-
-⚠️ **Le détecteur porte sur le PRÉFIXE, pas sur le titre entier** : un titre peut *mentionner* une autre KF sans la porter — `[KF-020] … pour fermer la race no-op KF-004 résiduelle` est une référence, pas une attribution. Un `grep` sur le titre entier compte les deux et rend un faux positif. *Un détecteur mal formé coûte le même diagnostic qu'un défaut réel.*
-
-**Précédent (rétrospective Epic 24, 2026-09-10)** : `KF-045` et `KF-046` désignaient chacune **deux issues distinctes** — #330/#421 et #339/#424 —, les secondes ouvertes huit jours après les premières. Renumérotées en KF-051 et KF-052. Reste `KF-002`, portée par #2, #40 et #41 (avril 2026, toutes fermées) : collision historique laissée telle quelle, réécrire le titre de tickets clos n'apporterait rien.
-
-### Quand créer une issue
-
-- **Bug report** : dès qu'un comportement incorrect est reproduit, **hors du flux normal de dev d'une story en cours**. Si le bug est découvert pendant l'implémentation d'une story liée, le corriger directement dans la story et le documenter dans le Change Log de la story.
-- **KF** : dès qu'un test cassé ou un comportement défaillant est détecté **hors scope du travail courant**.
-- **CR** : **avant** tout changement de scope qui modifie le PRD ou les AC d'une story déjà validée (`done` ou en `review`). Ne pas faire de modification silencieuse du scope.
-
-### Commits qui adressent une issue
-
-Chaque commit qui adresse partiellement ou totalement une issue doit mentionner son numéro :
-- **Fermer l'issue** : `fix(api): close IDOR on contacts (#2)` ou `... (closes #2)` ou `... (fixes #2)` — GitHub ferme automatiquement l'issue au merge sur `main`.
-- **Référencer sans fermer** : `fix: round invoice totals (refs #42)` — lie le commit à l'issue sans la fermer.
-
-**Le mot-clé de fermeture se porte sur la PR, pas sur les commits intermédiaires.** Une story se construit en plusieurs commits, tous en `refs #N` — c'est correct, aucun d'eux ne clôt à lui seul. Mais le dépôt merge en **squash** : le message du commit final est le **titre et le corps de la PR**, et c'est donc là que `closes #N` doit figurer pour que GitHub ferme l'issue au merge.
-
-⚠️ **`refs` partout donne un merge propre et une issue qui reste ouverte, sans le moindre signal.** Rien ne rougit, rien ne prévient : on découvre l'issue ouverte des jours plus tard, ou jamais. Vérifier après merge vaut mieux que supposer :
-
-```sh
-gh issue view <N> --json state --jq .state
-```
-
-*(Précédent : Story 16-3b, 2026-08-11. Les sept commits portaient `refs #151`, la PR #296 disait « Ferme #151 » en toutes lettres — en prose, pas en mot-clé. L'issue est restée ouverte après le merge et a dû être fermée à la main.)*
-
-⛔ **Aucun mot-clé de fermeture dans un message de COMMIT — pas même en prose ni au futur.** `closes`, `fixes`, `resolves` (et leurs variantes) ne s'écrivent que dans le **titre ou le corps de la PR**. GitHub ferme une issue dès qu'un commit poussé sur `main` porte le mot-clé, et le corps d'une PR squashée reprend les messages des commits : une phrase comme « cette story closes #526 » ferme l'issue trop tôt, ou la ferme alors que la PR ne la règle pas. Greper avant d'ouvrir ou de merger une PR (`git log origin/main..HEAD --format=%B | grep -niE '\b(close[sd]?|fix(e[sd])?|resolve[sd]?) #[0-9]'`) et réécrire le message de squash au besoin. Écrire aussi « validation terminée » plutôt que « validation close », que le contrôle prend pour un mot-clé. *(Rétrospective de l'Epic 28, § 4.4 : #526 fermée trop tôt par « closes #526 » écrit en prose dans un commit ; action B4, appliquée par les prompts depuis l'Epic 29 sans faute, versée ici le 2026-10-23.)*
-
-### Legacy
-
-Deux fichiers dans `docs/` sont **archivés et ne doivent plus être mis à jour** — ils ne servent que de trace historique :
-
-- `docs/change_request.md` — archivé depuis 2026-04-16, 8 CR migrés sur GitHub.
-- `docs/known-failures.md` — archivé depuis 2026-04-18, 7 KF migrées sur GitHub (KF-001 à KF-007).
-
-Toute nouvelle KF/CR/bug → GitHub uniquement. Ne **pas** rouvrir ces fichiers pour y ajouter des entrées.
-
-## Un appariement automatique propose, il ne crée jamais
-
-**Règle** : quand Kesh rapproche une donnée entrante d'une entité existante — un fournisseur sur une facture scannée, un débiteur sur un virement, un article sur une ligne — il **propose** un rattachement à l'utilisateur. Il ne crée jamais l'entité d'office, et ne tranche jamais seul un rattachement douteux. Ce qui n'est pas certain va dans une file « à rattacher ».
-
-**Pourquoi, et le motif n'est pas celui qu'on croit.** L'objection habituelle est qu'un appariement automatique crée des doublons. C'est vrai, et ce n'est pas le plus grave : **un doublon est bruyant**, on le voit dans la liste et on le corrige. Le vrai danger est le **faux rattachement** — une facture imputée au mauvais fournisseur. Celui-là est **muet** : rien ne le signale, il fausse la comptabilité analytique et les rapports, et on ne le découvre qu'en cherchant autre chose.
-
-Les données entrantes sont bruitées par nature : « Dubarde SàRL », « Dubarde Sarl », « DUBARDE S.à r.l. » désignent la même société ; deux sociétés d'un même groupe portent des noms presque identiques et sont deux débiteurs distincts. **Aucun seuil de similarité ne sépare les deux cas de façon fiable**, et le coût d'une erreur n'est pas symétrique.
-
-⚠️ **C'est le comportement actuel de l'import de factures** — aucun `contacts::create` dans le chemin d'import, la pièce importée attend un rattachement humain. La règle est écrite pour qu'on n'en sorte pas par inadvertance, en croyant améliorer l'ergonomie.
-
-*Corollaire* : la prévention se place **à la saisie** (signaler un contact proche avant l'enregistrement, cf. #301), pas à la réparation. Signaler, jamais bloquer : deux clients peuvent légitimement porter des noms très proches.
-
-*(codifié 2026-08-12, à la suite de la revue de projet — proposition de Guy, étendue de « en cas de doute » à « sans exception » sur l'argument du faux rattachement muet.)*
+- **Titre d'une KF : `[KF-NNN] description`.** Le numéro se lit **depuis GitHub** avant d'être attribué, sur le seul préfixe :
+  ```sh
+  gh issue list --state all --limit 600 --json title --jq '.[].title' \
+    | grep -oE '^\[KF-[0-9]{3}\]' | grep -oE '[0-9]{3}' | sort -n | tail -1
+  ```
+- **Quand créer** : un bug reproduit hors de la story en cours (un bug trouvé dans la story se corrige dans la story, au Change Log) ; une KF détectée hors du travail courant ; un CR **avant** tout changement de périmètre d'une story validée.
+- **Commits** : chaque commit qui touche une issue la cite en `refs #N`. **Aucun mot-clé de fermeture (`closes`, `fixes`, `resolves` et variantes) dans un message de commit**, pas même en prose : il ne s'écrit que dans le titre ou le corps de la PR, puisque le dépôt fusionne en squash. Contrôle avant d'ouvrir ou de fusionner une PR :
+  ```sh
+  git log origin/main..HEAD --format=%B | grep -niE '\b(close[sd]?|fix(e[sd])?|resolve[sd]?) #[0-9]'
+  ```
+  Écrire « validation terminée », non « validation close ». Après fusion, vérifier : `gh issue view <N> --json state --jq .state`.
 
 ## Migration breaking policy
 
-**Politique introduite Story 10-2** — protège contre les downgrades silencieux corrupteurs.
+- **(P1) Définition.** Une migration est **breaking** si un binaire antérieur ne peut plus consommer le schéma correctement (`DROP COLUMN` lue, `RENAME TABLE`, `MODIFY`/`CHANGE COLUMN` vers un type incompatible). **Toute** migration, breaking ou non, empêche le binaire précédent de démarrer (sqlx refuse une migration appliquée qu'il ne connaît pas) : le retour en arrière passe par la sauvegarde d'avant la mise à jour, ou par le SQL qui défait la migration et retire sa ligne de `_sqlx_migrations`. « Non breaking » veut dire : sans relever `kesh_version_min_required` et sans corrompre le schéma.
+- **(P2) Bump.** Une migration breaking finit par `UPDATE _kesh_version SET kesh_version_min_required = '<version de la PR>' WHERE id = 1;`, version figée dans le SQL.
+- **(P2-bis) Le bump `min_required` va toujours avec le bump Cargo** : si `min_required` passe à `X.Y.Z`, tous les crates (`crates/*/Cargo.toml`) sont ≥ `X.Y.Z` dans la même PR, sinon le binaire refuse de démarrer et d'importer une sauvegarde. Le défaut ne se voit qu'au gate complet : jamais `done` sans lui.
+- **(P3) Revue.** Une migration `DROP TABLE`, `DROP COLUMN`, `RENAME TABLE`, `RENAME COLUMN`, `MODIFY COLUMN <type>` ou `CHANGE COLUMN <nom> <type>` sans bump de `kesh_version_min_required` est un finding **CRITICAL**. (MariaDB : `MODIFY`/`CHANGE COLUMN`, pas `ALTER COLUMN … TYPE`.)
+- **(P4) Exception.** Une telle opération restée compatible porte `-- breaking-skip-bump: <justification>`, confirmée en revue.
+- **(P5) Audit d'idempotence.** Toute nouvelle migration ajoute sa ligne au tableau de `docs/migrations-idempotence-audit.md` (`yes` / `no` / `tracked-by-sqlx`, avec justification) ; à défaut, finding **MEDIUM**. Le total apparaît deux fois (en-tête `## Table d'audit (N migrations)` et ligne `Total`) et égale la somme des trois compteurs de partition ; tous se recomptent depuis le tableau :
+  ```sh
+  ls crates/kesh-db/migrations/*.sql | wc -l
+  grep -c '^| `20' docs/migrations-idempotence-audit.md
+  ```
+- **(P6) Couplage positionnel.** Toute nouvelle migration oblige à lancer `grep -rn "migrations.len()\|apply_migrations_up_to" crates/` et à inspecter chaque site : index résolu par version (`.position(|m| m.version == …)`, à préférer), ou couplage positionnel assumé avec garde qui échoue bruyamment (`assert_eq!(total, N)` ou assertion de montage). Un site positionnel sans garde est un finding **MEDIUM**. *Motif : un test indexé par position peut se mettre à passer à vide.*
+- **(P7) Backfills de données.** Toute migration qui écrit des données se trie au registre `POST_RESTORE_BACKFILLS` ou à `EXEMPT_MIGRATIONS` avec justification écrite (`crates/kesh-db/src/post_restore.rs`) ; `every_data_backfill_migration_is_triaged` l'impose ; un manquement est un finding **MEDIUM**.
+  - Le détecteur cherche large (`UPDATE`, `INSERT` sous toutes ses formes, `REPLACE`, `DELETE`, SQL décommenté, instructions sur plusieurs lignes) et classe sur le premier mot-clé ; `ON UPDATE CURRENT_TIMESTAMP` est du DDL.
+  - Une migration hors de la fenêtre d'import ne s'inscrit pas au registre (`registry_entries_are_within_import_window`). Une justification « hors fenêtre » commence par la chaîne `Hors fenêtre`, faute de quoi `exemptions_claiming_out_of_window_really_are_out_of_window` ne la contrôle pas.
+  - **Classe A** (rejeu inconditionnel) seulement si toutes les instructions sont gardées contre l'écrasement d'une valeur de l'utilisateur ; sinon **classe B** (rejeu conditionné à une colonne sentinelle), valide seulement si DDL et backfill sont dans le même fichier. Ne jamais classer sur la présence textuelle de `IS NULL` / `NOT EXISTS`.
+- **(P8) Une migration appliquée ne se modifie plus, pas même un commentaire** : sqlx compare l'empreinte de l'octet et refuse de démarrer. Ce qu'on voudrait y ajouter va dans `docs/migrations-idempotence-audit.md`, les Dev Notes ou une migration suivante. Le gate complet ne le voit pas (bases éphémères) ; seul un démarrage sur une base persistante (E2E, `cargo run`) le révèle.
 
-**(P1) Définition** : Une migration est **breaking** si elle introduit un état du schéma qu'un binaire Kesh antérieur ne peut **plus** consommer correctement (ex. `DROP COLUMN` d'une colonne lue par un SELECT du binaire antérieur, `RENAME TABLE`, `MODIFY COLUMN` ou `CHANGE COLUMN` introduisant un type incompatible ex. DECIMAL → VARCHAR). La majorité des migrations (`ADD COLUMN` nullable, `ADD INDEX`, `CREATE TABLE` de nouvelle entité) sont **non-breaking** car les anciens binaires les ignorent.
+## Commits, branches et push
 
-⚠️ **« Les anciens binaires les ignorent » est faux à la lettre, et la release 0.13.3 l'a constaté avec l'image publiée.** `sqlx` refuse de démarrer sur une base qui porte une migration **appliquée qu'il ne connaît pas** (`migration 20261013000001 was previously applied but is missing in the resolved migrations`) : **toute** migration, breaking ou non, empêche le binaire précédent de démarrer. « Non-breaking » veut donc dire ici *sans relever `kesh_version_min_required`* et *sans corrompre le schéma* — pas *retour en arrière possible*. Le retour à la version précédente passe par la sauvegarde d'avant la mise à jour, ou par le SQL qui défait la migration **et** retire sa ligne de `_sqlx_migrations`. La politique (P2–P8) reste juste : elle protège contre un downgrade *corrupteur*, qu'un refus de démarrer n'est pas. *(Constaté le 2026-10-14, release 0.13.3 ; action A-C8 de la rétrospective de l'Epic 15, qui demandait de vérifier ce fait à l'exécution avant de l'écrire.)*
+- **Brancher avant le premier `Edit`/`Write`** d'une story, d'un correctif ou d'une maintenance :
+  ```sh
+  git checkout main && git pull --ff-only
+  git checkout -b story/X-Y-slug    # ou chore/…, fix/…, docs/…
+  ```
+  Le hook `scripts/hooks/pre-commit` refuse les commits sur `main`/`master` (installation : `bash scripts/install-hooks.sh`, à chaque clone et après toute mise à jour du hook). Contournement exceptionnel : `--no-verify`, justifié dans le message.
+- **Branches** : `story/X-Y-slug`, `chore/…`, `fix/…` (rare), `docs/…`, `epic/N-slug`, `hotfix/X.Y.Z` (§ *Travailler à plusieurs développeurs*).
+- **Un commit par étape BMAD** : après `bmad-create-story`, après chaque passe de validation, après `bmad-dev-story`, après chaque passe de `bmad-code-review`.
+- **Push** : sur demande de Guy ; à chaque story close, sans redemander — sa branche `story/…`, puis la branche d'epic une fois la fusion contrôlée (décision de Guy du 2026-11-16) ; à la fin d'un epic ; ou quand un workflow l'impose, justifié.
 
-**(P2) Procédure de bump** : Quand une migration breaking est introduite, la migration elle-même DOIT contenir, **en dernière instruction**, un `UPDATE _kesh_version SET kesh_version_min_required = '<version-de-la-PR-qui-introduit-la-migration>' WHERE id = 1;`. La version est figée dans le SQL (pas via paramètre runtime), comme la version d'origine `'0.1.0'` figée dans `crates/kesh-db/migrations/20260522000001_kesh_version.sql`.
+### Documentation à synchroniser
 
-**(P2-bis) Le bump `min_required` va TOUJOURS de pair avec le bump de version Cargo du workspace** — codifié 2026-07-14 après un incident réel (Story 21-3, 1er bump `min_required` du repo). Si `min_required` passe à `X.Y.Z`, **tous les crates du workspace** (`crates/*/Cargo.toml`, `version = "…"`) DOIVENT être ≥ `X.Y.Z` **dans le même commit/PR**. Sinon le binaire courant (dont `env!("CARGO_PKG_VERSION")` est encore l'ancienne version) devient **plus ancien que sa propre DB** → `check_downgrade_protection` (`main.rs`) **refuse le boot** ET l'import backup (`admin_backup`, le manifeste porte `min_required`). **Piège de détection** : ce défaut est **invisible en `bmad-create-story validate` (statique)** — il ne se manifeste qu'au **runtime** (boot / import), donc au **gate workspace complet** (les suites `admin_backup_e2e` / `admin_full_import_e2e` / `migrations_fresh_install` l'attrapent). Ne JAMAIS marquer une story avec bump `min_required` « done » sans avoir passé le gate runtime complet. Le bump `min_required` et le bump Cargo sont **les deux moitiés de la même action de version**.
-
-**(P3) Garde-fou code review** : Si une PR introduit une migration `DROP TABLE`, `DROP COLUMN`, `RENAME TABLE`, `RENAME COLUMN`, `MODIFY COLUMN <type>`, ou `CHANGE COLUMN <name> <type>` **sans** UPDATE de `kesh_version_min_required`, c'est un finding **CRITICAL** à remonter en passe `bmad-code-review`. Note dialecte : MariaDB utilise `MODIFY COLUMN <type>` ou `CHANGE COLUMN <old> <new> <type>` pour les changements de type (la syntaxe PostgreSQL `ALTER COLUMN <name> TYPE <type>` n'est **pas** supportée en MariaDB — référence locale `crates/kesh-db/migrations/20260419000002_users_company_id.sql:23` utilise bien `MODIFY COLUMN`). Le rationale : ces opérations sont celles dont l'omission du bump min_required exposerait silencieusement les utilisateurs à un downgrade corrupteur. Inversement, `ADD COLUMN nullable` / `ADD INDEX` / `CREATE TABLE` n'imposent pas de bump.
-
-**(P4) Exception documentée** : Si une migration utilise une de ces opérations mais reste **techniquement compatible** avec un binaire antérieur (rare — typiquement `DROP` d'une colonne jamais lue), l'auteur de la PR doit ajouter un commentaire SQL `-- breaking-skip-bump: <justification>` dans la migration, et un Pass code-review devra confirmer la justification. Sinon par défaut → bump obligatoire.
-
-**(P5) Garde-fou audit idempotence** : Toute PR introduisant un nouveau fichier `crates/kesh-db/migrations/*.sql` DOIT ajouter une ligne correspondante au tableau `docs/migrations-idempotence-audit.md` avec verdict (`yes` / `no` / `tracked-by-sqlx`) + justification. Si une PR ajoute un `.sql` migration sans modifier `docs/migrations-idempotence-audit.md`, c'est un finding **MEDIUM** à remonter en passe `bmad-code-review`. Rationale : éviter que l'audit doc dérive silencieusement au fil des Epics suivants — symétrique de la discipline P3.
-
-**Vérifier la ligne ET les compteurs, en recomptant la source.** Le **total** de migrations apparaît à **deux** endroits du fichier — l'**en-tête de section** `## Table d'audit (N migrations)` et la ligne `Total` des « Statistiques ». S'y ajoutent **trois compteurs de partition** (`yes`, `tracked-by-sqlx`, `no`) dont la **somme** doit égaler ce total. Tous se **recomptent depuis le tableau**, jamais ne s'incrémentent de confiance. Recompte de contrôle :
-
-```sh
-ls crates/kesh-db/migrations/*.sql | wc -l                 # doit égaler les DEUX sites du total…
-grep -c '^| `20' docs/migrations-idempotence-audit.md      # …et le nombre de lignes du tableau
-```
-
-⚠️ Les compteurs de partition ne valent **pas** le total — les aligner dessus casserait l'invariant qu'ils servent à tenir. *(Cette précision a dû être écrite deux fois : la passe 1 de revue de la 16-1a-bis, en corrigeant un compteur faux, avait énoncé une règle fausse — « les trois sites doivent donner le même nombre » — que la passe 2 a rattrapée. Corriger un compteur et écrire la règle de son contrôle sont deux gestes distincts.)* Précédent : au moment de la Story 16-1a, le compteur `tracked-by-sqlx` annonçait 45 pour **52** réelles — dérive de 7 accumulée sur les Epics 20/21, parce que 11 lignes de migration avaient été ajoutées **sous** la section « Maintenance future » au lieu du tableau, et que les statistiques ne comptaient que le premier bloc. La passe 7 de `validate` de la 16-1a déclare pourtant avoir « re-vérifié les compteurs » : **sept passes adversariales ont confirmé un nombre faux**, parce que relire une valeur n'est pas recompter sa source.
-
-**(P6) Garde-fou couplage positionnel des migrations** : Toute PR introduisant un nouveau fichier `crates/kesh-db/migrations/*.sql` DOIT exécuter `grep -rn "migrations.len()\|apply_migrations_up_to" crates/` et **inspecter chaque site**. Un test qui indexe les migrations **par position** (`total - N`, `&all[..n]`) change silencieusement de sens à chaque migration ajoutée : la fenêtre qu'il croit appliquer se décale d'un cran.
-
-Chaque site doit satisfaire l'un des deux critères :
-
-- **résolution par version** — l'index est obtenu par `.position(|m| m.version == <version>)`, ce qui rend le montage insensible aux ajouts futurs (**à préférer**) ; OU
-- **couplage positionnel assumé** — il matérialise une frontière historique voulue, et porte alors **obligatoirement** un garde-fou fail-loud : `assert_eq!(total, <N>)` codé en dur, ou une assertion de montage vérifiant l'état attendu du schéma avant la migration cible.
-
-Un site positionnel **sans** garde-fou est un finding **MEDIUM** en `bmad-code-review`.
-
-Rationale — ce mode d'échec est **invisible en revue de diff** : il ne naît ni du code écrit ni de la spec, mais de l'**interaction** entre la migration ajoutée et des tests que la PR ne touche pas. Seul le gate réellement exécuté le révèle. Précédent Story 16-1a : 3 tests touchés, dont `upgrade_path_preserves_data` (échec net grâce à son `assert_eq!(total, 55)` volontaire), `backfill_matches_seed_for_every_chart` (échec grâce à son assertion de montage) et surtout **`backfill_skips_archived_accounts`, qui s'est mis à passer À VIDE** — ses rôles ressortaient `NULL` non pas parce que le backfill écartait correctement un compte archivé, mais parce qu'il ne tournait plus du tout sur ces lignes. Un test muet ne détecte plus aucune régression, et rien ne le signale. C'est la raison d'être du critère « assertion de montage obligatoire ».
-
-*(codifié 2026-07-28, passe 1 de `bmad-code-review` de la Story 16-1a)*
-
-**(P7) Garde-fou triage des backfills de données** : Toute PR introduisant une migration qui **écrit des données** DOIT la trier — soit au registre `POST_RESTORE_BACKFILLS`, soit à la liste `EXEMPT_MIGRATIONS` **avec une justification écrite** (`crates/kesh-db/src/post_restore.rs`). Le test `every_data_backfill_migration_is_triaged` l'impose et échoue en nommant le fichier ; un manquement laissé passer est un finding **MEDIUM** en `bmad-code-review`.
-
-Rationale : `_sqlx_migrations` n'est pas restaurée par l'import d'installation. Sans rejeu, restaurer un `.keshbackup` antérieur à une migration de backfill **rouvre définitivement** le bug qu'elle fermait — la migration reste marquée appliquée et ne repassera jamais. Et le contrôle de schéma ne voit rien : `is_required()` est faux dès qu'une colonne porte un `DEFAULT`, pas seulement quand elle est nullable, si bien qu'une colonne `NOT NULL DEFAULT …` est silencieusement **réinitialisée à son défaut**.
-
-**Détecter, c'est chercher LARGE.** Le détecteur couvre `UPDATE`, `INSERT` **toutes formes** (`INTO … SELECT`, `INTO … VALUES`, `IGNORE`, `LOW_PRIORITY`, `HIGH_PRIORITY`, `ON DUPLICATE KEY UPDATE`), `REPLACE` et `DELETE`, sur du SQL **décommenté** et découpé en statements **multi-lignes**. Il classe sur le **premier mot-clé** du statement, et c'est ce qui lui donne cette largeur sans énumération à maintenir. Le coût d'une forme en trop est une exemption d'une ligne ; le coût d'une forme manquante est un garde-fou **muet**. C'est arrivé **deux fois** pendant la seule spécification de la Story 16-1c : d'abord un `grep "INSERT INTO.*SELECT"` **mono-ligne** (le `SELECT` était à la ligne suivante), puis un motif `INSERT\s+INTO` qui ratait les quatre `INSERT **IGNORE** INTO` d'une autre migration. Attention aussi à `ON UPDATE CURRENT_TIMESTAMP`, présent dans une vingtaine de migrations : c'est du **DDL**.
-
-**Trier, ce n'est pas forcément inscrire au registre.** Un backup n'est importable que si son inventaire de tables est **identique** au nôtre (`parse_and_verify` compare dans les deux sens), et les tables ne font que s'ajouter : une migration **antérieure à la dernière création de table applicative** est donc hors d'atteinte, son cas de déclenchement étant refusé en 400 bien avant le rejeu. L'y inscrire produirait du code mort **qui paraît fonctionner** — et, s'il est en classe A, exécuté à chaque import. Le test `registry_entries_are_within_import_window` recalcule cette fenêtre depuis le `MIGRATOR` et échoue si une entrée en sort.
-
-**L'exemption est l'issue la moins coûteuse, donc celle qu'il faut contrôler.** Le garde-fou de triage propose lui-même « soit l'ajouter à `EXEMPT_MIGRATIONS` avec une justification écrite » : rédiger une justification est plus rapide qu'inscrire une entrée au registre, et une justification fausse désactive le rejeu **définitivement et en silence**. D'où le symétrique `exemptions_claiming_out_of_window_really_are_out_of_window`, qui recalcule la fenêtre pour toute justification invoquant l'argument. Il la reconnaît à un **marqueur textuel** : une justification « hors fenêtre » DOIT commencer par la chaîne `Hors fenêtre`, faute de quoi elle échappe au contrôle et redevient une affirmation crue sur parole.
-
-**Classer, ça se déclare, ça ne se devine pas.** Classe **A** (rejeu inconditionnel) uniquement si **tous** les statements sont gardés contre l'écrasement d'une valeur posée par l'utilisateur ; classe **B** (rejeu conditionné à l'absence d'une colonne sentinelle) sinon — et la classe B n'est valide que si le **DDL et le backfill sont dans le même fichier**. Ne **jamais** classer par détection textuelle de `IS NULL` / `NOT EXISTS` : un `NOT EXISTS` peut être un prédicat **structurel** de ciblage et non une garde d'idempotence. Et ne pas réutiliser le critère « un `NULL` n'est l'expression d'aucun choix » : il est **faux** dès qu'une route écrit le champ en *full-replace*.
-
-*(codifié 2026-08-01, Story 16-1c / issue #281)*
-
-**(P8) Une migration appliquée ne se modifie plus — pas même un commentaire.** `sqlx` enregistre le **checksum** de chaque fichier dans `_sqlx_migrations` et refuse de démarrer dès qu'il diffère : `migration <version> was previously applied but has been modified`. Le binaire **ne boote pas**. Cela vaut pour une correction de faute, un renommage de commentaire, une reformulation d'en-tête — le contenu SQL n'a rien à voir dans l'affaire, c'est l'octet qui compte.
-
-La portée du dégât dépend de qui a déjà appliqué le fichier :
-
-- **Migration jamais publiée** (branche non mergée) : seules les bases de dev locales sont touchées — la vôtre, `kesh_e2e`, celles d'un collègue ayant testé la branche. Réparable, mais c'est du temps perdu et un plantage déroutant.
-- **Migration publiée dans une release** : toute installation à jour refuse de démarrer après mise à jour. Il n'y a alors **aucun retour en arrière propre**.
-
-**Conduite à tenir** : ce qu'on veut ajouter à une migration déjà appliquée se met **ailleurs** — la ligne de `docs/migrations-idempotence-audit.md`, les Dev Notes de la story, ou une migration suivante. Et si la modification est réellement nécessaire *avant* toute publication, la rendre **délibérée** : annoncer la reconstruction des bases de dev concernées, et vérifier qu'aucune base persistante du gate ne reste en arrière.
-
-⚠️ **Le gate complet ne voit rien de ce défaut** : les tests `#[sqlx::test]` créent une base éphémère et rejouent les migrations à neuf, donc ils restent verts. Seul un démarrage réel contre une base **persistante** le révèle — c'est-à-dire, en pratique, la suite E2E ou un `cargo run` de dev.
-
-*(codifié 2026-08-11, passe 2 de `bmad-code-review` de la Story 16-3b : un correctif de passe 1 avait reformulé l'en-tête de `20260810000001_contacts_client_number.sql`, ce qui a fait échouer le démarrage du backend E2E sur `kesh_e2e` — après un gate backend pourtant vert à 2158/2158. Le correctif a été annulé, la clarification déplacée hors du fichier de migration.)*
-
-## Règle de commit et push
-
-**Règle de branchement avant commit** :
-
-Avant le **premier** `Edit`/`Write` d'une nouvelle story, feature, fix ou tâche de maintenance — **toujours brancher d'abord, commiter ensuite** :
-
-```sh
-git checkout main && git pull --ff-only
-git checkout -b story/X-Y-slug    # ou chore/..., fix/..., docs/...
-# puis Edit/Write/commit
-```
-
-Pourquoi cette règle existe : sans elle, les premiers commits d'une story atterrissent sur `main` local, puis on `git checkout -b` après coup ce qui emporte les commits sur la nouvelle branche, mais laisse `main` local décalé. Après le squash-merge de la PR, `main` local pointe encore sur l'ancien commit et diverge de `origin/main`. Symptôme : `git pull` qui refuse de fast-forward, état incohérent, risque de `git reset --hard` mal ciblé.
-
-**Garde-fou outillé** : un hook `pre-commit` versionné dans `scripts/hooks/pre-commit` refuse les commits directs sur `main`/`master`. Installation (à exécuter une fois par clone du repo, et après tout update du hook) :
-
-```sh
-bash scripts/install-hooks.sh
-```
-
-Le script copie les hooks dans `.git/hooks/` (chemin par défaut, indépendant de la branche checkout — un hook activé via `core.hooksPath scripts/hooks` ne protégerait pas les branches qui ne contiennent pas encore le fichier hook, ex. `main` pré-merge).
-
-Bypass exceptionnel : `git commit --no-verify`, à justifier dans le message de commit.
-
-Branches typiques :
-- `story/X-Y-slug` — implémentation d'une story BMAD (ex. `story/7-5-kf-008-playwright-selector-fixes`).
-- `chore/...` — maintenance, sprint-status, doc post-merge, infra.
-- `fix/...` — bugfix hors story (rare — préférer story dédiée si scope > trivial).
-- `docs/...` — mise à jour pure de documentation hors flux story.
-- `epic/N-slug` — un epic, livré dans une seule release ; les branches `story/…` de l'epic en partent et y reviennent (§ *Travailler à plusieurs développeurs*).
-- `hotfix/X.Y.Z` — un correctif urgent, parti du tag de la dernière release publiée (même section).
-
-**Commit systématique après chaque étape BMAD** :
-
-On commit localement après chaque étape structurante du workflow BMAD, sans attendre :
-
-- **Après `bmad-create-story`** (ou `bmad-quick-spec`) — la spec est un artefact versionné, pas un brouillon.
-- **Après chaque passe de `bmad-create-story validate`** — chaque passe produit un Change Log entry + patches éventuels, qu'il faut tracer séparément.
-- **Après `bmad-dev-story`** (ou `bmad-quick-dev`) — l'implémentation est prête à être revue.
-- **Après chaque passe de `bmad-code-review`** — idem validate, chaque passe a ses findings + patches.
-
-Un commit par étape, pas un commit géant en fin de story. Ça permet de revenir en arrière proprement et de voir le fil du processus dans `git log`.
-
-**Push à la demande ou en fin d'epic** :
-
-On **ne push pas automatiquement** après chaque commit. Deux déclencheurs :
-
-1. **Sur demande explicite** de Guy (ex. « pousse », « fais une PR », « ouvre la PR »).
-2. **À la fin d'un epic**, après la rétrospective (`bmad-retrospective`). Le push de fin d'epic est le moment où l'on regroupe plusieurs stories dans un PR (ou plusieurs PRs) et où l'on matérialise la clôture de l'epic.
-
-**Exception** : si une règle de workflow BMAD spécifique impose un push (ex. CI check obligatoire avant passe suivante), on push. À justifier dans le message de commit ou dans la conversation.
-
-**Synchroniser le planning du README à chaque commit** :
-
-Avant de créer un commit, vérifier que la **section « Feuille de route »** de `README.md` reflète encore l'état du projet. Le but est d'éviter qu'elle dérive au fil des epics et donne une fausse image (epic marqué "En cours" alors que toutes ses stories sont done, feature listée *(à venir)* alors qu'elle est livrée, etc.).
-
-Vérifier en particulier après :
-
-- **Clôture d'un epic** (rétro done) → mettre à jour le statut dans le tableau des versions (✅ Done / 🚧 En cours / 📋 Backlog).
-- **Story qui livre une feature listée dans la section « Fonctionnalités »** → retirer le marqueur *(à venir)*.
-- **Renumérotation d'epics** (cf. décision rétro Epic 5 qui a renuméroté 6→13 en 7→14) → propager le nouveau découpage.
-- **Changement de scope d'une version** (feature déplacée v0.1 → v0.2 ou inverse, validé via CR) → refléter dans le tableau.
-
-Si une mise à jour est nécessaire, l'inclure **dans le même commit** que le changement qui l'a déclenchée (typiquement le merge de la dernière story de l'epic, ou la rétro). Pas de commit séparé « sync README » a posteriori — sinon le `git log` ne raconte plus l'histoire.
-
-Si le commit ne change rien à la planification (refactor interne, fix de bug, code review patches) le README reste tel quel.
-
-**Synchroniser TOUTES les docs avant tout push / création de release** :
-
-Au-delà du planning README à chaque commit (ci-dessus), élargir la vérification à **tous les supports de documentation** au moment d'**actions visibles à l'extérieur du repo** :
-
-- **À tout `git push` qui ouvre/met à jour une PR** → vérifier que les docs touchées par la branche sont cohérentes.
-- **À toute création de release** (tag annoté `vX.Y.Z` + push tag déclenchant `.github/workflows/release.yml`) → audit complet de toutes les docs.
-- **À toute clôture d'epic** (post-`bmad-retrospective`) → idem audit complet.
-
-**Supports de doc à auditer** :
-
-| Support | Localisation | Trigger CI/CD | Quand vérifier |
-|---------|--------------|---------------|----------------|
-| `README.md` (racine) | `/README.md` | rendu auto par GitHub sur la page repo | À chaque commit (cf. paragraphe précédent) + push/release |
-| Site GitHub Pages | `website/` (HTML statique) | `.github/workflows/deploy-pages.yml` déclenché par push sur `main` touchant `website/**` | Push/release (rebuild automatique) |
-| Manuel admin LaTeX FR | `docs/manual/fr/admin-manual.tex` (+ `.pdf` régénéré) | release (PDF attaché ?) | Release + clôture d'epic majeure (changement install/config/sécurité) |
-| Manuel user LaTeX FR | `docs/manual/fr/user-manual.tex` (+ `.pdf`) | idem | Release + stories qui ajoutent/modifient des features visibles utilisateur |
-| Brochure marketing LaTeX FR | `docs/manual/fr/marketing-brochure.tex` (+ `.pdf`) | idem | Release (changements de positionnement / pricing) |
-| Manuels DE/IT/EN | `docs/manual/{de,en,it}/` (vide v0.1, traductions v0.2+) | idem | Release majeure ; v0.1 = noter "à traduire" si gap |
-| CHANGELOG | `CHANGELOG.md` racine (à créer Story 10-4) | release (lecture par tooling release) | Release **obligatoire**, push de fin d'epic recommandé |
-
-**Liste de contrôle pré-push / pré-release** :
-
-1. **README.md « Feuille de route »** : tableau des versions à jour (✅/🚧/📋 par epic), section « Fonctionnalités » sans `(à venir)` pour ce qui est livré.
-2. **`website/index.html` + `website/roadmap.html`** : claims marketing alignés avec ce qui est *réellement* dans `main` à la release. Pas d'over-promise sur des features non-mergées. Pas d'under-claim sur des features livrées (visibilité Google Search Console).
-3. **`website/issues.html`** : si la page liste les KFs ou roadmap connue, synchroniser avec l'état actuel des labels GitHub Issues (`known-failure`, `enhancement`, `v0.2-milestone`).
-4. **Manuels LaTeX FR** : si la story touche install/config/sécurité/usage utilisateur, mettre à jour la section correspondante (admin-manual pour DevOps, user-manual pour fiduciaires/comptables). Régénérer le PDF (`latexmk -xelatex` dans `docs/manual/fr/`) et le commiter (la convention projet est de versionner les PDFs cf. PR #102).
-4-bis. **Macro version des manuels — gate release OBLIGATOIRE et inconditionnel** : à **toute création de release** (pas seulement si la story touche un manuel), bumper les trois macros de `docs/manual/shared/kesh-style.sty` pour qu'elles correspondent EXACTEMENT à la version publiée : `\keshVersion{X.Y.Z}` (= version Cargo / champ `version` de `/health`), `\keshReleaseDate{AAAA-MM-JJ}` (date de publication Docker Hub) et `\keshTargetRelease{vX.Y}`. **Puis régénérer les 3 PDF** (`make fr` dans `docs/manual/`) et les commiter — la page de titre et l'en-tête de chaque manuel affichent `\keshVersion`, donc un macro périmé ment sur toutes les pages. *Précédent (2026-06-27, doc-sync v0.3) : la macro était restée bloquée à `0.1.0-dev`/`v0.1` à travers v0.2 ET v0.3 — l'étape « manuels » 4 était conditionnée « si la story touche un manuel », ce qui laissait passer les releases purement code. D'où ce gate inconditionnel.* **Garde-fou** : si un tag `vX.Y.Z` est créé alors que `\keshVersion` ≠ `X.Y.Z`, c'est un défaut de release à corriger avant le push du tag. **Avec la macro, porter au même tag `vX.Y.Z` toutes les URL `raw.githubusercontent.com/guycorbaz/kesh/<réf>/…` des manuels, du README et de `website/`** — jamais `main`, qui peut être en avance sur l'image publiée ; écrites en dur dans des `lstlisting` où la macro ne s'étend pas, elles sont tenues égales à `v<\keshVersion>` par la garde G19 de `crates/kesh-api/tests/textes_coherents.rs`, qui rougit tant qu'elles n'ont pas suivi le bump. *(Ajouté à la release 0.13.0, 2026-10-10.)*
-5. **CHANGELOG** (une fois créé Story 10-4) : entrée pour la release courante avec sections `Added` / `Changed` / `Fixed` / `Security` / `Removed` (style [Keep a Changelog](https://keepachangelog.com/)).
-6. **`scripts/prepare-release.sh` — à LANCER, pas seulement à connaître** : il bumpe les versions Cargo, date l'entrée du CHANGELOG, et **affiche les rappels qui n'ont pas d'autre filet**. Si les crates portent déjà la version cible — le cas normal quand une migration a imposé le bump (P2-bis) —, il saute le bump mais exécute tout le reste, pré-vol et datation compris ; relancé après commit, il ne date pas deux fois ; il refuse une version inférieure ou déjà taguée (#566). Le principal : les exemptions du registre de rejeu (`EXEMPT_MIGRATIONS`, `crates/kesh-db/src/post_restore.rs`) dont la justification repose sur un **fait daté** — « aucune version publiée ne se situe dans tel intervalle » — et que **cette release même peut rendre fausses**, silencieusement et définitivement. Le test `exemptions_claiming_out_of_window_really_are_out_of_window` ne les couvre pas : il ne contrôle que le fondement « Hors fenêtre ». Le script **refuse la release** (`exit 1`) s'il trouve un tag déjà publié dont l'arbre porte la borne basse de l'intervalle sans porter la migration exemptée — c'est-à-dire une version publiée là où la justification déclare qu'il n'y en a aucune. ⚠️ **`release.yml` se déclenche sur `push: tags:` et n'impose rien** : poser un tag à la main contourne ce contrôle. Le script est le seul endroit qui *pose* la question, pas une barrière — d'où sa place dans cette liste. *(Ajouté le 2026-09-09, passe 2 de revue de code de la Story 24-5, finding P2-3 : le script existait, son rappel était écrit, et il se disait « seul point de passage de toute release » alors qu'il n'était nommé nulle part. Un garde-fou hors de la procédure qu'il garde n'est pas un garde-fou. Reformulé en passe 3, finding P3-6 : la formulation absolue n'était garantie par aucun outillage. Le rappel lui-même a été refondu aux findings P3-2/P3-3 — il ne grepe plus rien, il lit `ExemptionBasis` par un exemple Rust.)*
-6-bis. **`scripts/recette-montee.sh`** joue la montée de version et le retour sur des données synthétiques, depuis l'image publiée précédente (`docs/testing.md`).
-7. **`docs/known-failures.md` + `docs/change_request.md`** : déjà archivés depuis 2026-04-16/18 — **pas** d'update ici, juste vérifier qu'aucune nouvelle entrée n'a été ajoutée par erreur (les KF/CR vont sur GitHub Issues désormais, cf. §"Issue Tracking Rule").
-
-**Règle d'inclusion** : tout update de doc déclenché par la story DOIT être **dans le même commit** ou la même PR que le code qui le motive (pas de PR doc séparée a posteriori, sauf cas où plusieurs stories y contribuent et que la doc serait rejouée — alors batched dans la PR de la dernière story de l'epic, cohérent `feedback_avoid_parallel_prs`).
-
-**Si la doc n'est pas touchée** (refactor interne, fix de bug sans changement comportemental visible, code review patches cosmétiques) : tous les supports restent tels quels — pas de "doc-only commit" cosmétique pour la forme.
-
-**Coût d'oubli** : un manuel admin obsolète après une story qui change le format `.env` ou les ports réseau induit du support utilisateur cassé. Une feuille de route README qui ment fait perdre la confiance d'un éval/contributeur. Un CHANGELOG manquant à la release rend impossible le diff "qu'est-ce qui change pour mes utilisateurs". Les 3 minutes de vérification valent les heures de support en aval.
+- **À chaque commit** : la « Feuille de route » de `README.md` reflète l'état du projet (statut des epics, marqueurs *(à venir)*, renumérotations, changements de périmètre), mise à jour dans le commit qui la change.
+- **Toute mise à jour de documentation voyage dans le commit ou la PR du code qui la motive.** Pas de commit de documentation cosmétique quand rien n'a changé.
+- **À tout push de PR**, vérifier la cohérence des docs que la branche touche ; **à toute release et toute clôture d'epic**, audit complet de :
+  1. `README.md` — feuille de route et « Fonctionnalités » ;
+  2. `website/index.html`, `website/roadmap.html` — rien de promis qui ne soit dans `main`, rien de livré qui manque ; `website/issues.html` aligné sur les labels GitHub ;
+  3. manuels LaTeX (`docs/manual/fr/` : `admin-manual`, `user-manual`, `marketing-brochure` ; DE/IT/EN) — mis à jour si la story touche installation, configuration, sécurité ou usage ;
+  4. **(4-bis) macros de version, à toute release, sans condition** : `\keshVersion{X.Y.Z}` (= version Cargo et `/health`), `\keshReleaseDate{AAAA-MM-JJ}`, `\keshTargetRelease{vX.Y}` dans `docs/manual/shared/kesh-style.sty`, puis les PDF régénérés (`make fr` dans `docs/manual/`). Un tag dont la version diffère de `\keshVersion` est un défaut de release. Les URL `raw.githubusercontent.com/guycorbaz/kesh/<réf>/…` des manuels, du README et de `website/` portent le même tag `vX.Y.Z`, jamais `main` (garde G19 de `crates/kesh-api/tests/textes_coherents.rs`) ;
+  5. `CHANGELOG.md` — entrée de la release, au format Keep a Changelog, assemblée depuis les *Notes de version* des fiches ;
+  6. **`scripts/prepare-release.sh`, à lancer** : bump Cargo, datation du CHANGELOG, rappels sans autre filet ; il refuse la release quand une exemption datée de `EXEMPT_MIGRATIONS` est démentie par un tag publié. Poser un tag à la main contourne ce contrôle ;
+  7. `scripts/recette-montee.sh` — montée et retour depuis la dernière image publiée (`docs/testing.md`).
 
 ## Travailler à plusieurs développeurs
 
-**Depuis le 2026-11-15, Kesh a plusieurs développeurs** : le Project Lead et l'orchestrateur qui travaille sur son mandat, et des contributeurs à qui des numéros d'epic sont réservés (37 à 39, 40). Les règles ci-dessous, décidées par Guy ce jour-là, en découlent ; `docs/developpement-a-plusieurs.md` les explique à un contributeur, avec leurs motifs. **Elles font foi ici** ; le document les commente.
+Kesh a plusieurs développeurs depuis le 2026-11-15 : le Project Lead, l'orchestrateur qui travaille sur son mandat, et des contributeurs à qui des epics sont réservés (37 à 39, 40 ; le prochain epic interne est le 41, et le reste de l'Epic 36 part en epics neufs à partir du 42). Décisions de Guy des 2026-11-15 et 2026-11-16 ; `docs/developpement-a-plusieurs.md` les commente pour un contributeur, mais **elles font foi ici**.
 
 ### Planification — GitHub Projects
 
-- **Un projet GitHub « Kesh »** porte la planification à long terme, au niveau des **issues** : **release = milestone** (une issue n'appartient qu'à une release), **epic = champ du projet**, **qui = l'assigné**. Les vues : feuille de route par release, table par epic, tableau par développeur.
-- **Les stories BMAD restent dans `sprint-status.yaml`** : le projet ne les recopie pas (§ *Issue Tracking Rule*, pas de double suivi). Le projet dit *quoi, pour quand, par qui* ; le dépôt dit *comment*.
-- **Seules les deux ou trois prochaines releases sont datées** ; le reste va au milestone « Plus tard », sans date. N'entrent au projet que les issues qu'un epic ou une release retient ; les autres restent en triage.
-- **Réserver un epic**, c'est ajouter sa valeur au champ *Epic* avec son responsable et son objet — non un échange d'e-mails. **Rattacher une issue à une release est une décision du Project Lead** ; les contributeurs proposent.
-- **On parle d'epics, non de numéros de release** (e-mails, fiches, décisions) : l'epic est stable, le numéro de release ne l'est qu'au tag.
+- Le projet GitHub « Kesh » porte la planification au niveau des **issues** : **release = milestone** (une issue n'appartient qu'à une release), **epic = champ du projet**, **qui = l'assigné**.
+- **Les stories BMAD restent dans `sprint-status.yaml`** ; le projet ne les recopie pas.
+- Seules les deux ou trois prochaines releases sont datées ; le reste va au milestone « Plus tard ». N'entrent au projet que les issues qu'un epic ou une release retient.
+- Réserver un epic, c'est renseigner le champ *Epic* avec responsable et objet. **Rattacher une issue à une release est une décision du Project Lead** ; les contributeurs proposent.
+- On parle d'epics, non de numéros de release : le numéro n'est acquis qu'au tag.
 
-### Numérotation des versions — deux niveaux
+### Numérotation des versions
 
-- **Une release planifiée monte le chiffre mineur** : 0.18.0, 0.19.0, 0.20.0. Elle reçoit son milestone d'avance.
-- **Un correctif urgent monte le chiffre de correction** de la dernière release publiée : 0.18.1, 0.18.2. Son milestone naît avec le bug. Il part du **tag** (branche `hotfix/X.Y.Z`), ne porte **aucune migration** — une correction qui en exige une n'est plus un correctif et va à la prochaine release planifiée —, et il est **reporté dans `main`** après publication.
-- La v0.17.8 est la dernière release numérotée à l'ancienne (chaque release montait le chiffre de correction) ; la phase 2 de l'Epic 36 se publie en 0.18.0 (sans migration) puis 0.19.0 (avec migrations).
-- **Un epic = une release** *(décision de Guy du 2026-11-15)* : à partir de l'Epic 37, un epic ne s'étale plus sur plusieurs releases. Un chantier trop grand pour une release se découpe en plusieurs epics au kickoff. L'Epic 36, déjà réparti sur 0.17.8, 0.18.0 et 0.19.0 (décision D2), est la dernière exception.
-- **Un epic reste petit, en règle générale** *(décision de Guy du 2026-11-15)* : un epic de correction ou d'amélioration se borne à ce qu'une release courte peut livrer ; seul l'ajout d'une fonctionnalité nouvelle peut justifier un epic plus important. Au kickoff, un epic qui paraît trop grand se découpe en plusieurs epics, chacun avec sa release. **Borne** : un epic de correction ou d'amélioration compte **au plus six stories**, story de solde comprise ; un epic de fonctionnalité nouvelle peut dépasser, à condition de le dire au kickoff. **Et surtout, pas de story trop longue ni trop complexe** : c'est la taille des stories qui compte d'abord — la règle de splitting préventif (§ *Review Iteration Rule*) s'applique dès la fiche.
+- **Une release planifiée monte le chiffre mineur** (0.19.0, 0.20.0) et reçoit son milestone d'avance.
+- **Un correctif urgent monte le chiffre de correction** de la dernière release publiée (0.18.1) : branche `hotfix/X.Y.Z` partie du tag, **aucune migration** (sinon il va à la prochaine release planifiée), reporté dans `main` après publication.
+- **Un epic = une release**, jamais plus : un chantier trop grand se découpe en plusieurs epics au kickoff ; un epic qui n'aboutit pas se réduit (§ *Cadence*). Une release peut porter plusieurs epics.
+- **Un epic reste petit** : un epic de correction ou d'amélioration compte **au plus six stories**, story de solde comprise ; un epic de fonctionnalité nouvelle peut dépasser, si le kickoff le dit. La taille des stories compte d'abord : le splitting préventif s'applique dès la fiche.
 
 ### Ordre des releases
 
-- **La première release terminée sort la première.** Un numéro n'est acquis qu'au tag : si le contenu prévu pour la 0.20.0 est prêt avant celui de la 0.19.0, il prend 0.19.0, et l'on échange les milestones.
-- **Le second arrivé reprend `main`** dans sa branche, résout, puis rejoue tous les gates et l'E2E complet. Si les deux releases portent des migrations, leur ordre se contrôle à cette intégration, sur une base peuplée par la release du premier ; la recette de montée part toujours de la **dernière image publiée**.
-- Un correctif en cours dont la base a été dépassée par une release planifiée se publie depuis cette dernière (0.19.1 plutôt que 0.18.2), sauf décision contraire du Project Lead.
-- **Seul le Project Lead pose un tag et publie une image**, ou l'orchestrateur sur son mandat explicite : un seul point ordonne les publications.
+- **La première release terminée sort la première** ; si besoin, on échange les numéros et les milestones.
+- **Le second arrivé reprend `main`** dans sa branche, résout, puis rejoue tous les gates et l'E2E complet ; si les deux releases portent des migrations, leur ordre se contrôle sur une base peuplée par la release du premier. La recette de montée part toujours de la dernière image publiée.
+- Un correctif dont la base a été dépassée par une release planifiée se publie depuis celle-ci, sauf décision du Project Lead.
+- **Seul le Project Lead pose un tag et publie une image**, ou l'orchestrateur sur son mandat explicite.
+
+### Cadence — au moins une release par semaine
+
+- **Au moins une release par semaine de présence du Project Lead** : la date tient, le périmètre s'ajuste.
+- **La semaine type** : coupure le **jeudi soir** (n'entrent que les stories closes — boucle de revue terminée, gates de clôture et E2E complet verts) ; intégration le **vendredi matin** (dernières fusions, gates, recette de montée, revue du code d'intégration, PR, CI) ; **accord de fusion du Project Lead vers midi**, puis tag et image ; mise à jour du NAS par le Project Lead.
+- **Chaque story se fusionne dans la branche de son epic dès sa clôture**, puis on pousse (§ *Commits, branches et push*) ; les branches `story/…` poussées se suppriment sur GitHub après la fusion de la release.
+- **Une branche d'epic n'est pas une base** : un contributeur part de `main` ; bâtir sur une branche d'epic non publiée demande l'accord du Project Lead.
+- **Un epic qui n'aboutit pas se réduit** : à la coupure, l'orchestrateur sort les stories non closes (`backlog`, pour une semaine suivante) et le dit au compte rendu de la PR ; le Project Lead garde le dernier mot. Il ne touche jamais à l'epic d'un contributeur.
+- **Une story sortie emporte sa migration.** Une migration est annoncée d'avance au projet GitHub et dite en tête des notes ; les migrations voisines se regroupent quand c'est possible.
+- **Chaque release planifiée corrige au moins un ou deux bugs**, dans une story de correction en plus de ses epics, comptée dans la borne de six : un P1 d'abord, sinon ce qui touche l'usage réel du Project Lead, sinon le plus ancien. Elle est petite et part en premier. Le dosage s'adapte au stock de bugs. Elle s'ajoute à la story de solde et à la correction des LOW, sans les remplacer.
+- **Une release urgente** (`hotfix/X.Y.Z`) reste possible pour un bug majeur — P1 qui touche les livres ou la conformité, ou défaut qui bloque le Project Lead —, sur sa décision ; elle ne compte pas comme la release de la semaine.
+- **Absence du Project Lead** : pas de release cette semaine-là ; il annonce ses dates d'avance, les stories continuent.
 
 ### Branches
 
@@ -1016,30 +380,29 @@ Au-delà du planning README à chaque commit (ci-dessus), élargir la vérificat
 | tag `vX.Y.Z` | production : le code exact de l'image publiée |
 | `hotfix/X.Y.Z` | correctif urgent parti du tag, reporté ensuite dans `main` |
 
-- **Pas de branche `develop`** : `main` ne reçoit déjà que des epics terminés, et le tag tient lieu de branche de production.
-- **Une branche par epic, fusionnée une fois.** Le dépôt fusionne en squash : une branche qui continuerait après sa fusion ne reconnaîtrait plus son propre travail dans `main` et rejouerait de faux conflits. Un epic terminé se fusionne, sa branche se clôt. *(L'Epic 36, réparti sur trois releases, a une branche par release.)*
-- **Reprendre `main` dans sa branche au moins après chaque release publiée** par un autre : les conflits se paient par petits morceaux.
+- Pas de branche `develop`.
+- **Une branche par epic, fusionnée une fois** (le squash rend toute suite après fusion source de faux conflits).
+- **Reprendre `main` dans sa branche au moins après chaque release publiée** par un autre.
 - **On ne touche ni aux branches ni aux bases de test d'un autre.**
 
 ### Fusions et fichiers communs
 
-- **Au kickoff de chaque epic**, le fichier d'epic déclare les fichiers et modules qu'il touchera (tableau des fichiers communs). Deux epics en cours sur le même module se voient alors avant la première ligne ; l'ordre ou le partage se décide avec le Project Lead.
-- **Les fichiers que tout le monde touche ont leur règle** :
+- **Au kickoff**, le fichier d'epic déclare les fichiers et modules qu'il touchera ; deux epics sur le même module s'arbitrent avec le Project Lead.
 
 | Fichier | Règle |
 |---|---|
-| `CHANGELOG.md` | jamais écrit en cours d'epic : assemblé à la release depuis les *Notes de version* des fiches |
-| PDF des manuels | jamais commités dans une branche `epic/…` ou `story/…` : seul le `.tex` change, les PDF se régénèrent à la release |
-| catalogues i18n (quatre locales), `sprint-status.yaml` | chaque epic écrit dans son propre bloc ; le conflit se résout en gardant les deux côtés |
-| compteurs (`sitesTotal` de `i18n-keys.test.ts`, totaux de `docs/migrations-idempotence-audit.md`, schéma de test) | se **recomptent** depuis la source après la fusion, ne se fusionnent pas |
-| migrations | un fichier chacune, nommé par horodatage ; l'ordre se contrôle à l'intégration |
+| `CHANGELOG.md` | pas écrit dans les stories : assemblé à l'intégration depuis les *Notes de version* des fiches |
+| PDF des manuels | jamais commités dans `epic/…` ou `story/…` : seul le `.tex` change, les PDF se régénèrent à la release |
+| catalogues i18n (quatre locales), `sprint-status.yaml` | chaque epic dans son bloc ; un conflit se résout en gardant les deux côtés |
+| compteurs (`sitesTotal` de `i18n-keys.test.ts`, totaux de `docs/migrations-idempotence-audit.md`, schéma de test) | se recomptent depuis la source après la fusion |
+| migrations | un fichier chacune, horodaté ; l'ordre se contrôle à l'intégration |
 | `Cargo.lock` | se régénère après la fusion |
 
-- **Le second arrivé résout, dans sa branche, jamais dans `main`.** La résolution garde **les deux intentions** (règle, test, texte, compteur) ; si elles se contredisent, il ne tranche pas seul : il en parle à l'autre, et le Project Lead arbitre.
-- **Toute PR d'un epic vers `main` passe une revue du code d'intégration** (précédent : la 0.17.8) : les commits de fusion relus en diff combiné, et les **interactions sans conflit de texte** cherchées — deux epics qui changent la même règle dans deux fichiers différents, ce que Git fusionne sans rien dire.
+- **Le second arrivé résout, dans sa branche, jamais dans `main`**, en gardant les deux intentions ; s'il y a contradiction, il en parle à l'autre et le Project Lead arbitre.
+- **Toute PR d'un epic vers `main` passe une revue du code d'intégration** : commits de fusion relus en diff combiné, et recherche des interactions sans conflit de texte (deux epics qui changent la même règle dans deux fichiers).
 
 ### CI
 
-- `ci.yml` se déclenche aussi sur les PR vers `epic/**` (toute branche dont le nom commence par `epic/`) : une story d'un contributeur passe la même CI avant d'entrer dans la branche de son epic.
-- **Le cache Rust n'est sauvegardé que depuis `main`** (`save-if`) et porte une clé partagée (`shared-key`) : les PR le lisent sans l'écrire. Le cache du dépôt est plafonné à 10 Go par GitHub et en occupait 8,2 le 2026-11-15 ; chaque branche qui écrit le sien en évincerait d'autres et ferait tout recompiler. Le cache Docker (`type=gha`) n'est pas restreint : `e2e-smoke` reconstruit l'image de la PR depuis le cache que `docker-build` vient d'écrire.
+- `ci.yml` tourne aussi sur les PR vers `epic/**`.
+- **Le cache Rust ne s'écrit que depuis `main`** (`save-if`, `shared-key`) ; les PR le lisent. Le cache Docker (`type=gha`) n'est pas restreint.
 - Une CI allégée sur les PR vers `epic/**` reste à décider avec les contributeurs.

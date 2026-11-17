@@ -520,14 +520,23 @@ pub struct WriteOffOutcome {
 ///   le compte de la nature, celui du reste d'arrondi et celui de TVA due sont
 ///   comparés par **identifiant** à la créance lue sur la vente — le contrôle de
 ///   type des comptes désignés ne suffit pas (un compte qui porte des écritures
-///   change de type avec confirmation), et la TVA due n'en a aucun au moment
-///   d'écrire. Chaque comparaison suit la lecture de son compte et celle de la
-///   créance ; l'ordre des refus est donc celui des lectures : **nature**
-///   (`role: write_off_nature`, ou `rounding` pour la nature `rounding`), **reste
-///   d'arrondi** (`role: rounding` — même colonne de réglage), **TVA due**
-///   (`role: vat_payable`). Le premier égal est nommé ; une nature égale à la
-///   créance précède les refus de configuration du reste d'arrondi et de la TVA
-///   due.
+///   change de type avec confirmation, et une créance retypée en passif passe
+///   le type de la TVA due). Chaque comparaison suit la lecture de son compte
+///   et celle de la créance ; l'ordre des refus est donc celui des lectures :
+///   **nature** (`role: write_off_nature`, ou `rounding` pour la nature
+///   `rounding`), **reste d'arrondi** (`role: rounding` — même colonne de
+///   réglage), **TVA due** (`role: vat_payable`). Le premier égal est nommé ;
+///   une nature égale à la créance précède les refus de configuration du reste
+///   d'arrondi et de la TVA due, et le refus de type de celle-ci.
+/// - ⛔ **La TVA due doit rester un passif** (Story 36-9, #1044) : son accesseur
+///   ([`company_invoice_settings::vat_payable_account_for_write`]) refuse, sous
+///   son verrou, un compte retypé depuis sa désignation —
+///   `DesignatedAccountsWrongType`, le refus de la validation d'une facture
+///   (Story 35-3) —, après l'absent ou l'archivé et avant le non imputable
+///   (tous deux `ConfigurationRequired`). Ce refus précède la comparaison de la
+///   TVA due à la créance : une TVA due désignée sur la créance qui n'est pas un
+///   passif (restée un actif, ou retypée en charge ou en produit) est nommée par
+///   son type.
 #[allow(clippy::too_many_arguments)]
 pub async fn write_off_invoice(
     pool: &MySqlPool,
@@ -691,9 +700,10 @@ pub async fn write_off_invoice(
     } else {
         let vat =
             company_invoice_settings::vat_payable_account_for_write(&mut tx, company_id).await?;
-        // Story 15-6b — la TVA due n'est pas la créance. Aucun contrôle de type ne
-        // garde ce compte au moment d'écrire : cette comparaison est sa seule
-        // garde contre `D 1100 / C 1100`.
+        // Story 15-6b — la TVA due n'est pas la créance. Depuis la Story 36-9
+        // (#1044), l'accesseur refuse une TVA due qui n'est plus un passif ; mais
+        // une créance retypée en passif puis désignée TVA due passe ce contrôle :
+        // cette comparaison reste la garde contre `D 1100 / C 1100`.
         invoice_settlements::refuse_if_claim_account(
             &mut tx,
             company_id,

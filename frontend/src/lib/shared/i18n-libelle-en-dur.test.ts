@@ -383,8 +383,21 @@ const SUFFIXES = ['Label', 'Text', 'Display'];
  * `ecartee` **15 → 18**) ; dans `closing-checks-labels.ts`, `notRevaluedText` (textes par
  * `i18nMsg` seulement : `conforme` **97 → 98**). Relevé par la garde après la fusion, non
  * additionné.
+ *
+ * **92 → 95, et les déclarations sont NOMMÉES** (Story 36-17, #1187) : dans
+ * `lib/features/onboarding/OnboardingDone.svelte`, `orgTypeLabel` (le type d'organisation du
+ * récapitulatif : chaque branche par `i18nMsg`, la valeur inconnue rendue telle quelle) et
+ * `summaryErrorText` (par `i18nMsg`) ; dans `lib/features/onboarding/onboarding-screens.ts`,
+ * `onboardingLanguageLabel` (le nom d'une langue lu dans la table `ONBOARDING_LANGUAGES`, nom
+ * de chaque langue dans sa propre langue, qui ne se traduit pas — aucun `return` d'un
+ * littéral). `conforme` **78 → 81** ; `ecartee` ne bouge pas. Relevé par la garde
+ * (`expected 95 to be 92`, `kesh-gate-logs/e36-17/front-test-unit-1.log`), non additionné.
+ *
+ * **Intégration de main (v0.18.0) dans l'Epic 37** (2026-11-17) : **119**, relevé par la garde après
+ * la fusion (`expected 119 to be 0`, `kesh-gate-logs/integration-main-37/vitest-1.log`), non
+ * additionné — 92 + 24 (Epic 37) + 3 (Story 36-17) ; `ecartee` **18**, `conforme` **101**.
  */
-const CANDIDATES_ATTENDUES = 116;
+const CANDIDATES_ATTENDUES = 119;
 
 /** Les trois délimiteurs de littéral en JS/TS. */
 const QUOTES = ["'", '"', '`'];
@@ -901,7 +914,7 @@ describe('libellés en dur — l’angle mort #255', () => {
 			else if (c.retours.length > 0) classes.ecartee += 1;
 			else classes.conforme += 1;
 		}
-		expect(classes).toEqual({ nonAnalysee: 0, enViolation: 0, ecartee: 18, conforme: 98 });
+		expect(classes).toEqual({ nonAnalysee: 0, enViolation: 0, ecartee: 18, conforme: 101 });
 		// La somme est recalculée depuis les classes, jamais depuis le total qu'elle contrôle.
 		const somme = Object.values(classes).reduce((a, b) => a + b, 0);
 		expect(somme).toBe(CANDIDATES_ATTENDUES);

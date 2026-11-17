@@ -227,7 +227,7 @@
 			{#if projects.length > 0}
 				<div class="mt-2">
 					<label class="mb-1 block text-xs text-text-muted" for="manual-match-project">
-						{i18nMsg('reconciliation-manual-project-label', 'Projet analytique (optionnel)')}
+						{i18nMsg('reconciliation-manual-project-label', 'Compte analytique (optionnel)')}
 					</label>
 					<select
 						id="manual-match-project"
