@@ -125,6 +125,13 @@ test.describe('Assistant — compte bancaire lié dès l’installation (#966)',
 		await page.fill('#fy-start', `${annee}-04-01`);
 		await expect(page.locator('#fy-end')).toHaveValue(`${annee + 1}-03-31`);
 		await page.getByTestId('onboarding-skip-bank').click();
+		// Intégration de la v0.18.0 (Story 36-17, #1187) : la page « Configuration terminée »,
+		// sans navigation d'office, dont le récapitulatif porte l'exercice à ces dates.
+		await expect(page.getByTestId('onboarding-screen-done')).toBeVisible();
+		const resume = page.getByTestId('onboarding-done-summary');
+		await expect(resume).toContainText(`01.04.${annee}`);
+		await expect(resume).toContainText(`31.03.${annee + 1}`);
+		await page.getByTestId('onboarding-done-start').click();
 		await expect(page).toHaveURL(/\/$/);
 
 		await page.goto('/settings/fiscal-years');
