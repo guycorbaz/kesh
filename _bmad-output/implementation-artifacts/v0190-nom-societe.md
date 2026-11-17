@@ -1,6 +1,6 @@
 # Story v0190-nom-societe : le nom de la société se modifie dans *Paramètres → Organisation* (#1097)
 
-Status: review
+Status: done
 
 *Fiche rédigée le 2026-11-17 (Sonnet 5.5), worktree `kesh-v0190c`, branche `story/v0190-nom-societe` à créer depuis
 `epic/v0190-correction` (= `main` = v0.18.0, `8b50fd195`), par le workflow `bmad-create-story`. Issue de la scission de
@@ -132,6 +132,18 @@ Ceux de `e35-dev-commun.md` : gate ciblé en cours de développement (`npm run c
 - **2026-11-17 — validation terminée** (fiche relue avec `v0190-correction` jusqu'à la P4) : P1 Opus 4 MEDIUM / 5 LOW → P2 Sonnet 0 MEDIUM / 6 LOW → P3 ciblée Opus 1 MEDIUM (N3-1, le normaliseur `trim` déjà donné par la règle commune) / 1 LOW (N3-2, ligne du patron g-bis) → P4 ciblée Haiku, aucun finding pour cette fiche (`validation-p4-ciblee.md` : « La boucle `v0190-nom-societe` peut se clore sur cette passe »). Rapports : `kesh-gate-logs/v0190c/validation-nom-societe-p1.md`, `-p2.md`, `-p3-ciblee.md`, `validation-p4-ciblee.md`.
 - **2026-11-17 — étape 0 du développement** (Opus 5.5, worktree `kesh-v0190n`, clé `v0190n`, voie 2). Le dernier rapport propre à la fiche (P3) ne laisse qu'un LOW, N3-2, déjà appliqué (AC1 g-bis cite `companies_repository.rs:355`, montage `:362-369`) ; ligne lue `crates/kesh-db/tests/companies_repository.rs:355` `async fn update_preserves_address_when_structured_columns_are_empty(pool: MySqlPool) {`. Prémisses relues avant d'écrire : `kesh-qrbill/src/validation.rs:10` `pub const NAME_MAX: usize = 70;`, `:213` `pub fn first_qr_refused_char(value: &str) -> Option<char> {`, `:244` `pub fn champ_vide_pour_qr(valeur: &str) -> bool {` ; `company-conflict.ts:55-57` `normalizeCompanyValue` = `(value ?? '').trim()` (N3-1 : aucun normaliseur ajouté) ; aucune migration (`20260404000001_initial_schema.sql:6` `name VARCHAR(255) NOT NULL,`).
 - **2026-11-17 — développement** : voir le Dev Agent Record. Écart à la fiche : quatre compteurs non inventoriés, dont celui du manuel d'administration (C-v0190c-23).
+- **2026-11-17 — revue de code terminée, clôture.**
+  - **Tendance de la revue** :
+    - P1, trois lentilles B/E/A (Sonnet), 0 CRITICAL / 0 HIGH / 0 MEDIUM / 8 LOW (`kesh-gate-logs/v0190n/review-p1-{B,E,A}.md`). Les LOW B1, B2, A1, A2, E1 à E4 ont été corrigés dans la story (`6794e82a0`), voir la section « Remédiation de la revue P1 » du Dev Agent Record.
+    - P2 ciblée sur `6794e82a0` (Haiku), 0 / 0 / 0 / 3 LOW (`review-p2-ciblee.md`). L2 (message de l'assertion `sans_ecriture`, qui redonne « 120 au total = 119 + /password-reset-token ») est corrigé par `293fc245c`, message de test seul. L1 et L3 sont tracés par #1244 ; l'adresse tronquée, hors périmètre, par #1243.
+    - Modèles : développement et remédiations Opus 5.5 ; P1 Sonnet ; P2 ciblée Haiku.
+  - **Gates de clôture** au **dernier commit de code `293fc245c`**, bases de la voie 2 remises à neuf (`migrate-cloture-*.log`) :
+    - `scripts/test-fast.sh --ci`, voie 2 : **5527 passés**, 13 ignorés (`test-fast-cloture.log`).
+    - `scripts/gate-ci.sh kesh_ci_v0190n`, voie 1 : **5534 passés, 0 échoué**, 17 ignorés (`gate-ci-cloture.log`). Un premier lancement, resté en attente du verrou de la voie 1, a été arrêté par son PID pour ne pas tourner en même temps que le frontend ; il n'a rien exécuté.
+    - Frontend complet : `check` 0 erreur ; `lint-i18n-ownership` PASS ; Vitest **247 fichiers, 4004 passés**, `sitesTotal` 3096 vert ; `build` vert (`front-{check,lint-i18n-ownership,test-unit,build}-cloture.log`).
+    - **E2E complet**, base `kesh_e2e_v0190n` recréée, frontend construit à `293fc245c` : **440 passés, 8 échoués, 18 ignorés** (`e2e-complet-cloture.log`). Les huit échecs, nommés un par un contre `docs/testing.md` § « Les échecs attendus » :
+      - les sept de la KF-029 (#97) : `mode-expert.spec.ts:26`, `:41` ; `onboarding-path-b.spec.ts:65`, `:92` ; `onboarding.spec.ts:57`, `:77`, `:150` ;
+      - le huitième, variable : `dunning.spec.ts:59` (« éditer la période de grâce », valeur relue « 5 » au lieu de « 10 » après rechargement), sans rapport avec la story. **Rejoué seul, il passe** (`e2e-rejeu-dunning.log`, 4 passés) : c'est la pollution d'état entre specs que la liste admet.
 
 ## Dev Agent Record
 
