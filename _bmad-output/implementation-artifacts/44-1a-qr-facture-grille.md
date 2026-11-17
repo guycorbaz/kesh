@@ -102,14 +102,18 @@ se testent) ; dernière valeur → intitulé suivant 6,0 (comme `dessiner_refere
 - **D4 — La cascade, réduite à R1 et aux paliers de secours** (C-36-12-5, -9) — chaque palier seulement si le précédent
   ne « tient » pas ; la mise en page est une fonction **pure** qui rend une mise en page, **jamais une erreur** :
   - **Récépissé : R0 → R1 → R4.** **R0** : tout à 8 pt, adresses complètes, coupées à 52 mm (les lignes « tiennent » si le
-    bas de la dernière ligne ≥ 41,52). **Seuil de R0, calculé** (pas de D2 ; bas = base de la dernière ligne − 0,586) :
+    bas de la dernière ligne ≥ 41,52). **Seuil de R0, calculé** (pas de D2 ; bas = base de la dernière ligne − 0,584, soit 207 × 8 × 25,4 / 72 / 1000 = 0,5842) :
     3,5 × N ≤ 30,4 avec une référence QR, ≤ 39,4 sans, où N = nombre de lignes d'adresse du créancier **et** du débiteur
     après coupe à 52 mm, soit **R0 tient jusqu'à N = 8 avec référence QR, N = 11 sans** (valeurs à confirmer à l'étape 0).
     En production, un QR-IBAN configuré donne `Reference::Qrr` (`invoice_pdf_service.rs:324`) : le seuil de 8 est donc le
     cas courant d'un compte QR-IBAN. **R1** (§ 3.6.2, rue omissible au récépissé) : le **créancier et le débiteur ensemble**
     perdent la **ligne de rue et numéro** ; restent le nom (complet, coupé à 52 mm, éventuellement sur plusieurs lignes) et la
-    ligne NPA-localité ; tient si le bas ≥ 41,52 (même formule, N' = lignes restantes). **Sans objet pour le type K**
-    (aucune ligne de rue propre) : le type K passe de R0 à R4. **R4** : le **créancier et le débiteur ensemble** (pas l'un
+    ligne NPA-localité ; tient si le bas ≥ 41,52 (même formule, N' = lignes restantes). **R1 retire toutes les lignes
+    issues de la rue** (jusqu'à cinq à 52 mm), non « la ligne » ; **il ne s'applique que si au moins une des deux adresses
+    a une ligne de rue** — une adresse de type S sans rue (ligne `joindre` vide) n'en perd rien, et si aucune des deux n'en
+    a, R1 ne change pas N et ne « tient » pas plus que R0 : on passe à R4. **Sans objet pour le type K**
+    (aucune ligne de rue propre) : le type K passe de R0 à R4. **R4 sur une adresse dont `lignes_adresse` n'a qu'une
+    ligne** : première et dernière ligne sont la même, imprimée **une seule fois**. **R4** : le **créancier et le débiteur ensemble** (pas l'un
     après l'autre) sont réduits à **la première ligne (le nom) et la dernière ligne de `lignes_adresse`** (NPA-localité pour
     le type S ; **type K** : la dernière ligne non vide, la rue n'ayant pas de ligne propre), chacune **ramenée à 52 mm avec
     « ... »**. **IBAN et référence ne passent pas par `couper_ligne`** (Kesh ne connaît que `Reference::Qrr` et `None`,
@@ -139,8 +143,9 @@ se testent) ; dernière valeur → intitulé suivant 6,0 (comme `dessiner_refere
     critère « tient »), les constantes de pas, `couper_ligne` à la largeur, le garde `aucune_entree_admise_n_echoue`, le
     dispositif de mutations ; la 44-1b **insère** des paliers entre R1 et R4 (R2, R3), entre P0 et P3 (P1, P2) sans toucher à
     R0, R1, R4, P0, P3 ; sans la 44-1b, une adresse trop longue pour R1 passe d'un seul saut à R4 — assumé, mais réservé
-    aux adresses qui, rue omise, dépassent encore 8 lignes avec une référence QR (11 sans), soit des noms de plus de six
-    lignes à eux deux (D8).
+    aux adresses qui, rue omise, dépassent encore 8 lignes avec une référence QR (11 sans) après coupe à 52 mm — des noms
+    de plus de six lignes à eux deux **si** les deux localités tiennent chacune sur une ligne, moins si une localité
+    (35 caractères et NPA) en prend jusqu'à trois (D8).
 - **D5 — Tailles 6 / 8 pt, titres 11 pt** (C-36-12-6) : inchangées.
 - **D6 — Section montant fixe**, alignée des deux côtés (C-36-12-7) : intitulés à la base 35,0 ; montants placés comme
   aujourd'hui dans la section (décalage 12 mm au récépissé, 15 mm en partie paiement) ; le montant ne « remonte » plus.
@@ -150,8 +155,9 @@ se testent) ; dernière valeur → intitulé suivant 6,0 (comme `dessiner_refere
   tronquer qu'« in consultation with the recipient bank » — P3 exige au moins 12 lignes d'adresse à 87 mm, atteint seulement
   par des noms qu'aucune société réelle ne porte, et préféré à un 500 ; (b) **R1 omet la rue au récépissé, ce que § 3.6.2
   permet ; R4 et P3 tronquent la rue et la localité, que la directive ne prévoit pas, et R4 supprime la rue** : R4 est
-  atteint dès que, rue omise, plus de 8 lignes d'adresse restent au récépissé avec une référence QR (11 sans) — noms de plus
-  de six lignes à eux deux, ce qu'aucune adresse ordinaire ne fait, mais ce que 70 caractères de nom permettent —, le code
+  atteint dès que, rue omise, plus de 8 lignes d'adresse restent au récépissé avec une référence QR (11 sans) après coupe
+  à 52 mm — noms de plus de six lignes à eux deux si les localités tiennent chacune sur une ligne, ce qu'aucune adresse
+  ordinaire ne fait, mais ce que 70 caractères de nom permettent —, le code
   QR restant entier ; au récépissé, la troncature du nom reste permise « if the information remains clear » ; (c) le premier
   intitulé du récépissé suit l'échantillon officiel de SIX (3,68 mm du bas du titre, descendantes comprises, 4,48 mm depuis
   sa ligne de base ; 3,1 mm est la mesure de l'échantillon), non les 5 mm des espaces entre sections.
@@ -167,8 +173,7 @@ se testent) ; dernière valeur → intitulé suivant 6,0 (comme `dessiner_refere
 2. ***Payable by*** : en partie paiement, à x = 118, sous *Additional information* (ou sous la référence) ; au récépissé,
    à x = 5, avant la section montant ; **plus rien à x = 67 sous la section montant**.
 3. **Aucune ligne hors de sa zone**, pour chaque fixture (ordinaire de type S, rue longue, étrangère, sans référence, sans
-   message, **débiteur absent**, **type K**, **une qui déclenche R1 (la fixture réaliste de l'AC5)**, une qui déclenche R4, une qui déclenche P3 — laquelle
-déclenche aussi R4, AC5) : récépissé dans [5, 57], colonne
+   message, **débiteur absent**, **type K**, **une qui déclenche R1 (la fixture réaliste de l'AC5)**, une qui déclenche R4 sans P3, une qui déclenche P3 **et R4** (le pire cas), **une qui déclenche P3 et R1 sans R4**, AC5) : récépissé dans [5, 57], colonne
    d'information dans [118, 205], rien dans le rectangle du QR élargi de 5 mm (x ∈ [62, 118], y ∈ [37, 93]) hors le QR et la
    ligne verticale, rien sous y = 5, l'information du récépissé ≥ 5 mm au-dessus du montant (bas ≥ 41,52), rien sur le point
    de dépôt ; boîtes des ciseaux de la 36-12a hors de la bordure du QR.
@@ -183,16 +188,23 @@ déclenche aussi R4, AC5) : récépissé dans [5, 57], colonne
    deux lignes des deux côtés, rue de deux lignes d'un côté, QR-IBAN avec référence QRR) **déclenche R1 et seulement lui** :
    la rue et le numéro manquent des deux adresses au récépissé, les noms, intacts, restent complets, la colonne d'information
    reste en P0 ; **une fixture déclenche R4 sans P3** (noms de quatre lignes des deux côtés au récépissé : 8 lignes de nom +
-   2 de localité = 10 > 8 même rue omise ; la colonne, à 87 mm, reste en P0) ; **une autre déclenche P3, et donc R4** : toute fixture qui déclenche P3 déclenche aussi R4
-   (la colonne tient si n₁ + n₂ + m ≤ 19 avec référence, 21 sans, m ≤ 8 lignes de message ; P3 exige donc n₁ + n₂ ≥ 12 à
-   87 mm, et la coupe à 52 mm ne rend jamais moins de lignes ; démonstration écrite au Dev Agent Record, la fixture du pire cas
-   le vérifiant) — « et seulement lui » n'a de sens que dans une même cascade pour R1 et pour R4 sans P3 ; au palier P3, le message
+   2 de localité = 10 > 8 même rue omise ; la colonne, à 87 mm, reste en P0) ; **une fixture déclenche P3 et R4** (le pire cas : noms de 70 W, rue de 86 caractères, localité de 51 : à 87 mm
+   3 + 3 + 3 lignes par adresse, à 52 mm après R1 4 + 3 = 7 par adresse, soit 14 > 8) ; **une autre déclenche P3 et R1 sans R4**
+   (colonne : n₁ + n₂ + m > 19 avec référence, > 22 sans, m ≤ 8 lignes de message ; P3 exige donc n₁ + n₂ ≥ 12 à 87 mm, ≥ 15
+   sans référence). **Il n'est pas vrai que P3 entraîne R4** : R4 se décide après R1, rue retirée du compte, P3 la compte ;
+   le contre-exemple, **recalculé à l'étape 0** (couper_ligne sur les largeurs AFM, relu à `15b362e19`) : noms de 5 `A` (une
+   ligne chacun) ; rue = un mot de 70 `W`, une espace, un numéro de 16 chiffres ; NPA étranger `XX-` + 16 `W` et localité de
+   35 `W` ; message de 140 caractères en 8 lignes (mots de 17 `W`) ; à 87 mm, par adresse : nom 1, rue 3, NPA-localité 3 = 7,
+   N = 14, N + m = 22 > 19 → **P3** ; à 52 mm : nom 1, rue 5, NPA-localité 3 = 9, N = 18 > 8 → R0 échoue ; R1 : N' = 2 × (1 + 3)
+   = 8 ≤ 8 → **tient** (bas 72,5 − 28,0 − 0,584 = 43,9 ≥ 41,52). Aucune démonstration universelle n'est écrite au Dev Agent
+   Record : chaque fixture se vérifie par ses nombres. — « et seulement lui » n'a de sens que dans une même cascade pour R1 et
+   pour R4 sans P3 ; au palier P3, le message
    tient sur **une ligne** terminée par `...` ; à P0 un message long s'imprime **entier**, sur plusieurs lignes (nombre de
    lignes attendu écrit en dur, **positions des lignes au pas `MESSAGE_PAS`**) ; R1 et R4 s'appliquent au créancier **et** au
    débiteur ensemble (une fixture où seul le débiteur déborde vérifie que le créancier perd aussi sa rue) ; R1 est sans
    objet en type K (la fixture K à 9 lignes passe à R4).
 6. **R4 et P3 tiennent par construction** : un test calcule leur hauteur depuis les constantes de D2 (bas **57,9** et
-   **49,4**, valeurs écrites en dur) et l'affirme ≥ 41,52 et ≥ 5 ; **et** appelle la fonction de mise en page pure sur une
+   **49,4**, valeurs écrites en dur) et l'affirme ≥ 41,52 et ≥ 5, **et égal à ces valeurs à 0,05 mm près** (M10) ; **et** appelle la fonction de mise en page pure sur une
    entrée qui déclenche R4, puis une qui déclenche P3, et lit le bas **qu'elle rend** (non un calcul à côté qui ne
    prouverait pas que la mise en page emploie ces constantes) — la mutation M10 le prouve.
 7. **La mise en page ne rend jamais d'erreur** : sa signature ne rend pas de `Result` (ou rend une erreur que seul un défaut
@@ -242,8 +254,9 @@ déclenche aussi R4, AC5) : récépissé dans [5, 57], colonne
       les doc-comments de `MAX_CARACTERES_*` (`:960-972`).
 12. *(Numéro gardé pour ne pas décaler les références : la table et ses témoins sont l'AC8 de la 36-12a.)*
 13. **Manuel** (`docs/manual/fr/user-manual.tex`, lignes relues à `8b50fd195`) : **dit** la grille, *Payable by*, le palier de
-    secours (rue omise au récépissé dès que l'adresse dépasse 8 lignes avec une référence QR, 11 sans ; puis lignes
-    raccourcies par « ... », message sur une ligne), et **corrige chaque phrase qui devient fausse** :
+    secours (**une adresse très longue**, aux noms sur plusieurs lignes, **perd sa rue au reçu** ; puis, si elle reste trop
+    longue, ses lignes sont raccourcies par « ... » et le message tient sur une ligne) — sans compter de lignes que l'utilisateur
+    ne compte pas, et **corrige chaque phrase qui devient fausse** :
     - `:1307` « Un message long peut aussi sortir de la feuille, faute de borne de largeur (issue \#944) » ;
     - `:1311` « à 27~caractères au reçu et à 46 en partie paiement~: rien n'est tronqué » (la coupe est à la largeur, et un
       palier de secours tronque par « ... ») ; **le titre en gras du même paragraphe, « Le reçu et la partie paiement portent
@@ -270,7 +283,7 @@ contre l'ancienne mise en page ; journal `/home/gcorbaz/devel/kesh-gate-logs/e44
 | `payable_by_dans_la_section_d_information` | 2 | débiteur à (67, 26,0) ; au récépissé, sous le montant |
 | `chaque_ligne_dans_sa_zone` | 3 | colonne à 117 dans la bordure ; lignes hors de la feuille |
 | `la_coupe_mesure_les_largeurs` (valeurs de l'AC4 en dur) | 4 | 27 `W` jusqu'à x ≈ 77 |
-| `la_cascade_par_palier` (R0 à 8 lignes, **R1 à 9 lignes**, R4 sans P3, P3 et R4, débiteur absent, type K, lignes du message au pas `MESSAGE_PAS`) | 5 | aucun palier n'existe ; la rue s'imprime à 9 lignes |
+| `la_cascade_par_palier` (R0 à 8 lignes, **R1 à 9 lignes**, R4 sans P3, P3 et R4, **P3 et R1 sans R4**, R1 sur le seul débiteur, débiteur absent, type K, lignes du message au pas `MESSAGE_PAS`) | 5 | aucun palier n'existe ; la rue s'imprime à 9 lignes |
 | `les_derniers_paliers_tiennent_par_construction` | 6 | écrit **après** les constantes, rouge par mutation (M10) |
 | `aucune_entree_admise_n_echoue` | 8 | lignes hors de la feuille (rouge par l'AC3 dans la propriété) |
 | `le_code_qr_est_inchange` | 9 | croix : rouge (centre (90, 70)) ; charge et matrice : vertes (garde) |
@@ -289,7 +302,13 @@ contre l'ancienne mise en page ; journal `/home/gcorbaz/devel/kesh-gate-logs/e44
 - **M7** P3 retiré → `aucune_entree_admise_n_echoue` ;
 - **M8** croix laissée à l'ancien centre → `le_code_qr_est_inchange` ;
 - **M9** message raccourci sans « ... » → `la_cascade_par_palier` ;
-- **M10** pas de ligne de R4 porté à 5 mm → `les_derniers_paliers_tiennent_par_construction` ;
+- **M10** pas de ligne de R4 porté à 5 mm → `les_derniers_paliers_tiennent_par_construction` (le bas passe de 57,9 à 51,9, encore
+  ≥ 41,52 : le test **affirme aussi le bas égal à 57,9 et 49,4 à 0,05 mm près**, non la seule borne, sans quoi la mutation
+  survit) ;
+- **M13** R1 qui n'omet que la rue du débiteur (R4 de même, par une mutation jumelle) → `la_cascade_par_palier` (la fixture
+  où seul le débiteur déborde : le créancier doit perdre aussi sa rue) ;
+- **M14** P3 qui force R4 (la cascade du récépissé décidée sans R1 dès que P3 se déclenche) → `la_cascade_par_palier` (la
+  fixture « P3 et R1 sans R4 » du contre-exemple de l'AC5 passerait alors à R4 et perdrait ses lignes de nom en trop) ;
 - **M11** montant du récépissé qui suit le contenu (D6 défait) → `la_grille_six_est_tenue`, `sans_reference_aucune_rubrique`.
 Une mutation équivalente se dit.
 
@@ -315,9 +334,9 @@ Une mutation équivalente se dit.
 - QR-facture : la section de paiement suit la grille de la directive SIX. *Payable by* s'imprime dans la section
   d'information, avant le montant ; le montant est à la même hauteur au récépissé et en partie paiement ; le point de dépôt
   remonte à la place que la directive lui donne ; aucun texte ne touche plus le code QR ni ne sort de la feuille, même fait
-  de lettres très larges, et un message trop long se termine par « ... ». Au récépissé, une adresse de plus de 8 lignes avec
-  une référence QR (11 sans) perd sa rue, comme la directive le permet ; une adresse qui dépasse encore (des noms de plus de
-  six lignes à eux deux) est raccourcie par « ... » plutôt que de faire échouer le PDF. Le code QR et son contenu ne changent pas.
+  de lettres très larges, et un message trop long se termine par « ... ». Au récépissé, une adresse très longue
+  (des noms sur plusieurs lignes) perd sa rue, comme la directive le permet ; une adresse qui dépasse encore est
+  raccourcie par « ... » plutôt que de faire échouer le PDF. Le code QR et son contenu ne changent pas.
   **Les PDF déjà émis et figés ne changent pas** ; une facture validée jamais ouverte, un rappel et un PDF refigé prennent le
   nouveau rendu. (refs #944)
 
@@ -327,20 +346,24 @@ Une mutation équivalente se dit.
 
 Étapes intermédiaires R2, R3, P1, P2 : **44-1b**. Lignes et ciseaux : 36-12a. Cadre vide du débiteur : **#1203**. Type K : **#1204**. Police
 embarquée : #943. Anciens PDF figés : #957. **Le corps de la facture** (`IDENTITY_MAX_CHARS`, `pdf.rs:206-212`, qui dit
-qu'une chaîne de 46 `W` occupe 137,9 mm et déborde) est de la même famille et hors périmètre (L4) : **aucune issue ouverte
-n'a été trouvée** (recherches `gh issue list --search` sur `IDENTITY_MAX_CHARS`, « 46 W » et « débordement identité facture »,
-2026-11-17) ; à ouvrir par l'orchestrateur. **`closes #944`** à la PR de release **seulement si** la 44-1a est fusionnée :
-le corps de l'issue ne porte plus que *Payable by*, que cette story livre ; les points de la 44-1b suivent leur propre
-issue.
+qu'une chaîne de 46 `W` occupe 137,9 mm et déborde) est de la même famille et hors périmètre (L4) : il est tracé par
+l'issue **#1229** (ouverte depuis la validation P2). **`closes #944`** à la PR de release **seulement si** la 44-1a est
+fusionnée : le corps de l'issue ne porte plus que les ciseaux et *Payable by*, que la 36-12a et cette story livrent ; les
+points de la 44-1b (R2, R3, P1, P2) suivent leur propre issue, **#1230**, citée dans la fiche 44-1b.
 
 ### Règle de repli à la coupure
 
 Coupure du **jeudi 2026-11-19 au soir** ; le développement démarre **mercredi 2026-11-18 au matin au plus tard**. **Si la
 44-1a n'est pas close jeudi soir** (boucle de revue terminée, `gate-ci` et E2E complet verts au dernier commit de code), **elle
 sort de la release** : elle repasse en `backlog` pour une semaine suivante, **#944 reste ouverte** (aucun `closes #944` à la PR
-de release), la 0.19.0 se publie sans elle. Au plus tard **jeudi à 12 h**, si la story n'est pas **en revue** (`Status:
-review`, prompt de revue P1 lancé), l'orchestrateur le dit au Project Lead : une boucle de revue de deux ou trois passes ne
-tient plus avant le soir. Le plan de release (`release-0.19.0.md`) est à corriger par l'orchestrateur : il porte encore
+de release), la 0.19.0 se publie sans elle. **Calendrier** : le développement démarre **mercredi 18 à 8 h** ; **jalon mercredi 18 h** — la mise en page pure (R0, R1, R4, P0,
+P3) est verte sur les fixtures de l'AC5 ; **sinon la story sort de la release** sans attendre jeudi ; **contrôle jeudi 19 à
+10 h** : la story doit être **en revue** (`Status: review`, prompt de revue P1 lancé), sinon l'orchestrateur le dit au
+Project Lead (le reste — revue P1, remédiation, P2, `gate-ci` et E2E complet au dernier commit de code sous le verrou
+`.gate.lock` partagé avec les Epics 42 et 43 — ne tient plus avant le soir). **Ordre de sacrifice** si la place manque :
+captures en allemand d'abord, puis mutations M4a/b, M8, M9 en dernier recours ; `pire_cas_boites_independantes` jamais ; et,
+dans la release, l'ordre de sortie des stories est : 42-3, 42-2, **44-1a**, correction #1097, correction #1162, Epic 43 en
+dernier. Le plan de release (`release-0.19.0.md`) est à corriger par l'orchestrateur : il porte encore
 `kesh-api/…/invoice_pdf_service.rs` et `issued_invoice_pdf.rs` parmi les fichiers touchés, et « #944 (close) ».
 
 ### Splitting — deux modules
@@ -399,3 +422,10 @@ fiche `36-12b-qr-facture-grille-largeurs.md` ; validation P1 `kesh-gate-logs/e44
   R4 » de l'autre), L1 (IBAN 37,81 / QRR 46,29 mm, hors `couper_ligne`), L2 (`MESSAGE_PAS`), L3 (3,68 / 4,48 mm), L4 (AC6 lit
   le bas rendu par la mise en page), L5 (boîte et conversion du relevé `pdftotext -bbox`), L6 (phrases du manuel nommées),
   L7 (règle de repli, chemin du registre).
+- 2026-11-17 — **Remédiation de la validation P3** (`kesh-gate-logs/e44/remediation-p3.md`) : M1 (la phrase « P3 entraîne R4 »
+  supprimée, fausse depuis que R1 est dans la cascade ; AC3/AC5 : une fixture P3 et R4, une autre P3 et R1 sans R4, contre-exemple
+  du rapport recalculé par script sur les largeurs AFM — par adresse 7 lignes à 87 mm, N' = 8 à 52 mm après R1 ; mutations M13,
+  M14 ; ligne de test), M2 (calendrier : jalon mercredi 18 h, contrôle jeudi 10 h, ordre de sacrifice), L1 (descender 0,584),
+  L2 (≥ 15 / 22 sans référence, dans le texte neuf de l'AC5), L3 (M10 : bas égal à 57,9 / 49,4 à 0,05 mm près, AC6), L4
+  (M13), L5 (R1 : adresse sans rue, plusieurs lignes de rue, R4 sur une ligne), L6 (texte à l'utilisateur sans compte de
+  lignes ; D4 et D8 : « si les localités tiennent chacune sur une ligne »), L7 (#1229, #1230).

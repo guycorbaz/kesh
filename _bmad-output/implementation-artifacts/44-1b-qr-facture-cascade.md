@@ -1,8 +1,8 @@
-# Story 44-1b : QR-facture — les paliers intermédiaires de la cascade (R2, R3, P1, P2) (#944)
+# Story 44-1b : QR-facture — les paliers intermédiaires de la cascade (R2, R3, P1, P2) (#1230)
 
 Status: backlog
 
-*Fiche courte écrite le 2026-11-17 au découpage de la 36-12b (validation P1, H1, option (b)). **Release ultérieure**
+*Issue de la story : **#1230** (R2, R3, P1, P2) ; #944 se ferme avec la 44-1a. Fiche courte écrite le 2026-11-17 au découpage de la 36-12b (validation P1, H1, option (b)). **Release ultérieure**
 (0.20.0 ou la suivante, selon le plan du Project Lead) : elle ne se tient pas dans la 0.19.0 et n'entre pas dans la
 coupure du 2026-11-19. Elle **part de la 44-1a fusionnée** (`44-1a-qr-facture-grille.md`), même fichier `pdf.rs`.
 À rattacher à un epic de sa release au kickoff (la règle « un epic = une release » interdit de la laisser dans l'Epic 44
