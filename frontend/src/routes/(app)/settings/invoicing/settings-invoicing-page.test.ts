@@ -575,4 +575,61 @@ describe('Administration → Facturation — écart admis d’un règlement grou
 			groupSettlementMaxDifference: '0',
 		});
 	});
+
+	// Revue P1 (B1-1) — mutation : le champ envoyé à chaque enregistrement.
+	it('le plafond non modifié n’est pas envoyé : un autre réglage ne le réécrit pas', async () => {
+		getInvoiceSettingsMock.mockResolvedValue(settings({ groupSettlementMaxDifference: '5.01' }));
+		const { findByTestId, container } = render(Page);
+		const input = (await findByTestId('settings-group-max-difference')) as HTMLInputElement;
+		await waitFor(() => expect(input.value).toBe('5.01'));
+		await fireEvent.submit(container.querySelector('form')!);
+		await waitFor(() => expect(updateInvoiceSettingsMock).toHaveBeenCalledTimes(1));
+		expect(updateInvoiceSettingsMock.mock.calls[0][0]).not.toHaveProperty(
+			'groupSettlementMaxDifference',
+		);
+	});
+
+	// Revue P1 (B1-3) — le champ reprend la valeur que le serveur rend.
+	it('après l’enregistrement, le champ reprend la valeur rendue (« 1,5 » → « 1.50 »)', async () => {
+		updateInvoiceSettingsMock.mockResolvedValue(
+			settings({ groupSettlementMaxDifference: '1.50', version: 4 }),
+		);
+		const { findByTestId, container } = render(Page);
+		const input = (await findByTestId('settings-group-max-difference')) as HTMLInputElement;
+		await waitFor(() => expect(input.value).toBe('5.00'));
+		await fireEvent.input(input, { target: { value: '1,5' } });
+		await fireEvent.submit(container.querySelector('form')!);
+		await waitFor(() => expect(input.value).toBe('1.50'));
+	});
+
+	// Revue P1 (B1-4) — l'aide reste lue quand l'erreur s'affiche.
+	it('en erreur, aria-describedby nomme le refus et l’aide', async () => {
+		const { findByTestId } = render(Page);
+		const input = (await findByTestId('settings-group-max-difference')) as HTMLInputElement;
+		await waitFor(() => expect(input.value).toBe('5.00'));
+		await fireEvent.input(input, { target: { value: '1.250' } });
+		await findByTestId('settings-group-max-error');
+		const ids = (input.getAttribute('aria-describedby') ?? '').split(' ');
+		expect(ids.some((i) => i.endsWith('-group-max-error'))).toBe(true);
+		expect(ids.some((i) => i.endsWith('-group-max-hint'))).toBe(true);
+	});
+
+	// Revue P1 (relecture sur conflit) — mutation : champ non relu.
+	it('la relecture sur conflit de version reprend le plafond', async () => {
+		getInvoiceSettingsMock
+			.mockResolvedValueOnce(settings())
+			.mockResolvedValueOnce(settings({ groupSettlementMaxDifference: '9.00', version: 9 }));
+		updateInvoiceSettingsMock.mockRejectedValue({
+			code: 'OPTIMISTIC_LOCK_CONFLICT',
+			status: 409,
+			message: 'Conflit de version',
+		});
+		const { findByTestId, container } = render(Page);
+		const input = (await findByTestId('settings-group-max-difference')) as HTMLInputElement;
+		await waitFor(() => expect(input.value).toBe('5.00'));
+		await fireEvent.input(input, { target: { value: '2' } });
+		await fireEvent.submit(container.querySelector('form')!);
+		await waitFor(() => expect(getInvoiceSettingsMock).toHaveBeenCalledTimes(2));
+		await waitFor(() => expect(input.value).toBe('9.00'));
+	});
 });

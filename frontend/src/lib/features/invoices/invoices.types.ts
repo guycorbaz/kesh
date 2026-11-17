@@ -184,8 +184,11 @@ export interface UpdateInvoiceSettingsRequest {
 	defaultDiscountAccountId: number | null;
 	defaultBankFeesAccountId: number | null;
 	defaultBadDebtAccountId: number | null;
-	/** Écart admis dans un règlement de plusieurs factures, de 0 à 100.00 (Story 43-7, #823). */
-	groupSettlementMaxDifference: string;
+	/**
+	 * Écart admis dans un règlement de plusieurs factures, de 0 à 100.00 (Story 43-7, #823).
+	 * Facultatif : l'écran ne l'envoie que modifié ; absent, le serveur le préserve.
+	 */
+	groupSettlementMaxDifference?: string;
 	version: number;
 }
 

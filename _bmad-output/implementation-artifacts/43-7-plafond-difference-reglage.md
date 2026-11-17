@@ -51,6 +51,10 @@ retenus, arrondis de clients, etc.).
   alors que `GET` l'affiche au centime. Le `PUT` ne peut produire que des centimes, donc seule une valeur posée par SQL
   direct les sépare : stocké `5.0060`, affiché `5.01`, un écart de 5.01 est pourtant refusé (`5.01 > 5.0060`). Limite
   assumée, non corrigée (le plafond reste la valeur stockée), dite au manuel d'administration et au Dev Agent Record.
+  **Précisée à la revue P1** : l'affichage arrondit le demi-centime en s'éloignant de zéro (`MidpointAwayFromZero`, comme
+  `amount_due_to_centime` : `5.0050` → `5.01`), non au pair ; l'écran n'envoie le plafond **que s'il est modifié**, donc
+  enregistrer un autre réglage ne réécrit pas une valeur à quatre décimales (B1-1) ; la modifier écrit la valeur saisie, au
+  centime.
 - **AC2** — Contrôles du `PUT` : ≥ 0, au **centime** (deux décimales au plus), ≤ **100.00** ; montant ambigu (« 1.250 »)
   refusé par la règle des montants des réglages si elle est déjà posée, sinon la saisie de l'écran l'impose ; refus `400
   VALIDATION_ERROR` qui nomme le champ.

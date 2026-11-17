@@ -262,6 +262,76 @@ async fn an_absent_ceiling_is_preserved(pool: MySqlPool) {
     assert_eq!(stored(&pool, seeded.company_id).await.0, dec("7.25"));
 }
 
+/// Revue P1 (E1-1, A1-2) : un `PUT` sans le champ sur un plafond stocké à quatre
+/// décimales le laisse intact (rien n'est arrondi au centime affiché) ; `null` de
+/// même (préservé, non effacé).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn an_absent_or_null_ceiling_leaves_a_four_decimal_value_intact(pool: MySqlPool) {
+    let (app, seeded) = setup(&pool).await;
+    sqlx::query(
+        "UPDATE company_invoice_settings SET group_settlement_max_difference = 5.0060 \
+         WHERE company_id = ?",
+    )
+    .bind(seeded.company_id)
+    .execute(&pool)
+    .await
+    .unwrap();
+    // Absent : un autre réglage change, le plafond reste 5.0060.
+    let mut body = app.settings_body().await;
+    body["journalEntryDescriptionTemplate"] = json!("{INVOICE_NUMBER}");
+    let (status, resp) = app.put_settings(body).await;
+    assert_eq!(status, 200, "{resp}");
+    assert_eq!(resp["groupSettlementMaxDifference"], "5.01", "affichage");
+    assert_eq!(stored(&pool, seeded.company_id).await.0, dec("5.0060"));
+    // `null` : préservé.
+    let mut body = app.settings_body().await;
+    body["journalEntryDescriptionTemplate"] = json!("{YEAR}-{INVOICE_NUMBER}");
+    body["groupSettlementMaxDifference"] = Value::Null;
+    let (status, resp) = app.put_settings(body).await;
+    assert_eq!(status, 200, "{resp}");
+    assert_eq!(stored(&pool, seeded.company_id).await.0, dec("5.0060"));
+}
+
+/// Revue P1 (B1-2) : `GET` arrondit le demi-centime en s'éloignant de zéro.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn get_rounds_a_half_cent_away_from_zero(pool: MySqlPool) {
+    let (app, seeded) = setup(&pool).await;
+    sqlx::query(
+        "UPDATE company_invoice_settings SET group_settlement_max_difference = 5.0050 \
+         WHERE company_id = ?",
+    )
+    .bind(seeded.company_id)
+    .execute(&pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        app.get(SETTINGS).await["groupSettlementMaxDifference"],
+        "5.01"
+    );
+}
+
+/// Revue P1 (E1-5) : les formes à zéros en trop et le zéro négatif sont acceptés.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn trailing_zero_forms_and_negative_zero_are_accepted(pool: MySqlPool) {
+    let (app, seeded) = setup(&pool).await;
+    for (sent, stored_value) in [
+        ("5.0000", "5"),
+        ("100.0000", "100"),
+        ("-0", "0"),
+        ("0.00", "0"),
+    ] {
+        let mut body = app.settings_body().await;
+        body["groupSettlementMaxDifference"] = json!(sent);
+        let (status, resp) = app.put_settings(body).await;
+        assert_eq!(status, 200, "{sent} : {resp}");
+        assert_eq!(
+            stored(&pool, seeded.company_id).await.0,
+            dec(stored_value),
+            "{sent}"
+        );
+    }
+}
+
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn the_ceiling_bounds(pool: MySqlPool) {
     let (app, seeded) = setup(&pool).await;

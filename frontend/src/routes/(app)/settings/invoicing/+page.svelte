@@ -313,13 +313,18 @@
 				defaultDiscountAccountId: writeOff.discount,
 				defaultBankFeesAccountId: writeOff.bankFees,
 				defaultBadDebtAccountId: writeOff.badDebt,
-				groupSettlementMaxDifference: groupMaxRead.payload,
+				// Revue P1 (B1-1) : envoyé **seulement si modifié** — enregistrer un autre réglage ne
+				// réécrit pas au centime affiché un plafond stocké à quatre décimales.
+				...(groupMax.trim() !== settings?.groupSettlementMaxDifference
+					? { groupSettlementMaxDifference: groupMaxRead.payload }
+					: {}),
 				defaultSalesJournal: salesJournal,
 				journalEntryDescriptionTemplate: descriptionTemplate,
 				version,
 			});
 			settings = updated;
 			version = updated.version;
+			groupMax = updated.groupSettlementMaxDifference;
 			notifySuccess(i18nMsg('settings-invoicing-save-success', 'Configuration enregistrée'));
 		} catch (err) {
 			if (isApiError(err)) {
@@ -753,7 +758,9 @@
 					class:border-border={!groupMaxError}
 					class:border-destructive={!!groupMaxError}
 					aria-invalid={!!groupMaxError}
-					aria-describedby={groupMaxError ? `${uid}-group-max-error` : `${uid}-group-max-hint`}
+					aria-describedby={groupMaxError
+						? `${uid}-group-max-error ${uid}-group-max-hint`
+						: `${uid}-group-max-hint`}
 					bind:value={groupMax}
 				/>
 				{#if groupMaxError}

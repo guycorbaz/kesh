@@ -36,6 +36,19 @@ use crate::middleware::auth::CurrentUser;
 // DTOs
 // ---------------------------------------------------------------------------
 
+/// Le plafond de l'écart d'un règlement groupé tel que `GET` l'affiche : **deux
+/// décimales**, le demi-centime **s'éloignant de zéro** (`MidpointAwayFromZero`),
+/// l'arrondi du reste dû de Kesh (`amount_due_to_centime`) et non l'arrondi au pair
+/// de `round_dp` (Story 43-7, revue P1 B1-2) : `5.0050` s'affiche `5.01`. La colonne
+/// garde quatre décimales ; seule une valeur posée par SQL direct diffère de son
+/// affichage (limite L-4).
+fn group_max_for_display(value: rust_decimal::Decimal) -> String {
+    format!(
+        "{:.2}",
+        value.round_dp_with_strategy(2, rust_decimal::RoundingStrategy::MidpointAwayFromZero)
+    )
+}
+
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct InvoiceSettingsResponse {
@@ -90,9 +103,8 @@ impl From<CompanyInvoiceSettings> for InvoiceSettingsResponse {
             default_discount_account_id: s.default_discount_account_id,
             default_bank_fees_account_id: s.default_bank_fees_account_id,
             default_bad_debt_account_id: s.default_bad_debt_account_id,
-            group_settlement_max_difference: format!(
-                "{:.2}",
-                s.group_settlement_max_difference.round_dp(2)
+            group_settlement_max_difference: group_max_for_display(
+                s.group_settlement_max_difference,
             ),
             version: s.version,
         }
@@ -578,6 +590,20 @@ pub async fn update_invoice_settings(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Revue P1 (B1-2) : demi-centime vers l'éloignement de zéro, deux décimales
+    /// toujours ; l'arrondi au pair rendrait `5.00` et `5.02`.
+    #[test]
+    fn group_max_display_rounds_half_away_from_zero() {
+        use rust_decimal_macros::dec;
+        assert_eq!(group_max_for_display(dec!(5.0050)), "5.01");
+        assert_eq!(group_max_for_display(dec!(5.0150)), "5.02");
+        assert_eq!(group_max_for_display(dec!(5.0250)), "5.03");
+        assert_eq!(group_max_for_display(dec!(5.0060)), "5.01");
+        assert_eq!(group_max_for_display(dec!(5.0049)), "5.00");
+        assert_eq!(group_max_for_display(dec!(5)), "5.00");
+        assert_eq!(group_max_for_display(dec!(100.0000)), "100.00");
+    }
 
     #[test]
     fn parse_journal_ok() {
