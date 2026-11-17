@@ -2854,6 +2854,8 @@ async fn accept_one_invoice(
             company_id,
             invoice_id,
             journal_entry_id,
+            // Règlement unitaire : toute la créance de l'écriture (Story 43-1a).
+            journal_entry_line_id: None,
             // #476 : le reste BRUT quand la transaction solde avec un écart.
             amount: settled_amount,
             settled_on: paid_at_candidate,
@@ -5871,7 +5873,11 @@ pub async fn get_reconciliation_transaction(
         Some(ReconciliationKind::SupplierSettlement {
             supplier_invoice_id,
         }) => (None, Some(supplier_invoice_id)),
-        Some(ReconciliationKind::Entry) | None => (None, None),
+        // Story 43-1a : la liste d'un groupe (`view.grouped_invoices`) est
+        // exposée par la Story 43-2.
+        Some(ReconciliationKind::GroupedSettlement { .. })
+        | Some(ReconciliationKind::Entry)
+        | None => (None, None),
     };
     let hit = view.cancel_blocker;
     Ok(Json(ReconciliationTransactionResponse {

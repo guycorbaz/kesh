@@ -367,6 +367,8 @@ pub async fn settle_invoice(
             company_id,
             invoice_id,
             journal_entry_id: je.entry.id,
+            // Règlement unitaire : toute la créance de l'écriture (Story 43-1a).
+            journal_entry_line_id: None,
             amount: settled_amount,
             settled_on,
             kind: crate::entities::SettlementKind::Choice(choice),
@@ -743,6 +745,8 @@ pub async fn write_off_invoice(
             company_id,
             invoice_id,
             journal_entry_id: je.entry.id,
+            // Solde unitaire : toute la créance de l'écriture (Story 43-1a).
+            journal_entry_line_id: None,
             amount,
             settled_on,
             kind: SettlementKind::WriteOff {

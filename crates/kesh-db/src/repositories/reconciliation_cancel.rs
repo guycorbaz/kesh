@@ -84,6 +84,12 @@ pub enum ReconciliationKind {
     /// fournisseur `paid` (Story 30-1a, #686). Il n'y a pas de seconde ligne :
     /// la facture **est** la ligne de règlement.
     SupplierSettlement { supplier_invoice_id: i64 },
+    /// Un **règlement groupé** (Story 43-1a, #823) : au moins un règlement qui
+    /// pointe l'écriture porte un identifiant de **ligne** (D3). ⛔ Sans `Vec`
+    /// — le type reste `Copy` ; la liste des factures se lit à part
+    /// ([`super::grouped_settlements`]). Se défait en entier
+    /// ([`super::grouped_settlements::cancel_in_tx`]).
+    GroupedSettlement { journal_entry_id: i64 },
     /// Une écriture qu'aucune pièce ne possède (éclatement, règle,
     /// rapprochement manuel ; une écriture saisie au journal puis rattachée —
     /// Story v017-3a) — ou un règlement fournisseur **détaché** de sa facture
@@ -97,6 +103,7 @@ impl ReconciliationKind {
         match self {
             Self::InvoiceSettlement { .. } => "invoice_settlement",
             Self::SupplierSettlement { .. } => "supplier_settlement",
+            Self::GroupedSettlement { .. } => "grouped_settlement",
             Self::Entry => "entry",
         }
     }
@@ -114,7 +121,8 @@ impl ReconciliationKind {
 /// `status = 'paid'` : une facture qui quitte `paid` remet la colonne à `NULL`
 /// (annulation du règlement, annulation de la facture) — le filtre ne fait que
 /// le redire, et un règlement détaché reste ainsi une écriture propre.
-pub const SUPPLIER_SETTLEMENT_CLASSIFY_SQL: &str = "SELECT id FROM supplier_invoices \
+pub const SUPPLIER_SETTLEMENT_CLASSIFY_SQL: &str = "SELECT id, settlement_journal_entry_line_id \
+     FROM supplier_invoices \
      WHERE company_id = ? AND settlement_journal_entry_id = ? AND status = 'paid'";
 
 /// Classe l'écriture liée `entry_id` : un règlement client la porte-t-il, puis
@@ -161,40 +169,69 @@ async fn classify(
     entry_id: i64,
     for_update: bool,
 ) -> Result<ReconciliationKind, DbError> {
-    // `uq_invoice_settlements_entry` : une écriture règle UNE facture.
+    // Story 43-1a (#823, AC7) : une écriture règle UNE facture, ou un GROUPE —
+    // toutes ses lignes `invoice_settlements` sont lues (verrouillées en forme
+    // `for_update`), par la clé `uq_invoice_settlements_entry_invoice`
+    // (`journal_entry_id`, `invoice_id`). Groupée dès qu'une ligne porte un
+    // identifiant de ligne d'écriture (D3).
     let sql = format!(
-        "SELECT id, invoice_id FROM invoice_settlements \
-         WHERE company_id = ? AND journal_entry_id = ?{}",
+        "SELECT id, invoice_id, journal_entry_line_id FROM invoice_settlements \
+         WHERE company_id = ? AND journal_entry_id = ? ORDER BY journal_entry_id, invoice_id{}",
         if for_update { " FOR UPDATE" } else { "" }
     );
-    let row: Option<(i64, i64)> = sqlx::query_as(&sql)
+    let rows: Vec<(i64, i64, Option<i64>)> = sqlx::query_as(&sql)
         .bind(company_id)
         .bind(entry_id)
-        .fetch_optional(&mut *conn)
+        .fetch_all(&mut *conn)
         .await
         .map_err(map_db_error)?;
-    if let Some((settlement_id, invoice_id)) = row {
-        return Ok(ReconciliationKind::InvoiceSettlement {
-            invoice_id,
-            settlement_id,
+    if rows.iter().any(|(_, _, line)| line.is_some()) {
+        return Ok(ReconciliationKind::GroupedSettlement {
+            journal_entry_id: entry_id,
         });
     }
-    // Story 30-1a (#686, AC-a1) — le règlement fournisseur, dans la MÊME forme.
+    match rows.as_slice() {
+        [] => {}
+        [(settlement_id, invoice_id, None)] => {
+            return Ok(ReconciliationKind::InvoiceSettlement {
+                invoice_id: *invoice_id,
+                settlement_id: *settlement_id,
+            });
+        }
+        _ => {
+            return Err(DbError::Invariant(format!(
+                "rapprochement : l'écriture {entry_id} porte plusieurs règlements sans ligne"
+            )));
+        }
+    }
+    // Story 30-1a (#686, AC-a1) — le règlement fournisseur, dans la MÊME forme ;
+    // groupé (Story 43-1b) dès qu'une facture porte sa ligne de règlement.
     let sql = format!(
         "{SUPPLIER_SETTLEMENT_CLASSIFY_SQL}{}",
         if for_update { " FOR UPDATE" } else { "" }
     );
-    let supplier: Option<i64> = sqlx::query_scalar(&sql)
+    let supplier: Vec<(i64, Option<i64>)> = sqlx::query_as(&sql)
         .bind(company_id)
         .bind(entry_id)
-        .fetch_optional(&mut *conn)
+        .fetch_all(&mut *conn)
         .await
         .map_err(map_db_error)?;
-    Ok(match supplier {
-        Some(supplier_invoice_id) => ReconciliationKind::SupplierSettlement {
-            supplier_invoice_id,
+    if supplier.iter().any(|(_, line)| line.is_some()) {
+        return Ok(ReconciliationKind::GroupedSettlement {
+            journal_entry_id: entry_id,
+        });
+    }
+    Ok(match supplier.as_slice() {
+        [] => ReconciliationKind::Entry,
+        [(supplier_invoice_id, None)] => ReconciliationKind::SupplierSettlement {
+            supplier_invoice_id: *supplier_invoice_id,
         },
-        None => ReconciliationKind::Entry,
+        _ => {
+            return Err(DbError::Invariant(format!(
+                "rapprochement : l'écriture {entry_id} règle plusieurs factures fournisseur \
+                 sans ligne"
+            )));
+        }
     })
 }
 
@@ -262,6 +299,7 @@ async fn cancel_blocker(
                 None,
             )),
             unlink_only: false,
+            blocked_invoice: None,
         });
     }
     entry_cancel_outlook(conn, company_id, matched_entry(bt)?, bt, aujourd_hui).await
@@ -278,6 +316,10 @@ pub struct CancelOutlook {
     /// L'écriture est aussi rapprochée de l'**autre côté** d'un virement :
     /// l'annulation ne retirerait que le lien (`blocker` vaut alors `None`).
     pub unlink_only: bool,
+    /// Pour un **règlement groupé** (Story 43-1a, AC7) : la facture qui porte
+    /// le premier motif (la première par identifiant croissant), pour que
+    /// l'écran la nomme (`cancelBlockedInvoice`, 43-2). `None` sinon.
+    pub blocked_invoice: Option<super::grouped_settlements::GroupedPiece>,
 }
 
 /// Ce qui déciderait de l'annulation d'un rapprochement **dont l'écriture
@@ -329,6 +371,28 @@ pub async fn entry_cancel_outlook(
     concerned: &BankTransaction,
     aujourd_hui: NaiveDate,
 ) -> Result<CancelOutlook, DbError> {
+    let kind = classify(conn, company_id, entry_id, false).await?;
+    // Story 43-1a (AC7) — un règlement groupé n'est jamais un retrait seul : le
+    // rang 0 ne s'applique pas ; ses motifs se lisent facture par facture.
+    if let ReconciliationKind::GroupedSettlement { .. } = kind {
+        let hit = super::grouped_settlements::group_cancel_blocker(
+            conn,
+            company_id,
+            entry_id,
+            concerned.id,
+            aujourd_hui,
+        )
+        .await?;
+        let (blocker, blocked_invoice) = match hit {
+            Some((hit, piece)) => (Some(hit), Some(piece)),
+            None => (None, None),
+        };
+        return Ok(CancelOutlook {
+            blocker,
+            unlink_only: false,
+            blocked_invoice,
+        });
+    }
     // 0 — en tête : l'autre côté d'un virement (Story 34-11b, C-e341-35).
     if super::reconciliation_link::transfer_other_side(conn, company_id, entry_id, concerned)
         .await?
@@ -337,26 +401,43 @@ pub async fn entry_cancel_outlook(
         return Ok(CancelOutlook {
             blocker: None,
             unlink_only: true,
+            blocked_invoice: None,
         });
     }
-    let blocker = entry_cancel_chain(conn, company_id, entry_id, concerned.id, aujourd_hui).await?;
+    let blocker =
+        entry_cancel_chain(conn, company_id, entry_id, kind, concerned.id, aujourd_hui).await?;
     Ok(CancelOutlook {
         blocker,
         unlink_only: false,
+        blocked_invoice: None,
     })
 }
 
 /// Les rangs 1 à 5, avec l'exemption étroite du rang 3 pour `unlinking` :
-/// classement, puis bras client, fournisseur ou écriture propre.
+/// bras client, fournisseur ou écriture propre, selon le classement `kind`
+/// (un groupe est traité par l'appelant).
 async fn entry_cancel_chain(
     conn: &mut MySqlConnection,
     company_id: i64,
     entry_id: i64,
+    kind: ReconciliationKind,
     unlinking: i64,
     aujourd_hui: NaiveDate,
 ) -> Result<Option<SettlementCancelHit>, DbError> {
+    if let ReconciliationKind::GroupedSettlement { .. } = kind {
+        return super::grouped_settlements::group_cancel_blocker(
+            conn,
+            company_id,
+            entry_id,
+            unlinking,
+            aujourd_hui,
+        )
+        .await
+        .map(|hit| hit.map(|(h, _)| h));
+    }
     let unlinking = Some(unlinking);
-    match classify(conn, company_id, entry_id, false).await? {
+    match kind {
+        ReconciliationKind::GroupedSettlement { .. } => Ok(None),
         ReconciliationKind::InvoiceSettlement { settlement_id, .. } => {
             invoice_settlements_write::settlement_cancel_blocker_unlinking(
                 conn,
@@ -408,6 +489,15 @@ pub struct ReconciliationView {
     /// de cette transaction ([`cancel_in_tx`]). `false` si elle n'est pas
     /// rapprochée.
     pub unlink_only: bool,
+    /// Story 43-1a (AC7) — les factures d'un **règlement groupé**, par
+    /// identifiant croissant (`groupedInvoices`, 43-2) ; vide sinon.
+    pub grouped_invoices: Vec<super::grouped_settlements::GroupedViewInvoice>,
+    /// Story 43-1a (AC7) — la facture du groupe qui porte le premier motif
+    /// (`cancelBlockedInvoice`, 43-2) ; `None` sinon.
+    pub cancel_blocked_invoice: Option<super::grouped_settlements::GroupedPiece>,
+    /// Story 43-1a — le compte de l'écart d'un groupe, relu sur sa ligne
+    /// d'écart (`differenceAccountId`, 43-2) ; `None` sans écart ou hors groupe.
+    pub grouped_difference_account_id: Option<i64>,
 }
 
 /// Le numéro (nullable) d'une pièce, par `sql` (`… WHERE id = ? AND
@@ -479,11 +569,25 @@ pub async fn get_view(
                     .await?;
                     (Some(kind), None, number, interne)
                 }
-                ReconciliationKind::Entry => (Some(kind), None, None, None),
+                ReconciliationKind::GroupedSettlement { .. } | ReconciliationKind::Entry => {
+                    (Some(kind), None, None, None)
+                }
             }
         } else {
             (None, None, None, None)
         };
+    let (grouped_invoices, grouped_difference_account_id) = match kind {
+        Some(ReconciliationKind::GroupedSettlement { journal_entry_id }) => (
+            super::grouped_settlements::view_members(&mut tx, company_id, journal_entry_id).await?,
+            super::grouped_settlements::difference_account_of(
+                &mut tx,
+                company_id,
+                journal_entry_id,
+            )
+            .await?,
+        ),
+        _ => (Vec::new(), None),
+    };
     let outlook = cancel_blocker(&mut tx, company_id, &bt, aujourd_hui).await?;
     tx.commit().await.map_err(map_db_error)?;
     Ok(Some(ReconciliationView {
@@ -494,6 +598,9 @@ pub async fn get_view(
         internal_number,
         cancel_blocker: outlook.blocker,
         unlink_only: outlook.unlink_only,
+        grouped_invoices,
+        cancel_blocked_invoice: outlook.blocked_invoice,
+        grouped_difference_account_id,
     }))
 }
 
@@ -510,6 +617,9 @@ pub struct ReconciliationCancellation {
     /// La facture fournisseur dont le paiement a été retiré, pour un règlement
     /// fournisseur (Story 30-1a).
     pub supplier_invoice_id: Option<i64>,
+    /// Story 43-1a — les factures d'un **règlement groupé** défait (vide
+    /// sinon) ; `invoice_id` et `supplier_invoice_id` restent alors `None`.
+    pub grouped_invoices: Vec<super::grouped_settlements::GroupedViewInvoice>,
 }
 
 /// Annule le rapprochement de `bank_transaction_id` **dans une transaction
@@ -600,6 +710,29 @@ pub async fn cancel_in_tx(
     //     avant (3). Pour un règlement fournisseur (Story 30-1a), la ligne
     //     verrouillée par le classement EST la facture : rien de plus à tenir.
     let kind = classify(tx, company_id, entry_id, true).await?;
+    // Story 43-1a (AC7) — un règlement groupé se défait en entier, par son
+    // propre geste, dans l'ordre de l'unitaire (factures, écriture et exercice,
+    // compte ouvert, refus, lien, délettrage, retrait, contre-passation).
+    if let ReconciliationKind::GroupedSettlement { journal_entry_id } = kind {
+        let done = super::grouped_settlements::cancel_in_tx(
+            tx,
+            company_id,
+            &bt,
+            journal_entry_id,
+            acteur,
+            expect_unlink_only,
+            aujourd_hui,
+        )
+        .await?;
+        let bank_transaction = find(tx, company_id, bank_transaction_id, false).await?;
+        return Ok(ReconciliationCancellation {
+            bank_transaction,
+            reversal_journal_entry_id: Some(done.reversal_journal_entry_id),
+            invoice_id: None,
+            supplier_invoice_id: None,
+            grouped_invoices: done.invoices,
+        });
+    }
     if let ReconciliationKind::InvoiceSettlement { invoice_id, .. } = kind {
         sqlx::query("SELECT id FROM invoices WHERE id = ? AND company_id = ? FOR UPDATE")
             .bind(invoice_id)
@@ -737,6 +870,12 @@ pub async fn cancel_in_tx(
                     .await?;
             (Some(done.reversal_journal_entry_id), None, None)
         }
+        // Aiguillé avant l'étape (3) vers `grouped_settlements::cancel_in_tx`.
+        ReconciliationKind::GroupedSettlement { .. } => {
+            return Err(DbError::Invariant(
+                "dé-rapprochement : un règlement groupé n'atteint pas l'étape (6)".into(),
+            ));
+        }
         ReconciliationKind::Entry => {
             // Story 35-8a2 (#431) : la contre-passation d'une écriture rapprochée
             // seule porte la clé du dé-rapprochement, quand il en a une.
@@ -824,6 +963,7 @@ pub async fn cancel_in_tx(
         reversal_journal_entry_id,
         invoice_id,
         supplier_invoice_id,
+        grouped_invoices: Vec::new(),
     })
 }
 

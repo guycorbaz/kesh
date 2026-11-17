@@ -802,6 +802,7 @@ mod tests {
             settlement_bank_account_id: None,
             settlement_account_id: None,
             settlement_journal_entry_id: None,
+            settlement_journal_entry_line_id: None,
             paid_at: None,
             version: 1,
             created_at: NaiveDateTime::default(),

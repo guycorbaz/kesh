@@ -976,6 +976,8 @@ pub fn serialize_company_invoice_settings_csv<W: Write>(
         "default_discount_account_id",
         "default_bank_fees_account_id",
         "default_bad_debt_account_id",
+        // Story 43-1a (#823, C-43-24) — le plafond du règlement groupé.
+        "group_settlement_max_difference",
         "version",
         "created_at",
         "updated_at",
@@ -1001,6 +1003,7 @@ pub fn serialize_company_invoice_settings_csv<W: Write>(
             fmt_opt_i64(cis.default_discount_account_id),
             fmt_opt_i64(cis.default_bank_fees_account_id),
             fmt_opt_i64(cis.default_bad_debt_account_id),
+            fmt_decimal(cis.group_settlement_max_difference),
             cis.version.to_string(),
             fmt_dt(cis.created_at),
             fmt_dt(cis.updated_at),
@@ -1230,6 +1233,8 @@ pub fn serialize_supplier_invoices_csv<W: Write>(
         "settlement_bank_account_id",
         "settlement_account_id",
         "settlement_journal_entry_id",
+        // Story 43-1a (#823) — la ligne d'un règlement groupé.
+        "settlement_journal_entry_line_id",
         "paid_at",
         "version",
         "created_at",
@@ -1258,6 +1263,7 @@ pub fn serialize_supplier_invoices_csv<W: Write>(
             fmt_opt_i64(si.settlement_bank_account_id),
             fmt_opt_i64(si.settlement_account_id),
             fmt_opt_i64(si.settlement_journal_entry_id),
+            fmt_opt_i64(si.settlement_journal_entry_line_id),
             fmt_opt_dt(si.paid_at),
             si.version.to_string(),
             fmt_dt(si.created_at),
@@ -1402,6 +1408,8 @@ pub fn serialize_invoice_settlements_csv<W: Write>(
         "settlement_account_id",
         "write_off_nature",
         "write_off_vat",
+        // Story 43-1a (#823) — la ligne de créance d'un règlement groupé.
+        "journal_entry_line_id",
         "created_at",
     ])
     .map_err(|e| map_csv_err("invoice_settlements", e))?;
@@ -1423,6 +1431,7 @@ pub fn serialize_invoice_settlements_csv<W: Write>(
                 .as_ref()
                 .map(|v| v.to_string())
                 .unwrap_or_default()),
+            fmt_opt_i64(st.journal_entry_line_id),
             fmt_dt(st.created_at),
         ])
         .map_err(|e| map_csv_err("invoice_settlements", e))?;

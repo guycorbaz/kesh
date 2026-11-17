@@ -215,7 +215,10 @@ async fn assert_inventaire_clos(pool: &MySqlPool) {
     .unwrap()
     .into_iter()
     .collect();
-    for (t, c, _) in REFERENCES_TRIEES.iter().chain(REFERENCES_VERS_LIGNES_TRIEES) {
+    for (t, c, _) in REFERENCES_TRIEES
+        .iter()
+        .chain(REFERENCES_VERS_LIGNES_TRIEES)
+    {
         nommees.remove(&(t.to_string(), c.to_string()));
     }
     let declarees: BTreeSet<(String, String)> = COLONNES_SANS_CLE_DECLAREES

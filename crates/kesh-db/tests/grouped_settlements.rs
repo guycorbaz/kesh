@@ -19,6 +19,82 @@ use rust_decimal_macros::dec;
 use sqlx::MySqlPool;
 
 // ---------------------------------------------------------------------------
+// La CHECK « ligne ⇒ écriture » (AC1.3, M2)
+// ---------------------------------------------------------------------------
+
+/// AC1.3 — poser la ligne de règlement d'une facture fournisseur sans son
+/// écriture est refusé par la base (`chk_supplier_invoices_settlement_line`) ;
+/// le fragment partagé `CLEAR_SETTLEMENT_SQL`, lui, vide les deux ensemble.
+///
+/// Sonde sous `FOREIGN_KEY_CHECKS = 0`, sur une seule connexion : la CHECK reste
+/// active, seules les clés étrangères (vers des lignes factices) sont suspendues.
+#[sqlx::test(migrations = "./test-schema")]
+async fn a_settlement_line_without_its_entry_is_refused(pool: MySqlPool) {
+    use kesh_db::repositories::supplier_invoices::CLEAR_SETTLEMENT_SQL;
+    let mut conn = pool.acquire().await.expect("connexion");
+    sqlx::query("SET FOREIGN_KEY_CHECKS = 0")
+        .execute(&mut *conn)
+        .await
+        .unwrap();
+    let refus = sqlx::query(
+        "INSERT INTO supplier_invoices \
+         (company_id, contact_id, invoice_date, status, purchase_journal_entry_id, \
+          settlement_journal_entry_line_id) \
+         VALUES (1, 1, '2026-11-01', 'open', 1, 7)",
+    )
+    .execute(&mut *conn)
+    .await;
+    let err = refus.expect_err("ligne sans écriture acceptée");
+    assert!(
+        err.to_string()
+            .contains("chk_supplier_invoices_settlement_line"),
+        "refus inattendu : {err}"
+    );
+    let id = sqlx::query(
+        "INSERT INTO supplier_invoices \
+         (company_id, contact_id, invoice_date, status, purchase_journal_entry_id, \
+          settlement_type, settlement_bank_account_id, settlement_journal_entry_id, \
+          settlement_journal_entry_line_id, paid_at) \
+         VALUES (1, 1, '2026-11-01', 'paid', 1, 'bank_transfer', 1, 3, 7, NOW())",
+    )
+    .execute(&mut *conn)
+    .await
+    .expect("ligne avec son écriture")
+    .last_insert_id();
+    // Vider l'écriture SEULE (la forme d'avant la 43-1a) : refusé.
+    let seule = sqlx::query(
+        "UPDATE supplier_invoices SET status = 'open', settlement_type = NULL, \
+         settlement_bank_account_id = NULL, settlement_journal_entry_id = NULL, paid_at = NULL \
+         WHERE id = ?",
+    )
+    .bind(id)
+    .execute(&mut *conn)
+    .await;
+    assert!(seule.is_err(), "écriture vidée sans sa ligne acceptée");
+    // Le fragment partagé : accepté, les deux à NULL.
+    sqlx::query(&format!(
+        "UPDATE supplier_invoices SET status = 'open', {CLEAR_SETTLEMENT_SQL} WHERE id = ?"
+    ))
+    .bind(id)
+    .execute(&mut *conn)
+    .await
+    .expect("fragment partagé");
+    let (entry, line): (Option<i64>, Option<i64>) = sqlx::query_as(
+        "SELECT settlement_journal_entry_id, settlement_journal_entry_line_id \
+         FROM supplier_invoices WHERE id = ?",
+    )
+    .bind(id)
+    .fetch_one(&mut *conn)
+    .await
+    .unwrap();
+    assert_eq!((entry, line), (None, None));
+    sqlx::query("SET FOREIGN_KEY_CHECKS = 1")
+        .execute(&mut *conn)
+        .await
+        .unwrap();
+}
+
+// ---------------------------------------------------------------------------
 // Le plafond de la différence (AC3 bis, C-43-24)
 // ---------------------------------------------------------------------------
 

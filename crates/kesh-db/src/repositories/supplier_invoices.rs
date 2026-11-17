@@ -42,8 +42,21 @@ use crate::repositories::{audit_log, letterings};
 const FIND_SCOPED_SQL: &str = "SELECT id, company_id, contact_id, supplier_invoice_number, \
     internal_number, status, invoice_date, due_date, total_amount, creditor_iban, creditor_qr_iban, payment_reference, \
     expected_payment_amount, project_id, purchase_journal_entry_id, settlement_type, settlement_bank_account_id, \
-    settlement_account_id, settlement_journal_entry_id, paid_at, version, created_at, updated_at \
+    settlement_account_id, settlement_journal_entry_id, settlement_journal_entry_line_id, paid_at, \
+    version, created_at, updated_at \
     FROM supplier_invoices WHERE id = ? AND company_id = ?";
+
+/// Le fragment `SET` qui **vide le règlement** d'une facture fournisseur —
+/// mode, contrepartie, écriture **et ligne** de règlement, date de paiement
+/// (Story 43-1a, AC1.3, M2). ⛔ **Le seul** : les deux gestes qui remettent
+/// `settlement_journal_entry_id` à `NULL` — l'annulation d'une facture payée
+/// qui détache son règlement ([`cancel_in_tx`]) et l'annulation du règlement
+/// ([`cancel_settlement_in_tx`]) — l'emploient tous deux, pour qu'aucun ne
+/// laisse une ligne sans son écriture (`chk_supplier_invoices_settlement_line`
+/// le refuserait, en erreur de base).
+pub const CLEAR_SETTLEMENT_SQL: &str = "settlement_type = NULL, \
+    settlement_bank_account_id = NULL, settlement_account_id = NULL, \
+    settlement_journal_entry_id = NULL, settlement_journal_entry_line_id = NULL, paid_at = NULL";
 
 /// Les colonnes de [`SupplierInvoice`], préfixées de l'alias `si`, pour les
 /// requêtes qui joignent d'autres tables (la réconciliation, Story 30-1b) —
@@ -55,7 +68,7 @@ pub const SUPPLIER_INVOICE_COLUMNS_SI: &str = "si.id, si.company_id, si.contact_
     si.creditor_iban, si.creditor_qr_iban, si.payment_reference, si.expected_payment_amount, \
     si.project_id, si.purchase_journal_entry_id, si.settlement_type, \
     si.settlement_bank_account_id, si.settlement_account_id, si.settlement_journal_entry_id, \
-    si.paid_at, si.version, si.created_at, si.updated_at";
+    si.settlement_journal_entry_line_id, si.paid_at, si.version, si.created_at, si.updated_at";
 
 const LINE_COLUMNS: &str = "id, supplier_invoice_id, position, description, quantity, unit_price, \
     vat_rate, line_total, expense_account_id, created_at";
@@ -2633,12 +2646,13 @@ pub async fn cancel_in_tx(
 
     // (4) `cancelled`, règlement DÉTACHÉ (colonnes à NULL — déjà NULL pour une
     //     facture ouverte). ⛔ L'écriture de règlement n'est PAS contre-passée.
-    let rows = sqlx::query(
-        "UPDATE supplier_invoices SET status = 'cancelled', settlement_type = NULL, \
-         settlement_bank_account_id = NULL, settlement_account_id = NULL, \
-         settlement_journal_entry_id = NULL, paid_at = NULL, version = version + 1 \
-         WHERE id = ? AND company_id = ? AND version = ? AND status IN ('open', 'paid')",
-    )
+    //     Story 43-1a (M2) : la ligne de règlement avec l'écriture, par le
+    //     fragment partagé.
+    let rows = sqlx::query(&format!(
+        "UPDATE supplier_invoices SET status = 'cancelled', {CLEAR_SETTLEMENT_SQL}, \
+         version = version + 1 \
+         WHERE id = ? AND company_id = ? AND version = ? AND status IN ('open', 'paid')"
+    ))
     .bind(id)
     .bind(company_id)
     .bind(inv.version)
@@ -2923,12 +2937,13 @@ pub async fn cancel_settlement_in_tx(
 
     // (4) Retour à `open`, colonnes de règlement vidées. Il n'y en a qu'un jeu ;
     //     le lien survit dans l'audit et au grand livre (`reverses_entry_id`).
-    let rows = sqlx::query(
-        "UPDATE supplier_invoices SET status = 'open', settlement_type = NULL, \
-         settlement_bank_account_id = NULL, settlement_account_id = NULL, \
-         settlement_journal_entry_id = NULL, paid_at = NULL, version = version + 1 \
-         WHERE id = ? AND company_id = ? AND version = ? AND status = 'paid'",
-    )
+    //     Story 43-1a (M2) : la ligne de règlement avec l'écriture, par le
+    //     fragment partagé.
+    let rows = sqlx::query(&format!(
+        "UPDATE supplier_invoices SET status = 'open', {CLEAR_SETTLEMENT_SQL}, \
+         version = version + 1 \
+         WHERE id = ? AND company_id = ? AND version = ? AND status = 'paid'"
+    ))
     .bind(id)
     .bind(company_id)
     .bind(inv.version)
@@ -3196,7 +3211,7 @@ pub async fn list_all_by_company(
          invoice_date, due_date, total_amount, creditor_iban, creditor_qr_iban, payment_reference, \
          expected_payment_amount, project_id, purchase_journal_entry_id, settlement_type, \
          settlement_bank_account_id, settlement_account_id, settlement_journal_entry_id, \
-         paid_at, version, created_at, updated_at \
+         settlement_journal_entry_line_id, paid_at, version, created_at, updated_at \
          FROM supplier_invoices WHERE company_id = ? ORDER BY id",
     )
     .bind(company_id)

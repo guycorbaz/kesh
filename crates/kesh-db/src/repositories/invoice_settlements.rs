@@ -17,7 +17,7 @@ use sqlx::MySqlPool;
 /// une colonne ajoutée sans passer par ici casse la compilation, pas le runtime.
 const COLUMNS: &str = "id, company_id, invoice_id, journal_entry_id, amount, settled_on, \
      settlement_type, settlement_bank_account_id, settlement_account_id, \
-     write_off_nature, write_off_vat, created_at";
+     write_off_nature, write_off_vat, journal_entry_line_id, created_at";
 
 use crate::entities::{InvoiceSettlement, NewInvoiceSettlement, NewJournalEntryLine};
 use crate::errors::{ClaimSide, DbError, SettlementAccountRole, map_db_error};
@@ -454,8 +454,8 @@ pub async fn create_in_tx(
         "INSERT INTO invoice_settlements \
          (company_id, invoice_id, journal_entry_id, amount, settled_on, \
           settlement_type, settlement_bank_account_id, settlement_account_id, \
-          write_off_nature, write_off_vat) \
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+          write_off_nature, write_off_vat, journal_entry_line_id) \
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
     )
     .bind(new.company_id)
     .bind(new.invoice_id)
@@ -467,6 +467,7 @@ pub async fn create_in_tx(
     .bind(account_id)
     .bind(nature)
     .bind(vat)
+    .bind(new.journal_entry_line_id)
     .execute(&mut **tx)
     .await
     .map_err(map_db_error)?

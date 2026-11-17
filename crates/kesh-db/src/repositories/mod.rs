@@ -24,6 +24,7 @@ pub mod dunning_eligibility;
 pub mod dunning_levels;
 pub mod email_templates;
 pub mod fiscal_years;
+pub mod grouped_settlements;
 pub mod imported_supplier_invoices;
 pub mod installation_settings;
 pub mod invoice_number_sequences;

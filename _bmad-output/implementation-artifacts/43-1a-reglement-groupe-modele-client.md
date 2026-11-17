@@ -75,6 +75,11 @@ Cette story pose **la migration de la release** (colonnes de la 43-1b et réglag
   de ligne.
 - **D4** — Le dé-rapprochement groupé retire les propriétaires, **puis** contre-passe l'écriture devenue sans propriétaire
   (`journal_entries::reverse_in_tx`) : aucune autorité neuve.
+- ⚠️ **D4 bis est REMPLACÉE par la décision de Guy du 2026-11-17** (`kesh-gate-logs/e43/decision-difference.md`,
+  registre `e0190-choix-autonomes-e431a.md`, C-e431a-1 et C-e431a-2) : l'écart `gap` est admis dans les deux sens, au
+  compte que l'utilisateur choisit (`difference_account_id`), seul le plafond refuse ; `Decomposition { difference,
+  rounding_difference, gap }` ; `group_difference(montant, apports_bruts, plafond)`. Le texte ci-dessous reste comme
+  relevé de la validation ; il ne fait plus foi pour le signe ni pour les refus.
 - **D4 bis — Une seule fonction de la différence** (M4) : `grouped_settlements::group_difference(famille, montant,
   apports_bruts, plafond) -> Result<Decomposition, GroupRefusal>`, **pure**, appelée par les deux bras (client et
   fournisseur). Elle porte toute la règle de C-43-16 ; un changement décidé par Guy ne change qu'elle, ses tests et les
@@ -459,3 +464,22 @@ change pour passer, hors des trois assertions de `journal_entries_modification.r
   (« à deux écarts près », nommés), L2 (`enforce_postable = false`), L3 (doc-comment du point de sauvegarde), L4 (reste dû
   vérifié à zéro avant `paid_at`), L5 (ancre non lue), L6 (sites du compteur), L7 (couples `(table, colonne)`), L8
   (reprise au manuel), L9 (constante contre `DEFAULT`), L10 (défaut sans réponse de Guy). Passe 4 ciblée à lancer.
+- 2026-11-17 (développement, étape 0) — **Clôture de la validation** : P1 (43-1, Opus) → découpage ; P2 0/3/4/8 ; P3
+  0/0/6/10 ; P4 ciblée (Haiku) 0/0/1/6, MEDIUM dans la fiche 43-2 (corrigé `7d8859aa3`) ; P5 ciblée (Haiku) sur ce seul
+  commit 0/0/0/4 pour la 43-1a (son MEDIUM porte sur la fiche 43-3, hors du commit, laissé à l'orchestrateur). LOW
+  traités : P4 LOW-1 (dérogation, liste des modules), LOW-2 (pourquoi ces quatre mutations), LOW-3 (le grep fait foi,
+  historiques exclus — lignes lues `migrations_upgrade_path.rs:97`, `:131`, `:159-160`, `:221`), LOW-4 (`Decomposition`,
+  `GroupFamily`, `group_difference` en `pub` nommés à T3) ; P5 LOW-1 (« apports bruts », ligne 235). Non traités ici :
+  P4 LOW-5 et LOW-6 (arbitrage et calendrier, au rapport — LOW-5 tranché depuis par Guy, C-e431a-1), P5 LOW-2 et LOW-3
+  (fiche 43-2, pas la mienne), LOW-4 (trailer d'un commit passé). **T0** : sur MariaDB 10.11.19 (base jetable
+  `kesh_e431a_t0`, `kesh-gate-logs/e431a/t0-mariadb.log`) — `DROP INDEX uq_invoice_settlements_entry` seul : ERROR 1553 ;
+  migration entière (clé composée d'abord) : acceptée, `fk_invoice_settlements_entry` gardée ; `CHECK` de la ligne
+  fournisseur : 4025 sans écriture, acceptée avec ; `CHECK` du plafond : 100.0001 et −0.0001 refusés, 100 et défaut 5.0000
+  acceptés. **D2** : `create_in_tx_inner` insère `line_order = idx + 1` et relit `ORDER BY line_order`
+  (`journal_entries.rs:513-530`, `:551-555`) — attribution par position confirmée.
+- 2026-11-17 (développement, T3) — **Contrat modifié** par la décision de Guy (règle de la différence) et par les
+  ajustements de l'orchestrateur (registre `e0190-choix-autonomes-e431a.md`, C-e431a-1 et C-e431a-2) : `gap` au lieu de
+  `bank_fees`, `difference_account_id` en paramètre et dans le résultat, refus du compte d'écart (`Required`,
+  `IsBankLedger`, `NotPostable`, `Invalid`), `ClaimAccount` aux rôles réels, `CurrencyMismatch`, `WrongDirection`,
+  `Overpayment`, `Underpayment` et `BankFeesAccountNotConfigured` retirés. Les AC5 (étape 6) et la section *Tests*
+  (frais, trop-perçu) se lisent sous cette règle.
