@@ -218,6 +218,33 @@ E2 ; B-3), une douzaine de LOW. Remédiation selon les décisions de l'orchestra
 - **Non traité** : B-4 (commentaire, fait), B-5 (plan `EXPLAIN` de `locked_supplier_members`) et B-6
   (`RaceDuringUpdate` inatteignable côté fournisseur) — issues proposées au rapport.
 
+#### Remédiation de la revue P2 (2026-11-18, Opus 5.5)
+
+Revue P2 (Sonnet 5.5, passe complète) : 0 CRITICAL, 0 HIGH, 0 MEDIUM, 8 LOW ; les trois MEDIUM de la P1 levés.
+Traités selon les décisions de l'orchestrateur :
+- **LOW-1** (production, rouge d'abord, `kesh-gate-logs/e431b/p2-rouges.log`) : une trace de détachement manquante
+  pour la dernière facture d'un groupe sans écart faisait rendre sa dette comme compte d'écart. La vue recoupe
+  désormais le nombre de lignes de dette nommées avec les factures du paiement (`group_size_at_payment`, C-e431b-15) ;
+  test `a_missing_detachment_trace_makes_the_view_an_invariant`. C-e431b-4 annoté, doc-comment récrit.
+- **LOW-6** (production) : `detached_debt_lines` filtre `si.status = 'cancelled'` (C-e431b-16).
+- **LOW-3** : test `the_bank_ledger_is_the_one_read_under_lock` et mutation M10.
+- **LOW-7** : test `a_group_cancel_on_an_entry_without_settlement_is_an_invariant` ; le test de la 43-1a adapté
+  renommé `a_malformed_supplier_group_is_an_invariant_for_the_view`, assertion sur la variante (C-e431b-18).
+- **LOW-4, LOW-5** : décompte de la P1 annoté (six tests neufs, deux rouges, quatre verts) ; AC6 bis, la ligne de la
+  vue (§ Completion Notes), le File List et le doc-comment public de `pay_supplier_invoices_in_tx` (verrouillage de
+  toutes les factures avant le compte) mis à jour.
+- **LOW-8** : la campagne distingue une mutation non compilée et garde la cause de chaque échec ; M11 (délettrage
+  retiré du dé-rapprochement) et M12 (côté de l'écart inversé au bras **client**) jouées.
+- **LOW-2** : inscrit au registre comme limite du test d'interblocage (C-e431b-17), non traité.
+- **Tests**, recomptés depuis la source (`git grep -c '^#\[sqlx::test'`) : `grouped_settlements_supplier.rs` 18 à
+  `b3b2800be`, **21** à `bd5d97820` (trois neufs) ; `grouped_settlements.rs` : un test renommé, aucun ajouté.
+- **Mutations** (`mut/campagne.log`, causes jointes) : M9, M10, M11, M12 tuées — M10 par la ligne de banque au compte
+  de l'instantané (6 au lieu de 9), M11 par l'achat resté lettré, M12 par l'`Invariant` de la balance (« débit=20.0300,
+  crédit=20.0100 »), M9 par l'`Invariant` du recoupement.
+- **Gates** au commit de code `bd5d97820`, bases remises à neuf : `test-fast --ci` (voie 2) **5575 passés, 13
+  ignorés** (`test-fast-p2.log`) ; `gate-ci.sh kesh_ci_e431b` (voie 1) **5582 passés, 0 échec, 17 ignorés**
+  (`gate-ci-p2.log`). Frontend non touché. E2E à la clôture.
+
 ### File List
 
 - `crates/kesh-db/src/repositories/grouped_settlements.rs`, `supplier_invoices.rs` (modifiés)
