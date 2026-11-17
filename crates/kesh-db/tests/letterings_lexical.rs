@@ -587,10 +587,20 @@ fn ecrivains_du_reglement_fournisseur(source: &str) -> Vec<(String, bool, bool)>
             Some((nom, de, fin)) => {
                 let corps = &masque[*de..=*fin];
                 let synchronise = masque[p..*fin].contains("sync_supplier_invoice_in_tx(");
+                // Story 43-1b (#823) : le dé-rapprochement d'un groupe
+                // fournisseur contre-passe une écriture sans propriétaire
+                // (`reverse_in_tx(`), après avoir rouvert ses factures.
+                let contre_passe = [
+                    corps.find("reverse_owned_in_tx("),
+                    corps.find("reverse_in_tx("),
+                ]
+                .into_iter()
+                .flatten()
+                .min();
                 let dissout = matches!(
                     (
                         corps.find("dissolve_supplier_invoice_document_group_in_tx("),
-                        corps.find("reverse_owned_in_tx("),
+                        contre_passe,
                     ),
                     (Some(d), Some(r)) if d < r
                 );
@@ -601,7 +611,8 @@ fn ecrivains_du_reglement_fournisseur(source: &str) -> Vec<(String, bool, bool)>
         .collect()
 }
 
-/// AC8 (part ii) — chacun des trois `UPDATE supplier_invoices …
+/// AC8 (part ii) — chacun des cinq (trois avant la Story 43-1b, qui ajoute le
+/// paiement groupé et son dé-rapprochement) `UPDATE supplier_invoices …
 /// settlement_journal_entry_id` de production est dans une fonction qui
 /// synchronise le lettrage après lui (`pay_in_tx_as`, le corps de `pay_in_tx`
 /// depuis la Story 30-1b) ou qui le dissout avant de contre-passer (les deux
@@ -612,7 +623,8 @@ fn supplier_settlement_writers_sync_or_dissolve() {
     let mut ecrivains = Vec::new();
     for (fichier, source) in sources_de_production() {
         for (nom, synchronise, dissout) in ecrivains_du_reglement_fournisseur(&source) {
-            let attendu = if nom == "pay_in_tx_as" {
+            // Story 43-1b (#823) : le paiement groupé fournisseur est un paiement.
+            let attendu = if nom == "pay_in_tx_as" || nom == "pay_supplier_inner" {
                 synchronise
             } else {
                 dissout
@@ -637,11 +649,14 @@ fn supplier_settlement_writers_sync_or_dissolve() {
     assert_eq!(
         ecrivains,
         [
+            "kesh-db/src/repositories/grouped_settlements.rs::pay_supplier_inner",
+            "kesh-db/src/repositories/grouped_settlements.rs::supplier_cancel_in_tx",
             "kesh-db/src/repositories/supplier_invoices.rs::cancel_in_tx",
             "kesh-db/src/repositories/supplier_invoices.rs::cancel_settlement_in_tx",
             "kesh-db/src/repositories/supplier_invoices.rs::pay_in_tx_as",
         ],
-        "les trois écrivains connus — un site neuf se nomme ici"
+        "les cinq écrivains connus (Story 43-1b : le paiement groupé et son \
+         dé-rapprochement) — un site neuf se nomme ici"
     );
 
     // Le détecteur, éprouvé sur un source synthétique (anti-muet).
