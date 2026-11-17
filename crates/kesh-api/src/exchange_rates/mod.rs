@@ -52,7 +52,7 @@ pub use recuperation::{
 };
 pub use source::{
     HttpRateSource, MOCK_DAILY_RATES, MOCK_MONTHLY_RATES, MockBehavior, MockRateSource, MockReply,
-    RateFuture, RateSource, SourceError,
+    RateFuture, RateSource, SourceError, UnavailableRateSource, production_rate_source,
 };
 
 /// Délai avant le premier tour après le démarrage (AC-4 (a)).
