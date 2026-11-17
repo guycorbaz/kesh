@@ -35,6 +35,8 @@ import {
 } from './helpers/test-state';
 import {
 	createContactWithAddressViaApi,
+	createManualDebitStatementViaApi,
+	createSupplierInvoiceViaApi,
 	setDesignatedAccountsViaApi,
 	todayInZurich,
 	wiredBankAccountViaApi,
@@ -474,6 +476,61 @@ test.describe.fixme('Règlement groupé — l’écran (Story 43-3, #823)', () =
 			}
 			await cleanup(s.ctx, s.txId, s.importId);
 			await disposeContextSafe(s.ctx);
+		}
+	});
+
+	// D6 — retirable avec le commit fournisseur si la 43-1b sort.
+	test('un débit règle deux factures fournisseur (D6)', async ({ page }, testInfo) => {
+		const unique = `${Date.now()}-fourn`;
+		const today = todayInZurich();
+		const bankAccountId = await wiredBankAccountViaApi(page, TEST_IBAN);
+		const ctx = await authedApiContext(page);
+		const base = 20000 + (Date.now() % 20000);
+		const a = (base / 100).toFixed(2);
+		const b = ((base + 1100) / 100).toFixed(2);
+		const s1 = await createSupplierInvoiceViaApi(page, {
+			supplierName: `Fournisseur A ${unique}`,
+			number: `FA-${unique}`,
+			paymentReference: null,
+			invoiceDate: today,
+			dueDate: today,
+			amount: a,
+		});
+		const s2 = await createSupplierInvoiceViaApi(page, {
+			supplierName: `Fournisseur B ${unique}`,
+			number: `FB-${unique}`,
+			paymentReference: null,
+			invoiceDate: today,
+			dueDate: today,
+			amount: b,
+		});
+		const debit = ((sumCents(a, b) + 40) / 100).toFixed(2);
+		const importId = await createManualDebitStatementViaApi(page, {
+			bankAccountId,
+			bookingDate: today,
+			amount: debit,
+			counterpartyName: `Fournisseur A ${unique}`,
+			details: `Paiement groupé ${unique}`,
+		});
+		const txId = ((await (await ctx.get(`/api/v1/bank-imports/${importId}`)).json()) as {
+			transactions: Array<{ id: number }>;
+		}).transactions[0].id;
+		try {
+			const { modal } = await openGroup(page, bankAccountId, txId);
+			await add(modal, `FA-${unique}`, s1.supplierInvoiceId);
+			await add(modal, `FB-${unique}`, s2.supplierInvoiceId);
+			await expect(modal.getByTestId('group-gap')).toHaveText('Débit supérieur aux factures de 0.40');
+			await expect(modal.locator('input[aria-autocomplete="list"]')).toHaveValue(`${fees.number} — ${fees.name}`);
+			await modal.screenshot({ path: capturePath(testInfo, '43-3-fournisseur-debit-superieur') });
+			const accept = page.waitForRequest((r) => r.url().includes('/api/v1/reconciliation/accept'));
+			await modal.getByTestId('group-submit').click();
+			expect(((await accept).postDataJSON() as { proposals: Array<{ type: string }> }).proposals[0].type).toBe(
+				'supplier_invoice_group',
+			);
+			await expect(modal).toBeHidden();
+		} finally {
+			await cleanup(ctx, txId, importId);
+			await disposeContextSafe(ctx);
 		}
 	});
 });
