@@ -121,7 +121,15 @@ export type AcceptProposalInput =
 			counterpartyAccountId: number;
 	  }
 	// Story 30-1b (#686) — régler une facture fournisseur par un débit.
-	| { type: 'supplier_invoice'; bankTransactionId: number; supplierInvoiceId: number };
+	| { type: 'supplier_invoice'; bankTransactionId: number; supplierInvoiceId: number }
+	// Story 43-3 (#823) — une transaction au crédit règle plusieurs factures clients (43-2).
+	// `differenceAccountId` : le compte de l'écart au centime, obligatoire dès qu'il est non nul.
+	| {
+			type: 'invoice_group';
+			bankTransactionId: number;
+			invoiceIds: number[];
+			differenceAccountId?: number;
+	  };
 
 export interface SplitProposalLine {
 	counterpartyAccountId: number;
@@ -139,6 +147,72 @@ export interface AcceptedProposal {
 	supplierInvoiceId: number | null;
 	journalEntryId: number;
 	score: MatchScore;
+	// Story 43-3 (#823) — les cinq champs d'un règlement groupé (43-2, M1), absents pour les
+	// autres types. Invariant du serveur : `difference = roundingDifference + gap`.
+	/** `d = |montant| − Σ restes bruts`, signé, à quatre décimales. */
+	difference?: string;
+	/** `r`, la fraction sous le centime passée au compte d'arrondi, signée, à quatre décimales. */
+	roundingDifference?: string;
+	/** `e`, l'écart au centime passé au compte choisi, signé (`"0.00"` sans écart). */
+	gap?: string;
+	/** Le compte de l'écart ; `null` quand `gap` est nul. */
+	differenceAccountId?: number | null;
+	/** Les factures réglées, montant brut. */
+	settledInvoices?: GroupSettledInvoice[];
+}
+
+/** Story 43-3 — une facture réglée par un groupe (`accepted[].settledInvoices`). */
+export interface GroupSettledInvoice {
+	invoiceId?: number;
+	supplierInvoiceId?: number;
+	/** Le montant soldé, brut, à quatre décimales. */
+	amount: string;
+}
+
+/**
+ * Story 43-3 (#823) — une facture candidate d'un règlement groupé
+ * (`GET …/group-candidates`, Story 43-2). `amountDue` est le reste dû au centime (affichage),
+ * `amountDueRaw` le reste dû brut, à quatre décimales, sur lequel l'écart se calcule (C-43-21).
+ */
+export type GroupCandidate =
+	| {
+			kind: 'invoice';
+			id: number;
+			number: string | null;
+			contactName: string;
+			date: string;
+			dueDate: string | null;
+			totalTtc: string;
+			amountDue: string;
+			amountDueRaw: string;
+	  }
+	| {
+			kind: 'supplier_invoice';
+			id: number;
+			internalNumber: string | null;
+			supplierInvoiceNumber: string | null;
+			contactName: string;
+			date: string;
+			dueDate: string | null;
+			paymentReference: string | null;
+			amountDue: string;
+			amountDueRaw: string;
+	  };
+
+/** Story 43-3 — `GET /api/v1/reconciliation/transactions/{id}/group-candidates`. */
+export interface GroupCandidatesResponse {
+	/**
+	 * La famille cherchée : `client` pour un crédit, `supplier` pour un débit ; `null` pour un
+	 * montant nul ou une transaction hors CHF — la liste est alors vide.
+	 */
+	direction: 'client' | 'supplier' | null;
+	/** Le montant de la transaction, signé, à deux décimales. */
+	transactionAmount: string;
+	/** Le plafond de l'écart, réglage de la société (43-7), à deux décimales. */
+	maxDifference: string;
+	candidates: GroupCandidate[];
+	/** Vrai s'il reste des factures au-delà de la liste rendue. */
+	hasMore: boolean;
 }
 
 export interface FailedProposal {
@@ -201,7 +275,7 @@ export interface ReconciliationTransactionResponse {
 	 * `invoice_settlement`, `supplier_settlement` (Story 30-1a, un règlement fournisseur) ou
 	 * `entry` ; `null` si la transaction n'est pas rapprochée.
 	 */
-	kind: 'invoice_settlement' | 'supplier_settlement' | 'entry' | null;
+	kind: 'invoice_settlement' | 'supplier_settlement' | 'grouped_settlement' | 'entry' | null;
 	invoiceId: number | null;
 	invoiceNumber: string | null;
 	/** Story 30-1a — la facture fournisseur réglée, si `kind = supplier_settlement`. */
@@ -220,6 +294,28 @@ export interface ReconciliationTransactionResponse {
 	cancelBlockedLabel: string | null;
 	/** L'AUTRE transaction qui pointe la même écriture (rang 3). */
 	cancelBlockedDocumentId: number | null;
+	// Story 43-3 (#823) — les champs d'un règlement groupé (43-2, « Vue et annulation »),
+	// facultatifs ici : une vue rendue par un serveur antérieur ne les porte pas.
+	/** Les factures du groupe, montant brut ; vide hors groupe. */
+	groupedInvoices?: GroupedInvoiceRef[];
+	/** L'écart au centime `e` du groupe, signé, recalculé par le serveur ; `null` hors groupe. */
+	gap?: string | null;
+	/** Le compte de l'écart ; `null` sans écart ou hors groupe. */
+	differenceAccount?: { id: number; number: string; name: string } | null;
+	/** La facture du groupe qui porte le premier motif d'un refus d'annulation ; `null` sinon. */
+	cancelBlockedInvoice?: GroupedPieceRef | null;
+}
+
+/** Story 43-3 — une pièce d'un règlement groupé, nommée. */
+export interface GroupedPieceRef {
+	kind: 'invoice' | 'supplier_invoice';
+	id: number;
+	number: string | null;
+}
+
+/** Story 43-3 — une facture d'un règlement groupé dans la vue, avec son montant brut. */
+export interface GroupedInvoiceRef extends GroupedPieceRef {
+	amount: string;
 }
 
 /** `POST /api/v1/reconciliation/transactions/{id}/cancel`. */
@@ -233,6 +329,10 @@ export interface CancelReconciliationResponse {
 	invoiceId: number | null;
 	/** Story 30-1a — la facture fournisseur dont le paiement a été retiré. */
 	supplierInvoiceId: number | null;
+	/** Story 43-3 (#823, 43-2 M5) — le genre du rapprochement défait (absent d'un serveur antérieur). */
+	kind?: string;
+	/** Story 43-3 — les factures d'un règlement groupé défait ; vide hors groupe. */
+	cancelledInvoices?: GroupedPieceRef[];
 }
 
 // Story 29-8 (#670) — rattacher une transaction au règlement saisi depuis la fiche.
