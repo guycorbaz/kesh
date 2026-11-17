@@ -1,6 +1,6 @@
 # Story 43-1b : un règlement pour plusieurs factures — factures fournisseur (#823)
 
-Status: ready-for-dev
+Status: review
 
 *Fiche rédigée le 2026-11-17 au soir par l'agent de rédaction de l'Epic 43 (Opus 5.5), workflow `bmad-create-story`,
 découpage de la 43-1 (validation P1, H3) ; **alignée dans la nuit** sur la remédiation de la 43-1a (validation P2 : H-B,
@@ -142,9 +142,49 @@ Modules : `repositories/grouped_settlements` (paiement, bras du dé-rapprochemen
 
 ### Agent Model Used
 
+Opus 5.5 (agent de développement, 2026-11-17), en autonomie ; choix au registre `e0190-choix-autonomes-e431b.md`
+(C-e431b-1 à 11).
+
 ### Completion Notes List
 
+- **Étape 0** : LOW L-3 de `validation-fiches-p-ciblee-2.md` traité (en-tête : le chemin du worktree de la 43-1a
+  remplacé par sa branche). Contrat `t3.md` relu, annotation de la revue P1 de la 43-1a comprise. L-1, L-2, L-4 portent
+  sur la 43-7 et l'épique : hors de cette fiche.
+- **AC1 à AC5** : `pay_supplier_invoices_in_tx` / `pay_supplier_inner` — point de sauvegarde, bornes, transaction (sens,
+  devise), `lock_for_bank_settlement_in_tx` réemployée par identifiant croissant, borne basse de date, dette lue sur
+  l'achat et contrôlée égale au `total_amount` (C-e431b-2), dette ≠ banque, même `group_difference` (plafond d'abord),
+  compte d'arrondi, compte d'écart, écriture sans projet d'en-tête, factures `paid` avec leur ligne à la version lue
+  sous verrou, transaction rapprochée, lettrage par facture, `recheck_open_locked_in_tx`, audit.
+- **AC6, AC6 bis** : bras fournisseur de `view_members`, `difference_account_of` (bloc des dettes lu sur l'écriture,
+  C-e431b-4), `group_cancel_blocker` (tête `supplier_settlement_cancel_head` extraite, C-e431b-5) et `cancel_in_tx`
+  (`supplier_cancel_in_tx`) : l'`Invariant` de C-e431a-9 est remplacé ; `Some(true)` → `ReconciliationCancelChanged`.
+- **AC7** : les deux sites emploient déjà `CLEAR_SETTLEMENT_SQL` (43-1a) ; l'audit du détachement gagne
+  `settlementJournalEntryLineId` ; doc-comment du faux positif bénin sur `supplier_invoices::cancel_in_tx`.
+- **AC8** : retour en brouillon refusé (`PaidReconciled`) ; annulation du règlement refusée sur le motif
+  `MatchedBankTransaction` (variante `EntryNotReversable`, C-e431b-8).
+- **Hors des modules annoncés** (deux gardes de tests que le gate a fait rougir) :
+  `kesh-api/tests/bank_account_closed_inventory.rs` (écrivains classés, `ANNULATIONS` 6 → 7, `FENETRE` + 2, anti-muets
+  41 → 45 sites, G 14 → 16, revérifications 9 → 11 — C-e431b-6) ; `kesh-db/tests/letterings_lexical.rs` (cinq
+  écrivains du règlement fournisseur au lieu de trois ; `reverse_in_tx(` admis comme contre-passation).
+- **Tests** : 12 dans `crates/kesh-db/tests/grouped_settlements_supplier.rs` (C-e431b-1). ⚠️ Écrits **après** le code
+  (écart à « rouges d'abord », `kesh-gate-logs/e431b/rouges.log`) ; la campagne de mutations prouve qu'ils mordent.
+- **Mutations** (`kesh-gate-logs/e431b/mut/campagne.log`, code commité avant) : 6 jouées, 5 tuées (M1, M2, M4, M5, M6),
+  1 équivalente (M3 `AND version = ?`, facture tenue `FOR UPDATE` — C-e431b-11).
+- **Gates du passage en revue**, au dernier commit de code `cb594a7e2`, bases remises à neuf :
+  `scripts/test-fast.sh --ci` (voie 2) **5561 passés, 13 ignorés** (`kesh-gate-logs/e431b/test-fast-review-2.log`) ;
+  `scripts/gate-ci.sh kesh_ci_e431b` (voie 1) **5568 passés, 0 échec, 17 ignorés** (`gate-ci-review.log`). Le premier
+  `test-fast` (`test-fast-review.log`, `ad3acb75e`) rendait 1 échec, la garde lexicale
+  `supplier_settlement_writers_sync_or_dissolve`, corrigée par `cb594a7e2`. Frontend non touché. **E2E non lancé** (à
+  la clôture ; aucune route ni écran dans cette story).
+- **Manuels** : aucun changement (ni route ni écran). `user-manual.tex:3253` cite encore #823 comme limite — à la 43-3.
+
 ### File List
+
+- `crates/kesh-db/src/repositories/grouped_settlements.rs`, `supplier_invoices.rs` (modifiés)
+- `crates/kesh-db/tests/grouped_settlements_supplier.rs` (neuf)
+- `crates/kesh-db/tests/letterings_lexical.rs`, `crates/kesh-api/tests/bank_account_closed_inventory.rs` (modifiés)
+- `_bmad-output/implementation-artifacts/e0190-choix-autonomes-e431b.md`, `…-review-prompt-p1.md` (neufs)
+- cette fiche, `sprint-status.yaml` (modifiés)
 
 ## Change Log
 
@@ -162,3 +202,6 @@ Modules : `repositories/grouped_settlements` (paiement, bras du dé-rapprochemen
   `difference_account_of`), avec ses tests ; MEDIUM-1 : ordre des refus du code (plafond d'abord, dans
   `group_difference`) ; MEDIUM-2 : AC6 reprend C-e431a-9 (l'`Invariant` remplacé) et C-e431a-6 (jamais un retrait seul) ;
   LOW-2 à LOW-5 : règle tranchée, `t3.md` existant, ordre des lignes de l'écriture, test d'équilibre `r` et `e` ensemble.
+- 2026-11-17 (développement, Opus 5.5) — Validation terminée (contre `t3.md`, puis passe ciblée 2 : 0 au-dessus de
+  LOW) ; étape 0 (L-3) ; AC1 à AC8 et AC6 bis ; 12 tests, 6 mutations (5 tuées, 1 équivalente) ; `test-fast --ci` et
+  `gate-ci` verts à `cb594a7e2` ; passage en `review`. E2E à la clôture.
