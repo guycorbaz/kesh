@@ -382,9 +382,9 @@ async fn empreinte(pool: &MySqlPool) -> Vec<i64> {
         "SELECT COUNT(*) FROM invoice_settlements",
         "SELECT COUNT(*) FROM audit_log",
         "SELECT COUNT(*) FROM journal_entry_lines WHERE lettering_key IS NOT NULL",
-        "SELECT COALESCE(SUM(version), 0) FROM invoices",
+        "SELECT CAST(COALESCE(SUM(version), 0) AS SIGNED) FROM invoices",
         "SELECT COUNT(*) FROM invoices WHERE paid_at IS NOT NULL",
-        "SELECT COALESCE(SUM(version), 0) FROM bank_transactions",
+        "SELECT CAST(COALESCE(SUM(version), 0) AS SIGNED) FROM bank_transactions",
         "SELECT COUNT(*) FROM bank_transactions WHERE matched_entry_id IS NOT NULL",
     ] {
         out.push(
@@ -1079,7 +1079,7 @@ async fn unreconciling_a_group_undoes_it_entirely(pool: MySqlPool) {
     assert_eq!(restants, 0);
     // Chaque entrée écrite par le geste porte la clé.
     let (total, avec_cle): (i64, i64) = sqlx::query_as(
-        "SELECT COUNT(*), CAST(SUM(api_key_id = ?) AS SIGNED) FROM audit_log WHERE id > ?",
+        "SELECT COUNT(*), CAST(SUM(actor_api_key_id <=> ?) AS SIGNED) FROM audit_log WHERE id > ?",
     )
     .bind(key)
     .bind(audit_avant)
