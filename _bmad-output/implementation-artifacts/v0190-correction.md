@@ -32,22 +32,31 @@ Ce qui part : `InvoiceForm.svelte:665` `contactId: selectedContact!.id,` ; valid
 (`:745` `selectedContact = c;`, `:748` et `:751` `selectedContact = null;`) : le champ doit suivre.
 
 **La règle de la 36-1, reprise** (`_bmad-output/implementation-artifacts/36-1-entree-compte-produit.md`, D1) : `AccountAutocomplete` montre le brouillon pendant la frappe (`const query = $derived(draft ?? displayLabel);`), le jette au `blur` (`commitDraft()`),
-et n'envoie jamais le formulaire par *Entrée* tant qu'un brouillon est affiché ; une surbrillance ne vaut choix que si elle a été désignée. **S'applique ici**, avec deux différences : (i) un contact ne s'efface pas (pas d'`onClear`, la facture exige un client) :
-le brouillon jeté **rend le client retenu, ou le vide s'il n'y en a pas** ; (ii) la liste vient du serveur, avec anti-rebond : *Entrée* pendant la recherche en cours ne choisit rien.
+et n'envoie jamais le formulaire par *Entrée* tant qu'un brouillon est affiché ; une surbrillance ne vaut choix que si elle a été désignée. **S'applique ici**, avec trois différences : (i) un contact ne s'efface pas (pas d'`onClear`, la facture exige un client) :
+le brouillon jeté **rend le client retenu, ou le vide s'il n'y en a pas** ; (ii) la liste vient du serveur, avec anti-rebond : *Entrée* pendant la recherche en cours ne choisit rien ; (iii) le brouillon blanc + *Entrée* est jeté comme à la 36-1 (E5), mais le champ réaffiche le client retenu (D2).
 
 ## Décisions
 
 - **D1 — le brouillon se jette au départ du champ** (C-v0190c-1). `draft: string | null` (`null` hors frappe) ; `query = $derived(draft ?? selected?.name ?? '')` — le `$effect` à `initialSyncDone` disparaît ; `pick` fait
-  `onSelect(c); draft = null; open = false;` ; **`blur` : `draft = null`** puis fermeture de la liste ; **un changement de `selected?.id` jette le brouillon** (`$effect` sur l'identifiant seul, `untrack` du brouillon : après un 409, le client rechargé s'affiche) ;
+  `onSelect(c); draft = null; open = false;` ; **`blur` : `draft = null`**, anti-rebond annulé, `pending` remis à faux, puis fermeture de la liste (`pick` fait de même, D2) ; **un changement de `selected?.id` jette le brouillon** (`$effect` sur l'identifiant seul, `untrack` du brouillon : après un 409, le client rechargé s'affiche) ;
   frappe : `draft = valeur`. **Option écartée** : résoudre le texte par une recherche au `blur` (« le premier contact qui correspond ») — un choix que l'écran n'a pas montré, contraire à la règle du `CLAUDE.md` § *Un appariement automatique propose,
   il ne crée jamais* (le faux rattachement est muet). **Option écartée** : un message — le client retenu réaffiché dit déjà ce qui part, comme pour le compte.
 - **D2 — *Entrée*** (C-v0190c-2). Ordre : (1) liste ouverte **et** surbrillance désignée **et** recherche courante terminée → l'élément est choisi (`preventDefault`, rien ne part) ; (2) sinon, **un brouillon est affiché** (`draft !== null`) →
   `preventDefault` toujours, la liste s'ouvre ; (3) sinon (champ non touché) l'événement suit son cours : le formulaire part avec le client que le champ montre. *Entrée* maintenue (`e.repeat`) et composition IME (`e.isComposing`, `e.keyCode === 229`) :
-  mêmes règles que `AccountAutocomplete.svelte` (à lire, ne pas réinventer). « Recherche courante terminée » : un indicateur `pending` posé à la frappe, levé quand `runSearch` de **cette** séquence (`searchSeq`) rend la main.
-- **D3 — la surbrillance ne vaut choix que désignée** (C-v0190c-3). `highlighted` vaut `-1` à l'ouverture, au focus, au `blur`, à *Échap* et au choix ; il passe à `0` quand la saisie est **non blanche** et la liste non vide, ou par une flèche ;
-  *flèche bas* depuis `-1` va à `0` ; *flèche haut* depuis `-1` va au dernier. Rendu : `ContactPicker` emploie `hover:bg-muted` / `bg-muted` (`:159`, `:161`), classes que le thème ne génère pas (`/usr/bin/grep -nE "muted|accent" frontend/src/app.css` ne rend que
-  `--color-text-muted`, `:32`, et un commentaire `:41`) : **réemployer** `CLASSE_DESIGNEE` / `CLASSE_SURVOL` de `frontend/src/lib/features/journal-entries/account-autocomplete-classes.ts` (présent : `git cat-file -e HEAD:…` vérifié).
-- **Hors périmètre** : les deux filtres de liste n'ont pas de bouton d'effacement du client — **issue #1228**.
+  mêmes règles que `AccountAutocomplete.svelte` (à lire, ne pas réinventer). **Brouillon blanc** (C-v0190c-11, validation P1 V1-6) : *Entrée* avec `draft.trim() === ''` jette le brouillon, ferme la liste, laisse le champ réafficher le client retenu
+  et empêche l'envoi ; l'*Entrée* suivante envoie (patron E5 d'`AccountAutocomplete.svelte:398-402`, « troisième différence » avec la 36-1 : la règle reprise a donc **trois** différences, non deux).
+  **« Recherche courante terminée »** (C-v0190c-12, validation P1 V1-1) : `searchSeq` n'avance aujourd'hui qu'au départ de `runSearch` (`ContactPicker.svelte:57`), 300 ms après la frappe : une réponse partie **avant** la dernière frappe
+  serait donc acceptée (`:61`) et désignerait un contact de l'ancienne recherche. Règle : **chaque frappe invalide toute recherche en vol** (`searchSeq++` dans `onInput`, avant l'armement de l'anti-rebond) ; `pending` est posé à la frappe et ne se lève
+  qu'à la réponse de la recherche lancée pour le brouillon **actuel** (la séquence courante) ; **au `blur` et au choix, l'anti-rebond est annulé et `pending` revient à faux** (sinon il resterait vrai au focus suivant et *Entrée* serait empêché ou, pire,
+  la désignation ignorée).
+- **D3 — la surbrillance ne vaut choix que désignée** (C-v0190c-3). `highlighted` vaut `-1` à l'ouverture, au focus, au `blur`, à *Échap* et au choix ; il passe à `0` quand le **brouillon** est non blanc (`draft !== null && draft.trim() !== ''`, **non** le texte affiché :
+  `query` vaut le nom du client sur un champ non touché ; patron `indexParDefaut`, `AccountAutocomplete.svelte:277-278`) et la liste non vide, ou par une flèche ;
+  *flèche bas* depuis `-1` va à `0` ; *flèche haut* depuis `-1` va au dernier. **Flèches liste fermée** (C-v0190c-13, V1-7) : flèche bas / haut **ouvrent** la liste et désignent le premier / le dernier (patron `AccountAutocomplete.svelte:328-338`) ; la garde
+  `ContactPicker.svelte:87` `if (!open) return;` ne s'applique plus à elles. Rendu : `ContactPicker` emploie `hover:bg-muted` / `bg-muted` (`:159`, `:161`), classes que le thème ne génère pas (`/usr/bin/grep -nE "muted|accent" frontend/src/app.css` ne rend que
+  `--color-text-muted`, `:32`, et un commentaire `:41`) : **réemployer** `CLASSE_DESIGNEE` / `CLASSE_SURVOL` de `frontend/src/lib/features/journal-entries/account-autocomplete-classes.ts` (présent : `git cat-file -e HEAD:…` vérifié) ;
+  l'import traverse `lib/features/journal-entries` depuis `lib/components/invoices` : couplage transverse **assumé**, le déplacement des constantes est hors périmètre.
+- **Hors périmètre** : les deux filtres de liste n'ont pas de bouton d'effacement **du seul client** (la page des échéances n'en a aucun) — **issue #1228**. La page des factures a, elle, un chemin de remise à `null` : le bouton *Réinitialiser*
+  (`invoices/+page.svelte:375-380`, `contactFilter = null;`) ; après lui, le champ gardait l'ancien nom (`ContactPicker.svelte:46-48`), même classe de défaut, fermée par D1 (AC1 g, AC3).
 
 ## Critères d'acceptation
 
@@ -57,20 +66,31 @@ le brouillon jeté **rend le client retenu, ou le vide s'il n'y en a pas** ; (ii
    - b. `selected = null`, taper « zzz », `blur` → le champ est vide ;
    - c. `selected = Dupont`, taper « Mar », *Entrée* (liste fermée par *Échap*, ou aucun résultat) → événement empêché ; `onSelect` jamais appelé ; le texte tapé reste ; la liste est affichée ;
    - d. *Entrée* **pendant l'anti-rebond** (temps simulé, 100 ms après la frappe, anciens résultats présents) → événement empêché, `onSelect` jamais appelé ; la recherche terminée, *Entrée* choisit le premier résultat de **la nouvelle** liste ;
-   - e. focus sans saisie, liste affichée, *Entrée* → rien n'est choisi, événement **non** empêché (aucun brouillon : le formulaire part avec le client affiché) ; *flèche bas* → le **premier** contact est désigné, *Entrée* le choisit ;
+   - d-bis. (V1-1) recherche « M » **en vol** (promesse non résolue), frappe « a » (anti-rebond armé), la réponse « M » arrive **pendant l'anti-rebond** → *Entrée* empêchée, `onSelect` jamais appelé, aucune option désignée (aucune ne porte `CLASSE_DESIGNEE`) ;
+   - d-ter. (V1-1) frappe, `blur` pendant l'anti-rebond, focus, flèche bas, *Entrée* → le contact désigné est choisi (`pending` est revenu à faux au `blur`) ;
+   - e. focus sans saisie, liste affichée, *Entrée* → rien n'est choisi, événement **non** empêché (aucun brouillon : le formulaire part avec le client affiché) ; *flèche bas* → le **premier** contact est désigné, *Entrée* le choisit ; la réponse de la recherche du focus, arrivant sur un champ **non touché** dont le nom est non blanc, ne désigne rien (V1-5) ;
+   - e-bis. (V1-7) liste fermée par *Échap* : flèche bas rouvre la liste et désigne le premier ; flèche haut, le dernier ;
+   - e-ter. (V1-6) brouillon blanc (champ vidé au clavier) + *Entrée* → événement empêché, brouillon jeté, liste fermée, le champ réaffiche le client retenu ; l'*Entrée* suivante n'est pas empêchée ;
    - f. choix à la souris (`mousedown`) puis `blur` → le champ montre le contact choisi (parent réinjecté) ;
-   - g. `selected` change de client pendant qu'un brouillon est affiché → le champ montre le nouveau client ; `selected` passe à `null` → champ vide ;
+   - f-bis. (V1-11) la désignation **rendue** : l'option désignée porte `CLASSE_DESIGNEE`, les autres `CLASSE_SURVOL`, aucune ne porte `bg-muted` (la garde de jetons ne lit que les constantes) ;
+   - g. `selected` change de client pendant qu'un brouillon est affiché → le champ montre le nouveau client ; `selected` passe à `null` → champ vide (chemin du bouton *Réinitialiser* de la liste des factures) ;
    - h. composition IME et touche maintenue : mêmes issues que `AccountAutocomplete` (un cas chacun).
-2. **AC2 — la facture** (`InvoiceForm.test.ts`, un test) : facture existante au client X ; taper « zzz » dans le champ client puis cliquer *Enregistrer* → `updateInvoice` reçoit le `contactId` de X et le champ montre X. Les tests existants du formulaire restent verts (montage du client initial, `:380-384`).
-3. **AC3 — les filtres** : les deux pages de liste restent vertes ; un filtre posé se réaffiche tel quel après un texte tapé non choisi (AC1 a, même composant).
-4. **AC4 — E2E** (`frontend/tests/e2e/invoices.spec.ts`, un test) : nouvelle facture, client choisi dans la liste ; taper un autre texte dans le champ client, *Entrée* → l'URL reste `/invoices/new` ; quitter le champ → il montre le client choisi ; *Créer la facture* → la facture porte ce client (liste des factures).
+2. **AC2 — la facture** (`InvoiceForm.test.ts`, un test) : facture existante au client X ; `fireEvent.input` « zzz » dans le champ client, **`fireEvent.blur`** (en jsdom le clic ne déplace pas le focus : sans `blur` explicite le champ montrerait « zzz » même avec le correctif),
+   puis `fireEvent.click` sur *Enregistrer* (patron `InvoiceForm.test.ts:336-340`) → `updateInvoice` reçoit le `contactId` de X et le champ montre X. **L'assertion qui prouve le rouge est l'affichage de X** : le `contactId` de X part déjà aujourd'hui (`selectedContact` n'est jamais touché par la frappe).
+   Le mock `vi.mock('$lib/features/contacts/contacts.api', …)` (`:39-41`) reçoit `listContacts` (la frappe lance `runSearch`). Les tests existants du formulaire restent verts (le montage du client initial est `InvoiceForm.svelte:380-384`, non le fichier de test).
+3. **AC3 — les filtres** : les deux pages de liste restent vertes ; un filtre posé se réaffiche tel quel après un texte tapé non choisi (AC1 a, même composant) ; le chemin *Réinitialiser* de la page des factures (`contactFilter = null`, AC1 g au composant) est le seul chemin de remise à `null` : un test de page est le filet du parent, à ajouter s'il tient dans le patron existant de `invoices/+page.test.ts`.
+4. **AC4 — E2E** (`frontend/tests/e2e/invoices.spec.ts`, un test) : nouvelle facture, client choisi dans la liste ; taper un texte **qui ne correspond à aucun contact** (suffixe unique, `zzz-<uniq>`) dans le champ client ; **attendre que la liste affiche « Aucun contact »** avant d'appuyer sur *Entrée* (l'ancien code laisse alors partir le formulaire : l'URL change, le test rougit sans le correctif — avec une *Entrée* immédiate l'ancien code rechoisit le client déjà choisi et le test passerait avec le défaut) → l'URL reste `/invoices/new` ;
+   quitter le champ → il montre le client choisi ; *Créer la facture* → la facture porte ce client (liste des factures). Variante facultative : *Entrée* immédiate (pendant l'anti-rebond) avec un client choisi qui n'est **pas** le premier de la liste précédente.
 5. **AC5 — aucune clé i18n neuve, aucune migration, aucun changement serveur.**
-6. **AC6 — le manuel** (`docs/manual/fr/user-manual.tex`, § création d'une facture, `:1162` *Factures → Nouvelle facture. Renseigner :*) : une phrase — le client se choisit **dans la liste** ; un texte tapé et non choisi est abandonné en quittant le champ, qui réaffiche le client retenu. `.tex` seulement.
+6. **AC6 — le manuel** (`docs/manual/fr/user-manual.tex`, § création d'une facture, `:1162` *Factures → Nouvelle facture. Renseigner :*) : **la parenthèse « (ou création à la volée) » de `:1167` est fausse** (`\item \textbf{Client} : sélection dans le carnet d'adresses (ou création à la volée).` ; aucune création depuis ce champ :
+   `git grep -n -i -E "volée|nouveau contact|createContact" -- frontend/src/lib/components/invoices/ 'frontend/src/routes/(app)/invoices/'` ne rend rien) : **elle est remplacée** par la règle — le client se choisit **dans la liste** ; un texte tapé et non choisi est abandonné en quittant le champ, qui réaffiche le client retenu ;
+   un client absent se crée d'abord dans *Contacts*. Contrôle : `git grep -n "à la volée" -- docs/manual/fr/user-manual.tex` ne rend plus que `:663` et `:689` (les rapports). `.tex` seulement ; **le PDF ne se commite pas dans la branche** : il se régénère à la release, et le contrôle aplati
+   (`pdftotext docs/manual/fr/user-manual.pdf - | tr '\n' ' ' | tr -s ' ' | /usr/bin/grep -c 'ou création à la volée'` → `0`) se fait alors, à la charge de l'orchestrateur.
 
 ## Tâches
 
-1. `ContactPicker.svelte` : D1, D2, D3 (lire d'abord `AccountAutocomplete.svelte`, `handleKeydown` et `commitDraft`, à la tête du worktree).
-2. `ContactPicker.test.ts` (AC1) ; test de `InvoiceForm.test.ts` (AC2) ; E2E (AC4) et captures ; manuel (AC6) ; section `## Note de version` ci-dessous (assemblée par l'orchestrateur, la story n'écrit pas `CHANGELOG.md`).
+1. `ContactPicker.svelte` : D1, D2 (dont brouillon blanc, invalidation par la frappe, `pending` remis à faux au `blur` et au choix), D3 (lire d'abord `AccountAutocomplete.svelte`, `handleKeydown`, `handleEnter`, `commitDraft` et `indexParDefaut`, à la tête du worktree).
+2. `ContactPicker.test.ts` (AC1, dont d-bis, d-ter, e-bis, e-ter, f-bis) ; test de `InvoiceForm.test.ts` (AC2, `listContacts` au mock) ; E2E (AC4) et captures ; manuel (AC6, `.tex` seul) ; section `## Note de version` ci-dessous (assemblée par l'orchestrateur, la story n'écrit pas `CHANGELOG.md`).
 
 ## Gates
 
@@ -83,8 +103,10 @@ Champ client avec un texte tapé non choisi ; le même champ après avoir quitt�
 ## Dev Notes
 
 - Taille : un composant, trois fichiers de test, un manuel ; petite.
-- Le détecteur du symptôme (`git grep -n -l -E 'aria-autocomplete|role="combobox"|role="listbox"' -- frontend/src`) : avant correction il rend `ContactPicker` (sonde positive) et `AccountAutocomplete` ; après, plus aucun composant sans la règle.
-- Issue liée : **#1228** (filtres sans effacement). Aucune donnée réelle dans les fixtures (`Dupont`).
+- Le détecteur du symptôme, restreint aux composants : `git grep -n -l -E 'aria-autocomplete|role="combobox"|role="listbox"' -- 'frontend/src/*.svelte'` rend **deux** fichiers, `ContactPicker.svelte` (sonde positive) et `AccountAutocomplete.svelte` (sans la restriction, huit fichiers dont six de test ou de constantes) ;
+  et `git grep -n -l -E "onSelect" -- 'frontend/src/*.svelte'` ne montre aucun autre sélecteur à texte tapé (`ProductPicker` est une boîte de dialogue à clic). **Liste fermée** : les deux composants à texte tapé et choix dans une liste sont `ContactPicker` et `AccountAutocomplete` ; la règle (brouillon jeté au `blur`, aucune surbrillance qui vaille choix sans désignation) s'applique aux deux, et à tout composant qui s'y ajouterait.
+- Issue liée : **#1228** (filtres sans effacement du seul client). Aucune donnée réelle dans les fixtures (`Dupont`).
+- **Registre des choix** : `_bmad-output/implementation-artifacts/e0190-choix-autonomes-v0190c.md` (C-v0190c-1 à 13).
 
 ## Note de version
 
