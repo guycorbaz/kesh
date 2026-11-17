@@ -139,9 +139,10 @@ Cette story pose **la migration de la release** (colonnes de la 43-1b et réglag
 - **AC2** — Registres et garde-fous :
   - `docs/migrations-idempotence-audit.md` : une ligne (`tracked-by-sqlx`, réserve d'AC1), totaux à **92** aux deux sites
     (en-tête :17, `Total` :117, dont la ventilation gagne « + 1 Story 43-1a »), compteurs de partition recomptés depuis le
-    tableau ; P6 : `migrations_upgrade_path.rs` à `assert_eq!(total, 92)` et `total - 58` (frontière inchangée) — sites
-    :51 (docstring, `total == 91`), :134-135, :146, :156, :221, :228-231, trouvés par `grep -nE "\b(57|91)\b"` sur le
-    fichier, relancé après la correction (L6) ; si la 43-5 est publiée, **elle** passe à 93 et
+    tableau ; P6 : `migrations_upgrade_path.rs` à `assert_eq!(total, 92)` et `total - 58` (frontière inchangée) — le
+    `grep -nE "\b(57|91)\b"` du fichier fait foi, relancé après la correction (L6), **les lignes d'historique exclues**
+    (« Story … : a → b », « + … = 91 », :97, :131, :159-160, :221 : relevés datés, non réécrits ; une ligne
+    « Story 43-1a : 57 → 58 » et « + grouped_settlements … = 92 » s'y ajoutent) (P4 LOW-3) ; si la 43-5 est publiée, **elle** passe à 93 et
     `total - 59` (C-43-5) ; les autres sites résolvent par version (`pre_upgrade_backup/tests.rs`,
     `sauvegarde_avant_migration.rs`), relevé au Change Log ;
   - squash `test-schema` repris, `test_schema_guard.rs` vert ; `every_data_backfill_migration_is_triaged` vert sans entrée ;
@@ -232,7 +233,7 @@ Cette story pose **la migration de la release** (colonnes de la 43-1b et réglag
   SupplierInvoice(id)`) et le **numéro affichable** de la pièce quand une pièce est en cause ; aucune variante de projet
   (H-B). Les variantes de la 43-1b (lot `generated`, tenue par un lot, non `open`, `Underpayment`) sont déclarées à T3. Tout
   autre `DbError` reste `Err` (doc-comment). **`GroupedSettlement`** : `journal_entry_id`, `reconciliation_audit_id`,
-  la `Decomposition` de D4 bis — `difference` (`|montant| − Σ restes bruts`, signé, brut), `rounding_difference` (`r`,
+  la `Decomposition` de D4 bis — `difference` (`|montant| − Σ apports bruts`, signé, brut), `rounding_difference` (`r`,
   signé, brut), `bank_fees` (`|e|`, ≥ 0, au centime), une seule définition pour les deux familles, la 43-1b et la 43-2 y
   renvoient (M4) —, et par facture un `GroupedInvoiceRef { kind, id, number, settlement_id: Option<i64>, line_id, amount }` (montant
   brut ; `settlement_id` absent côté fournisseur).
@@ -339,7 +340,10 @@ Cette story pose **la migration de la release** (colonnes de la 43-1b et réglag
   et (2) sans `AND version = ?` — le test de concurrence rougit (H-A) ; (3) le détachement sans remettre la ligne à `NULL`
   — le test de la `CHECK` rougit (M2) ; (4) inverser le sens admis de `e` dans `group_difference` — le test « trop-perçu
   refusé » rougit. Les autres (filtre par ligne, `ROLLBACK TO SAVEPOINT`, projet validé) sont souhaitables si le temps le
-  permet, en second lot.
+  permet, en second lot. *Pourquoi ces quatre et non celles de la P3* (P4 LOW-2) : (3) et (4) gardent les deux
+  décisions **neuves** de la P3 (M2, M4), que rien d'autre n'exerce ; le filtre par ligne est déjà exercé par AC6 (une
+  clé de lettrage par facture : sans le filtre, les deux lignes de créance d'un même compte tombent dans un seul groupe
+  et le test rougit), et `ROLLBACK TO SAVEPOINT` par la preuve de D6 (tables comparées après un refus validé).
 
 ## Tâches
 
@@ -351,7 +355,9 @@ Cette story pose **la migration de la release** (colonnes de la 43-1b et réglag
   `group_settlement_max_difference` et `DEFAULT_GROUP_DIFFERENCE_MAX` (AC3 bis, M5). Commit — la 43-7 peut partir.
 - [ ] **T2** — Entités et listes de colonnes des règlements, fragment `CLEAR_SETTLEMENT_SQL` (AC1.3), export (AC3). Commit.
 - [ ] **T3** — **Signatures publiques** documentées : `GroupedSettlement`, `GroupedInvoiceRef`, `GroupedDocument`,
-  `GroupRefusal` (toutes ses variantes, celles de la 43-1b comprises), `DEFAULT_GROUP_DIFFERENCE_MAX`,
+  `GroupRefusal` (toutes ses variantes, celles de la 43-1b comprises), `Decomposition` (champs publics),
+  `GroupFamily`, **`group_difference` en `pub`** (pure, sans base : la 43-2 peut l'employer pour ses tests de contrat ;
+  P4 LOW-4), `DEFAULT_GROUP_DIFFERENCE_MAX`,
   `settle_invoices_in_tx`, **`pay_supplier_invoices_in_tx(tx, company_id, bank_account_id, bank_transaction_id,
   supplier_invoice_ids, batch_size, acteur, aujourd_hui)`** (corps `unimplemented!` permis à ce commit seulement),
   `cancel_in_tx`, la structure de la vue (factures, facture qui bloque). **Commit transmis à l'orchestrateur mercredi avant
@@ -390,7 +396,8 @@ doc-comment de `journal_entries`), `kesh-api/exports/csv_tables`, `kesh-reconcil
 - **Justification** : la migration, la création et l'annulation d'un groupe se testent ensemble ; aucun commit fusionné ne
   doit produire une écriture groupée qu'on ne sait pas défaire, ni une clé vers une ligne sans la levée écrite de
   l'invariant de la modification d'écriture. Hors `grouped_settlements`, `letterings` et `reconciliation_cancel`, les
-  modules ne reçoivent que des colonnes, un fragment SQL, une forme `pub(crate)` ou un doc-comment. Le travail que les
+  modules ne reçoivent que des colonnes, une fonction de lecture, un fragment SQL, une forme `pub(crate)`, l'ordre
+  d'une liste de vidage, des assertions de garde-fou levées par décision écrite ou un doc-comment. Le travail que les
   autres stories consomment (T1 à T3 : schéma, entités, plafond, signatures) est isolé dans des commits à part, déjà livrés
   à midi.
 - **Risque accepté** : une revue plus large qu'une story à cinq modules, et un passage en revue tendu ; il est borné par le
