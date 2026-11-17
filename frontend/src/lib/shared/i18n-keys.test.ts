@@ -1043,7 +1043,9 @@ const ATTENDU = {
 	// littéraux — `settings-company-name-required`, `-saved`, `-conflict`,
 	// `-conflict-reload-failed`, `common-save`, `common-cancel`, `common-edit`, `common-error`
 	// (« expected 3095 to be 3087 », `kesh-gate-logs/v0190n/vitest-i18n-1.log`).
-	sitesTotal: 3095,
+	// 3095 → 3096 (v0190-nom-societe, revue P1 E3) : `settings-company-name-too-long`, le refus
+	// local de la longueur — un littéral, garde verte à 3096 (`vitest-i18n-3.log`).
+	sitesTotal: 3096,
 	sitesNonResolus: 31,
 	relais: 6,
 	// Story 26-1 (#620, AC3-bis) : **10 → 11** — `lib/features/bank-import/

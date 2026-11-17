@@ -1144,14 +1144,16 @@ async fn only_an_administrator_in_session_may_correct_the_name(pool: MySqlPool) 
 
 /// AC1 g-bis — une société d'avant les composants (adresse en texte libre seulement) :
 /// renommer ne produit ni `500` ni écrasement de l'adresse (garde de `update_in_tx`,
-/// Story 16-3a ; filet de non-régression).
+/// Story 16-3a ; filet de non-régression). Revue P1 (E4) : le pays vaut `CH`, comme sur une
+/// vraie société d'avant les composants — la migration `20260705000001_structured_addresses`
+/// a ajouté `address_country CHAR(2) NOT NULL DEFAULT 'CH'` sans rien réécrire.
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn renaming_a_free_text_only_company_keeps_its_address(pool: MySqlPool) {
     let (app, token, company_id, _) = setup(&pool).await;
     sqlx::query(
         "UPDATE companies SET address = 'Ancienne adresse libre', address_street = '', \
          address_building = '', address_postal_code = '', address_city = '', \
-         address_country = '' WHERE id = ?",
+         address_country = 'CH' WHERE id = ?",
     )
     .bind(company_id)
     .execute(&pool)
@@ -1168,4 +1170,5 @@ async fn renaming_a_free_text_only_company_keeps_its_address(pool: MySqlPool) {
     let after = app.company(&token).await;
     assert_eq!(after["name"], "Nom corrigé SA");
     assert_eq!(after["address"], "Ancienne adresse libre");
+    assert_eq!(after["addressStructured"]["country"], "CH");
 }

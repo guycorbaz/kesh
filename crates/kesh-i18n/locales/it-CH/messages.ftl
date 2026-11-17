@@ -2380,6 +2380,7 @@ settings-company-email-conflict = Conflitto di versione — i dati sono stati ri
 settings-company-email-conflict-reload-failed = Conflitto di versione e ricaricamento impossibile — ricaricare la pagina.
 settings-company-name-saved = Nome della società salvato
 settings-company-name-required = Il nome della società è obbligatorio.
+settings-company-name-too-long = Il nome della società supera { $max } caratteri ({ $got }): la QR-fattura non ne ammette di più.
 settings-company-name-conflict = Conflitto di versione — i dati sono stati ricaricati, riprovare.
 settings-company-name-conflict-reload-failed = Conflitto di versione e ricaricamento impossibile — ricaricare la pagina.
 

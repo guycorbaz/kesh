@@ -1261,7 +1261,8 @@ describe('page Paramètres — nom de la société (Story v0190-nom-societe)', (
 		await fireEvent.click(getByTestId('settings-company-name-edit'));
 		const input = getByTestId('settings-company-name-input') as HTMLInputElement;
 		expect(input.value).toBe('Test SA');
-		expect(input.maxLength).toBe(70);
+		// Revue P1 (E3, C-v0190c-25) : aucun `maxlength`, qui tronquait en silence un nom collé.
+		expect(input.hasAttribute('maxlength')).toBe(false);
 		await saisir(getByTestId, 'settings-company-name-input', ' Démo SA ');
 		await fireEvent.click(getByTestId('settings-company-name-save'));
 		await vi.waitFor(() => expect(updateCompanyNameMock).toHaveBeenCalledTimes(1));
@@ -1292,41 +1293,70 @@ describe('page Paramètres — nom de la société (Story v0190-nom-societe)', (
 		expect(updateCompanyNameMock).not.toHaveBeenCalled();
 	});
 
-	it('71 caractères posés par le test : le refus du serveur s’affiche, la saisie reste', async () => {
+	// Revue P1 (E3, C-v0190c-25) : la longueur se refuse ici, sans appel ; la saisie reste.
+	// Le mock d'`i18nMsg` rend le repli sans l'interpoler : les nombres du message se
+	// vérifient dans l'E2E (`company-name.spec.ts`), où la vraie fonction les pose.
+	it('71 caractères (un nom collé) : refus local, aucun appel, la saisie reste entière', async () => {
 		connecter('Admin');
 		fetchCompanyCurrentMock.mockResolvedValue(societe());
-		const message = 'Le nom de la société dépasse 70 caractères (71) : la QR-facture n’en admet pas davantage.';
-		updateCompanyNameMock.mockRejectedValue({ code: 'VALIDATION_ERROR', message, status: 400 });
 		const { findByTestId, getByTestId } = render(Page);
 		await fireEvent.click(await findByTestId('settings-company-name-edit'));
 		const long = 'N'.repeat(71);
-		await saisir(getByTestId, 'settings-company-name-input', long);
+		await saisir(getByTestId, 'settings-company-name-input', ` ${long} `);
 		await fireEvent.click(getByTestId('settings-company-name-save'));
-		expect((await findByTestId('settings-company-name-error')).textContent).toContain('(71)');
-		expect((getByTestId('settings-company-name-input') as HTMLInputElement).value).toBe(long);
-		expect(updateCompanyNameMock).toHaveBeenCalledWith({ name: long, version: 1 });
+		expect((await findByTestId('settings-company-name-error')).textContent).toContain('dépasse');
+		expect((getByTestId('settings-company-name-input') as HTMLInputElement).value).toBe(` ${long} `);
+		expect(updateCompanyNameMock).not.toHaveBeenCalled();
 	});
 
-	it('nom stocké refusé par la QR-facture : Modifier le préremplit tel quel, l’envoi inchangé rend le refus, le raccourcir l’enregistre (V2-N3)', async () => {
+	it('70 caractères après rognage, et 70 caractères hors du plan de base (comptés en points de code) : envoyés', async () => {
+		connecter('Admin');
+		fetchCompanyCurrentMock.mockResolvedValue(societe());
+		updateCompanyNameMock.mockResolvedValue(societe({ version: 2 }).company);
+		const { findByTestId, getByTestId } = render(Page);
+		for (const nom of ['N'.repeat(70), '𝒜'.repeat(70)]) {
+			await fireEvent.click(await findByTestId('settings-company-name-edit'));
+			await saisir(getByTestId, 'settings-company-name-input', `  ${nom} `);
+			await fireEvent.click(getByTestId('settings-company-name-save'));
+			await vi.waitFor(() =>
+				expect(updateCompanyNameMock).toHaveBeenLastCalledWith({ name: nom, version: expect.any(Number) }),
+			);
+		}
+		expect(updateCompanyNameMock).toHaveBeenCalledTimes(2);
+	});
+
+	it('nom stocké trop long : Modifier le préremplit tel quel, l’envoi inchangé est refusé ici, le raccourcir l’enregistre (V2-N3)', async () => {
 		connecter('Admin');
 		const stocke = 'S'.repeat(71);
 		fetchCompanyCurrentMock.mockResolvedValue(societe({ name: stocke }));
-		updateCompanyNameMock.mockRejectedValueOnce({
-			code: 'VALIDATION_ERROR',
-			message: 'Le nom de la société dépasse 70 caractères (71)',
-			status: 400,
-		});
 		updateCompanyNameMock.mockResolvedValueOnce(societe({ name: 'S'.repeat(70), version: 2 }).company);
 		const { findByTestId, getByTestId, queryByTestId } = render(Page);
 		await fireEvent.click(await findByTestId('settings-company-name-edit'));
 		expect((getByTestId('settings-company-name-input') as HTMLInputElement).value).toBe(stocke);
 		await fireEvent.click(getByTestId('settings-company-name-save'));
-		expect((await findByTestId('settings-company-name-error')).textContent).toContain('(71)');
-		expect(updateCompanyNameMock.mock.calls[0][0]).toEqual({ name: stocke, version: 1 });
+		expect((await findByTestId('settings-company-name-error')).textContent).toContain('dépasse');
+		expect(updateCompanyNameMock).not.toHaveBeenCalled();
 		await saisir(getByTestId, 'settings-company-name-input', 'S'.repeat(70));
 		await fireEvent.click(getByTestId('settings-company-name-save'));
 		await vi.waitFor(() => expect(queryByTestId('settings-company-name-input')).toBeNull());
-		expect(updateCompanyNameMock.mock.calls[1][0]).toEqual({ name: 'S'.repeat(70), version: 1 });
+		expect(updateCompanyNameMock.mock.calls[0][0]).toEqual({ name: 'S'.repeat(70), version: 1 });
+	});
+
+	it('nom stocké hors du jeu de la QR-facture : l’envoi inchangé rend le refus du serveur, la saisie reste (V2-N3)', async () => {
+		connecter('Admin');
+		const stocke = 'Démo 张 SA';
+		fetchCompanyCurrentMock.mockResolvedValue(societe({ name: stocke }));
+		updateCompanyNameMock.mockRejectedValueOnce({
+			code: 'VALIDATION_ERROR',
+			message: 'Le nom de la société contient un caractère que la QR-facture n’admet pas : « 张 » (U+5F20)',
+			status: 400,
+		});
+		const { findByTestId, getByTestId } = render(Page);
+		await fireEvent.click(await findByTestId('settings-company-name-edit'));
+		await fireEvent.click(getByTestId('settings-company-name-save'));
+		expect((await findByTestId('settings-company-name-error')).textContent).toContain('U+5F20');
+		expect((getByTestId('settings-company-name-input') as HTMLInputElement).value).toBe(stocke);
+		expect(updateCompanyNameMock).toHaveBeenCalledWith({ name: stocke, version: 1 });
 	});
 
 	it('conflit de version : la valeur relue est montrée, la saisie gardée, le second clic part avec la version relue', async () => {

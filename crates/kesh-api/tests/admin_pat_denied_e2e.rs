@@ -43,8 +43,9 @@ const LIB_RS: &str = include_str!("../src/lib.rs");
 const MARKER_BEGIN: &str = "KESH-ADMIN-ROUTES-BEGIN";
 const MARKER_END: &str = "KESH-ADMIN-ROUTES-END";
 
-/// Les **53 constructeurs de méthode** du bloc `admin_routes` (49 avant la
-/// Story v017-4a, 50 avant la Story v0172-session, 52 avant la 33-5), un par couple
+/// Les **54 constructeurs de méthode** du bloc `admin_routes` (49 avant la
+/// Story v017-4a, 50 avant la Story v0172-session, 52 avant la 33-5, 53 avant la
+/// v0190-nom-societe), un par couple
 /// (méthode, chemin). Les identifiants de chemin sont arbitraires : la couche
 /// répond **avant** le handler, donc aucune donnée n'a besoin d'exister.
 ///
@@ -797,7 +798,7 @@ async fn error_code(resp: reqwest::Response) -> String {
 // Tests HTTP — le comportement
 // ============================================================================
 
-/// AC1, jambe `read-write` : les 53 couples rendent `API_KEY_ADMIN_FORBIDDEN`.
+/// AC1, jambe `read-write` : les 54 couples rendent `API_KEY_ADMIN_FORBIDDEN`.
 ///
 /// ⚠️ On asserte le **code**, pas le statut. Trois gardes distinctes rendent
 /// `403` sur ces routes — le RBAC, le gate de portée, et la couche : un test

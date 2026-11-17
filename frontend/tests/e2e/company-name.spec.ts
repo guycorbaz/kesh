@@ -10,9 +10,9 @@ import {
  * Tests E2E — corriger le nom de la société dans les réglages (Story v0190-nom-societe, #1097).
  *
  * Vitest simule l'API, les tests Rust construisent leur propre URL : seul ce fichier vérifie
- * qu'un nom saisi à l'écran traverse la frontière HTTP. Le refus se joue par un caractère hors
- * du jeu de la QR-facture, non par 71 caractères : le `maxlength={70}` du champ tronque la
- * saisie, `fill()` compris (le refus de longueur est couvert en Vitest et en Rust).
+ * qu'un nom saisi à l'écran traverse la frontière HTTP. Revue P1 (E3, C-v0190c-25) : le champ
+ * n'a plus de `maxlength`, qui tronquait en silence un nom collé ; 71 caractères se refusent à
+ * l'écran, et seul ce fichier voit les nombres du message, que la vraie `i18nMsg` interpole.
  */
 
 test.beforeAll(async () => {
@@ -73,6 +73,34 @@ test('corriger le nom dans les réglages : il traverse la frontière HTTP et sur
 		await expect(page.getByTestId('settings-company-name')).toHaveText('Démo Corrigée & Fils SA');
 	} finally {
 		await restoreName(ctx, initial);
+		await disposeContextSafe(ctx);
+	}
+});
+
+test('un nom collé de 71 caractères n’est pas tronqué : il est refusé à l’écran, compté, et rien n’est écrit', async ({
+	page,
+}) => {
+	await login(page);
+	const ctx = await authedApiContext(page);
+	const avant = await readCompany(ctx);
+	const long = 'N'.repeat(71);
+	try {
+		await page.goto('/settings');
+		await page.getByTestId('settings-company-name-edit').click();
+		await page.getByTestId('settings-company-name-input').fill(long);
+		await expect(page.getByTestId('settings-company-name-input')).toHaveValue(long);
+		await page.getByTestId('settings-company-name-save').click();
+
+		const erreur = page.getByTestId('settings-company-name-error');
+		await expect(erreur).toContainText('70');
+		await expect(erreur).toContainText('(71)');
+		await expect(page.getByTestId('settings-company-name-input')).toHaveValue(long);
+
+		const apres = await readCompany(ctx);
+		expect(apres.version).toBe(avant.version);
+		expect(apres.name).toBe(avant.name);
+	} finally {
+		await restoreName(ctx, avant.name);
 		await disposeContextSafe(ctx);
 	}
 });

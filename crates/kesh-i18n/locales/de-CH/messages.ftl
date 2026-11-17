@@ -2382,6 +2382,7 @@ settings-company-email-conflict = Versionskonflikt — die Daten wurden neu gela
 settings-company-email-conflict-reload-failed = Versionskonflikt und Neuladen fehlgeschlagen — laden Sie die Seite neu.
 settings-company-name-saved = Firmenname gespeichert
 settings-company-name-required = Der Name des Unternehmens ist obligatorisch.
+settings-company-name-too-long = Der Name des Unternehmens überschreitet { $max } Zeichen ({ $got }): Die QR-Rechnung lässt nicht mehr zu.
 settings-company-name-conflict = Versionskonflikt — die Daten wurden neu geladen, bitte erneut versuchen.
 settings-company-name-conflict-reload-failed = Versionskonflikt und Neuladen fehlgeschlagen — laden Sie die Seite neu.
 

@@ -2387,6 +2387,7 @@ settings-company-email-conflict = Version conflict — data reloaded, please try
 settings-company-email-conflict-reload-failed = Version conflict and reload failed — reload the page.
 settings-company-name-saved = Company name saved
 settings-company-name-required = The company name is required.
+settings-company-name-too-long = The company name exceeds { $max } characters ({ $got }): the QR-bill allows no more.
 settings-company-name-conflict = Version conflict — data reloaded, please try again.
 settings-company-name-conflict-reload-failed = Version conflict and reload failed — reload the page.
 

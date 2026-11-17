@@ -339,8 +339,14 @@
 
 	// Story v0190-nom-societe (#1097) — le nom de la société, que la QR-facture peut refuser
 	// après l'assistant. Édition inline sur le patron de l'e-mail ci-dessus (C-v0190c-8) :
-	// vide refusé ici ; longueur et jeu de caractères jugés par le serveur, dont le message
-	// s'affiche tel quel (le jeu de caractères n'est pas recopié dans le frontend).
+	// vide et plus de 70 caractères refusés ici ; le jeu de caractères est jugé par le serveur,
+	// dont le message s'affiche tel quel (il n'est pas recopié dans le frontend).
+	//
+	// Revue P1 (E3, C-v0190c-25) : pas de `maxlength` sur le champ. Il tronquait en silence un
+	// nom collé trop long, qui s'enregistrait coupé avec le toast de succès ; la longueur se
+	// refuse donc ici, avec le maximum et le nombre saisi, et la saisie reste.
+	/** Le maximum de la QR-facture (`kesh_qrbill::validation::NAME_MAX`), en caractères. */
+	const NAME_MAX = 70;
 	let nameEditing = $state(false);
 	let nameValue = $state('');
 	let nameSubmitting = $state(false);
@@ -354,8 +360,8 @@
 			nameBase = nameValuesOf(data.company);
 			nameVersion = data.company.version;
 		}
-		// Le nom stocké tel quel, même trop long ou hors jeu : `maxlength` n'agit que sur la
-		// saisie, et l'enregistrer sans le changer rend le refus du serveur (V2-N3).
+		// Le nom stocké tel quel, même trop long ou hors jeu : l'enregistrer sans le changer
+		// rend le refus (local pour la longueur, du serveur pour le jeu ; V2-N3).
 		nameValue = nameBase.name;
 		nameError = '';
 		nameConflict = null;
@@ -373,6 +379,16 @@
 		const trimmed = nameValue.trim();
 		if (!trimmed) {
 			nameError = msg('settings-company-name-required', 'Le nom de la société est obligatoire.');
+			return;
+		}
+		// En caractères (points de code), comme `chars().count()` côté serveur.
+		const length = [...trimmed].length;
+		if (length > NAME_MAX) {
+			nameError = msg(
+				'settings-company-name-too-long',
+				"Le nom de la société dépasse { $max } caractères ({ $got }) : la QR-facture n'en admet pas davantage.",
+				{ max: NAME_MAX, got: length },
+			);
 			return;
 		}
 		nameSubmitting = true;
@@ -750,7 +766,6 @@
 									bind:value={nameValue}
 									readonly={nameSubmitting}
 									class={PENDING_FIELD}
-									maxlength={70}
 									data-testid="settings-company-name-input"
 								/>
 								<CompanyConflictNotice notice={nameConflict} testid="settings-company-name-conflict" field="name" />
