@@ -56,8 +56,14 @@ retenus, arrondis de clients, etc.).
   enregistrer un autre réglage ne réécrit pas une valeur à quatre décimales (B1-1) ; la modifier écrit la valeur saisie, au
   centime. « Modifié » se juge sur les **valeurs**, non sur le texte saisi (P2, B2-1) : « 5,01 » contre « 5.01 », « 5,00 »
   contre « 5.00 » ne sont pas des changements (`groupMaxChanged`, lecture par `readGroupMax` puis égalité décimale).
-  **L'audit** (`{before, after}`) **et l'export CSV** des réglages portent la valeur **brute, à quatre décimales** (`5.0060`),
-  alors que l'API l'affiche arrondie au centime (`5.01`) (P2, B2-3).
+  **L'audit** (`{before, after}`) porte la valeur **brute, à quatre décimales** (`5.0060`) ; **l'export CSV la tronque à deux
+  décimales** (`5.00` : `fmt_decimal` fait `{:.2}`, défaut antérieur, tracé en #1245, non corrigé ici) ; **l'écran et l'API
+  l'arrondissent** (`5.01`) (P2 B2-3, corrigé P3 C3-1).
+  Pour fixer exactement `5.01` quand `5.0060` est stocké : enregistrer d'abord une autre valeur (`5.02`), puis `5.01` ; retaper
+  `5.01` ne change rien, l'écran affiche déjà `5.01` (P3 L3-3).
+  **Piège latent (P3 L3-2, limite, pas de code)** : l'écran suppose que l'API arrondit toujours à deux décimales. Si elle rendait
+  un jour quatre décimales, le champ serait refusé (`scale`) et la garde de `save()` bloquerait l'enregistrement de **tous** les
+  réglages de la page ; non atteignable aujourd'hui (`group_max_for_display`).
 - **AC2** — Contrôles du `PUT` : ≥ 0, au **centime** (deux décimales au plus), ≤ **100.00** ; montant ambigu (« 1.250 »)
   refusé par la règle des montants des réglages si elle est déjà posée, sinon la saisie de l'écran l'impose ; refus `400
   VALIDATION_ERROR` qui nomme le champ.
@@ -228,6 +234,17 @@ Rapport : `kesh-gate-logs/e437/review-p2-ciblee.md` (1 MEDIUM, 2 LOW). Edit seul
 - **M4** : ajoutée au script `mut/mut-e437.sh` (avec M5, voie frontend), rejouée sur le code de `9849bd74b` : 4 rouges (`mut/M4.log`).
 - **Gates ciblés** (commit `9849bd74b`) : Vitest de la page et de `group-settlement-max` 50 passés (`rem2-vitest.log`) ; `npm run check`
   0 erreur (`rem2-check.log`). Aucun code Rust touché.
+
+### Remédiation de la passe ciblée P3
+
+Rapport : `kesh-gate-logs/e437/review-p3-ciblee.md` (1 MEDIUM, 3 LOW). Edit seulement.
+- **C3-1 (MEDIUM)** : la phrase de B2-3 était fausse sur l'export CSV : `fmt_decimal` (`csv_tables.rs:108`, `{:.2}`) **tronque**
+  (`5.0060` → `5.00`) ; défaut antérieur, tracé en **#1245**, non corrigé ici. AC1 de la fiche, L-4 et manuel disent désormais :
+  l'audit porte la valeur brute à quatre décimales, l'export CSV la tronque à deux (#1245), l'écran et l'API l'arrondissent.
+- **L3-1** : tests unitaires de `groupMaxChanged` (égal, différent, saisie illisible ou ambiguë, valeur rendue absente ou illisible).
+- **L3-3** : le manuel et la fiche donnent le chemin pour fixer exactement `5.01` quand `5.0060` est stocké (enregistrer `5.02`, puis `5.01`).
+- **L3-2** : écrit comme limite à L-4 de la fiche (piège latent si l'API rendait quatre décimales) ; pas de code.
+- **Gate ciblé** : Vitest de `group-settlement-max` et de la page, 61 passés (`rem3-vitest.log`). Rien d'autre relancé (aucun code de production touché).
 
 ### File List
 
