@@ -1,6 +1,6 @@
 # Story 37-3b : écritures en devise — soldes d'ouverture, formulaire et écrans
 
-Status: review
+Status: done
 
 *Fiche rédigée le 2026-11-14 (Opus 5.5), branche `epic/37-multi-devises`. Epic 37, C-37-4, C-37-5. Suit **37-3a**
 (découpe de l'ancienne 37-3 à la rédaction). **Aucune migration.** Révisée le 2026-11-14 pour la revue de Beat
@@ -1355,6 +1355,9 @@ devise au cours d'ouverture choisi pour l'exercice (R6), afin de tenir mes livre
     gate backend, `front-vitest-2.log`, rendait cinq délais de 5 s dépassés dans des fichiers hors du diff, verts au passage
     seul). E2E non rejoués.
 
+- **Fin de story (2026-11-17)** : fusion de `epic/37-multi-devises` (37-3a, 37-4 terminées), gates backend 5808/5808 et
+  Vitest 4074 verts, E2E complet 441 passés / 10 échecs connus (sept KF-029 et trois préexistants) ; statut `done`.
+
 ## Dev Agent Record
 
 ### Choix (C-37-3b-*)
@@ -1476,6 +1479,24 @@ devise au cours d'ouverture choisi pour l'exercice (R6), afin de tenir mes livre
   recouvre le bouton *Compléter* : le clic échoue sur « element intercepts », relevé depuis la 37-1 au même registre,
   « à confirmer sur `main` »). Un premier E2E complet (`e2e-run-final.log`) a été **arrêté** en cours : tmpfs du
   MariaDB partagé de nouveau plein ; rejoué sur le conteneur redémarré, réservé à cette story.
+
+**Fin de story — fusion de l'epic, gates et E2E au commit de fusion** (journaux `kesh-gate-logs/s37-3b/final2/` et
+`e2e-run-final3.log`) :
+
+- **Fusion** de `epic/37-multi-devises` (37-3a et 37-4 terminées) : conflits dans `sprint-status.yaml` (37-3a et 37-4
+  prises de l'epic, 37-3b gardée), `kesh-api/src/errors.rs` (les deux fonctions voisines gardées :
+  `conversion_validation_message` et `coded_response` avec son commentaire) et `i18n-keys.test.ts` (`sitesTotal`).
+  Recomptés depuis la source : `sitesTotal` **3300** (relevé par la garde, `expected 3300 to be 3294`, non additionné ; les
+  6 sites de la 37-4 en plus) ; migrations **94** fichiers = **94** lignes de l'audit, total de l'audit à 94, aucune
+  migration en conflit ; registre des routes et bornes MCP : aucun conflit de texte, gardes vertes au gate backend.
+- **Backend complet** (`scripts/test-fast.sh --ci`, base `kesh_s37_3b` recréée, migrée, seedée) : **5808 exécutés,
+  5808 passés, 13 ignorés** (838 s, `gate.log`). **Vitest complet : 4074 passés (260 fichiers)**, `npm run build` vert.
+- **E2E complet** au commit de fusion (`LANG=fr_CH.UTF-8`, base `kesh_e2e_s37_3b` recréée, backend et frontend
+  reconstruits à ce commit, 42,1 min) : **441 passés, 10 échecs, 18 ignorés**. Les dix échecs, tous connus : les **sept de
+  la KF-029 (#97)** (`mode-expert.spec.ts:26`, `:41` ; `onboarding-path-b.spec.ts:65`, `:92` ; `onboarding.spec.ts:57`,
+  `:77`, `:150`) ; `backup-restore-new-install.spec.ts:262` et `:381` et `opening-balances.spec.ts:156`, établis comme
+  préexistants à `19bf12fb` (prompt de fin de story, non rejoués sur la base). `bank-import.spec.ts:130` passe ce
+  coup-ci. Aucun échec causé par la story ; les neuf de `fx-entries.spec.ts` passent.
 
 **Tests ajoutés** (périmètre `6f66e775..HEAD`) : Rust **23** `#[sqlx::test]`
 (`journal_entries_fx_ecrans_e2e.rs`) ; Vitest **90** déclarations `it(` ajoutées ; E2E **9** tests.
