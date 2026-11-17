@@ -7,7 +7,13 @@
 //!   vertical line at x = 62 mm ; each of the two dotted lines bears a scissors symbol
 //!   drawn in strokes (SIX § 3.7, Story 36-12a). The "Acceptance point" heading is
 //!   right-aligned at x = 57 mm (§ 3.6.4), measured by the private module `largeurs`.
-//! - QR Code 46×46 mm with 7×7 mm white square + Swiss cross in the center.
+//! - The payment section follows the SIX grid (Story 44-1a, #944): titles at baseline
+//!   96.5 mm, QR code 46×46 mm from (67, 42) to (113, 88) with an 8×8 mm white square and a
+//!   7×7 mm red Swiss cross centred at (90, 65), information column at x = 118 mm with
+//!   *Payable by* in it, amount section at baseline 35 mm on both sides, acceptance point
+//!   at baseline 20.5 mm. Text is wrapped at measured widths (52 mm on the receipt, 87 mm
+//!   in the column); a very long address falls back to fixed-height steps (street omitted
+//!   on the receipt, then lines shortened with "..."): the layout never fails.
 //!
 //! Uses `BuiltinFont::Helvetica` (PDF standard 14) — no external font embedding.
 
@@ -106,8 +112,7 @@ pub fn generate_qr_bill_pdf_with_date(
     // Facture : le contenu s'arrête au séparateur QR (SEP_Y).
     draw_invoice_section(&layer, invoice, i18n, &helv, &helv_bold, SEP_Y)?;
     draw_separator(&layer);
-    draw_receipt(&layer, data, invoice, i18n, &helv, &helv_bold)?;
-    draw_payment_part(&layer, data, invoice, i18n, &helv, &helv_bold, &qr)?;
+    dessiner_section_de_paiement(&layer, data, invoice, i18n, &helv, &helv_bold, &qr)?;
 
     finalize(doc)
 }
@@ -754,7 +759,8 @@ const SEP_ECART_CISEAUX: f32 = 0.25;
 const CISEAU_H_X: f32 = 48.0;
 
 /// Ordonnée de l'origine du repère du ciseau de la ligne verticale, en mm : sa boîte va de y = 99,5 à
-/// 103,35, au-dessus de la zone de 5 mm du QR (qui monte à 98, § 3.5.2) et sous la ligne
+/// 103,35, au-dessus de la zone de 5 mm du QR (qui monte à 93 depuis la Story 44-1a, à 98
+/// avant, § 3.5.2) et sous la ligne
 /// horizontale (D2, AC3 : centre y ∈ [101 ; 102]).
 const CISEAU_V_Y: f32 = 101.5;
 
@@ -906,12 +912,111 @@ fn dessiner_ciseaux(layer: &PdfLayerReference, cx: f32, cy: f32, vertical: bool)
     }
 }
 
+// ----- La grille de la section de paiement (SIX § 3.3 à 3.6.4, Story 44-1a, #944) -----
+//
+// Repère : mm depuis le bas à gauche de la page ; la section de paiement occupe y ∈ [0, 105].
+// Les cotes viennent du texte de la directive (`docs/six-references/ig-qr-bill-v2.4-en.pdf`)
+// quand il en donne, de la mesure des échantillons de SIX sinon (C-36-12-3,
+// `kesh-gate-logs/e36-12/mesure-echantillon-six-nr1.log`). Le « haut » d'une ligne est sa
+// base plus la hauteur des capitales d'Helvetica, son « bas » sa base moins la descendante.
+
+/// Millimètres par point typographique.
+const MM_PAR_POINT: f32 = 25.4 / 72.0;
+/// Marge de la section de paiement, et espace minimal entre deux de ses sections, en mm
+/// (§ 3.3, § 3.5).
+const MARGE: f32 = 5.0;
+/// Taille des titres « Récépissé » et « Section paiement », en points (§ 3.4).
+const TITRE_TAILLE: f32 = 11.0;
+/// Taille des intitulés, en points (§ 3.4 ; 6 pt en partie paiement aussi, C-36-12-6).
+const INTITULE_TAILLE: f32 = 6.0;
+/// Taille des valeurs, en points (§ 3.4, C-36-12-6).
+const VALEUR_TAILLE: f32 = 8.0;
+/// Hauteur des capitales d'Helvetica, en em (`CapHeight 718` de `phvr8a.afm`).
+const HAUTEUR_CAPITALES: f32 = 0.718;
+/// Descendante d'Helvetica, en em (`Descender -207` de `phvr8a.afm`).
+const DESCENDANTE: f32 = 0.207;
+
+/// Base des deux titres, en mm : haut à 99,29, dans [98, 100] (échantillons : 5,9 à 6,3 mm
+/// du haut de la section).
+const TITRE_BASE: f32 = 96.5;
+/// Côté du code QR, en mm (§ 6.4).
+const QR_COTE: f32 = 46.0;
+/// Bord gauche du code QR et du titre de la partie paiement : la ligne verticale à 62, plus
+/// la marge (§ 3.3) — 67.
+const QR_X: f32 = RECEIPT_W + MARGE;
+/// Haut du code QR, en mm : 88, la section montant passant à 5 mm sous son bas (42), § 3.5.2.
+const QR_HAUT: f32 = 88.0;
+/// Bord gauche de la colonne d'information : le QR et sa bordure de 5 mm (§ 3.5.2) — 118
+/// (échantillon : 117,9).
+const INFO_X: f32 = QR_X + QR_COTE + MARGE;
+/// Largeur de la colonne d'information, jusqu'à la marge droite de la page — 87 mm.
+const INFO_LARGEUR: f32 = PAGE_W - MARGE - INFO_X;
+/// Largeur de l'information du récépissé, entre ses deux marges — 52 mm.
+const RECU_LARGEUR: f32 = RECU_BORD_DROIT - MARGE;
+/// Base du premier intitulé du récépissé : haut 92,0 (échantillon : 12,9 mm du haut ; écart
+/// assumé aux 5 mm entre sections, fiche 44-1a, D8 (c)).
+const RECU_INFO_BASE: f32 = 90.5;
+/// Base du premier intitulé de la colonne d'information : haut 99,5 (échantillon : 5,2 mm
+/// du haut).
+const INFO_BASE: f32 = 98.0;
+/// Base des intitulés de la section montant, la même des deux côtés (C-36-12-7) : haut
+/// 36,52, à 5 mm sous le bas du QR à 0,48 mm près (§ 3.5 ; échantillons : 68,6 mm du haut).
+const MONTANT_BASE: f32 = 35.0;
+/// Pas de l'intitulé du montant à sa valeur, en mm.
+const MONTANT_PAS: f32 = 3.5;
+/// Décalage de l'intitulé et de la valeur du montant, à droite de la monnaie, au récépissé.
+const RECU_MONTANT_DECALAGE: f32 = 12.0;
+/// Le même décalage, en partie paiement.
+const PAIEMENT_MONTANT_DECALAGE: f32 = 15.0;
+/// Base du point de dépôt : haut 22,02 (échantillon : 82,7 mm du haut, § 3.6.4) ; son bord
+/// droit reste à [`RECU_BORD_DROIT`] (Story 36-12a).
+const POINT_DE_DEPOT_BASE: f32 = 20.5;
+/// Pas d'un intitulé à sa valeur (IBAN, référence, première ligne du message), en mm.
+const INTITULE_PAS: f32 = 3.0;
+/// Pas de la dernière valeur d'une rubrique à l'intitulé suivant, en mm.
+const RUBRIQUE_PAS: f32 = 6.0;
+/// Pas vertical entre deux lignes d'adresse de la section de paiement, en mm — et de
+/// l'intitulé *Payable by* (ou du compte) à la première d'entre elles.
+const ADRESSE_PAS: f32 = 3.5;
+/// Pas vertical d'une ligne du message à la suivante, en mm (même valeur qu'[`ADRESSE_PAS`],
+/// constante distincte pour que les positions du message se testent).
+const MESSAGE_PAS: f32 = 3.5;
+/// Les points de suspension d'une ligne raccourcie : trois points ASCII (§ 3.5.4).
+const POINTS_DE_SUSPENSION: &str = "...";
+
+/// Le haut d'une ligne de `taille` points posée sur la base `base`, en mm.
+const fn haut_de_ligne(base: f32, taille: f32) -> f32 {
+    base + HAUTEUR_CAPITALES * taille * MM_PAR_POINT
+}
+
+/// Le bas d'une ligne de `taille` points posée sur la base `base`, en mm.
+const fn bas_de_ligne(base: f32, taille: f32) -> f32 {
+    base - DESCENDANTE * taille * MM_PAR_POINT
+}
+
+/// Le bas que l'information du récépissé ne franchit pas : le haut des intitulés du montant,
+/// plus l'espace de 5 mm entre sections (§ 3.5, § 3.6) — 41,52.
+const RECU_INFO_BAS_MIN: f32 = haut_de_ligne(MONTANT_BASE, INTITULE_TAILLE) + MARGE;
+/// Le bas que la colonne d'information ne franchit pas : la marge du bas de la page.
+const INFO_BAS_MIN: f32 = MARGE;
+
 // ----- Adresses de la section de paiement -----
 
-/// Pas vertical entre deux lignes d'adresse de la section de paiement, en mm.
-const ADRESSE_PAS: f32 = 3.5;
+/// Le rôle d'une ligne d'adresse : le palier R1 omet la rue au récépissé (§ 3.6.2), R4
+/// garde le nom et la dernière ligne.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Role {
+    /// Le nom (type S et K).
+    Nom,
+    /// La rue et le numéro (type S).
+    Rue,
+    /// Le NPA et la localité, le pays devant hors de Suisse (type S).
+    Localite,
+    /// Une ligne d'adresse du type K, que rien ne compose.
+    LigneK,
+}
 
-/// Les lignes à imprimer pour une adresse, nom compris, chacune passée par
+/// Les lignes à imprimer pour une adresse, nom compris, chacune avec son rôle et passée par
 /// [`texte_imprime`] : le seul chemin de tout texte d'adresse vers le reçu et la
 /// partie paiement (Stories 33-12a et 33-12b, #941).
 ///
@@ -921,7 +1026,7 @@ const ADRESSE_PAS: f32 = 3.5;
 /// n'emploie ce type, et la directive v2.4 l'a retiré (C-e3312-7).
 ///
 /// Un champ vide après `texte_imprime` ne laisse ni ligne vide ni espace de tête.
-fn lignes_adresse(addr: &Address) -> Vec<String> {
+fn lignes_adresse_par_role(addr: &Address) -> Vec<(Role, String)> {
     let lignes = match addr.address_type {
         AddressType::Structured => {
             let npa = texte_imprime(&addr.postal_code);
@@ -931,18 +1036,30 @@ fn lignes_adresse(addr: &Address) -> Vec<String> {
                 format!("{}-{npa}", addr.country)
             };
             [
-                texte_imprime(&addr.name),
-                joindre(texte_imprime(&addr.line1), texte_imprime(&addr.line2)),
-                joindre(npa, texte_imprime(&addr.town)),
+                (Role::Nom, texte_imprime(&addr.name)),
+                (
+                    Role::Rue,
+                    joindre(texte_imprime(&addr.line1), texte_imprime(&addr.line2)),
+                ),
+                (Role::Localite, joindre(npa, texte_imprime(&addr.town))),
             ]
         }
         AddressType::Combined => [
-            texte_imprime(&addr.name),
-            texte_imprime(&addr.line1),
-            texte_imprime(&addr.line2),
+            (Role::Nom, texte_imprime(&addr.name)),
+            (Role::LigneK, texte_imprime(&addr.line1)),
+            (Role::LigneK, texte_imprime(&addr.line2)),
         ],
     };
-    lignes.into_iter().filter(|l| !l.is_empty()).collect()
+    lignes.into_iter().filter(|(_, l)| !l.is_empty()).collect()
+}
+
+/// Les lignes de [`lignes_adresse_par_role`], sans leur rôle.
+#[cfg(test)]
+fn lignes_adresse(addr: &Address) -> Vec<String> {
+    lignes_adresse_par_role(addr)
+        .into_iter()
+        .map(|(_, l)| l)
+        .collect()
 }
 
 /// Deux morceaux séparés d'une espace, sans espace de tête ni de fin si l'un est vide.
@@ -954,50 +1071,41 @@ fn joindre(a: String, b: String) -> String {
     }
 }
 
-/// Caractères par ligne d'adresse au reçu : une colonne de 52 mm (`RECEIPT_W` moins
-/// deux marges de 5 mm), à 8 pt, calibrée sur la largeur moyenne des capitales
-/// d'Helvetica (677/1000 em, 1,911 mm), comme `IDENTITY_MAX_CHARS` : 51,6 mm.
-///
-/// Aux minuscules (490/1000 em), on tiendrait 37 caractères, mais une adresse en
-/// capitales recouvrirait alors le QR, à x = 67. Le prix : une rue en minuscules de
-/// 28 à 37 caractères, qui tenait, se coupe à une frontière de mot.
-///
-/// ⚠️ Une moyenne n'est pas une borne : 27 `W` occupent 72 mm depuis x = 5, jusqu'à
-/// x = 77, dix millimètres sur le QR. Limite écrite, à #944.
-const MAX_CARACTERES_RECU: usize = 27;
+/// La largeur d'une valeur imprimée (8 pt, Helvetica), en mm.
+fn largeur_valeur(texte: &str) -> f32 {
+    largeur_mm(texte, VALEUR_TAILLE, false)
+}
 
-/// Caractères par ligne d'adresse en partie paiement, même calibrage : 88 mm depuis
-/// x = 117, au bord droit moins 5 mm, soit 87,9 mm. Le débiteur, à x = 67 et sous le
-/// QR, n'a pas de borne droite propre : il reçoit la même largeur.
-const MAX_CARACTERES_PAIEMENT: usize = 46;
-
-/// Coupe une ligne au-delà de `max` caractères, à une frontière de mot. Un mot plus
-/// long que `max` se coupe à la limite. Rien n'est tronqué.
+/// Coupe une ligne de valeur (8 pt) en lignes d'au plus `largeur` mm, mesurées par la
+/// table AFM d'Helvetica ([`largeur_mm`]), à une frontière de mot ; un mot plus large que
+/// `largeur` se coupe au dernier caractère qui tient. Rien n'est tronqué (Story 44-1a, D3 ;
+/// la coupe comptait des caractères jusqu'à la 0.18.0, calée sur la largeur moyenne des
+/// capitales, et 27 `W` recouvraient le QR).
 ///
 /// La coupe est gloutonne : si le premier mot de la localité ne tient pas à côté du
 /// NPA, le NPA reste seul sur sa ligne, l'adresse restant entière (C-e3312-6). Les
 /// espaces multiples intérieures se réduisent à une, sur toute ligne : les lignes
-/// rejointes par une espace redonnent l'entrée à ces espaces près, hors un mot coupé à
-/// la limite, que seule leur concaténation redonne.
-fn couper_ligne(ligne: &str, max: usize) -> Vec<String> {
-    debug_assert!(max > 0, "une largeur nulle ne coupe rien");
+/// rejointes par une espace redonnent l'entrée à ces espaces près, hors un mot plus large
+/// que la colonne, que seule leur concaténation redonne. Le dernier morceau d'un mot coupé
+/// reste ouvert au mot suivant.
+fn couper_ligne(ligne: &str, largeur: f32) -> Vec<String> {
+    debug_assert!(largeur > 0.0, "une largeur nulle ne coupe rien");
     let mut lignes = Vec::new();
     let mut courante = String::new();
     for mot in ligne.split(' ').filter(|mot| !mot.is_empty()) {
         if !courante.is_empty() {
-            if courante.chars().count() + 1 + mot.chars().count() <= max {
+            if largeur_valeur(&format!("{courante} {mot}")) <= largeur {
                 courante.push(' ');
                 courante.push_str(mot);
                 continue;
             }
             lignes.push(std::mem::take(&mut courante));
         }
-        let caracteres: Vec<char> = mot.chars().collect();
-        for morceau in caracteres.chunks(max) {
-            if !courante.is_empty() {
+        for c in mot.chars() {
+            if !courante.is_empty() && largeur_valeur(&format!("{courante}{c}")) > largeur {
                 lignes.push(std::mem::take(&mut courante));
             }
-            courante = morceau.iter().collect();
+            courante.push(c);
         }
     }
     if !courante.is_empty() {
@@ -1006,141 +1114,419 @@ fn couper_ligne(ligne: &str, max: usize) -> Vec<String> {
     lignes
 }
 
-/// La rubrique *Référence* et sa valeur groupée, un pas de 6 sous `y` puis de 3 : au
-/// reçu (§ 3.6.2 de la directive) comme en partie paiement. Rien sans référence.
-fn dessiner_reference(
-    layer: &PdfLayerReference,
-    data: &QrBillData,
-    i18n: &QrBillI18n,
+/// Ramène une ligne de valeur (8 pt) à `largeur` mm sur une seule ligne : entière si elle
+/// tient, sinon son début le plus long qui laisse la place des [`POINTS_DE_SUSPENSION`],
+/// sans espace de fin, suivi d'eux (§ 3.5.4 ; paliers R4 et P3, Story 44-1a, D3 et D4). Les
+/// espaces multiples intérieures se réduisent à une, comme dans [`couper_ligne`].
+fn raccourcir(ligne: &str, largeur: f32) -> String {
+    let ligne = ligne
+        .split(' ')
+        .filter(|mot| !mot.is_empty())
+        .collect::<Vec<_>>()
+        .join(" ");
+    if largeur_valeur(&ligne) <= largeur {
+        return ligne;
+    }
+    let mut garde = String::new();
+    for c in ligne.chars() {
+        if largeur_valeur(&format!("{garde}{c}{POINTS_DE_SUSPENSION}")) > largeur {
+            break;
+        }
+        garde.push(c);
+    }
+    format!("{}{POINTS_DE_SUSPENSION}", garde.trim_end())
+}
+
+// ----- La mise en page de la section de paiement : une fonction pure, puis le dessin -----
+
+/// Un texte placé dans la section de paiement : sa ligne de base en mm, sa taille et sa graisse.
+#[derive(Debug, Clone, PartialEq)]
+struct Texte {
     x: f32,
-    y: &mut f32,
-    helv: &IndirectFontRef,
-    helv_bold: &IndirectFontRef,
-) {
-    if let Reference::Qrr(qrr) = &data.reference {
-        *y -= 6.0;
-        layer.use_text(
-            i18n.get("invoice-pdf-qr-reference"),
-            6.0,
-            Mm(x),
-            Mm(*y),
-            helv_bold,
-        );
-        *y -= 3.0;
-        layer.use_text(format_qrr(qrr), 8.0, Mm(x), Mm(*y), helv);
+    y: f32,
+    texte: String,
+    taille: f32,
+    gras: bool,
+}
+
+impl Texte {
+    /// Le bas de la ligne, descendantes comprises.
+    fn bas(&self) -> f32 {
+        bas_de_ligne(self.y, self.taille)
     }
 }
 
-/// Dessine les lignes de [`lignes_adresse`], coupées à `max` caractères, à l'abscisse
-/// `x`, chacune un pas sous la précédente, à partir de `y`, qui est laissé sur la
-/// dernière ligne dessinée.
-fn dessiner_adresse(
-    layer: &PdfLayerReference,
-    addr: &Address,
+/// Les paliers du récépissé (fiche 44-1a, D4), dans l'ordre où ils s'essaient : chacun ne
+/// s'applique que si le précédent ne « tient » pas, c'est-à-dire si le bas de l'information
+/// passe sous [`RECU_INFO_BAS_MIN`]. La 44-1b insère R2 et R3 entre R1 et R4.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PalierRecu {
+    /// Tout à 8 pt, adresses complètes, coupées à 52 mm.
+    R0,
+    /// La rue et le numéro omis, du créancier et du débiteur ensemble (§ 3.6.2) ; sans objet
+    /// si aucune des deux adresses n'a de ligne de rue (type K compris).
+    R1,
+    /// Le dernier palier, qui tient par construction : nom et dernière ligne de chaque
+    /// adresse, chacun ramené à 52 mm avec « ... » (fiche 44-1a, D4 et D8 (b)).
+    R4,
+}
+
+/// Les paliers de la colonne d'information, dans l'ordre où ils s'essaient ; le critère est
+/// le bas de la colonne, au-dessus de [`INFO_BAS_MIN`]. La 44-1b insère P1 et P2.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PalierPaiement {
+    /// Tout, adresses complètes et message entier, coupés aux mots à 87 mm.
+    P0,
+    /// Le dernier palier, qui tient par construction : message sur une ligne, chaque ligne
+    /// d'adresse sur une ligne, ramenés à 87 mm avec « ... » (fiche 44-1a, D4 et D8 (a)).
+    P3,
+}
+
+/// Les paliers du récépissé, du premier au dernier.
+const PALIERS_RECU: [PalierRecu; 3] = [PalierRecu::R0, PalierRecu::R1, PalierRecu::R4];
+/// Les paliers de la colonne d'information, du premier au dernier.
+const PALIERS_PAIEMENT: [PalierPaiement; 2] = [PalierPaiement::P0, PalierPaiement::P3];
+
+/// Ce que le dessin imprime de la section de paiement, hors lignes, ciseaux et code QR :
+/// rendu par [`mise_en_page`], qui ne peut pas échouer. Les paliers et les bas ne servent
+/// pas au dessin : les tests les lisent (fiche 44-1a, AC5 et AC6).
+#[derive(Debug, Clone)]
+#[cfg_attr(not(test), allow(dead_code))]
+struct MiseEnPage {
+    /// Les textes du récépissé : titre, information, section montant, point de dépôt.
+    recu: Vec<Texte>,
+    /// Le titre de la partie paiement, dessiné avant le code QR.
+    titre_paiement: Texte,
+    /// Les textes de la partie paiement après le code QR : colonne d'information, puis
+    /// section montant.
+    paiement: Vec<Texte>,
+    /// Le palier retenu au récépissé.
+    palier_recu: PalierRecu,
+    /// Le palier retenu dans la colonne d'information.
+    palier_paiement: PalierPaiement,
+    /// Le bas de la dernière ligne de l'information du récépissé.
+    bas_recu: f32,
+    /// Le bas de la dernière ligne de la colonne d'information.
+    bas_paiement: f32,
+}
+
+/// Une colonne de textes posés de haut en bas, chacun un pas sous le précédent ; le premier
+/// sur la base donnée.
+struct Colonne {
     x: f32,
-    y: &mut f32,
-    max: usize,
-    helv: &IndirectFontRef,
-) {
-    for ligne in lignes_adresse(addr) {
-        for morceau in couper_ligne(&ligne, max) {
-            *y -= ADRESSE_PAS;
-            layer.use_text(morceau, 8.0, Mm(x), Mm(*y), helv);
+    y: f32,
+    textes: Vec<Texte>,
+}
+
+impl Colonne {
+    fn new(x: f32, premiere_base: f32) -> Self {
+        Colonne {
+            x,
+            y: premiere_base,
+            textes: Vec::new(),
         }
     }
-}
 
-// ----- Receipt column (left, 62 mm) -----
-
-fn draw_receipt(
-    layer: &PdfLayerReference,
-    data: &QrBillData,
-    invoice: &InvoicePdfData,
-    i18n: &QrBillI18n,
-    helv: &IndirectFontRef,
-    helv_bold: &IndirectFontRef,
-) -> Result<(), QrBillError> {
-    let x = 5.0;
-    let top = SEP_Y - 5.0;
-
-    layer.use_text(
-        i18n.get("invoice-pdf-qr-section-receipt"),
-        11.0,
-        Mm(x),
-        Mm(top),
-        helv_bold,
-    );
-
-    let mut y = top - 7.0;
-    layer.use_text(
-        i18n.get("invoice-pdf-qr-account"),
-        6.0,
-        Mm(x),
-        Mm(y),
-        helv_bold,
-    );
-    y -= 3.0;
-    layer.use_text(format_iban(&data.creditor_iban), 8.0, Mm(x), Mm(y), helv);
-    dessiner_adresse(layer, &data.creditor, x, &mut y, MAX_CARACTERES_RECU, helv);
-    dessiner_reference(layer, data, i18n, x, &mut y, helv, helv_bold);
-
-    // Amount + currency.
-    y -= 8.0;
-    layer.use_text(
-        i18n.get("invoice-pdf-qr-currency"),
-        6.0,
-        Mm(x),
-        Mm(y),
-        helv_bold,
-    );
-    layer.use_text(
-        i18n.get("invoice-pdf-qr-amount"),
-        6.0,
-        Mm(x + 12.0),
-        Mm(y),
-        helv_bold,
-    );
-    y -= 3.5;
-    layer.use_text(invoice.currency.code(), 8.0, Mm(x), Mm(y), helv);
-    let amount = data
-        .amount
-        .ok_or_else(|| QrBillError::InvalidAmount("montant requis pour rendu PDF".into()))?
-        .round_dp_with_strategy(2, RoundingStrategy::MidpointAwayFromZero);
-    layer.use_text(format_ch(amount, 2), 8.0, Mm(x + 12.0), Mm(y), helv);
-
-    // Debtor.
-    y -= 8.0;
-    layer.use_text(
-        i18n.get("invoice-pdf-qr-payable-by"),
-        6.0,
-        Mm(x),
-        Mm(y),
-        helv_bold,
-    );
-    if let Some(debtor) = &data.ultimate_debtor {
-        dessiner_adresse(layer, debtor, x, &mut y, MAX_CARACTERES_RECU, helv);
+    /// Pose `texte` un `pas` sous le texte précédent (sur la première base s'il n'y en a pas).
+    fn poser(&mut self, texte: String, pas: f32, taille: f32, gras: bool) {
+        if !self.textes.is_empty() {
+            self.y -= pas;
+        }
+        self.textes.push(Texte {
+            x: self.x,
+            y: self.y,
+            texte,
+            taille,
+            gras,
+        });
     }
 
-    // Le point de dépôt, en bas à droite du récépissé, « printed right-aligned » (§ 3.6.4) :
-    // son intitulé finit au bord droit du récépissé, 5 mm avant la ligne verticale, dans
-    // toutes les langues (Story 36-12a, D3 ; il était ancré à gauche à x = 47, et la ligne le
-    // traversait en anglais et en italien).
-    let point_de_depot = i18n.get("invoice-pdf-qr-acceptance-point");
-    layer.use_text(
-        point_de_depot,
-        6.0,
-        Mm(RECU_BORD_DROIT - largeur_mm(point_de_depot, 6.0, true)),
-        Mm(5.0),
-        helv_bold,
-    );
+    /// Un intitulé (6 pt gras), [`RUBRIQUE_PAS`] sous la dernière valeur.
+    fn intitule(&mut self, texte: &str) {
+        self.poser(texte.to_string(), RUBRIQUE_PAS, INTITULE_TAILLE, true);
+    }
 
-    Ok(())
+    /// Une valeur (8 pt), `pas` sous le texte précédent.
+    fn valeur(&mut self, texte: String, pas: f32) {
+        self.poser(texte, pas, VALEUR_TAILLE, false);
+    }
+
+    /// Le bas du dernier texte posé.
+    fn bas(&self) -> f32 {
+        self.textes.last().map_or(self.y, Texte::bas)
+    }
 }
 
-// ----- Payment Part column (right) -----
+/// Ce qu'un palier fait des lignes d'une adresse.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Forme {
+    /// Toutes les lignes, coupées à la largeur (R0, P0).
+    Entiere,
+    /// Toutes hors la rue, coupées à la largeur (R1).
+    SansRue,
+    /// La première et la dernière, chacune ramenée à la largeur avec « ... » (R4) ; une
+    /// seule si l'adresse n'en a qu'une.
+    Extremes,
+    /// Chacune ramenée à la largeur avec « ... » (P3).
+    UneLigneChacune,
+}
 
+/// Les lignes d'une adresse sous la forme `forme`, chacune d'au plus `largeur` mm.
+fn lignes_sous_forme(addr: &Address, forme: Forme, largeur: f32) -> Vec<String> {
+    let lignes = lignes_adresse_par_role(addr);
+    match forme {
+        Forme::Entiere | Forme::SansRue => lignes
+            .iter()
+            .filter(|(role, _)| forme == Forme::Entiere || *role != Role::Rue)
+            .flat_map(|(_, l)| couper_ligne(l, largeur))
+            .collect(),
+        Forme::Extremes => {
+            let mut extremes: Vec<&String> = lignes.iter().map(|(_, l)| l).take(1).collect();
+            if lignes.len() > 1 {
+                extremes.extend(lignes.last().map(|(_, l)| l));
+            }
+            extremes
+                .into_iter()
+                .map(|l| raccourcir(l, largeur))
+                .collect()
+        }
+        Forme::UneLigneChacune => lignes.iter().map(|(_, l)| raccourcir(l, largeur)).collect(),
+    }
+}
+
+/// L'information du récépissé au palier donné (§ 3.6.2) : compte et créancier, référence,
+/// *Payable by* et débiteur — *Payable by* avant la section montant (§ 3.5.4, Story 44-1a).
+fn information_du_recu(data: &QrBillData, i18n: &QrBillI18n, palier: PalierRecu) -> Colonne {
+    let forme = match palier {
+        PalierRecu::R0 => Forme::Entiere,
+        PalierRecu::R1 => Forme::SansRue,
+        PalierRecu::R4 => Forme::Extremes,
+    };
+    let mut c = Colonne::new(MARGE, RECU_INFO_BASE);
+    c.intitule(i18n.get("invoice-pdf-qr-account"));
+    c.valeur(format_iban(&data.creditor_iban), INTITULE_PAS);
+    for ligne in lignes_sous_forme(&data.creditor, forme, RECU_LARGEUR) {
+        c.valeur(ligne, ADRESSE_PAS);
+    }
+    if let Reference::Qrr(qrr) = &data.reference {
+        c.intitule(i18n.get("invoice-pdf-qr-reference"));
+        c.valeur(format_qrr(qrr), INTITULE_PAS);
+    }
+    c.intitule(i18n.get("invoice-pdf-qr-payable-by"));
+    if let Some(debiteur) = &data.ultimate_debtor {
+        for ligne in lignes_sous_forme(debiteur, forme, RECU_LARGEUR) {
+            c.valeur(ligne, ADRESSE_PAS);
+        }
+    }
+    c
+}
+
+/// La colonne d'information de la partie paiement au palier donné (§ 3.5.4) : compte et
+/// créancier, référence, *Additional information*, puis *Payable by* et débiteur.
+fn information_du_paiement(
+    data: &QrBillData,
+    i18n: &QrBillI18n,
+    message: Option<&str>,
+    palier: PalierPaiement,
+) -> Colonne {
+    let forme = match palier {
+        PalierPaiement::P0 => Forme::Entiere,
+        PalierPaiement::P3 => Forme::UneLigneChacune,
+    };
+    let mut c = Colonne::new(INFO_X, INFO_BASE);
+    c.intitule(i18n.get("invoice-pdf-qr-account"));
+    c.valeur(format_iban(&data.creditor_iban), INTITULE_PAS);
+    for ligne in lignes_sous_forme(&data.creditor, forme, INFO_LARGEUR) {
+        c.valeur(ligne, ADRESSE_PAS);
+    }
+    if let Reference::Qrr(qrr) = &data.reference {
+        c.intitule(i18n.get("invoice-pdf-qr-reference"));
+        c.valeur(format_qrr(qrr), INTITULE_PAS);
+    }
+    if let Some(message) = message {
+        c.intitule(i18n.get("invoice-pdf-qr-additional-info"));
+        let lignes = match palier {
+            PalierPaiement::P0 => couper_ligne(message, INFO_LARGEUR),
+            PalierPaiement::P3 => vec![raccourcir(message, INFO_LARGEUR)],
+        };
+        for (i, ligne) in lignes.into_iter().enumerate() {
+            c.valeur(ligne, if i == 0 { INTITULE_PAS } else { MESSAGE_PAS });
+        }
+    }
+    c.intitule(i18n.get("invoice-pdf-qr-payable-by"));
+    if let Some(debiteur) = &data.ultimate_debtor {
+        for ligne in lignes_sous_forme(debiteur, forme, INFO_LARGEUR) {
+            c.valeur(ligne, ADRESSE_PAS);
+        }
+    }
+    c
+}
+
+/// La section montant, à sa place fixe (C-36-12-7) : monnaie et montant, intitulés à la base
+/// [`MONTANT_BASE`], valeurs [`MONTANT_PAS`] plus bas, le montant décalé de `decalage`.
+fn section_montant(
+    i18n: &QrBillI18n,
+    x: f32,
+    decalage: f32,
+    devise: &str,
+    montant: &str,
+) -> [Texte; 4] {
+    let texte = |x: f32, y: f32, texte: &str, taille: f32, gras: bool| Texte {
+        x,
+        y,
+        texte: texte.to_string(),
+        taille,
+        gras,
+    };
+    let valeurs = MONTANT_BASE - MONTANT_PAS;
+    [
+        texte(
+            x,
+            MONTANT_BASE,
+            i18n.get("invoice-pdf-qr-currency"),
+            INTITULE_TAILLE,
+            true,
+        ),
+        texte(
+            x + decalage,
+            MONTANT_BASE,
+            i18n.get("invoice-pdf-qr-amount"),
+            INTITULE_TAILLE,
+            true,
+        ),
+        texte(x, valeurs, devise, VALEUR_TAILLE, false),
+        texte(x + decalage, valeurs, montant, VALEUR_TAILLE, false),
+    ]
+}
+
+/// La mise en page de la section de paiement, sur la grille de la directive (Story 44-1a,
+/// D2) : une fonction **pure**, qui rend toujours une mise en page et **jamais une erreur**
+/// (AC7). Le récépissé et la colonne d'information choisissent chacun leur palier, l'un
+/// sans l'autre : le premier qui tient, ou le dernier, qui tient par construction.
+///
+/// `devise` et `montant` sont déjà formatés : le montant absent est refusé avant, par
+/// [`dessiner_section_de_paiement`].
+fn mise_en_page(data: &QrBillData, i18n: &QrBillI18n, devise: &str, montant: &str) -> MiseEnPage {
+    // Récépissé : R0, R1 (s'il y a une rue à omettre), R4.
+    let une_rue = std::iter::once(&data.creditor)
+        .chain(data.ultimate_debtor.as_ref())
+        .any(|a| {
+            lignes_adresse_par_role(a)
+                .iter()
+                .any(|(r, _)| *r == Role::Rue)
+        });
+    let (dernier_recu, avant_recu) = PALIERS_RECU.split_last().expect("des paliers");
+    let (palier_recu, info_recu) = avant_recu
+        .iter()
+        .copied()
+        .filter(|p| *p != PalierRecu::R1 || une_rue)
+        .map(|p| (p, information_du_recu(data, i18n, p)))
+        .find(|(_, c)| c.bas() >= RECU_INFO_BAS_MIN)
+        .unwrap_or_else(|| {
+            (
+                *dernier_recu,
+                information_du_recu(data, i18n, *dernier_recu),
+            )
+        });
+    debug_assert!(
+        info_recu.bas() >= RECU_INFO_BAS_MIN,
+        "le dernier palier du récépissé tient par construction"
+    );
+
+    // Colonne d'information : P0, P3.
+    let message = data
+        .unstructured_message
+        .as_deref()
+        .map(texte_imprime)
+        .filter(|message| !message.is_empty());
+    let (dernier_paiement, avant_paiement) = PALIERS_PAIEMENT.split_last().expect("des paliers");
+    let (palier_paiement, info_paiement) = avant_paiement
+        .iter()
+        .copied()
+        .map(|p| {
+            (
+                p,
+                information_du_paiement(data, i18n, message.as_deref(), p),
+            )
+        })
+        .find(|(_, c)| c.bas() >= INFO_BAS_MIN)
+        .unwrap_or_else(|| {
+            (
+                *dernier_paiement,
+                information_du_paiement(data, i18n, message.as_deref(), *dernier_paiement),
+            )
+        });
+    debug_assert!(
+        info_paiement.bas() >= INFO_BAS_MIN,
+        "le dernier palier de la colonne tient par construction"
+    );
+
+    let titre = |x: f32, cle: &'static str| Texte {
+        x,
+        y: TITRE_BASE,
+        texte: i18n.get(cle).to_string(),
+        taille: TITRE_TAILLE,
+        gras: true,
+    };
+    // Le point de dépôt, en bas à droite du récépissé, « printed right-aligned » (§ 3.6.4) :
+    // son intitulé finit au bord droit du récépissé dans toutes les langues (Story 36-12a).
+    let point_de_depot = i18n.get("invoice-pdf-qr-acceptance-point");
+    let point_de_depot = Texte {
+        x: RECU_BORD_DROIT - largeur_mm(point_de_depot, INTITULE_TAILLE, true),
+        y: POINT_DE_DEPOT_BASE,
+        texte: point_de_depot.to_string(),
+        taille: INTITULE_TAILLE,
+        gras: true,
+    };
+
+    let (bas_recu, bas_paiement) = (info_recu.bas(), info_paiement.bas());
+    let mut recu = vec![titre(MARGE, "invoice-pdf-qr-section-receipt")];
+    recu.extend(info_recu.textes);
+    recu.extend(section_montant(
+        i18n,
+        MARGE,
+        RECU_MONTANT_DECALAGE,
+        devise,
+        montant,
+    ));
+    recu.push(point_de_depot);
+    let mut paiement = info_paiement.textes;
+    paiement.extend(section_montant(
+        i18n,
+        QR_X,
+        PAIEMENT_MONTANT_DECALAGE,
+        devise,
+        montant,
+    ));
+    MiseEnPage {
+        recu,
+        titre_paiement: titre(QR_X, "invoice-pdf-qr-section-payment"),
+        paiement,
+        palier_recu,
+        palier_paiement,
+        bas_recu,
+        bas_paiement,
+    }
+}
+
+/// Dessine un texte de la mise en page.
+fn dessiner_texte(
+    layer: &PdfLayerReference,
+    t: &Texte,
+    helv: &IndirectFontRef,
+    helv_bold: &IndirectFontRef,
+) {
+    let police = if t.gras { helv_bold } else { helv };
+    layer.use_text(t.texte.clone(), t.taille, Mm(t.x), Mm(t.y), police);
+}
+
+/// Dessine la section de paiement (récépissé et partie paiement, hors lignes et ciseaux) :
+/// la [`mise_en_page`], le code QR de 46 mm à (67, 88) et sa croix centrée en (90, 65).
+///
+/// Seul le montant absent (et le QR, par [`draw_qr_matrix`]) peut faire échouer ce dessin :
+/// la mise en page, elle, ne le peut pas.
 #[allow(clippy::too_many_arguments)]
-fn draw_payment_part(
+fn dessiner_section_de_paiement(
     layer: &PdfLayerReference,
     data: &QrBillData,
     invoice: &InvoicePdfData,
@@ -1149,102 +1535,21 @@ fn draw_payment_part(
     helv_bold: &IndirectFontRef,
     qr: &QrCode,
 ) -> Result<(), QrBillError> {
-    let x0 = RECEIPT_W + 5.0;
-    let top = SEP_Y - 5.0;
-
-    layer.use_text(
-        i18n.get("invoice-pdf-qr-section-payment"),
-        11.0,
-        Mm(x0),
-        Mm(top),
-        helv_bold,
-    );
-
-    // QR code 46×46 mm, top-left corner at (x0, top - 10).
-    let qr_x = x0;
-    let qr_top = top - 7.0;
-    draw_qr_matrix(layer, qr, qr_x, qr_top, 46.0)?;
-    draw_swiss_cross(layer, qr_x + 46.0 / 2.0, qr_top - 46.0 / 2.0);
-
-    // Text column to the right of the QR code.
-    let tx = qr_x + 50.0;
-    let mut y = top - 7.0;
-    layer.use_text(
-        i18n.get("invoice-pdf-qr-account"),
-        6.0,
-        Mm(tx),
-        Mm(y),
-        helv_bold,
-    );
-    y -= 3.0;
-    layer.use_text(format_iban(&data.creditor_iban), 8.0, Mm(tx), Mm(y), helv);
-    dessiner_adresse(
-        layer,
-        &data.creditor,
-        tx,
-        &mut y,
-        MAX_CARACTERES_PAIEMENT,
-        helv,
-    );
-
-    dessiner_reference(layer, data, i18n, tx, &mut y, helv, helv_bold);
-
-    let message = data
-        .unstructured_message
-        .as_deref()
-        .map(texte_imprime)
-        .filter(|message| !message.is_empty());
-    if let Some(msg) = message {
-        y -= 6.0;
-        layer.use_text(
-            i18n.get("invoice-pdf-qr-additional-info"),
-            6.0,
-            Mm(tx),
-            Mm(y),
-            helv_bold,
-        );
-        y -= 3.0;
-        layer.use_text(msg, 8.0, Mm(tx), Mm(y), helv);
-    }
-
-    // Amount + currency (below QR).
-    let amount_y = qr_top - 52.0;
-    layer.use_text(
-        i18n.get("invoice-pdf-qr-currency"),
-        6.0,
-        Mm(qr_x),
-        Mm(amount_y),
-        helv_bold,
-    );
-    layer.use_text(
-        i18n.get("invoice-pdf-qr-amount"),
-        6.0,
-        Mm(qr_x + 15.0),
-        Mm(amount_y),
-        helv_bold,
-    );
-    let ay = amount_y - 3.5;
-    layer.use_text(invoice.currency.code(), 8.0, Mm(qr_x), Mm(ay), helv);
-    let amount = data
+    let montant = data
         .amount
         .ok_or_else(|| QrBillError::InvalidAmount("montant requis pour rendu PDF".into()))?
         .round_dp_with_strategy(2, RoundingStrategy::MidpointAwayFromZero);
-    layer.use_text(format_ch(amount, 2), 8.0, Mm(qr_x + 15.0), Mm(ay), helv);
-
-    // Debtor block (bottom-left).
-    let dx = qr_x;
-    let mut dy = ay - 8.0;
-    layer.use_text(
-        i18n.get("invoice-pdf-qr-payable-by"),
-        6.0,
-        Mm(dx),
-        Mm(dy),
-        helv_bold,
-    );
-    if let Some(debtor) = &data.ultimate_debtor {
-        dessiner_adresse(layer, debtor, dx, &mut dy, MAX_CARACTERES_PAIEMENT, helv);
+    let page = mise_en_page(data, i18n, invoice.currency.code(), &format_ch(montant, 2));
+    for t in &page.recu {
+        dessiner_texte(layer, t, helv, helv_bold);
     }
-
+    dessiner_texte(layer, &page.titre_paiement, helv, helv_bold);
+    draw_qr_matrix(layer, qr, QR_X, QR_HAUT, QR_COTE)?;
+    draw_swiss_cross(layer, QR_X + QR_COTE / 2.0, QR_HAUT - QR_COTE / 2.0);
+    // Après la croix, qui remet le remplissage au noir (`chaque_texte_s_imprime_en_noir`).
+    for t in &page.paiement {
+        dessiner_texte(layer, t, helv, helv_bold);
+    }
     Ok(())
 }
 
@@ -1867,80 +2172,75 @@ mod tests {
         assert_eq!(lignes_adresse(&k), ["Max", "Lódzka 2", "78462 Konstanz"]);
     }
 
-    /// **AC3** (Story 33-12b) — un mot plus long que `max` se coupe à la limite, sans
-    /// perte.
+    /// **AC3** (Story 33-12b), à la largeur depuis la Story 44-1a — un mot plus large que
+    /// la colonne se coupe au dernier caractère qui tient, sans perte : 27 `A` font 50,83 mm
+    /// (`A` = 667 à l'AFM), 28 font 52,71 mm, au-delà des 52 du récépissé.
     #[test]
     fn couper_ligne_mot_long_sans_perte() {
         let mot = "A".repeat(30);
-        let lignes = couper_ligne(&mot, 27);
+        let lignes = couper_ligne(&mot, RECU_LARGEUR);
         assert_eq!(lignes, ["A".repeat(27), "A".repeat(3)]);
         assert_eq!(lignes.concat(), mot);
 
         // Un mot long après un mot court part sur sa propre ligne.
-        let lignes = couper_ligne(&format!("Rue {mot}"), 27);
+        let lignes = couper_ligne(&format!("Rue {mot}"), RECU_LARGEUR);
         assert_eq!(lignes, ["Rue".to_string(), "A".repeat(27), "A".repeat(3)]);
 
         // Un mot long coupé laisse sa fin ouverte au mot suivant.
-        let lignes = couper_ligne(&format!("{mot} fin"), 27);
+        let lignes = couper_ligne(&format!("{mot} fin"), RECU_LARGEUR);
         assert_eq!(lignes, ["A".repeat(27), "AAA fin".to_string()]);
     }
 
-    /// **AC3** (Story 33-12b) — une rue longue : aucune ligne au-delà de `max`, les
-    /// lignes rejointes par une espace redonnent l'entrée ; aucun de ses mots ne
-    /// dépasse `max`.
+    /// **AC3** (Story 33-12b), à la largeur depuis la Story 44-1a (AC4) — une rue longue :
+    /// aucune ligne au-delà de la largeur, les lignes rejointes par une espace redonnent
+    /// l'entrée. Au récépissé, la rue de 61 caractères ne fait plus trois lignes mais deux ;
+    /// dans la colonne, une seule.
     #[test]
     fn couper_ligne_rue_entiere() {
         let rue = "Chemin des Trois-Fontaines de la Vieille Tour du Haut-Plateau 12";
-        for (max, attendu) in [
+        for (largeur, attendu) in [
             (
-                27,
+                RECU_LARGEUR,
                 vec![
-                    "Chemin des Trois-Fontaines",
-                    "de la Vieille Tour du",
-                    "Haut-Plateau 12",
+                    "Chemin des Trois-Fontaines de la Vieille",
+                    "Tour du Haut-Plateau 12",
                 ],
             ),
-            (
-                46,
-                vec![
-                    "Chemin des Trois-Fontaines de la Vieille Tour",
-                    "du Haut-Plateau 12",
-                ],
-            ),
+            (INFO_LARGEUR, vec![rue]),
         ] {
-            let lignes = couper_ligne(rue, max);
+            let lignes = couper_ligne(rue, largeur);
             assert_eq!(lignes, attendu);
-            assert!(lignes.iter().all(|l| l.chars().count() <= max));
+            assert!(lignes.iter().all(|l| largeur_valeur(l) <= largeur));
             assert_eq!(lignes.join(" "), rue);
         }
-        assert_eq!(couper_ligne("", 27), Vec::<String>::new());
+        assert_eq!(couper_ligne("", RECU_LARGEUR), Vec::<String>::new());
     }
 
-    /// **AC3** (Story 33-12b, revue P1) — les frontières, là où elles mordent : une
-    /// jointure à exactement `max` tient, à `max + 1` elle se coupe, et les longueurs
-    /// se comptent en caractères : ces 27 caractères font 52 octets.
+    /// **AC3** (Story 33-12b, revue P1), à la largeur depuis la Story 44-1a — les
+    /// frontières, là où elles mordent : une jointure qui fait exactement la largeur tient,
+    /// un rien de moins de largeur la coupe ; un mot qui fait exactement la largeur tient
+    /// seul, le suivant part à la ligne.
     #[test]
-    fn couper_ligne_frontieres_en_caracteres() {
+    fn couper_ligne_frontieres_en_largeur() {
         let juste = format!("{} {}", "é".repeat(12), "é".repeat(14));
-        assert_eq!(juste.chars().count(), 27, "montage");
-        assert_eq!(couper_ligne(&juste, 27), std::slice::from_ref(&juste));
-
-        let un_de_plus = format!("{} {}", "é".repeat(12), "é".repeat(15));
+        let l = largeur_valeur(&juste);
+        assert_eq!(couper_ligne(&juste, l), std::slice::from_ref(&juste));
         assert_eq!(
-            couper_ligne(&un_de_plus, 27),
-            ["é".repeat(12), "é".repeat(15)]
+            couper_ligne(&juste, l - 0.01),
+            ["é".repeat(12), "é".repeat(14)]
         );
 
-        // Une jointure à `max` au milieu d'une ligne plus longue.
+        // Une jointure à la largeur au milieu d'une ligne plus longue.
+        let deux = "aaaaaaaaaaaaa bbbbbbbbbbbbb";
         assert_eq!(
-            couper_ligne("aaaaaaaaaaaaa bbbbbbbbbbbbb cc", 27),
-            ["aaaaaaaaaaaaa bbbbbbbbbbbbb", "cc"]
+            couper_ligne(&format!("{deux} cc"), largeur_valeur(deux)),
+            [deux, "cc"]
         );
 
-        // Un mot de `max` caractères tient seul, le suivant part à la ligne.
+        // Un mot qui fait la largeur tient seul, le suivant part à la ligne.
         let mot = "é".repeat(27);
         assert_eq!(
-            couper_ligne(&format!("{mot} x"), 27),
+            couper_ligne(&format!("{mot} x"), largeur_valeur(&mot)),
             [mot, "x".to_string()]
         );
     }
@@ -1950,69 +2250,101 @@ mod tests {
     /// chemin, et la jointure redonne l'entrée à ces espaces près. Aucune lettre perdue.
     #[test]
     fn couper_ligne_reduit_les_espaces_multiples() {
-        assert_eq!(couper_ligne("Rue  du   Lac", 27), ["Rue du Lac"]);
+        assert_eq!(couper_ligne("Rue  du   Lac", RECU_LARGEUR), ["Rue du Lac"]);
+        // 50,5 mm une fois les espaces réduites : une ligne au récépissé.
         assert_eq!(
-            couper_ligne("Chemin  des Trois-Fontaines  de la Tour", 27),
-            ["Chemin des Trois-Fontaines", "de la Tour"]
+            couper_ligne("Chemin  des Trois-Fontaines  de la Tour", RECU_LARGEUR),
+            ["Chemin des Trois-Fontaines de la Tour"]
+        );
+        assert_eq!(
+            couper_ligne(
+                "Chemin  des Trois-Fontaines  de la Vieille Tour",
+                RECU_LARGEUR
+            ),
+            ["Chemin des Trois-Fontaines de la Vieille", "Tour"]
         );
     }
 
     /// **AC3** (Story 33-12b, C-e3312-6) — la coupe est gloutonne : le NPA peut rester
-    /// seul sur sa ligne, l'adresse restant entière ; le préfixe, lui, reste au NPA.
+    /// seul sur sa ligne, l'adresse restant entière ; le préfixe, lui, reste au NPA. À la
+    /// largeur (Story 44-1a), il y faut une localité plus longue qu'avant : 59,29 mm.
     #[test]
     fn couper_ligne_npa_peut_rester_seul() {
         assert_eq!(
-            couper_ligne("FR-69400 Villefranche-sur-Saône", 27),
-            ["FR-69400", "Villefranche-sur-Saône"]
+            couper_ligne("FR-69400 Villefranche-sur-Saône", RECU_LARGEUR),
+            ["FR-69400 Villefranche-sur-Saône"]
+        );
+        assert_eq!(
+            couper_ligne(
+                "FR-69400 Villefranche-sur-Saône-et-Beaujolais",
+                RECU_LARGEUR
+            ),
+            ["FR-69400", "Villefranche-sur-Saône-et-Beaujolais"]
         );
     }
 
-    /// **AC3** (Story 33-12b, C-e3312-4) — les deux constantes se recalculent depuis
-    /// la largeur de leur colonne et le calibrage sur les capitales.
+    /// **AC4** (Story 44-1a) — `raccourcir` : une ligne qui tient sort entière (espaces
+    /// réduites) ; sinon, son début le plus long qui laisse la place des trois points ASCII,
+    /// sans espace de fin. 18 `W` et « ... » font 47,96 + 2,35 = 50,31 mm, 19 en font 52,97.
     #[test]
-    fn constantes_de_coupe_recalculees() {
-        let mm_par_caractere = 8.0 * 0.677 * 25.4 / 72.0;
-        let recu = RECEIPT_W - 2.0 * 5.0;
-        assert_eq!(MAX_CARACTERES_RECU, (recu / mm_par_caractere) as usize);
-        let paiement = PAGE_W - 5.0 - (RECEIPT_W + 5.0 + 50.0);
-        assert_eq!(paiement, 88.0, "montage : tx = 117");
+    fn raccourcir_laisse_la_place_des_points() {
+        assert_eq!(raccourcir("Rue  du Lac", RECU_LARGEUR), "Rue du Lac");
         assert_eq!(
-            MAX_CARACTERES_PAIEMENT,
-            (paiement / mm_par_caractere) as usize
+            raccourcir(&"W".repeat(70), RECU_LARGEUR),
+            format!("{}...", "W".repeat(18))
         );
+        assert_eq!(
+            raccourcir(&"W".repeat(19), RECU_LARGEUR),
+            "W".repeat(19),
+            "19 `W` tiennent sans points"
+        );
+        // L'espace de fin tombe avant les points.
+        assert_eq!(
+            raccourcir(
+                &format!("DE-{} {}", "W".repeat(16), "W".repeat(35)),
+                RECU_LARGEUR
+            ),
+            format!("DE-{}...", "W".repeat(16))
+        );
+        for l in [RECU_LARGEUR, INFO_LARGEUR] {
+            assert!(largeur_valeur(&raccourcir(&"@".repeat(140), l)) <= l);
+        }
     }
 
     /// **AC1, AC5** (Story 33-12b) et **M13** — aux quatre blocs, créancier et débiteur
     /// distincts : `name`, `rue numéro`, `NPA localité`, dans cet ordre, aux positions
-    /// exactes ; au reçu, la référence entre le créancier et le montant.
+    /// exactes ; au reçu, la référence entre le créancier et *Payable by*. Positions de la
+    /// grille de la Story 44-1a : le débiteur passe de x = 67 sous le montant à la colonne
+    /// d'information (x = 118) et, au reçu, au-dessus du montant (base 35).
     #[test]
     fn quatre_blocs_impriment_la_composition() {
         let textes = textes_pour(creancier_ordinaire(), debiteur_ordinaire());
         for (x, y, attendu) in [
-            (5.0, 86.5, "Robert Schneider SA"),
-            (5.0, 83.0, "Rue du Lac 1268"),
-            (5.0, 79.5, "2501 Biel"),
-            (5.0, 73.5, "Reference"),
-            (5.0, 70.5, "00 00000 00004 20000 00000 01008"),
-            (5.0, 62.5, "Currency"),
-            (5.0, 51.0, "Payable by"),
-            (5.0, 47.5, "Pia Rutschmann"),
-            (5.0, 44.0, "Marktgasse 28"),
-            (5.0, 40.5, "9400 Rorschach"),
-            (117.0, 86.5, "Robert Schneider SA"),
-            (117.0, 83.0, "Rue du Lac 1268"),
-            (117.0, 79.5, "2501 Biel"),
-            (117.0, 73.5, "Reference"),
-            (67.0, 26.0, "Pia Rutschmann"),
-            (67.0, 22.5, "Marktgasse 28"),
-            (67.0, 19.0, "9400 Rorschach"),
+            (5.0, 84.0, "Robert Schneider SA"),
+            (5.0, 80.5, "Rue du Lac 1268"),
+            (5.0, 77.0, "2501 Biel"),
+            (5.0, 71.0, "Reference"),
+            (5.0, 68.0, "00 00000 00004 20000 00000 01008"),
+            (5.0, 35.0, "Currency"),
+            (5.0, 62.0, "Payable by"),
+            (5.0, 58.5, "Pia Rutschmann"),
+            (5.0, 55.0, "Marktgasse 28"),
+            (5.0, 51.5, "9400 Rorschach"),
+            (118.0, 91.5, "Robert Schneider SA"),
+            (118.0, 88.0, "Rue du Lac 1268"),
+            (118.0, 84.5, "2501 Biel"),
+            (118.0, 78.5, "Reference"),
+            (118.0, 57.0, "Pia Rutschmann"),
+            (118.0, 53.5, "Marktgasse 28"),
+            (118.0, 50.0, "9400 Rorschach"),
         ] {
             assert_eq!(texte_a(&textes, x, y), attendu, "à ({x}, {y})");
         }
     }
 
     /// **AC5** (Story 33-12b) — sans référence, aucune rubrique, ni au reçu ni en
-    /// partie paiement, et le montant remonte d'autant.
+    /// partie paiement. Depuis la Story 44-1a (D6), le montant ne remonte plus : il reste à
+    /// la base 35 ; c'est *Payable by* qui remonte d'autant (base 71 au lieu de 62).
     #[test]
     fn sans_reference_aucune_rubrique() {
         let (mut data, invoice, i18n) = invoice_fixture();
@@ -2022,11 +2354,14 @@ mod tests {
         let pdf = generate_qr_bill_pdf_with_date(&data, &invoice, &i18n, fixed_date()).unwrap();
         let textes = textes_du_pdf(&pdf);
         assert!(!textes.iter().any(|(_, _, t)| t == "Reference"));
-        assert_eq!(texte_a(&textes, 5.0, 71.5), "Currency");
+        assert_eq!(texte_a(&textes, 5.0, MONTANT_BASE), "Currency");
+        assert_eq!(texte_a(&textes, 5.0, 71.0), "Payable by");
     }
 
-    /// **AC4** (Story 33-12b) et **M11** — une rue longue, trois lignes au reçu et deux
-    /// en partie paiement : `y` exacts, pas de 3,5, bloc suivant décalé d'autant.
+    /// **AC4** (Story 33-12b) et **M11** — une rue longue : `y` exacts, pas de 3,5, bloc
+    /// suivant décalé d'autant. Coupée à la largeur depuis la Story 44-1a, la rue de 61
+    /// caractères fait deux lignes au reçu (52 mm), au lieu de trois, et une seule dans la
+    /// colonne (87 mm), au lieu de deux ; huit lignes d'adresse au reçu : palier R0.
     #[test]
     fn rue_longue_les_y_suivent() {
         let longue = adresse_s(
@@ -2044,27 +2379,26 @@ mod tests {
             "Rorschach",
         );
         let textes = textes_pour(longue, debiteur);
+        let rue = "Chemin des Trois-Fontaines de la Vieille Tour du Haut-Plateau 12";
         for (x, y, attendu) in [
-            (5.0, 37.0, "Chemin des Trois-Fontaines"),
-            (5.0, 33.5, "de la Vieille Tour du"),
-            (5.0, 30.0, "Haut-Plateau 12"),
-            (5.0, 26.5, "9400 Rorschach"),
-            (67.0, 22.5, "Chemin des Trois-Fontaines de la Vieille Tour"),
-            (67.0, 19.0, "du Haut-Plateau 12"),
-            (67.0, 15.5, "9400 Rorschach"),
-            (5.0, 83.0, "Chemin des Trois-Fontaines"),
-            (5.0, 79.5, "de la Vieille Tour du"),
-            (5.0, 76.0, "Haut-Plateau 12"),
-            (5.0, 72.5, "2501 Biel"),
-            (5.0, 66.5, "Reference"),
-            (5.0, 55.5, "Currency"),
-            (5.0, 44.0, "Payable by"),
-            (5.0, 40.5, "Pia Rutschmann"),
-            (117.0, 83.0, "Chemin des Trois-Fontaines de la Vieille Tour"),
-            (117.0, 79.5, "du Haut-Plateau 12"),
-            (117.0, 76.0, "2501 Biel"),
-            (117.0, 70.0, "Reference"),
-            (117.0, 61.0, "Additional information"),
+            (5.0, 84.0, "Robert Schneider SA"),
+            (5.0, 80.5, "Chemin des Trois-Fontaines de la Vieille"),
+            (5.0, 77.0, "Tour du Haut-Plateau 12"),
+            (5.0, 73.5, "2501 Biel"),
+            (5.0, 67.5, "Reference"),
+            (5.0, 58.5, "Payable by"),
+            (5.0, 55.0, "Pia Rutschmann"),
+            (5.0, 51.5, "Chemin des Trois-Fontaines de la Vieille"),
+            (5.0, 48.0, "Tour du Haut-Plateau 12"),
+            (5.0, 44.5, "9400 Rorschach"),
+            (5.0, 35.0, "Currency"),
+            (118.0, 88.0, rue),
+            (118.0, 84.5, "2501 Biel"),
+            (118.0, 78.5, "Reference"),
+            (118.0, 69.5, "Additional information"),
+            (118.0, 60.5, "Payable by"),
+            (118.0, 53.5, rue),
+            (118.0, 50.0, "9400 Rorschach"),
         ] {
             assert_eq!(texte_a(&textes, x, y), attendu, "à ({x}, {y})");
         }
@@ -2079,11 +2413,11 @@ mod tests {
             adresse_etrangere("Jan", "ulica Długa", "5", "90-001", "Łódź", "PL"),
         );
         for (x, y, attendu) in [
-            (5.0, 79.5, "LI-9490 Vaduz"),
-            (117.0, 79.5, "LI-9490 Vaduz"),
-            (5.0, 44.0, "ulica Dluga 5"),
-            (5.0, 40.5, "PL-90-001 Lódz"),
-            (67.0, 19.0, "PL-90-001 Lódz"),
+            (5.0, 77.0, "LI-9490 Vaduz"),
+            (118.0, 84.5, "LI-9490 Vaduz"),
+            (5.0, 55.0, "ulica Dluga 5"),
+            (5.0, 51.5, "PL-90-001 Lódz"),
+            (118.0, 50.0, "PL-90-001 Lódz"),
         ] {
             assert_eq!(texte_a(&textes, x, y), attendu, "à ({x}, {y})");
         }
@@ -2091,8 +2425,10 @@ mod tests {
         assert!(!suisse.iter().any(|(_, _, t)| t.starts_with("CH-")));
     }
 
-    /// **AC4** (Story 33-12b) — les cinq cas, tous à référence QRR : rien sous le point
-    /// de dépôt (y = 5), et aucune ligne vide dessinée dans la section de paiement.
+    /// **AC4** (Story 33-12b) — les cinq cas, tous à référence QRR : rien sur le point de
+    /// dépôt, et aucune ligne vide dessinée dans la section de paiement. Depuis la Story
+    /// 44-1a, le point de dépôt est à la base 20,5 et la section montant sous lui ne s'arrête
+    /// plus à y = 5 + un pas : la règle devient le non-recouvrement de sa boîte.
     #[test]
     fn cinq_cas_au_dessus_du_point_de_depot() {
         let rue = "Avenue du Général-Guisan et de la Promenade des Anciens-Bains";
@@ -2115,18 +2451,32 @@ mod tests {
                 adresse_s("Pia Rutschmann", "", "", "9400", "Rorschach"),
             ),
         ] {
-            let textes = textes_pour(creancier, debiteur);
-            let section: Vec<_> = textes.iter().filter(|(_, y, _)| *y < SEP_Y).collect();
+            let (mut data, invoice, i18n) = invoice_fixture();
+            data.creditor = creancier;
+            data.ultimate_debtor = Some(debiteur);
+            let pdf = generate_qr_bill_pdf_with_date(&data, &invoice, &i18n, fixed_date()).unwrap();
+            let section = textes_de_la_section(&pdf);
             assert!(
-                section.iter().any(|(_, _, t)| t == "Reference"),
+                section.iter().any(|t| t.texte == "Reference"),
                 "montage : un QRR"
             );
-            for (x, y, t) in section {
-                assert!(!t.is_empty(), "ligne vide à ({x}, {y})");
-                // Le seul texte au point de dépôt est son intitulé ; une ligne à
-                // moins d'un pas au-dessus le recouvrirait (y = 5 ne suffit pas).
-                if t != "Acceptance point" {
-                    assert!(*y >= 5.0 + ADRESSE_PAS, "{t:?} à ({x}, {y})");
+            let depot: Vec<_> = section
+                .iter()
+                .filter(|t| t.texte == "Acceptance point")
+                .map(boite_44)
+                .collect();
+            assert_eq!(depot.len(), 1, "montage : un point de dépôt");
+            for t in &section {
+                assert!(!t.texte.is_empty(), "ligne vide à ({}, {})", t.x, t.y);
+                if t.texte != "Acceptance point" {
+                    assert!(
+                        boite_44(t).disjointe(&depot[0]),
+                        "{:?} à ({}, {}) sur le point de dépôt {:?}",
+                        t.texte,
+                        t.x,
+                        t.y,
+                        depot[0]
+                    );
                 }
             }
         }
@@ -2146,20 +2496,21 @@ mod tests {
         let pdf = generate_qr_bill_pdf_with_date(&data, &invoice, &i18n, fixed_date()).unwrap();
         let textes = textes_du_pdf(&pdf);
 
+        // Positions de la grille de la Story 44-1a.
         for (x, y, attendu) in [
-            (5.0, 86.5, "Colic"),
-            (5.0, 83.0, "Lódzka 1l"),
-            (5.0, 79.5, "1003 Lask"),
-            (5.0, 47.5, "Stefan"),
-            (5.0, 44.0, "Tara 2n"),
-            (5.0, 40.5, "1200 Zary"),
-            (117.0, 86.5, "Colic"),
-            (117.0, 83.0, "Lódzka 1l"),
-            (117.0, 79.5, "1003 Lask"),
-            (67.0, 26.0, "Stefan"),
-            (67.0, 22.5, "Tara 2n"),
-            (67.0, 19.0, "1200 Zary"),
-            (117.0, 61.5, "Merci Ž c"),
+            (5.0, 84.0, "Colic"),
+            (5.0, 80.5, "Lódzka 1l"),
+            (5.0, 77.0, "1003 Lask"),
+            (5.0, 58.5, "Stefan"),
+            (5.0, 55.0, "Tara 2n"),
+            (5.0, 51.5, "1200 Zary"),
+            (118.0, 91.5, "Colic"),
+            (118.0, 88.0, "Lódzka 1l"),
+            (118.0, 84.5, "1003 Lask"),
+            (118.0, 57.0, "Stefan"),
+            (118.0, 53.5, "Tara 2n"),
+            (118.0, 50.0, "1200 Zary"),
+            (118.0, 66.5, "Merci Ž c"),
         ] {
             assert_eq!(texte_a(&textes, x, y), attendu, "à ({x}, {y})");
         }
@@ -3634,7 +3985,8 @@ mod tests {
         );
         let (x, y, _) = trouves[0];
         assert!((x - 39.946).abs() <= 0.05, "Td.x = {x}, attendu 39,946");
-        assert!((y - 5.0).abs() < 0.01);
+        // Base 20,5 depuis la Story 44-1a (5 avant) ; l'abscisse ne change pas.
+        assert!((y - 20.5).abs() < 0.01, "base {y}");
     }
 
     /// **AC3** (Story 36-12a) — un symbole sur chaque ligne, de 3 à 5 mm de long et 3,5 mm
@@ -3680,14 +4032,16 @@ mod tests {
     }
 
     /// **AC4** (Story 36-12a) — les ciseaux ne touchent ni un texte ni le QR élargi de sa
-    /// zone de 5 mm (§ 3.5.2).
+    /// zone de 5 mm (§ 3.5.2) — le QR descendu de 5 mm par la Story 44-1a (de 47..93 à
+    /// 42..88), sa zone élargie va de 37 à 93 ; sans cette mise à jour le test passerait à vide
+    /// sur l'ancienne zone.
     #[test]
     fn les_ciseaux_ne_touchent_rien() {
         let qr = Boite {
             x0: 62.0,
-            y0: 42.0,
+            y0: 37.0,
             x1: 118.0,
-            y1: 98.0,
+            y1: 93.0,
         };
         for (langue, pdf) in pdfs_fr_en() {
             let r = relever(&pdf);
@@ -3714,7 +4068,8 @@ mod tests {
     }
 
     /// **AC5** (Story 36-12a) — le point de dépôt aligné à droite au bord x = 57 (§ 3.6.4),
-    /// dans les quatre langues et au repli anglais ; ligne de base 5. Les abscisses
+    /// dans les quatre langues et au repli anglais ; ligne de base 20,5 (5 jusqu'à la Story
+    /// 44-1a, qui remonte le point de dépôt à la place des échantillons de SIX). Les abscisses
     /// attendues et les largeurs sont calculées à la main depuis `phvb8a.afm` (somme des
     /// `WX`, 6 pt), indépendamment de la table : fr 6945, de 7113, en 8335, it 10280.
     #[test]
@@ -3750,7 +4105,7 @@ mod tests {
             if (x - x_attendu).abs() > 0.05 {
                 ecarts.push(format!("{langue} : Td.x = {x}, attendu {x_attendu}"));
             }
-            if (y - 5.0).abs() >= 0.01 {
+            if (y - POINT_DE_DEPOT_BASE).abs() >= 0.01 {
                 ecarts.push(format!("{langue} : ligne de base {y}"));
             }
             let marge = RECEIPT_W - (x + largeur);
@@ -3762,9 +4117,9 @@ mod tests {
     }
 
     /// **AC6** (Story 36-12a) — la ligne verticale ne traverse aucun texte du récépissé, pour
-    /// les adresses ordinaires de type S, une rue longue, et sans référence, en français et
-    /// en anglais. Une adresse de capitales très larges en est exclue (limite connue,
-    /// jusqu'à la 36-12b).
+    /// les adresses ordinaires de type S, une rue longue, sans référence, et — depuis la
+    /// Story 44-1a, qui coupe à la largeur mesurée — une adresse de capitales très larges,
+    /// en français et en anglais.
     #[test]
     fn la_ligne_verticale_ne_traverse_aucun_texte() {
         let rue = "Chemin des Trois-Fontaines de la Vieille Tour du Haut-Plateau";
@@ -3790,6 +4145,12 @@ mod tests {
                     creancier_ordinaire(),
                     debiteur_ordinaire(),
                     true,
+                ),
+                (
+                    "capitales très larges",
+                    adresse_s(&"W".repeat(70), &"W".repeat(70), "12", "2501", "Biel"),
+                    adresse_s(&"W".repeat(27), "Marktgasse", "28", "9400", "Rorschach"),
+                    false,
                 ),
             ] {
                 let (mut data, invoice, _) = invoice_fixture();
@@ -4169,7 +4530,7 @@ mod tests {
             "Chemin des Trois-Fontaines de la Vieille Tour du Haut-Plateau",
             "12",
             "9400",
-            "Rorschacherberg-Wartensee-Staad",
+            "Rorschacherberg-Wartensee-Buechen",
         )
     }
 
@@ -4389,6 +4750,37 @@ mod tests {
     #[test]
     fn la_cascade_par_palier() {
         let par_nom: std::collections::HashMap<_, _> = fixtures_44().into_iter().collect();
+        // Les paliers que la mise en page pure retient, fixture par fixture : « et seulement
+        // lui » pour R1 et pour R4 sans P3 ; R1 et P3 décidés chacun de son côté (M14).
+        use PalierPaiement::*;
+        use PalierRecu::*;
+        let mut paliers = Vec::new();
+        for (nom, recu, paiement) in [
+            ("ordinaire", R0, P0),
+            ("rue longue", R0, P0),
+            ("étrangère", R0, P0),
+            ("sans référence", R0, P0),
+            ("sans message", R0, P0),
+            ("débiteur absent", R0, P0),
+            ("type K", R0, P0),
+            ("réaliste R1", R1, P0),
+            ("R1 sur le seul débiteur", R1, P0),
+            ("R4 sans P3", R4, P0),
+            ("P3 et R4", R4, P3),
+            ("P3 et R1 sans R4", R1, P3),
+            ("type K, neuf lignes", R4, P0),
+        ] {
+            let page = mise_en_page(&par_nom[nom], &QrBillI18n::default(), "CHF", "1'234.50");
+            if (page.palier_recu, page.palier_paiement) != (recu, paiement) {
+                paliers.push(format!(
+                    "{nom} : {:?}, {:?} au lieu de {recu:?}, {paiement:?}",
+                    page.palier_recu, page.palier_paiement
+                ));
+            }
+        }
+        assert_eq!(par_nom.len(), 13, "montage : chaque fixture a son palier");
+        assert!(paliers.is_empty(), "{paliers:#?}");
+
         let pdf = |nom: &str| pdf_44(&par_nom[nom]);
         let w = |n: usize| "W".repeat(n);
         // Les écarts de toutes les fixtures, réunis : un rouge les nomme toutes.
@@ -4474,7 +4866,7 @@ mod tests {
                 "Association des amis de la Fondation",
                 "suisse pour le paysage alpin",
                 "9400",
-                "Rorschacherberg-Wartensee-Staad",
+                "Rorschacherberg-Wartensee-Buechen",
             ]),
         );
         // R4 sans P3 : noms de quatre lignes ; nom et localité, ramenés à 52 mm.
@@ -4606,7 +4998,7 @@ mod tests {
         let pdf_message = pdf_44(&donnees_44(
             creancier_ordinaire(),
             Some(debiteur_ordinaire()),
-            Some(&[17, 16, 17, 16].map(|n| w(n)).join(" ")),
+            Some(&[17, 16, 17, 16].map(w).join(" ")),
         ));
         let col = colonne(&pdf_message);
         for (y, attendu) in [
@@ -4627,6 +5019,69 @@ mod tests {
         }
         let ecarts = ecarts.into_inner();
         assert!(ecarts.is_empty(), "{}", ecarts.join("\n"));
+    }
+
+    /// **AC6** (Story 44-1a) — R4 et P3 tiennent par construction : leur bas, calculé depuis
+    /// les constantes de la grille (deux lignes par adresse au récépissé, trois dans la
+    /// colonne, une ligne de message), vaut 57,9 et 49,4 mm, au-dessus de 41,52 et de 5 ; et
+    /// la mise en page pure rend ce même bas pour une entrée qui déclenche R4, puis P3 — elle
+    /// emploie donc ces constantes (mutation M10).
+    #[test]
+    fn les_derniers_paliers_tiennent_par_construction() {
+        assert!(
+            (RECU_INFO_BAS_MIN - 41.52).abs() < 0.01,
+            "{RECU_INFO_BAS_MIN}"
+        );
+        // R4 : compte, IBAN, nom et localité du créancier, référence, Payable by, nom et
+        // localité du débiteur.
+        let base_r4 = RECU_INFO_BASE
+            - INTITULE_PAS
+            - 2.0 * ADRESSE_PAS
+            - RUBRIQUE_PAS
+            - INTITULE_PAS
+            - RUBRIQUE_PAS
+            - 2.0 * ADRESSE_PAS;
+        let bas_r4 = bas_de_ligne(base_r4, VALEUR_TAILLE);
+        assert!((bas_r4 - 57.9).abs() < 0.05, "R4 : {bas_r4}");
+        assert!(bas_r4 >= RECU_INFO_BAS_MIN);
+        // P3 : compte, IBAN, trois lignes de créancier, référence, message d'une ligne,
+        // Payable by, trois lignes de débiteur.
+        let base_p3 = INFO_BASE
+            - INTITULE_PAS
+            - 3.0 * ADRESSE_PAS
+            - RUBRIQUE_PAS
+            - INTITULE_PAS
+            - RUBRIQUE_PAS
+            - INTITULE_PAS
+            - RUBRIQUE_PAS
+            - 3.0 * ADRESSE_PAS;
+        let bas_p3 = bas_de_ligne(base_p3, VALEUR_TAILLE);
+        assert!((bas_p3 - 49.4).abs() < 0.05, "P3 : {bas_p3}");
+        assert!(bas_p3 >= INFO_BAS_MIN);
+
+        // Ce que rend la mise en page : le pire cas déclenche R4 et P3.
+        let page = mise_en_page(
+            &donnees_44(
+                adresse_pire(),
+                Some(adresse_pire()),
+                Some(&message_huit_lignes()),
+            ),
+            &QrBillI18n::default(),
+            "CHF",
+            "1'234.50",
+        );
+        assert_eq!(page.palier_recu, PalierRecu::R4);
+        assert_eq!(page.palier_paiement, PalierPaiement::P3);
+        assert!(
+            (page.bas_recu - 57.9).abs() < 0.05,
+            "R4 rendu : {}",
+            page.bas_recu
+        );
+        assert!(
+            (page.bas_paiement - 49.4).abs() < 0.05,
+            "P3 rendu : {}",
+            page.bas_paiement
+        );
     }
 
     /// **AC8** (Story 44-1a) — aucune entrée admise par `validation::validate` ne fait échouer
