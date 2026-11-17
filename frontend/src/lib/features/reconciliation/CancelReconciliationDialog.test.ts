@@ -239,3 +239,69 @@ describe('CancelReconciliationDialog — règlement fournisseur (Story 30-1b, T-
 		expect(onSuccess).not.toHaveBeenCalled();
 	});
 });
+
+// Story 43-3 (#823, AC5) — l'annulation d'un règlement groupé : les N factures rouvertes,
+// l'écart et son compte tels que le serveur les rend, et le refus par facture qui la nomme.
+describe('CancelReconciliationDialog — règlement groupé (Story 43-3)', () => {
+	const groupe = {
+		kind: 'grouped_settlement' as const,
+		groupedInvoices: [
+			{ kind: 'invoice' as const, id: 12, number: 'F-12', amount: '500.0000' },
+			{ kind: 'invoice' as const, id: 15, number: null, amount: '300.0000' },
+		],
+		gap: '-0.40',
+		differenceAccount: { id: 6940, number: '6940', name: 'Frais bancaires' },
+		cancelBlockedInvoice: null,
+	};
+
+	it('les N factures listées redeviendront ouvertes ; écart et compte nommés (mutation : liste omise)', async () => {
+		mockApi.getReconciliationTransaction.mockResolvedValue(view(groupe));
+		const { findByTestId, getAllByTestId, getByTestId } = monter();
+		const texte = (await findByTestId('reconciliation-cancel-confirm-text')).textContent ?? '';
+		expect(texte).toContain('le règlement des factures F-12, #15 sera retiré');
+		expect(getAllByTestId('reconciliation-cancel-group-invoice').map((li) => li.textContent?.trim())).toEqual([
+			'F-12 — 500.0000',
+			'#15 — 300.0000',
+		]);
+		expect(getByTestId('reconciliation-cancel-group-gap').textContent).toBe(
+			"L'écart de -0.40 passé au compte 6940 Frais bancaires sera contre-passé avec elle.",
+		);
+	});
+
+	it('écart nul (gap 0.00, compte null) : aucune phrase d’écart', async () => {
+		mockApi.getReconciliationTransaction.mockResolvedValue(
+			view({ ...groupe, gap: '0.00', differenceAccount: null }),
+		);
+		const { findByTestId, queryByTestId } = monter();
+		await findByTestId('reconciliation-cancel-confirm-text');
+		expect(queryByTestId('reconciliation-cancel-group-gap')).toBeNull();
+	});
+
+	it.each([
+		['INVOICE_CREDITED', 'Une des factures de ce rapprochement, F-15, a été créditée'],
+		['INVOICE_WRITTEN_OFF', "Le reste d'une des factures de ce rapprochement, F-15, a été soldé"],
+		['LETTERING_ALL_LINES_IN_CLOSED_PERIODS', 'Une des factures de ce rapprochement, F-15, est lettrée'],
+	] as const)('refus %s par facture ⇒ la facture est nommée (mutation : texte au singulier)', async (code, phrase) => {
+		mockApi.getReconciliationTransaction.mockResolvedValue(
+			view({
+				...groupe,
+				cancellable: false,
+				cancelBlockedBy: code,
+				cancelBlockedInvoice: { kind: 'invoice', id: 15, number: 'F-15' },
+			}),
+		);
+		const { findByTestId, queryByTestId } = monter();
+		expect((await findByTestId('reconciliation-cancel-motif')).textContent).toContain(phrase);
+		expect(queryByTestId('reconciliation-cancel-submit')).toBeNull();
+	});
+
+	it('un motif qui ne porte pas sur une facture garde son texte (exercice clôturé)', async () => {
+		mockApi.getReconciliationTransaction.mockResolvedValue(
+			view({ ...groupe, cancellable: false, cancelBlockedBy: 'FISCAL_YEAR_CLOSED' }),
+		);
+		const { findByTestId } = monter();
+		expect((await findByTestId('reconciliation-cancel-motif')).textContent).toContain(
+			'exercice clôturé',
+		);
+	});
+});

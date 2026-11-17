@@ -106,7 +106,50 @@ export function reconciliationCancelDoneMessage(result: CancelReconciliationResp
 			'Le lien est retiré ; l’écriture reste celle de l’autre côté du virement.',
 		);
 	}
+	// Story 43-3 (#823, AC5) — un règlement groupé défait rouvre ses N factures.
+	const reopened = result.cancelledInvoices?.length ?? 0;
+	if (reopened > 0) {
+		return i18nMsg(
+			'reconciliation-cancel-done-group',
+			'Rapprochement annulé : { $count } factures redeviennent à régler.',
+			{ count: reopened },
+		);
+	}
 	return i18nMsg('reconciliation-cancel-done', 'Rapprochement annulé.');
+}
+
+/**
+ * Story 43-3 (#823, AC5) — le motif d'un refus d'annulation **par facture** d'un règlement
+ * groupé, au pluriel du groupe, qui nomme la facture en cause (`cancelBlockedInvoice` de la
+ * vue) : créditée, soldée, ou lettrage figé. `null` pour les autres motifs, qui gardent leur
+ * texte (ils portent sur l'écriture ou l'exercice, non sur une facture).
+ */
+export function groupedCancelBlockedMessage(
+	code: ReconciliationCancelCode,
+	invoice: string,
+): string | null {
+	switch (code) {
+		case 'INVOICE_CREDITED':
+			return i18nMsg(
+				'reconciliation-cancel-blocked-group-credited',
+				"Une des factures de ce rapprochement, { $invoice }, a été créditée par un avoir : son règlement reste ouvert au compte débiteurs, le rapprochement ne s'annule pas.",
+				{ invoice },
+			);
+		case 'INVOICE_WRITTEN_OFF':
+			return i18nMsg(
+				'reconciliation-cancel-blocked-group-written-off',
+				"Le reste d'une des factures de ce rapprochement, { $invoice }, a été soldé : annulez d'abord le solde.",
+				{ invoice },
+			);
+		case 'LETTERING_ALL_LINES_IN_CLOSED_PERIODS':
+			return i18nMsg(
+				'reconciliation-cancel-blocked-group-lettering-closed',
+				"Une des factures de ce rapprochement, { $invoice }, est lettrée avec lui, et toutes les lignes de ce lettrage sont dans une période close : il est figé. Pour pouvoir l'annuler, prenez la date la plus récente du lettrage : si elle est sous le verrou de période, un administrateur doit faire reculer le verrou avant elle ; et si son exercice est suivi d'un exercice clôturé, ou clôturé lui-même, il doit rouvrir les exercices clôturés jusqu'à celui-ci, en commençant par le plus récent.",
+				{ invoice },
+			);
+		default:
+			return null;
+	}
 }
 
 /**

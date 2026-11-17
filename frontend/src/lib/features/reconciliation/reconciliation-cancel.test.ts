@@ -30,6 +30,22 @@ describe('reconciliationCancelDoneMessage', () => {
 		expect(seul).toBe('Le lien est retiré ; l’écriture reste celle de l’autre côté du virement.');
 		expect(annule).toBe('Rapprochement annulé.');
 	});
+
+	// Story 43-3 (#823, AC5) — un règlement groupé défait dit ses factures rouvertes.
+	it('règlement groupé (`cancelledInvoices` non vide) ⇒ le message du groupe (mutation : liste ignorée)', () => {
+		const groupe = reconciliationCancelDoneMessage({
+			...base,
+			reversalJournalEntryId: 9,
+			kind: 'grouped_settlement',
+			cancelledInvoices: [
+				{ kind: 'invoice', id: 12, number: 'F-12' },
+				{ kind: 'invoice', id: 15, number: 'F-15' },
+			],
+		});
+		expect(groupe).toBe('Rapprochement annulé : { $count } factures redeviennent à régler.');
+		const vide = reconciliationCancelDoneMessage({ ...base, reversalJournalEntryId: 9, cancelledInvoices: [] });
+		expect(vide).toBe('Rapprochement annulé.');
+	});
 });
 
 describe('reconciliationCancelMessage', () => {
