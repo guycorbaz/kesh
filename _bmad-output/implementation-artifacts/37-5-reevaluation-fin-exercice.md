@@ -1151,7 +1151,8 @@ l'Epic 38).
   enveloppes examinées 29, total 159, `sans_ecriture` 127, `no_matter` 4 ; phrase du manuel d'administration « 147 des
   155 », « 147 + 4 + 4 = 155 » ; `sitesTotal` **3350** relevé par la garde (3300 de la 37-3b + 50) ; candidates des
   libellés en dur **116** (`ecartee` 18, `conforme` 98) ; manuel utilisateur : les deux sous-sections gardées
-  (réévaluation, puis écritures en devise). Audit des migrations : aucune migration dans l'une ou l'autre (91). La
+  (réévaluation, puis écritures en devise). Audit des migrations : aucune migration de la 37-5 ; 94 fichiers et 94 lignes d'audit après la fusion
+  (recomptés). La
   recette V7 gagne l'ouverture et la conversion (routes de la 37-3b).
 
 ## Dev Agent Record
@@ -1244,4 +1245,27 @@ Opus 5.5 (`claude-opus-5-5`).
 
 ### Tests ajoutés et gates
 
-(Rempli au dernier commit de code, ci-dessous.)
+- **Tests ajoutés** (recomptés au code, périmètre `31910288` → `d818fad6`, revue comprise : aucune) : Rust **55** —
+  `kesh-core` `fx_revaluation.rs` 13 (+ 2 doctests), `kesh-db` `repositories/fx_revaluation.rs` 4,
+  `tests/fx_revaluation.rs` 26, `repositories/closing_checks.rs` +1 (2 → 3), `kesh-api` `routes/fx_revaluation.rs` 2,
+  `tests/fx_revaluation_e2e.rs` 7, `tests/fx_recette_api_e2e.rs` 1, `tests/mcp_outils_e2e.rs` +1 (31 → 32) ; Vitest
+  **30** — `revaluation.helpers.test.ts` 11, `RevaluationPanel.test.ts` 11, `FiscalYearChecks.k9.test.ts` 4,
+  `fiscal-years-page.test.ts` +4 (29 → 33) ; E2E **2** (`fx-revaluation.spec.ts`). Tests existants adaptés (huit →
+  neuf, compteurs des gardes).
+- **Gates complets au dernier commit de code `d818fad6`** (fusion de la 37-3b comprise), base `kesh_s37_5` sur
+  `kesh-mariadb-dev3` remise à zéro (94 migrations, seed) : `heavy.sh scripts/test-fast.sh --ci` — fmt, clippy
+  `-D warnings`, nextest **5863 passés, 13 ignorés** (`gate-backend-3.log`) ; frontend `check` 0 erreur,
+  `lint-i18n-ownership` PASS, Vitest **4104 / 263 fichiers**, `build` vert (`gate-frontend-3.log`).
+- **E2E complet au même commit** (`LANG=fr_CH.UTF-8`, port 3376, base `kesh_e2e_s37_5` neuve) : **443 passés,
+  11 échecs, 17 ignorés** (`e2e-3.log`, 43,2 min). Les onze : les sept de la KF-029 ; `backup-restore-new-install.spec.ts:262`
+  et `:381`, rouges aussi aux E2E de la 37-2, de la 37-3a et de la 37-4 ; `opening-balances.spec.ts:156`, déjà relevée
+  par la 37-1 et la 37-4 (`issues-a-ouvrir-epic-37.md` n° 4 ; rejouée seule avant la fusion,
+  `e2e-rejeu-opening.log` : rouge, délai du clic) ; `bank-import.spec.ts:130`, **verte rejouée seule**
+  (`e2e-rejeu-bank-import.log`, 7/7 : pollution). Les deux tests de `fx-revaluation.spec.ts` passent à chaque
+  exécution (`e2e-1.log`, `e2e-2.log`, `e2e-3.log`).
+- Avant la fusion de la 37-3b : gate backend 5836/5836 (`gate-backend-2.log`), Vitest 3940, E2E 434–435 passés aux
+  mêmes échecs connus (`e2e-1.log`, `e2e-2.log`).
+- **Captures** (thème clair, prises par la spec au dernier E2E) : `kesh-gate-logs/s37-5/captures/` —
+  `37-5-ecran-repli-mensuel.png`, `37-5-ecran-cours-du-jour.png`, `37-5-ecran-apres-passation.png`,
+  `37-5-k9-avis-apercu.png`, `37-5-k9-leve.png`.
+- Journaux : `kesh-gate-logs/s37-5/`.
