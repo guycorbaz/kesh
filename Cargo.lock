@@ -2136,6 +2136,7 @@ dependencies = [
  "csv",
  "kesh-core",
  "kesh-db",
+ "kesh-qrbill",
  "printpdf",
  "rust_decimal",
  "rust_decimal_macros",

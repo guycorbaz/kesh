@@ -7,6 +7,9 @@ license.workspace = true
 [dependencies]
 kesh-core = { path = "../kesh-core" }
 kesh-db = { path = "../kesh-db" }
+# La largeur imprimée d'un texte en Helvetica (`kesh_qrbill::largeur_mm`) : les montants
+# des PDF s'alignent à droite sur le bord de leur colonne (correctif fix-pdf-montants-alignes).
+kesh-qrbill = { path = "../kesh-qrbill" }
 sqlx = { version = "0.8", features = ["runtime-tokio-rustls", "mysql", "chrono", "rust_decimal", "macros"] }
 chrono = { version = "0.4", features = ["serde"] }
 serde = { version = "1", features = ["derive"] }

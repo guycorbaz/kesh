@@ -33,6 +33,9 @@
 //! par plusieurs octets (U+2022 aux octets 0x7F, 0x81…), le premier octet est retenu, comme
 //! `lopdf::encodings::string_to_bytes`.
 //!
+//! [`largeur_mm`] sert aussi à `kesh-report`, qui aligne à droite les montants de ses PDF
+//! de rapports, écrits dans les mêmes deux polices (correctif `fix-pdf-montants-alignes`).
+//!
 //! ⚠️ **La table vaut pour ces deux polices seulement.** Le jour où le PDF embarque une autre
 //! police (#943), elle est à engendrer de nouveau, depuis les métriques de celle-ci.
 
@@ -506,7 +509,7 @@ fn chasse(c: char, gras: bool) -> Option<u16> {
 /// le résultat de [`crate::texte::texte_imprime`] : avant ce repli, une lettre hors WinAnsi
 /// (`Ĳ`, qui s'imprime `IJ`) compterait zéro et la largeur serait sous-estimée (revue P2
 /// ciblée, LOW-1).
-pub(crate) fn largeur_mm(texte: &str, taille: f32, gras: bool) -> f32 {
+pub fn largeur_mm(texte: &str, taille: f32, gras: bool) -> f32 {
     let milliemes: u32 = texte
         .chars()
         .map(|c| u32::from(chasse(c, gras).unwrap_or(0)))

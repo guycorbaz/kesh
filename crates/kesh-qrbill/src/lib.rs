@@ -18,6 +18,7 @@ pub mod types;
 pub mod validation;
 
 pub use generator::build_payload;
+pub use largeurs::largeur_mm;
 pub use parser::{ScannedAddress, ScannedQrBill, ScannedReference, parse_spc_payload};
 pub use pdf::{
     REMINDER_LABEL_MAX_CHARS, REMINDER_NOTE_MAX_CHARS, generate_credit_note_pdf,

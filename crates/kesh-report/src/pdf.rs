@@ -12,6 +12,11 @@
 //! - Format suisse montants (`1'234.56`) + dates (`dd.mm.yyyy`) via helpers locaux.
 //! - Helvetica builtin (cohérent kesh-qrbill, pas d'embedding TTF v0.1 — L3/L11).
 //!
+//! Montants **alignés à droite** sur le bord de leur colonne (correctif
+//! `fix-pdf-montants-alignes`) : [`PdfBuilder::write_right`] mesure le texte
+//! par la métrique de la police ([`kesh_qrbill::largeur_mm`]) et le fait finir
+//! au bord donné — les décimales s'alignent, quelle que soit la longueur.
+//!
 //! Pagination automatique (T2.3a) : page break à `cursor_y < MARGIN_BOTTOM_MM` +
 //! footer `page X/Y` redrawn après finalisation.
 
@@ -22,6 +27,7 @@ use printpdf::{
 use rust_decimal::Decimal;
 
 use kesh_db::entities::AccountRole;
+use kesh_qrbill::largeur_mm;
 
 use crate::balance_sheet::{AccountBalance, BalanceSheet};
 use crate::errors::ReportError;
@@ -40,6 +46,18 @@ const PAGE_HEIGHT_MM: f32 = 297.0;
 const MARGIN_TOP_MM: f32 = 20.0;
 const MARGIN_BOTTOM_MM: f32 = 25.0;
 const MARGIN_LEFT_MM: f32 = 15.0;
+const MARGIN_RIGHT_MM: f32 = 15.0;
+/// Bord droit de la colonne des montants en devise principale — bilan, compte
+/// de résultat, totaux, TVA, dépenses par projet, crédit des journaux : la
+/// marge droite, symétrique de la gauche. Le plus long montant plausible,
+/// « -12'345'678.90 » en Helvetica 10 pt, mesure 23,1 mm (23,4 en gras) : il
+/// commence vers 171,6 mm.
+const AMOUNT_RIGHT_MM: f32 = PAGE_WIDTH_MM - MARGIN_RIGHT_MM;
+/// Bord droit de la colonne des soldes en devise du bilan et du compte de
+/// résultat (Story 37-4) : « USD -1'234'567.89 » (29,6 mm en 10 pt) commence à
+/// 130,4 mm, après le nom tronqué du compte ([`ACCOUNT_NAME_MAX_CHARS_FX`]), et
+/// finit plus de 11 mm avant le plus long montant en devise principale.
+const FX_AMOUNT_RIGHT_MM: f32 = PAGE_WIDTH_MM - 50.0;
 const FONT_SIZE_PT: f32 = 10.0;
 const FONT_SIZE_HEADER_PT: f32 = 14.0;
 const FONT_SIZE_FOOTER_PT: f32 = 8.0;
@@ -331,6 +349,16 @@ pub(crate) fn format_exchange_rate(rate: Decimal) -> String {
     format!("{r:.prec$}", prec = scale as usize)
 }
 
+/// L'abscisse, en mm, où commencer `text` pour qu'il **finisse** à `right_mm` :
+/// le bord droit moins sa largeur imprimée en Helvetica (ou Helvetica-Bold si
+/// `bold`) à `font_size` points, mesurée par [`kesh_qrbill::largeur_mm`] — la
+/// table des chasses de l'AFM d'Adobe, en WinAnsi, celle des deux polices
+/// intégrées qu'emploie [`PdfBuilder`]. Partagée par toutes les colonnes de
+/// montant des rapports PDF.
+fn right_aligned_x(text: &str, font_size: f32, bold: bool, right_mm: f32) -> f32 {
+    right_mm - largeur_mm(text, font_size, bold)
+}
+
 /// Formate une date au format suisse `dd.mm.yyyy` (T2.5).
 pub fn format_swiss_date(d: NaiveDate) -> String {
     d.format("%d.%m.%Y").to_string()
@@ -452,6 +480,20 @@ impl PdfBuilder {
         layer.use_text(text, font_size, Mm(x_mm), Mm(self.cursor_y), font);
     }
 
+    /// Dessine `text` **aligné à droite** sur l'abscisse `right_mm`, à la
+    /// position courante, sans avancer : le texte finit au bord de sa colonne,
+    /// si bien que les montants d'une même colonne y alignent leurs décimales
+    /// (les chiffres d'Helvetica sont de même chasse, 556 millièmes d'em, en
+    /// maigre comme en gras ; l'apostrophe et le signe, non, d'où la mesure).
+    fn write_right(&self, text: &str, font_size: f32, bold: bool, right_mm: f32) {
+        self.write_inline(
+            text,
+            font_size,
+            bold,
+            right_aligned_x(text, font_size, bold, right_mm),
+        );
+    }
+
     /// Dessine la seconde ligne en petit d'un montant en devise, **sous la ligne
     /// qui vient d'être écrite** (le curseur a déjà avancé d'une ligne) : elle
     /// est posée à `FX_RAISE_MM` au-dessus du curseur, puis le curseur avance de
@@ -552,9 +594,10 @@ fn draw_empty_message(builder: &mut PdfBuilder, ctx: &PdfContext) {
 }
 
 /// Longueur maximale du nom d'un compte **en devise** au bilan et au compte de
-/// résultat : de `MARGIN_LEFT_MM + 25` (40 mm) au solde en devise
-/// (`PAGE_WIDTH_MM - 85`, 125 mm), 85 mm en corps 10 — 34 caractères à 2,5 mm la capitale (comme `TB_NAME_MAX_CHARS`),
-/// avec une marge (Story 37-4, revue de code P1).
+/// résultat : de `MARGIN_LEFT_MM + 25` (40 mm) au solde en devise, aligné à
+/// droite sur [`FX_AMOUNT_RIGHT_MM`] et qui commence au plus tôt vers 130,4 mm —
+/// 34 caractères à 2,5 mm la capitale (comme `TB_NAME_MAX_CHARS`) tiennent dans
+/// 85 mm, avec une marge (Story 37-4, revue de code P1).
 const ACCOUNT_NAME_MAX_CHARS_FX: usize = 34;
 
 /// Dessine une ligne de compte (N° | Nom | Solde) ou variante.
@@ -588,20 +631,18 @@ fn draw_account_row(builder: &mut PdfBuilder, ab: &AccountBalance) {
     // solde — compte en devise seulement ; les totaux restent en devise
     // principale.
     if let (Some(cur), Some(fx)) = (&ab.currency, ab.balance_currency) {
-        layer.use_text(
-            format_currency_amount(cur, fx),
+        builder.write_right(
+            &format_currency_amount(cur, fx),
             FONT_SIZE_PT,
-            Mm(PAGE_WIDTH_MM - 85.0),
-            Mm(y),
-            &builder.font,
+            false,
+            FX_AMOUNT_RIGHT_MM,
         );
     }
-    layer.use_text(
-        format_swiss_amount(ab.balance),
+    builder.write_right(
+        &format_swiss_amount(ab.balance),
         FONT_SIZE_PT,
-        Mm(PAGE_WIDTH_MM - 45.0),
-        Mm(y),
-        &builder.font,
+        false,
+        AMOUNT_RIGHT_MM,
     );
     builder.cursor_y -= LINE_HEIGHT_MM;
 }
@@ -618,12 +659,11 @@ fn draw_totals_footer(builder: &mut PdfBuilder, label: &str, amount: Decimal) {
         Mm(y),
         &builder.font_bold,
     );
-    layer.use_text(
-        format_swiss_amount(amount),
+    builder.write_right(
+        &format_swiss_amount(amount),
         FONT_SIZE_PT,
-        Mm(PAGE_WIDTH_MM - 45.0),
-        Mm(y),
-        &builder.font_bold,
+        true,
+        AMOUNT_RIGHT_MM,
     );
     builder.cursor_y -= LINE_HEIGHT_MM * 1.5;
 }
@@ -724,12 +764,11 @@ pub fn render_balance_sheet_pdf(
             Mm(y),
             &builder.font,
         );
-        layer.use_text(
-            format_swiss_amount(amount),
+        builder.write_right(
+            &format_swiss_amount(amount),
             FONT_SIZE_PT,
-            Mm(PAGE_WIDTH_MM - 45.0),
-            Mm(y),
-            &builder.font,
+            false,
+            AMOUNT_RIGHT_MM,
         );
         builder.cursor_y -= LINE_HEIGHT_MM;
     }
@@ -810,28 +849,36 @@ pub fn render_income_statement_pdf(
     builder.finalize()
 }
 
-/// Positions des six colonnes de la balance (Story 25-5-b), en mm depuis la marge
-/// gauche. A4 portrait est déjà saturé à cinq colonnes (20 + 70 + 3 × 35 = 195 mm) :
-/// quatre colonnes de montant de 30 mm (« -12'345'678.90 » ≈ 23 mm en Helvetica
-/// 10 pt) laissent 55 mm à l'intitulé.
-const TB_COL_X: [f32; 6] = [0.0, 20.0, 75.0, 105.0, 135.0, 165.0];
+/// Positions des deux colonnes de texte de la balance (N°, intitulé ; Story
+/// 25-5-b), en mm depuis la marge gauche : l'intitulé dispose de 55 mm, de 35 à
+/// 90 mm de la page.
+const TB_COL_X: [f32; 2] = [0.0, 20.0];
+
+/// Bords droits des quatre colonnes de montant de la balance — ouverture,
+/// débit, crédit, clôture —, en mm depuis le bord gauche de la page : montants
+/// et en-têtes y sont alignés à droite, tous les 26 mm jusqu'à la marge droite.
+/// Le plus long montant plausible, « -12'345'678.90 » (23,1 mm en Helvetica
+/// 10 pt, 23,4 en gras), commence vers 93,6 mm dans la colonne d'ouverture,
+/// après l'intitulé (qui finit à 90 mm).
+const TB_AMOUNT_RIGHT_MM: [f32; 4] = [117.0, 143.0, 169.0, AMOUNT_RIGHT_MM];
 
 /// Longueur maximale de l'intitulé d'un compte dans la balance PDF : 22
 /// caractères tiennent dans 55 mm, même en capitales.
 const TB_NAME_MAX_CHARS: usize = 22;
 
-/// Dessine une ligne de la balance : six cellules, `None` = cellule vide.
+/// Dessine une ligne de la balance : six cellules, `None` = cellule vide. Les
+/// deux premières (N°, intitulé) s'écrivent à gauche de leur colonne, les
+/// quatre montants alignés à droite sur [`TB_AMOUNT_RIGHT_MM`].
 fn draw_tb_row(builder: &mut PdfBuilder, cells: [Option<&str>; 6], bold: bool) {
-    let y = builder.cursor_y;
-    let font = if bold {
-        builder.font_bold.clone()
-    } else {
-        builder.font.clone()
-    };
-    let layer = builder.current_layer();
-    for (cell, x) in cells.iter().zip(TB_COL_X) {
+    let (texts, amounts) = cells.split_at(TB_COL_X.len());
+    for (cell, x) in texts.iter().zip(TB_COL_X) {
         if let Some(text) = cell {
-            layer.use_text(*text, FONT_SIZE_PT, Mm(MARGIN_LEFT_MM + x), Mm(y), &font);
+            builder.write_inline(text, FONT_SIZE_PT, bold, MARGIN_LEFT_MM + x);
+        }
+    }
+    for (cell, right) in amounts.iter().zip(TB_AMOUNT_RIGHT_MM) {
+        if let Some(text) = cell {
+            builder.write_right(text, FONT_SIZE_PT, bold, right);
         }
     }
 }
@@ -974,6 +1021,13 @@ pub fn render_trial_balance_pdf(
     builder.finalize()
 }
 
+/// Bords droits des colonnes débit et crédit des journaux, en mm depuis le bord
+/// gauche de la page : 35 mm d'écart, comme avant l'alignement à droite ; le plus
+/// long débit plausible (23,1 mm, 23,4 en gras) commence vers 136,6 mm, laissant
+/// plus de 90 mm à l'intitulé du compte, qui commence à 45 mm.
+const JR_DEBIT_RIGHT_MM: f32 = AMOUNT_RIGHT_MM - 35.0;
+const JR_CREDIT_RIGHT_MM: f32 = AMOUNT_RIGHT_MM;
+
 /// Génère le PDF des journaux — 5 sections fixes ou 1 section filtrée (AC #6, #7).
 pub fn render_journal_report_pdf(
     jr: &JournalReport,
@@ -1041,19 +1095,17 @@ pub fn render_journal_report_pdf(
                     Mm(y),
                     &builder.font,
                 );
-                layer.use_text(
-                    format_swiss_amount(line.debit),
+                builder.write_right(
+                    &format_swiss_amount(line.debit),
                     FONT_SIZE_PT,
-                    Mm(MARGIN_LEFT_MM + 110.0),
-                    Mm(y),
-                    &builder.font,
+                    false,
+                    JR_DEBIT_RIGHT_MM,
                 );
-                layer.use_text(
-                    format_swiss_amount(line.credit),
+                builder.write_right(
+                    &format_swiss_amount(line.credit),
                     FONT_SIZE_PT,
-                    Mm(MARGIN_LEFT_MM + 145.0),
-                    Mm(y),
-                    &builder.font,
+                    false,
+                    JR_CREDIT_RIGHT_MM,
                 );
                 builder.cursor_y -= LINE_HEIGHT_MM;
             }
@@ -1071,19 +1123,17 @@ pub fn render_journal_report_pdf(
             Mm(y),
             &builder.font_bold,
         );
-        layer.use_text(
-            format_swiss_amount(section.section_total_debit),
+        builder.write_right(
+            &format_swiss_amount(section.section_total_debit),
             FONT_SIZE_PT,
-            Mm(MARGIN_LEFT_MM + 110.0),
-            Mm(y),
-            &builder.font_bold,
+            true,
+            JR_DEBIT_RIGHT_MM,
         );
-        layer.use_text(
-            format_swiss_amount(section.section_total_credit),
+        builder.write_right(
+            &format_swiss_amount(section.section_total_credit),
             FONT_SIZE_PT,
-            Mm(MARGIN_LEFT_MM + 145.0),
-            Mm(y),
-            &builder.font_bold,
+            true,
+            JR_CREDIT_RIGHT_MM,
         );
         builder.cursor_y -= LINE_HEIGHT_MM * 1.5;
     }
@@ -1100,21 +1150,17 @@ pub fn render_journal_report_pdf(
         true,
         MARGIN_LEFT_MM,
     );
-    let y = builder.cursor_y;
-    let layer = builder.current_layer();
-    layer.use_text(
-        format_swiss_amount(jr.grand_total_debit),
+    builder.write_right(
+        &format_swiss_amount(jr.grand_total_debit),
         FONT_SIZE_PT,
-        Mm(MARGIN_LEFT_MM + 110.0),
-        Mm(y),
-        &builder.font_bold,
+        true,
+        JR_DEBIT_RIGHT_MM,
     );
-    layer.use_text(
-        format_swiss_amount(jr.grand_total_credit),
+    builder.write_right(
+        &format_swiss_amount(jr.grand_total_credit),
         FONT_SIZE_PT,
-        Mm(MARGIN_LEFT_MM + 145.0),
-        Mm(y),
-        &builder.font_bold,
+        true,
+        JR_CREDIT_RIGHT_MM,
     );
     builder.cursor_y -= LINE_HEIGHT_MM;
 
@@ -1178,22 +1224,25 @@ impl VatPdfLabels {
     }
 }
 
-// Colonnes du tableau TVA (mm depuis la gauche / le bord page).
+// Colonnes du tableau TVA (mm depuis le bord gauche de la page) : le taux à
+// gauche ; la base HT et la TVA, en-têtes compris, alignées à droite sur leur
+// bord — celui de la TVA est celui des totaux (`draw_totals_footer`).
 const VAT_COL_RATE_X: f32 = MARGIN_LEFT_MM;
-const VAT_COL_BASE_X: f32 = PAGE_WIDTH_MM - 90.0;
-const VAT_COL_VAT_X: f32 = PAGE_WIDTH_MM - 45.0;
+const VAT_BASE_RIGHT_MM: f32 = AMOUNT_RIGHT_MM - 45.0;
+const VAT_DUE_RIGHT_MM: f32 = AMOUNT_RIGHT_MM;
 
 /// Formate un taux en pourcent pour l'affichage (ex. `8.10` → `"8.10 %"`).
 fn format_rate(rate: Decimal) -> String {
     format!("{rate:.2} %")
 }
 
-/// Dessine une ligne du tableau TVA (3 colonnes).
+/// Dessine une ligne du tableau TVA (3 colonnes, les deux montants alignés à
+/// droite).
 fn draw_vat_row(builder: &mut PdfBuilder, rate: &str, base_ht: &str, vat_due: &str, bold: bool) {
     builder.ensure_space_for_row();
     builder.write_inline(rate, FONT_SIZE_PT, bold, VAT_COL_RATE_X);
-    builder.write_inline(base_ht, FONT_SIZE_PT, bold, VAT_COL_BASE_X);
-    builder.write_inline(vat_due, FONT_SIZE_PT, bold, VAT_COL_VAT_X);
+    builder.write_right(base_ht, FONT_SIZE_PT, bold, VAT_BASE_RIGHT_MM);
+    builder.write_right(vat_due, FONT_SIZE_PT, bold, VAT_DUE_RIGHT_MM);
     builder.cursor_y -= LINE_HEIGHT_MM;
 }
 
@@ -1344,12 +1393,11 @@ fn draw_expense_row(builder: &mut PdfBuilder, row: &crate::project_report::Expen
         Mm(y),
         &builder.font,
     );
-    layer.use_text(
-        format_swiss_amount(row.amount),
+    builder.write_right(
+        &format_swiss_amount(row.amount),
         FONT_SIZE_PT,
-        Mm(PAGE_WIDTH_MM - 45.0),
-        Mm(y),
-        &builder.font,
+        false,
+        AMOUNT_RIGHT_MM,
     );
     builder.cursor_y -= LINE_HEIGHT_MM;
 }
@@ -1447,17 +1495,34 @@ impl Default for ProjectReturnPdfLabels {
     }
 }
 
-// Colonnes du tableau rendement (mm depuis le bord gauche / droit).
+// Colonnes du tableau rendement (mm depuis le bord gauche de la page) : le
+// libellé à gauche ; les quatre colonnes numériques, en-têtes compris, alignées
+// à droite sur leur bord, 30 mm d'écart (27 pour le rendement, court).
 const RET_COL_LABEL_X: f32 = MARGIN_LEFT_MM;
-const RET_COL_COUT_X: f32 = PAGE_WIDTH_MM - 135.0;
-const RET_COL_REV_X: f32 = PAGE_WIDTH_MM - 100.0;
-const RET_COL_RES_X: f32 = PAGE_WIDTH_MM - 65.0;
-const RET_COL_RENDEMENT_X: f32 = PAGE_WIDTH_MM - 28.0;
+const RET_COUT_RIGHT_MM: f32 = AMOUNT_RIGHT_MM - 87.0;
+const RET_REV_RIGHT_MM: f32 = AMOUNT_RIGHT_MM - 57.0;
+const RET_RES_RIGHT_MM: f32 = AMOUNT_RIGHT_MM - 27.0;
+const RET_RENDEMENT_RIGHT_MM: f32 = AMOUNT_RIGHT_MM;
 
 fn format_rendement(pct: Option<Decimal>) -> String {
     match pct {
         Some(p) => format!("{p:.2}%"),
         None => "—".to_string(),
+    }
+}
+
+/// Dessine les quatre cellules numériques d'une ligne du tableau rendement —
+/// coût, revenus, résultat, rendement —, alignées à droite sur leur bord, à la
+/// position courante et sans avancer. Sert aussi à la ligne des en-têtes.
+fn draw_return_cells(builder: &PdfBuilder, cells: [&str; 4], bold: bool) {
+    let rights = [
+        RET_COUT_RIGHT_MM,
+        RET_REV_RIGHT_MM,
+        RET_RES_RIGHT_MM,
+        RET_RENDEMENT_RIGHT_MM,
+    ];
+    for (text, right) in cells.into_iter().zip(rights) {
+        builder.write_right(text, FONT_SIZE_PT, bold, right);
     }
 }
 
@@ -1472,41 +1537,16 @@ fn draw_return_row(
     bold: bool,
 ) {
     builder.ensure_space_for_row();
-    let y = builder.cursor_y;
-    let font = if bold {
-        &builder.font_bold
-    } else {
-        &builder.font
-    };
-    let layer = builder.current_layer();
-    layer.use_text(label, FONT_SIZE_PT, Mm(RET_COL_LABEL_X), Mm(y), font);
-    layer.use_text(
-        format_swiss_amount(cout),
-        FONT_SIZE_PT,
-        Mm(RET_COL_COUT_X),
-        Mm(y),
-        font,
-    );
-    layer.use_text(
-        format_swiss_amount(revenus),
-        FONT_SIZE_PT,
-        Mm(RET_COL_REV_X),
-        Mm(y),
-        font,
-    );
-    layer.use_text(
-        format_swiss_amount(resultat),
-        FONT_SIZE_PT,
-        Mm(RET_COL_RES_X),
-        Mm(y),
-        font,
-    );
-    layer.use_text(
-        format_rendement(rendement),
-        FONT_SIZE_PT,
-        Mm(RET_COL_RENDEMENT_X),
-        Mm(y),
-        font,
+    builder.write_inline(label, FONT_SIZE_PT, bold, RET_COL_LABEL_X);
+    draw_return_cells(
+        builder,
+        [
+            &format_swiss_amount(cout),
+            &format_swiss_amount(revenus),
+            &format_swiss_amount(resultat),
+            &format_rendement(rendement),
+        ],
+        bold,
     );
     builder.cursor_y -= LINE_HEIGHT_MM;
 }
@@ -1545,39 +1585,17 @@ pub fn render_project_return_pdf(
     }
 
     // En-tête de colonnes (gras).
-    {
-        let y = builder.cursor_y;
-        let layer = builder.current_layer();
-        layer.use_text(
+    draw_return_cells(
+        &builder,
+        [
             &labels.col_cout,
-            FONT_SIZE_PT,
-            Mm(RET_COL_COUT_X),
-            Mm(y),
-            &builder.font_bold,
-        );
-        layer.use_text(
             &labels.col_revenus,
-            FONT_SIZE_PT,
-            Mm(RET_COL_REV_X),
-            Mm(y),
-            &builder.font_bold,
-        );
-        layer.use_text(
             &labels.col_resultat,
-            FONT_SIZE_PT,
-            Mm(RET_COL_RES_X),
-            Mm(y),
-            &builder.font_bold,
-        );
-        layer.use_text(
             &labels.col_rendement,
-            FONT_SIZE_PT,
-            Mm(RET_COL_RENDEMENT_X),
-            Mm(y),
-            &builder.font_bold,
-        );
-        builder.cursor_y -= LINE_HEIGHT_MM;
-    }
+        ],
+        true,
+    );
+    builder.cursor_y -= LINE_HEIGHT_MM;
 
     for section in &report.sections {
         let label = if section.is_root {
@@ -1624,9 +1642,18 @@ const LEDGER_COL_PIECE: f32 = MARGIN_LEFT_MM + 19.0;
 const LEDGER_COL_JOURNAL: f32 = MARGIN_LEFT_MM + 34.0;
 const LEDGER_COL_DESC: f32 = MARGIN_LEFT_MM + 48.0;
 const LEDGER_COL_COUNTERPART: f32 = MARGIN_LEFT_MM + 96.0;
-const LEDGER_COL_DEBIT: f32 = MARGIN_LEFT_MM + 114.0;
-const LEDGER_COL_CREDIT: f32 = MARGIN_LEFT_MM + 136.0;
-const LEDGER_COL_RUNNING: f32 = MARGIN_LEFT_MM + 158.0;
+/// Bords droits des trois colonnes de montant — débit, crédit, solde
+/// progressif —, en mm depuis le bord gauche de la page : montants et
+/// en-têtes y sont alignés à droite, 23 mm d'écart jusqu'à la marge droite. Le
+/// plus long montant plausible, « -12'345'678.90 » en 8 pt, mesure 18,5 mm
+/// (18,8 en gras).
+const LEDGER_DEBIT_RIGHT_MM: f32 = AMOUNT_RIGHT_MM - 46.0;
+const LEDGER_CREDIT_RIGHT_MM: f32 = AMOUNT_RIGHT_MM - 23.0;
+const LEDGER_RUNNING_RIGHT_MM: f32 = AMOUNT_RIGHT_MM;
+/// Bord droit du solde en devise des lignes d'encadrement (ouverture, report,
+/// rupture, clôture ; Story 37-4) : la fin de la colonne des contreparties,
+/// vide sur ces lignes, 2 mm avant la colonne du débit.
+const LEDGER_FX_RIGHT_MM: f32 = LEDGER_DEBIT_RIGHT_MM - 22.0;
 
 /// Un montant nul ne s'écrit pas — une colonne débit/crédit reste vide, comme
 /// sur un grand livre tenu à la main.
@@ -1676,9 +1703,14 @@ fn draw_ledger_account_header(
         true,
         LEDGER_COL_COUNTERPART,
     );
-    builder.write_inline(&l.col_debit, LEDGER_FONT_PT, true, LEDGER_COL_DEBIT);
-    builder.write_inline(&l.col_credit, LEDGER_FONT_PT, true, LEDGER_COL_CREDIT);
-    builder.write_inline(&l.col_running, LEDGER_FONT_PT, true, LEDGER_COL_RUNNING);
+    builder.write_right(&l.col_debit, LEDGER_FONT_PT, true, LEDGER_DEBIT_RIGHT_MM);
+    builder.write_right(&l.col_credit, LEDGER_FONT_PT, true, LEDGER_CREDIT_RIGHT_MM);
+    builder.write_right(
+        &l.col_running,
+        LEDGER_FONT_PT,
+        true,
+        LEDGER_RUNNING_RIGHT_MM,
+    );
     builder.cursor_y -= LINE_HEIGHT_MM;
 }
 
@@ -1686,7 +1718,8 @@ fn draw_ledger_account_header(
 /// clôture, report, rupture d'exercice.
 ///
 /// `fx` : le même solde en devise d'un compte en devise (Story 37-4, AC-5),
-/// écrit dans la colonne des contreparties, vide sur ces lignes.
+/// écrit dans la colonne des contreparties, vide sur ces lignes, aligné à
+/// droite sur [`LEDGER_FX_RIGHT_MM`] ; le montant, sur le bord du solde.
 fn draw_ledger_marker(
     builder: &mut PdfBuilder,
     label: &str,
@@ -1696,13 +1729,13 @@ fn draw_ledger_marker(
 ) {
     builder.write_inline(label, LEDGER_FONT_PT, bold, LEDGER_COL_DATE);
     if let Some(fx) = fx {
-        builder.write_inline(&fx, LEDGER_FONT_PT, bold, LEDGER_COL_COUNTERPART);
+        builder.write_right(&fx, LEDGER_FONT_PT, bold, LEDGER_FX_RIGHT_MM);
     }
-    builder.write_inline(
+    builder.write_right(
         &format_swiss_amount(amount),
         LEDGER_FONT_PT,
         bold,
-        LEDGER_COL_RUNNING,
+        LEDGER_RUNNING_RIGHT_MM,
     );
     builder.cursor_y -= LINE_HEIGHT_MM;
 }
@@ -1856,23 +1889,23 @@ pub fn render_general_ledger_pdf(
                 false,
                 LEDGER_COL_COUNTERPART,
             );
-            builder.write_inline(
+            builder.write_right(
                 &ledger_amount(line.debit),
                 LEDGER_FONT_PT,
                 false,
-                LEDGER_COL_DEBIT,
+                LEDGER_DEBIT_RIGHT_MM,
             );
-            builder.write_inline(
+            builder.write_right(
                 &ledger_amount(line.credit),
                 LEDGER_FONT_PT,
                 false,
-                LEDGER_COL_CREDIT,
+                LEDGER_CREDIT_RIGHT_MM,
             );
-            builder.write_inline(
+            builder.write_right(
                 &format_swiss_amount(line.running_balance),
                 LEDGER_FONT_PT,
                 false,
-                LEDGER_COL_RUNNING,
+                LEDGER_RUNNING_RIGHT_MM,
             );
             builder.cursor_y -= LINE_HEIGHT_MM;
             carry = line.running_balance;
@@ -1916,17 +1949,17 @@ pub fn render_general_ledger_pdf(
             false,
             LEDGER_COL_DATE,
         );
-        builder.write_inline(
+        builder.write_right(
             &format_swiss_amount(section.total_debit),
             LEDGER_FONT_PT,
             false,
-            LEDGER_COL_DEBIT,
+            LEDGER_DEBIT_RIGHT_MM,
         );
-        builder.write_inline(
+        builder.write_right(
             &format_swiss_amount(section.total_credit),
             LEDGER_FONT_PT,
             false,
-            LEDGER_COL_CREDIT,
+            LEDGER_CREDIT_RIGHT_MM,
         );
         builder.cursor_y -= LINE_HEIGHT_MM;
         // Les totaux de la section en devise — seuls totaux en devise d'un
