@@ -1,6 +1,6 @@
 # Story 43-1b : un règlement pour plusieurs factures — factures fournisseur (#823)
 
-Status: review
+Status: done
 
 *Fiche rédigée le 2026-11-17 au soir par l'agent de rédaction de l'Epic 43 (Opus 5.5), workflow `bmad-create-story`,
 découpage de la 43-1 (validation P1, H3) ; **alignée dans la nuit** sur la remédiation de la 43-1a (validation P2 : H-B,
@@ -277,3 +277,23 @@ Traités selon les décisions de l'orchestrateur :
 - 2026-11-18 (revue P1, Opus, B/E/A : 0/0/3/≈12 ; remédiation Opus 5.5) — 3 MEDIUM remédiés (vue après détachement,
   ordre des verrous, règle de la différence commune), LOW de tests et de rédaction ; `test-fast --ci` et `gate-ci`
   verts à `b3b2800be`. Revue P2 complète à suivre.
+- 2026-11-18 (clôture, Opus 5.5) — **Boucle de revue close.** Tendance (CRITICAL/HIGH/MEDIUM/LOW) : **P1** complète,
+  trois lentilles B, E, A, toutes Opus — 0/0/3/≈12 (MEDIUM : vue fausse après le détachement de la dernière facture,
+  convergent sur les trois lentilles ; ordre des verrous compte avant facture ; règle de la différence en double) →
+  **P2** complète, Sonnet — 0/0/0/8 → **P3** ciblée sur `bd5d97820`, Haiku — 0/0/0/4. Les défauts de production de la
+  P1 et le LOW-1 de la P2 ont été reproduits par un test rouge avant correction (`p1-rouges.log`, `p2-rouges.log`).
+  **Reclassements** : aucun MEDIUM reclassé en dette. Le reste de la duplication (B-3), le contrôle de plan (B-5) et
+  `RaceDuringUpdate` inatteignable (B-6) sont ouverts en issues ; issues de la boucle : **#1255 à #1258** (#1258 : le
+  coût par vue de `group_size_at_payment`, LOW-C de la P3). P2 LOW-2 inscrit au registre comme limite du test
+  d'interblocage (C-e431b-17), non traité. P3 : LOW-A traité (`debt_lines_out_of_their_positions_make_the_view_an_invariant`,
+  mutation M13 tuée), LOW-B traité (C-e431b-18 annoté), **LOW-D non traité** — l'assertion de
+  `a_missing_detachment_trace_makes_the_view_an_invariant` porte sur la variante seule, sans épingler le message du
+  recoupement (aucune autre cause d'`Invariant` n'y précède le recoupement, d'après la P3). Avant la clôture, tête
+  de la branche d'épique fusionnée (`fcce75ed3`, clôture de la 43-1a ; conflit de `sprint-status.yaml` résolu en gardant
+  les deux lignes). **Gates de clôture** au dernier commit de code `920471faa`, bases remises à neuf :
+  `test-fast --ci` (voie 2) **5576 passés, 13 ignorés** (`test-fast-cloture.log`) ; `gate-ci.sh kesh_ci_e431b`
+  (voie 1) **5583 passés, 0 échec, 17 ignorés** (`gate-ci-cloture.log`) ; frontend complet après `npm ci` —
+  `check`, `lint-i18n-ownership`, `build` verts, Vitest **3948 tests, 246 fichiers** (`front-*.log`) ; **E2E complet**
+  sur `kesh_e2e_e431b`, port 3477 (`e2e-cloture.log`, script `e2e-cloture.sh`) : **437 passés, 7 échecs, 18 ignorés**
+  — les sept de la KF-029 (#97), un par un : `mode-expert.spec.ts:26`, `:41`, `onboarding-path-b.spec.ts:65`, `:92`,
+  `onboarding.spec.ts:57`, `:77`, `:150` ; aucun échec variable. Statut `done`.
