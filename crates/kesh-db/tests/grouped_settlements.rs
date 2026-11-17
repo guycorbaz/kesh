@@ -2448,10 +2448,14 @@ async fn a_group_without_client_settlements_is_an_invariant(pool: MySqlPool) {
     );
 }
 
-/// Revue P2, LOW-5 — l'ordre de l'étape 4 (AC5.4) : le reste dû nul passe
-/// devant la date, l'écriture de vente malformée aussi.
+/// Revue P2, LOW-5 — une partie de l'ordre de l'étape 4 (AC5.4) : le reste dû
+/// nul passe devant la date, l'écriture de vente malformée aussi. Ni
+/// `AlreadyPaid` ni `NotValidated` contre `NothingDue`, ni `SaleEntryMalformed`
+/// contre `NothingDue` ne sont épinglés ici (revue P3, LOW-1).
 #[sqlx::test(migrations = "./test-schema")]
-async fn step_four_refuses_in_the_order_of_ac5_4(pool: MySqlPool) {
+async fn step_four_refuses_before_the_date_when_nothing_is_due_or_the_sale_is_malformed(
+    pool: MySqlPool,
+) {
     let m = monter(&pool).await;
     let bt = transaction(&pool, &m, dec!(300.00), jour(6, 15)).await;
     let a = facture(&pool, &m, "Q-1", dec!(100.00), jour(6, 1), None).await;
